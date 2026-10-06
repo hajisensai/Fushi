@@ -66,7 +66,7 @@ class UpdateAvailableDialog extends StatelessWidget {
       insetPadding: EdgeInsets.all(tokens.spacing.gap),
       child: FushiModalSheetFrame(
         title: t.update_available,
-        leadingIcon: Icons.system_update_alt_outlined,
+        leadingIcon: FushiIcons.downloading,
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
@@ -159,7 +159,7 @@ class InstallPermissionRetryDialog extends StatelessWidget {
       insetPadding: EdgeInsets.all(tokens.spacing.gap),
       child: FushiModalSheetFrame(
         title: t.update_install_permission_title,
-        leadingIcon: Icons.security_outlined,
+        leadingIcon: FushiIcons.shield,
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
@@ -228,9 +228,9 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
         t.update_install_launch_failed_message(version: record.targetVersion),
     };
     final IconData icon = switch (result.status) {
-      WindowsUpdateHandoffStatus.installed => Icons.check_circle_outline,
-      WindowsUpdateHandoffStatus.incomplete => Icons.error_outline,
-      WindowsUpdateHandoffStatus.launchFailed => Icons.warning_amber_outlined,
+      WindowsUpdateHandoffStatus.installed => FushiIcons.success,
+      WindowsUpdateHandoffStatus.incomplete => FushiIcons.error,
+      WindowsUpdateHandoffStatus.launchFailed => FushiIcons.warning,
     };
 
     return FushiDialogFrame(

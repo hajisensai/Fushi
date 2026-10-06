@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 
@@ -83,12 +84,12 @@ class _CrashDumpPageState extends State<CrashDumpPage> {
       title: t.crash_dump_label(n: _dumps.length),
       actions: <Widget>[
         FushiIconButton(
-          icon: Icons.folder_open_outlined,
+          icon: FushiIcons.folderOpen,
           tooltip: t.crash_dump_open_folder,
           onTap: _openFolder,
         ),
         FushiIconButton(
-          icon: Icons.refresh,
+          icon: FushiIcons.refresh,
           tooltip: t.refresh,
           onTap: _refresh,
         ),
@@ -107,44 +108,59 @@ class _CrashDumpPageState extends State<CrashDumpPage> {
             // 统一提示块：MD3 中性填充 r12 / Apple tertiaryFill r10，图标单色，
             // 不再拿整张卡片装一行提示（卡片在 Apple 下是内容底板语义）。
             child: FushiInlineNotice(
-              icon: Icons.privacy_tip_outlined,
+              icon: FushiIcons.shield,
               message: t.crash_dump_privacy_notice,
             ),
           ),
           Expanded(
             child: _dumps.isEmpty
-                ? FushiPlaceholderMessage(
-                    icon: Icons.bug_report_outlined,
-                    message: t.crash_dump_empty,
+                // 空状态走 settings kit 统一空态（M3E 形状图标 + 标题）。
+                ? SettingsEmptyState(
+                    icon: FushiIcons.success,
+                    title: t.crash_dump_empty,
                   )
-                : ListView.builder(
-                    itemCount: _dumps.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      final File dump = _dumps[index];
-                      final String name = dump.uri.pathSegments.isNotEmpty
-                          ? dump.uri.pathSegments.last
-                          : dump.path;
-                      FileStat? stat;
-                      try {
-                        stat = dump.statSync();
-                      } catch (_) {
-                        stat = null;
-                      }
-                      final String subtitle = stat == null
-                          ? ''
-                          : '${_formatSize(stat.size)}  ·  ${stat.modified}';
-                      return FushiListTile(
-                        selected: true,
-                        icon: Icons.bug_report_outlined,
-                        title: name,
-                        subtitle: subtitle,
-                        trailing: FushiIconButton(
-                          icon: Icons.share_outlined,
-                          tooltip: t.crash_dump_share,
-                          onTap: () => _shareDump(dump),
-                        ),
-                      );
-                    },
+                // M3E 分段卡片列表：行首 error 色块形状，行尾分享；首屏错峰进场。
+                : FushiEntranceScope(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      itemCount: _dumps.length,
+                      itemBuilder: fushiStaggeredItemBuilder((
+                        BuildContext context,
+                        int index,
+                      ) {
+                        final File dump = _dumps[index];
+                        final String name = dump.uri.pathSegments.isNotEmpty
+                            ? dump.uri.pathSegments.last
+                            : dump.path;
+                        FileStat? stat;
+                        try {
+                          stat = dump.statSync();
+                        } catch (_) {
+                          stat = null;
+                        }
+                        final String subtitle = stat == null
+                            ? ''
+                            : '${_formatSize(stat.size)}  ·  ${stat.modified}';
+                        return FushiGroupedListItem(
+                          index: index,
+                          count: _dumps.length,
+                          child: FushiListItem(
+                            leading: const FushiListLeadingIcon(
+                              FushiIcons.file,
+                              shape: FushiLeadingShape.square,
+                              tone: FushiCardTone.error,
+                            ),
+                            title: Text(name),
+                            subtitle: subtitle.isEmpty ? null : Text(subtitle),
+                            trailing: FushiIconButton(
+                              icon: FushiIcons.share,
+                              tooltip: t.crash_dump_share,
+                              onTap: () => _shareDump(dump),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
                   ),
           ),
         ],

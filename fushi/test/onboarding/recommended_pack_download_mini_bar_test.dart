@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_mini_bar.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// BUG-2165：推荐包 9.5 GB 的下载在 BUG-2097 之后确实活过了新手引导，但可见入口
@@ -163,7 +164,7 @@ void main() {
     await tester.pump();
     expect(find.text(t.onboarding_pack_status_downloading), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.close));
+    await tester.tap(find.byIcon(FushiIcons.close));
     await tester.pump();
 
     expect(find.text(t.onboarding_pack_status_downloading), findsNothing);
@@ -182,7 +183,7 @@ void main() {
     await tester.pumpWidget(host(controller, () {}));
     controller.stage.value = RecommendedPackDownloadStage.downloading;
     await tester.pump();
-    await tester.tap(find.byIcon(Icons.close));
+    await tester.tap(find.byIcon(FushiIcons.close));
     await tester.pump();
     expect(find.text(t.onboarding_pack_status_downloading), findsNothing);
 

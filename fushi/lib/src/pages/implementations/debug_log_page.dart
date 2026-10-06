@@ -38,14 +38,14 @@ class _DebugLogPageState extends State<DebugLogPage> {
       title: t.debug_log_title(count: count),
       actions: <Widget>[
         FushiIconButton(
-          icon: Icons.refresh,
+          icon: FushiIcons.refresh,
           tooltip: t.stat_refresh,
           onTap: () => setState(() {
             _log = DebugLogService.instance.getFullLog();
           }),
         ),
         FushiIconButton(
-          icon: Icons.copy_outlined,
+          icon: FushiIcons.copy,
           tooltip: t.copy,
           onTap: () async {
             await Clipboard.setData(ClipboardData(text: _log));
@@ -57,7 +57,7 @@ class _DebugLogPageState extends State<DebugLogPage> {
           },
         ),
         FushiIconButton(
-          icon: Icons.share_outlined,
+          icon: FushiIcons.share,
           tooltip: t.share,
           onTap: () {
             final Uint8List bytes = Uint8List.fromList(utf8.encode(_log));
@@ -71,7 +71,7 @@ class _DebugLogPageState extends State<DebugLogPage> {
         ),
         if (showUploadLogAction)
           FushiIconButton(
-            icon: Icons.cloud_upload_outlined,
+            icon: FushiIcons.cloudUpload,
             tooltip: t.log_upload_action,
             onTap: () => uploadLogToServer(
               context: context,
@@ -81,7 +81,7 @@ class _DebugLogPageState extends State<DebugLogPage> {
           ),
         if (showSaveLogAction)
           FushiIconButton(
-            icon: Icons.save_alt_outlined,
+            icon: FushiIcons.save,
             tooltip: t.log_export_file,
             onTap: () => saveLogToFile(
               context: context,
@@ -91,7 +91,7 @@ class _DebugLogPageState extends State<DebugLogPage> {
             ),
           ),
         FushiIconButton(
-          icon: Icons.delete_outline,
+          icon: FushiIcons.delete,
           tooltip: t.clear,
           onTap: () {
             DebugLogService.instance.clear();
@@ -106,10 +106,14 @@ class _DebugLogPageState extends State<DebugLogPage> {
             BuildContext context,
             ScrollController controller,
             SettingsSectionSpy spy,
-          ) => FushiLogPanel(
-        log: _log,
-        shareAction: (text) => FushiShare.shareText(text),
-      ),
+          ) => count == 0
+          // 空状态：settings kit 统一空态（M3E 形状图标 + 标题），不是一块只写着
+          // 「暂无日志」的空日志面板。
+          ? SettingsEmptyState(icon: FushiIcons.file, title: t.no_debug_logs)
+          : FushiLogPanel(
+              log: _log,
+              shareAction: (text) => FushiShare.shareText(text),
+            ),
     );
   }
 }
