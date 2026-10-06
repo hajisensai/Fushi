@@ -349,7 +349,7 @@ class _MangaOcrSettingsSectionState
       context: context,
       title: t.manga_ocr_delete_confirm_title,
       message: t.manga_ocr_delete_confirm_message,
-      icon: Icons.delete_outline,
+      icon: FushiIcons.delete,
       confirmLabel: t.manga_ocr_delete,
       destructive: true,
     );
@@ -419,7 +419,7 @@ class _MangaOcrSettingsSectionState
                   alignment: Alignment.centerLeft,
                   child: FushiTextButton.icon(
                     onPressed: () => unawaited(_copyModelUrls()),
-                    icon: const FushiIcon(Icons.link, size: 18),
+                    icon: const FushiIcon(FushiIcons.link, size: 18),
                     label: Text(t.manga_ocr_import_copy_urls),
                   ),
                 ),
@@ -1128,7 +1128,7 @@ class _MangaOcrSettingsSectionState
         AdaptiveSettingsRow(
           title: t.manga_ocr_model_unused_by_engine,
           subtitle: _modelSizeSubtitle(_status),
-          icon: Icons.download_outlined,
+          icon: FushiIcons.download,
           showIcon: true,
         ),
         const SizedBox(height: 8),
@@ -1141,7 +1141,7 @@ class _MangaOcrSettingsSectionState
               children: <Widget>[
                 FushiTextButton.icon(
                   onPressed: _importing ? null : _startDownload,
-                  icon: const FushiIcon(Icons.download_outlined, size: 18),
+                  icon: const FushiIcon(FushiIcons.download, size: 18),
                   label: Text(t.manga_ocr_download),
                 ),
                 _importButton(),
@@ -1166,7 +1166,7 @@ class _MangaOcrSettingsSectionState
           subtitle: t.manga_ocr_model_disk_usage(
             size: _formatBytes(status.diskBytes),
           ),
-          icon: Icons.folder_off_outlined,
+          icon: FushiIcons.storage,
           showIcon: true,
         ),
         const SizedBox(height: 8),
@@ -1195,7 +1195,9 @@ class _MangaOcrSettingsSectionState
               ? t.manga_ocr_model_status_ready
               : t.manga_ocr_model_status_missing,
           subtitle: _withModelName(_modelSizeSubtitle(status)),
-          icon: ready ? Icons.check_circle_outline : Icons.download_outlined,
+          icon: ready
+              ? FushiIcons.filled(FushiIcons.success)
+              : FushiIcons.download,
           showIcon: true,
         ),
         if (_downloading) ...<Widget>[
@@ -1254,7 +1256,7 @@ class _MangaOcrSettingsSectionState
                               'manga_ocr_accelerator_download',
                             ),
                             onPressed: _importing ? null : _startDownload,
-                            icon: const FushiIcon(Icons.bolt_outlined, size: 18),
+                            icon: const FushiIcon(FushiIcons.speed, size: 18),
                             label: Text(
                               t.manga_ocr_accelerator_download(
                                 size: _formatBytes(
@@ -1272,7 +1274,7 @@ class _MangaOcrSettingsSectionState
                       children: <Widget>[
                         FushiFilledButton.icon(
                           onPressed: _importing ? null : _startDownload,
-                          icon: const FushiIcon(Icons.download_outlined, size: 18),
+                          icon: const FushiIcon(FushiIcons.download, size: 18),
                           // 「继续下载」不是新能力：下载器一直有 Range 续传。
                           // 文案分叉只是把已有能力说出来——用户取消或断网后看到
                           // 的若还是「下载模型」，就会以为那几百 MB 白下了。
@@ -1371,7 +1373,7 @@ class _MangaOcrSettingsSectionState
               height: 16,
               child: FushiCircularProgressIndicator(strokeWidth: 2),
             )
-          : const FushiIcon(Icons.delete_outline, size: 18),
+          : const FushiIcon(FushiIcons.delete, size: 18),
       label: Text(t.manga_ocr_delete),
     );
   }
@@ -1401,7 +1403,7 @@ class _MangaOcrSettingsSectionState
                       height: 16,
                       child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const FushiIcon(Icons.search_outlined, size: 18),
+                  : const FushiIcon(FushiIcons.search, size: 18),
               label: Text(t.manga_ocr_external_detect),
             ),
             if (_probeResult != null) ...<Widget>[
