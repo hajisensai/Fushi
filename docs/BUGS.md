@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2784 条。点号进各自文件。
+> 共 2785 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3035](bugs/BUG-3035-destructive-confirm-footer.md) | ✅ | ✅ | 通用删除确认框勾选披露后动作区滚出矮窗口 |
 | [BUG-3034](bugs/BUG-3034-home-first-load-slow.md) | ✅ | ✅ | 首页首屏加载慢：合集成员表全表物化 + 串行读 |
 | [BUG-3033](bugs/BUG-3033-pending-ai-outcome-scroll.md) | ✅ | ✅ | AI识别长结论在待确认清空或刷新时溢出 |
 | [BUG-3032](bugs/BUG-3032-control-layout-chip-overflow.md) | ✅ | ✅ | 阅读器按钮布局编辑器长文案胶囊撑破窄槽 |
