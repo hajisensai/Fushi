@@ -160,6 +160,66 @@ void main() {
       }
     });
 
+    test('FushiFloatingChromeInsetPadding is a ratchet, not a page root', () {
+      // 整体 Padding 下移让出的那段永远是空白页面底色：工具区一收起顶部就是
+      // 一整块白（游戏 / 设置 2026-10-06 截图）。滚动页面一律走
+      // FushiFloatingChromeScrollInset / InsetSpacer；InsetPadding 只留给不滚动
+      // 的占位 / 加载 / 错误态，以及下面这些已审过的点。只许减，不许加。
+      const Map<String, int> allowed = <String, int>{
+        'lib/src/pages/implementations/browse_page.dart': 1,
+        'lib/src/pages/implementations/home_game_page.dart': 2,
+        'lib/src/pages/implementations/home_reader_page.dart': 1,
+        'lib/src/pages/implementations/media_discovery_page.dart': 7,
+        'lib/src/pages/implementations/media_library_shell.dart': 1,
+        'lib/src/pages/implementations/media_server/media_server_widgets.dart':
+            1,
+        'lib/src/pages/implementations/reader_fushi_history_page.dart': 4,
+        'lib/src/pages/implementations/video_discovery_page.dart': 2,
+        'lib/src/pages/implementations/video_library_shell.dart': 1,
+      };
+      final Map<String, int> found = <String, int>{};
+      for (final FileSystemEntity entity in Directory(
+        'lib',
+      ).listSync(recursive: true)) {
+        if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        final String path = entity.path.replaceAll(r'\', '/');
+        if (path.endsWith('fushi_floating_chrome.dart')) continue;
+        final int count = 'FushiFloatingChromeInsetPadding('
+            .allMatches(entity.readAsStringSync())
+            .length;
+        if (count > 0) found[path] = count;
+      }
+      for (final MapEntry<String, int> entry in found.entries) {
+        expect(
+          entry.value,
+          lessThanOrEqualTo(allowed[entry.key] ?? 0),
+          reason:
+              '${entry.key}: 新增的整体下移；滚动页面改用 '
+              'FushiFloatingChromeScrollInset',
+        );
+      }
+    });
+
+    test('top fade scrims live only in shared components', () {
+      const Set<String> allowed = <String>{
+        'lib/src/utils/components/fushi_floating_chrome.dart',
+        'lib/src/utils/components/fushi_material_components.dart',
+        'lib/src/utils/components/glass/fushi_glass_bars.dart',
+        'lib/src/pages/implementations/discovery/discovery_hero_carousel.dart',
+      };
+      final List<String> offenders = <String>[];
+      for (final FileSystemEntity entity in Directory(
+        'lib',
+      ).listSync(recursive: true)) {
+        if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        final String path = entity.path.replaceAll(r'\', '/');
+        if (allowed.contains(path)) continue;
+        final String source = entity.readAsStringSync();
+        if (source.contains('FushiTopFadeScrim(')) offenders.add(path);
+      }
+      expect(offenders, isEmpty);
+    });
+
     test('desktop title bar floats over the page', () {
       // 曾经是 Column[标题行, Expanded(页面)]：标题行是一条独立带子，页面背景
       // 在 y = 32 被切开。
