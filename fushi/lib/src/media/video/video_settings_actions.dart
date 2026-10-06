@@ -477,7 +477,7 @@ Widget buildVideoAudioTrackSection(SettingsContext context) {
   if (section != null) return section;
   return FushiListTileControl(
     dense: true,
-    leading: const FushiIcon(FushiIcons.audio),
+    leading: const FushiIcon(FushiIcons.music),
     title: Text(t.video_audio_track_empty),
     enabled: false,
   );
