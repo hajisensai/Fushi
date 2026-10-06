@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -94,10 +96,20 @@ void main() {
       final Size size = tester.getSize(material);
       final Path path = shape.getOuterPath(Offset.zero & size);
       // 取左上角：路径包围盒左上点到第一个非角点的距离不好量，直接比形状参数。
-      // Path 以 float32 存点：非整数宽（80.3）读回差 1e-6 量级。
-      final Size bounds = path.getBounds().size;
-      expect(bounds.width, closeTo(size.width, 1e-3));
-      expect(bounds.height, closeTo(size.height, 1e-3));
+      // 此路径是 RoundedRectangleBorder → Path.addRRect：SDK 把 RRect 的
+      // 四边编码进 Float32List，再由 getBounds 以 Float32List 读回。圆角不
+      // 改外接矩形；零原点下右/下边就是宽/高。只转换预期边界的存储表示，
+      // 精确比较整个 Rect（也检查原点），不额外允许亚像素误差。
+      final Float32List edges = Float32List.fromList(<double>[
+        0,
+        0,
+        size.width,
+        size.height,
+      ]);
+      expect(
+        path.getBounds(),
+        Rect.fromLTRB(edges[0], edges[1], edges[2], edges[3]),
+      );
       final double half = size.shortestSide / 2;
       final double r =
           (shape.radius + (half - shape.radius) * shape.startPill.clamp(0, 1))
