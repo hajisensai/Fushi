@@ -127,33 +127,22 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
           onTap: _loading ? null : _load,
         ),
       ],
-      body: _buildBody(context),
+      // 域筛选条原本固定在正文顶部：页头浮在正文上之后会被胶囊盖住，所以随
+      // 页头一起进 headerBottom（页头 → 筛选纵向堆叠、一起收起）。
+      headerBottom: _buildFilters(),
+      // Builder：正文要在页头脚手架之内取 MediaQuery 顶部让位（状态栏 + 浮动
+      // 页头含筛选条）。
+      body: Builder(builder: _buildList),
     );
   }
 
-  Widget _buildBody(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        _buildFilters(tokens),
-        Expanded(child: _buildList(tokens)),
-      ],
-    );
-  }
-
-  Widget _buildFilters(FushiDesignTokens tokens) {
+  Widget _buildFilters() {
     // 横向滚动区必须包 HorizontalDragScrollable：桌面端默认 dragDevices 不含
     // mouse，不包就是「鼠标拖不动」（守卫 horizontal_drag_scroll_guard 盯着）。
     return HorizontalDragScrollable(
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.fromLTRB(
-          tokens.spacing.page,
-          0,
-          tokens.spacing.page,
-          tokens.spacing.gap,
-        ),
+        // 挂在页头 headerBottom 里：页头已有左右内边距，这里不再叠加。
         child: Row(
           children: <Widget>[
             _filterChip(label: t.updates_filter_all, kind: null),
@@ -180,10 +169,11 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
     );
   }
 
-  Widget _buildList(FushiDesignTokens tokens) {
-    if (_loading) return buildLoading();
+  Widget _buildList(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    if (_loading) return SafeArea(bottom: false, child: buildLoading());
     if (_entries.isEmpty) {
-      return _UpdatesEmptyState(tokens: tokens);
+      return SafeArea(bottom: false, child: _UpdatesEmptyState(tokens: tokens));
     }
     // M3E 分段卡片列表（首尾大圆角、行间 2px），首屏错峰进场；切筛选重开窗口。
     return FushiEntranceScope(
@@ -193,7 +183,8 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
           context,
           EdgeInsets.fromLTRB(
             tokens.spacing.page,
-            tokens.spacing.gap,
+            // 正文滚到浮动页头底下：顶部让出「状态栏 + 页头」。
+            tokens.spacing.gap + MediaQuery.paddingOf(context).top,
             tokens.spacing.page,
             tokens.spacing.section,
           ),
