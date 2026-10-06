@@ -95,8 +95,11 @@ const int kSettingsRowTitleMaxLines = 2;
 const int kSettingsRowSubtitleMaxLines = 3;
 const double kSettingsStepperValueWidth = 72;
 
+/// Stepper 按钮的布局与触控边界；内部 XS 图形仍由共享按钮渲染。
+const double kSettingsStepperButtonWidth = kMinInteractiveDimension;
+
 /// stepper 行 trailing（`−` / 读数 / `+`）的固有宽度：两个
-/// `VisualDensity.compact` 的 [IconButton]（48 − 8 = 40）+ [Wrap] 的两处 4
+/// [kSettingsStepperButtonWidth] 触控区 + [Wrap] 的两处 4
 /// 间距 + [kSettingsStepperValueWidth] 读数槽。读数走 [FittedBox] 缩放，所以
 /// 这个盒子不随文字缩放变宽。
 ///
@@ -104,7 +107,7 @@ const double kSettingsStepperValueWidth = 72;
 /// [AdaptiveSettingsRow.trailingWidth]）——判「这行还放不放得下标题」必须知道
 /// trailing 到底占多宽，靠经验常数猜会把标题削没（BUG-2550）。
 const double kSettingsStepperTrailingWidth =
-    kSettingsStepperValueWidth + 2 * (40 + 4);
+    kSettingsStepperValueWidth + 2 * (kSettingsStepperButtonWidth + 4);
 
 /// 行内布局下，标题至少要拿到的宽度（1x；随文字缩放放大）。
 ///
@@ -973,7 +976,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
     // impossible width.
     //
     // BUG-2550：那个经验值只在 trailing 窄（switch ~60）时成立。trailing 一旦真的
-    // 宽——stepper 是 [kSettingsStepperTrailingWidth]（160）——220 就远低于这行真正
+    // 宽——stepper 是 [kSettingsStepperTrailingWidth]——220 就远低于这行真正
     // 需要的宽度：行宽刚好卡在阈值上时，标题拿到的是
     // `220 + 42 − 32(padding) − 42(icon) − 12(gap) − 160(stepper) ≈ 16dp`，
     // 一个汉字都装不下，于是「字体大小 / 字体粗细 / 段落间距」在阅读设置面板里
@@ -3855,11 +3858,14 @@ class _SettingsStepButton extends StatelessWidget {
         child: FushiIcon(icon, size: 18),
       );
     }
-    return FushiIconButtonControl(
-      icon: FushiIcon(icon, size: 18),
-      tooltip: tooltip,
-      visualDensity: VisualDensity.compact,
-      onPressed: onPressed,
+    return SizedBox.square(
+      dimension: kSettingsStepperButtonWidth,
+      child: FushiIconButtonControl(
+        icon: FushiIcon(icon, size: 18),
+        tooltip: tooltip,
+        visualDensity: VisualDensity.compact,
+        onPressed: onPressed,
+      ),
     );
   }
 }
