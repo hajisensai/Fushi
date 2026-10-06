@@ -25,6 +25,10 @@ class TagPickerPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return FushiPageScaffold(
       title: t.tag_label,
+      // 不铺到页头底下：正文是与 sheet 共用的 [TagPickerPanel]，它自带固定的
+      // 弹层标题行与底部动作行（FushiModalSheetFrame），只有中段可滚——内容
+      // 无法滚到浮动页头底下，叠放只会让固定标题行压在页头里。
+      extendBodyBehindHeader: false,
       body: SafeArea(
         child: TagPickerPanel(
           embedded: true,
