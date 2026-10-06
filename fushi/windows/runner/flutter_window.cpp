@@ -542,6 +542,25 @@ bool FlutterWindow::OnCreate() {
         } else if (call.method_name() == "endStartupWindowPreparation") {
           EndStartupWindowPreparation();
           result->Success();
+        } else if (call.method_name() == "setCaptionMaxButtonRect") {
+          // Physical-pixel rect of the Flutter maximize button in the Flutter
+          // view (= child client coordinates); all zero = disabled.
+          const auto* rect_args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          auto read_int = [rect_args](const char* key) -> LONG {
+            if (rect_args == nullptr) {
+              return 0;
+            }
+            const auto it = rect_args->find(flutter::EncodableValue(key));
+            if (it == rect_args->end()) {
+              return 0;
+            }
+            return static_cast<LONG>(it->second.TryGetLongValue().value_or(0));
+          };
+          const RECT rect{read_int("left"), read_int("top"), read_int("right"),
+                          read_int("bottom")};
+          caption_snap_button_.SetRect(rect);
+          result->Success();
         } else if (call.method_name() == "clearTaskbarFlash") {
           // TODO-615: actively stop any taskbar "flash / request attention"
           // state on the main window. SetForegroundWindow (window_manager's
@@ -749,6 +768,15 @@ bool FlutterWindow::OnCreate() {
   RegisterSystemTransparencyChannel(flutter_controller_->engine()->messenger());
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  caption_snap_button_.Attach(
+      GetHandle(), flutter_controller_->view()->GetNativeWindow(),
+      [this](const char* event) {
+        if (caption_channel_) {
+          caption_channel_->InvokeMethod(
+              "onCaptionMaxButton",
+              std::make_unique<flutter::EncodableValue>(std::string(event)));
+        }
+      });
   return true;
 }
 
@@ -4607,6 +4635,9 @@ bool FlutterWindow::ApplyWindowIcon(const std::wstring& path) {
 }
 
 void FlutterWindow::OnDestroy() {
+  // Before the Flutter view / channels go away: unhook the child subclass and
+  // drop the Dart relay.
+  caption_snap_button_.Detach();
   if (window_capture_channel_) {
     window_capture_channel_->SetMethodCallHandler(nullptr);
     window_capture_channel_.reset();
@@ -4743,6 +4774,13 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
               std::make_unique<flutter::EncodableValue>());
         },
         windows_ime_space_channel_.get());
+  }
+
+  // Snap Layouts hit testing for the app-drawn maximize button (before the
+  // plugins: window_manager answers WM_NCHITTEST on its own otherwise).
+  if (std::optional<LRESULT> snap =
+          caption_snap_button_.HandleTopLevel(hwnd, message, wparam, lparam)) {
+    return *snap;
   }
 
   // Give Flutter, including plugins, an opportunity to handle window messages.

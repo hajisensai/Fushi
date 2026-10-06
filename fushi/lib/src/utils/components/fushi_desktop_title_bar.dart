@@ -4,14 +4,18 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show hdrHostActiveGlobal;
 import 'package:fushi/src/platform/desktop/macos_traffic_lights.dart';
 import 'package:fushi/src/platform/macos_fullscreen_state.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isEinkTheme;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/fushi_color_roles.dart';
+import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// App-themed desktop frame used after the native caption is hidden.
@@ -40,6 +44,10 @@ class FushiDesktopTitleBar extends StatefulWidget {
   /// This is intentionally outside [FushiAppUiScale], so the window controls do
   /// not grow with content zoom.
   static const double height = 32;
+
+  /// 关闭按钮的 key（测试按它判断顶栏是否挂着窗口按钮）。
+  @visibleForTesting
+  static const Key closeButtonKey = ValueKey<String>('fushi_title_bar_close');
 
   static bool _isEnabled = false;
 
@@ -213,6 +221,10 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
     with WindowListener {
   bool _isMaximized = false;
 
+  /// 窗口是否在前台。失焦时窗口按钮组整体降低强调（与系统标题栏失焦变灰
+  /// 同一语义），颜色仍全部取主题。
+  bool _isFocused = true;
+
   /// macOS 原生全屏的 chrome 所有者（与 window_manager 那个所有者并列，互不覆盖）。
   final Object _macosNativeFullscreenOwner = Object();
 
@@ -231,6 +243,9 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
       unawaited(MacosFullscreenState.instance.ensureRegistered());
       _onMacosFullscreenChanged();
     }
+    // Windows 11 贴靠布局：最大化按钮的点击可能由原生命中区回传
+    // （caption_snap_button.h），与 Flutter 侧点击走同一个处理。
+    WindowCaptionChannel.onCaptionMaxButtonClick = _toggleMaximize;
     unawaited(_readInitialWindowState());
   }
 
@@ -256,11 +271,13 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
       final List<bool> state = await Future.wait<bool>(<Future<bool>>[
         windowManager.isMaximized(),
         windowManager.isFullScreen(),
+        windowManager.isFocused(),
       ]);
       if (!mounted) return;
       FushiDesktopTitleBar.setWindowManagerFullscreen(state[1]);
       setState(() {
         _isMaximized = state[0];
+        _isFocused = state[2];
       });
     } catch (error) {
       debugPrint('[Fushi] failed to read initial window state: $error');
@@ -270,6 +287,9 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
   @override
   void dispose() {
     windowManager.removeListener(this);
+    if (WindowCaptionChannel.onCaptionMaxButtonClick == _toggleMaximize) {
+      WindowCaptionChannel.onCaptionMaxButtonClick = null;
+    }
     if (Platform.isMacOS) {
       MacosFullscreenState.instance.isFullscreen.removeListener(
         _onMacosFullscreenChanged,
@@ -290,6 +310,16 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
   @override
   void onWindowUnmaximize() {
     setState(() => _isMaximized = false);
+  }
+
+  @override
+  void onWindowFocus() {
+    if (!_isFocused) setState(() => _isFocused = true);
+  }
+
+  @override
+  void onWindowBlur() {
+    if (_isFocused) setState(() => _isFocused = false);
   }
 
   @override
@@ -479,7 +509,11 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
           // 透明标题行浮在页面背景（如详情页 fanart）上时，窗口按钮背后垫一团
           // 无硬边的柔光保证可读：右上角起的径向渐变，压扁成椭圆，边缘处
           // 不透明度已降到 0。只给 Windows 那组按钮（macOS 红绿灯是系统画的）。
-          if (page == null && !trafficLights)
+          //
+          // M3E 按钮组自己有一枚半透明 tonal 胶囊，柔光只负责让胶囊四周的
+          // 背景过渡柔和、不出硬边：峰值比旧版低、渐隐半径更大，胶囊整枚落在
+          // 最浓的那一段里。墨水屏不画（降级为胶囊描边，无填色）。
+          if (page == null && !trafficLights && !isEinkTheme(context))
             Positioned(
               top: 0,
               right: 0,
@@ -488,19 +522,19 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
               child: IgnorePointer(
                 child: Transform(
                   alignment: Alignment.topRight,
-                  transform: Matrix4.diagonal3Values(1, 0.4, 1),
+                  transform: Matrix4.diagonal3Values(1, 0.26, 1),
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: RadialGradient(
                         center: Alignment.topRight,
                         radius: 1,
                         colors: <Color>[
-                          colors.surface.withValues(alpha: 0.62),
-                          colors.surface.withValues(alpha: 0.4),
-                          colors.surface.withValues(alpha: 0.14),
+                          colors.surface.withValues(alpha: 0.5),
+                          colors.surface.withValues(alpha: 0.36),
+                          colors.surface.withValues(alpha: 0.12),
                           colors.surface.withValues(alpha: 0),
                         ],
-                        stops: const <double>[0, 0.35, 0.7, 1],
+                        stops: const <double>[0, 0.42, 0.74, 1],
                       ),
                     ),
                   ),
@@ -555,25 +589,44 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
             ),
           ),
           if (!trafficLights) ...<Widget>[
-          _FushiCaptionButton(
-            icon: Icons.remove_rounded,
-            foreground: page?.foreground,
-            onPressed: _minimize,
+          // M3E 窗口按钮组：三枚小号 standard 图标按钮收进一枚 tonal 胶囊；
+          // 右缘与页面浮动页头的动作组同一条页边（[FushiSpacingTokens.page]），
+          // 竖直方向在 32 高的标题行里居中。
+          _FushiCaptionButtonGroup(
+            page: page,
+            active: _isFocused,
+            children: <Widget>[
+              _FushiCaptionButton(
+                glyph: _CaptionGlyph.minimize,
+                page: page,
+                active: _isFocused,
+                onPressed: _minimize,
+              ),
+              _FushiCaptionButton(
+                glyph: _CaptionGlyph.maximize,
+                maximized: _isMaximized,
+                // 只有 Windows runner 认 HTMAXBUTTON 命中区（贴靠布局）。
+                snapLayouts: Platform.isWindows,
+                page: page,
+                active: _isFocused,
+                onPressed: _toggleMaximize,
+              ),
+              _FushiCaptionButton(
+                key: FushiDesktopTitleBar.closeButtonKey,
+                glyph: _CaptionGlyph.close,
+                page: page,
+                active: _isFocused,
+                onPressed: _close,
+              ),
+            ],
           ),
-          _FushiCaptionButton(
-            icon: _isMaximized
-                ? Icons.filter_none_rounded
-                : Icons.crop_square_rounded,
-            foreground: page?.foreground,
-            onPressed: _toggleMaximize,
+          // 组右侧的页边留白仍是拖动区（右上角另有顶边 resize 把手）。
+          DragToMoveArea(
+            child: SizedBox(
+              width: FushiDesignTokens.of(context).spacing.page,
+              height: FushiDesktopTitleBar.height,
+            ),
           ),
-          _FushiCaptionButton(
-            icon: Icons.close_rounded,
-            isClose: true,
-            foreground: page?.foreground,
-            onPressed: _close,
-          ),
-          const SizedBox(width: 4),
           ],
         ],
     );
@@ -597,61 +650,508 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
   }
 }
 
-class _FushiCaptionButton extends StatelessWidget {
-  const _FushiCaptionButton({
-    required this.icon,
-    required this.onPressed,
-    this.foreground,
-    this.isClose = false,
+/// 窗口按钮的字形（自绘，笔画粗细与圆角统一；最大化 / 还原之间做形变）。
+enum _CaptionGlyph { minimize, maximize, close }
+
+/// 按钮组几何（逻辑像素，与 [FushiDesktopTitleBar.height] 一样不随
+/// [FushiAppUiScale] 缩放）：28 高的胶囊、24 高的按钮可视区，命中区撑满
+/// 标题行的 32 高与按钮间距（桌面精确指针，小于 48 但没有命中死角）。
+const double _kCaptionCapsuleHeight = 28;
+const double _kCaptionButtonWidth = 36;
+const double _kCaptionButtonHeight = 24;
+const double _kCaptionButtonGap = 2;
+const double _kCaptionGroupPadding = 2;
+const double _kCaptionGlyphSize = 10;
+
+/// M3E 窗口按钮组：一枚半透明 tonal 胶囊（与页面浮动页头的动作组同一种
+/// 「胶囊里一排 standard 图标按钮」形态，只是压成标题行的高度）。
+///
+/// - 无页面上报色：surfaceContainerHigh 半透明，浮在页面背景 + 柔光上；
+/// - 页面上报色（阅读器纸色等）：从页面前景色派生一层极淡的色块，不引入
+///   根主题的 surface（纸色与根主题明暗可能相反）；
+/// - 窗口失焦：胶囊变淡（按钮前景同步降低不透明度，见 [_FushiCaptionButton]）；
+/// - 墨水屏：无填色，一圈 outline 描边。
+class _FushiCaptionButtonGroup extends StatelessWidget {
+  const _FushiCaptionButtonGroup({
+    required this.page,
+    required this.active,
+    required this.children,
   });
 
-  final IconData icon;
-  final VoidCallback onPressed;
-  final bool isClose;
-
-  /// 页面上报的前景色；null = 根主题 token。页面底色与根主题明暗可能相反，
-  /// 图标与悬停底都必须从它派生，不能再用根主题的 onVariant / overlay。
-  final Color? foreground;
+  final FushiTitleBarColors? page;
+  final bool active;
+  final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: FushiIconButtonControl(
-        onPressed: onPressed,
-        icon: FushiIcon(icon, size: 16),
-        style: ButtonStyle(
-          minimumSize: const WidgetStatePropertyAll<Size>(Size(40, 28)),
-          maximumSize: const WidgetStatePropertyAll<Size>(Size(40, 28)),
-          padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
-            EdgeInsets.zero,
-          ),
-          shape: WidgetStatePropertyAll<OutlinedBorder>(
-            RoundedRectangleBorder(borderRadius: tokens.radii.chipRadius),
-          ),
-          foregroundColor: WidgetStateProperty.resolveWith<Color>((states) {
-            if (isClose && states.contains(WidgetState.hovered)) {
-              return colors.onError;
-            }
-            return foreground ?? tokens.surfaces.onVariant;
-          }),
-          backgroundColor: WidgetStateProperty.resolveWith<Color?>((states) {
-            if (isClose && states.contains(WidgetState.hovered)) {
-              return colors.error;
-            }
-            if (states.contains(WidgetState.hovered) ||
-                states.contains(WidgetState.focused)) {
-              return foreground?.withValues(alpha: 0.12) ??
-                  tokens.surfaces.overlay;
-            }
-            return Colors.transparent;
-          }),
-          overlayColor: const WidgetStatePropertyAll<Color>(Colors.transparent),
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    final FushiSpringSpec effects = context.fushiMotion.effectsDefault;
+    final Color? pageForeground = page?.foreground;
+    final Color fill;
+    if (eink) {
+      fill = Colors.transparent;
+    } else if (pageForeground != null) {
+      fill = pageForeground.withValues(
+        alpha: pageForeground.a * (active ? 0.08 : 0.04),
+      );
+    } else {
+      fill = cs.surfaceContainerHigh.withValues(alpha: active ? 0.72 : 0.48);
+    }
+    final BorderSide side = eink
+        ? BorderSide(color: pageForeground ?? cs.outline)
+        : BorderSide.none;
+    const double inset =
+        (FushiDesktopTitleBar.height - _kCaptionCapsuleHeight) / 2;
+    return FocusTraversalGroup(
+      child: SizedBox(
+        height: FushiDesktopTitleBar.height,
+        child: Stack(
+          alignment: Alignment.center,
+          children: <Widget>[
+            Positioned.fill(
+              top: inset,
+              bottom: inset,
+              child: IgnorePointer(
+                child: AnimatedContainer(
+                  duration: effects.duration,
+                  curve: effects.curve,
+                  decoration: ShapeDecoration(
+                    color: fill,
+                    shape: StadiumBorder(side: side),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              // 按钮命中区各自带半个间距，组内边距补齐到 [_kCaptionGroupPadding]。
+              padding: const EdgeInsets.symmetric(
+                horizontal: _kCaptionGroupPadding - _kCaptionButtonGap / 2,
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: children),
+            ),
+          ],
         ),
       ),
     );
+  }
+}
+
+/// 组内的一枚 M3E 小号 standard 图标按钮。
+///
+/// 自绘而不是 [FushiIconButtonControl]：最大化按钮在 Windows 上把命中交给
+/// 原生 HTMAXBUTTON（贴靠布局），那时 Flutter 收不到指针，悬停 / 按下态要由
+/// 原生回传（[WindowCaptionChannel.captionMaxButtonHovered] / `Pressed`）
+/// 注入——按钮组件不开放这一层状态。
+///
+/// 状态：悬停 / 键盘焦点 = 前景色状态层（[FushiStateLayer]）；按下 = 形状
+/// 从全圆收到小圆角并轻微缩小（M3E 按压形变，spatial 弹簧回弹）；关闭按钮
+/// 悬停 / 按下 = errorContainer / onErrorContainer（不用刺眼的纯红）。墨水屏
+/// 不填色，悬停只描边；减弱动态效果 / 墨水屏下全部瞬间到位。
+class _FushiCaptionButton extends StatefulWidget {
+  const _FushiCaptionButton({
+    required this.glyph,
+    required this.page,
+    required this.active,
+    required this.onPressed,
+    this.maximized = false,
+    this.snapLayouts = false,
+    super.key,
+  });
+
+  final _CaptionGlyph glyph;
+
+  /// 页面上报色；null = 根主题 token。前景与状态层都从它派生。
+  final FushiTitleBarColors? page;
+
+  /// 窗口在前台。失焦时前景降不透明度。
+  final bool active;
+  final VoidCallback onPressed;
+
+  /// 仅 [_CaptionGlyph.maximize]：窗口当前已最大化（字形形变为「还原」）。
+  final bool maximized;
+
+  /// 把本按钮的命中区报给 Windows runner 做 HTMAXBUTTON（贴靠布局）。
+  final bool snapLayouts;
+
+  @override
+  State<_FushiCaptionButton> createState() => _FushiCaptionButtonState();
+}
+
+class _FushiCaptionButtonState extends State<_FushiCaptionButton> {
+  bool _hovered = false;
+  bool _pressed = false;
+  bool _focusHighlight = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.snapLayouts) _listenNative();
+  }
+
+  @override
+  void didUpdateWidget(_FushiCaptionButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.snapLayouts == widget.snapLayouts) return;
+    if (widget.snapLayouts) {
+      _listenNative();
+    } else {
+      _unlistenNative();
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.snapLayouts) _unlistenNative();
+    super.dispose();
+  }
+
+  void _listenNative() {
+    WindowCaptionChannel.captionMaxButtonHovered.addListener(_onNativeState);
+    WindowCaptionChannel.captionMaxButtonPressed.addListener(_onNativeState);
+  }
+
+  void _unlistenNative() {
+    WindowCaptionChannel.captionMaxButtonHovered.removeListener(
+      _onNativeState,
+    );
+    WindowCaptionChannel.captionMaxButtonPressed.removeListener(
+      _onNativeState,
+    );
+  }
+
+  void _onNativeState() {
+    if (mounted) setState(() {});
+  }
+
+  bool get _isHovered =>
+      _hovered ||
+      (widget.snapLayouts &&
+          WindowCaptionChannel.captionMaxButtonHovered.value);
+
+  bool get _isPressed =>
+      _pressed ||
+      (widget.snapLayouts &&
+          WindowCaptionChannel.captionMaxButtonPressed.value);
+
+  void _setPressed(bool value) {
+    if (_pressed != value) setState(() => _pressed = value);
+  }
+
+  String? _semanticLabel(BuildContext context) {
+    if (widget.glyph != _CaptionGlyph.close) return null;
+    return Localizations.of<MaterialLocalizations>(
+      context,
+      MaterialLocalizations,
+    )?.closeButtonTooltip;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    final FushiMotionScheme motion = context.fushiMotion;
+    final bool hovered = _isHovered;
+    final bool pressed = _isPressed;
+    final bool isClose = widget.glyph == _CaptionGlyph.close;
+    final Color? pageForeground = widget.page?.foreground;
+    final Color rest = pageForeground ?? cs.onSurfaceVariant;
+    final Color emphasis = pageForeground ?? cs.onSurface;
+
+    Color foreground = widget.active
+        ? rest
+        : rest.withValues(alpha: rest.a * 0.55);
+    Color background = Colors.transparent;
+    BorderSide side = BorderSide.none;
+    if (isClose && (hovered || pressed)) {
+      if (eink) {
+        foreground = cs.error;
+        side = BorderSide(color: cs.error, width: 1.5);
+      } else {
+        foreground = cs.onErrorContainer;
+        background = pressed
+            ? Color.alphaBlend(
+                cs.onErrorContainer.withValues(alpha: FushiStateLayer.pressed),
+                cs.errorContainer,
+              )
+            : cs.errorContainer;
+      }
+    } else if (hovered || pressed || _focusHighlight) {
+      foreground = emphasis;
+      if (eink) {
+        side = BorderSide(color: pageForeground ?? cs.outline);
+      } else {
+        final double layer = pressed
+            ? FushiStateLayer.hover + FushiStateLayer.pressed
+            : hovered
+            ? FushiStateLayer.hover
+            : FushiStateLayer.focus;
+        background = emphasis.withValues(alpha: emphasis.a * layer);
+      }
+    }
+    if (_focusHighlight && !eink) {
+      side = BorderSide(color: cs.secondary, width: 2);
+    }
+
+    final Widget glyph = TweenAnimationBuilder<Color?>(
+      tween: ColorTween(end: foreground),
+      duration: motion.effectsFast.duration,
+      curve: motion.effectsFast.curve,
+      builder: (BuildContext context, Color? color, Widget? _) =>
+          TweenAnimationBuilder<double>(
+            tween: Tween<double>(end: widget.maximized ? 1 : 0),
+            duration: motion.spatialDefault.duration,
+            curve: motion.spatialDefault.curve,
+            builder: (BuildContext context, double restore, Widget? _) =>
+                CustomPaint(
+                  size: const Size.square(_kCaptionGlyphSize),
+                  painter: _CaptionGlyphPainter(
+                    glyph: widget.glyph,
+                    restore: restore,
+                    color: color ?? foreground,
+                  ),
+                ),
+          ),
+    );
+
+    final Widget visual = AnimatedScale(
+      scale: pressed ? 0.9 : 1,
+      duration: motion.spatialFast.duration,
+      curve: motion.spatialFast.curve,
+      child: AnimatedContainer(
+        width: _kCaptionButtonWidth,
+        height: _kCaptionButtonHeight,
+        duration: motion.effectsFast.duration,
+        curve: motion.effectsFast.curve,
+        alignment: Alignment.center,
+        decoration: ShapeDecoration(
+          color: background,
+          shape: RoundedRectangleBorder(
+            // 静止全圆（24 高 → 半径 12），按下收到 6：M3E 按压形状形变。
+            borderRadius: BorderRadius.circular(
+              pressed ? 6 : _kCaptionButtonHeight / 2,
+            ),
+            side: side,
+          ),
+        ),
+        child: glyph,
+      ),
+    );
+
+    Widget target = SizedBox(
+      width: _kCaptionButtonWidth + _kCaptionButtonGap,
+      height: FushiDesktopTitleBar.height,
+      child: Center(child: visual),
+    );
+    if (widget.snapLayouts) {
+      target = _CaptionSnapTarget(
+        devicePixelRatio: MediaQuery.maybeDevicePixelRatioOf(context) ?? 1,
+        child: target,
+      );
+    }
+
+    return Semantics(
+      button: true,
+      label: _semanticLabel(context),
+      child: FocusableActionDetector(
+        mouseCursor: SystemMouseCursors.basic,
+        onShowFocusHighlight: (bool value) {
+          if (_focusHighlight != value) {
+            setState(() => _focusHighlight = value);
+          }
+        },
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (ActivateIntent _) {
+              widget.onPressed();
+              return null;
+            },
+          ),
+        },
+        child: MouseRegion(
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() {
+            _hovered = false;
+            _pressed = false;
+          }),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (_) => _setPressed(true),
+            onTapUp: (_) => _setPressed(false),
+            onTapCancel: () => _setPressed(false),
+            onTap: widget.onPressed,
+            child: target,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 窗口按钮字形：10×10 逻辑像素、统一笔画与圆角端点。
+///
+/// 最大化 ↔ 还原是一次形变而不是换图标：[restore] 从 0 到 1 时，前方方块
+/// 缩小并沉到左下，后方方块从同一位置滑向右上、淡入，被前方方块挡住的那段
+/// 不画（与系统「还原」字形同构）。[restore] 可能因 spatial 弹簧略超出
+/// 0..1，几何照用（回弹），透明度夹回 0..1。
+class _CaptionGlyphPainter extends CustomPainter {
+  const _CaptionGlyphPainter({
+    required this.glyph,
+    required this.restore,
+    required this.color,
+  });
+
+  final _CaptionGlyph glyph;
+  final double restore;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double s = size.shortestSide;
+    const double strokeWidth = 1.25;
+    const double i = strokeWidth / 2;
+    Paint stroke(Color c) => Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..color = c;
+    switch (glyph) {
+      case _CaptionGlyph.minimize:
+        canvas.drawLine(Offset(i, s / 2), Offset(s - i, s / 2), stroke(color));
+      case _CaptionGlyph.close:
+        // X 的对角线视觉上比横线 / 方块大，向内收 0.5。
+        _paintClose(canvas, s, i + 0.5, stroke(color));
+      case _CaptionGlyph.maximize:
+        _paintMaximize(canvas, s, i, strokeWidth, stroke);
+    }
+  }
+
+  void _paintClose(Canvas canvas, double s, double x, Paint paint) {
+    canvas.drawLine(Offset(x, x), Offset(s - x, s - x), paint);
+    canvas.drawLine(Offset(s - x, x), Offset(x, s - x), paint);
+  }
+
+  void _paintMaximize(
+    Canvas canvas,
+    double s,
+    double i,
+    double strokeWidth,
+    Paint Function(Color) stroke,
+  ) {
+    final double t = restore;
+    final double offset = s * 0.22 * t;
+    final Radius radius = Radius.circular(
+      2.6 - 0.6 * t.clamp(0.0, 1.0).toDouble(),
+    );
+    final Rect front = Rect.fromLTRB(i, i + offset, s - i - offset, s - i);
+    final double backAlpha = t.clamp(0.0, 1.0).toDouble();
+    if (backAlpha > 0) {
+      final Rect back = front.shift(Offset(offset, -offset));
+      canvas.save();
+      canvas.clipPath(
+        Path()
+          ..fillType = PathFillType.evenOdd
+          ..addRect(Rect.fromLTWH(-s, -s, s * 3, s * 3))
+          ..addRRect(
+            RRect.fromRectAndRadius(
+              front.inflate(strokeWidth),
+              radius + Radius.circular(strokeWidth),
+            ),
+          ),
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(back, radius),
+        stroke(color.withValues(alpha: color.a * backAlpha)),
+      );
+      canvas.restore();
+    }
+    canvas.drawRRect(RRect.fromRectAndRadius(front, radius), stroke(color));
+  }
+
+  @override
+  bool shouldRepaint(_CaptionGlyphPainter oldDelegate) =>
+      oldDelegate.glyph != glyph ||
+      oldDelegate.restore != restore ||
+      oldDelegate.color != color;
+}
+
+/// 把子树在 Flutter 视图里的矩形（物理像素）报给 Windows runner，作为
+/// HTMAXBUTTON 命中区（Windows 11 贴靠布局，见 `caption_snap_button.h`）。
+///
+/// 每次绘制后（布局 / 窗口尺寸 / 缩放变化都会触发重绘）在帧尾取一次全局
+/// 矩形，同值由 [WindowCaptionChannel.setCaptionMaxButtonRect] 去重；卸载
+/// （顶栏收起、内容全屏）时撤销命中区。
+class _CaptionSnapTarget extends SingleChildRenderObjectWidget {
+  const _CaptionSnapTarget({
+    required this.devicePixelRatio,
+    required super.child,
+  });
+
+  final double devicePixelRatio;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderCaptionSnapTarget(devicePixelRatio: devicePixelRatio);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderCaptionSnapTarget renderObject,
+  ) {
+    renderObject.devicePixelRatio = devicePixelRatio;
+  }
+}
+
+class _RenderCaptionSnapTarget extends RenderProxyBox {
+  _RenderCaptionSnapTarget({required double devicePixelRatio})
+    : _devicePixelRatio = devicePixelRatio;
+
+  double _devicePixelRatio;
+  set devicePixelRatio(double value) {
+    if (value == _devicePixelRatio) return;
+    _devicePixelRatio = value;
+    markNeedsPaint();
+  }
+
+  bool _reportScheduled = false;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    super.paint(context, offset);
+    if (_reportScheduled) return;
+    _reportScheduled = true;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _reportScheduled = false;
+      if (!attached || !hasSize) return;
+      final Rect logical = MatrixUtils.transformRect(
+        getTransformTo(null),
+        Offset.zero & size,
+      );
+      final double dpr = _devicePixelRatio;
+      unawaited(
+        WindowCaptionChannel.setCaptionMaxButtonRect(
+          Rect.fromLTRB(
+            logical.left * dpr,
+            logical.top * dpr,
+            logical.right * dpr,
+            logical.bottom * dpr,
+          ),
+        ),
+      );
+    });
+  }
+
+  @override
+  void detach() {
+    super.detach();
+    // 撤销放到帧尾：detach 发生在构建期，此刻改原生悬停态的 notifier 会在
+    // 构建中标脏别的按钮；同一帧里若又挂回来（换父节点），绘制那次的上报
+    // 也在帧尾，以那次为准。
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (attached) return;
+      unawaited(WindowCaptionChannel.setCaptionMaxButtonRect(null));
+    });
   }
 }
 
@@ -783,7 +1283,7 @@ class _FushiTitleBarColorScopeState extends State<FushiTitleBarColorScope> {
 }
 
 /// 透明标题行上窗口按钮背后柔光的半径（压扁前；见 [_buildCaptionRow]）。
-const double _kCaptionHaloExtent = 200;
+const double _kCaptionHaloExtent = 280;
 
 /// macOS 系统红绿灯占位宽度（三枚按钮 + 左右边距，与 AppKit 标准标题栏一致）。
 const double _kTrafficLightsReserve = 78;

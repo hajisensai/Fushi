@@ -241,4 +241,85 @@ class WindowCaptionChannel {
       return false;
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Windows 11 Snap Layouts：自绘最大化按钮的原生命中区。
+  //
+  // 系统标题栏隐藏后，系统看不到最大化按钮，悬停也就弹不出贴靠布局。runner
+  // （caption_snap_button.h）在 Dart 上报的矩形里对 WM_NCHITTEST 答
+  // HTMAXBUTTON；指针落在那块时 Flutter 收不到鼠标，悬停 / 按下 / 点击由原生
+  // 经 `onCaptionMaxButton` 回传，按钮照常画状态层、由 Dart 执行最大化 / 还原。
+
+  /// 原生侧报告的最大化按钮悬停态（指针在 HTMAXBUTTON 命中区里）。
+  static final ValueNotifier<bool> captionMaxButtonHovered =
+      ValueNotifier<bool>(false);
+
+  /// 原生侧报告的最大化按钮按下态。
+  static final ValueNotifier<bool> captionMaxButtonPressed =
+      ValueNotifier<bool>(false);
+
+  /// 原生命中区上完成的一次点击（按下与松开都在按钮上）。同一时刻只有一个
+  /// 顶栏，后挂上的覆盖先前的。
+  static VoidCallback? onCaptionMaxButtonClick;
+
+  static bool _nativeHandlerInstalled = false;
+  static Rect? _lastMaxButtonRect;
+
+  static void _ensureNativeHandler() {
+    if (_nativeHandlerInstalled) return;
+    _nativeHandlerInstalled = true;
+    _channel.setMethodCallHandler((MethodCall call) async {
+      if (call.method != 'onCaptionMaxButton') return null;
+      switch (call.arguments) {
+        case 'hover':
+          captionMaxButtonHovered.value = true;
+        case 'leave':
+          captionMaxButtonHovered.value = false;
+          captionMaxButtonPressed.value = false;
+        case 'press':
+          captionMaxButtonPressed.value = true;
+        case 'release':
+          captionMaxButtonPressed.value = false;
+        case 'click':
+          onCaptionMaxButtonClick?.call();
+      }
+      return null;
+    });
+  }
+
+  /// 上报最大化按钮在 Flutter 视图里的矩形（**物理像素**）；null = 撤销命中区
+  /// （按钮卸载 / 顶栏收起）。仅 Windows，同值不重复下发。
+  static Future<void> setCaptionMaxButtonRect(Rect? physical) async {
+    if (!Platform.isWindows) return;
+    final Rect? rounded = physical == null || physical.isEmpty
+        ? null
+        : Rect.fromLTRB(
+            physical.left.roundToDouble(),
+            physical.top.roundToDouble(),
+            physical.right.roundToDouble(),
+            physical.bottom.roundToDouble(),
+          );
+    if (rounded == _lastMaxButtonRect) return;
+    _lastMaxButtonRect = rounded;
+    if (rounded == null) {
+      captionMaxButtonHovered.value = false;
+      captionMaxButtonPressed.value = false;
+    }
+    _ensureNativeHandler();
+    try {
+      await _channel.invokeMethod<void>(
+        'setCaptionMaxButtonRect',
+        <String, int>{
+          'left': rounded?.left.toInt() ?? 0,
+          'top': rounded?.top.toInt() ?? 0,
+          'right': rounded?.right.toInt() ?? 0,
+          'bottom': rounded?.bottom.toInt() ?? 0,
+        },
+      );
+    } on PlatformException {
+      // 旧 runner 没有这条方法：没有贴靠布局，按钮照常由 Flutter 处理。
+    } on MissingPluginException {
+      // 同上。
+    }
+  }
 }

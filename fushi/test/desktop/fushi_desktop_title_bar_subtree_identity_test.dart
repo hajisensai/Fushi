@@ -120,7 +120,7 @@ void main() {
           '把手必须由 Flutter 侧补。',
     );
     // 顶栏可见。
-    expect(find.byIcon(Icons.close_rounded), findsOneWidget);
+    expect(find.byKey(FushiDesktopTitleBar.closeButtonKey), findsOneWidget);
 
     FushiDesktopTitleBar.setContentFullscreen(owner: owner, enabled: true);
     await tester.pump();
@@ -132,7 +132,7 @@ void main() {
     );
     expect(area().enableResizeEdges, isEmpty, reason: '全屏时不得留任何 resize 命中区。');
     // 顶栏隐藏。
-    expect(find.byIcon(Icons.close_rounded), findsNothing);
+    expect(find.byKey(FushiDesktopTitleBar.closeButtonKey), findsNothing);
   });
 }
 
