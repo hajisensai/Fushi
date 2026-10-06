@@ -233,7 +233,7 @@ void main() {
     test('_withStudyClockPaused 计数进出并 sync（finally 保证减计数）', () {
       final String body = _functionSource(
         corpus,
-        '  Future<T> _withStudyClockPaused<T>(Future<T> Function() body) async {',
+        '  Future<T?> _withStudyClockPaused<T>(Future<T?> Function() body) async {',
         '\n  }\n',
       );
       expect(body, contains('_studyClockModalDepth++;'));
@@ -251,8 +251,8 @@ void main() {
       '  Future<void> _openAlignmentImportDialog(',
       '  Future<void> _openAudioImportDialog() async {',
       '  Future<void> _openSrtBookReimport() async {',
-      '  void _openImageViewer(String imgUrl, {File? resolvedFile}) {',
-      '  void _openGallery() {',
+      '  Future<void> _openImageViewer(String imgUrl, {File? resolvedFile}) async {',
+      '  Future<void> _openGallery() async {',
       '  Future<void> _transcribeFromAudiobookPanel() async {',
       '  void _showLyricsModeHintIfNeeded() {',
     ];
