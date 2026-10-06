@@ -180,11 +180,20 @@ class ReaderHeaderAction {
     this.pinned = false,
     this.key,
     this.semanticsId,
+    this.tooltip,
   });
 
   final IconData icon;
+
+  /// 可见文案（工具栏标签 / 菜单项）：只放功能名，不拼快捷键。
   final String label;
   final VoidCallback? onPressed;
+
+  /// 悬停提示；带快捷键的动作在这里括注键名（[tooltipWithShortcutHint]）。
+  /// null 时与 [label] 相同。
+  final String? tooltip;
+
+  String get tooltipText => tooltip ?? label;
 
   /// 紧凑形态下仍保留为图标按钮（返回 / 导航 / 设置）；其余收进溢出菜单。
   final bool pinned;
@@ -241,7 +250,7 @@ class ReaderDesktopHeader extends StatelessWidget {
   Widget _button(ReaderHeaderAction a) => ReaderDesktopHeaderButton(
         key: a.key,
         icon: a.icon,
-        tooltip: a.label,
+        tooltip: a.tooltipText,
         color: textColor,
         semanticsId: a.semanticsId,
         onPressed: a.onPressed,

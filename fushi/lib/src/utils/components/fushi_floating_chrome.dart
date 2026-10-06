@@ -208,6 +208,49 @@ class FushiFloatingChromeInset extends InheritedWidget {
       top != oldWidget.top;
 }
 
+/// 库页浮动工具区下的**唯一页面入口**（2026-10-06 结构收口）：把叠放工具区的
+/// 让位高度 [FushiFloatingChromeInset] 换成 `MediaQuery` 顶部 padding 交给
+/// [child]，子树里的 inset 归零。
+///
+/// 这样页面的主滚动视图按 Flutter 的通用约定自己吃掉这段让位——
+/// `ListView` / `GridView`（`padding` 为 null 时）、`SafeArea` / `SliverSafeArea`、
+/// 或显式读 `MediaQuery.paddingOf(context).top` 加进内容内边距——内容从工具区
+/// 下方开始、往下滚时**滚到工具区胶囊底下**，工具区收起后顶部不留空白。
+///
+/// 与 [FushiFloatingChromeInsetPadding] 的区别：那个是整体 `Padding` 下移，
+/// 让出的那段永远是空的页面底色，工具区一收起就是顶部一整块白（游戏 / 设置
+/// 等页 2026-10-06 用户截图）。它只留给**不滚动**的占位 / 加载 / 错误态。
+class FushiFloatingChromeScrollInset extends StatelessWidget {
+  const FushiFloatingChromeScrollInset({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final double top = FushiFloatingChromeInset.of(context);
+    final MediaQueryData media = MediaQuery.of(context);
+    return MediaQuery(
+      data: media.copyWith(
+        padding: media.padding.copyWith(top: media.padding.top + top),
+      ),
+      child: FushiFloatingChromeInset(top: 0, child: child),
+    );
+  }
+}
+
+/// 高度 = 所在位置的 [FushiFloatingChromeInset] 的空白：主滚动视图的第一个
+/// sliver / 子项用它让出叠放在上面的浮动工具区。自己读 inset（用它自己的
+/// context），所以页面在 State 方法里构建正文时也能拿到嵌套工具区的值——直接
+/// 用 State 的 context 读只会读到外层（嵌套的 [FushiFloatingChromeOverlay] 在
+/// 它下面）。
+class FushiFloatingChromeInsetSpacer extends StatelessWidget {
+  const FushiFloatingChromeInsetSpacer({super.key});
+
+  @override
+  Widget build(BuildContext context) =>
+      SizedBox(height: FushiFloatingChromeInset.of(context));
+}
+
 /// 把 [child] 整体下移 [FushiFloatingChromeInset] 的高度（不会自己加顶部内边距
 /// 的页面用；高度恒定，不随工具区显隐变）。子树里的 inset 归零，不重复让。
 class FushiFloatingChromeInsetPadding extends StatelessWidget {
@@ -343,6 +386,12 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
     }
     final double outer = FushiFloatingChromeInset.of(context);
     final double travel = outer + _chromeHeight;
+    // 嵌套的工具区（页面自己的搜索 / 筛选行叠在外壳页签之下）不再画第二层
+    // 遮罩：两层「从视口顶边起、顶端不透明」的渐隐叠在一起，就是库页往下滚
+    // 时页签下面那一整块白底（2026-10-06 用户截图）。顶部可读性只归最外层。
+    final bool nested =
+        context.findAncestorStateOfType<_FushiFloatingChromeOverlayState>() !=
+        null;
     final Widget chrome = Focus(
       canRequestFocus: false,
       skipTraversal: true,
@@ -351,7 +400,15 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
       },
       child: FushiHeightReporter(
         onHeight: _onChromeHeight,
-        child: widget.chrome,
+        // 嵌套工具行（页面自己的搜索 / 筛选行）与上一层页签胶囊之间统一隔
+        // [kFushiFloatingChromeGap]（加上外壳工具栏底边的 4 合计 12，M3E 组
+        // 间距），不再各页自己凑、贴在一起。
+        child: nested
+            ? Padding(
+                padding: const EdgeInsets.only(top: kFushiFloatingChromeGap),
+                child: widget.chrome,
+              )
+            : widget.chrome,
       ),
     );
     return Stack(
@@ -378,27 +435,28 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                 // 照常可见——曾经整个工具区高度都是 0.92 的实色段，库页往下一滚
                 // 顶部两三百 px 一整块白底把内容盖死（2026-10-06 用户截图）。
                 // 没滚动时不画（工具区下面就是第一行内容）。
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: AnimatedOpacity(
-                    opacity: controller.contentUnderTop ? 1 : 0,
-                    duration: fushiMotionDuration(context, FushiMotion.short),
-                    child: FushiTopFadeScrim(
-                      solidHeight: 0,
-                      fadeExtent:
-                          outer +
-                          shown *
-                              math.min(
-                                _chromeHeight,
-                                kFushiTopScrimChromeReach,
-                              ) +
-                          kFushiTopFadeExtent,
-                      topOpacity: 1,
+                if (!nested)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: AnimatedOpacity(
+                      opacity: controller.contentUnderTop ? 1 : 0,
+                      duration: fushiMotionDuration(context, FushiMotion.short),
+                      child: FushiTopFadeScrim(
+                        solidHeight: 0,
+                        fadeExtent:
+                            outer +
+                            shown *
+                                math.min(
+                                  _chromeHeight,
+                                  kFushiTopScrimChromeReach,
+                                ) +
+                            kFushiTopFadeExtent,
+                        topOpacity: 1,
+                      ),
                     ),
                   ),
-                ),
                 Positioned(
                   top: outer,
                   left: 0,

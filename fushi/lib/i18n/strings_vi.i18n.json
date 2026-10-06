@@ -6718,5 +6718,8 @@
   "manga_ocr_group_ai": "AI enhancement",
   "manga_ocr_group_external_tools": "External tools",
   "manga_ocr_model_details_show": "Show model details",
-  "manga_ocr_model_details_hide": "Hide model details"
+  "manga_ocr_model_details_hide": "Hide model details",
+  "ai_interconnect_host_title": "Run on a paired computer",
+  "ai_interconnect_host_hint": "AI video downloads hand the whole conversation to this device over Fushi Interconnect: it uses that device's AI assignment and download setup. Same setting as Downloads › Execution device.",
+  "ai_interconnect_host_unpaired": "No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI."
 }

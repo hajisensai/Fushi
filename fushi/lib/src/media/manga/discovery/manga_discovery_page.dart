@@ -26,6 +26,9 @@ import 'package:fushi/src/pages/implementations/discovery_header.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeInsetSpacer, FushiFloatingChromeOverlay,
+        FushiFloatingChromeScope;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// 漫画库「发现」视图：**漫画唯一的发现入口**。
@@ -345,7 +348,9 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   /// 页头。与 `MangaSourcesPage` 同一范式：导航条存在时即页头主位，不再另渲染一个
   /// 页面大标题。全源搜索不在这里——它是下面的搜索框。
   Widget _buildHeader() {
-    final List<Widget> actions = <Widget>[_refreshButton()];
+    // 刷新不放页头：它和 ✨ AI 下载同属搜索行行尾，两颗按钮右对齐成一列
+    // （放页头时它被收进外壳的悬浮动作组，与搜索行的 AI 按钮横坐标对不齐）。
+    const List<Widget> actions = <Widget>[];
     final Widget? navigation = widget.navigation;
     if (navigation != null) {
       return FushiPageHeader.customTitle(title: navigation, actions: actions);
@@ -364,9 +369,17 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     )
         ? _selectedSourceId
         : kDiscoveryAllSourcesId;
+    // 库页外壳里：页头 / 来源 + 搜索行叠进 M3E 浮动工具区（与外壳页签同一份
+    // 显隐），正文从顶端画起、经 [FushiFloatingChromeInset] 让位——不再是
+    // 「一整块不透明控件区 + 下面才是内容」。外壳外退化成原来的竖排。
+    final bool floating = FushiFloatingChromeScope.maybeOf(context) != null;
+    final Widget body = _buildBody(catalog, selected);
     return DesktopContentLayout(
       kind: DesktopContentKind.readerShelf,
-      child: Column(
+      child: FushiFloatingChromeOverlay(
+        chrome: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           if (_headerVisible) _buildHeader(),
           DiscoveryHeaderControls(
@@ -376,7 +389,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
                     key: const ValueKey<String>('manga-discovery-ai-acquire'),
                     onPressed: () => onAi(_searchController.text),
                   ),
-                if (!_headerVisible) _refreshButton(),
+                _refreshButton(),
               ],
               sources: options,
               selectedSourceId: selected,
@@ -394,10 +407,9 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
               onSearchSubmitted: (String query) =>
                   _submitSearch(query, catalog, selected),
             ),
-          Expanded(
-            child: DiscoveryScrollTopFade(child: _buildBody(catalog, selected)),
-          ),
         ],
+        ),
+        child: floating ? body : DiscoveryScrollTopFade(child: body),
       ),
     );
   }
@@ -421,6 +433,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
       return CustomScrollView(
         key: PageStorageKey<String>('manga-discovery-scroll-$selected'),
         slivers: <Widget>[
+          const SliverToBoxAdapter(child: FushiFloatingChromeInsetSpacer()),
           SliverToBoxAdapter(child: catalogSection),
           if (feed != null)
             MangaDiscoverySourceGrid(
@@ -460,6 +473,8 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     return CustomScrollView(
       key: const PageStorageKey<String>('manga-discovery-scroll'),
       slivers: <Widget>[
+        // 让出叠放在上面的浮动工具区。
+        const SliverToBoxAdapter(child: FushiFloatingChromeInsetSpacer()),
         // 部分来源失败：横幅点名是哪几个源，其余行照常显示。
         if (failures.isNotEmpty && !allFailed)
           SliverToBoxAdapter(
@@ -563,6 +578,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     final VoidCallback? openSources = _openSourcesAction();
     return CustomScrollView(
       slivers: <Widget>[
+        const SliverToBoxAdapter(child: FushiFloatingChromeInsetSpacer()),
         SliverFillRemaining(
           hasScrollBody: false,
           child: FushiPlaceholderMessage(

@@ -126,6 +126,49 @@ void main() {
       ).readAsStringSync();
       expect(discovery.contains('FushiTopFadeScrim('), isTrue);
     });
+
+    test('library toolbar scrim is a short fade, not a solid block', () {
+      // 曾经整个工具区高度都是 0.92 的实色段：库页一滚顶部两三百 px 全白。
+      final String chrome = File(
+        'lib/src/utils/components/fushi_floating_chrome.dart',
+      ).readAsStringSync();
+      expect(
+        chrome.contains('solidHeight: outer + shown * _chromeHeight'),
+        isFalse,
+      );
+      expect(chrome.contains('kFushiTopScrimChromeReach'), isTrue);
+    });
+
+    test('discovery pages float their search rows in the toolbar', () {
+      // 发现页的搜索 / 筛选行曾是 Column 里的一整块不透明控件区。
+      for (final String path in <String>[
+        'lib/src/pages/implementations/video_discovery_page.dart',
+        'lib/src/media/manga/discovery/manga_discovery_page.dart',
+        'lib/src/pages/implementations/media_discovery_page.dart',
+      ]) {
+        final String source = File(path).readAsStringSync();
+        expect(
+          source.contains('FushiFloatingChromeOverlay('),
+          isTrue,
+          reason: path,
+        );
+        expect(
+          source.contains('FushiFloatingChromeInsetSpacer()'),
+          isTrue,
+          reason: path,
+        );
+      }
+    });
+
+    test('desktop title bar floats over the page', () {
+      // 曾经是 Column[标题行, Expanded(页面)]：标题行是一条独立带子，页面背景
+      // 在 y = 32 被切开。
+      final String bar = File(
+        'lib/src/utils/components/fushi_desktop_title_bar.dart',
+      ).readAsStringSync();
+      expect(bar.contains('? Colors.transparent\n'), isTrue);
+      expect(bar.contains('top: mediaQuery.padding.top + inset'), isTrue);
+    });
   });
 }
 

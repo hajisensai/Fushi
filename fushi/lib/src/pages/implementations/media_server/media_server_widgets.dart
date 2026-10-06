@@ -7,7 +7,12 @@ import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/utils/cover_image.dart'
     show kLocalCoverDecodePixelWidth;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show FushiTopFadeScrim;
+    show
+        FushiFloatingChromeController,
+        FushiFloatingChromeInset,
+        FushiFloatingChromeInsetPadding,
+        FushiFloatingChromeOverlay,
+        FushiFloatingChromeScope;
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -975,15 +980,29 @@ class MediaServerRow extends StatelessWidget {
 }
 
 /// 分区内每层视图（服务器列表 / 首页 / 网格）的页面外壳：M3E 悬浮页头（返回圆胶囊
-/// + 标题胶囊 + 动作组胶囊，由 [FushiPageHeader] 画）+ 正文。Material 下页头随
-/// 正文「往下滚收起、往回滚出现」（[FushiScrollAwayChrome]，spatial 弹簧），收起时
-/// 正文顶边加一道渐隐；Apple 设计系统页头恒在。
+/// + 标题胶囊 + 动作组胶囊 + 可选的搜索 / 排序行，由 [FushiPageHeader] 画）**叠在
+/// 正文上**——页头只是几颗自带底色的胶囊，背后内容可见。Material 下页头随正文
+/// 「往下滚收起、往回滚出现」，收起只做位移 + 淡出（[FushiFloatingChromeOverlay]，
+/// M3E default spatial 弹簧），不改正文视口；顶部可读性只靠共享的
+/// `FushiTopFadeScrim` 一段短的无硬边渐隐（由 overlay 画），不再有整宽实色底带。
+///
+/// 正文的让位：正文经 [MediaServerBodyInset]（即 [FushiFloatingChromeInset]）拿到
+/// 「外层库页工具区 + 本页头」的高度，主滚动视图把它加成顶部内边距（内容滚到
+/// 胶囊底下），空态 / 错误整体让开。**视图 State 的 context 在本框架外面**，必须
+/// 在正文子树里读（[MediaServerBodyInset]），否则读到的是外层的值。
+///
+/// 显隐 controller：挂在库页浮动外壳里（视频页「媒体服务器」分区）时与外壳的分区
+/// 页签共用同一份（[FushiFloatingChromeScope]，外壳自己听滚动通知），页头排在页签
+/// 下方、一起收；独立使用（无外壳 / 测试宿主）时自备一份、自己喂滚动通知。每层
+/// 路由成为栈顶（push 进来 / 从上一层 pop 回来）时页头弹回。
+///
+/// Apple 设计系统的页头不是悬浮胶囊：保持「页头 + 正文」竖排、页头恒在，整体让开
+/// 外层工具区（[FushiFloatingChromeInsetPadding]）。
 ///
 /// 为什么不直接用 [FushiPageScaffold]：这些视图是分区嵌套 Navigator 里的路由，
 /// 分区被壳 Offstage 保活时页面仍挂在树上；[FushiPageScaffold] 会把自己的滚动
 /// 控制器登记进全局 `PageScrollRegistry`，切到别的分区后手柄 LB/RB 翻页会落到这
-/// 张看不见的页上。这里只取它的悬浮页头行为，不登记全局滚动。仍要一个
-/// [Scaffold] 作 Material 祖先（嵌套路由上方没有）。
+/// 张看不见的页上。仍要一个 [Scaffold] 作 Material 祖先（嵌套路由上方没有）。
 class MediaServerPageFrame extends StatefulWidget {
   const MediaServerPageFrame({
     required this.header,
@@ -993,6 +1012,8 @@ class MediaServerPageFrame extends StatefulWidget {
 
   /// 页头（通常是 [FushiPageHeader]）。
   final Widget header;
+
+  /// 正文。顶部让位在正文子树里用 [MediaServerBodyInset] 读。
   final Widget body;
 
   @override
@@ -1000,67 +1021,83 @@ class MediaServerPageFrame extends StatefulWidget {
 }
 
 class _MediaServerPageFrameState extends State<MediaServerPageFrame> {
-  final FushiScrollAwayController _chrome = FushiScrollAwayController();
+  /// 不在库页浮动外壳里时自备的显隐 controller（外壳在时不用）。
+  final FushiFloatingChromeController _ownChrome =
+      FushiFloatingChromeController();
+
+  /// 上一次依赖变化时本路由是否是栈顶：变成栈顶时让页头弹回。
+  bool _wasCurrent = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final bool current = ModalRoute.isCurrentOf(context) ?? true;
+    if (current && !_wasCurrent) {
+      // 依赖变化发生在 build 阶段，controller 通知会标脏祖先：等这一帧画完。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        (FushiFloatingChromeScope.peek(context) ?? _ownChrome).resetToTop();
+      });
+    }
+    _wasCurrent = current;
+  }
 
   @override
   void dispose() {
-    _chrome.dispose();
+    _ownChrome.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool floating = !isGlassDesign(context);
-    final FushiMotionScheme motion = context.fushiMotion;
+    if (isGlassDesign(context)) {
+      return Scaffold(
+        backgroundColor: tokens.surfaces.page,
+        body: FushiFloatingChromeInsetPadding(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              widget.header,
+              Expanded(child: widget.body),
+            ],
+          ),
+        ),
+      );
+    }
+    final FushiFloatingChromeController? outer =
+        FushiFloatingChromeScope.maybeOf(context);
     return Scaffold(
       backgroundColor: tokens.surfaces.page,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          // 结构恒定：两套设计系统都挂收起外壳，Apple 下只是不喂通知。
-          FushiScrollAwayChrome(
-            controller: _chrome,
-            enabled: floating,
-            child: widget.header,
+      body: FushiFloatingChromeScope(
+        controller: outer ?? _ownChrome,
+        // 外壳在时由外壳听滚动通知（通知照常冒泡上去），这里只喂自备的那份。
+        child: NotificationListener<ScrollNotification>(
+          onNotification: (ScrollNotification notification) =>
+              outer == null &&
+              _ownChrome.handleScrollNotification(notification),
+          child: FushiFloatingChromeOverlay(
+            chrome: widget.header,
+            child: widget.body,
           ),
-          Expanded(
-            child: Stack(
-              fit: StackFit.passthrough,
-              children: <Widget>[
-                NotificationListener<Notification>(
-                  onNotification: (Notification notification) =>
-                      floating && _chrome.handleNotification(notification),
-                  child: widget.body,
-                ),
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: ListenableBuilder(
-                    listenable: _chrome,
-                    builder: (BuildContext context, Widget? scrim) =>
-                        AnimatedOpacity(
-                          opacity: floating && _chrome.hidden ? 1 : 0,
-                          duration: motion.effectsDefault.duration,
-                          curve: motion.effectsDefault.curve,
-                          child: scrim,
-                        ),
-                    // 顶边紧贴页头让出的不透明底色（正文视口在这条线上被
-                    // 裁掉）：从 1 起才看不出切线。
-                    child: const FushiTopFadeScrim(
-                      solidHeight: 0,
-                      topOpacity: 1,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
+}
+
+/// [MediaServerPageFrame] 正文的顶部让位（外层库页工具区 + 本页头的高度，恒定、
+/// 不随收起变）：主滚动视图把 [builder] 拿到的 `top` 加成顶部内边距，空态 /
+/// 错误整体下移 `top`。必须挂在框架的正文子树里（视图 State 的 context 在框架
+/// 外面，读不到本页头的高度）。
+class MediaServerBodyInset extends StatelessWidget {
+  const MediaServerBodyInset({required this.builder, super.key});
+
+  final Widget Function(BuildContext context, double top) builder;
+
+  @override
+  Widget build(BuildContext context) =>
+      builder(context, FushiFloatingChromeInset.of(context));
 }
 
 /// 加载骨架：一张 2:3 海报卡（封面块 + 两行文字条），与 [MediaServerItemCard]

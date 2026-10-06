@@ -239,7 +239,11 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
         leading: BackButton(onPressed: () => Navigator.of(context).maybePop()),
         bottom: _buildControls(),
       ),
-      body: _buildBody(),
+      // 页头（含搜索 / 排序行）叠在正文上：网格把让位加成顶部内边距，空态 /
+      // 错误整体让开。
+      body: MediaServerBodyInset(
+        builder: (BuildContext context, double top) => _buildBody(top),
+      ),
     );
   }
 
@@ -328,34 +332,40 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(double top) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    if (_loading && _items.isEmpty) return _buildSkeleton(tokens);
+    if (_loading && _items.isEmpty) return _buildSkeleton(tokens, top);
     if (_firstPageError != null && _items.isEmpty) {
-      return FushiPlaceholderMessage(
-        icon: FushiIcons.cloudOff,
-        tone: FushiPlaceholderTone.error,
-        message: t.media_server_items_load_failed,
-        detail: '$_firstPageError',
-        action: FushiFilledButton.icon(
-          key: const ValueKey<String>('media-server-grid-retry'),
-          onPressed: () => unawaited(_reload()),
-          icon: const FushiIcon(FushiIcons.refresh),
-          label: Text(t.retry),
+      return Padding(
+        padding: EdgeInsets.only(top: top),
+        child: FushiPlaceholderMessage(
+          icon: FushiIcons.cloudOff,
+          tone: FushiPlaceholderTone.error,
+          message: t.media_server_items_load_failed,
+          detail: '$_firstPageError',
+          action: FushiFilledButton.icon(
+            key: const ValueKey<String>('media-server-grid-retry'),
+            onPressed: () => unawaited(_reload()),
+            icon: const FushiIcon(FushiIcons.refresh),
+            label: Text(t.retry),
+          ),
         ),
       );
     }
     if (_items.isEmpty && (_hasMore || _loadingMore)) {
       // 首页 0 条但服务器还有后续页（搜索把关后常见）：续扫期间显示骨架而不是
       // 先闪一下「无结果」。
-      return _buildSkeleton(tokens);
+      return _buildSkeleton(tokens, top);
     }
     if (_items.isEmpty) {
-      return FushiPlaceholderMessage(
-        icon: _searchMode ? FushiIcons.searchOff : FushiIcons.collection,
-        message: _searchMode
-            ? t.video_discovery_empty
-            : t.media_server_items_empty,
+      return Padding(
+        padding: EdgeInsets.only(top: top),
+        child: FushiPlaceholderMessage(
+          icon: _searchMode ? FushiIcons.searchOff : FushiIcons.collection,
+          message: _searchMode
+              ? t.video_discovery_empty
+              : t.media_server_items_empty,
+        ),
       );
     }
     final String prefix = widget.session.serverId;
@@ -368,7 +378,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
         ),
         controller: _scrollController,
         slivers: <Widget>[
-          _posterGrid(tokens, (int _) => _cardDelegate(context, prefix)),
+          _posterGrid(tokens, top, (int _) => _cardDelegate(context, prefix)),
           if (_loadingMore)
             SliverToBoxAdapter(
               child: Padding(
@@ -401,14 +411,16 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
   /// 数据时版面不跳。[delegateFor] 拿到本次布局的列数。
   Widget _posterGrid(
     FushiDesignTokens tokens,
+    double top,
     SliverChildDelegate Function(int columns) delegateFor,
   ) {
     final double gap = tokens.spacing.card;
     return SliverPadding(
-      // 顶部留出悬停抬升的余量：第一排卡放大 5% 时不被视口上沿裁掉。
+      // 顶部先让开叠在上面的页头（[top]，内容滚到胶囊底下），再留出悬停抬升的
+      // 余量：第一排卡放大 5% 时不被页头 / 视口上沿裁掉。
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.page,
-        tokens.spacing.gap / 2,
+        top + tokens.spacing.gap / 2,
         tokens.spacing.page,
         0,
       ),
@@ -446,7 +458,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
 
   /// 加载骨架：与真实网格同几何的三排海报卡块（有界闪光）。不挂本页滚动控制器
   /// ——那是真实网格的，骨架只是占位。
-  Widget _buildSkeleton(FushiDesignTokens tokens) {
+  Widget _buildSkeleton(FushiDesignTokens tokens, double top) {
     return FushiSkeletonShimmer(
       child: CustomScrollView(
         key: const ValueKey<String>('media-server-grid-skeleton'),
@@ -454,6 +466,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
         slivers: <Widget>[
           _posterGrid(
             tokens,
+            top,
             (int columns) => SliverChildBuilderDelegate(
               (BuildContext context, int index) =>
                   const MediaServerPosterSkeleton(),

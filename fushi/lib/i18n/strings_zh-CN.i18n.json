@@ -6718,5 +6718,8 @@
   "manga_ocr_group_ai": "大模型增强",
   "manga_ocr_group_external_tools": "外部工具",
   "manga_ocr_model_details_show": "展开模型详情",
-  "manga_ocr_model_details_hide": "收起模型详情"
+  "manga_ocr_model_details_hide": "收起模型详情",
+  "ai_interconnect_host_title": "交给互联电脑办",
+  "ai_interconnect_host_hint": "「AI 下视频」整场对话经 Fushi 互联交给这台设备：用它的 AI 指派与下载管线，这边只负责对话。与「下载 › 下载执行设备」是同一项设置。",
+  "ai_interconnect_host_unpaired": "还没有配对设备。先在「Fushi 互联」里配对电脑，就能把 AI 下视频交给它，用它的 AI 来办。"
 }

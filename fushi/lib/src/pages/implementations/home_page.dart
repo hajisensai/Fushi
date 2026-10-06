@@ -1466,9 +1466,14 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   /// 外壳大标题条（两种摆法共用同一份配置）。
+  ///
+  /// M3E 库页（叠放浮动工具区的 tab）一律用收起形态——一枚悬浮标题胶囊，
+  /// 不随滚动在「裸大字」与「胶囊」之间切换：否则同样停在顶部的视频页与漫画
+  /// 页一个是胶囊、一个是裸大字（2026-10-06 用户截图「标题形态不一致」）。
   Widget _buildShellTitleBar() => FushiShellLargeTitleBar(
         title: _shellTitleFor(_visibleTab),
-        collapsed: _largeTitle.collapsed,
+        collapsed: _largeTitle.collapsed ||
+            (!isGlassDesign(context) && _tabHasFloatingChrome(_visibleTab)),
         actions: _shellActions,
       );
 

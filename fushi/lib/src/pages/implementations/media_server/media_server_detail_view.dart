@@ -8,6 +8,8 @@ import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeInset, FushiFloatingChromeScope;
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -87,6 +89,12 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
     _scrollController.addListener(_onScroll);
     unawaited(_loadDetail());
     if (_isSeries) unawaited(_loadSeasons());
+    // 从滚到半截的网格点进来：库页浮动工具区回到展开态（新页面从顶部开始），
+    // 与 [MediaServerPageFrame] 每层路由成为栈顶时同一口径。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      FushiFloatingChromeScope.peek(context)?.resetToTop();
+    });
   }
 
   @override
@@ -320,72 +328,96 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
       kind: MediaServerImageKind.backdrop,
     );
     final ImageProvider? cover = mediaServerCoverImage(_browser, _detail);
+    // 本路由若直接叠在库页浮动工具区底下（外壳不整体下移本分区时），把工具区
+    // 高度并进顶部安全区：顶栏胶囊排在页签下方，fanart 背景仍从窗口顶端铺起，
+    // [MediaDetailLayout] 照常按 MediaQuery 顶部 padding 让位。外壳整体下移时
+    // 这里为 0，不改任何东西。
+    final double chromeInset = FushiFloatingChromeInset.of(context);
+    final MediaQueryData media = MediaQuery.of(context);
     // 本视图是嵌套 Navigator 里的一条路由：没有 Scaffold 就没有 Material 祖先。
-    return Scaffold(
-      // 背景铺满到窗口顶端，浮动顶栏只是几颗胶囊（不画整宽底带）；让位由
-      // [MediaDetailLayout] 按 MediaQuery 顶部 padding 自己处理。
-      extendBodyBehindAppBar: true,
-      appBar: FushiAppBar(
-        title: Text(
-          t.video_work_details,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+    return MediaQuery(
+      data: media.copyWith(
+        padding: media.padding.copyWith(top: media.padding.top + chromeInset),
+        viewPadding: media.viewPadding.copyWith(
+          top: media.viewPadding.top + chromeInset,
         ),
-        leading: BackButton(onPressed: () => Navigator.of(context).maybePop()),
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
       ),
-      // M3E 详情布局：宽屏两栏（左 hero sticky、右版本 / 选集 / 资料），窄屏单列。
-      // 滚动控制器挂在正文（两栏时右栏）上：触底分页追加集清单。
-      body: MediaDetailLayout(
-        controller: _scrollController,
-        backdrop: collectionHeroBackdropImage(backdrop: backdrop, cover: cover),
-        backdropBlur: collectionHeroBackdropBlur(backdrop: backdrop),
-        bottomPadding: tokens.spacing.section,
-        header: CollectionDetailHero(
-          backdrop: backdrop,
-          cover: cover,
-          logo: mediaServerHeroImage(
-            _browser,
-            _detail,
-            kind: MediaServerImageKind.logo,
+      // 让位已并进 MediaQuery，子树不再重复让。
+      child: FushiFloatingChromeInset(
+        top: 0,
+        child: Scaffold(
+          // 背景铺满到窗口顶端，浮动顶栏只是几颗胶囊（不画整宽底带）；让位由
+          // [MediaDetailLayout] 按 MediaQuery 顶部 padding 自己处理。
+          extendBodyBehindAppBar: true,
+          appBar: FushiAppBar(
+            title: Text(
+              t.video_work_details,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            leading: BackButton(
+              onPressed: () => Navigator.of(context).maybePop(),
+            ),
+            surfaceTintColor: Colors.transparent,
+            elevation: 0,
           ),
-          title: _detail.name,
-          chips: _heroChips(),
-          tagNames: genres.take(6).toList(),
-          summary: _detail.overview,
-          continueLabel: _continueLabel(),
-          playLabel: _resumesMidway ? t.video_continue_watching : null,
-          playButtonKey: const ValueKey<String>('media-server-detail-play'),
-          onPlay: canPlay ? _playPrimary : null,
-          secondaryAction: _buildDownloadAction(),
-        ),
-        slivers: <Widget>[
-          if (_isSeries) ...<Widget>[
-            SliverToBoxAdapter(child: _buildEpisodeSectionHeader(tokens)),
-            ..._buildEpisodeSlivers(tokens),
-          ],
-          if (_versionIndex >= 0)
-            SliverToBoxAdapter(
-              child: MediaServerVersionSection(
-                versions: _detail.versions,
-                selectedIndex: _versionIndex,
-                focusPrefix: '${widget.session.serverId}-version-${_detail.id}',
-                onSelected: _selectVersion,
+          // M3E 详情布局：宽屏两栏（左 hero sticky、右版本 / 选集 / 资料），窄屏单列。
+          // 滚动控制器挂在正文（两栏时右栏）上：触底分页追加集清单。
+          body: MediaDetailLayout(
+            controller: _scrollController,
+            backdrop: collectionHeroBackdropImage(
+              backdrop: backdrop,
+              cover: cover,
+            ),
+            backdropBlur: collectionHeroBackdropBlur(backdrop: backdrop),
+            bottomPadding: tokens.spacing.section,
+            header: CollectionDetailHero(
+              backdrop: backdrop,
+              cover: cover,
+              logo: mediaServerHeroImage(
+                _browser,
+                _detail,
+                kind: MediaServerImageKind.logo,
               ),
+              title: _detail.name,
+              chips: _heroChips(),
+              tagNames: genres.take(6).toList(),
+              summary: _detail.overview,
+              continueLabel: _continueLabel(),
+              playLabel: _resumesMidway ? t.video_continue_watching : null,
+              playButtonKey: const ValueKey<String>('media-server-detail-play'),
+              onPlay: canPlay ? _playPrimary : null,
+              secondaryAction: _buildDownloadAction(),
             ),
-          // 简介已在 hero 里（可展开）；这里只留事实行。
-          SliverToBoxAdapter(
-            child: CollectionWorkDetailsSection(
-              overview: _detail.overview,
-              showOverview: false,
-              facts: <(String, String)>[
-                if (genres.isNotEmpty)
-                  (t.video_work_genres, genres.join(' · ')),
+            slivers: <Widget>[
+              if (_isSeries) ...<Widget>[
+                SliverToBoxAdapter(child: _buildEpisodeSectionHeader(tokens)),
+                ..._buildEpisodeSlivers(tokens),
               ],
-            ),
+              if (_versionIndex >= 0)
+                SliverToBoxAdapter(
+                  child: MediaServerVersionSection(
+                    versions: _detail.versions,
+                    selectedIndex: _versionIndex,
+                    focusPrefix:
+                        '${widget.session.serverId}-version-${_detail.id}',
+                    onSelected: _selectVersion,
+                  ),
+                ),
+              // 简介已在 hero 里（可展开）；这里只留事实行。
+              SliverToBoxAdapter(
+                child: CollectionWorkDetailsSection(
+                  overview: _detail.overview,
+                  showOverview: false,
+                  facts: <(String, String)>[
+                    if (genres.isNotEmpty)
+                      (t.video_work_genres, genres.join(' · ')),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

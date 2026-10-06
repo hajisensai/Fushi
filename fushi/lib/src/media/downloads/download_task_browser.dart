@@ -887,6 +887,14 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
     // 叠放的浮动头部（浏览页一二级页签行）让出的高度：主滚动视图自己在顶部
     // 占位，内容滚到头部之下（BUG-2975）；不在浮动头部下时为 0。
     final double chromeInset = FushiFloatingChromeInset.of(context);
+    // 底部同理：手机外壳的悬浮导航胶囊 + 查词 FAB 叠在正文上（外壳 Scaffold
+    // `extendBody`），它们占的高度经 MediaQuery bottom padding 传下来。列表末尾、
+    // 「添加」FAB、宽屏侧窗格与多选批量条都要让出这段，否则最后几条任务被胶囊 /
+    // FAB 盖住、「添加」FAB 压在查词 FAB 上（10-06 反馈）。不在悬浮底栏下时为 0
+    // （桌面 rail / 系统 inset 已被外层 SafeArea 吃掉）。
+    final double bottomInset = MediaQuery.paddingOf(context).bottom;
+    // 多选时批量条贴在列表下方并自己让出 [bottomInset]，列表本身不再重复让。
+    final double listBottomInset = _selectionMode ? 0 : bottomInset;
 
     Widget scroller({required bool withControls}) => FushiEntranceScope(
       replayKey: _statusFilter,
@@ -910,7 +918,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
               page,
               withControls ? 4 : tokens.spacing.gap,
               page,
-              showFab ? 96 : 24,
+              listBottomInset + (showFab ? 96 : 24),
             ),
             sliver: body,
           ),
@@ -924,7 +932,9 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
         if (showFab)
           PositionedDirectional(
             end: page,
-            bottom: page,
+            // 坐在悬浮底栏（导航胶囊 + 查词 FAB）之上，与查词 FAB 右对齐竖向堆叠
+            // （M3E：主 FAB 在上、底栏 FAB 在下，不互相覆盖）。
+            bottom: listBottomInset + page,
             child: FushiFab(
               key: const ValueKey<String>('download-task-add-fab'),
               heroTag: null,
@@ -955,7 +965,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                         0,
                         chromeInset + tokens.spacing.gap,
                         page,
-                        page,
+                        page + listBottomInset,
                       ),
                       child: _buildControls(visible),
                     ),
@@ -967,7 +977,12 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
           children: <Widget>[
             Expanded(child: main),
             if (_selectionMode)
-              _buildBatchBar(rows.whereType<DownloadTaskEntry>().toList()),
+              Padding(
+                padding: EdgeInsets.only(bottom: bottomInset),
+                child: _buildBatchBar(
+                  rows.whereType<DownloadTaskEntry>().toList(),
+                ),
+              ),
           ],
         );
       },

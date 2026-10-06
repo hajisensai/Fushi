@@ -148,63 +148,74 @@ class _MediaServerListViewState extends State<MediaServerListView> {
           ),
         ],
       ),
-      body: FutureBuilder<List<MediaServerEntry>>(
-        future: _future,
-        builder:
-            (
-              BuildContext context,
-              AsyncSnapshot<List<MediaServerEntry>> snapshot,
-            ) {
-              // 三态之间交叉淡入（effects 弹簧，不过冲）：骨架 → 列表 / 空态 /
-              // 错误不硬切。
-              final FushiMotionScheme motion = context.fushiMotion;
-              final Widget child;
-              if (snapshot.connectionState != ConnectionState.done) {
-                child = _buildSkeleton();
-              } else if (snapshot.hasError) {
-                child = FushiPlaceholderMessage(
-                  key: ValueKey<String>('media-server-list-error-$_epoch'),
-                  icon: FushiIcons.cloudOff,
-                  tone: FushiPlaceholderTone.error,
-                  message: t.media_server_items_load_failed,
-                  detail: '${snapshot.error}',
-                  action: FushiFilledButton.icon(
-                    onPressed: _reload,
-                    icon: const FushiIcon(FushiIcons.refresh),
-                    label: Text(t.retry),
-                  ),
-                );
-              } else {
-                final List<MediaServerEntry> servers =
-                    snapshot.data ?? const <MediaServerEntry>[];
-                _servers = servers;
-                if (servers.isEmpty) {
-                  child = _buildEmpty();
-                } else {
-                  _maybeAutoEnter(servers);
-                  child = _buildList(servers);
-                }
-              }
-              return AnimatedSwitcher(
-                duration: motion.effectsDefault.duration,
-                switchInCurve: motion.effectsDefault.curve,
-                switchOutCurve: motion.effectsDefault.curve,
-                child: child,
-              );
-            },
+      // 页头叠在正文上：列表把让位加成顶部内边距，空态 / 错误整体让开。
+      body: MediaServerBodyInset(
+        builder: (BuildContext context, double top) =>
+            FutureBuilder<List<MediaServerEntry>>(
+              future: _future,
+              builder:
+                  (
+                    BuildContext context,
+                    AsyncSnapshot<List<MediaServerEntry>> snapshot,
+                  ) {
+                    // 三态之间交叉淡入（effects 弹簧，不过冲）：骨架 → 列表 / 空态 /
+                    // 错误不硬切。
+                    final FushiMotionScheme motion = context.fushiMotion;
+                    final Widget child;
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      child = _buildSkeleton(top);
+                    } else if (snapshot.hasError) {
+                      child = Padding(
+                        key: ValueKey<String>(
+                          'media-server-list-error-$_epoch',
+                        ),
+                        padding: EdgeInsets.only(top: top),
+                        child: FushiPlaceholderMessage(
+                          icon: FushiIcons.cloudOff,
+                          tone: FushiPlaceholderTone.error,
+                          message: t.media_server_items_load_failed,
+                          detail: '${snapshot.error}',
+                          action: FushiFilledButton.icon(
+                            onPressed: _reload,
+                            icon: const FushiIcon(FushiIcons.refresh),
+                            label: Text(t.retry),
+                          ),
+                        ),
+                      );
+                    } else {
+                      final List<MediaServerEntry> servers =
+                          snapshot.data ?? const <MediaServerEntry>[];
+                      _servers = servers;
+                      if (servers.isEmpty) {
+                        child = _buildEmpty(top);
+                      } else {
+                        _maybeAutoEnter(servers);
+                        child = _buildList(servers, top);
+                      }
+                    }
+                    return AnimatedSwitcher(
+                      duration: motion.effectsDefault.duration,
+                      switchInCurve: motion.effectsDefault.curve,
+                      switchOutCurve: motion.effectsDefault.curve,
+                      child: child,
+                    );
+                  },
+            ),
       ),
     );
   }
 
   /// 加载骨架：与真实列表同宽同形的两行分段卡（行首方块 + 两行文字条）。
-  Widget _buildSkeleton() {
+  Widget _buildSkeleton(double top) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return FushiSkeletonShimmer(
       key: ValueKey<String>('media-server-list-skeleton-$_epoch'),
       child: ListView(
-        padding: EdgeInsets.symmetric(
-          horizontal: tokens.spacing.page,
-          vertical: tokens.spacing.gap,
+        padding: EdgeInsets.fromLTRB(
+          tokens.spacing.page,
+          top + tokens.spacing.gap,
+          tokens.spacing.page,
+          tokens.spacing.gap,
         ),
         children: <Widget>[
           Center(
@@ -224,30 +235,35 @@ class _MediaServerListViewState extends State<MediaServerListView> {
     );
   }
 
-  Widget _buildEmpty() {
-    return FushiPlaceholderMessage(
+  Widget _buildEmpty(double top) {
+    return Padding(
       key: ValueKey<String>('media-server-list-empty-$_epoch'),
-      icon: FushiIcons.server,
-      message: t.media_server_servers_empty_hint,
-      action: FushiFilledButton.tonalIcon(
-        key: const ValueKey<String>('media-server-list-go-settings'),
-        onPressed: widget.onOpenSettings,
-        icon: const FushiIcon(FushiIcons.settingsGear),
-        label: Text(t.media_server_servers_go_settings),
+      padding: EdgeInsets.only(top: top),
+      child: FushiPlaceholderMessage(
+        icon: FushiIcons.server,
+        message: t.media_server_servers_empty_hint,
+        action: FushiFilledButton.tonalIcon(
+          key: const ValueKey<String>('media-server-list-go-settings'),
+          onPressed: widget.onOpenSettings,
+          icon: const FushiIcon(FushiIcons.settingsGear),
+          label: Text(t.media_server_servers_go_settings),
+        ),
       ),
     );
   }
 
-  Widget _buildList(List<MediaServerEntry> servers) {
+  Widget _buildList(List<MediaServerEntry> servers, double top) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final int count = servers.length;
     return FushiEntranceScope(
       key: ValueKey<String>('media-server-list-body-$_epoch'),
       child: ListView(
         key: const PageStorageKey<String>('media-server-list'),
-        padding: EdgeInsets.symmetric(
-          horizontal: tokens.spacing.page,
-          vertical: tokens.spacing.gap,
+        padding: EdgeInsets.fromLTRB(
+          tokens.spacing.page,
+          top + tokens.spacing.gap,
+          tokens.spacing.page,
+          tokens.spacing.gap,
         ),
         children: <Widget>[
           // 设置风格的窄栏：宽屏上一行拉满 1600 宽读不下去，限在 760 居中。

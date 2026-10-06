@@ -3055,6 +3055,8 @@ class AppModel with ChangeNotifier {
       navRailExpandedNotifier.value = prefsRepo.navRailExpanded;
       // 封面模式默认是音画同步片段：2026-09-28 被钉成 GIF 的存量安装在这里迁一次。
       await prefsRepo.settleMiningImageModeInstallDefault();
+      // 阅读器工具栏样式一次性强制悬浮（含各 Profile 快照），之后尊重用户选择。
+      await prefsRepo.settleReaderToolbarStyleFloating();
       // 偏好一装载就把折叠开关推给 TexthookerService（进程级单例、无 ref）。漏了这一步
       // 开关就只在「本次会话里手动改过」时才生效，重启后静默退回默认值。
       TexthookerService.instance.foldProgressiveLines =

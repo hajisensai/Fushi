@@ -213,12 +213,15 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
           ),
         ],
       ),
-      // 骨架 / 错误 / 正文之间交叉淡入（effects 弹簧，不过冲）。
-      body: AnimatedSwitcher(
-        duration: motion.effectsDefault.duration,
-        switchInCurve: motion.effectsDefault.curve,
-        switchOutCurve: motion.effectsDefault.curve,
-        child: _buildBody(),
+      // 骨架 / 错误 / 正文之间交叉淡入（effects 弹簧，不过冲）。页头叠在正文
+      // 上：滚动视图把让位加成顶部内边距，错误态整体让开。
+      body: MediaServerBodyInset(
+        builder: (BuildContext context, double top) => AnimatedSwitcher(
+          duration: motion.effectsDefault.duration,
+          switchInCurve: motion.effectsDefault.curve,
+          switchOutCurve: motion.effectsDefault.curve,
+          child: _buildBody(top),
+        ),
       ),
     );
   }
@@ -291,26 +294,29 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(double top) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Object? error = _librariesError;
     if (error != null) {
-      return FushiPlaceholderMessage(
+      return Padding(
         key: ValueKey<String>('media-server-home-error-$_generation'),
-        icon: FushiIcons.cloudOff,
-        tone: FushiPlaceholderTone.error,
-        message: t.jellyfin_libraries_load_failed,
-        detail: '$error',
-        action: FushiFilledButton.icon(
-          key: const ValueKey<String>('media-server-home-retry'),
-          onPressed: () => unawaited(_load()),
-          icon: const FushiIcon(FushiIcons.refresh),
-          label: Text(t.retry),
+        padding: EdgeInsets.only(top: top),
+        child: FushiPlaceholderMessage(
+          icon: FushiIcons.cloudOff,
+          tone: FushiPlaceholderTone.error,
+          message: t.jellyfin_libraries_load_failed,
+          detail: '$error',
+          action: FushiFilledButton.icon(
+            key: const ValueKey<String>('media-server-home-retry'),
+            onPressed: () => unawaited(_load()),
+            icon: const FushiIcon(FushiIcons.refresh),
+            label: Text(t.retry),
+          ),
         ),
       );
     }
     final List<MediaServerLibrary>? libraries = _libraries;
-    if (libraries == null) return _buildSkeleton(tokens);
+    if (libraries == null) return _buildSkeleton(tokens, top);
     final String prefix = widget.session.serverId;
     final double cardHeight = mediaServerRowCardHeight(context);
     return FushiEntranceScope(
@@ -319,6 +325,8 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
       child: CustomScrollView(
         key: PageStorageKey<String>('$prefix-home'),
         slivers: <Widget>[
+          // 让开叠在上面的页头（内容滚到胶囊底下）。
+          SliverToBoxAdapter(child: SizedBox(height: top)),
           if (_continueWatching.isNotEmpty)
             SliverToBoxAdapter(child: _continueRow(prefix)),
           SliverToBoxAdapter(
@@ -372,7 +380,7 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
 
   /// 加载骨架：「媒体库」标题条 + 一排库卡块 + 一条海报横滚行，与正文同几何
   /// （库卡 16:9 外卡、海报 2:3 + 两行文字），数据回来时版面不跳。
-  Widget _buildSkeleton(FushiDesignTokens tokens) {
+  Widget _buildSkeleton(FushiDesignTokens tokens, double top) {
     final double cardHeight = mediaServerRowCardHeight(context);
     final bool narrow = MediaQuery.sizeOf(context).width < 600;
     Widget titleBar() => Align(
@@ -389,7 +397,7 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
         physics: const NeverScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(
           tokens.spacing.page,
-          tokens.spacing.card,
+          top + tokens.spacing.card,
           tokens.spacing.page,
           tokens.spacing.section,
         ),

@@ -10,6 +10,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
@@ -28,6 +29,11 @@ class DiscoverySourceOption {
   /// 展示名（站名/来源名，不走 i18n）。
   final String label;
 }
+
+const OutlineInputBorder _pillBorder = OutlineInputBorder(
+  borderRadius: BorderRadius.all(Radius.circular(kFushiSearchFieldHeight / 2)),
+  borderSide: BorderSide.none,
+);
 
 /// 发现页头部（四个域统一）：
 ///
@@ -108,10 +114,13 @@ class DiscoveryHeaderControls extends StatelessWidget {
           // 往下推）。
           if (filterRow != null) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
-            HorizontalDragScrollable(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: filterRow,
+            FushiHorizontalEdgeFade(
+              extent: 16,
+              child: HorizontalDragScrollable(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: filterRow,
+                ),
               ),
             ),
           ],
@@ -204,6 +213,18 @@ class DiscoveryHeaderControls extends StatelessWidget {
           ),
           constraints: const BoxConstraints.tightFor(
             height: kFushiSearchFieldHeight,
+          ),
+          // 与旁边的搜索胶囊同形（M3E：全圆角、surfaceContainerHigh 填充、
+          // 静止无描边），不再是一颗小圆角描边方块挨着一枚胶囊。
+          filled: true,
+          fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+          border: _pillBorder,
+          enabledBorder: _pillBorder,
+          focusedBorder: _pillBorder.copyWith(
+            borderSide: BorderSide(
+              color: Theme.of(context).colorScheme.primary,
+              width: 2,
+            ),
           ),
         ),
         onSelected: (String? value) =>

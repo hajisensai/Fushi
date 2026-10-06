@@ -15,6 +15,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -176,11 +177,13 @@ class MangaSourceCatalogSection extends StatelessWidget {
         children: <Widget>[
           // 区块标题与下方热门横滑行同一套 [FushiSectionTitle]（MD3 titleLarge /
           // Apple Title 2 粗体），不再是小一号的 titleMedium。
+          // 本区块是发现页正文的首个分区：上方只隔工具区底边的 gap，合计 16
+          // （与视频发现页工具区到首屏内容同一间距），不再叠一个 section 大边距。
           FushiSectionTitle(
             t.manga_discovery_sources_browse,
             padding: EdgeInsets.fromLTRB(
               tokens.spacing.page,
-              tokens.spacing.section,
+              tokens.spacing.gap,
               tokens.spacing.page,
               tokens.spacing.gap,
             ),
@@ -190,18 +193,20 @@ class MangaSourceCatalogSection extends StatelessWidget {
             // HorizontalDragScrollable（横向滚动守卫）。
             SizedBox(
               height: stripHeight,
-              child: HorizontalDragScrollable(
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  // 与区块标题、下方横滑行同一页边距，左缘对齐。
-                  padding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.page,
+              child: FushiHorizontalEdgeFade(
+                child: HorizontalDragScrollable(
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    // 与区块标题、下方横滑行同一页边距，左缘对齐。
+                    padding: EdgeInsets.symmetric(
+                      horizontal: tokens.spacing.page,
+                    ),
+                    itemCount: tiles.length,
+                    separatorBuilder: (BuildContext context, int index) =>
+                        SizedBox(width: tokens.spacing.gap),
+                    itemBuilder: (BuildContext context, int index) =>
+                        tiles[index],
                   ),
-                  itemCount: tiles.length,
-                  separatorBuilder: (BuildContext context, int index) =>
-                      SizedBox(width: tokens.spacing.gap),
-                  itemBuilder: (BuildContext context, int index) =>
-                      tiles[index],
                 ),
               ),
             ),

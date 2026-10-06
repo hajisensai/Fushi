@@ -77,10 +77,16 @@ class FushiToolbarItem {
     this.selected = false,
     this.key,
     this.semanticsId,
+    this.tooltip,
   });
 
   final IconData icon;
+
+  /// 可见文案：只放功能名（快捷键放 [tooltip]，否则窄窗标签被截断）。
   final String label;
+
+  /// 悬停提示（可带快捷键）；null 时用 [label]。
+  final String? tooltip;
   final VoidCallback? onPressed;
   final bool selected;
   final Key? key;
@@ -254,7 +260,7 @@ class FushiToolbarButton extends StatelessWidget {
         key: item.key,
         icon: FushiIcon(item.icon, color: fg),
         iconSize: iconSize,
-        tooltip: item.label,
+        tooltip: item.tooltip ?? item.label,
         isSelected: item.selected,
         style: item.selected
             ? IconButton.styleFrom(backgroundColor: selectedContainer)
@@ -268,7 +274,7 @@ class FushiToolbarButton extends StatelessWidget {
       button = SizedBox(
         width: kFushiFloatingToolbarLabeledItemWidth,
         child: Tooltip(
-          message: item.label,
+          message: item.tooltip ?? item.label,
           excludeFromSemantics: true,
           child: InkResponse(
             key: item.key,

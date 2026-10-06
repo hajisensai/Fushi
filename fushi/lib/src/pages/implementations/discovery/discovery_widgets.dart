@@ -10,6 +10,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/utils.dart';
@@ -292,7 +293,8 @@ class DiscoveryShelf extends StatelessWidget {
                     ),
                   ),
                 )
-              : HorizontalDragScrollable(
+              : FushiHorizontalEdgeFade(
+                child: HorizontalDragScrollable(
                   child: ListView.separated(
                     key: storage == null
                         ? null
@@ -309,6 +311,7 @@ class DiscoveryShelf extends StatelessWidget {
                     ),
                   ),
                 ),
+              ),
         ),
       ],
     );

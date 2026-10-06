@@ -15,6 +15,9 @@ import 'package:fushi/utils.dart';
 ///
 /// 设置项仍来自全局 [buildSettingsSchema]，所以这里不会复制第二套开关、持久化或
 /// 平台门控。外层只负责保留模块的分段导航页头；正文交给与设置主页相同的 renderer。
+///
+/// 内嵌形态由库页外壳用 [FushiFloatingChromeScrollInset] 包着（不是整体下移的
+/// `FushiFloatingChromeInsetPadding`）：正文滚动视图消费 MediaQuery 顶部 padding。
 class ModuleSettingsView extends ConsumerStatefulWidget {
   const ModuleSettingsView({
     required this.destinationId,
@@ -74,6 +77,7 @@ class _ModuleSettingsViewState extends ConsumerState<ModuleSettingsView>
     // 正文横向缩进由 renderer 的 detailHorizontalInsets 自持（与「导入」分区的
     // 文字流处理同源）；全局设置主页（settings_home_page.dart）仍走
     // DesktopContentKind.settings，不受影响。
+    final bool embedded = widget.navigation != null;
     return Column(
       children: <Widget>[
         if (widget.routeTitle case final String title)
@@ -81,9 +85,21 @@ class _ModuleSettingsViewState extends ConsumerState<ModuleSettingsView>
         else
           FushiPageHeader.customTitle(title: widget.navigation!),
         Expanded(
-          child: renderer.buildDetailContent(
-            settingsContext: settingsContext,
-            destination: destination,
+          // 吃掉之后从子树里摘掉顶部 padding：渲染器按本 State 的 context
+          // （在这层之上）算内边距，设置行里的列表 / SafeArea 不会再让一遍。
+          child: MediaQuery.removePadding(
+            context: context,
+            removeTop: embedded,
+            child: renderer.buildDetailContent(
+              settingsContext: settingsContext,
+              destination: destination,
+              // 模块内嵌形态坐在库页外壳的浮动工具区下：外壳经
+              // [FushiFloatingChromeScrollInset] 把让位高度交成 MediaQuery 顶部
+              // padding，正文滚动视图自己吃掉它——内容从工具区下方开始、往下
+              // 滚时滚到工具区底下，工具区收起后顶部不留空白。上面的页头在外壳
+              // 里是零高度占位（页签与动作都由外壳画）。
+              consumeTopPadding: embedded,
+            ),
           ),
         ),
       ],

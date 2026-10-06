@@ -14,7 +14,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/shortcuts/shortcut_labels.dart'
-    show labelWithShortcutHint;
+    show tooltipWithShortcutHint;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:path/path.dart' as p;
@@ -2361,7 +2361,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 状态行**画出来**占的底部带高（悬浮态唤出时 28px，收起时 0），是底栏在窄屏
   /// 坐落的高度；与 [_statusFooterBand]（预留口径）的区别只在悬浮态。
   double get _statusFooterPaintedBand => readerStatusFooterBandHeight(
-    footerReserve: _statusFooterShouldPaint ? kReaderStatusFooterHeight : 0,
+    // 悬浮读数胶囊离窗底留外边距（[readerStatusFooterPaintedHeight]），底部悬浮
+    // 件坐在它之上，与 [ReaderStatusFooter] 同一口径。
+    footerReserve: _statusFooterShouldPaint
+        ? readerStatusFooterPaintedHeight(floating: _floatingToolbars)
+        : 0,
     bottomInset: _stableBottomInset,
   );
 
