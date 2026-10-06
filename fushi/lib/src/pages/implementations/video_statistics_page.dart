@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
@@ -317,19 +318,19 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     // 持久化值），本页此前没有入口，切到这个 tab 目标按钮就凭空消失。
     final List<Widget> actions = <Widget>[
       FushiIconButton(
-        icon: Icons.flag_outlined,
+        icon: FushiIcons.flag,
         tooltip: t.stat_goal_set,
         enabled: !_loading,
         onTap: _editGoals,
       ),
       FushiIconButton(
-        icon: Icons.refresh,
+        icon: FushiIcons.refresh,
         tooltip: t.stat_refresh,
         enabled: !_loading,
         onTap: _syncAndLoad,
       ),
       FushiIconButton(
-        icon: Icons.delete_sweep_outlined,
+        icon: FushiIcons.deleteSweep,
         tooltip: t.stat_clear_all,
         enabled: !_loading,
         onTap: _confirmAndClearAll,
@@ -725,7 +726,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     final String? coverPath = uid == null ? null : _coverPathByUid[uid];
     return buildStatMediaRow(
       context,
-      icon: Icons.movie,
+      icon: FushiIcons.video,
       cover: resolveMediaCoverImage(
         kind: MediaKind.video,
         localPath: coverPath,
