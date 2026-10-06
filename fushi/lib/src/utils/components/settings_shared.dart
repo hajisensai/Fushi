@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
@@ -576,7 +577,7 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
         // 收起时行不入树（不可聚焦、不参与焦点驱动），只保留标题头；用 AnimatedSize
         // 平滑高度过渡，ClipRect 防过渡帧溢出。eink 下高度过渡同样归零。
         child: ClipRect(
-          child: AnimatedSize(
+          child: FushiAnimatedSize(
             duration: einkSafeDuration(
               context,
               const Duration(milliseconds: 180),
@@ -728,7 +729,7 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
           header,
           // 收起时行不入树（不可聚焦、不参与焦点驱动）。
           ClipRect(
-            child: AnimatedSize(
+            child: FushiAnimatedSize(
               duration: einkSafeDuration(
                 context,
                 const Duration(milliseconds: 180),

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -435,7 +436,7 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
               ),
             ],
           ),
-          AnimatedSize(
+          FushiAnimatedSize(
             duration: motion.spatialDefault.duration,
             curve: motion.spatialDefault.curve,
             alignment: Alignment.topCenter,
