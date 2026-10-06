@@ -953,7 +953,7 @@ class _MangaOcrSettingsSectionState
           SettingsSectionHeader(t.manga_reader_group_ocr_model),
           if (collapsible) ...<Widget>[
             _buildModelSummary(theme),
-            AnimatedSize(
+            _MotionSize(
               duration: spring.duration,
               curve: spring.curve,
               alignment: Alignment.topCenter,
@@ -1487,7 +1487,7 @@ class _MangaOcrSettingsSectionState
       key: const ValueKey<String>('manga_ocr_model_card'),
       tone: tone,
       padding: const EdgeInsets.all(16),
-      child: AnimatedSize(
+      child: _MotionSize(
         duration: fushiMotionDuration(context, FushiMotion.medium),
         curve: FushiMotion.standard,
         alignment: Alignment.topCenter,
@@ -1588,7 +1588,7 @@ class _MangaOcrSettingsSectionState
             label: Text(t.manga_ocr_external_detect),
           ),
         ),
-        AnimatedSize(
+        _MotionSize(
           duration: context.fushiMotion.spatialDefault.duration,
           curve: context.fushiMotion.spatialDefault.curve,
           alignment: Alignment.topCenter,
@@ -1662,4 +1662,33 @@ class _EngineOption {
   final String description;
 
   final bool enabled;
+}
+
+/// 动效开时就是 [AnimatedSize]；「减弱动态效果」/ 墨水屏把时长归零时直接给最终
+/// 几何。零时长的 [AnimatedSize] 不可用：子尺寸一变，`RenderAnimatedSize` 在
+/// 自身 performLayout 里 `forward(from: 0)` 同步跳到终点、监听器随即
+/// `markNeedsLayout`，debug 下断言「mutated in its own performLayout」。
+class _MotionSize extends StatelessWidget {
+  const _MotionSize({
+    required this.duration,
+    required this.curve,
+    required this.alignment,
+    required this.child,
+  });
+
+  final Duration duration;
+  final Curve curve;
+  final AlignmentGeometry alignment;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (duration == Duration.zero) return child;
+    return AnimatedSize(
+      duration: duration,
+      curve: curve,
+      alignment: alignment,
+      child: child,
+    );
+  }
 }
