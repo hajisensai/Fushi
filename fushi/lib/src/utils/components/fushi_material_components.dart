@@ -4213,7 +4213,7 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   /// `Scaffold.appBar` 自动 [BackButton] 本就是 48×48 的 [IconButton]，而
   /// [FushiIconButton] 在 `padding: EdgeInsets.zero` + 无 constraints 下只有图标
   /// 本体那么大（24×24）——手机触屏上就成了「点不中的返回箭头」，也与
-  /// 本脚手架**显式**传入的 [BackButton]（aidoku 源浏览 / 新手引导）不是
+  /// 本脚手架**显式**传入的 [BackButton]（新手引导等）不是
   /// 同一命中口径。图标视觉尺寸不变，只把 InkWell 命中盒撑开。
   ///
   /// 与 [FushiToolScaffold] 同名方法看着一样但**不能合并**：那边整条工具条

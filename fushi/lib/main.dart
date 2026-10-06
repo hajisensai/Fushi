@@ -96,7 +96,6 @@ import 'package:fushi/src/platform/engine_deep_link_route_guard.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_cloudflare_challenge_page.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
@@ -116,7 +115,6 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
 import 'package:fushi/src/engine_bindings.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_challenge.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/utils/system_transparency.dart';
@@ -915,14 +913,6 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _systemThemeChannel.setMethodCallHandler(_handleSystemThemeChannel);
     }
     FushiToast.navigatorKey = ref.read(appProvider).navigatorKey;
-    // BUG-1876：Aidoku 源被 Cloudflare 拦下时在 WebView 里解题再重试。
-    // 只在有 Aidoku 宿主的构建里装（iOS 按 App Store 合规、macOS 随 Rust CLI 一并
-    // 移除后当前没有宿主）：没有源却装个解题器等于给一个不存在的源留后门。
-    // `AidokuCloudflareGate` 本身仍是跨平台的——全源搜索与来源匹配用它的
-    // `runSuppressed` 抑制批量解题弹窗，那条路径不受本门影响。
-    if (AidokuRuntimeFactory.isSupported) {
-      installAidokuCloudflareResolver(ref.read(appProvider).navigatorKey);
-    }
     // 桌面 Mihon sidecar 是无头 JVM，被 Cloudflare 拦下时由宿主弹 WebView 解题；
     // Android 有自己的 CloudflareChallengeActivity，不走这条。
     if (MihonRuntimeFactory.isSupported && !Platform.isAndroid) {

@@ -187,10 +187,7 @@ class MihonMangaAcquisitionBackend implements MediaAcquisitionBackend {
         MangaSourceSearchRun(MihonGlobalSource(row)),
     ];
     if (runs.isEmpty) return const <MediaAcquisitionCandidate>[];
-    await MangaGlobalSearchRunner(
-      mihonManager: _manager,
-      resolveAidokuRuntime: () => null,
-    ).search(
+    await MangaGlobalSearchRunner(mihonManager: _manager).search(
       runs: runs,
       query: query,
       isCancelled: () => false,

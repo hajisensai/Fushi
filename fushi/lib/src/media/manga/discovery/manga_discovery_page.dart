@@ -10,9 +10,6 @@ import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/discovery/sources/opds_discovery_source.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_source_feeds.dart';
 import 'package:fushi/src/media/manga/discovery/manga_source_catalog_section.dart';
 import 'package:fushi/src/media/manga/manga_global_search_page.dart';
@@ -36,7 +33,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 /// 下拉 + 搜索框），正文**只由用户自己启用的来源**构成：
 ///
 /// 1. 「浏览来源」快捷条（[MangaSourceCatalogSection]）：内置 mokuro.moe 目录 +
-///    已启用 Aidoku 包 + 已启用 Mihon 在线源 + OPDS 服务器，一源一枚磁贴，点进
+///    已启用 Mihon 在线源 + OPDS 服务器，一源一枚磁贴，点进
 ///    各自的目录页；
 /// 2. 每个已启用在线源的「热门」横滑行（[MangaDiscoverySourceRow]），行头带
 ///    「查看全部」直达该源目录。
@@ -50,7 +47,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 /// 的来源失败横幅（[DiscoveryProviderWarningBanner]，印来源展示名），全部失败时换
 /// 成可重试的整块提示；单源网格滚到离底 600 以内自动翻下一页。
 ///
-/// 「浏览来源」节保留：它是 mokuro.moe / Aidoku / OPDS 这些**没有热门行**的来源在
+/// 「浏览来源」节保留：它是 mokuro.moe / OPDS 这些**没有热门行**的来源在
 /// 本页唯一的入口——下拉选中它们时正文只剩这一块磁贴，删掉就成了空白页。
 ///
 /// 此前页首是 MAL（经 Jikan）的趋势 / 热门 / 高分 / 最新完结四条元数据行，点开
@@ -105,11 +102,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   final MihonSourceImageLoadQueue _imageQueue =
       MihonSourceImageLoadQueue(maxConcurrent: 4);
 
-  StreamSubscription<void>? _aidokuChanges;
-  List<AidokuInstalledPackage> _aidokuPackages =
-      const <AidokuInstalledPackage>[];
-  Object? _aidokuError;
-
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
 
@@ -141,30 +133,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
       widget.sourceFeedsOverride != null || widget.catalogOverride != null;
 
   @override
-  void initState() {
-    super.initState();
-    // Aidoku 包清单：装/卸/启停后立即重载，否则保活的本页停在旧清单上。
-    if (!_injected && AidokuRuntimeFactory.isSupported) {
-      _aidokuChanges = AidokuPackageStore.changes.listen((_) => _loadAidoku());
-      unawaited(_loadAidoku());
-    }
-  }
-
-  Future<void> _loadAidoku() async {
-    try {
-      final List<AidokuInstalledPackage> packages =
-          await (await AidokuPackageStore.open()).listInstalled();
-      if (!mounted) return;
-      setState(() {
-        _aidokuPackages = packages;
-        _aidokuError = null;
-      });
-    } on Object catch (error) {
-      if (mounted) setState(() => _aidokuError = error);
-    }
-  }
-
-  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     // 监听 manager：来源装载/启停后热门行与来源清单跟着变。
@@ -183,7 +151,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   @override
   void dispose() {
     _mihonManager?.removeListener(_managerChanged);
-    unawaited(_aidokuChanges?.cancel());
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
@@ -196,9 +163,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
       _heroes.clear();
       _anyRowSettled = false;
     });
-    if (!_injected && AidokuRuntimeFactory.isSupported) {
-      unawaited(_loadAidoku());
-    }
   }
 
   /// 热门行拉取结束的回报：[error] 为 null = 成功。晚到的旧一代回报直接丢弃。
@@ -246,9 +210,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     // （BUG-1431 同因：「来源」里关掉的源必须立刻从这里消失）。
     return MangaSourceCatalog(
       mokuroEnabled: isMokuroMoeSourceEnabled(ref.watch(appProvider)),
-      aidokuPackages: _aidokuPackages
-          .where((AidokuInstalledPackage package) => package.enabled)
-          .toList(growable: false),
       mihonSources: manager == null
           ? const <MangaOnlineSourceRow>[]
           : enabledMangaOnlineSources(manager),
@@ -260,7 +221,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
           .discoveryOpdsServers
           .where((OpdsServerConfig server) => server.enabled)
           .toList(growable: false),
-      aidokuError: _aidokuError,
     );
   }
 
@@ -317,16 +277,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     );
   }
 
-  void _openAidokuSource(AidokuInstalledPackage package) {
-    Navigator.of(context).push(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (BuildContext context) =>
-            AidokuSourceBrowsePage(package: package),
-      ),
-    );
-  }
-
   /// 打开一台 OPDS 服务器的漫画目录。
   ///
   /// 复用统一发现页（`MediaDiscoveryPage`）而不是另写一个浏览页：OPDS 的目录
@@ -360,7 +310,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   /// 本页原地刷新结果。
   ///
   /// mokuro.moe 走**另一条**路：它不在聚合搜索的源模型里
-  /// （`manga_global_search_runner` 只认 Mihon 在线源与 Aidoku 包），硬塞进去只会
+  /// （`manga_global_search_runner` 只认 Mihon 在线源），硬塞进去只会
   /// 得到一个恒空的段。选中它时提交搜索因此直接打开 mokuro 目录页——那里有站内
   /// 搜索，能力不丢。选「全部来源」时它同样不参与聚合，只是不拦搜索。
   void _submitSearch(
@@ -384,7 +334,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
         builder: (BuildContext context) => MangaGlobalSearchPage(
           mihonManager: _mihonManager,
           mihonSources: scope.mihonSources,
-          aidokuPackages: scope.aidokuPackages,
           initialQuery: query,
           onOpenSources: openSources,
         ),
@@ -460,7 +409,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     final Widget catalogSection = MangaSourceCatalogSection(
       catalog: catalog.filterById(selected),
       onOpenMokuro: _openMokuro,
-      onOpenAidoku: _openAidokuSource,
       onOpenMihon: _openMihonSource,
       onOpenOpds: _openOpdsServer,
     );

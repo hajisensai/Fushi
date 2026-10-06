@@ -96,8 +96,8 @@ class SourceMangaSeriesTarget extends MangaSeriesTarget {
   ///
   /// 入库后封面走本地落盘那张（作品页首屏不该依赖网络）；但**还没入库**时本地
   /// 什么都没有，只能由来源自己提供取图控件——Mihon 要经扩展的 imageProxy 带鉴权
-  /// 头，Aidoku 是普通 https + referer，两者的取图方式没有公共分母。作品页因此
-  /// 不自己开取图路径，只留这个口子。
+  /// 头，各运行时的取图方式没有公共分母。作品页因此不自己开取图路径，只留这个
+  /// 口子。
   final Widget Function(BuildContext context)? remoteCoverBuilder;
 }
 
@@ -112,8 +112,8 @@ class SourceMangaSeriesTarget extends MangaSeriesTarget {
 /// 设计要点：
 /// - **先离线渲染，再后台刷新**。首屏只读库里的描述符，一次网络调用都不发；
 ///   刷新失败只在顶部挂一条可重试的提示条，不遮挡任何已有内容。
-/// - **与运行时无关**。只跟 [OnlineMangaLibraryService] 打交道，Mihon 和
-///   Aidoku 走同一条路径。
+/// - **与运行时无关**。只跟 [OnlineMangaLibraryService] 打交道，Mihon 与
+///   互联对端走同一条路径。
 /// - **本地卷也进这里**（用户明确要求的一致性）：本地 mokuro 卷没有章节，
 ///   章节区换成页数/进度，不假装有章节列表。
 class MangaSeriesPage extends ConsumerStatefulWidget {

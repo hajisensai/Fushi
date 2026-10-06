@@ -4747,10 +4747,10 @@ class AppModel with ChangeNotifier {
   /// 书架条目和作品页手上只有 `bookKey` + 描述符里的 runtime，不知道该找哪个
   /// 运行时；这里是唯一的分派点。
   ///
-  /// **Aidoku 分支刻意不碰 [mihonManager]**：平台矩阵不重合——Mihon 是
-  /// Android/Windows/macOS/Linux，Aidoku 是 macOS/iOS。在 iOS 上读一条 Aidoku 书架
-  /// 条目时去取 mihonManager 会直接抛 `UnsupportedError`，把「打开这本书」变成
-  /// 崩溃。两个分支各自独立到底。
+  /// **旧 Aidoku 分支刻意不碰 [mihonManager]**：Aidoku 宿主已整体移除，这一支只
+  /// 服务旧版本留下的书架条目（[LegacyAidokuLibraryAdapter] 一律回报不可用）；
+  /// 在没有 Mihon 宿主的 iOS 上去取 mihonManager 会直接抛 `UnsupportedError`，
+  /// 把「打开这本书」变成崩溃。
   OnlineMangaLibraryService onlineMangaLibraryService(
     OnlineMangaRuntimeKind runtime,
   ) {
@@ -4767,7 +4767,7 @@ class AppModel with ChangeNotifier {
         return OnlineMangaLibraryService(
           database: database,
           rootDirectory: aidokuLibraryRoot,
-          adapter: AidokuLibraryAdapter(),
+          adapter: const LegacyAidokuLibraryAdapter(),
           updateFeed: updateFeedService,
         );
       // 互联对端同样不碰 [mihonManager]：它五端都可用，而 mihonManager 在
@@ -4787,11 +4787,10 @@ class AppModel with ChangeNotifier {
   Directory get interconnectMangaLibraryRoot =>
       Directory(path.join(databaseDirectory.path, 'interconnect_manga'));
 
-  /// Aidoku 书架条目的本地落盘根（占位 manga.json、封面、章节页缓存）。
+  /// 旧 Aidoku 书架条目的本地落盘根（占位 manga.json、封面、已下载章节）。
   ///
-  /// 单独暴露是为了让源浏览的详情页能带着**自己那份**（可能是测试注入的）
-  /// `AidokuRuntime` 建服务，而不是被迫走上面那条恒用
-  /// `AidokuRuntimeFactory.create()` 的分派。
+  /// Aidoku 宿主已移除，但目录名 `aidoku` 是磁盘持久化名（冻结）：旧条目的封面与
+  /// 已下载章节仍在这里，删除条目时也要按它清理。
   Directory get aidokuLibraryRoot =>
       Directory(path.join(databaseDirectory.path, 'aidoku'));
 
