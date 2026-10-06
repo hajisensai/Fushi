@@ -1413,10 +1413,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Widget build(BuildContext context) {
     final OnlineMangaLibraryEntry? entry = _entry;
     final String title = entry?.series.title ?? _row?.title ?? t.manga_library;
-    // 正文铺到悬浮页头底下：封面模糊背景一直画到窗口顶端，页头只是胶囊。
+    // 正文铺到悬浮页头底下（脚手架默认 extendBodyBehindHeader）：封面模糊背景
+    // 一直画到窗口顶端，页头只是胶囊。
     return FushiPageScaffold(
       title: title,
-      extendBodyBehindHeader: true,
       body: _buildBody(context),
     );
   }
