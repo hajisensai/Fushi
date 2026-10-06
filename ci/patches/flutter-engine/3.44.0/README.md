@@ -49,17 +49,25 @@ sRGB 合成，>1.0 全被钳掉（实测：backing store 里 2.57，桌面上 1.
 
 ## 构建与产物
 
-本地实测流程（Windows，VS 2022 + Windows SDK 10.0.26100）：
+一条脚本（Windows，VS 2022 C++ 工作负载 + ATL、任一 Windows 10/11 SDK、Python 3、
+`<工作目录>\depot_tools`）：
 
-1. 用 depot_tools 同步 3.44.0 的引擎源码（`gclient sync`），打上两份补丁。
-2. `flutter/tools/gn --runtime-mode {debug,profile,release} --no-rbe` 后
-   `ninja -C out/host_<mode> flutter/shell/platform/windows:flutter_windows`。
-3. 产物（`flutter_windows.dll` / `.dll.lib` / `.dll.exp` / `.dll.pdb`，以及
-   `flutter_windows.h` / `flutter_texture_registrar.h`）按
-   `windows-x64` / `windows-x64-profile` / `windows-x64-release` 布局放好，附
-   `engine-overlay.json`（`engineVersion` + `patchVersion`）。
-4. `tool/engine_overlay.ps1 -ArtifactDir <产物> [-FlutterRoot <SDK>]` 装进 SDK 缓存
-   （原文件备份到 `.stock-backup`，`-Restore` 还原）。
+```powershell
+tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-1
+# 只重编 / 只打包：-Steps build,stage,pack -Modes release
+# 本机 VS 缺 ATL 时：-AtlDir '<另一套 VS>\VC\Tools\MSVC\<ver>\atlmfc'
+```
+
+步骤：sync（clone 3.44.0 + `gclient sync`）→ patch（两份补丁，已打过则跳过）→
+build（`gn --runtime-mode <mode>` + `ninja flutter_windows`，与官方产物同配置）→
+stage（按 `windows-x64{,-profile,-release}` 布局 + `engine-overlay.json`）→
+pack（去掉 pdb 打 zip，打印 `artifacts.json` 片段：填上发布地址后放进本目录）。
+
+安装：`tool/engine_overlay.ps1 -ArtifactDir <stage 目录>` 或
+`-Manifest ci/patches/flutter-engine/3.44.0/artifacts.json`（下载 + SHA-256 校验），
+原文件备份到 `.stock-backup`，`-Restore` 还原。CI 走
+`.github/actions/flutter-engine-overlay`，`artifacts.json` 不存在时用原版引擎构建（app
+运行期回退宿主窗，并打 warning）。
 
 ## 运行时契约
 

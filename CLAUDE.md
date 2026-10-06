@@ -53,7 +53,7 @@
 
 ## 当前技术事实
 
-- Flutter 版本**只有一个：`3.44.0`**——`fushi/.fvmrc` 与所有 workflow 的 `flutter-version` 同钉（守卫 `fushi/test/build/flutter_version_single_source_guard_test.dart`），本地 analyze / test / `pub get` 一律用它：版本不同 analyzer 与 lint 的结论就不同，CI 会红在本地没红的地方（2026-09-30 前这里写的是「本地 3.41.6、CI 3.44.0」）；`tool/pre_push_check.dart` 第 0 步强制比对。升级时 `.fvmrc` 与全部 workflow 一起改。pubspec 的 `flutter: "^3.41.6"` 只是下限，不是钉版；Dart SDK 约束 `>=3.5.0 <4.0.0`。最低 Android API 24，`compileSdk 36` / `targetSdk 35`。
+- Flutter 版本**只有一个：`3.44.0`**——`fushi/.fvmrc` 与所有 workflow 的 `flutter-version` 同钉（守卫 `fushi/test/build/flutter_version_single_source_guard_test.dart`），本地 analyze / test / `pub get` 一律用它：版本不同 analyzer 与 lint 的结论就不同，CI 会红在本地没红的地方（2026-09-30 前这里写的是「本地 3.41.6、CI 3.44.0」）；`tool/pre_push_check.dart` 第 0 步强制比对。升级时 `.fvmrc` 与全部 workflow 一起改，**并且**把 `ci/patches/flutter-engine/<版本>/`（Windows 引擎 + ANGLE 补丁，合成器内 HDR）移植到新基线、重编发布引擎产物（守卫按 `.fvmrc` 找补丁目录，见 [docs/agent/build.md](docs/agent/build.md)「依赖补丁」）。pubspec 的 `flutter: "^3.41.6"` 只是下限，不是钉版；Dart SDK 约束 `>=3.5.0 <4.0.0`。最低 Android API 24，`compileSdk 36` / `targetSdk 35`。
 - 状态管理 Riverpod；音频 just_audio（桌面经 just_audio_media_kit）；录音 record 6.0.0；视频播放走 **media_kit**（third_party vendored 全套）+ youtube_explode_dart。
 - torrent 走内部包 `packages/fushi_torrent`（libtorrent 2.x C ABI FFI，native 在 `native/fushi_torrent/`；Windows 预编译 DLL / macOS universal 静态 dylib（`Contents/Frameworks`）/ Android arm64 `.so` / Linux 静态链 `.so`（copy-if-present）随包，缺失时回退外接 qBittorrent；iOS 无内置引擎）。
 - 主存储是 Drift SQLite（`FushiDatabase`，schema v114），偏好落 Drift `preferences` 表 + `profile_settings` 每 Profile 快照。**已无 Isar/Hive 依赖**；旧注释里的 Isar/Hive 不代表当前事实，先查代码再判断。

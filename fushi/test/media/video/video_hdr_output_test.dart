@@ -322,6 +322,74 @@ void main() {
     });
   });
 
+  group('compositorHdrTarget（合成器内 HDR 的唯一亮度换算）', () {
+    test('HDR 显示器：界面白 = SDR 内容亮度，参考白按绝对亮度，峰值 = 面板峰值', () {
+      expect(
+        compositorHdrTarget(
+          const HdrDisplayInfo(
+            colorSpace: kDxgiColorSpaceHdr10,
+            maxLuminance: 1015,
+            bitsPerColor: 10,
+            sdrWhiteNits: 280,
+          ),
+        ),
+        const CompositorHdrTarget(
+          engineSdrWhiteNits: 280,
+          referenceWhiteNits: 280,
+          targetPeakNits: 1015,
+        ),
+      );
+    });
+
+    test('HDR 显示器但 SDR 白未知：按 scRGB 基准 80 尼特', () {
+      final CompositorHdrTarget target = compositorHdrTarget(
+        const HdrDisplayInfo(
+          colorSpace: kDxgiColorSpaceHdr10,
+          maxLuminance: 0,
+          bitsPerColor: 10,
+        ),
+      );
+      expect(target.engineSdrWhiteNits, kScRgbWhiteNits);
+      expect(target.referenceWhiteNits, kScRgbWhiteNits);
+      // 峰值未知交给 mpv 推断（≤0）。
+      expect(target.targetPeakNits, 0);
+    });
+
+    test('SDR 显示器（always 模式）：参考白对齐界面白、峰值压到参考白，'
+        '不随面板峰值 / SDR 滑块变', () {
+      const CompositorHdrTarget sdr = CompositorHdrTarget(
+        engineSdrWhiteNits: kScRgbWhiteNits,
+        referenceWhiteNits: kMpvReferenceWhiteNits,
+        targetPeakNits: kMpvReferenceWhiteNits,
+      );
+      for (final HdrDisplayInfo display in <HdrDisplayInfo>[
+        HdrDisplayInfo.unknown,
+        const HdrDisplayInfo(
+          colorSpace: kDxgiColorSpaceSdr,
+          maxLuminance: 1015,
+          bitsPerColor: 10,
+          sdrWhiteNits: 280,
+        ),
+      ]) {
+        expect(compositorHdrTarget(display), sdr, reason: '$display');
+      }
+    });
+
+    test('值相等即相等（控制器靠它判断要不要重下发）', () {
+      const HdrDisplayInfo display = HdrDisplayInfo(
+        colorSpace: kDxgiColorSpaceHdr10,
+        maxLuminance: 600,
+        bitsPerColor: 10,
+        sdrWhiteNits: 200,
+      );
+      expect(compositorHdrTarget(display), compositorHdrTarget(display));
+      expect(
+        compositorHdrTarget(display).hashCode,
+        compositorHdrTarget(display).hashCode,
+      );
+    });
+  });
+
   group('HDR 图形白归一（字幕 / 弹幕层）', () {
     const HdrDisplayInfo hdr280 = HdrDisplayInfo(
       colorSpace: kDxgiColorSpaceHdr10,
@@ -425,6 +493,10 @@ void main() {
             switch (call.method) {
               case 'create':
                 return 0xABCD;
+              case 'compositorHdrSupported':
+                return true;
+              case 'setCompositorHdrOutput':
+                return (call.arguments as Map<Object?, Object?>)['enabled'];
               case 'displayInfo':
                 return <String, Object?>{
                   'valid': true,
@@ -471,6 +543,44 @@ void main() {
       });
     });
 
+    test('合成器内 HDR：能力查询与开关透传参数、回传引擎结果', () async {
+      final HdrVideoHostChannel host = HdrVideoHostChannel(
+        channel: channel,
+        isWindows: true,
+      );
+      expect(await host.compositorHdrSupported(), isTrue);
+      expect(
+        await host.setCompositorHdrOutput(enabled: true, sdrWhiteNits: 280),
+        isTrue,
+      );
+      expect(
+        await host.setCompositorHdrOutput(enabled: false, sdrWhiteNits: 80),
+        isFalse,
+      );
+      expect(calls.map((MethodCall c) => c.method).toList(), <String>[
+        'compositorHdrSupported',
+        'setCompositorHdrOutput',
+        'setCompositorHdrOutput',
+      ]);
+      expect(calls[1].arguments, <String, Object>{
+        'enabled': true,
+        'sdrWhiteNits': 280.0,
+      });
+    });
+
+    test('原版引擎 / 旧 runner（无此方法）报不支持，不抛', () async {
+      const MethodChannel bare = MethodChannel('test/hdr_video_host_bare');
+      final HdrVideoHostChannel host = HdrVideoHostChannel(
+        channel: bare,
+        isWindows: true,
+      );
+      expect(await host.compositorHdrSupported(), isFalse);
+      expect(
+        await host.setCompositorHdrOutput(enabled: true, sdrWhiteNits: 280),
+        isFalse,
+      );
+    });
+
     test('非 Windows 全部 no-op：不碰通道，create 返回 0', () async {
       final HdrVideoHostChannel host = HdrVideoHostChannel(
         channel: channel,
@@ -480,6 +590,11 @@ void main() {
       await host.setRect(Rect.zero);
       await host.destroy();
       expect((await host.displayInfo()).isHdr, isFalse);
+      expect(await host.compositorHdrSupported(), isFalse);
+      expect(
+        await host.setCompositorHdrOutput(enabled: true, sdrWhiteNits: 280),
+        isFalse,
+      );
       expect(calls, isEmpty);
     });
 
