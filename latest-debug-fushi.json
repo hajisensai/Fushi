@@ -1,20 +1,20 @@
 {
   "schemaVersion": 1,
-  "version": "2.10.0-debug.18263",
-  "tag": "v2.10.0-debug.18263+9aaee4b",
+  "version": "2.10.0-debug.18265",
+  "tag": "v2.10.0-debug.18265+778bef3",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 18263,
-  "notes": "Automated release-signed debug-channel build from develop @ 9aaee4b. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 18265,
+  "notes": "Automated release-signed debug-channel build from develop @ 778bef3. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-2.10.0-debug.18263-9aaee4b-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.18263-9aaee4b-debug.apk",
-      "releaseSequence": 18263,
-      "tag": "v2.10.0-debug.18263+9aaee4b",
-      "version": "2.10.0-debug.18263",
+      "name": "fushi-2.10.0-debug.18265-778bef3-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.18265-778bef3-debug.apk",
+      "releaseSequence": 18265,
+      "tag": "v2.10.0-debug.18265+778bef3",
+      "version": "2.10.0-debug.18265",
       "size": 367397661,
-      "sha256": "668f31e18457ff981c53716a36bf77653367e3dfa07c6a13a0890e03fc4ff455"
+      "sha256": "26807117c551baaf0e727d2e3680ea4219fa5495e6dd697020537af149568922"
     }
   ]
 }
