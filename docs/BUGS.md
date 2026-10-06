@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2812 条。点号进各自文件。
+> 共 2813 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -48,6 +48,7 @@
 | [BUG-3048](bugs/BUG-3048-reader-selection-persists-across-page-turn.md) | ✅ | ✅ | 移动端划词后翻页，选择高亮与两端手柄留在新页面上 |
 | [BUG-3047](bugs/BUG-3047-reader-selection-drag-gap-freeze.md) | ✅ | ✅ | 移动端 EPUB 拖选/拖手柄落到字缝·行尾·行距·段间空白就卡住 |
 | [BUG-3046](bugs/BUG-3046-reader-selection-handle-covers-glyph.md) | 🚧 | 🚧 | 页边缘选择手柄避让回归：触控盒和选择球遮挡选中字 |
+| [BUG-3045](bugs/BUG-3045-asr-truncated-audio-finished.md) | ✅ | ✅ | ASR 转录把解不完的音频当文件末尾，残卷标成完成 |
 | [BUG-3044](bugs/BUG-3044-video-cover-black-frame.md) | ✅ | ✅ | 视频自动抽帧封面落在黑场，首页「继续」卡显示纯黑块 |
 | [BUG-3042](bugs/BUG-3042-library-blur-scroll-jank.md) | ✅ | ✅ | 游戏库/视频库滚动掉帧：卡片封面背景渲染期实时模糊 |
 | [BUG-3041](bugs/BUG-3041-manga-page-full-decode-per-request.md) | ✅ | ✅ | 漫画阅读器每次页图请求都整张解码取宽高，大图页拖慢阅读与查词 |
