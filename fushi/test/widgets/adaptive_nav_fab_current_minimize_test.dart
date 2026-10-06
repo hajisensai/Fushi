@@ -20,6 +20,7 @@ Future<void> _pump(
   WidgetTester tester, {
   required int current,
   required bool minimized,
+  bool leading = false,
 }) async {
   tester.view.physicalSize = const Size(412, 892);
   tester.view.devicePixelRatio = 1;
@@ -38,6 +39,7 @@ Future<void> _pump(
               glassMinimized: minimized,
               onGlassExpand: () {},
               glassSearchIndex: _lookup,
+              searchLeading: leading,
             ),
           ),
         ),
@@ -109,5 +111,24 @@ void main() {
     expect(_hittableIcon(Icons.home_outlined), findsOneWidget);
     expect(_hittableIcon(Icons.menu_book_outlined), findsNothing);
     expect(_hittableIcon(Icons.search), findsOneWidget);
+  });
+
+  // 与「反转底栏方向」（查词 FAB 在左）叠加：收起照样整条胶囊让位，FAB 留在左边。
+  testWidgets('reversed bar (FAB leading): capsule gives way, FAB stays left', (
+    WidgetTester tester,
+  ) async {
+    await _pump(tester, current: _lookup, minimized: false, leading: true);
+    final double fabX = tester.getCenter(find.byIcon(Icons.search)).dx;
+    final double homeX = tester.getCenter(find.byIcon(Icons.home_outlined)).dx;
+    expect(fabX, lessThan(homeX));
+
+    await _pump(tester, current: _lookup, minimized: true, leading: true);
+    expect(_hittableIcon(Icons.home_outlined), findsNothing);
+    expect(_hittableIcon(Icons.menu_book_outlined), findsNothing);
+    expect(_hittableIcon(Icons.search), findsOneWidget);
+    expect(tester.getCenter(find.byIcon(Icons.search)).dx, fabX);
+
+    await _pump(tester, current: _lookup, minimized: false, leading: true);
+    expect(_hittableIcon(Icons.home_outlined), findsOneWidget);
   });
 }
