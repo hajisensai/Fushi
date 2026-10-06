@@ -88,6 +88,16 @@ extension _VideoLookupMining on _VideoFushiPageState {
     _miningDraft.editSentence(slot: slot, index: index, text: text);
   }
 
+  /// 移除 / 恢复草稿里某一句前文/后文（[DictionaryPageMixin.onRemoveSentenceContext]
+  /// 的私有目标）。被移除的 cue 不进卡片文本与音频区间。
+  Future<void> _removeSentenceContext(
+    SentenceContextSlot slot,
+    int index,
+    bool removed,
+  ) async {
+    _miningDraft.setSentenceRemoved(slot: slot, index: index, removed: removed);
+  }
+
   Future<int> _clearSentenceDraft() async {
     _miningDraft.clear();
     return _miningDraft.length;

@@ -194,6 +194,12 @@ mixin DictionaryPageMixin {
   Future<void> Function(SentenceContextSlot slot, int index, String text)?
       get onEditSentenceContextText => null;
 
+  /// 「制卡前调整·选择句子上下文」里把上文/下文第 index 句从卡片里移除或恢复
+  /// （视频/首页查词车道）。默认 null = 不支持，对话框不渲染移除入口。视频页覆写。
+  /// 与 reader 车道（[BaseSourcePageState.onRemoveSentenceContext]）对称。
+  Future<void> Function(SentenceContextSlot slot, int index, bool removed)?
+      get onRemoveSentenceContext => null;
+
   /// BUG-797 / BUG-1040：有多少个「必须盖住查词弹窗」的 Flutter 对话框正开着。
   ///
   /// 查词弹窗是**原生平台视图**（桌面 WebView2 / Android platform view），靠 airspace 永远
@@ -253,6 +259,8 @@ mixin DictionaryPageMixin {
           // 手改某一句文本：只改这次会写进卡片的**文本**，cue 的时间窗（音频/画面
           // 身份）原样保留。宿主没接就传 null，对话框不渲染编辑入口。
           editSentence: onEditSentenceContextText,
+          // 移除 / 恢复某一句前文/后文（剔掉夹在中间的旁白）。宿主没接传 null。
+          removeSentence: onRemoveSentenceContext,
           // BUG-2627：回传「有没有真的点到制卡按钮」。弹窗层在这次往返途中被关栈
           // （或 State 已卸载）时为 false，对话框据此提示，不再静默关窗。
           onConfirm: () async =>

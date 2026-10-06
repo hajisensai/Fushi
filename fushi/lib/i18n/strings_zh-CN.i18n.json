@@ -6383,5 +6383,7 @@
   "game_stream_host_stream_off": "该主机未提供游戏串流。",
   "game_stream_host_library_off": "主机没有开启游戏库。请在 Windows 端 Fushi 启用「游戏」模块后重启。",
   "game_stream_host_unauthorized": "主机拒绝了本设备，请重新配对。",
-  "game_stream_tab": "串流"
+  "game_stream_tab": "串流",
+  "popup_ctx_sentence_remove": "从卡片中移除此句",
+  "popup_ctx_sentence_restore": "恢复此句"
 }

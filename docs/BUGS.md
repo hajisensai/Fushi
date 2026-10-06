@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2727 条。点号进各自文件。
+> 共 2728 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2999](bugs/BUG-2999-ctx-remove-middle-sentence.md) | ✅ | ✅ | 制卡上下文无法删除中间的旁白句 |
 | [BUG-2998](bugs/BUG-2998-popup-dictionary-disclosure-reflow.md) | ✅ | ✅ | 查词同词条展开收起辞典后不按当前空间重新分列 |
 | [BUG-2965](bugs/BUG-2965-movie-pack-numbered-files-become-extras.md) | ✅ | ✅ | 剧场版合集包Movie 01…25被误判带集号，只入库一部其余进Extras |
 | [BUG-2964](bugs/BUG-2964-hdr-passthrough-top-line.md) | ✅ | ✅ | HDR 直通全屏顶部一条主题色横线 + 底色叠加到视频上 |

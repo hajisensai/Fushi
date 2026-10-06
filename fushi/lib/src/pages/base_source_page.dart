@@ -1432,6 +1432,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           // （本入口只在 sentenceDraftEnabled 时才挂上，这里再按
           // [supportsSentenceDraft] 兜一层）；不支持的表面传 null，对话框不渲染编辑入口。
           editSentence: supportsSentenceDraft ? onEditSentenceContextText : null,
+          // 移除 / 恢复某一句前文/后文（剔掉夹在中间的旁白），门控同编辑。
+          removeSentence:
+              supportsSentenceDraft ? onRemoveSentenceContext : null,
           // BUG-2196 ②：只有真的能出声的表面才给试听按钮。
           previewAudio: supportsSentenceAudioPreview ? onPreviewSentenceAudio : null,
           stopAudioPreview:
@@ -1543,6 +1546,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     SentenceContextSlot slot,
     int index,
     String text,
+  ) async {}
+
+  /// 「制卡前调整·选择句子上下文」里把 [slot]（上文/下文）第 [index] 句从卡片里
+  /// 移除（[removed] = true）或恢复。被移除的句子不进卡片文本与音频区间，但仍占着
+  /// 上下文的位置（加减句数不会把它挤丢）。
+  /// 默认 no-op（[supportsSentenceDraft] 为 false 时不会被调用）。reader 覆写。
+  @protected
+  Future<void> onRemoveSentenceContext(
+    SentenceContextSlot slot,
+    int index,
+    bool removed,
   ) async {}
 
   /// BUG-2196 ②：试听**这次制卡真正会写进卡片的那段音频**。

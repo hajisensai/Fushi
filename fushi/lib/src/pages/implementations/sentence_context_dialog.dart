@@ -23,6 +23,8 @@ import 'package:fushi/utils.dart';
 ///     （`DictionaryPopupWebViewState.mineEntryByIndex`，复用全部制卡/查重/覆写逻辑）。
 ///   * [editSentence]（可选）：把某一句手改后的文本写回草稿。每张句子卡右上角一个编辑
 ///     按钮 → 就地变输入框 → 卡内「确认修改」落地，最后仍由底部「确认制卡」收尾。
+///   * [removeSentence]（可选）：把某一句前文/后文从卡片里移除或恢复——剔掉夹在中间的
+///     旁白/语气词（「−」只能从两端减）。
 class SentenceContextDialog extends StatefulWidget {
   const SentenceContextDialog({
     super.key,
@@ -31,6 +33,7 @@ class SentenceContextDialog extends StatefulWidget {
     required this.setContext,
     required this.onConfirm,
     this.editSentence,
+    this.removeSentence,
     this.previewAudio,
     this.stopAudioPreview,
   });
@@ -63,6 +66,15 @@ class SentenceContextDialog extends StatefulWidget {
   final Future<void> Function(SentenceContextSlot slot, int index, String text)?
       editSentence;
 
+  /// 把前文/后文第 index 句从卡片里移除（removed = true）或恢复
+  /// （`MiningSentenceDraft.setSentenceRemoved`）。
+  ///
+  /// 用户报「中间是旁白，也做进字幕了，不能删么」：「−」按钮只能从两端减句，中间那句
+  /// 没有别的办法拿掉。被移除的句子仍列在原位（删除线 + 恢复入口），不进卡片文本与
+  /// 音频区间。当前句不可移除。null = 该表面不支持，不渲染移除入口。
+  final Future<void> Function(SentenceContextSlot slot, int index, bool removed)?
+      removeSentence;
+
   /// BUG-2196 ②：试听**这次制卡真正会写进卡片的那段音频**（不是「当前句的 cue」——
   /// 写进卡的区间还合并了在这个对话框里加减出来的上下文句，并带首尾留白与 A/V
   /// 偏移）。返回 false = 这句没有可试听的音频。null = 该表面不支持，不渲染按钮。
@@ -82,6 +94,9 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
 
   List<String> _prev = const <String>[];
   List<String> _next = const <String>[];
+  // 与 [_prev]/[_next] 逐位对应：该句是否已被移除（宿主未给该字段时全 false）。
+  List<bool> _prevRemoved = const <bool>[];
+  List<bool> _nextRemoved = const <bool>[];
   String _current = '';
   int? _currentOffset;
   int _total = 0;
@@ -131,12 +146,19 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
       ? <String>[for (final Object? e in v) e.toString()]
       : const <String>[];
 
+  static List<bool> _boolList(Object? v, int length) => <bool>[
+        for (int i = 0; i < length; i++)
+          v is List && i < v.length && v[i] == true,
+      ];
+
   Future<void> _refresh({bool initial = false}) async {
     final Map<String, Object?> p = await widget.fetchPreview();
     if (!mounted) return;
     setState(() {
       _prev = _stringList(p['prev']);
       _next = _stringList(p['next']);
+      _prevRemoved = _boolList(p['prevRemoved'], _prev.length);
+      _nextRemoved = _boolList(p['nextRemoved'], _next.length);
       _current = p['current'] as String? ?? '';
       _currentOffset = (p['currentOffset'] as num?)?.toInt();
       _total = (p['total'] as num?)?.toInt() ?? (_prev.length + _next.length);
@@ -296,6 +318,10 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
 
   /// 确认修改：写回宿主草稿，再重新拉一次预览（宿主是唯一真值——它可能把空白句
   /// 还原成原句，UI 不自作主张地把输入框里的文本直接当成结果显示）。
+  ///
+  /// 前文/后文清空后确认 = 移除这一句（用户的直觉操作：把那句删光再确认）。原来
+  /// 宿主把空白当成「还原」，句子原样弹回来，看起来就是删不掉。移除后该句仍列在
+  /// 原位、带删除线和恢复入口，不是无声丢失。当前句清空仍是还原——当前句不可移除。
   Future<void> _commitEdit() async {
     final SentenceContextSlot? slot = _editSlot;
     final Future<void> Function(SentenceContextSlot, int, String)? edit =
@@ -303,10 +329,37 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
     if (slot == null || edit == null) return;
     final String text = _editController?.text ?? '';
     final int index = _editIndex;
+    final Future<void> Function(SentenceContextSlot, int, bool)? remove =
+        widget.removeSentence;
+    final bool removeInstead = text.trim().isEmpty &&
+        slot != SentenceContextSlot.current &&
+        remove != null;
     _cancelEdit();
     setState(() => _busy = true);
     try {
-      await edit(slot, index, text);
+      if (removeInstead) {
+        await remove(slot, index, true);
+      } else {
+        await edit(slot, index, text);
+      }
+      await _refresh();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 移除 / 恢复某一句前文/后文，再从宿主拉一次预览。
+  Future<void> _setRemoved(
+    SentenceContextSlot slot,
+    int index,
+    bool removed,
+  ) async {
+    final Future<void> Function(SentenceContextSlot, int, bool)? remove =
+        widget.removeSentence;
+    if (remove == null || _locked) return;
+    setState(() => _busy = true);
+    try {
+      await remove(slot, index, removed);
       await _refresh();
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -371,6 +424,21 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
         icon: const FushiIcon(Icons.edit_outlined, size: 16),
       );
 
+  /// 句子卡右上角的「移除此句 / 恢复此句」按钮，尺寸与 [_editButton] 一致。
+  Widget _removeButton(SentenceContextSlot slot, int index, bool removed) =>
+      IconButton(
+        tooltip:
+            removed ? t.popup_ctx_sentence_restore : t.popup_ctx_sentence_remove,
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+        onPressed: _locked ? null : () => _setRemoved(slot, index, !removed),
+        icon: FushiIcon(
+          removed ? Icons.undo_rounded : Icons.remove_circle_outline,
+          size: 16,
+        ),
+      );
+
   /// 编辑态的卡内容：多行输入框 + 「放弃修改 / 确认修改」。
   ///
   /// 确认按钮独立于底部的「确认制卡」：用户要的是「先确认这一句改完了」，改完还能继续
@@ -421,6 +489,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
     int index = 0,
     bool current = false,
     bool editable = true,
+    bool removed = false,
   }) {
     final ColorScheme scheme = theme.colorScheme;
     // 这一张卡是不是正被编辑：编辑态换成输入框，且不再走下面的缩略/降透明层
@@ -450,8 +519,18 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
                 ),
               ),
               // 编辑入口只在宿主真的能落地编辑时出现（editSentence == null 整颗不渲染）。
-              if (editable && widget.editSentence != null && !editingThis)
+              // 已移除的句子不给编辑——先恢复再改，免得改了一句看不见效果的文本。
+              if (editable &&
+                  !removed &&
+                  widget.editSentence != null &&
+                  !editingThis)
                 _editButton(slot, index, editText),
+              // 移除 / 恢复：只给前文/后文（当前句不可移除），宿主没接不渲染。
+              if (editable &&
+                  !current &&
+                  widget.removeSentence != null &&
+                  !editingThis)
+                _removeButton(slot, index, removed),
             ],
           ),
           const SizedBox(height: 4),
@@ -467,8 +546,18 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
     );
   }
 
-  Widget _sentenceText(ThemeData theme, String sentence) =>
-      Text(sentence, style: theme.textTheme.bodyMedium);
+  Widget _sentenceText(ThemeData theme, String sentence,
+          {bool removed = false}) =>
+      Text(
+        sentence,
+        style: removed
+            ? theme.textTheme.bodyMedium?.copyWith(
+                decoration: TextDecoration.lineThrough,
+                color: theme.colorScheme.onSurfaceVariant
+                    .withValues(alpha: 0.6),
+              )
+            : theme.textTheme.bodyMedium,
+      );
 
   Widget _emptyText(ThemeData theme) => Text(
         t.popup_ctx_box_empty,
@@ -485,6 +574,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
     ThemeData theme, {
     required String label,
     required List<String> sentences,
+    required List<bool> removed,
     required SentenceContextSlot slot,
   }) {
     if (sentences.isEmpty) {
@@ -508,7 +598,8 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
           slot: slot,
           index: i,
           editText: sentences[i],
-          child: _sentenceText(theme, sentences[i]),
+          removed: removed[i],
+          child: _sentenceText(theme, sentences[i], removed: removed[i]),
         ),
     ];
   }
@@ -544,6 +635,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
         theme,
         label: t.popup_ctx_box_prev,
         sentences: _prev,
+        removed: _prevRemoved,
         slot: SentenceContextSlot.prev,
       ),
       _box(
@@ -558,6 +650,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
         theme,
         label: t.popup_ctx_box_next,
         sentences: _next,
+        removed: _nextRemoved,
         slot: SentenceContextSlot.next,
       ),
     ];

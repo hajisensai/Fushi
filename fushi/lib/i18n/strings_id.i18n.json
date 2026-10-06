@@ -6383,5 +6383,7 @@
   "game_stream_host_stream_off": "This host does not offer game streaming.",
   "game_stream_host_library_off": "The host has no game library. Turn on the Games module in Fushi on Windows, then restart it.",
   "game_stream_host_unauthorized": "The host rejected this device. Pair them again.",
-  "game_stream_tab": "Stream"
+  "game_stream_tab": "Stream",
+  "popup_ctx_sentence_remove": "Remove this sentence from the card",
+  "popup_ctx_sentence_restore": "Restore this sentence"
 }

@@ -4269,6 +4269,16 @@ $liveConfigJs
     _miningDraft.editSentence(slot: slot, index: index, text: text);
   }
 
+  /// 「选择句子上下文」对话框里移除 / 恢复某一句前文/后文：直接转调草稿模型。
+  @override
+  Future<void> onRemoveSentenceContext(
+    SentenceContextSlot slot,
+    int index,
+    bool removed,
+  ) async {
+    _miningDraft.setSentenceRemoved(slot: slot, index: index, removed: removed);
+  }
+
   /// TODO-382 / TODO-393：弹窗点「清空已加句子」清掉本次查词的上下文选择（回到只制
   /// 当前句），回传清空后的句数（恒 0）。给用户一个明确、可见的撤销入口。
   @override

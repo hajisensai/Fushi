@@ -29,6 +29,10 @@ void main() {
   late String? currentEdit;
   // 该表面是否支持编辑（false = 宿主没接回调，编辑入口整颗不该渲染）。
   late bool supportsEdit;
+  // 移除 / 恢复：记录 (slot,index,removed)，并把状态落进桩。
+  late List<List<Object>> removeCalls;
+  late Map<int, bool> prevRemoved;
+  late bool supportsRemove;
 
   Map<String, Object?> preview() {
     final List<String> prev = <String>[
@@ -43,7 +47,12 @@ void main() {
       // 当前句被手改后偏移失效（宿主置空，见 buildSentenceContextPreview）。
       'currentOffset': currentEdit == null ? 2 : null, // 「対する」在偏移 2
       'next': next,
-      'total': prev.length + next.length,
+      'prevRemoved': <bool>[
+        for (int i = 0; i < stubPrev; i++) prevRemoved[i] ?? false,
+      ],
+      'total': prev.length +
+          next.length -
+          prevRemoved.values.where((bool r) => r).length,
     };
   }
 
@@ -88,6 +97,15 @@ void main() {
                           }
                         }
                       : null,
+                  removeSentence: supportsRemove
+                      ? (SentenceContextSlot slot, int index,
+                          bool removed) async {
+                          removeCalls.add(<Object>[slot, index, removed]);
+                          if (slot == SentenceContextSlot.prev) {
+                            prevRemoved[index] = removed;
+                          }
+                        }
+                      : null,
                 ),
               ),
               child: const Text('open'),
@@ -110,10 +128,17 @@ void main() {
     nextEdits = <int, String>{};
     currentEdit = null;
     supportsEdit = true;
+    removeCalls = <List<Object>>[];
+    prevRemoved = <int, bool>{};
+    supportsRemove = true;
   });
 
   // 用 IconButton finder（不是 byTooltip）：byTooltip 命中的是 RawTooltip 包装层，
   // 拿不到 IconButton.onPressed 判禁用。
+  Finder removeButtons() =>
+      find.widgetWithIcon(IconButton, Icons.remove_circle_outline);
+  Finder restoreButtons() => find.widgetWithIcon(IconButton, Icons.undo_rounded);
+
   Finder editButtons() =>
       find.widgetWithIcon(IconButton, Icons.edit_outlined);
 
@@ -386,5 +411,72 @@ void main() {
     expect(setCalls, contains(equals(<int>[1, 1])));
     expect(find.textContaining('前文0（改）。'), findsOneWidget);
     expect(find.textContaining('后文0。'), findsOneWidget);
+  });
+
+  // 用户报「中间是旁白，也做进字幕了，不能删么 / 删除了确定也还变回原样」。
+  testWidgets('移除中间一句：只调 removeSentence，画删除线、计数减一、可恢复',
+      (WidgetTester tester) async {
+    stubPrev = 3;
+    await open(tester);
+    // 前文三句各一颗移除按钮，当前句没有（当前句不可移除）。
+    expect(removeButtons(), findsNWidgets(3));
+    await tester.tap(removeButtons().at(1));
+    await tester.pumpAndSettle();
+    expect(removeCalls, <List<Object>>[
+      <Object>[SentenceContextSlot.prev, 1, true],
+    ]);
+    // 句子仍在原位，但画成删除线，并换成恢复按钮。
+    final Text removedText = tester.widget<Text>(find.text('前文1。'));
+    expect(removedText.style?.decoration, TextDecoration.lineThrough);
+    expect(restoreButtons(), findsOneWidget);
+    expect(find.text(t.popup_ctx_modal_count.replaceAll('%d', '2')),
+        findsOneWidget);
+    // 被移除的句子不给编辑入口（先恢复再改）。
+    expect(editButtons(), findsNWidgets(3));
+
+    await tester.tap(restoreButtons());
+    await tester.pumpAndSettle();
+    expect(removeCalls.last, <Object>[SentenceContextSlot.prev, 1, false]);
+    expect(tester.widget<Text>(find.text('前文1。')).style?.decoration,
+        isNot(TextDecoration.lineThrough));
+    expect(find.text(t.popup_ctx_modal_count.replaceAll('%d', '3')),
+        findsOneWidget);
+  });
+
+  testWidgets('前文清空后确认修改 = 移除这句，不再弹回原句',
+      (WidgetTester tester) async {
+    stubPrev = 2;
+    await open(tester);
+    await tester.tap(editButtons().at(1));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '');
+    await tester.tap(find.text(t.popup_ctx_edit_confirm));
+    await tester.pumpAndSettle();
+    expect(editCalls, isEmpty, reason: '清空不该走「还原」的编辑路径');
+    expect(removeCalls, <List<Object>>[
+      <Object>[SentenceContextSlot.prev, 1, true],
+    ]);
+    expect(tester.widget<Text>(find.text('前文1。')).style?.decoration,
+        TextDecoration.lineThrough);
+  });
+
+  testWidgets('当前句清空仍是还原（走 editSentence，不移除）',
+      (WidgetTester tester) async {
+    await open(tester);
+    await tester.tap(editButtons().first);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '');
+    await tester.tap(find.text(t.popup_ctx_edit_confirm));
+    await tester.pumpAndSettle();
+    expect(removeCalls, isEmpty);
+    expect(editCalls.single[0], SentenceContextSlot.current);
+  });
+
+  testWidgets('宿主不支持移除时不渲染移除按钮', (WidgetTester tester) async {
+    supportsRemove = false;
+    stubPrev = 2;
+    await open(tester);
+    expect(removeButtons(), findsNothing);
+    expect(editButtons(), findsNWidgets(3));
   });
 }
