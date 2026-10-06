@@ -125,6 +125,7 @@ import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig, JellyfinVideoClient;
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -3796,13 +3797,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // BUG-250: 视频 tab 的批量选择模式（[_selectionMode]）和书架一样活在 tab
     // 内容里、不是独立 route。顶层 HomePage 的 PopScope 对它无感，返回键会直接
     // 退出 App，而不是退出选择模式。这里用嵌套 PopScope 拦截：选择模式开启时
-    // canPop=false，返回先退出选择模式（与书架 / 查词 tab 一致）。
-    return PopScope(
-      canPop: !_selectionMode,
-      onPopInvokedWithResult: (bool didPop, Object? result) {
-        if (didPop) return;
-        if (_selectionMode) _exitSelectionMode();
-      },
+    // canPop=false，返回先退出选择模式（与书架 / 查词 tab 一致）。只在本页所在
+    // 分区可见时拦（HBK-AUDIT-017）：切到发现 / 媒体服务器等分区后，背后保活的
+    // 多选不能吃掉返回键。
+    return SectionPopScope(
+      intercepting: _selectionMode,
+      onIntercept: _exitSelectionMode,
       child: FushiFileDropTarget(
         debugLabel: 'home-video',
         onDrop: _handleVideoDrop,

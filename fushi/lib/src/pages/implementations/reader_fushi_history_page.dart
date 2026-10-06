@@ -124,6 +124,7 @@ import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
+import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -676,12 +677,11 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // route。顶层 HomePage 的 PopScope 对它无感，返回键会直接弹掉 root route 退
     // 出 App，而不是退出选择模式。这里像查词 tab（home_dictionary_page）一样用
     // 嵌套 PopScope 拦截：选择模式开启时 canPop=false，返回先退出选择模式。
-    return PopScope(
-      canPop: !_selectionMode,
-      onPopInvokedWithResult: (bool didPop, Object? result) {
-        if (didPop) return;
-        if (_selectionMode) _exitSelectionMode();
-      },
+    // 只在书架所在分区可见时拦（HBK-AUDIT-017）：停在「发现」等视图时，背后保活
+    // 的书架多选不能吃掉返回键。
+    return SectionPopScope(
+      intercepting: _selectionMode,
+      onIntercept: _exitSelectionMode,
       child: FushiFileDropTarget(
         debugLabel: 'reader-shelf',
         onDrop: _handleShelfDrop,

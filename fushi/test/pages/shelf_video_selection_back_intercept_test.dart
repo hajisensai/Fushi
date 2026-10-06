@@ -142,7 +142,7 @@ void main() {
     expect(find.text('My Episode'), findsOneWidget);
   });
 
-  test('视频/书架 build 根都包了 PopScope 拦截多选态返回（源码守卫）', () {
+  test('视频/书架 build 根都包了 SectionPopScope 拦截多选态返回（源码守卫）', () {
     String read(String path) => File(path).readAsStringSync();
 
     final String videoSrc =
@@ -156,8 +156,9 @@ void main() {
     }.entries) {
       final int buildStart = e.value.indexOf('Widget build(BuildContext');
       expect(buildStart, isNonNegative, reason: '${e.key} 应有 build 方法');
-      // build 根第一个返回的 widget 必须是 PopScope（在 FushiFileDropTarget 外）。
-      final int popScope = e.value.indexOf('return PopScope(', buildStart);
+      // build 根第一个返回的 widget 必须是 SectionPopScope（在 FushiFileDropTarget
+      // 外）：只在所在库页分区可见时拦返回（HBK-AUDIT-017）。
+      final int popScope = e.value.indexOf('return SectionPopScope(', buildStart);
       final int dropTarget =
           e.value.indexOf('FushiFileDropTarget(', buildStart);
       expect(popScope, isNonNegative,
@@ -166,9 +167,9 @@ void main() {
           reason: '${e.key} 的 PopScope 必须包在 FushiFileDropTarget 外层');
 
       final String region = e.value.substring(popScope, dropTarget);
-      expect(region, contains('canPop: !_selectionMode'),
-          reason: '${e.key} 多选态 canPop=false，普通态不变');
-      expect(region, contains('_exitSelectionMode()'),
+      expect(region, contains('intercepting: _selectionMode'),
+          reason: '${e.key} 多选态拦返回，普通态不变');
+      expect(region, contains('onIntercept: _exitSelectionMode'),
           reason: '${e.key} 返回被拦时应退出多选态');
     }
   });

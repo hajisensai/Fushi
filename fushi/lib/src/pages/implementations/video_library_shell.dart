@@ -21,6 +21,7 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
+import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/utils.dart';
 
 /// 视频专用分区壳。
@@ -296,8 +297,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
       children: <Widget>[
         Offstage(
           offstage: !_showsLocalLibrary,
-          child: ExcludeFocus(
-            excluding: !_showsLocalLibrary,
+          child: SectionVisibilityScope(
+            visible: _showsLocalLibrary,
             child: TickerMode(
               enabled: _showsLocalLibrary,
               child: _dropScoped(
@@ -326,8 +327,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         if (_mediaServersVisited)
           Offstage(
             offstage: _section != VideoLibrarySection.mediaServers,
-            child: ExcludeFocus(
-              excluding: _section != VideoLibrarySection.mediaServers,
+            child: SectionVisibilityScope(
+              visible: _section == VideoLibrarySection.mediaServers,
               child: TickerMode(
                 enabled: _section == VideoLibrarySection.mediaServers,
                 child: _dropScoped(
@@ -366,8 +367,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         if (_sourcesVisited)
           Offstage(
             offstage: _section != VideoLibrarySection.sources,
-            child: ExcludeFocus(
-              excluding: _section != VideoLibrarySection.sources,
+            child: SectionVisibilityScope(
+              visible: _section == VideoLibrarySection.sources,
               child: TickerMode(
                 enabled: _section == VideoLibrarySection.sources,
                 child: _dropScoped(
@@ -395,8 +396,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         if (_settingsVisited)
           Offstage(
             offstage: _section != VideoLibrarySection.settings,
-            child: ExcludeFocus(
-              excluding: _section != VideoLibrarySection.settings,
+            child: SectionVisibilityScope(
+              visible: _section == VideoLibrarySection.settings,
               child: TickerMode(
                 enabled: _section == VideoLibrarySection.settings,
                 child: _dropScoped(
@@ -433,8 +434,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
     final bool active = _section == section;
     return Offstage(
       offstage: !active,
-      child: ExcludeFocus(
-        excluding: !active,
+      child: SectionVisibilityScope(
+        visible: active,
         child: TickerMode(
           enabled: active,
           child: _dropScoped(

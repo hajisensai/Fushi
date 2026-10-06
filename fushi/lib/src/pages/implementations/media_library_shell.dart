@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
+import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
 import 'package:fushi/utils.dart';
@@ -236,15 +237,20 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
                   // 照样是 true —— 隐藏的书架仍会把拖入的文件夹当漫画导入。
                   // 判据与上面 `offstage:` 用的是同一个表达式，且写成回调、在 drop
                   // 落地那一刻求值。
-                  child: DropSurfaceScope(
-                    isActive: () => i == _currentIndex,
-                    // 每个保活视图自己的主滚动控制器：共用 tab 外壳那一个会让
-                    // 多个主滚动视图附着同一控制器、Scrollbar 断言。
-                    child: SectionPrimaryScrollScope(
-                      child: _insetFor(
-                        views[i],
-                        // 页签由壳的浮动工具栏画出，视图页头的主位留空。
-                        views[i].builder(context, const SizedBox.shrink()),
+                  // 隐藏视图不参与焦点遍历与系统返回（HBK-AUDIT-017），判据同
+                  // `offstage:`。
+                  child: SectionVisibilityScope(
+                    visible: i == _currentIndex,
+                    child: DropSurfaceScope(
+                      isActive: () => i == _currentIndex,
+                      // 每个保活视图自己的主滚动控制器：共用 tab 外壳那一个会让
+                      // 多个主滚动视图附着同一控制器、Scrollbar 断言。
+                      child: SectionPrimaryScrollScope(
+                        child: _insetFor(
+                          views[i],
+                          // 页签由壳的浮动工具栏画出，视图页头的主位留空。
+                          views[i].builder(context, const SizedBox.shrink()),
+                        ),
                       ),
                     ),
                   ),
