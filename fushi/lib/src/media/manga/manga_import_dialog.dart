@@ -151,25 +151,28 @@ class _MangaImportDialogState extends State<MangaImportDialog>
 
   @override
   Widget build(BuildContext context) {
-    return FushiFileDropTarget(
-      enabled: !importing,
-      debugLabel: 'manga-import-dialog',
-      onDrop: _handleDialogDrop,
-      child: ImportDialogFrame(
-        leadingIcon: FushiIcons.books,
-        title: t.manga_import_action,
-        body: _buildForm(),
-        actions: <Widget>[
-          FushiDialogAction(
-            label: t.manga_ocr_wizard_title,
-            onPressed: importing ? null : _openOcrWizard,
-          ),
-          FushiDialogAction(
-            label: t.dialog_cancel,
-            onPressed: () => Navigator.pop(context),
-          ),
-          buildImportAction(context, onImport: _doImport),
-        ],
+    // 导入进行中禁止返回键 / 点遮罩 / Esc 关闭（HBK-AUDIT-037，见 buildImportPopGuard）。
+    return buildImportPopGuard(
+      child: FushiFileDropTarget(
+        enabled: !importing,
+        debugLabel: 'manga-import-dialog',
+        onDrop: _handleDialogDrop,
+        child: ImportDialogFrame(
+          leadingIcon: FushiIcons.books,
+          title: t.manga_import_action,
+          body: _buildForm(),
+          actions: <Widget>[
+            FushiDialogAction(
+              label: t.manga_ocr_wizard_title,
+              onPressed: importing ? null : _openOcrWizard,
+            ),
+            FushiDialogAction(
+              label: t.dialog_cancel,
+              onPressed: importing ? null : () => Navigator.pop(context),
+            ),
+            buildImportAction(context, onImport: _doImport),
+          ],
+        ),
       ),
     );
   }
