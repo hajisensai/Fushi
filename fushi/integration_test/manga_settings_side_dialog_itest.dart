@@ -121,15 +121,33 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
     }
 
-    // 「全部设置」「回到开头」在顶栏「更多」（⋯）菜单里：先开菜单，再焦点到项上
-    // 确认（2026-10 M3E 悬浮工具栏改版）。
+    // 「全部设置」「回到开头」在右上角动作胶囊：默认平铺（直接焦点到按钮上确认），
+    // 窗口窄到放不下时才收进「⋯」（先开菜单，再焦点到项上确认）——用户
+    // 2026-10-06「默认展开，空间不足才收起」。
     Future<void> activateMenuItem(String key) async {
+      if (find.byKey(ValueKey<String>(key)).evaluate().isNotEmpty) {
+        await activateKey(key);
+        return;
+      }
       await activateKey('manga_chrome_overflow');
       await tester.pump(const Duration(milliseconds: 400));
       await activateKey('${key}_menu_item');
     }
 
     Future<void> expectStartIcon(IconData icon) async {
+      if (find
+          .byKey(const ValueKey<String>('manga_reader_start_button'))
+          .evaluate()
+          .isNotEmpty) {
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('manga_reader_start_button')),
+            matching: find.byIcon(icon),
+          ),
+          findsOneWidget,
+        );
+        return;
+      }
       await activateKey('manga_chrome_overflow');
       await tester.pump(const Duration(milliseconds: 400));
       expect(

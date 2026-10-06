@@ -5977,7 +5977,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           : t.manga_reader_page_grid,
       status: ready ? _buildChromeStatus() : null,
       actions: plan.top,
-      overflow: plan.overflow,
     );
   }
 
@@ -6011,7 +6010,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       ),
       toolbar: MangaReaderToolbar(
         groups: plan.toolbar,
-        labels: plan.labels,
         // FAB = 本页主操作：识别框开关（查词的入口）。开 = 圆角方、关 = 圆，按
         // M3E 弹簧形状变形；与快捷键 / 悬浮球同一执行体。
         fab: KeyedSubtree(
@@ -6148,14 +6146,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
   }
 
-  /// chrome 全部动作，按组声明（组 = 底部工具栏里的按钮组），每颗带
-  /// [MangaChromeSlot]：
+  /// chrome 全部动作，按组声明（组只是声明顺序；纯图标底栏摊平成一排），每颗带
+  /// [MangaChromeSlot] 与 priority（越大越晚收起）：
   ///
-  ///  * 底部工具栏（高频，拇指区）：导航组（章节目录 / 页面一览）│ 视图组（阅读
-  ///    模式 / 单双页 / 翻页方向）│ 快捷设置；窄屏放不下时按 priority 从低到高降进
-  ///    「更多」（快捷设置最后降，翻页方向最先降）；
-  ///  * 顶部胶囊（状态型）：整卷 OCR 取消（运行中才有）、窗口全屏（桌面）；
-  ///  * 「更多」：回到开头、识别本卷 / 重新识别、全部设置、隐藏界面。
+  ///  * 底部纯图标工具栏（高频，拇指区）：章节目录 8 / 页面一览 4 / 阅读模式 6 /
+  ///    单双页 3 / 翻页方向 2 / 快捷设置 10；窄屏放不下时按 priority 从低到高降到
+  ///    右上角（快捷设置最后降，翻页方向最先降）；
+  ///  * 右上角动作胶囊（默认全部平铺，放不下才按 priority 从低到高收进「⋯」）：
+  ///    整卷 OCR 取消 9（运行中才有）、窗口全屏 7（桌面）、全部设置 5、识别本卷 4
+  ///    （手动触发时）、回到开头 1、重新识别 1、隐藏界面 0（有快捷键 M / 手柄 Y）。
   ///
   /// 识别框开关是底部 FAB（[_buildBottomChrome]），不在这张表里。
   List<List<MangaChromeAction>> _chromeActionGroups() {
@@ -6238,6 +6237,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             icon: Icons.stop_circle_outlined,
             label: t.dialog_cancel,
             slot: MangaChromeSlot.top,
+            priority: 9,
             onPressed: _cancelWholeVolumeOcr,
           ),
         if (desktopWindowFullscreenSupported)
@@ -6248,6 +6248,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 : Icons.fullscreen_rounded,
             label: t.shortcut_action_global_toggle_fullscreen,
             slot: MangaChromeSlot.top,
+            priority: 7,
             // The method itself serializes native transitions. Keeping the
             // button enabled avoids rebuilding it as permanently disabled
             // when the final state update occurs before the transition's
@@ -6262,7 +6263,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                     ? Icons.last_page
                     : Icons.first_page),
           label: t.manga_reader_back_to_start,
-          slot: MangaChromeSlot.more,
+          slot: MangaChromeSlot.top,
+          priority: 1,
           onPressed: () => unawaited(_jumpToPage(1)),
         ),
         // 默认进入即整卷识别；只有触发方式设成「手动」时才给这个入口。
@@ -6271,7 +6273,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             key: const ValueKey<String>('manga_reader_ocr_volume_button'),
             icon: Icons.document_scanner_outlined,
             label: t.manga_reader_ocr_volume,
-            slot: MangaChromeSlot.more,
+            slot: MangaChromeSlot.top,
+            priority: 4,
             onPressed: () =>
                 unawaited(_maybeStartVolumeOcr(userInitiated: true)),
           ),
@@ -6280,14 +6283,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             key: const ValueKey<String>('manga_reader_ocr_rerun_button'),
             icon: Icons.document_scanner_outlined,
             label: t.manga_reader_ocr_rerun,
-            slot: MangaChromeSlot.more,
+            slot: MangaChromeSlot.top,
+            priority: 1,
             onPressed: () => unawaited(_rerunVolumeOcr()),
           ),
         MangaChromeAction(
           key: const ValueKey<String>('manga_reader_settings_button'),
           icon: Icons.settings_outlined,
           label: t.manga_reader_settings,
-          slot: MangaChromeSlot.more,
+          slot: MangaChromeSlot.top,
+          priority: 5,
           onPressed: () => unawaited(_showReaderSettings()),
         ),
         // BUG-1888：隐藏界面。与快捷键（默认 M / 手柄 Y）同一个执行体。
@@ -6295,7 +6300,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           key: const ValueKey<String>('manga_chrome_hide_button'),
           icon: Icons.visibility_off_outlined,
           label: t.manga_interface_hide,
-          slot: MangaChromeSlot.more,
+          slot: MangaChromeSlot.top,
           onPressed: _toggleMangaChrome,
         ),
       ],
