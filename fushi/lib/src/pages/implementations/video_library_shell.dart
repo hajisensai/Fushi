@@ -334,8 +334,9 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                 enabled: _section == VideoLibrarySection.mediaServers,
                 child: _dropScoped(
                   () => _section == VideoLibrarySection.mediaServers,
-                  FushiFloatingChromeInsetPadding(
-                  child: widget.mediaServerPageBuilder?.call(
+                  // 媒体服务器页头自己叠进浮动工具区、正文自己让位
+                  // （[MediaServerPageFrame]），不再整体下移。
+                  widget.mediaServerPageBuilder?.call(
                         context,
                         _navigationFor(
                           _section == VideoLibrarySection.mediaServers,
@@ -353,7 +354,6 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                         loadServers: widget.mediaServerServersLoader ??
                             () async => const <MediaServerEntry>[],
                       ),
-                  ),
                 ),
               ),
             ),
