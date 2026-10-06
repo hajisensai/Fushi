@@ -1,9 +1,10 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-// The Dart test writes the generated card-back player to a temp file and passes
-// its path. Executing that generated code is this harness's whole purpose.
-const script = fs.readFileSync(process.argv[2], 'utf8');
+// The Dart test pipes the generated card-back player in on stdin; no path or
+// code ever arrives through argv. Executing that generated code is this
+// harness's whole purpose.
+const script = fs.readFileSync(0, 'utf8');
 
 function required(value, message) {
   if (value == null) throw new assert.AssertionError({message});

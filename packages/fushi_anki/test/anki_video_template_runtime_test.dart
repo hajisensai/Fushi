@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -26,17 +27,15 @@ void main() {
         File('test/fixtures/video_adapter_runtime.cjs'),
         File('../packages/fushi_anki/test/fixtures/video_adapter_runtime.cjs'),
       ].firstWhere((File file) => file.existsSync());
-      final Directory temp = await Directory.systemTemp.createTemp(
-        'fushi_video_player_',
-      );
-      addTearDown(() => temp.delete(recursive: true));
-      final File scriptFile = File('${temp.path}/player.js')
-        ..writeAsStringSync(script);
-      final ProcessResult result = await Process.run('node', <String>[
+      final Process node = await Process.start('node', <String>[
         fixture.absolute.path,
-        scriptFile.path,
       ]);
-      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      final Future<String> stdout = node.stdout.transform(utf8.decoder).join();
+      final Future<String> stderr = node.stderr.transform(utf8.decoder).join();
+      node.stdin.add(utf8.encode(script));
+      await node.stdin.close();
+      final int exitCode = await node.exitCode;
+      expect(exitCode, 0, reason: '${await stdout}\n${await stderr}');
     },
   );
 }
