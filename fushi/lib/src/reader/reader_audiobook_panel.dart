@@ -143,12 +143,12 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
   /// 页签切换方向（shared-axis X 的进出方向）：true = 往右边的页签走。
   bool _tabForward = true;
 
-  /// 章节列表的滚动（当前章自动滚进视野）。
-  final ScrollController _chaptersScroll = ScrollController();
-  final GlobalKey _currentChapterKey = GlobalKey();
-
-  /// 上次自动滚到的章（-1 = 还没滚过）；当前章变了 / 页签重进才再滚。
-  int _scrolledEntry = -1;
+  /// 页签每切一次 +1：AnimatedSwitcher 里同时存活的进/出子树各有独立身份。
+  /// 「章节→设置→章节」快速反切时，退出中的章节页与新进的章节页曾共用同一个
+  /// tab key、同一个 GlobalKey 和 ScrollController → Duplicate GlobalKey
+  /// （HBK045）。现在每次进入都是新的 [_AudiobookChapterList] 实例，滚动与当前
+  /// 章 key 都归实例自己持有。
+  int _tabSerial = 0;
 
   /// 侧板路由的进场动画是否已落定。错峰进场在它落定之后才开窗：之前进场窗口从
   /// 面板挂载起算（600ms），恰好和侧板自己的滑入（约 300–400ms）重叠，各卡的
@@ -184,8 +184,8 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
     if (mounted && !_routeSettled) {
       setState(() {
         _routeSettled = true;
-        // 内容重挂载（进场窗口此刻才开），当前章要重新滚进视野。
-        _scrolledEntry = -1;
+        // 内容重挂载（进场窗口此刻才开）：章节列表是新实例，会重新把当前章
+        // 滚进视野。
       });
     }
   }
@@ -194,38 +194,7 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
   void dispose() {
     _ticker?.cancel();
     _routeAnimation?.removeStatusListener(_onRouteStatus);
-    _chaptersScroll.dispose();
     super.dispose();
-  }
-
-  /// 当前章行滚进视野（偏上 1/3）。行还没被懒构建出来时先按行高估一个位置跳过去，
-  /// 下一帧行在了再精确对齐。
-  void _revealCurrentChapter(int leadCount, int entry, {bool retry = true}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final BuildContext? row = _currentChapterKey.currentContext;
-      final Duration d = fushiMotionDuration(context, FushiMotion.medium);
-      if (row != null) {
-        unawaited(
-          Scrollable.ensureVisible(
-            row,
-            alignment: 0.3,
-            duration: d,
-            curve: FushiMotion.standard,
-          ),
-        );
-        return;
-      }
-      if (!retry || !_chaptersScroll.hasClients) return;
-      final ScrollPosition pos = _chaptersScroll.position;
-      final double estimate =
-          (leadCount * 120 + entry * readerPanelRowMinHeight(context))
-              .toDouble();
-      _chaptersScroll.jumpTo(
-        estimate.clamp(pos.minScrollExtent, pos.maxScrollExtent),
-      );
-      _revealCurrentChapter(leadCount, entry, retry: false);
-    });
   }
 
   static String _formatDuration(Duration d) => FushiTimeFormat.clockPadded(d);
@@ -299,13 +268,13 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
             onChanged: (String id) => setState(() {
               _tabForward = kReaderAudiobookPanelTabs.indexOf(id) >=
                   kReaderAudiobookPanelTabs.indexOf(_tab);
+              if (id != _tab) _tabSerial++;
               _tab = id;
-              _scrolledEntry = -1;
             }),
           )),
     ];
     final ValueKey<String> tabKey =
-        ValueKey<String>('fushi_audiobook_tab_$_tab');
+        ValueKey<String>('fushi_audiobook_tab_${_tab}_$_tabSerial');
     // M3E shared-axis X：新页签从前进方向滑入淡入，旧页签朝反方向滑出淡出。
     // 每个页签内容自带一个进场窗口（新挂载的 scope），切过去也有一轮错峰进场——
     // 之前整块共用面板挂载时的那一个窗口，切页签时窗口早已关了，行瞬间出现。
@@ -1020,49 +989,132 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
           ),
         ),
     ];
-    if (currentEntry >= 0 && currentEntry != _scrolledEntry) {
-      _scrolledEntry = currentEntry;
-      _revealCurrentChapter(lead.length, currentEntry);
-    }
-    return ListView.builder(
-      key: const ValueKey<String>('fushi_audiobook_chapters'),
-      controller: _chaptersScroll,
-      itemCount: lead.length + widget.toc.length,
-      itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int index) {
-        if (index < lead.length) return lead[index];
-        final int i = index - lead.length;
-        final TtuTocEntry entry = widget.toc[i];
-        final int? startMs = starts[i];
-        final int? dms = durationFor(i);
-        final String? subtitle = <String>[
-          if (i == currentEntry) t.reader_audiobook_current_chapter,
-          if (dms != null) _formatDuration(Duration(milliseconds: dms)),
-        ].join(' · ').let((String s) => s.isEmpty ? null : s);
-        return ReaderPanelListItem(
-          key: i == currentEntry ? _currentChapterKey : null,
-          title: entry.label,
-          subtitle: subtitle,
-          current: i == currentEntry,
-          trailing: Text(
-            startMs == null
-                ? '—'
-                : _formatDuration(Duration(milliseconds: startMs)),
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+    return _AudiobookChapterList(
+      currentEntry: currentEntry,
+      leadCount: lead.length,
+      builder: (BuildContext context, ScrollController scroll,
+              GlobalKey currentRowKey) =>
+          ListView.builder(
+        key: const ValueKey<String>('fushi_audiobook_chapters'),
+        controller: scroll,
+        itemCount: lead.length + widget.toc.length,
+        itemBuilder:
+            fushiStaggeredItemBuilder((BuildContext context, int index) {
+          if (index < lead.length) return lead[index];
+          final int i = index - lead.length;
+          final TtuTocEntry entry = widget.toc[i];
+          final int? startMs = starts[i];
+          final int? dms = durationFor(i);
+          final String? subtitle = <String>[
+            if (i == currentEntry) t.reader_audiobook_current_chapter,
+            if (dms != null) _formatDuration(Duration(milliseconds: dms)),
+          ].join(' · ').let((String s) => s.isEmpty ? null : s);
+          return ReaderPanelListItem(
+            key: i == currentEntry ? currentRowKey : null,
+            title: entry.label,
+            subtitle: subtitle,
+            current: i == currentEntry,
+            trailing: Text(
+              startMs == null
+                  ? '—'
+                  : _formatDuration(Duration(milliseconds: startMs)),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+              ),
             ),
-          ),
-          onTap: () async {
-            Navigator.of(context).pop();
-            await widget.onJumpSection(entry.index, entry.fragment);
-            final AudioCue? first =
-                ctrl == null ? null : _entryStartCue(ctrl, i);
-            if (ctrl != null && first != null) {
-              await ctrl.skipToCue(first);
-            }
-          },
-        );
-      }),
+            onTap: () async {
+              Navigator.of(context).pop();
+              await widget.onJumpSection(entry.index, entry.fragment);
+              final AudioCue? first =
+                  ctrl == null ? null : _entryStartCue(ctrl, i);
+              if (ctrl != null && first != null) {
+                await ctrl.skipToCue(first);
+              }
+            },
+          );
+        }),
+      ),
     );
+  }
+}
+
+/// 章节页的列表：自己持有滚动控制器与当前章行的 GlobalKey，并负责把当前章滚进
+/// 视野（偏上 1/3）。每个挂载实例独立，页签切换动画里新旧两份同时存活也不会
+/// 共享 GlobalKey / ScrollController（HBK045）。
+class _AudiobookChapterList extends StatefulWidget {
+  const _AudiobookChapterList({
+    required this.currentEntry,
+    required this.leadCount,
+    required this.builder,
+  });
+
+  /// 当前章在目录里的下标（-1 = 无）。
+  final int currentEntry;
+
+  /// 目录行之前的非目录项个数（概览卡等）。
+  final int leadCount;
+
+  final Widget Function(
+    BuildContext context,
+    ScrollController scroll,
+    GlobalKey currentRowKey,
+  ) builder;
+
+  @override
+  State<_AudiobookChapterList> createState() => _AudiobookChapterListState();
+}
+
+class _AudiobookChapterListState extends State<_AudiobookChapterList> {
+  final ScrollController _scroll = ScrollController();
+  final GlobalKey _currentRowKey = GlobalKey();
+
+  /// 上次自动滚到的章（-1 = 还没滚过）；当前章变了才再滚（页签重进 = 新实例）。
+  int _scrolledEntry = -1;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// 当前章行滚进视野（偏上 1/3）。行还没被懒构建出来时先按行高估一个位置跳过去，
+  /// 下一帧行在了再精确对齐。
+  void _revealCurrentChapter(int entry, {bool retry = true}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final BuildContext? row = _currentRowKey.currentContext;
+      final Duration d = fushiMotionDuration(context, FushiMotion.medium);
+      if (row != null) {
+        unawaited(
+          Scrollable.ensureVisible(
+            row,
+            alignment: 0.3,
+            duration: d,
+            curve: FushiMotion.standard,
+          ),
+        );
+        return;
+      }
+      if (!retry || !_scroll.hasClients) return;
+      final ScrollPosition pos = _scroll.position;
+      final double estimate =
+          (widget.leadCount * 120 + entry * readerPanelRowMinHeight(context))
+              .toDouble();
+      _scroll.jumpTo(
+        estimate.clamp(pos.minScrollExtent, pos.maxScrollExtent),
+      );
+      _revealCurrentChapter(entry, retry: false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final int entry = widget.currentEntry;
+    if (entry >= 0 && entry != _scrolledEntry) {
+      _scrolledEntry = entry;
+      _revealCurrentChapter(entry);
+    }
+    return widget.builder(context, _scroll, _currentRowKey);
   }
 }
 
