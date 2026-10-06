@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2770 条。点号进各自文件。
+> 共 2771 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3032](bugs/BUG-3032-control-layout-chip-overflow.md) | ✅ | ✅ | 阅读器按钮布局编辑器长文案胶囊撑破窄槽 |
 | [BUG-3025](bugs/BUG-3025-manga-settings-zero-duration-animated-size.md) | ✅ | ✅ | 漫画阅读设置面板减弱动效下切换作用域断言 RenderAnimatedSize |
 | [BUG-3023](bugs/BUG-3023-audio-missing-notice-squeezed.md) | ✅ | ✅ | 音频来源弹窗：丢失文件提示把说明挤成一列字、重新选择按钮被推出视口 |
 | [BUG-3022](bugs/BUG-3022-ocr-settings-zero-duration-animated-size.md) | ✅ | ✅ | 漫画 OCR 设置在减弱动态效果下 AnimatedSize 零时长断言 |
