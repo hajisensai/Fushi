@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3055](bugs/BUG-3055-glass-menu-over-webview.md) | ✅ | ✅ | 有声书歌词模式「⋯」菜单玻璃背景压在 WebView 上成灰块与白斑 |
 | [BUG-3051](bugs/BUG-3051-collection-menu-binding.md) | ✅ | ✅ | 合集详情非拖排网格和列表右键菜单绕过快捷键绑定 |
 | [BUG-3044](bugs/BUG-3044-video-cover-black-frame.md) | ✅ | ✅ | 视频自动抽帧封面落在黑场，首页「继续」卡显示纯黑块 |
 | [BUG-3042](bugs/BUG-3042-library-blur-scroll-jank.md) | ✅ | ✅ | 游戏库/视频库滚动掉帧：卡片封面背景渲染期实时模糊 |
@@ -102,7 +103,6 @@
 | [BUG-2964](bugs/BUG-2964-hdr-passthrough-top-line.md) | ✅ | ✅ | HDR 直通全屏顶部一条主题色横线 + 底色叠加到视频上 |
 | [BUG-2963](bugs/BUG-2963-ai-acquire-anime-movie-category-movie.md) | ✅ | ✅ | 全部哆啦A梦剧场版被解析成category=movie，作品搜索只剩TMDB直接失败 |
 | [BUG-2962](bugs/BUG-2962-mal-unreachable-every-request-full-retries.md) | ✅ | ✅ | Jikan停摆时每条MAL请求都吃满3次超时，整套下载核对卡一两个小时 |
-| [BUG-2961](bugs/BUG-2961-glass-menu-over-webview.md) | ✅ | ✅ | 有声书歌词模式「⋯」菜单玻璃背景压在 WebView 上成灰块与白斑 |
 | [BUG-2961](bugs/BUG-2961-audiobook-background-desync-and-stall.md) | ✅ | ✅ | 后台挂有声书：切回来高亮/视口与音频不同步，挂久了音频断掉且点不起来 |
 | [BUG-2960](bugs/BUG-2960-franchise-web-fallback-anchor-title.md) | ✅ | ✅ | 整套下载资料源不可用时联网补全拿单部剧场版标题搜维基列不出系列 |
 | [BUG-2959](bugs/BUG-2959-server-port-conflict-masked.md) | ✅ | ✅ | 服务端端口被占时只报drift Bad state No element |

@@ -80,7 +80,7 @@ LiquidGlassSettings _overlayGlassSettings(
   Color? tint,
 }) {
   // 浮层可能压在 WebView / 原生视图上（歌词模式的「⋯」菜单），采不到背景处
-  // 用实色兜底（BUG-2961，见 [fushiGlassPlatformViewFallback]）。
+  // 用实色兜底（BUG-3055，见 [fushiGlassPlatformViewFallback]）。
   final LiquidGlassSettings base = fushiGlassSettings(context, tint: tint)
       .copyWith(
         platformViewFallbackColor: fushiGlassPlatformViewFallback(context),

@@ -458,7 +458,7 @@ void main() {
       expect(await result, 8);
     });
 
-    // BUG-2961：菜单压在 WebView（Android Hybrid Composition）/ 原生视图上时，
+    // BUG-3055：菜单压在 WebView（Android Hybrid Composition）/ 原生视图上时，
     // 着色器采到空纹理；玻璃面板必须带实色兜底，否则按透明黑合成成灰块白斑。
     for (final Brightness brightness in Brightness.values) {
       testWidgets(

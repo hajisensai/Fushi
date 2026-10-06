@@ -203,7 +203,7 @@ LiquidGlassSettings fushiGlassSettingsOverPlatformView(
 /// 不知道自己会压在什么上面的浮层（菜单、对话框、底部面板）一律带上：Android
 /// 的 WebView 走 Hybrid Composition（见 [fushiPopupBackdropSampleable]），压在
 /// 它上面的 Flutter 层落在独立 overlay surface 里，着色器采到的是空纹理——不带
-/// 兜底就按透明黑合成，玻璃填充叠上去是一块灰矩形、高光是一团白斑（BUG-2961：
+/// 兜底就按透明黑合成，玻璃填充叠上去是一块灰矩形、高光是一团白斑（BUG-3055：
 /// 有声书歌词模式「⋯」菜单）。iOS / macOS 的原生视图同理。
 Color fushiGlassPlatformViewFallback(BuildContext context) {
   final bool dark = Theme.of(context).colorScheme.brightness == Brightness.dark;
