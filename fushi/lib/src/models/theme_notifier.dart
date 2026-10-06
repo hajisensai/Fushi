@@ -424,6 +424,37 @@ SurfaceRoles deriveSurfaceRolesFrom(Color surface) {
   );
 }
 
+/// 自定义主题条目 [entry] 的配色——活跃主题、设置色卡与编辑草稿预览的**唯一**
+/// 解析链（BUG-2988）。系统取色 / 纯黑 / 墨水屏这三样全局状态显式传入，
+/// 调用方（[ThemeNotifier.buildCustomThemeColorScheme]、`AppModel` 的同名门面）
+/// 各自取自己那份真值，算法只有这一份。
+ColorScheme buildCustomThemeEntryColorScheme(
+  CustomThemeEntry entry,
+  Brightness brightness, {
+  required bool einkMode,
+  required bool pureBlack,
+  required Color? systemPrimaryColor,
+}) {
+  if (einkMode) return buildEinkColorScheme(brightness);
+  Color? role(int? value) => value == null ? null : Color(value);
+  // 开了「跟随系统取色」且系统真有色时用系统色。
+  final Color? systemAccent =
+      entry.followSystemAccent ? systemPrimaryColor : null;
+  return buildFushiColorScheme(
+    seedColor: systemAccent ?? Color(entry.seed),
+    brightness: brightness,
+    primary: entry.primaryColor == null
+        ? null
+        : (systemAccent ?? Color(entry.primaryColor!)),
+    secondary: role(entry.secondaryColor),
+    tertiary: role(entry.tertiaryColor),
+    primaryContainer: role(entry.containerColor),
+    surface: role(entry.surfaceColor),
+    neutralDerived: entry.neutralDerived,
+    pureBlack: pureBlack,
+  );
+}
+
 /// E-ink mode (墨水屏模式): a pure black-and-white [ColorScheme] built by hand
 /// instead of `fromSeed` (any seed would leak hue into the neutral palette).
 /// Light = black text on white; dark = white text on black. Every surface
@@ -1550,24 +1581,14 @@ class ThemeNotifier extends ChangeNotifier {
   ColorScheme buildCustomThemeColorScheme(
     CustomThemeEntry entry,
     Brightness brightness,
-  ) {
-    if (einkMode) return buildEinkColorScheme(brightness);
-    Color? role(int? value) => value == null ? null : Color(value);
-    final Color? systemAccent = _followedSystemAccent(entry);
-    return buildFushiColorScheme(
-      seedColor: systemAccent ?? Color(entry.seed),
-      brightness: brightness,
-      primary: entry.primaryColor == null
-          ? null
-          : (systemAccent ?? Color(entry.primaryColor!)),
-      secondary: role(entry.secondaryColor),
-      tertiary: role(entry.tertiaryColor),
-      primaryContainer: role(entry.containerColor),
-      surface: role(entry.surfaceColor),
-      neutralDerived: entry.neutralDerived,
-      pureBlack: pureBlackDark,
-    );
-  }
+  ) =>
+      buildCustomThemeEntryColorScheme(
+        entry,
+        brightness,
+        einkMode: einkMode,
+        pureBlack: pureBlackDark,
+        systemPrimaryColor: systemPrimaryColor,
+      );
 
   /// 当前生效自定义主题是否要求派生色中性灰。
   bool get activeCustomThemeNeutralDerived {

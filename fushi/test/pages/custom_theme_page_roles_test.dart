@@ -98,6 +98,10 @@ class _RecordingAppModel extends AppModel {
   @override
   bool get einkMode => false;
 
+  // 4c32e76e6e4：编辑页把「纯黑深色背景」开关计入配色缓存键。
+  @override
+  bool get pureBlackDark => false;
+
   @override
   Color? get systemPrimaryColor => const Color(0xFF1F4959);
 }

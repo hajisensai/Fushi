@@ -280,7 +280,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   }
 
   ColorScheme _buildSchemeFor(Brightness brightness) {
-    return appModelNoUpdate.themeNotifier.buildCustomThemeColorScheme(
+    return appModelNoUpdate.buildCustomThemeColorScheme(
       _buildEntry(),
       brightness,
     );

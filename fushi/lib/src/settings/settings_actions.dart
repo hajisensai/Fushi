@@ -374,7 +374,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
             return FushiThemePresetCard(
               key: ValueKey<String>('theme-preset-$key'),
               seed: seed,
-              scheme: appModel.themeNotifier.buildCustomThemeColorScheme(
+              scheme: appModel.buildCustomThemeColorScheme(
                 e,
                 brightness,
               ),
