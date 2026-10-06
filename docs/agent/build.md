@@ -30,9 +30,9 @@ bundle 布局：`build/linux/x64/<mode>/bundle/{fushi, lib/, data/, mihon_bridge
 
 **单实例**：runner 以 `G_APPLICATION_HANDLES_COMMAND_LINE` 注册到会话 D-Bus（id `app.fushi.reader`），第二次启动（文件关联 / `fushi://` 深链 / 终端 `fushi <路径>`）把第一条非 flag 参数经 `app.fushi/external_video` 交给已开着的实例并前置窗口（`linux/runner/my_application.cc` + `external_open_handoff.cc`）；`--fushi-restarted` 先等旧实例让出名字；设了 `FUSHI_TEST_HIDDEN` / `FUSHI_TEST_ROOT` 的测试实例不参与单实例；没有会话总线时 GLib 自动退化成多实例。系统关联本身靠打包时装的 `.desktop`（`Exec=fushi %u` + `MimeType=x-scheme-handler/fushi;…`），本仓不随带。
 
-构建依赖（Debian trixie 一条龙）：`clang cmake ninja-build make pkg-config g++`（≥ 14，fushidicts 要 `std::expected`）、`libgtk-3-dev liblzma-dev libmpv-dev libsecret-1-dev libkeybinder-3.0-dev`，要 WebView 再加 `libwpewebkit-2.0-dev libwpebackend-fdo-1.0-dev libwpe-1.0-dev libepoxy-dev libwayland-dev`。Flutter 3.44 用 `CC=clang` 调 CMake，而 Debian 的 clang 配 libstdc++ 时 `std::expected` 不一定可用：在 PATH 前面放两个垫片脚本把 `clang` / `clang++` 指到 `gcc` / `g++`（≥ 14）再 `flutter build linux`。Mihon 运行时：`tool/mihon/build_desktop_runtime.sh bundle/mihon_bridge` 在 Linux 上出宿主架构的 `runtime/` + JAR。
+构建依赖（Debian trixie 一条龙）：`clang cmake ninja-build make pkg-config g++`（≥ 14，fushidicts 要 `std::expected`）、`libgtk-3-dev liblzma-dev libmpv-dev libsecret-1-dev libkeybinder-3.0-dev`，要 WebView 再加 `libwpewebkit-2.0-dev libwpebackend-fdo-1.0-dev libwpe-1.0-dev libepoxy-dev libwayland-dev`。Flutter（3.47.6）用 `CC=clang` 调 CMake，而 Debian 的 clang 配 libstdc++ 时 `std::expected` 不一定可用：在 PATH 前面放两个垫片脚本把 `clang` / `clang++` 指到 `gcc` / `g++`（≥ 14）再 `flutter build linux`。Mihon 运行时：`tool/mihon/build_desktop_runtime.sh bundle/mihon_bridge` 在 Linux 上出宿主架构的 `runtime/` + JAR。
 
-本机没有 Linux：用 Docker Desktop（`debian:trixie` + 拷进 `/opt/flutter` 的 3.44 SDK）构建；源码以 `git ls-files -co --exclude-standard` 打包进 docker 卷再编，别直接 bind mount 工作区（`.dart_tool/package_config.json` 会被写成 Linux 路径）。跑 app / 集成测试用 `Xvfb :99` + `dbus-run-session`；容器里没有 user namespace，WebView 相关测试要设 `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1`（**只限容器测试**）。
+本机没有 Linux：用 Docker Desktop（`debian:trixie` + 拷进 `/opt/flutter` 的 3.47.6 SDK）构建；源码以 `git ls-files -co --exclude-standard` 打包进 docker 卷再编，别直接 bind mount 工作区（`.dart_tool/package_config.json` 会被写成 Linux 路径）。跑 app / 集成测试用 `Xvfb :99` + `dbus-run-session`；容器里没有 user namespace，WebView 相关测试要设 `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1`（**只限容器测试**）。
 
 ## Melos
 
