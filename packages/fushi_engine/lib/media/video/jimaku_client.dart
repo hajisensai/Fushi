@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 
+import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
@@ -116,6 +117,11 @@ class JimakuFile {
   /// 是否可解析成 cue 的文本字幕（srt/ass/ssa/vtt）。
   bool get isTextSubtitle =>
       const <String>{'srt', 'ass', 'ssa', 'vtt'}.contains(extension);
+
+  /// 整季压缩包（zip / rar / 7z）的格式；不是压缩包为 null。Jimaku 上大量老番只有
+  /// 整季包，过去被 [isTextSubtitle] 一刀滤掉，搜索结果就是「找不到字幕」。
+  SubtitleArchiveFormat? get archiveFormat =>
+      subtitleArchiveFormatForName(name);
 
   /// 从文件名启发式解析出的集号（`第01話`/`E01`/`- 12`/`S01E02` 等）；认不出为 null。
   /// 用于把「集数乱序」的候选按集号升序排列（见 [sortJimakuFilesByEpisode]）。

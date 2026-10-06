@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart'
     show FushiListItem, FushiListItemSelectedShape;
 
@@ -49,7 +50,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('词典查词'), findsOneWidget);
-    expect(find.byIcon(Icons.check_circle), findsOneWidget);
+    expect(
+      find.byIcon(FushiIcons.filled(FushiIcons.success)),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('词典查词'));
     expect(toggled, isTrue);
@@ -71,8 +75,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byIcon(Icons.radio_button_unchecked), findsOneWidget);
-    expect(find.byIcon(Icons.check_circle), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('onboarding_feature_unchecked')),
+      findsOneWidget,
+    );
+    expect(
+      find.byIcon(FushiIcons.filled(FushiIcons.success)),
+      findsNothing,
+    );
   });
 
   testWidgets('OnboardingFeatureTile keeps equal height under loose bounds', (
@@ -254,11 +264,11 @@ void main() {
         (tester.widget<AnimatedContainer>(segments.at(index)).decoration!
                 as BoxDecoration)
             .color!;
-    // 0..current 用主色，之后用轮廓色。
+    // 0..current 用主色，之后用 M3E 轨道色（secondaryContainer）。
     expect(segmentColor(0), colors.primary);
     expect(segmentColor(2), colors.primary);
-    expect(segmentColor(3), colors.outlineVariant);
-    expect(segmentColor(6), colors.outlineVariant);
+    expect(segmentColor(3), colors.secondaryContainer);
+    expect(segmentColor(6), colors.secondaryContainer);
   });
 
   testWidgets('OnboardingStepView renders title, body and actions', (

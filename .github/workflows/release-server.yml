@@ -174,7 +174,7 @@ jobs:
           ref: ${{ inputs.source_ref }}
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: '3.47.6'
           cache: true
       - name: Install build tools
         run: |
@@ -390,7 +390,7 @@ jobs:
           ref: ${{ inputs.source_ref }}
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: '3.47.6'
           cache: true
       - name: Pub get (workspace)
         working-directory: fushi

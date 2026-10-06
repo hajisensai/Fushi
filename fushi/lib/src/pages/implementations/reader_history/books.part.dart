@@ -238,16 +238,9 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         icon: Icons.drive_file_rename_outline,
         onPressed: () => _renameBook(dialogContext, item),
       ),
-      // 合集详情页成员卡：给可聚焦长按对话框补「移出合集」（键盘/手柄移出入口）。
-      if (removeFromCollection != null)
-        DialogListAction(
-          label: t.collection_remove_member,
-          icon: Icons.remove_circle_outline,
-          onPressed: () {
-            Navigator.pop(dialogContext);
-            removeFromCollection();
-          },
-        ),
+      // 合集详情页成员卡：补「移出合集」（网格右键 / 长按与键盘/手柄长按 A 都走这
+      // 一个菜单，BUG-2969）。
+      ..._removeFromCollectionActions(dialogContext, removeFromCollection),
       // 单卡「加入合集」：与 EPUB 卡菜单对称，纯字幕书（bookKey 为空）也可加入；
       // entryKey 编码与 shelfSelectionToEntry 对 'srt_<uid>' 选择键的解码一致（= uid）。
       // 合集详情页成员卡语境（已注入「移出合集」）不显示——同一条目在详情页语境下
@@ -496,8 +489,9 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           tooltip: t.combine_into_series,
         ),
         FushiIconButton(
-          // 打标签只作用于散卡媒体（合集无直接标签），故按本地散卡选中集可用态。
-          enabled: localKeys.isNotEmpty,
+          // 散卡与合集都能打标签（合集在选择器里二选一：合集本身 / 合集内全部条目）。
+          key: const ValueKey<String>('reader_shelf_batch_tag'),
+          enabled: hasLocalSelection,
           onTap: _batchShowTagPicker,
           icon: Icons.sell_outlined,
           tooltip: t.tag_label,
@@ -922,21 +916,26 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // 幽灵键会让 bookTags 外键插入抛异常，弹窗把落库 await 在 loading 态里，
     // 一抛就永远转圈（卡死）。必须在开弹窗前剔干净。
     if (!await _pruneStaleSelection() || !mounted) return;
-    final allTags = ref.read(allTagsProvider).valueOrNull;
-    if (allTags == null || allTags.isEmpty) {
-      FushiToast.show(msg: t.tag_no_tags_hint, severity: ToastSeverity.info);
-      return;
-    }
-    await showAppDialog<void>(
-      context: context,
-      builder: (_) => _BatchTagPickerDialog(
-        allTags: allTags,
-        selectedKeys: _selectedLocalKeys,
-        database: appModel.database,
-        parseBookKey: _parseBookKey,
-      ),
+    // 共享标签选择器（搜索 / 一键新建 / 三态）。散卡按 epub=bookKey、srt=uid 成
+    // MediaRef；选中的合集交给选择器的「合集本身 / 合集内全部条目」二选一（单个格子
+    // 模式下选中合集也能批量打标签，不再只作用于散卡）。
+    final List<MediaRef> media = <MediaRef>[
+      for (final String key in _selectedLocalKeys)
+        if (key.startsWith('srt_'))
+          MediaRef(kind: MediaKind.srt, entryKey: key.substring(4))
+        else if (_parseBookKey(key) case final String bookKey)
+          MediaRef(kind: MediaKind.epub, entryKey: bookKey),
+    ];
+    final TagTargets targets = TagTargets(
+      media: media,
+      collectionIds: _selectedCollectionIds.toList()..sort(),
     );
+    if (targets.isEmpty) return;
+    await showTagPicker(context, targets: targets);
     if (!mounted) return;
+    ref.invalidate(allTagsProvider);
+    ref.invalidate(collectionTagMapProvider);
+    ref.invalidate(filteredCollectionIdsProvider);
     ref.invalidate(bookTagMapProvider);
     ref.invalidate(srtBookTagMapProvider);
     ref.invalidate(filteredBookIdsProvider);

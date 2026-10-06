@@ -764,6 +764,35 @@ class AudiobookPlayerController extends ChangeNotifier {
     });
   }
 
+  /// 某章内、章内偏移 ≥ [fromOffset] 的第一句（按全书时间最早）。[fromOffset] ≤ 0
+  /// 即 [sectionFirstCue]。偏移默认取 cue 自身的 normCharStart；阅读器给出
+  /// [offsetOf]（音频坐标 → 学习单位，与目录锚点同尺）时以它为准，映射不出的 cue
+  /// 退回 normCharStart。同一 spine 内按锚点分节的目录项靠它定位（HBK040）；不缓存，
+  /// 调用方自己记忆。
+  AudioCue? sectionCueFrom(
+    int sectionIndex,
+    int fromOffset, {
+    int? Function(SubtitleRematchFragment fragment)? offsetOf,
+  }) {
+    if (fromOffset <= 0) return sectionFirstCue(sectionIndex);
+    AudioCue? best;
+    int bestMs = 0;
+    for (final AudioCue cue in _allBookCues) {
+      final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+        cue.textFragmentId,
+      );
+      if (frag == null || frag.sectionIndex != sectionIndex) continue;
+      final int offset = offsetOf?.call(frag) ?? frag.normCharStart;
+      if (offset < fromOffset) continue;
+      final int ms = globalMsOfCue(cue);
+      if (best == null || ms < bestMs) {
+        best = cue;
+        bestMs = ms;
+      }
+    }
+    return best;
+  }
+
   /// 某章首句在全书时间轴上的起点（毫秒）；该章没有 cue → null。
   int? sectionStartGlobalMs(int sectionIndex) {
     final AudioCue? first = sectionFirstCue(sectionIndex);

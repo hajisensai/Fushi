@@ -85,21 +85,25 @@ extension _VideoFlickerNotice on _VideoFushiPageState {
                                   children: <Widget>[
                                     Text(
                                       t.video_windows_black_flash_notice_title,
-                                      style: TextStyle(
-                                        color: cs.onSurface,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                        height: 1.25,
-                                      ),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleSmall
+                                          ?.copyWith(
+                                            color: cs.onSurface,
+                                            fontWeight: FontWeight.w600,
+                                            height: 1.25,
+                                          ),
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
                                       t.video_windows_black_flash_notice_body,
-                                      style: TextStyle(
-                                        color: cs.onSurfaceVariant,
-                                        fontSize: 13,
-                                        height: 1.35,
-                                      ),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: cs.onSurfaceVariant,
+                                            height: 1.35,
+                                          ),
                                     ),
                                   ],
                                 ),

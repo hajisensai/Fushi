@@ -122,7 +122,7 @@ void main() {
       source,
       'Widget build(BuildContext context)',
     );
-    final int mainBodyAt = build.indexOf('return Column(');
+    final int mainBodyAt = build.indexOf('return FushiEntranceScope(');
     expect(mainBodyAt, greaterThanOrEqualTo(0));
     final String routing = build.substring(0, mainBodyAt);
     expect(routing, contains('if (widget.panel != null)'));

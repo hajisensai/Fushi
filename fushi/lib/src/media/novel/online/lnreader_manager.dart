@@ -490,6 +490,30 @@ class LnReaderManager extends ChangeNotifier {
     _notify();
   }
 
+  /// 拖拽重排：按 [orderedIds] 的先后重新连续编号 `sortOrder`（置顶组与普通组
+  /// 仍按置顶优先排，组内即给出的顺序）；列表里没有的插件按原相对顺序排在后面。
+  Future<void> reorder(List<String> orderedIds) async {
+    final Map<String, LnReaderInstalledPlugin> byId =
+        <String, LnReaderInstalledPlugin>{
+          for (final LnReaderInstalledPlugin plugin in _installed)
+            plugin.id: plugin,
+        };
+    final Set<String> listed = <String>{};
+    final List<LnReaderInstalledPlugin> reordered = <LnReaderInstalledPlugin>[
+      for (final String id in orderedIds)
+        if (byId[id] case final LnReaderInstalledPlugin plugin)
+          if (listed.add(id)) plugin,
+      for (final LnReaderInstalledPlugin plugin in _installed)
+        if (!listed.contains(plugin.id)) plugin,
+    ];
+    _installed = _sorted(<LnReaderInstalledPlugin>[
+      for (int i = 0; i < reordered.length; i++)
+        reordered[i].copyWith(sortOrder: i),
+    ]);
+    await _writeState();
+    _notify();
+  }
+
   /// 清掉插件的 `@libs/storage`（登录态 / 缓存的 token 等），并让运行时重新装载。
   Future<void> clearData(LnReaderInstalledPlugin plugin) async {
     final File file = _storageFile(plugin.id);

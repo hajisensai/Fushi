@@ -619,7 +619,7 @@ class BackupRestoreService {
       await db.transaction(() async {
         await db!
             .customStatement('DELETE FROM preferences WHERE key IN ($inList)');
-        await db.customStatement('INSERT INTO preferences '
+        await db!.customStatement('INSERT INTO preferences '
             'SELECT * FROM crbak.preferences WHERE key IN ($inList)');
       });
       await db.customStatement('DETACH DATABASE crbak');

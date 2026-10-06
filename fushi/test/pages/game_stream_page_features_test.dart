@@ -1,5 +1,5 @@
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -174,73 +174,71 @@ void main() {
     );
   });
 
-  testWidgets(
-    'a desktop mouse sends its own buttons, drags and wheel',
-    (WidgetTester tester) async {
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetDevicePixelRatio);
-      final List<GameStreamInputEvent> sent = <GameStreamInputEvent>[];
-      final GameStreamInputComposer composer = GameStreamInputComposer(
-        sessionId: 's1',
-        clientId: 'c1',
-        sender: (GameStreamInputEvent event) async {
-          sent.add(event);
-          return GameStreamInputAck(sequence: event.sequence, accepted: true);
-        },
-      );
-      await tester.pumpWidget(
-        MaterialApp(
-          home: GameStreamPage(
+  testWidgets('a desktop mouse sends its own buttons, drags and wheel', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final List<GameStreamInputEvent> sent = <GameStreamInputEvent>[];
+    final GameStreamInputComposer composer = GameStreamInputComposer(
+      sessionId: 's1',
+      clientId: 'c1',
+      sender: (GameStreamInputEvent event) async {
+        sent.add(event);
+        return GameStreamInputAck(sequence: event.sequence, accepted: true);
+      },
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GameStreamPage(
+          sessionId: 's1',
+          clientId: 'c1',
+          inputComposer: composer,
+          videoPlaceholder: const Text('remote frame'),
+          session: GameStreamSession.create(
             sessionId: 's1',
-            clientId: 'c1',
-            inputComposer: composer,
-            videoPlaceholder: const Text('remote frame'),
-            session: GameStreamSession.create(
-              sessionId: 's1',
-              now: DateTime.utc(2026, 9, 23),
-              features: GameStreamFeature.all,
-            ),
+            now: DateTime.utc(2026, 9, 23),
+            features: GameStreamFeature.all,
           ),
         ),
-      );
-      await tester.pumpAndSettle();
-      final Rect video = tester.getRect(find.byKey(GameStreamPage.videoKey));
-      final Offset at = video.topLeft + Offset(video.width / 2, 100);
-      String describe(GameStreamInputEvent e) =>
-          '${e.action.name}:${e.button ?? e.dy ?? ''}';
+      ),
+    );
+    await tester.pumpAndSettle();
+    final Rect video = tester.getRect(find.byKey(GameStreamPage.videoKey));
+    final Offset at = video.topLeft + Offset(video.width / 2, 100);
+    String describe(GameStreamInputEvent e) =>
+        '${e.action.name}:${e.button ?? e.dy ?? ''}';
 
-      // A right press is a right press -- not the touch path's left tap.
-      final TestGesture right = await tester.startGesture(
-        at,
-        kind: PointerDeviceKind.mouse,
-        buttons: kSecondaryMouseButton,
-      );
-      await right.up();
-      await tester.pump();
-      expect(sent.map(describe), <String>['down:right', 'up:right']);
+    // A right press is a right press -- not the touch path's left tap.
+    final TestGesture right = await tester.startGesture(
+      at,
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryMouseButton,
+    );
+    await right.up();
+    await tester.pump();
+    expect(sent.map(describe), <String>['down:right', 'up:right']);
 
-      // A left drag presses, moves, releases.
-      sent.clear();
-      final TestGesture left = await tester.startGesture(
-        at,
-        kind: PointerDeviceKind.mouse,
-      );
-      await left.moveBy(const Offset(30, 0));
-      await left.up();
-      await tester.pump();
-      expect(sent.map(describe), <String>['down:', 'move:', 'up:']);
+    // A left drag presses, moves, releases.
+    sent.clear();
+    final TestGesture left = await tester.startGesture(
+      at,
+      kind: PointerDeviceKind.mouse,
+    );
+    await left.moveBy(const Offset(30, 0));
+    await left.up();
+    await tester.pump();
+    expect(sent.map(describe), <String>['down:', 'move:', 'up:']);
 
-      // One detent (Windows: 100 px at 100% scale) is one host notch -- a VN
-      // advances one line, not two.
-      sent.clear();
-      final TestPointer wheel = TestPointer(9, PointerDeviceKind.mouse);
-      await tester.sendEventToBinding(wheel.hover(at));
-      await tester.sendEventToBinding(wheel.scroll(const Offset(0, 100)));
-      await tester.pump();
-      expect(sent.map(describe), <String>['wheel:1.0']);
-    },
-    variant: TargetPlatformVariant.only(TargetPlatform.windows),
-  );
+    // One detent (Windows: 100 px at 100% scale) is one host notch -- a VN
+    // advances one line, not two.
+    sent.clear();
+    final TestPointer wheel = TestPointer(9, PointerDeviceKind.mouse);
+    await tester.sendEventToBinding(wheel.hover(at));
+    await tester.sendEventToBinding(wheel.scroll(const Offset(0, 100)));
+    await tester.pump();
+    expect(sent.map(describe), <String>['wheel:1.0']);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('a press cut off by a layout change does not click again', (
     WidgetTester tester,

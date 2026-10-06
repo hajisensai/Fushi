@@ -1,6 +1,6 @@
 import 'dart:ui' show ImageFilter;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -279,9 +279,11 @@ void main() {
 
     await pumpBar(tester, theme(glass: FushiGlassMaterial.frosted));
     expect(hasBlur(tester), isTrue);
+    // M3E 悬浮导航：带 key 的 Material 恒为透明层（不画底色），底色 / 模糊
+    // 画在悬浮胶囊上。
     expect(
-      tester.widget<Material>(find.byKey(fushiMaterialNavKey)).color,
-      Colors.transparent,
+      tester.widget<Material>(find.byKey(fushiMaterialNavKey)).type,
+      MaterialType.transparency,
     );
     expect(tester.getRect(find.byKey(fushiMaterialNavKey)), solid);
   });

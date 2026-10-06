@@ -150,7 +150,7 @@ void main() {
       // 旧锚点是散文词 'master-detail'，它在本文件里**只出现在一条注释**里
       // （`false, // master-detail keeps selection in-pane.`）——掩掉注释后当场
       // 露馅。主从布局的真实结构证据是它会把 destination 推进详情页。
-      'SettingsDetailPage(',
+      'renderer.buildDetailContent(',
     ],
     'lib/src/settings/settings_detail_page.dart': <String>[
       'class SettingsDetailPage',
@@ -837,7 +837,13 @@ void main() {
       'lib/src/pages/implementations/shortcut_settings_page.dart',
       'lib/src/pages/implementations/miscellaneous_settings_page.dart',
     ]) {
-      final String source = readNormalizedSource(path);
+      final String source =
+          readNormalizedSource(path) +
+          (path.endsWith('/shortcut_settings_page.dart')
+              ? readNormalizedSource(
+                  'lib/src/pages/implementations/shortcut_settings/shortcut_browser.part.dart',
+                )
+              : '');
       expect(
         containsIdentifierCall(source, 'buildSettingsDetailShell'),
         isTrue,

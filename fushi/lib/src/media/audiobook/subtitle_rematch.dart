@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart'
     show AudiobookImportDialog;
 

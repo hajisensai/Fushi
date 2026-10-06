@@ -36,23 +36,38 @@ void main() {
 
   test('rail 图标尺寸走 _videoControlIconSize（吃 appUiScale，不再默认 24px）', () {
     final String body = railForBody();
-    expect(body.contains('iconSize: _videoControlIconSize'), isTrue,
-        reason:
-            'rail IconButton 必须显式传 iconSize: _videoControlIconSize（吃缩放，TODO-388）');
+    expect(
+      body.contains('iconSize: _videoControlIconSize'),
+      isTrue,
+      reason:
+          'rail IconButton 必须显式传 iconSize: _videoControlIconSize（吃缩放，TODO-388）',
+    );
   });
 
   test('rail 图标走 chrome 固定亮色强调色（不再硬编码黑白）', () {
     final String body = railForBody();
-    expect(body.contains('_videoChromeColorScheme(context)'), isTrue,
-        reason: 'rail 应取 _videoChromeColorScheme（取当前主题色相）');
+    expect(
+      body.contains('_videoChromeColorScheme(context)'),
+      isTrue,
+      reason: 'rail 应取 _videoChromeColorScheme（取当前主题色相）',
+    );
     // UI 巡检 PR-4：cs.primary 在浅色 / eink 主题下是深色，裸图标压画面不可读，
     // 改与底 / 顶栏 buttonBarButtonColor 同源的 _videoChromeAccent（恒亮 tone）。
-    expect(body.contains('color: _videoChromeAccent(cs)'), isTrue,
-        reason: 'rail 图标应用 chrome 固定亮色强调色（与底 / 顶栏 buttonBarButtonColor 同源）');
-    expect(body.contains('Colors.black.withValues(alpha: 0.42)'), isFalse,
-        reason: 'rail 不应再硬编码黑色背景（TODO-388）');
-    expect(body.contains('color: Colors.white'), isFalse,
-        reason: 'rail 不应再硬编码白色图标（TODO-388）');
+    expect(
+      body.contains('color: _videoChromeButtonForeground(cs)'),
+      isTrue,
+      reason: 'rail 图标应用 chrome 固定亮色强调色（与底 / 顶栏 buttonBarButtonColor 同源）',
+    );
+    expect(
+      body.contains('Colors.black.withValues(alpha: 0.42)'),
+      isFalse,
+      reason: 'rail 不应再硬编码黑色背景（TODO-388）',
+    );
+    expect(
+      body.contains('color: Colors.white'),
+      isFalse,
+      reason: 'rail 不应再硬编码白色图标（TODO-388）',
+    );
   });
 
   // TODO-635：去掉 rail 按钮外层圆形半透明 `Material(surface@0.55)` 背景，只留裸
@@ -60,9 +75,15 @@ void main() {
   // 体内不得再出现 surface@0.55 的 Material 圆底，也不得用 CircleBorder 圆形容器。
   test('TODO-635：rail 按钮无 surface@0.55 圆形 Material 背景', () {
     final String body = railForBody();
-    expect(body.contains('cs.surface.withValues(alpha: 0.55)'), isFalse,
-        reason: 'TODO-635：rail 按钮不应再包 surface@0.55 的 Material 圆底（用户要求去背景）');
-    expect(body.contains('shape: const CircleBorder()'), isFalse,
-        reason: 'TODO-635：rail 按钮不应再用 CircleBorder 圆形背景容器');
+    expect(
+      body.contains('cs.surface.withValues(alpha: 0.55)'),
+      isFalse,
+      reason: 'TODO-635：rail 按钮不应再包 surface@0.55 的 Material 圆底（用户要求去背景）',
+    );
+    expect(
+      body.contains('shape: const CircleBorder()'),
+      isFalse,
+      reason: 'TODO-635：rail 按钮不应再用 CircleBorder 圆形背景容器',
+    );
   });
 }

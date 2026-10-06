@@ -38,7 +38,7 @@
   var MIN_VIDEO_W = 200; // 通用按钮的视频门（与 study-tracker 同口径：挡掉首页悬停预览/预告片）
   var MIN_VIDEO_H = 120;
   var MIN_VIDEO_SEC = 30;
-  var FLOAT_BTN_SIZE = 44;  // 通用悬浮按钮边长（与 content-css-overlay.css 的 .is-floating 同值）
+  var FLOAT_BTN_SIZE = 48;  // 通用悬浮按钮边长（与 content-css-overlay.css 的 .is-floating 同值；M3E FAB 触控尺寸）
   var FLOAT_BTN_INSET = 8;  // 通用悬浮按钮离视频画面边缘的留白（px）
 
   function tr(key, params) {
@@ -89,31 +89,32 @@
     var s = state || {};
     var overlayOn = s.overlayOn !== false;
     var items = [];
-    items.push({ id: 'overlay', kind: 'switch', on: overlayOn, label: tr('ap_hp_overlay_toggle_label') });
-    items.push({ id: 'replaceNative', kind: 'switch', on: !!s.replaceNative, disabled: !overlayOn, label: tr('opt_subtitleReplaceNative_title') });
-    items.push({ id: 'allTracks', kind: 'switch', on: !!s.allTracks, disabled: !overlayOn, label: tr('opt_subtitleOverlayAllTracks_title') });
-    items.push({ id: 'background', kind: 'switch', on: s.background !== false, disabled: !overlayOn, label: tr('opt_subtitleOverlayBackground_title') });
-    items.push({ id: 'hidden', kind: 'switch', on: !!s.hidden, label: tr('opt_subtitleHidden_title') });
+    items.push({ id: 'overlay', kind: 'switch', on: overlayOn, label: tr('ap_hp_overlay_toggle_label'), icon: 'subtitles' });
+    items.push({ id: 'replaceNative', kind: 'switch', on: !!s.replaceNative, disabled: !overlayOn, label: tr('opt_subtitleReplaceNative_title'), icon: 'closed_caption' });
+    items.push({ id: 'allTracks', kind: 'switch', on: !!s.allTracks, disabled: !overlayOn, label: tr('opt_subtitleOverlayAllTracks_title'), icon: 'layers' });
+    items.push({ id: 'background', kind: 'switch', on: s.background !== false, disabled: !overlayOn, label: tr('opt_subtitleOverlayBackground_title'), icon: 'format_color_fill' });
+    items.push({ id: 'hidden', kind: 'switch', on: !!s.hidden, label: tr('opt_subtitleHidden_title'), icon: 'visibility_off' });
     // 「开着却什么都不画」是覆盖层最容易让人误判坏掉的状态：站点自带轨默认不叠覆盖层
     // （subtitle-panel.js updateSubtitleOverlay 的显示门），外挂轨才无条件画。这里如实说出来，
     // 并给一键出路，而不是让用户以为开关坏了。
     if (overlayOn && !s.hidden && s.hasTrack && !s.externalTrack && !s.replaceNative && !s.allTracks) {
-      items.push({ id: 'hint', kind: 'hint', label: tr('pc_hint_site_track'), action: 'replaceNative' });
+      items.push({ id: 'hint', kind: 'hint', label: tr('pc_hint_site_track'), action: 'replaceNative', icon: 'info' });
     }
-    items.push({ id: 'list', kind: 'action', label: tr('opt_videoShortcutTogglePanel_title') });
+    items.push({ id: 'list', kind: 'action', label: tr('opt_videoShortcutTogglePanel_title'), icon: 'view_sidebar' });
     items.push({
       id: 'offset',
       kind: 'group',
       label: tr('pc_offset_title'),
+      icon: 'timer',
       // 按钮面是数字与符号（与侧边栏 offset-row 同形，不进 i18n）；说明文字走 title。
       buttons: [
         { id: 'offset-minus', label: '−0.1', title: tr('opt_videoShortcutOffsetMinus_title') },
-        { id: 'offset-reset', label: '⟲', title: tr('sp_offset_reset_title') },
+        { id: 'offset-reset', label: '⟲', icon: 'restart_alt', title: tr('sp_offset_reset_title') },
         { id: 'offset-plus', label: '＋0.1', title: tr('opt_videoShortcutOffsetPlus_title') },
       ],
     });
-    items.push({ id: 'style', kind: 'submenu', label: tr('pc_style_title') });
-    items.push({ id: 'settings', kind: 'action', label: tr('sp_settings_title') });
+    items.push({ id: 'style', kind: 'submenu', label: tr('pc_style_title'), icon: 'style' });
+    items.push({ id: 'settings', kind: 'action', label: tr('sp_settings_title'), icon: 'settings' });
     return items;
   }
 
@@ -238,6 +239,25 @@
 
   function S() { return window.fushiSubtitleStyle || null; }
 
+  // Material Symbols Rounded 图标（icons.js，manifest 里排在本文件之前）。缺席（纯 vm 测试 / 旧缓存）
+  // 时回 null，调用方照常只有文字——图标是装饰，不承载任何语义（语义在文字与 aria 上）。
+  function iconEl(name, size, cls) {
+    if (!name || typeof window.fushiIcon !== 'function') return null;
+    try { return window.fushiIcon(name, { size: size || 24, className: cls || '' }); } catch (_) { return null; }
+  }
+
+  // 前置图标：插在节点最前（textContent 已写好的按钮也成立——SVG 不带文本节点）。
+  function prependIcon(el, name, size, cls) {
+    var ic = iconEl(name, size, cls);
+    if (ic && el) el.insertBefore(ic, el.firstChild || null);
+    return ic;
+  }
+
+  // 页内宿主的外观风格（M3E / 液态玻璃）：theme.js 盖 data-style，content.css 按它分流。
+  function stamp(el) {
+    try { if (el && window.fushiTheme && typeof window.fushiTheme.stampStyle === 'function') window.fushiTheme.stampStyle(el); } catch (_) { /* no-op */ }
+  }
+
   function videoEl() {
     // 与全仓库同一条取法（subtitle-panel.js:121 等）：第一条 <video>。站点的画中画/广告位也可能
     // 是 <video>，但控制栏锚点本身就长在正片播放器上，通用路径另有尺寸门，两边都不会挂错地方。
@@ -292,6 +312,8 @@
     b.className = 'fushi-pc-btn';
     b.setAttribute('aria-haspopup', 'true');
     b.setAttribute('aria-expanded', 'false');
+    stamp(b);
+    // 按钮面保留 Fushi 品牌图（站点控制栏里要一眼认出是谁家的按钮）；菜单内才换 Material Symbols。
     var icon = document.createElement('img');
     icon.className = 'fushi-pc-btn-icon';
     icon.alt = '';
@@ -370,6 +392,9 @@
     el.className = 'fushi-pc-row';
     el.dataset.item = item.id;
     if (item.disabled) el.dataset.disabled = '1';
+    // M3E 菜单项：24px 前置图标（on-surface-variant）+ label-large 文案。
+    var lead = iconEl(item.icon, 24, 'fushi-pc-lead');
+    if (lead) el.appendChild(lead);
     var copy = document.createElement('span');
     copy.className = 'fushi-pc-copy';
     var title = document.createElement('strong');
@@ -406,6 +431,7 @@
       hint.className = 'fushi-pc-hint';
       hint.dataset.item = item.id;
       hint.textContent = item.label;
+      prependIcon(hint, item.icon, 20, 'fushi-pc-hint-icon');
       hint.addEventListener('click', function () { writePrefs({ subtitleReplaceNative: true }); });
       return hint;
     }
@@ -419,7 +445,10 @@
           var b = document.createElement('button');
           b.type = 'button';
           b.dataset.action = spec.id;
-          b.textContent = spec.label;
+          // 有图标的段（复位）只画图标，文字符号是缺图标时的回退；说明一律在 title / aria-label。
+          var ic = iconEl(spec.icon, 18);
+          if (ic) b.appendChild(ic);
+          else b.textContent = spec.label;
           if (spec.title) {
             b.title = spec.title;
             b.setAttribute('aria-label', spec.title);
@@ -437,9 +466,12 @@
       s.setAttribute('role', 'switch');
       s.setAttribute('tabindex', '0');
       s.setAttribute('aria-checked', item.on ? 'true' : 'false');
+      // M3E 开关：轨道 + 拇指（::after）；开态拇指里一枚 check 图标。
       var sw = document.createElement('span');
       sw.className = 'fushi-pc-switch';
       sw.dataset.on = item.on ? '1' : '';
+      var check = iconEl('check', 16, 'fushi-pc-switch-icon');
+      if (check) sw.appendChild(check);
       s.appendChild(sw);
       if (!item.disabled) {
         s.addEventListener('click', function () { flip(item.id); });
@@ -451,6 +483,10 @@
     }
     var a = row(item);
     a.classList.add(item.kind === 'submenu' ? 'is-submenu' : 'is-action');
+    if (item.kind === 'submenu') {
+      var trail = iconEl('chevron_right', 24, 'fushi-pc-trail');
+      if (trail) { a.classList.add('has-trail'); a.appendChild(trail); }
+    }
     a.setAttribute('role', 'button');
     a.setAttribute('tabindex', '0');
     function go() {
@@ -473,6 +509,7 @@
     back.type = 'button';
     back.className = 'fushi-pc-back';
     back.textContent = tr('pc_style_back');
+    prependIcon(back, 'arrow_back', 24);
     back.addEventListener('click', function () { showPage('main'); });
     stylePageEl.appendChild(back);
     if (!mod) return;
@@ -483,15 +520,29 @@
     foot.className = 'fushi-pc-foot';
     var reset = document.createElement('button');
     reset.type = 'button';
+    reset.className = 'fushi-pc-foot-reset';
     reset.textContent = tr('pc_style_reset');
+    prependIcon(reset, 'restart_alt', 18);
     reset.addEventListener('click', function () { writeStyle(mod.DEFAULTS, true); });
     var more = document.createElement('button');
     more.type = 'button';
+    more.className = 'fushi-pc-foot-more';
     more.textContent = tr('pc_style_more');
+    prependIcon(more, 'settings', 18);
     more.addEventListener('click', openOptions);
     foot.appendChild(reset);
     foot.appendChild(more);
     stylePageEl.appendChild(foot);
+  }
+
+  // M3E 滑杆的已选段（主色轨道）长度：CSS 读 --fushi-pc-fill 画渐变（WebKit 没有 ::-moz-range-progress）。
+  function paintRangeFill(input, spec) {
+    var span = Number(spec.max) - Number(spec.min);
+    var pct = span > 0 ? ((Number(input.value) - Number(spec.min)) / span) * 100 : 0;
+    pct = Math.min(100, Math.max(0, isFinite(pct) ? pct : 0));
+    try {
+      if (input.style && typeof input.style.setProperty === 'function') input.style.setProperty('--fushi-pc-fill', pct.toFixed(1) + '%');
+    } catch (_) { /* no-op */ }
   }
 
   function renderStyleControl(spec, cur) {
@@ -513,8 +564,10 @@
       input.value = String(cur[spec.id]);
       var out = document.createElement('output');
       out.textContent = String(cur[spec.id]);
+      paintRangeFill(input, spec);
       input.addEventListener('input', function () {
         out.textContent = input.value;
+        paintRangeFill(input, spec);
         var patch = {};
         patch[spec.id] = Number(input.value);
         writeStyle(patch, false);
@@ -562,6 +615,8 @@
     auto.className = 'fushi-pc-color-auto';
     auto.dataset.on = cur[spec.id] ? '' : '1';
     auto.textContent = tr('opt_subtitleStyle_follow_theme');
+    // M3E 筛选 chip：选中态带前置 check。
+    if (!cur[spec.id]) prependIcon(auto, 'check', 18);
     auto.addEventListener('click', function () {
       var patch = {};
       patch[spec.id] = '';
@@ -586,6 +641,7 @@
     menuEl = document.createElement('div');
     menuEl.id = MENU_ID;
     menuEl.setAttribute('role', 'menu');
+    stamp(menuEl);
     mainPageEl = document.createElement('div');
     mainPageEl.className = 'fushi-pc-page';
     stylePageEl = document.createElement('div');
@@ -598,7 +654,11 @@
   }
 
   function applyMenuTheme() {
+    // 风格随设置变：已挂在页上的宿主 theme.js applyToHostPage 会按 id 重盖，但菜单关着时可能还没
+    // 挂进文档（getElementById 找不到），按钮也可能刚被站点摘下——两者在这里补盖一次。
+    stamp(btnEl);
     if (!menuEl) return;
+    stamp(menuEl);
     var t = themeOf();
     if (t === 'light' || t === 'dark') menuEl.setAttribute('data-theme', t);
     else menuEl.removeAttribute('data-theme');

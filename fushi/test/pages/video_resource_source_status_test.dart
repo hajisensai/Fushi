@@ -2,7 +2,7 @@
 // ① TMDB 卡片没有罗马字别名时，页面先经宿主端口补齐别名，再搜——搜索框预填词
 //    随之换成罗马字，Nyaa 同时补查日文原名；
 // ② 结果上方逐源显示「N 条（查询词 …）/ 失败原因」，成功但 0 条的源也在。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';

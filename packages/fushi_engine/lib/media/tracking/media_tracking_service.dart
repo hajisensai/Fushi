@@ -480,7 +480,7 @@ class MediaTrackingService {
     final BangumiTrackingApi api = _apiFactory(accessToken);
     try {
       final BangumiUser user = await api.getMe();
-      return api.getWatchedAnime(user.username);
+      return await api.getWatchedAnime(user.username);
     } finally {
       api.close();
     }

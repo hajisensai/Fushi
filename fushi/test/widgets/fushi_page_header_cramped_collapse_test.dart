@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 2026-08-13 手机顶栏显示不全：页头（customTitle 分段导航形态）在「分段条自然宽
@@ -49,12 +50,12 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.byIcon(Icons.more_vert), findsOneWidget,
+    expect(find.byIcon(FushiIcons.more), findsOneWidget,
         reason: '360dp 行宽放不下 6 段 + 4 动作，必须出现 ⋯ 溢出按钮');
     expect(find.byIcon(Icons.star_border), findsNothing,
         reason: '被收纳的动作不应再以图标形态占页头宽度');
 
-    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.tap(find.byIcon(FushiIcons.more));
     await tester.pumpAndSettle();
     expect(find.text('action-2'), findsOneWidget,
         reason: '菜单项以动作的 tooltip 文案呈现');
@@ -69,7 +70,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.byIcon(Icons.more_vert), findsNothing,
+    expect(find.byIcon(FushiIcons.more), findsNothing,
         reason: '放得下时不收纳（仅在左边位置不够时才变）');
     expect(find.byIcon(Icons.star_border), findsNWidgets(4));
   });
@@ -93,7 +94,7 @@ void main() {
     );
     await tester.pump();
     await tester.pump();
-    expect(find.byIcon(Icons.more_vert), findsNothing,
+    expect(find.byIcon(FushiIcons.more), findsNothing,
         reason: '文字标题自身可省略号收缩，维持既有行为');
     expect(find.byIcon(Icons.star_border), findsNWidgets(4));
   });

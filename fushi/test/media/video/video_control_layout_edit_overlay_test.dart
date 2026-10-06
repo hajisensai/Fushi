@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_layout_edit_overlay.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 Future<void> _pumpOverlay(
   WidgetTester tester, {
@@ -35,7 +36,8 @@ Future<void> _pumpOverlay(
       ),
     ),
   );
-  await tester.pump();
+  // 槽位 / 调色板有错峰进场（位移 + 淡入），落定后再量几何、拖拽。
+  await tester.pumpAndSettle();
 }
 
 /// Finds the inline "x" remove button rendered next to a placed [item] chip in
@@ -48,7 +50,7 @@ Finder _removeButtonFor(VideoControlItem item, VideoControlSlot slot) {
           matching: find.byType(Row),
         )
         .first,
-    matching: find.byIcon(Icons.close),
+    matching: find.byIcon(FushiIcons.close),
   );
 }
 
@@ -310,9 +312,10 @@ void main() {
       _placedChip(VideoControlItem.subtitleTrack, VideoControlSlot.bottomRight),
       findsOneWidget,
     );
+    // 2026-10-06 遮挡最小化：音轨默认移出播放器（进右上「⋯」），只在面板里。
     expect(
       _placedChip(VideoControlItem.audioTrack, VideoControlSlot.topRight),
-      findsOneWidget,
+      findsNothing,
     );
   });
 
@@ -326,7 +329,7 @@ void main() {
 
     expect(find.text(t.dialog_save), findsOneWidget);
     expect(find.text(t.dialog_cancel), findsOneWidget);
-    expect(find.byIcon(Icons.close), findsWidgets);
+    expect(find.byIcon(FushiIcons.close), findsWidgets);
     expect(find.byIcon(Icons.drag_indicator), findsNothing);
     expect(find.text(t.video_control_slot_hidden), findsOneWidget);
   });
@@ -363,7 +366,7 @@ void main() {
     for (final Finder finder in <Finder>[
       find.text(t.dialog_save),
       find.text(t.dialog_cancel),
-      find.byIcon(Icons.close).first,
+      find.byIcon(FushiIcons.close).first,
     ]) {
       final Rect rect = tester.getRect(finder);
       expect(rect.left, greaterThanOrEqualTo(0));

@@ -6,7 +6,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show FlutterExceptionHandler;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -121,6 +121,30 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
     }
 
+    // 「全部设置」「回到开头」在顶栏「更多」（⋯）菜单里：先开菜单，再焦点到项上
+    // 确认（2026-10 M3E 悬浮工具栏改版）。
+    Future<void> activateMenuItem(String key) async {
+      await activateKey('manga_chrome_overflow');
+      await tester.pump(const Duration(milliseconds: 400));
+      await activateKey('${key}_menu_item');
+    }
+
+    Future<void> expectStartIcon(IconData icon) async {
+      await activateKey('manga_chrome_overflow');
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey<String>('manga_reader_start_button_menu_item'),
+          ),
+          matching: find.byIcon(icon),
+        ),
+        findsOneWidget,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
     int currentPage() => tester
         .widget<MangaReaderBottomBar>(find.byType(MangaReaderBottomBar))
         .currentPage();
@@ -200,12 +224,12 @@ void main() {
         const ValueKey<String>('fushi_reader_side_sheet'),
       );
       // 打开后什么都不做就按 Esc（焦点在面板第一个控件上）也必须能关。
-      await activateKey('manga_reader_settings_button');
+      await activateMenuItem('manga_reader_settings_button');
       await waitForPanel(panel);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await waitForPanelGone(panel);
       expect(panel, findsNothing, reason: 'Escape right after opening');
-      await activateKey('manga_reader_settings_button');
+      await activateMenuItem('manga_reader_settings_button');
       await waitForPanel(panel);
       final Rect rightBounds = tester.getRect(panel);
       expect(rightBounds.right, closeTo(contentBounds.right, 1));
@@ -269,13 +293,7 @@ void main() {
       expect((await savedOverrides())['direction'], 'ltr');
       expect((await domSnapshot())['direction'], 'ltr');
       expect(appModel.mangaReadingDirection, directionBefore);
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey<String>('manga_reader_start_button')),
-          matching: find.byIcon(Icons.first_page),
-        ),
-        findsOneWidget,
-      );
+      await expectStartIcon(Icons.first_page);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.pageDown);
       await tester.pump(const Duration(milliseconds: 400));
@@ -283,18 +301,12 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
       expect(currentPage(), greaterThan(0));
       final int advancedPage = currentPage();
-      await activateKey('manga_reader_start_button');
+      await activateMenuItem('manga_reader_start_button');
       expect(currentPage(), 0);
       expect((await domSnapshot())['page'], '0');
       await activateKey('manga_reader_direction_button');
       expect((await savedOverrides())['direction'], 'rtl');
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey<String>('manga_reader_start_button')),
-          matching: find.byIcon(Icons.last_page),
-        ),
-        findsOneWidget,
-      );
+      await expectStartIcon(Icons.last_page);
       expect(
         (await captureFlutterFrame(tester, 'manga-settings-start-rtl')).saved,
         isTrue,

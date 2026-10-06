@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
@@ -7,11 +7,14 @@ import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_search_sheet.dart';
 import 'package:fushi/src/settings/settings_navigation_groups.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -74,9 +77,11 @@ class GlassSettingsRenderer implements SettingsRenderer {
       onDestinationSelected: onDestinationSelected,
     );
     if (embedded) return list;
+    // 分类列表的内边距按外层 context 算、不含页头让位：整体让开页头（Apple
+    // 设计系统本就上下排，这里与 M3E 渲染器同一写法）。
     return FushiPageScaffold(
       title: settingsContext.context.t.settings,
-      body: list,
+      body: SafeArea(bottom: false, child: list),
     );
   }
 
@@ -162,13 +167,63 @@ class GlassSettingsRenderer implements SettingsRenderer {
     required SettingsContext settingsContext,
     required SettingsDestination destination,
   }) {
-    return FushiPageScaffold(
+    return _kitDetail(settingsContext, destination, showBack: true);
+  }
+
+  /// 设置子页整页壳（settings kit 的 Apple 形态）：返回 + 大标题（滚动收成
+  /// 行内标题、玻璃胶囊）+ 搜索，≥ 3 个分组时分组跳转条。宽屏右窗格同一个壳、
+  /// 不画返回钮。
+  Widget _kitDetail(
+    SettingsContext settingsContext,
+    SettingsDestination destination, {
+    required bool showBack,
+  }) {
+    return SettingsKitScaffold(
+      key: ValueKey<String>('settings-detail.${destination.id.name}'),
       title: destination.title,
-      subtitle: destination.summary,
-      body: buildDetailContent(
-        settingsContext: settingsContext,
-        destination: destination,
+      leadingIcon: destination.icon,
+      leadingTone: settingsIconToneFor(destination.id),
+      showBack: showBack,
+      sections: settingsJumpSections(
+        destination.visibleSections(settingsContext),
       ),
+      actions: showBack
+          ? const <Widget>[SettingsSearchAction()]
+          : const <Widget>[],
+      // 同 M3E 渲染器：schema 详情的滚动内边距加上壳的页头让位（Apple 设计
+      // 系统下壳仍上下排，让位为 0）。
+      bodyConsumesTopPadding: true,
+      bodyBuilder:
+          (
+            BuildContext context,
+            ScrollController controller,
+            SettingsSectionSpy spy,
+          ) => destination.fillsViewport(settingsContext)
+          // 正文自管滚动（见 SettingsDestination.bodyFillsViewport）：只给水平
+          // 内边距与顶部一点呼吸，正文占满剩余视口（吸顶工具区 / 两栏导航 /
+          // 粘性分组标题都靠这一点）；底部安全区由正文自己的滚动视图负责。
+          ? SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  detailHorizontalInset(context),
+                  12,
+                  detailHorizontalInset(context),
+                  0,
+                ),
+                child: destination.body!(settingsContext),
+              ),
+            )
+          : _detailBody(
+              settingsContext: settingsContext,
+              destination: destination,
+              scrollController: controller,
+              sectionSpy: spy,
+              inlineHeader: false,
+              shrinkWrap: false,
+              insetHorizontally: true,
+              topInset: MediaQuery.paddingOf(context).top,
+            ),
     );
   }
 
@@ -179,6 +234,34 @@ class GlassSettingsRenderer implements SettingsRenderer {
     ScrollController? scrollController,
     bool shrinkWrap = false,
     bool insetHorizontally = true,
+    bool consumeTopPadding = false,
+  }) {
+    // 宽屏主从右窗格：与 push 出来的子页同一个 kit 壳（不画返回钮）。
+    if (showDetailHeader && !shrinkWrap && scrollController == null) {
+      return _kitDetail(settingsContext, destination, showBack: false);
+    }
+    return _detailBody(
+      settingsContext: settingsContext,
+      destination: destination,
+      scrollController: scrollController,
+      sectionSpy: null,
+      inlineHeader: showDetailHeader,
+      shrinkWrap: shrinkWrap,
+      insetHorizontally: insetHorizontally,
+      consumeTopPadding: consumeTopPadding,
+    );
+  }
+
+  Widget _detailBody({
+    required SettingsContext settingsContext,
+    required SettingsDestination destination,
+    required ScrollController? scrollController,
+    required SettingsSectionSpy? sectionSpy,
+    required bool inlineHeader,
+    required bool shrinkWrap,
+    required bool insetHorizontally,
+    bool consumeTopPadding = false,
+    double topInset = 0,
   }) {
     final BuildContext context = settingsContext.context;
     final FushiAppleColors apple = appleColorsOf(context);
@@ -191,27 +274,33 @@ class GlassSettingsRenderer implements SettingsRenderer {
         : 0;
     final EdgeInsets padding = EdgeInsets.fromLTRB(
       horizontal,
-      showDetailHeader ? (metrics.desktop ? 22 : 12) : 12,
+      (inlineHeader ? (metrics.desktop ? 22 : 12) : 12) +
+          (consumeTopPadding ? MediaQuery.paddingOf(context).top : 0) +
+          topInset,
       horizontal,
       24 + MediaQuery.of(context).padding.bottom,
     );
 
-    Widget section(int index) => SettingsSchemaSection(
-      key: ValueKey<String>('${destination.id.name}.${sections[index].id}'),
-      scopeId: destination.id.name,
+    Widget section(int index) => settingsSectionAnchor(
+      spy: sectionSpy,
       section: sections[index],
-      settingsContext: settingsContext,
-      showIcons: false,
-      routeBuilder: _route,
-      footerStyle: (BuildContext context) =>
-          FushiAppleMetrics.of(context).footnoteStyle(context),
+      child: SettingsSchemaSection(
+        key: ValueKey<String>('${destination.id.name}.${sections[index].id}'),
+        scopeId: destination.id.name,
+        section: sections[index],
+        settingsContext: settingsContext,
+        showIcons: false,
+        routeBuilder: _route,
+        footerStyle: (BuildContext context) =>
+            FushiAppleMetrics.of(context).footnoteStyle(context),
+      ),
     );
 
     // 整页正文逃生口（见 SettingsDestination.body）：与 schema section 共享同一个
     // 滚动容器与内容列。
     final Widget? bodyWidget = destination.body?.call(settingsContext);
-    final List<Widget> content = <Widget>[
-      if (showDetailHeader)
+    final List<Widget> rawContent = <Widget>[
+      if (inlineHeader)
         Padding(
           padding: EdgeInsets.fromLTRB(
             metrics.desktop ? 2 : 4,
@@ -248,11 +337,23 @@ class GlassSettingsRenderer implements SettingsRenderer {
       if (bodyWidget != null && !destination.bodyBeforeSections) bodyWidget,
     ];
 
+    // 分组错峰淡入上移（与 M3E 渲染器同一套 FushiStaggeredEntrance；只改
+    // opacity / transform，滚动范围不变）。
+    final List<Widget> content = <Widget>[
+      for (final (int index, Widget child) in rawContent.indexed)
+        FushiStaggeredEntrance(
+          key: child.key == null ? null : ValueKey<Key>(child.key!),
+          index: index,
+          child: child,
+        ),
+    ];
     // 内容列全宽（用户 2026-10-04「设置页要做成全宽」）：分组卡、行与滑块随
     // 右栏伸缩，只保留常规左右留白。
-    final Widget bounded = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: content,
+    final Widget bounded = FushiEntranceScope(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: content,
+      ),
     );
 
     // shrinkWrap：嵌在外层可滚动宿主里（快捷设置弹窗等）。与 MD3 渲染器同一
@@ -350,6 +451,7 @@ class GlassSettingsSidebarList extends StatelessWidget {
                   GlassSettingsSidebarRow(
                     key: ValueKey<SettingsDestinationId>(destination.id),
                     icon: destination.icon,
+                    tone: settingsIconToneFor(destination.id),
                     title: destination.title,
                     selected: destination.id == selectedDestinationId,
                     onTap: () => onDestinationSelected(destination.id),
@@ -377,9 +479,13 @@ class GlassSettingsSidebarRow extends StatefulWidget {
     super.key,
     this.subtitle,
     this.selected = false,
+    this.tone,
   });
 
   final IconData icon;
+
+  /// 分类色调（iOS 系统色着色字形）；null = 强调色（搜索结果等）。
+  final SettingsIconTone? tone;
   final String title;
   final String? subtitle;
   final bool selected;
@@ -417,11 +523,19 @@ class _GlassSettingsSidebarRowState extends State<GlassSettingsSidebarRow> {
           ),
           child: Row(
             children: <Widget>[
-              FushiIcon(
-                widget.icon,
-                size: 17,
-                color: selected ? apple.onAccent : apple.accent,
-              ),
+              if (widget.tone == null)
+                FushiIcon(
+                  widget.icon,
+                  size: 17,
+                  color: selected ? apple.onAccent : apple.accent,
+                )
+              else
+                SettingsShapeIcon(
+                  icon: widget.icon,
+                  tone: widget.tone!,
+                  selected: selected,
+                  size: 22,
+                ),
               const SizedBox(width: 9),
               Expanded(
                 child: Column(

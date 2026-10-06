@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
@@ -110,8 +110,8 @@ void main() {
     final Finder button =
         find.byKey(const ValueKey<String>('video-discovery-search-resource'));
     expect(button, findsOneWidget);
-    // key 就挂在 OutlinedButton.icon 产出的 OutlinedButton 上（不是它的祖先）。
-    expect(tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(button)).onPressed, isNotNull,
+    // M3E 详情骨架：「找资源」是 hero 主按钮（filled），key 落在按钮本体上。
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(button)).onPressed, isNotNull,
         reason: '下载进行中这颗按钮必须是 enabled 的。');
 
     await tester.tap(button);

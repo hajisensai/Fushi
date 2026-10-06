@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart' show t;
@@ -254,9 +254,13 @@ Future<int> _seedUnresolvedRun(FushiDatabase db, int sourceId) =>
 /// 支持「AI 识别」的 runner：[available] 模拟「设置 › AI」有没有指派提供商。
 class _AiIdentifyRunner
     implements VideoSourceScrapeRunner, VideoSourceScrapeAiIdentify {
-  _AiIdentifyRunner({required this.available});
+  _AiIdentifyRunner({
+    required this.available,
+    this.reason = 'same year and studio',
+  });
 
   bool available;
+  final String reason;
   final List<String> identifiedKeys = <String>[];
 
   @override
@@ -291,10 +295,10 @@ class _AiIdentifyRunner
         SourceScrapeIssue(
           workTitle: workTitle,
           message: encodeVideoScrapeAiIdentityNote(
-            const AiVideoIdentityDecision(
+            AiVideoIdentityDecision(
               key: 'anidb:65733',
               confidence: 0.93,
-              reason: 'same year and studio',
+              reason: reason,
             ),
           ),
           workKey: workStableKey,
@@ -368,19 +372,23 @@ Future<void> _openPendingTab(
   WidgetTester tester,
   FushiDatabase db,
   VideoSourceScrapeTaskController controller,
-  VideoPendingScrapeWork entry,
-) async {
+  VideoPendingScrapeWork entry, {
+  Future<List<VideoPendingScrapeWork>> Function()? loadPendingWorks,
+}) async {
   await tester.pumpWidget(
     MaterialApp(
       home: Builder(
         builder: (BuildContext context) => Scaffold(
           body: TextButton(
-            onPressed: () => unawaited(showVideoSourceScrapeTaskPanel(
-              context: context,
-              controller: controller,
-              loadRuns: () => db.getVideoSourceScrapeRuns(limit: 20),
-              loadPendingWorks: () async => <VideoPendingScrapeWork>[entry],
-            )),
+            onPressed: () => unawaited(
+              showVideoSourceScrapeTaskPanel(
+                context: context,
+                controller: controller,
+                loadRuns: () => db.getVideoSourceScrapeRuns(limit: 20),
+                loadPendingWorks: loadPendingWorks ??
+                    () async => <VideoPendingScrapeWork>[entry],
+              ),
+            ),
             child: const Text('Open tasks'),
           ),
         ),
@@ -389,12 +397,14 @@ Future<void> _openPendingTab(
   );
   await tester.tap(find.text('Open tasks'));
   await tester.pumpAndSettle();
-  await tester
-      .tap(find.byKey(const ValueKey<String>('video-source-tab-pending')));
+  await tester.tap(
+    find.byKey(const ValueKey<String>('video-source-tab-pending')),
+  );
   await tester.pumpAndSettle();
   expect(
     find.byKey(
-        const ValueKey<String>('video-source-pending-work-book:movie-a')),
+      const ValueKey<String>('video-source-pending-work-book:movie-a'),
+    ),
     findsOneWidget,
   );
 }
@@ -576,9 +586,10 @@ void main() {
         .where((Element element) => listRect
             .contains(tester.getRect(find.byWidget(element.widget)).center))
         .length;
-    // MD3 两行列表行（2026-10 重做）每行约 68px（旧 ≈56），同样高度能露出
-    // 6 行；判据仍是「远多于旧 260px 硬截的 4 行」且可视行一直排到列表底部。
-    expect(visible, greaterThanOrEqualTo(6), reason: '说明行没有铺满 tab');
+    // M3E 分段卡片行（2026-10-06：卡内边距 + 行间 2px + 顶部状态卡）每行约
+    // 76px，同样高度能露出 5 行以上；判据仍是「多于旧 260px 硬截的 4 行」且
+    // 可视行一直排到列表底部。
+    expect(visible, greaterThanOrEqualTo(5), reason: '说明行没有铺满 tab');
     final List<Rect> visibleRows = issues
         .evaluate()
         .map((Element element) => tester.getRect(find.byWidget(element.widget)))
@@ -877,9 +888,14 @@ void main() {
     // 搜索框预填的是那条待确认作品名，用户可直接搜。
     expect(runner.queries, <String>['Doraemon Movies']);
 
-    await tester.tap(find.byKey(
+    // M3E 手动指定弹窗（页眉图标 + 说明 + 搜索框 + 分段候选卡）在 800×600 下
+    // 正文要滚：结果卡落在正文滚动区下沿、被动作行盖住。先滚进来再点。
+    final Finder candidate = find.byKey(
       const ValueKey<String>('video-source-candidate-anidb-tv-65733'),
-    ));
+    );
+    await tester.ensureVisible(candidate);
+    await tester.pumpAndSettle();
+    await tester.tap(candidate);
     await tester.pumpAndSettle();
 
     expect(runner.boundTitles, <String>['Doraemon Movies']);
@@ -952,6 +968,99 @@ void main() {
   });
 
   group('AI identify in the pending tab', () {
+    for (final bool reloadFails in <bool>[false, true]) {
+      testWidgets(
+          'long AI conclusion scrolls during reload and after '
+          '${reloadFails ? 'failure' : 'the last work is cleared'}', (
+        WidgetTester tester,
+      ) async {
+        await tester.binding.setSurfaceSize(const Size(800, 600));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
+        final VideoPendingScrapeWork entry = await _seedPendingWork(db);
+        final _AiIdentifyRunner runner = _AiIdentifyRunner(
+          available: true,
+          reason: List<String>.generate(
+            20,
+            (int index) => 'AI evidence $index: matching year and studio.',
+          ).join('\n'),
+        );
+        final VideoSourceScrapeTaskController controller =
+            VideoSourceScrapeTaskController(runner);
+        addTearDown(controller.dispose);
+        final Completer<List<VideoPendingScrapeWork>> reload =
+            Completer<List<VideoPendingScrapeWork>>();
+        bool retried = false;
+        await _openPendingTab(
+          tester,
+          db,
+          controller,
+          entry,
+          loadPendingWorks: () async {
+            if (runner.identifiedKeys.isEmpty) {
+              return <VideoPendingScrapeWork>[entry];
+            }
+            if (retried) return <VideoPendingScrapeWork>[];
+            return reload.future;
+          },
+        );
+        await tester.tap(find.byKey(_aiButtonKey));
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 1));
+        expect(runner.identifiedKeys, <String>['book:movie-a']);
+        expect(find.textContaining('AI evidence 19'), findsOneWidget);
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: '长结论在等待重新加载时也必须滚动，不能固定在正文外',
+        );
+
+        if (reloadFails) {
+          reload.completeError(StateError('pending refresh failed'));
+        } else {
+          reload.complete(<VideoPendingScrapeWork>[]);
+        }
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(_aiButtonKey), findsNothing);
+        final Finder list = find.byKey(
+          const PageStorageKey<String>('video-source-pending-list'),
+        );
+        final Finder scrollable =
+            find.descendant(of: list, matching: find.byType(Scrollable)).first;
+        final Finder outcome = find.text(
+          reloadFails
+              ? t.video_source_scrape_list_reload
+              : t.video_source_scrape_pending_empty,
+        );
+        await tester.scrollUntilVisible(outcome, 200, scrollable: scrollable);
+        await tester.pumpAndSettle();
+        expect(
+          outcome.hitTestable(),
+          findsOneWidget,
+          reason: '结论底下的空态或重试按钮必须能滚进正文视口',
+        );
+        expect(tester.takeException(), isNull);
+        if (reloadFails) {
+          retried = true;
+          await tester.tap(outcome);
+          await tester.pumpAndSettle();
+          await tester.scrollUntilVisible(
+            find.text(t.video_source_scrape_pending_empty),
+            200,
+            scrollable: scrollable,
+          );
+          await tester.pumpAndSettle();
+          expect(
+            find.text(t.video_source_scrape_pending_empty).hitTestable(),
+            findsOneWidget,
+          );
+          expect(tester.takeException(), isNull);
+        }
+      });
+    }
+
     testWidgets('available AI: the button runs identifyWorkWithAi once',
         (WidgetTester tester) async {
       final FushiDatabase db = _memDb();

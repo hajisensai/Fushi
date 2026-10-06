@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
@@ -391,8 +391,12 @@ void main() {
     test('搜索：索引递归进子页；命中后逐级推子页', () {
       expect(read('lib/src/settings/settings_search.dart'),
           contains('_flattenPageInto('));
+      // 「逐级推子页」已从主页抽到共享入口 openSettingsSearchEntry（窄屏 /
+      // 子页页头搜索 / 宽屏主从三处共用），主页只负责调用它。
+      expect(read('lib/src/settings/settings_search_sheet.dart'),
+          contains('in entry.subPagePath'));
       expect(read('lib/src/settings/settings_home_page.dart'),
-          contains('entry.subPagePath'));
+          contains('openSettingsSearchEntry('));
     });
 
     test('详情页：子页靠闭包取新鲜树，不按 id 到顶层找', () {

@@ -1,6 +1,7 @@
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/shortcuts/gamepad_forwarding_action.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -11,6 +12,9 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/settings_section_anchor.dart';
+import 'package:fushi/src/settings/settings_kit.dart'
+    show SettingsKitScaffold;
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -19,7 +23,12 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_option_selection_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
-    show FushiPlainButton, fushiClearGlassBezel, fushiClearGlassSettings;
+    show
+        FushiIconButtonControl,
+        FushiPlainButton,
+        fushiClearGlassBezel,
+        fushiClearGlassSettings;
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
     show showFushiMenu;
@@ -34,8 +43,13 @@ class SettingsSectionHeader extends StatelessWidget {
   final String text;
   final EdgeInsetsGeometry? padding;
 
+  // 带标题的分组标题即页内分组锚点（settings kit 的分组跳转条自动收录，见
+  // settings_section_anchor.dart；不在设置页壳里时原样渲染）。
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      SettingsSectionAnchor(title: text, child: _build(context));
+
+  Widget _build(BuildContext context) {
     if (isGlassDesign(context) && !isCupertinoPlatform(context)) {
       // Apple：与 [AdaptiveSettingsSection] 分组外标题同一口径——13 号 semibold
       // secondaryLabel，缩进到分组行文字起点（桌面 10 / 触屏 16）。调用方显式
@@ -82,8 +96,11 @@ const int kSettingsRowTitleMaxLines = 2;
 const int kSettingsRowSubtitleMaxLines = 3;
 const double kSettingsStepperValueWidth = 72;
 
+/// Stepper 按钮的布局与触控边界；内部 XS 图形仍由共享按钮渲染。
+const double kSettingsStepperButtonWidth = kMinInteractiveDimension;
+
 /// stepper 行 trailing（`−` / 读数 / `+`）的固有宽度：两个
-/// `VisualDensity.compact` 的 [IconButton]（48 − 8 = 40）+ [Wrap] 的两处 4
+/// [kSettingsStepperButtonWidth] 触控区 + [Wrap] 的两处 4
 /// 间距 + [kSettingsStepperValueWidth] 读数槽。读数走 [FittedBox] 缩放，所以
 /// 这个盒子不随文字缩放变宽。
 ///
@@ -91,7 +108,7 @@ const double kSettingsStepperValueWidth = 72;
 /// [AdaptiveSettingsRow.trailingWidth]）——判「这行还放不放得下标题」必须知道
 /// trailing 到底占多宽，靠经验常数猜会把标题削没（BUG-2550）。
 const double kSettingsStepperTrailingWidth =
-    kSettingsStepperValueWidth + 2 * (40 + 4);
+    kSettingsStepperValueWidth + 2 * (kSettingsStepperButtonWidth + 4);
 
 /// 行内布局下，标题至少要拿到的宽度（1x；随文字缩放放大）。
 ///
@@ -163,6 +180,37 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
       );
     }
 
+    // 设置类子页统一壳（settings kit）：标题是纯文字时走 SettingsKitScaffold——
+    // 浮动页头（返回 + 标题胶囊 + 动作组，随滚动收缩）+ 页内 ≥ 2 个带标题分组时
+    // 的分组跳转条，与 schema 详情页同一套外观。标题是自定义组件时保持原工具栏。
+    final Widget titleWidget = title;
+    if (titleWidget is Text && titleWidget.data != null) {
+      return SettingsKitScaffold(
+        title: titleWidget.data!,
+        actions: actions ?? const <Widget>[],
+        // 列表滚到叠放的页头底下：顶部内边距加上壳的页头让位。
+        bodyConsumesTopPadding: true,
+        bodyBuilder:
+            (
+              BuildContext context,
+              ScrollController controller,
+              SettingsSectionSpy spy,
+            ) {
+              final Widget list = ListView(
+                controller: controller,
+                padding: listPadding.add(
+                  EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
+                ),
+                children: children,
+              );
+              return bottom == null
+                  ? list
+                  : Column(
+                      children: <Widget>[Expanded(child: list), bottom!],
+                    );
+            },
+      );
+    }
     final Widget list = ListView(padding: listPadding, children: children);
     return FushiToolScaffold.customTitle(
       title: title,
@@ -207,7 +255,10 @@ class AdaptiveSettingsSurface extends StatelessWidget {
   final VoidCallback? onTitleTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      SettingsSectionAnchor(title: title, child: _build(context));
+
+  Widget _build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget content = Column(
@@ -441,10 +492,17 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
     }
   }
 
+  // 带标题的分组 = 页内分组锚点（见 SettingsSectionHeader 的同名说明）。
   @override
   Widget build(BuildContext context) {
     if (widget.children.isEmpty) return const SizedBox.shrink();
+    return SettingsSectionAnchor(
+      title: widget.title,
+      child: _buildSection(context),
+    );
+  }
 
+  Widget _buildSection(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
     final bool glassDesign = isGlassDesign(context) && !cupertino;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -519,7 +577,7 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
         // 收起时行不入树（不可聚焦、不参与焦点驱动），只保留标题头；用 AnimatedSize
         // 平滑高度过渡，ClipRect 防过渡帧溢出。eink 下高度过渡同样归零。
         child: ClipRect(
-          child: AnimatedSize(
+          child: FushiAnimatedSize(
             duration: einkSafeDuration(
               context,
               const Duration(milliseconds: 180),
@@ -671,7 +729,7 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
           header,
           // 收起时行不入树（不可聚焦、不参与焦点驱动）。
           ClipRect(
-            child: AnimatedSize(
+            child: FushiAnimatedSize(
               duration: einkSafeDuration(
                 context,
                 const Duration(milliseconds: 180),
@@ -919,7 +977,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
     // impossible width.
     //
     // BUG-2550：那个经验值只在 trailing 窄（switch ~60）时成立。trailing 一旦真的
-    // 宽——stepper 是 [kSettingsStepperTrailingWidth]（160）——220 就远低于这行真正
+    // 宽——stepper 是 [kSettingsStepperTrailingWidth]——220 就远低于这行真正
     // 需要的宽度：行宽刚好卡在阈值上时，标题拿到的是
     // `220 + 42 − 32(padding) − 42(icon) − 12(gap) − 160(stepper) ≈ 16dp`，
     // 一个汉字都装不下，于是「字体大小 / 字体粗细 / 段落间距」在阅读设置面板里
@@ -1166,11 +1224,16 @@ class AdaptiveSettingsSwitchRow extends StatelessWidget {
     this.icon,
     this.showIcon = false,
     this.horizontalPadding,
+    this.subtitleMaxLines,
   });
 
   final String title;
   final String? subtitle;
   final IconData? icon;
+
+  /// 透传给 [AdaptiveSettingsRow.subtitleMaxLines]：null = 说明完整换行（默认），
+  /// 给值时超出部分省略号截断（调用方负责把完整说明放进提示里）。
+  final int? subtitleMaxLines;
 
   /// 与 [AdaptiveSettingsNavigationRow.showIcon] 同款开关：true 且 [icon] 非空
   /// 才渲染左栏图标徽章。schema 层的 `showIcons` 经此透传（此前只转发 icon 不
@@ -1185,6 +1248,7 @@ class AdaptiveSettingsSwitchRow extends StatelessWidget {
     return AdaptiveSettingsRow(
       title: title,
       subtitle: subtitle,
+      subtitleMaxLines: subtitleMaxLines,
       icon: icon,
       showIcon: showIcon,
       horizontalPadding: horizontalPadding,
@@ -2875,7 +2939,10 @@ class SettingsFormField extends StatelessWidget {
       padding: EdgeInsets.only(bottom: bottomSpacing),
       child: SizedBox(
         width: double.infinity,
-        child: TextFormField(
+        // 共享 M3E 输入框（FushiTextFormFieldControl → fushiMd3FieldDecoration）：
+        // 填充底、静止无描边、聚焦 2px 主色、悬停状态层，与其它输入框同一形态；
+        // 此前这里是裸 TextFormField + 灰色细描边方框。
+        child: FushiTextFormFieldControl(
           initialValue: initialValue,
           controller: controller,
           focusNode: focusNode,
@@ -3093,10 +3160,14 @@ class _GamepadAdjustableValue extends StatefulWidget {
     required this.onDecrement,
     required this.child,
     this.focusId,
+    this.autofocus = false,
   });
 
   final String focusIdPrefix;
   final FushiFocusId? focusId;
+
+  /// 挂载即抢焦点（弹出面板里唯一的调值控件用）。
+  final bool autofocus;
   final VoidCallback onIncrement;
   final VoidCallback onDecrement;
   final Widget child;
@@ -3156,6 +3227,7 @@ class _GamepadAdjustableValueState extends State<_GamepadAdjustableValue> {
         },
         child: FushiFocusTarget(
           id: widget.focusId ?? _fallbackFocusId,
+          autofocus: widget.autofocus,
           child: ExcludeFocus(child: widget.child),
         ),
       ),
@@ -3321,6 +3393,7 @@ class _KeyboardSlider extends StatelessWidget {
     this.label,
     this.onChangeEnd,
     this.step,
+    this.autofocus = false,
   });
 
   final double value;
@@ -3331,6 +3404,7 @@ class _KeyboardSlider extends StatelessWidget {
   final ValueChanged<double> onChanged;
   final ValueChanged<double>? onChangeEnd;
   final double? step;
+  final bool autofocus;
 
   /// One D-pad/arrow nudge: an explicit [step], else one division, else 1/20 of
   /// the range (a sensible default for continuous sliders).
@@ -3347,6 +3421,7 @@ class _KeyboardSlider extends StatelessWidget {
   Widget build(BuildContext context) {
     return _GamepadAdjustableValue(
       focusIdPrefix: 'settings-slider',
+      autofocus: autofocus,
       onIncrement: () => _adjust(_step),
       onDecrement: () => _adjust(-_step),
       child: Semantics(
@@ -3384,6 +3459,7 @@ Widget gamepadSeekableSlider({
   String? label,
   ValueChanged<double>? onChangeEnd,
   double? step,
+  bool autofocus = false,
 }) {
   return _KeyboardSlider(
     value: value,
@@ -3394,6 +3470,7 @@ Widget gamepadSeekableSlider({
     onChanged: onChanged,
     onChangeEnd: onChangeEnd,
     step: step,
+    autofocus: autofocus,
   );
 }
 
@@ -3782,11 +3859,14 @@ class _SettingsStepButton extends StatelessWidget {
         child: FushiIcon(icon, size: 18),
       );
     }
-    return IconButton(
-      icon: FushiIcon(icon, size: 18),
-      tooltip: tooltip,
-      visualDensity: VisualDensity.compact,
-      onPressed: onPressed,
+    return SizedBox.square(
+      dimension: kSettingsStepperButtonWidth,
+      child: FushiIconButtonControl(
+        icon: FushiIcon(icon, size: 18),
+        tooltip: tooltip,
+        visualDensity: VisualDensity.compact,
+        onPressed: onPressed,
+      ),
     );
   }
 }

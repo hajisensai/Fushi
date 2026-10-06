@@ -7,7 +7,7 @@ void main() {
       () {
     final String script = File('../script/build_and_run.sh').readAsStringSync();
 
-    expect(script, contains('FUSHI_MIHON_ARCHS=host bash'));
+    expect(script, contains('tool/mihon/build_desktop_runtime.sh'));
     expect(
       script,
       contains(
@@ -25,8 +25,11 @@ void main() {
 
     expect(script, contains('corretto_version="21.0.12.8.1"'));
     expect(script, contains('corretto.aws/downloads/resources'));
-    expect(script, contains('x64_archive_sha256='));
     expect(script, contains('arm64_archive_sha256='));
+    expect(
+      script,
+      contains('amazon-corretto-\$corretto_version-macosx-aarch64.tar.gz'),
+    );
     // 按宿主选工具：macOS 14+ 的 /sbin/sha256sum 是 BSD 版、不认 GNU 的
     // --status，按「PATH 里有没有 sha256sum」探测会在 macOS 上全判失败。
     expect(script, contains('Darwin) sha256_tool=(shasum -a 256)'));
@@ -35,16 +38,28 @@ void main() {
     expect(script, contains('--continue-at -'));
   });
 
-  test('Mihon runtime 默认出全架构，不是 runner 的 host 架构', () {
+  test('macOS 只出 arm64 的 Mihon runtime（不再支持 Intel Mac）', () {
     final String script =
         File('../tool/mihon/build_desktop_runtime.sh').readAsStringSync();
 
+    expect(script, contains('"runtime-macos-arm64"'));
     expect(
       script,
-      contains(r'${FUSHI_MIHON_ARCHS:-all}'),
-      reason: '发布包必须两个架构都出。降级成 host 会让 Intel Mac 上整条 Mihon 链'
-          '直接没有 JVM 镜像可用。',
+      isNot(contains('runtime-macos-x64')),
+      reason: 'macOS 版只出 Apple Silicon，x64 JVM 镜像是死重。',
     );
+    expect(
+      script,
+      isNot(contains('macosx-x64')),
+      reason: 'macOS x64 JDK 归档不再下载、不再钉哈希。',
+    );
+    expect(script, isNot(contains('FUSHI_MIHON_ARCHS')));
+
+    final String runtime = File(
+      'lib/src/media/manga/mihon/desktop_mihon_runtime.dart',
+    ).readAsStringSync();
+    expect(runtime, contains("'runtime-macos-arm64'"));
+    expect(runtime, isNot(contains('runtime-macos-x64')));
   });
 
   test('verify 脚本用 app 本体核对 JVM 镜像的架构覆盖', () {
@@ -54,13 +69,18 @@ void main() {
     expect(
       script,
       contains(r'lipo -archs "$app_executable"'),
-      reason: '脚本原本只按 uname -m 冒烟宿主架构的 java，而 runner 恒是 Apple '
-          'Silicon——交叉 jlink 出来的 x64 镜像一次都没被核对过。',
+      reason: '脚本原本只按 uname -m 冒烟宿主架构的 java；按 app 本体的架构核对'
+          '才能拦住「app 带了某架构、JVM 镜像却没有」的包。',
     );
     expect(
       script,
-      contains('runtime-macos-x64/bin/java'),
-      reason: 'Dart 侧按 Abi.current() 选目录，两个目录都要能被这道门核到。',
+      contains('runtime-macos-arm64/bin/java'),
+      reason: 'Dart 侧只认 runtime-macos-arm64，这道门必须核到它。',
+    );
+    expect(
+      script,
+      isNot(contains('runtime-macos-x64')),
+      reason: 'app 意外带上 x86_64 切片时必须直接红，而不是去找不存在的 x64 镜像。',
     );
     expect(
       script,

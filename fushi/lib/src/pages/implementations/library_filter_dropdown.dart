@@ -1,7 +1,10 @@
-import 'package:flutter/cupertino.dart' show CupertinoIcons;
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_control_metrics.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingToolbarSurface;
+import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
@@ -93,7 +96,8 @@ double librarySearchFieldHeight(BuildContext context) =>
 ///
 /// eink：primary / outline / onSurfaceVariant 全塌成前景色，激活与未激活逐像素
 /// 相同；改反色填充表达激活（chipTheme / segmentedButtonTheme 同一套处理）。
-class LibraryFilterChip extends StatelessWidget {
+class LibraryFilterChip extends StatelessWidget
+    implements FushiShapedMenuTrigger {
   const LibraryFilterChip({
     required this.label,
     required this.active,
@@ -102,6 +106,15 @@ class LibraryFilterChip extends StatelessWidget {
 
   final String label;
   final bool active;
+
+  /// 与下面画出来的胶囊同一个形状：[FushiPopupMenuButton] 用它裁剪悬停 / 按压
+  /// 状态层（2026-10-05 用户反馈：灰色反馈范围与高亮 chip 对不上）。
+  @override
+  ShapeBorder menuTriggerShape(BuildContext context) => isEinkTheme(context)
+      ? RoundedRectangleBorder(
+          borderRadius: const OutlineInputBorder().borderRadius,
+        )
+      : const StadiumBorder();
 
   @override
   Widget build(BuildContext context) {
@@ -169,8 +182,8 @@ class LibraryFilterChip extends StatelessWidget {
       );
     }
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      curve: Curves.easeOut,
+      duration: FushiMotion.short,
+      curve: FushiSpringCurve.effects,
       height: height,
       padding: EdgeInsetsDirectional.only(start: active ? 8 : 12, end: 8),
       alignment: Alignment.center,
@@ -218,8 +231,8 @@ class LibraryFilterChip extends StatelessWidget {
   }
 }
 
-/// 库页搜索框（书架 / 漫画库 / 视频库 / 游戏库共用一个形态）：MD3 填充胶囊、
-/// Apple 透明玻璃搜索胶囊（都由 [FushiTextFieldControl] 认出前缀放大镜后给出），
+/// 库页搜索框（书架 / 漫画库 / 视频库 / 游戏库共用一个形态）：共享 M3E 搜索栏
+/// [FushiSearchBar]（MD3 填充胶囊、Apple 搜索胶囊），
 /// 高度见 [librarySearchFieldHeight]。有搜索词时尾部出清除钮。搜索词只影响本次
 /// 会话、不落库，由调用方持有 [controller]。
 class LibrarySearchField extends StatelessWidget {
@@ -243,40 +256,17 @@ class LibrarySearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 共享 M3E 搜索栏（FushiSearchBar）：形态与其它搜索框同一实现（MD3 填充
+    // 胶囊 / Apple 搜索胶囊、紧凑清除钮），行为上补齐 IME 组字期间不过滤、
+    // Esc 清空。高度仍按库页工具条的行内控件高。
     return SizedBox(
       height: librarySearchFieldHeight(context),
-      child: ValueListenableBuilder<TextEditingValue>(
-        valueListenable: controller,
-        builder: (BuildContext context, TextEditingValue value, Widget? _) {
-          return FushiTextFieldControl(
-            key: fieldKey,
-            controller: controller,
-            decoration: InputDecoration(
-              isDense: true,
-              prefixIcon: const FushiIcon(Icons.search, size: 18),
-              hintText: hintText,
-              border: const OutlineInputBorder(),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 4,
-              ),
-              // 清除钮必须是紧凑尺寸（与 [FushiSearchField] 同一套 18 + 4）：
-              // 标准图标按钮 40–44 高，比 36 / 40 的定高搜索框还高，Apple 下
-              // 会把输入行撑溢出、文字被挤得偏下（用户 2026-10-04「搜索框文字
-              // 没有垂直居中」）。
-              suffixIcon: value.text.isEmpty
-                  ? null
-                  : FushiIconButton(
-                      icon: Icons.close,
-                      tooltip: t.clear,
-                      size: kFushiSearchFieldIconSize,
-                      padding: const EdgeInsets.all(4),
-                      onTap: onClear,
-                    ),
-            ),
-            onChanged: onChanged,
-          );
-        },
+      child: FushiSearchBar(
+        fieldKey: fieldKey,
+        controller: controller,
+        hintText: hintText,
+        onQueryChanged: onChanged,
+        onClear: onClear,
       ),
     );
   }
@@ -296,6 +286,12 @@ class LibrarySearchField extends StatelessWidget {
 ///
 /// 焦点顺序固定为 搜索 → 筛选 → 工具（[OrderedTraversalPolicy]），与布局无关。
 /// 与下方内容的分隔靠留白，不画分隔线。
+///
+/// 对齐（2026-10-06 用户截图「顶部标签页和搜索栏没对齐」）：左右边距取页面
+/// 统一页边（[FushiSpacingTokens.page]），与外壳大标题、浮动页签胶囊、内容卡片
+/// 同一条左缘 / 右缘。Material（M3E）下行尾工具收进一枚与搜索框同高的悬浮
+/// 按钮组胶囊（[FushiFloatingToolbarSurface]），不再是一排裸图标；Apple 下
+/// [FushiToolbar] 自带分组玻璃胶囊，原样放。
 class LibraryToolbar extends StatelessWidget {
   const LibraryToolbar({
     required this.search,
@@ -308,7 +304,6 @@ class LibraryToolbar extends StatelessWidget {
   });
 
   static const double wideBreakpoint = 640;
-  static const double _hPad = 12;
   static const double _gap = 8;
 
   final Widget search;
@@ -324,14 +319,24 @@ class LibraryToolbar extends StatelessWidget {
   /// 窄屏布局时挂在整块工具条上的 key（测试按它判定走了窄屏两行布局）。
   final Key? compactKey;
 
-  Widget _filterStrip({required bool wide}) {
+  /// 行尾工具的容器：Material 下是与搜索框同高的悬浮按钮组胶囊。
+  static Widget _trailingPill(BuildContext context, Widget child) {
+    if (isGlassDesign(context)) return child;
+    return FushiFloatingToolbarSurface(
+      height: librarySearchFieldHeight(context),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: child,
+    );
+  }
+
+  Widget _filterStrip({required bool wide, required double hPad}) {
     return HorizontalDragScrollable(
       child: SingleChildScrollView(
         key: filtersKey,
         scrollDirection: Axis.horizontal,
         // 上下各留 4：玻璃胶囊的投影不被横滚区裁掉。
         padding: EdgeInsets.symmetric(
-          horizontal: wide ? 0 : _hPad,
+          horizontal: wide ? 0 : hPad,
           vertical: 4,
         ),
         child: Row(
@@ -352,6 +357,7 @@ class LibraryToolbar extends StatelessWidget {
       builder: (BuildContext context, BoxConstraints constraints) {
         final double width = constraints.maxWidth;
         final bool wide = width >= wideBreakpoint;
+        final double hPad = FushiDesignTokens.of(context).spacing.page;
         final Widget searchSlot = FocusTraversalOrder(
           order: const NumericFocusOrder(1),
           child: search,
@@ -360,7 +366,7 @@ class LibraryToolbar extends StatelessWidget {
             ? null
             : FocusTraversalOrder(
                 order: const NumericFocusOrder(2),
-                child: _filterStrip(wide: wide),
+                child: _filterStrip(wide: wide, hPad: hPad),
               );
         final Widget? trailingWidget =
             !wide && compactTrailing != null ? compactTrailing : trailing;
@@ -368,13 +374,13 @@ class LibraryToolbar extends StatelessWidget {
             ? null
             : FocusTraversalOrder(
                 order: const NumericFocusOrder(3),
-                child: trailingWidget,
+                child: _trailingPill(context, trailingWidget),
               );
         final Widget body;
         if (wide) {
           final double searchWidth = (width * 0.32).clamp(240.0, 420.0);
           body = Padding(
-            padding: const EdgeInsets.fromLTRB(_hPad, 4, _hPad, 4),
+            padding: EdgeInsets.fromLTRB(hPad, 4, hPad, 4),
             child: Row(
               children: <Widget>[
                 SizedBox(width: searchWidth, child: searchSlot),
@@ -399,12 +405,12 @@ class LibraryToolbar extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: _hPad),
+                  padding: EdgeInsets.symmetric(horizontal: hPad),
                   child: searchSlot,
                 ),
                 const SizedBox(height: 4),
                 Padding(
-                  padding: const EdgeInsetsDirectional.only(end: _hPad),
+                  padding: EdgeInsetsDirectional.only(end: hPad),
                   child: Row(
                     children: <Widget>[
                       Expanded(
@@ -426,7 +432,7 @@ class LibraryToolbar extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: _hPad),
+                  padding: EdgeInsets.symmetric(horizontal: hPad),
                   child: Row(
                     children: <Widget>[
                       Expanded(child: searchSlot),

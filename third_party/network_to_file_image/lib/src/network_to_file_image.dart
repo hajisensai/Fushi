@@ -7,7 +7,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui show Codec, ImmutableBuffer;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// This is a mixture of [FileImage] and [NetworkImage].
 /// It will download the image from the url once, save it locally in the file system,

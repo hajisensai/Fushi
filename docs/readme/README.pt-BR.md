@@ -6,7 +6,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | **Português** | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
@@ -49,14 +49,14 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 flutter build windows --release
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` reúnem `flutter pub get` e `ci/apply-patches.sh` em um único comando. Este projeto está fixado no Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`); algumas dependências upstream estão incluídas em `third_party/` ou recebem patch de `ci/apply-patches.sh` — consulte [docs/agent/build.md](../agent/build.md) para mais detalhes.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` reúnem `flutter pub get` e `ci/apply-patches.sh` em um único comando. Este projeto está fixado no Flutter 3.47.6 (Dart SDK `>=3.5.0 <4.0.0`); algumas dependências upstream estão incluídas em `third_party/` ou recebem patch de `ci/apply-patches.sh` — consulte [docs/agent/build.md](../agent/build.md) para mais detalhes.
 
 <details>
 <summary><b>Pilha de tecnologias</b></summary>
 
 | Camada | Tecnologia |
 |---|---|
-| Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Framework | Flutter 3.47.6 (Dart SDK `>=3.5.0 <4.0.0`) |
 | Plataformas | Android / Windows / macOS / iOS (Material Design 3) |
 | Leitor | Motor de paginação WebView (derivado da família Hoshi Reader) |
 | Vídeo | media_kit (libmpv core) |
@@ -151,7 +151,6 @@ O Fushi baseia-se nos seguintes projetos e ecossistema:
 | [Mihon](https://github.com/mihonapp/mihon) | Ecossistema de extensões de fontes de mangá |
 | [Aniyomi](https://github.com/aniyomiorg/aniyomi) | Ecossistema de extensões de fontes de anime (extensions-lib 14–16, mesmo runtime) |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Runtime de extensões de mangá para desktop |
-| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI do runtime de fontes de mangá |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | Referência da ponte de legendas de streaming para a extensão de navegador |
 | [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Referência de arquitetura para identificação e scraping de anime |
 | [ReinaManager](https://github.com/huoshen80/ReinaManager) | Referência de arquitetura de informação da biblioteca de galgames |

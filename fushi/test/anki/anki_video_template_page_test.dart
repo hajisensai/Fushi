@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:html/parser.dart' as html;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/utils.dart';
@@ -93,7 +93,9 @@ void main() {
       extraMappings: <String, String>{'Expression': '{sentence-audio}'},
     );
     expect(
-      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      tester
+          .widget<FushiFilledButton>(find.byType(FushiFilledButton))
+          .onPressed,
       isNull,
     );
     expect(find.text(t.anki_video_template_audio_required), findsOneWidget);
@@ -109,7 +111,9 @@ void main() {
       },
     );
     expect(
-      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      tester
+          .widget<FushiFilledButton>(find.byType(FushiFilledButton))
+          .onPressed,
       isNull,
     );
   });
@@ -214,7 +218,7 @@ void main() {
       );
     await _open(tester, service);
     expect(find.text(t.anki_video_template_preview), findsNothing);
-    expect(find.byType(FilledButton), findsNothing);
+    expect(find.byType(FushiFilledButton), findsNothing);
     expect(find.text(t.anki_video_template_unsupported), findsOneWidget);
   });
   testWidgets('opening and preview never write; picks mapped image field', (
@@ -224,8 +228,8 @@ void main() {
     await _open(tester, service);
     expect(
       tester
-          .widget<DropdownButtonFormField<String>>(
-            find.byType(DropdownButtonFormField<String>),
+          .widget<FushiDropdownButtonFormField<String>>(
+            find.byType(FushiDropdownButtonFormField<String>),
           )
           .initialValue,
       'Picture',
@@ -234,8 +238,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(service.writes, 0);
     expect(find.text(t.anki_video_template_preview_hint), findsOneWidget);
-    final DropdownButtonFormField<String> dropdown = tester.widget(
-      find.byType(DropdownButtonFormField<String>),
+    final FushiDropdownButtonFormField<String> dropdown = tester.widget(
+      find.byType(FushiDropdownButtonFormField<String>),
     );
     expect(dropdown.initialValue, 'Picture');
   });
@@ -256,7 +260,9 @@ void main() {
       await tester.pump();
       expect(service.writes, 1);
       expect(
-        tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+        tester
+            .widget<FushiFilledButton>(find.byType(FushiFilledButton))
+            .onPressed,
         isNull,
       );
       expect(
@@ -284,7 +290,9 @@ void main() {
   ) async {
     await _open(tester, _Service(), audio: false);
     expect(
-      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      tester
+          .widget<FushiFilledButton>(find.byType(FushiFilledButton))
+          .onPressed,
       isNull,
     );
     expect(find.text(t.anki_video_template_audio_required), findsOneWidget);
@@ -299,7 +307,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('write refused'), findsOneWidget);
     expect(
-      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      tester
+          .widget<FushiFilledButton>(find.byType(FushiFilledButton))
+          .onPressed,
       isNotNull,
     );
   });
@@ -309,7 +319,7 @@ void main() {
   ) async {
     await _open(tester, _Service()..definition = null);
     expect(find.text(t.anki_video_template_unsupported), findsOneWidget);
-    expect(find.byType(FilledButton), findsNothing);
+    expect(find.byType(FushiFilledButton), findsNothing);
   });
 
   test(

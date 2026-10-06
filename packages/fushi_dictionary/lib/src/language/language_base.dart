@@ -7,7 +7,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:collection/collection.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../formats/dictionary_format.dart';
 import '../models/dictionary_entry.dart';
@@ -146,10 +146,7 @@ abstract class Language {
       start: rawStart.clamp(0, sentenceToReturn.length),
       end: rawEnd.clamp(0, sentenceToReturn.length),
     );
-    return FushiTextSelection(
-      text: sentenceToReturn,
-      range: range,
-    );
+    return FushiTextSelection(text: sentenceToReturn, range: range);
   }
 
   /// Returns a list of sentences for a block of text.
@@ -190,10 +187,7 @@ abstract class Language {
   ///
   /// In the case of English, 'This is a pen.' at index 10 (p), should return
   /// the word 'pen'.
-  String wordFromIndex({
-    required String text,
-    required int index,
-  }) {
+  String wordFromIndex({required String text, required int index}) {
     /// See [indexMaxDistance] above.
     /// If the [indexMaxDistance] is not defined...
     if (indexMaxDistance != null) {
@@ -236,10 +230,7 @@ abstract class Language {
   /// is within the range of the first word, with remainder words included.
   /// For a language that is not space-delimited, this is simply the substring
   /// function.
-  String getSearchTermFromIndex({
-    required String text,
-    required int index,
-  }) {
+  String getSearchTermFromIndex({required String text, required int index}) {
     if (isSpaceDelimited) {
       final workingBuffer = StringBuffer();
       final termBuffer = StringBuffer();
@@ -263,9 +254,7 @@ abstract class Language {
   /// from, given a clicked index and full text. For a space-delimited language,
   /// this will return the starting index of a clicked word. Otherwise, this
   /// returns the clicked index itself.
-  TextRange getWordRange({
-    required FushiTextSelection selection,
-  }) {
+  TextRange getWordRange({required FushiTextSelection selection}) {
     final workingBuffer = StringBuffer();
     String selectedWord = '';
     int start = 0;
@@ -298,13 +287,13 @@ abstract class Language {
   }
 
   /// Get preliminary highlight length before a dictionary search.
-  int getGuessHighlightLength({
-    required String searchTerm,
-  }) {
-    final truncated =
-        searchTerm.length > 40 ? searchTerm.substring(0, 40) : searchTerm;
-    final word = textToWords(truncated)
-        .firstWhere((e) => e.trim().isNotEmpty, orElse: () => '');
+  int getGuessHighlightLength({required String searchTerm}) {
+    final truncated = searchTerm.length > 40
+        ? searchTerm.substring(0, 40)
+        : searchTerm;
+    final word = textToWords(
+      truncated,
+    ).firstWhere((e) => e.trim().isNotEmpty, orElse: () => '');
     final length = word.trim().length;
     return length > 0 ? length : 1;
   }
@@ -330,10 +319,7 @@ abstract class Language {
   /// from, given a clicked index and full text. For a space-delimited language,
   /// this will return the starting index of a clicked word. Otherwise, this
   /// returns the clicked index itself.
-  int getStartingIndex({
-    required String text,
-    required int index,
-  }) {
+  int getStartingIndex({required String text, required int index}) {
     if (isSpaceDelimited) {
       final workingBuffer = StringBuffer();
 
@@ -366,15 +352,11 @@ abstract class Language {
       children: [
         Text(
           entry.word,
-          style: Theme.of(context)
-              .textTheme
-              .titleLarge!
-              .copyWith(fontWeight: FontWeight.bold),
+          style: Theme.of(
+            context,
+          ).textTheme.titleLarge!.copyWith(fontWeight: FontWeight.bold),
         ),
-        Text(
-          entry.reading,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
+        Text(entry.reading, style: Theme.of(context).textTheme.titleMedium),
       ],
     );
   }

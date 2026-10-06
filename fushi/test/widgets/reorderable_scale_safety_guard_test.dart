@@ -15,7 +15,7 @@ import '../helpers/scan_scale.dart';
 /// 缩小时一拖即飞出屏幕。这是 SDK 的坐标缺陷，app 内改不了那段数学。
 ///
 /// BUG-778 当时只把合集与词典两条链路换成了自实现的 FushiReorderable*，
-/// `custom_fonts_page` 与互联设备排序两处漏网，且 `md3_design_system_static_test`
+/// `custom_fonts_page` 与互联设备排序两处漏网，且 `m3e_design_system_static_test`
 /// 还**正向断言**字体页必须含 `ReorderableListView.builder(`——一条守卫把缺陷焊
 /// 在了原地。这里改为反向钉死：全仓不得再实际使用 SDK 的重排组件。
 void main() {

@@ -1313,7 +1313,11 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     );
     if (unitStart >= 0 && unitEnd > unitStart) {
       _traceArrive(unitStart, unitEnd);
+      final (int, int)? previousUnit = _readLedger.current;
       _readLedger.arrive(unitStart, unitEnd);
+      // 「翻页后开始」：先 arrive 再起表——起表前翻走的那页（打开时停着读的那页）
+      // 与停表期间同律丢弃，时长与字数同口径（BUG-2210）。
+      _noteStudyClockUnitArrival(previousUnit, unitStart, unitEnd);
     } else if (unitStart >= 0 && snapshot.charOffsetEnd < 0) {
       // BUG-2492：JS 判起点不在本页 / 页尾探不到 → 第四段 -1 → 不 arrive（宁可不计）。
       // 记一行让诊断日志能看出「这页没计」而不是静默消失。
@@ -1754,6 +1758,31 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     return clock;
   }
 
+  /// 阅读计时开始方式「翻页后开始」：位置从 [previous] 向前推进到 `[start, end)`
+  /// （判据 [readerStudyClockTurnAdvanced]：只比相邻两次落定、跳转后首次落定不算、
+  /// 重排漂移不算、回翻不算）时清掉开始暂停并按统一判据起表。其余模式 / 已开始 /
+  /// 用户已手动停续过时是 no-op。
+  void _noteStudyClockUnitArrival((int, int)? previous, int start, int end) {
+    if (!_studyClockStartGate.noteUnitArrival(
+      previous: previous,
+      start: start,
+      end: end,
+    )) {
+      return;
+    }
+    studyDiag('clock', 'auto-start on first page turn [$start,$end)');
+    _startStudyClockFromGate();
+  }
+
+  /// 开始方式门刚清掉暂停旗：建表（[_ensureStudyClock] 按判据 start）、刷新计时键
+  /// 的暂停态图标。面板压正文 / 切后台时判据仍不放行，与手动「继续」同律。
+  void _startStudyClockFromGate() {
+    if (!mounted) return;
+    _rebuild(() {});
+    _ensureStudyClock();
+    _syncStudyClockRunState();
+  }
+
   /// 时钟此刻可跑（[studyClockMayRun]）。
   ///
   /// BUG-2558：`audiobookPlaying` 直接读控制器的**当前**播放态，不用任何镜像字段——
@@ -1793,6 +1822,13 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   void _noteAudiobookPlayingForStudyClock(bool playing) {
     if (playing == _audiobookPlayingForStudyClock) return;
     _audiobookPlayingForStudyClock = playing;
+    // 阅读计时开始方式「翻页后开始」：按下有声书播放同样算开始阅读（「手动」不受
+    // 影响——手动暂停旗照旧一票否决，听书也要用户自己点继续）。
+    if (_studyClockStartGate.noteAudiobookPlaying(playing)) {
+      studyDiag('clock', 'auto-start on audiobook play');
+      _startStudyClockFromGate();
+      return;
+    }
     _syncStudyClockRunState();
   }
 

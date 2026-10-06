@@ -41,7 +41,7 @@ List<DeinflectionTag> buildDeinflectionTags({
   }
   if (matched != deinflected && deinflected.isNotEmpty) {
     return <DeinflectionTag>[
-      (name: '$matched → $deinflected', description: '')
+      (name: '$matched → $deinflected', description: ''),
     ];
   }
   return const <DeinflectionTag>[];
@@ -89,11 +89,13 @@ List<DeinflectionTag> deinflectionTagsFromExtra(Map<String, dynamic> extra) {
           ),
     ]);
   }
-  return localizeDeinflectionTags(buildDeinflectionTags(
-    matched: (extra['matched'] ?? '').toString(),
-    deinflected: (extra['deinflected'] ?? '').toString(),
-    trace: const <FushiTransformGroup>[],
-  ));
+  return localizeDeinflectionTags(
+    buildDeinflectionTags(
+      matched: (extra['matched'] ?? '').toString(),
+      deinflected: (extra['deinflected'] ?? '').toString(),
+      trace: const <FushiTransformGroup>[],
+    ),
+  );
 }
 
 String buildLookupEntryExtra(FushiLookupResult r, FushiGlossaryEntry g) {
@@ -105,29 +107,32 @@ String buildLookupEntryExtra(FushiLookupResult r, FushiGlossaryEntry g) {
     // 变形链带着语法说明一起随 entry 走。走 extra 的两条弹窗路径（原生弹窗、
     // buildLookupEntriesJson）本来只能看到 matched/deinflected，只好现编一条
     // 「matched → deinflected」且说明恒空——语法说明就是断在这里的。
-    'deinflectionTrace': deinflectionTagsToJson(buildDeinflectionTags(
-      matched: r.matched,
-      deinflected: r.deinflected,
-      trace: r.trace,
-    )),
+    'deinflectionTrace': deinflectionTagsToJson(
+      buildDeinflectionTags(
+        matched: r.matched,
+        deinflected: r.deinflected,
+        trace: r.trace,
+      ),
+    ),
     'frequencies': r.term.frequencies
-        .map((f) => {
-              'dictName': f.dictName,
-              'values': f.frequencies
-                  .map((v) => {
-                        'value': v.value,
-                        'display': v.displayValue,
-                      })
-                  .toList(),
-            })
+        .map(
+          (f) => {
+            'dictName': f.dictName,
+            'values': f.frequencies
+                .map((v) => {'value': v.value, 'display': v.displayValue})
+                .toList(),
+          },
+        )
         .toList(),
     'pitches': r.term.pitches
-        .map((p) => {
-              'dictName': p.dictName,
-              'positions': p.pitchPositions,
-              'patterns': p.patterns,
-              'transcriptions': p.transcriptions,
-            })
+        .map(
+          (p) => {
+            'dictName': p.dictName,
+            'positions': p.pitchPositions,
+            'patterns': p.patterns,
+            'transcriptions': p.transcriptions,
+          },
+        )
         .toList(),
   });
 }
@@ -137,6 +142,7 @@ DictionarySearchResult buildResultFromLookup({
   required List<FushiLookupResult> results,
   required int maximumTerms,
   List<String> dictionaryOrder = const <String>[],
+  Set<String> hiddenDictionaries = const <String>{},
 }) {
   int bestLength = 0;
   // BUG-1472：预算的单位是**词头**（表记 + 读音），不是 glossary 注释行。
@@ -158,6 +164,17 @@ DictionarySearchResult buildResultFromLookup({
   final Map<String, String> soleReadings = soleExplicitReadings(results);
   outer:
   for (final r in results) {
+    // 与 [buildPopupJsonFromLookup] 同一道源头过滤：被用户关掉的词典不进 entries。
+    // 此前只有 popupJson 过滤、entries 不过滤——只命中已隐藏词典的词，宿主据
+    // entries 判「有结果」去等 WebView 渲染，页面拿到的 popupJson 却是 `[]`，画出
+    // 页面自己的「No results」（emoji 放大镜）并按最大宽高铺成一大块空面板。只有
+    // 隐藏词典释义的词头不占 maximumTerms 预算、也不贡献高亮长度。
+    final List<FushiGlossaryEntry> glossaries = hiddenDictionaries.isEmpty
+        ? r.term.glossaries
+        : r.term.glossaries
+              .where((g) => !hiddenDictionaries.contains(g.dictName))
+              .toList();
+    if (glossaries.isEmpty) continue;
     if (r.matched.length > bestLength) {
       bestLength = r.matched.length;
     }
@@ -169,9 +186,11 @@ DictionarySearchResult buildResultFromLookup({
       truncated = true;
       break outer;
     }
-    final int headwordIndex =
-        headwords.putIfAbsent(headword, () => headwords.length);
-    for (final g in r.term.glossaries) {
+    final int headwordIndex = headwords.putIfAbsent(
+      headword,
+      () => headwords.length,
+    );
+    for (final g in glossaries) {
       collected.add((
         entry: DictionaryEntry(
           dictionaryName: g.dictName,
@@ -267,14 +286,18 @@ String buildPopupJsonFromLookup({
   final groupPitches = <String, List<FushiPitchEntry>>{};
   final seenFreqs = <String, Set<String>>{};
   final seenPitches = <String, Set<String>>{};
-  final groupGlossaries = <String,
-      List<
+  final groupGlossaries =
+      <
+        String,
+        List<
           ({
             String dictionary,
             String contentJson,
             String defTags,
             String termTags,
-          })>>{};
+          })
+        >
+      >{};
 
   // BUG-1472：与 [buildResultFromLookup] 同一处根因——预算按词头算，不按 glossary
   // 注释行算。这里本来就是按 key 分组的，所以「已有几个词头」= groupKeys.length。
@@ -343,8 +366,9 @@ String buildPopupJsonFromLookup({
       }
 
       final String m = g.glossary;
-      final String contentJson =
-          (m.isNotEmpty && (m[0] == '[' || m[0] == '{')) ? m : jsonEncode(m);
+      final String contentJson = (m.isNotEmpty && (m[0] == '[' || m[0] == '{'))
+          ? m
+          : jsonEncode(m);
       groupGlossaries[key]!.add((
         dictionary: g.dictName,
         contentJson: contentJson,
@@ -366,12 +390,19 @@ String buildPopupJsonFromLookup({
     sb.write(jsonEncode(groupMatched[key]));
     sb.write(',"rules":[],"deinflectionTrace":');
     // 弹窗 JSON 是显示路径 → 翻译；持久化的 extra 不翻（BUG-2038）。
-    sb.write(jsonEncode(
-        deinflectionTagsToJson(localizeDeinflectionTags(buildDeinflectionTags(
-      matched: groupMatched[key]!,
-      deinflected: groupDeinflected[key]!,
-      trace: groupTrace[key] ?? const <FushiTransformGroup>[],
-    )))));
+    sb.write(
+      jsonEncode(
+        deinflectionTagsToJson(
+          localizeDeinflectionTags(
+            buildDeinflectionTags(
+              matched: groupMatched[key]!,
+              deinflected: groupDeinflected[key]!,
+              trace: groupTrace[key] ?? const <FushiTransformGroup>[],
+            ),
+          ),
+        ),
+      ),
+    );
     sb.write(',"glossaries":[');
     final gl = _sortedByDictionaryOrder(
       groupGlossaries[key]!,
@@ -456,15 +487,17 @@ List<T> _sortedByDictionaryOrder<T>(
   final Map<int, int> groupOrder = <int, int>{};
   final List<({T item, int group, int rank, int sourceIndex})> indexed =
       <({T item, int group, int rank, int sourceIndex})>[
-    for (int i = 0; i < items.length; i++)
-      (
-        item: items[i],
-        group:
-            groupOrder.putIfAbsent(groupOf(items[i]), () => groupOrder.length),
-        rank: rank[dictNameOf(items[i])] ?? unknownRank,
-        sourceIndex: i,
-      ),
-  ];
+        for (int i = 0; i < items.length; i++)
+          (
+            item: items[i],
+            group: groupOrder.putIfAbsent(
+              groupOf(items[i]),
+              () => groupOrder.length,
+            ),
+            rank: rank[dictNameOf(items[i])] ?? unknownRank,
+            sourceIndex: i,
+          ),
+      ];
   indexed.sort((a, b) {
     final int byGroup = a.group.compareTo(b.group);
     if (byGroup != 0) return byGroup;
@@ -497,8 +530,7 @@ List<T> _sortedByDictionaryOrder<T>(
 
   for (int i = 0; i < text.runes.length; i++) {
     if (i >= rangeStart && i < rangeEnd) {
-      final String character =
-          String.fromCharCode(text.runes.elementAt(i));
+      final String character = String.fromCharCode(text.runes.elementAt(i));
       buffer.write(character);
 
       indexTape.add(i);

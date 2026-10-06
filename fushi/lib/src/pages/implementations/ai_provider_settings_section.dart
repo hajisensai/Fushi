@@ -17,7 +17,7 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -32,6 +32,8 @@ import 'package:fushi/src/settings/glass_settings_renderer.dart'
 import 'package:fushi/src/settings/settings_schema_widgets.dart'
     show SettingsSectionFooter;
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/settings/settings_kit.dart';
 
 // 历史上 aiFailureText 住在这里，五处调用方按 `show aiFailureText` 从本文件引；
 // 搬到 lib/src/ai/ 后保留这条再导出，不逐个改调用方。
@@ -127,7 +129,7 @@ class _AiProviderSettingsSectionState
               _providerRow(index),
             AdaptiveSettingsRow(
               key: const ValueKey<String>('ai-provider-add'),
-              icon: Icons.add_rounded,
+              icon: FushiIcons.add,
               showIcon: true,
               title: t.ai_provider_add,
               onTap: () => unawaited(_pickPresetAndAdd()),
@@ -208,7 +210,7 @@ class _AiProviderSettingsSectionState
             const FushiAppleChevron()
           else
             FushiIcon(
-              Icons.chevron_right,
+              FushiIcons.chevronRight,
               size: 20,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -220,8 +222,8 @@ class _AiProviderSettingsSectionState
   /// 本地服务（Ollama / LM Studio）是电脑，其余是云端 API。
   static IconData _presetIcon(_AiProviderDraft draft) =>
       (aiProviderPresetById(draft.presetId)?.isLocal ?? false)
-      ? Icons.computer_outlined
-      : Icons.cloud_outlined;
+      ? FushiIcons.devices
+      : FushiIcons.cloud;
 
   /// 编辑页跟随本 State 重建：草稿 / 探测结果 / 模型候选都只活在这里（防抖落盘与
   /// dispose 冲刷照旧由本 State 负责），编辑页只是另一处渲染。每次 [setState]
@@ -261,13 +263,25 @@ class _AiProviderSettingsSectionState
     final double inset = isGlassDesign(pageContext)
         ? GlassSettingsRenderer.detailHorizontalInset(pageContext)
         : tokens.spacing.page;
-    return FushiPageScaffold(
+    // 设置子页统一壳（settings kit）：浮动页头 + 分组跳转条（编辑表单的
+    // 连接 / 请求方式 / 自检等分组 ≥ 2 时自动出现）。
+    return SettingsKitScaffold(
       title: draft.displayName,
-      body: ListView(
+      leadingIcon: FushiIcons.ai,
+      leadingTone: SettingsIconTone.purple,
+      // 正文滚到叠放的页头底下：顶部内边距加上壳的页头让位。
+      bodyConsumesTopPadding: true,
+      bodyBuilder:
+          (
+            BuildContext context,
+            ScrollController controller,
+            SettingsSectionSpy spy,
+          ) => ListView(
+        controller: controller,
         key: ValueKey<String>('ai-provider-editor-${draft.id}'),
         padding: EdgeInsets.fromLTRB(
           inset,
-          tokens.spacing.gap,
+          tokens.spacing.gap + MediaQuery.paddingOf(context).top,
           inset,
           tokens.spacing.page + bottomSafeInsetOf(pageContext),
         ),
@@ -428,7 +442,7 @@ class _AiProviderSettingsSectionState
           children: <Widget>[
             AdaptiveSettingsRow(
               key: ValueKey<String>('ai-provider-$index-fetch-models'),
-              icon: Icons.download_outlined,
+              icon: FushiIcons.download,
               showIcon: true,
               title: t.ai_provider_models_fetch,
               // 地址还没填成合法 URL 时这一行不可点，而不是点了再报通用错误。
@@ -438,7 +452,7 @@ class _AiProviderSettingsSectionState
             ),
             AdaptiveSettingsRow(
               key: ValueKey<String>('ai-provider-$index-test'),
-              icon: Icons.network_check_outlined,
+              icon: FushiIcons.wifi,
               showIcon: true,
               title: t.ai_provider_test,
               // 「测试连接」对所配模型发一次最小问答（见 [_testConnection]）：
@@ -477,7 +491,7 @@ class _AiProviderSettingsSectionState
               Navigator.of(pageContext).pop();
               _delete(index);
             },
-            icon: const FushiIcon(Icons.delete_outline),
+            icon: const FushiIcon(FushiIcons.delete),
             label: Text(t.ai_provider_delete),
           ),
         ),
@@ -548,7 +562,7 @@ class _AiProviderSettingsSectionState
                 height: 16,
                 child: FushiCircularProgressIndicator(strokeWidth: 2),
               )
-            : const FushiIcon(Icons.arrow_drop_down),
+            : const FushiIcon(FushiIcons.dropDown),
         onPressed: ready && !busy
             ? () => unawaited(_pickModel(anchor, draft.id))
             : null,
@@ -632,7 +646,7 @@ class _AiProviderSettingsSectionState
     return _assignmentRow(
       key: const ValueKey<String>('ai-feature-default'),
       menuKey: const ValueKey<String>('ai-feature-default-provider'),
-      icon: Icons.auto_awesome_outlined,
+      icon: FushiIcons.ai,
       title: t.ai_feature_default_provider,
       summary: t.ai_feature_default_provider_summary,
       current: current,
@@ -724,15 +738,15 @@ class _AiProviderSettingsSectionState
 
   /// 功能行的单色图标（只做辨识，不上彩色底块）。
   static IconData _featureIcon(AiFeature feature) => switch (feature) {
-    AiFeature.galgameTextProcess => Icons.sports_esports_outlined,
-    AiFeature.dictStyle => Icons.style_outlined,
-    AiFeature.lapisStyle => Icons.dashboard_customize_outlined,
-    AiFeature.videoIdentify => Icons.movie_outlined,
-    AiFeature.videoSearch => Icons.subtitles_outlined,
-    AiFeature.customTheme => Icons.palette_outlined,
-    AiFeature.acquire => Icons.download_outlined,
-    AiFeature.mangaOcr => Icons.document_scanner_outlined,
-    AiFeature.lookupContext => Icons.manage_search_outlined,
+    AiFeature.galgameTextProcess => FushiIcons.game,
+    AiFeature.dictStyle => FushiIcons.ankiCard,
+    AiFeature.lapisStyle => FushiIcons.dashboardCustomize,
+    AiFeature.videoIdentify => FushiIcons.video,
+    AiFeature.videoSearch => FushiIcons.subtitles,
+    AiFeature.customTheme => FushiIcons.appearance,
+    AiFeature.acquire => FushiIcons.download,
+    AiFeature.mangaOcr => FushiIcons.ocr,
+    AiFeature.lookupContext => FushiIcons.manageSearch,
   };
 
   // ---------------------------------------------------------------------------
@@ -825,21 +839,21 @@ class _AiProviderSettingsSectionState
         scrollable: false,
         child: FushiModalSheetFrame(
           title: t.ai_provider_add,
-          leadingIcon: Icons.add_rounded,
+          leadingIcon: FushiIcons.add,
           scrollable: true,
-          bodyPadding: const EdgeInsets.only(bottom: 12),
-          body: Column(
+          bodyPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          // M3E 分段卡片列表（首尾大圆角、行间 2）+ 形状底行首图标。
+          body: FushiGroupedList(
             key: const ValueKey<String>('ai-provider-preset-picker'),
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               for (final AiProviderPreset preset in kAiProviderPresets)
                 FushiListItem(
                   key: ValueKey<String>('ai-provider-preset-${preset.id}'),
-                  leading: FushiIcon(
-                    preset.isLocal
-                        ? Icons.computer_outlined
-                        : Icons.cloud_outlined,
+                  leading: FushiListLeadingIcon(
+                    preset.isLocal ? FushiIcons.devices : FushiIcons.cloud,
+                    tone: preset.isLocal
+                        ? FushiCardTone.tertiary
+                        : FushiCardTone.secondary,
                   ),
                   title: Text(preset.displayName),
                   subtitle: preset.baseUrl.isEmpty
@@ -1228,7 +1242,7 @@ class _AiChoiceButtonState extends State<_AiChoiceButton> {
             ),
             const SizedBox(width: 2),
             FushiIcon(
-              Icons.arrow_drop_down_rounded,
+              FushiIcons.dropDown,
               size: 22,
               color: theme.colorScheme.primary,
             ),

@@ -1,8 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/video_panel_auto_scroll.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart'
     show formatCueTimestamp;
+import 'package:fushi/src/reader/reader_panel_kit.dart'
+    show ReaderBadgeShape, ReaderPolarShapeBorder;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
@@ -105,35 +107,55 @@ class _VideoChapterPanelState extends State<VideoChapterPanel> {
         ),
       );
     }
+    // M3 Expressive（非 Apple、非墨水屏）：行是内缩的圆角选中块（pill），序号
+    // 落在一枚小圆徽标里，当前章的徽标填主色并变形成四瓣饼干（形状即状态）；
+    // 选中行前景是 onSecondaryContainer（压在 secondaryContainer 色块上）。
+    // Apple / 墨水屏保持原来的平铺行 + 主色字。
+    final bool m3e = !isGlassDesign(context) && !isEinkTheme(context);
     return ListView.builder(
       controller: _autoScroller.controller,
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: m3e
+          ? const EdgeInsets.fromLTRB(4, 4, 4, 16)
+          : const EdgeInsets.symmetric(vertical: 8),
       itemCount: chapters.length,
       itemBuilder: (BuildContext _, int i) {
         final VideoChapter chapter = chapters[i];
         final bool selected = i == widget.currentIndex;
+        final Color selectedFg = m3e ? cs.onSecondaryContainer : cs.primary;
         // BUG-1425：行骨架走共享 MD3 组件（[FushiListItem]），不再裸 ListTile。
         // 本文件的 reviewed 豁免只覆盖「行字号随 appUiScale 缩放」这一条内容理由，
         // 从不覆盖行骨架；它援引的同类 video_subtitle_jump_panel 也根本不用 ListTile。
         return FushiListItem(
           density: FushiListDensity.compact,
           selected: selected,
-          leading: Text(
-            '${i + 1}',
-            style: TextStyle(
-              color: selected ? cs.primary : cs.onSurfaceVariant,
-              fontSize: widget.fontSize,
-              fontWeight: selected ? FontWeight.w600 : null,
-              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-            ),
-          ),
+          selectedShape: m3e
+              ? FushiListItemSelectedShape.pill
+              : FushiListItemSelectedShape.fill,
+          leading: m3e
+              ? _ChapterIndexBadge(
+                  number: i + 1,
+                  selected: selected,
+                  colorScheme: cs,
+                  fontSize: widget.fontSize,
+                )
+              : Text(
+                  '${i + 1}',
+                  style: TextStyle(
+                    color: selected ? cs.primary : cs.onSurfaceVariant,
+                    fontSize: widget.fontSize,
+                    fontWeight: selected ? FontWeight.w600 : null,
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures(),
+                    ],
+                  ),
+                ),
           titleMaxLines: 2,
           title: Text(
             _chapterLabel(chapter),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: selected ? cs.primary : cs.onSurface,
+              color: selected ? selectedFg : cs.onSurface,
               fontSize: widget.fontSize,
               fontWeight: selected ? FontWeight.w600 : null,
             ),
@@ -141,15 +163,63 @@ class _VideoChapterPanelState extends State<VideoChapterPanel> {
           subtitle: Text(
             formatCueTimestamp(chapter.start.inMilliseconds),
             style: TextStyle(
-              color: cs.onSurfaceVariant,
+              color: selected && m3e
+                  ? selectedFg.withValues(alpha: 0.78)
+                  : cs.onSurfaceVariant,
               fontSize: widget.fontSize - 2,
               fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
             ),
           ),
-          trailing: selected ? FushiIcon(Icons.play_arrow, color: cs.primary) : null,
+          trailing:
+              selected ? FushiIcon(Icons.play_arrow, color: selectedFg) : null,
           onTap: () => widget.onTapChapter(chapter),
         );
       },
+    );
+  }
+}
+
+/// M3E 章节序号徽标：常态是淡色小圆（onSurface 8%），当前章填主色并变形成
+/// 四瓣饼干（[ReaderBadgeShape.cookie4]），形状与颜色一起表达「正在播放」。
+class _ChapterIndexBadge extends StatelessWidget {
+  const _ChapterIndexBadge({
+    required this.number,
+    required this.selected,
+    required this.colorScheme,
+    required this.fontSize,
+  });
+
+  final int number;
+  final bool selected;
+  final ColorScheme colorScheme;
+  final double fontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = colorScheme;
+    final double size = (fontSize * 2.3).clamp(28.0, 44.0).toDouble();
+    return SizedBox.square(
+      dimension: size,
+      child: DecoratedBox(
+        decoration: ShapeDecoration(
+          color: selected ? cs.primary : cs.onSurface.withValues(alpha: 0.08),
+          shape: selected
+              ? ReaderPolarShapeBorder.of(ReaderBadgeShape.cookie4)
+              : const CircleBorder(),
+        ),
+        child: Center(
+          child: Text(
+            '$number',
+            maxLines: 1,
+            style: TextStyle(
+              color: selected ? cs.onPrimary : cs.onSurfaceVariant,
+              fontSize: fontSize - 1,
+              fontWeight: FontWeight.w600,
+              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

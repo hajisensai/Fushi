@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/manga_global_search_page.dart';
@@ -238,7 +238,6 @@ void main() {
           home: MangaGlobalSearchPage(
             mihonManager: manager,
             mihonSources: manager.sources,
-            aidokuPackages: const [],
             initialQuery: 'fixture',
           ),
         ),
@@ -324,12 +323,17 @@ void main() {
     await tester.pump();
     expect(find.text('Raw Otaku fixture'), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.add_circle_outline));
+    // M3E：「加载更多」改成 filledTonal 图标按钮（FushiIcons.add），按它的稳定
+    // key 定位，不绑定具体图标码点。
+    final Finder loadMore = find.byKey(
+      const ValueKey<String>('mihon_browse_more'),
+    );
+    await tester.tap(loadMore);
     await tester.pump();
     await tester.pump();
 
     expect(find.text('Raw Otaku fixture'), findsOneWidget);
-    expect(find.byIcon(Icons.add_circle_outline), findsNothing);
+    expect(loadMore, findsNothing);
   });
 
   testWidgets(
@@ -363,6 +367,9 @@ void main() {
           ),
         ),
       );
+      await tester.pumpAndSettle();
+      // M3E 详情骨架：「在网站打开」在 hero 的「⋯」菜单里。
+      await tester.tap(find.byKey(const ValueKey<String>('online_work_more')));
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey<String>('manga_series_open_website')),

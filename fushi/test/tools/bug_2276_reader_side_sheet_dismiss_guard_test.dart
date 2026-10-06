@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-2276 守卫：阅读设置 / 导航抽屉开着时，点正文必须把抽屉关掉。
 ///
 /// 根因是 BUG-1692 那套 macOS 平台视图命中模型的**另一面**：engine 只把「平台视图
@@ -36,7 +38,8 @@ void main() {
           readerRouteIsCurrent: false,
         ),
         isFalse,
-        reason: '压在正文上的是别的路由（图片查看器 / 制卡对话框…）时不得借道关它——'
+        reason:
+            '压在正文上的是别的路由（图片查看器 / 制卡对话框…）时不得借道关它——'
             '那些遮罩有实色，macOS 上照常吃点击，根本不会走到这里',
       );
     });
@@ -59,23 +62,32 @@ void main() {
         'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
       );
       expect(f.existsSync(), isTrue, reason: 'chrome part 被移动了，守卫需同步更新');
-      final String src = f.readAsStringSync();
-
-      final int at = src.indexOf('await showReaderSideSheet<void>(');
-      expect(at, greaterThan(-1), reason: '抽屉呈现调用改名了，守卫需同步更新');
-
-      final String before = src.substring((at - 400).clamp(0, at), at);
+      final String src = maskCommentsAndStrings(
+        methodBody(f.readAsStringSync(), 'Future<void> _presentSideSheet('),
+      );
+      final int opened = src.indexOf('_sideSheetOpen = true');
+      final int guarded = src.indexOf('try {');
+      final int finallyAt = src.indexOf('} finally {');
+      final int reset = src.indexOf('_sideSheetOpen = false');
       expect(
-        before.contains('_sideSheetOpen = true'),
-        isTrue,
+        opened,
+        greaterThanOrEqualTo(0),
         reason: '旗没在抽屉打开前置位 ⇒ macOS 上点正文仍然关不掉抽屉（BUG-2276 回归）',
       );
-      final String after = src.substring(at, at + 600);
+      expect(guarded, greaterThan(opened));
+      for (final String call in <String>[
+        'await showReaderSettingsSideDialog<void>(',
+        'await showReaderSideSheet<void>(',
+      ]) {
+        final int at = src.indexOf(call);
+        expect(at, greaterThan(guarded), reason: '$call 必须在置旗后的 try 内');
+        expect(at, lessThan(finallyAt), reason: '$call 必须受 finally 复位保护');
+      }
       expect(
-        after.contains('} finally {') &&
-            after.contains('_sideSheetOpen = false'),
-        isTrue,
-        reason: '复位不在 finally 里 ⇒ 抽屉内抛异常后旗永久顶着 ⇒ 此后每一次正文点击都被'
+        reset,
+        greaterThan(finallyAt),
+        reason:
+            '复位不在 finally 里 ⇒ 抽屉内抛异常后旗永久顶着 ⇒ 此后每一次正文点击都被'
             '当成「关遮罩」吞掉，正文彻底点不动',
       );
     });
@@ -106,7 +118,8 @@ void main() {
         expect(
           body.contains('_closeSideSheetForWebViewPointer()'),
           isTrue,
-          reason: '$bridge 少了门控 ⇒ macOS 上抽屉开着时点正文会照常翻页 / 查词 / 跳播，'
+          reason:
+              '$bridge 少了门控 ⇒ macOS 上抽屉开着时点正文会照常翻页 / 查词 / 跳播，'
               '抽屉却纹丝不动（BUG-2276）',
         );
       }
@@ -127,7 +140,10 @@ void main() {
       for (final String bridge in <String>['onTapEmpty', 'onLyricsTapEmpty']) {
         final int at = src.indexOf("handlerName: '$bridge',");
         expect(at, greaterThan(-1), reason: '$bridge 桥改名了，守卫需同步更新');
-        expect(src.substring(at, at + 200), contains('lyricsTapEmptyConsumed()'));
+        expect(
+          src.substring(at, at + 200),
+          contains('lyricsTapEmptyConsumed()'),
+        );
       }
       final int cueTap = src.indexOf("handlerName: 'onLyricsCueTap',");
       expect(cueTap, greaterThan(-1));

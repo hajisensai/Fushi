@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/creator.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';

@@ -34,6 +34,8 @@ constexpr UINT_PTR kAnimationTimerId = 1;
 // 填 16 会被取整成两拍 = 31ms（约 32fps），填 10 取整成一拍 ≈ 64fps。动画进度
 // 按 QPC 实际经过时间算，节拍抖动不影响时长。
 constexpr UINT kAnimationTimerMs = 10;
+// 尚未显现的进场按钮不能提前截获桌面点击；绘制命中垫与 ButtonAt 同门控。
+constexpr double kMenuMinHitOpacity = 0.05;
 
 constexpr char kActionOpenApp[] = "open_app";
 constexpr char kActionClose[] = "close";
@@ -72,16 +74,6 @@ uint32_t AlphaBlend(uint32_t fg, uint32_t bg) {
     return static_cast<uint32_t>(std::lround(f * a + b * (1 - a))) & 0xFF;
   };
   return (bg & 0xFF000000) | (channel(16) << 16) | (channel(8) << 8) |
-         channel(0);
-}
-
-uint32_t LerpColor(uint32_t from, uint32_t to, double t) {
-  auto channel = [&](int shift) {
-    const double a = (from >> shift) & 0xFF;
-    const double b = (to >> shift) & 0xFF;
-    return static_cast<uint32_t>(std::lround(a + (b - a) * t)) & 0xFF;
-  };
-  return (channel(24) << 24) | (channel(16) << 16) | (channel(8) << 8) |
          channel(0);
 }
 
@@ -140,6 +132,12 @@ bool FloatingBallWindow::EnsureDeviceResources() {
     }
     // 1 DIP = 1 物理像素：几何全在 px 里算，DPI 由本类自己乘。
     render_target_->SetDpi(96.0f, 96.0f);
+  }
+  if (dwrite_factory_ == nullptr) {
+    // 失败不致命：没有 DirectWrite 就不画标签胶囊，只剩圆钮（tooltip 照旧）。
+    DWriteCreateFactory(
+        DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+        reinterpret_cast<IUnknown**>(dwrite_factory_.GetAddressOf()));
   }
   if (wic_factory_ == nullptr) {
     // 失败不致命：没有 WIC 就画不出图片，球退化成主题色圆、按钮只有底色。
@@ -489,6 +487,21 @@ void FloatingBallWindow::EnsureMenuWindow() {
   double min_y = ball_cy - reach_radius;
   double max_y = ball_cy + reach_radius;
   std::vector<fb::Offset> offsets;
+  PrepareMenuLabels(g);
+  // 标签胶囊贴在按钮朝屏幕中央的一侧（左停靠在右、右停靠在左），随按钮圆心走：
+  // 两个端点各把胶囊（含阴影边）并进包围盒。
+  const double label_near = g.button() / 2 + fb::kLabelGapDip * menu_scale_;
+  const double label_pad = fb::kMenuShadowPadDip * menu_scale_;
+  const double label_half_h = fb::kLabelHeightDip * menu_scale_ / 2 + label_pad;
+  auto include_label = [&](size_t index, double cx, double cy) {
+    if (index >= menu_label_widths_.size()) return;
+    const double w = menu_label_widths_[index];
+    const double a = dock_left_ ? cx + label_near : cx - label_near - w;
+    min_x = std::min(min_x, a - label_pad);
+    max_x = std::max(max_x, a + w + label_pad);
+    min_y = std::min(min_y, cy - label_half_h);
+    max_y = std::max(max_y, cy + label_half_h);
+  };
   for (size_t i = 0; i < menu_ids_.size(); ++i) {
     const fb::Offset off = g.ButtonOffset(static_cast<int>(i));
     offsets.push_back(off);
@@ -498,6 +511,8 @@ void FloatingBallWindow::EnsureMenuWindow() {
     max_x = std::max(max_x, far_x + reach_radius);
     min_y = std::min(min_y, far_y - reach_radius);
     max_y = std::max(max_y, far_y + reach_radius);
+    include_label(i, ball_cx, ball_cy);
+    include_label(i, far_x, far_y);
   }
   menu_origin_ = POINT{static_cast<LONG>(std::floor(min_x)),
                        static_cast<LONG>(std::floor(min_y))};
@@ -563,16 +578,107 @@ bool FloatingBallWindow::ButtonCircle(int index, double* cx, double* cy,
 int FloatingBallWindow::ButtonAt(double x, double y) const {
   for (int i = static_cast<int>(menu_centers_.size()) - 1; i >= 0; --i) {
     double cx, cy, r, o;
-    if (!ButtonCircle(i, &cx, &cy, &r, &o) || o < 0.05) {
+    if (!ButtonCircle(i, &cx, &cy, &r, &o) || o < kMenuMinHitOpacity) {
       continue;
     }
+    // 圆钮画 40，命中区按 48 算（应用内 kReaderFloatingBallMinTouchTarget）。
+    const double hit = fb::ButtonHitRadius(r);
     const double dx = x - cx;
     const double dy = y - cy;
-    if (dx * dx + dy * dy <= r * r) {
+    if (dx * dx + dy * dy <= hit * hit) {
+      return i;
+    }
+    // 点标签胶囊 = 点这颗按钮。
+    D2D1_RECT_F label;
+    double lo;
+    if (LabelRect(i, &label, &lo) && lo >= kMenuMinHitOpacity && x >= label.left &&
+        x <= label.right && y >= label.top && y <= label.bottom) {
       return i;
     }
   }
   return -1;
+}
+
+void FloatingBallWindow::PrepareMenuLabels(const fb::Geometry& g) {
+  menu_label_layouts_.clear();
+  menu_label_widths_.clear();
+  // 多列时标签会压到相邻列：与应用内一样只在单列显示。
+  if (g.ColumnCount() != 1 || dwrite_factory_ == nullptr) {
+    return;
+  }
+  const double s = menu_scale_;
+  const double available = g.viewport().Width() - 2 * g.margin() -
+                           g.button() - fb::kLabelGapDip * s;
+  const double cap = std::min(fb::kLabelMaxWidthDip * s, available);
+  const double pad = fb::kLabelPaddingDip * s;
+  // 连一颗短标签都放不下（极窄显示器）：只留圆钮。
+  if (cap < 2 * pad + 24 * s) {
+    return;
+  }
+  if (label_format_ == nullptr || label_format_scale_ != s) {
+    label_format_.Reset();
+    wchar_t locale[LOCALE_NAME_MAX_LENGTH] = L"";
+    if (GetUserDefaultLocaleName(locale, LOCALE_NAME_MAX_LENGTH) == 0) {
+      wcscpy_s(locale, L"en-us");
+    }
+    if (FAILED(dwrite_factory_->CreateTextFormat(
+            L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+            static_cast<float>(fb::kLabelFontDip * s), locale,
+            label_format_.GetAddressOf()))) {
+      label_format_.Reset();
+      return;
+    }
+    label_format_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+    label_format_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+    label_format_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+    label_format_scale_ = s;
+  }
+  const float box_h = static_cast<float>(fb::kLabelHeightDip * s);
+  std::vector<ComPtr<IDWriteTextLayout>> layouts;
+  std::vector<double> widths;
+  for (const std::string& id : menu_ids_) {
+    const std::wstring text = LabelFor(id);
+    ComPtr<IDWriteTextLayout> layout;
+    if (FAILED(dwrite_factory_->CreateTextLayout(
+            text.c_str(), static_cast<UINT32>(text.size()),
+            label_format_.Get(), static_cast<float>(cap - 2 * pad), box_h,
+            layout.GetAddressOf()))) {
+      return;
+    }
+    DWRITE_TEXT_METRICS metrics = {};
+    if (FAILED(layout->GetMetrics(&metrics))) {
+      return;
+    }
+    const double width = std::min(
+        cap, std::ceil(metrics.widthIncludingTrailingWhitespace + 2 * pad));
+    layout->SetMaxWidth(static_cast<float>(std::max(0.0, width - 2 * pad)));
+    layouts.push_back(layout);
+    widths.push_back(width);
+  }
+  menu_label_layouts_ = std::move(layouts);
+  menu_label_widths_ = std::move(widths);
+}
+
+bool FloatingBallWindow::LabelRect(int index, D2D1_RECT_F* rect,
+                                   double* opacity) const {
+  if (index < 0 || index >= static_cast<int>(menu_label_widths_.size())) {
+    return false;
+  }
+  double cx, cy, r, o;
+  if (!ButtonCircle(index, &cx, &cy, &r, &o)) {
+    return false;
+  }
+  const double s = menu_scale_;
+  const double w = menu_label_widths_[index];
+  const double h = fb::kLabelHeightDip * s;
+  const double near_edge = fb::kButtonDip * s / 2 + fb::kLabelGapDip * s;
+  const double left = dock_left_ ? cx + near_edge : cx - near_edge - w;
+  *rect = D2D1::RectF(static_cast<float>(left), static_cast<float>(cy - h / 2),
+                      static_cast<float>(left + w),
+                      static_cast<float>(cy + h / 2));
+  *opacity = o;
+  return true;
 }
 
 void FloatingBallWindow::RunButton(int index) {
@@ -876,18 +982,29 @@ void FloatingBallWindow::RenderBall() {
 
   RenderLayered(ball_hwnd_, x, y, size, size, alpha, [&]() {
     ID2D1RenderTarget* rt = render_target_.Get();
-    // 阴影随展开加深（应用内 elevation 1 → 6）；模糊不超过窗口留的阴影边。
-    const float pad = static_cast<float>(fb::kBallShadowPadDip) * scale;
-    const float blur = std::min(pad, (1.5f + 3.5f * static_cast<float>(t)) * scale);
-    DrawSoftShadow(cx, cy + (0.5f + static_cast<float>(t)) * scale, r, blur,
-                   0.18f + 0.14f * static_cast<float>(t));
+    const float tf = static_cast<float>(t);
+    const bool outlined = ((config_.outline >> 24) & 0xFF) != 0;
+    // 阴影随展开加深（应用内 M3E elevation level 1 → 3）；模糊不超过窗口留的
+    // 阴影边；墨水屏不投影。
+    if (!outlined) {
+      const float pad = static_cast<float>(fb::kBallShadowPadDip) * scale;
+      const float blur = std::min(pad, (1.5f + 3.0f * tf) * scale);
+      DrawSoftShadow(cx, cy + (0.5f + tf) * scale, r, blur,
+                     0.14f + 0.10f * tf);
+    }
 
-    // 球面：圆形裁切的 Fushi 图标（cover：取中心正方形，已在 WIC 里缩到球径）。
-    const D2D1_ELLIPSE disc = D2D1::Ellipse(D2D1::Point2F(cx, cy), r, r);
+    // M3E FAB menu 的开合钮（应用内 _BallFace）：收起是圆角方块（14dp）球面
+    // ——Dart 合成的主题 primaryContainer + 吉祥物；展开随进度变形成正圆、
+    // 换成 primary 底 + onPrimary ×（墨水屏 surface + 描边）。
+    const float corner =
+        static_cast<float>(fb::kBallCollapsedRadiusDip) * scale;
+    const float radius = std::min(r, corner + (r - corner) * tf);
+    const D2D1_ROUNDED_RECT face = D2D1::RoundedRect(
+        D2D1::RectF(bx, by, bx + 2 * r, by + 2 * r), radius, radius);
     ID2D1Bitmap* image =
         BitmapFor("ball", config_.ball_image, image_px, /*crop_square=*/true);
     bool painted = false;
-    if (image != nullptr) {
+    if (image != nullptr && tf < 1.0f) {
       ComPtr<ID2D1BitmapBrush> brush;
       if (SUCCEEDED(rt->CreateBitmapBrush(image, brush.GetAddressOf()))) {
         const D2D1_SIZE_F image_size = image->GetSize();
@@ -895,29 +1012,46 @@ void FloatingBallWindow::RenderBall() {
         brush->SetInterpolationMode(D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
         brush->SetTransform(D2D1::Matrix3x2F::Scale(s, s) *
                             D2D1::Matrix3x2F::Translation(bx, by));
-        rt->FillEllipse(disc, brush.Get());
+        rt->FillRoundedRectangle(face, brush.Get());
         painted = true;
       }
     }
-    if (!painted) {
-      ComPtr<ID2D1SolidColorBrush> fill;
-      if (SUCCEEDED(rt->CreateSolidColorBrush(ColorFromArgb(config_.primary),
-                                              fill.GetAddressOf()))) {
-        rt->FillEllipse(disc, fill.Get());
+    ComPtr<ID2D1SolidColorBrush> fill;
+    if (SUCCEEDED(rt->CreateSolidColorBrush(
+            ColorFromArgb(config_.ball_container), fill.GetAddressOf()))) {
+      if (!painted) {
+        rt->FillRoundedRectangle(face, fill.Get());
       }
-    }
-
-    // 描边环：收起态细的前景色 35% 环 → 展开态主题色粗环。
-    const float stroke = (1.0f + 1.5f * static_cast<float>(t)) * scale;
-    const uint32_t ring = LerpColor(WithAlpha(config_.on_surface, 0.35),
-                                    config_.primary, t);
-    ComPtr<ID2D1SolidColorBrush> ring_brush;
-    if (SUCCEEDED(rt->CreateSolidColorBrush(ColorFromArgb(ring),
-                                            ring_brush.GetAddressOf()))) {
-      const float inset = stroke / 2;
-      rt->DrawEllipse(
-          D2D1::Ellipse(D2D1::Point2F(cx, cy), r - inset, r - inset),
-          ring_brush.Get(), stroke);
+      // 展开：primary 底盖上来（交叉淡入），再画 onPrimary ×。
+      if (tf > 0.0f) {
+        fill->SetColor(ColorFromArgb(config_.ball_open, tf));
+        rt->FillRoundedRectangle(face, fill.Get());
+        const auto close_it = config_.icon_images.find("ball_close");
+        if (close_it != config_.icon_images.end()) {
+          const UINT icon_px =
+              static_cast<UINT>(std::ceil(fb::kIconDip * scale_));
+          ID2D1Bitmap* icon = BitmapFor("icon:ball_close", close_it->second,
+                                        icon_px, /*crop_square=*/false);
+          if (icon != nullptr) {
+            const float half = static_cast<float>(fb::kIconDip) * scale / 2;
+            rt->DrawBitmap(
+                icon, D2D1::RectF(cx - half, cy - half, cx + half, cy + half),
+                tf, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+          }
+        }
+      }
+      // 墨水屏：描边无填色（M3E FAB 本身无环）。
+      if (outlined) {
+        const float stroke = 1.5f * scale;
+        const float inner = std::max(0.0f, radius - stroke / 2);
+        fill->SetColor(ColorFromArgb(config_.outline));
+        rt->DrawRoundedRectangle(
+            D2D1::RoundedRect(
+                D2D1::RectF(bx + stroke / 2, by + stroke / 2,
+                            bx + 2 * r - stroke / 2, by + 2 * r - stroke / 2),
+                inner, inner),
+            fill.Get(), stroke);
+      }
     }
   });
 }
@@ -927,15 +1061,25 @@ void FloatingBallWindow::RenderMenu() {
     return;
   }
   const float scale = static_cast<float>(menu_scale_);
-  // 纸张底色上再调 6% 前景色（应用内 _ColumnButton 同一配方）。
+  // M3E tonal 小圆钮（应用内 _ColumnButton 同一配方）：secondaryContainer 底、
+  // onSecondaryContainer 状态层（图标 PNG 已由 Dart 着好色）；墨水屏 surface 底 +
+  // 描边、无阴影。Dart 没下发 M3E 键时按旧配方（surface 叠 6% onSurface）兜底。
   const uint32_t base =
-      AlphaBlend(WithAlpha(config_.on_surface, 0.06), config_.surface);
+      config_.button_container != 0
+          ? config_.button_container
+          : AlphaBlend(WithAlpha(config_.on_surface, 0.06), config_.surface);
+  const uint32_t on_base = config_.on_button_container != 0
+                               ? config_.on_button_container
+                               : config_.on_surface;
+  const bool outlined = ((config_.outline >> 24) & 0xFF) != 0;
   const UINT icon_px =
       static_cast<UINT>(std::ceil(fb::kIconDip * menu_scale_));
 
   RenderLayered(menu_hwnd_, menu_origin_.x, menu_origin_.y, menu_size_.cx,
                 menu_size_.cy, 255, [&]() {
     ID2D1RenderTarget* rt = render_target_.Get();
+    // 分层窗口带 alpha：ClearType 需要不透明底，标签文字用灰度抗锯齿。
+    rt->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
     ComPtr<ID2D1SolidColorBrush> brush;
     if (FAILED(rt->CreateSolidColorBrush(D2D1::ColorF(0, 0, 0, 0),
                                          brush.GetAddressOf()))) {
@@ -950,17 +1094,85 @@ void FloatingBallWindow::RenderMenu() {
       const float cy = static_cast<float>(dcy);
       const float r = static_cast<float>(dr);
       const float opacity = static_cast<float>(dop);
-      // 轻阴影（≈ elevation 2）。
-      DrawSoftShadow(cx, cy + 1.0f * scale, r, 2.5f * scale, 0.24f * opacity);
+      // UpdateLayeredWindow 的 alpha=0 像素会在 OS 命中阶段直接穿透，根本到不了
+      // ButtonAt。只在这颗按钮实际的 48 DIP 圆形触区铺 8-bit alpha 的最小非零值，
+      // 再画原有 40 DIP 圆盘；窗口其余空白保持全透明，不拦截下面的应用。
+      // 命中垫不用抗锯齿，避免边缘的 1/255 再乘覆盖率后量化回 0；普通图形恢复
+      // 原来的抗锯齿模式。墨水屏无阴影时也必须保留这块输入区。
+      if (dop >= kMenuMinHitOpacity) {
+        const D2D1_ANTIALIAS_MODE antialias = rt->GetAntialiasMode();
+        rt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
+        brush->SetColor(D2D1::ColorF(0, 0, 0, 1.0f / 255.0f));
+        const float hit = static_cast<float>(fb::ButtonHitRadius(dr));
+        rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), hit, hit),
+                        brush.Get());
+        rt->SetAntialiasMode(antialias);
+      }
+      // 标签胶囊（单列才有）：与圆钮同一套 secondaryContainer / 状态层 / 描边，
+      // 文字 onSecondaryContainer（应用内 _LabelCapsule）。
+      D2D1_RECT_F label;
+      double lop;
+      if (i < static_cast<int>(menu_label_layouts_.size()) &&
+          LabelRect(i, &label, &lop) && lop > 0.0) {
+        const float lo = static_cast<float>(lop);
+        const float radius = (label.bottom - label.top) / 2;
+        if (!outlined) {
+          brush->SetColor(D2D1::ColorF(0, 0, 0, 0.12f * lo));
+          rt->FillRoundedRectangle(
+              D2D1::RoundedRect(
+                  D2D1::RectF(label.left, label.top + 1.0f * scale,
+                              label.right, label.bottom + 1.0f * scale),
+                  radius, radius),
+              brush.Get());
+        }
+        const D2D1_ROUNDED_RECT capsule =
+            D2D1::RoundedRect(label, radius, radius);
+        brush->SetColor(ColorFromArgb(base, lo));
+        rt->FillRoundedRectangle(capsule, brush.Get());
+        if (i == pressed_ || i == hovered_) {
+          const double overlay = i == pressed_ ? 0.10 : 0.08;
+          brush->SetColor(ColorFromArgb(WithAlpha(on_base, overlay), lo));
+          rt->FillRoundedRectangle(capsule, brush.Get());
+        }
+        if (outlined) {
+          const float stroke = 1.5f * scale;
+          brush->SetColor(ColorFromArgb(config_.outline, lo));
+          rt->DrawRoundedRectangle(
+              D2D1::RoundedRect(
+                  D2D1::RectF(label.left + stroke / 2, label.top + stroke / 2,
+                              label.right - stroke / 2,
+                              label.bottom - stroke / 2),
+                  radius - stroke / 2, radius - stroke / 2),
+              brush.Get(), stroke);
+        }
+        brush->SetColor(ColorFromArgb(on_base, lo));
+        rt->DrawTextLayout(
+            D2D1::Point2F(
+                label.left + static_cast<float>(fb::kLabelPaddingDip) * scale,
+                label.top),
+            menu_label_layouts_[i].Get(), brush.Get(),
+            D2D1_DRAW_TEXT_OPTIONS_CLIP);
+      }
+      // 轻阴影（M3E elevation level 1，与应用内同级）；墨水屏不投影。
+      if (!outlined) {
+        DrawSoftShadow(cx, cy + 0.5f * scale, r, 1.5f * scale,
+                       0.14f * opacity);
+      }
       const D2D1_ELLIPSE disc = D2D1::Ellipse(D2D1::Point2F(cx, cy), r, r);
       brush->SetColor(ColorFromArgb(base, opacity));
       rt->FillEllipse(disc, brush.Get());
-      // 悬停 / 按下：前景色 8% / 12% 叠色。
+      // 悬停 / 按下：M3E 状态层 8% / 10%。
       if (i == pressed_ || i == hovered_) {
-        const double overlay = i == pressed_ ? 0.12 : 0.08;
-        brush->SetColor(
-            ColorFromArgb(WithAlpha(config_.on_surface, overlay), opacity));
+        const double overlay = i == pressed_ ? 0.10 : 0.08;
+        brush->SetColor(ColorFromArgb(WithAlpha(on_base, overlay), opacity));
         rt->FillEllipse(disc, brush.Get());
+      }
+      if (outlined) {
+        const float stroke = 1.5f * scale;
+        brush->SetColor(ColorFromArgb(config_.outline, opacity));
+        rt->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), r - stroke / 2,
+                                      r - stroke / 2),
+                        brush.Get(), stroke);
       }
       const auto icon_it = config_.icon_images.find(menu_ids_[i]);
       if (icon_it != config_.icon_images.end()) {

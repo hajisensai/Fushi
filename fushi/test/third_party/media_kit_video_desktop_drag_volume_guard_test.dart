@@ -77,9 +77,17 @@ void main() {
 
   test('tap play/pause and double-press fullscreen gestures are preserved', () {
     // The sibling tap handlers on the same GestureDetector must stay intact.
+    // Since the touch-on-desktop patch that GestureDetector lives in
+    // MaterialDesktopTapRouter (material_desktop.dart passes onTapUp through).
+    final String tapLayer =
+        source +
+        File(
+          '../third_party/media_kit_video/lib/media_kit_video_controls/'
+          'src/controls/widgets/desktop_tap_router.dart',
+        ).readAsStringSync();
     for (final String handler in <String>['onTap', 'onTapDown', 'onTapUp']) {
       expect(
-        source.contains(RegExp('$handler\\s*:')),
+        tapLayer.contains(RegExp('$handler\\s*:')),
         isTrue,
         reason:
             'TODO-1097 only removes onPanUpdate; the $handler handler '

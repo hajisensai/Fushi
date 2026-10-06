@@ -1,16 +1,17 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_cloudflare_challenge_page.dart';
+import 'package:fushi/src/media/manga/cookie/cloudflare_challenge_page.dart';
 import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 插件请求被 Cloudflare 拦下后，给用户的「站点验证」按钮。
 ///
 /// 与 LNReader app 的「在 WebView 中打开」同一用法：**只由用户点击触发**，从不
-/// 在后台请求里自动弹页。解题页与漫画扩展共用 [AidokuCloudflareChallengePage]
+/// 在后台请求里自动弹页。解题页与漫画扩展共用 [CloudflareChallengePage]
 /// （同 UA 打开被拦地址、轮询到新的 `cf_clearance` 自动关闭、整站 cookie 回存），
 /// cookie 落进小说源自己的 jar，桥之后的请求都会带上。
 ///
@@ -46,7 +47,7 @@ class LnReaderCloudflareAction extends StatelessWidget {
         builder: (BuildContext context) => FushiAppUiScaleNeutralizer(
           child:
               pageBuilder?.call(challenge) ??
-              AidokuCloudflareChallengePage(
+              CloudflareChallengePage(
                 challengeUrl: challenge.url,
                 userAgent: challenge.userAgent,
                 jar: state.jar,
@@ -68,7 +69,7 @@ class LnReaderCloudflareAction extends StatelessWidget {
     return FushiFilledButton.tonalIcon(
       key: ValueKey<String>('novel_source_cloudflare_verify_$pluginId'),
       onPressed: () => _verify(context),
-      icon: const FushiIcon(Icons.verified_user_outlined),
+      icon: const FushiIcon(FushiIcons.shield),
       label: Text(t.manga_source_cloudflare_verify_title),
     );
   }

@@ -1,4 +1,4 @@
-import 'package:flutter/cupertino.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -120,15 +120,20 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
       child: CustomScrollView(
         slivers: <Widget>[
           CupertinoSliverNavigationBar(largeTitle: Text(destination.title)),
-          SliverToBoxAdapter(
-            child: buildDetailContent(
-              settingsContext: settingsContext,
-              destination: destination,
-              // sliver 沿滚动轴无界，详情须收缩到内容高、由外层 CustomScrollView
-              // 滚动（large-title 折叠依赖同一 scrollview）。
-              shrinkWrap: true,
+          // 正文自管滚动（见 SettingsDestination.bodyFillsViewport）：占满大标题
+          // 以下的剩余视口。
+          if (destination.fillsViewport(settingsContext))
+            SliverFillRemaining(child: destination.body!(settingsContext))
+          else
+            SliverToBoxAdapter(
+              child: buildDetailContent(
+                settingsContext: settingsContext,
+                destination: destination,
+                // sliver 沿滚动轴无界，详情须收缩到内容高、由外层 CustomScrollView
+                // 滚动（large-title 折叠依赖同一 scrollview）。
+                shrinkWrap: true,
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -143,6 +148,7 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
     // no-op：Cupertino 详情正文本就无横向内边距（靠 CupertinoListSection /
     // 外层容器提供留白），故 [insetHorizontally] 对其无影响，仅为满足接口签名。
     bool insetHorizontally = true,
+    bool consumeTopPadding = false,
   }) {
     final List<SettingsSection> sections = destination.visibleSections(
       settingsContext,
@@ -151,7 +157,10 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
       settingsContext.context,
     ).padding;
     // 底部留安全区，自滚到底时最后一项不贴边（对齐 Material 渲染器）。
-    final EdgeInsets padding = EdgeInsets.only(bottom: mediaPadding.bottom);
+    final EdgeInsets padding = EdgeInsets.only(
+      top: consumeTopPadding ? mediaPadding.top : 0,
+      bottom: mediaPadding.bottom,
+    );
 
     Widget section(int index) => SettingsSchemaSection(
       key: ValueKey<String>('${destination.id.name}.${sections[index].id}'),

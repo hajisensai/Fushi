@@ -486,6 +486,19 @@ extension _VideoLayout on _VideoFushiPageState {
                             ),
                           ),
                         ),
+                        // M3E：控件显示时画面最下方一条很矮的暗角（同样排在控制条之前、
+                        // IgnorePointer、与控制条同速淡入淡出，恒在字幕避让线以下）。
+                        // Apple / mini 档 / 墨水屏为空。
+                        Positioned.fill(
+                          child: Padding(
+                            padding: _videoControlsChromeInsets(),
+                            child: VideoM3eBottomScrim(
+                              visible: _videoControlsVisible,
+                              duration: _videoControlsTransitionDuration,
+                              height: _m3eBottomScrimHeight(),
+                            ),
+                          ),
+                        ),
                         // Builder 捕获 media_kit controls 子树内的 context（[_videoControlsContext]），
                         // 供覆盖后的键盘快捷键调用全屏 helper（isFullscreen/toggle/exitFullscreen）——
                         // 本页 build context 是它们的祖先，找不到 media_kit 的 Fullscreen/VideoState
@@ -960,7 +973,8 @@ extension _VideoLayout on _VideoFushiPageState {
           // TODO-604：与底栏 / 顶栏按钮的 buttonBarButtonColor 同源。UI 巡检 PR-4：
           // 同源改为 chrome 固定亮色强调色 [_videoChromeAccent]（裸图标浮在画面 /
           // 固定深色 scrim 上，跟随 cs.primary 在浅色 / eink 主题下黑压黑）。
-          color: _videoChromeAccent(cs),
+          // 2026-10-06：字形改中性前景，强调色只留给主操作与进度。
+          color: _videoChromeButtonForeground(cs),
           onPressed: () => _activateVideoControlItem(
             item,
             controller,

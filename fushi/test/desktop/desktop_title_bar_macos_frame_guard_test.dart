@@ -73,7 +73,11 @@ void main() {
   });
 
   test('窗口按钮按平台：macOS 留位不画自绘按钮，非 macOS 画 MD3 三键', () {
-    final String body = methodBody(titleBar, 'Widget _buildCaptionRow(');
+    // 标题行拆成两段：_buildCaptionRow（底色 / 柔光 / 背景）与
+    // _buildCaptionControls（拖动区 + 窗口按钮组），按平台分流在两段里。
+    final String body =
+        methodBody(titleBar, 'Widget _buildCaptionRow(') +
+        methodBody(titleBar, 'Widget _buildCaptionControls(');
 
     expect(
       body.contains('final bool trafficLights = Platform.isMacOS;'),
@@ -105,7 +109,7 @@ void main() {
     expect(
       '_FushiCaptionButton('.allMatches(gated).length,
       3,
-      reason: '非 macOS 是原来 MD3 那组三键：最小化 / 最大化-还原 / 关闭。',
+      reason: '非 macOS 是 M3E 窗口按钮组的三键：最小化 / 最大化-还原 / 关闭。',
     );
     for (final String handler in <String>[
       '_minimize',

@@ -146,14 +146,29 @@ void main() {
         corpus,
         'MaterialVideoControlsThemeData _mobileControlsTheme(',
       );
-      expect(containsCodeLine(body, 'horizontalSeekResolver:'), isTrue,
-          reason: 'BUG-1485：必须注入 resolver 接管 fork 的比例制换算');
+      // 2026-10-05：resolver 抽成 [_resolveTouchSeekDelta]，移动控制条与桌面触屏
+      // （Surface）共用同一换算，下面对它的方法体做同样的断言。
       expect(
-        containsCodeLine(body, 'VideoHorizontalSeekGesture.resolveDelta('),
+          containsCodeLine(
+              body, 'horizontalSeekResolver: _resolveTouchSeekDelta,'),
+          isTrue,
+          reason: 'BUG-1485：必须注入 resolver 接管 fork 的比例制换算');
+      // 命名参数的 `{` 会骗过 methodBody 的大括号配对；helper 是箭头函数、紧排在
+      // _mobileControlsTheme 之前，按这两个锚点截取。
+      final int resolverStart =
+          corpus.indexOf('Duration _resolveTouchSeekDelta(');
+      expect(resolverStart, greaterThanOrEqualTo(0));
+      final String resolver = corpus.substring(
+          resolverStart,
+          corpus.indexOf('MaterialVideoControlsThemeData _mobileControlsTheme(',
+              resolverStart));
+      expect(
+        containsCodeLine(resolver, 'VideoHorizontalSeekGesture.resolveDelta('),
         isTrue,
         reason: 'BUG-1485：resolver 必须走可单测的纯函数模型',
       );
-      expect(containsCodeLine(body, '_asbConfig.dragSeekSensitivity'), isTrue,
+      expect(
+          containsCodeLine(resolver, '_asbConfig.dragSeekSensitivity'), isTrue,
           reason: 'BUG-1485：灵敏度必须读用户设置档位，不得写死');
       expect(
         containsIdentifier(body, 'horizontalGestureSensitivity'),

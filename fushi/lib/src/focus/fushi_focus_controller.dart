@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/focus_geometry.dart';
 import 'package:fushi/src/focus/main_window_focus_gate.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';

@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/mining/gal_audio_tracks_panel.dart';
@@ -8,7 +8,9 @@ import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/utils.dart';
 
@@ -228,37 +230,64 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
   Widget _buildThreadPane(BuildContext context) {
     final List<TexthookerTextThread> threads = widget.session.textThreads;
     final Map<String, String> labels = assignThreadDisplayLabels(threads);
+    final bool glass = isGlassDesign(context);
+    // M3E：外框是 surface 底的描边卡，候选线程是一组分段行（组首尾大圆角、
+    // 内侧小圆角、悬停 / 按下形变）；外框若是填充卡，分段与外框同色看不出缝。
     return FushiCard(
       padding: EdgeInsets.zero,
+      variant: glass ? FushiCardVariant.filled : FushiCardVariant.outlined,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: Text(
-              t.game_text_thread,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+          _PaneHeader(
+            icon: FushiIcons.textFields,
+            title: t.game_text_thread,
+            trailing: threads.isEmpty
+                ? null
+                : Text(
+                    '${threads.length}',
+                    style: context.fushiType.labelLarge.tabular,
+                  ),
           ),
-          const FushiDividerControl(height: 1),
           Expanded(
             child: threads.isEmpty
-                ? Center(
-                    child: Text(
-                      t.game_waiting_for_text,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: fushiNeutralSecondaryForeground(context),
-                      ),
-                    ),
+                // 还没有候选线程：M3E 空态（色块图标弹入），不是一行孤零零的灰字。
+                // BUG-3026：线程栏在常见桌面窗口（1400×900）里只剩百来像素高，
+                // 72px 色块 + 标题的空态放不下会溢出；放得下时照常居中，放不下
+                // 时改为可滚动，不裁、不溢出。
+                ? LayoutBuilder(
+                    builder:
+                        (BuildContext context, BoxConstraints constraints) =>
+                            SingleChildScrollView(
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  minHeight: constraints.maxHeight,
+                                ),
+                                child: FushiPlaceholderMessage(
+                                  icon: FushiIcons.pending,
+                                  message: t.game_waiting_for_text,
+                                ),
+                              ),
+                            ),
                   )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(8),
+                : FushiEntranceScope(
+                    child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                     itemCount: threads.length,
-                    itemBuilder: (BuildContext context, int index) {
+                    itemBuilder: fushiStaggeredItemBuilder((
+                      BuildContext context,
+                      int index,
+                    ) {
                       final TexthookerTextThread thread = threads[index];
                       final bool selecting = _selectingThreadKey == thread.key;
-                      return FushiListItem(
-                        leading: const FushiIcon(Icons.forum_outlined),
+                      return FushiGroupedListItem(
+                        index: index,
+                        count: threads.length,
+                        selected: selecting,
+                        child: FushiListItem(
+                        leading: const FushiListLeadingIcon(
+                          Icons.forum_outlined,
+                        ),
                         // BUG-1474：线程 label 形如 `TextRender · 0x459f50 · #1a2b`，
                         // 默认单行必被切。这里父容器（ListView 行）高度自由，
                         // 按 BUG-1184 的规矩逐调用点放宽是安全的。
@@ -288,17 +317,17 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
                         ),
                         trailing: selecting
                             ? const SizedBox.square(
-                                dimension: 20,
-                                child: FushiCircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
+                                dimension: 24,
+                                child: FushiCircularProgressIndicator(),
                               )
                             : const FushiIcon(Icons.chevron_right),
                         onTap: selecting
                             ? null
                             : () => unawaited(_selectThread(thread)),
+                        ),
                       );
-                    },
+                    }),
+                  ),
                   ),
           ),
         ],
@@ -319,17 +348,10 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: Text(
-              t.game_audio_tracks,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ),
-          const FushiDividerControl(height: 1),
+          _PaneHeader(icon: FushiIcons.audio, title: t.game_audio_tracks),
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
@@ -367,22 +389,72 @@ class _AudioSourceSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        const FushiIcon(Icons.graphic_eq_outlined),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(source, style: Theme.of(context).textTheme.labelLarge),
-              if (format != null)
-                Text(format!, style: Theme.of(context).textTheme.bodySmall),
-            ],
+    // M3E 饱和色块：音频采集源是这一栏的「结论」，与下面的逐轨列表分开。
+    final Color? foreground = fushiCardToneColors(
+      context,
+      FushiCardTone.secondary,
+    )?.onContainer;
+    final FushiTypography type = context.fushiType;
+    return FushiCard(
+      tone: FushiCardTone.secondary,
+      padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
+      child: Row(
+        children: <Widget>[
+          const FushiListLeadingIcon(
+            Icons.graphic_eq_outlined,
+            tone: FushiCardTone.primary,
+            size: 40,
           ),
-        ),
-      ],
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  source,
+                  style: type.titleSmallEmphasized.copyWith(color: foreground),
+                ),
+                if (format != null)
+                  Text(
+                    format!,
+                    style: type.bodySmall.tabular.copyWith(color: foreground),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 两栏各自的栏头：M3E 方圆角色块图标 + emphasized 标题（+ 可选尾部计数）。
+class _PaneHeader extends StatelessWidget {
+  const _PaneHeader({required this.icon, required this.title, this.trailing});
+
+  final IconData icon;
+  final String title;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 16, 10),
+      child: Row(
+        children: <Widget>[
+          FushiListLeadingIcon(
+            icon,
+            shape: FushiLeadingShape.square,
+            size: 36,
+            iconSize: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(title, style: context.fushiType.titleMediumEmphasized),
+          ),
+          if (trailing != null) trailing!,
+        ],
+      ),
     );
   }
 }

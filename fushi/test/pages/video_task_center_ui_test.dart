@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
@@ -188,6 +188,11 @@ void main() {
       return <VideoPendingScrapeWork>[_pending(7)];
     });
     expect(find.text('Could not load this list. Try again.'), findsOneWidget);
+    // M3E 错误占位（9da1a2a5458：色块图标 + 原因 + 详情 + 重试）比旧的一行
+    // 文字高，800x600 下按钮落在错误态 ListView 视口之外——滚到它再点，与
+    // 用户在小窗口里的真实路径一致。
+    await tester.ensureVisible(find.text('Reload'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Reload'));
     await tester.pumpAndSettle();
     expect(calls, 2);

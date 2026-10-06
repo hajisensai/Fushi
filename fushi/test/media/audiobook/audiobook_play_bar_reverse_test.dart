@@ -1,8 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// BUG-021 守卫：反转有声书播放底栏只镜像整体布局，**不能**反转
 /// ⏮⏯⏭ 播放三联键的内部方向——快退/上一句永远在左、快进/下一句永远在右。
@@ -61,10 +62,10 @@ void main() {
     addTearDown(controller.dispose);
     await _pumpBar(tester, reversed: false, controller: controller);
 
-    final double prev = dx(tester, Icons.skip_previous_outlined);
-    final double play = dx(tester, Icons.play_arrow_outlined);
-    final double next = dx(tester, Icons.skip_next_outlined);
-    final double tune = dx(tester, Icons.tune_outlined);
+    final double prev = dx(tester, FushiIcons.skipPrevious);
+    final double play = dx(tester, FushiIcons.play);
+    final double next = dx(tester, FushiIcons.skipNext);
+    final double tune = dx(tester, FushiIcons.settings);
 
     // ⏮ < ⏯ < ⏭，且设置簇（⚙）在最右。
     expect(prev, lessThan(play));
@@ -78,10 +79,10 @@ void main() {
     addTearDown(controller.dispose);
     await _pumpBar(tester, reversed: true, controller: controller);
 
-    final double prev = dx(tester, Icons.skip_previous_outlined);
-    final double play = dx(tester, Icons.play_arrow_outlined);
-    final double next = dx(tester, Icons.skip_next_outlined);
-    final double tune = dx(tester, Icons.tune_outlined);
+    final double prev = dx(tester, FushiIcons.skipPrevious);
+    final double play = dx(tester, FushiIcons.play);
+    final double next = dx(tester, FushiIcons.skipNext);
+    final double tune = dx(tester, FushiIcons.settings);
 
     // 三联键内部方向保持自然：⏮ 仍在 ⏯ 左、⏯ 仍在 ⏭ 左。
     expect(prev, lessThan(play),
@@ -116,11 +117,11 @@ void main() {
     await _pumpBar(tester, reversed: false, controller: controller);
 
     // 左键图标 = skip_previous，激活调 skipToPrevCue。
-    await focusAndActivate(tester, Icons.skip_previous_outlined);
+    await focusAndActivate(tester, FushiIcons.skipPrevious);
     expect(controller.calls, <String>['prevCue']);
 
     // 右键图标 = skip_next，激活调 skipToNextCue。
-    await focusAndActivate(tester, Icons.skip_next_outlined);
+    await focusAndActivate(tester, FushiIcons.skipNext);
     expect(controller.calls, <String>['prevCue', 'nextCue']);
   });
 
@@ -134,17 +135,17 @@ void main() {
 
     // 图标也互换：屏幕左侧（id=audiobook_prev）现在显示 skip_next，
     // 屏幕右侧（id=audiobook_next）显示 skip_previous。
-    final double leftIconDx = dx(tester, Icons.skip_next_outlined);
-    final double rightIconDx = dx(tester, Icons.skip_previous_outlined);
+    final double leftIconDx = dx(tester, FushiIcons.skipNext);
+    final double rightIconDx = dx(tester, FushiIcons.skipPrevious);
     expect(leftIconDx, lessThan(rightIconDx),
         reason: 'invertSkip swaps icons: skip_next now sits on the left side');
 
     // 屏幕左侧（现 skip_next 图标）激活调 skipToNextCue。
-    await focusAndActivate(tester, Icons.skip_next_outlined);
+    await focusAndActivate(tester, FushiIcons.skipNext);
     expect(controller.calls, <String>['nextCue']);
 
     // 屏幕右侧（现 skip_previous 图标）激活调 skipToPrevCue。
-    await focusAndActivate(tester, Icons.skip_previous_outlined);
+    await focusAndActivate(tester, FushiIcons.skipPrevious);
     expect(controller.calls, <String>['nextCue', 'prevCue']);
   });
 
@@ -157,12 +158,12 @@ void main() {
         reversed: true, controller: controller, invertSkip: false);
 
     // 位置镜像但功能不反转：skip_previous 仍调 prevCue。
-    await focusAndActivate(tester, Icons.skip_previous_outlined);
+    await focusAndActivate(tester, FushiIcons.skipPrevious);
     expect(controller.calls, <String>['prevCue'],
         reason:
             'reversed only mirrors layout; prev key must still call prevCue');
 
-    await focusAndActivate(tester, Icons.skip_next_outlined);
+    await focusAndActivate(tester, FushiIcons.skipNext);
     expect(controller.calls, <String>['prevCue', 'nextCue'],
         reason:
             'reversed only mirrors layout; next key must still call nextCue');

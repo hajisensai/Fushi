@@ -54,20 +54,23 @@ void main() {
     });
 
     test(
-        'anki handlebar picker dialog uses shared MD3 dialog chrome and tokens',
-        () {
-      final String code = _readCode(
-        'lib/src/pages/implementations/anki_settings_page.dart',
-      );
-      // 壳与 insetPadding 都在 State 类的 build 里；StatefulWidget 外壳类本身
-      // 不含任何 chrome，锚到它会扫到空窗口。
-      final String dialogCode =
-          methodBody(code, 'class _AnkiHandlebarPickerDialogState');
+      'anki handlebar picker dialog uses shared MD3 dialog chrome and tokens',
+      () {
+        final String code = _readCode(
+          'lib/src/pages/implementations/anki_settings_page.dart',
+        );
+        // 壳与 insetPadding 都在 State 类的 build 里；StatefulWidget 外壳类本身
+        // 不含任何 chrome，锚到它会扫到空窗口。
+        final String dialogCode = methodBody(
+          code,
+          'class _AnkiHandlebarPickerDialogState',
+        );
 
-      _expectMd3DialogChrome(dialogCode, 'Anki handlebar 选择对话框');
-      _expectTokenDerivedInsetPadding(dialogCode, 'Anki handlebar 选择对话框');
-      _expectTokenDerivedSpacing(dialogCode, 'Anki handlebar 选择对话框');
-    });
+        _expectMd3DialogChrome(dialogCode, 'Anki handlebar 选择对话框');
+        _expectTokenDerivedInsetPadding(dialogCode, 'Anki handlebar 选择对话框');
+        _expectTokenDerivedSpacing(dialogCode, 'Anki handlebar 选择对话框');
+      },
+    );
   });
 
   group('audio_recorder_dialog_md3_static', () {
@@ -96,8 +99,10 @@ void main() {
       final String code = maskCommentsAndStrings(readReaderHistorySource());
       // 旧写法把「State 类 + Frame 类」拼成一段偶然区间（起点是 StatefulWidget、
       // 终点是**下一个**类名），谁改名都会漂。改成各自作用域各断言其职责。
-      final String stateCode =
-          methodBody(code, 'class _BookProfileDialogState');
+      final String stateCode = methodBody(
+        code,
+        'class _BookProfileDialogState',
+      );
       final String frameCode = methodBody(code, 'class BookProfileDialogFrame');
 
       expect(
@@ -119,28 +124,32 @@ void main() {
   });
 
   group('crop_image_dialog_md3_static', () {
-    test('crop image dialog uses shared MD3 dialog chrome and token spacing',
-        () {
-      final String code = _readCode(
-        'lib/src/pages/implementations/crop_image_dialog_page.dart',
-      );
+    test(
+      'crop image dialog uses shared MD3 dialog chrome and token spacing',
+      () {
+        final String code = _readCode(
+          'lib/src/pages/implementations/crop_image_dialog_page.dart',
+        );
 
-      _expectMd3DialogChrome(code, '裁剪图片对话框');
-      _expectNoLegacySpacingFacade(code, '裁剪图片对话框');
-    });
+        _expectMd3DialogChrome(code, '裁剪图片对话框');
+        _expectNoLegacySpacingFacade(code, '裁剪图片对话框');
+      },
+    );
   });
 
   group('dictionary_settings_dialog_md3_static', () {
-    test('dictionary settings dialogs use shared MD3 dialog chrome and tokens',
-        () {
-      final String code = _readCode(
-        'lib/src/pages/implementations/dictionary_settings_dialog_page.dart',
-      );
+    test(
+      'dictionary settings dialogs use shared MD3 dialog chrome and tokens',
+      () {
+        final String code = _readCode(
+          'lib/src/pages/implementations/dictionary_settings_dialog_page.dart',
+        );
 
-      _expectMd3DialogChrome(code, '词典设置对话框');
-      _expectTokenDerivedInsetPadding(code, '词典设置对话框');
-      _expectTokenDerivedSpacing(code, '词典设置对话框');
-    });
+        _expectMd3DialogChrome(code, '词典设置对话框');
+        _expectTokenDerivedInsetPadding(code, '词典设置对话框');
+        _expectTokenDerivedSpacing(code, '词典设置对话框');
+      },
+    );
 
     test('audio source controls use shared MD3 icon buttons', () {
       final String code = _readCode(
@@ -201,16 +210,18 @@ void main() {
   });
 
   group('profile_management_dialog_md3_static', () {
-    test('profile management dialogs use shared MD3 dialog chrome and tokens',
-        () {
-      final String code = _readCode(
-        'lib/src/pages/implementations/profile_management_page.dart',
-      );
+    test(
+      'profile management dialogs use shared MD3 dialog chrome and tokens',
+      () {
+        final String code = _readCode(
+          'lib/src/pages/implementations/profile_management_page.dart',
+        );
 
-      _expectMd3DialogChrome(code, 'Profile 管理对话框');
-      _expectTokenDerivedInsetPadding(code, 'Profile 管理对话框');
-      _expectTokenDerivedSpacing(code, 'Profile 管理对话框');
-    });
+        _expectMd3DialogChrome(code, 'Profile 管理对话框');
+        _expectTokenDerivedInsetPadding(code, 'Profile 管理对话框');
+        _expectTokenDerivedSpacing(code, 'Profile 管理对话框');
+      },
+    );
 
     test('profile action buttons use shared MD3 icon buttons', () {
       final String code = _readCode(
@@ -310,8 +321,9 @@ bool _hasHardcodedSpacing(String expr) {
 /// 把 16 改成 20、或换一个构造器就静默放行。改成对每个 `EdgeInsets` 调用做结构判据，
 /// 覆盖全部硬编码写法，且不因换行/参数顺序变假。
 void _expectTokenDerivedSpacing(String code, String label) {
-  for (final RegExpMatch match
-      in identifierCall('EdgeInsets').allMatches(code)) {
+  for (final RegExpMatch match in identifierCall(
+    'EdgeInsets',
+  ).allMatches(code)) {
     final EnclosingCall call = enclosingCall(code, match.end);
     expect(
       _hasHardcodedSpacing(call.text),
@@ -357,11 +369,7 @@ void _expectMd3DialogChrome(
 /// 构造器而变假。
 void _expectTokenDerivedInsetPadding(String code, String label) {
   final List<String> values = namedArgumentValues(code, 'insetPadding');
-  expect(
-    values,
-    isNotEmpty,
-    reason: '$label 的对话框必须显式给出 insetPadding',
-  );
+  expect(values, isNotEmpty, reason: '$label 的对话框必须显式给出 insetPadding');
   for (final String value in values) {
     expect(
       value.contains('tokens.spacing.'),
@@ -380,7 +388,7 @@ void _expectNoLegacySpacingFacade(String code, String label) {
   );
 }
 
-/// 图标按钮必须走共享 [FushiIconButton]。
+/// 图标按钮必须走共享 FushiIconButton 或 M3E FushiIconButtonControl。
 ///
 /// 旧守卫写成 `isNot(contains('return IconButton('))` 等四条**调用位置前缀**，
 /// 唯一目的是绕开「`FushiIconButton(` 含子串 `IconButton(`」；代价是换个调用位置
@@ -388,9 +396,10 @@ void _expectNoLegacySpacingFacade(String code, String label) {
 /// `IconButton.filledTonal(`。带标识符边界后一条顶四条，且严格更强。
 void _expectSharedIconButtons(String code, String label) {
   expect(
-    containsIdentifierCall(code, 'FushiIconButton'),
+    containsIdentifierCall(code, 'FushiIconButton') ||
+        containsIdentifierCall(code, 'FushiIconButtonControl'),
     isTrue,
-    reason: '$label 必须用共享 FushiIconButton',
+    reason: '$label 必须用共享 FushiIconButton / FushiIconButtonControl',
   );
   expect(
     containsIdentifierCall(code, 'IconButton'),

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +10,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -86,7 +87,7 @@ void main() {
       );
 
   Finder exportButton() =>
-      find.widgetWithIcon(FushiIconButton, Icons.share_outlined);
+      find.widgetWithIcon(FushiIconButton, FushiIcons.share);
 
   /// 焦点驱动打开导出面板（禁 tap / 坐标点击，与既有 collections_export_test 同纪律）。
   Future<void> openExportPanel(WidgetTester tester) async {

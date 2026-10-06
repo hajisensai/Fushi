@@ -286,7 +286,7 @@ void main() {
 
     test('reserve-changing chrome prefs go through the re-anchor channel', () {
       expect(
-        src.contains('ReaderFushiSource.onChromeReanchorLive = ()'),
+        src.contains('chromeReanchor: ()'),
         isTrue,
         reason: '改预留高的 chrome 偏好必须注册 onChromeReanchorLive 重锚通道',
       );

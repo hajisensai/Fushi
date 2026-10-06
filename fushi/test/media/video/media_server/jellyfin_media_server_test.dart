@@ -673,6 +673,16 @@ void main() {
         expect(r.single.url.path, '/Users/u1/Items/Latest');
         expect(r.singleQuery['ParentId'], 'lib-tv');
         expect(r.singleQuery['Limit'], '12');
+        expect(r.singleQuery['GroupItems'], 'true');
+        expect(
+          r.singleQuery['Fields']!.split(','),
+          containsAll(<String>['ProductionYear', 'RecursiveItemCount']),
+        );
+        expect(
+          r.singleQuery['Fields']!.contains('MediaSources'),
+          isFalse,
+          reason: 'BUG-1891：首页行不带重字段',
+        );
         expect(row.map((MediaServerItem i) => i.id).toList(), <String>[
           's1',
           'm1',
@@ -681,6 +691,56 @@ void main() {
         expect(row[0].unplayedChildCount, 2);
       },
     );
+
+    test('Emby 4.9 真实形状：按库折成剧 + 年份 + 未看数 + 主图', () async {
+      // 取自 Emby 4.9「完结动漫」库 `/Items/Latest?GroupItems=true` 的响应形态
+      // （裁掉无关字段）：剧条目带 ProductionYear / RecursiveItemCount /
+      // UserData.UnplayedItemCount / ImageTags.Primary，没有 MediaSources。
+      final _Router r = _Router(
+        (_) => _json(<Object?>[
+          <String, Object?>{
+            'Name': '独自一人的异世界攻略',
+            'ServerId': 'srv',
+            'Id': '120345',
+            'IsFolder': true,
+            'Type': 'Series',
+            'ProductionYear': 2024,
+            'RecursiveItemCount': 12,
+            'ChildCount': 1,
+            'UserData': <String, Object?>{
+              'UnplayedItemCount': 12,
+              'PlaybackPositionTicks': 0,
+              'PlayCount': 0,
+              'IsFavorite': false,
+              'Played': false,
+            },
+            'ImageTags': <String, Object?>{'Primary': 'abc'},
+            'BackdropImageTags': <Object?>['bd1'],
+          },
+          <String, Object?>{
+            'Name': '航海王',
+            'Id': '99',
+            'IsFolder': true,
+            'Type': 'Series',
+            'ProductionYear': 1999,
+            'UserData': <String, Object?>{'UnplayedItemCount': 1024},
+            'ImageTags': <String, Object?>{'Primary': 'p'},
+          },
+        ]),
+      );
+      final List<MediaServerItem> row = await _client(
+        r.client,
+      ).listLatest(libraryId: 'lib-done');
+      expect(row, hasLength(2));
+      expect(row[0].name, '独自一人的异世界攻略');
+      expect(row[0].type, MediaServerItemType.series);
+      expect(row[0].productionYear, 2024);
+      expect(row[0].episodeCount, 12);
+      expect(row[0].unplayedChildCount, 12);
+      expect(row[0].hasCover, isTrue);
+      expect(row[0].hasBackdrop, isTrue);
+      expect(row[1].unplayedChildCount, 1024);
+    });
 
     test('libraryId null 不带 ParentId；对象形状 {Items:[…]} 也能解', () async {
       final _Router r = _Router(
@@ -876,11 +936,50 @@ void main() {
         ]);
       });
 
+      test('相关度序下一整页都不命中就跳过本轮剩余沾边行（BUG-2970），剧轮的真命中第一页就出来', () async {
+        // 全是沾边的电影 900 条 + 精确命中的剧 1 条。
+        http.Response hugeServe(http.Request req) {
+          final Map<String, String> q = req.url.queryParameters;
+          final String type = q['IncludeItemTypes']!;
+          final int start = int.parse(q['StartIndex']!);
+          final int limit = int.parse(q['Limit']!);
+          final int total = type == 'Movie' ? 900 : 1;
+          return _page(<Map<String, Object?>>[
+            for (int i = start; i < total && i < start + limit; i++)
+              if (type == 'Movie')
+                _item('junk$i', 'Movie', name: '怪形 $i')
+              else
+                _item('st', 'Series', name: '怪奇物语', isFolder: true),
+          ], total: total);
+        }
+
+        final _Router r = _Router(hugeServe);
+        final JellyfinVideoClient c = _client(r.client);
+        final MediaServerPage first = await c.search('怪奇物语');
+        expect(first.items.map((MediaServerItem i) => i.id).toList(), <String>[
+          'st',
+        ]);
+        expect(first.totalCount, 901);
+        expect(first.nextStartIndex, 901);
+        expect(first.hasMore, isFalse);
+        expect(
+          r.seen
+              .map(
+                (http.Request q) =>
+                    '${q.url.queryParameters['IncludeItemTypes']}'
+                    '@${q.url.queryParameters['StartIndex']}',
+              )
+              .toList(),
+          <String>['Movie@0', 'Series@0'],
+          reason: '电影轮第一页 100 行全是沾边，不再往下扫剩余 800 行',
+        );
+      });
+
       test(
-        '扫满 kSearchScanLimit 行就先返回：命中可为 0 而 hasMore 仍 true，偏移落在电影轮中段',
+        '扫满 kSearchScanLimit 行就先返回：命中仍在继续时 hasMore 为 true，偏移落在电影轮中段',
         () async {
-          // 全是沾边的电影 900 条 + 精确命中的剧 1 条。
-          http.Response hugeServe(http.Request req) {
+          // 900 部电影每条都真含查询词（子串语义服务器）：一次只扫 500 行。
+          http.Response manyHits(http.Request req) {
             final Map<String, String> q = req.url.queryParameters;
             final String type = q['IncludeItemTypes']!;
             final int start = int.parse(q['StartIndex']!);
@@ -889,16 +988,16 @@ void main() {
             return _page(<Map<String, Object?>>[
               for (int i = start; i < total && i < start + limit; i++)
                 if (type == 'Movie')
-                  _item('junk$i', 'Movie', name: '怪形 $i')
+                  _item('m$i', 'Movie', name: '怪奇物语 $i')
                 else
                   _item('st', 'Series', name: '怪奇物语', isFolder: true),
             ], total: total);
           }
 
-          final _Router r = _Router(hugeServe);
+          final _Router r = _Router(manyHits);
           final JellyfinVideoClient c = _client(r.client);
-          final MediaServerPage first = await c.search('怪奇物语');
-          expect(first.items, isEmpty);
+          final MediaServerPage first = await c.search('怪奇物语', limit: 10000);
+          expect(first.items, hasLength(JellyfinVideoClient.kSearchScanLimit));
           expect(first.totalCount, 901);
           expect(first.nextStartIndex, JellyfinVideoClient.kSearchScanLimit);
           expect(first.hasMore, isTrue);
@@ -909,15 +1008,13 @@ void main() {
           );
           expect(r.seen.last.url.queryParameters['Limit'], '1');
 
-          // 页面按 nextStartIndex 接着扫：剩下 400 条电影 + 剧轮命中。
           final MediaServerPage second = await c.search(
             '怪奇物语',
             startIndex: first.nextStartIndex,
+            limit: 10000,
           );
-          expect(
-            second.items.map((MediaServerItem i) => i.id).toList(),
-            <String>['st'],
-          );
+          expect(second.items, hasLength(401));
+          expect(second.items.first.id, 'st', reason: '精确同名置顶');
           expect(second.nextStartIndex, 901);
           expect(second.hasMore, isFalse);
         },

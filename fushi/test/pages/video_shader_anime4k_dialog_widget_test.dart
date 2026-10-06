@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_shader_downloader.dart';
 import 'package:fushi/src/pages/implementations/video_shader_dialog.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// Anime4K 预设选择对话框的 widget 行为：列出全部预设、已下载预设标 check、点击未下载
 /// 预设 pop 回该预设对象。
@@ -27,7 +28,7 @@ void main() {
           reason: '预设 ${preset.name} 应显示');
     }
     // 没有任何文件下载 → 没有 check 标记。
-    expect(find.byIcon(Icons.check), findsNothing);
+    expect(find.byIcon(FushiIcons.downloadDone), findsNothing);
   });
 
   testWidgets('已下载全部文件的预设显示 check', (WidgetTester tester) async {
@@ -41,7 +42,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
     // 第一个预设全部文件已存在 → 至少一个 check（其它预设若共享文件也可能 check）。
-    expect(find.byIcon(Icons.check), findsWidgets);
+    expect(find.byIcon(FushiIcons.downloadDone), findsWidgets);
   });
 
   testWidgets('点击未下载预设 pop 回该预设', (WidgetTester tester) async {

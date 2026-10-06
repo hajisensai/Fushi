@@ -79,7 +79,7 @@ void main() {
             .readAsStringSync();
 
     final int cardStart = source.indexOf('  Widget _buildAutoUpdateCard() {');
-    final int cardEnd = source.indexOf('  Widget _buildActionBar() {');
+    final int cardEnd = source.indexOf('  Widget _buildActionBar({');
     expect(cardStart, isNonNegative);
     expect(cardEnd, greaterThan(cardStart));
 
@@ -126,6 +126,9 @@ void main() {
     expect(source, isNot(contains('return Dialog(')));
   });
 
+  // 2026-10 词典管理 M3 Expressive 重做：宽屏（≥ 840）列表 + 详情侧板两栏，
+  // 窄屏单列卡片列表 + 底部 sheet；类型筛选在所有宽度都是同一个带本数的分段
+  // 控件（手机上不再退化成要点开才看得到选项的下拉框）。
   test('dictionary manager uses compact mobile-safe chrome', () {
     final String source =
         File('lib/src/pages/implementations/dictionary_dialog_page.dart')
@@ -134,9 +137,32 @@ void main() {
     expect(source, contains('_buildMobilePageActions'));
     expect(source, contains('_buildDesktopPageActions'));
     expect(source, contains('MediaQuery.sizeOf(context).width < 480'));
-    expect(source, contains('AdaptiveSettingsPickerRow<DictionaryType>'));
-    expect(source, contains('_buildDictionaryTypePicker'));
+    expect(source, contains('dictionaryManagerUsesSplitLayout(width)'));
+    expect(source, contains('_buildSplitBody('));
+    expect(source, contains('_showDictionaryDetailSheet('));
+    expect(source, contains('adaptiveModalSheet<void>('));
+    expect(
+        source, isNot(contains('AdaptiveSettingsPickerRow<DictionaryType>')));
+    expect(source, isNot(contains('_buildDictionaryTypePicker')));
     expect(source, contains('_buildDictionaryVisibilityButton'));
+  });
+
+  // 批量操作：共享 BatchActionBar（全选 / 反选 / 启用 / 停用 / 删除），批量删除与
+  // 单本删除走同一确认 + 删除漏斗，不另起删除旁路。
+  test('dictionary manager batch actions reuse shared primitives', () {
+    final String source =
+        File('lib/src/pages/implementations/dictionary_dialog_page.dart')
+            .readAsStringSync();
+
+    expect(source, contains('BatchActionBar('));
+    expect(source, contains('void _batchSetEnabled(bool enabled)'));
+    expect(source, contains('appModel.toggleDictionaryHidden(dictionary)'));
+    final int start = source.indexOf('  Future<void> _batchDelete() {');
+    expect(start, isNonNegative);
+    final String batchDelete =
+        source.substring(start, source.indexOf('\n  }\n', start));
+    expect(batchDelete, contains('_showDictionaryActionConfirmDialog('));
+    expect(batchDelete, contains('appModel.deleteDictionary(dictionary)'));
   });
 
   test('dictionary folder import is not Android-only', () {
@@ -219,8 +245,9 @@ void main() {
 
     // Material path empties the app bar and renders an in-page action bar.
     expect(source, contains('_buildActionBar'));
-    expect(source, contains('if (!cupertino) _buildActionBar()'));
-    expect(source, contains('actions: cupertino'));
+    expect(
+        source, contains('if (!cupertino) _buildActionBar(compact: compact)'));
+    expect(source, contains('final List<Widget> actions = cupertino'));
 
     // The four actions are labeled buttons reusing the existing i18n keys.
     for (final String label in <String>[
@@ -289,56 +316,38 @@ void main() {
   });
 
   // TODO-091/TODO-381：每本词典的「折叠/展开」状态必须在列表行内可一览 + 一键
-  // 切换，且按用户诉求放到行**最左**（leading），从拥挤的右侧控件串里拿出来。
-  // 守卫：
-  //  ① 折叠/展开按钮放在 FushiListItem 的 leading（最左），不在 trailing；
-  //  ② 该按钮单击即 cycleDictionaryCollapseState（一键，非先开菜单）；
+  // 切换。2026-10 词典管理重做后它从行首挪到行尾开关旁（行首让给优先级序号 /
+  // 多选复选框），详情里另有同一状态的三段分段控件。守卫：
+  //  ① 行（_buildDictionaryTile）里直接挂折叠按钮，单击即切换，不进二级菜单；
+  //  ② 行首是优先级序号徽标（多选态是复选框）；
   //  ③ 图标随折叠**三态**切换（BUG-2158：横杠=继承 / unfold_more=显式展开 /
   //     unfold_less=显式折叠，三个图标 = 状态一览）；
-  //  ④ trailing 串里不再有三点菜单（TODO-422 已移除），自然也没有折叠项入口。
+  //  ④ 行里没有三点菜单（TODO-422 已移除）。
   test(
-      'dictionary row puts the one-tap collapse toggle in leading (leftmost), '
-      'not trailing (TODO-091/TODO-381)', () {
+      'dictionary row keeps the one-tap collapse toggle in the row '
+      '(TODO-091/TODO-381, BUG-2158)', () {
     final String source =
         File('lib/src/pages/implementations/dictionary_dialog_page.dart')
             .readAsStringSync();
 
     expect(source, contains('Widget _buildDictionaryCollapseButton('));
 
-    // ① 折叠/展开按钮挂在 leading（最左），不在 trailing 串里。
-    expect(
-      source,
-      contains('leading: _buildDictionaryCollapseButton(dictionary)'),
-      reason: 'collapse toggle must be the row leading (leftmost)',
-    );
-    // TODO-749/751：窄屏（手机）下行改成两行布局，行尾控件串提取为
-    // _buildDictionaryTileControls（桌面进 FushiListItem 的 trailing，窄屏挪到标题
-    // 下方），两处共用。下面把「行尾控件串」锚到这个 helper 的 body 上断言。
     final int tileStart = source.indexOf('Widget _buildDictionaryTile({');
-    final int controlsStart =
-        source.indexOf('Row _buildDictionaryTileControls({');
-    final int tileEnd =
-        source.indexOf('Widget _buildDictionaryVisibilityButton(');
+    final int tileEnd = source.indexOf('Widget _buildDictionaryGroupCard({');
     expect(tileStart, isNonNegative);
-    expect(controlsStart, greaterThan(tileStart));
-    expect(tileEnd, greaterThan(controlsStart));
-    // _buildDictionaryTile 仍把折叠按钮放 leading（最左），并把控件串交给 helper。
-    final String tileSource = source.substring(tileStart, controlsStart);
-    expect(
-      tileSource,
-      contains('leading: _buildDictionaryCollapseButton(dictionary)'),
-      reason: 'collapse toggle stays the row leading (leftmost)',
-    );
-    expect(tileSource, contains('_buildDictionaryTileControls('));
-    // 行尾控件串（helper body）不含折叠按钮——折叠永远只在 leading。
-    final String trailingSource = source.substring(controlsStart, tileEnd);
-    expect(
-      trailingSource,
-      isNot(contains('_buildDictionaryCollapseButton(dictionary)')),
-      reason: 'collapse toggle lives in leading, never the trailing cluster',
-    );
+    expect(tileEnd, greaterThan(tileStart));
+    final String tileSource = source.substring(tileStart, tileEnd);
+    // ① 折叠按钮就在行里。
+    expect(tileSource, contains('_buildDictionaryCollapseButton(dictionary)'));
+    // ② 行首：优先级序号 / 多选复选框。
+    expect(tileSource, contains('DictionaryOrderBadge('));
+    expect(tileSource, contains('FushiCheckbox('));
+    expect(tileSource, contains('leading: leading'));
+    // ④ 行里没有三点菜单。
+    expect(tileSource, isNot(contains('Icons.more_vert')));
+    expect(source, isNot(contains('getMenuItems(')));
 
-    // ② 单击直接切换折叠状态（不经二级菜单）。
+    // ① 单击直接切换折叠状态（不经二级菜单）。
     final int btnStart =
         source.indexOf('Widget _buildDictionaryCollapseButton(');
     final int btnEnd = source.indexOf('// 用自实现的 FushiReorderableColumn');
@@ -361,52 +370,41 @@ void main() {
     expect(btnSource, contains('Icons.unfold_less'));
     expect(btnSource, contains('t.options_expand'));
     expect(btnSource, contains('t.options_collapse'));
-
-    // ④ 行尾的三点菜单已被 TODO-422 移除（trailing 串里没有 more_vert，也没有
-    //    buildDictionaryTileTrailing/getMenuItems 入口），自然不存在折叠项的
-    //    「第二个慢入口」。折叠仍由 leading 一键切换（前面已断言）。
-    expect(trailingSource, isNot(contains('Icons.more_vert')));
-    expect(trailingSource, isNot(contains('buildDictionaryTileTrailing(')));
-    expect(source, isNot(contains('getMenuItems(')));
   });
 
   // TODO-422：词典行尾的三点菜单（旧 buildDictionaryTileTrailing / getMenuItems）
-  // 已被一个独立删除按钮取代。守卫：① 整个文件不再有三点菜单方法；② trailing Row
-  // 末尾是一个删除 FushiIconButton（图标 delete_outline、tooltip 用现有 options_delete
-  // key），onTap 仍调原删除确认对话框 showDictionaryDeleteDialog（删单本词典流程不变）。
-  test(
-      'row trailing replaces the three-dot menu with an inline delete button '
-      '(TODO-422)', () {
+  // 已移除。2026-10 重做后改名 / 内容语言 / 更新 / 排序 / 删除都住在词典详情
+  // （DictionaryManagerDetail：宽屏右侧侧板、窄屏底部 sheet）。守卫：① 整个文件
+  // 不再有三点菜单方法；② 详情里有带文字的删除按钮（delete_outline +
+  // options_delete），页面把它接到原删除确认对话框 showDictionaryDeleteDialog
+  // （删单本流程不变）。
+  test('per-dictionary delete lives in the detail panel (TODO-422)', () {
     final String source =
         File('lib/src/pages/implementations/dictionary_dialog_page.dart')
             .readAsStringSync();
+    final String panels =
+        File('lib/src/pages/implementations/dictionary_manager_panels.dart')
+            .readAsStringSync();
 
-    // ① 旧三点菜单的两个方法整文件不再存在。
     expect(source, isNot(contains('Widget buildDictionaryTileTrailing(')));
     expect(
       source,
       isNot(contains('List<FushiPopupMenuItem<VoidCallback>> getMenuItems(')),
     );
 
-    // ② 定位行尾控件串 helper（_buildDictionaryTileControls，桌面进 trailing、窄屏
-    //    挪到标题下方两行布局，TODO-749/751）。
-    final int controlsStart =
-        source.indexOf('Row _buildDictionaryTileControls({');
-    final int controlsEnd =
-        source.indexOf('Widget _buildDictionaryVisibilityButton(');
-    expect(controlsStart, isNonNegative);
-    expect(controlsEnd, greaterThan(controlsStart));
-    final String trailingSource = source.substring(controlsStart, controlsEnd);
+    final int start = panels.indexOf('class DictionaryManagerDetail ');
+    final int end = panels.indexOf('class _QuickActionTile ');
+    expect(start, isNonNegative);
+    expect(end, greaterThan(start));
+    final String detail = panels.substring(start, end);
+    expect(detail, contains('Icons.delete_outline'));
+    expect(detail, contains('t.options_delete'));
+    expect(detail, contains('onPressed: onDelete'));
+    // 排序按钮（无障碍 / 手柄路径）也在详情里。
+    expect(detail, contains('Icons.keyboard_arrow_up'));
+    expect(detail, contains('Icons.keyboard_arrow_down'));
 
-    // 控件串里没有三点菜单，改成独立删除按钮（仍走删除确认对话框）。
-    expect(trailingSource, isNot(contains('Icons.more_vert')));
-    expect(trailingSource, isNot(contains('buildDictionaryTileTrailing(')));
-    expect(trailingSource, contains('FushiIconButton('));
-    expect(trailingSource, contains('Icons.delete_outline'));
-    expect(trailingSource, contains('tooltip: t.options_delete'));
-    expect(
-      trailingSource,
-      contains('showDictionaryDeleteDialog(dictionary)'),
-    );
+    expect(source, contains('showDictionaryDeleteDialog(dictionary)'));
+    expect(source, contains('unawaited(showDictionaryDeleteDialog(current))'));
   });
 }

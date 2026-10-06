@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 
 import 'widget_test_helpers.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 void main() {
   /// è¿åé®ç**å½ä¸­ç**ï¼InkWellï¼ç©å½¢ââä¸æ¯å¾æ å­å½¢ç©å½¢ã
@@ -18,7 +19,7 @@ void main() {
   Rect backHitRect(WidgetTester tester) => tester.getRect(
         find
             .ancestor(
-              of: find.byIcon(Icons.arrow_back),
+              of: find.byIcon(FushiIcons.back),
               matching: find.byType(InkWell),
             )
             .first,
@@ -56,7 +57,7 @@ void main() {
 
     expect(find.byType(AppBar), findsNothing,
         reason: 'the back action must not occupy a separate empty app-bar row');
-    final Finder back = find.byIcon(Icons.arrow_back);
+    final Finder back = find.byIcon(FushiIcons.back);
     final Finder title = find.text('Sync & backup');
     expect(back, findsOneWidget);
     expect(title, findsOneWidget);

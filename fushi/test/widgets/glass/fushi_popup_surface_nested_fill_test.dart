@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -65,7 +65,7 @@ void main() {
   tearDown(() => SystemTransparency.reduceTransparency.value = false);
 
   for (final Brightness brightness in Brightness.values) {
-    testWidgets('MD3 真模糊（$brightness）：BackdropFilter + 填充 90% / 88%', (
+    testWidgets('MD3 真模糊（$brightness）：BackdropFilter + 填充 97%（实底）', (
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(
@@ -78,10 +78,8 @@ void main() {
           matching: find.byType(ColoredBox),
         ),
       );
-      expect(
-        fill.color.a,
-        closeTo(brightness == Brightness.dark ? 0.88 : 0.9, 0.005),
-      );
+      // 2026-10-06：MD3 查词面板内容区要读作实底（背后正文不可读），两种明暗同 97%。
+      expect(fill.color.a, closeTo(0.97, 0.005));
     });
   }
 

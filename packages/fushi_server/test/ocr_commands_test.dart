@@ -121,18 +121,20 @@ void main() {
       final Map<String, Object?> json = h.json();
       expect(json['runtimeAvailable'], isA<bool>());
       final List<Map<Object?, Object?>> models = (json['models']! as List<Object?>).cast<Map<Object?, Object?>>();
-      final Map<Object?, Object?> classic = models.firstWhere((Map<Object?, Object?> m) => m['key'] == 'manga_ocr');
-      expect(classic['ready'], isFalse);
-      expect(classic['totalBytes'], greaterThan(0));
-      expect(classic.keys, containsAll(<String>['name', 'obtainedBytes', 'diskBytes', 'acceleratorMissingBytes']));
+      final Map<Object?, Object?> ctc = models.firstWhere((Map<Object?, Object?> m) => m['key'] == 'manga_ctc');
+      expect(ctc['ready'], isFalse);
+      expect(ctc['totalBytes'], greaterThan(0));
+      expect(ctc.keys, containsAll(<String>['name', 'obtainedBytes', 'diskBytes']));
+      // 2026-10 删掉的 kha-white manga-ocr 不再列出。
+      expect(models.where((Map<Object?, Object?> m) => m['key'] == 'manga_ocr'), isEmpty);
     });
 
     test('ocr models 用法：rm 必须点名、未知动作 / 未知模型 → 64；rm 删不存在的模型释放 0', () async {
       expect(await h.run(module, <String>['ocr', 'models', 'rm']), 64);
       expect(await h.run(module, <String>['ocr', 'models', 'frobnicate']), 64);
       expect(await h.run(module, <String>['ocr', 'models', 'pull', '--model', 'nope']), 64);
-      expect(await h.run(module, <String>['ocr', 'models', 'rm', '--model', 'manga_ocr', '--json']), 0);
-      expect(h.json(), <String, Object?>{'model': 'manga_ocr', 'freedBytes': 0});
+      expect(await h.run(module, <String>['ocr', 'models', 'rm', '--model', 'manga_ctc', '--json']), 0);
+      expect(h.json(), <String, Object?>{'model': 'manga_ctc', 'freedBytes': 0});
     });
 
     test('manga panels：缺图 66 / 缺模型 69 / 缺参数 64', () async {

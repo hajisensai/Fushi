@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -13,10 +13,11 @@ import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
-import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
+import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/utils.dart';
 
 import '../helpers/test_platform_services.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// BUG-1113「游戏没有标签」的 UI 侧守卫：游戏库页必须接上书架 / 视频页那套**共享**
 /// 用户标签体系——同一个 [FushiTagFilterBar]、同一个标签池、同一套 AND 筛选、
@@ -153,13 +154,13 @@ void main() {
     expect(find.text(t.game_empty), findsNothing);
   });
 
-  testWidgets('卡片菜单有「标签」项，点开进共享 TagPickerPage 并真写穿 DB',
+  testWidgets('卡片菜单有「标签」项，点开进共享标签选择器并真写穿 DB',
       (WidgetTester tester) async {
     final (AppModel appModel, FushiDatabase db) = await buildModel();
     final int tagId = await db.createTag('神作', 0xFFEF5350);
     await pumpPage(tester, appModel);
 
-    await tester.tap(find.byIcon(Icons.more_vert).first);
+    await tester.tap(find.byIcon(FushiIcons.more).first);
     await tester.pumpAndSettle();
     expect(find.text(t.tag_label), findsOneWidget);
 
@@ -168,11 +169,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.tag_label));
     await tester.pumpAndSettle();
-    expect(find.byType(TagPickerPage), findsOneWidget,
+    expect(find.byType(TagPickerPanel), findsOneWidget,
         reason: '复用书/视频/合集那张选择器，不另做一套游戏专用的');
 
     // 勾上标签：必须真落 galgame_tag_mappings（不是只改本地 state）。
-    await tester.tap(find.text('神作'));
+    await tester.tap(find.descendant(
+      of: find.byType(TagPickerPanel),
+      matching: find.text('神作'),
+    ));
     await tester.pumpAndSettle();
 
     final List<BookTagRow> tags = await db.getTagsForGame('g1');

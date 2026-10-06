@@ -197,7 +197,10 @@ class HeadlessHost {
     _ocrModelServices = <String, MangaOcrServiceImpl>{
       for (final MangaOcrLocalModel model in MangaOcrLocalModel.values)
         if (MangaOcrLocalModel.forPlatform(model.key) == model)
-          model.key: model == MangaOcrLocalModel.mangaOcr ? ocrService : MangaOcrServiceImpl(localModel: model),
+          // 默认模型复用 [ocrService] 这一个实例（它就是按默认模型建的）。
+          model.key: model == kDefaultMangaOcrLocalModel
+              ? ocrService
+              : MangaOcrServiceImpl(localModel: model),
     };
     final MangaOcrHostJobManager ocrJobs = MangaOcrHostJobManager(
       service: ocrService,

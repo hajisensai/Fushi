@@ -100,7 +100,6 @@ void main() {
       (audiobook, 'Future<void> _openSrtBookReimport('),
       (chrome, 'Future<void> _openAlignmentImportDialog('),
       (chrome, 'Future<void> _transcribeFromAudiobookPanel('),
-      (chrome, 'Future<void> _showAppearanceSheet('),
     ]) {
       expect(
         maskComments(methodBody(route.$1, route.$2)),
@@ -108,6 +107,18 @@ void main() {
         reason: route.$2,
       );
     }
+    // M3E: the audiobook panel is one kind of the shared reader panel. Its
+    // clock hold is `_syncPanelClockHold` (see the study-clock guard) and its
+    // selection boundary is the `_presentSideSheet` route entry asserted above.
+    expect(
+      maskComments(methodBody(chrome, 'Future<void> _showAppearanceSheet(')),
+      contains('_kReaderPanelAudiobook'),
+    );
+    final String panel = maskComments(
+      methodBody(chrome, 'Future<void> _openReaderPanel('),
+    );
+    expect(panel, contains('_syncPanelClockHold(kind)'));
+    expect(panel, contains('await _presentSideSheet('));
     // The unbound-audio branch must not bypass teardown in either input route.
     expect(audiobook, contains('await _openSrtBookReimport();'));
     final String caret = File(

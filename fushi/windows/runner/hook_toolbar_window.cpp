@@ -17,6 +17,9 @@
 #pragma comment(lib, "dwrite.lib")
 // TOOLTIPS_CLASS / InitCommonControlsEx / TTM_* —— 工具条槽位悬停提示。
 #pragma comment(lib, "comctl32.lib")
+// SetWindowTheme：提示气泡关掉视觉样式后 TTM_SETTIPBKCOLOR 才生效（跟随主题色）。
+#pragma comment(lib, "uxtheme.lib")
+#include <uxtheme.h>
 
 namespace {
 
@@ -67,13 +70,18 @@ bool SameLayout(const hook_toolbar::Layout& a, const hook_toolbar::Layout& b) {
          a.rect.right == b.rect.right && a.rect.bottom == b.rect.bottom &&
          a.owner_origin.x == b.owner_origin.x &&
          a.owner_origin.y == b.owner_origin.y && a.button_px == b.button_px &&
-         a.gap_px == b.gap_px && a.margin_px == b.margin_px;
+         a.gap_px == b.gap_px && a.margin_px == b.margin_px &&
+         a.slot_px == b.slot_px && a.label_px == b.label_px;
 }
 
 bool SameStyle(const hook_toolbar::Style& a, const hook_toolbar::Style& b) {
   return a.button_text_color == b.button_text_color &&
          a.button_bg_color == b.button_bg_color &&
-         a.active_color == b.active_color && a.bg_color == b.bg_color;
+         a.active_color == b.active_color && a.bg_color == b.bg_color &&
+         a.surface_color == b.surface_color &&
+         a.active_bg_color == b.active_bg_color &&
+         a.tooltip_bg_color == b.tooltip_bg_color &&
+         a.tooltip_text_color == b.tooltip_text_color;
 }
 
 bool SameStates(const hook_toolbar::States& a, const hook_toolbar::States& b) {
@@ -453,10 +461,55 @@ std::vector<std::wstring>& SlotTooltipStore(Profile profile) {
   return profile == Profile::kAudiobook ? audiobook_store : gal_hook_store;
 }
 
+std::vector<std::wstring>& SlotLabelStore(Profile profile) {
+  static std::vector<std::wstring> gal_hook_store;
+  static std::vector<std::wstring> audiobook_store;
+  return profile == Profile::kAudiobook ? audiobook_store : gal_hook_store;
+}
+
+COLORREF ColorRefFromArgb(uint32_t argb) {
+  return RGB((argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF);
+}
+
 }  // namespace
 
 void SetSlotTooltips(Profile profile, std::vector<std::wstring> tooltips) {
   SlotTooltipStore(profile) = std::move(tooltips);
+}
+
+void SetSlotLabels(Profile profile, std::vector<std::wstring> labels) {
+  SlotLabelStore(profile) = std::move(labels);
+}
+
+const std::wstring& SlotLabel(Profile profile, int slot) {
+  static const std::wstring empty;
+  const std::vector<std::wstring>& store = SlotLabelStore(profile);
+  if (slot < 0 || slot >= static_cast<int>(store.size())) {
+    return empty;
+  }
+  return store[static_cast<size_t>(slot)];
+}
+
+void SlotTooltipHost::SetColors(uint32_t bg_argb, uint32_t text_argb) {
+  if (bg_argb == bg_argb_ && text_argb == text_argb_) {
+    return;
+  }
+  bg_argb_ = bg_argb;
+  text_argb_ = text_argb;
+  ApplyColors();
+}
+
+void SlotTooltipHost::ApplyColors() {
+  if (!OwnsLiveWindow() || (bg_argb_ >> 24) == 0) {
+    return;
+  }
+  // 视觉样式下 comctl32 忽略自定义底色；关掉本窗的主题，按 M3 plain tooltip
+  // 的 inverseSurface / inverseOnSurface 自绘配色。
+  SetWindowTheme(hwnd_, L"", L"");
+  SendMessageW(hwnd_, TTM_SETTIPBKCOLOR, ColorRefFromArgb(bg_argb_), 0);
+  SendMessageW(hwnd_, TTM_SETTIPTEXTCOLOR, ColorRefFromArgb(text_argb_), 0);
+  RECT padding = {6, 4, 6, 4};
+  SendMessageW(hwnd_, TTM_SETMARGIN, 0, reinterpret_cast<LPARAM>(&padding));
 }
 
 const std::wstring& SlotTooltip(Profile profile, int slot) {
@@ -532,6 +585,7 @@ bool SlotTooltipHost::EnsureWindow(HWND owner) {
   // 放在窗口 extra bytes 里，GWLP_USERDATA 这一格是留给宿主的，写它安全。
   // OwnsLiveWindow 靠它把「HWND 被系统回收给别人」和「还是我那一个」分开。
   SetWindowLongPtr(hwnd_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+  ApplyColors();
   tool_ = {};
   tool_.cbSize = sizeof(tool_);
   // TTF_TRACK|TTF_ABSOLUTE：位置完全由宿主的 TTM_TRACKPOSITION 决定——宿主窗
@@ -683,6 +737,7 @@ bool HookToolbarWindow::Show(hook_toolbar::Profile profile,
   style_ = style;
   states_ = states;
   has_layout_ = true;
+  tooltip_.SetColors(style.tooltip_bg_color, style.tooltip_text_color);
   SetWindowPos(hwnd_, HWND_TOPMOST, layout.rect.left, layout.rect.top, width,
                height, SWP_NOACTIVATE);
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
@@ -749,6 +804,7 @@ void HookToolbarWindow::Sync(hook_toolbar::Profile profile,
   style_ = style;
   states_ = states;
   has_layout_ = true;
+  tooltip_.SetColors(style.tooltip_bg_color, style.tooltip_text_color);
   if (moved) {
     SetWindowPos(hwnd_, HWND_TOPMOST, layout.rect.left, layout.rect.top,
                  layout.rect.right - layout.rect.left,
@@ -765,13 +821,14 @@ int HookToolbarWindow::SlotAt(float x, float y) const {
     return -1;
   }
   const float top = layout_.margin_px;
-  if (y < top || y > top + layout_.button_px) {
+  if (y < top || y > top + layout_.button_px + layout_.label_px) {
     return -1;
   }
+  const float pitch =
+      layout_.slot_px > 0.0f ? layout_.slot_px : layout_.button_px;
   for (int slot = 0; slot < hook_toolbar::SlotCount(profile_); ++slot) {
-    const float bx =
-        layout_.margin_px + slot * (layout_.button_px + layout_.gap_px);
-    if (x >= bx && x <= bx + layout_.button_px) {
+    const float bx = layout_.margin_px + slot * (pitch + layout_.gap_px);
+    if (x >= bx && x <= bx + pitch) {
       return slot;
     }
   }
@@ -960,7 +1017,10 @@ void HookToolbarWindow::Render() {
   }
 
   const float opacity = hovered_ ? kHoverOpacity : kRestOpacity;
-  const float corner = std::max(2.0f, layout_.margin_px * 1.5f);
+  // M3E theme palette pushed from Dart (see hook_toolbar::Style::surface_color).
+  const bool m3e = (style_.surface_color >> 24) != 0;
+  const float corner = m3e ? static_cast<float>(height) / 2.0f
+                           : std::max(2.0f, layout_.margin_px * 1.5f);
 
   render_target_->BeginDraw();
   render_target_->Clear(D2D1::ColorF(0, 0, 0, 0));
@@ -969,7 +1029,7 @@ void HookToolbarWindow::Render() {
   // so the escape hatch matches the caption bar the user configured; it is
   // floored to a visible value because a fully transparent escape hatch over a
   // fully transparent overlay cannot be found.
-  uint32_t pill = style_.bg_color;
+  uint32_t pill = m3e ? style_.surface_color : style_.bg_color;
   if ((pill >> 24) < 0x99) {
     pill = 0x99000000u | (pill & 0x00FFFFFFu);
   }
@@ -994,11 +1054,39 @@ void HookToolbarWindow::Render() {
                                         btn_fg.GetAddressOf());
   render_target_->CreateSolidColorBrush(ColorFromArgb(style_.active_color),
                                         btn_active.GetAddressOf());
+  Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_active_bg;
+  if (m3e) {
+    render_target_->CreateSolidColorBrush(
+        ColorFromArgb(style_.active_bg_color), btn_active_bg.GetAddressOf());
+  }
   if (btn_bg != nullptr) btn_bg->SetOpacity(opacity);
   if (btn_fg != nullptr) btn_fg->SetOpacity(opacity);
   if (btn_active != nullptr) btn_active->SetOpacity(opacity);
+  if (btn_active_bg != nullptr) btn_active_bg->SetOpacity(opacity);
+  // M3E icon buttons are full circles inside the full-round pill.
+  const float cell_corner =
+      m3e ? layout_.button_px / 2.0f : corner * 0.65f;
 
   const float btn = layout_.button_px;
+  const float pitch = layout_.slot_px > 0.0f ? layout_.slot_px : btn;
+  const bool labelled = layout_.label_px > 0.0f;
+  Microsoft::WRL::ComPtr<IDWriteTextFormat> label_format;
+  if (labelled && dwrite_factory_ != nullptr) {
+    dwrite_factory_->CreateTextFormat(
+        L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+        DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+        layout_.label_px * 0.78f, L"", label_format.GetAddressOf());
+    if (label_format != nullptr) {
+      label_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+      label_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+      label_format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+      DWRITE_TRIMMING trimming = {DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0};
+      Microsoft::WRL::ComPtr<IDWriteInlineObject> ellipsis;
+      dwrite_factory_->CreateEllipsisTrimmingSign(label_format.Get(),
+                                                  ellipsis.GetAddressOf());
+      label_format->SetTrimming(&trimming, ellipsis.Get());
+    }
+  }
   Microsoft::WRL::ComPtr<IDWriteTextFormat> icon_format;
   if (icon_font_collection_ != nullptr) {
     dwrite_factory_->CreateTextFormat(
@@ -1012,11 +1100,28 @@ void HookToolbarWindow::Render() {
     }
   }
   for (int slot = 0; slot < hook_toolbar::SlotCount(profile_); ++slot) {
-    const float bx = layout_.margin_px + slot * (btn + layout_.gap_px);
+    const float sx = layout_.margin_px + slot * (pitch + layout_.gap_px);
+    const float bx = sx + (pitch - btn) / 2.0f;
     const float by = layout_.margin_px;
-    const D2D1_RECT_F cell = D2D1::RectF(bx, by, bx + btn, by + btn);
+    // 图标格（字形 / 矢量图标画在这里）。带文字时激活指示器是图标后面一颗
+    // 加宽胶囊（M3E 导航栏形态），文字在其下。
+    const D2D1_RECT_F glyph_cell = D2D1::RectF(bx, by, bx + btn, by + btn);
+    const float indicator_w = labelled ? std::min(pitch, btn * 1.6f) : btn;
+    const float ix = sx + (pitch - indicator_w) / 2.0f;
+    const D2D1_RECT_F cell = D2D1::RectF(ix, by, ix + indicator_w, by + btn);
     const bool active = hook_toolbar::SlotActive(profile_, slot, states_);
-    if (active && btn_active != nullptr) {
+    if (m3e && active && btn_active_bg != nullptr) {
+      render_target_->FillRoundedRectangle(
+          D2D1::RoundedRect(cell, cell_corner, cell_corner),
+          btn_active_bg.Get());
+      if (slot == hovered_slot_ && btn_bg != nullptr) {
+        render_target_->FillRoundedRectangle(
+            D2D1::RoundedRect(cell, cell_corner, cell_corner), btn_bg.Get());
+      }
+    } else if (m3e && slot == hovered_slot_ && btn_bg != nullptr) {
+      render_target_->FillRoundedRectangle(
+          D2D1::RoundedRect(cell, cell_corner, cell_corner), btn_bg.Get());
+    } else if (active && btn_active != nullptr) {
       btn_active->SetOpacity(opacity * 0.16f);
       render_target_->FillRoundedRectangle(
           D2D1::RoundedRect(cell, corner * 0.65f, corner * 0.65f),
@@ -1036,10 +1141,22 @@ void HookToolbarWindow::Render() {
       // 分流的话，这两颗会画成豆腐块——空串 glyph 必须逐颗落到矢量画法。
       const wchar_t* glyph = hook_toolbar::SlotGlyph(profile_, slot, states_);
       if (icon_format != nullptr && glyph[0] != L'\0') {
-        render_target_->DrawTextW(glyph, 1, icon_format.Get(), cell, brush);
+        render_target_->DrawTextW(glyph, 1, icon_format.Get(), glyph_cell,
+                                  brush);
       } else {
         hook_toolbar::DrawSlotIcon(render_target_.Get(), d2d_factory_.Get(),
-                                   profile_, slot, states_, cell, brush);
+                                   profile_, slot, states_, glyph_cell, brush);
+      }
+    }
+    if (label_format != nullptr && btn_fg != nullptr) {
+      const std::wstring& label = hook_toolbar::SlotLabel(profile_, slot);
+      if (!label.empty()) {
+        const D2D1_RECT_F label_cell =
+            D2D1::RectF(sx, by + btn + layout_.label_px * 0.08f, sx + pitch,
+                        by + btn + layout_.label_px);
+        render_target_->DrawTextW(label.c_str(),
+                                  static_cast<UINT32>(label.size()),
+                                  label_format.Get(), label_cell, btn_fg.Get());
       }
     }
   }

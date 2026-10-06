@@ -34,6 +34,8 @@ function harness(handler = () => null) {
     fushiT: FUSHI_T,
     innerWidth: 1280, innerHeight: 900,
     CSS: { supports: () => true },
+    // 本文件钉的是液态玻璃那套子层材质；缺省风格已是 M3E（theme.js），这里显式选玻璃。
+    fushiTheme: { style: 'glass' },
     addEventListener: (name, callback) => { listeners[name] = callback; },
     fushiIsEntryQueued: () => false,
     renderPopup: () => renderCount++,

@@ -6,9 +6,8 @@ import 'dart:math' as math;
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:material_color_utilities/material_color_utilities.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -75,121 +74,92 @@ void main() {
     await db.close();
   });
 
-  group('ThemeNotifier presets', () {
-    test('has 7 built-in theme presets', () {
-      expect(ThemeNotifier.themePresets.length, 7);
-      expect(ThemeNotifier.themePresets.containsKey('light-theme'), true);
-      expect(ThemeNotifier.themePresets.containsKey('dark-theme'), true);
-    });
-
-    test('TODO-1347: eyecare-theme is a built-in light preset with a label',
-        () {
-      // 护眼主题必须存在于默认主题列表、是浅色（低蓝光暖色调），且有本地化名字
-      // （themeLabel 命中而非回退成裸 key）。删掉 preset 或漏配 label 本用例即红。
-      final preset = ThemeNotifier.themePresets['eyecare-theme'];
-      expect(preset, isNotNull, reason: '护眼主题不在默认主题列表里');
-      expect(preset!.brightness, Brightness.light, reason: '护眼主题应是浅色（豆沙绿柔和底）');
-      final String label = ThemeNotifier.themeLabel('eyecare-theme');
-      expect(label, isNotEmpty);
-      expect(label, isNot('eyecare-theme'),
-          reason: 'themeLabel 未命中 = 漏配 _themeLabelKeys / i18n key');
-    });
-
-    test(
-        'TODO-1347: reader availableThemes stays in sync with app themePresets',
-        () {
-      // 阅读器主题选择器（TtuReaderSettings.availableThemes）与应用主题预设
-      // （themePresets）是同一 app_theme_key 的两个并行列表；两者必须逐一对齐，
-      // 否则新增/删除主题时其一漂移（护眼主题只在一个列表出现）。
+  group('ThemeNotifier presets (2026-10 M3E classic seeds)', () {
+    test('10 Material 3 classic seed presets, none carries a brightness', () {
+      expect(ThemeNotifier.themePresets.keys, <String>[
+        'm3-baseline',
+        'm3-indigo',
+        'm3-blue',
+        'm3-teal',
+        'm3-green',
+        'm3-yellow',
+        'm3-orange',
+        'm3-red',
+        'm3-pink',
+        'm3-neutral',
+      ]);
       expect(
-        TtuReaderSettings.availableThemes.toSet(),
-        ThemeNotifier.themePresets.keys.toSet(),
-        reason: '阅读器主题列表与应用主题预设集合不一致',
+        ThemeNotifier.themePresets['m3-baseline']!.seed,
+        const Color(0xFF6750A4),
+        reason: 'M3 基线紫',
       );
-      expect(TtuReaderSettings.availableThemes, contains('eyecare-theme'));
     });
 
-    test('themeLabel returns localized labels for known keys', () {
-      final label = ThemeNotifier.themeLabel('light-theme');
-      expect(label, isNotEmpty);
+    test('every preset (and system-theme) has a localized label', () {
+      for (final String key in <String>[
+        'system-theme',
+        ...ThemeNotifier.themePresets.keys,
+      ]) {
+        final String label = ThemeNotifier.themeLabel(key);
+        expect(label, isNotEmpty);
+        expect(label, isNot(key), reason: '$key 漏配 themeLabel');
+      }
     });
 
     test('themeLabel returns raw key for unknown keys', () {
       expect(ThemeNotifier.themeLabel('unknown-key'), 'unknown-key');
     });
 
-    test('each preset carries a scheme variant', () {
-      for (final entry in ThemeNotifier.themePresets.entries) {
-        expect(
-          entry.value.variant,
-          isA<DynamicSchemeVariant>(),
-          reason: '${entry.key} 缺少 scheme variant 字段',
-        );
-      }
-    });
-
-    test('the three dark presets declare distinct variants (TODO-100)', () {
-      expect(
-        ThemeNotifier.themePresets['gray-theme']!.variant,
-        DynamicSchemeVariant.neutral,
-      );
-      expect(
-        ThemeNotifier.themePresets['dark-theme']!.variant,
-        DynamicSchemeVariant.tonalSpot,
-      );
-      // 纯黑靠真黑表面区分，强调色走 M3 默认 tonalSpot（不再用高彩度 vibrant）。
-      expect(
-        ThemeNotifier.themePresets['black-theme']!.variant,
-        DynamicSchemeVariant.tonalSpot,
-      );
-      expect(ThemeNotifier.themePresets['black-theme']!.pureBlack, isTrue);
-    });
-
-    test('presets stay on M3 default-chroma variants (no vibrant/expressive)',
-        () {
+    // 2026-10-05 用户「配色统一成 m3e」：彩色预设走 M3E 默认 vibrant（饱和容器
+    // 色块、同色相）；不用 expressive——它会旋转 primary 色相。中性灰走 neutral。
+    test('presets use the M3E default variant (neutral stays neutral)', () {
+      expect(kFushiDefaultSchemeVariant, DynamicSchemeVariant.vibrant);
       for (final MapEntry<String, ThemePreset> entry
           in ThemeNotifier.themePresets.entries) {
         expect(
-          <DynamicSchemeVariant>[
-            DynamicSchemeVariant.tonalSpot,
-            DynamicSchemeVariant.neutral,
-          ],
-          contains(entry.value.variant),
-          reason: '${entry.key} 用了高彩度变体，亮色 primary 会远超 M3 常规彩度',
+          entry.value.variant,
+          entry.key == ThemeNotifier.neutralPresetKey
+              ? DynamicSchemeVariant.neutral
+              : kFushiDefaultSchemeVariant,
+          reason: '${entry.key} 没走 M3E 默认变体',
         );
       }
     });
 
-    test('black-theme dark surfaces are true black; light stays ordinary',
-        () {
-      final ThemePreset black = ThemeNotifier.themePresets['black-theme']!;
-      final ColorScheme dark =
-          ThemeNotifier.buildPresetColorScheme(black, Brightness.dark);
-      expect(dark.surface, const Color(0xFF000000));
-      expect(dark.surfaceContainerLowest, const Color(0xFF000000));
-      expect(dark.surfaceContainer, isNot(const Color(0xFF000000)));
-      final ColorScheme light =
-          ThemeNotifier.buildPresetColorScheme(black, Brightness.light);
-      expect(light.surface.computeLuminance(), greaterThan(0.9));
+    test('presets are visibly apart: primary hues pairwise distinct', () {
+      final List<Color> primaries = <Color>[
+        for (final ThemePreset p in ThemeNotifier.themePresets.values)
+          ThemeNotifier.buildPresetColorScheme(p, Brightness.light).primary,
+      ];
+      expect(primaries.toSet().length, primaries.length);
     });
 
-    test('water-theme is not a recolor of the brand teal (hue apart)', () {
-      double hueGap(Color a, Color b) {
-        final double d = (Hct.fromInt(a.toARGB32()).hue -
-                    Hct.fromInt(b.toARGB32()).hue)
-                .abs() %
-            360;
-        return d > 180 ? 360 - d : d;
-      }
+    test('reader paper keys stay in sync with the legacy preset ids', () {
+      // 阅读器纸色（TtuReaderSettings.availableThemes）仍按存量旧预设 id 生效，
+      // 本次精简不动；它们必须全部能被映射到保留预设。
+      expect(
+        TtuReaderSettings.availableThemes.toSet(),
+        ThemeNotifier.legacyThemePresets.keys.toSet(),
+      );
+    });
 
-      for (final Brightness b in Brightness.values) {
-        final ColorScheme water = ThemeNotifier.buildPresetColorScheme(
-            ThemeNotifier.themePresets['water-theme']!, b);
-        final ColorScheme teal = ThemeNotifier.buildPresetColorScheme(
-            ThemeNotifier.themePresets['light-theme']!, b);
-        expect(hueGap(water.primary, teal.primary), greaterThan(15),
-            reason: '${b.name}: 水蓝与白色主题 primary 色相几乎相同');
+    test('legacy preset ids map to the nearest kept preset by seed hue', () {
+      expect(
+        ThemeNotifier.legacyPresetReplacement('gray-theme'),
+        ThemeNotifier.neutralPresetKey,
+      );
+      expect(ThemeNotifier.legacyPresetReplacement('black-theme'), 'm3-indigo');
+      expect(ThemeNotifier.legacyPresetReplacement('eyecare-theme'), 'm3-green');
+      for (final String key in ThemeNotifier.legacyThemePresets.keys) {
+        expect(
+          ThemeNotifier.themePresets.containsKey(
+            ThemeNotifier.legacyPresetReplacement(key),
+          ),
+          isTrue,
+          reason: '$key 没映射到保留预设',
+        );
       }
+      expect(ThemeNotifier.legacyPresetReplacement('m3-blue'), isNull);
     });
 
     test('switch uses M3 default role colors (track primary, thumb onPrimary)',
@@ -231,28 +201,64 @@ void main() {
     });
   });
 
-  group('ThemeNotifier dark preset distinctness (TODO-100)', () {
-    // 用户报「三个暗色主题选择时完全看不出差别」：旧实现三个暗色预设经
-    // tonalSpot 全部塌成同一套青色(#8bd0ef)+近黑背景。按预设各自的 variant
-    // 应用后，primary 与 surface 必须各不相同，主题切换才看得出差别。撤掉
-    // variant 接线(buildColorScheme 不传 _variant)本组立即转红。
-    Future<ColorScheme> appliedScheme(String key) async {
-      await notifier.setAppThemeKey(key);
-      return notifier.buildColorScheme(Brightness.dark);
-    }
+  group('ThemeNotifier: presets never decide brightness (2026-10-06)', () {
+    // 用户：「切换主题的时候如果我是深色就要继续保持深色」。此前 setAppThemeKey
+    // 选 system-theme 写 brightness_mode=system、选预设写该预设自带的 light/dark。
+    test('switching any theme keeps the current brightness_mode', () async {
+      await notifier.setBrightnessMode('dark');
+      for (final String key in <String>[
+        'system-theme',
+        ...ThemeNotifier.themePresets.keys,
+        'custom-theme',
+      ]) {
+        await notifier.setAppThemeKey(key);
+        expect(notifier.brightnessMode, 'dark', reason: '切到 $key 改写了明暗');
+        expect(notifier.isDarkMode, isTrue);
+      }
+      await notifier.setBrightnessMode('light');
+      await notifier.setAppThemeKey('m3-indigo');
+      expect(notifier.brightnessMode, 'light');
+    });
 
-    test('gray / dark / black applied schemes have distinct primary + surface',
+    test('a stored legacy id reads as its replacement without rewriting prefs',
         () async {
-      final ColorScheme gray = await appliedScheme('gray-theme');
-      final ColorScheme dark = await appliedScheme('dark-theme');
-      final ColorScheme black = await appliedScheme('black-theme');
+      await db.setPref('app_theme_key', PrefCodec.encode('ecru-theme'));
+      await db.setPref('brightness_mode', PrefCodec.encode('dark'));
+      await notifier.refreshFromDb();
+      expect(notifier.storedAppThemeKey, 'ecru-theme');
+      expect(
+        notifier.appThemeKey,
+        ThemeNotifier.legacyPresetReplacement('ecru-theme'),
+      );
+      expect(notifier.brightnessMode, 'dark', reason: '旧浅色预设不得强制浅色');
+      expect(
+        PrefCodec.decode((await db.getPref('app_theme_key'))!, ''),
+        'ecru-theme',
+        reason: '读取映射不改写偏好',
+      );
+    });
 
-      expect(gray.primary, isNot(dark.primary));
-      expect(dark.primary, isNot(black.primary));
-      expect(gray.primary, isNot(black.primary));
+    test('pure black: legacy black-theme users keep it; toggle is independent',
+        () async {
+      await db.setPref('app_theme_key', PrefCodec.encode('black-theme'));
+      await db.setPref('brightness_mode', PrefCodec.encode('dark'));
+      await notifier.refreshFromDb();
+      expect(notifier.pureBlackDark, isTrue);
+      expect(notifier.buildColorScheme(Brightness.dark).surface,
+          const Color(0xFF000000));
 
-      expect(gray.surface, isNot(black.surface));
-      expect(dark.surface, isNot(black.surface));
+      await notifier.setAppThemeKey('m3-teal');
+      await notifier.setPureBlackDark(true);
+      expect(notifier.buildColorScheme(Brightness.dark).surface,
+          const Color(0xFF000000));
+      expect(
+        notifier.buildColorScheme(Brightness.light).surface.computeLuminance(),
+        greaterThan(0.9),
+        reason: '纯黑只在深色下起作用',
+      );
+      await notifier.setPureBlackDark(false);
+      expect(notifier.buildColorScheme(Brightness.dark).surface,
+          isNot(const Color(0xFF000000)));
     });
   });
 
@@ -326,9 +332,10 @@ void main() {
     test('setAppThemeKey persists and changes theme', () async {
       int notifyCount = 0;
       notifier.addListener(() => notifyCount++);
-      await notifier.setAppThemeKey('dark-theme');
-      expect(notifier.appThemeKey, 'dark-theme');
-      expect(notifier.brightnessMode, 'dark');
+      await notifier.setAppThemeKey('m3-blue');
+      expect(notifier.appThemeKey, 'm3-blue');
+      // 预设不带明暗：切换不改写 brightness_mode。
+      expect(notifier.brightnessMode, 'system');
       expect(notifyCount, greaterThan(0));
     });
 
@@ -532,13 +539,24 @@ void main() {
         );
       });
 
-      test('glass tier defaults to liquid and never resolves to off', () async {
+      // 2026-10-06：Apple 设计系统固定毛玻璃，液态档关闭——已存 liquid 的偏好
+      // 读取时降级为 frosted，存储值不改写。
+      test('glass tier is pinned to frosted, even with a stored liquid pref',
+          () async {
         await notifier.setDesignSystem('glass');
-        expect(notifier.glassMaterialTier, FushiGlassMaterial.liquid);
-        expect(notifier.glassMaterial, FushiGlassMaterial.liquid);
+        expect(notifier.glassMaterialTier, FushiGlassMaterial.frosted);
+        expect(notifier.glassMaterial, FushiGlassMaterial.frosted);
+
+        await notifier.setGlassMaterial(FushiGlassMaterial.liquid);
+        expect(notifier.glassMaterialTier, FushiGlassMaterial.frosted);
+        expect(notifier.glassMaterial, FushiGlassMaterial.frosted);
+        expect(
+          notifier.theme.extension<FushiGlassTheme>()?.material,
+          FushiGlassMaterial.frosted,
+        );
 
         await notifier.setGlassMaterial(FushiGlassMaterial.off);
-        expect(notifier.glassMaterialTier, FushiGlassMaterial.liquid);
+        expect(notifier.glassMaterialTier, FushiGlassMaterial.frosted);
       });
 
       test('system reduce-transparency turns glass off and rebuilds', () async {
@@ -551,7 +569,7 @@ void main() {
         expect(notifier.glassMaterial, FushiGlassMaterial.off);
 
         SystemTransparency.reduceTransparency.value = false;
-        expect(notifier.glassMaterial, FushiGlassMaterial.liquid);
+        expect(notifier.glassMaterial, FushiGlassMaterial.frosted);
       });
     });
   });

@@ -13,9 +13,11 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_failure_text.dart';
@@ -195,24 +197,15 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
       _pop();
       return;
     }
-    final bool? discard = await showAppDialog<bool>(
+    final bool discard = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext dialogContext) => FushiAlertDialog(
-        title: Text(t.book_css_editor_unsaved_changes),
-        content: Text(t.book_css_editor_unsaved_changes_message),
-        actions: <Widget>[
-          FushiTextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(t.dialog_cancel),
-          ),
-          FushiTextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(t.book_css_editor_discard),
-          ),
-        ],
-      ),
+      title: t.book_css_editor_unsaved_changes,
+      message: t.book_css_editor_unsaved_changes_message,
+      icon: Icons.delete_outline,
+      confirmLabel: t.book_css_editor_discard,
+      destructive: true,
     );
-    if (discard == true) _pop();
+    if (discard) _pop();
   }
 
   // ── AI 生成 ──────────────────────────────────────────────────────────────
@@ -353,7 +346,10 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Text(t.game_text_process_preview, style: tokens.type.sectionLabel),
+          _SectionHeader(
+            icon: FushiIcons.visibility,
+            title: t.game_text_process_preview,
+          ),
           SizedBox(height: tokens.spacing.gap),
           FushiTextField(
             key: const ValueKey<String>('gtp-sample-field'),
@@ -374,10 +370,11 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
               label: Text(t.game_text_process_preview_use_latest),
             ),
           ),
-          for (int i = 0; i < trace.steps.length; i += 1) ...<Widget>[
-            _buildStepTraceCard(tokens, i, trace.steps[i]),
-            SizedBox(height: tokens.spacing.gap),
-          ],
+          // 逐步留痕是一组 M3E 分段卡（组首尾大圆角、内侧小圆角、行间 2px 缝），
+          // 结果卡单独成一块饱和色块压在最后。
+          for (int i = 0; i < trace.steps.length; i += 1)
+            _buildStepTraceCard(tokens, i, trace.steps[i], trace.steps.length),
+          if (trace.steps.isNotEmpty) SizedBox(height: tokens.spacing.gap),
           _buildResultCard(tokens, trace),
           SizedBox(height: tokens.spacing.card),
         ],
@@ -394,12 +391,23 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
     FushiDesignTokens tokens,
     int index,
     GalTextProcessStepTrace trace,
+    int count,
   ) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool skipped = !trace.step.enabled;
     final _TextAffixes affixes = _commonAffixes(trace.input, trace.output);
+    final bool glass = isGlassDesign(context);
     final Widget card = FushiCard(
       key: ValueKey<String>('gtp-trace-${trace.step.id}'),
+      grouped: !glass,
+      borderRadius: glass
+          ? null
+          : fushiGroupedItemRadius(context, index, count),
+      margin: EdgeInsets.only(
+        bottom: index >= count - 1
+            ? 0
+            : (glass ? tokens.spacing.gap : fushiGroupedListGap(context)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -454,27 +462,33 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
   }
 
   Widget _buildResultCard(FushiDesignTokens tokens, GalTextProcessTrace trace) {
+    // M3E 饱和结果卡：管线的最终产物是这一页的「答案」，铺 primaryContainer；
+    // 文字取 onPrimaryContainer（令牌字阶自带颜色，必须显式覆盖）。
+    final Color? foreground = fushiCardToneColors(
+      context,
+      FushiCardTone.primary,
+    )?.onContainer;
     return FushiCard(
       key: const ValueKey<String>('gtp-result'),
-      color: tokens.surfaces.group,
+      tone: FushiCardTone.primary,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(
             t.game_text_process_preview_result,
-            style: tokens.type.sectionLabel,
+            style: tokens.type.sectionLabel.copyWith(color: foreground),
           ),
           SizedBox(height: tokens.spacing.gap),
           Text(
             trace.output.isEmpty ? _kEmptyGlyph : trace.output,
             key: const ValueKey<String>('gtp-result-text'),
-            style: tokens.type.listTitle,
+            style: context.fushiType.titleMedium.copyWith(color: foreground),
           ),
           if (!trace.changed) ...<Widget>[
             SizedBox(height: tokens.spacing.gap / 2),
             Text(
               t.game_text_process_preview_unchanged,
-              style: tokens.type.listSubtitle,
+              style: tokens.type.listSubtitle.copyWith(color: foreground),
             ),
           ],
           if (trace.emptied) ...<Widget>[
@@ -551,25 +565,29 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
           Text(t.game_text_process_summary, style: tokens.type.listSubtitle),
           SizedBox(height: tokens.spacing.gap),
           if (_steps.isEmpty)
-            Padding(
-              padding: EdgeInsets.symmetric(vertical: tokens.spacing.card),
-              child: Text(
-                t.game_text_process_empty,
+            // M3E 空态：色块图标弹入 + 标题，不再是一行居中的灰字。
+            SizedBox(
+              height: 220,
+              child: FushiPlaceholderMessage(
                 key: const ValueKey<String>('gtp-empty'),
-                textAlign: TextAlign.center,
-                style: tokens.type.listSubtitle,
+                icon: FushiIcons.filterList,
+                message: t.game_text_process_empty,
               ),
             )
           else
+            // M3E 分段列表：步骤是一组可拖拽重排的分段卡（行间 2px 缝、组首尾
+            // 大圆角），拖起时浮层按共享口径放大 + 投影。
             FushiReorderableColumn(
               itemCount: _steps.length,
-              spacing: tokens.spacing.gap,
+              spacing: isGlassDesign(context)
+                  ? tokens.spacing.gap
+                  : fushiGroupedListGap(context),
               feedbackBorderRadius: fushiCardBorderRadius(context),
               keyForIndex: (int index) =>
                   ValueKey<String>('gtp-step-row-${_steps[index].id}'),
               onReorder: _reorder,
               itemBuilder: (BuildContext context, int index) =>
-                  _buildStepCard(tokens, _steps[index]),
+                  _buildStepCard(tokens, _steps[index], index, _steps.length),
             ),
           SizedBox(height: tokens.spacing.gap),
           Align(
@@ -610,19 +628,25 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
   Widget _buildWarning(FushiDesignTokens tokens, Key key, String message) =>
       FushiInlineNotice(key: key, message: message);
 
-  Widget _buildStepCard(FushiDesignTokens tokens, GalTextProcessStep step) {
+  Widget _buildStepCard(
+    FushiDesignTokens tokens,
+    GalTextProcessStep step,
+    int index,
+    int count,
+  ) {
+    final bool glass = isGlassDesign(context);
     return FushiCard(
       key: ValueKey<String>('gtp-step-${step.id}'),
+      grouped: !glass,
+      borderRadius: glass
+          ? null
+          : fushiGroupedItemRadius(context, index, count),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
             children: <Widget>[
-              FushiIcon(
-                Icons.drag_handle,
-                size: 18,
-                color: tokens.surfaces.onVariant,
-              ),
+              const FushiDragHandle(size: 18),
               SizedBox(width: tokens.spacing.gap),
               Expanded(
                 child: Column(
@@ -872,7 +896,11 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(t.game_text_process_ai_section, style: tokens.type.sectionLabel),
+          _SectionHeader(
+            icon: FushiIcons.aiAssistant,
+            title: t.game_text_process_ai_section,
+            tone: FushiCardTone.tertiary,
+          ),
           SizedBox(height: tokens.spacing.gap),
           FushiTextField(
             key: const ValueKey<String>('gtp-ai-request'),
@@ -985,6 +1013,38 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
       t.game_text_process_kind_filter_latin_letters_desc,
     GalTextProcessKind.replace => t.game_text_process_kind_replace_desc,
   };
+}
+
+/// 分区标题：M3E 方圆角色块图标 + emphasized 标题（Apple 走 iOS 彩色圆角方块）。
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({
+    required this.icon,
+    required this.title,
+    this.tone = FushiCardTone.secondary,
+  });
+
+  final IconData icon;
+  final String title;
+  final FushiCardTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        FushiListLeadingIcon(
+          icon,
+          shape: FushiLeadingShape.square,
+          tone: tone,
+          size: 32,
+          iconSize: 18,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(title, style: context.fushiType.titleSmallEmphasized),
+        ),
+      ],
+    );
+  }
 }
 
 /// 一对公共前后缀长度（以 UTF-16 码元计）。

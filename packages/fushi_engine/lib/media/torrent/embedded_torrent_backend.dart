@@ -227,7 +227,7 @@ class EmbeddedTorrentBackend
         '${temporaryDirectory.path}${Platform.pathSeparator}$fileName',
       );
       await file.writeAsBytes(payload.bytes, flush: true);
-      return addTorrent(
+      return await addTorrent(
         file.path,
         category: category,
         savePath: savePath,

@@ -290,3 +290,10 @@ bool topProgressPillShowsBlur({
   required bool obscured,
 }) =>
     topProgressUsesFrostedGlass(floating: floating) && !obscured;
+
+/// 阅读器「工具栏样式」偏好（`reader_toolbar_style`）是否走悬浮形态。
+///
+/// 只有显式的 `'docked'`（贴边：整宽实体条）是贴边；默认 `'floating'` 与任何
+/// 未知值一律悬浮（M3 Expressive floating toolbar 是默认形态）。阅读器页的
+/// `_floatingToolbars` 只经这里换算，设置页与页面不各写一份判据。
+bool readerToolbarsFloating(String toolbarStyle) => toolbarStyle != 'docked';

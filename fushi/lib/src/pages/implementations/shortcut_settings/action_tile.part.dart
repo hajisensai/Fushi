@@ -9,67 +9,223 @@ part of '../shortcut_settings_page.dart';
 // Row for a single action
 // ---------------------------------------------------------------------------
 
-class _ActionTile extends StatelessWidget {
+/// 一个动作一行（2026-10 重设计）：动作名 + 当前输入设备的键帽胶囊（多条并排）+
+/// 恢复默认 / 添加 / 完整编辑。点整行 = 原地录制（替换该通道的绑定），「+」=
+/// 追加一条；撞键在行内展开冲突条。
+class _ActionTile extends StatefulWidget {
   const _ActionTile({
     required this.action,
     required this.bindings,
+    required this.device,
     required this.brand,
+    required this.readOnly,
+    required this.modified,
+    required this.recording,
+    required this.conflictFor,
     required this.onEdit,
+    required this.onAdd,
+    required this.onRemove,
+    required this.onReset,
+    required this.onResolve,
+    required this.onCancel,
+    super.key,
+    this.warning,
+    this.pending,
+    this.recorder,
+    this.onOpenEditor,
   });
 
   final ShortcutAction action;
   final ShortcutBindingSet bindings;
+  final ShortcutInputDevice device;
 
   /// Display brand for gamepad chips (TODO-1113); display-only, never affects
   /// binding serialization.
   final GamepadBrand brand;
+  final bool readOnly;
+  final bool modified;
+  final bool recording;
+  final String? warning;
+  final _PendingConflict? pending;
+  final Widget? recorder;
+  final ShortcutAction? Function(Object binding) conflictFor;
+
+  /// 整行点按：原地录制（TODO-944：未映射行同一入口，整行可点可聚焦）。
   final VoidCallback onEdit;
+  final VoidCallback onAdd;
+  final ValueChanged<Object> onRemove;
+  final VoidCallback onReset;
+  final VoidCallback? onOpenEditor;
+  final ValueChanged<_InlineConflictChoice> onResolve;
+  final VoidCallback onCancel;
+
+  @override
+  State<_ActionTile> createState() => _ActionTileState();
+}
+
+class _ActionTileState extends State<_ActionTile> {
+  bool _hovered = false;
+
+  Widget _subtitle(BuildContext context, List<Widget> chips) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final _ActionTile w = widget;
+    final _PendingConflict? pending = w.pending;
+    if (w.recorder != null) return w.recorder!;
+    if (pending != null) {
+      final List<Object> current = shortcutBindingsInChannel(
+        w.bindings,
+        shortcutBindingChannel(pending.binding),
+      );
+      return _ConflictStrip(
+        pending: pending,
+        brand: w.brand,
+        canSwap: pending.replace &&
+            current.length == 1 &&
+            current.single != pending.binding,
+        onResolve: w.onResolve,
+        onCancel: w.onCancel,
+      );
+    }
+    if (w.readOnly) return Text(t.shortcut_read_only);
+    if (chips.isEmpty) {
+      return Text(t.shortcut_tap_to_assign);
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Wrap(
+          spacing: tokens.spacing.gap / 2,
+          runSpacing: tokens.spacing.gap / 2,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: chips,
+        ),
+        if (w.warning != null)
+          Padding(
+            padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+            child: Text(
+              w.warning!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _trailing(BuildContext context, Duration motion) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final _ActionTile w = widget;
+    if (w.readOnly) {
+      return FushiIcon(
+        FushiIcons.lock,
+        size: 18,
+        color: tokens.surfaces.onVariant,
+      );
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        AnimatedSwitcher(
+          duration: motion,
+          transitionBuilder: (Widget child, Animation<double> animation) =>
+              ScaleTransition(scale: animation, child: child),
+          child: w.modified
+              ? FushiIconButton(
+                  key: ValueKey<String>('shortcut-reset-${w.action.name}'),
+                  icon: FushiIcons.restart,
+                  tooltip: t.shortcut_reset_defaults,
+                  onTap: w.onReset,
+                )
+              : const SizedBox.shrink(),
+        ),
+        FushiIconButton(
+          key: ValueKey<String>('shortcut-add-${w.action.name}'),
+          icon: FushiIcons.add,
+          tooltip: t.shortcut_add_binding,
+          onTap: w.onAdd,
+        ),
+        if (w.onOpenEditor != null)
+          FushiIconButton(
+            key: ValueKey<String>('shortcut-editor-${w.action.name}'),
+            icon: FushiIcons.settings,
+            tooltip: t.shortcut_edit_all_inputs,
+            onTap: w.onOpenEditor,
+          ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // Keyboard + gamepad render as plain text chips; TODO-1050b: mouse bindings
-    // render as icon chips (middle/right/back/forward small glyph) so the mouse
-    // channel is no longer invisible in the list view (was data-only pass-through).
+    final _ActionTile w = widget;
+    final ShortcutAction action = w.action;
+    final TargetPlatform platform = Theme.of(context).platform;
+    final bool touch =
+        platform == TargetPlatform.android || platform == TargetPlatform.iOS;
+    // 只列当前输入设备的绑定：键盘、手柄、鼠标（含滚轮）三套不再挤在一行里。
+    final List<Object> shown = shortcutBindingsForDevice(w.bindings, w.device);
+    // 小 × 只在悬停时出现（触屏没有悬停，常显），免得一屏都是删除钮。
+    final bool showRemove = !w.readOnly && (_hovered || touch);
     final List<Widget> chips = <Widget>[
-      for (final InputBinding b in bindings.keyboardBindings)
-        FushiTagChip(
-          label: b.displayLabel,
-          tone: FushiTagChipTone.surface,
+      for (final Object b in shown)
+        _BindingKeycap(
+          key: ValueKey<String>(
+            'keycap-${action.name}-${shortcutBindingLabel(b, w.brand)}',
+          ),
+          binding: b,
+          brand: w.brand,
+          conflictWith: w.conflictFor(b),
+          onRemove: showRemove ? () => w.onRemove(b) : null,
         ),
-      for (final GamepadBinding b in bindings.gamepadBindings)
-        FushiTagChip(
-          label: GamepadGlyphs.glyphFor(b.button, brand).symbol,
-          tone: FushiTagChipTone.surface,
-        ),
-      for (final MouseBinding b in bindings.mouseBindings)
-        _MouseChip(binding: b),
-      // 滚轮绑定（Alt+滚轮…）与鼠标按钮同款图标 chip，列表视图里同样可见。
-      for (final WheelBinding b in bindings.wheelBindings)
-        _InputIconChip(icon: b.icon, label: b.label),
     ];
-
-    // TODO-944: the whole row taps into the SAME assign/edit flow, so unmapped
-    // rows (no chips, only the dim "tap to assign" hint) are reachable instead
-    // of relying on the tiny trailing edit icon. Routing `onTap` through
-    // [FushiListItem] also registers a focus target, making every row — mapped
-    // or not — keyboard/gamepad navigable.
-    return FushiListItem(
-      onTap: onEdit,
-      title: Text(action.label),
-      subtitle: chips.isEmpty
-          ? Text(
-              t.shortcut_tap_to_assign,
-            )
-          : Wrap(
-              spacing: tokens.spacing.gap / 2,
-              runSpacing: tokens.spacing.gap / 2,
-              children: chips,
+    final String state = w.recorder != null
+        ? 'recording'
+        : w.pending != null
+            ? 'conflict'
+            : 'chips';
+    final Duration motion = fushiMotionDuration(context, FushiMotion.short);
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: FushiListItem(
+        onTap: w.readOnly ? null : w.onEdit,
+        focusId: _rowFocusId(action),
+        selected: w.recording || w.pending != null,
+        subtitleMaxLines: 6,
+        title: Row(
+          children: <Widget>[
+            Flexible(child: Text(action.label)),
+            if (w.modified) ...<Widget>[
+              SizedBox(width: tokens.spacing.gap / 2),
+              const _ModifiedDot(),
+            ],
+          ],
+        ),
+        subtitle: AnimatedSize(
+          duration: motion,
+          curve: FushiMotion.standard,
+          alignment: Alignment.topLeft,
+          child: AnimatedSwitcher(
+            duration: motion,
+            switchInCurve: FushiMotion.enter,
+            switchOutCurve: FushiMotion.exit,
+            layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+              alignment: Alignment.topLeft,
+              children: <Widget>[...previous, if (current != null) current],
             ),
-      trailing: FushiIconButton(
-        icon: Icons.edit_outlined,
-        tooltip: t.options_edit,
-        onTap: onEdit,
+            child: KeyedSubtree(
+              key: ValueKey<String>(state),
+              child: Padding(
+                padding: EdgeInsets.only(top: tokens.spacing.gap / 4),
+                child: _subtitle(context, chips),
+              ),
+            ),
+          ),
+        ),
+        trailing: _trailing(context, motion),
       ),
     );
   }
@@ -160,7 +316,7 @@ class _InputIconChip extends StatelessWidget {
             InkWell(
               onTap: onDeleted,
               customBorder: const CircleBorder(),
-              child: FushiIcon(Icons.close, size: 14, color: fg),
+              child: FushiIcon(FushiIcons.close, size: 14, color: fg),
             ),
           ],
         ],

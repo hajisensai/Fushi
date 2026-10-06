@@ -264,10 +264,22 @@ void main() {
       'Future<void> _showSrtBookDialog(SrtBook book,',
       '  bool _srtBookHasMissingAudio(',
     );
+    // BUG-2969：EPUB / 漫画 / PDF 书卡的长按对话框抽成 _showEpubItemMenu（书架卡与
+    // 合集详情成员卡同一入口），书卡的 onLongPress 只转发到它。
+    final String epubCard = _sectionSource(
+      src,
+      'Widget _buildEpubBookCard(MediaItem item,',
+      '      child: buildMediaItemContent(item),',
+    );
+    expect(
+      epubCard,
+      contains('onLongPress: () =>\n'
+          '          _showEpubItemMenu(item, removeFromCollection: removeFromCollection),'),
+    );
     final String epubDialog = _sectionSource(
       src,
-      'onLongPress: () async {',
-      '      child: buildMediaItemContent(item),',
+      'Future<void> _showEpubItemMenu(',
+      '    if (isHistory && mounted) {',
     );
 
     expect(srtDialog, contains('showLaunchAction: false'));
