@@ -251,6 +251,11 @@ const double _kGlassSidebarCollapsedCellWidth = 60;
 /// - [glassContentUnder]：内容还压在胶囊下面，画底部 scroll edge 带；
 /// - [glassSearchIndex]：这一项（查词 / 搜索）不进胶囊，单独画成胶囊右侧的
 ///   圆形玻璃钮（iOS 26 搜索 tab）。
+///
+/// [searchLeading]：「反转底栏方向」开启时为 true——拆出去的查词钮（Apple 圆钮
+/// / MD3 FAB）挪到胶囊**起始侧**（LTR 即左侧），整条底栏成为关闭时的镜像；
+/// 胶囊收起时也缩向末端，紧贴 FAB 的另一侧不留空洞。目的地顺序本身由调用方
+/// 传入的 [items] 决定（已按反转排好）。
 Widget adaptiveBottomBar({
   required BuildContext context,
   required int currentIndex,
@@ -262,6 +267,7 @@ Widget adaptiveBottomBar({
   int? glassSearchIndex,
   bool showLabels = true,
   AdaptiveNavFab? materialFab,
+  bool searchLeading = false,
 }) {
   if (isCupertinoPlatform(context)) {
     // Cupertino keeps the stock tab bar as a single whole-bar gamepad stop. iOS
@@ -302,6 +308,7 @@ Widget adaptiveBottomBar({
     glassSearchIndex: glassSearchIndex,
     showLabels: showLabels,
     materialFab: materialFab,
+    searchLeading: searchLeading,
   );
 }
 
@@ -326,6 +333,7 @@ class _MaterialNavCluster extends StatelessWidget {
     this.glassSearchIndex,
     this.showLabels = true,
     this.materialFab,
+    this.searchLeading = false,
   });
 
   /// [Axis.horizontal] = bottom bar; [Axis.vertical] = side rail.
@@ -365,6 +373,9 @@ class _MaterialNavCluster extends StatelessWidget {
 
   /// MD3 悬浮底栏右侧 FAB 的覆盖（当前页自己的主操作）；null = 用查词目的地。
   final AdaptiveNavFab? materialFab;
+
+  /// 查词钮 / FAB 放在胶囊起始侧（反转底栏方向），见 [adaptiveBottomBar]。
+  final bool searchLeading;
 
   Widget _cell(
     BuildContext context,
@@ -467,10 +478,28 @@ class _MaterialNavCluster extends StatelessWidget {
         final int? selectedPos = selectedInCapsule
             ? capsuleIndices.indexOf(currentIndex)
             : null;
+        // 搜索圆钮：默认在胶囊右侧；反转底栏方向时挪到左侧（[searchLeading]）。
+        Widget searchButton(int index) => SizedBox.square(
+          dimension: kGlassNavBarCapsuleHeight,
+          child: GlassContainer(
+            // premium 档必须自带 LiquidGlassLayer（BUG-2957），见
+            // [fushiGlassQuality]。
+            useOwnLayer: true,
+            shape: const LiquidOval(),
+            quality: fushiGlassQuality(context, prominent: true),
+            settings: fushiClearGlassSettings(context, bar: true),
+            child: Padding(
+              padding: const EdgeInsets.all(_kGlassNavBarInnerPadding),
+              child: _cell(context, index, iconOnly: true),
+            ),
+          ),
+        );
         return SizedBox(
           height: kGlassNavBarCapsuleHeight,
           child: Row(
             children: <Widget>[
+              if (searchLeading && search != null) searchButton(search),
+              if (searchLeading) const Spacer(),
               _GlassTabCapsule(
                 width: minimized ? _kGlassNavBarMinimizedWidth : fullWidth,
                 minimized: minimized,
@@ -496,23 +525,8 @@ class _MaterialNavCluster extends StatelessWidget {
                   ),
                 ],
               ),
-              const Spacer(),
-              if (search != null)
-                SizedBox.square(
-                  dimension: kGlassNavBarCapsuleHeight,
-                  child: GlassContainer(
-                    // premium 档必须自带 LiquidGlassLayer（BUG-2957），见
-                    // [fushiGlassQuality]。
-                    useOwnLayer: true,
-                    shape: const LiquidOval(),
-                    quality: fushiGlassQuality(context, prominent: true),
-                    settings: fushiClearGlassSettings(context, bar: true),
-                    child: Padding(
-                      padding: const EdgeInsets.all(_kGlassNavBarInnerPadding),
-                      child: _cell(context, search, iconOnly: true),
-                    ),
-                  ),
-                ),
+              if (!searchLeading) const Spacer(),
+              if (!searchLeading && search != null) searchButton(search),
             ],
           ),
         );
@@ -569,6 +583,7 @@ class _MaterialNavCluster extends StatelessWidget {
         _NavMoreCell.focusId,
       ],
       fab: fab,
+      fabLeading: searchLeading,
       height: capsuleHeight,
       capsule: SizedBox(
         height: capsuleHeight,
@@ -622,6 +637,9 @@ class _MaterialNavCluster extends StatelessWidget {
   ///    比例分（窄格自动走紧凑形态：药丸收窄、标签小一号）；纯图标时每格
   ///    至少 [_kMinIconNavCellWidth]（48 触控目标）；
   /// 3. 放不下 → 按用户的模块顺序从前往后放，剩下的收进最右的「更多」。
+  ///    反转底栏方向（[searchLeading]）时整排镜像：[indices] 已是倒序，从末端
+  ///    （用户顺序的开头）往回放，「更多」挪到最左、紧挨查词 FAB，菜单里仍按
+  ///    用户顺序列出。
   Widget _buildMaterialFloatingRow(
     BuildContext context,
     BoxConstraints box,
@@ -666,14 +684,19 @@ class _MaterialNavCluster extends StatelessWidget {
       final double more = need(t.home_nav_more);
       moreNeed = more;
       double used = more;
-      for (final int i in indices) {
+      final Iterable<int> fillOrder = searchLeading
+          ? indices.reversed
+          : indices;
+      final Set<int> fits = <int>{};
+      for (final int i in fillOrder) {
         if (used + needs[i]! > width) break;
-        visible.add(i);
+        fits.add(i);
         used += needs[i]!;
       }
+      visible.addAll(indices.where(fits.contains));
     }
     final List<int> overflow = <int>[
-      for (final int i in indices)
+      for (final int i in searchLeading ? indices.reversed : indices)
         if (!visible.contains(i)) i,
     ];
     final double? moreSlot = moreNeed;
@@ -696,27 +719,30 @@ class _MaterialNavCluster extends StatelessWidget {
         ? FushiFocusId('$idPrefix-$currentIndex')
         : (overflow.contains(currentIndex) ? _NavMoreCell.focusId : null);
     final _FloatingBarStyle? barStyle = _FloatingBarStyle.maybeOf(context);
+    final Widget? moreCell = moreSlot == null
+        ? null
+        : Expanded(
+            flex: flexOf(moreSlot),
+            child: _NavMoreCell(
+              items: items,
+              overflow: overflow,
+              currentIndex: currentIndex,
+              onTap: onTap,
+              cellWidth: cellWidthOf(moreSlot),
+            ),
+          );
     return _SlidingIndicatorScope(
       selectedId: selectedId,
       color: barStyle?.indicator ?? Theme.of(context).colorScheme.tertiary,
       child: Row(
         children: <Widget>[
+          if (searchLeading && moreCell != null) moreCell,
           for (final int i in visible)
             Expanded(
               flex: flexOf(needs[i]!),
               child: _cell(context, i, cellWidth: cellWidthOf(needs[i]!)),
             ),
-          if (moreSlot != null)
-            Expanded(
-              flex: flexOf(moreSlot),
-              child: _NavMoreCell(
-                items: items,
-                overflow: overflow,
-                currentIndex: currentIndex,
-                onTap: onTap,
-                cellWidth: cellWidthOf(moreSlot),
-              ),
-            ),
+          if (!searchLeading && moreCell != null) moreCell,
         ],
       ),
     );
@@ -1075,6 +1101,7 @@ class _MaterialFloatingBar extends StatefulWidget {
     required this.fab,
     required this.capsule,
     required this.height,
+    this.fabLeading = false,
   });
 
   /// 胶囊高（[_MaterialNavCluster._materialCapsuleHeight]）；FAB 与之同高。
@@ -1091,6 +1118,9 @@ class _MaterialFloatingBar extends StatefulWidget {
 
   /// 展开态的胶囊内容（目的地一排）。
   final Widget capsule;
+
+  /// FAB 在胶囊起始侧（反转底栏方向）：整条底栏镜像，胶囊收起时缩向末端。
+  final bool fabLeading;
 
   @override
   State<_MaterialFloatingBar> createState() => _MaterialFloatingBarState();
@@ -1199,6 +1229,19 @@ class _MaterialFloatingBarState extends State<_MaterialFloatingBar>
             ),
           );
     final AdaptiveNavFab? fab = widget.fab;
+    // 反转底栏方向时整条镜像：FAB 在起始侧，胶囊与收起小胶囊都贴末端
+    // （紧挨 FAB 的另一侧），收起时朝末端缩。
+    final bool leading = widget.fabLeading;
+    final AlignmentDirectional anchor = leading
+        ? AlignmentDirectional.centerEnd
+        : AlignmentDirectional.centerStart;
+    final List<Widget> fabSlot = <Widget>[
+      if (fab != null) ...<Widget>[
+        if (!leading) const SizedBox(width: kAdaptiveNavFloatingMargin),
+        _NavBarFab(fab: fab, height: widget.height),
+        if (leading) const SizedBox(width: kAdaptiveNavFloatingMargin),
+      ],
+    ];
     return Focus(
       canRequestFocus: false,
       skipTraversal: true,
@@ -1210,6 +1253,7 @@ class _MaterialFloatingBarState extends State<_MaterialFloatingBar>
         onIndicator: onIndicator,
         child: Row(
           children: <Widget>[
+            if (leading) ...fabSlot,
             Expanded(
               child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints box) {
@@ -1231,7 +1275,7 @@ class _MaterialFloatingBarState extends State<_MaterialFloatingBar>
                           .clamp(miniWidth * 0.9, full);
                       final bool minimized = widget.minimized;
                       return Align(
-                        alignment: AlignmentDirectional.centerStart,
+                        alignment: anchor,
                         heightFactor: 1,
                         child: SizedBox(
                           width: width,
@@ -1250,8 +1294,7 @@ class _MaterialFloatingBarState extends State<_MaterialFloatingBar>
                                     child: Opacity(
                                       opacity: 1 - shown,
                                       child: OverflowBox(
-                                        alignment:
-                                            AlignmentDirectional.centerStart,
+                                        alignment: anchor,
                                         minWidth: full,
                                         maxWidth: full,
                                         fit: OverflowBoxFit.deferToChild,
@@ -1268,13 +1311,15 @@ class _MaterialFloatingBarState extends State<_MaterialFloatingBar>
                                       child: Opacity(
                                         opacity: shown,
                                         child: Align(
-                                          alignment:
-                                              AlignmentDirectional.centerStart,
+                                          alignment: anchor,
                                           child: Padding(
-                                            padding:
-                                                const EdgeInsetsDirectional.only(
-                                                  start: _kMiniInset,
-                                                ),
+                                            padding: leading
+                                                ? const EdgeInsetsDirectional.only(
+                                                    end: _kMiniInset,
+                                                  )
+                                                : const EdgeInsetsDirectional.only(
+                                                    start: _kMiniInset,
+                                                  ),
                                             child: mini,
                                           ),
                                         ),
@@ -1292,10 +1337,7 @@ class _MaterialFloatingBarState extends State<_MaterialFloatingBar>
                 },
               ),
             ),
-            if (fab != null) ...<Widget>[
-              const SizedBox(width: kAdaptiveNavFloatingMargin),
-              _NavBarFab(fab: fab, height: widget.height),
-            ],
+            if (!leading) ...fabSlot,
           ],
         ),
       ),
