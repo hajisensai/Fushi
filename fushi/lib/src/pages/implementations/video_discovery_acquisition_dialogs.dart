@@ -2137,8 +2137,25 @@ class _NoProviderEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 空态走共享占位（MD3 分组底卡 / Apple ContentUnavailableView 观感）。
-    return FushiPlaceholderMessage(icon: icon, message: title, detail: hint);
+    // 空态走共享占位（M3E 色块图标 / Apple ContentUnavailableView 观感）。
+    // 两处调用都在结果区的 `Expanded` 里，高度由窗口与上方查询 / 筛选行瓜分；
+    // 窄窗口下 72px 色块 + 标题 + 说明放不下时必须能滚，不能溢出裁字。放得下
+    // 时撑满结果区居中，观感不变。
+    final Widget placeholder = FushiPlaceholderMessage(
+      icon: icon,
+      message: title,
+      detail: hint,
+    );
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(child: placeholder),
+          ),
+        );
+      },
+    );
   }
 }
 
