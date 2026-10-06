@@ -222,6 +222,56 @@ String? videoResourceSourceTag(VideoResourceVersionGroup group) =>
       AnimeVideoSource.unknown => null,
     };
 
+/// 版本卡的编码短标签（`HEVC 10bit HDR` 这类字面量）；标题里一样都没写返回 null。
+/// 同组成员按「组 + 分辨率」归在一起，编码可能各异，只看代表条——与片源标签同口径。
+String? videoResourceTraitsTag(VideoResourceVersionGroup group) {
+  final AnimeReleaseDescriptor d = parseAnimeReleaseDescriptor(
+    group.representative.title,
+  );
+  final String tag = <String>[
+    if (_codecTag(d.videoCodec) case final String codec) codec,
+    if (d.bitDepth != null) '${d.bitDepth}bit',
+    if (d.dynamicRanges.contains(AnimeDynamicRange.dolbyVision)) 'DV',
+    if (d.dynamicRanges.any(_isHdr10Family)) 'HDR',
+  ].join(' ');
+  return tag.isEmpty ? null : tag;
+}
+
+String? _codecTag(AnimeVideoCodec codec) => switch (codec) {
+  AnimeVideoCodec.avc => 'AVC',
+  AnimeVideoCodec.hevc => 'HEVC',
+  AnimeVideoCodec.av1 => 'AV1',
+  AnimeVideoCodec.vp9 => 'VP9',
+  AnimeVideoCodec.mpeg4 => 'MPEG-4',
+  AnimeVideoCodec.unknown => null,
+};
+
+bool _isHdr10Family(AnimeDynamicRange range) => switch (range) {
+  AnimeDynamicRange.hdr ||
+  AnimeDynamicRange.hdr10 ||
+  AnimeDynamicRange.hdr10Plus ||
+  AnimeDynamicRange.hlg => true,
+  AnimeDynamicRange.sdr || AnimeDynamicRange.dolbyVision => false,
+};
+
+/// 一个版本的全部可比较事实（与语言无关）：当前版本卡（summary 发言）与候选版本
+/// chip（`alt:<i>` 选项）共用这一份，两处说的是同一件事、用同一套字段（BUG-2958）。
+Map<String, Object?> videoAcquisitionVersionArgs(
+  VideoAcquisitionResourcePlan plan,
+) => <String, Object?>{
+  'releaseGroup': plan.group.releaseGroup,
+  'resolution': plan.group.resolution,
+  'source': videoResourceSourceTag(plan.group),
+  'traits': videoResourceTraitsTag(plan.group),
+  'provider': plan.group.providerId,
+  'count': plan.picks.length,
+  'batch': plan.usesBatch,
+  'seeders': plan.group.bestSeeders,
+  'missing': plan.missingEpisodes,
+  'startAfterEpisode': plan.startAfterEpisode,
+  'bytesPerEpisode': estimatedBytesPerEpisode(plan.group),
+};
+
 /// 每集平均体积（码率的代理量）；估不出返回 null。
 ///
 /// 只数**单集**发布：整季合集的体积要除以集数，而合集标题里的集数范围本就不可靠

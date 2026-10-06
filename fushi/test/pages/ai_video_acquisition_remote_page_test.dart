@@ -40,14 +40,68 @@ void main() {
     expect(session.actions, <String>['choose:resource:confirm:null']);
   });
 
-  testWidgets('远端每次推来新对象时「以后默认」的勾选不被重置', (
+  // BUG-2958：候选 chip 曾只有「组 · 分辨率 · 片源 · 体积」，比不出差别。
+  testWidgets('BUG-2958 候选版本 chip 与当前版本卡同口径：站点 · 集数 / 合集 · 做种 · 编码', (
     WidgetTester tester,
   ) async {
+    final _FakeSession session = _FakeSession(
+      _resourceQuestion(
+        altArgs: const <String, Object?>{
+          'releaseGroup': 'Erai-raws',
+          'resolution': '1080p',
+          'source': 'WEB-DL',
+          'traits': 'HEVC 10bit',
+          'provider': 'nyaa',
+          'count': 12,
+          'batch': false,
+          'seeders': 30,
+          'bytesPerEpisode': 1024 * 1024 * 1024,
+        },
+      ),
+    );
+    addTearDown(session.dispose);
+    await tester.pumpWidget(harness(session));
+
+    expect(
+      find.text(
+        'Erai-raws · 1080p · WEB-DL · HEVC 10bit · nyaa · 12 集 · 做种 30'
+        ' · 每集约 1.0 GiB',
+      ),
+      findsOneWidget,
+    );
+    // 有 args 时不再用旧的字面量标签。
+    expect(find.text('Group · 1080p · 1.2 GiB'), findsNothing);
+  });
+
+  testWidgets('BUG-2958 合集版本 chip 写「整季合集」而不是集数', (WidgetTester tester) async {
+    final _FakeSession session = _FakeSession(
+      _resourceQuestion(
+        altArgs: const <String, Object?>{
+          'releaseGroup': 'Judas',
+          'resolution': '1080p',
+          'provider': 'nyaa',
+          'count': 1,
+          'batch': true,
+          'seeders': 74,
+        },
+      ),
+    );
+    addTearDown(session.dispose);
+    await tester.pumpWidget(harness(session));
+
+    expect(find.text('Judas · 1080p · nyaa · 整季合集 · 做种 74'), findsOneWidget);
+  });
+
+  testWidgets('远端每次推来新对象时「以后默认」的勾选不被重置', (WidgetTester tester) async {
     final _FakeSession session = _FakeSession(_qualityQuestion());
     addTearDown(session.dispose);
     await tester.pumpWidget(harness(session));
 
-    Checkbox remember() => tester.widget<Checkbox>(glassUnwrap<Checkbox>(find.byKey(const ValueKey<String>('ai-video-acquire-remember'))),);
+    Checkbox remember() => tester.widget<Checkbox>(
+          glassUnwrap<Checkbox>(
+            find.byKey(const ValueKey<String>('ai-video-acquire-remember')),
+          ),
+        );
     expect(remember().value, isTrue);
     await tester.tap(
       find.byKey(const ValueKey<String>('ai-video-acquire-remember')),
@@ -62,15 +116,14 @@ void main() {
 
     await tester.tap(
       find.byKey(
-          const ValueKey<String>('ai-video-acquire-option-quality-720p')),
+        const ValueKey<String>('ai-video-acquire-option-quality-720p'),
+      ),
     );
     await tester.pump();
     expect(session.actions, <String>['choose:quality:720p:false']);
   });
 
-  testWidgets('连接中断的失败提示翻成人话，且远端不给「去配置下载后端」按钮', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('连接中断的失败提示翻成人话，且远端不给「去配置下载后端」按钮', (WidgetTester tester) async {
     final _FakeSession session = _FakeSession(const VideoAcquisitionView());
     addTearDown(session.dispose);
     await tester.pumpWidget(harness(session));
@@ -101,31 +154,33 @@ void main() {
   });
 }
 
-VideoAcquisitionView _resourceQuestion() => const VideoAcquisitionView(
-      stage: VideoAcquisitionStage.awaitingResourceConfirm,
-      transcript: <VideoAcquisitionMessage>[
-        VideoAcquisitionUserMessage('下 Show'),
-        VideoAcquisitionAssistantMessage(
-          VideoAcquisitionSay(VideoAcquisitionSayKind.question),
-          question: VideoAcquisitionQuestion(
-            slot: VideoAcquisitionSlot.resource,
-            options: <VideoAcquisitionOption>[
-              VideoAcquisitionOption(id: kVideoAcquisitionOptionConfirm),
-              VideoAcquisitionOption(
-                  id: '${kVideoAcquisitionOptionAltPrefix}0'),
-            ],
-          ),
-        ),
-      ],
-      question: VideoAcquisitionQuestion(
-        slot: VideoAcquisitionSlot.resource,
-        options: <VideoAcquisitionOption>[
-          VideoAcquisitionOption(id: kVideoAcquisitionOptionConfirm),
-          VideoAcquisitionOption(id: '${kVideoAcquisitionOptionAltPrefix}0'),
-        ],
+/// [altArgs] 为空 = 旧 host（选项不带 args，chip 退回 [alternativeLabels]）。
+VideoAcquisitionView _resourceQuestion({
+  Map<String, Object?> altArgs = const <String, Object?>{},
+}) {
+  final VideoAcquisitionQuestion question = VideoAcquisitionQuestion(
+    slot: VideoAcquisitionSlot.resource,
+    options: <VideoAcquisitionOption>[
+      const VideoAcquisitionOption(id: kVideoAcquisitionOptionConfirm),
+      VideoAcquisitionOption(
+        id: '${kVideoAcquisitionOptionAltPrefix}0',
+        args: altArgs,
       ),
-      alternativeLabels: <String>['Group · 1080p · 1.2 GiB'],
-    );
+    ],
+  );
+  return VideoAcquisitionView(
+    stage: VideoAcquisitionStage.awaitingResourceConfirm,
+    transcript: <VideoAcquisitionMessage>[
+      const VideoAcquisitionUserMessage('下 Show'),
+      VideoAcquisitionAssistantMessage(
+        const VideoAcquisitionSay(VideoAcquisitionSayKind.question),
+        question: question,
+      ),
+    ],
+    question: question,
+    alternativeLabels: const <String>['Group · 1080p · 1.2 GiB'],
+  );
+}
 
 VideoAcquisitionView _qualityQuestion() => const VideoAcquisitionView(
       stage: VideoAcquisitionStage.collectingSlots,

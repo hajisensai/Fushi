@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2786 条。点号进各自文件。
+> 共 2792 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -92,13 +92,19 @@
 | [BUG-2967](bugs/BUG-2967-android-first-lookup-after-idle-anki-main-thread.md) | ✅ | ✅ | Android 空闲后首次查词卡顿：AnkiDroid 制卡态探测在主线程冷启动 AnkiDroid |
 | [BUG-2966](bugs/BUG-2966-home-ja-untranslated.md) | ✅ | ✅ | 日文 UI 首页 Daily Goal / Set Goal / Nothing to continue yet 漏翻译 |
 | [BUG-2965](bugs/BUG-2965-video-cover-black-frame.md) | ✅ | ✅ | 视频自动抽帧封面落在黑场，首页「继续」卡显示纯黑块 |
+| [BUG-2965](bugs/BUG-2965-movie-pack-numbered-files-become-extras.md) | ✅ | ✅ | 剧场版合集包Movie 01…25被误判带集号，只入库一部其余进Extras |
 | [BUG-2964](bugs/BUG-2964-hdr-passthrough-top-line.md) | ✅ | ✅ | HDR 直通全屏顶部一条主题色横线 + 底色叠加到视频上 |
 | [BUG-2963](bugs/BUG-2963-library-blur-scroll-jank.md) | ✅ | ✅ | 游戏库/视频库滚动掉帧：卡片封面背景渲染期实时模糊 |
+| [BUG-2963](bugs/BUG-2963-ai-acquire-anime-movie-category-movie.md) | ✅ | ✅ | 全部哆啦A梦剧场版被解析成category=movie，作品搜索只剩TMDB直接失败 |
 | [BUG-2962](bugs/BUG-2962-manga-page-full-decode-per-request.md) | ✅ | ✅ | 漫画阅读器每次页图请求都整张解码取宽高，大图页拖慢阅读与查词 |
+| [BUG-2962](bugs/BUG-2962-mal-unreachable-every-request-full-retries.md) | ✅ | ✅ | Jikan停摆时每条MAL请求都吃满3次超时，整套下载核对卡一两个小时 |
 | [BUG-2961](bugs/BUG-2961-glass-menu-over-webview.md) | ✅ | ✅ | 有声书歌词模式「⋯」菜单玻璃背景压在 WebView 上成灰块与白斑 |
 | [BUG-2960](bugs/BUG-2960-reader-shortcut-hint-raw-token.md) | ✅ | ✅ | 阅读器工具栏/溢出菜单快捷键提示显示原始键名 Ctrl+KeyF，触屏也显示 |
+| [BUG-2960](bugs/BUG-2960-franchise-web-fallback-anchor-title.md) | ✅ | ✅ | 整套下载资料源不可用时联网补全拿单部剧场版标题搜维基列不出系列 |
 | [BUG-2959](bugs/BUG-2959-md3-large-app-bar-title.md) | ✅ | ✅ | MD3 大标题顶栏展开态被主题钉成 titleLarge 小字（设置页标题上方大片空白） |
+| [BUG-2959](bugs/BUG-2959-server-port-conflict-masked.md) | ✅ | ✅ | 服务端端口被占时只报drift Bad state No element |
 | [BUG-2958](bugs/BUG-2958-md3-settings-search-capsule.md) | ✅ | ✅ | MD3 设置页搜索栏被压成 12 圆角方框（胶囊判据认不出包了 Padding 的放大镜） |
+| [BUG-2958](bugs/BUG-2958-ai-acquire-alt-version-details.md) | ✅ | ✅ | AI下视频备选版本chip缺做种来源集数编码 |
 | [BUG-2957](bugs/BUG-2957-android-liquid-glass-bar.md) | ✅ | ✅ | Android 设计系统 Apple（液态玻璃）底栏渲染成灰色矩形 |
 | [BUG-2956](bugs/BUG-2956-game-stream-rejection-shown-as-outdated.md) | ✅ | ✅ | 串流主机拒绝原因一律显示成主机版本过旧 |
 | [BUG-2955](bugs/BUG-2955-game-stream-library-lost-after-restart.md) | ✅ | ✅ | 主机重启互联服务后串流显示主机版本过旧并且离开报未能通知主机 |
