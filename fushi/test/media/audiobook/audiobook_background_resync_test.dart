@@ -121,18 +121,23 @@ void main() {
   });
 
   group('resyncReaderToAudio', () {
-    test('跟随播放中：强制 reveal 一次并通知 reader', () async {
+    test('跟随播放中：通知 reader 按正常跟随 reveal，不留强制旗', () async {
       final AudiobookPlayerController c = await _playingController();
       int notifies = 0;
       c.addListener(() => notifies++);
 
       c.resyncReaderToAudio();
 
-      expect(notifies, 1);
+      expect(notifies, 1, reason: 'reader 的 _onCueChanged 据此把视口滚回当前句');
+      expect(
+        c.shouldRevealCurrentCue,
+        isTrue,
+        reason: '_onCueChanged 靠正常跟随判据 reveal',
+      );
       expect(
         c.consumeForceReveal(),
-        isTrue,
-        reason: 'reader 的 _onCueChanged 据此把视口滚回当前句',
+        isFalse,
+        reason: '强制旗会越过歌词覆盖层「跟随关」的自由滚动，resync 不得置它',
       );
       c.dispose();
     });

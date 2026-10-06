@@ -28,6 +28,11 @@ import 'package:just_audio/just_audio.dart';
 /// 调用约定：[played] 必须是**刚刚**调用 `play()` 返回的 Future——just_audio 在
 /// `play()` 的第一个 await 之前就同步把 playing 置 true，[playingStream] 的当前值
 /// 因此已是这次激活的 true，不会被调用前残留的 false 立即放行。
+///
+/// 代价：「防交错」比押 play Future 弱一档——暂停落在上一次 `play()` 的
+/// `setActive` await 窗口内时，下一次 play 可能与它各发一次平台 play 请求。原生后端
+/// 忽略重复 play（just_audio 自己的注释也这么约定），多出的那个 completer 由本函数的
+/// 播放态分支兜住，不会再卡死串行尾。
 Future<void> playActivationSettled(
   Future<void> played,
   Stream<bool> playingStream,
@@ -1818,10 +1823,20 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 只在正常跟随本就会 reveal 的条件下生效（[shouldRevealCurrentCue]：跟随开、按过
   /// 播放、正在播、非单句试听），并尊重手动翻页护栏——暂停态下用户自己滚走的阅读
   /// 位置不被拽回（BUG-2961）。
+  ///
+  /// 只做「跨章检查 + notify」，**不**置 [_forceNextReveal]：门控已保证
+  /// [shouldRevealCurrentCue] 为真，reader 的 `_onCueChanged` 据此就会 reveal；强制
+  /// 旗会越过歌词覆盖层「跟随音频关」的自由滚动（覆盖层下 [shouldRevealCurrentCue]
+  /// 走的是恒真的生效跟随，歌词层自己再看原始开关），把用户滚开的歌词拽回居中。
   void resyncReaderToAudio() {
     if (!shouldRevealCurrentCue) return;
     if (_manualReaderOverrideCue != null) return;
-    snapReaderToAudio();
+    if (_chapterTransition) return;
+    final AudioCue? cue = _currentCue;
+    if (cue == null) return;
+    _maybeEmitCrossChapter(cue, bypassPlayGuard: true);
+    if (_chapterTransition) return;
+    notifyListeners();
   }
 
   // HBK-AUDIT-070: snapAudioToReader / getReaderViewportPos 是从未被装配的死
