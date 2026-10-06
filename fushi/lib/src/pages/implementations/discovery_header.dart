@@ -29,6 +29,11 @@ class DiscoverySourceOption {
   final String label;
 }
 
+const OutlineInputBorder _pillBorder = OutlineInputBorder(
+  borderRadius: BorderRadius.all(Radius.circular(kFushiSearchFieldHeight / 2)),
+  borderSide: BorderSide.none,
+);
+
 /// 发现页头部（四个域统一）：
 ///
 /// - 宽屏：来源下拉 + 搜索胶囊（M3E search bar / Apple 玻璃，[FushiSearchBar]）
@@ -204,6 +209,18 @@ class DiscoveryHeaderControls extends StatelessWidget {
           ),
           constraints: const BoxConstraints.tightFor(
             height: kFushiSearchFieldHeight,
+          ),
+          // 与旁边的搜索胶囊同形（M3E：全圆角、surfaceContainerHigh 填充、
+          // 静止无描边），不再是一颗小圆角描边方块挨着一枚胶囊。
+          filled: true,
+          fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+          border: _pillBorder,
+          enabledBorder: _pillBorder,
+          focusedBorder: _pillBorder.copyWith(
+            borderSide: BorderSide(
+              color: Theme.of(context).colorScheme.primary,
+              width: 2,
+            ),
           ),
         ),
         onSelected: (String? value) =>
