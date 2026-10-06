@@ -74,6 +74,7 @@
 | [BUG-2926](bugs/BUG-2926-leaderboard-sync-timeout-local-network.md) | ✅ | ✅ | 排行榜后台同步 GET /v1/me 30 秒超时（本机网络间歇丢新 TCP 连接） |
 | [BUG-2925](bugs/BUG-2925-android-video-exit-system-bars.md) | ✅ | ✅ | Android 视频退出后沉浸模式残留，启动状态栏被隐藏 |
 | [BUG-2924](bugs/BUG-2924-sync-compare-dict-local-presence.md) | ✅ | ✅ | 同步对比词典行不显示本地是否存在 |
+| [BUG-2923](bugs/BUG-2923-kiku-release-template-probe.md) | ✅ | ✅ | Kiku 发布模板预渲染字段导致同步视频兼容探测误判 |
 | [BUG-2922](bugs/BUG-2922-gal-mine-card-flicker.md) | ✅ | ✅ | 游戏内查词卡点制卡时卡片消失一下 |
 | [BUG-2921](bugs/BUG-2921-gal-nested-card-root-jump.md) | ✅ | ✅ | 游戏内查词卡嵌套查词时根卡跳位、子卡标题被裁 |
 | [BUG-2920](bugs/BUG-2920-shelf-read-status-filter-reset.md) | ✅ | ✅ | 书架阅读状态筛选每次打开软件都重置 |

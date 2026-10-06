@@ -1059,6 +1059,7 @@ class AnkiHandlebarRenderer {
       // {card-image} 是通用图片键（书籍封面 / 视频 GIF 共用，语义中性、名副其实）：
       // 阅读器场景 coverPath 是书籍封面，视频场景 coverPath 是 GIF/降级帧（见 video
       // lookup_mining）。这是 Lapis Picture 字段的默认映射（TODO-1298）。
+      case '{card-video}':
       case '{card-image}':
         return context.coverPath ?? '';
       // {book-cover} / {video-clip} 是 {card-image} 的旧别名（历史命名），保留以兼容
@@ -1219,6 +1220,7 @@ class AnkiHandlebarOptions {
     '{source-link}',
     '{clip-timestamp}',
     '{card-image}',
+    '{card-video}',
     '{book-cover}',
     '{video-clip}',
     '{sentence-audio}',
@@ -1285,6 +1287,20 @@ class AnkiHandlebarOptions {
     Map<String, String> fieldMappings,
   ) => anyFieldConsumesToken(fieldMappings, '{sentence-audio}');
 
+  /// A single native sentence-audio reference is required for managed video.
+  /// Returns null for absent consumers, repeated tokens, or multiple fields.
+  static String? singleSentenceAudioField(Map<String, String> fieldMappings) {
+    const String token = '{sentence-audio}';
+    String? field;
+    for (final MapEntry<String, String> entry in fieldMappings.entries) {
+      final int count = token.allMatches(entry.value).length;
+      if (count == 0) continue;
+      if (count != 1 || field != null) return null;
+      field = entry.key;
+    }
+    return field;
+  }
+
   /// 是否有字段消费卡片图片（`{card-image}` 或语义等价的旧别名 `{book-cover}` /
   /// `{video-clip}`）。三者任一被引用即视为「卡片图片有去处」，避免把 TODO-1298
   /// 改名前建的、Picture 仍映射到旧别名 `{book-cover}` 的老配置误报成未映射（与
@@ -1295,6 +1311,7 @@ class AnkiHandlebarOptions {
   /// 卡片图片 token 及其旧别名（见 [anyFieldConsumesCardImage]）。
   static const List<String> cardImageTokens = <String>[
     '{card-image}',
+    '{card-video}',
     '{book-cover}',
     '{video-clip}',
   ];
