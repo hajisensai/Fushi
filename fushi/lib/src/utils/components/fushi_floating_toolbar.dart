@@ -257,16 +257,22 @@ class FushiToolbarButton extends StatelessWidget {
     final Color fg = item.selected ? selectedForeground : foreground;
     final Widget button;
     if (!showLabel) {
-      button = FushiIconButtonControl(
+      final String tooltip = item.tooltip ?? item.label;
+      final Widget iconButton = FushiIconButtonControl(
         key: item.key,
         icon: FushiIcon(item.icon, color: fg),
         iconSize: iconSize,
-        tooltip: item.tooltip ?? item.label,
+        tooltip: tooltip,
         isSelected: item.selected,
         style: item.selected
             ? IconButton.styleFrom(backgroundColor: selectedContainer)
             : null,
         onPressed: item.onPressed,
+      );
+      // 纯图标：无障碍名称恒为功能名本身（[FushiToolbarItem.label]）——tooltip
+      // 只进语义的「提示」槽，带快捷键时更不该顶替名称。
+      button = MergeSemantics(
+        child: Semantics(label: item.label, child: iconButton),
       );
     } else {
       final TextStyle? labelStyle = Theme.of(

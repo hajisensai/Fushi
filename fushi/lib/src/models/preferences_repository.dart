@@ -1303,10 +1303,11 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('nav_rail_expanded', expanded ? 'expanded' : 'collapsed');
   }
 
-  /// MD3 悬浮底栏是否在图标下显示标签（默认显示；关掉即 M3E floating toolbar
-  /// 的纯图标形态）。
+  /// MD3 悬浮底栏是否在图标下显示标签。默认关 = M3E floating toolbar 的纯图标
+  /// 形态（标签进 tooltip / 语义；用户 2026-10-06「底部栏的文字砍掉」）。只有
+  /// 显式打开过开关、库里存了 true 的用户才继续显示标签。
   bool get navBarLabelsVisible =>
-      getPref('nav_bar_labels_visible', defaultValue: true) as bool;
+      getPref('nav_bar_labels_visible', defaultValue: false) as bool;
 
   Future<void> setNavBarLabelsVisible(bool value) async {
     await setPref('nav_bar_labels_visible', value);

@@ -838,12 +838,19 @@ class _ReaderToolbarPreview extends StatelessWidget {
     final Widget? bottomBar = !hasBottom
         ? null
         : floating
-        ? FushiFloatingToolbar(groups: bottom, showLabels: compact)
-        : _DockedPreviewBar(
-            leading: bottom[0],
-            center: bottom[1],
-            trailing: bottom[2],
-          );
+            // 与阅读器真底栏同形：纯图标、一组排开不画组间分隔。
+            ? FushiFloatingToolbar(
+                groups: <List<FushiToolbarItem>>[
+                  <FushiToolbarItem>[
+                    for (final List<FushiToolbarItem> g in bottom) ...g,
+                  ],
+                ],
+              )
+            : _DockedPreviewBar(
+                leading: bottom[0],
+                center: bottom[1],
+                trailing: bottom[2],
+              );
     final Color paper = glass
         ? appleColorsOf(context).secondaryGroupedBackground
         : theme.colorScheme.surfaceContainer;
