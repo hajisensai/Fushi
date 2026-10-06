@@ -1,0 +1,147 @@
+import 'dart:io';
+
+import 'package:drift/drift.dart' show DatabaseConnection;
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/reader/reader_desktop_chrome.dart';
+import 'package:fushi/src/reader/reader_floating_ball.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:material_ui/material_ui.dart';
+
+void main() {
+  test(
+    'button label preference defaults on and survives file database reopen',
+    () async {
+      final Directory directory = Directory.systemTemp.createTempSync(
+        'fushi_ball_labels_',
+      );
+      final File file = File('${directory.path}/prefs.sqlite');
+      FushiDatabase open() =>
+          FushiDatabase.forTesting(DatabaseConnection(NativeDatabase(file)));
+      FushiDatabase database = open();
+      PreferencesRepository prefs = PreferencesRepository(database);
+      try {
+        await prefs.loadFromDb();
+        expect(prefs.floatingBallShowLabels, isTrue);
+        for (final bool shown in <bool>[false, true]) {
+          await prefs.setFloatingBallShowLabels(shown);
+          prefs.dispose();
+          await database.close();
+          database = open();
+          prefs = PreferencesRepository(database);
+          await prefs.loadFromDb();
+          expect(prefs.floatingBallShowLabels, shown);
+        }
+      } finally {
+        prefs.dispose();
+        await database.close();
+        directory.deleteSync(recursive: true);
+      }
+    },
+  );
+
+  for (final TargetPlatform platform in <TargetPlatform>[
+    TargetPlatform.android,
+    TargetPlatform.windows,
+    TargetPlatform.macOS,
+  ]) {
+    testWidgets(
+      'labels toggle while expanded on $platform; icon stays named and clickable',
+      (WidgetTester tester) async {
+        final ValueNotifier<bool> showLabels = ValueNotifier<bool>(true);
+        final SemanticsHandle semantics = tester.ensureSemantics();
+        int invoked = 0;
+        int backgroundTaps = 0;
+        tester.view.physicalSize = const Size(400, 600);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        const Key actionKey = ValueKey<String>('labels-test-lookup');
+        try {
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: ThemeData(platform: platform),
+              home: Scaffold(
+                body: ValueListenableBuilder<bool>(
+                  valueListenable: showLabels,
+                  builder: (BuildContext context, bool shown, Widget? child) =>
+                      Stack(
+                        fit: StackFit.expand,
+                        children: <Widget>[
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => backgroundTaps++,
+                            child: const SizedBox.expand(),
+                          ),
+                          ReaderFloatingBall(
+                            viewport: const Rect.fromLTWH(0, 0, 400, 600),
+                            actions: <ReaderHeaderAction>[
+                              ReaderHeaderAction(
+                                key: actionKey,
+                                icon: Icons.search,
+                                label: 'Lookup example',
+                                onPressed: () => invoked++,
+                              ),
+                            ],
+                            dock: ReaderFloatingBallDock.right,
+                            verticalFraction: 0.7,
+                            animate: false,
+                            showLabels: shown,
+                            onDockChanged:
+                                (
+                                  ReaderFloatingBallDock dock,
+                                  double fraction,
+                                ) {},
+                          ),
+                        ],
+                      ),
+                ),
+              ),
+            ),
+          );
+          await tester.tap(
+            find.byKey(
+              const ValueKey<String>('fushi_reader_floating_ball_icon'),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.text('Lookup example'), findsOneWidget);
+          final Offset oldLabelCenter = tester.getCenter(
+            find.text('Lookup example'),
+          );
+          final Offset originalIconCenter = tester.getCenter(
+            find.byKey(actionKey),
+          );
+
+          showLabels.value = false;
+          await tester.pumpAndSettle();
+          expect(find.text('Lookup example'), findsNothing);
+          expect(find.byTooltip('Lookup example'), findsOneWidget);
+          expect(find.bySemanticsLabel('Lookup example'), findsOneWidget);
+          expect(tester.getCenter(find.byKey(actionKey)), originalIconCenter);
+          await tester.tapAt(oldLabelCenter);
+          await tester.pump();
+          expect(
+            backgroundTaps,
+            1,
+            reason: 'Hidden labels must not leave invisible input surfaces',
+          );
+          expect(invoked, 0);
+
+          showLabels.value = true;
+          await tester.pumpAndSettle();
+          expect(find.text('Lookup example'), findsOneWidget);
+          showLabels.value = false;
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(actionKey));
+          await tester.pumpAndSettle();
+          expect(invoked, 1);
+        } finally {
+          await tester.pumpWidget(const SizedBox.shrink());
+          semantics.dispose();
+          showLabels.dispose();
+        }
+      },
+    );
+  }
+}

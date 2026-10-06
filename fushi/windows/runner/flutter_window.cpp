@@ -2227,6 +2227,7 @@ void FlutterWindow::RegisterFloatingBallChannel() {
         if (method == "startSystemBall") {
           FloatingBallWindow::Config config;
           config.animate = BoolFromValue(args, "animate", true);
+          config.show_labels = BoolFromValue(args, "showLabels", true);
           auto find = [args](const char* key) -> const flutter::EncodableValue* {
             if (args == nullptr) return nullptr;
             const auto it = args->find(flutter::EncodableValue(key));

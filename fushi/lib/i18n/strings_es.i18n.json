@@ -6777,5 +6777,7 @@
   "audiobook_transcribe_audio_incomplete": "The audio file is damaged or not fully downloaded, so only part of it can be decoded. Re-download or replace the file, then transcribe again.",
   "window_caption_minimize": "Minimize",
   "window_caption_maximize": "Maximize",
-  "window_caption_restore": "Restore"
+  "window_caption_restore": "Restore",
+  "floating_ball_show_labels": "Mostrar etiquetas de los botones",
+  "floating_ball_show_labels_hint": "Mostrar texto junto a los botones desplegados. Desactívalo para mostrar solo iconos"
 }

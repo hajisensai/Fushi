@@ -801,6 +801,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 展开按钮旁的可见文字；tooltip / 无障碍名称不受此偏好影响。
+  bool get floatingBallShowLabels =>
+      getPref('floating_ball.show_labels', defaultValue: true);
+
+  Future<void> setFloatingBallShowLabels(bool value) async {
+    await setPref('floating_ball.show_labels', value);
+    notifyListeners();
+  }
+
   /// 应用外悬浮球（Android 悬浮窗服务 / Windows、macOS 置顶窗口）。默认关。旧版
   /// 选过 `system` 的用户保持开。不支持的平台（iOS / Linux）读到 true 也不起球。
   bool get floatingBallSystem {

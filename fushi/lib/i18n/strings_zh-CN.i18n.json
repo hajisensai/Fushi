@@ -6777,5 +6777,7 @@
   "audiobook_transcribe_audio_incomplete": "音频文件已损坏或没有下载完整，只能解出其中一部分。请重新下载或替换文件后再转录。",
   "window_caption_minimize": "最小化",
   "window_caption_maximize": "最大化",
-  "window_caption_restore": "还原"
+  "window_caption_restore": "还原",
+  "floating_ball_show_labels": "显示按钮文字",
+  "floating_ball_show_labels_hint": "展开时在按钮旁显示文字，关闭后只显示图标"
 }

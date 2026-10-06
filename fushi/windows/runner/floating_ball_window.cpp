@@ -609,7 +609,8 @@ void FloatingBallWindow::PrepareMenuLabels(const fb::Geometry& g) {
   menu_label_layouts_.clear();
   menu_label_widths_.clear();
   // 多列时标签会压到相邻列：与应用内一样只在单列显示。
-  if (g.ColumnCount() != 1 || dwrite_factory_ == nullptr) {
+  if (!config_.show_labels || g.ColumnCount() != 1 ||
+      dwrite_factory_ == nullptr) {
     return;
   }
   const double s = menu_scale_;

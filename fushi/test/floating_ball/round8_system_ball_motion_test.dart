@@ -12,6 +12,11 @@ import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/reader/reader_floating_ball.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_floating_ball.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
@@ -37,6 +42,7 @@ void main() {
   late Directory store;
   late ValueNotifier<bool> reduced;
   late List<Map<Object?, Object?>> starts;
+  late SettingsContext settingsContext;
 
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.en);
@@ -92,7 +98,18 @@ void main() {
             theme: ThemeData(
               extensions: <ThemeExtension<dynamic>>[FushiEinkTheme(themeEink)],
             ),
-            home: const Scaffold(body: SizedBox()),
+            home: Consumer(
+              builder: (BuildContext context, WidgetRef ref, Widget? child) {
+                settingsContext = SettingsContext(
+                  context: context,
+                  appModel: model,
+                  ref: ref,
+                  readerSource: ReaderFushiSource.instance,
+                  refresh: () {},
+                );
+                return const Scaffold(body: SizedBox());
+              },
+            ),
             builder: (BuildContext context, Widget? child) =>
                 ValueListenableBuilder<bool>(
                   valueListenable: reduced,
@@ -171,4 +188,59 @@ void main() {
     expect(starts.last['colors'], equals(originalColors));
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets(
+    'label setting updates both existing balls without changing actions',
+    (WidgetTester tester) async {
+      await pumpHost(tester);
+      await enableSystemBall(tester);
+      final SettingsSwitchItem setting = buildFloatingBallDestination().sections
+          .expand((SettingsSection section) => section.items)
+          .whereType<SettingsSwitchItem>()
+          .singleWhere(
+            (SettingsSwitchItem item) => item.id == 'floating_ball.show_labels',
+          );
+      final Object originalHost = tester.state(
+        find.byType(AppFloatingBallHost),
+      );
+      final Object? originalLabels = starts.single['labels'];
+      final Object? originalActions = starts.single['actions'];
+      expect(setting.defaultValue, isTrue);
+      expect(setting.value(settingsContext), isTrue);
+      expect(starts.single['showLabels'], isTrue);
+      expect(
+        tester
+            .widget<ReaderFloatingBall>(find.byType(ReaderFloatingBall))
+            .showLabels,
+        isTrue,
+      );
+
+      for (final bool shown in <bool>[false, true]) {
+        final int count = starts.length;
+        await tester.runAsync(
+          () async => setting.onChanged(settingsContext, shown),
+        );
+        await expectStarts(tester, count + 1);
+        expect(setting.value(settingsContext), shown);
+        expect(
+          tester.state(find.byType(AppFloatingBallHost)),
+          same(originalHost),
+        );
+        expect(
+          tester
+              .widget<ReaderFloatingBall>(find.byType(ReaderFloatingBall))
+              .showLabels,
+          shown,
+        );
+        expect(starts.last['showLabels'], shown);
+        expect(
+          starts.last['labels'],
+          equals(originalLabels),
+          reason: 'Native tooltip/accessibility names remain available',
+        );
+        expect(starts.last['actions'], equals(originalActions));
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 }

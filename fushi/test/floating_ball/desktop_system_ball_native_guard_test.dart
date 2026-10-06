@@ -95,4 +95,22 @@ void main() {
     );
     expect(mac, contains('private func start(_ args: [String: Any]) -> Bool'));
   });
+
+  test('desktop label preference keeps legacy defaults and native names', () {
+    final String flutterWindow = _read('$_runner/flutter_window.cpp');
+    expect(
+      flutterWindow,
+      contains('config.show_labels = BoolFromValue(args, "showLabels", true);'),
+    );
+    final String mac = _read('macos/Runner/FushiDesktopFloatingBall.swift');
+    expect(
+      mac,
+      contains('showsActionLabels = (args["showLabels"] as? Bool) ?? true'),
+    );
+    expect(mac, contains('let showLabels = showsActionLabels && columns == 1'));
+    // AppKit cannot run on the Windows test host. This checks wiring only;
+    // native rendering/hit-area behavior is exercised by the Windows DIB test.
+    expect(mac, contains('toolTip = label'));
+    expect(mac, contains('setAccessibilityLabel(label)'));
+  });
 }

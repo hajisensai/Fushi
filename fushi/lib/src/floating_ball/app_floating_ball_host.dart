@@ -524,10 +524,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final Map<String, int> icons = floatingBallNativeIcons();
     final Map<String, int> colors = _systemBallColors;
     final bool animate = _systemBallAnimate;
-    // 动效也进签名：系统减弱动画切换时配色可能完全没变。
+    final bool showLabels = prefs.floatingBallShowLabels;
+    // 动效和文字开关也进签名：这些偏好切换时配色可能完全没变。
     final String signature =
         '${actions.join(',')}|${labels.values.join('|')}|'
-        '${colors.values.join(',')}|$animate';
+        '${colors.values.join(',')}|$animate|$showLabels';
     if (!force && signature == _systemSignature) return;
     final int generation = ++_systemGeneration;
     _systemRequested = true;
@@ -596,6 +597,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         icons: icons,
         colors: colors,
         animate: animate,
+        showLabels: showLabels,
         ocrLanguage: kFloatingBallOcrLanguage,
         iconImages: iconImages,
         ballImage: ballImage,
@@ -1225,6 +1227,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
             dock: ReaderFloatingBallDock.decode(prefs.floatingBallDock),
             verticalFraction: prefs.floatingBallVerticalFraction,
             animate: !appModel.einkMode,
+            showLabels: prefs.floatingBallShowLabels,
             onDockChanged: (ReaderFloatingBallDock dock, double fraction) {
               unawaited(prefs.setFloatingBallPosition(dock.id, fraction));
             },
