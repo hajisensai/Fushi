@@ -19,6 +19,7 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_home_page.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -1250,8 +1251,12 @@ void main() {
           lessThan(kToolbarHeight),
           reason: '标题就在页头这一行，上方没有空行',
         );
+        // 浮动页头的返回钮走语义图标 FushiIcons.back（765b65f 页头图标迁移）。
         expect(
-          find.byIcon(Icons.arrow_back),
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('settings_home_header')),
+            matching: find.byIcon(FushiIcons.back),
+          ),
           root ? findsNothing : findsOneWidget,
         );
       },
