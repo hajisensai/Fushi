@@ -16,8 +16,6 @@ void main() {
     testWidgets(
       'custom rail destinations exclude menu and branding on $platform',
       (WidgetTester tester) async {
-        debugDefaultTargetPlatformOverride = platform;
-        addTearDown(() => debugDefaultTargetPlatformOverride = null);
         int selected = 0;
         int menuActivations = 0;
         await tester.pumpWidget(
@@ -57,6 +55,7 @@ void main() {
         expect(selected, 0);
         expect(menuActivations, 0);
       },
+      variant: TargetPlatformVariant.only(platform),
     );
   }
 
