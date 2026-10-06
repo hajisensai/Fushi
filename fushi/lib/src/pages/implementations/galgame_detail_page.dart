@@ -232,7 +232,12 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
         ),
       );
     }
+    // 背景铺到窗口顶端：hero 的模糊 key art / 色晕从 y = 0 画起，浮动顶栏只是
+    // 几颗胶囊。曾经正文从顶栏下沿开始，hero 背景（左上角散开的色晕）在栏
+    // 下沿被齐刷刷切出一块发白的矩形色区（2026-10-06 用户截图）。hero 自己按
+    // MediaQuery 顶部 padding 让开顶栏；页签与正文不再让。
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: FushiAppBar(
         title: Text(
           game.displayName,
@@ -253,6 +258,13 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
         children: <Widget>[
           _buildHero(context, game),
           // 页签轨道与正文同一条页边（trackInset: 0，轨道不再自己多缩 12）。
+          // 顶栏让位已由 hero 吃掉，下面不再让。
+          Expanded(
+            child: MediaQuery.removePadding(
+              context: context,
+              removeTop: true,
+              child: Column(
+                children: <Widget>[
           Padding(
             padding: EdgeInsets.symmetric(
               horizontal: FushiDesignTokens.of(context).spacing.page,
@@ -281,6 +293,10 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
               ],
             ),
           ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -303,7 +319,13 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
           children: <Widget>[
             Positioned.fill(child: _heroBackdrop(context, game)),
             Padding(
-              padding: EdgeInsets.fromLTRB(16, narrow ? 12 : 20, 16, 12),
+              // 顶部先让开铺到背景之上的浮动顶栏（extendBodyBehindAppBar）。
+              padding: EdgeInsets.fromLTRB(
+                16,
+                MediaQuery.paddingOf(context).top + (narrow ? 12 : 20),
+                16,
+                12,
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,

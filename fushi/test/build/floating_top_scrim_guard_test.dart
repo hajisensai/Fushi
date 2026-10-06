@@ -220,6 +220,37 @@ void main() {
       expect(offenders, isEmpty);
     });
 
+    test('hero backdrops on app-bar pages extend behind the bar', () {
+      // 游戏详情页：正文从顶栏下沿开始，hero 背景（左上角散开的色晕）在栏下沿
+      // 被切出一块发白的矩形色区（2026-10-06 用户截图）。带 hero 渐变背景的
+      // FushiAppBar 页必须 extendBodyBehindAppBar，背景从窗口顶端画起。
+      // 白名单里的渐变是卡片 / 发现卡的局部遮罩，不是页面顶部。
+      const Set<String> allowed = <String>{
+        'lib/src/pages/implementations/discovery/discovery_layout.dart',
+        'lib/src/pages/implementations/games_library_page.dart',
+      };
+      final List<String> offenders = <String>[];
+      for (final FileSystemEntity entity in Directory(
+        'lib',
+      ).listSync(recursive: true)) {
+        if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        final String path = entity.path.replaceAll(r'\', '/');
+        if (path.contains('/utils/components/') || allowed.contains(path)) {
+          continue;
+        }
+        final String source = entity.readAsStringSync();
+        if (!source.contains('FushiAppBar(')) continue;
+        final bool heroGradient =
+            source.contains('RadialGradient(') ||
+            source.contains('begin: Alignment.topCenter') ||
+            source.contains('begin: Alignment.topLeft');
+        if (heroGradient && !source.contains('extendBodyBehindAppBar: true')) {
+          offenders.add(path);
+        }
+      }
+      expect(offenders, isEmpty);
+    });
+
     test('desktop title bar floats over the page', () {
       // 曾经是 Column[标题行, Expanded(页面)]：标题行是一条独立带子，页面背景
       // 在 y = 32 被切开。
