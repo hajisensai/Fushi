@@ -45,11 +45,13 @@ VideoMediaReference _movie(
   year: year,
 );
 
-VideoResourceWorkMismatch? _mismatch(String release, VideoMediaReference work) =>
-    videoResourceWorkMismatch(
-      release,
-      VideoResourceWorkTarget.fromReference(work),
-    );
+VideoResourceWorkMismatch? _mismatch(
+  String release,
+  VideoMediaReference work,
+) => videoResourceWorkMismatch(
+  release,
+  VideoResourceWorkTarget.fromReference(work),
+);
 
 // ---- 用户实测的错选（原样） ------------------------------------------------
 
@@ -87,10 +89,7 @@ final VideoMediaReference _dinosaur1980 = _movie(
   year: 1980,
   aliases: const <String>['Doraemon: Nobita\'s Dinosaur'],
 );
-final VideoMediaReference _makyou1982 = _movie(
-  '映画ドラえもん のび太の大魔境',
-  year: 1982,
-);
+final VideoMediaReference _makyou1982 = _movie('映画ドラえもん のび太の大魔境', year: 1982);
 final VideoMediaReference _kiganjou1983 = _movie(
   '映画ドラえもん のび太の海底鬼岩城',
   year: 1983,
@@ -173,6 +172,11 @@ void main() {
           '10-bit 1080p HEVC BDRip [MOVIE Fin]';
       expect(_mismatch(standByMe1, _standByMe2014), isNull);
       expect(_mismatch(_standByMe2, _standByMe2020), isNull);
+      // 声道 / 位深紧跟标题时不是续作序号。
+      expect(
+        _mismatch('Stand by Me Doraemon 5.1 DTS 1080p', _standByMe2014),
+        isNull,
+      );
       expect(
         _mismatch(standByMe1, _standByMe2020),
         VideoResourceWorkMismatch.sequel,
@@ -185,6 +189,21 @@ void main() {
         VideoResourceWorkMismatch.year,
       );
       expect(_mismatch(_ripp2021, _starWars2022), isNull);
+    });
+
+    test('多部合集包（年份区间）不当成任何一部，连区间端点那部也不当', () {
+      const String pack =
+          '[Fabre-RAW] Doraemon Movies 01-25 (1980-2004) [WEB-DL 1080p]';
+      expect(
+        _mismatch(pack, _dinosaur1980),
+        VideoResourceWorkMismatch.collection,
+      );
+      expect(_mismatch(pack, _nippon1989), VideoResourceWorkMismatch.year);
+      // 首映 / 上映跨年的 ±1 区间不是合集。
+      expect(
+        _mismatch('[G] Nobita no Kyouryuu (1980-1981) [1080p]', _dinosaur1980),
+        isNull,
+      );
     });
 
     test('正确版本（编号 / 罗马字 / 年份写法）不被误杀', () {
@@ -314,9 +333,39 @@ void main() {
         nearestHeight: 1080,
         workYear: 1980,
       );
-      expect(outcome.eligible.map((VideoResourceVersionGroup g) => g.resolution), <
-        String?
-      >['720p', '480p', '2160p']);
+      expect(
+        outcome.eligible.map((VideoResourceVersionGroup g) => g.resolution),
+        <String?>['720p', '480p', '2160p'],
+      );
+    });
+
+    test('整套计划：会话 1080p 没有时退到离 1080p 最近的 720p，不是最高的 2160p', () {
+      final VideoAcquisitionFranchiseEntry planned = planFranchiseEntry(
+        VideoAcquisitionFranchiseEntry(
+          item: VideoDiscoveryItem(
+            reference: _movie('映画ドラえもん のび太の新恐竜', year: 2020),
+          ),
+        ),
+        VideoAcquisitionFranchiseEntryResolvedEvent(
+          index: 0,
+          items: <VideoResourceCandidate>[
+            _Resource(
+              '[UHD] Doraemon Nobita no Shin Kyouryuu (2020) 2160p WEB-DL',
+              seeders: 900,
+              resolution: '2160p',
+            ),
+            _Resource(
+              '[HD] Doraemon Nobita no Shin Kyouryuu (2020) 720p WEB-DL',
+              seeders: 3,
+              resolution: '720p',
+            ),
+          ],
+        ),
+        quality: VideoAcquisitionQuality.p1080,
+        defaults: const VideoAcquisitionDefaults(),
+      );
+      expect(planned.status, VideoAcquisitionFranchiseEntryStatus.ready);
+      expect(planned.plan!.group.resolution, '720p');
     });
 
     test('同为 1080p：DVD 片源的放大版排在 WEB-DL / BD 后面', () {
@@ -389,6 +438,45 @@ void main() {
       expect(state.stage, VideoAcquisitionStage.planningFranchise);
       return state;
     }
+
+    test('单部下载走同一份清洗：1989 那部展示的是编号版，不是 VCB 的重制版', () {
+      final VideoDiscoveryItem movie = VideoDiscoveryItem(
+        reference: _nippon1989,
+      );
+      VideoAcquisitionState state = const VideoAcquisitionState();
+      for (final VideoAcquisitionEvent event in <VideoAcquisitionEvent>[
+        const VideoAcquisitionUserTextEvent('下载 のび太の日本誕生'),
+        const VideoAcquisitionAiIntentEvent(
+          VideoAcquisitionIntent(
+            VideoAcquisitionIntentKind.provide,
+            VideoAcquisitionIntentPatch(workQueries: <String>['のび太の日本誕生']),
+          ),
+          utterance: '下载 のび太の日本誕生',
+        ),
+        VideoAcquisitionWorksLoadedEvent(
+          query: 'のび太の日本誕生',
+          items: <VideoDiscoveryItem>[movie],
+        ),
+        const VideoAcquisitionDetailsLoadedEvent(),
+        VideoAcquisitionResourcesLoadedEvent(<VideoResourceCandidate>[
+          _Resource(_vcb2016, seeders: 900),
+          _Resource(
+            '[BYG-RAWS][哆啦A梦：大雄的日本诞生][1989][1080P][国语中字]',
+            seeders: 800,
+          ),
+          _Resource(_fabre1989),
+        ]),
+      ]) {
+        state = reduceVideoAcquisition(state, event, defaults).$1;
+      }
+      expect(state.stage, VideoAcquisitionStage.awaitingResourceConfirm);
+      expect(
+        state.groups.map(
+          (VideoResourceVersionGroup g) => g.representative.title,
+        ),
+        <String>[_fabre1989],
+      );
+    });
 
     test('用户那一单的四部：每部都落到自己的版本', () {
       VideoAcquisitionState state = reachFranchise(<VideoMediaReference>[

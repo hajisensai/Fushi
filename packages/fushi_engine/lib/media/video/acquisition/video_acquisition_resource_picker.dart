@@ -576,7 +576,8 @@ List<VideoResourceCandidate> cleanResourceCandidates(
 }) => <VideoResourceCandidate>[
   for (final VideoResourceCandidate item in items)
     if (!(skipExtras && looksLikeExtrasOnlyRelease(item.title)) &&
-        !(work != null && videoResourceWorkMismatch(item.title, work) != null) &&
+        !(work != null &&
+            videoResourceWorkMismatch(item.title, work) != null) &&
         !(originalLanguageOnly &&
             (releaseIsDubOnly(item.title) ||
                 releaseHasBurnedInSubtitles(item.title))))

@@ -14,14 +14,17 @@
 ///   `新` / `Shin` / `New`），而目标作品自己的任何标题都不带重制记号；
 /// * [VideoResourceWorkMismatch.sequel]：标题里目标标题后面跟着的续作序号与目标不同
 ///   （目标无序号而发布写了 ` 2`，或目标是 ` 2` 而发布只写了基础标题），且没有一处
-///   序号相符的写法。
+///   序号相符的写法；
+/// * [VideoResourceWorkMismatch.collection]：标题写了跨多年的年份区间
+///   （`Doraemon Movies 01-25 (1980-2004)`）——这是多部作品的合集包，不是这一部。
+///   包内按部选文件尚未实现，整包给区间端点那一部只会把 25 部全下进一部的目录。
 library;
 
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 
 /// 发布与目标作品的身份矛盾种类。
-enum VideoResourceWorkMismatch { year, remake, sequel }
+enum VideoResourceWorkMismatch { year, remake, sequel, collection }
 
 /// 目标作品的身份：归一化后的全部标题 + 年份。
 class VideoResourceWorkTarget {
@@ -67,9 +70,8 @@ class VideoResourceWorkTarget {
 
 /// 比对用归一化：[TitleNormalizer.normalize]（全角 / 繁简 / 小写）后把一切非字母
 /// 数字压成单个空格。`Nobita's` → `nobita s`，`新・のび太` → `新 のび太`。
-String normalizeVideoResourceMatchText(String raw) => TitleNormalizer.normalize(
-  raw,
-).replaceAll(_nonWord, ' ').trim();
+String normalizeVideoResourceMatchText(String raw) =>
+    TitleNormalizer.normalize(raw).replaceAll(_nonWord, ' ').trim();
 
 final RegExp _nonWord = RegExp(r'[^\p{L}\p{N}]+', unicode: true);
 
@@ -100,6 +102,9 @@ VideoResourceWorkMismatch? videoResourceWorkMismatch(
     return VideoResourceWorkMismatch.year;
   }
   if (target.titles.isEmpty) return null;
+  if (_spansSeveralYears(releaseTitle)) {
+    return VideoResourceWorkMismatch.collection;
+  }
   final String release = normalizeVideoResourceMatchText(releaseTitle);
   if (!target.remakeMarked && _isRemake(releaseTitle, release, target)) {
     return VideoResourceWorkMismatch.remake;
@@ -118,6 +123,20 @@ bool releaseYearConflicts(String title, int year) {
   ];
   if (years.isEmpty) return false;
   return !years.any((int value) => (value - year).abs() <= 1);
+}
+
+final RegExp _yearRange = RegExp(
+  r'(?<![0-9])((?:19|20)[0-9]{2})\s*[-~–—]\s*((?:19|20)[0-9]{2})(?![0-9])',
+);
+
+/// 标题里有跨 ≥2 年的年份区间（首映 / 上映跨年的 ±1 不算）。
+bool _spansSeveralYears(String title) {
+  for (final RegExpMatch match in _yearRange.allMatches(title)) {
+    final int from = int.parse(match.group(1)!);
+    final int to = int.parse(match.group(2)!);
+    if ((to - from).abs() >= 2) return true;
+  }
+  return false;
 }
 
 bool _isRemake(String raw, String release, VideoResourceWorkTarget target) {
@@ -157,9 +176,10 @@ bool _isRemake(String raw, String release, VideoResourceWorkTarget target) {
   return (match.group(1)!, int.parse(match.group(2)!));
 }
 
-/// 紧跟在标题后面的续作序号；`10 bit` / `1080p` 这类技术标签不算。
+/// 紧跟在标题后面的续作序号；`10 bit` / `1080p` / 声道 `5.1`（归一化后是
+/// `5 1`）这类技术标签不算。
 final RegExp _followingNumber = RegExp(
-  r'^ (\d{1,2})(?![0-9])(?! ?(?:bit|bits|p|fps|ch|x)(?: |$))',
+  r'^ (\d{1,2})(?![0-9])(?! ?(?:bit|bits|p|fps|ch|x)(?: |$))(?! \d(?: |$))',
 );
 
 bool _isOtherSequel(String release, VideoResourceWorkTarget target) {
