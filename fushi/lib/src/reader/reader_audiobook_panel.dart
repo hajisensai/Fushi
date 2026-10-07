@@ -1027,19 +1027,17 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                         '${widget.toc.length}',
                         style: theme.textTheme.labelMedium,
                       ),
-                      FushiPressScale(
-                        child: IconButton(
-                          key: const ValueKey<String>(
-                            'fushi_audiobook_reveal_current_chapter',
-                          ),
-                          tooltip: t.reader_audiobook_current_chapter,
-                          constraints: const BoxConstraints(
-                            minWidth: 48,
-                            minHeight: 48,
-                          ),
-                          onPressed: currentEntry < 0 ? null : revealCurrent,
-                          icon: const FushiIcon(FushiIcons.myLocation),
+                      FushiIconButtonControl(
+                        key: const ValueKey<String>(
+                          'fushi_audiobook_reveal_current_chapter',
                         ),
+                        tooltip: t.reader_audiobook_current_chapter,
+                        constraints: const BoxConstraints(
+                          minWidth: 48,
+                          minHeight: 48,
+                        ),
+                        onPressed: currentEntry < 0 ? null : revealCurrent,
+                        icon: const FushiIcon(FushiIcons.myLocation),
                       ),
                     ],
                   ),
