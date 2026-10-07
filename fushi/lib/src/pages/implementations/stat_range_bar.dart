@@ -4,7 +4,9 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/stats/stat_range.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -170,7 +172,7 @@ class StatRangeBar extends StatelessWidget {
   /// 自定义区间下，步进器中间的区间文字本身可点 → 重新选区间。
   Widget _customAware(BuildContext context, Widget child) {
     if (range.mode != StatRangeMode.custom) return child;
-    return Tooltip(
+    return FushiTooltip(
       message: t.stat_range_custom_edit,
       child: InkWell(
         key: const ValueKey<String>('stat-range-custom-label'),
@@ -215,8 +217,8 @@ class StatRangeBar extends StatelessWidget {
                     // 在手机宽下每段不到 60，任何语言的「自定义」都会被截断。
                     ButtonSegment<StatRangeMode>(
                       value: mode,
-                      icon: const Icon(
-                        Icons.date_range_outlined,
+                      icon: const FushiIcon(
+                        FushiIcons.calendar,
                         key: ValueKey<String>('stat-range-mode-custom'),
                       ),
                       tooltip: statRangeModeLabel(mode),
@@ -261,7 +263,7 @@ class StatRangeBar extends StatelessWidget {
             FushiActionChip(
               key: const ValueKey<String>('stat-range-custom-edit'),
               label: t.stat_range_custom_edit,
-              icon: Icons.edit_calendar_outlined,
+              icon: FushiIcons.edit,
               onPressed: () => _pickCustomRange(context),
             ),
         ],
