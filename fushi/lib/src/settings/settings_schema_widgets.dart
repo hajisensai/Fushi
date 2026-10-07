@@ -121,8 +121,8 @@ class SettingsSchemaSection extends StatelessWidget {
 /// **按渲染输入记忆化**（[_SettingsSchemaItemState]）：`SettingsContext.refresh`
 /// 恒为宿主整页 setState，切一个开关 / 拖一格滑条都会把整页每一行重新派发一遍
 /// （视频页 43 行，实测单帧 80ms+ debug）。每行的可见输出只由
-/// [_renderSignature] 列出的那几个闭包求值决定（值、标题 / 副标题、改过默认值
-/// 标记……），签名不变就复用上一次构建的行 widget 实例，框架据此跳过整棵行子树；
+/// [_renderSignature] 列出的那几个闭包求值决定（值、标题 / 副标题等），
+/// 签名不变就复用上一次构建的行 widget 实例，框架据此跳过整棵行子树；
 /// 主题等继承依赖变化由 didChangeDependencies 作废缓存。自绘行
 /// （[SettingsCustomItem]）读什么不可知，不做记忆化。
 class SettingsSchemaItem extends StatefulWidget
@@ -196,7 +196,6 @@ class SettingsSchemaItem extends StatefulWidget
       ctx.context,
       ctx.appModel,
       ctx.video,
-      settingsResetSpecFor(item, ctx)?.modified,
       ...values,
     ];
   }
