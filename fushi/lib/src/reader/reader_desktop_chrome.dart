@@ -718,6 +718,12 @@ class ReaderPanelSpringCurve extends Curve {
   }
 }
 
+/// 底部面板不越过停靠位；侧板保留 M3E 的轻微弹簧过冲。
+Curve readerPanelEnterCurve(ReaderPanelPresentation presentation) =>
+    presentation == ReaderPanelPresentation.bottom
+        ? FushiMotion.enter
+        : const ReaderPanelSpringCurve();
+
 /// 从贴边滑出一条全高面板路由（各档见 [ReaderPanelTier]）；[bottomSheetWhenCompact]
 /// 为 true 且窗口窄于 [kReaderPanelCompactWidth] 时改从底部升起
 /// （[ReaderPanelPresentation]）。
@@ -734,7 +740,7 @@ class ReaderPanelSpringCurve extends Curve {
 ///
 /// [switcher] 非空时桌面 / 平板侧板旁挂一条面板切换工具栏（原地换内容）。
 ///
-/// 动效：进场 [FushiMotion.long] + M3E 弹簧（[ReaderPanelSpringCurve]）滑入并淡入，
+/// 动效：进场 [FushiMotion.long] + [readerPanelEnterCurve] 滑入并淡入，
 /// 退场 emphasized accelerate；墨水屏 / 系统「减弱动态效果」下瞬时开合。
 Future<T?> showReaderSideSheet<T>({
   required BuildContext context,
@@ -819,7 +825,7 @@ Future<T?> showReaderSideSheet<T>({
     ) {
       final CurvedAnimation curved = CurvedAnimation(
         parent: animation,
-        curve: const ReaderPanelSpringCurve(),
+        curve: readerPanelEnterCurve(presentationOf(ctx)),
         reverseCurve: FushiMotion.exit,
       );
       final Offset begin = switch (presentationOf(ctx)) {

@@ -4,9 +4,8 @@
 ///  * 「正在播放」卡：M3E primaryContainer 饱和色块（Apple 分组卡）——封面、当前句
 ///    （交叉淡入）、可拖动的全书进度（章节刻度 + 随播放波动的波浪）、大号时间、
 ///    传输行（中间是形状变形的播放 FAB）、倍速滑块（与歌词模式同款）与跟随键；
-///  * 页签「句子 / 章节 / 设置」：句子页列当前章的句子，当前句高亮并自动滚到视野
-///    里（手动滚动后 5 秒不抢），点句跳过去；低频的资源（对齐 / 转录 / 导入）收进
-///    设置页底部的次级分组。
+///  * 页签「章节 / 设置」：章节页从概览与资源入口开始，当前章高亮且可按需定位；
+///    点章跳转阅读与音频位置。
 /// 设置页内容由调用方经 [settingsBuilder] 提供（音量 / 延迟等行的写路径在设置 sheet）。
 library;
 
@@ -15,7 +14,6 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart'
     show AudiobookFollowAudioButton, AudiobookPlayFab;
@@ -186,8 +184,7 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
     if (mounted && !_routeSettled) {
       setState(() {
         _routeSettled = true;
-        // 内容重挂载（进场窗口此刻才开）：章节列表是新实例，会重新把当前章
-        // 滚进视野。
+        // 内容重挂载（进场窗口此刻才开）：章节列表从顶部展示概览与资源入口。
       });
     }
   }
@@ -999,34 +996,56 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
         ReaderPanelSectionLabel(t.reader_audiobook_section_tools),
         _buildSourceCard(theme, ctrl),
       ],
-      if (widget.toc.isNotEmpty)
-        ReaderPanelSectionLabel(
-          t.reader_audiobook_tab_chapters,
-          trailing: Text(
-            '${widget.toc.length}',
-            style: theme.textTheme.labelMedium,
-          ),
-        ),
     ];
+    final int leadCount = lead.length + (widget.toc.isEmpty ? 0 : 1);
     return _AudiobookChapterList(
       currentEntry: currentEntry,
-      leadCount: lead.length,
-      itemCount: lead.length + widget.toc.length,
+      leadCount: leadCount,
+      itemCount: leadCount + widget.toc.length,
       builder:
           (
             BuildContext context,
             ScrollController scroll,
             GlobalKey currentRowKey,
+            VoidCallback revealCurrent,
           ) => ListView.builder(
             key: const ValueKey<String>('fushi_audiobook_chapters'),
             controller: scroll,
-            itemCount: lead.length + widget.toc.length,
+            itemCount: leadCount + widget.toc.length,
             itemBuilder: fushiStaggeredItemBuilder((
               BuildContext context,
               int index,
             ) {
               if (index < lead.length) return lead[index];
-              final int i = index - lead.length;
+              if (index < leadCount) {
+                return ReaderPanelSectionLabel(
+                  t.reader_audiobook_tab_chapters,
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        '${widget.toc.length}',
+                        style: theme.textTheme.labelMedium,
+                      ),
+                      FushiPressScale(
+                        child: IconButton(
+                          key: const ValueKey<String>(
+                            'fushi_audiobook_reveal_current_chapter',
+                          ),
+                          tooltip: t.reader_audiobook_current_chapter,
+                          constraints: const BoxConstraints(
+                            minWidth: 48,
+                            minHeight: 48,
+                          ),
+                          onPressed: currentEntry < 0 ? null : revealCurrent,
+                          icon: const FushiIcon(FushiIcons.myLocation),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              final int i = index - leadCount;
               final TtuTocEntry entry = widget.toc[i];
               final int? startMs = starts[i];
               final int? dms = durationFor(i);
@@ -1066,7 +1085,7 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
   }
 }
 
-/// 章节页的列表：自己持有滚动控制器与当前章行的 GlobalKey，并负责把当前章滚进
+/// 章节页的列表：自己持有滚动控制器与当前章行的 GlobalKey，按需把当前章滚进
 /// 视野（偏上 1/3）。每个挂载实例独立，页签切换动画里新旧两份同时存活也不会
 /// 共享 GlobalKey / ScrollController（HBK045）。
 class _AudiobookChapterList extends StatefulWidget {
@@ -1090,6 +1109,7 @@ class _AudiobookChapterList extends StatefulWidget {
     BuildContext context,
     ScrollController scroll,
     GlobalKey currentRowKey,
+    VoidCallback revealCurrent,
   )
   builder;
 
@@ -1104,11 +1124,6 @@ class _AudiobookChapterListState extends State<_AudiobookChapterList> {
   final ScrollController _scroll = ScrollController();
   final GlobalKey _currentRowKey = GlobalKey();
 
-  /// 已确实滚进视野的章（-1 = 还没有）。只在目标行真被构建并对齐后才写入，
-  /// 估算跳转没找到行时不写（HBK046：之前估算一次就标记完成，长标题 / 大字下
-  /// 行高远大于最小行高，跳过去仍差几千像素，之后再也不纠正）。
-  int _scrolledEntry = -1;
-
   /// 正在定位的章；定位进行中 ticker 重建不重复调度。
   int _revealingEntry = -1;
 
@@ -1120,7 +1135,7 @@ class _AudiobookChapterListState extends State<_AudiobookChapterList> {
 
   void _scheduleReveal() {
     final int entry = widget.currentEntry;
-    if (entry < 0 || entry == _scrolledEntry || entry == _revealingEntry) {
+    if (entry < 0 || entry == _revealingEntry) {
       return;
     }
     _revealingEntry = entry;
@@ -1138,11 +1153,10 @@ class _AudiobookChapterListState extends State<_AudiobookChapterList> {
       }
       final BuildContext? row = _currentRowKey.currentContext;
       if (row != null) {
-        _scrolledEntry = entry;
         _revealingEntry = -1;
         unawaited(
-          FushiFocusScroll.ensureVisible(
-            row,
+          _scroll.position.ensureVisible(
+            row.findRenderObject()!,
             alignment: 0.3,
             duration: fushiMotionDuration(context, FushiMotion.medium),
             curve: FushiMotion.standard,
@@ -1151,7 +1165,6 @@ class _AudiobookChapterListState extends State<_AudiobookChapterList> {
         return;
       }
       if (attempt >= _maxRevealAttempts || !_scroll.hasClients) {
-        _scrolledEntry = entry;
         _revealingEntry = -1;
         return;
       }
@@ -1173,19 +1186,19 @@ class _AudiobookChapterListState extends State<_AudiobookChapterList> {
       );
       if (attempt > 0 && (target - pos.pixels).abs() < 1) {
         // 估算原地不动却仍看不到目标：再跳也一样，放手。
-        _scrolledEntry = entry;
         _revealingEntry = -1;
         return;
       }
       _scroll.jumpTo(target);
       _revealStep(entry, attempt + 1);
     });
+    // post-frame callbacks do not request a frame (notably with reduced motion).
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   @override
   Widget build(BuildContext context) {
-    _scheduleReveal();
-    return widget.builder(context, _scroll, _currentRowKey);
+    return widget.builder(context, _scroll, _currentRowKey, _scheduleReveal);
   }
 }
 
