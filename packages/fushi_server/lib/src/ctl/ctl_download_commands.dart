@@ -14,6 +14,7 @@ import 'dart:typed_data';
 
 import 'package:args/args.dart';
 import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
+import 'package:fushi_engine/utils/net/app_http.dart' show createAppHttpClient;
 import 'package:fushi_server/src/ctl/admin_client.dart';
 
 /// 往 `ctl` 参数表里补 `downloads add` 用到的选项。
@@ -170,12 +171,11 @@ Future<Uint8List> loadCtlTorrent(String source, {CtlTorrentFetcher? fetch}) asyn
   return file.readAsBytes();
 }
 
-/// 下载一个 .torrent。代理按环境变量（`HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY`）走，
+/// 下载一个 .torrent。走应用统一出口 [createAppHttpClient]（含 `HTTPS_PROXY` / `HTTP_PROXY`），
 /// 体积上限与解析器同一个 [kMaximumTorrentMetainfoBytes]。非 200 抛 [HttpException]。
 Future<Uint8List> fetchCtlTorrent(Uri url, {Duration timeout = const Duration(seconds: 60)}) async {
-  final HttpClient http = HttpClient()
-    ..connectionTimeout = timeout
-    ..findProxy = (Uri u) => HttpClient.findProxyFromEnvironment(u, environment: Platform.environment);
+  // 应用统一出口：环境变量 / 手填代理都由 resolveAppProxyDirective 决定（回环与局域网恒直连）。
+  final HttpClient http = createAppHttpClient(connectionTimeout: timeout);
   try {
     final HttpClientRequest request = await http.getUrl(url).timeout(timeout);
     request.headers.set(HttpHeaders.acceptHeader, 'application/x-bittorrent, */*');
