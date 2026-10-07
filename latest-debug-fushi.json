@@ -17,6 +17,24 @@
       "sha256": "6704d45c7bdc51f868961727c1071fd8e0aa7f5acb4abf957ea923b92c757350"
     },
     {
+      "name": "fushi-2.10.0-debug.18343-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.18343-ios.ipa",
+      "releaseSequence": 18343,
+      "tag": "v2.10.0-debug.18343+7d6ac51",
+      "version": "2.10.0-debug.18343",
+      "size": 78283817,
+      "sha256": "84969cf3f75797b5dc57805b01873e034651dfcc991d2f2a6db183dd3fcd39e5"
+    },
+    {
+      "name": "fushi-2.10.0-debug.18343-macos-arm64.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.18343-macos-arm64.zip",
+      "releaseSequence": 18343,
+      "tag": "v2.10.0-debug.18343+7d6ac51",
+      "version": "2.10.0-debug.18343",
+      "size": 241927359,
+      "sha256": "ee1d3b9d72f7bf1ab7d98823b04f9d95ac81aa7a352c5d47f2cc06566867b001"
+    },
+    {
       "name": "fushi-2.10.0-debug.18343-windows-setup.exe",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.18343-windows-setup.exe",
       "releaseSequence": 18343,
