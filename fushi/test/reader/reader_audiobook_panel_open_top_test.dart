@@ -214,8 +214,9 @@ void main() {
         matching: find.byType(Scrollable),
       ),
     )) {
-      if (state.position.axis == Axis.vertical)
+      if (state.position.axis == Axis.vertical) {
         expect(state.position.pixels, 0);
+      }
     }
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
