@@ -1067,6 +1067,49 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _videoDesktopSeekBarButtonBarOverlap * _controlsDensityScale +
       _videoM3eDesktopTrackRaise;
 
+  /// 进度条热区容器底缘离控制条区域底边的高度（BUG-3062）：移动端主题的
+  /// `seekBarMargin.bottom` 与所有叠在进度条上的兄弟层都读它，见
+  /// [videoSeekBarContainerBottom]。值已乘密度档缩放。
+  double get _videoSeekBarContainerBottom {
+    final double d = _controlsDensityScale;
+    return videoSeekBarContainerBottom(
+      isDesktop: _isDesktopVideoControls,
+      buttonBarHeight: _videoButtonBarHeight * d,
+      seekBarButtonGap: _videoSeekBarButtonGap * d,
+      floatingLift: _floatingChromeBottomLift,
+      bottomChromeBaseline: _videoBottomChromeBaseline,
+      bottomSystemInset: _videoBottomSystemInset(),
+      desktopButtonBarOverlap: _videoDesktopSeekBarButtonBarOverlap * d,
+    );
+  }
+
+  /// 进度条**可见轨道中线**离控制条区域底边的高度（BUG-3062）：热区容器底缘 +
+  /// 轨道在容器里的中线。章节刻度、缩略图预览、自动连播卡、M3E 暗角、Apple 玻璃
+  /// 胶囊全部从这里取，与真实画出来的轨道同一个几何来源。
+  ///
+  /// - M3E（非 Apple）：轨道由宿主 [VideoM3eSeekTrack] 画，中线走它自己用的
+  ///   [videoM3eSeekTrackCenterFromBottom]（移动端底对齐 = 底缘之上 10×缩放，桌面抬到
+  ///   底栏小胶囊上方）。
+  /// - Apple：fork 原生轨道——移动端贴容器底缘（中线 = 轨道半高），桌面在容器竖直正中。
+  double get _videoSeekBarTrackCenter {
+    final double d = _controlsDensityScale;
+    final bool desktop = _isDesktopVideoControls;
+    final double inContainer;
+    if (_appleChrome) {
+      inContainer = desktop
+          ? _videoDesktopSeekBarContainerHeight * d / 2
+          : _videoSeekBarTrackHeight * d / 2;
+    } else {
+      inContainer = videoM3eSeekTrackCenterFromBottom(
+        containerHeight: _activeSeekBarContainerHeight * d,
+        scale: _videoUiScale * d,
+        alignment: Alignment.bottomCenter,
+        trackBottomInset: desktop ? _videoM3eDesktopTrackBottomInset : null,
+      );
+    }
+    return _videoSeekBarContainerBottom + inContainer;
+  }
+
   /// M3E 控件显示时的底部暗角高度（[VideoM3eBottomScrim]，只为压住高亮画面让白字
   /// 不发虚）：到进度条轨道上方 16 × 缩放为止，不超过进度条热区上缘——字幕避让
   /// （[_subtitleControlsBottomReserve]）按热区上缘 + 呼吸间距算，暗角因此恒在避让
@@ -1076,25 +1119,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final double d = _controlsDensityScale;
     final double s = _videoUiScale * d;
     final double barHeight = _videoButtonBarHeight * d;
-    final double trackCenter;
-    final double hitTop;
-    if (_isDesktopVideoControls) {
-      final double containerBottom =
-          _floatingChromeBottomLift +
-          barHeight -
-          _videoDesktopSeekBarButtonBarOverlap * d;
-      trackCenter = containerBottom + _videoM3eDesktopTrackBottomInset;
-      hitTop = containerBottom + _videoDesktopSeekBarContainerHeight * d;
-    } else {
-      final double containerBottom =
-          _videoBottomChromeBaseline +
-          _videoBottomSystemInset() +
-          _floatingChromeBottomLift +
-          barHeight +
-          _videoSeekBarButtonGap * d;
-      trackCenter = containerBottom + 10 * s;
-      hitTop = containerBottom + _videoSeekBarContainerHeight * d;
-    }
+    final double trackCenter = _videoSeekBarTrackCenter;
+    final double hitTop =
+        _videoSeekBarContainerBottom + _activeSeekBarContainerHeight * d;
     if (!_controlsDensity.showSeekBar) {
       return _floatingChromeBottomLift + barHeight + 16 * s;
     }
@@ -1112,28 +1139,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (!_appleChrome || !_controlsDensity.showBottomButtonBar) return null;
     final double d = _controlsDensityScale;
     final double barHeight = _videoButtonBarHeight * d;
-    final double buttonBottom;
-    final double trackCenter;
-    if (_isDesktopVideoControls) {
-      buttonBottom = _floatingChromeBottomLift;
-      // 桌面：进度条容器骑按钮行上沿、被下压 overlap，轨道在容器竖直正中。
-      trackCenter =
-          buttonBottom +
-          barHeight -
-          _videoDesktopSeekBarButtonBarOverlap * d +
-          _videoDesktopSeekBarContainerHeight * d / 2;
-    } else {
-      buttonBottom =
-          _videoBottomChromeBaseline +
-          _videoBottomSystemInset() +
-          _floatingChromeBottomLift;
-      // 移动：进度条容器在按钮行上方 gap 处，轨道贴容器底缘。
-      trackCenter =
-          buttonBottom +
-          barHeight +
-          _videoSeekBarButtonGap * d +
-          _videoSeekBarTrackHeight * d / 2;
-    }
+    final double buttonBottom = _isDesktopVideoControls
+        ? _floatingChromeBottomLift
+        : _videoBottomChromeBaseline +
+              _videoBottomSystemInset() +
+              _floatingChromeBottomLift;
+    final double trackCenter = _videoSeekBarTrackCenter;
     final double top = _controlsDensity.showSeekBar
         ? trackCenter + kVideoAppleCapsuleTopPadding * d
         : buttonBottom + barHeight + kVideoAppleCapsuleBottomPadding;
