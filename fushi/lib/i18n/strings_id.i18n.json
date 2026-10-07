@@ -6791,5 +6791,11 @@
   "window_caption_maximize": "Maximize",
   "window_caption_restore": "Restore",
   "floating_ball_show_labels": "Tampilkan label tombol",
-  "floating_ball_show_labels_hint": "Tampilkan teks di samping tombol yang diperluas. Nonaktifkan untuk hanya menampilkan ikon"
+  "floating_ball_show_labels_hint": "Tampilkan teks di samping tombol yang diperluas. Nonaktifkan untuk hanya menampilkan ikon",
+  "settings_page_reset_menu": "Reset page to defaults",
+  "settings_page_reset_all_default": "Everything on this page is at its default",
+  "settings_page_reset_message": "Checked settings will go back to their defaults.",
+  "settings_page_reset_confirm": "Reset",
+  "settings_page_reset_value_on": "On",
+  "settings_page_reset_value_off": "Off"
 }

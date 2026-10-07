@@ -654,6 +654,7 @@ class SettingsCustomItem extends SettingsItem {
     required this.builder,
     super.title = '',
     this.searchTitle,
+    this.reset,
     super.subtitle,
     super.icon,
     super.visible,
@@ -676,7 +677,8 @@ class SettingsCustomItem extends SettingsItem {
     super.visible,
     super.reader,
     super.video,
-  }) : builder = ((SettingsContext context) => Column(
+  }) : reset = null,
+       builder = ((SettingsContext context) => Column(
          mainAxisSize: MainAxisSize.min,
          crossAxisAlignment: CrossAxisAlignment.stretch,
          children: rowsBuilder(context),
@@ -691,4 +693,25 @@ class SettingsCustomItem extends SettingsItem {
   /// 默认不可搜。声明本字段后该行以此标题进入设置搜索（展平/打分/结果展示均用它，
   /// 见 settingsItemSearchTitle）；不影响渲染。
   final String? searchTitle;
+
+  /// 自绘行的「恢复默认」元数据：声明后该行参与详情页的「恢复本页默认」
+  /// （settings_kit 的 settingsResetSpecFor），与声明了 defaultValue 的开关 /
+  /// 滑杆同一套判据。
+  final SettingsCustomReset? reset;
+}
+
+/// [SettingsCustomItem.reset]：自绘行改没改过默认值、怎么恢复、恢复确认框里
+/// 当前值 / 默认值怎么写。
+class SettingsCustomReset {
+  const SettingsCustomReset({
+    required this.isModified,
+    required this.reset,
+    required this.currentLabel,
+    required this.defaultLabel,
+  });
+
+  final bool Function(SettingsContext context) isModified;
+  final Future<void> Function(SettingsContext context) reset;
+  final String Function(SettingsContext context) currentLabel;
+  final String Function(SettingsContext context) defaultLabel;
 }
