@@ -62,7 +62,7 @@ class VideoResourceWorkTarget {
     return List<String>.unmodifiable(<String>[
       for (final String title in raw)
         if (normalizeVideoResourceMatchText(title) case final String normalized
-            when normalized.runes.length >= 3 && seen.add(normalized))
+            when normalized.length >= 3 && seen.add(normalized))
           normalized,
     ]);
   }
@@ -188,7 +188,7 @@ bool _isOtherSequel(String release, VideoResourceWorkTarget target) {
   bool mismatched = false;
   for (final String title in target.titles) {
     final (String base, int? number) = _splitSequelNumber(title);
-    if (base.runes.length < 3) continue;
+    if (base.length < 3) continue;
     final String needle = ' $base';
     int from = 0;
     while (true) {
