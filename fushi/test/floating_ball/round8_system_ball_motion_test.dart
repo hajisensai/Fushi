@@ -364,4 +364,54 @@ void main() {
       }
     },
   );
+
+  testWidgets(
+    'repeat sync with the in-flight signature does not open a new generation',
+    (WidgetTester tester) async {
+      final Completer<bool> startReply = Completer<bool>();
+      bool holdNextStart = false;
+      await pumpHost(
+        tester,
+        systemReply: (MethodCall call) async {
+          if (call.method == 'takeSystemBallClosedByUser') return false;
+          if (holdNextStart) {
+            holdNextStart = false;
+            return startReply.future;
+          }
+          return true;
+        },
+      );
+      try {
+        await enableSystemBall(tester);
+        await expectSyncFinished(tester, debugLatestSystemBallSync!);
+        holdNextStart = true;
+        await tester.runAsync(() => prefs.setFloatingBallShowLabels(false));
+        await expectStarts(tester, 2);
+        final Future<void> inFlight = debugLatestSystemBallSync!;
+        // 在途期间任何偏好写入都会再进同步；与在途目标同签名就不能再开一代
+        // （重渲染图标 + 作废在途那代），否则频繁写偏好会一直起不了球。
+        await tester.runAsync(() => prefs.setFloatingBallShowLabels(false));
+        await tester.pump();
+        expect(
+          debugLatestSystemBallSync,
+          same(inFlight),
+          reason: 'same in-flight target must be deduplicated',
+        );
+        startReply.complete(true);
+        await expectSyncFinished(tester, inFlight);
+        expect(
+          starts.map((Map<Object?, Object?> args) => args['showLabels']),
+          <bool>[true, false],
+        );
+        // 在途那代收尾后签名落为稳态：同配置再同步仍不重发。
+        await tester.runAsync(() => prefs.setFloatingBallShowLabels(false));
+        await tester.pump();
+        expect(debugLatestSystemBallSync, same(inFlight));
+        expect(starts, hasLength(2));
+      } finally {
+        if (!startReply.isCompleted) startReply.complete(true);
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+    },
+  );
 }

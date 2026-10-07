@@ -310,6 +310,19 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   /// 连着变两次，旧闭包都不能再把球拉起来 / 用旧配置盖掉新配置。
   int _systemGeneration = 0;
 
+  /// 还在路上的那一代起球请求下发的签名（[_systemPendingGeneration] 记它是哪一
+  /// 代）。去重按「在途目标」判：在途期间任何无关偏好写入都会再进
+  /// [_syncSystemBall]，签名与在途目标相同就不该再开一代、重渲染图标——否则频繁
+  /// 的偏好写入会一直顶掉上一代，迟迟起不了球。代数被别处 +1（停球 / 用户关球 /
+  /// dispose）后自动失效，不用逐处清。
+  String? _systemPendingSignature;
+  int _systemPendingGeneration = -1;
+
+  String? get _systemInFlightSignature =>
+      _systemPendingGeneration == _systemGeneration
+      ? _systemPendingSignature
+      : null;
+
   /// 自上次停球以来是否已经要求过起球（含还在路上的起球闭包）。停球要看它而
   /// 不是看 [_systemSignature]：签名要等原生回话才落，在那之前关开关也得停。
   bool _systemRequested = false;
@@ -529,11 +542,17 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final String signature =
         '${actions.join(',')}|${labels.values.join('|')}|'
         '${colors.values.join(',')}|$animate|$showLabels';
-    if (!force && signature == _systemSignature) return;
+    // 与「在途目标」比（没有在途请求时才是稳态签名）：A→B→A 时最后的 A 与在途
+    // 的 B 不同，必须开新一代取代 B；在途期间同签名的重复同步则直接跳过。
+    if (!force && signature == (_systemInFlightSignature ?? _systemSignature)) {
+      return;
+    }
     // 新请求在途时旧签名不再代表稳态：A→B→A 必须让最后的 A 取代 B，
     // 不能因上一次成功下发过 A 就提前返回，留下 B 越过后面的 stale 门。
     _systemSignature = null;
     final int generation = ++_systemGeneration;
+    _systemPendingSignature = signature;
+    _systemPendingGeneration = generation;
     _systemRequested = true;
     // 起球要 await 原生回话与桌面资源；回来时还是最新一代、开关还开着，才继续。
     // 「用户关过、等回到 Fushi 再起」也算过期：那个标记可能是同时在路上的另一代
@@ -616,7 +635,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       if (started) {
         await FloatingBallChannel.setAppForeground(_foreground);
       }
-    }();
+    }().whenComplete(() {
+      // 本代收尾（成功 / 失败 / 提前返回）：不再是在途目标。已被新一代取代时
+      // 在途目标归新一代，不动。
+      if (generation == _systemGeneration) _systemPendingSignature = null;
+    });
     debugLatestSystemBallSync = run;
     unawaited(run);
   }

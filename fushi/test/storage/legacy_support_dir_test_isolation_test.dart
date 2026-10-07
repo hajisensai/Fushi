@@ -92,6 +92,8 @@ void main() {
     });
 
     for (final String blank in <String>['', '   ']) {
+      // 只有「照常迁移」依赖 Windows 的 Hibiki\Hibiki → Fushi\Fushi 目录布局；
+      // 上面两条隔离门在 Platform 判断之前，任何平台（含 Linux CI）都要跑。
       test('blank test root retains normal migration ($blank)', () async {
         final LegacySupportMigrationOutcome result =
             await migrateLegacySupportDir(
@@ -107,7 +109,7 @@ void main() {
           'legacy sentinel',
         );
         expect(staging.existsSync(), isFalse);
-      });
+      }, skip: !Platform.isWindows);
     }
-  }, skip: !Platform.isWindows);
+  });
 }

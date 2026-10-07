@@ -56,12 +56,13 @@ List<CtlRoute> buildDictionaryCtlRoutes(DesktopCtlContext context) {
       if (enabled != null &&
           enabled == target.isHidden(JapaneseLanguage.instance)) {
         // 词典管理页的开关同一入口：toggle 内部持久化 + 引擎重载 + 清查词缓存。
-        model.toggleDictionaryHidden(target);
+        // 必须 await：写入失败要回给 HTTP 调用方，而不是漏成没人接的异步错误。
+        await model.toggleDictionaryHidden(target);
       }
       if (position != null) {
         if (position < 1) throw const CtlFailure.badRequest('position 从 1 起算');
         // 与词典管理页 `_reorderDictionaries` 同语义：同类型分区内移动后整组改 order。
-        model.updateDictionaryOrder(
+        await model.updateDictionaryOrder(
           ctlReorderDictionaries(
             _dictionariesOfType(model, target.type),
             target,
@@ -69,7 +70,11 @@ List<CtlRoute> buildDictionaryCtlRoutes(DesktopCtlContext context) {
           ),
         );
       }
-      return ctlDictionaryJson(target);
+      // `model.dictionaries` 借出的是拷贝、提交成功后才发布新状态：回的必须是
+      // 提交后重新取的那本，而不是改之前借出的 [target]。
+      return ctlDictionaryJson(
+        resolveCtlDictionary(model.dictionaries, target.name),
+      );
     }),
     CtlRoute.delete('/api/admin/dictionaries/:name', (CtlCall call) async {
       if (call.optBool('confirm') != true) {

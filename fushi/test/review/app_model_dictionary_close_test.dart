@@ -197,6 +197,35 @@ void main() {
     );
   }
 
+  for (final String boundary in <String>['closeDatabase', 'closeForPopup']) {
+    test('$boundary still closes when the history flush fails', () async {
+      final _CloseRecordingDatabase db = _CloseRecordingDatabase(
+        NativeDatabase.memory(),
+      );
+      final DictionaryRepository repo = DictionaryRepository(db);
+      final _RestartBoundaryAppModel model = _RestartBoundaryAppModel()
+        ..wireDatabaseForTesting(db, dictionaryRepository: repo);
+      try {
+        await repo.loadFromDb();
+        repo.addHistoryResult(
+          DictionarySearchResult(
+            searchTerm: 'fixture',
+            entries: <DictionaryEntry>[DictionaryEntry(word: 'fixture')],
+          ),
+          10,
+        );
+        db.failHistoryWrite = true;
+        // 查词历史是可丢的 debounce 数据：它写失败不能让关库停在半路
+        // （已标记未初始化、连接却还开着）。
+        await _close(model, boundary);
+        expect(db.closeCalls, 1);
+      } finally {
+        repo.dispose();
+        if (db.closeCalls == 0) await db.close();
+      }
+    });
+  }
+
   test('retry keeps the old connection and repo if flushing fails', () async {
     final Directory scratch = Directory.systemTemp.createTempSync(
       'fushi-dictionary-close-retry-',

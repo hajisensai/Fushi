@@ -7926,7 +7926,7 @@ class AppModel with ChangeNotifier {
     await quiesceBackgroundDatabaseWriters(
       pipelineDrainTimeout: pipelineDrainTimeout,
     );
-    await _flushDictionaryWritesBeforeClose();
+    await _drainDictionaryWritesForClose('AppModel.closeDatabase');
     await _database.close();
   }
 
@@ -7934,6 +7934,19 @@ class AppModel with ChangeNotifier {
   /// Every DB close boundary must drain them, including partial-init retries.
   Future<void> _flushDictionaryWritesBeforeClose() async {
     if (_dictionaryRepoReady) await dictRepo.flushPendingWritesNow();
+  }
+
+  /// 真正关库的边界（[closeDatabase] / [closeForPopup]）用的排空：元数据写入队列
+  /// 自己不抛；会抛的只有查词历史——它是 debounce 的可丢数据，写失败不能否决
+  /// 关库。否则 app 停在「已标记未初始化、watcher 已撤，连接却还开着」的半关态，
+  /// 备份恢复 / 迁移导入 / 退出全跟着中断。失败记日志后照常关。
+  /// （[retryInitialise] 不走这里：它在 flush 失败时保留旧连接重试，见那里。）
+  Future<void> _drainDictionaryWritesForClose(String scope) async {
+    try {
+      await _flushDictionaryWritesBeforeClose();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('$scope.dictionaryFlush', e, stack);
+    }
   }
 
   /// Safely shutdown and stop database operations.
@@ -7948,7 +7961,7 @@ class AppModel with ChangeNotifier {
     uninstallCollectionsSyncWatcher();
     _prefsRepo?.removeListener(notifyListeners);
     databaseCloseNotifier.notifyListeners();
-    await _flushDictionaryWritesBeforeClose();
+    await _drainDictionaryWritesForClose('AppModel.closeForPopup');
     await _database.close();
     FushiDicts.disposeInstance();
   }
