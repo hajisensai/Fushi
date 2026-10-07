@@ -1370,6 +1370,10 @@ class _JumpChip extends StatelessWidget {
 /// 「改过默认值」装饰：[modified] 时行首边缘出现一枚 primary 小圆点（弹簧放大），
 /// 行尾追加一个「恢复默认」图标钮（键盘 / 手柄可达）。未修改时原样返回 [child]
 /// 的同一棵树（不额外包层，避免切换时 State 重建）。
+///
+/// 只给确实需要逐行标记的局部面板用（漫画阅读器「当前作品」覆盖全局值）。普通
+/// schema 设置页的行不再包这一层，恢复默认走页级的「恢复本页默认」
+/// （settings_page_reset.dart）。
 class SettingsModifiedRow extends StatelessWidget {
   const SettingsModifiedRow({
     required this.modified,
@@ -1813,16 +1817,25 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
   }
 }
 
-/// 设置项「是否改过默认值」与恢复动作的统一判据（schema 渲染层与快捷键页共用）。
+/// 设置项「是否改过默认值」与恢复动作的统一判据（schema 渲染层的页级「恢复本页
+/// 默认」与自定义行共用）。[currentLabel] / [defaultLabel] 是给恢复确认框看的
+/// 当前值 / 默认值简述。
 class SettingsResetSpec {
-  const SettingsResetSpec({required this.modified, required this.reset});
+  const SettingsResetSpec({
+    required this.modified,
+    required this.reset,
+    required this.currentLabel,
+    required this.defaultLabel,
+  });
 
   final bool modified;
   final Future<void> Function() reset;
+  final String currentLabel;
+  final String defaultLabel;
 }
 
-/// 读 schema item 的 `defaultValue` 判断是否改过；没声明默认值的项返回 null
-/// （不出标记，也不出恢复钮）。
+/// 读 schema item 的 `defaultValue`（自定义行读 [SettingsCustomItem.reset]）判断是否
+/// 改过；没声明默认值的项返回 null（不参与页级恢复默认）。
 SettingsResetSpec? settingsResetSpecFor(
   SettingsItem item,
   SettingsContext context,
@@ -1830,8 +1843,11 @@ SettingsResetSpec? settingsResetSpecFor(
   if (item is SettingsSwitchItem) {
     final bool? defaultValue = item.defaultValue;
     if (defaultValue == null) return null;
+    final bool current = item.value(context);
     return SettingsResetSpec(
-      modified: item.value(context) != defaultValue,
+      modified: current != defaultValue,
+      currentLabel: _settingsSwitchLabel(current),
+      defaultLabel: _settingsSwitchLabel(defaultValue),
       reset: () async {
         await item.onChanged(context, defaultValue);
         context.refresh();
@@ -1841,8 +1857,13 @@ SettingsResetSpec? settingsResetSpecFor(
   if (item is SettingsSliderItem) {
     final double? defaultValue = item.defaultValue;
     if (defaultValue == null) return null;
+    final double current = item.value(context);
+    String format(double value) =>
+        item.label?.call(value) ?? _settingsNumberLabel(value);
     return SettingsResetSpec(
-      modified: (item.value(context) - defaultValue).abs() > 1e-6,
+      modified: (current - defaultValue).abs() > 1e-6,
+      currentLabel: format(current),
+      defaultLabel: format(defaultValue),
       reset: () async {
         await item.onChanged(context, defaultValue);
         await item.onChangeEnd?.call(context, defaultValue);
@@ -1853,8 +1874,11 @@ SettingsResetSpec? settingsResetSpecFor(
   if (item is SettingsStepperItem) {
     final double? defaultValue = item.defaultValue;
     if (defaultValue == null) return null;
+    final double current = item.value(context);
     return SettingsResetSpec(
-      modified: (item.value(context) - defaultValue).abs() > 1e-6,
+      modified: (current - defaultValue).abs() > 1e-6,
+      currentLabel: item.format(current),
+      defaultLabel: item.format(defaultValue),
       reset: () async {
         await item.onChanged(context, defaultValue);
         context.refresh();
@@ -1865,15 +1889,46 @@ SettingsResetSpec? settingsResetSpecFor(
     final SettingsSegmentedItem<Object> segmented = item;
     final Object? defaultValue = segmented.defaultValue;
     if (defaultValue == null) return null;
+    final Object current = segmented.selected(context);
+    String format(Object value) {
+      for (final SettingsSegmentOption<Object> option in segmented.options) {
+        if (option.value == value) return option.label;
+      }
+      return value.toString();
+    }
+
     return SettingsResetSpec(
-      modified: segmented.selected(context) != defaultValue,
+      modified: current != defaultValue,
+      currentLabel: format(current),
+      defaultLabel: format(defaultValue),
       reset: () async {
         await segmented.dispatchChange(context, defaultValue);
         context.refresh();
       },
     );
   }
+  if (item is SettingsCustomItem) {
+    final SettingsCustomReset? custom = item.reset;
+    if (custom == null) return null;
+    return SettingsResetSpec(
+      modified: custom.isModified(context),
+      currentLabel: custom.currentLabel(context),
+      defaultLabel: custom.defaultLabel(context),
+      reset: () async {
+        await custom.reset(context);
+        context.refresh();
+      },
+    );
+  }
   return null;
+}
+
+String _settingsSwitchLabel(bool value) =>
+    value ? t.settings_page_reset_value_on : t.settings_page_reset_value_off;
+
+String _settingsNumberLabel(double value) {
+  if (value == value.roundToDouble()) return value.toInt().toString();
+  return value.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '');
 }
 
 /// 详情页分组跳转条的条目：只收带标题的分组，id 与渲染层锚点同一口径
