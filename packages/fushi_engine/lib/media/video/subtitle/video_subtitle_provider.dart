@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 
 class LocalVideoFingerprint {
   const LocalVideoFingerprint({
@@ -51,6 +52,46 @@ class VideoSubtitleSearchRequest {
   int? get effectiveEpisode => episode ?? media?.episode;
 }
 
+/// 来源对「这条字幕属于哪部作品」的**自述**（BUG-3068）。
+///
+/// 字幕候选此前只带文件名与集号，作品身份全靠「搜索词搜得到它」隐式担保——而
+/// Jimaku / AJATT 的标题搜索是模糊的、OpenSubtitles 的 moviehash 会撞车，于是
+/// 「映画ドラえもん のび太と鉄人兵団」(1986) 被装上 2011 年重制版「新・…」的字幕，
+/// 电影被装上同名 TV 系列某一集、甚至毫不相干的剧集。把来源自己知道的身份（条目
+/// 名、年份、电影/剧集、外部 id）带出来，调用方才能拿它与目标作品比对、拒收错作品。
+///
+/// 全部字段可空 / 可空列表：来源不知道的就不说，**不知道 ≠ 不匹配**。
+class SubtitleWorkClaim {
+  SubtitleWorkClaim({
+    Iterable<String> titles = const <String>[],
+    this.year,
+    this.kind,
+    this.anilistId,
+    this.tmdbId,
+    this.imdbId,
+  }) : titles = List<String>.unmodifiable(
+          titles.where((String title) => title.trim().isNotEmpty),
+        );
+
+  /// 来源给这部作品的名字（条目名 / 日文名 / 英文名 / 特征标题），去空。
+  final List<String> titles;
+
+  /// 来源标注的作品年份。
+  final int? year;
+
+  /// 电影还是剧集；来源没明说为 null。
+  final VideoMetadataMediaKind? kind;
+
+  final int? anilistId;
+
+  /// TMDB id，号段由 [kind] 决定（电影与剧集是两个独立号段）；[kind] 为 null 时
+  /// 不可比。
+  final int? tmdbId;
+
+  /// IMDb id（`tt` 前缀可有可无）。
+  final String? imdbId;
+}
+
 abstract class VideoSubtitleCandidate {
   VideoSubtitleCandidate({
     required this.providerId,
@@ -71,6 +112,7 @@ abstract class VideoSubtitleCandidate {
     this.aiTranslated = false,
     this.fromTrusted = false,
     this.archiveFormat,
+    this.work,
   });
 
   final String providerId;
@@ -112,6 +154,9 @@ abstract class VideoSubtitleCandidate {
 
   /// 是否整季压缩包（见 [archiveFormat]）。
   bool get isArchivePack => archiveFormat != null;
+
+  /// 来源自述的作品身份（见 [SubtitleWorkClaim]）；来源什么都不知道为 null。
+  final SubtitleWorkClaim? work;
 
   String get identityKey => '$providerId:$remoteId';
 }
