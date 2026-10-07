@@ -10,6 +10,7 @@ import 'package:fushi/src/settings/settings_search_sheet.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_navigation_groups.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
+import 'package:fushi/src/settings/settings_page_reset.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -195,9 +196,19 @@ class MaterialSettingsRenderer implements SettingsRenderer {
       sections: settingsJumpSections(
         destination.visibleSections(settingsContext),
       ),
-      actions: showBack
-          ? const <Widget>[SettingsSearchAction()]
-          : const <Widget>[],
+      // 搜索只在 push 出来的子页（宽屏主从的搜索在左栏）；「恢复本页默认」溢出
+      // 菜单两种入口都有，本页没有声明了默认值的项时不出现。
+      actions: <Widget>[
+        if (showBack) const SettingsSearchAction(),
+        if (settingsPageResetEntries(
+          destination.visibleSections(settingsContext),
+          settingsContext,
+        ).isNotEmpty)
+          SettingsPageResetAction(
+            settingsContext: settingsContext,
+            destination: destination,
+          ),
+      ],
       // 正文滚到叠放的页头底下：schema 详情的滚动内边距加上页头让位
       // （bodyBuilder 的 context 在壳的让位 MediaQuery 之下）。
       bodyConsumesTopPadding: true,
