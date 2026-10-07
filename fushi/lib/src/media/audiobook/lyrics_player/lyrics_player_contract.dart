@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/widgets.dart';
 
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
+
 /// 歌词播放覆盖层（Apple / MD3 两套样式）共用的数据契约。
 ///
 /// 架构（2026-10-04 用户拍板，对齐 Niratan）：歌词模式是**盖在阅读器上的一层**。
@@ -112,7 +114,12 @@ class LyricsPlayerData {
     required this.clock,
     this.chapterLabel,
     this.sleepTimerMinutes,
+    this.illustrations,
   });
+
+  /// 书中插图（播放走过插图时封面位换成插图，见 lyrics_illustrations.dart）。
+  /// null = 这本书没有可显示的插图（或还在探测），封面位照旧只显示封面。
+  final LyricsIllustrationController? illustrations;
 
   /// 书名。
   final String title;
@@ -184,7 +191,13 @@ class LyricsPlayerCallbacks {
     this.onTypography,
     this.onSeekRelative,
     this.onSleepTimer,
+    this.onOpenIllustration,
   });
+
+  /// 打开插图大图浏览，从第 [index] 张看起。`returnToCover` = 关掉后插图位回到
+  /// 封面（窄屏小封面入口：看完就算确认过了）。null = 不提供大图浏览。
+  final void Function(int index, {required bool returnToCover})?
+  onOpenIllustration;
 
   /// 后退 / 前进若干秒（负数后退）。null = 不显示 ±10 秒键。
   final ValueChanged<int>? onSeekRelative;

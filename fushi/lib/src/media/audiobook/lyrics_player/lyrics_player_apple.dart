@@ -6,6 +6,8 @@ import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -456,10 +458,22 @@ class _PlayerPanel extends StatelessWidget {
           child: Center(
             child: FittedBox(
               fit: BoxFit.scaleDown,
-              child: _Artwork(
-                cover: data.cover,
-                size: layout.artworkSize,
-                isPlaying: data.isPlaying,
+              // 播放走过书中插图时封面位换成插图（见 lyrics_illustration_view）。
+              child: LyricsIllustrationArtworkSlot(
+                controller: data.illustrations,
+                side: layout.artworkSize,
+                borderRadius: const BorderRadius.all(Radius.circular(12)),
+                onOpen: callbacks.onOpenIllustration == null
+                    ? null
+                    : (int index) => callbacks.onOpenIllustration!(
+                        index,
+                        returnToCover: false,
+                      ),
+                cover: _Artwork(
+                  cover: data.cover,
+                  size: layout.artworkSize,
+                  isPlaying: data.isPlaying,
+                ),
               ),
             ),
           ),
@@ -852,6 +866,7 @@ class _NarrowChrome extends StatelessWidget {
           height: _kNarrowHeaderHeight,
           child: Row(
             children: <Widget>[
+              _NarrowIllustrationEntry(data: data, callbacks: callbacks),
               Expanded(
                 child: _NarrowHeader(title: data.title, clock: data.clock),
               ),
@@ -934,6 +949,61 @@ class _NarrowChrome extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 窄屏插图入口（Apple 窄屏本不放封面，Niratan 同款）：听到过插图后才在书名
+/// 左侧出现一枚小缩略图——新插图到达时换成它并带提示点，点它看插图大图，看完
+/// 回到「最近一张」的常态。一张都没听到时不占位。
+class _NarrowIllustrationEntry extends StatelessWidget {
+  const _NarrowIllustrationEntry({required this.data, required this.callbacks});
+
+  final LyricsPlayerData data;
+  final LyricsPlayerCallbacks callbacks;
+
+  static const double _size = 36;
+
+  @override
+  Widget build(BuildContext context) {
+    final LyricsIllustrationController? c = data.illustrations;
+    if (c == null) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: c,
+      builder: (BuildContext context, Widget? _) {
+        if (!c.hasReached) return const SizedBox.shrink();
+        final int cache = (_size * MediaQuery.devicePixelRatioOf(context))
+            .round();
+        return Padding(
+          padding: const EdgeInsetsDirectional.only(end: 10),
+          child: LyricsIllustrationCompactArtwork(
+            controller: c,
+            onOpen: callbacks.onOpenIllustration == null
+                ? null
+                : (int index) =>
+                      callbacks.onOpenIllustration!(index, returnToCover: true),
+            builder: (BuildContext context, ImageProvider? illustration) =>
+                ClipRSuperellipse(
+                  borderRadius: const BorderRadius.all(Radius.circular(8)),
+                  child: SizedBox.square(
+                    dimension: _size,
+                    child: Image(
+                      image: ResizeImage.resizeIfNeeded(
+                        cache,
+                        null,
+                        illustration ?? c.items[c.reached].image,
+                      ),
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.medium,
+                      gaplessPlayback: true,
+                      errorBuilder: (_, Object e, StackTrace? s) =>
+                          ColoredBox(color: Colors.white.withValues(alpha: 0.12)),
+                    ),
+                  ),
+                ),
+          ),
+        );
+      },
     );
   }
 }
