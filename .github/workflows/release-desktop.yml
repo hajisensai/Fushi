@@ -748,6 +748,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "fushi_cli --help failed ($LASTEXITCODE)" }
           & $exe status | Out-Null
           if ($LASTEXITCODE -ne 69) { throw "fushi_cli status expected exit 69 (not running), got $LASTEXITCODE" }
+          # 预期内的 69 已核对完。Actions 的 pwsh 包装会在脚本末尾追加
+          # `exit $LASTEXITCODE`，且以 `pwsh -command ". '{0}'"` 点源执行——点源脚本里
+          # `exit 69` 让 pwsh 进程以 1 退出、不打任何报错，整步无声变红。显式成功收尾。
+          exit 0
       # ffmpeg.exe and its MinGW runtime DLLs are vendored at
       # third_party/ffmpeg-min/windows/
       # (TODO-416). It used to be fetched from another workflow's build artifact,
