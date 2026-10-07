@@ -18,8 +18,6 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/src/settings/settings_kit.dart'
-    show SettingsModifiedRow;
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -633,6 +631,23 @@ SettingsCustomItem _galHookColorItem({
     id: id,
     icon: icon,
     searchTitle: title,
+    // 「恢复默认」= 回到跟随主题；收在详情页的「恢复本页默认」里（判据与台词窗
+    // 下发同一个函数），行内不再画已改过标记。
+    reset: SettingsCustomReset(
+      isModified: (SettingsContext context) =>
+          !galHookCaptionColorFollowsTheme(value(context), defaultColor),
+      reset: (SettingsContext context) => _commitGalHookAppearance(
+        context,
+        () => onChanged(context, defaultColor),
+      ),
+      currentLabel: (SettingsContext context) {
+        final int stored = value(context);
+        return galHookCaptionColorFollowsTheme(stored, defaultColor)
+            ? t.theme_role_follows_theme
+            : '#${stored.toRadixString(16).padLeft(8, '0').toUpperCase()}';
+      },
+      defaultLabel: (SettingsContext context) => t.theme_role_follows_theme,
+    ),
     builder: (SettingsContext settingsContext) {
       final ThemeData theme = Theme.of(settingsContext.context);
       final int stored = value(settingsContext);
@@ -644,51 +659,39 @@ SettingsCustomItem _galHookColorItem({
         followsTheme ? themedColor(galHookThemeCaptionColors(theme)) : stored,
       );
       final ColorScheme colors = theme.colorScheme;
-      // 自定义行不经渲染层的 settingsResetSpecFor，这里自己接 settings kit 的
-      // 「已改过 → 恢复默认」：与开关 / 滑杆同一套行首圆点 + 行尾重置钮。
-      return SettingsModifiedRow(
-        // 「恢复默认」= 回到跟随主题。
-        modified: !followsTheme,
-        onReset: () => unawaited(
-          _commitGalHookAppearance(
+      return AdaptiveSettingsRow(
+        title: title,
+        subtitle: followsTheme ? t.theme_role_follows_theme : null,
+        icon: icon,
+        showIcon: true,
+        // M3E 色样：28 圆点 + outlineVariant 描边（浅色 / 透明色在卡片底上也
+        // 读得出边界）。
+        trailing: FushiColorSwatch(
+          color: current,
+          size: 28,
+          shape: FushiColorSwatchShape.dot,
+          borderColor: colors.outlineVariant,
+        ),
+        onTap: () => unawaited(() async {
+          final Color? selected = await _pickGalHookColor(
+            settingsContext.context,
+            title: title,
+            initial: current,
+            enableAlpha: enableAlpha,
+            followsTheme: followsTheme,
+            followThemeColor: Color(defaultColor),
+          );
+          // 跟随中直接按「完成」= 没改：不把此刻的主题色冻结成自定义值。
+          if (selected == null ||
+              selected.toARGB32() == stored ||
+              selected.toARGB32() == current.toARGB32()) {
+            return;
+          }
+          await _commitGalHookAppearance(
             settingsContext,
-            () => onChanged(settingsContext, defaultColor),
-          ),
-        ),
-        child: AdaptiveSettingsRow(
-          title: title,
-          subtitle: followsTheme ? t.theme_role_follows_theme : null,
-          icon: icon,
-          showIcon: true,
-          // M3E 色样：28 圆点 + outlineVariant 描边（浅色 / 透明色在卡片底上也
-          // 读得出边界）。
-          trailing: FushiColorSwatch(
-            color: current,
-            size: 28,
-            shape: FushiColorSwatchShape.dot,
-            borderColor: colors.outlineVariant,
-          ),
-          onTap: () => unawaited(() async {
-            final Color? selected = await _pickGalHookColor(
-              settingsContext.context,
-              title: title,
-              initial: current,
-              enableAlpha: enableAlpha,
-              followsTheme: followsTheme,
-              followThemeColor: Color(defaultColor),
-            );
-            // 跟随中直接按「完成」= 没改：不把此刻的主题色冻结成自定义值。
-            if (selected == null ||
-                selected.toARGB32() == stored ||
-                selected.toARGB32() == current.toARGB32()) {
-              return;
-            }
-            await _commitGalHookAppearance(
-              settingsContext,
-              () => onChanged(settingsContext, selected.toARGB32()),
-            );
-          }()),
-        ),
+            () => onChanged(settingsContext, selected.toARGB32()),
+          );
+        }()),
       );
     },
   );
