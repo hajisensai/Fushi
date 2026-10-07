@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/utils.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-3067 守卫：小说阅读器正文就绪时声明的系统 UI 模式。
 ///
 /// Flutter 3.47 的 Android `PlatformPlugin.enableEdgeToEdge()` 先
@@ -123,4 +125,24 @@ void main() {
       reason: 'the running platform must pick the mode on device',
     );
   });
+
+  test(
+    'late content-ready cannot hide home system bars during reader exit',
+    () {
+      final String navigation = File(
+        'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
+      ).readAsStringSync();
+      final String body = methodBody(navigation, 'void _onRestoreComplete()');
+      expect(
+        body,
+        matches(
+          RegExp(
+            r'if\s*\(\s*!_popInProgress\s*\)\s*\{\s*'
+            r'unawaited\(setReaderSystemUiMode\(\)\);\s*\}',
+          ),
+        ),
+        reason: 'mounted stays true during the reverse route animation',
+      );
+    },
+  );
 }

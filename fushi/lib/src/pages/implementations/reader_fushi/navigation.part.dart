@@ -137,7 +137,10 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       _reapplyChromeInsetsAfterFirstLoad();
       // BUG-3067：Android 保持系统栏隐藏（裸 edgeToEdge 在 Flutter 3.47 会清掉
       // openMedia 的沉浸标志，状态栏回来并计入正文顶部 inset），见 helper 注释。
-      unawaited(setReaderSystemUiMode());
+      // 退出动画期间仍 mounted；晚到的 ready 不得覆盖 closeMedia 恢复的系统栏。
+      if (!_popInProgress) {
+        unawaited(setReaderSystemUiMode());
+      }
       // TODO-700 T3：内容就绪确定性落焦到正文（门控见 helper）。
       _focusOwnership.reclaim(FocusReclaimCause.contentReady);
       WidgetsBinding.instance.addPostFrameCallback((_) {

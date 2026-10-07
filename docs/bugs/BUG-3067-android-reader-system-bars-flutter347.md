@@ -11,3 +11,8 @@
 - **备注**：
   - 真机验证：见下方「真机数值」。
   - 同一个引擎变化也影响漫画阅读器 `manga_fushi_page.dart` 的 `_chromeVisible ? edgeToEdge : immersiveSticky`：3.44 下显示 chrome 时系统栏其实没回来，3.47 下会回来——那正是 BUG-1888 写的设计意图（「显示 → 还原 edgeToEdge」），不在本条改动范围，留意即可。
+
+### 交接后复核（2026-10-07）
+- 修复提交：`0fe9c4b09f`。追加退出生命周期保护：`navigation.part.dart` 内容就绪回调仅在 `!_popInProgress` 时声明 reader 模式；路由退出动画期间仍 mounted，晚到回调不得盖掉 `closeMedia()` 已恢复的首页系统栏。`reader_system_ui_mode_test.dart` 对此添加源码守卫。
+- Mac / Flutter 3.47.6 定向验证：`reader_system_ui_mode_test.dart`、`home_shell_system_ui_mode_test.dart`、`reader_exit_bounded_probe_test.dart`，**19 tests / exit 0**。
+- `FUSHI_BUG_BASE=upstream/develop dart run tool/bug.dart check --strict`：**exit 0**，本分支新增 BUG-3067 无撞号。
