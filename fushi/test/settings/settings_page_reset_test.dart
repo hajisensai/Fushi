@@ -234,7 +234,11 @@ void main() {
       ..mode = 'manual'
       ..hidden = true
       ..noDefault = false;
+    // 不强制展开：折叠分组真收起时，里面改过的项也必须进恢复列表（判据读
+    // schema 数据，不读渲染出来的行）。
+    debugSettingsForceExpandAllSections = false;
     await _pump(tester, () => _destination(v));
+    expect(find.text('Hidden toggle'), findsNothing, reason: '折叠分组默认收起，行不在页面上');
 
     await _openMenu(tester);
     final PopupMenuItem<int> item = tester.widget<PopupMenuItem<int>>(
