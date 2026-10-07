@@ -164,7 +164,16 @@ function Get-FlutterSdkKey([string]$root) {
 function Get-LockHash([string]$root) {
     $lock = Join-Path $root 'pubspec.lock'
     if (-not (Test-Path -LiteralPath $lock)) { return $null }
-    return (Get-FileHash -LiteralPath $lock -Algorithm SHA256).Hash
+    # Not Get-FileHash: when Windows PowerShell 5.1 is started from pwsh 7 or
+    # Git Bash it inherits pwsh 7 module paths in PSModulePath, autoloads the
+    # wrong Microsoft.PowerShell.Utility and Get-FileHash is "not recognized".
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        return [BitConverter]::ToString($sha.ComputeHash([IO.File]::ReadAllBytes($lock)))
+    }
+    finally {
+        $sha.Dispose()
+    }
 }
 
 function Invoke-TestKernelCacheSeed([string]$targetRoot) {
