@@ -1,0 +1,6 @@
+## BUG-3070 · 视频库导入动作挤窄页签条后选中项不可见
+- **报告**：2026-10-07（用户录屏，CC 交接任务 1）
+- **真实性**：✅ 真 bug。`fushi/lib/src/pages/implementations/video_library_shell.dart:260` 的页签与动作槽共用顶栏；导入页登记三按钮后，`fushi/lib/src/utils/components/fushi_floating_chrome.dart:1048` 的动作宽度动画持续挤窄页签。原 `fushi/lib/src/utils/components/library_section_tabs.dart:433` 只更新溢出提示，未在 viewport 改变后重新定位选中段；TabBar 切换时计算的旧滚动终点因而失效。
+- **[x] ① 已修复** — 共享页签组件跟踪横向 viewportDimension，布局完成后按实际选中段几何重新居中；idle/post-frame 直接执行，避免无下一帧时回调悬空。重定目标也会终止旧滚动 activity；无关重建保留用户手动横滑位置。动效复用共享时长并响应减弱动态效果。见本条同批 `fix(ui): keep selected library tab visible when toolbar resizes` 提交。
+- **[x] ② 已加自动化测试** — `fushi/test/widgets/library_section_tabs_selected_visible_test.dart`：同帧/晚一帧/420ms 连续挤窄与放宽、首帧、RTL、静止缩窄、减弱动态效果、旧 activity 恰经过新目标、手动滚动后无关重建。旧代码对照运行 11 条，6 条几何断言失败（exit 1）；修复后定向和相邻组件验证见最终交接报告。
+- **备注**：交接留下的 widget 渲染像素位于 `.codex-test/video-tab-visible/{before,after}.png`，已人工查看：旧版导入完全离屏，修复版导入完整显示。它们不是 Android 真机截图；本轮尚未完成 Android 设备原路径肉眼复测，不将 widget 证据冒充设备验证。
