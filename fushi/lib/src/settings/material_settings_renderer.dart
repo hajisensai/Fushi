@@ -230,7 +230,10 @@ class MaterialSettingsRenderer implements SettingsRenderer {
             inlineHeader: false,
             shrinkWrap: false,
             insetHorizontally: true,
-            topInset: MediaQuery.paddingOf(context).top,
+            // 叠放页头的让位不在这里读：读在这一层，让位逐帧变化（跳转条出现、
+            // 页头收展的尺寸动画）就会把整页设置行逐帧重建。交给滚动视图那一个
+            // 叶子按 MediaQuery.paddingOf 精确依赖去读（_ShellInsetScrollView）。
+            consumeShellInset: true,
           ),
     );
   }
@@ -269,7 +272,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     required bool shrinkWrap,
     required bool insetHorizontally,
     bool consumeTopPadding = false,
-    double topInset = 0,
+    bool consumeShellInset = false,
   }) {
     final BuildContext context = settingsContext.context;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -294,11 +297,10 @@ class MaterialSettingsRenderer implements SettingsRenderer {
         : EdgeInsets.zero;
     final EdgeInsets padding = EdgeInsets.fromLTRB(
       horizontal.left,
-      // [topInset]：kit 壳叠放页头的让位（由调用方从壳内 context 读入；
+      // kit 壳叠放页头的让位不计在这里（[consumeShellInset]：由
+      // _ShellInsetScrollView 在壳内 context 读 MediaQuery.paddingOf 叠加；
       // settingsContext.context 在壳之上读不到）。
-      tokens.spacing.gap +
-          (consumeTopPadding ? mediaPadding.top : 0) +
-          topInset,
+      tokens.spacing.gap + (consumeTopPadding ? mediaPadding.top : 0),
       horizontal.right,
       tokens.spacing.page + mediaPadding.bottom,
     );
@@ -420,15 +422,22 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     // content jumping (BUG-037). A settings page has a bounded, small number of
     // sections, so laying them ALL out (non-lazy SingleChildScrollView + Column)
     // costs nothing and makes the scroll extent exact and constant.
+    final Widget column = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: content,
+    );
     return FushiEntranceScope(
-      child: SingleChildScrollView(
-        controller: scrollController,
-        padding: padding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: content,
-        ),
-      ),
+      child: consumeShellInset
+          ? _ShellInsetScrollView(
+              controller: scrollController,
+              padding: padding,
+              child: column,
+            )
+          : SingleChildScrollView(
+              controller: scrollController,
+              padding: padding,
+              child: column,
+            ),
     );
   }
 
@@ -454,6 +463,34 @@ class MaterialSettingsRenderer implements SettingsRenderer {
           ),
         )
         .toList(growable: false);
+  }
+}
+
+/// kit 壳详情正文的滚动视图：顶部内边距 = [padding] + 壳叠放页头的让位
+/// （`MediaQuery.paddingOf(context).top`）。
+///
+/// 让位只在这一层读：页头收展 / 跳转条出现时让位逐帧变化，依赖精确落在本
+/// 叶子上——只重建这里的 [SingleChildScrollView]，[child]（整页设置行）是同一个
+/// 实例，不会被逐帧重建。
+class _ShellInsetScrollView extends StatelessWidget {
+  const _ShellInsetScrollView({
+    required this.controller,
+    required this.padding,
+    required this.child,
+  });
+
+  final ScrollController? controller;
+  final EdgeInsets padding;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final double inset = MediaQuery.paddingOf(context).top;
+    return SingleChildScrollView(
+      controller: controller,
+      padding: padding.copyWith(top: padding.top + inset),
+      child: child,
+    );
   }
 }
 

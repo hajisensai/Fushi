@@ -232,11 +232,27 @@ class SettingsSection {
     bool collapsedByDefault = false,
     SettingsSectionPresentation? presentation,
     this.summaryBuilder,
+    this.liveListenable,
   }) : presentation =
            presentation ??
            (collapsedByDefault
                ? SettingsSectionPresentation.collapsed
-               : SettingsSectionPresentation.alwaysExpanded);
+               : SettingsSectionPresentation.alwaysExpanded),
+       _unfiltered = null;
+
+  /// [visibleCopy] 的产物：记住过滤前的分组，[liveListenable] 触发时据此重新
+  /// 求值行级可见性（被过滤掉的行要能重新出现）。
+  const SettingsSection._filtered({
+    required this.items,
+    required this.presentation,
+    required SettingsSection unfiltered,
+    this.id,
+    this.title,
+    this.footer,
+    this.visible,
+    this.summaryBuilder,
+    this.liveListenable,
+  }) : _unfiltered = unfiltered;
 
   /// Stable identity independent of translated titles or visible row positions.
   final String? id;
@@ -248,6 +264,20 @@ class SettingsSection {
   final SettingsVisibility? visible;
   final List<SettingsItem> items;
 
+  /// 本分组的行（标题 / 副标题 / 值 / 行级可见性）读的**外部事件源**——不是设置
+  /// 偏好、不经 `SettingsContext.refresh` 变化的运行期状态（错误 / 调试日志条数、
+  /// galgame hook 异步报上来的准入、推荐包下载阶段……）。渲染层订阅它，变化时
+  /// **只重建本分组**（并按 [visibleCopy] 重算行级可见性）。
+  ///
+  /// 此前这类状态由设置宿主页整页 setState 刷新：调试日志开着时每条 debugPrint
+  /// 都把整页设置行重建一遍，日志一刷屏设置页就逐帧掉帧。
+  ///
+  /// 限制：只能增删本分组里的行，分组本身至少要有一行恒可见（整组的出现 /
+  /// 消失仍由宿主重建决定）。
+  final Listenable? Function(SettingsContext context)? liveListenable;
+
+  final SettingsSection? _unfiltered;
+
   /// 旧调用点的兼容读取；新代码显式使用 presentation。折叠仅影响展示，
   /// 搜索可临时展开，业务配置值不受影响。
   bool get collapsedByDefault =>
@@ -256,14 +286,19 @@ class SettingsSection {
   bool isVisible(SettingsContext context) => visible?.call(context) ?? true;
 
   SettingsSection visibleCopy(SettingsContext context) {
-    return SettingsSection(
-      id: id ?? (items.isEmpty ? null : 'section.${items.first.id}'),
-      title: title,
-      footer: footer,
-      visible: visible,
-      presentation: presentation,
-      summaryBuilder: summaryBuilder,
-      items: items
+    final SettingsSection source = _unfiltered ?? this;
+    return SettingsSection._filtered(
+      unfiltered: source,
+      id:
+          source.id ??
+          (source.items.isEmpty ? null : 'section.${source.items.first.id}'),
+      title: source.title,
+      footer: source.footer,
+      visible: source.visible,
+      presentation: source.presentation,
+      summaryBuilder: source.summaryBuilder,
+      liveListenable: source.liveListenable,
+      items: source.items
           .where((SettingsItem item) => item.isVisible(context))
           .toList(growable: false),
     );

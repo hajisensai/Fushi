@@ -93,6 +93,9 @@ SettingsDestination buildGameDestination() {
       // 什么」，与阅读器/视频/剪贴板那几路查词共用引擎但不共用触发面。放在查词分类
       // 里，用户要在游戏跑着的时候去另一个分类翻开关，找不到是必然的。
       SettingsSection(
+        // 准入是 hook **异步**报上来的：本分组自己订阅它（副标题原因与「复制
+        // 哈希」行的显隐随之刷新），开着设置页启动游戏也能看到。
+        liveListenable: (_) => GalIngameLookupController.instance.admission,
         items: <SettingsItem>[
           // 游戏内查词：命中的字直接在**游戏渲染树内部**弹出词典卡片
           // （不抢焦点、不 alt-tab、跟随全屏与窗口变换）。传感器按引擎逐个做，
@@ -134,9 +137,8 @@ SettingsDestination buildGameDestination() {
                 _ingameLookupExeSha256() ??
                 t.gal_hook_ingame_lookup_exe_hash_unavailable,
             icon: FushiIcons.fingerprint,
-            // 只在真被挡住时出现——平时多一行"复制哈希"是纯噪音。设置页监听准入
-            // notifier（settings_home_page / settings_detail_page），所以开着页面
-            // 启动游戏也会把这一行刷出来。
+            // 只在真被挡住时出现——平时多一行"复制哈希"是纯噪音。所在分组订阅准入
+            // notifier（liveListenable），所以开着页面启动游戏也会把这一行刷出来。
             visible: (_) => Platform.isWindows && _isIngameLookupBlocked(),
             onTap: (SettingsContext settingsContext) async {
               final String? sha = _ingameLookupExeSha256();
