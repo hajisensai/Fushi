@@ -31,7 +31,7 @@
 | vn | vertical-rl | 0 / 24 / 0 | 0 / 24 / 0 | stage：0 / 24 / 0 |
 
 - 单位为逻辑像素 / CSS px。该设备的底部 viewPadding 三阶段均为 0，未声称此设备复现了底部差异。
-- 本地证据：worktree 下 `.codex-test/reader-top-margin/` 的 `device-first-run.log`、`measurements.json`、`measurement-check.txt`，以及 `vn-{horizontal-tb,vertical-rl}-{A-fixed,B-legacy-edgeToEdge,C-setReaderSystemUiMode}.png`。VN 截图可见旧模式状态栏出现、修复模式隐藏；滚动竖排截图含新装包 Anki 权限对话框，不能当作无遮挡验收；翻页没有可靠截图。**三模式数值回归已验证，翻页/滚动无遮挡截图仍未完成。**
+- 本地证据：worktree 下 `.codex-test/reader-top-margin/` 的 `device-first-run.log`、`measurements.json`、`measurement-check.txt`。无遮挡截图为 `vn-vertical-rl-{A-fixed,B-legacy-edgeToEdge,C-setReaderSystemUiMode}.png` 与 `vn-horizontal-tb-{B-legacy-edgeToEdge,C-setReaderSystemUiMode}.png`，可见旧模式状态栏出现、修复模式隐藏。VN 横排 A 与滚动竖排截图含新装包 Anki 权限对话框，不能当作无遮挡验收；翻页没有可靠截图。**三模式数值回归已验证，翻页/滚动无遮挡截图仍未完成。**
 - 为补截图进行了重跑，但 Android 拒绝创建该临时包 Chromium 子进程（`ActivityManager: ... SandboxedProcessService... process is bad` / `cr_ChildProcessConn: Failed to establish the service connection`），即使重装临时包仍如此，WebView 白屏/初始化超时；这些中断轮次不算通过，证据 `webview-restart-blocker.txt`。没有为此重启用户设备或操作正式包。
 - 新装包的 Anki 权限仅拒绝，没有授权访问用户卡片；临时包已卸载、Gradle suffix 已还原、探针移出源码树且不入库。正式包 `app.fushi.reader` 的版本与安装时间前后相同。设备尺寸/密度/旋转未修改。
 - API 35/36 与有挖孔设备未真机验证；退出保护是源码守卫 + 调用链复核，探针返回走生产 Escape 路径，但未单独断言首页系统栏恢复。
