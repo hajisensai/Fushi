@@ -6794,5 +6794,11 @@
   "floating_ball_show_labels_hint": "展開したボタンの横に文字を表示します。オフにするとアイコンのみ表示します",
   "stat_range_mode_custom": "カスタム",
   "stat_range_custom_edit": "期間を変更",
-  "stat_range_custom_pick": "期間を選択"
+  "stat_range_custom_pick": "期間を選択",
+  "settings_page_reset_menu": "Reset page to defaults",
+  "settings_page_reset_all_default": "Everything on this page is at its default",
+  "settings_page_reset_message": "Checked settings will go back to their defaults.",
+  "settings_page_reset_confirm": "Reset",
+  "settings_page_reset_value_on": "On",
+  "settings_page_reset_value_off": "Off"
 }

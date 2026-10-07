@@ -145,22 +145,9 @@ class SettingsSchemaItem extends StatelessWidget
     };
     // 设置搜索跳转落点：本项是待定位目标时消费一次性挂点，包上滚动定位 +
     // 闪烁高亮（见 SettingsSearchReveal）。消费即清除，后续 rebuild 不再包装。
-    // 改过默认值的项：行首小圆点 + 行尾「恢复默认」（只对声明了 defaultValue
-    // 的项生效，见 settings_kit 的 settingsResetSpecFor）。
-    final SettingsResetSpec? reset = settingsResetSpecFor(
-      item,
-      settingsContext,
-    );
-    return SettingsSearchTarget(
-      id: item.id,
-      child: reset == null
-          ? row
-          : SettingsModifiedRow(
-              modified: reset.modified,
-              onReset: reset.reset,
-              child: row,
-            ),
-    );
+    // 「改过默认值」不在行内标记：行保持标准 M3E 列表项，恢复默认收进详情页
+    // 页头溢出菜单的「恢复本页默认」（settings_page_reset.dart）。
+    return SettingsSearchTarget(id: item.id, child: row);
   }
 
   Widget _routeRow(BuildContext context, SettingsNavigationItem navigation) {

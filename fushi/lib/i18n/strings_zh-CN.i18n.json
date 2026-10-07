@@ -6794,5 +6794,11 @@
   "floating_ball_show_labels_hint": "展开时在按钮旁显示文字，关闭后只显示图标",
   "stat_range_mode_custom": "自定义",
   "stat_range_custom_edit": "修改日期区间",
-  "stat_range_custom_pick": "选择统计区间"
+  "stat_range_custom_pick": "选择统计区间",
+  "settings_page_reset_menu": "恢复本页默认",
+  "settings_page_reset_all_default": "本页均为默认值",
+  "settings_page_reset_message": "勾选的设置项将恢复为默认值。",
+  "settings_page_reset_confirm": "恢复",
+  "settings_page_reset_value_on": "开",
+  "settings_page_reset_value_off": "关"
 }
