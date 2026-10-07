@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:cupertino_ui/cupertino_ui.dart'
     show CupertinoPageTransitionsBuilder, CupertinoRouteTransitionMixin;
@@ -968,12 +969,15 @@ class ThemeNotifier extends ChangeNotifier {
   final FushiDatabase _db;
   final TextTheme Function() _textThemeBuilder;
   final Map<String, String> _prefs = {};
+  int _preferenceWriteRevision = 0;
+  final Map<String, int> _publishedPreferenceWriteRevisions = {};
   // Invalidates an async migration reload whenever a newer local write or
   // full preference snapshot has taken ownership of the in-memory value.
   int _designSystemPreferenceRevision = 0;
   double _autoAppUiScale = FushiAppUiScale.defaultScale;
 
   CorePalette? _systemPalette;
+  String? _systemPaletteIdentity;
   // OS accent color, the only system-color signal Windows / macOS / Linux
   // expose (getCorePalette is Android-only there). Used to seed `system-theme`
   // when [_systemPalette] is null (BUG-090).
@@ -982,6 +986,14 @@ class ThemeNotifier extends ChangeNotifier {
   Color? get systemPrimaryColor {
     if (_systemPalette != null) return Color(_systemPalette!.primary.get(40));
     return _systemAccentColor;
+  }
+
+  /// 两种明暗的 Android 壁纸方案是否同源；只作镜像缓存身份，不是可派生种子。
+  /// 墨水屏覆盖了壁纸方案，切换时也必须淘汰另一明暗留下的彩色镜像。
+  String? get activeSystemPaletteIdentity {
+    final String? identity = _systemPaletteIdentity;
+    if (appThemeKey != 'system-theme' || identity == null) return null;
+    return einkMode ? '$identity:eink' : identity;
   }
 
   Future<void> refreshSystemPalette() async {
@@ -1012,6 +1024,16 @@ class ThemeNotifier extends ChangeNotifier {
     _systemPalette = palette;
     _systemAccentColor = accent;
     if (unchanged) return;
+    // 固定宽度 ARGB 编码 + SHA-256：跨进程稳定，不能用对象 hashCode。
+    // 只在系统颜色真变化时计算，重复 resumed 不重算、不额外广播。
+    if (palette == null) {
+      _systemPaletteIdentity = null;
+    } else {
+      final String colors = palette.asList().map((int argb) {
+        return (argb & 0xFFFFFFFF).toRadixString(16).padLeft(8, '0');
+      }).join();
+      _systemPaletteIdentity = 'android-v1:${sha256.convert(utf8.encode(colors))}';
+    }
     // 自定义主题也可以显式跟随系统强调色，与系统主题消费同一份取色结果。
     if (appThemeKey == 'system-theme' ||
         (activeCustomThemeEntry?.followSystemAccent ?? false)) {
@@ -1133,11 +1155,21 @@ class ThemeNotifier extends ChangeNotifier {
 
   Future<void> _set(String key, dynamic value) async {
     final String strVal = PrefCodec.encode(value);
-    _prefs[key] = strVal;
+    _publishPreferenceWrite(key, strVal, ++_preferenceWriteRevision);
     if (key == 'design_system') {
       _designSystemPreferenceRevision++;
     }
     await _db.setPref(key, strVal);
+  }
+
+  // A committed theme batch must not overwrite a newer immediate UI setting
+  // (brightness / pure black) while its transaction was pending. Track only
+  // published writes: a later pending theme that fails must not suppress an
+  // earlier successful commit. Single-key setters keep their existing timing.
+  void _publishPreferenceWrite(String key, String value, int revision) {
+    if ((_publishedPreferenceWriteRevisions[key] ?? 0) > revision) return;
+    _prefs[key] = value;
+    _publishedPreferenceWriteRevisions[key] = revision;
   }
 
   // ── Theme presets ──────────────────────────────────────────────────
@@ -2082,8 +2114,11 @@ class ThemeNotifier extends ChangeNotifier {
       writes['pure_black_dark'] = PrefCodec.encode(pureBlackDark);
     }
     writes['app_theme_key'] = PrefCodec.encode(key);
-    _prefs.addAll(writes);
+    final int revision = ++_preferenceWriteRevision;
     await _db.setPrefs(writes);
+    for (final MapEntry<String, String> write in writes.entries) {
+      _publishPreferenceWrite(write.key, write.value, revision);
+    }
   }
 
   Future<void> setBrightnessMode(String mode) async {

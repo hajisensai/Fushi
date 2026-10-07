@@ -256,6 +256,7 @@ class ReaderFloatingBall extends StatefulWidget {
     this.backgroundColor,
     this.foregroundColor,
     this.animate = true,
+    this.showLabels = true,
     super.key,
   });
 
@@ -280,6 +281,9 @@ class ReaderFloatingBall extends StatefulWidget {
 
   /// false（墨水屏模式）时所有过渡零时长。
   final bool animate;
+
+  /// 展开时显示按钮文字；关闭仅隐藏标签，图标仍保留提示和无障碍名称。
+  final bool showLabels;
 
   @override
   State<ReaderFloatingBall> createState() => _ReaderFloatingBallState();
@@ -481,7 +485,7 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
   /// 单列时每颗按钮的标签胶囊宽度；多列 / 视口太窄 / 没有按钮时返回空表。
   List<double> _measureLabels(BuildContext context) {
     final int n = widget.actions.length;
-    if (n == 0) return const <double>[];
+    if (!widget.showLabels || n == 0) return const <double>[];
     // 先按无标签几何判列数：多列时标签会压到相邻列，不显示。
     final ReaderFloatingBallLayout bare = ReaderFloatingBallLayout(
       viewport: widget.viewport,

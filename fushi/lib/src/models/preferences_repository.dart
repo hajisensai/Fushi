@@ -801,6 +801,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 展开按钮旁的可见文字；tooltip / 无障碍名称不受此偏好影响。
+  bool get floatingBallShowLabels =>
+      getPref('floating_ball.show_labels', defaultValue: true);
+
+  Future<void> setFloatingBallShowLabels(bool value) async {
+    await setPref('floating_ball.show_labels', value);
+    notifyListeners();
+  }
+
   /// 应用外悬浮球（Android 悬浮窗服务 / Windows、macOS 置顶窗口）。默认关。旧版
   /// 选过 `system` 的用户保持开。不支持的平台（iOS / Linux）读到 true 也不起球。
   bool get floatingBallSystem {
@@ -1303,10 +1312,11 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('nav_rail_expanded', expanded ? 'expanded' : 'collapsed');
   }
 
-  /// MD3 悬浮底栏是否在图标下显示标签（默认显示；关掉即 M3E floating toolbar
-  /// 的纯图标形态）。
+  /// MD3 悬浮底栏是否在图标下显示标签。默认关 = M3E floating toolbar 的纯图标
+  /// 形态（标签进 tooltip / 语义；用户 2026-10-06「底部栏的文字砍掉」）。只有
+  /// 显式打开过开关、库里存了 true 的用户才继续显示标签。
   bool get navBarLabelsVisible =>
-      getPref('nav_bar_labels_visible', defaultValue: true) as bool;
+      getPref('nav_bar_labels_visible', defaultValue: false) as bool;
 
   Future<void> setNavBarLabelsVisible(bool value) async {
     await setPref('nav_bar_labels_visible', value);

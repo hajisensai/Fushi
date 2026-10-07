@@ -3140,9 +3140,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   /// 悬浮工具栏样式的底部：有声书在场时一条 M3E 悬浮迷你播放条（当前句 + 波浪
   /// 进度，点它展开有声书侧板）+ 旁边的形状变形播放 FAB；布局底栏槽位有按钮时
-  /// （手机出厂：导航 / 有声书 / 设置 / 统计）一条居中的悬浮工具栏（手机带小字
-  /// 标签，拇指区）。两者都在时迷你条在上、工具栏 + FAB 在下（FAB 与工具栏配对，
-  /// M3E 规范）；只有迷你条时 FAB 跟在迷你条右侧。
+  /// （手机出厂：导航 / 有声书 / 设置 / 统计）一条居中的悬浮工具栏（纯图标，名称
+  /// 进 tooltip / 语义；用户 2026-10-06「小说的底部栏文字也砍掉」）。两者都在时
+  /// 迷你条在上、工具栏 + FAB 在下（FAB 与工具栏配对，M3E 规范）；只有迷你条时 FAB 跟在迷你条右侧。
   ///
   /// 坐在状态行带之上（状态行照常贴屏底，不并进胶囊），左右与底部留
   /// [kReaderFloatingBarMargin]。歌词覆盖层在场时不画（它自带全套播放控件）。
@@ -3165,7 +3165,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
     ];
     final bool hasDock = dock.any((List<FushiToolbarItem> g) => g.isNotEmpty);
     if (ctrl == null && !hasDock) return const SizedBox.shrink();
-    final bool phone = _readerCompactWidth;
     final FushiFloatingToolbarColors colors = _floatingToolbarColors();
     // 播放键住在迷你条里（M3E 连接式按钮组的中间那颗形状变形 FAB），底部只有
     // 这一颗播放键；Apple 形态同样放进条内。
@@ -3192,8 +3191,13 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final Widget? toolbar = hasDock
         ? FushiFloatingToolbar(
             key: const ValueKey<String>('fushi_reader_floating_dock'),
-            groups: dock,
-            showLabels: phone,
+            // 纯图标的 M3E 悬浮工具栏：按钮等距排开，不画组间竖分隔线（几颗
+            // 各自成组的单按钮之间插分隔只会把一条短胶囊切碎）。
+            groups: <List<FushiToolbarItem>>[
+              <FushiToolbarItem>[
+                for (final List<FushiToolbarItem> g in dock) ...g,
+              ],
+            ],
             colors: colors,
           )
         : null;

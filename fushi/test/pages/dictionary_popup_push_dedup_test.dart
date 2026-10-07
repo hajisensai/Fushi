@@ -213,6 +213,195 @@ void main() {
     });
   });
 
+  group('popup document reload', () {
+    testWidgets('late loadStop from a replaced controller is ignored', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        wrapPopup(
+          appModel: PushDedupAppModel(),
+          popup: DictionaryPopupWebView(result: makeResult('語')),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(
+        harness.hasDistinctControllerWrappers,
+        isTrue,
+        reason: 'Windows creates distinct wrappers around one platform',
+      );
+      expect(harness.pushCount, 1);
+      await harness.firePopupRendered();
+      final VoidCallback oldLoadStop = harness.captureLoadStop();
+
+      harness.replaceController();
+      harness.fireLoadStart();
+      oldLoadStop();
+      await tester.pump();
+      await tester.pump();
+      expect(
+        harness.pushCount,
+        1,
+        reason: 'an old native view cannot complete the replacement load',
+      );
+
+      harness.fireLoadStop();
+      await tester.pump();
+      await tester.pump();
+      expect(harness.pushCount, 2);
+      await harness.firePopupRendered();
+      oldLoadStop();
+      await tester.pump();
+      await tester.pump();
+      expect(
+        harness.pushCount,
+        2,
+        reason: 'a late old loadStop cannot invalidate the current document',
+      );
+      final DictionaryPopupWebViewState state = tester
+          .state<DictionaryPopupWebViewState>(
+            find.byType(DictionaryPopupWebView),
+          );
+      expect(state.refreshCurrentResult(), isFalse);
+    });
+
+    testWidgets(
+      'rendered result reload sends full entries, static and extras',
+      (WidgetTester tester) async {
+        await tester.pumpWidget(
+          wrapPopup(
+            appModel: PushDedupAppModel(),
+            popup: DictionaryPopupWebView(result: makeResult('語')),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        await harness.firePopupRendered();
+        expect(harness.pushCount, 1);
+        final int? oldToken = harness.lastRenderToken;
+
+        harness.fireLoadStart();
+        harness.fireLoadStop();
+        await tester.pump();
+        await tester.pump();
+
+        expect(
+          harness.pushCount,
+          2,
+          reason: 'the same Dart result belongs to a new, empty document',
+        );
+        final String script = harness.scripts.lastWhere(
+          (String s) => s.contains('window.lookupEntries'),
+        );
+        for (final String marker in <String>[
+          '語',
+          'window.dictionaryStyles',
+          'window.i18nCtx',
+          'window.__fushiResetPopupScroll =',
+          'window.renderPopup();',
+        ]) {
+          expect(script, contains(marker));
+        }
+        final DictionaryPopupWebViewState state = tester
+            .state<DictionaryPopupWebViewState>(
+              find.byType(DictionaryPopupWebView),
+            );
+        await harness.firePopupRendered(token: oldToken);
+        expect(
+          state.refreshCurrentResult(),
+          isTrue,
+          reason:
+              'the old document render callback cannot complete the new one',
+        );
+        await harness.firePopupRendered();
+        expect(state.refreshCurrentResult(), isFalse);
+        expect(harness.pushCount, 2);
+      },
+    );
+
+    testWidgets('result changes during navigation wait for the new document', (
+      WidgetTester tester,
+    ) async {
+      final GlobalKey<ReorderProbeState> probe = GlobalKey<ReorderProbeState>();
+      await tester.pumpWidget(
+        wrapPopup(
+          appModel: PushDedupAppModel(),
+          popup: ReorderProbe(key: probe, initial: makeResult('語')),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await harness.firePopupRendered();
+      expect(harness.pushCount, 1);
+
+      harness.fireLoadStart();
+      probe.currentState!.show(makeResult('途中'));
+      await tester.pump();
+      probe.currentState!.show(makeResult('最新'));
+      await tester.pump();
+      expect(
+        harness.pushCount,
+        1,
+        reason: 'no result may be injected into a document being replaced',
+      );
+
+      harness.fireLoadStop();
+      await tester.pump();
+      await tester.pump();
+      expect(harness.pushCount, 2);
+      final String script = harness.scripts.lastWhere(
+        (String s) => s.contains('window.lookupEntries'),
+      );
+      expect(script, contains('最新'));
+      expect(script, isNot(contains('途中')));
+      expect(script, contains('window.renderPopup();'));
+    });
+
+    for (final bool replaceController in <bool>[false, true]) {
+      testWidgets(
+        'stale bootstrap after ${replaceController ? "controller replacement" : "navigation"} '
+        'cannot ready the new document',
+        (WidgetTester tester) async {
+          harness.blockViewportInjection = true;
+          await tester.pumpWidget(
+            wrapPopup(
+              appModel: PushDedupAppModel(),
+              popup: DictionaryPopupWebView(result: makeResult('語')),
+            ),
+          );
+          await tester.pump();
+          await tester.pump();
+          final Completer<dynamic>? pending = harness.pendingViewportInjection;
+          expect(pending, isNotNull);
+          expect(harness.pushCount, 0);
+
+          if (replaceController) harness.replaceController();
+          harness.fireLoadStart();
+          harness.blockViewportInjection = false;
+          pending!.complete();
+          await tester.pump();
+          expect(
+            harness.pushCount,
+            0,
+            reason: 'a prior bootstrap completion is not the new loadStop',
+          );
+
+          harness.fireLoadStop();
+          await tester.pump();
+          await tester.pump();
+          expect(harness.pushCount, 1);
+          expect(
+            harness.scripts.lastWhere(
+              (String s) => s.contains('window.lookupEntries'),
+            ),
+            contains('window.renderPopup();'),
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  });
+
   group('BUG-712 ③ static settings payload dedup', () {
     testWidgets(
         'a repeat push with unchanged settings omits the static payload '
@@ -592,6 +781,44 @@ class RecordingWebViewHarness {
   bool failViewportInjection = false;
   Completer<dynamic>? pendingViewportInjection;
 
+  late PlatformInAppWebViewWidgetCreationParams _params;
+  dynamic _createdController;
+  dynamic _controller;
+
+  bool get hasDistinctControllerWrappers =>
+      !identical(_createdController, _controller);
+
+  /// Keep the same platform view while replaying document navigation events.
+  void attach(PlatformInAppWebViewWidgetCreationParams params) {
+    _params = params;
+    replaceController();
+    fireLoadStart();
+    fireLoadStop();
+  }
+
+  void replaceController() {
+    final _RecordingPlatformController platformController =
+        _RecordingPlatformController(this);
+    // Windows caches a wrapper for events in the platform controller, then
+    // creates another wrapper for onWebViewCreated. Both own the same platform.
+    _controller =
+        _params.controllerFromPlatform?.call(platformController) ??
+        platformController;
+    _createdController =
+        _params.controllerFromPlatform?.call(platformController) ??
+        platformController;
+    _params.onWebViewCreated?.call(_createdController);
+  }
+
+  void fireLoadStart() => _params.onLoadStart?.call(_controller, null);
+
+  void fireLoadStop() => _params.onLoadStop?.call(_controller, null);
+
+  VoidCallback captureLoadStop() {
+    final dynamic controller = _controller;
+    return () => _params.onLoadStop?.call(controller, null);
+  }
+
   static final RegExp _tokenPattern =
       RegExp(r'window\.__fushiRenderToken = (\d+);');
 
@@ -684,14 +911,7 @@ class _RecordingWebViewLifecycleState
   void _fireLifecycle() {
     if (!mounted || _fired) return;
     _fired = true;
-    final _RecordingPlatformController platformController =
-        _RecordingPlatformController(widget.harness);
-    // 与真实平台实现一致：经 controllerFromPlatform 包成 app 侧 controller 再回调。
-    final dynamic controller =
-        widget.params.controllerFromPlatform?.call(platformController) ??
-            platformController;
-    widget.params.onWebViewCreated?.call(controller);
-    widget.params.onLoadStop?.call(controller, null);
+    widget.harness.attach(widget.params);
   }
 
   @override

@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/scheduler.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show rethemeFushiWithScheme;
@@ -33,6 +34,32 @@ class LyricsThemeHost extends StatefulWidget {
 class LyricsThemeHostState extends State<LyricsThemeHost> {
   Object? _owner;
   ColorScheme? _coverScheme;
+  final ValueNotifier<ThemeData?> _themeChanges =
+      ValueNotifier<ThemeData?>(null);
+  ThemeData? _pendingTheme;
+  bool _themeNotificationScheduled = false;
+
+  /// Open reader panels must refresh their captured themes when this local
+  /// theme changes, including the ordinary (lyrics-off) root-theme passthrough.
+  /// Notifications run after tree finalization so a route can safely check its
+  /// source context before recapturing; builds in one frame are coalesced.
+  ValueListenable<ThemeData?> get themeChanges => _themeChanges;
+
+  void _publishTheme(ThemeData theme) {
+    _pendingTheme = theme;
+    if (_themeNotificationScheduled || _themeChanges.value == theme) return;
+    _themeNotificationScheduled = true;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _themeNotificationScheduled = false;
+      if (mounted) _themeChanges.value = _pendingTheme;
+    });
+  }
+
+  @override
+  void dispose() {
+    _themeChanges.dispose();
+    super.dispose();
+  }
 
   ThemeData? _cacheBase;
   ColorScheme? _cacheScheme;
@@ -96,6 +123,8 @@ class LyricsThemeHostState extends State<LyricsThemeHost> {
 
   @override
   Widget build(BuildContext context) {
-    return Theme(data: _themeFor(Theme.of(context)), child: widget.child);
+    final ThemeData theme = _themeFor(Theme.of(context));
+    _publishTheme(theme);
+    return Theme(data: theme, child: widget.child);
   }
 }

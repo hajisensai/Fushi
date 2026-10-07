@@ -38,6 +38,10 @@ import '../helpers/test_platform_services.dart';
 /// 让覆盖测试不对「别处已覆盖」的项裸喊 UNVERIFIED/FAIL，且强制每个 changed
 /// 但未 effect-verified 的设置都必须有去处（no silent caps）。
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // 悬浮球「显示按钮文字」：生效点在悬浮球展开态（应用内球 / 系统球原生面），
+  // 设置页 harness 里没有展开的悬浮球。行为由 floating_ball_labels_test 咬住。
+  'floatingBall/Show button labels':
+      'test/floating_ball/floating_ball_labels_test.dart',
   // 吉祥物图标换色开关：生效点是全局 appLogoFollowsAccent 与 AccentLogoImage
   // 的着色——harness 设置页里没有 logo 渲染面，渲染输入无变化。行为由
   // theme_app_icon_link_test（发布到全局开关）与 accent_logo_image_test 咬住。

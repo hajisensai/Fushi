@@ -830,10 +830,9 @@ class _DictionaryDialogPageState extends BasePageState {
       current: dictionary.languageOverride,
       // 自动值 = 词典 index.json 声明的词头语言。旧包/本地包为空串。
       autoDetected: dictionary.sourceLanguage,
-      onSelected: (String? tag) {
-        appModel.setDictionaryLanguageOverride(dictionary, tag);
-        setState(() {});
-      },
+      onSelected: (String? tag) => _saveDictionaryChange(
+        () => appModel.setDictionaryLanguageOverride(dictionary, tag),
+      ),
     );
   }
 
@@ -855,8 +854,32 @@ class _DictionaryDialogPageState extends BasePageState {
       leadingIcon: Icons.drive_file_rename_outline,
     );
     if (!mounted || name == null || name == current) return;
-    appModel.setDictionaryDisplayName(dictionary, name);
-    setState(() {});
+    await _saveDictionaryChange(
+      () => appModel.setDictionaryDisplayName(dictionary, name),
+    );
+  }
+
+  /// Refresh only committed metadata and surface write failures at the action
+  /// boundary. A batch can have committed earlier items before one fails.
+  Future<bool> _saveDictionaryChange(Future<void> Function() save) async {
+    try {
+      await save();
+      return true;
+    } catch (error, stack) {
+      ErrorLogService.instance.log('DictionaryDialog.save', error, stack);
+      if (mounted) {
+        unawaited(
+          showErrorDetails(
+            context,
+            title: t.dictionary_settings,
+            error: '$error\n$stack',
+          ),
+        );
+      }
+      return false;
+    } finally {
+      if (mounted) setState(() {});
+    }
   }
 
   Future<void> showDictionaryDeleteDialog(Dictionary dictionary) {
@@ -2046,7 +2069,7 @@ class _DictionaryDialogPageState extends BasePageState {
           value: enabled,
           // 走开关自身的主题配色（MD3 primary 轨 / Apple 系统开关），
           // 不再自定 primaryContainer 浅色轨——那与全应用其它开关不是一个长相。
-          onChanged: (_) => _toggleDictionaryHidden(dictionary),
+          onChanged: (bool enabled) => _setDictionaryEnabled(dictionary, enabled),
         ),
       ),
     );
@@ -2091,10 +2114,9 @@ class _DictionaryDialogPageState extends BasePageState {
       icon: icon,
       size: 20,
       tooltip: tooltip,
-      onTap: () {
-        appModel.cycleDictionaryCollapseState(dictionary);
-        setState(() {});
-      },
+      onTap: () => _saveDictionaryChange(
+        () => appModel.cycleDictionaryCollapseState(dictionary),
+      ),
     );
   }
 
@@ -2140,15 +2162,15 @@ class _DictionaryDialogPageState extends BasePageState {
   /// 并持久化。`newIndex` 是移动完成后该词典应处的位置（非 SDK 的「插入前下标」），
   /// 拖拽、键盘、详情里的上移 / 下移 / 置顶 / 置底统一走这套最终下标语义——无需
   /// SDK 的 `if(new>old)new--` 特例。越界与原地不动直接忽略。
-  void _reorderDictionaries(
+  Future<bool> _reorderDictionaries(
     int oldIndex,
     int newIndex,
     List<Dictionary> dictionaries,
-  ) {
+  ) async {
     if (newIndex < 0 ||
         newIndex >= dictionaries.length ||
         newIndex == oldIndex) {
-      return;
+      return false;
     }
     final List<Dictionary> cloneDictionaries = List.from(dictionaries);
 
@@ -2156,20 +2178,21 @@ class _DictionaryDialogPageState extends BasePageState {
     cloneDictionaries.insert(newIndex, item);
 
     for (int i = 0; i < cloneDictionaries.length; i++) {
-      cloneDictionaries[i].order = i;
+      cloneDictionaries[i] = cloneDictionaries[i].copyWith(order: i);
     }
 
-    appModel.updateDictionaryOrder(cloneDictionaries);
-    setState(() {});
+    return _saveDictionaryChange(
+      () => appModel.updateDictionaryOrder(cloneDictionaries),
+    );
   }
 
   /// 把 [dictionary] 挪到本类型列表的最终下标 [to]（详情里的四个排序按钮）。
-  void _moveDictionaryTo(Dictionary dictionary, int to) {
+  Future<bool> _moveDictionaryTo(Dictionary dictionary, int to) async {
     final List<Dictionary> dictionaries = _dictionariesForType(dictionary.type);
     final int from =
         dictionaries.indexWhere((Dictionary d) => d.name == dictionary.name);
-    if (from < 0) return;
-    _reorderDictionaries(from, to, dictionaries);
+    if (from < 0) return false;
+    return _reorderDictionaries(from, to, dictionaries);
   }
 
   /// 「移到第几位」：弹位置输入框，确认后走与拖动 / 上下移同一条
@@ -2187,8 +2210,9 @@ class _DictionaryDialogPageState extends BasePageState {
       count: dictionaries.length,
     );
     if (!mounted || to == null) return;
-    _moveDictionaryTo(dictionary, to);
-    _focusRowAfterFrame(dictionary.name);
+    if (await _moveDictionaryTo(dictionary, to)) {
+      _focusRowAfterFrame(dictionary.name);
+    }
   }
 
   FocusNode _rowFocusNode(String name) => _rowFocusNodes.putIfAbsent(
@@ -2214,8 +2238,11 @@ class _DictionaryDialogPageState extends BasePageState {
             key == LogicalKeyboardKey.arrowDown)) {
       final int to = key == LogicalKeyboardKey.arrowUp ? index - 1 : index + 1;
       if (to >= 0 && to < dictionaries.length) {
-        _reorderDictionaries(index, to, dictionaries);
-        _focusRowAfterFrame(dictionary.name);
+        unawaited(
+          _reorderDictionaries(index, to, dictionaries).then((bool saved) {
+            if (saved) _focusRowAfterFrame(dictionary.name);
+          }),
+        );
       }
       return KeyEventResult.handled;
     }
@@ -2343,11 +2370,8 @@ class _DictionaryDialogPageState extends BasePageState {
       position: position < 0 ? 0 : position,
       count: siblings.length,
       showHeader: showHeader,
-      onEnabledChanged: (bool value) {
-        if (value == dictionary.isHidden(JapaneseLanguage.instance)) {
-          _toggleDictionaryHidden(dictionary);
-        }
-      },
+      onEnabledChanged: (bool enabled) =>
+          _setDictionaryEnabled(dictionary, enabled),
       onCollapseChanged: (DictionaryCollapseState state) =>
           _setCollapseState(dictionary, state),
       onRename: () => _renameDictionary(dictionary),
@@ -2365,18 +2389,14 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  /// 详情里的折叠三段分段：数据层只有「循环一格」这一个写入点（BUG-2158 唯一
-  /// 写入点 cycleDictionaryCollapseState），所以按循环序走到目标态——最多两步，
-  /// 不另开写入口。
-  void _setCollapseState(Dictionary dictionary, DictionaryCollapseState target) {
-    for (int step = 0;
-        step < DictionaryCollapseState.values.length &&
-            dictionary.collapseStateFor(JapaneseLanguage.instance) != target;
-        step++) {
-      appModel.cycleDictionaryCollapseState(dictionary);
-    }
-    setState(() {});
-  }
+  /// 分段选择提交一个目标态；循环多次会在异步写入期间与后续选择交错。
+  /// 行内循环按钮与此入口在 repository 复用同一三态写入规则。
+  Future<bool> _setCollapseState(
+    Dictionary dictionary,
+    DictionaryCollapseState target,
+  ) => _saveDictionaryChange(
+    () => appModel.setDictionaryCollapseState(dictionary, target),
+  );
 
   /// 宽屏右侧侧板：选中了词典 = 它的详情；没选 = 概览（四类计数 + 自动更新）。
   /// 切换时淡入 + 轻微上移（时长取 FushiMotion，减弱动态效果下归零）。
@@ -2554,15 +2574,13 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  /// 批量启用 / 停用：只翻状态与目标不同的那几本（toggle 语义的写入点不变；
-  /// 引擎重载是排期的，N 次写入塌成一次装载）。
-  void _batchSetEnabled(bool enabled) {
-    for (final Dictionary dictionary in _selectedDictionaries) {
-      final bool hidden = dictionary.isHidden(JapaneseLanguage.instance);
-      if (hidden == enabled) appModel.toggleDictionaryHidden(dictionary);
-    }
-    setState(() {});
-  }
+  /// 批量启用 / 停用提交目标值，同一动作重复点击仍保持幂等。
+  Future<bool> _batchSetEnabled(bool enabled) =>
+      _saveDictionaryChange(() async {
+        for (final Dictionary dictionary in _selectedDictionaries) {
+          await appModel.setDictionaryHidden(dictionary, !enabled);
+        }
+      });
 
   /// 批量删除：一次确认，逐本走与单本删除同一条 [AppModel.deleteDictionary]
   /// （同一进度页 / 失败提示），删完退出多选。
@@ -2616,10 +2634,9 @@ class _DictionaryDialogPageState extends BasePageState {
     };
   }
 
-  void _toggleDictionaryHidden(Dictionary dictionary) {
-    appModel.toggleDictionaryHidden(dictionary);
-    setState(() {});
-  }
+  Future<bool> _setDictionaryEnabled(Dictionary dictionary, bool enabled) =>
+      _saveDictionaryChange(
+          () => appModel.setDictionaryHidden(dictionary, !enabled));
 
   FushiPopupMenuItem<VoidCallback> buildPopupItem({
     required String label,

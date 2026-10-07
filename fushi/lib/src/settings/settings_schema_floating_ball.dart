@@ -73,6 +73,18 @@ SettingsDestination buildFloatingBallDestination() {
             },
             defaultValue: false,
           ),
+          SettingsSwitchItem(
+            id: 'floating_ball.show_labels',
+            title: t.floating_ball_show_labels,
+            subtitle: t.floating_ball_show_labels_hint,
+            icon: FushiIcons.textFields,
+            value: (SettingsContext c) => _prefs(c).floatingBallShowLabels,
+            onChanged: (SettingsContext c, bool value) async {
+              await _prefs(c).setFloatingBallShowLabels(value);
+              c.refresh();
+            },
+            defaultValue: true,
+          ),
           SettingsSegmentedItem<FloatingBallAutoRestore>(
             id: 'floating_ball.auto_restore',
             title: t.floating_ball_auto_restore,

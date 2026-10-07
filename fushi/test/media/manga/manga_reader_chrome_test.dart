@@ -7,7 +7,7 @@ import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart'
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
-    show FushiToolbarFab;
+    show FushiToolbarFab, kFushiFloatingToolbarExtent;
 
 void main() {
   group('mangaChromeTopInset', () {
@@ -136,6 +136,8 @@ void main() {
   List<List<MangaChromeAction>> pageLikeGroups({
     VoidCallback? onChapters,
     VoidCallback? onQuick,
+    VoidCallback? onStart,
+    VoidCallback? onHide,
     bool ocrRunning = false,
   }) {
     void noop() {}
@@ -195,6 +197,7 @@ void main() {
             icon: Icons.stop_circle_outlined,
             label: '取消',
             slot: MangaChromeSlot.top,
+            priority: 9,
             onPressed: noop,
           ),
         MangaChromeAction(
@@ -202,22 +205,24 @@ void main() {
           icon: Icons.fullscreen_rounded,
           label: '全屏',
           slot: MangaChromeSlot.top,
+          priority: 7,
           onPressed: noop,
         ),
         MangaChromeAction(
           key: const ValueKey<String>('start'),
           icon: Icons.last_page,
           label: '回到开头',
-          slot: MangaChromeSlot.more,
-          onPressed: noop,
+          slot: MangaChromeSlot.top,
+          priority: 1,
+          onPressed: onStart ?? noop,
         ),
         MangaChromeAction(
           key: const ValueKey<String>('hide'),
           icon: Icons.visibility_off_outlined,
           label: '隐藏界面',
-          slot: MangaChromeSlot.more,
+          slot: MangaChromeSlot.top,
           active: true,
-          onPressed: noop,
+          onPressed: onHide ?? noop,
         ),
       ],
     ];
@@ -228,59 +233,46 @@ void main() {
       (a.key! as ValueKey<String>).value,
   ];
 
-  group('planMangaChrome（按钮分组 / 更多菜单内容）', () {
-    test('桌面宽屏：工具栏动作全在工具栏、不带标签；更多 = 固定的低频项', () {
+  group('planMangaChrome（底部工具栏 / 右上角动作）', () {
+    test('桌面宽屏：工具栏动作全在工具栏；右上角 = 顶栏动作按优先级从高到低', () {
       final MangaChromePlan plan = planMangaChrome(
         width: 1600,
         groups: pageLikeGroups(),
         hasFab: true,
       );
-      expect(plan.labels, isFalse);
       expect(plan.toolbar.map(keysOf).toList(), <List<Object?>>[
         <Object?>['chapters', 'grid'],
         <Object?>['mode', 'spread', 'direction'],
         <Object?>['quick'],
       ]);
-      expect(keysOf(plan.top), <Object?>['fullscreen']);
-      expect(keysOf(plan.overflow), <Object?>['start', 'hide']);
+      expect(keysOf(plan.top), <Object?>['fullscreen', 'start', 'hide']);
     });
 
-    test('420dp 手机：带标签等宽格，放不下按优先级从低到高降进更多（保持声明顺序）', () {
+    test('400dp 手机：纯图标工具栏放不下时按优先级从低到高降到右上角', () {
       final MangaChromePlan plan = planMangaChrome(
-        width: 420,
+        width: 400,
         groups: pageLikeGroups(),
         hasFab: true,
       );
-      expect(plan.labels, isTrue);
       final List<Object?> kept = <Object?>[
         for (final List<MangaChromeAction> g in plan.toolbar) ...keysOf(g),
       ];
       // 快捷设置 / 章节 / 阅读模式（高优先级）必须留在拇指区。
       expect(kept, containsAll(<Object?>['quick', 'chapters', 'mode']));
-      // 翻页方向优先级最低，最先降级。
+      // 翻页方向优先级最低，最先降级；纯图标 48dp 下只需降这一颗。
       expect(kept, isNot(contains('direction')));
-      // 降级项排在固定「更多」项之前，且保持声明顺序。
-      final List<Object?> overflow = keysOf(plan.overflow);
-      expect(overflow.sublist(overflow.length - 2), <Object?>['start', 'hide']);
-      final List<Object?> demoted = overflow.sublist(0, overflow.length - 2);
-      const List<String> declared = <String>[
-        'chapters',
-        'grid',
-        'mode',
-        'spread',
+      expect(kept, hasLength(5));
+      // 降下来的按优先级混排进右上角（方向 2 排在全屏 7 之后、回到开头 1 之前）。
+      expect(keysOf(plan.top), <Object?>[
+        'fullscreen',
         'direction',
-        'quick',
-      ];
-      expect(
-        demoted,
-        orderedEquals(
-          declared.where((String k) => demoted.contains(k)).toList(),
-        ),
-      );
+        'start',
+        'hide',
+      ]);
       // 留下的部分（含 FAB）确实放得下。
       expect(
-        mangaToolbarWidth(groups: plan.toolbar, labels: true, hasFab: true),
-        lessThanOrEqualTo(420 - 2 * kMangaChromeEdgeInset),
+        mangaToolbarWidth(groups: plan.toolbar, hasFab: true),
+        lessThanOrEqualTo(400 - 2 * kMangaChromeEdgeInset),
       );
     });
 
@@ -296,11 +288,7 @@ void main() {
           kMangaChromeBottomMaxWidth,
         );
         expect(
-          mangaToolbarWidth(
-            groups: plan.toolbar,
-            labels: plan.labels,
-            hasFab: true,
-          ),
+          mangaToolbarWidth(groups: plan.toolbar, hasFab: true),
           lessThanOrEqualTo(available),
           reason: '$width dp 下工具栏不得溢出',
         );
@@ -309,9 +297,18 @@ void main() {
               0,
               (int n, List<MangaChromeAction> g) => n + g.length,
             ) +
-            plan.overflow.length +
             plan.top.length;
         expect(total, 9, reason: '$width dp：动作一个不少（不删功能）');
+        final List<int> priorities = <int>[
+          for (final MangaChromeAction a in plan.top) a.priority,
+        ];
+        expect(
+          priorities,
+          orderedEquals(
+            List<int>.of(priorities)..sort((int a, int b) => b - a),
+          ),
+          reason: '$width dp：右上角按优先级从高到低排',
+        );
       }
       expect(
         () => planMangaChrome(width: 0, groups: pageLikeGroups(), hasFab: true),
@@ -319,13 +316,14 @@ void main() {
       );
     });
 
-    test('整卷 OCR 运行中：取消钮恒在顶部胶囊', () {
+    test('整卷 OCR 运行中：取消钮排在右上角最前（最后才收）', () {
       final MangaChromePlan plan = planMangaChrome(
         width: 360,
         groups: pageLikeGroups(ocrRunning: true),
         hasFab: true,
       );
-      expect(keysOf(plan.top), <Object?>['cancel', 'fullscreen']);
+      expect(keysOf(plan.top).first, 'cancel');
+      expect(keysOf(plan.top), containsAll(<Object?>['cancel', 'fullscreen']));
     });
   });
 
@@ -335,12 +333,19 @@ void main() {
     VoidCallback? onTitle,
     VoidCallback? onChapters,
     VoidCallback? onQuick,
+    VoidCallback? onStart,
+    VoidCallback? onHide,
     ValueChanged<int>? onCommitted,
   }) {
     final ValueNotifier<int> page = ValueNotifier<int>(4);
     final MangaChromePlan plan = planMangaChrome(
       width: width,
-      groups: pageLikeGroups(onChapters: onChapters, onQuick: onQuick),
+      groups: pageLikeGroups(
+        onChapters: onChapters,
+        onQuick: onQuick,
+        onStart: onStart,
+        onHide: onHide,
+      ),
       hasFab: true,
     );
     return MaterialApp(
@@ -370,7 +375,6 @@ void main() {
                     text: '分镜 3',
                   ),
                   actions: plan.top,
-                  overflow: plan.overflow,
                 ),
               ),
               Positioned(
@@ -390,7 +394,6 @@ void main() {
                   ),
                   toolbar: MangaReaderToolbar(
                     groups: plan.toolbar,
-                    labels: plan.labels,
                     fab: FushiToolbarFab(
                       key: const ValueKey<String>('fab'),
                       icon: Icons.highlight_alt,
@@ -453,12 +456,68 @@ void main() {
       expect(titleTaps, 1);
     });
 
-    testWidgets('更多菜单列出降级 + 固定项，开关项带勾', (WidgetTester tester) async {
-      setSize(tester, 1600);
-      await tester.pumpWidget(chromeHost(width: 1600));
-      await tester.tap(
-        find.byKey(const ValueKey<String>('manga_chrome_overflow')),
+    for (final double width in <double>[1200, 1600]) {
+      testWidgets('$width 宽：右上角动作默认全部平铺，不画「⋯」，点按生效', (
+        WidgetTester tester,
+      ) async {
+        setSize(tester, width);
+        int starts = 0;
+        await tester.pumpWidget(
+          chromeHost(width: width, onStart: () => starts++),
+        );
+        expect(
+          find.byKey(const ValueKey<String>('manga_chrome_overflow')),
+          findsNothing,
+          reason: '空间够时不收起',
+        );
+        final Rect pill = tester.getRect(
+          find.byKey(const ValueKey<String>('manga_reader_action_pill')),
+        );
+        for (final String k in <String>['fullscreen', 'start', 'hide']) {
+          final Finder f = find.byKey(ValueKey<String>(k));
+          expect(f, findsOneWidget, reason: '$k 平铺在右上角');
+          expect(pill.contains(tester.getCenter(f)), isTrue, reason: k);
+        }
+        // 平铺顺序 = 优先级从高到低（最常用的在最左、最后才收）。
+        expect(
+          tester.getCenter(find.byKey(const ValueKey<String>('fullscreen'))).dx,
+          lessThan(
+            tester.getCenter(find.byKey(const ValueKey<String>('start'))).dx,
+          ),
+        );
+        await tester.tap(find.byKey(const ValueKey<String>('start')));
+        expect(starts, 1);
+      });
+    }
+
+    testWidgets('400 宽：放不下的按优先级收进「⋯」，菜单里能触发；开关项带勾', (
+      WidgetTester tester,
+    ) async {
+      setSize(tester, 400);
+      int starts = 0;
+      int hides = 0;
+      await tester.pumpWidget(
+        chromeHost(width: 400, onStart: () => starts++, onHide: () => hides++),
       );
+      expect(tester.takeException(), isNull);
+      // 400dp：标题保底 160 之后只放得下一颗 + ⋯；平铺的是优先级最高的全屏。
+      expect(find.byKey(const ValueKey<String>('fullscreen')), findsOneWidget);
+      for (final String k in <String>['direction', 'start', 'hide']) {
+        expect(
+          find.byKey(ValueKey<String>(k)),
+          findsNothing,
+          reason: '$k 收进 ⋯',
+        );
+      }
+      final Finder overflow = find.byKey(
+        const ValueKey<String>('manga_chrome_overflow'),
+      );
+      expect(overflow, findsOneWidget);
+      final Rect action = tester.getRect(
+        find.byKey(const ValueKey<String>('manga_reader_action_pill')),
+      );
+      expect(action.right, lessThanOrEqualTo(400));
+      await tester.tap(overflow);
       await tester.pumpAndSettle();
       final List<Object?> items = <Object?>[
         for (final PopupMenuItem<MangaChromeAction> item
@@ -467,8 +526,35 @@ void main() {
             ))
           (item.value!.key! as ValueKey<String>).value,
       ];
-      expect(items, <Object?>['start', 'hide']);
-      expect(find.byIcon(Icons.check), findsOneWidget);
+      expect(items, <Object?>['direction', 'start', 'hide']);
+      expect(find.byIcon(Icons.check), findsOneWidget, reason: '开关项带勾');
+      await tester.tap(find.byKey(const ValueKey<String>('start_menu_item')));
+      await tester.pumpAndSettle();
+      expect(starts, 1, reason: '「⋯」菜单项能触发动作');
+      await tester.tap(overflow);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey<String>('hide_menu_item')));
+      await tester.pumpAndSettle();
+      expect(hides, 1);
+    });
+
+    testWidgets('窗口缩放：窄 → 宽展开、宽 → 窄收起', (WidgetTester tester) async {
+      Future<void> pumpAt(double width) async {
+        tester.view.physicalSize = Size(width, 900);
+        tester.view.devicePixelRatio = 1;
+        await tester.pumpWidget(chromeHost(width: width));
+      }
+
+      addTearDown(tester.view.reset);
+      final Finder overflow = find.byKey(
+        const ValueKey<String>('manga_chrome_overflow'),
+      );
+      await pumpAt(400);
+      expect(overflow, findsOneWidget);
+      await pumpAt(1600);
+      expect(overflow, findsNothing, reason: '拉宽后默认展开');
+      await pumpAt(400);
+      expect(overflow, findsOneWidget, reason: '缩窄后放不下再收起');
     });
 
     for (final double scale in <double>[1.0, 1.3, 2.0]) {
@@ -494,11 +580,95 @@ void main() {
     }
   });
 
-  group('底部悬浮工具栏', () {
-    testWidgets('手机：带标签格 + FAB；页码滑块胶囊在工具栏上方', (WidgetTester tester) async {
+  group('底部悬浮工具栏（纯图标）', () {
+    for (final double width in <double>[420, 1600]) {
+      testWidgets('$width 宽：无文字，tooltip + 语义名 = 原文案，命中区 ≥ 48，点按生效', (
+        WidgetTester tester,
+      ) async {
+        setSize(tester, width);
+        final SemanticsHandle semantics = tester.ensureSemantics();
+        int quick = 0;
+        int chapters = 0;
+        await tester.pumpWidget(
+          chromeHost(
+            width: width,
+            onQuick: () => quick++,
+            onChapters: () => chapters++,
+          ),
+        );
+        final Finder toolbar = find.byKey(
+          const ValueKey<String>('manga_reader_toolbar'),
+        );
+        expect(toolbar, findsOneWidget);
+        for (final (String key, String label) in <(String, String)>[
+          ('chapters', '章节'),
+          ('grid', '页面一览'),
+          ('mode', '阅读模式'),
+          ('quick', '快捷设置'),
+        ]) {
+          final Finder button = find.byKey(ValueKey<String>(key));
+          expect(
+            find.descendant(of: toolbar, matching: button),
+            findsOneWidget,
+            reason: key,
+          );
+          expect(
+            find.descendant(of: toolbar, matching: find.text(label)),
+            findsNothing,
+            reason: '$key：底栏不画文字',
+          );
+          expect(
+            find.byTooltip(label),
+            findsOneWidget,
+            reason: '$key：名称进 tooltip',
+          );
+          expect(
+            find.descendant(
+              of: toolbar,
+              matching: find.bySemanticsLabel(label),
+            ),
+            findsWidgets,
+            reason: '$key：无障碍名 = 原文案',
+          );
+          final Size size = tester.getSize(button);
+          expect(size.width, greaterThanOrEqualTo(48), reason: key);
+          expect(size.height, greaterThanOrEqualTo(48), reason: key);
+        }
+        // 纯图标浮动工具栏：没有组间竖分隔线（1 宽的 ColoredBox）。
+        expect(
+          find.descendant(
+            of: toolbar,
+            matching: find.byWidgetPredicate(
+              (Widget w) =>
+                  w is SizedBox && w.width == 1 && w.child is ColoredBox,
+            ),
+          ),
+          findsNothing,
+        );
+        expect(
+          tester
+              .getSize(
+                find.descendant(
+                  of: toolbar,
+                  matching: find.byKey(
+                    const ValueKey<String>('fushi_floating_toolbar'),
+                  ),
+                ),
+              )
+              .height,
+          kFushiFloatingToolbarExtent,
+        );
+        await tester.tap(find.byKey(const ValueKey<String>('quick')));
+        await tester.tap(find.byKey(const ValueKey<String>('chapters')));
+        expect(quick, 1);
+        expect(chapters, 1);
+        semantics.dispose();
+      });
+    }
+
+    testWidgets('手机：FAB 配在工具栏旁；页码滑块胶囊在工具栏上方', (WidgetTester tester) async {
       setSize(tester, 420);
       await tester.pumpWidget(chromeHost(width: 420));
-      expect(find.text('快捷设置'), findsOneWidget, reason: '手机工具栏画小字标签');
       final Rect slider = tester.getRect(
         find.byKey(const ValueKey<String>('manga_reader_slider_pill')),
       );
@@ -512,13 +682,6 @@ void main() {
       expect(fab.left, greaterThan(toolbar.right), reason: 'FAB 配在工具栏旁');
       expect(toolbar.left, greaterThanOrEqualTo(kMangaChromeEdgeInset));
       expect(fab.right, lessThanOrEqualTo(420 - kMangaChromeEdgeInset + 0.5));
-    });
-
-    testWidgets('桌面：只画图标、不画标签', (WidgetTester tester) async {
-      setSize(tester, 1600);
-      await tester.pumpWidget(chromeHost(width: 1600));
-      expect(find.text('快捷设置'), findsNothing);
-      expect(find.byKey(const ValueKey<String>('quick')), findsOneWidget);
     });
 
     testWidgets('页码滑块可用：拖动松手提交一次', (WidgetTester tester) async {
@@ -541,9 +704,10 @@ void main() {
     testWidgets('焦点可遍历：Tab 走遍顶栏与工具栏按钮和 FAB，滑块不进遍历；Enter 触发', (
       WidgetTester tester,
     ) async {
-      setSize(tester, 1600);
+      // 400dp：右上角有「⋯」，同时验证它也在焦点遍历里。
+      setSize(tester, 400);
       int quick = 0;
-      await tester.pumpWidget(chromeHost(width: 1600, onQuick: () => quick++));
+      await tester.pumpWidget(chromeHost(width: 400, onQuick: () => quick++));
       final Set<String> visited = <String>{};
       bool sliderFocused = false;
       for (int i = 0; i < 30; i++) {
@@ -573,6 +737,7 @@ void main() {
           'manga_reader_back_button',
           'manga_reader_title_button',
           'manga_chrome_overflow',
+          'fullscreen',
           'chapters',
           'mode',
           'quick',

@@ -160,7 +160,9 @@
       // ——与 app 自己切到这一明暗的算法相同。
       var other = palette.specFromAppTheme(current || (appMirror && appMirror[otherScheme]));
       if (other) return palette.derive(other.spec, s, { pureBlack: other.pureBlack });
-      return mine ? palette.tokensFromAppTheme(mine, s) : null;
+      // A rejected stale mirror must not become the fallback again. Complete
+      // Android palettes are non-derivable; unknown data uses the existing CSS.
+      return null;
     }
     var spec = palette.specFor(paletteId, customThemes);
     return spec ? palette.derive(spec, s, { pureBlack: pureBlack }) : null;
@@ -170,7 +172,17 @@
   var MIRROR_META_KEYS = ['--fushi-theme-seed', '--fushi-theme-variant', '--fushi-theme-neutral',
     '--fushi-pure-black', '--fushi-theme-system'];
   function mirrorStale(mine, current, scheme) {
-    if (!mine || !current || !current['--fushi-theme-variant']) return false;
+    if (!mine || !current) return false;
+    // Both schemes of one Android wallpaper palette share a stable identity.
+    // Old mirrors with no identity cannot be paired with a newly identified
+    // palette. A legacy Android producer has no way to prove the opposite
+    // mirror is still current; its current exact scheme remains usable above.
+    var minePalette = mine['--fushi-theme-palette-id'] || '';
+    var currentPalette = current['--fushi-theme-palette-id'] || '';
+    if (minePalette !== currentPalette) return true;
+    if (!currentPalette && current['--fushi-theme-system'] === '1' &&
+        !current['--fushi-theme-seed']) return true;
+    if (!current['--fushi-theme-variant']) return false;
     for (var i = 0; i < MIRROR_META_KEYS.length; i++) {
       var k = MIRROR_META_KEYS[i];
       // 纯黑只影响深色，浅色镜像不因它判旧。

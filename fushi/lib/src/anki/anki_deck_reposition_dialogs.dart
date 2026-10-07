@@ -296,13 +296,15 @@ class _RepositionDialogState extends State<_RepositionDialog> {
 
   Future<void> _previewAndApply() async {
     final String? deck = _deckName;
-    if (deck == null) return;
-    await _persistOptions();
-    if (!mounted) return;
+    if (_busy || deck == null) return;
+    // Saving options is part of the operation: prevent a second preview before
+    // the write completes, and let the same error/finally path recover failures.
     setState(() => _busy = true);
     final ScaffoldMessengerState? messenger =
         ScaffoldMessenger.maybeOf(context);
     try {
+      await _persistOptions();
+      if (!mounted) return;
       final AnkiRepositionPlan? plan =
           await runAnkiRepositionWithProgress<AnkiRepositionPlan?>(
         context,
@@ -357,10 +359,12 @@ class _RepositionDialogState extends State<_RepositionDialog> {
       ));
       await _refreshSnapshot();
     } on AnkiRepositionCancelled {
+      if (!mounted) return;
       messenger?.showSnackBar(
         FushiSnackBar(content: Text(t.anki_reposition_cancelled)),
       );
     } catch (e) {
+      if (!mounted) return;
       messenger?.showSnackBar(
         FushiSnackBar(content: Text(t.anki_reposition_failed(error: '$e'))),
       );

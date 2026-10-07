@@ -160,6 +160,9 @@ const double _kCapsuleVerticalPadding = 10;
 /// MD3 悬浮底栏一格的最窄宽度：再窄标签就要截断，改收进「更多」。
 const double _kMinNavCellWidth = 44;
 
+/// 纯图标（标签隐藏）时一格的最窄宽度：M3 的 48dp 最小触控目标。
+const double _kMinIconNavCellWidth = 48;
+
 /// 一格除标签外的横向余量（格内左右 4 的内边距）。
 const double _kNavCellLabelSlack = 8;
 
@@ -364,7 +367,8 @@ class _MaterialNavCluster extends StatelessWidget {
   /// 的大号 FAB（[materialFab] 非空时它留在胶囊里）。
   final int? glassSearchIndex;
 
-  /// MD3 悬浮底栏是否在图标下显示标签（用户偏好，默认显示）。
+  /// MD3 悬浮底栏是否在图标下显示标签（用户偏好 `nav_bar_labels_visible`，
+  /// 出厂关 = 纯图标；本组件参数缺省仍为 true，由调用方传偏好值）。
   final bool showLabels;
 
   /// MD3 悬浮底栏右侧 FAB 的覆盖（当前页自己的主操作）；null = 用查词目的地。
@@ -632,7 +636,8 @@ class _MaterialNavCluster extends StatelessWidget {
   /// 1. 每格要的宽 = max([_kMinNavCellWidth], 标签实宽（12 号 w600、跟随
   ///    文字缩放）+ [_kNavCellLabelSlack])；标签隐藏时每格就是最窄宽；
   /// 2. 全部放得下 → 全部出现，最宽一格乘以格数也放得下就等分，否则按所需宽
-  ///    比例分（窄格自动走紧凑形态：药丸收窄、标签小一号）；
+  ///    比例分（窄格自动走紧凑形态：药丸收窄、标签小一号）；纯图标时每格
+  ///    至少 [_kMinIconNavCellWidth]（48 触控目标）；
   /// 3. 放不下 → 按用户的模块顺序从前往后放，剩下的收进最右的「更多」。
   ///    反转底栏方向（[searchLeading]）时整排镜像：[indices] 已是倒序，从末端
   ///    （用户顺序的开头）往回放，「更多」挪到最左、紧挨查词 FAB，菜单里仍按
@@ -657,7 +662,7 @@ class _MaterialNavCluster extends StatelessWidget {
     final TextScaler scaler = MediaQuery.textScalerOf(context);
     final TextDirection direction = Directionality.of(context);
     double need(String label) {
-      if (!showLabels) return _kMinNavCellWidth;
+      if (!showLabels) return _kMinIconNavCellWidth;
       final TextPainter painter = TextPainter(
         text: TextSpan(text: label, style: style),
         textDirection: direction,
@@ -2585,9 +2590,20 @@ class _NavFocusCellState extends State<_NavFocusCell> {
     );
     final bool labelsHidden =
         !(_FloatingBarStyle.maybeOf(context)?.showLabels ?? true);
-    if (metrics.compact || labelsHidden) {
-      // 窄格里的标签可能被省略 / 用户关了底栏标签，用 tooltip 补出完整名称
-      // （长按 / 悬停可见）。
+    if (labelsHidden) {
+      // 纯图标底栏（出厂形态）：名称进 tooltip（长按 / 悬停可见），无障碍语义
+      // 仍报原文案——不靠 tooltip 的语义（那是「提示」不是「名称」）。
+      tile = Semantics(
+        label: item.label,
+        selected: selected,
+        child: FushiTooltip(
+          message: item.label,
+          excludeFromSemantics: true,
+          child: tile,
+        ),
+      );
+    } else if (metrics.compact) {
+      // 窄格里的标签可能被省略，用 tooltip 补出完整名称（长按 / 悬停可见）。
       tile = FushiTooltip(message: item.label, child: tile);
     }
     // MD3 展开 rail 的行靠起始边（药丸包住图标 + 文字），其余居中。
@@ -2644,7 +2660,9 @@ class _NavFocusCellState extends State<_NavFocusCell> {
           padding: glassDesign || materialRailRow
               ? EdgeInsets.zero
               : EdgeInsets.symmetric(
-                  vertical: horizontal ? 0 : 4,
+                  // 纯图标底栏：32 高的药丸上下各补 8，整格点击区凑足 48dp
+                  // 触控目标（带标签时标签行已把格撑过 48）。
+                  vertical: horizontal ? (labelsHidden ? 8 : 0) : 4,
                   horizontal: horizontal ? 4 : 0,
                 ),
           child: Align(

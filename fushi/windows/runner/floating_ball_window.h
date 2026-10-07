@@ -32,6 +32,10 @@
 class FloatingBallWindow {
  public:
   struct Config {
+    // Dart 按墨水屏 / 系统减弱动画统一下发；旧调用缺字段时保留原动画。
+    bool animate = true;
+    // 只控制可见标签；labels 仍用于 tooltip 和操作名称。
+    bool show_labels = true;
     // Dart 勾选的动作 id（自上而下）；open_app / close 由本类固定加在最上。
     std::vector<std::string> actions;
     // 按钮文案 / tooltip：键为动作 id + open_app / close / ball。

@@ -712,6 +712,11 @@ class FushiTooltip extends StatelessWidget {
       );
     }
 
+    // 先保留 Tooltip 的空消息语义，再把内容包进 WidgetSpan：占位符的
+    // toPlainText 非空，否则没有提示文案的标题也会弹出空玻璃气泡。
+    final String plain = message ?? richMessage?.toPlainText() ?? '';
+    if (plain.isEmpty) return child ?? const SizedBox.shrink();
+
     final ThemeData theme = Theme.of(context);
     final FushiAppleColors apple = appleColorsOf(context);
     final TooltipThemeData tooltipTheme = TooltipTheme.of(context);
@@ -726,7 +731,6 @@ class FushiTooltip extends StatelessWidget {
     final TextAlign align =
         textAlign ?? tooltipTheme.textAlign ?? TextAlign.start;
     final InlineSpan content = richMessage ?? TextSpan(text: message ?? '');
-    final String plain = message ?? richMessage?.toPlainText() ?? '';
 
     // 单行时是全胶囊（圆角 = 半高 15），多行退成圆角 15 的玻璃块。
     final Widget bubble = GlassContainer(

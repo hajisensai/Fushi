@@ -101,6 +101,12 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  // 纯图标格的 tooltip 不进语义（名称由外层 Semantics.label 报），按 Tooltip
+  // 本身的 message 找：flutter_test 的 byTooltip 只认 SDK 内置 material 的
+  // Tooltip 类型，认不出 material_ui 的 Tooltip。
+  Finder tooltipOf(String label) =>
+      find.byWidgetPredicate((Widget w) => w is Tooltip && w.message == label);
+
   int paintedLabels() => <String>[
     for (final String label in labels)
       if (find.text(label).hitTestable().evaluate().isNotEmpty) label,
@@ -127,36 +133,35 @@ void main() {
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: tmp);
 
-    // 默认开：每个入口都画出标签。
+    // 默认关（纯图标出厂形态）：底栏不画标签，只剩 tooltip 补全名。
     await pumpShell(tester);
     final SettingsSwitchItem row = labelsRow();
-    expect(row.value(settingsContext), isTrue);
-    expect(paintedLabels(), labels.length);
-    final double onNavTop = tester
-        .getTopLeft(find.byTooltip(labels.first).first)
-        .dy;
-
-    // 关掉：设置行写偏好 → 底栏不再画标签，只剩 tooltip 补全名。
-    await toggle(tester, false);
-    expect(appModel.navBarLabelsVisible, isFalse);
-    await pumpShell(tester);
-    expect(paintedLabels(), 0, reason: '关掉后底栏一个标签都不该画出来');
+    expect(row.value(settingsContext), isFalse);
+    expect(paintedLabels(), 0, reason: '默认纯图标：底栏一个标签都不该画出来');
     for (final String label in labels) {
       expect(
-        find.byTooltip(label),
+        tooltipOf(label),
         findsWidgets,
         reason: '纯图标形态要用 tooltip 补出 $label 的全名',
       );
     }
     final double offNavTop = tester
-        .getTopLeft(find.byTooltip(labels.first).first)
+        .getTopLeft(tooltipOf(labels.first).first)
         .dy;
-    expect(offNavTop, greaterThan(onNavTop), reason: '纯图标的悬浮底栏更矮，入口整体下沉');
 
-    // 打开：标签回来。
+    // 打开：设置行写偏好 → 每个入口都画出标签。
     await toggle(tester, true);
+    expect(appModel.navBarLabelsVisible, isTrue);
     await pumpShell(tester);
     expect(paintedLabels(), labels.length);
+    final double onNavTop = tester.getTopLeft(tooltipOf(labels.first).first).dy;
+    expect(offNavTop, greaterThan(onNavTop), reason: '纯图标的悬浮底栏更矮，入口整体下沉');
+
+    // 再关掉：标签消失。
+    await toggle(tester, false);
+    expect(appModel.navBarLabelsVisible, isFalse);
+    await pumpShell(tester);
+    expect(paintedLabels(), 0);
   });
 
   test('home shell feeds the bottom bar from navBarLabelsVisible', () {

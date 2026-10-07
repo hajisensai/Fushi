@@ -24,7 +24,7 @@ import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart'
-    show kMangaChromeBarHeight, MangaChromeAction;
+    show kMangaChromeBarHeight, MangaChromeAction, MangaReaderTopBar;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
@@ -485,9 +485,11 @@ void main() {
     },
   );
 
-  testWidgets('手动模式：进入不排整卷任务，⋮ 里给「识别本卷」；无「识别当前页」，保留返回与查词键盘宿主',
+  testWidgets('手动模式：进入不排整卷任务，窄屏 ⋯ 里给「识别本卷」；无「识别当前页」，保留返回与查词键盘宿主',
       (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(600, 1000);
+    // 360dp 手机宽：右上角放不下标题保底 + 动作，动作收进「⋯」（默认展开，空间不足
+    // 才收起；宽屏平铺见下一条）。
+    tester.view.physicalSize = const Size(360, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -592,7 +594,7 @@ void main() {
 
   // 进入即整卷识别：没有任何用户动作，打开一本没识别过的卷就排上整卷任务，
   // 从当前页开始跑，右上角浮标显示进度（对齐 Mangatan / Chimahon）。
-  testWidgets('已识别的卷：⋮ 里给「重新识别本卷」（换引擎重跑的唯一入口），不给「识别本卷」',
+  testWidgets('已识别的卷：右上角平铺「重新识别本卷」（换引擎重跑的唯一入口），不给「识别本卷」',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(600, 1000);
     tester.view.devicePixelRatio = 1.0;
@@ -647,26 +649,26 @@ void main() {
     await tester.pump();
     expect(ocrService.folderRequests, 0, reason: '已识别的卷不自动重排');
 
-    await tester.tap(find.byKey(const ValueKey<String>('manga_chrome_overflow')));
-    await tester.pumpAndSettle();
-    final Iterable<PopupMenuItem<MangaChromeAction>> menuItems =
-        tester.widgetList<PopupMenuItem<MangaChromeAction>>(
-            find.byType(PopupMenuItem<MangaChromeAction>));
-    final PopupMenuItem<MangaChromeAction> rerun = menuItems.singleWhere(
-        (PopupMenuItem<MangaChromeAction> item) =>
-            item.value?.key ==
-            const ValueKey<String>('manga_reader_ocr_rerun_button'));
-    expect(rerun.value!.onPressed, isNotNull);
+    // 600dp 下右上角放得下全部动作：默认展开、不画「⋯」。
+    expect(find.byKey(const ValueKey<String>('manga_chrome_overflow')),
+        findsNothing,
+        reason: '空间够时右上角动作默认全部平铺，不收进「⋯」');
+    expect(find.byKey(const ValueKey<String>('manga_reader_ocr_rerun_button')),
+        findsOneWidget);
+    final List<MangaChromeAction> topActions = tester
+        .widget<MangaReaderTopBar>(find.byType(MangaReaderTopBar))
+        .actions;
+    final MangaChromeAction rerun = topActions.singleWhere(
+        (MangaChromeAction a) =>
+            a.key == const ValueKey<String>('manga_reader_ocr_rerun_button'));
+    expect(rerun.onPressed, isNotNull);
     expect(
-        menuItems.any((PopupMenuItem<MangaChromeAction> item) =>
-            item.value?.key ==
-            const ValueKey<String>('manga_reader_ocr_volume_button')),
+        topActions.any((MangaChromeAction a) =>
+            a.key == const ValueKey<String>('manga_reader_ocr_volume_button')),
         isFalse,
         reason: '识别过的卷不该再给「识别本卷」');
-    Navigator.of(tester
-            .element(find.byType(PopupMenuItem<MangaChromeAction>).first))
-        .pop();
-    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('manga_reader_ocr_volume_button')),
+        findsNothing);
   });
 
   testWidgets('自动模式：进入阅读器即排整卷任务，右上角浮标显示进度',
@@ -833,22 +835,12 @@ void main() {
     expect(runner.requests, isEmpty);
 
     // 拒绝期间自动模式也给「识别本卷」入口：否则只能重启 app 才能再识别。
-    await tester.tap(find.byKey(const ValueKey<String>('manga_chrome_overflow')));
-    await tester.pumpAndSettle();
+    // 600dp 下右上角动作默认平铺，入口直接可见。
     expect(
-      tester
-          .widgetList<PopupMenuItem<MangaChromeAction>>(
-              find.byType(PopupMenuItem<MangaChromeAction>))
-          .any((PopupMenuItem<MangaChromeAction> item) =>
-              item.value?.key ==
-              const ValueKey<String>('manga_reader_ocr_volume_button')),
-      isTrue,
+      find.byKey(const ValueKey<String>('manga_reader_ocr_volume_button')),
+      findsOneWidget,
       reason: '拒绝 Lens 后自动模式不排任务，必须留一个主动识别的入口',
     );
-    Navigator.of(tester
-            .element(find.byType(PopupMenuItem<MangaChromeAction>).first))
-        .pop();
-    await tester.pumpAndSettle();
 
     // 换走引擎再换回 Lens：重新征求同意（拒绝只对当时那个引擎偏好有效）。
     await tester.pumpWidget(const SizedBox.shrink());

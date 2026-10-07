@@ -318,7 +318,7 @@ const APP_THEME_MIRROR_KEYS = [
   '--md-inverse-surface', '--md-inverse-on-surface', '--md-inverse-primary', '--md-secondary',
   '--md-on-secondary', '--md-on-error', '--md-error-container', '--md-on-error-container',
   '--fushi-theme-seed', '--fushi-theme-variant', '--fushi-theme-neutral', '--fushi-pure-black',
-  '--fushi-theme-system',
+  '--fushi-theme-system', '--fushi-theme-palette-id',
 ];
 let appThemeMirror = null;
 let appThemeMirrorLoaded = null;

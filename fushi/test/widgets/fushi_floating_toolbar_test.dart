@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -181,5 +183,81 @@ void main() {
       FushiFloatingToolbar.extentFor(compact: true, showLabels: true),
       kFushiFloatingToolbarExtent,
     );
+  });
+
+  // 2026-10-06 用户「小说的底部栏文字也砍掉」：阅读器底部悬浮工具栏是纯图标的
+  // M3E floating toolbar——不画文字、名称进 tooltip 与无障碍语义、每颗 >= 48。
+  testWidgets(
+    'icon-only toolbar keeps tooltip + semantics name, 48dp targets',
+    (WidgetTester tester) async {
+      final SemanticsHandle semantics = tester.ensureSemantics();
+      int tapped = 0;
+      await tester.pumpWidget(
+        _host(
+          FushiFloatingToolbar(
+            groups: <List<FushiToolbarItem>>[
+              <FushiToolbarItem>[
+                FushiToolbarItem(
+                  key: const ValueKey<String>('nav'),
+                  icon: Icons.list,
+                  label: 'Navigation',
+                  onPressed: () => tapped++,
+                ),
+                FushiToolbarItem(
+                  key: const ValueKey<String>('settings'),
+                  icon: Icons.tune,
+                  label: 'Reading settings',
+                  tooltip: 'Reading settings (Ctrl+M)',
+                  onPressed: () => tapped += 10,
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+      expect(find.text('Navigation'), findsNothing);
+      expect(find.text('Reading settings'), findsNothing);
+      expect(find.byTooltip('Navigation'), findsOneWidget);
+      expect(find.byTooltip('Reading settings (Ctrl+M)'), findsOneWidget);
+      expect(find.bySemanticsLabel('Navigation'), findsWidgets);
+      expect(find.bySemanticsLabel(RegExp(r'^Reading settings')), findsWidgets);
+      for (final String k in <String>['nav', 'settings']) {
+        final Size size = tester.getSize(find.byKey(ValueKey<String>(k)));
+        expect(size.width, greaterThanOrEqualTo(48), reason: k);
+        expect(size.height, greaterThanOrEqualTo(48), reason: k);
+      }
+      expect(
+        tester
+            .getSize(
+              find.byKey(const ValueKey<String>('fushi_floating_toolbar')),
+            )
+            .height,
+        kFushiFloatingToolbarExtent,
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('settings')));
+      expect(tapped, 10);
+      semantics.dispose();
+    },
+  );
+
+  test('novel reader floating dock is icon-only without group dividers', () {
+    final String source = File(
+      'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
+    ).readAsStringSync();
+    final int start = source.indexOf('Widget _buildFloatingBottomChrome()');
+    expect(start, isNonNegative);
+    final int dock = source.indexOf(
+      "ValueKey<String>('fushi_reader_floating_dock')",
+      start,
+    );
+    expect(dock, isNonNegative);
+    // FushiFloatingToolbar(...) 调用体：到 `colors: colors,` 为止。
+    final String call = source.substring(
+      dock,
+      source.indexOf('colors: colors,', dock),
+    );
+    expect(call, isNot(contains('showLabels')), reason: '底栏不画文字');
+    // 全部按钮并成一组：组间不插竖分隔线。
+    expect(call, contains('for (final List<FushiToolbarItem> g in dock) ...g'));
   });
 }

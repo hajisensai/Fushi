@@ -381,6 +381,12 @@ void FloatingBallWindow::SetExpanded(bool expand) {
 }
 
 void FloatingBallWindow::AnimateProgress(double target, int full_ms) {
+  if (!config_.animate) {
+    CancelAnimations();
+    SetProgress(target);
+    if (target <= 0.0) DestroyMenuWindow();
+    return;
+  }
   progress_anim_.active = true;
   progress_anim_.from = progress_;
   progress_anim_.to = target;
@@ -603,7 +609,8 @@ void FloatingBallWindow::PrepareMenuLabels(const fb::Geometry& g) {
   menu_label_layouts_.clear();
   menu_label_widths_.clear();
   // 多列时标签会压到相邻列：与应用内一样只在单列显示。
-  if (g.ColumnCount() != 1 || dwrite_factory_ == nullptr) {
+  if (!config_.show_labels || g.ColumnCount() != 1 ||
+      dwrite_factory_ == nullptr) {
     return;
   }
   const double s = menu_scale_;
@@ -826,14 +833,19 @@ void FloatingBallWindow::EndDrag() {
   dock_left_ = g.DockLeftForBallLeft(ball_left_);
   fraction_ = g.FractionForTop(ball_top_);
   const fb::Geometry settled = CurrentGeometry();
-  snap_anim_.active = true;
+  snap_anim_.active = config_.animate;
   snap_anim_.from_left = ball_left_;
   snap_anim_.from_top = ball_top_;
   snap_anim_.to_left = settled.CollapsedBallLeft();
   snap_anim_.to_top = settled.BallTop();
   snap_anim_.start_ms = NowMs();
+  if (!config_.animate) {
+    CancelAnimations();
+    ball_left_ = snap_anim_.to_left;
+    ball_top_ = snap_anim_.to_top;
+  }
   RenderBall();
-  EnsureAnimationTimer();
+  if (config_.animate) EnsureAnimationTimer();
   if (on_position_) on_position_(dock_left_, fraction_);
 }
 

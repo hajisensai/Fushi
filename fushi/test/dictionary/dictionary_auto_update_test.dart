@@ -179,10 +179,12 @@ void main() {
     expect(body, contains('needsSourceMetadataBackfill('));
     expect(body, contains('await indexFile.readAsString()'),
         reason: '异步读盘，不在 UI isolate 上同步 IO');
-    expect(body, contains('dictRepo.persistDictionaries('),
+    expect(body, contains('dictRepo.updateDictionaryMetadata('),
         reason: '一次批量落库，只重载一次引擎');
     expect(
-      RegExp(r'try \{\s*await dictRepo\.persistDictionaries\(updated\);\s*\} catch')
+      RegExp(
+        r'try \{\s*await dictRepo\.updateDictionaryMetadata\([\s\S]*?\);\s*\} catch',
+      )
           .hasMatch(body),
       isTrue,
       reason: '调用方 unawaited：落库失败必须就地捕获并记日志，不能漏成 zone 错误',

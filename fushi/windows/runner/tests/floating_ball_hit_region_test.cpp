@@ -208,6 +208,68 @@ int main() {
       }
     }
   }
+  // Exercise the actual DirectWrite layout and layered renderer when the
+  // preference changes. Hidden labels must lose both pixels and hit regions;
+  // the icon and its name must survive. No native windows are created.
+  for (const bool dock_left : {false, true}) {
+    FloatingBallWindow window;
+    window.menu_hwnd_ = reinterpret_cast<HWND>(static_cast<uintptr_t>(1));
+    window.menu_scale_ = 1;
+    window.progress_ = 1;
+    window.dock_left_ = dock_left;
+    window.menu_ids_ = {"test"};
+    window.config_.labels["test"] = L"Lookup example";
+    window.menu_centers_ = {{200, 100}};
+    window.menu_ball_cx_ = 200;
+    window.menu_ball_cy_ = 100;
+    window.menu_size_ = {400, 200};
+    const fb::Geometry geometry({0, 0, 400, 600}, dock_left, 0.7, 1, 1);
+    if (!window.EnsureDeviceResources() || window.dwrite_factory_ == nullptr) {
+      window.menu_hwnd_ = nullptr;
+      std::cerr << "Label test setup failed: no DirectWrite renderer.\n";
+      return 2;
+    }
+    const bool default_on = window.config_.show_labels;
+    window.PrepareMenuLabels(geometry);
+    D2D1_RECT_F rect{};
+    double opacity = 0;
+    const bool had_label = window.LabelRect(0, &rect, &opacity);
+    const int x = static_cast<int>((rect.left + rect.right) / 2);
+    const int y = static_cast<int>((rect.top + rect.bottom) / 2);
+    window.RenderMenu();
+    const bool visible_ok = had_label && window.ButtonAt(x, y) == 0 &&
+                            hit_region_test::Alpha(x, y) > 0;
+
+    window.config_.show_labels = false;
+    window.PrepareMenuLabels(geometry);
+    window.RenderMenu();
+    const bool hidden_ok = window.menu_label_widths_.empty() &&
+                           window.menu_label_layouts_.empty() &&
+                           !window.LabelRect(0, &rect, &opacity) &&
+                           window.ButtonAt(x, y) == -1 &&
+                           hit_region_test::Alpha(x, y) == 0;
+    const bool icon_ok = window.ButtonAt(200, 100) == 0 &&
+                         hit_region_test::Alpha(200, 100) > 0 &&
+                         window.LabelFor("test") == L"Lookup example";
+
+    window.config_.show_labels = true;
+    window.PrepareMenuLabels(geometry);
+    window.RenderMenu();
+    const bool restored_ok = window.LabelRect(0, &rect, &opacity) &&
+                             window.ButtonAt(x, y) == 0 &&
+                             hit_region_test::Alpha(x, y) > 0;
+    window.menu_hwnd_ = nullptr;
+    ++cases;
+    if (!default_on || !visible_ok || !hidden_ok || !icon_ok || !restored_ok) {
+      ++failures;
+    }
+    std::cout << "labels dockLeft=" << dock_left
+              << " default=" << (default_on ? "PASS" : "FAIL")
+              << " visible=" << (visible_ok ? "PASS" : "FAIL")
+              << " hidden=" << (hidden_ok ? "PASS" : "FAIL")
+              << " icon=" << (icon_ok ? "PASS" : "FAIL")
+              << " restored=" << (restored_ok ? "PASS" : "FAIL") << '\n';
+  }
   std::cout << "cases=" << cases << " failed=" << failures
             << " nativeWindowsCreated=0 inputEventsSent=0\n";
   return failures == 0 ? 0 : 1;

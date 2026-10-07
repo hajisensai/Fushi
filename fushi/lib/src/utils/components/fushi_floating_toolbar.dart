@@ -257,16 +257,22 @@ class FushiToolbarButton extends StatelessWidget {
     final Color fg = item.selected ? selectedForeground : foreground;
     final Widget button;
     if (!showLabel) {
-      button = FushiIconButtonControl(
+      final String tooltip = item.tooltip ?? item.label;
+      final Widget iconButton = FushiIconButtonControl(
         key: item.key,
         icon: FushiIcon(item.icon, color: fg),
         iconSize: iconSize,
-        tooltip: item.tooltip ?? item.label,
+        tooltip: tooltip,
         isSelected: item.selected,
         style: item.selected
             ? IconButton.styleFrom(backgroundColor: selectedContainer)
             : null,
         onPressed: item.onPressed,
+      );
+      // 纯图标：无障碍名称恒为功能名本身（[FushiToolbarItem.label]）——tooltip
+      // 只进语义的「提示」槽，带快捷键时更不该顶替名称。
+      button = MergeSemantics(
+        child: Semantics(label: item.label, child: iconButton),
       );
     } else {
       final TextStyle? labelStyle = Theme.of(
@@ -663,6 +669,59 @@ int fushiTopBarFitCount(
   return 0;
 }
 
+/// 顶部悬浮条里动作胶囊可用的宽度预算（纯函数）：整行宽减去 [leadingCount] 个
+/// 前置胶囊（返回等）、标题胶囊保底 [kFushiFloatingTopBarTitleMinWidth]（有标题时）
+/// 与标题和动作之间的 8 间距。
+double fushiTopBarActionsBudget({
+  required double maxWidth,
+  int leadingCount = 0,
+  required bool hasTitle,
+}) =>
+    maxWidth -
+    leadingCount * _kTopBarLeadingSlot -
+    (hasTitle ? kFushiFloatingTopBarTitleMinWidth : 0) -
+    8;
+
+/// 顶部悬浮条「默认展开、放不下才收进 ⋯」的平铺颗数决策（带展开回差）。
+///
+/// 有状态（记住上一次平铺几颗作回差参照），由持有它的 State 保活；
+/// [FushiFloatingTopBar] 与自绘顶栏的页面（漫画阅读器）共用这一份，测宽逻辑只有
+/// 一套。动作总数变了回差参照作废。
+class FushiTopBarOverflowFit {
+  int? _lastVisible;
+  int? _lastTotal;
+
+  /// 在 [budget]（见 [fushiTopBarActionsBudget]）里平铺几颗：[groups]（高 → 低
+  /// 优先级）+ [overflow]（最低）。宽度无界时全部平铺。
+  int visibleFor({
+    required List<List<FushiToolbarItem>> groups,
+    List<FushiToolbarItem> overflow = const <FushiToolbarItem>[],
+    required double budget,
+  }) {
+    int total = overflow.length;
+    for (final List<FushiToolbarItem> g in groups) {
+      total += g.length;
+    }
+    if (!budget.isFinite) return total;
+    final int fit = fushiTopBarFitCount(groups, overflow, total, budget);
+    final int? last = _lastTotal == total ? _lastVisible : null;
+    int visible = fit;
+    if (last != null && fit > last) {
+      // 展开：多出来的那几颗要连回差一起放得下才放出来，否则维持原样。
+      final int strict = fushiTopBarFitCount(
+        groups,
+        overflow,
+        total,
+        budget - kFushiFloatingTopBarOverflowHysteresis,
+      );
+      visible = strict > last ? strict : last;
+    }
+    _lastVisible = visible;
+    _lastTotal = total;
+    return visible;
+  }
+}
+
 class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
   List<FushiToolbarItem> get leading => widget.leading;
   String get title => widget.title;
@@ -674,42 +733,27 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
   FushiFloatingToolbarColors? get colors => widget.colors;
   bool get excludeFocus => widget.excludeFocus;
 
-  /// 上一次布局平铺了几颗（回差的参照）；动作总数变了就作废。
-  int? _lastVisible;
-  int? _lastTotal;
+  /// 平铺颗数决策（带展开回差，见 [FushiTopBarOverflowFit]）。
+  final FushiTopBarOverflowFit _fit = FushiTopBarOverflowFit();
 
   /// 按可用宽度定平铺颗数（带展开回差）。
   int _visibleFor(double maxWidth, {required bool hasTitle}) {
-    int total = 0;
-    for (final List<FushiToolbarItem> g in actions) {
-      total += g.length;
-    }
-    total += overflow.length;
     if (!widget.adaptiveOverflow) {
-      return total - overflow.length;
+      int total = 0;
+      for (final List<FushiToolbarItem> g in actions) {
+        total += g.length;
+      }
+      return total;
     }
-    if (!maxWidth.isFinite) return total;
-    final double budget =
-        maxWidth -
-        leading.length * _kTopBarLeadingSlot -
-        (hasTitle ? kFushiFloatingTopBarTitleMinWidth : 0) -
-        8;
-    final int fit = fushiTopBarFitCount(actions, overflow, total, budget);
-    final int? last = _lastTotal == total ? _lastVisible : null;
-    int visible = fit;
-    if (last != null && fit > last) {
-      // 展开：多出来的那几颗要连回差一起放得下才放出来，否则维持原样。
-      final int strict = fushiTopBarFitCount(
-        actions,
-        overflow,
-        total,
-        budget - kFushiFloatingTopBarOverflowHysteresis,
-      );
-      visible = strict > last ? strict : last;
-    }
-    _lastVisible = visible;
-    _lastTotal = total;
-    return visible;
+    return _fit.visibleFor(
+      groups: actions,
+      overflow: overflow,
+      budget: fushiTopBarActionsBudget(
+        maxWidth: maxWidth,
+        leadingCount: leading.length,
+        hasTitle: hasTitle,
+      ),
+    );
   }
 
   @override

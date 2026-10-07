@@ -692,6 +692,7 @@ final class DesktopFloatingBallController: NSObject {
   // 配置（Dart 下发）。
   private var actions: [String] = []
   private var labels: [String: String] = [:]
+  private var showsActionLabels = true
   private var icons: [String: NSImage] = [:]
   private var ballImage: CGImage?
   private var surface = DesktopFloatingBallColor(argb: 0xFFFF_FFFF)
@@ -795,6 +796,7 @@ final class DesktopFloatingBallController: NSObject {
   private func start(_ args: [String: Any]) -> Bool {
     actions = (args["actions"] as? [String]) ?? []
     labels = (args["labels"] as? [String: String]) ?? [:]
+    showsActionLabels = (args["showLabels"] as? Bool) ?? true
     var decodedIcons: [String: NSImage] = [:]
     if let raw = args["iconImages"] as? [String: Any] {
       for (id, value) in raw {
@@ -1078,7 +1080,8 @@ final class DesktopFloatingBallController: NSObject {
     let labelCap = min(
       kFloatingBallLabelMaxWidth,
       g.viewport.width - 2 * g.margin - g.button - kFloatingBallLabelGap)
-    let showLabels = columns == 1 && labelCap >= 2 * kFloatingBallLabelPadding + 24
+    let showLabels = showsActionLabels && columns == 1
+      && labelCap >= 2 * kFloatingBallLabelPadding + 24
     var labelWidths: [CGFloat] = []
     if showLabels {
       for id in ids {

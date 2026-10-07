@@ -918,11 +918,14 @@ Future<void> saveOrShareExport({
         .showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
-  File? tmp;
+  Directory? exportDirectory;
   try {
     final Directory tmpDir = await getTemporaryDirectory();
-    final String tmpPath = '${tmpDir.path}/$fileName';
-    tmp = File(tmpPath);
+    // Concurrent exports can have the same suggested name. Each invocation
+    // owns its staging directory, including when another dialog is cancelled.
+    exportDirectory = await tmpDir.createTemp('fushi_export_');
+    final String tmpPath = '${exportDirectory.path}/$fileName';
+    final File tmp = File(tmpPath);
     // BOM 已含在 content 里（仅 CSV）；写字节避免编码二次加 BOM。
     await tmp.writeAsString(content);
 
@@ -946,9 +949,9 @@ Future<void> saveOrShareExport({
     ErrorLogService.instance.log('collectionExport.saveOrShareExport', e, s);
     notify(t.collection_export_failed);
   } finally {
-    if (_isDesktop && tmp != null) {
+    if (_isDesktop && exportDirectory != null) {
       try {
-        await tmp.delete();
+        await exportDirectory.delete(recursive: true);
       } catch (_) {}
     }
   }

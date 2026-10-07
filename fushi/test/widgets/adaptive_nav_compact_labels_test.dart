@@ -216,4 +216,73 @@ void main() {
       expect(find.byTooltip('Tab$i').hitTestable(), findsNothing);
     }
   });
+
+  // 2026-10-06 用户「底部栏的文字砍掉」：出厂纯图标底栏（偏好
+  // nav_bar_labels_visible 默认关）。名称不画成文字，但仍是 tooltip 与无障碍
+  // 名称；每格至少 48dp 触控目标，选中胶囊照常。
+  testWidgets('纯图标底栏：不画标签文字，tooltip + 语义保留原文案，格宽 >= 48', (
+    WidgetTester tester,
+  ) async {
+    final SemanticsHandle semantics = tester.ensureSemantics();
+    // material_ui 的 Tooltip 与 flutter_test 的 find.byTooltip 认的 SDK 类型不同，
+    // 按类型 + message 直接找。
+    Finder tooltipNamed(String message) => find.byWidgetPredicate(
+      (Widget w) => w is Tooltip && w.message == message,
+    );
+    int tapped = -1;
+    tester.view.physicalSize = const Size(411, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FushiFocusRoot(
+          child: Scaffold(
+            body: const SizedBox.expand(),
+            bottomNavigationBar: Builder(
+              builder: (BuildContext context) => adaptiveBottomBar(
+                context: context,
+                currentIndex: 1,
+                onTap: (int i) => tapped = i,
+                showLabels: false,
+                items: itemsOf(6),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    for (int i = 0; i < 6; i++) {
+      expect(activeLabel('Tab$i'), findsNothing, reason: 'Tab$i 不画文字');
+      final Finder tip = tooltipNamed('Tab$i');
+      expect(tip, findsWidgets, reason: 'Tab$i 有 tooltip');
+      expect(
+        find.bySemanticsLabel('Tab$i'),
+        findsWidgets,
+        reason: 'Tab$i 语义名称',
+      );
+      final Finder icon = find.descendant(
+        of: tip,
+        matching: find.byIcon(Icons.circle_outlined),
+      );
+      expect(icon, findsWidgets);
+    }
+    // 每个入口的可点区（包住整格的 InkWell）至少 48×48。
+    for (int i = 0; i < 6; i++) {
+      final Finder ink = find
+          .ancestor(
+            of: tooltipNamed('Tab$i').first,
+            matching: find.byWidgetPredicate((Widget w) => w is InkWell),
+          )
+          .first;
+      final Size cell = tester.getSize(ink);
+      expect(cell.width, greaterThanOrEqualTo(48), reason: 'Tab$i 宽');
+      expect(cell.height, greaterThanOrEqualTo(48), reason: 'Tab$i 高');
+    }
+    await tester.tap(tooltipNamed('Tab3').first);
+    await tester.pump();
+    expect(tapped, 3);
+    semantics.dispose();
+  });
 }

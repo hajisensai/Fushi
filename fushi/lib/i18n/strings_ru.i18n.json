@@ -6786,5 +6786,10 @@
   "theme_logo_tint_enabled": "Logo follows theme color",
   "theme_logo_tint_hint": "Recolor the built-in mascot icon to match the accent color. When off, the original artwork is always shown.",
   "theme_icon_accent_follow": "Theme color follows custom icon",
-  "theme_icon_accent_hint": "Take the accent color from your custom icon image. Turn off to return to the theme you picked."
+  "theme_icon_accent_hint": "Take the accent color from your custom icon image. Turn off to return to the theme you picked.",
+  "window_caption_minimize": "Minimize",
+  "window_caption_maximize": "Maximize",
+  "window_caption_restore": "Restore",
+  "floating_ball_show_labels": "Показывать подписи кнопок",
+  "floating_ball_show_labels_hint": "Показывать текст рядом с развёрнутыми кнопками. Отключите, чтобы оставить только значки"
 }
