@@ -45,7 +45,6 @@ on:
       - 'tool/ffmpeg-min/**'
       - 'tool/sign_windows_release.ps1'
       - 'tool/simplysign_connect.ps1'
-      - 'tool/sign_kazumi_adhoc.sh'
       - 'third_party/**'
       - 'tools/build_magpie_slim.ps1'
       - 'tools/bundle_7za.ps1'
@@ -105,23 +104,6 @@ on:
         required: false
         default: false
         type: boolean
-      kazumi_adhoc:
-        description: 'One-off: sign the upstream Kazumi 2.3.0 IPA for two registered devices.'
-        required: false
-        default: false
-        type: boolean
-      kazumi_device_1_name:
-        description: 'Kazumi Ad Hoc device 1 name.'
-        required: false
-      kazumi_device_1_udid:
-        description: 'Kazumi Ad Hoc device 1 UDID.'
-        required: false
-      kazumi_device_2_name:
-        description: 'Kazumi Ad Hoc device 2 name.'
-        required: false
-      kazumi_device_2_udid:
-        description: 'Kazumi Ad Hoc device 2 UDID.'
-        required: false
 
 concurrency:
   # 组名带 workflow 名（2026-09-08，用户要求正式版并行发包）：Android（release.yml）与
@@ -159,7 +141,7 @@ jobs:
     # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
     # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
     # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
-    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: windows-2022
     timeout-minutes: 150
     permissions:
@@ -1252,7 +1234,7 @@ jobs:
     # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
     # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
     # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
-    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: macos-latest
     # 120：内置 torrent 引擎 bridge 冷编（boost + openssl + libtorrent）要几十分钟，
     # 只在 native/fushi_torrent 改动或 runner 镜像更新后的首跑发生，其余命中持久库。
@@ -2079,7 +2061,7 @@ jobs:
     # release（manga-panel-detector-onnx-v1、vendor-libmpv、voice-hook-helper…）被手动
     # 发布时不许整套构建、把安装包挂到它们身上。表达式没有正则，只能逐个列 v0..v9；
     # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
-    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: macos-latest
     timeout-minutes: 90
     permissions:
@@ -2683,43 +2665,12 @@ jobs:
             --apiKey "$APPSTORE_API_KEY_ID" --apiIssuer "$APPSTORE_API_ISSUER_ID"
           echo "已上传 TestFlight；App Store Connect 处理完成（通常 5-30 分钟）后才会出现在测试员列表里。"
 
-  kazumi-adhoc:
-    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.kazumi_adhoc == 'true' }}
-    runs-on: macos-latest
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-      - name: Sign Kazumi for registered devices
-        shell: bash
-        env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
-          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
-          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
-          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
-          IOS_DIST_CERT_P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_P12_PASSWORD }}
-          KAZUMI_DEVICE_1_NAME: ${{ github.event.inputs.kazumi_device_1_name }}
-          KAZUMI_DEVICE_1_UDID: ${{ github.event.inputs.kazumi_device_1_udid }}
-          KAZUMI_DEVICE_2_NAME: ${{ github.event.inputs.kazumi_device_2_name }}
-          KAZUMI_DEVICE_2_UDID: ${{ github.event.inputs.kazumi_device_2_udid }}
-          KAZUMI_OUTPUT_DIR: ${{ runner.temp }}/kazumi-output
-        run: bash tool/sign_kazumi_adhoc.sh
-      - name: Upload signed Kazumi IPA
-        uses: actions/upload-artifact@v7
-        with:
-          name: kazumi-2.3.0-internal-adhoc
-          path: ${{ runner.temp }}/kazumi-output/*
-          if-no-files-found: error
-          retention-days: 14
-
   publish:
     needs: [windows, macos, ios]
     # testflight_only 下三个平台 job 要么 skipped 要么只传了 TestFlight，没有任何
     # Release 资产可发；整个 publish 跳过，rolling debug / 清单一根手指都不碰。
     # BUG-2817：always() 会无视上游 job 被跳过，这里必须自己再挡一次非应用 tag。
-    if: ${{ always() && github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    if: ${{ always() && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

@@ -10,7 +10,9 @@
 //
 // It queues first come, first served for a free slot (it never "runs anyway",
 // there is no memory admission, and unless --wait-max-min=N is given it never
-// gives up waiting), keeps one build/-writing run per worktree, and on Windows runs the command
+// gives up waiting), keeps one build/-writing run per worktree, gives a
+// `flutter test` without its own --concurrency a default of 4, and on
+// Windows runs the command
 // tree at below-normal priority under a memory ceiling, killing whatever the
 // command leaves behind when it ends. Exit code: the command's; 75 when an
 // explicit --wait-max-min ran out before admission; 124 when --max-minutes cut it off. CI / FUSHI_HEAVY=off
@@ -32,7 +34,9 @@ Future<void> main(List<String> args) async {
     exit(64);
   }
   final List<String> own = args.sublist(0, sep);
-  final List<String> command = args.sublist(sep + 1);
+  final List<String> command = withDefaultTestConcurrency(
+    args.sublist(sep + 1),
+  );
   final HeavyNeed classified = classifyHeavyCommand(command);
   final HeavyNeed need = HeavyNeed(
     kind: classified.kind,

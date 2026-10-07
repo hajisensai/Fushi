@@ -49,12 +49,13 @@ toolchain_env="CC=${CC:-} CXX=${CXX:-}"
 
 # tree_hash <extra-identity> <path>... : sha256 over the committed tree of <path>s plus
 # the extra identity string. Fails when the paths match nothing (a renamed directory
-# must not silently turn the name into a constant).
+# must not silently turn the name into a constant). Markdown is left out: no build in
+# these trees reads a .md, and a README edit used to cold-rebuild every platform.
 tree_hash() {
   local extra="$1"
   shift
   local listing
-  listing="$(git ls-tree -r --full-tree HEAD -- "$@")"
+  listing="$(git ls-tree -r --full-tree HEAD -- "$@" | grep -viE '\.md$' || true)"
   if [ -z "$listing" ]; then
     echo "::error title=native-store-names::git ls-tree matched nothing for: $*" >&2
     exit 1
