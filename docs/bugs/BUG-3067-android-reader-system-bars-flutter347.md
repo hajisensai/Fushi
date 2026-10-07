@@ -36,3 +36,4 @@
 - 新装包的 Anki 权限仅拒绝，没有授权访问用户卡片；临时包已卸载、Gradle suffix 已还原、探针移出源码树且不入库。正式包 `app.fushi.reader` 的版本与安装时间前后相同。设备尺寸/密度/旋转未修改。
 - API 35/36 与有挖孔设备未真机验证；退出保护是源码守卫 + 调用链复核，探针返回走生产 Escape 路径，但未单独断言首页系统栏恢复。
 - 合入上游后的全量 `flutter analyze --no-pub`：**No issues found / exit 0**（102.8s）。
+- 20:14 再查 adb 已无真机，尝试 API 35 x64 模拟器补拍。模拟器冷启动成功，但新 APK 构建在 Gradle 启动阶段持续阻塞于 JAR 文件读取（线程栈 `FileDispatcherImpl.read0 → ZipFile$Source.initCEN`，未进入编译）；本轮构建已中止，**exit 137、0 tests**，不算通过。模拟器已关闭、临时 suffix/probe 再次还原/移出；保留 `api35-build-unverified.log` 与 `x64-gradle-threads.txt`。API 35 仍为未验证。
