@@ -6791,5 +6791,8 @@
   "window_caption_maximize": "Maximize",
   "window_caption_restore": "Restore",
   "floating_ball_show_labels": "Düğme etiketlerini göster",
-  "floating_ball_show_labels_hint": "Açılan düğmelerin yanında metin göster. Yalnızca simgeleri göstermek için kapatın"
+  "floating_ball_show_labels_hint": "Açılan düğmelerin yanında metin göster. Yalnızca simgeleri göstermek için kapatın",
+  "stat_range_mode_custom": "Custom",
+  "stat_range_custom_edit": "Change date range",
+  "stat_range_custom_pick": "Select date range"
 }

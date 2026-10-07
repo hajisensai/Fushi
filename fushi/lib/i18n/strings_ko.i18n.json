@@ -6791,5 +6791,8 @@
   "window_caption_maximize": "Maximize",
   "window_caption_restore": "Restore",
   "floating_ball_show_labels": "버튼 텍스트 표시",
-  "floating_ball_show_labels_hint": "펼친 버튼 옆에 텍스트를 표시합니다. 끄면 아이콘만 표시합니다"
+  "floating_ball_show_labels_hint": "펼친 버튼 옆에 텍스트를 표시합니다. 끄면 아이콘만 표시합니다",
+  "stat_range_mode_custom": "사용자 지정",
+  "stat_range_custom_edit": "기간 변경",
+  "stat_range_custom_pick": "기간 선택"
 }

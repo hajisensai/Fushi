@@ -6791,5 +6791,8 @@
   "window_caption_maximize": "Maximize",
   "window_caption_restore": "Restore",
   "floating_ball_show_labels": "顯示按鈕文字",
-  "floating_ball_show_labels_hint": "展開時在按鈕旁顯示文字，關閉後只顯示圖示"
+  "floating_ball_show_labels_hint": "展開時在按鈕旁顯示文字，關閉後只顯示圖示",
+  "stat_range_mode_custom": "自訂",
+  "stat_range_custom_edit": "修改日期區間",
+  "stat_range_custom_pick": "選擇統計區間"
 }

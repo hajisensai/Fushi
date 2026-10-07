@@ -6791,5 +6791,8 @@
   "window_caption_maximize": "Maximize",
   "window_caption_restore": "Restore",
   "floating_ball_show_labels": "Показывать подписи кнопок",
-  "floating_ball_show_labels_hint": "Показывать текст рядом с развёрнутыми кнопками. Отключите, чтобы оставить только значки"
+  "floating_ball_show_labels_hint": "Показывать текст рядом с развёрнутыми кнопками. Отключите, чтобы оставить только значки",
+  "stat_range_mode_custom": "Custom",
+  "stat_range_custom_edit": "Change date range",
+  "stat_range_custom_pick": "Select date range"
 }

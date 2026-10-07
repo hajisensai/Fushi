@@ -6791,5 +6791,8 @@
   "window_caption_maximize": "Maximize",
   "window_caption_restore": "Restore",
   "floating_ball_show_labels": "Mostrar rótulos dos botões",
-  "floating_ball_show_labels_hint": "Mostrar texto ao lado dos botões expandidos. Desative para mostrar apenas ícones"
+  "floating_ball_show_labels_hint": "Mostrar texto ao lado dos botões expandidos. Desative para mostrar apenas ícones",
+  "stat_range_mode_custom": "Custom",
+  "stat_range_custom_edit": "Change date range",
+  "stat_range_custom_pick": "Select date range"
 }

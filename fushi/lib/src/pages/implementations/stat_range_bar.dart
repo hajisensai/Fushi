@@ -30,17 +30,67 @@ class StatRangeBar extends StatelessWidget {
   /// 外边距；null = 左右上 [FushiSpacingTokens.card]、下 0（与区块卡同一节奏）。
   final EdgeInsetsGeometry? padding;
 
-  /// 粒度分段控件的最大宽度：宽屏下不把五段拉满整栏（每段会宽到像按钮条），
+  /// 粒度分段控件的最大宽度：宽屏下不把六段拉满整栏（每段会宽到像按钮条），
   /// 窄屏按可用宽度等分。
   static const double kSegmentsMaxWidth = 480;
 
-  void _selectMode(StatRangeMode mode) => onChanged(
-    StatRangeSelection(
-      mode: mode,
-      // 换粒度保留锚点：在「2026-05」里切到「周」落在 5 月那一周，而不是跳回本周。
-      anchorKey: range.anchorKey == range.todayKey ? null : range.anchorKey,
-    ),
-  );
+  void _selectMode(BuildContext context, StatRangeMode mode) {
+    if (mode == StatRangeMode.custom) {
+      _pickCustomRange(context);
+      return;
+    }
+    onChanged(
+      StatRangeSelection(
+        mode: mode,
+        // 换粒度保留锚点：在「2026-05」里切到「周」落在 5 月那一周，而不是跳回本周。
+        anchorKey: range.anchorKey == range.todayKey ? null : range.anchorKey,
+      ),
+    );
+  }
+
+  /// 「自定义」：弹 Material 日期区间选择器，初值 = 当前所选区间，可选到今日
+  /// （统计日口径的今日——重置整点前的凌晨仍算昨天）为止；取消则范围不变。
+  /// 选择器给的是日历日，按 [FushiDatabase.statCalendarDayKeyOf] 直接当统计日
+  /// key（统计日的标签就是它那一天的日历日），不再过 [FushiDatabase.statDateKeyOf]
+  /// 前移重置整点。
+  Future<void> _pickCustomRange(BuildContext context) async {
+    final DateTime lastDate = FushiDatabase.statDateKeyToDay(range.todayKey);
+    final DateTime earliest = FushiDatabase.statDateKeyToDay(
+      range.earliestKey,
+    );
+    final DateTime tenYearsBack = DateTime(lastDate.year - 10);
+    final DateTime domainStart = earliest.isBefore(tenYearsBack)
+        ? earliest
+        : tenYearsBack;
+    // 选择跨 tab 共享，当前域可能没有这么早的数据；编辑不能截短原区间。
+    final DateTime selectedStart = FushiDatabase.statDateKeyToDay(range.fromKey);
+    final DateTime firstDate = selectedStart.isBefore(domainStart)
+        ? selectedStart
+        : domainStart;
+    DateTime clamp(DateTime d) => d.isBefore(firstDate)
+        ? firstDate
+        : d.isAfter(lastDate)
+        ? lastDate
+        : d;
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: firstDate,
+      lastDate: lastDate,
+      currentDate: lastDate,
+      initialDateRange: DateTimeRange(
+        start: clamp(FushiDatabase.statDateKeyToDay(range.fromKey)),
+        end: clamp(FushiDatabase.statDateKeyToDay(range.toKey)),
+      ),
+      helpText: t.stat_range_custom_pick,
+    );
+    if (picked == null || !context.mounted) return;
+    onChanged(
+      StatRangeSelection.custom(
+        fromKey: FushiDatabase.statCalendarDayKeyOf(picked.start),
+        toKey: FushiDatabase.statCalendarDayKeyOf(picked.end),
+      ),
+    );
+  }
 
   /// 期间步进器「‹ 区间 ›」：与粒度分段同高（40）的紧凑胶囊。M3E 是扁平
   /// surfaceContainerHigh 底的小胶囊（不浮、无投影，曾是 56 高的悬浮大胶囊，
@@ -63,19 +113,28 @@ class StatRangeBar extends StatelessWidget {
           constraints: button,
           onTap: () => onChanged(range.shifted(-1)),
         ),
-        ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 88),
-          child: AnimatedSwitcher(
-            duration: fushiMotionDuration(context, FushiMotion.short),
-            switchInCurve: FushiMotion.enter,
-            switchOutCurve: FushiMotion.exit,
-            child: Text(
-              formatStatRange(range),
-              key: ValueKey<String>(formatStatRange(range)),
-              textAlign: TextAlign.center,
-              style: tokens.type.metadata.copyWith(
-                color: scheme.onSurface,
-                fontWeight: FontWeight.w600,
+        Flexible(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 88),
+            child: _customAware(
+              context,
+              AnimatedSwitcher(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                switchInCurve: FushiMotion.enter,
+                switchOutCurve: FushiMotion.exit,
+                // 完整起止日期比月标签长；只在空间不足时缩小，保留两端日期。
+                child: FittedBox(
+                  key: ValueKey<String>(formatStatRange(range)),
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    formatStatRange(range),
+                    textAlign: TextAlign.center,
+                    style: tokens.type.metadata.copyWith(
+                      color: scheme.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -108,6 +167,23 @@ class StatRangeBar extends StatelessWidget {
     );
   }
 
+  /// 自定义区间下，步进器中间的区间文字本身可点 → 重新选区间。
+  Widget _customAware(BuildContext context, Widget child) {
+    if (range.mode != StatRangeMode.custom) return child;
+    return Tooltip(
+      message: t.stat_range_custom_edit,
+      child: InkWell(
+        key: const ValueKey<String>('stat-range-custom-label'),
+        customBorder: const StadiumBorder(),
+        onTap: () => _pickCustomRange(context),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: child,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -134,19 +210,38 @@ class StatRangeBar extends StatelessWidget {
               key: const ValueKey<String>('stat-range-modes'),
               segments: <ButtonSegment<StatRangeMode>>[
                 for (final StatRangeMode mode in StatRangeMode.values)
-                  ButtonSegment<StatRangeMode>(
-                    value: mode,
-                    label: Text(
-                      statRangeModeLabel(mode),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                  if (mode == StatRangeMode.custom)
+                    // 「自定义」是纯图标段（文案进 tooltip / 语义）：六段等分
+                    // 在手机宽下每段不到 60，任何语言的「自定义」都会被截断。
+                    ButtonSegment<StatRangeMode>(
+                      value: mode,
+                      icon: const Icon(
+                        Icons.date_range_outlined,
+                        key: ValueKey<String>('stat-range-mode-custom'),
+                      ),
+                      tooltip: statRangeModeLabel(mode),
+                    )
+                  else
+                    ButtonSegment<StatRangeMode>(
+                      value: mode,
+                      label: Text(
+                        statRangeModeLabel(mode),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
               ],
               selected: <StatRangeMode>{range.mode},
               showSelectedIcon: false,
+              // 六段（含「自定义」）在手机宽（约 358 可用）下等分每段不到 60，
+              // 默认左右各 16 会把「全部」「自定义」挤成省略号；收到 8。
+              style: const ButtonStyle(
+                padding: WidgetStatePropertyAll<EdgeInsetsGeometry>(
+                  EdgeInsets.symmetric(horizontal: 8),
+                ),
+              ),
               onSelectionChanged: (Set<StatRangeMode> modes) {
-                if (modes.isNotEmpty) _selectMode(modes.first);
+                if (modes.isNotEmpty) _selectMode(context, modes.first);
               },
             ),
           ),
@@ -160,6 +255,14 @@ class StatRangeBar extends StatelessWidget {
               label: t.stat_this_month,
               icon: Icons.calendar_month_outlined,
               onPressed: () => onChanged(const StatRangeSelection()),
+            ),
+          // 自定义区间：分段里「自定义」已选中、再点不会触发，给一个改区间的入口。
+          if (range.mode == StatRangeMode.custom)
+            FushiActionChip(
+              key: const ValueKey<String>('stat-range-custom-edit'),
+              label: t.stat_range_custom_edit,
+              icon: Icons.edit_calendar_outlined,
+              onPressed: () => _pickCustomRange(context),
             ),
         ],
       ),
@@ -176,10 +279,11 @@ String statRangeModeLabel(StatRangeMode mode) => switch (mode) {
   StatRangeMode.month => t.stat_range_mode_month,
   StatRangeMode.year => t.stat_range_mode_year,
   StatRangeMode.all => t.stat_all_time,
+  StatRangeMode.custom => t.stat_range_mode_custom,
 };
 
 /// 区间文字：日 `2026-09-28`、周 `09-22 ~ 09-28`、月 `2026-09`、年 `2026`、
-/// 全部 `2025-03-01 ~ 2026-09-28`。
+/// 全部 / 自定义 `2025-03-01 ~ 2026-09-28`（单日只写一天）。
 String formatStatRange(StatRange range) {
   switch (range.mode) {
     case StatRangeMode.day:
@@ -191,6 +295,7 @@ String formatStatRange(StatRange range) {
     case StatRangeMode.year:
       return range.fromKey.substring(0, 4);
     case StatRangeMode.all:
+    case StatRangeMode.custom:
       return range.fromKey == range.toKey
           ? range.fromKey
           : '${range.fromKey} ~ ${range.toKey}';
@@ -229,7 +334,12 @@ List<StatDayData> buildStatRangeChartData(
           bucket,
           () => StatDayData(
             dateKey: bucket,
-            label: weekly ? bucket.substring(5) : bucket.substring(2),
+            // 周桶键是周一，可能早于区间起点（自定义区间从周中开始）；标签夹到
+            // 区间起点，免得首柱写着区间外的日期。
+            label: weekly
+                ? (bucket.compareTo(range.fromKey) < 0 ? range.fromKey : bucket)
+                      .substring(5)
+                : bucket.substring(2),
           ),
         );
         final StatDayData? day = byDay[key];
