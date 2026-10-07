@@ -25,6 +25,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/floating_ball/camera_ocr_photo.dart';
 import 'package:fushi/src/floating_ball/desktop_system_ball_assets.dart';
+import 'package:fushi/src/utils/components/accent_logo_image.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
@@ -371,6 +372,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingCameraOcr.addListener(_onChanged);
     pendingSync.addListener(_onChanged);
     pendingSystemOcrSetup.addListener(_onChanged);
+    // 「图标跟随主题色」开关一变，桌面系统球球面要重画。
+    appLogoFollowsAccent.addListener(_onLogoTintChanged);
     if (Platform.isIOS ||
         Platform.isAndroid ||
         isDesktopSystemBallPlatform ||
@@ -408,6 +411,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingCameraOcr.removeListener(_onChanged);
     pendingSync.removeListener(_onChanged);
     pendingSystemOcrSetup.removeListener(_onChanged);
+    appLogoFollowsAccent.removeListener(_onLogoTintChanged);
     _prefs?.removeListener(_onPrefsChanged);
     // 还在路上的起球闭包作废。
     _systemGeneration++;
@@ -416,6 +420,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
 
   void _onChanged() {
     if (mounted) setState(() {});
+  }
+
+  void _onLogoTintChanged() {
+    if (mounted) _syncSystemBall();
   }
 
   void _onPrefsChanged() {
@@ -522,10 +530,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final Map<String, String> labels = floatingBallNativeLabels();
     final Map<String, int> icons = floatingBallNativeIcons();
     final Map<String, int> colors = _systemBallColors;
-    // 文案 / 配色进签名：切换界面语言或主题后原生球也要换。
+    final bool tintMascot = appLogoFollowsAccent.value;
+    // 文案 / 配色 / 吉祥物换色开关进签名：切换界面语言、主题或换色开关后原生球也要换。
     final String signature =
         '${actions.join(',')}|${labels.values.join('|')}|'
-        '${colors.values.join(',')}';
+        '${colors.values.join(',')}|$tintMascot';
     if (!force && signature == _systemSignature) return;
     final int generation = ++_systemGeneration;
     _systemRequested = true;
@@ -583,6 +592,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       final Uint8List? ballImage = desktop
           ? await renderFloatingBallFacePng(
               Color(colors['ballContainer'] ?? 0xFFEADDFF),
+              // 「图标跟随主题色」开着时吉祥物跟随强调色（ballOpen = primary，
+              // 墨水屏 surface）；关着始终原图。
+              accent: tintMascot
+                  ? Color(colors['ballOpen'] ?? 0xFF6750A4)
+                  : null,
             )
           : null;
       // 调 start 之前唯一一道门：此前的 await 只产出本地数据（图标、球面），

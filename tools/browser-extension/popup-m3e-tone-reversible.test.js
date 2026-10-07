@@ -31,13 +31,15 @@ function makeStyle(init) {
 function makeNode(computed, inline) {
   const node = { tagName: 'DIV', style: makeStyle(inline), computed, children: [] };
   node.matches = () => false;
-  node.querySelectorAll = () => node.children;
+  // 夹具里没有 .glossary-content（词典样式统一的作用域）：按选择器如实回答。
+  node.querySelectorAll = (sel) => (sel === '.glossary-content' ? [] : node.children);
   return node;
 }
 
 function load(world) {
   const sandbox = {
-    window: {},
+    // 暗色调色层只在「保留词典原样式」模式下工作：显式关掉词典样式统一。
+    window: { __fushiDictUnifiedStyle: false },
     console,
     document: {
       documentElement: { classList: { contains: (c) => c === 'fushi-m3e' }, getAttribute: () => world.theme },
@@ -72,7 +74,7 @@ test('暗色调色可逆：切回浅色复原原内联值（含 !important 优�
   });
   const plain = makeNode({ bg: 'rgb(250, 250, 200)', color: 'rgb(30, 30, 30)' }, {});
   const root = makeNode({ bg: 'rgba(0, 0, 0, 0)', color: 'rgb(0,0,0)' }, {});
-  root.querySelectorAll = () => [pink, plain];
+  root.querySelectorAll = (sel) => (sel === '.glossary-content' ? [] : [pink, plain]);
   pink.querySelectorAll = () => [];
   plain.querySelectorAll = () => [];
   world.root = root;
@@ -131,6 +133,7 @@ function reproFixture(initialTheme) {
   let frames = [];
   const scope = {
     console, Set, WeakSet,
+    window: { __fushiDictUnifiedStyle: false },
     document: { documentElement: html },
     __fushiContainer: () => null,
     requestAnimationFrame: (callback) => (frames.push(callback), frames.length),

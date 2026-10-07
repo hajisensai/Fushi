@@ -12,7 +12,9 @@ import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/reader/reader_floating_ball.dart';
+import 'package:fushi/src/utils/components/accent_logo_image.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/logo_accent_tint.dart';
 
 /// 图标 PNG 的边长：22 逻辑像素 × 3，原生按显示器缩放往下取样。
 const int kDesktopSystemBallIconPx = 66;
@@ -102,8 +104,12 @@ Future<Map<String, Uint8List>> renderFloatingBallIconPngs(
 /// 正方形、吉祥物按应用内同一倍数（[kReaderFloatingBallMascotScale]）居中。原生
 /// 侧取中心正方形按圆裁切，所以画出来与应用内收起态的球面同色同形。吉祥物资源
 /// 缺失 / 解码失败时只画底色（记日志）；整张画不出来返回 null（原生退化成纯色球）。
+///
+/// [accent]（当前主题 primary，墨水屏是 surface）给了就让吉祥物跟随强调色，与应用
+/// 内球同一套换色（[readerFloatingBallMascotImage]）。
 Future<Uint8List?> renderFloatingBallFacePng(
   Color container, {
+  Color? accent,
   AssetBundle? bundle,
   int size = kDesktopSystemBallFacePx,
 }) async {
@@ -116,6 +122,23 @@ Future<Uint8List?> renderFloatingBallFacePng(
         mascotImage = (await codec.getNextFrame()).image;
       } finally {
         codec.dispose();
+      }
+      final LogoAccentTint tint = accent == null
+          ? LogoAccentTint.identity
+          : LogoAccentTint.fromAccent(accent.toARGB32());
+      if (!tint.isIdentity) {
+        final ui.Image original = mascotImage;
+        try {
+          mascotImage = await tintLogoImage(original, tint);
+          original.dispose();
+        } catch (error, stack) {
+          // 换色失败退回原配色吉祥物，球面照样有图。
+          ErrorLogService.instance.log(
+            'floating_ball.ball_face_tint',
+            error,
+            stack,
+          );
+        }
       }
     } catch (error, stack) {
       ErrorLogService.instance.log('floating_ball.ball_face', error, stack);

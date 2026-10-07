@@ -29,6 +29,7 @@ import 'package:fushi/src/sync/port_process_terminator.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/sync/yomitan_api_server.dart'
     show kYomitanApiDefaultPort;
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
 
@@ -640,6 +641,22 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
             defaultValue: false,
+          ),
+          // 词典样式统一（默认开）：导入词典自带的标签底色 / 强调字色 / 边框色按语义
+          // 换成当前 ColorScheme（M3E），换强调色、切明暗都跟随；关掉退回词典原样式。
+          // popup.js 读 window.__fushiDictUnifiedStyle（popup_settings_injection 注入）。
+          SettingsSwitchItem(
+            id: 'lookup.dictionary_unified_style',
+            title: t.lookup_dictionary_unified_style,
+            subtitle: t.lookup_dictionary_unified_style_hint,
+            icon: FushiIcons.appearance,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.dictionaryUnifiedStyle,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.toggleDictionaryUnifiedStyle();
+              settingsContext.refresh();
+            },
+            defaultValue: true,
           ),
           // 词典字体原本只能去「外观 · 字体库」里给某款字体勾「词典」用途，词典设置
           // 里找不到入口。这里以词典作用域打开同一个字体库：新加的字体挂到词典、

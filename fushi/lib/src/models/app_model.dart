@@ -8100,6 +8100,9 @@ class AppModel with ChangeNotifier {
   void toggleCollapseDictionaries() => prefsRepo.toggleCollapseDictionaries();
   bool get compactGlossaries => prefsRepo.compactGlossaries;
   void toggleCompactGlossaries() => prefsRepo.toggleCompactGlossaries();
+  bool get dictionaryUnifiedStyle => prefsRepo.dictionaryUnifiedStyle;
+  void toggleDictionaryUnifiedStyle() =>
+      prefsRepo.toggleDictionaryUnifiedStyle();
 
   /// TODO-1357: 查词弹窗「列数 / 自动展开词典数」的平台三态默认解析（纯函数，供守卫）。
   /// - 用户显式设过（[hasExplicit]）→ 一律遵从其存储值 [stored]（尊重用户）。

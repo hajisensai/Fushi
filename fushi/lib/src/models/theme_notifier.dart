@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:cupertino_ui/cupertino_ui.dart'
@@ -11,7 +12,12 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/adaptive/predictive_back_page_transitions.dart';
+import 'package:fushi/src/utils/components/accent_logo_image.dart'
+    show appLogoFollowsAccent;
+import 'package:fushi/src/utils/misc/app_icon_preferences.dart'
+    show AppIconSelection, currentAppIconSelection;
 import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/utils/misc/icon_seed_color.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
 
@@ -815,12 +821,135 @@ class ThemeNotifier extends ChangeNotifier {
             customThemeIdGenerator ?? _defaultCustomThemeIdGenerator {
     // 系统「降低透明度」切换时玻璃要立刻回退 / 恢复：重建主题即可。
     SystemTransparency.reduceTransparency.addListener(notifyListeners);
+    // 换图标（预设 ↔ 自定义、换自定义图）后「主题色跟随图标」要即时重取色。
+    currentAppIconSelection.addListener(_onAppIconSelectionChanged);
   }
 
   @override
   void dispose() {
     SystemTransparency.reduceTransparency.removeListener(notifyListeners);
+    currentAppIconSelection.removeListener(_onAppIconSelectionChanged);
+    _appIconSeedGeneration++;
     super.dispose();
+  }
+
+  // ── 应用图标 ↔ 主题色（两个开关，默认都关）──────────────────────────
+
+  /// 「图标跟随主题色」：内置吉祥物 logo 按当前强调色换色（关 = 始终原图）。
+  static const String tintAppLogoPrefKey = 'theme_tint_app_logo';
+
+  /// 「主题色跟随图标」：用户设置了自定义图标图片时，从图标取种子色当强调色。
+  /// 只是**覆盖**生效配色，不改写 `app_theme_key` / 自定义主题，关掉即回到原主题。
+  static const String followAppIconPrefKey = 'theme_follow_app_icon';
+
+  /// 取色缓存：`<路径>|<修改时间毫秒>:<字节数>|<ARGB>`。冷启动时先同步用它出首帧
+  /// 配色（不闪一下原主题），再异步核对文件有没有换过。
+  static const String appIconSeedCachePrefKey = 'theme_app_icon_seed_cache';
+
+  /// 从图标文件取种子色（ARGB）。测试可替换。
+  @visibleForTesting
+  static Future<int?> Function(String path) appIconSeedExtractor =
+      _extractAppIconSeedFromFile;
+
+  static Future<int?> _extractAppIconSeedFromFile(String path) async {
+    final Uint8List bytes = await File(path).readAsBytes();
+    return extractIconSeedArgb(bytes);
+  }
+
+  bool get tintAppLogo => _get(tintAppLogoPrefKey, defaultValue: false) as bool;
+
+  Future<void> setTintAppLogo(bool value) async {
+    await _set(tintAppLogoPrefKey, value);
+    appLogoFollowsAccent.value = value;
+    notifyListeners();
+  }
+
+  bool get followAppIconAccent =>
+      _get(followAppIconPrefKey, defaultValue: false) as bool;
+
+  Future<void> setFollowAppIconAccent(bool value) async {
+    await _set(followAppIconPrefKey, value);
+    notifyListeners();
+    _persistSplashColor();
+    await refreshAppIconSeed();
+  }
+
+  /// 当前自定义图标取出的种子色（最近一次取色结果，不看开关）。
+  Color? _appIconSeed;
+  int _appIconSeedGeneration = 0;
+
+  /// 「主题色跟随图标」实际生效的种子：开关开着、当前图标是自定义图片、且已取到色。
+  /// 没有自定义图标时恒为 null（开关形同关闭，回到原主题）。
+  Color? get appIconAccentSeed {
+    if (!followAppIconAccent) return null;
+    if (!currentAppIconSelection.value.usesCustomFile) return null;
+    return _appIconSeed;
+  }
+
+  void _onAppIconSelectionChanged() {
+    if (!followAppIconAccent) return;
+    unawaited(refreshAppIconSeed());
+  }
+
+  /// 偏好加载 / 刷新后：发布 logo 换色开关、按需取图标色。
+  void _onAppIconPreferencesLoaded() {
+    appLogoFollowsAccent.value = tintAppLogo;
+    if (followAppIconAccent) unawaited(refreshAppIconSeed());
+  }
+
+  /// 按当前图标重取种子色（开关关着或不是自定义图标时什么都不取）。
+  /// 先同步套用缓存，再核对文件修改时间 / 大小，变了才在后台重取。
+  Future<void> refreshAppIconSeed() async {
+    final int generation = ++_appIconSeedGeneration;
+    final AppIconSelection selection = currentAppIconSelection.value;
+    if (!followAppIconAccent || !selection.usesCustomFile) {
+      // 生效种子随开关 / 图标类型已经变成 null：重建一次回到原主题。
+      _onAppIconSeedChanged();
+      return;
+    }
+    final String path = selection.customPath!;
+    final List<String>? cache = _readAppIconSeedCache();
+    final Color? before = appIconAccentSeed;
+    _appIconSeed = cache != null && cache[0] == path
+        ? Color(int.parse(cache[2]))
+        : null;
+    if (appIconAccentSeed != before) _onAppIconSeedChanged();
+    String? stamp;
+    int? seed;
+    try {
+      final FileStat stat = await File(path).stat();
+      stamp = '${stat.modified.millisecondsSinceEpoch}:${stat.size}';
+      if (generation != _appIconSeedGeneration) return;
+      if (cache != null && cache[0] == path && cache[1] == stamp) return;
+      seed = await appIconSeedExtractor(path);
+    } catch (error) {
+      debugPrint('[theme] app icon seed extraction failed: $error');
+      seed = null;
+    }
+    if (generation != _appIconSeedGeneration) return;
+    final Color? previous = appIconAccentSeed;
+    _appIconSeed = seed == null ? null : Color(seed);
+    if (appIconAccentSeed != previous) _onAppIconSeedChanged();
+    if (seed != null && stamp != null) {
+      await _set(appIconSeedCachePrefKey, '$path|$stamp|$seed');
+    }
+  }
+
+  void _onAppIconSeedChanged() {
+    notifyListeners();
+    _persistSplashColor();
+  }
+
+  List<String>? _readAppIconSeedCache() {
+    final Object? raw = _get(appIconSeedCachePrefKey);
+    if (raw is! String) return null;
+    final int last = raw.lastIndexOf('|');
+    if (last <= 0) return null;
+    final int mid = raw.lastIndexOf('|', last - 1);
+    if (mid <= 0) return null;
+    final String seed = raw.substring(last + 1);
+    if (int.tryParse(seed) == null) return null;
+    return <String>[raw.substring(0, mid), raw.substring(mid + 1, last), seed];
   }
 
   // Stable, testable id source. Defaults to epoch-millis + a monotonic counter
@@ -894,6 +1023,7 @@ class ThemeNotifier extends ChangeNotifier {
     _prefs
       ..clear()
       ..addAll(snapshot);
+    _onAppIconPreferencesLoaded();
     _designSystemPreferenceRevision++;
     final _DesignSystemPreferenceMigration? migration =
         _normalizeHiddenDesignSystemInMemory();
@@ -915,6 +1045,7 @@ class ThemeNotifier extends ChangeNotifier {
     _prefs
       ..clear()
       ..addAll(all);
+    _onAppIconPreferencesLoaded();
     _designSystemPreferenceRevision++;
     final _DesignSystemPreferenceMigration? migration =
         _normalizeHiddenDesignSystemInMemory();
@@ -1509,6 +1640,8 @@ class ThemeNotifier extends ChangeNotifier {
   /// 返回 null（扩展收不到种子就不按种子派生）。以前这里恒为 [_seedColor]，系统取色下落成
   /// 默认种子，扩展派生的另一明暗与 app 实际配色对不上。
   Color? get activeSeedColor {
+    final Color? iconSeed = appIconAccentSeed;
+    if (iconSeed != null) return iconSeed;
     if (appThemeKey == 'system-theme') {
       if (_systemPalette != null) return null;
       return _systemAccentColor ?? _seedColor;
@@ -1519,6 +1652,7 @@ class ThemeNotifier extends ChangeNotifier {
   /// 当前主题的 M3 方案变体（同上）。系统取色与 [buildSystemThemeColorScheme] 同口径：
   /// 无彩度强调色用 tonalSpot，其余用默认变体。
   DynamicSchemeVariant get activeSchemeVariant {
+    if (appIconAccentSeed != null) return kFushiDefaultSchemeVariant;
     if (appThemeKey == 'system-theme') {
       final Color? seed = activeSeedColor;
       return seed != null && isAchromaticSeed(seed)
@@ -1537,6 +1671,16 @@ class ThemeNotifier extends ChangeNotifier {
     // toggle off restores the previous colors without any migration.
     if (einkMode) {
       return buildEinkColorScheme(brightness);
+    }
+    // 「主题色跟随图标」：自定义图标取出的种子覆盖当前主题（不改写主题偏好，
+    // 关掉开关 / 换回预设图标即回到原主题）。
+    final Color? iconSeed = appIconAccentSeed;
+    if (iconSeed != null) {
+      return buildFushiColorScheme(
+        seedColor: iconSeed,
+        brightness: brightness,
+        pureBlack: pureBlackDark,
+      );
     }
     if (appThemeKey == 'system-theme') {
       // 系统取色的中性阶梯有两个来源（Android 壁纸调色板 / 桌面 accent seed），
