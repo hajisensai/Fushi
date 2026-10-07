@@ -761,6 +761,69 @@ mixin _LocalLibraryHostVideos
     return suffix;
   }
 
+  /// 清掉视频字幕（[VideoSubtitleClearHost]）。
+  @override
+  Future<VideoSubtitleClearResult> clearVideoSubtitle(
+    String id, {
+    VideoSubtitleClearScope which = VideoSubtitleClearScope.primary,
+    bool allSidecars = false,
+  }) async {
+    _assertSafeVideoId(id);
+    late VideoSubtitleClearResult result;
+    await _runExclusive(() async {
+      final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+      if (row == null) throw StateError('unknown video: $id');
+      final Map<String, String?> cleared = <String, String?>{};
+      final Set<String> toBackUp = <String>{};
+      if (which.clearsPrimary) {
+        cleared['primary'] = row.subtitleSource;
+        await _db.upsertVideoBook(VideoBooksCompanion(
+          bookUid: Value(id),
+          title: Value(row.title),
+          videoPath: Value(row.videoPath),
+          subtitleSource: const Value<String?>(null),
+          subtitleFormat: const Value<String?>(null),
+        ));
+        // 主字幕解析出的 cue 与它同生同灭：留着会让查词 / 句子列表继续显示旧字幕。
+        await _db.replaceCuesForBook(id, const <AudioCuesCompanion>[]);
+        final String? own = _ownSidecarPath(row.videoPath, row.subtitleSource);
+        if (own != null) toBackUp.add(own);
+      }
+      if (which.clearsSecondary) {
+        cleared['secondary'] = row.secondarySubtitleSource;
+        await _db.updateVideoBookSecondarySubtitleSource(id, null);
+        final String? own =
+            _ownSidecarPath(row.videoPath, row.secondarySubtitleSource);
+        if (own != null) toBackUp.add(own);
+      }
+      final String dir = p.dirname(row.videoPath);
+      final String stem = p.basenameWithoutExtension(row.videoPath);
+      if (allSidecars && !isNetworkOnlyVideoPath(row.videoPath)) {
+        for (final String name
+            in listSidecarSubtitles(stem, _listDirFileNames(dir) ?? const <String>[])) {
+          toBackUp.add(p.join(dir, name));
+        }
+      }
+      final Map<String, String> backedUp = <String, String>{};
+      for (final String path in toBackUp) {
+        final File file = File(path);
+        if (!file.existsSync()) continue;
+        final String backup = _freeBackupPath(path);
+        file.renameSync(backup);
+        backedUp[path] = backup;
+      }
+      result = VideoSubtitleClearResult(
+        clearedSources: cleared,
+        backedUpFiles: backedUp,
+        remainingSidecars: isNetworkOnlyVideoPath(row.videoPath)
+            ? const <String>[]
+            : listSidecarSubtitles(stem, _listDirFileNames(dir) ?? const <String>[]),
+      );
+    });
+    _db.notifyVideoLibraryChanged();
+    return result;
+  }
+
   /// [id] 对应、且视频是 host 本地文件的库行；否则抛 [StateError]（端点映射 404）。
   /// 网络流（http(s) / rtsp …）与 `.strm` 流指针（[lacksLocalMediaFile]）都不算：
   /// 它们在 host 上没有可下发的视频本体（[resolveVideoFile] 恒 null），对端推来的
@@ -874,6 +937,33 @@ List<String>? _listDirFileNames(String dir) {
   } on FileSystemException {
     return null;
   }
+}
+
+/// [source] 是不是 [videoPath] **自己的** sidecar 字幕文件：与视频同目录、文件名是
+/// `<视频 stem><字幕后缀>`。是则返回规范化路径，否则（别处的文件、`embedded:<n>`、
+/// `off:`、网络路径、空）返回 null——清字幕时只有这一种文件可以动。
+String? _ownSidecarPath(String videoPath, String? source) {
+  if (source == null || source.trim().isEmpty) return null;
+  if (isNetworkOnlyVideoPath(videoPath) || !p.isAbsolute(source)) return null;
+  final String normalized = p.normalize(source);
+  if (!p.equals(p.dirname(normalized), p.dirname(p.normalize(videoPath)))) {
+    return null;
+  }
+  final List<String> match = listSidecarSubtitles(
+    p.basenameWithoutExtension(videoPath),
+    <String>[p.basename(normalized)],
+  );
+  return match.isEmpty ? null : normalized;
+}
+
+/// `<path>.fushi-bak`；已被占用（更早的备份）时 `<path>.<n>.fushi-bak`，
+/// 绝不覆盖已有备份。
+String _freeBackupPath(String path) {
+  String candidate = '$path$kDisplacedSidecarBackupSuffix';
+  for (int n = 2; File(candidate).existsSync(); n++) {
+    candidate = '$path.$n$kDisplacedSidecarBackupSuffix';
+  }
+  return candidate;
 }
 
 /// 校验视频 id 不含路径穿越字符（`..` / `\`）。id 允许 `/`（bookUid 形如

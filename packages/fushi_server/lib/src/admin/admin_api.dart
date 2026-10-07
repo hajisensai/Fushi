@@ -75,6 +75,8 @@ class AdminApi {
       return await _route(method, path, request);
     } on FormatException catch (e) {
       return _err(400, e.message);
+    } on ArgumentError catch (e) {
+      return _err(400, '${e.message}');
     } on UploadRejected catch (e) {
       return _err(e.status, e.message);
     } on VideoDownloadPipelineActionRequired catch (e) {
@@ -123,6 +125,11 @@ class AdminApi {
       case ('POST', _) when path.startsWith('/api/admin/downloads/') && path.endsWith('/retry'):
         await _downloadsHost().retryJob(_segment(path, '/api/admin/downloads/', '/retry'));
         return _json(const <String, Object?>{'ok': true});
+      case ('GET', _) when path.startsWith('/api/admin/downloads/') && path.endsWith('/subtitles'):
+        final List<VideoDownloadJobSubtitleRow>? subtitles =
+            await _downloadsHost().listJobSubtitles(_segment(path, '/api/admin/downloads/', '/subtitles'));
+        if (subtitles == null) return _err(404, 'unknown download job');
+        return _json(<String, Object?>{'subtitles': subtitles.map(videoDownloadJobSubtitleToWire).toList()});
       case ('DELETE', _) when path.startsWith('/api/admin/downloads/'):
         await _downloadsHost().deleteJob(path.substring('/api/admin/downloads/'.length));
         return _json(const <String, Object?>{'ok': true});
@@ -475,15 +482,10 @@ class AdminApi {
     });
   }
 
+  /// 与互联 `POST /api/downloads` 同一份请求解析（[HostDownloadAddRequest.fromJson]）：
+  /// 磁链 / .torrent（base64）+ 文件选择 + 年份 + 作品身份 + 字幕策略。
   Future<shelf.Response> _addDownload(Map<String, dynamic> body) async {
-    final String magnet = (body['magnet'] ?? '').toString().trim();
-    final String title = (body['title'] ?? '').toString().trim();
-    if (magnet.isEmpty || title.isEmpty) throw const FormatException('magnet and title required');
-    final String jobId = await _downloadsHost().addMagnet(
-      magnetUri: magnet,
-      title: title,
-      mediaKind: (body['mediaKind'] ?? 'movie').toString() == 'tv' ? 'tv' : 'movie',
-    );
+    final String jobId = await _downloadsHost().add(HostDownloadAddRequest.fromJson(body));
     return _json(<String, Object?>{'jobId': jobId});
   }
 

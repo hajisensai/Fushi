@@ -237,6 +237,93 @@ abstract interface class VideoSubtitleDefaultHost {
   });
 }
 
+/// `DELETE /api/library/videos/<id>/subtitle?which=` 清哪一路字幕。
+enum VideoSubtitleClearScope {
+  primary,
+  secondary,
+  all;
+
+  bool get clearsPrimary => this != secondary;
+  bool get clearsSecondary => this != primary;
+}
+
+/// [VideoSubtitleClearHost.clearVideoSubtitle] 做了什么。
+class VideoSubtitleClearResult {
+  const VideoSubtitleClearResult({
+    required this.clearedSources,
+    required this.backedUpFiles,
+    required this.remainingSidecars,
+  });
+
+  /// 被清掉的 DB 字幕源：`primary` / `secondary` → 清之前的值（null = 本来就空）。
+  final Map<String, String?> clearedSources;
+
+  /// 被挪走的 sidecar：原路径 → 改名后的备份路径（`<原名>.fushi-bak`）。
+  final Map<String, String> backedUpFiles;
+
+  /// 视频旁仍在的 sidecar 字幕（文件名）。非空时播放页仍会发现它们，
+  /// 自动补字幕也会当「已有字幕」跳过。
+  final List<String> remainingSidecars;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'clearedSources': clearedSources,
+        'backedUpFiles': backedUpFiles,
+        'remainingSidecars': remainingSidecars,
+      };
+}
+
+/// host 端「清掉某个视频的字幕」的**可选**能力（与 [VideoSubtitleDefaultHost] 同范式，
+/// 不扩大主接口）。不实现时 `DELETE /api/library/videos/<id>/subtitle` 落 404。
+abstract interface class VideoSubtitleClearHost {
+  /// 清 [id] 的字幕源（[which]），连同主字幕解析出的 cue。
+  ///
+  /// 文件侧只碰**这个视频自己的 sidecar**：与视频同目录、名为
+  /// `<视频 stem><字幕后缀>` 的文件，而且是**改名备份**（`<原名>.fushi-bak`）
+  /// 而不是删除——字幕可能是用户手放的，误清了还能改回来。指向别处的路径、
+  /// `embedded:<n>` 之类的非文件源只清 DB。视频本体永远不碰。
+  ///
+  /// [allSidecars] = true 时把视频旁全部 sidecar 字幕都备份挪走（不只 DB 指向的
+  /// 那份），让自动补字幕不再把它们当「已有字幕」。
+  ///
+  /// 未知视频抛 [StateError]；id 含路径穿越字符抛 [ArgumentError]。
+  Future<VideoSubtitleClearResult> clearVideoSubtitle(
+    String id, {
+    VideoSubtitleClearScope which = VideoSubtitleClearScope.primary,
+    bool allSidecars = false,
+  });
+}
+
+/// `POST /api/library/videos/<id>/subtitle/backfill` 的结果。
+class VideoSubtitleBackfillReport {
+  const VideoSubtitleBackfillReport({
+    required this.outcome,
+    this.installedPath,
+    this.language,
+    this.detail,
+  });
+
+  /// `installed` / `alreadyHasSubtitle` / `noCandidate` / `allCandidatesRejected` /
+  /// `failed` / `noIdentity` / `unavailable`。
+  final String outcome;
+  final String? installedPath;
+  final String? language;
+  final String? detail;
+
+  bool get installed => outcome == 'installed';
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'outcome': outcome,
+        'installed': installed,
+        if (installedPath != null) 'installedPath': installedPath,
+        if (language != null) 'language': language,
+        if (detail != null) 'detail': detail,
+      };
+}
+
+/// host 的「立即给这一个视频补字幕」：[videoId] 未知返回 null（路由 404）。
+typedef VideoSubtitleBackfillRunner = Future<VideoSubtitleBackfillReport?>
+    Function(String videoId, {String? language});
+
 /// 旧名兼容：有声书 diff 已并入 [SyncKeyDiff]。
 @Deprecated('已并入 SyncKeyDiff（computeKeyUnionDiff），请改用新名')
 typedef AudiobookSyncDiff = SyncKeyDiff;

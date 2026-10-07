@@ -15,6 +15,8 @@ import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart'
+    show videoDownloadJobConfirmedLookup;
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
@@ -3073,6 +3075,148 @@ void main() {
           reason: '非视频内容没有字幕概念');
       expect(job.targetSourceId, isNull, reason: '发现域任务不进受管视频来源');
       expect(job.mediaKind, DiscoveryMediaKind.novel.name);
+    });
+  });
+
+  group('手动视频任务：只下选中文件 + 年份 + 作品身份（互联 / CLI 代下载）', () {
+    Future<
+        ({
+          _PipelineEnvironment environment,
+          _FakePausedMetainfoBackend backend,
+          VideoDownloadPipelineService service,
+        })> setUpSelective() async {
+      final Directory manualDir =
+          await Directory.systemTemp.createTemp('fushi-video-select-');
+      addTearDown(() async {
+        if (await manualDir.exists()) await manualDir.delete(recursive: true);
+      });
+      final _FakePausedMetainfoBackend backend =
+          _FakePausedMetainfoBackend(fileCount: 3);
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      final VideoDownloadPipelineService service = VideoDownloadPipelineService(
+        database: environment.database,
+        resourceRegistry: environment.resourceRegistry,
+        backendResolver: (_) async => VideoDownloadBackendBinding(
+          backend: backend,
+          identity: _expectedIdentity,
+        ),
+        scrapeCoordinator: environment.scrapeCoordinator,
+        manualTorrentDirectory: manualDir,
+        workerId: 'video-select-worker',
+        pollInterval: const Duration(hours: 1),
+      );
+      addTearDown(service.dispose);
+      return (environment: environment, backend: backend, service: service);
+    }
+
+    test('只有选中的文件交给后端下载，其余标 skip；年份与 TMDB 身份落任务行', () async {
+      final (
+        :_PipelineEnvironment environment,
+        :_FakePausedMetainfoBackend backend,
+        :VideoDownloadPipelineService service,
+      ) = await setUpSelective();
+      final FushiDatabase database = environment.database;
+      final InspectedTorrentMetainfo metainfo =
+          inspectTorrentMetainfo(_manualPackMetainfo());
+
+      final String jobId = await service.enqueueManual(
+        VideoDownloadManualEnqueueRequest(
+          title: 'Doraemon Movie 10',
+          backendTarget: _expectedTarget,
+          metainfo: metainfo,
+          selectedFileIndexes: <int>{1},
+          year: 1989,
+          metadataProvider: 'tmdb',
+          externalId: '12345',
+          targetSourceId: environment.sourceId,
+        ),
+      );
+
+      final VideoDownloadJobRow job = (await database.getVideoDownloadJob(jobId))!;
+      expect(job.year, 1989, reason: '手动任务不再把年份写死成 null');
+      expect(job.metadataProvider, 'tmdb');
+      expect(job.externalId, '12345');
+      final VideoMetadataLookup? lookup = videoDownloadJobConfirmedLookup(job);
+      expect(lookup?.provider, VideoMetadataProviderKind.tmdb,
+          reason: '有确认身份 → import 后进 scrape 阶段按这个身份直取，不按标题搜');
+      expect(lookup?.externalId, '12345');
+      expect(lookup?.mediaKind, VideoMetadataMediaKind.movie);
+      expect(
+        <int?, bool>{
+          for (final VideoDownloadJobFileRow row
+              in await database.getVideoDownloadJobFiles(jobId))
+            row.backendFileIndex: row.selected,
+        },
+        <int, bool>{0: false, 1: true, 2: false},
+      );
+
+      service.wake();
+      await _waitForJob(
+        database,
+        jobId,
+        (VideoDownloadJobRow row) =>
+            row.stage == VideoDownloadJobStage.download &&
+            row.claimedBy == null,
+      );
+      expect(backend.pausedAdds, <String>[metainfo.torrentId.toLowerCase()],
+          reason: '选择性任务以暂停态加入，设好优先级再开始');
+      expect(backend.priorities, <int, TorrentFilePriority>{
+        0: TorrentFilePriority.skip,
+        1: TorrentFilePriority.normal,
+        2: TorrentFilePriority.skip,
+      });
+    });
+
+    test('选中全部文件 = 整颗 torrent：不落选择行（否则 add 阶段判选择不完整卡死）',
+        () async {
+      final (
+        :_PipelineEnvironment environment,
+        backend: _,
+        :VideoDownloadPipelineService service,
+      ) = await setUpSelective();
+      final String jobId = await service.enqueueManual(
+        VideoDownloadManualEnqueueRequest(
+          title: 'Whole Pack',
+          backendTarget: _expectedTarget,
+          metainfo: inspectTorrentMetainfo(_manualPackMetainfo()),
+          selectedFileIndexes: <int>{0, 1, 2},
+          targetSourceId: environment.sourceId,
+        ),
+      );
+      expect(await environment.database.getVideoDownloadJobFiles(jobId), isEmpty);
+    });
+
+    test('显式 AniDB 身份也能直取（默认主源），MAL 同理', () async {
+      final (
+        :_PipelineEnvironment environment,
+        backend: _,
+        :VideoDownloadPipelineService service,
+      ) = await setUpSelective();
+      for (final (String provider, VideoMetadataProviderKind kind)
+          in <(String, VideoMetadataProviderKind)>[
+        ('anidb', VideoMetadataProviderKind.anidb),
+        ('mal', VideoMetadataProviderKind.mal),
+      ]) {
+        final String jobId = await service.enqueueManual(
+          VideoDownloadManualEnqueueRequest(
+            title: 'Movie $provider',
+            backendTarget: _expectedTarget,
+            magnetUri: provider == 'anidb'
+                ? 'magnet:?xt=urn:btih:${'a' * 40}'
+                : 'magnet:?xt=urn:btih:${'b' * 40}',
+            metadataProvider: provider,
+            externalId: '777',
+            targetSourceId: environment.sourceId,
+          ),
+        );
+        final VideoMetadataLookup? lookup = videoDownloadJobConfirmedLookup(
+          (await environment.database.getVideoDownloadJob(jobId))!,
+        );
+        expect(lookup?.provider, kind, reason: provider);
+        expect(lookup?.externalId, '777');
+      }
     });
   });
 

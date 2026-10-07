@@ -166,7 +166,12 @@ fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试
 fushi_server ctl status | logs | p2p
 fushi_server ctl lib [ls] | add <path> [--kind video|book] [--id x] | rm <id> [--purge]
 fushi_server ctl scan [--prune|--no-prune]
-fushi_server ctl dl [ls] | add <magnet> --title t [--media-kind movie|tv] | cancel|retry|rm <id>
+fushi_server ctl dl [ls] | cancel|retry|rm <id> | subtitles <id>（该任务的字幕行：来源 / 语言 / 原文件名 / 落盘路径 / 错误）
+fushi_server ctl dl add --title t (<magnet> | --magnet m | --torrent <路径|URL>)
+                  [--select <正则>]... [--index n]... [--year y]
+                  [--provider anidb|mal|tmdb --external-id id] [--media-kind movie|tv]
+                  [--subtitle-policy none|bestEffort|required]
+fushi_server ctl dl add --torrent <路径|URL> --list-files  只列 .torrent 文件（下标 / 大小 / 路径），不投递
 fushi_server ctl sub [ls] | add '<json>' | check [id] | enable|disable|rm <id>
 fushi_server ctl models [ls] | pull <ja|…|ocr|ocr:key>
 fushi_server ctl anki [status] | sync | login --user u（密码读 stdin / FUSHI_ANKI_PASSWORD）| …
@@ -175,8 +180,11 @@ fushi_server ctl logs -f                                 跟随日志
 fushi_server ctl raw <METHOD> /api/admin/... ['<json>']   直调任意 admin 接口
 
 # 经互联接口（admin 以 host 身份代调 /api/admin/host/*，配对路由除外）
-fushi_server ctl books|videos|audiobooks|dict|metadata [ls]
+fushi_server ctl books|videos|audiobooks|dict|metadata [ls]   （books / videos ls 可加 --grep 子串）
 fushi_server ctl books progress <key> [--set '<json>']   videos position|playback <id> …
+fushi_server ctl videos rm <id>
+fushi_server ctl videos subtitle clear <id> [--which primary|secondary|all] [--all-sidecars]
+fushi_server ctl videos subtitle backfill <id> [--lang ja]   立即补字幕（只在 app 当 host 时可用）
 fushi_server ctl scrape pending | sweep | ai-identify <id> | search <bookUid> -q 词
                   | identify <bookUid> --provider anidb|mal|tmdb --external-id <id>
 fushi_server ctl jobs submit asr <音频> -l ja -o out.srt   在运行中的服务上转录
@@ -188,6 +196,48 @@ fushi_server ctl host <METHOD> <互联路径> ['<json>']       直调任意互�
 `admin_token`；TLS 下按数据目录里服务端证书的指纹钉扎。远程用 `--url` / `--token` /
 `--fingerprint` 覆盖。`--json` 原样输出。退出码：0 成功、1 服务端拒绝、64 用法错误、
 69 连不上、75 冲突（409）、77 鉴权失败。完整动作表见 `fushi_server --help`。
+
+**`downloads add` 的 .torrent 与文件选择**：`--torrent` 是 http(s) 地址时 CLI 自己下载（走
+`HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY`），用引擎的同一个解析器读文件清单；`--select`（不区分大小写的
+正则，匹配种子内路径，可重复）与 `--index`（可重复）取并集，只下选中的文件——下载后端（内置 libtorrent /
+qBittorrent）里其余文件优先级设为「不下载」并回读核对。`--year` 与 `--provider` + `--external-id` 写进
+任务行：入库后按这个身份直接刮削，不再按标题搜。正则写错 / 没匹配到 / 下标越界都是 64，不会退化成整颗下载。
+
+### 直连运行中的 Fushi app（`--interconnect`）
+
+`ctl` 也能不经 fushi_server 的 admin 面，直接连一台**互联 host**——正在运行的 Fushi app（设置 → 互联 →
+本机作为 host）或 fushi_server 的互联端口：
+
+```
+export FUSHI_HOST_URL=https://127.0.0.1:38765   # 或 --interconnect <url>
+export FUSHI_HOST_PASSWORD=<host token>          # 或 --password <token>（互联设置里的密码）
+
+fushi_server ctl dl add --torrent https://nyaa.si/download/1498115.torrent --list-files
+fushi_server ctl dl add --torrent https://nyaa.si/download/1498115.torrent \
+    --select 'Doraemon Movie 10 \(1989\)' --title 'ドラえもん のび太の日本誕生' \
+    --year 1989 --provider tmdb --external-id <TMDB 电影 id>
+fushi_server ctl dl                      # 任务列表
+fushi_server ctl dl subtitles <jobId>    # 该任务配上的字幕
+fushi_server ctl videos ls --grep doraemon
+fushi_server ctl videos subtitle clear <videoId> --which all --all-sidecars
+fushi_server ctl videos subtitle backfill <videoId> --lang ja
+```
+
+鉴权是 Basic（密码 = host token）。路径映射：admin 代理路径 `/api/admin/host/<x>` 直接打 `/api/<x>`，
+`/api/admin/downloads…` 打 `/api/downloads…`；只有 fushi_server 才有的 admin 动作（status / lib / models /
+anki / upload…）在这个模式下本地报 64，不发请求。显式给 `--url` 时走 admin 模式，环境变量
+`FUSHI_HOST_URL` 不生效。
+
+**TLS**：app 的互联 host 开 TLS 时用的是自签证书。给了 `--fingerprint` 就按指纹钉扎（推荐，指纹在 host 的
+互联设置 / 配对信息里）；没给时**只对命令行上点名的这一个 host:port** 放行证书校验失败——等价于互联
+client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝。不可信网络上请务必用 `--fingerprint`。
+
+**字幕清理**：`videos subtitle clear` 清 DB 里的字幕源（`--which` 选主 / 副 / 全部，主字幕连同解析出的 cue），
+文件侧只碰**这个视频自己的 sidecar**（同目录、`<视频文件名><字幕后缀>`），而且是改名成
+`<原名>.fushi-bak`（已有备份时 `.2.fushi-bak`…）不是删除；别处的文件与视频本体永远不动。`--all-sidecars`
+把视频旁全部 sidecar 字幕都挪走——自动补字幕把任何现存 sidecar 当「已有字幕」跳过，想重新补就得先清干净。
+`videos subtitle backfill` 用的是刮削后自动补字幕的同一个服务，身份取已落库的刮削结论（没刮过回
+`noIdentity`，先 `scrape identify`）；它只在 app 当 host 时有（无头服务端回 501）。
 
 **数据目录互斥**：`serve` 与所有直接打开数据库的离线命令（`scan` / `status` / `import` /
 `audiobook` / `dict` …）启动时都要拿 `<data_dir>/fushi_server.lock` 的排他 OS 文件锁（进程退出

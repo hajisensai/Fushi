@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
+    show VideoDownloadSubtitlePolicy;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/sync/downloads/host_download_routes.dart';
@@ -19,21 +21,25 @@ class _RecordingHost implements HostDownloadHost {
   Future<List<VideoDownloadJobRow>> listJobs() async =>
       const <VideoDownloadJobRow>[];
 
+  final List<HostDownloadAddRequest> requests = <HostDownloadAddRequest>[];
+
   @override
-  Future<String> addMagnet({
-    required String magnetUri,
-    required String title,
-    String mediaKind = 'movie',
-    String? discoveryKind,
-  }) async {
+  Future<String> add(HostDownloadAddRequest request) async {
+    requests.add(request);
     added.add(<String, Object?>{
-      'magnet': magnetUri,
-      'title': title,
-      'mediaKind': mediaKind,
-      'discoveryKind': discoveryKind,
+      'magnet': request.magnetUri,
+      'title': request.title,
+      'mediaKind': request.mediaKind,
+      'discoveryKind': request.discoveryKind,
     });
     return 'job-${added.length}';
   }
+
+  @override
+  Future<List<VideoDownloadJobSubtitleRow>?> listJobSubtitles(
+    String jobId,
+  ) async =>
+      jobId == 'known' ? const <VideoDownloadJobSubtitleRow>[] : null;
 
   @override
   Future<void> cancelJob(String jobId) async {}
@@ -104,19 +110,191 @@ void main() {
     expect(r.statusCode, 400);
     expect(await r.readAsString(), contains('only downloads video'));
   });
+
+  group('POST 扩展字段（.torrent / 文件选择 / 年份 / 作品身份 / 字幕策略）', () {
+    test('torrent + files + year + 身份 + 字幕策略原样到达 host', () async {
+      final _RecordingHost host = _RecordingHost();
+      final shelf.Response r = await _post(host, <String, Object?>{
+        'torrent': base64Encode(_packTorrent()),
+        'title': 'Doraemon Movie 10',
+        'files': <int>[1],
+        'year': 1989,
+        'metadataProvider': 'TMDB',
+        'externalId': '0042',
+        'subtitlePolicy': 'bestEffort',
+      });
+      expect(r.statusCode, 200, reason: await r.readAsString());
+      final HostDownloadAddRequest req = host.requests.single;
+      expect(req.magnetUri, isNull);
+      expect(req.metainfo!.files.map((f) => f.path),
+          <String>['a.mkv', 'b.mkv', 'c.mkv']);
+      expect(req.selectedFileIndexes, <int>{1});
+      expect(req.year, 1989);
+      expect(req.metadataProvider, 'tmdb', reason: 'provider 归一成小写');
+      expect(req.externalId, '42', reason: 'id 归一成十进制正整数');
+      expect(req.subtitlePolicy, VideoDownloadSubtitlePolicy.bestEffort);
+    });
+
+    test('老客户端只发 magnet/title：扩展字段全是 null（旧行为）', () async {
+      final _RecordingHost host = _RecordingHost();
+      expect(
+        (await _post(host, <String, Object?>{'magnet': 'magnet:?x', 'title': 'a'}))
+            .statusCode,
+        200,
+      );
+      final HostDownloadAddRequest req = host.requests.single;
+      expect(req.metainfo, isNull);
+      expect(req.selectedFileIndexes, isNull);
+      expect(req.year, isNull);
+      expect(req.metadataProvider, isNull);
+      expect(req.subtitlePolicy, isNull);
+    });
+
+    final Map<String, (Map<String, Object?>, String)> bad =
+        <String, (Map<String, Object?>, String)>{
+      '缺 magnet 与 torrent': (
+        <String, Object?>{'title': 't'},
+        'Missing magnet',
+      ),
+      'magnet 与 torrent 同时给': (
+        <String, Object?>{
+          'magnet': 'magnet:?x',
+          'torrent': base64Encode(_packTorrent()),
+          'title': 't',
+        },
+        'not both',
+      ),
+      'torrent 不是 base64': (
+        <String, Object?>{'torrent': '%%%not-base64', 'title': 't'},
+        'base64',
+      ),
+      'torrent 不是 bencode': (
+        <String, Object?>{
+          'torrent': base64Encode(utf8.encode('hello')),
+          'title': 't',
+        },
+        'torrent metainfo',
+      ),
+      'files 下标越界': (
+        <String, Object?>{
+          'torrent': base64Encode(_packTorrent()),
+          'title': 't',
+          'files': <int>[3],
+        },
+        'out of range 0..2',
+      ),
+      'files 下标不是整数': (
+        <String, Object?>{
+          'torrent': base64Encode(_packTorrent()),
+          'title': 't',
+          'files': <Object?>['1'],
+        },
+        'out of range',
+      ),
+      'files 配磁链': (
+        <String, Object?>{
+          'magnet': 'magnet:?x',
+          'title': 't',
+          'files': <int>[0],
+        },
+        'requires torrent',
+      ),
+      'files 空列表': (
+        <String, Object?>{
+          'torrent': base64Encode(_packTorrent()),
+          'title': 't',
+          'files': <int>[],
+        },
+        'non-empty',
+      ),
+      'year 不像年份': (
+        <String, Object?>{'magnet': 'magnet:?x', 'title': 't', 'year': 19},
+        'plausible year',
+      ),
+      '只给 provider': (
+        <String, Object?>{
+          'magnet': 'magnet:?x',
+          'title': 't',
+          'metadataProvider': 'tmdb',
+        },
+        'together',
+      ),
+      '不认识的 provider': (
+        <String, Object?>{
+          'magnet': 'magnet:?x',
+          'title': 't',
+          'metadataProvider': 'bangumi',
+          'externalId': '1',
+        },
+        'metadataProvider must be one of',
+      ),
+      'externalId 非正整数': (
+        <String, Object?>{
+          'magnet': 'magnet:?x',
+          'title': 't',
+          'metadataProvider': 'anidb',
+          'externalId': 'abc',
+        },
+        'positive integer',
+      ),
+      '非视频任务带身份': (
+        <String, Object?>{
+          'magnet': 'magnet:?x',
+          'title': 't',
+          'discoveryKind': 'novel',
+          'year': 2000,
+        },
+        'only apply to video',
+      ),
+      '字幕策略非法': (
+        <String, Object?>{
+          'magnet': 'magnet:?x',
+          'title': 't',
+          'subtitlePolicy': 'always',
+        },
+        'subtitlePolicy must be one of',
+      ),
+    };
+    bad.forEach((String name, (Map<String, Object?>, String) c) {
+      test('$name → 400 带原因，不进 host', () async {
+        final _RecordingHost host = _RecordingHost();
+        final shelf.Response r = await _post(host, c.$1);
+        expect(r.statusCode, 400);
+        expect(await r.readAsString(), contains(c.$2));
+        expect(host.added, isEmpty);
+      });
+    });
+  });
+
+  test('GET /api/downloads/<id>/subtitles：已知任务列出，未知任务 404', () async {
+    final _RecordingHost host = _RecordingHost();
+    Future<shelf.Response> get(String id) => handleHostDownloadRequest(
+          host,
+          shelf.Request('GET', Uri.parse('http://h/api/downloads/$id/subtitles')),
+          'GET',
+          '/api/downloads/$id/subtitles',
+        );
+    final shelf.Response known = await get('known');
+    expect(known.statusCode, 200);
+    expect(jsonDecode(await known.readAsString()),
+        <String, Object?>{'subtitles': <Object?>[]});
+    expect((await get('ghost')).statusCode, 404);
+  });
 }
 
 class _RejectingHost extends _RecordingHost {
   @override
-  Future<String> addMagnet({
-    required String magnetUri,
-    required String title,
-    String mediaKind = 'movie',
-    String? discoveryKind,
-  }) async {
-    if (discoveryKind != null) {
+  Future<String> add(HostDownloadAddRequest request) async {
+    if (request.discoveryKind != null) {
       throw ArgumentError('this host only downloads video');
     }
-    return super.addMagnet(magnetUri: magnetUri, title: title);
+    return super.add(request);
   }
 }
+
+/// 三个文件（下标 0..2）的 v1 多文件 .torrent。
+List<int> _packTorrent() => utf8.encode(
+      'd4:infod5:filesld6:lengthi1e4:pathl5:a.mkveed6:lengthi1e4:pathl5:'
+      'b.mkveed6:lengthi1e4:pathl5:c.mkveee4:name4:pack12:piece lengthi16384e'
+      '6:pieces20:aaaaaaaaaaaaaaaaaaaaee',
+    );
