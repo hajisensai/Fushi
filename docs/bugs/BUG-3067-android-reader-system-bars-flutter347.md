@@ -16,3 +16,23 @@
 - 修复提交：`0fe9c4b09f`。追加退出生命周期保护：`navigation.part.dart` 内容就绪回调仅在 `!_popInProgress` 时声明 reader 模式；路由退出动画期间仍 mounted，晚到回调不得盖掉 `closeMedia()` 已恢复的首页系统栏。`reader_system_ui_mode_test.dart` 对此添加源码守卫。
 - Mac / Flutter 3.47.6 定向验证：`reader_system_ui_mode_test.dart`、`home_shell_system_ui_mode_test.dart`、`reader_exit_bounded_probe_test.dart`，**19 tests / exit 0**。
 - `FUSHI_BUG_BASE=upstream/develop dart run tool/bug.dart check --strict`：**exit 0**，本分支新增 BUG-3067 无撞号。
+
+### 真机数值与验收边界
+- Android 14 / API 34 真机，824×1648、300dpi；Flutter 3.47.6 debug APK，独立包 `app.fushi.reader.topmargintest`。APK build **exit 0**；`flutter drive` 连接已运行的测试包，**exit 0**，1 个 probe 场景（runner 计数 +2 含 tearDownAll），6 个组合 × 3 个阶段 = **18 组独立采样**。逐组数值校验 **18/18、exit 0**。
+- 三阶段为 A：生产开书后的修复状态；B：显式发送修前的 `edgeToEdge`；C：再次发送 `setReaderSystemUiMode()`。各组合测得：
+
+| view mode | writing mode | viewPadding.top A/B/C | chrome-top-inset A/B/C | 正文有效顶部 padding A/B/C |
+|---|---|---|---|---|
+| paginated | vertical-rl | 0 / 24 / 0 | 0 / 24 / 0 | body：0 / 24 / 0 |
+| paginated | horizontal-tb | 0 / 24 / 0 | 0 / 24 / 0 | body：0 / 24 / 0 |
+| continuous | horizontal-tb | 0 / 24 / 0 | 0 / 24 / 0 | body：0 / 24 / 0 |
+| continuous | vertical-rl | 0 / 24 / 0 | 0 / 24 / 0 | body：0 / 24 / 0 |
+| vn | horizontal-tb | 0 / 24 / 0 | 0 / 24 / 0 | stage：0 / 24 / 0 |
+| vn | vertical-rl | 0 / 24 / 0 | 0 / 24 / 0 | stage：0 / 24 / 0 |
+
+- 单位为逻辑像素 / CSS px。该设备的底部 viewPadding 三阶段均为 0，未声称此设备复现了底部差异。
+- 本地证据：worktree 下 `.codex-test/reader-top-margin/` 的 `device-first-run.log`、`measurements.json`、`measurement-check.txt`，以及 `vn-{horizontal-tb,vertical-rl}-{A-fixed,B-legacy-edgeToEdge,C-setReaderSystemUiMode}.png`。VN 截图可见旧模式状态栏出现、修复模式隐藏；滚动竖排截图含新装包 Anki 权限对话框，不能当作无遮挡验收；翻页没有可靠截图。**三模式数值回归已验证，翻页/滚动无遮挡截图仍未完成。**
+- 为补截图进行了重跑，但 Android 拒绝创建该临时包 Chromium 子进程（`ActivityManager: ... SandboxedProcessService... process is bad` / `cr_ChildProcessConn: Failed to establish the service connection`），即使重装临时包仍如此，WebView 白屏/初始化超时；这些中断轮次不算通过，证据 `webview-restart-blocker.txt`。没有为此重启用户设备或操作正式包。
+- 新装包的 Anki 权限仅拒绝，没有授权访问用户卡片；临时包已卸载、Gradle suffix 已还原、探针移出源码树且不入库。正式包 `app.fushi.reader` 的版本与安装时间前后相同。设备尺寸/密度/旋转未修改。
+- API 35/36 与有挖孔设备未真机验证；退出保护是源码守卫 + 调用链复核，探针返回走生产 Escape 路径，但未单独断言首页系统栏恢复。
+- 合入上游后的全量 `flutter analyze --no-pub`：**No issues found / exit 0**（102.8s）。
