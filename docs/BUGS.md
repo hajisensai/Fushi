@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2821 条。点号进各自文件。
+> 共 2822 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3064](bugs/BUG-3064-lookup-bottom-bar-scroll.md) | ✅ | ✅ | 移动端查词页往下滑底部栏不收起 |
 | [BUG-3063](bugs/BUG-3063-collection-continue-btn-overflow.md) | ✅ | ✅ | 合集详情 hero「继续」按钮图标溢出左边缘、内边距不对称 |
 | [BUG-3061](bugs/BUG-3061-ctx-remove-middle-sentence.md) | ✅ | ✅ | 制卡上下文无法删除中间的旁白句 |
 | [BUG-3060](bugs/BUG-3060-apple-button-group-overflow.md) | ✅ | ✅ | Apple 设计下标准按钮组窄屏横向溢出（自定义主题 hero） |
