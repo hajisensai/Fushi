@@ -21,7 +21,17 @@ void main() {
     final int themesEnd = source.indexOf('\n}', themesStart);
     expect(themesStart, greaterThanOrEqualTo(0));
     expect(themesEnd, greaterThan(themesStart));
-    final String themes = source.substring(themesStart, themesEnd);
+    // BUG-3062：移动主题的 seekBarBottom 改由纯函数 videoSeekBarContainerBottom(...) 算，
+    // 它也有同名命名参数 `buttonBarHeight:`（同 BUG-238 的污染形态）——那是几何函数
+    // 入参、不是主题构造器参数，计数前把这段调用整体剥掉。
+    final String themes = source
+        .substring(themesStart, themesEnd)
+        .replaceAll(RegExp(r'videoSeekBarContainerBottom\([^;]*\);'), '');
+    expect(
+      source.substring(themesStart, themesEnd),
+      contains('videoSeekBarContainerBottom('),
+      reason: '剥离规则须仍命中真实调用，否则这段豁免已过期',
+    );
 
     // 尺寸基线常量(界面缩放×1.0 时的值)保持 56/32/36(TODO-067 未改基线数值)。
     expect(

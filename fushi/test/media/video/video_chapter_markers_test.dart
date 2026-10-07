@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../helpers/source_guard.dart';
 import '../../pages/video_fushi_page_source_corpus.dart';
 import 'package:fushi/src/media/video/video_chapter_markers.dart';
+import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 
@@ -63,53 +64,40 @@ void main() {
     });
   });
 
-  group('videoSeekBarTrackBand (TODO-432)', () {
-    test('桌面：刻度带以轨道中线（≈一个按钮行高）为中心、取 tickHeight 一小段', () {
+  group('videoSeekBarTrackBand (TODO-432 / BUG-3062)', () {
+    test('以真实轨道中线为中心展开 tickHeight', () {
       final ({double bottom, double height}) band = videoSeekBarTrackBand(
-        isDesktop: true,
-        buttonBarHeight: 56,
-        seekBarButtonGap: 8,
-        seekBarContainerHeight: 52,
-        seekBarTrackHeight: 5,
-        bottomChromeBaseline: 24,
-        bottomSystemInset: 0,
+        trackCenter: 56,
         tickHeight: 13,
       );
-      // 桌面轨道中线 = buttonBarHeight = 56；带底缘 = 56 - 13/2 = 49.5。
+      // 带底缘 = 56 - 13/2 = 49.5。
       expect(band.bottom, 49.5);
       expect(band.height, 13);
     });
 
-    test('移动：刻度带以轨道中线（seekBarBottom + 轨道半高）为中心', () {
-      // seekBarBottom = baseline(24) + inset(0) + buttonBar(56) + gap(8) = 88；
-      // 轨道中线 = 88 + 5/2 = 90.5；带底缘 = 90.5 - 13/2 = 84。
-      final ({double bottom, double height}) band = videoSeekBarTrackBand(
+    test('移动：轨道中线 = 容器底缘（含系统 inset）+ M3E 轨道在容器内的中线', () {
+      // 容器底缘 = baseline(8) + inset(30) + lift(12) + buttonBar(56) + gap(8) = 114；
+      // M3E 轨道底对齐 → 中线在底缘之上 10×缩放 → 124；带底缘 = 124 − 6.5 = 117.5。
+      final double containerBottom = videoSeekBarContainerBottom(
         isDesktop: false,
         buttonBarHeight: 56,
         seekBarButtonGap: 8,
-        seekBarContainerHeight: 52,
-        seekBarTrackHeight: 5,
-        bottomChromeBaseline: 24,
-        bottomSystemInset: 0,
-        tickHeight: 13,
-      );
-      expect(band.bottom, 84);
-      expect(band.height, 13);
-    });
-
-    test('移动：系统底部 inset（导航栏）叠进轨道中线 → 带底缘随之抬高', () {
-      // seekBarBottom = 24 + 30 + 56 + 8 = 118；中线 = 118 + 2.5 = 120.5；底缘 = 114。
-      final ({double bottom, double height}) band = videoSeekBarTrackBand(
-        isDesktop: false,
-        buttonBarHeight: 56,
-        seekBarButtonGap: 8,
-        seekBarContainerHeight: 52,
-        seekBarTrackHeight: 5,
-        bottomChromeBaseline: 24,
+        floatingLift: 12,
+        bottomChromeBaseline: 8,
         bottomSystemInset: 30,
+        desktopButtonBarOverlap: 0,
+      );
+      expect(containerBottom, 114);
+      final ({double bottom, double height}) band = videoSeekBarTrackBand(
+        trackCenter: containerBottom +
+            videoM3eSeekTrackCenterFromBottom(
+              containerHeight: 40,
+              scale: 1,
+              alignment: Alignment.bottomCenter,
+            ),
         tickHeight: 13,
       );
-      expect(band.bottom, 114);
+      expect(band.bottom, 117.5);
       expect(band.height, 13);
     });
   });
@@ -318,8 +306,7 @@ void main() {
       expect(end, greaterThan(start));
       final String body = src.substring(start, end);
       // 仅有章节时挂（无章节折叠成 SizedBox.shrink）。
-      expect(body.contains('if (!_hasChapters) return const SizedBox.shrink()'),
-          isTrue,
+      expect(body.contains('if (!_hasChapters ||'), isTrue,
           reason: '无章节时不该画刻度');
       // 竖直锚定走纯函数 videoSeekBarTrackBand（与 seek bar 同源几何）。
       expect(body.contains('videoSeekBarTrackBand('), isTrue,

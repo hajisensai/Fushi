@@ -71,9 +71,10 @@ extension _VideoChapter on _VideoFushiPageState {
   /// media_kit 的 seek bar 不暴露注入自定义子层的钩子（其 build 写死 Stack：轨道 + 缓冲 +
   /// 进度 + 滑块），故刻度只能作为 controls Stack 里独立的 [Positioned] 兄弟层叠上去。几何
   /// 对齐（与 [_mobileControlsTheme] / [_desktopControlsTheme] 喂给 media_kit 的同一套值
-  /// 同源）：水平左右各内缩 16px 对齐 `seekBarMargin`（轨道宽 = 控件区宽 − 32），竖直由纯
-  /// 函数 [videoSeekBarTrackBand] 按平台算出刻度带的 `bottom`/`height`（移动端进度条被抬到
-  /// 按钮条上方、桌面骑在按钮行上沿）。[VideoChapterMarkers] 内部把 [VideoChapter.start] /
+  /// 同源）：水平左右各内缩 [_videoSeekBarSideInset] 对齐 `seekBarMargin`，竖直以真实
+  /// 轨道中线 [_videoSeekBarTrackCenter] 为中心经 [videoSeekBarTrackBand] 展开刻度带
+  /// （BUG-3062：原先自带一套近似公式，M3E 轨道与密度档下刻度落在轨道外）。
+  /// [VideoChapterMarkers] 内部把 [VideoChapter.start] /
   /// 总时长换算成 `[0,1)` 比例画线（[chapterMarkerFractions]）。
   ///
   /// 仅当前视频有内封章节（[_hasChapters]）时挂；可见性随控制条（[_videoControlsVisible]）
@@ -83,19 +84,17 @@ extension _VideoChapter on _VideoFushiPageState {
   /// 而 `shortEdges` 刘海让横屏 `padding.left/right` 非零 → 刻度层比轨道多缩一段，误差随
   /// 比例斜切，首章右偏、末章左偏）。
   Widget _buildChapterMarkersOverlay(VideoPlayerController controller) {
-    if (!_hasChapters) return const SizedBox.shrink();
+    // mini 档没有进度条（进度交给底部细线），刻度无处可落。
+    if (!_hasChapters || !_controlsDensity.showSeekBar) {
+      return const SizedBox.shrink();
+    }
     // 刻度竖线高度：比轨道再高一截（约轨道高 + 8px×缩放），让标记探出轨道上下、清晰可见，
     // 但不至于像整条容器那样高出一大块。
-    final double tickHeight = _videoSeekBarTrackHeight + 8.0 * _videoUiScale;
+    final double tickHeight =
+        (_videoSeekBarTrackHeight + 8.0 * _videoUiScale) * _controlsDensityScale;
+    // 轨道中线取真实轨道几何（BUG-3062，[_videoSeekBarTrackCenter]）。
     final ({double bottom, double height}) band = videoSeekBarTrackBand(
-      isDesktop: _isDesktopVideoControls,
-      // 浮动底栏（Apple 玻璃胶囊 / M3E 浮动工具栏）的抬升，见 [_floatingChromeBottomLift]。
-      buttonBarHeight: _videoButtonBarHeight + _videoGeometryButtonBarLift,
-      seekBarButtonGap: _videoSeekBarButtonGap,
-      seekBarContainerHeight: _videoSeekBarContainerHeight,
-      seekBarTrackHeight: _videoSeekBarTrackHeight,
-      bottomChromeBaseline: _videoGeometryBottomBaseline,
-      bottomSystemInset: _videoBottomSystemInset(),
+      trackCenter: _videoSeekBarTrackCenter,
       tickHeight: tickHeight,
     );
     return Positioned.fill(
@@ -158,16 +157,11 @@ extension _VideoChapter on _VideoFushiPageState {
     final VideoThumbnailPreviewController? preview = _thumbnailPreview;
     if (preview == null) return const SizedBox.shrink();
     // 缩略图轨道竖直锚点：与刻度层同样的 band，浮层底缘抬到轨道带上沿 + 间距。
-    final double tickHeight = _videoSeekBarTrackHeight + 8.0 * _videoUiScale;
+    final double tickHeight =
+        (_videoSeekBarTrackHeight + 8.0 * _videoUiScale) * _controlsDensityScale;
+    // 轨道中线取真实轨道几何（BUG-3062，[_videoSeekBarTrackCenter]）。
     final ({double bottom, double height}) band = videoSeekBarTrackBand(
-      isDesktop: _isDesktopVideoControls,
-      // 浮动底栏（Apple 玻璃胶囊 / M3E 浮动工具栏）的抬升，见 [_floatingChromeBottomLift]。
-      buttonBarHeight: _videoButtonBarHeight + _videoGeometryButtonBarLift,
-      seekBarButtonGap: _videoSeekBarButtonGap,
-      seekBarContainerHeight: _videoSeekBarContainerHeight,
-      seekBarTrackHeight: _videoSeekBarTrackHeight,
-      bottomChromeBaseline: _videoGeometryBottomBaseline,
-      bottomSystemInset: _videoBottomSystemInset(),
+      trackCenter: _videoSeekBarTrackCenter,
       tickHeight: tickHeight,
     );
     // 浮层底缘 = 轨道带上沿（band.bottom + band.height）+ 一个小间距。
