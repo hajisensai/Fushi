@@ -1442,9 +1442,10 @@ VideoAcquisitionReduction _onResourcesLoaded(
       cleanResourceCandidates(
         event.items,
         skipExtras: defaults.skipExtras,
-        movieYear: reference.mediaKind == VideoMetadataMediaKind.movie
-            ? reference.year
+        work: reference.mediaKind == VideoMetadataMediaKind.movie
+            ? VideoResourceWorkTarget.fromReference(reference)
             : null,
+        originalLanguageOnly: wantsOriginalLanguageRelease(state),
       ),
     ),
     busy: false,
@@ -1466,6 +1467,7 @@ VideoAcquisitionReduction _refilter(
     quality: quality,
     source: defaults.sourcePref,
     bitrate: defaults.bitratePref,
+    workYear: state.reference?.year,
   );
   final VideoAcquisitionState base = state.copyWith(
     eligibleGroups: outcome.eligible,
@@ -2216,6 +2218,7 @@ VideoAcquisitionReduction _onFranchiseEntryResolved(
     // 剧集时按年份排除写了别的年份的发布。独一份的长寿剧不排（逐集发布常带
     // 播出年份，按首播年排会误杀）。
     filterSeriesByYear: _hasSameTitledSeries(state.franchiseEntries, target),
+    originalLanguageOnly: wantsOriginalLanguageRelease(state),
   );
   final List<VideoAcquisitionFranchiseEntry> entries =
       List<VideoAcquisitionFranchiseEntry>.of(state.franchiseEntries);
@@ -2258,7 +2261,11 @@ VideoAcquisitionReduction _onFranchiseEntryResolved(
 ///
 /// * 模式：电影 / 已完结 / 已取消 → 下载；在播 / 未开播 / 状态未知 → 订阅（订阅
 ///   从已知最小集号起，已出的集会一起下）。订阅推不出严格规则时退回下载。
-/// * 画质：会话画质找不到时退到「最高可用」——整套里不逐部追问。
+/// * 身份：电影按完整身份（年份 / 重制版 / 续作序号）排除兄弟作品的发布
+///   （BUG-3065）；剧集只在清单里有同名剧集时按年份排除。
+/// * 语言：[originalLanguageOnly] 时排除只有配音 / 硬字幕的发布（BUG-3066）。
+/// * 画质：会话画质找不到时退到「离会话画质最近的可用档」（同距取高，超分殿后，
+///   BUG-3067）——整套里不逐部追问。
 /// * 已在库 / 已订阅：照样给计划，默认不勾。
 VideoAcquisitionFranchiseEntry planFranchiseEntry(
   VideoAcquisitionFranchiseEntry entry,
@@ -2266,6 +2273,7 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
   required VideoAcquisitionQuality quality,
   required VideoAcquisitionDefaults defaults,
   bool filterSeriesByYear = false,
+  bool originalLanguageOnly = false,
 }) {
   final VideoMediaReference reference = entry.item.reference;
   final VideoMetadataMediaKind kind = reference.mediaKind;
@@ -2281,9 +2289,14 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
         cleanResourceCandidates(
           event.items,
           skipExtras: defaults.skipExtras,
-          movieYear: kind == VideoMetadataMediaKind.movie || filterSeriesByYear
-              ? reference.year
+          work: kind == VideoMetadataMediaKind.movie
+              ? VideoResourceWorkTarget.fromReference(
+                  reference.withWorkLatinTitles(event.work),
+                )
+              : filterSeriesByYear
+              ? VideoResourceWorkTarget.yearOnly(reference.year)
               : null,
+          originalLanguageOnly: originalLanguageOnly,
         ),
       );
   ({VideoAcquisitionMode mode, VideoAcquisitionResourcePlan plan})? found;
@@ -2302,6 +2315,9 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
         quality: wanted,
         source: defaults.sourcePref,
         bitrate: defaults.bitratePref,
+        // 会话画质的退路：离它最近的一档，而不是最高（BUG-3067）。
+        nearestHeight: wanted == quality ? null : quality.height,
+        workYear: reference.year,
       );
       for (final VideoResourceVersionGroup group in outcome.eligible) {
         final VideoAcquisitionResourcePlan? plan = planResourceFromGroup(
@@ -2341,6 +2357,15 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
     selected: !owned,
     owned: owned,
   );
+}
+
+/// 用户要原语言（字幕选「原语言」或正好选了作品语言）：只有配音 / 硬字幕的发布
+/// 不合格（BUG-3066）。
+bool wantsOriginalLanguageRelease(VideoAcquisitionState state) {
+  final String? subtitle = state.slots.subtitleLanguage;
+  if (subtitle == kVideoAcquisitionSubtitleOriginal) return true;
+  final String? content = state.contentLanguage?.code;
+  return content != null && subtitle == content;
 }
 
 bool _hasSameTitledSeries(
