@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
+import 'package:fushi/src/utils/components/accent_logo_image.dart';
+import 'package:fushi/src/utils/misc/logo_accent_tint.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_color_roles.dart';
@@ -747,6 +749,25 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
 /// 球面贴图：Fushi 吉祥物（透明底前景，与启动页同一张），叠在主题色 FAB 上。
 const String kReaderFloatingBallIconAsset = 'assets/meta/splash_foreground.png';
 
+/// 球面吉祥物的解码宽度：432² 原图只在 48dp 球里露脸，按 4× 解码足够，别整帧进缓存。
+const int kReaderFloatingBallMascotDecodeWidth = 192;
+
+/// 球面吉祥物图片源：按主题强调色推出的 [tint] 换色（墨水屏由 surface 推出，褪成
+/// 灰阶）；基线紫下就是原图。
+ImageProvider<Object> readerFloatingBallMascotImage(LogoAccentTint tint) {
+  final ImageProvider<Object> provider = tintedLogoImageProvider(
+    kReaderFloatingBallIconAsset,
+    tint: tint,
+    decodeWidth: kReaderFloatingBallMascotDecodeWidth,
+  );
+  if (provider is AccentLogoImage) return provider;
+  return ResizeImage.resizeIfNeeded(
+    kReaderFloatingBallMascotDecodeWidth,
+    null,
+    provider,
+  );
+}
+
 /// 吉祥物在球里的放大倍数：原图 432² 里吉祥物只占中间约一半，放大后宽约占球
 /// 径的 80%。原生系统球（Android / 桌面球面 PNG）用同一个值。
 const double kReaderFloatingBallMascotScale = 1.55;
@@ -837,12 +858,16 @@ class _BallFace extends StatelessWidget {
                 child: ClipOval(
                   child: Transform.scale(
                     scale: kReaderFloatingBallMascotScale,
-                    child: Image.asset(
-                      kReaderFloatingBallIconAsset,
-                      fit: BoxFit.contain,
-                      // 432² 原图只在 48dp 球里露脸：按 4× 解码足够，别整帧进缓存。
-                      cacheWidth: 192,
-                      filterQuality: FilterQuality.medium,
+                    child: AccentLogoTintBuilder(
+                      accent: einkMode ? cs.surface : cs.primary,
+                      builder: (BuildContext context, LogoAccentTint tint) =>
+                          Image(
+                            image: readerFloatingBallMascotImage(tint),
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.medium,
+                            // 换主题时无缝切到新配色的吉祥物，不闪空。
+                            gaplessPlayback: true,
+                          ),
                     ),
                   ),
                 ),

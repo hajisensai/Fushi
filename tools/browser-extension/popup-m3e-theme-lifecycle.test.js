@@ -27,7 +27,8 @@ function fixture(initialTheme, initialM3e = true) {
     const node = {
       tagName: 'DIV', isConnected: true, children: [],
       matches: () => false,
-      querySelectorAll: () => node.children,
+      // 夹具里没有 .glossary-content（词典样式统一的作用域）：按选择器如实回答。
+      querySelectorAll: (sel) => (sel === '.glossary-content' ? [] : node.children),
       computed: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(0, 0, 0)' },
       style: {
         setProperty: (key, value, priority = '') => { props.set(key, { value, priority }); mutate(node, 'style'); },
@@ -49,7 +50,8 @@ function fixture(initialTheme, initialM3e = true) {
   html.classList.toggle('fushi-m3e', initialM3e);
   html.setAttribute('data-theme', initialTheme);
   const scope = {
-    window: {}, console,
+    // 这里测的是「保留词典原样式」模式的暗色调色层：显式关掉词典样式统一。
+    window: { __fushiDictUnifiedStyle: false }, console,
     document: { documentElement: html, body: root },
     __fushiContainer: () => root,
     requestAnimationFrame: (callback) => (frames.push(callback), frames.length),

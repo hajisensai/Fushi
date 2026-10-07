@@ -909,6 +909,8 @@ class MemoAppModel extends AppModel {
   @override
   bool get compactGlossaries => compactGlossariesValue;
   @override
+  bool get dictionaryUnifiedStyle => true;
+  @override
   List<Dictionary> get dictionaries => dictionariesValue;
   @override
   Map<String, String> get customDictCSS => customDictCSSValue;

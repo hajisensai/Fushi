@@ -1633,10 +1633,117 @@
    text. Scoped to `[class^="gloss-sc-"]` so the image mask
    (.gloss-image-background, which also carries an inline background-color) is
    never touched; !important is required to beat the node's own inline style.
-   Light mode is left alone — the dict pastel reads fine on white. */
-:where(#entries-container)[data-theme="dark"] :where(.glossary-group, .glossary-content) [class^="gloss-sc-"][style*="background"] {
+   Light mode is left alone — the dict pastel reads fine on white.
+   Only for the "keep dictionary styles" mode: the unified mode (.fushi-dict-unified,
+   default) recolours these nodes from ColorScheme tokens itself, and this rule's
+   (0,3,1) specificity would otherwise flatten its chips back to grey. It must also
+   stand down while popup.js measures the dictionary's original colours
+   (.fushi-dict-unify-measuring), or every pale dict fill reads as grey and gets
+   mis-classified. Every gloss-sc node lives under exactly one .glossary-content,
+   so scoping to it is equivalent. */
+:where(#entries-container)[data-theme="dark"] :where(.glossary-content:not(.fushi-dict-unified, .fushi-dict-unify-measuring)) [class^="gloss-sc-"][style*="background"] {
     background-color: rgba(128, 128, 128, 0.2) !important;
     color: var(--text-color) !important;
+}
+
+/* ── 词典样式统一（M3E，默认开）────────────────────────────────────────────
+   导入词典的 styles.css 与结构化内容 inline style 各自写死颜色。popup.js 的
+   __fushiUnifyDictStyles 在渲染后量出每个元素的语义（data-fushi-dt*），并给
+   .glossary-content 挂 .fushi-dict-unified；这里按语义取 ColorScheme 令牌。
+   - 全部选择器包在 :where() 里，特异度为 0：!important 让它压过词典的 inline style
+     与 styles.css（二者都不带 !important），又让用户在「词典样式」可视化面板 / 手写
+     CSS 里设的 !important 规则（特异度 > 0）照样生效。同为 0 的规则按书写顺序，
+     所以「统一底层」在前、语义层在后。
+   - 只换颜色类声明（字色 / 底色 / 渐变 / 边框色 / 强调色），字号、边距、ruby、
+     表格结构、图片一律不碰。图片遮罩 .gloss-image-background 靠 background-color:
+     currentColor 显色，不得被抹成透明。
+   - 关掉统一（window.__fushiDictUnifiedStyle = false）只是摘掉 .fushi-dict-unified，
+     下面每条都依赖它，词典原样式原样回来。 */
+:where(.glossary-content.fushi-dict-unified) {
+    color: var(--md-sys-color-on-surface) !important;
+}
+
+:where(.fushi-dict-unified) :where(*:not(img, svg, svg *, canvas, video, picture, .gloss-image-background, .deinflection-tag)),
+:where(.fushi-dict-unified) :where(*)::before,
+:where(.fushi-dict-unified) :where(*)::after {
+    color: inherit !important;
+    background-color: transparent !important;
+    border-color: var(--md-sys-color-outline-variant) !important;
+    text-decoration-color: currentColor !important;
+    text-emphasis-color: currentColor !important;
+    -webkit-text-fill-color: currentColor !important;
+}
+
+:where(.fushi-dict-unified) :where(a) {
+    color: var(--md-sys-color-primary) !important;
+}
+
+:where(.fushi-dict-unified) :where(th, .gloss-sc-th) {
+    background-color: var(--md-sys-color-surface-container-high) !important;
+}
+
+/* 彩色强调字 → primary；灰字 → onSurfaceVariant；显式黑字 → onSurface。 */
+:where(.fushi-dict-unified) :where([data-fushi-dt="accent"]),
+:where(.fushi-dict-unified) :where([data-fushi-dt-before="accent"])::before,
+:where(.fushi-dict-unified) :where([data-fushi-dt-after="accent"])::after {
+    color: var(--md-sys-color-primary) !important;
+}
+
+:where(.fushi-dict-unified) :where([data-fushi-dt="muted"]) {
+    color: var(--md-sys-color-on-surface-variant) !important;
+}
+
+:where(.fushi-dict-unified) :where([data-fushi-dt="plain"]) {
+    color: var(--md-sys-color-on-surface) !important;
+}
+
+/* 渐变底（无论最终归到哪类）一律抹平；url() 图片底不动。 */
+:where(.fushi-dict-unified) :where([data-fushi-dt="flat"], [data-fushi-dt="chip"], [data-fushi-dt="block"], [data-fushi-dt="panel"]) {
+    background-image: none !important;
+}
+
+/* 标签 / 徽标 → M3E tonal chip。 */
+:where(.fushi-dict-unified) :where([data-fushi-dt="chip"]),
+:where(.fushi-dict-unified) :where([data-fushi-dt-before="chip"])::before,
+:where(.fushi-dict-unified) :where([data-fushi-dt-after="chip"])::after {
+    color: var(--md-sys-color-on-secondary-container) !important;
+    background-color: var(--md-sys-color-secondary-container) !important;
+    background-image: none !important;
+    border-color: transparent !important;
+    border-radius: var(--md-sys-shape-corner-small) !important;
+}
+
+/* 词典原本零内边距的标签：补一点水平内边距，否则圆角色块贴着字。 */
+:where(.fushi-dict-unified) :where([data-fushi-dt-pad]) {
+    padding-left: 0.3em !important;
+    padding-right: 0.3em !important;
+}
+
+/* 描框的短标签 → outlined chip。 */
+:where(.fushi-dict-unified) :where([data-fushi-dt="chip-outline"]) {
+    color: var(--md-sys-color-on-surface-variant) !important;
+    border-color: var(--md-sys-color-outline) !important;
+    border-radius: var(--md-sys-shape-corner-small) !important;
+}
+
+/* 深色 / 饱和底的块（大字框）→ primaryContainer。 */
+:where(.fushi-dict-unified) :where([data-fushi-dt="block"]) {
+    color: var(--md-sys-color-on-primary-container) !important;
+    background-color: var(--md-sys-color-primary-container) !important;
+    border-color: transparent !important;
+    border-radius: var(--md-sys-shape-corner-medium) !important;
+}
+
+/* 浅色底纹块（例句底色）→ surfaceContainerHighest（卡面本身是 surfaceContainer 系，
+   再低一级就和卡面糊成一片）。 */
+:where(.fushi-dict-unified) :where([data-fushi-dt="panel"]) {
+    background-color: var(--md-sys-color-surface-container-highest) !important;
+    border-radius: var(--md-sys-shape-corner-medium) !important;
+}
+
+/* 容器里的链接跟随容器的 on-color，不在色块上再叠一层 primary。 */
+:where(.fushi-dict-unified) :where([data-fushi-dt="chip"], [data-fushi-dt="block"]) :where(a) {
+    color: inherit !important;
 }
 
 .dict-label {

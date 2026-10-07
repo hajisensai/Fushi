@@ -5738,6 +5738,20 @@ function __fushiScheduleM3eDictTone(root) {
         __fushiM3eToneRoots.clear();
         const dark = __fushiM3eDarkSurface();
         __fushiM3eLastDark = dark;
+        // 词典样式统一（默认开）：颜色整体交给 popup.css 的令牌规则，暗色调色这层不再
+        // 需要——先复原它写过的内联色，否则统一层量到的是调过色的值而不是词典原色。
+        if (__fushiDictUnifiedEnabled()) {
+            __fushiRestoreDictTone();
+            roots.forEach((r) => {
+                try {
+                    if (r.isConnected !== false) __fushiUnifyDictStyles(r);
+                } catch (e) {
+                    console.error('[popup] dictionary style unify failed', e);
+                }
+            });
+            return;
+        }
+        roots.forEach((r) => __fushiClearDictUnify(r));
         // 非暗色：上一轮暗色调过的颜色必须复原（不能只是「不再调色」）。
         if (!dark) { __fushiRestoreDictTone(); return; }
         roots.forEach((r) => {
@@ -5825,6 +5839,208 @@ function __fushiToneDictColors(root) {
             __fushiHslCss(hsl.h, Math.min(hsl.s, 0.6), 0.82, fg.a), 'important');
     });
 }
+
+/* =====================================================================
+ * 词典样式统一（M3E，默认开）：导入词典的 styles.css / 结构化内容 inline style 各自
+ * 写死颜色（红底词性标签、绿/蓝/红强调字、深红汉字框、彩色边框……），与 app 主题
+ * 毫无关系。统一模式按**语义**把它们重映射到 ColorScheme 令牌：
+ *   - 带底色的短行内元素（标签 / 徽标）→ chip：secondaryContainer / onSecondaryContainer；
+ *   - 带深色底的块（或字号放大的大字框）→ block：primaryContainer / onPrimaryContainer；
+ *   - 带浅色底的块（例句底纹）→ panel：surfaceContainerHighest；
+ *   - 四边都描了框的短行内元素 → chip-outline：outline 描边；
+ *   - 被染彩色的文字 → accent：primary；被染灰的文字 → muted：onSurfaceVariant；
+ *   - 其余颜色 / 底色 / 边框色一律交给 popup.css 的统一层（继承正文色、透明底、
+ *     outlineVariant 边框），字号 / 边距 / ruby / 表格 / 图片一概不动。
+ * CSS 读不到「这个元素被词典涂成了什么」，所以在渲染后量一次计算样式（量的时候作用域
+ * 类必须摘掉，量到的才是词典原色），把语义写成 data-fushi-dt* 属性；配色全在 popup.css
+ * 里按 --md-sys-color-* 取，换强调色 / 明暗只是 CSS 变量变化，不必重新分类。
+ * 不按词典名写任何特例。关掉（window.__fushiDictUnifiedStyle === false）就摘掉作用域
+ * 类，词典原样式原样回来。宿主没注入（浏览器扩展）= 默认开。
+ * ===================================================================== */
+const FUSHI_DICT_UNIFIED_CLASS = 'fushi-dict-unified';
+// 量原色期间挂的类：popup.css 里会改写词典颜色的旧规则（暗色浅底调灰）见到它就让路，
+// 否则量到的是被那条规则压过的灰色。
+const FUSHI_DICT_UNIFY_MEASURING_CLASS = 'fushi-dict-unify-measuring';
+// 不参与分类的节点：媒体本体与 popup 自己画的组件（它们已经吃主题令牌）。
+const FUSHI_DICT_UNIFIED_SKIP = 'img, svg, svg *, canvas, video, audio, picture, '
+    + '.gloss-image-background, .gloss-image-sizer, .ruby-reserve, .deinflection-tag';
+// 「短」标签的字数上限：再长就是一段被涂了底色的正文，不当 chip 画。
+const FUSHI_DICT_UNIFIED_CHIP_MAX_CHARS = 16;
+
+function __fushiDictUnifiedEnabled() {
+    return typeof window === 'undefined' || window.__fushiDictUnifiedStyle !== false;
+}
+
+function __fushiDictUnifiedScopes(root) {
+    const scopes = [];
+    if (!root) return scopes;
+    if (root.matches && root.matches('.glossary-content')) scopes.push(root);
+    if (root.querySelectorAll) root.querySelectorAll('.glossary-content').forEach((s) => scopes.push(s));
+    return scopes;
+}
+
+// 底色是否「有意义」：近乎透明、或近白无彩（词典给整块写的白底）都不算。
+function __fushiDictUnifiedSolidBg(bg) {
+    if (!bg || bg.a < 0.12) return false;
+    const hsl = __fushiRgbToHsl(bg);
+    if (hsl.s < 0.12 && hsl.l > 0.92) return false;
+    return true;
+}
+
+function __fushiDictUnifiedSameColor(a, b) {
+    if (!a || !b) return false;
+    return Math.abs(a.r - b.r) + Math.abs(a.g - b.g) + Math.abs(a.b - b.b) <= 12
+        && Math.abs(a.a - b.a) < 0.1;
+}
+
+// 文字色语义：彩色 → accent；中灰 → muted；近黑 → plain（显式回到正文色）。
+// 近白字（多半是为深色底写的）不打标，跟随所在容器的 on-color。
+function __fushiDictUnifiedTextTone(color) {
+    if (!color || color.a < 0.3) return null;
+    const hsl = __fushiRgbToHsl(color);
+    if (hsl.s >= 0.25 && hsl.l >= 0.12 && hsl.l <= 0.88) return 'accent';
+    if (hsl.l > 0.88) return null;
+    if (hsl.l >= 0.3) return 'muted';
+    return 'plain';
+}
+
+function __fushiDictUnifiedHasFullBorder(cs) {
+    for (const side of ['Top', 'Right', 'Bottom', 'Left']) {
+        if (!(parseFloat(cs[`border${side}Width`]) > 0)) return false;
+        const style = cs[`border${side}Style`];
+        if (!style || style === 'none' || style === 'hidden') return false;
+    }
+    const color = __fushiParseRgb(cs.borderTopColor);
+    return !!(color && color.a > 0.2);
+}
+
+const FUSHI_DICT_UNIFIED_ATTRS = ['data-fushi-dt', 'data-fushi-dt-pad', 'data-fushi-dt-before', 'data-fushi-dt-after'];
+
+// 读相：只读计算样式，产出 [node, attr, value] 写单。调用方保证作用域类已摘掉。
+function __fushiDictUnifiedClassify(scope, writes) {
+    const scopeCs = getComputedStyle(scope);
+    const info = new Map();
+    info.set(scope, {
+        color: __fushiParseRgb(scopeCs.color),
+        fontSize: parseFloat(scopeCs.fontSize) || 0,
+        ctx: null,
+    });
+    const nodes = scope.querySelectorAll('*');
+    for (const node of nodes) {
+        const parentInfo = info.get(node.parentElement) || info.get(scope);
+        for (const attr of FUSHI_DICT_UNIFIED_ATTRS) {
+            if (node.hasAttribute(attr)) writes.push([node, attr, null]);
+        }
+        if (node.matches(FUSHI_DICT_UNIFIED_SKIP)) {
+            info.set(node, parentInfo);
+            continue;
+        }
+        const cs = getComputedStyle(node);
+        const color = __fushiParseRgb(cs.color);
+        const fontSize = parseFloat(cs.fontSize) || parentInfo.fontSize;
+        const bg = __fushiParseRgb(cs.backgroundColor);
+        const gradient = /gradient\(/i.test(cs.backgroundImage || '');
+        const hasBg = gradient || __fushiDictUnifiedSolidBg(bg);
+        const inline = /^(inline|ruby)/.test(cs.display || '');
+        const textLen = (node.textContent || '').trim().length;
+        let tag = null;
+        if (hasBg && parentInfo.ctx !== 'chip') {
+            const big = parentInfo.fontSize > 0 && fontSize >= parentInfo.fontSize * 1.4;
+            if (inline && !big && textLen <= FUSHI_DICT_UNIFIED_CHIP_MAX_CHARS) {
+                tag = 'chip';
+            } else {
+                // 深色 / 饱和的底是「强调块」（大字框），浅色底是「底纹」（例句块）。
+                const hsl = bg ? __fushiRgbToHsl(bg) : { s: 1, l: 0.5 };
+                tag = (!gradient && hsl.l > 0.8) ? 'panel' : 'block';
+            }
+            if (tag === 'chip' && !(parseFloat(cs.paddingLeft) >= 1)) {
+                writes.push([node, 'data-fushi-dt-pad', '']);
+            }
+        } else if (!hasBg && parentInfo.ctx === null && inline && textLen > 0
+            && textLen <= FUSHI_DICT_UNIFIED_CHIP_MAX_CHARS
+            && __fushiDictUnifiedHasFullBorder(cs)) {
+            tag = 'chip-outline';
+        } else if (gradient) {
+            tag = 'flat';
+        }
+        if (tag === null && parentInfo.ctx !== 'chip'
+            && !__fushiDictUnifiedSameColor(color, parentInfo.color)) {
+            const tone = __fushiDictUnifiedTextTone(color);
+            // 容器里的灰 / 黑字跟随容器的 on-color；只有彩色强调保留。
+            if (tone === 'accent' || (tone && parentInfo.ctx === null)) tag = tone;
+        }
+        if (tag) writes.push([node, 'data-fushi-dt', tag]);
+        // 伪元素（词典常用 ::before 画「動」「名」之类的标签）。
+        for (const pseudo of ['before', 'after']) {
+            const ps = getComputedStyle(node, `::${pseudo}`);
+            const content = ps && ps.content;
+            if (!content || content === 'none' || content === 'normal') continue;
+            const pbg = __fushiParseRgb(ps.backgroundColor);
+            let ptag = null;
+            if (/gradient\(/i.test(ps.backgroundImage || '') || __fushiDictUnifiedSolidBg(pbg)) {
+                ptag = 'chip';
+            } else if (!__fushiDictUnifiedSameColor(__fushiParseRgb(ps.color), color)
+                && __fushiDictUnifiedTextTone(__fushiParseRgb(ps.color)) === 'accent') {
+                ptag = 'accent';
+            }
+            if (ptag) writes.push([node, `data-fushi-dt-${pseudo}`, ptag]);
+        }
+        const ctx = (tag === 'chip' || tag === 'block' || tag === 'panel' || tag === 'chip-outline')
+            ? (tag === 'chip-outline' ? 'chip' : tag)
+            : parentInfo.ctx;
+        info.set(node, {
+            // 容器（chip / block / panel）里子孙的「父色」不再是词典原色：容器统一后
+            // 字色是它的 on-color，拿 null 让子孙按自身颜色重新判定。
+            color: ctx !== parentInfo.ctx ? null : color,
+            fontSize,
+            ctx,
+        });
+    }
+}
+
+// 对 root 下尚未统一过的作用域：摘类 → 量 → 写属性 → 挂类。读写分相，整批只重算两次样式。
+function __fushiUnifyDictStyles(root) {
+    const todo = __fushiDictUnifiedScopes(root).filter((s) => !s.__fushiDictUnifiedDone);
+    if (!todo.length) return;
+    todo.forEach((s) => {
+        s.classList.remove(FUSHI_DICT_UNIFIED_CLASS);
+        s.classList.add(FUSHI_DICT_UNIFY_MEASURING_CLASS);
+    });
+    const writes = [];
+    try {
+        todo.forEach((s) => __fushiDictUnifiedClassify(s, writes));
+    } finally {
+        todo.forEach((s) => s.classList.remove(FUSHI_DICT_UNIFY_MEASURING_CLASS));
+    }
+    writes.forEach(([node, attr, value]) => {
+        if (value === null) node.removeAttribute(attr);
+        else node.setAttribute(attr, value);
+    });
+    todo.forEach((s) => {
+        s.__fushiDictUnifiedDone = true;
+        s.classList.add(FUSHI_DICT_UNIFIED_CLASS);
+    });
+}
+
+// 退回词典原样式：摘掉作用域类（属性留着无害——没有作用域类时 popup.css 的规则不生效）。
+function __fushiClearDictUnify(root) {
+    __fushiDictUnifiedScopes(root).forEach((s) => {
+        s.__fushiDictUnifiedDone = false;
+        s.classList.remove(FUSHI_DICT_UNIFIED_CLASS);
+    });
+}
+
+// 宿主改了开关后调用：已渲染的词条就地切换，不必重新查词。
+function __fushiApplyDictUnifiedStyle() {
+    const roots = __fushiM3eKnownRoots ? [...__fushiM3eKnownRoots] : [];
+    const container = __fushiContainer();
+    if (container && !roots.includes(container)) roots.push(container);
+    roots.forEach((root) => {
+        if (root && root.isConnected !== false) __fushiClearDictUnify(root);
+    });
+    __fushiRetoneDictColors();
+}
+if (typeof window !== 'undefined') window.__fushiApplyDictUnifiedStyle = __fushiApplyDictUnifiedStyle;
 
 // BUG-1898: 给「隔壁也带注音」的基字单元打上 .ruby-tight，popup.css 只对它们把
 // .ruby-reserve 放回 in-flow。

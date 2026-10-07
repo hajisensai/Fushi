@@ -42,6 +42,16 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 设置页 harness 里没有展开的悬浮球。行为由 floating_ball_labels_test 咬住。
   'floatingBall/Show button labels':
       'test/floating_ball/floating_ball_labels_test.dart',
+  // 吉祥物图标换色开关：生效点是全局 appLogoFollowsAccent 与 AccentLogoImage
+  // 的着色——harness 设置页里没有 logo 渲染面，渲染输入无变化。行为由
+  // theme_app_icon_link_test（发布到全局开关）与 accent_logo_image_test 咬住。
+  'appearance/Logo follows theme color':
+      'test/models/theme_app_icon_link_test.dart + test/widgets/accent_logo_image_test.dart',
+  // 词典统一 M3E 配色：生效点在查词弹窗 WebView 里的 popup.js / popup.css，
+  // harness 没有 WebView。注入接线、默认值与 CSS 层由
+  // popup_dict_unified_style_test 咬住。
+  'lookup/Unify dictionary styles':
+      'test/pages/popup_dict_unified_style_test.dart',
   // v101 更新提醒的五个开关：写 prefsRepo（changed=true），生效点在
   // UpdateFeedService.publishBatch——关掉的域整批丢弃（不投递/不红点/不通知）、
   // 系统通知总开关只掐通知不掐红点。harness 里没有投递方（订阅检查、漫画刷新、

@@ -814,6 +814,7 @@ class _PopupStaticSettingsMemo {
     required this.showExpressionTags,
     required this.collapseDictionaries,
     required this.compactGlossaries,
+    required this.dictionaryUnifiedStyle,
     required this.autoExpandRows,
     required this.collapsedNames,
     required this.expandedNames,
@@ -845,6 +846,7 @@ class _PopupStaticSettingsMemo {
   final bool showExpressionTags;
   final bool collapseDictionaries;
   final bool compactGlossaries;
+  final bool dictionaryUnifiedStyle;
   final int autoExpandRows;
   final String collapsedNames;
   final String expandedNames;
@@ -986,6 +988,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       cached.showExpressionTags == appModel.showExpressionTags &&
       cached.collapseDictionaries == appModel.collapseDictionaries &&
       cached.compactGlossaries == appModel.compactGlossaries &&
+      cached.dictionaryUnifiedStyle == appModel.dictionaryUnifiedStyle &&
       cached.autoExpandRows == appModel.popupAutoExpandDictionaries &&
       cached.collapsedNames == collapsedNames &&
       // BUG-2158 补修：命中判据必须是产物**全部输入**的廉价投影（本类文档写死的
@@ -1106,6 +1109,13 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // 紧凑 CSS（assets/popup/popup.js 的 compactCss），但此前全 app 无人给它赋值，
     // 恒 undefined = 恒关。这里补上唯一的写入点。
     window.compactGlossaries = ${appModel.compactGlossaries};
+    // 词典样式统一（默认开）：popup.js 把导入词典自带的颜色按语义换成当前
+    // ColorScheme 令牌（__fushiUnifyDictStyles）。值变了才就地重排已渲染的词条，
+    // 每次查词都重注入的宿主不会白白把旧 DOM 再分类一遍。
+    if (window.__fushiDictUnifiedStyle !== ${appModel.dictionaryUnifiedStyle}) {
+      window.__fushiDictUnifiedStyle = ${appModel.dictionaryUnifiedStyle};
+      window.__fushiApplyDictUnifiedStyle?.();
+    }
     window.autoExpandRows = ${appModel.popupAutoExpandDictionaries};
     window.collapsedDictionaryNames = $collapsedNames;
     window.expandedDictionaryNames = $expandedNames;
@@ -1143,6 +1153,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     showExpressionTags: appModel.showExpressionTags,
     collapseDictionaries: appModel.collapseDictionaries,
     compactGlossaries: appModel.compactGlossaries,
+    dictionaryUnifiedStyle: appModel.dictionaryUnifiedStyle,
     autoExpandRows: appModel.popupAutoExpandDictionaries,
     collapsedNames: collapsedNames,
     expandedNames: expandedNames,

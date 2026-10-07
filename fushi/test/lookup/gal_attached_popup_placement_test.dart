@@ -52,6 +52,8 @@ class _LookupAppModel extends AppModel {
 
   @override
   bool get compactGlossaries => false;
+  @override
+  bool get dictionaryUnifiedStyle => true;
 
   @override
   LookupSize get overlayLookupEffectiveSize => const LookupSize(420.0, 600.0);
