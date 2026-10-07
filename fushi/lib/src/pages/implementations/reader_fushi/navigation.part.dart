@@ -135,7 +135,9 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       // 初始 WebView HTML 是在 _hasEverLoaded 尚为 false 时求值的（漏底栏高），这里补下一次
       // chrome insets，让正文列底沿避开底栏（竖排尤为明显，见辅助方法长注释）。
       _reapplyChromeInsetsAfterFirstLoad();
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      // BUG-3067：Android 保持系统栏隐藏（裸 edgeToEdge 在 Flutter 3.47 会清掉
+      // openMedia 的沉浸标志，状态栏回来并计入正文顶部 inset），见 helper 注释。
+      unawaited(setReaderSystemUiMode());
       // TODO-700 T3：内容就绪确定性落焦到正文（门控见 helper）。
       _focusOwnership.reclaim(FocusReclaimCause.contentReady);
       WidgetsBinding.instance.addPostFrameCallback((_) {
