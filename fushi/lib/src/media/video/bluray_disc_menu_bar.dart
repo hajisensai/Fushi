@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
 /// App navigation chrome for an authored disc menu. Narrow surfaces keep only
 /// the three accessible icons, leaving the disc's own buttons visible.
@@ -46,7 +47,7 @@ class BlurayDiscMenuBar extends StatelessWidget {
           );
         }
         return Flexible(
-          child: Tooltip(
+          child: FushiTooltip(
             message: label,
             child: TextButton.icon(
               key: ValueKey<String>(key),

@@ -214,7 +214,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
                       child: SizedBox(
                         width: 96,
                         height: 128,
-                        child: Tooltip(
+                        child: FushiTooltip(
                           message: t.feedback_compose_add_image,
                           child: const Center(
                             child: FushiIcon(FushiIcons.addCircle),

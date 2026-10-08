@@ -57,7 +57,7 @@ void main() {
           compactCode(
             'AspectRatio('
             'aspectRatio: orientation == VideoCardOrientation.landscape '
-            '? 16 / 9 : 2 / 3, child: Stack(',
+            '? 16 / 9 : 2 / 3, child: ShelfCoverFrame(child: Stack(',
           ),
         ),
         reason:
