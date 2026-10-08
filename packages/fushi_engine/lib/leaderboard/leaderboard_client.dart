@@ -23,6 +23,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_signing.dart';
@@ -431,6 +432,189 @@ class LeaderboardClient {
     return WorkPage.fromJson(j);
   }
 
+  // ---- 反馈（services/leaderboard/src/feedback.js） ----
+  //
+  // 反馈人接口不要求账户：凭提交时拿到的 ticket（X-Fushi-Ticket）读进度、追加说明、补传附件。
+  // 本客户端没有 identity 时同样可用（匿名）。开发者接口要求签名且账户 role = dev。
+
+  static final RegExp _feedbackSlot = RegExp(r'^(log|s[0-2])$');
+
+  static String _feedbackSlotOf(String slot) {
+    if (!_feedbackSlot.hasMatch(slot)) {
+      throw ArgumentError.value(slot, 'slot', 'log | s0..s2');
+    }
+    return slot;
+  }
+
+  /// 提交反馈。[linkAccount] 且本客户端有账户时带签名提交（开发者能看到反馈人昵称）；
+  /// 否则匿名。返回的 [FeedbackReceipt.ticket] 只给这一次。
+  Future<FeedbackReceipt> submitFeedback({
+    required FeedbackCategory category,
+    required String title,
+    required String body,
+    String contact = '',
+    Map<String, Object?> meta = const <String, Object?>{},
+    bool linkAccount = true,
+  }) async {
+    final bool signs = linkAccount && _identity != null;
+    final JsonMap j = await _sendJson(
+      'POST',
+      '/v1/feedback',
+      body: <String, dynamic>{
+        'category': category.wire,
+        'title': title,
+        'body': body,
+        if (contact.isNotEmpty) 'contact': contact,
+        'meta': meta,
+      },
+      signed: signs,
+    );
+    return FeedbackReceipt.fromJson(j);
+  }
+
+  /// 补传附件：[slot] = `log`（gzip 字节）/ `s0`..`s2`（PNG / JPEG / WebP）。
+  /// 同一槽位服务端只收一次：重试撞上 409 `slot_taken` 说明上次其实已传成功，按成功返回。
+  Future<void> uploadFeedbackAttachment(
+    String id,
+    String ticket,
+    String slot,
+    Uint8List bytes,
+  ) async {
+    try {
+      await _send(
+        'PUT',
+        '/v1/feedback/${_segment(id)}/attachments/${_feedbackSlotOf(slot)}',
+        bytes: bytes,
+        contentType: slot == 'log'
+            ? 'application/gzip'
+            : 'application/octet-stream',
+        signed: false,
+        headers: <String, String>{'X-Fushi-Ticket': ticket},
+        timeout: _uploadTimeout,
+      );
+    } on LeaderboardApiException catch (e) {
+      if (e.status == 409 && e.code == 'slot_taken') return;
+      rethrow;
+    }
+  }
+
+  /// 批量查进度（每批 ≤ [FeedbackLimits.statusBatch]）。ticket 对不上 / 已不存在的条目不返回。
+  Future<List<FeedbackSummary>> feedbackStatuses(
+    List<({String id, String ticket})> items,
+  ) async {
+    if (items.length > FeedbackLimits.statusBatch) {
+      throw ArgumentError.value(items.length, 'items', 'too many');
+    }
+    if (items.isEmpty) return const <FeedbackSummary>[];
+    final JsonMap j = await _sendJson(
+      'POST',
+      '/v1/feedback/status',
+      body: <String, dynamic>{
+        'items': <Map<String, String>>[
+          for (final ({String id, String ticket}) it in items)
+            <String, String>{'id': it.id, 'ticket': it.ticket},
+        ],
+      },
+      signed: false,
+    );
+    return List<FeedbackSummary>.unmodifiable(
+      ((j['items'] as List<Object?>?) ?? const <Object?>[]).map(
+        (Object? e) => FeedbackSummary.fromJson(
+          (e as Map<Object?, Object?>).cast<String, dynamic>(),
+        ),
+      ),
+    );
+  }
+
+  /// 反馈人看详情与处理时间线。
+  Future<FeedbackDetail> feedbackDetail(String id, String ticket) async =>
+      FeedbackDetail.fromJson(
+        await _sendJson(
+          'GET',
+          '/v1/feedback/${_segment(id)}',
+          signed: false,
+          headers: <String, String>{'X-Fushi-Ticket': ticket},
+        ),
+      );
+
+  /// 反馈人追加说明；结案后追加会把状态拉回待处理。返回更新后的详情。
+  Future<FeedbackDetail> addFeedbackMessage(
+    String id,
+    String ticket,
+    String body,
+  ) async => FeedbackDetail.fromJson(
+    await _sendJson(
+      'POST',
+      '/v1/feedback/${_segment(id)}/messages',
+      body: <String, dynamic>{'body': body},
+      signed: false,
+      headers: <String, String>{'X-Fushi-Ticket': ticket},
+    ),
+  );
+
+  /// 开发者：反馈列表。[status] = `active`（未结案，默认）/ 某个状态 wire 值 / null（全部）。
+  Future<FeedbackInboxPage> devFeedbackList({
+    String? status = 'active',
+    String? cursor,
+    int? limit,
+  }) async {
+    _requireIdentity();
+    return FeedbackInboxPage.fromJson(
+      await _sendJson(
+        'GET',
+        '/v1/dev/feedback',
+        query: <String, String>{
+          if (status != null) 'status': status,
+          if (cursor != null) 'cursor': cursor,
+          if (limit != null) 'limit': '$limit',
+        },
+      ),
+    );
+  }
+
+  /// 开发者：详情（含联系方式、设备信息、反馈人）。
+  Future<FeedbackDetail> devFeedback(String id) async {
+    _requireIdentity();
+    return FeedbackDetail.fromJson(
+      await _sendJson('GET', '/v1/dev/feedback/${_segment(id)}'),
+    );
+  }
+
+  /// 开发者：改状态和 / 或回复（至少一个，否则服务端 400 `nothing_to_update`）。
+  Future<FeedbackDetail> devUpdateFeedback(
+    String id, {
+    FeedbackStatus? status,
+    String reply = '',
+  }) async {
+    _requireIdentity();
+    return FeedbackDetail.fromJson(
+      await _sendJson(
+        'POST',
+        '/v1/dev/feedback/${_segment(id)}',
+        body: <String, dynamic>{
+          if (status != null) 'status': status.wire,
+          if (reply.isNotEmpty) 'reply': reply,
+        },
+      ),
+    );
+  }
+
+  /// 开发者：取附件字节。日志 [asText] 时服务端解压成 UTF-8 文本。
+  Future<Uint8List> devFeedbackAttachment(
+    String id,
+    String slot, {
+    bool asText = false,
+  }) async {
+    _requireIdentity();
+    final http.Response res = await _send(
+      'GET',
+      '/v1/dev/feedback/${_segment(id)}/attachments/${_feedbackSlotOf(slot)}',
+      query: asText ? <String, String>{'view': 'text'} : null,
+      timeout: _uploadTimeout,
+    );
+    return res.bodyBytes;
+  }
+
   // ---- 社交 ----
 
   Future<FriendList> friends() async {
@@ -583,6 +767,8 @@ class LeaderboardClient {
     Uint8List? bytes,
     String? contentType,
     bool withAccount = true,
+    bool signed = true,
+    Map<String, String>? headers,
     Duration? timeout,
   }) async {
     final http.Response res = await _send(
@@ -592,6 +778,8 @@ class LeaderboardClient {
       bytes: body != null ? _encodeJson(body) : bytes,
       contentType: body != null ? _json : contentType,
       withAccount: withAccount,
+      signed: signed,
+      headers: headers,
       timeout: timeout,
     );
     try {
@@ -611,6 +799,7 @@ class LeaderboardClient {
     String? contentType,
     bool withAccount = true,
     bool signed = true,
+    Map<String, String>? headers,
     Duration? timeout,
   }) async {
     final bool signs = signed && _identity != null;
@@ -624,6 +813,7 @@ class LeaderboardClient {
           contentType: contentType,
           withAccount: withAccount,
           signed: signed,
+          headers: headers,
           timeout: timeout ?? _requestTimeout,
         );
       } on LeaderboardApiException catch (e) {
@@ -655,11 +845,13 @@ class LeaderboardClient {
     required String? contentType,
     required bool withAccount,
     required bool signed,
+    required Map<String, String>? headers,
     required Duration timeout,
   }) async {
     final Uri url = _endpoint(path, query);
     final List<int> body = bytes ?? const <int>[];
     final http.Request req = http.Request(method, url);
+    if (headers != null) req.headers.addAll(headers);
     if (bytes != null) req.bodyBytes = bytes;
     if (contentType != null) req.headers['Content-Type'] = contentType;
     req.headers['Accept'] = 'application/json';

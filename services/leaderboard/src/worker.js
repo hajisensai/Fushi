@@ -27,6 +27,9 @@
 //   DELETE /v1/blocks/:id                [签名]
 //   POST   /v1/reports                   [签名] {targetKind, targetId, reason}
 //   GET    /img/<key>                                    R2 出图
+//   /v1/feedback/**、/v1/dev/feedback/**                反馈与开发者处理（feedback.js 文件头）
+//
+// 开发者网页处理台（HTML，会话 Cookie；devconsole.js）：/dev/**
 //
 // 只读网页（HTML，匿名 + 边缘缓存；pages.js）：GET /u/:id、/w/:id、/rank?metric&window
 //
@@ -46,6 +49,8 @@ import { leaderboard, popularWorks, userCard, userShelf, workPage } from './view
 import { handleAdmin } from './admin.js';
 import { listBlocks, listFriends, matchSocialWrite } from './social.js';
 import { isPagePath, renderPage } from './pages.js';
+import { isFeedbackPath, purgeFeedbackAttachments, routeFeedback } from './feedback.js';
+import { isDevConsolePath, purgeDevSessions, routeDevConsole } from './devconsole.js';
 
 const HOUR = 3600 * 1000;
 const JSON_BODY_MAX = 16 * 1024;
@@ -151,6 +156,25 @@ async function route(request, env, now, ctx) {
     const bytes = method === 'POST' ? await readBodyBytes(request, JSON_BODY_MAX) : new Uint8Array();
     const body = bytes.length ? parseJsonBytes(bytes) : {};
     return handleAdmin(env, request, path, body, now);
+  }
+
+  // ---- 反馈与开发者处理：凭据各不相同（ticket / 签名 / 会话 Cookie），一律不进边缘缓存 ----
+  if (isFeedbackPath(path)) {
+    const submit = method === 'POST' && path === '/v1/feedback';
+    await bindingLimit(submit ? env.AUTH_LIMITER : env.READ_LIMITER, request);
+    const res = await routeFeedback(request, env, url, now, {
+      ip: clientIp(request),
+      readBody: (max) => readBodyBytes(request, max),
+      parse: parseJsonBytes,
+      auth: (bytes, opts) => authenticate(request, env, bytes, now, opts),
+    });
+    if (res) return res;
+    throw new HttpError(404, 'not_found');
+  }
+  if (isDevConsolePath(path)) {
+    const login = method === 'POST' && (path === '/dev/code' || path === '/dev/login');
+    await bindingLimit(login ? env.AUTH_LIMITER : env.READ_LIMITER, request);
+    return routeDevConsole(request, env, url, now, ctx, clientIp(request));
   }
 
   if (method === 'POST' && (path === '/v1/email/code' || path === '/v1/login' || path === '/v1/register')) {
@@ -266,6 +290,8 @@ export default {
     await purgeRateLimits(env, now - 2 * 24 * HOUR, now - 2 * SIG_WINDOW_MS);
     await purgeBudgets(env, now);
     await purgeEmailCodes(env, now);
+    await purgeDevSessions(env, now);
+    await purgeFeedbackAttachments(env, now);
   },
 };
 

@@ -97,4 +97,23 @@ describe('查询计划：读接口不全表扫描', () => {
     }
     expect(bad).toEqual([]);
   });
+
+  it('反馈：回执读取 / 批量进度 / 处理台按状态列表走索引', async () => {
+    const env = makeEnv({ autoSnapshot: false });
+    const ip = { 'CF-Connecting-IP': '198.51.100.7' };
+    const f = await call(env, 'POST', '/v1/feedback', { body: { category: 'bug', title: 't', body: 'b' }, headers: ip, now: NOW });
+    const dev = await registerUser(env, 'dev', { now: NOW });
+    env.DB.raw.prepare("UPDATE accounts SET role = 'dev' WHERE id = ?").run(dev.id);
+    const seen = recordSql(env);
+    const t = { 'X-Fushi-Ticket': f.data.ticket };
+    expect((await call(env, 'GET', `/v1/feedback/${f.data.id}`, { headers: t, now: NOW })).status).toBe(200);
+    expect((await call(env, 'POST', '/v1/feedback/status', { body: { items: [f.data] }, now: NOW })).status).toBe(200);
+    expect((await call(env, 'GET', '/v1/dev/feedback?status=open', { key: dev.key, account: dev.id, now: NOW })).status).toBe(200);
+    expect((await call(env, 'GET', `/v1/dev/feedback/${f.data.id}`, { key: dev.key, account: dev.id, now: NOW })).status).toBe(200);
+    const bad = [];
+    for (const { sql, args } of seen) {
+      for (const line of badPlanLines(env.DB.raw, sql, args)) bad.push(`${line}\n    in: ${sql.replace(/\s+/g, ' ').slice(0, 160)}`);
+    }
+    expect(bad).toEqual([]);
+  });
 });

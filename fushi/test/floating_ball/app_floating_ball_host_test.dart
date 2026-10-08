@@ -18,6 +18,11 @@ import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.dart';
+import 'package:fushi/src/feedback/feedback_service.dart';
+import 'package:fushi/src/leaderboard/leaderboard_service.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -80,10 +85,17 @@ void main() {
     if (storeDir.existsSync()) storeDir.deleteSync(recursive: true);
   });
 
-  Future<void> pumpHost(WidgetTester tester, {Widget? home}) async {
+  Future<void> pumpHost(
+    WidgetTester tester, {
+    Widget? home,
+    List<Override> extraOverrides = const <Override>[],
+  }) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
+        overrides: <Override>[
+          appProvider.overrideWith((Ref ref) => appModel),
+          ...extraOverrides,
+        ],
         child: TranslationProvider(
           child: MaterialApp(
             navigatorKey: appModel.navigatorKey,
@@ -131,6 +143,8 @@ void main() {
     );
     // 立即同步出厂不勾（多数人没配同步），要在设置里自己勾上。
     expect(byKey('floating_ball_action_sync'), findsNothing);
+    // 反馈出厂勾上、各平台都有（打开反馈中心并附当前画面截图）。
+    expect(byKey('floating_ball_action_feedback'), findsOneWidget);
   });
 
   testWidgets('设置里关掉应用内悬浮球：不画球', (WidgetTester tester) async {
@@ -242,6 +256,47 @@ void main() {
     await tester.tap(byKey('floating_ball_action_sync'));
     await tester.pump();
     expect(find.text(t.sync_now_busy), findsOneWidget);
+  });
+
+  testWidgets('反馈按钮打开反馈中心', (WidgetTester tester) async {
+    await prefs.setFloatingBallButtons(FloatingBallScope.general, <String>[
+      'feedback',
+    ]);
+    // 反馈中心读排行榜账户（开发者入口）与本机回执：换成不联网的测试实例。
+    final LeaderboardService board = LeaderboardService(
+      database: () => throw StateError('no database'),
+      supportRoot: () async => storeDir,
+      profileId: () async => 1,
+      httpClientFactory: () async => MockClient(
+        (http.Request _) async => http.Response('{"items":[]}', 200),
+      ),
+    );
+    await pumpHost(
+      tester,
+      extraOverrides: <Override>[
+        leaderboardServiceProvider.overrideWith((Ref _) => board),
+        feedbackServiceProvider.overrideWith(
+          (Ref _) => FeedbackService(
+            supportRoot: () async => storeDir,
+            client: board.feedbackClient,
+          ),
+        ),
+      ],
+    );
+    await expand(tester);
+    await tester.tap(byKey('floating_ball_action_feedback'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byType(FeedbackCenterPage), findsOneWidget);
+  });
+
+  testWidgets('场景勾选里去掉反馈：球上没有反馈按钮', (WidgetTester tester) async {
+    await prefs.setFloatingBallButtons(FloatingBallScope.general, <String>[
+      'lookup',
+    ]);
+    await pumpHost(tester);
+    await expand(tester);
+    expect(byKey('floating_ball_action_feedback'), findsNothing);
   });
 
   testWidgets('球外的空白处点击照常落到底下页面', (WidgetTester tester) async {

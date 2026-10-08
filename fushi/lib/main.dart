@@ -101,6 +101,7 @@ import 'package:fushi/src/platform/ios/ios_url_event_channel.dart';
 import 'package:fushi/src/platform/engine_deep_link_route_guard.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
+import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
@@ -2498,7 +2499,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                               // 在查词宿主之下：球点出的查词弹窗要盖在球上。
                               child: Stack(
                                 children: <Widget>[
-                                  child!,
+                                  // 反馈截图截的是这一层（页面本身，不含悬浮球等
+                                  // 全局浮层），见 captureFeedbackScreenshot。
+                                  RepaintBoundary(
+                                    key: feedbackScreenshotBoundaryKey,
+                                    child: child!,
+                                  ),
                                   const AppFloatingBallHost(),
                                   const FloatingLyricLookupHost(),
                                   // galgame Hook 浮窗（native 窗口）跟随 app 主题。
