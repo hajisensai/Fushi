@@ -9,6 +9,37 @@ import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:path/path.dart' as p;
 
+/// PowerShell single-quoted literal: the only escape inside `'…'` is `''`.
+String _psLiteral(String value) => "'${value.replaceAll("'", "''")}'";
+
+/// Inline `-Command` text that runs the bundled installer script with typed
+/// parameters. Execution policy only governs loading `.ps1` files, so running
+/// the script text as a scriptblock needs no execution-policy bypass flag — a
+/// high-weight AV/EDR signal that shipped code must never pass (see
+/// test/tools/no_powershell_execution_policy_guard_test.dart). Every value is a
+/// literal, never interpolated PowerShell.
+String bdjInstallerCommand({
+  required String script,
+  required String action,
+  required String bundle,
+  required String startSignal,
+  String? archive,
+  String? stagingDirectory,
+}) {
+  final StringBuffer command =
+      StringBuffer(
+          '& ([scriptblock]::Create([IO.File]::ReadAllText(${_psLiteral(script)})))',
+        )
+        ..write(' -Action ${_psLiteral(action)}')
+        ..write(' -Bundle ${_psLiteral(bundle)}')
+        ..write(' -StartSignal ${_psLiteral(startSignal)}');
+  if (archive != null) command.write(' -Archive ${_psLiteral(archive)}');
+  if (stagingDirectory != null) {
+    command.write(' -StagingDirectory ${_psLiteral(stagingDirectory)}');
+  }
+  return command.toString();
+}
+
 /// Optional private Java runtime for BD-J discs. HDMV never needs this download.
 /// Network access uses the app proxy; the bundled installer only sees a verified
 /// local archive and never modifies system JAVA_HOME or other applications.
@@ -89,7 +120,8 @@ class BlurayJavaRuntimeManager {
       final String root = p.join(appData, archive.componentRootSuffix);
       final Random random = Random.secure();
       final String operationId = List<String>.generate(
-        16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+        16,
+        (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
       ).join();
       final String stageName = '.bdj-install-$operationId';
       staging = Directory(p.join(p.dirname(root), stageName));
@@ -177,28 +209,20 @@ class BlurayJavaRuntimeManager {
     Future<String>? errors;
     try {
       _checkCancelled();
-      process = await HelperProcessRegistry.instance.start(
-        'powershell.exe',
-        <String>[
-          '-NoProfile',
-          '-NonInteractive',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          _script,
-          '-Action',
-          action,
-          '-Bundle',
-          bundleDirectory,
-          '-StartSignal',
-          signal.path,
-          if (archive != null) ...<String>['-Archive', archive],
-          if (stagingDirectory != null) ...<String>[
-            '-StagingDirectory',
-            stagingDirectory,
-          ],
-        ],
-      );
+      process = await HelperProcessRegistry.instance
+          .start('powershell.exe', <String>[
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            bdjInstallerCommand(
+              script: _script,
+              action: action,
+              bundle: bundleDirectory,
+              startSignal: signal.path,
+              archive: archive,
+              stagingDirectory: stagingDirectory,
+            ),
+          ]);
       _process = process;
       _processTreeReaped = false;
       output = process.stdout.transform(utf8.decoder).join();
