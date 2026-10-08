@@ -102,12 +102,12 @@ dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wr
 | POST | `/v1/reports` `{targetKind, targetId, reason}` | 签名·写 | 举报账户 / 作品（理由 ≤ 500 字符、目标须存在）→ 201 `{id}`；同一目标未处理举报去重 |
 | GET | `/img/<key>` | — | R2 出图 |
 | GET | `/u/:id`、`/w/:id`、`/rank?metric&window` | — | 只读 HTML 落地页（分享链接；匿名渲染、无脚本、边缘缓存） |
-| POST | `/v1/feedback` `{category, title, body, contact?, meta?}` | 可选签名 | 提交反馈 → 201 `{id, ticket}`（ticket 只返回这一次；带签名 = 关联账户）。每 IP 每小时 10 条，日预算 `feedback` |
+| POST | `/v1/feedback` `{category, title, body, contact?, meta?}` | 可选签名 | 提交反馈 → 201 `{id, ticket}`（ticket 只返回这一次；带签名 = 关联账户）。每 IP 每小时 10 条，日预算 `feedback`；同来源同内容 1 小时内 409 `duplicate_feedback`；伪装字符剥掉、注入 / 链接 / 跨来源重复只打标记（`flags`，仅开发者可见） |
 | PUT | `/v1/feedback/:id/attachments/:slot` | `X-Fushi-Ticket` | 补传附件：`s0`..`s2` 截图（PNG/JPEG/WebP ≤ 1.5 MiB）、`log`（gzip ≤ 2 MiB）；提交后 24 小时内、每槽一次（重复 409 `slot_taken`） |
 | POST | `/v1/feedback/status` `{items:[{id, ticket}] ≤ 50}` | — | 批量查进度（ticket 不对的条目不返回） |
 | GET | `/v1/feedback/:id` | `X-Fushi-Ticket` | 详情 + 处理时间线 |
 | POST | `/v1/feedback/:id/messages` `{body}` | `X-Fushi-Ticket` | 反馈人追加说明（已结案会重新打开） |
-| GET | `/v1/dev/feedback?status&cursor&limit` | 签名·开发者 | 处理台列表（`status=active` = 未结案） |
+| GET | `/v1/dev/feedback?status&cursor&limit` | 签名·开发者 | 处理台列表（`status=active` = 未结案，`status=flagged` = 带风险标记） |
 | GET | `/v1/dev/feedback/:id` | 签名·开发者 | 详情（含联系方式 / 设备信息 / 反馈人） |
 | GET | `/v1/dev/feedback/:id/attachments/:slot[?view=text]` | 签名·开发者 | 附件；日志 `view=text` 服务端流式解压 |
 | POST | `/v1/dev/feedback/:id` `{status?, reply?}` | 签名·写·开发者 | 改状态 / 回复 |
@@ -141,5 +141,5 @@ HTTP Basic Auth（`ADMIN_USER` / `ADMIN_PASS`，未配置时 503 fail-closed）�
 | POST | `/admin/api/works/split` `{ref}` | 拆出误挂的别名（`ref` 带 `kind|` 前缀） |
 | POST | `/admin/api/accounts/:id/role` `{role: 'dev'\|'user'}` | 设 / 撤开发者（反馈处理台；撤销时网页会话一并作废） |
 
-反馈系统（回执、附件、开发者处理、清理策略）设计见
+反馈系统（回执、附件、开发者处理、防投毒、清理策略）设计见
 [`docs/specs/2026-10-08-feedback.md`](../../docs/specs/2026-10-08-feedback.md)。

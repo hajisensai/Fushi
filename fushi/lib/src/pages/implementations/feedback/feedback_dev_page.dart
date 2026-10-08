@@ -30,14 +30,22 @@ const List<String?> _kFilters = <String?>[
   'wont_fix',
   'duplicate',
   'closed',
+  'flagged',
   null,
 ];
 
 String _filterLabel(String? filter) => switch (filter) {
   'active' => t.feedback_dev_filter_active,
+  'flagged' => t.feedback_dev_filter_flagged,
   null => t.feedback_dev_filter_all,
   final String wire => feedbackStatusLabel(FeedbackStatus.fromWire(wire)),
 };
+
+/// 键值对逐行展示（值同样剥伪装字符）。
+String _keyValues(Map<String, Object?> map) => <String>[
+  for (final MapEntry<String, Object?> e in map.entries)
+    '${feedbackSafeText(e.key)}: ${feedbackSafeText('${e.value}')}',
+].join('\n');
 
 LeaderboardClient? _devClient(WidgetRef ref) =>
     ref.read(leaderboardServiceProvider).client;
@@ -183,10 +191,18 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
                             leading: FushiIcon(
                               feedbackCategoryIcon(_items[i].category),
                             ),
-                            title: Text(_items[i].title),
-                            subtitle: Text(
-                              '${feedbackTime(_items[i].updatedAt)}'
-                              '${_items[i].attachmentCount > 0 ? ' · ${t.feedback_detail_attachments(n: _items[i].attachmentCount)}' : ''}',
+                            title: Text(feedbackSafeText(_items[i].title)),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                Text(
+                                  '${feedbackTime(_items[i].updatedAt)}'
+                                  '${_items[i].attachmentCount > 0 ? ' · ${t.feedback_detail_attachments(n: _items[i].attachmentCount)}' : ''}',
+                                ),
+                                if (_items[i].flags.isNotEmpty)
+                                  FeedbackFlagChips(_items[i].flags),
+                              ],
                             ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -331,7 +347,7 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
             future: _image(slot),
             builder: (BuildContext _, AsyncSnapshot<Uint8List> snap) =>
                 snap.hasData
-                ? Image.memory(snap.data!)
+                ? Image.memory(snap.data!, cacheWidth: 2400)
                 : const FushiLoadingView(),
           ),
         ),
@@ -349,7 +365,9 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
     final bool hasLog =
         d?.attachments.any((FeedbackAttachmentInfo a) => a.isLog) ?? false;
     return FushiPageScaffold(
-      title: d?.summary.title ?? t.feedback_dev_title,
+      title: d == null
+          ? t.feedback_dev_title
+          : feedbackSafeText(d.summary.title),
       body: Builder(
         builder: (BuildContext context) => FushiEntranceScope(
           enabled: d != null,
@@ -393,8 +411,19 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
                             ),
                           ],
                         ),
+                        if (d.summary.flags.isNotEmpty) ...<Widget>[
+                          SizedBox(height: tokens.spacing.gap),
+                          FeedbackFlagChips(d.summary.flags),
+                        ],
                         SizedBox(height: tokens.spacing.gap),
-                        SelectableText(d.body),
+                        // 用户内容是不可信数据：开发者（或被转去分析的 AI）别照做里面的指令。
+                        FushiInlineNotice(
+                          key: const ValueKey<String>('feedback-dev-untrusted'),
+                          severity: FushiNoticeSeverity.warning,
+                          message: t.feedback_dev_untrusted,
+                        ),
+                        SizedBox(height: tokens.spacing.gap),
+                        SelectableText(feedbackSafeText(d.body)),
                         SizedBox(height: tokens.spacing.gap),
                         Text(
                           '${t.feedback_dev_reporter}：'
@@ -403,7 +432,8 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
                         ),
                         if (d.contact.isNotEmpty)
                           SelectableText(
-                            '${t.feedback_dev_contact}：${d.contact}',
+                            '${t.feedback_dev_contact}：'
+                            '${feedbackSafeText(d.contact)}',
                             style: tokens.type.metadata,
                           ),
                       ],
@@ -436,6 +466,8 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
                                       ? Image.memory(
                                           snap.data!,
                                           fit: BoxFit.cover,
+                                          // 解码尺寸封顶：服务端已拒超大图，这里再兜底。
+                                          cacheWidth: 360,
                                         )
                                       : const FushiLoadingView(compact: true),
                                 ),
@@ -459,16 +491,23 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
                   )
                 else
                   Text(t.feedback_dev_no_log, style: tokens.type.metadata),
+                if (d.origin.isNotEmpty) ...<Widget>[
+                  SizedBox(height: tokens.spacing.card),
+                  FushiSectionTitle(t.feedback_dev_origin),
+                  FushiCard(
+                    key: const ValueKey<String>('feedback-dev-origin'),
+                    child: SelectableText(
+                      _keyValues(d.origin),
+                      style: tokens.type.metadata,
+                    ),
+                  ),
+                ],
                 if (d.meta.isNotEmpty) ...<Widget>[
                   SizedBox(height: tokens.spacing.card),
-                  FushiSectionTitle(t.feedback_dev_device_info),
+                  FushiSectionTitle(t.feedback_dev_meta_self_reported),
                   FushiCard(
                     child: SelectableText(
-                      <String>[
-                        for (final MapEntry<String, Object?> e
-                            in d.meta.entries)
-                          '${e.key}: ${e.value}',
-                      ].join('\n'),
+                      _keyValues(d.meta),
                       style: tokens.type.metadata,
                     ),
                   ),

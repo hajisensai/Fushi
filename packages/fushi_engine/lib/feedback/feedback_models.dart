@@ -70,6 +70,7 @@ class FeedbackSummary {
     this.hasAccount = false,
     this.attachmentCount = 0,
     this.awaitingDev = false,
+    this.flags = const <String>[],
   });
 
   factory FeedbackSummary.fromJson(FeedbackJson j) => FeedbackSummary(
@@ -84,6 +85,9 @@ class FeedbackSummary {
     hasAccount: j['hasAccount'] == true,
     attachmentCount: j['attachments'] is num ? _int(j['attachments']) : 0,
     awaitingDev: j['awaitingDev'] == true,
+    flags: List<String>.unmodifiable(
+      ((j['flags'] as List<Object?>?) ?? const <Object?>[]).whereType<String>(),
+    ),
   );
 
   final String id;
@@ -103,6 +107,47 @@ class FeedbackSummary {
 
   /// 反馈人在开发者上次处理后又说话了。
   final bool awaitingDev;
+
+  /// 服务端打的风险标记（只有开发者接口给）：`injection` 疑似提示注入、`hidden_chars`
+  /// 含已剥除的隐藏字符、`links` 链接较多、`duplicate:<id>` 与另一条内容相同。
+  final List<String> flags;
+}
+
+/// 风险标记的种类（[FeedbackSummary.flags] 的解析结果）。
+sealed class FeedbackFlag {
+  const FeedbackFlag();
+
+  /// 不认识的标记返回 null（旧客户端遇到新服务端时忽略即可）。
+  static FeedbackFlag? parse(String raw) {
+    if (raw.startsWith('duplicate:')) {
+      return FeedbackDuplicateFlag(raw.substring(10));
+    }
+    return switch (raw) {
+      'injection' => const FeedbackInjectionFlag(),
+      'hidden_chars' => const FeedbackHiddenCharsFlag(),
+      'links' => const FeedbackLinksFlag(),
+      _ => null,
+    };
+  }
+}
+
+class FeedbackInjectionFlag extends FeedbackFlag {
+  const FeedbackInjectionFlag();
+}
+
+class FeedbackHiddenCharsFlag extends FeedbackFlag {
+  const FeedbackHiddenCharsFlag();
+}
+
+class FeedbackLinksFlag extends FeedbackFlag {
+  const FeedbackLinksFlag();
+}
+
+class FeedbackDuplicateFlag extends FeedbackFlag {
+  const FeedbackDuplicateFlag(this.ofId);
+
+  /// 先到的那条反馈 id。
+  final String ofId;
 }
 
 class FeedbackAttachmentInfo {
@@ -192,6 +237,7 @@ class FeedbackDetail {
     required this.messages,
     this.contact = '',
     this.meta = const <String, Object?>{},
+    this.origin = const <String, Object?>{},
     this.reporter,
   });
 
@@ -204,6 +250,9 @@ class FeedbackDetail {
     meta: j['meta'] is Map
         ? Map<String, Object?>.unmodifiable(_map(j['meta']))
         : const <String, Object?>{},
+    origin: j['origin'] is Map
+        ? Map<String, Object?>.unmodifiable(_map(j['origin']))
+        : const <String, Object?>{},
     reporter: j['reporter'] == null
         ? null
         : FeedbackReporter.fromJson(_map(j['reporter'])),
@@ -214,7 +263,12 @@ class FeedbackDetail {
   final List<FeedbackAttachmentInfo> attachments;
   final List<FeedbackMessage> messages;
   final String contact;
+
+  /// 客户端自报的设备 / 版本信息（可伪造）。
   final Map<String, Object?> meta;
+
+  /// 服务端自己记录的来源（国家 / ASN / User-Agent / 是否签名），开发者接口才给。
+  final Map<String, Object?> origin;
   final FeedbackReporter? reporter;
 
   String get id => summary.id;

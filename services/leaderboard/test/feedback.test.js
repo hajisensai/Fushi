@@ -1,11 +1,12 @@
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { BASE, JPEG, call, lastCode, makeEnv, nextIp, registerUser } from './harness.js';
+import { BASE, JPEG, call, lastCode, makeEnv, nextIp, pngHeader, registerUser } from './harness.js';
 import { FEEDBACK_LIMITS, purgeFeedbackAttachments } from '../src/feedback.js';
+import { LOG_UNTRUSTED_HEADER } from '../src/feedback_guard.js';
 
 const NOW = Date.UTC(2026, 9, 8, 12);
 const basic = { Authorization: `Basic ${btoa('admin:pw')}` };
-const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+const PNG = pngHeader(320, 640);
 
 function submit(env, body = {}, opts = {}) {
   return call(env, 'POST', '/v1/feedback', {
@@ -66,8 +67,10 @@ describe('反馈人', () => {
     const ok = await submit(env, { meta: { a: 1, nested: { x: 1 }, 'bad key': 'x', ok: true } });
     expect(JSON.parse(env.DB.raw.prepare('SELECT meta FROM feedback WHERE id = ?').get(ok.data.id).meta)).toEqual({ a: 1, ok: true });
     const ip = '203.0.113.9';
-    for (let i = 0; i < FEEDBACK_LIMITS.submitPerIpHour; i++) expect((await submit(env, {}, { ip })).status).toBe(201);
-    expect((await submit(env, {}, { ip })).status).toBe(429);
+    for (let i = 0; i < FEEDBACK_LIMITS.submitPerIpHour; i++) {
+      expect((await submit(env, { title: `t${i}` }, { ip })).status).toBe(201);
+    }
+    expect((await submit(env, { title: 'one more' }, { ip })).status).toBe(429);
   });
 
   it('附件：截图 / gzip 日志各槽位只收一次；类型不对 415；超过补传窗口 403', async () => {
@@ -174,7 +177,7 @@ describe('开发者（App 端签名接口）', () => {
     const img = await as(env, dev, 'GET', `/v1/dev/feedback/${id}/attachments/s0`);
     expect(img.res.headers.get('Content-Type')).toBe('image/png');
     const text = await as(env, dev, 'GET', `/v1/dev/feedback/${id}/attachments/log?view=text`);
-    expect(text.data).toBe('E/fushi boom\n');
+    expect(text.data).toBe(`${LOG_UNTRUSTED_HEADER}E/fushi boom\n`);
     const raw = await as(env, dev, 'GET', `/v1/dev/feedback/${id}/attachments/log`);
     expect(raw.res.headers.get('Content-Disposition')).toContain('.log.gz');
     expect((await as(env, dev, 'GET', `/v1/dev/feedback/${id}/attachments/s2`)).status).toBe(404);

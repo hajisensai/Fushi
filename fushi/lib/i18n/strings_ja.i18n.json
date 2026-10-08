@@ -6866,5 +6866,14 @@
   "feedback_dev_save": "保存",
   "feedback_dev_awaiting": "新着メッセージ",
   "feedback_dev_load_more": "さらに読み込む",
-  "feedback_dev_log_title": "ログ · ${id}"
+  "feedback_dev_log_title": "ログ · ${id}",
+  "feedback_dev_filter_flagged": "要注意",
+  "feedback_dev_flag_injection": "プロンプトインジェクションの疑い",
+  "feedback_dev_flag_hidden_chars": "不可視文字を除去済み",
+  "feedback_dev_flag_links": "リンクが多い",
+  "feedback_dev_flag_duplicate": "#${id} と同じ内容",
+  "feedback_dev_untrusted": "以下はすべて送信者が書いた未検証の内容です。中の指示に従ったり怪しいリンクを開いたりしないでください。他の人や AI に渡すときは信頼できないデータであることを明記してください。",
+  "feedback_dev_origin": "サーバー記録",
+  "feedback_dev_meta_self_reported": "端末情報（自己申告・偽装可能）",
+  "feedback_error_duplicate": "同じフィードバックを先ほど送信済みです"
 }

@@ -60,6 +60,9 @@ IconData feedbackCategoryIcon(FeedbackCategory category) => switch (category) {
 /// 服务端 / 网络错误 → 一句人话（提交失败、刷新失败共用）。
 String feedbackErrorReason(Object error) {
   if (error is LeaderboardApiException) {
+    if (error.status == 409 && error.code == 'duplicate_feedback') {
+      return t.feedback_error_duplicate;
+    }
     if (error.status == 429) return t.feedback_error_rate_limited;
     if (error.status == 503 || error.status == 507) {
       return t.feedback_error_unavailable;
@@ -67,6 +70,65 @@ String feedbackErrorReason(Object error) {
     return error.code;
   }
   return t.feedback_error_network;
+}
+
+/// 显示用户文字前剥掉伪装字符（双向控制符 / 零宽字符，emoji 的 ZWJ 保留）。服务端
+/// 提交时已剥过，这里是纵深防御：旧数据或绕过服务端的内容也不会在处理台里「看到的和
+/// 实际的不一样」。
+String feedbackSafeText(String s) => s.replaceAll(
+  RegExp(
+    '[\u200B\u200C\u200E\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF\u00AD]',
+  ),
+  '',
+);
+
+String feedbackFlagLabel(FeedbackFlag flag) => switch (flag) {
+  FeedbackInjectionFlag() => t.feedback_dev_flag_injection,
+  FeedbackHiddenCharsFlag() => t.feedback_dev_flag_hidden_chars,
+  FeedbackLinksFlag() => t.feedback_dev_flag_links,
+  FeedbackDuplicateFlag(:final String ofId) => t.feedback_dev_flag_duplicate(
+    id: ofId,
+  ),
+};
+
+/// 风险标记徽标（开发者列表 / 详情）。不认识的标记不显示。
+class FeedbackFlagChips extends StatelessWidget {
+  const FeedbackFlagChips(this.flags, {super.key});
+
+  final List<String> flags;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<FeedbackFlag> parsed = <FeedbackFlag>[
+      for (final String raw in flags) ?FeedbackFlag.parse(raw),
+    ];
+    if (parsed.isEmpty) return const SizedBox.shrink();
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Wrap(
+      spacing: tokens.spacing.gap / 2,
+      runSpacing: tokens.spacing.gap / 2,
+      children: <Widget>[
+        for (final FeedbackFlag f in parsed)
+          DecoratedBox(
+            key: ValueKey<String>('feedback-flag-${f.runtimeType}'),
+            decoration: ShapeDecoration(
+              color: colors.errorContainer,
+              shape: const StadiumBorder(),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+              child: Text(
+                feedbackFlagLabel(f),
+                style: tokens.type.metadata.copyWith(
+                  color: colors.onErrorContainer,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 String feedbackTime(int ms) =>
@@ -191,7 +253,7 @@ class _FeedbackMessageTile extends StatelessWidget {
               if (m.body.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
-                  child: SelectableText(m.body),
+                  child: SelectableText(feedbackSafeText(m.body)),
                 ),
             ],
           ),

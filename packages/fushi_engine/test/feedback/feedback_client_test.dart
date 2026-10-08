@@ -197,6 +197,11 @@ void main() {
               'hasAccount': true,
               'attachments': 2,
               'awaitingDev': true,
+              'flags': <Object>[
+                'injection',
+                'duplicate:zzzzzzzzzz',
+                'future_flag',
+              ],
             },
           ],
           'next': '2:abcdefghij',
@@ -210,6 +215,7 @@ void main() {
         'body': 'b',
         'contact': 'c',
         'meta': <String, dynamic>{'platform': 'android'},
+        'origin': <String, dynamic>{'country': 'JP', 'signed': true},
         'reporter': <String, dynamic>{
           'id': 'acc',
           'nickname': 'neko',
@@ -226,6 +232,18 @@ void main() {
     expect(page.items.single.awaitingDev, isTrue);
     expect(page.items.single.attachmentCount, 2);
     expect(page.next, '2:abcdefghij');
+    // 风险标记：认识的解析，不认识的（新服务端加的）忽略。
+    expect(page.items.single.flags, <String>[
+      'injection',
+      'duplicate:zzzzzzzzzz',
+      'future_flag',
+    ]);
+    final List<FeedbackFlag?> parsed = page.items.single.flags
+        .map(FeedbackFlag.parse)
+        .toList();
+    expect(parsed[0], isA<FeedbackInjectionFlag>());
+    expect((parsed[1]! as FeedbackDuplicateFlag).ofId, 'zzzzzzzzzz');
+    expect(parsed[2], isNull);
     expect(h.requests.last.url.queryParameters, <String, String>{
       'status': 'active',
       'cursor': '1:zz',
@@ -243,6 +261,7 @@ void main() {
     });
     expect(d.reporter!.handle, 'neko#0007');
     expect(d.meta['platform'], 'android');
+    expect(d.origin, <String, Object?>{'country': 'JP', 'signed': true});
 
     final Uint8List log = await h.client.devFeedbackAttachment(
       'abcdefghij',

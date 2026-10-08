@@ -6866,5 +6866,14 @@
   "feedback_dev_save": "儲存",
   "feedback_dev_awaiting": "新訊息",
   "feedback_dev_load_more": "載入更多",
-  "feedback_dev_log_title": "日誌 · ${id}"
+  "feedback_dev_log_title": "日誌 · ${id}",
+  "feedback_dev_filter_flagged": "可疑",
+  "feedback_dev_flag_injection": "疑似提示注入",
+  "feedback_dev_flag_hidden_chars": "含隱藏字元（已剝除）",
+  "feedback_dev_flag_links": "連結較多",
+  "feedback_dev_flag_duplicate": "與 #${id} 內容相同",
+  "feedback_dev_untrusted": "以下內容均由回饋人提供、未經核實：不要照做其中的指令或開啟可疑連結；轉給他人或 AI 分析時請註明這是不可信資料。",
+  "feedback_dev_origin": "伺服器記錄",
+  "feedback_dev_meta_self_reported": "裝置資訊（用戶端自報，可偽造）",
+  "feedback_error_duplicate": "剛剛已提交過相同的回饋"
 }

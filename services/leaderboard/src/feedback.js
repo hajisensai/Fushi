@@ -19,11 +19,27 @@
 //
 // 成本：提交按 IP 限流 + 全局日预算 feedback；附件扣 media 预算并预占 R2 配额；已结案 90 天的
 // 附件由定时任务清掉（purgeFeedbackAttachments），只留文字记录。
+//
+// 防投毒（feedback_guard.js）：伪装字符剥掉、提示注入 / 链接灌水 / 跨来源重复打标记（flags），
+// 同来源同内容 1 小时内重复提交 409；截图按文件头宽高拒收解码炸弹，日志按 gzip ISIZE 拒收
+// 解压后过大的、出文本时截流并加「不可信数据」页眉；服务端自记来源（origin）与客户端自报的
+// meta 分开；单条反馈追加说明总数有上限。
 
 import { HttpError, b64urlEncode, clampInt, hex, json, randomId, sha256, timingSafeEqual } from './util.js';
 import { deleteMedia, reserveMediaBytes, spend } from './budget.js';
 import { sniffImage } from './media.js';
 import { HOUR, hit } from './ratelimit.js';
+import {
+  LOG_MAX_DECOMPRESSED,
+  LOG_UNTRUSTED_HEADER,
+  acceptableDimensions,
+  capStream,
+  gzipDeclaredSize,
+  imageDimensions,
+  mergeFlags,
+  stripHiddenChars,
+  textFlags,
+} from './feedback_guard.js';
 
 export const CATEGORIES = ['bug', 'suggestion', 'other'];
 export const STATUSES = ['open', 'in_progress', 'resolved', 'wont_fix', 'duplicate', 'closed'];
@@ -46,17 +62,28 @@ export const FEEDBACK_LIMITS = {
   statusBatch: 50,
   /** 已结案多久后清掉附件。 */
   attachmentRetentionMs: 90 * 24 * HOUR,
+  /** 单条反馈追加说明的累计上限（防止一张回执被拿来无限灌消息）。 */
+  messagesPerFeedbackTotal: 100,
+  /** 同来源同内容重复提交的拒收窗口。 */
+  duplicateWindowMs: HOUR,
+  /** 跨来源同内容打 duplicate 标记的回看窗口。 */
+  duplicateLookbackMs: 24 * HOUR,
 };
 
 const SLOT_RE = /^(log|s[0-2])$/;
 export const FEEDBACK_ID_RE = /^[A-Za-z0-9_-]{8,16}$/;
 
-function cleanText(v, max, field, { required = false } = {}) {
+/**
+ * 用户文字：去控制字符（保留换行 / 制表）、NFC、剥伪装字符、去首尾空白。剥掉过伪装字符时
+ * 把 sink.hidden 置 true（调用方据此打 hidden_chars 标记）。
+ */
+function cleanText(v, max, field, { required = false } = {}, sink = null) {
   if (v === undefined || v === null) v = '';
   if (typeof v !== 'string') throw new HttpError(400, `bad_${field}`);
-  // 去掉控制字符（保留换行 / 制表），首尾空白。
   // eslint-disable-next-line no-control-regex
-  const s = v.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim();
+  const stripped = stripHiddenChars(v.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ''));
+  if (stripped.hidden && sink) sink.hidden = true;
+  const s = stripped.text.trim();
   if (required && !s) throw new HttpError(400, `missing_${field}`);
   if ([...s].length > max) throw new HttpError(400, `${field}_too_long`);
   return s;
@@ -82,12 +109,47 @@ export function normalizeSubmission(body) {
   if (!body || typeof body !== 'object') throw new HttpError(400, 'bad_json');
   const category = CATEGORIES.includes(body.category) ? body.category : null;
   if (!category) throw new HttpError(400, 'bad_category');
+  const sink = { hidden: false };
+  const title = cleanText(body.title, FEEDBACK_LIMITS.titleMax, 'title', { required: true }, sink);
+  const text = cleanText(body.body, FEEDBACK_LIMITS.bodyMax, 'body', { required: true }, sink);
+  const contact = cleanText(body.contact, FEEDBACK_LIMITS.contactMax, 'contact', {}, sink);
   return {
     category,
-    title: cleanText(body.title, FEEDBACK_LIMITS.titleMax, 'title', { required: true }),
-    body: cleanText(body.body, FEEDBACK_LIMITS.bodyMax, 'body', { required: true }),
-    contact: cleanText(body.contact, FEEDBACK_LIMITS.contactMax, 'contact'),
+    title,
+    body: text,
+    contact,
     meta: normalizeMeta(body.meta),
+    flags: textFlags([title, text, contact], sink),
+  };
+}
+
+/** 判重用的内容指纹：分类 + 标题 + 正文，小写、空白折叠。 */
+export async function contentHash(sub) {
+  const norm = (t) => t.toLowerCase().replace(/\s+/g, ' ').trim();
+  return hex(await sha256(new TextEncoder().encode(`${sub.category}\n${norm(sub.title)}\n${norm(sub.body)}`)));
+}
+
+function parseFlags(row) {
+  try {
+    const list = JSON.parse(row.flags || '[]');
+    return Array.isArray(list) ? list.filter((f) => typeof f === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 服务端自己看到的来源（与客户端自报的 meta 分开展示，伪造不了）：Cloudflare 判定的国家 / ASN、
+ * User-Agent 前 200 字、是否带签名提交。
+ */
+export function requestOrigin(request, signed) {
+  const cf = request.cf || {};
+  const ua = stripHiddenChars(String(request.headers.get('User-Agent') || '')).text.slice(0, 200);
+  return {
+    country: typeof cf.country === 'string' ? cf.country : '',
+    asn: typeof cf.asn === 'number' ? cf.asn : null,
+    ua,
+    signed,
   };
 }
 
@@ -136,6 +198,11 @@ function summary(row) {
   };
 }
 
+/** 开发者侧摘要：多带风险标记（反馈人侧不给，别教投毒者绕过）。 */
+function devSummary(row) {
+  return { ...summary(row), flags: parseFlags(row) };
+}
+
 async function timeline(env, id) {
   const rows = await env.DB.prepare(
     `SELECT m.id, m.author, m.body, m.status, m.created_at, a.nickname
@@ -173,30 +240,54 @@ export async function devView(env, row) {
   } catch {
     meta = {};
   }
+  let origin = {};
+  try {
+    origin = JSON.parse(row.origin || '{}');
+  } catch {
+    origin = {};
+  }
   return {
-    ...summary(row),
+    ...devSummary(row),
     body: row.body,
     contact: row.contact,
     meta,
+    origin,
     reporter: reporter ? { id: reporter.id, nickname: reporter.nickname, discriminator: reporter.discriminator } : null,
     attachments: publicAttachments(row),
     messages: await timeline(env, row.id),
   };
 }
 
-/** POST /v1/feedback。account 可为 null（匿名）。 */
-export async function createFeedback(env, account, ip, body, now) {
+/**
+ * POST /v1/feedback。account 可为 null（匿名）；origin 见 [requestOrigin]。
+ * 同一来源（账户或 IP）同一内容 1 小时内再交 → 409 duplicate_feedback；不同来源 24 小时内的
+ * 同内容只打 duplicate:<先到的 id> 标记（可能是多人遇到同一问题，也可能是换 IP 灌水，交给人判）。
+ */
+export async function createFeedback(env, account, ip, body, now, origin = {}) {
   const sub = normalizeSubmission(body);
+  const hash = await contentHash(sub);
+  const source = account ? `acct:${account.id}` : `ip:${ip}`;
+  try {
+    await hit(env, `feedback:dup:${source}:${hash}`, FEEDBACK_LIMITS.duplicateWindowMs, 1, now);
+  } catch (e) {
+    if (e instanceof HttpError && e.status === 429) throw new HttpError(409, 'duplicate_feedback');
+    throw e;
+  }
   await hit(env, `feedback:ip:${ip}`, HOUR, FEEDBACK_LIMITS.submitPerIpHour, now);
   await spend(env, 'feedback', 1, now);
-  await spend(env, 'write_rows', 6, now);
+  await spend(env, 'write_rows', 8, now);
+  const earlier = await env.DB.prepare(
+    'SELECT id FROM feedback WHERE content_hash = ?1 AND created_at > ?2 ORDER BY created_at LIMIT 1',
+  ).bind(hash, now - FEEDBACK_LIMITS.duplicateLookbackMs).first();
+  const flags = earlier ? [...sub.flags, `duplicate:${earlier.id}`] : sub.flags;
   const id = randomId(10);
   const ticket = randomId(32);
   await env.DB.prepare(
-    `INSERT INTO feedback (id, ticket_hash, account_id, category, title, body, contact, meta, created_at, updated_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)`,
+    `INSERT INTO feedback (id, ticket_hash, account_id, category, title, body, contact, meta, created_at, updated_at,
+                           flags, content_hash, origin)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10, ?11, ?12)`,
   ).bind(id, await ticketHash(ticket), account ? account.id : null, sub.category, sub.title, sub.body,
-    sub.contact, sub.meta, now).run();
+    sub.contact, sub.meta, now, JSON.stringify(flags), hash, JSON.stringify(origin)).run();
   return { id, ticket, status: 'open', createdAt: now, updatedAt: now };
 }
 
@@ -205,11 +296,15 @@ function slotKind(slot, bytes) {
     if (bytes.length > FEEDBACK_LIMITS.logMaxBytes) throw new HttpError(413, 'body_too_large');
     // 日志必须是客户端压缩好的 gzip：服务端不替人存未压缩的大文本。
     if (bytes.length < 18 || bytes[0] !== 0x1f || bytes[1] !== 0x8b) throw new HttpError(415, 'not_gzip');
+    // 解压炸弹：声明的解压后长度超限直接拒（声明可伪造，出文本时另有截流兜底）。
+    if (gzipDeclaredSize(bytes) > LOG_MAX_DECOMPRESSED) throw new HttpError(413, 'log_too_large');
     return { kind: 'log', ext: 'log.gz', type: 'application/gzip' };
   }
   if (bytes.length > FEEDBACK_LIMITS.screenshotMaxBytes) throw new HttpError(413, 'body_too_large');
   const img = sniffImage(bytes);
   if (!img) throw new HttpError(415, 'not_an_image');
+  // 解码炸弹：几 KB 的文件可以声明几万像素见方，开发者一打开就把 App / 浏览器撑爆。
+  if (!acceptableDimensions(imageDimensions(bytes, img.ext))) throw new HttpError(415, 'bad_image_dimensions');
   return { kind: 'screenshot', ext: img.ext, type: img.type };
 }
 
@@ -265,19 +360,26 @@ export async function batchStatus(env, body) {
 
 /** POST /v1/feedback/:id/messages：反馈人追加说明。结案后再追加会把状态拉回 open。 */
 export async function addReporterMessage(env, row, body, now) {
-  const text = cleanText(body && body.body, FEEDBACK_LIMITS.replyMax, 'body', { required: true });
+  const sink = { hidden: false };
+  const text = cleanText(body && body.body, FEEDBACK_LIMITS.replyMax, 'body', { required: true }, sink);
   await hit(env, `feedback:msg:${row.id}`, HOUR, FEEDBACK_LIMITS.messagesPerFeedbackHour, now);
+  // 累计上限：原子地占一个名额，满了直接拒（不写消息）。
+  const slot = await env.DB.prepare(
+    'UPDATE feedback SET message_count = message_count + 1 WHERE id = ?1 AND message_count < ?2',
+  ).bind(row.id, FEEDBACK_LIMITS.messagesPerFeedbackTotal).run();
+  if (slot.meta.changes !== 1) throw new HttpError(429, 'too_many_messages');
   await spend(env, 'write_rows', 4, now);
   const reopen = CLOSED_STATUSES.includes(row.status) && row.status !== 'duplicate';
+  const flags = mergeFlags(parseFlags(row), textFlags([text], sink));
   await env.DB.batch([
     env.DB.prepare(
       'INSERT INTO feedback_messages (feedback_id, author, body, status, created_at) VALUES (?1, \'user\', ?2, ?3, ?4)',
     ).bind(row.id, text, reopen ? 'open' : null, now),
     env.DB.prepare(
-      `UPDATE feedback SET user_reply_at = ?2, updated_at = ?2,
+      `UPDATE feedback SET user_reply_at = ?2, updated_at = ?2, flags = ?4,
          status = CASE WHEN ?3 THEN 'open' ELSE status END
        WHERE id = ?1`,
-    ).bind(row.id, now, reopen ? 1 : 0),
+    ).bind(row.id, now, reopen ? 1 : 0, JSON.stringify(flags)),
   ]);
 }
 
@@ -309,13 +411,17 @@ export async function devList(env, { status, cursor, limit }) {
     const i = cursor.indexOf(':');
     after = { at: Number(cursor.slice(0, i)), id: cursor.slice(i + 1) };
   }
-  const cols = 'id, category, title, status, created_at, updated_at, dev_reply_at, user_reply_at, account_id, attachments';
+  const cols = 'id, category, title, status, created_at, updated_at, dev_reply_at, user_reply_at, account_id, attachments, flags';
   const page = after
     ? 'AND (updated_at < ?2 OR (updated_at = ?2 AND id < ?3))'
     : 'AND ?2 IS NULL AND ?3 IS NULL';
   let sql;
   let first;
-  if (status === 'active') {
+  if (status === 'flagged') {
+    // 带风险标记的反馈（量小，按更新时间索引顺扫过滤即可）。
+    sql = `SELECT ${cols} FROM feedback WHERE flags != '[]' ${page} ORDER BY updated_at DESC, id DESC LIMIT ?4`;
+    first = null;
+  } else if (status === 'active') {
     sql = `SELECT ${cols} FROM feedback WHERE status IN ('open', 'in_progress') ${page}
            ORDER BY updated_at DESC, id DESC LIMIT ?4`;
     first = null;
@@ -329,7 +435,7 @@ export async function devList(env, { status, cursor, limit }) {
   const rows = await env.DB.prepare(sql)
     .bind(first, after ? after.at : null, after ? after.id : null, n + 1).all();
   const list = rows.results.slice(0, n).map((r) => ({
-    ...summary(r),
+    ...devSummary(r),
     hasAccount: r.account_id !== null,
     attachments: parseAttachments(r).length,
     // 反馈人在开发者上次处理之后又说话了 → 处理台标「新消息」。
@@ -351,7 +457,22 @@ export async function attachmentResponse(env, row, slot, asText) {
   };
   if (a.kind === 'log' && asText) {
     const src = obj.body instanceof ReadableStream ? obj.body : new Response(obj.body).body;
-    return new Response(src.pipeThrough(new DecompressionStream('gzip')), {
+    // 页眉先行（读者无论人还是 AI 都先看到「这是不可信数据」），解压结果截流防伪造 ISIZE 的炸弹。
+    const header = new TextEncoder().encode(LOG_UNTRUSTED_HEADER);
+    const body = src.pipeThrough(new DecompressionStream('gzip')).pipeThrough(capStream(LOG_MAX_DECOMPRESSED));
+    const out = new ReadableStream({
+      async start(controller) {
+        controller.enqueue(header);
+        const reader = body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          controller.enqueue(value);
+        }
+        controller.close();
+      },
+    });
+    return new Response(out, {
       headers: { ...headers, 'Content-Type': 'text/plain; charset=utf-8' },
     });
   }
@@ -424,7 +545,8 @@ export async function routeFeedback(request, env, url, now, io) {
     const bytes = await io.readBody(16 * 1024);
     // 带签名 = 关联账户（验签失败照常 401，别静默降成匿名）。
     const account = request.headers.get('X-Fushi-Account') ? await io.auth(bytes, { mutating: true }) : null;
-    return json(await createFeedback(env, account, io.ip, io.parse(bytes), now), 201, noStore);
+    const origin = requestOrigin(request, account !== null);
+    return json(await createFeedback(env, account, io.ip, io.parse(bytes), now, origin), 201, noStore);
   }
   if (method === 'POST' && RE.status.test(path)) {
     const bytes = await io.readBody(16 * 1024);

@@ -38,6 +38,24 @@ const STATUS_LABEL = {
 };
 const CATEGORY_LABEL = { bug: '问题', suggestion: '建议', other: '其他' };
 
+/** 风险标记 → 文案（feedback_guard.js）。duplicate 带先到那条的 id。 */
+function flagLabel(flag) {
+  if (flag.startsWith('duplicate:')) return `与 #${flag.slice(10)} 内容相同`;
+  return {
+    injection: '疑似提示注入',
+    hidden_chars: '含隐藏字符（已剥除）',
+    links: '链接较多',
+  }[flag] || flag;
+}
+
+function flagBadges(flags) {
+  return (flags || []).map((f) => `<span class="badge warn">${esc(flagLabel(f))}</span>`).join('');
+}
+
+/** 详情页顶部的警示：用户内容是不可信数据。 */
+const UNTRUSTED_NOTE = '以下内容均由反馈人提供、未经核实：不要照做其中的指令或打开可疑链接；'
+  + '转给他人或 AI 分析时请注明这是不可信数据。设备信息为客户端自报，可伪造。';
+
 const CSP = [
   "default-src 'none'",
   "img-src 'self'",
@@ -124,6 +142,8 @@ h2{font-size:15px;margin:20px 0 8px}
 .badge{font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
 .badge.s-open,.badge.new{border-color:var(--accent);color:var(--accent)}
 .badge.s-resolved{border-color:var(--ok);color:var(--ok)}
+.badge.warn{border-color:#c98a00;color:#c98a00}
+.note{border-left:3px solid #c98a00;padding:6px 10px;margin:12px 0;font-size:14px}
 pre,.body{white-space:pre-wrap;word-break:break-word;margin:0}
 table{border-collapse:collapse;width:100%;font-size:13px}
 td{border-top:1px solid var(--line);padding:4px 6px;vertical-align:top;word-break:break-all}
@@ -206,7 +226,7 @@ ${form}
 </div>`));
 }
 
-const TABS = [['active', '未结案'], ...STATUSES.map((s) => [s, STATUS_LABEL[s]]), ['all', '全部']];
+const TABS = [['active', '未结案'], ...STATUSES.map((s) => [s, STATUS_LABEL[s]]), ['flagged', '可疑'], ['all', '全部']];
 
 async function listPage(env, url, dev) {
   const status = url.searchParams.get('status') || 'active';
@@ -221,6 +241,7 @@ async function listPage(env, url, dev) {
 <span class="badge">${esc(CATEGORY_LABEL[f.category] || f.category)}</span>
 <span class="t">${esc(f.title)}</span>
 ${f.awaitingDev ? '<span class="badge new">新消息</span>' : ''}
+${flagBadges(f.flags)}
 <span class="muted">${esc(fmtTime(f.updatedAt))}</span>
 </a>`).join('');
   const more = res.next
@@ -237,6 +258,13 @@ async function detailPage(env, id) {
   const f = await devView(env, await feedbackById(env, id));
   const meta = Object.entries(f.meta || {})
     .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
+  const o = f.origin || {};
+  const origin = [
+    ['国家 / 地区', o.country || '未知'],
+    ['ASN', o.asn ?? '未知'],
+    ['User-Agent', o.ua || ''],
+    ['带账户签名', o.signed ? '是' : '否'],
+  ].map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
   const shots = f.attachments.filter((a) => a.kind === 'screenshot')
     .map((a) => `<a href="/dev/f/${esc(f.id)}/a/${esc(a.slot)}"><img src="/dev/f/${esc(f.id)}/a/${esc(a.slot)}" alt="截图 ${esc(a.slot)}"></a>`)
     .join('');
@@ -259,10 +287,13 @@ async function detailPage(env, id) {
 <p class="muted"><span class="badge s-${esc(f.status)}">${esc(STATUS_LABEL[f.status] || f.status)}</span>
 ${esc(CATEGORY_LABEL[f.category] || f.category)} · #${esc(f.id)} · ${esc(fmtTime(f.createdAt))} · ${reporter}
 ${f.contact ? ` · 联系方式：${esc(f.contact)}` : ''}</p>
+${f.flags && f.flags.length ? `<p>${flagBadges(f.flags)}</p>` : ''}
+<p class="note">${esc(UNTRUSTED_NOTE)}</p>
 <div class="card"><div class="body">${esc(f.body)}</div></div>
 ${shots ? `<h2>截图</h2><div class="shots">${shots}</div>` : ''}
 <h2>日志</h2>${logLinks}
-${meta ? `<h2>设备信息</h2><div class="card"><table>${meta}</table></div>` : ''}
+<h2>服务端记录</h2><div class="card"><table>${origin}</table></div>
+${meta ? `<h2>设备信息（客户端自报）</h2><div class="card"><table>${meta}</table></div>` : ''}
 <h2>处理记录</h2>
 <div class="card">${timeline || '<p class="muted">还没有记录。</p>'}</div>
 <h2>处理</h2>
