@@ -3,6 +3,8 @@
 
 #include <windows.h>
 
+#include <functional>
+
 namespace fushi {
 
 // Windows HDR passthrough host (docs/plans/2026-08-30-video-hdr-passthrough.md
@@ -17,7 +19,12 @@ namespace fushi {
 // .codex-test/hdr-passthrough/RESULTS.md).
 class HdrVideoHostWindow {
  public:
-  explicit HdrVideoHostWindow(HWND main);
+  // |on_main_passthrough| is told whenever the main window enters / leaves
+  // the see-through passthrough state, so the main window's owner can keep
+  // its own DWM frame margins and surface fill consistent with it (BUG-2964,
+  // main_surface_composition.h). Never invoked from the destructor.
+  HdrVideoHostWindow(HWND main,
+                     std::function<void(bool)> on_main_passthrough);
   ~HdrVideoHostWindow();
 
   HdrVideoHostWindow(const HdrVideoHostWindow&) = delete;
@@ -53,6 +60,7 @@ class HdrVideoHostWindow {
   void ResizeChildren();
 
   HWND main_;
+  std::function<void(bool)> on_main_passthrough_;
   HWND hwnd_ = nullptr;
   RECT client_rect_ = {};
   bool has_rect_ = false;
@@ -61,11 +69,17 @@ class HdrVideoHostWindow {
 // Current output colour space of the monitor the main window sits on
 // (IDXGIOutput6::GetDesc1). colour_space == 12 is
 // DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 (Windows HDR on).
+//
+// sdr_white_nits is the "SDR content brightness" slider of that monitor
+// (DISPLAYCONFIG_SDR_WHITE_LEVEL): the luminance DWM gives sRGB 1.0 of every
+// SDR window — including the Flutter overlays composited over the HDR video.
+// 0 = unknown (query failed / pre-1709 Windows).
 struct HdrDisplayInfo {
   bool valid = false;
   int color_space = -1;
   float max_luminance = 0.0f;
   unsigned bits_per_color = 0;
+  float sdr_white_nits = 0.0f;
 };
 HdrDisplayInfo QueryHdrDisplayInfo(HWND main);
 

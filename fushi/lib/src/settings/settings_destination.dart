@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 
 enum SettingsDestinationId {
@@ -114,6 +114,11 @@ typedef SettingsVisibility = bool Function(SettingsContext context);
 typedef SettingsSubtitleBuilder = String? Function(SettingsContext context);
 typedef SettingsItemAction = FutureOr<void> Function(SettingsContext context);
 typedef SettingsItemBuilder = Widget Function(SettingsContext context);
+
+/// 一个 custom item 渲染成**多行**：返回的每个 widget 在所属分组里各占一行
+/// （MD3 各是一张分段卡、Apple 行间画 inset 分隔线），见 [SettingsCustomItem.rows]。
+typedef SettingsItemRowsBuilder =
+    List<Widget> Function(SettingsContext context);
 typedef SettingsValueGetter<T extends Object> =
     T Function(SettingsContext context);
 typedef SettingsValueChanged<T extends Object> =
@@ -134,6 +139,7 @@ class SettingsDestination {
     this.body,
     this.bodyBeforeSections = false,
     this.bodySearchEntries = const <SettingsBodySearchEntry>[],
+    this.bodyFillsViewport = false,
   });
 
   final SettingsDestinationId id;
@@ -157,6 +163,19 @@ class SettingsDestination {
   /// 自绘正文的搜索元数据。索引器沿子页路径递归收集；声明 hasRevealTarget 的
   /// 行使用真实 SettingsSearchTarget 定位，其余兼容条目只导航到所在页。
   final List<SettingsBodySearchEntry> bodySearchEntries;
+
+  /// 正文自己管滚动、要占满详情视口（吸顶的工具区 / 两栏左侧导航 / 粘性分组
+  /// 标题都依赖这一点——装进外层 SingleChildScrollView 就只能整页一起滚）。
+  ///
+  /// 只对**推入的独立详情页**（[buildDetailPage]）且没有 schema [sections] 的
+  /// destination 生效：此时渲染器保留页头与水平内边距，把 [body] 直接放进剩余
+  /// 视口，不再套外层滚动容器。嵌进父级可滚动宿主（shrinkWrap）的场合仍按旧
+  /// 契约平铺，因为那里本来就没有可占满的视口。
+  final bool bodyFillsViewport;
+
+  /// [bodyFillsViewport] 真正生效的判据（三个渲染器共用，免得各写一份）。
+  bool fillsViewport(SettingsContext context) =>
+      bodyFillsViewport && body != null && visibleSections(context).isEmpty;
 
   bool isVisible(SettingsContext context) => visible?.call(context) ?? true;
 
@@ -380,6 +399,7 @@ class SettingsActionItem extends SettingsItem {
     required super.id,
     required super.title,
     required this.onTap,
+    this.destructive = false,
     super.subtitle,
     super.subtitleBuilder,
     super.icon,
@@ -389,6 +409,11 @@ class SettingsActionItem extends SettingsItem {
   });
 
   final SettingsItemAction onTap;
+
+  /// true = 不可撤销的危险动作（清空 / 删除 / 重置），渲染成 error 色调的
+  /// 危险操作行（settings_kit 的 SettingsDangerRow）。只影响外观，确认框仍由
+  /// [onTap] 自己负责。
+  final bool destructive;
 }
 
 class SettingsSwitchItem extends SettingsItem {
@@ -403,10 +428,17 @@ class SettingsSwitchItem extends SettingsItem {
     super.visible,
     super.reader,
     super.video,
+    this.defaultValue,
   });
 
   final SettingsSwitchGetter value;
   final SettingsSwitchChanged onChanged;
+
+  /// 出厂默认值；非 null 时渲染层在值偏离默认时标「已改过」并提供单项恢复默认
+  /// （见 settings_kit 的 settingsResetSpecFor）。只是 UI 元数据，与持久化无关——
+  /// 必须与读取端（AppModel getter 的 defaultValue）保持一致，守卫见
+  /// test/settings/settings_default_values_test.dart。
+  final bool? defaultValue;
 }
 
 class SettingsSegmentOption<T extends Object> {
@@ -437,7 +469,11 @@ class SettingsSegmentedItem<T extends Object> extends SettingsItem {
     super.video,
     this.controlBelow = true,
     this.dropdown = false,
+    this.defaultValue,
   });
+
+  /// 出厂默认选项；语义同 [SettingsSwitchItem.defaultValue]。
+  final T? defaultValue;
 
   final List<SettingsSegmentOption<T>> options;
   final SettingsValueGetter<T> selected;
@@ -474,6 +510,7 @@ class SettingsSliderItem extends SettingsItem {
     this.step,
     this.titleReadout = false,
     this.commitOnRelease = false,
+    this.defaultValue,
   }) : assert(
          !commitOnRelease || onChangeEnd == null,
          'commitOnRelease 滑条松手统一走 onChanged 提交，不得再声明 onChangeEnd',
@@ -500,6 +537,9 @@ class SettingsSliderItem extends SettingsItem {
   /// rebuild 掉帧）且拖动过程无实时预览意义的滑条；键盘/手柄步进仍每按即提交。
   /// 与 [onChangeEnd] 互斥（松手提交统一走 [onChanged]）。
   final bool commitOnRelease;
+
+  /// 出厂默认值；语义同 [SettingsSwitchItem.defaultValue]。
+  final double? defaultValue;
 }
 
 class SettingsStepperItem extends SettingsItem {
@@ -517,7 +557,11 @@ class SettingsStepperItem extends SettingsItem {
     super.visible,
     super.reader,
     super.video,
+    this.defaultValue,
   });
+
+  /// 出厂默认值；语义同 [SettingsSwitchItem.defaultValue]。
+  final double? defaultValue;
 
   final double Function(SettingsContext context) value;
   final double step;
@@ -610,17 +654,64 @@ class SettingsCustomItem extends SettingsItem {
     required this.builder,
     super.title = '',
     this.searchTitle,
+    this.reset,
     super.subtitle,
     super.icon,
     super.visible,
     super.reader,
     super.video,
-  });
+  }) : rowsBuilder = null;
+
+  /// 可增删的记录列表（自定义站点、仓库地址…）：schema 的 item 树表达不了「条数
+  /// 随数据变」，但每条记录仍该是分组里的一行。[rowsBuilder] 返回的每个 widget
+  /// 由 schema 渲染器拆成分组里的独立行（与同组的声明式行同一分段 / 分隔线规则），
+  /// 记录变化后调用 `SettingsContext.refresh` 重建。不认识多行的宿主（快捷设置
+  /// 面板等）走 [builder]，退化成一列竖排的行。
+  SettingsCustomItem.rows({
+    required super.id,
+    required SettingsItemRowsBuilder this.rowsBuilder,
+    super.title = '',
+    this.searchTitle,
+    super.subtitle,
+    super.icon,
+    super.visible,
+    super.reader,
+    super.video,
+  }) : reset = null,
+       builder = ((SettingsContext context) => Column(
+         mainAxisSize: MainAxisSize.min,
+         crossAxisAlignment: CrossAxisAlignment.stretch,
+         children: rowsBuilder(context),
+       ));
 
   final SettingsItemBuilder builder;
+
+  /// 非空 = 多行 custom item（见 [SettingsCustomItem.rows]）。
+  final SettingsItemRowsBuilder? rowsBuilder;
 
   /// 搜索元数据 opt-in：custom 行的 [title] 通常为空（正文由 [builder] 自绘），
   /// 默认不可搜。声明本字段后该行以此标题进入设置搜索（展平/打分/结果展示均用它，
   /// 见 settingsItemSearchTitle）；不影响渲染。
   final String? searchTitle;
+
+  /// 自绘行的「恢复默认」元数据：声明后该行参与详情页的「恢复本页默认」
+  /// （settings_kit 的 settingsResetSpecFor），与声明了 defaultValue 的开关 /
+  /// 滑杆同一套判据。
+  final SettingsCustomReset? reset;
+}
+
+/// [SettingsCustomItem.reset]：自绘行改没改过默认值、怎么恢复、恢复确认框里
+/// 当前值 / 默认值怎么写。
+class SettingsCustomReset {
+  const SettingsCustomReset({
+    required this.isModified,
+    required this.reset,
+    required this.currentLabel,
+    required this.defaultLabel,
+  });
+
+  final bool Function(SettingsContext context) isModified;
+  final Future<void> Function(SettingsContext context) reset;
+  final String Function(SettingsContext context) currentLabel;
+  final String Function(SettingsContext context) defaultLabel;
 }

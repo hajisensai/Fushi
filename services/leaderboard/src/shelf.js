@@ -138,6 +138,8 @@ export function normalizeEntry(e, i, now) {
     finishedDate,
     chars: clampInt(e.chars, 0, 50_000_000, 0),
     ms: clampInt(e.ms, 0, 10_000_000_000, 0),
+    // 同机多 Profile 去重（迁移 0002）：只有显式 false 才不计入作品维度的读者数。
+    counted: e.counted === false ? 0 : 1,
   };
 }
 
@@ -260,6 +262,7 @@ export function resolveUpload(entries, existing, workNs, newId = () => randomId(
         ms: e.ms,
         coverUrl: e.coverUrl,
         nsfw: e.nsfw,
+        counted: e.counted ?? 1,
       });
       return;
     }
@@ -272,6 +275,8 @@ export function resolveUpload(entries, existing, workNs, newId = () => randomId(
     row.ms += e.ms;
     row.coverUrl = row.coverUrl || e.coverUrl;
     row.nsfw = Math.max(row.nsfw, e.nsfw);
+    // 同一作品的任一条目计入，整行就计入。
+    row.counted = Math.max(row.counted, e.counted ?? 1);
   });
   return { entryWork, newWorks, newAliases, rows: [...byWork.values()] };
 }
@@ -314,7 +319,7 @@ export function coverKeysOf(purgeResult) {
  */
 export function recomputeMetaStatementWhere(db, idSubquery) {
   const voters = `SELECT s.title, s.author FROM shelf s JOIN accounts a ON a.id = s.account_id AND a.hidden = 0
-                  WHERE s.work_id = works.id ORDER BY s.finished_at DESC LIMIT ${META_VOTERS}`;
+                  WHERE s.work_id = works.id AND s.counted = 1 ORDER BY s.finished_at DESC LIMIT ${META_VOTERS}`;
   return db.prepare(
     `UPDATE works SET
        title = COALESCE((SELECT title FROM (${voters}) GROUP BY title ORDER BY COUNT(*) DESC, title LIMIT 1), title),
@@ -404,21 +409,25 @@ export function shelfDiff({ reset, remove, oldRows, putRows }) {
     const p = put.get(id);
     const existedBefore = o !== undefined;
     const existsAfter = p !== undefined || (!reset && existedBefore && !removeSet.has(id));
-    const finishedBefore = existedBefore && isFinished(o.finished_at);
-    const finishedAfter = p !== undefined ? isFinished(p.finishedAt) : existsAfter && finishedBefore;
+    // 作品维度的读者数（works.readers / work_periods）只算 counted 的行（迁移 0002）；
+    // 账户自己的计分（shelf_count / stat_days / account_periods）不看 counted。
+    const countedBefore = existedBefore && o.counted !== 0;
+    const countedAfter = p !== undefined ? p.counted !== 0 : existsAfter && countedBefore;
+    const readerBefore = countedBefore && isFinished(o.finished_at);
+    const readerAfter = countedAfter && (p !== undefined ? isFinished(p.finishedAt) : isFinished(o.finished_at));
     countDelta += (existsAfter ? 1 : 0) - (existedBefore ? 1 : 0);
-    const d = (finishedAfter ? 1 : 0) - (finishedBefore ? 1 : 0);
+    const d = (readerAfter ? 1 : 0) - (readerBefore ? 1 : 0);
     if (d !== 0) readerDeltas.push({ id, d });
     if (existedBefore && !existsAfter) gone.push(id);
     const changed = p !== undefined || !existsAfter;
     if (changed && o) {
       if (o.finished_date) dates.add(o.finished_date);
-      periodDeltas.push(...periodContributions(id, o.finished_at, o.finished_date, -1));
+      if (countedBefore) periodDeltas.push(...periodContributions(id, o.finished_at, o.finished_date, -1));
     }
     if (changed && existsAfter) {
       const after = p !== undefined ? { at: p.finishedAt, date: p.finishedDate } : { at: o.finished_at, date: o.finished_date };
       if (after.date) dates.add(after.date);
-      periodDeltas.push(...periodContributions(id, after.at, after.date, 1));
+      if (countedAfter) periodDeltas.push(...periodContributions(id, after.at, after.date, 1));
     }
   }
   return { countDelta, readerDeltas, periodDeltas, dates, gone };
@@ -498,10 +507,10 @@ export async function applyShelfDelta(env, account, keyId, upload, now) {
   // 2. 被触及的旧行（reset = 本账户全部旧行；否则只按 PK 取本批涉及的作品）。
   const putIds = res.rows.map((r) => r.workId);
   const old = upload.reset
-    ? await db.prepare('SELECT work_id, finished_at, finished_date FROM shelf WHERE account_id = ?1')
+    ? await db.prepare('SELECT work_id, finished_at, finished_date, counted FROM shelf WHERE account_id = ?1')
       .bind(accountId).all()
     : await db.prepare(
-      `SELECT work_id, finished_at, finished_date FROM shelf
+      `SELECT work_id, finished_at, finished_date, counted FROM shelf
        WHERE account_id = ?1 AND work_id IN (SELECT value FROM json_each(?2))`,
     ).bind(accountId, jsonParam([...new Set([...putIds, ...upload.remove])])).all();
   const oldRows = new Map(old.results.map((r) => [r.work_id, r]));
@@ -553,14 +562,14 @@ export async function applyShelfDelta(env, account, keyId, upload, now) {
   }
   stmts.push(
     db.prepare(
-      `INSERT INTO shelf (account_id, work_id, kind, refs, title, author, finished_at, finished_date, chars, ms, updated_at)
+      `INSERT INTO shelf (account_id, work_id, kind, refs, title, author, finished_at, finished_date, chars, ms, counted, updated_at)
        SELECT ?2, ${J('workId')}, ${J('kind')}, ${J('refs')}, ${J('title')}, ${J('author')}, ${J('finishedAt')},
-              ${J('finishedDate')}, ${J('chars')}, ${J('ms')}, ?3
+              ${J('finishedDate')}, ${J('chars')}, ${J('ms')}, ${J('counted')}, ?3
        FROM json_each(?1) WHERE 1
        ON CONFLICT (account_id, work_id) DO UPDATE SET
          refs = excluded.refs, title = excluded.title, author = excluded.author,
          finished_at = excluded.finished_at, finished_date = excluded.finished_date,
-         chars = excluded.chars, ms = excluded.ms, updated_at = excluded.updated_at`,
+         chars = excluded.chars, ms = excluded.ms, counted = excluded.counted, updated_at = excluded.updated_at`,
     ).bind(rowsJson, accountId, now),
     readersDeltaStatement(db, jsonParam(readerDeltas)),
     ...workPeriodsDeltaStatements(db, jsonParam(periodDeltas)),

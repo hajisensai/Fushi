@@ -1,5 +1,5 @@
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
@@ -85,6 +85,12 @@ void main() {
     );
   }
 
+  /// 推过滑动关闭的 200ms 位移动画（或回弹）。
+  Future<void> pumpPastSwipeAnimation(WidgetTester tester) async {
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+  }
+
   Future<void> dragHorizontally(
     WidgetTester tester,
     Offset start, {
@@ -100,8 +106,10 @@ void main() {
     }
     await gesture.up();
     // TODO-890: dismiss now fires on the slide-out animation's completion,
-    // so settle the 200ms tween (over-threshold) / spring-back (below).
-    await tester.pumpAndSettle();
+    // so run past the 200ms tween (over-threshold) / spring-back (below).
+    // Not pumpAndSettle: result==null 的 body 现在是延迟加载层（加载指示器
+    // 常驻动画），pumpAndSettle 永远等不到静止。
+    await pumpPastSwipeAnimation(tester);
   }
 
   Future<void> panZoomHorizontally(
@@ -123,8 +131,8 @@ void main() {
       await tester.pump();
     }
     tester.binding.handlePointerEvent(pointer.panZoomEnd());
-    // TODO-890: settle the slide-out animation before the dismiss assert.
-    await tester.pumpAndSettle();
+    // TODO-890: run the slide-out animation before the dismiss assert.
+    await pumpPastSwipeAnimation(tester);
   }
 
   testWidgets(
@@ -316,7 +324,10 @@ void main() {
       button.constraints,
       const BoxConstraints.tightFor(width: 36, height: 36),
     );
-    expect(button.padding, EdgeInsets.zero);
+    // M3E（1fd2964855d）：关闭是独立的 tonal 圆钮，底色画在 padding 盒上，
+    // 内边距补满 36 命中区（(36 - 20) / 2），tonal 圆与命中区同大。
+    expect(button.padding, const EdgeInsets.all((36 - 20) / 2));
+    expect(button.backgroundColor, isNotNull);
   });
 
   testWidgets(

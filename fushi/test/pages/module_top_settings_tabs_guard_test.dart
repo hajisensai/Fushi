@@ -184,7 +184,7 @@ TorrentSettingsSection()
     expect(
       _containsCode(
         moduleSettings,
-        'FushiPageHeader.customTitle(title: widget.navigation)',
+        'FushiPageHeader.customTitle(title: widget.navigation!)',
       ),
       isTrue,
       reason: '隐藏 Cupertino 外观也不能删掉模块分段导航',
@@ -196,7 +196,7 @@ TorrentSettingsSection()
     expect(
       _containsCode(
         diagnostics,
-        'icon: Icons.arrow_back',
+        'icon: FushiIcons.back',
       ),
       isTrue,
       reason: '诊断页高亮设置段时，重选当前段不会回调，必须另有显式返回入口',

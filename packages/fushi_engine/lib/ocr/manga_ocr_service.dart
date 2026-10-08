@@ -42,12 +42,6 @@ abstract class MangaOcrService {
   });
 }
 
-/// Local engines with an installation step after downloading or importing files.
-abstract interface class MangaOcrModelPreparationService {
-  /// Cancellation must stop installation before publishing a ready marker.
-  Stream<MangaOcrDownloadEvent> prepareModels();
-}
-
 /// 读者当前页的「改道请求」：整卷任务运行中跟着读者走。
 ///
 /// 起点页只在开跑那一刻定一次；手机上本地模型一页几十秒，读者翻得比识别快，
@@ -141,7 +135,6 @@ class MangaOcrModelStatus {
     required this.diskBytes,
     required this.totalBytes,
     this.obtainedBytes = 0,
-    this.acceleratorMissingBytes = 0,
   });
 
   final bool detectorReady;
@@ -169,14 +162,7 @@ class MangaOcrModelStatus {
   /// Range 续传，再点就是接着下。能力早就在，缺的只是把它说出来。
   final int obtainedBytes;
 
-  /// 可选提速组件（经典 manga-ocr 的 KV cache decoder）还差多少字节没下；0 = 已装
-  /// 或本模型没有提速组件。不影响 [allReady]：缺了照样能识别，只是慢。
-  final int acceleratorMissingBytes;
-
   bool get allReady => detectorReady && recognizerReady;
-
-  /// 模型可用、但提速组件没装（设置页据此给「下载识别提速组件」）。
-  bool get acceleratorMissing => allReady && acceleratorMissingBytes > 0;
 
   /// 是否存在可续传的半成品（决定按钮显示「下载」还是「继续下载」）。
   bool get hasResumableDownload => !allReady && obtainedBytes > 0;
@@ -195,7 +181,6 @@ class MangaOcrDownloadEvent {
     required this.receivedBytes,
     required this.totalBytes,
     this.done = false,
-    this.installing = false,
   });
 
   final String fileName;
@@ -204,7 +189,6 @@ class MangaOcrDownloadEvent {
 
   /// 全部文件完成时最后发一次 done=true。
   final bool done;
-  final bool installing;
 }
 
 /// 一次本地整卷 OCR 实际生效的推理加速状态。

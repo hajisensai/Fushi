@@ -53,8 +53,9 @@ void main() {
     );
     // 两处各自的行体紧跟在包装之后（包装的是那一行，不是别的 widget）。
     expect(
+      // 行控件走共享 FushiListTileControl（ListTile 的设计系统分派版）。
       RegExp(
-        r'_withSubtitleFileMenu\(\s*context,\s*controller,\s*source,\s*ListTile\(',
+        r'_withSubtitleFileMenu\(\s*context,\s*controller,\s*source,\s*FushiListTileControl\(',
       ).allMatches(rows).length,
       2,
       reason: '包装对象必须是该源自己的 ListTile 行',
@@ -151,8 +152,9 @@ void main() {
     expect(menu.contains('label: t.video_subtitle_delete,'), isTrue);
     expect(
       // `\s*\.\s*`：tall style 会在 `.` 之前换行（`await _focusOwnership\n    .guardOverlay(`）。
+      // 菜单走共享 showFushiMenu（showMenu 同签名的自绘菜单）。
       RegExp(
-        r'_focusOwnership\s*\.\s*guardOverlay\(\s*\(\)\s*=>\s*showMenu<bool>\(',
+        r'_focusOwnership\s*\.\s*guardOverlay\(\s*\(\)\s*=>\s*showFushiMenu<bool>\(',
       ).hasMatch(menu),
       isTrue,
       reason:

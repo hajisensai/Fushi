@@ -130,11 +130,10 @@ void main() {
 
     // load() 触发时必须传 player + loadToken（不再是弱判据的无参触发）。
     expect(
-      csrc.contains(
-        'unawaited(_loadEmbeddedSubtitleIfNeeded(\n'
-        '        player: player,\n'
-        '        loadToken: loadToken,',
-      ),
+      RegExp(
+        r'unawaited\(\s*_loadEmbeddedSubtitleIfNeeded\(\s*'
+        r'player:\s*player,\s*loadToken:\s*loadToken,',
+      ).hasMatch(csrc),
       isTrue,
       reason: 'load() 触发内封字幕自动加载必须传 player + loadToken，供过期判据与就绪重试',
     );

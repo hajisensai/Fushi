@@ -381,7 +381,7 @@ test('嵌套查词不得关掉弹窗：__fushiOnLinkClick 后 host 仍在文档�
       '嵌套查词绝不能移除弹窗 host（用户报「把旧弹窗关掉」）');
   assert.strictEqual(world.windowObj.__fushiRoot, before.host.shadowRoot,
       '父层必须保留自己的 shadow root');
-  assert.strictEqual(world.body.children.filter(c => c.tagName === 'IFRAME').length, 1,
+  assert.strictEqual(world.body.children.filter(c => c.className === 'fushi-nested-layer' && (c.children || []).some(k => k.tagName === 'IFRAME')).length, 1,
       '子词必须在独立 iframe 展示，不能替换父层');
   // 「旧弹窗被关掉」的直接视觉来源：重新走一遍入场淡入（opacity 压 0 再翻 1）。内容原地
   // 替换绝不该让弹窗先消失一次。
@@ -516,4 +516,71 @@ test('点释义里的交叉引用 a[href]：popup.js 必须走 onLinkClick，不
   assert.strictEqual(before.host.removed, undefined, '点释义里的词后弹窗必须还在');
   assert.ok(world.sent.some((m) => m.type === 'lookup' && m.term === '言語'),
       '点交叉引用必须发出对该词的 lookup（嵌套查词真的查了）');
+});
+
+// 2026-10-04 22:56 录屏：新开弹窗在 popup.js 尾批仍在途（首词条刚渲染完）时就显示，用户先看到
+// 一条矮卡，尾批建完再「啪」地长高。新开时等终发 popupRendered（bridge-shim → __fushiOnRendered）
+// 再显示；兜底计时器另有上限。
+test('新开弹窗等尾批建完再显示，不先以首词条矮卡入场', () => {
+  const many = { '日本語': { entries: [{ expression: '日本語' }, { expression: '日本' }, { expression: '日' }], bestLength: 3 } };
+  const world = loadWorld({ respond: lookupResponder(many) });
+  const src = makeSourceTextNode('日本語を勉強する', { left: 300, top: 400 });
+  installSelection(world.windowObj, src, 0, src.textContent.length);
+  shiftHover(world, '日本語', src, 320, 410);
+  // 测试沙箱的 setTimeout 不执行：popup.js 的尾批宏任务停在途中，正是录屏里的窗口期。
+  world.windowObj._renderInProgress = true;
+  world.flushRaf();
+  const root = world.windowObj.__fushiRoot;
+  const container = root.children.find((c) => c.id === 'entries-container');
+  assert.ok(container, '弹窗容器已建');
+  // 样式表落地（沙箱里 <link> 不会自己 load）：放开既有的样式门，只剩尾批门。
+  const link = root.children.find((c) => c.__fushiCssGate);
+  if (link) for (const l of (link.listeners.load || [])) l.fn();
+  assert.notStrictEqual(container.style.visibility, 'visible', '样式已落地但尾批在途：先不显示');
+  // 尾批建完：popup.js 清掉 _renderInProgress 后发终高。
+  world.windowObj._renderInProgress = false;
+  world.windowObj.flutter_inappwebview.callHandler('popupRendered', 520, 1, 800);
+  assert.strictEqual(container.style.visibility, 'visible', '终发到达即显示');
+});
+
+// 2026-10-06 用户：「查词时先出来一块毛玻璃，过一会儿查词框内容才出来」。玻璃模糊 / M3E 投影 / 描边
+// 都画在 shadow 宿主上，旧实现等落点与尾批时只藏了内容根 #entries-container，宿主照样上屏——
+// rAF + 尾批等待（最多 FUSHI_REVEAL_WAIT_MS）+ 首查样式门期间就是一块空的模糊底板。按时序逐段记录
+// 宿主与内容的可见性：任何一段都不得出现「宿主可见、内容不可见」，放出时两者同一步变可见。
+test('新开弹窗：玻璃宿主与内容同显同隐，等待期间不露空模糊底板', () => {
+  const many = { '日本語': { entries: [{ expression: '日本語' }, { expression: '日本' }], bestLength: 3 } };
+  const world = loadWorld({ respond: lookupResponder(many) });
+  const src = makeSourceTextNode('日本語を勉強する', { left: 300, top: 400 });
+  installSelection(world.windowObj, src, 0, src.textContent.length);
+  const timeline = [];
+  const snap = (phase) => {
+    const root = world.windowObj.__fushiRoot;
+    const host = root && root.host;
+    const container = root && root.children.find((c) => c.id === 'entries-container');
+    timeline.push({
+      phase,
+      host: host ? (host.style.visibility === 'hidden' ? 'hidden' : 'painted') : 'none',
+      content: container && container.style.visibility === 'visible' ? 'visible' : 'hidden',
+    });
+  };
+  shiftHover(world, '日本語', src, 320, 410);
+  snap('lookup-response-rendered');
+  world.windowObj._renderInProgress = true;
+  world.flushRaf();
+  snap('placed-waiting-css-and-tail');
+  const root = world.windowObj.__fushiRoot;
+  const link = root.children.find((c) => c.__fushiCssGate);
+  if (link) for (const l of (link.listeners.load || [])) l.fn();
+  snap('css-settled-waiting-tail');
+  world.windowObj._renderInProgress = false;
+  world.windowObj.flutter_inappwebview.callHandler('popupRendered', 520, 1, 800);
+  snap('revealed');
+
+  for (const s of timeline) {
+    assert.ok(!(s.host === 'painted' && s.content === 'hidden'),
+      `「${s.phase}」阶段宿主（玻璃底板）已上屏而内容未显示：${JSON.stringify(timeline)}`);
+  }
+  const last = timeline[timeline.length - 1];
+  assert.deepStrictEqual({ host: last.host, content: last.content }, { host: 'painted', content: 'visible' },
+    '放出时宿主与内容同时可见');
 });

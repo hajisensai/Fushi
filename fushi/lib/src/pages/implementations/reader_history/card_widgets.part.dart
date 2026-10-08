@@ -175,23 +175,11 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
   }
 
   Widget _coverPlaceholderIcon(IconData icon) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 巡检 B11：深色主题下无封面占位（卡面色 ≈ 页面背景）与背景零对比，占位卡
-    // 读作一块空洞。给占位区补 1px outlineVariant 描边（全主题恒有；eink 的卡级
-    // 描边另由 FushiCard 兜，两者叠加无害）。
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: tokens.radii.cardRadius,
-      ),
-      child: Center(
-        child: Icon(
-          icon,
-          size: 40,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
+    // 巡检 B11：深色主题下无封面占位与背景零对比。改走共享占位
+    // [ShelfCoverPlaceholder]（与视频库 / 游戏库同一件）：MD3 = 比卡面高一阶的
+    // surfaceContainerHigh 柔和填充、Apple = tertiaryFill 系统灰填充，都不再画
+    // 1px 描边方框；墨水屏由组件自己保留描边不填充。
+    return ShelfCoverPlaceholder(icon: icon);
   }
 
   Widget _bookCardShell({
@@ -213,7 +201,6 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     final bool selected =
         selectionKey != null && _selectedKeys.contains(selectionKey);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final double selectionInset = tokens.spacing.gap / 2;
     final SelectionSlot? slot =
         selectionKey == null ? null : SelectionSlot.loose(selectionKey);
     void handleTap() {
@@ -244,26 +231,20 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
           type: MaterialType.transparency,
           child: InkWell(
             canRequestFocus: false,
-            borderRadius: tokens.radii.cardRadius,
+            // 封面即卡片：状态层 / 水波与封面同圆角（[shelfCoverRadius]）。
+            borderRadius: shelfCoverRadius(context),
             onTap: handleTap,
             // 未进入选择态时，触屏与桌面长按都保留上下文菜单；只有显式进入选择态后
             // 才摘掉卡片识别器，让祖先 SelectionDragArea 接管长按扫选。
             onLongPress: _selectionMode ? null : onLongPress,
             child: AspectRatio(
               aspectRatio: slotAspectRatio,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  child,
-                  if (_selectionMode && selectionKey != null)
-                    Positioned(
-                      top: selectionInset,
-                      left: selectionInset,
-                      child: ShelfSelectionCheck(selected: selected),
-                    ),
-                  if (selected)
-                    const Positioned.fill(child: ShelfSelectedOverlay()),
-                ],
+              // 勾选圈与选中罩画在**封面上**（卡内 [ShelfCoverFrame] 读这一层），
+              // 不再连标题 footer 一起罩住整个卡槽。
+              child: ShelfCoverSelection(
+                selectionMode: _selectionMode && selectionKey != null,
+                selected: selected,
+                child: child,
               ),
             ),
           ),
@@ -415,12 +396,11 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     );
   }
 
+  /// 封面即卡片（2026-10-04）：封面框是共享 [ShelfCoverFrame]（MD3 12 圆角 /
+  /// Apple 10 圆角 + 0.5px 内描边 + 柔和投影 / 墨水屏描边），不再套一张
+  /// 色块底的 FushiCard；fitHeight 两侧几像素余量落在框自带的衬底上。
   Widget _bookCardCoverFrame(Widget child) {
-    return FushiCard(
-      padding: EdgeInsets.zero,
-      margin: EdgeInsets.zero,
-      child: child,
-    );
+    return ShelfCoverFrame(child: child);
   }
 
   Widget _bookCardTagArea(Widget tagLabels) {
@@ -440,13 +420,22 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     required Color foreground,
     String? tooltip,
   }) {
-    final Widget badge = FushiBadge(
+    // 角标统一（2026-10-04）：封面角标一律是 CoverBadge（MD3 inverseSurface@0.85
+    // / Apple 磨砂黑），调用方给的 container 底色只用来读出状态——失败 / 部分
+    // 完成落在图标颜色上，不再整块铺 errorContainer / secondaryContainer 彩底。
+    // 纯图标 CoverBadge 内在尺寸 14 + 4×2 = 22，正好等于
+    // [kShelfCoverBadgeDimension]。
+    final ColorScheme cs = theme.colorScheme;
+    final Widget badge = CoverBadge(
       icon: icon,
-      background: background,
-      foreground: foreground,
+      iconColor: coverBadgeStatusColor(
+        context,
+        error: background == cs.errorContainer,
+        warning: background == cs.tertiaryContainer,
+      ),
     );
     if (tooltip == null) return badge;
-    return Tooltip(message: tooltip, child: badge);
+    return FushiTooltip(message: tooltip, child: badge);
   }
 
   /// [completed] = 该书已被显式标记「读完」（EpubBooks.completedAt 非 null）。命中时
@@ -462,11 +451,16 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
         value = v > 0.97 ? 1 : v;
       }
     }
-    return LinearProgressIndicator(
+    final bool glass = isGlassDesign(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    // 与视频卡同一条封面进度（[CoverProgressStrip]：MD3 贴底细线 / Apple 内缩
+    // 胶囊 / 墨水屏实色）；读完换完成色——MD3 tertiary、Apple 系统绿（tertiary
+    // 在 Apple 色板里没有「完成」语义）。
+    return CoverProgressStrip(
       value: value,
-      backgroundColor: theme.colorScheme.surfaceContainerHighest,
-      color: completed ? theme.colorScheme.tertiary : theme.colorScheme.primary,
-      minHeight: 3,
+      color: completed
+          ? (glass ? apple.success : theme.colorScheme.tertiary)
+          : null,
     );
   }
 

@@ -15,6 +15,15 @@ class MainFlutterWindow: NSWindow {
     return ProcessInfo.processInfo.environment["HIBIKI_TEST_HIDDEN"] != nil
   }
 
+  func hideForStartupPresentation() {
+    guard !hiddenTestMode else { return }
+    // Keep the view attached to an ordered window so Flutter can rasterize
+    // its first frame before Dart asks us to reveal it.
+    animationBehavior = .none
+    alphaValue = 0
+    orderFront(nil)
+  }
+
   override func awakeFromNib() {
     var windowFrame = self.frame
     // macos_ui needs the window's content view managed by macos_window_utils so

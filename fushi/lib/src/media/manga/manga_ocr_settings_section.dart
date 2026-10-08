@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -14,22 +14,31 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_local_model_labels.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_model_downloads.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
+import 'package:fushi/src/media/manga/reader/manga_reader_settings_panel_kit.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/utils.dart';
 
+/// [MangaOcrSettingsSection] 的版式：设置页（M3E 分组：识别引擎选择行、性能、
+/// 大模型增强、本地模型状态卡、外部工具）或阅读器设置侧板（引擎单选卡片组平铺）。
+/// 只换呈现，读写的偏好与回调完全相同。
+enum MangaOcrSettingsPresentation { settingsPage, readerPanel }
+
 /// 设置区「漫画 OCR」组的正文（隶属**漫画**设置分类）。
 ///
-/// 内容：默认引擎下拉（本机模型直接作为引擎项列出，不再另设一个「本机 OCR 模型」
-/// 下拉——两者说的是同一件事）、内置 OCR 模型状态行（已下载/未下载 + 体积）、
-/// 下载按钮（进度条 + 可取消）、删除按钮（二次确认）。下载归全局
-/// [MangaOcrModelDownloads] 所有，离开本页照常在后台继续。本地模型只在支持整卷 ONNX 的平台
-/// 显示；下方是外部 mokuro CLI 路径设置（仅桌面）。旧的单框 Gemini 配置和 Google
-/// Lens 说明段落均不再渲染——Lens 的上传告知由首次使用时的
-/// `ensureGoogleLensDisclosure` 同意弹窗承担，设置页不再重复一遍。
+/// 内容：默认引擎（本机模型直接作为引擎项列出）、Lens 识别语言、并行任务、
+/// 大模型识别档位、本机模型状态卡（已下载 / 需下载 + 体积 + 波浪进度 + 下载 /
+/// 导入 / 删除）、外部 mokuro CLI 路径（仅桌面）。下载归全局
+/// [MangaOcrModelDownloads] 所有，离开本页照常在后台继续。Lens 的上传告知由首次
+/// 使用时的 `ensureGoogleLensDisclosure` 同意弹窗承担，设置页不再重复一遍。
 ///
 /// 服务经构造参数注入（不 `ref.read` provider），偏好与外部探测提供可注入默认实现，
 /// 故最小 widget 测试注 fake 即可独立编译/通过；真实接线由 `settings_schema_manga_ocr.dart`
@@ -52,8 +61,19 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
     this.modelImporter,
     this.pickImportPaths,
     this.systemOcrRunner,
+    this.pairedHostModelGetter,
+    this.pairedHostModelSetter,
+    this.remoteRunner,
+    this.aiModeGetter,
+    this.aiModeSetter,
+    this.aiProviderReady,
+    this.openAiSettings,
+    this.presentation = MangaOcrSettingsPresentation.settingsPage,
     super.key,
   });
+
+  /// 版式（见 [MangaOcrSettingsPresentation]）。
+  final MangaOcrSettingsPresentation presentation;
 
   /// 内置 OCR 服务（接口；测试注 fake）。
   final MangaOcrService service;
@@ -96,6 +116,26 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
   /// 系统 OCR 可用性探测；null = 走真实平台通道。
   final SystemOcrMangaRunner? systemOcrRunner;
 
+  /// 「Fushi 互联服务端」点名的服务端模型（空串 = 服务端默认）。省略时服务端只有
+  /// 一项、跟着服务端自己的选择走。
+  final String Function()? pairedHostModelGetter;
+  final Future<void> Function(String value)? pairedHostModelSetter;
+
+  /// 探测已配对服务端有哪些模型；null = 不列服务端模型。
+  final MangaOcrRemoteRunner? remoteRunner;
+
+  /// 大模型识别档位（`MangaAiOcrMode.storageKey`）读写；省略时下拉不出现。
+  final String Function()? aiModeGetter;
+  final Future<void> Function(String value)? aiModeSetter;
+
+  /// 「设置 › AI」里给漫画 OCR 解析到了能用的提供商（含默认提供商）。档位开着
+  /// 却没有提供商时，下拉下方提示「目前不会发送任何内容」并给入口。
+  final bool Function()? aiProviderReady;
+
+  /// 打开「设置 › AI」；null = 不显示入口。返回的 Future 在用户从那一页回来时
+  /// 完成：回来后重算「有没有提供商」（用户多半就是去指派提供商的）。
+  final Future<void> Function(BuildContext context)? openAiSettings;
+
   @override
   ConsumerState<MangaOcrSettingsSection> createState() =>
       _MangaOcrSettingsSectionState();
@@ -108,6 +148,13 @@ class _MangaOcrSettingsSectionState
   late int _parallelTasks;
   late MangaOcrLocalModel _localModel;
   late String _lensLanguage;
+  late MangaAiOcrMode _aiMode;
+
+  /// 当前点名的服务端模型；null = 服务端默认。
+  String? _pairedHostModel;
+
+  /// 已配对服务端报上来的可点名模型（探测完成前为空）。
+  List<MangaOcrRemoteModel> _hostModels = const <MangaOcrRemoteModel>[];
 
   MangaOcrModelStatus? _status;
   bool _loadingStatus = true;
@@ -127,8 +174,6 @@ class _MangaOcrSettingsSectionState
   MangaOcrModelDownloadProgress? get _progress =>
       _downloads.progressOf(_localModel);
 
-  bool get _installing => _progress?.installing ?? false;
-
   String? get _downloadingFile => _progress?.currentFile;
 
   bool _deleting = false;
@@ -143,6 +188,12 @@ class _MangaOcrSettingsSectionState
   bool _probing = false;
   String? _probeResult;
 
+  /// 最近一次探测是否找到了 mokuro（决定结果提示用成功色还是警告色）。
+  bool _probeFound = false;
+
+  /// 设置页「本地模型」分组在当前引擎用不到时是否展开详情（默认收起）。
+  bool _modelDetailsExpanded = false;
+
   @override
   void initState() {
     super.initState();
@@ -151,9 +202,10 @@ class _MangaOcrSettingsSectionState
       _readEnginePreference(),
     );
     _lensLanguage = normalizeLensLanguage(widget.lensLanguageGetter?.call());
+    _aiMode = MangaAiOcrMode.fromStorageKey(widget.aiModeGetter?.call());
     _parallelTasks = (widget.parallelTasksGetter?.call() ?? 0).clamp(0, 4);
     _localModel = MangaOcrLocalModel.forPlatform(
-      widget.localModelGetter?.call() ?? 'manga_ocr',
+      widget.localModelGetter?.call() ?? kDefaultMangaOcrLocalModel.key,
     );
     _downloads = ref.read(mangaOcrModelDownloadsProvider);
     _wasDownloading = _downloading;
@@ -167,13 +219,30 @@ class _MangaOcrSettingsSectionState
       _loadingStatus = false;
     }
     unawaited(_probeSystemOcr());
+    final String hostModel = widget.pairedHostModelGetter?.call() ?? '';
+    _pairedHostModel = hostModel.isEmpty ? null : hostModel;
+    if (widget.pairedHostModelGetter != null && widget.remoteRunner != null) {
+      unawaited(_probeHostModels());
+    }
+  }
+
+  Future<void> _probeHostModels() async {
+    MangaOcrRemoteTarget? target;
+    try {
+      target = await widget.remoteRunner!.probe();
+    } catch (_) {
+      // 探测失败就只列「服务端默认」与当前已选那项，选择照样可用。
+      target = null;
+    }
+    if (!mounted || target == null) return;
+    setState(() => _hostModels = target!.capability.models);
   }
 
   @override
   void didUpdateWidget(MangaOcrSettingsSection oldWidget) {
     super.didUpdateWidget(oldWidget);
     _localModel = MangaOcrLocalModel.forPlatform(
-      widget.localModelGetter?.call() ?? 'manga_ocr',
+      widget.localModelGetter?.call() ?? kDefaultMangaOcrLocalModel.key,
     );
     _wasDownloading = _downloading;
     if (!identical(widget.service, oldWidget.service)) {
@@ -273,32 +342,23 @@ class _MangaOcrSettingsSectionState
 
   int get _downloadReceivedBytes => _progress?.receivedBytes ?? 0;
 
-  void _startDownload({bool prepareOnly = false}) {
+  void _startDownload() {
     if (_importing) return;
-    _downloads.start(_localModel, widget.service, prepareOnly: prepareOnly);
+    _downloads.start(_localModel, widget.service);
   }
 
   Future<void> _cancelDownload() => _downloads.cancel(_localModel);
 
   Future<void> _confirmDelete() async {
-    final bool? ok = await showAppDialog<bool>(
+    final bool ok = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(t.manga_ocr_delete_confirm_title),
-        content: Text(t.manga_ocr_delete_confirm_message),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.manga_ocr_delete),
-          ),
-        ],
-      ),
+      title: t.manga_ocr_delete_confirm_title,
+      message: t.manga_ocr_delete_confirm_message,
+      icon: FushiIcons.delete,
+      confirmLabel: t.manga_ocr_delete,
+      destructive: true,
     );
-    if (ok != true || !mounted) return;
+    if (!ok || !mounted) return;
     setState(() => _deleting = true);
     int freed = 0;
     try {
@@ -342,7 +402,7 @@ class _MangaOcrSettingsSectionState
       context: context,
       builder: (BuildContext ctx) {
         final ThemeData dialogTheme = Theme.of(ctx);
-        return AlertDialog(
+        return FushiAlertDialog(
           title: Text(t.manga_ocr_import_title),
           content: SingleChildScrollView(
             child: Column(
@@ -362,9 +422,9 @@ class _MangaOcrSettingsSectionState
                 const SizedBox(height: 4),
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
+                  child: FushiTextButton.icon(
                     onPressed: () => unawaited(_copyModelUrls()),
-                    icon: const Icon(Icons.link, size: 18),
+                    icon: const FushiIcon(FushiIcons.link, size: 18),
                     label: Text(t.manga_ocr_import_copy_urls),
                   ),
                 ),
@@ -372,16 +432,16 @@ class _MangaOcrSettingsSectionState
             ),
           ),
           actions: <Widget>[
-            TextButton(
+            FushiTextButton(
               onPressed: () => Navigator.pop(ctx),
               child: Text(t.dialog_cancel),
             ),
-            TextButton(
+            FushiTextButton(
               key: const ValueKey<String>('manga_ocr_import_pick_files'),
               onPressed: () => Navigator.pop(ctx, false),
               child: Text(t.manga_ocr_import_pick_files),
             ),
-            FilledButton(
+            FushiFilledButton(
               key: const ValueKey<String>('manga_ocr_import_pick_folder'),
               onPressed: () => Navigator.pop(ctx, true),
               child: Text(t.manga_ocr_import_pick_folder),
@@ -443,12 +503,6 @@ class _MangaOcrSettingsSectionState
     }
     _reportImport(result);
     await _loadStatus();
-    if (mounted &&
-        result.allReady &&
-        _localModel == MangaOcrLocalModel.mangaOcrCuda &&
-        widget.service is MangaOcrModelPreparationService) {
-      _startDownload(prepareOnly: true);
-    }
   }
 
   Future<List<String>?> _pickImportPaths(bool folderMode) async {
@@ -519,19 +573,24 @@ class _MangaOcrSettingsSectionState
   }
 
   /// 「导入本地模型」按钮：下载中/导入中禁用（两条路径会动同一批文件）。
+  /// 两种版式都在状态卡里与主按钮成组，统一用描边按钮。
   Widget _importButton() {
-    return TextButton.icon(
+    final VoidCallback? onPressed = (_importing || _downloading)
+        ? null
+        : () => unawaited(_showImportDialog());
+    final Widget icon = _importing
+        ? const SizedBox.square(
+            dimension: 16,
+            child: FushiCircularProgressIndicator(strokeWidth: 2),
+          )
+        : const FushiIcon(FushiIcons.importFile, size: 18);
+    final Widget label =
+        Text(_importing ? t.manga_ocr_import_running : t.manga_ocr_import);
+    return FushiOutlinedButton.icon(
       key: const ValueKey<String>('manga_ocr_import_button'),
-      onPressed: (_importing || _downloading)
-          ? null
-          : () => unawaited(_showImportDialog()),
-      icon: _importing
-          ? const SizedBox.square(
-              dimension: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : const Icon(Icons.drive_folder_upload_outlined, size: 18),
-      label: Text(_importing ? t.manga_ocr_import_running : t.manga_ocr_import),
+      onPressed: onPressed,
+      icon: icon,
+      label: label,
     );
   }
 
@@ -557,6 +616,7 @@ class _MangaOcrSettingsSectionState
     if (!mounted) return;
     setState(() {
       _probing = false;
+      _probeFound = version != null;
       _probeResult = version != null
           ? t.manga_ocr_external_detected(version: version)
           : t.manga_ocr_external_not_found;
@@ -569,69 +629,83 @@ class _MangaOcrSettingsSectionState
     // Material 透明层：cupertino 桌面嵌入渲染（BUG-009 R2 路径）下设置正文没有
     // Material 祖先，而本组含 TextField/InkWell 系控件——透明 Material 只补墨水
     // 与文本编辑依赖，不改视觉。
-    return Material(type: MaterialType.transparency, child: _buildBody(theme));
-  }
-
-  /// 补齐标准设置行的水平内边距。
-  ///
-  /// [SettingsCustomItem] 是 `settings_schema_widgets.dart` 的 switch 里**唯一**
-  /// 不经过 `AdaptiveSettingsRow*` 的分支，而那 16px 横向 padding 正是由行控件自带
-  /// 的。于是本组件的裸内容贴在卡片边（x=0），同一张卡片里的模型状态行与「在线目录
-  /// 地址」行却在 x=16——用户看到的「漫画设置左右间距和其他设置不一样」就是这 16px。
-  /// 这里由组件自己补上，与制卡/媒体记录/配置方案那几个 body 逃生口的做法一致
-  /// （它们靠 `AdaptiveSettingsSection` + `AdaptiveSettingsRow` 天然拿到 16）。
-  Widget _inset(Widget child) {
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: FushiDesignTokens.of(context).spacing.rowHorizontal,
-      ),
-      child: child,
+    return Material(
+      type: MaterialType.transparency,
+      child:
+          widget.presentation == MangaOcrSettingsPresentation.readerPanel
+              ? _buildPanelBody(theme)
+              : _buildBody(theme),
     );
   }
 
+  /// 设置页版式（M3E）：按任务分组的分段卡片列表——识别引擎 / 性能 / 大模型增强 /
+  /// 本地模型 / 外部工具。说明一律收进行的 supporting text 或 info，不再平铺整段
+  /// 长行；宽屏（≥ [_kWideBreakpoint]）把「性能」与「大模型增强」并排。各分组
+  /// 错峰进场（墨水屏 / 减弱动态效果下由共享组件归零）。
   Widget _buildBody(ThemeData theme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    final bool showParallel =
+        isDesktopPlatform && widget.parallelTasksGetter != null;
+    final bool showAi = widget.aiModeGetter != null;
+    final Widget engine = MangaPanelGroup(
+      title: t.manga_reader_group_ocr_engine,
       children: <Widget>[
-        _inset(_sectionLabel(theme, t.manga_ocr_section)),
-        // 引擎下拉全平台显示：出厂默认已是 Google Lens（会上传页面），把开关关在
-        // 桌面里等于让移动端用户无法持久地退回离线引擎。外部 mokuro 是桌面工具，
-        // 由下拉项自身 disable，不再靠整块 gating。
-        // 本机模型不再单独占一个下拉：它们直接作为引擎项列在这里（见
-        // [_engineOptions]）。
-        _inset(_buildEnginePreference(theme)),
-        if (isDesktopPlatform &&
-            widget.parallelTasksGetter != null) ...<Widget>[
-          const SizedBox(height: 12),
-          _inset(_buildParallelTasks()),
-        ],
-        if (widget.lensLanguageGetter != null) ...<Widget>[
-          const SizedBox(height: 12),
-          _inset(_buildLensLanguage(theme)),
-        ],
-        const SizedBox(height: 12),
-        if (widget.service.isSupportedPlatform)
-          _buildLocalModelArea(theme)
-        else
-          _inset(
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                t.manga_ocr_unsupported,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ),
-        // 外部 mokuro CLI 是桌面工具，仅桌面显示。
-        if (isDesktopPlatform) ...<Widget>[
-          const SizedBox(height: 16),
-          _inset(_buildExternalBlock(theme)),
-        ],
+        _buildEngineRow(theme),
+        if (widget.lensLanguageGetter != null) _buildPanelLensLanguage(),
       ],
     );
+    final Widget performance = MangaPanelGroup(
+      title: t.manga_ocr_group_performance,
+      children: <Widget>[if (showParallel) _buildPanelParallelTasks()],
+    );
+    final Widget ai = MangaPanelGroup(
+      title: t.manga_ocr_group_ai,
+      children: <Widget>[if (showAi) _buildPanelAiMode(theme)],
+    );
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool wide =
+            constraints.maxWidth >= _kWideBreakpoint && showParallel && showAi;
+        final List<Widget> blocks = <Widget>[
+          engine,
+          if (wide)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Expanded(child: performance),
+                const SizedBox(width: 16),
+                Expanded(child: ai),
+              ],
+            )
+          else ...<Widget>[performance, ai],
+          _buildSettingsModelGroup(theme),
+          // 外部 mokuro CLI 是桌面工具，仅桌面显示。
+          if (isDesktopPlatform)
+            MangaPanelGroup(
+              title: t.manga_ocr_group_external_tools,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                  child: _buildPanelExternal(theme),
+                ),
+              ],
+            ),
+        ];
+        return FushiEntranceScope(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              for (final (int index, Widget block) in blocks.indexed)
+                FushiStaggeredEntrance(index: index, child: block),
+            ],
+          ),
+        );
+      },
+    );
   }
+
+  /// 「性能」与「大模型增强」并排的最小宽度。
+  static const double _kWideBreakpoint = 840;
 
   /// 引擎选项表：标签 + **取舍说明** + 可用性，一处定义。
   ///
@@ -641,7 +715,7 @@ class _MangaOcrSettingsSectionState
   /// 文档或试错。
   ///
   /// 平台不适用的项**保留在列表里**只置灰（不裁项）：裁掉会让「已存 external_mokuro
-  /// 的偏好」在移动端找不到匹配 value 而触发 Dropdown 断言。
+  /// 的偏好」在移动端找不到对应项，引擎行与单选卡片组都显示不出当前选择。
   List<_EngineOption> _engineOptions() {
     return <_EngineOption>[
       _EngineOption(
@@ -661,7 +735,7 @@ class _MangaOcrSettingsSectionState
           enabled: widget.service.isSupportedPlatform,
         )
       else
-        // 逐列 CTC 与经典 manga-ocr 五端都能跑，CUDA / Baberu 只在 Windows 列出
+        // 逐列 CTC 五端都能跑，Baberu 只在 Windows 列出
         // （[MangaOcrLocalModel.availableOnAllPlatforms]）。
         for (final MangaOcrLocalModel model in platformMangaOcrLocalModels())
           _EngineOption(
@@ -704,34 +778,58 @@ class _MangaOcrSettingsSectionState
         description: t.manga_ocr_engine_paired_host_desc,
         enabled: true,
       ),
+      // 服务端的模型也逐个列成引擎项（与本机模型同构）：手机上点名让电脑用哪个
+      // 模型跑，不必跑去服务端改它自己的选择。列的是服务端报上来的；探测还没回来
+      // 或服务端离线时，当前已选那项照样保留，免得下拉找不到当前值。
+      if (widget.pairedHostModelGetter != null)
+        for (final String key in _pairedHostModelKeys())
+          _EngineOption(
+            preference: MangaOcrEnginePreference.pairedHost,
+            hostModel: key,
+            label: t.manga_ocr_engine_paired_host_model(
+              model: _hostModelLabel(key),
+            ),
+            description: _hostModelReady(key) == false
+                ? '${_hostModelDescription(key)}\n'
+                      '${t.manga_ocr_engine_paired_host_model_missing}'
+                : _hostModelDescription(key),
+            enabled: true,
+          ),
     ];
   }
 
-  Widget _buildParallelTasks() {
-    return DropdownButtonFormField<int>(
-      key: const ValueKey<String>('manga_ocr_parallel_tasks'),
-      initialValue: _parallelTasks,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: t.manga_ocr_parallel_tasks,
-        helperText: t.manga_ocr_parallel_tasks_desc,
-        helperMaxLines: 3,
-        isDense: true,
-        border: const OutlineInputBorder(),
-      ),
-      items: <DropdownMenuItem<int>>[
-        DropdownMenuItem<int>(value: 0, child: Text(t.manga_ocr_parallel_auto)),
-        for (int count = 1; count <= 4; count++)
-          DropdownMenuItem<int>(value: count, child: Text('$count')),
-      ],
-      onChanged: widget.parallelTasksSetter == null
-          ? null
-          : (int? value) async {
-              if (value == null) return;
-              await widget.parallelTasksSetter!(value);
-              if (mounted) setState(() => _parallelTasks = value);
-            },
-    );
+  List<String> _pairedHostModelKeys() => <String>[
+    for (final MangaOcrRemoteModel model in _hostModels) model.key,
+    if (_pairedHostModel != null &&
+        !_hostModels.any((MangaOcrRemoteModel m) => m.key == _pairedHostModel))
+      _pairedHostModel!,
+  ];
+
+  /// 服务端没报这个模型时为 null（未知），报了就是它的就绪态。
+  bool? _hostModelReady(String key) {
+    for (final MangaOcrRemoteModel model in _hostModels) {
+      if (model.key == key) return model.ready;
+    }
+    return null;
+  }
+
+  static MangaOcrLocalModel? _knownModel(String key) {
+    for (final MangaOcrLocalModel model in MangaOcrLocalModel.values) {
+      if (model.key == key) return model;
+    }
+    return null;
+  }
+
+  String _hostModelLabel(String key) {
+    final MangaOcrLocalModel? model = _knownModel(key);
+    return model == null ? key : localModelLabel(model);
+  }
+
+  String _hostModelDescription(String key) {
+    final MangaOcrLocalModel? model = _knownModel(key);
+    return model == null
+        ? t.manga_ocr_engine_paired_host_desc
+        : localModelDescription(model);
   }
 
   /// 下拉当前值：本机 ONNX 带上具体模型，其余就是引擎偏好本身。
@@ -740,6 +838,9 @@ class _MangaOcrSettingsSectionState
     _enginePreference == MangaOcrEnginePreference.localOnnx &&
             widget.localModelGetter != null
         ? _localModel
+        : null,
+    hostModel: _enginePreference == MangaOcrEnginePreference.pairedHost
+        ? _pairedHostModel
         : null,
   );
 
@@ -753,93 +854,72 @@ class _MangaOcrSettingsSectionState
       setState(() => _localModel = model);
       _wasDownloading = _downloading;
     }
+    if (choice.preference == MangaOcrEnginePreference.pairedHost &&
+        choice.hostModel != _pairedHostModel) {
+      await widget.pairedHostModelSetter?.call(choice.hostModel ?? '');
+      if (!mounted) return;
+      setState(() => _pairedHostModel = choice.hostModel);
+    }
     if (!mounted) return;
     setState(() => _enginePreference = choice.preference);
     await _writeEnginePreference(choice.preference);
   }
 
-  Widget _buildEnginePreference(ThemeData theme) {
+  /// 默认引擎选择行：当前引擎的图标 + 名称与一句取舍作 supporting text，点按
+  /// 从底部弹出带图标 / 说明的单选卡片组。不可用的引擎在卡片组里置灰（不裁项：
+  /// 已存的偏好在别的平台上仍要能显示）。
+  Widget _buildEngineRow(ThemeData theme) {
     final List<_EngineOption> options = _engineOptions();
-    return DropdownButtonFormField<_EngineChoice>(
+    final _EngineChoice selected = _currentChoice;
+    _EngineOption? current;
+    for (final _EngineOption option in options) {
+      if (option.choice == selected) current = option;
+    }
+    // 导入 / 删除期间锁住：两者都按当前模型的目录动文件，中途换模型会让结果
+    // 落到另一个模型的状态上。下载不锁——它按模型归属全局登记表，换走了照跑。
+    final bool locked = _importing || _deleting;
+    return AdaptiveSettingsRow(
       key: const ValueKey<String>('manga_ocr_default_engine'),
-      initialValue: _currentChoice,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: t.manga_ocr_default_engine,
-        isDense: true,
-        border: const OutlineInputBorder(),
-      ),
-      // 闭合态只显示单行标签：说明是给「挑的时候」看的，收起后再占两行只会把
-      // 设置行撑高。
-      selectedItemBuilder: (BuildContext context) => <Widget>[
-        for (final _EngineOption option in options)
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: Text(option.label, overflow: TextOverflow.ellipsis),
-          ),
-      ],
-      items: <DropdownMenuItem<_EngineChoice>>[
-        for (final _EngineOption option in options)
-          DropdownMenuItem<_EngineChoice>(
-            value: option.choice,
-            enabled: option.enabled,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(option.label),
-                Text(
-                  option.description,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
-      // 两行项比默认 kMinInteractiveDimension 高，不给足高度会 overflow。
-      itemHeight: null,
-      // 导入 / 删除期间锁住：两者都按当前模型的目录动文件，中途换模型会让结果
-      // 落到另一个模型的状态上。下载不锁——它按模型归属全局登记表，换走了照跑。
-      onChanged: _importing || _deleting
+      title: t.manga_ocr_default_engine,
+      subtitle: current == null
           ? null
-          : (_EngineChoice? value) {
-              if (value == null || value == _currentChoice) return;
-              unawaited(_selectEngine(value));
-            },
+          : '${current.label}\n${current.description}',
+      icon: _engineIcon(selected.preference),
+      showIcon: true,
+      trailing: FushiIcon(
+        FushiIcons.dropDown,
+        size: 22,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      onTap: locked ? null : () => unawaited(_pickEngine(options, selected)),
     );
   }
 
-  /// Google Lens 识别语言（默认/本地书兜底）。在线阅读优先用源声明的语言，
-  /// 只有源语言未知时才回退到这里；本地漫画整卷 OCR 直接用此值。
-  Widget _buildLensLanguage(ThemeData theme) {
-    final List<DropdownMenuItem<String>> items = <DropdownMenuItem<String>>[
-      for (final (String tag, String label) in kGoogleLensLanguageOptions)
-        DropdownMenuItem<String>(value: tag, child: Text(label)),
-      if (!kGoogleLensLanguageOptions.any(
-        ((String, String) option) => option.$1 == _lensLanguage,
-      ))
-        DropdownMenuItem<String>(
-          value: _lensLanguage,
-          child: Text(_lensLanguage),
-        ),
-    ];
-    return DropdownButtonFormField<String>(
-      key: const ValueKey<String>('manga_ocr_lens_language'),
-      initialValue: _lensLanguage,
-      decoration: InputDecoration(
-        labelText: t.manga_ocr_lens_language_label,
-        isDense: true,
-        border: const OutlineInputBorder(),
-      ),
-      items: items,
-      onChanged: (String? value) {
-        if (value == null) return;
-        setState(() => _lensLanguage = value);
-        unawaited(_writeLensLanguage(value));
-      },
+  Future<void> _pickEngine(
+    List<_EngineOption> options,
+    _EngineChoice selected,
+  ) async {
+    final _EngineChoice? picked = await showMangaPanelOptionSheet<_EngineChoice>(
+      context: context,
+      title: t.manga_ocr_default_engine,
+      options: <MangaPanelOption<_EngineChoice>>[
+        for (final _EngineOption option in options)
+          MangaPanelOption<_EngineChoice>(
+            value: option.choice,
+            label: option.label,
+            description: option.description,
+            icon: _engineIcon(option.preference),
+            enabled: option.enabled,
+            key: ValueKey<String>(
+              'manga_ocr_engine_${option.preference.name}'
+              '_${option.localModel?.key ?? ''}_${option.hostModel ?? ''}',
+            ),
+          ),
+      ],
+      selected: selected,
     );
+    if (!mounted || picked == null || picked == _currentChoice) return;
+    await _selectEngine(picked);
   }
 
   /// 当前引擎偏好是否真的会用到本地 ONNX 模型。
@@ -850,239 +930,115 @@ class _MangaOcrSettingsSectionState
       _enginePreference == MangaOcrEnginePreference.auto ||
       _enginePreference == MangaOcrEnginePreference.localOnnx;
 
-  /// 本地模型区：**按当前引擎决定形态**。
+  /// 设置页「本地模型」分组：状态卡（已就绪 / 需下载 + 体积 + 波浪进度 + 下载 /
+  /// 导入按钮组，与阅读器侧板同一张卡）。
   ///
-  /// 修的是「我选的是 Google Lens，这儿怎么还让我下模型」（用户原话）——原先这块
-  /// 只受平台闸门控制，跟引擎选择完全脱钩，于是一个永远用不到本地模型的用户被
-  /// 一直劝着下 450 MB。三种形态：
-  /// - 引擎用得到（auto / 本地 ONNX）→ 完整块：状态 + 下载/删除。
-  /// - 引擎用不到但**磁盘上还留着文件** → 只给「用不到 + 占用多少 + 删除」，
-  ///   这正是「应该支持删除 ocr 模型」的落点：换了引擎之后那几百 MB 得能清掉。
-  /// - 引擎用不到且磁盘干净 → **次级入口**（不劝，但也不藏）。
-  Widget _buildLocalModelArea(ThemeData theme) {
-    // 下载/安装期间始终保留进度与取消入口，不受引擎偏好或磁盘状态影响。
-    if (_downloading) {
-      return _buildModelBlock(theme);
-    }
-    if (_loadingStatus) {
-      return _inset(
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 8),
-          child: LinearProgressIndicator(),
-        ),
-      );
-    }
-    if (_localModelsUsedByEngine) {
-      return _buildModelBlock(theme);
-    }
-    final MangaOcrModelStatus? status = _status;
-    if (status == null || !status.hasAnyFiles) {
-      return _buildDormantModelEntry(theme);
-    }
-    return _buildOrphanModelBlock(theme, status);
-  }
-
-  /// 引擎用不到、磁盘也干净时的**次级下载入口**。
-  ///
-  /// BUG-1780：这里原先直接 `SizedBox.shrink()`，本意是「别劝一个只用 Lens 的
-  /// 用户去下 450 MB」。但**出厂默认引擎就是 Google Lens**（偏好
-  /// `manga_ocr_engine_preference` 的默认值），于是「全新安装 + 从没下过模型」
-  /// 这条最常见的路径恰好命中该分支：整块连同下载按钮一起不存在，想预先备好
-  /// 离线模型的用户无处可点。本意是「不该劝你下」，落地成了「不给你下的机会」。
-  ///
-  /// 次级形态的分寸：用普通 [TextButton] 而不是主按钮，状态行也不喊「模型未
-  /// 下载」（当前引擎本来就不需要它，那不是缺陷状态）——不劝，但也不藏。
-  Widget _buildDormantModelEntry(ThemeData theme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        AdaptiveSettingsRow(
-          title: t.manga_ocr_model_unused_by_engine,
-          subtitle: _modelSizeSubtitle(_status),
-          icon: Icons.download_outlined,
-          showIcon: true,
-        ),
-        const SizedBox(height: 8),
-        _inset(
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: <Widget>[
-                TextButton.icon(
-                  onPressed: _importing ? null : _startDownload,
-                  icon: const Icon(Icons.download_outlined, size: 18),
-                  label: Text(t.manga_ocr_download),
-                ),
-                _importButton(),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// 引擎用不到、但磁盘上还占着的本地模型：说清楚 + 给删除 + 给继续导入。
-  ///
-  /// 导入入口在这里不是可有可无：「磁盘上有残留但模型不全」最常见的来源恰恰是
-  /// 「导入/下载到一半」，只给删除等于让这些人把已经搬进来的几百 MB 先删掉重来。
-  Widget _buildOrphanModelBlock(ThemeData theme, MangaOcrModelStatus status) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        AdaptiveSettingsRow(
-          title: t.manga_ocr_model_unused_by_engine,
-          subtitle: t.manga_ocr_model_disk_usage(
-            size: _formatBytes(status.diskBytes),
-          ),
-          icon: Icons.folder_off_outlined,
-          showIcon: true,
-        ),
-        const SizedBox(height: 8),
-        _inset(
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: <Widget>[_deleteButton(), _importButton()],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildModelBlock(ThemeData theme) {
-    final MangaOcrModelStatus? status = _status;
-    final bool ready = status?.allReady ?? false;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        AdaptiveSettingsRow(
-          title: ready
-              ? t.manga_ocr_model_status_ready
-              : t.manga_ocr_model_status_missing,
-          subtitle: _withModelName(_modelSizeSubtitle(status)),
-          icon: ready ? Icons.check_circle_outline : Icons.download_outlined,
-          showIcon: true,
-        ),
-        if (_downloading) ...<Widget>[
-          const SizedBox(height: 8),
-          _inset(
-            LinearProgressIndicator(
-              value: _installing ? null : _downloadProgressValue,
-            ),
-          ),
-          const SizedBox(height: 4),
-          if (_downloadingFile != null)
-            _inset(
-              Text(
-                _installing
-                    ? t.manga_ocr_runtime_installing
-                    : t.manga_ocr_downloading_file(file: _downloadingFile!),
-                style: theme.textTheme.bodySmall,
-              ),
-            ),
-          if (!_installing && _downloadTotalBytes > 0)
-            _inset(
-              Text(
-                t.manga_ocr_download_total_progress(
-                  done: _formatBytes(_downloadReceivedBytes),
-                  total: _formatBytes(_downloadTotalBytes),
-                ),
-                style: theme.textTheme.bodySmall,
-              ),
-            ),
-          _inset(
-            Text(
-              t.manga_ocr_download_background_hint,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          _inset(
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                onPressed: _cancelDownload,
-                child: Text(t.dialog_cancel),
-              ),
-            ),
-          ),
-        ] else ...<Widget>[
-          const SizedBox(height: 8),
-          _inset(
-            Align(
-              alignment: Alignment.centerLeft,
-              child: ready
-                  ? Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: <Widget>[
-                        // 经典模型的提速组件（KV cache decoder）：结果不变、识别约快
-                        // 一倍。模型已就绪时补下它，下载器会跳过已就绪的文件。
-                        if (status?.acceleratorMissing ?? false)
-                          FilledButton.tonalIcon(
-                            key: const ValueKey<String>(
-                              'manga_ocr_accelerator_download',
-                            ),
-                            onPressed: _importing ? null : _startDownload,
-                            icon: const Icon(Icons.bolt_outlined, size: 18),
-                            label: Text(
-                              t.manga_ocr_accelerator_download(
-                                size: _formatBytes(
-                                  status!.acceleratorMissingBytes,
-                                ),
-                              ),
-                            ),
-                          ),
-                        _deleteButton(),
-                      ],
+  /// 当前引擎用不到本机模型时**收起成一行摘要**（模型名 +「用不到」+ 体积 /
+  /// 占用），点开才露出完整的卡——修的是「我选的是 Google Lens，这儿怎么还让我
+  /// 下模型」；但不藏（BUG-1780：出厂默认就是 Lens，想预先备好离线模型的人仍要
+  /// 找得到下载入口，磁盘上的残留也得删得掉）。下载中、加载中一律展开。
+  Widget _buildSettingsModelGroup(ThemeData theme) {
+    final bool collapsible =
+        widget.service.isSupportedPlatform &&
+        !_downloading &&
+        !_loadingStatus &&
+        !_localModelsUsedByEngine;
+    final FushiSpringSpec spring = context.fushiMotion.spatialDefault;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          SettingsSectionHeader(t.manga_reader_group_ocr_model),
+          if (collapsible) ...<Widget>[
+            _buildModelSummary(theme),
+            _MotionSize(
+              duration: spring.duration,
+              curve: spring.curve,
+              alignment: Alignment.topCenter,
+              child: _modelDetailsExpanded
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: _buildPanelModelArea(theme),
                     )
-                  : Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: <Widget>[
-                        FilledButton.icon(
-                          onPressed: _importing ? null : _startDownload,
-                          icon: const Icon(Icons.download_outlined, size: 18),
-                          // 「继续下载」不是新能力：下载器一直有 Range 续传。
-                          // 文案分叉只是把已有能力说出来——用户取消或断网后看到
-                          // 的若还是「下载模型」，就会以为那几百 MB 白下了。
-                          label: Text(
-                            (status?.hasResumableDownload ?? false)
-                                ? t.manga_ocr_download_resume
-                                : t.manga_ocr_download,
-                          ),
-                        ),
-                        _importButton(),
-                      ],
-                    ),
+                  : const SizedBox(width: double.infinity),
             ),
-          ),
-          if (ready && (status?.acceleratorMissing ?? false)) ...<Widget>[
-            const SizedBox(height: 4),
-            _inset(
-              Text(
-                t.manga_ocr_accelerator_desc,
-                style: theme.textTheme.bodySmall,
+          ] else
+            _buildPanelModelArea(theme),
+        ],
+      ),
+    );
+  }
+
+  /// 收起态摘要：弱化的描边卡，整卡可点（键盘焦点 / 手柄 A 同样可达）展开详情。
+  Widget _buildModelSummary(ThemeData theme) {
+    final MangaOcrModelStatus? status = _status;
+    final String title = widget.localModelGetter == null
+        ? t.manga_reader_group_ocr_model
+        : localModelLabel(_localModel);
+    final String? size = status == null
+        ? null
+        : status.hasAnyFiles
+        ? t.manga_ocr_model_disk_usage(size: _formatBytes(status.diskBytes))
+        : _modelSizeSubtitle(status);
+    final FushiSpringSpec spring = context.fushiMotion.spatialFast;
+    final String toggleLabel = _modelDetailsExpanded
+        ? t.manga_ocr_model_details_hide
+        : t.manga_ocr_model_details_show;
+    return Semantics(
+      button: true,
+      expanded: _modelDetailsExpanded,
+      label: toggleLabel,
+      child: FushiCard(
+        key: const ValueKey<String>('manga_ocr_model_summary'),
+        variant: FushiCardVariant.outlined,
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+        onTap: () =>
+            setState(() => _modelDetailsExpanded = !_modelDetailsExpanded),
+        child: Row(
+          children: <Widget>[
+            FushiListLeadingIcon(
+              (status?.hasAnyFiles ?? false)
+                  ? FushiIcons.storage
+                  : FushiIcons.modelTraining,
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(title, style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 2),
+                  Text(
+                    <String>[
+                      t.manga_ocr_model_unused_by_engine,
+                      if (size != null) size,
+                    ].join('\n'),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            AnimatedRotation(
+              turns: _modelDetailsExpanded ? 0.5 : 0,
+              duration: spring.duration,
+              curve: spring.curve,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: FushiIcon(
+                  FushiIcons.expandMore,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           ],
-          // 模型不全但磁盘上有残留（中断的 `.part`、换档后的遗留档）时，除了
-          // 「继续下载」也得能直接清掉——否则那几百 MB 在 UI 上无处可删。
-          if (!ready && (status?.hasAnyFiles ?? false)) ...<Widget>[
-            const SizedBox(height: 4),
-            _inset(
-              Align(alignment: Alignment.centerLeft, child: _deleteButton()),
-            ),
-          ],
-        ],
-      ],
+        ),
+      ),
     );
   }
 
@@ -1138,7 +1094,7 @@ class _MangaOcrSettingsSectionState
   }
 
   Widget _deleteButton() {
-    return OutlinedButton.icon(
+    return FushiOutlinedButton.icon(
       onPressed: (_deleting || _downloading || _importing)
           ? null
           : _confirmDelete,
@@ -1146,66 +1102,510 @@ class _MangaOcrSettingsSectionState
           ? const SizedBox(
               width: 16,
               height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: FushiCircularProgressIndicator(strokeWidth: 2),
             )
-          : const Icon(Icons.delete_outline, size: 18),
+          : const FushiIcon(FushiIcons.delete, size: 18),
       label: Text(t.manga_ocr_delete),
     );
   }
 
-  Widget _buildExternalBlock(ThemeData theme) {
+  // ── 阅读器设置侧板版式（M3E）─────────────────────────────────────────
+  //
+  // 与设置页版式读写同一批偏好、走同一组回调，只换呈现：引擎是带图标的单选卡片组
+  // （说明随卡片给出，不再藏在下拉里）、选项是分段 / 选择行（长说明收进 info）、
+  // 本机模型是一张强调卡（状态 + 体积 + 波浪进度 + 下载 / 导入按钮组）。
+
+  static IconData _engineIcon(MangaOcrEnginePreference preference) =>
+      switch (preference) {
+        MangaOcrEnginePreference.auto => FushiIcons.brightnessAuto,
+        MangaOcrEnginePreference.localOnnx => FushiIcons.modelTraining,
+        MangaOcrEnginePreference.systemOcr => FushiIcons.devices,
+        MangaOcrEnginePreference.googleLens => FushiIcons.travelExplore,
+        MangaOcrEnginePreference.externalMokuro => FushiIcons.system,
+        MangaOcrEnginePreference.pairedHost => FushiIcons.hub,
+      };
+
+  Widget _panelTitle(String text) => FushiSectionTitle.group(
+    text,
+    padding: const EdgeInsets.only(top: 4, bottom: 8),
+  );
+
+  Widget _buildPanelBody(ThemeData theme) {
+    final List<Widget> options = <Widget>[
+      if (isDesktopPlatform && widget.parallelTasksGetter != null)
+        _buildPanelParallelTasks(),
+      if (widget.lensLanguageGetter != null) _buildPanelLensLanguage(),
+      if (widget.aiModeGetter != null) _buildPanelAiMode(theme),
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        TextField(
-          controller: _pathCtrl,
-          decoration: InputDecoration(
-            labelText: t.manga_ocr_external_cli_label,
-            hintText: t.manga_ocr_external_cli_hint,
-            isDense: true,
-            border: const OutlineInputBorder(),
-          ),
-          onChanged: (String v) => unawaited(_writePath(v.trim())),
+        _panelTitle(t.manga_reader_group_ocr_engine),
+        _buildPanelEngines(),
+        const SizedBox(height: 16),
+        MangaPanelGroup(
+          title: t.manga_reader_group_ocr_options,
+          children: options,
         ),
-        const SizedBox(height: 8),
-        Row(
-          children: <Widget>[
-            OutlinedButton.icon(
-              onPressed: _probing ? null : _detectExternal,
-              icon: _probing
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.search_outlined, size: 18),
-              label: Text(t.manga_ocr_external_detect),
-            ),
-            if (_probeResult != null) ...<Widget>[
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  _probeResult!,
-                  style: theme.textTheme.bodySmall,
-                  overflow: TextOverflow.ellipsis,
-                ),
+        _panelTitle(t.manga_reader_group_ocr_model),
+        _buildPanelModelArea(theme),
+        // 外部 mokuro CLI 是桌面工具，仅桌面显示。
+        if (isDesktopPlatform) ...<Widget>[
+          const SizedBox(height: 16),
+          MangaPanelGroup(
+            title: t.manga_reader_group_ocr_external,
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                child: _buildPanelExternal(theme),
               ),
             ],
-          ],
-        ),
+          ),
+        ],
       ],
     );
   }
 
-  Widget _sectionLabel(ThemeData theme, String text) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 4),
-      child: Text(
-        text,
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.primary,
+  Widget _buildPanelEngines() {
+    final List<_EngineOption> engines = _engineOptions();
+    return KeyedSubtree(
+      key: const ValueKey<String>('manga_ocr_default_engine'),
+      child: MangaPanelRadioCards<_EngineChoice>(
+        options: <MangaPanelOption<_EngineChoice>>[
+          for (final _EngineOption option in engines)
+            MangaPanelOption<_EngineChoice>(
+              value: option.choice,
+              label: option.label,
+              description: option.description,
+              icon: _engineIcon(option.preference),
+              enabled: option.enabled,
+              key: ValueKey<String>(
+                'manga_ocr_engine_${option.preference.name}'
+                '_${option.localModel?.key ?? ''}_${option.hostModel ?? ''}',
+              ),
+            ),
+        ],
+        selected: _currentChoice,
+        // 导入 / 删除期间锁住：两者都按当前模型的目录动文件（同设置页版式）。
+        onChanged: _importing || _deleting
+            ? null
+            : (_EngineChoice value) {
+                if (value == _currentChoice) return;
+                unawaited(_selectEngine(value));
+              },
+      ),
+    );
+  }
+
+  Widget _buildPanelParallelTasks() {
+    return MangaPanelChoiceRow<int>(
+      key: const ValueKey<String>('manga_ocr_parallel_tasks'),
+      title: t.manga_ocr_parallel_tasks,
+      icon: FushiIcons.speed,
+      info: t.manga_ocr_parallel_tasks_desc,
+      options: <MangaPanelOption<int>>[
+        MangaPanelOption<int>(value: 0, label: t.manga_ocr_parallel_auto),
+        for (int count = 1; count <= 4; count++)
+          MangaPanelOption<int>(value: count, label: '$count'),
+      ],
+      selected: _parallelTasks,
+      onChanged: widget.parallelTasksSetter == null
+          ? null
+          : (int value) async {
+              await widget.parallelTasksSetter!(value);
+              if (mounted) setState(() => _parallelTasks = value);
+            },
+    );
+  }
+
+  Widget _buildPanelLensLanguage() {
+    return MangaPanelChoiceRow<String>(
+      key: const ValueKey<String>('manga_ocr_lens_language'),
+      title: t.manga_ocr_lens_language_label,
+      icon: FushiIcons.language,
+      options: <MangaPanelOption<String>>[
+        for (final (String tag, String label) in kGoogleLensLanguageOptions)
+          MangaPanelOption<String>(value: tag, label: label),
+        if (!kGoogleLensLanguageOptions.any(
+          ((String, String) option) => option.$1 == _lensLanguage,
+        ))
+          MangaPanelOption<String>(value: _lensLanguage, label: _lensLanguage),
+      ],
+      selected: _lensLanguage,
+      onChanged: (String value) {
+        setState(() => _lensLanguage = value);
+        unawaited(_writeLensLanguage(value));
+      },
+    );
+  }
+
+  /// 大模型识别：关 / 低置信度 / 全部 三段；当前档位的完整说法作副标题，取舍
+  /// 说明收进 info。开着却没指派提供商时明说「不会发送」并给入口。
+  Widget _buildPanelAiMode(ThemeData theme) {
+    final bool missingProvider =
+        _aiMode != MangaAiOcrMode.off &&
+        !(widget.aiProviderReady?.call() ?? false);
+    final Future<void> Function(BuildContext context)? openAiSettings =
+        widget.openAiSettings;
+    final List<Widget> notes = <Widget>[
+      if (_aiMode == MangaAiOcrMode.lowConfidence)
+        Text(
+          t.manga_ocr_ai_mode_low_confidence_legacy,
+          key: const ValueKey<String>(
+            'manga_ocr_ai_mode_low_confidence_legacy',
+          ),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: fushiNeutralSecondaryForeground(context),
+          ),
+        ),
+      if (missingProvider) ...<Widget>[
+        Text(
+          t.manga_ocr_ai_mode_no_provider,
+          key: const ValueKey<String>('manga_ocr_ai_mode_no_provider'),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.error,
+          ),
+        ),
+        if (openAiSettings != null)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: FushiFilledButton.tonalIcon(
+              onPressed: () async {
+                await openAiSettings(context);
+                // build 里现算 missingProvider：回来后重建一次即刷新。
+                if (mounted) setState(() {});
+              },
+              icon: const FushiIcon(FushiIcons.ai, size: 18),
+              label: Text(t.manga_ocr_ai_mode_open_settings),
+            ),
+          ),
+      ],
+    ];
+    return MangaPanelSegmentedRow<MangaAiOcrMode>(
+      key: const ValueKey<String>('manga_ocr_ai_mode'),
+      title: t.manga_ocr_ai_mode_label,
+      subtitle: switch (_aiMode) {
+        MangaAiOcrMode.off => null,
+        MangaAiOcrMode.lowConfidence => t.manga_ocr_ai_mode_low_confidence,
+        MangaAiOcrMode.all => t.manga_ocr_ai_mode_all,
+      },
+      icon: FushiIcons.ai,
+      info: t.manga_ocr_ai_mode_desc,
+      options: <MangaPanelOption<MangaAiOcrMode>>[
+        MangaPanelOption<MangaAiOcrMode>(
+          value: MangaAiOcrMode.off,
+          label: t.manga_ocr_ai_mode_off,
+        ),
+        MangaPanelOption<MangaAiOcrMode>(
+          value: MangaAiOcrMode.lowConfidence,
+          label: t.manga_ocr_ai_mode_low_confidence_short,
+        ),
+        MangaPanelOption<MangaAiOcrMode>(
+          value: MangaAiOcrMode.all,
+          label: t.manga_ocr_ai_mode_all_short,
+        ),
+      ],
+      selected: _aiMode,
+      onChanged: widget.aiModeSetter == null
+          ? null
+          : (MangaAiOcrMode value) async {
+              if (value == _aiMode) return;
+              setState(() => _aiMode = value);
+              await widget.aiModeSetter!(value.storageKey);
+            },
+      footer: notes.isEmpty
+          ? null
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                for (final (int i, Widget note) in notes.indexed) ...<Widget>[
+                  if (i > 0) const SizedBox(height: 6),
+                  note,
+                ],
+              ],
+            ),
+    );
+  }
+
+  /// 本机模型强调卡：引擎用得到 → 状态卡；用不到 → 磁盘干净给次级下载入口、
+  /// 有残留给删除（设置页版式在此之上再加一层收起，见 [_buildSettingsModelGroup]），
+  /// 只换呈现。
+  Widget _buildPanelModelArea(ThemeData theme) {
+    if (!widget.service.isSupportedPlatform) {
+      return _panelModelCard(
+        theme,
+        tone: FushiCardTone.neutral,
+        icon: FushiIcons.block,
+        title: t.manga_ocr_unsupported,
+      );
+    }
+    if (_downloading) return _panelActiveModelCard(theme);
+    if (_loadingStatus) {
+      return FushiCard(
+        padding: const EdgeInsets.all(20),
+        child: FushiLinearProgressIndicator(),
+      );
+    }
+    if (_localModelsUsedByEngine) return _panelActiveModelCard(theme);
+    final MangaOcrModelStatus? status = _status;
+    if (status == null || !status.hasAnyFiles) {
+      // 引擎用不到、磁盘也干净：不劝，但也不藏（BUG-1780）。
+      return _panelModelCard(
+        theme,
+        tone: FushiCardTone.neutral,
+        icon: FushiIcons.download,
+        title: t.manga_ocr_model_unused_by_engine,
+        subtitle: _modelSizeSubtitle(_status),
+        actions: <Widget>[
+          FushiFilledButton.tonalIcon(
+            onPressed: _importing ? null : _startDownload,
+            icon: const FushiIcon(FushiIcons.download, size: 18),
+            label: Text(t.manga_ocr_download),
+          ),
+          _importButton(),
+        ],
+      );
+    }
+    // 引擎用不到、但磁盘上还占着：说清楚 + 删除 + 继续导入。
+    return _panelModelCard(
+      theme,
+      tone: FushiCardTone.neutral,
+      icon: FushiIcons.folder,
+      title: t.manga_ocr_model_unused_by_engine,
+      subtitle: t.manga_ocr_model_disk_usage(
+        size: _formatBytes(status.diskBytes),
+      ),
+      actions: <Widget>[_deleteButton(), _importButton()],
+    );
+  }
+
+  /// 引擎用得到本机模型（或正在下载）时的强调卡。
+  Widget _panelActiveModelCard(ThemeData theme) {
+    final MangaOcrModelStatus? status = _status;
+    final bool ready = status?.allReady ?? false;
+    if (_downloading) {
+      final double? value = _downloadProgressValue;
+      return _panelModelCard(
+        theme,
+        tone: FushiCardTone.secondary,
+        icon: FushiIcons.downloading,
+        title: t.manga_ocr_model_status_missing,
+        subtitle: _withModelName(null),
+        trailing: value == null
+            ? null
+            : Text(
+                '${(value * 100).round()}%',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  // 与所在强调卡（secondary）同一配对前景，见 [_panelModelCard]。
+                  color: fushiCardToneColors(
+                    context,
+                    FushiCardTone.secondary,
+                  )?.onContainer,
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures(),
+                  ],
+                ),
+              ),
+        progress: FushiLinearProgressIndicator(value: value),
+        notes: <String>[
+          if (_downloadingFile != null)
+            t.manga_ocr_downloading_file(file: _downloadingFile!),
+          if (_downloadTotalBytes > 0)
+            t.manga_ocr_download_total_progress(
+              done: _formatBytes(_downloadReceivedBytes),
+              total: _formatBytes(_downloadTotalBytes),
+            ),
+          t.manga_ocr_download_background_hint,
+        ],
+        actions: <Widget>[
+          FushiOutlinedButton.icon(
+            onPressed: _cancelDownload,
+            icon: const FushiIcon(FushiIcons.close, size: 18),
+            label: Text(t.dialog_cancel),
+          ),
+        ],
+      );
+    }
+    if (ready) {
+      return _panelModelCard(
+        theme,
+        tone: FushiCardTone.neutral,
+        icon: FushiIcons.downloadDone,
+        title: t.manga_ocr_model_status_ready,
+        subtitle: _withModelName(_modelSizeSubtitle(status)),
+        actions: <Widget>[_deleteButton()],
+      );
+    }
+    return _panelModelCard(
+      theme,
+      tone: FushiCardTone.secondary,
+      icon: FushiIcons.download,
+      title: t.manga_ocr_model_status_missing,
+      subtitle: _withModelName(_modelSizeSubtitle(status)),
+      actions: <Widget>[
+        FushiFilledButton.icon(
+          onPressed: _importing ? null : _startDownload,
+          icon: const FushiIcon(FushiIcons.download, size: 18),
+          // 「继续下载」只是把已有的 Range 续传说出来。
+          label: Text(
+            (status?.hasResumableDownload ?? false)
+                ? t.manga_ocr_download_resume
+                : t.manga_ocr_download,
+          ),
+        ),
+        _importButton(),
+        // 模型不全但磁盘上有残留时也得能直接清掉。
+        if (status?.hasAnyFiles ?? false) _deleteButton(),
+      ],
+    );
+  }
+
+  /// 模型卡骨架：形状底图标 + 标题 / 副标题（+ 尾部大数字）+ 波浪进度 + 说明 +
+  /// 按钮组。[tone] 为 secondary 时是饱和强调色块（需要用户动手的状态）。
+  Widget _panelModelCard(
+    ThemeData theme, {
+    required FushiCardTone tone,
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    Widget? trailing,
+    Widget? progress,
+    List<String> notes = const <String>[],
+    List<Widget> actions = const <Widget>[],
+  }) {
+    final bool emphasis = tone != FushiCardTone.neutral;
+    // 卡内文字只取排版角色，颜色跟卡片的配对前景走（secondaryContainer →
+    // onSecondaryContainer）。textTheme 的样式自带页面 onSurface 色，原样传给
+    // Text 会盖掉 FushiCard 写进 DefaultTextStyle 的前景——自定义主题下浅色
+    // surface + 深色容器就成了深底黑字（HBK-AUDIT-022）。中性卡 onCard 为 null，
+    // copyWith(color: null) 保持原样。
+    final Color? onCard = fushiCardToneColors(context, tone)?.onContainer;
+    return FushiCard(
+      key: const ValueKey<String>('manga_ocr_model_card'),
+      tone: tone,
+      padding: const EdgeInsets.all(16),
+      child: _MotionSize(
+        duration: fushiMotionDuration(context, FushiMotion.medium),
+        curve: FushiMotion.standard,
+        alignment: Alignment.topCenter,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                FushiListLeadingIcon(
+                  icon,
+                  size: 48,
+                  shape: emphasis
+                      ? FushiLeadingShape.cookie
+                      : FushiLeadingShape.circle,
+                  tone: emphasis ? FushiCardTone.primary : FushiCardTone.secondary,
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        title,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: onCard,
+                        ),
+                      ),
+                      if (subtitle != null && subtitle.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            subtitle,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: onCard,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                if (trailing != null) ...<Widget>[
+                  const SizedBox(width: 12),
+                  trailing,
+                ],
+              ],
+            ),
+            if (progress != null) ...<Widget>[
+              const SizedBox(height: 16),
+              progress,
+            ],
+            for (final String note in notes) ...<Widget>[
+              const SizedBox(height: 6),
+              Text(
+                note,
+                style: theme.textTheme.bodySmall?.copyWith(color: onCard),
+              ),
+            ],
+            if (actions.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 16),
+              Wrap(spacing: 8, runSpacing: 8, children: actions),
+            ],
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _buildPanelExternal(ThemeData theme) {
+    final String? probeResult = _probeResult;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        FushiTextField(
+          controller: _pathCtrl,
+          size: FushiInputSize.large,
+          labelText: t.manga_ocr_external_cli_label,
+          helperText: t.manga_ocr_external_cli_hint,
+          prefixIcon: const FushiIcon(FushiIcons.system, size: 20),
+          onChanged: (String v) => unawaited(_writePath(v.trim())),
+        ),
+        const SizedBox(height: 12),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FushiFilledButton.tonalIcon(
+            key: const ValueKey<String>('manga_ocr_external_detect'),
+            onPressed: _probing ? null : _detectExternal,
+            icon: _probing
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: FushiCircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const FushiIcon(FushiIcons.search, size: 18),
+            label: Text(t.manga_ocr_external_detect),
+          ),
+        ),
+        _MotionSize(
+          duration: context.fushiMotion.spatialDefault.duration,
+          curve: context.fushiMotion.spatialDefault.curve,
+          alignment: Alignment.topCenter,
+          child: probeResult == null
+              ? const SizedBox(width: double.infinity)
+              : Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: FushiInlineNotice(
+                    key: const ValueKey<String>('manga_ocr_external_result'),
+                    message: probeResult,
+                    severity: _probeFound
+                        ? FushiNoticeSeverity.success
+                        : FushiNoticeSeverity.warning,
+                  ),
+                ),
+        ),
+      ],
     );
   }
 
@@ -1215,19 +1615,23 @@ class _MangaOcrSettingsSectionState
 /// 引擎下拉的值：引擎偏好 + （本机 ONNX 时）具体模型。
 @immutable
 class _EngineChoice {
-  const _EngineChoice(this.preference, this.localModel);
+  const _EngineChoice(this.preference, this.localModel, {this.hostModel});
 
   final MangaOcrEnginePreference preference;
   final MangaOcrLocalModel? localModel;
+
+  /// 「Fushi 互联服务端」点名的服务端模型 key；null = 服务端默认。
+  final String? hostModel;
 
   @override
   bool operator ==(Object other) =>
       other is _EngineChoice &&
       other.preference == preference &&
-      other.localModel == localModel;
+      other.localModel == localModel &&
+      other.hostModel == hostModel;
 
   @override
-  int get hashCode => Object.hash(preference, localModel);
+  int get hashCode => Object.hash(preference, localModel, hostModel);
 }
 
 /// 引擎下拉的一项：偏好值 + 标签 + 取舍说明 + 本平台是否可用。
@@ -1235,6 +1639,7 @@ class _EngineOption {
   const _EngineOption({
     required this.preference,
     this.localModel,
+    this.hostModel,
     required this.label,
     required this.description,
     required this.enabled,
@@ -1245,7 +1650,11 @@ class _EngineOption {
   /// 本机 ONNX 项对应的模型；其余引擎为 null。
   final MangaOcrLocalModel? localModel;
 
-  _EngineChoice get choice => _EngineChoice(preference, localModel);
+  /// 服务端模型项对应的 key；「服务端默认」与其余引擎为 null。
+  final String? hostModel;
+
+  _EngineChoice get choice =>
+      _EngineChoice(preference, localModel, hostModel: hostModel);
 
   final String label;
 
@@ -1253,4 +1662,33 @@ class _EngineOption {
   final String description;
 
   final bool enabled;
+}
+
+/// 动效开时就是 [AnimatedSize]；「减弱动态效果」/ 墨水屏把时长归零时直接给最终
+/// 几何。零时长的 [AnimatedSize] 不可用：子尺寸一变，`RenderAnimatedSize` 在
+/// 自身 performLayout 里 `forward(from: 0)` 同步跳到终点、监听器随即
+/// `markNeedsLayout`，debug 下断言「mutated in its own performLayout」。
+class _MotionSize extends StatelessWidget {
+  const _MotionSize({
+    required this.duration,
+    required this.curve,
+    required this.alignment,
+    required this.child,
+  });
+
+  final Duration duration;
+  final Curve curve;
+  final AlignmentGeometry alignment;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (duration == Duration.zero) return child;
+    return AnimatedSize(
+      duration: duration,
+      curve: curve,
+      alignment: alignment,
+      child: child,
+    );
+  }
 }

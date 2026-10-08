@@ -1,0 +1,6 @@
+## BUG-2955 · 主机重启互联服务后串流显示主机版本过旧并且离开报未能通知主机
+- **报告**：2026-10-05（用户截图：两端都是最新版，游戏页显示「主机版本过旧，没有游戏库。请更新 Windows 端 Fushi。」，下方「未能通知主机结束串流」）
+- **真实性**：✅ 真 bug。游戏库挂在串流服务**实例**上（`fushi/lib/src/sync/fushi_server_controller.dart` `configureGameStreamLibrary` 原写 `gameStreamService.library = library`），而 `stop()` / `shutdownForExit()` 会 dispose 并置空该实例；互联设置里改端口 / 口令 / 开 HTTPS 都走 `restart()`，之后 getter 新建的服务 `library == null`，`game_stream_service.dart` `_handleLibrary` 回裸 404「Game library off」，客户端 `game_stream_client.dart` 把无结构的非 2xx 一律归为 `http_rejected`，页面译成「主机版本过旧」。同一次重启也丢掉了进行中的会话，离开时 `/stop` 回 `session_not_found`，`game_stream_session_opener.dart` 当成失败报「未能通知主机结束串流」。另外 `AppModel._configureGameStreamLibrary` 给 `FushiGameStreamLibraryHost` 传的是当时的服务实例，重启后远程启动进度会写进已销毁的旧服务。
+- **[x] ① 已修复** — 游戏库改为控制器持有的配置（`_gameStreamLibrary`），每个新建的服务实例都挂上；`FushiGameStreamLibraryHost` 改收 `FushiRemoteGameStreamService Function()`，每次取当前服务；离开时主机回 `session_not_found` 视为已结束（`leaveGameStreamOnHost`），其余拒绝与不可达照旧报错。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/game_stream_library_restart_test.dart`（stop 后新实例仍带库 / 先配置后建实例）、`fushi/test/pages/game_stream_leave_test.dart`（session_not_found 不算失败；403 与不可达仍报错）。变异实测：撤掉控制器修复两条变红，撤掉离开判定一条变红。
+- **备注**：`http_rejected` 一律译成「主机版本过旧」的大杂烩映射本身仍在（服务端三道门「串流未开启 / 需要 HTTPS / 凭据无效」都回无结构文本），本轮未改，误导性提示的源头之一仍在；要根治需服务端给这些门回带版本的结构化错误码并在客户端分别出文案。

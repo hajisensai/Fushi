@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/audio_mime.dart';
@@ -57,7 +58,75 @@ Future<String?> resolveLookupAudioUrl(
   String expression,
   String reading,
 ) async {
-  final WordAudioResolver resolver = WordAudioResolver(
+  return _buildLookupAudioResolver(appModel).resolveConfigured(
+    expression: expression,
+    reading: reading,
+    sources: appModel.audioSourceConfigs,
+  );
+}
+
+/// 「选择音频源」菜单的数据源：每个启用源各自解析出的全部候选（按配置顺序，
+/// 远端列表型源展开成多个变体）。与 [resolveLookupAudioUrl] 共用同一个装配好的
+/// [WordAudioResolver]（同样的本地库预算、远端冷却、互联查询），所以首项就是
+/// 单击 ♪ 会播的那条。
+Future<List<WordAudioCandidate>> listLookupAudioCandidates(
+  AppModel appModel,
+  String expression,
+  String reading,
+) {
+  return _buildLookupAudioResolver(appModel).listConfigured(
+    expression: expression,
+    reading: reading,
+    sources: appModel.audioSourceConfigs,
+  );
+}
+
+/// 菜单里一项的源显示名：用户起的名字优先；互联源用 i18n 名；没起名的远端源
+/// 用 host（整条模板 URL 带 `{term}` 占位，塞进菜单既长又看不懂）。
+String lookupAudioSourceDisplayName(AudioSourceConfig source) {
+  final String label = source.label?.trim() ?? '';
+  if (label.isNotEmpty) return label;
+  switch (source.kind) {
+    case AudioSourceKind.fushiRemote:
+      return t.audio_source_fushi_interconnect;
+    case AudioSourceKind.localAudio:
+      return source.displayLabel;
+    case AudioSourceKind.remoteAudio:
+      final String url = source.url ?? '';
+      final String host = Uri.tryParse(
+                  url.replaceAll('{term}', 'x').replaceAll('{reading}', 'x'))
+              ?.host ??
+          '';
+      return host.isNotEmpty ? host : url;
+  }
+}
+
+/// 「选择音频源」菜单的弹窗桥返回值（`listWordAudioSources`）：每项
+/// `{name, variant, url}`，`url` 已经过 [audioRefToWebViewUrl]，弹窗 `<audio>`
+/// 可直接播放。转不出可播 URL 的候选（本地文件已不在）直接跳过。
+Future<List<Map<String, String>>> listWordAudioWebViewChoices(
+  AppModel appModel,
+  String expression,
+  String reading,
+) async {
+  final List<WordAudioCandidate> candidates =
+      await listLookupAudioCandidates(appModel, expression, reading);
+  final List<String?> urls = await Future.wait(<Future<String?>>[
+    for (final WordAudioCandidate c in candidates) audioRefToWebViewUrl(c.ref),
+  ]);
+  return <Map<String, String>>[
+    for (int i = 0; i < candidates.length; i++)
+      if (urls[i] != null && urls[i]!.isNotEmpty)
+        <String, String>{
+          'name': lookupAudioSourceDisplayName(candidates[i].source),
+          'variant': candidates[i].variant,
+          'url': urls[i]!,
+        },
+  ];
+}
+
+WordAudioResolver _buildLookupAudioResolver(AppModel appModel) {
+  return WordAudioResolver(
     queryLocalAudio: (expression, reading) async {
       try {
         return await TtsChannel.instance
@@ -85,11 +154,6 @@ Future<String?> resolveLookupAudioUrl(
       expression,
       reading,
     ),
-  );
-  return resolver.resolveConfigured(
-    expression: expression,
-    reading: reading,
-    sources: appModel.audioSourceConfigs,
   );
 }
 

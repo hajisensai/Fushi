@@ -570,6 +570,10 @@ class AdapterRegistry {
     // first KOE read cannot race ahead; a transient measurement failure is
     // retried from Poll via ProcessPendingEvents.
     reallive_.install();
+    // FVP identity is structural (a self-consistent HCB script with the
+    // TextPrint syscall next to the exe); its text-object and audio-decoder
+    // input detours go in before the first print / first voice line.
+    fvp_.install();
     // SGRE RawImageEx labels can be rasterized once on the very first frame
     // and then live only as cached textures. Install its optional UI trace
     // while the injector still owns the startup suspension; the generated
@@ -616,6 +620,7 @@ class AdapterRegistry {
     catsystem2_.ProcessPendingEvents();
     malie_libp_.ProcessPendingEvents();
     elf_ai6_.ProcessPendingEvents();
+    yuris_.ProcessPendingEvents();
     kirikiri_.ProcessPendingEvents();
     renpy_.ProcessPendingEvents();
     sgre_.ProcessPendingEvents();
@@ -625,6 +630,8 @@ class AdapterRegistry {
     cmvs_.ProcessPendingEvents();
     reallive_.ProcessPendingEvents();
     unity_mono_.ProcessPendingEvents();
+    fvp_.ProcessPendingEvents();
+    kogado_hy_.ProcessPendingEvents();
     // These retry budgets and ordering intentionally match the old HookWorker. onModuleLoaded is
     // the stable seam; P3 can replace this bounded poll with real module events without changing
     // individual adapter contracts.
@@ -746,8 +753,9 @@ class AdapterRegistry {
     // 一个引擎 adapter 都没 probe 成立时 best 保持 Unknown：那是"还没认出这是什么游戏"，
     // 不是"不支持"。这两者必须分开，否则注入后的头几轮 Poll 会稳定误报。
     //
-    // 但 Unknown 不能是**终态**：有几家（Leaf/SGRE）的 probe() 本身就是精确 exe hash 门，
-    // 所以「白2 的另一个发行版」这种情形下没有任何 adapter 会认领，best 会永远停在
+    // 但 Unknown 不能是**终态**：Leaf 的 probe() 仍是精确 exe hash 门（SGRE 已改为
+    // wind3d11 语音归档 / 场景渲染器锚点的结构判据，不再看 hash），所以「白2 的另一个
+    // 发行版」或任何结构判据都没命中的游戏，没有 adapter 会认领，best 会永远停在
     // Unknown，用户界面上就是永远"正在判定"——比直接说不支持还糟，因为它不给任何出路。
     // 模块表**稳定**之后仍无人认领，才是一个确定的结论：这个游戏我们不认识，查词
     // 用不了。这里合并了"认出引擎但它没传感器"和"压根没认出引擎"——对用户来说处置

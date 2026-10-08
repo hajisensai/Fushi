@@ -68,45 +68,12 @@ void main() {
       expect(online, contains('MihonExtensionsSection.catalog'));
     });
 
-    test('在线来源面有 Aidoku 单包与仓库导入入口', () {
-      // BUG-2099 后 picker 走统一原语 pickSystemFilePath，扩展名集是 Set 字面量
-      // （裸 FilePicker + FileType.custom 在安卓会被 MimeTypeMap 静默丢掉 aix，
-      // 那个文件在 SAF 里是灰的）。断言的仍是「白名单还在、没被放宽成任意文件」。
-      expect(online, contains("allowedExtensions: const <String>{'aix'}"));
-      expect(online, contains("ValueKey<String>('aidoku_import_aix')"));
-      expect(online, contains("ValueKey<String>('aidoku_add_repository')"));
-      expect(online, contains("ValueKey<String>('aidoku_repository_url')"));
-      expect(online, contains('AidokuPackageStore.open()'));
-      expect(online, contains('AidokuRepositoryStore.open()'));
-      expect(online, contains('_AidokuRepositorySourcesDialog('));
-      expect(online, contains('MangaExtensionManagementTile('));
-      expect(online, contains('MangaExtensionFilters('));
-      expect(online, contains("keyPrefix: 'aidoku_extension'"));
-    });
-
-    test('Aidoku 源浏览页点章一律经作品页（直读 / 下载都由作品页分流）', () {
-      final String browse =
-          _read(<String>['aidoku', 'aidoku_source_browse_page.dart']);
-      // 2026-09-26 起未下载的章也能在线直读，但分流（已下载读盘 / 未下载直读 / 锁章
-      // 问下载）只在作品页 + 阅读器里做一次；源浏览页不许自己拼一条旁路直开阅读器。
-      expect(browse, isNot(contains('AidokuReaderChapter(')));
-      expect(browse, isNot(contains('MangaFushiPage(')));
-      expect(browse, contains('MangaSeriesPage('));
-    });
-
-    test('Aidoku 仓库 URL 输入框使用 Material 对话框', () {
-      final int start = online.indexOf(
-        'class _AidokuRepositoryUrlDialogState',
+    test('Aidoku 已整体移除：在线来源面不再有它的仓库 / 安装入口', () {
+      expect(online.toLowerCase(), isNot(contains('aidoku')));
+      expect(
+        online,
+        isNot(contains("allowedExtensions: const <String>{'aix'}")),
       );
-      final int end = online.indexOf(
-        'class _AidokuRepositorySourcesDialog',
-      );
-      expect(start, isNonNegative);
-      expect(end, greaterThan(start));
-
-      final String dialogSource = online.substring(start, end);
-      expect(dialogSource, contains('=> AlertDialog('));
-      expect(dialogSource, isNot(contains('AlertDialog.adaptive(')));
     });
 
     test('扩展提供的在线来源设置也在同一张面内（「来源」节）', () {
@@ -143,11 +110,11 @@ void main() {
   group('iOS / Linux 导航结构与其它平台相同', () {
     test('漫画在线来源面在扩展宿主不可用时降级内容，而不是不存在', () {
       final String sources = _read(<String>['manga_online_sources_view.dart']);
-      // AppModel.mihonManager 在 iOS/Linux 抛 UnsupportedError：读它之前必须有门。
+      // AppModel.mihonManager 在没有 Mihon 宿主的平台（iOS）抛 UnsupportedError：读它之前必须有门。
       expect(
         sources,
         contains('if (!MihonRuntimeFactory.isSupported) return;'),
-        reason: '不设门就会在 iOS/Linux 上抛 UnsupportedError，视图直接白屏',
+        reason: '不设门就会在 iOS 上抛 UnsupportedError，视图直接白屏',
       );
       expect(
         sources,
@@ -166,7 +133,7 @@ void main() {
       expect(
         discovery,
         contains('if (!MihonRuntimeFactory.isSupported) return;'),
-        reason: '同上：iOS/Linux 上不得触碰 AppModel.mihonManager',
+        reason: '同上：iOS 上不得触碰 AppModel.mihonManager',
       );
       expect(
         section,
@@ -177,16 +144,6 @@ void main() {
         discovery,
         contains('MihonSourceBrowsePage('),
         reason: '已启用的 Mihon 在线源要能从「发现」直接进内容，不是只在设置里躺着',
-      );
-      expect(
-        discovery,
-        contains('AidokuSourceBrowsePage('),
-        reason: '安装的 Aidoku 源也要从「发现」直接进入内容目录',
-      );
-      expect(
-        discovery,
-        contains('AidokuPackageStore.changes.listen'),
-        reason: '保活的「发现」页必须在安装、卸载或启停后立即重载 Aidoku 源',
       );
       // BUG-1431：mokuro.moe 与扩展源遵守同一条可见性规则——「来源」里关掉的源
       // 不出现在浏览入口里。以前它那个开关只让目录页显示成禁用态，行照旧列着。

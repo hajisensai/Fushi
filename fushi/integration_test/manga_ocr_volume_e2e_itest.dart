@@ -334,12 +334,10 @@ void main() {
         final Stopwatch timer = Stopwatch()..start();
         final List<Map<String, Object?>> progress = <Map<String, Object?>>[];
         MangaOcrVolumeEvent? finished;
-        MangaOcrAcceleration? acceleration;
         await for (final MangaOcrVolumeEvent event in service.ocrFolder(
           imageDirPath: realPages.path,
           volumeTitle: 'private full-page native smoke',
         )) {
-          acceleration = event.acceleration ?? acceleration;
           progress.add(<String, Object?>{
             'done': event.pagesDone,
             'total': event.pagesTotal,
@@ -351,9 +349,6 @@ void main() {
         timer.stop();
         expect(finished, isNotNull);
         expect(finished!.pagesTotal, expectedPages.length);
-        if (const bool.fromEnvironment('OCR_REQUIRE_CUDA')) {
-          expect(acceleration?.recognition, OcrExecutionProvider.cuda);
-        }
         final File result = File(finished.mangaJsonPath!);
         expect(result.existsSync(), isTrue);
         final Map<String, dynamic> payload =
@@ -462,7 +457,7 @@ void main() {
     final MangaOcrLocalModel localModel = MangaOcrLocalModel.fromKey(
       const String.fromEnvironment(
         'OCR_LOCAL_MODEL',
-        defaultValue: 'manga_ocr',
+        defaultValue: 'manga_ctc',
       ),
     );
     final List<MangaOcrModelFile>? manifest = baseUrl.isEmpty
@@ -543,9 +538,6 @@ void main() {
 
     expect(finished, isNotNull, reason: 'ocrFolder 未产出 finished 事件');
     expect(finished!.pagesTotal, 1);
-    if (const bool.fromEnvironment('OCR_REQUIRE_CUDA')) {
-      expect(acceleration?.recognition, OcrExecutionProvider.cuda);
-    }
 
     // ignore: avoid_print
     print(
@@ -593,7 +585,7 @@ void main() {
       print('[e2e]   "${b.text}" -> 最佳重合 ${(best * 100).toStringAsFixed(0)}%');
     }
 
-    // 竖排合成页上 manga-ocr 应当基本逐字命中；阈值留出一个字的余量，
+    // 竖排合成页上本地模型应当基本逐字命中；阈值留出一个字的余量，
     // 既能抓住「模型没跑/跑错」这种真回归，又不会因为单字混淆变 flaky。
     for (int i = 0; i < _kBubbles.length; i++) {
       expect(

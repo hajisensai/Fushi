@@ -2,20 +2,24 @@ import 'dart:async';
 import 'dart:io';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/collections/collection_detail_layout.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
+import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
-import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
-import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
 import 'package:fushi/src/media/video/metadata/video_credit_rail.dart';
+import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_panel.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -44,6 +48,7 @@ class VideoWorkDetailPage extends StatefulWidget {
     this.deleteMembersStatisticsSubtitle,
     this.onRescrapeCollection,
     this.onChooseTmdbOrdering,
+    this.onPickOnlineCover,
     super.key,
   });
 
@@ -82,6 +87,9 @@ class VideoWorkDetailPage extends StatefulWidget {
   /// 透传给合集详情页的「TMDB 集编排」（备选排序）。null = 不渲染该菜单项。
   final Future<void> Function(MediaCollectionRow collection)?
   onChooseTmdbOrdering;
+
+  /// 透传给合集详情页的「在线搜索封面」（BUG-2999）。null = 不渲染该菜单项。
+  final Future<File?> Function(String workTitle)? onPickOnlineCover;
 
   @override
   State<VideoWorkDetailPage> createState() => _VideoWorkDetailPageState();
@@ -136,13 +144,13 @@ class _VideoWorkDetailPageState extends State<VideoWorkDetailPage> {
                 // BUG-2230：同上 —— 加载态与它下面的 `collection == null` 终态口径一致，
                 // 都带 AppBar。future 悬挂时这里就是用户能看到的全部界面。
                 return Scaffold(
-                  appBar: AppBar(),
+                  appBar: FushiAppBar(),
                   body: Center(child: adaptiveIndicator(context: context)),
                 );
               }
               if (collection == null) {
                 return Scaffold(
-                  appBar: AppBar(),
+                  appBar: FushiAppBar(),
                   body: Center(child: Text(t.video_load_failed_not_found)),
                 );
               }
@@ -193,6 +201,7 @@ class _VideoWorkDetailPageState extends State<VideoWorkDetailPage> {
                     widget.deleteMembersStatisticsSubtitle,
                 onRescrapeCollection: widget.onRescrapeCollection,
                 onChooseTmdbOrdering: widget.onChooseTmdbOrdering,
+                onPickOnlineCover: widget.onPickOnlineCover,
               );
             },
       );
@@ -307,171 +316,118 @@ class _StandaloneVideoWorkDetailState
     if (_loading) {
       // BUG-2230：加载态与它的兄弟终态（下面 `book == null` 分支）口径必须一致 ——
       // 都带 AppBar（= 返回键）。桌面端没有系统返回键，`_load` 若久久不返回，
-      // 无顶栏的转圈就是一个没有出口的页面。
+      // 无顶栏的骨架就是一个没有出口的页面。
       return Scaffold(
-        appBar: AppBar(),
-        body: Center(child: adaptiveIndicator(context: context)),
+        appBar: FushiAppBar(),
+        body: const MediaDetailSkeleton(rows: 3),
       );
     }
     final VideoBookRow? book = _book;
     if (book == null) {
       return Scaffold(
-        appBar: AppBar(),
-        body: Center(child: Text(t.video_load_failed_not_found)),
+        appBar: FushiAppBar(),
+        body: FushiPlaceholderMessage(
+          icon: FushiIcons.searchOff,
+          tone: FushiPlaceholderTone.error,
+          message: t.video_load_failed_not_found,
+        ),
       );
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final VideoMetadataWorkRow? work = _work;
     final ImageProvider? poster =
         _image('poster') ??
+        _image('cover') ??
         resolveMediaCoverImage(
           kind: MediaKind.video,
           localPath: book.coverPath,
         );
-    final ImageProvider? backdrop = _image('backdrop') ?? poster;
+    final ImageProvider? fanart = _image('backdrop');
+    final String title = work?.title ?? book.title;
+    final String? originalTitle = work?.originalTitle;
+    final String? status = work?.status?.trim();
+    final double? rating = work?.rating;
+    final int? runtime = work?.runtimeMinutes;
+    // M3E 作品详情：宽屏两栏（左 hero sticky、右规格 / 资料 / 人物 / 附件），
+    // 窄屏单列。大背景 fanart 优先、没有就拿海报模糊垫底（与系列详情同一判据）。
     return Scaffold(
+      // 背景铺满到窗口顶端（浮动顶栏下不留整宽底带），让位由布局处理。
       extendBodyBehindAppBar: true,
-      appBar: AppBar(backgroundColor: Colors.transparent),
-      body: ListView(
-        padding: EdgeInsets.zero,
-        children: <Widget>[
-          SizedBox(
-            height: (MediaQuery.sizeOf(context).height * 0.62).clamp(
-              400.0,
-              620.0,
-            ),
-            child: Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                if (backdrop != null)
-                  LandscapeCoverImage(
-                    image: backdrop,
-                    overlays: const <Widget>[
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: <Color>[
-                              Color(0x22000000),
-                              Color(0xE8000000),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    tokens.spacing.page,
-                    kToolbarHeight + tokens.spacing.page,
-                    tokens.spacing.page,
-                    tokens.spacing.section,
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: <Widget>[
-                      if (poster != null)
-                        SizedBox(
-                          width: 210,
-                          child: AspectRatio(
-                            aspectRatio: 2 / 3,
-                            child: ClipRRect(
-                              borderRadius: FushiBorderRadius.card,
-                              child: PortraitCoverImage(image: poster),
-                            ),
-                          ),
-                        ),
-                      if (poster != null)
-                        SizedBox(width: tokens.spacing.section),
-                      Expanded(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Text(
-                              work?.title ?? book.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.displaySmall
-                                  ?.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                            ),
-                            if (work?.originalTitle case final String title)
-                              Text(
-                                title,
-                                style: const TextStyle(color: Colors.white70),
-                              ),
-                            const SizedBox(height: 10),
-                            Text(
-                              <String>[
-                                if (work?.year != null) '${work!.year}',
-                                if (work?.status?.isNotEmpty == true)
-                                  work!.status!,
-                                if (work?.rating != null)
-                                  '★ ${work!.rating!.toStringAsFixed(1)}',
-                                if (work?.runtimeMinutes != null)
-                                  '${work!.runtimeMinutes} min',
-                              ].join(' · '),
-                              style: const TextStyle(color: Colors.white70),
-                            ),
-                            const SizedBox(height: 16),
-                            FilledButton.icon(
-                              onPressed: () => _playBook(book),
-                              icon: const Icon(Icons.play_arrow_rounded),
-                              label: Text(
-                                book.lastPositionMs > 0
-                                    ? t.video_continue_watching
-                                    : t.collection_play,
-                              ),
-                            ),
-                            if (blurayDiscRootForPlaylistPath(book.videoPath) !=
-                                null)
-                              OutlinedButton.icon(
-                                onPressed: () =>
-                                    _playBook(book, openBlurayMenu: true),
-                                icon: const Icon(Icons.disc_full_outlined),
-                                label: Text(t.video_disc_open_menu),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+      appBar: FushiAppBar(),
+      body: FushiEntranceScope(
+        child: MediaDetailLayout(
+          backdrop: collectionHeroBackdropImage(
+            backdrop: fanart,
+            cover: poster,
           ),
-          if (work?.overview?.trim().isNotEmpty == true)
-            Padding(
-              padding: EdgeInsets.all(tokens.spacing.page),
-              child: SelectableText(
-                work!.overview!,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(height: 1.55),
+          backdropBlur: collectionHeroBackdropBlur(backdrop: fanart),
+          bottomPadding: tokens.spacing.page,
+          header: CollectionDetailHero(
+            backdrop: fanart,
+            cover: poster,
+            title: title,
+            originalTitle: originalTitle == title ? null : originalTitle,
+            airDate: work?.premiereDate,
+            chips: <MediaDetailChip>[
+              if (work?.year case final int year)
+                MediaDetailChip('$year', icon: FushiIcons.calendar),
+              if (status != null && status.isNotEmpty)
+                MediaDetailChip(status, tone: MediaDetailChipTone.secondary),
+              if (rating != null && rating > 0)
+                MediaDetailChip(
+                  '★ ${rating.toStringAsFixed(1)}',
+                  tone: MediaDetailChipTone.primary,
+                ),
+              if (runtime != null && runtime > 0)
+                MediaDetailChip(
+                  t.video_runtime_minutes(n: runtime),
+                  icon: FushiIcons.timer,
+                ),
+            ],
+            summary: work?.overview,
+            playLabel: book.lastPositionMs > 0
+                ? t.video_continue_watching
+                : t.collection_play,
+            playButtonKey: const ValueKey<String>('video-work-play'),
+            onPlay: () => _playBook(book),
+            secondaryActions: <Widget>[
+              if (blurayDiscRootForPlaylistPath(book.videoPath) != null)
+                MediaDetailSecondaryButton(
+                  buttonKey: const ValueKey<String>('video-work-disc-menu'),
+                  icon: Icons.disc_full_outlined,
+                  label: t.video_disc_open_menu,
+                  onPressed: () => _playBook(book, openBlurayMenu: true),
+                ),
+            ],
+          ),
+          slivers: <Widget>[
+            // v95：技术规格。这一页是「一个文件 = 一部作品」，规格无歧义，摊开
+            // 显示。探不到时整块不占位（VideoSpecsPanel 内部返回 shrink）。
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  tokens.spacing.page,
+                  tokens.spacing.section,
+                  tokens.spacing.page,
+                  0,
+                ),
+                child: VideoSpecsPanel(
+                  service: widget.videoSpecs,
+                  filePath: book.videoPath,
+                ),
               ),
             ),
-          // v95：技术规格。这一页是「一个文件 = 一部作品」，规格无歧义，摊开显示。
-          // 探不到时整块不占位（VideoSpecsPanel 内部返回 shrink）。
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-            child: VideoSpecsPanel(
-              service: widget.videoSpecs,
-              filePath: book.videoPath,
-            ),
-          ),
-          _buildTerms(tokens),
-          _buildCredits(tokens),
-          _buildExtras(tokens),
-          SizedBox(height: tokens.spacing.page),
-        ],
+            SliverToBoxAdapter(child: _buildTerms(tokens)),
+            SliverToBoxAdapter(child: _buildCredits(tokens)),
+            SliverToBoxAdapter(child: _buildExtras(tokens)),
+          ],
+        ),
       ),
     );
   }
 
+  /// 作品资料（类型 / 关键词 / 制作公司 / 地区 / 外部编号）：区块标题 + 元信息
+  /// chip 行。
   Widget _buildTerms(FushiDesignTokens tokens) {
     if (_terms.isEmpty && (_credits?.identities.isEmpty ?? true)) {
       return const SizedBox.shrink();
@@ -482,22 +438,52 @@ class _StandaloneVideoWorkDetailState
     }
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          for (final MapEntry<String, List<String>> entry in grouped.entries)
-            Chip(label: Text('${entry.key}: ${entry.value.join(' · ')}')),
-          for (final VideoMetadataIdentitySummary id
-              in _credits?.identities ?? const <VideoMetadataIdentitySummary>[])
-            Chip(label: Text('${id.provider.toUpperCase()}: ${id.externalId}')),
+          MediaDetailSectionHeader(t.video_work_details),
+          MediaDetailChipRow(
+            chips: <MediaDetailChip>[
+              for (final MapEntry<String, List<String>> entry
+                  in grouped.entries)
+                MediaDetailChip(
+                  _termChipText(entry.key, entry.value),
+                  tone: MediaDetailChipTone.secondary,
+                ),
+              for (final VideoMetadataIdentitySummary id
+                  in _credits?.identities ??
+                      const <VideoMetadataIdentitySummary>[])
+                MediaDetailChip(
+                  '${id.provider.toUpperCase()}: ${id.externalId}',
+                  icon: FushiIcons.link,
+                ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  /// 与合集详情页同一份照片轨道：配音 / 演职人员分两条。此前这里只画文字
-  /// Chip，照片无论刮到没刮到都不显示（BUG-2612）。
+  /// 2026-10 体验优化：term 的 `kind` 是存储值（genre / keyword / studio /
+  /// country），不能直接拼进 UI。与合集详情页 `_buildWorkDetailsSection` 同一套
+  /// 本地化标签；不认识的 kind 只显示值，不把原始 kind 漏给用户。
+  String _termChipText(String kind, List<String> names) {
+    final String? label = switch (kind) {
+      'genre' => t.video_work_genres,
+      'keyword' => t.video_work_keywords,
+      'studio' => t.video_work_studios,
+      'country' => t.video_work_countries,
+      _ => null,
+    };
+    final List<String> values = kind == 'country'
+        ? formatVideoCountriesForDisplay(names)
+        : names;
+    final String joined = values.join(' · ');
+    return label == null ? joined : '$label: $joined';
+  }
+
+  /// 与合集详情页同一份人物表（圆形头像横滑）：配音 / 演职人员分两条。此前这里
+  /// 只画文字 Chip，照片无论刮到没刮到都不显示（BUG-2612）。
   Widget _buildCredits(FushiDesignTokens tokens) {
     final List<VideoMetadataCreditSummary> all =
         _credits?.credits ?? const <VideoMetadataCreditSummary>[];
@@ -514,59 +500,66 @@ class _StandaloneVideoWorkDetailState
         )
         .toList(growable: false);
     if (voice.isEmpty && crew.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: EdgeInsets.only(top: tokens.spacing.section),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          if (voice.isNotEmpty)
-            VideoCreditRail(
-              title: t.video_work_voice_roles,
-              credits: voice,
-              tokens: tokens,
-            ),
-          if (voice.isNotEmpty && crew.isNotEmpty)
-            SizedBox(height: tokens.spacing.section),
-          if (crew.isNotEmpty)
-            VideoCreditRail(
-              title: t.video_work_cast_crew,
-              credits: crew,
-              tokens: tokens,
-            ),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (voice.isNotEmpty)
+          VideoCreditRail(
+            title: t.video_work_voice_roles,
+            credits: voice,
+            tokens: tokens,
+          ),
+        if (crew.isNotEmpty)
+          VideoCreditRail(
+            title: t.video_work_cast_crew,
+            credits: crew,
+            tokens: tokens,
+          ),
+      ],
     );
   }
 
   Widget _buildExtras(FushiDesignTokens tokens) {
     if (_extras.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.section,
-        tokens.spacing.page,
-        0,
-      ),
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Text(
-            t.video_work_trailers,
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          SizedBox(height: tokens.spacing.card),
-          for (final VideoMetadataExtraRow extra in _extras)
-            FushiListItem(
-              padding: EdgeInsets.zero,
-              leading: const Icon(Icons.play_circle_outline),
-              title: Text(extra.title),
-              subtitle: Text(extra.kind),
-              onTap: () => unawaited(_playExtra(extra)),
-            ),
+          // 2026-10 体验优化：按合集详情页口径拆成「预告片 / 花絮」两组，
+          // 不再把原始 kind（trailer / featurette …）当副标题直接显示。
+          for (final (String title, List<VideoMetadataExtraRow> rows)
+              in <(String, List<VideoMetadataExtraRow>)>[
+                (t.video_work_trailers, _extras.where(_isTrailer).toList()),
+                (
+                  t.video_work_extras,
+                  _extras
+                      .where((VideoMetadataExtraRow e) => !_isTrailer(e))
+                      .toList(),
+                ),
+              ])
+            if (rows.isNotEmpty) ...<Widget>[
+              MediaDetailSectionHeader(title, count: rows.length),
+              for (int i = 0; i < rows.length; i++)
+                MediaDetailItemRow(
+                  index: i,
+                  count: rows.length,
+                  title: rows[i].title,
+                  leading: FushiIcon(
+                    FushiIcons.playCircle,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  onTap: () => unawaited(_playExtra(rows[i])),
+                ),
+            ],
         ],
       ),
     );
   }
+
+  /// 与合集详情页同一判据：trailer / teaser 归「预告片」，其余归「花絮」。
+  static bool _isTrailer(VideoMetadataExtraRow extra) =>
+      extra.kind == 'trailer' || extra.kind == 'teaser';
 
   void _playBook(VideoBookRow book, {bool openBlurayMenu = false}) {
     Navigator.push<void>(

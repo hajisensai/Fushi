@@ -137,7 +137,55 @@ class GameStreamStatsSample {
   }
 }
 
-/// Android receiver for an already joined Fushi session. The host owns SDP
+/// Routes stream audio as media playback instead of a voice call.
+///
+/// flutter_webrtc sets mobile platforms up for a call by default:
+/// * Android builds the playout AudioTrack with USAGE_VOICE_COMMUNICATION, and
+///   when the remote track arrives its AudioSwitchManager puts the device into
+///   MODE_IN_COMMUNICATION -- game audio rides the call volume and route.
+/// * iOS activates libwebrtc's session configuration (PlayAndRecord +
+///   VoiceChat), which routes to the earpiece with call processing.
+///
+/// The receiver never opens a microphone; it is a media player. Each half is
+/// configured through its own call: the factory options (Android AudioTrack
+/// attributes, voice processing on both mobile platforms) are read only once,
+/// when the first WebRTC call builds the factory, so [WebRTC.initialize] must
+/// run before any other WebRTC call in the process; the Android audio mode and
+/// focus and the iOS session category are separate helper calls. The helpers
+/// are no-ops on the other platforms, and desktop playback needs no session.
+Future<void> prepareGameStreamMediaAudio() async {
+  final AndroidAudioConfiguration android = AndroidAudioConfiguration.media;
+  await WebRTC.initialize(
+    options: <String, dynamic>{
+      'androidAudioConfiguration': android.toMap(),
+      // iOS's voice-processing I/O unit is the call path itself; nothing is
+      // captured here, so it can only colour the game audio. Android only uses
+      // the flag for capture effects -- and taking it drops the low-latency
+      // playout path -- so it is not set there.
+      if (defaultTargetPlatform == TargetPlatform.iOS)
+        'bypassVoiceProcessing': true,
+    },
+  );
+  await Helper.setAndroidAudioConfiguration(android);
+  await Helper.setAppleAudioConfiguration(kGameStreamAppleAudioConfiguration);
+}
+
+/// iOS session for stream playback: the media category rather than a call.
+///
+/// The options set is explicitly empty. Playback already routes to the
+/// speaker, Bluetooth headphones and AirPlay; the call options (allowAirPlay,
+/// defaultToSpeaker, ...) are only valid with PlayAndRecord, and the plugin
+/// ignores the error when a category/option pair is rejected -- the session
+/// would silently stay on the old category. Leaving the key out would keep the
+/// options of whatever configuration came before.
+final AppleAudioConfiguration kGameStreamAppleAudioConfiguration =
+    AppleAudioConfiguration(
+      appleAudioCategory: AppleAudioCategory.playback,
+      appleAudioMode: AppleAudioMode.moviePlayback,
+      appleAudioCategoryOptions: <AppleAudioCategoryOption>{},
+    );
+
+/// Receiver for an already joined Fushi session. The host owns SDP
 /// negotiation and creates the reliable, ordered `fushi-game-control` channel.
 class FushiGameStreamReceiver extends ChangeNotifier
     with WidgetsBindingObserver {
@@ -148,9 +196,11 @@ class FushiGameStreamReceiver extends ChangeNotifier
     RTCVideoRenderer? videoRenderer,
     GameStreamPeerFactory? peerFactory,
     Future<RTCRtpCapabilities> Function()? codecCapabilities,
+    Future<void> Function()? prepareAudio,
   }) : _client = client,
        renderer = videoRenderer ?? RTCVideoRenderer(),
        _peerFactory = peerFactory ?? _createPeer,
+       _prepareAudio = prepareAudio ?? prepareGameStreamMediaAudio,
        _codecCapabilities =
            codecCapabilities ?? (() => getRtpReceiverCapabilities('video')) {
     WidgetsBinding.instance.addObserver(this);
@@ -176,6 +226,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
 
   final FushiGameStreamClient _client;
   final GameStreamPeerFactory _peerFactory;
+  final Future<void> Function() _prepareAudio;
   final Future<RTCRtpCapabilities> Function() _codecCapabilities;
   final ValueChanged<GameStreamTextEvent>? onTextEvent;
   final ValueChanged<GameStreamInputAck>? onInputAck;
@@ -194,6 +245,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
   bool _rendererInitialized = false;
   bool _rendererDisposed = false;
   bool _backgrounded = false;
+  bool _signalsPaused = false;
   bool _remoteDescriptionSet = false;
   bool _ready = false;
   Future<void>? _rendererInit;
@@ -244,9 +296,6 @@ class FushiGameStreamReceiver extends ChangeNotifier
     _settings = settings;
     _lastStats = null;
     _codecNote = null;
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
-      throw UnsupportedError('Game streaming receiver is Android-only');
-    }
     // A native peer can recover from a temporary LAN interruption. Rebuilding
     // it would consume the host's one offer with a different ICE identity.
     if (_sessionId == sessionId &&
@@ -267,6 +316,10 @@ class FushiGameStreamReceiver extends ChangeNotifier
     _error = null;
     _notify();
     try {
+      // Must precede the renderer: its initialize() is the first WebRTC call
+      // and would otherwise build the audio stack with call defaults.
+      await _prepareAudio();
+      if (!_isCurrent(generation)) return;
       await (_rendererInit ??= _initializeRenderer());
       if (!_isCurrent(generation)) return;
       final RTCPeerConnection connection = await _peerFactory();
@@ -362,7 +415,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
   }
 
   void _startPolling() {
-    if (_pollTimer != null || _backgrounded || _disposed || _hasTerminated) {
+    if (_pollTimer != null || _signalsPaused || _disposed || _hasTerminated) {
       return;
     }
     _pollTimer = Timer.periodic(kGameStreamNegotiationPoll, (_) {
@@ -377,7 +430,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
   }
 
   Future<void> _pollSignals() {
-    if (_disposed || _backgrounded || _hasTerminated) {
+    if (_disposed || _signalsPaused || _hasTerminated) {
       return Future<void>.value();
     }
     return _poll ??= _runPoll(_generation).whenComplete(() => _poll = null);
@@ -730,12 +783,17 @@ class FushiGameStreamReceiver extends ChangeNotifier
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (_disposed) return;
     final bool wasBackgrounded = _backgrounded;
+    // Any non-resumed state takes the keyboard/pointer away: release what is
+    // held and refuse new input until the user is back.
     _backgrounded = state != AppLifecycleState.resumed;
     if (_backgrounded) {
       if (!wasBackgrounded) _releaseInputs();
+      _invalidatePendingInputs('app_backgrounded');
+    }
+    _signalsPaused = gameStreamSignalsPaused(state, defaultTargetPlatform);
+    if (_signalsPaused) {
       _pollTimer?.cancel();
       _pollTimer = null;
-      _invalidatePendingInputs('app_backgrounded');
     } else if (_connection != null) {
       _startPolling();
       unawaited(_pollSignals());
@@ -834,4 +892,15 @@ class FushiGameStreamReceiver extends ChangeNotifier
     );
     super.dispose();
   }
+}
+
+/// Whether signalling should stop for [state]. A phone in any non-resumed
+/// state is on its way to being suspended. A desktop window is `inactive`
+/// whenever another window has focus while the stream stays on screen, so only
+/// a hidden or paused window stops signalling there; stopping on focus loss
+/// stalled negotiation whenever the user clicked elsewhere mid-connect.
+bool gameStreamSignalsPaused(AppLifecycleState state, TargetPlatform platform) {
+  if (state == AppLifecycleState.resumed) return false;
+  if (state != AppLifecycleState.inactive) return true;
+  return platform == TargetPlatform.android || platform == TargetPlatform.iOS;
 }

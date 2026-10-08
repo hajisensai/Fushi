@@ -1178,7 +1178,14 @@ sub_b/ep2.mp4
     // TODO-1237 ②: _importVideos keeps the physical-path re-scan dedup
     // (existingPaths.add short-circuit) so a future edit can't silently
     // reintroduce X (2) single-video folder-scan duplicates.
-    expect(src.contains('existingPaths.add(normalizeVideoPath'), isTrue,
+    // BUG-2979 把 `normalizeVideoPath(item.videoPath)` 提成局部 `normalizedPath`
+    // （搬家重链也要用同一个键），锚点随之拆成「键的来源 + 短路跳过」两段。
+    expect(
+        src.contains(
+            'final String normalizedPath = normalizeVideoPath(item.videoPath)'),
+        isTrue,
+        reason: 'single-video scan must key dedup on the normalized path');
+    expect(src.contains('if (!existingPaths.add(normalizedPath))'), isTrue,
         reason: 'single-video scan must skip already-imported physical paths');
     // TODO-1237 ② / 统一合集 Phase 2 / BUG-830: _importPlaylists keys on the
     // STABLE playlist COLLECTION name (m3u8 basename). First import splits into

@@ -24,7 +24,7 @@ import 'dart:ui' as ui;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart' show t;
@@ -52,6 +52,7 @@ import 'support/fake_ankiconnect.dart';
 import 'support/fake_ankiconnect_setup.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
+import '../test/helpers/glass_unwrap.dart';
 
 const String _kSentence = '猫がいる';
 
@@ -225,7 +226,7 @@ void main() {
       double? hudVolume() {
         final Finder hud = find.byKey(videoVolumeHudProgressKey);
         if (hud.evaluate().isEmpty) return null;
-        final double? v = tester.widget<LinearProgressIndicator>(hud).value;
+        final double? v = tester.widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(hud)).value;
         return v == null ? null : v * 100.0;
       }
 

@@ -21,6 +21,37 @@ void main() {
       );
     });
 
+    test('竖排：斜体并排两列横向互相压进一半以上也不合并（用户真实页）', () {
+      // 「パステルカラーで / 女子力アップ♡」两列字是斜着写的，PP 行检测给出的轴对齐
+      // 列框横向重叠 41 px（较窄者 76 px 的 54%）。旧口径只看跨轴重叠，把两列并成
+      // 一条宽列，逐列 CTC 只读出一列（还把「パ」认成「バ」），另一列整列丢失。
+      final List<OcrRect> merged = mergeOcrLineFragments(<OcrRect>[
+        _r(449, 30, 525, 292), // 女子力アップ♡
+        _r(484, 36, 566, 339), // パステルカラーで
+      ], vertical: true);
+      expect(merged, hasLength(2));
+    });
+
+    test('竖排：同一列被检出两次（跨轴几乎重合）仍合并', () {
+      final List<OcrRect> merged = mergeOcrLineFragments(<OcrRect>[
+        _r(100, 0, 130, 150),
+        _r(102, 10, 131, 140),
+      ], vertical: true);
+      expect(merged, hasLength(1));
+    });
+
+    test('横排：字距大的标题逐字断开的碎片仍并成一行', () {
+      final List<OcrRect> merged = mergeOcrLineFragments(<OcrRect>[
+        _r(874, 1046, 940, 1115), // モ
+        _r(1051, 1040, 1115, 1120),
+        _r(1120, 1037, 1209, 1125),
+        _r(1288, 1058, 1344, 1117), // の
+      ], vertical: false);
+      expect(merged, hasLength(1));
+      expect(merged.single.left, 874);
+      expect(merged.single.right, 1344);
+    });
+
     test('横排：同一行的几段合并，上下两行保持分开', () {
       final List<OcrRect> merged = mergeOcrLineFragments(<OcrRect>[
         _r(0, 0, 80, 30),

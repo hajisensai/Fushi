@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
+import 'package:fushi/src/media/novel/online/lnreader_download_counts.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_runtime.dart';
 
@@ -39,8 +40,13 @@ class LnReaderManager extends ChangeNotifier {
     this.builtinStoreUrl = kLnReaderOfficialStoreUrl,
     this.refreshOnInitialise = false,
     this.cloudflare,
+    this.fetchDownloadCounts = false,
+    LnReaderDownloadCountsClient? downloadCountsClient,
     int Function()? clock,
   }) : _httpClientFactory = httpClientFactory,
+       _downloadCountsClient =
+           downloadCountsClient ??
+           LnReaderDownloadCountsClient(httpClientFactory: httpClientFactory),
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   final Directory rootDirectory;
@@ -57,6 +63,18 @@ class LnReaderManager extends ChangeNotifier {
   /// true——那会让每个构造 manager 的单测都去拉真实网络索引（与
   /// `MihonManager.seedDefaultStore` 同一纪律）。
   final bool refreshOnInitialise;
+
+  /// 目录刷新后是否去拉插件的公开下载量（见 `lnreader_download_counts.dart`）。
+  /// 只有真实 app 开，与 `MihonManager.fetchDownloadCounts` 同一纪律：单测构造的
+  /// manager 不碰外网。
+  final bool fetchDownloadCounts;
+  final LnReaderDownloadCountsClient _downloadCountsClient;
+
+  /// 插件地址 → 下载量。进程内缓存：每次刷新仓库都重拉统计没有意义（季度口径，
+  /// 小时级不会有可见变化），只为新出现的地址补拉。
+  final Map<String, int> _downloadCounts = <String, int>{};
+
+  Future<void>? _downloadCountsInFlight;
   final HttpClient Function() _httpClientFactory;
   final int Function() _clock;
 
@@ -311,11 +329,44 @@ class LnReaderManager extends ChangeNotifier {
         byId[plugin.id] = plugin;
       }
       _stores = stores;
-      _available = byId.values.toList(growable: false);
+      _available = _withDownloadCounts(byId.values.toList(growable: false));
     } finally {
       _loading = false;
       _notify();
     }
+    // 下载量在目录出来之后后台补：统计接口在部分网络下要等到超时，不能让它
+    // 拖住加载条。
+    if (fetchDownloadCounts) unawaited(refreshDownloadCounts());
+  }
+
+  List<LnReaderRepoPlugin> _withDownloadCounts(
+    List<LnReaderRepoPlugin> plugins,
+  ) => <LnReaderRepoPlugin>[
+    for (final LnReaderRepoPlugin plugin in plugins)
+      plugin.downloadCount == _downloadCounts[plugin.url]
+          ? plugin
+          : plugin.withDownloadCount(_downloadCounts[plugin.url]),
+  ];
+
+  /// 为目录里还没有下载量的插件补拉一次，拿到后回填 [available] 并通知。
+  /// 并发调用合并成一次；失败只是「没有数据」，不抛。
+  Future<void> refreshDownloadCounts() =>
+      _downloadCountsInFlight ??= _refreshDownloadCounts().whenComplete(
+        () => _downloadCountsInFlight = null,
+      );
+
+  Future<void> _refreshDownloadCounts() async {
+    final List<String> missing = <String>[
+      for (final LnReaderRepoPlugin plugin in _available)
+        if (!_downloadCounts.containsKey(plugin.url)) plugin.url,
+    ];
+    // 非 GitHub 托管的地址客户端直接判无数据、不发请求；拉失败的下次刷新再试。
+    if (missing.isEmpty) return;
+    final Map<String, int> fetched = await _downloadCountsClient.fetch(missing);
+    if (_disposed || fetched.isEmpty) return;
+    _downloadCounts.addAll(fetched);
+    _available = _withDownloadCounts(_available);
+    _notify();
   }
 
   Future<String> _getText(String url) async {
@@ -431,6 +482,30 @@ class LnReaderManager extends ChangeNotifier {
     final LnReaderInstalledPlugin moved = reordered.removeAt(index);
     reordered.insert(target, moved);
     // 置顶组与普通组各自连续编号，交换跨组时仍按置顶优先排。
+    _installed = _sorted(<LnReaderInstalledPlugin>[
+      for (int i = 0; i < reordered.length; i++)
+        reordered[i].copyWith(sortOrder: i),
+    ]);
+    await _writeState();
+    _notify();
+  }
+
+  /// 拖拽重排：按 [orderedIds] 的先后重新连续编号 `sortOrder`（置顶组与普通组
+  /// 仍按置顶优先排，组内即给出的顺序）；列表里没有的插件按原相对顺序排在后面。
+  Future<void> reorder(List<String> orderedIds) async {
+    final Map<String, LnReaderInstalledPlugin> byId =
+        <String, LnReaderInstalledPlugin>{
+          for (final LnReaderInstalledPlugin plugin in _installed)
+            plugin.id: plugin,
+        };
+    final Set<String> listed = <String>{};
+    final List<LnReaderInstalledPlugin> reordered = <LnReaderInstalledPlugin>[
+      for (final String id in orderedIds)
+        if (byId[id] case final LnReaderInstalledPlugin plugin)
+          if (listed.add(id)) plugin,
+      for (final LnReaderInstalledPlugin plugin in _installed)
+        if (!listed.contains(plugin.id)) plugin,
+    ];
     _installed = _sorted(<LnReaderInstalledPlugin>[
       for (int i = 0; i < reordered.length; i++)
         reordered[i].copyWith(sortOrder: i),

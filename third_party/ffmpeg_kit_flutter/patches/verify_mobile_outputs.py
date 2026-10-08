@@ -20,6 +20,7 @@ REQUIRED_FLAGS: List[str] = [
     '--enable-openssl',
     '--enable-libvpx',
     '--enable-libopus',
+    '--enable-libdav1d',
 ]
 
 # libavcodec 里必须同时出现 ffmpeg 封装名与库自身的串：
@@ -32,6 +33,11 @@ REQUIRED_FLAGS: List[str] = [
 # - 'libopus'：ffmpeg 的 AVCodec 名（libavcodec/libopusenc.c:587）。
 # - 'request not implemented'：libopus 的 opus_strerror 表（celt/celt.c:293），
 #   ffmpeg 的 libopusenc.c 多处调用 opus_strerror；FFmpeg n6.0 源码里无此串（已 grep 核）。
+# - 'libdav1d'：ffmpeg 的 AV1 软件解码器 AVCodec 名（libavcodec/libdav1d.c）。BUG-2947：
+#   原生 'av1' 解码器只是 hwaccel 壳，移动端没有任何 hwaccel，缺它 AV1 源一帧都解不出。
+# - 'Malformed ITU-T T.35 metadata message format'：dav1d 自身的 dav1d_log 串
+#   （dav1d 1.2.1 src/obu.c，logging 默认开）；旧产物四个切片都扫不到（2026-10-05 实测），
+#   证明它只会因真链进 dav1d 而出现。
 CODEC_MARKERS: List[str] = [
     'libx264',
     'x264 - core',
@@ -39,6 +45,8 @@ CODEC_MARKERS: List[str] = [
     'WebM Project VP9 Encoder',
     'libopus',
     'request not implemented',
+    'libdav1d',
+    'Malformed ITU-T T.35 metadata message format',
 ]
 
 ZLIB_SYMBOLS: List[str] = ['deflateInit2_', 'deflateEnd', 'inflateInit_']
@@ -94,7 +102,8 @@ def verify_android(aar_path: str) -> None:
         check('--disable-mediacodec' in util, f'android {abi}: 仍 --disable-mediacodec')
     lic = 'res/raw/license.txt'
     check(lic in names and 'GNU GENERAL PUBLIC LICENSE' in text(z.read(lic)), 'license.txt 为 GPLv3')
-    for extra in ['license_x264.txt', 'license_openssl.txt', 'license_libvpx.txt', 'license_opus.txt', 'source.txt']:
+    for extra in ['license_x264.txt', 'license_openssl.txt', 'license_libvpx.txt', 'license_opus.txt',
+                  'license_dav1d.txt', 'source.txt']:
         check(f'res/raw/{extra}' in names, f'AAR 含 res/raw/{extra}')
 
 

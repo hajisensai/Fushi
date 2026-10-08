@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_layout_edit_overlay.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 Future<void> _pumpOverlay(
   WidgetTester tester, {
@@ -35,7 +36,8 @@ Future<void> _pumpOverlay(
       ),
     ),
   );
-  await tester.pump();
+  // 槽位 / 调色板有错峰进场（位移 + 淡入），落定后再量几何、拖拽。
+  await tester.pumpAndSettle();
 }
 
 /// Finds the inline "x" remove button rendered next to a placed [item] chip in
@@ -48,7 +50,7 @@ Finder _removeButtonFor(VideoControlItem item, VideoControlSlot slot) {
           matching: find.byType(Row),
         )
         .first,
-    matching: find.byIcon(Icons.close),
+    matching: find.byIcon(FushiIcons.close),
   );
 }
 
@@ -120,7 +122,7 @@ void main() {
     );
 
     final Finder source =
-        _placedChip(VideoControlItem.settings, VideoControlSlot.screenRight);
+        _placedChip(VideoControlItem.settings, VideoControlSlot.topRight);
     final Finder target = _slotRegion(VideoControlSlot.bottomLeft);
     expect(source, findsOneWidget);
     expect(target, findsOneWidget);
@@ -138,7 +140,8 @@ void main() {
     expect(committed, isNotNull);
     expect(committed!.itemsIn(VideoControlSlot.bottomLeft),
         contains(VideoControlItem.settings));
-    expect(committed!.itemsIn(VideoControlSlot.screenRight),
+    // 2026-10-05 M3E 重排：设置默认在右上（原右侧栏）。
+    expect(committed!.itemsIn(VideoControlSlot.topRight),
         isNot(contains(VideoControlItem.settings)));
     expect(closed, isTrue);
   });
@@ -306,12 +309,13 @@ void main() {
     expect(_paletteChip(VideoControlItem.subtitleTrack), findsOneWidget);
     expect(_paletteChip(VideoControlItem.audioTrack), findsOneWidget);
     expect(
-      _placedChip(VideoControlItem.subtitleTrack, VideoControlSlot.topRight),
+      _placedChip(VideoControlItem.subtitleTrack, VideoControlSlot.bottomRight),
       findsOneWidget,
     );
+    // 2026-10-06 遮挡最小化：音轨默认移出播放器（进右上「⋯」），只在面板里。
     expect(
       _placedChip(VideoControlItem.audioTrack, VideoControlSlot.topRight),
-      findsOneWidget,
+      findsNothing,
     );
   });
 
@@ -325,7 +329,7 @@ void main() {
 
     expect(find.text(t.dialog_save), findsOneWidget);
     expect(find.text(t.dialog_cancel), findsOneWidget);
-    expect(find.byIcon(Icons.close), findsWidgets);
+    expect(find.byIcon(FushiIcons.close), findsWidgets);
     expect(find.byIcon(Icons.drag_indicator), findsNothing);
     expect(find.text(t.video_control_slot_hidden), findsOneWidget);
   });
@@ -362,7 +366,7 @@ void main() {
     for (final Finder finder in <Finder>[
       find.text(t.dialog_save),
       find.text(t.dialog_cancel),
-      find.byIcon(Icons.close).first,
+      find.byIcon(FushiIcons.close).first,
     ]) {
       final Rect rect = tester.getRect(finder);
       expect(rect.left, greaterThanOrEqualTo(0));
@@ -384,7 +388,7 @@ void main() {
       onLayoutChanged: (VideoControlLayout layout) async => committed = layout,
     );
     final Finder settings =
-        _placedChip(VideoControlItem.settings, VideoControlSlot.screenRight);
+        _placedChip(VideoControlItem.settings, VideoControlSlot.topRight);
     final Finder hidden = _slotRegion(VideoControlSlot.hidden);
     expect(settings, findsOneWidget);
     expect(_willAccept(tester, settings, hidden), isTrue);
@@ -409,7 +413,7 @@ void main() {
       isTouchControls: true,
     );
     final Finder settings =
-        _placedChip(VideoControlItem.settings, VideoControlSlot.screenRight);
+        _placedChip(VideoControlItem.settings, VideoControlSlot.topRight);
     final Finder hidden = _slotRegion(VideoControlSlot.hidden);
     expect(settings, findsOneWidget);
     expect(
@@ -432,7 +436,7 @@ void main() {
       onLayoutChanged: (_) async {},
     );
     expect(
-      _removeButtonFor(VideoControlItem.settings, VideoControlSlot.screenRight),
+      _removeButtonFor(VideoControlItem.settings, VideoControlSlot.topRight),
       findsOneWidget,
     );
 
@@ -445,7 +449,7 @@ void main() {
       isTouchControls: true,
     );
     expect(
-      _removeButtonFor(VideoControlItem.settings, VideoControlSlot.screenRight),
+      _removeButtonFor(VideoControlItem.settings, VideoControlSlot.topRight),
       findsNothing,
       reason: 'no rejected tap target for the pinned settings entry on touch',
     );

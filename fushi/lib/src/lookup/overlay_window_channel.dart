@@ -126,8 +126,14 @@ class OverlayWindowChannel {
     if (_routeIsValid?.call() == false) {
       return Future<T?>.value();
     }
-    // 🔴 这里必须调 `_channel.invokeMethod`，**不能**调 `_invoke` —— 它就是 _invoke
-    // 本身。（本文件的调用点是用整文件替换从 `_channel.invokeMethod<` 改成 `_invoke<`
+    return _send<T>(method, args);
+  }
+
+  /// 不看 route 是否作废、直接发往 [target] 的那一层。只有 [resolveBridge] 绕过
+  /// [_invoke] 用它，理由见那里。
+  Future<T?> _send<T>(String method, [Map<String, Object?>? args]) {
+    // 🔴 这里必须调 `_channel.invokeMethod`，**不能**调 `_invoke` / `_send` —— 那是
+    // 自递归。（本文件的调用点是用整文件替换从 `_channel.invokeMethod<` 改成 `_invoke<`
     // 的，那次替换把这个 helper 自己体内的两处也换掉了，结果是无限自递归、栈溢出，
     // 且异常被 main.dart 的 `catch { debugPrint }` 吞掉——release 下整条桌面查词
     // 启动链静默中断，表现为"galgame 查词就是不工作"。）
@@ -238,7 +244,14 @@ class OverlayWindowChannel {
   /// containing the reply's JSON. So we double-encode: the inner jsonEncode
   /// produces the reply JSON text, the outer jsonEncode turns that into a JS
   /// string literal native can splice in verbatim.
-  Future<void> resolveBridge(int id, Object? value) => _invoke<void>(
+  ///
+  /// 应答**不受 route 作废影响**（BUG-2859）：[_invoke] 丢弃作废 route 的调用，防的是
+  /// 旧查词排队的前向调用复活旧卡面；应答只兑现页面自己还在 await 的那颗 promise，
+  /// 不碰卡面——宿主 `installBridgeRouter` 按发起 frame 投递，popup.js 用
+  /// epoch/version 自己挡陈旧装饰。丢掉它，那颗 promise 永远挂起；而 popup.js 按
+  /// 词条复用在途查重，于是查重比关卡慢一步（AnkiConnect 不在线时要挂满连接超时）
+  /// 的那个词，在这个 WebView 的生命周期内再也点不出卡。
+  Future<void> resolveBridge(int id, Object? value) => _send<void>(
     'resolveBridge',
     <String, Object?>{'id': id, 'value': jsonEncode(jsonEncode(value))},
   );
@@ -263,6 +276,10 @@ class OverlayWindowChannel {
     required int geometryEpoch,
     double left = 0,
     double top = 0,
+    // BUG-2921 — root card's measured height (physical px, 0 = unknown). The
+    // in-game direct card anchors the ROOT to the glyph with it; anchoring the
+    // whole nested union moved the root whenever a child appeared.
+    int rootHeight = 0,
   }) => _invoke<void>('revealStack', <String, Object?>{
     'dx': dx,
     'dy': dy,
@@ -271,6 +288,7 @@ class OverlayWindowChannel {
     'geometryEpoch': geometryEpoch,
     'left': left,
     'top': top,
+    'rootHeight': rootHeight,
   });
 
   /// Hides the overlay. [notify] true (default) = a genuine dismissal that
@@ -309,6 +327,7 @@ class OverlayWindowChannel {
   /// （热键 / 浮窗点词）**从不**调用本方法，行为零变化。
   Future<void> setOutsideClickOwner(int hwnd) =>
       _invoke<void>('setOutsideClickOwner', <String, Object?>{'hwnd': hwnd});
+
   /// TODO-1066 — 让 native 侧开始/停止监听全局鼠标侧键（RawInput +
   /// `RIDEV_INPUTSINK`）。[button] 用 DOM `MouseEvent.button` 号：3=侧键后退
   /// （XBUTTON1）/ 4=侧键前进（XBUTTON2）；**0 = 注销**，native 侧不留任何监听。

@@ -5,6 +5,7 @@
 //   POST /admin/api/accounts/:id  {hidden}      隐藏/恢复账户（不删数据）
 //   POST /admin/api/works/:id     {title?, author?, nsfw?, clearCover?}  改标题/作者即锁定
 //   POST /admin/api/works/merge   {from, into}  把 from 并入 into
+//   POST /admin/api/accounts/:id/role {role: 'dev'|'user'}  设 / 撤开发者（反馈处理台）
 //   POST /admin/api/works/split   {ref}         把一个误挂的别名拆成新作品，上报过它的书架随之迁走
 
 import { HttpError, json, randomId, timingSafeEqual } from './util.js';
@@ -30,7 +31,7 @@ function recountStatements(db, workIds, accountIds) {
     db.prepare(
       `UPDATE works SET readers = (
          SELECT COUNT(*) FROM shelf s JOIN accounts a ON a.id = s.account_id AND a.hidden = 0
-         WHERE s.work_id = works.id AND s.finished_at IS NOT NULL)
+         WHERE s.work_id = works.id AND s.finished_at IS NOT NULL AND s.counted = 1)
        WHERE id IN (SELECT value FROM json_each(?1))`,
     ).bind(ids),
     ...exactWorkPeriodsStatements(db, ids),
@@ -89,10 +90,11 @@ export async function mergeWorks(env, from, into, now) {
     env.DB.prepare('UPDATE work_aliases SET work_id = ?2 WHERE work_id = ?1').bind(from, into),
     // 同一账户两边都有：与上报合并规则一致——读完时刻取较晚者，字数/时长累加。
     env.DB.prepare(
-      `INSERT INTO shelf (account_id, work_id, kind, refs, title, author, finished_at, finished_date, chars, ms, updated_at)
-       SELECT account_id, ?2, kind, refs, title, author, finished_at, finished_date, chars, ms, updated_at
+      `INSERT INTO shelf (account_id, work_id, kind, refs, title, author, finished_at, finished_date, chars, ms, counted, updated_at)
+       SELECT account_id, ?2, kind, refs, title, author, finished_at, finished_date, chars, ms, counted, updated_at
        FROM shelf WHERE work_id = ?1
        ON CONFLICT (account_id, work_id) DO UPDATE SET
+         counted = MAX(shelf.counted, excluded.counted),
          finished_date = CASE WHEN COALESCE(excluded.finished_at, -1) > COALESCE(shelf.finished_at, -1)
                               THEN excluded.finished_date ELSE shelf.finished_date END,
          finished_at = CASE WHEN COALESCE(excluded.finished_at, -1) > COALESCE(shelf.finished_at, -1)
@@ -161,7 +163,7 @@ export async function setAccountHidden(env, accountId, hidden, now) {
   if (!acc) throw new HttpError(404, 'not_found');
   if ((acc.hidden === 1) === hidden) return;
   const finished = await env.DB.prepare(
-    'SELECT work_id, finished_at, finished_date FROM shelf WHERE account_id = ?1 AND finished_at IS NOT NULL',
+    'SELECT work_id, finished_at, finished_date FROM shelf WHERE account_id = ?1 AND finished_at IS NOT NULL AND counted = 1',
   ).bind(accountId).all();
   const d = hidden ? -1 : 1;
   // CAS：与本账户并发上传交错时整批回滚（409），管理员重试即可——否则上传用的旧 hidden 会让读者数重复计入。
@@ -206,6 +208,16 @@ export async function handleAdmin(env, request, path, body, now) {
       env.DB.prepare('UPDATE accounts SET upload_key = NULL WHERE id = ?1').bind(r[1]),
     ]);
     return json({ ok: true, removed: res[0].meta.changes });
+  }
+  if ((r = m(/^\/admin\/api\/accounts\/([A-Za-z0-9_-]+)\/role$/))) {
+    if (body.role !== 'dev' && body.role !== 'user') throw new HttpError(400, 'bad_role');
+    const res = await env.DB.batch([
+      env.DB.prepare('UPDATE accounts SET role = ?2 WHERE id = ?1').bind(r[1], body.role),
+      // 撤销开发者时顺带作废其网页会话（会话查询本身也会核对 role，这里只是不留垃圾）。
+      env.DB.prepare('DELETE FROM dev_sessions WHERE account_id = ?1 AND ?2 = \'user\'').bind(r[1], body.role),
+    ]);
+    if (res[0].meta.changes !== 1) throw new HttpError(404, 'not_found');
+    return json({ ok: true });
   }
   if ((r = m(/^\/admin\/api\/accounts\/([A-Za-z0-9_-]+)$/))) {
     await setAccountHidden(env, r[1], body.hidden === true, now);

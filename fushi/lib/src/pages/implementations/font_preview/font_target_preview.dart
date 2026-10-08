@@ -1,12 +1,14 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/models/app_ui_font_chain.dart';
 import 'package:fushi/src/models/cjk_font_families.dart' show CjkFontStyle;
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiSelectableChip;
 import 'package:fushi/i18n/strings.g.dart';
@@ -177,7 +179,8 @@ class _AppUiPreview extends StatelessWidget {
               width: 44,
               height: 60,
               decoration: BoxDecoration(
-                color: scheme.primaryContainer,
+                // 样张里的假封面：中性填充（不再是 primaryContainer 彩块）。
+                color: fushiNeutralBlockColor(context),
                 borderRadius: tokens.radii.controlRadius,
               ),
               alignment: Alignment.center,
@@ -185,7 +188,7 @@ class _AppUiPreview extends StatelessWidget {
                 '猫',
                 style: ui(
                   theme.textTheme.titleLarge,
-                ).copyWith(color: scheme.onPrimaryContainer),
+                ).copyWith(color: fushiNeutralSecondaryForeground(context)),
               ),
             ),
             SizedBox(width: tokens.spacing.card),
@@ -225,7 +228,10 @@ class _AppUiPreview extends StatelessWidget {
               ),
               decoration: BoxDecoration(
                 color: scheme.primary,
-                borderRadius: tokens.radii.chipRadius,
+                // 样张按钮跟随设计系统的按钮形状：Apple 是胶囊。
+                borderRadius: isGlassDesign(context)
+                    ? const BorderRadius.all(Radius.circular(999))
+                    : tokens.radii.chipRadius,
               ),
               child: Text(
                 t.font_preview_ui_sample_action,
@@ -242,7 +248,7 @@ class _AppUiPreview extends StatelessWidget {
 }
 
 /// 一段带振假名的日文：`(基字, 注音)`，注音为 null 即普通文字。
-const List<(String, String?)> _kBodyRubySample = <(String, String?)>[
+const List<(String, String?)> kJaFontRubySample = <(String, String?)>[
   ('吾輩', 'わがはい'),
   ('は猫である。名前はまだ無い。どこで', null),
   ('生', 'うま'),
@@ -283,7 +289,7 @@ class _BodyPreviewState extends State<_BodyPreview> {
       height: 1,
     );
     final List<(String, String?)> segments = widget.sampleText == null
-        ? _kBodyRubySample
+        ? kJaFontRubySample
         : <(String, String?)>[(widget.sampleText!, null)];
     return ColoredBox(
       color: tokens.surfaces.card,
@@ -311,53 +317,17 @@ class _BodyPreviewState extends State<_BodyPreview> {
             if (_vertical)
               SizedBox(
                 height: 176,
-                child: _VerticalText(
+                child: FontVerticalSpecimen(
                   segments: segments,
                   style: body,
                   rubyStyle: ruby,
                 ),
               )
             else
-              Text.rich(
-                TextSpan(
-                  children: <InlineSpan>[
-                    for (final (String base, String? rt) in segments)
-                      if (rt == null)
-                        TextSpan(text: base, style: body)
-                      else
-                        // 基字与正文同样式、按基线对齐（Stack 的基线取基字）；
-                        // 注音浮在基字上方的行距留白里，不撑高行、不挤换行。
-                        WidgetSpan(
-                          alignment: PlaceholderAlignment.baseline,
-                          baseline: TextBaseline.alphabetic,
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: <Widget>[
-                              Text(base, style: body),
-                              Positioned(
-                                left: -8,
-                                right: -8,
-                                top:
-                                    (body.fontSize ?? 16) *
-                                        ((body.height ?? 1) - 1) /
-                                        2 -
-                                    (ruby.fontSize ?? 8),
-                                // 不参与基线：否则 Stack 取最高基线 = 注音的。
-                                child: IgnoreBaseline(
-                                  child: Text(
-                                    rt,
-                                    style: ruby,
-                                    textAlign: TextAlign.center,
-                                    softWrap: false,
-                                    overflow: TextOverflow.visible,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                  ],
-                ),
+              FontHorizontalRubySpecimen(
+                segments: segments,
+                style: body,
+                rubyStyle: ruby,
               ),
           ],
         ),
@@ -366,13 +336,78 @@ class _BodyPreviewState extends State<_BodyPreview> {
   }
 }
 
-/// 竖排近似：从右往左一列一列排，每字一格，振假名贴在基字右侧。Flutter 没有原生
-/// 竖排，这里只为看字形在竖排版面里的观感，不追求 WebView 的标点换形。
-class _VerticalText extends StatelessWidget {
-  const _VerticalText({
+/// 横排带振假名的样张：基字与正文同样式、按基线对齐，注音浮在基字上方的行距
+/// 留白里（不撑高行、不挤换行）。字体库样张卡与详情页、正文用途预览共用。
+class FontHorizontalRubySpecimen extends StatelessWidget {
+  const FontHorizontalRubySpecimen({
     required this.segments,
     required this.style,
     required this.rubyStyle,
+    this.maxLines,
+    super.key,
+  });
+
+  final List<(String, String?)> segments;
+  final TextStyle style;
+  final TextStyle rubyStyle;
+  final int? maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextStyle body = style;
+    final TextStyle ruby = rubyStyle;
+    return Text.rich(
+      TextSpan(
+        children: <InlineSpan>[
+          for (final (String base, String? rt) in segments)
+            if (rt == null)
+              TextSpan(text: base, style: body)
+            else
+              WidgetSpan(
+                alignment: PlaceholderAlignment.baseline,
+                baseline: TextBaseline.alphabetic,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: <Widget>[
+                    Text(base, style: body),
+                    Positioned(
+                      left: -8,
+                      right: -8,
+                      top:
+                          (body.fontSize ?? 16) *
+                              ((body.height ?? 1) - 1) /
+                              2 -
+                          (ruby.fontSize ?? 8),
+                      // 不参与基线：否则 Stack 取最高基线 = 注音的。
+                      child: IgnoreBaseline(
+                        child: Text(
+                          rt,
+                          style: ruby,
+                          textAlign: TextAlign.center,
+                          softWrap: false,
+                          overflow: TextOverflow.visible,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+        ],
+      ),
+      maxLines: maxLines,
+      overflow: maxLines == null ? null : TextOverflow.ellipsis,
+    );
+  }
+}
+
+/// 竖排近似：从右往左一列一列排，每字一格，振假名贴在基字右侧。Flutter 没有原生
+/// 竖排，这里只为看字形在竖排版面里的观感，不追求 WebView 的标点换形。
+class FontVerticalSpecimen extends StatelessWidget {
+  const FontVerticalSpecimen({
+    required this.segments,
+    required this.style,
+    required this.rubyStyle,
+    super.key,
   });
 
   final List<(String, String?)> segments;
@@ -486,14 +521,15 @@ class _DictionaryPreview extends StatelessWidget {
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: scheme.secondaryContainer,
+                    // 词性小徽标：中性底（与 FushiTag 等共享徽标同口径）。
+                    color: fushiNeutralTagColors(context).background,
                     borderRadius: tokens.radii.chipRadius,
                   ),
                   child: Text(
                     '名詞',
                     style: content(
                       theme.textTheme.labelSmall,
-                    ).copyWith(color: scheme.onSecondaryContainer),
+                    ).copyWith(color: fushiNeutralTagColors(context).foreground),
                   ),
                 ),
               ],

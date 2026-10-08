@@ -1,5 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart' as legacy show Theme;
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
@@ -74,42 +78,63 @@ class _ChangelogPageState extends State<ChangelogPage>
       title: t.settings_view_changelog,
       actions: <Widget>[
         FushiIconButton(
-          icon: Icons.open_in_new_outlined,
+          icon: FushiIcons.openInNew,
           tooltip: t.changelog_open_releases,
           onTap: _openReleasesPage,
         ),
         FushiIconButton(
-          icon: Icons.refresh,
+          icon: FushiIcons.refresh,
           tooltip: t.refresh,
           onTap: _loading ? null : _load,
         ),
       ],
-      body: _buildBody(context),
+      // Builder：正文要在页头脚手架之内取 MediaQuery 顶部让位（状态栏 + 浮动页头）。
+      body: Builder(builder: _buildBody),
     );
   }
 
   Widget _buildBody(BuildContext context) {
     if (_loading) {
-      return buildLoading();
+      return SafeArea(bottom: false, child: buildLoading());
     }
     if (_releases.isEmpty) {
-      return _ChangelogEmptyState(
-        onRetry: _load,
-        onOpenReleases: _openReleasesPage,
+      return SafeArea(
+        bottom: false,
+        child: _ChangelogEmptyState(
+          onRetry: _load,
+          onOpenReleases: _openReleasesPage,
+        ),
       );
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return ListView.builder(
-      // BUG-2440：scaffold 底部安全区不再从 viewport 扣掉，末条卡片得靠内容
-      // padding 自己让开 home indicator / 手势条。
-      padding: withBottomSafeInset(context, EdgeInsets.all(tokens.spacing.gap)),
-      itemCount: _releases.length,
-      itemBuilder: (BuildContext context, int index) {
-        return Padding(
-          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-          child: _ReleaseCard(release: _releases[index]),
-        );
-      },
+    // 首屏错峰进场（spring 上移 + 淡入）；重新拉取后重开窗口。
+    return FushiEntranceScope(
+      replayKey: _releases,
+      child: ListView.builder(
+        // BUG-2440：scaffold 底部安全区不再从 viewport 扣掉，末条卡片得靠内容
+        // padding 自己让开 home indicator / 手势条。
+        padding: withBottomSafeInset(
+          context,
+          EdgeInsets.fromLTRB(
+            tokens.spacing.page,
+            // 正文滚到浮动页头底下：顶部让出「状态栏 + 页头」。
+            tokens.spacing.gap + MediaQuery.paddingOf(context).top,
+            tokens.spacing.page,
+            tokens.spacing.section,
+          ),
+        ),
+        itemCount: _releases.length,
+        itemBuilder:
+            fushiStaggeredItemBuilder((BuildContext context, int index) {
+          return Padding(
+            padding: EdgeInsets.only(bottom: tokens.spacing.card),
+            child: _ReleaseCard(
+              release: _releases[index],
+              latest: index == 0,
+            ),
+          );
+        }),
+      ),
     );
   }
 }
@@ -127,43 +152,27 @@ class _ChangelogEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(tokens.spacing.card),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(
-              Icons.cloud_off_outlined,
-              size: 48,
-              color: Theme.of(context).colorScheme.outline,
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            Text(
-              t.changelog_empty,
-              textAlign: TextAlign.center,
-              style: tokens.type.listSubtitle,
-            ),
-            SizedBox(height: tokens.spacing.card),
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: tokens.spacing.gap,
-              runSpacing: tokens.spacing.gap,
-              children: <Widget>[
-                OutlinedButton.icon(
-                  onPressed: onRetry,
-                  icon: const Icon(Icons.refresh),
-                  label: Text(t.retry),
-                ),
-                FilledButton.icon(
-                  onPressed: onOpenReleases,
-                  icon: const Icon(Icons.open_in_new_outlined),
-                  label: Text(t.changelog_open_releases),
-                ),
-              ],
-            ),
-          ],
-        ),
+    // 统一空态：MD3 中性分组底块 / Apple 无底块大图标 + 灰字（各自在
+    // FushiPlaceholderMessage 里分派），不再自画 outline 色图标 + 裸文字。
+    return FushiPlaceholderMessage(
+      icon: FushiIcons.cloudOff,
+      message: t.changelog_empty,
+      action: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: tokens.spacing.gap,
+        runSpacing: tokens.spacing.gap,
+        children: <Widget>[
+          FushiOutlinedButton.icon(
+            onPressed: onRetry,
+            icon: const FushiIcon(FushiIcons.refresh),
+            label: Text(t.retry),
+          ),
+          FushiFilledButton.icon(
+            onPressed: onOpenReleases,
+            icon: const FushiIcon(FushiIcons.openInNew),
+            label: Text(t.changelog_open_releases),
+          ),
+        ],
       ),
     );
   }
@@ -171,9 +180,12 @@ class _ChangelogEmptyState extends StatelessWidget {
 
 /// 单个版本卡片：版本号 + 通道徽标 + 发布日期 + Markdown 正文。
 class _ReleaseCard extends StatelessWidget {
-  const _ReleaseCard({required this.release});
+  const _ReleaseCard({required this.release, this.latest = false});
 
   final Map<String, dynamic> release;
+
+  /// 列表首条（最新版本）：M3E 抬升卡 + primary 版本形状，与历史版本区分。
+  final bool latest;
 
   /// 发布日期取 `published_at`（ISO8601）的日期段（`YYYY-MM-DD`）；缺失返空串。
   String get _publishedDate {
@@ -190,7 +202,6 @@ class _ReleaseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ThemeData theme = Theme.of(context);
     final Object? tagName = release['tag_name'];
     final String title =
         tagName is String && tagName.isNotEmpty ? tagName : '—';
@@ -199,15 +210,24 @@ class _ReleaseCard extends StatelessWidget {
     final String date = _publishedDate;
 
     return FushiCard(
+      variant: latest ? FushiCardVariant.elevated : FushiCardVariant.filled,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
             children: <Widget>[
+              FushiListLeadingIcon(
+                FushiIcons.tag,
+                shape: latest
+                    ? FushiLeadingShape.cookie
+                    : FushiLeadingShape.circle,
+                tone: latest ? FushiCardTone.primary : FushiCardTone.neutral,
+              ),
+              SizedBox(width: tokens.spacing.gap),
               Flexible(
                 child: Text(
                   title,
-                  style: theme.textTheme.titleMedium,
+                  style: context.fushiType.titleLargeEmphasized,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -238,7 +258,11 @@ class _ReleaseCard extends StatelessWidget {
                   mode: LaunchMode.externalApplication,
                 );
               },
-              styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+              // flutter_markdown 0.6 未迁 material_ui，只收 SDK 旧 ThemeData：经
+              // LegacyDesignCompatibility 桥出来的旧主题（与 app 主题同色同字）。
+              styleSheet: MarkdownStyleSheet.fromTheme(
+                legacy.Theme.of(context),
+              ).copyWith(
                 p: tokens.type.listSubtitle,
               ),
             ),
@@ -256,23 +280,12 @@ class _ChannelBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.gap / 2,
-        vertical: tokens.spacing.gap / 4,
-      ),
-      decoration: BoxDecoration(
-        color: scheme.secondaryContainer,
-        borderRadius: tokens.radii.chipRadius,
-      ),
-      child: Text(
-        label,
-        style: tokens.type.metadata.copyWith(
-          color: scheme.onSecondaryContainer,
-        ),
-      ),
+    // 标签统一（2026-10-04）：不可交互小标签走共享 FushiTag（MD3 圆角 6
+    // secondaryContainer，Apple 空心胶囊 + secondaryLabel 字）。
+    return FushiTag(
+      text: label,
+      backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+      dense: true,
     );
   }
 }

@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_asr_core/asr_core.dart';
@@ -21,8 +21,13 @@ class _NoopSession implements OnnxSession {
 }
 
 class _FakePcm implements AsrPcmSource {
+  _FakePcm({this.probedMs = 4000});
+
+  /// 探测报的时长；实际永远只解出 4 秒。大于 4 秒 = 文件后半段解不出来（损坏 / 没下完）。
+  final int probedMs;
+
   @override
-  Future<int?> probeDurationMs(String audioPath) async => 4000;
+  Future<int?> probeDurationMs(String audioPath) async => probedMs;
 
   @override
   Stream<AsrPcmChunk> decode(
@@ -99,6 +104,9 @@ class _FakeService extends AsrTranscriptionService {
   /// 非 null 时 `start` 抛它。装模型文件读不出图那条路径：引擎在 load 阶段把坏
   /// 档删掉再抛，所以抛之前 `ready` 归 false——与真实时序一致。
   Object? startError;
+
+  /// [start] 建的任务用的 PCM 源探测时长（见 [_FakePcm.probedMs]）。
+  int pcmProbedMs = 4000;
   int downloadCalls = 0;
   int discardCalls = 0;
   final List<AsrLanguage> planLanguages = <AsrLanguage>[];
@@ -201,7 +209,7 @@ class _FakeService extends AsrTranscriptionService {
       jobDir: Directory('${jobsDir.path}/job'),
       audioPaths: audioPaths,
       modelId: asrModelPackFor(language).id,
-      pcm: _FakePcm(),
+      pcm: _FakePcm(probedMs: pcmProbedMs),
       segmenter: _FakeSegmenter(),
       decoder: _FakeDecoder(),
       progressInterval: Duration.zero,
@@ -725,6 +733,59 @@ void main() {
     );
   });
 
+  // 音频文件只能解出开头一段（未下载完的 m4b 后面是全零）：引擎在收尾对账时整本失败，
+  // 面板先给一句能照着做的话，原文仍附在后面供排查。从前是任务照样「完成」、
+  // 产出只有开头几分钟的字幕。
+  testWidgets('音频解不完：错误态提示文件损坏或没下完', (WidgetTester tester) async {
+    final _FakeService service = _FakeService(ready: true, jobsDir: tmp)
+      ..pcmProbedMs = 22257761;
+    await tester.pumpWidget(wrap(service, (String? _) {}));
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+
+    // 真任务有文件 IO：在 runAsync 里让真事件循环跑到失败，再回 fake async 泛帧。
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.widgetWithText(FilledButton, t.audiobook_transcribe_start),
+      );
+      for (int i = 0; i < 50; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        if (find
+            .textContaining(t.audiobook_transcribe_audio_incomplete)
+            .evaluate()
+            .isNotEmpty) {
+          break;
+        }
+      }
+    });
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining(t.audiobook_transcribe_audio_incomplete),
+      findsOneWidget,
+    );
+    expect(find.textContaining(kAsrIncompleteAudioMarker), findsOneWidget);
+  });
+
+  testWidgets('其他失败不带「文件不完整」提示', (WidgetTester tester) async {
+    final _FakeService service = _FakeService(ready: true, jobsDir: tmp)
+      ..startError = StateError('cuda out of memory');
+    await tester.pumpWidget(wrap(service, (String? _) {}));
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.widgetWithText(FilledButton, t.audiobook_transcribe_start),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining(t.audiobook_transcribe_audio_incomplete),
+      findsNothing,
+    );
+  });
+
   group('模型选择', () {
     late AsrModelCatalog catalog;
 
@@ -768,6 +829,15 @@ void main() {
           directoryPicker: directoryPicker,
         );
 
+    /// M3E 分段选项卡让弹层 body 变高，800x600 测试窗下模型行落在 body 可滚
+    /// 视口之外（下面紧挨固定 footer 的「开始转录」）；先滚到控件再点，同用户操作。
+    Future<void> tapScrolledIntoView(WidgetTester tester, String key) async {
+      final Finder target = find.byKey(ValueKey<String>(key));
+      await tester.ensureVisible(target);
+      await tester.pump();
+      await tester.tap(target);
+    }
+
     testWidgets('默认显示该语言的内置模型，并列出可切换的备选', (WidgetTester tester) async {
       final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
       await tester.pumpWidget(wrapWithCatalog(service));
@@ -776,8 +846,7 @@ void main() {
 
       expect(find.text(kAsrJapanesePack.displayName), findsWidgets);
 
-      await tester
-          .tap(find.byKey(const ValueKey<String>('asr-transcribe-model')));
+      await tapScrolledIntoView(tester, 'asr-transcribe-model');
       await tester.pumpAndSettle();
       expect(find.text(kAsrOmnilingualPack.displayName), findsWidgets);
     });
@@ -789,8 +858,7 @@ void main() {
       await tester.pumpAndSettle();
       final int plansBefore = service.planLanguages.length;
 
-      await tester
-          .tap(find.byKey(const ValueKey<String>('asr-transcribe-model')));
+      await tapScrolledIntoView(tester, 'asr-transcribe-model');
       await tester.pumpAndSettle();
       final Finder entry = find.text(kAsrOmnilingualPack.displayName).last;
       await tester.ensureVisible(entry);
@@ -823,8 +891,7 @@ void main() {
         }
       }
 
-      await tester
-          .tap(find.byKey(const ValueKey<String>('asr-transcribe-model-add')));
+      await tapScrolledIntoView(tester, 'asr-transcribe-model-add');
       await settle();
       expect(
         find.byKey(const ValueKey<String>('asr-local-model-pick')),

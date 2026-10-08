@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Presentation metadata only. The source service remains the owner of actions.
 enum DownloadTaskKind { video, novel, audiobook, game, manga }
@@ -90,6 +90,9 @@ class DownloadTaskEntry {
     this.collectionKey,
     this.collectionTitle,
     this.searchTerms = const <String>[],
+    this.seeding = false,
+    this.downRateBps,
+    this.upRateBps,
   });
 
   /// 本条任务支持的动作，由产生它的来源填充。
@@ -104,6 +107,14 @@ class DownloadTaskEntry {
   final String? collectionKey;
   final String? collectionTitle;
   final List<String> searchTerms;
+
+  /// 已下完、正在做种（只有 torrent 来源报得出来）。[status] 仍是生命周期口径
+  /// （完成 / 进行中），这一位只喂「做种」筛选与汇总，不改排序与批量语义。
+  final bool seeding;
+
+  /// 实时下载 / 上传速率（字节每秒）；来源报不出实时指标时为 null，汇总时不计。
+  final int? downRateBps;
+  final int? upRateBps;
   final WidgetBuilder builder;
 }
 

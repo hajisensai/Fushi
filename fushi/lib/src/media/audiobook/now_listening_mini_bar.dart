@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -8,9 +8,16 @@ import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/cover_image.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/floating_lyric_hint.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 /// 首页「正在听书」迷你条（TODO-291 阶段2）。
 ///
@@ -79,71 +86,180 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
     final AudioCue? cue = controller.displayCueForFloatingLyric;
     final bool playing = controller.isPlaying;
 
-    // eink：surfaceContainerHighest 塌成页面底色，迷你条与上方正文连成一片；
-    // 顶上描一条线切出来（推荐包下载条同款）。
-    return Material(
-      color: scheme.surfaceContainerHighest,
-      shape: isEinkTheme(context)
-          ? Border(top: BorderSide(color: scheme.outline))
-          : null,
-      child: InkWell(
-        onTap: () => appModel.openBackgroundListeningBook(ref),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          child: Row(
+    final bool eink = isEinkTheme(context);
+    final bool glass = isGlassDesign(context);
+    final bool expressive = !eink && !glass;
+    final Widget content = Row(
+      children: <Widget>[
+        _cover(book, scheme),
+        SizedBox(width: expressive ? 12 : 10),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              _cover(book, scheme),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      book.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    Text(
-                      cue?.text.trim().isNotEmpty == true
-                          ? cue!.text.trim()
-                          : t.now_listening_label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
-                    ),
-                  ],
-                ),
+              Text(
+                book.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall,
               ),
-              // TODO-354 ③：书架底栏迷你条上的「悬浮字幕」开关——真启停 app 外悬浮字幕
-              // 窗口（复用 toggleFloatingLyricFromControls：拉起/隐藏悬浮窗 + 偏好读写）。
-              // 仅 Android/Windows 有 native 悬浮窗后端（floating_lyric_channel），其余桌面
-              // 隐藏开关（优雅降级）。开着态用实心高亮图标提示当前已开。
-              if (Platform.isAndroid || Platform.isWindows)
-                IconButton(
-                  icon: Icon(
-                    appModel.showFloatingLyric
-                        ? Icons.subtitles
-                        : Icons.subtitles_outlined,
-                    color: appModel.showFloatingLyric ? scheme.primary : null,
-                  ),
-                  tooltip: t.floating_lyric_toggle_action,
-                  onPressed: () => _toggleFloatingLyric(appModel),
-                ),
-              IconButton(
-                icon: Icon(playing ? Icons.pause : Icons.play_arrow),
-                tooltip: t.floating_lyric_play_pause,
-                onPressed: () => controller.togglePlayPause(),
-              ),
-              IconButton(
-                icon: const Icon(Icons.stop),
-                tooltip: t.stop,
-                onPressed: () => appModel.stopBackgroundListening(),
+              Text(
+                cue?.text.trim().isNotEmpty == true
+                    ? cue!.text.trim()
+                    : t.now_listening_label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: glass
+                          ? appleColorsOf(context).secondaryLabel
+                          : scheme.onSurfaceVariant,
+                    ),
               ),
             ],
+          ),
+        ),
+        // TODO-354 ③：书架底栏迷你条上的「悬浮字幕」开关——真启停 app 外悬浮字幕
+        // 窗口（复用 toggleFloatingLyricFromControls：拉起/隐藏悬浮窗 + 偏好读写）。
+        // 仅 Android/Windows 有 native 悬浮窗后端（floating_lyric_channel），其余桌面
+        // 隐藏开关（优雅降级）。开着态用实心高亮图标提示当前已开。
+        if (Platform.isAndroid || Platform.isWindows)
+          FushiIconButtonControl(
+            icon: FushiIcon(
+              appModel.showFloatingLyric
+                  ? FushiIcons.filled(FushiIcons.subtitles)
+                  : FushiIcons.subtitles,
+              color: appModel.showFloatingLyric ? scheme.primary : null,
+            ),
+            tooltip: t.floating_lyric_toggle_action,
+            onPressed: () => _toggleFloatingLyric(appModel),
+          ),
+        if (expressive)
+          // M3E：播放键是迷你胶囊里唯一的实心主色圆钮（与浮动工具栏的 FAB
+          // 同一强调层级），播放中弹簧变形成方圆角——形状即状态。
+          FushiIconButtonControl.filled(
+            icon: FushiIcon(
+              playing
+                  ? FushiIcons.filled(FushiIcons.pause)
+                  : FushiIcons.filled(FushiIcons.play),
+            ),
+            shape: playing
+                ? FushiIconButtonShape.square
+                : FushiIconButtonShape.round,
+            tooltip: t.floating_lyric_play_pause,
+            onPressed: () => controller.togglePlayPause(),
+          )
+        else
+          FushiIconButtonControl(
+            icon: FushiIcon(playing ? FushiIcons.pause : FushiIcons.play),
+            tooltip: t.floating_lyric_play_pause,
+            onPressed: () => controller.togglePlayPause(),
+          ),
+        FushiIconButtonControl(
+          icon: const FushiIcon(FushiIcons.stop),
+          tooltip: t.stop,
+          onPressed: () => appModel.stopBackgroundListening(),
+        ),
+      ],
+    );
+    void openBook() => appModel.openBackgroundListeningBook(ref);
+
+    // eink：surfaceContainerHighest 塌成页面底色，迷你条与上方正文连成一片；
+    // 顶上描一条线切出来（推荐包下载条同款）。墨水屏保持贴边整条（阴影 /
+    // 半透明在灰阶下都会糊成脏边）。
+    if (eink) {
+      return Material(
+        color: scheme.surfaceContainerHighest,
+        shape: Border(top: BorderSide(color: scheme.outline)),
+        child: InkWell(
+          onTap: openBook,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: content,
+          ),
+        ),
+      );
+    }
+    if (glass) {
+      // Apple Music 式迷你播放条：离边 14 的浮动液态玻璃全胶囊（导航与控件
+      // 层，不是内容层；圆角取足够大让任何高度都是全圆角），点按整条回到书，
+      // 按下变淡、无水波。
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
+        child: GlassContainer(
+          useOwnLayer: true,
+          quality: fushiGlassQuality(context, prominent: true),
+          settings: fushiClearGlassSettings(context, bar: true),
+          shape: const LiquidRoundedSuperellipse(borderRadius: 999),
+          child: FushiPlainButton(
+            onPressed: openBook,
+            borderRadius: BorderRadius.circular(999),
+            child: Padding(
+              padding: const EdgeInsetsDirectional.only(
+                start: 10,
+                end: 8,
+                top: 6,
+                bottom: 6,
+              ),
+              child: content,
+            ),
+          ),
+        ),
+      );
+    }
+    // M3E：与底部浮动导航 / 浮动工具栏同一套悬浮胶囊（fushiFloatingPillDecoration：
+    // 全圆角、surfaceContainer 底、level2 投影），高 64（kFushiFloatingToolbarExtent），
+    // 离边 16；宽屏不铺满，封顶 560 居中，读起来是「底栏上方的一颗播放胶囊」而
+    // 不是一条贴边横幅。首次出现时弹簧上浮落位（减弱动态 / 墨水屏下时长为零）。
+    final FushiMotionScheme motion = context.fushiMotion;
+    final Color pillColor = fushiFloatingToolbarPalette(context).container;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        kFushiFloatingToolbarEdgeMargin,
+        4,
+        kFushiFloatingToolbarEdgeMargin,
+        8,
+      ),
+      child: Center(
+        heightFactor: 1,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: 1),
+            duration: motion.spatialDefault.duration,
+            curve: motion.spatialDefault.curve,
+            builder: (BuildContext context, double v, Widget? child) =>
+                Transform.translate(
+              offset: Offset(0, (1 - v) * 24),
+              child: Transform.scale(
+                scale: 0.92 + 0.08 * v,
+                child: child,
+              ),
+            ),
+            child: SizedBox(
+              height: kFushiFloatingToolbarExtent,
+              child: DecoratedBox(
+                decoration: fushiFloatingPillDecoration(
+                  context,
+                  color: pillColor,
+                ),
+                child: Material(
+                  type: MaterialType.transparency,
+                  shape: const StadiumBorder(),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: openBook,
+                    child: Padding(
+                      padding: const EdgeInsetsDirectional.only(
+                        start: 12,
+                        end: 8,
+                      ),
+                      child: content,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -167,11 +283,12 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
         isAndroid: Platform.isAndroid,
         manufacturer: maker,
       );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(hint),
-          duration: const Duration(seconds: 4),
-        ),
+      // 2026-10 体验优化：全应用统一走 FushiToast（SnackBar 会被底部播放条 /
+      // 导航栏遮住，且与其它入口的同一失败提示样式不一致）。
+      FushiToast.show(
+        msg: hint,
+        severity: ToastSeverity.error,
+        toastLength: Toast.LENGTH_LONG,
       );
       return;
     }
@@ -198,23 +315,34 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
     } else {
       child = _coverFallback(scheme);
     }
+    // M3E：胶囊里的封面是 40 的圆（与胶囊同一曲率家族）；Apple 圆角方 8；
+    // 墨水屏保持 6 的小圆角方。
+    final bool expressive = !isGlassDesign(context) && !isEinkTheme(context);
+    final double side = expressive ? 40 : 36;
     return ClipRRect(
-      borderRadius: BorderRadius.circular(6),
-      child: SizedBox(width: 36, height: 36, child: child),
+      borderRadius: BorderRadius.circular(
+        expressive ? side / 2 : (isGlassDesign(context) ? 8 : 6),
+      ),
+      child: SizedBox(width: side, height: side, child: child),
     );
   }
 
   // eink：primaryContainer 塌成页面底色，补描边免得只剩一枚悬空耳机图标。
+  // Apple：中性 systemFill 底 + label 色单色图标（不要彩色底块）。
   Widget _coverFallback(ColorScheme scheme) => DecoratedBox(
         decoration: BoxDecoration(
-          color: scheme.primaryContainer,
+          color: isGlassDesign(context)
+              ? appleColorsOf(context).fill
+              : scheme.primaryContainer,
           border:
               isEinkTheme(context) ? Border.all(color: scheme.outline) : null,
         ),
-        child: Icon(
-          Icons.headphones,
+        child: FushiIcon(
+          FushiIcons.audiobook,
           size: 20,
-          color: scheme.onPrimaryContainer,
+          color: isGlassDesign(context)
+              ? appleColorsOf(context).label
+              : scheme.onPrimaryContainer,
         ),
       );
 }

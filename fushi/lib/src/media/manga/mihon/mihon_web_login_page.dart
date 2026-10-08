@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
@@ -10,8 +10,14 @@ import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_toolbar.dart';
 
 /// 该源能不能在 app 里登录，以及登录页要打开哪个地址；不能则返回 null。
 ///
@@ -432,7 +438,7 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
     if (failure != null || saved == 0) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(t.mihon_source_login_empty)));
+      ).showSnackBar(FushiSnackBar(content: Text(t.mihon_source_login_empty)));
       return;
     }
     if (ModalRoute.of(context)?.isCurrent ?? false) {
@@ -458,22 +464,24 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
       onPopInvokedWithResult: (bool didPop, Object? _) {
         if (!didPop) unawaited(_onBackInvoked());
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(widget.sourceName),
-          leading: IconButton(
-            icon: const Icon(Icons.close),
-            tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-            onPressed: () => Navigator.of(context).pop(false),
-          ),
-          actions: <Widget>[
-            TextButton(
-              key: const ValueKey<String>('mihon_login_done'),
-              onPressed: _saving ? null : () => unawaited(_finish()),
-              child: Text(t.mihon_source_login_done),
-            ),
-          ],
+      // M3E 浮动页头（FushiPageScaffold）：关闭 + 标题胶囊 + 「完成」动作。
+      child: FushiPageScaffold(
+        title: widget.sourceName,
+        // 不叠放：正文是平台 WebView（登录页），内容滚动在 WebView 内部、拿不到
+        // MediaQuery 顶部让位，叠到页头底下会被胶囊盖住且无法滚出。
+        extendBodyBehindHeader: false,
+        leading: FushiIconButtonControl(
+          icon: const FushiIcon(FushiIcons.close),
+          tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+          onPressed: () => Navigator.of(context).pop(false),
         ),
+        actions: <Widget>[
+          FushiTextButton(
+            key: const ValueKey<String>('mihon_login_done'),
+            onPressed: _saving ? null : () => unawaited(_finish()),
+            child: Text(t.mihon_source_login_done),
+          ),
+        ],
         body: Column(
           children: <Widget>[
             Padding(
@@ -508,12 +516,12 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
       child: Row(
         children: <Widget>[
-          OutlinedButton.icon(
+          FushiOutlinedButton.icon(
             key: const ValueKey<String>('mihon_login_import_browser'),
             onPressed: _import == null
                 ? () => unawaited(_beginBrowserImport(jar))
                 : null,
-            icon: const Icon(Icons.extension_outlined),
+            icon: const FushiIcon(FushiIcons.browserExtension),
             label: Text(t.mihon_source_login_import_browser),
           ),
           if (_import != null) ...<Widget>[
@@ -544,30 +552,33 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
       padding: const EdgeInsets.fromLTRB(4, 0, 16, 4),
       child: Row(
         children: <Widget>[
-          IconButton(
-            key: const ValueKey<String>('mihon_login_back'),
-            tooltip: t.back,
-            onPressed: controller != null && _canGoBack
-                ? () => unawaited(controller.goBack())
-                : null,
-            icon: const Icon(Icons.arrow_back),
-          ),
-          IconButton(
-            key: const ValueKey<String>('mihon_login_forward'),
-            tooltip: t.mihon_source_login_forward,
-            onPressed: controller != null && _canGoForward
-                ? () => unawaited(controller.goForward())
-                : null,
-            icon: const Icon(Icons.arrow_forward),
-          ),
-          IconButton(
-            key: const ValueKey<String>('mihon_login_reload'),
-            tooltip: t.refresh,
-            onPressed: controller != null
-                ? () => unawaited(controller.reload())
-                : null,
-            icon: const Icon(Icons.refresh),
-          ),
+          FushiToolbar(dense: true, children: <Widget>[
+            FushiIconButtonControl(
+              key: const ValueKey<String>('mihon_login_back'),
+              tooltip: t.back,
+              onPressed: controller != null && _canGoBack
+                  ? () => unawaited(controller.goBack())
+                  : null,
+              icon: const FushiIcon(FushiIcons.back),
+            ),
+            FushiIconButtonControl(
+              key: const ValueKey<String>('mihon_login_forward'),
+              tooltip: t.mihon_source_login_forward,
+              onPressed: controller != null && _canGoForward
+                  ? () => unawaited(controller.goForward())
+                  : null,
+              icon: const FushiIcon(FushiIcons.forward),
+            ),
+            FushiIconButtonControl(
+              key: const ValueKey<String>('mihon_login_reload'),
+              tooltip: t.refresh,
+              onPressed: controller != null
+                  ? () => unawaited(controller.reload())
+                  : null,
+              icon: const FushiIcon(FushiIcons.refresh),
+            ),
+          ]),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               _currentUrl,
@@ -587,7 +598,7 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
     final Widget Function(BuildContext context)? stub = widget.webViewBuilder;
     if (stub != null) return stub(context);
     if (!_environmentReady) {
-      return const Center(child: CircularProgressIndicator());
+      return const FushiLoadingView();
     }
     return KeyedSubtree(
       // 重建 key 挂在 WebView **之上**：renderer 死后换 key 才能真正

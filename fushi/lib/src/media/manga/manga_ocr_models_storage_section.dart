@@ -1,11 +1,13 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_local_model_labels.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_model_downloads.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/utils.dart';
@@ -14,7 +16,7 @@ import 'package:fushi/utils.dart';
 /// 删除。
 ///
 /// 漫画 OCR 设置里只管「用哪个」，那里的下载 / 删除只作用于当前选中的模型；换过
-/// 模型的用户磁盘上会留着别的模型（CUDA 档一套就是 4 GB），以前只能在存储总览里
+/// 模型的用户磁盘上会留着别的模型（经典 manga-ocr 一套约 470 MB），以前只能在存储总览里
 /// 看见一个裸目录。这里把每个模型都摆出来。
 ///
 /// 下载走全局 [MangaOcrModelDownloads]（与设置区同一份，离开页面照跑），删除走
@@ -106,27 +108,17 @@ class _MangaOcrModelsStorageSectionState
   }
 
   Future<void> _confirmDelete(_ModelRow row) async {
-    final bool? ok = await showAppDialog<bool>(
+    final bool ok = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(t.manga_ocr_delete_confirm_title),
-        content: Text(
+      title: t.manga_ocr_delete_confirm_title,
+      message:
           '${localModelLabel(row.model)}\n\n'
           '${t.manga_ocr_delete_confirm_message}',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.manga_ocr_delete),
-          ),
-        ],
-      ),
+      icon: FushiIcons.delete,
+      confirmLabel: t.manga_ocr_delete,
+      destructive: true,
     );
-    if (ok != true || !mounted) return;
+    if (!ok || !mounted) return;
     setState(() => row.deleting = true);
     int freed = 0;
     try {
@@ -151,9 +143,7 @@ class _MangaOcrModelsStorageSectionState
     );
     final List<String> parts = <String>[];
     if (progress != null) {
-      if (progress.installing) {
-        parts.add(t.manga_ocr_runtime_installing);
-      } else if (status != null && status.totalBytes > 0) {
+      if (status != null && status.totalBytes > 0) {
         parts.add(
           t.manga_ocr_download_total_progress(
             done: FushiByteFormat.bytes(progress.receivedBytes),
@@ -192,7 +182,7 @@ class _MangaOcrModelsStorageSectionState
       row.model,
     );
     if (progress != null) {
-      return TextButton(
+      return FushiTextButton(
         key: ValueKey<String>('ocr-models-cancel-${row.model.key}'),
         onPressed: progress.cancelling
             ? null
@@ -204,19 +194,19 @@ class _MangaOcrModelsStorageSectionState
       return const SizedBox(
         width: 18,
         height: 18,
-        child: CircularProgressIndicator(strokeWidth: 2),
+        child: FushiCircularProgressIndicator(strokeWidth: 2),
       );
     }
-    final Widget delete = OutlinedButton.icon(
+    final Widget delete = FushiOutlinedButton.icon(
       key: ValueKey<String>('ocr-models-delete-${row.model.key}'),
       onPressed: row.deleting ? null : () => unawaited(_confirmDelete(row)),
       icon: row.deleting
           ? const SizedBox(
               width: 16,
               height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: FushiCircularProgressIndicator(strokeWidth: 2),
             )
-          : const Icon(Icons.delete_outline, size: 18),
+          : const FushiIcon(FushiIcons.delete, size: 18),
       label: Text(t.manga_ocr_delete),
     );
     if (status.allReady) return delete;
@@ -225,10 +215,10 @@ class _MangaOcrModelsStorageSectionState
       runSpacing: 4,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
-        FilledButton.icon(
+        FushiFilledButton.icon(
           key: ValueKey<String>('ocr-models-download-${row.model.key}'),
           onPressed: row.deleting ? null : () => _startDownload(row),
-          icon: const Icon(Icons.download_outlined, size: 18),
+          icon: const FushiIcon(FushiIcons.download, size: 18),
           label: Text(
             status.hasResumableDownload
                 ? t.manga_ocr_download_resume
@@ -254,8 +244,8 @@ class _MangaOcrModelsStorageSectionState
           title: localModelLabel(row.model),
           subtitle: _subtitle(row),
           icon: (row.status?.allReady ?? false)
-              ? Icons.check_circle_outline
-              : Icons.download_outlined,
+              ? FushiIcons.filled(FushiIcons.success)
+              : FushiIcons.download,
           showIcon: true,
           controlBelow: true,
           trailing: Align(
@@ -268,8 +258,8 @@ class _MangaOcrModelsStorageSectionState
             padding: EdgeInsets.symmetric(
               horizontal: FushiDesignTokens.of(context).spacing.rowHorizontal,
             ),
-            child: LinearProgressIndicator(
-              value: progress.installing || total <= 0
+            child: FushiLinearProgressIndicator(
+              value: total <= 0
                   ? null
                   : (progress.receivedBytes / total).clamp(0.0, 1.0),
             ),

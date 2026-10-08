@@ -5,6 +5,7 @@ import 'package:meta/meta.dart';
 /// 视频页在 `initState` 里认领这些全局显示态（都是进程唯一、没有「谁设的谁看得见」
 /// 的作用域）：
 ///   * 移动端横屏锁（`SystemChrome.setPreferredOrientations`）；
+///   * 移动端沉浸模式（退出时恢复首页系统栏模式）；
 ///   * 移动端系统栏可见性回调（`SystemChrome.setSystemUIChangeCallback`，全局单槽）。
 ///
 /// （原先还有第三件「macOS 交通灯隐藏」。macOS 改用自绘 MD3 顶栏后交通灯是启动即
@@ -49,6 +50,9 @@ class VideoDisplayClaim {
     if (!_owners.remove(owner)) return false;
     return _owners.isEmpty;
   }
+
+  /// 此 owner 是否仍在册；异步加载 / 全屏回调不得在退页后重新设置沉浸模式。
+  static bool owns(Object owner) => _owners.contains(owner);
 
   /// 是否仍有视频页持有进程级显示态。
   static bool get held => _owners.isNotEmpty;

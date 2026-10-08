@@ -32,6 +32,7 @@ class BlurayFfmpegInput {
 Future<BlurayFfmpegInput> prepareBlurayFfmpegArgs(
   List<String> args, {
   bool probe = false,
+  Future<String> Function(String)? resolveStream,
 }) async {
   final List<int> paths = <int>[
     for (int i = 0; i < args.length; i++)
@@ -85,10 +86,15 @@ Future<BlurayFfmpegInput> prepareBlurayFfmpegArgs(
           start,
           duration,
           decode: decode,
+          resolveStream: resolveStream,
         );
         await manifest.writeAsString(contents.$1);
         rewritten.addAll(<String>[
           ...options,
+          if (resolveStream != null) ...<String>[
+            '-protocol_whitelist',
+            'file,http,tcp',
+          ],
           '-f',
           'concat',
           '-safe',
@@ -155,6 +161,7 @@ Future<(String, double)> _manifest(
   double start,
   double? duration, {
   required bool decode,
+  Future<String> Function(String)? resolveStream,
 }) async {
   final String? root = blurayDiscRootForPlaylistPath(path);
   final BlurayPlaylist? playlist = parseBlurayPlaylist(
@@ -187,9 +194,10 @@ Future<(String, double)> _manifest(
         stream,
       );
     }
-    final String escaped = stream
-        .replaceAll('\\', '/')
-        .replaceAll("'", "'\\''");
+    final String input = resolveStream == null
+        ? stream
+        : await resolveStream(stream);
+    final String escaped = input.replaceAll('\\', '/').replaceAll("'", "'\\''");
     final double origin = clip.inTimeTicks / kBlurayTimeScale;
     clips.add((escaped, origin + from, origin + to));
     if (decode && origin + from > preroll) preroll = origin + from;

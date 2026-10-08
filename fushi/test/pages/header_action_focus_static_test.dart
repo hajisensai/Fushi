@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'reader_history_source_corpus.dart';
+import '../helpers/source_guard.dart';
 
 void main() {
   test('desktop dictionary page actions use FushiIconButton', () {
@@ -18,25 +19,17 @@ void main() {
     expect(desktopActions, isNot(contains('\n        IconButton(')));
   });
 
-  test('custom theme page header actions use FushiIconButton', () {
+  test('custom theme import and share use shared focusable hero buttons', () {
     final String source = File(
       'lib/src/pages/implementations/custom_theme_page.dart',
     ).readAsStringSync();
-    // BUG-2187 重设计后两个 action 提成了局部变量，在窄屏/宽屏两个 scaffold 里
-    // 复用（`actions: actions,`），文件里已无 `actions: [` 字面量——旧锚点
-    // indexOf 返 -1、substring 直接 RangeError。改钉这个列表本身。
-    final int actionsStart =
-        source.indexOf('final List<Widget> actions = <Widget>[');
-    expect(actionsStart, isNonNegative,
-        reason: '锚点失效：custom_theme_page 的 header actions 列表被重命名/挪走');
-    final int actionsEnd = source.indexOf('\n    ];', actionsStart);
-    expect(actionsEnd, greaterThan(actionsStart), reason: '找不到 actions 列表结束');
-    final String headerActions = source.substring(actionsStart, actionsEnd);
-
-    expect(headerActions, contains('FushiIconButton('));
-    // 缩进无关（旧断言写死 8 空格，新代码是 6 空格，照抄会恒真）；
-    // FushiIconButton 本身含子串 IconButton(，用负向 lookbehind 排掉。
-    expect(headerActions, isNot(matches(RegExp(r'(?<![A-Za-z])IconButton\('))));
+    // 4f886a5e37a moves import/share from header icon actions to the hero.
+    final String hero = methodBody(source, 'Widget _buildHeaderCard(');
+    for (final String action in <String>['_importTheme', '_shareTheme']) {
+      final EnclosingCall button = enclosingCallOf(hero, 'onPressed: $action');
+      expect(button.name, 'FushiFilledButton.tonalIcon');
+    }
+    expect(containsIdentifierCall(hero, 'IconButton'), isFalse);
   });
 
   test('shortcut action rows use FushiIconButton for edit command', () {
@@ -54,8 +47,9 @@ void main() {
   test('reader history batch toolbar uses FushiIconButton actions', () {
     final String source = readReaderHistorySource();
     final int barStart = source.indexOf('Widget _buildBatchActionBar()');
-    final int deleteStart =
-        source.indexOf('Future<void> _batchDeleteConfirm()');
+    final int deleteStart = source.indexOf(
+      'Future<void> _batchDeleteConfirm()',
+    );
     final String selectionBar = source.substring(barStart, deleteStart);
 
     expect(selectionBar, contains('FushiIconButton('));

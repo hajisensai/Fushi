@@ -4,7 +4,7 @@
 /// 区，而「会保留」那条同时收窄成「书籍与字幕原件」。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/native.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -14,12 +14,23 @@ import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
+    show FushiCheckbox;
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
   Widget app(Widget home) =>
       TranslationProvider(child: MaterialApp(home: home));
+
+  // MD3 重设计后（居中图标头部 + 48dp 勾选行 / 按钮）弹窗内容高于默认 800×600
+  // 视口的 0.74 上限，外框整体滚动会把「删除」挤到屏外；这些用例测的是勾选语义，
+  // 不是紧凑布局（那由 test/pages/reader_history_delete_dialog_test.dart 守）。
+  void useTallView(WidgetTester tester) {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(900, 1400);
+    addTearDown(tester.view.reset);
+  }
 
   group('showDeleteScopeConfirm', () {
     testWidgets('没给 localFilesSubtitle → 不渲染勾选框，决定恒不删文件', (
@@ -51,9 +62,54 @@ void main() {
       expect(got, const DeleteDecision(scope: DeleteScope.keepLocalOnly));
     });
 
+    // BUG-3028：M3E 分组勾选卡把正文撑高后，外框整体滚动会把底部「删除」推出
+    // 0.74 高度的面板（800x600 下落在面板外、点上去打在遮罩上直接关框）。动作区
+    // 必须钉在面板内，只让正文滚。
+    testWidgets('BUG-3028 800x600 勾选项全开时「删除」仍钉在面板内、不滚就点得到', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(800, 600);
+      addTearDown(tester.view.reset);
+      DeleteDecision? got;
+      await tester.pumpWidget(
+        app(
+          Builder(
+            builder: (BuildContext ctx) => TextButton(
+              onPressed: () async {
+                got = await showDeleteScopeConfirm(
+                  ctx,
+                  title: t.video_delete_title,
+                  message: 'msg',
+                  localFilesSubtitle: t.delete_local_files_video_desc,
+                  statisticsSubtitle: t.delete_statistics_video_desc,
+                );
+              },
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      final Finder delete = find.text(t.dialog_delete);
+      expect(delete.hitTestable(), findsOneWidget,
+          reason: '「删除」不能落在面板外或被正文滚动挤出可视区');
+      final Rect panel = tester.getRect(
+        find.ancestor(of: delete, matching: find.byType(Material)).last,
+      );
+      expect(panel.contains(tester.getCenter(delete)), isTrue);
+      await tester.tap(delete);
+      await tester.pumpAndSettle();
+      expect(got, isNotNull, reason: '点中的是「删除」而不是遮罩');
+      expect(got!.deleteLocalFiles, isFalse);
+    });
+
     testWidgets('给了副标题 → 默认不勾；勾了才 deleteLocalFiles=true', (
       WidgetTester tester,
     ) async {
+      useTallView(tester);
       DeleteDecision? got;
       await tester.pumpWidget(
         app(
@@ -105,6 +161,7 @@ void main() {
     testWidgets('没给 statisticsSubtitle → 不渲染统计勾选框，决定恒不删统计', (
       WidgetTester tester,
     ) async {
+      useTallView(tester);
       DeleteDecision? got;
       await tester.pumpWidget(
         app(
@@ -135,6 +192,7 @@ void main() {
     testWidgets('给了 statisticsSubtitle → 默认不勾；勾了才 deleteStatistics=true', (
       WidgetTester tester,
     ) async {
+      useTallView(tester);
       DeleteDecision? got;
       await tester.pumpWidget(
         app(
@@ -236,6 +294,7 @@ void main() {
 
   group('ReaderHistoryDeleteDialog', () {
     testWidgets('已记住的两项作为默认值，并连同记住状态一起回写', (WidgetTester tester) async {
+      useTallView(tester);
       DeleteDecision? got;
       DeletePromptRememberedChoices? persisted;
       await tester.pumpWidget(
@@ -258,7 +317,9 @@ void main() {
 
       expect(find.text(t.delete_choices_remember), findsOneWidget);
       expect(
-        find.byIcon(Icons.check_box),
+        find.byWidgetPredicate(
+          (Widget w) => w is FushiCheckbox && w.value == true,
+        ),
         findsNWidgets(3),
         reason: '同步删除、本地文件、记住选择都应从偏好恢复为勾选',
       );

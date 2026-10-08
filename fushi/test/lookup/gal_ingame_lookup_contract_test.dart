@@ -27,6 +27,8 @@ import '../helpers/source_guard.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
+import 'package:fushi/src/mining/galgame_window_gif.dart'
+    show GalHookCaptureLease;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 
@@ -330,15 +332,31 @@ void main() {
       expect(isGalLookupProductionProviderPair(2, 19), isTrue);
       expect(isGalLookupProductionProviderPair(2, 20), isTrue);
       expect(isGalLookupProductionProviderPair(2, 21), isTrue);
+      expect(isGalLookupProductionProviderPair(2, 22), isTrue);
+      // Malie RICHTEXT3D（kLookupGeometryProviderIdMalie = 28）。
+      expect(isGalLookupProductionProviderPair(2, 28), isTrue);
+      expect(isGalLookupProductionProviderPair(1, 28), isFalse);
+      expect(isGalLookupProductionProviderPair(2, 29), isFalse);
+      expect(isGalLookupProductionProviderPair(2, 23), isTrue);
+      // Kogado Hy message window（kLookupGeometryProviderIdKogadoHy = 24）。
+      expect(isGalLookupProductionProviderPair(2, 24), isTrue);
+      expect(isGalLookupProductionProviderPair(1, 24), isFalse);
       expect(isGalLookupProductionProviderPair(3, 10), isTrue);
       expect(isGalLookupProductionProviderPair(1, 3), isFalse);
       expect(isGalLookupProductionProviderPair(2, 1), isFalse);
       expect(isGalLookupProductionProviderPair(1, 15), isFalse);
       expect(isGalLookupProductionProviderPair(1, 16), isFalse);
       expect(isGalLookupProductionProviderPair(3, 11), isFalse);
-      // native 的 provider 注册表最大到 21（voice_hook_ipc.h
-      // kLookupGeometryProviderIdBgi）；Dart 单方面放行不存在的 id 会让两端契约错位。
-      expect(isGalLookupProductionProviderPair(2, 22), isFalse);
+      // native 的 engine_exact provider 注册表登记到 22（Yuris）、23（Fvp）、
+      // 24（Kogado Hy）、28（Malie）（voice_hook_ipc.h）；25–27 在那里登记为
+      // 「保留、未分配」，Dart 单方面放行不存在的 id 会让两端契约错位。
+      for (int id = 25; id <= 27; id++) {
+        expect(
+          isGalLookupProductionProviderPair(2, id),
+          isFalse,
+          reason: '$id',
+        );
+      }
     });
 
     test('client/primaryLayer 坐标可用，design/layout-local fail-closed', () {
@@ -913,6 +931,109 @@ void main() {
       }
     });
 
+    // BUG-2921 / BUG-2922 接线：直连 present 回执带回的根卡客户区位置要把嵌套布局域切到
+    // 客户区；点制卡取截图租约时不得 hide 直连卡（只让 hook 藏游戏层里的东西）。
+    test('直连 present 切换嵌套布局域；制卡截图租约不隐藏直连卡', () async {
+      final List<MethodCall> globalCalls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(globalLookupChannel, (
+            MethodCall call,
+          ) async {
+            globalCalls.add(call);
+            return null;
+          });
+      late GlobalLookupRoute activeRoute;
+      mockRunner((MethodCall call) {
+        if (call.method == 'galLookupPresent') {
+          return <String, Object?>{
+            'directSurface': true,
+            'clientWidth': 2000,
+            'clientHeight': 1500,
+            'rootClientX': 320,
+            'rootClientY': 350,
+          };
+        }
+        if (call.method == 'galLookupSuspendForCapture') {
+          return <String, Object?>{'ok': true};
+        }
+        return <String, Object?>{};
+      });
+      final GalIngameLookupController controller =
+          GalIngameLookupController.test(
+            preferenceReader: (String key, {required Object? defaultValue}) =>
+                key == GalIngameLookupController.enabledPreferenceKey
+                ? true
+                : defaultValue,
+            lookupRunner: (String query, GalLookupHit hit) async {
+              activeRoute = GlobalLookupChannel.currentRoute;
+              return true;
+            },
+          );
+      try {
+        await controller.start(appModel: AppModel(testPlatformServices()));
+        // 同上一条的进程级 route 高水位：本组已用到 sessionEpoch 3，这里推到 4。
+        for (int i = 0; i < 3; i++) {
+          await controller.setSessionActive(true);
+          await controller.setSessionActive(false);
+        }
+        await controller.setSessionActive(true);
+        await controller.setProviderAdmission(true);
+        final GalLookupHit hit = _hit(seq: 91, glyphX: 400, glyphY: 640);
+        await controller.handleHit(hit);
+        // 画布域（1280x720 视口里的根卡原点）——直连前的状态。
+        GlobalLookupController.instance.debugSeedCascadeLayoutDomain(
+          workDpr: 2,
+          width: 640,
+          height: 360,
+          originX: 200,
+          originY: 18,
+        );
+        calls.clear();
+
+        GlobalLookupController.instance.onRoutedRevealed!(
+          activeRoute,
+          800,
+          900,
+          0,
+          0,
+          900,
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          calls.where((MethodCall c) => c.method == 'galLookupPresent'),
+          isNotEmpty,
+        );
+        expect(
+          GlobalLookupController.instance.debugCascadeLayoutDomain,
+          (w: 1000.0, h: 750.0, x: 160.0, y: 175.0),
+          reason: '子卡必须在真实客户区里、以 runner 放下的根卡为原点排版（BUG-2921）',
+        );
+
+        globalCalls.clear();
+        final GalHookCaptureLease lease = await controller
+            .acquireMiningCaptureLease();
+        expect(
+          calls.where(
+            (MethodCall c) => c.method == 'galLookupSuspendForCapture',
+          ),
+          isNotEmpty,
+          reason: '游戏层里的位图卡 / 高亮仍要由 hook 隐藏',
+        );
+        expect(
+          globalCalls.where((MethodCall c) => c.method == 'hide'),
+          isEmpty,
+          reason: 'BUG-2922：直连卡拍不进窗口截图，hide 只会让它闪一下',
+        );
+        await lease.release();
+        expect(
+          globalCalls.where((MethodCall c) => c.method == 'hide'),
+          isEmpty,
+        );
+      } finally {
+        await controller.stopForTesting();
+      }
+    });
+
     test('galLookupDismiss 带上要撤掉的那次命中序号', () async {
       mockRunner((_) => <String, Object?>{});
       await GalHookTextOverlayChannel.galLookupDismiss(9);
@@ -1001,25 +1122,27 @@ void main() {
         'galLookupSuspendForCapture(hit.seq)',
         acquireAt,
       );
-      final int currentRouteAt = source.indexOf(
-        'final GlobalLookupRoute hideRoute = _activeRoute ?? route;',
-        suppressAt,
-      );
-      final int directHideAt = source.indexOf(
-        'GlobalLookupChannel.hide(notify: false)',
-        currentRouteAt,
-      );
       final int leaseAt = source.indexOf(
         'return _GalIngameCaptureLease(',
-        directHideAt,
+        suppressAt,
       );
       expect(
-        acquireAt < suppressAt &&
-            suppressAt < currentRouteAt &&
-            currentRouteAt < directHideAt &&
-            directHideAt < leaseAt,
+        acquireAt >= 0 && acquireAt < suppressAt && suppressAt < leaseAt,
         isTrue,
-        reason: '制卡截图 lease 只能在 hook suppress ack + 当前 direct HWND hide 后发放',
+        reason: '制卡截图 lease 只能在 hook suppress ack 后发放',
+      );
+      // BUG-2922 — 直连卡是独立顶层 HWND，按窗口捕获（WGC / PrintWindow）拍不进它；
+      // 在 lease 里把它 hide 只会让卡片每次点制卡都消失一下。
+      final String acquireBody = source.substring(acquireAt, leaseAt);
+      expect(
+        acquireBody,
+        isNot(contains('GlobalLookupChannel.hide(')),
+        reason: 'BUG-2922：制卡截图不得隐藏直连查词卡（点制卡时卡片会闪一下）',
+      );
+      expect(
+        acquireBody,
+        isNot(contains('_directSurfaceActive = false')),
+        reason: 'BUG-2922：截图不改变直连上屏状态，release 只需重投一次解除 hook suppress',
       );
       expect(source, contains('static const int _kCardBitmapBytes ='));
       expect(

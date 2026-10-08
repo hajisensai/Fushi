@@ -16,7 +16,7 @@ import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 /// 过快捷键设置的用户，其快照里该 action 仍是「旧版本的完整默认」（仅 F），覆盖后新键
 /// （F12）永久丢失 —— 表现为「按 F12 没反应」。迁移只对「用户从未动过该 action（键集
 /// 恰等于旧默认全集）」的快照补回新键，绝不碰用户主动改/删过的绑定。
-const int kShortcutSchemaVersion = 12;
+const int kShortcutSchemaVersion = 13;
 
 /// 持久化 JSON 里记录写入时 schema 版本的保留 key（不是某个 action 的绑定，故单独
 /// 处理，不进 _unknownEntries，也不会被 [ShortcutAction.fromKey] 误解析）。
@@ -283,6 +283,47 @@ class FushiShortcutRegistry extends ChangeNotifier {
     // key 并保留缺席 key 的默认，故老用户升级后天然拿到默认热键，不必逐个 restore，
     // 也绝不误伤任何既有绑定。与 v3→v4 新增 globalExternalLookup 完全同构，这里只
     // bump 版本保持「快照版本 < 当前 ⇒ 跑迁移」不变式诚实，循环体为空。
+    //
+    // v12 -> v13（BUG-2948）：macOS 上两个默认键被系统先截走、app 永远收不到——
+    // audiobookPlayPause 的 Cmd+Space（Spotlight）与 globalToggleFullscreen 的 F11
+    // （显示桌面）。macOS 默认改成 Option+Space / Ctrl+Cmd+F（见
+    // `ShortcutDefaults._macOSKeyboardOverrides`）。只在 macOS、只换**键盘**、且只换
+    // 恰等于旧默认（用户没动过）的那份；手柄 L3 等其它通道原样保留。其它平台默认
+    // 未变，不迁移。
+    if (from < 13 && platform == TargetPlatform.macOS) {
+      _replaceKeyboardIfUntouched(
+        ShortcutAction.audiobookPlayPause,
+        oldDefaultKeyboard: const <InputBinding>[
+          InputBinding(
+            key: LogicalKeyboardKey.space,
+            modifiers: <ModifierKey>{ModifierKey.meta},
+          ),
+        ],
+        defaults: defaults,
+      );
+      _replaceKeyboardIfUntouched(
+        ShortcutAction.globalToggleFullscreen,
+        oldDefaultKeyboard: const <InputBinding>[
+          InputBinding(key: LogicalKeyboardKey.f11),
+        ],
+        defaults: defaults,
+      );
+    }
+  }
+
+  /// v13：[action] 的键盘绑定恰等于 [oldDefaultKeyboard]（用户没动过）时，只把
+  /// **键盘**换成 [defaults] 里的当前默认；手柄 / 鼠标 / 滚轮原样保留——与
+  /// [_restoreDefaultIfUntouched] 的区别是后者整组回默认，会抹掉用户改过的手柄键。
+  void _replaceKeyboardIfUntouched(
+    ShortcutAction action, {
+    required List<InputBinding> oldDefaultKeyboard,
+    required Map<ShortcutAction, ShortcutBindingSet> defaults,
+  }) {
+    final ShortcutBindingSet current = bindingsFor(action);
+    final List<InputBinding>? next = defaults[action]?.keyboardBindings;
+    if (next == null) return;
+    if (!_sameBindings(current.keyboardBindings, oldDefaultKeyboard)) return;
+    _bindings[action] = current.copyWith(keyboardBindings: next);
   }
 
   /// v10：仅当 [action] 的手柄绑定**为空**时，把当前默认表的手柄绑定播种进去；
@@ -535,17 +576,25 @@ class FushiShortcutRegistry extends ChangeNotifier {
         if (kb == target) return action;
       }
     }
-    // TODO-847 物理键回退：仅在 IME 把 logicalKey 改写成 process 且调用方提供了
-    // physicalKey 时启用，正常路径（上面精确相等）已先尝试且完全不受影响。
-    if (key == LogicalKeyboardKey.process && physicalKey != null) {
-      for (final action in ShortcutAction.actionsForScope(scope)) {
-        final bindings = _bindings[action];
-        if (bindings == null) continue;
-        for (final kb in bindings.keyboardBindings) {
-          if (setEquals(kb.modifiers, modifiers) &&
-              kb.physicalKey != null &&
-              kb.physicalKey == physicalKey) {
-            return action;
+    // 物理键回退：与录入侧同一契约 [InputBinding.normalizeCapturedKey]——IME 的
+    // `process`（TODO-847）与表外逻辑键（BUG-2948：macOS 上 Shift+/ 报 `question`）
+    // 都按物理键收拢回表内键再比一次。正常路径（上面精确相等）已先尝试，存量的
+    // `#<keyId>` 绑定不受影响。调用方在文本框 composing 时传 null 关闭回退。
+    if (physicalKey != null) {
+      final LogicalKeyboardKey normalized = InputBinding.normalizeCapturedKey(
+        logicalKey: key,
+        physicalKey: physicalKey,
+      );
+      if (normalized != key) {
+        final InputBinding fallback = InputBinding(
+          key: normalized,
+          modifiers: modifiers,
+        );
+        for (final action in ShortcutAction.actionsForScope(scope)) {
+          final bindings = _bindings[action];
+          if (bindings == null) continue;
+          for (final kb in bindings.keyboardBindings) {
+            if (kb == fallback) return action;
           }
         }
       }

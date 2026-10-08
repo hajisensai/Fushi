@@ -13,6 +13,38 @@ import 'package:just_audio/just_audio.dart';
 /// - 每 200 ms 轮询 positionStream，在当前章节 cue 列表中二分定位当前句；
 /// - 暴露 [currentCue]、[isPlaying]、[position] 供 UI 订阅；
 /// - 提供 play/pause/seek/skipToCue/setSpeed API。
+/// 一次 play 激活何时算「结束」：`play()` 的 Future 完成，**或**播放态翻回 false。
+///
+/// [AudiobookPlayerController] 的激活串行尾只该串行化**激活**，不能押在 `play()` 的
+/// Future 上——那个 Future 在 just_audio 里有一条永不完成的路径：音频会话激活被拒
+/// （来电 / 音频焦点被别的 App 占着）时 `play()` 只把 playing 回滚成 false，
+/// `playCompleter` 从未交给平台层，`pause()` / `stop()` 都解不开它。旧写法于是把
+/// 串行尾永久卡住，此后每一次播放请求（播放键 / 通知栏 / 耳机）都排在它后面永不执行
+/// ——「后台挂久了音频断了，且再也点不起来」（BUG-2961）。播放态翻回 false（被拒、
+/// 暂停、播完、停止）正是这次激活的真实终点；Android / Darwin 后端「play 回调挂到
+/// pause 才回」的语义也由它覆盖。[playingStream] 关闭（播放器已释放）同样算结束，
+/// 不向等待 `play()` 的调用方抛 `StateError`。
+///
+/// 调用约定：[played] 必须是**刚刚**调用 `play()` 返回的 Future——just_audio 在
+/// `play()` 的第一个 await 之前就同步把 playing 置 true，[playingStream] 的当前值
+/// 因此已是这次激活的 true，不会被调用前残留的 false 立即放行。
+///
+/// 代价：「防交错」比押 play Future 弱一档——暂停落在上一次 `play()` 的
+/// `setActive` await 窗口内时，下一次 play 可能与它各发一次平台 play 请求。原生后端
+/// 忽略重复 play（just_audio 自己的注释也这么约定），多出的那个 completer 由本函数的
+/// 播放态分支兜住，不会再卡死串行尾。
+Future<void> playActivationSettled(
+  Future<void> played,
+  Stream<bool> playingStream,
+) {
+  return Future.any<void>(<Future<void>>[
+    played,
+    playingStream
+        .firstWhere((bool playing) => !playing, orElse: () => false)
+        .then((_) {}),
+  ]);
+}
+
 class AudiobookPlayerController extends ChangeNotifier {
   AudiobookPlayerController();
 
@@ -732,6 +764,35 @@ class AudiobookPlayerController extends ChangeNotifier {
     });
   }
 
+  /// 某章内、章内偏移 ≥ [fromOffset] 的第一句（按全书时间最早）。[fromOffset] ≤ 0
+  /// 即 [sectionFirstCue]。偏移默认取 cue 自身的 normCharStart；阅读器给出
+  /// [offsetOf]（音频坐标 → 学习单位，与目录锚点同尺）时以它为准，映射不出的 cue
+  /// 退回 normCharStart。同一 spine 内按锚点分节的目录项靠它定位（HBK040）；不缓存，
+  /// 调用方自己记忆。
+  AudioCue? sectionCueFrom(
+    int sectionIndex,
+    int fromOffset, {
+    int? Function(SubtitleRematchFragment fragment)? offsetOf,
+  }) {
+    if (fromOffset <= 0) return sectionFirstCue(sectionIndex);
+    AudioCue? best;
+    int bestMs = 0;
+    for (final AudioCue cue in _allBookCues) {
+      final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+        cue.textFragmentId,
+      );
+      if (frag == null || frag.sectionIndex != sectionIndex) continue;
+      final int offset = offsetOf?.call(frag) ?? frag.normCharStart;
+      if (offset < fromOffset) continue;
+      final int ms = globalMsOfCue(cue);
+      if (best == null || ms < bestMs) {
+        best = cue;
+        bestMs = ms;
+      }
+    }
+    return best;
+  }
+
   /// 某章首句在全书时间轴上的起点（毫秒）；该章没有 cue → null。
   int? sectionStartGlobalMs(int sectionIndex) {
     final AudioCue? first = sectionFirstCue(sectionIndex);
@@ -1067,7 +1128,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (_stopRequested) return Future<void>.value();
     final Future<void> operation = _playActivationTail.then<void>((_) async {
       if (_stopRequested) return;
-      await _player.play();
+      await playActivationSettled(_player.play(), _player.playingStream);
     });
     _playActivationTail = operation.then<void>(
       (_) {},
@@ -1516,7 +1577,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// reader 的 `_onCueChanged` 在调 AudiobookBridge.highlight 时读一次
   /// 这个值传过去。
   bool get shouldRevealCurrentCue =>
-      followAudio.value &&
+      _effectiveFollowAudio &&
       _hasPlayedOnce &&
       _player.playing &&
       _stopAtPositionMs == null;
@@ -1583,7 +1644,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (!shouldCrossChapterForTesting(
       cueSec: cueSec,
       currentSec: currentSec,
-      followAudio: followAudio.value,
+      followAudio: _effectiveFollowAudio,
       hasPlayedOnce: _hasPlayedOnce,
       bypassPlayGuard: bypassPlayGuard,
     )) {
@@ -1729,6 +1790,30 @@ class AudiobookPlayerController extends ChangeNotifier {
   ///   重新拉回当前 cue。
   /// 否则用户手动翻页后再开 Follow 只翻图标，要等下一条 cue 才被动回跳，
   /// 体感是"跳不回去"。
+  /// 歌词覆盖层在场期间的「正文强制跟随」（2026-10-04 覆盖层架构）。
+  ///
+  /// 歌词模式是盖在阅读器上的一层：阅读器在下面照常翻页 / 高亮，阅读统计（字数、
+  /// 时长）也由阅读器这条路承担——字数来自阅读器滚动回传的页区间。用户关掉「跟随
+  /// 音频」时正文不再跟着音频走，被覆盖的阅读器就会停在原地，整段听歌词字数为 0。
+  /// 覆盖层期间正文看不见，「跟随」开关只管歌词列表自己滚不滚（`__lyricsSetCue` 的
+  /// scroll 参数），正文必须跟随；退出歌词即撤销，恢复用户的开关语义。
+  /// 不持久化、不改 [followAudio] 的值（图标 / 偏好不变）。
+  bool _readerFollowOverride = false;
+
+  bool get readerFollowOverride => _readerFollowOverride;
+
+  /// 正文跟随判据 = 用户开关 || 覆盖层强制。
+  bool get _effectiveFollowAudio =>
+      followAudio.value || _readerFollowOverride;
+
+  /// 进入 / 退出歌词覆盖层时由阅读器调用。打开时立即把正文对齐到音频（与
+  /// OFF→ON 翻跟随开关同一条 [snapReaderToAudio]），否则要等下一句才跟上。
+  void setReaderFollowOverride(bool value) {
+    if (_readerFollowOverride == value) return;
+    _readerFollowOverride = value;
+    if (value && !followAudio.value) snapReaderToAudio();
+  }
+
   void setFollowAudio(bool value) {
     if (followAudio.value == value) return;
     followAudio.value = value;
@@ -1754,6 +1839,30 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (cue == null) return;
     _manualReaderOverrideCue = null;
     _forceNextReveal = true;
+    _maybeEmitCrossChapter(cue, bypassPlayGuard: true);
+    if (_chapterTransition) return;
+    notifyListeners();
+  }
+
+  /// 把 reader 视口按「跟随音频」意图重新投影到当前 cue（不改任何播放状态）。
+  ///
+  /// 视口在跟随音频时只是播放位置的投影；投影会在两种场合丢失：App 在后台时 WebView
+  /// 被节流、帧被冻结，跟随滚动没落地或被积压的 post-frame 回调覆盖（回前台）；跨章
+  /// 恢复的重锚用的是「进章那一刻」的锚，提交时音频早已走远（恢复重锚落定后）。
+  /// 只在正常跟随本就会 reveal 的条件下生效（[shouldRevealCurrentCue]：跟随开、按过
+  /// 播放、正在播、非单句试听），并尊重手动翻页护栏——暂停态下用户自己滚走的阅读
+  /// 位置不被拽回（BUG-2961）。
+  ///
+  /// 只做「跨章检查 + notify」，**不**置 [_forceNextReveal]：门控已保证
+  /// [shouldRevealCurrentCue] 为真，reader 的 `_onCueChanged` 据此就会 reveal；强制
+  /// 旗会越过歌词覆盖层「跟随音频关」的自由滚动（覆盖层下 [shouldRevealCurrentCue]
+  /// 走的是恒真的生效跟随，歌词层自己再看原始开关），把用户滚开的歌词拽回居中。
+  void resyncReaderToAudio() {
+    if (!shouldRevealCurrentCue) return;
+    if (_manualReaderOverrideCue != null) return;
+    if (_chapterTransition) return;
+    final AudioCue? cue = _currentCue;
+    if (cue == null) return;
     _maybeEmitCrossChapter(cue, bypassPlayGuard: true);
     if (_chapterTransition) return;
     notifyListeners();

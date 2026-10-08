@@ -7,12 +7,13 @@
 /// 没有任务时是空段。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 class InterconnectDownloadTasksSection extends ConsumerWidget {
@@ -97,7 +98,7 @@ DownloadTaskEntry interconnectDownloadTaskEntry(
       progress: task.status == InterconnectDownloadStatus.completed
           ? 1
           : task.progress,
-      leading: Icon(switch (task.kind) {
+      leading: FushiIcon(switch (task.kind) {
         InterconnectDownloadKind.video => Icons.devices_outlined,
         InterconnectDownloadKind.book => Icons.menu_book_outlined,
         InterconnectDownloadKind.audiobook => Icons.headphones_outlined,

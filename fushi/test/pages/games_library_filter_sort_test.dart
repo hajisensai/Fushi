@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -19,6 +19,7 @@ import 'package:fushi/src/pages/implementations/games_library_page.dart';
 import 'package:fushi/utils.dart';
 
 import '../helpers/test_platform_services.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 游戏库页工具条守卫（契约 §4.1）：搜索命中、排序切换、状态筛选三条真实用户路径。
 ///
@@ -137,7 +138,7 @@ void main() {
     await pumpPage(tester, await buildModel());
 
     Future<void> pickSort(String label) async {
-      await tester.tap(find.byIcon(Icons.sort));
+      await tester.tap(find.byIcon(FushiIcons.sort));
       await tester.pumpAndSettle();
       await tester.tap(find.text(label).last);
       await tester.pumpAndSettle();
@@ -162,10 +163,11 @@ void main() {
     final AppModel appModel = await buildModel();
     await pumpPage(tester, appModel);
 
-    await tester.tap(find.byIcon(Icons.filter_alt_outlined));
+    await tester.tap(find.byIcon(FushiIcons.filter));
     await tester.pumpAndSettle();
-    await tester
-        .tap(find.text(galgamePlayStatusLabel(GalgamePlayStatus.playing)));
+    // 卡片封面上的状态角标也写着「在玩」：筛选面板在最上层，取最后一个。
+    await tester.tap(
+        find.text(galgamePlayStatusLabel(GalgamePlayStatus.playing)).last);
     await tester.pumpAndSettle();
     navKey.currentState!.pop();
     await tester.pumpAndSettle();
@@ -177,5 +179,48 @@ void main() {
     final GalgameLibraryView saved =
         GalgameLibraryView.decode(appModel.galgameLibraryView);
     expect(saved.status, GalgamePlayStatus.playing);
+  });
+
+  // 2026-10 体验优化：窄屏工具条两行（搜索独占一行），刮削 / 排序收进溢出菜单。
+  testWidgets('窄屏：搜索框独占一行，排序经溢出菜单仍可切换',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await pumpPage(tester, await buildModel());
+
+    expect(
+      find.byKey(const ValueKey<String>('games_toolbar_compact')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('games_filter_play_status')),
+      findsOneWidget,
+    );
+    // 搜索框拿到近整行宽（旧单行布局里被挤到只剩百余像素）。
+    expect(tester.getSize(find.byType(TextField)).width, greaterThan(340));
+    // 排序 / 刮削不再平铺在工具条上。
+    expect(find.byIcon(FushiIcons.sort), findsNothing);
+
+    Future<void> pickSortFromOverflow() async {
+      await tester
+          .tap(find.byKey(const ValueKey<String>('games_toolbar_overflow')));
+      await tester.pumpAndSettle();
+      expect(find.text(t.scrape_all), findsOneWidget);
+      await tester.tap(find.text(t.game_sort_name).last);
+      await tester.pumpAndSettle();
+    }
+
+    await pickSortFromOverflow();
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.getTopLeft(cardTitle('alpha')).dx,
+      lessThan(tester.getTopLeft(cardTitle('贝塔物语')).dx),
+    );
+    await pickSortFromOverflow();
+    expect(
+      tester.getTopLeft(cardTitle('alpha')).dx,
+      greaterThan(tester.getTopLeft(cardTitle('贝塔物语')).dx),
+    );
   });
 }

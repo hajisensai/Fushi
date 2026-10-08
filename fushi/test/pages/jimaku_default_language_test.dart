@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -16,8 +16,10 @@ import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 「设置 → 视频 → 字幕 → 默认字幕语言」的生效链路专项测试
 /// （`settings_schema_coverage_test` 的 `kCoveredElsewhere` 指向本文件）。
@@ -191,13 +193,13 @@ Future<void> _pumpDialog(WidgetTester tester, String language) async {
   ));
   await tester.pumpAndSettle();
   // 触发一次字幕搜索，语言选择器才会出现（它依赖搜到的条目）。
-  await tester.tap(find.byIcon(Icons.search).last);
+  await tester.tap(find.byIcon(FushiIcons.search).last);
   await tester.pumpAndSettle();
 }
 
 bool _chipSelected(WidgetTester tester, String label) {
   final Iterable<ChoiceChip> chips = tester
-      .widgetList<ChoiceChip>(find.byType(ChoiceChip))
+      .widgetList<ChoiceChip>(glassUnwrapAll<ChoiceChip>(find.byType(ChoiceChip)))
       .where((ChoiceChip c) => (c.label as Text).data == label);
   expect(chips, isNotEmpty, reason: '语言 chip「$label」应存在');
   return chips.first.selected;

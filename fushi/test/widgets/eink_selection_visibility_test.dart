@@ -15,12 +15,14 @@
 // 与 overflow 守卫吃固有宽度，改几何会把它们一起带红。填充与前景不改几何。
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import '../helpers/glass_unwrap.dart';
 
 Color? _resolve(
   WidgetStateProperty<Color?>? property,
@@ -138,13 +140,19 @@ void main() {
       expect(label?.fontFamily, 'Sentinel');
     });
 
-    test('非 eink：零行为变化', () async {
+    test('非 eink：MD3 胶囊 chip（secondaryContainer 选中 + 配对 label 色）', () async {
       final ThemeData theme = notifier.theme;
+      final ColorScheme cs = theme.colorScheme;
+      expect(theme.chipTheme.selectedColor, cs.secondaryContainer);
+      expect(theme.chipTheme.backgroundColor, cs.surfaceContainerHigh);
+      expect(theme.chipTheme.side, BorderSide.none);
+      final WidgetStateColor label =
+          theme.chipTheme.labelStyle!.color! as WidgetStateColor;
       expect(
-        theme.chipTheme.selectedColor,
-        theme.colorScheme.secondaryContainer,
+        label.resolve(<WidgetState>{WidgetState.selected}),
+        cs.onSecondaryContainer,
       );
-      expect(theme.chipTheme.labelStyle, isNull);
+      expect(label.resolve(<WidgetState>{}), cs.onSurfaceVariant);
     });
   });
 
@@ -173,9 +181,7 @@ void main() {
 
     testWidgets('eink：选中 chip 反色填充，边框不再消失', (WidgetTester tester) async {
       await tester.pumpWidget(app(eink: true, selected: true));
-      final ChoiceChip chip = tester.widget<ChoiceChip>(
-        find.byType(ChoiceChip),
-      );
+      final ChoiceChip chip = tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(find.byType(ChoiceChip)),);
 
       // 塌缩前：填充 = primaryContainer = 白 = 页面底色，且边框也是白——选中的
       // chip 比未选中的更没有边，是个负信号。
@@ -186,28 +192,31 @@ void main() {
 
     testWidgets('eink：leading 图标跟着前景翻色', (WidgetTester tester) async {
       await tester.pumpWidget(app(eink: true, selected: true));
-      final ChoiceChip chip = tester.widget<ChoiceChip>(
-        find.byType(ChoiceChip),
+      await tester.pumpAndSettle();
+      // 选中时前导槽原位换成对勾（M3 filter chip，5dc51724f1f）：渲染的是对勾而不是
+      // 原 leading 图标，颜色契约落在对勾上，仍须跟着前景翻成白。
+      final Finder check = find.descendant(
+        of: find.byType(ChoiceChip),
+        matching: find.byKey(const ValueKey<String>('fushi-chip-leading-check')),
       );
-      final Icon avatar = chip.avatar! as Icon;
+      expect(check, findsOneWidget);
       expect(
-        avatar.color,
+        tester.widget<FushiIcon>(check).color,
         Colors.white,
-        reason: 'avatar 不着色就会取 chip 默认 onSurfaceVariant（黑），黑底黑图标',
+        reason: '对勾不着色就会取 chip 默认 onSurfaceVariant（黑），黑底黑图标',
       );
+      expect(find.byIcon(Icons.star), findsNothing);
     });
 
-    testWidgets('非 eink：仍用 primaryContainer（零行为变化）', (
+    testWidgets('非 eink：secondaryContainer 填充、无描边（MD3 胶囊 chip）', (
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(app(eink: false, selected: true));
       final Element context = tester.element(find.byType(ChoiceChip));
-      final ChoiceChip chip = tester.widget<ChoiceChip>(
-        find.byType(ChoiceChip),
-      );
+      final ChoiceChip chip = tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(find.byType(ChoiceChip)),);
       final ColorScheme cs = Theme.of(context).colorScheme;
-      expect(chip.selectedColor, cs.primaryContainer);
-      expect(chip.side!.color, cs.primaryContainer);
+      expect(chip.selectedColor, cs.secondaryContainer);
+      expect(chip.side, BorderSide.none);
     });
   });
 }

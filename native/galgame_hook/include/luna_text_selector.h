@@ -47,9 +47,17 @@ constexpr int kLunaMaxFoldScanChars = 4096;
 // arrive as `\\n`, `¥n`, `￥n`, or the MAGES-native `%r`. Inline font colors use
 // `#RRGGBB;` (for example `#ff8A00;コスプレ`). Glyph-spacing controls use `%p;`
 // or `%p<signed integer>;` (for example `%p-1;─%p;─`). Strip only the control
-// prefix and preserve the styled/positioned text. This transformation is
-// profile-gated by executable SHA-256; keeping it out of the global path avoids
-// changing legitimate prose/code in unrelated games.
+// prefix and preserve the styled/positioned text. This transformation is gated
+// by engine identity (kLunaMagesControlEngineAdapterId) or an explicit user profile
+// option, never by executable hash/name; keeping it out of the global path
+// avoids changing legitimate prose/code in unrelated games.
+//
+// Engine adapter id whose Luna text carries these MAGES script controls. The
+// adapter's probe() is the structural identity (SGRE: wind3d11 voice archive or
+// the corroborated scenario renderer anchors), so every build/edition of the
+// engine is covered without pinning one executable.
+constexpr const char kLunaMagesControlEngineAdapterId[] = "sgre";
+
 inline std::wstring LunaNormalizeMagesControls(const wchar_t* text, int len,
                                                bool enabled) {
   if (text == nullptr || len <= 0) return std::wstring();
@@ -331,8 +339,35 @@ class LunaImmediateRepeatFilter {
   std::map<uint64_t, Last> last_;
 };
 
+// Characters a script writes as runs on purpose: pause / prolongation marks.
+// A voiced 「…………」【少女】 is one line, not a per-character double write, so
+// their repeats are not evidence of the doubled-write artifact (BUG-2897).
+inline bool LunaIsTypographicRunChar(wchar_t c) {
+  switch (c) {
+    case L'\x2026':  // …
+    case L'\x2025':  // ‥
+    case L'\x2015':  // ―
+    case L'\x2014':  // —
+    case L'\x2500':  // ─
+    case L'\x30FC':  // ー
+    case L'\x30FB':  // ・
+    case L'\xFF5E':  // ～
+    case L'\x301C':  // 〜
+    case L'.':
+    case L'-':
+      return true;
+    default:
+      return false;
+  }
+}
+
 inline bool LunaTextIsArtifact(const wchar_t* text, int len) {
   if (text == nullptr || len <= 1) return false;
+  bool only_typographic = true;
+  for (int i = 0; i < len && only_typographic; ++i) {
+    only_typographic = LunaIsTypographicRunChar(text[i]);
+  }
+  if (only_typographic) return false;
   if ((len % 2) == 0) {
     const int half = len / 2;
     if (std::wstring(text, text + half) == std::wstring(text + half, text + len)) {
@@ -353,10 +388,14 @@ inline bool LunaTextIsArtifact(const wchar_t* text, int len) {
   }
   if (segments >= 3 && uniform && first_run >= 2) return true;
   int adjacent_equal = 0;
+  int adjacent_pairs = 0;
   for (int i = 1; i < len; ++i) {
+    if (LunaIsTypographicRunChar(text[i])) continue;
+    ++adjacent_pairs;
     if (text[i] == text[i - 1]) ++adjacent_equal;
   }
-  return len > 4 && adjacent_equal * 100 >= (len - 1) * 30;
+  return len > 4 && adjacent_pairs > 0 &&
+         adjacent_equal * 100 >= adjacent_pairs * 30;
 }
 
 // ── hook 身份 id：injector 与测试共用同一实现 ────────────────────────

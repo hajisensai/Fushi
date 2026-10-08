@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
@@ -19,12 +19,15 @@ import 'package:fushi_core/fushi_core.dart';
 ReaderHeaderAction _action(String label, {IconData icon = Icons.add}) =>
     ReaderHeaderAction(icon: icon, label: label, onPressed: () {});
 
+/// 出厂勾上的全局按钮（「立即同步」可勾选但出厂不勾）。
 const List<String> _globals = <String>[
   'lookup',
   'popup_lookup',
   'clipboard',
   'screen_ocr',
   'camera_ocr',
+  // 反馈出厂勾上；应用外球虽在目录里，但按能力过滤掉（availableIn）。
+  'feedback',
 ];
 
 void main() {
@@ -44,7 +47,7 @@ void main() {
       );
     });
 
-    test('桌面应用外球：查词 / 应用外查词（查选区）/ 剪贴板，没有截屏与拍照', () {
+    test('桌面应用外球：查词 / 应用外查词（查选区）/ 剪贴板 / 截屏识字 / 同步，没有拍照', () {
       Set<FloatingBallGlobalAction> onDesktop(
         FloatingBallScope scope, {
         bool lookupModuleEnabled = true,
@@ -64,12 +67,17 @@ void main() {
         FloatingBallGlobalAction.lookup,
         FloatingBallGlobalAction.popupLookup,
         FloatingBallGlobalAction.clipboard,
+        FloatingBallGlobalAction.screenOcr,
+        FloatingBallGlobalAction.sync,
       });
-      // 查词模块关着：打开查词页与全局查词都没有入口，只剩剪贴板（它在覆盖窗
-      // 不可用时退回主窗查词弹窗）。
+      // 查词模块关着：打开查词页与全局查词（含截屏识字的结果卡）都没有入口，只剩
+      // 剪贴板（它在覆盖窗不可用时退回主窗查词弹窗）与同步（与查词无关）。
       expect(
         onDesktop(FloatingBallScope.system, lookupModuleEnabled: false),
-        <FloatingBallGlobalAction>{FloatingBallGlobalAction.clipboard},
+        <FloatingBallGlobalAction>{
+          FloatingBallGlobalAction.clipboard,
+          FloatingBallGlobalAction.sync,
+        },
       );
       // 应用内的球仍按平台能力（桌面没有独立查词窗），与查词模块无关。
       for (final bool enabled in <bool>[true, false]) {
@@ -78,6 +86,8 @@ void main() {
           <FloatingBallGlobalAction>{
             FloatingBallGlobalAction.lookup,
             FloatingBallGlobalAction.clipboard,
+            FloatingBallGlobalAction.sync,
+            FloatingBallGlobalAction.feedback,
           },
         );
       }
@@ -112,6 +122,39 @@ void main() {
       ]);
       expect(FloatingBallScope.general.defaultButtons, _globals);
       expect(FloatingBallScope.system.defaultButtons, _globals);
+    });
+
+    test('立即同步：每个场景都能勾选，出厂不勾，勾上后编解码往返不丢', () {
+      const String sync = 'sync';
+      expect(
+        FloatingBallGlobalAction.fromStorage(sync),
+        FloatingBallGlobalAction.sync,
+      );
+      expect(FloatingBallGlobalAction.sync.onByDefault, isFalse);
+      for (final FloatingBallScope scope in FloatingBallScope.values) {
+        expect(scope.catalog, contains(sync), reason: scope.storageValue);
+        expect(scope.defaultButtons, isNot(contains(sync)));
+        final List<String> withSync = <String>[...scope.defaultButtons, sync];
+        // 编解码按目录顺序排（sync 在 feedback 之前）。
+        expect(scope.decodeButtons(scope.encodeButtons(withSync)), <String>[
+          for (final String id in scope.catalog)
+            if (withSync.contains(id)) id,
+        ]);
+      }
+      // 同步与平台无关：Android / iOS / 桌面都有。
+      for (final (bool android, bool ios) in <(bool, bool)>[
+        (true, false),
+        (false, true),
+        (false, false),
+      ]) {
+        expect(
+          FloatingBallGlobalAction.sync.availableOn(
+            isAndroid: android,
+            isIOS: ios,
+          ),
+          isTrue,
+        );
+      }
     });
 
     test('阅读器目录是按钮布局里除书名外的全部按钮', () {
@@ -216,8 +259,42 @@ void main() {
       expect(nativeIds, <String>{
         for (final FloatingBallGlobalAction action
             in FloatingBallGlobalAction.values)
-          action.storageValue,
+          if (action.availableIn(
+            FloatingBallScope.system,
+            isAndroid: true,
+            isIOS: false,
+            isDesktop: false,
+            lookupModuleEnabled: true,
+          ))
+            action.storageValue,
       });
+    });
+
+    test('反馈只在应用内球上（各平台都有），应用外球没有', () {
+      const FloatingBallGlobalAction feedback =
+          FloatingBallGlobalAction.feedback;
+      expect(FloatingBallGlobalAction.fromStorage('feedback'), feedback);
+      expect(feedback.onByDefault, isTrue);
+      for (final (bool android, bool ios, bool desktop) in <(bool, bool, bool)>[
+        (true, false, false),
+        (false, true, false),
+        (false, false, true),
+      ]) {
+        expect(feedback.availableOn(isAndroid: android, isIOS: ios), isTrue);
+        for (final FloatingBallScope scope in FloatingBallScope.values) {
+          expect(
+            feedback.availableIn(
+              scope,
+              isAndroid: android,
+              isIOS: ios,
+              isDesktop: desktop,
+              lookupModuleEnabled: true,
+            ),
+            scope != FloatingBallScope.system,
+            reason: '$scope android=$android ios=$ios desktop=$desktop',
+          );
+        }
+      }
     });
 
     test('应用外查词（独立查词窗）只在 Android 提供', () {

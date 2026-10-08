@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
@@ -227,17 +227,19 @@ void main() {
   });
 
   group('画笔真的堆叠（读回像素）', () {
-    // 画布尺寸与画笔内部常量：bottomPadding=20 / leftPadding=32，chartHeight=120。
+    // 画布尺寸与画笔内部常量：bottomPadding=20，chartHeight=120；leftPadding 至少
+    // 32、刻度标签更宽时按最宽标签让出（[statAxisLeftPadding]，2026-10 起刻度单位
+    // 走 i18n，中日文「小时 / 時間」比 `h` 宽）。
     const double width = 480;
     const double height = 140;
     const double chartHeight = height - 20;
 
     /// 第 [hour] 根柱子的水平中心（对齐画笔的 step / barWidth / gap 计算）。
-    int barCenterX(int hour) {
-      const double step = (width - 32) / kStatHourlyBuckets;
-      const double barWidth = step * 0.7;
-      const double gap = step * 0.15;
-      return (32 + hour * step + gap + barWidth / 2).round();
+    int barCenterX(int hour, double leftPadding) {
+      final double step = (width - leftPadding) / kStatHourlyBuckets;
+      final double barWidth = step * 0.7;
+      final double gap = step * 0.15;
+      return (leftPadding + hour * step + gap + barWidth / 2).round();
     }
 
     Future<ByteData> renderPixels(StatHourlyChartPainter painter) async {
@@ -281,7 +283,12 @@ void main() {
       // FakeAsync 时钟里它们永远不完成（表现为 10 分钟超时而不是断言失败）。
       final ByteData pixels =
           (await tester.runAsync(() => renderPixels(painter)))!;
-      final int x = barCenterX(9);
+      final double leftPadding = statAxisLeftPadding(
+        statDurationAxisScale(900000).labels,
+        const TextStyle(),
+        32.0,
+      );
+      final int x = barCenterX(9, leftPadding);
 
       // 柱高按纵轴顶（最高刻度）归一，不再按当日最大值满高：刻度取整后轴顶通常
       // 高于数据最大值，最高的柱子因此不再贴顶——这正是「柱高能和刻度线对上」的

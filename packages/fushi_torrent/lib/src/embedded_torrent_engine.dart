@@ -100,16 +100,32 @@ class EmbeddedTorrentEngine {
   /// （`fushi/linux/CMakeLists.txt`）。裸名 dlopen 能否命中取决于**发起调用的那个
   /// 共享对象**的 RUNPATH（glibc 语义；可执行文件的 `$ORIGIN/lib` 管不到 Flutter 引擎
   /// 里发起的 dlopen），所以显式给出绝对路径，不押在链接器 dtag 上；裸名留作兜底
-  /// （系统路径 / `LD_LIBRARY_PATH`）。其余平台只有裸名：Windows 走 exe 同目录、
-  /// Android 走 APK native lib 目录、macOS 走 Frameworks rpath。
+  /// （系统路径 / `LD_LIBRARY_PATH`）。
+  ///
+  /// macOS 包先试 `<exe>/../Frameworks/<名>`：Runner 构建阶段
+  /// （`fushi/macos/bundle_fushi_torrent.sh`）把
+  /// `prebuilt/macos/libfushi_torrent_ffi.dylib` copy-if-present 进
+  /// `Contents/Frameworks`。dyld 对 dlopen 的**叶名**只查 `DYLD_*` 环境变量与当前
+  /// 目录，不保证走可执行文件的 `@executable_path/../Frameworks` rpath，所以同样显式给
+  /// 绝对路径；裸名留作兜底。
+  ///
+  /// 其余平台只有裸名：Windows 走 exe 同目录、Android 走 APK native lib 目录。
   /// [executablePath] 仅供测试覆盖。
   static List<String> defaultLibraryCandidates({String? executablePath}) {
     final List<String> names = defaultLibraryNames();
-    if (!Platform.isLinux) return names;
-    final String exe = executablePath ?? Platform.resolvedExecutable;
-    final String libDir = '${File(exe).parent.path}/lib';
+    final String? bundledDir;
+    if (Platform.isLinux) {
+      final String exe = executablePath ?? Platform.resolvedExecutable;
+      bundledDir = '${File(exe).parent.path}/lib';
+    } else if (Platform.isMacOS) {
+      final String exe = executablePath ?? Platform.resolvedExecutable;
+      bundledDir = '${File(exe).parent.parent.path}/Frameworks';
+    } else {
+      bundledDir = null;
+    }
+    if (bundledDir == null) return names;
     return <String>[
-      for (final String name in names) '$libDir/$name',
+      for (final String name in names) '$bundledDir/$name',
       ...names,
     ];
   }
@@ -1191,6 +1207,28 @@ class EmbeddedTorrentSession {
     final Object? json = _engine._consumeJson(_b.ht_session_status(_session));
     if (json is! Map<String, dynamic> || json['ok'] != true) return null;
     return FtSessionStatus._fromJson(json);
+  }
+
+  /// 已加载的库是否支持运行期补 DHT 节点（[addDhtNodes]）。
+  bool get supportsAddDhtNodes => _b.hasAddDhtNodes;
+
+  /// BUG-2950：运行期向 DHT 补节点（每项 "host:port"，IPv6 写 "[addr]:port"）。
+  /// 返回 native 成功添加的条数；库不支持 / session 已关 / 列表为空 / native
+  /// 失败一律返回 -1。
+  int addDhtNodes(List<String> hostPorts) {
+    if (isClosed || !_b.hasAddDhtNodes) return -1;
+    final String joined = hostPorts
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty)
+        .toSet()
+        .join('\n');
+    if (joined.isEmpty) return -1;
+    final Pointer<Char> nodes = joined.toNativeUtf8().cast<Char>();
+    try {
+      return _b.ht_add_dht_nodes(_session, nodes);
+    } finally {
+      malloc.free(nodes);
+    }
   }
 
   /// 用 CIDR 列表整体重建 session 的 ip_filter（空列表 = 清空）。已连接的

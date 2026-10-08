@@ -8,13 +8,14 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -157,7 +158,7 @@ class _RemoteDownloadTasksSectionState
         status: '${job.stage} · ${(job.stageProgress * 100).toStringAsFixed(0)}%',
         subtitle: target.label,
         progress: job.stageProgress,
-        leading: const Icon(Icons.cloud_download_outlined),
+        leading: const FushiIcon(Icons.cloud_download_outlined),
         details: _details(context, target, job),
       ),
     );

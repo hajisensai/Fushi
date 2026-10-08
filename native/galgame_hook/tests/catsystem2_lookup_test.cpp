@@ -35,10 +35,14 @@ class SyntheticImage {
     image.absolute_base = kAbsoluteBase;
     image.machine = machine;
     image.pointer_bits = bits;
-    image.section_count = 1u;
-    image.sections[0] = {base, kSize, 0u,
+    // Code, then read-only data (vtables, import slots) like a real PE.
+    image.section_count = 2u;
+    image.sections[0] = {base, kDataRva, 0u,
                          IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_EXECUTE};
+    image.sections[1] = {base + kDataRva, kSize - kDataRva,
+                         static_cast<uint32_t>(kDataRva), IMAGE_SCN_MEM_READ};
   }
+  static constexpr size_t kDataRva = 0xe000u;
   ~SyntheticImage() { VirtualFree(base, 0u, MEM_RELEASE); }
   SyntheticImage(const SyntheticImage&) = delete;
   SyntheticImage& operator=(const SyntheticImage&) = delete;
@@ -58,6 +62,10 @@ class SyntheticImage {
     base[at + 1u] = 0x15u;
     const uint32_t absolute = static_cast<uint32_t>(kAbsoluteBase + slot_rva);
     std::memcpy(base + at + 2u, &absolute, 4u);
+  }
+  void Pointer(size_t at, size_t target_rva) {  // absolute data pointer
+    const uint32_t absolute = static_cast<uint32_t>(kAbsoluteBase + target_rva);
+    std::memcpy(base + at, &absolute, 4u);
   }
   uintptr_t At(size_t rva) const {
     return reinterpret_cast<uintptr_t>(base + rva);
@@ -144,6 +152,81 @@ void BuildEngine(SyntheticImage* img) {
   img->CallSlot(kInput + 0x420u, kSlotSetCapture);
 }
 
+// Layout of the synthetic targeted-render engine.
+constexpr size_t kRenderT = 0x1000u;
+constexpr size_t kCharImageT = 0x1400u;   // int3 padding before it
+constexpr size_t kRasterT = 0x1600u;
+constexpr size_t kClearT = 0x1a00u;
+constexpr size_t kClearCallT = 0x1b00u;
+constexpr size_t kUpdateT = 0x2000u;
+constexpr size_t kRevealT = 0x2100u;
+constexpr size_t kSyncT = 0x2300u;
+constexpr size_t kLayerQueryT = 0x3000u;
+constexpr size_t kScreenQueryT = 0x3100u;
+constexpr size_t kSceneVisibleT = 0x3200u;
+constexpr size_t kSceneFindT = 0x3300u;
+constexpr size_t kSceneDrawT = 0x3400u;
+constexpr size_t kInputT = 0x4000u;
+constexpr size_t kVtableT = 0xe100u;      // COL pointer, slot 0, slot 1
+constexpr size_t kLocatorT = 0xe200u;
+
+void BuildEngineT(SyntheticImage* img) {
+  // RenderChar(renderer, record, target): prologue, record, epilogue.
+  img->Put(kRenderT, core::kRenderTBytes, sizeof(core::kRenderTBytes));
+  img->Put(kRenderT + core::kRecordPenTOffset, core::kRecordPenTBytes,
+           sizeof(core::kRecordPenTBytes));
+  img->Put(kRenderT + core::kRecordCharTOffset, core::kRecordCharTBytes,
+           sizeof(core::kRecordCharTBytes));
+  img->Put(kRenderT + core::kRenderTailTOffset, core::kRenderTailTBytes,
+           sizeof(core::kRenderTailTBytes));
+  // GetCharImage (vtable slot 1 of the font object) -> rasteriser twice.
+  img->Rel32(kCharImageT + 0x20u, kRasterT);
+  img->Rel32(kCharImageT + 0x60u, kRasterT);
+  img->CallSlot(kRasterT + 0x40u, kSlotGlyph);
+  img->Pointer(kVtableT, kLocatorT);              // data: not code
+  img->Pointer(kVtableT + 4u, 0x1800u);           // slot 0
+  img->Pointer(kVtableT + 8u, kCharImageT);       // slot 1
+  // ClearPage: both page images through one fill helper; a +0x2ac caller.
+  img->Put(kClearT, core::kClearTBytes, sizeof(core::kClearTBytes));
+  img->Rel32(kClearT + 10u, 0x1800u);
+  img->Rel32(kClearT + core::kClearTNormalFillCall, 0x1810u);
+  img->Rel32(kClearT + core::kClearTFadeFillCall, 0x1810u);
+  img->Put(kClearCallT, core::kClearCallTBytes,
+           sizeof(core::kClearCallTBytes));
+  img->base[kClearCallT + 9u] = 0x05u;
+  img->Rel32(kClearCallT + core::kClearCallTCall, kClearT);
+  // Window::Update -> reveal (renders through RenderChar), sync (screen copy).
+  img->Put(kUpdateT, core::kUpdateTBytes, sizeof(core::kUpdateTBytes));
+  img->Rel32(kUpdateT + 13u, 0x1830u);
+  img->Rel32(kUpdateT + core::kUpdateTRevealCall, kRevealT);
+  img->Rel32(kUpdateT + core::kUpdateTSyncCall, kSyncT);
+  img->Rel32(kRevealT + 0x40u, kRenderT);
+  img->Put(kSyncT + 0x30u, core::kSyncScreenTBytes,
+           sizeof(core::kSyncScreenTBytes));
+  // Layer query chain and the scene draw loop.
+  img->Put(kLayerQueryT, core::kLayerQueryTBytes,
+           sizeof(core::kLayerQueryTBytes));
+  img->Rel32(kLayerQueryT + core::kLayerQueryTCall, kScreenQueryT);
+  img->Put(kScreenQueryT, core::kScreenQueryTBytes,
+           sizeof(core::kScreenQueryTBytes));
+  img->Rel32(kScreenQueryT + 18u, 0x1840u);
+  img->Rel32(kScreenQueryT + core::kScreenQueryTSceneCall, kSceneVisibleT);
+  img->Put(kSceneVisibleT, core::kSceneVisibleTBytes,
+           sizeof(core::kSceneVisibleTBytes));
+  img->Rel32(kSceneVisibleT + core::kSceneVisibleTFindCall, kSceneFindT);
+  img->Put(kSceneFindT, core::kSceneFindTBytes,
+           sizeof(core::kSceneFindTBytes));
+  img->Put(kSceneDrawT, core::kSceneDrawTBytes,
+           sizeof(core::kSceneDrawTBytes));
+  // Input::Handle with its capture bookkeeping imports.
+  img->Put(kInputT, core::kInputTBytes, sizeof(core::kInputTBytes));
+  img->CallSlot(kInputT + 0x100u, kSlotReleaseCapture);
+  img->CallSlot(kInputT + 0x300u, kSlotWindowFromPoint);
+  img->CallSlot(kInputT + 0x420u, kSlotSetCapture);
+  img->Put(kInputT + 0x5adu, core::kInputTRetBytes,
+           sizeof(core::kInputTRetBytes));
+}
+
 void TestResolveSites() {
   core::Sites sites;
   {
@@ -175,6 +258,11 @@ void TestResolveSites() {
   assert(sites.rasteriser == img.At(kRaster));
   assert(sites.window_update == img.At(kUpdate));
   assert(sites.input_handler == img.At(kInput));
+  assert(sites.variant == core::SiteVariant::kAdjacentPage);
+  assert(sites.render_stack_args == 1u);
+  assert(sites.input_stack_args == 5u);
+  assert(sites.walk.list_offset == 0u && sites.walk.head_offset == 0x14u &&
+         !sites.walk.layer_by_pointer);
 
   // Several parts share the base-class layer query; copies that agree on the
   // screen query are one proof, not an ambiguity.
@@ -182,6 +270,159 @@ void TestResolveSites() {
   img.Rel32(0x5800u + core::kLayerQueryCall, kScreenQuery);
   assert(core::ResolveSites(img.image, Imports(), &sites) ==
          core::SiteResult::kResolved);
+}
+
+void TestResolveTargetedRenderSites() {
+  core::Sites sites;
+  SyntheticImage img;
+  BuildEngineT(&img);
+  assert(core::ResolveSites(img.image, Imports(), &sites) ==
+         core::SiteResult::kResolved);
+  assert(sites.variant == core::SiteVariant::kTargetedRender);
+  assert(sites.render_char == img.At(kRenderT));
+  assert(sites.clear_page == img.At(kClearT));
+  assert(sites.char_image == img.At(kCharImageT));
+  assert(sites.rasteriser == img.At(kRasterT));
+  assert(sites.window_update == img.At(kUpdateT));
+  assert(sites.input_handler == img.At(kInputT));
+  assert(sites.render_stack_args == 2u);
+  assert(sites.input_stack_args == 6u);
+  assert(sites.walk.list_offset == 4u && sites.walk.head_offset == 0u &&
+         sites.walk.layer_by_pointer);
+
+  // A derived class repeating GetCharImage in its own vtable is one
+  // function, not an ambiguity; so are other +0x2ac callers that clear
+  // something else, as long as one of them calls ClearPage.
+  img.Pointer(kVtableT + 0x40u, kLocatorT);
+  img.Pointer(kVtableT + 0x44u, 0x1820u);
+  img.Pointer(kVtableT + 0x48u, kCharImageT);
+  img.Put(0x5a00u, core::kClearCallTBytes, sizeof(core::kClearCallTBytes));
+  img.Rel32(0x5a00u + core::kClearCallTCall, 0x1850u);
+  assert(core::ResolveSites(img.image, Imports(), &sites) ==
+         core::SiteResult::kResolved);
+  assert(sites.char_image == img.At(kCharImageT));
+
+  // Both layouts present: the adjacent-page proof decides.
+  SyntheticImage both;
+  BuildEngineT(&both);
+  both.Put(0x6000u, core::kPageBytes, sizeof(core::kPageBytes));
+  assert(core::ResolveSites(both.image, Imports(), &sites) ==
+         core::SiteResult::kRecordInvalid);
+  assert(sites.render_char == 0u);
+}
+
+// Each targeted-render proof, broken alone, installs nothing.
+void TestTargetedRenderEachProofFailsClosed() {
+  struct Breaker {
+    void (*apply)(SyntheticImage*);
+    core::SiteResult expected;
+  };
+  const Breaker breakers[] = {
+      // A second RenderChar is ambiguous.
+      {[](SyntheticImage* img) {
+         img->Put(0x5000u, core::kRenderTBytes, sizeof(core::kRenderTBytes));
+       },
+       core::SiteResult::kPageMissing},
+      // Record offsets moved / the epilogue pops another argument count.
+      {[](SyntheticImage* img) {
+         img->base[kRenderT + core::kRecordPenTOffset + 25u] = 0x18u;
+       },
+       core::SiteResult::kRecordInvalid},
+      {[](SyntheticImage* img) {
+         img->base[kRenderT + core::kRecordCharTOffset + 66u] = 0x08u;
+       },
+       core::SiteResult::kRecordInvalid},
+      {[](SyntheticImage* img) {
+         img->base[kRenderT + core::kRenderTailTOffset + 7u] = 0x04u;
+       },
+       core::SiteResult::kRecordInvalid},
+      // No vtable names GetCharImage (the locator slot is code: not a vtable
+      // start), or the function does not start after padding.
+      {[](SyntheticImage* img) { img->Pointer(kVtableT, 0x1830u); },
+       core::SiteResult::kRasteriserInvalid},
+      {[](SyntheticImage* img) { img->base[kCharImageT - 1u] = 0x90u; },
+       core::SiteResult::kRasteriserInvalid},
+      // GetCharImage reaches the rasteriser only once.
+      {[](SyntheticImage* img) {
+         std::memset(img->base + kCharImageT + 0x60u, 0xcc, 5u);
+       },
+       core::SiteResult::kRasteriserInvalid},
+      // A second, different function passing the proof is ambiguous.
+      {[](SyntheticImage* img) {
+         img->Rel32(0x1c00u + 0x20u, kRasterT);
+         img->Rel32(0x1c00u + 0x60u, kRasterT);
+         img->Pointer(kVtableT + 0x40u, kLocatorT);
+         img->Pointer(kVtableT + 0x44u, 0x1820u);
+         img->Pointer(kVtableT + 0x48u, 0x1c00u);
+       },
+       core::SiteResult::kRasteriserInvalid},
+      // ClearPage missing, fills through two helpers, or nobody calls it
+      // through the message window's renderer.
+      {[](SyntheticImage* img) { img->base[kClearT + 63u] = 0x77u; },
+       core::SiteResult::kClearInvalid},
+      {[](SyntheticImage* img) {
+         img->Rel32(kClearT + core::kClearTFadeFillCall, 0x1820u);
+       },
+       core::SiteResult::kClearInvalid},
+      {[](SyntheticImage* img) {
+         img->Rel32(kClearCallT + core::kClearCallTCall, 0x1850u);
+       },
+       core::SiteResult::kClearInvalid},
+      // Update missing; reveal does not render; sync does not reach +0x68.
+      {[](SyntheticImage* img) { img->base[kUpdateT + 46u] = 0xa8u; },
+       core::SiteResult::kUpdateMissing},
+      {[](SyntheticImage* img) {
+         std::memset(img->base + kRevealT + 0x40u, 0xcc, 5u);
+       },
+       core::SiteResult::kRevealInvalid},
+      {[](SyntheticImage* img) { img->base[kSyncT + 0x32u] = 0x6cu; },
+       core::SiteResult::kSyncInvalid},
+      // Layer query missing / disagreeing copies.
+      {[](SyntheticImage* img) { img->base[kLayerQueryT + 12u] = 0x08u; },
+       core::SiteResult::kLayerQueryMissing},
+      {[](SyntheticImage* img) {
+         img->Put(0x5800u, core::kLayerQueryTBytes,
+                  sizeof(core::kLayerQueryTBytes));
+         img->Rel32(0x5800u + core::kLayerQueryTCall, 0x1850u);
+       },
+       core::SiteResult::kLayerQueryMissing},
+      // Scene layout differs along the chain, or the draw loop is missing.
+      {[](SyntheticImage* img) { img->base[kScreenQueryT + 32u] = 0x0cu; },
+       core::SiteResult::kSceneInvalid},
+      {[](SyntheticImage* img) { img->base[kSceneVisibleT + 18u] = 0x08u; },
+       core::SiteResult::kSceneInvalid},
+      {[](SyntheticImage* img) { img->base[kSceneFindT + 7u] = 0x3au; },
+       core::SiteResult::kSceneInvalid},
+      {[](SyntheticImage* img) { img->base[kSceneDrawT + 49u] = 0x0cu; },
+       core::SiteResult::kSceneInvalid},
+      // Input handler missing / without capture imports.
+      {[](SyntheticImage* img) { img->base[kInputT + 55u] = 0x01u; },
+       core::SiteResult::kInputMissing},
+      {[](SyntheticImage* img) {
+         std::memset(img->base + kInputT + 0x300u, 0xcc, 6u);
+       },
+       core::SiteResult::kInputImportsInvalid},
+      // Handle pops another number of arguments than the detour would.
+      {[](SyntheticImage* img) { img->base[kInputT + 0x5aeu] = 0x14u; },
+       core::SiteResult::kInputFrameInvalid},
+  };
+  for (const Breaker& breaker : breakers) {
+    SyntheticImage img;
+    BuildEngineT(&img);
+    breaker.apply(&img);
+    core::Sites sites;
+    sites.render_char = 1u;
+    const auto result = core::ResolveSites(img.image, Imports(), &sites);
+    if (result != breaker.expected) {
+      std::fprintf(stderr, "targeted: expected %u got %u\n",
+                   static_cast<unsigned>(breaker.expected),
+                   static_cast<unsigned>(result));
+    }
+    assert(result == breaker.expected);
+    assert(sites.render_char == 0u && sites.clear_page == 0u &&
+           sites.window_update == 0u && sites.input_handler == 0u &&
+           sites.variant == core::SiteVariant::kNone);
+  }
 }
 
 // Each structural proof, broken alone, installs nothing.
@@ -481,6 +722,31 @@ void TestTracker() {
   // 2 (x 345 is outside; 344 is inside the cell of glyph 1) → 2 hidden.
   assert(count == kLineCount - 2u);
 
+  // A cover box over part of glyph 2 keeps the glyph in the text and its
+  // whole cell clickable: a box only bounds the cover's opaque pixels (the
+  // 2016 message window's menu bar box overlaps the lower text row).
+  nodes = DialogueScene();
+  nodes.push_back(Node(91, true, 346, 580, 12, 50));  // box {345,579,358,630}
+  tracker.SetPlacement(kRenderer,
+                       core::ResolvePlacement(nodes.data(), nodes.size(),
+                                              kTextLayer, kPageW, kPageH));
+  count = core::CollectVisibleGlyphs(*slot, lines, core::kMaxSurfaceGlyphs);
+  assert(count == kLineCount);
+  assert(lines[2].x == 345 && lines[2].w == 26);
+  assert(lines[2].hit.x0 == 345 && lines[2].hit.x1 == 371 &&
+         lines[2].hit.y0 == 591 && lines[2].hit.y1 == 617);
+  assert(lines[1].hit.x1 == 345 && lines[3].hit.x0 == 371);
+  // A corner overlap: still visible, still fully clickable.
+  nodes = DialogueScene();
+  nodes.push_back(Node(92, true, 350, 600, 40, 40));  // box {349,599,390,640}
+  tracker.SetPlacement(kRenderer,
+                       core::ResolvePlacement(nodes.data(), nodes.size(),
+                                              kTextLayer, kPageW, kPageH));
+  count = core::CollectVisibleGlyphs(*slot, lines, core::kMaxSurfaceGlyphs);
+  assert(count == kLineCount && lines[2].hit.x0 == 345 &&
+         lines[2].hit.y1 == 617 && lines[3].hit.x1 == 397);
+  assert(!lines[1].hit.Empty() && !lines[4].hit.Empty());
+
   // Hidden window: nothing.
   nodes = DialogueScene();
   nodes[4].visible = false;
@@ -613,6 +879,58 @@ void TestSuffixAndHit() {
   assert(!core::HitTestLine(lines, count, 293 + 20 * 26 + 1, 583 + 38 + 5,
                             &hit));
   assert(!core::HitTestLine(lines, count, 10, 10, &hit));
+
+  // Only the clickable rectangle hits: a trimmed or empty one misses.
+  lines[3].hit.x0 = lines[3].x + 13;
+  assert(!core::HitTestLine(lines, count, 293 + 5, 583 + 38 + 5, &hit));
+  assert(core::HitTestLine(lines, count, 293 + 20, 583 + 38 + 5, &hit) &&
+         hit == 3u);
+  lines[3].hit = core::IntRect();
+  assert(!core::HitTestLine(lines, count, 293 + 20, 583 + 38 + 5, &hit));
+}
+
+// Text fade draws into the renderer's second page and swaps the two: both
+// pages are the text page (probe: every fade-mode draw went to +0x40).
+void TestRendererPage() {
+  assert(core::kRendererWorkImageOffset == 0x40u);
+  assert(core::IsRendererPage(0x1000u, 0x1000u, 0x2000u));
+  assert(core::IsRendererPage(0x2000u, 0x1000u, 0x2000u));
+  assert(!core::IsRendererPage(0x3000u, 0x1000u, 0x2000u));
+  assert(!core::IsRendererPage(0u, 0u, 0x2000u));
+}
+
+// A spoken line arrives as `「body」【speaker】`; the speaker is on the name
+// layer, so the text page is matched against the body.
+void TestSpeakerTag() {
+  auto start = [](const wchar_t* text) {
+    return core::SpeakerTagStart(text, wcslen(text));
+  };
+  const wchar_t* spoken = L"「許して」【少女】";
+  assert(start(spoken) == 5u);
+  assert(start(L"「あ」【太】  ") == 3u);           // one-char name, spaces
+  assert(start(L"「うん」 【太一】") == 5u);        // space before the tag
+  assert(start(L"考え事だろうか。") == 8u);         // narration: none
+  assert(start(L"【少女】") == 4u);                 // no body
+  assert(start(L"「あ」【】") == 5u);               // empty name
+  assert(start(L"「あ」】") == 4u);                 // no opener
+  assert(start(L"「あ」【太】】") == 7u);           // nested closer
+  assert(core::SpeakerTagStart(nullptr, 0u) == 0u);
+
+  // The page holds only the body: the body maps, the full line does not.
+  core::LineGlyph glyphs[5] = {};
+  const wchar_t page[] = L"「許して」";
+  for (size_t index = 0u; index < 5u; ++index) {
+    glyphs[index].codepoint = page[index];
+  }
+  assert(core::MapSelectedSuffix(glyphs, 5u, spoken, wcslen(spoken)) == 5u);
+  assert(core::MapSelectedSuffix(glyphs, 5u, spoken, start(spoken)) == 0u);
+  assert(glyphs[4].source_index == 4u);
+}
+
+void TestContains() {
+  const core::IntRect cell = {100, 200, 126, 226};
+  assert(core::Contains({90, 190, 140, 240}, cell));
+  assert(!core::Contains({101, 190, 140, 240}, cell));
 }
 
 // ── message-level claim ─────────────────────────────────────────────────────
@@ -655,6 +973,11 @@ void TestClaim() {
 int main() {
   TestResolveSites();
   TestResolveSitesEachProofFailsClosed();
+  TestResolveTargetedRenderSites();
+  TestTargetedRenderEachProofFailsClosed();
+  TestContains();
+  TestSpeakerTag();
+  TestRendererPage();
   TestGlyphCodes();
   TestPlacement();
   TestTracker();

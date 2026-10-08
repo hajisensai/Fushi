@@ -1,6 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:fushi/src/media/video/video_m3e_chrome.dart'
+    show videoM3eFloatingColor;
 import 'package:fushi/src/media/video/video_side_panel.dart';
 
 void main() {
@@ -29,8 +31,17 @@ void main() {
           )
           .first,
     );
-    expect(material.color, isNotNull);
-    expect(material.color!.a, lessThan(1));
+    // M3E：浮动面板与播放器悬浮胶囊同一层表面（videoM3eFloatingColor）。
+    // e3e7699afaa 起是「带一点主题色调的中性」——以 app 主色为种子的深色方案
+    // surfaceContainerHigh @86%，不再是无色相的 #2D2D2D；画面靠面板四周的留白
+    // 与面板宽度露出。
+    final ColorScheme appScheme = Theme.of(
+      tester.element(find.byType(VideoTranslucentSidePanel)),
+    ).colorScheme;
+    expect(material.color, videoM3eFloatingColor(appScheme));
+    // 面板内容读中性主题：浅色 app 主题下标题也是白字（不是黑压黑）。
+    final BuildContext ctx = tester.element(find.text('Speed'));
+    expect(Theme.of(ctx).colorScheme.onSurface, Colors.white);
     expect(find.text('Speed'), findsOneWidget);
     expect(find.text('1.5x'), findsOneWidget);
     // BUG-254：右上角 X 关闭按钮已删除（关闭改由页面层全屏 barrier 点面板外承载）。
@@ -71,11 +82,14 @@ void main() {
     // 镜像这件事因此从「圆角换边」挪到了**位置**上：左对齐贴左、右对齐贴右，两侧
     // 各留同一个 10 的间距；圆角则两边完全一致。两条一起断，退回半圆角抽屉、或
     // 左右间距不对称，都当场红。
-    const BorderRadius floatingRadius = BorderRadius.all(Radius.circular(12));
+    // MD3 Expressive 浮动面板圆角 28（四角一致）。
+    const BorderRadius floatingRadius = BorderRadius.all(Radius.circular(28));
+    BorderRadiusGeometry? radiusOf(Material m) =>
+        (m.shape as RoundedRectangleBorder?)?.borderRadius;
 
     final Material left = await pumpPanel(Alignment.centerLeft);
     expect(
-      left.borderRadius,
+      radiusOf(left),
       floatingRadius,
       reason: '浮动侧栏四边都有间距，四个角都应是圆角（不是贴边抽屉的半圆角）',
     );
@@ -84,7 +98,7 @@ void main() {
 
     final Material right = await pumpPanel(Alignment.centerRight);
     expect(
-      right.borderRadius,
+      radiusOf(right),
       floatingRadius,
       reason: '左右两侧圆角必须一致——镜像体现在位置上，不再体现在圆角换边',
     );

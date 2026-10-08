@@ -15,46 +15,49 @@ void main() {
 
   group('TODO-1303 扩展制卡诊断 toast + audioWarning 区分守卫', () {
     mirrors.forEach((String name, String root) {
-      test('[$name] fushiClassifyMineResp 读诊断 + 弹原因 toast', () {
-        final String src = File('$root/content.js').readAsStringSync();
+      // 分类判据住在 mine-outcome.js（content script 的 Netflix 回放与 service worker 的
+      // YouTube 批量共用一份）；content.js 只把判据给出的 notice 弹成 toast。行为本身由
+      // tools/browser-extension/mine-outcome.test.js 在 node 里真跑，这里守接线与文案。
+      test('[$name] 制卡结果分类读诊断 + 弹原因 toast', () {
+        final String outcome =
+            File('$root/mine-outcome.js').readAsStringSync();
         // 读服务端诊断字段（message 优先，detail 兜底）。
-        expect(src.contains('d.message || d.detail'), isTrue,
-            reason: '$root classify 未读取 message/detail 诊断');
-        // 失败弹 toast 显因。
-        expect(src.contains("window.fushiToast('✗ '"), isTrue,
-            reason: '$root 失败未弹原因 toast');
-        // 部分成功：success + message（音频落空）弹 ⚠ 警告但仍算 done。
-        expect(src.contains("window.fushiToast('⚠ '"), isTrue,
-            reason: '$root success+音频警告未弹 ⚠ toast');
-        expect(src.contains("r === 'success' && reason"), isTrue,
+        expect(outcome.contains('d.message || d.detail'), isTrue,
+            reason: '$root 分类器未读取 message/detail 诊断');
+        // 部分成功：success + message（音频落空）给 ⚠ 警告但仍算 done。
+        expect(outcome.contains("r === 'success' && reason"), isTrue,
             reason: '$root 未把 success+message 的部分成功与真成功区分');
+        expect(outcome.contains("'⚠ ' + reason"), isTrue,
+            reason: '$root success+音频警告未给 ⚠ 提示');
         // TODO-1331：HTTP/网络层失败（401/连接拒绝/404/4xx/5xx）不再静默 retry——
-        // 经 fushiMineHttpFailureReason 区分鉴权/连不上/服务端后弹 ✗ 原因，终结
+        // 经 fushiMineHttpFailureReason 区分鉴权/连不上/服务端后给 ✗ 原因，终结
         // 「你看日志却查不到条目」（BUG-603 只覆盖 server 回带诊断，未覆盖 HTTP 层）。
         expect(
-            src.contains('function fushiMineHttpFailureReason(resp)'), isTrue,
-            reason: '$root 未实现 HTTP 层失败原因翻译（静默吞失败）');
-        // 断言到「原因被传进 toast」为止，不含收尾的 `)`：fushiToast 现在还接
-        // (sticky, openSettings) 两个可选参数（401/4xx 的解法就在扩展设置页，故那两类
-        // toast 可点直达）。钉整行字面量会把「给这条 toast 加参数」误判成「不弹 toast 了」。
+            outcome.contains(
+                "notice: '✗ ' + fushiMineHttpFailureReason(resp, t)"),
+            isTrue,
+            reason: '$root HTTP 失败分支未给 ✗ 原因');
+        expect(outcome.contains("t('mine_err_401')"), isTrue,
+            reason: '$root 未区分 401 鉴权失败原因');
+        // 三态契约不变。
+        expect(outcome.contains("cls: 'done'"), isTrue);
+        expect(outcome.contains("cls: 'unconfigured'"), isTrue);
+        expect(outcome.contains("cls: 'retry'"), isTrue);
+        // content.js 用这份判据，并把原因弹出来（401/4xx 可点直达设置）。
+        final String src = File('$root/content.js').readAsStringSync();
+        expect(src.contains('window.fushiMineOutcome(resp, fushiTr)'), isTrue,
+            reason: '$root content.js 未走共享分类器');
         expect(
             src.contains(
-                "window.fushiToast('✗ ' + fushiMineHttpFailureReason(resp)"),
+                'window.fushiToast(o.notice, false, o.settingsFixable)'),
             isTrue,
-            reason: '$root HTTP 失败分支未弹 ✗ 原因 toast');
-        // 文案已进 i18n 字典（locales/en.js 为源，各语言 json 同键集）：content.js 只钉键名，
-        // 文案本身到字典里查。
-        expect(src.contains("fushiTr('mine_err_401')"), isTrue,
-            reason: '$root 未区分 401 鉴权失败原因');
+            reason: '$root content.js 未把分类原因弹成 toast');
+        // 文案已进 i18n 字典（locales/en.js 为源，各语言 json 同键集）。
         final String en = File('$root/locales/en.js').readAsStringSync();
         expect(en.contains('Authentication failed (401)'), isTrue,
             reason: '$root 字典缺 401 鉴权失败原因文案');
         expect(en.contains('Yomitan API server'), isTrue,
             reason: '$root 未提示连不上/端点错时去开 Yomitan API server');
-        // 三态返回契约不变。
-        expect(src.contains("return 'done';"), isTrue);
-        expect(src.contains("return 'unconfigured';"), isTrue);
-        expect(src.contains("return 'retry';"), isTrue);
       });
     });
 

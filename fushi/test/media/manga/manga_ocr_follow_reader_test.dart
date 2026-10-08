@@ -6,8 +6,11 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
@@ -300,4 +303,153 @@ void main() {
       expect(recognizer.closeCalls, 1);
     });
   });
+
+  group('MangaStreamPageOcr 两段式（大模型）', () {
+    late Directory dir;
+
+    setUp(() {
+      dir = Directory.systemTemp.createTempSync('manga_stream_ai_');
+    });
+
+    tearDown(() {
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+
+    Future<File?> pngPage(int index) async {
+      final File file = File(p.join(dir.path, 'p$index.jpg'));
+      file.writeAsBytesSync(img.encodePng(img.Image(width: 100, height: 200)));
+      return file;
+    }
+
+    ({MangaStreamAiRefinement ai, _GatedAiClients clients}) aiStage() {
+      final _GatedAiClients clients = _GatedAiClients(
+        '{"blocks":[{"id":1,"text":"機嫌"}]}',
+      );
+      return (
+        ai: MangaStreamAiRefinement(
+          refiner: MangaAiOcrRefiner(
+            provider: AiProviderConfig(
+              id: 'p',
+              presetId: kAiCustomPresetId,
+              name: 'p',
+              baseUrl: Uri.parse('https://example.com/v1'),
+              apiKey: 'k',
+              model: 'm',
+            ),
+            mode: MangaAiOcrMode.all,
+            clientFactory: clients.next,
+          ),
+        ),
+        clients: clients,
+      );
+    }
+
+    test('本地结果在大模型返回前就交出；回来后同页再交一次；下一页不等大模型', () async {
+      final _ControlledRecognizer recognizer = _ControlledRecognizer();
+      final ai = aiStage();
+      final List<(int, String)> delivered = <(int, String)>[];
+      final MangaStreamPageOcr ocr = MangaStreamPageOcr(
+        pageCount: 3,
+        pageFile: pngPage,
+        recognizer: recognizer,
+        ai: ai.ai,
+        onPage: (int index, MokuroImage page) =>
+            delivered.add((index, page.blocks.single.lines.join())),
+        lookahead: 1,
+      );
+      ocr.focus(0);
+      await _settle();
+      recognizer.finish('p0.jpg');
+      await ai.clients.firstStarted.timeout(const Duration(seconds: 5));
+      await _settle();
+      expect(delivered, <(int, String)>[(0, 'p0.jpg')], reason: '本地结果先到');
+      expect(recognizer.started, <String>[
+        'p0.jpg',
+        'p1.jpg',
+      ], reason: '大模型挂着时本地识别照常推进下一页');
+
+      ai.clients.releaseAll();
+      for (int i = 0; i < 50 && delivered.length < 2; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(delivered, <(int, String)>[(0, 'p0.jpg'), (0, '機嫌')]);
+      await ocr.close();
+    });
+
+    test('close：未轮到的页丢弃、在途请求被中止、之后不再回调', () async {
+      final _ControlledRecognizer recognizer = _ControlledRecognizer();
+      final ai = aiStage();
+      final List<(int, String)> delivered = <(int, String)>[];
+      final MangaStreamPageOcr ocr = MangaStreamPageOcr(
+        pageCount: 3,
+        pageFile: pngPage,
+        recognizer: recognizer,
+        ai: ai.ai,
+        onPage: (int index, MokuroImage page) =>
+            delivered.add((index, page.blocks.single.lines.join())),
+        lookahead: 1,
+      );
+      ocr.focus(0);
+      await _settle();
+      recognizer.finish('p0.jpg');
+      await ai.clients.firstStarted.timeout(const Duration(seconds: 5));
+      await _settle();
+      recognizer.finish('p1.jpg'); // p1 的大模型排在 p0 后面
+      await _settle();
+      expect(delivered, <(int, String)>[(0, 'p0.jpg'), (1, 'p1.jpg')]);
+
+      await ocr.close();
+      expect(ai.clients.lastClosed, isTrue, reason: '在途请求被中止');
+      ai.clients.releaseAll();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(delivered, <(int, String)>[(0, 'p0.jpg'), (1, 'p1.jpg')]);
+      expect(ai.clients.calls, 1, reason: '没轮到的 p1 不再送');
+    });
+  });
+}
+
+/// 每次请求一个新客户端；请求挂起直到 [releaseAll]，或客户端被关（=中止）。
+class _GatedAiClients {
+  _GatedAiClients(this.reply);
+
+  final String reply;
+  final Completer<void> _gate = Completer<void>();
+  final Completer<void> _firstStarted = Completer<void>();
+  int calls = 0;
+  bool lastClosed = false;
+
+  Future<void> get firstStarted => _firstStarted.future;
+
+  void releaseAll() {
+    if (!_gate.isCompleted) _gate.complete();
+  }
+
+  AiChatClient next() => _GatedAiClient(this);
+}
+
+class _GatedAiClient extends AiChatClient {
+  _GatedAiClient(this.owner);
+
+  final _GatedAiClients owner;
+  final Completer<void> _closed = Completer<void>();
+
+  @override
+  Future<String> complete({
+    required AiProviderConfig provider,
+    required List<AiChatMessage> messages,
+    int maxTokens = 2048,
+  }) async {
+    owner.calls += 1;
+    owner.lastClosed = false;
+    if (!owner._firstStarted.isCompleted) owner._firstStarted.complete();
+    await Future.any(<Future<void>>[owner._gate.future, _closed.future]);
+    if (_closed.isCompleted) throw const AiChatFailure('network_error');
+    return owner.reply;
+  }
+
+  @override
+  void close() {
+    owner.lastClosed = true;
+    if (!_closed.isCompleted) _closed.complete();
+  }
 }

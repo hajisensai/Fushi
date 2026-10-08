@@ -1,4 +1,8 @@
-/// 按块方向路由的识别器：竖排块整块喂 manga-ocr，横排块切行后横行走 PP-OCRv6。
+/// 按块方向路由的识别器：竖排块整块喂块识别器，横排块切行后横行走 PP-OCRv6。
+///
+/// 命名说明：参数 / 字段名 `mangaOcr` 是历史名，指「整块识别器」——kha-white
+/// manga-ocr 本地模型已于 2026-10 删除，现在传进来的是逐列 CTC 或 Baberu。下文
+/// 的路由实测是当年在 manga-ocr 上做的，判据（块比它高还宽 → 横排路径）不变。
 ///
 /// 为什么不是「一律切行」：2026-09-13 用用户真实页复测（「週に一度クラスメイトを
 /// 買う話」mihon 下载 844×1200 + 「幼なじみが絶対に結ばれる百合アンソロジー」
@@ -129,13 +133,26 @@ class RoutingOcrRecognizer
         lineHints: routed.lineHints,
       );
     }
-    return _withLineLayout(
+    final ScoredOcrText read = await _readScored(primary, page, box);
+    return (await _withLineLayout(
       page,
       box,
-      await primary.recognize(page, box),
+      read.text,
       vertical: routed.recognition.vertical,
       lineHints: routed.lineHints,
-    );
+    )).withConfidence(read.confidence);
+  }
+
+  /// 主识别器出分就取分，不出分的（Baberu 等）置信度为 null。
+  static Future<ScoredOcrText> _readScored(
+    OcrRecognizer recognizer,
+    img.Image page,
+    OcrRect box,
+  ) async {
+    if (recognizer is ScoredOcrRecognizer) {
+      return recognizer.recognizeScored(page, box);
+    }
+    return (text: await recognizer.recognize(page, box), confidence: null);
   }
 
   /// 整块识别出的 [text] 按块内的列/行切开，带上行几何。
@@ -207,15 +224,17 @@ class RoutingOcrRecognizer
     final List<PpTextLine> lines = orderLinesForReading(detected);
     final List<String> texts = <String>[];
     final List<OcrRect> boxes = <OcrRect>[];
+    double? confidence;
     for (final PpTextLine line in lines) {
       final OcrRect r = line.rect.clamp(w.toDouble(), h.toDouble());
       if (r.width < 1 || r.height < 1) {
         continue;
       }
-      final String lineText;
+      final ScoredOcrText lineRead;
       if (line.vertical) {
         // 竖行回到页面坐标、外扩边距，仍由 manga-ocr 识别。
-        lineText = await _mangaOcr.recognize(
+        lineRead = await _readScored(
+          _mangaOcr,
           page,
           OcrRect(
             left: x + r.left - kRoutingLinePadding,
@@ -234,11 +253,12 @@ class RoutingOcrRecognizer
           width: math.min(math.max(1, r.width.ceil()), w - lx),
           height: math.min(math.max(1, r.height.ceil()), h - ly),
         );
-        lineText = await _lineRecognizer.recognizeLine(lineCrop);
+        lineRead = await _lineRecognizer.recognizeLineScored(lineCrop);
       }
-      if (lineText.isEmpty) continue;
-      texts.add(lineText);
+      if (lineRead.text.isEmpty) continue;
+      texts.add(lineRead.text);
       boxes.add(crop.toPage(r));
+      confidence = minOcrConfidence(confidence, lineRead.confidence);
     }
     final String text = texts.join();
     return _RoutedBlock(
@@ -247,6 +267,7 @@ class RoutingOcrRecognizer
         vertical: false,
         lines: text.isEmpty ? null : texts,
         lineBoxes: text.isEmpty ? null : boxes,
+        confidence: text.isEmpty ? null : confidence,
       ),
       lineHints: lineHints,
     );

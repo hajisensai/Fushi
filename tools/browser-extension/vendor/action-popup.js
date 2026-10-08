@@ -73,11 +73,23 @@ function fushiTabSite(url) {
 // - cancel：fushiNfBatch.active（生成中/卡住残留）→ 可点，取消并清理（逃生口保留，队列空也可点）。
 // - generate：当前 tab 站点与队列中可生成项匹配 → 可点，标签带数量；跨站点剩余量进 hint。
 // - empty / unsupported / wrongSite：不可点 + hint 说明原因与下一步（wrongSite 引导点队列条目跳转）。
-function fushiGenButtonState(queue, batchActive, tabSite) {
+// YouTube 项不挑页面（用户 2026-10-04「点进去放一会儿视频才能制卡，能不能全自动」）：生成是
+// service worker 逐条调 /api/mine、服务端自己解析流，与当前 tab 无关 → 只要不是在 Netflix 页上
+// 录 Netflix，任何 tab 都能直接生成。ytBatch = background 回报的 {done,total}（进行中）或 null。
+// target 告诉 popup 点击后走哪条：'netflix' 需关 popup 让播放页就地录；'youtube' 留着看进度。
+function fushiGenButtonState(queue, batchActive, tabSite, ytBatch) {
   const t = fushiApT;
   if (batchActive) {
     return { mode: 'cancel', label: t('ap_gen_cancel'), enabled: true, hint: t('ap_gen_cancel_hint') };
   }
+  if (ytBatch && ytBatch.total > 0) {
+    return {
+      mode: 'running', label: t('gen_progress', { done: ytBatch.done || 0, total: ytBatch.total }),
+      enabled: false, hint: '',
+    };
+  }
+  // 当前 tab 还没查到（null）：不知道是不是 Netflix 播放页，点了可能走错分支 → 先禁用。
+  if (tabSite == null) return { mode: 'pending', label: t('ap_gen_start'), enabled: false, hint: '' };
   const list = Array.isArray(queue) ? queue : [];
   const nf = list.filter((q) => q && q.site === 'netflix' && q.netflixId).length;
   const yt = list.filter((q) => q && q.site === 'youtube' && q.youtubeId).length;
@@ -92,22 +104,20 @@ function fushiGenButtonState(queue, batchActive, tabSite) {
   }
   if (tabSite === 'netflix' && nf) {
     return {
-      mode: 'generate', label: t('ap_gen_start_record_n', { n: nf }), enabled: true,
+      mode: 'generate', target: 'netflix', label: t('ap_gen_start_record_n', { n: nf }), enabled: true,
       hint: yt ? t('ap_gen_other_youtube_hint', { n: yt }) : '',
     };
   }
-  if (tabSite === 'youtube' && yt) {
+  if (yt) {
     return {
-      mode: 'generate', label: t('ap_gen_start_n', { n: yt }), enabled: true,
+      mode: 'generate', target: 'youtube', label: t('ap_gen_start_n', { n: yt }), enabled: true,
       hint: nf ? t('ap_gen_other_netflix_hint', { n: nf }) : '',
     };
   }
-  const parts = [];
-  if (nf) parts.push(t('ap_gen_site_count', { site: 'Netflix', n: nf }));
-  if (yt) parts.push(t('ap_gen_site_count', { site: 'YouTube', n: yt }));
+  // 只剩 Netflix 项且不在 Netflix 页：录屏必须在播放页上，引导点队列条目跳过去。
   return {
     mode: 'wrongSite', label: t('ap_gen_start'), enabled: false,
-    hint: t('ap_gen_wrong_site_hint', { pending: parts.join(' · ') }),
+    hint: t('ap_gen_wrong_site_hint', { pending: t('ap_gen_site_count', { site: 'Netflix', n: nf }) }),
   };
 }
 
@@ -147,12 +157,24 @@ function fushiOverlayToggleWrite(currentlyOn) {
     : { subtitleOverlayEnabled: true, netflixSubtitlePanel: true };
 }
 
+// 工具栏菜单的其余快捷开关（只放最高频的几个；其余设置一律进设置页）：直接读写设置页同一把
+// 存储键，缺省值与 options.js settingDefaults 逐项一致（守卫 action-popup.test.js 交叉比对）。
+const FUSHI_AP_QUICK_DEFAULTS = Object.freeze({ subtitleHidden: false, shiftHoverLookup: true });
+
+// 某个快捷开关当前是否开（纯函数）：只认显式布尔，缺省回落到设置页同一个默认值。
+function fushiQuickToggleOn(key, stored) {
+  const v = stored ? stored[key] : undefined;
+  if (typeof v === 'boolean') return v;
+  return FUSHI_AP_QUICK_DEFAULTS[key] === true;
+}
+
 // node 单测导出（浏览器里 module 未定义，直接跳过）。
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     fushiFilterQueue, fushiQueueItemLabel, fushiQueueItemContext, fushiReadPanelEnabled,
     fushiQueueItemUrl, fushiTabSite, fushiGenButtonState, fushiUpdateNotice,
-    fushiOverlayToggleState, fushiOverlayToggleWrite,
+    fushiOverlayToggleState, fushiOverlayToggleWrite, fushiQuickToggleOn,
+    FUSHI_AP_QUICK_DEFAULTS,
   };
 }
 
@@ -160,6 +182,9 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   const listEl = document.getElementById('hp-list');
   const countEl = document.getElementById('hp-count');
   const genEl = document.getElementById('hp-gen');
+  // 按钮里是「状态图标 + 文字」两块（图标随 data-mode 由 CSS 切换），文案只写进文字块，
+  // 不整颗按钮 textContent 覆盖——否则 Material Symbols 图标会被一并抹掉。
+  const genLabelEl = document.getElementById('hp-gen-label') || genEl;
   const genHintEl = document.getElementById('hp-gen-hint');
 
   // 点扩展图标就能看见连接状态；离线/密钥错/Yomitan 占端口均给可执行提示，齿轮进完整设置。
@@ -250,12 +275,18 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   // popup 打开时 query 一次当前 tab（popup 绑定于当前窗口活动 tab，生命周期内不变）；
   // 队列/批量状态经 storage.onChanged 实时驱动重算。
   let genTab = null; // {id,url}；query 回来前按 other 站点渲染（按钮先禁用，回来后立即修正）
+  // YouTube 批量进度：background 内存态是唯一真相源（SW 被杀 = 没有批量在跑），打开时问一次，
+  // 之后跟 fushiYtBatchProgress 广播走。
+  let ytBatch = null;
+  let genTabKnown = false; // tabs.query 回来前 tabSite=null → 按钮禁用
   function updateGenButton(queue, batch) {
     if (!genEl) return;
-    const state = fushiGenButtonState(queue, !!(batch && batch.active), fushiTabSite(genTab && genTab.url));
-    genEl.textContent = state.label;
+    const state = fushiGenButtonState(
+      queue, !!(batch && batch.active), genTabKnown ? fushiTabSite(genTab && genTab.url) : null, ytBatch);
+    if (genLabelEl) genLabelEl.textContent = state.label;
     genEl.disabled = !state.enabled;
     genEl.dataset.mode = state.mode;
+    genEl.dataset.target = state.target || '';
     if (genHintEl) {
       genHintEl.textContent = state.hint;
       genHintEl.hidden = !state.hint;
@@ -347,8 +378,12 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
       const del = document.createElement('button');
       del.className = 'hp-del';
       del.type = 'button';
-      del.textContent = '×';
+      // Material Symbols Rounded「close」（icons.js 在扩展页已装入）；node 测试壳里没有它，退回 ×。
+      const delIcon = typeof self.fushiIcon === 'function' ? self.fushiIcon('close', { size: 18 }) : null;
+      if (delIcon) del.appendChild(delIcon);
+      else del.textContent = '×';
       del.title = fushiApT('ap_queue_remove_title');
+      del.setAttribute('aria-label', del.title);
       const id = q && q.id;
       del.addEventListener('click', () => { if (id) removeItem(id); });
       row.appendChild(main);
@@ -358,9 +393,12 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   }
 
   // 「开始生成/录制」：按钮点击=用户手势 → 拿当前 tab → 让 background 跑 fushiIconClick。
-  // Netflix：background 就地起录屏（复用本次 action 授予的 activeTab）；YouTube：跑队列服务端裁剪。
+  // Netflix：background 就地起录屏（复用本次 action 授予的 activeTab）；YouTube：background 自己
+  // 跑队列（服务端裁剪，不需要视频页），popup 留着显示进度。
   if (genEl) {
     genEl.addEventListener('click', () => {
+      // Netflix 就地录需当前页可见 → 关 popup；YouTube 在 SW 里跑，留着看「生成中 x/y」。
+      const keepOpen = genEl.dataset.target === 'youtube';
       try {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
           const tab = tabs && tabs[0];
@@ -370,11 +408,31 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
               { type: 'fushiIconAction', tab: { id: tab.id, url: tab.url || '' } },
               () => { try { void chrome.runtime.lastError; } catch (_) {} });
           } catch (_) {}
-          window.close(); // 关闭 popup，让 content 就地跑（Netflix 就地录需当前页可见）
+          if (!keepOpen) window.close();
         });
       } catch (_) { window.close(); }
     });
   }
+  function applyYtBatch(batch) {
+    ytBatch = batch && batch.total > 0 ? batch : null;
+    readQueue().then((q) => refreshGenButton(q));
+  }
+  function queryYtBatch() {
+    try {
+      chrome.runtime.sendMessage({ type: 'fushiYtBatchStatus' }, (resp) => {
+        try { if (chrome.runtime.lastError) return; } catch (_) { return; }
+        applyYtBatch(resp && resp.batch);
+      });
+    } catch (_) {}
+  }
+  try {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg && msg.type === 'fushiYtBatchProgress') applyYtBatch(msg.batch);
+    });
+  } catch (_) {}
+  queryYtBatch();
+  // running 态回问：SW 中途被杀就不会再有「结束」广播；重启后的 SW 内存态为 null → 解锁按钮。
+  setInterval(() => { if (ytBatch) queryYtBatch(); }, 3000);
 
   // 浏览器原生 Side Panel 入口。**这是全扩展唯一真正能开侧边栏的路径**（popup 在扩展上下文里，
   // 点击带瞬态用户激活），所以它必须一次都不能失手。
@@ -437,6 +495,48 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
     });
   }
 
+  // 其余快捷开关（隐藏字幕 / Shift 悬停查词）：翻转即写设置页同一把键，popup 不关——用户要看到
+  // 状态翻过去；渲染只认 storage 的真值（点击先按目标态画，落盘后 onChanged 再对一次）。
+  const quickEls = typeof document.querySelectorAll === 'function'
+    ? Array.prototype.slice.call(document.querySelectorAll('.hp-quick-toggle[data-key]'))
+    : [];
+  const quickState = {};
+  function renderQuick(stored) {
+    for (const el of quickEls) {
+      const key = el.dataset.key;
+      if (!(key in FUSHI_AP_QUICK_DEFAULTS)) continue;
+      if (stored && !(key in stored) && key in quickState) continue;
+      const on = fushiQuickToggleOn(key, stored);
+      quickState[key] = on;
+      el.dataset.on = on ? '1' : '';
+      el.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+  }
+  if (quickEls.length) {
+    try {
+      chrome.storage.local.get(Object.keys(FUSHI_AP_QUICK_DEFAULTS), (r) => renderQuick(r || {}));
+    } catch (_) { renderQuick({}); }
+    for (const el of quickEls) {
+      el.addEventListener('click', () => {
+        const key = el.dataset.key;
+        if (!(key in FUSHI_AP_QUICK_DEFAULTS)) return;
+        const patch = { [key]: !quickState[key] };
+        renderQuick(patch);
+        try { chrome.storage.local.set(patch); } catch (_) {}
+      });
+    }
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local') return;
+        const patch = {};
+        for (const key of Object.keys(FUSHI_AP_QUICK_DEFAULTS)) {
+          if (changes[key]) patch[key] = changes[key].newValue;
+        }
+        if (Object.keys(patch).length) renderQuick(patch);
+      });
+    } catch (_) {}
+  }
+
   // 队列在别处（content 入队 / 生成出队 / 别的标签）变化时，popup 若还开着就实时刷新。
   // TODO-1881：fushiNfBatch 变化（生成开始/结束/取消）也要刷新按钮状态（取消↔生成切换）。
   try {
@@ -458,6 +558,7 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   try {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       genTab = (tabs && tabs[0]) || null;
+      genTabKnown = true;
       readQueue().then((q) => refreshGenButton(q));
     });
   } catch (_) {}

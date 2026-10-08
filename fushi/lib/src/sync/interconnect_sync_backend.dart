@@ -618,7 +618,7 @@ class InterconnectSyncBackend extends SyncBackend
     required String folderId,
     required String fileName,
     required File file,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     final path = '$folderId${Uri.encodeComponent(fileName)}';
     final length = await file.length();
@@ -628,7 +628,8 @@ class InterconnectSyncBackend extends SyncBackend
     int bytesUploaded = 0;
     await request.addStream(file.openRead().map((chunk) {
       bytesUploaded += chunk.length;
-      onProgress?.call(length > 0 ? bytesUploaded / length : 0);
+      onProgress?.call(
+          length > 0 ? bytesUploaded / length : 0, bytesUploaded);
       return chunk;
     }));
     final response = await request.close();
@@ -640,7 +641,7 @@ class InterconnectSyncBackend extends SyncBackend
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     // Range 续传（视频 TODO-819 同款范式推广到库包下载：epub/词典/有声书/本地
     // 音频）。旧实现是裸 GET，中断即删截断文件、下次从 0——大词典/有声书包在
@@ -672,7 +673,9 @@ class InterconnectSyncBackend extends SyncBackend
         return _wrapResumableResponse(res);
       },
       onProgress: (int received, int? total) {
-        if (total != null && total > 0) onProgress?.call(received / total);
+        if (total != null && total > 0) {
+          onProgress?.call(received / total, received);
+        }
       },
     );
   }
@@ -1090,7 +1093,7 @@ class InterconnectSyncBackend extends SyncBackend
   Future<void> getRemoteDictionary(
     String name,
     File destination, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     await downloadContentFile(
@@ -1104,7 +1107,7 @@ class InterconnectSyncBackend extends SyncBackend
   Future<void> putRemoteDictionary(
     String name,
     File file, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
@@ -1117,7 +1120,7 @@ class InterconnectSyncBackend extends SyncBackend
     int sent = 0;
     await req.addStream(file.openRead().map((List<int> chunk) {
       sent += chunk.length;
-      onProgress?.call(length > 0 ? sent / length : 0);
+      onProgress?.call(length > 0 ? sent / length : 0, sent);
       return chunk;
     }));
     final HttpClientResponse res = await req.close();
@@ -1161,7 +1164,7 @@ class InterconnectSyncBackend extends SyncBackend
     await downloadContentFile(
       fileId: '$_apiBase/api/library/books/${Uri.encodeComponent(title)}',
       destination: destination,
-      onProgress: onProgress,
+      onProgress: syncTransferFractionOnly(onProgress),
     );
   }
 
@@ -1180,7 +1183,7 @@ class InterconnectSyncBackend extends SyncBackend
     File file, {
     String? displayTitle,
     int displayTitleAt = 0,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
@@ -1204,7 +1207,7 @@ class InterconnectSyncBackend extends SyncBackend
     int sent = 0;
     await req.addStream(file.openRead().map((List<int> chunk) {
       sent += chunk.length;
-      onProgress?.call(length > 0 ? sent / length : 0);
+      onProgress?.call(length > 0 ? sent / length : 0, sent);
       return chunk;
     }));
     final HttpClientResponse res = await req.close();
@@ -1663,7 +1666,7 @@ class InterconnectSyncBackend extends SyncBackend
   Future<void> getRemoteLocalAudio(
     String displayName,
     File dest, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     await downloadContentFile(
@@ -1678,7 +1681,7 @@ class InterconnectSyncBackend extends SyncBackend
   Future<void> putRemoteLocalAudio(
     String displayName,
     File file, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
@@ -1691,7 +1694,7 @@ class InterconnectSyncBackend extends SyncBackend
     int sent = 0;
     await req.addStream(file.openRead().map((List<int> chunk) {
       sent += chunk.length;
-      onProgress?.call(length > 0 ? sent / length : 0);
+      onProgress?.call(length > 0 ? sent / length : 0, sent);
       return chunk;
     }));
     final HttpClientResponse res = await req.close();
@@ -1724,7 +1727,7 @@ class InterconnectSyncBackend extends SyncBackend
   Future<void> getRemoteAudiobook(
     String bookKey,
     File dest, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     await downloadContentFile(
@@ -1739,7 +1742,7 @@ class InterconnectSyncBackend extends SyncBackend
   Future<void> putRemoteAudiobook(
     String bookKey,
     File file, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
@@ -1752,7 +1755,7 @@ class InterconnectSyncBackend extends SyncBackend
     int sent = 0;
     await req.addStream(file.openRead().map((List<int> chunk) {
       sent += chunk.length;
-      onProgress?.call(length > 0 ? sent / length : 0);
+      onProgress?.call(length > 0 ? sent / length : 0, sent);
       return chunk;
     }));
     final HttpClientResponse res = await req.close();
@@ -1925,7 +1928,7 @@ class InterconnectSyncBackend extends SyncBackend
     String id,
     File file, {
     required String title,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
@@ -1941,7 +1944,7 @@ class InterconnectSyncBackend extends SyncBackend
     int sent = 0;
     await req.addStream(file.openRead().map((List<int> chunk) {
       sent += chunk.length;
-      onProgress?.call(length > 0 ? sent / length : 0);
+      onProgress?.call(length > 0 ? sent / length : 0, sent);
       return chunk;
     }));
     final HttpClientResponse res = await req.close();
@@ -2256,7 +2259,7 @@ class InterconnectSyncBackend extends SyncBackend
     await downloadContentFile(
       fileId: uri.toString(),
       destination: dest,
-      onProgress: onProgress,
+      onProgress: syncTransferFractionOnly(onProgress),
     );
   }
 
@@ -2296,7 +2299,7 @@ class InterconnectSyncBackend extends SyncBackend
     await downloadContentFile(
       fileId: uri.toString(),
       destination: dest,
-      onProgress: onProgress,
+      onProgress: syncTransferFractionOnly(onProgress),
     );
   }
 

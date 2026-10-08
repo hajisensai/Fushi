@@ -9,6 +9,7 @@
 /// fushi_server admin  reset-token                     [--config …]
 /// fushi_server models pull|status --language ja        [--config …]
 /// fushi_server transcribe <audio> --language ja [--out x.srt] [--config …]
+/// fushi_server ctl <action> …   （经 admin API 操作运行中的 serve，见 ctl_commands.dart）
 /// ```
 library;
 
@@ -19,46 +20,21 @@ import 'package:args/args.dart';
 import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
-import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/admin_server.dart';
+import 'package:fushi_server/src/commands/cli_module.dart';
+import 'package:fushi_server/src/commands/cli_modules.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/ctl/ctl_commands.dart';
 import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
+import 'package:fushi_server/src/json_stdout_isolation.dart';
 import 'package:fushi_server/src/library_scanner.dart';
-import 'package:fushi_server/src/server_identity.dart';
-import 'package:fushi_server/src/server_log.dart';
-import 'package:fushi_server/src/server_paths.dart';
-import 'package:fushi_server/src/server_prefs.dart';
+import 'package:fushi_server/src/server_runtime.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:path/path.dart' as p;
 
 const String kDefaultConfigFileName = 'fushi_server.yaml';
-
-class _Runtime {
-  _Runtime({
-    required this.config,
-    required this.configFile,
-    required this.paths,
-    required this.log,
-    required this.db,
-    required this.prefs,
-    required this.identity,
-  });
-
-  final ServerConfig config;
-  final File configFile;
-  final ServerPaths paths;
-  final ServerLog log;
-  final FushiDatabase db;
-  final ServerPrefs prefs;
-  final ServerIdentity identity;
-
-  Future<void> dispose() async {
-    await db.close();
-    await log.close();
-  }
-}
 
 /// 显式给出的三态布尔 flag：没给返回 null（由配置决定，不把 CLI 默认值当成用户意图）。
 bool? _explicitFlag(ArgResults results, String name) =>
@@ -101,14 +77,23 @@ ArgParser _buildParser() {
     ..addOption('language', abbr: 'l', help: 'ASR 语言 tag', defaultsTo: 'ja')
     ..addOption('out', abbr: 'o', help: '输出 .srt 路径（默认与音频同名）')
     ..addFlag('cpu', negatable: false, help: '只用 CPU');
+  parser.addCommand('ctl', buildCtlParser());
+  for (final CliModule module in kCliModules) {
+    module.register(parser);
+  }
   return parser;
 }
 
 void _usage(ArgParser parser) {
   stdout.writeln('fushi_server <command> [options]\n');
   stdout.writeln('commands: init | serve | scan | status | pair ls|revoke <peerId> | '
-      'admin reset-token | models pull|status -l <lang> | transcribe <audio> -l <lang>\n');
+      'admin reset-token | models pull|status -l <lang> | transcribe <audio> -l <lang> | '
+      'ctl <action>\n');
   stdout.writeln(parser.usage);
+  stdout.writeln('\n$kCtlUsage');
+  for (final CliModule module in kCliModules) {
+    stdout.writeln('\n${module.usage}');
+  }
 }
 
 Future<int> runFushiServerCli(List<String> args) async {
@@ -133,31 +118,67 @@ Future<int> runFushiServerCli(List<String> args) async {
   }
   final File configFile = File(p.absolute(results['config'] as String));
   final bool verbose = results['verbose'] as bool;
+  final String label = _commandLabel(command);
+  // --json：stdout 只留给最终 JSON，后台 isolate / 原生库的打印整体改道 stderr。
+  if (commandChainWantsJson(command)) {
+    return runWithJsonStdoutIsolation(() => _dispatch(parser, command, configFile, verbose, label));
+  }
+  return _dispatch(parser, command, configFile, verbose, label);
+}
+
+/// 命令链摘要（`audiobook align`），写进数据目录锁文件。
+String _commandLabel(ArgResults command) {
+  final List<String> names = <String>[];
+  ArgResults? level = command;
+  while (level != null) {
+    final String? name = level.name;
+    if (name != null) names.add(name);
+    level = level.command;
+  }
+  return names.join(' ');
+}
+
+Future<int> _dispatch(ArgParser parser, ArgResults command, File configFile, bool verbose, String label) async {
   switch (command.name) {
     case 'init':
       return _init(configFile, command);
     case 'serve':
-      return _withRuntime(
+      return withServerRuntime(
           configFile,
           verbose,
-          (_Runtime rt) => _serve(rt,
+          (ServerRuntime rt) => _serve(rt,
               scan: command['scan'] as bool,
-              prune: _explicitFlag(command, 'prune')));
+              prune: _explicitFlag(command, 'prune')),
+          serve: true,
+          command: label);
     case 'scan':
-      return _withRuntime(configFile, verbose,
-          (_Runtime rt) => _scan(rt,
+      return withServerRuntime(configFile, verbose,
+          (ServerRuntime rt) => _scan(rt,
               prune: _explicitFlag(command, 'prune'),
-              scrape: _explicitFlag(command, 'scrape')));
+              scrape: _explicitFlag(command, 'scrape')),
+          command: label);
     case 'status':
-      return _withRuntime(configFile, verbose, _status);
+      return withServerRuntime(configFile, verbose, _status, command: label);
     case 'pair':
-      return _withRuntime(configFile, verbose, (_Runtime rt) => _pair(rt, command.rest));
+      return withServerRuntime(configFile, verbose, (ServerRuntime rt) => _pair(rt, command.rest), command: label);
     case 'admin':
-      return _withRuntime(configFile, verbose, (_Runtime rt) => _admin(rt, command.rest));
+      return withServerRuntime(configFile, verbose, (ServerRuntime rt) => _admin(rt, command.rest), command: label);
     case 'models':
-      return _withRuntime(configFile, verbose, (_Runtime rt) => _models(rt, command));
+      return withServerRuntime(configFile, verbose, (ServerRuntime rt) => _models(rt, command), command: label);
     case 'transcribe':
-      return _withRuntime(configFile, verbose, (_Runtime rt) => _transcribe(rt, command));
+      return withServerRuntime(configFile, verbose, (ServerRuntime rt) => _transcribe(rt, command), command: label);
+    case 'ctl':
+      // 不走 _withRuntime：ctl 只发 HTTP，不开数据库、不装 host 绑定（serve 正占着它们）。
+      return runCtl(configFile, command);
+  }
+  for (final CliModule module in kCliModules) {
+    if (module.commands.contains(command.name)) {
+      return module.run(
+        command.name!,
+        command,
+        CliContext(configFile: configFile, verbose: verbose, commandLabel: label),
+      );
+    }
   }
   _usage(parser);
   return 64;
@@ -184,63 +205,7 @@ Future<int> _init(File configFile, ArgResults command) async {
   return 0;
 }
 
-Future<int> _withRuntime(
-  File configFile,
-  bool verbose,
-  Future<int> Function(_Runtime rt) body,
-) async {
-  if (!await configFile.exists()) {
-    stderr.writeln('找不到配置文件 ${configFile.path}；先跑 fushi_server init');
-    return 66;
-  }
-  ServerConfig config;
-  try {
-    config = await ServerConfig.load(configFile);
-  } on FormatException catch (e) {
-    stderr.writeln('配置文件解析失败: ${e.message}');
-    return 65;
-  }
-  if (config.adminToken == null) {
-    config = config.copyWith(adminToken: FushiSyncServer.generateToken());
-    await config.save(configFile);
-  }
-  final ServerPaths paths = ServerPaths(config.dataDir);
-  await paths.ensureLayout();
-  final ServerLog log = ServerLog(
-    file: File(p.join(paths.logs.path, 'fushi_server.log')),
-    verbose: verbose,
-  );
-  await log.open();
-  installServerHostBindings(config: config, paths: paths, log: log);
-  // 与 app 侧 `AppModel.initialise()` 对偶：`createAppHttpClient()` 的 auto 模式
-  // 要读这份缓存，不 prime 的话服务端只认 HTTP(S)_PROXY 环境变量，系统代理设置
-  // 一律看不见（装在有桌面环境的 Linux / macOS 上就会莫名其妙地直连）。
-  // 无头机器上解析不出系统代理是正常情况：`primeAppProxy` 约定失败即空 map、
-  // 绝不抛，等价于此前的直连行为。
-  await primeAppProxy();
-  final String? ffmpegProblem = await validateFfmpeg(config);
-  if (ffmpegProblem != null) log.info(ffmpegProblem);
-  final FushiDatabase db = FushiDatabase(paths.support.path);
-  final ServerPrefs prefs = ServerPrefs(db);
-  await prefs.warmUp();
-  final ServerIdentity identity = await ServerIdentity.loadOrCreate(prefs);
-  final _Runtime rt = _Runtime(
-    config: config,
-    configFile: configFile,
-    paths: paths,
-    log: log,
-    db: db,
-    prefs: prefs,
-    identity: identity,
-  );
-  try {
-    return await body(rt);
-  } finally {
-    await rt.dispose();
-  }
-}
-
-Future<int> _serve(_Runtime rt, {required bool scan, bool? prune}) async {
+Future<int> _serve(ServerRuntime rt, {required bool scan, bool? prune}) async {
   final HeadlessHost host = HeadlessHost(
     config: rt.config,
     paths: rt.paths,
@@ -278,6 +243,11 @@ Future<int> _serve(_Runtime rt, {required bool scan, bool? prune}) async {
     );
     try {
       await admin.start();
+      // 锁文件补上 WebUI 地址：被拒的离线命令据此提示「改用 ctl」该连哪。
+      await rt.dataLock.update(
+        admin: '${rt.config.tls ? 'https' : 'http'}://'
+            '${rt.config.adminBind == '0.0.0.0' ? '127.0.0.1' : rt.config.adminBind}:${admin.port}',
+      );
       stdout.writeln('WebUI: ${rt.config.tls ? 'https' : 'http'}://'
           '${rt.config.adminBind == '0.0.0.0' ? '<本机地址>' : rt.config.adminBind}:${admin.port}/ '
           '（admin_token 在配置文件里）');
@@ -318,7 +288,7 @@ Future<void> _scanInBackground(AdminContext ctx) async {
   }
 }
 
-Future<int> _scan(_Runtime rt, {bool? prune, bool? scrape}) async {
+Future<int> _scan(ServerRuntime rt, {bool? prune, bool? scrape}) async {
   if (rt.config.libraries.isEmpty) {
     stderr.writeln('配置里没有 libraries[]，无事可扫。');
     return 0;
@@ -355,7 +325,7 @@ Future<int> _scan(_Runtime rt, {bool? prune, bool? scrape}) async {
   return summary.errors.isEmpty ? 0 : 1;
 }
 
-Future<int> _status(_Runtime rt) async {
+Future<int> _status(ServerRuntime rt) async {
   final List<FushiPairedPeerRow> peers = await rt.db.getPairedPeers();
   final int videos = (await rt.db.allVideoBooks()).length;
   stdout.writeln('config:      ${rt.configFile.path}');
@@ -368,7 +338,7 @@ Future<int> _status(_Runtime rt) async {
   return 0;
 }
 
-Future<int> _pair(_Runtime rt, List<String> rest) async {
+Future<int> _pair(ServerRuntime rt, List<String> rest) async {
   final String sub = rest.isEmpty ? 'ls' : rest.first;
   switch (sub) {
     case 'ls':
@@ -398,7 +368,7 @@ Future<int> _pair(_Runtime rt, List<String> rest) async {
   }
 }
 
-Future<int> _admin(_Runtime rt, List<String> rest) async {
+Future<int> _admin(ServerRuntime rt, List<String> rest) async {
   final String sub = rest.isEmpty ? '' : rest.first;
   switch (sub) {
     case 'reset-token':
@@ -423,7 +393,7 @@ asr.AsrLanguage? _languageArg(ArgResults command) {
   return language;
 }
 
-Future<int> _models(_Runtime rt, ArgResults command) async {
+Future<int> _models(ServerRuntime rt, ArgResults command) async {
   final String sub = command.rest.isEmpty ? 'status' : command.rest.first;
   final asr.AsrTranscriptionService service = createServerAsrTranscriptionService();
   if (sub == 'status') {
@@ -466,7 +436,7 @@ Future<int> _models(_Runtime rt, ArgResults command) async {
 }
 
 /// 离线直转：不经 HTTP，方便脚本与排障（与 `/api/jobs` 的 asr runner 同一条链路）。
-Future<int> _transcribe(_Runtime rt, ArgResults command) async {
+Future<int> _transcribe(ServerRuntime rt, ArgResults command) async {
   if (command.rest.isEmpty) {
     stderr.writeln('用法: transcribe <audio> --language <tag> [--out x.srt]');
     return 64;

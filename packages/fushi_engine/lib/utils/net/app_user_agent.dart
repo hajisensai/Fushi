@@ -4,16 +4,16 @@
 /// `Hibiki`——对外部服务而言 UA 就是这个 app 的身份，两个名字同时在跑等于同一个
 /// 客户端有两个身份（限流/封禁/统计都对不上，用户也看不出哪台设备在打谁）。
 ///
-/// **不适用**于故意伪装成浏览器的场景（Aidoku 源站需要浏览器 UA 才不被 WAF 拦、
+/// **不适用**于故意伪装成浏览器的场景（Cloudflare 解题页要与被拦请求同一浏览器 UA、
 /// Google Lens OCR 要求 Chromium UA、YouTube 分离流的回放 UA 必须与铸造 URL 时
 /// 逐字一致）。那几处是「装成别人」，不是「报自己」，必须保持原样。
 library;
 
 /// 项目主页；随 UA 一起报出去，方便被访问方联系到上游。
-const String kFushiUserAgentHomepage = 'https://github.com/hajisensai/fushi';
+const String kFushiUserAgentHomepage = 'https://fushi.moe';
 
 /// 组件名 [component] 的对外 UA，形如
-/// `fushi/<component> (https://github.com/hajisensai/fushi)`。
+/// `fushi/<component> (https://fushi.moe)`。
 ///
 /// [component] 用小写短横线（`shader-downloader` / `custom-fonts`），描述**是哪
 /// 个子系统在发请求**——出问题时对方能直接指出是哪条链路，而不是只知道「某个

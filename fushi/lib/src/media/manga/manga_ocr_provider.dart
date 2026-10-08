@@ -19,7 +19,7 @@ import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
 /// 无 Riverpod 场景（AppModel → 互联 host 代跑 OCR 接线）的服务工厂。与
 /// [mangaOcrServiceProvider] 同源，保持「唯一直接引用 Impl 的文件」不变。
 MangaOcrService createMangaOcrService({
-  MangaOcrLocalModel localModel = MangaOcrLocalModel.mangaOcr,
+  MangaOcrLocalModel localModel = kDefaultMangaOcrLocalModel,
 }) => MangaOcrServiceImpl(localModel: localModel);
 
 /// Interconnect hosts keep this facade while new jobs follow model changes.
@@ -30,6 +30,14 @@ MangaOcrService createSelectedMangaOcrService(String Function() modelKey) =>
       ),
     );
 
+/// 互联 host 给对端点名的模型表：本平台列得出的每个本机模型一份服务。
+Map<String, MangaOcrService> createMangaOcrHostModelServices() =>
+    <String, MangaOcrService>{
+      for (final MangaOcrLocalModel model in MangaOcrLocalModel.values)
+        if (MangaOcrLocalModel.forPlatform(model.key) == model)
+          model.key: createMangaOcrService(localModel: model),
+    };
+
 /// 漫画整卷 OCR 服务的全局单例 provider。
 ///
 /// 默认指向 [MangaOcrServiceImpl]（ONNX 流水线 + 模型下载管理）。widget 测试用
@@ -39,8 +47,9 @@ final Provider<MangaOcrService> mangaOcrServiceProvider =
     Provider<MangaOcrService>((Ref ref) {
       final String key = ref.watch(
         appProvider.select(
-          (AppModel app) =>
-              app.isInitialised ? app.mangaOcrLocalModel : 'manga_ocr',
+          (AppModel app) => app.isInitialised
+              ? app.mangaOcrLocalModel
+              : kDefaultMangaOcrLocalModel.key,
         ),
       );
       return createMangaOcrService(

@@ -19,7 +19,7 @@ import '../helpers/source_guard.dart';
 /// ② didChangeAppLifecycleState 的 resumed 分支重申（回前台后系统栏被恢复，主动重隐）；
 /// ③ 方法 `isMobilePlatform` 门控 + 设 `SystemUiMode.immersiveSticky`，桌面 no-op；
 /// ④ 严格限本页：不动 openMedia（书走 reader 自设 edgeToEdge、首页走
-///    setHomeShellSystemUiMode），退出由 [AppModel.closeMedia] 还原。
+///    setHomeShellSystemUiMode），视频退出由最后一个显示态 owner 还原。
 ///
 /// 用静态扫描守卫：media_kit 跑不了 headless，系统栏模式切换 / 生命周期回前台都无法
 /// 在 widget 测试里真实驱动（与 _lockLandscapeForVideo / _restoreOrientationOnExit 同
@@ -29,24 +29,37 @@ void main() {
   late String appModelSrc;
 
   setUpAll(() {
-    src = File('lib/src/pages/implementations/video_fushi_page.dart')
-        .readAsStringSync();
+    src = File(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    ).readAsStringSync();
     appModelSrc = File('lib/src/models/app_model.dart').readAsStringSync();
   });
 
   test('① 视频页定义 _applyVideoImmersiveMode：移动端门控 + immersiveSticky', () {
-    final String body =
-        methodBody(src, 'Future<void> _applyVideoImmersiveMode() async {');
+    final String body = methodBody(
+      src,
+      'Future<void> _applyVideoImmersiveMode() async {',
+    );
     expect(
       containsCodeLine(body, 'if (!isMobilePlatform) return;'),
       isTrue,
       reason: '沉浸模式必须 isMobilePlatform 门控（桌面无系统栏，no-op）',
     );
     expect(
-      containsCodeLine(body,
-          'SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky)'),
+      containsCodeLine(
+        body,
+        'SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky)',
+      ),
       isTrue,
       reason: '应设 immersiveSticky 隐藏系统栏（与既有基线一致，上划临时露栏后自动重隐）',
+    );
+    expect(
+      body.indexOf('if (!VideoDisplayClaim.owns(this)) return;'),
+      allOf(
+        greaterThanOrEqualTo(0),
+        lessThan(body.indexOf('SystemChrome.setEnabledSystemUIMode')),
+      ),
+      reason: '已释放的视频页不得通过延迟加载 / resumed 回调覆盖退页恢复',
     );
   });
 
@@ -63,8 +76,9 @@ void main() {
   });
 
   test('③ resumed 生命周期分支重申 _applyVideoImmersiveMode（后台返回不残留系统栏）', () {
-    final int lifeIdx =
-        src.indexOf('void didChangeAppLifecycleState(AppLifecycleState state)');
+    final int lifeIdx = src.indexOf(
+      'void didChangeAppLifecycleState(AppLifecycleState state)',
+    );
     expect(lifeIdx, greaterThanOrEqualTo(0));
     // 右边界取 resumed 之后的下一个同级标签；找不到时退到文件末尾，不会像裸
     // indexOf 返回 -1 那样让 substring 抛 RangeError。
@@ -92,7 +106,8 @@ void main() {
     // 这一处系统栏设置，避免误把视频专属逻辑塞进共用入口。
     expect(
       appModelSrc.contains(
-          'SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky)'),
+        'SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky)',
+      ),
       isTrue,
       reason: 'openMedia 的 immersiveSticky 基线应保留（书/视频共用打开入口）',
     );

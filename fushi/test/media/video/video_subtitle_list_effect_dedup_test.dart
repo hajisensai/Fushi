@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/video_player_controller.dart';
@@ -44,6 +44,7 @@ void main() {
     ]);
 
     await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
       controller: controller,
       onTapCue: (_) {},
       onClose: () {},
@@ -74,6 +75,7 @@ void main() {
     AudioCue? tapped;
 
     await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
       controller: controller,
       onTapCue: (AudioCue cue) => tapped = cue,
       onClose: () {},
@@ -106,6 +108,7 @@ void main() {
     controller.debugUpdateCueForPosition(t + 500);
 
     await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
       controller: controller,
       onTapCue: (_) {},
       onClose: () {},

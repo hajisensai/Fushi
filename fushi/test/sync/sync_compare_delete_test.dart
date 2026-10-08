@@ -1,12 +1,13 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_compare_dialog.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
@@ -197,12 +198,25 @@ void main() {
 
   /// Pumps the compare dialog with [fake] injected, then waits for its async
   /// `_load` to settle so the book/dictionary rows are rendered.
+  ///
+  /// [localDicts] are seeded into `dictionary_metadata` first, i.e. the
+  /// dictionaries installed on this device.
   Future<FushiDatabase> pumpDialog(
     WidgetTester tester,
-    _FakeSyncBackend fake,
-  ) async {
+    _FakeSyncBackend fake, {
+    List<String> localDicts = const <String>[],
+  }) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
+    await tester.runAsync(() async {
+      for (final (int i, String name) in localDicts.indexed) {
+        await db.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
+          name: name,
+          formatKey: 'yomichan',
+          order: i,
+        ));
+      }
+    });
     tester.view.physicalSize = const Size(1200, 1600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -247,7 +261,7 @@ void main() {
 
     await tapDeleteAndConfirm(
       tester,
-      rowDeleteIcon: find.byIcon(Icons.delete_outline),
+      rowDeleteIcon: find.byIcon(FushiIcons.delete),
       menuLabel: t.sync_compare_delete_book,
     );
 
@@ -273,7 +287,7 @@ void main() {
 
     await tapDeleteAndConfirm(
       tester,
-      rowDeleteIcon: find.byIcon(Icons.delete_outline),
+      rowDeleteIcon: find.byIcon(FushiIcons.delete),
       menuLabel: t.sync_compare_delete_dict,
     );
 
@@ -292,7 +306,7 @@ void main() {
 
     await tapDeleteAndConfirm(
       tester,
-      rowDeleteIcon: find.byIcon(Icons.delete_outline),
+      rowDeleteIcon: find.byIcon(FushiIcons.delete),
       menuLabel: t.sync_compare_delete_book,
     );
 
@@ -316,7 +330,7 @@ void main() {
 
     await tapDeleteAndConfirm(
       tester,
-      rowDeleteIcon: find.byIcon(Icons.delete_outline),
+      rowDeleteIcon: find.byIcon(FushiIcons.delete),
       menuLabel: t.sync_compare_delete_audiobook,
     );
 
@@ -333,9 +347,63 @@ void main() {
     expect(find.text('BookA'), findsOneWidget);
 
     // Re-open the row overflow: the audiobook item is gone, the book item stays.
-    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.tap(find.byIcon(FushiIcons.delete));
     await tester.pumpAndSettle();
     expect(find.text(t.sync_compare_delete_audiobook), findsNothing);
     expect(find.text(t.sync_compare_delete_book), findsOneWidget);
+  });
+
+  group('dictionary row presence label (#1473)', () {
+    _FakeSyncBackend dictOnly(List<String> remoteNames) => _FakeSyncBackend(
+          books: const <SyncFileRef>[],
+          dictAssets: <AssetEntry>[
+            for (final String n in remoteNames)
+              AssetEntry(
+                id: '__dictionaries__/$n.fushidict',
+                name: '$n.fushidict',
+              ),
+          ],
+        );
+
+    testWidgets('dictionary on both sides shows Local and Remote',
+        (WidgetTester tester) async {
+      await pumpDialog(tester, dictOnly(<String>['JMdict']),
+          localDicts: <String>['JMdict']);
+
+      expect(find.text('JMdict'), findsOneWidget);
+      expect(
+        find.text('${t.sync_compare_local} · ${t.sync_compare_remote}'),
+        findsOneWidget,
+      );
+      // Still deletable on the remote side.
+      expect(find.byIcon(FushiIcons.delete), findsOneWidget);
+    });
+
+    testWidgets('remote-only dictionary shows Remote, never Local',
+        (WidgetTester tester) async {
+      await pumpDialog(tester, dictOnly(<String>['JMdict']));
+
+      expect(find.text(t.sync_compare_remote), findsOneWidget);
+      expect(find.text(t.sync_compare_local), findsNothing);
+      expect(
+        find.text('${t.sync_compare_local} · ${t.sync_compare_remote}'),
+        findsNothing,
+      );
+    });
+
+    testWidgets('local-only dictionary shows Local and no remote delete',
+        (WidgetTester tester) async {
+      await pumpDialog(tester, dictOnly(const <String>[]),
+          localDicts: <String>['JMdict']);
+
+      expect(find.text('JMdict'), findsOneWidget);
+      expect(find.text(t.sync_compare_local), findsOneWidget);
+      expect(find.text(t.sync_compare_remote), findsNothing);
+      expect(
+        find.text('${t.sync_compare_local} · ${t.sync_compare_remote}'),
+        findsNothing,
+      );
+      expect(find.byIcon(FushiIcons.delete), findsNothing);
+    });
   });
 }

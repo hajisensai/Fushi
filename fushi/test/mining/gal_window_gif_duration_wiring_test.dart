@@ -18,6 +18,11 @@ import 'package:path/path.dart' as p;
 /// [setFfmpegBackendForTesting] 注入的假后端：它在编码时数目录里真实存在的帧文件，
 /// 这就是「交给 ffmpeg 的帧数」的直接观测，不是对源码的间接推断。
 class _RecordingFfmpegBackend implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   int? framesHandedToEncoder;
   List<String>? lastArgs;
 

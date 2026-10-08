@@ -10,9 +10,10 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:share_plus/share_plus.dart';
@@ -196,7 +197,16 @@ class LeaderboardShareCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 分享卡底用中性卡片面（MD3 surfaceContainerHigh / Apple 二级分组底），
+    // 不再整卡 primaryContainer：封面本身已经够彩，彩底只会和封面打架。
+    final bool glass = isGlassDesign(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final Color background = glass
+        ? appleColorsOf(context).secondaryGroupedBackground
+        : tokens.surfaces.search;
+    final Color foreground = glass
+        ? appleColorsOf(context).label
+        : colors.onSurface;
     final TextTheme text = Theme.of(context).textTheme;
     const double gap = 6;
     const double coverWidth = (kLeaderboardShareCardWidth - 32 - gap * 2) / 3;
@@ -204,8 +214,11 @@ class LeaderboardShareCard extends StatelessWidget {
       width: kLeaderboardShareCardWidth,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: colors.primaryContainer,
-        borderRadius: tokens.radii.cardRadius,
+        color: background,
+        // M3E 整卡 20 圆角；Apple 沿用分组卡圆角。
+        borderRadius: glass
+            ? tokens.radii.cardRadius
+            : FushiM3eShape.cardRadius,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -223,7 +236,7 @@ class LeaderboardShareCard extends StatelessWidget {
                 date: data.periodLabel,
               ),
             },
-            style: text.labelLarge?.copyWith(color: colors.onPrimaryContainer),
+            style: text.labelLarge?.copyWith(color: foreground),
           ),
           const SizedBox(height: 4),
           Text(
@@ -239,7 +252,7 @@ class LeaderboardShareCard extends StatelessWidget {
               ),
             },
             style: text.headlineSmall?.copyWith(
-              color: colors.onPrimaryContainer,
+              color: foreground,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -256,7 +269,7 @@ class LeaderboardShareCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             t.leaderboard_share_card_chars(n: data.chars),
-            style: text.titleMedium?.copyWith(color: colors.onPrimaryContainer),
+            style: text.titleMedium?.copyWith(color: foreground),
           ),
           const SizedBox(height: 8),
           Row(
@@ -265,14 +278,14 @@ class LeaderboardShareCard extends StatelessWidget {
                 child: Text(
                   data.accountTag,
                   style: text.titleSmall?.copyWith(
-                    color: colors.onPrimaryContainer,
+                    color: foreground,
                   ),
                 ),
               ),
               Text(
                 'Fushi',
                 style: text.labelMedium?.copyWith(
-                  color: colors.onPrimaryContainer,
+                  color: foreground,
                 ),
               ),
             ],
@@ -459,15 +472,12 @@ class _LeaderboardShareDialogState
         onRetry: () => _show(_window),
       );
     } else {
-      content = Padding(
-        padding: EdgeInsets.all(tokens.spacing.section),
-        child: const Center(child: CircularProgressIndicator()),
-      );
+      content = const FushiLoadingView();
     }
     return FushiDialogFrame(
       child: FushiModalSheetFrame(
         title: t.leaderboard_header_share,
-        leadingIcon: Icons.ios_share,
+        leadingIcon: FushiIcons.share,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -493,31 +503,28 @@ class _LeaderboardShareDialogState
           alignment: WrapAlignment.end,
           spacing: tokens.spacing.gap,
           children: <Widget>[
-            adaptiveDialogAction(
-              context: context,
+            FushiDialogAction(
+              label: t.dialog_close,
               onPressed: () => Navigator.pop(context),
-              child: Text(t.dialog_close),
             ),
             // 链接不依赖卡片预览：取数失败 / 还在加载时也能先复制。
             KeyedSubtree(
               key: const ValueKey<String>('leaderboard-share-copy-link'),
-              child: adaptiveDialogAction(
-                context: context,
+              child: FushiDialogAction(
+                label: t.leaderboard_share_copy_link,
                 onPressed: url == null
                     ? null
                     : () => unawaited(leaderboardCopy(url.toString())),
-                child: Text(t.leaderboard_share_copy_link),
               ),
             ),
             KeyedSubtree(
               key: const ValueKey<String>('leaderboard-share-image'),
-              child: adaptiveDialogAction(
-                context: context,
-                isDefaultAction: true,
+              child: FushiDialogAction(
+                label: t.leaderboard_share,
+                kind: FushiDialogActionKind.primary,
                 onPressed: data == null || url == null || _sharing
                     ? null
                     : () => unawaited(_share(url)),
-                child: Text(t.leaderboard_share),
               ),
             ),
           ],

@@ -48,13 +48,19 @@ bool dropSurfaceActive(BuildContext context) {
 
 /// Enables desktop_drop only on desktop platforms; all other platforms pass the
 /// child through with zero runtime cost.
-class FushiFileDropTarget extends StatelessWidget {
+///
+/// 「正拖着文件悬停」状态两条出口（都向后兼容，不用的调用点零改动）：
+/// - [onHoverChanged]：落点自己的页面 / 状态拿到变化（例如游戏导入视图）；
+/// - [FushiFileDropTarget.dragHoveringOf]：子树里任何卡片按需订阅最近一层落点的
+///   悬停位（例如快速导入区、导入对话框顶部的拖放卡），不用一层层往下传参。
+class FushiFileDropTarget extends StatefulWidget {
   const FushiFileDropTarget({
     required this.onDrop,
     required this.child,
     this.enabled = true,
     this.debugLabel,
     this.onDropFailure,
+    this.onHoverChanged,
     super.key,
   });
 
@@ -66,55 +72,26 @@ class FushiFileDropTarget extends StatelessWidget {
   /// 见 [DropFailureReporter]。`null` = 生产默认（error toast）。
   final DropFailureReporter? onDropFailure;
 
+  /// 「正拖着文件悬停在本落点上」的状态变化（可不传）。
+  ///
+  /// 拖入且本表面可见可用时报 `true`；拖离、落下（无论是否被门挡掉）报 `false`。
+  /// 只在桌面端触发——移动端没有桌面拖放，本组件直接透传 child。只在状态真的
+  /// 变化时回调（同一状态不重复报）。
+  final ValueChanged<bool>? onHoverChanged;
+
   static bool get _isDesktop =>
       !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
 
+  /// 最近一层 [FushiFileDropTarget] 当前是否正有文件拖着悬停（没有祖先 / 非
+  /// 桌面端恒为 false）。会注册依赖：悬停位变化时调用方重建。
+  static bool dragHoveringOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<_FushiFileDragHoverScope>()
+          ?.hovering ??
+      false;
+
   @override
-  Widget build(BuildContext context) {
-    if (!_isDesktop) return child;
-    return DropTarget(
-      enable: enabled,
-      onDragDone: (DropDoneDetails detail) {
-        final bool active = enabled && dropSurfaceActive(context);
-        final List<String> paths = detail.files
-            .map((DropItem f) => f.path)
-            .where((String s) => s.isNotEmpty)
-            .toList();
-        _log(
-          'done active=$active files=${paths.length} '
-          'local=${detail.localPosition} global=${detail.globalPosition}',
-        );
-        if (!active) {
-          _log('ignored inactive drop');
-          return;
-        }
-        if (paths.isEmpty) {
-          _log('ignored empty drop');
-          return;
-        }
-        runDrop(paths, detail.globalPosition);
-      },
-      onDragEntered: (DropEventDetails detail) {
-        _log(
-          'enter active=${enabled && dropSurfaceActive(context)} '
-          'local=${detail.localPosition} global=${detail.globalPosition}',
-        );
-      },
-      onDragUpdated: (DropEventDetails detail) {
-        _log(
-          'update active=${enabled && dropSurfaceActive(context)} '
-          'local=${detail.localPosition} global=${detail.globalPosition}',
-        );
-      },
-      onDragExited: (DropEventDetails detail) {
-        _log(
-          'exit active=${enabled && dropSurfaceActive(context)} '
-          'local=${detail.localPosition} global=${detail.globalPosition}',
-        );
-      },
-      child: child,
-    );
-  }
+  State<FushiFileDropTarget> createState() => _FushiFileDropTargetState();
 
   /// 把 [onDrop] 的**全部**失败收在这一处，并且一定给用户一个可见结果。
   ///
@@ -145,4 +122,94 @@ class FushiFileDropTarget extends StatelessWidget {
     final String label = debugLabel == null ? '' : '[$debugLabel] ';
     debugPrint('[fushi-drop] $label$message');
   }
+}
+
+class _FushiFileDropTargetState extends State<FushiFileDropTarget> {
+  bool _hovering = false;
+
+  void _setHovering(bool value) {
+    if (_hovering == value) return;
+    if (mounted) setState(() => _hovering = value);
+    widget.onHoverChanged?.call(value);
+  }
+
+  @override
+  void didUpdateWidget(covariant FushiFileDropTarget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 关掉落点时一并熄灭悬停位：desktop_drop 在 enable=false 后不再报 exit。
+    if (!widget.enabled && _hovering) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _setHovering(false);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool enabled = widget.enabled;
+    if (!FushiFileDropTarget._isDesktop) return widget.child;
+    return DropTarget(
+      enable: enabled,
+      onDragDone: (DropDoneDetails detail) {
+        _setHovering(false);
+        final bool active = widget.enabled && dropSurfaceActive(context);
+        final List<String> paths = detail.files
+            .map((DropItem f) => f.path)
+            .where((String s) => s.isNotEmpty)
+            .toList();
+        widget._log(
+          'done active=$active files=${paths.length} '
+          'local=${detail.localPosition} global=${detail.globalPosition}',
+        );
+        if (!active) {
+          widget._log('ignored inactive drop');
+          return;
+        }
+        if (paths.isEmpty) {
+          widget._log('ignored empty drop');
+          return;
+        }
+        widget.runDrop(paths, detail.globalPosition);
+      },
+      onDragEntered: (DropEventDetails detail) {
+        final bool active = widget.enabled && dropSurfaceActive(context);
+        widget._log(
+          'enter active=$active '
+          'local=${detail.localPosition} global=${detail.globalPosition}',
+        );
+        _setHovering(active);
+      },
+      onDragUpdated: (DropEventDetails detail) {
+        widget._log(
+          'update active=${widget.enabled && dropSurfaceActive(context)} '
+          'local=${detail.localPosition} global=${detail.globalPosition}',
+        );
+      },
+      onDragExited: (DropEventDetails detail) {
+        widget._log(
+          'exit active=${widget.enabled && dropSurfaceActive(context)} '
+          'local=${detail.localPosition} global=${detail.globalPosition}',
+        );
+        _setHovering(false);
+      },
+      child: _FushiFileDragHoverScope(
+        hovering: _hovering,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// [FushiFileDropTarget.dragHoveringOf] 的载体。
+class _FushiFileDragHoverScope extends InheritedWidget {
+  const _FushiFileDragHoverScope({
+    required this.hovering,
+    required super.child,
+  });
+
+  final bool hovering;
+
+  @override
+  bool updateShouldNotify(_FushiFileDragHoverScope oldWidget) =>
+      oldWidget.hovering != hovering;
 }

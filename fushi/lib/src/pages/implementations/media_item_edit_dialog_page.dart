@@ -1,11 +1,13 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// The content of the dialog upon selecting 'Edit' in the
@@ -88,7 +90,7 @@ class _MediaItemEditDialogPageState
             suffixIcon: FushiIconButton(
               tooltip: t.undo,
               isWideTapArea: true,
-              icon: Icons.undo_outlined,
+              icon: FushiIcons.undo,
               onTap: () async {
                 _nameOverrideController.text = widget.item.title;
                 FocusScope.of(context).unfocus();
@@ -105,7 +107,7 @@ class _MediaItemEditDialogPageState
               suffixIcon: FushiIconButton(
                 tooltip: t.undo,
                 isWideTapArea: true,
-                icon: Icons.undo_outlined,
+                icon: FushiIcons.undo,
                 onTap: () async {
                   _authorController.text = widget.item.author ?? '';
                   FocusScope.of(context).unfocus();
@@ -171,18 +173,17 @@ class _MediaItemEditDialogPageState
       ];
 
   Widget buildCancelButton() {
-    return adaptiveDialogAction(
-      context: context,
+    return FushiDialogAction(
+      label: t.dialog_cancel,
       onPressed: executeCancel,
-      child: Text(t.dialog_cancel),
     );
   }
 
   Widget buildSaveButton() {
-    return adaptiveDialogAction(
-      context: context,
+    return FushiDialogAction(
+      label: t.dialog_save,
+      kind: FushiDialogActionKind.primary,
       onPressed: executeSave,
-      child: Text(t.dialog_save),
     );
   }
 
@@ -311,8 +312,12 @@ class MediaItemCoverOverrideField extends StatelessWidget {
         horizontal: tokens.spacing.rowHorizontal,
         vertical: tokens.spacing.gap,
       ),
-      color: tokens.surfaces.search,
-      borderColor: tokens.surfaces.outline,
+      // Apple：对话框里的内嵌块是无描边的系统灰填充（tertiaryFill），不画
+      // 描边方框；MD3 维持 search 底 + outline 描边。
+      color: isGlassDesign(context)
+          ? appleColorsOf(context).tertiaryFill
+          : tokens.surfaces.search,
+      borderColor: isGlassDesign(context) ? null : tokens.surfaces.outline,
       child: ConstrainedBox(
         constraints: BoxConstraints(
           minHeight: tokens.spacing.gap * 7,
@@ -340,7 +345,7 @@ class MediaItemCoverOverrideField extends StatelessWidget {
                       return SizedBox(
                         height: tokens.spacing.gap * 6,
                         width: tokens.spacing.gap * 6,
-                        child: const Icon(Icons.broken_image_outlined),
+                        child: const FushiIcon(FushiIcons.brokenImage),
                       );
                     },
                   ),
@@ -352,7 +357,7 @@ class MediaItemCoverOverrideField extends StatelessWidget {
               FushiIconButton(
                 tooltip: t.book_scrape_cover,
                 isWideTapArea: true,
-                icon: Icons.image_search_outlined,
+                icon: FushiIcons.imageSearch,
                 onTap: onScrape,
               ),
               SizedBox(width: tokens.spacing.gap / 2),
@@ -360,14 +365,14 @@ class MediaItemCoverOverrideField extends StatelessWidget {
             FushiIconButton(
               tooltip: t.pick_image,
               isWideTapArea: true,
-              icon: Icons.file_upload_outlined,
+              icon: FushiIcons.upload,
               onTap: onPickImage,
             ),
             SizedBox(width: tokens.spacing.gap / 2),
             FushiIconButton(
               tooltip: t.undo,
               isWideTapArea: true,
-              icon: Icons.undo_outlined,
+              icon: FushiIcons.undo,
               onTap: onUndo,
             ),
           ],

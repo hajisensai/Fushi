@@ -246,13 +246,19 @@ void main() {
       'onTapEmpty', // 点空白切底栏
     ]) {
       test("'$handler' 回调体内回收焦点（FocusReclaimCause.gesture）", () {
-        final String body = _handlerCallbackBody(code, handler);
-        expect(
-          body.contains('_focusOwnership.reclaim(FocusReclaimCause.gesture)'),
-          isTrue,
-          reason: "'$handler' 回调丢了夺回焦点的调用 —— 该手势翻页/切栏后 ESC "
-              '将无法退出书籍（BUG-136）。',
-        );
+        // 2026-10-04 歌词覆盖层有自己的 WebView，同名桥（onTapEmpty）注册两处
+        // （正文 + 歌词）——每一处都必须回收焦点，不能只验第一处。
+        final List<String> bodies = _handlerCallbackBodies(code, handler);
+        expect(bodies, isNotEmpty);
+        for (final String body in bodies) {
+          expect(
+            body.contains(
+                '_focusOwnership.reclaim(FocusReclaimCause.gesture)'),
+            isTrue,
+            reason: "'$handler' 回调丢了夺回焦点的调用 —— 该手势翻页/切栏后 ESC "
+                '将无法退出书籍（BUG-136）。',
+          );
+        }
       });
     }
 
@@ -279,6 +285,18 @@ void main() {
 
 /// 取某个 `handlerName: '<name>'` 之后、到下一个 `handlerName:`（或文件末尾）之前的
 /// 源码片段，作为该回调体的近似范围，用于断言夺回焦点的调用确实接在该回调里。
+/// [handlerName] 的全部注册处（正文 WebView 与歌词覆盖层 WebView 可能各注册一份）。
+List<String> _handlerCallbackBodies(String code, String handlerName) {
+  final List<String> out = <String>[];
+  int start = code.indexOf("handlerName: '$handlerName'");
+  while (start >= 0) {
+    final int next = code.indexOf('handlerName:', start + 1);
+    out.add(next < 0 ? code.substring(start) : code.substring(start, next));
+    start = code.indexOf("handlerName: '$handlerName'", start + 1);
+  }
+  return out;
+}
+
 String _handlerCallbackBody(String code, String handlerName) {
   final int start = code.indexOf("handlerName: '$handlerName'");
   expect(start, isNonNegative,

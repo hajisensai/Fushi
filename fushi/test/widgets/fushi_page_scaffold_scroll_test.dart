@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 
 import 'widget_test_helpers.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 void main() {
   /// è¿åé®ç**å½ä¸­ç**ï¼InkWellï¼ç©å½¢ââä¸æ¯å¾æ å­å½¢ç©å½¢ã
@@ -18,7 +19,7 @@ void main() {
   Rect backHitRect(WidgetTester tester) => tester.getRect(
         find
             .ancestor(
-              of: find.byIcon(Icons.arrow_back),
+              of: find.byIcon(FushiIcons.back),
               matching: find.byType(InkWell),
             )
             .first,
@@ -56,7 +57,7 @@ void main() {
 
     expect(find.byType(AppBar), findsNothing,
         reason: 'the back action must not occupy a separate empty app-bar row');
-    final Finder back = find.byIcon(Icons.arrow_back);
+    final Finder back = find.byIcon(FushiIcons.back);
     final Finder title = find.text('Sync & backup');
     expect(back, findsOneWidget);
     expect(title, findsOneWidget);
@@ -222,6 +223,11 @@ void main() {
 
   testWidgets('BUG-1959/2004：粗鼠标滚轮分帧到达，距离仍是完整原始 delta',
       (WidgetTester tester) async {
+    // 粗细判据按物理像素（BUG-2867）；测试视图默认 DPR 3.0 会把下面「12 逻辑 px
+    // 的细 delta」放大成 36 物理 px 而判成粗滚轮。DPR 设成 1，让它就是高精度
+    // 滚轮 1/8 档的 12 物理 px；120 逻辑 px 仍是 120 物理 px 的粗滚轮。
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetDevicePixelRatio);
     PageScrollRegistry.debugClear();
     // 与生产同形：滚轮补间由根部 SmoothWheelScrollScope 给（BUG-2834）。
     await tester.pumpWidget(buildTestApp(SmoothWheelScrollScope(

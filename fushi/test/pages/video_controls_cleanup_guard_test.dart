@@ -44,7 +44,7 @@ void main() {
     }
 
     test('控制条不含 Icons.compare 按钮', () {
-      expect(controlsThemes().contains('Icons.compare'), isFalse,
+      expect(controlsThemes().contains('Icons.compare') || controlsThemes().contains('FushiIcons.compare'), isFalse,
           reason: '着色器对比按钮应移出桌面 / 移动控制条');
     });
     test('_toggleShaderCompare 方法与 C 快捷键接线保留', () {
@@ -95,7 +95,8 @@ void main() {
           reason: '浮动音轨侧栏（kind）已删');
       final String body = panelBody(
           'Widget _buildAudioTrackSettingsSection(VideoPlayerController');
-      expect(body.contains('ListTile('), isTrue,
+      // 玻璃重设计：行控件走共享 FushiListTileControl（ListTile 的设计系统分派版）。
+      expect(body.contains('FushiListTileControl('), isTrue,
           reason: '音轨切换区逐轨一行 ListTile（收进面板不丢功能）');
     });
 

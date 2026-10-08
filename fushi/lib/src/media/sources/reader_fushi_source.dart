@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,6 +12,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
@@ -76,6 +77,17 @@ final bookLastReadAtProvider = FutureProvider<Map<String, int>>((ref) async {
   };
 });
 
+/// 「读完」的书的 bookKey 集合（`EpubBooks.completedAt` 非 null：手动标记或读到
+/// 末尾由阅读器自动写入），口径与书架 `_completedBookKeys` 同源。BUG-2918：首页
+/// 「继续」区判在读必须经 [classifyShelfReadStatus] 查它——阅读器落库的位置是
+/// 末页**首个可见字符**，读到最后一页 position 也永远 < duration，只看进度会把
+/// 读完的书当「在读」并显示四舍五入出的 100%。与 [bookLastReadAtProvider] 同点失效。
+final completedEpubBookKeysProvider =
+    FutureProvider<Set<String>>((ref) async {
+  final FushiDatabase db = ref.watch(appProvider).database;
+  return db.getCompletedEpubBookKeys();
+});
+
 /// bookKey → `EpubBooks.uid` 换算表（v82）。书架/首页的通货是 MediaItem
 /// （身份 = mediaIdentifier 里的 bookKey），查 [bookLastReadAtProvider] 前经此
 /// 换算；空 uid 行不进表（查不到 = 无阅读记录，与 resolveEpubBookUid 契约一致）。
@@ -90,6 +102,19 @@ final epubBookUidByKeyProvider =
       if (r.uid.isNotEmpty) r.bookKey: r.uid,
   };
 });
+
+/// 按 bookKey 查 [bookLastReadAtProvider] 映射：先经 [epubBookUidByKeyProvider]
+/// 换算成 uid 再查，换算不上（非 epub 遗留行 / 空键）退回原键。书架 hero 与
+/// 「最近阅读」排序共用这一跳——BUG-2904：hero 曾直接拿 bookKey 查 uid 键表，
+/// 恒查空、退化成列表序（= 最近导入的在读书），读了新书「继续阅读」也不换。
+int? lastReadAtForBookKey(
+  Map<String, int> lastReadAtByUid,
+  Map<String, String> epubUidByKey,
+  String? bookKey,
+) {
+  if (bookKey == null) return null;
+  return lastReadAtByUid[epubUidByKey[bookKey] ?? bookKey];
+}
 
 /// 书架阅读进度（position / duration，字符为单位）。TODO-1346：书架进度条以前只按
 /// `sectionIndex` 累加「之前各章字数」、完全忽略当前章内的 `charOffset`，读到某章开头
@@ -147,6 +172,20 @@ final epubBookUidByKeyProvider =
   return (position: 0, duration: 1);
 }
 
+/// 页式书（漫画 / PDF）的位置行是不是「重置阅读状态」写回的开头位置。
+///
+/// 页式阅读器落位置恒显式传 `charOffset >= 0`（翻页 0、条漫存页内千分比），只有
+/// `library_progress_reset.dart` 的重置会写「第 0 页 + 精确锚缺席（-1）」——重置不能
+/// 删行（两条同步通道都会把对端位置灌回来），只能写一条新位置，这一形状就是它的
+/// 标记。书架按 1-based 页序算进度（停在第 1 页也算在读），不认这一形状的话重置后
+/// 的卷仍会显示「在读」并留在「继续阅读」里。[charOffset] 取仓库模型的值（-1 已
+/// 映射为 null）。
+bool isPageBasedResetPosition({
+  required int sectionIndex,
+  required int? charOffset,
+}) =>
+    sectionIndex == 0 && (charOffset == null || charOffset < 0);
+
 /// [ReaderFushiSource.deleteBook] 的结果（TODO-1359）。
 ///
 /// 旧接口只回 `Future<bool>`，删除失败时调用方拿不到任何原因，只能弹一个笼统的
@@ -177,6 +216,22 @@ class DeleteBookResult {
   /// 「同时删除本地文件」的逐条结果（没勾选时恒为空）。删除本身成功、原件却一个
   /// 都没删掉（正在播放、句柄占用）是必须让用户看见的状态，不能混进 [deleted]。
   final LocalFileDeleteReport localFiles;
+}
+
+/// 一个阅读器页登记给 [ReaderFushiSource] 的一组实时 hook（BUG-3001）。按对象
+/// 身份登记 / 注销，见 [ReaderFushiSource.attachLiveHooks]。
+class ReaderLiveHooks {
+  const ReaderLiveHooks({
+    required this.settingsChanged,
+    required this.layoutReload,
+    required this.chromeReload,
+    required this.chromeReanchor,
+  });
+
+  final VoidCallback settingsChanged;
+  final VoidCallback layoutReload;
+  final VoidCallback chromeReload;
+  final VoidCallback chromeReanchor;
 }
 
 /// 阅读器媒体源的**持久化身份键**（DB pref 前缀 `src:reader_fushi:`、
@@ -243,7 +298,7 @@ class ReaderFushiSource extends ReaderMediaSource {
   // leave to be mis-decoded or to throw on decode). Mirrors fontUrl's encoding.
   static String epubUrl(String href) {
     final String encoded = href.split('/').map(Uri.encodeComponent).join('/');
-    if (Platform.isMacOS || Platform.isIOS) {
+    if (webViewUsesCustomSchemeTransport) {
       return '$kResourceScheme://$kHost/epub/$encoded';
     }
     return 'https://$kHost/epub/$encoded';
@@ -251,7 +306,7 @@ class ReaderFushiSource extends ReaderMediaSource {
 
   static String fontUrl(String path) {
     final String encoded = Uri.encodeComponent(path);
-    if (Platform.isMacOS || Platform.isIOS) {
+    if (webViewUsesCustomSchemeTransport) {
       return '$kResourceScheme://$kHost/fonts/$encoded';
     }
     return 'https://$kHost/fonts/$encoded';
@@ -428,6 +483,8 @@ class ReaderFushiSource extends ReaderMediaSource {
     // BUG-777：阅读中位置持续落库刷新 updatedAt，关书回书架时 recency 映射与
     // 书列表同点失效，继续阅读 hero /「最近阅读」排序立即反映本次阅读。
     ref.invalidate(bookLastReadAtProvider);
+    // BUG-2918：读到末尾时阅读器写 completedAt，关书回首页「继续」区立即剔除。
+    ref.invalidate(completedEpubBookKeysProvider);
   }
 
   @override
@@ -444,10 +501,13 @@ class ReaderFushiSource extends ReaderMediaSource {
   }) {
     final String bookKey = _extractBookKey(item?.mediaIdentifier ?? '');
     return FushiAppUiScaleNeutralizer(
-      child: ReaderFushiPage(
-        item: item,
-        bookKey: bookKey,
-        initialBookmarkJump: initialBookmarkJump,
+      // 歌词模式配色的注入点：页面 context 弹出的侧栏 / 菜单 / 对话框都在它之下。
+      child: LyricsThemeHost(
+        child: ReaderFushiPage(
+          item: item,
+          bookKey: bookKey,
+          initialBookmarkJump: initialBookmarkJump,
+        ),
       ),
     );
   }
@@ -642,7 +702,13 @@ class ReaderFushiSource extends ReaderMediaSource {
             ? (
                 // 1-based 页序直接 clamp 到 [1, 总页数]，脏 sectionIndex 也不会让
                 // position 溢出 duration（>100%）。
-                position: pos == null
+                // 「重置阅读状态」写回的开头位置（页式阅读器从不写缺席的精确锚，
+                // 见 [isPageBasedResetPosition]）同样算未读。
+                position: pos == null ||
+                        isPageBasedResetPosition(
+                          sectionIndex: pos.sectionIndex,
+                          charOffset: pos.charOffset,
+                        )
                     ? 0
                     : (pos.sectionIndex + 1).clamp(
                         1,
@@ -1201,6 +1267,40 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// reflow would otherwise zero `window.scrollY` and bounce to chapter start).
   static VoidCallback? onChromeReanchorLive;
 
+  /// 四个实时 hook 的持有者栈（BUG-3001）。同一时刻可能挂着不止一个阅读器页：
+  /// 切卷走 `pushReplacement`，新页 initState 注册 hook 时旧页要等转场结束才
+  /// dispose；卡片来源也可能在一个阅读器上再叠开一个。旧实现由各页 dispose
+  /// 无条件把四个 hook 置 null，后销毁的那一页会把仍在显示的阅读器的 hook 一起
+  /// 抹掉——之后改按钮布局等设置偏好照写、阅读器却收不到通知，退出重进才生效。
+  /// 现在每页只登记 / 注销自己那一组，hook 恒指向栈顶（最上层、仍存活的那页）。
+  static final List<ReaderLiveHooks> _liveHookOwners = <ReaderLiveHooks>[];
+
+  /// 阅读器页 initState 登记自己的实时 hook；成为栈顶，四个 hook 指向它。
+  static void attachLiveHooks(ReaderLiveHooks hooks) {
+    _liveHookOwners.remove(hooks);
+    _liveHookOwners.add(hooks);
+    _applyTopLiveHooks();
+  }
+
+  /// 阅读器页 dispose 注销自己那一组（按身份）；hook 回落到剩下的栈顶，栈空时
+  /// 置 null（不让静态 hook 泄漏到已销毁页）。注销非栈顶的一组不影响当前 hook。
+  static void detachLiveHooks(ReaderLiveHooks hooks) {
+    _liveHookOwners.remove(hooks);
+    _applyTopLiveHooks();
+  }
+
+  static void _applyTopLiveHooks() {
+    final ReaderLiveHooks? top =
+        _liveHookOwners.isEmpty ? null : _liveHookOwners.last;
+    onSettingsChangedLive = top?.settingsChanged;
+    onLayoutReloadLive = top?.layoutReload;
+    onChromeReloadLive = top?.chromeReload;
+    onChromeReanchorLive = top?.chromeReanchor;
+  }
+
+  @visibleForTesting
+  static int get debugLiveHookOwnerCount => _liveHookOwners.length;
+
   /// 手柄按钮图显示品牌（TODO-1113 / TODO-612）。纯**显示偏好**：只决定快捷键设置页
   /// 里手柄面键渲染成 Xbox A/B/X/Y、PlayStation ✕○□△ 还是 Nintendo Switch B/A/Y/X，
   /// 与 binding 序列化完全解耦（[GamepadButton.serialize] 恒定）。以 token 字符串持久化，
@@ -1699,6 +1799,23 @@ class ReaderFushiSource extends ReaderMediaSource {
   Future<void> clearLyricsTextColor() async {
     await (readerSettings?.clearLyricsTextColor() ??
         setPreference<int>(key: 'lyrics_text_color', value: 0));
+    onSettingsChangedLive?.call();
+  }
+
+  /// 歌词模式当前行高亮色。ARGB int；`0` = 未设置（跟随播放器主题）。写后走
+  /// `onSettingsChangedLive` → 歌词态 `_updateLyricsStyleLive` 热更 CSS 变量。
+  int get lyricsHighlightColor =>
+      readerSettings?.lyricsHighlightColor ??
+      getPreference<int>(key: 'lyrics_highlight_color', defaultValue: 0);
+  Future<void> setLyricsHighlightColor(int v) async {
+    await (readerSettings?.setLyricsHighlightColor(v) ??
+        setPreference<int>(key: 'lyrics_highlight_color', value: v));
+    onSettingsChangedLive?.call();
+  }
+
+  Future<void> clearLyricsHighlightColor() async {
+    await (readerSettings?.clearLyricsHighlightColor() ??
+        setPreference<int>(key: 'lyrics_highlight_color', value: 0));
     onSettingsChangedLive?.call();
   }
 

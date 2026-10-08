@@ -194,6 +194,23 @@ window.flutter_inappwebview = {
             return null;
           }
         })();
+      case 'listWordAudioSources':
+        // 「选择音频源」菜单（♪ 长按 / 右键）：经 background 向 server POST
+        // /api/lookup/audio/list，拿回每个启用源各自的短命取字节 URL
+        // [{name, variant, url}]。旧 app 无该端点（404）/ 失败 → 空列表，popup.js 显示「暂无发音」。
+        return (async function () {
+          try {
+            var l = args[0] || {};
+            var resp = await chrome.runtime.sendMessage({
+              type: 'lookupAudioList',
+              expression: l.expression || '',
+              reading: l.reading || '',
+            });
+            return (resp && resp.ok && Array.isArray(resp.audioSources)) ? resp.audioSources : [];
+          } catch (_) {
+            return [];
+          }
+        })();
       // 单词音频播放已统一到 popup.js 自身（playWordAudio 直接 new Audio(url).play()），
       // 三端同一路径，不再经 callHandler('playWordAudio')。故此处旧的 playWordAudio 桥
       // 已删除。resolveWordAudio 仍返回可直接播放的 URL（扩展侧是 sync server 的

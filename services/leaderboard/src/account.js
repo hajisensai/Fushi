@@ -16,6 +16,8 @@ export function selfView(row) {
     createdAt: row.created_at,
     shelfCount: row.shelf_count,
     emailVerified: true,
+    // 开发者账户：App 据此显示反馈处理入口（权限仍以服务端为准）。
+    role: row.role === 'dev' ? 'dev' : 'user',
     // 本机是否为「上传设备」（还没有任何设备上传过时，第一台上传的就是）。
     uploadDevice: row.upload_key === null || row.upload_key === undefined || row.upload_key === row.keyId,
   };
@@ -149,11 +151,11 @@ export async function deleteAccount(env, account) {
   const id = account.id;
   // 版本与旧行在同一次 CAS 保护下：与本账户的并发上传交错时整批回滚（409，客户端重试删除）。
   const acc = await env.DB.prepare('SELECT shelf_rev, hidden FROM accounts WHERE id = ?1').bind(id).first();
-  const prev = await env.DB.prepare('SELECT work_id, finished_at, finished_date FROM shelf WHERE account_id = ?1')
+  const prev = await env.DB.prepare('SELECT work_id, finished_at, finished_date, counted FROM shelf WHERE account_id = ?1')
     .bind(id).all();
   const prevJson = JSON.stringify(prev.results.map((r) => r.work_id));
-  // 读完过的作品读者数 / 周期读者数减一（被隐藏的账户本来就没计入）。
-  const finished = acc.hidden ? [] : prev.results.filter((r) => r.finished_at !== null);
+  // 读完过的作品读者数 / 周期读者数减一（被隐藏的账户、counted = 0 的行本来就没计入）。
+  const finished = acc.hidden ? [] : prev.results.filter((r) => r.finished_at !== null && r.counted !== 0);
   const deltas = finished.map((r) => ({ id: r.work_id, d: -1 }));
   const periodDeltas = finished.flatMap((r) => periodContributions(r.work_id, r.finished_at, r.finished_date, -1));
   const results = await casBatch(env.DB, [
@@ -166,6 +168,9 @@ export async function deleteAccount(env, account) {
     env.DB.prepare('DELETE FROM account_totals WHERE account_id = ?1').bind(id),
     env.DB.prepare('DELETE FROM friends WHERE a = ?1 OR b = ?1').bind(id),
     env.DB.prepare('DELETE FROM blocks WHERE account_id = ?1 OR blocked_id = ?1').bind(id),
+    // 反馈是给开发者的问题记录，不随账户删除；只断开与账户的关联（变成匿名反馈，ticket 照旧可用）。
+    env.DB.prepare('UPDATE feedback SET account_id = NULL WHERE account_id = ?1').bind(id),
+    env.DB.prepare('DELETE FROM dev_sessions WHERE account_id = ?1').bind(id),
     env.DB.prepare('DELETE FROM reports WHERE reporter = ?1 OR (target_kind = \'account\' AND target_id = ?1)').bind(id),
     // 精确列出本账户的限流桶（LIKE 的 '_' 是通配符，账户 id 里正好有 '_'）。
     env.DB.prepare('DELETE FROM rate_limits WHERE bucket IN (?1, ?2, ?3, ?4)')

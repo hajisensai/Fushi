@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -13,26 +13,9 @@ Future<void> pushAiSettingsPage(BuildContext context) {
     MaterialPageRoute<void>(
       builder: (BuildContext context) => Scaffold(
         body: SafeArea(
-          child: ModuleSettingsView(
+          child: ModuleSettingsView.route(
             destinationId: SettingsDestinationId.ai,
-            navigation: Row(
-              children: <Widget>[
-                FushiIconButton(
-                  icon: Icons.arrow_back,
-                  tooltip: t.back,
-                  onTap: () => Navigator.of(context).maybePop(),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    t.ai_settings_title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
-              ],
-            ),
+            title: t.ai_settings_title,
           ),
         ),
       ),

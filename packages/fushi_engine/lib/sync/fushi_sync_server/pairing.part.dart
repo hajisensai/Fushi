@@ -431,6 +431,15 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       if (downloads != null) 'downloads': downloads,
       if (subscriptions != null) 'subscriptions': subscriptions,
       if (assistant != null) 'assistant': assistant,
+      // 查词 / 制卡 / 查词历史 / 游戏串流：这台 host 是否接了对应 service（老 host
+      // 无这些字段，client 照旧以端点 404 判断）。只说「懂不懂这条路由」，不代表此刻
+      // 一定成功——例如制卡还要 host 已登录 Anki、查词还要 host 装了词典。
+      'lookup': <String, dynamic>{
+        'dictionary': _remoteLookupService != null,
+        'history': _historyService != null,
+      },
+      'mining': _miningService != null,
+      'gameStream': _gameStreamService != null,
       'liveLibrary': <String, dynamic>{
         'dictionaries': lib,
         'books': lib,

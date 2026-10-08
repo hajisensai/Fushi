@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/anki/source_review_session.dart';
+import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi_core/fushi_core.dart' show kStatSourceBook;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -18,7 +19,12 @@ import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
+import 'package:fushi/src/ai/ai_failure_text.dart';
+import 'package:fushi/src/ai/ai_lookup_context_assistant.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_feature.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
@@ -28,6 +34,7 @@ import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
 import 'package:fushi/src/utils/misc/lookup_auto_read_coordinator.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
@@ -61,6 +68,20 @@ int lookupHighlightCharCount({
     result: result,
     searchTerm: searchTerm,
   );
+}
+
+/// 一次查词是怎么发起的。决定这次查词要不要跑「每查一次就付费一次」的旁路工作
+/// （查词按句意自动挑词条），以及这一层弹窗有没有可信的原句。
+enum LookupOrigin {
+  /// 明确的一次点击 / 按键 / 菜单「查词」：查的就是读者此刻那句话里的词。
+  explicit,
+
+  /// 指针扫过（Shift 悬停 / 悬停查词）：扫一行就连查十几个词，不自动挑词条。
+  hover,
+
+  /// 在弹窗释义里点词叠出的子层：查的词来自释义，不在读者的原句里，
+  /// 这一层没有可信的句子（不显示 ✨、不自动挑词条）。
+  nested,
 }
 
 /// A page template which assumes use of [BaseSourcePageState] by which all
@@ -131,6 +152,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   void dispose() {
     ExternalMediaNavigation.instance.unregister(this);
     _visibleRenderFailsafeTimer?.cancel();
+    _closeAutoAiPickClient();
     // TODO-058：controller 现持有挂起层兜底 Timer，作为其所有者必须 dispose 取消，防泄漏。
     _popup.dispose();
     _isSearchingNotifier.dispose();
@@ -153,6 +175,13 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   Rect? _pendingSelectionRect;
 
   int _searchGeneration = 0;
+
+  /// 推进查词代次（新查词 / 关弹窗）。代次一变，上一次查词的自动挑词条请求就
+  /// 作废——当场 close 掉它的客户端（中止在途请求，不再为过期的词付费）。
+  int _bumpSearchGeneration() {
+    _closeAutoAiPickClient();
+    return ++_searchGeneration;
+  }
 
   /// TODO-716：桌面对齐手机的"滑动关闭弹窗"。弹窗显示时全屏 barrier 盖住正文，
   /// 在 barrier 上水平拖累计位移过阈即关一层（[dismissTopPopup]，与光标 B/Esc 逐层
@@ -368,13 +397,25 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     required Rect selectionRect,
     int? overrideMaximumTerms,
     bool deferDisplay = false,
+    LookupOrigin origin = LookupOrigin.explicit,
   }) async {
     overrideMaximumTerms ??= appModel.maximumTerms;
 
-    final gen = ++_searchGeneration;
+    final gen = _bumpSearchGeneration();
     _pendingSelectionRect = selectionRect;
     _deferredPopupItem = null;
 
+    // 诊断：阅读器 / 有声书家族此前不开查词流水，`searchDictionary` 与弹窗各段在
+    // 诊断日志里没有归属（「空闲后首查慢」无从拆段）。与 mixin 宿主同一把尺：
+    // begin → search → warm → fill → shown → push → rendered。嵌套层不开新流水
+    // （父层仍在屏上，游标被覆盖只会让父层余段串台）。
+    final LookupPerfTrace? trace = origin == LookupOrigin.nested
+        ? null
+        : LookupPerfTrace.begin(
+            term: searchTerm,
+            host: 'reader',
+            lowMemory: _popup.lowMemory,
+          );
     try {
       if (!deferDisplay) {
         _isSearchingNotifier.value = true;
@@ -385,8 +426,16 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         searchWithWildcards: false,
         overrideMaximumTerms: overrideMaximumTerms,
       );
+      trace?.mark(
+        'search',
+        detail: 'entries=${dictionaryResult.entries.length} '
+            'kanji=${dictionaryResult.kanjiResults.length}',
+      );
 
-      if (_searchGeneration != gen) return 0;
+      if (_searchGeneration != gen) {
+        trace?.finish('superseded');
+        return 0;
+      }
 
       appModel.addToDictionaryHistory(result: dictionaryResult);
 
@@ -413,6 +462,20 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         result: dictionaryResult,
         allLoaded: !dictionaryResult.truncated,
       );
+      trace?.mark('fill', detail: 'warm-reuse=$reuse defer=$deferDisplay');
+      // 这一层查词时的原句（✨ 与自动挑词条只认它，不再回头读页面「当前句」——
+      // 嵌套层的词来自释义，外层阅读器的句子与它无关）。
+      item.lookupSentence = origin == LookupOrigin.nested
+          ? null
+          : _nonEmptyOrNull(favoriteLookupContext?.sentence);
+      // 「查词时自动按句意挑词条」：弹窗照常先显示词典顺序，AI 回来再换（见
+      // [aiPickLookupEntry]）。只对明确的查词发请求：悬停扫一行会连查十几个词，
+      // 嵌套层没有可信句子；开关关着或没指派提供商时也不发。
+      if (origin == LookupOrigin.explicit &&
+          appModel.lookupAiContextAuto &&
+          resolveLookupAiProvider() != null) {
+        unawaited(aiPickLookupEntry(item, automatic: true));
+      }
 
       // TODO-058 / BUG-480：嵌套冷层继续挂起到 popupRendered；复用热槽也不能裸奔
       // 直显内容区。macOS 上隐藏/屏外热槽的 JS 注入可能没跑到当前结果，直 show 会露出
@@ -456,6 +519,206 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         _pendingSelectionRect = null;
       }
     }
+  }
+
+  /// 正在等 AI 挑词条的弹窗层 → 那次请求的客户端（顶栏 ✨ 换成转圈）。存客户端
+  /// 而不是只存层：热槽复用让新查词落在**同一个**层对象上，旧请求的收尾只能清掉
+  /// 自己那一条，不能把新请求的转圈一起清掉。
+  final Map<DictionaryPopupEntry, AiChatClient> _aiPickInFlight =
+      <DictionaryPopupEntry, AiChatClient>{};
+
+  /// 当前唯一一个「查词时自动挑词条」请求的客户端。每页最多一个：新查词 / 关弹窗
+  /// 推进代次时 [_bumpSearchGeneration] 把它 close 掉；请求回来时客户端已不是它，
+  /// 结论一律丢弃——只有最后一次查词的结论能落到弹窗上。
+  AiChatClient? _autoAiPickClient;
+
+  void _closeAutoAiPickClient() {
+    final AiChatClient? client = _autoAiPickClient;
+    _autoAiPickClient = null;
+    client?.close();
+  }
+
+  /// 同一句同一词的 AI 结论（候选集合相同才复用）：回看 / 重查 / 重排后再点都
+  /// 不重复付费。值是选中词头的身份（`表记/读音`），null = AI 认为都不合适；存身份
+  /// 而非下标，因为重排后同一批候选的顺序就变了。
+  final Map<String, String?> _aiPickCache = <String, String?>{};
+
+  /// 测试缝：替换 AI 客户端。
+  @visibleForTesting
+  AiChatClient Function()? debugLookupAiClientFactory;
+
+  /// 测试缝：替换提供商解析（默认读「设置 › AI」的 [AiFeature.lookupContext]）。
+  @visibleForTesting
+  AiProviderConfig? Function()? debugLookupAiProvider;
+
+  /// 查词按句意挑词条用哪家 AI；null = 没指派（顶栏不画 ✨，也不自动发请求）。
+  ///
+  /// 弹窗每次构建都会问；解码缓存在 [PreferencesRepository.resolveAiFeatureProvider]
+  /// （按原始偏好串失效，不会读到陈旧值）。
+  @protected
+  AiProviderConfig? resolveLookupAiProvider() {
+    final AiProviderConfig? Function()? injected = debugLookupAiProvider;
+    if (injected != null) return injected();
+    // 查词弹窗每次构建都会问：偏好仓库没就绪时（启动早期）就是「没指派」。
+    if (!appModel.isPreferencesReady) return null;
+    return appModel.prefsRepo.resolveAiFeatureProvider(AiFeature.lookupContext);
+  }
+
+  /// [result] 的词头语言（BCP 47）：按查到这些词条的词典所声明的词头语言投票
+  /// （[aiLookupHeadwordLanguage]），问不出来再退到本页的查词语言
+  /// [AppModel.currentLookupLanguage]；都没有 = null，提示词用中立措辞。
+  @protected
+  String? lookupHeadwordLanguage(DictionarySearchResult result) {
+    String? fromDictionaries;
+    if (appModel.isDictionaryRepoReady) {
+      final Map<String, String?> byName = <String, String?>{
+        for (final Dictionary dictionary in appModel.dictionaries)
+          dictionary.name: dictionary.effectiveSourceLanguage,
+      };
+      fromDictionaries = aiLookupHeadwordLanguage(
+        result,
+        (String name) => byName[name],
+      );
+    }
+    return fromDictionaries ?? _nonEmptyOrNull(appModel.currentLookupLanguage);
+  }
+
+  /// 「✨ 按句意挑词条」画不画：给查词指派了 AI 才画；有结果才有得挑；这一层还得
+  /// 有自己查词时的原句（嵌套层 / 原地跳转页的词不在读者的句子里，不画）。
+  bool _showsAiPick(DictionaryPopupEntry item) {
+    final DictionarySearchResult? result = item.result;
+    return result != null &&
+        result.entries.isNotEmpty &&
+        item.lookupSentence != null &&
+        resolveLookupAiProvider() != null;
+  }
+
+  /// 测试钩子：[item] 这一层的顶栏会不会画 ✨（与弹窗构建同一判据）。
+  @visibleForTesting
+  bool debugShowsAiPick(DictionaryPopupEntry item) => _showsAiPick(item);
+
+  static String? _nonEmptyOrNull(String? text) {
+    final String trimmed = text?.trim() ?? '';
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  /// 让 AI 按句意在 [item] 已查到的词头里挑一个，挪到最前。
+  ///
+  /// 候选、句子都取自这一层**查词那一刻**（[DictionaryPopupEntry.lookupSentence]），
+  /// AI 只回编号（`ai_lookup_context_assistant.dart`）。等待期间用户可能已换词 /
+  /// 关弹窗 / 加载更多：回来时按「层还在、结果还是那一份」两道身份门校验，对不上就
+  /// 丢弃；[automatic] 还要求自己仍是本页唯一的自动请求（见 [_autoAiPickClient]）。
+  /// 换序走 [DictionaryPopupController.reorderResult]——弹窗只挪卡片，不重渲染。
+  /// [automatic] 时不弹任何提示（没句子、只有一个词头、请求失败都静默——那是每次
+  /// 查词都会走的路径）。
+  Future<void> aiPickLookupEntry(
+    DictionaryPopupEntry item, {
+    bool automatic = false,
+  }) async {
+    if (!mounted) return;
+    // 手动 ✨ 在请求未回时再点：忽略。自动请求不受挡——它只会在新查词里发起，
+    // 同层上的旧自动请求此刻已被代次推进 close 掉。
+    if (!automatic && _aiPickInFlight.containsKey(item)) return;
+    final DictionarySearchResult? result = item.result;
+    final AiProviderConfig? provider = resolveLookupAiProvider();
+    if (result == null || provider == null) {
+      if (!automatic) {
+        FushiToast.show(
+          msg: t.ai_assist_no_provider,
+          severity: ToastSeverity.info,
+        );
+      }
+      return;
+    }
+    final String sentence = item.lookupSentence ?? '';
+    final List<AiLookupCandidate> candidates = aiLookupCandidates(result);
+    if (sentence.isEmpty || candidates.length < 2) {
+      if (!automatic) {
+        FushiToast.show(
+          msg: sentence.isEmpty
+              ? t.lookup_ai_pick_no_sentence
+              : t.lookup_ai_pick_nothing,
+          severity: ToastSeverity.info,
+        );
+      }
+      return;
+    }
+    final String matched = aiLookupMatchedText(result);
+    final List<String> identities = <String>[
+      for (final AiLookupCandidate c in candidates)
+        '${c.expression}/${c.reading}',
+    ];
+    final String cacheKey = <String>[
+      sentence,
+      matched,
+      ...(List<String>.of(identities)..sort()),
+    ].join('\u0001');
+    int? choice;
+    if (_aiPickCache.containsKey(cacheKey)) {
+      final String? chosen = _aiPickCache[cacheKey];
+      final int found = chosen == null ? -1 : identities.indexOf(chosen);
+      choice = found < 0 ? null : found;
+    } else {
+      final AiChatClient client =
+          debugLookupAiClientFactory?.call() ?? AiChatClient();
+      if (automatic) {
+        _closeAutoAiPickClient();
+        _autoAiPickClient = client;
+      }
+      setState(() {
+        _aiPickInFlight[item] = client;
+      });
+      bool latest = true;
+      try {
+        choice = await requestAiLookupChoice(
+          client: client,
+          provider: provider,
+          sentence: sentence,
+          matched: matched,
+          candidates: candidates,
+          language: lookupHeadwordLanguage(result),
+        );
+        _aiPickCache[cacheKey] = choice == null ? null : identities[choice];
+      } on AiChatFailure catch (error) {
+        // 被新查词 close 掉的自动请求也落在这里（network_error），静默。
+        if (!automatic && mounted) {
+          FushiToast.show(
+            msg: aiFailureText(error.message),
+            severity: ToastSeverity.error,
+          );
+        }
+        return;
+      } finally {
+        if (automatic) latest = identical(_autoAiPickClient, client);
+        if (identical(_autoAiPickClient, client)) _autoAiPickClient = null;
+        client.close();
+        if (mounted && identical(_aiPickInFlight[item], client)) {
+          setState(() {
+            _aiPickInFlight.remove(item);
+          });
+        }
+      }
+      if (!mounted) return;
+      // 只有最后一次查词的自动结论能落地：期间代次推进过（新查词 / 关弹窗），
+      // 这个客户端早被 close 并换掉了。MockClient / 已经收到回复的请求关不掉，
+      // 所以 close 之外还得在这里认一次身份。
+      if (!latest) return;
+    }
+    if (!mounted) return;
+    // 身份门：层还在，且仍是发请求时那一份结果（换词 / 加载更多 / 原地跳转都会换）。
+    if (!_popup.entries.contains(item) || !identical(item.result, result)) {
+      return;
+    }
+    if (choice == null || choice == 0) {
+      if (!automatic) {
+        FushiToast.show(
+          msg: t.lookup_ai_pick_kept,
+          severity: ToastSeverity.info,
+        );
+      }
+      return;
+    }
+    _popup.reorderResult(item, promoteAiLookupCandidate(result, choice));
   }
 
   /// TODO-962：阅读器/有声书弹窗第 [index] 层「加载更多」——续查下一批词头并增量追加。
@@ -593,10 +856,13 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       }
       // item 已在栈内（beginTop 时加入，隐藏）。需要 WebView 渲染的结果先带盖板
       // 翻可见，等当前结果 popupRendered 后再撤盖板，避免 macOS 隐藏热槽漏注入后露白。
+      LookupPerfTrace.current?.mark('shown');
       if (_itemNeedsWebViewRender(item)) {
         _showPopupWaitingForRender(item, gen);
       } else {
         _popup.show(item);
+        // 空结果走 Flutter 占位、不经 WebView，没有 rendered / reveal 两段。
+        LookupPerfTrace.current?.finish('empty');
       }
     }
     if (_searchGeneration == gen && _visibleRenderPendingItem == null) {
@@ -791,9 +1057,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   }
 
   Widget buildDictionary() {
+    // 覆盖主题（阅读器纸色亮暗）下重挂一层玻璃作用域：库组件的默认玻璃变体
+    // 跟随弹窗主题的亮暗，而不是 app 根上的那份。结构恒定（MD3 也挂）。
     return Theme(
       data: appModel.overrideDictionaryTheme ?? theme,
-      child: AnimatedBuilder(
+      child: FushiGlassScope(child: AnimatedBuilder(
         animation: _popupListenable,
         builder: (context, _) {
           final stack = _popup.entries;
@@ -869,7 +1137,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             },
           );
         },
-      ),
+      )),
     );
   }
 
@@ -892,18 +1160,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       top: pos.top,
       width: pos.width,
       height: pos.height,
+      // 查询中：卡壳先铺上，加载指示器（MD3 Expressive 变形 / Apple 菊花 / 墨水屏
+      // 沙漏）150ms 后才露出——快查询只看到卡壳一闪而过、不闪转圈；绝不画「未找到」。
       child: FushiPopupSurface(
         color: fillColor,
-        child: Column(
-          children: [
-            LinearProgressIndicator(
-              backgroundColor: Colors.transparent,
-              color: effectiveCs.primary,
-              minHeight: 2.75,
-            ),
-            Expanded(child: Container()),
-          ],
-        ),
+        child: FushiDeferredLoading(active: true, color: effectiveCs.primary),
       ),
     );
   }
@@ -915,11 +1176,29 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     required bool isTop,
   }) {
     final item = stack[index];
+    // 真实空结果收成「未找到」空态的高度，否则按内容测量（见 layoutAutoFitHeight）。
+    final double emptyHeight = kLookupPopupEmptyHeight * appModel.appUiScale;
+    final double? fitHeight = item.layoutAutoFitHeight(emptyHeight: emptyHeight);
     final pos = _calculatePopupPosition(
       item.selectionRect,
       screen,
       verticalWriting: _layerVerticalWriting(index),
+      autoFitHeight: fitHeight,
     );
+    // 自适应高度只收外壳，WebView 仍按最大高度布局、超出部分裁掉
+    // （[DictionaryPopupLayer.webViewOverflowHeight]，与 mixin 家族同一手法）：内容增减
+    // 不改原生表面尺寸，避免 Windows 上旧尺寸帧被拉伸。
+    final double fullPopupHeight = fitHeight == null ||
+            popupBottomDocked ||
+            _popupResizePreview != null
+        ? pos.height
+        : _calculatePopupPosition(
+            item.selectionRect,
+            screen,
+            verticalWriting: _layerVerticalWriting(index),
+          ).height;
+    final double webViewOverflowHeight =
+        fullPopupHeight > pos.height ? fullPopupHeight - pos.height : 0.0;
     // Phase B 拖拽尺寸：缓存顶层卡当前 rect/选区，供 [_onPopupResizeStart] 冻结其左上角。
     if (isTop) {
       _topPopupSelectionRect = item.selectionRect;
@@ -950,6 +1229,20 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       // 钉住整层，让元素真正搬位而不是拆建原生表面。
       key: ObjectKey(item),
       pos: pos,
+      // 被更上层查词卡盖住的部分裁掉：上层的模糊才采到正文而不是本层面板
+      // （[PopupOccluderClip]，玻璃叠玻璃）。
+      occluders: <Rect>[
+        for (int j = index + 1; j < stack.length; j++)
+          if (stack[j].visible)
+            _calculatePopupPosition(
+              stack[j].selectionRect,
+              screen,
+              verticalWriting: _layerVerticalWriting(j),
+              autoFitHeight: stack[j].layoutAutoFitHeight(
+                emptyHeight: emptyHeight,
+              ),
+            ),
+      ],
       // BUG-797 / BUG-1040：任何「必须盖住弹窗」的 Flutter 对话框（选择句子上下文 /
       // 已制卡动作 / 打开卡片选择）期间把弹窗停靠屏外，否则原生平台视图
       // （WebView2 / Android platform view）盖住 showAppDialog 弹的对话框（层级不对）。
@@ -957,6 +1250,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       screen: screen,
       child: DictionaryPopupLayer(
         result: item.result,
+        // 「按句意挑词条」换序：只挪卡片，不全量重渲染（见 reorderResult）。
+        resultReorderOf: item.reorderBase,
         restoreScrollTop: item.restoreScrollTop,
         webViewKey: item.webViewKey,
         keepWebViewWarm: item.isWarmSlot,
@@ -988,6 +1283,29 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         // 保留本层 + 祖先（不关母代）。点顶层（无后代）= no-op 栈不变。
         onTapOutside: () => dismissDescendantsOf(index),
         onRendered: () => _onPopupLayerRendered(index, item),
+        webViewOverflowHeight: webViewOverflowHeight,
+        // 阅读器弹窗此前从不收缩：永远按「最大宽高」偏好铺满（默认约 1000×700），
+        // 一个词条 / 空结果也是一大块面板。按 WebView 上报的内容高度收外壳（mixin
+        // 家族 [buildNestedPopupLayer] 同一算法）。
+        onContentMetrics: (double contentHeight, double viewportHeight) {
+          if (!mounted ||
+              !_popup.entries.contains(item) ||
+              popupBottomDocked ||
+              _popupResizePreview != null) {
+            return;
+          }
+          final double nextHeight = resolveAutoFitPopupHeight(
+            currentPopupHeight: fullPopupHeight,
+            contentHeight: contentHeight,
+            viewportHeight: viewportHeight,
+            minHeight: kLookupPopupMinHeight * appModel.appUiScale,
+            maxHeight: popupMaxHeight,
+          );
+          if ((nextHeight - (item.autoFitHeight ?? pos.height)).abs() < 1) {
+            return;
+          }
+          setState(() => item.autoFitHeight = nextHeight);
+        },
         // TODO-058 fail-safe：弹窗 WebView 加载失败也走同一翻可见入口（加载失败
         // 也显示，不卡死「点查词什么都不出」）。
         onRenderError: () => _onPopupLayerRendered(index, item),
@@ -1017,6 +1335,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           final count = await searchDictionaryResult(
             searchTerm: text,
             selectionRect: childRect,
+            origin: LookupOrigin.nested,
           );
           if (count > 0) {
             final int generation = activeLookupGeneration;
@@ -1052,6 +1371,12 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                 canGoForward: item.canGoForward,
                 onBack: () => _navigatePopupHistory(item, forward: false),
                 onForward: () => _navigatePopupHistory(item, forward: true),
+              )
+            : null,
+        aiPick: _showsAiPick(item)
+            ? DictionaryPopupAiPick(
+                busy: _aiPickInFlight.containsKey(item),
+                onTap: () => unawaited(aiPickLookupEntry(item)),
               )
             : null,
         // TODO-962：弹窗滚到底时若该层结果可能被截断（!allLoaded）就续查下一批词头
@@ -1175,6 +1500,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           // （本入口只在 sentenceDraftEnabled 时才挂上，这里再按
           // [supportsSentenceDraft] 兜一层）；不支持的表面传 null，对话框不渲染编辑入口。
           editSentence: supportsSentenceDraft ? onEditSentenceContextText : null,
+          // 移除 / 恢复某一句前文/后文（剔掉夹在中间的旁白），门控同编辑。
+          removeSentence:
+              supportsSentenceDraft ? onRemoveSentenceContext : null,
           // BUG-2196 ②：只有真的能出声的表面才给试听按钮。
           previewAudio: supportsSentenceAudioPreview ? onPreviewSentenceAudio : null,
           stopAudioPreview:
@@ -1202,12 +1530,15 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   void _onPopupLayerRendered(int index, DictionaryPopupEntry item) {
     if (!mounted) return;
     _popup.revealRendered(item);
+    // 阅读器路径先带盖板翻可见（[showDeferredPopup]），revealRendered 不再收尾；
+    // 渲染完成即这次查词的终点，在这里收（已收尾时幂等）。
+    LookupPerfTrace.current?.finish('revealed');
     _clearVisibleRenderPending(item: item);
     onDictionaryPopupRendered(index);
   }
 
   void _dismissPopupAt(int index) {
-    _searchGeneration++;
+    _bumpSearchGeneration();
     _pendingSelectionRect = null;
     _isSearchingNotifier.value = false;
     _deferredPopupItem = null;
@@ -1288,6 +1619,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     String text,
   ) async {}
 
+  /// 「制卡前调整·选择句子上下文」里把 [slot]（上文/下文）第 [index] 句从卡片里
+  /// 移除（[removed] = true）或恢复。被移除的句子不进卡片文本与音频区间，但仍占着
+  /// 上下文的位置（加减句数不会把它挤丢）。
+  /// 默认 no-op（[supportsSentenceDraft] 为 false 时不会被调用）。reader 覆写。
+  @protected
+  Future<void> onRemoveSentenceContext(
+    SentenceContextSlot slot,
+    int index,
+    bool removed,
+  ) async {}
+
   /// BUG-2196 ②：试听**这次制卡真正会写进卡片的那段音频**。
   ///
   /// 为什么值得单独一个钩子而不是「播当前句的 cue」：写进卡的区间是
@@ -1355,6 +1697,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     Rect sel,
     Size screen, {
     bool verticalWriting = false,
+    double? autoFitHeight,
   }) {
     // TODO-108：查词弹窗位置计算的单一收口点（reader/有声书/独立查词页家族共用），
     // 底部固定模式忽略选区放屏幕底部全宽面板。video 家族在 dictionary_page_mixin
@@ -1365,7 +1708,12 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       screen: screen,
       bottomDocked: popupBottomDocked,
       maxWidth: popupMaxWidth,
-      maxHeight: popupMaxHeight,
+      // 查词弹窗按内容收缩（与 mixin 家族 [_calcMixinPopupPosition] 同口径）：
+      // [autoFitHeight] 来自 WebView 上报的内容高度，只收不放（夹在偏好最大高度内）；
+      // 拖尺寸把手期间以预览态为准，不收缩。
+      maxHeight: _popupResizePreview != null || autoFitHeight == null
+          ? popupMaxHeight
+          : autoFitHeight.clamp(0.0, popupMaxHeight).toDouble(),
       padding: popupPadding,
       bottomReserve: popupBottomReserve,
       topReserve: popupTopReserve,
@@ -1414,6 +1762,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           ))
       .toList();
 
+  /// 测试钩子：当前弹窗栈的条目本身（[aiPickLookupEntry] 要拿条目身份）。
+  @visibleForTesting
+  List<DictionaryPopupEntry> get debugPopupEntries =>
+      List<DictionaryPopupEntry>.unmodifiable(_popup.entries);
+
   /// TODO-058 test hook: simulate the WebView at [index] firing `popupRendered`
   /// (the fake test WebView never fires real lifecycle callbacks). Reveals a
   /// pending cold layer exactly like the production [DictionaryPopupLayer.onRendered]
@@ -1443,28 +1796,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     return ValueListenableBuilder<bool>(
       valueListenable: _isSearchingNotifier,
       builder: (context, value, child) {
-        return Visibility(
-          visible: value,
-          child: SizedBox(
-            height: double.infinity,
-            width: double.infinity,
-            child: FushiCard(
-              padding: EdgeInsets.zero,
-              color: Colors.transparent,
-              borderColor: Colors.transparent,
-              borderRadius: BorderRadius.zero,
-              child: Column(
-                children: [
-                  LinearProgressIndicator(
-                    backgroundColor: Colors.transparent,
-                    color: theme.colorScheme.primary,
-                    minHeight: 2.75,
-                  ),
-                  Expanded(child: Container())
-                ],
-              ),
-            ),
-          ),
+        // 顶层查词在途（含「已显示、等热槽 WebView 报 popupRendered」）：延迟加载层
+        // ——150ms 后才露出指示器、露出后至少停 300ms，撤场后是不拦指针的空盒。
+        return FushiDeferredLoading(
+          active: value,
+          color: theme.colorScheme.primary,
         );
       },
     );

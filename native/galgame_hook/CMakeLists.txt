@@ -47,17 +47,20 @@ add_library(fushi_voice_hook SHARED
   "hook/geometry_provider_registry.h"
   "hook/lookup_v19_runtime.h"
   "hook/generic_input_shield.inc"
+  "hook/overlay_cursor_guard.h"
+  "hook/overlay_cursor_guard.inc"
   "hook/generic_direct_input_wheel.inc"
   "include/lookup_wheel_source.h"
   "hook/xaudio_resource_dispatch.h"
   "hook/bgi_arc.h"
+  "hook/yuris_ypf.h"
+  "hook/fvp_format.h"
   "hook/artemis_pfs.h"
   "hook/catsystem2_int.h"
-  "hook/malie_cfi.h"
-  "hook/malie_lib.h"
   "hook/qlie_pack.h"
   "hook/visual_arts_ovk.h"
   "hook/voice_resource_writer.inc"
+  "hook/selected_lane_candidates.inc"
   "hook/adapter_registry.inc"
   "hook/adapters/unity_adapter.inc"
   "hook/adapters/unity_mono_text.h"
@@ -91,6 +94,21 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/bgi_ethornell_profile.h"
   "hook/adapters/bgi_lookup.inc"
   "hook/adapters/bgi_lookup_core.h"
+  "hook/adapters/yuris_adapter.inc"
+  "hook/adapters/yuris_lookup.inc"
+  "hook/adapters/yuris_lookup_core.h"
+  "hook/adapters/yuris_profile.h"
+  "hook/adapters/yuris_voice.inc"
+  "hook/adapters/yuris_voice_core.h"
+  "hook/adapters/kogado_hy_adapter.inc"
+  "hook/adapters/kogado_hy_core.h"
+  "hook/adapters/kogado_hy_lookup.inc"
+  "hook/adapters/kogado_hy_profile.h"
+  "hook/adapters/kogado_hy_text.inc"
+  "hook/adapters/fvp_adapter.inc"
+  "hook/adapters/fvp_profile.h"
+  "hook/adapters/fvp_lookup.inc"
+  "hook/adapters/fvp_lookup_core.h"
   "hook/adapters/artemis_adapter.inc"
   "hook/adapters/artemis_profile.h"
   "hook/adapters/artemis_lookup.inc"
@@ -102,7 +120,12 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/catsystem2_voice_core.h"
   "hook/adapters/catsystem2_adapter.inc"
   "hook/adapters/catsystem2_profile.h"
+  "hook/adapters/cmvs_voice.inc"
+  "hook/adapters/cmvs_voice_core.h"
   "hook/adapters/malie_adapter.inc"
+  "hook/adapters/malie_engine_io_core.h"
+  "hook/adapters/malie_lookup.inc"
+  "hook/adapters/malie_lookup_core.h"
   "hook/adapters/malie_profile.h"
   "hook/adapters/qlie_adapter.inc"
   "hook/adapters/qlie_profile.h"
@@ -115,6 +138,7 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/sgre_lookup.h"
   "hook/adapters/sgre_lookup.inc"
   "hook/adapters/sgre_profile.h"
+  "include/sgre_family.h"
   "hook/adapters/sgre_voice_archive.h"
   "hook/adapters/leaf_aquaplus_profile.h"
   "hook/adapters/leaf_aquaplus_lookup.h"
@@ -474,6 +498,27 @@ target_include_directories(fushi_kirikiri_voice_storage_name_test PRIVATE "hook"
 add_test(NAME fushi_kirikiri_voice_storage_name_test
   COMMAND fushi_kirikiri_voice_storage_name_test)
 
+# KiriKiri2 TCWF（.tcw，wutcwf 解码）→ WAV。纯函数头，双架构同跑。
+add_executable(fushi_kirikiri_tcwf_test
+  "tests/kirikiri_tcwf_test.cpp"
+)
+target_include_directories(fushi_kirikiri_tcwf_test PRIVATE "include")
+add_test(NAME fushi_kirikiri_tcwf_test COMMAND fushi_kirikiri_tcwf_test)
+
+# x86 指令长度解码 + 函数体内首个 call 定位（KiriKiri 内部 TVPCreateStream，BUG-2887）。双架构同跑。
+add_executable(fushi_x86_insn_len_test
+  "tests/x86_insn_len_test.cpp"
+)
+target_include_directories(fushi_x86_insn_len_test PRIVATE "hook")
+add_test(NAME fushi_x86_insn_len_test COMMAND fushi_x86_insn_len_test)
+
+# RIFF/WAVE PCM 静音判据（掐断语音用的静音文件不得配给旁白，BUG-2888）。双架构同跑。
+add_executable(fushi_pcm_wav_silence_test
+  "tests/pcm_wav_silence_test.cpp"
+)
+target_include_directories(fushi_pcm_wav_silence_test PRIVATE "include")
+add_test(NAME fushi_pcm_wav_silence_test COMMAND fushi_pcm_wav_silence_test)
+
 # 查词整句 ↔ 文本道行的同句判据（点击载荷 text_generation 反查，BUG-2130 家族）。
 add_executable(fushi_lookup_line_text_match_test
   "tests/lookup_line_text_match_test.cpp"
@@ -612,6 +657,14 @@ add_executable(fushi_game_main_window_test
 target_include_directories(fushi_game_main_window_test PRIVATE "hook")
 add_test(NAME fushi_game_main_window_test
   COMMAND fushi_game_main_window_test)
+
+# 游戏光标不盖过 Fushi 浮层（真 Win32 窗口跨线程判定，BUG-2864）。
+add_executable(fushi_overlay_cursor_guard_test
+  "tests/overlay_cursor_guard_test.cpp"
+)
+target_include_directories(fushi_overlay_cursor_guard_test PRIVATE "hook")
+add_test(NAME fushi_overlay_cursor_guard_test
+  COMMAND fushi_overlay_cursor_guard_test)
 
 # 第三条 exporter 路径的判据（形状门用真内存 + VirtualQuery 验；BUG-2145）。
 add_executable(fushi_kirikiri_exporter_scan_test
@@ -938,7 +991,8 @@ add_test(NAME fushi_unity_mono_lookup_test
 
 add_executable(fushi_engine_identity_layout_test
   "tests/engine_identity_layout_test.cpp")
-target_include_directories(fushi_engine_identity_layout_test PRIVATE "hook")
+target_include_directories(fushi_engine_identity_layout_test PRIVATE
+  "hook" "include" "injector")
 add_test(NAME fushi_engine_identity_layout_test
   COMMAND fushi_engine_identity_layout_test)
 
@@ -1018,6 +1072,27 @@ target_compile_definitions(fushi_bgi_lookup_test PRIVATE
 add_test(NAME fushi_bgi_lookup_test
   COMMAND fushi_bgi_lookup_test)
 
+# FVP (Favorite View Point) HCB trailer identity and the mono-Ogg Vorbis
+# voice check on synthetic bytes.
+add_executable(fushi_fvp_format_test "tests/fvp_format_test.cpp")
+target_include_directories(fushi_fvp_format_test PRIVATE "hook")
+add_test(NAME fushi_fvp_format_test COMMAND fushi_fvp_format_test)
+
+# FVP text lane + in-game lookup core: structural site resolution on a
+# synthetic x86 image (syscall registration, TextPrint handler, Print /
+# PutGlyph, PrimSetText field, render text case, DrawSprite transform proofs)
+# with fail-closed branches, CP932 ruby parsing, glyph pairing, draw-origin
+# admission, projection, hit testing and the message-level click claim.
+add_executable(fushi_fvp_lookup_test
+  "tests/fvp_lookup_test.cpp"
+)
+target_include_directories(fushi_fvp_lookup_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_fvp_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_fvp_lookup_test
+  COMMAND fushi_fvp_lookup_test)
+
 add_executable(fushi_catsystem2_lookup_test
   "tests/catsystem2_lookup_test.cpp"
 )
@@ -1042,6 +1117,50 @@ target_compile_definitions(fushi_catsystem2_voice_test PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_catsystem2_voice_test
   COMMAND fushi_catsystem2_voice_test)
+
+# CMVS per-line voice: group-loader site proof from the x64 exception
+# directory (both toolchain shapes, chained fragments, overflow) and the
+# voice-group / member-name classification.
+add_executable(fushi_cmvs_voice_test
+  "tests/cmvs_voice_test.cpp"
+)
+target_include_directories(fushi_cmvs_voice_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_cmvs_voice_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_cmvs_voice_test
+  COMMAND fushi_cmvs_voice_test)
+
+# Malie engine structure: the "CFI" I/O scheme table that is the engine
+# identity (name literal -> unique copy -> table hand-off -> six frame-function
+# slots, tell shape, getc->read, shared registrar) and the Ogg decoder input
+# (libogg ogg_sync_wrote / ogg_sync_buffer, the refill call sites and their
+# decoder stream field, the decoder path field) on a synthetic x86 image with
+# every fail-closed branch, plus the voice-path classification and naming.
+add_executable(fushi_malie_engine_io_test
+  "tests/malie_engine_io_test.cpp"
+)
+target_include_directories(fushi_malie_engine_io_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_malie_engine_io_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_malie_engine_io_test
+  COMMAND fushi_malie_engine_io_test)
+
+# Malie message lane + in-game lookup core: RICHTEXT3D draw-method decoding
+# from the class table (glyph records, count, stride, reveal, translation),
+# the segment parser / reveal setter pair, segment cleaning (voice tag, ruby,
+# codes), line-to-glyph mapping, world/design/client projection, hit testing
+# and the click claim, with every fail-closed branch.
+add_executable(fushi_malie_lookup_test
+  "tests/malie_lookup_test.cpp"
+)
+target_include_directories(fushi_malie_lookup_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_malie_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_malie_lookup_test
+  COMMAND fushi_malie_lookup_test)
 
 add_executable(fushi_siglus_text_owner_test "tests/siglus_text_owner_test.cpp")
 target_include_directories(fushi_siglus_text_owner_test PRIVATE "include")
@@ -1079,3 +1198,9 @@ add_test(NAME fushi_locale_emulator_version_hooks_test
 
 include(tests/generic_input_shield_install_test.cmake)
 include(tests/siglus_legacy_owner_publication_test.cmake)
+add_executable(fushi_yuris_adapter_test "tests/yuris_adapter_test.cpp")
+target_include_directories(fushi_yuris_adapter_test PRIVATE "hook")
+add_test(NAME fushi_yuris_adapter_test COMMAND fushi_yuris_adapter_test)
+add_executable(fushi_kogado_hy_adapter_test "tests/kogado_hy_adapter_test.cpp")
+target_include_directories(fushi_kogado_hy_adapter_test PRIVATE "hook")
+add_test(NAME fushi_kogado_hy_adapter_test COMMAND fushi_kogado_hy_adapter_test)

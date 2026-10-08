@@ -1,13 +1,14 @@
 /// 「悬浮球」一级分类：悬浮球唯一的设置入口（`docs/specs/2026-09-28-floating-ball.md`）。
 ///
-/// 两个独立开关——应用内（默认开）/ 应用外（Android / Windows / macOS，默认关）——
-/// 加每个场景一组按钮勾选：阅读器 / 漫画 / 视频按当前页面的语料分，「其它页面」是
+/// 两个独立开关——应用内（默认开）/ 应用外（Android / Windows / macOS，默认关）——、
+/// 关闭后自动恢复的三态（[FloatingBallAutoRestore]），加每个场景一组按钮勾选：阅读器 / 漫画 / 视频按当前页面的语料分，「其它页面」是
 /// 没有登记场景的页面，「应用外」是原生系统球。各场景的按钮目录见 [FloatingBallScope]。
 library;
 
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -23,7 +24,7 @@ SettingsDestination buildFloatingBallDestination() {
     id: SettingsDestinationId.floatingBall,
     title: t.settings_destination_floating_ball,
     summary: t.floating_ball_summary,
-    icon: Icons.blur_circular_outlined,
+    icon: FushiIcons.floatingBall,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'floating_ball.section.display',
@@ -32,12 +33,13 @@ SettingsDestination buildFloatingBallDestination() {
             id: 'floating_ball.in_app',
             title: t.floating_ball_in_app,
             subtitle: t.floating_ball_in_app_hint,
-            icon: Icons.blur_circular_outlined,
+            icon: FushiIcons.floatingBall,
             value: (SettingsContext c) => _prefs(c).floatingBallInApp,
             onChanged: (SettingsContext c, bool value) async {
               await _prefs(c).setFloatingBallInApp(value);
               c.refresh();
             },
+            defaultValue: true,
           ),
           SettingsSwitchItem(
             id: 'floating_ball.system',
@@ -46,7 +48,7 @@ SettingsDestination buildFloatingBallDestination() {
             subtitle: Platform.isAndroid
                 ? t.floating_ball_system_hint
                 : t.floating_ball_system_hint_desktop,
-            icon: Icons.open_in_new,
+            icon: FushiIcons.openInNew,
             // iOS 不允许应用外悬浮，Linux 没有实现。
             visible: (SettingsContext c) => _systemBallSupported,
             value: (SettingsContext c) => _prefs(c).floatingBallSystem,
@@ -61,7 +63,7 @@ SettingsDestination buildFloatingBallDestination() {
                 final BuildContext ctx = c.context;
                 if (ctx.mounted) {
                   ScaffoldMessenger.of(ctx).showSnackBar(
-                    SnackBar(
+                    FushiSnackBar(
                       content: Text(t.floating_ball_overlay_permission_needed),
                     ),
                   );
@@ -69,6 +71,51 @@ SettingsDestination buildFloatingBallDestination() {
                 await FloatingBallChannel.requestOverlayPermission();
               }
             },
+            defaultValue: false,
+          ),
+          SettingsSwitchItem(
+            id: 'floating_ball.show_labels',
+            title: t.floating_ball_show_labels,
+            subtitle: t.floating_ball_show_labels_hint,
+            icon: FushiIcons.textFields,
+            value: (SettingsContext c) => _prefs(c).floatingBallShowLabels,
+            onChanged: (SettingsContext c, bool value) async {
+              await _prefs(c).setFloatingBallShowLabels(value);
+              c.refresh();
+            },
+            defaultValue: true,
+          ),
+          SettingsSegmentedItem<FloatingBallAutoRestore>(
+            id: 'floating_ball.auto_restore',
+            title: t.floating_ball_auto_restore,
+            subtitle: t.floating_ball_auto_restore_hint,
+            icon: Icons.restore,
+            visible: (SettingsContext c) =>
+                _prefs(c).floatingBallInApp ||
+                (_systemBallSupported && _prefs(c).floatingBallSystem),
+            options: <SettingsSegmentOption<FloatingBallAutoRestore>>[
+              // 没有应用外球的平台（iOS / Linux）只剩「恢复 / 不恢复」两档。
+              if (_systemBallSupported)
+                SettingsSegmentOption<FloatingBallAutoRestore>(
+                  value: FloatingBallAutoRestore.both,
+                  label: t.floating_ball_auto_restore_both,
+                ),
+              SettingsSegmentOption<FloatingBallAutoRestore>(
+                value: FloatingBallAutoRestore.inApp,
+                label: t.floating_ball_auto_restore_in_app,
+              ),
+              SettingsSegmentOption<FloatingBallAutoRestore>(
+                value: FloatingBallAutoRestore.off,
+                label: t.floating_ball_auto_restore_off,
+              ),
+            ],
+            selected: (SettingsContext c) => _autoRestoreShown(c),
+            onChanged:
+                (SettingsContext c, FloatingBallAutoRestore value) async {
+                  await _prefs(c).setFloatingBallAutoRestore(value);
+                  c.refresh();
+                },
+            defaultValue: FloatingBallAutoRestore.fallback,
           ),
         ],
       ),
@@ -84,6 +131,14 @@ bool get _systemBallSupported => FloatingBallScope.systemBallSupported(
   isAndroid: Platform.isAndroid,
   isDesktop: isDesktopSystemBallPlatform,
 );
+
+/// 没有应用外球的平台上，「应用内外」与「仅应用内」行为相同，按后者显示。
+FloatingBallAutoRestore _autoRestoreShown(SettingsContext c) {
+  final FloatingBallAutoRestore value = _prefs(c).floatingBallAutoRestore;
+  return !_systemBallSupported && value == FloatingBallAutoRestore.both
+      ? FloatingBallAutoRestore.inApp
+      : value;
+}
 
 SettingsSection _buttonsSection(FloatingBallScope scope) {
   return SettingsSection(
@@ -178,6 +233,8 @@ String _buttonLabel(FloatingBallScope scope, String id) {
       FloatingBallGlobalAction.clipboard => t.floating_ball_action_clipboard,
       FloatingBallGlobalAction.screenOcr => t.floating_ball_action_screen_ocr,
       FloatingBallGlobalAction.cameraOcr => t.floating_ball_action_camera_ocr,
+      FloatingBallGlobalAction.sync => t.sync_now,
+      FloatingBallGlobalAction.feedback => t.feedback_title,
     };
   }
   if (scope == FloatingBallScope.reader) {
@@ -208,12 +265,13 @@ IconData _buttonIcon(FloatingBallScope scope, String id) {
   );
   if (global != null) {
     return switch (global) {
-      FloatingBallGlobalAction.lookup => Icons.search,
-      FloatingBallGlobalAction.popupLookup =>
-        Icons.picture_in_picture_alt_outlined,
+      FloatingBallGlobalAction.lookup => FushiIcons.search,
+      FloatingBallGlobalAction.popupLookup => FushiIcons.pictureInPicture,
       FloatingBallGlobalAction.clipboard => Icons.content_paste_search,
-      FloatingBallGlobalAction.screenOcr => Icons.document_scanner_outlined,
+      FloatingBallGlobalAction.screenOcr => FushiIcons.ocr,
       FloatingBallGlobalAction.cameraOcr => Icons.photo_camera_outlined,
+      FloatingBallGlobalAction.sync => FushiIcons.sync,
+      FloatingBallGlobalAction.feedback => FushiIcons.forum,
     };
   }
   if (scope == FloatingBallScope.reader) {
@@ -224,12 +282,12 @@ IconData _buttonIcon(FloatingBallScope scope, String id) {
     'play_pause' => Icons.play_arrow,
     'prev_cue' => Icons.skip_previous,
     'next_cue' => Icons.skip_next,
-    'favorite' => Icons.star_border,
+    'favorite' => FushiIcons.star,
     'screenshot' => Icons.photo_camera_outlined,
-    'previous' => Icons.chevron_left,
-    'next' => Icons.chevron_right,
+    'previous' => FushiIcons.chevronLeft,
+    'next' => FushiIcons.chevronRight,
     'ocr_boxes' => Icons.highlight_alt_outlined,
-    'ocr_volume' || 'ocr_rerun' => Icons.document_scanner_outlined,
+    'ocr_volume' || 'ocr_rerun' => FushiIcons.ocr,
     'chapters' => Icons.list_alt_outlined,
     _ => Icons.circle_outlined,
   };

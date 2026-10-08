@@ -4,7 +4,7 @@
 # 原本只在维护者局域网 Mac 构建机上手工编好再拷进仓库（见 third_party/ffmpeg_kit_flutter/patches/README.md）。
 # 本 workflow 把同一份配方（patches/build_x264_{android,ios}.sh）搬到 GitHub-hosted runner。
 #
-# 配方（两端一致）：--enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus
+# 配方（两端一致）：--enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d
 #   + FFmpeg 源码先打 patches/ffmpeg-tls-pin-sha256.patch（BUG-891 证书指纹钉扎）。
 #   Android 另加 --disable-x86 --disable-x86-64 --api-level=24；iOS 另加 --xcframework 并关掉
 #   Mac Catalyst（入库产物只有 ios-arm64_arm64e + ios-arm64_x86_64-simulator 两个切片）。
@@ -60,13 +60,13 @@ jobs:
 
       - name: Install host tools
         # 覆盖本配方用到的库：x264/openssl/opus（autotools）、libvpx（自带 configure + perl）、
-        # cpu-features（cmake，走下面私有 SDK 里的 cmake 3.22.1）。
+        # cpu-features（cmake，走下面私有 SDK 里的 cmake 3.22.1）、dav1d（meson + ninja，BUG-2947）。
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             autoconf automake libtool pkg-config nasm yasm gperf texinfo autopoint \
-            build-essential perl python3 unzip curl git
+            build-essential perl python3 unzip curl git meson ninja-build
 
       - name: Private Android SDK (NDK r25c + cmake 3.22.1 only)
         # 为什么用私有 SDK 根：ffmpeg-kit 的 android_ndk_cmake 取
@@ -167,10 +167,11 @@ jobs:
       - name: Install host tools
         # nasm：x264 的 x86_64 模拟器切片（scripts/apple/x264.sh:10-15）；
         # yasm：libvpx 传 --as=yasm（scripts/apple/libvpx.sh:62）；
-        # libtool 的 gnubin 提供 GNU libtoolize（opus v1.4 git 源码无 configure，要 autoreconf）。
+        # libtool 的 gnubin 提供 GNU libtoolize（opus v1.4 git 源码无 configure，要 autoreconf）；
+        # meson + ninja：dav1d（AV1 软件解码器，BUG-2947）只有 meson 构建系统。
         run: |
           set -euo pipefail
-          brew install autoconf automake libtool pkg-config nasm yasm
+          brew install autoconf automake libtool pkg-config nasm yasm meson ninja
           echo "$(brew --prefix libtool)/libexec/gnubin" >> "$GITHUB_PATH"
 
       - name: Clone ffmpeg-kit ${{ env.FFMPEG_KIT_REF }}

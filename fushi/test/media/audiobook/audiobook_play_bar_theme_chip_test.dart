@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -15,12 +15,16 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
+import 'package:fushi/src/reader/reader_navigation_widgets.dart';
+import 'package:fushi/src/reader/reader_panel_kit.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/settings/theme_preset_card.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../../helpers/test_platform_services.dart';
+import '../../helpers/glass_unwrap.dart';
 
 class _FakeInAppWebViewController implements InAppWebViewController {
   @override
@@ -100,6 +104,8 @@ void main() {
                       ref: ref,
                       isFushiReader: true,
                       lyricsMode: lyricsMode,
+                      // 主题与明暗住在「主题与字体」页（歌词模式默认落「歌词模式」页）。
+                      initialSideSheetTab: 'appearance',
                       presentation:
                           ReaderQuickSettingsPresentation.sideSheetAppearance,
                       onStyleChanged: () async => styleChanges++,
@@ -122,32 +128,35 @@ void main() {
       expect(brightnessRow, findsOneWidget);
       expect(tester.getTopLeft(brightnessRow).dy,
           greaterThan(tester.getTopLeft(find.text(t.reader_theme)).dy));
-      for (final IconData icon in <IconData>[
-        Icons.light_mode_outlined,
-        Icons.brightness_auto_outlined,
-        Icons.dark_mode_outlined,
-      ]) {
-        final Finder segment = find.descendant(
-          of: brightnessRow,
-          matching: find.byIcon(icon),
-        );
-        expect(segment.hitTestable(), findsOneWidget);
-        expect(tester.getRect(segment).left, greaterThanOrEqualTo(48));
-        expect(tester.getRect(segment).right, lessThanOrEqualTo(320));
-      }
+      // 272 宽抽屉里三段图标条放不进行宽 55%，按设计系统的唯一判据
+      // （settingsChoiceUsesSegments）退回「点整行弹菜单」形态：整行仍须完整落在
+      // 抽屉内（左侧保留 48px 点外关闭区），三个选项都能从菜单里选到。
+      final Finder menuRow = find.descendant(
+        of: brightnessRow,
+        matching: find.byType(SettingsChoiceMenuRow),
+      );
+      // 2026-10 M3E 主题预设卡（FushiThemePresetCard）比旧色块高得多，720 高的
+      // 视窗里「明暗」行被推到首屏以下——像用户一样先滚到它。
+      await tester.ensureVisible(menuRow);
+      await tester.pumpAndSettle();
+      expect(menuRow.hitTestable(), findsOneWidget);
+      expect(tester.getRect(menuRow).left, greaterThanOrEqualTo(48));
+      expect(tester.getRect(menuRow).right, lessThanOrEqualTo(320));
 
-      for (final (String, IconData) choice in <(String, IconData)>[
-        ('dark', Icons.dark_mode_outlined),
-        ('light', Icons.light_mode_outlined),
-        ('system', Icons.brightness_auto_outlined),
+      for (final (String, String) choice in <(String, String)>[
+        ('dark', t.dark_mode_dark),
+        ('light', t.dark_mode_light),
+        ('system', t.dark_mode_system),
       ]) {
         final int liveBefore = liveChanges;
         final int styleBefore = styleChanges;
         final int themeBefore = themeChanges;
-        await tester.tap(find.descendant(
-          of: brightnessRow,
-          matching: find.byIcon(choice.$2),
-        ));
+        await tester.tap(menuRow);
+        await tester.pumpAndSettle();
+        final Finder item = find.text(choice.$2).last;
+        expect(tester.getRect(item).left, greaterThanOrEqualTo(0));
+        expect(tester.getRect(item).right, lessThanOrEqualTo(320));
+        await tester.tap(item);
         await tester.pumpAndSettle();
 
         expect(model.themeNotifier.brightnessMode, choice.$1);
@@ -213,8 +222,24 @@ void main() {
     );
     expect(tester.getRect(close).right, lessThanOrEqualTo(320));
 
-    await tester.ensureVisible(find.text(t.settings_destination_lookup));
-    await tester.tap(find.text(t.settings_destination_lookup));
+    // 272 宽放不下全部页签时进入「前 N 段 + 更多」溢出档：「查词」页签可能
+    // 收进末尾的「更多」菜单，从菜单里同样能切过去。
+    final Finder tabs =
+        find.byKey(const ValueKey<String>('fushi_side_sheet_tabs'));
+    final Finder lookupTab = find.descendant(
+      of: tabs,
+      matching: find.text(t.settings_destination_lookup),
+    );
+    if (lookupTab.hitTestable().evaluate().isEmpty) {
+      await tester.tap(find.descendant(
+        of: tabs,
+        matching: find.byIcon(Icons.expand_more),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.settings_destination_lookup).last);
+    } else {
+      await tester.tap(lookupTab);
+    }
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text(t.auto_read_on_lookup), findsOneWidget);
@@ -281,7 +306,8 @@ void main() {
     // 主页不渲染内联「排版设置」卡标题 / 主题选择器 / 字号步进（都在 layout 子页）。
     expect(find.text(t.display_settings), findsNothing);
     expect(find.text(t.reader_theme), findsNothing);
-    expect(find.byType(FushiSchemeSwatch), findsNothing);
+    // 2026-10 M3E：主题色卡由 FushiSchemeSwatch 换成预设卡 FushiThemePresetCard。
+    expect(find.byType(FushiThemePresetCard), findsNothing);
     expect(find.text(t.reader_font_size), findsNothing);
     expect(find.byType(ListTile), findsNothing);
 
@@ -300,7 +326,7 @@ void main() {
 
     // TODO-802：主题选择器并入「布局与显示」子页顶部（外观组已删）。
     expect(find.text(t.reader_theme), findsOneWidget);
-    expect(find.byType(FushiSchemeSwatch), findsWidgets);
+    expect(find.byType(FushiThemePresetCard), findsWidgets);
     // TODO-774：字号/行高（schema 投影）也在 layout 子页。
     expect(find.text(t.reader_font_size), findsOneWidget);
     expect(find.text(t.reader_line_height), findsOneWidget);
@@ -356,13 +382,15 @@ void main() {
     // 「设置」抽屉：标题下一条标签栏把分类摊平同屏切换（导航 / 有声书不在这里，
     // 它们各有自己的 presentation），默认落在第一组「布局显示」上。不再用分段条。
     expect(find.byType(FushiSegmentedStrip<String>), findsNothing);
-    final TabBar tabBar = tester.widget<TabBar>(find.descendant(
+    final TabBar tabBar = tester.widget<TabBar>(glassUnwrap<TabBar>(find.descendant(
       of: find.byKey(const ValueKey<String>('fushi_side_sheet_tabs')),
       matching: find.byType(TabBar),
-    ));
-    expect(tabBar.tabs, hasLength(3));
+    )));
+    // 2026-10 侧板重设计：按任务分组（主题与字体 / 排版 / 翻页与手势 / 有声书 /
+    // 查词），默认落「主题与字体」。
+    expect(tabBar.tabs, hasLength(5));
     expect(tabBar.controller!.index, 0);
-    expect(find.text(t.section_layout), findsWidgets);
+    expect(find.text(t.reader_panel_tab_appearance), findsWidgets);
     // 导航分类被排除（它是 sideSheetNavigation 的地盘）。
     expect(find.text(t.reading_progress), findsNothing);
     // 抽屉是同屏切换、没有 push：既无返回箭头，也不该出现带 chevron 的导航行
@@ -413,24 +441,26 @@ void main() {
     // 点击标签：动画开始 / 结束两次通知只回写一次。
     await tester.tap(find.descendant(
       of: find.byKey(const ValueKey<String>('fushi_side_sheet_tabs')),
-      matching: find.text(t.section_layout),
+      matching: find.text(t.reader_panel_tab_appearance),
     ));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text(t.reader_theme), findsOneWidget);
     expect(find.text(t.auto_read_on_lookup), findsNothing);
-    expect(changes, <String>['layout']);
+    expect(changes, <String>['appearance']);
 
-    // 向左滑到下一页「阅读操作」。
+    // 向左滑到下一页「排版」。
     await tester.fling(
-      find.byKey(const PageStorageKey<String>('fushi_side_sheet_tab_layout')),
+      find.byKey(
+        const PageStorageKey<String>('fushi_side_sheet_tab_appearance'),
+      ),
       const Offset(-600, 0),
       2000,
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text(t.reader_theme), findsNothing);
-    expect(changes, <String>['layout', 'behavior']);
+    expect(changes, <String>['appearance', 'layout']);
   });
 
   testWidgets('reader exit is deferred and only scheduled once',
@@ -582,6 +612,8 @@ void main() {
     expect(find.textContaining('A highlighted sentence'), findsOneWidget);
     expect(find.byType(ListTile), findsNothing);
     expect(find.byType(ExpansionTile), findsNothing);
-    expect(find.byType(AdaptiveSettingsSection), findsWidgets);
+    // 2026-10 导航重做：目录是 M3E 分层行（ReaderTocRow），收藏是引文卡。
+    expect(find.byType(ReaderTocRow), findsWidgets);
+    expect(find.byType(ReaderQuoteCard), findsWidgets);
   });
 }

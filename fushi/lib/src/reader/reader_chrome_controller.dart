@@ -63,8 +63,10 @@ class ReaderChromeController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 右侧设置抽屉上次打开的分组 id（会话内记忆；默认布局显示）。
-  String lastSettingsTab = 'layout';
+  /// 设置侧板上次打开的分页 id（会话内记忆）。
+  /// 空串 = 本次会话还没切过页：书籍模式落「主题与字体」、歌词模式落「歌词模式」
+  /// （readerSettingsInitialTab）。
+  String lastSettingsTab = '';
 
   /// 导航抽屉目录里手动展开的父节（按 label；会话内记忆）。
   final Set<String> expandedTocParents = <String>{};

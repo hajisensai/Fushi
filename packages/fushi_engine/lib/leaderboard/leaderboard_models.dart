@@ -124,6 +124,7 @@ class LeaderboardSelf {
     this.shelfCount,
     this.emailVerified = false,
     this.uploadDevice,
+    this.role = 'user',
   });
 
   factory LeaderboardSelf.fromJson(JsonMap j) => LeaderboardSelf(
@@ -133,6 +134,7 @@ class LeaderboardSelf {
     shelfCount: _intOrNull(j['shelfCount']),
     emailVerified: j['emailVerified'] == true,
     uploadDevice: j['uploadDevice'] as bool?,
+    role: j['role'] as String? ?? 'user',
   );
 
   final LeaderboardAccount account;
@@ -146,6 +148,11 @@ class LeaderboardSelf {
   /// 本机钥匙是否为本账户的「上传设备」（每账户只有一台能上传书架）；旧服务端不给 = null。
   final bool? uploadDevice;
 
+  /// `user` | `dev`（开发者：可在 App 内处理反馈；权限以服务端为准）。旧服务端不给 = `user`。
+  final String role;
+
+  bool get isDeveloper => role == 'dev';
+
   JsonMap toJson() => <String, dynamic>{
     ...account.toJson(),
     'visibility': visibility,
@@ -153,6 +160,7 @@ class LeaderboardSelf {
     if (shelfCount != null) 'shelfCount': shelfCount,
     'emailVerified': emailVerified,
     if (uploadDevice != null) 'uploadDevice': uploadDevice,
+    if (role != 'user') 'role': role,
   };
 }
 
@@ -643,6 +651,7 @@ class ShelfEntryUpload {
     this.finishedDate,
     this.chars = 0,
     this.ms = 0,
+    this.counted = true,
   }) : refs = List<String>.unmodifiable(refs) {
     if (refs.isEmpty) {
       throw ArgumentError.value(refs, 'refs', 'must not be empty');
@@ -670,6 +679,12 @@ class ShelfEntryUpload {
   final int chars;
   final int ms;
 
+  /// 是否计入作品维度的读者数（读者数 / 作品人气 / 作品周月榜 / 读者列表）。false 只用于
+  /// 「本机没有任何 Profile 有学习记录」的作品在非代表 Profile 上的那一份：同一台机器的
+  /// 多个 Profile 共享同一个库，这类作品会被每个开了上传的 Profile 各报一次（BUG-2870）。
+  /// 账户自己的读完数与计分不受影响。只在 false 时上报，已有条目的 [contentHash] 不变。
+  final bool counted;
+
   JsonMap toJson() => <String, dynamic>{
     'kind': kind.wire,
     'refs': refs,
@@ -682,6 +697,7 @@ class ShelfEntryUpload {
     if (finishedDate != null) 'finishedDate': finishedDate,
     'chars': chars,
     'ms': ms,
+    if (!counted) 'counted': false,
   };
 
   /// 规范化 JSON（键按字典序递归排序）的 sha256 hex：同一条目恒得同一值，

@@ -45,26 +45,34 @@ void main() {
     expect(html, isNot(contains('if (!cueEl) return;')));
   });
 
+  // 2026-10-04 覆盖层架构：歌词有自己的 WebView，覆盖层自带全套播放控件，点空白
+  // 不再负责唤出底栏（底栏在覆盖层下面，覆盖层的 ⋯ 菜单承接全部操作）。点空白的
+  // 职责收敛为：有查词弹窗就关栈，否则清残留选区，并 reclaim 阅读焦点（BUG-136/756
+  // 的 ESC 契约不变）。
   test(
-      'reader registers onLyricsTapEmpty that reveals chrome and reclaims focus',
+      'lyrics WebView routes empty taps to one handler that reclaims focus',
       () {
     final String src = readReaderPageSource();
 
     expect(src, contains("handlerName: 'onLyricsTapEmpty'"));
-    // 取该 handler 注册处往后一段，断言 handler 体真「唤/收底栏 + reclaim 焦点」，
-    // 而非只是登记了个空 handler。
-    final int start = src.indexOf("handlerName: 'onLyricsTapEmpty'");
-    expect(start, greaterThanOrEqualTo(0));
-    final String body = src.substring(start, start + 600);
-    expect(
-        body, contains('_focusOwnership.reclaim(FocusReclaimCause.gesture)'));
-    expect(
-      body,
-      anyOf(
-        contains('_toggleChrome()'),
-        contains('_handleFloatingChromeReveal()'),
-      ),
-    );
+    final int fn = src.indexOf('bool lyricsTapEmptyConsumed() {');
+    expect(fn, greaterThanOrEqualTo(0));
+    final String body = src.substring(fn, src.indexOf('\n        }\n', fn));
+    expect(body, contains('clearDictionaryResult()'));
+    expect(body, contains('_closeSideSheetForWebViewPointer()'));
+    // 歌词文档里的选词脚本命中空白回 onTapEmpty、歌词页自身空白回
+    // onLyricsTapEmpty，两条都必须先过同一个判据、再 reclaim 阅读焦点。
+    final int reg = src.indexOf('Widget _buildLyricsWebView() {');
+    expect(reg, greaterThanOrEqualTo(0));
+    final String lyricsWeb = src.substring(reg);
+    for (final String name in <String>['onTapEmpty', 'onLyricsTapEmpty']) {
+      final int h = lyricsWeb.indexOf("handlerName: '$name',");
+      expect(h, greaterThanOrEqualTo(0), reason: name);
+      final String cb = lyricsWeb.substring(h, h + 260);
+      expect(cb, contains('if (lyricsTapEmptyConsumed()) return;'));
+      expect(
+          cb, contains('_focusOwnership.reclaim(FocusReclaimCause.gesture)'));
+    }
   });
 
   test(
@@ -74,35 +82,38 @@ void main() {
 
     // BUG-767 回归守卫：BUG-755 曾在歌词就绪分支回收焦点
     // 想让 ESC 从进入即可用，但桌面 loadData 后强夺 Flutter 焦点会顶焦原生 WebView2、
-    // 重置滚动（→ 高亮看似回第一句）并抖动，叠加重载路径成持续闪烁。故歌词就绪分支
+    // 重置滚动（→ 高亮看似回第一句）并抖动，叠加重载路径成持续闪烁。故歌词就绪
     // **必须不再**在 loadData 后强夺焦（ESC 改由任一交互后的 reclaim 覆盖）。
-    final int m = src.indexOf('Future<void> _onChapterLoadComplete(');
+    // 覆盖层架构下歌词就绪是独立的 _onLyricsDocumentReady（不再是正文就绪的分支）。
+    final int m = src.indexOf('Future<void> _onLyricsDocumentReady(');
     expect(m, greaterThanOrEqualTo(0));
-    final int end = src.indexOf('final int gen = _navigateGeneration;', m);
+    final int end = src.indexOf('Widget _buildLyricsWebView() {', m);
     expect(end, greaterThan(m));
-    final String lyricsBranch = src.substring(m, end);
-    expect(lyricsBranch, contains('_lyricsPageReady = true;'));
-    expect(lyricsBranch,
+    final String ready = src.substring(m, end);
+    expect(ready, contains('_lyricsPageReady = true'));
+    expect(ready,
         isNot(contains('_focusOwnership.reclaim(FocusReclaimCause.gesture)')));
   });
 
   test(
-      'lyrics _onCueChanged guards reload behind sourceIdx>=0 (BUG-767 no reload loop)',
+      'lyrics cue sync holds position when sourceIdx<0 (BUG-767 no reload loop)',
       () {
     final String src = readReaderPageSource();
 
-    // BUG-767 回归守卫：sourceIdx<0（当前 cue 不可解析：cue 间隙 / setChapterCues 瞬时
-    // 清 _currentCue 后 notify）时必须保位不跳、绝不重载。旧码在 `idx<0` 分支无条件
-    // `_loadLyricsPage()`，重载又以 allBookCueIdx(-1) 回退到过期 entry index 生成
-    // currentIndex → 恒第一句 + 无限重载闪烁。守卫后重载只剩「窗外合法重载」一处。
-    final int s = src.indexOf('void _onCueChanged() {');
+    // BUG-767 回归守卫：sourceIdx<0（当前 cue 不可解析：cue 间隙 / 跨章瞬间）时必须
+    // 保位不跳、绝不重载。旧码在 `idx<0` 分支无条件 `_loadLyricsPage()`，重载又以
+    // 过期 entry index 生成 currentIndex → 恒第一句 + 无限重载闪烁。守卫后重载只剩
+    // 「窗外合法重载」一处。
+    final int s = src.indexOf('void _syncLyricsOverlayCue(');
     expect(s, greaterThanOrEqualTo(0));
-    final int e =
-        src.indexOf('final AudioCue? cue = controller.currentCue;', s);
+    final int e = src.indexOf('Future<void> _onLyricsDocumentReady(', s);
     expect(e, greaterThan(s));
-    final String lyricsBranch = src.substring(s, e);
-    expect(lyricsBranch, contains('if (sourceIdx >= 0) {'));
-    expect('_loadLyricsPage()'.allMatches(lyricsBranch).length, 1);
+    final String sync = src.substring(s, e);
+    final int guard = sync.indexOf('if (sourceIdx < 0) return;');
+    expect(guard, greaterThanOrEqualTo(0));
+    // 守卫之后只剩「cue 移出已载窗口」这一处重载（守卫之前那处是无整书 cue 的书
+    // 跨章换了章 cue 列表，与 sourceIdx 无关）。
+    expect('_loadLyricsPage()'.allMatches(sync.substring(guard)).length, 1);
   });
 
   test(

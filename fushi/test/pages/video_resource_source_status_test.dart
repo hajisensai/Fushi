@@ -2,7 +2,7 @@
 // ① TMDB 卡片没有罗马字别名时，页面先经宿主端口补齐别名，再搜——搜索框预填词
 //    随之换成罗马字，Nyaa 同时补查日文原名；
 // ② 结果上方逐源显示「N 条（查询词 …）/ 失败原因」，成功但 0 条的源也在。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -20,6 +20,7 @@ import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 
 import '../torrent/nyaa_html_fixture.dart';
+import '../helpers/glass_unwrap.dart';
 
 class _TimeoutProvider implements VideoResourceProvider {
   @override
@@ -159,9 +160,7 @@ void main() {
 
     expect(resolveCalls, 1);
     // 预填词跟着换成补齐后的首选罗马字。
-    final TextField field = tester.widget<TextField>(
-      find.byKey(const ValueKey<String>('video-resource-query')),
-    );
+    final TextField field = tester.widget<TextField>(glassUnwrap<TextField>(find.byKey(const ValueKey<String>('video-resource-query'))),);
     expect(field.controller!.text, 'Sousou no Frieren');
     expect(queries, <String>['Sousou no Frieren', '葬送のフリーレン']);
     expect(

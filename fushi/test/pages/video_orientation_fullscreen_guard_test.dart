@@ -81,6 +81,13 @@ void main() {
         'Future<void> _exitVideoNativeFullscreen() async {',
       ]) {
         final String body = methodBody(src, sig);
+        final int immersion = body.indexOf('await _applyVideoImmersiveMode();');
+        const String ownershipGuard =
+            'if (!VideoDisplayClaim.owns(this)) return;';
+        expect(immersion, greaterThanOrEqualTo(0));
+        expect(body.indexOf(ownershipGuard), lessThan(immersion));
+        expect(body.lastIndexOf(ownershipGuard), greaterThan(immersion),
+            reason: '已退页的全屏回调不得在 await 后重新锁方向');
         expect(
           body.contains('setPreferredOrientations(<DeviceOrientation>[])'),
           isFalse,
@@ -118,8 +125,9 @@ void main() {
         reason: 'Windows 进全屏前必须认领应用顶栏隐藏状态',
       );
       // BUG-973: 桌面退全屏分支在 `defaultExitNativeFullscreen()` 之后追加
-      // `setMacOSTrafficLightsHidden(true)` re-hide（AppKit 退全屏重建标题栏会复位
-      // 交通灯 isHidden）。分支不再是单行 return，但仍须在 !isMobilePlatform 下先转调
+      // `FushiDesktopTitleBar.reassertMacTrafficLights()`（AppKit 退全屏重建标题栏会
+      // 复位交通灯 isHidden，按顶栏真值重申；钉序见
+      // test/video/macos_video_trafficlight_hide_guard_test.dart）。分支不再是单行 return，但仍须在 !isMobilePlatform 下先转调
       // 默认退出回调（对称还原 OS 窗口），故守卫改为要求「桌面分支存在且调
       // defaultExitNativeFullscreen()」，而非钉死单行写法。
       expect(
@@ -127,6 +135,11 @@ void main() {
             exitBody.contains('defaultExitNativeFullscreen()'),
         isTrue,
         reason: '退全屏桌面分支必须转调 defaultExitNativeFullscreen (对称还原OS窗口)',
+      );
+      expect(
+        exitBody.contains('FushiDesktopTitleBar.reassertMacTrafficLights()'),
+        isTrue,
+        reason: '退全屏桌面分支必须按顶栏真值重申 macOS 红绿灯 (BUG-973)',
       );
       expect(enterBody.contains('if (!isMobilePlatform) return;'), isFalse,
           reason: '进全屏桌面分支不得 no-op (会丢桌面OS窗口真全屏)');
@@ -144,30 +157,30 @@ void main() {
   });
 
   group('子2: 双击按平台分流-移动端 playOrPause, 桌面全屏', () {
-    test('移动端双击接 playOrPause (非全屏路由)', () {
+    test('移动端 / 桌面触屏双击接 playOrPause, 桌面鼠标保留全屏 toggle', () {
+      // 判据收进 resolveVideoDoubleTapCenterAction（纯函数测试覆盖），页面只派发。
       final String body =
           methodBody(src, 'void _handleVideoPointerUp(PointerUpEvent event) {');
+      expect(body.contains('resolveVideoDoubleTapCenterAction('), isTrue);
+      expect(body.contains('desktopControls: _isDesktopVideoControls'), isTrue);
+      final int fullscreenCase =
+          body.indexOf('case VideoDoubleTapCenterAction.toggleFullscreen:');
+      final int playbackCase =
+          body.indexOf('case VideoDoubleTapCenterAction.togglePlayback:');
+      expect(fullscreenCase, greaterThanOrEqualTo(0));
+      expect(playbackCase, greaterThan(fullscreenCase));
+      final int toggleIdx = body.indexOf(
+          '_toggleVideoFullscreen(controlsContext)', fullscreenCase);
+      expect(toggleIdx, greaterThan(fullscreenCase));
+      expect(toggleIdx, lessThan(playbackCase),
+          reason: '_toggleVideoFullscreen 必须在全屏分支内');
       expect(
-        body.contains('if (_isDesktopVideoControls) {') &&
-            body.contains(
-                'unawaited(_controller?.playOrPause() ?? Future<void>.value());'),
-        isTrue,
+        body.indexOf(
+            'unawaited(_controller?.playOrPause() ?? Future<void>.value());',
+            playbackCase),
+        greaterThan(playbackCase),
         reason: '移动端双击必须 = playOrPause (不再进 media_kit 全屏路由弹回竖屏)',
       );
-    });
-
-    test('桌面双击保留全屏 toggle', () {
-      final String body =
-          methodBody(src, 'void _handleVideoPointerUp(PointerUpEvent event) {');
-      final int desktopBranch = body.indexOf('if (_isDesktopVideoControls) {');
-      expect(desktopBranch, greaterThanOrEqualTo(0));
-      final int toggleIdx = body.indexOf(
-          '_toggleVideoFullscreen(controlsContext)', desktopBranch);
-      final int elseIdx = body.indexOf('} else {', desktopBranch);
-      expect(toggleIdx, greaterThan(desktopBranch),
-          reason: '桌面双击分支应保留 _toggleVideoFullscreen');
-      expect(toggleIdx, lessThan(elseIdx),
-          reason: '_toggleVideoFullscreen 必须在桌面分支内 (else 是移动端 playOrPause)');
     });
 
     test('media_kit 桌面主题禁用内置双击全屏 (toggleFullscreenOnDoublePress:false)', () {

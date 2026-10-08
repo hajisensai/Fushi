@@ -6,18 +6,22 @@
 //     Taking one is atomic, and a process that dies releases it -- no polling
 //     race (the old gate let every waiter start at once) and no stale holder
 //     (a dead run used to keep the gate shut for hours).
-//   * A slot is only taken when the machine has the memory for the run on top
-//     of a reserve kept for the user (available RAM and Windows commit
-//     headroom), minus what runs admitted in the last 90 s will still take.
-//     That also accounts for work that never took a lease.
+//   * A free slot is taken right away: there is no memory admission (removed
+//     2026-10-03, see heavy_budget.dart). The slot count alone bounds the
+//     machine's concurrency.
 //   * Writers of one checkout's build/ (native assets, sqlite3.dll, result
 //     files) additionally hold <repo>/.codex-test/heavy/worktree.lock.
 //   * On Windows the holder joins a Job Object: below-normal priority (the
 //     desktop wins every contended core), a memory ceiling for the whole tree,
 //     and kill-on-close (a flutter_tester can no longer outlive its run and
 //     lock sqlite3.dll for the next one).
-// Nothing ever "runs anyway": a run that cannot be admitted within its wait
-// limit fails and says why.
+//   * Waiters queue first come, first served: each holds a locked ticket under
+//     <state>/queue/ and only the oldest live ticket may take a free slot, so
+//     a run is never starved by later arrivals. A dead waiter's ticket is no
+//     longer locked and is swept by whoever sees it.
+// Nothing ever "runs anyway", and nothing gives up by default: a run waits in
+// the queue until it is admitted (owner's call, 2026-10-03). An explicit wait
+// limit is still honoured: past it the run fails and says why.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
@@ -135,7 +139,7 @@ class HeavyLease {
   }
 }
 
-/// Thrown when no slot was free (with memory to spare) within the wait limit.
+/// Thrown when no slot was free within the wait limit.
 class HeavyLeaseTimeout implements Exception {
   HeavyLeaseTimeout(this.message);
   final String message;
@@ -185,7 +189,6 @@ Future<HeavyLease> acquireHeavyLease({
     try {
       return await _waitSlot(
         dir,
-        need,
         label,
         sw,
         waitMax,
@@ -293,7 +296,6 @@ List<HeavyHolder> readHeavyHolders(Directory dir, int slots) {
           HeavyHolder(
             slot: i,
             pid: 0,
-            needMb: 0,
             startedAtMs: 0,
             label: '?',
             cwd: '',
@@ -327,7 +329,6 @@ RandomAccessFile? _tryLock(File f) {
 
 Future<HeavyLease> _waitSlot(
   Directory dir,
-  HeavyNeed need,
   String label,
   Stopwatch sw,
   Duration? waitMax,
@@ -338,95 +339,230 @@ Future<HeavyLease> _waitSlot(
   required Duration poll,
 }) async {
   String? lastReason;
-  while (true) {
-    // One admission at a time across the machine: two waiters must not both
-    // read "room for one more" before either has registered its need.
-    final RandomAccessFile gate = File(
-      '${dir.path}/admission.lock',
-    ).openSync(mode: FileMode.append);
-    String reason;
-    try {
-      gate.lockSync(FileLock.blockingExclusive);
-      final MemorySnapshot? memory = readMemory();
-      final int slots = heavySlotCount(memory, env);
-      final List<HeavyHolder> holders = readHeavyHolders(dir, slots);
-      final Set<int> busy = holders.map((HeavyHolder h) => h.slot).toSet();
-      final String? memoryBlocker = memory == null
-          ? null
-          : heavyAdmissionBlocker(
-              memory,
-              need.needMb,
-              pendingMb: pendingReservationMb(
-                holders,
-                DateTime.now().millisecondsSinceEpoch,
-              ),
-            );
-      if (busy.length >= slots) {
-        reason = 'all $slots slots busy: '
-            '${holders.map((HeavyHolder h) => '${h.label} (pid ${h.pid})').join(', ')}';
-      } else if (memoryBlocker != null) {
-        reason = memoryBlocker;
-      } else {
-        for (int i = 0; i < slots; i++) {
-          if (busy.contains(i) || _heldInProcess.contains(i)) continue;
-          final RandomAccessFile? lock = _tryLock(
-            File('${dir.path}/slot-$i.lock'),
-          );
-          if (lock == null) continue;
-          _heldInProcess.add(i);
-          final File info = File('${dir.path}/slot-$i.json');
-          try {
-            info.writeAsStringSync(
-              jsonEncode(
-                HeavyHolder(
-                  slot: i,
-                  pid: pid,
-                  needMb: need.needMb,
-                  startedAtMs: DateTime.now().millisecondsSinceEpoch,
-                  label: label,
-                  cwd: Directory.current.path,
-                ).toJson(),
-              ),
-            );
-          } on FileSystemException {
-            // Diagnostics only, but do not keep a slot nobody will release.
-            _heldInProcess.remove(i);
-            lock.closeSync();
-            rethrow;
-          }
-          if (sw.elapsed.inSeconds >= 5) {
-            say(
-              'heavy: $label admitted to slot $i after '
-              '${sw.elapsed.inSeconds} s',
-            );
-          }
-          return HeavyLease._(
-            slot: i,
-            skipReason: null,
-            waited: sw.elapsed,
-            slotLock: lock,
-            worktreeLock: worktree,
-            slotInfo: info,
-          );
-        }
-        reason = 'slots changed while probing';
+  _Ticket? ticket;
+  try {
+    while (true) {
+      // One admission at a time across the machine: two waiters must not both
+      // read the same slot as free and race over its holder info, and a
+      // ticket is created, locked and swept only under this gate.
+      final RandomAccessFile gate = File(
+        '${dir.path}/admission.lock',
+      ).openSync(mode: FileMode.append);
+      String reason;
+      try {
+        gate.lockSync(FileLock.blockingExclusive);
+        ticket ??= _Ticket.take(dir, label);
+        final (HeavyLease? lease, String blocker) = _admitHead(
+          dir,
+          ticket,
+          label,
+          sw,
+          say,
+          worktree,
+          env: env,
+          readMemory: readMemory,
+        );
+        if (lease != null) return lease;
+        reason = blocker;
+      } finally {
+        gate.closeSync();
       }
-    } finally {
-      gate.closeSync();
+      if (reason != lastReason) {
+        say('heavy: waiting before $label -- $reason');
+        lastReason = reason;
+      }
+      if (waitMax != null && sw.elapsed > waitMax) {
+        throw HeavyLeaseTimeout(
+          'heavy: $label not admitted after '
+          '${sw.elapsed.inMinutes} min -- $reason. Not running it anyway.',
+        );
+      }
+      await Future<void>.delayed(poll);
     }
-    if (reason != lastReason) {
-      say('heavy: waiting before $label -- $reason');
-      lastReason = reason;
+  } finally {
+    ticket?.release();
+  }
+}
+
+/// Under the admission gate: the slot lease for [ticket] if it heads the
+/// queue and a slot is free, else null and why not.
+(HeavyLease?, String) _admitHead(
+  Directory dir,
+  _Ticket ticket,
+  String label,
+  Stopwatch sw,
+  void Function(String) say,
+  _WorktreeLock? worktree, {
+  required Map<String, String> env,
+  required MemorySnapshot? Function() readMemory,
+}) {
+  final List<HeavyQueued> queue = readHeavyQueue(dir);
+  final int ahead = queue.indexWhere((HeavyQueued q) => q.name == ticket.name);
+  if (ahead > 0) {
+    return (
+      null,
+      'queued behind $ahead earlier run(s): '
+          '${queue.take(ahead).map((HeavyQueued q) => q.label).join(', ')}',
+    );
+  }
+  final MemorySnapshot? memory = readMemory();
+  final int slots = heavySlotCount(memory, env);
+  final List<HeavyHolder> holders = readHeavyHolders(dir, slots);
+  final Set<int> busy = holders.map((HeavyHolder h) => h.slot).toSet();
+  if (busy.length >= slots) {
+    return (
+      null,
+      'all $slots slots busy: '
+          '${holders.map((HeavyHolder h) => '${h.label} (pid ${h.pid})').join(', ')}',
+    );
+  }
+  for (int i = 0; i < slots; i++) {
+    if (busy.contains(i) || _heldInProcess.contains(i)) continue;
+    final RandomAccessFile? lock = _tryLock(File('${dir.path}/slot-$i.lock'));
+    if (lock == null) continue;
+    _heldInProcess.add(i);
+    final File info = File('${dir.path}/slot-$i.json');
+    try {
+      info.writeAsStringSync(
+        jsonEncode(
+          HeavyHolder(
+            slot: i,
+            pid: pid,
+            startedAtMs: DateTime.now().millisecondsSinceEpoch,
+            label: label,
+            cwd: Directory.current.path,
+          ).toJson(),
+        ),
+      );
+    } on FileSystemException {
+      // Diagnostics only, but do not keep a slot nobody will release.
+      _heldInProcess.remove(i);
+      lock.closeSync();
+      rethrow;
     }
-    if (waitMax != null && sw.elapsed > waitMax) {
-      throw HeavyLeaseTimeout(
-        'heavy: $label not admitted after '
-        '${sw.elapsed.inMinutes} min -- $reason. Not running it anyway: the '
-        'machine is busy (other runs or the user\'s own programs).',
+    if (sw.elapsed.inSeconds >= 5) {
+      say('heavy: $label admitted to slot $i after ${sw.elapsed.inSeconds} s');
+    }
+    final HeavyLease lease = HeavyLease._(
+      slot: i,
+      skipReason: null,
+      waited: sw.elapsed,
+      slotLock: lock,
+      worktreeLock: worktree,
+      slotInfo: info,
+    );
+    return (lease, '');
+  }
+  return (null, 'slots changed while probing');
+}
+
+/// Ticket names this process holds (see [_heldInProcess] for why a process
+/// must never probe its own lock).
+final Set<String> _heldTickets = <String>{};
+int _ticketSeq = 0;
+
+/// A waiter's place in the machine-wide queue: `queue/<enqueued us>-<pid>-<n>`
+/// (`.ticket` holds the lock, `.json` the label for --status). Names sort in
+/// arrival order.
+class _Ticket {
+  _Ticket._(this.dir, this.name, this.lock);
+  final Directory dir;
+  final String name;
+  final RandomAccessFile lock;
+
+  static _Ticket take(Directory state, String label) {
+    final Directory dir = Directory('${state.path}/queue')
+      ..createSync(recursive: true);
+    final String us = '${DateTime.now().microsecondsSinceEpoch}'.padLeft(
+      20,
+      '0',
+    );
+    final String name = '$us-$pid-${_ticketSeq++}';
+    final RandomAccessFile? lock = _tryLock(File('${dir.path}/$name.ticket'));
+    if (lock == null) {
+      throw StateError('heavy: fresh queue ticket $name is already locked');
+    }
+    _heldTickets.add(name);
+    File('${dir.path}/$name.json').writeAsStringSync(
+      jsonEncode(<String, Object>{'pid': pid, 'label': label}),
+    );
+    return _Ticket._(dir, name, lock);
+  }
+
+  void release() {
+    _heldTickets.remove(name);
+    lock.closeSync();
+    _deleteTicketFiles(dir, name);
+  }
+}
+
+void _deleteTicketFiles(Directory dir, String name) {
+  for (final String ext in <String>['ticket', 'json']) {
+    try {
+      File('${dir.path}/$name.$ext').deleteSync();
+    } on FileSystemException {
+      // Already gone, or (Windows) still closing: the next sweep retries.
+    }
+  }
+}
+
+/// One live waiter in the queue.
+class HeavyQueued {
+  const HeavyQueued({
+    required this.name,
+    required this.pid,
+    required this.label,
+  });
+  final String name;
+  final int pid;
+  final String label;
+}
+
+/// The live queue, oldest first. Tickets whose lock nobody holds belong to
+/// dead waiters: skipped, and deleted when [sweep] is set. Sweep only under
+/// the admission gate -- outside it a ticket created but not yet locked would
+/// look dead and be deleted under its owner (--status reads without sweeping).
+List<HeavyQueued> readHeavyQueue(Directory state, {bool sweep = true}) {
+  final Directory dir = Directory('${state.path}/queue');
+  if (!dir.existsSync()) return <HeavyQueued>[];
+  final List<String> names = <String>[
+    for (final FileSystemEntity e in dir.listSync())
+      if (e is File && e.path.endsWith('.ticket'))
+        e.uri.pathSegments.last.replaceAll('.ticket', ''),
+  ]..sort();
+  final List<HeavyQueued> out = <HeavyQueued>[];
+  for (final String name in names) {
+    if (!_heldTickets.contains(name)) {
+      final RandomAccessFile? probe = _tryLock(
+        File('${dir.path}/$name.ticket'),
+      );
+      if (probe != null) {
+        probe.closeSync();
+        if (sweep) _deleteTicketFiles(dir, name);
+        continue;
+      }
+    }
+    out.add(_queuedInfo(dir, name));
+  }
+  return out;
+}
+
+HeavyQueued _queuedInfo(Directory dir, String name) {
+  try {
+    final Object? j = jsonDecode(
+      File('${dir.path}/$name.json').readAsStringSync(),
+    );
+    if (j is Map<String, Object?>) {
+      return HeavyQueued(
+        name: name,
+        pid: (j['pid'] as int?) ?? 0,
+        label: (j['label'] as String?) ?? '?',
       );
     }
-    await Future<void>.delayed(poll);
+  } on Object {
+    // Label not written yet or unreadable: the ticket still counts.
   }
+  return HeavyQueued(name: name, pid: 0, label: '?');
 }
 
 // ---- Windows: memory status and the Job Object ---------------------------
@@ -488,13 +624,22 @@ const int _kLimitJobMemory = 0x200;
 const int _kLimitKillOnJobClose = 0x2000;
 const int _kBelowNormalPriorityClass = 0x4000;
 
+/// LimitFlags of the [joinHeavyJob] job: below-normal priority and
+/// kill-on-close always, the job-wide memory ceiling only with [memoryCap].
+int heavyJobLimitFlags({required bool memoryCap}) =>
+    _kLimitPriorityClass |
+    _kLimitKillOnJobClose |
+    (memoryCap ? _kLimitJobMemory : 0);
+
 /// This process's throttling Job Object (Windows x64), joined with
 /// [joinHeavyJob]; every process started afterwards is inside it.
 class HeavyJob {
   HeavyJob._(this._handle, this.capMb);
 
   final int _handle;
-  final int capMb;
+
+  /// The tree's memory ceiling in MB; null when the job has none.
+  final int? capMb;
 
   /// Peak committed memory of the whole tree so far, in MB.
   int? peakMb() {
@@ -535,10 +680,11 @@ final int Function() _currentProcess = _kernel32
     .lookupFunction<IntPtr Function(), int Function()>('GetCurrentProcess');
 
 /// Puts this process (and so everything it starts from now on) into a job
-/// with below-normal priority, a [capMb] memory ceiling for the whole tree,
-/// and kill-on-close. Null where unsupported (non-Windows, 32-bit, CI, or the
-/// OS refused); the run then proceeds unthrottled and [log] says so.
-HeavyJob? joinHeavyJob(int capMb, {void Function(String line)? log}) {
+/// with below-normal priority, a [capMb] memory ceiling for the whole tree
+/// (none when [capMb] is null), and kill-on-close. Null where unsupported
+/// (non-Windows, 32-bit, CI, or the OS refused); the run then proceeds
+/// unthrottled and [log] says so.
+HeavyJob? joinHeavyJob(int? capMb, {void Function(String line)? log}) {
   if (!Platform.isWindows || sizeOf<IntPtr>() != 8) return null;
   // CI and FUSHI_HEAVY=off mean "no throttling at all". (Nested holders do
   // join: their own job sits inside the parent's.)
@@ -551,10 +697,9 @@ HeavyJob? joinHeavyJob(int capMb, {void Function(String line)? log}) {
   }
   final Pointer<Uint8> info = calloc<Uint8>(_kExtendedLimitSize);
   try {
-    info.cast<Uint32>()[16 ~/ 4] =
-        _kLimitPriorityClass | _kLimitJobMemory | _kLimitKillOnJobClose;
+    info.cast<Uint32>()[16 ~/ 4] = heavyJobLimitFlags(memoryCap: capMb != null);
     info.cast<Uint32>()[56 ~/ 4] = _kBelowNormalPriorityClass;
-    info.cast<Uint64>()[120 ~/ 8] = capMb * 1024 * 1024;
+    if (capMb != null) info.cast<Uint64>()[120 ~/ 8] = capMb * 1024 * 1024;
     if (_setJob(
               job,
               _kExtendedLimitInformation,

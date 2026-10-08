@@ -46,7 +46,7 @@ void main() {
       final MangaOcrModelDownloads downloads = MangaOcrModelDownloads();
       addTearDown(downloads.dispose);
       final _ScriptedService service = _ScriptedService();
-      expect(downloads.start(MangaOcrLocalModel.mangaOcr, service), isTrue);
+      expect(downloads.start(MangaOcrLocalModel.baberu, service), isTrue);
       service.events
         ..add(
           const MangaOcrDownloadEvent(
@@ -71,7 +71,7 @@ void main() {
         );
       await pumpEventQueue();
       final MangaOcrModelDownloadProgress? progress = downloads.progressOf(
-        MangaOcrLocalModel.mangaOcr,
+        MangaOcrLocalModel.baberu,
       );
       expect(progress?.receivedBytes, 35);
       expect(progress?.currentFile, 'b.onnx');
@@ -82,8 +82,8 @@ void main() {
     final MangaOcrModelDownloads downloads = MangaOcrModelDownloads();
     addTearDown(downloads.dispose);
     final _ScriptedService service = _ScriptedService();
-    expect(downloads.start(MangaOcrLocalModel.mangaOcr, service), isTrue);
-    expect(downloads.start(MangaOcrLocalModel.mangaOcr, service), isFalse);
+    expect(downloads.start(MangaOcrLocalModel.baberu, service), isTrue);
+    expect(downloads.start(MangaOcrLocalModel.baberu, service), isFalse);
     expect(service.downloadCalls, 1);
     // 不同模型各占一槽，可以并行。
     expect(
@@ -102,10 +102,10 @@ void main() {
     addTearDown(downloads.dispose);
 
     final _ScriptedService ok = _ScriptedService();
-    downloads.start(MangaOcrLocalModel.mangaOcr, ok);
+    downloads.start(MangaOcrLocalModel.baberu, ok);
     await ok.events.close();
     await pumpEventQueue();
-    expect(downloads.isActive(MangaOcrLocalModel.mangaOcr), isFalse);
+    expect(downloads.isActive(MangaOcrLocalModel.baberu), isFalse);
 
     final _ScriptedService bad = _ScriptedService();
     downloads.start(MangaOcrLocalModel.mangaCtc, bad);
@@ -114,13 +114,13 @@ void main() {
     expect(downloads.isActive(MangaOcrLocalModel.mangaCtc), isFalse);
 
     final _ScriptedService cancelled = _ScriptedService();
-    downloads.start(MangaOcrLocalModel.mangaOcr, cancelled);
-    await downloads.cancel(MangaOcrLocalModel.mangaOcr);
-    expect(downloads.isActive(MangaOcrLocalModel.mangaOcr), isFalse);
+    downloads.start(MangaOcrLocalModel.baberu, cancelled);
+    await downloads.cancel(MangaOcrLocalModel.baberu);
+    expect(downloads.isActive(MangaOcrLocalModel.baberu), isFalse);
     expect(cancelled.events.hasListener, isFalse);
 
     expect(finished, <(MangaOcrLocalModel, bool)>[
-      (MangaOcrLocalModel.mangaOcr, false),
+      (MangaOcrLocalModel.baberu, false),
       (MangaOcrLocalModel.mangaCtc, true),
     ]);
   });
@@ -132,22 +132,17 @@ void main() {
     final MangaOcrModelDownloads downloads = MangaOcrModelDownloads();
     addTearDown(downloads.dispose);
     downloads.start(
-      MangaOcrLocalModel.mangaOcr,
+      MangaOcrLocalModel.baberu,
       _FixedStreamService(events.stream),
     );
-    final Future<void> cancelling = downloads.cancel(
-      MangaOcrLocalModel.mangaOcr,
-    );
+    final Future<void> cancelling = downloads.cancel(MangaOcrLocalModel.baberu);
     await pumpEventQueue();
     // 收尾前文件仍归下载器：槽位还在，删除 / 导入入口据此保持禁用。
-    expect(downloads.isActive(MangaOcrLocalModel.mangaOcr), isTrue);
-    expect(
-      downloads.progressOf(MangaOcrLocalModel.mangaOcr)?.cancelling,
-      isTrue,
-    );
+    expect(downloads.isActive(MangaOcrLocalModel.baberu), isTrue);
+    expect(downloads.progressOf(MangaOcrLocalModel.baberu)?.cancelling, isTrue);
     cleanup.complete();
     await cancelling;
-    expect(downloads.isActive(MangaOcrLocalModel.mangaOcr), isFalse);
+    expect(downloads.isActive(MangaOcrLocalModel.baberu), isFalse);
   });
 }
 

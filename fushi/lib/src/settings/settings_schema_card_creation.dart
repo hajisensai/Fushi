@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/anki/sync_client/anki_sync_host.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart'
@@ -20,7 +20,7 @@ SettingsDestination buildCardCreationDestination() {
     ),
     title: t.settings_destination_card_creation,
     summary: t.anki_settings_label,
-    icon: Icons.style_outlined,
+    icon: FushiIcons.ankiCard,
     body: (_) => const AnkiSettingsBody(),
     bodyBeforeSections: true,
     sections: <SettingsSection>[
@@ -239,7 +239,7 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
   return SettingsDestination(
     id: SettingsDestinationId.cardCreation,
     title: title,
-    icon: Icons.style_outlined,
+    icon: FushiIcons.ankiCard,
     sections: const <SettingsSection>[],
     body: (_) => AnkiSettingsBody(panel: panel),
     bodySearchEntries: <SettingsBodySearchEntry>[
@@ -318,6 +318,28 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           title: t.anki_connect_addon_install,
           hasRevealTarget: true,
           visible: (_) => Platform.isWindows,
+        ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.desktop_auto_launch',
+          title: t.anki_desktop_auto_launch,
+          subtitle: t.anki_desktop_auto_launch_hint,
+          hasRevealTarget: true,
+          visible: (_) =>
+              Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+        ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.desktop_executable',
+          title: t.anki_desktop_executable,
+          hasRevealTarget: true,
+          visible: (_) =>
+              Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+        ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.desktop_launch',
+          title: t.anki_desktop_launch,
+          hasRevealTarget: true,
+          visible: (_) =>
+              Platform.isWindows || Platform.isMacOS || Platform.isLinux,
         ),
       ],
       if (panel == AnkiSettingsPanel.media) ...[

@@ -79,9 +79,55 @@ void main() {
       final EpubBook book = _book(<String>[
         '「<ruby>馬鹿<rp>（</rp><rt>ばか</rt><rp>）</rp><rtc>BAKA</rtc></ruby>、ＡＢＣ！カナ。」',
       ]);
-      expect(LyricsCueTextResolver(book).textForCue(_cue(0, 7)), '馬鹿、ＡＢＣ！カナ');
+      // 2026-10-04：句首开括号与句末「。」」随行显示（归一化剥掉的收尾标点补回）。
+      expect(
+        LyricsCueTextResolver(book).textForCue(_cue(0, 7)),
+        '「馬鹿、ＡＢＣ！カナ。」',
+      );
     },
   );
+
+  // 用户 2026-10-04 报「歌词模式没有标点」：matcher 的区间是归一化坐标（标点已剥），
+  // 按它截正文会丢掉每句末尾的「。」「」」。歌词行显示 cue 命中的**正文原文**，
+  // 收尾标点 / 闭括号与句首开括号都要在，但不能吞进下一句的开括号或换行。
+  group('lyrics line keeps sentence punctuation from the book', () {
+    String line(String body, String sentence) {
+      final EpubBook book = _book(<String>[body]);
+      final String norm = AudioTextNormalizer.normalize(body);
+      final String target = AudioTextNormalizer.normalize(sentence);
+      final int start = norm.indexOf(target);
+      expect(start, greaterThanOrEqualTo(0), reason: sentence);
+      return LyricsCueTextResolver(
+        book,
+      ).textForCue(_cue(start, start + target.length));
+    }
+
+    test('sentence ending with 。', () {
+      expect(
+        line('月が替わると、体育の種目も変わる。次の授業だ。', '月が替わると体育の種目も変わる'),
+        '月が替わると、体育の種目も変わる。',
+      );
+    });
+
+    test('quoted sentence ending with 」 takes its opening 「 too', () {
+      expect(
+        line('彼は言った。「月が替わると、体育の種目も変わる」次だ', '月が替わると体育の種目も変わる'),
+        '「月が替わると、体育の種目も変わる」',
+      );
+    });
+
+    test('」 followed by 。 keeps both', () {
+      expect(line('「体育の種目も変わる」。<br/>「次の授業だ」', '体育の種目も変わる'), '「体育の種目も変わる」。');
+    });
+
+    test(
+      "does not swallow the next line's opening bracket or exclamation run",
+      () {
+        expect(line('本当か！？「次だ」', '本当か'), '本当か！？');
+        expect(line('本当か！？「次だ」', '次だ'), '「次だ」');
+      },
+    );
+  });
 
   test(
     'fragment addresses the specified chapter and span rather than searching ASR',
@@ -91,7 +137,7 @@ void main() {
         LyricsCueTextResolver(
           book,
         ).textForCue(_cue(1, 3, section: 1, text: '猫だ')),
-        '犬だ',
+        '犬だ。',
       );
     },
   );
@@ -101,7 +147,7 @@ void main() {
     () {
       final EpubBook book = _book(<String>['前。猫、', '', '！', '犬だ。後']);
       expect(LyricsCueTextResolver(book).textForCue(_cue(1, 5)), '猫、！犬だ。後');
-      expect(LyricsCueTextResolver(book).textForCue(_cue(1, 4)), '猫、！犬だ');
+      expect(LyricsCueTextResolver(book).textForCue(_cue(1, 4)), '猫、！犬だ。');
     },
   );
 
@@ -146,7 +192,7 @@ void main() {
       _book(<String>['𠮷野。犬']),
     );
     expect(resolver.textForCue(_cue(0, 2)), '𠮷');
-    expect(resolver.textForCue(_cue(0, 3)), '𠮷野');
+    expect(resolver.textForCue(_cue(0, 3)), '𠮷野。');
     expect(resolver.textForCue(_cue(0, 1)), 'ASR');
     expect(resolver.textForCue(_cue(1, 3)), 'ASR');
     final LyricsCueTextResolver across = LyricsCueTextResolver(
@@ -171,7 +217,10 @@ void main() {
       final String html = _html(cues, book: book);
       final element = html_parser.parse(html).querySelector('.cue')!;
       expect(element.text, '猫<犬&鳥>牛');
-      expect(element.children, isEmpty);
+      // 2026-10-04：cue 正文包在行内 `.tx` 里（逐字扫过的渐变载体）；转义正确
+      // 时它里面不会再有任何被注入的元素。
+      expect(element.children.single.classes, contains('tx'));
+      expect(element.children.single.children, isEmpty);
       expect(element.attributes['data-text-fragment-id'], fragment);
       expect(element.attributes['data-cue-index'], '0');
       expect(cues.single, same(cue));
@@ -237,8 +286,9 @@ void main() {
     // 正文：艦長は<ruby>共通信号<rt>きょうつうしんごう</rt></ruby>の発信を命じた。
     const String body = '<p>艦長は<ruby>共通信号<rt>きょうつうしんごう</rt></ruby>の発信を命じた。</p>';
     final EpubBook book = _book(<String>[body]);
-    // 尾部句号在归一化区间之外，resolver 一向不带（既有行为）。
-    const String plain = '艦長は共通信号の発信を命じた';
+    // 尾部句号在归一化区间之外；2026-10-04 起 resolver 把句末标点补回（歌词行
+    // 显示正文原文、带句号），ruby 区间不受影响。
+    const String plain = '艦長は共通信号の発信を命じた。';
     final AudioCue cue = _cue(
       0,
       AudioTextNormalizer.normalize(plain).length,

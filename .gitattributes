@@ -12,6 +12,10 @@
 *.patch -whitespace
 *.diff  -whitespace
 
+# 上游 flutter_inappwebview_linux 源码原样 vendored（含大量行尾空白）。保持与上游
+# 逐字节一致才能在升级时直接 diff 出本仓改动（见该目录 UPSTREAM.md），不做清理。
+packages/flutter_inappwebview_linux/** -whitespace
+
 # 二进制文件不做行尾转换
 *.bmp   binary
 *.png   binary

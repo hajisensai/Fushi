@@ -13,6 +13,8 @@ import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeInsetPadding, FushiFloatingChromeScrollInset;
 import 'package:fushi/utils.dart';
 
 /// The body content for the Reader tab in the main menu.
@@ -47,12 +49,22 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
         MediaLibraryViewSpec(
           kind: MediaLibraryViewKind.library,
           label: t.library_view_shelf,
-          builder: (BuildContext context, Widget navigation) =>
-              mediaSource.buildHistoryPage(navigation: navigation),
+          // 书架（[ReaderFushiHistoryPage]）主滚动视图自己让出浮动工具栏的高度；
+          // 其它来源的通用回退页不认识工具栏，整体下移。
+          handlesChromeInset: true,
+          builder: (BuildContext context, Widget navigation) {
+            final Widget page =
+                mediaSource.buildHistoryPage(navigation: navigation);
+            return page is ReaderFushiHistoryPage
+                ? page
+                : FushiFloatingChromeInsetPadding(child: page);
+          },
         ),
         if (StoreRestrictedCapability.externalDiscovery.isAvailable)
           MediaLibraryViewSpec(
             kind: MediaLibraryViewKind.discover,
+            // 发现页把自己的搜索 / 筛选行叠进浮动工具区，主滚动视图自己让位。
+            handlesChromeInset: true,
             label: t.library_view_discover,
             builder: (BuildContext context, Widget navigation) =>
                 MediaDiscoveryPage(
@@ -73,6 +85,8 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
         if (online)
           MediaLibraryViewSpec(
             kind: MediaLibraryViewKind.onlineSources,
+            // 主滚动视图自己把浮动工具区高度加成顶部内边距：工具区收起后不留空白。
+            handlesChromeInset: true,
             label: t.library_view_sources,
             builder: (BuildContext context, Widget navigation) =>
                 LibraryOnlineSourcesView(
@@ -84,6 +98,8 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
         if (online)
           MediaLibraryViewSpec(
             kind: MediaLibraryViewKind.extensions,
+            // 主滚动视图自己把浮动工具区高度加成顶部内边距：工具区收起后不留空白。
+            handlesChromeInset: true,
             label: t.media_import_segment_extensions,
             builder: (BuildContext context, Widget navigation) =>
                 LibraryOnlineSourcesView(
@@ -94,17 +110,23 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
           ),
         MediaLibraryViewSpec(
           kind: MediaLibraryViewKind.sources,
+          // 主滚动视图自己把浮动工具区高度加成顶部内边距：工具区收起后不留空白。
+          handlesChromeInset: true,
           label: t.library_view_import,
           builder: (BuildContext context, Widget navigation) =>
               MediaSourcesPage(mediaKind: 'book', navigation: navigation),
         ),
         MediaLibraryViewSpec(
           kind: MediaLibraryViewKind.settings,
+          // 设置正文的滚动视图自己吃掉工具区让位（MediaQuery 顶部 padding）。
+          handlesChromeInset: true,
           label: t.settings,
           builder: (BuildContext context, Widget navigation) =>
-              ModuleSettingsView(
-            destinationId: SettingsDestinationId.reading,
-            navigation: navigation,
+              FushiFloatingChromeScrollInset(
+            child: ModuleSettingsView(
+              destinationId: SettingsDestinationId.reading,
+              navigation: navigation,
+            ),
           ),
         ),
       ],

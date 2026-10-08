@@ -9,7 +9,8 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 
 import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart';
@@ -18,6 +19,10 @@ import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 按域组装后端。[includeOnlineSources] 由浏览页按「来源」页签同一门
 /// （模块开关 + 平台 / 合规）算好传入；漫画在线源另需 Mihon 运行时。
@@ -275,93 +280,102 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(t.ai_media_acquire_title(domain: widget.domainLabel)),
-      ),
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
+    // 统一页面壳（MD3 大标题 / Apple 大标题 + 玻璃返回钮），与其它子页一致。
+    return FushiPageScaffold(
+      title: t.ai_media_acquire_title(domain: widget.domainLabel),
+      // 输入行 / AI 改写的搜索词 / 降级提示 / 进度原本固定在正文顶部：页头浮在
+      // 正文上之后（脚手架默认 extendBodyBehindHeader）它们随页头一起进
+      // headerBottom 纵向堆叠，结果列表自己让开顶部。
+      headerBottom: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  // 共享 M3E 搜索栏——这一栏就是「说一句话去搜」。
+                  child: FushiSearchBar(
+                    fieldKey: const ValueKey<String>('ai-media-acquire-input'),
+                    controller: _input,
+                    autofocus: widget.initialQuery?.trim().isEmpty ?? true,
+                    hintText: t.ai_media_acquire_hint,
+                    onSubmitted: (String _) => unawaited(_submit()),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FushiFilledButton.icon(
+                  key: const ValueKey<String>('ai-media-acquire-send'),
+                  onPressed: _busy ? null : () => unawaited(_submit()),
+                  icon: const FushiIcon(FushiIcons.ai),
+                  label: Text(t.ai_media_acquire_send),
+                ),
+              ],
+            ),
+          ),
+          if (_queries.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Row(
-                children: <Widget>[
-                  Expanded(
-                    child: TextField(
-                      key: const ValueKey<String>('ai-media-acquire-input'),
-                      controller: _input,
-                      autofocus: widget.initialQuery?.trim().isEmpty ?? true,
-                      textInputAction: TextInputAction.search,
-                      onSubmitted: (String _) => unawaited(_submit()),
-                      decoration: InputDecoration(
-                        hintText: t.ai_media_acquire_hint,
-                        border: const OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    key: const ValueKey<String>('ai-media-acquire-send'),
-                    onPressed: _busy ? null : () => unawaited(_submit()),
-                    icon: const Icon(Icons.auto_awesome_outlined),
-                    label: Text(t.ai_media_acquire_send),
-                  ),
-                ],
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                t.ai_media_acquire_queries(queries: _queries.join(' / ')),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
-            if (_queries.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  t.ai_media_acquire_queries(queries: _queries.join(' / ')),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
+          if (_aiDegraded)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              // AI 降级是「仍可用、但没有智能推荐」的警告：统一提示块（中性底
+              // + 单色警告图标），不再是一行红字像报错。
+              child: FushiInlineNotice(
+                key: const ValueKey<String>('ai-media-acquire-degraded'),
+                severity: FushiNoticeSeverity.warning,
+                message: t.ai_media_acquire_ai_failed,
               ),
-            if (_aiDegraded)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                child: Text(
-                  t.ai_media_acquire_ai_failed,
-                  key: const ValueKey<String>('ai-media-acquire-degraded'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.error,
-                  ),
-                ),
-              ),
-            if (_busy) ...<Widget>[
-              const SizedBox(height: 8),
-              const LinearProgressIndicator(),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-                child: Text(switch (_phase) {
-                  _Phase.parsing => t.ai_media_acquire_parsing,
-                  _Phase.picking => t.ai_media_acquire_picking,
-                  _ => t.ai_media_acquire_searching,
-                }, style: theme.textTheme.bodySmall),
-              ),
-            ],
+            ),
+          if (_busy) ...<Widget>[
             const SizedBox(height: 8),
-            Expanded(child: _buildResults(theme)),
+            const FushiLinearProgressIndicator(),
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(switch (_phase) {
+                _Phase.parsing => t.ai_media_acquire_parsing,
+                _Phase.picking => t.ai_media_acquire_picking,
+                _ => t.ai_media_acquire_searching,
+              }, style: theme.textTheme.bodySmall),
+            ),
           ],
-        ),
+        ],
+      ),
+      // 正文用 body 子树里的 context 构建，才读得到脚手架下发的顶部让位。
+      body: Builder(
+        builder: (BuildContext context) => _buildResults(theme, context),
       ),
     );
   }
 
-  Widget _buildResults(ThemeData theme) {
+  Widget _buildResults(ThemeData theme, BuildContext context) {
     if (_phase == _Phase.done && _candidates.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            t.ai_media_acquire_no_results,
-            key: const ValueKey<String>('ai-media-acquire-empty'),
-            textAlign: TextAlign.center,
-          ),
+      return SafeArea(
+        bottom: false,
+        child: FushiPlaceholderMessage(
+          key: const ValueKey<String>('ai-media-acquire-empty'),
+          icon: FushiIcons.searchOff,
+          message: t.ai_media_acquire_no_results,
+        ),
+      );
+    }
+    // 还没搜出任何候选：空闲时是引导态，忙时是与结果行同轮廓的骨架。
+    if (_candidates.isEmpty) {
+      if (_busy) return _buildSkeleton(MediaQuery.paddingOf(context).top);
+      return SafeArea(
+        bottom: false,
+        child: FushiPlaceholderMessage(
+          key: const ValueKey<String>('ai-media-acquire-idle'),
+          icon: FushiIcons.ai,
+          message: t.ai_media_acquire_hint,
         ),
       );
     }
@@ -373,32 +387,96 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
       for (final MediaAcquisitionCandidate c in _candidates)
         if (!_picks.contains(c.id)) c,
     ];
-    return ListView(
-      key: const ValueKey<String>('ai-media-acquire-results'),
-      padding: const EdgeInsets.only(bottom: 24),
-      children: <Widget>[
-        if (picked.isNotEmpty) ...<Widget>[
-          _sectionLabel(theme, t.ai_media_acquire_recommended),
-          for (final MediaAcquisitionCandidate c in picked)
-            _candidateTile(theme, c, recommended: true),
+    // 推荐 / 其它各是一个共享分组列表（MD3 分段卡 / Apple inset grouped），
+    // 组标题缩进到行文字起点。
+    const EdgeInsets groupPadding = EdgeInsets.symmetric(horizontal: 16);
+    int order = 0;
+    // 错峰进场：AI 挑完（推荐分组出现）时重开窗口，新一屏再播一次。
+    return FushiEntranceScope(
+      replayKey: _picks.isEmpty ? _generation : -_generation,
+      child: ListView(
+        key: const ValueKey<String>('ai-media-acquire-results'),
+        padding: EdgeInsets.only(
+          top: 8 + MediaQuery.paddingOf(context).top,
+          bottom: 24 + bottomSafeInsetOf(context),
+        ),
+        children: <Widget>[
+          if (picked.isNotEmpty) ...<Widget>[
+            _sectionLabel(theme, t.ai_media_acquire_recommended),
+            FushiStaggeredEntrance(
+              index: order++,
+              child: FushiGroupedList(
+                padding: groupPadding,
+                children: <Widget>[
+                  for (final MediaAcquisitionCandidate c in picked)
+                    _candidateTile(theme, c, recommended: true),
+                ],
+              ),
+            ),
+          ],
+          if (others.isNotEmpty && picked.isNotEmpty)
+            _sectionLabel(theme, t.ai_media_acquire_others),
+          if (others.isNotEmpty)
+            FushiStaggeredEntrance(
+              index: order++,
+              child: FushiGroupedList(
+                padding: groupPadding,
+                children: <Widget>[
+                  for (final MediaAcquisitionCandidate c in others)
+                    _candidateTile(theme, c, recommended: false),
+                ],
+              ),
+            ),
         ],
-        if (others.isNotEmpty && picked.isNotEmpty)
-          _sectionLabel(theme, t.ai_media_acquire_others),
-        for (final MediaAcquisitionCandidate c in others)
-          _candidateTile(theme, c, recommended: false),
-      ],
+      ),
     );
   }
 
-  Widget _sectionLabel(ThemeData theme, String label) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-    child: Text(
-      label,
-      style: theme.textTheme.labelLarge?.copyWith(
-        color: theme.colorScheme.primary,
+  /// 搜索中、尚无候选时的骨架：与结果行同轮廓（行首色块 + 两条文字 + 按钮位）。
+  Widget _buildSkeleton(double topInset) {
+    Widget row() => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: <Widget>[
+          const FushiSkeleton(width: 40, height: 40, circle: true),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                FushiSkeleton.line(widthFactor: 0.7, height: 14),
+                const SizedBox(height: 8),
+                FushiSkeleton.line(widthFactor: 0.45),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          SizedBox(width: 72, child: FushiSkeleton.line(height: 36)),
+        ],
       ),
-    ),
-  );
+    );
+    return FushiSkeletonShimmer(
+      child: ListView(
+        key: const ValueKey<String>('ai-media-acquire-skeleton'),
+        physics: const NeverScrollableScrollPhysics(),
+        padding: EdgeInsets.only(top: 8 + topInset),
+        children: <Widget>[
+          FushiGroupedList(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            children: <Widget>[for (int i = 0; i < 4; i++) row()],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 分组标题走共享 [FushiSectionTitle.group]（M3E titleSmall 强调 / Apple
+  // 13 号 secondaryLabel），缩进到行文字起点。
+  Widget _sectionLabel(ThemeData theme, String label) =>
+      FushiSectionTitle.group(
+        label,
+        padding: const EdgeInsets.fromLTRB(32, 16, 32, 6),
+      );
 
   Widget _candidateTile(
     ThemeData theme,
@@ -411,29 +489,37 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
     if (acquiring) {
       action = const SizedBox.square(
         dimension: 24,
-        child: CircularProgressIndicator(strokeWidth: 2),
+        child: FushiCircularProgressIndicator(strokeWidth: 2),
       );
     } else if (acquired) {
-      action = Tooltip(
+      action = FushiTooltip(
         message: t.ai_media_acquire_started,
-        child: Icon(Icons.check_circle, color: theme.colorScheme.primary),
+        child: FushiIcon(
+          FushiIcons.filled(FushiIcons.success),
+          color: theme.colorScheme.primary,
+        ),
       );
     } else if (recommended) {
-      action = FilledButton(
+      action = FushiFilledButton(
         onPressed: () => unawaited(_acquire(c)),
         child: Text(t.ai_media_acquire_download),
       );
     } else {
-      action = OutlinedButton(
+      action = FushiOutlinedButton(
         onPressed: () => unawaited(_acquire(c)),
         child: Text(t.ai_media_acquire_download),
       );
     }
     return FushiListItem(
       key: ValueKey<String>('ai-media-acquire-candidate-${c.id}'),
+      // 推荐行：cookie 形 primary 色块里的 ✨；其余行：中性圆底的下载图标。
       leading: recommended
-          ? Icon(Icons.auto_awesome, color: theme.colorScheme.primary)
-          : null,
+          ? const FushiListLeadingIcon(
+              FushiIcons.ai,
+              shape: FushiLeadingShape.cookie,
+              tone: FushiCardTone.primary,
+            )
+          : const FushiListLeadingIcon(FushiIcons.download),
       title: Text(c.title),
       titleMaxLines: 2,
       subtitle: Text(<String>[c.sourceLabel, ...c.details].join(' · ')),

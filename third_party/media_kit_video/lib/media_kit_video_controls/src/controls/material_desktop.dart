@@ -5,7 +5,7 @@
 /// Use of this source code is governed by MIT license that can be found in the LICENSE file.
 // ignore_for_file: non_constant_identifier_names
 import 'dart:async';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -70,6 +70,32 @@ class MaterialDesktopVideoControlsThemeData {
 
   /// Whether to toggle play and pause on tap.
   final bool playAndPauseOnTap;
+
+  /// Hibiki patch (touch on desktop): when true, a tap from a touch / stylus
+  /// pointer toggles the controls (like the mobile controls' `onTap`) instead
+  /// of play / pause — fingers never hover, so hover is not available to reveal
+  /// the bar. Mouse clicks keep [playAndPauseOnTap]. Default false = upstream
+  /// behaviour. See [MaterialDesktopTapRouter] and PATCHES.md.
+  final bool touchTapTogglesControls;
+
+  /// Hibiki patch (touch on desktop): the mobile controls' swipe gestures for
+  /// touch / stylus pointers only ([TouchSwipeGestureLayer]); mouse drags never
+  /// reach them. Horizontal drag scrubs (needs [horizontalSeekResolver]),
+  /// right-half vertical drag sets the volume ([onVolumeChanged]), left-half
+  /// vertical drag the brightness ([onBrightnessChanged]). All default off =
+  /// upstream behaviour. Same semantics as the mobile theme's fields of the
+  /// same names. See PATCHES.md.
+  final bool touchSeekGesture;
+  final bool touchVolumeGesture;
+  final bool touchBrightnessGesture;
+  final HorizontalSeekResolver? horizontalSeekResolver;
+  final Duration Function()? relativeSeekBasePosition;
+  final Widget Function(BuildContext, Duration)? seekIndicatorBuilder;
+  final void Function(double)? onVolumeChanged;
+  final double Function()? currentVolume;
+  final void Function(double)? onBrightnessChanged;
+  final double Function()? currentBrightness;
+  final double verticalGestureSensitivity;
 
   /// Keyboards shortcuts.
   final Map<ShortcutActivator, VoidCallback>? keyboardShortcuts;
@@ -171,6 +197,15 @@ class MaterialDesktopVideoControlsThemeData {
 
   /// [Color] of the seek bar thumb.
   final Color seekBarThumbColor;
+
+  /// Hibiki patch (glass design system): corner radius of the seek bar track
+  /// (and its buffer / position fills). `0` (default) keeps the upstream
+  /// square-ended track pixel-for-pixel.
+  final double seekBarRadius;
+
+  /// Hibiki patch (glass design system): colour of the top / bottom gradient
+  /// scrims behind the button bars. Default = upstream `0x61000000`.
+  final Color backdropColor;
 
   // VOLUME BAR
 
@@ -275,6 +310,11 @@ class MaterialDesktopVideoControlsThemeData {
   /// identical to pub.dev. See third_party/media_kit_video/PATCHES.md.
   final void Function(double? fraction)? onHoverPosition;
 
+  /// Hibiki patch (M3 Expressive chrome): host-painted seek-bar track. Null
+  /// (upstream default) = upstream track. Gestures stay in the fork. See
+  /// PATCHES.md.
+  final VideoSeekBarTrackBuilder? seekBarTrackBuilder;
+
   /// {@macro material_desktop_video_controls_theme_data}
   const MaterialDesktopVideoControlsThemeData({
     this.displaySeekBar = true,
@@ -282,6 +322,18 @@ class MaterialDesktopVideoControlsThemeData {
     this.automaticallyImplySkipPreviousButton = true,
     this.toggleFullscreenOnDoublePress = true,
     this.playAndPauseOnTap = false,
+    this.touchTapTogglesControls = false,
+    this.touchSeekGesture = false,
+    this.touchVolumeGesture = false,
+    this.touchBrightnessGesture = false,
+    this.horizontalSeekResolver,
+    this.relativeSeekBasePosition,
+    this.seekIndicatorBuilder,
+    this.onVolumeChanged,
+    this.currentVolume,
+    this.onBrightnessChanged,
+    this.currentBrightness,
+    this.verticalGestureSensitivity = 100.0,
     this.modifyVolumeOnScroll = true,
     this.keyboardShortcuts,
     this.visibleOnMount = false,
@@ -320,6 +372,8 @@ class MaterialDesktopVideoControlsThemeData {
     this.seekBarBufferColor = const Color(0x3DFFFFFF),
     this.seekBarThumbSize = 12.0,
     this.seekBarThumbColor = const Color(0xFFFF0000),
+    this.seekBarRadius = 0.0,
+    this.backdropColor = const Color(0x61000000),
     this.volumeBarColor = const Color(0x3DFFFFFF),
     this.volumeBarActiveColor = const Color(0xFFFFFFFF),
     this.volumeBarThumbSize = 12.0,
@@ -332,6 +386,7 @@ class MaterialDesktopVideoControlsThemeData {
     this.onSeekEnd,
     this.onSeekDispatched,
     this.onHoverPosition,
+    this.seekBarTrackBuilder,
   });
 
   /// Creates a copy of this [MaterialDesktopVideoControlsThemeData] with the given fields replaced by the non-null parameter values.
@@ -341,6 +396,18 @@ class MaterialDesktopVideoControlsThemeData {
     bool? automaticallyImplySkipPreviousButton,
     bool? toggleFullscreenOnDoublePress,
     bool? playAndPauseOnTap,
+    bool? touchTapTogglesControls,
+    bool? touchSeekGesture,
+    bool? touchVolumeGesture,
+    bool? touchBrightnessGesture,
+    HorizontalSeekResolver? horizontalSeekResolver,
+    Duration Function()? relativeSeekBasePosition,
+    Widget Function(BuildContext, Duration)? seekIndicatorBuilder,
+    void Function(double)? onVolumeChanged,
+    double Function()? currentVolume,
+    void Function(double)? onBrightnessChanged,
+    double Function()? currentBrightness,
+    double? verticalGestureSensitivity,
     bool? modifyVolumeOnScroll,
     Map<ShortcutActivator, VoidCallback>? keyboardShortcuts,
     bool? visibleOnMount,
@@ -368,6 +435,8 @@ class MaterialDesktopVideoControlsThemeData {
     Color? seekBarBufferColor,
     double? seekBarThumbSize,
     Color? seekBarThumbColor,
+    double? seekBarRadius,
+    Color? backdropColor,
     Color? volumeBarColor,
     Color? volumeBarActiveColor,
     double? volumeBarThumbSize,
@@ -380,6 +449,7 @@ class MaterialDesktopVideoControlsThemeData {
     void Function(Duration)? onSeekEnd,
     void Function(Future<void> seek)? onSeekDispatched,
     void Function(double? fraction)? onHoverPosition,
+    VideoSeekBarTrackBuilder? seekBarTrackBuilder,
   }) {
     return MaterialDesktopVideoControlsThemeData(
       displaySeekBar: displaySeekBar ?? this.displaySeekBar,
@@ -391,6 +461,23 @@ class MaterialDesktopVideoControlsThemeData {
       toggleFullscreenOnDoublePress:
           toggleFullscreenOnDoublePress ?? this.toggleFullscreenOnDoublePress,
       playAndPauseOnTap: playAndPauseOnTap ?? this.playAndPauseOnTap,
+      touchTapTogglesControls:
+          touchTapTogglesControls ?? this.touchTapTogglesControls,
+      touchSeekGesture: touchSeekGesture ?? this.touchSeekGesture,
+      touchVolumeGesture: touchVolumeGesture ?? this.touchVolumeGesture,
+      touchBrightnessGesture:
+          touchBrightnessGesture ?? this.touchBrightnessGesture,
+      horizontalSeekResolver:
+          horizontalSeekResolver ?? this.horizontalSeekResolver,
+      relativeSeekBasePosition:
+          relativeSeekBasePosition ?? this.relativeSeekBasePosition,
+      seekIndicatorBuilder: seekIndicatorBuilder ?? this.seekIndicatorBuilder,
+      onVolumeChanged: onVolumeChanged ?? this.onVolumeChanged,
+      currentVolume: currentVolume ?? this.currentVolume,
+      onBrightnessChanged: onBrightnessChanged ?? this.onBrightnessChanged,
+      currentBrightness: currentBrightness ?? this.currentBrightness,
+      verticalGestureSensitivity:
+          verticalGestureSensitivity ?? this.verticalGestureSensitivity,
       modifyVolumeOnScroll: modifyVolumeOnScroll ?? this.modifyVolumeOnScroll,
       keyboardShortcuts: keyboardShortcuts ?? this.keyboardShortcuts,
       visibleOnMount: visibleOnMount ?? this.visibleOnMount,
@@ -427,6 +514,8 @@ class MaterialDesktopVideoControlsThemeData {
       seekBarBufferColor: seekBarBufferColor ?? this.seekBarBufferColor,
       seekBarThumbSize: seekBarThumbSize ?? this.seekBarThumbSize,
       seekBarThumbColor: seekBarThumbColor ?? this.seekBarThumbColor,
+      seekBarRadius: seekBarRadius ?? this.seekBarRadius,
+      backdropColor: backdropColor ?? this.backdropColor,
       volumeBarColor: volumeBarColor ?? this.volumeBarColor,
       volumeBarActiveColor: volumeBarActiveColor ?? this.volumeBarActiveColor,
       volumeBarThumbSize: volumeBarThumbSize ?? this.volumeBarThumbSize,
@@ -442,6 +531,7 @@ class MaterialDesktopVideoControlsThemeData {
       onSeekEnd: onSeekEnd ?? this.onSeekEnd,
       onSeekDispatched: onSeekDispatched ?? this.onSeekDispatched,
       onHoverPosition: onHoverPosition ?? this.onHoverPosition,
+      seekBarTrackBuilder: seekBarTrackBuilder ?? this.seekBarTrackBuilder,
     );
   }
 }
@@ -507,19 +597,6 @@ class _MaterialDesktopVideoControlsState
   late bool buffering = controller(context).player.state.buffering;
 
   DateTime last = DateTime.now();
-
-  // BUG-374 (Hibiki vendored patch): whether the pointer-down that started the
-  // current tap landed in the play/pause-eligible region (above the bottom seek
-  // bar). Recorded in onTapDown, consumed in onTap. Play/pause is now executed in
-  // `onTap` (which only fires when THIS GestureDetector WINS the gesture arena)
-  // instead of `onTapDown` (which fires immediately on pointer-down regardless of
-  // arena resolution). Firing on onTapDown made the edge/padding of overlaid
-  // control buttons leak through to play/pause: the parent onTapDown ran before
-  // the child button's tap recognizer could claim the arena, so a button-edge tap
-  // both pressed the button AND toggled play/pause. onTap defers to the winner, so
-  // a button (or any descendant tap recognizer) claiming the tap suppresses the
-  // spurious play/pause.
-  bool _playPauseTapEligible = false;
 
   final List<StreamSubscription> subscriptions = [];
 
@@ -712,6 +789,36 @@ class _MaterialDesktopVideoControlsState
     _timer?.cancel();
   }
 
+  /// Hibiki patch (touch on desktop): see [TouchSwipeGestureLayer].
+  Widget _buildTouchSwipeLayer(BuildContext context) {
+    final theme = _theme(context);
+    return TouchSwipeGestureLayer(
+      seekGesture: theme.touchSeekGesture,
+      horizontalSeekResolver: theme.horizontalSeekResolver,
+      duration: () => controller(context).player.state.duration,
+      seekBase: () =>
+          theme.relativeSeekBasePosition?.call() ??
+          controller(context).player.state.position,
+      onSeek: (Duration target) {
+        // Same commit path as the seek bar / mobile swipe (BUG-796 follow-up,
+        // BUG-2731): surface the target, then hand the dispatch to the host.
+        _theme(context).onSeekEnd?.call(target);
+        final Future<void> seek = controller(context).player.seek(target);
+        _theme(context).onSeekDispatched?.call(seek);
+      },
+      seekIndicatorBuilder: theme.seekIndicatorBuilder,
+      volumeGesture: theme.touchVolumeGesture,
+      currentVolume: () =>
+          theme.currentVolume?.call() ??
+          controller(context).player.state.volume / 100.0,
+      onVolumeChanged: theme.onVolumeChanged,
+      brightnessGesture: theme.touchBrightnessGesture,
+      currentBrightness: () => theme.currentBrightness?.call() ?? 0.5,
+      onBrightnessChanged: theme.onBrightnessChanged,
+      verticalGestureSensitivity: theme.verticalGestureSensitivity,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Theme(
@@ -806,38 +913,48 @@ class _MaterialDesktopVideoControlsState
                         }
                       }
                     : null,
-                child: GestureDetector(
-                  // BUG-374 (Hibiki vendored patch): record whether this tap is
-                  // eligible for play/pause (outside the bottom seek bar region),
-                  // but DO NOT toggle here. onTapDown fires on pointer-down before
-                  // the gesture arena resolves, so toggling here makes the edge of
-                  // overlaid control buttons leak through to play/pause. The actual
-                  // toggle runs in `onTap`, which only fires when this detector wins
-                  // the arena (no descendant button claimed the tap).
-                  onTapDown: !_theme(context).playAndPauseOnTap
-                      ? null
-                      : (TapDownDetails details) {
-                          final RenderBox box =
-                              context.findRenderObject() as RenderBox;
-                          final Offset localPosition =
-                              box.globalToLocal(details.globalPosition);
-                          const double tapPadding = 10.0;
-                          // Only play and pause when the bottom seek bar is visible
-                          // and when clicking outside of the bottom seek bar region.
-                          _playPauseTapEligible = !mount ||
-                              localPosition.dy <
-                                  box.size.height -
-                                      subtitleVerticalShiftOffset -
-                                      tapPadding;
-                        },
-                  onTap: !_theme(context).playAndPauseOnTap
-                      ? null
-                      : () {
-                          if (_playPauseTapEligible) {
-                            controller(context).player.playOrPause();
-                          }
-                          _playPauseTapEligible = false;
-                        },
+                child: MaterialDesktopTapRouter(
+                  // BUG-374 (Hibiki vendored patch): the router records in
+                  // onTapDown whether this tap is eligible for play/pause
+                  // (outside the bottom seek bar region) and only acts in
+                  // onTap, which fires when this detector wins the gesture
+                  // arena (no descendant button claimed the tap).
+                  // Hibiki patch (touch on desktop): a touch / stylus tap
+                  // toggles the controls instead (fingers cannot hover-reveal
+                  // them); mouse clicks keep play/pause. See
+                  // [MaterialDesktopTapRouter].
+                  playAndPauseOnTap: _theme(context).playAndPauseOnTap,
+                  touchTapTogglesControls:
+                      _theme(context).touchTapTogglesControls,
+                  controlsVisible: visible,
+                  isInPlayPauseRegion: (Offset globalPosition) {
+                    final RenderBox box =
+                        context.findRenderObject() as RenderBox;
+                    final Offset localPosition =
+                        box.globalToLocal(globalPosition);
+                    const double tapPadding = 10.0;
+                    // Only play and pause when the bottom seek bar is visible
+                    // and when clicking outside of the bottom seek bar region.
+                    return !mount ||
+                        localPosition.dy <
+                            box.size.height -
+                                subtitleVerticalShiftOffset -
+                                tapPadding;
+                  },
+                  onAction: (DesktopControlsTapAction action) {
+                    // (if-chain, not a switch: this package's language
+                    // version predates implicit case break.)
+                    if (action == DesktopControlsTapAction.playOrPause) {
+                      controller(context).player.playOrPause();
+                    } else if (action ==
+                        DesktopControlsTapAction.hideControls) {
+                      onExit();
+                    } else if (action ==
+                            DesktopControlsTapAction.showControls ||
+                        action == DesktopControlsTapAction.keepControlsAlive) {
+                      onHover();
+                    }
+                  },
                   onTapUp: !_theme(context).toggleFullscreenOnDoublePress
                       ? null
                       : (e) {
@@ -863,6 +980,21 @@ class _MaterialDesktopVideoControlsState
                     onExit: (_) => onExit(),
                     child: Stack(
                       children: [
+                        // Hibiki patch (touch on desktop): mobile-style swipe
+                        // gestures for touch / stylus, below the bars so a
+                        // gesture that starts on a button / the seek bar goes
+                        // to that control. Same 16px edge + bottom-bar inset
+                        // as the mobile drag layer. See PATCHES.md.
+                        if (_theme(context).touchSeekGesture ||
+                            _theme(context).touchVolumeGesture ||
+                            _theme(context).touchBrightnessGesture)
+                          Positioned.fill(
+                            left: 16.0,
+                            top: 16.0,
+                            right: 16.0,
+                            bottom: 16.0 + subtitleVerticalShiftOffset,
+                            child: _buildTouchSwipeLayer(context),
+                          ),
                         AnimatedOpacity(
                           curve: Curves.easeInOut,
                           opacity: visible ? 1.0 : 0.0,
@@ -879,41 +1011,51 @@ class _MaterialDesktopVideoControlsState
                             alignment: Alignment.bottomCenter,
                             children: [
                               // Top gradient.
+                              // Hibiki patch (touch on desktop): the scrims are
+                              // pure decoration; IgnorePointer so they no longer
+                              // swallow hits meant for the touch swipe layer
+                              // underneath (a gradient BoxDecoration hit-tests
+                              // true). Ancestors (tap router / MouseRegion) are
+                              // unaffected.
                               if (_theme(context).topButtonBar.isNotEmpty)
-                                Container(
-                                  decoration: const BoxDecoration(
+                                IgnorePointer(
+                                    child: Container(
+                                  // Hibiki patch (glass design system): scrim
+                                  // colour from the theme (default 0x61000000).
+                                  decoration: BoxDecoration(
                                     gradient: LinearGradient(
                                       begin: Alignment.topCenter,
                                       end: Alignment.bottomCenter,
-                                      stops: [
+                                      stops: const [
                                         0.0,
                                         0.2,
                                       ],
                                       colors: [
-                                        Color(0x61000000),
-                                        Color(0x00000000),
+                                        _theme(context).backdropColor,
+                                        const Color(0x00000000),
                                       ],
                                     ),
                                   ),
-                                ),
+                                )),
                               // Bottom gradient.
                               if (_theme(context).bottomButtonBar.isNotEmpty)
-                                Container(
-                                  decoration: const BoxDecoration(
+                                IgnorePointer(
+                                    child: Container(
+                                  decoration: BoxDecoration(
                                     gradient: LinearGradient(
                                       begin: Alignment.topCenter,
                                       end: Alignment.bottomCenter,
-                                      stops: [
+                                      stops: const [
                                         0.5,
                                         1.0,
                                       ],
                                       colors: [
-                                        Color(0x00000000),
-                                        Color(0x61000000),
+                                        const Color(0x00000000),
+                                        _theme(context).backdropColor,
                                       ],
                                     ),
                                   ),
-                                ),
+                                )),
                               if (mount)
                                 Padding(
                                   padding: _theme(context).padding ??
@@ -1334,7 +1476,22 @@ class MaterialDesktopSeekBarState extends State<MaterialDesktopSeekBar> {
               color: const Color(0x00000000),
               width: constraints.maxWidth,
               height: _theme(context).seekBarContainerHeight,
-              child: Stack(
+              // Hibiki patch (M3 Expressive chrome): host-painted track.
+              child: _theme(context).seekBarTrackBuilder != null
+                  ? _theme(context).seekBarTrackBuilder!(
+                      context,
+                      VideoSeekBarVisual(
+                        position: click ? slider : positionPercent,
+                        buffer: bufferPercent,
+                        hover: hover || click ? slider : null,
+                        hovering: hover,
+                        dragging: click,
+                        playing: playing,
+                        duration: duration,
+                        alignment: Alignment.center,
+                      ),
+                    )
+                  : Stack(
                 clipBehavior: Clip.none,
                 alignment: Alignment.centerLeft,
                 children: [
@@ -1345,7 +1502,18 @@ class MaterialDesktopSeekBarState extends State<MaterialDesktopSeekBar> {
                         : _theme(context).seekBarHeight,
                     alignment: Alignment.centerLeft,
                     duration: _theme(context).seekBarThumbTransitionDuration,
-                    color: _theme(context).seekBarColor,
+                    // Hibiki patch (glass design system): rounded track. With
+                    // the default radius 0 this is the upstream square track
+                    // (same colour, no clip).
+                    decoration: BoxDecoration(
+                      color: _theme(context).seekBarColor,
+                      borderRadius: _theme(context).seekBarRadius > 0
+                          ? BorderRadius.circular(_theme(context).seekBarRadius)
+                          : null,
+                    ),
+                    clipBehavior: _theme(context).seekBarRadius > 0
+                        ? Clip.antiAlias
+                        : Clip.none,
                     child: Stack(
                       clipBehavior: Clip.none,
                       alignment: Alignment.centerLeft,

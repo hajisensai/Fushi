@@ -1,10 +1,14 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/models/theme_notifier.dart'
+    show buildFushiThemeData;
 import 'package:fushi/utils.dart';
 
 import '../helpers/source_guard.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 书架 / 漫画 / 视频 / 游戏四个模块的顶栏分区导航统一走 [LibrarySectionTabs]
 /// （唯一实现），形态是 MD3 primary tabs。
@@ -70,7 +74,11 @@ void main() {
 
   testWidgets('段宽由各自文案决定，不被同排最长段绑架', (WidgetTester tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await pumpTabs(tester, videoTabs, width: 1600);
+    // 2026-10-04 全宽顶栏：宽窗口里各段等分铺满（`fill` 档，等分格放得下最长段
+    // 才走这档，不会截字）；等分放不下时退到「按各自文案取宽、均摊余宽」的
+    // natural 档。本条守的就是那一档——400 宽放不下 6 个等分格，却放得下各段
+    // 自然宽 + 最小内边距。
+    await pumpTabs(tester, videoTabs, width: 400);
 
     // 「系列」(2 字) → 「全部视频」(4 字) 的中心距，必须明显大于两个 2 字段之间的
     // 中心距。等宽控件下每格同宽、两个距离相等——那正是旧顶栏把 6 段撑到装不下、
@@ -85,22 +93,103 @@ void main() {
     );
   });
 
-  testWidgets('窄屏靠滚动容纳，段几何不变（不压窄、不裁字）', (WidgetTester tester) async {
+  testWidgets('窄屏不裁字：摆不下的段收进「更多」，可见段文案完整', (
+    WidgetTester tester,
+  ) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await pumpTabs(tester, videoTabs, width: 1600);
-    final double wide = centerGap(tester, '系列', '全部视频');
+    // 2026-10-04 全宽顶栏（用户：「移动端摆不下你想想办法」）：窄屏不再横滑截断，
+    // 而是逐级收紧，仍不够就把尾段收进末尾「更多」下拉。旧等宽方案在窄屏把每格
+    // 压到「可用宽 / 段数」并裁字（用户看到的「全部视」被切成半个胶囊）——这条
+    // 不变式在新形态下依然要成立：凡是画出来的段，文案必须完整、整段在屏内。
+    for (final double width in <double>[402, 220]) {
+      await pumpTabs(tester, videoTabs, width: width);
+      expect(tester.takeException(), isNull);
 
-    // 手机竖屏宽：整排放不下。旧等宽方案在这一档把每格压到「可用宽 / 段数」并裁字
-    // （用户看到的「全部视」被切成半个胶囊）；tabs 保持各段几何、整排横向滚动。
-    await pumpTabs(tester, videoTabs, width: 402);
-    final double narrow = centerGap(tester, '系列', '全部视频');
+      final List<String> shown = <String>[
+        for (final String label in videoTabs)
+          if (find.widgetWithText(Tab, label).evaluate().isNotEmpty) label,
+      ];
+      for (final String label in shown) {
+        final RenderParagraph text = tester.renderObject<RenderParagraph>(
+          find.descendant(
+            of: find.widgetWithText(Tab, label),
+            matching: find.text(label),
+          ),
+        );
+        expect(
+          text.size.width,
+          greaterThanOrEqualTo(text.getMaxIntrinsicWidth(double.infinity) - 0.5),
+          reason: '$width 宽下「$label」被压窄裁字',
+        );
+        final Rect rect = tester.getRect(find.widgetWithText(Tab, label));
+        expect(rect.left, greaterThanOrEqualTo(-0.5));
+        expect(rect.right, lessThanOrEqualTo(width + 0.5),
+            reason: '$width 宽下「$label」被挤出屏外');
+      }
+      if (shown.length < videoTabs.length) {
+        // 没画出来的段必须能从「更多」里够到，而不是凭空消失。
+        expect(find.byIcon(Icons.expand_more), findsOneWidget,
+            reason: '$width 宽下有段没画出来，却没有「更多」入口');
+      }
+    }
+  });
 
-    expect(
-      narrow,
-      moreOrLessEquals(wide, epsilon: 0.5),
-      reason: '窄屏不得改变单段几何——放不下要滚动，不是把每段压窄',
-    );
+  testWidgets('Apple 设计下窄屏四段不被渐隐截断（浏览页「在线源」）', (
+    WidgetTester tester,
+  ) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    // 2026-10-05 用户截图：手机上浏览页顶部「发现 / 在线源 / 扩展 / 下载」放得下，
+    // 「在线源」却被 Tab 自带的渐隐切掉。根因：Apple 文字页签在 label 内边距
+    // 之内文字两侧各还有一圈内衬（kFushiAppleTabContentInset），铺满判据漏算，
+    // 判「等分放得下」，实际每格比文字窄。扫一段宽度，凡画出来的段都必须完整。
+    const List<String> labels = <String>['发现', '在线源', '扩展', '下载'];
+    for (double width = 240; width <= 420; width += 6) {
+      await tester.binding.setSurfaceSize(Size(width, 400));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildFushiThemeData(
+            scheme: ColorScheme.fromSeed(
+              seedColor: Colors.teal,
+              brightness: Brightness.dark,
+            ),
+            textTheme: Typography.material2021().white,
+            glass: FushiGlassMaterial.frosted,
+            glassDesign: true,
+          ),
+          themeAnimationDuration: Duration.zero,
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: LibrarySectionTabs<int>(
+                tabs: <LibrarySectionTab<int>>[
+                  for (int i = 0; i < labels.length; i++)
+                    LibrarySectionTab<int>(value: i, label: labels[i]),
+                ],
+                selected: 0,
+                onChanged: (int _) {},
+                focusIdPrefix: 'apple-inset-test',
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      for (final String label in labels) {
+        final Finder text = find.text(label);
+        if (text.evaluate().isEmpty) continue;
+        final RenderParagraph paragraph =
+            tester.renderObject<RenderParagraph>(text);
+        expect(
+          paragraph.size.width,
+          greaterThanOrEqualTo(
+            paragraph.getMaxIntrinsicWidth(double.infinity) - 0.5,
+          ),
+          reason: '$width 宽下「$label」被压窄（渐隐截断）',
+        );
+      }
+    }
   });
 
   testWidgets('顶栏形态是 MD3 tabs，不是分段按钮', (WidgetTester tester) async {
@@ -111,12 +200,18 @@ void main() {
       width: 1600,
     );
 
-    final TabBar bar = tester.widget<TabBar>(find.byType(TabBar));
-    expect(bar.isScrollable, isTrue, reason: '段数可变，滚动是正常形态而非降级');
+    // 2026-10-04 全宽顶栏：宽窗口里各段等分铺满整行（MD3 fixed tabs），不滚动。
+    final TabBar bar = tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar)));
+    expect(bar.isScrollable, isFalse, reason: '摆得下时铺满整行，不是贴左滚动');
     expect(
       bar.tabAlignment,
-      TabAlignment.start,
-      reason: '首段必须与页头标题左缘对齐（默认 startOffset 会留 52px 缩进）',
+      TabAlignment.fill,
+      reason: '全宽顶栏：各段等分可用宽度',
+    );
+    expect(
+      centerGap(tester, '首页', '系列'),
+      closeTo((1600 - kFushiM3eFlushTabTrackInset * 2) / 6, 1),
+      reason: '六段等分 1600 宽（扣掉 M3E 分段胶囊轨道两侧内缩）',
     );
     expect(
       find.byType(SegmentedButton<int>),
@@ -158,7 +253,7 @@ void main() {
 
     expect(taps, <int>[2], reason: '点击必须照常上报给宿主');
     expect(
-      tester.widget<TabBar>(find.byType(TabBar)).controller!.index,
+      tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).controller!.index,
       0,
       reason: '宿主没改 selected，指示器必须被拉回——controller 是 selected 的投影，'
           '不是第二份真相',
@@ -198,7 +293,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      identical(tester.widget<TabBar>(find.byType(TabBar)).controller, host),
+      identical(tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).controller, host),
       isTrue,
       reason: 'TabBar 必须挂在宿主那一个 controller 上，不得自建第二个',
     );
@@ -211,7 +306,7 @@ void main() {
     // 反向：宿主自己换页（横滑 / 外部 animateTo）时指示器跟着走。
     host.animateTo(0);
     await tester.pumpAndSettle();
-    expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 0);
+    expect(tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).controller!.index, 0);
   });
 
   testWidgets('fill 形态摆得下时铺满整行、摆不下时退回可滚动',
@@ -242,17 +337,19 @@ void main() {
     }
 
     await pumpFill(900);
-    expect(tester.widget<TabBar>(find.byType(TabBar)).isScrollable, isFalse);
+    expect(tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).isScrollable, isFalse);
     // 三段等分整行：相邻两段中心距 = 行宽 / 3，末段中心在 5/6 处（贴左形态下
     // 三段全挤在左边一两百像素内）。
-    expect(centerGap(tester, '小说', '漫画'), closeTo(300, 1));
+    // M3E 分段胶囊轨道贴齐页边，两侧只剩轨道内边距 kFushiM3eFlushTabTrackInset。
+    const double track = 900 - kFushiM3eFlushTabTrackInset * 2;
+    expect(centerGap(tester, '小说', '漫画'), closeTo(track / 3, 1));
     expect(
       tester.getRect(find.widgetWithText(Tab, '视频')).center.dx,
-      closeTo(750, 1),
+      closeTo(kFushiM3eFlushTabTrackInset + track * 5 / 6, 1),
     );
 
     await pumpFill(120);
-    expect(tester.widget<TabBar>(find.byType(TabBar)).isScrollable, isTrue,
+    expect(tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).isScrollable, isTrue,
         reason: '摆不下时必须退回可滚动，不能把段挤到截字');
     expect(tester.takeException(), isNull);
   });
@@ -305,8 +402,10 @@ void main() {
     final String src =
         File('lib/src/utils/components/library_section_tabs.dart')
             .readAsStringSync();
-    expect(src.contains('isScrollable: true'), isTrue,
-        reason: '锚点过期：顶栏不再是可滚动 tabs，请同步改本守卫');
+    // 2026-10-04 起可滚动与否随档位切换（`isScrollable: scrollable`），可滚动档
+    // （fill: false / 等分放不下的 natural 档）仍在。
+    expect(src.contains('isScrollable: scrollable'), isTrue,
+        reason: '锚点过期：顶栏不再有可滚动档，请同步改本守卫');
     expect(
       src.contains('HorizontalDragScrollable('),
       isTrue,

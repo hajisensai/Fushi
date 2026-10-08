@@ -116,11 +116,11 @@ void main() {
     final List<VideoControlItem> topRightItems =
         VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
     final int screenshot = topRightItems.indexOf(VideoControlItem.screenshot);
-    final int clip = topRightItems.indexOf(VideoControlItem.clipExport);
     expect(screenshot, greaterThanOrEqualTo(0), reason: '顶栏应保留截图按钮');
-    expect(clip, greaterThanOrEqualTo(0), reason: '顶栏应新增片段导出按钮');
-    expect(clip, greaterThan(screenshot), reason: '片段导出必须放在截图按钮后面');
-    expect(clip, screenshot + 1, reason: '片段导出必须紧挨截图按钮，中间不能插入其它按钮');
+    // 2026-10-06 遮挡最小化：片段导出默认移出播放器、常驻右上「⋯」，仍可拖回。
+    expect(topRightItems.contains(VideoControlItem.clipExport), isFalse);
+    expect(VideoControlLayout.currentChrome.removedItems,
+        contains(VideoControlItem.clipExport));
     expect(
       RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight')
           .allMatches(text)
@@ -134,38 +134,38 @@ void main() {
     expect(text.contains('_toggleClipExport()'), isTrue);
   });
 
-  test('默认右上角顶栏精简为 6 个常用入口（TODO-642）', () {
-    // 默认 topRight = episodeList / screenshot / clipExport / subtitleTrack /
-    // audioTrack / chapterList 六个；prev/next 集与 prev/next 章 4 个导航键不再
-    // 默认占顶栏（落 hidden / removed，可从编辑器拖回）。screenshot 与 clipExport
-    // 保持相邻（受上一个守卫钉死）。
+  test('默认右上角顶栏只留选集 / 章节 / 截图 / 设置（2026-10-06 遮挡最小化）', () {
+    // 2026-10-05 播放器 UI 重做按使用频率重排默认布局（见 VideoControlLayout
+    // .currentChrome 的文档）：字幕轨挪到底栏右，设置从右侧栏挪到右上；右上 =
+    // 音轨 / 选集 / 章节 / 截图 / 片段导出 / 设置，窄窗按优先级收进「⋮」。
+    // screenshot 与 clipExport 保持相邻（受上一个守卫钉死）。
     final List<VideoControlItem> topRight =
         VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
     expect(
         topRight,
         <VideoControlItem>[
           VideoControlItem.episodeList,
-          VideoControlItem.screenshot,
-          VideoControlItem.clipExport,
-          VideoControlItem.subtitleTrack,
-          VideoControlItem.audioTrack,
           VideoControlItem.chapterList,
+          VideoControlItem.screenshot,
+          VideoControlItem.settings,
         ],
-        reason: 'TODO-642：默认右上角顶栏精简为 6 个常用入口');
+        reason: '默认右上角只留常用入口，其余进「⋯」');
 
-    // 4 个 prev/next 导航键默认不在任何可见槽，落 removedItems（仍可自定义拖回）。
+    // 上 / 下一集、上 / 下一章、音轨、片段导出默认移出播放器（常驻右上「⋯」），
+    // 可从编辑器拖回。
     const List<VideoControlItem> trimmedNav = <VideoControlItem>[
       VideoControlItem.previousEpisode,
       VideoControlItem.nextEpisode,
       VideoControlItem.previousChapter,
       VideoControlItem.nextChapter,
+      VideoControlItem.audioTrack,
+      VideoControlItem.clipExport,
     ];
     for (final VideoControlItem nav in trimmedNav) {
       expect(VideoControlLayout.currentChrome.isOnPlayer(nav), isFalse,
-          reason: '$nav 默认不应在播放器可见槽（TODO-642）');
+          reason: '$nav 默认不应在播放器可见槽');
       expect(VideoControlLayout.currentChrome.removedItems, contains(nav),
           reason: '$nav 默认落 removedItems，可从编辑器面板拖回（非从模型删除）');
-      // 仍是可自定义项：能被拖回任意可见槽。
       expect(nav.canMoveToSlot(VideoControlSlot.topRight), isTrue,
           reason: '$nav 仍可被用户加回 topRight');
     }

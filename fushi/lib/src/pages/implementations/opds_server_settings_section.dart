@@ -15,9 +15,11 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/discovery/sources/opds_discovery_source.dart';
@@ -90,12 +92,12 @@ class _OpdsServerSettingsSectionState
           SourceSectionHeading(
             title: t.discovery_opds_settings_title,
             hint: t.discovery_opds_settings_hint,
-            icon: Icons.menu_book_outlined,
+            icon: FushiIcons.books,
           ),
           for (int index = 0; index < _drafts.length; index++) _card(index),
           Align(
             alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
+            child: FushiOutlinedButton.icon(
               key: const ValueKey<String>('opds-server-add'),
               onPressed: () => setState(
                 () => _drafts.add(
@@ -104,7 +106,7 @@ class _OpdsServerSettingsSectionState
                   ),
                 ),
               ),
-              icon: const Icon(Icons.add),
+              icon: const FushiIcon(FushiIcons.add),
               label: Text(t.discovery_opds_add),
             ),
           ),
@@ -126,7 +128,7 @@ class _OpdsServerSettingsSectionState
           Row(
             children: <Widget>[
               Expanded(
-                child: SwitchListTile.adaptive(
+                child: FushiSwitchListTile.adaptive(
                   key: ValueKey<String>('opds-server-$index-enabled'),
                   contentPadding: EdgeInsets.zero,
                   dense: true,
@@ -136,7 +138,7 @@ class _OpdsServerSettingsSectionState
                       _update(index, draft.copyWith(enabled: value)),
                 ),
               ),
-              IconButton(
+              FushiIconButtonControl(
                 key: ValueKey<String>('opds-server-$index-remove'),
                 tooltip: t.discovery_opds_remove,
                 onPressed: () {
@@ -146,7 +148,7 @@ class _OpdsServerSettingsSectionState
                   });
                   unawaited(_saveValidDrafts());
                 },
-                icon: const Icon(Icons.remove_circle_outline),
+                icon: const FushiIcon(FushiIcons.delete),
               ),
             ],
           ),
@@ -184,7 +186,7 @@ class _OpdsServerSettingsSectionState
             onChanged: (String value) =>
                 _update(index, draft.copyWith(password: value)),
           ),
-          SwitchListTile.adaptive(
+          FushiSwitchListTile.adaptive(
             key: ValueKey<String>('opds-server-$index-allow-http'),
             contentPadding: EdgeInsets.zero,
             dense: true,
@@ -196,7 +198,7 @@ class _OpdsServerSettingsSectionState
           ),
           Row(
             children: <Widget>[
-              OutlinedButton.icon(
+              FushiOutlinedButton.icon(
                 key: ValueKey<String>('opds-server-$index-test'),
                 // 配置无效时按钮直接不可用，而不是点了再报一个通用错误。
                 onPressed: draft.toConfig() == null || probe?.running == true
@@ -206,22 +208,21 @@ class _OpdsServerSettingsSectionState
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.network_check_outlined),
+                    : const FushiIcon(FushiIcons.wifi),
                 label: Text(t.discovery_opds_test),
               ),
               if (probe != null && !probe.running) ...<Widget>[
                 const SizedBox(width: 12),
+                // 探测结论走 M3E tonal 提示条（成功 / 失败语义图标）。
                 Expanded(
-                  child: Text(
-                    probe.message,
+                  child: FushiInlineNotice(
                     key: ValueKey<String>('opds-server-$index-probe-result'),
-                    style: TextStyle(
-                      color: probe.ok
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.error,
-                    ),
+                    severity: probe.ok
+                        ? FushiNoticeSeverity.success
+                        : FushiNoticeSeverity.error,
+                    message: probe.message,
                   ),
                 ),
               ],

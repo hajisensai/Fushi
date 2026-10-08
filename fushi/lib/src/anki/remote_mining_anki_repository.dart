@@ -77,7 +77,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     );
     try {
       final Map<String, dynamic>? json = await _client.mineForward(payload);
-      return _withLocalDeckNameFallback(_outcomeFromResponse(json));
+      return await _withLocalDeckNameFallback(_outcomeFromResponse(json));
     } on SyncAuthError {
       return MineOutcome.failure(
         tokenRejectedMessage,
@@ -264,6 +264,11 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   @override
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(String modelName) =>
       _client.readNoteTypeDefinition(modelName);
+
+  /// 卡在主机上按**主机的**设置建，本机设置配不上主机的模板；主机也没有回答这个
+  /// 问题的端点 → 无法判定，保持偏好（BUG-2869）。
+  @override
+  Future<bool?> rendersSynchronizedClip() async => null;
 
   @override
   Future<bool> updateNoteTypeStyling(String modelName, String css) =>

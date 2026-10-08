@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/manga/manga_online_sources_view.dart';
@@ -16,6 +16,7 @@ import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart' show MangaOnlineSourceRow;
 
@@ -108,21 +109,17 @@ class BrowseSubPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: <Widget>[
-            FushiPageHeader(
-              title: title,
-              leading: FushiIconButton(
-                icon: Icons.arrow_back,
-                tooltip: t.back,
-                onTap: () => Navigator.of(context).maybePop(),
-              ),
-            ),
-            Expanded(child: child),
-          ],
+    // 统一页面壳：页头浮在正文上（M3E 悬浮胶囊，滚动收起），正文从窗口顶端画
+    // 起、内容滚到页头底下。这里的正文（在线来源面 / 扩展仓库）按库页浮动工具区
+    // 的约定经 [FushiFloatingChromeInset] 让位，所以把脚手架下发的顶部让位
+    // （状态栏 + 页头实测高度）转成同一个 inset；自己读 MediaQuery 的正文照常
+    // 拿得到。返回键由脚手架默认插入。
+    return FushiPageScaffold(
+      title: title,
+      body: Builder(
+        builder: (BuildContext context) => FushiFloatingChromeInset(
+          top: MediaQuery.paddingOf(context).top,
+          child: child,
         ),
       ),
     );
@@ -133,7 +130,7 @@ class BrowseSubPage extends StatelessWidget {
 ///
 /// 书 / 视频两域的实现此前住在 `MediaSourcesPage`（书 / 视频「导入」视图的后三段），
 /// 漫画在 `MangaSourcesPage`；2026-09-27 起三域统一搬进「浏览」，导入页只剩本地
-/// 来源。漫画域原样委托给 [MangaOnlineSourcesView]（它带着 Aidoku 仓库状态）。
+/// 来源。漫画域原样委托给 [MangaOnlineSourcesView]。
 ///
 /// 🔴 滚动容器是 [CustomScrollView]：扩展目录是按仓库分组懒建的 sliver
 /// （1400+ 条不能一次全建，BUG-1441）。
@@ -202,7 +199,9 @@ class _BrowseOnlineSourcesViewState
   );
 
   List<Widget> _videoSlivers(MihonManager manager) => <Widget>[
-    _hint(t.video_online_sources_hint),
+    // 仓库页顶部自带信任提示，不再叠这段域说明。
+    if (widget.section != OnlineSourcesSection.stores)
+      _hint(t.video_online_sources_hint),
     if (widget.section == OnlineSourcesSection.sources)
       MihonInstalledSourcesSection(
         key: const ValueKey<String>('video_mihon_sources'),
@@ -225,7 +224,9 @@ class _BrowseOnlineSourcesViewState
   ];
 
   List<Widget> _novelSlivers(LnReaderManager manager) => <Widget>[
-    _hint(t.novel_online_sources_hint),
+    // 仓库页顶部自带信任提示，不再叠这段域说明。
+    if (widget.section != OnlineSourcesSection.stores)
+      _hint(t.novel_online_sources_hint),
     if (widget.section == OnlineSourcesSection.sources)
       LnReaderInstalledSourcesSection(
         key: const ValueKey<String>('book_lnreader_sources'),
@@ -266,9 +267,11 @@ class _BrowseOnlineSourcesViewState
     return CustomScrollView(
       slivers: <Widget>[
         SliverPadding(
+          // 顶部让出浮动工具区的实测高度（库页壳不再套固定下移；不在库页壳里
+          // 时为 0）+ M3E 行内间距 8：内容滚到工具区底下，收起后不留空白。
           padding: EdgeInsets.fromLTRB(
             tokens.spacing.page,
-            0,
+            FushiFloatingChromeInset.of(context) + 8,
             tokens.spacing.page,
             tokens.spacing.page,
           ),

@@ -10,7 +10,7 @@
 /// 一个 FFI 探针），可被单测直接调用。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/utils.dart';
 
@@ -55,7 +55,7 @@ class GalJapaneseLocaleModeDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text('${t.game_japanese_locale} · $gameName'),
       content: SizedBox(
         width: 460,
@@ -73,7 +73,7 @@ class GalJapaneseLocaleModeDialog extends StatelessWidget {
               ),
               for (final GalJapaneseLocaleMode mode
                   in GalJapaneseLocaleMode.values)
-                RadioListTile<GalJapaneseLocaleMode>(
+                FushiRadioListTile<GalJapaneseLocaleMode>(
                   key: ValueKey<String>(
                     'gal-japanese-locale-mode-'
                     '${galJapaneseLocaleModeToKey(mode)}',

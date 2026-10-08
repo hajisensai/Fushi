@@ -1,9 +1,17 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/utils.dart' show t, FushiToast, ToastSeverity;
+import 'package:fushi/utils.dart'
+    show t, FushiLoadingView, FushiToast, ToastSeverity;
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    show FushiDialogHeroIcon, FushiHeroTone;
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart' show FushiListItem;
 
 /// BUG-1040：把「一段期间内让查词弹窗让位」的执行权交回宿主页面的钩子。
 ///
@@ -174,7 +182,11 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
     final double width = MediaQuery.sizeOf(context).width * 0.9 < 420
         ? MediaQuery.sizeOf(context).width * 0.9
         : 420;
-    return AlertDialog(
+    return FushiAlertDialog(
+      icon: const FushiDialogHeroIcon(
+        icon: FushiIcons.ankiCard,
+        tone: FushiHeroTone.primary,
+      ),
       title: Text(t.anki_mined_card_title),
       content: SizedBox(
         width: width,
@@ -200,33 +212,43 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
                   final preview = note.preview.isEmpty
                       ? '#${note.noteId}'
                       : note.preview;
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      preview,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                  // M3E 分段卡片：一张已有卡一段（首尾大圆角、行间 2px），
+                  // 行首 Anki 卡方形色块。
+                  return FushiGroupedListItem(
+                    index: i,
+                    count: matches.length,
+                    child: FushiListItem(
+                      leading: const FushiListLeadingIcon(
+                        FushiIcons.ankiCard,
+                        shape: FushiLeadingShape.square,
+                      ),
+                      title: Text(
+                        preview,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      titleMaxLines: 2,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          FushiIconButtonControl.filledTonal(
+                            tooltip: t.anki_mined_action_overwrite,
+                            icon: const FushiIcon(FushiIcons.edit),
+                            onPressed: _busy
+                                ? null
+                                : () => _runOverwrite(note.noteId),
+                          ),
+                          FushiIconButtonControl(
+                            tooltip: t.anki_mined_action_view,
+                            icon: const FushiIcon(FushiIcons.openInNew),
+                            onPressed: _busy
+                                ? null
+                                : () => _viewNote(note.noteId),
+                          ),
+                        ],
+                      ),
+                      onTap: _busy ? null : () => _viewNote(note.noteId),
                     ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          tooltip: t.anki_mined_action_overwrite,
-                          icon: const Icon(Icons.edit_outlined),
-                          onPressed: _busy
-                              ? null
-                              : () => _runOverwrite(note.noteId),
-                        ),
-                        IconButton(
-                          tooltip: t.anki_mined_action_view,
-                          icon: const Icon(Icons.open_in_new),
-                          onPressed: _busy
-                              ? null
-                              : () => _viewNote(note.noteId),
-                        ),
-                      ],
-                    ),
-                    onTap: _busy ? null : () => _viewNote(note.noteId),
                   );
                 },
               ),
@@ -234,13 +256,13 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
             if (_busy)
               const Padding(
                 padding: EdgeInsets.only(top: 12),
-                child: LinearProgressIndicator(),
+                child: FushiLinearProgressIndicator(),
               ),
           ],
         ),
       ),
       actions: [
-        TextButton(
+        FushiTextButton(
           // 制卡请求期间也保持可点：本框是 `barrierDismissible: false`，iOS 上既没有
           // 系统返回键、对话框路由也没有侧滑返回，而远端制卡 POST 的超时是 60 秒
           // ——禁用这颗按钮就是「点了制卡，整屏冻住一分钟」。关闭只解绑 UI，请求
@@ -248,9 +270,9 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: Text(_busy ? t.dialog_background_close : t.dialog_cancel),
         ),
-        FilledButton.tonalIcon(
+        FushiFilledButton.tonalIcon(
           onPressed: _busy ? null : _runMineNew,
-          icon: const Icon(Icons.add),
+          icon: const FushiIcon(FushiIcons.add),
           label: Text(t.anki_mined_action_add_duplicate),
         ),
       ],
@@ -366,35 +388,38 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
     final List<MapEntry<String, String>> nonEmpty = fields == null
         ? const []
         : fields.entries.where((e) => e.value.trim().isNotEmpty).toList();
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Row(
         children: <Widget>[
           if (widget.onBack != null)
-            IconButton(
+            FushiIconButtonControl.filledTonal(
               onPressed: _busy ? null : widget.onBack,
               tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-              icon: const Icon(Icons.arrow_back),
+              icon: const FushiIcon(FushiIcons.back),
             ),
+          if (widget.onBack != null) const SizedBox(width: 8),
           Expanded(child: Text(t.anki_note_viewer_title)),
         ],
       ),
       content: SizedBox(
         width: 420,
         child: _loading
-            ? const SizedBox(
+            ? SizedBox(
                 height: 80,
-                child: Center(child: CircularProgressIndicator()),
+                child: Center(child: FushiLoadingView(compact: true)),
               )
             : nonEmpty.isEmpty
             ? Text(t.anki_note_viewer_empty)
+            // 字段逐段铺成分段卡片：字段名 primary 小标题 + 可选中正文。
             : SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: FushiGroupedList(
                   children: [
                     for (final e in nonEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
                         child: _AnkiNoteField(label: e.key, value: e.value),
                       ),
                   ],
@@ -405,15 +430,15 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
         // 本框先前只有「在 Anki 中打开」「覆写」两颗按钮，没有任何关闭入口，全靠
         // barrier 可点兜底；iOS 上没有系统返回键、对话框路由也没有侧滑返回，用户
         // 看不到出口就会当成卡死（尤其字段还在转圈时）。
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_close),
         ),
-        TextButton(
+        FushiTextButton(
           onPressed: _busy ? null : _openInAnki,
           child: Text(t.anki_note_viewer_open_in_anki),
         ),
-        FilledButton(
+        FushiFilledButton(
           onPressed: _busy ? null : _overwrite,
           child: Text(t.anki_mined_action_overwrite),
         ),
@@ -447,7 +472,7 @@ class _AnkiNoteField extends StatelessWidget {
       children: <Widget>[
         Text(
           label,
-          style: theme.textTheme.labelMedium?.copyWith(
+          style: context.fushiType.labelMediumEmphasized.copyWith(
             color: theme.colorScheme.primary,
           ),
         ),
@@ -498,7 +523,11 @@ class _AnkiSourceNoteChangesDialogState
               widget.original[key] != widget.candidate[key],
         )
         .toList();
-    return AlertDialog(
+    return FushiAlertDialog(
+      icon: const FushiDialogHeroIcon(
+        icon: FushiIcons.swap,
+        tone: FushiHeroTone.tertiary,
+      ),
       title: Text(t.card_source_review_changes),
       content: SizedBox(
         width: 640,
@@ -510,10 +539,10 @@ class _AnkiSourceNoteChangesDialogState
               const SizedBox(height: 12),
               if (changed.isEmpty) Text(t.card_source_review_no_changes),
               for (final String field in changed)
-                ExpansionTile(
+                FushiExpansionTile(
                   key: ValueKey<String>('anki-source-expand-$field'),
                   title: Text(field),
-                  leading: Checkbox(
+                  leading: FushiCheckbox(
                     key: ValueKey<String>('anki-source-change-$field'),
                     value: _selected.contains(field),
                     onChanged: (bool? value) => setState(() {
@@ -544,11 +573,11 @@ class _AnkiSourceNoteChangesDialogState
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_cancel),
         ),
-        FilledButton(
+        FushiFilledButton(
           onPressed: _selected.isEmpty
               ? null
               : () => Navigator.of(context).pop(<String, String>{
@@ -668,7 +697,11 @@ class _UnverifiedMinedCardDialogState
     // 窄屏（手机）时不硬撑 420，与同族对话框同一口径。
     final double available = MediaQuery.sizeOf(context).width * 0.9;
     final double width = available < 420 ? available : 420;
-    return AlertDialog(
+    return FushiAlertDialog(
+      icon: const FushiDialogHeroIcon(
+        icon: FushiIcons.help,
+        tone: FushiHeroTone.tertiary,
+      ),
       title: Text(t.anki_mined_unverified_title),
       content: SizedBox(
         width: width,
@@ -681,30 +714,39 @@ class _UnverifiedMinedCardDialogState
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
-            ListTile(
-              key: const ValueKey<String>('anki-mined-unverified-add'),
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.add),
-              title: Text(t.anki_mined_action_add_duplicate),
-              onTap: _busy ? null : _runMineNew,
-            ),
-            ListTile(
-              key: const ValueKey<String>('anki-mined-unverified-forget'),
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.delete_outline),
-              title: Text(t.anki_mined_action_forget),
-              onTap: _busy ? null : _runForget,
+            // 两个出口做成一组分段卡片行：再加一张 = primary 色块，划掉 = error 色块。
+            FushiGroupedList(
+              children: <Widget>[
+                FushiListItem(
+                  key: const ValueKey<String>('anki-mined-unverified-add'),
+                  leading: const FushiListLeadingIcon(
+                    FushiIcons.add,
+                    tone: FushiCardTone.primary,
+                  ),
+                  title: Text(t.anki_mined_action_add_duplicate),
+                  onTap: _busy ? null : _runMineNew,
+                ),
+                FushiListItem(
+                  key: const ValueKey<String>('anki-mined-unverified-forget'),
+                  leading: const FushiListLeadingIcon(
+                    FushiIcons.delete,
+                    tone: FushiCardTone.error,
+                  ),
+                  title: Text(t.anki_mined_action_forget),
+                  onTap: _busy ? null : _runForget,
+                ),
+              ],
             ),
             if (_busy)
               const Padding(
                 padding: EdgeInsets.only(top: 12),
-                child: LinearProgressIndicator(),
+                child: FushiLinearProgressIndicator(),
               ),
           ],
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           // 与同族操作单一致：制卡请求期间也保持可点（关闭只解绑 UI，请求跑完）。
           onPressed: () => Navigator.of(context).pop(),
           child: Text(_busy ? t.dialog_background_close : t.dialog_cancel),

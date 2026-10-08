@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
@@ -227,6 +227,50 @@ void main() {
     await tester.tap(find.byTooltip(t.stat_range_next));
     await tester.pumpAndSettle();
     expect(find.text('2026'), findsOneWidget, reason: '当期不能翻到未来');
+  });
+
+  // 2026-10 体验优化：学习日历点某天会把范围切到单日，范围条要给一个显眼的
+  // 「本月」快捷入口一步回到当月（此前要先点「月」再连按箭头）。
+  testWidgets('范围条：单日态给出「本月」快捷入口，点了回到当月', (
+    WidgetTester tester,
+  ) async {
+    LocaleSettings.setLocale(AppLocale.en);
+    StatRangeSelection selection = const StatRangeSelection(
+      mode: StatRangeMode.day,
+      anchorKey: '2026-05-12',
+    );
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (BuildContext context, StateSetter setState) =>
+                  StatRangeBar(
+                    range: StatRange.resolve(
+                      selection,
+                      todayKey: '2026-09-28',
+                      earliestKey: '2025-03-10',
+                    ),
+                    onChanged: (StatRangeSelection s) =>
+                        setState(() => selection = s),
+                  ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final Finder back =
+        find.byKey(const ValueKey<String>('stat-range-back-to-month'));
+    expect(back, findsOneWidget);
+    expect(find.text(t.stat_this_month), findsOneWidget);
+
+    await tester.tap(back);
+    await tester.pumpAndSettle();
+    expect(selection.mode, StatRangeMode.month);
+    expect(selection.anchorKey, isNull, reason: '回到「本月」= 锚点跟随今日');
+    expect(find.text('2026-09'), findsOneWidget);
+    // 非单日态不出现该入口。
+    expect(back, findsNothing);
   });
 
   test('formatStatRange 各粒度文字', () {

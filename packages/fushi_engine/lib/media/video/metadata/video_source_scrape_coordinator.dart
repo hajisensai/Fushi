@@ -17,6 +17,7 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_asset_downloader.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_work_loader.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_merge.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -445,6 +446,153 @@ class VideoSourceScrapeCoordinator
       confirmedLookups: <String, VideoMetadataLookup>{work.stableKey: lookup},
       runScope: 'work',
     );
+  }
+
+  /// 按库里已落的规范资料重写一部作品的 NFO / 图片 sidecar：**不重新识别、不重拉
+  /// 资料**（无头端 `video sidecar write`）。
+  ///
+  /// 资料取 DB（[loadVideoMetadataWork]），分集绑定取已落库的
+  /// `video_metadata_episodes.book_uid`（刮削时 [VideoMetadataDatabaseStore.apply]
+  /// 写下的那把键，与当初写 sidecar 用的同一份），落盘走与刮削同一个
+  /// [_writeSidecars]——同一套所有权账本、来源级写入策略与覆盖保护。图片仍按 DB 里的
+  /// 远端 URL 下载。[replaceOwnArtifacts] 语义同手动指定身份重刮：只换 Fushi 自己写下
+  /// 且未被改动过的旧产物。
+  ///
+  /// 作品不存在返回 null；没有规范身份（扫描器写的 `local` 骨架）或不属于任何已登记的
+  /// 本地视频来源抛 [StateError]。
+  Future<SourceScrapeReport?> rewriteSidecarsForStoredWork(
+    int workId, {
+    bool replaceOwnArtifacts = false,
+  }) async {
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) throw StateError('视频刮削资料正在清理');
+    try {
+      return await _rewriteSidecarsUnlocked(workId,
+          replaceOwnArtifacts: replaceOwnArtifacts);
+    } finally {
+      lease.release();
+    }
+  }
+
+  Future<SourceScrapeReport?> _rewriteSidecarsUnlocked(
+    int workId, {
+    required bool replaceOwnArtifacts,
+  }) async {
+    final VideoMetadataWorkRow? row =
+        await database.getVideoMetadataWorkById(workId);
+    if (row == null) return null;
+    final VideoMetadataWork metadata =
+        await loadVideoMetadataWork(database, row);
+    SourceLibraryRow? source;
+    VideoSourceScrapeWork? localWork;
+    for (final SourceLibraryRow candidate
+        in await database.getMediaSourcesByKind('video')) {
+      if (candidate.transport != 'local') continue;
+      for (final VideoSourceScrapeWork work
+          in await VideoSourceWorkPlanner(database).plan(candidate)) {
+        final bool same = row.collectionId != null
+            ? work.collection?.id == row.collectionId
+            : work.collection == null &&
+                work.members.length == 1 &&
+                work.members.single.bookUid == row.bookUid;
+        if (same) {
+          source = candidate;
+          localWork = work;
+          break;
+        }
+      }
+      if (localWork != null) break;
+    }
+    if (source == null || localWork == null) {
+      throw StateError('作品 $workId 不属于任何已登记的本地视频来源');
+    }
+    final int sourceId = source.id;
+    final Map<int, int> seasonIds = <int, int>{};
+    final Map<(int, int), int> episodeIds = <(int, int), int>{};
+    final Map<String, (int, int)> episodeOverrides = <String, (int, int)>{};
+    for (final VideoMetadataSeasonRow season
+        in await database.getVideoMetadataSeasons(workId)) {
+      seasonIds[season.seasonNumber] = season.id;
+      for (final VideoMetadataEpisodeRow episode
+          in await database.getVideoMetadataEpisodes(season.id)) {
+        episodeIds[(season.seasonNumber, episode.episodeNumber)] = episode.id;
+        if (episode.bookUid case final String bookUid) {
+          episodeOverrides[bookUid] =
+              (season.seasonNumber, episode.episodeNumber);
+        }
+      }
+    }
+    final _EffectiveSourceSettings settings = _EffectiveSourceSettings.from(
+      await database.getVideoSourceScrapeSettings(sourceId),
+      config,
+      allowProtectedOverwrite: false,
+      primaryProvider: primaryProvider,
+    );
+    final int startedAt = DateTime.now().millisecondsSinceEpoch;
+    final int runId = await database.insertVideoSourceScrapeRun(
+      VideoSourceScrapeRunsCompanion.insert(
+        sourceId: Value<int?>(sourceId),
+        scope: 'sidecar',
+        status: 'running',
+        provider: Value<String?>(metadata.provider.name),
+        phase: const Value<String?>('writingSidecars'),
+        startedAt: startedAt,
+        updatedAt: startedAt,
+      ),
+    );
+    final List<String> knownSourcePaths = (await database.allVideoBooks())
+        .where((VideoBookRow book) => book.sourceId == sourceId)
+        .map((VideoBookRow book) => book.videoPath)
+        .toList(growable: false);
+    try {
+      final _SidecarOutcome outcome = await _writeSidecars(
+        source: source,
+        runId: runId,
+        localWork: localWork,
+        metadata: metadata,
+        persisted: PersistedVideoMetadata(
+          workId: workId,
+          seasonIds: seasonIds,
+          episodeIds: episodeIds,
+          episodesByBookUid: const <String, VideoMetadataEpisode>{},
+        ),
+        knownSourcePaths: knownSourcePaths,
+        settings: settings,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        episodeOverrides: episodeOverrides,
+        replaceOwnArtifacts: replaceOwnArtifacts,
+      );
+      final SourceScrapeReport report = SourceScrapeReport(
+        sourceIds: <int>[sourceId],
+        totalWorks: 1,
+        succeededWorks: outcome.errors.isEmpty ? 1 : 0,
+        failedWorks: outcome.errors.isEmpty ? 0 : 1,
+        nfoWritten: outcome.nfoWritten,
+        imagesWritten: outcome.imagesWritten,
+        protectedArtifacts: outcome.protectedArtifacts,
+        unchangedArtifacts: outcome.unchangedArtifacts,
+        warnings: List<SourceScrapeIssue>.unmodifiable(outcome.warnings),
+        errors: List<SourceScrapeIssue>.unmodifiable(outcome.errors),
+      );
+      await _finishRun(runId, status: 'completed', report: report);
+      return report;
+    } catch (error) {
+      await _finishRun(
+        runId,
+        status: 'failed',
+        report: SourceScrapeReport(
+          sourceIds: <int>[sourceId],
+          totalWorks: 1,
+          failedWorks: 1,
+          errors: <SourceScrapeIssue>[
+            SourceScrapeIssue(workTitle: row.title, message: error.toString()),
+          ],
+        ),
+        lastError: error.toString(),
+      );
+      rethrow;
+    }
   }
 
   @override

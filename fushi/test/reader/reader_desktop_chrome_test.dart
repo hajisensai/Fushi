@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 
@@ -29,17 +29,25 @@ void main() {
     expect(chrome, contains('_buildStatusFooterRow(centered: true)'));
     expect(chrome,
         contains('!_statusFooterShouldPaint || _statusFooterInBottomBar'));
+    // M3E 浮动工具栏（772f479e468）：浮动底栏是一块独立悬浮药丸、坐在读数带之上，
+    // 读数行不再并进底栏遮罩——所以这条判据在浮动态恒 false。
     expect(
         page,
         contains('bool get _statusFooterInBottomBar =>\n'
+            '      !_floatingToolbars &&\n'
             '      _separatePlaybackStatus &&\n'
             '      _statusFooterShouldPaint &&\n'
             '      _bottomBarShouldPaint &&'));
     // 底栏只在「有声书播放条在场」或「用户把按钮拖进底栏槽位」时占位。
+    // M3E（772f479e468）：占位高收进 _bottomChromeExtent（贴边一条 / 悬浮按迷你
+    // 播放条 + 悬浮工具栏叠放），「两者都没有 → 0」的判据不变。
+    expect(page, contains('chromeHeight: _bottomChromeExtent,'));
     expect(
-        page,
-        contains(
-            'chromeHeight: _audiobookController == null && !_bottomSlotsHaveButtons'));
+        chrome,
+        contains('    final bool audio = _audiobookController != null;\n'
+            '    final bool dock = _bottomSlotsHaveButtons;\n'
+            '    if (!audio && !dock) return 0;\n'
+            '    if (!_floatingToolbars) return _readerChromeHeight;'));
   });
 
   group('readerHeaderCompactForActions', () {

@@ -60,19 +60,19 @@ DAV1D_REF="${DAV1D_REF:-1.5.1}"
 LIBVPX_REF="${LIBVPX_REF:-v1.15.0}"
 OPUS_REF="${OPUS_REF:-v1.5.2}"
 
-# BUG-1668：macOS 目标架构（`x86_64` / `arm64`），默认跟随构建机。
+# macOS 目标架构。macOS 版只出 Apple Silicon（arm64），不再支持 Intel Mac，所以
+# 默认就是 arm64，而且只接受 arm64（ffmpeg-min.yml 的 macOS job 显式传它）。
 #
-# 为什么必须能指定：Flutter 的 `flutter build macos --release` 产出的是 **universal**
-# （x86_64 + arm64）app，而本脚本历来只编构建机自己的架构。CI 的 macOS runner 是
-# Apple Silicon，于是随包的 ffmpeg/ffprobe 是 arm64-only 瘦二进制。在 **Intel Mac**
-# 上后果是：app 本体照常启动、查词照常能用，但每次 `Process.start('…/ffmpeg')` 都
-# 被内核以 `Bad CPU type in executable`(EBADARCH) 拒掉 → 制卡音频/封面、内封字幕
-# 抽取、片段导出全线失效。ffmpeg-min.yml 与 release-desktop.yml 的 `ffmpeg -version`
-# 硬门都跑在 arm64 runner 上，对这个缺口天然免疫，所以它一路溜到了用户机器上。
-#
-# 用法：单独跑一次只出一个架构；两个架构各跑一次到不同 OUT，再 `lipo -create`
-# 合成 universal（见 .github/workflows/ffmpeg-min.yml 的 macOS job）。
-MACOS_ARCH="${MACOS_ARCH:-$(uname -m)}"
+# BUG-1668 的教训：目标架构必须显式钉死，不能靠「构建机恰好是什么」——当年 app 是
+# universal 而随包 ffmpeg 是 arm64-only，Intel Mac 上 helper 被内核以 EBADARCH 拒掉。
+# 现在 app 本体与 helper 都只有 arm64，release-desktop.yml 按 app 本体的 `lipo -archs`
+# 核对两者一致。下面依赖库里的 `-arch` / `--host` / cross file 仍按 MACOS_ARCH 参数化，
+# 在 arm64 构建机上编 arm64 时走的是同架构路径。
+MACOS_ARCH="${MACOS_ARCH:-arm64}"
+if [ "$(uname -s)" = "Darwin" ] && [ "$MACOS_ARCH" != "arm64" ]; then
+  echo "[ffmpeg-min] FATAL: macOS 版只出 arm64（不再支持 Intel Mac），MACOS_ARCH=$MACOS_ARCH 不受支持" >&2
+  exit 1
+fi
 
 # BUG-1443：macOS 上把 libx264 / SVT-AV1 / libwebp / dav1d 从源码编成**静态库**，
 # 装进一个私有 prefix，让 ffmpeg 只从那里取。
@@ -293,7 +293,7 @@ DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac
 # 之后 `av1` 那个壳就没有存在意义，从清单里去掉，避免再有人以为 AV1 已经覆盖。
 # ⚠️ CI 构建环境需装 dav1d 开发包（MSYS2: mingw-w64-x86_64-dav1d；Ubuntu: libdav1d-dev；
 # macOS 在 build_darwin_static_deps 里从源码静态编，需要 meson + ninja + nasm）。
-DECODERS="h264,hevc,libdav1d,vp9,vp8,mpeg4,mpeg2video,mpeg1video,flv,rv10,rv20,rv30,rv40,theora,wmv1,wmv2,wmv3,vc1,msmpeg4v1,msmpeg4v2,msmpeg4v3,mjpeg,png,webp,opus,aac,ac3,eac3,vorbis,flac,mp3,mp2,alac,dca,truehd,mlp,cook,sipr,ra_144,ra_288,wmav1,wmav2,wmapro,wmalossless,wmavoice,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_u16le,pcm_u16be,pcm_s24le,pcm_s24be,pcm_u24le,pcm_u24be,pcm_s32le,pcm_s32be,pcm_u32le,pcm_u32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_alaw,pcm_mulaw,ass,ssa,subrip,webvtt,movtext,text"
+DECODERS="h264,hevc,libdav1d,vp9,vp8,mpeg4,mpeg2video,mpeg1video,flv,rv10,rv20,rv30,rv40,theora,wmv1,wmv2,wmv3,vc1,msmpeg4v1,msmpeg4v2,msmpeg4v3,mjpeg,png,webp,opus,aac,ac3,eac3,vorbis,flac,mp3,mp2,alac,dca,truehd,mlp,cook,sipr,ra_144,ra_288,wmav1,wmav2,wmapro,wmalossless,wmavoice,pcm_bluray,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_u16le,pcm_u16be,pcm_s24le,pcm_s24be,pcm_u24le,pcm_u24be,pcm_s32le,pcm_s32be,pcm_u32le,pcm_u32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_alaw,pcm_mulaw,ass,ssa,subrip,webvtt,movtext,text"
 # movtext：视频片段导出把「用户正在看的字幕」封成软字幕流（`-c:s mov_text`）。片段
 # 输出恒 .mp4（BUG-917），而 ISO-BMFF 只认 3GPP Timed Text = movtext 编码器；缺它
 # ffmpeg 直接 "Unknown encoder 'mov_text'"，字幕封装在桌面全挂（导出会自动降级成
@@ -330,7 +330,10 @@ ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,libvpx_vp9,li
 # 设计的形态，也是 Jellyfin / Emby 给 mpv 客户端的标准形态。h264 进 TS 由已编入的
 # h264_mp4toannexb bsf 转 Annex B（见 BSFS）。
 # webm：音画同步片段的 WebM 容器（VP9/AV1 + Opus）。它与 matroska 共用 matroskaenc。
-MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts"
+# sup：图形字幕整轨 OCR（graphic_subtitle_track_ocr.dart）把 PGS 轨 `-c copy -f sup`
+# 原样抽成 `.sup` 段流再由 Dart 解析。supenc.c 只是给每段补 `PG`+PTS/DTS 头，LGPL、
+# 几十行；缺它 ffmpeg 报 "Requested output format 'sup' is not known"（exit -22）。
+MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts,sup"
 # pad：有声书片段导出（buildFfmpegImageAudioToVideoArgs）用
 #   `scale=W:H:force_original_aspect_ratio=decrease,pad=W:H:(ow-iw)/2:(oh-ih)/2:color=black`
 #   把文本图缩进框内再黑边填充到精确 WxH；漏 pad → "No option name near '...'" +

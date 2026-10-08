@@ -11,6 +11,7 @@ import 'package:fushi_engine/utils/misc/synchronized_video_exporter.dart';
 import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
+import 'package:fushi/src/mining/mining_image_mode_target.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
 
 /// 制卡静图格式 → 降采样器的编码枚举（两层各自的词汇，在此处一次性对齐）。
@@ -86,10 +87,13 @@ typedef AudioExtractor = Future<String?> Function({
   Map<String, String> httpHeaders,
 });
 
-/// 音频已经按选定音轨/时间窗裁好；视频只裁同一个窗，不能再次 seek 音频。
+/// 已裁音频从零读取；同源快路按视频的时间窗与选定音轨一次导出。
 typedef SynchronizedVideoExtractor = Future<VideoClipExportResult> Function({
   required String videoPath,
   required String audioPath,
+  int audioStartMs,
+  int audioStreamIndex,
+  int audioChannels,
   required int startMs,
   required int endMs,
   required String outputPath,
@@ -305,6 +309,9 @@ class ImmersionMiningEngine {
   static Future<VideoClipExportResult> _exportSynchronizedVideo({
     required String videoPath,
     required String audioPath,
+    int audioStartMs = 0,
+    int audioStreamIndex = 0,
+    int audioChannels = 2,
     required int startMs,
     required int endMs,
     required String outputPath,
@@ -316,7 +323,9 @@ class ImmersionMiningEngine {
         format: format,
         videoPath: videoPath,
         audioPath: audioPath,
-        audioStartMs: 0,
+        audioStartMs: audioStartMs,
+        audioStreamIndex: audioStreamIndex,
+        audioChannels: audioChannels,
         startMs: startMs,
         endMs: endMs,
         outputPath: outputPath,
@@ -462,7 +471,15 @@ class ImmersionMiningEngine {
     // 不能因此整张卡失败。
     // galgame（source: game）只会以「外部已给好的片段」进来（窗口录制 + 语音混流），
     // 它没有可裁的源（hasRange 恒 false），所以下面的判据自然只认 providedVideo。
-    final bool wantsSynchronizedVideo = req.imageMode.isVideoClip &&
+    //
+    // 模式按**目标模板**生效（[resolveTargetMiningImageMode]）：模板不原样渲染图片字段
+    // 时同步片段卡什么都显示不出来，改走动图阶梯。外部已给好媒体字节的来源（Netflix
+    // 录制、galgame 窗口录制）由产字节的一侧在录制前判过，这里不再改它的模式——片段
+    // 已经录成了，事后改模式只会让同一个文件既当封面又当音频的契约错位。
+    final VideoMiningImageMode imageMode = req.providedCoverBytes == null
+        ? await resolveTargetMiningImageMode(req.imageMode, repo: repo)
+        : req.imageMode;
+    final bool wantsSynchronizedVideo = imageMode.isVideoClip &&
         (req.source == AnkiMiningSource.video ||
             req.source == AnkiMiningSource.game);
     // 抽取用的是媒体文件自己的时间轴：缓冲副本的 0 点是播放器轴上的某一刻
@@ -611,9 +628,27 @@ class ImmersionMiningEngine {
     // 途的 Future 就成了 unhandled async error（Flutter 下直接上报成崩溃）。暂存 +
     // 重抛保持与串行版逐字一致的抛出语义。
     final String? audioSrc = req.audioSource ?? src;
+    // 本地同源且音轨明确时，直接把原音轨与画面一起裁出，省掉 AAC 中间文件。
+    // 未知默认轨仍交给原音频提取器选择；远端裁切、分离音频和外部音频保留原流程。
+    final int? selectedAudio = resolveAudioMapIndex(
+      audioStreamIndex: req.audioStreamIndex,
+      audioStreamCount: req.audioStreamCount,
+    );
+    final bool directSourceAudio =
+        synchronizedVideo &&
+        !providedVideo &&
+        req.source == AnkiMiningSource.video &&
+        src != null &&
+        File(src).isAbsolute &&
+        req.providedAudioBytes == null &&
+        req.audioSource == null &&
+        req.remoteAudioClipper == null &&
+        (selectedAudio != null || req.audioStreamCount == 1);
     Object? audioError;
     StackTrace? audioStack;
-    final Future<String?> audioFuture = (providedVideo
+    final Future<String?> audioFuture = (directSourceAudio
+            ? Future<String?>.value(null)
+            : providedVideo
             ? Future<String?>.value(coverPath)
             : _resolveAudioPath(
                 req,
@@ -644,7 +679,7 @@ class ImmersionMiningEngine {
     }
 
     if (coverPath == null && !synchronizedVideo) {
-      switch (req.imageMode) {
+      switch (imageMode) {
         case VideoMiningImageMode.gif:
         // 普通视频的同步模式已在外层分流；保留其他来源既有的动图降级阶梯。
         case VideoMiningImageMode.videoClip:
@@ -667,7 +702,7 @@ class ImmersionMiningEngine {
     }
 
     if (synchronizedVideo && !providedVideo) {
-      if (audioPath == null) {
+      if (audioPath == null && !directSourceAudio) {
         return ImmersionMiningResult(
           aborted: true,
           abortReason:
@@ -676,7 +711,7 @@ class ImmersionMiningEngine {
       }
       exportedVideoDir = await Directory(tempDir).createTemp('synced_video_');
       final VideoClipExportResult video;
-      final String trimmedAudio = audioPath;
+      final String exportAudio = directSourceAudio ? src : audioPath!;
       try {
         // 首选格式编不出来（捆绑 ffmpeg 缺 VP9/Opus/AV1）按 encodeAttempts 降级，
         // 卡上扩展名跟随实际编成的格式。
@@ -691,7 +726,10 @@ class ImmersionMiningEngine {
           attempt: (MiningClipFormat format, String outputPath) =>
               _synchronizedVideo(
             videoPath: src!,
-            audioPath: trimmedAudio,
+            audioPath: exportAudio,
+            audioStartMs: directSourceAudio ? extractStartMs : 0,
+            audioStreamIndex: directSourceAudio ? (selectedAudio ?? 0) : 0,
+            audioChannels: directSourceAudio ? compression.audioChannels : 2,
             startMs: extractStartMs,
             endMs: extractEndMs,
             outputPath: outputPath,
@@ -713,7 +751,22 @@ class ImmersionMiningEngine {
         // 动图模式的阶梯并保留已裁好的句子音频——照常出卡，但不声称同步。改默认之前这些
         // 卡走 gif 模式本来就能出，这里中止等于让它们整张失败。
         synchronizedVideo = false;
-        await runAnimatedLadder();
+        // 快路失败才补裁句子音频，和既有封面降级同时进行。
+        if (directSourceAudio) {
+          final List<String?> fallback = await Future.wait<String?>([
+            _resolveAudioPath(
+              req,
+              compression: compression,
+              tempDir: tempDir,
+              audioSrc: audioSrc,
+              reportAudio: reportAudio,
+            ),
+            runAnimatedLadder().then((_) => null),
+          ]);
+          audioPath = fallback.first;
+        } else {
+          await runAnimatedLadder();
+        }
       } else {
         coverPath = video.outputPath;
         audioPath = coverPath;

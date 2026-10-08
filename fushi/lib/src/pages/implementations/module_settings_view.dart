@@ -1,8 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/models.dart';
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
+import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -14,15 +15,33 @@ import 'package:fushi/utils.dart';
 ///
 /// 设置项仍来自全局 [buildSettingsSchema]，所以这里不会复制第二套开关、持久化或
 /// 平台门控。外层只负责保留模块的分段导航页头；正文交给与设置主页相同的 renderer。
+///
+/// 内嵌形态由库页外壳用 [FushiFloatingChromeScrollInset] 包着（不是整体下移的
+/// `FushiFloatingChromeInsetPadding`）：正文滚动视图消费 MediaQuery 顶部 padding。
 class ModuleSettingsView extends ConsumerStatefulWidget {
   const ModuleSettingsView({
     required this.destinationId,
-    required this.navigation,
+    required Widget this.navigation,
     super.key,
-  });
+  }) : routeTitle = null;
+
+  /// 推出来的独立设置页（如「设置 › AI」「设置 › 互联」）：页头是
+  /// [FushiPageHeader.route]——标题 + 自动返回键，不再各页手写
+  /// 「返回键 + titleLarge」。
+  const ModuleSettingsView.route({
+    required this.destinationId,
+    required String title,
+    super.key,
+  }) : navigation = null,
+       routeTitle = title;
 
   final SettingsDestinationId destinationId;
-  final Widget navigation;
+
+  /// 模块内嵌形态的分段导航页头主位；[ModuleSettingsView.route] 下为 null。
+  final Widget? navigation;
+
+  /// [ModuleSettingsView.route] 的页面标题。
+  final String? routeTitle;
 
   @override
   ConsumerState<ModuleSettingsView> createState() => _ModuleSettingsViewState();
@@ -43,7 +62,11 @@ class _ModuleSettingsViewState extends ConsumerState<ModuleSettingsView>
       (SettingsDestination destination) =>
           destination.id == widget.destinationId,
     );
-    final SettingsRenderer renderer = isCupertinoPlatform(context)
+    // 玻璃：与设置主页同一套 macOS / iOS 设置详情（GlassSettingsRenderer）。
+    final SettingsRenderer renderer =
+        isGlassDesign(context) && !isCupertinoPlatform(context)
+        ? const GlassSettingsRenderer()
+        : isCupertinoPlatform(context)
         ? const CupertinoSettingsRenderer()
         : const MaterialSettingsRenderer();
 
@@ -54,13 +77,29 @@ class _ModuleSettingsViewState extends ConsumerState<ModuleSettingsView>
     // 正文横向缩进由 renderer 的 detailHorizontalInsets 自持（与「导入」分区的
     // 文字流处理同源）；全局设置主页（settings_home_page.dart）仍走
     // DesktopContentKind.settings，不受影响。
+    final bool embedded = widget.navigation != null;
     return Column(
       children: <Widget>[
-        FushiPageHeader.customTitle(title: widget.navigation),
+        if (widget.routeTitle case final String title)
+          FushiPageHeader.route(title: title)
+        else
+          FushiPageHeader.customTitle(title: widget.navigation!),
         Expanded(
-          child: renderer.buildDetailContent(
-            settingsContext: settingsContext,
-            destination: destination,
+          // 吃掉之后从子树里摘掉顶部 padding：渲染器按本 State 的 context
+          // （在这层之上）算内边距，设置行里的列表 / SafeArea 不会再让一遍。
+          child: MediaQuery.removePadding(
+            context: context,
+            removeTop: embedded,
+            child: renderer.buildDetailContent(
+              settingsContext: settingsContext,
+              destination: destination,
+              // 模块内嵌形态坐在库页外壳的浮动工具区下：外壳经
+              // [FushiFloatingChromeScrollInset] 把让位高度交成 MediaQuery 顶部
+              // padding，正文滚动视图自己吃掉它——内容从工具区下方开始、往下
+              // 滚时滚到工具区底下，工具区收起后顶部不留空白。上面的页头在外壳
+              // 里是零高度占位（页签与动作都由外壳画）。
+              consumeTopPadding: embedded,
+            ),
           ),
         ),
       ],

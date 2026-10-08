@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:multi_value_listenable_builder/multi_value_listenable_builder.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/pages/implementations/dictionary_progress_dialog_content.dart';

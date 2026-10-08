@@ -13,3 +13,6 @@
 #include "../adapters/aos_sfa_profile.h"
 #include "../adapters/unity_mono_profile.h"
 #include "../adapters/smash_fzmedia_profile.h"
+#include "../adapters/yuris_profile.h"
+#include "../adapters/fvp_profile.h"
+#include "../adapters/kogado_hy_profile.h"

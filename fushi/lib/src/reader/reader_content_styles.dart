@@ -153,6 +153,8 @@ class ReaderContentStyles {
     String? selectionColor,
     String? sentenceAudioHighlightColor,
     String? linkColor,
+    String? rubyColor,
+    String? nativeSelectionColor,
     String? themeOverride,
     bool einkMode = false,
     bool einkDark = false,
@@ -168,6 +170,8 @@ class ReaderContentStyles {
       selectionColor: selectionColor,
       sentenceAudioHighlightColor: sentenceAudioHighlightColor,
       linkColor: linkColor,
+      rubyColor: rubyColor,
+      nativeSelectionColor: nativeSelectionColor,
       themeOverride: themeOverride,
       einkMode: einkMode,
       einkDark: einkDark,
@@ -231,7 +235,10 @@ class ReaderContentStyles {
   /// 变量缺省 0.1 即旧值，脚本没跑到之前行为不变。`--fushi-ruby-snap` 是给脚本的开关，
   /// 只在这里（Apple 端）打出。
   static String _webKitRubyAnnotationCss() => switch (defaultTargetPlatform) {
-        TargetPlatform.iOS || TargetPlatform.macOS => '''
+        TargetPlatform.iOS ||
+        TargetPlatform.macOS ||
+        TargetPlatform.linux =>
+          '''
 /* BUG-2472 / BUG-2482 / BUG-2724 / BUG-2779: WebKit only — see _webKitRubyAnnotationCss. */
 :root {
   --fushi-ruby-snap: 1;
@@ -275,6 +282,8 @@ ruby > rt, ruby > rtc {
     switch (defaultTargetPlatform) {
       case TargetPlatform.iOS:
       case TargetPlatform.macOS:
+      // Linux 走 WPE WebKit（flutter_inappwebview_linux），与 Apple 同一引擎族。
+      case TargetPlatform.linux:
         break;
       default:
         return '';
@@ -318,6 +327,8 @@ p::after {
     switch (defaultTargetPlatform) {
       case TargetPlatform.iOS:
       case TargetPlatform.macOS:
+      // Linux 走 WPE WebKit（flutter_inappwebview_linux），与 Apple 同一引擎族。
+      case TargetPlatform.linux:
         return '''
 /* BUG-2819: WebKit paginated only — see _webKitPaginatedScrollEndCss. */
 body::after {
@@ -393,6 +404,11 @@ body::after {
     String? selectionColor,
     String? sentenceAudioHighlightColor,
     String? linkColor,
+    // 「跟随主题」M3E 阅读配色（FushiReaderPalette）才有的两个槽位：注音字色与
+    // 桌面鼠标拖选的原生 ::selection 底色。null = 不写规则（预设 / 用户钉纸色 /
+    // 墨水屏保持旧行为：rt 继承正文色、原生选区用引擎默认）。
+    String? rubyColor,
+    String? nativeSelectionColor,
     String? themeOverride,
     // 墨水屏模式：强制纯黑白正文 + 线式高亮 + 关过渡（叠加在任意主题之上，见
     // 文件末尾 _einkOverrideCss）。einkDark 决定黑底白字还是白底黑字，取自 app
@@ -428,6 +444,12 @@ body::after {
     final String selectionBase = selectionColor ?? colors.selectionColor;
     final String selectionOpaque =
         composeOpaqueColor(selectionBase, colors.backgroundColor);
+    final String themedRubyCss = !einkMode && rubyColor != null
+        ? 'ruby > rt, ruby > rtc { color: $rubyColor; }\n'
+        : '';
+    final String nativeSelectionCss = !einkMode && nativeSelectionColor != null
+        ? '::selection { background-color: $nativeSelectionColor; }\n'
+        : '';
 
     final String resolvedFontFaces;
     final String resolvedFontFamily;
@@ -525,12 +547,16 @@ body::after {
     final String fontWeightCss =
         fontWeight == 400 ? '' : 'font-weight: $fontWeight !important;';
 
+    // 行首禁则用 `normal` 而不是 `strict`（BUG-2929）：二者唯一的差别是 CJ 类（小假名 っゃゅょ…
+    // 与长音 ー）在 `strict` 下也不许出现在行首，于是「たった」「コート」恰好落在列尾时，
+    // 浏览器只能把前一个字一起推到下一列，本列留出一格空白、视觉上像被错误换行。
+    // 。、」） 等标点在 `normal` 下仍然禁止行首，与日文出版的常规排版一致。
     final String gridCss = settings.enableTextJustification
         ? ''
         : '''
 text-align: start !important;
 hanging-punctuation: allow-end !important;
-line-break: strict !important;''';
+line-break: normal !important;''';
 
     const String pageBreakCss = '''
 p {
@@ -711,7 +737,8 @@ html {
   background-color: ${colors.textColor};
   background-clip: padding-box;
   border: 2px solid transparent;
-  border-radius: 8px;
+  /* M3E：全圆头拇指（与 app 内 Flutter 滚动条同一形状）。 */
+  border-radius: 999px;
 }
 ::-webkit-scrollbar-corner {
   background: transparent;
@@ -875,7 +902,7 @@ ${_touchNativeSelectionCss()}/* BUG-765 续：移动端选区起止手柄的强�
    颜色自动更新，无需 JS 感知主题。用主题 linkColor（各主题的饱和强调色）而非查词高亮
    色（0.35 低透明 tint，太淡不适合实心抓手）。 */
 :root { --fushi-sel-handle: ${linkColor ?? colors.linkColor}; }
-/* BUG-125：查词高亮用不透明色（见 selectionOpaque 注释）。JS 侧给该 Highlight 设
+$themedRubyCss$nativeSelectionCss/* BUG-125：查词高亮用不透明色（见 selectionOpaque 注释）。JS 侧给该 Highlight 设
    priority=1，使其叠在音频(sentenceAudioHighlight, 默认 priority=0)之上 → 重叠处只显示这一层。 */
 ::highlight(fushi-selection) {
   background-color: $selectionOpaque;
@@ -1305,6 +1332,15 @@ body {
      正确捕获并拆屏（盒尺寸测量语义不变）。 */
   max-width: 100% !important;
   max-height: 100% !important;
+}
+/* BUG-2905: no hanging punctuation in VN. The body's `hanging-punctuation:
+   allow-end` (WebKit only) hangs a line-final 、。 past the inline-end edge,
+   but the VN screen clips at that edge (overflow hidden, no inline-end slack)
+   and fitScreensToViewport rightly measures the hung glyph as overflow — so
+   a paragraph that fits gets cut right before its 、 onto a second screen.
+   With hanging off WebKit pushes the preceding char down like Blink does. */
+.fushi-vn-content, .fushi-vn-content * {
+  hanging-punctuation: none !important;
 }
 /* The reveal (M1) hides not-yet-typed text by collapsing the trailing span. */
 [data-fushi-visual-novel-unrevealed] {

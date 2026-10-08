@@ -225,11 +225,16 @@ mixin _LocalLibraryHostAudiobooks
         // getSrtBookByBookKey 先拿 uid，再用 deleteSrtBookByUid 级联删 audioCue 行。
         final SrtBookRow? srt = await _db.getSrtBookByBookKey(bookKey);
         if (srt != null) {
+          // 关联 SRT 书（bookKey 非空）的跨设备身份是 bookKey，由下面的 audiobook
+          // 墓碑覆盖；不另写 srtbook 墓碑，否则对端会弹两条重复确认（与
+          // SrtBookRepository.delete 的 standalone 判据同源）。
           await _db.deleteSrtBookByUid(srt.uid);
         }
 
         // 删除 Audiobooks 行（及其 audioCues 级联，via deleteAudiobookByBookKey）。
         await _db.deleteAudiobookByBookKey(bookKey);
+        // BUG-2945：同步删除墓碑，其它设备经 /api/tombstones 跟着删。
+        await _writeHostSyncTombstone(SyncTombstoneKind.audiobook, bookKey);
 
         await _deleteAudioRootIfPersisted(audioRoot);
         return;
@@ -240,7 +245,11 @@ mixin _LocalLibraryHostAudiobooks
       final SrtBookRow? srt = await _db.getSrtBookByUid(bookKey);
       if (srt == null) return; // 幂等：都不存在则静默跳过
       final String? audioRoot = srt.audioRoot;
-      await _db.deleteSrtBookByUid(srt.uid);
+      // srtbook 墓碑只对 standalone 行写（bookKey 为空，身份 = uid），与
+      // SrtBookRepository.delete / _collectPresentDeletionKeys 同一判据。
+      if (await _db.deleteSrtBookByUid(srt.uid) > 0 && srt.bookKey.isEmpty) {
+        await _writeHostSyncTombstone(SyncTombstoneKind.srtbook, srt.uid);
+      }
       await _deleteAudioRootIfPersisted(audioRoot);
     });
   }

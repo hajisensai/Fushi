@@ -401,6 +401,8 @@ BOOL CALLBACK EnumProc(HWND hwnd, LPARAM lparam) {
   return TRUE;
 }
 
+}  // namespace
+
 // BGRA 像素缓冲 -> PNG 字节（WIC）。stride 为源每行字节数（可含行尾 padding）。
 std::vector<uint8_t> EncodeBgraToPng(const uint8_t* pixels, UINT width,
                                      UINT height, UINT stride,
@@ -473,6 +475,8 @@ std::vector<uint8_t> EncodeBgraToPng(const uint8_t* pixels, UINT width,
   result.resize(read);
   return result;
 }
+
+namespace {
 
 constexpr UINT kPrintWindowTimeoutMs = 750;
 constexpr UINT kPrintWindowHelperExitGraceMs = 500;

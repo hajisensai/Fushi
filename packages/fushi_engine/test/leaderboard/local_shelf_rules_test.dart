@@ -3,6 +3,35 @@ import 'package:test/test.dart';
 
 /// 书架汇总里与服务端 shelf.js normalizeEntry / normalizeDaily 同口径的纯规则。
 void main() {
+  group('leaderboardUnattributedOwner（BUG-2870）', () {
+    test('开着上传且仍存在的 Profile 里取 id 最小', () {
+      expect(
+        leaderboardUnattributedOwner(
+          uploading: <int>[3, 2, 5],
+          existing: <int>[1, 2, 3, 5],
+        ),
+        2,
+      );
+    });
+
+    test('已删除的 Profile 留下的账户文件不当代表', () {
+      expect(
+        leaderboardUnattributedOwner(
+          uploading: <int>[1, 4],
+          existing: <int>[2, 3, 4],
+        ),
+        4,
+      );
+    });
+
+    test('没有候选返回 null', () {
+      expect(
+        leaderboardUnattributedOwner(uploading: <int>[], existing: <int>[1, 2]),
+        isNull,
+      );
+    });
+  });
+
   group('每日字数窗口（DAILY_WINDOW_DAYS = 3650）', () {
     // 服务端判 too_old：date < utcDateKey(now − 3650 天)。
     String serverFloor(DateTime now) {

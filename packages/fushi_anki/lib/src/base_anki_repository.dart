@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'anki_media_dedup.dart';
 import 'anki_models.dart';
 import 'anki_note_type_definition.dart';
+import 'anki_synchronized_clip_template.dart';
 import 'card_source_link.dart';
 import 'lapis_note_type.dart';
 import 'anki_note_composer.dart';
@@ -456,6 +457,27 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
     String modelName,
   ) async =>
       null;
+
+  /// 本次制卡的目标笔记类型能否承载音画同步片段（判据见
+  /// [noteTypeRendersSynchronizedClip]）。`null` = 无法判定（后端读不到模板、没选
+  /// 笔记类型、模板列表为空），调用方据此保持用户偏好。
+  ///
+  /// 设置与模板必须出自**同一个后端**：转发到互联主机的仓库在主机上按主机的设置
+  /// 建卡，必须自己覆写，不能拿本机设置去配主机的模板。后端可达性错误照抛。
+  Future<bool?> rendersSynchronizedClip() async {
+    if (!supportsNoteTypeEditing) return null;
+    final AnkiSettings settings = await loadSettings();
+    final AnkiNoteType? noteType = settings.selectedNoteType;
+    if (noteType == null) return null;
+    final AnkiNoteTypeDefinition? definition =
+        await readNoteTypeDefinition(noteType.name);
+    // AnkiDroid 游标为空时回空模板列表：那是「没读到」，不是「模板不渲染」。
+    if (definition == null || definition.templates.isEmpty) return null;
+    return noteTypeRendersSynchronizedClip(
+      definition: definition,
+      fieldMappings: settings.fieldMappings,
+    );
+  }
 
   /// 覆写 [modelName] 的 styling（CSS）。返回 `false` = 后端不支持（默认
   /// 降级）；成功返回 `true`；后端失败照抛。

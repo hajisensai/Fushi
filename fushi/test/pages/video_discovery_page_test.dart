@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey, TextInputAction;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -13,7 +13,9 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart'
     show VideoDiscoveryActions;
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart';
+import 'package:fushi/src/pages/implementations/discovery/discovery_widgets.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import '../helpers/glass_unwrap.dart';
 
 typedef _LoadHandler = Future<ProviderBatchResult<discovery.VideoDiscoveryPage>>
     Function(
@@ -174,7 +176,7 @@ void main() {
       expect(find.text('video navigation'), findsNothing);
       final Finder entry = find.byKey(calendarKey);
       expect(entry, findsOneWidget);
-      final IconButton button = tester.widget<IconButton>(entry);
+      final IconButton button = tester.widget<IconButton>(glassUnwrap<IconButton>(entry));
       expect(button.onPressed, isNotNull);
       expect(tester.getRect(entry).right, lessThanOrEqualTo(width));
 
@@ -231,6 +233,85 @@ void main() {
       find.byKey(const ValueKey<String>('video-discovery-category-all')),
       findsOneWidget,
     );
+  });
+
+  // 2026-10-05 移动端截图：筛选 chip 下方一条空的暗色胶囊。热门没有数据时
+  // Hero 位必须整块不渲染（骨架只在首屏加载中出现），不能留一张空卡壳。
+  testWidgets('热门无数据时 Hero 不渲染空壳', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 860);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (discovery.VideoDiscoveryRequest request) async =>
+          request.feed == discovery.VideoDiscoveryFeed.trending
+              ? _result(const <discovery.VideoDiscoveryItem>[])
+              : _result(<discovery.VideoDiscoveryItem>[
+                  _item('all-${request.feed.name}', '全部作品条目'),
+                ]),
+    );
+
+    await tester.pumpWidget(_harness(controller, embedded: true));
+    await tester.pumpAndSettle();
+
+    expect(find.text('全部作品条目'), findsWidgets);
+    expect(find.byType(DiscoveryHeroCarousel), findsNothing);
+    expect(find.byType(DiscoveryHeroBanner), findsNothing);
+    expect(find.byType(DiscoveryHeroSkeleton), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('video-discovery-popular')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('热门有多条时 Hero 是轮播，滚动后顶缘渐隐、回顶收起',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 860);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (discovery.VideoDiscoveryRequest request) async =>
+          _result(<discovery.VideoDiscoveryItem>[
+        for (int i = 0; i < 8; i++)
+          _item('${request.feed.name}-$i', '${request.feed.name} $i'),
+      ]),
+    );
+
+    await tester.pumpWidget(_harness(controller, embedded: true));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('video-discovery-hero-carousel')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('discovery-hero-dot-4')),
+      findsOneWidget,
+    );
+    double fadeOpacity() => tester
+        .widget<AnimatedOpacity>(
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('discovery-scroll-top-fade')),
+            matching: find.byType(AnimatedOpacity),
+          ),
+        )
+        .opacity;
+    expect(fadeOpacity(), 0);
+
+    await tester.drag(
+      find.byKey(const PageStorageKey<String>('video-discovery-scroll')),
+      const Offset(0, -300),
+    );
+    await tester.pumpAndSettle();
+    expect(fadeOpacity(), 1);
+
+    await tester.drag(
+      find.byKey(const PageStorageKey<String>('video-discovery-scroll')),
+      const Offset(0, 600),
+    );
+    await tester.pumpAndSettle();
+    expect(fadeOpacity(), 0);
   });
 
   // BUG-2620：输入后按回车不搜索——提交动作没有声明，默认 `done` 的收尾又会把
@@ -615,9 +696,28 @@ void main() {
       tester.getCenter(sort).dy,
       closeTo(tester.getCenter(category).dy, 1),
     );
+    // 窄屏：搜索框独占整行；日历 / AI / 筛选入口并进分类 chip 行行尾、与排序
+    // 同排，不再单占一行（2026-10-05：那一行左半边恒空，白占纵向空间）。
+    final Finder openFiltersButton = find.byKey(
+      const ValueKey<String>('video-discovery-open-filters'),
+    );
+    expect(
+      tester.getTopLeft(openFiltersButton).dy,
+      greaterThanOrEqualTo(tester.getBottomLeft(search).dy),
+      reason: '窄屏搜索框应独占一整行',
+    );
+    expect(
+      tester.getCenter(openFiltersButton).dy,
+      closeTo(tester.getCenter(category).dy, 1),
+      reason: '筛选入口与分类 chip、排序同一行',
+    );
+    expect(
+      tester.getTopLeft(openFiltersButton).dx,
+      lessThan(tester.getTopLeft(sort).dx),
+    );
     expect(
       tester.getBottomRight(sort).dy - tester.getTopLeft(search).dy,
-      lessThan(140),
+      lessThan(120),
     );
     final int originalRequests = controller.requests.length;
     await tester.tap(
@@ -695,7 +795,7 @@ void main() {
     expect(controller.requests, hasLength(appliedRequests));
     await tester.tap(openFilters);
     await tester.pumpAndSettle();
-    expect(tester.widget<PopupMenuButton<String>>(region).initialValue, 'JP');
+    expect(tester.widget<PopupMenuButton<String>>(glassUnwrap<PopupMenuButton<String>>(region)).initialValue, 'JP');
     await tester.tap(reset);
     await tester.pumpAndSettle();
     await tester.tap(apply);
@@ -762,7 +862,7 @@ void main() {
     final Finder yearFinder =
         find.byKey(const ValueKey<String>('video-discovery-filter-year'));
     final PopupMenuButton<int> yearMenu =
-        tester.widget<PopupMenuButton<int>>(yearFinder);
+        tester.widget<PopupMenuButton<int>>(glassUnwrap<PopupMenuButton<int>>(yearFinder));
     final Iterable<int?> yearValues = yearMenu
         .itemBuilder(tester.element(yearFinder))
         .whereType<PopupMenuItem<int>>()
@@ -775,7 +875,7 @@ void main() {
     final Finder genreFinder =
         find.byKey(const ValueKey<String>('video-discovery-filter-genre'));
     final PopupMenuButton<String> genreMenu =
-        tester.widget<PopupMenuButton<String>>(genreFinder);
+        tester.widget<PopupMenuButton<String>>(glassUnwrap<PopupMenuButton<String>>(genreFinder));
     final List<PopupMenuEntry<String>> genreEntries =
         genreMenu.itemBuilder(tester.element(genreFinder));
     expect(
@@ -808,7 +908,7 @@ void main() {
     final Finder genreFinder =
         find.byKey(const ValueKey<String>('video-discovery-filter-genre'));
     final PopupMenuButton<String> genreMenu =
-        tester.widget<PopupMenuButton<String>>(genreFinder);
+        tester.widget<PopupMenuButton<String>>(glassUnwrap<PopupMenuButton<String>>(genreFinder));
     final Iterable<String?> values = genreMenu
         .itemBuilder(tester.element(genreFinder))
         .whereType<PopupMenuItem<String>>()

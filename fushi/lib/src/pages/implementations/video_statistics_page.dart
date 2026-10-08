@@ -1,12 +1,14 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
+import 'package:fushi/src/pages/implementations/stat_dashboard.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
 import 'package:fushi/src/stats/stat_range.dart';
@@ -316,19 +318,19 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     // 持久化值），本页此前没有入口，切到这个 tab 目标按钮就凭空消失。
     final List<Widget> actions = <Widget>[
       FushiIconButton(
-        icon: Icons.flag_outlined,
+        icon: FushiIcons.flag,
         tooltip: t.stat_goal_set,
         enabled: !_loading,
         onTap: _editGoals,
       ),
       FushiIconButton(
-        icon: Icons.refresh,
+        icon: FushiIcons.refresh,
         tooltip: t.stat_refresh,
         enabled: !_loading,
         onTap: _syncAndLoad,
       ),
       FushiIconButton(
-        icon: Icons.delete_sweep_outlined,
+        icon: FushiIcons.deleteSweep,
         tooltip: t.stat_clear_all,
         enabled: !_loading,
         onTap: _confirmAndClearAll,
@@ -337,11 +339,9 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     final Widget body = buildStatPageBody(
       loading: _loading,
       error: _error,
-      isEmpty: !_hasData,
       loadingBuilder: () =>
           buildLoading(size: 25, color: theme.colorScheme.primary),
       errorBuilder: (String error) => buildError(error: error),
-      emptyMessage: t.video_stat_no_data,
       contentBuilder: _buildContent,
     );
     if (widget.embedded) return buildEmbeddedStatTab(context, actions, body);
@@ -352,112 +352,97 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     );
   }
 
+  /// 骨架与总览 / 阅读 / 游戏 tab 同一套（2026-10 统计中心重设计，
+  /// [StatDashboardBody]）：关键指标区（四张指标卡）→ 趋势栏（时间窗口分段 +
+  /// 日期翻页 → 范围时长图 → 所选范围卡 → 学习日历 → 「分析」折叠里的小时分布）
+  /// → 明细栏（时段卡 → 最近会话 → 按视频列表）。宽屏两栏，窄屏单栏。
   Widget _buildContent() {
-    final tokens = FushiDesignTokens.of(context);
-
-    // 骨架与阅读 / 游戏 tab 同形：时段卡 → 每日图 → 最近会话 → 「分析」折叠 → 按视频；
-    // 横屏时会话与按视频列表拆到右栏（[buildStatAdaptiveScrollView]）。
-    return buildStatAdaptiveScrollView(
-      context,
-      sections: (double _) => <StatPaneSliver>[
-        StatPaneSliver(
-          StatPane.overview,
-          SliverToBoxAdapter(child: _buildSummaryCards()),
+    final Widget hero = StatHero(
+      tiles: buildStatKpiTiles(context, computeStatKpis(_videoFacts, _window)),
+    );
+    if (!_hasData) {
+      return StatDashboardBody(
+        hero: hero,
+        emptyState: StatDashboardEmpty(message: t.video_stat_no_data),
+        tail: buildStatTailSliver(context),
+      );
+    }
+    return StatDashboardBody(
+      hero: hero,
+      tail: buildStatTailSliver(context),
+      trend: <Widget>[
+        ..._buildRangeSection(),
+        StatAnalysisFold(
+          children: <Widget>[buildStatHourlyChartSection(context, _hourlyMs)],
         ),
-        StatPaneSliver(
-          StatPane.overview,
-          SliverToBoxAdapter(child: _buildRangeSection()),
+      ],
+      details: <Widget>[
+        StatSectionHeader(title: t.stat_overview_periods),
+        _buildSummaryCards(),
+        buildStatSessionSection(
+          context,
+          sessions: _sessions,
+          titleOf: (StudySession s) => s.title,
+          collectionOf: _sessionCollectionName,
+          coverOf: _sessionCover,
+          onDelete: _deleteSession,
+          onEdit: _editSession,
+          onClearAll: _clearSessions,
         ),
-        StatPaneSliver(
-          StatPane.detail,
-          SliverToBoxAdapter(
-            child: buildStatSessionSection(
-              context,
-              sessions: _sessions,
-              titleOf: (StudySession s) => s.title,
-              collectionOf: _sessionCollectionName,
-              onDelete: _deleteSession,
-              onEdit: _editSession,
-              onClearAll: _clearSessions,
-            ),
+        Padding(
+          padding: EdgeInsets.only(
+            bottom: FushiDesignTokens.of(context).spacing.gap,
+          ),
+          child: StatSectionHeader(
+            title: t.video_stat_by_video,
+            subtitle: formatStatRange(_range),
           ),
         ),
-        StatPaneSliver(
-          StatPane.overview,
-          SliverToBoxAdapter(
-            child: StatAnalysisFold(
-              children: <Widget>[
-                buildStatHourlyChartSection(context, _hourlyMs),
-              ],
-            ),
-          ),
-        ),
-        StatPaneSliver(
-          StatPane.detail,
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.card,
-                tokens.spacing.card + tokens.spacing.gap,
-                tokens.spacing.card,
-                tokens.spacing.gap,
-              ),
-              child: Text(
-                '${t.video_stat_by_video} · ${formatStatRange(_range)}',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-          ),
-        ),
-        StatPaneSliver(
-          StatPane.detail,
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) => _buildVideoTile(_rangeVideos[index]),
-              childCount: _rangeVideos.length,
-            ),
+      ],
+      detailSlivers: <Widget>[
+        SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) => _buildVideoTile(_rangeVideos[index]),
+            childCount: _rangeVideos.length,
           ),
         ),
       ],
     );
   }
 
-  /// 范围区块：范围条 → 学习日历 → 范围时长图 → 所选范围卡（与阅读 / 游戏 /
-  /// 总览 tab 同形）。
-  Widget _buildRangeSection() {
+  /// 范围区块：范围条（时间窗口分段 + 日期翻页）→ 范围时长图 → 所选范围卡 →
+  /// 学习日历（与总览 / 阅读 / 游戏 tab 同序）。
+  List<Widget> _buildRangeSection() {
     final StatRange range = _range;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        StatRangeBar(
-          range: range,
-          onChanged: (StatRangeSelection s) => _rangeSelection.value = s,
-        ),
-        buildStatRangeCalendarSection(
-          context,
-          byDay: _byDay,
-          now: _window.now,
-          onDaySelected: (String dateKey) => _rangeSelection.value =
-              StatRangeSelection(mode: StatRangeMode.day, anchorKey: dateKey),
-        ),
-        buildStatRangeChartSection(context, range, _byDay),
-        buildStatRangeSummary(
-          context,
-          range,
-          _byDay,
-          extraLines: <StatSummaryLine>[
-            StatSummaryLine(
-              label: t.stat_lookup,
-              value: '${sumStatEventsInRange(_lookupEvents, range)}',
-            ),
-            StatSummaryLine(
-              label: t.stat_mined,
-              value: '${sumStatEventsInRange(_minedEvents, range)}',
-            ),
-          ],
-        ),
-      ],
-    );
+    return <Widget>[
+      StatRangeBar(
+        range: range,
+        onChanged: (StatRangeSelection s) => _rangeSelection.value = s,
+      ),
+      buildStatRangeChartSection(context, range, _byDay),
+      buildStatRangeSummary(
+        context,
+        range,
+        _byDay,
+        extraLines: <StatSummaryLine>[
+          StatSummaryLine(
+            label: t.stat_lookup,
+            value: '${sumStatEventsInRange(_lookupEvents, range)}',
+          ),
+          StatSummaryLine(
+            label: t.stat_mined,
+            value: '${sumStatEventsInRange(_minedEvents, range)}',
+          ),
+        ],
+      ),
+      buildStatRangeCalendarSection(
+        context,
+        byDay: _byDay,
+        now: _window.now,
+        onDaySelected: (String dateKey) => _rangeSelection.value =
+            StatRangeSelection(mode: StatRangeMode.day, anchorKey: dateKey),
+      ),
+    ];
   }
 
   Widget _buildSummaryCards() {
@@ -629,6 +614,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       sessions: _sessions.where((StudySession s) => s.mediaKey == uid).toList(),
       titleOf: (StudySession s) => s.title,
       collectionOf: _sessionCollectionName,
+      coverOf: _sessionCover,
       onDelete: (StudySession s) =>
           deleteStudySession(appModelNoUpdate.database, s),
       onEdit: (StudySession s, StudySessionEdit edit) =>
@@ -644,13 +630,14 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   Future<void> _confirmAndDeleteVideo(VideoStatBookData video) async {
     final bool confirmed = await confirmDeleteStatistics(context, video.title);
     if (!confirmed || !mounted) return;
-    await appModelNoUpdate.database.deleteVideoStatisticsForIdentity(
-      title: video.title,
-      bookUid: video.bookUid,
-      includeUnattributed: video.absorbedUnattributed,
+    await _runStatDeletion(
+      'VideoStatisticsPage.deleteVideo',
+      () => appModelNoUpdate.database.deleteVideoStatisticsForIdentity(
+        title: video.title,
+        bookUid: video.bookUid,
+        includeUnattributed: video.absorbedUnattributed,
+      ),
     );
-    if (!mounted) return;
-    await _loadFromDatabase();
   }
 
   /// TODO-1322：点顶栏「清空统计」→ 危险操作确认 → 清空**全部视频统计**（观看时长 /
@@ -661,9 +648,36 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       t.stat_clear_all_video_message,
     );
     if (!confirmed || !mounted) return;
-    await appModelNoUpdate.database.clearAllVideoStatistics();
+    await _runStatDeletion(
+      'VideoStatisticsPage.clearAll',
+      () => appModelNoUpdate.database.clearAllVideoStatistics(),
+    );
+  }
+
+  /// 删除 / 清空统计的共同收尾（2026-10 体验优化）：执行期间置 [_loading]（顶栏
+  /// 动作随之禁用、正文显示加载态，大库清空要跑一阵，此前界面毫无反应还能连点），
+  /// 结束后整页重聚合并给成功提示。写库抛错只记日志、不报成功；重聚合照跑，
+  /// [_loadFromDatabase] 负责把 [_loading] 复位。
+  Future<void> _runStatDeletion(
+    String logSource,
+    Future<void> Function() mutate,
+  ) async {
+    setState(() => _loading = true);
+    bool succeeded = false;
+    try {
+      await mutate();
+      succeeded = true;
+    } catch (e, stack) {
+      ErrorLogService.instance.log(logSource, e, stack);
+    }
     if (!mounted) return;
     await _loadFromDatabase();
+    if (succeeded && mounted) {
+      FushiToast.show(
+        msg: t.stat_cleared_toast,
+        severity: ToastSeverity.success,
+      );
+    }
   }
 
   /// 按视频 tile 的所属合集名（书架同款「主合集」折叠归属，无则 null）。只认
@@ -692,6 +706,13 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
           _collectionNamesById,
         );
 
+  /// 会话行封面：段 mediaKey 即 bookUid，与「按视频」行同一张封面表。
+  ImageProvider? _sessionCover(StudySession s) => resolveMediaCoverImage(
+    kind: MediaKind.video,
+    localPath: _coverPathByUid[s.mediaKey],
+    decodeWidth: kActivityCoverDecodePixelWidth,
+  );
+
   /// 「按视频」一行（游戏页同款 [buildStatMediaRow]）：会话数 / 查词 · 制卡 · 收藏，
   /// 右侧观看时长；点按进该视频的会话 sheet（无身份遗留组没有会话），长按 / 右键删
   /// 该视频统计。
@@ -705,7 +726,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     final String? coverPath = uid == null ? null : _coverPathByUid[uid];
     return buildStatMediaRow(
       context,
-      icon: Icons.movie,
+      icon: FushiIcons.video,
       cover: resolveMediaCoverImage(
         kind: MediaKind.video,
         localPath: coverPath,

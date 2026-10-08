@@ -3,7 +3,7 @@
 // 窗口函数排名、upsert 合并）——正则假 D1 验证不了这些。
 
 import { createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import worker from '../src/worker.js';
 import { signingString } from '../src/auth.js';
@@ -13,7 +13,9 @@ import { clearSnapshotMemo, refreshSnapshots } from '../src/snapshots.js';
 // vite 会剥掉 'node:' 前缀，而 sqlite 只能以 'node:sqlite' 加载 → 走 require 绕开 vite 解析。
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');
 
-const MIGRATION =fileURLToPath(new URL('../migrations/0001_init.sql', import.meta.url));
+const MIGRATIONS_DIR = fileURLToPath(new URL('../migrations/', import.meta.url));
+// 与 `wrangler d1 migrations apply` 同序：按文件名升序逐个应用全部迁移。
+const MIGRATIONS = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort();
 
 function checkBind(v) {
   // 与 D1 一致：不接受 undefined / boolean。
@@ -43,7 +45,7 @@ function checkCompound(sql) {
 export function makeD1({ delayMs = 0 } = {}) {
   const pause = () => (delayMs > 0 ? new Promise((r) => setTimeout(r, delayMs)) : null);
   const db = new DatabaseSync(':memory:');
-  db.exec(readFileSync(MIGRATION, 'utf8'));
+  for (const f of MIGRATIONS) db.exec(readFileSync(MIGRATIONS_DIR + f, 'utf8'));
   const plain = (r) => (r ? { ...r } : null);
   function stmt(sql, args) {
     checkCompound(sql);
@@ -246,3 +248,13 @@ export function entry(kind, refs, title, extra = {}) {
 }
 
 export const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+
+/** PNG 头 + IHDR（宽高 w×h；服务端只读文件头，不解码像素）。 */
+export function pngHeader(w = 1, h = 1) {
+  const b = new Uint8Array(33);
+  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  new DataView(b.buffer).setUint32(16, w);
+  new DataView(b.buffer).setUint32(20, h);
+  b.set([8, 2, 0, 0, 0], 24);
+  return b;
+}

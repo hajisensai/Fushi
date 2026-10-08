@@ -25,13 +25,38 @@ void main() {
       '  Future<void> _pushNeutralizedVideoFullscreen(BuildContext context) async {',
       '  void _onVideoFullscreenRouteClosed() {',
     );
+    // 全屏路由的根是零布局的 [WindowFullscreenHost]（BUG-2913：全屏路由也要登记成
+    // 窗口全屏宿主），手柄输入层是它的独生子——与窗口侧 build() 同一形状。
     expect(
       fn,
-      contains('pageBuilder: (_, __, ___) => _wrapVideoGamepadControls('),
-      reason: '全屏路由子树必须持有与窗口模式同一个 GamepadButtonIntent 处理层，'
+      matches(
+        RegExp(
+          r'pageBuilder: \(_, __, ___\) => WindowFullscreenHost\(\s*'
+          r'child: _wrapVideoGamepadControls\(',
+        ),
+      ),
+      reason:
+          '全屏路由子树必须持有与窗口模式同一个 GamepadButtonIntent 处理层，'
           '否则桌面手柄轮询以 primaryFocus 为派发起点时 A/D-pad 在全屏内静默 no-op'
           '（BUG-697 根因）。若重构改了包裹方式，请保证等价的 Actions 仍是全屏'
           '子树祖先，并同步更新本守卫与 video_fullscreen_gamepad_dispatch_test。',
+    );
+  });
+
+  test('全屏路由自己登记为窗口全屏宿主（BUG-2913）', () {
+    // 全屏路由压在本页路由之上，本页那份宿主登记此刻不是 current。全屏路由不登记，
+    // 注册表里就没有可见宿主：剧集列表换集时被 removeRoute 摘掉的旧集页要等新页
+    // 入场过渡结束才 dispose，那时新页已压上自己的全屏路由，帧末判「无宿主」就把
+    // 用户正在看的原生全屏退掉。
+    final String fn = _slice(
+      fullscreenPart,
+      '  Future<void> _pushNeutralizedVideoFullscreen(BuildContext context) async {',
+      '  void _onVideoFullscreenRouteClosed() {',
+    );
+    expect(
+      fn,
+      contains('pageBuilder: (_, __, ___) => WindowFullscreenHost('),
+      reason: '视频全屏路由必须声明自己是窗口全屏宿主，否则任一宿主离场都会退掉全屏',
     );
   });
 
@@ -42,13 +67,11 @@ void main() {
     // Host 一起匹配——只写 `_wrapVideoGamepadControls(` 会被页面里任何一处调用蒙混，
     // 而这里要的是 build 的返回树本身。
     final int idxHost = mainShell.indexOf('return WindowFullscreenHost(');
-    expect(
+    expect(idxHost, isNonNegative, reason: '视频页必须声明自己是窗口全屏宿主，否则它的全屏键会被门掉');
+    final int idxWrap = mainShell.indexOf(
+      'child: _wrapVideoGamepadControls(',
       idxHost,
-      isNonNegative,
-      reason: '视频页必须声明自己是窗口全屏宿主，否则它的全屏键会被门掉',
     );
-    final int idxWrap =
-        mainShell.indexOf('child: _wrapVideoGamepadControls(', idxHost);
     expect(
       idxWrap,
       isNonNegative,

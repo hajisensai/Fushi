@@ -1025,6 +1025,7 @@ void GlobalLookupWindow::SetRouteContext(std::string source,
     direct_bbox_dy_ = 0;
     direct_view_width_ = 0;
     direct_view_height_ = 0;
+    ResetDirectRootPin();
   }
 }
 
@@ -1173,6 +1174,28 @@ int GlobalLookupWindow::OffscreenX() const {
          GetSystemMetrics(SM_CXVIRTUALSCREEN) + 200;
 }
 
+void GlobalLookupWindow::ReparkOffscreenIfParked() {
+  // SW_HIDE 的窗不在屏上，挪不挪无所谓；只有「显示着但没 Reveal」的停放窗
+  // （PrewarmWebView / ShowAt 的离屏测量 / ResizeOffscreen 的 gal 采集面）会被
+  // 变宽的桌面吞进来。不带 SWP_SHOWWINDOW、不改尺寸与 Z 序：只换位置。
+  if (!OwnsLiveWindow() || revealed_ || !IsWindowVisible(hwnd_)) {
+    return;
+  }
+  RECT rc;
+  if (!GetWindowRect(hwnd_, &rc)) {
+    return;
+  }
+  const int off_x = OffscreenX();
+  if (rc.left == off_x && rc.top == 0) {
+    return;
+  }
+  NativeGlog("lookup repark offscreen from=" + std::to_string(rc.left) + "," +
+             std::to_string(rc.top) + " to=" + std::to_string(off_x) + ",0");
+  SetWindowPos(hwnd_, nullptr, off_x, 0, 0, 0,
+               SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                   SWP_NOOWNERZORDER);
+}
+
 bool GlobalLookupWindow::OwnsLiveWindow() const {
   if (hwnd_ == nullptr || !IsWindow(hwnd_)) {
     return false;
@@ -1283,6 +1306,7 @@ bool GlobalLookupWindow::ShowAt(int x, int y, int width, int height,
   direct_bbox_dy_ = 0;
   direct_view_width_ = 0;
   direct_view_height_ = 0;
+  ResetDirectRootPin();
   // Render OFF-SCREEN at the requested size. The page measures itself there and
   // Dart calls Reveal() with the final size, so the user only ever sees the
   // settled card (no width/height jitter on screen).
@@ -1700,9 +1724,15 @@ bool GlobalLookupWindow::ResizeOffscreen(int width, int height) {
 void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
                                             int height, double bbox_left,
                                             double bbox_top,
-                                            int64_t geometry_epoch) {
+                                            int64_t geometry_epoch,
+                                            int root_height) {
   if (!BeginGeometryRequest(geometry_epoch)) {
     return;
+  }
+  // BUG-2921 — 根卡实测高度随每次 revealStack 到达（0 = 旧 Dart 未上报），贴字形时用它
+  // 而不是 union 高度。
+  if (root_height > 0) {
+    direct_root_height_ = root_height;
   }
   // BUG-1835 — layout already used the FULL game viewport; width/height is the
   // resulting all-card union, not the single-card cap. If direct composition is
@@ -1750,25 +1780,32 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
         const int screen_width = std::max(1, width);
         const int screen_height = std::max(1, height);
         // 嵌套 resize 必须复用 present 时的同一贴附基准，否则同一次查词里卡片会跳位。
-        double local_x = 0.0;
-        double local_y = 0.0;
-        if (direct_glyph_valid_) {
+        // BUG-2921 — 贴字形的是根卡：union 原点由根卡位置 + bbox 偏移推出，绝不拿
+        // union 尺寸重新贴字形（那会在子卡出现时把根卡整体挪走）。
+        int clamped_x = 0;
+        int clamped_y = 0;
+        if (direct_glyph_valid_ && direct_root_pin_valid_) {
           const auto placed =
-              fushi::gal_direct_card_geometry::GlyphAnchoredCardOrigin(
+              fushi::gal_direct_card_geometry::PlaceDirectUnionAroundRoot(
                   direct_glyph_left_, direct_glyph_top_, direct_glyph_width_,
-                  direct_glyph_height_, screen_width, screen_height);
-          local_x = placed.left;
-          local_y = placed.top;
+                  direct_glyph_height_, direct_root_width_,
+                  direct_root_height_, direct_root_local_left_,
+                  direct_root_local_top_, dx, dy, screen_width, screen_height,
+                  client_width, client_height);
+          clamped_x = placed.union_x;
+          clamped_y = placed.union_y;
         } else {
-          local_x = content_left + (direct_root_anchor_x_ + dx) * scale;
-          local_y = content_top + (direct_root_anchor_y_ + dy) * scale;
+          const double local_x =
+              content_left + (direct_root_anchor_x_ + dx) * scale;
+          const double local_y =
+              content_top + (direct_root_anchor_y_ + dy) * scale;
+          clamped_x = fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
+              local_x, screen_width, client_width);
+          clamped_y = fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
+              local_y, screen_height, client_height);
         }
-        const int screen_x =
-            origin.x + fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
-                           local_x, screen_width, client_width);
-        const int screen_y =
-            origin.y + fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
-                           local_y, screen_height, client_height);
+        const int screen_x = origin.x + clamped_x;
+        const int screen_y = origin.y + clamped_y;
         if (SetWindowPos(hwnd_, HWND_TOPMOST, screen_x, screen_y, screen_width,
                          screen_height,
                          SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW)) {
@@ -2549,7 +2586,8 @@ bool GlobalLookupWindow::RevealOverProcessClient(
     uint32_t pid, int32_t anchor_x, int32_t anchor_y, uint32_t card_width,
     uint32_t card_height, uint32_t view_width, uint32_t view_height,
     int32_t glyph_x, int32_t glyph_y, uint32_t glyph_w, uint32_t glyph_h,
-    uint32_t* out_client_width, uint32_t* out_client_height) {
+    uint32_t* out_client_width, uint32_t* out_client_height,
+    int32_t* out_root_client_x, int32_t* out_root_client_y) {
   ForgetDeadWindow();
   if (capture_suppressed_) return false;
   if (hwnd_ == nullptr || composition_controller_ == nullptr ||
@@ -2613,29 +2651,51 @@ bool GlobalLookupWindow::RevealOverProcessClient(
   // 例外：此时落点与旧路径不同（水平中心对齐 vs 左对齐、垂直优先上方 vs 下方），这是
   // 有意的策略变更。只有字形缺失（glyph_w/h == 0）才退回旧的 anchor 映射，那条路径在
   // 1:1 下与旧行为逐像素相同。
-  double local_x = 0.0;
-  double local_y = 0.0;
   direct_glyph_valid_ = glyph_w > 0 && glyph_h > 0;
+  // BUG-2921 — 本次查词第一次直连上屏时只有根卡（union == 根卡），以此钉住根卡在
+  // window-local 里的位置与宽度。之后的 present（嵌套 resize 后的重投、制卡截图后的
+  // 恢复）都复用这枚钉子，union 跟着 bbox 平移，根卡在屏幕上不动。
+  if (!direct_root_pin_valid_) {
+    direct_root_pin_valid_ = true;
+    direct_root_local_left_ = direct_bbox_dx_;
+    direct_root_local_top_ = direct_bbox_dy_;
+    direct_root_width_ = screen_width;
+    if (direct_root_height_ <= 0) direct_root_height_ = screen_height;
+  }
+  int clamped_x = 0;
+  int clamped_y = 0;
+  int root_client_x = 0;
+  int root_client_y = 0;
   if (direct_glyph_valid_) {
     direct_glyph_left_ = content_left + glyph_x * scale;
     direct_glyph_top_ = content_top + glyph_y * scale;
     direct_glyph_width_ = glyph_w * scale;
     direct_glyph_height_ = glyph_h * scale;
-    const auto placed = fushi::gal_direct_card_geometry::GlyphAnchoredCardOrigin(
-        direct_glyph_left_, direct_glyph_top_, direct_glyph_width_,
-        direct_glyph_height_, screen_width, screen_height);
-    local_x = placed.left;
-    local_y = placed.top;
+    const auto placed =
+        fushi::gal_direct_card_geometry::PlaceDirectUnionAroundRoot(
+            direct_glyph_left_, direct_glyph_top_, direct_glyph_width_,
+            direct_glyph_height_, direct_root_width_, direct_root_height_,
+            direct_root_local_left_, direct_root_local_top_, direct_bbox_dx_,
+            direct_bbox_dy_, screen_width, screen_height, client_width,
+            client_height);
+    clamped_x = placed.union_x;
+    clamped_y = placed.union_y;
+    root_client_x = placed.root_x;
+    root_client_y = placed.root_y;
   } else {
-    local_x = content_left + anchor_x * scale;
-    local_y = content_top + anchor_y * scale;
+    const double local_x = content_left + anchor_x * scale;
+    const double local_y = content_top + anchor_y * scale;
+    clamped_x = fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
+        local_x, screen_width, client_width);
+    clamped_y = fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
+        local_y, screen_height, client_height);
+    root_client_x = clamped_x + direct_root_local_left_ - direct_bbox_dx_;
+    root_client_y = clamped_y + direct_root_local_top_ - direct_bbox_dy_;
   }
-  const int screen_x =
-      origin.x + fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
-                     local_x, screen_width, client_width);
-  const int screen_y =
-      origin.y + fushi::gal_direct_card_geometry::ClampDirectCardOrigin(
-                     local_y, screen_height, client_height);
+  if (out_root_client_x != nullptr) *out_root_client_x = root_client_x;
+  if (out_root_client_y != nullptr) *out_root_client_y = root_client_y;
+  const int screen_x = origin.x + clamped_x;
+  const int screen_y = origin.y + clamped_y;
 
   // Popup owner 与父子窗口不同：不改 Fushi/WebView2 的线程与 DPI 上下文，只让 Z 序
   // 跟随游戏。WS_EX_NOACTIVATE 保证点卡片时游戏仍持有键盘焦点。
@@ -2670,6 +2730,14 @@ bool GlobalLookupWindow::RevealOverProcessClient(
     direct_game_hwnd_ = nullptr;
   }
   return shown;
+}
+
+void GlobalLookupWindow::ResetDirectRootPin() {
+  direct_root_pin_valid_ = false;
+  direct_root_local_left_ = 0;
+  direct_root_local_top_ = 0;
+  direct_root_width_ = 0;
+  direct_root_height_ = 0;
 }
 
 void GlobalLookupWindow::EnsureWebView() {
@@ -3317,6 +3385,7 @@ void GlobalLookupWindow::ConfigureWebView() {
               // data: URL fed to playAudioRef classifies as a local file).
               const bool deferred =
                   body.find("\"resolveWordAudio\"") != std::string::npos ||
+                  body.find("\"listWordAudioSources\"") != std::string::npos ||
                   body.find("\"queryLocalAudio\"") != std::string::npos ||
                   body.find("\"favoriteEntry\"") != std::string::npos ||
                   body.find("\"favoriteCheck\"") != std::string::npos ||
@@ -4128,8 +4197,13 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
         // 圆角区域的直径按 DPI 算（ApplyRoundedRegion），换屏必须重算。
         ApplyRoundedRegion();
       }
+      // 系统建议矩形是按旧位置换算的；停放窗要回到新拓扑下的离屏位。
+      ReparkOffscreenIfParked();
       return 0;
     }
+    case WM_DISPLAYCHANGE:
+      ReparkOffscreenIfParked();
+      return DefWindowProc(hwnd_, message, wparam, lparam);
     case WM_ENTERSIZEMOVE:
       // Phase C（弹窗尺寸精细化 2026-07-13）— 进入模态 move/size 循环（面板拖动/调整，
       // 或 —— Phase C 起 —— 瞬态覆盖窗拖右下角 grip）。瞬态窗平时按 shell 卡矩形裁剪

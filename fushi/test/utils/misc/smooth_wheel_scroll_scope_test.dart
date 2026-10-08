@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 
@@ -41,6 +41,13 @@ void main() {
       ),
     );
     await tester.pump(const Duration(milliseconds: 16));
+  }
+
+  /// 判据按物理像素（BUG-2867）；测试视图默认 DPR 3.0。细 delta 用例把 DPR 设成 1，
+  /// 让「12 逻辑 px」就是高精度滚轮 1/8 档的 12 物理 px。
+  void atDevicePixelRatio(WidgetTester tester, double dpr) {
+    tester.view.devicePixelRatio = dpr;
+    addTearDown(tester.view.resetDevicePixelRatio);
   }
 
   testWidgets('粗滚轮一档走满系统给的距离（120 → 120）', (WidgetTester tester) async {
@@ -134,9 +141,60 @@ void main() {
     expect(controller.offset, closeTo(mid - 120, 0.001));
   });
 
+  testWidgets('200% 缩放：Windows 默认一档只有 50 逻辑 px，照样补间（BUG-2867）', (
+    WidgetTester tester,
+  ) async {
+    // Windows 引擎一档 = 行数 × 100/3 物理 px（默认 3 行 = 100），框架除以 DPR 2
+    // 后只剩 50。旧判据「逻辑 px >= 80」把它当成触控板，补间从未生效。
+    atDevicePixelRatio(tester, 2.0);
+    final ScrollController controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(buildList(controller));
+
+    await tick(tester, 50);
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(
+      controller.offset,
+      allOf(greaterThan(0.0), lessThan(50.0)),
+      reason: '高 DPI 下的粗滚轮也必须分帧到达',
+    );
+    await tester.pumpAndSettle();
+    expect(controller.offset, 50, reason: '距离 1:1 不变（BUG-2009）');
+  });
+
+  testWidgets('200% 缩放 + 每次滚动 1 行：一档 16.5 逻辑 px 仍补间（BUG-2867）', (
+    WidgetTester tester,
+  ) async {
+    atDevicePixelRatio(tester, 2.0);
+    final ScrollController controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(buildList(controller));
+
+    await tick(tester, 16.5); // 引擎 1 行 = int(33.3) = 33 物理 px
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(controller.offset, allOf(greaterThan(0.0), lessThan(16.5)));
+    await tester.pumpAndSettle();
+    expect(controller.offset, 16.5);
+  });
+
+  testWidgets('200% 缩放下高精度滚轮 1/8 档仍同步 1:1（BUG-2867）', (
+    WidgetTester tester,
+  ) async {
+    atDevicePixelRatio(tester, 2.0);
+    final ScrollController controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(buildList(controller));
+
+    await tick(tester, 6.25); // 12.5 物理 px
+    if (fineDeltaStaysNative) expect(controller.offset, 6.25);
+    await tester.pumpAndSettle();
+    expect(controller.offset, 6.25);
+  });
+
   testWidgets('细 delta 开头的手势整段保持同步 1:1', (WidgetTester tester) async {
     final ScrollController controller = ScrollController();
     addTearDown(controller.dispose);
+    atDevicePixelRatio(tester, 1.0);
     await tester.pumpWidget(buildList(controller));
 
     await tick(tester, 12);
@@ -151,6 +209,7 @@ void main() {
   testWidgets('粗滚轮手势里的小尾帧不得走同步路径掐断动画', (WidgetTester tester) async {
     final ScrollController controller = ScrollController();
     addTearDown(controller.dispose);
+    atDevicePixelRatio(tester, 1.0);
     await tester.pumpWidget(buildList(controller));
 
     await tick(tester, 120);
@@ -164,6 +223,7 @@ void main() {
   testWidgets('静默超过 200ms 后重新分类（滚轮之后换高精度设备）', (WidgetTester tester) async {
     final ScrollController controller = ScrollController();
     addTearDown(controller.dispose);
+    atDevicePixelRatio(tester, 1.0);
     await tester.pumpWidget(buildList(controller));
 
     await tick(tester, 120);
@@ -180,6 +240,7 @@ void main() {
   testWidgets('惯性取消立刻清掉分类且不丢已拨出的距离', (WidgetTester tester) async {
     final ScrollController controller = ScrollController();
     addTearDown(controller.dispose);
+    atDevicePixelRatio(tester, 1.0);
     await tester.pumpWidget(buildList(controller));
 
     // 🔴 惯性取消是独立的 PointerScrollInertiaCancelEvent，不是 scrollDelta 0。
@@ -285,6 +346,69 @@ void main() {
     await tester.pumpAndSettle();
     expect(leader.offset, 120);
     expect(follower.offset, 120);
+  });
+
+  group('WheelScrollForwarder（游戏捕获工作台：任意位置滚轮滚台词列表）', () {
+    Widget buildWorkbench(ScrollController controller) => scoped(
+      WheelScrollForwarder(
+        controller: controller,
+        child: Column(
+          children: <Widget>[
+            // 非滚动区（状态卡 / 筛选行）：不接滚轮。
+            const SizedBox(height: 200, child: Text('overview')),
+            Expanded(
+              child: ListView(
+                controller: controller,
+                children: const <Widget>[SizedBox(height: 30000)],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    Future<void> wheelAt(WidgetTester tester, Offset at, double delta) async {
+      await tester.sendEventToBinding(
+        PointerScrollEvent(position: at, scrollDelta: Offset(0, delta)),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+
+    testWidgets('指针在非滚动区：转给列表，并照常分帧补间', (WidgetTester tester) async {
+      final ScrollController controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(buildWorkbench(controller));
+
+      await wheelAt(tester, const Offset(20, 100), 120);
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(
+        controller.offset,
+        allOf(greaterThan(0.0), lessThan(120.0)),
+        reason: '转发的滚动也要走根部补间，不能单帧瞬移',
+      );
+      await tester.pumpAndSettle();
+      expect(controller.offset, 120);
+    });
+
+    testWidgets('指针在列表上：列表自己接，不重复滚两份', (WidgetTester tester) async {
+      final ScrollController controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(buildWorkbench(controller));
+
+      await wheelAt(tester, const Offset(20, 400), 120);
+      await tester.pumpAndSettle();
+      expect(controller.offset, 120);
+    });
+
+    testWidgets('列表已在顶端时往上滚：不登记、不动', (WidgetTester tester) async {
+      final ScrollController controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(buildWorkbench(controller));
+
+      await wheelAt(tester, const Offset(20, 100), -120);
+      await tester.pumpAndSettle();
+      expect(controller.offset, 0);
+    });
   });
 
   test('主 app 与弹窗词典的根部都挂了本层', () {

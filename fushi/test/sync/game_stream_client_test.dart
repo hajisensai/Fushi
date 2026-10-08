@@ -47,6 +47,44 @@ void main() {
             }),
             code: 'session_conflict',
           ),
+          // A current host names why it refused before any session logic, so
+          // the receiver can say what to change instead of "update the host".
+          (
+            status: 403,
+            body: jsonEncode(<String, Object?>{
+              'version': 1,
+              'code': 'https_required',
+              'error': 'HTTPS required for game stream',
+            }),
+            code: 'https_required',
+          ),
+          (
+            status: 404,
+            body: jsonEncode(<String, Object?>{
+              'version': 1,
+              'code': 'library_off',
+              'error': 'Game library off',
+            }),
+            code: 'library_off',
+          ),
+          (
+            status: 404,
+            body: jsonEncode(<String, Object?>{
+              'version': 1,
+              'code': 'game_stream_off',
+              'error': 'Game stream off',
+            }),
+            code: 'game_stream_off',
+          ),
+          (
+            status: 403,
+            body: jsonEncode(<String, Object?>{
+              'version': 1,
+              'code': 'unauthorized_peer',
+              'error': 'Not a paired device',
+            }),
+            code: 'unauthorized_peer',
+          ),
           (
             status: 500,
             body: '<html>Server failed</html>',

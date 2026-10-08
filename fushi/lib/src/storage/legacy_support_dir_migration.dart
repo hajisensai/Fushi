@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/startup/test_environment.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -33,12 +34,30 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// **必须在进程内第一次 `SharedPreferences.getInstance()` 之前调用**（插件会在新
 /// 路径创建并缓存空 prefs，之后搬什么都晚了）。`main()` 在 `ensureInitialized`
 /// 之后立刻调。
-Future<LegacySupportMigrationOutcome> migrateLegacySupportDir() async {
+Future<LegacySupportMigrationOutcome> migrateLegacySupportDir({
+  @visibleForTesting Map<String, String>? environment,
+  @visibleForTesting String dartDefineRoot =
+      const String.fromEnvironment('FUSHI_TEST_ROOT'),
+  @visibleForTesting Future<Directory> Function()? supportDirectoryResolver,
+}) async {
+  // Windows known-folder APIs ignore APPDATA/USERPROFILE overrides. An isolated
+  // test must not even resolve the real support root: path_provider may create
+  // it, and migration may rename the user's old root or delete its staging dir.
+  // Keep this gate here so both main() and the integration launcher are covered.
+  if (fushiTestRootPath(
+        environment: environment,
+        dartDefineRoot: dartDefineRoot,
+      ) !=
+      null) {
+    return LegacySupportMigrationOutcome.notApplicable;
+  }
   if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) {
     return LegacySupportMigrationOutcome.notApplicable;
   }
   try {
-    final Directory current = await getApplicationSupportDirectory();
+    final Directory current = await (
+      supportDirectoryResolver ?? getApplicationSupportDirectory
+    )();
     final Directory? legacy = legacySupportDirFor(
       current,
       isMacOS: Platform.isMacOS,

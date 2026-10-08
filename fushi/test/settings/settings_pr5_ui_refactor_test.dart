@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -36,8 +36,14 @@ void main() {
         isNot(contains('SettingsDestinationId.appearance')),
         reason: '宽屏默认选中分类不得再硬编码外观（重排后首项是阅读，未来跟随 schema）',
       );
-      // 只有声明真实挂点的正文行才登记 reveal。
-      expect(home, contains('entry.hasRevealTarget'));
+      // 只有声明真实挂点的正文行才登记 reveal——登记逻辑已抽到共享入口
+      // openSettingsSearchEntry，主页点搜索结果时必须经它走。
+      expect(home, contains('openSettingsSearchEntry('));
+      expect(
+        File('lib/src/settings/settings_search_sheet.dart')
+            .readAsStringSync(),
+        contains('SettingsSearchReveal.pendingItemId = entry.hasRevealTarget'),
+      );
     });
   });
 

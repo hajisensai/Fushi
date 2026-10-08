@@ -29,7 +29,10 @@ void main() {
 
   group('BUG-1451 ① 选区必须在右键那一刻取快照', () {
     test('showMenu 之前就发起 _selectedTextAcrossFrames', () {
-      final int menuIdx = code.indexOf('showMenu<_PopupContextMenuAction>');
+      // 玻璃重设计后菜单走共享 showFushiMenu（自绘菜单），不变式不变：
+      // 选区快照必须在 await 菜单之前发起。
+      final int menuIdx =
+          code.indexOf('showFushiMenu<_PopupContextMenuAction>');
       expect(menuIdx, greaterThan(0), reason: 'Windows 右键菜单入口必须还在');
 
       final int ctxIdx = code.indexOf('Future<void> _showWindowsContextMenu');

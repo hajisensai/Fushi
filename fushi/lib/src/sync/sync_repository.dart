@@ -1576,12 +1576,20 @@ class SyncRepository {
     // 单独漂过去只会变成一堆悬空 id，故一并设备本地。
     'ai_providers',
     'ai_feature_providers',
+    // 漫画 OCR 大模型档位：开了就是「上传漫画页 + 按量计费」，这种同意只对点它的
+    // 那台设备成立，漂过去会让另一台配了 AI 的设备静默开始上传。
+    'manga_ocr_ai_mode',
+    // 查词自动按句意挑词条：同理，每次查词一个计费请求。
+    'lookup_ai_context_auto',
     // 用户自配的 OPDS 书目服务器：条目里带 base64 密码，且服务器地址多是
     // 局域网 IP（`http://192.168.x.x:8080`），跨设备恢复既泄凭据又指向一台
     // 新机根本连不到的主机。
     'discovery_opds_servers',
     // 同形：AList / OpenList 站点清单，条目里带 base64 密码。
     'discovery_alist_sites',
+    // 同形：Audiobookshelf 服务器清单，条目里带 base64 令牌（refresh token 会轮换，
+    // 两台设备共用一枚只会互相把对方挤下线）。
+    'discovery_audiobookshelf_servers',
     'video_download_backend_path_mappings',
     'video_download_target_source_id',
     'video_download_embedded_installation_id',

@@ -26,9 +26,81 @@ void main() {
       // 「跟 mpv 一样」的落地点：产出的是 libmpv 自己写的日志，不是仿格式的自研
       // 日志。少了这一条，hwdec 协商 / VO 交换链 / 解码器选择全部不可见。
       expect(src, contains('VideoDiagLog.instance.mpvLogFilePath'));
-      expect(src, contains("'log-file': mpvLogFile"));
-      expect(src, contains("'msg-level': 'all=v'"));
+      expect(src, contains("setProperty('log-file', _nativeMpvLogFile!)"));
+      expect(src, contains("setProperty('msg-level', 'all=v')"));
     });
+
+    test(
+      'protected inputs disable native file logs before open and scrub Dart logs',
+      () {
+        final int disable = src.indexOf("setProperty('log-file', '')");
+        final int open = src.indexOf('await player.open(');
+        expect(disable, greaterThan(0));
+        expect(disable, lessThan(open));
+        expect(
+          src.substring(disable - 80, disable),
+          contains('aacsSession.hasProtectedStreams'),
+        );
+        final String afterOpen = src.substring(open);
+        expect(afterOpen, contains('hadProtectedAacsSession &&'));
+        expect(
+          afterOpen,
+          contains("setProperty('log-file', _nativeMpvLogFile!)"),
+        );
+        expect(
+          src,
+          contains(
+            RegExp(r'redactAacsRelayUrls\s*\(\s*redactAppNativeProxySecrets'),
+          ),
+        );
+      },
+    );
+
+    test(
+      'media-handle release cancels pending loads and awaits the AACS worker',
+      () {
+        final int index = src.indexOf('Future<void> _releaseMediaHandles()');
+        final String body = src.substring(index, src.indexOf('\n  }', index));
+        expect(body, contains('_loadToken++;'));
+        expect(body, contains('_closeAacsSessionsExcept(null)'));
+        expect(body, contains('await closingAacs;'));
+      },
+    );
+
+    test(
+      'successor preparation retains relays until current native open completes',
+      () {
+        final int adoption = src.indexOf('_aacsSessions.add(aacsSession)');
+        final int open = src.indexOf('await player.open(');
+        final int retirement = src.indexOf(
+          '_closeAacsSessionsExcept(aacsSession)',
+        );
+        expect(adoption, greaterThan(0));
+        expect(adoption, lessThan(open));
+        expect(retirement, greaterThan(open));
+        expect(
+          src.substring(open, retirement),
+          contains('if (!_isCurrentLoad(player, loadToken)) return;'),
+        );
+        expect(src.substring(adoption, open), isNot(contains('.close()')));
+        final int cleanup = src.indexOf(
+          'Future<void> _closeAacsSessionsExcept(',
+        );
+        final String body = src.substring(
+          cleanup,
+          src.indexOf('\n  }', cleanup),
+        );
+        expect(
+          body.indexOf('await session.close();'),
+          lessThan(body.indexOf('_aacsSessions.remove(session);')),
+        );
+        final int dispose = src.indexOf('void dispose()');
+        expect(
+          src.substring(dispose, src.indexOf('\n  }', dispose)),
+          contains('_closeAacsSessionsExcept(null)'),
+        );
+      },
+    );
 
     test('mpv 日志流有独立于 Lua 归因的诊断订阅', () {
       expect(
@@ -149,6 +221,41 @@ void main() {
         reason: '空结果直显不经 WebView，不收尾会让游标悬着串到下一次查词',
       );
       expect(body, contains("trace?.finish('abandoned')"));
+    });
+
+    test('阅读器家族（base_source_page）也开查词流水并落 search / fill / shown', () {
+      // BUG-2967：阅读器查词此前不开流水，「空闲后首查慢」在诊断日志里无从拆段。
+      final String src = code('lib/src/pages/base_source_page.dart');
+      final int idx = src.indexOf('Future<int> searchDictionaryResult({');
+      expect(idx, greaterThan(0));
+      final String body = src.substring(
+        idx,
+        src.indexOf('Future<void> aiPickLookupEntry(', idx),
+      );
+      expect(body, contains('LookupPerfTrace.begin('));
+      expect(body, contains("host: 'reader'"));
+      expect(body, contains("'search'"));
+      expect(body, contains("trace?.mark('fill'"));
+      expect(body, contains("trace?.finish('superseded')"));
+      final int show = src.indexOf('void showDeferredPopup(');
+      expect(show, greaterThan(0));
+      final String showBody = src.substring(
+        show,
+        src.indexOf('int get activeLookupGeneration', show),
+      );
+      expect(showBody, contains("LookupPerfTrace.current?.mark('shown')"));
+      expect(
+        showBody,
+        contains("LookupPerfTrace.current?.finish('empty')"),
+        reason: '空结果走 Flutter 占位不经 WebView，不收尾会让游标悬着串到下一次查词',
+      );
+      final int rendered = src.indexOf('void _onPopupLayerRendered(');
+      expect(rendered, greaterThan(0));
+      expect(
+        src.substring(rendered, src.indexOf('void _dismissPopupAt(', rendered)),
+        contains("LookupPerfTrace.current?.finish('revealed')"),
+        reason: '阅读器路径带盖板先翻可见，revealRendered 不收尾，渲染完成处必须收',
+      );
     });
 
     test('控制器在 beginTop 记录热槽命中 / 冷建 / 接管停驻 realm 三态', () {

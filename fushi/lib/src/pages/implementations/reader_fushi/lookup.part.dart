@@ -25,10 +25,13 @@ extension _ReaderLookup on _ReaderFushiPageState {
     double cssY, {
     bool fromHover = false,
   }) async {
-    if (_controller == null) return;
+    // 坐标是「用户正在看的那份文档」的局部 CSS 坐标：歌词覆盖层在场时是歌词
+    // WebView，否则是正文（[_surfaceController] / [_surfaceWebViewKey] 同口径）。
+    final InAppWebViewController? surface = _surfaceController;
+    if (surface == null) return;
     const int maxLength = 400;
     try {
-      await _controller!.evaluateJavascript(
+      await surface.evaluateJavascript(
         source: ReaderSelectionScripts.selectInvocation(
           cssX,
           cssY,
@@ -85,7 +88,7 @@ extension _ReaderLookup on _ReaderFushiPageState {
   /// 记日志：调用方会 await，但平台视图销毁竞态仍应 no-op，不能阻断焦点归还。
   Future<void> _clearSelectionJs() async {
     try {
-      await _controller?.evaluateJavascript(
+      await _surfaceController?.evaluateJavascript(
         source: ReaderSelectionScripts.clearInvocation(),
       );
     } catch (e, stack) {
@@ -113,9 +116,10 @@ extension _ReaderLookup on _ReaderFushiPageState {
     // ~一跳」，与 app 外一致（app 外根本不在正文高亮）。
     final int generation = activeLookupGeneration;
     showDeferredPopup(selectionRect: fallbackRect);
-    if (highlightCount <= 0 || _controller == null) return;
+    final InAppWebViewController? surface = _surfaceController;
+    if (highlightCount <= 0 || surface == null) return;
     try {
-      final raw = await _controller!.evaluateJavascript(
+      final raw = await surface.evaluateJavascript(
         source: ReaderSelectionScripts.highlightInvocation(highlightCount),
       );
       if (!mounted) return;
@@ -123,7 +127,9 @@ extension _ReaderLookup on _ReaderFushiPageState {
         raw,
         topOffset: 0,
       );
-      if (rect != null) reanchorTopPopup(rect, generation);
+      if (rect != null) {
+        reanchorTopPopup(_surfaceRectToPage(rect), generation);
+      }
     } catch (e, stack) {
       // BUG-005 同根因（TODO-678）：WebView 半销毁（页面 teardown / 设置 reload 重建
       // 瞬态）时其 per-instance method channel 的 setMethodCallHandler(null) 已摘除，
@@ -137,6 +143,11 @@ extension _ReaderLookup on _ReaderFushiPageState {
       );
     }
   }
+
+  /// 选词来源：JS 回传的 `fromHover`（Shift 悬停 / 悬停查词）是悬停，其余是明确的
+  /// 点击 / 按键。宿主据此决定是否跑「每查一次就付费一次」的旁路工作。
+  LookupOrigin _lookupOriginOf(ReaderSelectionData data) =>
+      data.fromHover ? LookupOrigin.hover : LookupOrigin.explicit;
 
   Future<void> _handleTextSelected(ReaderSelectionData data) async {
     if (data.text.isEmpty) {
@@ -157,11 +168,13 @@ extension _ReaderLookup on _ReaderFushiPageState {
 
     final Map<String, double>? rect = data.rect;
     final Rect selectionRect = rect != null
-        ? Rect.fromLTWH(
-            rect['x'] ?? 0,
-            rect['y'] ?? 0,
-            rect['width'] ?? 0,
-            rect['height'] ?? 0,
+        ? _surfaceRectToPage(
+            Rect.fromLTWH(
+              rect['x'] ?? 0,
+              rect['y'] ?? 0,
+              rect['width'] ?? 0,
+              rect['height'] ?? 0,
+            ),
           )
         : Rect.fromCenter(
             center: Offset(
@@ -197,7 +210,7 @@ extension _ReaderLookup on _ReaderFushiPageState {
         // try —— 半销毁 WebView 上它抛 MissingPluginException，此前 eval 在 try 之外
         // 会让整个歌词查词分支（含 _runLookupAndHighlight）被打断、弹窗不显示。纳入后
         // 失败则 _lookupCue 退回 currentCue fallback，查词照常继续。
-        final Object? ctxRaw = await _controller?.evaluateJavascript(
+        final Object? ctxRaw = await _lyricsController?.evaluateJavascript(
           source: 'JSON.stringify(window.__lyricsCueContext || null)',
         );
         if (ctxRaw is String && ctxRaw != 'null') {
@@ -241,7 +254,11 @@ extension _ReaderLookup on _ReaderFushiPageState {
       }
       _lookupCue ??= _audiobookController?.currentCue;
       _syncCueSentence();
-      await _runLookupAndHighlight(data.text, selectionRect);
+      await _runLookupAndHighlight(
+        data.text,
+        selectionRect,
+        origin: _lookupOriginOf(data),
+      );
       _checkFavoriteStatus();
       return;
     }
@@ -267,7 +284,11 @@ extension _ReaderLookup on _ReaderFushiPageState {
     }
     _syncCueSentence();
 
-    await _runLookupAndHighlight(data.text, selectionRect);
+    await _runLookupAndHighlight(
+      data.text,
+      selectionRect,
+      origin: _lookupOriginOf(data),
+    );
     _cacheMatchableSelection(data);
     if (data.normalizedOffset != null && data.normalizedLength != null) {
       _cachedSelectionRange = (
@@ -320,5 +341,27 @@ extension _ReaderLookup on _ReaderFushiPageState {
     if (mounted && favorited != _currentSentenceIsFavorited) {
       _rebuild(() => _currentSentenceIsFavorited = favorited);
     }
+  }
+
+  /// 把「当前可交互文档」WebView 的局部矩形映射成页面主 Stack 坐标（查词弹窗的
+  /// 定位坐标系）。正文 WebView 铺满 Stack、原点重合，映射为恒等；歌词 WebView
+  /// 在覆盖层的歌词栏里（宽屏是右栏），必须加上它相对 Stack 的偏移，否则弹窗会
+  /// 落到左栏封面上。RenderBox 不可用时原样返回（退化为旧行为，不崩）。
+  Rect _surfaceRectToPage(Rect local) {
+    if (!_lyricsMode) return local;
+    final RenderObject? web =
+        _lyricsWebViewKey.currentContext?.findRenderObject();
+    final RenderObject? stack =
+        _pageStackKey.currentContext?.findRenderObject();
+    if (web is! RenderBox ||
+        stack is! RenderBox ||
+        !web.attached ||
+        !stack.attached ||
+        !web.hasSize) {
+      return local;
+    }
+    final Offset origin =
+        stack.globalToLocal(web.localToGlobal(Offset.zero));
+    return local.shift(origin);
   }
 }

@@ -39,14 +39,22 @@ const List<String> updateCheckProxyPrefixes = kGitHubMirrorPrefixes;
 /// 让下载引擎继续回退 GitHub；不带它会由官网 302 到 GitHub，和后续直连候选重复。
 const String _kOfficialUpdateMirrorHost = 'fushi.moe';
 
+/// 官网 R2 实际收录的 tag 形状：只有正式版 `vX.Y.Z`。
+///
+/// `mirror-releases.yml` 按 release 的 isPrerelease 跳过所有预发布（beta 的
+/// `vX.Y.Z-beta.N`、debug 的 `vX.Y.Z-debug.N+sha` 与滚动 tag `fushi-debug-rolling`），
+/// 发布规则又保证正式版 tag 恒为 `vX.Y.Z`，所以这里按 tag 形状就能与镜像范围对齐。
+/// 对预发布生成 R2 候选只会换来一次必然的 404 再回退 GitHub（BUG-2855）。
+final RegExp _kOfficialMirroredTagPattern = RegExp(r'^v\d+(?:\.\d+)*$');
+
 const String updateDownloadSourceAutomatic = 'auto';
 const String updateDownloadSourceCloudflare = 'r2';
 const String updateDownloadSourceGitHub = 'github';
 const String updateDownloadSourceProxyPrefix = 'proxy:';
 
 /// 进程级更新资产首选源。设置只改变候选顺序，完整回退链始终保留。
-String Function() appUpdateDownloadSourceReader =
-    () => updateDownloadSourceAutomatic;
+String Function() appUpdateDownloadSourceReader = () =>
+    updateDownloadSourceAutomatic;
 
 String updateDownloadSourceForProxy(String prefix) =>
     '$updateDownloadSourceProxyPrefix$prefix';
@@ -55,8 +63,9 @@ String updateDownloadSourceForProxy(String prefix) =>
 ///
 /// 只接受 `https://github.com/hajisensai/fushi/releases/download/<tag>/<name>`：
 /// 旧 Hibiki 仓库、任意第三方 host、API URL 或畸形路径都返回 null，避免把不属于官网 R2
-/// 桶的文件送到受信域名。用 [Uri.pathSegments] 解码输入，再交给 [Uri] 重新编码输出，兼容
-/// debug tag 的 `+` 和资产名里的空格等字符。
+/// 桶的文件送到受信域名；预发布 tag 同样返回 null——R2 只收正式版（见
+/// [_kOfficialMirroredTagPattern]）。用 [Uri.pathSegments] 解码输入，再交给 [Uri] 重新
+/// 编码输出，兼容资产名里的空格等字符。
 @visibleForTesting
 String? officialR2UrlForUpdateAsset(String url) {
   final Uri? uri = Uri.tryParse(url);
@@ -71,7 +80,7 @@ String? officialR2UrlForUpdateAsset(String url) {
       segments[1].toLowerCase() != 'fushi' ||
       segments[2] != 'releases' ||
       segments[3] != 'download' ||
-      segments[4].isEmpty ||
+      !_kOfficialMirroredTagPattern.hasMatch(segments[4]) ||
       segments[5].isEmpty) {
     return null;
   }
@@ -125,7 +134,7 @@ class UpdateDownloadPlan {
 /// **纯函数**：生成 release 资产的下载候选计划。
 ///
 /// 官网 R2 不可变版本路径排第一，优先获得 Cloudflare/R2 的低延迟与免费出网；R2 未镜像
-/// （预发布默认不入桶、单文件超过镜像上限、工作流失败等）会快速 404，随后完整保留原来的
+/// （单文件超过镜像上限、工作流失败等）会快速 404；预发布根本不生成 R2 候选，随后完整保留原来的
 /// GitHub 直连 + 公共 gh 代理回退链。检查 manifest/API 仍使用 [updateCheckUrls]，不会把
 /// 非下载请求误送进 R2。
 ///
@@ -147,8 +156,9 @@ UpdateDownloadPlan resolveUpdateDownloadPlan(String url, {String? preference}) {
       _selectedProxyCandidate(value, url),
     _ => null,
   };
-  final String? pinned =
-      requested != null && candidates.contains(requested) ? requested : null;
+  final String? pinned = requested != null && candidates.contains(requested)
+      ? requested
+      : null;
   return UpdateDownloadPlan(
     candidates: pinned == null
         ? candidates
@@ -170,16 +180,16 @@ List<String> updateDownloadUrls(String url, {String? preference}) =>
 /// **纯函数**：下载来源值 → 用户可读标签。设置页的选项标签与「本次没用上所选来源」
 /// 通告共用这一份，避免同一个来源在两处叫不同名字。未知值按「自动」处理。
 String updateDownloadSourceLabel(String source) => switch (source) {
-      updateDownloadSourceCloudflare => t.update_download_source_cloudflare,
-      updateDownloadSourceGitHub => t.update_download_source_github,
-      String value when value.startsWith(updateDownloadSourceProxyPrefix) =>
-        t.update_download_source_proxy(
-          host: Uri.parse(
-            value.substring(updateDownloadSourceProxyPrefix.length),
-          ).host,
-        ),
-      _ => t.update_download_source_auto,
-    };
+  updateDownloadSourceCloudflare => t.update_download_source_cloudflare,
+  updateDownloadSourceGitHub => t.update_download_source_github,
+  String value when value.startsWith(updateDownloadSourceProxyPrefix) =>
+    t.update_download_source_proxy(
+      host: Uri.parse(
+        value.substring(updateDownloadSourceProxyPrefix.length),
+      ).host,
+    ),
+  _ => t.update_download_source_auto,
+};
 
 /// 所选下载来源对本资产不适用时的用户可见通告；用上了 / 没显式选 → null。
 /// 下载遮罩与诊断日志共用它，「静默降级」从此有唯一一句可展示的话。
@@ -191,8 +201,9 @@ String? _downloadSourceUnavailableNotice(UpdateDownloadPlan plan) {
 }
 
 String? _selectedProxyCandidate(String preference, String directUrl) {
-  final String prefix =
-      preference.substring(updateDownloadSourceProxyPrefix.length);
+  final String prefix = preference.substring(
+    updateDownloadSourceProxyPrefix.length,
+  );
   if (!updateCheckProxyPrefixes.contains(prefix)) return null;
   return '$prefix$directUrl';
 }
@@ -240,11 +251,7 @@ Future<String?> fetchFirstSuccessfulBody(
   required Future<String?> Function(String url) fetch,
   void Function(String host, Object? error)? onFailure,
 }) {
-  return raceFirstSuccessfulBody(
-    urls,
-    fetch: fetch,
-    onFailure: onFailure,
-  );
+  return raceFirstSuccessfulBody(urls, fetch: fetch, onFailure: onFailure);
 }
 
 /// 一个并发候选 [fetch] 的结果（检查阶段竞速用）。[url] = 被抓的候选；[body] = 合法成功
@@ -392,8 +399,9 @@ String describeUpdateNetworkFailureReason(Object? error) {
   }
   if (error is SocketException) {
     final OSError? os = error.osError;
-    final String osPart =
-        os != null ? ' (errno=${os.errorCode}: ${os.message})' : '';
+    final String osPart = os != null
+        ? ' (errno=${os.errorCode}: ${os.message})'
+        : '';
     final String message = error.message;
     final String lower = message.toLowerCase();
     final String category;

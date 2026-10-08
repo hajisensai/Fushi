@@ -1,12 +1,15 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/tags/tag_chips.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/tag_management_page.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 final selectedTagIdsProvider = StateProvider<Set<int>>((_) => {});
 
@@ -153,7 +156,7 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
       body: _buildBody(context, selectedIds),
       footer: Row(
         children: [
-          TextButton(
+          FushiTextButton(
             onPressed: () {
               Navigator.pop(context);
               Navigator.push(
@@ -168,7 +171,7 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
           ),
           const Spacer(),
           if (selectedIds.isNotEmpty)
-            TextButton(
+            FushiTextButton(
               onPressed: () {
                 ref.read(selectedTagIdsProvider.notifier).state = {};
               },
@@ -181,7 +184,6 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
 
   Widget _buildBody(BuildContext context, Set<int> selectedIds) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ThemeData theme = Theme.of(context);
     final List<BookTagRow>? tags = _tags;
     if (tags == null) {
       return Padding(
@@ -192,12 +194,10 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
     if (tags.isEmpty) {
       return Padding(
         padding: EdgeInsets.all(tokens.spacing.card + tokens.spacing.gap),
-        child: Text(
-          t.tag_no_tags_hint,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+        // 与标签管理页的空状态同一件共享占位（图标 + 文案）。
+        child: FushiPlaceholderMessage(
+          icon: Icons.label_outline,
+          message: t.tag_no_tags_hint,
         ),
       );
     }
@@ -206,14 +206,13 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
       runSpacing: tokens.spacing.gap / 2,
       children: tags.map((tag) {
         final isSelected = selectedIds.contains(tag.id);
-        return FushiSelectableChip(
-          selected: isSelected,
-          avatar: CircleAvatar(
-            backgroundColor: Color(tag.colorValue),
-            radius: 6,
-          ),
+        // 与库页标签栏同一枚 M3E 彩色 filter chip（Apple 下玻璃胶囊 + 色点）。
+        return FushiTagToggleChip(
+          state: isSelected ? TagCheckState.all : TagCheckState.none,
+          color: Color(tag.colorValue),
           label: tag.name,
-          onSelected: (selected) {
+          onTap: () {
+            final bool selected = !isSelected;
             final current = Set<int>.from(ref.read(selectedTagIdsProvider));
             if (selected) {
               current.add(tag.id);

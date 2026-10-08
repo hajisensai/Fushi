@@ -1,6 +1,7 @@
 #ifndef RUNNER_FLUTTER_WINDOW_H_
 #define RUNNER_FLUTTER_WINDOW_H_
 
+#include "caption_snap_button.h"
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
 #include <flutter/method_channel.h>
@@ -17,6 +18,8 @@
 #include "hdr_video_host_window.h"
 #include "ime_association_guard.h"
 #include "ime_language_switch.h"
+#include "screen_ocr_overlay.h"
+#include "system_ocr_channel_host.h"
 #include "win32_window.h"
 #include "window_capture_reply_queue.h"
 
@@ -45,6 +48,11 @@ class FlutterWindow : public Win32Window {
   // Receives title-bar colors pushed from Dart (app.fushi/window channel).
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       caption_channel_;
+
+  // Windows 11 Snap Layouts on the app-drawn maximize button: HTMAXBUTTON hit
+  // testing over the rect Dart reports (setCaptionMaxButtonRect), hover /
+  // press / click relayed back as onCaptionMaxButton.
+  CaptionSnapButton caption_snap_button_;
 
   // Copies decoded reader images to the Windows clipboard as CF_DIB.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
@@ -107,6 +115,17 @@ class FlutterWindow : public Win32Window {
       floating_ball_channel_;
   std::unique_ptr<FloatingBallWindow> floating_ball_window_;
   void RegisterFloatingBallChannel();
+  // 应用外球「截屏识字」的冻结层（spec「截屏识字」）。回调经 floating_ball_channel_。
+  std::unique_ptr<ScreenOcrOverlay> screen_ocr_overlay_;
+  // startScreenOcrCapture：藏球 → 截球所在显示器 → 显示冻结层 → 回 {png, screen}。
+  flutter::EncodableValue StartScreenOcrCapture(const flutter::EncodableMap* args);
+  // 关冻结层（不回调）并恢复球。
+  void StopScreenOcr();
+
+  // app.fushi.reader/system_ocr 的宿主（实现与工作线程都在
+  // system_ocr_channel_host.cpp；这里只持有并转发它的计时器消息）。
+  std::unique_ptr<fushi::SystemOcrChannelHost> system_ocr_host_;
+  void RegisterSystemOcrChannel();
 
   // Dedicated galgame Hook text box: a SECOND FloatingLyricWindow instance in
   // rich text-only mode, independent of the audiobook lyric strip.
@@ -204,6 +223,23 @@ class FlutterWindow : public Win32Window {
   // Applies DWM caption/text colors to the top-level window. Persists across
   // focus changes, so the unfocused title bar keeps following the app theme.
   void ApplyCaptionColors(uint32_t caption_argb, uint32_t text_argb);
+
+  // Glass material: turns the Windows 11 Mica system backdrop on / off behind
+  // the (translucent) Flutter view. Returns whether Mica is actually active,
+  // so Dart only makes its shell background translucent when DWM really draws
+  // something behind it (Windows 10 / older Windows 11 builds return false).
+  bool ApplySystemBackdrop(bool mica, bool dark);
+
+  // BUG-2964: the single writer of the main window's DWM composition
+  // (DwmExtendFrameIntoClientArea margins + non-client rendering policy),
+  // derived from a MainSurfaceState (see main_surface_composition.h). Mica,
+  // the HDR passthrough and fullscreen all go through here instead of each
+  // writing DWM state of their own.
+  void ApplyMainSurfaceComposition(const fushi::MainSurfaceState& state);
+  void ApplyMainSurfaceComposition();
+
+  // Called by HdrVideoHostWindow when the passthrough host goes live / away.
+  void SetMainVideoPassthrough(bool enabled);
 
   // TODO-1092: notify Dart (system_theme_channel_) that the OS accent/theme
   // color changed so ThemeNotifier.refreshSystemPalette() re-reads it live.

@@ -1,7 +1,7 @@
 // BUG-1539 守卫：下载「资源」tab 的手动搜索按钮在元数据身份（外部 ID/年份）
 // 未填齐时按设计禁用，但必须给出可见的禁用原因（tooltip + 内联提示），
 // 且身份填齐后按钮必须真正可点并触发搜索。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -12,6 +12,7 @@ import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
+import '../helpers/glass_unwrap.dart';
 
 class _RecordingResourceProvider implements VideoResourceProvider {
   final List<VideoResourceSearchRequest> requests =
@@ -72,7 +73,7 @@ void main() {
     );
     await tester.pump();
 
-    final IconButton button = tester.widget<IconButton>(_searchButton());
+    final IconButton button = tester.widget<IconButton>(glassUnwrap<IconButton>(_searchButton()));
     expect(button.onPressed, isNull, reason: '缺外部 ID/年份时必须禁用');
     expect(
       button.tooltip,
@@ -111,7 +112,7 @@ void main() {
     );
     await tester.pump();
 
-    final IconButton button = tester.widget<IconButton>(_searchButton());
+    final IconButton button = tester.widget<IconButton>(glassUnwrap<IconButton>(_searchButton()));
     expect(button.onPressed, isNotNull);
     expect(button.tooltip, t.dialog_search);
     expect(

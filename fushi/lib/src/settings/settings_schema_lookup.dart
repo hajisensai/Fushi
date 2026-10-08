@@ -1,10 +1,17 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
+import 'package:fushi/src/lookup/effective_lookup_size.dart'
+    show
+        kLookupPopupMaxHeight,
+        kLookupPopupMaxWidth,
+        kLookupPopupMinHeight,
+        kLookupPopupMinWidth;
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/lookup/lookup_popup_size_preview.dart';
 import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -22,6 +29,7 @@ import 'package:fushi/src/sync/port_process_terminator.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/sync/yomitan_api_server.dart'
     show kYomitanApiDefaultPort;
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
 
@@ -34,7 +42,7 @@ String _yomitanApiPortInUseMessage(int port) {
 void _showSettingsSnackBar(SettingsContext settingsContext, String message) {
   final BuildContext ctx = settingsContext.context;
   if (!ctx.mounted) return;
-  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(message)));
+  ScaffoldMessenger.of(ctx).showSnackBar(FushiSnackBar(content: Text(message)));
 }
 
 /// 端口冲突提示：说明占用者（默认端口时通常是浏览器拉起的 yomitan-api Python
@@ -45,7 +53,7 @@ void _showYomitanPortConflictSnackBar(SettingsContext settingsContext) {
   if (!ctx.mounted) return;
   final int port = settingsContext.appModel.yomitanApiPort;
   ScaffoldMessenger.of(ctx).showSnackBar(
-    SnackBar(
+    FushiSnackBar(
       content: Text(_yomitanApiPortInUseMessage(port)),
       duration: const Duration(seconds: 10),
       action: PortProcessTerminator.isSupported
@@ -126,22 +134,23 @@ Future<void> _terminatePortOwnerAndRetry(
 
 /// 「底部停靠」在单个媒体模块里是否启用的子开关（[AppModel.popupBottomDockedIn]）。
 SettingsSwitchItem _popupBottomDockedModuleSwitch(ModuleId module) {
+  // 图标取各模块底栏 tab 的同一真值（homeNavItemFor）。
   final ({String title, IconData icon}) identity = switch (module) {
     ModuleId.books => (
         title: t.popup_bottom_docked_books,
-        icon: Icons.menu_book_outlined,
+        icon: homeNavItemFor(HomeTab.books).icon,
       ),
     ModuleId.manga => (
         title: t.popup_bottom_docked_manga,
-        icon: Icons.auto_stories_outlined,
+        icon: homeNavItemFor(HomeTab.manga).icon,
       ),
     ModuleId.video => (
         title: t.popup_bottom_docked_video,
-        icon: Icons.movie_outlined,
+        icon: homeNavItemFor(HomeTab.video).icon,
       ),
     ModuleId.games => (
         title: t.popup_bottom_docked_games,
-        icon: Icons.sports_esports_outlined,
+        icon: homeNavItemFor(HomeTab.games).icon,
       ),
     _ => throw StateError('$module 没有底部停靠细分开关'),
   };
@@ -149,6 +158,11 @@ SettingsSwitchItem _popupBottomDockedModuleSwitch(ModuleId module) {
     id: 'lookup.popup_bottom_docked.${module.name}',
     title: identity.title,
     icon: identity.icon,
+    // 小说这一条同时投影进书内快捷设置：总开关开着时它就是「小说里停不停靠」的
+    // 真值；总开关关着时由 [_popupBottomDockedBooksOnlySwitch] 顶替同一位置。
+    reader: module == ModuleId.books
+        ? const ReaderPlacement(group: ReaderGroup.lookup, order: 4)
+        : null,
     visible: (SettingsContext settingsContext) =>
         settingsContext.appModel.popupBottomDocked &&
         settingsContext.appModel.moduleVisibility.isEnabled(module),
@@ -156,6 +170,51 @@ SettingsSwitchItem _popupBottomDockedModuleSwitch(ModuleId module) {
         settingsContext.appModel.popupBottomDockedIn(module),
     onChanged: (SettingsContext settingsContext, bool value) async {
       await settingsContext.appModel.setPopupBottomDockedIn(module, value);
+      settingsContext.refresh();
+    },
+    defaultValue: true,
+  );
+}
+
+/// 打开「只在小说里底部停靠」：总开关关着（= 任何模块都不停靠）时，要让小说
+/// 停靠又不能顺手把漫画 / 视频 / 游戏也一起停靠——细分开关默认 ON，光开总开关
+/// 会让它们全部翻转。所以先把其余模块的细分开关显式写成 OFF（保持它们此刻
+/// 「不停靠」的有效值），再开小说与总开关。只改小说的有效值，其余模块一个不变。
+Future<void> enablePopupBottomDockedOnlyInBooks(AppModel appModel) async {
+  for (final ModuleId module
+      in PreferencesRepository.kPopupBottomDockedModules) {
+    if (module == ModuleId.books) continue;
+    await appModel.setPopupBottomDockedIn(module, false);
+  }
+  await appModel.setPopupBottomDockedIn(ModuleId.books, true);
+  await appModel.setPopupBottomDocked(true);
+}
+
+/// 总开关关着时，给小说一个「只在小说里停靠」的入口（书内快捷设置里查词弹窗的
+/// 位置偏好）。总开关一开它就让位给 [_popupBottomDockedModuleSwitch] 的小说那条，
+/// 两条永远只出一条，且出现的那条的值就是小说里的有效停靠状态。
+SettingsSwitchItem _popupBottomDockedBooksOnlySwitch() {
+  return SettingsSwitchItem(
+    id: 'lookup.popup_bottom_docked_books_only',
+    title: t.popup_bottom_docked_books_only,
+    subtitle: t.popup_bottom_docked_books_only_hint,
+    icon: Icons.vertical_align_bottom_outlined,
+    reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 3),
+    visible: (SettingsContext settingsContext) =>
+        !settingsContext.appModel.popupBottomDocked &&
+        settingsContext.appModel.moduleVisibility.isEnabled(ModuleId.books),
+    // 只在总开关关着时可见，此时小说的有效值恒为 false。
+    value: (SettingsContext settingsContext) =>
+        settingsContext.appModel.popupBottomDockedFor(ModuleId.books),
+    onChanged: (SettingsContext settingsContext, bool value) async {
+      if (value) {
+        await enablePopupBottomDockedOnlyInBooks(settingsContext.appModel);
+      } else {
+        await settingsContext.appModel.setPopupBottomDockedIn(
+          ModuleId.books,
+          false,
+        );
+      }
       settingsContext.refresh();
     },
   );
@@ -166,7 +225,8 @@ SettingsDestination buildLookupDestination() {
     id: SettingsDestinationId.lookup,
     title: t.settings_destination_lookup,
     summary: t.dictionary_settings,
-    icon: Icons.manage_search_outlined,
+    // 图标与底栏 / 侧栏同一真值（homeNavItemFor），不在设置里另写一份。
+    icon: homeNavItemFor(HomeTab.dictionaries).icon,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'lookup.section.dictionaries',
@@ -216,6 +276,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.toggleAutoSearchEnabled();
               settingsContext.refresh();
             },
+            defaultValue: true,
           ),
           // TODO-861②（移植 Hoshi `07b5c09`）：扫描非日文文本。关闭后选区/查词遇非
           // 日文码点即停（不吃相邻拉丁词/数字）。默认 true = 现状，向后兼容。开着的
@@ -226,12 +287,15 @@ SettingsDestination buildLookupDestination() {
             title: t.scan_non_japanese_text,
             subtitle: t.scan_non_japanese_text_hint,
             icon: Icons.language_outlined,
+            // 已经 live 推到开着的阅读器（见上），读小说时遇到夹杂英文的段落就近切。
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 21),
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.scanNonJapaneseText,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setScanNonJapaneseText(value);
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: true,
           ),
           // TODO-756b：“鼠标悬停即自动查词”。开启后无需按住 Shift，鼠标悬停在字幕/正文
           // 字符上即查词（与 TODO-756a 的 Shift-悬停同链路）；关闭退回 756a 的 Shift+悬停。
@@ -243,7 +307,7 @@ SettingsDestination buildLookupDestination() {
             icon: Icons.ads_click_outlined,
             visible: (SettingsContext settingsContext) =>
                 DesktopLookupService.isDesktop,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 5),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 15),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.hoverAutoLookup,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -257,6 +321,7 @@ SettingsDestination buildLookupDestination() {
                   .applyHoverAutoLookupFromPreferences();
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: false,
           ),
           // 悬停查词的收尾动作：鼠标离开字幕与查词浮层即自动关浮层 + 恢复播放，免去
           // 「再点一下空白」。只作用于悬停发起的查词会话（点击查词不受影响），故与上面
@@ -278,6 +343,7 @@ SettingsDestination buildLookupDestination() {
               );
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: true,
           ),
           // 一等数字项：负值经 min:0 夹取（旧散装字段把负值回退成默认值——语义
           // 收敛为「非负」，正常正值写穿完全一致）。解析失败不写（新数字项契约）。
@@ -333,6 +399,7 @@ SettingsDestination buildLookupDestination() {
               );
               settingsContext.refresh();
             },
+            defaultValue: false,
           ),
           // macOS：读取 / 复制其它应用的选区（AX 读选区、合成 ⌘C）都要「辅助功能」
           // 授权；未授权时旧行为会退化为只查当前剪贴板文本。设置页和第一次
@@ -424,12 +491,16 @@ SettingsDestination buildLookupDestination() {
             id: 'lookup.collapse_dictionaries',
             title: t.collapse_dictionaries,
             icon: Icons.unfold_less_outlined,
+            // 词条密度三件套（折叠 / 自动展开行数 / 紧凑释义）也投影进小说快捷设置：
+            // 手机上弹窗调小后，内容密度是同一个取舍，不该退出阅读器去翻全局设置。
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 22),
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.collapseDictionaries,
             onChanged: (SettingsContext settingsContext, bool value) {
               settingsContext.appModel.toggleCollapseDictionaries();
               settingsContext.refresh();
             },
+            defaultValue: true,
           ),
           // TODO-845: how many leading *rows* of dictionary blocks the popup
           // auto-expands even when "collapse dictionaries" is on. The unit is
@@ -447,6 +518,7 @@ SettingsDestination buildLookupDestination() {
             icon: Icons.unfold_more_outlined,
             visible: (SettingsContext settingsContext) =>
                 settingsContext.appModel.collapseDictionaries,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 23),
             min: 0,
             max: 6,
             divisions: 6,
@@ -460,6 +532,7 @@ SettingsDestination buildLookupDestination() {
               );
               settingsContext.refresh();
             },
+            defaultValue: 1,
           ),
           // TODO-776: dictionaries-per-row grid (experimental). int preference
           // surfaced through a double slider, so value/onChanged bridge int↔double.
@@ -500,6 +573,21 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setPopupWheelSpeed(value);
               settingsContext.refresh();
             },
+            defaultValue: 1.0,
+          ),
+          // AI 按句意挑词条（✨）：关着时顶栏按钮仍可手动点，开了每次查词都问一次。
+          SettingsSwitchItem(
+            id: 'lookup.ai_context_auto',
+            title: t.lookup_ai_context_auto,
+            subtitle: t.lookup_ai_context_auto_desc,
+            icon: Icons.auto_awesome_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.lookupAiContextAuto,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.setLookupAiContextAuto(value);
+              settingsContext.refresh();
+            },
+            defaultValue: false,
           ),
           SettingsSwitchItem(
             id: 'lookup.show_expression_tags',
@@ -511,6 +599,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.toggleShowExpressionTags();
               settingsContext.refresh();
             },
+            defaultValue: false,
           ),
           SettingsSwitchItem(
             id: 'lookup.deduplicate_pitch_accents',
@@ -522,6 +611,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.toggleDeduplicatePitchAccents();
               settingsContext.refresh();
             },
+            defaultValue: true,
           ),
           SettingsSwitchItem(
             id: 'lookup.harmonic_frequency',
@@ -533,6 +623,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.toggleHarmonicFrequency();
               settingsContext.refresh();
             },
+            defaultValue: true,
           ),
           // 对齐 Hoshi Reader Android 的 "Compact Glossaries"。popup.js 的
           // createDictionaryBlock 一直按 window.compactGlossaries 产出紧凑释义 CSS，
@@ -542,12 +633,30 @@ SettingsDestination buildLookupDestination() {
             title: t.popup_compact_glossaries,
             subtitle: t.popup_compact_glossaries_hint,
             icon: Icons.compress,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 24),
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.compactGlossaries,
             onChanged: (SettingsContext settingsContext, bool value) {
               settingsContext.appModel.toggleCompactGlossaries();
               settingsContext.refresh();
             },
+            defaultValue: false,
+          ),
+          // 词典样式统一（默认开）：导入词典自带的标签底色 / 强调字色 / 边框色按语义
+          // 换成当前 ColorScheme（M3E），换强调色、切明暗都跟随；关掉退回词典原样式。
+          // popup.js 读 window.__fushiDictUnifiedStyle（popup_settings_injection 注入）。
+          SettingsSwitchItem(
+            id: 'lookup.dictionary_unified_style',
+            title: t.lookup_dictionary_unified_style,
+            subtitle: t.lookup_dictionary_unified_style_hint,
+            icon: FushiIcons.appearance,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.dictionaryUnifiedStyle,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.toggleDictionaryUnifiedStyle();
+              settingsContext.refresh();
+            },
+            defaultValue: true,
           ),
           // 词典字体原本只能去「外观 · 字体库」里给某款字体勾「词典」用途，词典设置
           // 里找不到入口。这里以词典作用域打开同一个字体库：新加的字体挂到词典、
@@ -572,6 +681,9 @@ SettingsDestination buildLookupDestination() {
             // 字号，持久化）。
             subtitle: t.dictionary_font_size_zoom_hint,
             icon: Icons.format_size,
+            // 弹窗字号与弹窗宽高是同一个取舍（字大了就要更宽的窗），在小说快捷设置
+            // 里紧跟尺寸行。
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 5),
             min: 0,
             suffixText: t.unit_pixels,
             value: (SettingsContext settingsContext) =>
@@ -598,19 +710,23 @@ SettingsDestination buildLookupDestination() {
             id: 'lookup.auto_read_on_lookup',
             title: t.auto_read_on_lookup,
             icon: Icons.record_voice_over_outlined,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 0),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 10),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.autoReadOnLookup,
             onChanged: (SettingsContext settingsContext, bool value) {
               settingsContext.readerSource.toggleAutoReadOnLookup();
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: true,
           ),
           SettingsSliderItem(
             id: 'lookup.audio_volume',
             title: t.lookup_audio_volume,
             icon: Icons.volume_up_outlined,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 1),
+            // 拖动只跟手预览、松手提交一次：逐 tick 写穿会每帧写库 + 推正文
+            // WebView 重注样式 / 重建阅读器页，Android 上压着平台视图拖动掉帧。
+            commitOnRelease: true,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 11),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.lookupAudioVolume.toDouble(),
             min: 0,
@@ -626,18 +742,20 @@ SettingsDestination buildLookupDestination() {
               await settingsContext.readerSource.setLookupAudioVolume(value);
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: 100,
           ),
           SettingsSwitchItem(
             id: 'lookup.pause_on_lookup',
             title: t.pause_on_lookup,
             icon: Icons.pause_circle_outline,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 2),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 12),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.pauseOnLookup,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.readerSource.setPauseOnLookup(value: value);
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: true,
           ),
         ],
       ),
@@ -654,8 +772,12 @@ SettingsDestination buildLookupDestination() {
             // 绝不会超出屏幕）。divisions 保持 10px 步进（1750/175）。
             title: t.popup_max_width,
             icon: Icons.open_in_full_outlined,
-            min: 250,
-            max: 2000,
+            // 用户 2026-10-05：小说阅读设置的查词里要能调宽高。真值仍是这一份全局
+            // 偏好（与弹窗右下角拖拽把手、漫画 / 视频弹窗同源），只是投影进书内面板，
+            // 不另立小说专属键——否则拖把手该写哪份就分叉了。
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 0),
+            min: kLookupPopupMinWidth,
+            max: kLookupPopupMaxWidth,
             divisions: 175,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.popupMaxWidth,
@@ -664,6 +786,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setPopupMaxWidth(value);
               settingsContext.refresh();
             },
+            defaultValue: 400,
           ),
           SettingsSliderItem(
             id: 'lookup.popup_max_height',
@@ -673,8 +796,9 @@ SettingsDestination buildLookupDestination() {
             // 步进保持 10px（1400/140）。
             title: t.popup_max_height,
             icon: Icons.height_outlined,
-            min: 200,
-            max: 1600,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 1),
+            min: kLookupPopupMinHeight,
+            max: kLookupPopupMaxHeight,
             divisions: 140,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.popupMaxHeight,
@@ -683,6 +807,25 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setPopupMaxHeight(value);
               settingsContext.refresh();
             },
+            defaultValue: 360,
+          ),
+          // 宽高滑杆写的是「上限」，实际尺寸还要按当前屏幕 / 停靠 / 竖排夹一次：
+          // 预览用宿主同一个 resolvePopupRect 画出小说里弹窗的真实落点与尺寸。
+          SettingsCustomItem(
+            id: 'lookup.popup_size_preview',
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 2),
+            builder: (SettingsContext settingsContext) =>
+                LookupPopupSizePreview(
+              maxWidth: settingsContext.appModel.popupMaxWidth *
+                  settingsContext.appModel.appUiScale,
+              maxHeight: settingsContext.appModel.popupMaxHeight *
+                  settingsContext.appModel.appUiScale,
+              bottomDocked: settingsContext.appModel.popupBottomDockedFor(
+                ModuleId.books,
+              ),
+              verticalWriting: settingsContext.readerSource.readerWritingMode
+                  .startsWith('vertical'),
+            ),
           ),
           // 弹窗尺寸精细化：app 外覆盖查词窗独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
           // 关闭时跟随上面的 app 内最大宽高（overlayLookupEffectiveSize 解析）。
@@ -699,6 +842,7 @@ SettingsDestination buildLookupDestination() {
               );
               settingsContext.refresh();
             },
+            defaultValue: false,
           ),
           SettingsSliderItem(
             id: 'lookup.overlay_lookup_max_width',
@@ -717,6 +861,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setOverlayLookupMaxWidth(value);
               settingsContext.refresh();
             },
+            defaultValue: 400,
           ),
           SettingsSliderItem(
             id: 'lookup.overlay_lookup_max_height',
@@ -735,6 +880,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setOverlayLookupMaxHeight(value);
               settingsContext.refresh();
             },
+            defaultValue: 360,
           ),
           // 弹窗尺寸精细化：浏览器扩展弹窗独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
           // 关闭时跟随 app 内最大宽高（extensionPopupEffectiveSize 解析，经 theme 下发）。
@@ -751,6 +897,7 @@ SettingsDestination buildLookupDestination() {
               );
               settingsContext.refresh();
             },
+            defaultValue: false,
           ),
           SettingsSliderItem(
             id: 'lookup.extension_popup_max_width',
@@ -769,6 +916,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setExtensionPopupMaxWidth(value);
               settingsContext.refresh();
             },
+            defaultValue: 400,
           ),
           SettingsSliderItem(
             id: 'lookup.extension_popup_max_height',
@@ -787,6 +935,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setExtensionPopupMaxHeight(value);
               settingsContext.refresh();
             },
+            defaultValue: 360,
           ),
           // 墨水屏「瞬时滚动」+ 两个步长旋钮。同时经 ReaderPlacement 出现在阅读器快捷
           // 设置的查词段（墨水屏用户是在书里查词时才发现步长不合手，不该为此退出阅读器
@@ -797,13 +946,14 @@ SettingsDestination buildLookupDestination() {
             title: t.popup_instant_scroll,
             subtitle: t.popup_instant_scroll_hint,
             icon: Icons.animation_outlined,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 7),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 17),
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.popupInstantScroll,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setPopupInstantScroll(value);
               settingsContext.refresh();
             },
+            defaultValue: false,
           ),
           SettingsSliderItem(
             id: 'lookup.popup_instant_scroll_wheel_step',
@@ -814,7 +964,10 @@ SettingsDestination buildLookupDestination() {
             max: PreferencesRepository.kPopupInstantScrollStepMax,
             divisions: 18,
             titleReadout: true,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 8),
+            // 拖动只跟手预览、松手提交一次：逐 tick 写穿会每帧写库并重建整个
+            // 阅读设置面板（Android 上压着正文平台视图拖动掉帧）。
+            commitOnRelease: true,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 18),
             visible: (SettingsContext settingsContext) =>
                 settingsContext.appModel.popupInstantScroll,
             value: (SettingsContext settingsContext) =>
@@ -824,6 +977,8 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setPopupInstantScrollWheelStep(value);
               settingsContext.refresh();
             },
+            defaultValue:
+                PreferencesRepository.kPopupInstantScrollWheelStepDefault,
           ),
           SettingsSliderItem(
             id: 'lookup.popup_instant_scroll_touch_step',
@@ -834,7 +989,10 @@ SettingsDestination buildLookupDestination() {
             max: PreferencesRepository.kPopupInstantScrollStepMax,
             divisions: 18,
             titleReadout: true,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 9),
+            // 拖动只跟手预览、松手提交一次：逐 tick 写穿会每帧写库并重建整个
+            // 阅读设置面板（Android 上压着正文平台视图拖动掉帧）。
+            commitOnRelease: true,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 19),
             visible: (SettingsContext settingsContext) =>
                 settingsContext.appModel.popupInstantScroll,
             value: (SettingsContext settingsContext) =>
@@ -844,6 +1002,8 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setPopupInstantScrollTouchStep(value);
               settingsContext.refresh();
             },
+            defaultValue:
+                PreferencesRepository.kPopupInstantScrollTouchStepDefault,
           ),
           SettingsSwitchItem(
             id: 'lookup.popup_bottom_docked',
@@ -856,6 +1016,7 @@ SettingsDestination buildLookupDestination() {
               await settingsContext.appModel.setPopupBottomDocked(value);
               settingsContext.refresh();
             },
+            defaultValue: false,
           ),
           // 底部停靠按模块细分：不是所有场景都要停靠（例如只在视频里固定弹窗）。
           // 总开关打开后才出现；模块在本平台不存在（iOS 无游戏模块）或被用户在
@@ -863,6 +1024,7 @@ SettingsDestination buildLookupDestination() {
           for (final ModuleId module
               in PreferencesRepository.kPopupBottomDockedModules)
             _popupBottomDockedModuleSwitch(module),
+          _popupBottomDockedBooksOnlySwitch(),
           // TODO-436/407②/716：是否允许"水平滑动关闭查词弹窗"。这是查词弹窗窗口的
           // 关闭手势，与弹窗尺寸/停靠同组；同时经 ReaderPlacement 出现在阅读器快捷
           // 设置的查词段。开启后既驱动弹窗顶栏滑动关闭（[SwipeDismissWrapper]），也让
@@ -873,7 +1035,7 @@ SettingsDestination buildLookupDestination() {
             id: 'reading_controls.enable_swipe_to_close',
             title: t.enable_swipe_to_close,
             icon: Icons.swipe_left_outlined,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 3),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 13),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.enableSwipeToClose,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -891,7 +1053,10 @@ SettingsDestination buildLookupDestination() {
             min: 0.1,
             max: 1,
             divisions: 9,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 4),
+            // 拖动只跟手预览、松手提交一次：逐 tick 写穿会每帧写库 + 推正文
+            // WebView 重注样式 / 重建阅读器页，Android 上压着平台视图拖动掉帧。
+            commitOnRelease: true,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 14),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.dismissSwipeSensitivity,
             label: (double value) => value.toStringAsFixed(1),
@@ -901,6 +1066,7 @@ SettingsDestination buildLookupDestination() {
               );
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: 0.6,
           ),
           // 用户诉求（2026-09-10）：滑动关闭弹窗那段滑出/弹回动画要能**单独**关掉。
           // 此前唯一的关闭途径是开墨水屏模式（externally 顺带归零），想要瞬时关闭
@@ -911,7 +1077,7 @@ SettingsDestination buildLookupDestination() {
             title: t.popup_dismiss_animation,
             subtitle: t.popup_dismiss_animation_hint,
             icon: Icons.animation_outlined,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 6),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 16),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.popupDismissAnimation,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -920,6 +1086,7 @@ SettingsDestination buildLookupDestination() {
               );
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: true,
           ),
           // 用户诉求（2026-09-23）：滚动模式下查词后继续滚动正文（横排/竖排都算）
           // 即关闭弹窗，并做成开关。只在滚动（连续）模式生效，故仅该模式可见
@@ -931,7 +1098,7 @@ SettingsDestination buildLookupDestination() {
             icon: Icons.swap_vert_outlined,
             visible: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.readerViewMode == 'continuous',
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 10),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 20),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.dismissPopupOnScroll,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -940,6 +1107,7 @@ SettingsDestination buildLookupDestination() {
               );
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: true,
           ),
           // 防截屏（用户诉求）：桌面查词浮窗经 native
           // SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 从截图/录屏/串流中
@@ -961,6 +1129,7 @@ SettingsDestination buildLookupDestination() {
               await GlobalLookupController.instance.applyBlockCapture(value);
               settingsContext.refresh();
             },
+            defaultValue: false,
           ),
         ],
       ),
@@ -1125,7 +1294,7 @@ Future<void> showAudioSourcesManagerDialog({
     final bool canReference = picked.isRealPath;
     if (reference && !canReference && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.local_audio_reference_unavailable)),
+        FushiSnackBar(content: Text(t.local_audio_reference_unavailable)),
       );
     }
     final LocalAudioDbEntry entry = await appModel.importLocalAudioDbFile(
@@ -1194,6 +1363,7 @@ SettingsItem buildRemoteDictionaryLookupItem() {
       await settingsContext.appModel.setRemoteLookupEnabled(value);
       settingsContext.refresh();
     },
+    defaultValue: false,
   );
 }
 

@@ -384,6 +384,13 @@ void main() {
       expect(
           hostDicts.map((DictionaryMetaRow d) => d.name), contains('JMdict'));
 
+      // 第二次同步：两边词典已一致，必须零传输（不能每次全量重传）。
+      final SyncRunReport second = SyncRunReport();
+      await orch.syncDictionaries(second, direction: SyncAssetDirection.both);
+      expect(second.errors, isEmpty, reason: 'rerun errors: ${second.errors}');
+      expect(second.dictionariesImported, 0, reason: '已有的词典不应再次 pull');
+      expect(second.dictionariesExported, 0, reason: '已有的词典不应再次 push');
+
       // 无暂存目录
       final String syncDataDir = p.join(work.path, 'server_data', 'sync-data');
       expect(

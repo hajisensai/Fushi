@@ -1,4 +1,5 @@
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
+import 'package:fushi_engine/media/video/download/downloaded_collection_order.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -20,6 +21,9 @@ import 'package:fushi_core/fushi_core.dart';
 /// - **手动序整合集 LWW**：orderUpdatedAt 新者整表覆盖成员 sortIndex；平手取
 ///   远端（共享清单）序——两端从未手动排序(=0)时也能收敛到同一顺序，而不是各
 ///   持己序永久 ping-pong。不做逐成员位置合并（两个排列不存在有意义的合并）。
+///   例外（BUG-2941）：[CollectionManifestEntry.episodeOrdered]（下载管理的合集）且
+///   两端都为 0 时，视频成员按成员键里的季/集重排——远端序只是另一端的下载到达
+///   顺序，不是任何人的意图；重排只依赖 wire 成员键，各端结果逐字节相同。
 /// - **合集删除墓碑**（deletedAt，清单 entry 级）防复活；与成员墓碑同一基线
 ///   规则：晚于基线 ⇒ 删除生效；早于基线且对端活着 ⇒ 对端重建了，合集复活。
 class CollectionSyncEngine {
@@ -59,6 +63,7 @@ class CollectionSyncEngine {
       CollectionManifestEntry? merged =
           _mergeOne(l, r, lastSyncedAtMs: lastSyncedAtMs, lPeer: localIsPeer);
       if (merged == null) continue; // 双方都无知识（不可达）或全空壳被剪枝。
+      merged = _withEpisodeOrder(merged);
       // 首次发布盖时戳：把本端新造/新并入的（publishedAt 尚空的）墓碑/删除标记为
       // now，供对端用「基线 vs publishedAt」判新旧（§2.3 因果修复）。
       if (stampPublish) merged = _stampEntry(merged, now);
@@ -139,6 +144,7 @@ class CollectionSyncEngine {
       ],
       // 盖发布戳时重建整个 entry：必须透传 tagNames，否则每轮盖戳都会丢标签。
       tagNames: e.tagNames,
+      episodeOrdered: e.episodeOrdered,
     );
   }
 
@@ -251,7 +257,39 @@ class CollectionSyncEngine {
       ],
       // 双活标签并集（只增不删；确定性排序供 canonicalJson 幂等）。
       tagNames: <String>{...l.tagNames, ...r.tagNames}.toList()..sort(),
+      episodeOrdered: l.episodeOrdered || r.episodeOrdered,
     ));
+  }
+
+  /// 集号序合集（[CollectionManifestEntry.episodeOrdered]）在无人手动排序时，
+  /// 视频成员按集号重排（BUG-2941）。有人手动排过（orderUpdatedAt > 0）的照旧
+  /// LWW，其它合集原样返回。
+  static CollectionManifestEntry _withEpisodeOrder(CollectionManifestEntry e) {
+    if (!e.episodeOrdered || e.orderUpdatedAt != 0 || e.deletedAt != null) {
+      return e;
+    }
+    final List<CollectionManifestMember> current =
+        List<CollectionManifestMember>.of(e.members)
+          ..sort((CollectionManifestMember a, CollectionManifestMember b) =>
+              a.sortIndex.compareTo(b.sortIndex));
+    final List<CollectionMemberKey> ordered = orderDownloadedCollectionMembers(
+      <CollectionMemberKey>[
+        for (final CollectionManifestMember m in current)
+          (mediaType: m.mediaType, entryKey: m.entryKey),
+      ],
+    );
+    return CollectionManifestEntry(
+      name: e.name,
+      collectionType: e.collectionType,
+      orderUpdatedAt: e.orderUpdatedAt,
+      members: _reindexed(<String>[
+        for (final CollectionMemberKey m in ordered)
+          _memberKey(m.mediaType, m.entryKey),
+      ]),
+      memberTombstones: e.memberTombstones,
+      tagNames: e.tagNames,
+      episodeOrdered: true,
+    );
   }
 
   /// 一条墓碑「对本端是不是新闻」：对端侧用 publishedAt（首次进共享清单的时刻，回退
@@ -417,6 +455,7 @@ class CollectionSyncEngine {
         membersByKey: byKey,
         tombstones: tombs,
         tagNames: e.tagNames.toSet(),
+        episodeOrdered: e.episodeOrdered,
       );
     }
     return out;
@@ -499,6 +538,7 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
     ..sort(
         (MediaCollectionRow a, MediaCollectionRow b) => a.id.compareTo(b.id));
 
+  final Set<int> episodeOrderedIds = await db.downloadManagedCollectionIds();
   final List<CollectionManifestEntry> entries = <CollectionManifestEntry>[];
   final Set<String> seen = <String>{};
   for (final MediaCollectionRow row in byId) {
@@ -541,6 +581,7 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
             ),
       ],
       tagNames: <String>[for (final BookTagRow t in rowTags) t.name],
+      episodeOrdered: episodeOrderedIds.contains(row.id),
     ));
   }
 
@@ -718,10 +759,14 @@ class _NormalizedEntry {
     required this.membersByKey,
     required this.tombstones,
     required this.tagNames,
+    this.episodeOrdered = false,
   });
 
   final String name;
   final String collectionType;
+
+  /// 见 [CollectionManifestEntry.episodeOrdered]（死条目恒 false）。
+  final bool episodeOrdered;
 
   /// 非 null = 该侧认为合集已删（deletedAt 毫秒戳）。
   final int? deletedAt;
@@ -766,6 +811,7 @@ class _NormalizedEntry {
             ),
         ],
         tagNames: tagNames.toList()..sort(),
+        episodeOrdered: episodeOrdered,
       );
 }
 
@@ -804,6 +850,8 @@ class _FoldGroup {
       <String, int>{}; // 决策用 max(pub??removed)。
 
   final Set<String> _tagNames = <String>{}; // 各活文件标签并集（只增不删）。
+  // 标了集号序（BUG-2941）的活文件中最新 lastWrittenAt；-1 = 没有。
+  int _episodeOrderedFileTimeMax = -1;
 
   void observe(_NormalizedEntry e, int fileTime) {
     if (e.deletedAt != null) {
@@ -821,6 +869,9 @@ class _FoldGroup {
       return; // 归一化后的死条目不携带成员/墓碑/标签。
     }
     _tagNames.addAll(e.tagNames); // 活文件标签并集。
+    if (e.episodeOrdered && fileTime > _episodeOrderedFileTimeMax) {
+      _episodeOrderedFileTimeMax = fileTime;
+    }
     if (fileTime > _aliveFileTimeMax) _aliveFileTimeMax = fileTime;
     if (e.orderUpdatedAt > _orderUpdatedAtMax) {
       _orderUpdatedAtMax = e.orderUpdatedAt;
@@ -918,6 +969,10 @@ class _FoldGroup {
       ],
       // 折叠活分支标签并集（确定性排序）；死分支上方 return 不带标签。
       tagNames: _tagNames.toList()..sort(),
+      // 与「删除后重建」同一判据：只认删除发布之后写的文件里的标记——否则长期
+      // 离线设备的旧文件会把已删下载合集的标记带给同名新建的普通合集。
+      episodeOrdered: _episodeOrderedFileTimeMax >
+          (_sawDelete ? _deletePubMaxDecision : -1),
     ));
   }
 

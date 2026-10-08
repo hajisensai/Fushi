@@ -1,6 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 
 /// 卡片悬浮抬升：鼠标移入时轻微放大，并把 hover 态交给 [builder]，由调用方决定
 /// 还要不要顺带加深阴影/描边。
@@ -39,6 +41,7 @@ class FushiHoverLift extends StatefulWidget {
     required this.builder,
     this.enabled = true,
     this.scale = kFushiHoverLiftScale,
+    this.forceLifted = false,
   });
 
   /// 拿到当前 hover 态自行构建内容。hover 态在 [enabled] 为 false 时恒为 false。
@@ -50,13 +53,44 @@ class FushiHoverLift extends StatefulWidget {
   /// 悬停时的缩放倍数。默认与游戏库既有观感一致。
   final double scale;
 
+  /// 不靠指针也保持抬升（例如桌面拖文件悬停在导入卡上：拖拽期间 [MouseRegion]
+  /// 收不到 enter/exit，由调用方从 `FushiFileDropTarget.onHoverChanged` 传进来）。
+  /// [enabled] 为 false 时无效；滚动压制不作用于它（拖拽期间不会滚动）。
+  final bool forceLifted;
+
   @override
   State<FushiHoverLift> createState() => _FushiHoverLiftState();
+
+  /// 最近一层 [FushiHoverLift] 当前是否处于抬升态（没有祖先时为 false）。
+  ///
+  /// 卡片内部的封面框（`ShelfCoverFrame`）靠它在悬停时加深阴影——各库页调用点
+  /// 的 builder 都把 hovering 位丢掉了（`(_, __) => card`），逐个改调用点要动一
+  /// 批高冲突的页面文件，故由壳自己往下广播。
+  static bool liftedOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<_FushiHoverLiftScope>()
+          ?.lifted ??
+      false;
+}
+
+/// [FushiHoverLift.liftedOf] 的载体。
+class _FushiHoverLiftScope extends InheritedWidget {
+  const _FushiHoverLiftScope({required this.lifted, required super.child});
+
+  final bool lifted;
+
+  @override
+  bool updateShouldNotify(_FushiHoverLiftScope oldWidget) =>
+      oldWidget.lifted != lifted;
 }
 
 /// 悬停缩放倍数：与 `docs/design/galgame-library-reina-visual-parity.md` 里定的
 /// 游戏库观感一致，推广到其余库页时不另立数值。
 const double kFushiHoverLiftScale = 1.05;
+
+/// Apple 设计系统下的悬停放大（macOS 26 的卡片悬停只是轻轻一抬，1.05 读作
+/// 「跳」）。只替换默认值；调用方显式传了别的 scale 时照用。
+const double kFushiAppleHoverLiftScale = 1.03;
 
 /// 悬停动画时长（游戏库既有实现的落地值）。
 const Duration kFushiHoverLiftDuration = Duration(milliseconds: 120);
@@ -100,7 +134,10 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
       vsync: this,
       duration: kFushiHoverLiftDuration,
     );
-    _curved = CurvedAnimation(parent: _lift, curve: Curves.easeOut);
+    _curved = CurvedAnimation(
+      parent: _lift,
+      curve: FushiSpringCurve.effects,
+    );
   }
 
   /// 抬升的唯一判据：指针在这张卡上，且**这一帧刚滚过**（BUG-2124）。
@@ -112,7 +149,8 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   /// 失效。而按帧位判本来就更准：ScrollStart 那一刻还没有任何位移，第一条 ScrollUpdate
   /// 才是真的滚起来了；`SmoothWheelScrollScope` 的 140ms 补间走 `DrivenScrollActivity`，
   /// 每帧都发 ScrollUpdate，同样被这一位盖住。
-  bool get _lifted => widget.enabled && _hovering && !_moved;
+  bool get _lifted =>
+      widget.enabled && (widget.forceLifted || (_hovering && !_moved));
 
   /// [immediate] 为真时同帧落位，不走缓动。
   void _syncLift({bool immediate = false}) {
@@ -181,6 +219,8 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
     if (oldWidget.enabled != widget.enabled ||
         oldWidget.scale != widget.scale) {
       _syncLift(immediate: true);
+    } else if (oldWidget.forceLifted != widget.forceLifted) {
+      _syncLift();
     }
   }
 
@@ -202,15 +242,30 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
           if (mounted) _setHover(false);
         });
       }
-      return widget.builder(context, false);
+      return _FushiHoverLiftScope(
+        lifted: false,
+        child: widget.builder(context, false),
+      );
     }
-    final Widget content = widget.builder(context, _lifted);
+    // 2026-10 交互重做：悬停抬升之外再叠按压下沉——触屏上没有 hover，卡片
+    // 此前点下去只有水波纹；按压反馈放在抬升**内层**，两者独立叠乘（桌面上
+    // 悬停 1.05 × 按下 0.97），抬升的显式 Transform 仍是本组件最外层变换。
+    final Widget content = FushiPressScale(
+      child: _FushiHoverLiftScope(
+        lifted: _lifted,
+        child: widget.builder(context, _lifted),
+      ),
+    );
+    final double scale =
+        widget.scale == kFushiHoverLiftScale && isGlassDesign(context)
+            ? kFushiAppleHoverLiftScale
+            : widget.scale;
     if (!_animate) return _wrapHover(content);
     return _wrapHover(
       AnimatedBuilder(
         animation: _curved,
         builder: (BuildContext _, Widget? child) => Transform.scale(
-          scale: 1.0 + (widget.scale - 1.0) * _curved.value,
+          scale: 1.0 + (scale - 1.0) * _curved.value,
           child: child,
         ),
         child: content,

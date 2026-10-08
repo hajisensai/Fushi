@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -13,6 +13,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:path/path.dart' as p;
+import '../../helpers/glass_unwrap.dart';
 
 class _FakeOcrService implements MangaOcrService {
   _FakeOcrService({required this.ready});
@@ -60,7 +61,7 @@ void main() {
     File(p.join(imageDir.path, 'p001.jpg')).writeAsBytesSync(<int>[1, 2, 3]);
     services = <MangaOcrLocalModel, _FakeOcrService>{
       for (final MangaOcrLocalModel model in MangaOcrLocalModel.values)
-        model: _FakeOcrService(ready: model == MangaOcrLocalModel.mangaCtc),
+        model: _FakeOcrService(ready: model == MangaOcrLocalModel.baberu),
     };
   });
 
@@ -83,9 +84,9 @@ void main() {
             home: Scaffold(
               body: MangaOcrWizardDialog(
                 engines: MangaOcrWizardEngines(
-                  service: services[MangaOcrLocalModel.mangaOcr]!,
+                  service: services[MangaOcrLocalModel.mangaCtc]!,
                   initialEnginePreference: 'local_onnx',
-                  localModel: MangaOcrLocalModel.mangaOcr,
+                  localModel: MangaOcrLocalModel.mangaCtc,
                   localModelSetter: (String value) async =>
                       storedModels.add(value),
                   modelServiceFor: (MangaOcrLocalModel model) =>
@@ -110,32 +111,39 @@ void main() {
       FilledButton,
       t.manga_ocr_wizard_run,
     );
-    expect(tester.widget<FilledButton>(run).onPressed, isNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(run)).onPressed, isNull);
     final Finder download = find.byKey(
       const ValueKey<String>('manga_ocr_wizard_model_download'),
     );
     expect(download, findsOneWidget);
 
+    // 引擎分段在测试字体下折成多行，向导内容区比 800x600 默认窗口高：下载
+    // 入口落在可滚动内容区下部、被固定的动作栏盖住，先滚到可见再点。
+    await tester.ensureVisible(download);
+    await tester.pumpAndSettle();
     await tester.tap(download);
     await tester.pump();
     expect(
       find.byKey(const ValueKey<String>('manga_ocr_wizard_model_progress')),
       findsOneWidget,
     );
-    await services[MangaOcrLocalModel.mangaOcr]!.downloads.close();
+    await services[MangaOcrLocalModel.mangaCtc]!.downloads.close();
     await tester.pumpAndSettle();
     expect(download, findsNothing);
-    expect(tester.widget<FilledButton>(run).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(run)).onPressed, isNotNull);
 
-    // 换成已下好的 CTC：写回全局模型偏好，仍停在本地引擎、可开跑。
-    await tester.tap(modelField);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.text(localModelLabel(MangaOcrLocalModel.mangaCtc)).last,
-    );
-    await tester.pumpAndSettle();
-    expect(storedModels, <String>['manga_ctc']);
-    expect(modelField, findsOneWidget);
-    expect(tester.widget<FilledButton>(run).onPressed, isNotNull);
+    // 换成已下好的 Baberu（只在 Windows 列出）：写回全局模型偏好，仍停在本地
+    // 引擎、可开跑。经典 manga-ocr 删除后五端通用的只剩 CTC 一个模型。
+    if (Platform.isWindows) {
+      await tester.tap(modelField);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.text(localModelLabel(MangaOcrLocalModel.baberu)).last,
+      );
+      await tester.pumpAndSettle();
+      expect(storedModels, <String>['baberu']);
+      expect(modelField, findsOneWidget);
+      expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(run)).onPressed, isNotNull);
+    }
   });
 }

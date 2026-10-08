@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart' show RenderStack;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/lookup/latin_word_lookup.dart';
@@ -10,7 +10,7 @@ import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 /// BUG-175 / TODO-222 要求源文本条与弹窗 headword **同级**；那个 headword 不是
 /// Flutter 排版角色，而是 WebView 里 `assets/popup/popup.css` 的
 /// `.expression { font-size: 26px }`。所以这个数字是**跨边界对齐常量**，不是本地
-/// 重新拍板的 MD3 字号——守卫用 `md3_design_system_static_test.dart` 的
+/// 重新拍板的 MD3 字号——守卫用 `m3e_design_system_static_test.dart` 的
 /// 「source lookup strip headword size stays pinned to the popup CSS」把它与
 /// popup.css 钉在一起，改哪边都会红。
 ///
@@ -99,6 +99,21 @@ SourceLookupHighlight resolveSourceLookupHighlight({
   );
 }
 
+/// 源文本条是否只是在重复结果卡的词头：整段源文本恰好被一次扫描高亮从头到尾框住
+/// （搜索框直接查一个词的常态）。此时条上没有可供 Yomitan 式扫描的余文，而结果卡
+/// 词头又把同一个词带注音大字画了一遍，宿主应收起这条。[highlight] 为 null（还没
+/// 有命中跨度）时不判重复。
+bool isSourceStripRedundant({
+  required String text,
+  required SourceLookupHighlight? highlight,
+}) {
+  if (highlight == null) return false;
+  final String trimmed = text.trim();
+  if (trimmed.isEmpty) return false;
+  return highlight.start == 0 &&
+      highlight.length >= trimmed.characters.length;
+}
+
 /// 一次「扫描查词」的发起点：交给引擎的那段串，以及它在源文本条上的起始字素簇。
 ///
 /// 源文本条上点第 n 个字，查的是「从该字到串尾」的后缀（[SourceLookupTextPanel]
@@ -146,6 +161,47 @@ class SourceLookupScan {
 
   @override
   String toString() => 'SourceLookupScan(query: $query, charIndex: $charIndex)';
+}
+
+/// 把整句 [text] 里的 UTF-16 下标 [unitIndex] 换成源文本条上的字素簇下标。
+///
+/// 源文本条渲染的是 `text.trim()` 的字素簇（见 [SourceLookupTextPanel]），而外部入口
+/// （截屏识字 / 悬浮字幕点字）报的是原生字符串里的 UTF-16 下标。越界钳到首 / 末字，
+/// 空串返回 -1。
+int sourceGraphemeIndexOfUnit(String text, int unitIndex) {
+  final String trimmed = text.trim();
+  if (trimmed.isEmpty) return -1;
+  final int leading = text.length - text.trimLeft().length;
+  final int unit = unitIndex - leading;
+  int consumed = 0;
+  int index = 0;
+  for (final String grapheme in trimmed.characters) {
+    consumed += grapheme.length;
+    if (unit < consumed) return index;
+    index++;
+  }
+  return index - 1;
+}
+
+/// 源文本条上点第 [graphemeIndex] 个字时要查的后缀与实际起点（字素簇下标）。
+///
+/// 与 [SourceLookupTextPanel] 的点字同一规则：按查词输入上限截断，拉丁单词从词首
+/// 起查（与视频字幕点词同口径）。下标越界返回 null。
+({String suffix, int start})? sourceLookupSuffixAt(
+  String text,
+  int graphemeIndex,
+) {
+  // BUG-442：与渲染同一上限——后缀从截断后的字符序列取，与可点字符一一对应。
+  final List<String> capped =
+      text.trim().characters.take(kMaxLookupInputChars).toList();
+  if (graphemeIndex < 0 || graphemeIndex >= capped.length) return null;
+  int start = graphemeIndex;
+  if (isLatinWordGrapheme(capped[start])) {
+    while (start > 0 && isLatinWordGrapheme(capped[start - 1])) {
+      start--;
+    }
+  }
+  return (suffix: capped.skip(start).join(), start: start);
 }
 
 class SourceLookupTextPanel extends StatefulWidget {
@@ -321,25 +377,14 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
     BuildContext panelContext,
     BuildContext charContext,
   ) {
-    final String trimmed = widget.text.trim();
-    // BUG-442：与 build 同一上限——查词后缀从截断后的字符序列取，避免对超长串
-    // 重新展开整个 characters（也与渲染出来的可点字符一一对应）。
-    final List<String> capped =
-        trimmed.characters.take(kMaxLookupInputChars).toList();
-    // 英文等拉丁文：点单词里任一字母都从词首起查（与视频字幕点词同口径），否则从
-    // 词中间起查只会命中单个字母。高亮锚点随之落在词首。
-    int start = index;
-    if (start >= 0 &&
-        start < capped.length &&
-        isLatinWordGrapheme(capped[start])) {
-      while (start > 0 && isLatinWordGrapheme(capped[start - 1])) {
-        start--;
-      }
-    }
+    // 英文等拉丁文：点单词里任一字母都从词首起查，高亮锚点随之落在词首。
+    final ({String suffix, int start})? scan =
+        sourceLookupSuffixAt(widget.text, index);
+    if (scan == null) return;
     widget.onLookup(
-      capped.skip(start).join(),
+      scan.suffix,
       _localRectOf(panelContext, charContext),
-      start,
+      scan.start,
     );
   }
 

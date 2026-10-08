@@ -10,10 +10,11 @@
 /// 开着的用户在第一次判定时直接记成已处理；之后才关掉浏览的人不会再被提示。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 一次判定的结果。
@@ -74,9 +75,9 @@ Future<void> showBrowseMovedNoticeDialog(BuildContext context) {
   final String browse = t.nav_browse;
   return showAppDialog<void>(
     context: context,
-    builder: (BuildContext dialogContext) => AlertDialog(
+    builder: (BuildContext dialogContext) => FushiAlertDialog(
       key: const ValueKey<String>('browse_moved_notice'),
-      icon: const Icon(Icons.explore_outlined),
+      icon: const FushiIcon(Icons.explore_outlined),
       title: Text(t.browse_moved_notice_title(browse: browse)),
       content: Text(
         t.browse_moved_notice_body(
@@ -87,7 +88,7 @@ Future<void> showBrowseMovedNoticeDialog(BuildContext context) {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           key: const ValueKey<String>('browse_moved_notice_ok'),
           onPressed: () => Navigator.of(dialogContext).pop(),
           child: Text(t.dialog_ok),

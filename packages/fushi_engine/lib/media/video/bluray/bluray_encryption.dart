@@ -2,8 +2,8 @@
 ///
 /// 加密原盘（以及把原盘逐字节拷出来的目录）的 MPLS / CLPI 是明文，标题、时长、章节
 /// 照样解析得出来；但 `STREAM/*.m2ts` 的负载是密文，交给 libmpv 只会黑屏或花屏，
-/// 没有任何可读的错误。Fushi 不做解密（不随包、不加载任何解密组件），所以在交给
-/// 内核之前先认出来，给用户一个真实的原因，而不是让他对着黑屏猜。
+/// 没有任何可读的错误。在交给内核之前先认出来，供 AacsMediaSession 准备解密输入；
+/// 本文件本身只判定封装，不读取播放配置或解密内容。
 ///
 /// 判据与 libaacs 自己决定「这个单元要不要解」同源：BDAV 按 6144 字节的 aligned
 /// unit 加密，每个单元由 32 个 192 字节的源包组成；首包 4 字节 TP_extra_header 的
@@ -22,7 +22,7 @@ const int kBlurayAlignedUnitBytes = 6144;
 const int _kSourcePacketBytes = 192;
 const int _kTsSyncByte = 0x47;
 
-/// 播放一条加密蓝光码流时抛出，供页面层给出明确原因。
+/// 兼容尚未接入解密输入的调用方；常规播放现由 AacsMediaSession 处理。
 class BlurayEncryptedStreamException implements Exception {
   const BlurayEncryptedStreamException(this.streamPath);
 

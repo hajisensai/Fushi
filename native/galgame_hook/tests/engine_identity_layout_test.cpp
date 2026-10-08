@@ -3,7 +3,7 @@
 // 必须在任何 include 之前撤销它。守卫：tests/assert_liveness_guard_test.py
 #undef NDEBUG
 
-// BGI / CatSystem2 / elf AI6 / Malie 四个引擎的身份判据（BUG-2153）。
+// BGI / CatSystem2 / elf AI6 三个引擎的磁盘结构身份判据（BUG-2153）；Malie 只留负向一档。
 //
 // 本测试要钉住的不变式只有一条：**身份由磁盘结构决定，与 exe 叫什么名字无关**。
 // 这四个引擎原来都把 exe 名当先决条件（`BGI.exe` / `cs2_open.exe` / `AI6WIN.exe` /
@@ -20,6 +20,8 @@
 #include "../hook/adapters/catsystem2_profile.h"
 #include "../hook/adapters/elf_ai6_profile.h"
 #include "../hook/adapters/malie_profile.h"
+#include "../include/launcher_layout.h"
+#include "../injector/launch_engine_signature.h"
 
 #include <cassert>
 #include <cstdio>
@@ -29,7 +31,6 @@
 
 namespace {
 
-namespace mal = ::fushi_voice_hook::malie;
 namespace ai6 = ::fushi_voice_hook::elf_ai6;
 
 std::wstring MakeTempRoot(const wchar_t* tag) {
@@ -87,52 +88,9 @@ void WriteBe32(uint8_t* out, uint32_t value) {
   out[3] = static_cast<uint8_t>(value);
 }
 
-// DecryptCfiBlock 的逆。测试自己实现逆变换有「测的是我的逆而不是真解密」的风险，
-// 所以下面 main 里第一件事就是 round-trip 自校验：Decrypt(Encrypt(x)) == x。
-// 逆推自 hook/malie_cfi.h:52-91，两步各自取逆并倒序：
-//   解密 = 先 pivot-XOR 再字变换；所以加密 = 先字逆变换再 pivot-XOR。
-void EncryptCfiBlockAtZero(const uint8_t* plain, uint8_t* encrypted) {
-  uint32_t words[4] = {};
-  std::memcpy(words, plain, sizeof(words));
-  const uint32_t block_index = 0;
-  words[0] = mal::RotateLeft(words[0],
-                             mal::kDiesAmantesCfiKey[(block_index + 12) & 0x1F] ^ 0xA5) ^
-             mal::RotateRight(mal::kDiesAmantesCfiRotateKey[0],
-                              mal::kDiesAmantesCfiKey[block_index & 0x1F] ^ 0xA5);
-  words[1] = mal::RotateRight(words[1],
-                              mal::kDiesAmantesCfiKey[(block_index + 15) & 0x1F] ^ 0xA5) ^
-             mal::RotateLeft(mal::kDiesAmantesCfiRotateKey[1],
-                             mal::kDiesAmantesCfiKey[(block_index + 3) & 0x1F] ^ 0xA5);
-  words[2] = mal::RotateLeft(words[2],
-                             mal::kDiesAmantesCfiKey[(block_index + 18) & 0x1F] ^ 0xA5) ^
-             mal::RotateRight(mal::kDiesAmantesCfiRotateKey[2],
-                              mal::kDiesAmantesCfiKey[(block_index + 6) & 0x1F] ^ 0xA5);
-  words[3] = mal::RotateRight(words[3],
-                              mal::kDiesAmantesCfiKey[(block_index + 21) & 0x1F] ^ 0xA5) ^
-             mal::RotateLeft(mal::kDiesAmantesCfiRotateKey[3],
-                             mal::kDiesAmantesCfiKey[(block_index + 9) & 0x1F] ^ 0xA5);
-  uint8_t pivoted[16] = {};
-  std::memcpy(pivoted, words, sizeof(words));
-  // block_offset 0 ⇒ pivot_index 0，pivot 值在两步之间保持不变。
-  const uint8_t pivot = pivoted[0];
-  encrypted[0] = pivoted[0];
-  for (uint32_t i = 1; i < 16; ++i) encrypted[i] = pivoted[i] ^ pivot;
-}
-
 }  // namespace
 
 int main() {
-  // ── 0. 先自校验 Malie CFI 逆变换，后面所有 Malie 正向夹具都建在它之上 ──────────
-  {
-    uint8_t plain[16] = {'L', 'I', 'B', 'P', 1, 2, 3, 4,
-                         5,   6,   7,   8,   9, 10, 11, 12};
-    uint8_t encrypted[16] = {};
-    uint8_t roundtrip[16] = {};
-    EncryptCfiBlockAtZero(plain, encrypted);
-    mal::DecryptCfiBlock(0, encrypted, roundtrip);
-    assert(std::memcmp(plain, roundtrip, sizeof(plain)) == 0);
-  }
-
   // ── 1. BGI / Ethornell：`*.arc` 是自洽的 BURIKO ARC20 或 PackFile 索引 ───────
   // 两代格式各一份：1 条目、成员 8 字节、首条目 offset 0。
   const auto bgi_archive = [](bool arc20) {
@@ -214,6 +172,61 @@ int main() {
     assert(!fushi_voice_hook::MatchesCatSystem2Layout(root));
     RemoveTree(root);
   }
+  // BUG-2930：体验版「根目录 WCBOOTMENU 启动器 + data\cs2.exe」。注入器的启动器判据
+  // （LooksLikeLauncherLayout + DirectoryHasEngineSignature）必须靠同一份 CatSystem2
+  // 判据在 data\ 认出真游戏；根目录本身就是 CatSystem2（Grisaia 形态）时不算启动器。
+  {
+    const std::wstring root = MakeTempRoot(L"cs2_bootmenu");
+    const std::wstring data = root + L"\\data";
+    assert(CreateDirectoryW(data.c_str(), nullptr));
+    assert(CreateDirectoryW((data + L"\\config").c_str(), nullptr));
+    const char xml[] = "<?xml version=\"1.0\"?><startup/>";
+    WriteBytes(data + L"\\config\\startup.xml", xml, sizeof(xml) - 1);
+    char kif[32] = {0};
+    std::memcpy(kif, ::fushi_voice_hook::catsystem2::kIntSignature,
+                ::fushi_voice_hook::catsystem2::kIntSignatureBytes);
+    WriteBytes(data + L"\\scene.int", kif, sizeof(kif));
+    const char stub[] = "MZ";
+    WriteBytes(root + L"\\bootmenu.exe", stub, sizeof(stub) - 1);
+    assert(CreateDirectoryW((root + L"\\manual").c_str(), nullptr));
+
+    // 注入器实际调用的那一个函数，不是 MatchesCatSystem2Layout 本身：注入器漏接
+    // CatSystem2 这一条时这里必须变红。
+    auto is_game_dir = [](const std::wstring& dir) {
+      return fushi_voice_hook::DirectoryHasEngineSignature(dir);
+    };
+    auto list_dirs = [](const std::wstring& dir) {
+      std::vector<std::wstring> out;
+      WIN32_FIND_DATAW found = {};
+      HANDLE search = FindFirstFileW((dir + L"\\*").c_str(), &found);
+      if (search == INVALID_HANDLE_VALUE) return out;
+      do {
+        const std::wstring name = found.cFileName;
+        if (name == L"." || name == L"..") continue;
+        if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) continue;
+        out.push_back(dir + L"\\" + name);
+      } while (FindNextFileW(search, &found));
+      FindClose(search);
+      return out;
+    };
+    assert(fushi_voice_hook::LooksLikeLauncherLayout(
+        root, fushi_voice_hook::kLauncherLayoutMaxDepth, is_game_dir,
+        list_dirs));
+    // 子目录只有 startup.xml、没有 KIF 归档：不是 CatSystem2，启动器判据随之失效。
+    DeleteFileW((data + L"\\scene.int").c_str());
+    assert(!fushi_voice_hook::LooksLikeLauncherLayout(
+        root, fushi_voice_hook::kLauncherLayoutMaxDepth, is_game_dir,
+        list_dirs));
+    WriteBytes(data + L"\\scene.int", kif, sizeof(kif));
+    // 根目录自己就带签名（cs2.exe 与 KIF 同级）：被启动的就是游戏，不是启动器。
+    assert(CreateDirectoryW((root + L"\\config").c_str(), nullptr));
+    WriteBytes(root + L"\\config\\startup.xml", xml, sizeof(xml) - 1);
+    WriteBytes(root + L"\\scene.int", kif, sizeof(kif));
+    assert(!fushi_voice_hook::LooksLikeLauncherLayout(
+        root, fushi_voice_hook::kLauncherLayoutMaxDepth, is_game_dir,
+        list_dirs));
+    RemoveTree(root);
+  }
   assert(!fushi_voice_hook::MatchesCatSystem2Profile(nullptr));
 
   // ── 3. elf AI6：voice.arc 索引自洽（首条目 packed==unpacked 且 offset==索引末尾）─
@@ -242,38 +255,9 @@ int main() {
   }
   assert(!fushi_voice_hook::MatchesElfAi6Profile(nullptr));
 
-  // ── 4. Malie：data2.dat 头 16 字节 CFI 解块后是自洽 LIBP 头 ──────────────────
-  {
-    const std::wstring root = MakeTempRoot(L"malie_ok");
-    uint8_t plain[16] = {0};
-    std::memcpy(plain, "LIBP", 4);
-    WriteLe32(plain + 4, 2);  // entry_count
-    WriteLe32(plain + 8, 1);  // offset_count（必须 <= entry_count）
-    uint8_t header[16] = {};
-    EncryptCfiBlockAtZero(plain, header);
-    // index_bytes = 16 + 2*32 + 1*4 = 84；data_base = AlignUp(84, 4096) = 4096，
-    // 两者都必须 <= 文件大小，所以夹具至少 4096 字节。
-    std::vector<uint8_t> archive(8192, 0);
-    std::memcpy(archive.data(), header, sizeof(header));
-    WriteBytes(root + L"\\data2.dat", archive.data(), archive.size());
-    // 目录里没有 malie.exe，照样认得出来。
-    assert(fushi_voice_hook::MatchesMalieLayout(root));
-
-    // 文件太小 → data_base 越界 → 不匹配（头字节完全相同，只有大小变了）。
-    WriteBytes(root + L"\\data2.dat", archive.data(), 1024);
-    assert(!fushi_voice_hook::MatchesMalieLayout(root));
-    RemoveTree(root);
-  }
-  {
-    const std::wstring root = MakeTempRoot(L"malie_name_only");
-    // 只有 malie.exe 和一个解不出 LIBP 的 data2.dat → 名字不是充分条件。
-    const char stub[8] = {'M', 'Z', 0, 0, 0, 0, 0, 0};
-    WriteBytes(root + L"\\malie.exe", stub, sizeof(stub));
-    std::vector<uint8_t> junk(8192, 0x5A);
-    WriteBytes(root + L"\\data2.dat", junk.data(), junk.size());
-    assert(!fushi_voice_hook::MatchesMalieLayout(root));
-    RemoveTree(root);
-  }
+  // ── 4. Malie：身份不看磁盘，看主模块里能否从结构解析出 "CFI" I/O scheme 表
+  //（hook/adapters/malie_engine_io_core.h；正反夹具在 tests/malie_engine_io_test.cpp）。
+  // 测试进程自己的映像没有这张表 → 不得误认领。
   assert(!fushi_voice_hook::MatchesMalieProfile(nullptr));
 
   std::printf("engine_identity_layout_test: ok\n");

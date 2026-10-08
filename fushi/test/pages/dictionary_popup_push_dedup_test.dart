@@ -1,6 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 // ignore: depend_on_referenced_packages  — 测试桩需直接实现该平台接口（flutter_inappwebview 的传递依赖）
 import 'package:flutter_inappwebview_platform_interface/flutter_inappwebview_platform_interface.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,8 +9,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
 import '../helpers/test_platform_services.dart';
@@ -205,6 +213,195 @@ void main() {
     });
   });
 
+  group('popup document reload', () {
+    testWidgets('late loadStop from a replaced controller is ignored', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        wrapPopup(
+          appModel: PushDedupAppModel(),
+          popup: DictionaryPopupWebView(result: makeResult('語')),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(
+        harness.hasDistinctControllerWrappers,
+        isTrue,
+        reason: 'Windows creates distinct wrappers around one platform',
+      );
+      expect(harness.pushCount, 1);
+      await harness.firePopupRendered();
+      final VoidCallback oldLoadStop = harness.captureLoadStop();
+
+      harness.replaceController();
+      harness.fireLoadStart();
+      oldLoadStop();
+      await tester.pump();
+      await tester.pump();
+      expect(
+        harness.pushCount,
+        1,
+        reason: 'an old native view cannot complete the replacement load',
+      );
+
+      harness.fireLoadStop();
+      await tester.pump();
+      await tester.pump();
+      expect(harness.pushCount, 2);
+      await harness.firePopupRendered();
+      oldLoadStop();
+      await tester.pump();
+      await tester.pump();
+      expect(
+        harness.pushCount,
+        2,
+        reason: 'a late old loadStop cannot invalidate the current document',
+      );
+      final DictionaryPopupWebViewState state = tester
+          .state<DictionaryPopupWebViewState>(
+            find.byType(DictionaryPopupWebView),
+          );
+      expect(state.refreshCurrentResult(), isFalse);
+    });
+
+    testWidgets(
+      'rendered result reload sends full entries, static and extras',
+      (WidgetTester tester) async {
+        await tester.pumpWidget(
+          wrapPopup(
+            appModel: PushDedupAppModel(),
+            popup: DictionaryPopupWebView(result: makeResult('語')),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        await harness.firePopupRendered();
+        expect(harness.pushCount, 1);
+        final int? oldToken = harness.lastRenderToken;
+
+        harness.fireLoadStart();
+        harness.fireLoadStop();
+        await tester.pump();
+        await tester.pump();
+
+        expect(
+          harness.pushCount,
+          2,
+          reason: 'the same Dart result belongs to a new, empty document',
+        );
+        final String script = harness.scripts.lastWhere(
+          (String s) => s.contains('window.lookupEntries'),
+        );
+        for (final String marker in <String>[
+          '語',
+          'window.dictionaryStyles',
+          'window.i18nCtx',
+          'window.__fushiResetPopupScroll =',
+          'window.renderPopup();',
+        ]) {
+          expect(script, contains(marker));
+        }
+        final DictionaryPopupWebViewState state = tester
+            .state<DictionaryPopupWebViewState>(
+              find.byType(DictionaryPopupWebView),
+            );
+        await harness.firePopupRendered(token: oldToken);
+        expect(
+          state.refreshCurrentResult(),
+          isTrue,
+          reason:
+              'the old document render callback cannot complete the new one',
+        );
+        await harness.firePopupRendered();
+        expect(state.refreshCurrentResult(), isFalse);
+        expect(harness.pushCount, 2);
+      },
+    );
+
+    testWidgets('result changes during navigation wait for the new document', (
+      WidgetTester tester,
+    ) async {
+      final GlobalKey<ReorderProbeState> probe = GlobalKey<ReorderProbeState>();
+      await tester.pumpWidget(
+        wrapPopup(
+          appModel: PushDedupAppModel(),
+          popup: ReorderProbe(key: probe, initial: makeResult('語')),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await harness.firePopupRendered();
+      expect(harness.pushCount, 1);
+
+      harness.fireLoadStart();
+      probe.currentState!.show(makeResult('途中'));
+      await tester.pump();
+      probe.currentState!.show(makeResult('最新'));
+      await tester.pump();
+      expect(
+        harness.pushCount,
+        1,
+        reason: 'no result may be injected into a document being replaced',
+      );
+
+      harness.fireLoadStop();
+      await tester.pump();
+      await tester.pump();
+      expect(harness.pushCount, 2);
+      final String script = harness.scripts.lastWhere(
+        (String s) => s.contains('window.lookupEntries'),
+      );
+      expect(script, contains('最新'));
+      expect(script, isNot(contains('途中')));
+      expect(script, contains('window.renderPopup();'));
+    });
+
+    for (final bool replaceController in <bool>[false, true]) {
+      testWidgets(
+        'stale bootstrap after ${replaceController ? "controller replacement" : "navigation"} '
+        'cannot ready the new document',
+        (WidgetTester tester) async {
+          harness.blockViewportInjection = true;
+          await tester.pumpWidget(
+            wrapPopup(
+              appModel: PushDedupAppModel(),
+              popup: DictionaryPopupWebView(result: makeResult('語')),
+            ),
+          );
+          await tester.pump();
+          await tester.pump();
+          final Completer<dynamic>? pending = harness.pendingViewportInjection;
+          expect(pending, isNotNull);
+          expect(harness.pushCount, 0);
+
+          if (replaceController) harness.replaceController();
+          harness.fireLoadStart();
+          harness.blockViewportInjection = false;
+          pending!.complete();
+          await tester.pump();
+          expect(
+            harness.pushCount,
+            0,
+            reason: 'a prior bootstrap completion is not the new loadStop',
+          );
+
+          harness.fireLoadStop();
+          await tester.pump();
+          await tester.pump();
+          expect(harness.pushCount, 1);
+          expect(
+            harness.scripts.lastWhere(
+              (String s) => s.contains('window.lookupEntries'),
+            ),
+            contains('window.renderPopup();'),
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  });
+
   group('BUG-712 ③ static settings payload dedup', () {
     testWidgets(
         'a repeat push with unchanged settings omits the static payload '
@@ -358,14 +555,14 @@ void main() {
       hostKey.currentState!.showDeferredPopup();
       await tester.pump();
       // 本帧确实架过盖板（渲染进树），post-frame 已拿到 false 并清态……
-      expect(find.byType(LinearProgressIndicator), findsOneWidget,
+      expect(_activeLoadingCover(), findsOneWidget,
           reason: '盖板在探询帧内确实架起过（结构没被绕开）');
       await tester.pump();
 
       // ……下一帧（零时长）盖板必须已撤，弹窗可见——不等 1.8s failsafe。
       final stack = hostKey.currentState!.debugPopupStack;
       expect(stack.single.visible, isTrue);
-      expect(find.byType(LinearProgressIndicator), findsNothing,
+      expect(_activeLoadingCover(), findsNothing,
           reason: 'refreshCurrentResult 返回 false（已渲染完成、信号不会再来）时，'
               '宿主必须立即走 rendered 路径撤盖板，而不是空等 failsafe 超时');
       expect(harness.pushCount, seedPushes + 1, reason: '兜底探询对已渲染结果零重推');
@@ -373,6 +570,203 @@ void main() {
       // pending timer 失败——测试干净结束本身就是「不等 failsafe」的证据。
     });
   });
+
+  group('PR#1913 按句意挑词条：只换顺序，不全量重渲染', () {
+    /// 某一刻之后才出现的脚本（重排 / 重置都只看这一段）。
+    List<String> scriptsSince(int index) => harness.scripts.sublist(index);
+
+    testWidgets(
+        'reorderOf 指向已推送的上一份结果：只发 fushiReorderPopupEntries，'
+        '不 renderPopup、不滚回顶、不清已选释义、不归零句子镜像',
+        (WidgetTester tester) async {
+      final DictionarySearchResult base = makeKigen();
+      final GlobalKey<ReorderProbeState> probe = GlobalKey<ReorderProbeState>();
+      await tester.pumpWidget(
+        wrapPopup(
+          appModel: PushDedupAppModel(),
+          popup: ReorderProbe(key: probe, initial: base),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(harness.pushCount, 1);
+      await harness.firePopupRendered();
+      final DictionaryPopupWebViewState state =
+          tester.state<DictionaryPopupWebViewState>(
+              find.byType(DictionaryPopupWebView));
+      expect(state.refreshCurrentResult(), isFalse, reason: '前置：已渲染完成');
+
+      final int mark = harness.scripts.length;
+      probe.currentState!.show(swapKigen(base), reorderOf: base);
+      await tester.pump();
+
+      expect(harness.pushCount, 1, reason: '换序不得走全量推送');
+      expect(harness.renderPopupCount, 1);
+      final List<String> after = scriptsSince(mark);
+      final List<String> reorders = after
+          .where((String s) => s.contains('fushiReorderPopupEntries'))
+          .toList();
+      expect(reorders, hasLength(1));
+      expect(reorders.single.indexOf('機嫌'),
+          lessThan(reorders.single.indexOf('期限')),
+          reason: '新顺序把 AI 选中的词头排在最前');
+      for (final String marker in <String>[
+        'resetSentenceContextMirror',
+        'resetSelectedDictionaries',
+        '__fushiResetPopupScroll()',
+        'window.renderPopup()',
+      ]) {
+        expect(after.any((String s) => s.contains(marker)), isFalse,
+            reason: '换序不得触发 $marker');
+      }
+      expect(state.refreshCurrentResult(), isFalse,
+          reason: '换序后的结果视同已渲染：宿主不得因此补推一次全量');
+      expect(harness.pushCount, 1);
+    });
+
+    testWidgets('reorderOf 不是页面上那一份：照常全量推送（宁可多渲染，不吞内容）',
+        (WidgetTester tester) async {
+      final DictionarySearchResult base = makeKigen();
+      final GlobalKey<ReorderProbeState> probe = GlobalKey<ReorderProbeState>();
+      await tester.pumpWidget(
+        wrapPopup(
+          appModel: PushDedupAppModel(),
+          popup: ReorderProbe(key: probe, initial: base),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await harness.firePopupRendered();
+
+      final int mark = harness.scripts.length;
+      probe.currentState!.show(swapKigen(base), reorderOf: makeKigen());
+      await tester.pump();
+      expect(harness.pushCount, 2);
+      expect(
+        scriptsSince(mark)
+            .any((String s) => s.contains('fushiReorderPopupEntries')),
+        isFalse,
+      );
+    });
+
+    testWidgets(
+        '宿主：AI 选中第 2 个词头后弹窗只挪卡片，层记下 reorderBase，'
+        '查词缓存那份结果不动', (WidgetTester tester) async {
+      final PushDedupAppModel appModel = PushDedupAppModel(
+        results: makeKigen().entries,
+      );
+      final hostKey = GlobalKey<DedupHostPageState>();
+      await tester.pumpWidget(
+        buildDedupHostApp(appModel: appModel, hostKey: hostKey),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+      final DedupHostPageState host = hostKey.currentState!;
+      int calls = 0;
+      host
+        ..debugSentence = 'キゲンの悪いうみな'
+        ..debugLookupAiProvider = (() => AiProviderConfig(
+              id: 'p',
+              presetId: kAiCustomPresetId,
+              name: 'p',
+              baseUrl: Uri.parse('https://example.com/v1'),
+              apiKey: 'k',
+              model: 'm',
+            ))
+        ..debugLookupAiClientFactory = () => AiChatClient(
+              client: MockClient((http.Request request) async {
+                calls++;
+                return http.Response(
+                  jsonEncode(<String, Object?>{
+                    'choices': <Object?>[
+                      <String, Object?>{
+                        'message': <String, Object?>{
+                          'content': '{"choice": 2}',
+                        },
+                      },
+                    ],
+                  }),
+                  200,
+                  headers: <String, String>{
+                    'content-type': 'application/json',
+                  },
+                );
+              }),
+            );
+      await host.deferredSearch('キゲン');
+      await tester.pump();
+      await harness.firePopupRendered();
+      host.showDeferredPopup();
+      await tester.pump();
+      await tester.pump();
+      final int pushes = harness.pushCount;
+      final int mark = harness.scripts.length;
+
+      final DictionaryPopupEntry entry = host.debugPopupEntries.last;
+      final DictionarySearchResult before = entry.result!;
+      await host.aiPickLookupEntry(entry);
+      await tester.pump();
+
+      expect(calls, 1);
+      expect(entry.result!.entries.first.word, '機嫌');
+      expect(identical(entry.reorderBase, before), isTrue,
+          reason: '换序必须走 reorderResult，而不是 fillResult 全量换结果');
+      expect(before.entries.first.word, '期限', reason: '查词缓存那份不动');
+      expect(harness.pushCount, pushes, reason: '换序零全量推送');
+      final List<String> after = scriptsSince(mark);
+      expect(after.any((String s) => s.contains('fushiReorderPopupEntries')),
+          isTrue);
+      expect(after.any((String s) => s.contains('resetSentenceContextMirror')),
+          isFalse,
+          reason: '句子镜像不归零——宿主制卡草稿没清，两边必须一致（BUG-297）');
+    });
+  });
+}
+
+DictionarySearchResult makeKigen() => DictionarySearchResult(
+      searchTerm: 'キゲン',
+      bestLength: 3,
+      entries: <DictionaryEntry>[
+        DictionaryEntry(
+            dictionaryName: 'd', word: '期限', reading: 'きげん', meaning: '"a"'),
+        DictionaryEntry(
+            dictionaryName: 'd', word: '機嫌', reading: 'きげん', meaning: '"b"'),
+      ],
+    );
+
+/// [base] 的换序（第 2 个词头挪到最前）——与 promoteAiLookupCandidate 产物同形。
+DictionarySearchResult swapKigen(DictionarySearchResult base) =>
+    DictionarySearchResult(
+      searchTerm: base.searchTerm,
+      bestLength: base.bestLength,
+      entries: <DictionaryEntry>[base.entries[1], base.entries[0]],
+    );
+
+/// 可换 result / reorderOf 的宿主（重建 widget，真走 didUpdateWidget）。
+class ReorderProbe extends StatefulWidget {
+  const ReorderProbe({super.key, required this.initial});
+  final DictionarySearchResult initial;
+
+  @override
+  State<ReorderProbe> createState() => ReorderProbeState();
+}
+
+class ReorderProbeState extends State<ReorderProbe> {
+  late DictionarySearchResult _result = widget.initial;
+  DictionarySearchResult? _reorderOf;
+
+  void show(DictionarySearchResult result,
+      {DictionarySearchResult? reorderOf}) {
+    setState(() {
+      _result = result;
+      _reorderOf = reorderOf;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      DictionaryPopupWebView(result: _result, reorderOf: _reorderOf);
 }
 
 // ───────────────────────── 记录桩（可数注入的假 WebView 平台） ─────────────────────────
@@ -386,6 +780,44 @@ class RecordingWebViewHarness {
   bool blockViewportInjection = false;
   bool failViewportInjection = false;
   Completer<dynamic>? pendingViewportInjection;
+
+  late PlatformInAppWebViewWidgetCreationParams _params;
+  dynamic _createdController;
+  dynamic _controller;
+
+  bool get hasDistinctControllerWrappers =>
+      !identical(_createdController, _controller);
+
+  /// Keep the same platform view while replaying document navigation events.
+  void attach(PlatformInAppWebViewWidgetCreationParams params) {
+    _params = params;
+    replaceController();
+    fireLoadStart();
+    fireLoadStop();
+  }
+
+  void replaceController() {
+    final _RecordingPlatformController platformController =
+        _RecordingPlatformController(this);
+    // Windows caches a wrapper for events in the platform controller, then
+    // creates another wrapper for onWebViewCreated. Both own the same platform.
+    _controller =
+        _params.controllerFromPlatform?.call(platformController) ??
+        platformController;
+    _createdController =
+        _params.controllerFromPlatform?.call(platformController) ??
+        platformController;
+    _params.onWebViewCreated?.call(_createdController);
+  }
+
+  void fireLoadStart() => _params.onLoadStart?.call(_controller, null);
+
+  void fireLoadStop() => _params.onLoadStop?.call(_controller, null);
+
+  VoidCallback captureLoadStop() {
+    final dynamic controller = _controller;
+    return () => _params.onLoadStop?.call(controller, null);
+  }
 
   static final RegExp _tokenPattern =
       RegExp(r'window\.__fushiRenderToken = (\d+);');
@@ -479,14 +911,7 @@ class _RecordingWebViewLifecycleState
   void _fireLifecycle() {
     if (!mounted || _fired) return;
     _fired = true;
-    final _RecordingPlatformController platformController =
-        _RecordingPlatformController(widget.harness);
-    // 与真实平台实现一致：经 controllerFromPlatform 包成 app 侧 controller 再回调。
-    final dynamic controller =
-        widget.params.controllerFromPlatform?.call(platformController) ??
-            platformController;
-    widget.params.onWebViewCreated?.call(controller);
-    widget.params.onLoadStop?.call(controller, null);
+    widget.harness.attach(widget.params);
   }
 
   @override
@@ -576,6 +1001,8 @@ class PushDedupAppModel extends AppModel {
   @override
   bool get compactGlossaries => false;
   @override
+  bool get dictionaryUnifiedStyle => true;
+  @override
   int get popupDictionaryColumns => 1;
   @override
   int get popupAutoExpandDictionaries => 0;
@@ -662,6 +1089,16 @@ class DedupHostPage extends BaseSourcePage {
 }
 
 class DedupHostPageState extends BaseSourcePageState<DedupHostPage> {
+  /// 查词所在句（null = 走基类默认：读当前媒体源，本 harness 里为空）。
+  String? debugSentence;
+
+  @override
+  FavoriteLookupContext? get favoriteLookupContext {
+    final String? sentence = debugSentence;
+    if (sentence == null) return super.favoriteLookupContext;
+    return FavoriteLookupContext(sentence: sentence);
+  }
+
   /// 阅读器查词路径：先查词填充（隐藏），高亮完成后再 showDeferredPopup reveal。
   Future<void> deferredSearch(String term) => searchDictionaryResult(
         searchTerm: term,
@@ -694,3 +1131,8 @@ Widget buildDedupHostApp({
     ),
   );
 }
+
+/// 查词浮层的加载盖板（[FushiDeferredLoading]）当前是否在盖。
+Finder _activeLoadingCover() => find.byWidgetPredicate(
+  (Widget w) => w is FushiDeferredLoading && w.active,
+);

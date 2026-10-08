@@ -22,11 +22,25 @@ void main() {
     expect(body, contains('requestAnimationFrame(fn)'));
   });
 
-  test('四条置旗后延帧清旗的重锚路径都经 _reanchorFrame，不得裸用 rAF', () {
+  test('分页共享队列与连续重锚都经 _reanchorFrame，不得裸用 rAF', () {
     expect(
       'this._reanchorFrame(function() {'.allMatches(src).length,
-      greaterThanOrEqualTo(4),
-      reason: '分页 / 连续 × restoreToCharOffset / updatePageSize 四处',
+      greaterThanOrEqualTo(3),
+      reason: '分页 inset/尺寸共用一个队列；连续仍有两条独立路径',
+    );
+    final int queueStart = src.indexOf(
+      '  _queueGeometryReanchor: function(anchor) {',
+    );
+    expect(queueStart, greaterThanOrEqualTo(0));
+    final String queue = src.substring(
+      queueStart,
+      src.indexOf('\n  },\n', queueStart),
+    );
+    expect(queue, contains('this._reanchorFrame(function() {'));
+    expect(
+      'this._queueGeometryReanchor(anchor);'.allMatches(src).length,
+      2,
+      reason: '分页 inset 与尺寸必须都通过可见/隐藏帧队列',
     );
     // 「rAF 回调里 finally 清旗」的旧形状不得回潮：清旗只能在 _reanchorFrame 调度的
     // 回调里。
@@ -42,12 +56,9 @@ void main() {
       markTestSkipped('node not found on PATH; skipping JS behavior execution');
       return;
     }
-    final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[
-          'test/reader/reader_reanchor_hidden_fallback_behavior_test.js',
-        ],
-        workingDirectory: Directory.current.path);
+    final ProcessResult result = await Process.run(nodeExe, <String>[
+      'test/reader/reader_reanchor_hidden_fallback_behavior_test.js',
+    ], workingDirectory: Directory.current.path);
     expect(
       result.exitCode,
       0,
@@ -61,8 +72,9 @@ void main() {
 }
 
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

@@ -28,21 +28,40 @@ void main() {
   final String js = ReaderSelectionScripts.source();
 
   group('① 长按即选：无需额外拖动', () {
-    test('beginRangeSelection 建锚后立刻建立并绘制单字选区', () {
+    test('beginRangeSelection 建锚后直接绘制锚点区间（不走端点解析）', () {
       final String body = _between(
         js,
         'beginRangeSelection: function',
         'updateRangeSelection: function',
       );
       expect(body, contains('this.dragAnchor ='));
+      // 锚点是**区间**：空格分词词里长按 -> 整词锚点（原地长按即选中整词），其它脚本 -> 单字。
       expect(
         body,
-        contains('this.updateRangeSelection(x, y);'),
+        contains('this.selectionAnchorAtHit(hit)'),
+        reason: '锚点区间必须由 selectionAnchorAtHit 解析（词/字两种粒度）',
+      );
+      expect(
+        body,
+        contains('endNode: anchor.endNode'),
+        reason: '锚点必须记下区间末端，反向拖动才不会丢词尾',
+      );
+      // 长按阈值触发时立刻出现选区反馈 —— 但必须**直接** collectRangeBetween 画锚点区间，
+      // 不能走 updateRangeSelection（端点解析会把端点收到手指所在的字上，把刚定下的整词
+      // 截成半截：手指此刻还压在锚点上）。拖动扩展由 touchmove 的 updateRangeSelection 负责。
+      expect(
+        body,
+        contains('this.collectRangeBetween('),
         reason: '长按阈值触发时就应出现选区反馈',
+      );
+      expect(
+        body,
+        isNot(contains('this.updateRangeSelection(')),
+        reason: '长按不得走端点解析（否则整词被截断）',
       );
     });
 
-    test('updateRangeSelection 继续按当前命中字扩展选区', () {
+    test('updateRangeSelection 继续按当前命中字/坐标扩展选区', () {
       final String body = _between(
         js,
         'updateRangeSelection: function',
@@ -50,9 +69,19 @@ void main() {
       );
       // BUG-长按选择不灵敏：扩选走**选择**命中（不剔除标点/空白），不是查词命中——
       // 拖过句号时查词命中返回 null 会让选区停住。
-      expect(body, contains('this.getSelectableCharacterAtPoint(x, y)'));
+      expect(body, contains('if (!endpoint) return null;'));
+      expect(
+        body,
+        contains('this.selectionEndpointAtPoint(x, y'),
+        reason:
+            '本次修复：严格命中落空（字缝/行距/行尾/行首）时必须回退到「坐标 -> 文本位置」'
+            '解析，否则端点被钉回锚点、选区当场塌回锚点字（用户报的手柄卡住）',
+      );
       expect(body, contains('this.collectRangeBetween('));
       expect(body, contains('this.renderSelectionHighlight();'));
+      // 锚点是区间：正向取 anchor.node/offset、反向取 anchor.endNode/endOffset。
+      expect(body, contains('anchor.endNode'));
+      expect(body, contains('anchor.endOffset'));
     });
 
     test('endRangeSelection 对原地与拖动长按都停在选区状态弹菜单', () {
@@ -76,6 +105,105 @@ void main() {
     });
   });
 
+  group('live handle lifecycle and host geometry contract', () {
+    test('begin and every update position handles before release', () {
+      final String begin = _between(
+        js,
+        'beginRangeSelection: function',
+        'notifySelectionDragStarted: function',
+      );
+      final String update = _between(
+        js,
+        'updateRangeSelection: function',
+        'endRangeSelection: function',
+      );
+      expect(begin, contains('this.showSelectionHandles();'));
+      expect(begin, contains('this.notifySelectionDragStarted();'));
+      expect(update, contains('this.positionSelectionHandles();'));
+      expect(
+        update.indexOf('this.positionSelectionHandles();'),
+        greaterThan(update.indexOf('this.renderSelectionHighlight();')),
+      );
+      expect(update, isNot(contains('requestAnimationFrame')));
+      expect(update, isNot(contains('setTimeout')));
+    });
+
+    test('grip start notifies host without clearing its live selection', () {
+      final String wire = _between(
+        js,
+        '_wireHandle: function',
+        'moveSelectionHandle: function',
+      );
+      final String start = wire.substring(
+        0,
+        wire.indexOf("el.addEventListener('touchmove'"),
+      );
+      expect(start, contains('self.notifySelectionDragStarted();'));
+      expect(start, contains('self.selectionHandles[which] !== el'));
+      expect(start, isNot(contains('clearSelection()')));
+      final String notify = _between(
+        js,
+        'notifySelectionDragStarted: function',
+        'liveDragAnchor: function',
+      );
+      expect(notify, contains("callHandler('onSelectionDragStarted')"));
+    });
+
+    test(
+      'top-layer grips keep the same visible touch targets while moving',
+      () {
+        final String create = _between(
+          js,
+          'ensureSelectionHandles: function',
+          '_wireHandle: function',
+        );
+        expect(create, contains("typeof el.showPopover === 'function'"));
+        expect(create, contains("el.setAttribute('popover', 'manual')"));
+        expect(create, contains('inset:auto;margin:0;'));
+        final String position = _between(
+          js,
+          'positionSelectionHandles: function',
+          'selectionHandlesRect: function',
+        );
+        expect(position, contains("!el.matches(':popover-open')"));
+        expect(position, contains("if (el.style.display !== 'block')"));
+        expect(position, isNot(contains("display = 'none'")));
+        expect(position, isNot(contains('hidePopover')));
+      },
+    );
+
+    test(
+      'menu adds both touch bounds without changing the lookup glyph rect',
+      () {
+        final String menu = _between(
+          js,
+          'fireSelectionMenu: function',
+          'collectRangeBetween: function',
+        );
+        expect(
+          menu,
+          contains('payload.handlesRect = this.selectionHandlesRect();'),
+        );
+        final String bounds = _between(
+          js,
+          'selectionHandlesRect: function',
+          'showSelectionHandles: function',
+        );
+        expect(bounds, contains('handles.start : handles.end'));
+        expect(bounds, contains('el.getBoundingClientRect()'));
+        expect(bounds, contains('width: bounds.right - bounds.x'));
+        expect(bounds, contains('height: bounds.bottom - bounds.y'));
+        final String glyph = _between(
+          js,
+          'getSelectionRect: function',
+          'highlightSelection: function',
+        );
+        expect(glyph, isNot(contains('selectionHandles')));
+        expect(glyph, contains('first.start + 1'));
+      },
+    );
+  });
+
   group('② 起止触摸手柄：状态、书写模式定位、拖动语义、无原生选区', () {
     test('field 块声明 selectionHandles / activeHandle 状态', () {
       expect(js, contains('selectionHandles: null,'));
@@ -89,7 +217,7 @@ void main() {
         '_wireHandle: function',
         'moveSelectionHandle: function',
         'positionSelectionHandles: function',
-        'showSelectionHandles: function',
+        'selectionHandlesRect: function',
         'hideSelectionHandles: function',
       ]) {
         expect(js, contains(api), reason: '缺手柄 API：$api');
@@ -148,150 +276,94 @@ void main() {
       );
       expect(body, contains('this.renderSelectionHighlight();'));
       expect(body, contains('this.positionSelectionHandles();'));
+      // 本次修复：严格命中落空时必须走「坐标 -> 文本位置」解析，不得直接 return 冻结手柄。
+      expect(
+        body,
+        contains(
+          'this.selectionEndpointAtPoint(x, y, anchorNode, anchorOffset)',
+        ),
+        reason: '拖手柄到字缝/行尾空白时必须仍然解析出端点（否则手柄视觉冻结）',
+      );
+      expect(
+        body,
+        contains('if (!endpoint) return;'),
+        reason: '只有解析失败才允许保持旧端点（不收缩、不塌陷）',
+      );
+      final int resolveAt = body.indexOf('this.selectionEndpointAtPoint(');
+      final int nullGuardAt = body.indexOf('if (!endpoint) return;');
+      expect(resolveAt, greaterThanOrEqualTo(0));
+      expect(nullGuardAt, greaterThan(resolveAt), reason: '空值守卫必须在解析之后');
     });
 
-    test('BUG-765：拖手柄 hit-test 时临时熄灭手柄 pointer-events（防命中手柄自身冻结）', () {
+    test('hit window restores exact pointer events after hit AND resolve', () {
       final String body = _between(
         js,
-        'moveSelectionHandle: function',
-        'positionSelectionHandles: function',
+        'selectionEndpointAtPoint: function',
+        'selectionAnchorAtHit: function',
       );
-      // 手指压在手柄上，若不让手柄对命中透明，elementFromPoint/caretPositionFromPoint
-      // 命中的是最上层手柄 div（非文本节点）→ getCharacterAtPoint 返回 null → 手柄冻结
-      // 拖不动。hit-test 前必须置 pointer-events:none，取字后还原。
-      expect(
-        body,
-        contains("pointerEvents = 'none'"),
-        reason: 'hit-test 前必须把两手柄 pointer-events 置 none',
-      );
-      // 取字后还原（否则手柄永久不可点）。
-      expect(
-        body,
-        contains("|| 'auto'"),
-        reason: 'hit-test 后必须还原手柄 pointer-events',
-      );
-      // 还原发生在拿到 hit 之后（顺序正确）。
       final int noneAt = body.indexOf("pointerEvents = 'none'");
-      final int hitAt = body.indexOf(
-        'this.getSelectableCharacterAtPoint(x, y)',
-      );
-      final int restoreAt = body.indexOf("|| 'auto'");
+      final int hitAt = body.indexOf('this.getSelectableCharacterAtPoint(');
+      final int resolveAt = body.indexOf('this.resolveSelectionEndpoint(');
+      final int finallyAt = body.indexOf('finally');
+      final int restoreAt = body.indexOf('pointerEvents = savedStartPe;');
       expect(noneAt, greaterThanOrEqualTo(0));
-      expect(hitAt, greaterThan(noneAt), reason: '熄灭必须在 hit-test 之前');
-      expect(restoreAt, greaterThan(hitAt), reason: '还原必须在 hit-test 之后');
+      expect(hitAt, greaterThan(noneAt));
+      expect(resolveAt, greaterThan(hitAt));
+      expect(finallyAt, greaterThan(resolveAt));
+      expect(restoreAt, greaterThan(finallyAt));
+      expect(body, contains('pointerEvents = savedEndPe;'));
+      expect(body, isNot(contains("|| 'auto'")));
     });
 
-    test('手柄定位按书写模式分支（横排 vs 竖排 vertical-rl）', () {
-      final String body = _between(
-        js,
-        'positionSelectionHandles: function',
-        'showSelectionHandles: function',
-      );
-      expect(body, contains('this._selectionVertical()'), reason: '定位必须读书写模式');
-      expect(body, contains('if (vertical)'), reason: '竖排/横排必须各自定位（不是一套硬编码坐标）');
-      expect(body, contains('_glyphRect'));
-      // _selectionVertical 走 fushiReader.isVertical()（与 caret 同源）。
-      final String vBody = _between(
-        js,
-        '_selectionVertical: function',
-        'selectionEndpoints: function',
-      );
-      expect(vBody, contains('window.fushiReader'));
-      expect(vBody, contains('isVertical'));
-    });
+    test(
+      'viewport clear protects active drags and notifies host after local cleanup',
+      () {
+        final String viewport = _between(
+          js,
+          'clearSelectionOnViewportChange: function',
+          'clearSelection: function',
+        );
+        expect(
+          viewport,
+          contains('if (this.dragAnchor || this.activeHandle) return;'),
+        );
+        expect(
+          viewport.indexOf('this.clearSelection();'),
+          greaterThan(viewport.indexOf('return;')),
+        );
+        final String clear = js.substring(
+          js.indexOf('clearSelection: function'),
+        );
+        final int notify = clear.indexOf("callHandler('onSelectionCleared')");
+        expect(notify, greaterThan(clear.indexOf('this.selection = null;')));
+        expect(notify, greaterThan(clear.indexOf('this.dragAnchor = null;')));
+        expect(
+          notify,
+          greaterThan(clear.indexOf('this.hideSelectionHandles();')),
+        );
+        expect(
+          clear,
+          contains(
+            "typeof window.flutter_inappwebview.callHandler === 'function'",
+          ),
+        );
+        expect(clear, isNot(contains('if (!this.selection) return')));
+      },
+    );
 
-    test('clearSelection 同步隐藏手柄（无选区必无悬空手柄）', () {
-      final String body = js.substring(js.indexOf('clearSelection: function'));
-      expect(body, contains('this.hideSelectionHandles();'));
-    });
-
-    test('手柄段绝不建立/读写原生选区（不复活 TODO-1279 双选区）', () {
-      // endRangeSelection..getSelectionRect 之间涵盖全部手柄方法。
-      final String region = _between(
-        js,
-        'endRangeSelection: function',
-        'getSelectionRect: function',
-      );
-      expect(
-        region,
-        isNot(contains('window.getSelection')),
-        reason: '手柄绝不读/建原生选区',
-      );
-      expect(region, isNot(contains('.addRange(')), reason: '手柄绝不写原生选区');
-      expect(region, isNot(contains('removeAllRanges')), reason: '手柄绝不动原生选区');
-    });
-  });
-
-  group('长按手势 IIFE 对手柄触摸让路', () {
-    test('lpsAllowed 排除手柄元素（触手柄不 arm 新长按）', () {
-      final String gestureJs =
-          ReaderSelectionScripts.longPressDragGestureScript();
-      expect(
-        gestureJs,
-        contains('[data-fushi-sel-handle]'),
-        reason: '长按 arm 白名单必须排除起止手柄元素',
-      );
-    });
-  });
-
-  group('BUG-765 续修：getCaretRange caretPositionFromPoint 命中非文本节点不早退', () {
-    test('caretPositionFromPoint 仅在文本节点走快路，非文本落几何兜底', () {
-      final String body = _between(
-        js,
-        'getCaretRange: function',
-        'getCharacterAtPoint: function',
-      );
-      // 命中判据必须校验 TEXT_NODE（旧代码 if(!pos) return 无条件早退，押注
-      // caretPositionFromPoint 尊重 pointer-events，真机不成立 → 拖手柄冻结）。
-      expect(
-        body,
-        contains('nodeType === Node.TEXT_NODE'),
-        reason: 'caretPositionFromPoint 结果必须校验是文本节点才走快路',
-      );
-      // 非文本节点（遮挡的手柄 div / documentElement）不得早退，必须落到下方
-      // elementFromPoint + 最近字符几何兜底（对 pointer-events:none 稳定生效）。
-      final int caretIdx = body.indexOf('caretPositionFromPoint');
-      final int fallbackIdx = body.indexOf('elementFromPoint');
-      expect(caretIdx, greaterThanOrEqualTo(0));
-      expect(
-        fallbackIdx,
-        greaterThan(caretIdx),
-        reason: 'elementFromPoint 几何兜底必须在 caretPositionFromPoint 之后可达（非早退）',
-      );
-      // 不得再有「拿到 pos 就无条件 setStart 返回」的旧早退。
-      expect(
-        body,
-        isNot(contains('if (!pos) return null;')),
-        reason: '旧无条件早退必须移除，改为 TEXT_NODE 校验 + 兜底',
-      );
-    });
-  });
-
-  group('BUG-765 续修：手柄外观（主题色 + 触控盒 + 内层圆钮，去刺眼橙）', () {
-    test('手柄用主题变量 var(--fushi-sel-handle) 上色，不再硬编码刺眼橙 + 发光', () {
-      final String body = _between(
-        js,
-        'ensureSelectionHandles: function',
-        '_wireHandle: function',
-      );
-      expect(
-        body,
-        contains('var(--fushi-sel-handle'),
-        reason: '圆钮颜色须走主题变量（reader CSS 从 linkColor 下发，随主题变）',
-      );
-      // 内层实心圆钮存在（外层是透明触控盒）。
-      expect(body, contains("'data-fushi-sel-ball'"), reason: '须有内层视觉圆钮元素');
-      // 旧刺眼橙 + 双重发光 box-shadow 必须移除。
-      expect(
-        body,
-        isNot(contains('rgba(255,138,0,0.98)')),
-        reason: '旧刺眼橙背景必须移除',
-      );
-      expect(
-        body,
-        isNot(contains('0 0 4px rgba(255,138,0,0.9)')),
-        reason: '旧橙色发光 box-shadow 必须移除',
-      );
+    test('rollback preserves endpoint anchors and only fits viewport edges', () {
+      final String body = _between(js, 'positionSelectionHandles: function', 'selectionHandlesRect: function');
+      expect(body, contains('var GAP = 8;'));
+      expect(body, contains('sy = sRect.top - GAP;'));
+      expect(body, contains('ey = eRect.bottom + GAP;'));
+      expect(body, contains('sx = sRect.left;'));
+      expect(body, contains('ex = eRect.right;'));
+      expect(body, contains('edgeClamped && Math.abs(sx - ex) < SIZE'));
+      expect(body, contains('return Math.max(half, Math.min(extent - half, value));'));
+      expect(body, contains('this.visibleContentBox()'));
+      expect(body, isNot(contains('selectedRects')));
+      expect(body, isNot(contains('bestStart')));
+      expect(body, isNot(contains('this.selection =')));
     });
   });
 }

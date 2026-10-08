@@ -157,6 +157,9 @@ class GoogleLensWireFields {
   /// `TextLayout.Word.text_separator`
   static const int wordTextSeparator = 3;
 
+  /// `TextLayout.Word.geometry`
+  static const int wordGeometry = 4;
+
   /// `Geometry.bounding_box`
   static const int geometryBoundingBox = 1;
 
@@ -359,6 +362,7 @@ class GoogleLensProtocol {
             sourceIndex: lineIndex,
             text: text,
             geometry: geometry,
+            words: _readWords(line, aspect),
           ),
         );
       }
@@ -401,6 +405,7 @@ class GoogleLensProtocol {
           lineText: line.text,
           utf16Base: utf16Base,
           geometry: line.geometry,
+          words: line.words,
           isVertical: isVertical,
         );
         regionCount += lineRegions.length;
@@ -425,10 +430,46 @@ class GoogleLensProtocol {
     return result;
   }
 
+  /// 每个 Word 的文字（去空白后逐字形拆开）与自身几何。
+  ///
+  /// 任何一个 Word 缺几何就返回 null：此时整行只能退回行几何均分。
+  static List<_RecognizedWord>? _readWords(
+    _ProtobufMessage line,
+    double aspect,
+  ) {
+    final List<_RecognizedWord> words = <_RecognizedWord>[];
+    for (final _ProtobufMessage word
+        in line.messages(GoogleLensWireFields.lineWords)) {
+      final List<String> characters = word
+          .string(GoogleLensWireFields.wordPlainText)
+          .characters
+          .where((String character) => character.trim().isNotEmpty)
+          .toList();
+      if (characters.isEmpty) {
+        continue;
+      }
+      final _LensGeometry? geometry = word
+          .firstMessage(GoogleLensWireFields.wordGeometry)
+          ?.let((_ProtobufMessage box) => _readGeometry(box, aspect));
+      if (geometry == null) {
+        return null;
+      }
+      words.add(_RecognizedWord(glyphs: characters, geometry: geometry));
+    }
+    return words;
+  }
+
+  /// 逐字命中区。
+  ///
+  /// 优先用 Lens 给每个 Word 的框，在 Word 内沿阅读方向均分：行框带着首尾
+  /// 留白、字距也不均匀，整行均分会让逐字格子相对原图上的字整体漂移（竖排
+  /// 时高亮压到前一个字、切掉后一个字，BUG-2878）。Word 缺几何、或 Word
+  /// 文字拼不回行文字时，才退回整行均分。
   static List<GoogleLensTextRegion> _characterRegions({
     required String lineText,
     required int utf16Base,
     required _LensGeometry geometry,
+    required List<_RecognizedWord>? words,
     required bool isVertical,
   }) {
     final List<({String text, int start, int end})> characters =
@@ -443,6 +484,23 @@ class GoogleLensProtocol {
     }
     if (characters.isEmpty) {
       return const <GoogleLensTextRegion>[];
+    }
+    final List<Rect>? wordCells = _wordCharacterCells(
+      characters: characters
+          .map((({String text, int start, int end}) c) => c.text)
+          .toList(),
+      words: words,
+      isVertical: isVertical,
+    );
+    if (wordCells != null) {
+      return <GoogleLensTextRegion>[
+        for (int i = 0; i < characters.length; i++)
+          GoogleLensTextRegion(
+            normalizedBounds: wordCells[i],
+            utf16Start: characters[i].start,
+            utf16End: characters[i].end,
+          ),
+      ];
     }
     return <GoogleLensTextRegion>[
       for (int i = 0; i < characters.length; i++)
@@ -470,6 +528,45 @@ class GoogleLensProtocol {
           utf16End: characters[i].end,
         ),
     ];
+  }
+
+  /// 把行内每个字形映射到所属 Word 框里的那一格；拼不上返回 null。
+  static List<Rect>? _wordCharacterCells({
+    required List<String> characters,
+    required List<_RecognizedWord>? words,
+    required bool isVertical,
+  }) {
+    if (words == null || words.isEmpty) {
+      return null;
+    }
+    final List<Rect> cells = <Rect>[];
+    for (final _RecognizedWord word in words) {
+      final Rect rect = word.geometry.rect;
+      final int count = word.glyphs.length;
+      for (int i = 0; i < count; i++) {
+        final int index = cells.length;
+        if (index >= characters.length ||
+            characters[index] != word.glyphs[i]) {
+          return null;
+        }
+        cells.add(
+          isVertical
+              ? Rect.fromLTWH(
+                  rect.left,
+                  rect.top + i * rect.height / count,
+                  rect.width,
+                  rect.height / count,
+                )
+              : Rect.fromLTWH(
+                  rect.left + i * rect.width / count,
+                  rect.top,
+                  rect.width / count,
+                  rect.height,
+                ),
+        );
+      }
+    }
+    return cells.length == characters.length ? cells : null;
   }
 
   /// 旋转矩形的归一化 AABB。
@@ -571,10 +668,25 @@ class _RecognizedLine {
     required this.sourceIndex,
     required this.text,
     required this.geometry,
+    required this.words,
   });
 
   final int sourceIndex;
   final String text;
+  final _LensGeometry geometry;
+
+  /// null = 至少一个 Word 缺几何，逐字区只能按行均分。
+  final List<_RecognizedWord>? words;
+}
+
+class _RecognizedWord {
+  const _RecognizedWord({
+    required this.glyphs,
+    required this.geometry,
+  });
+
+  /// 去空白后的字形序列。
+  final List<String> glyphs;
   final _LensGeometry geometry;
 }
 

@@ -1,0 +1,19 @@
+## BUG-2858 · 选定线程后的历史回捞与轮询抢先后，当前台词变成旧句
+- **报告**：2026-10-02（agent 真机巡检 ceshi 游戏集时发现：ATRI -My Dear Moments- / 天使☆騒々 RE-BOOT! 记忆恢复线程后，工作台最后一行是旧句，accept4 制卡 `sentence=false`）
+- **真实性**：✅ 真 bug，引擎无关的宿主时序问题。
+  - `selectTextThread` 原先 `await _recoverSelectedThreadHistory()`（`fushi/lib/src/mining/gal_hook_session_controller.dart`），回捞自己另拉一次 `engine.pollText(0)`，把 `seq <= _lastTextSeq` 的旧行追加到工作台**尾部**。
+  - 与此同时，定时 `_pollHookedText` 只受 `_pollInFlight` 约束，不知道回捞的存在：选择状态一落地，它就把新线程的最新一句收进来并推进 `_lastTextSeq`。
+  - 回捞的 IPC 回来后，更早的几句被接在最新一句后面，`lines.last` 变成旧句；当前台词、制卡例句与逐句语音配对一起错位。
+  - 跨会话记忆恢复（`_maybeRestoreTextThread`，`unawaited(selectTextThread(...))`）几乎必然踩中。
+  - 真机现场（ATRI，TextRender 线程恢复后）：`ev=15 ヒトの生息域は狭まり…` → `ev=7 この星は沈みゆこうとしている――` → `ev=11 原因不明の急激な海面上昇…`。tenshi 同样出现 ev9 → ev2 → ev3。
+  - 只把两者串行化不够：选择生效前已在飞的那次轮询，同样会抢先收进新句。
+- **[x] ① 已修复** — 回捞不再是第二个轮询者：
+  - `_pollHookedText` 拆成前导（readiness / 文本道压力 / 线程预览）和 `_consumeTextLane`。
+  - 选线程时记下 `_historyRecoveryCeiling = _lastTextSeq`，递增 `_pollGeneration` 作废在飞轮询（与引擎重启同一套所有权），再同步接管 `_pollInFlight` 跑一次 `_consumeTextLane`。
+  - 这一趟从 0 取整批、按 seq 升序消费：先补上界以内的旧行（`_recoverHistoryLine`，判据与旧回捞一致，含两趟学 face），再收上界以后的新行，顺序由构造保证。
+  - `_lastTextSeq == 0` 时没有历史可补，仍交给定时 tick，首行照旧走 readiness 已刷新的主路径。
+- **[x] ② 已加自动化测试** — `fushi/test/mining/gal_hook_session_controller_test.dart`：
+  - 新增「BUG-2858：选定线程后回捞的旧句必须排在新句之前」用例：假引擎新增 `fullReplayGate`，拖住全量回放、放行增量轮询，复现交错。
+  - 变异实测：换回旧控制器时该用例红，实际顺序 `[3, 1, 2]`；新实现为 `[1, 2, 3]`。
+  - BUG-950/1063 源码守卫随拆分改为分段钉住：`_pollHookedText` 依次 await 预览与 `_consumeTextLane`，`_consumeTextLane` 内只 await `engine.pollText`。
+- **备注**：与 KiriKiri 间歇性 `rg=0/0`（部分台词点不出查词卡）无关，那是另一条引擎侧问题。

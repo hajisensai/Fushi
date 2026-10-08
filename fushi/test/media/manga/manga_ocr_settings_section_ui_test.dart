@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
@@ -11,12 +12,15 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_local_model_labels.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_model_downloads.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
+import 'package:fushi/src/media/manga/reader/manga_reader_settings_panel_kit.dart'
+    show MangaPanelInfoButton;
 import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
+import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
-import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/utils.dart';
+import '../../helpers/glass_unwrap.dart';
 
 /// Fake 服务，模型状态与下载流可编程。
 class _FakeOcrService implements MangaOcrService {
@@ -26,14 +30,10 @@ class _FakeOcrService implements MangaOcrService {
     this.diskBytesOverride,
     this.obtainedBytesOverride,
     this.downloadEvents,
-    this.acceleratorMissingBytes = 0,
   });
 
   final bool supported;
   bool ready;
-
-  /// 提速组件还差的字节数；下载流跑完即清零（与真实服务「一次下齐」同形）。
-  int acceleratorMissingBytes;
   int downloadCalls = 0;
 
   /// 磁盘占用与「清单是否齐全」解耦：残留 `.part`/遗留档就是「不 ready 但占着
@@ -62,13 +62,11 @@ class _FakeOcrService implements MangaOcrService {
         totalBytes: 40 * 1024 * 1024,
         obtainedBytes:
             obtainedBytesOverride ?? (ready ? 40 * 1024 * 1024 : 0),
-        acceleratorMissingBytes: acceleratorMissingBytes,
       );
 
   @override
   Stream<MangaOcrDownloadEvent> downloadModels() async* {
     downloadCalls++;
-    acceleratorMissingBytes = 0;
     final StreamController<MangaOcrDownloadEvent>? scripted = downloadEvents;
     if (scripted != null) {
       yield* scripted.stream;
@@ -76,13 +74,13 @@ class _FakeOcrService implements MangaOcrService {
       return;
     }
     yield const MangaOcrDownloadEvent(
-      fileName: 'detector.onnx',
+      fileName: 'detector-v4-s_int8.onnx',
       receivedBytes: 10,
       totalBytes: 20,
     );
     ready = true;
     yield const MangaOcrDownloadEvent(
-      fileName: 'detector.onnx',
+      fileName: 'detector-v4-s_int8.onnx',
       receivedBytes: 20,
       totalBytes: 20,
       done: true,
@@ -125,44 +123,6 @@ class _FakeImporter extends MangaOcrModelImporter {
   }
 }
 
-class _PreparingOcrService extends _FakeOcrService
-    implements MangaOcrModelPreparationService {
-  bool filesImported = false;
-  int prepareCalls = 0;
-  bool prepareCancelled = false;
-  final Completer<void> cancellationFinished = Completer<void>();
-  late final StreamController<MangaOcrDownloadEvent> preparation =
-      StreamController<MangaOcrDownloadEvent>(
-    onCancel: () {
-      prepareCancelled = true;
-      return cancellationFinished.future;
-    },
-  );
-
-  @override
-  Future<MangaOcrModelStatus> modelStatus() async => MangaOcrModelStatus(
-        detectorReady: filesImported,
-        recognizerReady: false,
-        diskBytes: filesImported ? 4096 : 0,
-        totalBytes: 4096,
-        obtainedBytes: filesImported ? 4096 : 0,
-      );
-
-  @override
-  Stream<MangaOcrDownloadEvent> prepareModels() {
-    prepareCalls++;
-    preparation.add(
-      const MangaOcrDownloadEvent(
-        fileName: 'runtime',
-        receivedBytes: 0,
-        totalBytes: 0,
-        installing: true,
-      ),
-    );
-    return preparation.stream;
-  }
-}
-
 /// 系统 OCR 可用性桩：设置区据此决定「设备自带」那项灰不灰。
 class _FakeSystemOcr implements SystemOcrMangaRunner {
   _FakeSystemOcr(this.available);
@@ -192,14 +152,94 @@ class _FakeSystemOcr implements SystemOcrMangaRunner {
       throw UnimplementedError();
 }
 
+/// 已配对服务端的假探测：报一张模型表（或离线时什么都不报）。
+class _FakeRemoteRunner implements MangaOcrRemoteRunner {
+  _FakeRemoteRunner(this.models);
+
+  /// null = 服务端离线（探测不到）。
+  final List<MangaOcrRemoteModel>? models;
+
+  @override
+  Future<MangaOcrRemoteTarget?> probe() async {
+    final List<MangaOcrRemoteModel>? reported = models;
+    if (reported == null) return null;
+    return MangaOcrRemoteTarget(
+      baseUrl: 'http://127.0.0.1:1',
+      capability: MangaOcrRemoteCapability(
+        supported: true,
+        modelsReady: true,
+        models: reported,
+      ),
+    );
+  }
+
+  @override
+  Stream<MangaOcrRemoteEvent> run({
+    required MangaOcrRemoteTarget target,
+    required String imageDirPath,
+    String? volumeTitle,
+  }) => throw UnimplementedError();
+}
+
+/// 测试宿主统一开「减少动态效果」：波浪进度 / 加载指示器停成静止形态。
+Widget _reduceMotion(BuildContext context, Widget? child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(disableAnimations: true),
+      child: child!,
+    );
+
 void main() {
   Widget wrap(Widget child) {
     return ProviderScope(
       child: TranslationProvider(
         child: MaterialApp(
+            // MD3 Expressive 波浪进度在下载中（不定态 / 0<value<1）持续推相位，
+            // pumpAndSettle 永远等不到静止；「减少动态效果」下退回静止直线，
+            // 下载行为不受影响。
+            builder: _reduceMotion,
             home: Scaffold(body: SingleChildScrollView(child: child))),
       ),
     );
+  }
+
+  const ValueKey<String> engineRowKey =
+      ValueKey<String>('manga_ocr_default_engine');
+  const ValueKey<String> modelSummaryKey =
+      ValueKey<String>('manga_ocr_model_summary');
+  const ValueKey<String> modelCardKey =
+      ValueKey<String>('manga_ocr_model_card');
+
+  /// 引擎弹层里单项的 key（与 `_pickEngine` 同一拼法）。
+  ValueKey<String> engineOptionKey(
+    MangaOcrEnginePreference preference, {
+    MangaOcrLocalModel? localModel,
+    String? hostModel,
+  }) =>
+      ValueKey<String>('manga_ocr_engine_${preference.name}'
+          '_${localModel?.key ?? ''}_${hostModel ?? ''}');
+
+  /// 点按某个（可能在弹层滚动区外的）目标：先滚进视口再点。
+  Future<void> tapVisible(WidgetTester tester, Finder target) async {
+    await tester.ensureVisible(target);
+    await tester.pumpAndSettle();
+    await tester.tap(target);
+    await tester.pumpAndSettle();
+  }
+
+  /// 点开默认引擎行，弹出引擎选项弹层。
+  Future<void> openEngineSheet(WidgetTester tester) async {
+    await tapVisible(tester, find.byKey(engineRowKey));
+  }
+
+  /// 打开引擎弹层并点选某一项（标签在行副标题里与说明拼在一起，弹层里单独一份；
+  /// 取最后一个即弹层那份）。
+  Future<void> pickEngine(WidgetTester tester, String label) async {
+    await openEngineSheet(tester);
+    await tapVisible(tester, find.text(label).last);
+  }
+
+  /// 引擎用不到本机模型时模型区收起成摘要卡：点开它才露出下载 / 导入 / 删除。
+  Future<void> expandModelSummary(WidgetTester tester) async {
+    await tapVisible(tester, find.byKey(modelSummaryKey));
   }
 
   testWidgets('shows missing status + download button when models not ready',
@@ -217,60 +257,15 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
+    expect(find.byKey(modelCardKey), findsOneWidget);
+    expect(find.byKey(modelSummaryKey), findsNothing,
+        reason: '引擎用得到本机模型时不收起');
     expect(find.text(t.manga_ocr_model_status_missing), findsOneWidget);
     expect(find.widgetWithText(FilledButton, t.manga_ocr_download),
         findsOneWidget);
   });
 
-  testWidgets('ready model without the speed-up pack offers to download it',
-      (WidgetTester tester) async {
-    final _FakeOcrService service = _FakeOcrService(
-      ready: true,
-      acceleratorMissingBytes: 94 * 1024 * 1024,
-    );
-    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
-      service: service,
-      mokuroPathGetter: () => '',
-      mokuroPathSetter: (String _) async {},
-      probeExternal: (String _) async => null,
-      enginePreferenceGetter: () => 'auto',
-    )));
-    await tester.pumpAndSettle();
-
-    final Finder button =
-        find.byKey(const ValueKey<String>('manga_ocr_accelerator_download'));
-    expect(find.text(t.manga_ocr_model_status_ready), findsOneWidget);
-    expect(button, findsOneWidget);
-    expect(find.text(t.manga_ocr_accelerator_desc), findsOneWidget);
-
-    await tester.ensureVisible(button);
-    await tester.tap(button);
-    await tester.pumpAndSettle();
-
-    expect(service.downloadCalls, 1);
-    expect(button, findsNothing, reason: '下齐之后不再提示');
-    expect(find.text(t.manga_ocr_accelerator_desc), findsNothing);
-  });
-
-  testWidgets('speed-up pack prompt is absent when nothing is missing',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
-      service: _FakeOcrService(ready: true),
-      mokuroPathGetter: () => '',
-      mokuroPathSetter: (String _) async {},
-      probeExternal: (String _) async => null,
-      enginePreferenceGetter: () => 'auto',
-    )));
-    await tester.pumpAndSettle();
-
-    expect(find.text(t.manga_ocr_model_status_ready), findsOneWidget);
-    expect(
-        find.byKey(const ValueKey<String>('manga_ocr_accelerator_download')),
-        findsNothing);
-    expect(find.text(t.manga_ocr_accelerator_desc), findsNothing);
-  });
-
-  testWidgets('lens language dropdown persists the chosen language',
+  testWidgets('lens language row persists the chosen language',
       (WidgetTester tester) async {
     final _FakeOcrService service = _FakeOcrService(ready: true);
     String stored = 'ja';
@@ -284,16 +279,18 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
+    final Finder row =
+        find.byKey(const ValueKey<String>('manga_ocr_lens_language'));
     expect(find.text(t.manga_ocr_lens_language_label), findsOneWidget);
-    await tester
-        .tap(find.byKey(const ValueKey<String>('manga_ocr_lens_language')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('English').last);
-    await tester.pumpAndSettle();
+    await tapVisible(tester, row);
+    await tapVisible(tester, find.text('English').last);
     expect(stored, 'en');
+    // 弹层选中即关，行副标题换成新选的语言。
+    expect(find.descendant(of: row, matching: find.text('English')),
+        findsOneWidget);
   });
 
-  testWidgets('lens language dropdown is absent without a language setter',
+  testWidgets('lens language row is absent without a language setter',
       (WidgetTester tester) async {
     final _FakeOcrService service = _FakeOcrService(ready: true);
     await tester.pumpWidget(wrap(MangaOcrSettingsSection(
@@ -318,55 +315,43 @@ void main() {
           parallelTasksGetter: () => stored,
           parallelTasksSetter: (int value) async => stored = value,
         ));
-    final Finder field =
+    final Finder row =
         find.byKey(const ValueKey<String>('manga_ocr_parallel_tasks'));
-    final Finder dropdown =
-        find.descendant(of: field, matching: find.byType(DropdownButton<int>));
+    Finder rowValue(String label) =>
+        find.descendant(of: row, matching: find.text(label));
 
     await tester.pumpWidget(settings());
     await tester.pumpAndSettle();
-    expect(tester.widget<DropdownButton<int>>(dropdown).value, 0);
-    await tester.ensureVisible(field);
-    await tester.tap(field);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('4').last);
-    await tester.pumpAndSettle();
+    expect(rowValue(t.manga_ocr_parallel_auto), findsOneWidget);
+    await tapVisible(tester, row);
+    await tapVisible(tester, find.text('4').last);
     expect(stored, 4);
+    expect(rowValue('4'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(settings());
     await tester.pumpAndSettle();
-    expect(tester.widget<DropdownButton<int>>(dropdown).value, 4);
-    await tester.ensureVisible(field);
-    await tester.tap(field);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(t.manga_ocr_parallel_auto).last);
-    await tester.pumpAndSettle();
+    expect(rowValue('4'), findsOneWidget);
+    await tapVisible(tester, row);
+    await tapVisible(tester, find.text(t.manga_ocr_parallel_auto).last);
     expect(stored, 0);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(settings());
     await tester.pumpAndSettle();
-    expect(tester.widget<DropdownButton<int>>(dropdown).value, 0);
+    expect(rowValue(t.manga_ocr_parallel_auto), findsOneWidget);
   });
 
   String engineLabel(MangaOcrLocalModel model) =>
       t.manga_ocr_engine_local_model(model: localModelLabel(model));
 
-  /// 打开引擎下拉并点选某一项（菜单里同一文字可能在闭合态与菜单各一份，取最后）。
-  Future<void> pickEngine(WidgetTester tester, String label) async {
-    final Finder field =
-        find.byKey(const ValueKey<String>('manga_ocr_default_engine'));
-    await tester.ensureVisible(field);
-    await tester.tap(field);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(label).last);
-    await tester.pumpAndSettle();
-  }
-
   testWidgets('local models are engine choices; no separate model dropdown',
       (WidgetTester tester) async {
-    String storedModel = 'manga_ocr';
+    // Windows 上从 Baberu 起步，选 CTC 时模型偏好真的要被改写；别的平台只列
+    // CTC，起步值只能就是它。
+    String storedModel = Platform.isWindows
+        ? MangaOcrLocalModel.baberu.key
+        : MangaOcrLocalModel.mangaCtc.key;
     String storedEngine = 'auto';
     await tester.pumpWidget(wrap(MangaOcrSettingsSection(
       service: _FakeOcrService(ready: true),
@@ -383,23 +368,25 @@ void main() {
     expect(find.byKey(const ValueKey<String>('manga_ocr_local_model')),
         findsNothing);
     expect(find.text(t.manga_ocr_local_model), findsNothing);
+    // 设置页已经没有任何下拉了：引擎是选择行 + 底部弹层。
+    expect(
+      find.byWidgetPredicate((Widget widget) =>
+          widget is DropdownButtonFormField || widget is DropdownButton),
+      findsNothing,
+    );
 
-    final Finder field =
-        find.byKey(const ValueKey<String>('manga_ocr_default_engine'));
-    await tester.ensureVisible(field);
-    await tester.tap(field);
-    await tester.pumpAndSettle();
-    // CUDA / Baberu 只在 Windows 列出；CTC 与经典 manga-ocr 五端都有。
-    expect(find.text(engineLabel(MangaOcrLocalModel.mangaOcr)), findsWidgets);
+    await openEngineSheet(tester);
+    // Baberu 只在 Windows 列出；CTC 五端都有。
     expect(find.text(engineLabel(MangaOcrLocalModel.mangaCtc)), findsWidgets);
     expect(find.text(engineLabel(MangaOcrLocalModel.baberu)),
         Platform.isWindows ? findsWidgets : findsNothing);
-    expect(find.text(engineLabel(MangaOcrLocalModel.mangaOcrCuda)),
-        Platform.isWindows ? findsWidgets : findsNothing);
     // 单一的「本地 ONNX」项已被逐模型项取代。
     expect(find.text(t.manga_ocr_engine_local_onnx), findsNothing);
-    await tester.tap(find.text(engineLabel(MangaOcrLocalModel.mangaCtc)).last);
-    await tester.pumpAndSettle();
+    await tapVisible(
+      tester,
+      find.byKey(engineOptionKey(MangaOcrEnginePreference.localOnnx,
+          localModel: MangaOcrLocalModel.mangaCtc)),
+    );
     expect(storedModel, 'manga_ctc');
     expect(storedEngine, 'local_onnx');
     // 状态行说清楚是哪个模型。
@@ -408,7 +395,7 @@ void main() {
 
   testWidgets('choosing a local model engine persists across reopening',
       (WidgetTester tester) async {
-    String storedModel = 'manga_ocr';
+    String storedModel = kDefaultMangaOcrLocalModel.key;
     String storedEngine = 'google_lens';
     Widget settings() => wrap(MangaOcrSettingsSection(
           service: _FakeOcrService(ready: true),
@@ -432,8 +419,13 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(settings());
     await tester.pumpAndSettle();
-    // 闭合态只显示选中项的标签。
-    expect(find.text(engineLabel(target)), findsOneWidget);
+    // 引擎行副标题显示选中项的标签（与它的取舍说明拼在同一段）。
+    expect(
+      find.descendant(
+          of: find.byKey(engineRowKey),
+          matching: find.textContaining(engineLabel(target))),
+      findsOneWidget,
+    );
 
     // 换回云端引擎不改本机模型偏好（自动模式下仍用它兜底）。
     await pickEngine(tester, t.manga_ocr_engine_google_lens);
@@ -457,6 +449,7 @@ void main() {
       container: container,
       child: TranslationProvider(
         child: MaterialApp(
+          builder: _reduceMotion,
           home: Scaffold(
             body: SingleChildScrollView(
               child: ValueListenableBuilder<bool>(
@@ -490,26 +483,29 @@ void main() {
     expect(find.byType(MangaOcrSettingsSection), findsNothing);
     final MangaOcrModelDownloads downloads =
         container.read(mangaOcrModelDownloadsProvider);
-    expect(downloads.isActive(MangaOcrLocalModel.mangaOcr), isTrue);
+    // 宿主没接模型偏好时用的是默认本机模型（CTC）。
+    expect(downloads.isActive(kDefaultMangaOcrLocalModel), isTrue);
     expect(events.hasListener, isTrue);
     events.add(const MangaOcrDownloadEvent(
-      fileName: 'detector.onnx',
+      fileName: 'detector-v4-s_int8.onnx',
       receivedBytes: 1024,
       totalBytes: 2048,
     ));
     await tester.pump();
-    expect(downloads.progressOf(MangaOcrLocalModel.mangaOcr)?.receivedBytes,
+    expect(downloads.progressOf(kDefaultMangaOcrLocalModel)?.receivedBytes,
         1024);
 
     // 重新打开页面：接回同一条下载的进度。
     showPage.value = true;
     await tester.pumpAndSettle();
-    expect(find.text(t.manga_ocr_downloading_file(file: 'detector.onnx')),
+    expect(
+        find.text(
+            t.manga_ocr_downloading_file(file: 'detector-v4-s_int8.onnx')),
         findsOneWidget);
 
     await events.close();
     await tester.pumpAndSettle();
-    expect(downloads.isActive(MangaOcrLocalModel.mangaOcr), isFalse);
+    expect(downloads.isActive(kDefaultMangaOcrLocalModel), isFalse);
     expect(find.text(t.manga_ocr_model_status_ready), findsOneWidget);
   });
 
@@ -520,7 +516,12 @@ void main() {
     addTearDown(() {
       if (!events.isClosed) unawaited(events.close());
     });
-    String storedModel = 'manga_ocr';
+    // Windows 列得出两个本机模型：从 Baberu 的下载中换到 CTC，最能说明「下载
+    // 按模型归属全局登记表、换走了照跑」。其余平台只有 CTC，就换到云端引擎。
+    final bool twoModels = Platform.isWindows;
+    String storedModel = twoModels
+        ? MangaOcrLocalModel.baberu.key
+        : MangaOcrLocalModel.mangaCtc.key;
     String storedEngine = 'local_onnx';
     await tester.pumpWidget(wrap(MangaOcrSettingsSection(
       service: _FakeOcrService(downloadEvents: events),
@@ -538,14 +539,20 @@ void main() {
     await tester.ensureVisible(download);
     await tester.tap(download);
     await tester.pump();
-    await pickEngine(tester, engineLabel(MangaOcrLocalModel.mangaCtc));
-    expect(storedModel, 'manga_ctc');
-    // manga-ocr 那条下载仍挂在全局登记表上。
+    if (twoModels) {
+      await pickEngine(tester, engineLabel(MangaOcrLocalModel.mangaCtc));
+      expect(storedModel, 'manga_ctc');
+      expect(storedEngine, 'local_onnx');
+    } else {
+      await pickEngine(tester, t.manga_ocr_engine_google_lens);
+      expect(storedEngine, 'google_lens');
+    }
+    // 原模型那条下载仍挂在全局登记表上。
     expect(events.hasListener, isTrue);
   });
 
   testWidgets(
-    'runtime installation errors stop download without reporting ready',
+    'download errors stop download without reporting ready',
     (WidgetTester tester) async {
       final StreamController<MangaOcrDownloadEvent> events =
           StreamController<MangaOcrDownloadEvent>();
@@ -571,15 +578,18 @@ void main() {
       await tester.pump();
       events.add(
         const MangaOcrDownloadEvent(
-          fileName: 'runtime',
-          receivedBytes: 0,
-          totalBytes: 0,
-          installing: true,
+          fileName: 'kellenok_manga_rec_v0.2.onnx',
+          receivedBytes: 10,
+          totalBytes: 100,
         ),
       );
       await tester.pump();
-      expect(find.text(t.manga_ocr_runtime_installing), findsOneWidget);
-      events.addError(StateError('installation failed'));
+      expect(
+        find.text(t.manga_ocr_downloading_file(
+            file: 'kellenok_manga_rec_v0.2.onnx')),
+        findsOneWidget,
+      );
+      events.addError(StateError('download failed'));
       final Future<void> closed = events.close();
       await tester.pumpAndSettle();
       await closed;
@@ -589,117 +599,6 @@ void main() {
       expect(find.text(t.manga_ocr_model_status_ready), findsNothing);
       expect(download, findsOneWidget);
     },
-  );
-
-  testWidgets(
-    'default Lens keeps imported CUDA installation visible and cancellable',
-    (WidgetTester tester) async {
-      final _PreparingOcrService service = _PreparingOcrService();
-      addTearDown(() {
-        if (!service.cancellationFinished.isCompleted) {
-          service.cancellationFinished.complete();
-        }
-        unawaited(service.preparation.close());
-      });
-      final _FakeImporter importer = _FakeImporter(
-        MangaOcrModelImportResult(
-          imported: <String>[
-            for (final MangaOcrModelFile file
-                in MangaOcrLocalModel.mangaOcrCuda.manifest)
-              file.fileName,
-          ],
-          skipped: <String>[],
-          rejected: <MangaOcrModelImportRejection>[],
-          stillMissing: <String>[],
-        ),
-        beforeReturn: () async => service.filesImported = true,
-      );
-      await tester.pumpWidget(
-        wrap(
-          MangaOcrSettingsSection(
-            service: service,
-            mokuroPathGetter: () => '',
-            mokuroPathSetter: (String _) async {},
-            probeExternal: (String _) async => null,
-            systemOcrRunner: _FakeSystemOcr(false),
-            enginePreferenceGetter: () => kDefaultMangaOcrEnginePreference.key,
-            localModelGetter: () => 'manga_ocr_cuda',
-            localModelSetter: (String _) async {},
-            modelsDirProvider: () async => Directory.systemTemp,
-            modelImporter: importer,
-            pickImportPaths: (bool _) async => <String>['/picked/cuda-models'],
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(
-        kDefaultMangaOcrEnginePreference,
-        MangaOcrEnginePreference.googleLens,
-      );
-      final Finder importButton = find.byKey(
-        const ValueKey<String>('manga_ocr_import_button'),
-      );
-      await tester.ensureVisible(importButton);
-      await tester.tap(importButton);
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey<String>('manga_ocr_import_pick_folder')),
-      );
-      // The preparation stream deliberately stays open. Do not settle an
-      // indeterminate progress indicator while checking this intermediate state.
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-      await tester.pump();
-      // Wait for the closing import route, rather than settling the active
-      // indeterminate installer animation or matching the dialog's CANCEL.
-      for (int frame = 0;
-          frame < 60 && find.byType(AlertDialog).evaluate().isNotEmpty;
-          frame++) {
-        await tester.pump(const Duration(milliseconds: 16));
-      }
-      expect(find.byType(AlertDialog), findsNothing);
-      expect(importer.calls, <List<String>>[
-        <String>['/picked/cuda-models'],
-      ]);
-      expect(service.prepareCalls, 1);
-      expect(service.preparation.isClosed, isFalse);
-      expect(find.text(t.manga_ocr_runtime_installing), findsOneWidget);
-      expect(find.byType(LinearProgressIndicator), findsOneWidget);
-      expect(find.text(t.manga_ocr_model_unused_by_engine), findsNothing);
-      final Finder deleteButton = find.widgetWithText(
-        OutlinedButton,
-        t.manga_ocr_delete,
-      );
-      expect(
-        tester
-            .widgetList<OutlinedButton>(deleteButton)
-            .where((OutlinedButton button) => button.onPressed != null),
-        isEmpty,
-      );
-      final Finder cancel = find.descendant(
-        of: find.byType(MangaOcrSettingsSection),
-        matching: find.widgetWithText(TextButton, t.dialog_cancel),
-      );
-      expect(cancel, findsOneWidget);
-      await tester.ensureVisible(cancel);
-      await tester.tap(cancel);
-      await tester.pump();
-      expect(service.prepareCancelled, isTrue);
-      expect(service.deleteCalls, 0);
-      // Installation owns its files until cancellation cleanup acknowledges.
-      expect(find.text(t.manga_ocr_runtime_installing), findsOneWidget);
-      expect(
-        tester.widgetList<OutlinedButton>(deleteButton).where(
-              (OutlinedButton button) => button.onPressed != null,
-            ),
-        isEmpty,
-      );
-      service.cancellationFinished.complete();
-      await tester.pumpAndSettle();
-      expect(find.text(t.manga_ocr_runtime_installing), findsNothing);
-      expect(tester.widget<OutlinedButton>(deleteButton).onPressed, isNotNull);
-    },
-    skip: !Platform.isWindows,
   );
 
   testWidgets('default Lens disables deletion while model import is pending', (
@@ -715,7 +614,7 @@ void main() {
         imported: <String>[],
         skipped: <String>[],
         rejected: <MangaOcrModelImportRejection>[],
-        stillMissing: <String>['vocab.txt'],
+        stillMissing: <String>['ppocrv6_small_rec.yml'],
       ),
       beforeReturn: () => imported.future,
     );
@@ -735,11 +634,13 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    // 默认引擎（Lens）用不到本机模型：模型区先收起成摘要，点开才有删除 / 导入。
+    await expandModelSummary(tester);
     final Finder deleteButton = find.widgetWithText(
       OutlinedButton,
       t.manga_ocr_delete,
     );
-    expect(tester.widget<OutlinedButton>(deleteButton).onPressed, isNotNull);
+    expect(tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(deleteButton)).onPressed, isNotNull);
     final Finder importButton = find.byKey(
       const ValueKey<String>('manga_ocr_import_button'),
     );
@@ -753,7 +654,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(importer.calls, hasLength(1));
     expect(imported.isCompleted, isFalse);
-    expect(tester.widget<OutlinedButton>(deleteButton).onPressed, isNull);
+    expect(tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(deleteButton)).onPressed, isNull);
     await tester.ensureVisible(deleteButton);
     await tester.tap(deleteButton);
     await tester.pump();
@@ -761,7 +662,7 @@ void main() {
     expect(service.deleteCalls, 0);
     imported.complete();
     await tester.pumpAndSettle();
-    expect(tester.widget<OutlinedButton>(deleteButton).onPressed, isNotNull);
+    expect(tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(deleteButton)).onPressed, isNotNull);
   });
 
   testWidgets('detect external shows probed version',
@@ -775,15 +676,21 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    // ready 时展示删除按钮。
+    // 出厂默认引擎用不到本机模型：先展开摘要；ready 时展示删除按钮。
+    await expandModelSummary(tester);
     expect(find.widgetWithText(OutlinedButton, t.manga_ocr_delete),
         findsOneWidget);
 
-    await tester
-        .tap(find.widgetWithText(OutlinedButton, t.manga_ocr_external_detect));
-    await tester.pumpAndSettle();
-    expect(find.text(t.manga_ocr_external_detected(version: 'mokuro 0.2.1')),
-        findsOneWidget);
+    await tapVisible(
+        tester, find.byKey(const ValueKey<String>('manga_ocr_external_detect')));
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('manga_ocr_external_result')),
+        matching:
+            find.text(t.manga_ocr_external_detected(version: 'mokuro 0.2.1')),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets(
@@ -801,7 +708,14 @@ void main() {
 
     expect(
         find.widgetWithText(FilledButton, t.manga_ocr_download), findsNothing);
-    expect(find.text(t.manga_ocr_unsupported), findsOneWidget);
+    // 不支持的平台不收起：直接给出说明卡，也没有可展开的摘要。
+    expect(find.byKey(modelSummaryKey), findsNothing);
+    expect(
+      find.descendant(
+          of: find.byKey(modelCardKey),
+          matching: find.text(t.manga_ocr_unsupported)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('legacy single-box Gemini controls are no longer rendered',
@@ -823,7 +737,7 @@ void main() {
 
   // ---- BUG-1732：引擎取舍说明 / 按引擎收起模型块 / 真实占用与释放量 ----
 
-  testWidgets('engine dropdown spells out each engine trade-off',
+  testWidgets('engine sheet spells out each engine trade-off',
       (WidgetTester tester) async {
     final _FakeOcrService service = _FakeOcrService(ready: true);
     await tester.pumpWidget(wrap(MangaOcrSettingsSection(
@@ -836,9 +750,16 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    await tester
-        .tap(find.byKey(const ValueKey<String>('manga_ocr_default_engine')));
-    await tester.pumpAndSettle();
+    // 行副标题就带着当前引擎的取舍。
+    expect(
+      find.descendant(
+          of: find.byKey(engineRowKey),
+          matching: find.text(
+              '${t.manga_ocr_engine_auto}\n${t.manga_ocr_engine_auto_desc}')),
+      findsOneWidget,
+    );
+
+    await openEngineSheet(tester);
 
     // 谷歌要联网、快、但质量不如本地——用户挑引擎的依据必须写在选项上。
     expect(find.text(t.manga_ocr_engine_google_lens_desc), findsWidgets);
@@ -859,6 +780,14 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
+    // 收起成一行摘要，说明当前引擎用不到它们。
+    expect(find.byKey(modelSummaryKey), findsOneWidget);
+    expect(
+      find.descendant(
+          of: find.byKey(modelSummaryKey),
+          matching: find.textContaining(t.manga_ocr_model_unused_by_engine)),
+      findsOneWidget,
+    );
     expect(
         find.widgetWithText(FilledButton, t.manga_ocr_download), findsNothing);
     expect(find.text(t.manga_ocr_model_status_missing), findsNothing);
@@ -884,17 +813,28 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
+    // M3E 设置页：引擎用不到本机模型时模型区收起成摘要卡——收起不等于藏起来，
+    // 摘要卡本身就是入口。
+    expect(find.byKey(modelSummaryKey), findsOneWidget);
+    expect(find.byKey(modelCardKey), findsNothing);
     expect(
-      find.widgetWithText(TextButton, t.manga_ocr_download),
-      findsOneWidget,
-      reason: '出厂默认引擎下必须仍能找到下载入口（次级形态：普通按钮，不是主按钮）',
-    );
-    // 分寸不能丢：当前引擎本来就不需要模型，那不是「缺陷状态」，不该喊「未下载」。
-    expect(find.text(t.manga_ocr_model_status_missing), findsNothing);
+        find.widgetWithText(FilledButton, t.manga_ocr_download), findsNothing);
+
+    await expandModelSummary(tester);
+
     expect(
       find.widgetWithText(FilledButton, t.manga_ocr_download),
-      findsNothing,
-      reason: '次级入口不许升级成主按钮，否则又变成劝一个只用 Lens 的用户下 450 MB',
+      findsOneWidget,
+      reason: '出厂默认引擎下必须仍能找到下载入口（展开摘要后的次级色调按钮）',
+    );
+    // 分寸不能丢：当前引擎本来就不需要模型，那不是「缺陷状态」，不该喊「未下载」。
+    // 展开后是中性的「用不到」说明卡，而不是劝一个只用 Lens 的用户下模型的强调卡。
+    expect(find.text(t.manga_ocr_model_status_missing), findsNothing);
+    expect(
+      find.descendant(
+          of: find.byKey(modelCardKey),
+          matching: find.text(t.manga_ocr_model_unused_by_engine)),
+      findsOneWidget,
     );
   });
 
@@ -914,19 +854,26 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    expect(find.text(t.manga_ocr_model_unused_by_engine), findsOneWidget);
+    final String diskUsage = t.manga_ocr_model_disk_usage(
+      size: FushiByteFormat.bytes(3 * 1024 * 1024 * 1024),
+    );
+    // 摘要里就报真实占用。
     expect(
-      find.text(t.manga_ocr_model_disk_usage(
-        size: FushiByteFormat.bytes(3 * 1024 * 1024 * 1024),
-      )),
+      find.descendant(
+          of: find.byKey(modelSummaryKey),
+          matching: find.textContaining(diskUsage)),
       findsOneWidget,
     );
+
+    await expandModelSummary(tester);
+
+    expect(find.text(t.manga_ocr_model_unused_by_engine), findsOneWidget);
+    expect(find.text(diskUsage), findsOneWidget);
     expect(
         find.widgetWithText(FilledButton, t.manga_ocr_download), findsNothing);
 
-    await tester
-        .tap(find.widgetWithText(OutlinedButton, t.manga_ocr_delete).first);
-    await tester.pumpAndSettle();
+    await tapVisible(
+        tester, find.widgetWithText(OutlinedButton, t.manga_ocr_delete).first);
     await tester.tap(find.widgetWithText(FilledButton, t.manga_ocr_delete));
     await tester.pumpAndSettle();
     expect(service.deleteCalls, 1);
@@ -943,9 +890,12 @@ void main() {
       mokuroPathGetter: () => '',
       mokuroPathSetter: (String _) async {},
       probeExternal: (String _) async => null,
+      // 就绪卡只在引擎用得到本机模型时直接展开（出厂默认 Lens 下是摘要）。
+      enginePreferenceGetter: () => 'auto',
     )));
     await tester.pumpAndSettle();
 
+    expect(find.text(t.manga_ocr_model_status_ready), findsOneWidget);
     expect(
       find.text(t.manga_ocr_model_disk_usage(
         size: FushiByteFormat.bytes(512 * 1024 * 1024),
@@ -973,18 +923,21 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(FilledButton, t.manga_ocr_download));
+    final Finder download =
+        find.widgetWithText(FilledButton, t.manga_ocr_download);
+    await tester.ensureVisible(download);
+    await tester.tap(download);
     await tester.pump();
 
-    // 检测器整档下完（10 MB），识别 encoder 下到 5 MB：总进度必须是 15 MB，
+    // 检测器整档下完（10 MB），漫画 rec 下到 5 MB：总进度必须是 15 MB，
     // 而不是「当前文件 5/30」这种一条条各自归零的读数。
     events.add(const MangaOcrDownloadEvent(
-      fileName: 'detector.onnx',
+      fileName: 'detector-v4-s_int8.onnx',
       receivedBytes: 10 * 1024 * 1024,
       totalBytes: 10 * 1024 * 1024,
     ));
     events.add(const MangaOcrDownloadEvent(
-      fileName: 'encoder_model.onnx',
+      fileName: 'kellenok_manga_rec_v0.2.onnx',
       receivedBytes: 5 * 1024 * 1024,
       totalBytes: 30 * 1024 * 1024,
     ));
@@ -1011,8 +964,11 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey<String>('manga_ocr_import_button')),
-        findsOneWidget);
+    final Finder importButton =
+        find.byKey(const ValueKey<String>('manga_ocr_import_button'));
+    expect(importButton, findsOneWidget);
+    // 与主按钮成组时是描边按钮。
+    expect(glassUnwrap<OutlinedButton>(importButton), findsOneWidget);
   });
 
   testWidgets('有半成品时下载按钮说「继续下载」，而不是让人以为要重下',
@@ -1059,7 +1015,7 @@ void main() {
     });
     final _FakeImporter importer = _FakeImporter(
       const MangaOcrModelImportResult(
-        imported: <String>['vocab.txt'],
+        imported: <String>['ppocrv6_small_rec.yml'],
         skipped: <String>[],
         rejected: <MangaOcrModelImportRejection>[],
         stillMissing: <String>[],
@@ -1079,13 +1035,20 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    await tester
-        .tap(find.byKey(const ValueKey<String>('manga_ocr_import_button')));
-    await tester.pumpAndSettle();
+    await tapVisible(
+        tester, find.byKey(const ValueKey<String>('manga_ocr_import_button')));
 
     // 用户点进来最缺的信息是「到底要哪几个文件」——清单必须在选择器之前出现。
+    // 默认本机模型是逐列 CTC，列的是它的清单。
     expect(find.text(t.manga_ocr_import_title), findsOneWidget);
-    expect(find.textContaining('vocab.txt'), findsOneWidget);
+    for (final String name in <String>[
+      'detector-v4-s_int8.onnx',
+      'ppocrv6_small_det.onnx',
+      'ppocrv6_small_rec.yml',
+      'kellenok_manga_rec_v0.2.onnx',
+    ]) {
+      expect(find.textContaining(name), findsOneWidget);
+    }
 
     await tester.tap(
         find.byKey(const ValueKey<String>('manga_ocr_import_pick_folder')));
@@ -1103,7 +1066,7 @@ void main() {
         imported: <String>[],
         skipped: <String>[],
         rejected: <MangaOcrModelImportRejection>[],
-        stillMissing: <String>['vocab.txt'],
+        stillMissing: <String>['ppocrv6_small_rec.yml'],
       ),
     );
     final Directory tempDir =
@@ -1125,9 +1088,8 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    await tester
-        .tap(find.byKey(const ValueKey<String>('manga_ocr_import_button')));
-    await tester.pumpAndSettle();
+    await tapVisible(
+        tester, find.byKey(const ValueKey<String>('manga_ocr_import_button')));
     await tester
         .tap(find.byKey(const ValueKey<String>('manga_ocr_import_pick_files')));
     await tester.pumpAndSettle();
@@ -1176,7 +1138,7 @@ void main() {
     }
   }, skip: !Platform.isWindows);
 
-  testWidgets('设备自带 OCR：可用时下拉里那项可选', (WidgetTester tester) async {
+  testWidgets('设备自带 OCR：可用时弹层里那项可选', (WidgetTester tester) async {
     await tester.pumpWidget(wrap(MangaOcrSettingsSection(
       service: _FakeOcrService(ready: false),
       mokuroPathGetter: () => '',
@@ -1188,40 +1150,149 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    await tester
-        .tap(find.byKey(const ValueKey<String>('manga_ocr_default_engine')));
-    await tester.pumpAndSettle();
+    await openEngineSheet(tester);
     expect(find.text(t.manga_ocr_engine_system), findsWidgets);
     // 取舍必须写在选项自己身上：用户没有别的依据判断该不该选它。
     expect(find.textContaining(t.manga_ocr_engine_system_desc), findsWidgets);
+    final FushiGroupedListItem system = tester.widget<FushiGroupedListItem>(
+        find.byKey(engineOptionKey(MangaOcrEnginePreference.systemOcr)));
+    expect(system.onTap, isNotNull);
   });
 
   testWidgets('设备自带 OCR：本机没有就置灰，不假装能跑',
       (WidgetTester tester) async {
+    String storedEngine = 'auto';
     await tester.pumpWidget(wrap(MangaOcrSettingsSection(
       service: _FakeOcrService(ready: false),
       mokuroPathGetter: () => '',
       mokuroPathSetter: (String _) async {},
       probeExternal: (String _) async => null,
-      enginePreferenceGetter: () => 'auto',
-      enginePreferenceSetter: (String _) async {},
+      enginePreferenceGetter: () => storedEngine,
+      enginePreferenceSetter: (String value) async => storedEngine = value,
       systemOcrRunner: _FakeSystemOcr(false),
     )));
     await tester.pumpAndSettle();
 
-    await tester
-        .tap(find.byKey(const ValueKey<String>('manga_ocr_default_engine')));
-    await tester.pumpAndSettle();
-    // 下拉值类型是私有的（引擎 + 本机模型），按菜单项里的标签取那一项。
-    final DropdownMenuItem<Object?> system = tester
-        .widgetList<Widget>(find.ancestor(
-          of: find.text(t.manga_ocr_engine_system),
-          matching: find.byWidgetPredicate(
-              (Widget widget) => widget is DropdownMenuItem),
-        ))
-        .cast<DropdownMenuItem<Object?>>()
-        .first;
-    expect(system.enabled, isFalse,
+    await openEngineSheet(tester);
+    // 弹层值类型是私有的（引擎 + 本机模型），按选项 key 取那一项。
+    final Finder systemOption =
+        find.byKey(engineOptionKey(MangaOcrEnginePreference.systemOcr));
+    expect(tester.widget<FushiGroupedListItem>(systemOption).onTap, isNull,
         reason: '选得中一个跑不了的引擎，只会换来一句没头没脑的报错');
+    await tester.ensureVisible(systemOption);
+    await tester.pumpAndSettle();
+    await tester.tap(systemOption, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(storedEngine, 'auto');
+  });
+
+  String hostLabel(MangaOcrLocalModel model) =>
+      t.manga_ocr_engine_paired_host_model(model: localModelLabel(model));
+
+  testWidgets('server models are engine choices and persist the named model',
+      (WidgetTester tester) async {
+    String storedEngine = 'google_lens';
+    String storedHostModel = '';
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: _FakeOcrService(ready: true),
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      enginePreferenceGetter: () => storedEngine,
+      enginePreferenceSetter: (String value) async => storedEngine = value,
+      pairedHostModelGetter: () => storedHostModel,
+      pairedHostModelSetter: (String value) async => storedHostModel = value,
+      remoteRunner: _FakeRemoteRunner(const <MangaOcrRemoteModel>[
+        MangaOcrRemoteModel(key: 'baberu', ready: true),
+        MangaOcrRemoteModel(key: 'manga_ctc', ready: false),
+      ]),
+    )));
+    await tester.pumpAndSettle();
+
+    await openEngineSheet(tester);
+    expect(find.text(hostLabel(MangaOcrLocalModel.baberu)), findsWidgets);
+    expect(find.text(hostLabel(MangaOcrLocalModel.mangaCtc)), findsWidgets);
+    // 服务端没下好的那个模型如实说出来，而不是等整卷传完才报错。
+    expect(
+      find.textContaining(t.manga_ocr_engine_paired_host_model_missing),
+      findsOneWidget,
+    );
+    await tapVisible(
+      tester,
+      find.byKey(engineOptionKey(MangaOcrEnginePreference.pairedHost,
+          hostModel: 'manga_ctc')),
+    );
+    expect(storedEngine, 'paired_host');
+    expect(storedHostModel, 'manga_ctc');
+
+    // 选回「服务端默认」：清掉点名。
+    await pickEngine(tester, t.manga_remote_ocr_engine);
+    expect(storedEngine, 'paired_host');
+    expect(storedHostModel, '');
+  });
+
+  testWidgets('a named server model stays selected while the server is offline',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: _FakeOcrService(ready: true),
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      enginePreferenceGetter: () => 'paired_host',
+      enginePreferenceSetter: (String _) async {},
+      pairedHostModelGetter: () => 'manga_ctc',
+      pairedHostModelSetter: (String _) async {},
+      remoteRunner: _FakeRemoteRunner(null),
+    )));
+    await tester.pumpAndSettle();
+    // 引擎行副标题显示的就是点名的那项（选项表里找不到当前值就没有副标题）。
+    expect(
+      find.descendant(
+          of: find.byKey(engineRowKey),
+          matching: find.textContaining(hostLabel(MangaOcrLocalModel.mangaCtc))),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('BUG-2912: engine row and parallel-tasks help show in full',
+      (WidgetTester tester) async {
+    // 原 BUG-2912：引擎下拉闭合态曾被 dense 的一行高 SizedBox 裁掉第二行；并行
+    // 任务说明被限死 3 行吞掉结尾。M3E 设置页已没有下拉，阅读器侧板也改走
+    // readerPanel 版式（单选卡片组），于是守卫改钉新形态的同一诉求：
+    // ① 引擎行副标题（引擎名 + 取舍）整段排出，不截断、不被裁；
+    // ② 并行任务的长说明收进 info，点开的对话框里整段可见。
+    //
+    // 原第二条「闭合态只与选中项一样高」（IndexedStack 取所有子项最大高）是
+    // DropdownButton 闭合态特有的问题，新形态没有 IndexedStack，整条删掉。
+    // 窄宽（320px）不再在这里测：测试字体每字等宽 1em，那个宽度下 5 行上限一定
+    // 截断，测出来的是字体而不是布局。
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: _FakeOcrService(),
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      enginePreferenceGetter: () => 'auto',
+      parallelTasksGetter: () => 0,
+      parallelTasksSetter: (int _) async {},
+    )));
+    await tester.pumpAndSettle();
+
+    final RenderParagraph subtitle = tester.renderObject<RenderParagraph>(
+        find.descendant(
+            of: find.byKey(engineRowKey),
+            matching: find.text(
+                '${t.manga_ocr_engine_auto}\n${t.manga_ocr_engine_auto_desc}')));
+    expect(subtitle.didExceedMaxLines, isFalse);
+    // 段落拿到的高度装得下它排出来的全部行。
+    expect(
+        subtitle.size.height, greaterThanOrEqualTo(subtitle.textSize.height));
+
+    final Finder info = find.descendant(
+      of: find.byKey(const ValueKey<String>('manga_ocr_parallel_tasks')),
+      matching: find.byType(MangaPanelInfoButton),
+    );
+    expect(info, findsOneWidget);
+    await tapVisible(tester, info);
+    expect(find.text(t.manga_ocr_parallel_tasks_desc), findsOneWidget);
   });
 }

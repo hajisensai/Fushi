@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/widgets.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/storage/storage_usage_service.dart'
+    show formatStorageBytes;
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -119,13 +121,17 @@ String syncPhaseLabel(SyncPhase phase) {
   }
 }
 
-/// "阶段 (k/N) 标题" —— 阶段没有条目总数时省略计数。
+/// "阶段 (k/N) 标题 · 速率" —— 阶段没有条目总数时省略计数，没在走字节时省略速率。
 String syncProgressLine(SyncProgress p) {
   final String phase = syncPhaseLabel(p.phase);
   if (p.itemTotal <= 0) return phase;
-  final String head = '$phase (${p.itemIndex + 1}/${p.itemTotal})';
   final String? title = p.title;
-  return (title == null || title.isEmpty) ? head : '$head $title';
+  final double? rate = p.bytesPerSecond;
+  return <String>[
+    '$phase (${p.itemIndex + 1}/${p.itemTotal})',
+    if (title != null && title.isNotEmpty) title,
+    if (rate != null) '· ${formatStorageBytes(rate.round())}/s',
+  ].join(' ');
 }
 
 /// 没有阶段 tick 可显示时的兜底行 —— 说清这轮同步**是谁**。
@@ -184,12 +190,15 @@ String syncOutcomeLine(SyncRunOutcome o) {
 ///
 /// 返回实际发生的 outcome，调用方可据此决定后续（下拉刷新据此不重复刷列表）。
 /// 全程不抛：错误都转成用户可读的 SnackBar。
+///
+/// [onlyChannels] 透传给 [runManualFullSync]：缺省 null = 全部已启用通道。
 Future<ManualSyncOutcome> runManualSyncWithFeedback({
   required BuildContext context,
   required AppModel appModel,
   bool announceNotConfigured = true,
   bool announceBusy = true,
   bool announceCompleted = true,
+  Set<SyncAssetChannelScope>? onlyChannels,
 }) =>
     _runWithSyncFeedback(
       context: context,
@@ -198,6 +207,7 @@ Future<ManualSyncOutcome> runManualSyncWithFeedback({
       announceBusy: announceBusy,
       announceCompleted: announceCompleted,
       run: () => runManualFullSync(
+        onlyChannels: onlyChannels,
         db: appModel.database,
         dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
         audioDatabaseRoot:

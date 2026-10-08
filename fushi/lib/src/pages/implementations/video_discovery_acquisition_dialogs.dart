@@ -4,7 +4,8 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:collection/collection.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/media/torrent/builtin_video_resource_providers.dart';
@@ -32,6 +33,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/pages/implementations/video_resource_version_group_list.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
 
 export 'package:fushi_engine/media/video/download/video_discovery_selection.dart';
 
@@ -363,7 +365,7 @@ class VideoDiscoveryResourceSearchPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: Text(t.video_discovery_resource_search)),
+        appBar: FushiAppBar(title: Text(t.video_discovery_resource_search)),
         body: SafeArea(
           child: VideoResourceSearchSurface(
             initialItem: item,
@@ -412,7 +414,7 @@ class VideoDiscoverySubscriptionPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: Text(t.video_discovery_subscribe)),
+        appBar: FushiAppBar(title: Text(t.video_discovery_subscribe)),
         body: SafeArea(
           child: VideoResourceSearchSurface(
             initialItem: item,
@@ -675,7 +677,7 @@ class _VideoResourceSearchSurfaceState
   }
 
   Widget _buildCategorySelector() =>
-      DropdownButtonFormField<VideoDiscoveryCategory>(
+      FushiDropdownButtonFormField<VideoDiscoveryCategory>(
         key: const ValueKey<String>('video-resource-category'),
         initialValue: _manualCategory,
         decoration: InputDecoration(labelText: t.media_tracking_kind),
@@ -977,7 +979,7 @@ class _VideoResourceSearchSurfaceState
   void _showSubmitFailure(String message, SnackBarAction? action) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
+      FushiSnackBar(
         content: Text(message),
         duration: const Duration(seconds: 10),
         action: action,
@@ -1037,22 +1039,18 @@ class _VideoResourceSearchSurfaceState
             Row(
               children: <Widget>[
                 Expanded(
-                  child: TextField(
-                    key: const ValueKey<String>('video-resource-query'),
+                  child: FushiSearchBar(
+                    fieldKey: const ValueKey<String>('video-resource-query'),
                     controller: _queryController,
-                    decoration: InputDecoration(
-                      hintText: t.video_discovery_search_hint,
-                      prefixIcon: const Icon(Icons.search_rounded),
-                    ),
-                    textInputAction: TextInputAction.search,
+                    hintText: t.video_discovery_search_hint,
                     onSubmitted: (_) => unawaited(_search()),
                   ),
                 ),
                 SizedBox(width: tokens.spacing.gap),
-                IconButton.filledTonal(
+                FushiIconButtonControl.filledTonal(
                   tooltip: t.dialog_search,
                   onPressed: _loading ? null : () => unawaited(_search()),
-                  icon: const Icon(Icons.search_rounded),
+                  icon: const FushiIcon(Icons.search_rounded),
                 ),
               ],
             ),
@@ -1069,7 +1067,7 @@ class _VideoResourceSearchSurfaceState
                   VideoResourceSearchRequest(media: _media),
                 )
                     .map(
-                      (String query) => ActionChip(
+                      (String query) => FushiActionChipControl(
                         label: Text(query),
                         onPressed: _loading
                             ? null
@@ -1087,15 +1085,11 @@ class _VideoResourceSearchSurfaceState
           if (manual) ...<Widget>[
             LayoutBuilder(
               builder: (BuildContext context, BoxConstraints constraints) {
-                final Widget search = TextField(
-                  key: const ValueKey<String>('video-resource-query'),
+                final Widget search = FushiSearchBar(
+                  fieldKey: const ValueKey<String>('video-resource-query'),
                   controller: _queryController,
-                  decoration: InputDecoration(
-                    hintText: t.video_discovery_search_hint,
-                    prefixIcon: const Icon(Icons.search_rounded),
-                  ),
-                  textInputAction: TextInputAction.search,
-                  onChanged: (_) => _invalidateManualSearch(),
+                  hintText: t.video_discovery_search_hint,
+                  onQueryChanged: (_) => _invalidateManualSearch(),
                   onSubmitted: (_) => unawaited(_search()),
                 );
                 final Widget category = _buildCategorySelector();
@@ -1108,12 +1102,12 @@ class _VideoResourceSearchSurfaceState
                         children: <Widget>[
                           Expanded(child: category),
                           SizedBox(width: tokens.spacing.gap),
-                          IconButton.filledTonal(
+                          FushiIconButtonControl.filledTonal(
                             tooltip: _manualSearchTooltip,
                             onPressed: _loading || !_manualIdentityReady
                                 ? null
                                 : () => unawaited(_search()),
-                            icon: const Icon(Icons.search_rounded),
+                            icon: const FushiIcon(Icons.search_rounded),
                           ),
                         ],
                       ),
@@ -1126,12 +1120,12 @@ class _VideoResourceSearchSurfaceState
                     SizedBox(width: tokens.spacing.gap),
                     SizedBox(width: 160, child: category),
                     SizedBox(width: tokens.spacing.gap),
-                    IconButton.filledTonal(
+                    FushiIconButtonControl.filledTonal(
                       tooltip: _manualSearchTooltip,
                       onPressed: _loading || !_manualIdentityReady
                           ? null
                           : () => unawaited(_search()),
-                      icon: const Icon(Icons.search_rounded),
+                      icon: const FushiIcon(Icons.search_rounded),
                     ),
                   ],
                 );
@@ -1139,7 +1133,7 @@ class _VideoResourceSearchSurfaceState
             ),
             if (_manualCategory == VideoDiscoveryCategory.anime) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),
-              DropdownButtonFormField<VideoMetadataMediaKind>(
+              FushiDropdownButtonFormField<VideoMetadataMediaKind>(
                 key: const ValueKey<String>('video-resource-anime-kind'),
                 initialValue: _manualMediaKind,
                 decoration: InputDecoration(labelText: t.media_tracking_kind),
@@ -1166,8 +1160,11 @@ class _VideoResourceSearchSurfaceState
             SizedBox(height: tokens.spacing.gap),
             LayoutBuilder(
               builder: (BuildContext context, BoxConstraints constraints) {
-                final Widget provider = DropdownButtonFormField<String>(
+                final Widget provider = FushiDropdownButtonFormField<String>(
                   key: const ValueKey<String>('video-resource-provider'),
+                  // 宽屏下钉在 160 宽的槽里：MD3 填充式字段的内边距更大，按内容
+                  // 定宽的按钮行会溢出；撑满槽位、让选中项在剩余宽度内排版。
+                  isExpanded: true,
                   initialValue: _manualProvider,
                   decoration: InputDecoration(
                     labelText: t.video_resource_identity_provider,
@@ -1195,7 +1192,7 @@ class _VideoResourceSearchSurfaceState
                     });
                   },
                 );
-                final Widget externalId = TextField(
+                final Widget externalId = FushiTextFieldControl(
                   key: const ValueKey<String>('video-resource-external-id'),
                   controller: _manualIdController,
                   decoration: InputDecoration(
@@ -1203,7 +1200,7 @@ class _VideoResourceSearchSurfaceState
                   ),
                   onChanged: (_) => _invalidateManualSearch(),
                 );
-                final Widget year = TextField(
+                final Widget year = FushiTextFieldControl(
                   key: const ValueKey<String>('video-resource-year'),
                   controller: _manualYearController,
                   keyboardType: TextInputType.number,
@@ -1262,12 +1259,12 @@ class _VideoResourceSearchSurfaceState
             mainAxisAlignment: MainAxisAlignment.end,
             children: <Widget>[
               if (widget.onClose != null && !widget.pageMode)
-                TextButton(
+                FushiTextButton(
                   onPressed: _submitting ? null : widget.onClose,
                   child: Text(t.dialog_cancel),
                 ),
               SizedBox(width: tokens.spacing.gap),
-              FilledButton.icon(
+              FushiFilledButton.icon(
                 key: ValueKey<String>(
                   widget.subscription
                       ? 'video-subscription-submit'
@@ -1278,9 +1275,9 @@ class _VideoResourceSearchSurfaceState
                 icon: _submitting
                     ? const SizedBox.square(
                         dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Icon(widget.subscription
+                    : FushiIcon(widget.subscription
                         ? Icons.favorite_border_rounded
                         : Icons.download_rounded),
                 label: Text(
@@ -1311,7 +1308,7 @@ class _VideoResourceSearchSurfaceState
       (!widget.subscription || (filter != null && _strictConfirmed));
 
   Widget _buildResults() {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) return const FushiLoadingView();
     final ProviderBatchResult<VideoResourceCandidate>? result = _result;
     if (result == null) {
       return Center(child: Text(t.anime_download_search_start_hint));
@@ -1322,7 +1319,7 @@ class _VideoResourceSearchSurfaceState
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             Text(t.video_discovery_load_failed),
-            TextButton(
+            FushiTextButton(
                 onPressed: () => unawaited(_search()), child: Text(t.retry)),
           ],
         ),
@@ -1349,7 +1346,7 @@ class _VideoResourceSearchSurfaceState
     if (groups == null) {
       final Widget toggle = Align(
         alignment: AlignmentDirectional.centerEnd,
-        child: FilterChip(
+        child: FushiFilterChip(
           key: const ValueKey<String>('video-resource-flat-toggle'),
           label: Text(t.resource_version_view_flat),
           selected: _flatResourceView,
@@ -1437,10 +1434,10 @@ class _VideoResourceSearchSurfaceState
           // 下载模式给勾选框（可多选整季分集）；订阅模式仍是单选，摆勾选框会
           // 让人以为能订阅一批。
           leading: widget.subscription
-              ? Icon(candidate.trusted
+              ? FushiIcon(candidate.trusted
                   ? Icons.verified_rounded
                   : Icons.cloud_download_outlined)
-              : Checkbox(
+              : FushiCheckbox(
                   value: _isSelected(candidate),
                   onChanged: (_) => _select(candidate),
                 ),
@@ -1460,7 +1457,7 @@ class _VideoResourceSearchSurfaceState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (showDownloadLocation) ...<Widget>[
-          DropdownButtonFormField<HostDownloadTarget?>(
+          FushiDropdownButtonFormField<HostDownloadTarget?>(
             key: const ValueKey<String>('video-download-run-location'),
             initialValue: _remoteDownloadTarget,
             isExpanded: true,
@@ -1490,7 +1487,7 @@ class _VideoResourceSearchSurfaceState
           SizedBox(height: tokens.spacing.gap),
         ],
         if (showRunLocation) ...<Widget>[
-          DropdownButtonFormField<HostSubscriptionTarget?>(
+          FushiDropdownButtonFormField<HostSubscriptionTarget?>(
             key: const ValueKey<String>('video-subscription-run-location'),
             initialValue: _remoteTarget,
             isExpanded: true,
@@ -1529,7 +1526,7 @@ class _VideoResourceSearchSurfaceState
             // 交给 host 跑时落点是 host 的下载目录，本地来源不参与。
             if (!_remote)
             Expanded(
-              child: DropdownButtonFormField<int>(
+              child: FushiDropdownButtonFormField<int>(
                 key: const ValueKey<String>('video-resource-source'),
                 initialValue: _sourceId,
                 isExpanded: true,
@@ -1559,7 +1556,7 @@ class _VideoResourceSearchSurfaceState
             ),
             if (!_remote) SizedBox(width: tokens.spacing.gap),
             Expanded(
-              child: DropdownButtonFormField<VideoDownloadSubtitlePolicy>(
+              child: FushiDropdownButtonFormField<VideoDownloadSubtitlePolicy>(
                 key: const ValueKey<String>('video-resource-subtitle-policy'),
                 initialValue: _subtitlePolicy,
                 isExpanded: true,
@@ -1636,7 +1633,7 @@ class _VideoResourceSearchSurfaceState
           if (_media?.mediaKind != VideoMetadataMediaKind.movie &&
               !_selectedIsBatch) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
-            TextField(
+            FushiTextFieldControl(
               key: const ValueKey<String>('video-subscription-start-after'),
               controller: _startAfterController,
               keyboardType: TextInputType.number,
@@ -1830,7 +1827,7 @@ class _VideoDiscoverySubtitleSearchDialogState
             ),
             SizedBox(height: tokens.spacing.card),
           ],
-          DropdownButtonFormField<SubtitleInstallTarget>(
+          FushiDropdownButtonFormField<SubtitleInstallTarget>(
             key: const ValueKey<String>('video-subtitle-target'),
             initialValue: _target,
             items: <DropdownMenuItem<SubtitleInstallTarget>>[
@@ -1863,7 +1860,7 @@ class _VideoDiscoverySubtitleSearchDialogState
           ),
           SizedBox(height: tokens.spacing.gap),
           if (_target == SubtitleInstallTarget.activeTask)
-            DropdownButtonFormField<String>(
+            FushiDropdownButtonFormField<String>(
               key: const ValueKey<String>('video-subtitle-active-task'),
               initialValue: _selectedJobId,
               decoration: InputDecoration(labelText: t.download_tasks_tab),
@@ -1884,10 +1881,10 @@ class _VideoDiscoverySubtitleSearchDialogState
                   : (String? value) => setState(() => _selectedJobId = value),
             )
           else
-            OutlinedButton.icon(
+            FushiOutlinedButton.icon(
               key: const ValueKey<String>('video-subtitle-pick-target'),
               onPressed: _installing ? null : () => unawaited(_pickTarget()),
-              icon: const Icon(Icons.folder_open_outlined),
+              icon: const FushiIcon(Icons.folder_open_outlined),
               label: Text(
                 _selectedPath == null
                     ? t.dialog_select
@@ -1905,13 +1902,13 @@ class _VideoDiscoverySubtitleSearchDialogState
             mainAxisAlignment: MainAxisAlignment.end,
             children: <Widget>[
               if (!widget.pageMode) ...<Widget>[
-                TextButton(
+                FushiTextButton(
                   onPressed: _installing ? null : () => Navigator.pop(context),
                   child: Text(t.dialog_cancel),
                 ),
                 SizedBox(width: tokens.spacing.gap),
               ],
-              FilledButton.icon(
+              FushiFilledButton.icon(
                 key: const ValueKey<String>('video-subtitle-install'),
                 onPressed:
                     _selected == null || !_hasSelectedTarget || _installing
@@ -1920,9 +1917,9 @@ class _VideoDiscoverySubtitleSearchDialogState
                 icon: _installing
                     ? const SizedBox.square(
                         dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.subtitles_outlined),
+                    : const FushiIcon(Icons.subtitles_outlined),
                 label: Text(t.dialog_save),
               ),
             ],
@@ -1932,7 +1929,7 @@ class _VideoDiscoverySubtitleSearchDialogState
     );
     if (widget.pageMode) {
       return Scaffold(
-        appBar: AppBar(title: Text(t.video_discovery_subtitle_search)),
+        appBar: FushiAppBar(title: Text(t.video_discovery_subtitle_search)),
         body: SafeArea(child: content),
       );
     }
@@ -1946,7 +1943,7 @@ class _VideoDiscoverySubtitleSearchDialogState
   }
 
   Widget _buildSubtitleResults() {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) return const FushiLoadingView();
     final ProviderBatchResult<VideoSubtitleCandidate>? result = _result;
     if (result == null || result.isTotalFailure) {
       return Center(
@@ -1954,7 +1951,7 @@ class _VideoDiscoverySubtitleSearchDialogState
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             Text(t.video_discovery_load_failed),
-            TextButton(
+            FushiTextButton(
                 onPressed: () => unawaited(_search()), child: Text(t.retry)),
           ],
         ),
@@ -2000,7 +1997,7 @@ class _VideoDiscoverySubtitleSearchDialogState
               ? FushiListDensity.standard
               : FushiListDensity.compact,
           selected: identical(_selected, candidate),
-          leading: const Icon(Icons.subtitles_outlined),
+          leading: const FushiIcon(Icons.subtitles_outlined),
           onTap: () => setState(() => _selected = candidate),
         );
       },
@@ -2078,7 +2075,7 @@ class VideoResourceSourceStatusList extends StatelessWidget {
                 'video-resource-source-status-${report.providerId}',
               ),
               children: <Widget>[
-                Icon(
+                FushiIcon(
                   report.failed
                       ? Icons.error_outline_rounded
                       : report.skipped
@@ -2113,18 +2110,12 @@ class _ProviderWarning extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme colors = Theme.of(context).colorScheme;
     return Padding(
       padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-      child: Row(
-        children: <Widget>[
-          Icon(
-            error ? Icons.error_outline_rounded : Icons.warning_amber_rounded,
-            color: error ? colors.error : colors.tertiary,
-          ),
-          SizedBox(width: tokens.spacing.gap),
-          Expanded(child: Text(message, style: tokens.type.metadata)),
-        ],
+      child: FushiInlineNotice(
+        severity:
+            error ? FushiNoticeSeverity.error : FushiNoticeSeverity.warning,
+        message: message,
       ),
     );
   }
@@ -2146,31 +2137,24 @@ class _NoProviderEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(tokens.spacing.card),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(icon, size: 40, color: theme.colorScheme.onSurfaceVariant),
-            SizedBox(height: tokens.spacing.gap),
-            Text(title, style: theme.textTheme.titleSmall),
-            SizedBox(height: tokens.spacing.gap / 2),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Text(
-                hint,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+    // 空态走共享占位（M3E 色块图标 / Apple ContentUnavailableView 观感）。
+    // 两处调用都在结果区的 `Expanded` 里，高度由窗口与上方查询 / 筛选行瓜分；
+    // 窄窗口下 72px 色块 + 标题 + 说明放不下时必须能滚，不能溢出裁字。放得下
+    // 时撑满结果区居中，观感不变。
+    final Widget placeholder = FushiPlaceholderMessage(
+      icon: icon,
+      message: title,
+      detail: hint,
+    );
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(child: placeholder),
+          ),
+        );
+      },
     );
   }
 }

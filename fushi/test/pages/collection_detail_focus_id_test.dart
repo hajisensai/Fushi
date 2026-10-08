@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -139,6 +139,9 @@ void main() {
     expect(memberUid, isNotNull, reason: 'insertEpubBook 必须给书生成稳定 uid');
     await db.addToCollection(cid, MediaKind.epub, memberUid!);
     final String mediaId = ReaderFushiSource.mediaIdentifierFor('memberKey');
+    // 本用例验合集**横排行**内成员卡与详情页 focusId 不撞号；书架默认已改
+    // 「单个格子」（a55fc1382bb），这里显式切回整行展开。
+    await prefs.setShelfCollectionLayoutName('rows');
 
     tester.view.physicalSize = const Size(1400, 1200);
     tester.view.devicePixelRatio = 1.0;

@@ -12,7 +12,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -25,6 +25,8 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_native_material.dart';
 import 'package:fushi/src/utils/popup_theme_css.dart';
 import 'package:fushi/src/reader/dictionary_font_css.dart';
 import 'package:fushi/src/reader/dictionary_language_css.dart';
@@ -111,8 +113,50 @@ String _themeVariablesJs({
   final bool eink = theme.extension<FushiEinkTheme>()?.einkMode ?? false;
   final String einkLine =
       "document.documentElement.classList.toggle('eink', $eink);\n";
+  // 弹窗卡面由 Flutter [FushiPopupSurface] 画（app 内两套设计系统都是压在正文上的
+  // 玻璃——与浏览器扩展同一材质；独立窗是不透明面板），WebView 文档背景透明、词条
+  // 直接落在材质上，并与扩展同一套强调色淡染（popup.css `html.fushi-glass-host`）。
+  // 桌面全局查词窗（.global-lookup）卡面是文档自己的 body，不挂；墨水屏不挂。
+  // toggle 同 eink：热槽跨渲染持久，开墨水屏后必须摘掉。
+  final bool glassHost = !globalLookup && !eink;
+  // 背后能不能真模糊（宿主能力声明）：iOS / macOS 的弹窗 WebView 是原生平台视图，
+  // Flutter 画在它背后的面板与正文都采不到，文档里的浮层（音频源菜单）用实底；
+  // 其它平台菜单的 backdrop-filter 真能模糊下面的词条——包括 Android：它的 WebView
+  // 虽是 Hybrid Composition（Flutter 面板因此恒不透明，见 fushiPopupBackdropSampleable），
+  // 菜单模糊的是同一文档里的词条，在 Chromium 自己的合成器里完成，与 Flutter 无关。
+  // 宿主在 WebView 下方垫了原生系统材质（NSVisualEffectView / UIVisualEffectView，
+  // [fushiNativePopupMaterialAvailable]）时，背后是真模糊，走与其它平台同一档。
+  final bool solidBackdrop = (theme.platform == TargetPlatform.iOS ||
+          theme.platform == TargetPlatform.macOS) &&
+      !(glassHost &&
+          !mobileExternal &&
+          fushiNativePopupMaterialAvailable(
+            theme: theme,
+            highContrast: WidgetsBinding
+                .instance.platformDispatcher.accessibilityFeatures.highContrast,
+          ));
+  // Apple 设计系统（色板扩展 [FushiAppleColors] 只挂在 Apple 主题上）：popup.css 的
+  // `html.fushi-glass-host.fushi-apple` 把顶栏 tonal 按钮（「调整上下文」）换成 Apple
+  // 胶囊口径（系统灰填充 + 按下变暗、不做形状变形）；MD3 下走 M3 Expressive 的按压
+  // 形状变形。只随玻璃宿主挂（墨水屏 / 桌面全局查词窗不挂）；toggle 同上要能摘除。
+  final bool appleDesign =
+      glassHost && theme.extension<FushiAppleColors>() != null;
+  // M3 Expressive 视觉层（用户 2026-10-05：Material 设计系统一律 M3E）：popup.css 的
+  // `html.fushi-m3e` 段把卡片 / 标签 / 动作按钮 / 提示 / 菜单换成 M3E 色块与形状。
+  // 只看设计系统本身（不随玻璃宿主）：桌面全局查词窗与 app 外窗同样是 Material。
+  // 墨水屏与 Apple 设计系统不挂。减弱动态效果（系统无障碍「关闭动画」）挂
+  // fushi-reduced-motion，CSS 侧归零按压位移与过渡（CSS 不能写 @media，见生成器）。
+  final bool m3e = !eink && theme.extension<FushiAppleColors>() == null;
+  final bool reducedMotion = WidgetsBinding
+      .instance.platformDispatcher.accessibilityFeatures.disableAnimations;
+  final String glassLine =
+      "document.documentElement.classList.toggle('fushi-glass-host', $glassHost);\n"
+      "document.documentElement.classList.toggle('fushi-solid-backdrop', $solidBackdrop);\n"
+      "document.documentElement.classList.toggle('fushi-apple', $appleDesign);\n"
+      "document.documentElement.classList.toggle('fushi-m3e', $m3e);\n"
+      "document.documentElement.classList.toggle('fushi-reduced-motion', $reducedMotion);\n";
   return '''
-      $classLine      $einkLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
+      $classLine      $einkLine      $glassLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       document.documentElement.style.setProperty('--fushi-primary-highlight', '${vars['--fushi-primary-highlight']}');
       document.documentElement.style.setProperty('--text-color', '${vars['--text-color']}');
       document.documentElement.style.setProperty('--background-color', '${vars['--background-color']}');
@@ -123,6 +167,21 @@ String _themeVariablesJs({
       document.documentElement.style.setProperty('--md-on-surface-variant', '${vars['--md-on-surface-variant']}');
       document.documentElement.style.setProperty('--md-primary', '${vars['--md-primary']}');
       document.documentElement.style.setProperty('--md-on-primary', '${vars['--md-on-primary']}');
+      document.documentElement.style.setProperty('--md-on-surface', '${vars['--md-on-surface']}');
+      document.documentElement.style.setProperty('--md-primary-container', '${vars['--md-primary-container']}');
+      document.documentElement.style.setProperty('--md-on-primary-container', '${vars['--md-on-primary-container']}');
+      document.documentElement.style.setProperty('--md-secondary-container', '${vars['--md-secondary-container']}');
+      document.documentElement.style.setProperty('--md-on-secondary-container', '${vars['--md-on-secondary-container']}');
+      document.documentElement.style.setProperty('--md-tertiary', '${vars['--md-tertiary']}');
+      document.documentElement.style.setProperty('--md-on-tertiary', '${vars['--md-on-tertiary']}');
+      document.documentElement.style.setProperty('--md-tertiary-container', '${vars['--md-tertiary-container']}');
+      document.documentElement.style.setProperty('--md-on-tertiary-container', '${vars['--md-on-tertiary-container']}');
+      document.documentElement.style.setProperty('--md-surface-container-low', '${vars['--md-surface-container-low']}');
+      document.documentElement.style.setProperty('--md-surface-container-highest', '${vars['--md-surface-container-highest']}');
+      document.documentElement.style.setProperty('--md-outline', '${vars['--md-outline']}');
+      document.documentElement.style.setProperty('--md-inverse-surface', '${vars['--md-inverse-surface']}');
+      document.documentElement.style.setProperty('--md-inverse-on-surface', '${vars['--md-inverse-on-surface']}');
+      document.documentElement.style.setProperty('--md-error', '${vars['--md-error']}');
       document.documentElement.style.setProperty('--fushi-radius-card', '${vars['--fushi-radius-card']}');
       document.documentElement.style.setProperty('--dict-columns', '${vars['--dict-columns']}');
 ''';
@@ -599,7 +658,15 @@ String buildPopupSettingsJs({
 
 /// 每次查词都会变化的动态负载：词条与汉字卡结果。与静态段分开注入后，热路径
 /// 每次只发这一段 + renderPopup 调用。
-String buildPopupEntriesJs(DictionarySearchResult result) {
+///
+/// [pending] = 这一层可见且查询确实在进行中（唯一派生点 `popupLookupPending`）：
+/// popup.js 据此画加载指示器而不是「No results」（假空态）。**不再**按「结果是搜索期
+/// 占位单例」推断——热槽 seed / 复位 / 停驻 realm 挂的也是那个单例，但它们是空闲，
+/// 推 true 会让停驻在屏外的页面里加载动画无限循环。
+String buildPopupEntriesJs(
+  DictionarySearchResult result, {
+  bool pending = false,
+}) {
   final String entriesJson = result.popupJson ??
       DictionaryPopupWebViewState.buildLookupEntriesJson(result);
   final String kanjiResultsJson = jsonEncode(
@@ -607,6 +674,7 @@ String buildPopupEntriesJs(DictionarySearchResult result) {
   );
   return '''    try { window.lookupEntries = $entriesJson; } catch(e) { window.lookupEntries = []; }
     try { window.kanjiResults = $kanjiResultsJson; } catch(e) { window.kanjiResults = []; }
+    window.lookupPending = $pending;
 ''';
 }
 
@@ -746,6 +814,7 @@ class _PopupStaticSettingsMemo {
     required this.showExpressionTags,
     required this.collapseDictionaries,
     required this.compactGlossaries,
+    required this.dictionaryUnifiedStyle,
     required this.autoExpandRows,
     required this.collapsedNames,
     required this.expandedNames,
@@ -777,6 +846,7 @@ class _PopupStaticSettingsMemo {
   final bool showExpressionTags;
   final bool collapseDictionaries;
   final bool compactGlossaries;
+  final bool dictionaryUnifiedStyle;
   final int autoExpandRows;
   final String collapsedNames;
   final String expandedNames;
@@ -918,6 +988,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       cached.showExpressionTags == appModel.showExpressionTags &&
       cached.collapseDictionaries == appModel.collapseDictionaries &&
       cached.compactGlossaries == appModel.compactGlossaries &&
+      cached.dictionaryUnifiedStyle == appModel.dictionaryUnifiedStyle &&
       cached.autoExpandRows == appModel.popupAutoExpandDictionaries &&
       cached.collapsedNames == collapsedNames &&
       // BUG-2158 补修：命中判据必须是产物**全部输入**的廉价投影（本类文档写死的
@@ -1026,6 +1097,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.__fushiMiningEnabled = $miningEnabled;
     window.sentenceDraftEnabled = ${options.sentenceDraftEnabled};
     window._noResultsMessage = ${jsonEncode(t.no_search_results)};
+    window._noResultsHint = ${jsonEncode(t.settings_search_empty_hint)};
     window.embedMedia = true;
     window.deduplicatePitchAccents = ${appModel.deduplicatePitchAccents};
     window.i18nPitchSourceCount = ${jsonEncode(t.dictionary_pitch_source_count(count: '{count}'))};
@@ -1037,6 +1109,13 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // 紧凑 CSS（assets/popup/popup.js 的 compactCss），但此前全 app 无人给它赋值，
     // 恒 undefined = 恒关。这里补上唯一的写入点。
     window.compactGlossaries = ${appModel.compactGlossaries};
+    // 词典样式统一（默认开）：popup.js 把导入词典自带的颜色按语义换成当前
+    // ColorScheme 令牌（__fushiUnifyDictStyles）。值变了才就地重排已渲染的词条，
+    // 每次查词都重注入的宿主不会白白把旧 DOM 再分类一遍。
+    if (window.__fushiDictUnifiedStyle !== ${appModel.dictionaryUnifiedStyle}) {
+      window.__fushiDictUnifiedStyle = ${appModel.dictionaryUnifiedStyle};
+      window.__fushiApplyDictUnifiedStyle?.();
+    }
     window.autoExpandRows = ${appModel.popupAutoExpandDictionaries};
     window.collapsedDictionaryNames = $collapsedNames;
     window.expandedDictionaryNames = $expandedNames;
@@ -1074,6 +1153,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     showExpressionTags: appModel.showExpressionTags,
     collapseDictionaries: appModel.collapseDictionaries,
     compactGlossaries: appModel.compactGlossaries,
+    dictionaryUnifiedStyle: appModel.dictionaryUnifiedStyle,
     autoExpandRows: appModel.popupAutoExpandDictionaries,
     collapsedNames: collapsedNames,
     expandedNames: expandedNames,
