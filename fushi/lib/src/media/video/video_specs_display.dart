@@ -34,16 +34,17 @@ enum VideoSpecField {
 /// 占位（unknown 更是绝不出，见 [VideoDynamicRange] 的 unknown≠sdr 说明）。立体声同理
 /// 不出，见 [videoSpecsAudioBadge]。
 List<String> videoSpecsCoverBadges(VideoProbeFacts? facts) {
-  if (facts == null) return const <String>[];
+  // 没有视频流（纯音频条目）不出角标：这一层是给「片子」看的规格。
+  final VideoStreamFacts? video = facts?.video;
+  if (facts == null || video == null) return const <String>[];
   final String? audio = videoSpecsAudioBadge(facts);
   return List<String>.unmodifiable(<String>[
-    ..._videoBadges(facts.video),
+    ..._videoBadges(video),
     if (audio != null) audio,
   ]);
 }
 
-List<String> _videoBadges(VideoStreamFacts? video) {
-  if (video == null) return const <String>[];
+List<String> _videoBadges(VideoStreamFacts video) {
   final String? resolution = video.resolutionLabel;
   final VideoDynamicRange range = video.dynamicRange;
   final String? rangeLabel = range.isHdr ? range.badgeLabel : null;
@@ -53,11 +54,14 @@ List<String> _videoBadges(VideoStreamFacts? video) {
   ];
 }
 
-/// 环绕声角标：`Atmos` / `7.1` / `5.1`；立体声、单声道或探不到时为 null。
+/// 环绕声角标：`Atmos` / `7.1` / `6.1` / `5.1`；立体声、单声道或探不到时为 null。
 ///
 /// 取**最好的那条非评论音轨**（Atmos 优先，其次声道数）：角标说的是「这个文件能给
 /// 出什么」，和发布组标题里的 `TrueHD Atmos 7.1` 同一口径；默认轨恰好是日语 2.0 时
 /// 也照样标出另一条 5.1。评论音轨不算——导演评论 5.1 不是片子的环绕声。
+///
+/// 只按**声道数**出字，不用 ffprobe 的布局原文：没写声道掩码的轨布局是
+/// `6 channels`，8 声道 DTS 可能报 `octagonal`，那些塞进角标就是一串英文。
 String? videoSpecsAudioBadge(VideoProbeFacts? facts) {
   if (facts == null) return null;
   AudioTrackFacts? best;
@@ -67,8 +71,11 @@ String? videoSpecsAudioBadge(VideoProbeFacts? facts) {
   }
   if (best == null) return null;
   if (best.isAtmos) return 'Atmos';
-  if ((best.channels ?? 0) < 6) return null;
-  return best.channelLabel;
+  final int channels = best.channels ?? 0;
+  if (channels >= 8) return '7.1';
+  if (channels == 7) return '6.1';
+  if (channels == 6) return '5.1';
+  return null;
 }
 
 /// Atmos 压过任何声道数；其余按声道数比。
@@ -80,11 +87,12 @@ int _audioRank(AudioTrackFacts track) =>
 /// 没有任何可显示项时返回 null 而不是空串——调用方据此决定「整行不渲染」，空串会白
 /// 占一行高度。
 String? videoSpecsInlineSummary(VideoProbeFacts? facts) {
-  if (facts == null) return null;
-  final String? codec = facts.video?.codecLabel;
+  final VideoStreamFacts? video = facts?.video;
+  if (facts == null || video == null) return null;
+  final String? codec = video.codecLabel;
   final String? audio = videoSpecsAudioBadge(facts);
   final List<String> parts = <String>[
-    ..._videoBadges(facts.video),
+    ..._videoBadges(video),
     if (codec != null) codec,
     if (audio != null) audio,
   ];

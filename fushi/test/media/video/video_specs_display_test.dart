@@ -135,7 +135,28 @@ void main() {
             ),
           ]));
       expect(badge(6, '5.1(side)'), '5.1');
+      expect(badge(7, '6.1'), '6.1');
       expect(badge(8, '7.1'), '7.1');
+    });
+
+    test('只按声道数出字：布局原文是英文单词时不漏进角标', () {
+      String? badge(int channels, String layout) =>
+          videoSpecsAudioBadge(factsWith(width: 1920, audio: <AudioTrackFacts>[
+            AudioTrackFacts(
+                index: 1, codec: 'pcm_s24le', channels: channels,
+                channelLayout: layout),
+          ]));
+      expect(badge(6, '6 channels'), '5.1');
+      expect(badge(8, 'octagonal'), '7.1');
+    });
+
+    test('纯音频（无视频流）不出角标也不出摘要', () {
+      final VideoProbeFacts audioOnly =
+          factsWith(audio: const <AudioTrackFacts>[
+        AudioTrackFacts(index: 0, codec: 'flac', channels: 6),
+      ]);
+      expect(videoSpecsCoverBadges(audioOnly), isEmpty);
+      expect(videoSpecsInlineSummary(audioOnly), isNull);
     });
 
     test('立体声 / 单声道不出——「是立体声」不是信息', () {

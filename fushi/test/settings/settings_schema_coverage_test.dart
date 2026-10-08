@@ -782,6 +782,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Channels': 'test/media/video/video_mpv_config_test.dart',
   'video/Normalize downmix loudness':
       'test/media/video/video_mpv_config_test.dart',
+  // 直通：下发值由 mpv 配置测试咬住；真正的码流直通要接功放 / 回音壁才能验。
+  'video/Dolby / DTS passthrough':
+      'test/media/video/video_mpv_config_test.dart',
   // TODO-1247：尊重 .ass 自带样式开关平移到首页（videoRespectAssStyle 纯 pref）；
   // 生效点在字幕 overlay 标记渲染，由 video_subtitle_overlay_markup_test.dart 咬住。
   "video/Respect subtitle's own style":
