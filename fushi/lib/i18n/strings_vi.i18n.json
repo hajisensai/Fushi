@@ -6797,5 +6797,7 @@
   "settings_page_reset_message": "Checked settings will go back to their defaults.",
   "settings_page_reset_confirm": "Reset",
   "settings_page_reset_value_on": "On",
-  "settings_page_reset_value_off": "Off"
+  "settings_page_reset_value_off": "Off",
+  "video_setting_mpv_passthrough": "Dolby / DTS passthrough",
+  "video_setting_mpv_passthrough_hint": "Send AC-3, E-AC-3, TrueHD and DTS-HD untouched to your receiver or soundbar so it decodes them (Atmos included). Only turn on if that device supports these formats — otherwise there may be no sound. When off, Fushi decodes them itself and 5.1 / 7.1 still play as surround."
 }

@@ -6797,5 +6797,7 @@
   "settings_page_reset_message": "勾选的设置项将恢复为默认值。",
   "settings_page_reset_confirm": "恢复",
   "settings_page_reset_value_on": "开",
-  "settings_page_reset_value_off": "关"
+  "settings_page_reset_value_off": "关",
+  "video_setting_mpv_passthrough": "杜比 / DTS 直通",
+  "video_setting_mpv_passthrough_hint": "把 AC-3 / E-AC-3 / TrueHD / DTS-HD 原样交给功放或回音壁解码（含 Atmos）。仅在设备支持这些格式时打开，否则可能无声。关闭时由 Fushi 自己解码，5.1 / 7.1 照样环绕输出。"
 }

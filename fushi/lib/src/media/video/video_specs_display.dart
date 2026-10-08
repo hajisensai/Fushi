@@ -25,37 +25,68 @@ enum VideoSpecField {
   subtitleTracks,
 }
 
-/// 卡片封面角标：**最多两个**，依次是清晰度与动态范围。
+/// 卡片封面角标：**最多三个**，依次是清晰度、动态范围、环绕声。
 ///
-/// 刻意只给两个：封面是给人认片子的，不是规格表。四个角已被标签/集数/云/进度条占住，
+/// 刻意只给这三个：封面是给人认片子的，不是规格表。四个角已被标签/集数/云/进度条占住，
 /// 再多塞就开始盖画面。完整规格在作品详情页。
 ///
 /// SDR 不出角标——「这片子是 SDR」不是信息，绝大多数片源都是；只有 HDR10 / HLG 值得
-/// 占位（unknown 更是绝不出，见 [VideoDynamicRange] 的 unknown≠sdr 说明）。
+/// 占位（unknown 更是绝不出，见 [VideoDynamicRange] 的 unknown≠sdr 说明）。立体声同理
+/// 不出，见 [videoSpecsAudioBadge]。
 List<String> videoSpecsCoverBadges(VideoProbeFacts? facts) {
-  final VideoStreamFacts? video = facts?.video;
-  if (video == null) return const <String>[];
-  final List<String> out = <String>[];
-  final String? resolution = video.resolutionLabel;
-  if (resolution != null) out.add(resolution);
-  final VideoDynamicRange range = video.dynamicRange;
-  if (range.isHdr) {
-    final String? label = range.badgeLabel;
-    if (label != null) out.add(label);
-  }
-  return List<String>.unmodifiable(out);
+  if (facts == null) return const <String>[];
+  final String? audio = videoSpecsAudioBadge(facts);
+  return List<String>.unmodifiable(<String>[
+    ..._videoBadges(facts.video),
+    if (audio != null) audio,
+  ]);
 }
 
-/// 一行紧凑摘要，给卡片文字区/集卡状态行用：`1080p · HDR10 · HEVC`。
+List<String> _videoBadges(VideoStreamFacts? video) {
+  if (video == null) return const <String>[];
+  final String? resolution = video.resolutionLabel;
+  final VideoDynamicRange range = video.dynamicRange;
+  final String? rangeLabel = range.isHdr ? range.badgeLabel : null;
+  return <String>[
+    if (resolution != null) resolution,
+    if (rangeLabel != null) rangeLabel,
+  ];
+}
+
+/// 环绕声角标：`Atmos` / `7.1` / `5.1`；立体声、单声道或探不到时为 null。
+///
+/// 取**最好的那条非评论音轨**（Atmos 优先，其次声道数）：角标说的是「这个文件能给
+/// 出什么」，和发布组标题里的 `TrueHD Atmos 7.1` 同一口径；默认轨恰好是日语 2.0 时
+/// 也照样标出另一条 5.1。评论音轨不算——导演评论 5.1 不是片子的环绕声。
+String? videoSpecsAudioBadge(VideoProbeFacts? facts) {
+  if (facts == null) return null;
+  AudioTrackFacts? best;
+  for (final AudioTrackFacts track in facts.audioTracks) {
+    if (track.isCommentary) continue;
+    if (best == null || _audioRank(track) > _audioRank(best)) best = track;
+  }
+  if (best == null) return null;
+  if (best.isAtmos) return 'Atmos';
+  if ((best.channels ?? 0) < 6) return null;
+  return best.channelLabel;
+}
+
+/// Atmos 压过任何声道数；其余按声道数比。
+int _audioRank(AudioTrackFacts track) =>
+    (track.isAtmos ? 1000 : 0) + (track.channels ?? 0);
+
+/// 一行紧凑摘要，给卡片文字区/集卡状态行用：`1080p · HDR10 · HEVC · Atmos`。
 ///
 /// 没有任何可显示项时返回 null 而不是空串——调用方据此决定「整行不渲染」，空串会白
 /// 占一行高度。
 String? videoSpecsInlineSummary(VideoProbeFacts? facts) {
-  final VideoStreamFacts? video = facts?.video;
-  if (video == null) return null;
+  if (facts == null) return null;
+  final String? codec = facts.video?.codecLabel;
+  final String? audio = videoSpecsAudioBadge(facts);
   final List<String> parts = <String>[
-    ...videoSpecsCoverBadges(facts),
-    if (video.codecLabel != null) video.codecLabel!,
+    ..._videoBadges(facts.video),
+    if (codec != null) codec,
+    if (audio != null) audio,
   ];
   return parts.isEmpty ? null : parts.join(' · ');
 }
@@ -137,6 +168,7 @@ TrackDisplay audioTrackDisplay(AudioTrackFacts track) => TrackDisplay(
       name: trackDisplayName(track.title, track.language, track.index),
       detail: <String>[
         if (track.codecLabel != null) track.codecLabel!,
+        if (track.isAtmos) 'Atmos',
         if (track.channelLabel != null) track.channelLabel!,
       ].join(' · '),
       isDefault: track.isDefault,

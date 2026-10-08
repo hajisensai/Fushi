@@ -40,6 +40,7 @@ class VideoMpvConfig {
     required this.audioPitchCorrection,
     required this.audioChannels,
     required this.normalizeDownmix,
+    required this.audioPassthrough,
     required this.loopFile,
     required this.hdrToneMapping,
     required this.hdrComputePeak,
@@ -69,6 +70,7 @@ class VideoMpvConfig {
     audioPitchCorrection: true,
     audioChannels: 'auto-safe',
     normalizeDownmix: false,
+    audioPassthrough: false,
     loopFile: false,
     hdrToneMapping: 'auto',
     hdrComputePeak: 'auto',
@@ -132,6 +134,14 @@ class VideoMpvConfig {
   /// 下混时做响度归一化（mpv 默认 no）。
   final bool normalizeDownmix;
 
+  /// 杜比 / DTS 码流直通（mpv `audio-spdif`，见 [kAudioPassthroughCodecs]）。
+  ///
+  /// **默认关，且不做「自动」**：mpv 无从得知 HDMI / 光纤另一头的功放能不能解这些
+  /// 码流——系统音频端点照样报「支持多声道」，猜错的代价是无声或满屏噪音。关着时
+  /// mpv 自己解码成多声道 PCM，任何设备都出声，5.1 / 7.1 照样环绕（见
+  /// [resolveAudioChannels]）；只有想让功放亮 Atmos / DTS:X 灯的用户才需要打开。
+  final bool audioPassthrough;
+
   /// 单文件循环。
   final bool loopFile;
 
@@ -184,6 +194,7 @@ class VideoMpvConfig {
     bool? audioPitchCorrection,
     String? audioChannels,
     bool? normalizeDownmix,
+    bool? audioPassthrough,
     bool? loopFile,
     String? hdrToneMapping,
     String? hdrComputePeak,
@@ -211,6 +222,7 @@ class VideoMpvConfig {
         audioPitchCorrection: audioPitchCorrection ?? this.audioPitchCorrection,
         audioChannels: audioChannels ?? this.audioChannels,
         normalizeDownmix: normalizeDownmix ?? this.normalizeDownmix,
+        audioPassthrough: audioPassthrough ?? this.audioPassthrough,
         loopFile: loopFile ?? this.loopFile,
         hdrToneMapping: hdrToneMapping ?? this.hdrToneMapping,
         hdrComputePeak: hdrComputePeak ?? this.hdrComputePeak,
@@ -240,6 +252,7 @@ class VideoMpvConfig {
         'audioPitchCorrection': c.audioPitchCorrection,
         'audioChannels': c.audioChannels,
         'normalizeDownmix': c.normalizeDownmix,
+        'audioPassthrough': c.audioPassthrough,
         'loopFile': c.loopFile,
         'hdrToneMapping': c.hdrToneMapping,
         'hdrComputePeak': c.hdrComputePeak,
@@ -305,6 +318,7 @@ class VideoMpvConfig {
         audioPitchCorrection: d['audioPitchCorrection'] != false, // 默认 true
         audioChannels: channels.contains(ch) ? ch : 'auto-safe',
         normalizeDownmix: d['normalizeDownmix'] == true,
+        audioPassthrough: d['audioPassthrough'] == true, // 默认 false
         loopFile: d['loopFile'] == true,
         hdrToneMapping: kHdrToneMappingValues.contains(tone)
             ? tone
@@ -534,6 +548,12 @@ String resolveAudioChannels(String audioChannels) {
   return audioChannels; // stereo / mono（用户显式强制）原样透传。
 }
 
+/// [VideoMpvConfig.audioPassthrough] 打开时交给 mpv `audio-spdif` 的码流清单。
+///
+/// `dts-hd` 已包含 `dts`（mpv 手册：两者同写等价于只写 `dts-hd`）。关闭时下发空串
+/// ＝ mpv 默认（全部本地解码），而不是不下发——运行时关掉开关必须真的撤回直通。
+const String kAudioPassthroughCodecs = 'ac3,eac3,truehd,dts-hd';
+
 /// mpv `audio-channels` 标准布局白名单：高→低有序，末位 `stereo` 永远兜底（不会无声）。
 /// 见 [resolveAudioChannels]（BUG-798）。
 const String _standardChannelLayouts = '7.1,5.1,stereo';
@@ -646,6 +666,7 @@ Map<String, String> buildMpvProperties(VideoMpvConfig config,
   // [resolveAudioChannels]；stereo/mono（用户显式强制）原样透传。
   out['audio-channels'] = resolveAudioChannels(config.audioChannels);
   out['audio-normalize-downmix'] = config.normalizeDownmix ? 'yes' : 'no';
+  out['audio-spdif'] = config.audioPassthrough ? kAudioPassthroughCodecs : '';
   // HDR→SDR 色调映射。两条都**只在真的需要色调映射时**起作用，SDR 片源不受影响，
   // 所以无条件下发即可，不必按片源门控。见 [VideoMpvConfig.hdrToneMapping] 对
   // 「为什么是映射质量而不是 HDR 直通」的说明。

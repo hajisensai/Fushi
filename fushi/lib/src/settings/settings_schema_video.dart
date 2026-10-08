@@ -1196,6 +1196,22 @@ SettingsDestination buildVideoDestination() {
             write: (VideoMpvConfig c, bool v) =>
                 c.copyWith(normalizeDownmix: v),
           ),
+          // 杜比 / DTS 直通：默认关，不做「自动」——为什么见
+          // [VideoMpvConfig.audioPassthrough]。
+          _videoMpvSwitchItem(
+            id: 'video.audio.passthrough',
+            title: t.video_setting_mpv_passthrough,
+            subtitle: t.video_setting_mpv_passthrough_hint,
+            icon: Icons.speaker_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 195,
+              section: t.video_setting_mpv_group_audio,
+            ),
+            read: (VideoMpvConfig c) => c.audioPassthrough,
+            write: (VideoMpvConfig c, bool v) =>
+                c.copyWith(audioPassthrough: v),
+          ),
         ],
       ),
       SettingsSection(

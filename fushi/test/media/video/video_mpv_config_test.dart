@@ -64,6 +64,10 @@ keep-open=yes
       // 布局做输出目标时 libswresample 无法初始化 → 无声。末位 stereo 永远兜底。
       expect(m['audio-channels'], '7.1,5.1,stereo');
       expect(m['audio-normalize-downmix'], 'no');
+      // 杜比 / DTS 直通默认关，且关着也要显式下发空串（= mpv 默认，全部本地解码），
+      // 运行时关掉开关才能真的撤回直通。
+      expect(VideoMpvConfig.defaults.audioPassthrough, isFalse);
+      expect(m['audio-spdif'], '');
     });
 
     test('audio group passes through', () {
@@ -73,8 +77,10 @@ keep-open=yes
         audioPitchCorrection: false,
         audioChannels: 'stereo',
         normalizeDownmix: true,
+        audioPassthrough: true,
       ));
       expect(m['audio-delay'], '0.25'); // 250ms = 0.25s
+      expect(m['audio-spdif'], 'ac3,eac3,truehd,dts-hd');
       expect(m['audio-pitch-correction'], 'no');
       expect(m['audio-channels'], 'stereo');
       expect(m['audio-normalize-downmix'], 'yes');
@@ -372,6 +378,7 @@ keep-open=yes
         audioPitchCorrection: false,
         audioChannels: 'mono',
         normalizeDownmix: true,
+        audioPassthrough: true,
         loopFile: true,
         rawConf: 'vo=gpu-next',
       );
@@ -392,6 +399,7 @@ keep-open=yes
       expect(back.audioPitchCorrection, isFalse);
       expect(back.audioChannels, 'mono');
       expect(back.normalizeDownmix, isTrue);
+      expect(back.audioPassthrough, isTrue);
       expect(back.loopFile, isTrue);
       expect(back.rawConf, 'vo=gpu-next');
     });
