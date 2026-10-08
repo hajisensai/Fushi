@@ -58,7 +58,9 @@ function html(body, status = 200, extra = {}) {
       'Content-Type': 'text/html; charset=utf-8',
       'Content-Security-Policy': CSP,
       'Cache-Control': 'private, no-store',
-      'Referrer-Policy': 'no-referrer',
+      // 不能用 no-referrer：按 Fetch 规范，该策略下页面里的表单 POST 一律发 `Origin: null`（同站也是），
+      // 会被下面的 checkOrigin 全部拒成 403 bad_origin。same-origin 对外链照样不带 referrer。
+      'Referrer-Policy': 'same-origin',
       'X-Content-Type-Options': 'nosniff',
       ...extra,
     },
@@ -170,6 +172,7 @@ function sessionCookie(token, maxAgeSec) {
 }
 
 /** 所有 POST：Origin 必须是本站（浏览器提交表单都会带）。 */
+// CSRF 防线：同站表单 POST 必须带本站 Origin。依赖 html() 的 Referrer-Policy 不是 no-referrer（见那里）。
 function checkOrigin(request, url) {
   const origin = request.headers.get('Origin');
   if (!origin || origin !== url.origin) throw new HttpError(403, 'bad_origin');

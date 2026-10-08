@@ -241,6 +241,9 @@ describe('网页处理台', () => {
     expect(anon.status).toBe(200);
     expect(anon.data).toContain('发送验证码');
     expect(anon.res.headers.get('Content-Security-Policy')).toContain("default-src 'none'");
+    // no-referrer 会让浏览器给本页表单的 POST 发 `Origin: null`，被 checkOrigin 拒成 bad_origin（线上登录全挂过一次）。
+    expect(anon.res.headers.get('Referrer-Policy')).toBe('same-origin');
+    expect(anon.data).not.toMatch(/<meta[^>]+name="referrer"/i);
     expect((await page(env, 'GET', `/dev/f/${id}`)).status).toBe(303);
 
     const login = await webLogin(env, dev);
