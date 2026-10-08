@@ -26,6 +26,7 @@ import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -1202,7 +1203,7 @@ SettingsDestination buildVideoDestination() {
             id: 'video.audio.passthrough',
             title: t.video_setting_mpv_passthrough,
             subtitle: t.video_setting_mpv_passthrough_hint,
-            icon: Icons.speaker_outlined,
+            icon: FushiIcons.audio,
             video: VideoPlacement(
               group: VideoGroup.mpv,
               order: 195,
