@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../pages/video_fushi_page_source_corpus.dart';
+import '../../helpers/source_guard.dart' show compactCode;
 
 /// TODO-451 guard: video volume is remembered per video bookUid.
 ///
@@ -15,8 +16,7 @@ import '../../pages/video_fushi_page_source_corpus.dart';
 /// - pending writes debounce and flush on lifecycle / dispose / process exit.
 /// 源码扫描的归一化：压掉全部空白，并把 tall-style 拆行补出来的尾随逗号
 /// 收回去。钉调用形态本身，不钉它当天被 dart format 排成什么样。
-String _flat(String v) =>
-    v.replaceAll(RegExp(r'\s+'), '').replaceAll(',)', ')');
+String _flat(String v) => compactCode(v).replaceAll(',)', ')');
 
 void main() {
   final File controllerFile = File(
@@ -61,30 +61,56 @@ void main() {
   group('preference key and initial read', () {
     test('uses video_volume_<bookUid> and never episode-indexed keys', () {
       expect(
-        page,
+        _flat(page),
         contains(
-            r"String get _volumePrefKey => 'video_volume_${widget.bookUid}'"),
-        reason: 'single videos and playlists both key by the video bookUid',
+          _flat(r"String get _volumePrefKey => 'video_volume_$_activeBookUid'"),
+        ),
+        reason:
+            'volume belongs to the current title, including a disc-selected MPLS',
+      );
+      expect(
+        _flat(page),
+        contains(
+          _flat('String get _activeBookUid => _discBookUid ?? widget.bookUid;'),
+        ),
+        reason:
+            'ordinary local and remote videos retain their existing bookUid key',
+      );
+      expect(
+        _flat(page),
+        contains('_discBookUid=selected.bookUid;'),
+        reason: 'disc volume keys must use the selected library row identity',
       );
       final String keyRegion = region(
         page,
         'String get _volumePrefKey',
         'double _readPersistedVolume',
       );
-      expect(keyRegion, isNot(contains('_currentEpisode')),
-          reason: 'playlist episodes must share one volume value');
-      expect(keyRegion, isNot(contains('positionMs')),
-          reason: 'volume key must not use per-episode progress data');
+      expect(
+        keyRegion,
+        isNot(contains('_currentEpisode')),
+        reason: 'playlist episodes must share one volume value',
+      );
+      expect(
+        keyRegion,
+        isNot(contains('positionMs')),
+        reason: 'volume key must not use per-episode progress data',
+      );
     });
 
     test('default is 100 and persisted values clamp to 0..100', () {
-      expect(page, contains('double _playbackVolume = 100.0'),
-          reason: 'new videos default to 100 volume');
+      expect(
+        page,
+        contains('double _playbackVolume = 100.0'),
+        reason: 'new videos default to 100 volume',
+      );
       final String read = methodBody(page, 'double _readPersistedVolume()');
       // dart format 的 tall style 会把这个调用拆成多行并补尾随逗号，逐字
       // contains 会假红（接线没动）。归一化后钉调用形态本身。
-      expect(_flat(read),
-          contains(_flat('getPref(_volumePrefKey, defaultValue: 100.0)')));
+      expect(
+        _flat(read),
+        contains(_flat('getPref(_volumePrefKey, defaultValue: 100.0)')),
+      );
       expect(_flat(read), contains(_flat('clamp(0.0, 100.0)')));
     });
 
@@ -96,31 +122,36 @@ void main() {
       );
       // 统一合集 Phase 3：单视频与播放列表某一集都照 _loadSingle 加载（每集是独立
       // VideoBooks 行），故只需保证持久化音量在 _loadSingle 前读到。
-      expect(localInit.indexOf('_playbackVolume = _readPersistedVolume()'),
-          lessThan(localInit.indexOf('_loadSingle(row)')),
-          reason: 'single-video / playlist-episode load must see volume first');
+      expect(
+        localInit.indexOf('_playbackVolume = _readPersistedVolume()'),
+        lessThan(localInit.indexOf('_loadSingle(row)')),
+        reason: 'single-video / playlist-episode load must see volume first',
+      );
 
       final String remoteInit = region(
         page,
         'Future<void> _initRemote() async {',
         'String get _speedPrefKey',
       );
-      expect(remoteInit.indexOf('_playbackVolume = _readPersistedVolume()'),
-          lessThan(remoteInit.indexOf('_applyLoad(')),
-          reason: 'remote load must also apply the saved bookUid volume');
+      expect(
+        remoteInit.indexOf('_playbackVolume = _readPersistedVolume()'),
+        lessThan(remoteInit.indexOf('_applyLoad(')),
+        reason: 'remote load must also apply the saved bookUid volume',
+      );
     });
 
-    test('_applyLoad passes initialVolume and syncs display from controller',
-        () {
-      final String applyLoad = methodBody(
-        page,
-        'Future<void> _applyLoad({',
-      );
-      expect(applyLoad, contains('initialVolume: _playbackVolume'));
-      expect(applyLoad, contains('_syncVolumeDisplay(controller.volume)'),
-          reason:
-              'after load, icon / popover display must match actual volume');
-    });
+    test(
+      '_applyLoad passes initialVolume and syncs display from controller',
+      () {
+        final String applyLoad = methodBody(page, 'Future<void> _applyLoad({');
+        expect(applyLoad, contains('initialVolume: _playbackVolume'));
+        expect(
+          applyLoad,
+          contains('_syncVolumeDisplay(controller.volume)'),
+          reason: 'after load, icon / popover display must match actual volume',
+        );
+      },
+    );
   });
 
   group('controller initialVolume handoff', () {
@@ -138,63 +169,98 @@ void main() {
       // BUG-528：open 现随 Media(httpHeaders:) 多行下发，锚点收敛到唯一的 `await player.open(`。
       final int open = loadBody.indexOf('await player.open(');
       final int lastVolume = loadBody.indexOf('_lastVolume = initialVolume');
-      final int setVolume =
-          loadBody.indexOf('await player.setVolume(initialVolume)');
+      final int setVolume = loadBody.indexOf(
+        'await player.setVolume(initialVolume)',
+      );
       // BUG-344: autoPlay 守卫升级为 _isCurrentLoad 双判据，锚点同步更新。
-      final int play = loadBody
-          .indexOf('if (autoPlay && _isCurrentLoad(player, loadToken))');
+      final int play = loadBody.indexOf(
+        'if (autoPlay && _isCurrentLoad(player, loadToken))',
+      );
       expect(open, greaterThanOrEqualTo(0));
-      expect(lastVolume, greaterThan(open),
-          reason:
-              '_lastVolume must reflect the saved value before UI reads it');
-      expect(setVolume, greaterThan(open),
-          reason: 'player must receive saved volume before playback starts');
-      expect(setVolume, lessThan(play),
-          reason: 'avoid an audible 100 then jump back to saved volume');
+      expect(
+        lastVolume,
+        greaterThan(open),
+        reason: '_lastVolume must reflect the saved value before UI reads it',
+      );
+      expect(
+        setVolume,
+        greaterThan(open),
+        reason: 'player must receive saved volume before playback starts',
+      );
+      expect(
+        setVolume,
+        lessThan(play),
+        reason: 'avoid an audible 100 then jump back to saved volume',
+      );
     });
   });
 
   group('real volume changes persist, mute does not', () {
     test('real volume entrypoints use the shared persistence helper', () {
-      final String slider =
-          methodBody(page, 'void _setVolumeFromSlider(double value)');
+      final String slider = methodBody(
+        page,
+        'void _setVolumeFromSlider(double value)',
+      );
       expect(slider, contains('_applyUserVideoVolume(next)'));
 
-      final String adjust =
-          methodBody(page, 'Future<void> _adjustVolume(double delta) async');
-      expect(adjust, contains('_applyUserVideoVolume(next)'),
-          reason: 'keyboard shortcuts and wheel path persist real volume');
-
-      final String mediaKit =
-          methodBody(page, 'void _onMediaKitVolumeChanged(double value)');
-      expect(mediaKit, contains('_applyUserVideoVolume(pct)'),
-          reason: 'right-half vertical drag persists real volume');
-    });
-
-    test('shared helper updates display, HUD, playback volume, and persistence',
-        () {
-      final String helper = methodBody(
+      final String adjust = methodBody(
         page,
-        'Future<void> _applyUserVideoVolume(',
+        'Future<void> _adjustVolume(double delta) async',
       );
-      expect(helper, contains('controller.setVolume(clamped)'));
-      expect(helper, contains('_playbackVolume = clamped'));
-      expect(helper, contains('_syncVolumeDisplay(clamped)'));
-      expect(helper, contains('_showVolumeOsd(clamped)'),
-          reason: 'TODO-450 right-side HUD remains display-only feedback');
-      expect(helper, contains('_queuePersistVideoVolume(clamped)'));
+      expect(
+        adjust,
+        contains('_applyUserVideoVolume(next)'),
+        reason: 'keyboard shortcuts and wheel path persist real volume',
+      );
+
+      final String mediaKit = methodBody(
+        page,
+        'void _onMediaKitVolumeChanged(double value)',
+      );
+      expect(
+        mediaKit,
+        contains('_applyUserVideoVolume(pct)'),
+        reason: 'right-half vertical drag persists real volume',
+      );
     });
 
-    test('M mute updates display and HUD without queuing or applying a saved 0',
-        () {
-      final String mute = methodBody(page, 'Future<void> _toggleMute() async');
-      expect(mute, contains('persist: false'));
-      expect(mute, contains('applyToController: false'));
-      expect(mute, contains('_applyUserVideoVolume('));
-      expect(mute, contains('next,'));
-      expect(mute, isNot(contains('_queuePersistVideoVolume')),
-          reason: 'temporary M mute must not overwrite saved volume');
-    });
+    test(
+      'shared helper updates display, HUD, playback volume, and persistence',
+      () {
+        final String helper = methodBody(
+          page,
+          'Future<void> _applyUserVideoVolume(',
+        );
+        expect(helper, contains('controller.setVolume(clamped)'));
+        expect(helper, contains('_playbackVolume = clamped'));
+        expect(helper, contains('_syncVolumeDisplay(clamped)'));
+        expect(
+          helper,
+          contains('_showVolumeOsd(clamped)'),
+          reason: 'TODO-450 right-side HUD remains display-only feedback',
+        );
+        expect(helper, contains('_queuePersistVideoVolume(clamped)'));
+      },
+    );
+
+    test(
+      'M mute updates display and HUD without queuing or applying a saved 0',
+      () {
+        final String mute = methodBody(
+          page,
+          'Future<void> _toggleMute() async',
+        );
+        expect(mute, contains('persist: false'));
+        expect(mute, contains('applyToController: false'));
+        expect(mute, contains('_applyUserVideoVolume('));
+        expect(mute, contains('next,'));
+        expect(
+          mute,
+          isNot(contains('_queuePersistVideoVolume')),
+          reason: 'temporary M mute must not overwrite saved volume',
+        );
+      },
+    );
 
     test('real volume 0 is still persisted', () {
       final String helper = methodBody(
@@ -202,25 +268,38 @@ void main() {
         'Future<void> _applyUserVideoVolume(',
       );
       expect(helper, contains('persist = true'));
-      expect(helper, isNot(contains('clamped > 0')),
-          reason: 'explicitly dragging to 0 is a real saved volume');
-      expect(helper, isNot(contains('clamped == 0')),
-          reason: '0 must not be filtered out of persistence');
+      expect(
+        helper,
+        isNot(contains('clamped > 0')),
+        reason: 'explicitly dragging to 0 is a real saved volume',
+      );
+      expect(
+        helper,
+        isNot(contains('clamped == 0')),
+        reason: '0 must not be filtered out of persistence',
+      );
     });
   });
 
   group('debounce and flush', () {
     test('volume writes debounce, then set the per-book pref', () {
       expect(page, contains('Timer? _volumePersistDebounce'));
-      final String queue =
-          methodBody(page, 'void _queuePersistVideoVolume(double volume)');
-      expect(queue, contains('Duration(milliseconds: 350)'),
-          reason:
-              'trailing debounce should stay within the planned 250 to 500 ms');
+      final String queue = methodBody(
+        page,
+        'void _queuePersistVideoVolume(double volume)',
+      );
+      expect(
+        queue,
+        contains('Duration(milliseconds: 350)'),
+        reason:
+            'trailing debounce should stay within the planned 250 to 500 ms',
+      );
       expect(queue, contains('_flushPersistedVideoVolume()'));
 
-      final String flush =
-          methodBody(page, 'Future<void> _flushPersistedVideoVolume() async');
+      final String flush = methodBody(
+        page,
+        'Future<void> _flushPersistedVideoVolume() async',
+      );
       expect(flush, contains('appModel.prefsRepo.setPref('));
       expect(flush, contains('_volumePrefKey'));
       expect(flush, contains('_pendingVolumePersist'));
@@ -234,8 +313,10 @@ void main() {
       );
       expect(lifecycle, contains('_flushPersistedVideoVolume()'));
 
-      final String processExit =
-          methodBody(page, 'Future<void> _flushAllForProcessExit() async');
+      final String processExit = methodBody(
+        page,
+        'Future<void> _flushAllForProcessExit() async',
+      );
       expect(processExit, contains('await _flushPersistedVideoVolume()'));
 
       final String dispose = methodBody(page, 'void dispose()');

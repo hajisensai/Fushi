@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "libbluray": {
+    "version": "1.5.0",
+    "sourceUrl": "https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz",
+    "sourceSha256": "f676408e91a5d321abf8b8d4dfdae36205c297dab5c54c3ec519639025f474a2",
+    "license": "LGPL-2.1-or-later"
+  },
+  "runtime": {
+    "componentRootSuffix": "Fushi/components/bdj/1.5.0-temurin8u504b01",
+    "version": "8u504-b01",
+    "directory": "jdk8u504-b01-jre",
+    "url": "https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u504-b01/OpenJDK8U-jre_x64_windows_hotspot_8u504b01.zip",
+    "sha256": "82e2cdc6693737c5998445b31f69668fa0da77c7705121053f6508ac84961123",
+    "license": "GPL-2.0-with-classpath-exception"
+  },
+  "files": [
+    {
+      "name": "bdj-runtime-probe.jar",
+      "sha256": "269df5f4df45f4679b5dd493791e5c877f78903d23caf1813d0292d334273893"
+    },
+    {
+      "name": "libbluray-awt-j2se-1.5.0.jar",
+      "sha256": "4c9440b6365e47621b35cf4ae207c01e274b227ca59da6e6faa27cb9b4b7d7ec"
+    },
+    {
+      "name": "libbluray-j2se-1.5.0.jar",
+      "sha256": "425502f07f1792ec5f16aece14c2fd71603969949ee4d3e2076c1064ef4a0cc9"
+    }
+  ]
+}

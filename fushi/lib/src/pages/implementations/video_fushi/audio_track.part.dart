@@ -30,6 +30,7 @@ extension _VideoAudioTrack on _VideoFushiPageState {
   /// 切换退出重进又得重新弄」。改为**有界轮询**：每 200ms 重试，最多 ~4s，直到列表里
   /// 出现目标轨再切；期间换片/卸载（`_controller != controller`）即放弃。
   Future<void> _restoreAudioTrack(VideoPlayerController controller) async {
+    if (controller.isBlurayNavigationSession) return;
     final String? wantId = _currentAudioTrackId;
     if (wantId == null || wantId.isEmpty) return;
     for (int attempt = 0; attempt < 20; attempt++) {
@@ -49,7 +50,11 @@ extension _VideoAudioTrack on _VideoFushiPageState {
     VideoPlayerController controller,
     AudioTrack track,
   ) async {
+    if (_discLearningBlocked) return;
+    final String bookUid = _activeBookUid;
+    final int generation = _episodeLoadSeq;
     await controller.selectAudioTrack(track);
+    if (!mounted || generation != _episodeLoadSeq) return;
     // 同系列音轨记忆（schema v52）：合集内选音轨写系列级，全系列共享（换集/从书架
     // 重进任一集都读到）；单文件视频（无合集）仍走 per-book，行为与旧版一致。
     //
@@ -60,27 +65,31 @@ extension _VideoAudioTrack on _VideoFushiPageState {
     if (_isRemote) {
       final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
       final int nowMs = await _stampRemoteStringPref(
-          videoRemoteAudioTrackPrefKey(uid),
-          videoRemoteAudioTrackAtPrefKey(uid),
-          track.id);
-      _pushRemotePlayback(uid,
-          VideoPlaybackSyncState(audioTrackId: track.id, audioTrackAt: nowMs));
+        videoRemoteAudioTrackPrefKey(uid),
+        videoRemoteAudioTrackAtPrefKey(uid),
+        track.id,
+      );
+      _pushRemotePlayback(
+        uid,
+        VideoPlaybackSyncState(audioTrackId: track.id, audioTrackAt: nowMs),
+      );
     } else {
       final int? collectionId = widget.playlistCollectionId;
       if (collectionId != null) {
         // 系列级写入内聚盖戳：repo 会把值 + now 镜像进全体视频成员的互联键对。
         await widget.repo.updateCollectionAudioTrackId(collectionId, track.id);
       } else {
-        await widget.repo.updateAudioTrackId(widget.bookUid, track.id);
+        await widget.repo.updateAudioTrackId(bookUid, track.id);
         // 本机镜像盖戳（互联 LWW 载体）：否则对端上报过一次后，本机选轨（row
         // 无戳恒 0）永远输给旧戳、再也传不出去。
         await _stampRemoteStringPref(
-            videoRemoteAudioTrackPrefKey(widget.bookUid),
-            videoRemoteAudioTrackAtPrefKey(widget.bookUid),
-            track.id);
+          videoRemoteAudioTrackPrefKey(bookUid),
+          videoRemoteAudioTrackAtPrefKey(bookUid),
+          track.id,
+        );
       }
     }
-    if (!mounted) return;
+    if (!mounted || generation != _episodeLoadSeq) return;
     _rebuild(() => _currentAudioTrackId = track.id);
     _showOsd(
       t.video_audio_track_switched(

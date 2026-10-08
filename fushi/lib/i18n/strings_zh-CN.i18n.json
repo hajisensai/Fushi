@@ -6208,5 +6208,18 @@
   "video_filter_extras_main": "仅正片",
   "video_filter_extras_only": "仅特典",
   "video_filter_source": "来源",
-  "video_filter_series_standalone_empty_hint": "没有散片。合集里的视频在「系列」页，或把「系列」筛选切到「全部」。"
+  "video_filter_series_standalone_empty_hint": "没有散片。合集里的视频在「系列」页，或把「系列」筛选切到「全部」。",
+  "video_disc_open_menu": "进入原盘菜单",
+  "video_disc_top_menu": "原盘主菜单",
+  "video_disc_popup_menu": "弹出菜单",
+  "video_disc_navigation_failed": "原盘未能执行这个菜单操作。",
+  "video_disc_title_binding_failed": "所选标题未能关联媒体库，学习功能暂不可用。",
+  "video_disc_extraction_unavailable": "此标题可经原盘解码播放，但加密源无法用于字幕提取或制卡。",
+  "video_disc_menu_unsupported": "当前播放器不支持蓝光菜单，请更新随包播放器或直接播放标题。",
+  "video_disc_runtime_install": "安装原盘菜单组件",
+  "video_disc_runtime_required": "这张盘需要 Java 菜单组件。重试可安装组件，也可以直接播放标题。",
+  "video_disc_runtime_description": "这张盘使用 Java 菜单，需要为 Fushi 下载约 40 MB 组件。组件仅供 Fushi 使用，不修改系统 Java。",
+  "video_disc_runtime_install_failed": "菜单组件安装失败，请检查网络后重试。",
+  "video_disc_angle_extraction_unavailable": "当前菜单选中的角度无法直接提取。请切回主视角后制卡。",
+  "video_disc_audio_selection_pending": "请等待原盘确定音轨，或手动选择音轨后再制卡。"
 }

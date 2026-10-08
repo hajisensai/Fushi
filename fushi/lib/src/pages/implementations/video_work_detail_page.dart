@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
@@ -63,7 +64,8 @@ class VideoWorkDetailPage extends StatefulWidget {
     List<VideoBookRow> members,
     bool deleteLocalFiles,
     bool deleteStatistics,
-  )? onDeleteMembersMedia;
+  )?
+  onDeleteMembersMedia;
 
   /// 透传给 [MediaCollectionDetailPage.deleteMembersLocalFilesSubtitle]：
   /// 「同时删除其中的视频」之下的二级「同时删除本地文件」勾选说明。
@@ -75,11 +77,11 @@ class VideoWorkDetailPage extends StatefulWidget {
   /// 透传给合集详情页的「重新刮削资料与封面」（刮削 controller 归 HomePage，
   /// 由库页注入）。null = 不渲染该菜单项。
   final Future<void> Function(MediaCollectionRow collection)?
-      onRescrapeCollection;
+  onRescrapeCollection;
 
   /// 透传给合集详情页的「TMDB 集编排」（备选排序）。null = 不渲染该菜单项。
   final Future<void> Function(MediaCollectionRow collection)?
-      onChooseTmdbOrdering;
+  onChooseTmdbOrdering;
 
   @override
   State<VideoWorkDetailPage> createState() => _VideoWorkDetailPageState();
@@ -124,60 +126,75 @@ class _VideoWorkDetailPageState extends State<VideoWorkDetailPage> {
     if (collectionId != null) {
       return FutureBuilder<MediaCollectionRow?>(
         future: _collectionFuture,
-        builder: (BuildContext context,
-            AsyncSnapshot<MediaCollectionRow?> snapshot) {
-          final MediaCollectionRow? collection = snapshot.data;
-          if (snapshot.connectionState != ConnectionState.done) {
-            // BUG-2230：同上 —— 加载态与它下面的 `collection == null` 终态口径一致，
-            // 都带 AppBar。future 悬挂时这里就是用户能看到的全部界面。
-            return Scaffold(
-              appBar: AppBar(),
-              body: Center(child: adaptiveIndicator(context: context)),
-            );
-          }
-          if (collection == null) {
-            return Scaffold(
-              appBar: AppBar(),
-              body: Center(
-                child: Text(t.video_load_failed_not_found),
-              ),
-            );
-          }
-          return MediaCollectionDetailPage(
-            database: widget.database,
-            videoSpecs: widget.videoSpecs,
-            collection: collection,
-            // 成员解析走共享的 [loadCollectionEpisodeSlots]：合集清单是跨端 union，
-            // 「本机没有这一行」不等于「这一集不存在」（BUG-1704）。
-            loadEpisodes: () => loadCollectionEpisodeSlots(
-              repository: widget.repository,
-              collectionId: collection.id,
-              loadRemoteVideos: widget.remote?.loadRemoteVideos,
-            ),
-            remote: widget.remote,
-            onOpenEpisode: (VideoBookRow episode) {
-              Navigator.push<void>(
-                context,
-                adaptivePageRoute<void>(
-                  context: context,
-                  builder: (_) => VideoFushiPage.neutralized(
-                    bookUid: episode.bookUid,
-                    repo: widget.repository,
-                    playlistCollectionId: collection.id,
-                  ),
+        builder:
+            (
+              BuildContext context,
+              AsyncSnapshot<MediaCollectionRow?> snapshot,
+            ) {
+              final MediaCollectionRow? collection = snapshot.data;
+              if (snapshot.connectionState != ConnectionState.done) {
+                // BUG-2230：同上 —— 加载态与它下面的 `collection == null` 终态口径一致，
+                // 都带 AppBar。future 悬挂时这里就是用户能看到的全部界面。
+                return Scaffold(
+                  appBar: AppBar(),
+                  body: Center(child: adaptiveIndicator(context: context)),
+                );
+              }
+              if (collection == null) {
+                return Scaffold(
+                  appBar: AppBar(),
+                  body: Center(child: Text(t.video_load_failed_not_found)),
+                );
+              }
+              return MediaCollectionDetailPage(
+                database: widget.database,
+                videoSpecs: widget.videoSpecs,
+                collection: collection,
+                // 成员解析走共享的 [loadCollectionEpisodeSlots]：合集清单是跨端 union，
+                // 「本机没有这一行」不等于「这一集不存在」（BUG-1704）。
+                loadEpisodes: () => loadCollectionEpisodeSlots(
+                  repository: widget.repository,
+                  collectionId: collection.id,
+                  loadRemoteVideos: widget.remote?.loadRemoteVideos,
                 ),
+                remote: widget.remote,
+                onOpenEpisode: (VideoBookRow episode) {
+                  Navigator.push<void>(
+                    context,
+                    adaptivePageRoute<void>(
+                      context: context,
+                      builder: (_) => VideoFushiPage.neutralized(
+                        bookUid: episode.bookUid,
+                        repo: widget.repository,
+                        playlistCollectionId: collection.id,
+                      ),
+                    ),
+                  );
+                },
+                onOpenDiscMenu: (VideoBookRow episode) {
+                  Navigator.push<void>(
+                    context,
+                    adaptivePageRoute<void>(
+                      context: context,
+                      builder: (_) => VideoFushiPage.neutralized(
+                        bookUid: episode.bookUid,
+                        repo: widget.repository,
+                        playlistCollectionId: collection.id,
+                        openBlurayMenu: true,
+                      ),
+                    ),
+                  );
+                },
+                onChanged: widget.onChanged,
+                onDeleteMembersMedia: widget.onDeleteMembersMedia,
+                deleteMembersLocalFilesSubtitle:
+                    widget.deleteMembersLocalFilesSubtitle,
+                deleteMembersStatisticsSubtitle:
+                    widget.deleteMembersStatisticsSubtitle,
+                onRescrapeCollection: widget.onRescrapeCollection,
+                onChooseTmdbOrdering: widget.onChooseTmdbOrdering,
               );
             },
-            onChanged: widget.onChanged,
-            onDeleteMembersMedia: widget.onDeleteMembersMedia,
-            deleteMembersLocalFilesSubtitle:
-                widget.deleteMembersLocalFilesSubtitle,
-            deleteMembersStatisticsSubtitle:
-                widget.deleteMembersStatisticsSubtitle,
-            onRescrapeCollection: widget.onRescrapeCollection,
-            onChooseTmdbOrdering: widget.onChooseTmdbOrdering,
-          );
-        },
       );
     }
     return _StandaloneVideoWorkDetail(
@@ -243,13 +260,15 @@ class _StandaloneVideoWorkDetailState
   }
 
   Future<void> _load() async {
-    final VideoBookRow? book =
-        await widget.repository.getByBookUid(widget.bookUid);
-    final VideoMetadataWorkRow? work =
-        await widget.database.getVideoMetadataWorkByBook(widget.bookUid);
+    final VideoBookRow? book = await widget.repository.getByBookUid(
+      widget.bookUid,
+    );
+    final VideoMetadataWorkRow? work = await widget.database
+        .getVideoMetadataWorkByBook(widget.bookUid);
     final VideoMetadataWorkCredits? credits =
-        await VideoMetadataCreditRepository(widget.database)
-            .forBook(widget.bookUid);
+        await VideoMetadataCreditRepository(
+          widget.database,
+        ).forBook(widget.bookUid);
     final List<VideoMetadataTermRow> terms = work == null
         ? const <VideoMetadataTermRow>[]
         : await widget.database.getVideoMetadataTermsForWork(work.id);
@@ -303,9 +322,12 @@ class _StandaloneVideoWorkDetailState
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final VideoMetadataWorkRow? work = _work;
-    final ImageProvider? poster = _image('poster') ??
+    final ImageProvider? poster =
+        _image('poster') ??
         resolveMediaCoverImage(
-            kind: MediaKind.video, localPath: book.coverPath);
+          kind: MediaKind.video,
+          localPath: book.coverPath,
+        );
     final ImageProvider? backdrop = _image('backdrop') ?? poster;
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -314,8 +336,10 @@ class _StandaloneVideoWorkDetailState
         padding: EdgeInsets.zero,
         children: <Widget>[
           SizedBox(
-            height:
-                (MediaQuery.sizeOf(context).height * 0.62).clamp(400.0, 620.0),
+            height: (MediaQuery.sizeOf(context).height * 0.62).clamp(
+              400.0,
+              620.0,
+            ),
             child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
@@ -369,9 +393,7 @@ class _StandaloneVideoWorkDetailState
                               work?.title ?? book.title,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .displaySmall
+                              style: Theme.of(context).textTheme.displaySmall
                                   ?.copyWith(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w800,
@@ -399,10 +421,20 @@ class _StandaloneVideoWorkDetailState
                             FilledButton.icon(
                               onPressed: () => _playBook(book),
                               icon: const Icon(Icons.play_arrow_rounded),
-                              label: Text(book.lastPositionMs > 0
-                                  ? t.video_continue_watching
-                                  : t.collection_play),
+                              label: Text(
+                                book.lastPositionMs > 0
+                                    ? t.video_continue_watching
+                                    : t.collection_play,
+                              ),
                             ),
+                            if (blurayDiscRootForPlaylistPath(book.videoPath) !=
+                                null)
+                              OutlinedButton.icon(
+                                onPressed: () =>
+                                    _playBook(book, openBlurayMenu: true),
+                                icon: const Icon(Icons.disc_full_outlined),
+                                label: Text(t.video_disc_open_menu),
+                              ),
                           ],
                         ),
                       ),
@@ -417,9 +449,9 @@ class _StandaloneVideoWorkDetailState
               padding: EdgeInsets.all(tokens.spacing.page),
               child: SelectableText(
                 work!.overview!,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      height: 1.55,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(height: 1.55),
               ),
             ),
           // v95：技术规格。这一页是「一个文件 = 一部作品」，规格无歧义，摊开显示。
@@ -470,12 +502,16 @@ class _StandaloneVideoWorkDetailState
     final List<VideoMetadataCreditSummary> all =
         _credits?.credits ?? const <VideoMetadataCreditSummary>[];
     final List<VideoMetadataCreditSummary> voice = all
-        .where((VideoMetadataCreditSummary credit) =>
-            credit.creditKind == 'voice_actor')
+        .where(
+          (VideoMetadataCreditSummary credit) =>
+              credit.creditKind == 'voice_actor',
+        )
         .toList(growable: false);
     final List<VideoMetadataCreditSummary> crew = all
-        .where((VideoMetadataCreditSummary credit) =>
-            credit.creditKind != 'voice_actor')
+        .where(
+          (VideoMetadataCreditSummary credit) =>
+              credit.creditKind != 'voice_actor',
+        )
         .toList(growable: false);
     if (voice.isEmpty && crew.isEmpty) return const SizedBox.shrink();
     return Padding(
@@ -514,8 +550,10 @@ class _StandaloneVideoWorkDetailState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Text(t.video_work_trailers,
-              style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            t.video_work_trailers,
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           SizedBox(height: tokens.spacing.card),
           for (final VideoMetadataExtraRow extra in _extras)
             FushiListItem(
@@ -530,7 +568,7 @@ class _StandaloneVideoWorkDetailState
     );
   }
 
-  void _playBook(VideoBookRow book) {
+  void _playBook(VideoBookRow book, {bool openBlurayMenu = false}) {
     Navigator.push<void>(
       context,
       adaptivePageRoute<void>(
@@ -538,6 +576,7 @@ class _StandaloneVideoWorkDetailState
         builder: (_) => VideoFushiPage.neutralized(
           bookUid: book.bookUid,
           repo: widget.repository,
+          openBlurayMenu: openBlurayMenu,
         ),
       ),
     );
@@ -545,8 +584,9 @@ class _StandaloneVideoWorkDetailState
 
   Future<void> _playExtra(VideoMetadataExtraRow extra) async {
     if (extra.bookUid != null) {
-      final VideoBookRow? local =
-          await widget.repository.getByBookUid(extra.bookUid!);
+      final VideoBookRow? local = await widget.repository.getByBookUid(
+        extra.bookUid!,
+      );
       if (local != null && mounted) _playBook(local);
       return;
     }

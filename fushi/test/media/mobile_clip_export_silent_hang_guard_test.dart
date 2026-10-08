@@ -33,16 +33,23 @@ void main() {
 
     test('防重入门必须给用户反馈，不得是裸 return', () {
       final int gate = audiobookPart.indexOf('if (_audiobookClipExporting) {');
-      expect(gate, greaterThan(-1),
-          reason: '防重入门必须带块体（里面要弹提示）；裸 `if (...) return;` 即回归');
+      expect(
+        gate,
+        greaterThan(-1),
+        reason: '防重入门必须带块体（里面要弹提示）；裸 `if (...) return;` 即回归',
+      );
       final String body = audiobookPart.substring(gate, gate + 700);
-      expect(body, contains('audiobook_export_clip_in_progress'),
-          reason: '导出进行中再点，必须复用「正在导出」文案提示，别静默丢弃');
+      expect(
+        body,
+        contains('audiobook_export_clip_in_progress'),
+        reason: '导出进行中再点，必须复用「正在导出」文案提示，别静默丢弃',
+      );
     });
 
     test('防重入标志与 try/finally 同域：置位后不得再有可抛语句落在 try 之外', () {
-      final int setFlag =
-          audiobookPart.indexOf('_audiobookClipExporting = true;');
+      final int setFlag = audiobookPart.indexOf(
+        '_audiobookClipExporting = true;',
+      );
       expect(setFlag, greaterThan(-1));
       final int tryStart = audiobookPart.indexOf('try {', setFlag);
       expect(tryStart, greaterThan(setFlag));
@@ -59,16 +66,25 @@ void main() {
         'msg: t.audiobook_export_clip_in_progress,',
       ]) {
         final int at = audiobookPart.indexOf(risky, setFlag);
-        expect(at, greaterThan(tryStart),
-            reason: '$risky 必须落在 try 之内（置位与 try 之间不得有可抛语句）');
+        expect(
+          at,
+          greaterThan(tryStart),
+          reason: '$risky 必须落在 try 之内（置位与 try 之间不得有可抛语句）',
+        );
       }
     });
 
     test('移动端分享失败不得报「已保存」', () {
-      expect(audiobookPart, contains('final bool shared = await FushiShare'),
-          reason: '必须消费分享返回值；fire-and-forget 就会弹出假成功');
-      expect(audiobookPart, contains('audiobook_export_clip_share_unavailable'),
-          reason: '面板没呈现时必须给诚实文案，而不是复用 saved');
+      expect(
+        audiobookPart,
+        contains('final bool shared = await FushiShare'),
+        reason: '必须消费分享返回值；fire-and-forget 就会弹出假成功',
+      );
+      expect(
+        audiobookPart,
+        contains('audiobook_export_clip_share_unavailable'),
+        reason: '面板没呈现时必须给诚实文案，而不是复用 saved',
+      );
     });
   });
 
@@ -83,10 +99,15 @@ void main() {
 
     test('controller 缺失不得是裸 return', () {
       final int gate = clipExportPart.indexOf('if (controller == null) {');
-      expect(gate, greaterThan(-1),
-          reason: '`if (controller == null) return;` 是零 OSD 零日志的静默出口');
-      expect(clipExportPart.substring(gate, gate + 400),
-          contains('video_clip_export_input_missing'));
+      expect(
+        gate,
+        greaterThan(-1),
+        reason: '`if (controller == null) return;` 是零 OSD 零日志的静默出口',
+      );
+      expect(
+        clipExportPart.substring(gate, gate + 400),
+        contains('video_clip_export_input_missing'),
+      );
     });
 
     test('unmount 时不得删掉已成功的产物，且要留下落点记录', () {
@@ -99,10 +120,16 @@ void main() {
       expect(nextBranch, greaterThan(unmounted));
       final String body = clipExportPart.substring(unmounted, nextBranch);
 
-      expect(body, contains('if (result.isSuccess)'),
-          reason: '成功产物与失败残片必须分开处置：从前一律删，等于丢掉用户等来的文件');
-      expect(body, contains('ErrorLogService.instance.log'),
-          reason: 'unmount 收场必须留一条可追记录（此前三重静默：无成功、无失败、无日志）');
+      expect(
+        body,
+        contains('if (result.isSuccess)'),
+        reason: '成功产物与失败残片必须分开处置：从前一律删，等于丢掉用户等来的文件',
+      );
+      expect(
+        body,
+        contains('ErrorLogService.instance.log'),
+        reason: 'unmount 收场必须留一条可追记录（此前三重静默：无成功、无失败、无日志）',
+      );
       final int deleteAt = body.indexOf('_deleteClipOutput');
       final int elseAt = body.indexOf('} else {');
       expect(elseAt, greaterThan(-1));
@@ -110,15 +137,22 @@ void main() {
     });
 
     test('移动端分享失败不得报「已导出」', () {
-      expect(clipExportPart, contains('final bool shared = isDesktop ||'),
-          reason: '桌面短路 + 移动消费分享返回值；fire-and-forget 就是假成功');
+      final RegExp desktopShortCircuit = RegExp(
+        r'final\s+bool\s+shared\s*=\s*isDesktop\s*\|\|',
+      );
+      expect(
+        desktopShortCircuit.hasMatch(clipExportPart),
+        isTrue,
+        reason: '桌面短路 + 移动消费分享返回值；fire-and-forget 就是假成功',
+      );
       expect(clipExportPart, contains('video_clip_export_share_unavailable'));
 
       // 成功文案必须落在 shared 为真的分支里，不能再无条件先弹。
-      final int shared =
-          clipExportPart.indexOf('final bool shared = isDesktop');
-      final int exported =
-          clipExportPart.indexOf('video_clip_exported', shared);
+      final int shared = desktopShortCircuit.firstMatch(clipExportPart)!.start;
+      final int exported = clipExportPart.indexOf(
+        'video_clip_exported',
+        shared,
+      );
       expect(exported, greaterThan(shared), reason: '成功 OSD 必须在拿到分享结果之后才弹');
     });
   });
@@ -154,12 +188,17 @@ void main() {
     final String kit = libFile('lib/src/media/video/ffmpeg_kit_backend.dart');
     // 启动 / 取消 / 读退出码 / 读日志四处，各一个上限。
     expect(
-        RegExp(r'\.timeout\(').allMatches(kit).length, greaterThanOrEqualTo(4),
-        reason: '四处 method channel 往返都必须有上限，任一裸 await 都能让 run() 永不返回');
+      RegExp(r'\.timeout\(').allMatches(kit).length,
+      greaterThanOrEqualTo(4),
+      reason: '四处 method channel 往返都必须有上限，任一裸 await 都能让 run() 永不返回',
+    );
     expect(kit, contains('KitSessionPhase.start'));
     expect(kit, contains('KitSessionPhase.execute'));
     expect(kit, contains('KitSessionPhase.epilogue'));
-    expect(kit, isNot(contains("output: ''")),
-        reason: '超时结果不得再返回空 output——那会抹掉「卡在哪」这唯一线索');
+    expect(
+      kit,
+      isNot(contains("output: ''")),
+      reason: '超时结果不得再返回空 output——那会抹掉「卡在哪」这唯一线索',
+    );
   });
 }
