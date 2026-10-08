@@ -36,7 +36,6 @@ import {
   capStream,
   gzipDeclaredSize,
   imageDimensions,
-  mergeFlags,
   stripHiddenChars,
   textFlags,
 } from './feedback_guard.js';
@@ -370,16 +369,22 @@ export async function addReporterMessage(env, row, body, now) {
   if (slot.meta.changes !== 1) throw new HttpError(429, 'too_many_messages');
   await spend(env, 'write_rows', 4, now);
   const reopen = CLOSED_STATUSES.includes(row.status) && row.status !== 'duplicate';
-  const flags = mergeFlags(parseFlags(row), textFlags([text], sink));
+  // 只算这条消息新增的标记，合并在 SQL 里做：并发的两条追加说明各自读到的是旧行，
+  // 用旧行算好再整列覆盖会互相冲掉对方的标记。
+  const added = textFlags([text], sink);
   await env.DB.batch([
     env.DB.prepare(
       'INSERT INTO feedback_messages (feedback_id, author, body, status, created_at) VALUES (?1, \'user\', ?2, ?3, ?4)',
     ).bind(row.id, text, reopen ? 'open' : null, now),
     env.DB.prepare(
-      `UPDATE feedback SET user_reply_at = ?2, updated_at = ?2, flags = ?4,
+      `UPDATE feedback SET user_reply_at = ?2, updated_at = ?2,
+         flags = CASE WHEN ?4 = '[]' THEN flags ELSE (
+           SELECT json_group_array(value) FROM (
+             SELECT value FROM json_each(feedback.flags) UNION SELECT value FROM json_each(?4)))
+         END,
          status = CASE WHEN ?3 THEN 'open' ELSE status END
        WHERE id = ?1`,
-    ).bind(row.id, now, reopen ? 1 : 0, JSON.stringify(flags)),
+    ).bind(row.id, now, reopen ? 1 : 0, JSON.stringify(added)),
   ]);
 }
 
