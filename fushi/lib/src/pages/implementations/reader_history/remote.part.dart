@@ -8,30 +8,11 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         _pageWidget.remoteBookClientLoader;
     if (injected != null) return injected();
 
-    final SyncRepository syncRepo = SyncRepository(appModel.database);
-
-    // 互联（局域网 hibiki server）已从 backendType 解耦成独立开关，可与云备份并存。
-    // 互联启用且已配对对端时优先用它的 live 库 API（listRemoteBooks/getRemoteBook），
-    // 因为端到端 live 库比云盘备份更适合浏览对端在读书。未启用/未配对则回退云后端。
-    // 注：两源同时展示（互联对端 + 云盘 远端书合并去重）留作后续，本轮先「有互联走
-    // 互联，否则走云」——满足「选了云备份仍能看到互联对端」的核心诉求。
-    if (await syncRepo.isInterconnectEnabled()) {
-      final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
-      if (await backend.restoreAuth(syncRepo)) return backend;
-    }
-
-    // 云盘备份后端（Google Drive 等）：经 resolveSyncBackend 得带解混淆装饰层的
-    // 后端，鉴权恢复成功后用 CloudRemoteBookClient 把远端书库适配成可下载条目
-    // （TODO-665 阶段1）。鉴权失败返 null（书架不显示远端区）。
-    final SyncBackendType type = await syncRepo.getBackendType();
-    final SyncBackend backend = resolveSyncBackend(type);
-    if (!await backend.restoreAuth(syncRepo)) return null;
-    final String rootFolderId = await backend.findOrCreateRootFolder();
-    return CloudRemoteBookClient(
-      backend: backend,
-      backendType: type,
-      rootFolderId: rootFolderId,
-    );
+    // 互联（局域网 hibiki server）已从 backendType 解耦成独立开关，可与云备份并存：
+    // 互联启用且已配对对端时优先用它的 live 库 API，否则回退云盘备份后端（经
+    // CloudRemoteBookClient 适配，TODO-665 阶段1）；鉴权失败返 null（不显示远端区）。
+    // 判定与「已从本机移除的远端书」找回列表共用一条。
+    return resolveShelfRemoteBookClient(appModel.database);
   }
 
   /// 是否应该去问远端要书列表。
@@ -142,16 +123,23 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
                   client,
                   forceRefresh: forceRefresh,
                 );
-      // 「仅从本机移除」过的远端书不再出占位卡（对端那份不动）。
-      final Set<String> hidden = appModelNoUpdate.prefsRepo.hiddenRemoteBooks;
+      // 「仅从本机移除」过的远端书不再出占位卡（对端那份不动）。互联按对端身份区分：
+      // 在 A 机隐藏的书换到 B 机不受牵连。
+      final List<HiddenRemoteBook> hidden =
+          appModelNoUpdate.prefsRepo.hiddenRemoteBooks;
+      final String? sourceHost = hidden.isEmpty
+          ? null
+          : await remoteBookSourceHost(appModel.database, client);
       return _RemoteBookState(
         books: dedupeRemoteBooks(
           remote: <RemoteBookInfo>[
             for (final RemoteBookInfo book in notAdopted)
-              if (!hidden.contains(hiddenRemoteBookKey(
+              if (!isRemoteBookHidden(
+                hidden,
                 sourceId: client.remoteLibrarySourceId,
-                book: book,
-              )))
+                sourceHost: sourceHost,
+                remoteId: book.downloadId,
+              ))
                 book,
           ],
           localBookKeys: localKeys,
@@ -473,46 +461,53 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     RemoteBookClient client,
   ) async {
     final PreferencesRepository prefs = appModelNoUpdate.prefsRepo;
-    final String key = hiddenRemoteBookKey(
+    final ({String? identity, String label})? host =
+        client is InterconnectSyncBackend
+            ? await _describeInterconnectHost(client)
+            : null;
+    final HiddenRemoteBook hidden = HiddenRemoteBook.of(
       sourceId: client.remoteLibrarySourceId,
       book: book,
+      sourceHost: host?.identity,
+      sourceLabel: host?.label,
     );
-    await prefs.setHiddenRemoteBooks(<String>{...prefs.hiddenRemoteBooks, key});
+    // 写偏好即可：书架订阅了偏好变更（[_onPrefsChangedForRemoteGate]），隐藏清单
+    // 一变就重取远端列表——找回列表里「恢复」也走同一条路。
+    await prefs.setHiddenRemoteBooks(<HiddenRemoteBook>[
+      for (final HiddenRemoteBook h in prefs.hiddenRemoteBooks)
+        if (h.key != hidden.key) h,
+      hidden,
+    ]);
     if (!mounted) return;
-    _refreshRemoteBooks();
     ScaffoldMessenger.of(context).showSnackBar(
       FushiSnackBar(
         content: Text(t.remote_book_hidden_message),
         action: SnackBarAction(
           label: t.undo,
           onPressed: () async {
-            await prefs.setHiddenRemoteBooks(
-              prefs.hiddenRemoteBooks..remove(key),
-            );
-            if (mounted) _refreshRemoteBooks();
+            await prefs.setHiddenRemoteBooks(<HiddenRemoteBook>[
+              for (final HiddenRemoteBook h in prefs.hiddenRemoteBooks)
+                if (h.key != hidden.key) h,
+            ]);
           },
         ),
       ),
     );
   }
 
-  /// 「彻底删除」二次确认里点名的 host：配对时记下的对端展示名，没有就用地址的主机名。
-  Future<String> _interconnectHostLabel(InterconnectSyncBackend backend) async {
-    final String? base = backend.resolvedHostBaseUrl;
+  /// 当前互联对端的身份与展示名（[describeInterconnectHost]）：「彻底删除」二次确认
+  /// 点名用展示名，「仅从本机移除」按身份记。
+  Future<({String? identity, String label})> _describeInterconnectHost(
+    InterconnectSyncBackend backend,
+  ) async {
+    List<FushiClientUrl> urls = const <FushiClientUrl>[];
     try {
-      for (final FushiClientUrl url
-          in await SyncRepository(appModel.database).getFushiClientUrls()) {
-        final String? name = url.deviceName?.trim();
-        if (base != null && url.url == base && name != null && name.isNotEmpty) {
-          return name;
-        }
-      }
+      urls = await SyncRepository(appModel.database).getFushiClientUrls();
     } catch (e, stack) {
       ErrorLogService.instance
           .log('ReaderFushiHistoryPage.interconnectHostLabel', e, stack);
     }
-    final String? host = base == null ? null : Uri.tryParse(base)?.host;
-    return (host == null || host.isEmpty) ? (base ?? '?') : host;
+    return describeInterconnectHost(urls, backend.resolvedHostBaseUrl);
   }
 
   /// 合集详情页成员语境下菜单末尾的「移出合集」（本地书卡 / SRT 卡 / 远端占位卡
@@ -569,7 +564,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   ) async {
     // 确认文案是给人看的 → 显示名（BUG-1488）；下面的删除仍走 downloadId 身份键。
     // 写明是哪台 host 上的哪本书（反馈 nvlhtczbro）。
-    final String host = await _interconnectHostLabel(backend);
+    final String host = (await _describeInterconnectHost(backend)).label;
     if (!mounted) return;
     final bool? confirmed = await _confirmRemoteDelete(
       book.displayName,
@@ -1948,11 +1943,3 @@ class _RemoteAudiobookException implements Exception {
   @override
   String toString() => '_RemoteAudiobookException: $cause';
 }
-
-/// 「仅从本机移除」隐藏清单的键：来源身份（互联对端 / 某个云盘书库）+ 远端身份键
-/// （[RemoteBookInfo.downloadId]，与下载 / 删除同键，BUG-414）。
-String hiddenRemoteBookKey({
-  required String sourceId,
-  required RemoteBookInfo book,
-}) =>
-    '$sourceId/${Uri.encodeComponent(book.downloadId)}';

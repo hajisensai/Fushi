@@ -112,6 +112,7 @@ import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/deletion_propagation_availability.dart';
 import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
+import 'package:fushi/src/sync/hidden_remote_books.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
@@ -126,6 +127,7 @@ import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -409,6 +411,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 用于识别「显示远端条目」开关翻转，翻转时重新取数。
   bool? _remoteGateAtLastLoad;
 
+  /// 上次取远端列表时的「仅从本机移除」清单签名（见 [_onPrefsChangedForRemoteGate]）。
+  String _hiddenRemoteBooksAtLastLoad = '';
+
   // 远端书 / 纯 SRT 有声书的下载进度与失败态不再挂本页 State（旧
   // `_downloadingBooks` 已删，BUG-1561 书侧补齐）：任务活在 app 级
   // InterconnectDownloadManager，占位卡经 _remoteBookTaskBadge 按任务状态渲染。
@@ -546,6 +551,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 用 appModelNoUpdate：initState 里读 appModel 会走 ref.watch，触发
     // 「initState 完成前依赖 InheritedWidget」断言。
     appModelNoUpdate.prefsRepo.addListener(_onPrefsChangedForRemoteGate);
+    _hiddenRemoteBooksAtLastLoad = _hiddenRemoteBooksSignature();
     _readStatusFilter = ShelfReadStatus.values
         .asNameMap()[appModelNoUpdate.prefsRepo.shelfReadStatusFilterName];
     _collectionLayout = ShelfCollectionLayout.fromName(
@@ -560,10 +566,24 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 这里和 build 各自重取一遍）。
   void _onPrefsChangedForRemoteGate() {
     if (!mounted) return;
+    // 「仅从本机移除」清单变了（隐藏 / 撤销 / 找回列表里恢复）：重取远端列表。
+    final String hidden = _hiddenRemoteBooksSignature();
+    if (hidden != _hiddenRemoteBooksAtLastLoad) {
+      _hiddenRemoteBooksAtLastLoad = hidden;
+      _refreshRemoteBooks();
+      return;
+    }
     if (_remoteGateAtLastLoad == null) return;
     if (_remoteGateAtLastLoad == _shouldLoadRemoteBooks) return;
     _rebuild(() {});
   }
+
+  /// 隐藏清单的比对签名（偏好通知很频繁，只在清单真变时重取）。
+  String _hiddenRemoteBooksSignature() => <String>[
+        for (final HiddenRemoteBook h
+            in appModelNoUpdate.prefsRepo.hiddenRemoteBooks)
+          h.key,
+      ].join('|');
 
   /// 切回书架 tab 时自动重拉远端书（BUG-992）。非书架 tab 的切换忽略。
   void _onShellTabActivated() {
