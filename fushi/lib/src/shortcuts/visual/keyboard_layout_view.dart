@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
+import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/shortcuts/visual/key_cap_widget.dart';
@@ -380,10 +381,17 @@ class KeyboardLayoutView extends StatelessWidget {
 
     // 修饰键：只读分区展示，恒不可点、不参与高亮（key 不进反向索引）。
     if (spec.kind == KeyCapKind.modifier) {
+      // 修饰键键帽的字走快捷键显示的统一入口（BUG-3203）：macOS 上印 ⌃ ⌥ ⇧ ⌘，
+      // 与快捷键列表 / tooltip 一致；其它平台保留示意图自己的 Ctrl / Win / Alt。
+      final ModifierKey? modifier = ModifierKey.fromKeyboardKey(spec.key!);
+      final String label =
+          modifier != null && shortcutUsesAppleSymbols(shortcutDisplayPlatform)
+              ? shortcutModifierDisplayLabel(modifier)
+              : spec.label;
       return KeyCapWidget(
         key: Key('keycap_${spec.key!.keyId}'),
         logicalKey: spec.key!,
-        label: spec.label,
+        label: label,
         bound: false,
         isModifier: true,
         onTap: null,

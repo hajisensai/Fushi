@@ -115,7 +115,12 @@ class KeyCapWidget extends StatelessWidget {
     final Color highlightColor = scheme.surface.withValues(alpha: 0.35);
 
     final Widget face = Container(
-      alignment: Alignment.center,
+      // [width] 为 null 时按内容收宽（Wrap / Row 里的独立键帽）：
+      // `Align.widthFactor: 1` 让键面宽 = 文字宽 + 内边距，高度仍撑满。以前
+      // 这里是无因子的 center 对齐、侧壁又全是 Positioned，Stack 只能取父约束
+      // 的最大宽——引导页的 ⌃ ⌥ D 三枚键帽各占满一整行（BUG-3203）。
+      constraints:
+          width == null ? BoxConstraints(minWidth: height - stepHeight) : null,
       padding: const EdgeInsets.symmetric(horizontal: 6),
       decoration: BoxDecoration(
         borderRadius: radius,
@@ -138,14 +143,17 @@ class KeyCapWidget extends StatelessWidget {
                 stops: const <double>[0.0, 0.5],
               ),
       ),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        textAlign: TextAlign.center,
-        style: theme.textTheme.labelMedium?.copyWith(
-          color: fg,
-          fontWeight: bound ? FontWeight.w600 : FontWeight.w500,
+      child: Align(
+        widthFactor: width == null ? 1 : null,
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: fg,
+            fontWeight: bound ? FontWeight.w600 : FontWeight.w500,
+          ),
         ),
       ),
     );
@@ -165,12 +173,10 @@ class KeyCapWidget extends StatelessWidget {
               ),
             ),
           ),
-          // 键面（顶层）：顶部对齐、底部留 stepHeight 露台阶。
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: stepHeight,
+          // 键面（顶层）：顶部对齐、底部留 stepHeight 露台阶。非定位子节点，
+          // Stack 的尺寸由它决定（宽度见 face 的注释）。
+          Padding(
+            padding: EdgeInsets.only(bottom: stepHeight),
             child: face,
           ),
         ],

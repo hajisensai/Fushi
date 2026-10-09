@@ -835,41 +835,16 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         current: _stepIndex,
         total: steps.length,
       ),
-      body: Column(
-        children: <Widget>[
-          // BUG-2440：脚手架的 body 不再扣底部安全区，那一段归下面这条按钮行的
-          // SafeArea 认领。步骤正文在按钮行**上方**、够不着屏幕底边，所以先把
-          // 底部 inset 从它的 MediaQuery 里摘掉——不摘的话，自己补安全区的步骤
-          // （如 [OnlineServicesOnboardingView]）会和按钮行各补一次，在按钮上方
-          // 顶出一条 34pt 空白。
-          Expanded(
-            child: MediaQuery.removePadding(
-              context: context,
-              removeBottom: true,
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxWidth: _kOnboardingContentMaxWidth,
-                  ),
-                  // 步骤切换走 M3E 共享 X 轴：前进新页自右滑入、旧页向左让出，
-                  // 后退反向；位移是 spatial 弹簧、淡入淡出是 effects。每步一个
-                  // 进场窗口，hero 与卡片在新页里再错峰进场一次。
-                  child: OnboardingStepSwitcher(
-                    stepKey: step,
-                    forward: _navigatingForward,
-                    child: FushiEntranceScope(child: _buildStep(step)),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          OnboardingNavigationBar(
-            onSkip: isLast ? null : () => unawaited(_complete()),
-            onBack: _stepIndex > 0 ? _goBack : null,
-            onNext: _goNext,
-            isLast: isLast,
-          ),
-        ],
+      body: OnboardingWizardBody(
+        stepKey: step,
+        forward: _navigatingForward,
+        step: _buildStep(step),
+        navigationBar: OnboardingNavigationBar(
+          onSkip: isLast ? null : () => unawaited(_complete()),
+          onBack: _stepIndex > 0 ? _goBack : null,
+          onNext: _goNext,
+          isLast: isLast,
+        ),
       ),
     );
   }
@@ -1114,23 +1089,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       ShortcutAction.globalExternalLookup,
     );
     if (set.keyboardBindings.isEmpty) return null;
-    final InputBinding binding = set.keyboardBindings.first;
-    final List<String> parts = binding.displayLabel.split('+');
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Wrap(
-      spacing: tokens.spacing.gap / 2,
-      runSpacing: tokens.spacing.gap / 2,
-      children: <Widget>[
-        for (int i = 0; i < parts.length; i++)
-          KeyCapWidget(
-            logicalKey: binding.key,
-            label: parts[i],
-            bound: true,
-            isModifier: i < parts.length - 1,
-            height: 36,
-          ),
-      ],
-    );
+    return OnboardingHotkeyKeycaps(binding: set.keyboardBindings.first);
   }
 
   /// 应用外查词不是「移动端 / 桌面端各换一个快捷键」：两边由不同的系统能力
@@ -1894,6 +1853,68 @@ class OnboardingProgressBar extends StatelessWidget {
   }
 }
 
+/// 向导页的正文骨架（[FushiPageScaffold.body]）：步骤内容居中限宽、走共享 X 轴
+/// 切换，下面一条按钮行。单独成 widget 是为了让版面回归测试能装出与真页同构的
+/// 树（BUG-3202）。
+class OnboardingWizardBody extends StatelessWidget {
+  const OnboardingWizardBody({
+    required this.stepKey,
+    required this.forward,
+    required this.step,
+    required this.navigationBar,
+    super.key,
+  });
+
+  /// 当前步骤的身份；变化即触发一次转场。
+  final Object stepKey;
+
+  /// 本次换步是否前进（决定滑动方向）。
+  final bool forward;
+  final Widget step;
+  final Widget navigationBar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: <Widget>[
+        // BUG-2440：脚手架的 body 不再扣底部安全区，那一段归下面这条按钮行的
+        // SafeArea 认领。步骤正文在按钮行**上方**、够不着屏幕底边，所以先把
+        // 底部 inset 从它的 MediaQuery 里摘掉——不摘的话，自己补安全区的步骤
+        // （如 [OnlineServicesOnboardingView]）会和按钮行各补一次，在按钮上方
+        // 顶出一条 34pt 空白。
+        Expanded(
+          // BUG-3202：removePadding 读的是**正文自己**的 MediaQuery（本 widget
+          // 挂在脚手架 body 里）。脚手架把正文铺到浮动页头底下，并在正文的
+          // MediaQuery 顶部 padding 里报「标题行 + 页头（含进度条）」的让位
+          // 高度；以前这段写在页面 State.build 里、用的是脚手架**外层**的
+          // context（只有桌面标题行那 32px），等于把那份 padding 整个换回
+          // 外层的，步骤 hero 就画到进度条上。
+          child: MediaQuery.removePadding(
+            context: context,
+            removeBottom: true,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: _kOnboardingContentMaxWidth,
+                ),
+                // 步骤切换走 M3E 共享 X 轴：前进新页自右滑入、旧页向左让出，
+                // 后退反向；位移是 spatial 弹簧、淡入淡出是 effects。每步一个
+                // 进场窗口，hero 与卡片在新页里再错峰进场一次。
+                child: OnboardingStepSwitcher(
+                  stepKey: stepKey,
+                  forward: forward,
+                  child: FushiEntranceScope(child: step),
+                ),
+              ),
+            ),
+          ),
+        ),
+        navigationBar,
+      ],
+    );
+  }
+}
+
 /// 每一步开头的 hero：插画式图标色块 + 大标题 + 一句说明，左对齐。
 ///
 /// M3E：一朵 primaryContainer 九瓣花形大色块托着图标，旁边点缀 tertiary 四瓣
@@ -1931,6 +1952,36 @@ class OnboardingStepHero extends StatelessWidget {
           body,
           style: type.bodyLarge.copyWith(color: colors.onSurfaceVariant),
         ),
+      ],
+    );
+  }
+}
+
+/// 教程里的热键键帽：一个键一枚、按内容收宽、横向排开（窄屏自动换行）。键名
+/// 走快捷键显示的统一入口 [InputBinding.displayParts]，macOS 上是 ⌃ ⌥ D 而不是
+/// Ctrl / Alt / D（BUG-3203）。
+class OnboardingHotkeyKeycaps extends StatelessWidget {
+  const OnboardingHotkeyKeycaps({required this.binding, super.key});
+
+  final InputBinding binding;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final List<String> parts = binding.displayParts;
+    return Wrap(
+      spacing: tokens.spacing.gap / 2,
+      runSpacing: tokens.spacing.gap / 2,
+      children: <Widget>[
+        for (int i = 0; i < parts.length; i++)
+          KeyCapWidget(
+            key: ValueKey<String>('onboarding_hotkey_keycap_$i'),
+            logicalKey: binding.key,
+            label: parts[i],
+            bound: true,
+            isModifier: i < parts.length - 1,
+            height: 36,
+          ),
       ],
     );
   }

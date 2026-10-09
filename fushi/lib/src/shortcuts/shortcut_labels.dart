@@ -268,8 +268,9 @@ extension ShortcutScopeLabel on ShortcutScope {
 }
 
 /// 滚轮绑定的本地化显示名与小图标（与 [MouseBindingLabel] 同形，供设置页的
-/// chip 复用）。修饰键沿用 [ModifierKey.label] 的英文缩写（Alt/Ctrl/Shift/Meta，
-/// 与键盘 chip 一致），只有方向翻译成人话。
+/// chip 复用）。修饰键走与键盘 chip 同一个显示入口
+/// [shortcutModifierDisplayLabels]（macOS 上是 ⌃ ⌥ ⇧ ⌘，BUG-3203），只有方向
+/// 翻译成人话。
 extension WheelBindingLabel on WheelBinding {
   String get label {
     final String direction = switch (this.direction) {
@@ -277,9 +278,11 @@ extension WheelBindingLabel on WheelBinding {
       WheelDirection.down => t.shortcut_wheel_down,
     };
     if (modifiers.isEmpty) return direction;
-    final List<ModifierKey> sorted = modifiers.toList()
-      ..sort((ModifierKey a, ModifierKey b) => a.index.compareTo(b.index));
-    return '${sorted.map((ModifierKey m) => m.label).join('+')}+$direction';
+    final List<String> mods = shortcutModifierDisplayLabels(modifiers);
+    // 方向是一个词（「滚轮向下」），Apple 写法里也和修饰键符号隔开。
+    return shortcutUsesAppleSymbols(shortcutDisplayPlatform)
+        ? '${mods.join()} $direction'
+        : '${mods.join('+')}+$direction';
   }
 
   IconData get icon => FushiIcons.mouse;
