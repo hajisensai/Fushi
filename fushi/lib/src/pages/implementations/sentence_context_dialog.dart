@@ -634,8 +634,30 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
         onPressed: onPressed,
         // M3E XS 档（32 高胶囊）：横屏矮窗里四颗按钮占位要小。
         size: FushiButtonSize.xs,
+        // BUG-3087：XS 档把高度钉死在 32（maximumSize.height），文案一折行第二行就被
+        // 裁掉。放开最大高度（调用方字段优先于尺寸档），单行时仍是 32 高，
+        // 折行时高度跟着文字长。
+        style: const ButtonStyle(
+          maximumSize: WidgetStatePropertyAll<Size>(Size.infinite),
+          padding: WidgetStatePropertyAll<EdgeInsetsGeometry>(
+            EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          ),
+        ),
         icon: icon,
-        label: Text(label),
+        label: Text(label, textAlign: TextAlign.center),
+      );
+
+  /// 一个方向的 ±按钮行：两颗等宽、等高（IntrinsicHeight 让一颗折行时另一颗同高）。
+  Widget _adjustRow({required Widget minus, required Widget plus}) =>
+      IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Expanded(child: minus),
+            const SizedBox(width: 8),
+            Expanded(child: plus),
+          ],
+        ),
       );
 
   /// 「−」：语义图标子集里没有 remove 字形，用数学减号字形占位（与 add 同字号）。
@@ -693,12 +715,10 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
     return PopScope(
       canPop: !_busy,
       child: FushiAlertDialog(
-        // M3E 对话框：图标徽标（饼干形 primaryContainer）+ 圆角 28 由主题给。
-        icon: const FushiDialogHeroIcon(
-          icon: FushiIcons.quote,
-          tone: FushiHeroTone.primary,
-          size: 48,
-        ),
+        // BUG-3087：不放顶部 hero 图标。M3 对话框的图标是可选项，只在需要强调提醒类
+        // 内容时用，带图标时标题必须居中。这里的标题区是「小标题 + 大标题 + 关闭 X」，
+        // 靠左对齐，正文是一叠句子卡，图标既不提供额外信息（引号字形被用户读成「99」），
+        // 还会把标题拉成居中、和靠左的小标题错位。
         // BUG-922：横屏矮窗里正文竖向空间不足时，旧的 `Flexible(SingleChildScrollView)`
         // 会把整块滚动区让给固定的计数/按钮区、塌成 0 高——句子预览整段消失，只剩选项
         // （用户报「手机上看不见句子，只有选项」）。改为让整个对话框正文可滚动
@@ -755,59 +775,44 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
                     // 不再嵌 Flexible/SingleChildScrollView（那在矮窗会塌成 0 高）。
                     ...spacedCards,
                     const SizedBox(height: 12),
-                    // ±上下文：前一组靠左、后一组靠右（对齐 Niratan rangeControls 的
-                    // 「Remove/Add Previous … Remove/Add Next」分组）。各半区内用 Wrap
-                    // 兜底换行，窄屏不会溢出。
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Expanded(
-                          child: Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: <Widget>[
-                              _adjustButton(
-                                icon: _minusGlyph(),
-                                label: t.popup_ctx_prev_minus,
-                                onPressed: _locked || _prev.isEmpty
-                                    ? null
-                                    : () => _adjust(prevDir: true, plus: false),
-                              ),
-                              _adjustButton(
-                                icon: const FushiIcon(FushiIcons.add, size: 18),
-                                label: t.popup_ctx_prev_plus,
-                                onPressed: _locked || _prevAtMax
-                                    ? null
-                                    : () => _adjust(prevDir: true, plus: true),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            alignment: WrapAlignment.end,
-                            children: <Widget>[
-                              _adjustButton(
-                                icon: _minusGlyph(),
-                                label: t.popup_ctx_next_minus,
-                                onPressed: _locked || _next.isEmpty
-                                    ? null
-                                    : () => _adjust(prevDir: false, plus: false),
-                              ),
-                              _adjustButton(
-                                icon: const FushiIcon(FushiIcons.add, size: 18),
-                                label: t.popup_ctx_next_plus,
-                                onPressed: _locked || _nextAtMax
-                                    ? null
-                                    : () => _adjust(prevDir: false, plus: true),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                    // ±上下文：前文一行、后文一行，每行两颗等宽按钮（对齐 Niratan
+                    // rangeControls 的「Remove/Add Previous … Remove/Add Next」分组）。
+                    // BUG-3087：以前前文 / 后文左右各占半宽、每半区再挤两颗，360dp 窄屏下
+                    // 英文「Remove previous」折成两行后第二行被 32 高的 XS 胶囊裁掉。现在
+                    // 每个方向独占一行、两颗按钮平分整行；放不下时文案在按钮里折行、按钮
+                    // 跟着长高（见 [_adjustButton]），绝不截字，四颗仍排成整齐的 2×2。
+                    _adjustRow(
+                      minus: _adjustButton(
+                        icon: _minusGlyph(),
+                        label: t.popup_ctx_prev_minus,
+                        onPressed: _locked || _prev.isEmpty
+                            ? null
+                            : () => _adjust(prevDir: true, plus: false),
+                      ),
+                      plus: _adjustButton(
+                        icon: const FushiIcon(FushiIcons.add, size: 18),
+                        label: t.popup_ctx_prev_plus,
+                        onPressed: _locked || _prevAtMax
+                            ? null
+                            : () => _adjust(prevDir: true, plus: true),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _adjustRow(
+                      minus: _adjustButton(
+                        icon: _minusGlyph(),
+                        label: t.popup_ctx_next_minus,
+                        onPressed: _locked || _next.isEmpty
+                            ? null
+                            : () => _adjust(prevDir: false, plus: false),
+                      ),
+                      plus: _adjustButton(
+                        icon: const FushiIcon(FushiIcons.add, size: 18),
+                        label: t.popup_ctx_next_plus,
+                        onPressed: _locked || _nextAtMax
+                            ? null
+                            : () => _adjust(prevDir: false, plus: true),
+                      ),
                     ),
                   ],
                 ),
