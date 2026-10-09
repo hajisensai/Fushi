@@ -204,8 +204,6 @@ void main() {
         resolveDictionaryPopupTheme(
           eink: eink,
           einkDark: appDark,
-          readerBackground: paperBg,
-          readerForeground: paperFg,
           readerDark: readerDark,
           buildColorScheme: eink ? buildEinkColorScheme : blue,
           textTheme: const TextTheme(),
@@ -224,17 +222,17 @@ void main() {
           ),
         );
 
-    test('app 浅色：弹窗 = 歌词页深色档主题（同一工厂配方），不是纸色', () {
+    test('app 浅色：弹窗 = 歌词页深色档主题（同一工厂配方），不是浅色 app 主题', () {
       final DictionaryPopupTheme r = resolve(lyricsMode: true);
       final ThemeData page = lyricsPage(Brightness.light);
       expect(r.theme.colorScheme.brightness, Brightness.dark);
       expect(r.theme.colorScheme, page.colorScheme);
       expect(r.theme.extension<FushiGlassTheme>()?.glassDesign, isTrue);
       expect(r.fillColor, page.colorScheme.surface);
-      expect(r.fillColor, isNot(paperBg));
+      expect(r.fillColor, isNot(blue(Brightness.light).surface));
     });
 
-    test('阅读器纸色明暗不影响：浅色纸 / 深色纸都跟 app 明暗出的深色档', () {
+    test('阅读器明暗不影响：浅色纸 / 深色纸都跟 app 明暗出的深色档', () {
       final DictionaryPopupTheme a = resolve(lyricsMode: true);
       final DictionaryPopupTheme b =
           resolve(lyricsMode: true, readerDark: true);
@@ -249,13 +247,11 @@ void main() {
       expect(r.theme.colorScheme.brightness, Brightness.dark);
     });
 
-    test('退出歌词模式：回到原 Apple 主题（跟阅读器纸色明暗）', () {
+    test('退出歌词模式：回到原 Apple 主题（跟阅读器明暗）', () {
       final DictionaryPopupTheme off = resolve(lyricsMode: false);
       final DictionaryPopupTheme baseline = resolveDictionaryPopupTheme(
         eink: false,
         einkDark: false,
-        readerBackground: paperBg,
-        readerForeground: paperFg,
         readerDark: false,
         buildColorScheme: blue,
         textTheme: const TextTheme(),

@@ -293,8 +293,6 @@ void main() {
         resolveDictionaryPopupTheme(
           eink: false,
           einkDark: false,
-          readerBackground: const Color(0xFFF5EFE0),
-          readerForeground: const Color(0xFF3B3229),
           readerDark: false,
           buildColorScheme: (Brightness b) => root.colorScheme,
           textTheme: root.textTheme,
