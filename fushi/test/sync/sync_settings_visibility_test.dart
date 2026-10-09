@@ -125,6 +125,8 @@ void main() {
         // 词典与本地音频源数据库不是开关，而是一类一行的显式动作，方向在行尾菜单选。
         'sync.dictionary_transfer',
         'sync.local_audio_transfer',
+        // 字体文件 + 字体配置的显式传输（同步备份带字体，2026-10-09）。
+        'sync.fonts_transfer',
       ]);
       expect(idsOf(dest.sections[4]), <String>[
         'sync.backup_export',
@@ -163,6 +165,7 @@ void main() {
           'sync.video_files',
           'sync.dictionary_transfer',
           'sync.local_audio_transfer',
+          'sync.fonts_transfer',
         ]) {
           expect(
             byId(id).visible,
@@ -190,6 +193,7 @@ void main() {
         // 内容上传归互联页那组 opt-in），方法选成互联时同样是死按钮。
         'sync.dictionary_transfer',
         'sync.local_audio_transfer',
+        'sync.fonts_transfer',
       ]) {
         final int at = src.indexOf("id: '$id'");
         expect(at, greaterThanOrEqualTo(0));
@@ -485,6 +489,7 @@ void main() {
         expect(idsOf(dest.sections[2]), <String>[
           'interconnect.upload_content',
           'interconnect.dictionary_transfer',
+          'interconnect.fonts_transfer',
           'interconnect.upload_audiobook_files',
           'interconnect.upload_video_files',
         ]);

@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show TableUpdateQuery, Value;
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/profile/profile_document.dart';
@@ -38,6 +38,16 @@ class ProfileRepository {
   final bool Function(String name)? _isDictionaryInstalled;
 
   Future<List<ProfileRow>> getAllProfiles() => _db.getAllProfiles();
+
+  /// BUG-3148：`profiles` 表的任何写入（新建 / 改名 / 删除 / 导入）都会在这里冒一个
+  /// 事件，不论写入方是谁。
+  ///
+  /// 配置列表的视图模型是常驻的（非 autoDispose），以前只在自己发起的操作之后重读；
+  /// 互联「下载配置」与对端「上传配置」入站这两条写入绕过了它，列表就一直停在旧值，
+  /// 杀后台重进才看得到新配置。表级变更流是 drift 自带的唯一真相，比在每个写入点
+  /// 记得通知一遍可靠。
+  Stream<void> watchProfilesChanged() =>
+      _db.tableUpdates(TableUpdateQuery.onTable(_db.profiles)).map((_) {});
 
   Future<ProfileRow?> getProfileById(int id) => _db.getProfileById(id);
 

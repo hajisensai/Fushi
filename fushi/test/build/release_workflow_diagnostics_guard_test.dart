@@ -375,12 +375,18 @@ void main() {
     expect(macosJob, contains('flutter build macos --release'));
     expect(macosJob, contains('ditto -c -k --keepParent'));
     expect(macosJob, contains(r'fushi-${BUILD_VERSION_NAME}-macos-arm64.zip'));
+    // 手动下载用的 dmg（用户 2026-10-09：zip 解压麻烦）。zip 仍是更新器吃的那份，
+    // 两个都要出；未签名时 dmg 里随包放 Gatekeeper 放行说明。
+    expect(macosJob, contains('hdiutil create'));
+    expect(macosJob, contains(r'fushi-${BUILD_VERSION_NAME}-macos-arm64.dmg'));
+    expect(macosJob, contains('xattr -dr com.apple.quarantine'));
 
     expect(iosJob, contains('flutter build ios --release --no-codesign'));
     expect(iosJob, contains('Payload'));
     expect(iosJob, contains(r'fushi-${BUILD_VERSION_NAME}-ios.ipa'));
 
     expect(publishJob, contains('fushi-*-macos-arm64.zip'));
+    expect(publishJob, contains('fushi-*-macos-arm64.dmg'));
     expect(publishJob, contains('fushi-*-ios.ipa'));
     expect(
         publishJob, contains('Publish mirror update manifest (Apple assets)'));

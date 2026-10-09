@@ -142,10 +142,24 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     this._profileDraftCoordinator,
   ) : super(const ProfileUiState()) {
     _load();
+    // BUG-3148：别处（互联下载 / 对端上传入站）写进 profiles 表的新配置，列表要跟着
+    // 刷新，不必等重启。只重读列表本身——激活 id 与绑定的切换都经本类，不受影响。
+    _profilesChanged = _repo.watchProfilesChanged().listen((_) {
+      unawaited(_refreshProfileList());
+    });
+  }
+
+  StreamSubscription<void>? _profilesChanged;
+
+  Future<void> _refreshProfileList() async {
+    final List<ProfileRow> profiles = await _repo.getAllProfiles();
+    if (!mounted) return;
+    state = state.copyWith(profiles: profiles);
   }
 
   @override
   void dispose() {
+    _profilesChanged?.cancel();
     _repo.snapshotCurrentSettings(state.activeProfileId).catchError((Object e) {
       debugPrint('[profile] snapshot on dispose failed: $e');
     });

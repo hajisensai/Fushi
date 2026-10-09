@@ -27,6 +27,28 @@ void main() {
       expect(generated.certificatePem, contains('-----BEGIN CERTIFICATE-----'));
     });
 
+    // BUG-3196：Windows 计算机名是中文时主机服务开不起来——asn1lib 把 CN / SAN
+    // 按 ASCII 编码，原样传进来直接抛 `Contains invalid characters.`。
+    test('计算机名含中文也能生成可用证书（BUG-3196）', () {
+      for (final String name in <String>['大祥老师的电脑', 'Wight的MacBook']) {
+        final generated = FushiSelfSignedCertGenerator.generate(
+          commonName: name,
+          sanIpAddresses: <String>['127.0.0.1'],
+        );
+        final ctx = SecurityContext();
+        ctx.useCertificateChainBytes(generated.certificatePem.codeUnits);
+        ctx.usePrivateKeyBytes(generated.privateKeyPem.codeUnits);
+      }
+    });
+
+    test('tlsSafeCommonName 只留主机名字符，全不可用时退回固定名', () {
+      expect(tlsSafeCommonName('DESKTOP-AB12'), 'DESKTOP-AB12');
+      expect(tlsSafeCommonName('Wight的MacBook'), 'WightMacBook');
+      expect(tlsSafeCommonName('大祥老师的电脑'), kTlsFallbackCommonName);
+      expect(tlsSafeCommonName('-.my host.-'), 'myhost');
+      expect(tlsSafeCommonName('a' * 80).length, 63);
+    });
+
     test('fingerprintOf 对同一证书稳定、为 64 hex (32 字节冒号分隔)', () {
       final generated = FushiSelfSignedCertGenerator.generate(
         commonName: 'hibiki-test',

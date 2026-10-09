@@ -359,6 +359,21 @@ SettingsDestination buildSyncBackupDestination() {
               icon: FushiIcons.audio,
             ),
           ),
+          // 用户导入的字体文件 + 字体库配置（各用途的选用顺序与开关）。备份 zip 早就
+          // 带字体（BUG-183），这一行补上同步通道：换一台设备点「下载」即得同一套字体。
+          SettingsCustomItem(
+            id: 'sync.fonts_transfer',
+            searchTitle: t.sync_asset_fonts,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
+            icon: FushiIcons.font,
+            builder: (SettingsContext ctx) => _AssetTransferMenuRow(
+              settingsContext: ctx,
+              kind: SyncAssetKind.fonts,
+              title: t.sync_asset_fonts,
+              icon: FushiIcons.font,
+            ),
+          ),
         ],
       ),
       // ── Group 5: Local backup — independent of sync ──────────────────
@@ -623,6 +638,18 @@ SettingsDestination buildInterconnectDestination() {
               kind: SyncAssetKind.dictionary,
               title: t.sync_asset_dictionary,
               icon: FushiIcons.readingMode,
+              scope: SyncAssetChannelScope.interconnect,
+            ),
+          ),
+          SettingsCustomItem(
+            id: 'interconnect.fonts_transfer',
+            searchTitle: t.sync_asset_fonts,
+            icon: FushiIcons.font,
+            builder: (SettingsContext ctx) => _AssetTransferMenuRow(
+              settingsContext: ctx,
+              kind: SyncAssetKind.fonts,
+              title: t.sync_asset_fonts,
+              icon: FushiIcons.font,
               scope: SyncAssetChannelScope.interconnect,
             ),
           ),

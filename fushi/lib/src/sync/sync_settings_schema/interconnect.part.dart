@@ -2126,12 +2126,15 @@ class _InterconnectProfileTransferWidgetState
       // 与「配置管理」页导出同参：剥掉指向本机 custom_fonts/ 的绝对路径。
       fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
     );
-    return InterconnectSyncBackend.instance.putRemoteProfileJson(json);
+    return InterconnectSyncBackend.instance.putRemoteProfileJson(
+      json,
+      repo: SyncRepository(appModel.database),
+    );
   }
 
   Future<String?> _download(AppModel appModel) async {
-    final String? json =
-        await InterconnectSyncBackend.instance.getRemoteProfileJson();
+    final String? json = await InterconnectSyncBackend.instance
+        .getRemoteProfileJson(repo: SyncRepository(appModel.database));
     if (json == null) return null;
     final ProfileRepository repo = appModel.interconnectProfileRepository();
     // createNew（默认）：本机现有配置一份都不动。

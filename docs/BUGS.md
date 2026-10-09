@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2852 条。点号进各自文件。
+> 共 2855 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3196](bugs/BUG-3196-host-tls-cn-non-ascii.md) | ✅ | ✅ | 计算机名含中文时主机服务开不起来（自签证书 CN/SAN 只收 ASCII） |
+| [BUG-3148](bugs/BUG-3148-profile-list-stale-after-import.md) | ✅ | ✅ | 互联下载/入站配置后配置管理列表不刷新，需重启才看到 |
+| [BUG-3147](bugs/BUG-3147-interconnect-profile-stale-session.md) | ✅ | ✅ | 互联配置传输复用未重载的会话，重新配对后仍报「配对凭据被拒」 |
 | [BUG-3093](bugs/BUG-3093-feedback-snackbar-transition-race.md) | ✅ | ✅ | 反馈提交测试在提交页退场动画中断言提示条数，CI 慢时数到两条 |
 | [BUG-3092](bugs/BUG-3092-espeak-kana-only-symbols.md) | ✅ | ✅ | isKanaOnlyText 拒收〜…等读音常见符号、却放行 espeak-ng 读不了的・与小片假名扩展 |
 | [BUG-3091](bugs/BUG-3091-linux-tts-real-engine-test-skip.md) | ✅ | ✅ | Linux 真引擎 TTS 测试只判 open_jtalk 在 PATH，缺辞书或声音时误红 |

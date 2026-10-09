@@ -40,9 +40,14 @@ class FushiSelfSignedCertGenerator {
     final privateKey = pair.privateKey as ECPrivateKey;
     final publicKey = pair.publicKey as ECPublicKey;
 
-    final dn = <String, String>{'CN': commonName};
+    // BUG-3196：CN 与 SAN 里的名字必须是 ASCII（asn1lib 按 PrintableString /
+    // IA5String 编码，遇到非 ASCII 直接抛 `Invalid argument (string): Contains
+    // invalid characters.`）。Windows 计算机名可以是中文（「大祥老师的电脑」），
+    // 原样写进来就让主机服务一开就失败。身份校验走指纹钉扎，名字只是标签，归一即可。
+    final String safeName = tlsSafeCommonName(commonName);
+    final dn = <String, String>{'CN': safeName};
     final sans = <String>[
-      commonName,
+      safeName,
       ...sanIpAddresses,
     ];
 
@@ -79,6 +84,23 @@ class FushiSelfSignedCertGenerator {
     return (certificatePem: certificatePem, privateKeyPem: privateKeyPem);
   }
 }
+
+/// BUG-3196：把任意设备名归一成证书里可编码的名字。
+///
+/// 证书的 CN 与 dNSName SAN 只能装 ASCII；这里只留主机名字符（字母、数字、`-`、
+/// `.`），去掉首尾的 `-` / `.`，截到 63 字符（DNS 单段上限）。一个合法字符都不剩
+/// （纯中文计算机名）时退回固定标签——名字不参与任何校验，client 只认指纹。
+String tlsSafeCommonName(String name) {
+  String cleaned = name.replaceAll(RegExp(r'[^A-Za-z0-9.-]'), '');
+  cleaned = cleaned.replaceAll(RegExp(r'^[.-]+|[.-]+$'), '');
+  if (cleaned.length > 63) {
+    cleaned = cleaned.substring(0, 63).replaceAll(RegExp(r'[.-]+$'), '');
+  }
+  return cleaned.isEmpty ? kTlsFallbackCommonName : cleaned;
+}
+
+/// 设备名里一个可用字符都没有时证书用的名字。
+const String kTlsFallbackCommonName = 'fushi-host';
 
 /// 生成 / 加载 / 持久化 host TLS 身份。私钥仅落数据目录下 sync-tls/ 子目录，
 /// 靠 OS 文件权限保护（取舍 D：不接系统密钥库）。
