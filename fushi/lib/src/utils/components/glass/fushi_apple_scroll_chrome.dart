@@ -44,6 +44,7 @@ class FushiAppleScrollEdge extends StatelessWidget {
     this.blur = true,
     this.maxSigma = 8,
     this.maxAlpha = 1,
+    this.bandExtent,
   });
 
   final FushiScrollEdgeSide side;
@@ -62,45 +63,67 @@ class FushiAppleScrollEdge extends StatelessWidget {
   /// 小值：玻璃胶囊要透出并折射后面的内容，底色铺满就只剩一块平板。
   final double maxAlpha;
 
+  /// 非 null：本组件的盒子比渐隐带高——只有最靠内的 [bandExtent] 是 soft 渐隐，
+  /// 靠边的其余部分是实色底（与渐隐带最靠边处同色同不透明度，无接缝）。
+  ///
+  /// 顶栏用它把整段栏区连同栏下沿的渐隐带一起盖住：页面把正文铺到透明顶栏
+  /// 下面（`extendBodyBehindAppBar`，详情页 hero）时，若只在栏下沿画一条
+  /// 「上实下透」的带，带的上沿（实色）与上方透明栏区里露出的内容之间就是一条
+  /// 硬线（2026-10-09 用户 iOS 截图「往下拉露出一条线」）。
+  final double? bandExtent;
+
   @override
   Widget build(BuildContext context) {
     final Color base = (color ?? Theme.of(context).scaffoldBackgroundColor)
         .withValues(alpha: 1);
     final bool top = side == FushiScrollEdgeSide.top;
     final bool solid = glassMaterialOf(context) == FushiGlassMaterial.off;
+    Widget band = Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        if (blur && !solid)
+          ProgressiveBlur(
+            maxSigma: maxSigma,
+            // 与 GlassScrollEdgeEffect 同一个 2.0：前四成几乎不糊，
+            // 内容进到栏里才化开。
+            falloff: 2.0,
+            direction: top
+                ? ProgressiveBlurDirection.topToBottom
+                : ProgressiveBlurDirection.bottomToTop,
+          ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: top ? Alignment.topCenter : Alignment.bottomCenter,
+              end: top ? Alignment.bottomCenter : Alignment.topCenter,
+              colors: <Color>[
+                for (final double a in _kSoftAlphas)
+                  base.withValues(alpha: a * maxAlpha),
+              ],
+              stops: _kSoftStops,
+            ),
+          ),
+        ),
+      ],
+    );
+    final double? lead = bandExtent;
+    if (lead != null) {
+      final Widget fill = ColoredBox(color: base.withValues(alpha: maxAlpha));
+      band = Column(
+        verticalDirection: top ? VerticalDirection.down : VerticalDirection.up,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Expanded(child: fill),
+          SizedBox(height: lead, child: band),
+        ],
+      );
+    }
     return IgnorePointer(
       child: AnimatedOpacity(
         opacity: visible ? 1 : 0,
         duration: fushiMotionDuration(context, FushiMotion.short),
         curve: FushiMotion.standard,
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            if (blur && !solid)
-              ProgressiveBlur(
-                maxSigma: maxSigma,
-                // 与 GlassScrollEdgeEffect 同一个 2.0：前四成几乎不糊，
-                // 内容进到栏里才化开。
-                falloff: 2.0,
-                direction: top
-                    ? ProgressiveBlurDirection.topToBottom
-                    : ProgressiveBlurDirection.bottomToTop,
-              ),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: top ? Alignment.topCenter : Alignment.bottomCenter,
-                  end: top ? Alignment.bottomCenter : Alignment.topCenter,
-                  colors: <Color>[
-                    for (final double a in _kSoftAlphas)
-                      base.withValues(alpha: a * maxAlpha),
-                  ],
-                  stops: _kSoftStops,
-                ),
-              ),
-            ),
-          ],
-        ),
+        child: band,
       ),
     );
   }

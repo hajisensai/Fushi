@@ -21,9 +21,10 @@ import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
         FushiHeightReporter,
-        FushiTopFadeScrim,
-        kFushiTopFadeExtent,
-        kFushiTopScrimOverlayOpacity;
+        FushiTopFadeScrim;
+import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
+import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart'
+    show fushiIsChromeIconButton;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -182,12 +183,16 @@ class _SettingsSpringValueState extends State<SettingsSpringValue>
 enum SettingsIconTone { blue, teal, green, orange, purple, pink, red, gray }
 
 /// 分类的图标色调：同一导航分组同一主色系，组内再错开，首页一眼能分区。
+///
+/// [SettingsIconTone.red] 只留给破坏性操作行（[SettingsDangerRow]）：M3E 下它映射
+/// 到 error 容器，error 角色是固定的红、**不随主题种子色变化**——分类图标用它，
+/// 换主题时就只有那一枚还是红的（2026-10-09 用户截图「视频图标不变色」）。
 SettingsIconTone settingsIconToneFor(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.appearance => SettingsIconTone.purple,
   SettingsDestinationId.floatingBall => SettingsIconTone.pink,
   SettingsDestinationId.reading => SettingsIconTone.blue,
   SettingsDestinationId.manga => SettingsIconTone.teal,
-  SettingsDestinationId.video => SettingsIconTone.red,
+  SettingsDestinationId.video => SettingsIconTone.pink,
   SettingsDestinationId.game => SettingsIconTone.green,
   SettingsDestinationId.mediaTracking => SettingsIconTone.orange,
   SettingsDestinationId.lookup => SettingsIconTone.orange,
@@ -1203,11 +1208,18 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
           ),
           child: Row(
             children: <Widget>[
+              // 2026-10-09 用户截图「标题胶囊和 ⋮ 高度不一致、贴在一起」：三块
+              // 胶囊同高（[kFushiFloatingToolbarCompactExtent]，与
+              // FushiFloatingTopBar 同一档），块间留 gap；单颗图标的胶囊塌成
+              // 圆，按钮经 [FushiFillSlot] 撑满（ink / 命中区 = 可见圆）。
               if (widget.onBack != null) ...<Widget>[
                 capsule(
                   t: 1,
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
+                  child: FushiFillSlot.wrap(
+                    extent: const Size.square(
+                      kFushiFloatingToolbarCompactExtent,
+                    ),
+                    shape: const CircleBorder(),
                     child: FushiIconButtonControl(
                       icon: const FushiIcon(FushiIcons.back),
                       tooltip: MaterialLocalizations.of(
@@ -1222,20 +1234,53 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
               Expanded(
                 child: Align(
                   alignment: AlignmentDirectional.centerStart,
-                  child: capsule(t: t, child: titleBlock),
-                ),
-              ),
-              if (widget.actions.isNotEmpty)
-                capsule(
-                  t: math.max(t, 0.6),
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: FushiButtonGroup(
-                      spacing: 2,
-                      children: widget.actions,
+                  child: capsule(
+                    t: t,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        minHeight: kFushiFloatingToolbarCompactExtent,
+                      ),
+                      child: Align(
+                        widthFactor: 1,
+                        heightFactor: 1,
+                        alignment: AlignmentDirectional.centerStart,
+                        child: titleBlock,
+                      ),
                     ),
                   ),
                 ),
+              ),
+              if (widget.actions.isNotEmpty) ...<Widget>[
+                SizedBox(width: tokens.spacing.gap),
+                capsule(
+                  t: math.max(t, 0.6),
+                  child:
+                      widget.actions.length == 1 &&
+                          fushiIsChromeIconButton(widget.actions.single)
+                      ? FushiFillSlot.wrap(
+                          extent: const Size.square(
+                            kFushiFloatingToolbarCompactExtent,
+                          ),
+                          shape: const CircleBorder(),
+                          child: widget.actions.single,
+                        )
+                      : ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            minHeight: kFushiFloatingToolbarCompactExtent,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Center(
+                              widthFactor: 1,
+                              child: FushiButtonGroup(
+                                spacing: 2,
+                                children: widget.actions,
+                              ),
+                            ),
+                          ),
+                        ),
+                ),
+              ],
             ],
           ),
         );
@@ -1836,10 +1881,13 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
                     ? 1
                     : 0,
                 duration: fushiMotionDuration(context, FushiMotion.short),
+                // 2026-10-09 Android 用户截图：页头 + 跳转条背后透出正文
+                // （「结果中的词头数量上限 99」压在状态栏与胶囊之间）。遮罩
+                // 实色盖满整段让位（状态栏 + 页头 + 跳转条），再往下柔和渐隐；
+                // 与库页外壳顶部遮罩同一口径（BUG-3132 的修法）。
                 child: FushiTopFadeScrim(
-                  solidHeight: 0,
-                  fadeExtent: inset() + kFushiTopFadeExtent,
-                  topOpacity: kFushiTopScrimOverlayOpacity,
+                  solidHeight: inset(),
+                  topOpacity: 1,
                 ),
               ),
             ),

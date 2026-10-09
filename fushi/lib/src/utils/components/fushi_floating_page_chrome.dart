@@ -22,6 +22,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:flutter/rendering.dart';
+import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -43,8 +44,9 @@ Color fushiPageChromeColor(BuildContext context) =>
 Color fushiPageChromeForeground(BuildContext context) =>
     fushiFloatingToolbarPalette(context).foreground;
 
-/// 返回 / 关闭 / 抽屉键的圆形悬浮胶囊（48 直径）。子组件是一枚图标按钮，
-/// 原样挂进去。
+/// 返回 / 关闭 / 抽屉键的圆形悬浮胶囊（[kFushiPageChromeExtent] 直径）。子组件
+/// 是一枚图标按钮，原样挂进去，经 [FushiFillSlot] 撑满整枚圆：悬停 / 按下的
+/// state layer 与命中区就是这枚圆，不再是中间一枚更小的圆 / 方块。
 class FushiPageChromeCircle extends StatelessWidget {
   const FushiPageChromeCircle({required this.child, super.key});
 
@@ -60,12 +62,25 @@ class FushiPageChromeCircle extends StatelessWidget {
         padding: EdgeInsets.zero,
         child: IconTheme.merge(
           data: IconThemeData(color: fushiPageChromeForeground(context)),
-          child: Center(child: child),
+          child: FushiFillSlot.wrap(
+            extent: const Size.square(kFushiPageChromeExtent),
+            shape: const CircleBorder(),
+            child: child,
+          ),
         ),
       ),
     );
   }
 }
+
+/// [child] 是否是一颗「只有图标」的按钮（可装进 [FushiPageChromeCircle]）。
+bool fushiIsChromeIconButton(Widget child) =>
+    child is FushiIconButtonControl ||
+    child is IconButton ||
+    child is BackButton ||
+    child is CloseButton ||
+    child is PopupMenuButton ||
+    child is FushiIconButton;
 
 /// 页头 leading 是图标按钮（返回 / 关闭 / 抽屉 / 自定义图标键）时装进
 /// [FushiPageChromeCircle]；其它 leading（头像、品牌位……）原样返回。
@@ -312,13 +327,24 @@ class FushiScrollAwayController extends ChangeNotifier {
   /// 短页面一碰就把页头收掉。
   static const double revealZone = 56;
 
+  /// 收起 / 叫出所需的**同向累计**滚动距离（滞回）。手指拖动时总带几 px 的
+  /// 来回抖动，旧实现按方向一变就切换，Android 上页头在一次滑动里来回跳
+  /// （2026-10-09 用户反馈「顶栏来回跳、太容易触发」）。与首页外壳的
+  /// [FushiFloatingChromeController] 同一阈值。
+  static const double toggleDistance = 24;
+
   bool _hidden = false;
   ScrollDirection _userDirection = ScrollDirection.idle;
+
+  /// 当前方向上累计的用户滚动位移：正 = 往下看（内容上移），负 = 往回。
+  /// 方向一反就清零重新攒。
+  double _travel = 0;
 
   /// 页头当前是否收起。
   bool get hidden => _hidden;
 
   set hidden(bool value) {
+    _travel = 0;
     if (_hidden == value) return;
     _hidden = value;
     notifyListeners();
@@ -328,33 +354,42 @@ class FushiScrollAwayController extends ChangeNotifier {
   void show() => hidden = false;
 
   /// 喂滚动通知；永远返回 false（不拦截冒泡）。只认竖向滚动。
+  ///
+  /// 只累计**用户发起**的位移：拖动（带 dragDetails 的更新，含松手后的惯性）
+  /// 与滚轮（[UserScrollNotification] 标了方向的那一段，到 [ScrollEndNotification]
+  /// 为止）。程序滚动（jumpTo / animateTo / 平滑滚轮的补间）不动页头。
   bool handleNotification(Notification notification) {
     // 平滑滚轮补间的「拉回起点」不是用户滚动（[SmoothWheelScrollScope.isRewinding]）。
     if (SmoothWheelScrollScope.isRewinding) return false;
+    if (notification is! ScrollNotification) return false;
+    if (notification.metrics.axis != Axis.vertical) return false;
     if (notification is UserScrollNotification) {
-      if (notification.metrics.axis != Axis.vertical) return false;
+      if (notification.direction != _userDirection) _travel = 0;
       _userDirection = notification.direction;
-      switch (notification.direction) {
-        case ScrollDirection.reverse:
-          if (notification.metrics.extentBefore > revealZone) hidden = true;
-        case ScrollDirection.forward:
-          hidden = false;
-        case ScrollDirection.idle:
-          break;
-      }
-    } else if (notification is ScrollUpdateNotification) {
-      if (notification.metrics.axis != Axis.vertical) return false;
-      if (notification.metrics.extentBefore <= 0) {
-        hidden = false;
-      } else if (_userDirection == ScrollDirection.reverse &&
-          notification.dragDetails != null &&
-          notification.metrics.extentBefore > revealZone) {
-        // UserScrollNotification only fires when the direction changes. A drag
-        // that starts at the top must also be able to cross the reveal zone in
-        // its subsequent updates. Require a real drag so programmatic scrolls
-        // and viewport corrections cannot hide the header.
-        hidden = true;
-      }
+      return false;
+    }
+    if (notification is ScrollEndNotification) {
+      _userDirection = ScrollDirection.idle;
+      return false;
+    }
+    if (notification is! ScrollUpdateNotification) return false;
+    final ScrollMetrics metrics = notification.metrics;
+    if (metrics.extentBefore <= 0) {
+      hidden = false;
+      return false;
+    }
+    final bool userDriven =
+        notification.dragDetails != null ||
+        _userDirection != ScrollDirection.idle;
+    if (!userDriven || metrics.outOfRange) return false;
+    final double delta = notification.scrollDelta ?? 0;
+    if (delta == 0) return false;
+    if (_travel != 0 && delta.sign != _travel.sign) _travel = 0;
+    _travel += delta;
+    if (_travel >= toggleDistance && metrics.extentBefore > revealZone) {
+      hidden = true;
+    } else if (_travel <= -toggleDistance) {
+      hidden = false;
     }
     return false;
   }

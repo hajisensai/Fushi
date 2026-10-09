@@ -341,7 +341,8 @@ void main() {
       ),
     );
 
-    expect(find.byType(SegmentedButton<String>), findsOneWidget);
+    expect(find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
+        findsOneWidget);
     expect(
       find.byWidgetPredicate(
         (widget) => widget is CupertinoSlidingSegmentedControl,
@@ -387,7 +388,8 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.byType(SegmentedButton<String>), findsNothing);
+    expect(find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
+        findsNothing);
   });
 
   testWidgets('picker rows use Material dropdown on Android', (tester) async {
@@ -517,7 +519,8 @@ void main() {
     // 长 CJK 选项在 2x 下放不进行宽 55%：分段行按唯一判据
     // settingsChoiceUsesSegments 退回菜单行（当前值写进说明行），不溢出。
     expect(find.byType(SettingsChoiceMenuRow), findsOneWidget);
-    expect(find.byType(SegmentedButton<String>), findsNothing);
+    expect(find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
+        findsNothing);
     expect(find.byType(Slider), findsOneWidget);
     expect(find.byType(DropdownMenu<int>), findsOneWidget);
   });

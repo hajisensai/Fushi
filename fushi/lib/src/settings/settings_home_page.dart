@@ -12,11 +12,7 @@ import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_search_sheet.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show
-        FushiHeightReporter,
-        FushiTopFadeScrim,
-        kFushiTopFadeExtent,
-        kFushiTopScrimOverlayOpacity;
+    show FushiHeightReporter, FushiTopFadeScrim;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
@@ -852,11 +848,11 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
                             context,
                             FushiMotion.short,
                           ),
+                          // 与 SettingsKitScaffold 同口径：实色盖满页头让位，
+                          // 再往下渐隐（2026-10-09 用户截图：页头背后透出正文）。
                           child: FushiTopFadeScrim(
-                            solidHeight: 0,
-                            fadeExtent:
-                                _narrowHeaderHeight.value + kFushiTopFadeExtent,
-                            topOpacity: kFushiTopScrimOverlayOpacity,
+                            solidHeight: _narrowHeaderHeight.value,
+                            topOpacity: 1,
                           ),
                         ),
                   ),

@@ -251,7 +251,7 @@ bool _mapsEqual(Map<String, String> a, Map<String, String> b) {
 Future<int> _countSegmentedButtons(WidgetTester tester) async {
   return find
       .byWidgetPredicate(
-          (w) => w.runtimeType.toString().startsWith('SegmentedButton'))
+          (w) => w is SegmentedButton)
       .evaluate()
       .length;
 }

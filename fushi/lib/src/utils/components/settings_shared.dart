@@ -3383,7 +3383,13 @@ class _KeyboardStepper extends StatelessWidget {
 /// stop whose Left/Right (D-pad or arrow keys) nudge the slider by one step,
 /// while the slider stays draggable by mouse/touch. Up/Down are left free for
 /// row-to-row focus navigation.
-class _KeyboardSlider extends StatelessWidget {
+///
+/// 拖动跟手（2026-10-09 Android 用户反馈「设置里的数值拉条松手才变」）：拖动
+/// 中的值放在本 State 里直接画，不等调用方把新值写回 [value]——不少滑条拖动中
+/// 只做预览、松手才落库（字幕外观），或写库是异步的，旧实现下滑块在整段拖动里
+/// 钉在原地。松手后保留最后的拖动值，直到调用方的 [value] 真的变了（或刚好等于
+/// 它）再交还，避免提交在途时滑块先弹回旧值再跳过去。
+class _KeyboardSlider extends StatefulWidget {
   const _KeyboardSlider({
     required this.value,
     required this.min,
@@ -3406,39 +3412,84 @@ class _KeyboardSlider extends StatelessWidget {
   final double? step;
   final bool autofocus;
 
+  @override
+  State<_KeyboardSlider> createState() => _KeyboardSliderState();
+}
+
+class _KeyboardSliderState extends State<_KeyboardSlider> {
+  /// 指针拖动中 / 刚松手、调用方还没把新值写回时显示的值；null = 显示 [value]。
+  double? _local;
+
+  double get _shown =>
+      (_local ?? widget.value).clamp(widget.min, widget.max).toDouble();
+
+  @override
+  void didUpdateWidget(covariant _KeyboardSlider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final double? local = _local;
+    if (local == null || _dragging) return;
+    // 松手后：调用方的值动了（提交落地）或已与拖动值一致，交还给调用方。
+    if (widget.value != oldWidget.value || widget.value == local) {
+      _local = null;
+    }
+  }
+
+  bool _dragging = false;
+
   /// One D-pad/arrow nudge: an explicit [step], else one division, else 1/20 of
   /// the range (a sensible default for continuous sliders).
   double get _step =>
-      step ?? (divisions != null ? (max - min) / divisions! : (max - min) / 20);
+      widget.step ??
+      (widget.divisions != null
+          ? (widget.max - widget.min) / widget.divisions!
+          : (widget.max - widget.min) / 20);
 
   void _adjust(double delta) {
-    final double next = (value + delta).clamp(min, max);
-    onChanged(next);
-    onChangeEnd?.call(next);
+    final double next = (_shown + delta).clamp(widget.min, widget.max);
+    setState(() => _local = next);
+    widget.onChanged(next);
+    widget.onChangeEnd?.call(next);
+  }
+
+  void _handleChanged(double next) {
+    setState(() {
+      _dragging = true;
+      _local = next;
+    });
+    widget.onChanged(next);
+  }
+
+  void _handleChangeEnd(double next) {
+    setState(() {
+      _dragging = false;
+      _local = next == widget.value ? null : next;
+    });
+    widget.onChangeEnd?.call(next);
   }
 
   @override
   Widget build(BuildContext context) {
+    final double value = _shown;
     return _GamepadAdjustableValue(
       focusIdPrefix: 'settings-slider',
-      autofocus: autofocus,
+      autofocus: widget.autofocus,
       onIncrement: () => _adjust(_step),
       onDecrement: () => _adjust(-_step),
       child: Semantics(
         container: true,
         slider: true,
-        onIncrease: value < max ? () => _adjust(_step) : null,
-        onDecrease: value > min ? () => _adjust(-_step) : null,
+        onIncrease: value < widget.max ? () => _adjust(_step) : null,
+        onDecrease: value > widget.min ? () => _adjust(-_step) : null,
         excludeSemantics: true,
         child: adaptiveSlider(
           context: context,
           value: value,
-          min: min,
-          max: max,
-          divisions: divisions,
-          label: label,
-          onChanged: onChanged,
-          onChangeEnd: onChangeEnd,
+          min: widget.min,
+          max: widget.max,
+          divisions: widget.divisions,
+          label: widget.label,
+          onChanged: _handleChanged,
+          onChangeEnd: _handleChangeEnd,
         ),
       ),
     );

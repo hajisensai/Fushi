@@ -188,7 +188,10 @@ void main() {
     // MD3 原控件照旧在。
     expect(find.byType(Switch), findsWidgets);
     expect(find.byType(Slider), findsOneWidget);
-    expect(find.byType(SegmentedButton<int>), findsOneWidget);
+    expect(
+      find.byWidgetPredicate((Widget w) => w is SegmentedButton<int>),
+      findsOneWidget,
+    );
     expect(find.byType(ChoiceChip), findsOneWidget);
     // MD3 进度是 M3 Expressive 波浪环（自绘）。
     expect(find.byType(FushiWavyCircularProgress), findsOneWidget);
@@ -259,7 +262,7 @@ void main() {
 
     expect(find.byType(Switch), findsNothing);
     expect(find.byType(Slider), findsNothing);
-    expect(find.byType(SegmentedButton<int>), findsNothing);
+    expect(find.byWidgetPredicate((Widget w) => w is SegmentedButton<int>), findsNothing);
     expect(find.byType(ChoiceChip), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.byType(PopupMenuButton<int>), findsNothing);

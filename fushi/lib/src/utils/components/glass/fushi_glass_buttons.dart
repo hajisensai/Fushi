@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
@@ -1386,6 +1387,13 @@ class FushiIconButtonControl extends StatelessWidget {
         ? style
         : (style?.merge(_expressiveDefaults(context)) ??
               _expressiveDefaults(context));
+    // 装在填充槽里（返回圆胶囊 / 单按钮动作胶囊）：按钮 = 可见容器，尺寸与
+    // 形状都取容器的，state layer 与命中区撑满容器；容器不变形，按钮也不变形。
+    final FushiFillSlot? slot = FushiFillSlot.maybeOf(context);
+    if (slot != null) {
+      final ButtonStyle fill = fushiFillSlotButtonStyle(slot.extent, slot.shape);
+      return _buildMaterial(base == null ? fill : fill.merge(base));
+    }
     // 圆角按尺寸档（XS / S 12→8、M 16→12、L / XL 28→16）；圆形未选按下收到
     // 方形圆角，方形 / 选中按下再收到 pressed 圆角。
     final ({double square, double pressed}) radii =

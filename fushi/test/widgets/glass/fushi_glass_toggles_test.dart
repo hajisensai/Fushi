@@ -641,7 +641,7 @@ void main() {
       );
       expect(find.byType(FushiConnectedButtonGroup<String>), findsOneWidget);
       expect(find.byType(FushiAppleSegmentedControl), findsNothing);
-      expect(find.byType(SegmentedButton<String>), findsNothing);
+      expect(find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>), findsNothing);
       await tester.tap(find.text('Beta'));
       await tester.pump();
       expect(calls, <Set<String>>[
@@ -666,7 +666,7 @@ void main() {
         ),
         glass: true,
       );
-      expect(find.byType(SegmentedButton<String>), findsNothing);
+      expect(find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>), findsNothing);
       expect(find.byType(FushiAppleSegmentedControl), findsOneWidget);
 
       await tester.tap(find.text('Beta'));
@@ -697,7 +697,7 @@ void main() {
         ),
         glass: true,
       );
-      expect(find.byType(SegmentedButton<String>), findsNothing);
+      expect(find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>), findsNothing);
       expect(find.byType(FushiAppleSegmentedControl), findsNothing);
       expect(find.byType(GlassButton), findsNothing);
       // 选中段显示 SF 对勾。

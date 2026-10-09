@@ -35,6 +35,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
@@ -486,6 +487,33 @@ class FushiFloatingToolbar extends StatelessWidget {
       );
     }
     final double pad = compact ? 4 : kFushiFloatingToolbarPadding;
+    // 整条只有一颗图标按钮：胶囊塌成一枚圆，按钮经 [FushiFillSlot] 撑满它——
+    // state layer 与命中区 = 可见形状（2026-10-09 用户截图：单按钮胶囊里悬停
+    // 只亮中间一枚更小的方块）。
+    if (children.length == 1 && !labels && axis == Axis.horizontal) {
+      final Widget single = FushiFloatingPill(
+        key: const ValueKey<String>('fushi_floating_toolbar'),
+        color: palette.container,
+        shape: const CircleBorder(),
+        padding: EdgeInsets.zero,
+        child: FushiFillSlot.wrap(
+          extent: Size.square(extent),
+          shape: const CircleBorder(),
+          child: children.single,
+        ),
+      );
+      final Widget singleBody = fab == null
+          ? single
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                single,
+                const SizedBox.square(dimension: kFushiFloatingToolbarFabGap),
+                fab!,
+              ],
+            );
+      return excludeFocus ? ExcludeFocus(child: singleBody) : singleBody;
+    }
     final Widget bar = ConstrainedBox(
       constraints: axis == Axis.horizontal
           ? BoxConstraints(minHeight: extent)
@@ -844,13 +872,21 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
             for (final FushiToolbarItem item in leading) ...<Widget>[
+              // 前置键（返回等）就是一枚圆：按钮经 [FushiFillSlot] 撑满整枚圆，
+              // 悬停 / 按下的 state layer 与命中区 = 可见形状。
               FushiFloatingPill(
                 color: palette.container,
-                child: FushiToolbarButton(
-                  item: item,
-                  foreground: palette.foreground,
-                  selectedContainer: palette.selectedContainer,
-                  selectedForeground: palette.selectedForeground,
+                shape: const CircleBorder(),
+                padding: EdgeInsets.zero,
+                child: FushiFillSlot.wrap(
+                  extent: const Size.square(kFushiFloatingToolbarCompactExtent),
+                  shape: const CircleBorder(),
+                  child: FushiToolbarButton(
+                    item: item,
+                    foreground: palette.foreground,
+                    selectedContainer: palette.selectedContainer,
+                    selectedForeground: palette.selectedForeground,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),

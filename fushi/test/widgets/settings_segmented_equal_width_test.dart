@@ -94,7 +94,9 @@ void main() {
       final Rect shortStrip = tester.getRect(
         find.descendant(
           of: find.byKey(const ValueKey<String>('short')),
-          matching: find.byType(SegmentedButton<String>),
+          matching: find.byWidgetPredicate(
+            (Widget w) => w is SegmentedButton<String>,
+          ),
         ),
       );
       expect(shortRow.right - shortStrip.right, lessThan(40),
@@ -105,7 +107,9 @@ void main() {
       expect(
         find.descendant(
           of: find.byKey(const ValueKey<String>('long')),
-          matching: find.byType(SegmentedButton<String>),
+          matching: find.byWidgetPredicate(
+            (Widget w) => w is SegmentedButton<String>,
+          ),
         ),
         findsNothing,
         reason: 'no narrow / clipped strip box on the long row',

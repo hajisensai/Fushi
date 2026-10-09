@@ -367,36 +367,14 @@ class SettingsSchemaItem extends StatefulWidget
   }
 
   Widget _slider(SettingsSliderItem slider) {
-    if (slider.commitOnRelease) {
-      return _CommitOnReleaseSlider(
-        item: slider,
-        settingsContext: settingsContext,
-        showIcons: showIcons,
-      );
-    }
-    final double value = slider.value(settingsContext);
-    return AdaptiveSettingsSliderRow(
-      title: slider.title,
-      subtitle: slider.subtitle,
-      icon: slider.icon,
-      showIcon: showIcons,
-      value: value.clamp(slider.min, slider.max).toDouble(),
-      min: slider.min,
-      max: slider.max,
-      divisions: slider.divisions,
-      label: slider.label?.call(value),
-      step: slider.step,
-      readout: slider.titleReadout ? slider.label?.call(value) : null,
-      onChanged: (double next) async {
-        await slider.onChanged(settingsContext, next);
-        settingsContext.refresh();
-      },
-      onChangeEnd: slider.onChangeEnd == null
-          ? null
-          : (double next) async {
-              await slider.onChangeEnd!(settingsContext, next);
-              settingsContext.refresh();
-            },
+    // 两种提交语义共用一个有状态载体：拖动中的值放在载体 State 里（滑块跟手、
+    // 读数实时），不依赖 item.value 在拖动中被写回（2026-10-09 用户反馈「拉条
+    // 松手才变」——字幕外观等滑条拖动中只做预览、不落库，item.value 读到的一直
+    // 是旧值）。
+    return _CommitOnReleaseSlider(
+      item: slider,
+      settingsContext: settingsContext,
+      showIcons: showIcons,
     );
   }
 
@@ -525,7 +503,8 @@ class _SettingsSchemaItemState extends State<SettingsSchemaItem> {
   }
 }
 
-/// [SettingsSliderItem.commitOnRelease] 滑条的渲染载体：拖动中的临时值放在与
+/// 设置滑条的渲染载体（[SettingsSliderItem.commitOnRelease] 与逐 tick 两种语义
+/// 共用）。commitOnRelease：拖动中的临时值放在与
 /// 拖动 UI 同生命周期的本 State（滑块跟手、label/读数实时），不调 item.onChanged、
 /// 不 refresh；松手（onChangeEnd）才把最终值经 item.onChanged 一次性提交。与
 /// 界面大小滑条（settings_actions.dart 的 _AppUiScaleSliderRow）同款拖动解耦——
@@ -626,13 +605,21 @@ class _CommitOnReleaseSliderState extends State<_CommitOnReleaseSlider> {
       label: item.label?.call(value),
       step: item.step,
       readout: item.titleReadout ? item.label?.call(value) : null,
-      onChanged: (double next) {
+      onChanged: (double next) async {
         _dragSession++;
         setState(() => _dragValue = next);
+        if (item.commitOnRelease) return;
+        // 逐 tick 写穿 / 预览的滑条：照旧每 tick 回调并刷新宿主。
+        await item.onChanged(widget.settingsContext, next);
+        widget.settingsContext.refresh();
       },
       onChangeEnd: (double next) async {
         final int session = _dragSession;
-        await item.onChanged(widget.settingsContext, next);
+        if (item.commitOnRelease) {
+          await item.onChanged(widget.settingsContext, next);
+        } else {
+          await item.onChangeEnd?.call(widget.settingsContext, next);
+        }
         if (mounted && _dragSession == session) {
           setState(() => _dragValue = null);
         }

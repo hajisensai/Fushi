@@ -71,7 +71,8 @@ void main() {
   }) async {
     expect(find.byType(SettingsChoiceMenuRow), findsOneWidget,
         reason: 'a strip that cannot fit falls back to the choice menu row');
-    expect(find.byType(SegmentedButton<String>), findsNothing,
+    expect(find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
+        findsNothing,
         reason: 'no clipped / half-visible strip is left on the row');
     expect(find.textContaining(selectedLabel), findsOneWidget,
         reason: 'the selected option is shown on the row itself');
@@ -223,7 +224,8 @@ void main() {
       expect(find.byType(SingleChildScrollView), findsNothing,
           reason: 'a fitting strip is laid out whole, not scroll-hosted');
 
-      final Rect strip = tester.getRect(find.byType(SegmentedButton<String>));
+      final Rect strip = tester.getRect(
+          find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>));
       final Rect label = tester.getRect(find.text('Spread mode'));
       final Rect row = tester.getRect(find.byKey(paneKey));
       // Compact trailing control on the label row (Android 16 settings),

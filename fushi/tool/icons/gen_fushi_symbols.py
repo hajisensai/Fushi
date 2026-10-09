@@ -73,6 +73,7 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("more", "more_vert", "more_vert", "more_vert", "更多（竖）"),
     ("moreHoriz", "more_horiz", "more_horiz", "more_horiz", "更多（横）"),
     ("menu", "menu", "menu", "menu", "菜单"),
+    ("menuOpen", "menu_open", "menu_open", "menu_open", "收起侧栏 / 导航栏（menu 的展开态）"),
     ("add", "add", "add", "add", "新增"),
     ("addCircle", "add_circle", "add_circle_outline", "add_circle", "新增（圆）"),
     ("edit", "edit", "edit_outlined", "edit", "编辑"),

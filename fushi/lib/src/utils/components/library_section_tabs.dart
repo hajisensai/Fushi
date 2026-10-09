@@ -1028,8 +1028,11 @@ class _FushiSectionTabBarState<T extends Object>
           shape: const StadiumBorder(),
           color: cs.secondaryContainer,
         ),
+        // 选中胶囊 = 整个页签格（不再上下各缩 4）：悬停 / 按下的 state layer
+        // （splashBorderRadius 全圆角、整格）与命中区就是这一格，三者同形同大
+        // （2026-10-09 用户截图「悬停胶囊、选中胶囊、可点区域三者不一致」）。
         indicatorSize: TabBarIndicatorSize.tab,
-        indicatorPadding: const EdgeInsets.symmetric(vertical: 4),
+        indicatorPadding: EdgeInsets.zero,
         indicatorAnimation: TabIndicatorAnimation.elastic,
         labelColor: cs.onSecondaryContainer,
         unselectedLabelColor: cs.onSurfaceVariant,
@@ -1189,7 +1192,8 @@ class _FloatingSectionTabsFrame extends StatelessWidget {
   final double naturalWidth;
   final Widget child;
 
-  static const double _horizontalPadding = 6;
+  /// 与竖向内边距同为 4：选中胶囊四周到外框的留白一圈等宽。
+  static const double _horizontalPadding = 4;
 
   @override
   Widget build(BuildContext context) {

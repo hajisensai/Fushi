@@ -1,4 +1,5 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:fushi/src/utils/components/fushi_pill_segmented_button.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:macos_ui/macos_ui.dart'
     show MacosSwitch, MacosSlider, PushButton, ControlSize;
@@ -732,8 +733,9 @@ Widget adaptiveSegmentedButton<T extends Object>({
       },
     );
   }
-  return SegmentedButton<T>(
-    showSelectedIcon: false,
+  // Material（M3E）：胶囊轨道 + 选中胶囊，与浏览页二级页签同一形态
+  // （2026-10-09 用户「深色模式三图标分段与浏览页胶囊页签风格不一致」）。
+  return FushiPillSegmentedButton<T>(
     segments: segments,
     selected: selected,
     onSelectionChanged: onSelectionChanged,
