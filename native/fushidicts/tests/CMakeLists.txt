@@ -145,6 +145,18 @@ add_test(NAME en_inflection_lookup_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json"
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/en_irregular.json")
 
+# BUG-3212：关西方言「うた → った」不得跨词吞掉「ため / たび」的「た」（真 ja.json）。
+add_executable(ja_kansai_ta_boundary_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/ja_kansai_ta_boundary_test.cpp")
+target_link_libraries(ja_kansai_ta_boundary_test PRIVATE fushidicts)
+target_include_directories(ja_kansai_ta_boundary_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(ja_kansai_ta_boundary_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME ja_kansai_ta_boundary_test
+         COMMAND ja_kansai_ta_boundary_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
+
 # BUG-2853：Yomitan 词典自带变形（`[formOf, [rule...]]` 重定向记录）在 lookup 里被跟随。
 add_executable(yomitan_redirect_lookup_test
     "${CMAKE_CURRENT_SOURCE_DIR}/yomitan_redirect_lookup_test.cpp")

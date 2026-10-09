@@ -48,9 +48,33 @@ class JapaneseLanguage extends Language {
   static final LinkedHashMap<String, int> _matchLengthCache =
       LinkedHashMap<String, int>();
 
+  /// 匹配长度缓存的键：引擎只看查询串的前 [FushiDicts.defaultScanLength] 个
+  /// **码点**——候选前缀都在这个扫描窗口内，BUG-3212 的关西方言保护结构判定也只
+  /// 读窗口内的文本——所以键取的正是这段，结果只依赖键里的文本。
+  ///
+  /// 旧键是前 20 个 UTF-16 单元：全 BMP 文本时恰好盖住 16 个码点，但窗口里每多
+  /// 一个增补平面字（𠮷 这类，占两个单元）就少盖一个码点，两段只在键外不同的
+  /// 文本会共享同一个缓存值。按码点截断后两者对齐。
+  @visibleForTesting
+  static String matchLengthCacheKey(String text) {
+    int units = 0;
+    int codePoints = 0;
+    while (units < text.length && codePoints < FushiDicts.defaultScanLength) {
+      final int unit = text.codeUnitAt(units);
+      final bool surrogatePair =
+          unit >= 0xD800 &&
+          unit <= 0xDBFF &&
+          units + 1 < text.length &&
+          (text.codeUnitAt(units + 1) & 0xFC00) == 0xDC00;
+      units += surrogatePair ? 2 : 1;
+      codePoints++;
+    }
+    return units == text.length ? text : text.substring(0, units);
+  }
+
   static int _lookupMatchedLength(String text) {
     if (!FushiDicts.isInitialized) return 0;
-    final String key = text.length > 20 ? text.substring(0, 20) : text;
+    final String key = matchLengthCacheKey(text);
     final cached = _matchLengthCache.remove(key);
     if (cached != null) {
       _matchLengthCache[key] = cached;

@@ -3430,6 +3430,118 @@ Promise.all([
   testConfirmMiningReportsDisabledButton(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
 
+// BUG-3210：SelectionText 串字段。选区只在「+」的 pointerdown/touchstart 快照，
+// 而「调整上下文」确认回点（fushiPopupMineEntryByIndex）与快捷键/手柄制卡
+// （fushiPopupMineFirstEntry）都不经那颗按钮的 pointerdown——它们沿用的是**上一次**
+// 点「+」时的快照，热槽 WebView 跨查词不重载，于是上一个词释义里选中的文字被写进
+// 这张卡（用户的「自体」卡 SelectionText 成了另一个词的释义）。
+function findByClassName(node, name) {
+  const hasClass = (n) =>
+    (n.className || '').split(/\s+/).includes(name) ||
+    (n.classList && n.classList.contains(name));
+  if (hasClass(node)) return node;
+  for (const child of node.children ?? []) {
+    const found = findByClassName(child, name);
+    if (found) return found;
+  }
+  return null;
+}
+
+async function testNewLookupDropsPreviousSelectionSnapshot() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  const [oldButton] = mountEntriesWith(context, ['抜かす']);
+  await flush();
+  // 上一个词：用户在释义里选了一段再点「+」。
+  context.window.getSelection().text = '② 好ましくないことばを口に出す。こく。';
+  oldButton.onpointerdown();
+  context.window.getSelection().removeAllRanges();
+  await oldButton.onclick();
+  await flush();
+  assert.equal(mined.length, 1);
+
+  // 换词重渲染（同一个热槽 WebView），这次什么都没选。
+  const container = new FakeElement('div');
+  stubRenderPopupRuntime(context, container);
+  context.window.lookupEntries = [];
+  context.window.kanjiResults = [];
+  context.window.renderPopup();
+  mountEntriesWith(context, ['自体']);
+  await flush();
+
+  assert.equal(await context.window.fushiPopupMineEntryByIndex(0), true);
+  await flush();
+  assert.equal(mined.length, 2);
+  assert.equal(mined[1].expression, '自体');
+  assert.equal(mined[1].popupSelectionText, '',
+    'a new lookup must not inherit the selected definition of the previous word');
+}
+
+async function testAdjustContextButtonSnapshotsSelectionForConfirm() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  context.window.sentenceContextPreviewEnabled = true;
+  mountEntriesWith(context, ['自体']);
+  await flush();
+  const adjust = findByClassName(context.window.__fushiRoot, 'ctx-adjust-button');
+  assert.ok(adjust, 'adjust-context button must render when preview is enabled');
+
+  const selected = 'それ自身。そのもの。';
+  context.window.getSelection().text = selected;
+  adjust.onpointerdown();
+  // 原生对话框弹出 / document click 处理器会把 WebView 里的活选区清掉。
+  context.window.getSelection().removeAllRanges();
+
+  assert.equal(await context.window.fushiPopupMineEntryByIndex(0), true);
+  await flush();
+  assert.equal(mined.length, 1);
+  assert.equal(mined[0].popupSelectionText, selected,
+    'confirm from the adjust-context dialog must carry the selection made before opening it');
+}
+
+async function testShortcutMineUsesLiveSelection() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  const [button] = mountEntriesWith(context, ['自体']);
+  await flush();
+  // 早先一次点「+」留下的旧快照。
+  context.window.getSelection().text = '旧い選択';
+  button.onpointerdown();
+  context.window.getSelection().removeAllRanges();
+
+  // 快捷键 / 手柄制卡：不经 pointerdown，必须按此刻的选区。
+  assert.equal(await context.window.fushiPopupMineFirstEntry(), true);
+  await flush();
+  assert.equal(mined.length, 1);
+  assert.equal(mined[0].popupSelectionText, '',
+    'shortcut mining with nothing selected must not reuse a stale snapshot');
+
+}
+
+async function testShortcutMineCapturesLiveSelection() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  mountEntriesWith(context, ['自体']);
+  await flush();
+  context.window.getSelection().text = '今の選択';
+  assert.equal(await context.window.fushiPopupMineFirstEntry(), true);
+  await flush();
+  assert.equal(mined.length, 1);
+  assert.equal(mined[0].popupSelectionText, '今の選択',
+    'shortcut mining must carry what is selected right now');
+}
+
+Promise.all([
+  testNewLookupDropsPreviousSelectionSnapshot(),
+  testAdjustContextButtonSnapshotsSelectionForConfirm(),
+  testShortcutMineUsesLiveSelection(),
+  testShortcutMineCapturesLiveSelection(),
+]).catch((error) => { console.error(error); process.exitCode = 1; });
+
 // ── 收藏夹一键制卡：fushiPopupBuildMinePayloadFor ─────────────────────────────
 // 批量制卡要的是「与手动点 + 逐字段相同的 payload」，但不能点按钮、不能走 mineEntry
 // 桥（落卡由 Dart 批量流程自己做）。这里钉住：选中的词条下标、payload 与该词条一致、
