@@ -128,8 +128,13 @@ Future<int> _switchByMouseClick(
   required String tag,
 }) async {
   final int viewId = tester.view.viewId;
-  final Finder episodeButton = find.byIcon(
-    FushiIcons.playlist,
+  // 控制条剧集按钮的字形是 [Icons.playlist_play]（`_videoControlItemIcon`）；
+  // [FushiIcons.playlist] 只用于控件编辑器的呈现表。两个都认，免得图标换源后
+  // 本用例在「找不到按钮」处就提前失败、根本走不到被测路径。
+  final Finder episodeButton = find.byWidgetPredicate(
+    (Widget w) =>
+        w is Icon &&
+        (w.icon == FushiIcons.playlist || w.icon == Icons.playlist_play),
     skipOffstage: false,
   );
   final RenderBox videoBox = tester.renderObject<RenderBox>(
@@ -145,7 +150,12 @@ Future<int> _switchByMouseClick(
     buttonAt = _hittableCenter(episodeButton, viewId, '[$tag] button');
   }
   expect(buttonAt, isNotNull, reason: '[$tag] 全屏控制条应有点得中的剧集按钮');
-  await _mouseClick(tester, mouse, buttonAt!);
+  // 移到按钮上会再次唤醒控制条；点之前按当前帧重新取一次命中点。
+  await mouse.moveTo(buttonAt!);
+  await tester.pump(const Duration(milliseconds: 120));
+  buttonAt =
+      _hittableCenter(episodeButton, viewId, '[$tag] button(re)') ?? buttonAt;
+  await _mouseClick(tester, mouse, buttonAt);
 
   final Finder card = find.byKey(cardKey, skipOffstage: false);
   Offset? cardAt;
