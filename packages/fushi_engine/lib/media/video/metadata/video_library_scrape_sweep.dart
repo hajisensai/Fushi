@@ -18,7 +18,8 @@
 ///
 /// 触发：进入视频 tab、切回视频 tab、以及视频库新增条目时（任意导入路径，含
 /// 内置下载管线）。批次经 [VideoSourceScrapeTaskController] 走全应用统一互斥门；
-/// 忙时不发批次、记下请求，批次结束时兑现。幂等键是**作品**不是进程
+/// 忙时不发批次、记下请求，批次结束时由调度器自己兑现（监听 controller 的
+/// 忙→闲，不依赖视频页挂载）。幂等键是**作品**不是进程
 /// （BUG-2199），重复触发廉价。刮削结果落库（含补刮批次自己的写入）**不是**
 /// 触发点，只刷新待确认清单（BUG-3072）。
 library;
@@ -34,6 +35,7 @@ import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:meta/meta.dart';
 
 /// 「[since] 之后 TMDB 上有变动的剧 id」探针（生产装配
 /// `TmdbVideoMetadataProvider.changedTvShowIds`）。
@@ -183,7 +185,9 @@ class VideoLibraryScrapeSweep {
         _ledger = ledger ?? VideoScrapeSweepLedger(),
         _configFingerprint = configFingerprint,
         _aiCapabilityKey = aiCapabilityKey,
-        _now = now ?? DateTime.now;
+        _now = now ?? DateTime.now {
+    _controller.addListener(_onControllerChanged);
+  }
 
   final FushiDatabase _database;
   final DateTime Function() _now;
@@ -249,12 +253,56 @@ class VideoLibraryScrapeSweep {
 
   /// 有一次「库里的条目变了」的补刮请求撞上了在飞的一轮（本调度器自己的，或
   /// 别处发起的批次）而没跑成。它不能丢：下载入库常落在批次期间（BUG-2199）。
-  /// 由 [refreshPendingAfterScrapeResults]（批次结束 / 结果落库）或本轮收尾兑现。
+  /// 由调度器自己兑现：本轮收尾（`finally`）或 controller 忙→闲
+  /// （[_onControllerChanged]）。以前只靠视频页「批次忙→闲」时调
+  /// [refreshPendingAfterScrapeResults] 兑现——视频页没挂载（用户在别的 tab、
+  /// 无头服务端根本没有页面）就一直拖着，页面那边的在飞闸门还可能把这次兑现
+  /// 整个吞掉（BUG-3085）。
   ///
-  /// 这是**唯一**能让「结果变了」这类通知发起补刮的条件：批次自己的写入
-  /// （运行记录、作品资料）本身绝不是补刮请求，否则一轮的写入会触发下一轮，
-  /// 临时失败的作品被无限重刮（BUG-3072）。
+  /// 只有 [sweepAndListPending]（库里条目变了的真实请求）会置位它；刮削结果的
+  /// 写入（运行记录、作品资料，含补刮批次自己的）绝不置位，否则一轮的写入会
+  /// 触发下一轮，临时失败的作品被无限重刮（BUG-3072）。
   bool _sweepDeferred = false;
+
+  /// 最近一次由调度器自己发起的兑现（见 [whenDeferredSettled]）。
+  Future<void>? _deferredRun;
+
+  bool _disposed = false;
+
+  /// controller 每次通知都看一眼：有被挡下的请求、自己没在跑、批次已闲 → 兑现。
+  /// [sweepAndListPending] 的同步前缀就会置 [_sweeping]，同一轮通知里不会重复发起。
+  void _onControllerChanged() {
+    if (_disposed || !_sweepDeferred || _sweeping || _controller.isBusy) return;
+    _runDeferred();
+  }
+
+  void _runDeferred() {
+    final Future<void> run = sweepAndListPending().then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stack) =>
+          engineLog.log('VideoLibraryScrapeSweep.deferred', error, stack),
+    );
+    _deferredRun = run;
+  }
+
+  /// 等调度器自己发起的兑现（含兑现期间又被挡下、接着再跑的那一轮）全部跑完。
+  @visibleForTesting
+  Future<void> whenDeferredSettled() async {
+    while (true) {
+      final Future<void>? run = _deferredRun;
+      if (run == null) return;
+      await run;
+      if (identical(run, _deferredRun)) return;
+    }
+  }
+
+  /// 断开与 controller 的监听。controller 换代 / 关停前调用：之后在途批次结束
+  /// 也不会再由这一代调度器发起补刮。
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _controller.removeListener(_onControllerChanged);
+  }
 
   /// 最近一次算出的待确认清单。批次在跑（含本调度器自己发起的那一批）时，
   /// 重复触发直接回它：每次重算都要把所有来源重新规划一遍 + 逐作品查身份，
@@ -270,14 +318,10 @@ class VideoLibraryScrapeSweep {
   /// 刮削结果落库 / 批次结束后刷新待确认清单（提醒条计数）。
   ///
   /// 只读，**不**发起补刮——刮削结果的写入（含补刮批次自己的）会触发这里，若它
-  /// 也发起补刮，一轮的写入就会启动下一轮（BUG-3072）。唯一例外是兑现批次期间
-  /// 被挡下的真实请求（[_sweepDeferred]），那是库里条目变化留下的，不是写入。
-  Future<List<VideoPendingScrapeWork>> refreshPendingAfterScrapeResults() {
-    if (_sweepDeferred && !_sweeping && !_controller.isBusy) {
-      return sweepAndListPending();
-    }
-    return pendingWorks();
-  }
+  /// 也发起补刮，一轮的写入就会启动下一轮（BUG-3072）。批次期间被挡下的真实请求
+  /// 由调度器自己在批次结束时兑现（[_onControllerChanged]），不经这里。
+  Future<List<VideoPendingScrapeWork>> refreshPendingAfterScrapeResults() =>
+      pendingWorks();
 
   /// 同 [pendingWorks]，每部作品再带上最近一次刮削留下的挂起原因（见
   /// `video_scrape_pending_note.dart`）。待确认清单用；只要计数的地方别用它。
@@ -529,10 +573,10 @@ class VideoLibraryScrapeSweep {
       return pending;
     } finally {
       _sweeping = false;
-      // 本轮在飞期间有条目变化被挡下：这里兑现（控制器仍忙则等批次结束时由
-      // [refreshPendingAfterScrapeResults] 兑现）。
-      if (_sweepDeferred && !_controller.isBusy) {
-        unawaited(sweepAndListPending());
+      // 本轮在飞期间有条目变化被挡下：这里兑现（控制器仍忙则等它忙→闲时由
+      // [_onControllerChanged] 兑现）。
+      if (!_disposed && _sweepDeferred && !_controller.isBusy) {
+        _runDeferred();
       }
     }
   }

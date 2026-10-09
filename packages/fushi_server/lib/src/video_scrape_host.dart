@@ -165,6 +165,7 @@ class ServerVideoScrape {
   void close() {
     if (_closed) return;
     _closed = true;
+    _sweep.dispose();
     controller.dispose();
     coordinator.close();
   }

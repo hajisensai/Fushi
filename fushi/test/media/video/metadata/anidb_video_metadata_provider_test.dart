@@ -2,12 +2,16 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_work_identity.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_title_catalog.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -148,6 +152,50 @@ void main() {
   });
 
   group('AniDbVideoMetadataProvider', () {
+    test(
+      'BUG-3084: English official / romaji titles reach the subtitle identity '
+      'aliases, so an English release name matches without tmdb/imdb',
+      () async {
+        final _CatalogFixture fixture = await _catalogFixture();
+        addTearDown(fixture.dispose);
+        final AniDbVideoMetadataProvider provider = AniDbVideoMetadataProvider(
+          clientName: '',
+          clientVersion: null,
+          language: 'ja',
+          titleCatalog: fixture.catalog,
+          client: MockClient((http.Request request) async {
+            throw StateError('HTTP API must not be called without an identity');
+          }),
+        );
+        addTearDown(provider.close);
+
+        final VideoMetadataWork work = (await provider.fetchWork(
+          const VideoMetadataLookup(
+            provider: VideoMetadataProviderKind.anidb,
+            externalId: '43',
+            mediaKind: VideoMetadataMediaKind.movie,
+          ),
+        ))!;
+        expect(work.englishTitle, 'Your Name.');
+        expect(work.romajiTitle, 'Kimi no Na wa.');
+
+        final VideoMediaReference reference = scrapedMediaReference(work);
+        expect(reference.tmdbId, isNull);
+        expect(reference.imdbId, isNull);
+        expect(
+          <String?>[reference.title, ...reference.aliases],
+          containsAll(<String>['Your Name.', 'Kimi no Na wa.']),
+        );
+        expect(
+          checkSubtitleWork(
+            reference,
+            _EnglishCandidate('Your.Name.1080p.BluRay.x264-SPARKS.en.srt'),
+          ).rejected,
+          isFalse,
+        );
+      },
+    );
+
     test(
       'without a client identity returns title identity and skips HTTP API',
       () async {
@@ -728,6 +776,17 @@ Future<_CatalogFixture> _catalogFixture() async {
   return _CatalogFixture(directory: directory, catalog: catalog);
 }
 
+class _EnglishCandidate extends VideoSubtitleCandidate {
+  _EnglishCandidate(String fileName)
+      : super(
+          providerId: 'opensubtitles',
+          remoteId: fileName,
+          fileName: fileName,
+          language: 'en',
+          providerPriority: 0,
+        );
+}
+
 class _CatalogFixture {
   const _CatalogFixture({required this.directory, required this.catalog});
 
@@ -750,6 +809,11 @@ const String _titleCatalogXml = '''
   </anime>
   <anime aid="2">
     <title type="main" xml:lang="x-jat">Mushoku Tensei II</title>
+  </anime>
+  <anime aid="43">
+    <title type="main" xml:lang="x-jat">Kimi no Na wa.</title>
+    <title type="official" xml:lang="ja">君の名は。</title>
+    <title type="official" xml:lang="en">Your Name.</title>
   </anime>
   <anime aid="42">
     <title type="main" xml:lang="x-jat">Violet Evergarden</title>

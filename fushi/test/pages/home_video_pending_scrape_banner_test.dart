@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -337,5 +338,87 @@ void main() {
     expect(port.callCount[0], 1,
         reason: '结果写入不是补刮请求：否则补刮批次的写入会启动下一轮，'
             '资料源连不上时同一作品被每分钟重刮十几次');
+  });
+
+  testWidgets('计数重算在飞时又来一次：完成后补跑一次，不被在飞闸门吞掉（BUG-3085）',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final int sourceId = await addSource();
+    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+        'Unscraped Movie');
+    await addVideo('movie-b', 'D:/A/Another Movie (2021).mkv', sourceId,
+        'Another Movie');
+    final VideoLibraryScrapeSweep sweep = VideoLibraryScrapeSweep(
+      database: db,
+      controller: controller,
+      isEnabled: () => false,
+    );
+    addTearDown(sweep.dispose);
+    final Completer<void> firstRefreshGate = Completer<void>();
+    int refreshes = 0;
+    // 第一次重算先读到当时的状态，再卡住：模拟「在飞期间库又变了」。
+    Future<List<VideoPendingScrapeWork>> refresh() async {
+      refreshes++;
+      final List<VideoPendingScrapeWork> pending =
+          await sweep.refreshPendingAfterScrapeResults();
+      if (refreshes == 1) await firstRefreshGate.future;
+      return pending;
+    }
+
+    Future<void> seedIdentity(String bookUid) async {
+      final int workId = await db.into(db.videoMetadataWorks).insert(
+            VideoMetadataWorksCompanion.insert(
+              bookUid: Value<String?>(bookUid),
+              mediaType: 'movie',
+              title: 'seeded',
+              updatedAt: 1,
+            ),
+          );
+      await db.into(db.videoMetadataProviderIdentities).insert(
+            VideoMetadataProviderIdentitiesCompanion.insert(
+              identityKey: 'work:$workId:anidb',
+              workId: Value<int?>(workId),
+              provider: 'anidb',
+              externalId: '$workId',
+              updatedAt: 1,
+            ),
+          );
+    }
+
+    await tester
+        .pumpWidget(buildApp(sweep.sweepAndListPending, refresh: refresh));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.video_library_scrape_pending_banner(count: 2)),
+      findsOneWidget,
+    );
+
+    await seedIdentity('movie-a');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(refreshes, 1, reason: '第一次重算已发起并卡在飞');
+
+    // 在飞期间第二部也确认了身份：这次请求撞上闸门。
+    await seedIdentity('movie-b');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(refreshes, 1, reason: '在飞时不并发重算');
+
+    firstRefreshGate.complete();
+    await tester.pumpAndSettle();
+    expect(refreshes, 2, reason: '被挡下的那次在飞完成后必须补跑');
+    expect(
+      find.text(t.video_library_scrape_pending_banner(count: 1)),
+      findsNothing,
+      reason: '在飞那次读到的是旧状态（还剩 1 部），不补跑就停在旧数字上',
+    );
+    expect(
+      find.text(t.video_library_scrape_pending_banner(count: 2)),
+      findsNothing,
+    );
   });
 }
