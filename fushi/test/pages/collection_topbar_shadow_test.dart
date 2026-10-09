@@ -11,10 +11,10 @@ import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-3069：书架 / 漫画 / 游戏使用的真实网格合集页是普通 Scaffold。
+/// BUG-3075：书架 / 漫画 / 游戏使用的真实网格合集页是普通 Scaffold。
 /// 滚动使栏下沿遮罩淡入后，返回圆落在栏外的投影仍应可见。
 void main() {
-  testWidgets('BUG-3069 网格合集滚动后遮罩不截断返回圆投影', (WidgetTester tester) async {
+  testWidgets('BUG-3075 网格合集滚动后遮罩不截断返回圆投影', (WidgetTester tester) async {
     LocaleSettings.setLocale(AppLocale.zhCn);
     tester.view.physicalSize = const Size(392, 640);
     tester.view.devicePixelRatio = 1;

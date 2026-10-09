@@ -1,4 +1,4 @@
-// BUG-3069：M3E 悬浮顶栏（FushiAppBar）滚动后，栏下沿的渐隐遮罩把返回圆 /
+// BUG-3075：M3E 悬浮顶栏（FushiAppBar）滚动后，栏下沿的渐隐遮罩把返回圆 /
 // 标题胶囊 / 动作胶囊落在栏外的悬浮投影整片盖掉，胶囊下半圈像被切平。
 // 同时覆盖合集详情使用的 extendBodyBehindAppBar 分支，防止共享层回归。
 //
@@ -52,7 +52,7 @@ Widget _harness({required GlobalKey boundaryKey, required bool bodyBehindBar}) {
 void main() {
   for (final bool bodyBehindBar in <bool>[false, true]) {
     group('extendBodyBehindAppBar=$bodyBehindBar', () {
-      testWidgets('BUG-3069 悬浮顶栏的栏下沿遮罩画在胶囊之下', (WidgetTester tester) async {
+      testWidgets('BUG-3075 悬浮顶栏的栏下沿遮罩画在胶囊之下', (WidgetTester tester) async {
         await tester.pumpWidget(
           _harness(boundaryKey: GlobalKey(), bodyBehindBar: bodyBehindBar),
         );
@@ -86,7 +86,7 @@ void main() {
         );
       });
 
-      testWidgets('BUG-3069 滚动后返回圆的投影越过栏下沿、不被遮罩截平', (
+      testWidgets('BUG-3075 滚动后返回圆的投影越过栏下沿、不被遮罩截平', (
         WidgetTester tester,
       ) async {
         tester.view.physicalSize = const Size(392, 640);

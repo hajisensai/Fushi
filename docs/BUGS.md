@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2830 条。点号进各自文件。
+> 共 2831 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3075](bugs/BUG-3075-floating-appbar-scrim-cuts-shadow.md) | ✅ | ✅ | M3E 悬浮顶栏的栏下沿遮罩盖住胶囊投影 |
 | [BUG-3074](bugs/BUG-3074-bluray-menu-aacs-black.md) | ✅ | ✅ | 加密原盘进入原盘菜单纯黑（libbluray 找不到 libaacs） |
 | [BUG-3073](bugs/BUG-3073-download-identity-locks-unreachable-provider.md) | ✅ | ✅ | 下载任务身份被当用户锁定：那家资料源连不上就永远providerUnavailable，不换任务里的TMDB id |
 | [BUG-3072](bugs/BUG-3072-sweep-retry-storm.md) | ✅ | ✅ | 补刮批次自己的写入触发下一轮+临时失败清账，同一作品每分钟重刮十几次 |

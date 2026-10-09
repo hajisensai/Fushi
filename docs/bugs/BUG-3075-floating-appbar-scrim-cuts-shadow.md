@@ -1,4 +1,4 @@
-## BUG-3069 · M3E 悬浮顶栏的栏下沿遮罩盖住胶囊投影
+## BUG-3075 · M3E 悬浮顶栏的栏下沿遮罩盖住胶囊投影
 - **报告**：2026-10-07（合集详情移动端顶栏底边横线，CC 交接任务 7）
 - **真实性**：✅ 真 bug。书架入口 `reader_fushi_history_page.dart:2294` 打开的网格合集页 `media_collection_grid_detail_page.dart:607,683` 使用普通 Scaffold；共享 `fushi/lib/src/utils/components/glass/fushi_glass_bars.dart:657` 把栏下沿 scrim 画在 AppBar 之后，不透明顶边盖住栏外阴影。恢复基线代码：共享测试 2 条均失败；真实网格合集页测试 1 条也命中阴影像素断言失败，均退出 1。
 - **[x] ① 已修复** — `_buildFloating` 的两种 scrim 均在 `bar` 之前绘制；不改遮罩几何、滚动显隐与指针行为。提交 `74c92d86d2`。
