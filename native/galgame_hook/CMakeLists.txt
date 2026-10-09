@@ -94,6 +94,12 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/bgi_ethornell_profile.h"
   "hook/adapters/bgi_lookup.inc"
   "hook/adapters/bgi_lookup_core.h"
+  "hook/luca_pak.h"
+  "hook/adapters/luca_adapter.inc"
+  "hook/adapters/luca_lookup.inc"
+  "hook/adapters/luca_lookup_core.h"
+  "hook/adapters/luca_profile.h"
+  "hook/adapters/luca_text_core.h"
   "hook/adapters/yuris_adapter.inc"
   "hook/adapters/yuris_lookup.inc"
   "hook/adapters/yuris_lookup_core.h"
@@ -1204,3 +1210,7 @@ add_test(NAME fushi_yuris_adapter_test COMMAND fushi_yuris_adapter_test)
 add_executable(fushi_kogado_hy_adapter_test "tests/kogado_hy_adapter_test.cpp")
 target_include_directories(fushi_kogado_hy_adapter_test PRIVATE "hook")
 add_test(NAME fushi_kogado_hy_adapter_test COMMAND fushi_kogado_hy_adapter_test)
+add_executable(fushi_luca_adapter_test "tests/luca_adapter_test.cpp")
+target_include_directories(fushi_luca_adapter_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_luca_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_luca_adapter_test COMMAND fushi_luca_adapter_test)

@@ -91,7 +91,7 @@ inline bool IsProductionProviderPair(uint32_t kind, uint32_t id) {
     return id == 3u || id == 4u || id == 5u || id == 14u || id == 15u ||
            id == 16u || id == 17u || id == 18u || id == 19u || id == 20u ||
            id == 21u || id == 22u || id == 23u || id == 24u ||
-           id == 28u;
+           id == 25u || id == 28u;
   case 3u: // positioned GDI/DirectWrite
     return id == 9u || id == 10u;
   default:

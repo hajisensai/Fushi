@@ -91,6 +91,33 @@ class GalhookWorkflowTest(unittest.TestCase):
         )
         self.assertTrue(report["session_clean"])
 
+    def test_luca_replay_pairs_pak_voice_and_matches_dart_copy(self) -> None:
+        fixture = ROOT / "tests" / "fixtures" / "luca_replay.json"
+        completed = subprocess.run(
+            [sys.executable, str(TOOL), "replay", str(fixture)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        report = json.loads(completed.stdout)
+        # LucaSystem 的语音是 voice id 定位到的 PAK 成员（逐句资源），优先于 loopback；
+        # 无 voice id 的台词不配任何音频。
+        self.assertEqual(
+            [card["audio_backend"] for card in report["cards"]],
+            ["resource_audio", None],
+        )
+        self.assertEqual(report["duplicate_text_events"], 1)
+        self.assertEqual(report["thread_filtered_events"], 1)
+        self.assertTrue(report["session_clean"])
+        data = json.loads(fixture.read_text(encoding="utf-8"))
+        dart_copy = (
+            ROOT.parent.parent / "fushi" / "test" / "fixtures" / "galhook"
+            / "luca_replay.json"
+        )
+        self.assertEqual(
+            json.loads(dart_copy.read_text(encoding="utf-8")), data
+        )
+
     def test_kogado_hy_replay_pairs_pcm_and_matches_dart_copy(self) -> None:
         fixture = ROOT / "tests" / "fixtures" / "kogado_hy_replay.json"
         completed = subprocess.run(
