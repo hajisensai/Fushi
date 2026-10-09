@@ -24,7 +24,7 @@ part of '../reader_fushi_page.dart';
 /// `_paginate`) move here as extension statics and are referenced by bare name
 /// (no qualification needed). The `@override` host member
 /// `buildPopupAudioControls` (and the related `_readerChromeHeight` getter /
-/// `_readerChromeBaseHeight` / `_readerPopupHeaderBaseHeight` constants) cannot
+/// `_readerChromeBaseHeight` constant) cannot
 /// live on an extension and stay in the shell, reachable via the shared private
 /// class scope.
 extension _ReaderChrome on _ReaderFushiPageState {

@@ -1789,8 +1789,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 底栏内容行的自然（未缩放）高度。
   static const double _readerChromeBaseHeight = 56;
 
-  /// 查词弹窗顶部四按钮栏的自然（未缩放）高度。
-
   /// 阅读器底栏的隐形界面缩放系数：取自全局 appUiScale（阅读器子树被中和器改写成
   /// 1.0，故不能用 FushiAppUiScale.of）。在 build 里读 appModel 会随缩放变化重建。
   double get _readerChromeScale => appModel.appUiScale;
