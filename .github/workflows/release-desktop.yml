@@ -2059,8 +2059,56 @@ jobs:
           mkdir -p "$out_dir"
           # 2026-10 起只出 arm64，资产名带 `-arm64`：旧版（universal、可能跑在 Intel
           # Mac 上）的更新器只认 `-macos.zip`，改名让它们选不中这个 Intel 上启动不了的包。
-          rm -f "$out_dir"/fushi-*-macos.zip "$out_dir"/fushi-*-macos-arm64.zip
+          rm -f "$out_dir"/fushi-*-macos.zip "$out_dir"/fushi-*-macos-arm64.zip "$out_dir"/fushi-*-macos-arm64.dmg
           ditto -c -k --keepParent "$app_dir" "$out_dir/fushi-${BUILD_VERSION_NAME}-macos-arm64.zip"
+          # dmg 只给「网页上手动下载、首次安装」用：拖进 Applications 的标准形态。
+          # 应用内自动更新**只认 zip**（platform_updater.dart 的 -macos-arm64.zip 判据，
+          # 老客户端也只认它），所以 dmg 不进更新清单；两者装的是同一个已装订的 .app。
+          dmg_root="$RUNNER_TEMP/fushi-dmg-root"
+          rm -rf "$dmg_root"
+          mkdir -p "$dmg_root"
+          ditto "$app_dir" "$dmg_root/fushi.app"
+          ln -s /Applications "$dmg_root/Applications"
+          hdiutil create -volname "Fushi" -srcfolder "$dmg_root" -fs HFS+ \
+            -format UDZO -ov "$out_dir/fushi-${BUILD_VERSION_NAME}-macos-arm64.dmg"
+          rm -rf "$dmg_root"
+          hdiutil verify "$out_dir/fushi-${BUILD_VERSION_NAME}-macos-arm64.dmg"
+      # 新版 macOS 对「签了名但没公证」的 dmg 一样拦，所以 dmg 自身也要签名 + 公证 +
+      # 装订（里面的 .app 上面已单独装订，zip 那条路不受影响）。没有 Developer ID 时
+      # dmg 与 zip 一样是 ad-hoc 内容，照常发布。
+      - name: Sign and notarize macOS dmg
+        if: steps.signing.outputs.macos_signed == 'true'
+        working-directory: fushi
+        shell: bash
+        env:
+          BUILD_VERSION_NAME: ${{ steps.channel.outputs.build_version_name }}
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          DMG="build/release-artifacts/fushi-${BUILD_VERSION_NAME}-macos-arm64.dmg"
+          codesign --force --timestamp --keychain "$MACOS_KEYCHAIN_PATH" \
+            --sign "$MACOS_SIGN_IDENTITY" "$DMG"
+          codesign --verify --strict --verbose=2 "$DMG"
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${APPSTORE_API_KEY_ID}.p8"
+          printf '%s\n' "$APPSTORE_API_PRIVATE_KEY" > "$KEY_PATH"
+          set +e
+          xcrun notarytool submit "$DMG" \
+            --key "$KEY_PATH" \
+            --key-id "$APPSTORE_API_KEY_ID" \
+            --issuer "$APPSTORE_API_ISSUER_ID" \
+            --wait --timeout 45m
+          NOTARY_STATUS=$?
+          set -e
+          rm -f "$KEY_PATH"
+          if [ "$NOTARY_STATUS" -ne 0 ]; then
+            echo "::error title=DMG notarization failed::notarytool exited $NOTARY_STATUS. Run 'xcrun notarytool log <submission-id>' with the same key to see why."
+            exit "$NOTARY_STATUS"
+          fi
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
       # The single non-blocking `publish` job downloads this artifact and does
       # all Release publishing, so macOS builds in parallel with Windows/iOS and
       # never blocks (or is blocked by) the other platforms.
@@ -2069,7 +2117,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: desktop-artifacts-macos
-          path: fushi/build/release-artifacts/fushi-*-macos-arm64.zip
+          path: |
+            fushi/build/release-artifacts/fushi-*-macos-arm64.zip
+            fushi/build/release-artifacts/fushi-*-macos-arm64.dmg
           if-no-files-found: ignore
           retention-days: 14
 
@@ -2910,6 +2960,7 @@ jobs:
           files: |
             fushi/build/release-artifacts/fushi-*-windows-setup.exe
             fushi/build/release-artifacts/fushi-*-macos-arm64.zip
+            fushi/build/release-artifacts/fushi-*-macos-arm64.dmg
             fushi/build/release-artifacts/fushi-*-ios.ipa
       # TODO-1049 / TODO-1123 / TODO-1129: same rolling-release asset GC as
       # release.yml. softprops upserts same-named assets but never removes a
@@ -2958,13 +3009,13 @@ jobs:
           # KEEP_SEQS by the OTHER platforms' newer seqs -- so another platform's
           # prune deletes it and the rolling release "loses" that device. Scope
           # the candidate set to THIS workflow's filename shapes (Windows:
-          # *-windows-setup.exe / macOS: *-macos-arm64.zip (+ legacy *-macos.zip) /
+          # *-windows-setup.exe / macOS: *-macos-arm64.zip + .dmg (+ legacy *-macos.zip) /
           # iOS: *-ios.ipa) so it keeps
           # its own top KEEP_SEQS and never touches Android's assets.
           PLATFORM_ASSETS=()
           for name in "${ASSET_NAMES[@]}"; do
             case "$name" in
-              *-windows-setup.exe|*-macos-arm64.zip|*-macos.zip|*-ios.ipa) PLATFORM_ASSETS+=("$name") ;;
+              *-windows-setup.exe|*-macos-arm64.zip|*-macos-arm64.dmg|*-macos.zip|*-ios.ipa) PLATFORM_ASSETS+=("$name") ;;
             esac
           done
           # Check length BEFORE re-expanding the (possibly empty) array: on macOS
@@ -3043,6 +3094,7 @@ jobs:
           files: |
             fushi/build/release-artifacts/fushi-*-windows-setup.exe
             fushi/build/release-artifacts/fushi-*-macos-arm64.zip
+            fushi/build/release-artifacts/fushi-*-macos-arm64.dmg
             fushi/build/release-artifacts/fushi-*-ios.ipa
       # TODO-705: publish a mirror update manifest so beta/debug in-China update
       # checks succeed (raw.githubusercontent.com is proxiable; api.github.com

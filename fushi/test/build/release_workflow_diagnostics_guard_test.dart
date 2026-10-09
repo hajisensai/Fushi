@@ -382,6 +382,17 @@ void main() {
 
     expect(publishJob, contains('fushi-*-macos-arm64.zip'));
     expect(publishJob, contains('fushi-*-ios.ipa'));
+
+    // dmg 是网页手动下载的首装形态：产出、签名公证、发布三处都要在，
+    // 但**不进更新清单**——应用内自动更新只认 zip（老客户端也只认它）。
+    expect(macosJob, contains(r'fushi-${BUILD_VERSION_NAME}-macos-arm64.dmg'));
+    expect(macosJob, contains('hdiutil create'));
+    expect(macosJob, contains('Sign and notarize macOS dmg'));
+    expect(publishJob, contains('fushi-*-macos-arm64.dmg'));
+    final RegExp appleManifestGlob =
+        RegExp(r'ASSET_GLOB: (fushi-\*-macos-arm64\.zip fushi-\*-ios\.ipa)\n');
+    expect(publishJob, matches(appleManifestGlob),
+        reason: 'Apple 更新清单只收 zip + ipa，dmg 进清单会被更新器误选。');
     expect(
         publishJob, contains('Publish mirror update manifest (Apple assets)'));
   });
