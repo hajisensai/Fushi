@@ -35,10 +35,10 @@
 |---|:--:|:--:|---|
 | [BUG-3081](bugs/BUG-3081-settings-jank.md) | ✅ | ✅ | 设置页多处掉帧 |
 | [BUG-3080](bugs/BUG-3080-subtitle-preview-overlap.md) | ✅ | ✅ | 字幕样式预览字号调大后主副字幕串行 |
-| [BUG-3079](bugs/BUG-3068-online-hls-nonstandard-mime-split.md) | ✅ | ✅ | 在线视频源进度条被切成三四秒一段（HLS 播放列表被当普通列表逐分片播放） |
-| [BUG-3078](bugs/BUG-3070-video-tab-visible.md) | ✅ | ✅ | 视频库导入动作挤窄页签条后选中项不可见 |
+| [BUG-3079](bugs/BUG-3079-online-hls-nonstandard-mime-split.md) | ✅ | ✅ | 在线视频源进度条被切成三四秒一段（HLS 播放列表被当普通列表逐分片播放） |
+| [BUG-3078](bugs/BUG-3078-video-tab-visible.md) | ✅ | ✅ | 视频库导入动作挤窄页签条后选中项不可见 |
 | [BUG-3077](bugs/BUG-3077-android-reader-system-bars-flutter347.md) | ✅ | ✅ | Android 阅读器顶部留白变大：Flutter 3.47 的 edgeToEdge 清掉沉浸标志，状态栏回来并计入正文顶部 inset |
-| [BUG-3076](bugs/BUG-3071-audiobook-sheet-open-top.md) | ✅ | ✅ | 有声书面板打开时滚离顶部且底部进场过冲 |
+| [BUG-3076](bugs/BUG-3076-audiobook-sheet-open-top.md) | ✅ | ✅ | 有声书面板打开时滚离顶部且底部进场过冲 |
 | [BUG-3075](bugs/BUG-3075-floating-appbar-scrim-cuts-shadow.md) | ✅ | ✅ | M3E 悬浮顶栏的栏下沿遮罩盖住胶囊投影 |
 | [BUG-3074](bugs/BUG-3074-bluray-menu-aacs-black.md) | ✅ | ✅ | 加密原盘进入原盘菜单纯黑（libbluray 找不到 libaacs） |
 | [BUG-3073](bugs/BUG-3073-download-identity-locks-unreachable-provider.md) | ✅ | ✅ | 下载任务身份被当用户锁定：那家资料源连不上就永远providerUnavailable，不换任务里的TMDB id |
