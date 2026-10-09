@@ -72,6 +72,7 @@ void main() {
         'manga.tap_zone_paging',
         'manga.tap_zone_layout',
         'manga.chrome_floating',
+        'manga.resume_target',
         'manga.volume_key_paging',
       });
       for (final SettingsSection s in manga.sections) {
