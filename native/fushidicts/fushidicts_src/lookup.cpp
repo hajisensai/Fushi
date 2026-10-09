@@ -100,11 +100,68 @@ std::optional<std::vector<DictionaryRedirect>> parse_redirect_glossary(const std
 bool matches_primary_reading(const TermResult& term, std::string_view primary_reading) {
   return term.reading == primary_reading;
 }
+
+// BUG-3088：关西方言变形跨词吞掉「ため / たび」的「た」。
+//
+// ja.json 的 kansai-ben -た 有一条与 Yomitan 上游逐字相同的 `うた → った`（用于
+// 思うた / 言うた），于是「もらうためには」里的「もらうた」会被还原成 もらう；同一
+// (expression, reading) 只保留最长匹配，结果高亮吞掉「ため」的「た」并挂上 -た /
+// 关西方言标签。Yomitan 的 translator 同样按最长 transformedText 保留，上游大概率有
+// 同样的问题——这里是有意偏离上游的窄修复，不改合并键、不改排序、不降方言权重。
+//
+// 同一 (expression, reading) 的长短两个候选竞争时，仅当下面四条**全部**成立才留短的：
+//   1. 短候选无需变形即可直接命中（trace 为空）；
+//   2. 长候选的变形链里有关西方言规则；
+//   3. 从短候选的原文结束位置起，后续文本以保护结构开头；
+//   4. 长候选的原文匹配确实越过了短候选的结束位置（即跨进了该结构）。
+// 第一版保护结构只有下面六个；不保护所有「た / て」开头的词，也不凭出现「ため /
+// たび」就截断。
+constexpr std::string_view kKansaiBenGroup = "kansai-ben";
+constexpr std::string_view kKansaiProtectedSuffixes[] = {
+    "ために", "ためには", "ためにも", "ための", "たびに", "たびには",
+};
+
+bool has_kansai_rule(const std::vector<TransformGroup>& trace) {
+  return std::ranges::any_of(trace, [](const TransformGroup& g) { return g.name == kKansaiBenGroup; });
+}
+
+// [window] 是本次查词的扫描窗口（lookup_string 的前 scan_length 个码点，UTF-8 字节
+// 视图）；候选都是它的字节前缀（scan_candidates 保证），所以候选的原文结束位置就是
+// `matched.size()` 这个**字节**偏移，不能拿还原后词条的长度去算。后缀检查只看窗口
+// 内的文本：引擎结果因此只依赖前 scan_length 个码点，与 Dart 侧匹配长度缓存的键
+// 覆盖范围一致（见 japanese_language.dart `_lookupMatchedLength`）。
+bool protected_structure_follows(std::string_view window, std::size_t end_bytes) {
+  if (end_bytes >= window.size()) return false;
+  const std::string_view rest = window.substr(end_bytes);
+  return std::ranges::any_of(kKansaiProtectedSuffixes,
+                             [rest](std::string_view suffix) { return rest.starts_with(suffix); });
+}
+
+// 同一 (expression, reading) 的两个候选：短的原文匹配到字节 [short_end]、变形链
+// [short_trace]，长的到 [long_end]、变形链 [long_trace]。四条都成立时返回 true，
+// 表示应留短的。只做字符串比较，不访问词典。
+bool kansai_short_match_wins(std::string_view window, std::size_t short_end,
+                             const std::vector<TransformGroup>& short_trace, std::size_t long_end,
+                             const std::vector<TransformGroup>& long_trace) {
+  return short_trace.empty() && long_end > short_end && has_kansai_rule(long_trace) &&
+         protected_structure_follows(window, short_end);
+}
 }
 
 std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int max_results, size_t scan_length,
                                          const LookupOptions& options) const {
   std::map<std::pair<std::string, std::string>, LookupResult> result_map;
+
+  // BUG-3088：扫描窗口（前 scan_length 个码点）的字节视图，供关西方言保护结构判定。
+  std::size_t window_bytes = 0;
+  {
+    auto it = lookup_string.begin();
+    for (std::size_t n = 0; n < scan_length && it != lookup_string.end(); ++n) {
+      utf8::next(it, lookup_string.end());
+    }
+    window_bytes = static_cast<std::size_t>(it - lookup_string.begin());
+  }
+  const std::string_view scan_window(lookup_string.data(), window_bytes);
 
   // 候选前缀由词边界感知的扫描器生成（对齐 Yomitan searchResolution）：
   // 空格分词语言不在单词中间切断，CJK 仍逐码点。详见 scan/word_scan.hpp。
@@ -144,6 +201,24 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
           auto key = std::make_pair(term.expression, term.reading);
           auto it = result_map.find(key);
           if (it != result_map.end()) {
+            // BUG-3088：关西方言跨进「ため / たび」时留无需变形的短候选。扫描从长到短，
+            // 通常是长候选先进来、短候选后到时替换；反过来（短的已在、长的后到）同一
+            // 判据挡住长的。一旦留下短候选，后续更短的候选按下面的常规规则进不来，
+            // 选定结果不会被再次覆盖。
+            const LookupResult& held_result = it->second;
+            if (kansai_short_match_wins(scan_window, search_str.size(), trace, held_result.matched.size(),
+                                        held_result.trace)) {
+              it->second = LookupResult{.matched = search_str,
+                                        .deinflected = query_text,
+                                        .trace = trace,
+                                        .term = std::move(term),
+                                        .preprocessor_steps = variant.steps};
+              continue;
+            }
+            if (kansai_short_match_wins(scan_window, held_result.matched.size(), held_result.trace,
+                                        search_str.size(), trace)) {
+              continue;
+            }
             // we only need the longest matched form
             const size_t incoming = utf8::distance(search_str.begin(), search_str.end());
             const size_t held = utf8::distance(it->second.matched.begin(), it->second.matched.end());

@@ -43,7 +43,7 @@
 | [BUG-3089](bugs/BUG-3089-linux-external-open-before-handler.md) | ✅ | ✅ | Linux 二次启动参数在 Dart 处理器注册前到达被静默丢弃、首帧前 present 出黑窗 |
 | [BUG-3089](bugs/BUG-3089-android-selection-range.md) | 🚧 | 🚧 | Android 长按选词高亮范围与实际不符 |
 | [BUG-3088](bugs/BUG-3088-linux-tts-process-hang.md) | ✅ | ✅ | Linux 制卡 TTS 子进程卡住无上界、stdin EPIPE 跳过 espeak-ng 兜底 |
-| [BUG-3088](bugs/BUG-3088-kansai-ta-deinflection.md) | 🚧 | 🚧 | もらうた 被推断成 もらう + 关西方言 -た |
+| [BUG-3088](bugs/BUG-3088-kansai-ta-deinflection.md) | ✅ | ✅ | もらうた 被推断成 もらう + 关西方言 -た |
 | [BUG-3087](bugs/BUG-3087-linux-second-launch-during-exit.md) | ✅ | ✅ | Linux 首实例退出途中二次启动：参数转交给将死进程、隐藏窗口被重新显示，文件丢失 |
 | [BUG-3087](bugs/BUG-3087-dialog-hero-icon-stretched.md) | ✅ | ✅ | 对话框 hero 图标底板被撑成满宽横条（选择句子上下文顶部的 99） |
 | [BUG-3086](bugs/BUG-3086-video-word-sweep-grapheme-misalign.md) | ✅ | ✅ | 视频整句扫词：分词碎片劈开代理对/组合字符导致后续词首字下标整体错位 |
