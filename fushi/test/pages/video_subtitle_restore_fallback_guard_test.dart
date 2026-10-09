@@ -23,7 +23,12 @@ void main() {
 
   test('兜底链独立于 else-if 链：任何一支没成功都必须能落到兜底', () {
     expect(
-      containsCodeLine(body, 'if (!subtitleExplicitlyOff && cues.isEmpty) {'),
+      // 已确定渲染图形轨（graphicStreamIndex != null）时不再试，BUG-3103。
+      containsCodeLine(
+        body,
+        'if (!subtitleExplicitlyOff && cues.isEmpty && '
+        'graphicStreamIndex == null) {',
+      ),
       isTrue,
       reason: '兜底必须是独立判据（「还没拿到 cue 就继续试」），而不是挂在 else-if 链尾',
     );
@@ -73,7 +78,12 @@ void main() {
     );
     // 兜底判据自身也带 !subtitleExplicitlyOff，双保险。
     expect(
-      containsCodeLine(body, 'if (!subtitleExplicitlyOff && cues.isEmpty) {'),
+      // 已确定渲染图形轨（graphicStreamIndex != null）时不再试，BUG-3103。
+      containsCodeLine(
+        body,
+        'if (!subtitleExplicitlyOff && cues.isEmpty && '
+        'graphicStreamIndex == null) {',
+      ),
       isTrue,
     );
   });

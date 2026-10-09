@@ -88,6 +88,12 @@ class _SettingsDialogTestAppModel extends AppModel {
   double get popupMaxWidth => _popupMaxWidth;
 
   @override
+  double get dictionaryFontSize => 16;
+
+  @override
+  double get appUiScale => 1.0;
+
+  @override
   void setPopupMaxWidth(double width) {
     _popupMaxWidth = width;
   }

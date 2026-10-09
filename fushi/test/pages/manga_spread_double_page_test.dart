@@ -35,6 +35,9 @@ class _MangaTestAppModel extends AppModel {
   double get popupMaxWidth => 360;
 
   @override
+  double get dictionaryFontSize => 16;
+
+  @override
   double get popupMaxHeight => 360;
 
   @override

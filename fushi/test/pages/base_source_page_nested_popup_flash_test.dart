@@ -39,6 +39,9 @@ class NestedFlashAppModel extends AppModel {
   double get popupMaxWidth => 360;
 
   @override
+  double get dictionaryFontSize => 16;
+
+  @override
   double get popupMaxHeight => 360;
 
   // TODO-108: popupBottomDocked 读 prefsRepo（本 fake 未 wire），与现有

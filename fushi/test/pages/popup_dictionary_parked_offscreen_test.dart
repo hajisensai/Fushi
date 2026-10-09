@@ -42,6 +42,9 @@ class ParkedPopupTestAppModel extends AppModel {
   double get popupMaxWidth => 300;
 
   @override
+  double get dictionaryFontSize => 16;
+
+  @override
   double get appUiScale => 1.0;
 
   @override

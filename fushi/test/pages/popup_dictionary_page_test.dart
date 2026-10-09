@@ -25,6 +25,12 @@ class PopupTestAppModel extends AppModel {
   double get popupMaxWidth => 400;
 
   @override
+  double get dictionaryFontSize => 16;
+
+  @override
+  double get appUiScale => 1.0;
+
+  @override
   List<String> get enabledAudioSources => const <String>[];
 
   @override

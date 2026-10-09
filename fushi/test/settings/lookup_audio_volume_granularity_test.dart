@@ -244,12 +244,14 @@ void main() {
       final String shared = File(
         'lib/src/settings/settings_schema_widgets.dart',
       ).readAsStringSync();
-      expect(shared, contains('step: slider.step'),
+      // 两种提交语义已收口到同一个有状态载体（_CommitOnReleaseSlider，BUG-3174
+      // 滑条跟手），局部变量名是 item。
+      expect(shared, contains('step: item.step'),
           reason: '共享 schema widget 必须把 SettingsSliderItem.step 传给滑条行');
       expect(
           shared,
-          contains('readout: slider.titleReadout ? '
-              'slider.label?.call(value) : null'),
+          contains('readout: item.titleReadout ? '
+              'item.label?.call(value) : null'),
           reason: '共享 schema widget 必须把 titleReadout 投影成标题读数');
     });
   });

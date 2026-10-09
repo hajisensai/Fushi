@@ -349,7 +349,16 @@ void main() {
       appearanceSource,
       isNot(contains("id: 'appearance.fonts_dictionary'")),
     );
-    expect(readingSource, isNot(contains('CustomFontsPage')));
+    // 阅读页只许以「正文」作用域跳进同一个字体库（#2024 正文字体切换），不许
+    // 另起字体目录 / 用途列表。
+    expect(
+      readingSource.replaceAll(
+        'CustomFontsPage(target: FontTarget.body)',
+        '',
+      ),
+      isNot(contains('CustomFontsPage')),
+    );
+    expect(readingSource, isNot(contains('font_catalog')));
   });
 
   test('reader quick settings project from schema reader placements', () {
@@ -782,7 +791,9 @@ void main() {
     );
     expect(shared, contains('kSettingsPickerDefaultWidth'));
     expect(shared, contains('kSettingsPickerMinInlineWidth'));
-    expect(shared, contains('trailingFlexible: !cupertino && !controlBelow'));
+    // 紧凑档（SettingsCompactRowsScope）的「值 ▾」是自尺寸控件，不参与 flex。
+    expect(shared, contains('final bool below = !cupertino && controlBelow && !compact;'));
+    expect(shared, contains('trailingFlexible: !cupertino && !below && !compact'));
     expect(
       containsIdentifierCall(shared, 'LayoutBuilder'),
       isTrue,

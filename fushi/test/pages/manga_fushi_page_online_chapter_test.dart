@@ -109,6 +109,9 @@ class _MangaTestAppModel extends AppModel {
   bool get lowMemoryMode => false;
   @override
   double get popupMaxWidth => 360;
+
+  @override
+  double get dictionaryFontSize => 16;
   @override
   double get popupMaxHeight => 360;
   @override
