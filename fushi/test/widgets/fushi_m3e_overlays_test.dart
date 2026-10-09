@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +7,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiLinearProgressIndicator;
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
+    show FushiAlertDialog;
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -273,4 +277,40 @@ void main() {
     final double expanded = tester.getSize(find.byType(BottomSheet)).height;
     expect(expanded, closeTo(900 * kFushiSheetFullFraction, 1));
   });
+  // BUG-3087：AlertDialog 的 icon 槽在 stretch Column 里（宽约束是紧的），hero 底板
+  // 曾被撑成满宽横条（「选择句子上下文」顶部的黄色波浪 + 小小的「99」引号）。
+  for (final bool scrollable in <bool>[false, true]) {
+    testWidgets('对话框 hero 图标底板保持见方（scrollable: $scrollable）', (
+      WidgetTester tester,
+    ) async {
+      final BuildContext context = await pumpHost(tester);
+      unawaited(
+        showAppDialog<void>(
+          context: context,
+          builder: (BuildContext _) => FushiAlertDialog(
+            scrollable: scrollable,
+            icon: const FushiDialogHeroIcon(
+              icon: FushiIcons.quote,
+              tone: FushiHeroTone.primary,
+              size: 48,
+            ),
+            title: const Text('选择句子上下文'),
+            content: const SizedBox(width: 460, height: 40),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final Finder plate = find.descendant(
+        of: find.byType(FushiDialogHeroIcon),
+        matching: find.byWidgetPredicate(
+          (Widget w) => w is DecoratedBox && w.decoration is ShapeDecoration,
+        ),
+      );
+      expect(plate, findsOneWidget);
+      expect(tester.getSize(plate), const Size(48, 48));
+      // 居中：底板中心与对话框标题区同一条竖直中线。
+      final double dialogCenter = tester.getCenter(find.byType(AlertDialog)).dx;
+      expect(tester.getCenter(plate).dx, closeTo(dialogCenter, 0.5));
+    });
+  }
 }

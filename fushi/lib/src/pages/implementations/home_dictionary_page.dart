@@ -12,6 +12,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
+import 'package:fushi/src/lookup/source_lookup_sentence.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
@@ -1832,8 +1833,13 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                           reuseWarmSlot: true,
                         );
                       },
-                      onMineEntry: onMineEntry,
-                      onUpdateEntry: onUpdateEntry,
+                      // BUG-3092：结果卡制卡补上源文本条那一句作例句（查词页没有书 /
+                      // 视频的「当前句」，以前 Sentence 恒空）。只接结果区：浮层里从
+                      // 释义点出来的词，源文本那句不是它的语境。
+                      onMineEntry: (Map<String, String> fields) =>
+                          onMineEntry(_withSourceSentence(fields)),
+                      onUpdateEntry: (int noteId, Map<String, String> fields) =>
+                          onUpdateEntry(noteId, _withSourceSentence(fields)),
                       onDuplicateCheck: checkDuplicate,
                       onOverwriteTargetNoteId: findOverwriteTargetNoteId,
                       onScrolledToBottom: _allLoaded ? null : _loadMore,
@@ -2032,6 +2038,17 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       highlight: _sourceHighlight,
     );
   }
+
+  /// BUG-3092：结果区制卡用的例句——源文本条上扫描高亮所在的那一句。
+  Map<String, String> _withSourceSentence(Map<String, String> fields) =>
+      withFallbackMiningSentence(
+        fields,
+        sourceLookupMiningSentence(
+          sourceText: _sourceLookupText,
+          highlight: _sourceHighlight,
+          stripRedundant: _sourceStripRedundant,
+        ),
+      );
 
   Future<int> _pushNestedPopup(
     String query,
