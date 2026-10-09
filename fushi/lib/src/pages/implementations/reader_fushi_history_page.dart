@@ -724,10 +724,11 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
                         if (!isCupertinoPlatform(context)) _buildPageHeader(),
-                        // 搜索 + 阅读状态 + 多选 / 排序收成一条库页工具行
-                        // （2026-10-04），标签 chip 只在有标签时另起一行。
+                        // 搜索 + 多选 / 排序收成一条库页工具行（2026-10-04）；
+                        // 阅读状态与（窄屏的）标签筛选并进排序菜单、宽屏标签
+                        // chip 嵌进这一行（2026-10-10「顶部只留两行」），不再
+                        // 另起行。
                         _buildSearchBar(allTags.valueOrNull ?? const []),
-                        _buildTagBar(allTags.valueOrNull ?? const []),
                         // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时
                         // 零高度。
                         SyncProgressBanner(compact: _compactLibraryToolbar),
@@ -870,10 +871,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   Widget _buildTagBar(
     List<BookTagRow> allTags, {
     FushiTagFilterBarPart part = FushiTagFilterBarPart.tags,
+    bool tagsInMenu = false,
+    bool inlineTags = false,
   }) {
     return FushiTagFilterBar(
       tags: allTags,
       part: part,
+      tagsInMenu: tagsInMenu,
+      inlineTags: inlineTags,
       pinActions: _compactLibraryToolbar,
       onToggleFilter: _toggleFilter,
       onReorder: _reorderTags,
@@ -884,6 +889,27 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       sortMode: _sortMode,
       sortModeLabel: _sortModeLabel,
       onSortModeChanged: _setSortMode,
+      // 「阅读状态」单选组（原工具行上的下拉 chip，2026-10-10 用户：「阅读状态
+      // 下拉框放在排序那」）。持久化仍是 `shelf_read_status_filter`；生效时排序
+      // 按钮亮圆点。
+      filterOptionsTitle: t.shelf_filter_read_status,
+      filterActive: _readStatusFilter != null,
+      filterOptions: <LibraryViewOption>[
+        for (final ShelfReadStatus? status in <ShelfReadStatus?>[
+          null,
+          ...ShelfReadStatus.values,
+        ])
+          LibraryViewOption(
+            key: ValueKey<String>(
+              'shelf_filter_read_status_${status?.name ?? 'all'}',
+            ),
+            label: status == null
+                ? t.home_filter_all
+                : _readStatusLabel(status),
+            selected: status == _readStatusFilter,
+            onSelected: () => _setReadStatusFilter(status),
+          ),
+      ],
       // 「排序与显示」：排序下面接「合集显示」（整行展开 / 单个格子）。
       viewOptionsTitle: t.shelf_collection_layout_title,
       viewOptions: <LibraryViewOption>[
@@ -1075,15 +1101,33 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     setState(() {});
   }
 
-  /// P5-A 书架工具行：搜索框 + 阅读状态 + 行尾「管理标签 / 批量选择 / 排序」，
-  /// 与视频库 / 游戏库同一个 [LibraryToolbar]。搜索词只影响本次会话、不落库。
-
+  /// P5-A 书架工具行：搜索框 + 行尾「管理标签 / 批量选择 / 排序」，与视频库 /
+  /// 游戏库同一个 [LibraryToolbar]。搜索词只影响本次会话、不落库。
+  ///
+  /// 2026-10-10「库页顶部只留两行」：阅读状态并进排序菜单；标签 chip 宽屏嵌在
+  /// 搜索框与行尾工具之间（[LibraryToolbar.wideMiddle]），窄屏放不下就收进
+  /// 排序菜单（多选组）。两种布局下工具条都只有一行。宽窄判据与
+  /// [LibraryToolbar] 自己的同一个（同一宽度、同一断点）。
   Widget _buildSearchBar(List<BookTagRow> allTags) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool wide =
+            constraints.maxWidth >= LibraryToolbar.wideBreakpoint;
+        return _buildToolbar(allTags, wide: wide);
+      },
+    );
+  }
+
+  Widget _buildToolbar(List<BookTagRow> allTags, {required bool wide}) {
     final Widget actions = _buildTagBar(
       allTags,
       part: FushiTagFilterBarPart.actions,
+      tagsInMenu: !wide,
     );
     return LibraryToolbar(
+      wideMiddle: wide && allTags.isNotEmpty
+          ? _buildTagBar(allTags, inlineTags: true)
+          : null,
       search: LibrarySearchField(
         fieldKey: const ValueKey<String>('shelf_search_field'),
         controller: _searchController,
@@ -1094,18 +1138,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           setState(() => _searchQuery = '');
         },
       ),
-      filters: <Widget>[
-        LibraryFilterDropdown<ShelfReadStatus>(
-          key: const ValueKey<String>('shelf_filter_read_status'),
-          value: _readStatusFilter,
-          options: ShelfReadStatus.values,
-          labelOf: _readStatusLabel,
-          title: t.shelf_filter_read_status,
-          allLabel: t.home_filter_all,
-          onSelected: _setReadStatusFilter,
-        ),
-      ],
-      // 行尾：管理标签（常驻，key `library_tag_settings`）+ 批量选择 + 排序。
+      // 行尾：管理标签（常驻，key `library_tag_settings`）+ 批量选择 + 排序
+      // （含阅读状态 / 窄屏标签筛选）。
       trailing: actions,
     );
   }

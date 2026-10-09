@@ -214,7 +214,10 @@ void main() {
     final int cid = await seedLibrary();
     await pumpPage(tester);
 
-    await tester.tap(find.byTooltip(t.shelf_sort_and_view));
+    // 排序菜单（2026-10-10 起含阅读状态组，tooltip 改为「排序、筛选与显示」）。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('library_sort_menu_button')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const ValueKey<String>('shelf_collection_layout_cards')),

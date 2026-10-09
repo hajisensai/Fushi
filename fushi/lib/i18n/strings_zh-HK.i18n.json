@@ -6871,6 +6871,8 @@
   "shortcut_action_video_lookup_next_word": "下一個詞（掃詞）",
   "shortcut_action_video_lookup_prev_word": "上一個詞（掃詞）",
   "media_source_open_folder_failed": "無法開啟資料夾，可能已被移動、刪除或中斷連線。",
+  "library_sort_filter_view": "排序、篩選與顯示",
+  "library_filter_active": "已篩選",
   "settings_module_keep_one_navigation": "Keep at least one page in the navigation bar",
   "settings_section_home_shortcuts": "Home shortcuts",
   "manga_chapter_switching_loading": "Loading chapter…",

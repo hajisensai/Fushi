@@ -6871,6 +6871,8 @@
   "shortcut_action_video_lookup_next_word": "下一个词（扫词）",
   "shortcut_action_video_lookup_prev_word": "上一个词（扫词）",
   "media_source_open_folder_failed": "无法打开文件夹，它可能已被移动、删除或断开连接。",
+  "library_sort_filter_view": "排序、筛选与显示",
+  "library_filter_active": "已筛选",
   "settings_module_keep_one_navigation": "导航栏里至少要保留一个页面",
   "settings_section_home_shortcuts": "首页入口",
   "manga_chapter_switching_loading": "正在加载章节…",

@@ -15,8 +15,10 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart'
 import 'package:fushi/src/utils/components/fushi_toolbar.dart'
     show FushiToolbarScope;
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
+import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart'
+    show FushiPageChromeTitle;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
-    show FushiShellActionsSlot;
+    show FushiShellActionsSlot, FushiShellTitleScope;
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable;
 import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart'
@@ -1325,6 +1327,30 @@ const double kFushiFloatingChromeGap = 8;
 /// 页签按自然宽贴左（摆不下时在胶囊里横滑），动作组按自然宽贴右；窄屏上
 /// 动作组最多占一半行宽，再多由 [FushiShellHeaderActions] 收进 ⋯。整行跟随
 /// [FushiFloatingChromeOverlay] 显隐（由外壳把整行叠在内容上）。
+/// 首页外壳告诉本 tab 里的 [FushiFloatingChromeBar]：外壳**不**另画大标题行，
+/// 页面名由工具栏行自己在页签胶囊左边画一枚标题胶囊（宽窗 M3E 库页 / 浏览，
+/// 2026-10-10「库页顶部只留两行」）。不在外壳里（push 出来的页面、组件测试）
+/// 时为 false，工具栏行照旧只有页签与动作。
+class FushiShellInlineTitle extends InheritedWidget {
+  const FushiShellInlineTitle({
+    required this.enabled,
+    required super.child,
+    super.key,
+  });
+
+  final bool enabled;
+
+  static bool of(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<FushiShellInlineTitle>()
+          ?.enabled ??
+      false;
+
+  @override
+  bool updateShouldNotify(FushiShellInlineTitle oldWidget) =>
+      enabled != oldWidget.enabled;
+}
+
 class FushiFloatingChromeBar extends StatelessWidget {
   const FushiFloatingChromeBar({
     required this.tabs,
@@ -1344,6 +1370,19 @@ class FushiFloatingChromeBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 首页外壳把页面名交给本行画（[FushiShellInlineTitle]，宽窗 M3E 库页）：
+    // 标题胶囊排在页签胶囊左边，不再单独占页签上面那一行（2026-10-10「库页
+    // 顶部只留两行」）。
+    final String? shellTitle =
+        leading == null && FushiShellInlineTitle.of(context)
+        ? FushiShellTitleScope.maybeTitleOf(context)
+        : null;
+    final Widget? lead = shellTitle != null && shellTitle.isNotEmpty
+        ? KeyedSubtree(
+            key: const ValueKey<String>('floating-chrome-shell-title'),
+            child: FushiPageChromeTitle(title: Text(shellTitle)),
+          )
+        : leading;
     return Padding(
       // M3E 收紧（2026-10-06 用户截图「标题与页签、页签与内容留白偏大」）：
       // 顶边不再加距——外壳大标题自带 8 的下沿留白，就是标题到胶囊的那段
@@ -1367,8 +1406,8 @@ class FushiFloatingChromeBar extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
-                if (leading != null) ...<Widget>[
-                  leading!,
+                if (lead != null) ...<Widget>[
+                  lead,
                   const SizedBox(width: kFushiFloatingChromeGap),
                 ],
                 Expanded(child: tabs),

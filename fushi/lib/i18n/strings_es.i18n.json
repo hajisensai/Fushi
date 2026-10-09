@@ -6871,6 +6871,8 @@
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
+  "library_sort_filter_view": "Sort, filter and view",
+  "library_filter_active": "Filtered",
   "settings_module_keep_one_navigation": "Keep at least one page in the navigation bar",
   "settings_section_home_shortcuts": "Home shortcuts",
   "manga_chapter_switching_loading": "Loading chapter…",
