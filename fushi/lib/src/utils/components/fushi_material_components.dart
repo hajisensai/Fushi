@@ -5647,11 +5647,21 @@ class FushiPopupSurface extends StatelessWidget {
   });
 
   final Widget child;
+
+  /// 面板底色。传**全透明色**（alpha 0，如 `Colors.transparent`）表示「本层不画
+  /// 面板，由外层已画好的卡面透出来」——app 外查词窗（popup_dictionary_page）的
+  /// 基础层就是这样：整卡由外层 [standaloneWindow] surface 画，基础层 WebView 文档
+  /// 也透明。此时背衬（玻璃 / 实底面板 / 原生材质）一律不画：不能把透明色当底色再
+  /// 压成不透明——`Colors.transparent.withValues(alpha: 1)` 是**纯黑**（BUG-3225：
+  /// Android app 外查词窗词条区整块黑底、浅色主题深色字看不见）。
   final Color? color;
   final EdgeInsetsGeometry padding;
   final double elevation;
   final bool showBorder;
   final Clip clipBehavior;
+
+  /// [color] 显式要求「不画面板」（全透明），见 [color]。
+  bool get _panelSuppressed => color != null && color!.a == 0;
 
   /// 这块 surface 是一扇**独立窗口**的整窗面板（悬浮词典、全局查词窗）。
   ///
@@ -5823,7 +5833,7 @@ class FushiPopupSurface extends StatelessWidget {
       // 子节点内缩一圈（BUG-2166 同一修法）。
       final BorderRadius radius = _appleOuterRadius;
       return _ApplePopupGlassBackdrop(
-        enabled: true,
+        enabled: !_panelSuppressed,
         borderRadius: radius,
         panelColor: _applePanelColor(context),
         child: Material(
@@ -5882,7 +5892,7 @@ class FushiPopupSurface extends StatelessWidget {
     if (borderOnForeground) return md3;
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return _ApplePopupGlassBackdrop(
-      enabled: md3Glass,
+      enabled: md3Glass && !_panelSuppressed,
       md3: true,
       borderRadius: _outerRadius(tokens),
       panelColor: Color.alphaBlend(
