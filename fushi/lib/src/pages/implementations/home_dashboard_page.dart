@@ -1609,8 +1609,8 @@ class _HomeDashboardPageState
   /// 宽屏「最近添加」卡（用户 2026-10-09：桌面 / 平板横屏下方空白太多）。
   ///
   /// 只在宽屏挂（手机宽度布局不变），形态是一行比「继续」小一号的 2:3 封面：
-  /// **没有标题行、没有筛选**（用户要求删掉的都不回来），每张卡右上角挂「新」
-  /// 角标自解释。数据源是本页快照里已有的书 / 视频 / 游戏行（不新增查询）：
+  /// **没有标题行、没有筛选**（用户要求删掉的都不回来），每张卡左上角挂一枚缩小的
+  /// 「新」角标自解释（右上角留给竖排书名）。数据源是本页快照里已有的书 / 视频 / 游戏行（不新增查询）：
   /// 书按 `EpubBooks.importedAt`、视频按 `VideoBooks.importedAt`（合集按成员
   /// 最大值收成一张，封面取合集海报）、游戏按 `addedAt` 倒序混排；已在「继续」
   /// 行出现的作品去重；关掉的模块先出局；取前 12。没有可显示的条目 → null
@@ -1739,6 +1739,8 @@ class _HomeDashboardPageState
           visible,
           coverHeight: coverHeight,
           rowKey: 'home-recent-row',
+          // 「新」挂左上角并缩小：右上角是日文竖排书名的起笔处，会被压住。
+          categoryBadge: true,
         ),
       ),
     );
@@ -1753,6 +1755,7 @@ class _HomeDashboardPageState
     List<_ContinueEntry> entries, {
     required double coverHeight,
     required String rowKey,
+    bool categoryBadge = false,
   }) {
     // BUG-2002 同款几何：悬停放大是纯绘制变换（以卡中心放大），行视口高度恰等于
     // 卡高时，溢出的上下各 (scale-1)/2 会被 ListView 视口裁成平边。行高留出余量、
@@ -1785,6 +1788,7 @@ class _HomeDashboardPageState
             appModel,
             entries[i],
             coverHeight: coverHeight,
+            categoryBadge: categoryBadge,
           ),
         ),
       ),
@@ -1798,6 +1802,7 @@ class _HomeDashboardPageState
     AppModel appModel,
     _ContinueEntry entry, {
     required double coverHeight,
+    bool categoryBadge = false,
   }) {
     return HomeContinueCoverCard(
       cover: _continueCover(tokens, appModel, entry),
@@ -1807,6 +1812,8 @@ class _HomeDashboardPageState
       progress: entry.progress,
       badgeLabel: entry.badgeLabel,
       badgeIcon: entry.badgeIcon,
+      badgeAtStart: categoryBadge,
+      badgeScale: categoryBadge ? 0.85 : 1,
       onTap: () => unawaited(_openContinueEntry(appModel, entry)),
     );
   }

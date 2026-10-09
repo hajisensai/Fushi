@@ -406,6 +406,21 @@ void main() {
       expect(c.progress, isNull);
       expect(c.height, closeTo(260 * 0.82, 0.01));
     }
+    // 「新」挂左上角、缩小（右上角是竖排书名起笔处，不压字）；「继续」的进度
+    // 角标仍在右上角。
+    for (final HomeContinueCoverCard c in recent) {
+      expect(c.badgeAtStart, isTrue);
+      expect(c.badgeScale, lessThan(1));
+    }
+    expect(tester.widget<HomeContinueCoverCard>(coverCards()).badgeAtStart,
+        isFalse);
+    final Finder recentBadge = find.descendant(
+      of: recentCards().first,
+      matching: find.byType(CoverBadge),
+    );
+    final Rect recentCard = tester.getRect(recentCards().first);
+    expect(tester.getRect(recentBadge).center.dx, lessThan(recentCard.center.dx));
+    expect(tester.getTopLeft(recentBadge).dx - recentCard.left, lessThan(12));
     expect(find.text(t.home_recently_added), findsNothing);
     expect(
       tester.getTopLeft(recentCards().first).dy,
