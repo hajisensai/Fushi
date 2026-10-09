@@ -10,8 +10,8 @@ import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 /// dedup/label 依赖），而 explorer.exe 只认反斜杠路径参数——传正斜杠会被忽略、
 /// 改开默认「文档」目录。存储层归一化不动，仅在 explorer 平台边界做方向转换。
 ///
-/// 「打开文件夹」现在走三桌面端共用的 [revealInFileManager]（Linux / macOS 也能
-/// 用），方向转换收在该原语的 Windows 分支：这里同时钉住「委托给原语」与「原语
+/// 「打开文件夹」现在走三桌面端共用的文件管理器原语（[openDirectoryInFileManager]，
+/// Linux / macOS 也能用），方向转换收在该原语的 Windows 分支：这里同时钉住「委托给原语」与「原语
 /// 对正斜杠目录做了转换」两半，缺一半 BUG-920 就会回来。
 void main() {
   late String source;
@@ -24,11 +24,16 @@ void main() {
     ).readAsStringSync();
   });
 
-  test('_openFolder 委托给 revealInFileManager，不再自己拼 explorer 调用', () {
+  test('_openFolder 委托给打开目录原语，不再自己拼 explorer 调用', () {
     final int idx = source.indexOf('Future<void> _openFolder(');
     expect(idx, isNonNegative, reason: '必须存在 _openFolder');
     final String body = source.substring(idx, idx + 400);
-    expect(body, contains('revealInFileManager(row.rootPath)'));
+    // BUG-3090：按目录语义打开（跟随符号链接 / 联接点），不是 revealInFileManager
+    // 的「选中」语义；且返回 false 时必须提示用户。
+    expect(body, contains('openDirectoryInFileManager(row.rootPath)'));
+    expect(body, isNot(contains('revealInFileManager(row.rootPath)')));
+    expect(body, contains('if (!opened && mounted)'));
+    expect(body, contains('t.media_source_open_folder_failed'));
     expect(
       source.contains("Process.run('explorer'"),
       isFalse,

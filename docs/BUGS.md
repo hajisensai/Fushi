@@ -29,10 +29,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2844 条。点号进各自文件。
+> 共 2850 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3092](bugs/BUG-3092-espeak-kana-only-symbols.md) | ✅ | ✅ | isKanaOnlyText 拒收〜…等读音常见符号、却放行 espeak-ng 读不了的・与小片假名扩展 |
+| [BUG-3091](bugs/BUG-3091-linux-tts-real-engine-test-skip.md) | ✅ | ✅ | Linux 真引擎 TTS 测试只判 open_jtalk 在 PATH，缺辞书或声音时误红 |
+| [BUG-3090](bugs/BUG-3090-source-open-folder-symlink-silent.md) | ✅ | ✅ | 来源「打开文件夹」：根目录是符号链接/联接点时被当文件选中，打不开时无提示 |
+| [BUG-3089](bugs/BUG-3089-linux-external-open-before-handler.md) | ✅ | ✅ | Linux 二次启动参数在 Dart 处理器注册前到达被静默丢弃、首帧前 present 出黑窗 |
+| [BUG-3088](bugs/BUG-3088-linux-tts-process-hang.md) | ✅ | ✅ | Linux 制卡 TTS 子进程卡住无上界、stdin EPIPE 跳过 espeak-ng 兜底 |
+| [BUG-3087](bugs/BUG-3087-linux-second-launch-during-exit.md) | ✅ | ✅ | Linux 首实例退出途中二次启动：参数转交给将死进程、隐藏窗口被重新显示，文件丢失 |
 | [BUG-3085](bugs/BUG-3085-scrape-sweep-deferred-depends-on-page.md) | ✅ | ✅ | 补刮被挡下的请求只靠视频页忙到闲兑现，页面未挂载或在飞闸门时丢失 |
 | [BUG-3084](bugs/BUG-3084-subtitle-anidb-movie-english-release.md) | 🚧 | 🚧 | AniDB 主源电影无 tmdb/imdb 时 OpenSubtitles 英文发布名被拒（核查别名是否带英文名） |
 | [BUG-3083](bugs/BUG-3083-subtitle-backfill-global-default-hard-filter.md) | ✅ | ✅ | 补字幕在无作品语言证据时把全局默认内容语言当硬过滤，英语片的英文字幕被拒 |
