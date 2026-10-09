@@ -1,4 +1,4 @@
-## BUG-3070 · 视频库导入动作挤窄页签条后选中项不可见
+## BUG-3078 · 视频库导入动作挤窄页签条后选中项不可见
 - **报告**：2026-10-07（用户录屏，CC 交接任务 1）
 - **真实性**：✅ 真 bug。`fushi/lib/src/pages/implementations/video_library_shell.dart:260` 的页签与动作槽共用顶栏；导入页登记三按钮后，`fushi/lib/src/utils/components/fushi_floating_chrome.dart:1048` 的动作宽度动画持续挤窄页签。原 `fushi/lib/src/utils/components/library_section_tabs.dart:433` 只更新溢出提示，未在 viewport 改变后重新定位选中段；TabBar 切换时计算的旧滚动终点因而失效。
 - **[x] ① 已修复** — 共享页签组件跟踪横向 viewportDimension，布局完成后按实际选中段几何重新居中；idle/post-frame 直接执行，避免无下一帧时回调悬空。重定目标也会终止旧滚动 activity；无关重建保留用户手动横滑位置。动效复用共享时长并响应减弱动态效果。提交 `c93bfe4af3`（`fix(ui): keep selected library tab visible when toolbar resizes`）。
