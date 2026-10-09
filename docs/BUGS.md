@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2837 条。点号进各自文件。
+> 共 2840 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -47,6 +47,9 @@
 | [BUG-3070](bugs/BUG-3070-devconsole-bad-origin.md) | ✅ | ✅ | 反馈处理台网页登录一律 403 bad_origin |
 | [BUG-3069](bugs/BUG-3069-subtitle-backfill-other-language.md) | ✅ | ✅ | 自动补字幕在原语言无候选时装上其它语言的字幕 |
 | [BUG-3068](bugs/BUG-3068-subtitle-backfill-wrong-work.md) | ✅ | ✅ | 自动补字幕把重制版/TV集/无关剧集的字幕装到电影上 |
+| [BUG-3067](bugs/BUG-3067-acquisition-quality-fallback-upscale.md) | ✅ | ✅ | AI video download quality fallback prefers upscales and DVD over the requested 1080p tier |
+| [BUG-3066](bugs/BUG-3066-acquisition-ignores-original-language.md) | ✅ | ✅ | AI video download picks dubbed or hardsubbed releases when original language was requested |
+| [BUG-3065](bugs/BUG-3065-acquisition-sibling-work-releases.md) | ✅ | ✅ | AI video download picks remake or sequel releases as the target work |
 | [BUG-3064](bugs/BUG-3064-lookup-bottom-bar-scroll.md) | ✅ | ✅ | 移动端查词页往下滑底部栏不收起 |
 | [BUG-3063](bugs/BUG-3063-collection-continue-btn-overflow.md) | ✅ | ✅ | 合集详情 hero「继续」按钮图标溢出左边缘、内边距不对称 |
 | [BUG-3062](bugs/BUG-3062-video-chapter-markers-off-track.md) | ✅ | ✅ | 移动端视频章节刻度没落在进度条轨道上 |
