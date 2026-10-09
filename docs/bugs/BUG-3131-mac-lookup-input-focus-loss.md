@@ -1,0 +1,12 @@
+## BUG-3131 · macOS 查词页手动输入框查到词后退出输入框、清空后再触发（未复现）
+- **报告**：2026-10-09（用户：「Mac 2.9.1 手动查词输入框焦点异常。不管是中、英还是日文输入法，输入第一个字符后，只要查到词，就会退出输入框、打不了字，需要重新点击；删除所有文本后又会触发一次，不能重新输入（英文重输似乎不影响）。上个版本应该还是好的。」）
+- **真实性**：❌ 未复现。在 Mac（macOS 27.0，Apple Silicon）上用真 NSEvent 驱动真 app，`v2.9.1`（Flutter 3.44.0）与 `upstream/develop` `4223acd220`（Flutter 3.47.6）两份代码都跑过，结果出现、清空、重打的每一步窗口 first responder 都停在 `FlutterTextInputPlugin`，Flutter primaryFocus 始终是搜索框，下一次输入都落进了输入框。
+  - 驱动方式：`fushi/integration_test/macos_lookup_search_focus_itest.dart`。键盘走 Runner 测试钩子 `app.fushi.test/input` 的 `key`（`NSApp.postEvent` → `sendEvent` → first responder → `FlutterKeyboardManager` → `FlutterTextInputPlugin`）；组字走新增的 `imeMarked` / `imeCommit`，对**第一响应者的 `inputContext.client`** 调 `setMarkedText` / `insertText`，与 IMK 输入法回调 client 的入口相同。
+  - 覆盖的形态：① 真键打 `testword`，结果区出现（`home_dictionary_result_evidence` 在场、`InAppWebView` 已挂进视图树）后再打一个键；② 删光后重打；③ 组字 `n → ね → ねk → ねこ`，结果在组字中途出现，再组 `ねこが`、上屏 `猫が`，删光，连做两轮；④ 先回车提交两次写出查词历史；⑤ 默认宽屏主从与 560 宽窄屏单栏两种布局。全部通过（日志 `~/dev/mlif-*.log`，Mac 上 `~/dev/hibiki-mlif`）。
+  - 2.9.0 → 2.9.1 之间只有 11 个提交，`fushi/lib` 只改了 `app_native_proxy.dart`（BUG-2915），与查词页无关；「上个版本是好的」对应的引入点在 2.9.1 里找不到。
+  - 排除过的路径（都沿代码确认过不会在「查到词」时触发）：结果区 `DictionaryPopupWebView`（`AppKitView` 只在引擎回调 `onFocus` 时抢 Flutter 焦点，macOS 引擎不发 `viewFocused`）；`flutter_inappwebview_macos` 不调 `makeFirstResponder`；`popup.js` 里唯一的 `.focus()` 在「重复卡」面板；`LookupImeBinding` 只在焦点变化时切输入源；`_search` 改写输入框（`home_dictionary_page.dart` `_search` 里 `_controller.text != trimmed` 才回写）只在查询串带首尾空白时发生。
+  - 还没覆盖、可能是差异所在：真实输入法（ssh 会话投递的合成键事件 IMK 输入法不接：选到 Kotoeri / 微信输入法后打字仍是裸字母，`imeMarked` 只能模拟 client 一侧）、真实鼠标点击、用户自己的词典与设置、用户的 macOS 版本。
+  - 一个只靠读代码确认、尚未在用户路径上坐实的风险点：`packages/flutter/lib/src/widgets/view.dart` `_ViewState._scopeFocusChangeListener` 在 View 作用域**重新获得**焦点时调 `requestViewFocusChange`，macOS 引擎（`FlutterEngine.mm` `onFocusChangeRequest`）随即 `makeFirstResponder:flutterView`，会把 first responder 从 `FlutterTextInputPlugin` 手里抢走；而 macOS 普通主窗从不发 view focus 事件（`windowDidBecomeKey` 只在多窗口 `FlutterWindowController` 里调），`_viewHasFocus` 恒为 false。只要某条路径让主焦点先掉到 root scope（例如持焦节点被销毁）再被拉回输入框，就会出现「Flutter 以为输入框有焦点、键盘却不进输入框」。本次复现里主焦点从未离开过搜索框，所以没走到这条路。
+- **[ ] ① 未修复** — 未复现，不做猜测性修改。
+- **[ ] ② 未加自动化测试** — 已加 macOS 真机取证 itest `fushi/integration_test/macos_lookup_search_focus_itest.dart`（当前两份代码都通过）与 Runner 测试钩子 `imeMarked` / `imeCommit` / `imeUnmark` / `resize`（`FUSHI_TEST_INPUT` 门控，生产不注册）。拿到能复现的环境后，把差异条件加进这条 itest 先看它变红，再修。
+- **备注**：需要用户补充的信息：macOS 版本；窗口大小（是否窄屏单栏）；用的设计风格；具体输入法（系统自带 / 第三方，哪一个）；「退出输入框」时光标是否还在闪；是用鼠标点进输入框还是热键唤起查词页；设置里「自动搜索」与「搜索防抖」的值。
