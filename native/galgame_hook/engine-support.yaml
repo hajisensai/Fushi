@@ -3782,7 +3782,7 @@
           {
             "kind": "luna_auto_or_pc_hooks",
             "status": "implemented_unverified",
-            "verification": "LunaHook attaches generic hooks only; not used as the selected lane."
+            "verification": "Native text-owner handshake: a LucaSystem identity leaves the owner Pending before Ready; once the MESSAGE readers are hooked the owner is NativeOwned and the injector never starts LunaHook, so no generic Luna threads compete with the exact lane. A final site rejection or failed startup publishes LunaAllowed and Luna remains the fallback."
           },
           {
             "kind": "ingame_lookup_geometry",
@@ -3819,7 +3819,7 @@
       "current_status": "implemented_unverified",
       "known_limitations": [
         "Only Windows x86 Little Busters! English Edition and Windows x64 Summer Pockets REFLECTION BLUE structural samples were measured. x64 is implemented_unverified: resolver/ABI tests and read-only structure observations do not prove actual text/voice pairing, lookup, no-advance input shielding or a real card. Other MESSAGE/cText ABIs refuse installation.",
-        "Only the MESSAGE opcode is published; choices, titles and other text opcodes are not a lane.",
+        "Only the MESSAGE opcode is published; choices, titles and other text opcodes are not a lane, and because the native owner fences LunaHook they are not captured by generic hooks either.",
         "Voice comes from the PAK member addressed by the voice id, not from a played-buffer capture; a build that remaps voice ids at run time would publish the wrong member (not observed).",
         "The click claim samples the engine's per-frame GetAsyncKeyState poll; touch taps promoted to sub-frame WM_LBUTTONDOWN/UP passed the user's touch checklist once, but no injected-touch (InjectTouchInput) run is recorded.",
         "The lookup model requires exactly one live text object whose glyph records spell the selected line; ruby, multi-object pages and surrogate pairs fail closed.",

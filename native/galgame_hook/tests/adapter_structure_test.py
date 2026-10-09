@@ -463,6 +463,54 @@ class AdapterStructureTest(unittest.TestCase):
         reader = self._function_body(source, "uint32_t ReadLucaMessageRecordCount()")
         self.assertIn("luca::X64AdmittedRecordCount(count)", reader)
 
+    def test_luca_owns_its_text_lane_and_fences_luna(self) -> None:
+        # LucaSystem joins the native text-owner handshake: Pending before
+        # Ready, NativeOwned once the MESSAGE lane is hooked (Luna never
+        # starts, so its unrelated generic threads never appear), LunaAllowed
+        # on a final rejection or a failed startup.
+        worker = self._function_body(
+            self._strip_comments(
+                (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")),
+            "DWORD WINAPI HookWorker(")
+        self.assertLess(worker.index("InitializeNativeTextOwner(g_header,"),
+                        worker.index("registry.native_text_candidate()"))
+        self.assertLess(worker.index("registry.native_text_candidate()"),
+                        worker.index("SignalReady"))
+        registry = self._strip_comments(
+            (ROOT / "hook" / "adapter_registry.inc").read_text(encoding="utf-8"))
+        candidate = self._function_body(
+            registry, "bool native_text_candidate() const")
+        self.assertIn("siglus_.probe()", candidate)
+        self.assertIn("luca_.probe()", candidate)
+        fail = self._function_body(registry, "void FailNativeTextStartup()")
+        self.assertIn("siglus_.FailTextStartup();", fail)
+        self.assertIn("luca_.FailTextStartup();", fail)
+        # Siglus runs InstallText on every process; on another engine's
+        # Pending owner it must neither hook nor settle anything.
+        siglus_install = self._function_body(registry, "void InstallText()")
+        self.assertLess(siglus_install.index("!probe()"),
+                        siglus_install.index("TryHookSiglusExactText"))
+        siglus_fail = self._function_body(registry, "void FailTextStartup()")
+        self.assertLess(siglus_fail.index("if (!probe()) return;"),
+                        siglus_fail.index("CompleteNativeTextOwner"))
+        luca = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "luca_adapter.inc").read_text(
+                encoding="utf-8"))
+        adapter = luca[luca.index("class LucaAdapter final"):]
+        settle = self._function_body(adapter, "void SettleTextOwner()")
+        self.assertLess(settle.index("LucaTextSettled(&hooked)"),
+                        settle.index("CompleteNativeTextOwner(g_header, hooked, false)"))
+        install = self._function_body(adapter, "bool install() override")
+        self.assertLess(install.index("InstallLucaText()"),
+                        install.index("SettleTextOwner();"))
+        pending = self._function_body(adapter, "void ProcessPendingEvents()")
+        self.assertLess(pending.index("InstallLucaText()"),
+                        pending.index("SettleTextOwner();"))
+        luca_fail = self._function_body(adapter, "void FailTextStartup()")
+        self.assertIn("CompleteNativeTextOwner(g_header, false, false)", luca_fail)
+        settled = self._function_body(luca, "bool LucaTextSettled(bool* installed)")
+        self.assertIn("g_luca.hooks_installed || g_luca.resolved", settled)
+
     def test_every_adapter_is_an_independent_include(self) -> None:
         source = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
         adapters = {
