@@ -836,7 +836,15 @@ void main() {
       ),
       hasLength(1),
     );
-    // 回到原反馈详情：反向显示「已被重新提交为」。
+    // 回到原反馈详情：反向显示「已被重新提交为」。提交页退场、详情页重读本机回执
+    // 都是异步的（与 BUG-3093 同一时序），等到它真出现再断言，而不是在转场窗口里数。
+    await settleIo(
+      tester,
+      () => find
+          .text(t.feedback_reopened_as(id: 'newnewnew0'))
+          .evaluate()
+          .isNotEmpty,
+    );
     expect(find.text(t.feedback_reopened_as(id: 'newnewnew0')), findsOneWidget);
     // 普通新反馈的草稿没被这次重新提交清掉。
     final FeedbackComposeDraft? kept = await tester
