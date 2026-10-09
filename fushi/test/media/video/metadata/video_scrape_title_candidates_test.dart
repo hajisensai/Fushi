@@ -1,6 +1,11 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
+import 'package:fushi_engine/media/video/scraper/filename_parser.dart';
+import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 
 void main() {
   group('isEpisodeLabelTitle', () {
@@ -130,4 +135,126 @@ void main() {
       expect(candidates.toSet().length, candidates.length);
     });
   });
+
+  // BUG-3192：作品目录名带年份（下载整理器自己就写 `标题 (年份)`）时，哈希
+  // 识别不可用、回落到标题匹配也必须命中：标题候选里要有去掉年份的干净标题，
+  // 年份只作 ±1 的过滤门。provider 按归一化标题精确返回，混进年份的标题搜不到。
+  group('year-tagged work directories fall back to a title match', () {
+    final VideoMetadataWork frieren = VideoMetadataWork(
+      provider: VideoMetadataProviderKind.anidb,
+      kind: VideoMetadataMediaKind.tv,
+      title: 'Sousou no Frieren',
+      originalTitle: '葬送のフリーレン',
+      year: 2023,
+      ids: const <VideoMetadataId>[
+        VideoMetadataId(type: 'anidb', value: '17617', isDefault: true),
+      ],
+    );
+    for (final String directory in <String>[
+      'Sousou no Frieren (2023)',
+      '葬送のフリーレン（2023）',
+      '[2023] 葬送のフリーレン',
+      '葬送のフリーレン [2023]',
+      '【2023】葬送のフリーレン',
+      'Sousou.no.Frieren.2023.1080p.WEB-DL',
+      'Sousou no Frieren 2023',
+      '[Sakurato] Sousou no Frieren (2023) [01-28][1080p]',
+    ]) {
+      test(directory, () async {
+        // 文件名只有集号：标题只能从目录名来（目录里放「03.mkv」是常见形态）。
+        final String videoPath = 'D:/Anime/$directory/03.mkv';
+        final List<String> candidates = videoScrapeTitleCandidates(
+          workTitle: directory,
+          parsedSeries: '',
+          videoPath: videoPath,
+        );
+        final int? year = FilenameParser.parse(directory).year;
+        expect(year, 2023, reason: directory);
+        final _TitleKeyedProvider provider =
+            _TitleKeyedProvider(<VideoMetadataWork>[frieren]);
+        final VideoMetadataResolution result = await VideoMetadataResolver(
+          registry:
+              VideoMetadataProviderRegistry(<VideoMetadataProvider>[provider]),
+        ).resolve(VideoMetadataResolveRequest(
+          selectedProvider: VideoMetadataProviderKind.anidb,
+          mediaKind: VideoMetadataMediaKind.tv,
+          titleCandidates: candidates,
+          year: year,
+          episodeCount: 1,
+        ));
+        expect(result.status, VideoMetadataResolutionStatus.matched,
+            reason: '$directory → $candidates');
+        expect(result.lookup?.externalId, '17617');
+      });
+    }
+
+    test('the year gate still rejects a same-titled work from another year',
+        () async {
+      final _TitleKeyedProvider provider =
+          _TitleKeyedProvider(<VideoMetadataWork>[frieren]);
+      final VideoMetadataResolution result = await VideoMetadataResolver(
+        registry:
+            VideoMetadataProviderRegistry(<VideoMetadataProvider>[provider]),
+      ).resolve(VideoMetadataResolveRequest(
+        selectedProvider: VideoMetadataProviderKind.anidb,
+        mediaKind: VideoMetadataMediaKind.tv,
+        titleCandidates: videoScrapeTitleCandidates(
+          workTitle: 'Sousou no Frieren (2010)',
+          parsedSeries: '',
+          videoPath: r'D:\Anime\Sousou no Frieren (2010)\01.mkv',
+        ),
+        year: 2010,
+      ));
+      expect(result.status, isNot(VideoMetadataResolutionStatus.matched));
+    });
+  });
+}
+
+/// 只在归一化标题与作品标题 / 原名完全一致时返回该作品的假资料源。
+class _TitleKeyedProvider implements VideoMetadataProvider {
+  _TitleKeyedProvider(this.works);
+
+  final List<VideoMetadataWork> works;
+
+  @override
+  VideoMetadataProviderKind get providerKind => VideoMetadataProviderKind.anidb;
+
+  @override
+  bool get isAvailable => true;
+
+  @override
+  Future<List<VideoMetadataWork>> search(
+    VideoMetadataSearchRequest request,
+  ) async {
+    final String query = TitleNormalizer.normalize(request.title);
+    return <VideoMetadataWork>[
+      for (final VideoMetadataWork work in works)
+        if (<String?>[work.title, work.originalTitle].any(
+            (String? t) => t != null && TitleNormalizer.normalize(t) == query))
+          work,
+    ];
+  }
+
+  @override
+  Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async =>
+      works
+          .where((VideoMetadataWork w) =>
+              w.ids.any((VideoMetadataId id) => id.value == lookup.externalId))
+          .firstOrNull;
+
+  @override
+  Future<List<VideoMetadataSeason>> fetchSeasons(
+    VideoMetadataLookup lookup,
+  ) async =>
+      const <VideoMetadataSeason>[];
+
+  @override
+  Future<List<VideoMetadataEpisode>> fetchEpisodes(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+  }) async =>
+      const <VideoMetadataEpisode>[];
+
+  @override
+  void close() {}
 }
