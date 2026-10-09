@@ -70,7 +70,30 @@ dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wr
 - `READ_LIMITER` / `AUTH_LIMITER` / `ACCOUNT_LIMITER` 是 Workers Rate Limiting binding（`[[unsafe.bindings]]`
   `type = "ratelimit"`）；部署前确认账户可用。不可用时代码会跳过这几道限流（其余 D1 计数限流与日预算照常），
   但成本保护会变弱，**请以可用为准**。
-- 仓库 CI（`.github/workflows/leaderboard-worker.yml`）**只跑测试、不部署**；上线一律由维护者手动 `wrangler deploy`。
+- 仓库 CI（`.github/workflows/leaderboard-worker.yml`）**只跑测试、不部署**；上线由维护者手动触发——
+  用下面的 GitHub Actions 部署，或在本机按上面的显式 `--config` 命令 `wrangler deploy`。
+
+## 用 GitHub Actions 部署
+
+`.github/workflows/leaderboard-worker-deploy.yml`，**只能手动触发**（Actions → leaderboard-worker-deploy →
+Run workflow），push / PR 永远不会部署。维护者不需要在自己机器上 `wrangler login`。
+
+- 输入：`ref`（要部署的分支 / tag / 提交，默认 `develop`）、`apply_migrations`（默认关；打开后先执行
+  `d1 migrations apply fushi-leaderboard --remote`，新增迁移的版本要勾上）。
+- 步骤：checkout `ref` → `npm ci` → `npm test`（**测试不过不部署**）→ 打印 `wrangler whoami` 与将要部署的
+  提交号 →（可选）D1 迁移 → `wrangler deploy --config services/leaderboard/wrangler.toml` →
+  `GET https://rank.fushi.moe/v1/health` 必须 200。用的是 `package-lock.json` 锁定的 wrangler，不走 `npx`。
+- 凭据：优先读 secret `CLOUDFLARE_WORKERS_API_TOKEN`，没配就回退到 `CLOUDFLARE_API_TOKEN`（原本给
+  `mirror-releases.yml` 的 R2 镜像用）；账户 ID 读 `CLOUDFLARE_ACCOUNT_ID`。token 至少要有
+  「Account → Workers Scripts: Edit」，勾 `apply_migrations` 还要「Account → D1: Edit」；若 deploy 报
+  自定义域名 / route 相关的权限错误，再加限定 `fushi.moe` 的「Zone → Workers Routes: Edit」。
+  现有 token 只有 R2 权限时，二选一：在 Cloudflare 后台给它加上述权限，或另建一个 token 存成
+  `CLOUDFLARE_WORKERS_API_TOKEN`（推荐，R2 镜像与 Worker 部署权限分开）。
+- 跑在 environment `leaderboard-production` 里：在仓库 Settings → Environments 给它配 Required reviewers
+  就变成「点了运行还要审批」；不配也能直接跑。token 也可以只存成该 environment 的 secret。
+- 同一时刻只跑一次部署（concurrency 组 `leaderboard-worker-deploy`），后来者排队，不会取消正在跑的部署。
+- Worker 的运行时 secret（`ADMIN_USER` / `ADMIN_PASS` / `EMAIL_PEPPER` / `RESEND_API_KEY`）已存在 Cloudflare
+  上，`wrangler deploy` 不会动它们；这个 workflow 也不负责设置它们。
 
 ## API
 
