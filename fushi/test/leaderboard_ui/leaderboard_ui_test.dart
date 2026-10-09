@@ -12,6 +12,9 @@ import 'package:fushi/src/leaderboard/leaderboard_features.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_store.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_account_page.dart';
+import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_chars_summary.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiLinearProgressIndicator;
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_common.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_share_card.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_sign_in_page.dart';
@@ -1562,5 +1565,31 @@ void main() {
     // 退场转场比 settle 的十帧长：再推进一秒让路由真正移除。
     await tester.pump(const Duration(seconds: 1));
     expect(find.byType(LeaderboardTab), findsNothing);
+  });
+
+  testWidgets('总字数卡：加载失败显示原因，不永远停在加载条上', (WidgetTester tester) async {
+    Widget card({Object? error}) => MaterialApp(
+      home: Scaffold(
+        body: LeaderboardCharsSummaryCard(
+          total: null,
+          week: null,
+          error: error,
+        ),
+      ),
+    );
+    await tester.pumpWidget(card());
+    expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('leaderboard-summary-error')),
+      findsNothing,
+    );
+
+    const LeaderboardApiException error = LeaderboardApiException(
+      503,
+      'not_configured',
+    );
+    await tester.pumpWidget(card(error: error));
+    expect(find.byType(FushiLinearProgressIndicator), findsNothing);
+    expect(find.text(leaderboardErrorText(error)), findsOneWidget);
   });
 }

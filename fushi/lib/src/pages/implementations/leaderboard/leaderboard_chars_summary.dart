@@ -37,11 +37,13 @@ String leaderboardEquivalentText(LeaderboardReferenceEquivalent e) {
   }
 }
 
-/// 总字数卡。[total] / [week] 为 null = 还在加载。
+/// 总字数卡。[total] / [week] 为 null = 还在加载；[error] 非 null 且 [total] 为 null =
+/// 加载失败（显示原因，不再停在加载条上）。
 class LeaderboardCharsSummaryCard extends StatefulWidget {
   const LeaderboardCharsSummaryCard({
     required this.total,
     required this.week,
+    this.error,
     this.works = kLeaderboardReferenceWorks,
     this.random,
     super.key,
@@ -49,6 +51,7 @@ class LeaderboardCharsSummaryCard extends StatefulWidget {
 
   final int? total;
   final int? week;
+  final Object? error;
   final List<LeaderboardReferenceWork> works;
 
   /// 轮换用的随机源（测试注入固定种子）；null = 每次打开随机。
@@ -135,7 +138,13 @@ class _LeaderboardCharsSummaryCardState
               color: colors.onSurfaceVariant,
             ),
           ),
-          if (total == null)
+          if (total == null && widget.error != null)
+            Text(
+              leaderboardErrorText(widget.error!),
+              key: const ValueKey<String>('leaderboard-summary-error'),
+              style: tokens.type.listSubtitle,
+            )
+          else if (total == null)
             Padding(
               padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap),
               child: const SizedBox(

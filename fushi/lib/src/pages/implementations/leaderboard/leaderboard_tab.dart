@@ -214,6 +214,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
   /// 总字数卡：总榜 / 周榜字数榜上「我」的值；null = 还没取到。
   int? _summaryTotal;
   int? _summaryWeek;
+  Object? _summaryError;
 
   RankPage? _rank;
   List<RankRow> _rankRows = <RankRow>[];
@@ -279,9 +280,12 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
       setState(() {
         _summaryTotal = pages[0].me?.value ?? 0;
         _summaryWeek = pages[1].me?.value ?? 0;
+        _summaryError = null;
       });
     } catch (e, st) {
       ErrorLogService.instance.log('Leaderboard.summary', e, st);
+      // 不记下失败，卡片会永远停在加载条上；已有数时保留旧数（下拉刷新失败不清空）。
+      if (mounted) setState(() => _summaryError = e);
     }
   }
 
@@ -566,6 +570,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
     child: LeaderboardCharsSummaryCard(
       total: _summaryTotal,
       week: _summaryWeek,
+      error: _summaryError,
     ),
   );
 
