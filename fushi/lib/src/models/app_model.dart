@@ -82,6 +82,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
 import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
@@ -9396,6 +9397,16 @@ class AppModel with ChangeNotifier {
       _prefsRepo?.mangaWidePageSolo ?? kMangaWidePageSoloDefault;
   Future<void> setMangaWidePageSolo(bool value) =>
       prefsRepo.setMangaWidePageSolo(value);
+
+  String get mangaResumeTarget =>
+      _prefsRepo?.mangaResumeTarget ?? kMangaResumeTargetDefault;
+  Future<void> setMangaResumeTarget(String value) =>
+      prefsRepo.setMangaResumeTarget(value);
+
+  bool get mangaChapterListNewestFirst =>
+      _prefsRepo?.mangaChapterListNewestFirst ?? true;
+  Future<void> setMangaChapterListNewestFirst(bool value) =>
+      prefsRepo.setMangaChapterListNewestFirst(value);
 
   MangaReaderPreferences get mangaReaderPreferences =>
       _prefsRepo?.mangaReaderPreferences ?? const MangaReaderPreferences();

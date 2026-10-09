@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
+import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart';
 import 'package:fushi/src/media/media_item.dart';
@@ -164,8 +165,15 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   OnlineMangaUnavailable? _refreshError;
   Future<void> Function()? _challengeRetry;
 
+  /// 章节排序：初值读全局偏好（阅读器章节抽屉同一份），切换即写回。
   bool _newestFirst = true;
   bool _unreadOnly = false;
+
+  /// 正文滚动（窄屏整页 / 宽屏右栏）：快速滚动条与「跳到当前章节」都挂在它上。
+  final ScrollController _scroll = ScrollController();
+  final GlobalKey _currentChapterAnchor = GlobalKey(
+    debugLabel: 'manga_series_current_chapter',
+  );
 
   /// 下载状态位（设计稿 2026-09-12 §5）：任务行 + 磁盘判据，两份合成章节行上
   /// 的一个状态。任务表一变就整体重算。
@@ -239,6 +247,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   @override
   void initState() {
     super.initState();
+    _newestFirst = _appModelOrNull?.mangaChapterListNewestFirst ?? true;
     unawaited(_load());
   }
 
@@ -248,6 +257,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     _jobsWatch = null;
     unawaited(_ocrChangesWatch?.cancel());
     unawaited(_ocrEventsWatch?.cancel());
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -1221,7 +1231,13 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   int get _resumeIndex {
     final OnlineMangaLibraryEntry? entry = _entry;
     if (entry == null) return -1;
-    return OnlineMangaLibraryService.resumeChapterIndex(entry, _states);
+    return OnlineMangaLibraryService.resumeChapterIndex(
+      entry,
+      _states,
+      target: MangaResumeTargetKey.fromKey(
+        _appModelOrNull?.mangaResumeTarget ?? kMangaResumeTargetDefault,
+      ),
+    );
   }
 
   /// 点章节：开读——已下载从磁盘读，未下载在线直读（2026-09-26 用户撤回设计稿
@@ -1457,32 +1473,37 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     // 宽屏两栏：左 hero（封面 / 标题 / 操作 / 简介）独立滚动，右章节列表；窄屏
     // 单列。BUG-2440 的底部安全区由 MediaDetailLayout 的尾部 SliverSafeArea 补。
     return FushiEntranceScope(
-      child: MediaDetailLayout(
-        backdrop: _coverImageProvider(),
-        header: _buildHeader(context),
-        slivers: <Widget>[
-          SliverPadding(
-            padding: EdgeInsets.symmetric(horizontal: page),
-            sliver: SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  if (ocrBanner != null) ...<Widget>[
-                    FushiStaggeredEntrance(index: 0, child: ocrBanner),
-                    const SizedBox(height: 12),
+      child: MangaChapterFastScrollbar(
+        controller: _scroll,
+        notificationPredicate: _isBodyScroll,
+        child: MediaDetailLayout(
+          controller: _scroll,
+          backdrop: _coverImageProvider(),
+          header: _buildHeader(context),
+          slivers: <Widget>[
+            SliverPadding(
+              padding: EdgeInsets.symmetric(horizontal: page),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    if (ocrBanner != null) ...<Widget>[
+                      FushiStaggeredEntrance(index: 0, child: ocrBanner),
+                      const SizedBox(height: 12),
+                    ],
+                    if (_isLocal)
+                      FushiStaggeredEntrance(
+                        index: 1,
+                        child: _buildLocalDetails(context),
+                      )
+                    else
+                      _buildChapterList(context),
                   ],
-                  if (_isLocal)
-                    FushiStaggeredEntrance(
-                      index: 1,
-                      child: _buildLocalDetails(context),
-                    )
-                  else
-                    _buildChapterList(context),
-                ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1505,7 +1526,14 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           newestFirst: _newestFirst,
           unreadOnly: _unreadOnly,
           currentChapterKey: _entry?.currentChapter?.key,
-          onSortToggled: () => setState(() => _newestFirst = !_newestFirst),
+          currentChapterAnchorKey: _currentChapterAnchor,
+          onSortToggled: _toggleSort,
+          onJumpToCurrent: _entry?.currentChapter == null
+              ? null
+              : () => scrollToMangaChapterAnchor(
+                  _currentChapterAnchor,
+                  duration: fushiMotionDuration(context, FushiMotion.medium),
+                ),
           onUnreadOnlyToggled: () =>
               setState(() => _unreadOnly = !_unreadOnly),
           onChapterTap: (OnlineMangaChapter chapter) {
@@ -1552,6 +1580,25 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         ),
       ],
     );
+  }
+
+  /// 切换章节排序并写回全局偏好（阅读器章节抽屉同一份）。没有 AppModel（源浏览
+  /// 立起的无 ProviderScope 树）时只在本页生效。
+  void _toggleSort() {
+    setState(() => _newestFirst = !_newestFirst);
+    final AppModel? appModel = _appModelOrNull;
+    if (appModel != null) {
+      unawaited(appModel.setMangaChapterListNewestFirst(_newestFirst));
+    }
+  }
+
+  /// 快速滚动条只跟正文那个滚动视图：宽屏两栏时左栏（hero）也会冒滚动通知。
+  bool _isBodyScroll(ScrollNotification notification) {
+    if (notification.depth != 0 || !_scroll.hasClients) return false;
+    final ScrollableState? scrollable = notification.context
+        ?.findAncestorStateOfType<ScrollableState>();
+    return scrollable != null &&
+        _scroll.positions.contains(scrollable.position);
   }
 
   /// 可读文案：桥接层 message 往往是 `Exception: ...` 原串，经

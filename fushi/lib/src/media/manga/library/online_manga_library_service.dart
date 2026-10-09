@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart';
+import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
@@ -423,45 +424,18 @@ class OnlineMangaLibraryService {
     }
   }
 
-  /// 新读者从哪一章开始。
-  ///
-  /// 源按新→旧返回，所以「最旧的一章」= 列表末尾 = 第 1 话。
-  static int initialChapterIndex(OnlineMangaLibraryEntry entry) {
-    final int? selected = entry.currentChapterIndex;
-    if (selected != null && selected >= 0 && selected < entry.chapters.length) {
-      return selected;
-    }
-    return entry.chapters.isEmpty ? -1 : entry.chapters.length - 1;
-  }
+  /// 新读者从哪一章开始（[mangaInitialChapterIndex]）。
+  static int initialChapterIndex(OnlineMangaLibraryEntry entry) =>
+      mangaInitialChapterIndex(entry);
 
-  /// 「继续阅读」落到哪一章。
-  ///
-  /// 优先取**最近读过且没读完**的那一章（`manga_chapter_states.updatedAt` 最大
-  /// 且 `readAt == null`）；全读完了就落到它之后的下一话；一次没读过就走
-  /// [initialChapterIndex]。这比直接用 `currentChapterIndex` 准：那个字段只记
-  /// 「最后一次选了哪章」，用户在作品页点开一章看了两眼退出来，它也会被改写。
+  /// 「继续阅读」落到哪一章（[continueMangaChapterIndex]）。这比直接用
+  /// `currentChapterIndex` 准：那个字段只记「最后一次选了哪章」，用户在作品页点开
+  /// 一章看了两眼退出来，它也会被改写。[target] 见 [MangaResumeTarget]。
   static int resumeChapterIndex(
     OnlineMangaLibraryEntry entry,
-    Map<String, MangaChapterStateRow> states,
-  ) {
-    if (entry.chapters.isEmpty) return -1;
-    int bestIndex = -1;
-    int bestUpdatedAt = -1;
-    for (int index = 0; index < entry.chapters.length; index++) {
-      final MangaChapterStateRow? state = states[entry.chapters[index].key];
-      if (state == null) continue;
-      if (state.updatedAt > bestUpdatedAt) {
-        bestUpdatedAt = state.updatedAt;
-        bestIndex = index;
-      }
-    }
-    if (bestIndex < 0) return initialChapterIndex(entry);
-    final MangaChapterStateRow best = states[entry.chapters[bestIndex].key]!;
-    if (best.readAt == null) return bestIndex;
-    // 最近那章已读完 → 往「更新」的方向走一话（列表是新→旧，所以是 -1）。
-    // 已经是最新一话就停在原地，让用户看到自己读到头了。
-    return bestIndex > 0 ? bestIndex - 1 : bestIndex;
-  }
+    Map<String, MangaChapterStateRow> states, {
+    MangaResumeTarget target = MangaResumeTarget.furthestProgress,
+  }) => continueMangaChapterIndex(entry, states, target: target);
 
   static String _chaptersJson(List<OnlineMangaChapter> chapters) =>
       jsonEncode(<Map<String, Object?>>[

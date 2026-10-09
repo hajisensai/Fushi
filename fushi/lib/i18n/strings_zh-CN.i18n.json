@@ -6897,5 +6897,12 @@
   "video_setting_mpv_passthrough_hint": "把 AC-3 / E-AC-3 / TrueHD / DTS-HD 原样交给功放或回音壁解码（含 Atmos）。仅在设备支持这些格式时打开，否则可能无声。直通时请在功放上调音量：应用内音量与静音作用不到这些码流，所以倍速不为 1×、音量未满或静音时会临时改由 Fushi 解码（功放上的 Atmos / DTS 标识随之熄灭）。关闭时始终由 Fushi 解码，5.1 / 7.1 照样环绕输出。",
   "shortcut_action_video_lookup_next_word": "下一个词（扫词）",
   "shortcut_action_video_lookup_prev_word": "上一个词（扫词）",
-  "media_source_open_folder_failed": "无法打开文件夹，它可能已被移动、删除或断开连接。"
+  "media_source_open_folder_failed": "无法打开文件夹，它可能已被移动、删除或断开连接。",
+  "manga_resume_target": "重新打开时",
+  "manga_resume_target_subtitle": "仅在线漫画。最远进度：读完过的章跳到下一话、重开从第 1 页开始；最后阅读位置：和读书一样回到上次离开的那一页，即使那一章以前读完过。",
+  "manga_resume_target_furthest": "最远进度",
+  "manga_resume_target_last": "最后阅读位置",
+  "manga_chapter_list_jump_current": "跳到当前章节",
+  "manga_chapter_list_jump_top": "跳到顶部",
+  "manga_chapter_list_jump_bottom": "跳到底部"
 }

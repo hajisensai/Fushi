@@ -216,6 +216,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'low_memory_mode',
   // String（`MangaBackground.key`，默认 `black`）：页图周围留白的底色。
   'manga_background',
+  // bool（默认 true）：漫画章节列表新→旧（源顺序）；false = 第 1 话在前。作品页与
+  // 阅读器章节抽屉共用。
+  'manga_chapter_list_newest_first',
   // bool（默认 true）：漫画阅读器顶栏悬浮（不占布局、点页面中央/顶边悬停唤出）
   // 还是常驻钉在页图上方。
   'manga_chrome_floating',
@@ -241,6 +244,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // MangaReaderPreferences 序列化）。每作品覆盖落 manga_reader_overrides 表。
   'manga_reader_preferences',
   'manga_reading_direction',
+  // String（`MangaResumeTarget.key`，默认 `furthest`）：在线漫画重新打开时回到
+  // 进度（读完过的章跳过）还是最后停下的那一页（`last`）。
+  'manga_resume_target',
   // int（默认 1）：跨页配对的整体偏移，用来把「封面独占一页」这类错位掰回来。
   'manga_spread_offset',
   'manga_spread_preference',
