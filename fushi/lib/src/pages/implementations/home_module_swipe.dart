@@ -95,6 +95,18 @@ const double kModuleSwipeFlingVelocity = 400;
 /// 共享轴（X）转场的位移距离：与新手引导换步同一个值（M3 shared axis 30dp）。
 const double _kSharedAxisDistance = 30;
 
+/// 让外部入口（底栏长按拖选）切完模块后播同一段进场转场。
+///
+/// 宿主持有它并交给 [HomeModuleSwipeDetector]；没挂载时 [playEnter] 什么都不做。
+class HomeModuleSwipeController {
+  _HomeModuleSwipeDetectorState? _state;
+
+  /// 播一次共享轴（X）进场。[fromScreenRight]：新页从屏幕右侧滑入（目标模块在
+  /// 当前模块的屏幕右边）。
+  void playEnter({required bool fromScreenRight}) =>
+      _state?._playEnter(fromScreenRight: fromScreenRight);
+}
+
 /// 把横滑切模块接到 tab 内容上，并在切换后播一次共享轴（X）进场转场。
 ///
 /// 只有被切到的那一页做进场（离开的那页由宿主立即 Offstage，不保留截图）：保活
@@ -108,8 +120,12 @@ class HomeModuleSwipeDetector extends StatefulWidget {
     required this.targetFor,
     required this.onSwipe,
     required this.child,
+    this.controller,
     super.key,
   });
+
+  /// 外部入口（底栏长按拖选）借用进场转场的把手。
+  final HomeModuleSwipeController? controller;
 
   /// 当前布局 / 当前 tab 是否参与横滑。false 时不挂识别器（不进手势竞技场）。
   final bool enabled;
@@ -146,7 +162,27 @@ class _HomeModuleSwipeDetectorState extends State<HomeModuleSwipeDetector>
   Curve _curve = FushiSprings.spatialDefault.curve;
 
   @override
+  void initState() {
+    super.initState();
+    widget.controller?._state = this;
+  }
+
+  @override
+  void didUpdateWidget(HomeModuleSwipeDetector oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      if (identical(oldWidget.controller?._state, this)) {
+        oldWidget.controller?._state = null;
+      }
+      widget.controller?._state = this;
+    }
+  }
+
+  @override
   void dispose() {
+    if (identical(widget.controller?._state, this)) {
+      widget.controller?._state = null;
+    }
     _enter.dispose();
     super.dispose();
   }

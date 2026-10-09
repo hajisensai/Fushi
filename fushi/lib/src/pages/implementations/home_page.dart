@@ -1815,6 +1815,7 @@ class _HomePageState extends BasePageState<HomePage>
           child: HomeModuleSwipeDetector(
             enabled: _moduleSwipeEnabled(),
             tracker: _moduleRoot,
+            controller: _moduleSwipe,
             targetFor: _moduleSwipeTarget,
             onSwipe: _selectTab,
             child: buildBody(),
@@ -1841,6 +1842,9 @@ class _HomePageState extends BasePageState<HomePage>
 
   /// tab 内容的「模块根」登记表（多选模式 / 嵌套栈钻进去时不许横滑切模块）。
   final ModuleRootTracker _moduleRoot = ModuleRootTracker();
+
+  /// 底栏长按拖选切完模块后借横滑的进场转场（同一段共享轴动画）。
+  final HomeModuleSwipeController _moduleSwipe = HomeModuleSwipeController();
 
   /// 当前是否在手机底栏布局（[_buildMobileLayout] 每次构建时置位）。
   bool _inMobileLayout = false;
@@ -1937,6 +1941,24 @@ class _HomePageState extends BasePageState<HomePage>
             materialFab: _shellPageFab(),
             // 反转底栏方向：查词钮 / FAB 跟着翻到左侧，整条底栏镜像。
             searchLeading: reversed,
+            // 长按拎起选中指示器拖到目标模块（MD3 悬浮底栏）：落地走同一个切
+            // tab 入口，再播一次与横滑同款的进场转场，方向按底栏视觉序。
+            onDragSelect: (int index) {
+              final HomeTab tab = homeTabForVisualIndex(
+                tabs: tabs,
+                visualIndex: index,
+                reversed: reversed,
+              );
+              if (tab == _visibleTab) return;
+              final bool towardEnd = index > visualIndex;
+              _selectTabFromNav(tab);
+              _moduleSwipe.playEnter(
+                fromScreenRight:
+                    Directionality.of(context) == TextDirection.ltr
+                    ? towardEnd
+                    : !towardEnd,
+              );
+            },
           ),
         ),
       ),

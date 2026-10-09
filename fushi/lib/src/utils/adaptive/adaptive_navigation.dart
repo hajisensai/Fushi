@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
@@ -7,7 +8,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiBadgeControl;
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
-import 'package:flutter/rendering.dart' show OverflowBoxFit;
+import 'package:flutter/rendering.dart' show OverflowBoxFit, RenderFlex;
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/shortcuts/gamepad_forwarding_action.dart';
@@ -268,6 +269,7 @@ Widget adaptiveBottomBar({
   bool showLabels = true,
   AdaptiveNavFab? materialFab,
   bool searchLeading = false,
+  ValueChanged<int>? onDragSelect,
 }) {
   if (isCupertinoPlatform(context)) {
     // Cupertino keeps the stock tab bar as a single whole-bar gamepad stop. iOS
@@ -309,6 +311,7 @@ Widget adaptiveBottomBar({
     showLabels: showLabels,
     materialFab: materialFab,
     searchLeading: searchLeading,
+    onDragSelect: onDragSelect,
   );
 }
 
@@ -334,7 +337,13 @@ class _MaterialNavCluster extends StatelessWidget {
     this.showLabels = true,
     this.materialFab,
     this.searchLeading = false,
+    this.onDragSelect,
   });
+
+  /// MD3 悬浮底栏「长按拎起选中指示器、拖到目标模块松手」的落地回调（参数同
+  /// [onTap] 的序号）。null = 不启用长按拖选（侧栏、玻璃底栏、调用方没接）。
+  /// 与 [onTap] 分开是因为宿主要知道「这是一次拖选」，好接上模块切换转场。
+  final ValueChanged<int>? onDragSelect;
 
   /// [Axis.horizontal] = bottom bar; [Axis.vertical] = side rail.
   final Axis axis;
@@ -733,9 +742,20 @@ class _MaterialNavCluster extends StatelessWidget {
               cellWidth: cellWidthOf(moreSlot),
             ),
           );
+    final ValueChanged<int>? dragSelect = onDragSelect;
     return _SlidingIndicatorScope(
       selectedId: selectedId,
       color: barStyle?.indicator ?? Theme.of(context).colorScheme.tertiary,
+      // 长按拖选只认胶囊里看得见的目的地；「更多」不参与（拖到它上面松手 =
+      // 取消），FAB（查词）不在胶囊里。
+      dragTargets: dragSelect == null
+          ? null
+          : <FushiFocusId, int>{
+              for (final int i in visible) FushiFocusId('$idPrefix-$i'): i,
+            },
+      dragExcludedId: moreCell == null ? null : _NavMoreCell.focusId,
+      onDragSelect: dragSelect,
+      hoverColor: barStyle?.content ?? Theme.of(context).colorScheme.onSurface,
       child: Row(
         children: <Widget>[
           if (searchLeading && moreCell != null) moreCell,
@@ -1572,7 +1592,29 @@ class _SlidingIndicatorScope extends StatefulWidget {
     required this.selectedId,
     required this.color,
     required this.child,
+    this.dragTargets,
+    this.dragExcludedId,
+    this.onDragSelect,
+    this.hoverColor,
   });
+
+  /// 长按拖选的目标：目的地焦点 id → 序号。null = 不启用长按拖选。
+  ///
+  /// 交互（2026-10-10 用户「底部栏长按拖动、松手到达对应模块」）：长按胶囊
+  /// 任意处，选中指示器被拎起（放大 + 投影，手机上轻触感）；左右拖动时它跟着
+  /// 手指走，经过的目的地亮一层悬停状态层；松手吸附到离手指最近的目的地
+  /// （弹簧滑过去，复用切换时的滑动），并经 [onDragSelect] 切过去。拖回原位、
+  /// 拖出胶囊或停在「更多」上松手 = 取消，指示器弹回原位。最近目的地按真实
+  /// 槽矩形算，反转底栏 / RTL 自然成立。减弱动态效果下指示器不跟手、不拎起，
+  /// 只在松手后直接切换。
+  final Map<FushiFocusId, int>? dragTargets;
+
+  /// 拖选时不参与的格（「更多」）：停在它上面松手按取消处理。
+  final FushiFocusId? dragExcludedId;
+  final ValueChanged<int>? onDragSelect;
+
+  /// 拖选经过目的地时悬停状态层的颜色（按 M3 状态层不透明度叠）。
+  final Color? hoverColor;
 
   /// 选中目的地的焦点 id（`nav-bar-<序号>`，当前页在「更多」里时是
   /// `nav-bar-more`）。
@@ -1591,21 +1633,35 @@ class _SlidingIndicatorRegistry extends InheritedWidget {
   const _SlidingIndicatorRegistry({
     required this.state,
     required this.sliding,
+    required this.dragSelect,
+    required this.dragHoverId,
     required super.child,
   });
 
   final _SlidingIndicatorScopeState state;
 
-  /// 滑块正在滑：目的地自己的药丸先不填色。
+  /// 滑块正在滑（或被拎起拖动）：目的地自己的药丸先不填色。
   final bool sliding;
+
+  /// 启用了长按拖选：目的地的 tooltip 不再抢长按（见 [_NavFocusCell]）。
+  final bool dragSelect;
+
+  /// 跟手拖选进行中，指示器此刻「罩着」的目的地：它临时换成选中态的图标与
+  /// 前景色（拎起的药丸经过哪一项，哪一项就亮），原选中项退回普通态。null =
+  /// 没在拖，或减弱动态效果下指示器不跟手（那时改画悬停状态层）。只影响外观，
+  /// 语义里的选中仍是真实的当前项。
+  final FushiFocusId? dragHoverId;
 
   @override
   bool updateShouldNotify(_SlidingIndicatorRegistry oldWidget) =>
-      !identical(oldWidget.state, state) || oldWidget.sliding != sliding;
+      !identical(oldWidget.state, state) ||
+      oldWidget.sliding != sliding ||
+      oldWidget.dragSelect != dragSelect ||
+      oldWidget.dragHoverId != dragHoverId;
 }
 
 class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final Map<FushiFocusId, GlobalKey> _slots = <FushiFocusId, GlobalKey>{};
 
   late final FushiSpring _progress = FushiSpring(
@@ -1622,10 +1678,135 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
 
   bool _sliding = false;
 
+  /// 长按拖选：指示器被拎起的程度（0 = 静止，1 = 拎起：放大 + 投影）。
+  late final FushiSpring _lift = FushiSpring(
+    vsync: this,
+    spring: _kNavExpressiveSpatial,
+  );
+
+  /// 拖选进行中：手指在本 scope 里的位置（null = 没在拖）。
+  Offset? _dragPoint;
+
+  /// 拖选进行中离手指最近的目的地（悬停状态层画在它上面）。
+  FushiFocusId? _hoverId;
+
+  /// 拖选时指示器是否跟手（减弱动态效果下不跟手、不拎起）。
+  bool _dragFollows = false;
+
+  /// 只为跟手重绘（拖动的每一帧不重建整排目的地）。
+  final ValueNotifier<int> _dragTick = ValueNotifier<int>(0);
+
+  bool get _dragging => _dragPoint != null;
+
   @override
   void initState() {
     super.initState();
     _progress.animation.addStatusListener(_onStatus);
+  }
+
+  /// 离 [point] 最近的拖选目标（按槽矩形中心的横向距离）。
+  FushiFocusId? _nearestTarget(Offset point) {
+    final Map<FushiFocusId, int>? targets = widget.dragTargets;
+    if (targets == null) return null;
+    FushiFocusId? best;
+    double bestDistance = double.infinity;
+    for (final FushiFocusId id in targets.keys) {
+      final Rect? rect = _rectOf(id);
+      if (rect == null) continue;
+      final double distance = (rect.center.dx - point.dx).abs();
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = id;
+      }
+    }
+    return best;
+  }
+
+  void _onDragStart(LongPressStartDetails details) {
+    if (widget.dragTargets == null) return;
+    _dragFollows = fushiExpressiveMotionEnabled(context);
+    fushiLiftHaptic(context);
+    _lift.animateTo(1, animate: _dragFollows);
+    setState(() {
+      _dragPoint = details.localPosition;
+      _hoverId = _nearestTarget(details.localPosition);
+    });
+  }
+
+  void _onDragMove(LongPressMoveUpdateDetails details) {
+    if (!_dragging) return;
+    _dragPoint = details.localPosition;
+    final FushiFocusId? hover = _nearestTarget(details.localPosition);
+    if (hover != _hoverId) {
+      fushiSelectionHaptic(context);
+      setState(() => _hoverId = hover);
+    }
+    _dragTick.value++;
+  }
+
+  /// 松手：落在胶囊里、不在「更多」上、且最近的目的地不是当前项 → 切过去；
+  /// 否则取消、指示器弹回原位。
+  void _onDragEnd(LongPressEndDetails details) {
+    if (!_dragging) return;
+    final Offset point = details.localPosition;
+    final RenderObject? box = context.findRenderObject();
+    final bool inside =
+        box is RenderBox &&
+        box.hasSize &&
+        (Offset.zero & box.size).inflate(_kNavDragSelectSlop).contains(point);
+    final Rect? excluded = _rectOfCell(widget.dragExcludedId);
+    final bool onExcluded =
+        excluded != null &&
+        point.dx >= excluded.left &&
+        point.dx <= excluded.right;
+    final FushiFocusId? target = inside && !onExcluded
+        ? _nearestTarget(point)
+        : null;
+    final int? index = target == null ? null : widget.dragTargets?[target];
+    if (index == null || target == widget.selectedId) {
+      _cancelDrag();
+      return;
+    }
+    _finishDrag();
+    // 选中变化经 didUpdateWidget 从 [_painted]（拖着的那一枚）弹簧滑到新目的地。
+    widget.onDragSelect?.call(index);
+  }
+
+  void _cancelDrag() {
+    if (!_dragging) return;
+    final Rect? from = _painted;
+    final bool animate = _dragFollows && from != null;
+    _finishDrag();
+    if (animate) {
+      _progress.animateTo(0, animate: false);
+      _progress.animateTo(1, animate: true);
+      _from = from;
+      _sliding = true;
+    }
+  }
+
+  void _finishDrag() {
+    _lift.animateTo(0, animate: _dragFollows);
+    setState(() {
+      _dragPoint = null;
+      _hoverId = null;
+    });
+  }
+
+  /// [id] 那一整格（Row 的直接子，不只是药丸槽）相对本 scope 的矩形，用来判断
+  /// 「停在更多上」。
+  Rect? _rectOfCell(FushiFocusId? id) {
+    if (id == null) return null;
+    final RenderObject? scope = context.findRenderObject();
+    if (scope is! RenderBox || !scope.hasSize) return null;
+    RenderObject? node = _slots[id]?.currentContext?.findRenderObject();
+    while (node != null && node.parent is! RenderFlex) {
+      node = node.parent;
+    }
+    if (node is! RenderBox || !node.attached || !node.hasSize) {
+      return _rectOf(id);
+    }
+    return node.localToGlobal(Offset.zero, ancestor: scope) & node.size;
   }
 
   /// 滑动落定：交回选中项自己的药丸。状态回调可能在 build 中途（重置进度时）
@@ -1697,6 +1878,8 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
   void dispose() {
     _progress.animation.removeStatusListener(_onStatus);
     _progress.dispose();
+    _lift.dispose();
+    _dragTick.dispose();
     super.dispose();
   }
 
@@ -1720,20 +1903,54 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
 
   @override
   Widget build(BuildContext context) {
+    final bool dragSelect = widget.dragTargets != null;
+    Widget child = CustomPaint(
+      painter: _SlidingIndicatorPainter(this),
+      child: widget.child,
+    );
+    if (dragSelect) {
+      // 长按阈值沿用系统长按（kLongPressTimeout）；短按仍由各目的地自己的
+      // InkWell 拿走（长按识别器在超时前不接受）。只认触摸 / 触笔：鼠标在
+      // 桌面窄窗里长按拖动没有这个语义。
+      child = GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        supportedDevices: const <PointerDeviceKind>{
+          PointerDeviceKind.touch,
+          PointerDeviceKind.stylus,
+          PointerDeviceKind.invertedStylus,
+        },
+        onLongPressStart: _onDragStart,
+        onLongPressMoveUpdate: _onDragMove,
+        onLongPressEnd: _onDragEnd,
+        onLongPressCancel: _cancelDrag,
+        child: child,
+      );
+    }
     return _SlidingIndicatorRegistry(
       state: this,
-      sliding: _sliding,
-      child: CustomPaint(
-        painter: _SlidingIndicatorPainter(this),
-        child: widget.child,
-      ),
+      sliding: _sliding || (_dragging && _dragFollows),
+      dragSelect: dragSelect,
+      dragHoverId: _dragging && _dragFollows ? _hoverId : null,
+      child: child,
     );
   }
 }
 
+/// 长按拖选松手时，手指离开胶囊多远仍算「在胶囊里」（逻辑像素）。超出 = 取消。
+const double _kNavDragSelectSlop = 24;
+
+/// 拎起时指示器放大的比例（1 + 此值）。
+const double _kNavDragLiftScale = 0.12;
+
 class _SlidingIndicatorPainter extends CustomPainter {
   _SlidingIndicatorPainter(this.state)
-    : super(repaint: state._progress.animation);
+    : super(
+        repaint: Listenable.merge(<Listenable>[
+          state._progress.animation,
+          state._lift.animation,
+          state._dragTick,
+        ]),
+      );
 
   final _SlidingIndicatorScopeState state;
 
@@ -1741,6 +1958,11 @@ class _SlidingIndicatorPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final RenderObject? scope = state.context.findRenderObject();
     if (scope is! RenderBox || !scope.hasSize) return;
+    final Offset? drag = state._dragPoint;
+    if (drag != null) {
+      _paintDrag(canvas, scope, drag);
+      return;
+    }
     final Rect? target = state._targetIn(scope);
     if (target == null) {
       state._painted = null;
@@ -1758,6 +1980,53 @@ class _SlidingIndicatorPainter extends CustomPainter {
       RRect.fromRectAndRadius(rect, Radius.circular(rect.height / 2)),
       Paint()..color = state.widget.color,
     );
+  }
+
+  /// 长按拖选中：悬停目的地的状态层 + 跟手的拎起指示器。
+  void _paintDrag(Canvas canvas, RenderBox scope, Offset drag) {
+    final Rect? hover = state._rectOf(state._hoverId);
+    if (!state._dragFollows) {
+      // 减弱动态效果：指示器不跟手（原地照常由选中项自己画），经过的目的地
+      // 改画一层 M3 悬停状态层（不透明度 8%）。跟手时的悬停反馈是被罩着的
+      // 那一项换成选中态图标（见 [_SlidingIndicatorRegistry.dragHoverId]）。
+      final Color? hoverColor = state.widget.hoverColor;
+      if (hover != null && hoverColor != null) {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(hover, Radius.circular(hover.height / 2)),
+          Paint()..color = hoverColor.withValues(alpha: 0.08),
+        );
+      }
+      return;
+    }
+    final Rect? base = state._targetIn(scope) ?? hover ?? state._painted;
+    if (base == null) return;
+    final double halfWidth = base.width / 2;
+    final double cx = drag.dx.clamp(halfWidth, scope.size.width - halfWidth);
+    final Rect rect = Rect.fromCenter(
+      center: Offset(cx, base.center.dy),
+      width: base.width,
+      height: base.height,
+    );
+    state._painted = rect;
+    final double lift = state._lift.value.clamp(0.0, 1.0);
+    final Rect lifted = Rect.fromCenter(
+      center: rect.center,
+      width: rect.width * (1 + _kNavDragLiftScale * lift),
+      height: rect.height * (1 + _kNavDragLiftScale * lift),
+    );
+    final RRect pill = RRect.fromRectAndRadius(
+      lifted,
+      Radius.circular(lifted.height / 2),
+    );
+    if (lift > 0) {
+      canvas.drawShadow(
+        Path()..addRRect(pill),
+        const Color(0xFF000000),
+        6 * lift,
+        false,
+      );
+    }
+    canvas.drawRRect(pill, Paint()..color = state.widget.color);
   }
 
   @override
@@ -2564,9 +2833,14 @@ class _NavFocusCellState extends State<_NavFocusCell> {
 
   @override
   Widget build(BuildContext context) {
-    final _SlidingIndicatorScopeState? slider = _SlidingIndicatorScope.maybeOf(
+    final _SlidingIndicatorRegistry? registry = _SlidingIndicatorScope.maybeOf(
       context,
-    )?.state;
+    );
+    final _SlidingIndicatorScopeState? slider = registry?.state;
+    final bool dragSelect = registry?.dragSelect ?? false;
+    // 跟手拖选中：被拎起的指示器罩着的那一项临时画成选中态（只是外观）。
+    final FushiFocusId? dragHover = registry?.dragHoverId;
+    final bool looksSelected = dragHover == null ? selected : dragHover == id;
     if (!identical(slider, _slider)) {
       _slider?.unregister(id, _indicatorKey);
       _slider = slider;
@@ -2580,7 +2854,7 @@ class _NavFocusCellState extends State<_NavFocusCell> {
     );
     Widget tile = _FushiNavTile(
       item: item,
-      selected: selected,
+      selected: looksSelected,
       horizontal: horizontal,
       extended: extended,
       iconOnly: iconOnly,
@@ -2599,12 +2873,19 @@ class _NavFocusCellState extends State<_NavFocusCell> {
         child: FushiTooltip(
           message: item.label,
           excludeFromSemantics: true,
+          // 底栏启用了长按拖选时长按归拖选（tooltip 的长按识别器在更深处、
+          // 会先赢）；悬停 tooltip 不受影响，名称仍在语义里。
+          triggerMode: dragSelect ? TooltipTriggerMode.manual : null,
           child: tile,
         ),
       );
     } else if (metrics.compact) {
       // 窄格里的标签可能被省略，用 tooltip 补出完整名称（长按 / 悬停可见）。
-      tile = FushiTooltip(message: item.label, child: tile);
+      tile = FushiTooltip(
+        message: item.label,
+        triggerMode: dragSelect ? TooltipTriggerMode.manual : null,
+        child: tile,
+      );
     }
     // MD3 展开 rail 的行靠起始边（药丸包住图标 + 文字），其余居中。
     final bool materialRailRow = !glassDesign && !horizontal && extended;
