@@ -769,16 +769,19 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
             final bool hidden = opacity <= 0.001 && shown <= 0.001;
             return Stack(
               children: <Widget>[
-                // 遮罩在内容之上、本层工具区之下。最外层从视口顶边（不透明，
-                // 与上方底色 / 窗口标题行连续）盖到本层工具区下沿；页面自己的
-                // 工具行（嵌套层：搜索 / 标签行）各画自己那一段，接在上一层下沿、
-                // 从 [kFushiNestedScrimOpacity] 起（= 上一层肩段末端），画在**它
-                // 自己的**工具行之下——只能各画各的：嵌套工具行住在外层的内容层
-                // 里，外层的遮罩若一路盖下来会把它们也压成半透明。最深一层的下沿
-                // 再往下柔和渐隐（[_nestedReach] 判「下面还有没有工具行」）。
+                // 遮罩在内容之上、本层工具区之下，沿用 2026-10-06 定的「短渐隐、
+                // 不垫整块底色」：只在视口顶边是页面底色（不透明，与上方底色 /
+                // 窗口标题行无接缝），随即缓降到一层半透明的
+                // [kFushiTopScrimOverlayOpacity] 薄纱——工具行背后的封面退后、
+                // 不再花得看不清胶囊，但不是一块实底——薄纱铺到**最后一行**
+                // 可见工具栏的下沿，再往下 [kFushiTopFadeExtent] 短距离渐隐到 0。
+                // 页面自己的工具行（嵌套层：搜索 / 标签行）各画自己那一段薄纱，
+                // 接在上一层下沿、画在**它自己的**工具行之下——只能各画各的：
+                // 嵌套工具行住在外层的内容层里，外层的遮罩若一路盖下来会把它们
+                // 也压成半透明。只有最深一层渐隐（[_nestedReach] 判「下面还有没有
+                // 工具行」），上面各层在接缝处停在同一不透明度。
                 // BUG-3132：曾经只伸进第一行胶囊 40 px，搜索 / 标签行背后整片透出
-                // 封面。遮罩跟着弹簧走：工具区收起时一起收回顶边，不会像更早的版本
-                // 那样留下两三百 px 的整块底色（2026-10-06 用户截图）。没滚动时不画。
+                // 封面。遮罩跟着弹簧走：工具区收起时一起收回顶边。没滚动时不画。
                 Positioned(
                   top: nested ? outer : 0,
                   left: 0,
@@ -794,7 +797,8 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                               outer + shown * _chromeHeight + 0.5
                           ? 1
                           : kFushiTopFadeExtent,
-                      topOpacity: nested ? kFushiNestedScrimOpacity : 1,
+                      topOpacity: nested ? kFushiTopScrimOverlayOpacity : 1,
+                      shoulderOpacity: kFushiTopScrimOverlayOpacity,
                     ),
                   ),
                 ),
@@ -854,12 +858,18 @@ class FushiTopFadeScrim extends StatelessWidget {
     required this.solidHeight,
     this.fadeExtent = kFushiTopFadeExtent,
     this.topOpacity = 0.92,
+    this.shoulderOpacity,
     this.color,
     super.key,
   });
 
   final double solidHeight;
   final double fadeExtent;
+
+  /// 肩段末端的不透明度（同 [topOpacity]，乘在 [color] 的 alpha 上）。缺省为
+  /// [topOpacity] 的 0.82 倍；库页工具区用它把肩段压成一层半透明薄纱
+  /// （[kFushiTopScrimOverlayOpacity]），而不是近乎实色的底块。
+  final double? shoulderOpacity;
 
   /// 顶边的不透明度（乘在 [color] 自身的 alpha 上）。
   final double topOpacity;
@@ -880,6 +890,9 @@ class FushiTopFadeScrim extends StatelessWidget {
     final double height = solid + fade;
     final Color base = color ?? fushiTopFadeScrimColor(context);
     final double top = base.a * topOpacity.clamp(0.0, 1.0);
+    final double floor = shoulderOpacity == null
+        ? top * _kShoulderFloor
+        : base.a * shoulderOpacity!.clamp(0.0, 1.0);
     final List<Color> colors = <Color>[];
     final List<double> stops = <double>[];
     void sample(double y, double alpha) {
@@ -891,9 +904,15 @@ class FushiTopFadeScrim extends StatelessWidget {
     if (solid > 0) {
       for (int i = 0; i <= _kShoulderSamples; i++) {
         final double u = i / _kShoulderSamples;
-        sample(solid * u, top * (1 - (1 - _kShoulderFloor) * u * u));
+        // 缺省肩段：顶端斜率为 0 的缓降（u²）。薄纱形态（floor 远低于 top）
+        // 改用 1-(1-u)²：在视口顶边很快落到薄纱、末端斜率为 0 平顺接上渐隐段，
+        // 不在顶部拖出一大段近实色。
+        final double ease = shoulderOpacity == null
+            ? u * u
+            : 1 - (1 - u) * (1 - u);
+        sample(solid * u, top + (floor - top) * ease);
       }
-      fadeStart = top * _kShoulderFloor;
+      fadeStart = floor;
     } else {
       fadeStart = top;
     }
@@ -929,10 +948,6 @@ Color fushiTopFadeScrimColor(BuildContext context) {
   if (scaffold.a >= 1) return scaffold;
   return FushiDesignTokens.of(context).surfaces.page;
 }
-
-/// 嵌套工具行那一段遮罩的起始不透明度：= 外层遮罩肩段末端
-/// （[FushiTopFadeScrim] 的 `_kShoulderFloor`），两段在接缝处连续。
-const double kFushiNestedScrimOpacity = 0.82;
 
 /// [FushiTopFadeScrim] 渐隐段的默认长度（胶囊 / 栏下沿再往下 32）。
 const double kFushiTopFadeExtent = 32;

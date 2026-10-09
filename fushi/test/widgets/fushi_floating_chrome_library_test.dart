@@ -121,6 +121,18 @@ void main() {
       scrims.last, // 外壳的遮罩在外壳 Stack 里后画，树序排最后。
     );
     expect(outerScrim.solidHeight, lessThanOrEqualTo(56.5));
+    // 10-06 定的风格：不垫整块底色——工具行背后是半透明薄纱，只在最后一行
+    // 工具栏下方短距离渐隐。
+    for (final Element e in scrims.evaluate()) {
+      final FushiTopFadeScrim w = e.widget as FushiTopFadeScrim;
+      expect(w.shoulderOpacity, kFushiTopScrimOverlayOpacity);
+      expect(w.fadeExtent, lessThanOrEqualTo(kFushiTopFadeExtent));
+    }
+    expect(
+      tester.widget<FushiTopFadeScrim>(scrims.first).fadeExtent,
+      kFushiTopFadeExtent,
+      reason: '最深一层（嵌套工具行）负责最后那段短渐隐',
+    );
     expect(
       find.descendant(
         of: find.byType(FushiFloatingChromeOverlay).last,
