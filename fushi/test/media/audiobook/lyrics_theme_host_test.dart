@@ -285,4 +285,57 @@ void main() {
     expect(popup.theme.colorScheme, original.theme.colorScheme);
     expect(popup.fillColor, original.fillColor);
   });
+
+  // Apple（用户 10-10 拍板）：歌词页恒深色档，弹窗与页面主题一致；退出恢复。
+  testWidgets('查词弹窗 · Apple：进入歌词模式与歌词页深色档一致，退出恢复', (WidgetTester tester) async {
+    final ThemeData root = _rootTheme(apple: true);
+    DictionaryPopupTheme resolve({required bool lyricsMode}) =>
+        resolveDictionaryPopupTheme(
+          eink: false,
+          einkDark: false,
+          readerBackground: const Color(0xFFF5EFE0),
+          readerForeground: const Color(0xFF3B3229),
+          readerDark: false,
+          buildColorScheme: (Brightness b) => root.colorScheme,
+          textTheme: root.textTheme,
+          glassDesign: true,
+          glass: FushiGlassMaterial.frosted,
+          lyricsMode: lyricsMode,
+        );
+    final DictionaryPopupTheme original = resolve(lyricsMode: false);
+
+    final GlobalKey<LyricsThemeHostState> host =
+        GlobalKey<LyricsThemeHostState>();
+    final GlobalKey page = GlobalKey();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: root,
+        themeAnimationDuration: Duration.zero,
+        home: LyricsThemeHost(
+          key: host,
+          child: SizedBox.expand(key: page),
+        ),
+      ),
+    );
+    final Object owner = Object();
+    host.currentState!.attach(owner, null);
+    await tester.pump();
+    final ThemeData pageTheme = Theme.of(page.currentContext!);
+    final DictionaryPopupTheme popup = resolve(
+      lyricsMode: host.currentState!.active,
+    );
+    expect(pageTheme.colorScheme.brightness, Brightness.dark);
+    expect(popup.theme.colorScheme.brightness, Brightness.dark);
+    expect(popup.theme.colorScheme.surface, pageTheme.colorScheme.surface);
+    expect(popup.theme.colorScheme.primary, pageTheme.colorScheme.primary);
+    expect(popup.fillColor, pageTheme.colorScheme.surface);
+
+    host.currentState!.detach(owner);
+    await tester.pump();
+    final DictionaryPopupTheme after = resolve(
+      lyricsMode: host.currentState!.active,
+    );
+    expect(after.theme.colorScheme, original.theme.colorScheme);
+    expect(after.theme.colorScheme.brightness, Brightness.light);
+  });
 }

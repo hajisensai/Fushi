@@ -96,6 +96,16 @@ void main() {
       ),
       isTrue,
     );
+    // Apple 歌词页恒深色档：弹窗经 lyricsMode 走同一配方。
+    expect(body.contains('lyricsMode: _lyricsMode,'), isTrue);
+    // 进入歌词模式当场重算（app 已是深色时宿主主题不变、不会发通知）。
+    expect(
+      RegExp(
+        r'_rebuild\(\(\) => _lyricsMode = true\);\s*(//[^\n]*\n\s*)*'
+        r'_syncDictionaryTheme\(\);',
+      ).hasMatch(lyrics),
+      isTrue,
+    );
     // 退出歌词模式当场恢复阅读器原覆盖值。
     expect(
       RegExp(

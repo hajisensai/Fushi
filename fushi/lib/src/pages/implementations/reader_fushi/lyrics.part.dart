@@ -167,6 +167,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         _audiobookController!.setReaderFollowOverride(true);
         // 挂上覆盖层：歌词 WebView 在 onWebViewCreated 里装载歌词文档。
         _rebuild(() => _lyricsMode = true);
+        // 查词弹窗换成歌词页主题：Apple 深色档当场生效（app 已是深色时宿主主题
+        // 不变、不会发布通知）；MD3 封面取色到达后经宿主通知再换一次。
+        _syncDictionaryTheme();
         // 书中插图：后台探测尺寸、筛掉外字 / 装饰小图，装好后封面位才开始换图。
         unawaited(_prepareLyricsIllustrations());
       } else {

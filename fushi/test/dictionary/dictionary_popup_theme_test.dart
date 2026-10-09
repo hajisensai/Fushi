@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_theme.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
+    show FushiAppleDarkTier;
 
 /// BUG-2434：书内查词弹窗的覆盖主题此前手工 `new ThemeData(...)` 却不带
 /// `extensions`，[FushiEinkTheme] 当场丢失 —— 而 `popup_settings_injection` 判定
@@ -183,6 +185,93 @@ void main() {
       final DictionaryPopupTheme appleBaseline = resolve(glassDesign: true);
       expect(apple.theme.colorScheme, appleBaseline.theme.colorScheme);
       expect(apple.fillColor, appleBaseline.fillColor);
+    });
+  });
+
+  // Apple 设计系统（用户 10-10 拍板）：歌词页恒为深色档，查词弹窗跟它同一配方
+  // （app 明暗的 Apple 主题 → FushiAppleDarkTier.darkTierOf），不再用阅读器纸色；
+  // 退出（lyricsMode: false）回到原 Apple 主题；墨水屏下不生效。
+  group('歌词模式 · Apple：弹窗跟歌词页深色档', () {
+    ColorScheme blue(Brightness b) => ColorScheme.fromSeed(
+        seedColor: const Color(0xFF0A84FF), brightness: b);
+
+    DictionaryPopupTheme resolve({
+      required bool lyricsMode,
+      bool appDark = false,
+      bool readerDark = false,
+      bool eink = false,
+    }) =>
+        resolveDictionaryPopupTheme(
+          eink: eink,
+          einkDark: appDark,
+          readerBackground: paperBg,
+          readerForeground: paperFg,
+          readerDark: readerDark,
+          buildColorScheme: eink ? buildEinkColorScheme : blue,
+          textTheme: const TextTheme(),
+          glassDesign: true,
+          glass: FushiGlassMaterial.frosted,
+          lyricsMode: lyricsMode,
+        );
+
+    ThemeData lyricsPage(Brightness appBrightness) =>
+        FushiAppleDarkTier.darkTierOf(
+          buildFushiThemeData(
+            scheme: blue(appBrightness),
+            textTheme: const TextTheme(),
+            glass: FushiGlassMaterial.frosted,
+            glassDesign: true,
+          ),
+        );
+
+    test('app 浅色：弹窗 = 歌词页深色档主题（同一工厂配方），不是纸色', () {
+      final DictionaryPopupTheme r = resolve(lyricsMode: true);
+      final ThemeData page = lyricsPage(Brightness.light);
+      expect(r.theme.colorScheme.brightness, Brightness.dark);
+      expect(r.theme.colorScheme, page.colorScheme);
+      expect(r.theme.extension<FushiGlassTheme>()?.glassDesign, isTrue);
+      expect(r.fillColor, page.colorScheme.surface);
+      expect(r.fillColor, isNot(paperBg));
+    });
+
+    test('阅读器纸色明暗不影响：浅色纸 / 深色纸都跟 app 明暗出的深色档', () {
+      final DictionaryPopupTheme a = resolve(lyricsMode: true);
+      final DictionaryPopupTheme b =
+          resolve(lyricsMode: true, readerDark: true);
+      expect(a.theme.colorScheme, b.theme.colorScheme);
+      expect(a.fillColor, b.fillColor);
+    });
+
+    test('app 深色：歌词页就是 app 深色主题，弹窗与之一致', () {
+      final DictionaryPopupTheme r = resolve(lyricsMode: true, appDark: true);
+      final ThemeData page = lyricsPage(Brightness.dark);
+      expect(r.theme.colorScheme, page.colorScheme);
+      expect(r.theme.colorScheme.brightness, Brightness.dark);
+    });
+
+    test('退出歌词模式：回到原 Apple 主题（跟阅读器纸色明暗）', () {
+      final DictionaryPopupTheme off = resolve(lyricsMode: false);
+      final DictionaryPopupTheme baseline = resolveDictionaryPopupTheme(
+        eink: false,
+        einkDark: false,
+        readerBackground: paperBg,
+        readerForeground: paperFg,
+        readerDark: false,
+        buildColorScheme: blue,
+        textTheme: const TextTheme(),
+        glassDesign: true,
+        glass: FushiGlassMaterial.frosted,
+      );
+      expect(off.theme.colorScheme, baseline.theme.colorScheme);
+      expect(off.theme.colorScheme.brightness, Brightness.light);
+      expect(off.fillColor, baseline.fillColor);
+    });
+
+    test('墨水屏下不生效：仍是纯白底', () {
+      final DictionaryPopupTheme r = resolve(lyricsMode: true, eink: true);
+      expect(r.fillColor, Colors.white);
+      expect(r.theme.colorScheme.surface, Colors.white);
+      expect(r.theme.extension<FushiEinkTheme>()?.einkMode, isTrue);
     });
   });
 }
