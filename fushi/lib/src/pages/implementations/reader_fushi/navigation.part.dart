@@ -1318,11 +1318,16 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     );
     if (unitStart >= 0 && unitEnd > unitStart) {
       _traceArrive(unitStart, unitEnd);
-      final (int, int)? previousUnit = _readLedger.current;
-      _readLedger.arrive(unitStart, unitEnd);
-      // 「翻页后开始」：先 arrive 再起表——起表前翻走的那页（打开时停着读的那页）
-      // 与停表期间同律丢弃，时长与字数同口径（BUG-2210）。
-      _noteStudyClockUnitArrival(previousUnit, unitStart, unitEnd);
+      // 「翻页后开始」：先喂门（首次翻页即起表）再 arrive——打开时停着读的那页在
+      // 翻走那一刻入账，落进刚开的段（BUG-3100：旧顺序先 arrive，时钟还停着，
+      // 这页字数按停表丢弃，读完一页统计为 0）。
+      arriveReadUnitThroughStartGate(
+        gate: _studyClockStartGate,
+        ledger: _readLedger,
+        start: unitStart,
+        end: unitEnd,
+        onAutoStart: _onStudyClockAutoStartOnTurn,
+      );
     } else if (unitStart >= 0 && snapshot.charOffsetEnd < 0) {
       // BUG-2492：JS 判起点不在本页 / 页尾探不到 → 第四段 -1 → 不 arrive（宁可不计）。
       // 记一行让诊断日志能看出「这页没计」而不是静默消失。
@@ -1763,19 +1768,12 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     return clock;
   }
 
-  /// 阅读计时开始方式「翻页后开始」：位置从 [previous] 向前推进到 `[start, end)`
-  /// （判据 [readerStudyClockTurnAdvanced]：只比相邻两次落定、跳转后首次落定不算、
-  /// 重排漂移不算、回翻不算）时清掉开始暂停并按统一判据起表。其余模式 / 已开始 /
-  /// 用户已手动停续过时是 no-op。
-  void _noteStudyClockUnitArrival((int, int)? previous, int start, int end) {
-    if (!_studyClockStartGate.noteUnitArrival(
-      previous: previous,
-      start: start,
-      end: end,
-    )) {
-      return;
-    }
-    studyDiag('clock', 'auto-start on first page turn [$start,$end)');
+  /// 阅读计时开始方式「翻页后开始」：门刚判出首次向前翻页（判据
+  /// [readerStudyClockTurnAdvanced]：只比相邻两次落定、跳转后首次落定不算、重排
+  /// 漂移不算、回翻不算），按统一判据起表。由 [arriveReadUnitThroughStartGate] 在
+  /// 账本 arrive **之前**调用（BUG-3100）。
+  void _onStudyClockAutoStartOnTurn() {
+    studyDiag('clock', 'auto-start on first page turn');
     _startStudyClockFromGate();
   }
 

@@ -4260,6 +4260,7 @@ class FushiPageScaffold extends StatefulWidget {
     this.headerCompact,
     this.extendBodyBehindHeader = true,
     this.header,
+    this.headerTitle,
   });
 
   final String title;
@@ -4272,6 +4273,12 @@ class FushiPageScaffold extends StatefulWidget {
   final Widget? header;
   final String? subtitle;
   final Widget body;
+
+  /// 非 null 时用它占据页头主位（[FushiPageHeader.customTitle]）：分段导航直接与
+  /// 返回键同一行，不再画 [title] 文字标题（它只剩语义 / 调试用途），[subtitle] 与
+  /// [headerBottom] 不显示。主位组件经 [FushiHeaderCrampScope] 上报自然宽时，放不下
+  /// 的 [actions] 自动收进 ⋯ 菜单。[header] 非 null 时整条页头由它接管，本字段不生效。
+  final Widget? headerTitle;
 
   /// **默认开启**（2026-10-06 结构收口：「页头 + 正文上下排」时页头收起后让出
   /// 的那段是实色空白、正文在页头下沿被硬切——统计中心等截图）。正文必须消费
@@ -4371,20 +4378,27 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     final Widget header = FushiScrollAwayChrome(
       controller: _chrome,
       enabled: floatingChrome,
-      child: widget.header == null
-          ? FushiPageHeader(
+      child: widget.header != null
+          ? Semantics(
+              label: widget.title,
+              container: true,
+              explicitChildNodes: true,
+              child: widget.header,
+            )
+          : widget.headerTitle != null
+          ? FushiPageHeader.customTitle(
+              title: widget.headerTitle!,
+              leading: effectiveLeading,
+              actions: widget.actions,
+              compact: widget.headerCompact ?? effectiveLeading != null,
+            )
+          : FushiPageHeader(
               title: widget.title,
               subtitle: widget.subtitle,
               leading: effectiveLeading,
               actions: widget.actions,
               bottom: widget.headerBottom,
               compact: widget.headerCompact ?? effectiveLeading != null,
-            )
-          : Semantics(
-              label: widget.title,
-              container: true,
-              explicitChildNodes: true,
-              child: widget.header,
             ),
     );
     return PrimaryScrollController(

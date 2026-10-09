@@ -6,6 +6,8 @@
 ///
 /// 偏好键 [kReaderStudyClockStartModePrefKey]，存 [storageValue]；与阅读空闲门同为
 /// 普通偏好（未进 `ProfileKeys` 排除表 = 随 Profile 快照，各 Profile 各自一份）。
+import 'package:fushi/src/stats/read_unit_ledger.dart';
+
 enum ReaderStudyClockStartMode {
   /// 打开书时计时处于暂停，用户点「继续阅读计时」（状态行计时键 / 统计侧栏 / 快捷键
   /// P）才开始。
@@ -131,4 +133,31 @@ class ReaderStudyClockStartGate {
     _manualPause = false;
     return true;
   }
+}
+
+/// 一次进度落定 `[start, end)` 经「开始方式门」进账本（BUG-3100）。
+///
+/// 顺序是契约：**先喂门、再 arrive**。「翻页后开始」下首次向前翻页那一刻，账本
+/// `arrive` 会把刚翻走的那页（打开书时停着读的那页）入账；若此时时钟还停着，
+/// `StudyClock.addChars` 按停表丢弃（BUG-2210），这一页字数永久丢失——用户读完一页
+/// 统计是 0、阅读速度系统性偏低。先让门判出「这是首次翻页」并经 [onAutoStart]
+/// 起表，再 arrive，这页字数就落进刚开的段。
+///
+/// 只改字数归属，不补时长：「翻页后开始」本来就不计打开到首次翻页之间的时间。
+/// 返回门是否刚刚自动起表。
+bool arriveReadUnitThroughStartGate({
+  required ReaderStudyClockStartGate gate,
+  required ReadUnitLedger ledger,
+  required int start,
+  required int end,
+  required void Function() onAutoStart,
+}) {
+  final bool started = gate.noteUnitArrival(
+    previous: ledger.current,
+    start: start,
+    end: end,
+  );
+  if (started) onAutoStart();
+  ledger.arrive(start, end);
+  return started;
 }

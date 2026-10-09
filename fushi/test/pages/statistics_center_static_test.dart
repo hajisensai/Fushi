@@ -5,8 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// 阶段 2（统计中心大一统）结构守卫：
 ///  * 三域 tab 必须以 embedded 模式复用现有统计页（不嵌套 FushiPageScaffold，
 ///    避免双 Scaffold/双顶栏 + PageScrollRegistry 互踩）；
-///  * 总览 tab 的目标分子必须走 studyGoalCharsForDay（BUG-1993 口径），时段明细
-///    必须走统一 sheet（showStatPeriodDetailSheet）；
+///  * 总览 tab 不再有目标卡 / 时段明细 / 媒体筛选（2026-10-09 统计中心精简），
+///    计数挪进「所选范围」卡；
 ///  * 书架入口必须落阅读 tab（视频/游戏入口由
 ///    home_video_statistics_entry_static_test / game_statistics_page_guard_test
 ///    分别钉住）。
@@ -38,24 +38,16 @@ void main() {
     );
   });
 
-  test('总览 tab：目标口径 + 统一时段明细 sheet', () {
-    expect(center, contains('studyGoalCharsForDay('));
-    expect(center, contains('showStatPeriodDetailSheet('));
-  });
-
-  test('总览时段卡带查词 / 制卡 / 收藏（与两个域 tab 的卡逐行同形）', () {
-    for (final String label in <String>[
-      't.stat_lookup',
-      't.stat_mined',
-      't.stat_favorited',
-      't.stat_favorited_sentence',
+  test('总览 tab：无媒体筛选 chip / 目标卡 / 时段明细（2026-10-09 精简）', () {
+    for (final String gone in <String>[
+      'StatMediaFilterBar(',
+      'StatGoalPanel(',
+      'buildStatPeriodSummaryGrid(',
     ]) {
-      expect(
-        center,
-        contains(label),
-        reason: '总览此前只有时长 / 字数，每天都在动的制卡与查词一个都看不到',
-      );
+      expect(center, isNot(contains(gone)), reason: '总览不再有 $gone');
     }
+    // 查词 / 制卡 / 收藏词 / 收藏句仍在：挪进了「所选范围」卡。
+    expect(center, contains('buildStatRangeCounterLines('));
   });
 
   test('总览的计数面与三个域 tab 同一次加载、同一份切分判据', () {
@@ -137,57 +129,62 @@ void main() {
       }
     });
 
-    test('四个 tab 的顶栏动作行逐颗同形：目标 → 刷新 → 清空全部统计', () {
+    test('四个 tab 只把「清空统计」交给页头的统计设置；没有目标 / 刷新按钮', () {
       for (final String path in tabPages) {
         final String src = File(path).readAsStringSync();
-        // 已迁到 FushiIcons 的页用语义名，未迁的仍是 Icons.*：两种写法都认。
-        int find(String fushi, String legacy) {
-          final int i = src.indexOf(fushi);
-          return i >= 0 ? i : src.indexOf(legacy);
-        }
-
-        final int flag = find('FushiIcons.flag', 'Icons.flag_outlined');
-        final int refresh = find('FushiIcons.refresh', 'Icons.refresh');
-        final int clear = find(
-          'FushiIcons.deleteSweep',
-          'Icons.delete_sweep_outlined',
-        );
-        expect(flag, isNonNegative, reason: '$path 缺目标按钮');
-        expect(refresh, greaterThan(flag), reason: '$path 刷新不在目标之后');
-        expect(clear, greaterThan(refresh), reason: '$path 清空不在刷新之后');
-        for (final String key in <String>[
+        expect(src, contains('StatTabSettings('), reason: path);
+        expect(src, contains('trailing: StatRangeActions('),
+            reason: '$path 的统计设置挂在范围条行尾');
+        expect(src, contains('settings: _statSettings,'), reason: path);
+        expect(src, contains('onClearAll: _confirmAndClearAll'), reason: path);
+        for (final String gone in <String>[
           't.stat_goal_set',
           't.stat_refresh',
-          't.stat_clear_all',
+          'FushiIcons.flag,',
+          'Icons.flag_outlined',
         ]) {
-          expect(src, contains(key), reason: '$path 缺 $key');
+          expect(src, isNot(contains(gone)), reason: '$path 还留着 $gone');
         }
       }
     });
 
-    test('四个 tab 的时段卡副行同形：字数 + 查词 + 制卡 + 收藏 + 收藏语句', () {
-      // 主值口径（时长）已由上游统一；副行此前四种形状——观看 / 游戏两个 tab 的卡
-      // 连字数都没有。四张卡是横着比的，少一行就对不齐。
+    test('四个 tab 的范围条都有「明细」入口：打开所选范围的时段明细 sheet', () {
+      // 2026-10-09 删掉「时段明细」卡后补回的入口（齿轮旁，不是再加一张卡）。
+      // 时段 = 范围条当前所选区间：谓词就是 StatRange.contains（周 = 自然周，
+      // 与所选范围卡同口径），标题就是范围条上那行区间文字。
       for (final String path in tabPages) {
         final String src = File(path).readAsStringSync();
         expect(
           src,
-          contains('formatStatChars('),
-          reason: '$path 的时段卡缺字数副行',
+          contains('onOpenDetail: () => unawaited(_showRangeDetail(range))'),
+          reason: path,
         );
-        for (final String key in <String>[
-          't.stat_lookup',
-          't.stat_mined',
-          't.stat_favorited',
-          't.stat_favorited_sentence',
+        final int start = src.indexOf(
+          'Future<void> _showRangeDetail(StatRange range) async {',
+        );
+        expect(start, greaterThanOrEqualTo(0), reason: path);
+        final String body = src.substring(start, src.indexOf('\n  }\n', start));
+        expect(body, contains('showStatPeriodDetailSheet('), reason: path);
+        expect(body, contains('periodLabel: formatStatRange(range)'),
+            reason: path);
+        expect(body, contains('contains: range.contains'), reason: path);
+      }
+    });
+
+    test('四个 tab 同形：顶部学习日历（含过去一周）+ 所选范围卡带计数行，无时段卡', () {
+      for (final String path in tabPages) {
+        final String src = File(path).readAsStringSync();
+        expect(src, contains('buildStatRangeCalendarSection('), reason: path);
+        expect(src, contains('weekKeys:'), reason: path);
+        expect(src, contains('buildStatRangeCounterLines('), reason: path);
+        for (final String gone in <String>[
+          '_buildSummaryCards',
+          'buildStatPeriodSummaryGrid(',
+          'buildStatKpiTiles(',
+          't.stat_overview_periods',
         ]) {
-          expect(src, contains(key), reason: '$path 的时段卡缺 $key 副行');
+          expect(src, isNot(contains(gone)), reason: '$path 还留着 $gone');
         }
-        expect(
-          src,
-          contains('primaryValue: formatStatTime(ms)'),
-          reason: '$path 的时段卡主值必须是时长（四张卡首行数字要可比）',
-        );
       }
     });
 

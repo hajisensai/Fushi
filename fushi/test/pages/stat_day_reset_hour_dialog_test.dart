@@ -6,16 +6,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/stat_day_reset_hour_dialog.dart';
+import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// 「今日」重置时刻从「阅读」设置页挪到统计中心（用户 2026-09-18）：
+/// 「今日」重置时刻从「阅读」设置页挪到统计中心（用户 2026-09-18），2026-10-09 起
+/// 收进统计设置弹窗（页头只剩一颗设置按钮）：
 ///  * 弹窗本体：标题 / 说明文案 / `HH:00` 外显齐全，点 + 即写穿偏好并镜像到
 ///    `FushiDatabase.statDayResetHour`（dateKey 派生的唯一输入）；
-///  * 结构守卫：统计中心页头必须挂带文字标签（label）的入口按钮并落到本弹窗，
-///    阅读设置 schema 不再保留该项（挪走不是复制，否则两处各改一份）。
+///  * 清空统计在同一弹窗里，交给当前 tab；
+///  * 结构守卫：阅读设置 schema 不再保留该项（挪走不是复制，否则两处各改一份）。
 void main() {
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
@@ -52,14 +54,14 @@ void main() {
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
-          home: Scaffold(body: StatDayResetHourDialog(appModel: appModel)),
+          home: Scaffold(body: StatSettingsDialog(appModel: appModel)),
         ),
       ),
     );
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    expect(find.text(t.stat_center_day_reset_action), findsOneWidget);
+    expect(find.text(t.stat_center_settings), findsOneWidget);
     expect(find.text(t.stat_center_day_reset_hour), findsOneWidget);
     expect(find.text(t.stat_center_day_reset_hour_hint), findsOneWidget);
     expect(find.text('00:00'), findsOneWidget);
@@ -79,7 +81,7 @@ void main() {
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
-          home: Scaffold(body: StatDayResetHourDialog(appModel: appModel)),
+          home: Scaffold(body: StatSettingsDialog(appModel: appModel)),
         ),
       ),
     );
@@ -109,7 +111,7 @@ void main() {
     expect(appModel.statDayResetHour, 0);
   });
 
-  testWidgets('opens through showStatDayResetHourDialog without layout errors',
+  testWidgets('opens through showStatSettingsDialog without layout errors',
       (WidgetTester tester) async {
     final (FushiDatabase db, AppModel appModel, Directory tmpDir) =
         await harness();
@@ -124,7 +126,7 @@ void main() {
           home: Scaffold(
             body: Builder(
               builder: (BuildContext context) => ElevatedButton(
-                onPressed: () => showStatDayResetHourDialog(context, appModel),
+                onPressed: () => showStatSettingsDialog(context, appModel),
                 child: const Text('open'),
               ),
             ),
@@ -171,7 +173,7 @@ void main() {
           home: Scaffold(
             body: Builder(
               builder: (BuildContext context) => ElevatedButton(
-                onPressed: () => showStatDayResetHourDialog(context, appModel),
+                onPressed: () => showStatSettingsDialog(context, appModel),
                 child: const Text('open'),
               ),
             ),
@@ -191,14 +193,70 @@ void main() {
     expect(find.text('01:00'), findsOneWidget);
   });
 
-  test('统计中心页头挂带文字标签的入口；阅读设置不再保留该项', () {
+  testWidgets('清空统计：有 tab 设置时出现，点了先关弹窗再交给 tab', (
+    WidgetTester tester,
+  ) async {
+    final (FushiDatabase db, AppModel appModel, Directory tmpDir) =
+        await harness();
+    addTearDown(() async {
+      await db.close();
+      tmpDir.deleteSync(recursive: true);
+    });
+    int cleared = 0;
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (BuildContext context) => ElevatedButton(
+                onPressed: () => showStatSettingsDialog(
+                  context,
+                  appModel,
+                  settings: StatTabSettings(onClearAll: () => cleared++),
+                  profileName: 'Default',
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.stat_center_profile_scope(name: 'Default')),
+      findsOneWidget,
+      reason: '当前 Profile 从页头副标题挪进统计设置',
+    );
+    final Finder clear =
+        find.byKey(const ValueKey<String>('stat-settings-clear-all'));
+    await tester.ensureVisible(clear);
+    await tester.pumpAndSettle();
+    await tester.tap(clear);
+    await tester.pumpAndSettle();
+    expect(cleared, 1);
+    expect(find.text(t.stat_center_settings), findsNothing, reason: '弹窗先关');
+  });
+
+  test('统计中心页头只剩返回键 + 页签，统计设置在范围条；阅读设置不再保留重置时刻', () {
     final String center = File(
       'lib/src/pages/implementations/statistics_center_page.dart',
     ).readAsStringSync();
-    expect(center, contains('showStatDayResetHourDialog('));
-    expect(center, contains('label: t.stat_center_day_reset_action'),
-        reason: '页头入口必须是带文字说明的按钮（宽窗展开成图标 + 文字）');
-    expect(center, contains('tooltip: t.stat_center_day_reset_hour'));
+    expect(center, contains('trailing: StatRangeActions('));
+    expect(center, contains('settings: _statSettings,'));
+    expect(center, isNot(contains('actions:')), reason: '页头不再有动作按钮');
+    expect(center, contains('headerTitle: tabBar,'),
+        reason: '页签在页头第一行、与返回键同排');
+    for (final String gone in <String>[
+      'Icons.flag_outlined',
+      't.stat_refresh',
+      't.stat_goal_set',
+      'headerBottom:',
+      'subtitle:',
+    ]) {
+      expect(center, isNot(contains(gone)), reason: '页头不再有 $gone');
+    }
 
     final String reading = File(
       'lib/src/settings/settings_schema_reading.dart',

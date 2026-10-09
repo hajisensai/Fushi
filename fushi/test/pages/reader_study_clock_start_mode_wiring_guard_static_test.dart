@@ -34,21 +34,21 @@ void main() {
         reason: '暂停旗只有门一个持有者，页面不许再自己写一份');
   });
 
-  test('进度落定先 arrive 再喂门（起表前翻走的页按停表丢弃）', () {
+  test('进度落定先喂门再 arrive（BUG-3100：打开那页翻走时计入）', () {
     final String refresh = body('  Future<void> _refreshProgress() async {');
-    final int arrive =
-        refresh.indexOf('_readLedger.arrive(unitStart, unitEnd);');
-    final int note = refresh.indexOf(
-        '_noteStudyClockUnitArrival(previousUnit, unitStart, unitEnd);');
-    expect(arrive, greaterThanOrEqualTo(0));
-    expect(note, greaterThan(arrive));
-    expect(refresh,
-        contains('final (int, int)? previousUnit = _readLedger.current;'));
+    expect(refresh, contains('arriveReadUnitThroughStartGate('));
+    expect(refresh, contains('ledger: _readLedger,'));
+    expect(refresh, contains('gate: _studyClockStartGate,'));
+    expect(
+      refresh,
+      isNot(contains('_readLedger.arrive(unitStart, unitEnd);')),
+      reason: '落定只经 arriveReadUnitThroughStartGate（先门后账本），不许再裸 arrive',
+    );
   });
 
   test('喂门的两处只在门放行后经统一判据起表', () {
-    expect(body('  void _noteStudyClockUnitArrival('),
-        contains('_studyClockStartGate.noteUnitArrival('));
+    expect(body('  void _onStudyClockAutoStartOnTurn() {'),
+        contains('_startStudyClockFromGate();'));
     expect(body('  void _noteAudiobookPlayingForStudyClock(bool playing) {'),
         contains('_studyClockStartGate.noteAudiobookPlaying(playing)'));
     final String start = body('  void _startStudyClockFromGate() {');

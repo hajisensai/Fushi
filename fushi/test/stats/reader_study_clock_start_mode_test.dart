@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show studyClockMayRun;
+import 'package:fushi/src/stats/read_unit_ledger.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 
 /// 阅读计时开始方式（手动 / 打开即开始 / 翻页后开始，2026-10-05）的纯逻辑契约。
@@ -178,6 +179,103 @@ void main() {
       expect(gate.manualPause, isTrue);
       expect(gate.toggleManualPause(), isFalse);
       expect(mayRunInForeground(gate), isTrue);
+    });
+  });
+
+  /// BUG-3100：「翻页后开始」下打开时停着读的那页，翻走时必须入账。账本经
+  /// `StudyClock.addChars` 记字数，停表期间按 BUG-2210 丢弃——这里用一枚最小
+  /// 替身时钟复现同一条「停表即丢」规则。
+  group('BUG-3100 首次翻页时打开那页的字数', () {
+    ({
+      ReaderStudyClockStartGate gate,
+      ReadUnitLedger ledger,
+      int Function() chars,
+      void Function() start
+    }) rig(ReaderStudyClockStartMode mode) {
+      final ReaderStudyClockStartGate gate = ReaderStudyClockStartGate(mode);
+      bool running = mayRunInForeground(gate);
+      int credited = 0;
+      final ReadUnitLedger ledger = ReadUnitLedger(
+        onCredit: (List<(int, int)> fresh) {
+          if (running) credited += readUnitsLength(fresh);
+        },
+        onRetract: (List<(int, int)> retracted) {
+          if (running) credited -= readUnitsLength(retracted);
+        },
+      );
+      return (
+        gate: gate,
+        ledger: ledger,
+        chars: () => credited,
+        start: () => running = mayRunInForeground(gate),
+      );
+    }
+
+    test('翻页后开始：打开那页（0–500）在首次翻走时计入', () {
+      final r = rig(ReaderStudyClockStartMode.onPageTurn);
+      // 打开书：落在第一页，门还在等翻页、时钟停着。
+      expect(
+        arriveReadUnitThroughStartGate(
+          gate: r.gate,
+          ledger: r.ledger,
+          start: 0,
+          end: 500,
+          onAutoStart: r.start,
+        ),
+        isFalse,
+      );
+      expect(r.chars(), 0);
+      // 翻到第二页：门先起表，再结算刚翻走的第一页。
+      expect(
+        arriveReadUnitThroughStartGate(
+          gate: r.gate,
+          ledger: r.ledger,
+          start: 500,
+          end: 1000,
+          onAutoStart: r.start,
+        ),
+        isTrue,
+      );
+      expect(r.chars(), 500, reason: '打开时读的那页翻走即计（旧顺序这里是 0）');
+      arriveReadUnitThroughStartGate(
+        gate: r.gate,
+        ledger: r.ledger,
+        start: 1000,
+        end: 1500,
+        onAutoStart: r.start,
+      );
+      expect(r.chars(), 1000);
+    });
+
+    test('打开即开始：口径不变（第一页翻走即计）', () {
+      final r = rig(ReaderStudyClockStartMode.onOpen);
+      for (final (int a, int b) in <(int, int)>[(0, 500), (500, 1000)]) {
+        arriveReadUnitThroughStartGate(
+          gate: r.gate,
+          ledger: r.ledger,
+          start: a,
+          end: b,
+          onAutoStart: r.start,
+        );
+      }
+      expect(r.chars(), 500);
+    });
+
+    test('手动：没按继续前翻页一律不计、也不自动起表', () {
+      final r = rig(ReaderStudyClockStartMode.manual);
+      for (final (int a, int b) in <(int, int)>[(0, 500), (500, 1000)]) {
+        expect(
+          arriveReadUnitThroughStartGate(
+            gate: r.gate,
+            ledger: r.ledger,
+            start: a,
+            end: b,
+            onAutoStart: r.start,
+          ),
+          isFalse,
+        );
+      }
+      expect(r.chars(), 0);
     });
   });
 }

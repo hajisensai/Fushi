@@ -270,6 +270,41 @@ void main() {
     expect(find.text('S4'), findsOneWidget, reason: 'sheet 里是全量');
   });
 
+  // PDF 图 3（2026-10-09）：手机宽下卡头「全部会话 (N)」+ 清除图标挤进一个 Wrap，
+  // 各占一行、标题被顶到中间。现在卡头只有标题 + 清除图标同一行，「全部会话」
+  // 在列表下方。
+  testWidgets('手机宽：卡头标题与清除钮同一行，「全部会话」在列表下方', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await _pump(
+      tester,
+      sessions: <StudySession>[
+        for (int i = 0; i < 12; i++) _session('s$i', title: 'S$i'),
+      ],
+      onDelete: (_) async {},
+      limit: 3,
+    );
+    final Rect title = tester.getRect(find.text(t.stat_sessions_recent));
+    final Rect clear = tester.getRect(
+      find.byKey(const ValueKey<String>('stat-sessions-clear-all')),
+    );
+    expect(
+      (clear.center.dy - title.center.dy).abs(),
+      lessThan(clear.height / 2),
+      reason: '清除钮与标题同一行',
+    );
+    expect(clear.right, greaterThan(360 - 80), reason: '清除钮贴卡片右缘，不在中间');
+    final Rect showAll = tester.getRect(
+      find.byKey(const ValueKey<String>('stat-sessions-show-all')),
+    );
+    expect(showAll.top, greaterThan(tester.getRect(find.text('S2')).bottom),
+        reason: '「全部会话」在最后一行之下');
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('垃圾桶 → 会话专用确认文案 → 删除回调 + 行移除；取消不动', (
     WidgetTester tester,
   ) async {

@@ -5,7 +5,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// 此前四处各写一遍 `statDateKey(now - 7d)` / `- 30d` 并用 `>=` 比较：「近 7 天」
 /// 实际含 8 个自然日、「近 30 天」含 31 天，而环比的「上周」窗口 `[now-14d, now-7d)`
 /// 恰 7 天——本周系统性偏大、环比结构性偏正（阅读页 / 视频页 / 游戏页 / 首页各一份，
-/// 还互相不一致）。这里只有一个定义：`days(n)` = 含今日在内的 **恰 n 个自然日**。
+/// 还互相不一致）。这里只有一个定义：`days(n)` = 含今日在内的 **恰 n 个自然日**；
+/// 「本周」= 自然周（周一起，2026-10-09），上周 = 上周同期（与本周已过天数同长）。
 ///
 /// dateKey 是零填充的 `yyyy-MM-dd`，字典序即时间序，比较全走字符串。
 ///
@@ -14,10 +15,13 @@ import 'package:fushi_core/fushi_core.dart';
 /// 派生再做 key 算术，不得再用 `DateTime(y, m, d)` 合成本地午夜当今日——
 /// 重置时刻 = 4 点时凌晨 2 点仍属「昨日」，合成午夜会把它错切到日历今日。
 class StatWindow {
-  StatWindow(DateTime now)
-    : todayKey = FushiDatabase.statDateKeyOf(now),
-      weekFromKey = _keyDaysAgo(now, 6),
-      prevWeekFromKey = _keyDaysAgo(now, 13),
+  StatWindow(DateTime now) : this._(now, FushiDatabase.statDateKeyOf(now));
+
+  StatWindow._(DateTime now, String today)
+    : todayKey = today,
+      weekFromKey = _mondayOf(today),
+      prevWeekFromKey = FushiDatabase.statDateKeyPlusDays(_mondayOf(today), -7),
+      prevWeekToKey = FushiDatabase.statDateKeyPlusDays(today, -7),
       monthFromKey = _keyDaysAgo(now, 29),
       _now = now;
 
@@ -31,11 +35,18 @@ class StatWindow {
   /// 今日。
   final String todayKey;
 
-  /// 近 7 天窗口起点（含）：`[weekFromKey, todayKey]` 恰 7 天。
+  /// 本周起点（含）= 今日所在**自然周的周一**（统计日口径）：`[weekFromKey,
+  /// todayKey]` 是本周已过的 1–7 天。与统计中心范围条「周」粒度（`StatRange`，
+  /// 周一起）同一口径——2026-10-09 起「本周」只有这一个意思（此前是滚动近 7 天，
+  /// 与范围条的「周」数字对不上）。滚动近 7 天用 [lastDayKeys]`(7)`。
   final String weekFromKey;
 
-  /// 上一个 7 天窗口起点（含）：`[prevWeekFromKey, weekFromKey)` 恰 7 天，与本周不重叠。
+  /// 上周同期起点（含）= 上周一。
   final String prevWeekFromKey;
+
+  /// 上周同期终点（含）= 今日 - 7 天：`[prevWeekFromKey, prevWeekToKey]` 与本周
+  /// 已过天数**同长**、不重叠（周三对比上周一至周三，环比不被「不满一周」拖成负数）。
+  final String prevWeekToKey;
 
   /// 近 30 天窗口起点（含）：`[monthFromKey, todayKey]` 恰 30 天。
   final String monthFromKey;
@@ -47,7 +58,7 @@ class StatWindow {
 
   bool inPrevWeek(String dateKey) =>
       dateKey.compareTo(prevWeekFromKey) >= 0 &&
-      dateKey.compareTo(weekFromKey) < 0;
+      dateKey.compareTo(prevWeekToKey) <= 0;
 
   bool inMonth(String dateKey) =>
       dateKey.compareTo(monthFromKey) >= 0 && dateKey.compareTo(todayKey) <= 0;
@@ -64,6 +75,11 @@ class StatWindow {
   /// （DST 切换日不是恰 24h）。
   static Duration untilNextStatDayBoundary(DateTime now) =>
       FushiDatabase.untilNextStatDayBoundary(now);
+
+  static String _mondayOf(String dateKey) => FushiDatabase.statDateKeyPlusDays(
+    dateKey,
+    -(FushiDatabase.statDateKeyToDay(dateKey).weekday - DateTime.monday),
+  );
 
   static String _keyDaysAgo(DateTime now, int days) =>
       FushiDatabase.statDateKeyPlusDays(

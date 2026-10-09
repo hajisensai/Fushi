@@ -788,11 +788,14 @@ _statWindowOf(String? raw) {
         contains: window.isToday,
       );
     case '7d' || 'week':
+      // 滚动近 7 天（含今日）；[StatWindow.inWeek] 是自然周，口径不同。
+      final String from = window.lastDayKeys(7).first;
       return (
         name: '7d',
-        fromKey: window.weekFromKey,
+        fromKey: from,
         toKey: window.todayKey,
-        contains: window.inWeek,
+        contains: (String key) =>
+            key.compareTo(from) >= 0 && key.compareTo(window.todayKey) <= 0,
       );
     case '30d' || 'month':
       return (

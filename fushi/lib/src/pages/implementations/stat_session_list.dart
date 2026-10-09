@@ -94,19 +94,15 @@ Widget buildStatSessionSection(
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   final List<StudySession> shown =
       sessions.length <= limit ? sessions : sessions.sublist(0, limit);
-  // 2026-10 统计中心重设计：会话区块是一张与图表卡同形的 [StatSectionCard]
-  // （卡头 = 图标 + 标题 + 「全部」/「清除」动作），不再是裸在页面底色上的列表。
-  return StatSectionCard(
-    key: const ValueKey<String>('stat-sessions-section'),
-    icon: Icons.history,
-    title: t.stat_sessions_recent,
-    // 窄屏时两颗动作按钮自己换行（卡头给行尾的宽度有限）。
-    trailing: Wrap(
-      alignment: WrapAlignment.end,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: <Widget>[
-        if (sessions.length > shown.length)
-          FushiTextButton(
+  // 2026-10 统计中心重设计：会话区块是一张与图表卡同形的 [StatSectionCard]。
+  // 2026-10-09（PDF 图 3「最近沉浸」按钮乱了）：卡头行尾此前是「全部会话 (N)」
+  // 文字按钮 + 清除图标塞进一个 Wrap，手机宽下两颗各占一行、把标题挤到中间。
+  // 现在卡头只留一颗图标按钮（清除），「全部会话 (N)」挪到列表下方整行。
+  final Widget? showAll = sessions.length > shown.length
+      ? Align(
+          alignment: AlignmentDirectional.centerEnd,
+          child: FushiTextButton(
+            key: const ValueKey<String>('stat-sessions-show-all'),
             onPressed: () => unawaited(
               showStatSessionsSheet(
                 context,
@@ -122,27 +118,39 @@ Widget buildStatSessionSection(
             ),
             child: Text('${t.stat_sessions_show_all} (${sessions.length})'),
           ),
-        // 清的是**这一页拿到的整批**会话（域 tab = 本域全部，总览 = 跨域全部），
-        // 不是屏幕上截断显示的那 8 条——按钮文案与防呆勾选项复述的都是 N。
-        if (sessions.isNotEmpty)
-          _StatSessionsClearAllButton(
+        )
+      : null;
+  return StatSectionCard(
+    key: const ValueKey<String>('stat-sessions-section'),
+    icon: Icons.history,
+    title: t.stat_sessions_recent,
+    // 清的是**这一页拿到的整批**会话（域 tab = 本域全部，总览 = 跨域全部），
+    // 不是屏幕上截断显示的那 8 条——按钮文案与防呆勾选项复述的都是 N。
+    trailing: sessions.isEmpty
+        ? null
+        : _StatSessionsClearAllButton(
             sessions: sessions,
             onClearAll: onClearAll,
           ),
-      ],
-    ),
     child: shown.isEmpty
         ? Padding(
             padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap),
             child: Text(t.stat_sessions_empty, style: tokens.type.metadata),
           )
-        : StatSessionList(
-            sessions: shown,
-            titleOf: titleOf,
-            collectionOf: collectionOf,
-            coverOf: coverOf,
-            onDelete: onDelete,
-            onEdit: onEdit,
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              StatSessionList(
+                sessions: shown,
+                titleOf: titleOf,
+                collectionOf: collectionOf,
+                coverOf: coverOf,
+                onDelete: onDelete,
+                onEdit: onEdit,
+              ),
+              if (showAll != null) showAll,
+            ],
           ),
   );
 }
