@@ -1519,4 +1519,48 @@ void main() {
         .size;
     expect(sizeOf(_otherId), greaterThan(sizeOf(_selfId)));
   });
+
+  testWidgets('从首页 push 进来时顶栏第一位是返回键，其后是头像 + 昵称#编号', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    final LeaderboardService service = await activeService(tester);
+    final GlobalKey<NavigatorState> nav = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          leaderboardServiceProvider.overrideWith((Ref _) => service),
+        ],
+        child: MaterialApp(
+          navigatorKey: nav,
+          home: const Scaffold(body: SizedBox.expand()),
+        ),
+      ),
+    );
+    unawaited(
+      nav.currentState!.push<void>(
+        MaterialPageRoute<void>(
+          builder: (BuildContext _) => const LeaderboardTab(),
+        ),
+      ),
+    );
+    await settle(tester);
+    final Finder back = byKey('leaderboard-back');
+    expect(back, findsOneWidget);
+    final Finder title = find.descendant(
+      of: byKey('leaderboard-top-bar'),
+      matching: find.text('Me#0042'),
+    );
+    expect(title, findsOneWidget);
+    expect(
+      tester.getCenter(back).dx,
+      lessThan(tester.getCenter(title).dx),
+      reason: '返回键在头像胶囊左侧',
+    );
+    await tester.tap(back);
+    await settle(tester);
+    // 退场转场比 settle 的十帧长：再推进一秒让路由真正移除。
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(LeaderboardTab), findsNothing);
+  });
 }
