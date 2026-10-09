@@ -145,17 +145,7 @@ class KeyCapWidget extends StatelessWidget {
       ),
       child: Align(
         widthFactor: width == null ? 1 : null,
-        child: Text(
-          label,
-          // Mac 修饰键印「符号 + 换行 + 名字」（⌘ / command），其余单行。
-          maxLines: label.contains('\n') ? 2 : 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.labelMedium?.copyWith(
-            color: fg,
-            fontWeight: bound ? FontWeight.w600 : FontWeight.w500,
-          ),
-        ),
+        child: _label(theme, fg),
       ),
     );
 
@@ -194,5 +184,22 @@ class KeyCapWidget extends StatelessWidget {
         child: cap,
       ),
     );
+  }
+
+  /// 键面文字。Mac 示意图的键印「符号 + 换行 + 名字」（⌘ / command、⌦ / delete），
+  /// 两行在窄键上整体等比缩小而不是截成省略号；其余单行、放不下省略。
+  Widget _label(ThemeData theme, Color fg) {
+    final bool twoLine = label.contains('\n');
+    final Widget text = Text(
+      label,
+      maxLines: twoLine ? 2 : 1,
+      overflow: twoLine ? TextOverflow.visible : TextOverflow.ellipsis,
+      textAlign: TextAlign.center,
+      style: theme.textTheme.labelMedium?.copyWith(
+        color: fg,
+        fontWeight: bound ? FontWeight.w600 : FontWeight.w500,
+      ),
+    );
+    return twoLine ? FittedBox(fit: BoxFit.scaleDown, child: text) : text;
   }
 }
