@@ -23,6 +23,8 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 import 'package:fushi/src/shortcuts/shortcut_labels.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/shortcuts/visual/keyboard_layout_view.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
@@ -102,6 +104,37 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
     }
   });
+
+  for (final TargetPlatform platform in <TargetPlatform>[
+    TargetPlatform.macOS,
+    TargetPlatform.windows,
+  ]) {
+    testWidgets('keyboard layout view (${platform.name})', (
+      WidgetTester tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = platform;
+      try {
+        final FushiShortcutRegistry registry = FushiShortcutRegistry()
+          ..loadDefaults(platform);
+        await _capture(
+          tester,
+          File('${out.path}/keyboard_layout_${platform.name}_$_suffix.png'),
+          size: const Size(1000, 340),
+          child: Scaffold(
+            body: Padding(
+              padding: const EdgeInsets.all(16),
+              child: KeyboardLayoutView(
+                registry: registry,
+                scope: ShortcutScope.reader,
+              ),
+            ),
+          ),
+        );
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+  }
 
   testWidgets('shortcut labels on macOS', (WidgetTester tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.macOS;

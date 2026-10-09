@@ -63,7 +63,18 @@ const double kAnsiMainRowFlex = 15;
 ///
 /// 导航簇（Ins/Del/Home/End/PgUp/PgDn + 倒 T 方向键）拆到 [buildNavClusterRows]，
 /// 作为右侧独立块渲染（真键盘上它们本就在主区右侧，不在主区内）。
-List<List<KeyboardKeySpec>> buildPhysicalKeyboardRows() {
+///
+/// 修饰键行按平台选两套（BUG-3203，用户 10-09 拍板）：macOS / 外接键盘的 iPad
+/// 画 Mac 键盘——左下 fn、⌃ control、⌥ option、⌘ command，右侧 ⌘ ⌥；其它平台
+/// 画 PC 的 Ctrl / Win / Alt。只是示意图的布局数据，逻辑键与存储键名不变。
+/// [platform] 缺省取快捷键显示平台 [shortcutDisplayPlatform]。
+List<List<KeyboardKeySpec>> buildPhysicalKeyboardRows({
+  TargetPlatform? platform,
+}) {
+  final bool mac = shortcutUsesAppleSymbols(
+    platform ?? shortcutDisplayPlatform,
+  );
+  final String shiftLabel = mac ? '⇧\nshift' : 'Shift';
   return <List<KeyboardKeySpec>>[
     <KeyboardKeySpec>[
       const KeyboardKeySpec(LogicalKeyboardKey.escape, 'Esc'),
@@ -132,9 +143,9 @@ List<List<KeyboardKeySpec>> buildPhysicalKeyboardRows() {
       const KeyboardKeySpec(LogicalKeyboardKey.enter, 'Enter', flex: 2.25),
     ],
     <KeyboardKeySpec>[
-      const KeyboardKeySpec(
+      KeyboardKeySpec(
         LogicalKeyboardKey.shiftLeft,
-        'Shift',
+        shiftLabel,
         flex: 2.25,
         kind: KeyCapKind.modifier,
       ),
@@ -148,54 +159,99 @@ List<List<KeyboardKeySpec>> buildPhysicalKeyboardRows() {
       const KeyboardKeySpec(LogicalKeyboardKey.comma, ','),
       const KeyboardKeySpec(LogicalKeyboardKey.period, '.'),
       const KeyboardKeySpec(LogicalKeyboardKey.slash, '/'),
-      const KeyboardKeySpec(
+      KeyboardKeySpec(
         LogicalKeyboardKey.shiftRight,
-        'Shift',
+        shiftLabel,
         flex: 2.75,
         kind: KeyCapKind.modifier,
       ),
     ],
-    <KeyboardKeySpec>[
-      const KeyboardKeySpec(
-        LogicalKeyboardKey.controlLeft,
-        'Ctrl',
-        flex: 1.5,
-        kind: KeyCapKind.modifier,
-      ),
-      const KeyboardKeySpec(
-        LogicalKeyboardKey.metaLeft,
-        'Win',
-        flex: 1.25,
-        kind: KeyCapKind.modifier,
-      ),
-      const KeyboardKeySpec(
-        LogicalKeyboardKey.altLeft,
-        'Alt',
-        flex: 1.25,
-        kind: KeyCapKind.modifier,
-      ),
-      const KeyboardKeySpec(LogicalKeyboardKey.space, 'Space', flex: 7),
-      const KeyboardKeySpec(
-        LogicalKeyboardKey.altRight,
-        'Alt',
-        flex: 1.25,
-        kind: KeyCapKind.modifier,
-      ),
-      const KeyboardKeySpec(
-        LogicalKeyboardKey.metaRight,
-        'Win',
-        flex: 1.25,
-        kind: KeyCapKind.modifier,
-      ),
-      const KeyboardKeySpec(
-        LogicalKeyboardKey.controlRight,
-        'Ctrl',
-        flex: 1.5,
-        kind: KeyCapKind.modifier,
-      ),
-    ],
+    if (mac) _macModifierRow else _pcModifierRow,
   ];
 }
+
+/// PC 键盘的修饰键行：Ctrl / Win / Alt / Space / Alt / Win / Ctrl（总 flex 15）。
+const List<KeyboardKeySpec> _pcModifierRow = <KeyboardKeySpec>[
+  KeyboardKeySpec(
+    LogicalKeyboardKey.controlLeft,
+    'Ctrl',
+    flex: 1.5,
+    kind: KeyCapKind.modifier,
+  ),
+  KeyboardKeySpec(
+    LogicalKeyboardKey.metaLeft,
+    'Win',
+    flex: 1.25,
+    kind: KeyCapKind.modifier,
+  ),
+  KeyboardKeySpec(
+    LogicalKeyboardKey.altLeft,
+    'Alt',
+    flex: 1.25,
+    kind: KeyCapKind.modifier,
+  ),
+  KeyboardKeySpec(LogicalKeyboardKey.space, 'Space', flex: 7),
+  KeyboardKeySpec(
+    LogicalKeyboardKey.altRight,
+    'Alt',
+    flex: 1.25,
+    kind: KeyCapKind.modifier,
+  ),
+  KeyboardKeySpec(
+    LogicalKeyboardKey.metaRight,
+    'Win',
+    flex: 1.25,
+    kind: KeyCapKind.modifier,
+  ),
+  KeyboardKeySpec(
+    LogicalKeyboardKey.controlRight,
+    'Ctrl',
+    flex: 1.5,
+    kind: KeyCapKind.modifier,
+  ),
+];
+
+/// Mac 键盘的修饰键行：fn / ⌃ control / ⌥ option / ⌘ command / Space /
+/// ⌘ command / ⌥ option（总 flex 15，与 PC 行同宽，键盘仍是矩形）。
+const List<KeyboardKeySpec> _macModifierRow = <KeyboardKeySpec>[
+  KeyboardKeySpec(
+    LogicalKeyboardKey.fn,
+    'fn',
+    flex: 1.25,
+    kind: KeyCapKind.modifier,
+  ),
+  KeyboardKeySpec(
+    LogicalKeyboardKey.controlLeft,
+    '⌃\ncontrol',
+    flex: 1.25,
+    kind: KeyCapKind.modifier,
+  ),
+  KeyboardKeySpec(
+    LogicalKeyboardKey.altLeft,
+    '⌥\noption',
+    flex: 1.25,
+    kind: KeyCapKind.modifier,
+  ),
+  KeyboardKeySpec(
+    LogicalKeyboardKey.metaLeft,
+    '⌘\ncommand',
+    flex: 1.5,
+    kind: KeyCapKind.modifier,
+  ),
+  KeyboardKeySpec(LogicalKeyboardKey.space, 'Space', flex: 7),
+  KeyboardKeySpec(
+    LogicalKeyboardKey.metaRight,
+    '⌘\ncommand',
+    flex: 1.5,
+    kind: KeyCapKind.modifier,
+  ),
+  KeyboardKeySpec(
+    LogicalKeyboardKey.altRight,
+    '⌥\noption',
+    flex: 1.25,
+    kind: KeyCapKind.modifier,
+  ),
+];
 
 /// 纯函数：返回导航簇几何（真键盘主区右侧的独立 3 宽块）。可单测，零渲染依赖。
 ///
@@ -381,17 +437,12 @@ class KeyboardLayoutView extends StatelessWidget {
 
     // 修饰键：只读分区展示，恒不可点、不参与高亮（key 不进反向索引）。
     if (spec.kind == KeyCapKind.modifier) {
-      // 修饰键键帽的字走快捷键显示的统一入口（BUG-3203）：macOS 上印 ⌃ ⌥ ⇧ ⌘，
-      // 与快捷键列表 / tooltip 一致；其它平台保留示意图自己的 Ctrl / Win / Alt。
-      final ModifierKey? modifier = ModifierKey.fromKeyboardKey(spec.key!);
-      final String label =
-          modifier != null && shortcutUsesAppleSymbols(shortcutDisplayPlatform)
-              ? shortcutModifierDisplayLabel(modifier)
-              : spec.label;
+      // 修饰键的字与排列都来自布局数据（macOS 是 Mac 键盘那一套，见
+      // [buildPhysicalKeyboardRows]），这里不再按平台改字。
       return KeyCapWidget(
         key: Key('keycap_${spec.key!.keyId}'),
         logicalKey: spec.key!,
-        label: label,
+        label: spec.label,
         bound: false,
         isModifier: true,
         onTap: null,

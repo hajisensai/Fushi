@@ -6,4 +6,5 @@
   - 键帽撑满：`KeyCapWidget` 在 `width == null` 时侧壁、键面全是 `Positioned`，Stack 只能取父约束最大宽，Wrap 里每枚键帽占满一整行。
 - **[x] ① 已修复**（f2b87efe1d）— `input_binding.dart` 新增显示统一入口：`ModifierKey.displayLabelOn` / `shortcutModifierDisplayLabels`（Apple 平台 ⌃ ⌥ ⇧ ⌘、按 HIG 顺序）/ `joinShortcutDisplayParts`（Apple 平台直接相连 `⌃⌥D`，其它平台 `+`）/ `InputBinding.displayParts`；`displayLabel`、`WheelBinding.displayLabel`、`WheelBindingLabel.label`、设置快捷键列表键帽（改用 `displayParts`，删掉按 `+` 拆字符串的 `_keyParts`）、键盘示意图的修饰键键帽、引导页键帽（抽成 `OnboardingHotkeyKeycaps`）全走它。持久化 token（`serialize` / `ModifierKey.label` / popup 线协议）不变。`KeyCapWidget` 无宽度时按内容收宽。
 - **[x] ② 已加自动化测试** — `fushi/test/shortcuts/shortcut_display_platform_test.dart`（各平台分段 / 文本 / tooltip / 滚轮名，token 不随平台变）、`fushi/test/onboarding/onboarding_wizard_layout_test.dart`（macOS 下引导键帽为 ⌃ ⌥ D、同一行、按内容收宽，并钉住 macOS 默认绑定是 Control+Option+D）。
+- **追加（用户 10-09 拍板）**：设置页键盘示意图在 macOS / iPad 上改画 Mac 键盘的修饰键行（fn、⌃ control、⌥ option、⌘ command · Space · ⌘ ⌥，shift 印 ⇧），其它平台保持 PC 布局；改的是 `buildPhysicalKeyboardRows` 的布局数据，逻辑键与存储键名不变。测试 `fushi/test/shortcuts/visual_keyboard_mac_layout_test.dart`。
 - **备注**：iPadOS 外接键盘同样用 Apple 符号（`shortcutUsesAppleSymbols` 含 iOS）。

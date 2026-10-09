@@ -147,7 +147,8 @@ class KeyCapWidget extends StatelessWidget {
         widthFactor: width == null ? 1 : null,
         child: Text(
           label,
-          maxLines: 1,
+          // Mac 修饰键印「符号 + 换行 + 名字」（⌘ / command），其余单行。
+          maxLines: label.contains('\n') ? 2 : 1,
           overflow: TextOverflow.ellipsis,
           textAlign: TextAlign.center,
           style: theme.textTheme.labelMedium?.copyWith(
