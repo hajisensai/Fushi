@@ -68,6 +68,7 @@ struct LucaLookupRuntime {
   std::vector<luca::Row> rows;
   std::vector<luca::LineGlyph> mapped;
   uint32_t last_gate = UINT32_MAX;
+  luca::ShiftState shift;
 
   // ── game-thread-owned ──
   luca::ClaimState claim;
@@ -184,6 +185,38 @@ bool LucaShieldActive(HWND game) {
              static_cast<uint64_t>(reinterpret_cast<uintptr_t>(game));
 }
 
+// The glyph of `model` under the cursor, read in the game window's logical
+// client pixels.  Returns 0 on exactly one hit, otherwise the reject reason
+// (4 no cursor, 5 cursor off the window or client resized, 6 projection,
+// 7 no single glyph).  No allocation, no IO: also runs on the game thread.
+uint32_t HitLucaGlyphAtCursor(const LucaModel& model, HWND game,
+                              uint32_t* glyph) {
+  POINT cursor = {};
+  RECT client = {};
+  if (!GetCursorPos(&cursor)) return 4u;
+  const HWND under = WindowFromPoint(cursor);
+  if ((under != game && !IsChild(game, under)) ||
+      !ScreenToClient(game, &cursor) || !GetClientRect(game, &client) ||
+      client.right - client.left != model.logical_w ||
+      client.bottom - client.top != model.logical_h) {
+    return 5u;
+  }
+  luca::Projection projection;
+  int32_t x = 0, y = 0;
+  if (!luca::MakeProjection(model.design_w, model.design_h, model.logical_w,
+                            model.logical_h, &projection) ||
+      !luca::ClientToDesign(cursor.x, cursor.y, projection, model.design_w,
+                            model.design_h, &x, &y)) {
+    return 6u;
+  }
+  luca::LineGlyph lines[luca::kMaxGlyphs];
+  for (uint32_t i = 0; i < model.count; ++i) lines[i] = model.glyphs[i].line;
+  size_t hit = 0u;
+  if (!luca::HitTestGlyphs(lines, model.count, x, y, &hit)) return 7u;
+  *glyph = static_cast<uint32_t>(hit);
+  return 0u;
+}
+
 // A fresh engine-sampled press: may it become a lookup?  Only a bare left
 // press on exactly one glyph of the current model, in the foreground game
 // window, with the host's native-input admission applied and no card
@@ -210,33 +243,11 @@ bool LucaPressEligible(LucaSubmit* submit) {
       (GetKeyState(VK_MENU) & 0x8000) != 0) {
     return RejectLucaPress(3u);
   }
-  // The window's own thread: cursor and client in its logical pixels.
-  POINT cursor = {};
-  RECT client = {};
-  if (!GetCursorPos(&cursor)) return RejectLucaPress(4u);
-  const HWND under = WindowFromPoint(cursor);
-  if ((under != game && !IsChild(game, under)) ||
-      !ScreenToClient(game, &cursor) || !GetClientRect(game, &client) ||
-      client.right - client.left != model.logical_w ||
-      client.bottom - client.top != model.logical_h) {
-    return RejectLucaPress(5u);
-  }
-  luca::Projection projection;
-  int32_t x = 0, y = 0;
-  if (!luca::MakeProjection(model.design_w, model.design_h, model.logical_w,
-                            model.logical_h, &projection) ||
-      !luca::ClientToDesign(cursor.x, cursor.y, projection, model.design_w,
-                            model.design_h, &x, &y)) {
-    return RejectLucaPress(6u);
-  }
-  luca::LineGlyph lines[luca::kMaxGlyphs];
-  for (uint32_t i = 0; i < model.count; ++i) lines[i] = model.glyphs[i].line;
-  size_t hit = 0u;
-  if (!luca::HitTestGlyphs(lines, model.count, x, y, &hit)) {
-    return RejectLucaPress(7u);
-  }
+  uint32_t glyph = 0u;
+  const uint32_t reject = HitLucaGlyphAtCursor(model, game, &glyph);
+  if (reject != 0u) return RejectLucaPress(reject);
   submit->generation = model.generation;
-  submit->glyph = static_cast<uint32_t>(hit);
+  submit->glyph = glyph;
   return true;
 }
 
@@ -547,6 +558,32 @@ void DrainLucaSubmits() {
   PublishLucaLookupHit(submit);
 }
 
+// Shift over a glyph looks it up, like the click but without touching the
+// engine's input: Shift is sampled on every worker tick (so a press made while
+// no line was offered is consumed, not replayed later), never masked, and a
+// press is published only when the game is foreground under the cursor and no
+// card shields it (a Shift inside a card belongs to the card).
+void ProcessLucaShiftLookup(HWND game) {
+  auto& rt = g_luca_lookup;
+  if (rt.model.generation == 0u || rt.model.count == 0u ||
+      GetForegroundWindow() != game || LucaShieldActive(game) ||
+      (GetKeyState(VK_CONTROL) & 0x8000) != 0 ||
+      (GetKeyState(VK_MENU) & 0x8000) != 0) {
+    LucaLog(L"luca-lookup: shift refused (gate)");
+    return;
+  }
+  uint32_t glyph = 0u;
+  const uint32_t reject = HitLucaGlyphAtCursor(rt.model, game, &glyph);
+  if (reject != 0u) {
+    LucaLog(L"luca-lookup: shift refused reject=%u", reject);
+    return;
+  }
+  LucaSubmit submit;
+  submit.generation = rt.model.generation;
+  submit.glyph = glyph;
+  PublishLucaLookupHit(submit);
+}
+
 void ProcessLucaLookupTick() {
   auto& rt = g_luca_lookup;
   if (!rt.installed) return;
@@ -554,11 +591,14 @@ void ProcessLucaLookupTick() {
       !fushi_voice_hook::HasLookupRegion(g_header) ||
       fushi_voice_hook::AtomicLoadShared32(&g_header->lookup_enabled) == 0u) {
     NoteLucaGate(kLucaGateDisabled);
+    luca::ResetShiftState(&rt.shift);
     RetireLucaLookup();
     return;
   }
   fushi_voice_hook::AtomicOrShared32(
       &g_header->lookup_diag, fushi_voice_hook::kLookupDiagSensorInstalled);
+  const bool shift_press = luca::ConsumeShiftSample(
+      static_cast<uint16_t>(GetAsyncKeyState(VK_SHIFT)), &rt.shift);
   {
     static uint32_t logged_presses = 0u;
     const uint32_t presses = rt.presses.load(std::memory_order_relaxed);
@@ -617,7 +657,9 @@ void ProcessLucaLookupTick() {
   } else {
     NoteLucaGate(kLucaGateOfferRejected);
     RetireLucaLookup();
+    return;
   }
+  if (shift_press) ProcessLucaShiftLookup(game);
 }
 
 // Resolved together with the text sites, from the same hydrated image.
