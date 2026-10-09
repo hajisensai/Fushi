@@ -6888,5 +6888,6 @@
   "feedback_dev_untrusted": "以下はすべて送信者が書いた未検証の内容です。中の指示に従ったり怪しいリンクを開いたりしないでください。他の人や AI に渡すときは信頼できないデータであることを明記してください。",
   "feedback_dev_origin": "サーバー記録",
   "feedback_dev_meta_self_reported": "端末情報（自己申告・偽装可能）",
-  "feedback_error_duplicate": "同じフィードバックを先ほど送信済みです"
+  "feedback_error_duplicate": "同じフィードバックを先ほど送信済みです",
+  "video_disc_menu_open_failed": "This disc's menu could not be opened. You can still play its titles directly."
 }

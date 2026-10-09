@@ -82,6 +82,12 @@ target_link_libraries(flutter_webrtc_plugin PRIVATE
 set(FUSHIDICTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushidicts")
 add_subdirectory("${FUSHIDICTS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/fushidicts")
 
+# === fushi_aacs: the libaacs ABI module libbluray loads for AACS disc menus ===
+# libbluray (inside the bundled libmpv) resolves it as "libaacs.dll" from the
+# application directory, so it must sit next to the executable.
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_aacs"
+  "${CMAKE_CURRENT_BINARY_DIR}/fushi_aacs")
+
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can
 # run in place. This is done instead of making a separate bundle (as on Linux)
@@ -135,6 +141,10 @@ install(DIRECTORY "${NATIVE_ASSETS_DIR}"
 
 # Install fushidicts DLL next to the executable
 install(TARGETS fushidicts_ffi RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
+# libaacs.dll (native/fushi_aacs) next to the executable for libbluray.
+install(TARGETS fushi_aacs RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 # === 内置 libtorrent 引擎（Debug 可选，Profile/Release 必需）===

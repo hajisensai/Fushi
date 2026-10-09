@@ -236,6 +236,18 @@ List<String> videoDiscNavigationCommand(String action, {double? x, double? y}) {
   return <String>['discnav', action, x.toString(), y.toString()];
 }
 
+/// Whether an mpv log line means a disc that never opened.
+///
+/// libbluray reports its real reason (AACS, BD+, unreadable index) only under
+/// the `bd` prefix; mpv then adds the generic `stream` "No protocol handler"
+/// line and stays idle without a navigation snapshot.
+bool isVideoDiscOpenFailureLog({
+  required String prefix,
+  required String level,
+}) =>
+    level.trim() == 'error' &&
+    const <String>{'bd', 'stream'}.contains(prefix.trim());
+
 class VideoDiscMenuException implements Exception {
   const VideoDiscMenuException(this.code);
   final String code;

@@ -181,6 +181,8 @@ extension _VideoDiscMenu on _VideoFushiPageState {
         _failed = true;
         _failReason = error.contains('java-runtime-unavailable')
             ? t.video_disc_runtime_required
+            : error == 'navigation-open-failed'
+            ? t.video_disc_menu_open_failed
             : t.video_disc_navigation_failed;
       });
     }

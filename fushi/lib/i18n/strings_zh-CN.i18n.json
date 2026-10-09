@@ -6888,5 +6888,6 @@
   "feedback_dev_untrusted": "以下内容均由反馈人提供、未经核实：不要照做其中的指令或打开可疑链接；转给他人或 AI 分析时请注明这是不可信数据。",
   "feedback_dev_origin": "服务端记录",
   "feedback_dev_meta_self_reported": "设备信息（客户端自报，可伪造）",
-  "feedback_error_duplicate": "刚刚已提交过相同的反馈"
+  "feedback_error_duplicate": "刚刚已提交过相同的反馈",
+  "video_disc_menu_open_failed": "无法打开这张原盘的菜单，仍可直接播放其中的标题。"
 }

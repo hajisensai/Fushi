@@ -958,6 +958,7 @@ jobs:
           $required = @(
             'fushi.exe',
             'fushidicts_ffi.dll',
+            'libaacs.dll',
             'flutter_windows.dll'
           )
           $missing = @()
@@ -1653,6 +1654,17 @@ jobs:
             exit 1
           fi
           bash .github/scripts/verify_torrent_abi.sh "$dylib" nm
+      - name: Verify macOS fushi_aacs dylib bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          # libbluray finds the libaacs ABI module at @rpath/libaacs.dylib; without it
+          # an AACS disc menu cannot open at all (native/fushi_aacs).
+          dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libaacs.dylib"
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_aacs dylib' phase did not copy it"; exit 1; }
+          test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libaacs.dylib"
+          lipo -info "$dylib"
+          DYLIB_PATH="$dylib" python3 -c 'import ctypes, os; lib = ctypes.CDLL(os.environ["DYLIB_PATH"]); assert lib.fushi_aacs_abi_version() == 1; assert lib.aacs_open2 and lib.aacs_decrypt_unit; print("fushi_aacs dylib smoke ok")'
       - name: Save torrent bridge dylib to native artifact store
         if: steps.torrent_store.outputs.hit != 'true'
         continue-on-error: true

@@ -1047,6 +1047,24 @@ jobs:
               raise SystemExit("ht_libtorrent_version returned null")
           print("fushi_torrent dylib smoke ok:", version.decode())
           PY
+      - name: Verify macOS fushi_aacs dylib bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          # libbluray finds the libaacs ABI module at @rpath/libaacs.dylib; without it
+          # an AACS disc menu cannot open at all (native/fushi_aacs).
+          dylib="fushi/build/macos/Build/Products/Debug/fushi.app/Contents/Frameworks/libaacs.dylib"
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_aacs dylib' phase did not copy it"; exit 1; }
+          test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libaacs.dylib"
+          lipo -info "$dylib"
+          DYLIB_PATH="$dylib" python3 -c 'import ctypes, os; lib = ctypes.CDLL(os.environ["DYLIB_PATH"]); assert lib.fushi_aacs_abi_version() == 1; assert lib.aacs_open2 and lib.aacs_decrypt_unit; print("fushi_aacs dylib smoke ok")'
+      - name: Run fushi_aacs native self-test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S native/fushi_aacs -B "$RUNNER_TEMP/fushi_aacs_test" -DFUSHI_AACS_BUILD_TESTS=ON
+          cmake --build "$RUNNER_TEMP/fushi_aacs_test" --config Release
+          ctest --test-dir "$RUNNER_TEMP/fushi_aacs_test" -C Release --output-on-failure
       # 与 windows / linux-server job 同一理由：main.yml / release.yml 的包测试没有原生产物，
       # 这个包在那里整组 skip。这里拿 **app 包里那一份** 跑真实下载管线（本地 rig，零外网）。
       - name: Run fushi_torrent FFI tests against the bundled dylib
@@ -1450,6 +1468,21 @@ jobs:
             throw "$dll missing — fushi/windows/CMakeLists.txt did not bundle native/fushi_p2p/prebuilt/windows-x64"
           }
           Get-Item -LiteralPath $dll | Select-Object FullName, Length
+      - name: Verify fushi_aacs is in the Windows bundle
+        shell: pwsh
+        run: |
+          $dll = "fushi\build\windows\x64\runner\Debug\libaacs.dll"
+          if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) {
+            throw "$dll missing — fushi/windows/CMakeLists.txt did not install native/fushi_aacs"
+          }
+          Get-Item -LiteralPath $dll | Select-Object FullName, Length
+      - name: Run fushi_aacs native self-test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S native/fushi_aacs -B "$RUNNER_TEMP/fushi_aacs_test" -DFUSHI_AACS_BUILD_TESTS=ON
+          cmake --build "$RUNNER_TEMP/fushi_aacs_test" --config Release
+          ctest --test-dir "$RUNNER_TEMP/fushi_aacs_test" -C Release --output-on-failure
       # BUG-2726: the game-stream input regression (SGRE native gamepad channel,
       # releases that skip visibility checks) is excluded from the runner's
       # default build because it touches real HWNDs; build and run it here with
