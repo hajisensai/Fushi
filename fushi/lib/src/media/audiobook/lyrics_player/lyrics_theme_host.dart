@@ -68,6 +68,11 @@ class LyricsThemeHostState extends State<LyricsThemeHost> {
   /// 歌词模式是否正在覆盖页面主题（测试断言用）。
   bool get active => _owner != null;
 
+  /// 歌词模式当前的封面取色 scheme（歌词页整页主题就是它经工厂重走出来的）。
+  /// 没有歌词覆盖层、或封面取色尚未到达时为 null。阅读器拿它给查词弹窗换色，
+  /// 变化经 [themeChanges] 通知（宿主随 attach / detach 重建并发布主题）。
+  ColorScheme? get coverScheme => _owner == null ? null : _coverScheme;
+
   /// 歌词覆盖层登记 / 更新：[coverScheme] 为封面取色结果（尚未到达时 null，
   /// MD3 先沿用根主题、Apple 恒用深色档）。
   void attach(Object owner, ColorScheme? coverScheme) {

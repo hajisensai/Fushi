@@ -6,6 +6,7 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.d
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_theme.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
@@ -221,4 +222,71 @@ void main() {
       );
     });
   }
+
+  // 查词弹窗跟随歌词页封面取色（方案 A）：阅读器订阅宿主的 themeChanges，每次
+  // 发布都用 [LyricsThemeHostState.coverScheme] 重算弹窗覆盖主题（与
+  // `_syncDictionaryTheme` 同一个纯函数、同一个入参）。这里用同样的接线复刻：
+  // 进入歌词模式（封面取色到达）→ 弹窗 = 封面 scheme；退出 → 恢复原覆盖值。
+  testWidgets('查词弹窗：进入歌词模式跟随封面 scheme，退出恢复原主题', (WidgetTester tester) async {
+    const Color paper = Color(0xFFF5EFE0);
+    const Color ink = Color(0xFF3B3229);
+    final ThemeData root = _rootTheme(apple: false);
+    DictionaryPopupTheme resolve(ColorScheme? cover) =>
+        resolveDictionaryPopupTheme(
+          eink: false,
+          einkDark: false,
+          readerBackground: paper,
+          readerForeground: ink,
+          readerDark: false,
+          buildColorScheme: (Brightness b) => root.colorScheme,
+          textTheme: root.textTheme,
+          lyricsCoverScheme: cover,
+        );
+    final DictionaryPopupTheme original = resolve(null);
+
+    final GlobalKey<LyricsThemeHostState> host =
+        GlobalKey<LyricsThemeHostState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: root,
+        themeAnimationDuration: Duration.zero,
+        home: LyricsThemeHost(key: host, child: const SizedBox.expand()),
+      ),
+    );
+    await tester.pump();
+
+    DictionaryPopupTheme popup = original;
+    void sync() => popup = resolve(host.currentState!.coverScheme);
+    host.currentState!.themeChanges.addListener(sync);
+    addTearDown(() => host.currentState?.themeChanges.removeListener(sync));
+
+    // 歌词覆盖层登记、封面取色尚未到达：弹窗保持原主题。
+    final Object owner = Object();
+    host.currentState!.attach(owner, null);
+    await tester.pump();
+    await tester.pump();
+    expect(host.currentState!.coverScheme, isNull);
+    expect(popup.theme.colorScheme, original.theme.colorScheme);
+
+    // 封面取色到达：宿主发布新主题，弹窗换成同一份封面 scheme。
+    host.currentState!.attach(owner, _coverScheme);
+    await tester.pump();
+    await tester.pump();
+    expect(host.currentState!.coverScheme, same(_coverScheme));
+    expect(popup.theme.colorScheme.primary, _coverScheme.primary);
+    expect(popup.theme.colorScheme.surface, _coverScheme.surface);
+    expect(popup.fillColor, _coverScheme.surface);
+    expect(
+      popup.theme.colorScheme.primary,
+      isNot(original.theme.colorScheme.primary),
+    );
+
+    // 退出歌词模式：覆盖层撤回，弹窗回到原覆盖值。
+    host.currentState!.detach(owner);
+    await tester.pump();
+    await tester.pump();
+    expect(host.currentState!.coverScheme, isNull);
+    expect(popup.theme.colorScheme, original.theme.colorScheme);
+    expect(popup.fillColor, paper);
+  });
 }

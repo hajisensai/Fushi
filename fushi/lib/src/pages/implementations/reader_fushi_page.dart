@@ -47,6 +47,7 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/media/audiobook/lyrics_cue_text.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -2061,6 +2062,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   bool _lyricsMode = false;
   bool _lyricsModeTransition = false;
+  // 页面外的歌词主题宿主（路由 builder 包的那层）。歌词模式下查词弹窗跟随它的
+  // 封面取色 scheme（[_syncDictionaryTheme]），宿主主题一变就重算弹窗主题。
+  LyricsThemeHostState? _lyricsThemeHost;
   // BUG-785: 「上次退出时在歌词模式」的待恢复意图。fresh open 仍先以正文加载
   // （_lyricsMode=false，避免直接整页加载歌词 HTML 跳过 EPUB → iOS 白屏），等 EPUB
   // 内容就绪 + 有声书已挂载后再切歌词（等价用户手动切，已知安全）。一次性，恢复后清零。
@@ -3331,6 +3335,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _clearGamepadAHold();
     VolumeKeyChannel.instance.setHandlers();
     VolumeKeyChannel.instance.setInterceptEnabled(false);
+    _lyricsThemeHost?.themeChanges.removeListener(_onLyricsThemeHostChanged);
+    _lyricsThemeHost = null;
     appModel.setOverrideDictionaryTheme(null);
     appModel.setOverrideDictionaryColor(null);
     // 退出那一刻的位置（BUG-203/032）交给退出汇合点，dispose 里不发起（同上：无人
@@ -3630,6 +3636,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final LyricsThemeHostState? themeHost = LyricsThemeHost.maybeOf(context);
+    if (!identical(themeHost, _lyricsThemeHost)) {
+      _lyricsThemeHost?.themeChanges.removeListener(_onLyricsThemeHostChanged);
+      _lyricsThemeHost = themeHost;
+      themeHost?.themeChanges.addListener(_onLyricsThemeHostChanged);
+    }
     final EdgeInsets vp = MediaQuery.of(context).viewPadding;
     // TODO-1375：inset（系统安全区 / notch / 全屏进出改变的 viewPadding）变化时，
     // 过去只更新这两个 Dart 字段，却从不把新 inset 回喂给 WebView 的分页几何——

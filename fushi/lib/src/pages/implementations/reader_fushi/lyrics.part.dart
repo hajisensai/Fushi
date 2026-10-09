@@ -171,6 +171,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         unawaited(_prepareLyricsIllustrations());
       } else {
         _rebuild(() => _lyricsMode = false);
+        // 查词弹窗立即回到阅读器主题（不等覆盖层卸载后宿主再发布）。
+        _syncDictionaryTheme();
         await _exitLyricsMode();
         await _resolveAndApplyProfile(appModelNoUpdate.database);
       }
