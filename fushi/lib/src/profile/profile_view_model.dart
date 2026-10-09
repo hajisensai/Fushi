@@ -142,10 +142,24 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     this._profileDraftCoordinator,
   ) : super(const ProfileUiState()) {
     _load();
+    // BUG-3148：别处（互联下载 / 对端上传入站）写进 profiles 表的新配置，列表要跟着
+    // 刷新，不必等重启。只重读列表本身——激活 id 与绑定的切换都经本类，不受影响。
+    _profilesChanged = _repo.watchProfilesChanged().listen((_) {
+      unawaited(_refreshProfileList());
+    });
+  }
+
+  StreamSubscription<void>? _profilesChanged;
+
+  Future<void> _refreshProfileList() async {
+    final List<ProfileRow> profiles = await _repo.getAllProfiles();
+    if (!mounted) return;
+    state = state.copyWith(profiles: profiles);
   }
 
   @override
   void dispose() {
+    _profilesChanged?.cancel();
     _repo.snapshotCurrentSettings(state.activeProfileId).catchError((Object e) {
       debugPrint('[profile] snapshot on dispose failed: $e');
     });
@@ -214,6 +228,19 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
         state = state.copyWith(activeProfileId: profileId);
         await _onProfileApplied();
       });
+
+  /// 互联「下载配置」：把收到的配置作为**新**配置落地（不覆盖任何既有配置），再走
+  /// 与配置选择器同一条 [switchProfile] 切过去（issue #1997，所有者 2026-10-09 拍板：
+  /// 下载完直接生效，不再让用户自己去「配置管理」里切）。
+  ///
+  /// 切换前的规矩与手动切换完全一致：当前配置的实时设置先快照回它自己那一份，在飞的
+  /// 设置草稿随配置代次一起作废，切换后 [_onProfileApplied] 刷新偏好缓存 / 词典 /
+  /// 阅读器设置。返回新配置的 id。
+  Future<int> importAndSwitchProfile(String json) async {
+    final int id = await importProfile(json);
+    await switchProfile(id);
+    return id;
+  }
 
   Future<void> createProfile(String name) =>
       _whileInvalidatingProfileDrafts(() async {

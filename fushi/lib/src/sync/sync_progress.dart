@@ -31,6 +31,9 @@ enum SyncPhase {
 
   /// Video files in the `__videos__` namespace (多端库联合视图 §2.6).
   videos,
+
+  /// Font files + font settings in the `__fonts__` namespace.
+  fonts,
 }
 
 /// One progress tick within a sync phase.

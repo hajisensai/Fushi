@@ -954,6 +954,26 @@ class InterconnectSyncBackend extends SyncBackend
     );
   }
 
+  /// BUG-3147：一次性动作（配置上传/下载）的会话入口——先按 [repo] 里**此刻**的配对
+  /// 配置重载会话，再发请求。
+  ///
+  /// 其余消费点（书架 / 视频页 / 首页 / 同步编排）都先 [restoreAuth] 再用本单例，只有
+  /// 配置传输两条路漏了：它们拿的是进程里上一次 [_loadConfig] 留下的候选与凭据。重新
+  /// 配对只改库、不碰这个单例，所以旧 token 一直被拿去打 host → 401 →「配对凭据被
+  /// 拒」；直到某次词典同步之类走编排的操作顺手 [restoreAuth] 了，才「莫名其妙好了」
+  /// ——这就是 issue #1997 里「词典同步是配置同步的前置条件」的假象。
+  ///
+  /// [restoreAuth] 自带配置签名判据（BUG-1183）：配置没变就保留已探明的会话，不会白
+  /// 白重探。一台对端都没配置时如实抛「未配对」，不再落到 401 的错误归因上。
+  Future<void> _reloadSessionFrom(SyncRepository repo) async {
+    if (!await restoreAuth(repo)) {
+      throw SyncAuthError(
+        'Fushi server credentials not configured',
+        kind: SyncAuthFailureKind.pairingNotConfigured,
+      );
+    }
+  }
+
   /// 拉取 host 当前激活 Profile 的分享 JSON（互联「下载配置」动作）。
   ///
   /// 与 [getRemoteServiceConfig] 同一条安全边界：整份配置只在 pinned HTTPS 会话上传
@@ -963,7 +983,12 @@ class InterconnectSyncBackend extends SyncBackend
   /// 返回 null 的三种情形归一为「对端不提供此能力」：明文会话 / 老 host 404 /
   /// host 未接线该能力 404。host **开关关着**是 403（不是 404）——那不是「不支持」，
   /// 而是对端明确拒绝，必须如实报给用户，故走 checkStatus 抛出。
-  Future<String?> getRemoteProfileJson() async {
+  ///
+  /// BUG-3147：[repo] 必填，进来先 [_reloadSessionFrom]——本类是单例，这个按钮又不经
+  /// 任何同步编排，不重载就会拿进程里那份旧会话（重新配对之前的 token / 地址）去打
+  /// host，host 回 401，用户看到「配对凭据被拒」，再怎么重新配对都没用。
+  Future<String?> getRemoteProfileJson({required SyncRepository repo}) async {
+    await _reloadSessionFrom(repo);
     await _ensureResolved();
     if (Uri.tryParse(_apiBase)?.scheme != 'https') return null;
     final HttpClientRequest req = await _ops!.buildRequest(
@@ -990,7 +1015,13 @@ class InterconnectSyncBackend extends SyncBackend
   /// 返回 host 上新建的 Profile 名；host 不提供该能力（老 host / 未接线）返回 null，
   /// 由调用方翻成「对端不支持」。host 开关关着 / 明文会话 / 未配对一律经 checkStatus
   /// 抛出，携带 host 给的拒绝原因。
-  Future<String?> putRemoteProfileJson(String json) async {
+  ///
+  /// [repo] 的用途同 [getRemoteProfileJson]（BUG-3147）。
+  Future<String?> putRemoteProfileJson(
+    String json, {
+    required SyncRepository repo,
+  }) async {
+    await _reloadSessionFrom(repo);
     await _ensureResolved();
     if (Uri.tryParse(_apiBase)?.scheme != 'https') return null;
     final HttpClientRequest req = await _ops!.buildRequest(

@@ -20,6 +20,7 @@ import 'package:fushi_engine/sync/manga_sync_package.dart'
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
+import 'package:fushi/src/sync/font_sync.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/override_title_lookup.dart';
@@ -169,6 +170,7 @@ bool isReservedSyncFolderName(String name) =>
     name == kSyncCollectionsNamespace ||
     name == kSyncVideosNamespace ||
     name == kSyncTombstonesNamespace ||
+    name == kSyncFontsNamespace ||
     // 待发制卡跨设备中转（见 PendingMineRelay）：不是书；当成书列出来，用户在对比
     // 弹窗里一「删远端书」就连认领带待落的卡一起删了。
     name == PendingMineRelay.namespace;
@@ -209,6 +211,11 @@ class SyncRunReport {
   int audiobooksExported = 0;
   int localAudioImported = 0;
   int localAudioExported = 0;
+
+  /// 字体同步：本轮下载落地 / 上传的字体文件数（按内容去重后的实传数）。字体落地后
+  /// 当场注册（见 [FontSyncLocal]），不经库页刷新，故不计入 [needsLocalLibraryRefresh]。
+  int fontsImported = 0;
+  int fontsExported = 0;
 
   /// 本轮推到云 `__videos__/` 命名空间的视频文件数（多端库联合视图 §2.6）。上传语义
   /// （export-only），不产生本地导入，故不计入 [needsLocalLibraryRefresh]——与
@@ -319,6 +326,8 @@ class SyncRunReport {
     audiobooksExported += other.audiobooksExported;
     localAudioImported += other.localAudioImported;
     localAudioExported += other.localAudioExported;
+    fontsImported += other.fontsImported;
+    fontsExported += other.fontsExported;
     videosExported += other.videosExported;
     localBookProgressPulled += other.localBookProgressPulled;
     rootSpillFilesRemoved += other.rootSpillFilesRemoved;
@@ -430,6 +439,9 @@ enum SyncAssetKind {
 
   /// 本地音频来源数据库（`.db` + 来源配置）。
   localAudio,
+
+  /// 用户导入的字体文件 + 字体相关配置（字体库目录、各用途的选用顺序与开关）。
+  fonts,
 }
 
 /// Orchestrates sync across any [SyncBackend].
@@ -468,6 +480,7 @@ class SyncOrchestrator {
     required this.syncDictionary,
     this.localAudioEntries = const <LocalAudioDbEntry>[],
     this.onLocalAudioImported,
+    this.fontSync,
     this.statsSyncMode = StatisticsSyncMode.merge,
     this.onProgress,
     this.pendingMineRelay,
@@ -524,6 +537,10 @@ class SyncOrchestrator {
   /// 驱动。
   final List<LocalAudioDbEntry> localAudioEntries;
   final Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported;
+
+  /// 字体同步读写本机字体库的接口（[SyncAssetKind.fonts]）。null = 本轮不同步字体
+  /// （全量 sweep 与测试构造都不带它：字体只走显式的上传 / 下载动作）。
+  final FontSyncLocal? fontSync;
 
   final StatisticsSyncMode statsSyncMode;
 
@@ -829,7 +846,10 @@ class SyncOrchestrator {
     required SyncAssetDirection direction,
   }) async {
     final SyncRunReport report = SyncRunReport();
-    if (_backend is! InterconnectSyncBackend) {
+    // 字体两条通道都走同步根下的 `__fonts__` 命名空间（互联 host 的 WebDAV 存储同样
+    // 提供它），所以不论通道都要先解析根；词典 / 本地音频的互联路径直打 live 端点、
+    // 不需要根。
+    if (_backend is! InterconnectSyncBackend || kind == SyncAssetKind.fonts) {
       await _backend.findOrCreateRootFolder();
     }
     switch (kind) {
@@ -837,8 +857,58 @@ class SyncOrchestrator {
         await syncDictionaries(report, direction: direction);
       case SyncAssetKind.localAudio:
         await syncLocalAudioSources(report, direction: direction);
+      case SyncAssetKind.fonts:
+        await syncFonts(report, direction: direction);
     }
     return report;
+  }
+
+  /// 字体文件 + 字体配置的显式上传 / 下载（见 [FontSyncService]）。
+  ///
+  /// 单项失败（某个字体传不动、某个字体超限没传）进 [SyncRunReport.errors]，不拦其余；
+  /// 清单读不出来这种整体失败也记一条，不抛——与其它资产维度同纪律。
+  Future<void> syncFonts(
+    SyncRunReport report, {
+    required SyncAssetDirection direction,
+  }) async {
+    final FontSyncLocal? local = fontSync;
+    if (local == null) {
+      report.noteError('fonts', StateError('font sync not wired'));
+      return;
+    }
+    final FontSyncService service = FontSyncService(
+      store: _backend,
+      local: local,
+      tempDir: _tempDir,
+    );
+    try {
+      if (direction.pushes) {
+        _emit(SyncPhase.fonts, itemIndex: 0, itemTotal: 1);
+        final FontSyncReport r = await service.upload();
+        report.fontsExported += r.filesUploaded;
+        _noteFontIssues(report, r);
+      }
+      if (direction.pulls) {
+        _emit(SyncPhase.fonts, itemIndex: 0, itemTotal: 1);
+        final FontSyncReport r = await service.download();
+        report.fontsImported += r.filesDownloaded;
+        _noteFontIssues(report, r);
+      }
+    } catch (e) {
+      report.noteError('fonts', e);
+    }
+  }
+
+  void _noteFontIssues(SyncRunReport report, FontSyncReport r) {
+    for (final String name in r.skippedOversize) {
+      report.noteError(
+        'font "$name"',
+        'larger than ${kFontSyncMaxFileBytes ~/ (1024 * 1024)} MB, skipped',
+      );
+    }
+    for (final String line in r.errors) {
+      report.noteError('font', line);
+    }
   }
 
   Future<void> syncCollections(SyncRunReport report) async {

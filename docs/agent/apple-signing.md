@@ -226,6 +226,12 @@ xcodebuild -project Runner.xcodeproj -target Runner -configuration Release \
 
 ### 没有 Developer ID 时：ad-hoc 包必须钉指定要求（BUG-2772）
 
+现状（2026-10-09 核对 `gh secret list`）：仓库**还没有** `MACOS_DEVELOPER_ID_P12_BASE64` /
+`MACOS_DEVELOPER_ID_P12_PASSWORD`，所以 macOS 包**所有通道**（debug / beta / formal）都走 ad-hoc
+路径——签名判据不看通道，补齐这两个 secret（证书只能账号持有人在网页端建）后各通道自动改走
+Developer ID + 公证，workflow 不用再改。在那之前，手动下载用的 `-macos-arm64.dmg` 里随包放
+`打开说明 How to open.txt`（Gatekeeper「仍要打开」/ `xattr -dr com.apple.quarantine`）。
+
 ad-hoc 签名默认的指定要求是 `cdhash H"…"`，每次构建都变。TCC（辅助功能等隐私授权）
 存的就是授权那一刻的指定要求，所以不钉的话**每次应用内更新都要重新授权**（全局查词
 读前台选区靠辅助功能）。workflow 的「Pin stable designated requirement for ad-hoc

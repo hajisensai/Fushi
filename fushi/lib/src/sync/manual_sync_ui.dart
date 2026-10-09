@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
+import 'package:fushi/src/models/app_font_sync_local.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart'
     show formatStorageBytes;
@@ -34,6 +35,8 @@ String summarizeSyncReport(SyncRunReport r) {
       t.sync_now_local_audio_in(count: r.localAudioImported),
     if (r.localAudioExported > 0)
       t.sync_now_local_audio_out(count: r.localAudioExported),
+    if (r.fontsImported > 0) t.sync_now_fonts_in(count: r.fontsImported),
+    if (r.fontsExported > 0) t.sync_now_fonts_out(count: r.fontsExported),
   ];
   final String head = parts.isEmpty ? t.sync_now_no_changes : parts.join(' · ');
   final String done = t.sync_now_done(detail: head);
@@ -118,6 +121,8 @@ String syncPhaseLabel(SyncPhase phase) {
       return t.sync_progress_audiobooks;
     case SyncPhase.videos:
       return t.sync_progress_videos;
+    case SyncPhase.fonts:
+      return t.sync_progress_fonts;
   }
 }
 
@@ -248,6 +253,7 @@ Future<ManualSyncOutcome> runAssetTransferWithFeedback({
         tempDir: appModel.temporaryDirectory,
         localAudioEntries: appModel.localAudioDbs,
         onLocalAudioImported: appModel.importSyncedLocalAudioDb,
+        fontSync: AppFontSyncLocal(appModel),
         onPostRun: appModel.refreshAfterSyncRun,
       ),
     );

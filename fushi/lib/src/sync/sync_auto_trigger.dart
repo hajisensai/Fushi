@@ -9,6 +9,7 @@ import 'package:fushi/src/anki/pending_mining/pending_mine_store.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/sync/book_exit_sync_scope.dart';
+import 'package:fushi/src/sync/font_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
@@ -921,6 +922,7 @@ Future<ManualSyncResult> runManualAssetTransfer({
   required List<LocalAudioDbEntry> localAudioEntries,
   required Future<void> Function(LocalAudioPackageContents)
       onLocalAudioImported,
+  FontSyncLocal? fontSync,
   SyncAssetChannelScope scope = SyncAssetChannelScope.cloud,
   SyncPostRunCallback? onPostRun,
   SyncProgressCallback? onProgress,
@@ -963,6 +965,7 @@ Future<ManualSyncResult> runManualAssetTransfer({
             tempDir: tempDir,
             localAudioEntries: localAudioEntries,
             onLocalAudioImported: onLocalAudioImported,
+            fontSync: fontSync,
             onProgress: (SyncProgress p) {
               syncProgress.value = p;
               onProgress?.call(p);
@@ -1034,6 +1037,7 @@ Future<SyncRunReport?> _runAssetTransferChannel({
   required List<LocalAudioDbEntry> localAudioEntries,
   required Future<void> Function(LocalAudioPackageContents)
       onLocalAudioImported,
+  required FontSyncLocal? fontSync,
   required void Function(SyncProgress) onProgress,
 }) async {
   try {
@@ -1058,6 +1062,7 @@ Future<SyncRunReport?> _runAssetTransferChannel({
       syncDictionary: false,
       localAudioEntries: localAudioEntries,
       onLocalAudioImported: onLocalAudioImported,
+      fontSync: fontSync,
       onProgress: onProgress,
     );
     return await orchestrator.runAssetTransferOnly(
