@@ -1,6 +1,10 @@
 // 反馈「粘贴截图」的 Windows 剪贴板解码：不碰真剪贴板（每次构建都跑，不能清掉构建
 // 机的剪贴板），只测两段纯转换——截图工具的 32bpp DIB（alpha 全 0）→ 不透明 PNG、
 // BI_BITFIELDS 掩码偏移；资源管理器复制的 CF_HDROP → UTF-8 路径（含中文）。
+//
+// release 也要真断言（assert_liveness_guard_test 按文件强制）：本文件用自己的
+// Check 计数，与其余 runner 测试同一写法，免得日后加 assert 时被 NDEBUG 编空。
+#undef NDEBUG
 
 #include <windows.h>
 #include <shlobj.h>

@@ -1,6 +1,12 @@
 // Render the real native menu into a memory DIB, without creating a window or
 // sending input. A layered window passes alpha-zero pixels through before its
 // ButtonAt handler can run, so geometry alone cannot prove a 48dp hit target.
+//
+// release 也要真断言：NDEBUG 会把 assert 编成空语句、测试空跑照样「通过」。本文件
+// 目前用自己的失败计数，不依赖 assert，但与其余 runner 测试同一写法，免得日后
+// 新增断言时重走这个坑（assert_liveness_guard_test 按文件强制）。
+#undef NDEBUG
+
 #include <windows.h>
 #include <commctrl.h>
 #include <d2d1.h>

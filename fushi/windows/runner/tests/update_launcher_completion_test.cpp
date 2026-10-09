@@ -1,5 +1,9 @@
 // The included functions are extracted verbatim from update_launcher.cpp at
 // configure time. Every OS, process, clock and disk boundary is inert here.
+//
+// release 也要真断言（assert_liveness_guard_test 按文件强制），与其余 runner 测试同一写法。
+#undef NDEBUG
+
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>

@@ -1,6 +1,10 @@
 // Real native state transitions and offscreen rendering, with no real HWND,
 // timer, input, or monitor dependency. The Flutter host payload has separate
 // widget coverage; this test starts at FloatingBallWindow::Config.
+//
+// release 也要真断言（assert_liveness_guard_test 按文件强制），与其余 runner 测试同一写法。
+#undef NDEBUG
+
 #include <windows.h>
 #include <commctrl.h>
 #include <d2d1.h>
