@@ -1713,7 +1713,7 @@ class _ResizeHandleState extends State<_ResizeHandle> {
         : ColoredBox(
             color: active
                 ? scheme.primary.withValues(alpha: 0.5)
-                : scheme.surfaceContainerHighest,
+                : scheme.outlineVariant,
           );
     child = GestureDetector(
       behavior: HitTestBehavior.opaque,
