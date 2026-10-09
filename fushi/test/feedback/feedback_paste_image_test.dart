@@ -7,6 +7,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -113,6 +114,32 @@ void main() {
   final Finder pasteButton = find.byKey(
     const ValueKey<String>('feedback-paste-image'),
   );
+
+  testWidgets('粘贴提示按平台：桌面提快捷键（macOS ⌘V），手机提长按菜单', (WidgetTester tester) async {
+    tallView(tester);
+    final Finder hint = find.byKey(
+      const ValueKey<String>('feedback-paste-hint'),
+    );
+    String hintText() => tester.widget<Text>(hint).data!;
+    for (final (TargetPlatform platform, String expected)
+        in <(TargetPlatform, String)>[
+          (TargetPlatform.android, t.feedback_compose_paste_hint_mobile),
+          (TargetPlatform.iOS, t.feedback_compose_paste_hint_mobile),
+          (
+            TargetPlatform.windows,
+            t.feedback_compose_paste_hint_desktop(key: 'Ctrl+V'),
+          ),
+          (
+            TargetPlatform.macOS,
+            t.feedback_compose_paste_hint_desktop(key: '⌘V'),
+          ),
+        ]) {
+      debugDefaultTargetPlatformOverride = platform;
+      await tester.pumpWidget(wrap(FeedbackComposePage(key: UniqueKey())));
+      expect(hintText(), expected, reason: '$platform');
+    }
+    debugDefaultTargetPlatformOverride = null;
+  });
 
   testWidgets('「粘贴图片」按钮：剪贴板里的截图位图加进附件', (WidgetTester tester) async {
     tallView(tester);

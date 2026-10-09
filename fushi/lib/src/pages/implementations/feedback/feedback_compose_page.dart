@@ -7,6 +7,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
@@ -185,16 +186,16 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     unawaited(_addRawImage(data));
   }
 
-  /// 桌面提示 Ctrl+V / ⌘V 粘贴截图；移动端提示长按菜单。
-  String get _pasteHint {
-    if (Platform.isMacOS) {
-      return t.feedback_compose_paste_hint_desktop(key: '⌘V');
-    }
-    if (Platform.isWindows || Platform.isLinux) {
-      return t.feedback_compose_paste_hint_desktop(key: 'Ctrl+V');
-    }
-    return t.feedback_compose_paste_hint_mobile;
-  }
+  /// 桌面提示 Ctrl+V / ⌘V 粘贴截图；手机 / 平板提示长按正文框的菜单（那里没有
+  /// 实体键盘快捷键，提 Ctrl+V 没有意义）。按目标平台判，测试里可覆盖。
+  String get _pasteHint => switch (defaultTargetPlatform) {
+    TargetPlatform.macOS => t.feedback_compose_paste_hint_desktop(key: '⌘V'),
+    TargetPlatform.windows || TargetPlatform.linux =>
+      t.feedback_compose_paste_hint_desktop(key: 'Ctrl+V'),
+    TargetPlatform.android ||
+    TargetPlatform.iOS ||
+    TargetPlatform.fuchsia => t.feedback_compose_paste_hint_mobile,
+  };
 
   Future<void> _submit() async {
     final String title = _title.text.trim();
