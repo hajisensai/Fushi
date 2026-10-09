@@ -7,7 +7,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -100,11 +99,10 @@ void main() {
       await launchFushiTestApp();
       expect(await waitForHome(tester), isTrue);
       FlutterError.onError = errorHandler;
-      await enableFocusNavigation(tester);
-      final ProviderContainer container = ProviderScope.containerOf(
-        tester.element(find.byType(MaterialApp).first),
-      );
-      final FushiDatabase db = container.read(appProvider).database;
+      // Use the model the helper already resolved: after the focus-navigation
+      // toggle rebuilds the root, a second MaterialApp lookup finds nothing.
+      final AppModel appModel = await enableFocusNavigation(tester);
+      final FushiDatabase db = appModel.database;
       final VideoBookRepository repo = VideoBookRepository(db);
       final String uid =
           'video/itest-disc-menu-${DateTime.now().microsecondsSinceEpoch}';
