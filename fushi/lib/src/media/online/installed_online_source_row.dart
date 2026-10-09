@@ -13,7 +13,7 @@ import 'package:fushi/utils.dart';
 // （`MokuroMoeSourceRow`）同一种行形态：
 //
 // - 分段列表行（[FushiGroupedListItem]）：行首 M3E 开关、名称、副标题 = 语言
-//   tag + 包名 / 站点；
+//   tag + 扩展名 / 站点；窄行（手机）标题独占一行、动作挪到第二层，名字不被截断；
 // - 行尾只留一个主要动作（来源偏好）+ 「⋯」菜单（登录 / 置顶 / 上移下移 / 清数据），
 //   宽窄同形——此前宽行把六个图标按钮铺成一排，标题被挤到只剩几个字；
 // - 置顶组与其余组各自一组（[InstalledSourcesGroup]），组内可拖拽重排；搜索 /
@@ -249,132 +249,171 @@ class InstalledOnlineSourceRow extends StatelessWidget {
   /// 鼠标按下即拖、触摸长按再拖。
   final bool dragEnabled;
 
+  /// 行宽低于此值（手机竖屏 360–430dp 的卡片宽都在内）改用两层排布。
+  ///
+  /// 单层时行首开关 + 行尾三个 48dp 动作只给文字列留 ~80dp：「AnimeWorld India」
+  /// 被拆成「AnimeWo / rld India」，扩展名「Anime Blkom」被截成「Anim / e Bl…」，
+  /// 用户靠这两个名字认源，截断等于没写。两层时标题独占整行宽度（最多两行），
+  /// 第二层是语言 tag + 扩展名 / 站点（按需换行）+ 行尾动作；动作命中区不变。
+  static const double narrowLayoutBreakpoint = 440;
+
   @override
   Widget build(BuildContext context) {
     final FushiMotionScheme motion = context.fushiMotion;
     final ColorScheme cs = Theme.of(context).colorScheme;
     final String? lang = language?.trim();
     final String? detailText = detail?.trim();
+    final bool hasLang = lang != null && lang.isNotEmpty;
+    final bool hasDetail = detailText != null && detailText.isNotEmpty;
     final double contentOpacity = enabled ? 1 : 0.6;
+
+    Widget fade(Widget child) => AnimatedOpacity(
+      opacity: contentOpacity,
+      duration: motion.effectsDefault.duration,
+      curve: motion.effectsDefault.curve,
+      child: child,
+    );
+
+    // 启停：标题与副标题的淡出走 effects 弹簧（透明度不过冲）。
+    final Widget titleWidget = fade(
+      Row(
+        children: <Widget>[
+          // 置顶：钉子图标随 spatial 弹簧展开 / 收起。
+          AnimatedSize(
+            duration: motion.spatialFast.duration,
+            curve: motion.spatialFast.curve,
+            alignment: AlignmentDirectional.centerStart,
+            child: pinned
+                ? Padding(
+                    padding: const EdgeInsetsDirectional.only(end: 6),
+                    child: FushiIcon(
+                      FushiIcons.filled(FushiIcons.pin),
+                      size: 16,
+                      color: cs.primary,
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+          Flexible(
+            child: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
+    );
+
+    // 语言 tag + 扩展名 / 站点：Wrap 而不是 Row——放不下时扩展名整段折到 tag
+    // 下一行拿满宽度，而不是挤在 tag 右边被拆字截断。
+    final Widget? metaWidget = !hasLang && !hasDetail
+        ? null
+        : fade(
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: <Widget>[
+                if (hasLang)
+                  FushiTag(
+                    text: onlineSourceLanguageLabel(lang),
+                    tone: FushiTagTone.neutral,
+                    dense: true,
+                  ),
+                if (hasDetail)
+                  Text(
+                    detailText,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
+            ),
+          );
+
+    final Widget actions = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (primaryAction != null) primaryAction!,
+        if (menuActions.isNotEmpty)
+          FushiPopupMenuButton<OnlineSourceMenuAction>(
+            key: menuKey,
+            tooltip: t.common_more_actions,
+            icon: const FushiIcon(FushiIcons.more),
+            onSelected: (OnlineSourceMenuAction action) => action.onTap?.call(),
+            itemBuilder: (BuildContext context) =>
+                <PopupMenuEntry<OnlineSourceMenuAction>>[
+                  for (final OnlineSourceMenuAction action in menuActions)
+                    PopupMenuItem<OnlineSourceMenuAction>(
+                      key: action.key,
+                      value: action,
+                      enabled: action.onTap != null,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          FushiIcon(
+                            action.icon,
+                            size: 20,
+                            color: action.destructive ? cs.error : null,
+                          ),
+                          const SizedBox(width: 12),
+                          Flexible(
+                            child: Text(
+                              action.label,
+                              style: action.destructive
+                                  ? TextStyle(color: cs.error)
+                                  : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+          ),
+        // 把手自带 32dp 圆形命中框，不再额外垫 4dp。
+        if (dragEnabled) const FushiDragHandle(),
+      ],
+    );
+
     return FushiGroupedListItem(
       index: index,
       count: count,
       includeGap: false,
       onTap: enabled ? onOpen : null,
-      child: FushiListItem(
-        key: rowKey,
-        leading: FushiSwitch.adaptive(
-          value: enabled,
-          onChanged: onEnabledChanged,
-        ),
-        // 启停：标题与副标题的淡出走 effects 弹簧（透明度不过冲）。
-        title: AnimatedOpacity(
-          opacity: contentOpacity,
-          duration: motion.effectsDefault.duration,
-          curve: motion.effectsDefault.curve,
-          child: Row(
-            children: <Widget>[
-              // 置顶：钉子图标随 spatial 弹簧展开 / 收起。
-              AnimatedSize(
-                duration: motion.spatialFast.duration,
-                curve: motion.spatialFast.curve,
-                alignment: AlignmentDirectional.centerStart,
-                child: pinned
-                    ? Padding(
-                        padding: const EdgeInsetsDirectional.only(end: 6),
-                        child: FushiIcon(
-                          FushiIcons.filled(FushiIcons.pin),
-                          size: 16,
-                          color: cs.primary,
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-              Flexible(
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final bool narrow = constraints.maxWidth < narrowLayoutBreakpoint;
+          final Widget switchWidget = FushiSwitch.adaptive(
+            value: enabled,
+            onChanged: onEnabledChanged,
+          );
+          if (!narrow) {
+            return FushiListItem(
+              key: rowKey,
+              titleMaxLines: 2,
+              subtitleMaxLines: 2,
+              leading: switchWidget,
+              title: titleWidget,
+              subtitle: metaWidget,
+              trailing: actions,
+            );
+          }
+          // 两层：标题独占文字列整宽；第二层 = 语言 / 扩展名 + 行尾动作。
+          return FushiListItem(
+            key: rowKey,
+            titleMaxLines: 2,
+            subtitleMaxLines: 2,
+            leading: switchWidget,
+            title: titleWidget,
+            subtitle: Row(
+              children: <Widget>[
+                Expanded(child: metaWidget ?? const SizedBox.shrink()),
+                // 动作图标的字号 / 颜色与单层行尾一致（FushiListItem 只给
+                // trailing 套 metadata 样式，这里在 subtitle 里自己套 IconTheme）。
+                IconTheme.merge(
+                  data: IconThemeData(color: cs.onSurfaceVariant),
+                  child: actions,
                 ),
-              ),
-            ],
-          ),
-        ),
-        subtitle:
-            (lang == null || lang.isEmpty) &&
-                (detailText == null || detailText.isEmpty)
-            ? null
-            : AnimatedOpacity(
-                opacity: contentOpacity,
-                duration: motion.effectsDefault.duration,
-                curve: motion.effectsDefault.curve,
-                child: Row(
-                  children: <Widget>[
-                    if (lang != null && lang.isNotEmpty) ...<Widget>[
-                      FushiTag(
-                        text: onlineSourceLanguageLabel(lang),
-                        tone: FushiTagTone.neutral,
-                        dense: true,
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    if (detailText != null && detailText.isNotEmpty)
-                      Flexible(
-                        child: Text(
-                          detailText,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            if (primaryAction != null) primaryAction!,
-            if (menuActions.isNotEmpty)
-              FushiPopupMenuButton<OnlineSourceMenuAction>(
-                key: menuKey,
-                tooltip: t.common_more_actions,
-                icon: const FushiIcon(FushiIcons.more),
-                onSelected: (OnlineSourceMenuAction action) =>
-                    action.onTap?.call(),
-                itemBuilder: (BuildContext context) =>
-                    <PopupMenuEntry<OnlineSourceMenuAction>>[
-                      for (final OnlineSourceMenuAction action in menuActions)
-                        PopupMenuItem<OnlineSourceMenuAction>(
-                          key: action.key,
-                          value: action,
-                          enabled: action.onTap != null,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              FushiIcon(
-                                action.icon,
-                                size: 20,
-                                color: action.destructive ? cs.error : null,
-                              ),
-                              const SizedBox(width: 12),
-                              Flexible(
-                                child: Text(
-                                  action.label,
-                                  style: action.destructive
-                                      ? TextStyle(color: cs.error)
-                                      : null,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                    ],
-              ),
-            if (dragEnabled) ...<Widget>[
-              const SizedBox(width: 4),
-              const FushiDragHandle(),
-            ],
-          ],
-        ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

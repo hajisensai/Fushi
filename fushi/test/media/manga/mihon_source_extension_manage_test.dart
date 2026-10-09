@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
@@ -148,6 +149,59 @@ void main() {
         await tester.pump();
         expect(find.text('أنمي بالكوم'), findsOneWidget);
         expect(find.text('Anikoto'), findsNothing);
+        expect(tester.takeException(), null);
+      });
+
+      testWidgets('360dp 窄屏：扩展名副标题不再被截断成前缀（标题 / 副标题可折两行）', (
+        WidgetTester tester,
+      ) async {
+        await tester.binding.setSurfaceSize(const Size(360, 800));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(
+          ProviderScope(
+            child: MaterialApp(
+              theme: ThemeData.light(useMaterial3: true),
+              home: Scaffold(
+                body: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: CustomScrollView(
+                    slivers: <Widget>[
+                      MihonInstalledSourcesSection(manager: manager),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        final Finder arabicRow = find.byKey(
+          const ValueKey<String>('mihon_source_row_${multiPackage}_1'),
+        );
+        // 测试字体 Ahem 每个拉丁字形宽 = 字号，比真实字体宽得多；单行时
+        // 「Anime Blkom」在这一列必然被省略号截断，可折两行后完整显示。
+        final RenderParagraph extensionLabel = tester
+            .renderObject<RenderParagraph>(
+              find.descendant(
+                of: arabicRow,
+                matching: find.text('Anime Blkom'),
+              ),
+            );
+        expect(
+          extensionLabel.didExceedMaxLines,
+          isFalse,
+          reason: '用户靠扩展名认出源，截断成「Anime B…」等于没写',
+        );
+        // 另一行同名标题（en 源 Anime Blkom）也完整显示。
+        final RenderParagraph title = tester.renderObject<RenderParagraph>(
+          find.descendant(
+            of: find.byKey(
+              const ValueKey<String>('mihon_source_row_${multiPackage}_2'),
+            ),
+            matching: find.text('Anime Blkom'),
+          ),
+        );
+        expect(title.didExceedMaxLines, isFalse);
         expect(tester.takeException(), null);
       });
 
