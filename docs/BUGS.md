@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2853 条。点号进各自文件。
+> 共 2854 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3200](bugs/BUG-3200-feedback-reporter-attachments-hidden.md) | ✅ | ✅ | 反馈人在自己的反馈详情里看不到提交的截图和日志 |
 | [BUG-3097](bugs/BUG-3097-feedback-shot-mid-transition.md) | ✅ | ✅ | 反馈自动截图截到页面转场中途的半透明叠画 |
 | [BUG-3093](bugs/BUG-3093-feedback-snackbar-transition-race.md) | ✅ | ✅ | 反馈提交测试在提交页退场动画中断言提示条数，CI 慢时数到两条 |
 | [BUG-3092](bugs/BUG-3092-espeak-kana-only-symbols.md) | ✅ | ✅ | isKanaOnlyText 拒收〜…等读音常见符号、却放行 espeak-ng 读不了的・与小片假名扩展 |

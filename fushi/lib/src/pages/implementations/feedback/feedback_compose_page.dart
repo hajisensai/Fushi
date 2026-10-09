@@ -10,6 +10,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/feedback/feedback_draft_store.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
@@ -51,14 +52,161 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
 
   int get _room => FeedbackLimits.screenshots - _shots.length;
 
+  // ---- 草稿（FeedbackDraftStore，本机一份）----
+
+  /// 草稿读完之前不写：否则「还是空表单」会把磁盘上的草稿清掉。
+  bool _draftLoaded = false;
+
+  /// 提交成功后不再存（草稿已清）。
+  bool _submitted = false;
+
+  /// 本次打开恢复了草稿：显示「已恢复 · 丢弃草稿」。
+  int? _restoredAt;
+  Timer? _draftTimer;
+  late final AppLifecycleListener _lifecycle;
+
+  /// initState 里取一次：dispose 时还要用它落盘，那时已不能再碰 ref。
+  late final FeedbackService _service;
+
+  static const Duration _kDraftDebounce = Duration(milliseconds: 800);
+
   @override
   void initState() {
     super.initState();
+    _service = ref.read(feedbackServiceProvider);
     HardwareKeyboard.instance.addHandler(_onKey);
+    for (final TextEditingController c in <TextEditingController>[
+      _title,
+      _body,
+      _contact,
+    ]) {
+      c.addListener(_scheduleDraftSave);
+    }
+    // 进后台（切走 / 锁屏 / 可能随后被杀）时立刻落盘，不等防抖。
+    _lifecycle = AppLifecycleListener(
+      onStateChange: (AppLifecycleState state) {
+        if (state != AppLifecycleState.resumed) _flushDraft();
+      },
+    );
+    unawaited(_loadDraft());
+  }
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _scheduleDraftSave();
+  }
+
+  /// 用户写过东西没有（与刚打开时的空表单 + 自动截图比）。
+  bool get _hasDraftContent =>
+      _title.text.trim().isNotEmpty ||
+      _body.text.trim().isNotEmpty ||
+      _contact.text.trim().isNotEmpty ||
+      _category != FeedbackCategory.bug ||
+      !_includeLogs ||
+      !_includeDevice ||
+      !_linkAccount ||
+      _shots.length != (widget.initialScreenshot == null ? 0 : 1) ||
+      (_shots.isNotEmpty && !identical(_shots.first, widget.initialScreenshot));
+
+  Future<void> _loadDraft() async {
+    try {
+      final FeedbackComposeDraft? draft = await (await _service.draftStore())
+          .read();
+      if (!mounted) return;
+      // 草稿读回来之前用户已经动手写了：以眼前的为准，下一次保存覆盖旧草稿。
+      if (draft != null && !_hasDraftContent) {
+        super.setState(() {
+          _category = draft.category;
+          _includeLogs = draft.includeLogs;
+          _includeDevice = draft.includeDevice;
+          _linkAccount = draft.linkAccount;
+          _shots
+            ..clear()
+            ..addAll(draft.screenshots);
+          _restoredAt = draft.savedAt;
+        });
+        _title.text = draft.title;
+        _body.text = draft.body;
+        _contact.text = draft.contact;
+      }
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('feedback.draft_load', e, st);
+    } finally {
+      _draftLoaded = true;
+      _draftTimer?.cancel();
+    }
+  }
+
+  void _scheduleDraftSave() {
+    if (!_draftLoaded || _submitted) return;
+    _draftTimer?.cancel();
+    _draftTimer = Timer(_kDraftDebounce, _flushDraft);
+  }
+
+  /// 立刻按当前表单写草稿（表单空了就删掉草稿）。不等结果：离开页面时也要能调。
+  void _flushDraft() {
+    _draftTimer?.cancel();
+    _draftTimer = null;
+    if (!_draftLoaded || _submitted) return;
+    final bool keep = _hasDraftContent;
+    final FeedbackComposeDraft draft = FeedbackComposeDraft(
+      category: _category,
+      title: _title.text,
+      body: _body.text,
+      contact: _contact.text,
+      includeLogs: _includeLogs,
+      includeDevice: _includeDevice,
+      linkAccount: _linkAccount,
+      screenshots: List<Uint8List>.of(_shots),
+      savedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    unawaited(
+      _service
+          .draftStore()
+          .then(
+            (FeedbackDraftStore store) =>
+                keep ? store.write(draft) : store.clear(),
+          )
+          .catchError((Object e, StackTrace st) {
+            ErrorLogService.instance.log('feedback.draft_save', e, st);
+          }),
+    );
+  }
+
+  /// 「丢弃草稿」：删掉磁盘上的草稿，表单回到刚打开时的样子（带本次的自动截图）。
+  void _discardDraft() {
+    _draftTimer?.cancel();
+    _title.text = '';
+    _body.text = '';
+    _contact.text = '';
+    super.setState(() {
+      _category = FeedbackCategory.bug;
+      _includeLogs = true;
+      _includeDevice = true;
+      _linkAccount = true;
+      _shots
+        ..clear()
+        ..addAll(<Uint8List>[?widget.initialScreenshot]);
+      _restoredAt = null;
+      _error = null;
+    });
+    _draftTimer?.cancel();
+    unawaited(
+      _service
+          .draftStore()
+          .then((FeedbackDraftStore store) => store.clear())
+          .catchError((Object e, StackTrace st) {
+            ErrorLogService.instance.log('feedback.draft_clear', e, st);
+          }),
+    );
   }
 
   @override
   void dispose() {
+    // 返回 / 切走页面：把还在防抖里的改动落盘。
+    _flushDraft();
+    _lifecycle.dispose();
     HardwareKeyboard.instance.removeHandler(_onKey);
     _title.dispose();
     _body.dispose();
@@ -226,6 +374,13 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
               if (mounted) setState(() => _stage = s);
             },
           );
+      _submitted = true;
+      _draftTimer?.cancel();
+      try {
+        await (await _service.draftStore()).clear();
+      } on Object catch (e, st) {
+        ErrorLogService.instance.log('feedback.draft_clear', e, st);
+      }
       if (mounted) Navigator.of(context).pop(result);
     } on Object catch (e, st) {
       ErrorLogService.instance.log('feedback.submit', e, st);
@@ -265,6 +420,22 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
             ),
           ),
           children: <Widget>[
+            if (_restoredAt != null) ...<Widget>[
+              FushiInlineNotice(
+                key: const ValueKey<String>('feedback-draft-restored'),
+                message: t.feedback_draft_restored(
+                  time: feedbackTime(_restoredAt!),
+                ),
+                actions: <Widget>[
+                  FushiTextButton(
+                    key: const ValueKey<String>('feedback-draft-discard'),
+                    onPressed: _busy ? null : _discardDraft,
+                    child: Text(t.feedback_draft_discard),
+                  ),
+                ],
+              ),
+              SizedBox(height: tokens.spacing.card),
+            ],
             Wrap(
               spacing: tokens.spacing.gap,
               runSpacing: tokens.spacing.gap,

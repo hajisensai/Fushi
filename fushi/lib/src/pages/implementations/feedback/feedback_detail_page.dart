@@ -1,8 +1,10 @@
 // 反馈人看自己的一条反馈：正文、状态、开发者回复与状态变更时间线、追加说明。
-// 服务端查不到（ticket 失效 / 被清理）时给「从本机移除」。
+// 服务端查不到（ticket 失效 / 被清理）时给「从本机移除」。附件：截图凭本机 ticket 取回
+// 显示缩略图、点开看大图；日志只列条目（服务端不把日志回传给 ticket 持有者）。
 
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
@@ -90,6 +92,112 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
     }
   }
 
+  /// 截图字节按槽位缓存：刷新详情不重复下载（服务端对单条反馈的下载有限次）。
+  final Map<String, Future<Uint8List>> _images = <String, Future<Uint8List>>{};
+
+  Future<Uint8List> _image(String slot) => _images[slot] ??= ref
+      .read(feedbackServiceProvider)
+      .screenshot(widget.feedbackId, slot);
+
+  void _viewImage(String slot) => unawaited(
+    showAppDialog<void>(
+      context: context,
+      builder: (BuildContext ctx) => FushiDialog(
+        child: InteractiveViewer(
+          child: FutureBuilder<Uint8List>(
+            future: _image(slot),
+            builder: (BuildContext _, AsyncSnapshot<Uint8List> snap) =>
+                snap.hasData
+                ? Image.memory(snap.data!, cacheWidth: 2400)
+                : snap.hasError
+                ? const Center(child: FushiIcon(FushiIcons.brokenImage))
+                : const FushiLoadingView(),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  Widget _attachments(FeedbackDetail d, FushiDesignTokens tokens) {
+    final List<FeedbackAttachmentInfo> shots = <FeedbackAttachmentInfo>[
+      for (final FeedbackAttachmentInfo a in d.attachments)
+        if (!a.isLog) a,
+    ];
+    final FeedbackAttachmentInfo? log = d.attachments
+        .where((FeedbackAttachmentInfo a) => a.isLog)
+        .firstOrNull;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        if (shots.isNotEmpty) ...<Widget>[
+          FushiSectionTitle(t.feedback_dev_screenshots),
+          Wrap(
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap,
+            children: <Widget>[
+              for (final FeedbackAttachmentInfo a in shots)
+                FushiPressScale(
+                  child: GestureDetector(
+                    key: ValueKey<String>('feedback-detail-shot-${a.slot}'),
+                    onTap: () => _viewImage(a.slot),
+                    child: ClipRRect(
+                      borderRadius: FushiM3eShape.smallRadius,
+                      child: SizedBox(
+                        width: 96,
+                        height: 128,
+                        child: FutureBuilder<Uint8List>(
+                          future: _image(a.slot),
+                          builder:
+                              (BuildContext _, AsyncSnapshot<Uint8List> snap) =>
+                                  snap.hasData
+                                  ? Image.memory(
+                                      snap.data!,
+                                      fit: BoxFit.cover,
+                                      cacheWidth: 360,
+                                    )
+                                  : snap.hasError
+                                  ? const Center(
+                                      child: FushiIcon(FushiIcons.brokenImage),
+                                    )
+                                  : const FushiLoadingView(compact: true),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+        if (log != null) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap),
+          Row(
+            key: const ValueKey<String>('feedback-detail-log'),
+            children: <Widget>[
+              const FushiIcon(FushiIcons.file),
+              SizedBox(width: tokens.spacing.gap),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      t.feedback_detail_log(
+                        size: FushiByteFormat.bytes(log.bytes),
+                      ),
+                    ),
+                    Text(
+                      t.feedback_detail_log_hint,
+                      style: tokens.type.metadata,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
   Future<void> _forget() async {
     await ref.read(feedbackServiceProvider).forget(widget.feedbackId);
     if (mounted) Navigator.of(context).pop();
@@ -175,19 +283,17 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
                           ),
                           SizedBox(height: tokens.spacing.gap),
                           SelectableText(d.body),
-                          if (d.attachments.isNotEmpty) ...<Widget>[
-                            SizedBox(height: tokens.spacing.gap),
-                            Text(
-                              t.feedback_detail_attachments(
-                                n: d.attachments.length,
-                              ),
-                              style: tokens.type.metadata,
-                            ),
-                          ],
                         ],
                       ),
                     ),
                   ),
+                  if (d.attachments.isNotEmpty) ...<Widget>[
+                    SizedBox(height: tokens.spacing.card),
+                    FushiStaggeredEntrance(
+                      index: 1,
+                      child: _attachments(d, tokens),
+                    ),
+                  ],
                   SizedBox(height: tokens.spacing.card),
                   FushiSectionTitle(t.feedback_detail_timeline),
                   FeedbackTimeline(messages: d.messages),

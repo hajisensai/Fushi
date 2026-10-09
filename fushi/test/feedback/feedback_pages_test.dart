@@ -8,12 +8,14 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/feedback/feedback_draft_store.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_store.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_detail_page.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_dev_page.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
@@ -136,6 +138,41 @@ class _Server {
         'attachments': <Object>[],
         'messages': <Object>[],
       });
+    }
+    if (path == '/v1/feedback/oldoldold0' && r.method == 'GET') {
+      if (r.headers['X-Fushi-Ticket'] != 'old-ticket') return _json({}, 404);
+      return _json(<String, dynamic>{
+        'id': 'oldoldold0',
+        'category': 'bug',
+        'title': '旧反馈',
+        'status': 'open',
+        'createdAt': 100,
+        'updatedAt': 100,
+        'body': '截图里能看到问题',
+        'attachments': <Object>[
+          <String, dynamic>{
+            'slot': 's0',
+            'kind': 'screenshot',
+            'bytes': _kOnePixelPng.length,
+            'type': 'image/png',
+          },
+          <String, dynamic>{
+            'slot': 'log',
+            'kind': 'log',
+            'bytes': 2048,
+            'type': 'application/gzip',
+          },
+        ],
+        'messages': <Object>[],
+      });
+    }
+    if (path == '/v1/feedback/oldoldold0/attachments/s0' && r.method == 'GET') {
+      if (r.headers['X-Fushi-Ticket'] != 'old-ticket') return _json({}, 404);
+      return http.Response.bytes(
+        _kOnePixelPng,
+        200,
+        headers: <String, String>{'content-type': 'image/png'},
+      );
     }
     if (path == '/v1/feedback/status') {
       return _json(<String, dynamic>{
@@ -340,6 +377,65 @@ void main() {
     // 提交页退场动画还没走完时它的 Scaffold 也挂着同一条 SnackBar（ScaffoldMessenger
     // 给每个已注册的 Scaffold 都显示），走得快慢看机器，所以不数个数。
     expect(find.text(t.feedback_submitted), findsWidgets);
+    // 提交成功后草稿清掉。
+    expect(
+      await tester.runAsync(() => FeedbackDraftStore(root).read()),
+      isNull,
+    );
+    expect(Directory('${root.path}/feedback/draft').existsSync(), isFalse);
+  });
+
+  testWidgets('BUG-3200 反馈人详情：截图凭本机 ticket 取回显示缩略图、可点开大图；日志列条目', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    await tester.runAsync(seedOld);
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    await tester.runAsync(f.load);
+    await tester.pumpWidget(
+      wrap(b, f, const FeedbackDetailPage(feedbackId: 'oldoldold0')),
+    );
+    final Finder thumb = find.descendant(
+      of: find.byKey(const ValueKey<String>('feedback-detail-shot-s0')),
+      matching: find.byType(Image),
+    );
+    await settleIo(tester, () => thumb.evaluate().isNotEmpty);
+    expect(thumb, findsOneWidget);
+    final http.Request get = server.requests.firstWhere(
+      (http.Request r) =>
+          r.url.path == '/v1/feedback/oldoldold0/attachments/s0',
+    );
+    expect(get.method, 'GET');
+    expect(get.headers['X-Fushi-Ticket'], 'old-ticket');
+    expect(
+      find.byKey(const ValueKey<String>('feedback-detail-log')),
+      findsOneWidget,
+    );
+    expect(find.text(t.feedback_detail_log_hint), findsOneWidget);
+    // 日志不去下载（服务端也不给）。
+    expect(
+      server.requests.where(
+        (http.Request r) => r.url.path.endsWith('/attachments/log'),
+      ),
+      isEmpty,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('feedback-detail-shot-s0')),
+    );
+    await settleIo(
+      tester,
+      () => find.byType(InteractiveViewer).evaluate().isNotEmpty,
+    );
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    // 缩略图与大图共用一次下载。
+    expect(
+      server.requests.where(
+        (http.Request r) => r.url.path.endsWith('/attachments/s0'),
+      ),
+      hasLength(1),
+    );
   });
 
   testWidgets('开发者账户：中心出现处理台入口', (WidgetTester tester) async {

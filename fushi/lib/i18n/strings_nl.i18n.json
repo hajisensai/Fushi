@@ -6903,5 +6903,9 @@
   "feedback_compose_paste_hint_mobile": "Long-press the description box and choose “Paste image” to attach a copied screenshot",
   "feedback_compose_paste_none": "No image on the clipboard",
   "feedback_compose_paste_full": "You can attach up to ${max} images; remove one first",
-  "feedback_compose_paste_failed": "Couldn't read the image on the clipboard"
+  "feedback_compose_paste_failed": "Couldn't read the image on the clipboard",
+  "feedback_draft_restored": "Restored your unsent draft (saved ${time})",
+  "feedback_draft_discard": "Discard draft",
+  "feedback_detail_log": "Log (${size}, compressed)",
+  "feedback_detail_log_hint": "Only the developers can open the log"
 }

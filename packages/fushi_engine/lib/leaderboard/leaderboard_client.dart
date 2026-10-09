@@ -537,6 +537,25 @@ class LeaderboardClient {
         ),
       );
 
+  /// 反馈人取回自己那条反馈的截图（[slot] = `s0`..`s2`；日志服务端不回传）。
+  Future<Uint8List> feedbackScreenshot(
+    String id,
+    String ticket,
+    String slot,
+  ) async {
+    if (!RegExp(r'^s[0-2]$').hasMatch(slot)) {
+      throw ArgumentError.value(slot, 'slot', 's0..s2');
+    }
+    final http.Response res = await _send(
+      'GET',
+      '/v1/feedback/${_segment(id)}/attachments/$slot',
+      signed: false,
+      headers: <String, String>{'X-Fushi-Ticket': ticket},
+      timeout: _uploadTimeout,
+    );
+    return res.bodyBytes;
+  }
+
   /// 反馈人追加说明；结案后追加会把状态拉回待处理。返回更新后的详情。
   Future<FeedbackDetail> addFeedbackMessage(
     String id,

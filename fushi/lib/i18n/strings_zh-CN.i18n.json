@@ -6903,5 +6903,9 @@
   "feedback_compose_paste_hint_mobile": "长按描述框选「粘贴图片」，可加入已复制的截图",
   "feedback_compose_paste_none": "剪贴板里没有图片",
   "feedback_compose_paste_full": "最多 ${max} 张图片，先删掉一张再粘贴",
-  "feedback_compose_paste_failed": "读取剪贴板图片失败"
+  "feedback_compose_paste_failed": "读取剪贴板图片失败",
+  "feedback_draft_restored": "已恢复未提交的草稿（${time} 保存）",
+  "feedback_draft_discard": "丢弃草稿",
+  "feedback_detail_log": "日志（压缩后 ${size}）",
+  "feedback_detail_log_hint": "日志只有开发者能打开"
 }
