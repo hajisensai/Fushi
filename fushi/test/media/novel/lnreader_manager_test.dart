@@ -72,7 +72,7 @@ void main() {
     rootDirectory: root,
     runtime: runtime,
     httpClientFactory: HttpClient.new,
-    builtinStoreUrl: '$base/builtin.json',
+    legacyBuiltinStoreUrl: '$base/builtin.json',
     clock: () => 42,
   );
 
@@ -83,39 +83,181 @@ void main() {
     return m;
   }
 
-  test('生产内置的是官方仓库', () {
+  test('生产不内置任何仓库；旧内置地址只留作迁移判据', () async {
     final LnReaderManager m = LnReaderManager(
       rootDirectory: root,
       runtime: FakeLnReaderRuntime(),
       httpClientFactory: HttpClient.new,
     );
-    expect(m.builtinStoreUrl, kLnReaderOfficialStoreUrl);
+    expect(m.legacyBuiltinStoreUrl, kLnReaderLegacyOfficialStoreUrl);
     expect(m.refreshOnInitialise, isFalse, reason: '单测默认不碰外网。');
+    await m.initialise();
+    expect(m.stores, isEmpty, reason: '全新安装仓库列表为空');
+    expect(
+      File('${root.path}/state.json').existsSync(),
+      isFalse,
+      reason: '全新安装不为迁移标记单独写盘',
+    );
   });
 
-  test('内置仓库：恒在第一位、不可删改、不落盘', () async {
-    final String builtin = '$base/builtin.json';
+  String installedJson(String id, String storeUrl) =>
+      jsonEncode(<String, Object?>{
+        'id': id,
+        'name': id,
+        'site': 'https://$id.example/',
+        'lang': '日本語',
+        'version': '1.0.0',
+        'url': '$storeUrl/$id.js',
+        'iconUrl': '',
+        'storeUrl': storeUrl,
+        'enabled': true,
+        'pinned': false,
+        'sortOrder': 0,
+        'installedAt': 0,
+      });
+
+  test('迁移：装过旧内置仓库插件的存量用户得到一条普通、可删的仓库记录，删后不回来', () async {
+    final String legacy = '$base/builtin.json';
+    // 旧版本的 state.json：内置仓库不落盘，只有已装插件记着来源。
+    await File('${root.path}/state.json').writeAsString(
+      '{"stores":[{"indexUrl":"$base/plugins.min.json","name":"x"}],'
+      '"installed":[${installedJson('syosetu', legacy)}]}',
+    );
     final LnReaderManager m = manager(FakeLnReaderRuntime());
     await m.initialise();
-    expect(m.stores.first.indexUrl, builtin);
-    expect(m.isBuiltinStore(m.stores.first), isTrue);
-
-    await m.removeStore(m.stores.first);
-    await m.editStore(m.stores.first, '$base/plugins.min.json');
-    expect(m.stores.first.indexUrl, builtin);
-
-    await m.addStore('$base/plugins.min.json');
-    final String state = await File('${root.path}/state.json').readAsString();
-    expect(state, isNot(contains(builtin)));
-    expect(state, contains('$base/plugins.min.json'));
-
-    // 重启后仍然恒在、仍排第一，用户仓库跟在后面。
-    final LnReaderManager reopened = manager(FakeLnReaderRuntime());
-    await reopened.initialise();
-    expect(reopened.stores.map((LnReaderStore s) => s.indexUrl), <String>[
-      builtin,
+    expect(m.stores.map((LnReaderStore s) => s.indexUrl), <String>[
+      legacy,
       '$base/plugins.min.json',
     ]);
+    final Map<String, Object?> state =
+        jsonDecode(await File('${root.path}/state.json').readAsString())
+            as Map<String, Object?>;
+    expect(state[kLnReaderLegacyStoreMigratedKey], isTrue);
+    expect(
+      (state['stores'] as List<Object?>).map(
+        (Object? e) => (e as Map<String, Object?>)['indexUrl'],
+      ),
+      contains(legacy),
+      reason: '迁移后它是落盘的普通仓库，不再是运行时合成项',
+    );
+
+    // 可以像普通仓库一样改地址 / 删除。
+    await m.removeStore(m.stores.first);
+    expect(m.stores.map((LnReaderStore s) => s.indexUrl), <String>[
+      '$base/plugins.min.json',
+    ]);
+
+    // 插件仍装着，但迁移只做一次：重启不会把删掉的仓库塞回来。
+    final LnReaderManager reopened = manager(FakeLnReaderRuntime());
+    await reopened.initialise();
+    expect(reopened.installed.single.storeUrl, legacy);
+    expect(reopened.stores.map((LnReaderStore s) => s.indexUrl), <String>[
+      '$base/plugins.min.json',
+    ]);
+  });
+
+  test('迁移：迁移后的旧内置仓库照常刷新，已装插件能检查更新', () async {
+    final String legacy = '$base/plugins.min.json';
+    await File('${root.path}/state.json').writeAsString(
+      '{"stores":[],"installed":[${installedJson('yomou.syosetu', legacy)}]}',
+    );
+    // 用 plugins.min.json 充当旧内置地址，目录里有同 id 的 1.1.4。
+    final LnReaderManager migrating = LnReaderManager(
+      rootDirectory: root,
+      runtime: FakeLnReaderRuntime(),
+      httpClientFactory: HttpClient.new,
+      legacyBuiltinStoreUrl: legacy,
+    );
+    await migrating.initialise();
+    await migrating.refreshStores();
+    final LnReaderRepoPlugin entry = migrating.available.firstWhere(
+      (LnReaderRepoPlugin p) => p.id == 'yomou.syosetu',
+    );
+    expect(migrating.hasUpdate(entry), isTrue);
+  });
+
+  test('迁移：从没用过旧内置仓库的用户不会凭空多出它', () async {
+    await File('${root.path}/state.json').writeAsString(
+      '{"stores":[{"indexUrl":"$base/plugins.min.json","name":"x"}],'
+      '"installed":[${installedJson('kakuyomu', '$base/plugins.min.json')}]}',
+    );
+    final LnReaderManager m = manager(FakeLnReaderRuntime());
+    await m.initialise();
+    expect(m.stores.map((LnReaderStore s) => s.indexUrl), <String>[
+      '$base/plugins.min.json',
+    ]);
+    final Map<String, Object?> state =
+        jsonDecode(await File('${root.path}/state.json').readAsString())
+            as Map<String, Object?>;
+    expect(state[kLnReaderLegacyStoreMigratedKey], isTrue);
+  });
+
+  test('迁移判据（纯函数）', () {
+    const String legacy = 'https://legacy.example/plugins.min.json';
+    const LnReaderStore other = LnReaderStore(
+      indexUrl: 'https://other.example/i.json',
+      name: 'other',
+    );
+    final LnReaderInstalledPlugin fromLegacy =
+        LnReaderInstalledPlugin.tryFromJson(
+          jsonDecode(installedJson('a', legacy)),
+        )!;
+    final LnReaderInstalledPlugin fromOther =
+        LnReaderInstalledPlugin.tryFromJson(
+          jsonDecode(installedJson('b', other.indexUrl)),
+        )!;
+    List<String> urls(List<LnReaderStore> stores) =>
+        stores.map((LnReaderStore s) => s.indexUrl).toList();
+
+    expect(
+      urls(
+        migrateLegacyBuiltinLnReaderStore(
+          stores: const <LnReaderStore>[other],
+          installed: <LnReaderInstalledPlugin>[fromOther, fromLegacy],
+          legacyUrl: legacy,
+          migrated: false,
+        ),
+      ),
+      <String>[legacy, other.indexUrl],
+    );
+    expect(
+      urls(
+        migrateLegacyBuiltinLnReaderStore(
+          stores: const <LnReaderStore>[other],
+          installed: <LnReaderInstalledPlugin>[fromOther],
+          legacyUrl: legacy,
+          migrated: false,
+        ),
+      ),
+      <String>[other.indexUrl],
+    );
+    expect(
+      urls(
+        migrateLegacyBuiltinLnReaderStore(
+          stores: const <LnReaderStore>[other],
+          installed: <LnReaderInstalledPlugin>[fromLegacy],
+          legacyUrl: legacy,
+          migrated: true,
+        ),
+      ),
+      <String>[other.indexUrl],
+      reason: '已迁移过：用户删掉后不再补回',
+    );
+    expect(
+      urls(
+        migrateLegacyBuiltinLnReaderStore(
+          stores: const <LnReaderStore>[
+            other,
+            LnReaderStore(indexUrl: legacy, name: 'LNReader'),
+          ],
+          installed: <LnReaderInstalledPlugin>[fromLegacy],
+          legacyUrl: legacy,
+          migrated: false,
+        ),
+      ),
+      <String>[other.indexUrl, legacy],
+      reason: '用户已自己加过同地址：不重复、不改顺序',
+    );
   });
 
   test('刷新仓库：坏条目跳过，失败仓库只记在自己身上', () async {
@@ -223,7 +365,7 @@ void main() {
     final LnReaderManager m = manager(FakeLnReaderRuntime());
     await m.initialise();
     expect(m.installed, isEmpty);
-    expect(m.stores.single.indexUrl, '$base/builtin.json');
+    expect(m.stores, isEmpty);
   });
 
   test('索引解析：不是数组直接报错（填成仓库主页地址的常见错误）', () {
@@ -247,7 +389,7 @@ void main() {
       'https://a.b/c.json',
     );
     expect(
-      lnReaderStoreDisplayName(kLnReaderOfficialStoreUrl),
+      lnReaderStoreDisplayName(kLnReaderLegacyOfficialStoreUrl),
       'LNReader/lnreader-plugins',
     );
   });

@@ -145,41 +145,21 @@ void main() {
     },
   );
 
-  test(
-    'default store seed is per kind and lands with its media_kind',
-    () async {
-      final MihonManager seeded = MihonManager(
-        database: database,
-        rootDirectory: Directory('${root.path}/seeded'),
-        runtime: runtime,
-        kind: MihonMediaKind.anime,
-        ownsRuntime: false,
-        seedDefaultStore: true,
-        storeClient: _OfflineStoreClient(),
-      );
-      addTearDown(seeded.dispose);
-      await seeded.initialise().catchError((Object _) {});
-      final List<MangaExtensionStoreRow> animeStores = await database
-          .getMangaExtensionStores(mediaKind: 'anime');
-      expect(animeStores.single.indexUrl, kMihonDefaultAnimeStoreIndexUrl);
-      expect(animeStores.single.mediaKind, 'anime');
-      expect(
-        await database.getMangaExtensionStores(mediaKind: 'manga'),
-        isEmpty,
-      );
-      expect(
-        await database.getPrefTyped<bool>(
-          kMihonDefaultAnimeStoreSeededPref,
-          false,
-        ),
-        isTrue,
-      );
-      expect(
-        await database.getPrefTyped<bool>(kMihonDefaultStoreSeededPref, false),
-        isFalse,
-      );
-    },
-  );
+  test('no built-in store is seeded for the anime kind (2026-10-09)', () async {
+    final MihonManager anime = MihonManager(
+      database: database,
+      rootDirectory: Directory('${root.path}/fresh'),
+      runtime: runtime,
+      kind: MihonMediaKind.anime,
+      ownsRuntime: false,
+      storeClient: _OfflineStoreClient(),
+    );
+    addTearDown(anime.dispose);
+    await anime.initialise().catchError((Object _) {});
+    expect(anime.stores, isEmpty);
+    expect(await database.getMangaExtensionStores(mediaKind: 'anime'), isEmpty);
+    expect(await database.getMangaExtensionStores(mediaKind: 'manga'), isEmpty);
+  });
 
   test(
     'a shared runtime is not disposed by a manager that does not own it',

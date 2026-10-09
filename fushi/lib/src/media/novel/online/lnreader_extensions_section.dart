@@ -462,7 +462,6 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
       itemCount: manager.stores.length,
       itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int index) {
         final LnReaderStore store = manager.stores[index];
-        final bool builtin = manager.isBuiltinStore(store);
         final int count = manager.available
             .where((LnReaderRepoPlugin p) => p.storeUrl == store.indexUrl)
             .length;
@@ -484,8 +483,7 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
                 tone: null,
               ),
             };
-        // 仓库列表整段读作一个分组（MD3 分段 / Apple inset grouped）。内置
-        // 仓库只能复制地址，不给改 / 删。
+        // 仓库列表整段读作一个分组（MD3 分段 / Apple inset grouped）。
         return ExtensionStoreTile(
           index: index,
           count: manager.stores.length,
@@ -493,24 +491,20 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
           menuKey: ValueKey<String>('novel_store_menu_${store.indexUrl}'),
           name: store.name,
           url: store.indexUrl,
-          builtin: builtin,
-          builtinLabel: t.novel_store_builtin_label,
           status: status,
           actions: <ExtensionStoreRowAction>[
             extensionStoreCopyAction(store.indexUrl),
-            if (!builtin) ...<ExtensionStoreRowAction>[
-              ExtensionStoreRowAction(
-                label: t.mihon_store_edit,
-                icon: FushiIcons.edit,
-                onTap: () => unawaited(_editStore(store)),
-              ),
-              ExtensionStoreRowAction(
-                label: t.mihon_store_remove,
-                icon: FushiIcons.delete,
-                destructive: true,
-                onTap: () => unawaited(_removeStore(store)),
-              ),
-            ],
+            ExtensionStoreRowAction(
+              label: t.mihon_store_edit,
+              icon: FushiIcons.edit,
+              onTap: () => unawaited(_editStore(store)),
+            ),
+            ExtensionStoreRowAction(
+              label: t.mihon_store_remove,
+              icon: FushiIcons.delete,
+              destructive: true,
+              onTap: () => unawaited(_removeStore(store)),
+            ),
           ],
         );
       }),

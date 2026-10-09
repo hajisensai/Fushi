@@ -2323,7 +2323,7 @@
   "mihon_source_search": "بحث عن مانغا",
   "mihon_store_add": "إضافة متجر إضافات",
   "mihon_store_edit": "تعديل عنوان المستودع",
-  "mihon_store_empty": "لا توجد متاجر إضافات بعد. أضف متجر Mihon متوافق أو استورد ملف APK محلي.",
+  "mihon_store_empty": "لا توجد مستودعات إضافات بعد. لا يتضمن Fushi أي مستودع — أضف رابط فهرس مستودع متوافق مع Mihon تثق به، أو استورد ملف APK محليًا.",
   "mihon_store_extension_count": "$count إضافة",
   "mihon_store_refresh": "تحديث المتاجر",
   "mihon_store_remove": "إزالة متجر الإضافات",
@@ -5503,9 +5503,8 @@
   "novel_online_sources_hint": "إضافات LNReader من جهات خارجية. يأتي المحتوى من مواقع المصادر؛ وتُحفظ الروايات المنزّلة في رفّك بصيغة EPUB.",
   "novel_online_sources_empty": "لا توجد مصادر روايات بعد. ثبّت إضافة ضمن الإضافات أولًا.",
   "novel_extensions_search_hint": "البحث في الإضافات",
-  "novel_store_builtin_label": "مدمج",
   "novel_store_add_warning": "إضافات LNReader نصوص برمجية من جهات خارجية تجلب المحتوى من مواقع الويب. أضف المستودعات التي تثق بها فقط.",
-  "novel_store_empty": "لا توجد مستودعات إضافات.",
+  "novel_store_empty": "لا توجد مستودعات إضافات بعد. لا يتضمن Fushi أي مستودع — أضف رابط فهرس مستودع إضافات LNReader تثق به.",
   "novel_source_search_hint": "البحث في الروايات",
   "novel_source_no_results": "لم يُعثر على روايات.",
   "novel_source_filters_title": "المرشحات",
@@ -6897,5 +6896,6 @@
   "video_setting_mpv_passthrough_hint": "Send AC-3, E-AC-3, TrueHD and DTS-HD untouched to your receiver or soundbar so it decodes them (Atmos included). Only turn on if that device supports these formats — otherwise there may be no sound. While passing through, set the volume on the receiver: Fushi's volume and mute can't act on these streams, so at any speed other than 1×, below full volume or when muted, Fushi decodes them itself for the time being (the receiver's Atmos / DTS indicator goes off). When off, Fushi always decodes them and 5.1 / 7.1 still play as surround.",
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
-  "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected."
+  "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
+  "extension_nsfw_badge": "NSFW"
 }

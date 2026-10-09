@@ -2323,7 +2323,7 @@
   "mihon_source_search": "만화 검색",
   "mihon_store_add": "확장 프로그램 스토어 추가",
   "mihon_store_edit": "저장소 주소 편집",
-  "mihon_store_empty": "확장 프로그램 스토어가 없습니다. 호환되는 Mihon 스토어를 추가하거나 로컬 APK를 가져오세요.",
+  "mihon_store_empty": "확장 프로그램 저장소가 아직 없습니다. Fushi에는 기본 저장소가 포함되어 있지 않습니다. 신뢰하는 Mihon 호환 저장소의 인덱스 URL을 추가하거나 로컬 APK를 가져오세요.",
   "mihon_store_extension_count": "확장 $count개",
   "mihon_store_refresh": "스토어 새로고침",
   "mihon_store_remove": "확장 스토어 제거",
@@ -5503,9 +5503,8 @@
   "novel_online_sources_hint": "서드파티 LNReader 플러그인입니다. 콘텐츠는 소스 웹사이트에서 가져오며, 다운로드한 소설은 EPUB으로 책장에 저장됩니다.",
   "novel_online_sources_empty": "아직 소설 소스가 없습니다. 먼저 확장 프로그램에서 플러그인을 설치하세요.",
   "novel_extensions_search_hint": "플러그인 검색",
-  "novel_store_builtin_label": "기본 제공",
   "novel_store_add_warning": "LNReader 플러그인은 웹사이트에서 콘텐츠를 가져오는 서드파티 스크립트입니다. 신뢰할 수 있는 저장소만 추가하세요.",
-  "novel_store_empty": "플러그인 저장소가 없습니다.",
+  "novel_store_empty": "플러그인 저장소가 아직 없습니다. Fushi에는 기본 저장소가 포함되어 있지 않습니다. 신뢰하는 LNReader 플러그인 저장소의 인덱스 URL을 추가하세요.",
   "novel_source_search_hint": "소설 검색",
   "novel_source_no_results": "소설을 찾을 수 없습니다.",
   "novel_source_filters_title": "필터",
@@ -6897,5 +6896,6 @@
   "video_setting_mpv_passthrough_hint": "Send AC-3, E-AC-3, TrueHD and DTS-HD untouched to your receiver or soundbar so it decodes them (Atmos included). Only turn on if that device supports these formats — otherwise there may be no sound. While passing through, set the volume on the receiver: Fushi's volume and mute can't act on these streams, so at any speed other than 1×, below full volume or when muted, Fushi decodes them itself for the time being (the receiver's Atmos / DTS indicator goes off). When off, Fushi always decodes them and 5.1 / 7.1 still play as surround.",
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
-  "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected."
+  "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
+  "extension_nsfw_badge": "NSFW"
 }

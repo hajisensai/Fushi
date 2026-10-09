@@ -186,7 +186,6 @@ class _OnlineCtl {
             <String, Object?>{
               'url': store.indexUrl,
               'name': store.name,
-              'builtin': manager.isBuiltinStore(store),
               'lastError': store.lastError,
             },
         ],
@@ -241,9 +240,6 @@ class _OnlineCtl {
           .where((LnReaderStore s) => s.indexUrl == url)
           .firstOrNull;
       if (store == null) throw CtlFailure.notFound('没有这个仓库：$url');
-      if (manager.isBuiltinStore(store)) {
-        throw const CtlFailure.rejected('内置官方仓库不可删除');
-      }
       await manager.removeStore(store);
       return null;
     }

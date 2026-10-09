@@ -2323,7 +2323,7 @@
   "mihon_source_search": "Manga suchen",
   "mihon_store_add": "Erweiterungsshop hinzufügen",
   "mihon_store_edit": "Repository-URL bearbeiten",
-  "mihon_store_empty": "Noch keine Erweiterungsshops. Fügen Sie einen kompatiblen Mihon-Shop hinzu oder importieren Sie eine lokale APK.",
+  "mihon_store_empty": "Noch keine Erweiterungs-Repositories. Fushi enthält keine – fügen Sie die Index-URL eines Mihon-kompatiblen Repositorys hinzu, dem Sie vertrauen, oder importieren Sie eine lokale APK.",
   "mihon_store_extension_count": "$count Erweiterungen",
   "mihon_store_refresh": "Shops aktualisieren",
   "mihon_store_remove": "Erweiterungs-Store entfernen",
@@ -5503,9 +5503,8 @@
   "novel_online_sources_hint": "LNReader-Plugins von Drittanbietern. Inhalte stammen von den Quell-Websites; heruntergeladene Romane werden als EPUB in deinem Bücherregal gespeichert.",
   "novel_online_sources_empty": "Noch keine Romanquellen. Installiere zuerst ein Plugin unter Erweiterungen.",
   "novel_extensions_search_hint": "Plugins durchsuchen",
-  "novel_store_builtin_label": "Integriert",
   "novel_store_add_warning": "LNReader-Plugins sind Skripte von Drittanbietern, die Inhalte von Websites abrufen. Füge nur Repositories hinzu, denen du vertraust.",
-  "novel_store_empty": "Keine Plugin-Repositories.",
+  "novel_store_empty": "Noch keine Plugin-Repositories. Fushi enthält keine – fügen Sie die Index-URL eines LNReader-Plugin-Repositorys hinzu, dem Sie vertrauen.",
   "novel_source_search_hint": "Romane durchsuchen",
   "novel_source_no_results": "Keine Romane gefunden.",
   "novel_source_filters_title": "Filter",
@@ -6897,5 +6896,6 @@
   "video_setting_mpv_passthrough_hint": "Send AC-3, E-AC-3, TrueHD and DTS-HD untouched to your receiver or soundbar so it decodes them (Atmos included). Only turn on if that device supports these formats — otherwise there may be no sound. While passing through, set the volume on the receiver: Fushi's volume and mute can't act on these streams, so at any speed other than 1×, below full volume or when muted, Fushi decodes them itself for the time being (the receiver's Atmos / DTS indicator goes off). When off, Fushi always decodes them and 5.1 / 7.1 still play as surround.",
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
-  "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected."
+  "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
+  "extension_nsfw_badge": "NSFW"
 }

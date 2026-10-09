@@ -218,4 +218,29 @@ void main() {
       expect(mangaSourceHostLabel('  '), '');
     });
   });
+  // 2026-10-09 用户口径「18+ 改为 NSFW」：内容警告徽章只显示 i18n 文案，
+  // 不再出现写死的「18+」。
+  testWidgets('内容警告徽章显示 NSFW，不再是 18+', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.light(useMaterial3: true),
+        home: const Scaffold(
+          body: MangaExtensionManagementTile(
+            title: 'MyReadingManga',
+            contentWarning: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final Finder badge =
+        find.byKey(const ValueKey<String>('extension_tile_nsfw_badge'));
+    expect(badge, findsOneWidget);
+    expect(
+      find.descendant(of: badge, matching: find.text(t.extension_nsfw_badge)),
+      findsOneWidget,
+    );
+    expect(t.extension_nsfw_badge, 'NSFW');
+    expect(find.text('18+'), findsNothing);
+  });
 }

@@ -2323,7 +2323,7 @@
   "mihon_source_search": "Search manga",
   "mihon_store_add": "Add extension store",
   "mihon_store_edit": "Edit repository URL",
-  "mihon_store_empty": "No extension stores yet. Add a compatible Mihon store or import a local APK.",
+  "mihon_store_empty": "No extension repositories yet. Fushi doesn't include any — add the index URL of a Mihon-compatible repository you trust, or import a local APK.",
   "mihon_store_extension_count": "$count extensions",
   "mihon_store_refresh": "Refresh stores",
   "mihon_store_remove": "Remove extension store",
@@ -5503,9 +5503,8 @@
   "novel_online_sources_hint": "Third-party LNReader plugins. Content comes from the source websites; downloaded novels are saved to your bookshelf as EPUB.",
   "novel_online_sources_empty": "No novel sources yet. Install a plugin under Extensions first.",
   "novel_extensions_search_hint": "Search plugins",
-  "novel_store_builtin_label": "Built-in",
   "novel_store_add_warning": "LNReader plugins are third-party scripts that fetch content from websites. Only add repositories you trust.",
-  "novel_store_empty": "No plugin repositories.",
+  "novel_store_empty": "No plugin repositories yet. Fushi doesn't include any — add the index URL of an LNReader plugin repository you trust.",
   "novel_source_search_hint": "Search novels",
   "novel_source_no_results": "No novels found.",
   "novel_source_filters_title": "Filters",
@@ -6897,5 +6896,6 @@
   "video_setting_mpv_passthrough_hint": "Send AC-3, E-AC-3, TrueHD and DTS-HD untouched to your receiver or soundbar so it decodes them (Atmos included). Only turn on if that device supports these formats — otherwise there may be no sound. While passing through, set the volume on the receiver: Fushi's volume and mute can't act on these streams, so at any speed other than 1×, below full volume or when muted, Fushi decodes them itself for the time being (the receiver's Atmos / DTS indicator goes off). When off, Fushi always decodes them and 5.1 / 7.1 still play as surround.",
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
-  "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected."
+  "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
+  "extension_nsfw_badge": "NSFW"
 }

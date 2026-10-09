@@ -19,7 +19,8 @@ import 'package:fushi/utils.dart';
 import 'fake_lnreader_runtime.dart';
 
 /// 小说源三段与浏览页的真渲染：行用的是和漫画 / 视频同一个
-/// [MangaExtensionManagementTile]、内置仓库不给删改、开关真写穿、浏览按模式分派。
+/// [MangaExtensionManagementTile]、仓库不内置（旧内置仓库迁移成普通可删行、全新
+/// 安装是空态引导）、开关真写穿、浏览按模式分派。
 /// 导入页接线（book 域才挂、过合规门）由 `ios_store_compliance_guard_test` 守。
 void main() {
   late Directory root;
@@ -63,7 +64,7 @@ void main() {
       rootDirectory: root,
       runtime: runtime,
       httpClientFactory: HttpClient.new,
-      builtinStoreUrl: builtin,
+      legacyBuiltinStoreUrl: builtin,
     );
     await manager.initialise();
     await manager.pluginFile('syosetu').create(recursive: true);
@@ -115,7 +116,7 @@ void main() {
   Future<void> pumpSlivers(WidgetTester tester, List<Widget> slivers) =>
       pump(tester, Scaffold(body: CustomScrollView(slivers: slivers)));
 
-  testWidgets('仓库段：内置仓库带「内置」标记且没有编辑 / 删除按钮', (WidgetTester tester) async {
+  testWidgets('仓库段：迁移来的旧内置仓库是普通仓库，可编辑 / 删除', (WidgetTester tester) async {
     await pumpSlivers(tester, <Widget>[
       LnReaderExtensionsSection(
         manager: manager,
@@ -123,12 +124,37 @@ void main() {
         showCatalog: false,
       ),
     ]);
-    expect(find.textContaining(t.novel_store_builtin_label), findsOneWidget);
-    expect(find.byTooltip(t.mihon_store_remove), findsNothing);
-    expect(find.byTooltip(t.mihon_store_edit), findsNothing);
+    expect(manager.stores.map((LnReaderStore s) => s.indexUrl), <String>[
+      builtin,
+    ], reason: '装过来自旧内置仓库的插件 → 迁移成一条普通仓库记录');
+    expect(find.byTooltip(t.mihon_store_remove), findsOneWidget);
+    expect(find.byTooltip(t.mihon_store_edit), findsOneWidget);
+    expect(find.text(t.novel_store_empty), findsNothing);
     // 「添加仓库」是仓库页顶部的主操作按钮。
     expect(find.text(t.mihon_store_add), findsOneWidget);
     expect(find.byType(MangaExtensionManagementTile), findsNothing);
+  });
+
+  testWidgets('仓库段：全新安装没有任何仓库，空态说明不内置并给出添加入口', (WidgetTester tester) async {
+    // 放在 setUp 的临时根下，随 tearDown 一起删。
+    final LnReaderManager empty = LnReaderManager(
+      rootDirectory: Directory('${root.path}/fresh'),
+      runtime: runtime,
+      httpClientFactory: HttpClient.new,
+    );
+    addTearDown(empty.dispose);
+    await tester.runAsync(empty.initialise);
+    expect(empty.stores, isEmpty);
+    await pumpSlivers(tester, <Widget>[
+      LnReaderExtensionsSection(
+        manager: empty,
+        showStores: true,
+        showCatalog: false,
+      ),
+    ]);
+    expect(find.text(t.novel_store_empty), findsOneWidget);
+    // 顶部工具栏一个 + 空态里一个。
+    expect(find.text(t.mihon_store_add), findsNWidgets(2));
   });
 
   testWidgets('扩展段：共享扩展行 + 无下载量时按名字排 + 有更新显示版本跳变 + 语言筛选生效', (
@@ -466,7 +492,7 @@ void main() {
       rootDirectory: root,
       runtime: runtime,
       httpClientFactory: HttpClient.new,
-      builtinStoreUrl: builtin,
+      legacyBuiltinStoreUrl: builtin,
       cloudflare: cloudflare,
     );
     addTearDown(guarded.dispose);

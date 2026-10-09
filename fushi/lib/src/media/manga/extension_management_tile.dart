@@ -42,7 +42,7 @@ enum ExtensionTileActionStyle { filled, tonal, outlined, text }
 /// Runtime-specific pages supply metadata and actions; spacing, icon fallback,
 /// warning badge, progress, enable switch and buttons stay identical.
 ///
-/// M3E 形态（2026-10-06）：行首 12 圆角方块图标；标题后跟 18+（error tonal
+/// M3E 形态（2026-10-06）：行首 12 圆角方块图标；标题后跟 NSFW（error tonal
 /// 小胶囊）与「可更新」（accent tonal 小胶囊）；副标题是一排元信息小标签
 /// （[metaChips]：语言 / 版本 / lib）+ 下载量 + 可展开详情（[details]）；
 /// 动作按 [ExtensionTileActionStyle] 分级；安装中在卡片底部展开一条波浪进度。
@@ -259,7 +259,12 @@ class MangaExtensionManagementTile extends StatelessWidget {
             const SizedBox(width: 8),
             // M3E：error tonal 小胶囊（errorContainer 底 + onErrorContainer
             // 字）；Apple 是空心胶囊 + 系统红字。
-            const FushiTag(text: '18+', tone: FushiTagTone.error, dense: true),
+            FushiTag(
+              key: const ValueKey<String>('extension_tile_nsfw_badge'),
+              text: t.extension_nsfw_badge,
+              tone: FushiTagTone.error,
+              dense: true,
+            ),
           ],
           if (updateAvailable) ...<Widget>[
             const SizedBox(width: 8),
