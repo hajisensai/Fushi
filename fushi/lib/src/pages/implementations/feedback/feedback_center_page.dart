@@ -34,6 +34,18 @@ class FeedbackCenterPage extends ConsumerStatefulWidget {
 class _FeedbackCenterPageState extends ConsumerState<FeedbackCenterPage> {
   String? _refreshError;
 
+  /// 「我的反馈」本机搜索（编号 / 标题 / 正文）。
+  final TextEditingController _search = TextEditingController();
+  final FocusNode _searchFocus = FocusNode(debugLabel: 'feedback-search');
+  String _query = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    _searchFocus.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -102,7 +114,8 @@ class _FeedbackCenterPageState extends ConsumerState<FeedbackCenterPage> {
     final LeaderboardSelf? self = ref.watch(
       leaderboardServiceProvider.select((LeaderboardService s) => s.self),
     );
-    final List<FeedbackTicket> tickets = service.tickets;
+    final List<FeedbackTicket> all = service.tickets;
+    final List<FeedbackTicket> tickets = filterFeedbackTickets(all, _query);
     return FushiPageScaffold(
       title: t.feedback_title,
       actions: <Widget>[
@@ -166,12 +179,29 @@ class _FeedbackCenterPageState extends ConsumerState<FeedbackCenterPage> {
                   ),
                 ],
                 SizedBox(height: tokens.spacing.card),
+                if (service.loaded && all.isNotEmpty) ...<Widget>[
+                  FushiSearchField(
+                    fieldKey: const ValueKey<String>('feedback-center-search'),
+                    controller: _search,
+                    focusNode: _searchFocus,
+                    hintText: t.feedback_search_hint,
+                    onChanged: (String v) => setState(() => _query = v),
+                    onSubmitted: (String v) => setState(() => _query = v),
+                    onClear: () => setState(() => _query = ''),
+                  ),
+                  SizedBox(height: tokens.spacing.card),
+                ],
                 if (!service.loaded)
                   const FushiLoadingView()
-                else if (tickets.isEmpty)
+                else if (all.isEmpty)
                   FushiPlaceholderMessage(
                     icon: FushiIcons.forum,
                     message: t.feedback_center_empty,
+                  )
+                else if (tickets.isEmpty)
+                  FushiPlaceholderMessage(
+                    icon: FushiIcons.searchOff,
+                    message: t.feedback_search_empty,
                   )
                 else
                   for (int i = 0; i < tickets.length; i++)
@@ -179,6 +209,10 @@ class _FeedbackCenterPageState extends ConsumerState<FeedbackCenterPage> {
                       index: i,
                       child: _TicketTile(
                         ticket: tickets[i],
+                        reopenedAs: <String>[
+                          for (final FeedbackTicket x in all)
+                            if (x.parentId == tickets[i].id) x.id,
+                        ],
                         onTap: () => _openDetail(tickets[i]),
                       ),
                     ),
@@ -192,9 +226,16 @@ class _FeedbackCenterPageState extends ConsumerState<FeedbackCenterPage> {
 }
 
 class _TicketTile extends StatelessWidget {
-  const _TicketTile({required this.ticket, required this.onTap});
+  const _TicketTile({
+    required this.ticket,
+    required this.reopenedAs,
+    required this.onTap,
+  });
 
   final FeedbackTicket ticket;
+
+  /// 本机清单里由这条重新提交出来的新反馈。
+  final List<String> reopenedAs;
   final VoidCallback onTap;
 
   @override
@@ -209,11 +250,29 @@ class _TicketTile extends StatelessWidget {
         child: FushiListItem(
           leading: FushiIcon(feedbackCategoryIcon(ticket.category)),
           title: Text(ticket.title),
-          subtitle: Text(
-            ticket.missing
-                ? t.feedback_detail_missing
-                : '${feedbackCategoryLabel(ticket.category)} · '
-                      '${feedbackTime(ticket.updatedAt)}',
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                ticket.missing
+                    ? t.feedback_detail_missing
+                    : '${feedbackCategoryLabel(ticket.category)} · '
+                          '${feedbackTime(ticket.updatedAt)}',
+              ),
+              FeedbackIdLabel(ticket.id),
+              if (ticket.parentId != null)
+                Text(
+                  t.feedback_reopen_of(id: ticket.parentId!),
+                  key: ValueKey<String>('feedback-ticket-parent-${ticket.id}'),
+                  style: tokens.type.metadata.copyWith(color: colors.primary),
+                ),
+              for (final String id in reopenedAs)
+                Text(
+                  t.feedback_reopened_as(id: id),
+                  style: tokens.type.metadata.copyWith(color: colors.primary),
+                ),
+            ],
           ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,

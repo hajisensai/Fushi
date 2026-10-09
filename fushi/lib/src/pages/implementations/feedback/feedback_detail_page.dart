@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_compose_page.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -198,6 +199,76 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
     );
   }
 
+  bool _closing = false;
+
+  /// 关联的另一条（本机清单里有才打开；别的设备提交的没有 ticket，看不了）。
+  void _openRelated(String id) {
+    if (ref.read(feedbackServiceProvider).byId(id) == null) return;
+    unawaited(
+      Navigator.push(
+        context,
+        adaptivePageRoute<void>(
+          context: context,
+          builder: (_) => FeedbackDetailPage(feedbackId: id),
+        ),
+      ),
+    );
+  }
+
+  /// 「问题没解决，重新提交」：打开预填了原反馈的提交页；交上去后回到这里并刷新关联。
+  Future<void> _reopen(FeedbackDetail d) async {
+    final FeedbackSubmitResult? result = await Navigator.push(
+      context,
+      adaptivePageRoute<FeedbackSubmitResult>(
+        context: context,
+        builder: (_) =>
+            FeedbackComposePage(reopenOf: FeedbackReopenSeed.fromDetail(d)),
+      ),
+    );
+    if (result == null || !mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(t.feedback_reopen_submitted)));
+    await _load();
+  }
+
+  /// 反馈人只能把「待处理 / 处理中」标为完成（与服务端 REPORTER_CLOSABLE 一致）。
+  static bool _closable(FeedbackStatus s) =>
+      s == FeedbackStatus.open || s == FeedbackStatus.inProgress;
+
+  Future<void> _markDone() async {
+    final bool ok = await showFushiConfirmDialog(
+      context: context,
+      title: t.feedback_mark_done_confirm_title,
+      message: t.feedback_mark_done_confirm_body,
+      confirmLabel: t.feedback_mark_done,
+      icon: FushiIcons.check,
+    );
+    if (!ok || !mounted) return;
+    setState(() => _closing = true);
+    try {
+      final FeedbackDetail d = await ref
+          .read(feedbackServiceProvider)
+          .markDone(widget.feedbackId);
+      if (!mounted) return;
+      setState(() => _detail = d);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(FushiSnackBar(content: Text(t.feedback_marked_done)));
+    } on Object catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        FushiSnackBar(
+          content: Text(
+            t.feedback_submit_failed(reason: feedbackErrorReason(e)),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _closing = false);
+    }
+  }
+
   Future<void> _forget() async {
     await ref.read(feedbackServiceProvider).forget(widget.feedbackId);
     if (mounted) Navigator.of(context).pop();
@@ -272,17 +343,55 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
                             children: <Widget>[
                               FeedbackStatusBadge(d.status),
                               SizedBox(width: tokens.spacing.gap),
-                              Expanded(
-                                child: Text(
-                                  '${feedbackCategoryLabel(d.summary.category)} · '
-                                  '#${d.id} · ${feedbackTime(d.summary.createdAt)}',
-                                  style: tokens.type.metadata,
-                                ),
-                              ),
+                              Expanded(child: FeedbackMetaLine(d)),
                             ],
                           ),
+                          if (d.summary.parentId != null ||
+                              d.reopenedAs.isNotEmpty) ...<Widget>[
+                            SizedBox(height: tokens.spacing.gap),
+                            FeedbackRelationLinks(
+                              parentId: d.summary.parentId,
+                              reopenedAs: d.reopenedAs,
+                              onOpen: _openRelated,
+                            ),
+                          ],
                           SizedBox(height: tokens.spacing.gap),
                           SelectableText(d.body),
+                          if (d.status.isClosed) ...<Widget>[
+                            SizedBox(height: tokens.spacing.gap),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: FushiPressScale(
+                                child: FushiFilledButton.tonalIcon(
+                                  key: const ValueKey<String>(
+                                    'feedback-reopen',
+                                  ),
+                                  onPressed: () => unawaited(_reopen(d)),
+                                  icon: const FushiIcon(FushiIcons.refresh),
+                                  label: Text(t.feedback_reopen),
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (_closable(d.status)) ...<Widget>[
+                            SizedBox(height: tokens.spacing.gap),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: FushiPressScale(
+                                enabled: !_closing,
+                                child: FushiFilledButton.tonalIcon(
+                                  key: const ValueKey<String>(
+                                    'feedback-mark-done',
+                                  ),
+                                  onPressed: _closing
+                                      ? null
+                                      : () => unawaited(_markDone()),
+                                  icon: const FushiIcon(FushiIcons.check),
+                                  label: Text(t.feedback_mark_done),
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),

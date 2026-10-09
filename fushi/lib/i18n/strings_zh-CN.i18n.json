@@ -6907,5 +6907,22 @@
   "feedback_draft_restored": "已恢复未提交的草稿（${time} 保存）",
   "feedback_draft_discard": "丢弃草稿",
   "feedback_detail_log": "日志（压缩后 ${size}）",
-  "feedback_detail_log_hint": "日志只有开发者能打开"
+  "feedback_detail_log_hint": "日志只有开发者能打开",
+  "feedback_id_copy_hint": "点按或长按复制反馈编号",
+  "feedback_id_copied": "已复制反馈编号",
+  "feedback_search_hint": "按编号、标题、正文搜索",
+  "feedback_search_empty": "没有匹配的反馈",
+  "feedback_mark_done": "标记为已完成",
+  "feedback_mark_done_confirm_title": "将这条反馈标记为已完成？",
+  "feedback_mark_done_confirm_body": "反馈会变为「已关闭」，开发者能看到是你标记的完成。之后追加说明即可重新打开。",
+  "feedback_marked_done": "已标记为完成",
+  "feedback_timeline_reporter_closed": "反馈人标记完成",
+  "feedback_timeline_you_closed": "你标记了完成",
+  "feedback_reopen": "问题没解决，重新提交",
+  "feedback_reopen_title": "重新提交反馈",
+  "feedback_reopen_of": "重新提交自 #${id}",
+  "feedback_reopened_as": "已被重新提交为 #${id}",
+  "feedback_reopen_include_shots": "带上原反馈的截图（${n} 张）",
+  "feedback_reopen_notice": "会新建一条反馈并关联到 #${id}，原来的处理记录保留不动。可以修改正文，补充现在还有什么问题。",
+  "feedback_reopen_submitted": "已重新提交，并关联到原反馈"
 }

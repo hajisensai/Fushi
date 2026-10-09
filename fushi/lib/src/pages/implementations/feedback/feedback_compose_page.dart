@@ -23,10 +23,42 @@ import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 
+/// 「问题没解决，重新提交」的原反馈：用来预填提交页（分类 / 标题 / 正文），截图可选带上。
+class FeedbackReopenSeed {
+  const FeedbackReopenSeed({
+    required this.id,
+    required this.category,
+    required this.title,
+    required this.body,
+    this.screenshotSlots = const <String>[],
+  });
+
+  /// 从原反馈详情构造（截图槽位按服务端返回的附件清单）。
+  factory FeedbackReopenSeed.fromDetail(FeedbackDetail d) => FeedbackReopenSeed(
+    id: d.id,
+    category: d.summary.category,
+    title: d.summary.title,
+    body: d.body,
+    screenshotSlots: <String>[
+      for (final FeedbackAttachmentInfo a in d.attachments)
+        if (!a.isLog) a.slot,
+    ],
+  );
+
+  final String id;
+  final FeedbackCategory category;
+  final String title;
+  final String body;
+  final List<String> screenshotSlots;
+}
+
 class FeedbackComposePage extends ConsumerStatefulWidget {
-  const FeedbackComposePage({this.initialScreenshot, super.key});
+  const FeedbackComposePage({this.initialScreenshot, this.reopenOf, super.key});
 
   final Uint8List? initialScreenshot;
+
+  /// 非空 = 基于这条已结案的反馈重新提交（不读写草稿：草稿属于普通的新反馈）。
+  final FeedbackReopenSeed? reopenOf;
 
   @override
   ConsumerState<FeedbackComposePage> createState() =>
@@ -88,7 +120,14 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
         if (state != AppLifecycleState.resumed) _flushDraft();
       },
     );
-    unawaited(_loadDraft());
+    final FeedbackReopenSeed? seed = widget.reopenOf;
+    if (seed == null) {
+      unawaited(_loadDraft());
+    } else {
+      _category = seed.category;
+      _title.text = seed.title;
+      _body.text = seed.body;
+    }
   }
 
   @override
@@ -212,6 +251,68 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     _body.dispose();
     _contact.dispose();
     super.dispose();
+  }
+
+  // ---- 重新提交 ----
+
+  /// 「带上原截图」开着时加进来的那几张（关掉时按引用移除）。
+  final List<Uint8List> _parentShots = <Uint8List>[];
+  bool _includeParentShots = false;
+  bool _loadingParentShots = false;
+
+  Future<void> _toggleParentShots(bool on) async {
+    final FeedbackReopenSeed seed = widget.reopenOf!;
+    if (!on) {
+      setState(() {
+        _includeParentShots = false;
+        _shots.removeWhere(
+          (Uint8List s) => _parentShots.any((Uint8List p) => identical(p, s)),
+        );
+        _parentShots.clear();
+      });
+      return;
+    }
+    setState(() {
+      _includeParentShots = true;
+      _loadingParentShots = true;
+    });
+    for (final String slot in seed.screenshotSlots) {
+      if (_room <= 0 || !_includeParentShots) break;
+      try {
+        final Uint8List bytes = await _service.screenshot(seed.id, slot);
+        if (!mounted || !_includeParentShots || _room <= 0) break;
+        setState(() {
+          _parentShots.add(bytes);
+          _shots.add(bytes);
+        });
+      } on Object catch (e, st) {
+        ErrorLogService.instance.log('feedback.reopen_screenshot', e, st);
+      }
+    }
+    if (mounted) setState(() => _loadingParentShots = false);
+  }
+
+  List<Widget> _reopenSection(FushiDesignTokens tokens) {
+    final FeedbackReopenSeed seed = widget.reopenOf!;
+    return <Widget>[
+      FushiInlineNotice(
+        key: const ValueKey<String>('feedback-reopen-notice'),
+        title: t.feedback_reopen_of(id: seed.id),
+        message: t.feedback_reopen_notice(id: seed.id),
+      ),
+      if (seed.screenshotSlots.isNotEmpty)
+        FushiSwitchListTile(
+          key: const ValueKey<String>('feedback-reopen-include-shots'),
+          value: _includeParentShots,
+          onChanged: _busy || _loadingParentShots
+              ? null
+              : (bool v) => unawaited(_toggleParentShots(v)),
+          title: Text(
+            t.feedback_reopen_include_shots(n: seed.screenshotSlots.length),
+          ),
+        ),
+      SizedBox(height: tokens.spacing.card),
+    ];
   }
 
   Future<void> _addImage() async {
@@ -369,6 +470,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
               includeDeviceInfo: _includeDevice,
               linkAccount: _linkAccount,
               screenshots: List<Uint8List>.of(_shots),
+              reopenOf: widget.reopenOf?.id,
             ),
             onStage: (FeedbackSubmitStage s) {
               if (mounted) setState(() => _stage = s);
@@ -407,7 +509,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     );
     final FeedbackSubmitStage? stage = _stage;
     return FushiPageScaffold(
-      title: t.feedback_new,
+      title: widget.reopenOf == null ? t.feedback_new : t.feedback_reopen_title,
       body: Builder(
         builder: (BuildContext context) => ListView(
           padding: withBottomSafeInset(
@@ -420,6 +522,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
             ),
           ),
           children: <Widget>[
+            if (widget.reopenOf != null) ..._reopenSection(tokens),
             if (_restoredAt != null) ...<Widget>[
               FushiInlineNotice(
                 key: const ValueKey<String>('feedback-draft-restored'),

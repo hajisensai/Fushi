@@ -186,11 +186,18 @@ void main() {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     // 不推进假时钟（防抖定时器不会触发），只让真实 IO 走完：落盘只能来自进后台。
-    bool flushed() =>
-        draftOnDisk() &&
-        File(
-          '${root.path}/feedback/draft/draft.json',
-        ).readAsStringSync().contains('第二句');
+    bool flushed() {
+      try {
+        return draftOnDisk() &&
+            File(
+              '${root.path}/feedback/draft/draft.json',
+            ).readAsStringSync().contains('第二句');
+      } on FileSystemException {
+        // Windows 上正在替换目录时读会撞共享冲突：还没写完，下一轮再看。
+        return false;
+      }
+    }
+
     for (int i = 0; i < 200 && !flushed(); i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 10)),
