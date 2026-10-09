@@ -6894,6 +6894,10 @@
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
+  "mihon_source_uninstall_extension": "Uninstall extension",
+  "mihon_extension_uninstall_confirm_single": "Uninstall the extension “$name”? Its source will be removed from the source list.",
+  "mihon_extension_uninstall_confirm_multi": "The extension “$name” provides $count sources. Uninstalling it removes all of them:",
+  "mihon_extension_package_label": "Package: $package",
   "extension_nsfw_badge": "NSFW",
   "mihon_extension_min_downloads_any": "ไม่จำกัด"
 }

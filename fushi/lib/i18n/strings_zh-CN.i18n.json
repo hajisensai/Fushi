@@ -6894,6 +6894,10 @@
   "shortcut_action_video_lookup_next_word": "下一个词（扫词）",
   "shortcut_action_video_lookup_prev_word": "上一个词（扫词）",
   "media_source_open_folder_failed": "无法打开文件夹，它可能已被移动、删除或断开连接。",
+  "mihon_source_uninstall_extension": "卸载扩展",
+  "mihon_extension_uninstall_confirm_single": "卸载扩展「$name」？它提供的源会从来源列表中移除。",
+  "mihon_extension_uninstall_confirm_multi": "扩展「$name」包含 $count 个源，卸载会把它们一起移除：",
+  "mihon_extension_package_label": "包名：$package",
   "extension_nsfw_badge": "NSFW",
   "mihon_extension_min_downloads_any": "不限"
 }

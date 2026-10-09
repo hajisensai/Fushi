@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_extension_uninstall.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_preferences_dialog.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
@@ -18,8 +19,8 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 /// 扩展提供的在线源列表：「导入」视图「在线源」段的正文，漫画与视频共用。
 ///
 /// 一行一个源（M3E 分段列表行，见 [InstalledOnlineSourceRow]）：启停开关、名称、
-/// 语言 tag · 包名；行尾「来源偏好」+「⋯」菜单（登录——宿主持有 cookie 的运行时
-/// 才有、置顶、上移 / 下移、清数据）。置顶源单独成组排在上方，两组各自组内可
+/// 语言 tag ·（源名与扩展名不同时）扩展名；行尾「来源偏好」+「⋯」菜单（登录——
+/// 宿主持有 cookie 的运行时才有、置顶、上移 / 下移、清数据、卸载扩展）。置顶源单独成组排在上方，两组各自组内可
 /// 拖拽重排（批量回写 `sort_order`）。顶部一条搜索框 + 「按下载量排序」+ 状态 /
 /// 语言筛选 chip。此前漫画来源页和视频在线源页各抄了一份几乎相同的行（视频那份
 /// 少了搜索与排序），2026-09-19 两页统一时收成这一处。
@@ -119,6 +120,23 @@ class _MihonInstalledSourcesSectionState
       }
     }
   }
+
+  /// 该源所属的已安装扩展（按包名）；本地登记缺失时为 null（菜单不出「卸载扩展」）。
+  MangaExtensionRow? _extensionOf(MangaOnlineSourceRow source) {
+    for (final MangaExtensionRow extension in widget.manager.installed) {
+      if (extension.packageName == source.extensionPackage) return extension;
+    }
+    return null;
+  }
+
+  /// 「卸载扩展」：在来源页确认完能不能放出内容后就地卸载，不必再跑去扩展页
+  /// （用户反馈）。确认框列出会一起移除的源。
+  Future<void> _uninstallExtension(MangaExtensionRow extension) =>
+      confirmAndUninstallMihonExtension(
+        context,
+        manager: widget.manager,
+        extension: extension,
+      );
 
   /// 该源能不能在 app 里登录，以及登录页要打开哪个地址。
   ///
@@ -265,7 +283,7 @@ class _MihonInstalledSourcesSectionState
   bool get _filtering =>
       _status != OnlineSourceStatusFilter.all || _language != null;
 
-  /// 搜索按名称 / 语言 / 扩展包名匹配，走全应用统一的归一化（不用裸 contains）；
+  /// 搜索按名称 / 语言 / 扩展名 / 扩展包名匹配，走全应用统一的归一化（不用裸 contains）；
   /// 再叠状态 / 语言筛选。只影响显示。
   List<MangaOnlineSourceRow> _visible(List<MangaOnlineSourceRow> rows) =>
       filterByMediaSearch<MangaOnlineSourceRow>(
@@ -274,6 +292,7 @@ class _MihonInstalledSourcesSectionState
             (MangaOnlineSourceRow source) => <String>[
               source.name,
               source.language,
+              _extensionOf(source)?.name ?? '',
               source.extensionPackage,
             ],
           )
@@ -438,7 +457,8 @@ class _MihonInstalledSourcesSectionState
         dragEnabled: dragEnabled,
       );
 
-  /// 一行：开关 + 名称 + 语言 tag · 包名；行尾「来源偏好」+「⋯」菜单，宽窄同形
+  /// 一行：开关 + 名称 + 语言 tag · 扩展名（与源名不同时；包名截断没有信息量，
+  /// 包名改放在「卸载扩展」的确认框里）；行尾「来源偏好」+「⋯」菜单，宽窄同形
   /// （此前宽行铺开六个图标按钮、窄行才收菜单，两种形态各有一套 bug）。
   ///
   /// [group] 是该行所在组（置顶 / 其余）的完整顺序，「上移 / 下移」只在组内挪，
@@ -454,6 +474,7 @@ class _MihonInstalledSourcesSectionState
     final MihonManager manager = widget.manager;
     final void Function(MangaOnlineSourceRow source)? open =
         widget.onOpenSource;
+    final MangaExtensionRow? extension = _extensionOf(source);
     final List<OnlineSourceMenuAction> actions = <OnlineSourceMenuAction>[
       if (_loginTargetFor(source) != null)
         OnlineSourceMenuAction(
@@ -493,6 +514,17 @@ class _MihonInstalledSourcesSectionState
         destructive: true,
         onTap: () => unawaited(_clearSourceData(source)),
       ),
+      if (extension != null)
+        OnlineSourceMenuAction(
+          key: ValueKey<String>(
+            'mihon_source_uninstall_${source.extensionPackage}_'
+            '${source.sourceId}',
+          ),
+          label: t.mihon_source_uninstall_extension,
+          icon: FushiIcons.delete,
+          destructive: true,
+          onTap: () => unawaited(_uninstallExtension(extension)),
+        ),
     ];
     return InstalledOnlineSourceRow(
       index: index,
@@ -505,7 +537,10 @@ class _MihonInstalledSourcesSectionState
       onEnabledChanged: (bool value) =>
           unawaited(manager.updateSourceSettings(source, enabled: value)),
       language: source.language,
-      detail: source.extensionPackage,
+      detail: mihonSourceExtensionLabel(
+        sourceName: source.name,
+        extensionName: extension?.name,
+      ),
       pinned: source.pinned,
       onOpen: open == null ? null : () => open(source),
       primaryAction: FushiIconButtonControl(
