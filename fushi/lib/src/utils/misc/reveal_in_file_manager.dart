@@ -109,12 +109,11 @@ Future<bool> revealFirstOf(
 /// 返回 false = 平台无文件管理器契约、路径已不存在，或启动失败——调用方据此提示，
 /// 不要吞掉。
 Future<bool> revealInFileManager(String path) => revealInFileManagerOn(
-      path,
-      host: currentRevealHost(),
-      typeOf: (String value) =>
-          FileSystemEntity.type(value, followLinks: false),
-      run: Process.run,
-    );
+  path,
+  host: currentRevealHost(),
+  typeOf: (String value) => FileSystemEntity.type(value, followLinks: false),
+  run: Process.run,
+);
 
 /// [revealInFileManager] 的可注入内核：让 per-host 的 argv 形状与退出码策略脱离真实
 /// 文件管理器可测。
@@ -126,16 +125,69 @@ Future<bool> revealInFileManagerOn(
   required Future<ProcessResult> Function(
     String executable,
     List<String> arguments,
-  ) run,
+  )
+  run,
 }) async {
   if (host == null) return false;
   final FileSystemEntityType type = await typeOf(path);
   if (type == FileSystemEntityType.notFound) return false;
-  final RevealCommand command = revealCommand(
-    host: host,
-    path: path,
-    isDirectory: type == FileSystemEntityType.directory,
+  return _runRevealCommand(
+    revealCommand(
+      host: host,
+      path: path,
+      isDirectory: type == FileSystemEntityType.directory,
+    ),
+    run,
   );
+}
+
+/// 在系统文件管理器里**打开**目录 [path] 本身（不是在其父目录里选中它）。
+///
+/// 与 [revealInFileManager] 的分别：那个原语按 `followLinks: false` 判类型，指向
+/// 目录的符号链接 / Windows 联接点会被当成「文件」去选中（explorer `/select,`）。
+/// 调用方语义本来就是「这是个文件夹」时（来源根目录）用这里：类型判断跟随链接，
+/// 解析后是目录才打开（BUG-3090）。
+///
+/// 返回 false = 平台无文件管理器契约、路径不存在 / 不是目录（含悬空链接），或
+/// 启动失败——调用方据此提示，不要吞掉。
+Future<bool> openDirectoryInFileManager(String path) =>
+    openDirectoryInFileManagerOn(
+      path,
+      host: currentRevealHost(),
+      typeOf: followingLinkEntityType,
+      run: Process.run,
+    );
+
+/// [openDirectoryInFileManager] 的类型判据：**跟随**符号链接 / 联接点，指向目录的
+/// 链接判为目录，悬空链接判为 notFound。
+@visibleForTesting
+Future<FileSystemEntityType> followingLinkEntityType(String path) =>
+    FileSystemEntity.type(path);
+
+/// [openDirectoryInFileManager] 的可注入内核。[typeOf] 须跟随链接。
+@visibleForTesting
+Future<bool> openDirectoryInFileManagerOn(
+  String path, {
+  required RevealHost? host,
+  required Future<FileSystemEntityType> Function(String path) typeOf,
+  required Future<ProcessResult> Function(
+    String executable,
+    List<String> arguments,
+  )
+  run,
+}) async {
+  if (host == null) return false;
+  if (await typeOf(path) != FileSystemEntityType.directory) return false;
+  return _runRevealCommand(
+    revealCommand(host: host, path: path, isDirectory: true),
+    run,
+  );
+}
+
+Future<bool> _runRevealCommand(
+  RevealCommand command,
+  Future<ProcessResult> Function(String executable, List<String> arguments) run,
+) async {
   try {
     final ProcessResult result = await run(
       command.executable,

@@ -105,6 +105,7 @@ import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
+import 'package:fushi/src/platform/desktop/linux_external_open_channel.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart'
@@ -919,6 +920,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (Platform.isWindows || Platform.isLinux) {
       _externalVideoChannel.setMethodCallHandler(_handleExternalVideoChannel);
     }
+    if (Platform.isLinux) {
+      // BUG-3089：处理器挂上之前 runner 收到的二次启动参数在它那边排队，这里
+      // 通知它冲出来；不排队的话处理器注册前只有 ChannelBuffers 的 1 条容量，
+      // 首启加载期间连续转交，前一个会被挤掉。
+      unawaited(
+        LinuxExternalOpenChannel.notifyHandlerReady(_externalVideoChannel),
+      );
+    }
     if (Platform.isWindows) {
       _systemThemeChannel.setMethodCallHandler(_handleSystemThemeChannel);
     }
@@ -1091,6 +1100,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (_shutdownStarted) return;
     _shutdownStarted = true;
     final Stopwatch exitWatch = Stopwatch()..start();
+    // BUG-3087：先让 Linux runner 进入「正在退出」，再隐藏窗口。此后二次启动不再
+    // 交给本进程（文件会随进程一起丢、隐藏的窗口会被 present 回来），而是等本
+    // 进程让出 D-Bus 名后自己按首实例启动。
+    if (Platform.isLinux) {
+      await LinuxExternalOpenChannel.notifyExiting(_externalVideoChannel);
+    }
     final AppModel appModel = ref.read(appProvider);
     try {
       await DesktopWindowPlacement.saveCurrentBoundsNow()

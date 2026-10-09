@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -40,8 +41,12 @@ Future<String?> _sayMacOS(String text, String outputPath) async {
   final File out = File(aiffPath);
   out.parent.createSync(recursive: true);
   // `--` terminates options so text starting with `-` is not parsed as a flag.
-  final ProcessResult r =
-      await Process.run('say', <String>['-o', aiffPath, '--', text]);
+  final ProcessResult r = await Process.run('say', <String>[
+    '-o',
+    aiffPath,
+    '--',
+    text,
+  ]);
   if (r.exitCode == 0 && out.existsSync() && out.lengthSync() > 0) {
     return aiffPath;
   }
@@ -60,16 +65,19 @@ Future<String?> _sapiWindows(String text, String outputPath) async {
   out.parent.createSync(recursive: true);
   final String b64 = base64Encode(utf8.encode(text));
   final String escapedOut = outputPath.replaceAll("'", "''");
-  final String script = 'Add-Type -AssemblyName System.Speech; '
+  final String script =
+      'Add-Type -AssemblyName System.Speech; '
       r"$t=[System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"
       "$b64')); "
       r'$s=New-Object System.Speech.Synthesis.SpeechSynthesizer; '
       "\$s.SetOutputToWaveFile('$escapedOut'); "
       r'$s.Speak($t); $s.Dispose();';
-  final ProcessResult r = await Process.run(
-    'powershell',
-    <String>['-NoProfile', '-NonInteractive', '-Command', script],
-  );
+  final ProcessResult r = await Process.run('powershell', <String>[
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    script,
+  ]);
   if (r.exitCode == 0 && out.existsSync() && out.lengthSync() > 0) {
     return outputPath;
   }
@@ -135,8 +143,14 @@ OpenJTalkAssets? resolveOpenJTalkAssets({
   return (dictionaryDir: dic, voicePath: voice);
 }
 
-/// [text] 是否只由假名（含长音符、标点、空白）组成——espeak-ng 的日语声音只会
-/// 读假名，带汉字的文本交给它会读错，宁可不出音频。
+/// [text] 是否只由假名（含长音符、读音里常见的符号、空白）组成——espeak-ng 的
+/// 日语声音只会读假名，带汉字的文本交给它会读错，宁可不出音频。
+///
+/// 收哪些、拒哪些以 espeak-ng 1.51（`-v ja -q -x` 看音素输出）实测为准（BUG-3092）：
+/// - 收：假名本体、长音 `ー`/`ｰ`、波浪长音 `〜`（读成延长）、全角 `～`、省略号
+///   `…`/`‥`、括号 `「」『』`/`｢｣`、句读与空白（都只当停顿）；
+/// - 拒：中点 `・`（U+30FB）与片假名音标扩展 `ㇰ`–`ㇿ`（U+31F0–31FF）——espeak-ng
+///   会把它们念成英语的 "Japanese letter" / "Chinese letter"。
 @visibleForTesting
 bool isKanaOnlyText(String text) {
   final String trimmed = text.trim();
@@ -144,10 +158,10 @@ bool isKanaOnlyText(String text) {
   bool sawKana = false;
   for (final int rune in trimmed.runes) {
     final bool kana =
-        (rune >= 0x3041 && rune <= 0x309F) || // 平假名
-        (rune >= 0x30A0 && rune <= 0x30FF) || // 片假名（含 ー・）
-        (rune >= 0x31F0 && rune <= 0x31FF) || // 片假名音标扩展
-        (rune >= 0xFF66 && rune <= 0xFF9F); // 半角片假名
+        (rune >= 0x3041 && rune <= 0x309F) || // 平假名（含 ゛゜ゝゞ）
+        (rune >= 0x30A0 && rune <= 0x30FA) || // 片假名
+        (rune >= 0x30FC && rune <= 0x30FF) || // ー ヽ ヾ ヿ
+        (rune >= 0xFF66 && rune <= 0xFF9F); // 半角片假名（含 ｰ）
     if (kana) {
       sawKana = true;
       continue;
@@ -156,8 +170,14 @@ bool isKanaOnlyText(String text) {
         rune == 0x20 ||
         rune == 0x3000 || // 全角空格
         (rune >= 0x3001 && rune <= 0x3003) || // 、。〃
+        (rune >= 0x300C && rune <= 0x300F) || // 「」『』
+        rune == 0x301C || // 〜
+        rune == 0x2025 || // ‥
+        rune == 0x2026 || // …
         rune == 0xFF01 || // ！
-        rune == 0xFF1F; // ？
+        rune == 0xFF1F || // ？
+        rune == 0xFF5E || // ～
+        (rune >= 0xFF61 && rune <= 0xFF65); // ｡｢｣､･
     if (!neutral) return false;
   }
   return sawKana;
@@ -176,87 +196,151 @@ List<String> _listHtsVoices(String dir) {
   }
 }
 
-/// Linux：Open JTalk（能读汉字）优先，没装再用 espeak-ng 读纯假名文本。
-Future<String?> _ttsLinux(String text, String outputPath) async {
-  final OpenJTalkAssets? assets = resolveOpenJTalkAssets(
-    environment: Platform.environment,
-    directoryExists: (String path) => Directory(path).existsSync(),
-    fileExists: (String path) => File(path).existsSync(),
-    listVoiceFiles: _listHtsVoices,
-  );
-  if (assets != null) {
-    final String? viaOpenJTalk = await _openJTalkLinux(
-      text,
-      outputPath,
-      assets,
+/// 本机实际可用的 Open JTalk 资产（读真实环境变量与文件系统）；缺辞书或缺声音
+/// 返回 null。生产路径与真引擎测试的 skip 判据共用这一处。
+OpenJTalkAssets? resolveSystemOpenJTalkAssets() => resolveOpenJTalkAssets(
+  environment: Platform.environment,
+  directoryExists: (String path) => Directory(path).existsSync(),
+  fileExists: (String path) => File(path).existsSync(),
+  listVoiceFiles: _listHtsVoices,
+);
+
+/// 启动外部 TTS 进程的函数形状（[Process.start] 的子集），测试注入假进程用。
+typedef LinuxTtsProcessStarter =
+    Future<Process> Function(String executable, List<String> arguments);
+
+/// 单个 TTS 进程从写入文本到退出的上界。合成一个词条读音正常在 1 秒内；这是对
+/// 外部进程（辞书损坏、声音文件异常、等不到 EOF）的硬上界，到点杀掉并按该引擎
+/// 失败处理，让下一个引擎接着兜底，而不是让制卡永远等下去（BUG-3088）。
+const Duration kLinuxTtsProcessTimeout = Duration(seconds: 15);
+
+/// Linux：Open JTalk（能读汉字）优先，没装或失败再用 espeak-ng 读纯假名文本。
+Future<String?> _ttsLinux(String text, String outputPath) => synthesizeLinuxTts(
+  text: text,
+  outputPath: outputPath,
+  openJTalk: resolveSystemOpenJTalkAssets(),
+);
+
+/// [_ttsLinux] 的可注入内核：引擎选择与兜底顺序脱离真实进程可测。
+@visibleForTesting
+Future<String?> synthesizeLinuxTts({
+  required String text,
+  required String outputPath,
+  required OpenJTalkAssets? openJTalk,
+  LinuxTtsProcessStarter startProcess = Process.start,
+  Duration processTimeout = kLinuxTtsProcessTimeout,
+}) async {
+  if (openJTalk != null) {
+    final String? viaOpenJTalk = await runLinuxTtsProcess(
+      executable: 'open_jtalk',
+      // 不给输入文件参数时 open_jtalk 从 stdin 读一行行文本。
+      arguments: <String>[
+        '-x',
+        openJTalk.dictionaryDir,
+        '-m',
+        openJTalk.voicePath,
+        '-ow',
+        outputPath,
+      ],
+      // open_jtalk 按行合成；把换行压成空格，保证一次调用只出一段音频。
+      text: '${text.replaceAll(RegExp(r'[\r\n]+'), ' ')}\n',
+      outputPath: outputPath,
+      logTag: 'ttsToFileDesktop.openJTalk',
+      startProcess: startProcess,
+      timeout: processTimeout,
     );
     if (viaOpenJTalk != null) return viaOpenJTalk;
   }
   if (!isKanaOnlyText(text)) return null;
-  return _espeakNgLinux(text, outputPath);
+  return runLinuxTtsProcess(
+    executable: 'espeak-ng',
+    // `--stdin` 读文本；`-b 1` = 输入是 UTF-8。
+    arguments: <String>['-v', 'ja', '-b', '1', '-w', outputPath, '--stdin'],
+    text: text,
+    outputPath: outputPath,
+    logTag: 'ttsToFileDesktop.espeakNg',
+    startProcess: startProcess,
+    timeout: processTimeout,
+  );
 }
 
 /// 跑一个 TTS 进程：文本经 stdin 以 UTF-8 送入（避开命令行转义与 argv 编码），
 /// 退出码 0 且产出非空文件才算成功。可执行文件不存在时返回 null（未安装 ≠ 错误）。
-Future<String?> _runLinuxTtsProcess({
+///
+/// 以下都按「该引擎失败」处理（记日志、返回 null），调用方据此换下一个引擎：
+/// - 写 / 关 stdin 失败（引擎提前退出 → EPIPE，`SocketException`）；
+/// - 从写入文本到进程退出超过 [timeout]——进程被 SIGKILL。
+@visibleForTesting
+Future<String?> runLinuxTtsProcess({
   required String executable,
   required List<String> arguments,
   required String text,
   required String outputPath,
   required String logTag,
+  LinuxTtsProcessStarter startProcess = Process.start,
+  Duration timeout = kLinuxTtsProcessTimeout,
 }) async {
   final File out = File(outputPath);
   out.parent.createSync(recursive: true);
   if (out.existsSync()) out.deleteSync();
   final Process process;
   try {
-    process = await Process.start(executable, arguments);
+    process = await startProcess(executable, arguments);
   } on ProcessException {
     return null; // 没装这个引擎。
   }
-  process.stdin.add(utf8.encode(text));
-  await process.stdin.close();
+  // 先挂上 stdout / stderr 的消费者再写 stdin：否则引擎写满输出管道后阻塞，
+  // 我们又在等它读完 stdin，两边互等。
   final Future<String> stderr = process.stderr.transform(utf8.decoder).join();
-  await process.stdout.drain<void>();
-  final int exitCode = await process.exitCode;
+  final Future<void> stdoutDrained = process.stdout.drain<void>();
+
+  Future<int> interact() async {
+    process.stdin.add(utf8.encode(text));
+    await process.stdin.close();
+    await stdoutDrained;
+    return process.exitCode;
+  }
+
+  final int exitCode;
+  try {
+    exitCode = await interact().timeout(timeout);
+  } on TimeoutException {
+    process.kill(ProcessSignal.sigkill);
+    _deletePartialOutput(out);
+    ErrorLogService.instance.log(
+      logTag,
+      '$executable did not finish within ${timeout.inMilliseconds}ms; killed',
+      StackTrace.current,
+    );
+    return null;
+  } on IOException catch (e, stack) {
+    process.kill(ProcessSignal.sigkill);
+    _deletePartialOutput(out);
+    ErrorLogService.instance.log(logTag, '$executable stdin failed: $e', stack);
+    return null;
+  }
   if (exitCode == 0 && out.existsSync() && out.lengthSync() > 0) {
     return outputPath;
   }
+  _deletePartialOutput(out);
+  // 进程已退出，stderr 随之 EOF；仍加同一上界，防孙进程继承了管道不放。
+  final String stderrText = await stderr.timeout(
+    timeout,
+    onTimeout: () => '<stderr not closed>',
+  );
   ErrorLogService.instance.log(
     logTag,
-    '$executable exit $exitCode: ${await stderr}',
+    '$executable exit $exitCode: $stderrText',
     StackTrace.current,
   );
   return null;
 }
 
-Future<String?> _openJTalkLinux(
-  String text,
-  String outputPath,
-  OpenJTalkAssets assets,
-) => _runLinuxTtsProcess(
-  executable: 'open_jtalk',
-  // 不给输入文件参数时 open_jtalk 从 stdin 读一行行文本。
-  arguments: <String>[
-    '-x',
-    assets.dictionaryDir,
-    '-m',
-    assets.voicePath,
-    '-ow',
-    outputPath,
-  ],
-  // open_jtalk 按行合成；把换行压成空格，保证一次调用只出一段音频。
-  text: '${text.replaceAll(RegExp(r'[\r\n]+'), ' ')}\n',
-  outputPath: outputPath,
-  logTag: 'ttsToFileDesktop.openJTalk',
-);
-
-Future<String?> _espeakNgLinux(String text, String outputPath) =>
-    _runLinuxTtsProcess(
-      executable: 'espeak-ng',
-      // `--stdin` 读文本；`-b 1` = 输入是 UTF-8。
-      arguments: <String>['-v', 'ja', '-b', '1', '-w', outputPath, '--stdin'],
-      text: text,
-      outputPath: outputPath,
-      logTag: 'ttsToFileDesktop.espeakNg',
-    );
+/// 失败的引擎可能留下半截 WAV；删掉，免得被当成产物。
+void _deletePartialOutput(File out) {
+  try {
+    if (out.existsSync()) out.deleteSync();
+  } on FileSystemException catch (e, stack) {
+    ErrorLogService.instance.log('ttsToFileDesktop.cleanup', e, stack);
+  }
+}

@@ -22,6 +22,10 @@ gchar* fushi_normalize_external_arg(GApplicationCommandLine* cmdline,
 gchar* fushi_first_external_arg(GApplicationCommandLine* cmdline,
                                 gchar** argv);
 
+// 等 [name] 在会话总线上没有 owner，最多 [timeout_ms]。名字空闲 / 没有会话总线时
+// 立即返回 TRUE；到上界仍被占着返回 FALSE（调用方决定怎么退回，不无限挂起）。
+gboolean fushi_wait_for_bus_name_released(const gchar* name, guint timeout_ms);
+
 // 数据迁移自动重启（`DesktopLifecycleService.restartApp`）以 detached 方式拉起带
 // `--fushi-restarted` 的新进程，**旧进程此刻还持有单实例 D-Bus 名**。不等的话新进程
 // 会把参数转交给正在退出的旧进程然后自己退出，重启落空。与 Windows main.cpp 的

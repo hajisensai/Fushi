@@ -1224,14 +1224,23 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     );
   }
 
-  /// 打开来源根目录（桌面三端本地来源）。走仓库唯一的文件管理器原语
-  /// [revealInFileManager]：rootPath 由 normalizeSourceRootPath 归一化为正斜杠，
-  /// 而 Windows explorer.exe 只认反斜杠（传正斜杠会改开「文档」，BUG-920）——
+  /// 打开来源根目录（桌面三端本地来源）。走文件管理器原语的「打开目录」形态
+  /// [openDirectoryInFileManager]：rootPath 由 normalizeSourceRootPath 归一化为正
+  /// 斜杠，而 Windows explorer.exe 只认反斜杠（传正斜杠会改开「文档」，BUG-920）——
   /// 这层方向转换收在原语的 Windows 分支里，这里不再自己拼 explorer 调用。
+  ///
+  /// 根目录可以是符号链接 / 联接点：必须按目录打开，不能交给按 `followLinks: false`
+  /// 判类型的 [revealInFileManager]（会被当成文件、在父目录里选中它，BUG-3090）。
+  /// 打不开（根目录已不存在 / 盘没挂 / 启动失败）要告诉用户，不能点了没反应。
   Future<void> _openFolder(SourceLibraryRow row) async {
     if (row.transport != 'local') return;
-    // 打开失败不致命（路径可能已不存在）；静默即可。
-    await revealInFileManager(row.rootPath);
+    final bool opened = await openDirectoryInFileManager(row.rootPath);
+    if (!opened && mounted) {
+      FushiToast.show(
+        msg: t.media_source_open_folder_failed,
+        severity: ToastSeverity.error,
+      );
+    }
   }
 
   /// 导出当前本地视频来源的 AI 可读刮削诊断包。

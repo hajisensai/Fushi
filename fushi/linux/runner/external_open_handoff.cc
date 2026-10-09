@@ -60,23 +60,29 @@ bool NameHasOwner(GDBusConnection* bus, const gchar* name) {
 
 }  // namespace
 
+gboolean fushi_wait_for_bus_name_released(const gchar* name,
+                                          guint timeout_ms) {
+  g_autoptr(GDBusConnection) bus =
+      g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
+  if (bus == nullptr) return TRUE;
+  const gint64 deadline =
+      g_get_monotonic_time() + timeout_ms * G_GINT64_CONSTANT(1000);
+  while (NameHasOwner(bus, name)) {
+    if (g_get_monotonic_time() >= deadline) {
+      g_warning("previous instance still owns %s after %u ms", name,
+                timeout_ms);
+      return FALSE;
+    }
+    g_usleep(100 * 1000);
+  }
+  return TRUE;
+}
+
 void fushi_wait_for_previous_instance_exit(int argc, char** argv,
                                            const gchar* application_id,
                                            guint timeout_ms) {
   if (!HasRestartMarker(argc, argv)) return;
-  g_autoptr(GDBusConnection) bus =
-      g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
-  if (bus == nullptr) return;
-  const gint64 deadline =
-      g_get_monotonic_time() + timeout_ms * G_GINT64_CONSTANT(1000);
-  while (NameHasOwner(bus, application_id)) {
-    if (g_get_monotonic_time() >= deadline) {
-      // 旧进程卡住没退：照常注册（会转交给它并退出），与超时前的行为一致，
-      // 不在这里无限挂起一个用户看不见的进程。
-      g_warning("previous instance still owns %s after %u ms", application_id,
-                timeout_ms);
-      return;
-    }
-    g_usleep(100 * 1000);
-  }
+  // 旧进程卡住没退（返回 FALSE）：照常注册（会转交给它并退出），与超时前的行为
+  // 一致，不在这里无限挂起一个用户看不见的进程。
+  fushi_wait_for_bus_name_released(application_id, timeout_ms);
 }

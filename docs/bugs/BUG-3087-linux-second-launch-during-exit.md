@@ -1,0 +1,12 @@
+## BUG-3087 · Linux 首实例退出途中二次启动：参数转交给将死进程、隐藏窗口被重新显示，文件丢失
+- **报告**：2026-10-09（审查 `1be1a2b7^..f84a2186` Linux 补缺提交时发现）
+- **真实性**：✅ 真 bug。Dart 退出链 `_flushAndExitForWindowClose` 第一步 `windowManager.hide()`（`fushi/lib/main.dart:1106`，修前行号），此后进程还要活约 6s 做 flush，单实例 D-Bus 名一直占着。这期间二次启动（文件关联 / 深链 / 终端）落到首实例的 `my_application_command_line`（`fushi/linux/runner/my_application.cc:127` 起），`self->window != nullptr` 分支照常把参数 invoke 给 Dart（`:143`）并 `gtk_window_present`（`:147`）——参数交给一个马上 `exit(0)` 的进程等于丢失，隐藏的将死窗口还会被重新显示。Windows 侧早有对应处理（`windows/runner/main.cpp`「窗口不可见 ⇔ 正在退出 → 等所有权后按首实例启动」），Linux 没有。
+- **[x] ① 已修复**（见本分支提交 `fix(linux): …`）—
+  - Dart：退出链在 hide 之前经 `app.fushi/external_video` 发 `appExiting`（`LinuxExternalOpenChannel.notifyExiting`，`fushi/lib/src/platform/desktop/linux_external_open_channel.dart`；300ms 上界，旧 runner 不认也不挡退出）。
+  - runner：收到后 `self->exiting = TRUE`；此后 `my_application_command_line` 直接回 `kFushiPrimaryExitingStatus`（75），不转交、不 present；`activate` 与所有前置统一走 `present_main_window`（退出中 / 首帧前不前置）。
+  - 二次启动方（`fushi/linux/runner/main.cc`）：GApplication 远端拿到的正是首实例的这个退出码 → `fushi_wait_for_bus_name_released`（与 `--fushi-restarted` 共用，10s 上界）等旧实例让出名字 → 用同一份 argv 再跑一次，按首实例启动并自己打开文件。超时则放弃（不无限挂起看不见的进程）。是否远端由 `GApplication::startup` 是否跑过判定（`my_application_became_primary`）——`g_application_run` 返回后 GLib 已注销远端实例，`g_application_get_is_remote` 不可用（实测 `registered=0`）。
+- **[x] ② 已加自动化测试** —
+  - 源码守卫 `fushi/test/native/linux_single_instance_guard_static_test.dart`：退出中拒收在转交之前、命令行路径不裸调 `gtk_window_present`、main.cc 等名字后再跑一次、Dart 侧 `notifyExiting` 在 `windowManager.hide()` 之前。
+  - 单测 `fushi/test/platform/desktop/linux_external_open_channel_test.dart`：方法名 / 通道、runner 未实现 / 报错 / 不回时不抛不挂。
+  - 真机替身 E2E（不入库，CI 无 GTK）：用本 runner 源码编一个最小 Flutter Linux app，`xvfb-run dbus-run-session` 下首实例发 `appExiting` 后再活 3s，期间二次启动 → 首实例不接管；二次启动进程在首实例退出后以 `argv=…/file3` 作为新首实例启动。修前 runner 同脚本：file3 被交给正在退出的首实例。
+- **备注**：Linux App 为社区维护平台，未在真实桌面会话 + 完整 Fushi 包上肉眼复测（本机完整 `flutter build linux` 卡在 `native/fushidicts` 需要 C++23 `<expected>`，与本改动无关）。
