@@ -244,12 +244,26 @@ class MangaTurnQueue {
   /// 影响，drain 循环在它返回后看到 0 就停。
   void clear() => _pendingDelta = 0;
 
+  /// 正在跑的 drain 循环结束时完成；没在 drain 时立即完成。
+  Completer<void>? _drainDone;
+
+  /// 等到眼下这一轮 drain 跑完（[enqueue] 在已有 drain 进行中时会立刻返回，
+  /// 它排进去的那一步要等那一轮 drain 才消费）。
+  ///
+  /// 横滑跟手松手后，JS 要等 Dart「处理完这次翻页请求」才判断换没换页、没换才
+  /// 回弹（BUG-3219）。只等 [enqueue] 不够：连滑时第二下的 enqueue 撞上第一下
+  /// 还在跑的 drain 就立即返回，JS 以为没翻页先回弹，紧接着 drain 又把它翻过去，
+  /// 页面「弹回去再翻过来」。**不能**在 applyStep 内部 await 它（自己等自己）。
+  Future<void> get whenIdle => _drainDone?.future ?? Future<void>.value();
+
   Future<void> drain({
     required bool Function() canApply,
     required Future<void> Function(int step) applyStep,
   }) async {
     if (_draining || !canApply()) return;
     _draining = true;
+    final Completer<void> done = Completer<void>();
+    _drainDone = done;
     try {
       while (_pendingDelta != 0 && canApply()) {
         final int step = _pendingDelta > 0 ? 1 : -1;
@@ -258,6 +272,8 @@ class MangaTurnQueue {
       }
     } finally {
       _draining = false;
+      _drainDone = null;
+      done.complete();
     }
   }
 }
@@ -6585,7 +6601,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
             // 返回 Future：桥在它完成后才答复 JS 的 callHandler Promise。横滑跟手
             // 松手后靠这个答复判断「Dart 换没换页」，没换才回弹（BUG-3219）。
-            return _onMangaTurn(args[0] as String);
+            // 还要等进行中的那一轮 drain：连滑时本次 enqueue 会立即返回，步数要等
+            // 那一轮才消费（见 [MangaTurnQueue.whenIdle]）。
+            return _onMangaTurn(
+              args[0] as String,
+            ).then((void _) => _turnQueue.whenIdle);
           },
         );
         controller.addJavaScriptHandler(

@@ -1756,7 +1756,7 @@ class MangaChapterSwitchingOverlay extends StatelessWidget {
                 ? DecoratedBox(
                     decoration: BoxDecoration(
                       color: scheme.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(28),
+                      borderRadius: FushiM3eShape.containerLargeRadius,
                     ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(

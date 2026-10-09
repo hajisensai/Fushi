@@ -226,4 +226,55 @@ void main() {
       expect(page5.firstMatch(d)!.group(1), 'eager');
     });
   });
+
+  group('BUG-3219 横滑松手的答复要等进行中的 drain', () {
+    test('连滑：第二下 enqueue 立即返回，whenIdle 等到它排进去的那一步真正翻完', () async {
+      final MangaTurnQueue queue = MangaTurnQueue();
+      final Completer<void> firstStep = Completer<void>();
+      final List<int> applied = <int>[];
+      Future<void> applyStep(int step) async {
+        applied.add(step);
+        if (applied.length == 1) await firstStep.future;
+      }
+
+      final Future<void> first = queue.enqueue(
+        1,
+        maxMagnitude: 100,
+        canApply: () => true,
+        applyStep: applyStep,
+      );
+      await Future<void>.delayed(Duration.zero);
+      // 第一下还在飞：第二下 enqueue 撞上进行中的 drain，立刻返回。
+      bool secondAnswered = false;
+      final Future<void> second = queue
+          .enqueue(
+            1,
+            maxMagnitude: 100,
+            canApply: () => true,
+            applyStep: applyStep,
+          )
+          .then((void _) => queue.whenIdle)
+          .then((void _) => secondAnswered = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(applied, <int>[1]);
+      expect(
+        secondAnswered,
+        isFalse,
+        reason: '第二下排进去的步数还没翻，JS 此刻收到答复就会先回弹再被翻过去',
+      );
+      firstStep.complete();
+      await first;
+      await second;
+      expect(applied, <int>[1, 1]);
+      expect(secondAnswered, isTrue);
+    });
+
+    test('没在 drain 时 whenIdle 立即完成', () async {
+      await expectLater(MangaTurnQueue().whenIdle, completes);
+    });
+
+    test('生产接线：onMangaTurn 处理器答复前等 whenIdle', () {
+      expect(source, contains('.then((void _) => _turnQueue.whenIdle)'));
+    });
+  });
 }
