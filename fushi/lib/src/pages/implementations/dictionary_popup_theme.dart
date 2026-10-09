@@ -3,6 +3,8 @@ import 'package:fushi/src/models/theme_notifier.dart'
     show SurfaceRoles, buildFushiThemeData, deriveSurfaceRolesFrom;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show FushiDesignSystem, FushiEinkTheme, FushiGlassMaterial;
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
+    show FushiAppleDarkTier;
 
 /// 查词弹窗覆盖主题的解析结果：罩住整个查词浮层的 [theme]，以及弹窗外壳的
 /// [fillColor]。两者必须同源——外壳填充色与主题的 surface 一旦差一个色阶，
@@ -58,8 +60,13 @@ class DictionaryPopupTheme {
 /// `rethemeFushiWithScheme` → [buildFushiThemeData] 重走工厂）。非 null 时弹窗
 /// 直接复用这份 scheme、不再盖纸色中性梯度——歌词页铺的是封面色，不是正文纸色，
 /// 再盖纸色就是「青色歌词页上弹出紫色弹窗」的撞色。明暗随 scheme 本身（与歌词页
-/// 一致），外壳填充取它的 surface。墨水屏与 Apple 设计系统下忽略：墨水屏要守
-/// 不变式 ②，Apple 歌词页恒深色档、不吃封面色。
+/// 一致），外壳填充取它的 surface。墨水屏下忽略（守不变式 ②）。
+///
+/// [lyricsMode]：歌词覆盖层开着。Apple 设计系统下歌词页恒为深色档
+/// （`LyricsThemeHost` 用 [FushiAppleDarkTier.darkTierOf] 换掉整页主题、不吃
+/// 封面色），弹窗跟它同一配方：按 **app** 明暗（[einkDark] 即 app 的深色模式
+/// 真值）经 [buildFushiThemeData] 出 Apple 主题，再取 [FushiAppleDarkTier.darkTierOf]
+/// ——不再用阅读器纸色与纸色明暗。外壳填充取深色档的 surface。墨水屏下忽略。
 DictionaryPopupTheme resolveDictionaryPopupTheme({
   required bool eink,
   required bool einkDark,
@@ -73,6 +80,7 @@ DictionaryPopupTheme resolveDictionaryPopupTheme({
   FushiGlassMaterial glass = FushiGlassMaterial.off,
   bool monochromeAccent = false,
   ColorScheme? lyricsCoverScheme,
+  bool lyricsMode = false,
 }) {
   final Color bg =
       eink ? (einkDark ? Colors.black : Colors.white) : readerBackground;
@@ -86,6 +94,25 @@ DictionaryPopupTheme resolveDictionaryPopupTheme({
   // 非墨水屏：弹窗配色 = app 真实 ColorScheme（主题色 / 高亮 / 描边跟用户主题）
   // + 纸色与字色盖上去的中性角色，与编辑页预览共用 [deriveSurfaceRolesFrom]。
   final bool apple = glassDesign && !eink;
+  if (apple && lyricsMode) {
+    // 与歌词页同一配方：app 明暗的 Apple 主题 → 深色档（app 已是深色时原样）。
+    final ThemeData dark = FushiAppleDarkTier.darkTierOf(
+      buildFushiThemeData(
+        scheme: buildColorScheme(
+          einkDark ? Brightness.dark : Brightness.light,
+        ),
+        textTheme: textTheme,
+        designSystem: designSystem,
+        glass: glass,
+        glassDesign: true,
+        monochromeAccent: monochromeAccent,
+      ),
+    );
+    return DictionaryPopupTheme(
+      theme: dark,
+      fillColor: dark.colorScheme.surface,
+    );
+  }
   final ColorScheme? lyricsScheme = eink || apple ? null : lyricsCoverScheme;
   ColorScheme dictionaryScheme = lyricsScheme ?? scheme;
   if (!eink && !apple && lyricsScheme == null) {

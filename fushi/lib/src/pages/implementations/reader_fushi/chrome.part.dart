@@ -3842,9 +3842,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
       glassDesign: appModel.themeNotifier.designSystem == 'glass',
       glass: appModel.themeNotifier.glassMaterial,
       monochromeAccent: appModel.themeNotifier.appThemeKey == 'system-theme',
-      // 歌词模式：弹窗跟歌词页同一份封面取色 scheme；退出后这里回到 null，
+      // 歌词模式：弹窗跟歌词页同一份封面取色 scheme（MD3）；退出后这里回到 null，
       // 弹窗恢复阅读器纸色主题。
       lyricsCoverScheme: _lyricsMode ? _lyricsThemeHost?.coverScheme : null,
+      // Apple：歌词页恒深色档，弹窗同一配方（见 resolveDictionaryPopupTheme）。
+      lyricsMode: _lyricsMode,
     );
     appModel.setOverrideDictionaryColor(resolved.fillColor);
     appModel.setOverrideDictionaryTheme(resolved.theme);
