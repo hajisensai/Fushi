@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -448,5 +449,46 @@ void main() {
       'lib/src/pages/implementations/game_stream_library_page.dart',
     ).readAsStringSync();
     expect(src, contains('body: FushiFloatingChromeVisiblePadding('));
+  });
+
+  test('分段选中胶囊与轨道对比度 ≥ 3:1（WCAG 非文本），亮 / 暗 × 多种子色', () {
+    double lum(Color c) {
+      double ch(double v) => v <= 0.03928
+          ? v / 12.92
+          : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
+      return 0.2126 * ch(c.r) + 0.7152 * ch(c.g) + 0.0722 * ch(c.b);
+    }
+
+    double ratio(Color a, Color b) {
+      final double x = lum(a), y = lum(b);
+      return (math.max(x, y) + 0.05) / (math.min(x, y) + 0.05);
+    }
+
+    for (final Color seed in const <Color>[
+      Color(0xFF6750A4),
+      Color(0xFF2E7D32),
+      Color(0xFFFF9800),
+      Color(0xFF00897B),
+      Color(0xFFE91E63),
+      Color(0xFF616161),
+    ]) {
+      for (final Brightness b in Brightness.values) {
+        final ColorScheme cs = ColorScheme.fromSeed(
+          seedColor: seed,
+          brightness: b,
+        );
+        final Color fill = fushiPillSegmentSelectedFill(cs);
+        expect(
+          ratio(fill, cs.surfaceContainerHigh),
+          greaterThanOrEqualTo(3),
+          reason: '$seed $b：选中胶囊与轨道',
+        );
+        expect(
+          ratio(fushiPillSegmentSelectedForeground(cs), fill),
+          greaterThanOrEqualTo(4.5),
+          reason: '$seed $b：选中段文字',
+        );
+      }
+    }
   });
 }

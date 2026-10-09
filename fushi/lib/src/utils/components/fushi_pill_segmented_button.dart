@@ -4,7 +4,7 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 /// M3E 分段选择器（Material 设计系统）：一条扁平的 tonal 胶囊轨道，选中段是
-/// 一枚 secondaryContainer 小胶囊——与浏览页「书架 / 漫画 / 游戏 / 视频」的二级
+/// 一枚 primary 实底小胶囊（见 [fushiPillSegmentSelectedFill]）——与浏览页「书架 / 漫画 / 游戏 / 视频」的二级
 /// 页签（`LibrarySectionTabs(floating: true, secondary: true)`）同一形态。
 ///
 /// 2026-10-09 用户截图：设置里「深色模式」的三图标分段是 Material 2 式的描边
@@ -80,7 +80,7 @@ class _FushiPillSegmentedButtonState<T> extends State<SegmentedButton<T>> {
       final Color fg = !enabled
           ? cs.onSurface.withValues(alpha: 0.38)
           : on
-          ? cs.onSecondaryContainer
+          ? fushiPillSegmentSelectedForeground(cs, eink: eink)
           : cs.onSurfaceVariant;
       final bool iconOnly = s.label == null;
       final Widget content = IconTheme.merge(
@@ -115,12 +115,13 @@ class _FushiPillSegmentedButtonState<T> extends State<SegmentedButton<T>> {
         ),
         alignment: Alignment.center,
         decoration: ShapeDecoration(
-          color: on && !eink
-              ? cs.secondaryContainer
-              : cs.secondaryContainer.withValues(alpha: 0),
-          shape: StadiumBorder(
-            side: on && eink ? BorderSide(color: cs.outline) : BorderSide.none,
-          ),
+          color: on
+              ? fushiPillSegmentSelectedFill(cs, eink: eink)
+              : fushiPillSegmentSelectedFill(
+                  cs,
+                  eink: eink,
+                ).withValues(alpha: 0),
+          shape: StadiumBorder(side: BorderSide.none),
         ),
         child: content,
       );
@@ -174,3 +175,17 @@ class _FushiPillSegmentedButtonState<T> extends State<SegmentedButton<T>> {
     );
   }
 }
+
+/// 选中段的填充色。
+///
+/// 2026-10-09 审查：最初取 secondaryContainer（与浏览页二级页签同色），但它和
+/// surfaceContainerHigh 轨道在 M3 色调上只差几档（亮色 tone 90 vs 92），选中
+/// 与未选中几乎分不出来，所有设置分段都受影响。改取 primary：与轨道至少相差
+/// 一半色调区间，亮 / 暗、任意种子色下都满足 WCAG 非文本 3:1（测试按多种子
+/// 实测）。墨水屏用 onSurface 实底（灰阶下也是最强对比）。
+Color fushiPillSegmentSelectedFill(ColorScheme cs, {bool eink = false}) =>
+    eink ? cs.onSurface : cs.primary;
+
+/// 选中段的图标 / 文字色（与 [fushiPillSegmentSelectedFill] 配对的 on- 色）。
+Color fushiPillSegmentSelectedForeground(ColorScheme cs, {bool eink = false}) =>
+    eink ? cs.surface : cs.onPrimary;
