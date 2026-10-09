@@ -187,22 +187,37 @@ VideoSourceScrapeWork? downloadJobWork(
 Future<Map<String, VideoMetadataLookup>> downloadConfirmedLookupsForWorks(
   FushiDatabase database,
   List<VideoSourceScrapeWork> works,
+) async =>
+    <String, VideoMetadataLookup>{
+      for (final MapEntry<String, List<VideoMetadataLookup>> entry
+          in (await downloadConfirmedLookupListsForWorks(database, works))
+              .entries)
+        entry.key: entry.value.first,
+    };
+
+/// 同 [downloadConfirmedLookupsForWorks]，但给出任务记下的**全部**可直取身份
+/// （首选在前，见 [videoDiscoveryMetadataLookups]）：一家资料源连不上时，同一部
+/// 作品的另一个 id 照样可用（BUG-3073）。身份一致性按首选身份判。
+Future<Map<String, List<VideoMetadataLookup>>>
+    downloadConfirmedLookupListsForWorks(
+  FushiDatabase database,
+  List<VideoSourceScrapeWork> works,
 ) async {
-  if (works.isEmpty) return const <String, VideoMetadataLookup>{};
+  if (works.isEmpty) return const <String, List<VideoMetadataLookup>>{};
   final Map<String, List<VideoDownloadJobFileRow>> filesByJob =
       <String, List<VideoDownloadJobFileRow>>{};
   for (final VideoDownloadJobFileRow row
       in await database.getImportedVideoDownloadJobFiles()) {
     filesByJob.putIfAbsent(row.jobId, () => <VideoDownloadJobFileRow>[]).add(row);
   }
-  if (filesByJob.isEmpty) return const <String, VideoMetadataLookup>{};
+  if (filesByJob.isEmpty) return const <String, List<VideoMetadataLookup>>{};
   final Set<String> memberPaths = <String>{
     for (final VideoSourceScrapeWork work in works)
       for (final VideoBookRow member in work.members)
         normalizeVideoPath(member.videoPath),
   };
-  final Map<String, VideoMetadataLookup> result =
-      <String, VideoMetadataLookup>{};
+  final Map<String, List<VideoMetadataLookup>> result =
+      <String, List<VideoMetadataLookup>>{};
   final Set<String> conflicted = <String>{};
   for (final VideoDownloadJobRow job in await database.getVideoDownloadJobs()) {
     final List<VideoDownloadJobFileRow>? files = filesByJob[job.jobId];
@@ -210,15 +225,16 @@ Future<Map<String, VideoMetadataLookup>> downloadConfirmedLookupsForWorks(
     if (!downloadJobImportedVideoPaths(files).any(memberPaths.contains)) {
       continue;
     }
-    final VideoMetadataLookup? lookup = videoDownloadJobConfirmedLookup(job);
-    if (lookup == null) continue;
+    final List<VideoMetadataLookup> lookups =
+        videoDiscoveryMetadataLookups(videoDownloadJobMediaReference(job));
+    if (lookups.isEmpty) continue;
     final VideoSourceScrapeWork? work = downloadJobWork(job, files, works);
     if (work == null) continue;
-    final VideoMetadataLookup? existing = result[work.stableKey];
-    if (existing != null && !_sameLookup(existing, lookup)) {
+    final List<VideoMetadataLookup>? existing = result[work.stableKey];
+    if (existing != null && !_sameLookup(existing.first, lookups.first)) {
       conflicted.add(work.stableKey);
     }
-    result[work.stableKey] = lookup;
+    result[work.stableKey] = lookups;
   }
   conflicted.forEach(result.remove);
   return result;
