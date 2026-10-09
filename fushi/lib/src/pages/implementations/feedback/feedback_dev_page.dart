@@ -339,9 +339,9 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
   );
 
   void _viewImage(String slot) => unawaited(
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
-      builder: (BuildContext ctx) => Dialog(
+      builder: (BuildContext ctx) => FushiDialog(
         child: InteractiveViewer(
           child: FutureBuilder<Uint8List>(
             future: _image(slot),

@@ -1,6 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// App navigation chrome for an authored disc menu. Narrow surfaces keep only
 /// the three accessible icons, leaving the disc's own buttons visible.
@@ -36,10 +39,10 @@ class BlurayDiscMenuBar extends StatelessWidget {
         VoidCallback? onPressed,
       ) {
         if (compact) {
-          return IconButton(
+          return FushiIconButtonControl(
             key: ValueKey<String>(key),
             tooltip: label,
-            icon: Icon(
+            icon: FushiIcon(
               icon,
               color: onPressed == null ? Colors.white38 : Colors.white,
             ),
@@ -49,9 +52,9 @@ class BlurayDiscMenuBar extends StatelessWidget {
         return Flexible(
           child: FushiTooltip(
             message: label,
-            child: TextButton.icon(
+            child: FushiTextButton.icon(
               key: ValueKey<String>(key),
-              icon: Icon(icon),
+              icon: FushiIcon(icon),
               label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
               onPressed: onPressed,
             ),
@@ -60,22 +63,22 @@ class BlurayDiscMenuBar extends StatelessWidget {
       }
 
       final List<Widget> buttons = <Widget>[
-        IconButton(
+        FushiIconButtonControl(
           key: const ValueKey<String>('bluray-menu-exit'),
           tooltip: backLabel,
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: const FushiIcon(FushiIcons.back, color: Colors.white),
           onPressed: onBack,
         ),
         menuButton(
           'bluray-menu-top',
           topMenuLabel,
-          Icons.disc_full_outlined,
+          FushiIcons.toc,
           navigationEnabled ? onTopMenu : null,
         ),
         menuButton(
           'bluray-menu-popup',
           popupMenuLabel,
-          Icons.menu_open,
+          FushiIcons.menu,
           navigationEnabled ? onPopupMenu : null,
         ),
       ];

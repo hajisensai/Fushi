@@ -394,7 +394,7 @@ class _StandaloneVideoWorkDetailState
               if (blurayDiscRootForPlaylistPath(book.videoPath) != null)
                 MediaDetailSecondaryButton(
                   buttonKey: const ValueKey<String>('video-work-disc-menu'),
-                  icon: Icons.disc_full_outlined,
+                  icon: FushiIcons.toc,
                   label: t.video_disc_open_menu,
                   onPressed: () => _playBook(book, openBlurayMenu: true),
                 ),

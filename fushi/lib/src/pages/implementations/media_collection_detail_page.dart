@@ -1912,10 +1912,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         runSpacing: 8,
         children: <Widget>[
           for (final MapEntry<String, VideoBookRow> disc in discs.entries)
-            OutlinedButton.icon(
+            FushiOutlinedButton.icon(
               key: ValueKey<String>('bluray-menu-${disc.key}'),
               onPressed: () => widget.onOpenDiscMenu!(disc.value),
-              icon: const Icon(Icons.disc_full_outlined),
+              icon: const FushiIcon(FushiIcons.toc),
               label: Text(
                 '${t.video_disc_open_menu} · ${p.basename(disc.key)}',
               ),

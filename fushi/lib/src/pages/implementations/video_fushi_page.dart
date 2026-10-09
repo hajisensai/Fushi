@@ -11146,12 +11146,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       if (controller
           .isBlurayNavigationSession) ...<PopupMenuEntry<VoidCallback>>[
         item(
-          Icons.disc_full_outlined,
+          FushiIcons.toc,
           t.video_disc_top_menu,
           () => unawaited(_runDiscNavigation('menu')),
         ),
         item(
-          Icons.menu_open,
+          FushiIcons.menu,
           t.video_disc_popup_menu,
           () => unawaited(_runDiscNavigation('popup')),
         ),

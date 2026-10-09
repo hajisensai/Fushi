@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart' show sha1;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:drift/drift.dart' show Value;
@@ -3270,7 +3271,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           if (blurayDiscRootForPlaylistPath(book.videoPath) != null)
             DialogQuickAction(
               label: t.video_disc_open_menu,
-              icon: Icons.disc_full_outlined,
+              icon: FushiIcons.toc,
               onPressed: () {
                 Navigator.pop(dialogContext);
                 unawaited(

@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_bar.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:material_ui/material_ui.dart';
 
 void main() {
   for (final double width in <double>[180, 420]) {
@@ -33,9 +34,9 @@ void main() {
       ]) {
         final Widget button = tester.widget(find.byKey(ValueKey<String>(key)));
         expect(
-          button is IconButton
+          button is FushiIconButtonControl
               ? button.onPressed
-              : (button as TextButton).onPressed,
+              : (button as FushiTextButton).onPressed,
           isNull,
         );
       }
@@ -73,7 +74,17 @@ void main() {
     expect(find.text('Top menu'), findsNothing);
     expect(find.byTooltip('Top menu'), findsOneWidget);
     expect(
-      tester.getSize(find.byType(Material).last).width,
+      // The bar's own surface — Fushi controls bring their own Material.
+      tester
+          .getSize(
+            find
+                .descendant(
+                  of: find.byType(BlurayDiscMenuBar),
+                  matching: find.byType(Material),
+                )
+                .first,
+          )
+          .width,
       lessThanOrEqualTo(180),
     );
     await tester.tap(find.byKey(const ValueKey<String>('bluray-menu-top')));
@@ -107,7 +118,7 @@ void main() {
         ),
       );
       expect(tester.takeException(), isNull);
-      expect(find.byType(TextButton), findsNWidgets(2));
+      expect(find.byType(FushiTextButton), findsNWidgets(2));
       expect(tester.getSize(find.byType(BlurayDiscMenuBar)).width, 420);
     },
   );

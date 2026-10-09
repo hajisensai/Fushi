@@ -19,7 +19,7 @@ extension _VideoDiscMenu on _VideoFushiPageState {
       }
       final bool installed =
           await _focusOwnership.guardOverlay(
-            () => showDialog<bool>(
+            () => showAppDialog<bool>(
               context: context,
               barrierDismissible: false,
               builder: (_) => _BlurayJavaRuntimeInstallDialog(manager: manager),
@@ -437,7 +437,7 @@ class _BlurayJavaRuntimeInstallDialogState
   @override
   Widget build(BuildContext context) => PopScope(
     canPop: !_installing,
-    child: AlertDialog(
+    child: FushiAlertDialog(
       title: Text(t.video_disc_runtime_install),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -446,7 +446,7 @@ class _BlurayJavaRuntimeInstallDialogState
           Text(t.video_disc_runtime_description),
           if (_installing) ...<Widget>[
             const SizedBox(height: 16),
-            LinearProgressIndicator(value: _progress),
+            FushiLinearProgressIndicator(value: _progress),
           ],
           if (_failed) ...<Widget>[
             const SizedBox(height: 16),
@@ -455,14 +455,14 @@ class _BlurayJavaRuntimeInstallDialogState
         ],
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () {
             widget.manager.cancel();
             Navigator.of(context).pop(false);
           },
           child: Text(t.cancel),
         ),
-        FilledButton(
+        FushiFilledButton(
           onPressed: _installing ? null : _install,
           child: Text(t.video_disc_runtime_install),
         ),
