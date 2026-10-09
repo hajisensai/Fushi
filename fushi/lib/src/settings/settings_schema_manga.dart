@@ -344,7 +344,7 @@ SettingsDestination buildMangaDestination() {
             id: 'manga.resume_target',
             title: t.manga_resume_target,
             subtitle: t.manga_resume_target_subtitle,
-            icon: Icons.bookmark_outline,
+            icon: FushiIcons.bookmark,
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
                 value: MangaResumeTarget.furthestProgress.key,

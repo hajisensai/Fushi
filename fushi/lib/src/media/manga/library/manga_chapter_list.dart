@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -81,7 +84,7 @@ class MangaChapterList extends StatelessWidget {
   final bool unreadOnly;
   final String? currentChapterKey;
 
-  /// 挂在当前章那一行上的 key：宿主拿它 `Scrollable.ensureVisible` 定位到当前章
+  /// 挂在当前章那一行上的 key：宿主拿它 `FushiFocusScroll.ensureVisible` 定位到当前章
   /// （阅读器章节抽屉打开即滚到当前章、作品页「跳到当前章节」）。当前章被筛掉
   /// （只看未读）时不挂，`currentContext` 为 null。
   final GlobalKey? currentChapterAnchorKey;
@@ -488,11 +491,13 @@ bool scrollToMangaChapterAnchor(
 }) {
   final BuildContext? target = anchor.currentContext;
   if (target == null) return false;
-  Scrollable.ensureVisible(
-    target,
-    alignment: 0.3,
-    duration: duration,
-    curve: Curves.easeInOutCubicEmphasized,
+  unawaited(
+    FushiFocusScroll.ensureVisible(
+      target,
+      alignment: 0.3,
+      duration: duration,
+      curve: FushiMotion.standard,
+    ),
   );
   return true;
 }

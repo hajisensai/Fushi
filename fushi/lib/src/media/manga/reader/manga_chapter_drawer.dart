@@ -106,7 +106,7 @@ class _MangaChapterDrawerState extends State<MangaChapterDrawer> {
       position.animateTo(
         target,
         duration: duration,
-        curve: Curves.easeInOutCubicEmphasized,
+        curve: FushiMotion.standard,
       );
     }
   }
@@ -178,7 +178,7 @@ class _MangaChapterDrawerState extends State<MangaChapterDrawer> {
                 key: const ValueKey<String>('manga_chapter_drawer_close'),
                 tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
                 onPressed: widget.onClose,
-                icon: const FushiIcon(Icons.close),
+                icon: const FushiIcon(FushiIcons.close),
               ),
             ],
           );

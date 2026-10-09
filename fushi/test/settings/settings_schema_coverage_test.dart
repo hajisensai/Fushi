@@ -184,6 +184,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // MihonCoverCache.maxAge（过期条目下次读取删掉重取），harness 里没有封面缓存
   // 目录可探。由专项测试咬住：过期封面重新联网、未过期命中磁盘、偏好改动即时
   // 写穿到已建 manager 的缓存实例。
+  // 继续阅读落点（最远进度 / 最后位置）。写 prefsRepo（changed=true），生效点是
+  // 打开在线漫画作品时 continueMangaChapterIndex 按偏好挑章——harness 里没有在线
+  // 漫画作品可开。由专项测试咬住：偏好键默认/回落/写穿 DB，以及两种口径各自落到
+  // 哪一章、从第几页开始的纯函数。
+  'manga/Reopen at':
+      'test/media/manga/manga_resume_point_test.dart（偏好写穿 + 两种口径选章）',
   'manga/Cover cache retention':
       'test/media/manga/manga_cover_retry_test.dart（maxAge 过期重取 + 偏好写穿）',
   // galgame 窗口超分三态开关（PR#430）。写 prefsRepo（changed=true），生效点整条在
