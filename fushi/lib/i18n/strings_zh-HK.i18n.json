@@ -4098,7 +4098,7 @@
   "video_setting_torrent_zero_default": "0 = 預設",
   "video_setting_torrent_zero_off": "0 = 關閉",
   "video_setting_youtube_quality": "YouTube 畫質",
-  "video_setting_youtube_quality_hint": "起播自動選不超過目標的最高檔；「自動」優先流暢（硬解友好編碼，最高 1080p）；要 2K / 4K 請選 1440p / 2160p",
+  "video_setting_youtube_quality_hint": "「自動」流暢優先（≤1080p）；要 4K 選 2160p",
   "video_settings_cat_audio": "音頻",
   "video_settings_cat_controls": "控制按鈕",
   "video_settings_cat_danmaku": "彈幕",

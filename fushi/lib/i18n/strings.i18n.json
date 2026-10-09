@@ -4098,7 +4098,7 @@
   "video_setting_torrent_zero_default": "0 = default",
   "video_setting_torrent_zero_off": "0 = off",
   "video_setting_youtube_quality": "YouTube quality",
-  "video_setting_youtube_quality_hint": "Start streams at the highest tier up to this target; Auto prefers smooth playback (hardware-friendly codec, up to 1080p); pick 1440p / 2160p for higher",
+  "video_setting_youtube_quality_hint": "Auto = smooth first (≤1080p); pick 2160p for 4K",
   "video_settings_cat_audio": "Audio",
   "video_settings_cat_controls": "Controls",
   "video_settings_cat_danmaku": "Danmaku",

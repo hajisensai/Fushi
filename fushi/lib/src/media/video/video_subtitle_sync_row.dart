@@ -176,6 +176,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
     if (widget.floatBar) return _buildFloatBar(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final VideoQuickSettingsHost host = widget.host;
+    final bool compact = SettingsCompactRowsScope.of(context);
     // 拖动中显示预览值，否则显示已落盘的权威值。
     final int shownMs = _delayDragMs ?? _delayMs;
     final String label = _delayLabel(shownMs);
@@ -215,19 +216,23 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
           // [FushiAppUiScale] 的 Transform.scale 子树里，裸 Slider 的值指示器水平钳制在两
           // 空间差 s² 下会把气泡甩到拇指反方向（根因与守卫见 adaptive_widgets.dart /
           // slider_value_indicator_scale_test.dart）。
-          adaptiveSlider(
-            context: context,
-            value: sliderValue,
-            min: -_subtitleSyncSliderRangeMs.toDouble(),
-            max: _subtitleSyncSliderRangeMs.toDouble(),
-            divisions: _subtitleSyncSliderRangeMs ~/ 50, // 50ms 一档
-            label: label,
-            onChanged: (double v) => setState(() => _delayDragMs = v.round()),
-            onChangeEnd: (double v) {
-              setState(() => _delayDragMs = null);
-              _commitDelay(v.round());
-            },
-          ),
+          // 手机紧凑档（[SettingsCompactRowsScope]）不放滑条：±步进 + 可输入读数已覆盖
+          // 它的用途，省下的一截留给首屏更多设置项。
+          if (!compact) ...<Widget>[
+            adaptiveSlider(
+              context: context,
+              value: sliderValue,
+              min: -_subtitleSyncSliderRangeMs.toDouble(),
+              max: _subtitleSyncSliderRangeMs.toDouble(),
+              divisions: _subtitleSyncSliderRangeMs ~/ 50, // 50ms 一档
+              label: label,
+              onChanged: (double v) => setState(() => _delayDragMs = v.round()),
+              onChangeEnd: (double v) {
+                setState(() => _delayDragMs = null);
+                _commitDelay(v.round());
+              },
+            ),
+          ],
           SizedBox(height: tokens.spacing.gap / 2),
           buttons,
           // TODO-1051 阶段B / TODO-1207：音频波形对轴入口（有字幕 cue + 可抽波形时才挂）。

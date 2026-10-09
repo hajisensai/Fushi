@@ -208,6 +208,7 @@ Widget _settingsPanel(
         ? readerSideSheetWidth(window.width)
         : fushiQuickSettingsPanelWidth(window.width),
     bottomSheetWhenCompact: true,
+    opaque: true,
     onClose: () {},
     child: sheet,
   );
@@ -223,6 +224,7 @@ Widget _delayBar(VideoQuickSettingsHost host) {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
           child: VideoFloatingPanelSurface(
+            opaque: true,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               child: VideoSubtitleSyncRow(

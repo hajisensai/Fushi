@@ -1290,9 +1290,11 @@ void main() {
       t.video_setting_av_delay,
     );
     expect(delayRow, findsOneWidget);
+    // 界面缩放 2.0 把窗口缩成 160 宽 → 手机紧凑档：不放滑条（±步进 + 可输入读数
+    // 已覆盖它），把首屏留给更多设置项。
     expect(
       find.descendant(of: delayRow, matching: find.byType(Slider)),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       find.byKey(const ValueKey<String>('video-subtitle-delay-readout')),
@@ -1681,6 +1683,12 @@ void main() {
     expect(padding.left, 16);
     expect(padding.right, 16);
     expect(padding.top, 8);
+    // 设置行走紧凑档（单行说明 + ⓘ、下拉与标题同行），页顶说明行不放。
+    expect(find.byType(SettingsCompactRowsScope), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('video-settings-hint-playback')),
+      findsNothing,
+    );
   });
 
   // ── TODO-470：设置页内控制按钮编辑器使用播放器方位预览舞台 ─

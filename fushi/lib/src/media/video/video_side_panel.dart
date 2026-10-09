@@ -34,8 +34,14 @@ class VideoFloatingPanelSurface extends StatelessWidget {
     required this.child,
     this.surfaceKey,
     this.borderRadius,
+    this.opaque = false,
     super.key,
   });
+
+  /// MD3：true 时表面用不透明底色（不透出下面的画面 / 字幕）。设置面板与调轴浮条
+  /// 用它——面板里是成片的文字与控件，背后透出字幕会和面板文字叠在一起难读。
+  /// Apple 液态玻璃不受影响（玻璃本身已压得住画面）。
+  final bool opaque;
 
   final Widget child;
 
@@ -101,7 +107,11 @@ class VideoFloatingPanelSurface extends StatelessWidget {
       data: videoM3ePanelTheme(Theme.of(context)),
       child: Material(
         key: surfaceKey,
-        color: videoM3eFloatingColor(Theme.of(context).colorScheme),
+        color: opaque
+            ? videoM3eFloatingColor(
+                Theme.of(context).colorScheme,
+              ).withValues(alpha: 1)
+            : videoM3eFloatingColor(Theme.of(context).colorScheme),
         surfaceTintColor: Colors.transparent,
         shadowColor: Colors.black,
         elevation: kFushiFloatingElevation,
@@ -359,8 +369,12 @@ class VideoTranslucentSidePanel extends StatelessWidget {
     this.width = 400,
     this.icon,
     this.bottomSheetWhenCompact = false,
+    this.opaque = false,
     super.key,
   });
+
+  /// 表面不透明（见 [VideoFloatingPanelSurface.opaque]）。
+  final bool opaque;
 
   /// 页头标题；null = 不画页头（内容自带顶行，如视频设置面板的分类页签——反馈
   /// nGxUGtYot9：一打开最上面一整行「视频设置」大标题没用、占空间）。
@@ -478,6 +492,7 @@ class VideoTranslucentSidePanel extends StatelessWidget {
             child: SizedBox(
               width: panelWidth,
               child: VideoFloatingPanelSurface(
+                opaque: opaque,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
@@ -520,6 +535,7 @@ class VideoTranslucentSidePanel extends StatelessWidget {
           width: sheetWidth,
           height: height,
           child: VideoFloatingPanelSurface(
+            opaque: opaque,
             borderRadius: BorderRadius.vertical(top: Radius.circular(radius)),
             child: SafeArea(
               top: false,

@@ -4098,7 +4098,7 @@
   "video_setting_torrent_zero_default": "0 = デフォルト",
   "video_setting_torrent_zero_off": "0 = オフ",
   "video_setting_youtube_quality": "YouTube画質",
-  "video_setting_youtube_quality_hint": "この目標までの最高画質でストリームを開始します。自動はスムーズな再生を優先します（ハードウェア対応コーデック、最大1080p）。それより高画質は 1440p / 2160p を選択",
+  "video_setting_youtube_quality_hint": "自動は滑らかさ優先（1080p まで）。4K は 2160p を選択",
   "video_settings_cat_audio": "オーディオ",
   "video_settings_cat_controls": "操作ボタン",
   "video_settings_cat_danmaku": "弾幕",

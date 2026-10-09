@@ -1288,6 +1288,7 @@ extension _VideoLayout on _VideoFushiPageState {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 720),
                   child: VideoFloatingPanelSurface(
+                    opaque: true,
                     surfaceKey: const ValueKey<String>('video-subtitle-delay-bar'),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(

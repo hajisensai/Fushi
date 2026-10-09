@@ -205,6 +205,8 @@ extension _VideoSidePanel on _VideoFushiPageState {
       width: _videoSidePanelWidth(kind),
       alignment: panelState.alignment,
       bottomSheetWhenCompact: settings,
+      // 设置面板整块不透明：成片文字与控件背后不能透出字幕。
+      opaque: settings,
       onClose: _hideVideoSidePanel,
       child: _buildVideoSidePanelChild(kind, controller),
     );

@@ -16,7 +16,10 @@ import 'package:fushi/src/utils/components/settings_section_anchor.dart';
 import 'package:fushi/src/settings/settings_kit.dart'
     show SettingsKitScaffold;
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/fushi_focusable.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -867,6 +870,23 @@ bool settingsRowHasLeadingIcon(Widget row) => switch (row) {
       _ => false,
     };
 
+/// 设置行「紧凑档」作用域：子树里的 [AdaptiveSettingsRow]（及基于它的开关 / 滑条 /
+/// 下拉行）收紧上下内边距与最小行高，说明文字只留一行、放不下的整段收进标题旁的
+/// ⓘ 提示，下拉行把控件放回标题同一行右侧并去掉与标题重复的浮动标签。
+///
+/// 只给空间极紧的浮层面板用（视频播放器设置面板的手机档，反馈 nGxUGtYot9：手机上
+/// 「文字小点，附加说明简洁点或者塞角落里」）；全局设置页不挂，行为不变。
+class SettingsCompactRowsScope extends InheritedWidget {
+  const SettingsCompactRowsScope({required super.child, super.key});
+
+  static bool of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<SettingsCompactRowsScope>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(SettingsCompactRowsScope oldWidget) => false;
+}
+
 class AdaptiveSettingsRow extends StatelessWidget {
   const AdaptiveSettingsRow({
     required this.title,
@@ -1016,10 +1036,13 @@ class AdaptiveSettingsRow extends StatelessWidget {
             horizontal: horizontalPadding ??
                 (cupertino ? 16 : tokens.spacing.rowHorizontal),
             // MD3 分段行（Android 16 设置）：行内布局也取 rowVertical（12），
-            // 配合下面的最小高，单行行高 64、带说明的行更舒展。
-            vertical: stackControls || (!cupertino && !isGlassDesign(context))
-                ? tokens.spacing.rowVertical
-                : tokens.spacing.gap,
+            // 配合下面的最小高，单行行高 64、带说明的行更舒展。紧凑档
+            // （[SettingsCompactRowsScope]）一律收到 gap。
+            vertical: SettingsCompactRowsScope.of(context)
+                ? tokens.spacing.gap
+                : stackControls || (!cupertino && !isGlassDesign(context))
+                    ? tokens.spacing.rowVertical
+                    : tokens.spacing.gap,
           ),
           child: stackControls
               ? _buildColumnLayout(context)
@@ -1082,7 +1105,10 @@ class AdaptiveSettingsRow extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return ConstrainedBox(
       constraints: BoxConstraints(
-        minHeight: isCupertinoPlatform(context)
+        minHeight: SettingsCompactRowsScope.of(context)
+            // 紧凑档：单行行高 36 + 上下各 gap = 52。
+            ? 36
+            : isCupertinoPlatform(context)
             ? 46
             : isGlassDesign(context)
                 // 玻璃：iOS 行高 44（桌面 38）；外层 Padding 已有竖直 gap。
@@ -2599,15 +2625,25 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
     }
     final bool cupertino = isCupertinoPlatform(context);
     if (!cupertino && isGlassDesign(context)) return _buildGlass(context);
+    // 紧凑档：下拉回到标题同一行右侧、去掉与标题重复的浮动标签（像其他设置行一样
+    // 值靠右），不再「标题 + 说明 + 带同名标签的整行下拉」三层。
+    final bool compact = SettingsCompactRowsScope.of(context);
+    final bool below = !cupertino && controlBelow && !compact;
     return AdaptiveSettingsRow(
       title: title,
       subtitle: subtitle,
       icon: icon,
       showIcon: showIcon,
-      controlBelow: cupertino ? false : controlBelow,
-      trailingFlexible: !cupertino && !controlBelow,
+      controlBelow: below,
+      // 紧凑档的「值 ▾」至多 [_kCompactPickerMaxWidth] 宽：声明给行，窄到标题放不下
+      // 时照常换到标题下方，而不是把标题挤没。
+      trailingWidth: compact ? _kCompactPickerMaxWidth : null,
+      // 紧凑档的「值 ▾」是自尺寸控件：不参与 flex 平分，标题照常吃满剩余宽。
+      trailingFlexible: !cupertino && !below && !compact,
       trailing: cupertino
           ? _buildCupertinoTrailing(context)
+          : compact
+          ? _buildCompactTrailing(context)
           : _buildMaterialDropdown(context),
       onTap: cupertino ? () => _showCupertinoPicker(context) : null,
     );
@@ -2679,6 +2715,77 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
         if (index != null) onChanged(options[index].value);
       },
     );
+  }
+
+  /// 紧凑档的行尾：当前值 + ▾，像其他设置行一样值靠右（不再是 56 高的整块下拉
+  /// 输入框）；点按 / Enter 在原位弹出选项菜单。
+  static const double _kCompactPickerMaxWidth = 140;
+
+  Widget _buildCompactTrailing(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String label = _selectedLabel ?? placeholder ?? '';
+    return Builder(
+      builder: (BuildContext anchorContext) => FushiFocusable(
+        key: const ValueKey<String>('settings-picker-compact'),
+        onTap: () => _showCompactMenu(anchorContext),
+        borderRadius: const BorderRadius.all(Radius.circular(8)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Flexible(
+                child: ConstrainedBox(
+                  // 16 内边距 + 20 箭头之外留给值文字；更窄时随父约束收缩。
+                  constraints: const BoxConstraints(
+                    maxWidth: _kCompactPickerMaxWidth - 36,
+                  ),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ),
+              ),
+              FushiIcon(
+                Icons.arrow_drop_down,
+                size: 20,
+                color: theme.colorScheme.primary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showCompactMenu(BuildContext anchorContext) async {
+    final RenderBox button = anchorContext.findRenderObject()! as RenderBox;
+    final RenderBox overlay =
+        Navigator.of(anchorContext).overlay!.context.findRenderObject()!
+            as RenderBox;
+    final RelativeRect position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        button.localToGlobal(Offset.zero, ancestor: overlay),
+        button.localToGlobal(
+          button.size.bottomRight(Offset.zero),
+          ancestor: overlay,
+        ),
+      ),
+      Offset.zero & overlay.size,
+    );
+    final int? picked = await showFushiMenu<int>(
+      context: anchorContext,
+      position: position,
+      items: <PopupMenuEntry<int>>[
+        for (int i = 0; i < options.length; i++)
+          PopupMenuItem<int>(value: i, child: Text(options[i].label)),
+      ],
+    );
+    if (picked != null) onChanged(options[picked].value);
   }
 
   Widget _buildMaterialDropdown(BuildContext context) {
@@ -3747,6 +3854,17 @@ class _SettingsLabel extends StatelessWidget {
         : cupertino
             ? theme.textTheme.bodySmall?.copyWith(color: subtitleColor)
             : theme.textTheme.bodyMedium?.copyWith(color: subtitleColor);
+    final String? description = subtitle;
+    if (SettingsCompactRowsScope.of(context) &&
+        description != null &&
+        description.isNotEmpty) {
+      return _CompactSettingsLabel(
+        title: title,
+        subtitle: description,
+        titleStyle: titleStyle,
+        subtitleStyle: subtitleStyle,
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.center,
@@ -3777,6 +3895,82 @@ class _SettingsLabel extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// 紧凑档的行标签：标题 + 一行说明。说明一行放不下时截断，并在标题旁挂一枚 ⓘ，
+/// 点按 / 悬停弹出整段说明（「附加说明塞角落里」）。
+class _CompactSettingsLabel extends StatelessWidget {
+  const _CompactSettingsLabel({
+    required this.title,
+    required this.subtitle,
+    required this.titleStyle,
+    required this.subtitleStyle,
+  });
+
+  final String title;
+  final String subtitle;
+  final TextStyle? titleStyle;
+  final TextStyle? subtitleStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final TextPainter painter = TextPainter(
+          text: TextSpan(text: subtitle, style: subtitleStyle),
+          maxLines: 1,
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout(maxWidth: constraints.maxWidth);
+        final bool overflows = painter.didExceedMaxLines;
+        painter.dispose();
+        final Widget titleText = Text(
+          title,
+          style: titleStyle,
+          overflow: TextOverflow.ellipsis,
+          maxLines: kSettingsRowTitleMaxLines,
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            // ⓘ 跟在标题后（标题可换行收缩）；极窄时（放不下 ⓘ）只留标题。
+            if (!overflows || constraints.maxWidth < 64)
+              titleText
+            else
+              Row(
+                children: <Widget>[
+                  Flexible(child: titleText),
+                  FushiTooltip(
+                    key: const ValueKey<String>('settings-row-info'),
+                    message: subtitle,
+                    triggerMode: TooltipTriggerMode.tap,
+                    showDuration: const Duration(seconds: 6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: FushiIcon(
+                        FushiIcons.info,
+                        size: 16,
+                        color: subtitleStyle?.color,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                subtitle,
+                style: subtitleStyle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

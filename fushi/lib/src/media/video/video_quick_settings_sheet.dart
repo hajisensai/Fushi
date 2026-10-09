@@ -240,10 +240,12 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
                       children: <Widget>[
                         // 一行小字说明这一页管什么（尤其「画质增强」与「画面」两页
                         // 名字相近）；不再是带徽标的大标题 + 整段说明。
-                        FushiStaggeredEntrance(
-                          index: 0,
-                          child: _buildPageHint(selectedId),
-                        ),
+                        // 手机紧凑档不放：首屏留给设置项本身。
+                        if (!compact)
+                          FushiStaggeredEntrance(
+                            index: 0,
+                            child: _buildPageHint(selectedId),
+                          ),
                         FushiStaggeredEntrance(
                           index: 1,
                           child: _subPageContent(selectedId),
@@ -261,7 +263,11 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
     // 手机：整块面板收一档密度与字号（反馈 nGxUGtYot9「文字小一点」），只作用于
     // 面板内部，不改全局主题。
     if (!compact) return body;
-    return Theme(data: videoQuickSettingsCompactTheme(theme), child: body);
+    // 紧凑档：字阶收一档 + 设置行收紧（单行说明、溢出进 ⓘ、下拉与标题同行）。
+    return Theme(
+      data: videoQuickSettingsCompactTheme(theme),
+      child: SettingsCompactRowsScope(child: body),
+    );
   }
 
   /// 页顶一行小字说明（[_groupHint]）：单行、次要色，放不下省略。
