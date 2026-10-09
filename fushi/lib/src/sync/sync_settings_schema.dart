@@ -39,6 +39,9 @@ import 'package:fushi/src/sync/desktop_oauth_wait_dialog.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/hidden_remote_books.dart'
+    show resolveShelfRemoteBookClient;
+import 'package:fushi/src/pages/implementations/hidden_remote_books_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -242,6 +245,9 @@ SettingsDestination buildSyncBackupDestination() {
           // 远端占位卡开关抽成共享 builder：同步内容分类与 Hibiki 互联分类共享同一份
           // 定义（占位卡渲染的是互联对端的远端条目，逻辑上属互联，故互联分类也提供）。
           buildShowRemoteEntriesItem(),
+          // 书架上「仅从本机移除」的远端书找回列表（反馈 nvlhtczbro）：紧挨着
+          // 「显示远端条目」，同属远端占位卡的显示偏好。
+          buildHiddenRemoteBooksItem(),
         ],
       ),
       // ── Group 3: When to sync — auto-sync + manual actions ────────────
@@ -949,6 +955,29 @@ SettingsItem buildShowRemoteEntriesItem() {
     onChanged: (SettingsContext ctx, bool value) async {
       await ctx.appModel.prefsRepo.setShowRemoteEntries(value);
     },
+  );
+}
+
+/// 「已从本机移除的远端书」找回列表入口，副标题报条数。
+SettingsItem buildHiddenRemoteBooksItem() {
+  return SettingsNavigationItem(
+    id: 'sync.hidden_remote_books',
+    title: t.remote_hidden_books_title,
+    subtitleBuilder: (SettingsContext ctx) {
+      final int n = ctx.appModel.prefsRepo.hiddenRemoteBooks.length;
+      return n == 0
+          ? t.remote_hidden_books_hint
+          : '$n · ${t.remote_hidden_books_hint}';
+    },
+    icon: FushiIcons.visibilityOff,
+    onTap: (SettingsContext ctx) => pushSettingsPage(
+      ctx,
+      (_) => HiddenRemoteBooksPage(
+        prefs: ctx.appModel.prefsRepo,
+        remoteClientLoader: () =>
+            resolveShelfRemoteBookClient(ctx.appModel.database),
+      ),
+    ),
   );
 }
 

@@ -24,6 +24,8 @@ import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/sync/hidden_remote_books.dart'
+    show HiddenRemoteBook, decodeHiddenRemoteBooks, encodeHiddenRemoteBooks;
 import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart'
     show
         kMangaCoverCacheDefaultMaxAgeDays,
@@ -568,23 +570,14 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   /// 「仅从本机移除」的远端书（反馈 nvlhtczbro）：只在本机书架隐藏、对端那份不动。
-  /// 元素是 [hiddenRemoteBookKey] 拼出的「来源身份 + 远端身份键」——同名书在另一台
-  /// host / 云盘上不受牵连。按设备记（不进 Profile 快照语义以外的同步）。
-  Set<String> get hiddenRemoteBooks {
-    final Object? raw = getPref('hidden_remote_books', defaultValue: null);
-    if (raw is! String || raw.isEmpty) return <String>{};
-    try {
-      final Object? decoded = jsonDecode(raw);
-      if (decoded is! List) return <String>{};
-      return <String>{for (final Object? e in decoded) if (e is String) e};
-    } on FormatException {
-      return <String>{};
-    }
-  }
+  /// 按「来源身份 + 远端身份键」记（[HiddenRemoteBook.key]）——同名书在另一台
+  /// host / 云盘上不受牵连。找回列表在 设置 › 同步 › 已从本机移除的远端书。
+  List<HiddenRemoteBook> get hiddenRemoteBooks => decodeHiddenRemoteBooks(
+        getPref('hidden_remote_books', defaultValue: null) as String?,
+      );
 
-  Future<void> setHiddenRemoteBooks(Set<String> keys) async {
-    final List<String> sorted = keys.toList()..sort();
-    await setPref('hidden_remote_books', jsonEncode(sorted));
+  Future<void> setHiddenRemoteBooks(List<HiddenRemoteBook> books) async {
+    await setPref('hidden_remote_books', encodeHiddenRemoteBooks(books));
     notifyListeners();
   }
 
