@@ -656,6 +656,9 @@ class AnkiMobileRepository extends BaseAnkiRepository {
     // issue #1432：「紧凑释义」开关只在这里落地——payload 进 handlebar 渲染前给
     // 释义 HTML 注入紧凑样式；关闭时三份释义原样透传，输出逐字节不变。
     final bool compactGlossaries = settings.compactGlossaries;
+    // BUG-3224：词典 CSS 先按本条释义内容裁剪（见 anki_glossary_css.dart），再注入紧凑样式。
+    // 整份词典 CSS 逐字段内联会把笔记撑到 AnkiDroid 预览过不了 Binder 的大小。
+    final AnkiGlossaryCssSlimmer cssSlimmer = AnkiGlossaryCssSlimmer();
     final mediaPayload = AnkiMiningPayload(
       expression: payload.expression,
       reading: payload.reading,
@@ -664,15 +667,15 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       frequenciesHtml: payload.frequenciesHtml,
       freqHarmonicRank: payload.freqHarmonicRank,
       glossary: compactAnkiGlossaryHtml(
-        payload.glossary,
+        cssSlimmer.slim(payload.glossary),
         enabled: compactGlossaries,
       ),
       glossaryFirst: compactAnkiGlossaryHtml(
-        payload.glossaryFirst,
+        cssSlimmer.slim(payload.glossaryFirst),
         enabled: compactGlossaries,
       ),
       singleGlossaries: compactAnkiGlossaryMap(
-        payload.singleGlossaries,
+        cssSlimmer.slimMap(payload.singleGlossaries),
         enabled: compactGlossaries,
       ),
       pitchPositions: payload.pitchPositions,

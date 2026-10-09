@@ -24,6 +24,8 @@ dependencies:
   # AnkiWeb 下发的插件包不带 manifest.json，必须由我们补齐后重新打包才能交给
   # Anki 安装（见 AnkiConnectInstaller）。
   archive: ^3.6.1
+  # 制卡释义里词典 CSS 按内容裁剪（anki_glossary_css.dart）要真解析释义 HTML 做选择器匹配。
+  html: ^0.15.2
 
 dev_dependencies:
   flutter_test:
