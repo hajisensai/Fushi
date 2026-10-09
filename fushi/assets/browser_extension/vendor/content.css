@@ -3963,6 +3963,55 @@
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 16px 40px -12px rgba(0, 0, 0, 0.7);
 }
 
+/* 查词弹窗右侧的滚动条（用户群 10-09「右侧条」）。可滚动的是 shadow 宿主 #hibiki-popup-host 自己
+   （overflow-y:auto），它是宿主页里的普通元素：此前滚动条按**宿主页**的配色画——浅色网页上深色
+   弹窗右侧挂一条带上下箭头的白色经典滚动条；shadow 里的主题滚动条只管 #entries-container 内部，
+   够不到宿主本身。本段是页面级样式（content.css 以 manifest css 注入宿主页；同一份文本进 shadow
+   时这些选择器什么都不匹配），给宿主画「无箭头、透明轨道、圆角半透明滑块」：轨道不再是一条
+   异色竖条（透出背后的网页，与日间模式下用户觉得还好的观感一致），中灰滑块在深浅网页上都看得见。
+   宿主上先把标准属性压回 auto：Chromium 121+ 一旦 scrollbar-color / scrollbar-width 生效（网页
+   给 html 设了会继承下来）就整族禁用 ::-webkit-scrollbar（BUG-753 记录的引擎行为）。
+   滚动条那一列的底色：卡片底色画在 shadow 里的 #entries-container 上，它的宽度不含这一列，
+   透明轨道就会透出网页（深色弹窗贴浅色网页 = 一条白边）。content.js 把量到的卡片底色写进
+   --fushi-host-gutter，这里用一道只有最右 10px（= 滚动条宽）的渐变只给那一列上色：随宿主圆角
+   裁切、不随内容滚动、不叠到内容区（液态玻璃的半透明填充因此不会在内容区叠两层）。 */
+#hibiki-popup-host {
+    scrollbar-width: auto !important;
+    scrollbar-color: auto !important;
+    background-image: linear-gradient(to left, var(--fushi-host-gutter, transparent) 10px, transparent 10px) !important;
+}
+
+#hibiki-popup-host::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+    background: transparent;
+}
+
+#hibiki-popup-host::-webkit-scrollbar-track,
+#hibiki-popup-host::-webkit-scrollbar-track-piece,
+#hibiki-popup-host::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+#hibiki-popup-host::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
+#hibiki-popup-host::-webkit-scrollbar-thumb {
+    min-height: 32px;
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-color: rgba(128, 128, 128, 0.55);
+    background-clip: padding-box;
+}
+
+#hibiki-popup-host::-webkit-scrollbar-thumb:hover,
+#hibiki-popup-host::-webkit-scrollbar-thumb:active {
+    background-color: rgba(128, 128, 128, 0.8);
+}
+
 /* M3E 查词弹窗宿主（content.js 在 shadow 宿主上写 data-style="m3e"）：实色卡（不挂玻璃钩子，填充
    就是 app 下发的不透明 --md-* 底）+ 大圆角 + MD3 投影，圆角 / 投影与 nested-popup-host.js 的
    FUSHI_M3E_LAYER_* 逐字相同（嵌套子层一样；extension-style.test.js 比对）。 */
@@ -4937,6 +4986,53 @@
 #fushi-player-controls .fushi-pc-seg button:focus-visible {
     outline: 2px solid var(--md-sys-color-primary);
     outline-offset: 2px;
+}
+
+/* 时轴偏移的手填框（用户群 10-09）：夹在 −0.1 / ＋0.1 两段之间，与连体按钮同高同底色、方角，
+   聚焦时主色描边；等宽数字，回车生效。 */
+#fushi-player-controls .fushi-pc-offset-input {
+    box-sizing: border-box;
+    width: 58px;
+    min-height: 32px;
+    margin: 0;
+    padding: 0 6px;
+    border: 0;
+    border-radius: var(--md-sys-shape-corner-small);
+    background: var(--md-sys-color-surface-container-highest);
+    color: var(--md-sys-color-on-surface);
+    font: inherit;
+    font-size: var(--md-sys-typescale-label-medium-size);
+    line-height: var(--md-sys-typescale-label-medium-line-height);
+    font-weight: var(--md-sys-typescale-weight-medium);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    outline: none;
+    transition: box-shadow var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects);
+}
+
+#fushi-player-controls .fushi-pc-offset-input:focus {
+    box-shadow: inset 0 0 0 2px var(--md-sys-color-primary);
+}
+
+/* 选字幕轨子页：当前轨主色字 + 前置 check；空态是一行说明。 */
+#fushi-player-controls .fushi-pc-row.is-track[data-selected="1"] .fushi-pc-copy strong,
+#fushi-player-controls .fushi-pc-row.is-track[data-selected="1"] .fushi-pc-lead {
+    color: var(--md-sys-color-primary);
+}
+
+#fushi-player-controls .fushi-pc-row.is-track:not([data-selected="1"]) {
+    padding-left: 48px;
+}
+
+#fushi-player-controls .fushi-pc-copy strong {
+    overflow-wrap: anywhere;
+}
+
+#fushi-player-controls .fushi-pc-empty {
+    padding: 12px 16px 16px;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--md-sys-typescale-body-medium-size);
+    line-height: var(--md-sys-typescale-body-medium-line-height);
 }
 
 /* 「站点自带轨」提示：info 语义色块（secondary-container，与 app FushiInlineNotice 的 info 同色、

@@ -29,10 +29,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2852 条。点号进各自文件。
+> 共 2858 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3146](bugs/BUG-3146-browser-ext-fullscreen-lookup-offline.md) | ✅ | ✅ | 浏览器扩展切全屏后查词连不上并误报 API 未开启 |
+| [BUG-3145](bugs/BUG-3145-browser-ext-import-gate.md) | ✅ | ✅ | 浏览器扩展导入本地字幕后不显示，要拨一下 Fushi 字幕开关 |
+| [BUG-3144](bugs/BUG-3144-browser-ext-floating-button.md) | ✅ | ✅ | 浏览器扩展悬浮按钮在非 YouTube 站点乱飞 |
+| [BUG-3143](bugs/BUG-3143-browser-ext-fullscreen-subtitle.md) | ✅ | ✅ | 浏览器扩展全屏下字幕拖动贴底、把手点不着、切全屏后飞出屏幕 |
+| [BUG-3142](bugs/BUG-3142-browser-ext-resize-relayout.md) | ✅ | ✅ | 浏览器扩展拖右下角改弹窗大小后词条不重排 |
+| [BUG-3141](bugs/BUG-3141-browser-ext-favorite.md) | ✅ | ✅ | 浏览器扩展查词弹窗收藏按钮无反应 |
 | [BUG-3093](bugs/BUG-3093-feedback-snackbar-transition-race.md) | ✅ | ✅ | 反馈提交测试在提交页退场动画中断言提示条数，CI 慢时数到两条 |
 | [BUG-3092](bugs/BUG-3092-espeak-kana-only-symbols.md) | ✅ | ✅ | isKanaOnlyText 拒收〜…等读音常见符号、却放行 espeak-ng 读不了的・与小片假名扩展 |
 | [BUG-3091](bugs/BUG-3091-linux-tts-real-engine-test-skip.md) | ✅ | ✅ | Linux 真引擎 TTS 测试只判 open_jtalk 在 PATH，缺辞书或声音时误红 |

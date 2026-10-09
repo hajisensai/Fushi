@@ -87,6 +87,40 @@
     .hp-toggle[data-on="1"] .hp-tg-icon { color: var(--fushi-primary); }
     .hp-toggle-label { flex: 1 1 auto; min-width: 0; font-weight: 550; }
     .hp-toggle .switch { pointer-events: none; }
+    /* 词典字号步进器：两颗图标按钮夹一个当前值（点值 = 回到跟随 Fushi）。 */
+    .hp-font-row {
+      display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; margin: 0;
+      padding: 4px 8px 4px 12px; box-sizing: border-box; font-size: 13px;
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-font-row {
+      font-size: var(--md-sys-typescale-body-large-size);
+      line-height: var(--md-sys-typescale-body-large-line-height);
+      color: var(--md-sys-color-on-surface);
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-font-row .hp-toggle-label { font-weight: var(--md-sys-typescale-weight-regular); }
+    /* 与上面三个开关同组：M3E 下同一枚分段色块，玻璃下同一条细分隔线。 */
+    :root:not([data-style="glass"]) .hp-shell .hp-group > .hp-font-row {
+      padding: 6px 8px 6px 16px;
+      border-radius: var(--fushi-shape-segment) var(--fushi-shape-segment) var(--md-sys-shape-corner-large-increased) var(--md-sys-shape-corner-large-increased);
+      background-color: var(--md-sys-color-surface-container-lowest);
+    }
+    :root[data-style="glass"] .hp-shell .hp-group > .hp-font-row {
+      border-top: 1px solid color-mix(in oklch, var(--fushi-outline) 40%, transparent);
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-font-row .hp-tg-icon { color: var(--md-sys-color-on-surface-variant); }
+    .hp-stepper { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+    .hp-step, .hp-step-value {
+      display: inline-flex; align-items: center; justify-content: center; min-width: 36px; height: 36px;
+      padding: 0 8px; border: 0; border-radius: 999px; background: transparent; color: inherit;
+      font: inherit; font-size: 13px; font-variant-numeric: tabular-nums; cursor: pointer;
+      transition: background-color var(--fushi-motion-short, 150ms) ease, transform var(--fushi-motion-short, 150ms) ease;
+    }
+    .hp-step:hover, .hp-step-value:hover { background: color-mix(in oklch, currentColor 10%, transparent); }
+    .hp-step:active, .hp-step-value:active { transform: scale(0.92); }
+    .hp-step:disabled { opacity: .38; cursor: default; }
+    .hp-step-value { min-width: 52px; font-weight: 600; }
+    .hp-step-value[data-follow="1"] { font-weight: 500; opacity: .78; }
+    @media (prefers-reduced-motion: reduce) { .hp-step, .hp-step-value { transition: none; } }
     .hp-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
     /* 动作按钮（字幕侧边栏 = 色调按钮；开始生成 = 实心按钮）：图标 + 文字，按压时弹簧缩放 + 圆角形变。 */
     .hp-side-panel, .hp-gen {
@@ -348,6 +382,21 @@
         <span class="hp-toggle-label" data-i18n="opt_shiftHoverLookup_title">Shift 悬停查词</span>
         <span class="switch" aria-hidden="true"><span></span></span>
       </button>
+      <!-- 词典字号（用户群 10-09：弹窗和设置里都找不到调字号的地方）：只作用于浏览器的覆盖，
+           「跟随」= 不存值、用 Fushi 的词典字号。与设置页「词典字号」同一个键 popupFontSize。 -->
+      <div class="hp-font-row" id="hp-font-row" role="group" aria-labelledby="hp-font-label">
+        <span class="msr-slot hp-tg-icon" data-fushi-icon="text_fields" data-fushi-icon-size="22" aria-hidden="true"></span>
+        <span class="hp-toggle-label" id="hp-font-label" data-i18n="opt_popupFontSize_title">词典字号</span>
+        <span class="hp-stepper">
+          <button class="hp-step" id="hp-font-dec" type="button" data-i18n-title="ap_font_smaller" title="缩小">
+            <span class="msr-slot" data-fushi-icon="text_decrease" data-fushi-icon-size="18" aria-hidden="true"></span>
+          </button>
+          <button class="hp-step-value" id="hp-font-value" type="button" data-i18n-title="ap_font_follow_title" title="跟随 Fushi 的词典字号">…</button>
+          <button class="hp-step" id="hp-font-inc" type="button" data-i18n-title="ap_font_larger" title="放大">
+            <span class="msr-slot" data-fushi-icon="text_increase" data-fushi-icon-size="18" aria-hidden="true"></span>
+          </button>
+        </span>
+      </div>
     </div>
     <!-- 字幕列表使用浏览器原生 Side Panel，不向视频网页注入列表或修改布局。 -->
     <button class="hp-side-panel text-button" id="hp-nf-sublist" type="button">
@@ -380,6 +429,7 @@
   <script src="../theme.js"></script>
   <script src="../icons.js"></script>
   <script src="../connection-diagnostics.js"></script>
+  <script src="../popup-size.js"></script>
   <script src="action-popup.js"></script>
 </body>
 </html>

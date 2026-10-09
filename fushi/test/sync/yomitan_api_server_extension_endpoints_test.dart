@@ -204,6 +204,7 @@ void main() {
       String Function()? appLocaleProvider,
       void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
       void Function(BrowserVideoSample sample)? onExtensionStudy,
+      ExtensionFavoriteHandler? onExtensionFavorite,
     }) async {
       lookup = _FakeLookup();
       mining = _FakeMining();
@@ -219,6 +220,7 @@ void main() {
         appLocaleProvider: appLocaleProvider,
         onExtensionPopupSize: onExtensionPopupSize,
         onExtensionStudy: onExtensionStudy,
+        onExtensionFavorite: onExtensionFavorite,
         apiKey: apiKey,
       );
       await server.start();
@@ -1113,6 +1115,109 @@ void main() {
         expect(resp.statusCode, 401);
         await resp.drain<void>();
         expect(called, isFalse);
+      });
+    });
+
+    // BUG-3141：扩展查词弹窗 ☆/★。此前扩展根本没有收藏端点，popup.js 的 favoriteEntry /
+    // favoriteCheck 两个桥落空回 null → 点了图标不变、收藏夹没新行。
+    group('/api/extension/favorite (BUG-3141)', () {
+      test('toggle 体原样交 handler，回切换后的状态', () async {
+        final List<ExtensionFavoriteRequest> got = <ExtensionFavoriteRequest>[];
+        await startServer(
+          apiKey: 'k123',
+          onExtensionFavorite: (ExtensionFavoriteRequest r) async {
+            got.add(r);
+            return true;
+          },
+        );
+        final HttpClientResponse resp = await _post(
+          server.port,
+          '/api/extension/favorite',
+          <String, dynamic>{
+            'toggle': true,
+            'expression': '片栗',
+            'reading': 'かたくり',
+            'glossary': '早春の草本植物',
+            'sentence': 'カタクリの花が咲いた。',
+          },
+          auth: _basic('k123'),
+        );
+        expect(resp.statusCode, 200);
+        expect((await _json(resp))['favorite'], true);
+        expect(got, hasLength(1));
+        expect(got.single.toggle, isTrue);
+        expect(got.single.expression, '片栗');
+        expect(got.single.reading, 'かたくり');
+        expect(got.single.glossary, '早春の草本植物');
+        expect(got.single.sentence, 'カタクリの花が咲いた。');
+      });
+
+      test('缺 toggle = 只读（favoriteCheck），handler 回 false 原样下发', () async {
+        ExtensionFavoriteRequest? got;
+        await startServer(
+          apiKey: 'k123',
+          onExtensionFavorite: (ExtensionFavoriteRequest r) async {
+            got = r;
+            return false;
+          },
+        );
+        final HttpClientResponse resp = await _post(
+          server.port,
+          '/api/extension/favorite',
+          <String, dynamic>{'expression': '片栗', 'reading': 'かたくり'},
+          auth: _basic('k123'),
+        );
+        expect(resp.statusCode, 200);
+        expect((await _json(resp))['favorite'], false);
+        expect(got!.toggle, isFalse);
+        expect(got!.glossary, '');
+      });
+
+      test('词形为空 → 400，不触发 handler', () async {
+        int called = 0;
+        await startServer(
+          apiKey: 'k123',
+          onExtensionFavorite: (ExtensionFavoriteRequest r) async {
+            called++;
+            return true;
+          },
+        );
+        for (final Map<String, dynamic> body in <Map<String, dynamic>>[
+          <String, dynamic>{'toggle': true, 'expression': ''},
+          <String, dynamic>{'toggle': true, 'expression': '   '},
+          <String, dynamic>{'toggle': true, 'expression': 3},
+          <String, dynamic>{'toggle': true},
+        ]) {
+          final HttpClientResponse resp = await _post(
+            server.port,
+            '/api/extension/favorite',
+            body,
+            auth: _basic('k123'),
+          );
+          expect(resp.statusCode, 400, reason: jsonEncode(body));
+          await resp.drain<void>();
+        }
+        expect(called, 0);
+      });
+
+      test('未注入 handler → 404；错 token → 401', () async {
+        await startServer(apiKey: 'k123');
+        final HttpClientResponse missing = await _post(
+          server.port,
+          '/api/extension/favorite',
+          <String, dynamic>{'toggle': true, 'expression': '片栗'},
+          auth: _basic('k123'),
+        );
+        expect(missing.statusCode, 404);
+        await missing.drain<void>();
+        final HttpClientResponse denied = await _post(
+          server.port,
+          '/api/extension/favorite',
+          <String, dynamic>{'toggle': true, 'expression': '片栗'},
+          auth: _basic('WRONG'),
+        );
+        expect(denied.statusCode, 401);
+        await denied.drain<void>();
       });
     });
   });

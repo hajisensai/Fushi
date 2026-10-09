@@ -1,0 +1,6 @@
+## BUG-3146 · 浏览器扩展切全屏后查词连不上并误报 API 未开启
+- **报告**：2026-10-09（用户群：「切换全屏和半屏后查词连不上，明明 Fushi 里设置是一直打开的，还会弹提示要求打开 API，要切一下 Fushi 才恢复」；导入本地字幕「要切到 Fushi 再切回来才导进去」同源）
+- **真实性**：⚠️ 部分复现。扩展侧没有任何长连接或心跳状态会被判死：每次查词都是 service worker 里一次独立的 `fetch`，失败时才做一次限时连接诊断。所以「切一下 Fushi app 窗口就恢复」说明那段时间 **app 自己没在应答**（窗口被浏览器全屏完全遮住 / 失焦后），这一层本机未复现——本机没有开着 Yomitan API 的 Fushi 实例可测，也拿不到用户的查词性能日志（设置页「查词性能日志」可导出，能区分「立刻连接被拒」与「等满 10 秒超时」）。扩展侧确定的两处缺陷：① 限时诊断（`tools/browser-extension/background.js:218` `diagnoseConnectionCapped`）在 750ms 内没拿到状态回包就落成 `offline`，页面据此提示「Fushi API 未开启，请去设置里打开」——端口拒绝连接会在几毫秒内失败，能拖过时限的只有「Fushi 在跑却不应答」，提示把用户引去翻一个本来就开着的设置；② 解析字幕请求（`background.js:1320`）没有任何上限，失败分支用不限时的诊断：app 不应答时消息一直挂着，页面「导入了没反应」，直到 app 恢复才突然导进去。
+- **[x] ① 已修复（扩展侧诊断）** — 新增连接状态 `no-response`（`connection-diagnostics.js`）：限时诊断拖过时限 = 「Fushi 在运行但没有响应，把 Fushi 窗口切到前台后再试」，拒绝连接仍是 `offline`；页面 toast（`content.js`）与外挂字幕失败文案（`subtitle-panel.js`）各自区分；解析字幕加 15s 上限，所有消息的失败分支一律走限时诊断（不再可能把回调一起挂住）。这是如实报告，不是重试或掩盖：请求失败照样失败。提交见 PR。
+- **[x] ② 已加自动化测试** — `tools/browser-extension/connection-no-response.test.js`（状态探测不应答 → no-response 且回调按时回来；拒绝连接 → offline；解析字幕有上限；两种文案不同）。
+- **未复现 / 待定**：app 在窗口被遮挡或失焦后不应答 HTTP 的根因（Flutter Windows 宿主 / 事件循环层面）没有定位，需要在开着 Yomitan API 的真机上「浏览器全屏遮住 Fushi → curl 状态端点」复现，或请用户导出查词性能日志（看失败是 `TimeoutError` 还是 `Failed to fetch`）。

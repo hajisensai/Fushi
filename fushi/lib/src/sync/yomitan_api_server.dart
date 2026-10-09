@@ -59,6 +59,7 @@ const Set<String> _kExtensionSeenPaths = <String>{
   '/api/mine',
   '/api/duplicate',
   '/api/anki/open',
+  '/api/extension/favorite',
 };
 
 /// TODO-2936：「浏览器」媒体类型 Profile 绑定的触发端点集合——真正代表「用户正在
@@ -70,6 +71,48 @@ const Set<String> _kLookupActivityPaths = <String>{
   '/api/lookup/dictionary',
   '/api/mine',
 };
+
+/// BUG-3141：扩展查词弹窗收藏请求（`/api/extension/favorite` 的体）。
+class ExtensionFavoriteRequest {
+  const ExtensionFavoriteRequest({
+    required this.toggle,
+    required this.expression,
+    required this.reading,
+    this.glossary = '',
+    this.sentence = '',
+  });
+
+  /// true = 切换收藏（popup.js favoriteEntry），false = 只读（favoriteCheck）。
+  final bool toggle;
+  final String expression;
+  final String reading;
+
+  /// 释义快照（popup.js favoriteGlossaryText），只在切换时有意义。
+  final String glossary;
+
+  /// 扩展侧取到的当前句（字幕行 / 页面句），收藏夹显示用。
+  final String sentence;
+
+  /// 体不合契约（词形为空 / 非字符串）返回 null。
+  static ExtensionFavoriteRequest? tryParse(Map<String, dynamic> body) {
+    final Object? expression = body['expression'];
+    if (expression is! String || expression.trim().isEmpty) return null;
+    final Object? reading = body['reading'];
+    final Object? glossary = body['glossary'];
+    final Object? sentence = body['sentence'];
+    return ExtensionFavoriteRequest(
+      toggle: body['toggle'] == true,
+      expression: expression,
+      reading: reading is String ? reading : '',
+      glossary: glossary is String ? glossary : '',
+      sentence: sentence is String ? sentence : '',
+    );
+  }
+}
+
+/// 收藏读写的 app 侧实现：回**处理后**的收藏态。
+typedef ExtensionFavoriteHandler =
+    Future<bool> Function(ExtensionFavoriteRequest request);
 
 class YomitanApiServer {
   static final RegExp _lookupTraceIdPattern = RegExp(
@@ -91,6 +134,7 @@ class YomitanApiServer {
     RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
     void Function(BrowserVideoSample sample)? onExtensionStudy,
+    ExtensionFavoriteHandler? onExtensionFavorite,
     void Function()? onExtensionSeen,
     void Function()? onLookupActivity,
     void Function(String build, String? version)? onExtensionReport,
@@ -113,6 +157,7 @@ class YomitanApiServer {
        _popupDictionaryCssProvider = popupDictionaryCssProvider,
        _onExtensionPopupSize = onExtensionPopupSize,
        _onExtensionStudy = onExtensionStudy,
+       _onExtensionFavorite = onExtensionFavorite,
        _onExtensionSeen = onExtensionSeen,
        _onLookupActivity = onLookupActivity,
        _onExtensionReport = onExtensionReport,
@@ -153,6 +198,9 @@ class YomitanApiServer {
   // 交给这个 sink（app 侧 BrowserVideoStudyBridge → VideoWatchTracker + StudyClock）。
   // 未注入（旧 app / 配对 sync host）时端点 404（向后兼容，无写库副作用）。
   final void Function(BrowserVideoSample sample)? _onExtensionStudy;
+  // BUG-3141：扩展查词弹窗 ☆/★ 收藏（POST `/api/extension/favorite`）。app 侧与 app 外
+  // 浮窗的 favoriteEntry / favoriteCheck 两个桥同一份收藏读写。未注入时端点 404。
+  final ExtensionFavoriteHandler? _onExtensionFavorite;
   // 浏览器扩展连接探活：任一扩展端点被命中即回调（app 侧记录 last-seen 时间戳，
   // 供「安装 → 验证插件已正常启用」的连接检测显示）。扩展 background 在 SW 启动时
   // 主动打 /api/extension/status，故装完扩展即刷新 last-seen，无需用户先划词。
@@ -405,6 +453,8 @@ class YomitanApiServer {
         return _handleExtensionPopupSize(request);
       case '/api/extension/study':
         return _handleExtensionStudy(request);
+      case '/api/extension/favorite':
+        return _handleExtensionFavorite(request);
       case '/api/extension/status':
         return _handleExtensionStatus(request);
       case '/api/extension/site-cookies':
@@ -773,6 +823,25 @@ class YomitanApiServer {
     }
     sink(sample);
     return jsonResponse(<String, dynamic>{'ok': true});
+  }
+
+  /// BUG-3141：扩展查词弹窗的 ☆/★（POST `/api/extension/favorite`）。body
+  /// `{toggle, expression, reading, glossary?, sentence?}`：`toggle` 为 true 切换收藏并回
+  /// **切换后**的状态，false 只读当前状态（popup.js 的 favoriteEntry / favoriteCheck）。
+  /// 与查词同一 [_authMiddleware] 鉴权——这是写收藏夹 / 学习统计的入口，绝不无鉴权开放。
+  /// 词形为空 400；未注入 handler 404；成功 `{favorite: bool}`。
+  Future<shelf.Response> _handleExtensionFavorite(shelf.Request request) async {
+    final ExtensionFavoriteHandler? handler = _onExtensionFavorite;
+    if (handler == null) return shelf.Response.notFound('Favorite sink off');
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    final ExtensionFavoriteRequest? favorite =
+        ExtensionFavoriteRequest.tryParse(body);
+    if (favorite == null) {
+      return shelf.Response(400, body: 'Missing expression');
+    }
+    final bool state = await handler(favorite);
+    return jsonResponse(<String, dynamic>{'favorite': state});
   }
 
   Future<shelf.Response> _handleTermEntries(shelf.Request request) async {

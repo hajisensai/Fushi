@@ -94,12 +94,23 @@
     items.push({ id: 'allTracks', kind: 'switch', on: !!s.allTracks, disabled: !overlayOn, label: tr('opt_subtitleOverlayAllTracks_title'), icon: 'layers' });
     items.push({ id: 'background', kind: 'switch', on: s.background !== false, disabled: !overlayOn, label: tr('opt_subtitleOverlayBackground_title'), icon: 'format_color_fill' });
     items.push({ id: 'hidden', kind: 'switch', on: !!s.hidden, label: tr('opt_subtitleHidden_title'), icon: 'visibility_off' });
+    // 沉浸统计开关（用户群 10-09：只能去扩展设置里开关很麻烦）。与设置页「网页视频计入学习时长」
+    // 同一个键 studyTrackVideo（缺省开），这里只是就近入口。
+    items.push({ id: 'study', kind: 'switch', on: s.study !== false, label: tr('opt_studyTrackVideo_title'), icon: 'hourglass_empty' });
     // 「开着却什么都不画」是覆盖层最容易让人误判坏掉的状态：站点自带轨默认不叠覆盖层
     // （subtitle-panel.js updateSubtitleOverlay 的显示门），外挂轨才无条件画。这里如实说出来，
     // 并给一键出路，而不是让用户以为开关坏了。
     if (overlayOn && !s.hidden && s.hasTrack && !s.externalTrack && !s.replaceNative && !s.allTracks) {
       items.push({ id: 'hint', kind: 'hint', label: tr('pc_hint_site_track'), action: 'replaceNative', icon: 'info' });
     }
+    // 选字幕轨（就地切换，不必开侧边栏）：子页列出这个视频的全部 Fushi 字幕轨。
+    items.push({
+      id: 'track',
+      kind: 'submenu',
+      label: tr('sp_track_aria_label'),
+      detail: s.trackLabel || tr('pc_track_none'),
+      icon: 'translate',
+    });
     items.push({ id: 'list', kind: 'action', label: tr('opt_videoShortcutTogglePanel_title'), icon: 'view_sidebar' });
     items.push({
       id: 'offset',
@@ -107,15 +118,38 @@
       label: tr('pc_offset_title'),
       icon: 'timer',
       // 按钮面是数字与符号（与侧边栏 offset-row 同形，不进 i18n）；说明文字走 title。
+      // 中间是可直接输入的秒数（app 视频页同款「手填偏移」：盗版源片头多出几十秒时 ±0.1 按不过来），
+      // 填 0 即复位。
       buttons: [
         { id: 'offset-minus', label: '−0.1', title: tr('opt_videoShortcutOffsetMinus_title') },
-        { id: 'offset-reset', label: '⟲', icon: 'restart_alt', title: tr('sp_offset_reset_title') },
+        { id: 'offset-value', kind: 'input', value: formatOffsetSeconds(s.offsetMs || 0), title: tr('pc_offset_input_label') },
         { id: 'offset-plus', label: '＋0.1', title: tr('opt_videoShortcutOffsetPlus_title') },
       ],
     });
     items.push({ id: 'style', kind: 'submenu', label: tr('pc_style_title'), icon: 'style' });
     items.push({ id: 'settings', kind: 'action', label: tr('sp_settings_title'), icon: 'settings' });
     return items;
+  }
+
+  // 偏移毫秒 → 输入框里的秒数文字：带符号、最多两位小数、去掉多余的 0（0 显示成 '0'）。
+  function formatOffsetSeconds(ms) {
+    var n = Number(ms);
+    if (!isFinite(n) || n === 0) return '0';
+    var sec = Math.round(n / 10) / 100;
+    var text = String(Math.abs(sec));
+    return (sec > 0 ? '+' : '-') + text;
+  }
+
+  // 输入框文字 → 偏移毫秒；不成立返回 null（调用方回显原值，不静默改成别的）。
+  // 接受全角 / 数学减号、逗号小数点、末尾的 s；夹在 ±1 小时内（再大只可能是手滑）。
+  var OFFSET_LIMIT_MS = 3600 * 1000;
+  function parseOffsetSeconds(text) {
+    var t = String(text == null ? '' : text).trim()
+      .replace(/[−－–]/g, '-').replace(/＋/g, '+').replace(/[，,]/g, '.').replace(/\s*(s|秒)$/i, '');
+    if (!/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(t)) return null;
+    var ms = Math.round(parseFloat(t) * 1000);
+    if (!isFinite(ms) || Math.abs(ms) > OFFSET_LIMIT_MS) return null;
+    return ms;
   }
 
   // 字幕外观快捷面板的控件表。字段与取值范围全部取自 fushiSubtitleStyle，本文件不重复定义
@@ -209,6 +243,8 @@
     stylePatchWrite: stylePatchWrite,
     placeMenu: placeMenu,
     videoQualifies: videoQualifies,
+    formatOffsetSeconds: formatOffsetSeconds,
+    parseOffsetSeconds: parseOffsetSeconds,
   };
 
   if (typeof window === 'undefined' || typeof document === 'undefined') return api;
@@ -224,7 +260,11 @@
       subtitleOverlayAllTracks: false,
       subtitleOverlayBackground: true,
       subtitleHidden: false,
+      studyTrackVideo: true,
     },
+    // BUG-3145：字幕能力总门（netflixSubtitlePanel，缺省关）。覆盖层受它门控，「Fushi 字幕」
+    // 显示开必须两者都开，否则是一个拨了也不出字的假「开」。
+    gate: false,
     style: null,
     open: false,
     page: 'main',
@@ -234,6 +274,7 @@
   var menuEl = null;
   var mainPageEl = null;
   var stylePageEl = null;
+  var tracksPageEl = null;
   var styleWriteTimer = null;
   var site = siteOf(location.hostname);
 
@@ -259,9 +300,24 @@
   }
 
   function videoEl() {
-    // 与全仓库同一条取法（subtitle-panel.js:121 等）：第一条 <video>。站点的画中画/广告位也可能
-    // 是 <video>，但控制栏锚点本身就长在正片播放器上，通用路径另有尺寸门，两边都不会挂错地方。
-    try { return document.querySelector('video'); } catch (_) { return null; }
+    // BUG-3144：正片按 video-target.js 挑（全屏元素 / 可见面积最大、在播优先）。此前取文档里
+    // **第一个** <video>：YouTube 恰好是正片，别的站常是预告片 / 广告位 / 缩略图预览，悬浮按钮就
+    // 贴到那个元素旁边「乱飞」。契约缺席（单测壳）时回落旧取法。
+    try {
+      if (typeof window.fushiMainVideo === 'function') {
+        var v = window.fushiMainVideo();
+        if (v) return v;
+      }
+      return document.querySelector('video');
+    } catch (_) { return null; }
+  }
+
+  // 浮层父级里 position:fixed 的坐标系（站点给 body / 全屏容器加 transform 时不是视口）。
+  function fixedOriginOf(el) {
+    if (el && el.parentNode && typeof window.fushiFixedOrigin === 'function') {
+      try { return window.fushiFixedOrigin(el.parentNode); } catch (_) { /* fallthrough */ }
+    }
+    return { x: 0, y: 0, sx: 1, sy: 1 };
   }
 
   // 站点控制栏锚点。返回 {parent, before} —— before 为 null 表示追加到末尾。
@@ -330,7 +386,7 @@
 
   function paintButton() {
     if (!btnEl) return;
-    var on = st.prefs.subtitleOverlayEnabled !== false && !st.prefs.subtitleHidden;
+    var on = overlayEffective() && !st.prefs.subtitleHidden;
     btnEl.dataset.on = on ? '1' : '';
     btnEl.title = tr(on ? 'ap_overlay_toggle_title_on' : 'ap_overlay_toggle_title_off');
     btnEl.setAttribute('aria-label', btnEl.title);
@@ -376,8 +432,9 @@
     var v = videoEl();
     if (!btnEl || !v || typeof v.getBoundingClientRect !== 'function') return;
     var r = v.getBoundingClientRect();
-    btnEl.style.left = Math.round(r.right - FLOAT_BTN_SIZE - FLOAT_BTN_INSET) + 'px';
-    btnEl.style.top = Math.round(r.top + FLOAT_BTN_INSET) + 'px';
+    var o = fixedOriginOf(btnEl);
+    btnEl.style.left = Math.round((r.right - FLOAT_BTN_SIZE - FLOAT_BTN_INSET - o.x) / o.sx) + 'px';
+    btnEl.style.top = Math.round((r.top + FLOAT_BTN_INSET - o.y) / o.sy) + 'px';
     btnEl.dataset.visible = (st.open || st.hoverVideo) ? '1' : '';
   }
 
@@ -409,17 +466,26 @@
     return el;
   }
 
+  // 「Fushi 字幕」此刻是否真在出画：覆盖层开关 + 字幕能力总门（与工具栏弹窗
+  // fushiOverlayToggleState 同一判据）。
+  function overlayEffective() {
+    return st.prefs.subtitleOverlayEnabled !== false && st.gate === true;
+  }
+
   function renderMain() {
     if (!mainPageEl) return;
     mainPageEl.textContent = '';
     var items = menuModel({
-      overlayOn: st.prefs.subtitleOverlayEnabled !== false,
+      overlayOn: overlayEffective(),
       replaceNative: !!st.prefs.subtitleReplaceNative,
       allTracks: !!st.prefs.subtitleOverlayAllTracks,
       background: st.prefs.subtitleOverlayBackground !== false,
       hidden: !!st.prefs.subtitleHidden,
       hasTrack: hasTrack(),
       externalTrack: hasExternalTrack(),
+      study: st.prefs.studyTrackVideo !== false,
+      trackLabel: activeTrackLabel(),
+      offsetMs: trackInfo().offsetMs,
     });
     for (var i = 0; i < items.length; i++) mainPageEl.appendChild(renderItem(items[i]));
   }
@@ -442,6 +508,7 @@
       box.className = 'fushi-pc-seg';
       for (var i = 0; i < item.buttons.length; i++) {
         (function (spec) {
+          if (spec.kind === 'input') { box.appendChild(renderOffsetInput(spec)); return; }
           var b = document.createElement('button');
           b.type = 'button';
           b.dataset.action = spec.id;
@@ -453,7 +520,7 @@
             b.title = spec.title;
             b.setAttribute('aria-label', spec.title);
           }
-          b.addEventListener('click', function () { runShortcut(spec.id); });
+          b.addEventListener('click', function () { runShortcut(spec.id); refreshOffsetValue(); });
           box.appendChild(b);
         })(item.buttons[i]);
       }
@@ -491,6 +558,7 @@
     a.setAttribute('tabindex', '0');
     function go() {
       if (item.id === 'style') showPage('style');
+      else if (item.id === 'track') showPage('tracks');
       else if (item.id === 'list') runShortcut('toggle-panel');
       else if (item.id === 'settings') openOptions();
     }
@@ -499,6 +567,109 @@
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
     });
     return a;
+  }
+
+  // 当前视频的 Fushi 字幕轨（subtitle-panel.js 契约；缺席时当没有轨）。
+  function trackInfo() {
+    try {
+      if (typeof window.fushiSubtitleTrackList === 'function') {
+        var info = window.fushiSubtitleTrackList();
+        if (info && Array.isArray(info.tracks)) return info;
+      }
+    } catch (_) { /* no-op */ }
+    return { tracks: [], active: null, offsetMs: 0 };
+  }
+
+  function activeTrackLabel() {
+    var info = trackInfo();
+    for (var i = 0; i < info.tracks.length; i++) {
+      if (info.tracks[i].lang === info.active) return info.tracks[i].label || info.active;
+    }
+    return null;
+  }
+
+  function renderOffsetInput(spec) {
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'fushi-pc-offset-input';
+    input.dataset.action = spec.id;
+    input.setAttribute('inputmode', 'decimal');
+    input.setAttribute('autocomplete', 'off');
+    input.setAttribute('spellcheck', 'false');
+    input.value = spec.value;
+    if (spec.title) {
+      input.title = spec.title;
+      input.setAttribute('aria-label', spec.title);
+    }
+    function commit() {
+      var ms = parseOffsetSeconds(input.value);
+      var ok = ms !== null && typeof window.fushiSubtitleSetOffset === 'function' &&
+        window.fushiSubtitleSetOffset(ms) === true;
+      if (!ok && ms !== null && typeof window.fushiToast === 'function') window.fushiToast(tr('pc_track_none'));
+      refreshOffsetValue(true);
+    }
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); if (typeof input.blur === 'function') input.blur(); }
+      else if (e.key === 'Escape') { e.preventDefault(); refreshOffsetValue(true); if (typeof input.blur === 'function') input.blur(); }
+    });
+    input.addEventListener('change', commit);
+    input.addEventListener('focus', function () { try { input.select(); } catch (_) { /* no-op */ } });
+    return input;
+  }
+
+  // 偏移变了（按钮 / 快捷键 / 侧边栏）就把输入框回显成真值；正在输入时不打断，force 除外。
+  function refreshOffsetValue(force) {
+    if (!mainPageEl) return;
+    var input = mainPageEl.querySelector ? mainPageEl.querySelector('.fushi-pc-offset-input') : null;
+    if (!input) return;
+    if (!force && document.activeElement === input) return;
+    input.value = formatOffsetSeconds(trackInfo().offsetMs || 0);
+  }
+
+  function renderTracksPage() {
+    if (!tracksPageEl) return;
+    tracksPageEl.textContent = '';
+    var back = document.createElement('button');
+    back.type = 'button';
+    back.className = 'fushi-pc-back';
+    back.textContent = tr('sp_track_aria_label');
+    prependIcon(back, 'arrow_back', 24);
+    back.addEventListener('click', function () { showPage('main'); });
+    tracksPageEl.appendChild(back);
+    var info = trackInfo();
+    if (!info.tracks.length) {
+      var empty = document.createElement('div');
+      empty.className = 'fushi-pc-empty';
+      empty.textContent = tr('pc_track_none');
+      tracksPageEl.appendChild(empty);
+      return;
+    }
+    for (var i = 0; i < info.tracks.length; i++) {
+      (function (track) {
+        var selected = track.lang === info.active;
+        var r = row({
+          id: 'track-option',
+          // 与侧边栏下拉同形：待加载轨带后缀，已加载轨带（条数）。
+          label: (track.label || track.lang) + (track.pending ? tr('sp_track_pending_suffix') : '（' + track.length + '）'),
+          icon: selected ? 'check' : null,
+        });
+        r.classList.add('is-action', 'is-track');
+        r.dataset.lang = track.lang;
+        r.dataset.selected = selected ? '1' : '';
+        r.setAttribute('role', 'menuitemradio');
+        r.setAttribute('aria-checked', selected ? 'true' : 'false');
+        r.setAttribute('tabindex', '0');
+        function pick() {
+          if (typeof window.fushiSubtitleSelectTrack === 'function') window.fushiSubtitleSelectTrack(track.lang);
+          renderTracksPage();
+        }
+        r.addEventListener('click', pick);
+        r.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); }
+        });
+        tracksPageEl.appendChild(r);
+      })(info.tracks[i]);
+    }
   }
 
   function renderStylePage() {
@@ -631,8 +802,11 @@
   function showPage(page) {
     st.page = page;
     if (page === 'style') renderStylePage();
+    if (page === 'tracks') renderTracksPage();
+    if (page === 'main') renderMain();
     if (mainPageEl) mainPageEl.hidden = page !== 'main';
     if (stylePageEl) stylePageEl.hidden = page !== 'style';
+    if (tracksPageEl) tracksPageEl.hidden = page !== 'tracks';
     position();
   }
 
@@ -647,8 +821,12 @@
     stylePageEl = document.createElement('div');
     stylePageEl.className = 'fushi-pc-page';
     stylePageEl.hidden = true;
+    tracksPageEl = document.createElement('div');
+    tracksPageEl.className = 'fushi-pc-page';
+    tracksPageEl.hidden = true;
     menuEl.appendChild(mainPageEl);
     menuEl.appendChild(stylePageEl);
+    menuEl.appendChild(tracksPageEl);
     sealEvents(menuEl);
     return menuEl;
   }
@@ -677,6 +855,7 @@
     renderMain();
     if (mainPageEl) mainPageEl.hidden = false;
     if (stylePageEl) stylePageEl.hidden = true;
+    if (tracksPageEl) tracksPageEl.hidden = true;
     menuEl.dataset.open = '1';
     if (btnEl) btnEl.setAttribute('aria-expanded', 'true');
     position();
@@ -698,8 +877,9 @@
     var size = { width: menuEl.offsetWidth, height: menuEl.offsetHeight };
     var view = { width: window.innerWidth || 0, height: window.innerHeight || 0 };
     var p = placeMenu(r, size, view);
-    menuEl.style.left = p.left + 'px';
-    menuEl.style.top = p.top + 'px';
+    var o = fixedOriginOf(menuEl);
+    menuEl.style.left = Math.round((p.left - o.x) / o.sx) + 'px';
+    menuEl.style.top = Math.round((p.top - o.y) / o.sy) + 'px';
   }
 
   // ────────────────────────────── 动作 ──────────────────────────────
@@ -741,7 +921,9 @@
 
   function flip(id) {
     if (id === 'overlay') {
-      return writePrefs(overlayToggleWrite(st.prefs.subtitleOverlayEnabled !== false));
+      var write = overlayToggleWrite(overlayEffective());
+      if (write[PANEL_GATE_KEY] === true) st.gate = true;
+      return writePrefs(write);
     }
     if (id === 'hidden') {
       // 隐藏字幕的状态与 style 注入归 content.js 独占（见那里的所有权注释），这里只转发。
@@ -752,6 +934,7 @@
     if (id === 'replaceNative') return writePrefs({ subtitleReplaceNative: !st.prefs.subtitleReplaceNative });
     if (id === 'allTracks') return writePrefs({ subtitleOverlayAllTracks: !st.prefs.subtitleOverlayAllTracks });
     if (id === 'background') return writePrefs({ subtitleOverlayBackground: st.prefs.subtitleOverlayBackground === false });
+    if (id === 'study') return writePrefs({ studyTrackVideo: st.prefs.studyTrackVideo === false });
   }
 
   function runShortcut(action) {
@@ -792,18 +975,20 @@
   // ────────────────────────────── 装载与同步 ──────────────────────────────
 
   var PREF_KEYS = [
-    SETTING_KEY, 'subtitleOverlayEnabled', 'subtitleReplaceNative', 'subtitleOverlayAllTracks',
-    'subtitleOverlayBackground', 'subtitleHidden', 'subtitleStyle',
+    SETTING_KEY, PANEL_GATE_KEY, 'subtitleOverlayEnabled', 'subtitleReplaceNative', 'subtitleOverlayAllTracks',
+    'subtitleOverlayBackground', 'subtitleHidden', 'subtitleStyle', 'studyTrackVideo',
   ];
 
   function adoptStored(stored) {
     var s = stored || {};
     st.enabled = readBool(s, SETTING_KEY, true);
+    st.gate = s[PANEL_GATE_KEY] === true;
     st.prefs.subtitleOverlayEnabled = readBool(s, 'subtitleOverlayEnabled', true);
     st.prefs.subtitleReplaceNative = readBool(s, 'subtitleReplaceNative', false);
     st.prefs.subtitleOverlayAllTracks = readBool(s, 'subtitleOverlayAllTracks', false);
     st.prefs.subtitleOverlayBackground = readBool(s, 'subtitleOverlayBackground', true);
     st.prefs.subtitleHidden = readBool(s, 'subtitleHidden', false);
+    st.prefs.studyTrackVideo = readBool(s, 'studyTrackVideo', true);
     if (Object.prototype.hasOwnProperty.call(s, 'subtitleStyle')) st.style = s.subtitleStyle || null;
   }
 
@@ -839,11 +1024,13 @@
   function snapshot() {
     var s = {};
     s[SETTING_KEY] = st.enabled;
+    s[PANEL_GATE_KEY] = st.gate;
     s.subtitleOverlayEnabled = st.prefs.subtitleOverlayEnabled;
     s.subtitleReplaceNative = st.prefs.subtitleReplaceNative;
     s.subtitleOverlayAllTracks = st.prefs.subtitleOverlayAllTracks;
     s.subtitleOverlayBackground = st.prefs.subtitleOverlayBackground;
     s.subtitleHidden = st.prefs.subtitleHidden;
+    s.studyTrackVideo = st.prefs.studyTrackVideo;
     s.subtitleStyle = st.style;
     return s;
   }
@@ -867,12 +1054,24 @@
   document.addEventListener('fullscreenchange', function () {
     closeMenu();
     ensureButton();
+    // 站点在 fullscreenchange 之后才按新尺寸重排播放器：两帧后按落定的几何再摆一次。
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(function () { requestAnimationFrame(function () { ensureButton(); }); });
+    }
   });
 
-  window.addEventListener('resize', function () {
-    placeFloatingButton();
-    position();
-  });
+  // BUG-3144：悬浮按钮是 fixed 浮层，视频随页面滚动 / 播放器自己挪位时它不会跟着动——此前只在
+  // resize、悬停和每秒轮询时重摆，滚动一下按钮就停在原处「飞」离视频。滚动（含内部滚动容器，
+  // capture）与尺寸变化都按帧合并重摆。
+  var replaceRaf = 0;
+  function scheduleReplace() {
+    if (replaceRaf) return;
+    var run = function () { replaceRaf = 0; placeFloatingButton(); position(); };
+    if (typeof requestAnimationFrame === 'function') replaceRaf = requestAnimationFrame(run);
+    else run();
+  }
+  window.addEventListener('resize', scheduleReplace);
+  window.addEventListener('scroll', scheduleReplace, { capture: true, passive: true });
 
   // 通用悬浮按钮的显隐跟鼠标：在视频画面上才出现，与站点控件一个作息。
   document.addEventListener('pointerover', function (e) {
@@ -891,7 +1090,11 @@
   // 与其为每个站点各写一套观察器，不如一秒一次确认「按钮还在正确容器里吗」。
   setInterval(function () {
     ensureButton();
-    if (st.open) position();
+    if (st.open) {
+      position();
+      // 偏移可能被快捷键 / 侧边栏改了：菜单开着时回显真值（正在输入时不打断）。
+      if (st.page === 'main') refreshOffsetValue(false);
+    }
   }, 1000);
 
   if (window.fushiTheme && typeof window.fushiTheme.onChange === 'function') {

@@ -81,17 +81,25 @@
               </span>
               <span class="switch"><input id="subtitleOverlayAutoLookup" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
-            <label class="setting-row" for="touchLookupTap">
+            <label class="setting-row" for="popupFontSize">
               <span class="setting-copy">
-                <strong data-i18n="opt_touchLookupTap_title">点按查词（触屏）</strong>
-                <small data-i18n="opt_touchLookupTap_desc">在手机和平板上点文字即可查词。</small>
+                <strong data-i18n="opt_popupFontSize_title">词典字号</strong>
+                <small data-i18n="opt_popupFontSize_desc">查词框里的字号（10–40 像素），只影响浏览器。留空则跟随 Fushi 的词典字号。</small>
               </span>
-              <span class="switch"><input id="touchLookupTap" type="checkbox"><span aria-hidden="true"></span></span>
+              <input class="size-input" id="popupFontSize" type="number" min="10" max="40" step="1"
+                     inputmode="numeric" placeholder="跟随 Fushi" data-i18n-placeholder="opt_popupFontSize_placeholder">
             </label>
           </div>
           <details class="more" id="moreLookup">
-            <summary><span class="more-label" data-i18n="opt_more_options">更多选项</span><span class="more-count">4</span><span class="more-chevron msr-slot" data-fushi-icon="expand_more" data-fushi-icon-size="20" aria-hidden="true"></span></summary>
+            <summary><span class="more-label" data-i18n="opt_more_options">更多选项</span><span class="more-count">5</span><span class="more-chevron msr-slot" data-fushi-icon="expand_more" data-fushi-icon-size="20" aria-hidden="true"></span></summary>
             <div class="setting-list">
+              <label class="setting-row" for="touchLookupTap">
+                <span class="setting-copy">
+                  <strong data-i18n="opt_touchLookupTap_title">点按查词（触屏）</strong>
+                  <small data-i18n="opt_touchLookupTap_desc">在手机和平板上点文字即可查词。</small>
+                </span>
+                <span class="switch"><input id="touchLookupTap" type="checkbox"><span aria-hidden="true"></span></span>
+              </label>
               <label class="setting-row" for="touchLookupHold">
                 <span class="setting-copy">
                   <strong data-i18n="opt_touchLookupHold_title">长按查词（触屏）</strong>
@@ -554,61 +562,62 @@
             <div class="section-title">
               <h2 id="shortcut-heading" data-i18n="opt_group_shortcut">快捷键</h2>
               <p data-i18n="opt_group_shortcut_desc">视频页的按键；与网站冲突的可单独关闭。</p>
+              <p data-i18n="opt_shortcut_edit_hint">点击按键可改成别的组合键。</p>
             </div>
           </header>
           <div class="setting-list shortcut-grid">
             <label class="setting-row shortcut-row" for="videoShortcutPrevCue">
-              <kbd class="keycap">←</kbd>
+              <button class="keycap keycap-edit" type="button" data-shortcut-action="prev-cue" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">←</button>
               <span class="setting-copy"><strong data-i18n="opt_videoShortcutPrevCue_title">上一句字幕</strong></span>
               <span class="switch"><input id="videoShortcutPrevCue" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row shortcut-row" for="videoShortcutNextCue">
-              <kbd class="keycap">→</kbd>
+              <button class="keycap keycap-edit" type="button" data-shortcut-action="next-cue" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">→</button>
               <span class="setting-copy"><strong data-i18n="opt_videoShortcutNextCue_title">下一句字幕</strong></span>
               <span class="switch"><input id="videoShortcutNextCue" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row shortcut-row" for="videoShortcutReplayCue">
-              <kbd class="keycap">↑</kbd>
+              <button class="keycap keycap-edit" type="button" data-shortcut-action="replay-cue" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">↑</button>
               <span class="setting-copy"><strong data-i18n="opt_videoShortcutReplayCue_title">重播本句</strong></span>
               <span class="switch"><input id="videoShortcutReplayCue" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row shortcut-row" for="videoShortcutTogglePanel">
-              <kbd class="keycap">Shift+S</kbd>
+              <button class="keycap keycap-edit" type="button" data-shortcut-action="toggle-panel" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">Shift+S</button>
               <span class="setting-copy"><strong data-i18n="opt_videoShortcutTogglePanel_title">打开字幕侧边栏</strong></span>
               <span class="switch"><input id="videoShortcutTogglePanel" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row shortcut-row" for="videoShortcutToggleSubtitleHide">
-              <kbd class="keycap">Shift+H</kbd>
+              <button class="keycap keycap-edit" type="button" data-shortcut-action="toggle-subtitle-hide" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">Shift+H</button>
               <span class="setting-copy"><strong data-i18n="opt_videoShortcutToggleSubtitleHide_title">隐藏或显示字幕</strong></span>
               <span class="switch"><input id="videoShortcutToggleSubtitleHide" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row shortcut-row" for="videoShortcutCopyCue">
-              <kbd class="keycap">Ctrl+Shift+Z</kbd>
+              <button class="keycap keycap-edit" type="button" data-shortcut-action="copy-cue" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">Ctrl+Shift+Z</button>
               <span class="setting-copy"><strong data-i18n="opt_videoShortcutCopyCue_title">复制当前字幕</strong></span>
               <span class="switch"><input id="videoShortcutCopyCue" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row shortcut-row" for="videoShortcutOffsetMinus">
-              <kbd class="keycap">Ctrl+Shift+←</kbd>
+              <button class="keycap keycap-edit" type="button" data-shortcut-action="offset-minus" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">Ctrl+Shift+←</button>
               <span class="setting-copy"><strong data-i18n="opt_videoShortcutOffsetMinus_title">字幕提前 100 毫秒</strong></span>
               <span class="switch"><input id="videoShortcutOffsetMinus" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row shortcut-row" for="videoShortcutOffsetPlus">
-              <kbd class="keycap">Ctrl+Shift+→</kbd>
+              <button class="keycap keycap-edit" type="button" data-shortcut-action="offset-plus" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">Ctrl+Shift+→</button>
               <span class="setting-copy"><strong data-i18n="opt_videoShortcutOffsetPlus_title">字幕延后 100 毫秒</strong></span>
               <span class="switch"><input id="videoShortcutOffsetPlus" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row shortcut-row" for="videoShortcutOffsetReset">
-              <kbd class="keycap">Ctrl+Shift+↓</kbd>
+              <button class="keycap keycap-edit" type="button" data-shortcut-action="offset-reset" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">Ctrl+Shift+↓</button>
               <span class="setting-copy"><strong data-i18n="opt_videoShortcutOffsetReset_title">重置字幕偏移</strong></span>
               <span class="switch"><input id="videoShortcutOffsetReset" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row shortcut-row" for="videoShortcutRateDown">
-              <kbd class="keycap">Ctrl+Shift+[</kbd>
+              <button class="keycap keycap-edit" type="button" data-shortcut-action="rate-down" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">Ctrl+Shift+[</button>
               <span class="setting-copy"><strong data-i18n="opt_videoShortcutRateDown_title">降低播放速度</strong></span>
               <span class="switch"><input id="videoShortcutRateDown" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row shortcut-row" for="videoShortcutRateUp">
-              <kbd class="keycap">Ctrl+Shift+]</kbd>
+              <button class="keycap keycap-edit" type="button" data-shortcut-action="rate-up" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">Ctrl+Shift+]</button>
               <span class="setting-copy"><strong data-i18n="opt_videoShortcutRateUp_title">提高播放速度</strong></span>
               <span class="switch"><input id="videoShortcutRateUp" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
@@ -716,6 +725,7 @@
   <script src="subtitle-style.js"></script>
   <script src="fushi-defaults.js"></script>
   <script src="popup-size.js"></script>
+  <script src="video-shortcuts.js"></script>
   <script src="connection-diagnostics.js"></script>
   <script src="self-update.js"></script>
   <script src="options.js"></script>

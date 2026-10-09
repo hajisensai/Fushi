@@ -12,6 +12,9 @@
     unauthorized: 'unauthorized',
     yomitanConflict: 'yomitan-conflict',
     wrongService: 'wrong-service',
+    // BUG-3146：端口上有东西在听，但状态探测在时限内没回话（app 在跑却卡住 / 被系统挂起）。
+    // 只由 background 的限时诊断给出，classify 不产出它——classify 拿到的是已完成的响应。
+    noResponse: 'no-response',
   });
 
   function classify(primary, legacy, version, networkError) {
@@ -56,6 +59,9 @@
         detail: tr('conn_state_yomitan_detail', { port: p }),
         tone: 'danger',
       };
+    }
+    if (state === states.noResponse) {
+      return { title: tr('conn_state_no_response_title'), detail: tr('conn_state_no_response_detail'), tone: 'warn' };
     }
     if (state === states.wrongService) {
       return { title: tr('conn_state_wrong_service_title'), detail: tr('conn_state_wrong_service_detail', { port: p }), tone: 'danger' };

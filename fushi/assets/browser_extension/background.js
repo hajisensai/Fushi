@@ -215,12 +215,16 @@ async function diagnoseConnectionCapped(base, timeoutMs = 750) {
   let timer = null;
   let port = 19633;
   try { port = Number(new URL(base).port) || port; } catch (_) {}
-  const fallback = { state: 'offline', base, port };
+  const offline = { state: 'offline', base, port };
+  // BUG-3146：限时内状态探测没回话 ≠ API 没开。连不上（拒绝连接 / 端口没人听）会在几毫秒内
+  // 以 networkError 落成 offline；能拖过时限的只有「端口上的 Fushi 在跑却没有应答」。此前两者
+  // 都报「Fushi API 未开启，请去设置里打开」——用户明明开着，只会被误导去翻设置。
+  const noResponse = { state: 'no-response', base, port };
   try {
     return await Promise.race([
-      diagnoseConnection(true).catch(() => fallback),
+      diagnoseConnection(true).catch(() => offline),
       new Promise((resolve) => {
-        timer = setTimeout(() => resolve(fallback), timeoutMs);
+        timer = setTimeout(() => resolve(noResponse), timeoutMs);
       }),
     ]);
   } finally {
@@ -1317,8 +1321,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       } else if (msg.type === 'parseSubtitle') {
         // B（asb 招牌）：给任意网页视频加载用户自己的外挂字幕文件——扩展读本地 srt/ass/vtt 文本
         // POST /api/subtitle/parse {filename,content} → server 复用 app 内已测 parser 解析成 cue。
+        // BUG-3146：解析是纯 CPU 小活，正常几十毫秒回。此前没有上限——app 不应答时这条消息永远
+        // 挂着，页面「导入了没反应」，直到 app 恢复应答才突然导进去。给上限并走限时诊断：
+        // 超时由下方 catch 回 {ok:false, connection:no-response}，页面如实说「Fushi 没有响应」。
         const r = await fetch(base + '/api/subtitle/parse', {
           method: 'POST',
+          signal: AbortSignal.timeout(15000),
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({ filename: msg.filename || '', content: msg.content || '' }),
         });
@@ -1326,7 +1334,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           ok: r.ok,
           status: r.status,
           data: r.ok ? await r.json() : null,
-          ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
+          ...(!r.ok ? { connection: await diagnoseConnectionCapped(base) } : {}),
         });
       } else if (msg.type === 'subtitleSearch') {
         // 查字幕①：Side Panel 搜索框 → server /api/subtitle/search。server 扇出
@@ -1417,6 +1425,30 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           body: JSON.stringify({ expression: msg.expression || '', reading: msg.reading || '' }),
         });
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
+      } else if (msg.type === 'favorite') {
+        // BUG-3141：弹窗 ☆/★ 收藏。POST {toggle,expression,reading,glossary,sentence}
+        // → server /api/extension/favorite，与 app 外浮窗 favoriteEntry / favoriteCheck 两个桥
+        // 同一份 overlayToggleOrCheckFavoriteWord（跨源判 / 跨源删 / 单源写），回 {favorite:bool}。
+        // 旧 app 没有这个端点 → 404 → ok:false，带连接诊断让页面说清楚为什么没收藏上。
+        const r = await fetch(base + '/api/extension/favorite', {
+          method: 'POST',
+          signal: AbortSignal.timeout(8000),
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({
+            toggle: msg.toggle === true,
+            expression: msg.expression || '',
+            reading: msg.reading || '',
+            glossary: msg.glossary || '',
+            sentence: msg.sentence || '',
+          }),
+        });
+        const data = r.ok ? await responseJson(r) : null;
+        sendResponse({
+          ok: r.ok && !!data && typeof data.favorite === 'boolean',
+          status: r.status,
+          data,
+          ...(!r.ok && r.status !== 404 ? { connection: await diagnoseConnectionCapped(base) } : {}),
+        });
       } else if (msg.type === 'openInAnki') {
         // Issue #1409：弹窗 ↗「在 Anki 中打开这个词的卡」。POST {expression,reading}
         // → server /api/anki/open，与 app 内 openInAnki 桥同一 repo.openWordInAnki，
@@ -1496,10 +1528,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       // 错误日志先落内存，连接诊断若本身超时也不会把真正失败阶段吞掉。
       if (lookupPerf) recordLookupPerf(lookupPerf);
       const diagnosticStartedAt = performance.now();
-      const connection = lookupTrace
-        ? await diagnoseConnectionCapped(base)
-        : await diagnoseConnection(true)
-            .catch(() => ({ state: 'offline', base, port: 19633 }));
+      // 所有消息一律限时诊断：失败的那一刻 app 常常正是不应答的状态，不限时的诊断会把
+      // sendResponse 一起挂住（BUG-3146：页面上表现为「点了没反应」）。
+      const connection = await diagnoseConnectionCapped(base);
       if (lookupPerf) {
         lookupPerf.diagnosticMs = Number(
           (performance.now() - diagnosticStartedAt).toFixed(1));

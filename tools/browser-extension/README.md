@@ -19,10 +19,11 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 | `subtitle-style.js` | 隔离 + options | 视频上字幕外观设置（字体/大小/字重/间距/行高/对齐/颜色/描边/底板含宽高）→ 覆盖层 `--fushi-sub-*` 变量 + `applyBox` 宽高 + `fitTextInto` 自适应缩放（`--fushi-sub-fit`） |
 | `study-tracker.js` | 隔离 | 网页视频沉浸时间：正片 `<video>` 播放时每秒把位置样本经 background 交给 app 记学习统计（见「沉浸时间」） |
 | `side-panel.html/js/css` | 扩展页 | 浏览器原生 Side Panel 字幕列表；侧边栏内取词，默认把词交给宿主页用页面弹窗渲染（见「侧边栏查词跨出面板」），经 tabs 消息读取轨道并执行跳转/制卡/偏移，不把字幕列表注入网页 |
-| `video-shortcuts.js` | 隔离 | 视频页快捷键判定（纯函数）+ 绑定；每个动作独立开关，动作交 subtitle-panel 执行 |
+| `video-shortcuts.js` | 隔离 + options | 视频页快捷键判定（纯函数）+ 绑定；每个动作独立开关、组合键可在设置页改（`videoShortcutKeys`），动作交 subtitle-panel 执行；设置页只借用纯函数做改键录入 |
+| `video-target.js` | 隔离 | 视频页浮层「跟谁定位 / 用什么坐标系」：`fushiMainVideo()` 按全屏元素与可见面积挑正片（不是文档里第一个 `<video>`），`fushiFixedOrigin(parent)` 量出 fixed 浮层父级的包含块（站点给全屏容器 / body 加 transform 时不再是视口）；字幕覆盖层与通用悬浮按钮共用，不依赖任何站点 DOM |
 | `touch-lookup.js` | 隔离 | 触屏点按/长按查词：单指点正文=查词（默认开）、长按≈0.5s=查词（默认关）；复用 content.js 的 `fushiLookupAtPoint`，零新增查词链路，只认 touch 主指针，绝不影响鼠标行为 |
 | `mobile-drawer.js` | 隔离 | 移动端字幕列表抽屉：安卓无 chrome.sidePanel，触屏视频页挂边缘 ☰ 钮 + 隐形手势带（点=开关、按住=拖宽自由停位）；横屏右挂仅全屏（页面态让位形态太杂已禁用）、竖屏底挂，内容为 iframe 内嵌 `side-panel.html?fushiEmbed=1`（选轨/跳转/偏移/制卡/查词全套复用）；全屏态压播放器让位并以 adopt 跟随其自重排，几何存 `mobileSubtitleDrawerGeom` |
-| `player-controls.js` | 隔离 | 播放器内嵌字幕控制：把一颗 Fushi 按钮插进站点自己的控制栏（YouTube `.ytp-right-controls` / Netflix 全屏钮左侧），其余站点退回「悬停视频时右上角浮出」的通用钮；菜单是字幕开关（覆盖层 / 替代原生 / 全轨叠加 / 底色 / 隐藏）+ 字幕列表 + 时轴偏移 + 字幕外观快捷面板，全部写既有键或调既有执行端，不新增状态（见「播放器内嵌字幕控制」） |
+| `player-controls.js` | 隔离 | 播放器内嵌字幕控制：把一颗 Fushi 按钮插进站点自己的控制栏（YouTube `.ytp-right-controls` / Netflix 全屏钮左侧），其余站点退回「悬停视频时右上角浮出」的通用钮（跟 `video-target.js` 挑出的正片走，滚动即重摆）；菜单是字幕开关（覆盖层 / 替代原生 / 全轨叠加 / 底色 / 隐藏）+ 沉浸统计开关 + 选字幕轨子页 + 字幕列表 + 时轴偏移（±0.1 与手填秒数）+ 字幕外观快捷面板，全部写既有键或调既有执行端，不新增状态（见「播放器内嵌字幕控制」） |
 | `netflix-bridge.js` | MAIN | Netflix 专用：JSON.parse hook 抓整集字幕 + 官方 player.seek（避开 DRM M7375） |
 | `youtube-bridge.js` | MAIN | YouTube 专用：按 asbplayer 顺序读取播放器运行态 captionTracks（含 POT）→ Android Innertube → player response，并一次下载完整 srv3/json3 轨；只读、不改宿主 DOM |
 | `stream-bridge.js` | MAIN | 通用流媒体字幕桥（asb 移植）：TVer / Bilibili.tv / Hulu JP / Prime Video 整集字幕拦截 |
@@ -37,7 +38,7 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 | `options.html/css/js` | options | 设置页，按任务分六组：查词 / 字幕 / 字幕外观（实时预览）/ 外观（界面风格 · 配色主题 · 明暗 · 语言）/ 快捷键 / 高级（沉浸时间 · 连接与诊断 · 版本与更新）；每组常用项在前、次要项收进「更多选项」折叠，每项一行说明 |
 | `material.css` | 扩展页 | 表面材质层（options / 工具栏菜单 / 字幕侧边栏）：两套外观风格 `extensionStyle`——M3E（缺省，与 Fushi 本体同一套 Material 3 Expressive）与液态玻璃——共用一份规则，形状 / 材质 / 动效全取 `theme.css` 的风格 token；与配色正交 |
 | `icons.js` | 隔离 + 扩展页 | Material Symbols Rounded 图标子集（内联 SVG 路径表，不加载图标字体）：`fushiIcon(name)` / 静态页 `data-fushi-icon` 槽位；只收录界面真用到的字形 |
-| `popup-size.js` | 隔离 + 扩展页 | 查词弹窗尺寸盒的唯一决策器（纯函数）：扩展独立尺寸覆盖 + 视口不足时的收敛；页面弹窗与侧边栏弹窗共用 |
+| `popup-size.js` | 隔离 + 扩展页 | 查词弹窗尺寸盒的唯一决策器（纯函数）：扩展独立尺寸覆盖 + 视口不足时的收敛 + 只作用于浏览器的词典字号覆盖 `popupFontSize`（缺省跟随 Fushi 下发的 zoom）；页面弹窗与侧边栏弹窗共用 |
 | `vendor/` | — | `popup.{js,css,html}`+`selection.js` = app 查词弹窗原样拷贝（上游 `fushi/assets/popup/`）；`dict-media.js` 允许扩展分叉；`content.css` 由生成器产出；`action-popup.*` 扩展独有 |
 | `scripts/` | 开发 | `generate-content-css.mjs`（popup.css → 零特异性重根 content.css）、`sync-mirrors.mjs`（镜像同步） |
 
@@ -85,7 +86,7 @@ app 升级
 
 全部 `POST http://<host>:<port>/api/...`，`Authorization: Basic base64('fushi:'+token)`。
 查词 `/api/lookup/dictionary` · 单词音频 `/api/lookup/audio` · 制卡 `/api/mine` · 查重
-`/api/duplicate` · 状态/心跳 `/api/extension/status` · 弹窗尺寸 `/api/extension/popup-size` ·
+`/api/duplicate` · 收藏 `/api/extension/favorite` · 状态/心跳 `/api/extension/status` · 弹窗尺寸 `/api/extension/popup-size` ·
 YouTube 整集字幕 `/api/youtube/captions` · 外挂字幕解析 `/api/subtitle/parse`。
 服务端实现：`fushi/lib/src/sync/yomitan_api_server.dart`。
 
@@ -459,8 +460,11 @@ hook 安装；② `manifest.json` 的 stream-bridge matches 加域名；③ 新�
 | Ctrl+Shift+Z | 复制当前字幕句（配合 Fushi 剪贴板监看即查词） |
 | Ctrl+Shift+[ / ] | 播放速度 −0.25x / ＋0.25x（0.25–4x） |
 
-这里使用固定键位 + 纯函数判定；每个动作在扩展设置页各有自己的开关。站点输入框/可编辑区
-一律放行；无轨时方向键及 Shift+S 均放行给站点原生行为。
+上表是默认键位；每个动作在扩展设置页各有自己的开关，点键帽即可录入新的组合键（Backspace 恢复默认、
+Esc 取消、与别的动作撞键时拒绝并提示）。改过的键存 `videoShortcutKeys = {动作: 'Ctrl+Shift+KeyJ'}`
+（修饰键规范顺序 + 布局无关的 `KeyboardEvent.code`），只存改过的、改回默认即删项；视频页按
+storage.onChanged 热更新，不必刷新。判定仍是纯函数。站点输入框/可编辑区一律放行；无轨时需要
+字幕轨的动作（上一句 / 下一句 / 重播 / 侧边栏 / 偏移 / 复制）均放行给站点原生行为。
 
 `Shift+H` 的「隐藏」用 `visibility:hidden` 而非 `display:none`：扩展的取词、逐句制卡、caret
 兜底命中都要读字幕节点的 textContent / 几何，`display:none` 会把它们摘出布局，隐藏字幕就
