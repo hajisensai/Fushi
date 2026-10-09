@@ -1,6 +1,10 @@
+import 'dart:io';
+
+import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 
 void main() {
   group('LyricsModeHtml', () {
@@ -224,9 +228,13 @@ void main() {
       expect(rootRule, contains('overflow-y: hidden;'));
       expect(html, contains('var __lyricsVertical = true;'));
 
-      // The container main axis flips to a row so cues lay out as columns.
+      // The flex main axis follows writing-mode: under vertical-rl `column` is
+      // the block axis (right-to-left), so each cue is its own column. `row`
+      // would be the inline axis (top-to-bottom) and squash every cue into one
+      // screen height — the original TODO-907 layout that never rendered.
       final String containerRule = _cssBlock(html, '.lyrics-container {');
-      expect(containerRule, contains('flex-direction: row;'));
+      expect(containerRule, contains('flex-direction: column;'));
+      expect(containerRule, isNot(contains('flex-direction: row;')));
 
       // Scrolling is delta/incremental to dodge vertical-rl's negative scrollX
       // coordinate, not absolute scrollTo. BUG-784: the delta is applied to the
@@ -234,6 +242,126 @@ void main() {
       // not window.scrollBy (which no-ops because body, not html, is the scroller).
       expect(html, contains('s.scrollLeft += d'));
       expect(html, contains('_lyricsScrollByAxis'));
+    });
+
+    // 竖排专属 .cue 几何：宽度上限换行内方向（长句折列而不是被裁）、句间距走
+    // 左右、放大原点 / 收藏星标按竖排挪；横排文档一个字节都不带。
+    group('vertical cue geometry', () {
+      String build({required bool vertical, LyricsHtmlTheme? theme}) {
+        return LyricsModeHtml.generate(
+          cues: <AudioCue>[_cue(0), _cue(1)],
+          currentIndex: 0,
+          backgroundColor: 'rgba(255,255,255,1.00)',
+          textColor: 'rgba(0,0,0,1.00)',
+          accentColor: 'rgba(255,220,0,1.00)',
+          fontSize: 20,
+          vertical: vertical,
+          theme: theme,
+        );
+      }
+
+      LyricsHtmlTheme theme(bool alignStart) => LyricsHtmlTheme(
+            textColor: const Color(0xFFFFFFFF),
+            currentColor: const Color(0xFFFFFFFF),
+            accentColor: const Color(0x4DFFFFFF),
+            selectionTextColor: const Color(0xFFFFFFFF),
+            contextOpacities: const <double>[0.46, 0.36, 0.3, 0.26],
+            browsingOpacity: 0.6,
+            deselectedScale: 0.96,
+            anchorY: 0.46,
+            edgeFade: 0.08,
+            alignStart: alignStart,
+            contextBlurPx: 0,
+            rowRadius: 16,
+            hoverFill: const Color(0x14FFFFFF),
+          );
+
+      test('vertical page caps the inline size and swaps cue spacing', () {
+        final String html = build(vertical: true);
+        final String cueRule = _cssBlock(html, '.lyrics-container > .cue {');
+        expect(cueRule, contains('max-width: none;'));
+        expect(cueRule,
+            contains('max-inline-size: calc(100% / var(--cue-scale) - 1%);'));
+        expect(cueRule, contains('padding: 8px 12px;'));
+        expect(
+            cueRule, contains('transform-origin: var(--ly-origin-v, center);'));
+        final String themedRule =
+            _cssBlock(html, 'body.ly-themed .lyrics-container > .cue {');
+        expect(themedRule, contains('margin: 0 2px;'));
+        final String starRule =
+            _cssBlock(html, '.lyrics-container > .cue.favorited::before {');
+        expect(starRule, contains('bottom: -2px;'));
+        expect(starRule, contains('left: 50%;'));
+      });
+
+      test('vertical overrides never use a bare .cue selector', () {
+        // __lyricsUpdateStyle rewrites rules by selectorText; a second bare
+        // `.cue` rule would be rewritten as if it were the base rule.
+        final String html = build(vertical: true);
+        expect(
+            RegExp(r'^\.cue \{', multiLine: true).allMatches(html).length, 1);
+      });
+
+      test('horizontal page carries none of the vertical geometry', () {
+        final String html = build(vertical: false);
+        expect(html, isNot(contains('.lyrics-container > .cue')));
+        expect(html, isNot(contains('max-inline-size')));
+        final String containerRule = _cssBlock(html, '.lyrics-container {');
+        expect(containerRule, contains('flex-direction: column;'));
+      });
+
+      test('theme exposes a vertical transform origin (top when start-aligned)',
+          () {
+        expect(LyricsModeHtml.themeVars(theme(true)).vars['--ly-origin-v'],
+            'center top');
+        expect(LyricsModeHtml.themeVars(theme(false)).vars['--ly-origin-v'],
+            'center');
+        final String html = build(vertical: true, theme: theme(true));
+        expect(html, contains('--ly-origin-v: center top;'));
+        expect(html, contains('ly-vertical'));
+      });
+
+      test('vertical wheel is projected onto horizontal scroll', () {
+        final String html = build(vertical: true);
+        expect(html,
+            contains('if (__lyricsVertical) {\n  window.addEventListener'));
+        expect(html, contains('_lyricsScrollTarget().scrollLeft -= px;'));
+      });
+    });
+
+    // 滚动居中纯函数在真 JS 引擎里跑：只产生增量、从不写绝对 scrollLeft，所以
+    // vertical-rl 的两种 scrollLeft 约定（Chromium 85+ / WKWebView 的「起点 0、往左
+    // 为负」，老 Chromium WebView 的「起点 max、往左变小」）下都把当前句居中，滚轮
+    // 往下读也都往左走。无 node 时 skip。
+    test('center delta centers the cue under both RTL scrollLeft conventions',
+        () async {
+      final String? node = _resolveNode();
+      if (node == null) {
+        markTestSkipped('node not found on PATH');
+        return;
+      }
+      final String html = LyricsModeHtml.generate(
+        cues: <AudioCue>[_cue(0)],
+        currentIndex: 0,
+        backgroundColor: 'rgba(255,255,255,1.00)',
+        textColor: 'rgba(0,0,0,1.00)',
+        accentColor: 'rgba(255,220,0,1.00)',
+        fontSize: 20,
+        vertical: true,
+      );
+      const String sig = 'function __lyricsCenterDeltaFor(';
+      final String fn = '$sig${_fnSource(html, sig)}';
+      final Directory dir =
+          Directory.systemTemp.createTempSync('lyrics_center_delta');
+      final File js = File('${dir.path}${Platform.pathSeparator}harness.js')
+        ..writeAsStringSync('$fn\n$_centerHarness');
+      try {
+        final ProcessResult r = await Process.run(node, <String>[js.path]);
+        expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
+        expect('${r.stdout}', contains('CENTER_OK 4'));
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
     });
 
     // TODO-1080: an over-long sentence can be taller (vertical-rl) or wider than
@@ -459,6 +587,70 @@ String _fnBody(String src, String signature) {
   }
   fail('unterminated fn: $signature');
 }
+
+/// `(args) { body }` of a JS function declaration starting at [signature].
+String _fnSource(String src, String signature) {
+  final int start = src.indexOf(signature);
+  expect(start, isNonNegative, reason: 'missing fn: $signature');
+  final int open = src.indexOf('{', start);
+  final String args = src.substring(start + signature.length, open);
+  return '$args{${_fnBody(src.substring(start), signature)}}';
+}
+
+String? _resolveNode() {
+  final String exe = Platform.isWindows ? 'node.exe' : 'node';
+  final List<String> dirs = <String>[
+    ...(Platform.environment['PATH'] ?? '').split(
+      Platform.isWindows ? ';' : ':',
+    ),
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+  ];
+  for (final String d in dirs) {
+    if (d.isEmpty) continue;
+    final File f = File('$d${Platform.pathSeparator}$exe');
+    if (f.existsSync()) return f.path;
+  }
+  return null;
+}
+
+/// Simulated vertical-rl scroller: `moved` = how far the viewport has travelled
+/// left from the start (the first cue sits at the right edge). Each convention
+/// maps `moved` <-> scrollLeft differently; the page only ever does
+/// `scrollLeft += delta`, so both must land the cue on the viewport centre.
+const String _centerHarness = r"""
+var viewW = 1000, viewH = 700, max = 6000;
+var conventions = {
+  specNegative: { toS: function(m) { return -m; }, toM: function(s) { return -s; } },
+  legacyPositive: { toS: function(m) { return max - m; }, toM: function(s) { return max - s; } },
+};
+var ok = 0;
+for (var name in conventions) {
+  var c = conventions[name];
+  // A cue 40px wide whose right edge is 2300px left of the content's right edge.
+  var elRight = 2300, elW = 40;
+  [0, 1500].forEach(function(startMoved) {
+    var s = c.toS(startMoved);
+    function rect() {
+      var left = viewW - elRight - elW + c.toM(s);
+      return { left: left, width: elW, top: 0, height: 300 };
+    }
+    s += __lyricsCenterDeltaFor(rect(), viewW, viewH, true, 0.46);
+    var r = rect();
+    var off = r.left + r.width / 2 - viewW / 2;
+    if (Math.abs(off) > 0.5) throw new Error(name + ' off by ' + off);
+    // Wheel down (deltaY > 0) => scrollLeft -= px => viewport moves on (left).
+    var before = c.toM(s);
+    s -= 120;
+    if (!(c.toM(s) > before)) throw new Error(name + ' wheel went backwards');
+    ok++;
+  });
+}
+// Horizontal pages still anchor on the theme's anchorY.
+var d = __lyricsCenterDeltaFor({ left: 0, width: 10, top: 500, height: 100 }, viewW, viewH, false, 0.5);
+if (d !== 200) throw new Error('horizontal anchor ' + d);
+console.log('CENTER_OK ' + ok);
+""";
 
 AudioCue _cue(int index) {
   return AudioCue()

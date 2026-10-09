@@ -8,20 +8,18 @@ fi
 
 runtime_directory="$(cd "$1" && pwd)"
 app_executable="${2:-}"
+# macOS 版只出 Apple Silicon（arm64），不再支持 Intel Mac：bundle 里只有
+# runtime-macos-arm64 一份 JVM 镜像（DesktopMihonRuntime._javaExecutablePath 只认它）。
 case "$(uname -m)" in
   arm64) java="$runtime_directory/runtime-macos-arm64/bin/java" ;;
-  x86_64) java="$runtime_directory/runtime-macos-x64/bin/java" ;;
-  *) echo "unsupported macOS architecture: $(uname -m)" >&2; exit 1 ;;
+  *) echo "unsupported macOS architecture: $(uname -m) (the macOS app ships arm64 only)" >&2; exit 1 ;;
 esac
 
-# 下面那段冒烟只证明**这台 runner 的架构**能跑它，而 runner 恒是 Apple Silicon。
-# `DesktopMihonRuntime._javaExecutablePath()` 按 `Abi.current()` 在
-# runtime-macos-arm64 / runtime-macos-x64 之间选目录，所以真正的不变式是：app
-# 本体能以哪些架构运行，就必须有哪个架构的 JVM 镜像、且那个镜像真的是该架构。
-# 交叉 jlink（arm64 宿主 + x64 jmods）出错时产物看着齐全、名字也对，只有到
-# Intel Mac 上才被内核以 EBADARCH 拒掉——表现是整条 Mihon 链（源列表、搜索、
-# 详情、章节、看图）全废，而 CI 全绿。Aidoku 侧曾有同形门
-# tool/aidoku/verify_macos_runtime.sh（BUG-1668 / BUG-1922），已随 macOS 宿主移除。
+# 下面那段冒烟只证明**这台 runner 的架构**能跑它。真正的不变式是：app 本体能以
+# 哪些架构运行，就必须有哪个架构的 JVM 镜像、且那个镜像真的是该架构——否则
+# 那种 Mac 上会被内核以 EBADARCH 拒掉，整条 Mihon 链（源列表、搜索、详情、章节、
+# 看图）全废而 CI 全绿。app 现在只有 arm64；若它意外又带上 x86_64 切片，这道门
+# 会直接红，而不是悄悄发出一个 Intel 上 Mihon 全废的包。
 if [[ -n "$app_executable" ]]; then
   if [[ ! -x "$app_executable" ]]; then
     echo "app executable not found for the Mihon runtime architecture gate: $app_executable" >&2
@@ -32,7 +30,10 @@ if [[ -n "$app_executable" ]]; then
   for want in $app_archs; do
     case "$want" in
       arm64) want_java="$runtime_directory/runtime-macos-arm64/bin/java" ;;
-      x86_64) want_java="$runtime_directory/runtime-macos-x64/bin/java" ;;
+      x86_64)
+        echo "app 本体带了 x86_64 切片，但 macOS 版只出 arm64（不再支持 Intel Mac），Mihon runtime 也只有 arm64 镜像；检查 fushi/macos/Runner.xcodeproj 的 EXCLUDED_ARCHS。" >&2
+        exit 1
+        ;;
       *)
         echo "unsupported app architecture for the Mihon runtime gate: $want" >&2
         exit 1

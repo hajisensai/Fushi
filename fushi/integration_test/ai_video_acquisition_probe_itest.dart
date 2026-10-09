@@ -8,7 +8,7 @@
 /// 不真的入队（没有下载后端 runtime 时 confirm 会走「配置后端」失败态，也抓一帧）。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';

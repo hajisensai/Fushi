@@ -6,7 +6,7 @@
 //
 // 这是真行为测试（直接调 helper），不是源码扫描：纯白/纯黑一旦被写回来，
 // tinted seed 主题下的断言立刻红。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/popup_theme_css.dart';
 

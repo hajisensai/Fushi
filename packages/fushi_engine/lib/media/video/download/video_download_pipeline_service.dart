@@ -30,7 +30,6 @@ import 'package:fushi_engine/media/torrent/torrent_add_coordinator.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
-import 'package:fushi_engine/media/video/discovery/discovery_metadata_identity.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
@@ -182,6 +181,7 @@ class VideoDownloadManualEnqueueRequest {
     this.coverUrl,
     this.metadataProvider,
     this.externalId,
+    this.year,
     this.discoveryKind,
     this.importAfterDownload = true,
     this.mediaKind = VideoMetadataMediaKind.movie,
@@ -205,6 +205,9 @@ class VideoDownloadManualEnqueueRequest {
   final String? coverUrl;
   final String? metadataProvider;
   final String? externalId;
+
+  /// 作品年份（电影版本区分 / 合集命名 / 字幕搜索都用它）；null = 不知道。
+  final int? year;
   final DiscoveryMediaKind? discoveryKind;
 
   /// 非视频任务下载后是否交给发现导入器。false 时只完成下载任务。
@@ -1124,7 +1127,7 @@ class VideoDownloadPipelineService {
     if (request.maxAttempts <= 0) {
       throw ArgumentError.value(request.maxAttempts, 'maxAttempts');
     }
-    final Set<int>? selectedFileIndexes = request.selectedFileIndexes;
+    Set<int>? selectedFileIndexes = request.selectedFileIndexes;
     if (selectedFileIndexes != null) {
       if (metainfo == null || selectedFileIndexes.isEmpty) {
         throw ArgumentError(
@@ -1140,6 +1143,11 @@ class VideoDownloadPipelineService {
           'selectedFileIndexes',
           'selection contains an index absent from metainfo',
         );
+      }
+      // 选中了全部文件 = 整颗 torrent：按普通任务建。否则落库的「选择」没有
+      // 一个跳过项，add 阶段 [_applyPersistedFileSelection] 会判它不完整而卡死。
+      if (selectedFileIndexes.containsAll(available)) {
+        selectedFileIndexes = null;
       }
     }
     final DiscoveryMediaKind? discoveryKind = request.discoveryKind;
@@ -1227,7 +1235,7 @@ class VideoDownloadPipelineService {
           ),
           discoveryCategory: const Value<String?>(null),
           title: Value<String>(title),
-          year: const Value<int?>(null),
+          year: Value<int?>(request.year),
           coverUrl: Value<String?>(request.coverUrl),
           backendKind: Value<String>(request.backendTarget.kind),
           backendProfileId: Value<String?>(request.backendTarget.profileId),
@@ -4255,9 +4263,10 @@ class VideoDownloadPipelineService {
     await _advance(job, VideoDownloadJobStage.scrape, nowAt: now);
   }
 
-  /// 从持久化发现身份恢复 MAL/TMDB lookup，保留旧行读取兼容。
+  /// 从持久化发现身份恢复 MAL/TMDB lookup（手动任务另认显式 AniDB），保留旧行
+  /// 读取兼容。与库内补刮同一判据 [videoDownloadJobConfirmedLookup]。
   VideoMetadataLookup? _confirmedMetadataLookup(VideoDownloadJobRow job) =>
-      videoDiscoveryMetadataLookup(_mediaReference(job));
+      videoDownloadJobConfirmedLookup(job);
 
   Future<void> _notifyDownloadOnlyCompleted(VideoDownloadJobRow job) async {
     final Future<void> Function(DiscoveryMediaKind, List<String>)? hook =

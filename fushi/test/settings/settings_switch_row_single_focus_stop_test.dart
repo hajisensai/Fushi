@@ -3,7 +3,7 @@
 // 一个站点，同一行最多 3 停且激活语义相同——长设置页遍历冗长（巡检 C2，
 // docs/reviews/2026-07-22-ui-ux-survey.md）。滑条/步进行本就用 ExcludeFocus
 // 收成单站点，这里锁住开关行与之对齐后不再回归。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';

@@ -1455,6 +1455,14 @@ void main() {
 }
 
 class _FakeFfmpegBackend implements ffmpeg.FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<ffmpeg.FfmpegRunResult> runQuery(
+    List<String> args,
+    Duration timeout,
+  ) =>
+      run(args, timeout);
+
   const _FakeFfmpegBackend(this.result);
 
   final ffmpeg.FfmpegRunResult result;
@@ -1483,6 +1491,14 @@ class _FakeFfmpegBackend implements ffmpeg.FfmpegBackend {
 /// Invalid argument", exit -22) sinks the entire batch. A command whose every
 /// mapped index is decodable writes each output file and exits 0.
 class _MinBuildFakeFfmpegBackend implements ffmpeg.FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<ffmpeg.FfmpegRunResult> runQuery(
+    List<String> args,
+    Duration timeout,
+  ) =>
+      run(args, timeout);
+
   _MinBuildFakeFfmpegBackend({required this.decodableIndices});
 
   final Set<int> decodableIndices;
@@ -1523,6 +1539,14 @@ class _MinBuildFakeFfmpegBackend implements ffmpeg.FfmpegBackend {
 }
 
 class _InvalidBundledThenPathFfmpegBackend implements ffmpeg.FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<ffmpeg.FfmpegRunResult> runQuery(
+    List<String> args,
+    Duration timeout,
+  ) =>
+      run(args, timeout);
+
   _InvalidBundledThenPathFfmpegBackend({required this.pathExecutable});
 
   static const String bundledPath = r'C:\App\Hibiki\ffmpeg.exe';
@@ -1574,6 +1598,14 @@ class _InvalidBundledThenPathFfmpegBackend implements ffmpeg.FfmpegBackend {
 /// map of each invocation so a test can assert the single pass ran first, then
 /// per-track fallback for the still-missing tracks.
 class _FakePoisonFfmpegBackend implements ffmpeg.FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<ffmpeg.FfmpegRunResult> runQuery(
+    List<String> args,
+    Duration timeout,
+  ) =>
+      run(args, timeout);
+
   _FakePoisonFfmpegBackend({required this.poisonIndex});
 
   final int poisonIndex;

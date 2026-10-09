@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -35,6 +35,7 @@ import 'package:fushi/src/shortcuts/reader_space_override.dart'
     show readerShouldHandleDesktopCopy;
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
+import 'package:fushi/src/utils/misc/webview_scroll_notification_bridge.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/utils.dart';
 
@@ -239,6 +240,8 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onSentenceContextPreview,
     this.onOpenSentenceContextModal,
     this.onScrolledToBottom,
+    this.onScrolledUnderChanged,
+    this.forwardScrollToHost = false,
     this.onTopPullReleased,
     this.onRendered,
     this.onContentMetrics,
@@ -376,6 +379,16 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   final Future<void> Function(int entryIndex, String matched)?
       onOpenSentenceContextModal;
   final VoidCallback? onScrolledToBottom;
+
+  /// 正文是否已离开顶部（scrollTop > 0）。宿主据此给顶栏铺 M3「scrolled-under」底色，
+  /// 取代顶栏与正文之间那条常驻硬分隔线。只在跨过 0 时回调一次。
+  final ValueChanged<bool>? onScrolledUnderChanged;
+
+  /// BUG-3064：把正文（WebView 文档）的纵向滚动以 Flutter [ScrollNotification]
+  /// 冒泡给宿主树。WebView 原生滚动不产生 Flutter 滚动通知，首页外壳的底栏
+  /// 随下滑收起 / 大标题收起都靠通知驱动；首页查词结果卡打开它，与库页
+  /// ListView 走同一台状态机（[WebViewScrollNotificationBridge]）。
+  final bool forwardScrollToHost;
   final VoidCallback? onTopPullReleased;
 
   /// Fired after the popup content finishes rendering (the `popupRendered` JS
@@ -428,6 +441,10 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
 class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
     with WidgetsBindingObserver {
   InAppWebViewController? _controller;
+
+  /// BUG-3064：正文滚动 → Flutter 滚动通知（[DictionaryPopupWebView.forwardScrollToHost]）。
+  final WebViewScrollNotificationBridge _hostScrollBridge =
+      WebViewScrollNotificationBridge();
 
   /// 制卡态失效通知的订阅（见 [MinedStateSignal]）。
   StreamSubscription<MinedStateChange>? _minedStateSubscription;
@@ -490,8 +507,52 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
   /// resolution, avoiding a stale last-writer static.
   Future<dynamic> debugEval(String source) async =>
       _controller?.evaluateJavascript(source: source);
+
+  /// Captures native WebView pixels, which Flutter layer screenshots omit.
+  @visibleForTesting
+  Future<List<int>?> debugCaptureWebView() async => _controller?.takeScreenshot();
+
+  /// Replaces the document through the same native API as initial inline data.
+  @visibleForTesting
+  Future<void> debugLoadDocument(String html) async {
+    await _controller?.loadData(data: html);
+  }
+
   bool _ready = false;
   bool _refreshWhenReady = false;
+  int _documentGeneration = 0;
+
+  /// BUG-3002: the result cache belongs to a document, not to this State.
+  /// Navigation and native controller replacement both discard the JS realm.
+  void _invalidatePopupDocument() {
+    _documentGeneration++;
+    _renderToken++;
+    _ready = false;
+    _refreshWhenReady = true;
+    _lastSearchTerm = null;
+    _lastEntryCount = 0;
+    _lastPushedResult = null;
+    _lastRenderedResult = null;
+    _lastPushedPending = false;
+    _lastRenderedPending = false;
+    _lastSentStaticRevision = null;
+    _lastSentInAppExtrasKey = null;
+    _lastThemeVarsJs = null;
+  }
+
+  // The plugin creates separate Dart wrappers for onWebViewCreated and load
+  // callbacks. Their platform controller, rather than the wrapper, is identity.
+  bool _isCurrentPopupController(InAppWebViewController controller) =>
+      identical(_controller?.platform, controller.platform);
+
+  bool _isCurrentPopupDocument(
+    InAppWebViewController controller,
+    int generation,
+  ) =>
+      mounted &&
+      _isCurrentPopupController(controller) &&
+      _documentGeneration == generation;
+
   double? _layoutWidth;
   double? _layoutHeight;
 
@@ -561,18 +622,26 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
     }
   }
 
-  Future<void> _completePopupLoad(InAppWebViewController controller) async {
+  Future<void> _completePopupLoad(
+    InAppWebViewController controller,
+    int generation,
+  ) async {
+    if (!_isCurrentPopupDocument(controller, generation)) return;
     try {
       await controller.evaluateJavascript(source: ReaderCaretScripts.source());
-      if (!mounted) return;
+      if (!_isCurrentPopupDocument(controller, generation)) return;
       await _applyPopupViewportSize();
     } catch (e, stack) {
-      if (mounted) {
-        ErrorLogService.instance
-            .log('DictPopupWebview.loadBootstrap', e, stack);
+      if (_isCurrentPopupDocument(controller, generation)) {
+        ErrorLogService.instance.log(
+          'DictPopupWebview.loadBootstrap',
+          e,
+          stack,
+        );
       }
     }
-    if (!mounted) return;
+    if (!_isCurrentPopupDocument(controller, generation)) return;
+    _ready = true;
     unawaited(_pushInstantScrollPreference());
     if (_refreshWhenReady || _lastSearchTerm == null) {
       _pushResults();
@@ -594,13 +663,7 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
     surface: 'dictionary_popup',
     flushBeforeRebuild: () async {
       _controller = null;
-      _ready = false;
-      _lastPushedResult = null;
-      _lastRenderedResult = null;
-      _lastSentStaticRevision = null;
-      _lastSentInAppExtrasKey = null;
-      // 新 WebView 的 onLoadStop 据此立刻补推当前结果。
-      _refreshWhenReady = true;
+      _invalidatePopupDocument();
     },
     afterRebuild: () {
       if (mounted) setState(() {});
@@ -824,6 +887,34 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
           ' && window.__fushiPopupZoomStep(${zoomIn ? 1 : -1});',
     );
   }
+
+  /// 顶栏 scrolled-under 判据：正文纵向滚动位置是否离开顶部。捕获阶段监听覆盖内层滚动
+  /// 容器（#entries-container 等）；只认纵向主滚动面，横向滚的义项表格不算。状态只在
+  /// 翻转时回报一次，换词重渲染把滚动归零时自然翻回 false。
+  static const String _scrolledUnderJs = '''
+(function(){
+  if(window.__fushiScrolledUnderInstalled) { window.__fushiScrolledUnderCheck && window.__fushiScrolledUnderCheck(); return; }
+  window.__fushiScrolledUnderInstalled=true;
+  var last=null;
+  function top(t){
+    var de=document.documentElement, b=document.body;
+    var st=Math.max(window.scrollY||0, de?de.scrollTop:0, b?b.scrollTop:0);
+    if(t&&t.nodeType===1&&t!==de&&t!==b&&t.scrollHeight>t.clientHeight&&t.id==='entries-container'){
+      st=Math.max(st,t.scrollTop);
+    }
+    return st;
+  }
+  function check(e){
+    var under=top(e&&e.target)>0;
+    if(under===last) return;
+    last=under;
+    try{ window.flutter_inappwebview.callHandler('popupScrolledUnder', under); }catch(_){}
+  }
+  window.__fushiScrolledUnderCheck=function(){ check(null); };
+  window.addEventListener('scroll',check,{capture:true,passive:true});
+  check(null);
+})();
+''';
 
   static const String _scrollCheckJs = '''
 (function(){
@@ -1475,7 +1566,12 @@ JSON.stringify((function(){
     final String themeVarsJs = _buildStaticSettings().themeVarsJs;
     if (themeVarsJs == _lastThemeVarsJs) return;
     _lastThemeVarsJs = themeVarsJs;
-    _controller!.evaluateJavascript(source: themeVarsJs);
+    // HBK-AUDIT-015：M3E 暗色下词典浅底的调色是 JS 写进词条的内联色，CSS 变量换了它不会跟着变；
+    // 注入新变量后让 popup.js 复原再按新明暗重调（不重建词条，选区 / 展开状态不受影响）。
+    _controller!.evaluateJavascript(
+      source: '$themeVarsJs\n'
+          'window.__fushiRetoneDictColors && window.__fushiRetoneDictColors();',
+    );
   }
 
   /// in-app 弹窗的静态段（主题变量 + 字体 + 全部 window.* 设置）。与
@@ -1643,8 +1739,11 @@ JSON.stringify((function(){
       $entriesJs
       ${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};
       window.__fushiRenderToken = $renderToken;
+      ${isLoadMore ? '' : kWebViewHostScrollDisarmJs}
       $beforeRenderJs
       ${needsScrollCheck ? _scrollCheckJs : ""}
+      ${widget.onScrolledUnderChanged != null ? _scrolledUnderJs : ""}
+      ${widget.forwardScrollToHost ? kWebViewHostScrollReportJs : ""}
     ''');
     // 诊断（2026-09-22）：注入量是「查词为什么卡」的直接证据。冷建 WebView 时
     // staticChanged 恒为真 ⇒ 数十 KB 的静态设置段要跟着每次查词一起发；命中热槽时它
@@ -2172,6 +2271,7 @@ JSON.stringify((function(){
       },
       onWebViewCreated: (controller) {
         _controller = controller;
+        _invalidatePopupDocument();
 
         // TODO-1392：查词弹窗 JS 渲染路径（renderPopup / __fushiContainer 等）抛异常，此前
         // 只 console.error → onConsoleMessage → debugPrint（永不进错误日志），uncaught 更彻底
@@ -2332,6 +2432,42 @@ JSON.stringify((function(){
         );
 
         controller.addJavaScriptHandler(
+          handlerName: 'popupScrolledUnder',
+          callback: (args) {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.popupScrolledUnder',
+              null,
+              ErrorLogService.instance,
+              () {
+                widget.onScrolledUnderChanged?.call(
+                  args.isNotEmpty && args.first == true,
+                );
+                return null;
+              },
+            );
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'popupHostScroll',
+          callback: (args) {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.popupHostScroll',
+              null,
+              ErrorLogService.instance,
+              () {
+                if (!widget.forwardScrollToHost || !mounted) return null;
+                final WebViewScrollSample? sample = WebViewScrollSample.fromJs(
+                  args.isEmpty ? null : args.first,
+                );
+                if (sample != null) _hostScrollBridge.dispatch(context, sample);
+                return null;
+              },
+            );
+          },
+        );
+
+        controller.addJavaScriptHandler(
           handlerName: 'topPullReleased',
           callback: (_) {
             return _guardJsBridge<Object?>(
@@ -2356,6 +2492,9 @@ JSON.stringify((function(){
               null,
               ErrorLogService.instance,
               () {
+                if (!_ready || !_isCurrentPopupController(controller)) {
+                  return null;
+                }
                 final Object? rawContent = args.isNotEmpty ? args[0] : null;
                 final double? contentHeight = rawContent is num
                     ? rawContent.toDouble()
@@ -2391,6 +2530,9 @@ JSON.stringify((function(){
               null,
               ErrorLogService.instance,
               () {
+                if (!_ready || !_isCurrentPopupController(controller)) {
+                  return null;
+                }
                 final Object? rawToken = args.length > 1 ? args[1] : null;
                 final int? token = rawToken is num
                     ? rawToken.toInt()
@@ -2957,12 +3099,17 @@ JSON.stringify((function(){
         // with the browser extension and every desktop surface — see
         // resolveWordAudioWebViewUrl). The old `playWordAudio` handler is gone.
       },
+      onLoadStart: (controller, url) {
+        if (!mounted || !_isCurrentPopupController(controller)) return;
+        _invalidatePopupDocument();
+      },
       onLoadStop: (controller, url) {
-        _ready = true;
-        // BUG-712 ③：页面（重）加载后 window.* 状态清零，静态设置负载与 in-app
-        // 固定块必须随下一次推送整体重发——重置版本比对基线。
-        _lastSentStaticRevision = null;
-        _lastSentInAppExtrasKey = null;
+        if (!mounted || !_isCurrentPopupController(controller)) return;
+        // Also handle platforms that finish a fresh document without a start
+        // callback. Results arriving during bootstrap remain queued; only this
+        // controller/document pair may mark the surface ready afterwards.
+        _invalidatePopupDocument();
+        final int generation = _documentGeneration;
         debugPrint('[popup-perf] webview loadStop $url');
         // 诊断（2026-09-22）：这一段只在**冷建**路径上出现——复用热槽 / 停驻 realm 的
         // 查词根本不会重新 loadStop。它在流水里现身本身就说明这次查词付了整页（约
@@ -2986,7 +3133,7 @@ JSON.stringify((function(){
                 : widget.inputSpec,
           ),
         );
-        unawaited(_completePopupLoad(controller));
+        unawaited(_completePopupLoad(controller, generation));
       },
       onReceivedError: (controller, request, error) {
         // TODO-058 fail-safe：主框架加载失败（弹窗 WebView 进程异常 / 资源拦截

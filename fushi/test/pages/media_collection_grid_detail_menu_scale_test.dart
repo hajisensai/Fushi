@@ -1,8 +1,10 @@
 import 'package:drift/native.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
+    show collectionDetailSortPrefKey, kCollectionDetailManualSortValue;
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -33,6 +35,9 @@ void main() {
     for (int i = 1; i <= count; i++) {
       await db.addToCollection(cid, MediaKind.epub, 'k$i');
     }
+    // 右键菜单走手动序拖排网格的 onContextMenu（默认卷号序不挂拖排网格）。
+    await db.setPref(
+        collectionDetailSortPrefKey(cid), kCollectionDetailManualSortValue);
     final MediaCollectionRow col = (await db.getMediaCollectionById(cid))!;
     return (db: db, col: col);
   }

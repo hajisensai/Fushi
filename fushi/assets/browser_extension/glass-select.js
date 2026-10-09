@@ -1,7 +1,8 @@
 // glass-select.js — 扩展自有页面（设置页 / 字幕侧边栏 / 工具栏菜单）的统一下拉组件。
 //
 // 用户 2026-10-04：原生 <select> 太丑（展开是系统蓝底高亮列表、收起是粗双圈框），换成一套
-// 液态玻璃下拉：触发器是玻璃胶囊 + 右侧 chevron，展开面板是玻璃菜单（选中行 = 淡主色底 + ✓、
+// 统一下拉（M3E 缺省 = 实色字段 + M3 菜单；液态玻璃 = 玻璃胶囊 + 玻璃菜单，见 material.css）：
+// 触发器右侧 expand_more，展开面板是菜单（选中行 = secondary-container 底 + check、
 // 悬停高亮），键盘 ↑↓ / Home / End / PageUp / PageDown / Enter / Space / Esc / Tab / 输入首字
 // 定位，ARIA 走 APG「select-only combobox」：焦点始终留在触发器（role=combobox），菜单是
 // role=listbox，当前项经 aria-activedescendant 播报。
@@ -12,7 +13,7 @@
 //   - 页面代码改 select.value / selectedIndex → 实例上的访问器拦到后同步触发器文字；
 //   - 页面代码重建 <option>（侧边栏换字幕轨）、i18n 改文案、改 hidden / disabled / aria-label →
 //     MutationObserver 同步；菜单打开期间选项变了就按新选项重画。
-// 选项样式在 glass.css（.fgs-*）。脚本缺席时原生 select 照常可用（样式同样在页面 CSS 里）。
+// 选项样式在 material.css（.fgs-*）。脚本缺席时原生 select 照常可用（样式同样在页面 CSS 里）。
 //
 // 菜单挂在 <body> 上、position: fixed：触发器所在的侧边栏页眉有 backdrop-filter，会把
 // fixed 后代的包含块变成页眉自己，菜单留在里面会被裁掉。
@@ -23,8 +24,20 @@
   var seq = 0;
   var openInstance = null;
   var TYPEAHEAD_MS = 600;
-  var CHEVRON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  var CHECK = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  // 图标：Material Symbols Rounded（与 icons.js 同一字形）。页面装了 icons.js 就取它的路径；
+  // 没装（或 node 测试沙箱）用这里内联的同一份路径，组件不依赖加载顺序。
+  var MSR_FALLBACK = {
+    expand_more: 'M480-357q-6 0-11-2t-10-7L261-564q-9-9-9-21t9-21q9-9 21.5-9t21.5 9l176 176 176-176q9-9 21-9t21 9q9 9 9 21.5t-9 21.5L501-366q-5 5-10 7t-11 2Z',
+    check: 'm378-332 363-363q9-9 21.5-9t21.5 9q9 9 9 21.5t-9 21.5L399-267q-9 9-21 9t-21-9L175-449q-9-9-8.5-21.5T176-492q9-9 21.5-9t21.5 9l159 160Z',
+  };
+  function msrSvg(name, size) {
+    var icons = window.fushiIcons;
+    var d = (icons && icons.PATHS && icons.PATHS[name]) || MSR_FALLBACK[name];
+    return '<svg class="msr" viewBox="0 -960 960 960" width="' + size + '" height="' + size
+      + '" fill="currentColor" aria-hidden="true" focusable="false"><path d="' + d + '"/></svg>';
+  }
+  var CHEVRON = msrSvg('expand_more', 20);
+  var CHECK = msrSvg('check', 18);
 
   function findDescriptor(obj, prop) {
     while (obj) {

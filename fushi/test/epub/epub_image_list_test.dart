@@ -286,4 +286,46 @@ void main() {
       expect(book.images.single.src, 'OEBPS/images/p1.png');
     });
   });
+
+  group('EpubImageRef.sharesLineWithText (lyrics-mode illustration filter)',
+      () {
+    Map<String, bool> inlineBySrc(String body) {
+      final EpubBook book =
+          _bookWithChapterHtml(<String>['<html><body>$body</body></html>']);
+      return <String, bool>{
+        for (final EpubImageRef r in book.images) r.src: r.sharesLineWithText,
+      };
+    }
+
+    test('gaiji inside a sentence shares its line with text', () {
+      expect(inlineBySrc('<p>「<img class="gaiji" src="g.png"/>」と言った</p>'),
+          <String, bool>{'g.png': true});
+    });
+
+    test('heading ornament next to the heading text is inline', () {
+      expect(inlineBySrc('<h2><span><img src="icon.png"/></span>第一章</h2>'),
+          <String, bool>{'icon.png': true});
+    });
+
+    test('a plate in a block of its own is not inline', () {
+      expect(
+          inlineBySrc('<p>前文</p><div class="illust"><img src="p.jpg"/></div>'
+              '<p>後文</p>'),
+          <String, bool>{'p.jpg': false});
+    });
+
+    test('an image directly under body is not inline with sibling blocks', () {
+      expect(inlineBySrc('<img src="p.jpg"/><p>本文</p>'),
+          <String, bool>{'p.jpg': false});
+    });
+
+    test('svg-wrapped plates and ruby-only text are not inline', () {
+      expect(
+          inlineBySrc('<div><svg xmlns="http://www.w3.org/2000/svg" '
+              'xmlns:xlink="http://www.w3.org/1999/xlink">'
+              '<image xlink:href="s.jpg"/></svg></div>'
+              '<p><img src="r.png"/><ruby><rt>よみ</rt></ruby>　</p>'),
+          <String, bool>{'s.jpg': false, 'r.png': false});
+    });
+  });
 }

@@ -9,8 +9,10 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_candidate_tile.dart';
 import 'package:fushi/src/media/video/metadata/video_manual_identity_query.dart';
@@ -115,61 +117,156 @@ class _VideoSourceScrapeRunDetailDialogState
     final SourceLibraryRow? source = widget.source;
     final List<(SourceScrapeIssue, bool)> issues = _issues;
     final String? lastError = run.lastError?.trim();
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    // 时间线：第一个节点是这次 run 本身（状态色圆点 + 摘要卡），其后每条作品级
+    // 警告 / 错误一个节点（竖线串起；错误 = error 圆点 + errorContainer 卡，
+    // 警告 = tertiary 圆点 + secondaryContainer 卡）。
+    final List<Widget> nodes = <Widget>[
+      _TimelineNode(
+        dotColor: _runStatusColor(cs, run.status),
+        isFirst: true,
+        isLast: issues.isEmpty,
+        child: _buildRunSummary(run, lastError),
+      ),
+      for (int i = 0; i < issues.length; i++)
+        _TimelineNode(
+          key: ValueKey<String>(
+            'video-source-run-issue-${issues[i].$1.workTitle}',
+          ),
+          dotColor: issues[i].$2 ? cs.error : cs.tertiary,
+          isFirst: false,
+          isLast: i == issues.length - 1,
+          child: _buildIssue(issues[i].$1, issues[i].$2),
+        ),
+    ];
     return FushiAlertDialog(
+      icon: const FushiIcon(FushiIcons.checklist),
       title: Text(t.video_source_scrape_run_detail_title),
       content: SizedBox(
         width: 560,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 560),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Text(FushiTimeFormat.dateHourMinute(
-                  DateTime.fromMillisecondsSinceEpoch(run.startedAt),
-                )),
-                const SizedBox(height: 6),
-                Text(t.video_source_scrape_last_summary(
-                  status: videoSourceScrapeRunStatusLabel(run.status),
-                  succeeded: run.succeededWorks,
-                  pending: run.pendingConfirmations,
-                  failed: run.failedWorks,
-                )),
-                if (lastError != null && lastError.isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 6),
-                  SelectableText(lastError),
+          child: FushiEntranceScope(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  for (int i = 0; i < nodes.length; i++)
+                    FushiStaggeredEntrance(index: i, child: nodes[i]),
+                  if (issues.isEmpty)
+                    FushiStaggeredEntrance(
+                      index: nodes.length,
+                      child: FushiPlaceholderMessage(
+                        icon: FushiIcons.success,
+                        message: t.video_source_scrape_run_no_issues,
+                      ),
+                    ),
+                  if (_error case final String error) ...<Widget>[
+                    const SizedBox(height: 12),
+                    FushiCard(
+                      tone: FushiCardTone.error,
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          const FushiIcon(FushiIcons.error, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(child: SelectableText(error)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
-                const SizedBox(height: 12),
-                if (issues.isEmpty)
-                  Text(t.video_source_scrape_run_no_issues)
-                else
-                  for (final (SourceScrapeIssue issue, bool isError) in issues)
-                    _buildIssue(issue, isError),
-                if (_error case final String error) ...<Widget>[
-                  const SizedBox(height: 12),
-                  SelectableText(error),
-                ],
-              ],
+              ),
             ),
           ),
         ),
       ),
       actions: <Widget>[
-        FushiTextButton(
+        FushiDialogAction(
+          label: t.dialog_close,
           onPressed: () => Navigator.of(context).pop(_changed),
-          child: Text(t.dialog_close),
         ),
         if (source != null && widget.onRescrapeSource != null)
-          FushiTextButton(
+          FushiDialogAction(
             key: const ValueKey<String>('video-source-run-rescrape'),
+            label: t.video_source_scrape_rescrape_source,
             onPressed:
                 !_rescrapingSource && !(widget.controller?.isBusy ?? false)
                     ? () => unawaited(_rescrapeSource(source))
                     : null,
-            child: Text(t.video_source_scrape_rescrape_source),
           ),
       ],
+    );
+  }
+
+  /// run 状态 → 时间线首节点圆点色。
+  static Color _runStatusColor(ColorScheme cs, String status) =>
+      switch (status) {
+        'completed' => cs.primary,
+        'failed' => cs.error,
+        'cancelled' || 'interrupted' => cs.outline,
+        _ => cs.tertiary,
+      };
+
+  /// run 状态 → 摘要卡色块。
+  static FushiCardTone _runStatusTone(String status) => switch (status) {
+        'completed' => FushiCardTone.primary,
+        'failed' => FushiCardTone.error,
+        'cancelled' || 'interrupted' => FushiCardTone.neutral,
+        _ => FushiCardTone.tertiary,
+      };
+
+  Widget _buildRunSummary(VideoSourceScrapeRunRow run, String? lastError) {
+    final FushiTypography type = context.fushiType;
+    // fushiType 槽位自带页面前景，会盖掉饱和卡的配对前景（HBK-AUDIT-022）；
+    // 中性（取消 / 中断）为 null 保持原色。
+    final Color? onCard =
+        fushiCardToneColors(context, _runStatusTone(run.status))?.onContainer;
+    return FushiCard(
+      tone: _runStatusTone(run.status),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  videoSourceScrapeRunStatusLabel(run.status),
+                  style: type.titleMediumEmphasized.copyWith(color: onCard),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                FushiTimeFormat.dateHourMinute(
+                  DateTime.fromMillisecondsSinceEpoch(run.startedAt),
+                ),
+                style: type.labelMedium.tabular.copyWith(color: onCard),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            t.video_source_scrape_last_summary(
+              status: videoSourceScrapeRunStatusLabel(run.status),
+              succeeded: run.succeededWorks,
+              pending: run.pendingConfirmations,
+              failed: run.failedWorks,
+            ),
+            style: type.bodyMedium.copyWith(color: onCard),
+          ),
+          if (lastError != null && lastError.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 6),
+            SelectableText(
+              lastError,
+              style: type.bodySmall.copyWith(color: onCard),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -181,35 +278,71 @@ class _VideoSourceScrapeRunDetailDialogState
                   workTitle: issue.workTitle,
                 ) ??
                 false));
-    return FushiListItem(
-      key: ValueKey<String>('video-source-run-issue-${issue.workTitle}'),
-      density: FushiListDensity.compact,
-      padding: EdgeInsets.zero,
-      leading: FushiIcon(
-        isError ? Icons.error_outline : Icons.info_outline,
-        color: isError
-            ? Theme.of(context).colorScheme.error
-            : Theme.of(context).colorScheme.primary,
-      ),
-      title: Text(issue.workTitle),
-      subtitleMaxLines: 4,
-      subtitle: SelectableText(
-        issue.path == null
-            ? describeVideoScrapeIssueMessage(issue.message)
-            : '${describeVideoScrapeIssueMessage(issue.message)}\n${issue.path}',
-      ),
-      trailing: !_canBindManually
-          ? null
-          : busy
-              ? const SizedBox.square(
-                  dimension: 18,
-                  child: FushiCircularProgressIndicator(strokeWidth: 2),
-                )
-              : FushiIconButtonControl(
-                  tooltip: t.video_source_scrape_manual_search_title,
-                  onPressed: () => unawaited(_bindManually(issue)),
-                  icon: const FushiIcon(Icons.search),
+    final FushiTypography type = context.fushiType;
+    final FushiCardTone tone =
+        isError ? FushiCardTone.error : FushiCardTone.secondary;
+    // 同上：卡内文字跟饱和卡的配对前景。
+    final Color? onCard = fushiCardToneColors(context, tone)?.onContainer;
+    return FushiCard(
+      tone: tone,
+      padding: const EdgeInsetsDirectional.fromSTEB(14, 12, 8, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    FushiIcon(
+                      isError ? FushiIcons.error : FushiIcons.info,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        issue.workTitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: type.titleSmallEmphasized.copyWith(
+                          color: onCard,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 4),
+                SelectableText(
+                  issue.path == null
+                      ? describeVideoScrapeIssueMessage(issue.message)
+                      : '${describeVideoScrapeIssueMessage(issue.message)}\n${issue.path}',
+                  style: type.bodySmall.copyWith(color: onCard),
+                  maxLines: 4,
+                ),
+              ],
+            ),
+          ),
+          if (_canBindManually)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(start: 4),
+              child: busy
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox.square(
+                        dimension: 18,
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : FushiIconButtonControl(
+                      tooltip: t.video_source_scrape_manual_search_title,
+                      onPressed: () => unawaited(_bindManually(issue)),
+                      icon: const FushiIcon(FushiIcons.search),
+                    ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -275,6 +408,113 @@ class _VideoSourceScrapeRunDetailDialogState
   }
 }
 
+/// 时间线的一个节点：左侧轨道（竖线 + 状态色圆点）+ 右侧内容卡。轨道用
+/// [CustomPaint] 画在节点自身的高度上，不靠 IntrinsicHeight 量内容。
+class _TimelineNode extends StatelessWidget {
+  const _TimelineNode({
+    super.key,
+    required this.dotColor,
+    required this.isFirst,
+    required this.isLast,
+    required this.child,
+  });
+
+  final Color dotColor;
+  final bool isFirst;
+  final bool isLast;
+  final Widget child;
+
+  static const double _railWidth = 28;
+  static const double _gap = 10;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return CustomPaint(
+      painter: _TimelineRailPainter(
+        dotColor: dotColor,
+        lineColor: cs.outlineVariant,
+        haloColor: FushiDesignTokens.of(context).surfaces.search,
+        isFirst: isFirst,
+        isLast: isLast,
+        railWidth: _railWidth,
+        gap: _gap,
+        textDirection: Directionality.of(context),
+      ),
+      child: Padding(
+        padding: EdgeInsetsDirectional.only(
+          start: _railWidth + 6,
+          bottom: isLast ? 0 : _gap,
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _TimelineRailPainter extends CustomPainter {
+  const _TimelineRailPainter({
+    required this.dotColor,
+    required this.lineColor,
+    required this.haloColor,
+    required this.isFirst,
+    required this.isLast,
+    required this.railWidth,
+    required this.gap,
+    required this.textDirection,
+  });
+
+  final Color dotColor;
+  final Color lineColor;
+  final Color haloColor;
+  final bool isFirst;
+  final bool isLast;
+  final double railWidth;
+  final double gap;
+  final TextDirection textDirection;
+
+  /// 圆点圆心距节点顶部的距离：对齐内容卡第一行文字。
+  static const double _dotCenterY = 22;
+  static const double _dotRadius = 6;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double x = textDirection == TextDirection.rtl
+        ? size.width - railWidth / 2
+        : railWidth / 2;
+    final Paint line = Paint()
+      ..color = lineColor
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    final double top = isFirst ? _dotCenterY : 0;
+    final double bottom = isLast ? _dotCenterY : size.height;
+    if (bottom > top) {
+      canvas.drawLine(Offset(x, top), Offset(x, bottom), line);
+    }
+    canvas.drawCircle(
+      Offset(x, _dotCenterY),
+      _dotRadius + 3,
+      Paint()..color = haloColor,
+    );
+    canvas.drawCircle(
+      Offset(x, _dotCenterY),
+      _dotRadius,
+      Paint()..color = dotColor,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_TimelineRailPainter oldDelegate) =>
+      oldDelegate.dotColor != dotColor ||
+      oldDelegate.lineColor != lineColor ||
+      oldDelegate.haloColor != haloColor ||
+      oldDelegate.isFirst != isFirst ||
+      oldDelegate.isLast != isLast ||
+      oldDelegate.railWidth != railWidth ||
+      oldDelegate.gap != gap ||
+      oldDelegate.textDirection != textDirection;
+}
+
 /// 候选搜索原语：按用户输入（标题或 `mal:123` 这类身份串）返回候选。
 typedef VideoMetadataCandidateSearch
     = Future<List<VideoSourceScrapeConfirmationCandidate>> Function(
@@ -305,17 +545,25 @@ Future<VideoSourceScrapeConfirmationCandidate?>
 
 /// 同一个候选搜索 UI，但候选来源由 [search] 注入——互联 7a「在 host 上刮削」把
 /// 搜索打到对端端点，本机不需要有刮削链。
+///
+/// [title] / [hint] 缺省是「手动指定作品」语境的文案；借这个搜索框做别的事（例如
+/// 在线搜封面，选中只取封面图、不改作品身份）的调用方传自己的文案，免得用户以为
+/// 选一条就会重绑作品。
 Future<VideoSourceScrapeConfirmationCandidate?>
     showVideoMetadataCandidateSearchDialog({
   required BuildContext context,
   required String workTitle,
   required VideoMetadataCandidateSearch search,
+  String? title,
+  String? hint,
 }) =>
         showAppDialog<VideoSourceScrapeConfirmationCandidate>(
           context: context,
           builder: (BuildContext context) => _ManualBindingDialog(
             search: search,
             workTitle: workTitle,
+            title: title,
+            hint: hint,
           ),
         );
 
@@ -325,10 +573,16 @@ class _ManualBindingDialog extends StatefulWidget {
   const _ManualBindingDialog({
     required this.search,
     required this.workTitle,
+    this.title,
+    this.hint,
   });
 
   final VideoMetadataCandidateSearch search;
   final String workTitle;
+
+  /// null = 手动指定作品的标题 / 提示（见 [showVideoMetadataCandidateSearchDialog]）。
+  final String? title;
+  final String? hint;
 
   @override
   State<_ManualBindingDialog> createState() => _ManualBindingDialogState();
@@ -384,8 +638,15 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
   @override
   Widget build(BuildContext context) {
     final List<VideoSourceScrapeConfirmationCandidate>? results = _results;
+    final FushiTypography type = context.fushiType;
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    // 「当前作品」卡是 secondary 饱和色块：fushiType 自带页面前景，显式跟
+    // 卡片配对前景（HBK-AUDIT-022）。
+    final Color? onCard =
+        fushiCardToneColors(context, FushiCardTone.secondary)?.onContainer;
     return FushiAlertDialog(
-      title: Text(t.video_source_scrape_manual_search_title),
+      icon: const FushiIcon(FushiIcons.manageSearch),
+      title: Text(widget.title ?? t.video_source_scrape_manual_search_title),
       content: SizedBox(
         width: 560,
         child: ConstrainedBox(
@@ -395,10 +656,40 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                FushiListItem(
-                  padding: EdgeInsets.zero,
-                  title: Text(widget.workTitle),
-                  subtitle: Text(t.video_source_scrape_manual_current_work),
+                FushiCard(
+                  tone: FushiCardTone.secondary,
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: <Widget>[
+                      const FushiListLeadingIcon(
+                        FushiIcons.video,
+                        shape: FushiLeadingShape.cookie,
+                        tone: FushiCardTone.primary,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              t.video_source_scrape_manual_current_work,
+                              style: type.labelMedium.copyWith(color: onCard),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              widget.workTitle,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: type.titleMediumEmphasized.copyWith(
+                                color: onCard,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 12),
                 FushiSegmentedButton<bool>(
@@ -455,7 +746,10 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
                   ),
                   const SizedBox(height: 12),
                 ],
-                Text(t.video_source_scrape_manual_query_hint),
+                Text(
+                  widget.hint ?? t.video_source_scrape_manual_query_hint,
+                  style: type.bodyMedium.copyWith(color: cs.onSurfaceVariant),
+                ),
                 const SizedBox(height: 12),
                 FushiTextFieldControl(
                   key: const ValueKey<String>('video-source-manual-query'),
@@ -477,21 +771,49 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
                 const SizedBox(height: 12),
                 if (_searching)
                   const FushiLoadingView()
-                else if (results != null && results.isEmpty)
-                  Text(t.video_source_scrape_manual_search_empty)
+                else if (results != null && results.isEmpty && _error == null)
+                  FushiPlaceholderMessage(
+                    icon: FushiIcons.searchOff,
+                    message: t.video_source_scrape_manual_search_empty,
+                  )
                 else if (results != null)
-                  for (final VideoSourceScrapeConfirmationCandidate candidate
-                      in results)
-                    VideoSourceScrapeCandidateTile(
-                      candidate: candidate,
-                      onSelected: (
-                        VideoSourceScrapeConfirmationCandidate selected,
-                      ) =>
-                          Navigator.of(context).pop(selected),
+                  // 结果每次搜索整组换新：replayKey 跟着结果列表走，新一批也错峰进场。
+                  FushiEntranceScope(
+                    replayKey: results,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        for (int i = 0; i < results.length; i++)
+                          FushiStaggeredEntrance(
+                            index: i,
+                            child: VideoSourceScrapeCandidateTile(
+                              candidate: results[i],
+                              groupIndex: i,
+                              groupCount: results.length,
+                              onSelected: (
+                                VideoSourceScrapeConfirmationCandidate selected,
+                              ) =>
+                                  Navigator.of(context).pop(selected),
+                            ),
+                          ),
+                      ],
                     ),
+                  ),
                 if (_error case final String error) ...<Widget>[
                   const SizedBox(height: 12),
-                  SelectableText(error),
+                  FushiCard(
+                    tone: FushiCardTone.error,
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const FushiIcon(FushiIcons.error, size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(child: SelectableText(error)),
+                      ],
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -499,14 +821,15 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
         ),
       ),
       actions: <Widget>[
-        FushiTextButton(
+        FushiDialogAction(
+          label: t.dialog_cancel,
           onPressed: () => Navigator.of(context).pop(),
-          child: Text(t.dialog_cancel),
         ),
-        FushiTextButton(
+        FushiDialogAction(
           key: const ValueKey<String>('video-source-manual-search'),
+          kind: FushiDialogActionKind.primary,
+          label: t.video_source_scrape_manual_search_action,
           onPressed: _searching ? null : () => unawaited(_search()),
-          child: Text(t.video_source_scrape_manual_search_action),
         ),
       ],
     );

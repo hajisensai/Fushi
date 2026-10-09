@@ -2,8 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
@@ -150,27 +151,28 @@ class _MangaImportDialogState extends State<MangaImportDialog>
 
   @override
   Widget build(BuildContext context) {
-    return FushiFileDropTarget(
-      enabled: !importing,
-      debugLabel: 'manga-import-dialog',
-      onDrop: _handleDialogDrop,
-      child: ImportDialogFrame(
-        leadingIcon: Icons.auto_stories_outlined,
-        title: t.manga_import_action,
-        body: _buildForm(),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: context,
-            onPressed: importing ? null : _openOcrWizard,
-            child: Text(t.manga_ocr_wizard_title),
-          ),
-          adaptiveDialogAction(
-            context: context,
-            onPressed: () => Navigator.pop(context),
-            child: Text(t.dialog_cancel),
-          ),
-          buildImportAction(context, onImport: _doImport),
-        ],
+    // 导入进行中禁止返回键 / 点遮罩 / Esc 关闭（HBK-AUDIT-037，见 buildImportPopGuard）。
+    return buildImportPopGuard(
+      child: FushiFileDropTarget(
+        enabled: !importing,
+        debugLabel: 'manga-import-dialog',
+        onDrop: _handleDialogDrop,
+        child: ImportDialogFrame(
+          leadingIcon: FushiIcons.books,
+          title: t.manga_import_action,
+          body: _buildForm(),
+          actions: <Widget>[
+            FushiDialogAction(
+              label: t.manga_ocr_wizard_title,
+              onPressed: importing ? null : _openOcrWizard,
+            ),
+            FushiDialogAction(
+              label: t.dialog_cancel,
+              onPressed: importing ? null : () => Navigator.pop(context),
+            ),
+            buildImportAction(context, onImport: _doImport),
+          ],
+        ),
       ),
     );
   }
@@ -207,19 +209,19 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     return FushiFilePickerRow(
       title: t.manga_import_pick_file,
       subtitle: _pathName,
-      icon: Icons.auto_stories_outlined,
+      icon: FushiIcons.books,
       onTap: _pickFile,
       actions: <Widget>[
         // 漫画载体可以是**文件**（.cbz/.zip/.mokuro）也可以是**目录**（一卷页图），
         // 两种选择器在系统层是两个不同的对话框，故并列两个入口而非合成一个。
         FushiIconButton(
-          icon: Icons.folder_open_outlined,
+          icon: FushiIcons.folderOpen,
           tooltip: t.manga_import_pick_folder,
           isWideTapArea: true,
           onTap: _pickFolder,
         ),
         FushiIconButton(
-          icon: Icons.insert_drive_file_outlined,
+          icon: FushiIcons.file,
           tooltip: t.manga_import_pick_file,
           isWideTapArea: true,
           onTap: _pickFile,
@@ -401,24 +403,14 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     String proposedTitle,
   ) async {
     if (!mounted) return DuplicateChoice.cancel;
-    final bool? keep = await showAppDialog<bool>(
+    final bool keep = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext ctx) => FushiAlertDialog(
-        title: Text(t.book_import_duplicate_title),
-        content: Text(t.book_import_duplicate_message(name: proposedTitle)),
-        actions: <Widget>[
-          FushiTextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.book_import_duplicate_cancel),
-          ),
-          FushiFilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.book_import_duplicate_keep),
-          ),
-        ],
-      ),
+      title: t.book_import_duplicate_title,
+      message: t.book_import_duplicate_message(name: proposedTitle),
+      cancelLabel: t.book_import_duplicate_cancel,
+      confirmLabel: t.book_import_duplicate_keep,
     );
-    return keep == true ? DuplicateChoice.suffix : DuplicateChoice.cancel;
+    return keep ? DuplicateChoice.suffix : DuplicateChoice.cancel;
   }
 
   /// 逐卷导入一个整卷文件目录，返回给用户看的汇总文案。

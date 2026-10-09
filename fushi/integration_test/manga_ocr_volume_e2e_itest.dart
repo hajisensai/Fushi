@@ -457,7 +457,7 @@ void main() {
     final MangaOcrLocalModel localModel = MangaOcrLocalModel.fromKey(
       const String.fromEnvironment(
         'OCR_LOCAL_MODEL',
-        defaultValue: 'manga_ocr',
+        defaultValue: 'manga_ctc',
       ),
     );
     final List<MangaOcrModelFile>? manifest = baseUrl.isEmpty
@@ -585,7 +585,7 @@ void main() {
       print('[e2e]   "${b.text}" -> 最佳重合 ${(best * 100).toStringAsFixed(0)}%');
     }
 
-    // 竖排合成页上 manga-ocr 应当基本逐字命中；阈值留出一个字的余量，
+    // 竖排合成页上本地模型应当基本逐字命中；阈值留出一个字的余量，
     // 既能抓住「模型没跑/跑错」这种真回归，又不会因为单字混淆变 flaky。
     for (int i = 0; i < _kBubbles.length; i++) {
       expect(

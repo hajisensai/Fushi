@@ -1,9 +1,12 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 词典查词结果的可视化样式面板：选部位 → 调属性。
@@ -59,47 +62,12 @@ class DictStyleVisualEditor extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool scopeIgnored = scopeDictionary != null &&
         !dictStylePartSupportsPerDictionary(selectedPart);
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    // M3E：部位选择 + 三个属性分区（颜色 / 字形 / 尺寸），每个分区一张卡，
+    // 分区错峰进场；切换部位时整组按新部位重放一次进场，让「改的是谁」一目了然。
+    final List<Widget> sections = <Widget>[
+      _section(
+        tokens: tokens,
         children: <Widget>[
-          Wrap(
-            spacing: tokens.spacing.gap,
-            runSpacing: tokens.spacing.gap,
-            children: <Widget>[
-              for (final DictStylePart part in DictStylePart.values)
-                FushiFilterChip(
-                  selected: part == selectedPart,
-                  onSelected: (_) => onSelectPart(part),
-                  avatar: _hasRules(part)
-                      ? const FushiIcon(Icons.brush_outlined, size: 16)
-                      : null,
-                  label: Text(dictStylePartLabel(part)),
-                ),
-            ],
-          ),
-          SizedBox(height: tokens.spacing.gap),
-          if (scopeIgnored)
-            Padding(
-              padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  FushiIcon(
-                    Icons.info_outline,
-                    size: 16,
-                    color: tokens.surfaces.outline,
-                  ),
-                  SizedBox(width: tokens.spacing.gap / 2),
-                  Expanded(
-                    child: Text(
-                      t.dict_style_global_only,
-                      style: tokens.type.listSubtitle,
-                    ),
-                  ),
-                ],
-              ),
-            ),
           _buildColorRow(
             context: context,
             tokens: tokens,
@@ -120,7 +88,11 @@ class DictStyleVisualEditor extends StatelessWidget {
             enableAlpha: true,
             onChanged: (int? v) => _update(_props.copyWith(backgroundColor: v)),
           ),
-          SizedBox(height: tokens.spacing.gap),
+        ],
+      ),
+      _section(
+        tokens: tokens,
+        children: <Widget>[
           _buildTriState(
             tokens: tokens,
             label: t.dict_style_prop_bold,
@@ -139,7 +111,11 @@ class DictStyleVisualEditor extends StatelessWidget {
             value: _props.underline,
             onChanged: (bool? v) => _update(_props.copyWith(underline: v)),
           ),
-          SizedBox(height: tokens.spacing.gap),
+        ],
+      ),
+      _section(
+        tokens: tokens,
+        children: <Widget>[
           _buildOptionalSlider(
             label: t.dict_style_prop_font_scale,
             value: _props.fontScale,
@@ -160,17 +136,69 @@ class DictStyleVisualEditor extends StatelessWidget {
             format: (double v) => '${v.round()}px',
             onChanged: (double? v) => _update(_props.copyWith(cornerRadius: v)),
           ),
-          SizedBox(height: tokens.spacing.gap),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: FushiTextButton.icon(
-              onPressed:
-                  _props.isEmpty ? null : () => _update(const DictStyleProps()),
-              icon: const FushiIcon(Icons.restart_alt, size: 18),
-              label: Text(t.dict_style_part_reset),
-            ),
-          ),
         ],
+      ),
+    ];
+    return FushiEntranceScope(
+      replayKey: selectedPart,
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Wrap(
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap,
+              children: <Widget>[
+                for (final DictStylePart part in DictStylePart.values)
+                  FushiFilterChip(
+                    selected: part == selectedPart,
+                    onSelected: (_) => onSelectPart(part),
+                    avatar: _hasRules(part)
+                        ? const FushiIcon(FushiIcons.appearance, size: 16)
+                        : null,
+                    label: Text(dictStylePartLabel(part)),
+                  ),
+              ],
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            if (scopeIgnored)
+              Padding(
+                padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+                child: _ScopeIgnoredNotice(tokens: tokens),
+              ),
+            for (int i = 0; i < sections.length; i++)
+              Padding(
+                padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+                child: FushiStaggeredEntrance(index: i, child: sections[i]),
+              ),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: FushiTextButton.icon(
+                onPressed: _props.isEmpty
+                    ? null
+                    : () => _update(const DictStyleProps()),
+                icon: const FushiIcon(FushiIcons.restart, size: 18),
+                label: Text(t.dict_style_part_reset),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 一个属性分区：M3E 卡片（20 圆角、filled 色块），把颜色 / 字形 / 尺寸三组
+  /// 控件按语义分开，而不是一长列平铺。
+  Widget _section({
+    required FushiDesignTokens tokens,
+    required List<Widget> children,
+  }) {
+    return FushiCard(
+      padding: EdgeInsets.all(tokens.spacing.gap + 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: children,
       ),
     );
   }
@@ -294,7 +322,7 @@ class DictStyleVisualEditor extends StatelessWidget {
                   selected: true,
                   tooltip: _hexLabel(value),
                   onTap: () => unawaited(
-                    _pickCustom(context, value, enableAlpha, onChanged),
+                    _pickCustom(context, label, value, enableAlpha, onChanged),
                   ),
                 ),
               _ColorChoice(
@@ -303,7 +331,7 @@ class DictStyleVisualEditor extends StatelessWidget {
                 showPaletteIcon: true,
                 tooltip: t.dict_style_prop_text_color,
                 onTap: () => unawaited(
-                  _pickCustom(context, value, enableAlpha, onChanged),
+                  _pickCustom(context, label, value, enableAlpha, onChanged),
                 ),
               ),
             ],
@@ -315,6 +343,7 @@ class DictStyleVisualEditor extends StatelessWidget {
 
   Future<void> _pickCustom(
     BuildContext context,
+    String title,
     int? initialArgb,
     bool enableAlpha,
     ValueChanged<int?> onChanged,
@@ -326,6 +355,9 @@ class DictStyleVisualEditor extends StatelessWidget {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => FushiAlertDialog(
+        // M3E：标题 + 饼干形色块 hero 图标，与全应用标准对话框同口径。
+        icon: const FushiDialogHeroIcon(icon: FushiIcons.appearance),
+        title: Text(title),
         content: SingleChildScrollView(
           child: ColorPicker(
             pickerColor: initial,
@@ -338,13 +370,15 @@ class DictStyleVisualEditor extends StatelessWidget {
           ),
         ),
         actions: <Widget>[
-          FushiTextButton(
+          FushiDialogAction(
+            label: t.dialog_cancel,
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(t.dialog_cancel),
           ),
-          FushiTextButton(
+          FushiDialogAction(
+            label: t.dialog_ok,
+            kind: FushiDialogActionKind.primary,
+            autofocus: true,
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(t.dialog_ok),
           ),
         ],
       ),
@@ -422,41 +456,102 @@ class _ColorChoice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 颜色一律走设计 token，不碰裸 ColorScheme 槽位；圆形墨水面用 CircleBorder
-    // 而不是 BorderRadius.circular——共享 MD3 守卫（md3_design_system_static_test）
-    // 会把这两样当「绕开设计系统的本地决策」抓出来，而它是对的：这里没有任何
-    // 需要偏离 token 的理由。
+    // 颜色一律走设计 token，不碰裸 ColorScheme 槽位。M3E 形变：未选中是圆，
+    // 选中弹簧变形成 12 圆角方块 + 粗描边 + 对勾（与 M3E 形状库的选中语汇一致）；
+    // 墨水屏 / 减弱动态效果下瞬时到位。
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FushiSpringSpec spring = context.fushiMotion.spatialFast;
+    final BorderRadius radius =
+        selected ? FushiM3eShape.smallRadius : _kRoundRadius;
+    final Color? swatch = argb == null ? null : Color(argb!);
+    final Color glyphColor = swatch == null || swatch.a < 0.5
+        ? tokens.surfaces.onVariant
+        : (ThemeData.estimateBrightnessForColor(swatch) == Brightness.dark
+            ? Colors.white
+            : Colors.black);
+    final Widget? glyph = showPaletteIcon
+        ? FushiIcon(
+            FushiIcons.appearance,
+            size: 16,
+            color: tokens.surfaces.onVariant,
+          )
+        : (argb == null
+            ? FushiIcon(
+                FushiIcons.block,
+                size: 16,
+                color: tokens.surfaces.onVariant,
+              )
+            : (selected
+                ? FushiIcon(FushiIcons.check, size: 16, color: glyphColor)
+                : null));
     return FushiTooltip(
       message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        customBorder: const CircleBorder(),
-        child: Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: argb == null ? tokens.surfaces.card : Color(argb!),
-            shape: BoxShape.circle,
-            border: Border.all(
-              color:
-                  selected ? tokens.surfaces.primary : tokens.surfaces.outline,
-              width: selected ? 3 : 1,
+      child: FushiPressScale(
+        child: InkWell(
+          onTap: onTap,
+          customBorder: RoundedRectangleBorder(borderRadius: radius),
+          child: AnimatedContainer(
+            duration: spring.duration,
+            curve: spring.curve,
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: swatch ?? tokens.surfaces.card,
+              borderRadius: radius,
+              border: Border.all(
+                color: selected
+                    ? tokens.surfaces.primary
+                    : tokens.surfaces.outline,
+                width: selected ? 3 : 1,
+              ),
             ),
+            child: glyph,
           ),
-          child: showPaletteIcon
-              ? FushiIcon(
-                  Icons.colorize,
-                  size: 16,
-                  color: tokens.surfaces.onVariant,
-                )
-              : (argb == null
-                  ? FushiIcon(
-                      Icons.block,
-                      size: 16,
-                      color: tokens.surfaces.onVariant,
-                    )
-                  : null),
+        ),
+      ),
+    );
+  }
+}
+
+/// 未选中色块的圆形圆角（32 见方的一半）。
+const BorderRadius _kRoundRadius = BorderRadius.all(Radius.circular(16));
+
+/// 当前部位只能全局生效的提示：M3E secondaryContainer tonal 色块。
+class _ScopeIgnoredNotice extends StatelessWidget {
+  const _ScopeIgnoredNotice({required this.tokens});
+
+  final FushiDesignTokens tokens;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool glass = isGlassDesign(context);
+    final Color background =
+        glass ? fushiNeutralBlockColor(context) : colors.secondaryContainer;
+    final Color foreground =
+        glass ? tokens.surfaces.onVariant : colors.onSecondaryContainer;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: FushiM3eShape.smallRadius,
+      ),
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.gap + 4,
+          vertical: tokens.spacing.gap,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            FushiIcon(FushiIcons.info, size: 18, color: foreground),
+            SizedBox(width: tokens.spacing.gap),
+            Expanded(
+              child: Text(
+                t.dict_style_global_only,
+                style: tokens.type.listSubtitle.copyWith(color: foreground),
+              ),
+            ),
+          ],
         ),
       ),
     );

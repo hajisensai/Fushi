@@ -1,0 +1,9 @@
+## BUG-2978 · 视频作品详情页同一集本地与远端成员各出一张卡
+- **报告**：2026-10-06（用户转述协作者 shishamo：媒体服务器 / 视频系列作品详情页右栏每集出现两次——一张带 AniDB 集号 / 日期 / 时长 / 简介 / 1080p 的完整卡，一张只有标题 + 简介；左栏「全 12 话」与「已看完 0/14」「选集 14」对不上）
+- **真实性**：✅ 真 bug，数据归并层缺陷，不是渲染重复。
+  - 合集清单是跨端 union：媒体服务器单集经 `mediaServerCollectionOf`（`fushi/lib/src/media/video/media_server/media_server_browser.dart:156`）按剧名带 playlist 归属，库页刷新时 `RemoteCollectionAdoptionService.adoptVideo` → `adoptRemoteCollectionMember`（`packages/fushi_core/lib/src/database/database_library.part.dart:954`）把它以服务器 item id 为 entryKey 收养进**同名本地合集**；互联 host 文件名与本机不同时同理（entryKey = host bookUid）。于是同一集在 `media_collection_items` 里有两行：本地 bookUid 一行 + 远端 id 一行。
+  - 根因：`loadCollectionEpisodeSlots`（`fushi/lib/src/media/collections/collection_episode_slot.dart:105`，修前）把每一行成员原样解析成一槽——本地行出本地卡（有刮削的 AniDB 集号 / 播出日 / 时长 / 简介），远端行出远端卡（只有服务器下发的标题），两边从不按「是不是同一集」归并；`_slots.length` 同时喂「已看完 x/N」与「选集 N」，所以都是 14，而「全 12 话」是刮削资料的真实集数。
+  - 库页同病：`home_video_page.dart:1493`（修前）的 `dedupeRemoteVideos` 只按 id 去重，跨 id 的同一集照样出远端占位卡，合集卡「已看完 x/N」同样多数。
+- **[x] ① 根因修复** — `54f9acb2a12`：`collection_episode_slot.dart` 新增纯函数 `pairRemoteEpisodesWithLocal`（同一合集内按 (季号, 集号) 配对：本地走与集卡序号同一个 `parsedEpisodeNumbersOf` 整批解析 + `parseVideoPath` 季号，远端按标题 `parseVideoFilename`；只配两边各自唯一的身份，撞号 / 解析不出一律不并），`loadCollectionEpisodeSlots` 据此把远端同集并进本地槽（本地优先，远端挂成 `CollectionEpisodeSlot.remoteMirror` 保留为第二播放来源，看完取两者之或），不再单独占槽、不再进「下载远端集」清单。库页 `_remoteEpisodesMirroredLocally` 走同一判据的 `remoteEpisodesMirroredLocally`（按主合集分桶）过滤远端占位，两处集数口径一致。UI 层无任何去重特例。
+- **[x] ② 自动化测试** — `fushi/test/media/collections/collection_episode_local_remote_merge_test.dart`（成员解析归并 + 本地优先 + 远端看完保留；不同季 / 撞号不并；库页按合集分桶）。本波按用户 10-06 指示未运行，由合并后 CI / 人工验证。
+- **备注**：真机验法——媒体服务器（或互联 host）上有与本机同名合集的剧集、本机已导入其中几集：进该作品详情页，每集只剩一张完整卡（本地那张），只在服务器上有的集仍以云角标卡出现；「已看完 x/N」「选集 N」= 去重后的集数；库页该合集卡计数与详情页一致。已知边界：远端标题解析不出集号（如互联 host 端改过显示名）时不会归并，表现回到修前（安全退化，不会错并）。

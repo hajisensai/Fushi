@@ -157,30 +157,30 @@ void main() {
   });
 
   group('子2: 双击按平台分流-移动端 playOrPause, 桌面全屏', () {
-    test('移动端双击接 playOrPause (非全屏路由)', () {
+    test('移动端 / 桌面触屏双击接 playOrPause, 桌面鼠标保留全屏 toggle', () {
+      // 判据收进 resolveVideoDoubleTapCenterAction（纯函数测试覆盖），页面只派发。
       final String body =
           methodBody(src, 'void _handleVideoPointerUp(PointerUpEvent event) {');
+      expect(body.contains('resolveVideoDoubleTapCenterAction('), isTrue);
+      expect(body.contains('desktopControls: _isDesktopVideoControls'), isTrue);
+      final int fullscreenCase =
+          body.indexOf('case VideoDoubleTapCenterAction.toggleFullscreen:');
+      final int playbackCase =
+          body.indexOf('case VideoDoubleTapCenterAction.togglePlayback:');
+      expect(fullscreenCase, greaterThanOrEqualTo(0));
+      expect(playbackCase, greaterThan(fullscreenCase));
+      final int toggleIdx = body.indexOf(
+          '_toggleVideoFullscreen(controlsContext)', fullscreenCase);
+      expect(toggleIdx, greaterThan(fullscreenCase));
+      expect(toggleIdx, lessThan(playbackCase),
+          reason: '_toggleVideoFullscreen 必须在全屏分支内');
       expect(
-        body.contains('if (_isDesktopVideoControls) {') &&
-            body.contains(
-                'unawaited(_controller?.playOrPause() ?? Future<void>.value());'),
-        isTrue,
+        body.indexOf(
+            'unawaited(_controller?.playOrPause() ?? Future<void>.value());',
+            playbackCase),
+        greaterThan(playbackCase),
         reason: '移动端双击必须 = playOrPause (不再进 media_kit 全屏路由弹回竖屏)',
       );
-    });
-
-    test('桌面双击保留全屏 toggle', () {
-      final String body =
-          methodBody(src, 'void _handleVideoPointerUp(PointerUpEvent event) {');
-      final int desktopBranch = body.indexOf('if (_isDesktopVideoControls) {');
-      expect(desktopBranch, greaterThanOrEqualTo(0));
-      final int toggleIdx = body.indexOf(
-          '_toggleVideoFullscreen(controlsContext)', desktopBranch);
-      final int elseIdx = body.indexOf('} else {', desktopBranch);
-      expect(toggleIdx, greaterThan(desktopBranch),
-          reason: '桌面双击分支应保留 _toggleVideoFullscreen');
-      expect(toggleIdx, lessThan(elseIdx),
-          reason: '_toggleVideoFullscreen 必须在桌面分支内 (else 是移动端 playOrPause)');
     });
 
     test('media_kit 桌面主题禁用内置双击全屏 (toggleFullscreenOnDoublePress:false)', () {

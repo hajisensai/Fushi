@@ -10,10 +10,11 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -74,7 +75,7 @@ List<Widget> buildAiWebKnowledgeCustomSiteRows(
     for (final WebKnowledgeSite site in sites)
       AdaptiveSettingsRow(
         key: ValueKey<String>('ai-web-knowledge-site-${site.id}'),
-        icon: Icons.travel_explore,
+        icon: FushiIcons.travelExplore,
         showIcon: true,
         title: site.label,
         subtitle: site.endpoint.toString(),
@@ -110,7 +111,7 @@ List<Widget> buildAiWebKnowledgeCustomSiteRows(
                 'ai-web-knowledge-site-${site.id}-remove',
               ),
               tooltip: t.ai_web_knowledge_custom_remove,
-              icon: const FushiIcon(Icons.remove_circle_outline),
+              icon: const FushiIcon(FushiIcons.delete),
               onPressed: () => unawaited(
                 _removeWebKnowledgeSite(prefs, site).then((_) => refresh()),
               ),
@@ -120,7 +121,7 @@ List<Widget> buildAiWebKnowledgeCustomSiteRows(
       ),
     AdaptiveSettingsRow(
       key: const ValueKey<String>('ai-web-knowledge-custom-add'),
-      icon: Icons.add,
+      icon: FushiIcons.add,
       showIcon: true,
       title: t.ai_web_knowledge_custom_add,
       onTap: () => unawaited(_addWebKnowledgeSite(context, prefs, refresh)),
@@ -229,7 +230,7 @@ class _AddSiteDialogState extends State<_AddSiteDialog> {
       child: FushiModalSheetFrame(
         key: const ValueKey<String>('ai-web-knowledge-custom-dialog'),
         title: t.ai_web_knowledge_custom_add,
-        leadingIcon: Icons.travel_explore,
+        leadingIcon: FushiIcons.travelExplore,
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,

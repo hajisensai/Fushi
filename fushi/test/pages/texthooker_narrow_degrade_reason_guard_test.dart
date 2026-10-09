@@ -61,40 +61,49 @@ void main() {
 
   test('compact 省掉的是次要信息而非诊断线索（BUG-1110）', () {
     // 采样率/声道/位深（format）这类次要信息仍可以在窄屏省掉——这是 compact 的正当
-    // 用途。判据按**结构**做而不是拿一整串三元表达式做正则：那串里随时会被合入新的
-    // 后缀（转区是否生效的 localeSuffix 就是这么加进来的），整串匹配会被一次正当的
-    // 增补撞成假红，而它要守的「compact 只省 format」并没有变。
+    // 用途。2026-10 工作台重做后它落在「音频源 chip」的标签上：compact 时只显示
+    // 音频源名，宽屏才缀 format（窄屏的 format 收进 chip tooltip）。
     final String code = maskComments(cardSource);
-    final int at = code.indexOf('compact');
-    expect(at, greaterThanOrEqualTo(0), reason: '找不到 compact 分支');
-    final int ternary = code.indexOf(r"? '$phase · $audio", at);
-    expect(ternary, greaterThanOrEqualTo(0),
-        reason: '找不到「phase · audio」那条 compact 三元；改写了就同步改本守卫');
-    final int elseAt = code.indexOf(r": '$phase · $audio", ternary);
-    expect(elseAt, greaterThan(ternary), reason: '找不到非 compact 分支');
-    final String compactBranch = code.substring(ternary, elseAt);
-    final String fullBranch = code.substring(elseAt, elseAt + 240);
-    expect(compactBranch.contains('format'), isFalse,
+    final String? label = initializerExpression(code, 'audioChipLabel');
+    expect(label, isNotNull, reason: '找不到 audioChipLabel；改写了就同步改本守卫');
+    final String expr = label!;
+    final int question = expr.indexOf('?');
+    final int colon = expr.indexOf(':', question);
+    expect(question, greaterThan(0), reason: 'audioChipLabel 应是 compact 三元');
+    expect(expr.substring(0, question).contains('compact'), isTrue,
+        reason: '音频 chip 标签按 compact 分支');
+    expect(expr.substring(question, colon).contains('format'), isFalse,
         reason: 'compact 分支不该带 format（采样率/声道/位深是次要信息）');
-    expect(fullBranch.contains('format == null'), isTrue,
+    expect(expr.substring(colon).contains('format'), isTrue,
         reason: '非 compact 分支必须仍带 format');
   });
 
   test('降级徽章与降级原因的显示条件必须对称（BUG-1110）', () {
     // 不对称正是这个 bug 的本质：徽章无条件亮，原因却被藏。
-    final String code = maskComments(cardSource);
-    final int pill = code.indexOf('_StatusPill(');
-    expect(pill, greaterThanOrEqualTo(0), reason: '找不到 _StatusPill');
-    final String pillSource = code.substring(pill);
+    final EnclosingCall pill = enclosingCallOf(
+      cardSource,
+      'label: state.isDegraded',
+    );
+    expect(pill.text.startsWith('_StatusPill('), isTrue,
+        reason: '降级标签应由 _StatusPill 承载');
     expect(
-      pillSource.contains('state.isDegraded'),
+      pill.text.contains('state.isDegraded'),
       isTrue,
       reason: '徽章按 isDegraded 亮',
     );
     expect(
-      pillSource.contains('compact'),
+      pill.text.contains('compact'),
       isFalse,
       reason: '徽章不看屏宽；原因也不该看——两者必须对称',
+    );
+    // 徽章被放进 chip 行时的条件也不看屏宽。
+    expect(
+      containsCodeLine(
+        cardSource,
+        'if (state.phase != GalHookSessionPhase.idle) statusPill,',
+      ),
+      isTrue,
+      reason: '徽章在 chip 行里只按会话阶段出现，不看屏宽',
     );
   });
 }

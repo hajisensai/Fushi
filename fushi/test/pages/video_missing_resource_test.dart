@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +13,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
+import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -28,7 +29,7 @@ import '../helpers/test_platform_services.dart';
 /// libmpv；故能在 widget 环境跑通真实 `_init → _loadSingle → _applyLoad` 链。
 class _MissingTestAppModel extends AppModel {
   _MissingTestAppModel(PlatformServices platformServices, this._db)
-      : super(platformServices);
+    : super(platformServices);
 
   final FushiDatabase _db;
 
@@ -85,11 +86,13 @@ void main() {
     required String videoPath,
     String title = 'Missing Movie',
   }) async {
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: Value(bookUid),
-      title: Value(title),
-      videoPath: Value(videoPath),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: Value(bookUid),
+        title: Value(title),
+        videoPath: Value(videoPath),
+      ),
+    );
   }
 
   final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
@@ -97,34 +100,31 @@ void main() {
   /// BUG-2229 用：把视频页 **push 在一个占位根路由之上**，这样 `Navigator.pop`
   /// 有东西可退——只有可退的路由栈才能验「返回按钮真的退得出去」。
   Widget wrapPushable() => ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            navigatorKey: navKey,
-            home: const Scaffold(body: Text('shelf-placeholder')),
-          ),
-        ),
-      );
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        navigatorKey: navKey,
+        home: const Scaffold(body: Text('shelf-placeholder')),
+      ),
+    ),
+  );
 
   Widget wrap(String bookUid) => ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: VideoFushiPage(
-              bookUid: bookUid,
-              repo: VideoBookRepository(db),
-            ),
-          ),
-        ),
-      );
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: VideoFushiPage(bookUid: bookUid, repo: VideoBookRepository(db)),
+      ),
+    ),
+  );
 
   // 用 runAsync 驱动真实异步 IO（File.exists / getTemporaryDirectory / 目录扫描）——
   // `tester.pump` 只推假时钟、不推真 Future。视频页有控制条自动隐藏等周期定时器，
@@ -138,38 +138,45 @@ void main() {
   // pump 不驱动真实 dart:io，missing 短路永不触发、spinner 残留（PR 在链中加了
   // relocateMissingAppDocumentPath 的额外真实 IO 跳数后，Windows 上恰好越窗）。
   // 故交替 runAsync + pump 多轮：每一段顺序真实 IO 都拿到自己的 real-async 窗口，
-  // 直到 spinner 消失（缺失态落定）或轮数耗尽——与「链里有几跳 IO」解耦，不再脆弱。
+  // 直到加载态消失（缺失态落定）或轮数耗尽——与「链里有几跳 IO」解耦，不再脆弱。
+  //
+  // 加载态的判据是页面真实的加载视图 [VideoLoadingOverlay]（TODO-1213），不是裸
+  // `CircularProgressIndicator`：overlay 换成 `FushiCircularProgressIndicator` 后
+  // 树里再没有裸转圈，旧判据让循环第一轮就无条件退出、下面的 findsNothing 恒真，
+  // 用例是否通过全看加载链能否塞进第一个 100 ms 窗口（PR #2012 合并后越窗）。
   Future<void> drive(WidgetTester tester) async {
     for (int round = 0; round < 12; round++) {
       await tester.runAsync(() async {
         await Future<void>.delayed(const Duration(milliseconds: 100));
       });
       await tester.pump(const Duration(milliseconds: 50));
-      if (find.byType(CircularProgressIndicator).evaluate().isEmpty) break;
+      if (find.byType(VideoLoadingOverlay).evaluate().isEmpty) break;
     }
   }
 
-  testWidgets('single video with non-existent path → missing state, no spinner',
-      (WidgetTester tester) async {
-    const String missing = r'D:\does\not\exist\gone.mp4';
-    await insertVideoBook(bookUid: 'video/missing', videoPath: missing);
+  testWidgets(
+    'single video with non-existent path → missing state, no spinner',
+    (WidgetTester tester) async {
+      const String missing = r'D:\does\not\exist\gone.mp4';
+      await insertVideoBook(bookUid: 'video/missing', videoPath: missing);
 
-    await tester.pumpWidget(wrap('video/missing'));
-    await drive(tester);
+      await tester.pumpWidget(wrap('video/missing'));
+      await drive(tester);
 
-    // 关键：不停留在转圈。
-    expect(find.byType(CircularProgressIndicator), findsNothing);
-    // 缺失态正文图标（中性，非 generic error_outline）。
-    expect(find.byIcon(Icons.video_file_outlined), findsWidgets);
-    // BUG-805：缺失态收敛成两个真按钮 [重新导入] [删除]（缺失正文 + 对话框都含此文案）。
-    expect(find.text(t.video_resource_missing_reimport), findsWidgets);
-    // 单视频（canDelete）提供「删除」。
-    expect(find.text(t.dialog_delete), findsWidgets);
+      // 关键：不停留在加载态。
+      expect(find.byType(VideoLoadingOverlay), findsNothing);
+      // 缺失态正文图标（中性，非 generic error_outline）。
+      expect(find.byIcon(Icons.video_file_outlined), findsWidgets);
+      // BUG-805：缺失态收敛成两个真按钮 [重新导入] [删除]（缺失正文 + 对话框都含此文案）。
+      expect(find.text(t.video_resource_missing_reimport), findsWidgets);
+      // 单视频（canDelete）提供「删除」。
+      expect(find.text(t.dialog_delete), findsWidgets);
 
-    // 卸载页面让其 dispose 干净跑完（appModel / prefs 由 GC 回收，不显式 dispose——
-    // 页面生命周期已 dispose 关联监听，显式再 dispose 会触发 used-after-dispose）。
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
+      // 卸载页面让其 dispose 干净跑完（appModel / prefs 由 GC 回收，不显式 dispose——
+      // 页面生命周期已 dispose 关联监听，显式再 dispose 会触发 used-after-dispose）。
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   // BUG-2229：缺失态是**没有视频内顶栏**的（没有 controller ⇒ media_kit controls
   // 根本没挂载），本页又有意不挂 AppBar（BUG-102）。所以正文里的「返回」按钮是缺失态
@@ -178,19 +185,24 @@ void main() {
   // globalBack 也被刻意分流在 controller == null 那道门之前（Esc / 手柄 B 一直通）。
   // 下面第二条用例把后者钉住，免得有人把那条分流当成多余删掉。
   // 这条守卫盯的是「按钮存在且真的退得出去」，不是「文案长什么样」。
-  testWidgets('missing state offers a working back button (BUG-2229)',
-      (WidgetTester tester) async {
+  testWidgets('missing state offers a working back button (BUG-2229)', (
+    WidgetTester tester,
+  ) async {
     const String missing = r'D:\does\not\exist\gone.mp4';
     await insertVideoBook(bookUid: 'video/missing-back', videoPath: missing);
 
     await tester.pumpWidget(wrapPushable());
     await tester.pump();
-    unawaited(navKey.currentState!.push<void>(MaterialPageRoute<void>(
-      builder: (BuildContext _) => VideoFushiPage(
-        bookUid: 'video/missing-back',
-        repo: VideoBookRepository(db),
+    unawaited(
+      navKey.currentState!.push<void>(
+        MaterialPageRoute<void>(
+          builder: (BuildContext _) => VideoFushiPage(
+            bookUid: 'video/missing-back',
+            repo: VideoBookRepository(db),
+          ),
+        ),
       ),
-    )));
+    );
     await tester.pump();
     await drive(tester);
 
@@ -236,12 +248,20 @@ void main() {
     const String gate = 'if (controller == null) return false;';
     final int branchAt = src.indexOf(branch);
     final int gateAt = src.indexOf(gate);
-    expect(branchAt, greaterThan(-1),
-        reason: 'globalBack 的分流没了：缺失态/加载态下 Esc 会跟着整表被 controller '
-            '门挡住，键盘和手柄都退不出去');
+    expect(
+      branchAt,
+      greaterThan(-1),
+      reason:
+          'globalBack 的分流没了：缺失态/加载态下 Esc 会跟着整表被 controller '
+          '门挡住，键盘和手柄都退不出去',
+    );
     expect(gateAt, greaterThan(-1), reason: 'controller 门改写了，守卫需更新');
-    expect(branchAt, lessThan(gateAt),
-        reason: 'globalBack 必须排在 controller == null 之前——它的执行体是本页的'
-            '逐级退出阶梯，整条不碰播放器，没有理由被播放器就绪与否挡住');
+    expect(
+      branchAt,
+      lessThan(gateAt),
+      reason:
+          'globalBack 必须排在 controller == null 之前——它的执行体是本页的'
+          '逐级退出阶梯，整条不碰播放器，没有理由被播放器就绪与否挡住',
+    );
   });
 }

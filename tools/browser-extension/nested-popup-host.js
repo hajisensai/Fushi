@@ -57,7 +57,13 @@
   // （2026-10-04 录屏）。现在模糊与填充由同一份宿主脚本经 glassBackdrop 握手一起决定。
   // color-scheme 两侧对齐：iframe 元素与 iframe 根的 color-scheme 不一致时 Chrome 会给
   // iframe 画一层不透明画布底（白 / 黑），玻璃永远透不出来。
+  // 外观风格（theme.js extensionStyle）：M3E 下子层与第一层一样是实色卡，不上玻璃。
+  function fushiNestedStyle() {
+    const t = window.fushiTheme;
+    return t && t.style === 'glass' ? 'glass' : 'm3e';
+  }
   function fushiNestedGlass(theme) {
+    if (fushiNestedStyle() !== 'glass') return false;
     return !(theme && theme['--fushi-glass'] === '0');
   }
   // 与第一层 content.css 的 @supports / prefers-reduced-transparency 回落同一判据。
@@ -80,10 +86,18 @@
     const s = typeof fushiResolveTheme === 'function' ? fushiResolveTheme(cs) : cs;
     return s === 'dark' ? 'dark' : 'light';
   }
+  // M3E 子层外观：与 content.css :host([data-style="m3e"]) 的圆角 / 投影逐字相同。
+  const FUSHI_M3E_LAYER_RADIUS = '20px';
+  const FUSHI_M3E_LAYER_SHADOW = '0 2px 4px rgba(0,0,0,0.18),0 8px 24px 4px rgba(0,0,0,0.16)';
   function fushiNestedLayerSkin(theme) {
+    const scheme = 'color-scheme:' + fushiNestedScheme(theme) + ';';
+    if (fushiNestedStyle() === 'm3e') {
+      return scheme + '--fushi-radius-card:' + FUSHI_M3E_LAYER_RADIUS + ';border-radius:' + FUSHI_M3E_LAYER_RADIUS + ';' +
+        'box-shadow:' + FUSHI_M3E_LAYER_SHADOW + ';';
+    }
     const radius = (theme && typeof theme['--fushi-radius-card'] === 'string' && theme['--fushi-radius-card']) || '10px';
     // 与 content.css :host([data-fushi-glass]) 的 box-shadow 逐字相同。
-    return 'color-scheme:' + fushiNestedScheme(theme) + ';' +
+    return scheme +
       '--fushi-radius-card:' + radius + ';border-radius:' + radius + ';' +
       'box-shadow:0 10px 32px rgba(0,0,0,0.22);';
   }

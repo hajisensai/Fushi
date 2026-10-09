@@ -283,5 +283,125 @@ void main() {
       expect(result!.series.single.reference.mediaId, 'tv');
       expect(result.movies.single.reference.mediaId, 'm1');
     });
+
+    // BUG-2960：资料源整个不可用、锚点是单部剧场版时，曾拿它自己的标题去搜，
+    // 三站都只回那一部的条目，列不出整个系列。
+    test('BUG-2960 资料源不可用：先按用户说的系列名搜，系列名交给 AI', () async {
+      final VideoDiscoveryItem movieAnchor = _item(
+        'm2019',
+        'ドラえもん のび太の月面探査記',
+        year: 2019,
+      );
+      final _FakeWeb web = _FakeWeb(<WebKnowledgePage>[
+        _page('Doraemon', '...', isList: true, siteId: 'ann'),
+      ]);
+      String? askedFranchise;
+      await expandVideoFranchiseFromWeb(
+        anchor: movieAnchor,
+        seriesNames: const <String>['哆啦A梦', 'ドラえもん', 'Doraemon'],
+        known: null,
+        web: web,
+        listWorks: (String franchise, _) async {
+          askedFranchise = franchise;
+          return const <AiFranchiseWork>[];
+        },
+        findCandidates: (_) async => const <VideoDiscoveryItem>[],
+      );
+      expect(web.queries, <String>['哆啦A梦', 'ドラえもん', 'Doraemon']);
+      expect(askedFranchise, '哆啦A梦');
+    });
+
+    test('BUG-2960 资料源走不动只交回 0 部（名字是锚点标题）：锚点仍在清单里、'
+        '清单按系列名命名', () async {
+      final VideoDiscoveryItem movieAnchor = _item(
+        'm2019',
+        'ドラえもん のび太の月面探査記',
+        year: 2019,
+      );
+      final VideoFranchise? result = await expandVideoFranchiseFromWeb(
+        anchor: movieAnchor,
+        seriesNames: const <String>['哆啦A梦'],
+        known: VideoFranchise(
+          name: 'ドラえもん のび太の月面探査記',
+          series: const <VideoDiscoveryItem>[],
+          movies: const <VideoDiscoveryItem>[],
+          truncated: true,
+        ),
+        web: _FakeWeb(<WebKnowledgePage>[_page('p', 't')]),
+        listWorks: (_, _) async => const <AiFranchiseWork>[
+          AiFranchiseWork(
+            title: '大雄的宝岛',
+            originalTitle: 'のび太の宝島',
+            year: 2018,
+            kind: VideoMetadataMediaKind.movie,
+          ),
+        ],
+        findCandidates: (_) async => <VideoDiscoveryItem>[
+          _item('m2018', 'のび太の宝島', year: 2018),
+        ],
+      );
+      expect(result!.name, '哆啦A梦');
+      expect(
+        result.movies.map((VideoDiscoveryItem e) => e.reference.mediaId),
+        <String>['m2018', 'm2019'],
+      );
+      expect(result.truncated, isTrue);
+    });
+  });
+
+  group('BUG-2960 aiFranchiseWebQueries', () {
+    final VideoMediaReference movie = _item(
+      'm2019',
+      'ドラえもん のび太の月面探査記',
+      originalTitle: 'Doraemon: Nobita no Getsumen Tansaki',
+      year: 2019,
+    ).reference;
+
+    test('资料源系列名 > 用户系列名 > 锚点标题 > 原名，最多 3 个', () {
+      expect(
+        aiFranchiseWebQueries(
+          anchor: movie,
+          seriesNames: const <String>['哆啦A梦', 'Doraemon'],
+          knownName: 'ドラえもん',
+        ),
+        <String>['ドラえもん', '哆啦A梦', 'Doraemon'],
+      );
+    });
+
+    test('资料源拿锚点标题当系列名（MAL 关联链走不动）时不占首位', () {
+      expect(
+        aiFranchiseWebQueries(
+          anchor: movie,
+          seriesNames: const <String>['哆啦A梦'],
+          knownName: 'ドラえもん のび太の月面探査記',
+        ),
+        <String>[
+          '哆啦A梦',
+          'ドラえもん のび太の月面探査記',
+          'Doraemon: Nobita no Getsumen Tansaki',
+        ],
+      );
+    });
+
+    test('没有系列名时退回锚点标题 + 原名（旧行为）', () {
+      expect(
+        aiFranchiseWebQueries(anchor: movie, seriesNames: const <String>[]),
+        <String>['ドラえもん のび太の月面探査記', 'Doraemon: Nobita no Getsumen Tansaki'],
+      );
+    });
+
+    test('按归一化标题去重、丢空白项', () {
+      expect(
+        aiFranchiseWebQueries(
+          anchor: movie,
+          seriesNames: const <String>['  ', 'Doraemon', 'doraemon'],
+        ),
+        <String>[
+          'Doraemon',
+          'ドラえもん のび太の月面探査記',
+          'Doraemon: Nobita no Getsumen Tansaki',
+        ],
+      );
+    });
   });
 }

@@ -7,14 +7,14 @@
 // bridge 的 id→delegate 映射从此与树脱节，屏幕阅读器 / 输入法 / 触控键盘等外部
 // UIA 客户端一查就解引用空或已释放的 delegate。
 //
-// 修复在框架层（`ci/patches/flutter-sdk/3.44.0/`，回移上游 #186118 / #186826 /
+// 修复在框架层（`ci/patches/flutter-sdk/3.47.6/`，回移上游 #186118 / #186826 /
 // #193372）。这里在 app 侧钉住引擎要求的契约：**每帧下发的每个节点都必须能从根
 // 沿 childrenInTraversalOrder 与 childrenInHitTestOrder 到达，且两条链覆盖同一组
 // 节点**。SDK 补丁丢了（升级 Flutter 没回移 / apply-patches 没跑）这里就红。
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// 一个节点在某次更新里下发的子节点链。

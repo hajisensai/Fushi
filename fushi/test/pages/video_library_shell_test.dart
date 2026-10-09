@@ -1,5 +1,5 @@
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
@@ -9,6 +9,7 @@ import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/pages/implementations/video_library_shell.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import '../helpers/glass_unwrap.dart';
@@ -151,11 +152,11 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  // 本地库的各视图（首页 / 系列 / 全部视频）排完才是管理类分区。媒体服务器（用户
-  // 自己登录的 Jellyfin/Emby）是自己的库、只是远端的，排在本地库视图之后；随后是
-  // 「往库里加东西」的发现 / 来源 / 扩展（与「浏览」模块同一组组件，2026-10-01
-  // 加回库页），最后是导入与设置。测试宿主不是 iOS，合规门与视频源宿主门都开。
-  testWidgets('页签顺序固定为首页、系列、全部视频、媒体服务器、发现、来源、扩展、导入、设置',
+  // 本地库的各视图（首页 / 系列 / 全部视频）排完才是管理类分区。发现紧跟本地库
+  // 视图（2026-10-05 用户要求与媒体服务器对调），随后是媒体服务器（用户自己登录的
+  // Jellyfin/Emby，远端的自有库）、来源 / 扩展（与「浏览」模块同一组组件），最后
+  // 是导入与设置。测试宿主不是 iOS，合规门与视频源宿主门都开。
+  testWidgets('页签顺序固定为首页、系列、全部视频、发现、媒体服务器、来源、扩展、导入、设置',
       (WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.pump();
@@ -171,8 +172,8 @@ void main() {
         VideoLibrarySection.home,
         VideoLibrarySection.series,
         VideoLibrarySection.allVideos,
-        VideoLibrarySection.mediaServers,
         VideoLibrarySection.discover,
+        VideoLibrarySection.mediaServers,
         if (isVideoOnlineSourcesAvailable) VideoLibrarySection.onlineSources,
         if (isVideoOnlineSourcesAvailable) VideoLibrarySection.extensions,
         VideoLibrarySection.sources,
@@ -256,7 +257,8 @@ void main() {
         reason: '首页已是首位，向右甩无事发生');
   });
 
-  testWidgets('触屏横滑跨到非本地分区：全部视频向左甩进媒体服务器', (WidgetTester tester) async {
+  testWidgets('触屏横滑跨到非本地分区：全部视频向左甩进发现，不顺带构建媒体服务器',
+      (WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.pump();
     await select(tester, VideoLibrarySection.allVideos);
@@ -265,9 +267,12 @@ void main() {
     await tester.fling(find.text('local leaf'), const Offset(-260, 0), 1000);
     await tester.pumpAndSettle();
 
-    expect(mediaServerInitCount, 1, reason: '横滑与页签同一条 _select 路径，'
-        '首次进入媒体服务器才惰性构建');
-    expect(find.text('media server leaf'), findsOneWidget);
+    final FushiSectionTabBar<VideoLibrarySection> strip = tester.widget(
+      find.byType(FushiSectionTabBar<VideoLibrarySection>),
+    );
+    expect(strip.selected, VideoLibrarySection.discover,
+        reason: '横滑与页签同一条 _select 路径，全部视频的下一个分区是发现');
+    expect(mediaServerInitCount, 0, reason: '媒体服务器排在发现之后，未访问不得构建');
   });
 
   testWidgets('媒体服务器未访问不构建，访问后切走保活、退出焦点遍历', (WidgetTester tester) async {
@@ -317,13 +322,14 @@ void main() {
         reason: '页签必须是同一个 State 换父节点，而不是新挂一份');
     final TabController controller =
         tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).controller!;
-    expect(controller.index, 3);
+    // 发现排在媒体服务器前（2026-10-05 对调），媒体服务器是第 5 个页签。
+    expect(controller.index, 4);
     expect(controller.animation!.value, greaterThan(0));
-    expect(controller.animation!.value, lessThan(3),
+    expect(controller.animation!.value, lessThan(4),
         reason: '指示条应正从「首页」滑向「媒体服务器」，而不是直接落位');
 
     await tester.pumpAndSettle();
-    expect(controller.animation!.value, 3);
+    expect(controller.animation!.value, 4);
   });
 
   // 反向切换：目标分区在布局序里排在旧分区前面，新位置的 LayoutBuilder 先布局，
@@ -351,5 +357,155 @@ void main() {
         tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).controller!;
     expect(controller.index, 0);
     expect(controller.animation!.value, 0);
+  });
+
+  // ── 2026-10-05 M3E 浮动工具栏 ──────────────────────────────────────────
+  // 页签进壳顶部的浮动胶囊，分区页面页头的动作登记进壳的槽、由悬浮动作组画出；
+  // 往下滚收起、往上滚弹回，切分区时弹回。
+  Widget floatingHarness() {
+    return TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: VideoLibraryShell(
+            repository: VideoBookRepository(database),
+            libraryRefreshSignal: refreshSignal,
+            scrapeTaskController: scrapeController,
+            onScrapeAll: () async {},
+            onClearAllScrapeRecords: () async {},
+            onScrapeSource: (_) async {},
+            onVideoScanCompleted: (_, __) async {},
+            onOpenScrapeTasks: () {},
+            onLibraryChanged: () {},
+            localLibraryPageBuilder:
+                (_, Widget navigation, VideoLibrarySection section) {
+              lastLocalSection = section;
+              return Column(
+                children: <Widget>[
+                  FushiPageHeader.customTitle(
+                    title: navigation,
+                    actions: <Widget>[
+                      FushiIconButton(
+                        key: const ValueKey<String>('probe-header-action'),
+                        tooltip: 'probe',
+                        icon: Icons.refresh,
+                        onTap: () {},
+                      ),
+                    ],
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      key: const ValueKey<String>('probe-list'),
+                      itemCount: 80,
+                      itemBuilder: (_, int i) =>
+                          SizedBox(height: 60, child: Text('row $i')),
+                    ),
+                  ),
+                ],
+              );
+            },
+            mediaServerPageBuilder: (_, Widget navigation) => Column(
+              children: <Widget>[
+                navigation,
+                _StatefulProbeLeaf(
+                  label: 'media server leaf',
+                  onInit: () => mediaServerInitCount += 1,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 工具栏露出在叠放区里的高度：收起时整条滑出画面（底边退到叠放区顶边）。
+  double chromeHeight(WidgetTester tester) {
+    final Rect bar = tester.getRect(find.byType(FushiFloatingChromeBar));
+    final Rect area = tester.getRect(find.byType(FushiFloatingChromeOverlay));
+    return (bar.bottom - area.top).clamp(0.0, double.infinity);
+  }
+
+  /// 内容滚动视口高度：工具栏显隐不得改变它（改了就会夹紧滚动位置、自激回弹）。
+  double listViewport(WidgetTester tester) =>
+      tester.getSize(find.byKey(const ValueKey<String>('probe-list'))).height;
+
+  testWidgets('浮动工具栏：页签在顶部浮动胶囊里，页头动作进悬浮动作组', (WidgetTester tester) async {
+    await tester.pumpWidget(floatingHarness());
+    await tester.pumpAndSettle();
+
+    final Finder bar = find.byType(FushiFloatingChromeBar);
+    expect(bar, findsOneWidget);
+    expect(
+      find.descendant(
+        of: bar,
+        matching: find.byType(FushiSectionTabBar<VideoLibrarySection>),
+      ),
+      findsOneWidget,
+      reason: '分区页签整个壳只有一份，住在浮动工具栏里',
+    );
+    expect(
+      find.descendant(
+        of: find.byType(FushiFloatingActionsPill),
+        matching: find.byKey(const ValueKey<String>('probe-header-action')),
+      ),
+      findsOneWidget,
+      reason: '分区页头声明的动作由悬浮动作组画出',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('probe-header-action')),
+      findsOneWidget,
+      reason: '页头自己那一行不再重复画一份',
+    );
+  });
+
+  testWidgets('浮动工具栏：下滚收起、上滚弹回、切分区弹回', (WidgetTester tester) async {
+    await tester.pumpWidget(floatingHarness());
+    await tester.pumpAndSettle();
+    final double shown = chromeHeight(tester);
+    expect(shown, greaterThan(40));
+    final double viewport = listViewport(tester);
+
+    await tester.drag(
+      find.byKey(const ValueKey<String>('probe-list')),
+      const Offset(0, -600),
+    );
+    await tester.pumpAndSettle();
+    expect(chromeHeight(tester), 0, reason: '往下读：工具栏滑出画面');
+    expect(listViewport(tester), viewport, reason: '收起不改内容视口高度');
+
+    await tester.drag(
+      find.byKey(const ValueKey<String>('probe-list')),
+      const Offset(0, 120),
+    );
+    await tester.pumpAndSettle();
+    expect(chromeHeight(tester), shown, reason: '往回拉：工具栏弹回');
+    expect(listViewport(tester), viewport, reason: '弹回不改内容视口高度');
+
+    await tester.drag(
+      find.byKey(const ValueKey<String>('probe-list')),
+      const Offset(0, -600),
+    );
+    await tester.pumpAndSettle();
+    expect(chromeHeight(tester), 0);
+    await select(tester, VideoLibrarySection.mediaServers);
+    expect(chromeHeight(tester), shown, reason: '切到新分区从顶部开始，工具栏回来');
+  });
+
+  testWidgets('浮动工具栏：点胶囊里的页签文字切分区', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(floatingHarness());
+    await tester.pumpAndSettle();
+    expect(mediaServerInitCount, 0);
+
+    await tester.tap(find.text(t.video_library_media_servers));
+    await tester.pumpAndSettle();
+    expect(mediaServerInitCount, 1);
+    expect(find.text('media server leaf'), findsOneWidget);
+
+    await tester.tap(find.text(t.series));
+    await tester.pumpAndSettle();
+    expect(lastLocalSection, VideoLibrarySection.series);
   });
 }

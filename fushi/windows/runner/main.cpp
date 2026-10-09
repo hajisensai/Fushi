@@ -79,6 +79,19 @@ bool IsTestRunnerMode() {
   return ::GetEnvironmentVariableW(L"FUSHI_TEST_HIDDEN", nullptr, 0) > 0;
 }
 
+// 开发期与已安装的 Fushi 并存（`flutter run` 热重载时用户还开着自己的 Fushi 在看书）。
+// 只在 debug 构建、且显式设了 FUSHI_DEV_SIDE_BY_SIDE 时生效，release 包恒为 false。
+// 跳过单实例守卫同样安全，理由与 IsTestRunnerMode 相同：debug exe 在构建目录里，
+// 默认 WebView2 userDataFolder（<exe>.WebView2）与已安装实例不是同一个目录。数据根
+// 由调用方用 FUSHI_TEST_ROOT 隔离（见 docs/agent/build.md「与已安装版并存的热重载」）。
+bool IsDevSideBySideMode() {
+#ifdef NDEBUG
+  return false;
+#else
+  return ::GetEnvironmentVariableW(L"FUSHI_DEV_SIDE_BY_SIDE", nullptr, 0) > 0;
+#endif
+}
+
 // BUG-1483: [dir] 下能否创建文件（进而创建 WebView2 数据目录）。用一次性探针文件
 // 实测 ACL，FILE_FLAG_DELETE_ON_CLOSE 保证句柄一关探针即消失，不留垃圾。
 bool DirectoryWritable(const std::wstring &dir) {
@@ -168,7 +181,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // 此处检测已有实例则把首实例窗口前置并退出本进程，消除双实例锁冲突放大器。
   // 集成测试 runner（FUSHI_TEST_HIDDEN 非空）跳过整套单实例守卫——见 IsTestRunnerMode
   // 注释：否则撞用户实例的互斥量会在引擎初始化前退出，itest 无法 attach。
-  const bool test_runner = IsTestRunnerMode();
+  const bool dev_side_by_side = IsDevSideBySideMode();
+  const bool test_runner = IsTestRunnerMode() || dev_side_by_side;
   ::fushi::SingleInstanceMutex single_instance_mutex(
       L"FushiSingleInstanceMutex", !test_runner);
   if (!test_runner && !single_instance_mutex.valid()) {
@@ -273,7 +287,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
-  if (!window.CreateAndShow(L"Fushi", origin, size)) {
+  // 并存模式下换标题：已安装实例的二次启动（文件关联转交）按标题 FindWindow 找主窗，
+  // 不能把用户双击的视频转交给开发实例。
+  if (!window.CreateAndShow(dev_side_by_side ? L"Fushi Dev" : L"Fushi", origin,
+                            size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

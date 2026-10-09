@@ -78,6 +78,7 @@ void main() {
       'video.audio.pitch',
       'video.audio.channels',
       'video.audio.normalize_downmix',
+      'video.audio.passthrough',
       // Subtitle appearance
       'video.subtitle.obscure',
       'video.subtitle.respect_ass_style',

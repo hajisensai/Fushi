@@ -20,14 +20,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi_engine/media/video/jimaku_client.dart'
-    show parseSubtitleEpisode;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart'
     show kMaximumSubtitleDownloadBytes;
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
@@ -48,12 +46,7 @@ const int kSubdlSubtitlesPerPage = 30;
 
 /// 文本字幕扩展名白名单（与 Jimaku / AJATT 的 `isTextSubtitle` 同一集合）。
 /// `.sub`（MicroDVD）站上也有，但播放页没有它的 parser，不当候选。
-const Set<String> kSubdlTextSubtitleExtensions = <String>{
-  'srt',
-  'ass',
-  'ssa',
-  'vtt',
-};
+const Set<String> kSubdlTextSubtitleExtensions = kTextSubtitleExtensions;
 
 /// Hibiki 大类语言码 → SubDL 查询码（大写，逗号分隔）。
 ///
@@ -122,6 +115,19 @@ class SubdlWorkRecord {
   final String? imdbId;
   final int? tmdbId;
   final int? year;
+
+  /// 本页字幕所属作品的身份自述（BUG-3068），供调用方核对是不是目标作品。
+  SubtitleWorkClaim get claim => SubtitleWorkClaim(
+        titles: <String>[name],
+        year: year,
+        kind: switch (type?.toLowerCase()) {
+          'movie' => VideoMetadataMediaKind.movie,
+          'tv' => VideoMetadataMediaKind.tv,
+          _ => null,
+        },
+        tmdbId: tmdbId,
+        imdbId: imdbId,
+      );
 }
 
 class SubdlSubtitleRecord {
@@ -270,98 +276,29 @@ SubdlSearchPage parseSubdlSearchResponse(String body) {
   );
 }
 
-/// 下载体内挑出来的一个文本字幕文件。
-class SubdlExtractedSubtitle {
-  const SubdlExtractedSubtitle({required this.fileName, required this.bytes});
+/// 下载体内挑出来的一个文本字幕文件（解包实现已抽到 [extractArchivedSubtitles]，
+/// 与 Jimaku 共用）。
+typedef SubdlExtractedSubtitle = ArchivedSubtitle;
 
-  final String fileName;
-  final Uint8List bytes;
-}
-
-/// 把下载体（zip / 裸字幕）解成文本字幕文件列表。纯函数，便于单测。
-///
-/// - `PK\x03\x04` 开头按 zip 解；跳过目录、`__MACOSX/` 与 `._` AppleDouble 残渣，
-///   只留 [kSubdlTextSubtitleExtensions]；
-/// - `Rar!` 开头是 RAR 伪装成 `.zip` 的老上传：没有解 RAR 的依赖，明确报 unsupported，
-///   不要把压缩流当文本落盘；
-/// - 其余按裸字幕文件处理（站点偶尔直接回单文件），文件名用 [fallbackFileName]。
+/// 把下载体（zip / 裸字幕）解成文本字幕文件列表：薄转发到共享的
+/// [extractArchivedSubtitles]（RAR / 7z 抛 unsupported，不当文本落盘）。
 List<SubdlExtractedSubtitle> extractSubdlSubtitles(
   Uint8List bytes, {
   required String fallbackFileName,
-}) {
-  if (bytes.length >= 4 &&
-      bytes[0] == 0x52 &&
-      bytes[1] == 0x61 &&
-      bytes[2] == 0x72 &&
-      bytes[3] == 0x21) {
-    throw const ExternalProviderFailure(
+}) =>
+    extractArchivedSubtitles(
+      bytes,
+      fallbackFileName: fallbackFileName,
       providerId: kSubdlSubtitleProviderId,
-      operation: 'download',
-      kind: ExternalProviderFailureKind.unsupported,
-      message: 'SubDL returned a RAR archive, which is not supported',
     );
-  }
-  final bool isZip = bytes.length >= 4 &&
-      bytes[0] == 0x50 &&
-      bytes[1] == 0x4B &&
-      bytes[2] == 0x03 &&
-      bytes[3] == 0x04;
-  if (!isZip) {
-    return <SubdlExtractedSubtitle>[
-      SubdlExtractedSubtitle(fileName: fallbackFileName, bytes: bytes),
-    ];
-  }
-  final Archive archive;
-  try {
-    archive = ZipDecoder().decodeBytes(bytes, verify: true);
-  } on Object {
-    throw const ExternalProviderFailure(
-      providerId: kSubdlSubtitleProviderId,
-      operation: 'download',
-      kind: ExternalProviderFailureKind.invalidResponse,
-      message: 'SubDL archive could not be decoded',
-    );
-  }
-  final List<SubdlExtractedSubtitle> out = <SubdlExtractedSubtitle>[];
-  for (final ArchiveFile file in archive.files) {
-    if (!file.isFile) continue;
-    final String path = file.name.replaceAll('\\', '/');
-    if (path.startsWith('__MACOSX/') || path.contains('/__MACOSX/')) continue;
-    final String baseName = path.substring(path.lastIndexOf('/') + 1);
-    if (baseName.isEmpty || baseName.startsWith('._')) continue;
-    if (!kSubdlTextSubtitleExtensions.contains(_extensionOf(baseName))) {
-      continue;
-    }
-    final Object? content = file.content;
-    if (content is! List<int>) continue;
-    out.add(
-      SubdlExtractedSubtitle(
-        fileName: baseName,
-        bytes: content is Uint8List ? content : Uint8List.fromList(content),
-      ),
-    );
-  }
-  return out;
-}
 
-/// 多文件包里挑出要用的那一个。纯函数，便于单测。
-///
-/// 只有一个直接用；多个时按文件名解析集号（[parseSubtitleEpisode]）匹配 [episode]，
-/// 命中唯一的用它；解析不出 / 没给集号时退回第一个（zip 内顺序通常就是集序）。
+/// 多文件包里挑出要用的那一个：SubDL 的包已由服务端按集号区间圈过，匹配不到
+/// 退回第一个（[pickArchivedSubtitle] 的 `fallbackToFirst` 档）。
 SubdlExtractedSubtitle? pickSubdlSubtitle(
   List<SubdlExtractedSubtitle> files, {
   int? episode,
-}) {
-  if (files.isEmpty) return null;
-  if (files.length == 1 || episode == null) return files.first;
-  final List<SubdlExtractedSubtitle> matching = files
-      .where(
-        (SubdlExtractedSubtitle file) =>
-            parseSubtitleEpisode(file.fileName) == episode,
-      )
-      .toList();
-  return matching.isNotEmpty ? matching.first : files.first;
-}
+}) =>
+    pickArchivedSubtitle(files, episode: episode);
 
 class SubdlClient implements VideoSubtitleProvider {
   SubdlClient({
@@ -727,6 +664,7 @@ class _SubdlCandidate extends VideoSubtitleCandidate {
           collectionId: work == null ? null : '${work.sdId}',
           collectionLabel: work?.name,
           aiTranslated: record.aiTranslated,
+          work: work?.claim,
         );
 
   final SubdlSubtitleRecord record;
@@ -740,11 +678,6 @@ Uri _apiUri(Uri base, String operation) {
       ? base.path.substring(0, base.path.length - 1)
       : base.path;
   return base.replace(path: '$prefix/$operation', query: '');
-}
-
-String _extensionOf(String fileName) {
-  final int dot = fileName.lastIndexOf('.');
-  return dot < 0 ? '' : fileName.substring(dot + 1).toLowerCase();
 }
 
 String? _errorCode(String body) {

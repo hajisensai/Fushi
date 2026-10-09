@@ -13,7 +13,7 @@ const vm = require('node:vm');
 //     role=listbox，项 role=option + aria-selected，当前项经 aria-activedescendant；
 //  ③ 键盘：↓ 打开、↑↓ 移动、Enter 提交、Esc 收起不提交、输入首字定位、吃掉的键不外溢；
 //  ④ 菜单挂到 <body>（逃出页眉 backdrop-filter 的包含块），选中行带 ✓；
-//  ⑤ 页面接线：设置页 / 侧边栏都加载 glass-select.js，侧栏嵌入资源清单带它；glass.css 有
+//  ⑤ 页面接线：设置页 / 侧边栏都加载 glass-select.js，侧栏嵌入资源清单带它；material.css 有
 //     胶囊触发器 / 玻璃菜单 / 选中行样式，侧边栏按钮统一玻璃胶囊、选中态主色染色；
 //     侧边栏页面 CSS 不再按 #track 画原生框。
 
@@ -265,7 +265,7 @@ test('页面接线：设置页 / 侧边栏加载组件，侧栏嵌入资源带�
   for (const page of ['options.html', 'side-panel.html']) {
     const html = fs.readFileSync(path.join(__dirname, page), 'utf8');
     assert.match(html, /<script src="glass-select\.js"><\/script>/, page);
-    assert.match(html, /href="glass\.css"/, page);
+    assert.match(html, /href="material\.css"/, page);
   }
   const popup = fs.readFileSync(path.join(__dirname, 'vendor', 'action-popup.html'), 'utf8');
   assert.doesNotMatch(popup, /<select/, '工具栏菜单出现 select 时要同样加载 glass-select.js');
@@ -277,20 +277,21 @@ test('页面接线：设置页 / 侧边栏加载组件，侧栏嵌入资源带�
   assert.doesNotMatch(spCss, /#track\b/, '选轨版式挂在 .track-select 上（外壳与原生 select 同类）');
 });
 
-test('glass.css：胶囊触发器 + 玻璃菜单 + 选中行 ✓；侧边栏按钮统一玻璃胶囊、AS 选中态主色染色', () => {
-  const css = fs.readFileSync(path.join(__dirname, 'glass.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+test('material.css：胶囊触发器 + 材质菜单 + 选中行 ✓；侧边栏按钮统一玻璃胶囊、AS 选中态主色染色', () => {
+  const css = fs.readFileSync(path.join(__dirname, 'material.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
   const rule = (sel) => {
     const at = css.indexOf(sel + ' {');
     assert.ok(at >= 0, '缺规则 ' + sel);
     return css.slice(at, css.indexOf('}', at));
   };
   const trig = rule(':root .fgs-trigger');
-  assert.match(trig, /border-radius:\s*999px/);
-  assert.match(trig, /backdrop-filter:\s*var\(--fushi-glass-filter\)/);
+  // 形状 / 材质取 theme.css 的风格 token（玻璃 = 999px 胶囊 + 模糊；M3E = 圆角方 + 实色）。
+  assert.match(trig, /border-radius:\s*var\(--fushi-shape-field\)/);
+  assert.match(trig, /backdrop-filter:\s*var\(--fushi-mat-filter\)/);
   const menu = rule(':root .fgs-menu');
   assert.match(menu, /position:\s*fixed/);
-  assert.match(menu, /border-radius:\s*1[234]px/);
-  assert.match(menu, /backdrop-filter:\s*var\(--fushi-glass-filter\)/);
+  assert.match(menu, /border-radius:\s*var\(--fushi-shape-menu\)/);
+  assert.match(menu, /backdrop-filter:\s*var\(--fushi-mat-filter\)/);
   const opt = rule(':root .fgs-option');
   const h = Number(/min-height:\s*(\d+)px/.exec(opt)[1]);
   assert.ok(h >= 32 && h <= 36, '行高 32–36');
@@ -298,7 +299,7 @@ test('glass.css：胶囊触发器 + 玻璃菜单 + 选中行 ✓；侧边栏按�
   assert.match(css, /:root \.fgs-option\.is-selected \.fgs-check \{\s*visibility:\s*visible/);
   assert.match(css, /:root \.fgs \.fgs-native \{[^}]*opacity:\s*0/);
   const btn = rule(':root :is(.toolbar, .offset-row, .subs-row) button,\n:root .hdr-fold,\n:root .timestamp');
-  assert.match(btn, /border-radius:\s*999px/);
-  assert.match(btn, /border:\s*1px solid var\(--fushi-glass-edge\)/);
+  assert.match(btn, /border-radius:\s*var\(--fushi-shape-control\)/);
+  assert.match(btn, /border:\s*1px solid var\(--fushi-mat-edge\)/);
   assert.match(rule(':root .toolbar button.is-on,\n:root .toolbar button.is-on:hover'), /--fushi-primary-soft/);
 });

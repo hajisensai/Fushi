@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
 
@@ -38,6 +38,19 @@ import 'package:fushi/utils.dart';
 /// （`_readerBottomReserve`）喂 WebView，组件用它画自身——视觉高度 == 预留高度
 /// 是 chrome 的铁律（见 reader_chrome_floating.dart 文件头）。
 const double kReaderStatusFooterHeight = 28;
+
+/// 悬浮形态（[ReaderStatusFooter.floating]）读数胶囊离窗口底边的外边距：胶囊是浮在
+/// 正文上的悬浮件，不能贴着窗口底边（无系统底 inset 的桌面窗口里会被切掉半截阴影、
+/// 看着像被挤出窗外，10-06 反馈）。有更大的系统底 inset 时以 inset 为准。
+const double kReaderStatusFooterFloatingBottomGap = 8;
+
+/// 状态行**带高**的预留口径：悬浮形态多出 [kReaderStatusFooterFloatingBottomGap]。
+/// 组件与页面（底部悬浮件坐落高度）共用这一处，视觉 == 预留。
+double readerStatusFooterPaintedHeight({
+  required bool floating,
+  double height = kReaderStatusFooterHeight,
+}) =>
+    floating ? height + kReaderStatusFooterFloatingBottomGap : height;
 
 /// 状态行文字字号，与顶部进度 pill 同源（12）。
 const double kReaderStatusFooterFontSize = kTopProgressFontSize;
@@ -359,7 +372,13 @@ class ReaderStatusFooter extends StatefulWidget {
     this.onTap,
     this.onTapTracker,
     this.onTapProgress,
+    this.floating = false,
   });
+
+  /// 悬浮工具栏样式（M3E，默认）：读数是一枚浮在正文上的小胶囊（底色
+  /// [backgroundColor]、全圆角、轻阴影），整条带透明——不画整条实体底栏，竖排 /
+  /// 横排一样。带高（预留）不变，只是不再铺底色。
+  final bool floating;
 
   /// 会话累计的**读口**（每个 [tick] 采样一次）。账本在 `StudyClock`，页面不持有
   /// 任何会话累计副本（v92 统计纪律），所以这里拿的是函数而不是快照。
@@ -476,14 +495,17 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
             total: widget.totalChars,
           );
     final double bandHeight = readerStatusFooterBandHeight(
-      footerReserve: widget.height,
+      footerReserve: readerStatusFooterPaintedHeight(
+        floating: widget.floating,
+        height: widget.height,
+      ),
       bottomInset: widget.bottomInset,
     );
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: widget.onTap,
       child: ColoredBox(
-        color: widget.backgroundColor,
+        color: widget.floating ? Colors.transparent : widget.backgroundColor,
         child: SizedBox(
           height: bandHeight,
           child: Padding(
@@ -494,7 +516,9 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
             // 两段都 ellipsis，谁放不下谁先省略，行永远不溢出。
             child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints constraints) {
-              return Row(
+              final Widget row = Row(
+                mainAxisSize:
+                    widget.floating ? MainAxisSize.min : MainAxisSize.max,
                 mainAxisAlignment: widget.centered
                     ? MainAxisAlignment.center
                     : MainAxisAlignment.end,
@@ -568,6 +592,30 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
                       ),
                     ),
                 ],
+              );
+              if (!widget.floating) return row;
+              return Align(
+                alignment: widget.centered
+                    ? Alignment.center
+                    : AlignmentDirectional.centerEnd,
+                child: DecoratedBox(
+                  key: const ValueKey<String>('fushi_status_footer_pill'),
+                  decoration: ShapeDecoration(
+                    color: widget.backgroundColor,
+                    shape: const StadiumBorder(),
+                    shadows: <BoxShadow>[
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: row,
+                  ),
+                ),
               );
             }),
           ),

@@ -1,7 +1,9 @@
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
+    show collectionDetailSortPrefKey, kCollectionDetailManualSortValue;
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -26,6 +28,9 @@ void main() {
     await db.addToCollection(cid, MediaKind.epub, 'k1');
     await db.addToCollection(cid, MediaKind.epub, 'k2');
     await db.addToCollection(cid, MediaKind.epub, 'k3');
+    // 默认排序是卷号；拖排只在手动序下开放——模拟「用户保存过手动顺序」。
+    await db.setPref(
+        collectionDetailSortPrefKey(cid), kCollectionDetailManualSortValue);
     final MediaCollectionRow col = (await db.getMediaCollectionById(cid))!;
     return (db: db, col: col);
   }
@@ -59,8 +64,19 @@ void main() {
         ),
       );
 
+  /// M3E 详情页（8853cd4fc75）顶部是叠层封面 hero + 工具行，默认 800x600 测试
+  /// 视口里成员网格整片落在可视区外（卡片中心 y≈728 > 600），触摸手势命中不到。
+  /// 给一个桌面级视口，让成员网格与确认弹窗都在可视区内。
+  void useDesktopView(WidgetTester tester) {
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+  }
+
   testWidgets('长按整卡拖到新坑位 → sortIndex 真写穿 getCollectionItems',
       (WidgetTester tester) async {
+    useDesktopView(tester);
     final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
     await tester.pumpWidget(wrapPage(s.col, s.db));
     await tester.pumpAndSettle();
@@ -96,6 +112,7 @@ void main() {
 
   testWidgets('长按原地松手弹菜单（移出 + 打开）；移出真调 removeFromCollection',
       (WidgetTester tester) async {
+    useDesktopView(tester);
     final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
     await tester.pumpWidget(wrapPage(s.col, s.db, onOpenMember: (_, __) {}));
     await tester.pumpAndSettle();
@@ -122,6 +139,7 @@ void main() {
   });
 
   testWidgets('菜单「打开」真回调 onOpenMember', (WidgetTester tester) async {
+    useDesktopView(tester);
     final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
     final List<String> opened = <String>[];
     await tester.pumpWidget(wrapPage(
@@ -147,11 +165,15 @@ void main() {
   });
 
   testWidgets('筛选态拖拽保序合并：隐藏成员留在原下标（不被挤到表尾）', (WidgetTester tester) async {
+    useDesktopView(tester);
     final FushiDatabase db = await openDb();
     final int cid = await db.createMediaCollection('C');
     for (final String k in <String>['k1', 'k2', 'k3', 'k4', 'k5']) {
       await db.addToCollection(cid, MediaKind.epub, k);
     }
+    // 默认排序是卷号（89481bfd8b2）；拖排只在手动序下开放。
+    await db.setPref(
+        collectionDetailSortPrefKey(cid), kCollectionDetailManualSortValue);
     final MediaCollectionRow col = (await db.getMediaCollectionById(cid))!;
 
     // 模拟书架标签筛选：k2/k4 被过滤（builder 返回 null → 详情页跳过，不可见）。
@@ -205,6 +227,7 @@ void main() {
 
   testWidgets('详情页给成员卡 builder 注入可用的「移出合集」回调（键盘/手柄移出入口）',
       (WidgetTester tester) async {
+    useDesktopView(tester);
     final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
     final Map<String, VoidCallback> injected = <String, VoidCallback>{};
     Widget? capturingBuilder(String mediaType, String entryKey,
@@ -266,6 +289,7 @@ void main() {
 
   testWidgets('删除合集：未注入删本体回调 → 弹窗无复选框，仅解散容器（老行为零变化）',
       (WidgetTester tester) async {
+    useDesktopView(tester);
     final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
     await tester.pumpWidget(wrapPage(s.col, s.db)); // 不传 onDeleteMembersMedia
     await tester.pumpAndSettle();
@@ -282,6 +306,7 @@ void main() {
   });
 
   testWidgets('删除合集：复选框默认不勾 → 回调不触发，只解散容器', (WidgetTester tester) async {
+    useDesktopView(tester);
     final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
     final List<MediaCollectionItemRow> passed = <MediaCollectionItemRow>[];
     await tester.pumpWidget(wrapPageWithDelete(
@@ -308,6 +333,7 @@ void main() {
   });
 
   testWidgets('删除合集：勾选「同时删除其中的书」→ 回调收到全部成员再解散容器', (WidgetTester tester) async {
+    useDesktopView(tester);
     final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
     final List<String> passed = <String>[];
     await tester.pumpWidget(wrapPageWithDelete(

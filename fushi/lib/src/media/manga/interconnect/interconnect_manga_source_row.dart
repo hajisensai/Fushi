@@ -1,12 +1,13 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_browse_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 「Fushi 互联」在漫画「来源」一节里的一行（与 [MokuroMoeSourceRow] 同构、同级）。
@@ -61,14 +62,19 @@ class _InterconnectMangaSourceRowState
       padding: EdgeInsets.zero,
       child: FushiListItem(
         key: const ValueKey<String>('manga_source_interconnect'),
-        leading: const FushiIcon(Icons.devices_outlined),
+        // M3E 行首形状底：开着时 primary 饱和色块，关着时中性。
+        leading: FushiListLeadingIcon(
+          FushiIcons.devices,
+          shape: FushiLeadingShape.cookie,
+          tone: enabled ? FushiCardTone.primary : FushiCardTone.neutral,
+        ),
         title: Text(t.audio_source_fushi_interconnect),
         subtitle: Text(
           enabled
               ? t.manga_source_interconnect_subtitle
               : t.manga_source_interconnect_disabled,
         ),
-        trailing: const FushiIcon(Icons.chevron_right),
+        trailing: const FushiIcon(FushiIcons.chevronRight),
         onTap: enabled
             ? () => Navigator.of(context).push(
                   adaptivePageRoute<void>(

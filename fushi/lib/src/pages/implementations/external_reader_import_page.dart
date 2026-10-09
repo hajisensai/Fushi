@@ -2,14 +2,16 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/sync/external_reader_import/external_reader_import_service.dart';
 import 'package:fushi/src/sync/external_reader_import/hoshi_backup_archive.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/misc/screen_wakelock.dart';
 
@@ -166,44 +168,98 @@ class _ExternalReaderImportPageState
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final List<Widget> sections = <Widget>[
+      // 起点卡：怎么拿到 .hoshi 备份 + 选文件（tonal，扫描 / 导入中禁用）。
+      FushiCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const FushiListLeadingIcon(
+                  FushiIcons.importFile,
+                  shape: FushiLeadingShape.cookie,
+                  tone: FushiCardTone.primary,
+                ),
+                SizedBox(width: tokens.spacing.card),
+                Expanded(
+                  child: Text(
+                    t.hoshi_import_how_to,
+                    style: context.fushiType.bodyLarge,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: tokens.spacing.card),
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: FushiFilledButton.tonalIcon(
+                onPressed: _scanning || _running ? null : _pickBackup,
+                icon: const FushiIcon(FushiIcons.folderOpen),
+                label: Text(t.hoshi_import_file_pick),
+              ),
+            ),
+          ],
+        ),
+      ),
+      if (_scanning) FushiLoadingView(message: t.hoshi_import_scan_running),
+      // 错误走共享提示块（中性底 + 错误色图标），不再是裸红字。
+      if (_error != null)
+        FushiInlineNotice(
+          severity: FushiNoticeSeverity.error,
+          message: _error!,
+        ),
+      if (_preview != null) _buildPreview(theme, _preview!),
+      if (_report != null) _buildReport(theme, _report!),
+    ];
     return PopScope(
       canPop: !_running,
       onPopInvokedWithResult: (bool didPop, Object? result) {
         if (!didPop && _running) setState(() => _cancelRequested = true);
       },
-      child: Scaffold(
-        appBar: FushiAppBar(title: Text(t.hoshi_import_entry)),
-        body: ListView(
-          padding: const EdgeInsets.all(16),
-          children: <Widget>[
-            Text(t.hoshi_import_how_to),
-            const SizedBox(height: 16),
-            FushiFilledButton.tonalIcon(
-              onPressed: _scanning || _running ? null : _pickBackup,
-              icon: const FushiIcon(Icons.folder_open_outlined),
-              label: Text(t.hoshi_import_file_pick),
-            ),
-            const SizedBox(height: 16),
-            if (_scanning) ...<Widget>[
-              FushiLoadingView(message: t.hoshi_import_scan_running),
-            ],
-            // 错误走共享提示块（中性底 + 错误色图标），不再是裸红字。
-            if (_error != null)
-              FushiInlineNotice(
-                severity: FushiNoticeSeverity.error,
-                message: _error!,
+      child: FushiPageScaffold(
+        title: t.hoshi_import_entry,
+        body: FushiEntranceScope(
+          // 扫描结果 / 导入报告落地时重开进场窗口。
+          replayKey: Object.hash(_preview, _report),
+          // 页头浮在正文上（脚手架默认 extendBodyBehindHeader）：顶部让位从
+          // body 子树的 context 读（State 的 context 在脚手架之上）。
+          child: Builder(
+            builder: (BuildContext context) => ListView(
+              padding: withBottomSafeInset(
+                context,
+                EdgeInsets.fromLTRB(
+                  tokens.spacing.page,
+                  tokens.spacing.gap + MediaQuery.paddingOf(context).top,
+                  tokens.spacing.page,
+                  tokens.spacing.section,
+                ),
               ),
-            if (_preview != null) _buildPreview(theme, _preview!),
-            if (_report != null) _buildReport(theme, _report!),
-          ],
+              children: <Widget>[
+                for (int i = 0; i < sections.length; i++)
+                  Padding(
+                    padding: EdgeInsets.only(
+                      bottom: i == sections.length - 1
+                          ? 0
+                          : tokens.spacing.card,
+                    ),
+                    child: FushiStaggeredEntrance(index: i, child: sections[i]),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
   Widget _buildPreview(ThemeData theme, ExternalReaderImportPreview preview) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FushiTypography type = context.fushiType;
+    final double? progress = _progressValue;
     return FushiCard(
-      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -213,33 +269,49 @@ class _ExternalReaderImportPageState
               existingBooks: preview.existingBooks,
               statsOnlyBooks: preview.statsOnlyBooks,
             ),
+            style: type.bodyLarge,
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: tokens.spacing.gap / 2),
           Text(
             t.hoshi_import_summary_records(
               records: preview.statRecords,
               positions: preview.positions,
             ),
+            style: type.bodyMedium.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           if (preview.profileName.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 4),
+            SizedBox(height: tokens.spacing.gap / 2),
             Text(
               t.hoshi_import_summary_profile(name: preview.profileName),
-              style: theme.textTheme.bodySmall,
+              style: type.bodySmall.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
-          const SizedBox(height: 16),
+          SizedBox(height: tokens.spacing.card),
           if (_running) ...<Widget>[
-            FushiLinearProgressIndicator(value: _progressValue),
+            // 进度：Display 大数字百分比 + M3E 波浪进度条。
+            if (progress != null)
+              Text(
+                '${(progress * 100).floor()}%',
+                style: type.displaySmallEmphasized.tabular.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            SizedBox(height: tokens.spacing.gap),
+            FushiLinearProgressIndicator(value: progress, minHeight: 8),
             if (_progressLabel != null) ...<Widget>[
-              const SizedBox(height: 8),
+              SizedBox(height: tokens.spacing.gap),
               Text(
                 _progressLabel!,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
+                style: type.bodyMedium,
               ),
             ],
-            const SizedBox(height: 8),
+            SizedBox(height: tokens.spacing.gap),
             Align(
               alignment: AlignmentDirectional.centerEnd,
               child: FushiTextButton(
@@ -250,9 +322,14 @@ class _ExternalReaderImportPageState
               ),
             ),
           ] else
-            FushiFilledButton(
-              onPressed: _runImport,
-              child: Text(t.hoshi_import_run_start),
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: FushiFilledButton.icon(
+                size: FushiButtonSize.m,
+                onPressed: _runImport,
+                icon: const FushiIcon(FushiIcons.download),
+                label: Text(t.hoshi_import_run_start),
+              ),
             ),
         ],
       ),
@@ -260,70 +337,98 @@ class _ExternalReaderImportPageState
   }
 
   Widget _buildReport(ThemeData theme, ExternalReaderImportReport report) {
-    return FushiCard(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Text(
-            report.cancelled
-                ? t.hoshi_import_result_cancelled
-                : t.hoshi_import_result_done,
-            style: theme.textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            t.hoshi_import_result_books(
-              imported: report.booksImported,
-              matched: report.booksMatched,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            t.hoshi_import_result_stats(
-              sessions: report.sessionsImported,
-              days: report.daysImported,
-              positions: report.positionsWritten,
-            ),
-          ),
-          if (report.legacyRecordsSkipped > 0) ...<Widget>[
-            const SizedBox(height: 4),
-            Text(
-              t.hoshi_import_result_legacy_skipped(
-                count: report.legacyRecordsSkipped,
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FushiTypography type = context.fushiType;
+    final FushiCardTone tone = report.cancelled
+        ? FushiCardTone.tertiary
+        : FushiCardTone.primary;
+    final Color? onTone = fushiCardToneColors(context, tone)?.onContainer;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        // 结果：完成 = primary 色块，被取消 = tertiary 色块。
+        FushiCard(
+          tone: tone,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  FushiIcon(
+                    report.cancelled ? FushiIcons.info : FushiIcons.success,
+                  ),
+                  SizedBox(width: tokens.spacing.gap),
+                  Expanded(
+                    child: Text(
+                      report.cancelled
+                          ? t.hoshi_import_result_cancelled
+                          : t.hoshi_import_result_done,
+                      style: type.titleLargeEmphasized.copyWith(color: onTone),
+                    ),
+                  ),
+                ],
               ),
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
-          if (report.segmentsSuppressedByDeletion > 0) ...<Widget>[
-            const SizedBox(height: 4),
-            Text(
-              t.hoshi_import_result_deleted_skipped(
-                count: report.segmentsSuppressedByDeletion,
-              ),
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
-          if (report.failures.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 12),
-            Text(
-              t.hoshi_import_result_failed(count: report.failures.length),
-              style: TextStyle(color: theme.colorScheme.error),
-            ),
-            for (final ExternalReaderImportFailure failure in report.failures)
-              FushiListItem(
-                density: FushiListDensity.compact,
-                leading: FushiIcon(
-                  Icons.error_outline,
-                  color: theme.colorScheme.error,
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                t.hoshi_import_result_books(
+                  imported: report.booksImported,
+                  matched: report.booksMatched,
                 ),
-                title: Text(failure.title),
-                subtitle: Text(failure.reason),
+                style: type.bodyLarge.copyWith(color: onTone),
+              ),
+              SizedBox(height: tokens.spacing.gap / 2),
+              Text(
+                t.hoshi_import_result_stats(
+                  sessions: report.sessionsImported,
+                  days: report.daysImported,
+                  positions: report.positionsWritten,
+                ),
+                style: type.bodyMedium.copyWith(color: onTone),
+              ),
+              if (report.legacyRecordsSkipped > 0) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  t.hoshi_import_result_legacy_skipped(
+                    count: report.legacyRecordsSkipped,
+                  ),
+                  style: type.bodySmall.copyWith(color: onTone),
+                ),
+              ],
+              if (report.segmentsSuppressedByDeletion > 0) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  t.hoshi_import_result_deleted_skipped(
+                    count: report.segmentsSuppressedByDeletion,
+                  ),
+                  style: type.bodySmall.copyWith(color: onTone),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (report.failures.isNotEmpty) ...<Widget>[
+          SizedBox(height: tokens.spacing.card),
+          FushiSectionTitle.group(
+            t.hoshi_import_result_failed(count: report.failures.length),
+            padding: EdgeInsets.zero,
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          for (int i = 0; i < report.failures.length; i++)
+            FushiGroupedListItem(
+              index: i,
+              count: report.failures.length,
+              child: FushiListItem(
+                leading: const FushiListLeadingIcon(
+                  FushiIcons.error,
+                  tone: FushiCardTone.error,
+                ),
+                title: Text(report.failures[i].title),
+                subtitle: Text(report.failures[i].reason),
                 titleMaxLines: 2,
               ),
-          ],
+            ),
         ],
-      ),
+      ],
     );
   }
 }

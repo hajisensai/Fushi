@@ -7,29 +7,49 @@ void main() {
     // TODO-590 batch11：两套 controls 主题已搬到 video_fushi/controls_theme.part.dart，
     // 读「合并语料」（主壳 + 全部 part）才能命中它们 + 全文计数仍覆盖主题体内的引用。
     final String source = readVideoFushiSource();
+    final String compact = source.replaceAll(RegExp(r'\s+'), '');
 
     // 两套 media_kit controls 主题方法体区间（桌面 + 移动），用于把「主题构造器参数」类
     // 计数限定在主题里——BUG-238 让 _subtitleControlsBottomReserve 也用了同名命名参数
     // `buttonBarHeight:`，全文件裸计数会被它污染（2→3），故 theme 参数按区间内计数。
     final int themesStart = source.indexOf(
-        'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(');
+      'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(',
+    );
     // 搬出后主题是 controls_theme.part 的末两方法，原终点 _buildVideoControlButton 在主壳、
     // 排到了它们之前（合并语料里 part 整体追加在主壳后），故改用 part 顶格 extension 闭合
     // `\n}` 作终点——它紧随末方法 _mobileControlsTheme，恰涵盖桌面 + 移动两套主题。
     final int themesEnd = source.indexOf('\n}', themesStart);
     expect(themesStart, greaterThanOrEqualTo(0));
     expect(themesEnd, greaterThan(themesStart));
-    final String themes = source.substring(themesStart, themesEnd);
+    // BUG-3062：移动主题的 seekBarBottom 改由纯函数 videoSeekBarContainerBottom(...) 算，
+    // 它也有同名命名参数 `buttonBarHeight:`（同 BUG-238 的污染形态）——那是几何函数
+    // 入参、不是主题构造器参数，计数前把这段调用整体剥掉。
+    final String themes = source
+        .substring(themesStart, themesEnd)
+        .replaceAll(RegExp(r'videoSeekBarContainerBottom\([^;]*\);'), '');
+    expect(
+      source.substring(themesStart, themesEnd),
+      contains('videoSeekBarContainerBottom('),
+      reason: '剥离规则须仍命中真实调用，否则这段豁免已过期',
+    );
 
     // 尺寸基线常量(界面缩放×1.0 时的值)保持 56/32/36(TODO-067 未改基线数值)。
     expect(
-        source, contains('static const double _videoButtonBarHeightBase = 56'));
+      source,
+      contains('static const double _videoButtonBarHeightBase = 56'),
+    );
     expect(
-        source, contains('static const double _videoControlIconSizeBase = 32'));
-    expect(source,
-        contains('static const double _videoPlayPauseIconSizeBase = 36'));
-    expect(source,
-        contains('static const double _videoControlTitleFontSizeBase = 16'));
+      source,
+      contains('static const double _videoControlIconSizeBase = 32'),
+    );
+    expect(
+      source,
+      contains('static const double _videoPlayPauseIconSizeBase = 36'),
+    );
+    expect(
+      source,
+      contains('static const double _videoControlTitleFontSizeBase = 16'),
+    );
     // UI 巡检 PR-4：标题样式不再吃 ColorScheme（chrome 固定亮色），字号仍随缩放。
     expect(source, contains('TextStyle _videoControlTitleStyle()'));
 
@@ -38,19 +58,33 @@ void main() {
     // 否则控制条不吃缩放)。撤掉任一 * _videoUiScale 即转红。
     expect(
       source,
-      contains(
-          'double get _videoButtonBarHeight => _videoButtonBarHeightBase * _videoUiScale'),
+      matches(
+        RegExp(
+          r'double get _videoButtonBarHeight\s*=>\s*'
+          r'\(_appleChrome\s*\?\s*_videoButtonBarHeightBase\s*:\s*'
+          r'_videoM3eButtonBarHeightBase\)\s*\*\s*_videoUiScale\s*;',
+        ),
+      ),
       reason: 'button bar height must follow appUiScale (TODO-067)',
     );
     expect(
-      source,
+      compact,
       contains(
-          'double get _videoControlIconSize => _videoControlIconSizeBase * _videoUiScale'),
+        'doubleget_videoControlIconSize=>'
+        '_videoControlIconSizeBase*_videoUiScale*'
+        '(_appleChrome?'
+        '_videoAppleControlIconSizeBase/_videoControlIconSizeBase:1.0);',
+      ),
       reason: 'control icon size must follow appUiScale (TODO-067)',
     );
     expect(
-      source,
-      contains('_videoPlayPauseIconSizeBase * _videoUiScale'),
+      compact,
+      contains(
+        'doubleget_videoPlayPauseIconSize=>'
+        '_videoPlayPauseIconSizeBase*_videoUiScale*'
+        '(_appleChrome?'
+        '_videoApplePlayPauseIconSizeBase/_videoPlayPauseIconSizeBase:1.0);',
+      ),
       reason: 'play/pause icon size must follow appUiScale (TODO-067)',
     );
     expect(
@@ -70,15 +104,19 @@ void main() {
       reason:
           'desktop+mobile position indicators must scale time text by appUiScale (TODO-128)',
     );
-    final int indicatorStart =
-        source.indexOf('Widget _bottomPositionIndicator(');
+    final int indicatorStart = source.indexOf(
+      'Widget _bottomPositionIndicator(',
+    );
     expect(indicatorStart, greaterThanOrEqualTo(0));
     final String indicator = source.substring(
       indicatorStart,
       source.indexOf('\n  }\n', indicatorStart),
     );
     expect(indicator, contains('fontSize: 12.0 * _videoUiScale'));
-    expect(indicator, contains('MaterialDesktopPositionIndicator(style: style)'));
+    expect(
+      indicator,
+      contains('MaterialDesktopPositionIndicator(style: style)'),
+    );
     expect(indicator, contains('MaterialPositionIndicator(style: style)'));
     expect(
       source,
@@ -119,18 +157,24 @@ void main() {
     expect(source, isNot(contains('iconSize: 36')));
     expect(
       source,
-      isNot(contains(
-          'style: const TextStyle(color: Colors.white, fontSize: 16)')),
+      isNot(
+        contains('style: const TextStyle(color: Colors.white, fontSize: 16)'),
+      ),
     );
 
     // TODO-067:左下快进快退用左右镜像对称、平行的 fast_rewind/forward(实心双三角),
     // 取代视觉重心偏移的 replay_10/forward_10(带数字「10」圆弧箭头,显歪)。
-    expect(source, isNot(contains('Icons.replay_10')),
-        reason:
-            'lopsided replay_10 replaced by parallel fast_rewind (TODO-067)');
-    expect(source, isNot(contains('Icons.forward_10')),
-        reason:
-            'lopsided forward_10 replaced by parallel fast_forward (TODO-067)');
+    expect(
+      source,
+      isNot(contains('Icons.replay_10')),
+      reason: 'lopsided replay_10 replaced by parallel fast_rewind (TODO-067)',
+    );
+    expect(
+      source,
+      isNot(contains('Icons.forward_10')),
+      reason:
+          'lopsided forward_10 replaced by parallel fast_forward (TODO-067)',
+    );
     // BUG-257：桌面 + 移动底栏合并为单一 _centeredBottomControlBar(desktop:)，故并行
     // fast_rewind/forward 在底栏只出现一次（不再 per-theme 重复）。守卫意图（用对称图标、
     // 不用显歪的 replay_10/forward_10）仍由上面的 isNot(replay_10/forward_10) + 此处存在性守住。
@@ -156,15 +200,17 @@ void main() {
     );
   });
 
-  test('fullscreen video route is neutralized like the windowed video page',
-      () {
+  test('fullscreen video route is neutralized like the windowed video page', () {
     // _pushNeutralizedVideoFullscreen / _buildFullscreenButton 仍在主壳（合并语料前段），
     // 此切片相对顺序不变；统一读合并语料即可。
     final String source = readVideoFushiSource();
 
-    expect(source, contains('Future<void> _pushNeutralizedVideoFullscreen('),
-        reason:
-            'media_kit default fullscreen route is outside VideoFushiPage.neutralized; Hibiki must push its own neutralized route');
+    expect(
+      source,
+      contains('Future<void> _pushNeutralizedVideoFullscreen('),
+      reason:
+          'media_kit default fullscreen route is outside VideoFushiPage.neutralized; Hibiki must push its own neutralized route',
+    );
     final int helper = source.indexOf(
       'Future<void> _pushNeutralizedVideoFullscreen(',
     );
@@ -173,20 +219,34 @@ void main() {
     expect(end, greaterThan(helper));
     final String helperBody = source.substring(helper, end);
 
-    expect(helperBody, contains('FushiAppUiScaleNeutralizer('),
-        reason: 'fullscreen route must cancel the app-wide UI scale too');
-    expect(helperBody, contains('VideoStateInheritedWidget('),
-        reason: 'fullscreen route must preserve media_kit video state');
-    expect(helperBody, contains('FullscreenInheritedWidget('),
-        reason:
-            'fullscreen controls must still see media_kit fullscreen context');
+    expect(
+      helperBody,
+      contains('FushiAppUiScaleNeutralizer('),
+      reason: 'fullscreen route must cancel the app-wide UI scale too',
+    );
+    expect(
+      helperBody,
+      contains('VideoStateInheritedWidget('),
+      reason: 'fullscreen route must preserve media_kit video state',
+    );
+    expect(
+      helperBody,
+      contains('FullscreenInheritedWidget('),
+      reason: 'fullscreen controls must still see media_kit fullscreen context',
+    );
     expect(helperBody, contains('width: null'));
     expect(helperBody, contains('height: null'));
-    expect(source, contains('toggleFullscreenOnDoublePress: false'),
-        reason:
-            'package default double-click route is unneutralized; Hibiki should replace it with its own double-click handler');
-    expect(source, contains('void _handleVideoPointerUp('),
-        reason: 'double-click fullscreen must remain available');
+    expect(
+      source,
+      contains('toggleFullscreenOnDoublePress: false'),
+      reason:
+          'package default double-click route is unneutralized; Hibiki should replace it with its own double-click handler',
+    );
+    expect(
+      source,
+      contains('void _handleVideoPointerUp('),
+      reason: 'double-click fullscreen must remain available',
+    );
     expect(source, isNot(contains('const MaterialDesktopFullscreenButton()')));
     expect(source, isNot(contains('const MaterialFullscreenButton()')));
     expect(

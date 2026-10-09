@@ -1,12 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 // TODO-1088: capturing and binding a mouse button in the shortcut assignment
@@ -235,7 +236,7 @@ void main() {
 
     expect(find.text(t.shortcut_mouse_right), findsOneWidget);
     expect(find.byKey(const Key('shortcut_add_mouse')), findsNothing);
-    await tester.tap(find.byIcon(Icons.close).first);
+    await tester.tap(find.byIcon(FushiIcons.close).first);
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('OK').last);

@@ -16,7 +16,8 @@ String _read(String relative) {
   final File f = File(relative);
   if (!f.existsSync()) {
     throw StateError(
-        'missing source: $relative (cwd=${Directory.current.path})');
+      'missing source: $relative (cwd=${Directory.current.path})',
+    );
   }
   return f.readAsStringSync();
 }
@@ -43,8 +44,9 @@ String _methodBody(String source, String signature) {
 }
 
 void main() {
-  final String homeVideoSrc =
-      _read('lib/src/pages/implementations/home_video_page.dart');
+  final String homeVideoSrc = _read(
+    'lib/src/pages/implementations/home_video_page.dart',
+  );
 
   group('视频 tab（HomeVideoPage）长按菜单 + 标签', () {
     final String src = homeVideoSrc;
@@ -54,41 +56,59 @@ void main() {
       // 都必须继续走 _showVideoMenu。
       expect(src.contains('_showVideoMenu(book)'), isTrue, reason: '长按必须弹菜单');
       // 旧 bug：onLongPress 与 onTap 一样调 _open。
-      expect(src.contains('onLongPress: () => _open(book)'), isFalse,
-          reason: '长按不能再只是打开视频（无菜单）');
+      expect(
+        src.contains('onLongPress: () => _open(book)'),
+        isFalse,
+        reason: '长按不能再只是打开视频（无菜单）',
+      );
     });
 
     test('选择态长按禁用、点击改切换勾选（批量选择，TODO-063）', () {
       // 折掉换行/缩进后比对，免得 dart format 的换行位置成为守卫的隐形前提。
       final String flat = src.replaceAll(RegExp(r'\s+'), ' ');
       expect(
-          flat.contains(
-              'onLongPress: _selectionMode ? null : () => _showVideoMenu(book)'),
-          isTrue,
-          reason: '未进选择态时触屏/桌面长按都弹菜单，选择态才禁用');
-      expect(flat.contains('touchLongPressSelects'), isFalse,
-          reason: '不得再按触屏平台把未进入选择态的长按改判成多选');
+        flat.contains(
+          'onLongPress: _selectionMode ? null : () => _showVideoMenu(book)',
+        ),
+        isTrue,
+        reason: '未进选择态时触屏/桌面长按都弹菜单，选择态才禁用',
+      );
+      expect(
+        flat.contains('touchLongPressSelects'),
+        isFalse,
+        reason: '不得再按触屏平台把未进入选择态的长按改判成多选',
+      );
       // BUG-2458：多选分发收成唯一入口 [_dispatchCardTap]（本地 / 远端、网格 / 列表
       // 散卡全走它），选择态切换勾选在分发器里做，卡片只报自己的 selectionKey。
-      expect(flat.contains('_dispatchCardTap( selectionKey: book.bookUid'),
-          isTrue,
-          reason: '本地卡把 bookUid 交给统一分发');
       expect(
-          flat.contains('if (_selectionMode) { _toggleSelection(selectionKey);'),
-          isTrue,
-          reason: '选择态点卡片切换勾选（分发器唯一实现）');
+        RegExp(
+          r'_dispatchCardTap\(\s*selectionKey:\s*book\.bookUid\b',
+        ).hasMatch(src),
+        isTrue,
+        reason: '本地卡把 bookUid 交给统一分发',
+      );
       expect(
-          RegExp(r'_toggleSelection\(').allMatches(src).length,
-          2,
-          reason: '_toggleSelection 只应有声明 + 分发器一处调用；'
-              '卡片里再出现直调 = 又抄了一份 handleTap（远端卡漏抄的老路）');
+        flat.contains('if (_selectionMode) { _toggleSelection(selectionKey);'),
+        isTrue,
+        reason: '选择态点卡片切换勾选（分发器唯一实现）',
+      );
+      expect(
+        RegExp(r'_toggleSelection\(').allMatches(src).length,
+        2,
+        reason:
+            '_toggleSelection 只应有声明 + 分发器一处调用；'
+            '卡片里再出现直调 = 又抄了一份 handleTap（远端卡漏抄的老路）',
+      );
     });
 
     test('未进选择态的长按不按平台改判，也不再叠加临时 ⋮ 按钮', () {
       final String flat = src.replaceAll(RegExp(r'\s+'), ' ');
       expect(flat.contains('isTouchSelectionPlatform'), isFalse);
-      expect(flat.contains('ShelfCardMenuButton'), isFalse,
-          reason: '恢复长按菜单后不需要在封面上永久叠加替代入口');
+      expect(
+        flat.contains('ShelfCardMenuButton'),
+        isFalse,
+        reason: '恢复长按菜单后不需要在封面上永久叠加替代入口',
+      );
     });
 
     test('长按面板复用封面背景 frame，不再用 bottom sheet', () {
@@ -97,11 +117,17 @@ void main() {
         'void _showVideoMenu(VideoBookRow book)',
       );
 
-      expect(menuBody.contains('showModalBottomSheet'), isFalse,
-          reason: '_showVideoMenu 不得再弹旧底部小栏');
+      expect(
+        menuBody.contains('showModalBottomSheet'),
+        isFalse,
+        reason: '_showVideoMenu 不得再弹旧底部小栏',
+      );
       expect(menuBody.contains('showAppDialog'), isTrue);
-      expect(menuBody.contains('MediaItemDialogFrame'), isTrue,
-          reason: '视频 tab 长按必须复用 TODO-455 的共享封面背景 frame');
+      expect(
+        menuBody.contains('MediaItemDialogFrame'),
+        isTrue,
+        reason: '视频 tab 长按必须复用 TODO-455 的共享封面背景 frame',
+      );
     });
 
     test('长按面板含五项管理动作且不含播放动作', () {
@@ -115,8 +141,11 @@ void main() {
       expect(menuBody.contains('_pickCover(book)'), isTrue);
       expect(menuBody.contains('_pickSubtitle(book)'), isTrue);
       expect(menuBody.contains('_confirmDelete(book)'), isTrue);
-      expect(menuBody.contains('_open(book)'), isFalse,
-          reason: '播放仍由卡片点击负责，长按面板不放播放按钮');
+      expect(
+        menuBody.contains('_open(book)'),
+        isFalse,
+        reason: '播放仍由卡片点击负责，长按面板不放播放按钮',
+      );
       expect(menuBody.contains('dialog_read'), isFalse);
     });
 
@@ -137,30 +166,39 @@ void main() {
         // （旧写法在安卓会被 MimeTypeMap 丢掉 ass/ssa，用户只能选到 srt）。
         // 这里守的仍是「白名单没被放宽」，不是写法本身。
         pickerBody.contains(
-            "allowedExtensions: const <String>{'srt', 'vtt', 'ass', 'ssa'}"),
+          "allowedExtensions: const <String>{'srt', 'vtt', 'ass', 'ssa'}",
+        ),
         isTrue,
         reason: 'label polish must not relax the actual subtitle file picker',
       );
-      expect(i18n.contains('"video_import_pick_subtitle": "Pick subtitle"'),
-          isTrue);
+      expect(
+        i18n.contains('"video_import_pick_subtitle": "Pick subtitle"'),
+        isTrue,
+      );
       expect(i18n.contains('Pick subtitle (srt/vtt/ass)'), isFalse);
     });
 
-    test('编辑标签进入共享 TagPickerPage（video MediaRef 分支）', () {
-      // 命名统一 Phase 3.3：TagPickerPage 收口为单 MediaRef 目标参数。
+    test('编辑标签进入共享标签选择器（video MediaRef 分支）', () {
+      // 共享 showTagPicker（TagTargets 的 MediaRef 目标）；与书 / 游戏 / 合集同一张。
+      expect(src.contains('showTagPicker('), isTrue);
       expect(
-        src.contains(
-            'media: MediaRef(kind: MediaKind.video, entryKey: book.bookUid)'),
+        src.contains('MediaRef(kind: MediaKind.video, entryKey: book.bookUid)'),
         isTrue,
       );
     });
 
     test('卡片渲染所挂标签 + 顶部标签筛选栏', () {
-      expect(src.contains('videoBookTagMapProvider'), isTrue,
-          reason: '卡片标签来自共享 provider');
+      expect(
+        src.contains('videoBookTagMapProvider'),
+        isTrue,
+        reason: '卡片标签来自共享 provider',
+      );
       expect(src.contains('_buildTagFilterBar'), isTrue, reason: '顶部要有标签筛选栏');
-      expect(src.contains('filteredVideoBookUidsProvider'), isTrue,
-          reason: '网格按标签筛选');
+      expect(
+        src.contains('filteredVideoBookUidsProvider'),
+        isTrue,
+        reason: '网格按标签筛选',
+      );
     });
 
     test('视频拖拽加标签成功提示使用视频文案', () {
@@ -170,8 +208,11 @@ void main() {
       );
 
       expect(addVideoTagBody.contains('tag_added_to_video'), isTrue);
-      expect(addVideoTagBody.contains('tag_added_to_book'), isFalse,
-          reason: '视频加标签成功不能复用“书籍”文案');
+      expect(
+        addVideoTagBody.contains('tag_added_to_book'),
+        isFalse,
+        reason: '视频加标签成功不能复用“书籍”文案',
+      );
     });
   });
 }

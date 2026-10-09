@@ -2,32 +2,45 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart' as guard;
+
+String _body(String source, String name) {
+  final String? body = guard.topLevelFunctionBody(source, name);
+  expect(body, isNotNull, reason: 'missing production method $name');
+  return guard.compactCode(body!).replaceAll(',)', ')');
+}
+
 /// Native media/WebView callbacks cannot be exercised in a headless unit
 /// test. Guard their shared persistence boundaries as well as the runtime
 /// manga database test in manga_fushi_page_test.dart.
 void main() {
   final String video = File(
     'lib/src/pages/implementations/video_fushi_page.dart',
-  ).readAsStringSync();
+  ).readAsStringSync().replaceAll('\r\n', '\n');
   final String manga = File(
     'lib/src/media/manga/reader/manga_fushi_page.dart',
-  ).readAsStringSync();
+  ).readAsStringSync().replaceAll('\r\n', '\n');
   final String episode = File(
     'lib/src/pages/implementations/video_fushi/episode.part.dart',
-  ).readAsStringSync();
+  ).readAsStringSync().replaceAll('\r\n', '\n');
 
-  test('video persistence and study collection reject review before writing',
-      () {
-    for (final String signature in <String>[
-      'Future<void> _persistPosition(String uid, int posMs) async {',
-      'Future<void> _persistRemotePosition(String uid, int posMs) async {',
-      'void _ensureWatchTracker(VideoPlayerController controller, String title) {',
+  test('video persistence and study collection reject review before writing', () {
+    for (final String method in <String>[
+      '_persistPosition',
+      '_persistRemotePosition',
     ]) {
       expect(
-        video,
-        contains('$signature\n    if (_sourceReviewActive) return;'),
+        _body(video, method),
+        startsWith('{if(_sourceReviewActive)return;'),
+        reason: 'review must return before any persistence side effect',
       );
     }
+    expect(
+      _body(video, '_ensureWatchTracker'),
+      startsWith('{if(_sourceReviewActive||_discLearningBlocked)return;'),
+      reason:
+          'review and unbound disc menus both reject study collection before creating a tracker',
+    );
     final int stop = video.indexOf(
       'Future<void> _reportRemotePlaybackStopped(',
     );
@@ -74,11 +87,15 @@ void main() {
   test(
     'review completion never advances and manual episode changes keep session',
     () {
+      final String completion = _body(episode, '_handlePlaybackCompleted');
       expect(
-        episode,
-        contains(
-          'void _handlePlaybackCompleted() {\n    if (_sourceReviewActive) return;',
+        completion,
+        startsWith(
+          '{if(_controller?.isBlurayNavigationSession==true)return;'
+          'if(_sourceReviewActive)return;',
         ),
+        reason:
+            'disc VM and review completion must return before ordinary auto-advance',
       );
       expect(episode, contains('sourceReviewSession: _sourceReviewSession'));
     },
@@ -133,11 +150,12 @@ void main() {
     expect(play, greaterThan(tracker));
     expect(flush, greaterThan(play));
     expect(
-      video,
+      _body(video, '_applyLoad'),
       contains(
-        '_ensureWatchTracker(controller, title);\n'
-        '    _playAfterSourceReviewIfReady();',
+        '_ensureWatchTracker(controller,title);_playAfterSourceReviewIfReady();',
       ),
+      reason:
+          'load completion starts study before consuming the pending continue action',
     );
   });
 

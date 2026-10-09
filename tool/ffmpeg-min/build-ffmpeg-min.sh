@@ -60,19 +60,19 @@ DAV1D_REF="${DAV1D_REF:-1.5.1}"
 LIBVPX_REF="${LIBVPX_REF:-v1.15.0}"
 OPUS_REF="${OPUS_REF:-v1.5.2}"
 
-# BUG-1668：macOS 目标架构（`x86_64` / `arm64`），默认跟随构建机。
+# macOS 目标架构。macOS 版只出 Apple Silicon（arm64），不再支持 Intel Mac，所以
+# 默认就是 arm64，而且只接受 arm64（ffmpeg-min.yml 的 macOS job 显式传它）。
 #
-# 为什么必须能指定：Flutter 的 `flutter build macos --release` 产出的是 **universal**
-# （x86_64 + arm64）app，而本脚本历来只编构建机自己的架构。CI 的 macOS runner 是
-# Apple Silicon，于是随包的 ffmpeg/ffprobe 是 arm64-only 瘦二进制。在 **Intel Mac**
-# 上后果是：app 本体照常启动、查词照常能用，但每次 `Process.start('…/ffmpeg')` 都
-# 被内核以 `Bad CPU type in executable`(EBADARCH) 拒掉 → 制卡音频/封面、内封字幕
-# 抽取、片段导出全线失效。ffmpeg-min.yml 与 release-desktop.yml 的 `ffmpeg -version`
-# 硬门都跑在 arm64 runner 上，对这个缺口天然免疫，所以它一路溜到了用户机器上。
-#
-# 用法：单独跑一次只出一个架构；两个架构各跑一次到不同 OUT，再 `lipo -create`
-# 合成 universal（见 .github/workflows/ffmpeg-min.yml 的 macOS job）。
-MACOS_ARCH="${MACOS_ARCH:-$(uname -m)}"
+# BUG-1668 的教训：目标架构必须显式钉死，不能靠「构建机恰好是什么」——当年 app 是
+# universal 而随包 ffmpeg 是 arm64-only，Intel Mac 上 helper 被内核以 EBADARCH 拒掉。
+# 现在 app 本体与 helper 都只有 arm64，release-desktop.yml 按 app 本体的 `lipo -archs`
+# 核对两者一致。下面依赖库里的 `-arch` / `--host` / cross file 仍按 MACOS_ARCH 参数化，
+# 在 arm64 构建机上编 arm64 时走的是同架构路径。
+MACOS_ARCH="${MACOS_ARCH:-arm64}"
+if [ "$(uname -s)" = "Darwin" ] && [ "$MACOS_ARCH" != "arm64" ]; then
+  echo "[ffmpeg-min] FATAL: macOS 版只出 arm64（不再支持 Intel Mac），MACOS_ARCH=$MACOS_ARCH 不受支持" >&2
+  exit 1
+fi
 
 # BUG-1443：macOS 上把 libx264 / SVT-AV1 / libwebp / dav1d 从源码编成**静态库**，
 # 装进一个私有 prefix，让 ffmpeg 只从那里取。

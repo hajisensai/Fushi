@@ -14,7 +14,7 @@
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';

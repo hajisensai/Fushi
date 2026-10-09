@@ -2,9 +2,10 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/models/fushi_reader_palette.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -42,8 +43,11 @@ void main() {
       );
       expect(c.bg, const Color(0xFFFFF8E1));
       expect(c.selection, const Color(0x5500AA00));
-      // 链接没覆盖：跟随 scheme.primary。
-      expect(c.link, darkScheme().primary);
+      // 链接没覆盖：跟随主题派生的 M3E 阅读配色（primary tone 80）。
+      expect(
+        c.link,
+        fushiReaderPaletteFor(darkScheme(), Brightness.dark).link,
+      );
     });
 
     test('只覆盖背景时字色按背景亮度取黑/白、dark 跟随最终纸色', () {
@@ -90,7 +94,10 @@ void main() {
           link: null,
         ),
       );
-      expect(c.bg, darkScheme().surface);
+      expect(
+        c.bg,
+        fushiReaderPaletteFor(darkScheme(), Brightness.dark).background,
+      );
     });
   });
 

@@ -1,10 +1,17 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/video_m3e_chrome.dart';
+import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
+import 'package:fushi/src/reader/reader_panel_kit.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+
+// 面板内容（视频页各 part 的字幕轨 / 音轨 / 画质 / 章节）经本文件拿到面板中性
+// 主题的判据与配色 helper。
+export 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 
 /// 视频页浮层面板（设置 / 倍速 / 章节 / 画质 / 字幕抽屉）的统一表面。
 ///
@@ -14,9 +21,11 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 ///   [fushiGlassSettings] 回落实色。圆角桌面 18、触屏 28（超椭圆）。面板里的
 ///   分组卡换成一层半透明系统灰（[videoPanelAppleColors]），在玻璃上浮起而不是
 ///   挖出一块实色黑洞。
-/// - MD3：Material 3 Expressive 的浮动侧边面板——实色 surfaceContainerLow、
-///   圆角 28、轻阴影。不再半透明：设置面板满是小字，压在跳动的画面上读不清。
-///   墨水屏 surfaceContainerLow 塌成底色，补一圈 outline 描边切出面板。
+/// - MD3（M3 Expressive）：与播放器悬浮胶囊 / 音量倍速浮层同一层无色相中性
+///   深色表面（[videoM3eFloatingColor]，#2D2D2D @86%），圆角 28、轻阴影；面板
+///   内部读中性主题（[videoM3ePanelTheme]：灰阶容器、白字、强调色仍是 app 主色），
+///   浅色主题下也不再是一块白板压在画面上。墨水屏仍是实色 surfaceContainerLow +
+///   一圈 outline 描边（不半透明、不换配色）。
 class VideoFloatingPanelSurface extends StatelessWidget {
   const VideoFloatingPanelSurface({
     required this.child,
@@ -63,19 +72,37 @@ class VideoFloatingPanelSurface extends StatelessWidget {
       );
     }
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final bool eink = isEinkTheme(context);
-    return Material(
-      key: surfaceKey,
-      color: scheme.surfaceContainerLow,
-      surfaceTintColor: Colors.transparent,
-      shadowColor: scheme.shadow,
-      elevation: eink ? 0 : kFushiFloatingElevation,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(radius),
-        side: eink ? BorderSide(color: scheme.outline) : BorderSide.none,
+    if (isEinkTheme(context)) {
+      return Material(
+        key: surfaceKey,
+        color: scheme.surfaceContainerLow,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: scheme.shadow,
+        elevation: 0,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(radius),
+          side: BorderSide(color: scheme.outline),
+        ),
+        child: child,
+      );
+    }
+    // M3E：中性深色悬浮表面 + 面板中性主题（Theme 包在表面外，表面的
+    // DefaultTextStyle / 图标色同样读白前景）。
+    return Theme(
+      data: videoM3ePanelTheme(Theme.of(context)),
+      child: Material(
+        key: surfaceKey,
+        color: videoM3eFloatingColor(Theme.of(context).colorScheme),
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.black,
+        elevation: kFushiFloatingElevation,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(radius),
+        ),
+        child: child,
       ),
-      child: child,
     );
   }
 }
@@ -128,7 +155,10 @@ FushiAppleColors videoPanelAppleColors(BuildContext context) {
 }
 
 /// 浮层面板的标题：Apple = 17 / 15 号 semibold（iOS sheet 导航标题 / macOS
-/// 检查器标题），MD3 = titleLarge（Expressive 侧边面板标题）。
+/// 检查器标题），MD3 = titleLarge 加粗（M3E 侧边面板标题，强调层级）。
+///
+/// 读的是 [context] 的主题——M3E 面板内容在 [VideoFloatingPanelSurface] 的中性
+/// 主题里，所以调用点要用表面**内部**的 context（否则浅色主题下标题是黑字）。
 TextStyle? videoPanelTitleStyle(BuildContext context) {
   if (isGlassDesign(context)) {
     return TextStyle(
@@ -138,7 +168,9 @@ TextStyle? videoPanelTitleStyle(BuildContext context) {
       color: appleColorsOf(context).label,
     );
   }
-  return Theme.of(context).textTheme.titleLarge;
+  return Theme.of(context).textTheme.titleLarge?.copyWith(
+        fontWeight: FontWeight.w700,
+      );
 }
 
 /// 底部半透明**抽屉**：与 [VideoTranslucentSidePanel] 同一套配色/圆角/焦点纪律，只是
@@ -192,8 +224,6 @@ class _VideoTranslucentBottomDrawerState
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme colorScheme = theme.colorScheme;
     final Size screen = MediaQuery.sizeOf(context);
     const double margin = 10.0;
     final double width = (screen.width - margin * 2)
@@ -233,24 +263,32 @@ class _VideoTranslucentBottomDrawerState
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: <Widget>[
-                                Center(
-                                  child: Container(
-                                    width: 36,
-                                    height: 4,
-                                    decoration: BoxDecoration(
-                                      color: glass
-                                          ? appleColorsOf(context).tertiaryLabel
-                                          : colorScheme.outlineVariant,
-                                      borderRadius: borderRadius,
+                                // 拖拽条 / 标题读表面内部的主题（M3E 中性
+                                // 深色面板上是白 / 半透明白，而不是 app 主题色）。
+                                Builder(
+                                  builder: (BuildContext inner) => Center(
+                                    child: Container(
+                                      width: 36,
+                                      height: 4,
+                                      decoration: BoxDecoration(
+                                        color: glass
+                                            ? appleColorsOf(inner).tertiaryLabel
+                                            : Theme.of(inner)
+                                                .colorScheme
+                                                .outline,
+                                        borderRadius: borderRadius,
+                                      ),
                                     ),
                                   ),
                                 ),
                                 const SizedBox(height: 6),
-                                Text(
-                                  widget.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: videoPanelTitleStyle(context),
+                                Builder(
+                                  builder: (BuildContext inner) => Text(
+                                    widget.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: videoPanelTitleStyle(inner),
+                                  ),
                                 ),
                               ],
                             ),
@@ -276,9 +314,11 @@ class _VideoTranslucentBottomDrawerState
                     ),
                   ),
                   if (!_collapsed) ...<Widget>[
-                    // Apple 浮层头部与内容之间不压分隔线（iOS 26 sheet 靠留白
-                    // 分区）；MD3 保留一条细线。
-                    if (!glass) const FushiDividerControl(height: 1),
+                    // 头部与内容之间不压分隔线：Apple（iOS 26 sheet）与 M3E
+                    // （侧边面板标题直接坐在表面上）都靠留白分区；只有墨水屏
+                    // （表面层次塌成同色）保留一条细线。
+                    if (!glass && isEinkTheme(context))
+                      const FushiDividerControl(height: 1),
                     Expanded(child: widget.child),
                   ],
                 ],
@@ -298,6 +338,7 @@ class VideoTranslucentSidePanel extends StatelessWidget {
     this.onClose,
     this.alignment = Alignment.centerRight,
     this.width = 400,
+    this.icon,
     super.key,
   });
 
@@ -306,6 +347,10 @@ class VideoTranslucentSidePanel extends StatelessWidget {
   final VoidCallback? onClose;
   final Alignment alignment;
   final double width;
+
+  /// 页头图标：M3E 下画成标题前的饼干形徽标（primaryContainer 底）；Apple /
+  /// 墨水屏不画（保持原来的纯标题页头）。
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
@@ -348,11 +393,36 @@ class VideoTranslucentSidePanel extends StatelessWidget {
                   // 调用方复用，header 不再渲染关闭按钮。
                   Padding(
                     padding: headerPadding,
-                    child: Text(
-                      title,
-                      maxLines: 2,
-                      softWrap: true,
-                      style: videoPanelTitleStyle(context),
+                    // 页头读表面内部的主题（M3E 中性深色面板上是白字）。
+                    child: Builder(
+                      builder: (BuildContext inner) {
+                        final Widget text = Text(
+                          title,
+                          maxLines: 2,
+                          softWrap: true,
+                          style: videoPanelTitleStyle(inner),
+                        );
+                        final IconData? headerIcon = icon;
+                        if (headerIcon == null ||
+                            !videoM3ePanelNeutral(inner)) {
+                          return text;
+                        }
+                        final ColorScheme cs = Theme.of(inner).colorScheme;
+                        return Row(
+                          children: <Widget>[
+                            ReaderShapeBadge(
+                              icon: headerIcon,
+                              size: 40,
+                              shape: ReaderBadgeShape.cookie9,
+                              color: cs.primaryContainer,
+                              iconColor: cs.onPrimaryContainer,
+                              iconSize: 22,
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(child: text),
+                          ],
+                        );
+                      },
                     ),
                   ),
                   // 标题与内容之间：Apple 不压线（留白分区），MD3 也不压

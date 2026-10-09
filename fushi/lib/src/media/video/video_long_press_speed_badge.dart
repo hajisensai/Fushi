@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/video_apple_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
@@ -50,9 +50,8 @@ class VideoLongPressSpeedBadge extends StatelessWidget {
             fontSize: 15,
             fontWeight: FontWeight.w600,
             height: 1.0,
-            fontFeatures: apple
-                ? const <FontFeature>[FontFeature.tabularFigures()]
-                : null,
+            // 倍速数字随长按变化：两套设计系统都用等宽数字，宽度不跳。
+            fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
           ),
         ),
       ],

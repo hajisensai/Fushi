@@ -374,13 +374,13 @@ void main() {
 
     expect(macosJob, contains('flutter build macos --release'));
     expect(macosJob, contains('ditto -c -k --keepParent'));
-    expect(macosJob, contains(r'fushi-${BUILD_VERSION_NAME}-macos.zip'));
+    expect(macosJob, contains(r'fushi-${BUILD_VERSION_NAME}-macos-arm64.zip'));
 
     expect(iosJob, contains('flutter build ios --release --no-codesign'));
     expect(iosJob, contains('Payload'));
     expect(iosJob, contains(r'fushi-${BUILD_VERSION_NAME}-ios.ipa'));
 
-    expect(publishJob, contains('fushi-*-macos.zip'));
+    expect(publishJob, contains('fushi-*-macos-arm64.zip'));
     expect(publishJob, contains('fushi-*-ios.ipa'));
     expect(
         publishJob, contains('Publish mirror update manifest (Apple assets)'));

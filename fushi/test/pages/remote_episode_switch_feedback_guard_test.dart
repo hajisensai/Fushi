@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-2609 源码守卫：远端（视频源扩展 / 互联 / 媒体服务器）换集的反馈与失败落点。
 ///
 /// 播放页本体在 widget 测试里起不了 libmpv，这些接线只能钉在源码上：
@@ -55,13 +57,21 @@ void main() {
     );
     expect(
       page.contains(
-          'if (switching) _remoteSwitchPhase.value = _VideoLoadPhase.connecting;'),
+        'if (switching) _remoteSwitchPhase.value = _VideoLoadPhase.connecting;',
+      ),
       true,
       reason: '_loadRemoteEpisode 换集时应亮 OSD',
     );
     expect(
-      page.contains('if (mounted && switching && seq == _episodeLoadSeq) {\n'
-          '        _remoteSwitchPhase.value = null;'),
+      compactCode(
+        methodBody(page, 'Future<void> _loadRemoteEpisode('),
+      ).contains(
+        compactCode(
+          'finally { '
+          'if (mounted && switching && seq == _episodeLoadSeq) { '
+          '_remoteSwitchPhase.value = null; } }',
+        ),
+      ),
       true,
       reason: '只清自己这一程的 OSD，且页面已退出（notifier 已 dispose）时不再写它',
     );

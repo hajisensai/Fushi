@@ -3,6 +3,49 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../tool/test_flow/heavy_budget.dart';
 
 void main() {
+  group('withDefaultTestConcurrency', () {
+    test('adds a default to flutter test only', () {
+      expect(
+        withDefaultTestConcurrency(<String>['flutter', 'test', 'a_test.dart']),
+        <String>['flutter', 'test', '--concurrency=4', 'a_test.dart'],
+      );
+      expect(
+        withDefaultTestConcurrency(<String>[
+          'D:/sdk/bin/flutter.bat',
+          'test',
+          'a_test.dart',
+          '--no-pub',
+        ]),
+        <String>[
+          'D:/sdk/bin/flutter.bat',
+          'test',
+          '--concurrency=4',
+          'a_test.dart',
+          '--no-pub',
+        ],
+      );
+      expect(
+        withDefaultTestConcurrency(<String>['fvm', 'flutter', 'test']),
+        <String>['fvm', 'flutter', 'test', '--concurrency=4'],
+      );
+    });
+
+    test('keeps an explicit choice and other commands', () {
+      for (final List<String> argv in <List<String>>[
+        <String>['flutter', 'test', '--concurrency=1', 'a_test.dart'],
+        <String>['flutter', 'test', '--concurrency', '2'],
+        <String>['flutter', 'test', '-j', '2'],
+        <String>['flutter', 'test', '-j2'],
+        <String>['flutter', 'analyze', '--no-pub'],
+        <String>['dart', 'test'],
+        <String>['gradlew', 'test'],
+        <String>[],
+      ]) {
+        expect(withDefaultTestConcurrency(argv), argv);
+      }
+    });
+  });
+
   group('classifyHeavyCommand', () {
     HeavyKind kind(List<String> argv) => classifyHeavyCommand(argv).kind;
 

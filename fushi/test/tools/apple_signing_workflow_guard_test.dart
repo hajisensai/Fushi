@@ -189,20 +189,23 @@ void main() {
     );
   });
 
-  test('App Store Connect JWT 只有一份实现', () {
-    expect(File('${root.path}/tool/asc_api_jwt.rb').existsSync(), isTrue);
-    final String kazumi = File(
-      '${root.path}/tool/sign_kazumi_adhoc.sh',
-    ).readAsStringSync();
+  test('一次性 Kazumi Ad Hoc 签名通道已删除', () {
     expect(
-      kazumi,
-      contains('asc_api_jwt.rb'),
-      reason: 'kazumi 脚本必须复用共享 JWT 实现',
+      File('${root.path}/tool/sign_kazumi_adhoc.sh').existsSync(),
+      isFalse,
+      reason: '给上游 Kazumi IPA 签名的一次性脚本已随通道删除',
     );
     expect(
-      kazumi.contains('alg: "ES256"'),
+      File('${root.path}/tool/asc_api_jwt.rb').existsSync(),
       isFalse,
-      reason: 'JWT 生成不得在 kazumi 脚本里再内联一份',
+      reason: 'JWT 生成器只剩 Kazumi 脚本一个消费方，随之删除',
+    );
+    expect(
+      File(
+        '${root.path}/.github/workflows/release-desktop.yml',
+      ).readAsStringSync().toLowerCase().contains('kazumi'),
+      isFalse,
+      reason: '桌面发布 workflow 不再带 kazumi 输入与 job',
     );
   });
 

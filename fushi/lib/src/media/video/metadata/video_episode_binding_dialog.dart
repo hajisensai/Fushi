@@ -7,7 +7,9 @@
 /// （[FushiDatabase.rebindVideoEpisodeToBook]），不等下一次刮削。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -135,7 +137,9 @@ class _VideoEpisodeBindingDialogState
     )) {
       _episode = _episodes.first.episodeNumber;
     }
+    final ColorScheme cs = Theme.of(context).colorScheme;
     return FushiAlertDialog(
+      icon: const FushiIcon(FushiIcons.link),
       title: Text(t.collection_episode_link_manual),
       content: SizedBox(
         width: 420,
@@ -143,8 +147,13 @@ class _VideoEpisodeBindingDialogState
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Text(t.collection_episode_link_hint),
-            const SizedBox(height: 12),
+            Text(
+              t.collection_episode_link_hint,
+              style: context.fushiType.bodyMedium.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
             FushiDropdownButtonFormField<int>(
               key: const ValueKey<String>('video-episode-link-season'),
               value: _season,
@@ -165,7 +174,7 @@ class _VideoEpisodeBindingDialogState
                 });
               },
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             FushiDropdownButtonFormField<int>(
               key: const ValueKey<String>('video-episode-link-episode'),
               value: _episode,
@@ -196,23 +205,20 @@ class _VideoEpisodeBindingDialogState
       ),
       actions: <Widget>[
         if (widget.canClear)
-          adaptiveDialogAction(
-            context: context,
+          FushiDialogAction(
+            label: t.collection_episode_link_clear,
             onPressed: () =>
                 Navigator.pop(context, const _BindingChoice.clear()),
-            child: Text(t.collection_episode_link_clear),
           ),
-        adaptiveDialogAction(
-          context: context,
+        FushiDialogAction(
+          label: t.dialog_cancel,
           onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_cancel),
         ),
-        adaptiveDialogAction(
-          context: context,
-          isDefaultAction: true,
+        FushiDialogAction(
+          kind: FushiDialogActionKind.primary,
+          label: t.dialog_save,
           onPressed: () =>
               Navigator.pop(context, _BindingChoice.pick((_season, _episode))),
-          child: Text(t.dialog_save),
         ),
       ],
     );

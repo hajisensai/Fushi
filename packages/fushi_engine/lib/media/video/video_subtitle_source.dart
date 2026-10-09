@@ -1014,7 +1014,7 @@ String _subtitleMenuPathKey(String path) {
 ///
 /// 用「内封」而非「内嵌」：容器内封装的软字幕（mkv/mp4 的字幕流）业界叫**内封**；
 /// 「内嵌」在字幕圈指烧进画面像素的硬字幕。早先误用「内嵌」会让用户误判（BUG-122）。
-@visibleForTesting
+/// 同时供本地 ffmpeg 探测与播放器实时轨道列表使用，保持菜单标签一致。
 String embeddedSubtitleTrackLabel(EmbeddedSubtitleTrack track) {
   final List<String> parts = <String>[
     if ((track.language ?? '').isNotEmpty) track.language!,

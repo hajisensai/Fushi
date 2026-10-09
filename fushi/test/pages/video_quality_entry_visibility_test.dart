@@ -7,7 +7,7 @@
 //
 // 这里按用户真实所见断言：渲染真实设置面板 → 切到「播放」分类 → 画质行必须在**尚未解析出
 // 任何档位**时就已经可见、且可点。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/utils.dart';

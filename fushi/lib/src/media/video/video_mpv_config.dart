@@ -40,6 +40,7 @@ class VideoMpvConfig {
     required this.audioPitchCorrection,
     required this.audioChannels,
     required this.normalizeDownmix,
+    required this.audioPassthrough,
     required this.loopFile,
     required this.hdrToneMapping,
     required this.hdrComputePeak,
@@ -69,6 +70,7 @@ class VideoMpvConfig {
     audioPitchCorrection: true,
     audioChannels: 'auto-safe',
     normalizeDownmix: false,
+    audioPassthrough: false,
     loopFile: false,
     hdrToneMapping: 'auto',
     hdrComputePeak: 'auto',
@@ -132,6 +134,14 @@ class VideoMpvConfig {
   /// 下混时做响度归一化（mpv 默认 no）。
   final bool normalizeDownmix;
 
+  /// 杜比 / DTS 码流直通（mpv `audio-spdif`，见 [kAudioPassthroughCodecs]）。
+  ///
+  /// **默认关，且不做「自动」**：mpv 无从得知 HDMI / 光纤另一头的功放能不能解这些
+  /// 码流——系统音频端点照样报「支持多声道」，猜错的代价是无声或满屏噪音。关着时
+  /// mpv 自己解码成多声道 PCM，任何设备都出声，5.1 / 7.1 照样环绕（见
+  /// [resolveAudioChannels]）；只有想让功放亮 Atmos / DTS:X 灯的用户才需要打开。
+  final bool audioPassthrough;
+
   /// 单文件循环。
   final bool loopFile;
 
@@ -184,6 +194,7 @@ class VideoMpvConfig {
     bool? audioPitchCorrection,
     String? audioChannels,
     bool? normalizeDownmix,
+    bool? audioPassthrough,
     bool? loopFile,
     String? hdrToneMapping,
     String? hdrComputePeak,
@@ -211,6 +222,7 @@ class VideoMpvConfig {
         audioPitchCorrection: audioPitchCorrection ?? this.audioPitchCorrection,
         audioChannels: audioChannels ?? this.audioChannels,
         normalizeDownmix: normalizeDownmix ?? this.normalizeDownmix,
+        audioPassthrough: audioPassthrough ?? this.audioPassthrough,
         loopFile: loopFile ?? this.loopFile,
         hdrToneMapping: hdrToneMapping ?? this.hdrToneMapping,
         hdrComputePeak: hdrComputePeak ?? this.hdrComputePeak,
@@ -240,6 +252,7 @@ class VideoMpvConfig {
         'audioPitchCorrection': c.audioPitchCorrection,
         'audioChannels': c.audioChannels,
         'normalizeDownmix': c.normalizeDownmix,
+        'audioPassthrough': c.audioPassthrough,
         'loopFile': c.loopFile,
         'hdrToneMapping': c.hdrToneMapping,
         'hdrComputePeak': c.hdrComputePeak,
@@ -305,6 +318,7 @@ class VideoMpvConfig {
         audioPitchCorrection: d['audioPitchCorrection'] != false, // 默认 true
         audioChannels: channels.contains(ch) ? ch : 'auto-safe',
         normalizeDownmix: d['normalizeDownmix'] == true,
+        audioPassthrough: d['audioPassthrough'] == true, // 默认 false
         loopFile: d['loopFile'] == true,
         hdrToneMapping: kHdrToneMappingValues.contains(tone)
             ? tone
@@ -534,6 +548,37 @@ String resolveAudioChannels(String audioChannels) {
   return audioChannels; // stereo / mono（用户显式强制）原样透传。
 }
 
+/// [VideoMpvConfig.audioPassthrough] 打开时交给 mpv `audio-spdif` 的码流清单。
+///
+/// `dts-hd` 已包含 `dts`（mpv 手册：两者同写等价于只写 `dts-hd`）。关闭时下发空串
+/// ＝ mpv 默认（全部本地解码），而不是不下发——运行时关掉开关必须真的撤回直通。
+const String kAudioPassthroughCodecs = 'ac3,eac3,truehd,dts-hd';
+
+/// 本次实际下发给 mpv `audio-spdif` 的值。纯函数。
+///
+/// 直通（spdif）时 mpv 手里是压缩码流，**不是 PCM**，凡要改写采样的环节都碰不到它：
+/// - 音量 / 静音：mpv 的软件音量在 AO 侧按采样乘增益（`audio/out/ao.c`
+///   `process_plane`），只处理 U8/S16/S32/FLOAT/DOUBLE，spdif 格式落进 `default`
+///   分支什么也不做——调音量、按静音都**静默失效**（本仓静音就是把音量压 0）；
+/// - 倍速：mpv 的自动变速滤镜对非 PCM 只能插 `drop`（`filters/f_auto_filters.c`
+///   `aspeed_process`），它按整帧丢弃 / 重复压缩帧来凑速度（af 手册原话「extremely
+///   low quality」），听感断续卡顿，保音高也无从谈起。
+///
+/// 所以直通只在「1 倍速、满音量、未静音」时生效；任一项不满足就下发空串让 mpv 本地
+/// 解码成 PCM，倍速 / 音量 / 静音照常工作，回到条件内再恢复直通（运行时改
+/// `audio-spdif` 会让 mpv 重建音频输出）。[outputVolume] 是**实际可听音量**（静音
+/// 时传 0），取值 0..100（本仓不做放大）。
+String resolveAudioSpdif({
+  required bool passthrough,
+  double playbackSpeed = 1.0,
+  double outputVolume = 100.0,
+}) {
+  if (!passthrough) return '';
+  if (playbackSpeed != 1.0) return '';
+  if (outputVolume < 100.0) return '';
+  return kAudioPassthroughCodecs;
+}
+
 /// mpv `audio-channels` 标准布局白名单：高→低有序，末位 `stereo` 永远兜底（不会无声）。
 /// 见 [resolveAudioChannels]（BUG-798）。
 const String _standardChannelLayouts = '7.1,5.1,stereo';
@@ -602,7 +647,12 @@ Map<String, String> resolveTextureColorTargetProperties({bool? isApple}) {
 }
 
 Map<String, String> buildMpvProperties(VideoMpvConfig config,
-    {bool? isAndroid, bool? isMobile, bool? isWindows, bool? isApple}) {
+    {bool? isAndroid,
+    bool? isMobile,
+    bool? isWindows,
+    bool? isApple,
+    double playbackSpeed = 1.0,
+    double outputVolume = 100.0}) {
   final Map<String, String> out = <String, String>{};
   // 解码：Android 纹理渲染下把 surface-直渲的 auto-safe 改写成 copy 变体（BUG-465）；
   // Windows GL 纹理渲染下把 auto* 改写成不含 CUDA 的 d3d11va 列表（BUG-1639）。
@@ -646,6 +696,12 @@ Map<String, String> buildMpvProperties(VideoMpvConfig config,
   // [resolveAudioChannels]；stereo/mono（用户显式强制）原样透传。
   out['audio-channels'] = resolveAudioChannels(config.audioChannels);
   out['audio-normalize-downmix'] = config.normalizeDownmix ? 'yes' : 'no';
+  // 直通只在 1 倍速、满音量、未静音时生效，否则本地解码（见 [resolveAudioSpdif]）。
+  out['audio-spdif'] = resolveAudioSpdif(
+    passthrough: config.audioPassthrough,
+    playbackSpeed: playbackSpeed,
+    outputVolume: outputVolume,
+  );
   // HDR→SDR 色调映射。两条都**只在真的需要色调映射时**起作用，SDR 片源不受影响，
   // 所以无条件下发即可，不必按片源门控。见 [VideoMpvConfig.hdrToneMapping] 对
   // 「为什么是映射质量而不是 HDR 直通」的说明。
@@ -665,11 +721,15 @@ Map<String, String> buildMpvProperties(VideoMpvConfig config,
 ///
 /// best-effort：`player.platform` 非 libmpv（无 setProperty）或某属性不被接受时
 /// 单条静默吞掉，不影响其余属性与播放。与 [applyShadersToPlayer] 同范式。
-Future<void> applyMpvConfigToPlayer(
-    Player player, VideoMpvConfig config) async {
+///
+/// [playbackSpeed] / [outputVolume] 是当前倍速与实际可听音量，只用来判定直通是否
+/// 生效（[resolveAudioSpdif]）。
+Future<void> applyMpvConfigToPlayer(Player player, VideoMpvConfig config,
+    {double playbackSpeed = 1.0, double outputVolume = 100.0}) async {
   final dynamic native = player.platform;
   if (native == null) return;
-  final Map<String, String> props = buildMpvProperties(config);
+  final Map<String, String> props = buildMpvProperties(config,
+      playbackSpeed: playbackSpeed, outputVolume: outputVolume);
   for (final MapEntry<String, String> e in props.entries) {
     try {
       await native.setProperty(e.key, e.value);

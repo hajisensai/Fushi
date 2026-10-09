@@ -223,6 +223,41 @@ void main() {
       expect(body, contains("trace?.finish('abandoned')"));
     });
 
+    test('阅读器家族（base_source_page）也开查词流水并落 search / fill / shown', () {
+      // BUG-2967：阅读器查词此前不开流水，「空闲后首查慢」在诊断日志里无从拆段。
+      final String src = code('lib/src/pages/base_source_page.dart');
+      final int idx = src.indexOf('Future<int> searchDictionaryResult({');
+      expect(idx, greaterThan(0));
+      final String body = src.substring(
+        idx,
+        src.indexOf('Future<void> aiPickLookupEntry(', idx),
+      );
+      expect(body, contains('LookupPerfTrace.begin('));
+      expect(body, contains("host: 'reader'"));
+      expect(body, contains("'search'"));
+      expect(body, contains("trace?.mark('fill'"));
+      expect(body, contains("trace?.finish('superseded')"));
+      final int show = src.indexOf('void showDeferredPopup(');
+      expect(show, greaterThan(0));
+      final String showBody = src.substring(
+        show,
+        src.indexOf('int get activeLookupGeneration', show),
+      );
+      expect(showBody, contains("LookupPerfTrace.current?.mark('shown')"));
+      expect(
+        showBody,
+        contains("LookupPerfTrace.current?.finish('empty')"),
+        reason: '空结果走 Flutter 占位不经 WebView，不收尾会让游标悬着串到下一次查词',
+      );
+      final int rendered = src.indexOf('void _onPopupLayerRendered(');
+      expect(rendered, greaterThan(0));
+      expect(
+        src.substring(rendered, src.indexOf('void _dismissPopupAt(', rendered)),
+        contains("LookupPerfTrace.current?.finish('revealed')"),
+        reason: '阅读器路径带盖板先翻可见，revealRendered 不收尾，渲染完成处必须收',
+      );
+    });
+
     test('控制器在 beginTop 记录热槽命中 / 冷建 / 接管停驻 realm 三态', () {
       final String src = code(
         'lib/src/pages/implementations/dictionary_popup_controller.dart',

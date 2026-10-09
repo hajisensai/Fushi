@@ -87,15 +87,130 @@ void main() {
       ])), isEmpty, reason: '纯音频没有视频流');
     });
 
-    test('最多两个，不会因为编码多出第三个', () {
+    test('最多三个，编码不占角标', () {
       final List<String> badges = videoSpecsCoverBadges(factsWith(
         width: 3840,
         height: 2160,
         codec: 'hevc',
         primaries: 'bt2020',
         transfer: 'smpte2084',
+        audio: const <AudioTrackFacts>[
+          AudioTrackFacts(index: 1, codec: 'truehd', channels: 8),
+        ],
       ));
-      expect(badges, hasLength(2));
+      expect(badges, <String>['4K', 'HDR10', '7.1']);
+    });
+  });
+
+  group('环绕声角标', () {
+    test('Atmos 压过声道数（profile 报出 Atmos）', () {
+      expect(
+        videoSpecsCoverBadges(factsWith(
+          width: 3840,
+          height: 2160,
+          primaries: 'bt2020',
+          transfer: 'smpte2084',
+          audio: const <AudioTrackFacts>[
+            AudioTrackFacts(
+              index: 1,
+              codec: 'truehd',
+              channels: 8,
+              channelLayout: '7.1',
+              profile: 'Dolby TrueHD + Dolby Atmos',
+            ),
+          ],
+        )),
+        <String>['4K', 'HDR10', 'Atmos'],
+      );
+    });
+
+    test('5.1 / 7.1 按声道布局出', () {
+      String? badge(int channels, String layout) =>
+          videoSpecsAudioBadge(factsWith(width: 1920, audio: <AudioTrackFacts>[
+            AudioTrackFacts(
+              index: 1,
+              codec: 'eac3',
+              channels: channels,
+              channelLayout: layout,
+            ),
+          ]));
+      expect(badge(6, '5.1(side)'), '5.1');
+      expect(badge(7, '6.1'), '6.1');
+      expect(badge(8, '7.1'), '7.1');
+    });
+
+    test('只按声道数出字：布局原文是英文单词时不漏进角标', () {
+      String? badge(int channels, String layout) =>
+          videoSpecsAudioBadge(factsWith(width: 1920, audio: <AudioTrackFacts>[
+            AudioTrackFacts(
+                index: 1, codec: 'pcm_s24le', channels: channels,
+                channelLayout: layout),
+          ]));
+      expect(badge(6, '6 channels'), '5.1');
+      expect(badge(8, 'octagonal'), '7.1');
+    });
+
+    test('纯音频（无视频流）不出角标也不出摘要', () {
+      final VideoProbeFacts audioOnly =
+          factsWith(audio: const <AudioTrackFacts>[
+        AudioTrackFacts(index: 0, codec: 'flac', channels: 6),
+      ]);
+      expect(videoSpecsCoverBadges(audioOnly), isEmpty);
+      expect(videoSpecsInlineSummary(audioOnly), isNull);
+    });
+
+    test('立体声 / 单声道不出——「是立体声」不是信息', () {
+      expect(
+        videoSpecsCoverBadges(factsWith(
+          width: 1920,
+          height: 1080,
+          audio: const <AudioTrackFacts>[
+            AudioTrackFacts(
+                index: 1, codec: 'aac', channels: 2, channelLayout: 'stereo'),
+          ],
+        )),
+        <String>['1080p'],
+      );
+    });
+
+    test('取最好的一条：默认轨是 2.0 时照样标出另一条 5.1', () {
+      expect(
+        videoSpecsAudioBadge(
+            factsWith(width: 1920, audio: const <AudioTrackFacts>[
+          AudioTrackFacts(index: 1, codec: 'aac', channels: 2, isDefault: true),
+          AudioTrackFacts(
+              index: 2, codec: 'ac3', channels: 6, channelLayout: '5.1'),
+        ])),
+        '5.1',
+      );
+    });
+
+    test('Atmos 5.1 胜过非 Atmos 7.1', () {
+      expect(
+        videoSpecsAudioBadge(
+            factsWith(width: 1920, audio: const <AudioTrackFacts>[
+          AudioTrackFacts(index: 1, codec: 'dts', channels: 8),
+          AudioTrackFacts(
+            index: 2,
+            codec: 'eac3',
+            channels: 6,
+            profile: 'Dolby Digital Plus + Dolby Atmos',
+          ),
+        ])),
+        'Atmos',
+      );
+    });
+
+    test('评论音轨不算片子的环绕声', () {
+      expect(
+        videoSpecsAudioBadge(
+            factsWith(width: 1920, audio: const <AudioTrackFacts>[
+          AudioTrackFacts(index: 1, codec: 'aac', channels: 2),
+          AudioTrackFacts(
+              index: 2, codec: 'ac3', channels: 6, isCommentary: true),
+        ])),
+        isNull,
+      );
     });
   });
 
@@ -110,6 +225,41 @@ void main() {
           transfer: 'smpte2084',
         )),
         '4K · HDR10 · HEVC',
+      );
+    });
+
+    test('环绕声排在编码后面', () {
+      expect(
+        videoSpecsInlineSummary(factsWith(
+          width: 3840,
+          height: 2160,
+          codec: 'hevc',
+          primaries: 'bt2020',
+          transfer: 'smpte2084',
+          audio: const <AudioTrackFacts>[
+            AudioTrackFacts(
+              index: 1,
+              codec: 'truehd',
+              channels: 8,
+              profile: 'Dolby TrueHD + Dolby Atmos',
+            ),
+          ],
+        )),
+        '4K · HDR10 · HEVC · Atmos',
+      );
+    });
+
+    test('音轨详情写出 Atmos', () {
+      expect(
+        audioTrackDisplay(const AudioTrackFacts(
+          index: 1,
+          codec: 'truehd',
+          channels: 8,
+          channelLayout: '7.1',
+          profile: 'Dolby TrueHD + Dolby Atmos',
+          language: 'eng',
+        )).detail,
+        'TrueHD · Atmos · 7.1',
       );
     });
 

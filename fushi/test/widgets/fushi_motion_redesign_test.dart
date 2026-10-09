@@ -1,6 +1,6 @@
 // 2026-10 UI / 动效重做的行为测试：按压反馈、错峰进场、导航药丸展开、
 // 动效降级（墨水屏 / 系统减弱动态效果）。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
@@ -117,6 +117,42 @@ void main() {
   });
 
   group('FushiStaggeredEntrance', () {
+    testWidgets('禁用窗口首挂载即显示，切换启用状态立即生效', (WidgetTester tester) async {
+      const Key item = ValueKey<String>('scope-enabled-item');
+      final ValueNotifier<bool> enabled = ValueNotifier<bool>(false);
+      addTearDown(enabled.dispose);
+      await tester.pumpWidget(
+        _wrap(
+          ValueListenableBuilder<bool>(
+            valueListenable: enabled,
+            builder: (BuildContext context, bool value, Widget? child) =>
+                FushiEntranceScope(enabled: value, child: child!),
+            child: const FushiStaggeredEntrance(
+              index: 0,
+              child: SizedBox(key: item, width: 10, height: 10),
+            ),
+          ),
+        ),
+      );
+      expect(_opacityOf(tester, item), 1);
+      enabled.value = true;
+      await tester.pump();
+      expect(_opacityOf(tester, item), 0);
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(_opacityOf(tester, item), greaterThan(0));
+      expect(_opacityOf(tester, item), lessThan(1));
+      enabled.value = false;
+      await tester.pump();
+      expect(_opacityOf(tester, item), 1);
+      await tester.pump(const Duration(milliseconds: 800));
+      expect(_opacityOf(tester, item), 1);
+      enabled.value = true;
+      await tester.pump();
+      expect(_opacityOf(tester, item), 0, reason: '重新启用应重开窗口');
+      await tester.pumpAndSettle();
+      expect(_opacityOf(tester, item), 1);
+    });
+
     testWidgets('窗口内首挂载：从透明淡入，后面的项起播更晚', (WidgetTester tester) async {
       const Key first = ValueKey<String>('first');
       const Key late = ValueKey<String>('late');
@@ -262,7 +298,7 @@ void main() {
   });
 
   group('桌面共享轴转场', () {
-    test('进入 360ms / 退出 240ms', () {
+    test('进入 = spatial slow 落定时长 / 退出 = effects slow', () {
       const FushiSharedAxisPageTransitionsBuilder builder =
           FushiSharedAxisPageTransitionsBuilder();
       expect(builder.transitionDuration, FushiMotion.long);
@@ -293,7 +329,7 @@ void main() {
         ),
       );
       await tester.pump();
-      // 转场进行中（360ms 内）逐帧检查；结束后旧页进幕后，finder 取不到。
+      // 转场进行中（450ms 内）逐帧检查；结束后旧页进幕后，finder 取不到。
       for (int ms = 0; ms <= 300; ms += 60) {
         // 用户反馈「进入页面时整个页面会往上一点」：被覆盖页曾随转场上移 6px。
         expect(tester.getTopLeft(find.byKey(homeKey)), Offset.zero);
@@ -327,16 +363,16 @@ void main() {
     });
   });
 
-  test('release 曲线：端点精确、带不超过 2% 的过冲', () {
+  test('release 曲线 = M3E spatial fast 弹簧形状：端点精确、带弹性过冲', () {
     expect(FushiMotion.release.transform(0), closeTo(0, 1e-9));
     expect(FushiMotion.release.transform(1), closeTo(1, 1e-9));
     double peak = 0;
     for (int i = 0; i <= 1000; i++) {
-      peak = peak < FushiMotion.release.transform(i / 1000)
-          ? FushiMotion.release.transform(i / 1000)
-          : peak;
+      final double v = FushiMotion.release.transform(i / 1000);
+      if (v > peak) peak = v;
     }
-    expect(peak, greaterThan(1));
-    expect(peak, lessThan(1.02));
+    // ζ = 0.6 的欠阻尼弹簧过冲约 9.5%。
+    expect(peak, greaterThan(1.05));
+    expect(peak, lessThan(1.12));
   });
 }

@@ -15,10 +15,11 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/discovery/sources/opds_discovery_source.dart';
@@ -91,7 +92,7 @@ class _OpdsServerSettingsSectionState
           SourceSectionHeading(
             title: t.discovery_opds_settings_title,
             hint: t.discovery_opds_settings_hint,
-            icon: Icons.menu_book_outlined,
+            icon: FushiIcons.books,
           ),
           for (int index = 0; index < _drafts.length; index++) _card(index),
           Align(
@@ -105,7 +106,7 @@ class _OpdsServerSettingsSectionState
                   ),
                 ),
               ),
-              icon: const FushiIcon(Icons.add),
+              icon: const FushiIcon(FushiIcons.add),
               label: Text(t.discovery_opds_add),
             ),
           ),
@@ -147,7 +148,7 @@ class _OpdsServerSettingsSectionState
                   });
                   unawaited(_saveValidDrafts());
                 },
-                icon: const FushiIcon(Icons.remove_circle_outline),
+                icon: const FushiIcon(FushiIcons.delete),
               ),
             ],
           ),
@@ -209,20 +210,19 @@ class _OpdsServerSettingsSectionState
                         height: 16,
                         child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const FushiIcon(Icons.network_check_outlined),
+                    : const FushiIcon(FushiIcons.wifi),
                 label: Text(t.discovery_opds_test),
               ),
               if (probe != null && !probe.running) ...<Widget>[
                 const SizedBox(width: 12),
+                // 探测结论走 M3E tonal 提示条（成功 / 失败语义图标）。
                 Expanded(
-                  child: Text(
-                    probe.message,
+                  child: FushiInlineNotice(
                     key: ValueKey<String>('opds-server-$index-probe-result'),
-                    style: TextStyle(
-                      color: probe.ok
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.error,
-                    ),
+                    severity: probe.ok
+                        ? FushiNoticeSeverity.success
+                        : FushiNoticeSeverity.error,
+                    message: probe.message,
                   ),
                 ),
               ],

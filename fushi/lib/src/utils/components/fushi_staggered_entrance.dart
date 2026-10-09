@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart';
 
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -17,10 +17,14 @@ class FushiEntranceScope extends StatefulWidget {
     required this.child,
     super.key,
     this.replayKey,
+    this.enabled = true,
     this.window = const Duration(milliseconds: 600),
   });
 
   final Widget child;
+
+  /// 是否开放本 scope 的进场窗口。拖拽反馈等已可见内容的副本应直接显示。
+  final bool enabled;
 
   /// 变化时重开进场窗口。
   final Object? replayKey;
@@ -42,7 +46,8 @@ class _FushiEntranceScopeState extends State<FushiEntranceScope> {
   @override
   void didUpdateWidget(covariant FushiEntranceScope oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.replayKey != widget.replayKey) {
+    if (oldWidget.replayKey != widget.replayKey ||
+        oldWidget.enabled != widget.enabled) {
       _openedAt = _now();
       _generation++;
     }
@@ -54,6 +59,7 @@ class _FushiEntranceScopeState extends State<FushiEntranceScope> {
       openedAt: _openedAt,
       window: widget.window,
       generation: _generation,
+      enabled: widget.enabled,
       child: widget.child,
     );
   }
@@ -64,16 +70,19 @@ class _FushiEntranceWindow extends InheritedWidget {
     required this.openedAt,
     required this.window,
     required this.generation,
+    required this.enabled,
     required super.child,
   });
 
   final Duration openedAt;
   final Duration window;
   final int generation;
+  final bool enabled;
 
   bool get isOpen =>
+      enabled &&
       SchedulerBinding.instance.currentSystemFrameTimeStamp - openedAt <=
-      window;
+          window;
 
   @override
   bool updateShouldNotify(_FushiEntranceWindow oldWidget) =>
@@ -112,7 +121,10 @@ class _FushiStaggeredEntranceState extends State<FushiStaggeredEntrance>
     vsync: this,
     value: 1,
   );
-  Animation<double> _curve = const AlwaysStoppedAnimation<double>(1);
+  // 淡入走 effects（不过冲，透明度不能越过 1）、上移走 spatial（M3E 弹簧
+  // 形状，落点带极轻回弹）；两条共用一个控制器与同一段错峰延迟。
+  Animation<double> _fade = const AlwaysStoppedAnimation<double>(1);
+  Animation<double> _rise = const AlwaysStoppedAnimation<double>(1);
   int? _playedGeneration;
 
   @override
@@ -130,15 +142,17 @@ class _FushiStaggeredEntranceState extends State<FushiStaggeredEntrance>
     }
     final int slot = widget.index.clamp(0, FushiMotion.staggerMaxItems);
     final Duration delay = FushiMotion.staggerStep * slot;
-    final Duration total = delay + FushiMotion.medium;
+    final FushiSpringSpec spring = context.fushiMotion.spatialDefault;
+    final Duration total = delay + spring.duration;
+    final double start = delay.inMicroseconds / total.inMicroseconds;
     _controller.duration = total;
-    _curve = CurvedAnimation(
+    _fade = CurvedAnimation(
       parent: _controller,
-      curve: Interval(
-        delay.inMicroseconds / total.inMicroseconds,
-        1,
-        curve: FushiMotion.enter,
-      ),
+      curve: Interval(start, 1, curve: FushiSpringCurve.effects),
+    );
+    _rise = CurvedAnimation(
+      parent: _controller,
+      curve: Interval(start, 1, curve: spring.curve),
     );
     _controller.forward(from: 0);
   }
@@ -155,14 +169,13 @@ class _FushiStaggeredEntranceState extends State<FushiStaggeredEntrance>
     // 子树会被重新挂载、丢掉内部状态（封面图解码、焦点）。opacity 为 1 时
     // RenderOpacity 不建合成层，常驻无开销。
     return AnimatedBuilder(
-      animation: _curve,
+      animation: _controller,
       child: widget.child,
       builder: (BuildContext context, Widget? child) {
-        final double t = _curve.value;
         return Opacity(
-          opacity: t,
+          opacity: _fade.value,
           child: Transform.translate(
-            offset: Offset(0, (1 - t) * FushiMotion.enterOffset),
+            offset: Offset(0, (1 - _rise.value) * FushiMotion.enterOffset),
             child: child,
           ),
         );

@@ -6,7 +6,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](docs/readme/README.zh-Hant.md) | [日本語](docs/readme/README.ja.md) | [한국어](docs/readme/README.ko.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md) | [Deutsch](docs/readme/README.de.md) | [Português](docs/readme/README.pt-BR.md) | [Русский](docs/readme/README.ru.md) | [Tiếng Việt](docs/readme/README.vi.md) | [ภาษาไทย](docs/readme/README.th.md) | [Bahasa Indonesia](docs/readme/README.id.md) | [Italiano](docs/readme/README.it.md) | [Nederlands](docs/readme/README.nl.md) | [Türkçe](docs/readme/README.tr.md) | [العربية](docs/readme/README.ar.md)
 
@@ -28,7 +28,7 @@ Fushi is maintained by [hajisensai](https://github.com/hajisensai). Website: [fu
 |---|---|---|
 | Android | ✅ | Material Design 3 |
 | Windows | ✅ | Material Design 3 |
-| macOS | ✅ | Material Design 3 |
+| macOS | ✅ (Apple Silicon only) | Material Design 3 |
 | Linux | 🔧 (build from source) | Material Design 3 |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Material Design 3 |
 
@@ -40,7 +40,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## Installation
 
-Download the latest release from the [Fushi website](https://fushi.moe/) — Android APK, Windows installer, and macOS builds are available; iOS is installed through [TestFlight](https://testflight.apple.com/join/j88d69jx). Linux has no prebuilt release yet; build it from source.
+Download the latest release from the [Fushi website](https://fushi.moe/) — Android APK, Windows installer, and macOS builds (Apple Silicon only; Intel Macs are not supported) are available; iOS is installed through [TestFlight](https://testflight.apple.com/join/j88d69jx). Linux has no prebuilt release yet; build it from source.
 
 > Requires Android 7.0 (API 24) or higher.
 
@@ -63,14 +63,14 @@ flutter build linux --release
 flutter build ipa --release
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` collapse `flutter pub get` and `ci/apply-patches.sh` into a single command. This project is locked to Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`); some upstream dependencies are vendored under `third_party/` or patched by `ci/apply-patches.sh` — see [docs/agent/build.md](docs/agent/build.md) for details.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` collapse `flutter pub get` and `ci/apply-patches.sh` into a single command. This project is locked to Flutter 3.47.6 (Dart SDK `>=3.5.0 <4.0.0`); some upstream dependencies are vendored under `third_party/` or patched by `ci/apply-patches.sh` — see [docs/agent/build.md](docs/agent/build.md) for details.
 
 <details>
 <summary><b>Tech Stack</b></summary>
 
 | Layer | Technology |
 |---|---|
-| Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Framework | Flutter 3.47.6 (Dart SDK `>=3.5.0 <4.0.0`) |
 | Platforms | Android / Windows / macOS / iOS (Material Design 3) |
 | Reader | WebView paging engine (derived from the Hoshi Reader family) |
 | Video | media_kit (libmpv core) |
@@ -185,12 +185,11 @@ Fushi builds on the following projects and ecosystem:
 | [ReazonSpeech k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | Japanese speech recognition model |
 | [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | Multilingual CTC speech recognition model |
 | [Silero VAD](https://github.com/snakers4/silero-vad) | Voice activity detection model |
-| [manga-ocr](https://github.com/kha-white/manga-ocr) / [manga-ocr-onnx](https://huggingface.co/mayocream/manga-ocr-onnx) | Manga OCR model, trained with [Manga109-s](http://www.manga109.org/en/download_s.html); the KV-cache decoder of the OCR speed-up pack is re-exported from the same weights (`tool/manga_ocr_kv/`) |
 | [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | Manga text and speech bubble detection model |
 | [manga-panel-detector-yolo26n](https://huggingface.co/leoxs22/manga-panel-detector-yolo26n) | Manga panel detection model, trained on [Manga109-s](http://www.manga109.org/en/download_s.html) |
 | [PP-OCRv6](https://github.com/PaddlePaddle/PaddleOCR) small det / rec · [PP-OCRv6_manga](https://huggingface.co/Kellenok/PP-OCRv6_manga) | Text line detection and recognition; the manga-tuned rec (trained with [Manga109-s](http://www.manga109.org/en/download_s.html) and [AnimeText](https://huggingface.co/datasets/deepghs/AnimeText)) powers the per-column CTC local OCR model |
 
-> The manga panel detection model, manga-ocr and PP-OCRv6_manga are trained with the Manga109-s dataset (Matsui et al. 2017; Aizawa et al. 2020), whose terms require this use of the dataset to be clearly indicated. PP-OCRv6_manga (Apache-2.0) is additionally trained with the AnimeText dataset, which is licensed CC BY-NC-SA 4.0; the app downloads that model from its Hugging Face repository and does not redistribute it.
+> The manga panel detection model and PP-OCRv6_manga are trained with the Manga109-s dataset (Matsui et al. 2017; Aizawa et al. 2020), whose terms require this use of the dataset to be clearly indicated. PP-OCRv6_manga (Apache-2.0) is additionally trained with the AnimeText dataset, which is licensed CC BY-NC-SA 4.0; the app downloads that model from its Hugging Face repository and does not redistribute it.
 
 ### Content sources and integrations
 
@@ -199,7 +198,6 @@ Fushi builds on the following projects and ecosystem:
 | [Mihon](https://github.com/mihonapp/mihon) | Manga source extension ecosystem |
 | [Aniyomi](https://github.com/aniyomiorg/aniyomi) | Anime source extension ecosystem (extensions-lib 14–16 hosted by the same runtime) |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Manga extension runtime for desktop |
-| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | Manga source runtime ABI |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | Streaming subtitle bridge reference for the browser extension |
 | [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Anime identification and scraping architecture reference |
 | [ReinaManager](https://github.com/huoshen80/ReinaManager) | Galgame library information architecture reference |

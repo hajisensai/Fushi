@@ -201,9 +201,15 @@ void main() {
     // TODO-585: Sync-now widget 现住 sync_settings_schema/actions.part.dart；
     // 读合并语料而不是单文件。
     final widget = readSyncSettingsSchemaSource();
-    // The Sync-now widget must render the inline determinate bar.
+    // The Sync-now widget must render the inline determinate bar. Since the M3E
+    // sync rows (12bd864) the bar lives in the shared _SyncInlineProgress
+    // reveal wrapper: the row feeds it the live fraction and the wrapper draws
+    // the determinate bar from that value.
     expect(
-        widget.contains('LinearProgressIndicator(value: p?.fraction)'), isTrue,
+        widget.contains('return _SyncInlineProgress(') &&
+            widget.contains('value: p?.fraction,') &&
+            widget.contains('FushiLinearProgressIndicator(value: value)'),
+        isTrue,
         reason: 'the Sync-now row must show an inline progress bar');
     // BUG-101: the row must reflect the GLOBAL sync state, not a local flag, so
     // the bar appears even when a background/app-open sync started the run.

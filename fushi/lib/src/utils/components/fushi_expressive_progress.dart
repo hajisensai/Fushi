@@ -1,7 +1,8 @@
 import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 // Material 3 Expressive（2025-05）的进度与加载指示，自绘实现。
 //
@@ -96,6 +97,7 @@ class FushiWavyLinearProgress extends StatefulWidget {
     this.stopIndicatorRadius,
     this.semanticsLabel,
     this.semanticsValue,
+    this.waving = true,
   });
 
   final double? value;
@@ -103,6 +105,10 @@ class FushiWavyLinearProgress extends StatefulWidget {
   final Color trackColor;
   final double strokeWidth;
   final double trackGap;
+
+  /// false = 已填段收平成直线、停止流动（确定态；如有声书暂停时）。振幅以
+  /// 300ms 过渡收放，恢复时重新起波。不定态忽略。
+  final bool waving;
 
   /// 尾端停止点颜色；null = 与已填段同色，透明 = 不画。
   final Color? stopIndicatorColor;
@@ -133,6 +139,7 @@ class _FushiWavyLinearProgressState extends State<FushiWavyLinearProgress>
   bool wantsAnimation(BuildContext context) {
     if (!_motionAllowed(context)) return false;
     final double? value = widget.value;
+    if (value != null && !widget.waving) return false;
     return value == null || _amplitudeEase(value.clamp(0.0, 1.0)) > 0;
   }
 
@@ -157,24 +164,36 @@ class _FushiWavyLinearProgressState extends State<FushiWavyLinearProgress>
             maxHeight: stroke + amp * 2,
           ),
           child: TweenAnimationBuilder<double>(
-            tween: Tween<double>(end: (value ?? 0).clamp(0.0, 1.0)),
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeOut,
-            builder: (BuildContext context, double animatedValue, Widget? _) {
-              return CustomPaint(
-                size: Size(double.infinity, stroke + amp * 2),
-                painter: _WavyLinearPainter(
-                  progress: ticker,
-                  value: value == null ? null : animatedValue,
-                  color: widget.color,
-                  trackColor: widget.trackColor,
-                  stopColor: widget.stopIndicatorColor ?? widget.color,
-                  stopRadius: widget.stopIndicatorRadius ?? stroke / 2,
-                  strokeWidth: stroke,
-                  gap: widget.trackGap,
-                  amplitude: amp,
-                  rtl: Directionality.of(context) == TextDirection.rtl,
-                ),
+            tween: Tween<double>(
+              end: value != null && !widget.waving ? 0 : amp,
+            ),
+            duration: motion
+                ? const Duration(milliseconds: 300)
+                : Duration.zero,
+            curve: FushiMotion.enter,
+            builder: (BuildContext context, double liveAmp, Widget? _) {
+              return TweenAnimationBuilder<double>(
+                tween: Tween<double>(end: (value ?? 0).clamp(0.0, 1.0)),
+                duration: const Duration(milliseconds: 250),
+                curve: FushiMotion.enter,
+                builder:
+                    (BuildContext context, double animatedValue, Widget? _) {
+                      return CustomPaint(
+                        size: Size(double.infinity, stroke + amp * 2),
+                        painter: _WavyLinearPainter(
+                          progress: ticker,
+                          value: value == null ? null : animatedValue,
+                          color: widget.color,
+                          trackColor: widget.trackColor,
+                          stopColor: widget.stopIndicatorColor ?? widget.color,
+                          stopRadius: widget.stopIndicatorRadius ?? stroke / 2,
+                          strokeWidth: stroke,
+                          gap: widget.trackGap,
+                          amplitude: liveAmp,
+                          rtl: Directionality.of(context) == TextDirection.rtl,
+                        ),
+                      );
+                    },
               );
             },
           ),
@@ -398,7 +417,7 @@ class _FushiWavyCircularProgressState extends State<FushiWavyCircularProgress>
             child: TweenAnimationBuilder<double>(
               tween: Tween<double>(end: (value ?? 0).clamp(0.0, 1.0)),
               duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOut,
+              curve: FushiMotion.enter,
               builder: (BuildContext context, double animatedValue, Widget? _) {
                 return CustomPaint(
                   painter: _WavyCircularPainter(

@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -121,7 +122,7 @@ class _StatSessionEditDialogState extends State<StatSessionEditDialog> {
       maxHeightFactor: 0.74,
       child: FushiModalSheetFrame(
         title: t.stat_session_edit,
-        leadingIcon: Icons.edit_outlined,
+        leadingIcon: FushiIcons.edit,
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
@@ -147,26 +148,25 @@ class _StatSessionEditDialogState extends State<StatSessionEditDialog> {
               labelText: t.stat_session_edit_date,
               hintText: 'YYYY-MM-DD',
               autofocus: true,
+              // M3E 填充框自带的错误态（error 色下划线 + 辅助文字）。
+              errorText: dateValid ? null : t.stat_session_edit_date_invalid,
               onChanged: (_) => setState(() {}),
               suffixIcon: FushiIconButtonControl(
                 tooltip: t.stat_session_edit_date,
-                icon: const FushiIcon(Icons.calendar_today_outlined, size: 18),
+                icon: const FushiIcon(FushiIcons.calendar, size: 18),
                 onPressed: _pickDate,
               ),
             ),
-            if (!dateValid)
-              _fieldError(tokens, colors, t.stat_session_edit_date_invalid),
             SizedBox(height: tokens.spacing.gap),
             FushiTextField(
               key: const ValueKey<String>('stat-session-edit-chars'),
               controller: _charsController,
               labelText: t.stat_session_edit_chars,
               keyboardType: TextInputType.number,
+              errorText: charsValid ? null : t.stat_session_edit_chars_invalid,
               onChanged: (_) => setState(() {}),
               onSubmitted: (_) => _submit(),
             ),
-            if (!charsValid)
-              _fieldError(tokens, colors, t.stat_session_edit_chars_invalid),
             SizedBox(height: tokens.spacing.gap),
             Text(
               t.stat_session_edit_message,
@@ -181,35 +181,20 @@ class _StatSessionEditDialogState extends State<StatSessionEditDialog> {
           spacing: tokens.spacing.gap,
           runSpacing: tokens.spacing.gap,
           children: <Widget>[
-            adaptiveDialogAction(
-              context: context,
+            FushiDialogAction(
+              label: t.dialog_cancel,
               onPressed: () => Navigator.pop(context),
-              child: Text(t.dialog_cancel),
             ),
-            adaptiveDialogAction(
-              context: context,
-              isDefaultAction: true,
+            FushiDialogAction(
+              label: t.dialog_save,
+              kind: FushiDialogActionKind.primary,
               onPressed: _canSave ? _submit : null,
-              child: Text(t.dialog_save),
             ),
           ],
         ),
       ),
     );
   }
-
-  Widget _fieldError(
-    FushiDesignTokens tokens,
-    ColorScheme colors,
-    String message,
-  ) =>
-      Padding(
-        padding: EdgeInsets.only(top: tokens.spacing.gap / 3),
-        child: Text(
-          message,
-          style: tokens.type.metadata.copyWith(color: colors.error),
-        ),
-      );
 }
 
 /// 弹出会话编辑框；用户点「保存」且真有改动时返回 [StudySessionEdit]，取消 /

@@ -16,9 +16,8 @@ typedef MihonCloudflareResolver =
 /// 只管调用。没装（测试 / 无 UI）时运行时按 `CHALLENGE_UNAVAILABLE` 报错，而不是
 /// 静默当作解完。
 ///
-/// 与 Aidoku 那套的差别只有一点：Mihon 的解题**总是用户点按钮触发**
-/// （`MihonCloudflareAction`），运行时自己不会在后台流里弹页，所以这里不需要
-/// `runSuppressed` 那层 Zone 抑制。
+/// Mihon 的解题**总是用户点按钮触发**（`MihonCloudflareAction`），运行时自己不会
+/// 在后台流里弹页，所以不需要额外的 Zone 抑制。
 abstract final class MihonCloudflareGate {
   static MihonCloudflareResolver? resolver;
 }

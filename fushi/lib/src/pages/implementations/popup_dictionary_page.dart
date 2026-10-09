@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
@@ -14,6 +14,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:fushi/src/utils/misc/popup_channel.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:fushi/utils.dart';
 
@@ -818,7 +819,7 @@ class PopupDictionarySearchBar extends StatelessWidget {
 }
 
 /// TODO-951 症状B：独立于滑动手势的关闭按钮。渲染在 [SwipeDismissWrapper] 之外，
-/// 点它直接调 [onClose]（无滑出动画），与 search bar 内的旧关闭按钮视觉一致（[Icons.close]
+/// 点它直接调 [onClose]（无滑出动画），与 search bar 内的旧关闭按钮视觉一致（[FushiIcons.close]
 /// + 20 图标）。键沿用 `popup_dictionary_close_button`（桌面焦点驱动测试
 /// + 既有 widget 测试都按此键定位）。
 ///
@@ -843,7 +844,7 @@ class _CompactPopupCloseButton extends StatelessWidget {
       width: 36,
       height: height,
       child: FushiIconButton(
-        icon: Icons.close,
+        icon: FushiIcons.close,
         enabledColor: tokens.surfaces.onVariant,
         size: 20,
         tooltip: MaterialLocalizations.of(context).closeButtonTooltip,

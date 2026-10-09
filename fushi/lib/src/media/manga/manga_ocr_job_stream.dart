@@ -27,7 +27,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
-import 'package:fushi_engine/ocr/manga_ocr_model_fingerprint.dart';
+import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart'
     show mangaOcrPageOrder;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
@@ -140,7 +140,9 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(
         )
       : null;
   final String engineSignature = serviceCachePath == null
-      ? await resolveInstalledLocalMangaOcrEngineSignature()
+      ? await resolveInstalledLocalMangaOcrEngineSignature(
+          model: spec.engines.localModel ?? kDefaultMangaOcrLocalModel,
+        )
       : p.basename(serviceCachePath);
   final Directory cacheDir = Directory(
     serviceCachePath ??

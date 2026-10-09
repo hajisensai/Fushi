@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/tags/tag_chips.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/tag_management_page.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
@@ -205,14 +206,13 @@ class _TagFilterSheetState extends ConsumerState<TagFilterSheet> {
       runSpacing: tokens.spacing.gap / 2,
       children: tags.map((tag) {
         final isSelected = selectedIds.contains(tag.id);
-        return FushiSelectableChip(
-          selected: isSelected,
-          avatar: CircleAvatar(
-            backgroundColor: Color(tag.colorValue),
-            radius: 6,
-          ),
+        // 与库页标签栏同一枚 M3E 彩色 filter chip（Apple 下玻璃胶囊 + 色点）。
+        return FushiTagToggleChip(
+          state: isSelected ? TagCheckState.all : TagCheckState.none,
+          color: Color(tag.colorValue),
           label: tag.name,
-          onSelected: (selected) {
+          onTap: () {
+            final bool selected = !isSelected;
             final current = Set<int>.from(ref.read(selectedTagIdsProvider));
             if (selected) {
               current.add(tag.id);

@@ -7,7 +7,7 @@ import 'package:fushi/src/sync/interconnect_download_manager.dart';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -70,13 +70,14 @@ void main() {
   // 用来观测两阶段下载空窗期本地卡的加载覆盖层）。
   late List<SrtBook> shelfSrtBooks;
   Completer<void>? audiobookDownloadGate;
+  late PreferencesRepository prefs;
 
   setUp(() async {
     useRealImporter = false;
     failNextAudiobook = false;
     LocaleSettings.setLocale(AppLocale.en);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
-    final PreferencesRepository prefs = PreferencesRepository(db);
+    prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     final Directory storeDir =
         Directory.systemTemp.createTempSync('hibiki_remote_book_store');
@@ -215,6 +216,9 @@ void main() {
         ),
         downloadBytes: _collectionDownloadFixture(manga: manga),
       );
+      // 占位卡归属合集：要在横排行里直接点它的下载键。书架默认已改「单个格子」
+      // （a55fc1382bb，成员折进格子不外露），这里显式切回整行展开。
+      await prefs.setShelfCollectionLayoutName('rows');
       await tester.pumpWidget(buildApp(mangaOnly: manga));
       await tester.pumpAndSettle();
       final InterconnectDownloadManager manager = ProviderScope.containerOf(

@@ -5,6 +5,7 @@
 //   POST /admin/api/accounts/:id  {hidden}      隐藏/恢复账户（不删数据）
 //   POST /admin/api/works/:id     {title?, author?, nsfw?, clearCover?}  改标题/作者即锁定
 //   POST /admin/api/works/merge   {from, into}  把 from 并入 into
+//   POST /admin/api/accounts/:id/role {role: 'dev'|'user'}  设 / 撤开发者（反馈处理台）
 //   POST /admin/api/works/split   {ref}         把一个误挂的别名拆成新作品，上报过它的书架随之迁走
 
 import { HttpError, json, randomId, timingSafeEqual } from './util.js';
@@ -207,6 +208,16 @@ export async function handleAdmin(env, request, path, body, now) {
       env.DB.prepare('UPDATE accounts SET upload_key = NULL WHERE id = ?1').bind(r[1]),
     ]);
     return json({ ok: true, removed: res[0].meta.changes });
+  }
+  if ((r = m(/^\/admin\/api\/accounts\/([A-Za-z0-9_-]+)\/role$/))) {
+    if (body.role !== 'dev' && body.role !== 'user') throw new HttpError(400, 'bad_role');
+    const res = await env.DB.batch([
+      env.DB.prepare('UPDATE accounts SET role = ?2 WHERE id = ?1').bind(r[1], body.role),
+      // 撤销开发者时顺带作废其网页会话（会话查询本身也会核对 role，这里只是不留垃圾）。
+      env.DB.prepare('DELETE FROM dev_sessions WHERE account_id = ?1 AND ?2 = \'user\'').bind(r[1], body.role),
+    ]);
+    if (res[0].meta.changes !== 1) throw new HttpError(404, 'not_found');
+    return json({ ok: true });
   }
   if ((r = m(/^\/admin\/api\/accounts\/([A-Za-z0-9_-]+)$/))) {
     await setAccountHidden(env, r[1], body.hidden === true, now);

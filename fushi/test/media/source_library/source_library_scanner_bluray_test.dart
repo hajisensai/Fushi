@@ -23,6 +23,11 @@ import '../video/bluray_fixture.dart';
 
 /// 立刻失败的 ffmpeg 后端：导入路径不该起 ffmpeg，起了也不能等真超时。
 class _NoFfmpeg implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async =>
       const FfmpegRunResult(returnCode: 1, output: 'stub');

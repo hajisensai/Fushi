@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Build fushi-anki-sync (Linux / macOS). Same steps as build.ps1; see README.md.
 #
-#   build.sh [--debug] [--universal] [--install-dir DIR] [--prebuilt-binary FILE]
+#   build.sh [--debug] [--install-dir DIR] [--prebuilt-binary FILE]
 #
-#   --universal    macOS only: build aarch64 + x86_64 and lipo them into one binary
-#                  (the Flutter macOS app is universal; a single-arch helper would be
-#                  dead on the other half of Macs).
+#   On macOS the helper is built for the host architecture only: the macOS app ships
+#   Apple Silicon (arm64) only, Intel Macs are no longer supported, so CI builds it on
+#   an arm64 runner and release-desktop.yml checks the slice matches the app binary.
 #   --install-dir  copy the binary and its AGPL source notice (fushi-anki-sync.SOURCE.txt)
 #                  into DIR, then smoke-test the installed copy. CI uses this to bundle
 #                  the helper next to the app / server executable.
@@ -22,13 +22,11 @@ ANKI_COMMIT=29bb700b951e3f0c0cb69b77c0180fc1fe33e6ba
 SRC="$HERE/.anki-src"
 
 PROFILE=release
-UNIVERSAL=0
 INSTALL_DIR=""
 PREBUILT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --debug) PROFILE=debug ;;
-    --universal) UNIVERSAL=1 ;;
     --install-dir)
       INSTALL_DIR="${2:?--install-dir needs a directory}"
       shift
@@ -38,7 +36,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     *)
-      echo "unknown argument: $1 (usage: build.sh [--debug] [--universal] [--install-dir DIR] [--prebuilt-binary FILE])" >&2
+      echo "unknown argument: $1 (usage: build.sh [--debug] [--install-dir DIR] [--prebuilt-binary FILE])" >&2
       exit 2
       ;;
   esac
@@ -102,26 +100,8 @@ else
   # of an empty array under set -u).
   release_flag="--release"
   [ "$PROFILE" = debug ] && release_flag=""
-  if [ "$UNIVERSAL" = 1 ]; then
-    if [ "$(uname -s)" != Darwin ]; then
-      echo "--universal is macOS only." >&2
-      exit 2
-    fi
-    mac_targets="aarch64-apple-darwin x86_64-apple-darwin"
-    rustup target add $mac_targets
-    slices=""
-    for target in $mac_targets; do
-      cargo build $release_flag --target "$target"
-      slices="$slices target/$target/$PROFILE/fushi-anki-sync"
-    done
-    mkdir -p "target/universal/$PROFILE"
-    BIN="target/universal/$PROFILE/fushi-anki-sync"
-    lipo -create $slices -output "$BIN"
-    lipo -archs "$BIN"
-  else
-    cargo build $release_flag
-    BIN="target/$PROFILE/fushi-anki-sync"
-  fi
+  cargo build $release_flag
+  BIN="target/$PROFILE/fushi-anki-sync"
 fi
 
 if [ -z "$INSTALL_DIR" ]; then

@@ -1,12 +1,29 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+
+/// [FushiPlaceholderMessage] 的语气：决定 M3E 图标色块的配色。
+enum FushiPlaceholderTone {
+  /// 空状态 / 一般说明：secondaryContainer 色块。
+  neutral,
+
+  /// 错误 / 加载失败：errorContainer 色块。
+  error,
+}
 
 /// Used to show information or error messages across the application.
 /// For example, this is used for the empty placeholder messages on the home
 /// tabs when there are no media item entries in them.
+///
+/// 空状态 / 错误状态的唯一实现（M3 Expressive，2026-10-05）：
+/// - MD3：不再压一块深灰卡；图标落在 72×72、24 圆角的饱和 container 色块里
+///   （[tone] 决定 secondaryContainer / errorContainer），标题 titleMedium
+///   emphasized、说明 bodyMedium onSurfaceVariant，挂载时色块弹入（spring）、
+///   文案淡入上浮；墨水屏 / 减弱动态效果下静止。
+/// - Apple：iOS ContentUnavailableView 口径（见 [_buildApple]），不受影响。
 class FushiPlaceholderMessage extends StatelessWidget {
   /// Instantiate a decorative information/error message with an icon.
   const FushiPlaceholderMessage({
@@ -19,8 +36,12 @@ class FushiPlaceholderMessage extends StatelessWidget {
     this.details = const <String>[],
     this.detailMaxLines = 3,
     this.action,
+    this.tone = FushiPlaceholderTone.neutral,
     super.key,
   });
+
+  /// 错误态用 [FushiPlaceholderTone.error]（MD3 图标色块换 errorContainer）。
+  final FushiPlaceholderTone tone;
 
   /// Decorative icon that is appropriate to relay the message even
   /// if a user may not understand the message.
@@ -53,10 +74,10 @@ class FushiPlaceholderMessage extends StatelessWidget {
 
   /// [detail] + [details] 中非空的行，按顺序。
   List<String> get _detailLines => <String>[
-        if (detail != null && detail!.isNotEmpty) detail!,
-        for (final String line in details)
-          if (line.isNotEmpty) line,
-      ];
+    if (detail != null && detail!.isNotEmpty) detail!,
+    for (final String line in details)
+      if (line.isNotEmpty) line,
+  ];
 
   /// 可选行动按钮（如空态的「导入」、错误态的「重试」），渲染在文案下方。
   final Widget? action;
@@ -65,55 +86,90 @@ class FushiPlaceholderMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) return _buildApple(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Color foreground = color ?? tokens.surfaces.onVariant;
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(tokens.spacing.page),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: tokens.surfaces.group,
-            borderRadius: tokens.radii.cardRadius,
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final TextTheme tt = theme.textTheme;
+    final bool eink = isEinkTheme(context);
+    final bool error = tone == FushiPlaceholderTone.error;
+    final Color container = error ? cs.errorContainer : cs.secondaryContainer;
+    final Color onContainer =
+        color ?? (error ? cs.onErrorContainer : cs.onSecondaryContainer);
+    final Widget badge = Container(
+      width: 72,
+      height: 72,
+      alignment: Alignment.center,
+      decoration: ShapeDecoration(
+        color: eink ? Colors.transparent : container,
+        shape: RoundedRectangleBorder(
+          borderRadius: const BorderRadius.all(Radius.circular(24)),
+          side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
+        ),
+      ),
+      child: FushiIcon(icon, size: iconSize ?? 32, color: onContainer),
+    );
+    final Widget text = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          message,
+          textAlign: TextAlign.center,
+          style:
+              messageStyle ??
+              tt.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: color ?? cs.onSurface,
+              ),
+        ),
+        for (final String line in _detailLines) ...<Widget>[
+          const SizedBox(height: 6),
+          Text(
+            line,
+            textAlign: TextAlign.center,
+            maxLines: detailMaxLines,
+            overflow: detailMaxLines == null ? null : TextOverflow.ellipsis,
+            style: tt.bodyMedium?.copyWith(color: color ?? cs.onSurfaceVariant),
           ),
-          child: Padding(
-            padding: EdgeInsets.all(tokens.spacing.card),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FushiIcon(
-                  icon,
-                  size: iconSize ??
-                      Theme.of(context).textTheme.headlineMedium?.fontSize,
-                  color: foreground,
-                ),
-                SizedBox(height: tokens.spacing.gap),
-                Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: messageStyle ??
-                      Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: foreground,
-                          ),
-                ),
-                for (final String line in _detailLines) ...[
-                  SizedBox(height: tokens.spacing.gap / 2),
-                  Text(
-                    line,
-                    textAlign: TextAlign.center,
-                    maxLines: detailMaxLines,
-                    overflow: detailMaxLines == null
-                        ? null
-                        : TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: foreground,
-                        ),
+        ],
+        if (action != null) ...<Widget>[const SizedBox(height: 20), action!],
+      ],
+    );
+    final Duration duration = fushiMotionDuration(
+      context,
+      const Duration(milliseconds: 500),
+    );
+    return Center(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.all(tokens.spacing.page),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(
+              begin: duration == Duration.zero ? 1 : 0,
+              end: 1,
+            ),
+            duration: duration,
+            builder: (BuildContext context, double t, Widget? _) {
+              // 色块用 expressive spatial 弹入（带过冲），文案晚 80ms 淡入上浮。
+              final double pop = context.fushiMotion.spatialFast.curve
+                  .transform(t);
+              final double fade = FushiMotion.enter.transform(
+                ((t - 0.16) / 0.84).clamp(0.0, 1.0),
+              );
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Transform.scale(scale: 0.6 + 0.4 * pop, child: badge),
+                  const SizedBox(height: 16),
+                  Opacity(
+                    opacity: fade,
+                    child: Transform.translate(
+                      offset: Offset(0, 8 * (1 - fade)),
+                      child: text,
+                    ),
                   ),
                 ],
-                if (action != null) ...[
-                  SizedBox(height: tokens.spacing.gap * 1.5),
-                  action!,
-                ],
-              ],
-            ),
+              );
+            },
           ),
         ),
       ),
@@ -127,7 +183,7 @@ class FushiPlaceholderMessage extends StatelessWidget {
     final TextTheme tt = Theme.of(context).textTheme;
     final Color foreground = color ?? apple.secondaryLabel;
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 360),
@@ -139,7 +195,8 @@ class FushiPlaceholderMessage extends StatelessWidget {
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: messageStyle ??
+                style:
+                    messageStyle ??
                     tt.titleMedium?.copyWith(
                       fontSize: 17,
                       fontWeight: FontWeight.w600,
@@ -158,10 +215,7 @@ class FushiPlaceholderMessage extends StatelessWidget {
                   style: tt.bodyMedium?.copyWith(color: apple.secondaryLabel),
                 ),
               ],
-              if (action != null) ...[
-                const SizedBox(height: 18),
-                action!,
-              ],
+              if (action != null) ...[const SizedBox(height: 18), action!],
             ],
           ),
         ),

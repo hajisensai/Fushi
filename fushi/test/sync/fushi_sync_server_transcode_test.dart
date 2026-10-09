@@ -54,6 +54,11 @@ class _FakeLibraryService implements FushiLibraryHostService {
 
 /// ffprobe 替身：只回一个固定时长，让 playlist 的段数可预期。
 class _FixedDurationBackend implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   _FixedDurationBackend(this.durationSeconds);
 
   final double? durationSeconds;

@@ -25,6 +25,7 @@ import 'dart:isolate';
 import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 
 /// 一个来源被拒绝的原因。
@@ -150,7 +151,7 @@ bool isMangaOcrModelFileExact(File file, MangaOcrModelFile model) {
 /// 手动导入器。[manifest] 可注入（测试用小清单）。
 class MangaOcrModelImporter {
   MangaOcrModelImporter({List<MangaOcrModelFile>? manifest})
-      : _manifest = manifest ?? kMangaOcrModelManifest;
+      : _manifest = manifest ?? kDefaultMangaOcrLocalModel.manifest;
 
   final List<MangaOcrModelFile> _manifest;
 

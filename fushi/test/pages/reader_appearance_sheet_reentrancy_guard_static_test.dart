@@ -17,14 +17,9 @@ void main() {
   // InAppWebView 平台视图无法 widget 挂载，源码扫描守卫为最强可落地层。
   final String source = readReaderPageSource();
   final String stripped = _stripLineComments(source);
-  final String sheet = _functionSource(
-    stripped,
-    '  Future<void> _showAppearanceSheet(',
-    '  String _currentChapterLabel() {',
-  );
+  final String sheet = methodBody(stripped, 'Future<void> _openReaderPanel(');
 
-  test('_showAppearanceSheet bails on re-entry (no double sheet on fast taps)',
-      () {
+  test('_openReaderPanel bails on re-entry (no double sheet on fast taps)', () {
     expect(
       sheet.contains('if (_appearanceSheetOpen) return;'),
       isTrue,
@@ -54,8 +49,11 @@ void main() {
   test('the re-entry guard is reset in a finally block', () {
     final int finallyIndex = sheet.indexOf('finally');
     final int resetIndex = sheet.indexOf('_appearanceSheetOpen = false;');
-    expect(finallyIndex, isNonNegative,
-        reason: '必须用 finally 复位，确保异常路径也复位、标志不卡死');
+    expect(
+      finallyIndex,
+      isNonNegative,
+      reason: '必须用 finally 复位，确保异常路径也复位、标志不卡死',
+    );
     expect(resetIndex, isNonNegative, reason: '必须复位重入标志');
     expect(
       finallyIndex,
@@ -63,14 +61,6 @@ void main() {
       reason: '复位必须在 finally 块内（而非仅正常路径）',
     );
   });
-}
-
-String _functionSource(String source, String start, String end) {
-  final int startIndex = source.indexOf(start);
-  if (startIndex < 0) throw StateError('Missing start marker: $start');
-  final int endIndex = source.indexOf(end, startIndex + start.length);
-  if (endIndex < 0) throw StateError('Missing end marker: $end');
-  return source.substring(startIndex, endIndex);
 }
 
 String _stripLineComments(String source) => maskCommentsAndScriptLines(source);

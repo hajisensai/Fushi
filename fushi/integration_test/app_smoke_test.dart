@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -15,8 +15,9 @@ import 'test_helpers.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('app starts and initializes without crash',
-      (WidgetTester tester) async {
+  testWidgets('app starts and initializes without crash', (
+    WidgetTester tester,
+  ) async {
     // 必须在 app.main() 之前置位：启动期自动更新检查是真实网络竞速，检查成功会
     // 弹「发现新版本」DialogRoute，其 ModalScope 抢走 primary focus，下方主导航
     // 的焦点断言随机失败（iOS 模拟器实测复现；home 首帧后再 cancelActiveCheck
@@ -45,8 +46,11 @@ void main() {
         }
       }
 
-      expect(rendered, isTrue,
-          reason: 'App should render at least one Scaffold within 90 seconds');
+      expect(
+        rendered,
+        isTrue,
+        reason: 'App should render at least one Scaffold within 90 seconds',
+      );
 
       // ── 测试隔离（与 game_management_ui_itest 同范式）────────────────────
       // 等 home 真正就绪（主导航挂载）后打开「键盘/手柄焦点导航」实验开关——
@@ -69,24 +73,42 @@ void main() {
       final List<Finder> navTargets = findPrimaryNavigationTargets();
       final HomeTab initialTab = homeShellTabNotifier.value;
 
+      expect(homeReady, isTrue, reason: 'Home navigation must initialize');
+      expect(
+        navTargets.length,
+        greaterThanOrEqualTo(2),
+        reason: 'Smoke must exercise two real navigation destinations',
+      );
       if (homeReady && navTargets.length >= 2) {
         final bool focusedTab1 = await driver.focusWidget(navTargets[1]);
-        expect(focusedTab1, isTrue,
-            reason: 'Second nav tab must be reachable by focus');
+        expect(
+          focusedTab1,
+          isTrue,
+          reason: 'Second nav tab must be reachable by focus',
+        );
         await driver.activate();
         await tester.pump(const Duration(seconds: 3));
         // 焦点驱动必须真的切走 tab——否则「可达」只是断言了个寂寞（此前
         // _focusOwns 对整页 key-sink 的误报正是这样把断言变成恒真的）。
-        expect(homeShellTabNotifier.value, isNot(initialTab),
-            reason: 'Activating the second nav tab must switch the home tab');
+        expect(
+          homeShellTabNotifier.value,
+          isNot(initialTab),
+          reason: 'Activating the second nav tab must switch the home tab',
+        );
 
         final bool focusedTab0 = await driver.focusWidget(navTargets[0]);
-        expect(focusedTab0, isTrue,
-            reason: 'First nav tab must be reachable by focus');
+        expect(
+          focusedTab0,
+          isTrue,
+          reason: 'First nav tab must be reachable by focus',
+        );
         await driver.activate();
         await tester.pump(const Duration(seconds: 3));
-        expect(homeShellTabNotifier.value, initialTab,
-            reason: 'Activating the first nav tab must switch back');
+        expect(
+          homeShellTabNotifier.value,
+          initialTab,
+          reason: 'Activating the first nav tab must switch back',
+        );
       }
 
       // App survived without fatal crash
@@ -111,9 +133,13 @@ void main() {
         return true;
       }).toList();
 
-      expect(unexpectedErrors, isEmpty,
-          reason: 'App produced unexpected FlutterErrors: '
-              '${unexpectedErrors.map((e) => e.exceptionAsString()).join('; ')}');
+      expect(
+        unexpectedErrors,
+        isEmpty,
+        reason:
+            'App produced unexpected FlutterErrors: '
+            '${unexpectedErrors.map((e) => e.exceptionAsString()).join('; ')}',
+      );
     } finally {
       FlutterError.onError = oldHandler;
     }

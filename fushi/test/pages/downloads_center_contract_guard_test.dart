@@ -4,8 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-const String _downloadsPath =
-    'lib/src/pages/implementations/browse_page.dart';
+const String _downloadsPath = 'lib/src/pages/implementations/browse_page.dart';
 const String _downloadActionsPath =
     'lib/src/pages/implementations/download_actions.dart';
 
@@ -26,9 +25,7 @@ void main() {
 
     expect(
       code,
-      contains(
-        'enum BrowseTab { discover, sources, extensions, downloads }',
-      ),
+      contains('enum BrowseTab { discover, sources, extensions, downloads }'),
       reason: '浏览页顶层只能有且必须有四个目的地，顺序即页头顺序',
     );
     // 2026-09-28 用户拍板：发现排第一（打开浏览默认落在发现）。页头顺序由
@@ -41,9 +38,7 @@ void main() {
       ),
       reason: '浏览页签顺序：发现 → 来源 → 扩展 → 下载',
     );
-    final String labels = compactCode(
-      methodBody(source, 'String _tabLabel('),
-    );
+    final String labels = compactCode(methodBody(source, 'String _tabLabel('));
     for (final String label in <String>[
       'BrowseTab.sources=>t.media_import_segment_sources,',
       'BrowseTab.extensions=>t.media_import_segment_extensions,',
@@ -95,7 +90,7 @@ void main() {
     );
     expect(code, contains("'browse-download-settings'"));
     expect(
-      compactCode(methodBody(source, 'void _openDownloadSettings(')),
+      compactCode(methodBody(source, 'Future<void> _openDownloadSettings(')),
       contains('constBrowseDownloadSettingsPage()'),
     );
   });
@@ -193,8 +188,9 @@ void main() {
     // contains('MangaDiscoveryPage(\n          embedded: true')，加个 const 让
     // dart format 重排一次就恒假——断言的是排版不是行为。
     expect(
-      RegExp(r'MangaDiscoveryPage\(\s*embedded:\s*true')
-          .hasMatch(downloadsStructural),
+      RegExp(
+        r'MangaDiscoveryPage\(\s*embedded:\s*true',
+      ).hasMatch(downloadsStructural),
       isTrue,
       reason: '漫画发现页必须以 embedded: true 打开（否则它会自带一整套页头/导航）',
     );
@@ -214,7 +210,10 @@ void main() {
     // 离屏页关 ticker、排除出焦点遍历。
     expect(code, contains('bool get wantKeepAlive => true;'));
     expect(identifierCall('TickerMode').hasMatch(downloadsStructural), isTrue);
-    expect(identifierCall('ExcludeFocus').hasMatch(downloadsStructural), isTrue);
+    expect(
+      identifierCall('ExcludeFocus').hasMatch(downloadsStructural),
+      isTrue,
+    );
     expect(
       downloads,
       isNot(contains('DownloadsGlobalResourceSearchSurface')),
@@ -228,8 +227,11 @@ void main() {
 
     expect(code, contains('currentVideoDownloadBackendTarget()'));
     expect(code, contains('backendTarget: target'));
-    expect(code, isNot(contains('currentVideoDownloadBackendIdentity()')),
-        reason: '裸后端身份已被 BUG-1879 删除，新任务必须同时快照分类');
+    expect(
+      code,
+      isNot(contains('currentVideoDownloadBackendIdentity()')),
+      reason: '裸后端身份已被 BUG-1879 删除，新任务必须同时快照分类',
+    );
     expect(code, isNot(contains('backendIdentity: identity')));
   });
 }

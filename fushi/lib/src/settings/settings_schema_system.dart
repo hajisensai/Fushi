@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/onboarding/recommended_pack_discard.dart';
@@ -30,7 +31,7 @@ SettingsDestination buildSystemDestination() {
     id: SettingsDestinationId.system,
     title: t.settings_destination_system_about,
     summary: t.settings_destination_system_summary,
-    icon: Icons.settings_suggest_outlined,
+    icon: FushiIcons.system,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'system.section.updates',
@@ -50,7 +51,7 @@ SettingsDestination buildSystemDestination() {
               SettingsSegmentOption<String>(
                 value: 'stable',
                 label: t.update_channel_stable,
-                icon: Icons.verified_outlined,
+                icon: FushiIcons.verified,
                 tooltip: t.update_channel_stable,
               ),
               SettingsSegmentOption<String>(
@@ -73,7 +74,7 @@ SettingsDestination buildSystemDestination() {
             id: 'system.update_download_source',
             title: t.update_download_source_preference,
             subtitle: t.update_download_source_preference_hint,
-            icon: Icons.cloud_download_outlined,
+            icon: FushiIcons.cloudDownload,
             dropdown: true,
             // 标签走 updateDownloadSourceLabel 这一份真相源：下载遮罩的「本次没用上
             // 所选来源」通告要说出同一个名字，两处各写一套迟早对不上。
@@ -154,6 +155,10 @@ SettingsDestination buildSystemDestination() {
         // 内存 / 手柄导航 / 快捷键 / GitHub 这类通用应用项。框架层另有面包屑去重
         // （settingsSearchBreadcrumb），双保险消灭整类重复。
         title: t.settings_section_general,
+        // 「推荐包下载」行随 controller 的阶段实时显隐：本分组自己订阅 stage
+        // （SettingsSection.liveListenable），不再靠宿主页整页重建。
+        liveListenable: (SettingsContext settingsContext) =>
+            settingsContext.appModel.recommendedPackDownloadController.stage,
         items: <SettingsItem>[
           // 「界面语言」（id 'appearance.language'）已归位到「外观 · 界面」分区
           //（与主题/明暗/缩放并列）；id 前缀本就是 appearance，此前放系统分类
@@ -163,7 +168,7 @@ SettingsDestination buildSystemDestination() {
             title: t.shortcut_settings_title,
             // 「实验性」后缀已摘除（用户决策）：改键/冲突重分配/可视化键盘与
             // 手柄图/三通道实时录键均已齐备，页面不再是实验功能。
-            icon: Icons.keyboard_outlined,
+            icon: FushiIcons.keyboard,
             onTap: (SettingsContext settingsContext) async {
               await pushSettingsPage(
                 settingsContext,
@@ -206,7 +211,7 @@ SettingsDestination buildSystemDestination() {
           SettingsNavigationItem(
             id: 'system.onboarding_wizard',
             title: t.onboarding_reopen,
-            icon: Icons.flag_outlined,
+            icon: FushiIcons.flag,
             onTap: (SettingsContext settingsContext) async {
               await pushSettingsPage(
                 settingsContext,
@@ -218,7 +223,7 @@ SettingsDestination buildSystemDestination() {
           // controller 所有，关掉向导也照跑——那就必须有一个不依赖向导的地方
           // 看得到它、停得掉它、下完能就地导入。空闲时整行不渲染，设置页不常驻
           // 一条恒为「无任务」的死行；本行随 controller 的阶段变化实时显隐，靠
-          // [SettingsDetailPage] 订阅 stage 重建（同 galgame 准入那一行的做法）。
+          // 所在分组的 liveListenable 订阅 stage 重建（同 galgame 准入那一行的做法）。
           SettingsCustomItem(
             id: 'system.recommended_pack_download',
             searchTitle: t.onboarding_step_pack_title,
@@ -243,7 +248,7 @@ SettingsDestination buildSystemDestination() {
           ),
           SettingsCustomItem(
             id: 'system.app_version',
-            icon: Icons.info_outline,
+            icon: FushiIcons.info,
             builder: _buildRuntimeAppVersionRow,
           ),
           // 官网。与宽屏侧栏左上角的 app 图标是同一个入口（openOfficialWebsite），
@@ -270,7 +275,7 @@ SettingsDestination buildSystemDestination() {
           SettingsActionItem(
             id: 'system.github_sponsors',
             title: t.options_github_sponsors,
-            icon: Icons.favorite_border,
+            icon: FushiIcons.favorite,
             onTap: (_) async {
               await launchUrl(
                 Uri.parse(kGitHubSponsorsUrl),
@@ -303,7 +308,7 @@ SettingsDestination buildSystemDestination() {
             // / approved）搜不到这一行。同款用法见 settings_search 里
             // bodySearchEntries 的合成项。
             subtitle: t.about_tmdb_attribution,
-            icon: Icons.movie_outlined,
+            icon: FushiIcons.video,
             builder: _buildTmdbAttributionRow,
           ),
         ],
@@ -319,7 +324,7 @@ SettingsDestination buildSystemDestination() {
           SettingsSegmentedItem<String>(
             id: 'system.network_proxy_mode',
             title: t.network_proxy_mode_label,
-            icon: Icons.dns_outlined,
+            icon: FushiIcons.server,
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
                 value: kProxyModeAuto,
@@ -336,7 +341,7 @@ SettingsDestination buildSystemDestination() {
               SettingsSegmentOption<String>(
                 value: kProxyModeManual,
                 label: t.network_proxy_mode_manual,
-                icon: Icons.tune_outlined,
+                icon: FushiIcons.settings,
                 tooltip: t.network_proxy_mode_manual_hint,
               ),
             ],
@@ -351,7 +356,7 @@ SettingsDestination buildSystemDestination() {
             id: 'system.network_proxy',
             title: t.network_proxy_label,
             subtitle: t.network_proxy_address_hint,
-            icon: Icons.dns_outlined,
+            icon: FushiIcons.server,
             placeholder: t.network_proxy_hint,
             keyboardType: TextInputType.url,
             visible: (SettingsContext c) =>
@@ -385,7 +390,7 @@ SettingsDestination buildSystemDestination() {
             // `settings_pack::proxy_username/password` 根本没被导出，凭据到不了
             // P2P 那一侧；不写出来用户会以为「开了 P2P 走代理」就连上了。
             subtitle: t.network_proxy_credentials_scope_hint,
-            icon: Icons.person_outline,
+            icon: FushiIcons.person,
             visible: (SettingsContext c) =>
                 c.appModel.networkProxyMode == kProxyModeManual,
             value: (SettingsContext c) => c.appModel.networkProxyUsername,
@@ -428,7 +433,7 @@ SettingsDestination buildSystemDestination() {
               SettingsSegmentOption<String>(
                 value: 'proxy',
                 label: t.network_proxy_p2p_mode_proxy,
-                icon: Icons.dns_outlined,
+                icon: FushiIcons.server,
               ),
               SettingsSegmentOption<String>(
                 value: 'mixed',
@@ -468,19 +473,19 @@ SettingsDestination buildSystemDestination() {
                   UpdateFeedKind.videoEpisode,
                   t.updates_notify_video_episode,
                   t.updates_notify_video_episode_hint,
-                  Icons.movie_outlined,
+                  FushiIcons.video,
                 ),
                 (
                   UpdateFeedKind.mangaChapter,
                   t.updates_notify_manga_chapter,
                   t.updates_notify_manga_chapter_hint,
-                  Icons.photo_library_outlined,
+                  FushiIcons.manga,
                 ),
                 (
                   UpdateFeedKind.mangaExtension,
                   t.updates_notify_manga_extension,
                   t.updates_notify_manga_extension_hint,
-                  Icons.extension_outlined,
+                  FushiIcons.browserExtension,
                 ),
                 (
                   UpdateFeedKind.appRelease,
@@ -536,6 +541,13 @@ SettingsDestination buildSystemDestination() {
         id: 'system.section.diagnostics',
         presentation: SettingsSectionPresentation.collapsed,
         title: t.settings_destination_diagnostics,
+        // 错误 / 调试日志的实时条数与「调试日志」行的显隐：本分组自己订阅两个日志
+        // 服务。此前由宿主页整页 setState，调试日志开着时每条 debugPrint 都把整页
+        // 设置行重建一遍。
+        liveListenable: (_) => Listenable.merge(<Listenable>[
+          ErrorLogService.instance,
+          DebugLogService.instance,
+        ]),
         items: <SettingsItem>[
           // 标题里的实时条数走 titleBuilder（渲染时求值）。写成构造期插值会把整棵
           // schema 变成「每次 setState 都得重建才能刷新计数」的状态载体——那正是
@@ -720,7 +732,7 @@ Widget _buildTmdbAttributionRow(SettingsContext settingsContext) {
   return AdaptiveSettingsRow(
     title: 'TMDB',
     subtitle: t.about_tmdb_attribution,
-    icon: Icons.movie_outlined,
+    icon: FushiIcons.video,
     showIcon: true,
     trailing: SizedBox(
       height: _kTmdbLogoHeight,
@@ -765,7 +777,7 @@ Widget _buildRuntimeAppVersionRow(SettingsContext settingsContext) {
       packageInfo,
       runningCodeVersion: fushiRunningCodeVersion,
     ),
-    icon: Icons.info_outline,
+    icon: FushiIcons.info,
     showIcon: true,
   );
 }

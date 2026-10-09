@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 class SettingsSecretField extends StatefulWidget {
@@ -103,8 +104,8 @@ class SettingsSecretFieldState extends State<SettingsSecretField> {
           tooltip: _obscured ? t.settings_secret_show : t.settings_secret_hide,
           size: 18,
           icon: _obscured
-              ? Icons.visibility_outlined
-              : Icons.visibility_off_outlined,
+              ? FushiIcons.visibility
+              : FushiIcons.visibilityOff,
           onTap: () => setState(() => _obscured = !_obscured),
         ),
       if (widget.resetValue != null && widget.onReset != null)

@@ -14,7 +14,7 @@
 // 三端可跑（模拟器 / Mac 跨机 都在真库上）：进场先快照 11 个模块的原值，finally 里
 // 逐个还原，绝不留副作用。
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/module_id.dart';

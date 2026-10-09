@@ -26,7 +26,7 @@ class LnReaderCloudflareChallenge {
 /// 验证」让用户主动解；解出的 cookie 进 [jar]，之后所有插件请求都带上。
 ///
 /// cookie 的数据结构与解题页和漫画扩展共用（[MangaCookieJar] /
-/// `AidokuCloudflareChallengePage`），但**文件是小说源自己的**（放在 LNReader
+/// `CloudflareChallengePage`），但**文件是小说源自己的**（放在 LNReader
 /// 根目录下，删目录即彻底卸载）。
 class LnReaderCloudflare {
   LnReaderCloudflare(this.jar);

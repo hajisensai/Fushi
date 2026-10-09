@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -57,6 +57,9 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
+    // 本文件验远端占位卡折进合集**横排行**（行头计数 / View all / 行内顺序）；
+    // 书架默认已改「单个格子」（a55fc1382bb），这里显式切回整行展开。
+    await prefs.setShelfCollectionLayoutName('rows');
     final Directory storeDir =
         Directory.systemTemp.createTempSync('hibiki_remote_coll_book_store');
     appModel = AppModel(testPlatformServices())

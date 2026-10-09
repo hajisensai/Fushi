@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/video_control_customization.dart';
@@ -9,6 +9,7 @@ import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_player_shortcuts.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_labels.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 哑动作实例：每个回调都是 no-op，只用来把 [videoActionCallbacks] 的 **keys** 取出来。
 /// 守卫比对的是「哪些动作接过线」，与回调具体做什么无关。
@@ -357,10 +358,10 @@ void main() {
           slot1,
           bindings: VideoCustomActionBindings.empty,
         ),
-        Icons.add,
+        FushiIcons.add,
       );
       // 完全不传 bindings 也必须退回加号图标（编辑器调色板路径）。
-      expect(videoControlItemIcon(slot1), Icons.add);
+      expect(videoControlItemIcon(slot1), FushiIcons.add);
       final String emptyLabel = videoControlItemLabel(
         slot1,
         ctx,
@@ -386,7 +387,7 @@ void main() {
           VideoControlItem.customAction2,
           bindings: bound,
         ),
-        Icons.add,
+        FushiIcons.add,
       );
     });
   });

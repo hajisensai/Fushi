@@ -22,9 +22,34 @@ final RegExp kDragScrollableWrap = identifierCall(
 ({int horizontals, int wrapped}) countHorizontalScrollAreas(String source) {
   final String code = maskComments(source);
   return (
-    horizontals: kHorizontalAxis.allMatches(code).length,
+    horizontals: kHorizontalAxis
+        .allMatches(code)
+        .where(
+          (RegExpMatch axis) => !_explicitlyNonScrollable(code, axis.start),
+        )
+        .length,
     wrapped: kDragScrollableWrap.allMatches(code).length,
   );
+}
+
+/// 静态 loading skeleton 刻意禁止滚动，不需要鼠标拖动。只认横向滚动件自己
+/// 的直接 physics 参数；子孙控件不可滚不能替祖先滚动区豁免。
+bool _explicitlyNonScrollable(String code, int axisOffset) {
+  final EnclosingCall scroll = enclosingCall(code, axisOffset);
+  for (final RegExpMatch physics in RegExp(
+    r'\bphysics\s*:',
+  ).allMatches(scroll.text)) {
+    final int globalOffset = scroll.start + physics.start;
+    final EnclosingCall owner = enclosingCall(code, globalOffset);
+    if (owner.start != scroll.start || owner.end != scroll.end) continue;
+    final String value = scroll.text.substring(physics.end).trimLeft();
+    if (RegExp(
+      r'^(?:const\s+)?NeverScrollableScrollPhysics\s*\(',
+    ).hasMatch(value)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /// 桌面端 Flutter 的默认 `MaterialScrollBehavior.dragDevices` **不含鼠标**：横向
@@ -52,7 +77,7 @@ void main() {
     // WheelToHorizontalScroll 的鼠标滚轮（BUG-1214）。
     'lib/src/media/video/subtitle_waveform_align_panel.dart':
         'cue strip 自带 onHorizontalDrag 调延迟，放开滚动拖动会抢手势；'
-            '滚轮平移由 WheelToHorizontalScroll 提供',
+        '滚轮平移由 WheelToHorizontalScroll 提供',
   };
 
   test('每个横向滚动区都放开了鼠标拖动（或在豁免清单里说明了原因）', () {
@@ -82,17 +107,26 @@ void main() {
       }
     }
 
-    expectScanScale(scanned,
-        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+    expectScanScale(
+      scanned,
+      what: 'lib/ 下的 .dart',
+      atLeast: 750,
+      measured: 939,
+    );
     // `withHorizontal` 才是判据的真分母：扫描面还在、但「横向滚动区」的匹配写法
     // 一旦失配（`dart format` 折行、参数换序），这条守卫就对着 0 个候选跑全绿。
-    expectScanScale(withHorizontal,
-        what: '含横向滚动区的文件', atLeast: 12, measured: 17);
+    expectScanScale(
+      withHorizontal,
+      what: '含横向滚动区的文件',
+      atLeast: 12,
+      measured: 17,
+    );
 
     expect(
       offenders,
       isEmpty,
-      reason: '这些横向滚动区在桌面端鼠标拖不动（默认 dragDevices 不含 mouse）。'
+      reason:
+          '这些横向滚动区在桌面端鼠标拖不动（默认 dragDevices 不含 mouse）。'
           '用 HorizontalDragScrollable 包住滚动件；'
           '若区内已有依赖横拖的手势，加进本测试的 exemptions 并写明理由：\n'
           '${offenders.join('\n')}',
@@ -120,6 +154,25 @@ ListView.builder(
 );
 ''');
       expect(c.horizontals, 1, reason: '折行是 dart format 的常规产物，分母不得依赖「同一行」');
+    });
+
+    test('静止横向骨架无需拖动包裹，普通区仍计数', () {
+      final c = countHorizontalScrollAreas('''
+ListView(scrollDirection: Axis.horizontal, physics: const NeverScrollableScrollPhysics());
+SingleChildScrollView(scrollDirection: Axis.horizontal, child: child);
+''');
+      expect(c.horizontals, 1);
+      expect(c.wrapped, 0);
+    });
+
+    test('子孙的禁滚 physics 不能豁免父级横向滚动区', () {
+      final c = countHorizontalScrollAreas('''
+SingleChildScrollView(
+  scrollDirection: Axis.horizontal,
+  child: ListView(physics: const NeverScrollableScrollPhysics()),
+);
+''');
+      expect(c.horizontals, 1);
     });
 
     test('包裹件计数认左边界，不被同后缀标识符顶包', () {
@@ -161,7 +214,8 @@ void f() {}
     expect(
       maskComments(main.readAsStringSync()),
       isNot(contains('scrollBehavior:')),
-      reason: '全局放开鼠标拖动滚动会让垂直网格与 MediaCardDraggable 的 Draggable '
+      reason:
+          '全局放开鼠标拖动滚动会让垂直网格与 MediaCardDraggable 的 Draggable '
           '抢手势，把「拖卡进合集」变成「拖动网格滚动」。只包横向区。',
     );
   });

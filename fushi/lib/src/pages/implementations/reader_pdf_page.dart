@@ -5,8 +5,11 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:path/path.dart' as p;
 import 'package:pdfrx/pdfrx.dart';
 
@@ -19,6 +22,7 @@ import 'package:fushi/src/lookup/sentence_extraction.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
@@ -504,7 +508,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       FushiToast.show(msg: t.pdf_bookmarks_empty, severity: ToastSeverity.info);
       return;
     }
-    await showAppDialog<void>(
+    await adaptiveModalSheet<void>(
       context: context,
       builder: (BuildContext context) => _PdfBookmarkSheet(
         bookmarks: bookmarks,
@@ -549,10 +553,11 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       FushiToast.show(msg: t.pdf_outline_empty, severity: ToastSeverity.info);
       return;
     }
-    await showAppDialog<void>(
+    await adaptiveModalSheet<void>(
       context: context,
       builder: (BuildContext context) => _PdfOutlineSheet(
         nodes: outline,
+        currentPage: _pdfController.pageNumber,
         onSelect: (PdfOutlineNode node) {
           Navigator.of(context).pop();
           if (node.dest != null) {
@@ -724,31 +729,17 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
               ErrorLogService.instance.log('ReaderPdf.exitFlush', error, stack),
         );
       },
+      // 与小说阅读器同一套悬浮 chrome：顶部 FushiFloatingTopBar（返回 + 书名 /
+      // 页码胶囊 + 书签 / 目录按钮组），底部一颗翻页胶囊（上一页 / 页码滑块 /
+      // 下一页），都悬浮在正文之上，不再占一条贴边 AppBar。返回键恒在（iOS 无
+      // 系统返回键，见 media_page_exit_affordance_guard）。
       child: Scaffold(
-        appBar: FushiAppBar(
-          title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-          actions: <Widget>[
-            _buildPageIndicator(),
-            FushiIconButtonControl(
-              tooltip: t.pdf_bookmarks,
-              icon: const FushiIcon(Icons.bookmark_add_outlined),
-              onPressed: () => unawaited(_addBookmarkAtCurrentPage()),
-            ),
-            FushiIconButtonControl(
-              tooltip: t.pdf_bookmarks,
-              icon: const FushiIcon(Icons.bookmarks_outlined),
-              onPressed: () => unawaited(_showBookmarks()),
-            ),
-            FushiIconButtonControl(
-              tooltip: t.pdf_outline,
-              icon: const FushiIcon(Icons.list_alt_outlined),
-              onPressed: () => unawaited(_showOutline()),
-            ),
-          ],
-        ),
+        backgroundColor: const Color(0xFF3A3A3A),
         body: Stack(
           children: <Widget>[
             Positioned.fill(child: _buildViewer()),
+            _buildFloatingHeader(title),
+            _buildFloatingPager(),
             // 查词弹窗层：必须在树里，否则 searchDictionaryResult 查到也不显示。
             buildDictionary(),
           ],
@@ -757,25 +748,152 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     );
   }
 
-  /// 页码指示器「12 / 345」。纯数字，无需 i18n。
-  Widget _buildPageIndicator() {
-    return AnimatedBuilder(
-      animation: _pdfController,
-      builder: (BuildContext context, Widget? child) {
-        if (!_pdfController.isReady) return const SizedBox.shrink();
-        final int? page = _pdfController.pageNumber;
-        if (page == null) return const SizedBox.shrink();
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Center(
-            child: Text(
-              '$page / ${_pdfController.pageCount}',
-              style: Theme.of(context).textTheme.labelLarge,
-            ),
-          ),
-        );
-      },
+  /// 顶部悬浮栏：返回 + 书名（副标题是页码）+ 书签 / 目录按钮组。
+  Widget _buildFloatingHeader(String title) {
+    final EdgeInsets viewPadding = MediaQuery.viewPaddingOf(context);
+    return Positioned(
+      key: const ValueKey<String>('pdf_floating_header'),
+      top: viewPadding.top + kFushiFloatingToolbarEdgeMargin / 2,
+      left: viewPadding.left + kFushiFloatingToolbarEdgeMargin,
+      right: viewPadding.right + kFushiFloatingToolbarEdgeMargin,
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _pdfController,
+          builder: (BuildContext context, Widget? child) {
+            return FushiFloatingTopBar(
+              leading: <FushiToolbarItem>[
+                FushiToolbarItem(
+                  key: const ValueKey<String>('pdf_back'),
+                  icon: FushiIcons.back,
+                  label: t.back,
+                  onPressed: () => unawaited(Navigator.of(context).maybePop()),
+                ),
+              ],
+              title: title,
+              subtitle: _pageIndicatorText() ?? '',
+              titleTooltip: t.pdf_outline,
+              onTitleTap: () => unawaited(_showOutline()),
+              actions: <List<FushiToolbarItem>>[
+                <FushiToolbarItem>[
+                  FushiToolbarItem(
+                    icon: FushiIcons.bookmarkAdd,
+                    label: t.pdf_bookmarks,
+                    onPressed: () => unawaited(_addBookmarkAtCurrentPage()),
+                  ),
+                  FushiToolbarItem(
+                    icon: FushiIcons.bookmark,
+                    label: t.pdf_bookmarks,
+                    onPressed: () => unawaited(_showBookmarks()),
+                  ),
+                  FushiToolbarItem(
+                    icon: FushiIcons.listView,
+                    label: t.pdf_outline,
+                    onPressed: () => unawaited(_showOutline()),
+                  ),
+                ],
+              ],
+            );
+          },
+        ),
+      ),
     );
+  }
+
+  /// 拖动页码滑块时的预览页（1 起）；松手才真正跳页，null = 未在拖动。
+  double? _scrubPage;
+
+  /// 底部悬浮翻页胶囊：上一页 / M3E 页码滑块 / 下一页。文档未就绪或只有一页时
+  /// 收起（弹簧下沉）。
+  Widget _buildFloatingPager() {
+    final EdgeInsets viewPadding = MediaQuery.viewPaddingOf(context);
+    return Positioned(
+      key: const ValueKey<String>('pdf_floating_pager'),
+      left: viewPadding.left + kFushiFloatingToolbarEdgeMargin,
+      right: viewPadding.right + kFushiFloatingToolbarEdgeMargin,
+      bottom: viewPadding.bottom + kFushiFloatingToolbarEdgeMargin,
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _pdfController,
+          builder: (BuildContext context, Widget? child) {
+            final bool ready = _pdfController.isReady;
+            final int pageCount = ready ? _pdfController.pageCount : 0;
+            final int page = (ready ? _pdfController.pageNumber : null) ?? 1;
+            final bool show = ready && pageCount > 1;
+            return FushiChromeReveal(
+              visible: show,
+              from: AxisDirection.down,
+              child: !show
+                  ? const SizedBox.shrink()
+                  : Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 560),
+                        child: FushiFloatingPill(
+                          color: fushiFloatingToolbarPalette(context).container,
+                          child: Row(
+                            children: <Widget>[
+                              FushiIconButtonControl(
+                                tooltip: t.manga_previous_page,
+                                icon: const FushiIcon(FushiIcons.chevronLeft),
+                                onPressed: page <= 1
+                                    ? null
+                                    : () => unawaited(
+                                          _pdfController.goToPage(
+                                            pageNumber: page - 1,
+                                          ),
+                                        ),
+                              ),
+                              Expanded(
+                                child: FushiSlider(
+                                  key: const ValueKey<String>(
+                                    'pdf_page_slider',
+                                  ),
+                                  value: (_scrubPage ?? page.toDouble())
+                                      .clamp(1.0, pageCount.toDouble())
+                                      .toDouble(),
+                                  min: 1,
+                                  max: pageCount.toDouble(),
+                                  onChanged: (double v) =>
+                                      setState(() => _scrubPage = v),
+                                  onChangeEnd: (double v) {
+                                    setState(() => _scrubPage = null);
+                                    unawaited(
+                                      _pdfController.goToPage(
+                                        pageNumber: v.round(),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              FushiIconButtonControl(
+                                tooltip: t.manga_next_page,
+                                icon: const FushiIcon(FushiIcons.chevronRight),
+                                onPressed: page >= pageCount
+                                    ? null
+                                    : () => unawaited(
+                                          _pdfController.goToPage(
+                                            pageNumber: page + 1,
+                                          ),
+                                        ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// 页码「12 / 345」（纯数字，无需 i18n）；拖动滑块时显示预览页；未就绪时 null。
+  String? _pageIndicatorText() {
+    if (!_pdfController.isReady) return null;
+    final double? scrub = _scrubPage;
+    final int? page = scrub != null ? scrub.round() : _pdfController.pageNumber;
+    if (page == null) return null;
+    return '$page / ${_pdfController.pageCount}';
   }
 
   Widget _buildViewer() {
@@ -843,40 +961,51 @@ class _PdfBookmarkSheetState extends State<_PdfBookmarkSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return FushiDialogFrame(
-      maxWidth: 520,
+    // adaptiveModalSheet：窄屏 M3E 底部弹层 / 宽屏居中浮动面板（圆角 28 + 图标
+    // hero，由 FushiModalSheetFrame 的 leadingIcon 给）。书签是分段卡列表（首尾
+    // 大圆角、行间 2），错峰进场。
+    return FushiModalSheetFrame(
+      title: t.pdf_bookmarks,
+      leadingIcon: FushiIcons.bookmark,
       maxHeightFactor: 0.82,
-      scrollable: false,
-      child: FushiModalSheetFrame(
-        title: t.pdf_bookmarks,
-        leadingIcon: Icons.bookmarks_outlined,
-        body: _items.isEmpty
-            ? Padding(
-                padding: const EdgeInsets.all(24),
-                child: Center(child: Text(t.pdf_bookmarks_empty)),
-              )
-            : ListView.builder(
+      body: _items.isEmpty
+          ? ReaderPanelEmpty(
+              icon: FushiIcons.bookmark,
+              message: t.pdf_bookmarks_empty,
+            )
+          : FushiEntranceScope(
+              child: ListView.builder(
                 shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 itemCount: _items.length,
                 itemBuilder: (BuildContext context, int index) {
                   final Bookmark bookmark = _items[index];
-                  return FushiListItem(
-                    leading: const FushiIcon(Icons.bookmark_outline),
-                    title: Text(bookmark.label),
-                    trailing: FushiIconButtonControl(
-                      tooltip: t.dialog_delete,
-                      icon: const FushiIcon(Icons.delete_outline),
-                      onPressed: () async {
-                        await widget.onDelete(bookmark);
-                        if (!mounted) return;
-                        setState(() => _items.removeAt(index));
-                      },
+                  return FushiStaggeredEntrance(
+                    index: index,
+                    child: FushiGroupedListItem(
+                      index: index,
+                      count: _items.length,
+                      child: FushiListItem(
+                        leading: const FushiListLeadingIcon(
+                          FushiIcons.bookmark,
+                        ),
+                        title: Text(bookmark.label),
+                        trailing: FushiIconButtonControl(
+                          tooltip: t.dialog_delete,
+                          icon: const FushiIcon(FushiIcons.delete),
+                          onPressed: () async {
+                            await widget.onDelete(bookmark);
+                            if (!mounted) return;
+                            setState(() => _items.removeAt(index));
+                          },
+                        ),
+                        onTap: () => widget.onSelect(bookmark),
+                      ),
                     ),
-                    onTap: () => widget.onSelect(bookmark),
                   );
                 },
               ),
-      ),
+            ),
     );
   }
 }
@@ -884,12 +1013,20 @@ class _PdfBookmarkSheetState extends State<_PdfBookmarkSheet> {
 /// PDF 目录弹层：把 pdfrx 的树形 [PdfOutlineNode] 拍平成带缩进的可点列表。
 ///
 /// 用缩进而非可展开树：PDF 目录通常只有 2-3 层且条目不多，拍平一次可见全貌、点一下
-/// 就跳，比逐层展开少两次交互。
+/// 就跳，比逐层展开少两次交互。当前页所在的目录项高亮（与小说阅读器目录同一套
+/// [ReaderPanelListItem]）。
 class _PdfOutlineSheet extends StatelessWidget {
-  const _PdfOutlineSheet({required this.nodes, required this.onSelect});
+  const _PdfOutlineSheet({
+    required this.nodes,
+    required this.onSelect,
+    this.currentPage,
+  });
 
   final List<PdfOutlineNode> nodes;
   final void Function(PdfOutlineNode node) onSelect;
+
+  /// 打开时的当前页（1 起）；null = 未知（不高亮）。
+  final int? currentPage;
 
   /// 深度优先拍平，记录每个节点的层级用于缩进。
   static List<({PdfOutlineNode node, int depth})> _flatten(
@@ -907,34 +1044,54 @@ class _PdfOutlineSheet extends StatelessWidget {
     return out;
   }
 
+  /// 当前页落在哪一条目录项里：拍平序中页码不超过当前页的最后一条。
+  static int? _currentIndex(
+    List<({PdfOutlineNode node, int depth})> flat,
+    int? currentPage,
+  ) {
+    if (currentPage == null) return null;
+    int? best;
+    for (int i = 0; i < flat.length; i++) {
+      final int? page = flat[i].node.dest?.pageNumber;
+      if (page != null && page <= currentPage) best = i;
+    }
+    return best;
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<({PdfOutlineNode node, int depth})> flat = _flatten(nodes);
-    return FushiDialogFrame(
-      maxWidth: 520,
+    final int? current = _currentIndex(flat, currentPage);
+    return FushiModalSheetFrame(
+      title: t.pdf_outline,
+      leadingIcon: FushiIcons.listView,
       maxHeightFactor: 0.82,
-      scrollable: false,
-      child: FushiModalSheetFrame(
-        title: t.pdf_outline,
-        leadingIcon: Icons.list_alt_outlined,
-        body: ListView.builder(
+      body: FushiEntranceScope(
+        child: ListView.builder(
           shrinkWrap: true,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           itemCount: flat.length,
           itemBuilder: (BuildContext context, int index) {
             final ({PdfOutlineNode node, int depth}) entry = flat[index];
             final int? pageNumber = entry.node.dest?.pageNumber;
-            return FushiListItem(
-              // 层级用左内边距表达（FushiListItem 的 padding 是整体内边距）。
-              padding:
-                  EdgeInsets.only(left: 8.0 + entry.depth * 16.0, right: 8),
-              title: Text(
-                entry.node.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+            return readerPanelStagger(
+              index,
+              ReaderPanelListItem(
+                title: entry.node.title,
+                indent: entry.depth * 16.0,
+                current: index == current,
+                trailing: pageNumber != null
+                    ? Text(
+                        '$pageNumber',
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          fontFeatures: const <FontFeature>[
+                            FontFeature.tabularFigures(),
+                          ],
+                        ),
+                      )
+                    : null,
+                onTap: () => onSelect(entry.node),
               ),
-              titleMaxLines: 2,
-              trailing: pageNumber != null ? Text('$pageNumber') : null,
-              onTap: () => onSelect(entry.node),
             );
           },
         ),

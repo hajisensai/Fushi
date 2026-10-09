@@ -1,15 +1,20 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
+import 'package:fushi/src/media/audiobook/book_import_dialog.dart'
+    show ImportProgressCard;
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
 import 'package:fushi/src/media/import/import_flow_mixin.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/import/srt_book_reimport.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 字幕书（`srt_books`）的**重新导入**对话框：一次同时管音频与字幕两半。
@@ -87,65 +92,104 @@ class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return ImportDialogFrame(
-      title: t.srt_book_reimport,
-      leadingIcon: Icons.headphones_outlined,
-      body: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          AdaptiveSettingsSection(
+    final FushiTypography type = context.fushiType;
+    // 导入进行中禁止返回键 / 点遮罩 / Esc 关闭（HBK-AUDIT-037，见 buildImportPopGuard）。
+    return buildImportPopGuard(
+      child: ImportDialogFrame(
+        title: t.srt_book_reimport,
+        leadingIcon: FushiIcons.audiobook,
+        body: FushiEntranceScope(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              FushiFilePickerRow(
-                title: t.srt_import_pick_audio_files,
-                subtitle: _currentAudioLabel,
-                icon: Icons.audio_file_outlined,
-                enabled: !importing,
-                onTap: _pickAudioFiles,
-                actions: <Widget>[
-                  FushiIconButton(
-                    icon: Icons.audio_file_outlined,
-                    tooltip: t.srt_import_pick_audio_files,
-                    isWideTapArea: true,
-                    onTap: _pickAudioFiles,
-                  ),
-                ],
+              FushiStaggeredEntrance(
+                index: 0,
+                child: AdaptiveSettingsSection(
+                  children: <Widget>[
+                    FushiFilePickerRow(
+                      title: t.srt_import_pick_audio_files,
+                      subtitle: _currentAudioLabel,
+                      icon: FushiIcons.audio,
+                      enabled: !importing,
+                      onTap: _pickAudioFiles,
+                      actions: <Widget>[
+                        FushiIconButton(
+                          icon: FushiIcons.folderOpen,
+                          tooltip: t.srt_import_pick_audio_files,
+                          isWideTapArea: true,
+                          onTap: _pickAudioFiles,
+                        ),
+                      ],
+                    ),
+                    FushiFilePickerRow(
+                      title: t.srt_import_pick_subtitle_files,
+                      subtitle: _currentSubtitleLabel,
+                      icon: FushiIcons.subtitles,
+                      enabled: !importing,
+                      onTap: _pickSubtitle,
+                      actions: <Widget>[
+                        FushiIconButton(
+                          icon: FushiIcons.folderOpen,
+                          tooltip: t.srt_import_pick_subtitle_files,
+                          isWideTapArea: true,
+                          onTap: _pickSubtitle,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              FushiFilePickerRow(
-                title: t.srt_import_pick_subtitle_files,
-                subtitle: _currentSubtitleLabel,
-                icon: Icons.subtitles_outlined,
-                enabled: !importing,
-                onTap: _pickSubtitle,
-                actions: <Widget>[
-                  FushiIconButton(
-                    icon: Icons.subtitles_outlined,
-                    tooltip: t.srt_import_pick_subtitle_files,
-                    isWideTapArea: true,
-                    onTap: _pickSubtitle,
+              if (_subtitlePath != null && _bodyIsGenerated) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
+                // 换字幕会连带重建正文：tertiary tonal 提示色块，不是一行灰字。
+                FushiStaggeredEntrance(
+                  index: 1,
+                  child: FushiCard(
+                    tone: FushiCardTone.tertiary,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const FushiIcon(FushiIcons.info, size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            t.srt_book_reimport_subtitle_hint,
+                            // 色块上的字跟卡片配对前景（fushiType 自带页面前景，
+                            // HBK-AUDIT-022）。
+                            style: type.bodyMedium.copyWith(
+                              color: fushiCardToneColors(
+                                context,
+                                FushiCardTone.tertiary,
+                              )?.onContainer,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
+                ),
+              ],
+              if (importing) ...<Widget>[
+                SizedBox(height: tokens.spacing.card),
+                ImportProgressCard(progress: progress, message: progressMsg),
+              ],
             ],
           ),
-          if (_subtitlePath != null && _bodyIsGenerated) ...<Widget>[
-            SizedBox(height: tokens.spacing.gap),
-            Text(
-              t.srt_book_reimport_subtitle_hint,
-              style: tokens.type.metadata,
-            ),
-          ],
-          if (importing) ...buildProgressSection(context, tokens),
+        ),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: context,
+            onPressed: importing ? null : () => Navigator.pop(context),
+            child: Text(t.dialog_cancel),
+          ),
+          buildImportAction(context, onImport: _doImport),
         ],
       ),
-      actions: <Widget>[
-        adaptiveDialogAction(
-          context: context,
-          onPressed: importing ? null : () => Navigator.pop(context),
-          child: Text(t.dialog_cancel),
-        ),
-        buildImportAction(context, onImport: _doImport),
-      ],
     );
   }
 

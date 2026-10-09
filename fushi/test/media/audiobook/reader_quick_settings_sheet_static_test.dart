@@ -4,13 +4,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart'
     show kSettingsRowTitleMaxLines;
 
+import '../../helpers/source_guard.dart';
 import '../../pages/reader_fushi_page_source_corpus.dart';
 
 void main() {
   test('reader quick settings owns the in-book settings hierarchy', () {
-    final String source =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart',
+    ).readAsStringSync();
 
     expect(source, contains('class ReaderQuickSettingsSheet'));
     expect(source, contains("page: 'layout'"));
@@ -23,12 +24,11 @@ void main() {
     expect(source, isNot(contains('class AudiobookSettingsSheet')));
   });
 
-  test(
-      'reader quick settings home has no appearance nav row; appearance group '
+  test('reader quick settings home has no appearance nav row; appearance group '
       'dropped (TODO-802)', () {
-    final String source =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart',
+    ).readAsStringSync();
     final String mainSource = _between(
       source,
       '  Widget _buildMainPage(BuildContext context, ThemeData theme)',
@@ -38,8 +38,10 @@ void main() {
     // 手机/窄窗折叠：主页只剩「阅读进度 + 分类导航行 + 动作行」。
     expect(mainSource, isNot(contains('_buildAppearanceInline')));
     expect(mainSource, contains('_buildProgressSection(theme)'));
-    expect(mainSource,
-        contains('AdaptiveSettingsSection(children: navigationRows)'));
+    expect(
+      mainSource,
+      contains('AdaptiveSettingsSection(children: navigationRows)'),
+    );
     // TODO-802：外观分类整组删除，主页不再有「外观」导航行。
     expect(mainSource, isNot(contains("page: 'appearance'")));
     // 导航置首：location 行排在 navigationRows 第一位（在 layout 之前）。
@@ -54,21 +56,29 @@ void main() {
     expect(source, isNot(contains('Widget _buildQuickControlsSection(')));
 
     // TODO-802：外观卡 + 其行集合 helper 整个删除（外观详情、外观行集合都不再存在）。
-    expect(source, isNot(contains('_appearanceCardChildren')),
-        reason: 'TODO-802：外观行集合 helper 已删');
-    expect(source, isNot(contains('Widget _buildAppearanceDetail()')),
-        reason: 'TODO-802：外观详情子页已删');
-    expect(source, isNot(contains('ReaderGroup.appearance')),
-        reason: 'TODO-802：ReaderGroup.appearance 枚举值已删，不应再被引用');
+    expect(
+      source,
+      isNot(contains('_appearanceCardChildren')),
+      reason: 'TODO-802：外观行集合 helper 已删',
+    );
+    expect(
+      source,
+      isNot(contains('Widget _buildAppearanceDetail()')),
+      reason: 'TODO-802：外观详情子页已删',
+    );
+    expect(
+      source,
+      isNot(contains('ReaderGroup.appearance')),
+      reason: 'TODO-802：ReaderGroup.appearance 枚举值已删，不应再被引用',
+    );
     expect(source, isNot(contains('Widget _buildThemeSelector()')));
   });
 
-  test(
-      'layout sub-page hosts theme selector + book-CSS row; lyrics mode keeps '
+  test('layout sub-page hosts theme selector + book-CSS row; lyrics mode keeps '
       'them reachable (TODO-802/774/801)', () {
-    final String source =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart',
+    ).readAsStringSync();
 
     // TODO-802/774：主题选择器从已删的「外观」组并入「布局与显示」子页顶部；
     // TODO-801：CSS 行也在 layout 子页（仅 extractDir 可用时）。
@@ -77,24 +87,37 @@ void main() {
       '  Widget _buildLayoutDetail()',
       '  Widget _buildLocationSection(ThemeData theme)',
     );
-    expect(layoutDetailSource, contains('_buildThemeSelectorSection()'),
-        reason: 'TODO-802：主题选择器并入 layout 子页（外观组已删）');
-    expect(layoutDetailSource,
-        contains('_buildReaderGroupContent(ReaderGroup.layout'),
-        reason: 'layout 子页详情渲染 layout schema 行');
-    expect(layoutDetailSource, contains('_buildBookCssEditorSection()'),
-        reason: 'TODO-801/BUG-573：编辑书籍 CSS 行经等宽 section 随 layout 子页详情渲染');
-    expect(layoutDetailSource, contains('widget.extractDir != null'),
-        reason: 'extractDir 不可用时不渲染 CSS 行（保留显示条件）');
+    expect(
+      layoutDetailSource,
+      contains('_buildThemeSelectorSection()'),
+      reason: 'TODO-802：主题选择器并入 layout 子页（外观组已删）',
+    );
+    expect(
+      layoutDetailSource,
+      contains('_buildReaderGroupContent(ReaderGroup.layout'),
+      reason: 'layout 子页详情渲染 layout schema 行',
+    );
+    expect(
+      layoutDetailSource,
+      contains('_buildBookCssEditorSection()'),
+      reason: 'TODO-801/BUG-573：编辑书籍 CSS 行经等宽 section 随 layout 子页详情渲染',
+    );
+    expect(
+      layoutDetailSource,
+      contains('widget.extractDir != null'),
+      reason: 'extractDir 不可用时不渲染 CSS 行（保留显示条件）',
+    );
 
     // 主题选择器卡用主题专用 context（换肤后还 _syncThemeSelection）。
     final String themeSectionSource = _between(
       source,
-      '  Widget _buildThemeSelectorSection()',
+      '  Widget _buildThemeSelectorSection(',
       '  Widget _buildBookCssEditorRow()',
     );
-    expect(themeSectionSource,
-        contains('buildThemeSelector(_themeSettingsContext())'));
+    expect(
+      themeSectionSource,
+      contains('buildThemeSelector(_themeSettingsContext())'),
+    );
 
     // CSS 编辑入口行本身仍保留打开 BookCssEditorPage + 返回后整章重排的逻辑。
     final String cssRowSource = _between(
@@ -103,13 +126,18 @@ void main() {
       '  Widget _buildLayoutDetail()',
     );
     expect(cssRowSource, contains('book_css_editor_edit_css'));
-    expect(cssRowSource,
-        contains('BookCssEditorPage(extractDir: widget.extractDir!'));
+    expect(
+      cssRowSource,
+      contains('BookCssEditorPage(extractDir: widget.extractDir!'),
+    );
     expect(cssRowSource, contains('_reloadLayoutLive()'));
 
     // 'layout' 子页分支调用 _buildLayoutDetail（非直接 _buildReaderGroupContent）。
-    expect(source, contains(': _buildLayoutDetail()'),
-        reason: 'layout 子页（非歌词模式）经 _buildLayoutDetail 渲染');
+    expect(
+      source,
+      contains(': _buildLayoutDetail()'),
+      reason: 'layout 子页（非歌词模式）经 _buildLayoutDetail 渲染',
+    );
 
     // TODO-802 可达性：歌词模式布局子页也露出主题选择器 + CSS 行，否则删外观组后
     // 歌词模式将完全够不到主题/CSS。
@@ -118,17 +146,23 @@ void main() {
       '  Widget _buildLyricsDisplaySection()',
       '  Widget _buildLyricsMarginSection()',
     );
-    expect(lyricsSource, contains('_buildThemeSelectorSection()'),
-        reason: 'TODO-802：歌词模式必须能达到主题选择器');
-    expect(lyricsSource, contains('_buildBookCssEditorSection()'),
-        reason: 'TODO-802/BUG-573：歌词模式（extractDir 可用时）经等宽 section 达到编辑书籍 CSS');
+    expect(
+      lyricsSource,
+      contains('_buildThemeSelectorSection()'),
+      reason: 'TODO-802：歌词模式必须能达到主题选择器',
+    );
+    expect(
+      lyricsSource,
+      contains('_buildBookCssEditorSection()'),
+      reason: 'TODO-802/BUG-573：歌词模式（extractDir 可用时）经等宽 section 达到编辑书籍 CSS',
+    );
     expect(lyricsSource, contains('widget.extractDir != null'));
   });
 
   test('reader quick settings sheet uses shared MD3 sheet chrome', () {
-    final String source =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart',
+    ).readAsStringSync();
 
     // sheet 外壳骨架已抽到共享 FushiMasterDetailSettingsSheet（TODO-583）：阅读器
     // 经它进入 PopScope + FushiModalSheetFrame + master-detail；frame / maxHeightFactor
@@ -140,13 +174,13 @@ void main() {
   });
 
   test('reader quick settings action buttons use shared MD3 icon controls', () {
-    final String source =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart',
+    ).readAsStringSync();
     // 返回页头已抽到共享 FushiSettingsSubPageHeader（TODO-583）：从共享文件读它。
-    final String sharedSheetSource =
-        File('lib/src/settings/master_detail_settings_sheet.dart')
-            .readAsStringSync();
+    final String sharedSheetSource = File(
+      'lib/src/settings/master_detail_settings_sheet.dart',
+    ).readAsStringSync();
     final String headerSource = _between(
       sharedSheetSource,
       'class FushiSettingsSubPageHeader',
@@ -174,8 +208,10 @@ void main() {
       final String normalized = _withoutSharedIconButton(actionSource);
       expect(normalized, isNot(contains('return IconButton(')));
       expect(normalized, isNot(contains('child: IconButton(')));
-      expect(actionSource,
-          isNot(contains('visualDensity: VisualDensity.compact')));
+      expect(
+        actionSource,
+        isNot(contains('visualDensity: VisualDensity.compact')),
+      );
     }
     expect(
       favoriteActionSource,
@@ -192,40 +228,50 @@ void main() {
     expect(inBookSource, isNot(contains('VisualDensity.compact')));
   });
 
-  test('audiobook play bar restores the MD3 filled-tonal play frame (TODO-297)',
-      () {
-    // 代际守卫翻转：48a8d2044 曾把播放条全部按钮换成扁平的 FushiIconButton，
-    // TODO-297 把主操作（播放/暂停）还原成原生 [IconButton.filledTonal]（MD3 圆框
-    // + state-layer + ripple），其余键（上一句/下一句/follow/设置）还原成无框原生
-    // [IconButton]。锁住「图标 + 圆框 md3」旧观感不再回退到扁平自定义按钮。
-    final String source =
-        File('lib/src/media/audiobook/audiobook_play_bar.dart')
-            .readAsStringSync();
+  test(
+    'audiobook play bar restores the MD3 filled-tonal play frame (TODO-297)',
+    () {
+      // 代际守卫翻转：48a8d2044 曾把播放条全部按钮换成扁平的 FushiIconButton，
+      // TODO-297 把主操作（播放/暂停）还原成原生 [IconButton.filledTonal]（MD3 圆框
+      // + state-layer + ripple），其余键（上一句/下一句/follow/设置）还原成无框原生
+      // [IconButton]。锁住「图标 + 圆框 md3」旧观感不再回退到扁平自定义按钮。
+      final String source = File(
+        'lib/src/media/audiobook/audiobook_play_bar.dart',
+      ).readAsStringSync();
 
-    // 播放/暂停键是 filled-tonal 圆框。经设计系统分派包装：MD3 下渲染的
-    // 正是原生 IconButton.filledTonal，玻璃设计系统下换成玻璃圆钮。
-    expect(source, contains('FushiIconButtonControl.filledTonal('));
-    // 不再用扁平的共享 FushiIconButton 渲染播放条按钮。
-    expect(source, isNot(contains('FushiIconButton(')));
-  });
+      // 播放/暂停键是 filled-tonal 圆框。经设计系统分派包装：MD3 下渲染的
+      // 正是原生 IconButton.filledTonal，玻璃设计系统下换成玻璃圆钮。
+      expect(source, contains('FushiIconButtonControl.filledTonal('));
+      // 不再用扁平的共享 FushiIconButton 渲染播放条按钮。
+      expect(source, isNot(contains('FushiIconButton(')));
+    },
+  );
 
   test('reader quick settings sheet uses MD3 spacing tokens', () {
-    final String source =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart',
+    ).readAsStringSync();
 
     expect(source, contains('FushiDesignTokens.of(context)'));
     expect(source, isNot(contains('const SizedBox(height: 12)')));
     expect(source, isNot(contains('const SizedBox(height: 8)')));
     expect(source, isNot(contains('const SizedBox(width: 8)')));
     expect(
-        source, isNot(contains('padding: const EdgeInsets.only(bottom: 8)')));
+      source,
+      isNot(contains('padding: const EdgeInsets.only(bottom: 8)')),
+    );
     expect(
-        source, isNot(contains('contentPadding: const EdgeInsets.symmetric(')));
-    expect(source,
-        isNot(contains('padding: const EdgeInsets.symmetric(horizontal: 12')));
-    expect(source,
-        isNot(contains('padding: const EdgeInsets.symmetric(vertical: 12')));
+      source,
+      isNot(contains('contentPadding: const EdgeInsets.symmetric(')),
+    );
+    expect(
+      source,
+      isNot(contains('padding: const EdgeInsets.symmetric(horizontal: 12')),
+    );
+    expect(
+      source,
+      isNot(contains('padding: const EdgeInsets.symmetric(vertical: 12')),
+    );
     expect(source, isNot(contains('spacing: 6')));
     expect(source, isNot(contains('runSpacing: 6')));
     expect(source, isNot(contains('const SizedBox(height: 4)')));
@@ -239,33 +285,35 @@ void main() {
   });
 
   test('reader quick settings section headings use shared settings chrome', () {
-    final String source =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart',
+    ).readAsStringSync();
 
     expect(source, contains('SettingsSectionHeader('));
     expect(source, isNot(contains('style: theme.textTheme.titleMedium')));
   });
 
-  test('in-book settings header uses theme typography without hardcoded size',
-      () {
-    // 返回页头已抽到共享 FushiSettingsSubPageHeader（TODO-583）：扫共享文件。
-    final String source =
-        File('lib/src/settings/master_detail_settings_sheet.dart')
-            .readAsStringSync();
-    final String headerSource = source.substring(
-      source.indexOf('class FushiSettingsSubPageHeader'),
-      source.indexOf('class FushiMasterDetailSettingsSheet'),
-    );
+  test(
+    'in-book settings header uses theme typography without hardcoded size',
+    () {
+      // 返回页头已抽到共享 FushiSettingsSubPageHeader（TODO-583）：扫共享文件。
+      final String source = File(
+        'lib/src/settings/master_detail_settings_sheet.dart',
+      ).readAsStringSync();
+      final String headerSource = source.substring(
+        source.indexOf('class FushiSettingsSubPageHeader'),
+        source.indexOf('class FushiMasterDetailSettingsSheet'),
+      );
 
-    expect(headerSource, contains('navTitleTextStyle'));
-    expect(headerSource, isNot(contains('fontSize: 17')));
-  });
+      expect(headerSource, contains('navTitleTextStyle'));
+      expect(headerSource, isNot(contains('fontSize: 17')));
+    },
+  );
 
   test('reader action row flexes so labels never overflow (BUG-028)', () {
-    final String source =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart',
+    ).readAsStringSync();
     final String actionRowSource = _between(
       source,
       '  Widget _buildActionRow(BuildContext context)',
@@ -274,10 +322,16 @@ void main() {
 
     // 根因：spaceAround 只分配正余白，子项固有宽度（标签+固定内边距）超出可用
     // 宽度时照样溢出。修复改为每个按钮 Expanded 均分槽位，且不再用 spaceAround。
-    expect(actionRowSource, contains('Expanded('),
-        reason: '动作按钮必须包进 Expanded 才能在任意标签宽度下均分、不溢出');
-    expect(actionRowSource, isNot(contains('MainAxisAlignment.spaceAround')),
-        reason: 'spaceAround 不缩子项，是 3.3px 右溢出的根因');
+    expect(
+      actionRowSource,
+      contains('Expanded('),
+      reason: '动作按钮必须包进 Expanded 才能在任意标签宽度下均分、不溢出',
+    );
+    expect(
+      actionRowSource,
+      isNot(contains('MainAxisAlignment.spaceAround')),
+      reason: 'spaceAround 不缩子项，是 3.3px 右溢出的根因',
+    );
 
     // 标签在槽位内也要安全降级：短 CJK 标签可换成两行完整显示，
     // 极端长标签仍用 ellipsis 兜底，避免把 Column 无限撑高。
@@ -297,83 +351,113 @@ void main() {
     expect(actionBtnSource, contains('maxLines: 2'));
   });
 
-  test(
-      'reader exit waits until the quick-settings overlay is dismissed '
+  test('reader exit waits until the quick-settings overlay is dismissed '
       '(BUG-481)', () {
-    final String source =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart',
+    ).readAsStringSync();
     final String exitActionSource = _between(
       source,
       'label: t.action_exit',
       '  Widget _actionBtn(',
     );
 
-    expect(exitActionSource, contains('if (_exitScheduled)'),
-        reason: '退出动作必须幂等，避免重复焦点/键盘激活调度多次退出');
-    expect(exitActionSource, contains('_exitScheduled = true;'),
-        reason: '第一次退出点击后要立即锁住，不能等下一帧才防重复');
-    expect(exitActionSource, contains('final VoidCallback exitReader'),
-        reason: '退出回调要先捕获，避免下一帧读取已卸载 sheet 的 widget 状态');
-    expect(exitActionSource, contains('Navigator.of(context).pop();'),
-        reason: '先关闭快捷设置 overlay');
-    expect(exitActionSource,
-        contains('WidgetsBinding.instance.addPostFrameCallback'),
-        reason: '阅读器退出会 dispose 有声书 session 并同步 notify，必须等 overlay '
-            '本帧布局/激活结束后再触发');
-    expect(exitActionSource, contains('exitReader();'),
-        reason: '下一帧触发调用方退出阅读器');
+    expect(
+      exitActionSource,
+      contains('if (_exitScheduled)'),
+      reason: '退出动作必须幂等，避免重复焦点/键盘激活调度多次退出',
+    );
+    expect(
+      exitActionSource,
+      contains('_exitScheduled = true;'),
+      reason: '第一次退出点击后要立即锁住，不能等下一帧才防重复',
+    );
+    expect(
+      exitActionSource,
+      contains('final VoidCallback exitReader'),
+      reason: '退出回调要先捕获，避免下一帧读取已卸载 sheet 的 widget 状态',
+    );
+    expect(
+      exitActionSource,
+      contains('Navigator.of(context).pop();'),
+      reason: '先关闭快捷设置 overlay',
+    );
+    expect(
+      exitActionSource,
+      contains('WidgetsBinding.instance.addPostFrameCallback'),
+      reason:
+          '阅读器退出会 dispose 有声书 session 并同步 notify，必须等 overlay '
+          '本帧布局/激活结束后再触发',
+    );
+    expect(
+      exitActionSource,
+      contains('exitReader();'),
+      reason: '下一帧触发调用方退出阅读器',
+    );
 
-    final int popIndex =
-        exitActionSource.indexOf('Navigator.of(context).pop()');
-    final int postFrameIndex = exitActionSource
-        .indexOf('WidgetsBinding.instance.addPostFrameCallback');
+    final int popIndex = exitActionSource.indexOf(
+      'Navigator.of(context).pop()',
+    );
+    final int postFrameIndex = exitActionSource.indexOf(
+      'WidgetsBinding.instance.addPostFrameCallback',
+    );
     final int exitIndex = exitActionSource.indexOf('exitReader();');
     expect(popIndex, isNonNegative);
-    expect(postFrameIndex, greaterThan(popIndex),
-        reason: '不能在关闭 overlay 前调度退出');
-    expect(exitIndex, greaterThan(postFrameIndex),
-        reason: 'onExitReader 不能和 Navigator.pop 同一布局帧同步执行');
-    expect(exitActionSource, isNot(contains('widget.onExitReader();')),
-        reason: '直接同步退出会复现 _RenderLayoutBuilder performLayout 期间被修改');
+    expect(
+      postFrameIndex,
+      greaterThan(popIndex),
+      reason: '不能在关闭 overlay 前调度退出',
+    );
+    expect(
+      exitIndex,
+      greaterThan(postFrameIndex),
+      reason: 'onExitReader 不能和 Navigator.pop 同一布局帧同步执行',
+    );
+    expect(
+      exitActionSource,
+      isNot(contains('widget.onExitReader();')),
+      reason: '直接同步退出会复现 _RenderLayoutBuilder performLayout 期间被修改',
+    );
   });
 
   test('reader page opens the reader quick settings sheet', () {
     final String readerSource = readReaderPageSource();
-    final String playBarSource =
-        File('lib/src/media/audiobook/audiobook_play_bar.dart')
-            .readAsStringSync();
+    final String playBarSource = File(
+      'lib/src/media/audiobook/audiobook_play_bar.dart',
+    ).readAsStringSync();
 
     expect(readerSource, contains('ReaderQuickSettingsSheet'));
     expect(readerSource, isNot(contains('AudiobookSettingsSheet(')));
     expect(playBarSource, isNot(contains('class AudiobookSettingsSheet')));
   });
 
-  test('reading progress section shows book title and current chapter name',
-      () {
-    final String source =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
+  test(
+    'reading progress section shows book title and current chapter name',
+    () {
+      final String source = File(
+        'lib/src/media/audiobook/reader_quick_settings_sheet.dart',
+      ).readAsStringSync();
 
-    // sheet 暴露 chapterLabel 入参，承载阅读器页面反查出的当前章节名。
-    expect(source, contains('final String? chapterLabel;'));
+      // sheet 暴露 chapterLabel 入参，承载阅读器页面反查出的当前章节名。
+      expect(source, contains('final String? chapterLabel;'));
 
-    final String progressSource = _between(
-      source,
-      '  Widget _buildProgressSection(ThemeData theme)',
-      '  Widget _buildAudioProgressLine(',
-    );
-    // 阅读进度区块在数字进度行之上额外渲染书名（epubBook.title）与章节名。
-    expect(progressSource, contains('widget.epubBook?.title'));
-    expect(progressSource, contains('widget.chapterLabel'));
-    // 书名/章节名为空时不渲染空行。
-    expect(progressSource, contains('hasTitle'));
-    expect(progressSource, contains('hasChapter'));
+      final String progressSource = _between(
+        source,
+        '  Widget _buildProgressSection(ThemeData theme)',
+        '  Widget _buildAudioProgressLine(',
+      );
+      // 阅读进度区块在数字进度行之上额外渲染书名（epubBook.title）与章节名。
+      expect(progressSource, contains('widget.epubBook?.title'));
+      expect(progressSource, contains('widget.chapterLabel'));
+      // 书名/章节名为空时不渲染空行。
+      expect(progressSource, contains('hasTitle'));
+      expect(progressSource, contains('hasChapter'));
 
-    // 阅读器页面把当前章节名喂给 sheet。
-    final String readerSource = readReaderPageSource();
-    expect(readerSource, contains('chapterLabel: _currentChapterLabel()'));
-  });
+      // 阅读器页面把当前章节名喂给 sheet。
+      final String readerSource = readReaderPageSource();
+      expect(readerSource, contains('chapterLabel: _currentChapterLabel()'));
+    },
+  );
 
   test('all platforms share side sheets, audiobook panel included', () {
     final String source = readReaderPageSource();
@@ -385,7 +469,8 @@ void main() {
     // 2026-09-27：手机的有声书面板也走右侧侧栏，不再有底部抽屉分支。
     expect(route, isNot(contains('readerAudiobookUsesSideSheet(')));
     expect(route, contains('showReaderSideSheet<void>('));
-    expect(route, contains('ReaderSideSheetSide.left'));
+    // 2026-10 整合：四类侧板同一外壳、同一停靠边，开着时原地切换。
+    expect(route, contains('switcher: _readerPanelSwitcher('));
     expect(route, contains('ReaderSideSheetSide.right'));
     expect(route, isNot(contains('ReaderQuickSettingsPresentation.sheet')));
     expect(route, isNot(contains('FushiDialogFrame(')));
@@ -393,9 +478,9 @@ void main() {
   });
 
   test('reader quick settings no longer has a master-detail wide layout', () {
-    final String source =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart',
+    ).readAsStringSync();
     final String chrome = File(
       'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
     ).readAsStringSync();
@@ -409,10 +494,10 @@ void main() {
     expect(source, isNot(contains('Widget _buildWidePane(')));
     expect(source, isNot(contains('Widget _buildWidePrimary(')));
     expect(source, isNot(contains('SupportingPaneSide.start')));
-    // 分类顺序仍只有一份（设置抽屉分段条 / 有声书面板 / 窄窗主页共用）。
-    expect(source, contains('_wideCategories()'));
+    // 2026-10 侧板重设计：设置侧板的分页改由 reader_settings_ia.dart 的
+    // readerSettingsTabs 按任务分组给出，宽窗分类表（_wideCategories）已删。
+    expect(source, contains('readerSettingsTabs('));
     expect(source, isNot(contains("id: 'appearance'")));
-    expect(source, contains("id: 'location'"));
 
     // 窄窗（手机 bottom sheet）保留原 push：主页 / 子页。
     expect(source, contains('? _buildSubPage(context, theme)'));
@@ -425,12 +510,10 @@ void main() {
     expect(source, isNot(contains('_wideProbeHeight')));
   });
 
-  test(
-      'narrow nav rows and wide categories share the same category order '
-      '(TODO-725: nav-first)', () {
-    final String source =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
+  test('narrow nav rows keep the nav-first category order (TODO-725)', () {
+    final String source = File(
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart',
+    ).readAsStringSync();
 
     // 窄窗主页 navigationRows 的分类顺序（按 page: 出现顺序）。
     final String mainSource = _between(
@@ -438,21 +521,9 @@ void main() {
       '  Widget _buildMainPage(BuildContext context, ThemeData theme)',
       '  Widget _buildSubPage(BuildContext context, ThemeData theme)',
     );
-    final List<String> narrowOrder = RegExp(r"page: '([a-z]+)'")
-        .allMatches(mainSource)
-        .map((Match m) => m.group(1)!)
-        .toList();
-
-    // 宽窗 _wideCategories 的分类顺序（按 id: 出现顺序）。
-    final String wideSource = _between(
-      source,
-      '  List<({String id, IconData icon, String label})> _wideCategories()',
-      '  Widget _buildMainPage(BuildContext context, ThemeData theme)',
-    );
-    final List<String> wideOrder = RegExp(r"id: '([a-z]+)'")
-        .allMatches(wideSource)
-        .map((Match m) => m.group(1)!)
-        .toList();
+    final List<String> narrowOrder = RegExp(
+      r"page: '([a-z]+)'",
+    ).allMatches(mainSource).map((Match m) => m.group(1)!).toList();
 
     // TODO-802：「外观」分类已删，顺序里不再含 appearance。
     const List<String> expected = <String>[
@@ -463,13 +534,10 @@ void main() {
       'audiobook',
     ];
     expect(narrowOrder, expected, reason: '窄窗主页分类顺序必须导航置首：$narrowOrder');
-    expect(wideOrder, expected, reason: '宽窗分类顺序必须与窄窗一致、导航置首：$wideOrder');
     expect(narrowOrder.first, 'location');
-    expect(wideOrder.first, 'location');
   });
 
-  test(
-      'in-book TOC row passes titleMaxLines > 2 so long chapter names wrap '
+  test('in-book TOC row passes titleMaxLines > 2 so long chapter names wrap '
       '(TODO-1055, BUG-488)', () {
     // 回归守卫：手机端目录（TOC）里长章节名曾被 AdaptiveSettingsRow 的默认 2 行
     // clamp（kSettingsRowTitleMaxLines）截断。修复给 _InBookTocRow 的
@@ -479,9 +547,9 @@ void main() {
     // 有效，但那测不到 _InBookTocRow 是否真的把它传下去——若有人误删 TOC 行的
     // titleMaxLines，那份 widget 测仍会绿。这里补一条源码守卫，锁住 TOC 行确实
     // 传了一个 > 2 的 titleMaxLines（仍为有限值，避免病态长标题撑爆行）。
-    final String source =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart',
+    ).readAsStringSync();
     final int tocIndex = source.indexOf('class _InBookTocRow');
     expect(tocIndex, isNonNegative, reason: 'Missing _InBookTocRow class');
     final int nextClassIndex = source.indexOf('class ', tocIndex + 1);
@@ -489,52 +557,117 @@ void main() {
         ? source.substring(tocIndex, nextClassIndex)
         : source.substring(tocIndex);
 
-    // TOC 行必须用共享 AdaptiveSettingsRow 渲染章节名（章节名走它的 title）。
-    expect(tocSource, contains('AdaptiveSettingsRow('),
-        reason: 'TOC 章节行应复用共享 AdaptiveSettingsRow 渲染标题');
-
-    // 必须显式传 titleMaxLines，且其值为 > 2 的有限整数字面量。
-    final RegExpMatch? match =
-        RegExp(r'titleMaxLines:\s*(\d+)').firstMatch(tocSource);
-    expect(match, isNotNull,
-        reason: 'TOC 章节行必须显式传 titleMaxLines，否则回退默认 2 行截断长章节名');
+    // 2026-10 导航重做：TOC 行委托给 ReaderTocRow（reader_navigation_widgets.dart）
+    // 渲染章节名，行数上限是它的 titleMaxLines 常量。
+    expect(
+      tocSource,
+      contains('ReaderTocRow('),
+      reason: 'TOC 章节行应委托 ReaderTocRow 渲染标题',
+    );
+    final String rowSource = File(
+      'lib/src/reader/reader_navigation_widgets.dart',
+    ).readAsStringSync();
+    final RegExpMatch? match = RegExp(
+      r'static const int titleMaxLines = (\d+);',
+    ).firstMatch(rowSource);
+    expect(
+      match,
+      isNotNull,
+      reason: 'ReaderTocRow 必须显式声明 titleMaxLines，否则回退默认 2 行截断长章节名',
+    );
     final int maxLines = int.parse(match!.group(1)!);
-    expect(maxLines, greaterThan(kSettingsRowTitleMaxLines),
-        reason: '章节名要能换行显示，titleMaxLines 必须大于默认 2 行 clamp');
+    expect(
+      maxLines,
+      greaterThan(kSettingsRowTitleMaxLines),
+      reason: '章节名要能换行显示，titleMaxLines 必须大于默认 2 行 clamp',
+    );
+    expect(
+      rowSource,
+      contains('maxLines: titleMaxLines'),
+      reason: '标题 Text 必须真的用上 titleMaxLines',
+    );
   });
 
-  test(
-      'Ctrl+F opens the sheet straight to the navigation (location) sub-page '
+  test('Ctrl+F opens the sheet straight to the navigation (location) sub-page '
       '(TODO-1309①)', () {
-    final String sheetSource =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
+    final String sheetSource = File(
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart',
+    ).readAsStringSync();
 
     // The sheet takes an initialSubPage entry point and seeds _subPage from it,
     // so a caller can open it already showing a chosen sub-page (窄窗直接落子页，
     // 不必先停在主菜单再点一次导航)。宽窗 selectedId 早已默认 'location'。
-    expect(sheetSource, contains('final String? initialSubPage;'),
-        reason: 'sheet 必须暴露 initialSubPage 入口参数');
-    expect(sheetSource, contains('this.initialSubPage,'),
-        reason: 'initialSubPage 必须进构造函数');
     expect(
-        sheetSource, contains('late String? _subPage = widget.initialSubPage;'),
-        reason: '_subPage 必须由 initialSubPage 初始化，否则窄窗仍落主菜单');
+      sheetSource,
+      contains('final String? initialSubPage;'),
+      reason: 'sheet 必须暴露 initialSubPage 入口参数',
+    );
+    expect(
+      sheetSource,
+      contains('this.initialSubPage,'),
+      reason: 'initialSubPage 必须进构造函数',
+    );
+    expect(
+      sheetSource,
+      contains('late String? _subPage = widget.initialSubPage;'),
+      reason: '_subPage 必须由 initialSubPage 初始化，否则窄窗仍落主菜单',
+    );
 
     // The reader page routes the new readerOpenNavigation shortcut into
     // _showAppearanceSheet(initialSubPage: 'location') so Ctrl+F lands on the
     // navigation sub-page (search / char-jump / TOC / bookmarks / favorites).
     final String readerSource = readReaderPageSource();
-    expect(readerSource,
-        contains('Future<void> _showAppearanceSheet({String? initialSubPage})'),
-        reason: '_showAppearanceSheet 必须接受 initialSubPage 并透传给 sheet');
-    expect(readerSource, contains('initialSubPage: initialSubPage,'),
-        reason: '打开 sheet 时必须把 initialSubPage 透传下去');
-    expect(readerSource, contains('case ShortcutAction.readerOpenNavigation:'),
-        reason: 'reader 执行体必须处理 readerOpenNavigation');
-    expect(readerSource,
-        contains("_showAppearanceSheet(initialSubPage: 'location')"),
-        reason: 'Ctrl+F 必须直达 location 导航子页');
+    final String openAppearance = compactCode(
+      methodBody(readerSource, 'Future<void> _showAppearanceSheet('),
+    );
+    expect(
+      openAppearance,
+      contains('String?initialSubPage,'),
+      reason: '_showAppearanceSheet 必须接受 initialSubPage',
+    );
+    // 统一侧板通过 kind 分发；location 先映射到 navigation，再在内容工厂
+    // 中还原为 sheet 的 initialSubPage。守真实链路，不绑定旧的单行签名。
+    expect(
+      openAppearance,
+      contains("switch(initialSubPage){'location'=>_kReaderPanelNavigation,"),
+    );
+    expect(openAppearance, contains('await_openReaderPanel(kind,'));
+    final String panelContent = methodBody(
+      readerSource,
+      'Widget _buildReaderPanelContent(',
+    );
+    final String navigationContent = compactCode(
+      _between(
+        panelContent,
+        'case _kReaderPanelNavigation:',
+        'case _kReaderPanelAudiobook',
+      ),
+    );
+    expect(navigationContent, contains('return_buildQuickSettingsSheet('));
+    expect(
+      navigationContent,
+      contains(
+        'presentation:ReaderQuickSettingsPresentation.sideSheetNavigation,',
+      ),
+    );
+    expect(navigationContent, contains("initialSubPage:'location',"));
+    expect(
+      compactCode(methodBody(readerSource, 'Widget _buildQuickSettingsSheet(')),
+      contains('initialSubPage:initialSubPage,'),
+      reason: '组装 sheet 时必须把 initialSubPage 透传下去',
+    );
+    final String navigationShortcut = compactCode(
+      _between(
+        readerSource,
+        'case ShortcutAction.readerOpenNavigation:',
+        'case ShortcutAction.readerOpenGallery:',
+      ),
+    );
+    expect(
+      navigationShortcut,
+      contains("_showAppearanceSheet(initialSubPage:'location')"),
+      reason: 'Ctrl+F 必须直达 location 导航子页',
+    );
   });
 }
 
@@ -544,8 +677,9 @@ String _withoutSharedIconButton(String source) {
 
 String _between(String source, Object start, Object end) {
   final int startIndex = start is int ? start : source.indexOf(start as String);
-  final int endIndex =
-      end is int ? end : source.indexOf(end as String, startIndex);
+  final int endIndex = end is int
+      ? end
+      : source.indexOf(end as String, startIndex);
   expect(startIndex, isNonNegative, reason: 'Missing source marker: $start');
   expect(endIndex, isNonNegative, reason: 'Missing source marker: $end');
   return source.substring(startIndex, endIndex);

@@ -490,7 +490,7 @@ class OffscreenVideoFrameGrabber {
         outFile.deleteSync();
       } catch (_) {}
       if (bytes.isEmpty) return null;
-      return _decode(bytes);
+      return await _decode(bytes);
     } catch (_) {
       return null;
     }

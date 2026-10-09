@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/platform/desktop/desktop_device_info_service.dart';
@@ -85,6 +85,7 @@ class FushiSyncServerController extends ChangeNotifier {
     HostDownloadHost Function()? downloadsFactory,
     HostSubscriptionHost Function()? subscriptionsFactory,
     HostAssistantProvider Function()? assistantFactory,
+    VideoSubtitleBackfillRunner? videoSubtitleBackfill,
     PrefStore Function()? prefsStore,
     PlatformDeviceInfoService? deviceInfo,
   })  : _navigatorKey = navigatorKey,
@@ -100,6 +101,7 @@ class FushiSyncServerController extends ChangeNotifier {
         _downloadsFactory = downloadsFactory,
         _subscriptionsFactory = subscriptionsFactory,
         _assistantFactory = assistantFactory,
+        _videoSubtitleBackfill = videoSubtitleBackfill,
         _prefsStore = prefsStore,
         // Headless/test construction without an injected service falls back to
         // the desktop (machine-hostname) source; production wires the real
@@ -135,6 +137,10 @@ class FushiSyncServerController extends ChangeNotifier {
 
   /// AI 助手会话（`/api/assistant`：手机把一句话交给本机的 AI 去办）。
   final HostAssistantProvider Function()? _assistantFactory;
+
+  /// 「立即给这个视频补字幕」（`POST /api/library/videos/<id>/subtitle/backfill`）。
+  /// null（headless/单测）= 端点 501。
+  final VideoSubtitleBackfillRunner? _videoSubtitleBackfill;
   /// host 偏好读侧（`PreferencesRepository`）。null（单测 / 老调用方）= 引擎按默认值
   /// 走，行为与接线前一致。
   final PrefStore Function()? _prefsStore;
@@ -684,7 +690,8 @@ class FushiSyncServerController extends ChangeNotifier {
       // 地址集（docs/specs/2026-09-28-interconnect-remote-reach.md §1）：公网 /
       // 反代地址每次 capabilities 实时读，改完不必重启互联服务。
       ..hostId = hostId
-      ..publicUrlsProvider = repo.getInterconnectPublicUrls;
+      ..publicUrlsProvider = repo.getInterconnectPublicUrls
+      ..videoSubtitleBackfill = _videoSubtitleBackfill;
     publish(server);
     // Fushi 改名迁移（host 侧）：host 的 WebDAV 根映射到 server.syncDataDir，
     // client 的同步根是其下的 `fushi-data/` 子目录。旧安装磁盘上还留着

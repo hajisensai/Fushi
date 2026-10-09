@@ -1,10 +1,11 @@
 import 'dart:io';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_mini_bar.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// BUG-2165：推荐包 9.5 GB 的下载在 BUG-2097 之后确实活过了新手引导，但可见入口
@@ -41,6 +42,14 @@ void main() {
         ),
       ),
     );
+  }
+
+  // 迷你条出现走 M3E 弹簧（f0412a8）：占位 AnimatedSize 从 0 高展开 + 交错入场，
+  // 只 pump 一帧时条仍被裁在 0 高里点不到。下载中带不定态进度条（永远在动），
+  // 不能 pumpAndSettle——把假时钟推过整段入场再交互。
+  Future<void> pumpEntrance(WidgetTester tester) async {
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
   }
 
   RecommendedPackDownloadController newController() {
@@ -115,7 +124,7 @@ void main() {
     );
     controller.stage.value = RecommendedPackDownloadStage.paused;
     controller.receivedBytes.value = 3 * 1024 * 1024 * 1024;
-    await tester.pump();
+    await pumpEntrance(tester);
 
     await tester.tap(find.text(t.onboarding_pack_download_discard));
     await tester.pump();
@@ -145,7 +154,7 @@ void main() {
 
     await tester.pumpWidget(host(controller, () => imports += 1));
     controller.stage.value = RecommendedPackDownloadStage.downloaded;
-    await tester.pump();
+    await pumpEntrance(tester);
 
     expect(find.text(t.onboarding_pack_status_ready), findsOneWidget);
     await tester.tap(find.text(t.onboarding_pack_import_now));
@@ -160,10 +169,10 @@ void main() {
     await tester.pumpWidget(host(controller, () {}));
     controller.stage.value = RecommendedPackDownloadStage.downloading;
     controller.receivedBytes.value = 1024;
-    await tester.pump();
+    await pumpEntrance(tester);
     expect(find.text(t.onboarding_pack_status_downloading), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.close));
+    await tester.tap(find.byIcon(FushiIcons.close));
     await tester.pump();
 
     expect(find.text(t.onboarding_pack_status_downloading), findsNothing);
@@ -181,8 +190,8 @@ void main() {
 
     await tester.pumpWidget(host(controller, () {}));
     controller.stage.value = RecommendedPackDownloadStage.downloading;
-    await tester.pump();
-    await tester.tap(find.byIcon(Icons.close));
+    await pumpEntrance(tester);
+    await tester.tap(find.byIcon(FushiIcons.close));
     await tester.pump();
     expect(find.text(t.onboarding_pack_status_downloading), findsNothing);
 

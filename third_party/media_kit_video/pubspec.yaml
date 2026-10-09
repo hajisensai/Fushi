@@ -17,6 +17,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  material_ui: ^1.5.0
 
   media_kit: ^1.2.3
 

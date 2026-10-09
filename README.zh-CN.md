@@ -6,7 +6,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
 
 [English](README.md) | **简体中文** | [繁體中文](docs/readme/README.zh-Hant.md) | [日本語](docs/readme/README.ja.md) | [한국어](docs/readme/README.ko.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md) | [Deutsch](docs/readme/README.de.md) | [Português](docs/readme/README.pt-BR.md) | [Русский](docs/readme/README.ru.md) | [Tiếng Việt](docs/readme/README.vi.md) | [ภาษาไทย](docs/readme/README.th.md) | [Bahasa Indonesia](docs/readme/README.id.md) | [Italiano](docs/readme/README.it.md) | [Nederlands](docs/readme/README.nl.md) | [Türkçe](docs/readme/README.tr.md) | [العربية](docs/readme/README.ar.md)
 
@@ -28,7 +28,7 @@ Fushi 由 [hajisensai](https://github.com/hajisensai) 维护。官网：[fushi.m
 |---|---|---|
 | Android | ✅ | Material Design 3 |
 | Windows | ✅ | Material Design 3 |
-| macOS | ✅ | Material Design 3 |
+| macOS | ✅（仅 Apple Silicon） | Material Design 3 |
 | Linux | 🔧 (build from source) | Material Design 3 |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Material Design 3 |
 
@@ -40,7 +40,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## 安装
 
-从 [Fushi 官网](https://fushi.moe/) 下载最新版本，提供 Android APK、Windows 安装包与 macOS 构建；iOS 通过 [TestFlight](https://testflight.apple.com/join/j88d69jx) 安装。Linux 暂无预编译包，需自行从源码构建。
+从 [Fushi 官网](https://fushi.moe/) 下载最新版本，提供 Android APK、Windows 安装包与 macOS 构建（仅 Apple Silicon，不支持 Intel Mac）；iOS 通过 [TestFlight](https://testflight.apple.com/join/j88d69jx) 安装。Linux 暂无预编译包，需自行从源码构建。
 
 > 最低 Android 7.0（API 24）。
 
@@ -63,14 +63,14 @@ flutter build linux --release
 flutter build ipa --release
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` 把 `flutter pub get` 与 `ci/apply-patches.sh` 收敛成一条命令。本项目锁定 Flutter 3.44.0（Dart SDK `>=3.5.0 <4.0.0`），部分上游依赖经 vendored 到 `third_party/` 或由 `ci/apply-patches.sh` 修补——机制细节见 [docs/agent/build.md](docs/agent/build.md)。
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` 把 `flutter pub get` 与 `ci/apply-patches.sh` 收敛成一条命令。本项目锁定 Flutter 3.47.6（Dart SDK `>=3.5.0 <4.0.0`），部分上游依赖经 vendored 到 `third_party/` 或由 `ci/apply-patches.sh` 修补——机制细节见 [docs/agent/build.md](docs/agent/build.md)。
 
 <details>
 <summary><b>技术栈一览</b></summary>
 
 | 层 | 技术 |
 |---|---|
-| 框架 | Flutter 3.44.0（Dart SDK `>=3.5.0 <4.0.0`） |
+| 框架 | Flutter 3.47.6（Dart SDK `>=3.5.0 <4.0.0`） |
 | 平台 | Android / Windows / macOS / iOS（Material Design 3） |
 | 阅读器 | WebView 分页引擎（衍生自 Hoshi Reader 系列） |
 | 视频 | media_kit（libmpv 内核） |
@@ -183,7 +183,6 @@ Fushi 基于以下项目与生态：
 | [ReazonSpeech k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | 日语语音识别模型 |
 | [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | 多语言 CTC 语音识别模型 |
 | [Silero VAD](https://github.com/snakers4/silero-vad) | 人声活动检测模型 |
-| [manga-ocr](https://github.com/kha-white/manga-ocr) / [manga-ocr-onnx](https://huggingface.co/mayocream/manga-ocr-onnx) | 漫画 OCR 模型 |
 | [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | 漫画文本与对话气泡检测模型 |
 
 ### 内容源与集成
@@ -193,7 +192,6 @@ Fushi 基于以下项目与生态：
 | [Mihon](https://github.com/mihonapp/mihon) | 漫画源扩展生态 |
 | [Aniyomi](https://github.com/aniyomiorg/aniyomi) | 动画源扩展生态（extensions-lib 14–16，与漫画共用同一运行时） |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | 桌面端漫画扩展运行时 |
-| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | 漫画源运行时 ABI |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | 浏览器扩展流媒体字幕桥接参考 |
 | [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | 动画识别与刮削架构参考 |
 | [ReinaManager](https://github.com/huoshen80/ReinaManager) | galgame 库信息架构参考 |

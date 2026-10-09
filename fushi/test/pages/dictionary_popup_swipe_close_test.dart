@@ -1,5 +1,5 @@
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
@@ -324,7 +324,10 @@ void main() {
       button.constraints,
       const BoxConstraints.tightFor(width: 36, height: 36),
     );
-    expect(button.padding, EdgeInsets.zero);
+    // M3E（1fd2964855d）：关闭是独立的 tonal 圆钮，底色画在 padding 盒上，
+    // 内边距补满 36 命中区（(36 - 20) / 2），tonal 圆与命中区同大。
+    expect(button.padding, const EdgeInsets.all((36 - 20) / 2));
+    expect(button.backgroundColor, isNotNull);
   });
 
   testWidgets(

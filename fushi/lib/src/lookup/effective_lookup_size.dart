@@ -53,6 +53,11 @@ const double kLookupPopupMaxWidth = 2000;
 const double kLookupPopupMinHeight = 200;
 const double kLookupPopupMaxHeight = 1600;
 
+/// 查完为空（「未找到」M3E 空态）的弹窗外壳高度（基准逻辑像素，宿主再乘界面大小、
+/// 夹在用户最大高度内）：顶栏 + 72 色块 + 标题 + 一行建议刚好放下，不再按最大高度
+/// 铺一整块空面板。空结果没有 WebView 内容测量可依，只能由宿主直接给定。
+const double kLookupPopupEmptyHeight = 280;
+
 /// 拖拽弹窗右下角把手时，把「当前基准尺寸 + 本次累计位移」折算成新的基准（未缩放）
 /// 最大宽高并 clamp 到 [kLookupPopupMinWidth]..[kLookupPopupMaxHeight] 范围。
 ///

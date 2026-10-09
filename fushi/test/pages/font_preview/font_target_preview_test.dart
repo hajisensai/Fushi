@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
+import 'package:fushi/src/pages/implementations/font_preview/font_library_widgets.dart';
 import 'package:fushi/src/pages/implementations/font_preview/font_specimen.dart';
 import 'package:fushi/src/pages/implementations/font_preview/font_target_preview.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -126,65 +126,79 @@ void main() {
     expect(find.text('吾'), findsOneWidget);
   });
 
-  testWidgets('字体库行用该字体渲染名字与日文样字，并标出顺位', (WidgetTester tester) async {
+  FontLibraryEntryView entry({
+    required String name,
+    required bool isFile,
+    String? family,
+    bool missingOnSystem = false,
+  }) => FontLibraryEntryView(
+    identity: name,
+    name: name,
+    isFile: isFile,
+    path: isFile ? '/fonts/$name.ttf' : null,
+    family: family,
+    state: FontSpecimenState.ready,
+    targets: const <FontTarget>{FontTarget.body},
+    missingOnSystem: missingOnSystem,
+  );
+
+  testWidgets('字体库样张卡用该字体渲染样例文字', (WidgetTester tester) async {
+    const String sample = '吾輩は猫である。名前はまだ無い。';
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
           home: Scaffold(
-            body: CustomFontCatalogTile(
-              name: 'Klee One',
-              isFile: true,
-              index: 0,
-              isLast: true,
-              targets: const <FontTarget>{FontTarget.body},
-              previewFamily: 'Klee One',
-              chainPosition: 2,
-              onTargetToggled: (_) {},
-              onDelete: () {},
-              onMoveUp: () {},
-              onMoveDown: () {},
+            body: FontSpecimenCard(
+              entry: entry(name: 'Klee One', isFile: true, family: 'Klee One'),
+              sampleText: sample,
+              layout: FontLibraryLayout.list,
+              onOpen: () {},
+              onContextMenu: (_) {},
             ),
           ),
         ),
       ),
     );
     expect(
-      tester.widget<Text>(find.text('Klee One')).style?.fontFamily,
+      tester.widget<Text>(find.text(sample)).style?.fontFamily,
       'Klee One',
     );
+    expect(find.text(t.font_target_body_short), findsOneWidget);
+  });
+
+  testWidgets('详情页标出顺位，系统里找不到的系统字体条目给出提示', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(420, 1600);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: FontLibraryDetailPanel(
+              entry: entry(
+                name: 'msgothic',
+                isFile: false,
+                missingOnSystem: true,
+              ),
+              script: FontSampleScript.japanese,
+              customSample: '',
+              chainPosition: 2,
+              onToggleTarget: (_) {},
+              onDelete: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
     expect(
-      tester.widget<Text>(find.text(kJaFontSpecimenGlyphs)).style?.fontFamily,
-      'Klee One',
+      find.textContaining(t.custom_fonts_system_not_found),
+      findsOneWidget,
     );
     expect(
       find.textContaining(t.font_preview_chain_position(index: 2)),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('系统里找不到的系统字体条目给出提示', (WidgetTester tester) async {
-    await tester.pumpWidget(
-      TranslationProvider(
-        child: MaterialApp(
-          home: Scaffold(
-            body: CustomFontCatalogTile(
-              name: 'msgothic',
-              isFile: false,
-              index: 0,
-              isLast: true,
-              targets: const <FontTarget>{FontTarget.body},
-              missingOnSystem: true,
-              onTargetToggled: (_) {},
-              onDelete: () {},
-              onMoveUp: () {},
-              onMoveDown: () {},
-            ),
-          ),
-        ),
-      ),
-    );
-    expect(
-      find.textContaining(t.custom_fonts_system_not_found),
       findsOneWidget,
     );
   });

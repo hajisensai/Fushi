@@ -1,4 +1,4 @@
-/// 在线源（Mihon / Aidoku / LNReader / 互联）失败给用户看的文案。
+/// 在线源（Mihon / LNReader / 互联）失败给用户看的文案。
 ///
 /// 2026-10 体验优化：此前各页直接 `'$error'` 把原始异常甩给用户——
 /// `Exception: SocketException: Failed host lookup ...`、

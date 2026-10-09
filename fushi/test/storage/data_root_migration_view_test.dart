@@ -11,7 +11,7 @@
 // 线程 onProgress；④ 重启带前台标志 + main.dart 消费它做 show()/focus()。
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/storage/data_root_migration_view.dart';

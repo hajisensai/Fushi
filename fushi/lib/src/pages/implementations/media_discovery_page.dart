@@ -1,6 +1,6 @@
 import 'dart:async' show unawaited;
 import 'package:collection/collection.dart' show mergeSort;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
@@ -17,6 +17,11 @@ import 'package:fushi/src/pages/implementations/discovery/discovery_widgets.dart
 import 'package:fushi/src/pages/implementations/discovery_header.dart';
 import 'package:fushi/src/pages/implementations/download_actions.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show
+        FushiFloatingChromeInsetPadding,
+        FushiFloatingChromeInsetSpacer,
+        FushiFloatingChromeOverlay;
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/src/utils/misc/engine_listenable.dart';
 import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
@@ -697,21 +702,18 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   /// 横滑（四个域的发现页同一口径）。
   Widget? _buildHeaderLeading() {
     final List<List<Widget>> groups = <List<Widget>>[
+      // 媒体域（小说 / 有声书）：单选 chip，与同一行的筛选 chip 同一形态。
+      // 曾是分段按钮：放进横滑筛选行（无界宽）后分段按等分宽排，长标签那段
+      // 右半被裁掉（2026-10-06 用户截图「有声书」被切）；chip 按各自内容取宽。
       if (widget.kinds.length > 1)
         <Widget>[
-          adaptiveSegmentedButton<DiscoveryMediaKind>(
-            context: context,
-            segments: <ButtonSegment<DiscoveryMediaKind>>[
-              for (final DiscoveryMediaKind kind in widget.kinds)
-                ButtonSegment<DiscoveryMediaKind>(
-                  value: kind,
-                  label: Text(_kindLabel(kind)),
-                ),
-            ],
-            selected: <DiscoveryMediaKind>{_kind},
-            onSelectionChanged: (Set<DiscoveryMediaKind> selection) =>
-                _selectKind(selection.first),
-          ),
+          for (final DiscoveryMediaKind kind in widget.kinds)
+            FushiSelectableChip(
+              key: ValueKey<String>('discovery_kind_${kind.name}'),
+              label: _kindLabel(kind),
+              selected: _kind == kind,
+              onSelected: (_) => _selectKind(kind),
+            ),
         ],
       // BUG-1910：只有当前结果里确实有带分类的条目才出这组 chip——否则视频/书域，
       // 或搜的是不给分类的源时，凭空多一组没用的控件。
@@ -1010,9 +1012,11 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   Widget _buildBody(BuildContext context) {
     final AppModel? appModel = _appModel;
     if (appModel == null) {
-      return FushiPlaceholderMessage(
-        icon: Icons.search_rounded,
-        message: t.discovery_enter_query_hint,
+      return FushiFloatingChromeInsetPadding(
+        child: FushiPlaceholderMessage(
+          icon: Icons.search_rounded,
+          message: t.discovery_enter_query_hint,
+        ),
       );
     }
     final MediaDiscoveryService service = appModel.mediaDiscoveryService;
@@ -1021,26 +1025,32 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
 
     switch (_idleMode(appModel)) {
       case _DiscoveryIdle.pickSource:
-        return _buildSourcePicker(context, service);
+        return FushiFloatingChromeInsetPadding(
+          child: _buildSourcePicker(context, service),
+        );
       case _DiscoveryIdle.queryRequired:
-        return FushiPlaceholderMessage(
-          icon: Icons.search_rounded,
-          message: t.discovery_source_query_required,
+        return FushiFloatingChromeInsetPadding(
+          child: FushiPlaceholderMessage(
+            icon: Icons.search_rounded,
+            message: t.discovery_source_query_required,
+          ),
         );
       case _DiscoveryIdle.none:
         break;
     }
 
     if (_error != null) {
-      return FushiPlaceholderMessage(
-        key: const ValueKey<String>('discovery_load_error'),
-        icon: Icons.cloud_off_outlined,
-        message: t.discovery_partial_failure,
-        action: _retryButton(),
+      return FushiFloatingChromeInsetPadding(
+        child: FushiPlaceholderMessage(
+          key: const ValueKey<String>('discovery_load_error'),
+          icon: Icons.cloud_off_outlined,
+          message: t.discovery_partial_failure,
+          action: _retryButton(),
+        ),
       );
     }
     if (_loading && _entries.isEmpty) {
-      return const FushiLoadingView();
+      return const FushiFloatingChromeInsetPadding(child: FushiLoadingView());
     }
     final DiscoveryAggregateResult? result = _result;
     if (_entries.isEmpty) {
@@ -1051,22 +1061,26 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       // `object not found`（搜索仍可用），点进任何目录都只看到「无结果」。
       // 判据用模型层早就有的 `isTotalFailure`（successfulSourceCount==0 && 有失败）。
       if (result != null && result.isTotalFailure) {
-        return FushiPlaceholderMessage(
-          key: const ValueKey<String>('discovery_sources_unavailable'),
-          icon: Icons.cloud_off_outlined,
-          message: t.discovery_sources_unavailable,
-          // 印来源展示名而不是接线 id（与视频发现页横幅同一条，BUG-2430）。
-          detail: <String>{
-            for (final ExternalProviderFailure f in result.failures)
-              _sourceDisplayName(service, f.providerId),
-          }.join(' · '),
-          action: _retryButton(),
+        return FushiFloatingChromeInsetPadding(
+          child: FushiPlaceholderMessage(
+            key: const ValueKey<String>('discovery_sources_unavailable'),
+            icon: Icons.cloud_off_outlined,
+            message: t.discovery_sources_unavailable,
+            // 印来源展示名而不是接线 id（与视频发现页横幅同一条，BUG-2430）。
+            detail: <String>{
+              for (final ExternalProviderFailure f in result.failures)
+                _sourceDisplayName(service, f.providerId),
+            }.join(' · '),
+            action: _retryButton(),
+          ),
         );
       }
       // 空查询的两种引导态已在上面分流：能走到这里的空列表就是真·无结果。
-      return FushiPlaceholderMessage(
-        icon: Icons.search_off_rounded,
-        message: t.discovery_empty,
+      return FushiFloatingChromeInsetPadding(
+        child: FushiPlaceholderMessage(
+          icon: Icons.search_off_rounded,
+          message: t.discovery_empty,
+        ),
       );
     }
 
@@ -1088,6 +1102,8 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
           key: const ValueKey<String>('discovery-results-scroll'),
           controller: _resultsScroll,
           slivers: <Widget>[
+            // 让出叠放在上面的浮动工具区（外壳页签 + 本页搜索 / 筛选行）。
+            const SliverToBoxAdapter(child: FushiFloatingChromeInsetSpacer()),
             if (failures.isNotEmpty)
               SliverToBoxAdapter(
                 child: DiscoveryProviderWarningBanner(
@@ -1233,7 +1249,10 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   ) {
     return switch (entry) {
       DiscoveryFolder() => FushiListItem(
-          leading: const FushiIcon(Icons.folder_outlined),
+          leading: const FushiListLeadingIcon(
+            Icons.folder_outlined,
+            shape: FushiLeadingShape.square,
+          ),
           title: Text(entry.title),
           // 目录条目不带来源名，用户看不出这是哪个站的目录。
           subtitle: Text(
@@ -1305,19 +1324,28 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   @override
   Widget build(BuildContext context) {
     final Widget? navigation = widget.navigation;
+    // 库页外壳里：页头 / 搜索 / 面包屑叠进 M3E 浮动工具区（与外壳页签同一份
+    // 显隐），正文从顶端画起、经 [FushiFloatingChromeInset] 让位，滚上去的
+    // 内容在胶囊背后可见。外壳外 [FushiFloatingChromeOverlay] 退化成竖排，
+    // 让位为 0，与原来一致。正文用 Builder 的 context 构建，才读得到本层
+    // 工具区下发的 inset。
     return DesktopContentLayout(
       kind: DesktopContentKind.readerShelf,
-      child: Column(
-        children: <Widget>[
-          if (navigation != null)
-            FushiPageHeader.customTitle(
-              title: navigation,
-              actions: const <Widget>[],
-            ),
-          _buildControls(context),
-          if (_pathStack.isNotEmpty) _buildBreadcrumb(context),
-          Expanded(child: _buildBody(context)),
-        ],
+      child: FushiFloatingChromeOverlay(
+        chrome: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            if (navigation != null)
+              FushiPageHeader.customTitle(
+                title: navigation,
+                actions: const <Widget>[],
+              ),
+            _buildControls(context),
+            if (_pathStack.isNotEmpty) _buildBreadcrumb(context),
+          ],
+        ),
+        child: Builder(builder: _buildBody),
       ),
     );
   }

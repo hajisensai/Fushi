@@ -1,7 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// The content of the dialog used for picking a source for a media type.
@@ -76,18 +75,28 @@ class _MediaSourcePickerDialogPageState
     );
   }
 
+  bool _isCurrentSource(MediaSource mediaSource) =>
+      mediaSource.uniqueKey ==
+      appModel
+          .getCurrentSourceForMediaType(mediaType: widget.mediaType)
+          .uniqueKey;
+
   Widget buildSourceTile(MediaSource mediaSource) {
     return KeyedSubtree(
       key: ValueKey(mediaSource.uniqueKey),
       child: FushiListItem(
-        leading: FushiIcon(
+        // M3E 行首形状底：当前来源 = cookie 形 primary 色块，其余圆形
+        // secondaryContainer。
+        leading: FushiListLeadingIcon(
           mediaSource.icon,
-          color: theme.appBarTheme.foregroundColor,
+          shape: _isCurrentSource(mediaSource)
+              ? FushiLeadingShape.cookie
+              : FushiLeadingShape.circle,
+          tone: _isCurrentSource(mediaSource)
+              ? FushiCardTone.primary
+              : FushiCardTone.secondary,
         ),
-        selected: mediaSource.uniqueKey ==
-            appModel
-                .getCurrentSourceForMediaType(mediaType: widget.mediaType)
-                .uniqueKey,
+        selected: _isCurrentSource(mediaSource),
         title: Text(mediaSource.getLocalisedSourceName(appModel)),
         subtitle: Text(mediaSource.getLocalisedDescription(appModel)),
         onTap: () {

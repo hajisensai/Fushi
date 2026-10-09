@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:fushi/i18n/strings.g.dart' show t;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
@@ -32,8 +33,10 @@ String trendMetricAxisLabel(double v, StatTrendMetric metric) {
     case StatTrendMetric.time:
       // v 已是分钟。
       final int minutes = v.round();
-      if (minutes >= 60) return '${(minutes / 60).toStringAsFixed(1)}h';
-      return '${minutes}m';
+      if (minutes >= 60) {
+        return t.stat_axis_hours(n: (minutes / 60).toStringAsFixed(1));
+      }
+      return t.stat_axis_minutes(n: minutes);
     case StatTrendMetric.speed:
       return formatStatCphAxis(v);
   }

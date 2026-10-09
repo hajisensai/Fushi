@@ -1,7 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/utils.dart';
@@ -105,7 +106,10 @@ void main() {
     );
   });
 
-  testWidgets('已读 / 读了一半 / 未读三态各有自己的图标', (WidgetTester tester) async {
+  // 2026-10 M3E：行是 MediaDetailItemRow。已读 = 行尾 tertiary 对勾（key
+  // media-detail-item-completed）、读了一半 = 副标题「读到第 N 页」（知道总页数
+  // 时另有行内进度条）、未读两样都没有。
+  testWidgets('已读 / 读了一半 / 未读三态可区分', (WidgetTester tester) async {
     await pumpList(
       tester,
       entry: entryWith(chapters),
@@ -115,12 +119,26 @@ void main() {
       },
     );
 
-    expect(find.byIcon(Icons.check_circle_outline), findsOneWidget,
-        reason: 'readAt != null = 已读');
-    expect(find.byIcon(Icons.incomplete_circle), findsOneWidget,
-        reason: '有状态行、没读完、且真的翻过页 = 读了一半');
-    expect(find.byIcon(Icons.circle_outlined), findsOneWidget,
-        reason: '没有状态行 = 未读');
+    final Finder completed = find.byKey(
+      const ValueKey<String>('media-detail-item-completed'),
+    );
+    expect(completed, findsOneWidget, reason: 'readAt != null = 已读');
+    expect(
+      find.descendant(
+        of: find.ancestor(
+          of: find.text('Chapter 3'),
+          matching: find.byType(MediaDetailItemRow),
+        ),
+        matching: completed,
+      ),
+      findsOneWidget,
+      reason: '对勾落在已读的那一行',
+    );
+    expect(
+      find.textContaining(t.manga_series_read_progress_partial(page: '6')),
+      findsOneWidget,
+      reason: '有状态行、没读完、且真的翻过页 = 读了一半',
+    );
   });
 
   testWidgets('lastPage 为 0 不算「读了一半」', (WidgetTester tester) async {
@@ -132,56 +150,59 @@ void main() {
       },
     );
     expect(
-      find.byIcon(Icons.incomplete_circle),
+      find.textContaining(t.manga_series_read_progress_partial(page: '1')),
       findsNothing,
       reason: '开了一下就退出不该显示成「读到第 1 页」，那是误导',
     );
-    expect(find.byIcon(Icons.circle_outlined), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('media-detail-item-completed')),
+      findsNothing,
+    );
   });
 
-  testWidgets('当前章有播放角标，整行也高亮', (WidgetTester tester) async {
+  testWidgets('当前章整行高亮', (WidgetTester tester) async {
     await pumpList(
       tester,
       entry: entryWith(chapters),
       currentChapterKey: '/c/2',
     );
-    expect(find.byIcon(Icons.play_circle_outline), findsOneWidget);
     // 几百话的表里，一个 trailing 小图标扫不到；整行底色才是能一眼定位的信号。
-    final List<FushiCard> cards =
-        tester.widgetList<FushiCard>(find.byType(FushiCard)).toList();
-    expect(cards.where((FushiCard card) => card.selected), hasLength(1));
-    expect(cards, hasLength(3));
+    final List<MediaDetailItemRow> rows = tester
+        .widgetList<MediaDetailItemRow>(find.byType(MediaDetailItemRow))
+        .toList();
+    expect(rows, hasLength(3));
+    expect(rows.where((MediaDetailItemRow row) => row.current), hasLength(1));
+    expect(
+      rows.singleWhere((MediaDetailItemRow row) => row.current).title,
+      'Chapter 2',
+    );
   });
 
-  testWidgets('章节行紧凑且行间有实边距', (WidgetTester tester) async {
+  testWidgets('章节行带话数序号、分段排布且不被撑高', (WidgetTester tester) async {
     await pumpList(tester, entry: entryWith(chapters));
-    final List<Element> rows = find.byType(FushiListItem).evaluate().toList();
+    final List<MediaDetailItemRow> rows = tester
+        .widgetList<MediaDetailItemRow>(find.byType(MediaDetailItemRow))
+        .toList();
     expect(rows, hasLength(3));
-    for (final Element row in rows) {
-      // standard 密度（带副标题时下限 72 + 上下各 12）是给两行副标题留的；章节行
-      // 只有标题 + 一行元信息，几百条累计出的空白比内容还多。所以章节行必须走
-      // compact 密度，且行高只比文字内容多上下各 4 的内边距 + MD3 行恒画的 1px
-      // 透明边框 ×2（几何不随选中态变）——不被 standard 的下限 / 12 内边距撑高。
-      // （副标题在测试字体 Ahem 下可能折成两行，所以按内容高量余量而不是量绝对值。）
-      expect((row.widget as FushiListItem).density, FushiListDensity.compact);
-      final Rect rowRect = tester.getRect(find.byWidget(row.widget));
-      Rect? content;
-      for (final Element text in find
-          .descendant(of: find.byWidget(row.widget), matching: find.byType(Text))
-          .evaluate()) {
-        final Rect r = tester.getRect(find.byWidget(text.widget).first);
-        content = content == null ? r : content.expandToInclude(r);
-      }
-      expect(rowRect.height - content!.height, lessThanOrEqualTo(4 * 2 + 2));
-    }
-    // 单行元信息的章节行总高不超过 56（standard 单行下限）。
     expect(
-      tester.getSize(find.byWidget(rows.first.widget)).height,
-      lessThanOrEqualTo(56),
+      rows.map((MediaDetailItemRow row) => row.number),
+      <String>['3', '2', '1'],
+      reason: '整数话不带小数点',
     );
-    final Rect first = tester.getRect(find.byWidget(rows.first.widget));
-    final Rect second = tester.getRect(find.byWidget(rows[1].widget));
-    expect(second.top - first.bottom, greaterThan(0));
+    expect(
+      rows.map((MediaDetailItemRow row) => (row.index, row.count)),
+      <(int, int)>[(0, 3), (1, 3), (2, 3)],
+      reason: '分段列表靠 index / count 决定组首尾圆角',
+    );
+    final List<Element> elements = find
+        .byType(MediaDetailItemRow)
+        .evaluate()
+        .toList();
+    final Rect first = tester.getRect(find.byWidget(elements.first.widget));
+    final Rect second = tester.getRect(find.byWidget(elements[1].widget));
+    expect(second.top, greaterThanOrEqualTo(first.bottom));
+    // 标题 + 一行元信息的章节行不超过 M3E 三行列表项高（88）。
+    expect(first.height, lessThanOrEqualTo(88));
   });
 
   testWidgets('只看未读会滤掉已读的章', (WidgetTester tester) async {

@@ -3,7 +3,7 @@
 # Run `pod lib lint media_kit_libs_macos_video.podspec` to validate before publishing.
 #
 Pod::Spec.new do |s|
-  system("make")
+  raise "Failed to prepare verified libmpv frameworks" unless system("make")
 
   s.name             = 'media_kit_libs_macos_video'
   s.version          = '1.0.4'

@@ -82,6 +82,44 @@ void main() {
     ]);
   });
 
+  // BUG-2958：候选版本的比较事实挂在选项 args 上过线；旧 host 不带 args 时为空。
+  test('选项 args 原样过线；没有 args 的选项不写这个键', () {
+    const VideoAcquisitionView view = VideoAcquisitionView(
+      stage: VideoAcquisitionStage.awaitingResourceConfirm,
+      question: VideoAcquisitionQuestion(
+        slot: VideoAcquisitionSlot.resource,
+        options: <VideoAcquisitionOption>[
+          VideoAcquisitionOption(id: kVideoAcquisitionOptionConfirm),
+          VideoAcquisitionOption(
+            id: '${kVideoAcquisitionOptionAltPrefix}1',
+            args: <String, Object?>{
+              'releaseGroup': 'Erai-raws',
+              'traits': 'HEVC 10bit',
+              'seeders': 30,
+              'batch': true,
+              'missing': <int>[3],
+            },
+          ),
+        ],
+      ),
+    );
+    final List<Object?> wireOptions =
+        (view.toJson()['question']! as Map)['options']! as List<Object?>;
+    expect((wireOptions[0]! as Map).containsKey('args'), isFalse);
+
+    final List<VideoAcquisitionOption> options = roundTrip(
+      view,
+    ).question!.options;
+    expect(options[0].args, isEmpty);
+    expect(options[1].args, <String, Object?>{
+      'releaseGroup': 'Erai-raws',
+      'traits': 'HEVC 10bit',
+      'seeders': 30,
+      'batch': true,
+      'missing': <int>[3],
+    });
+  });
+
   test('失败按钮提示从原始异常推出、过线后仍在', () {
     final VideoAcquisitionView view = roundTrip(
       projectVideoAcquisitionView(

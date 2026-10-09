@@ -32,6 +32,18 @@ constexpr double kBallShadowPadDip = 6.0;
 // 按钮窗四周给阴影留的边（Android MENU_SHADOW_PAD_DP）。
 constexpr double kMenuShadowPadDip = 4.0;
 
+// M3E FAB menu（与 Dart reader_floating_ball.dart 同值，DIP）：
+// 球收起是圆角方块（kReaderFloatingBallCollapsedRadius），展开变正圆关闭钮；
+// 单列时每颗按钮朝屏幕中央一侧带标签胶囊；按钮命中区 ≥ 48。
+constexpr double kBallCollapsedRadiusDip = 14.0;
+constexpr double kLabelGapDip = 8.0;
+constexpr double kLabelHeightDip = 32.0;
+constexpr double kLabelMaxWidthDip = 200.0;
+constexpr double kLabelPaddingDip = 12.0;
+// M3E label large（14）；Windows 无 Medium 字重，取 SemiBold（同 Dart 字阶层）。
+constexpr double kLabelFontDip = 14.0;
+constexpr double kMinTouchDip = 48.0;
+
 // 与应用内球同一组时长（_expandDuration / _collapseDuration / _snapDuration）。
 constexpr int kExpandMs = 280;
 constexpr int kCollapseMs = 190;
@@ -256,6 +268,12 @@ inline double ButtonScale(double k) {
   return 0.4 + 0.6 * std::clamp(k, 0.0, 1.2);
 }
 inline double ButtonOpacity(double k) { return std::clamp(k, 0.0, 1.0); }
+
+// 绘制与命中共用：40 DIP 的圆钮扩到 48 DIP，仍跟随动画的实际半径。
+// 分层窗口必须同时给这块区域非零 alpha，仅扩大 ButtonAt 不会收到 OS 事件。
+inline double ButtonHitRadius(double visual_radius) {
+  return visual_radius * kMinTouchDip / kButtonDip;
+}
 
 // 球的不透明度：收起 0.42 → 展开 1；拖动中恒 1。
 inline double BallOpacity(double t, bool dragging) {

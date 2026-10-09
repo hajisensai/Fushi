@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -17,6 +17,7 @@ import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:image/image.dart' as img;
@@ -291,10 +292,14 @@ void main() {
     final Finder chapters =
         find.byKey(const ValueKey<String>('manga_reader_chapters'));
     expect(chapters, findsOneWidget);
-    // 章节按钮在左上，紧跟返回键（不在右侧动作组里；窄窗也不折进 ⋮）。
-    final Rect back = tester
-        .getRect(find.byKey(const ValueKey<String>('manga_reader_back_button')));
-    expect(tester.getRect(chapters).left, closeTo(back.right, 1));
+    // 章节按钮在底部悬浮工具栏的导航组里（拇指区，优先级仅次于快捷设置）。
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('manga_reader_toolbar')),
+        matching: chapters,
+      ),
+      findsOneWidget,
+    );
     // 点开是左侧侧栏，不是底部弹层。
     await tester.runAsync(() async {
       await tester.tap(chapters);
@@ -305,7 +310,9 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 250));
       await tester.pump();
     });
-    await tester.pump(const Duration(milliseconds: 300));
+    // 侧栏进场是 M3E 弹簧（[FushiMotion.long]，落位前有轻微过冲）：推满整段
+    // 转场再量位置，否则读到的是过冲中的瞬时 left。
+    await tester.pump(FushiMotion.long + const Duration(milliseconds: 50));
     expect(find.byKey(const ValueKey<String>('manga_reader_chapter_drawer')),
         findsOneWidget);
     expect(

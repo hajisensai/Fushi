@@ -2,10 +2,10 @@ name: fushi
 resolution: workspace
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 2.9.1+1352
+version: 2.10.0+1354
 environment:
   sdk: ">=3.8.0 <4.0.0"
-  flutter: "^3.41.6"
+  flutter: "^3.47.0"
 
 dependencies:
   # 语音识别生成字幕：算法层已抽成独立仓库（hajisensai/fushi-subtitles，GPL-3.0），本仓只留
@@ -18,7 +18,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 308e23606ea26c31d3cea4775002fdd3ee5f0fed
+      ref: f4984a897594ebded3c34f4c260f92f605da4aa0
   # 字幕重定时（拿 ASR 转录当参照修好已有字幕的时间轴）。与 fushi_asr_core 同仓同 sha。
   #
   # 只依赖 fushi_asr_core，**不含** ONNX 后端：算法那半边住在 fushi_asr 包里的话会
@@ -28,7 +28,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_subtitles
-      ref: 308e23606ea26c31d3cea4775002fdd3ee5f0fed
+      ref: f4984a897594ebded3c34f4c260f92f605da4aa0
   archive: ^3.6.1
   async_zip: ^0.1.0
   basic_utils: ^5.7.0
@@ -41,12 +41,19 @@ dependencies:
   clipboard: ^0.1.3
   collection:
   cupertino_icons: ^1.0.8
+  # Flutter 3.47 起 Material / Cupertino 拆成独立 pub 包；本仓已迁移
+  # （tool/migrate_design_widgets.sh）。lib/ 下禁止再 import
+  # package:flutter/material.dart / cupertino.dart（守卫
+  # test/build/design_widgets_import_guard_test.dart）。
+  cupertino_ui: ^1.1.1
+  material_ui: ^1.5.0
   liquid_glass_widgets: ^1.8.1
   crop_image: ^1.0.4
   desktop_drop: ^0.5.0
   device_info_plus: ^9.0.0
   dio: ^5.1.1
-  dynamic_color: ^1.7.0
+  # 2.x 起依赖 material_ui：其 ColorScheme 与本仓迁移后的 ColorScheme 同一类型。
+  dynamic_color: ^2.1.0
   external_app_launcher: ^4.0.3
   external_path: ^2.2.0
   # 分段条溢出滚动的渐隐边缘（vendored，见 dependency_overrides）。
@@ -67,6 +74,8 @@ dependencies:
     path: ../packages/fushi_core
   fushi_dictionary:
     path: ../packages/fushi_dictionary
+  fushi_cli:
+    path: ../packages/fushi_cli
   fushi_engine:
     path: ../packages/fushi_engine
   fushi_anki:
@@ -100,7 +109,7 @@ dependencies:
   # （Windows 走 flutter_local_notifications_windows 的 WinRT toast）。
   flutter_local_notifications: ^20.1.0
   flutter_riverpod: ^2.3.6
-  # WebRTC 游戏串流（Windows 主机 + Android 接收端）。
+  # WebRTC 游戏串流（Windows 主机；五端都可当接收端）。
   # 钉精确版本，不用 caret：WGC 客户区采集的入口只在
   # ci/patches/hosted/flutter_webrtc-1.6.2+hotfix.3/ 那份补丁里，而补丁目录按
   # 精确版本命名、apply-patches.sh 对目标缺失只打一行 WARNING 不判红。约束一旦
@@ -190,6 +199,8 @@ dependencies:
   qr_flutter: ^4.1.0
   mobile_scanner: ^7.4.2
 dev_dependencies:
+  # BUG-3003: native hot-restart regression waits for worker IsolateExit events.
+  vm_service: ^15.1.0
   build_runner: ^2.3.3
   just_audio_platform_interface: ^4.6.0
   # TODO-817 M1c scanner test overrides CharsetDetectorPlatform with a Dart
@@ -245,3 +256,16 @@ flutter:
     - assets/popup/
     - assets/transforms/
     - assets/transforms/i18n/
+
+  # M3E 语义图标（lib/src/utils/fushi_icons.dart）：Material Symbols Rounded 可变字体
+  # 的子集，由 tool/icons/gen_fushi_symbols.py 生成。线框 / 实心各一个字族——选中态在
+  # 只能传 IconData 的 API 里也能表达。release 构建的图标树摇只留用到的码位。
+  # 刻意不放进上面的 assets/fonts/（那个目录整体登记为普通 asset，供阅读器 WebView
+  # 按 URL 取用，不会被树摇）。
+  fonts:
+    - family: FushiSymbols
+      fonts:
+        - asset: assets/icon_fonts/FushiSymbolsRounded.ttf
+    - family: FushiSymbolsFilled
+      fonts:
+        - asset: assets/icon_fonts/FushiSymbolsRoundedFilled.ttf

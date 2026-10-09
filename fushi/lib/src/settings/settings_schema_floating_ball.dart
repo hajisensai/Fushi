@@ -7,7 +7,8 @@ library;
 
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -23,7 +24,7 @@ SettingsDestination buildFloatingBallDestination() {
     id: SettingsDestinationId.floatingBall,
     title: t.settings_destination_floating_ball,
     summary: t.floating_ball_summary,
-    icon: Icons.blur_circular_outlined,
+    icon: FushiIcons.floatingBall,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'floating_ball.section.display',
@@ -32,12 +33,13 @@ SettingsDestination buildFloatingBallDestination() {
             id: 'floating_ball.in_app',
             title: t.floating_ball_in_app,
             subtitle: t.floating_ball_in_app_hint,
-            icon: Icons.blur_circular_outlined,
+            icon: FushiIcons.floatingBall,
             value: (SettingsContext c) => _prefs(c).floatingBallInApp,
             onChanged: (SettingsContext c, bool value) async {
               await _prefs(c).setFloatingBallInApp(value);
               c.refresh();
             },
+            defaultValue: true,
           ),
           SettingsSwitchItem(
             id: 'floating_ball.system',
@@ -46,7 +48,7 @@ SettingsDestination buildFloatingBallDestination() {
             subtitle: Platform.isAndroid
                 ? t.floating_ball_system_hint
                 : t.floating_ball_system_hint_desktop,
-            icon: Icons.open_in_new,
+            icon: FushiIcons.openInNew,
             // iOS 不允许应用外悬浮，Linux 没有实现。
             visible: (SettingsContext c) => _systemBallSupported,
             value: (SettingsContext c) => _prefs(c).floatingBallSystem,
@@ -69,6 +71,19 @@ SettingsDestination buildFloatingBallDestination() {
                 await FloatingBallChannel.requestOverlayPermission();
               }
             },
+            defaultValue: false,
+          ),
+          SettingsSwitchItem(
+            id: 'floating_ball.show_labels',
+            title: t.floating_ball_show_labels,
+            subtitle: t.floating_ball_show_labels_hint,
+            icon: FushiIcons.textFields,
+            value: (SettingsContext c) => _prefs(c).floatingBallShowLabels,
+            onChanged: (SettingsContext c, bool value) async {
+              await _prefs(c).setFloatingBallShowLabels(value);
+              c.refresh();
+            },
+            defaultValue: true,
           ),
           SettingsSegmentedItem<FloatingBallAutoRestore>(
             id: 'floating_ball.auto_restore',
@@ -100,6 +115,7 @@ SettingsDestination buildFloatingBallDestination() {
                   await _prefs(c).setFloatingBallAutoRestore(value);
                   c.refresh();
                 },
+            defaultValue: FloatingBallAutoRestore.fallback,
           ),
         ],
       ),
@@ -218,6 +234,7 @@ String _buttonLabel(FloatingBallScope scope, String id) {
       FloatingBallGlobalAction.screenOcr => t.floating_ball_action_screen_ocr,
       FloatingBallGlobalAction.cameraOcr => t.floating_ball_action_camera_ocr,
       FloatingBallGlobalAction.sync => t.sync_now,
+      FloatingBallGlobalAction.feedback => t.feedback_title,
     };
   }
   if (scope == FloatingBallScope.reader) {
@@ -248,13 +265,13 @@ IconData _buttonIcon(FloatingBallScope scope, String id) {
   );
   if (global != null) {
     return switch (global) {
-      FloatingBallGlobalAction.lookup => Icons.search,
-      FloatingBallGlobalAction.popupLookup =>
-        Icons.picture_in_picture_alt_outlined,
+      FloatingBallGlobalAction.lookup => FushiIcons.search,
+      FloatingBallGlobalAction.popupLookup => FushiIcons.pictureInPicture,
       FloatingBallGlobalAction.clipboard => Icons.content_paste_search,
-      FloatingBallGlobalAction.screenOcr => Icons.document_scanner_outlined,
+      FloatingBallGlobalAction.screenOcr => FushiIcons.ocr,
       FloatingBallGlobalAction.cameraOcr => Icons.photo_camera_outlined,
-      FloatingBallGlobalAction.sync => Icons.sync,
+      FloatingBallGlobalAction.sync => FushiIcons.sync,
+      FloatingBallGlobalAction.feedback => FushiIcons.forum,
     };
   }
   if (scope == FloatingBallScope.reader) {
@@ -265,12 +282,12 @@ IconData _buttonIcon(FloatingBallScope scope, String id) {
     'play_pause' => Icons.play_arrow,
     'prev_cue' => Icons.skip_previous,
     'next_cue' => Icons.skip_next,
-    'favorite' => Icons.star_border,
+    'favorite' => FushiIcons.star,
     'screenshot' => Icons.photo_camera_outlined,
-    'previous' => Icons.chevron_left,
-    'next' => Icons.chevron_right,
+    'previous' => FushiIcons.chevronLeft,
+    'next' => FushiIcons.chevronRight,
     'ocr_boxes' => Icons.highlight_alt_outlined,
-    'ocr_volume' || 'ocr_rerun' => Icons.document_scanner_outlined,
+    'ocr_volume' || 'ocr_rerun' => FushiIcons.ocr,
     'chapters' => Icons.list_alt_outlined,
     _ => Icons.circle_outlined,
   };

@@ -10,7 +10,7 @@
 /// 一个 FFI 探针），可被单测直接调用。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/utils.dart';
 

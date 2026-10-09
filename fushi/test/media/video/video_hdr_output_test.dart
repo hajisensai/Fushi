@@ -255,7 +255,15 @@ void main() {
     ).readAsStringSync();
     final int start = src.indexOf('Future<void> _initRemote() async {');
     expect(start, greaterThan(0));
-    final int end = src.indexOf('\n  }\n', start);
+    final RegExpMatch? methodEnd = RegExp(
+      r'\r?\n  }\r?\n',
+    ).firstMatch(src.substring(start));
+    expect(
+      methodEnd,
+      isNotNull,
+      reason: '_initRemote closing brace must exist',
+    );
+    final int end = start + methodEnd!.start;
     final String body = src.substring(start, end);
     expect(body, contains('_videoHdrOutputMode = appModel.videoHdrOutputMode'));
     expect(body, contains('_videoFitMode = appModel.videoFitMode'));

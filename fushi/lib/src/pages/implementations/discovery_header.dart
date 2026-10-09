@@ -4,14 +4,16 @@
 /// `MangaDiscoveryPage`）头部形状由本组件给出唯一真相：左侧「全部来源 / 具体
 /// 来源」下拉，右侧搜索框。用户在任一模块看到的发现页结构因此一致。
 ///
-/// 各域的「来源」实体互不相同（发现源 adapter / Mihon 与 Aidoku 在线源），所以
+/// 各域的「来源」实体互不相同（发现源 adapter / Mihon 在线源），所以
 /// 本组件只吃 [DiscoverySourceOption] 这层最小公共结构 `(id, label)`，不绑任何
 /// 域模型——想让新的域接进来只需把自己的来源映射成一串 (id, label)。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/utils.dart';
 
 /// 「全部来源」哨兵 id（`DropdownMenu` 泛型不便用 null）。真实来源 id 不得为空串。
@@ -28,9 +30,14 @@ class DiscoverySourceOption {
   final String label;
 }
 
+const OutlineInputBorder _pillBorder = OutlineInputBorder(
+  borderRadius: BorderRadius.all(Radius.circular(kFushiSearchFieldHeight / 2)),
+  borderSide: BorderSide.none,
+);
+
 /// 发现页头部（四个域统一）：
 ///
-/// - 宽屏：来源下拉 + 搜索胶囊（MD3 填充 / Apple 玻璃，[FushiSearchField]）
+/// - 宽屏：来源下拉 + 搜索胶囊（M3E search bar / Apple 玻璃，[FushiSearchBar]）
 ///   + 行尾动作（✨ AI 下载、刷新…）同一行；
 /// - 窄屏（[isCompactWidth]）：搜索框独占整行，来源下拉 + 行尾动作排下一行；
 /// - 最后一行：筛选（[leading]，媒体域分段 / 筛选 chip）左对齐**单行**，放不下横滑。
@@ -107,10 +114,13 @@ class DiscoveryHeaderControls extends StatelessWidget {
           // 往下推）。
           if (filterRow != null) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
-            HorizontalDragScrollable(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: filterRow,
+            FushiHorizontalEdgeFade(
+              extent: 16,
+              child: HorizontalDragScrollable(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: filterRow,
+                ),
               ),
             ),
           ],
@@ -160,15 +170,17 @@ class DiscoveryHeaderControls extends StatelessWidget {
     );
   }
 
+  /// M3E 搜索栏（[FushiSearchBar]）：与库页工具行同一枚搜索胶囊。查询的
+  /// 防抖由各域发现页自己做（[onSearchChanged]），这里零防抖原样交出。
   Widget _buildSearchField() {
-    return FushiSearchField(
+    return FushiSearchBar(
       fieldKey: const ValueKey<String>('discovery_search_field'),
       clearButtonKey: const ValueKey<String>('discovery_search_clear'),
       focusId: searchFocusId,
       controller: searchController,
       focusNode: searchFocusNode,
       hintText: searchHintText,
-      onChanged: onSearchChanged ?? (String _) {},
+      onQueryChanged: onSearchChanged,
       onSubmitted: onSearchSubmitted,
       onClear: onSearchCleared,
     );
@@ -201,6 +213,18 @@ class DiscoveryHeaderControls extends StatelessWidget {
           ),
           constraints: const BoxConstraints.tightFor(
             height: kFushiSearchFieldHeight,
+          ),
+          // 与旁边的搜索胶囊同形（M3E：全圆角、surfaceContainerHigh 填充、
+          // 静止无描边），不再是一颗小圆角描边方块挨着一枚胶囊。
+          filled: true,
+          fillColor: tokens.surfaces.search,
+          border: _pillBorder,
+          enabledBorder: _pillBorder,
+          focusedBorder: _pillBorder.copyWith(
+            borderSide: BorderSide(
+              color: Theme.of(context).colorScheme.primary,
+              width: 2,
+            ),
           ),
         ),
         onSelected: (String? value) =>

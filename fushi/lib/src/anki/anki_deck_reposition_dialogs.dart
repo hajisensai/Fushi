@@ -7,8 +7,9 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -119,6 +120,7 @@ class _RepositionDialogState extends State<_RepositionDialog> {
         (!dictsMode || widget.loadedDictionaries.isNotEmpty);
 
     return FushiAlertDialog(
+      icon: const FushiDialogHeroIcon(icon: FushiIcons.sort),
       title: Text(t.anki_reposition_title),
       content: SizedBox(
         width: 480,
@@ -152,7 +154,10 @@ class _RepositionDialogState extends State<_RepositionDialog> {
                       },
               ),
               const SizedBox(height: 16),
-              Text(t.anki_reposition_source, style: theme.textTheme.labelLarge),
+              Text(
+                t.anki_reposition_source,
+                style: context.fushiType.titleSmallEmphasized,
+              ),
               const SizedBox(height: 6),
               FushiSegmentedButton<AnkiRepositionSource>(
                 key: const Key('anki_reposition_source'),
@@ -160,12 +165,12 @@ class _RepositionDialogState extends State<_RepositionDialog> {
                   ButtonSegment<AnkiRepositionSource>(
                     value: AnkiRepositionSource.dictionaries,
                     label: Text(t.anki_reposition_source_dictionaries),
-                    icon: const FushiIcon(Icons.menu_book_outlined),
+                    icon: const FushiIcon(FushiIcons.dictionary),
                   ),
                   ButtonSegment<AnkiRepositionSource>(
                     value: AnkiRepositionSource.field,
                     label: Text(t.anki_reposition_source_field),
-                    icon: const FushiIcon(Icons.text_fields),
+                    icon: const FushiIcon(FushiIcons.textFields),
                   ),
                 ],
                 selected: <AnkiRepositionSource>{_source},
@@ -191,7 +196,7 @@ class _RepositionDialogState extends State<_RepositionDialog> {
                 const FushiDividerControl(height: 24),
                 AdaptiveSettingsRow(
                   key: const Key('anki_reposition_undo'),
-                  icon: Icons.undo,
+                  icon: FushiIcons.undo,
                   showIcon: true,
                   horizontalPadding: 0,
                   title: t.anki_reposition_undo,
@@ -291,13 +296,15 @@ class _RepositionDialogState extends State<_RepositionDialog> {
 
   Future<void> _previewAndApply() async {
     final String? deck = _deckName;
-    if (deck == null) return;
-    await _persistOptions();
-    if (!mounted) return;
+    if (_busy || deck == null) return;
+    // Saving options is part of the operation: prevent a second preview before
+    // the write completes, and let the same error/finally path recover failures.
     setState(() => _busy = true);
     final ScaffoldMessengerState? messenger =
         ScaffoldMessenger.maybeOf(context);
     try {
+      await _persistOptions();
+      if (!mounted) return;
       final AnkiRepositionPlan? plan =
           await runAnkiRepositionWithProgress<AnkiRepositionPlan?>(
         context,
@@ -352,10 +359,12 @@ class _RepositionDialogState extends State<_RepositionDialog> {
       ));
       await _refreshSnapshot();
     } on AnkiRepositionCancelled {
+      if (!mounted) return;
       messenger?.showSnackBar(
         FushiSnackBar(content: Text(t.anki_reposition_cancelled)),
       );
     } catch (e) {
+      if (!mounted) return;
       messenger?.showSnackBar(
         FushiSnackBar(content: Text(t.anki_reposition_failed(error: '$e'))),
       );
@@ -429,6 +438,7 @@ Future<T?> runAnkiRepositionWithProgress<T>(
       return PopScope(
         canPop: false,
         child: FushiAlertDialog(
+          icon: const FushiDialogHeroIcon(icon: FushiIcons.sort),
           title: Text(t.anki_reposition_progress_title),
           content: SizedBox(
             width: 360,
@@ -510,7 +520,7 @@ class _RepositionProgressBody extends StatelessWidget {
               value: determinate ? p.done / p.total : null,
             ),
             const SizedBox(height: 12),
-            Text(label),
+            Text(label, style: context.fushiType.titleSmallEmphasized.tabular),
           ],
         );
       },
@@ -534,6 +544,10 @@ Future<bool> showAnkiRepositionPreviewDialog(
       );
       final List<AnkiRepositionCard> rows = plan.ordered.take(maxRows).toList();
       return FushiAlertDialog(
+        icon: const FushiDialogHeroIcon(
+          icon: FushiIcons.sort,
+          tone: FushiHeroTone.primary,
+        ),
         title: Text(t.anki_reposition_preview),
         content: SizedBox(
           width: 480,
@@ -560,30 +574,37 @@ Future<bool> showAnkiRepositionPreviewDialog(
                 child: ListView.builder(
                   shrinkWrap: true,
                   itemCount: rows.length,
+                  // 分段卡片：首尾大圆角、行间 2px，一张卡一段。
                   itemBuilder: (BuildContext _, int i) {
                     final AnkiRepositionCard c = rows[i];
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Row(
-                        children: <Widget>[
-                          SizedBox(
-                            width: 40,
-                            child: Text('${plan.updates[i].due}', style: mono),
-                          ),
-                          Expanded(
-                            child: Text(
-                              c.expression.isEmpty
-                                  ? '#${c.card.noteId}'
-                                  : c.expression,
-                              overflow: TextOverflow.ellipsis,
+                    return FushiGroupedListItem(
+                      index: i,
+                      count: rows.length,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        child: Row(
+                          children: <Widget>[
+                            SizedBox(
+                              width: 48,
+                              child:
+                                  Text('${plan.updates[i].due}', style: mono),
                             ),
-                          ),
-                          Text(
-                            c.rank?.toString() ??
-                                t.anki_reposition_no_frequency,
-                            style: mono,
-                          ),
-                        ],
+                            Expanded(
+                              child: Text(
+                                c.expression.isEmpty
+                                    ? '#${c.card.noteId}'
+                                    : c.expression,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Text(
+                              c.rank?.toString() ??
+                                  t.anki_reposition_no_frequency,
+                              style: mono,
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   },

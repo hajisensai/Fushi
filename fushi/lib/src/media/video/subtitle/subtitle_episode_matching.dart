@@ -56,12 +56,16 @@ class SubtitleEpisodeIndex<T> {
   /// 专为 registry 候选：集号取 [VideoSubtitleCandidate.episode]，语言权重用
   /// [jimakuLanguageRank]（[preferredLanguage] 优先 → ja → zh → en → ko），
   /// 同权重按 [VideoSubtitleCandidate.fileName] 小写 tie-break 保证确定性。
+  ///
+  /// 整季压缩包（[VideoSubtitleCandidate.isArchivePack]）不进索引：它不是「某一集
+  /// 的文件」，也不是「认不出集号的单文件」——当成后者会让唯一目标直接拿到整包。
+  /// 包的逐集拆分走 [runSubtitleBatch] 的包内匹配。
   static SubtitleEpisodeIndex<VideoSubtitleCandidate> fromCandidates(
     Iterable<VideoSubtitleCandidate> candidates, {
     String? preferredLanguage,
   }) {
     return SubtitleEpisodeIndex<VideoSubtitleCandidate>.build(
-      candidates,
+      candidates.where((VideoSubtitleCandidate c) => !c.isArchivePack),
       episodeOf: (VideoSubtitleCandidate c) => c.episode,
       compare: (VideoSubtitleCandidate a, VideoSubtitleCandidate b) =>
           compareCandidatesByLanguagePreference(a, b, preferredLanguage),

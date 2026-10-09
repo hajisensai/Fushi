@@ -6,7 +6,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | **Bahasa Indonesia** | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
@@ -49,14 +49,14 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 flutter build windows --release
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` menggabungkan `flutter pub get` dan `ci/apply-patches.sh` menjadi satu perintah. Proyek ini dikunci ke Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`); beberapa dependensi hulu di-vendor di bawah `third_party/` atau ditambal oleh `ci/apply-patches.sh` — lihat [docs/agent/build.md](../agent/build.md) untuk detailnya.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` menggabungkan `flutter pub get` dan `ci/apply-patches.sh` menjadi satu perintah. Proyek ini dikunci ke Flutter 3.47.6 (Dart SDK `>=3.5.0 <4.0.0`); beberapa dependensi hulu di-vendor di bawah `third_party/` atau ditambal oleh `ci/apply-patches.sh` — lihat [docs/agent/build.md](../agent/build.md) untuk detailnya.
 
 <details>
 <summary><b>Tumpukan Teknologi</b></summary>
 
 | Lapisan | Teknologi |
 |---|---|
-| Kerangka kerja | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Kerangka kerja | Flutter 3.47.6 (Dart SDK `>=3.5.0 <4.0.0`) |
 | Platform | Android / Windows / macOS / iOS (Material Design 3) |
 | Pembaca | Mesin paginasi WebView (diturunkan dari keluarga Hoshi Reader) |
 | Video | media_kit (inti libmpv) |
@@ -151,7 +151,6 @@ Fushi dibangun di atas proyek dan ekosistem berikut:
 | [Mihon](https://github.com/mihonapp/mihon) | Ekosistem ekstensi sumber manga |
 | [Aniyomi](https://github.com/aniyomiorg/aniyomi) | Ekosistem ekstensi sumber anime (extensions-lib 14–16, runtime yang sama) |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Runtime ekstensi manga untuk desktop |
-| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI runtime sumber manga |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | Rujukan jembatan subtitle streaming untuk ekstensi peramban |
 | [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Rujukan arsitektur identifikasi dan scraping anime |
 | [ReinaManager](https://github.com/huoshen80/ReinaManager) | Rujukan arsitektur informasi pustaka galgame |

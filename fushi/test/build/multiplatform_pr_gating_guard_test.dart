@@ -180,7 +180,11 @@ void main() {
       // 原生库：进哪个包就开哪个。
       'native/fushi_p2p/src/lib.rs': all,
       'packages/fushi_p2p/lib/src/ffi/fushi_p2p_bindings.dart': all,
-      'native/fushidicts/src/fushidicts.cpp': apps,
+      // fushidicts 编进三个 app，也随无头服务端包（linux-server 编 .so + 冒烟）。
+      'native/fushidicts/src/fushidicts.cpp': all,
+      'native/fushidicts/build_linux_so.sh': all,
+      // 去屈折变形表随服务端包（bundle/share/fushi/transforms）；app 侧是 Dart 资产。
+      'fushi/assets/transforms/ja.json': <String>{'server'},
       'native/galgame_hook/src/hook.cpp': <String>{'windows'},
       'native/fushi_torrent/fushi_torrent_ffi.cpp': <String>{
         'windows',
@@ -395,6 +399,12 @@ void main() {
       'native/fushi_anki_sync/build.sh --debug --install-dir build/fushi_server_linux/bundle/bin',
       'dart build cli --target packages/fushi_server/bin/fushi_server.dart',
       'libonnxruntime.so',
+      'bash native/fushidicts/build_linux_so.sh',
+      'build/fushi_server_linux/bundle/lib/libfushidicts_ffi.so',
+      'lib.fushidicts_create.restype',
+      'cp -a fushi/assets/transforms',
+      'fushi_server dict add',
+      '"lookup":{"dictionary":true',
       'fushi_server serve --config',
       '"backend":"embedded"',
       'name: fushi_server-linux-x64',

@@ -75,7 +75,7 @@ void main() {
     final int guard = body.indexOf('if (_primarySubtitleAligned) {');
     expect(guard, greaterThan(0));
     expect(body.indexOf('updateCollectionSubtitleDelayMs'), greaterThan(guard));
-    expect(body.indexOf('updateDelayMs(widget.bookUid'), greaterThan(guard));
+    expect(body.indexOf('updateDelayMs(_activeBookUid'), greaterThan(guard));
     expect(body.indexOf('videoRemoteDelayPrefKey'), greaterThan(guard));
   });
 

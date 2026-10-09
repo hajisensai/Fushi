@@ -170,7 +170,8 @@ void main() {
     expect(body.contains('VideoImmersiveMode.'), isFalse,
         reason:
             'pointer-up fallback must not special-case any immersive mode enum');
-    final int platformBranch = body.indexOf('if (_isDesktopVideoControls) {');
+    final int platformBranch =
+        body.indexOf('resolveVideoDoubleTapCenterAction(');
     expect(platformBranch, greaterThan(seekReturnIdx),
         reason: 'platform pause/fullscreen fallback follows the seek attempt');
   });

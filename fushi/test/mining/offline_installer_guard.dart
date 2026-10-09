@@ -135,7 +135,7 @@ const Set<String> kGalgameHelperInstallerImports = <String>{
   'dart:io',
   'package:archive/archive.dart',
   'package:crypto/crypto.dart',
-  'package:flutter/material.dart',
+  'package:material_ui/material_ui.dart',
   'package:path/path.dart',
   'package:fushi/utils.dart',
 };

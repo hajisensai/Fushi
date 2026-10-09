@@ -1,18 +1,16 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/discovery/sources/opds_discovery_source.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_source_feeds.dart';
 import 'package:fushi/src/media/manga/discovery/manga_source_catalog_section.dart';
 import 'package:fushi/src/media/manga/manga_global_search_page.dart';
@@ -28,6 +26,9 @@ import 'package:fushi/src/pages/implementations/discovery_header.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeInsetSpacer, FushiFloatingChromeOverlay,
+        FushiFloatingChromeScope;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// 漫画库「发现」视图：**漫画唯一的发现入口**。
@@ -36,7 +37,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 /// 下拉 + 搜索框），正文**只由用户自己启用的来源**构成：
 ///
 /// 1. 「浏览来源」快捷条（[MangaSourceCatalogSection]）：内置 mokuro.moe 目录 +
-///    已启用 Aidoku 包 + 已启用 Mihon 在线源 + OPDS 服务器，一源一枚磁贴，点进
+///    已启用 Mihon 在线源 + OPDS 服务器，一源一枚磁贴，点进
 ///    各自的目录页；
 /// 2. 每个已启用在线源的「热门」横滑行（[MangaDiscoverySourceRow]），行头带
 ///    「查看全部」直达该源目录。
@@ -50,7 +51,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 /// 的来源失败横幅（[DiscoveryProviderWarningBanner]，印来源展示名），全部失败时换
 /// 成可重试的整块提示；单源网格滚到离底 600 以内自动翻下一页。
 ///
-/// 「浏览来源」节保留：它是 mokuro.moe / Aidoku / OPDS 这些**没有热门行**的来源在
+/// 「浏览来源」节保留：它是 mokuro.moe / OPDS 这些**没有热门行**的来源在
 /// 本页唯一的入口——下拉选中它们时正文只剩这一块磁贴，删掉就成了空白页。
 ///
 /// 此前页首是 MAL（经 Jikan）的趋势 / 热门 / 高分 / 最新完结四条元数据行，点开
@@ -105,11 +106,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   final MihonSourceImageLoadQueue _imageQueue =
       MihonSourceImageLoadQueue(maxConcurrent: 4);
 
-  StreamSubscription<void>? _aidokuChanges;
-  List<AidokuInstalledPackage> _aidokuPackages =
-      const <AidokuInstalledPackage>[];
-  Object? _aidokuError;
-
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
 
@@ -124,9 +120,10 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   /// 刷新与切换来源时清空：行随之重新挂载、重新拉取，旧失败不该挂在新一轮上。
   final Map<String, Object> _rowFailures = <String, Object>{};
 
-  /// 首屏 Hero：本代第一个加载出 ≥ 2 条的来源行的首条（那一条随之从该行里
-  /// 拿掉，同一作品不在首屏出现两次）。刷新 / 切换来源时清空。
-  _MangaHero? _hero;
+  /// 首屏 Hero 轮播：本代最先加载出 ≥ 2 条的前 [_kHeroCount] 个来源行各取
+  /// 首条（那一条随之从该行里拿掉，同一作品不在首屏出现两次）。按到达顺序
+  /// 追加，已在看的页不会被挤走。刷新 / 切换来源时清空。
+  final List<_MangaHero> _heroes = <_MangaHero>[];
 
   /// 本代是否已有任何一行回报（成功或失败）：首个回报前 Hero 位画骨架占位，
   /// 之后没有合格的行就收起。
@@ -138,30 +135,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   /// widget 测试立刻退化成在测环境。两个 override 因此共用同一道门。
   bool get _injected =>
       widget.sourceFeedsOverride != null || widget.catalogOverride != null;
-
-  @override
-  void initState() {
-    super.initState();
-    // Aidoku 包清单：装/卸/启停后立即重载，否则保活的本页停在旧清单上。
-    if (!_injected && AidokuRuntimeFactory.isSupported) {
-      _aidokuChanges = AidokuPackageStore.changes.listen((_) => _loadAidoku());
-      unawaited(_loadAidoku());
-    }
-  }
-
-  Future<void> _loadAidoku() async {
-    try {
-      final List<AidokuInstalledPackage> packages =
-          await (await AidokuPackageStore.open()).listInstalled();
-      if (!mounted) return;
-      setState(() {
-        _aidokuPackages = packages;
-        _aidokuError = null;
-      });
-    } on Object catch (error) {
-      if (mounted) setState(() => _aidokuError = error);
-    }
-  }
 
   @override
   void didChangeDependencies() {
@@ -182,7 +155,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   @override
   void dispose() {
     _mihonManager?.removeListener(_managerChanged);
-    unawaited(_aidokuChanges?.cancel());
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
@@ -192,12 +164,9 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     setState(() {
       _generation++;
       _rowFailures.clear();
-      _hero = null;
+      _heroes.clear();
       _anyRowSettled = false;
     });
-    if (!_injected && AidokuRuntimeFactory.isSupported) {
-      unawaited(_loadAidoku());
-    }
   }
 
   /// 热门行拉取结束的回报：[error] 为 null = 成功。晚到的旧一代回报直接丢弃。
@@ -212,16 +181,18 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     setState(() => _rowFailures[feedId] = error);
   }
 
-  /// 热门行拿到条目：本代还没有 Hero 时，取第一个 ≥ 2 条的行的首条做 Hero
-  /// （只有 1 条的行不拆：拆完行就空了，行头悬着一条空卡片带）。
+  /// 热门行拿到条目：Hero 轮播未满 [_kHeroCount] 页、且这一行还没出过 Hero
+  /// 时，取它的首条追加一页（只有 1 条的行不拆：拆完行就空了，行头悬着一条
+  /// 空卡片带）。
   void _onRowItems(
     int generation,
     MangaDiscoverySourceFeed feed,
     List<MangaDiscoverySourceItem> items,
   ) {
     if (!mounted || generation != _generation) return;
-    if (_hero != null || items.length < 2) return;
-    setState(() => _hero = _MangaHero(feed: feed, item: items.first));
+    if (_heroes.length >= _kHeroCount || items.length < 2) return;
+    if (_heroes.any((_MangaHero hero) => hero.feed.id == feed.id)) return;
+    setState(() => _heroes.add(_MangaHero(feed: feed, item: items.first)));
   }
 
   /// 来源热门行清单：测试注入优先，否则按平台从 Mihon 宿主取。
@@ -243,9 +214,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     // （BUG-1431 同因：「来源」里关掉的源必须立刻从这里消失）。
     return MangaSourceCatalog(
       mokuroEnabled: isMokuroMoeSourceEnabled(ref.watch(appProvider)),
-      aidokuPackages: _aidokuPackages
-          .where((AidokuInstalledPackage package) => package.enabled)
-          .toList(growable: false),
       mihonSources: manager == null
           ? const <MangaOnlineSourceRow>[]
           : enabledMangaOnlineSources(manager),
@@ -257,7 +225,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
           .discoveryOpdsServers
           .where((OpdsServerConfig server) => server.enabled)
           .toList(growable: false),
-      aidokuError: _aidokuError,
     );
   }
 
@@ -281,7 +248,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
         key: const ValueKey<String>('manga_discovery_refresh'),
         tooltip: t.refresh,
         onPressed: _refresh,
-        icon: const FushiIcon(Icons.refresh),
+        icon: const FushiIcon(FushiIcons.refresh),
       );
 
   void _openMokuro() {
@@ -291,6 +258,10 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
         context: context,
         builder: (BuildContext context) => FushiPageScaffold(
           title: t.mihon_source_browse_mokuro,
+          // 不叠放：MokuroMoeCatalogView 是「固定搜索行 / 卷选择头 + 网格 / 列表
+          // + 底部动作行」的竖排正文，搜索行嵌在视图状态里、挪不进 headerBottom，
+          // 叠到页头底下会被胶囊盖住。
+          extendBodyBehindHeader: false,
           body: MokuroMoeCatalogView(
             db: appModel.database,
             embedded: true,
@@ -314,16 +285,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     );
   }
 
-  void _openAidokuSource(AidokuInstalledPackage package) {
-    Navigator.of(context).push(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (BuildContext context) =>
-            AidokuSourceBrowsePage(package: package),
-      ),
-    );
-  }
-
   /// 打开一台 OPDS 服务器的漫画目录。
   ///
   /// 复用统一发现页（`MediaDiscoveryPage`）而不是另写一个浏览页：OPDS 的目录
@@ -331,15 +292,19 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   /// 只是同一条链路的另一个 `DiscoveryMediaKind`。
   ///
   /// 单域传入 → 那页不出媒体类型分段条；`initialSourceId` 让它直接落在这台
-  /// 服务器上，跳过「先挑来源」的引导态。外面套 Scaffold 是因为该页设计为
+  /// 服务器上，跳过「先挑来源」的引导态。外面套 FushiPageScaffold（M3E 浮动页头）是因为该页设计为
   /// 嵌在库页壳里（`navigation == null` 时它自己不出 header），pushed route
   /// 需要一个返回入口。
   void _openOpdsServer(OpdsServerConfig server) {
     Navigator.of(context).push(
       adaptivePageRoute<void>(
         context: context,
-        builder: (BuildContext context) => Scaffold(
-          appBar: FushiAppBar(title: Text(server.displayName)),
+        builder: (BuildContext context) => FushiPageScaffold(
+          title: server.displayName,
+          // 不叠放：MediaDiscoveryPage 自带 FushiFloatingChromeOverlay 搜索 /
+          // 面包屑工具区，脚手架不下发浮动工具区作用域时它退化成竖排，叠到页头
+          // 底下工具区会被胶囊盖住。
+          extendBodyBehindHeader: false,
           body: MediaDiscoveryPage(
             kinds: const <DiscoveryMediaKind>[DiscoveryMediaKind.manga],
             initialSourceId: opdsSourceIdFor(server.id),
@@ -357,7 +322,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   /// 本页原地刷新结果。
   ///
   /// mokuro.moe 走**另一条**路：它不在聚合搜索的源模型里
-  /// （`manga_global_search_runner` 只认 Mihon 在线源与 Aidoku 包），硬塞进去只会
+  /// （`manga_global_search_runner` 只认 Mihon 在线源），硬塞进去只会
   /// 得到一个恒空的段。选中它时提交搜索因此直接打开 mokuro 目录页——那里有站内
   /// 搜索，能力不丢。选「全部来源」时它同样不参与聚合，只是不拦搜索。
   void _submitSearch(
@@ -381,7 +346,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
         builder: (BuildContext context) => MangaGlobalSearchPage(
           mihonManager: _mihonManager,
           mihonSources: scope.mihonSources,
-          aidokuPackages: scope.aidokuPackages,
           initialQuery: query,
           onOpenSources: openSources,
         ),
@@ -392,7 +356,9 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   /// 页头。与 `MangaSourcesPage` 同一范式：导航条存在时即页头主位，不再另渲染一个
   /// 页面大标题。全源搜索不在这里——它是下面的搜索框。
   Widget _buildHeader() {
-    final List<Widget> actions = <Widget>[_refreshButton()];
+    // 刷新不放页头：它和 ✨ AI 下载同属搜索行行尾，两颗按钮右对齐成一列
+    // （放页头时它被收进外壳的悬浮动作组，与搜索行的 AI 按钮横坐标对不齐）。
+    const List<Widget> actions = <Widget>[];
     final Widget? navigation = widget.navigation;
     if (navigation != null) {
       return FushiPageHeader.customTitle(title: navigation, actions: actions);
@@ -411,9 +377,17 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     )
         ? _selectedSourceId
         : kDiscoveryAllSourcesId;
+    // 库页外壳里：页头 / 来源 + 搜索行叠进 M3E 浮动工具区（与外壳页签同一份
+    // 显隐），正文从顶端画起、经 [FushiFloatingChromeInset] 让位——不再是
+    // 「一整块不透明控件区 + 下面才是内容」。外壳外退化成原来的竖排。
+    final bool floating = FushiFloatingChromeScope.maybeOf(context) != null;
+    final Widget body = _buildBody(catalog, selected);
     return DesktopContentLayout(
       kind: DesktopContentKind.readerShelf,
-      child: Column(
+      child: FushiFloatingChromeOverlay(
+        chrome: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           if (_headerVisible) _buildHeader(),
           DiscoveryHeaderControls(
@@ -423,7 +397,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
                     key: const ValueKey<String>('manga-discovery-ai-acquire'),
                     onPressed: () => onAi(_searchController.text),
                   ),
-                if (!_headerVisible) _refreshButton(),
+                _refreshButton(),
               ],
               sources: options,
               selectedSourceId: selected,
@@ -431,7 +405,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
                 _selectedSourceId = id;
                 _rowFailures.clear();
                 // 回到「全部来源」时各行重新挂载、重新拉取，Hero 跟着重选。
-                _hero = null;
+                _heroes.clear();
                 _anyRowSettled = false;
               }),
               searchController: _searchController,
@@ -441,8 +415,9 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
               onSearchSubmitted: (String query) =>
                   _submitSearch(query, catalog, selected),
             ),
-          Expanded(child: _buildBody(catalog, selected)),
         ],
+        ),
+        child: floating ? body : DiscoveryScrollTopFade(child: body),
       ),
     );
   }
@@ -455,7 +430,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     final Widget catalogSection = MangaSourceCatalogSection(
       catalog: catalog.filterById(selected),
       onOpenMokuro: _openMokuro,
-      onOpenAidoku: _openAidokuSource,
       onOpenMihon: _openMihonSource,
       onOpenOpds: _openOpdsServer,
     );
@@ -467,6 +441,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
       return CustomScrollView(
         key: PageStorageKey<String>('manga-discovery-scroll-$selected'),
         slivers: <Widget>[
+          const SliverToBoxAdapter(child: FushiFloatingChromeInsetSpacer()),
           SliverToBoxAdapter(child: catalogSection),
           if (feed != null)
             MangaDiscoverySourceGrid(
@@ -496,11 +471,18 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
         feedsById[feedId]?.displayName ?? feedId;
     final bool allFailed = feeds.isNotEmpty && failures.length == feeds.length;
     final int generation = _generation;
-    final _MangaHero? hero =
-        _hero != null && feedsById.containsKey(_hero!.feed.id) ? _hero : null;
+    final List<_MangaHero> heroes = <_MangaHero>[
+      for (final _MangaHero hero in _heroes)
+        if (feedsById.containsKey(hero.feed.id)) hero,
+    ];
+    final Set<String> heroFeedIds = <String>{
+      for (final _MangaHero hero in heroes) hero.feed.id,
+    };
     return CustomScrollView(
       key: const PageStorageKey<String>('manga-discovery-scroll'),
       slivers: <Widget>[
+        // 让出叠放在上面的浮动工具区。
+        const SliverToBoxAdapter(child: FushiFloatingChromeInsetSpacer()),
         // 部分来源失败：横幅点名是哪几个源，其余行照常显示。
         if (failures.isNotEmpty && !allFailed)
           SliverToBoxAdapter(
@@ -515,8 +497,13 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
         // 会让下面不带 key 的 sliver 错位重挂，热门行因此重新拉取。
         SliverToBoxAdapter(
           key: const ValueKey<String>('manga_discovery_hero_slot'),
-          child: hero != null
-              ? _buildHero(hero)
+          child: heroes.isNotEmpty
+              ? DiscoveryHeroCarousel(
+                  key: const ValueKey<String>('manga-discovery-hero-carousel'),
+                  itemCount: heroes.length,
+                  itemBuilder: (BuildContext context, int index) =>
+                      _buildHero(heroes[index]),
+                )
               : !_anyRowSettled && feeds.isNotEmpty
                   ? const DiscoveryHeroSkeleton()
                   : const SizedBox.shrink(),
@@ -540,7 +527,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
                   'manga_discovery_source_${feed.id}#$generation',
                 ),
                 feed: feed,
-                excludeFirst: hero?.feed.id == feed.id,
+                excludeFirst: heroFeedIds.contains(feed.id),
                 onItems: (List<MangaDiscoverySourceItem> items) =>
                     _onRowItems(generation, feed, items),
                 onResult: (Object? error) =>
@@ -552,7 +539,8 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
           SliverToBoxAdapter(
             child: FushiPlaceholderMessage(
               key: const ValueKey<String>('manga_discovery_feeds_failed'),
-              icon: Icons.cloud_off_outlined,
+              icon: FushiIcons.cloudOff,
+              tone: FushiPlaceholderTone.error,
               message: t.manga_discovery_load_failed,
               detail: feeds
                   .map((MangaDiscoverySourceFeed feed) => feed.displayName)
@@ -560,7 +548,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
               action: FushiFilledButton.icon(
                 key: const ValueKey<String>('manga_discovery_retry_all'),
                 onPressed: _refresh,
-                icon: const FushiIcon(Icons.refresh_rounded),
+                icon: const FushiIcon(FushiIcons.refresh),
                 label: Text(t.retry),
               ),
             ),
@@ -572,8 +560,8 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     );
   }
 
-  /// 首屏 Hero 横幅：来源自带的封面 widget 模糊垫底 + 尾侧完整封面，左下标题 +
-  /// 「详情」主按钮（键盘 / 手柄焦点落在按钮上）。
+  /// 首屏 Hero 轮播的一页：来源自带的封面 widget 模糊垫底 + 尾侧完整封面，
+  /// 左下标题 + 「详情」主按钮（键盘 / 手柄焦点落在按钮上）。
   Widget _buildHero(_MangaHero hero) {
     return Builder(
       builder: (BuildContext context) => DiscoveryHeroBanner(
@@ -598,11 +586,12 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     final VoidCallback? openSources = _openSourcesAction();
     return CustomScrollView(
       slivers: <Widget>[
+        const SliverToBoxAdapter(child: FushiFloatingChromeInsetSpacer()),
         SliverFillRemaining(
           hasScrollBody: false,
           child: FushiPlaceholderMessage(
             key: const ValueKey<String>('manga_discovery_empty'),
-            icon: Icons.travel_explore_outlined,
+            icon: FushiIcons.travelExplore,
             message: t.manga_discovery_empty_title,
             detail:
                 MihonRuntimeFactory.isSupported ? t.mihon_source_empty : null,
@@ -613,7 +602,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
                     onPressed: openSources,
                     // 2026-10 体验优化：与全局搜索空态同一「导入」图标；拼图块
                     // 暗示「扩展」入口，而库页里没有叫「扩展」的按钮。
-                    icon: const FushiIcon(Icons.library_add_outlined),
+                    icon: const FushiIcon(FushiIcons.libraryAdd),
                     label: Text(t.manga_discovery_empty_action),
                   ),
           ),
@@ -695,6 +684,9 @@ class _SourceItemCard extends StatelessWidget {
 /// 横滑行卡宽：手机 120、更宽 140（与书架 / 视频发现的竖版卡同一量级）。
 double _sourceCardWidth(BuildContext context) =>
     MediaQuery.sizeOf(context).width < 600 ? 120 : 140;
+
+/// 首屏 Hero 轮播最多几页（每页出自不同的来源行）。
+const int _kHeroCount = 5;
 
 /// 首屏 Hero 的来源条目（连同它出自哪一行）。
 class _MangaHero {
@@ -931,13 +923,14 @@ class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
     if (_failed) {
       body = SliverToBoxAdapter(
         child: FushiPlaceholderMessage(
-          icon: Icons.cloud_off_outlined,
+          icon: FushiIcons.cloudOff,
+          tone: FushiPlaceholderTone.error,
           message: t.manga_discovery_load_failed,
           // 2026-10 体验优化：重试按钮统一 FilledButton.icon(refresh_rounded)。
           action: FushiFilledButton.icon(
             key: const ValueKey<String>('manga_discovery_retry'),
             onPressed: () => unawaited(_loadFirst()),
-            icon: const FushiIcon(Icons.refresh_rounded),
+            icon: const FushiIcon(FushiIcons.refresh),
             label: Text(t.retry),
           ),
         ),
@@ -954,7 +947,7 @@ class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
       body = SliverToBoxAdapter(
         child: FushiPlaceholderMessage(
           key: const ValueKey<String>('manga_discovery_grid_empty'),
-          icon: Icons.search_off_rounded,
+          icon: FushiIcons.searchOff,
           message: t.discovery_empty,
         ),
       );
@@ -978,7 +971,7 @@ class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
         child: FushiTextButton.icon(
           key: const ValueKey<String>('manga_discovery_load_more_retry'),
           onPressed: _retryLoadMore,
-          icon: const FushiIcon(Icons.refresh_rounded),
+          icon: const FushiIcon(FushiIcons.refresh),
           label: Text(t.retry),
         ),
       );

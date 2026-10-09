@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi/src/pages/implementations/dictionary_settings_dialog_page.dart';
 import 'package:fushi/utils.dart';
@@ -170,7 +171,7 @@ void main() {
     await tester.enterText(
         find.byType(TextField), 'https://new.example.com/{term}');
     await tester.pump();
-    await tester.tap(find.byIcon(Icons.add));
+    await tester.tap(find.byIcon(FushiIcons.add));
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.dialog_close));
     await tester.pumpAndSettle();
@@ -290,7 +291,7 @@ void main() {
     expect((localSwitchX - remoteSwitchX).abs(), lessThan(1.0));
 
     // tune（仅本地行）在开关左侧。修复前 tune 在 ↓ 与删除之间，dx > 开关。
-    final double tuneX = tester.getCenter(find.byIcon(Icons.tune)).dx;
+    final double tuneX = tester.getCenter(find.byIcon(FushiIcons.settings)).dx;
     expect(tuneX, lessThan(localSwitchX));
   });
 
@@ -379,8 +380,8 @@ void main() {
     );
 
     // 第 2 行（label=Anki、已关闭）的 ✎。
-    expect(find.byIcon(Icons.edit_outlined), findsNWidgets(2));
-    await tester.tap(find.byIcon(Icons.edit_outlined).at(1));
+    expect(find.byIcon(FushiIcons.edit), findsNWidgets(2));
+    await tester.tap(find.byIcon(FushiIcons.edit).at(1));
     await tester.pumpAndSettle();
 
     // 进入编辑态：原 URL 已载入输入框，+ 变 ✓，并出现取消 ✕。
@@ -389,19 +390,19 @@ void main() {
       tester.widget<TextField>(glassUnwrap<TextField>(find.byType(TextField))).controller?.text,
       'http://localhost:5050/?term={term}',
     );
-    expect(find.byIcon(Icons.check), findsOneWidget);
-    expect(find.byIcon(Icons.add), findsNothing);
-    expect(find.byIcon(Icons.close), findsOneWidget);
+    expect(find.byIcon(FushiIcons.check), findsOneWidget);
+    expect(find.byIcon(FushiIcons.add), findsNothing);
+    expect(find.byIcon(FushiIcons.close), findsOneWidget);
 
     await tester.enterText(
         find.byType(TextField), 'http://192.168.1.9:5050/?term={term}');
     await tester.pump();
-    await tester.tap(find.byIcon(Icons.check));
+    await tester.tap(find.byIcon(FushiIcons.check));
     await tester.pumpAndSettle();
 
     // 提交后退出编辑态（✓ 变回 +，输入框清空）。
-    expect(find.byIcon(Icons.add), findsOneWidget);
-    expect(find.byIcon(Icons.check), findsNothing);
+    expect(find.byIcon(FushiIcons.add), findsOneWidget);
+    expect(find.byIcon(FushiIcons.check), findsNothing);
 
     await tester.tap(find.text(t.dialog_close));
     await tester.pumpAndSettle();
@@ -429,16 +430,16 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.tap(find.byIcon(FushiIcons.edit));
     await tester.pumpAndSettle();
     await tester.enterText(
         find.byType(TextField), 'https://typo.example.com/{term}');
     await tester.pump();
-    await tester.tap(find.byIcon(Icons.close));
+    await tester.tap(find.byIcon(FushiIcons.close));
     await tester.pumpAndSettle();
 
     // 取消后回到新增态，且不多出一条。
-    expect(find.byIcon(Icons.add), findsOneWidget);
+    expect(find.byIcon(FushiIcons.add), findsOneWidget);
     await tester.tap(find.text(t.dialog_close));
     await tester.pumpAndSettle();
 
@@ -466,15 +467,15 @@ void main() {
     );
 
     // 编辑第 1 行，然后把它用 ↓ 移到第 2 位（编辑态保持）。
-    await tester.tap(find.byIcon(Icons.edit_outlined).at(0));
+    await tester.tap(find.byIcon(FushiIcons.edit).at(0));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.keyboard_arrow_down).at(0));
+    await tester.tap(find.byIcon(FushiIcons.expandMore).at(0));
     await tester.pumpAndSettle();
 
     await tester.enterText(
         find.byType(TextField), 'https://fixed.example.com/{term}');
     await tester.pump();
-    await tester.tap(find.byIcon(Icons.check));
+    await tester.tap(find.byIcon(FushiIcons.check));
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.dialog_close));
     await tester.pumpAndSettle();
@@ -499,14 +500,14 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.tap(find.byIcon(FushiIcons.edit));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.tap(find.byIcon(FushiIcons.delete));
     await tester.pumpAndSettle();
 
     // 删除即退出编辑态（输入框清空、回到新增态的 +）。
-    expect(find.byIcon(Icons.check), findsNothing);
-    expect(find.byIcon(Icons.add), findsOneWidget);
+    expect(find.byIcon(FushiIcons.check), findsNothing);
+    expect(find.byIcon(FushiIcons.add), findsOneWidget);
     expect(
       tester.widget<TextField>(glassUnwrap<TextField>(find.byType(TextField))).controller?.text,
       isEmpty,
@@ -535,7 +536,7 @@ void main() {
       ),
     );
 
-    expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
+    expect(find.byIcon(FushiIcons.edit), findsOneWidget);
   });
 
   // BUG-027 的开关列对齐必须继续成立：远端行的 ✎ 占的是本地行 tune 的同一槽位
@@ -562,7 +563,7 @@ void main() {
     final double localSwitchX = tester.getCenter(switches.at(0)).dx;
     final double remoteSwitchX = tester.getCenter(switches.at(1)).dx;
     expect((localSwitchX - remoteSwitchX).abs(), lessThan(1.0));
-    expect(tester.getCenter(find.byIcon(Icons.edit_outlined)).dx,
+    expect(tester.getCenter(find.byIcon(FushiIcons.edit)).dx,
         lessThan(remoteSwitchX));
   });
 

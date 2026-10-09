@@ -513,6 +513,9 @@ class VideoDownloadOrganizer {
   /// * 文件名不带集号。带集号的多集种子根本走不到这里：[plan] 已先用
   ///   [looksLikeEpisodicPack] 把它改判成剧集整理（BUG-2760）；这里仍排除带
   ///   集号的文件，免得零散的 `Bonus - 01` 被抬成并列正片。
+  /// * 带电影提示的序号是「第几部」不是集号（与 [looksLikeEpisodicPack] 同口径）：
+  ///   `Doraemon Movie 01 (1980)` … `Movie 25 (2004)` 的合集包曾被解析成第 1…25
+  ///   集，只有最大那部入库、其余 24 部全进 `Extras/`（BUG-2965）。
   static bool _isStandaloneMovieCandidate(
     TorrentFileEntry file, {
     required TorrentFileEntry mainMovie,
@@ -520,7 +523,9 @@ class VideoDownloadOrganizer {
   }) {
     if (_isExplicitExtra(file.name, sharedRoot: sharedRoot)) return false;
     if (file.size * 4 < mainMovie.size) return false;
-    return parseVideoFilename(_segments(file.name).last).episode == null;
+    final String fileName = _segments(file.name).last;
+    if (FilenameParser.parse(fileName).isMovieHint) return true;
+    return parseVideoFilename(fileName).episode == null;
   }
 
   /// 该文件是否躺在发布组标记的特典目录里（共享根与文件名段都不参与判定）。

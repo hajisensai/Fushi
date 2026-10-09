@@ -26,9 +26,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 import app.fushi.reader.constants.ChannelNames;
 import io.flutter.embedding.engine.FlutterEngine;
+import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 
 public class AnkiChannelHandler {
@@ -37,6 +42,17 @@ public class AnkiChannelHandler {
     private static final String SOURCE_ID_PATTERN =
             "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$";
     private static final int AD_PERM_REQUEST = 0;
+
+    /**
+     * AnkiDroid ContentProvider 查询专用的单线程后台执行器（见 {@link #dispatch}）。
+     * 进程级共享：主 engine 与悬浮词典副 engine 的调用同样串行，彼此不并发打 provider。
+     */
+    private static final ExecutorService PROVIDER_IO =
+        Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "fushi-anki-provider");
+            t.setDaemon(true);
+            return t;
+        });
 
     // BUG-2098：`requestAnkidroidPermissions` 的返回值。此前恒 success(true)——发起
     // 系统权限请求后**不等用户答复**就返回，Dart 侧紧接着查 provider，于是权限对话框
@@ -92,7 +108,7 @@ public class AnkiChannelHandler {
 
     public void register(@NonNull FlutterEngine engine) {
         new MethodChannel(engine.getDartExecutor().getBinaryMessenger(), CHANNEL)
-            .setMethodCallHandler((call, result) -> {
+            .setMethodCallHandler((call, rawResult) -> dispatch(call, rawResult, result -> {
                 final String model = call.argument("model");
                 final String deck = call.argument("deck");
                 final String key = call.argument("key");
@@ -217,15 +233,13 @@ public class AnkiChannelHandler {
                             result.error("MISSING_ARG",
                                 "models and key are required", null);
                         } else if (requirePermission(result)) {
-                            new Handler(Looper.getMainLooper()).post(() -> {
-                                try {
-                                    result.success(findNotesByContent(
-                                        models, key, reading, readingFieldIndices));
-                                } catch (Exception e) {
-                                    result.error(providerErrorCode(e),
-                                        e.getMessage(), null);
-                                }
-                            });
+                            try {
+                                result.success(findNotesByContent(
+                                    models, key, reading, readingFieldIndices));
+                            } catch (Exception e) {
+                                result.error(providerErrorCode(e),
+                                    e.getMessage(), null);
+                            }
                         }
                         break;
                     case "openNote":
@@ -251,18 +265,16 @@ public class AnkiChannelHandler {
                             // HBK-AUDIT-020: the dupe-check queries the AnkiDroid
                             // ContentProvider, which can throw (provider disabled
                             // mid-session, SecurityException, null cursor). Without
-                            // this guard the exception escaped the posted Runnable
+                            // this guard the exception escaped the provider task
                             // and the Dart Future never completed (hang). Always
                             // complete the result.
-                            new Handler(Looper.getMainLooper()).post(() -> {
-                                try {
-                                    result.success(checkForDuplicates(
-                                        models, key, reading, readingFieldIndices));
-                                } catch (Exception e) {
-                                    result.error("DUPE_CHECK_FAILED",
-                                        e.getMessage(), null);
-                                }
-                            });
+                            try {
+                                result.success(checkForDuplicates(
+                                    models, key, reading, readingFieldIndices));
+                            } catch (Exception e) {
+                                result.error("DUPE_CHECK_FAILED",
+                                    e.getMessage(), null);
+                            }
                         }
                         break;
                     case "getDecks":
@@ -480,7 +492,55 @@ public class AnkiChannelHandler {
                     default:
                         result.notImplemented();
                 }
-            });
+            }));
+    }
+
+    /**
+     * 「空闲一阵后第一次查词要等很久」（shishamo 2026-10-05）：查词弹窗渲染后会逐条
+     * 探测「这个词是否已制卡」（{@code checkForDuplicates} / {@code findNotesByContent}），
+     * 每一次都是一趟跨进程 ContentProvider 查询。AnkiDroid 后台进程被系统回收后，
+     * 这趟查询要先把 AnkiDroid **整个冷启动**（HiBreak 实测：主线程被占 210–250 ms、
+     * 丢 37 帧，弹窗渲染信号从 ~50 ms 推迟到 ~490 ms；牌组大、机器慢时更久），而这里
+     * 原先**全部在主线程**上执行——Hybrid Composition 下 Flutter 的
+     * raster 与 WebView 都绑在主线程，于是整个界面（含刚翻出的弹窗）冻住，直到 AnkiDroid
+     * 起来。一直查词时 AnkiDroid 进程是热的，所以只有「空闲后第一次」慢。
+     *
+     * <p>根因修复：所有碰 AnkiDroid ContentProvider 的方法一律在单线程后台执行器上跑
+     * （保持调用间 FIFO 顺序，addNote → updateNoteFields 不会乱序），结果经
+     * {@link MainThreadResult} 回投主线程（MethodChannel.Result 只能在主线程回复）。
+     * 只有需要 Activity / 不做 IPC 的几个方法留在主线程（见 {@link #runsOnMainThread}）。
+     */
+    private void dispatch(@NonNull MethodCall call, @NonNull MethodChannel.Result result,
+            @NonNull Consumer<MethodChannel.Result> handleCall) {
+        if (runsOnMainThread(call.method)) {
+            handleCall.accept(result);
+            return;
+        }
+        final MethodChannel.Result reply = new MainThreadResult(result);
+        PROVIDER_IO.execute(() -> {
+            try {
+                handleCall.accept(reply);
+            } catch (Throwable t) {
+                // 后台线程上未捕获的异常会直接杀进程；且 Dart 侧 Future 必须完成。
+                reply.error("ANKI_PROVIDER_ERROR", String.valueOf(t.getMessage()), null);
+            }
+        });
+    }
+
+    /**
+     * 留在主线程的方法：要 Activity 弹权限框 / 跳设置页 / 起 Activity，或只是本进程
+     * 内的权限判断（不跨进程）。其余方法都会查询 AnkiDroid ContentProvider。
+     */
+    static boolean runsOnMainThread(@NonNull String method) {
+        switch (method) {
+            case "requestAnkidroidPermissions":
+            case "hasAnkidroidPermission":
+            case "openAnkiPermissionSettings":
+            case "openNote":
+                return true;
+            default:
+                return false;
+        }
     }
 
     /**
@@ -1111,5 +1171,47 @@ public class AnkiChannelHandler {
 
     private static String emptyIfNull(@Nullable String value) {
         return value == null ? "" : value;
+    }
+
+    /**
+     * 把后台执行器上产生的回复投回主线程：Flutter 要求 {@link MethodChannel.Result}
+     * 在平台主线程上回复。已在主线程时直接回复，不多绕一圈消息队列。只认第一次回复：
+     * 分支回复后又抛异常时，{@link #dispatch} 的兜底 error 不得二次回复（Flutter 对
+     * 重复回复抛 IllegalStateException，会在主线程上崩）。
+     */
+    static final class MainThreadResult implements MethodChannel.Result {
+        private static final Handler MAIN = new Handler(Looper.getMainLooper());
+        private final MethodChannel.Result inner;
+        private final AtomicBoolean replied = new AtomicBoolean(false);
+
+        MainThreadResult(@NonNull MethodChannel.Result inner) {
+            this.inner = inner;
+        }
+
+        private static void onMain(@NonNull Runnable r) {
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                r.run();
+            } else {
+                MAIN.post(r);
+            }
+        }
+
+        @Override
+        public void success(@Nullable Object value) {
+            if (replied.compareAndSet(false, true)) onMain(() -> inner.success(value));
+        }
+
+        @Override
+        public void error(@NonNull String code, @Nullable String message,
+                @Nullable Object details) {
+            if (replied.compareAndSet(false, true)) {
+                onMain(() -> inner.error(code, message, details));
+            }
+        }
+
+        @Override
+        public void notImplemented() {
+            if (replied.compareAndSet(false, true)) onMain(inner::notImplemented);
+        }
     }
 }

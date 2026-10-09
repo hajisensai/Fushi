@@ -152,4 +152,43 @@ void main() {
       expect(data.sentenceOffset, 2);
     });
   });
+  test('grip bounds remain separate from the lookup glyph anchor', () {
+    final ReaderSelectionData data = ReaderSelectionData.fromJson(
+      <String, dynamic>{
+        'text': '?',
+        'rect': <String, num>{'x': 80, 'y': 100, 'width': 20, 'height': 24},
+        'handlesRect': <String, num>{
+          'x': 74,
+          'y': 76,
+          'width': 32,
+          'height': 72,
+        },
+      },
+    );
+    expect(data.rect!['y'], 100);
+    expect(data.rect!['height'], 24);
+    expect(data.handlesRect, <String, double>{
+      'x': 74,
+      'y': 76,
+      'width': 32,
+      'height': 72,
+    });
+  });
+
+  test('legacy or invalid grip bounds use the glyph fallback', () {
+    for (final Object? value in <Object?>[
+      null,
+      'invalid',
+      <String, num>{'x': 1},
+      <String, num>{'x': 1, 'y': 2, 'width': 0, 'height': 32},
+      <String, num>{'x': double.nan, 'y': 2, 'width': 32, 'height': 32},
+    ]) {
+      expect(
+        ReaderSelectionData.fromJson(<String, dynamic>{
+          'handlesRect': value,
+        }).handlesRect,
+        isNull,
+      );
+    }
+  });
 }

@@ -1,4 +1,10 @@
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_filename_parser.dart'
+    show
+        VideoNameInfo,
+        parseVideoFilename,
+        parseVideoPath,
+        parsedEpisodeNumbersOf;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
@@ -19,15 +25,28 @@ import 'package:fushi_core/fushi_core.dart'
 /// 能力边界与库页一致：远端槽只支持**流播 / 下载**，不参与任何写本地库的管理动作
 /// （改集名、批量字幕、补缺集、删除本体）——那些动作的调用方取 [local] 子集。
 class CollectionEpisodeSlot {
-  const CollectionEpisodeSlot.local(VideoBookRow this.local) : remote = null;
+  const CollectionEpisodeSlot.local(VideoBookRow this.local,
+      {this.remoteMirror})
+      : remote = null;
   const CollectionEpisodeSlot.remote(RemoteVideoInfo this.remote)
-      : local = null;
+      : local = null,
+        remoteMirror = null;
 
   /// 本机视频行；null = 该集只在对端。
   final VideoBookRow? local;
 
   /// 对端下发的远端条目；null = 该集在本机。
   final RemoteVideoInfo? remote;
+
+  /// 本机这一集在远端源上的**同一集**（BUG-2978：本地成员与远端成员各占一槽）。
+  ///
+  /// 合集清单是跨端 union：媒体服务器（Jellyfin/Emby）按剧名把单集收养进同名本地
+  /// 合集、互联 host 的文件名与本机不同，都会让同一集以两个 entryKey 同时在
+  /// `media_collection_items` 里——本地一行 + 远端一行。两行不是两集，解析成员时
+  /// 由 [pairRemoteEpisodesWithLocal] 归并成一槽：本地优先（播放、刮削资料、管理
+  /// 动作都认 [local]），远端那份挂在这里保留为同一集的第二播放来源，不再单独
+  /// 出一张远端卡、也不再进「下载远端集」清单（本机已经有了）。
+  final RemoteVideoInfo? remoteMirror;
 
   /// 该集只在对端（渲染云角标、禁用本地管理动作的唯一判据）。
   bool get isRemote => local == null;
@@ -45,8 +64,11 @@ class CollectionEpisodeSlot {
 
   int get positionMs => local?.lastPositionMs ?? remote!.positionMs;
 
-  bool get completed =>
-      local != null ? local!.completedAt != null : remote!.completedAt != null;
+  /// 看完：本地行或其远端同集任一标记看完即算——在媒体服务器上看完的那一集，
+  /// 归并后不能因为「本地优先」就变回未看。
+  bool get completed => local != null
+      ? local!.completedAt != null || remoteMirror?.completedAt != null
+      : remote!.completedAt != null;
 
   /// 最近播放时刻（epoch 毫秒）；远端的真相源是 host 下发的进度更新戳，与首页
   /// 「继续观看」行同一口径。
@@ -102,13 +124,139 @@ Future<List<CollectionEpisodeSlot>> loadCollectionEpisodeSlots({
       remoteById = const <String, RemoteVideoInfo>{};
     }
   }
-  return <CollectionEpisodeSlot>[
+  // 同一集的本地成员与远端成员归并成一槽（本地优先），否则详情页每集出两张卡、
+  // 「已看完 x/N」「选集 N」把同一集数两遍。
+  final List<VideoBookRow> localMembers = <VideoBookRow>[
     for (final String key in videoKeys)
-      if (localByUid[key] case final VideoBookRow local)
-        CollectionEpisodeSlot.local(local)
-      else if (remoteById[key] case final RemoteVideoInfo info)
-        CollectionEpisodeSlot.remote(info),
+      if (localByUid[key] case final VideoBookRow local) local,
   ];
+  final List<RemoteVideoInfo> remoteMembers = <RemoteVideoInfo>[
+    for (final String key in videoKeys)
+      if (!localByUid.containsKey(key))
+        if (remoteById[key] case final RemoteVideoInfo info) info,
+  ];
+  final Map<String, String> localUidByRemoteId = pairRemoteEpisodesWithLocal(
+    local: localMembers,
+    remote: remoteMembers,
+  );
+  final Map<String, RemoteVideoInfo> mirrorByLocalUid =
+      <String, RemoteVideoInfo>{
+    for (final MapEntry<String, String> pair in localUidByRemoteId.entries)
+      pair.value: remoteById[pair.key]!,
+  };
+  final List<CollectionEpisodeSlot> slots = <CollectionEpisodeSlot>[];
+  for (final String key in videoKeys) {
+    final VideoBookRow? local = localByUid[key];
+    if (local != null) {
+      slots.add(CollectionEpisodeSlot.local(
+        local,
+        remoteMirror: mirrorByLocalUid[key],
+      ));
+      continue;
+    }
+    // 已并进本地同集的远端成员不再单独占槽。
+    if (localUidByRemoteId.containsKey(key)) continue;
+    if (remoteById[key] case final RemoteVideoInfo info) {
+      slots.add(CollectionEpisodeSlot.remote(info));
+    }
+  }
+  return slots;
+}
+
+/// 跨来源的分集身份：季号（解析不出视作第 1 季，与分季分组同口径）+ 集号。
+typedef CollectionEpisodeIdentity = ({int season, int episode});
+
+/// 把**同一合集**里「本机有、远端也有」的同一集配对：返回 远端 id → 本地 bookUid。
+///
+/// 纯函数，合集详情页（[loadCollectionEpisodeSlots]）与库页混排（远端占位卡）
+/// 共用同一判据，两处的集数口径因此一致。
+///
+/// 身份 = (季号, 集号)：本地从真实文件路径整批解析（与集卡序号同一个
+/// [parsedEpisodeNumbersOf]，季号走 [parseVideoPath] 的父目录回落），远端从标题
+/// 解析（媒体服务器标题是 `剧名 S01E02 集名`，互联 host 默认是文件名）。远端
+/// 标题不是路径，故走 [parseVideoFilename]——`Fate/Zero` 这种带斜杠的剧名不能被
+/// 当成目录切开。
+///
+/// 只配**两边各自唯一**的身份：同一身份在本地或远端出现多次（多版本、解析撞号）
+/// 时宁可不并，也不把两集错并成一集；解析不出集号的（PV / 特典 / 电影）一律不并。
+Map<String, String> pairRemoteEpisodesWithLocal({
+  required List<VideoBookRow> local,
+  required List<RemoteVideoInfo> remote,
+}) {
+  if (local.isEmpty || remote.isEmpty) return const <String, String>{};
+  final List<int?> localEpisodes = parsedEpisodeNumbersOf(<String>[
+    for (final VideoBookRow row in local) row.videoPath,
+  ]);
+  final Map<CollectionEpisodeIdentity, String?> localByIdentity =
+      <CollectionEpisodeIdentity, String?>{};
+  for (int i = 0; i < local.length; i++) {
+    final int? episode = localEpisodes[i];
+    if (episode == null) continue;
+    final CollectionEpisodeIdentity identity = (
+      season: parseVideoPath(local[i].videoPath).season ?? 1,
+      episode: episode,
+    );
+    // 撞号 → 记 null（该身份作废），不按先来后到挑一个。
+    localByIdentity[identity] =
+        localByIdentity.containsKey(identity) ? null : local[i].bookUid;
+  }
+  if (localByIdentity.isEmpty) return const <String, String>{};
+  final Map<CollectionEpisodeIdentity, String?> remoteByIdentity =
+      <CollectionEpisodeIdentity, String?>{};
+  for (final RemoteVideoInfo info in remote) {
+    final VideoNameInfo parsed = parseVideoFilename(info.title);
+    final int? episode = parsed.episode;
+    if (episode == null) continue;
+    final CollectionEpisodeIdentity identity =
+        (season: parsed.season ?? 1, episode: episode);
+    remoteByIdentity[identity] =
+        remoteByIdentity.containsKey(identity) ? null : info.id;
+  }
+  final Map<String, String> pairs = <String, String>{};
+  remoteByIdentity.forEach((CollectionEpisodeIdentity identity, String? id) {
+    final String? uid = localByIdentity[identity];
+    if (id != null && uid != null) pairs[id] = uid;
+  });
+  return pairs;
+}
+
+/// 库页口径的同一判据：按**合集**分桶后，返回已被本机同一集覆盖的远端 id 集合
+/// （库页据此不再出远端占位卡，与详情页归并后的集数一致）。
+///
+/// [collectionOfEntry] 给出视频条目（本地 bookUid / 远端 id）所在的合集；不在
+/// 合集里的条目没有「同一部作品」的上下文，一律不判重。
+Set<String> remoteEpisodesMirroredLocally({
+  required List<VideoBookRow> local,
+  required List<RemoteVideoInfo> remote,
+  required int? Function(String entryKey) collectionOfEntry,
+}) {
+  if (local.isEmpty || remote.isEmpty) return const <String>{};
+  final Map<int, List<RemoteVideoInfo>> remoteByCollection =
+      <int, List<RemoteVideoInfo>>{};
+  for (final RemoteVideoInfo info in remote) {
+    final int? cid = collectionOfEntry(info.id);
+    if (cid != null) {
+      (remoteByCollection[cid] ??= <RemoteVideoInfo>[]).add(info);
+    }
+  }
+  if (remoteByCollection.isEmpty) return const <String>{};
+  final Map<int, List<VideoBookRow>> localByCollection =
+      <int, List<VideoBookRow>>{};
+  for (final VideoBookRow row in local) {
+    final int? cid = collectionOfEntry(row.bookUid);
+    if (cid != null && remoteByCollection.containsKey(cid)) {
+      (localByCollection[cid] ??= <VideoBookRow>[]).add(row);
+    }
+  }
+  final Set<String> mirrored = <String>{};
+  remoteByCollection.forEach((int cid, List<RemoteVideoInfo> members) {
+    final List<VideoBookRow>? locals = localByCollection[cid];
+    if (locals == null) return;
+    mirrored.addAll(
+      pairRemoteEpisodesWithLocal(local: locals, remote: members).keys,
+    );
+  });
+  return mirrored;
 }
 
 /// 合集视图的**远端上下文**：让「只在对端」的成员能列出、能播、能取封面。

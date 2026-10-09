@@ -37,8 +37,10 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
   }) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    final ({int start, String term}) span =
-        subtitleLookupSpan(sentence, graphemeIndex);
+    final ({int start, String term}) span = subtitleLookupSpan(
+      sentence,
+      graphemeIndex,
+    );
     final String term = span.term;
     // 先判空再暂停：空词不弹浮层，不能暂停后无浮层可关→恢复路径永不触发（卡暂停）。
     if (term.isEmpty) return;
@@ -90,13 +92,13 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     final int graphemeCount = lookupHighlightGraphemeCount(term, matchedRunes);
     final SubtitleLookupHighlight? nextHighlight =
         graphemeCount > 0 && highlightCue != null && span.start >= 0
-            ? SubtitleLookupHighlight(
-                sentence: sentence,
-                cueStartMs: highlightCue.startMs,
-                graphemeStart: span.start,
-                graphemeCount: graphemeCount,
-              )
-            : null;
+        ? SubtitleLookupHighlight(
+            sentence: sentence,
+            cueStartMs: highlightCue.startMs,
+            graphemeStart: span.start,
+            graphemeCount: graphemeCount,
+          )
+        : null;
     if (nextHighlight != _subtitleLookupHighlight) {
       _rebuild(() => _subtitleLookupHighlight = nextHighlight);
     }
@@ -119,8 +121,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     final bool favorited = (await _matchingVideoFavorites(
       sentence,
       cue,
-    ))
-        .isNotEmpty;
+    )).isNotEmpty;
     if (mounted && favorited != _currentVideoSentenceIsFavorited) {
       _rebuild(() => _currentVideoSentenceIsFavorited = favorited);
     }
@@ -151,11 +152,13 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
         _rebuild(() {
           _currentVideoSentenceIsFavorited = false;
           if (cue != null) {
-            _favoritedVideoSentences.remove(_videoFavoriteCacheKey(
-              sentence,
-              cue.startMs,
-              _favoriteSectionIndex,
-            ));
+            _favoritedVideoSentences.remove(
+              _videoFavoriteCacheKey(
+                sentence,
+                cue.startMs,
+                _favoriteSectionIndex,
+              ),
+            );
           }
           _favoritedVideoSentences.remove(
             _videoFavoriteCacheKey(sentence, null, null),
@@ -181,9 +184,9 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
         // 视频标题尚未加载（_title==null）时回退到 bookUid，保证 bookTitle 永远非空
         // ——收藏夹页 / 统计页都按 bookTitle 展示来源行，空标题会显示成空白条目。
         text: sentence,
-        bookTitle: _title ?? widget.bookUid,
+        bookTitle: _title ?? _activeBookUid,
         createdAt: DateTime.now(),
-        bookKey: widget.bookUid,
+        bookKey: _activeBookUid,
         sectionIndex: _favoriteSectionIndex,
         normCharOffset: cue?.startMs,
         normCharLength: cue == null
@@ -198,11 +201,9 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     if (mounted) {
       _rebuild(() {
         _currentVideoSentenceIsFavorited = true;
-        _favoritedVideoSentences.add(_videoFavoriteCacheKey(
-          sentence,
-          cue?.startMs,
-          _favoriteSectionIndex,
-        ));
+        _favoritedVideoSentences.add(
+          _videoFavoriteCacheKey(sentence, cue?.startMs, _favoriteSectionIndex),
+        );
       });
     }
     _showOsd(
@@ -284,13 +285,12 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
   /// 字幕跳转列表面板某句是否已收藏（同步，读缓存 [_favoritedVideoSentences]）。
   bool _isCueFavorited(AudioCue cue) {
     final String text = cue.text.trim();
-    return _favoritedVideoSentences.contains(_videoFavoriteCacheKey(
-          text,
-          cue.startMs,
-          _favoriteSectionIndex,
-        )) ||
-        _favoritedVideoSentences
-            .contains(_videoFavoriteCacheKey(text, null, null));
+    return _favoritedVideoSentences.contains(
+          _videoFavoriteCacheKey(text, cue.startMs, _favoriteSectionIndex),
+        ) ||
+        _favoritedVideoSentences.contains(
+          _videoFavoriteCacheKey(text, null, null),
+        );
   }
 
   /// 从字幕跳转列表面板行内 toggle 某句收藏（TODO-152 子A）。与查词浮层收藏走同一
@@ -315,9 +315,9 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
       await repo.add(
         FavoriteSentence(
           text: sentence,
-          bookTitle: _title ?? widget.bookUid,
+          bookTitle: _title ?? _activeBookUid,
           createdAt: DateTime.now(),
-          bookKey: widget.bookUid,
+          bookKey: _activeBookUid,
           sectionIndex: _favoriteSectionIndex,
           normCharOffset: cue.startMs,
           normCharLength: (cue.endMs - cue.startMs).clamp(0, 1 << 31).toInt(),
@@ -330,18 +330,18 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     _rebuild(() {
       if (wasFavorited) {
         _favoritedVideoSentences
-          ..remove(_videoFavoriteCacheKey(
-            sentence,
-            cue.startMs,
-            _favoriteSectionIndex,
-          ))
+          ..remove(
+            _videoFavoriteCacheKey(
+              sentence,
+              cue.startMs,
+              _favoriteSectionIndex,
+            ),
+          )
           ..remove(_videoFavoriteCacheKey(sentence, null, null));
       } else {
-        _favoritedVideoSentences.add(_videoFavoriteCacheKey(
-          sentence,
-          cue.startMs,
-          _favoriteSectionIndex,
-        ));
+        _favoritedVideoSentences.add(
+          _videoFavoriteCacheKey(sentence, cue.startMs, _favoriteSectionIndex),
+        );
       }
       // 列表 toggle 的若是当前查词那句，同步浮层星标态（两处共用同一收藏记录）。
       if (sentence == _lastLookupSentence.trim()) {
@@ -359,11 +359,17 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
   /// 拉本视频已收藏句填充 [_favoritedVideoSentences]（打开字幕跳转列表前调一次）。
   /// 只取本 bookKey + video 来源那批，按 `text` 建集供同步查询。
   Future<void> _refreshFavoritedCueCache() async {
+    final String bookUid = _activeBookUid;
+    final int generation = _episodeLoadSeq;
     final FavoriteSentenceRepository repo = FavoriteSentenceRepository(
       appModel.database,
     );
     final List<FavoriteSentence> all = await repo.getAll();
-    if (!mounted) return;
+    if (!mounted ||
+        generation != _episodeLoadSeq ||
+        bookUid != _activeBookUid) {
+      return;
+    }
     _rebuild(() {
       _favoritedVideoSentences
         ..clear()
@@ -371,7 +377,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
           all
               .where(
                 (FavoriteSentence s) =>
-                    s.bookKey == widget.bookUid &&
+                    s.bookKey == bookUid &&
                     s.source == kFavoriteSentenceSourceVideo,
               )
               .map(
@@ -406,14 +412,14 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
         .where(
           (FavoriteSentence s) =>
               s.source == kFavoriteSentenceSourceVideo &&
-              s.bookKey == widget.bookUid &&
+              s.bookKey == _activeBookUid &&
               s.text.trim() == text &&
               (cue == null
                   ? s.normCharOffset == null
                   : (s.normCharOffset == cue.startMs &&
-                          (!_favoriteIsPlaylist ||
-                              s.sectionIndex == episodeIndex)) ||
-                      (s.normCharOffset == null && s.sectionIndex == null)),
+                            (!_favoriteIsPlaylist ||
+                                s.sectionIndex == episodeIndex)) ||
+                        (s.normCharOffset == null && s.sectionIndex == null)),
         )
         .toList();
   }

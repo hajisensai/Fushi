@@ -5,6 +5,7 @@ library;
 
 export 'fushi_apple_palette.dart';
 export 'fushi_expressive.dart';
+export 'fushi_expressive_controls.dart';
 export 'fushi_glass_bars.dart';
 export 'fushi_glass_buttons.dart';
 export 'fushi_glass_chips.dart';

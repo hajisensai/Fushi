@@ -4,7 +4,7 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:collection/collection.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
@@ -33,6 +33,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/pages/implementations/video_resource_version_group_list.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
 
 export 'package:fushi_engine/media/video/download/video_discovery_selection.dart';
 
@@ -1038,14 +1039,10 @@ class _VideoResourceSearchSurfaceState
             Row(
               children: <Widget>[
                 Expanded(
-                  child: FushiTextFieldControl(
-                    key: const ValueKey<String>('video-resource-query'),
+                  child: FushiSearchBar(
+                    fieldKey: const ValueKey<String>('video-resource-query'),
                     controller: _queryController,
-                    decoration: InputDecoration(
-                      hintText: t.video_discovery_search_hint,
-                      prefixIcon: const FushiIcon(Icons.search_rounded),
-                    ),
-                    textInputAction: TextInputAction.search,
+                    hintText: t.video_discovery_search_hint,
                     onSubmitted: (_) => unawaited(_search()),
                   ),
                 ),
@@ -1088,15 +1085,11 @@ class _VideoResourceSearchSurfaceState
           if (manual) ...<Widget>[
             LayoutBuilder(
               builder: (BuildContext context, BoxConstraints constraints) {
-                final Widget search = FushiTextFieldControl(
-                  key: const ValueKey<String>('video-resource-query'),
+                final Widget search = FushiSearchBar(
+                  fieldKey: const ValueKey<String>('video-resource-query'),
                   controller: _queryController,
-                  decoration: InputDecoration(
-                    hintText: t.video_discovery_search_hint,
-                    prefixIcon: const FushiIcon(Icons.search_rounded),
-                  ),
-                  textInputAction: TextInputAction.search,
-                  onChanged: (_) => _invalidateManualSearch(),
+                  hintText: t.video_discovery_search_hint,
+                  onQueryChanged: (_) => _invalidateManualSearch(),
                   onSubmitted: (_) => unawaited(_search()),
                 );
                 final Widget category = _buildCategorySelector();
@@ -2144,8 +2137,25 @@ class _NoProviderEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 空态走共享占位（MD3 分组底卡 / Apple ContentUnavailableView 观感）。
-    return FushiPlaceholderMessage(icon: icon, message: title, detail: hint);
+    // 空态走共享占位（M3E 色块图标 / Apple ContentUnavailableView 观感）。
+    // 两处调用都在结果区的 `Expanded` 里，高度由窗口与上方查询 / 筛选行瓜分；
+    // 窄窗口下 72px 色块 + 标题 + 说明放不下时必须能滚，不能溢出裁字。放得下
+    // 时撑满结果区居中，观感不变。
+    final Widget placeholder = FushiPlaceholderMessage(
+      icon: icon,
+      message: title,
+      detail: hint,
+    );
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(child: placeholder),
+          ),
+        );
+      },
+    );
   }
 }
 

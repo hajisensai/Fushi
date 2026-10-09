@@ -1,10 +1,10 @@
+import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -12,7 +12,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/shortcuts/gamepad_forwarding_action.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
-    show GamepadButtonIntent;
+    show GamepadButtonIntent, GamepadLongPressActions;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
@@ -37,6 +37,7 @@ import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale_prompt.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/mining/galgame_library_query.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/galgame_scrape_dialog.dart';
@@ -57,12 +58,16 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart'
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
-import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
     show currentRevealHost, revealFirstOf;
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeOverlay, FushiFloatingChromeScrollInset;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
+import 'package:fushi/src/utils/cover_image.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 // 游戏进合集（统一媒体库）：mediaType 用 [MediaKind.game]（P5 枚举地基，取代旧
 // 常量 kGameCollectionMediaType）。entryKey = `galgames.id`（添加时刻微秒时间戳
@@ -87,11 +92,17 @@ class GamesLibraryPage extends ConsumerStatefulWidget {
     this.embedded = false,
     this.sessionController,
     this.onLaunched,
+    this.header,
   });
 
   final bool embedded;
   final GalHookSessionController? sessionController;
   final VoidCallback? onLaunched;
+
+  /// 排在主滚动视图最前、随内容一起滚走的一块（游戏 tab 的捕获会话状态带）。
+  /// 它是内容不是工具：放进滚动视图而不是钉在搜索行上方，内容才能一路滚到
+  /// 浮动工具区底下，工具区收起后顶部不留一条钉死的带子。
+  final Widget? header;
 
   @override
   ConsumerState<GamesLibraryPage> createState() => _GamesLibraryPageState();
@@ -125,9 +136,20 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 叠出多个「需要下载 galgame 引擎组件」对话框（用户实测症状）。true 期间忽略新的启动点击。
   bool _launching = false;
 
+  /// 网格 / 列表布局（偏好 `games_library_layout`）。页头切换钮
+  /// （[GamesLibraryLayoutToggle]）写偏好，本页监听偏好仓储跟着换。
+  late bool _listLayout = _appModel.prefsRepo.gamesLibraryListLayout;
+
+  void _onPrefsChanged() {
+    final bool list = _appModel.prefsRepo.gamesLibraryListLayout;
+    if (!mounted || list == _listLayout) return;
+    setState(() => _listLayout = list);
+  }
+
   @override
   void initState() {
     super.initState();
+    _appModel.prefsRepo.addListener(_onPrefsChanged);
     // 仓储是 ChangeNotifier：监听它，游戏从任何入口落库（「导入」视图快速导入、
     // 详情页编辑等）本页都能自动刷新，不再依赖「写操作都发生在本页」的隐含假设。
     _repo.addListener(_refresh);
@@ -138,6 +160,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
 
   @override
   void dispose() {
+    _appModel.prefsRepo.removeListener(_onPrefsChanged);
     _repo.removeListener(_refresh);
     _appModel.discoveryDownloadQueue.removeListener(_refresh);
     _searchController.dispose();
@@ -344,7 +367,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           scrollable: false,
           child: FushiModalSheetFrame(
             title: t.game_play_status,
-            leadingIcon: Icons.flag_outlined,
+            leadingIcon: FushiIcons.flag,
             scrollable: true,
             bodyPadding: EdgeInsets.fromLTRB(
               tokens.spacing.gap,
@@ -359,20 +382,31 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                   ...kGalgamePlayStatusMenuOrder,
                   GalgamePlayStatus.unset,
                 ])
+                  // M3E：行首是该状态自己的语义图标（形状底），当前状态用饱和
+                  // primary 色块 + cookie 形 + 行选中底 + 行尾勾——一眼看出当前
+                  // 状态，而不是两个同色圆圈比形状。Apple 落 iOS 设置式图标方块。
                   FushiListItem(
                     density: FushiListDensity.compact,
-                    leading: FushiIcon(
-                      game.playStatus == status
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
-                      size: 18,
-                      // 选中项走强调色（MD3 primary / Apple accent），未选中保持
-                      // 中性——一眼看出当前状态，而不是两个同色圆圈比形状。
-                      color: game.playStatus == status
-                          ? Theme.of(ctx).colorScheme.primary
-                          : null,
+                    selected: game.playStatus == status,
+                    leading: FushiListLeadingIcon(
+                      galgamePlayStatusIcon(status),
+                      size: 36,
+                      iconSize: 20,
+                      shape: game.playStatus == status
+                          ? FushiLeadingShape.cookie
+                          : FushiLeadingShape.circle,
+                      tone: game.playStatus == status
+                          ? FushiCardTone.primary
+                          : FushiCardTone.secondary,
                     ),
                     title: Text(galgamePlayStatusLabel(status)),
+                    trailing: game.playStatus == status
+                        ? FushiIcon(
+                            FushiIcons.check,
+                            size: 20,
+                            color: Theme.of(ctx).colorScheme.primary,
+                          )
+                        : null,
                     onTap: () => Navigator.of(ctx).pop(status),
                   ),
               ],
@@ -698,18 +732,28 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       debugLabel: 'games-library',
       onDrop: (List<String> paths, Offset position) =>
           unawaited(_handleDrop(paths, position)),
-      child: Column(
-        children: <Widget>[
-          if (_games.isNotEmpty) _buildToolbar(context, allTags),
-          if (_games.isNotEmpty) _buildTagFilterBar(allTags),
-          Expanded(
-            child: _buildBody(
-              context,
-              visible,
-              tagFilterActive: allowedIds != null,
-            ),
+      // 搜索 / 筛选行与标签行叠进库页外壳的浮动工具区（嵌套
+      // [FushiFloatingChromeOverlay]，与书架 / 视频库 / 发现页同构）：往下滚
+      // 跟外壳页签一起收起，内容滚到它们底下；主滚动视图经
+      // [FushiFloatingChromeScrollInset] 拿到 MediaQuery 顶部 padding 自己让位。
+      // 不在外壳里（独立 push）时 overlay 退化成「工具行 + 内容」竖排，与旧版面
+      // 一致。
+      child: FushiFloatingChromeOverlay(
+        chrome: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            if (_games.isNotEmpty) _buildToolbar(context, allTags),
+            if (_games.isNotEmpty) _buildTagFilterBar(allTags),
+          ],
+        ),
+        child: FushiFloatingChromeScrollInset(
+          child: _buildBody(
+            context,
+            visible,
+            tagFilterActive: allowedIds != null,
           ),
-        ],
+        ),
       ),
     );
     // 嵌在游戏 tab 里（生产路径）：单件入口已统一收敛到「导入」分段（与书 /
@@ -721,13 +765,13 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     return Scaffold(
       appBar: FushiAppBar(
         title: Text(t.games),
+        actions: const <Widget>[GamesLibraryLayoutToggle()],
       ),
-      floatingActionButton: FushiGlassFab(
-        child: FloatingActionButton.extended(
-          onPressed: _addGame,
-          icon: const FushiIcon(Icons.add),
-          label: Text(t.game_add),
-        ),
+      floatingActionButton: FushiFab(
+        icon: const FushiIcon(FushiIcons.add),
+        label: Text(t.game_add),
+        tooltip: t.game_add,
+        onPressed: _addGame,
       ),
       body: body,
     );
@@ -811,14 +855,14 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           FushiIconButton(
             tooltip: t.scrape_all,
             label: t.scrape_all,
-            icon: Icons.manage_search_outlined,
+            icon: FushiIcons.manageSearch,
             onTap: _scrapeAllGames,
           ),
         ],
         <Widget>[
           FushiPopupMenuButton<GalgameSortField>(
             tooltip: t.game_sort,
-            icon: const FushiIcon(Icons.sort),
+            icon: const FushiIcon(FushiIcons.sort),
             onSelected: _selectSortField,
             itemBuilder: (BuildContext context) =>
                 <PopupMenuEntry<GalgameSortField>>[
@@ -858,8 +902,11 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     return FushiIconButtonControl(
       tooltip: t.game_filter,
       onPressed: () => unawaited(_showFilterSheet()),
+      // 有筛选生效：实心字形 + 强调色（M3E 的「激活」= FILL 1）。
       icon: FushiIcon(
-        _view.hasActiveFilter ? Icons.filter_alt : Icons.filter_alt_outlined,
+        _view.hasActiveFilter
+            ? FushiIcons.filled(FushiIcons.filter)
+            : FushiIcons.filter,
         color: _view.hasActiveFilter ? colors.primary : null,
       ),
     );
@@ -870,7 +917,9 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     return FushiPopupMenuButton<Object>(
       key: const ValueKey<String>('games_toolbar_overflow'),
       tooltip: t.common_more_actions,
-      icon: const FushiIcon(Icons.more_vert),
+      icon: FushiIcon(
+        isGlassDesign(context) ? FushiIcons.moreHoriz : FushiIcons.more,
+      ),
       onSelected: (Object value) {
         if (value is GalgameSortField) {
           _selectSortField(value);
@@ -883,7 +932,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           value: _GamesToolbarOverflowAction.scrapeAll,
           child: Row(
             children: <Widget>[
-              const FushiIcon(Icons.manage_search_outlined, size: 20),
+              const FushiIcon(FushiIcons.manageSearch, size: 20),
               const SizedBox(width: 12),
               Expanded(child: Text(t.scrape_all)),
             ],
@@ -937,15 +986,13 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   }
 
   Future<void> _openTagPicker(GalgameEntry game) async {
-    await Navigator.push(
+    await showTagPicker(
       context,
-      adaptivePageRoute(
-        context: context,
-        builder: (_) => TagPickerPage(
-          media: MediaRef(kind: MediaKind.game, entryKey: game.id),
-        ),
+      targets: TagTargets(
+        media: <MediaRef>[MediaRef(kind: MediaKind.game, entryKey: game.id)],
       ),
     );
+    if (!mounted) return;
     ref.invalidate(allTagsProvider);
     ref.invalidate(gameTagMapProvider);
     ref.invalidate(filteredGameIdsProvider);
@@ -1041,7 +1088,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
 
             return FushiModalSheetFrame(
               title: t.game_filter,
-              leadingIcon: Icons.filter_alt_outlined,
+              leadingIcon: FushiIcons.filter,
               scrollable: true,
               bodyPadding:
                   EdgeInsets.symmetric(horizontal: tokens.spacing.page),
@@ -1054,8 +1101,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                     spacing: tokens.spacing.gap,
                     runSpacing: tokens.spacing.gap,
                     children: <Widget>[
-                      FushiSelectableChip(
-                        label: t.game_filter_all,
+                      // M3E：单选维度用 choice chip、多选维度（标签）用 filter
+                      // chip；状态 chip 带各自的语义图标（与封面角标同一套）。
+                      FushiChoiceChip(
+                        label: Text(t.game_filter_all),
                         selected: _view.status == null,
                         onSelected: (_) =>
                             apply(_view.copyWith(clearStatus: true)),
@@ -1065,8 +1114,12 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                         ...kGalgamePlayStatusMenuOrder,
                         GalgamePlayStatus.unset,
                       ])
-                        FushiSelectableChip(
-                          label: galgamePlayStatusLabel(status),
+                        FushiChoiceChip(
+                          avatar: FushiIcon(
+                            galgamePlayStatusIcon(status),
+                            size: 18,
+                          ),
+                          label: Text(galgamePlayStatusLabel(status)),
                           selected: _view.status == status,
                           onSelected: (bool selected) => apply(
                             selected
@@ -1083,8 +1136,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                     children: <Widget>[
                       for (final GalgameLocalFilter filter
                           in GalgameLocalFilter.values)
-                        FushiSelectableChip(
-                          label: galgameLocalFilterLabel(filter),
+                        FushiChoiceChip(
+                          label: Text(galgameLocalFilterLabel(filter)),
                           selected: _view.localFilter == filter,
                           onSelected: (_) =>
                               apply(_view.copyWith(localFilter: filter)),
@@ -1098,8 +1151,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                       runSpacing: tokens.spacing.gap,
                       children: <Widget>[
                         for (final String tag in allTags)
-                          FushiSelectableChip(
-                            label: tag,
+                          FushiFilterChip(
+                            label: Text(tag),
                             selected: _view.tags.contains(tag),
                             onSelected: (bool selected) {
                               final Set<String> next =
@@ -1146,19 +1199,19 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 手写一套图标 + 文案 + 按钮的列。
   Widget _buildEmpty(BuildContext context) {
     return FushiPlaceholderMessage(
-      icon: Icons.videogame_asset_outlined,
+      icon: FushiIcons.games,
       message: t.game_empty,
       // 嵌壳时空态引导去「导入」分段（唯一入库位置）；独立使用时直接选 exe。
       action: widget.embedded
           ? FushiFilledButton.icon(
               onPressed: () =>
                   gameSectionNotifier.value = GameSection.importGames,
-              icon: const FushiIcon(Icons.library_add_outlined),
+              icon: const FushiIcon(FushiIcons.libraryAdd),
               label: Text(t.library_empty_go_import),
             )
           : FushiFilledButton.icon(
               onPressed: _addGame,
-              icon: const FushiIcon(Icons.add),
+              icon: const FushiIcon(FushiIcons.add),
               label: Text(t.game_add),
             ),
     );
@@ -1168,12 +1221,13 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 附「重置筛选」直达动作，省得用户再去找筛选面板底部的按钮。
   Widget _buildNoMatch(BuildContext context) {
     return FushiPlaceholderMessage(
-      icon: Icons.search_off,
+      icon: FushiIcons.searchOff,
       message: t.game_no_match,
       action: _view.hasActiveFilter
-          ? FushiTextButton(
+          ? FushiFilledButton.tonalIcon(
               onPressed: () => _setView(_view.clearFilters()),
-              child: Text(t.game_filter_reset),
+              icon: const FushiIcon(FushiIcons.filterList),
+              label: Text(t.game_filter_reset),
             )
           : null,
     );
@@ -1214,14 +1268,25 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     required bool tagFilterActive,
   }) {
     // 2026-10 动效重做：首屏卡片错峰淡入（与书架 / 视频库同一套），滚动带出的
-    // 卡瞬间出现。
+    // 卡瞬间出现。切换网格 / 列表时重开进场窗口，新布局同样错峰进场。
     return FushiEntranceScope(
+      replayKey: _listLayout,
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final _GameGridMetrics metrics =
               _GameGridMetrics.forWidth(constraints.maxWidth);
-          return CustomScrollView(
+          // 浮动工具区的让位（[FushiFloatingChromeScrollInset] 交来的 MediaQuery
+          // 顶部 padding）由首个 sliver 吃掉，再从子树里摘掉，免得卡片里的
+          // 竖向列表 / SafeArea 重复让一遍。
+          final Widget? header = widget.header;
+          final double chromeTop = MediaQuery.paddingOf(context).top;
+          return MediaQuery.removePadding(
+            context: context,
+            removeTop: true,
+            child: CustomScrollView(
             slivers: <Widget>[
+              SliverToBoxAdapter(child: SizedBox(height: chromeTop)),
+              if (header != null) SliverToBoxAdapter(child: header),
               ..._buildPendingDownloadSlivers(context, metrics),
               ..._buildLibrarySlivers(
                 context,
@@ -1233,6 +1298,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                 ),
               ),
             ],
+            ),
           );
         },
       ),
@@ -1251,7 +1317,12 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       SliverPadding(
         key: const ValueKey<String>('games_pending_downloads'),
         // 底边留 0：下一段（网格）自带 16 顶边，两段之间正好一个 spacing。
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+        padding: const EdgeInsets.fromLTRB(
+          _kGameGridEdge,
+          16,
+          _kGameGridEdge,
+          0,
+        ),
         sliver: SliverGrid.builder(
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: metrics.columns,
@@ -1306,11 +1377,21 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         SliverToBoxAdapter(
           child: FushiSectionTitle(
             t.game_library,
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+            padding: const EdgeInsets.fromLTRB(
+              _kGameGridEdge,
+              20,
+              _kGameGridEdge,
+              0,
+            ),
           ),
         ),
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+        padding: const EdgeInsets.fromLTRB(
+          _kGameGridEdge,
+          16,
+          _kGameGridEdge,
+          88,
+        ),
         sliver: SliverMainAxisGroup(
           slivers: _buildGridSlivers(context, visible, metrics),
         ),
@@ -1350,14 +1431,21 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   ) {
     final double viewport = metrics.viewportWidth;
     final double cardWidth =
-        viewport < 600 ? (viewport - 32) * 0.86 : _kContinueCardWidth;
+        viewport < 600
+            ? (viewport - _kGameGridEdge * 2) * 0.86
+            : _kContinueCardWidth;
     final double cardHeight = cardWidth * 9 / 16;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         FushiSectionTitle(
           t.game_focus_continue,
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          padding: const EdgeInsets.fromLTRB(
+            _kGameGridEdge,
+            16,
+            _kGameGridEdge,
+            8,
+          ),
         ),
         SizedBox(
           // 卡片悬停抬升 + 投影需要上下各留几像素，不被横向列表裁掉。
@@ -1367,7 +1455,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             child: ListView.separated(
               key: const ValueKey<String>('games_continue_row'),
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(
+                horizontal: _kGameGridEdge,
+                vertical: 8,
+              ),
               clipBehavior: Clip.none,
               itemCount: games.length,
               separatorBuilder: (_, __) => const SizedBox(width: 16),
@@ -1433,7 +1524,23 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         );
       }
     }
-    if (loose.isNotEmpty) {
+    if (loose.isNotEmpty && _listLayout) {
+      // 列表布局：M3E 分段卡（组首尾大圆角、行间 2），每行小封面 + 标题 + 开发商
+      // / 发行日 + 游玩状态 / 时长 / 最后游玩。合集横排行仍在前面，与网格同构。
+      slivers.add(
+        SliverList.builder(
+          itemCount: loose.length,
+          itemBuilder: (BuildContext context, int i) => FushiStaggeredEntrance(
+            index: i,
+            child: _buildGameCard(
+              loose[i],
+              listIndex: i,
+              listCount: loose.length,
+            ),
+          ),
+        ),
+      );
+    } else if (loose.isNotEmpty) {
       slivers.add(
         SliverGrid.builder(
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -1553,17 +1660,31 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   Widget _buildPendingDownloadCard(DiscoveryDownloadTask task) =>
       buildPendingGameDownloadCard(task);
 
-  Widget _buildGameCard(GalgameEntry game) {
+  Widget _buildGameCard(
+    GalgameEntry game, {
+    int? listIndex,
+    int? listCount,
+  }) {
     return MediaCardDraggable(
       mediaRef: MediaRef(kind: MediaKind.game, entryKey: game.id),
       label: game.displayName,
-      child: _buildGameCardBody(game),
+      child: _buildGameCardBody(
+        game,
+        listIndex: listIndex,
+        listCount: listCount,
+      ),
     );
   }
 
-  Widget _buildGameCardBody(GalgameEntry game) {
+  Widget _buildGameCardBody(
+    GalgameEntry game, {
+    int? listIndex,
+    int? listCount,
+  }) {
     return _GameCard(
       game: game,
+      listIndex: listIndex,
+      listCount: listCount,
       sortLabel: galgameSortValueLabel(game, _view.sortField),
       onTap: () => unawaited(_launchGame(game)),
       onRename: () => unawaited(_renameGame(game)),
@@ -1597,6 +1718,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
 /// 游戏网格的卡间距。
 const double _kGameGridSpacing = 16;
 
+/// 游戏库内容段的左右页边：与外壳大标题、浮动页签胶囊、工具行同一条左右缘
+/// （[FushiSpacingTokens.page]，2026-10-06 库页顶部对齐）。
+const double _kGameGridEdge = 20;
+
 /// 游戏海报卡的目标宽度（ReinaManager 海报宽档）。
 const double _kGameCardTargetWidth = 168;
 
@@ -1613,8 +1738,8 @@ class _GameGridMetrics {
 
   /// 复算 `MaxCrossAxisExtent(168)` 的列数与卡宽（ceil → 卡宽 ≤168）。
   factory _GameGridMetrics.forWidth(double maxWidth) {
-    // 32 = 网格段左右各 16 的内边距。
-    final double rawWidth = maxWidth - 32;
+    // 网格段左右各一个页边的内边距。
+    final double rawWidth = maxWidth - _kGameGridEdge * 2;
     final double available = rawWidth < 1 ? 1 : rawWidth;
     final int columns = ((available + _kGameGridSpacing) /
             (_kGameCardTargetWidth + _kGameGridSpacing))
@@ -1892,9 +2017,16 @@ class _GameCard extends StatelessWidget {
     required this.onOpenFileLocation,
     required this.onStatistics,
     this.sortLabel,
+    this.listIndex,
+    this.listCount,
   });
 
   final GalgameEntry game;
+
+  /// 非 null = 以列表布局的分段卡行渲染（本行在组内的位置 / 组内总行数，决定
+  /// 首尾大圆角）；null = 竖版海报卡。两种外观共用同一份菜单与回调。
+  final int? listIndex;
+  final int? listCount;
 
   /// 当前排序维度在这条游戏上的值（null = 不画浮层）。
   final String? sortLabel;
@@ -1989,7 +2121,7 @@ class _GameCard extends StatelessWidget {
       height: 120,
       child: Center(
         child: FushiIcon(
-          Icons.videogame_asset,
+          FushiIcons.games,
           size: 40,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
@@ -2006,61 +2138,61 @@ class _GameCard extends StatelessWidget {
         (
           action: 'detail',
           label: t.game_view_detail,
-          icon: Icons.info_outline,
+          icon: FushiIcons.info,
           danger: false,
         ),
         (
           action: 'status',
           label: t.game_play_status,
-          icon: Icons.flag_outlined,
+          icon: FushiIcons.flag,
           danger: false,
         ),
         (
           action: 'stats',
           label: t.media_stats_action,
-          icon: Icons.insights_outlined,
+          icon: FushiIcons.statistics,
           danger: false,
         ),
         (
           action: 'rename',
           label: t.game_rename,
-          icon: Icons.drive_file_rename_outline,
+          icon: FushiIcons.rename,
           danger: false,
         ),
         (
           action: 'cover',
           label: t.game_set_cover,
-          icon: Icons.image_outlined,
+          icon: FushiIcons.image,
           danger: false,
         ),
         (
           action: 'autocover',
           label: t.game_auto_cover,
-          icon: Icons.image_search,
+          icon: FushiIcons.imageSearch,
           danger: false,
         ),
         (
           action: 'scrape',
           label: t.game_scrape,
-          icon: Icons.cloud_download_outlined,
+          icon: FushiIcons.cloudDownload,
           danger: false,
         ),
         (
           action: 'collect',
           label: t.add_to_collection,
-          icon: Icons.collections_bookmark_outlined,
+          icon: FushiIcons.collection,
           danger: false,
         ),
         (
           action: 'tags',
           label: t.tag_label,
-          icon: Icons.sell_outlined,
+          icon: FushiIcons.tag,
           danger: false,
         ),
         (
           action: 'language',
           label: t.book_language_action,
-          icon: Icons.translate,
+          icon: FushiIcons.language,
           danger: false,
         ),
         // 窗口超分：**每个游戏各自一档**，这里是它唯一的入口（BUG-1191 删掉了那个
@@ -2095,13 +2227,13 @@ class _GameCard extends StatelessWidget {
           (
             action: 'file_location',
             label: t.media_file_location_open,
-            icon: Icons.folder_open_outlined,
+            icon: FushiIcons.folderOpen,
             danger: false,
           ),
         (
           action: 'remove',
           label: t.game_remove,
-          icon: Icons.delete_outline,
+          icon: FushiIcons.delete,
           danger: true,
         ),
       ];
@@ -2171,18 +2303,180 @@ class _GameCard extends StatelessWidget {
           },
         ),
       },
-      child: GalgamePosterCard(
-        cover: GameCoverThumb(game: game),
-        title: game.displayName,
-        subtitle: galgameCardMetaLabel(game),
-        badge: galgamePlayStatusBadge(game.playStatus),
-        overlayText: sort,
+      child: listIndex != null && listCount != null
+          ? _buildListRow(context, colors, listIndex!, listCount!)
+          : GalgamePosterCard(
+              cover: GameCoverThumb(game: game),
+              title: game.displayName,
+              subtitle: galgameCardMetaLabel(game),
+              badge: galgamePlayStatusBadge(game.playStatus),
+              overlayText: sort,
+              focusId: FushiFocusId('game-card-${game.id}'),
+              onTap: onTap,
+              onLongPress: () => unawaited(_showContextMenu(context)),
+              onSecondaryTap: () => unawaited(_showContextMenu(context)),
+              trailing: _menuButton(context, colors, tokens),
+              semanticLabel: game.displayName,
+            ),
+    );
+  }
+
+  /// 列表布局的一行（M3E 分段卡）：3:4 小封面（卡内小件 12）+ 标题 / 开发商 ·
+  /// 发行日；宽屏（≥640）右侧再排游玩状态、游玩时长、最后游玩三列，窄屏收成
+  /// 标题下一行（状态角标 + 时长 · 最后游玩）。行尾更多菜单。
+  ///
+  /// 焦点站点与海报卡同一个 `game-card-<id>`（手柄 / 方向键逐行可达，A/Enter
+  /// 启动，长按 A / 长按 / 右键出同一份上下文菜单，X = 详情由外层 Actions 接）。
+  Widget _buildListRow(
+    BuildContext context,
+    ColorScheme colors,
+    int index,
+    int count,
+  ) {
+    final FushiTypography type = context.fushiType;
+    final Widget? badge = galgamePlayStatusBadge(game.playStatus);
+    final String byline = <String?>[
+      game.developer,
+      game.effectiveReleaseDate,
+    ].whereType<String>().where((String v) => v.trim().isNotEmpty).join(' · ');
+    final String? playTime = game.totalPlaySeconds > 0
+        ? formatStatTime(game.totalPlaySeconds * 1000)
+        : null;
+    final String lastPlayed = game.lastPlayedMs > 0
+        ? formatGalgameDate(
+            DateTime.fromMillisecondsSinceEpoch(game.lastPlayedMs))
+        : t.game_never_played;
+    final TextStyle metaStyle =
+        type.labelMedium.tabular.copyWith(color: colors.onSurfaceVariant);
+    void openMenu() => unawaited(_showContextMenu(context));
+    return GamepadLongPressActions(
+      onLongPress: openMenu,
+      child: FushiGroupedListItem(
+        key: ValueKey<String>('game-list-row-${game.id}'),
+        index: index,
+        count: count,
         focusId: FushiFocusId('game-card-${game.id}'),
         onTap: onTap,
-        onLongPress: () => unawaited(_showContextMenu(context)),
-        onSecondaryTap: () => unawaited(_showContextMenu(context)),
-        trailing: _menuButton(context, colors, tokens),
-        semanticLabel: game.displayName,
+        onLongPress: openMenu,
+        onSecondaryTap: openMenu,
+        child: Semantics(
+          label: game.displayName,
+          button: true,
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final bool wide = constraints.maxWidth >= 640;
+              final Widget titleBlock = Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    game.displayName,
+                    maxLines: wide ? 1 : 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: type.titleMediumEmphasized,
+                  ),
+                  if (byline.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        byline,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: type.bodyMedium.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  if (!wide)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: <Widget>[
+                          if (badge != null) badge,
+                          Text(
+                            <String>[
+                              if (playTime != null) playTime,
+                              lastPlayed,
+                            ].join(' · '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: metaStyle,
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              );
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+                child: Row(
+                  children: <Widget>[
+                    SizedBox(
+                      width: wide ? 54 : 48,
+                      child: AspectRatio(
+                        aspectRatio: 3 / 4,
+                        child: ClipRRect(
+                          borderRadius: FushiM3eShape.smallRadius,
+                          child: GameCoverThumb(game: game),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(child: titleBlock),
+                    if (wide) ...<Widget>[
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 112,
+                        child: Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: badge == null
+                              ? const SizedBox.shrink()
+                              : FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: AlignmentDirectional.centerStart,
+                                  child: badge,
+                                ),
+                        ),
+                      ),
+                      _ListMetaCell(
+                        icon: FushiIcons.timer,
+                        label: t.game_library_play_time,
+                        value: playTime ?? '—',
+                        style: metaStyle,
+                      ),
+                      _ListMetaCell(
+                        icon: FushiIcons.history,
+                        label: t.game_sort_last_played,
+                        value: lastPlayed,
+                        style: metaStyle,
+                      ),
+                    ],
+                    FushiPopupMenuButton<String>(
+                      tooltip: t.common_more_actions,
+                      icon: FushiIcon(
+                        isGlassDesign(context)
+                            ? FushiIcons.moreHoriz
+                            : FushiIcons.more,
+                      ),
+                      onSelected: _dispatchAction,
+                      itemBuilder: (BuildContext context) =>
+                          <PopupMenuEntry<String>>[
+                        for (final _GameMenuItem item in _menuItems)
+                          PopupMenuItem<String>(
+                            value: item.action,
+                            child: Text(item.label),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
       ),
     );
   }
@@ -2204,7 +2498,7 @@ class _GameCard extends StatelessWidget {
           color: coverBadgeScrim(context),
         ),
         child: FushiIcon(
-          isGlassDesign(context) ? Icons.more_horiz : Icons.more_vert,
+          isGlassDesign(context) ? FushiIcons.moreHoriz : FushiIcons.more,
           size: 18,
           color: coverBadgeForeground(context),
         ),
@@ -2241,7 +2535,7 @@ class GameCoverThumb extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final Widget placeholder = ShelfCoverPlaceholder(
-      icon: Icons.videogame_asset,
+      icon: FushiIcons.games,
       iconSize: 48,
       backgroundColor: colors.surfaceContainerHighest,
     );
@@ -2264,23 +2558,89 @@ String? galgameCardMetaLabel(GalgameEntry game) {
 
 /// 游玩状态图标（封面角标 / 详情页状态胶囊共用）。
 IconData galgamePlayStatusIcon(GalgamePlayStatus status) => switch (status) {
-      GalgamePlayStatus.unset => Icons.flag_outlined,
-      GalgamePlayStatus.wantToPlay => Icons.bookmark_border,
-      GalgamePlayStatus.playing => Icons.play_arrow_rounded,
-      GalgamePlayStatus.played => Icons.check_rounded,
-      GalgamePlayStatus.onHold => Icons.pause_rounded,
-      GalgamePlayStatus.dropped => Icons.close_rounded,
+      GalgamePlayStatus.unset => FushiIcons.flag,
+      GalgamePlayStatus.wantToPlay => FushiIcons.bookmark,
+      GalgamePlayStatus.playing => FushiIcons.play,
+      GalgamePlayStatus.played => FushiIcons.check,
+      GalgamePlayStatus.onHold => FushiIcons.pause,
+      GalgamePlayStatus.dropped => FushiIcons.close,
     };
 
-/// 封面左上角的游玩状态角标（[CoverBadge]：MD3 scrim / Apple 磨砂暗底）；
-/// 未设置状态不画（满屏「未设置」只是噪音）。
+/// 游玩状态对应的 M3E 饱和色块档：在玩 = primary（最强调）、玩过 = tertiary、
+/// 想玩 = secondary、弃坑 = error；搁置 / 未设置 = null（中性）。
+FushiCardTone? galgamePlayStatusTone(GalgamePlayStatus status) =>
+    switch (status) {
+      GalgamePlayStatus.playing => FushiCardTone.primary,
+      GalgamePlayStatus.played => FushiCardTone.tertiary,
+      GalgamePlayStatus.wantToPlay => FushiCardTone.secondary,
+      GalgamePlayStatus.dropped => FushiCardTone.error,
+      GalgamePlayStatus.onHold || GalgamePlayStatus.unset => null,
+    };
+
+/// 封面左上角的游玩状态角标（[GalgameStatusBadge]：MD3 = M3E 饱和色块胶囊；
+/// Apple / 墨水屏 = 共享 [CoverBadge] 磨砂暗底 / 实色）；未设置状态不画（满屏
+/// 「未设置」只是噪音）。
 Widget? galgamePlayStatusBadge(GalgamePlayStatus status) {
   if (status == GalgamePlayStatus.unset) return null;
-  return CoverBadge(
-    icon: galgamePlayStatusIcon(status),
-    label: galgamePlayStatusLabel(status),
-    iconSize: 12,
-  );
+  return GalgameStatusBadge(status: status);
+}
+
+/// 游玩状态角标。
+///
+/// MD3（M3E）：全圆角胶囊，底色是状态对应的饱和 container 色块（[galgamePlayStatusTone]：
+/// 在玩 primaryContainer / 玩过 tertiaryContainer / 想玩 secondaryContainer / 弃坑
+/// errorContainer / 搁置 surfaceContainerHighest）+ onContainer 图标与 labelSmall
+/// Emphasized 文字——压在封面上也读得出「是哪种状态」，而不是一排同色暗角标比字。
+/// Apple 与墨水屏沿用共享 [CoverBadge]（iOS 磨砂暗底 / 墨水屏实色），不在封面上
+/// 放 15% 淡染块（Apple tone 是为页面底设计的，压在照片上读不出）。
+class GalgameStatusBadge extends StatelessWidget {
+  const GalgameStatusBadge({required this.status, super.key});
+
+  final GalgamePlayStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final IconData icon = galgamePlayStatusIcon(status);
+    final String label = galgamePlayStatusLabel(status);
+    if (isGlassDesign(context) || isEinkTheme(context)) {
+      return CoverBadge(icon: icon, label: label, iconSize: 12);
+    }
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiCardTone? tone = galgamePlayStatusTone(status);
+    final FushiCardColors? toned =
+        tone == null ? null : fushiCardToneColors(context, tone);
+    final Color container = toned?.container ?? cs.surfaceContainerHighest;
+    final Color onContainer = toned?.onContainer ?? cs.onSurfaceVariant;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(6, 3, 8, 3),
+      decoration: ShapeDecoration(
+        color: container,
+        shape: const StadiumBorder(),
+        shadows: <BoxShadow>[
+          BoxShadow(
+            color: cs.shadow.withValues(alpha: 0.18),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          FushiIcon(icon, size: 14, color: onContainer),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: context.fushiType.labelSmallEmphasized.copyWith(
+              color: onContainer,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// 「继续游戏」横版卡（Apple Arcade / Game Center「继续玩」式）：封面模糊放大铺
@@ -2303,17 +2663,23 @@ class _ContinuePlayCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FushiHoverLift(
-      builder: (BuildContext context, bool _) => shelfCoverCard(
-        key: ValueKey<String>('games_continue_card_${game.id}'),
-        focusId: FushiFocusId('games-continue-${game.id}'),
-        onTap: onLaunch,
-        onLongPress: onDetail,
-        onSecondaryTap: onDetail,
-        child: Semantics(
-          label: '${t.game_focus_continue} · ${game.displayName}',
-          button: true,
-          child: ShelfCoverFrame(child: _buildContent(context)),
+    // 游戏卡封面圆角（M3E 20）只在本卡子树生效，与海报卡同一份。
+    final BorderRadius radius = galgameCoverRadius(context);
+    return ShelfCoverRadiusScope(
+      radius: radius,
+      child: FushiHoverLift(
+        builder: (BuildContext context, bool _) => shelfCoverCard(
+          key: ValueKey<String>('games_continue_card_${game.id}'),
+          focusId: FushiFocusId('games-continue-${game.id}'),
+          borderRadius: radius,
+          onTap: onLaunch,
+          onLongPress: onDetail,
+          onSecondaryTap: onDetail,
+          child: Semantics(
+            label: '${t.game_focus_continue} · ${game.displayName}',
+            button: true,
+            child: ShelfCoverFrame(child: _buildContent(context)),
+          ),
         ),
       ),
     );
@@ -2344,21 +2710,12 @@ class _ContinuePlayCard extends StatelessWidget {
       children: <Widget>[
         // key art 背景：同一张封面放大模糊（竖版包装图裁成横版只剩局部，模糊后
         // 只取色调与氛围）。无封面时透出封面框衬底（MD3 中性容器 / Apple 填充）。
-        Opacity(
-          opacity: eink || !hasCover ? 0 : 1,
-          child: ImageFiltered(
-            imageFilter: ui.ImageFilter.blur(
-              sigmaX: eink ? 0.01 : 22,
-              sigmaY: eink ? 0.01 : 22,
-            ),
-            child: hasCover
-                ? ShelfFileCover(
-                    path: cover,
-                    placeholder: const SizedBox.shrink(),
-                  )
-                : const SizedBox.shrink(),
-          ),
-        ),
+        // 模糊预烘焙成小纹理（PrebakedBlurImage）：渲染期 ImageFiltered 每帧重算
+        // sigma 22 的卷积，滚动 / 悬停缩放时游戏库掉到 ~23 fps（2026-10-05 录屏）。
+        if (!eink && hasCover)
+          PrebakedBlurImage(image: resizedFileImage(File(cover)), sigma: 22)
+        else
+          const SizedBox.shrink(),
         DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -2378,8 +2735,10 @@ class _ContinuePlayCard extends StatelessWidget {
             children: <Widget>[
               AspectRatio(
                 aspectRatio: 3 / 4,
+                // M3E 形状分级：卡内缩略图走 small（12），与外层封面框拉开
+                // 形状对比。
                 child: ClipRRect(
-                  borderRadius: const BorderRadius.all(Radius.circular(8)),
+                  borderRadius: FushiM3eShape.smallRadius,
                   child: GameCoverThumb(game: game),
                 ),
               ),
@@ -2398,9 +2757,8 @@ class _ContinuePlayCard extends StatelessWidget {
                       game.displayName,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
+                      style: context.fushiType.titleLargeEmphasized.copyWith(
                         color: foreground,
-                        fontWeight: FontWeight.w700,
                         height: 1.25,
                       ),
                     ),
@@ -2411,8 +2769,8 @@ class _ContinuePlayCard extends StatelessWidget {
                           meta.join(' · '),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelMedium
-                              ?.copyWith(color: secondary),
+                          style: context.fushiType.labelMedium.tabular
+                              .copyWith(color: secondary),
                         ),
                       ),
                   ],
@@ -2433,9 +2791,10 @@ class _ContinuePlayCard extends StatelessWidget {
   }
 }
 
-/// 「继续游戏」卡右下的播放圆钮（装饰；整卡点击即启动）。MD3 = primaryContainer
-/// 圆底；Apple = 白色实心圆 + 黑色播放符（Arcade / TV 的「播放」钮）；墨水屏 =
-/// 前景色描边圆。
+/// 「继续游戏」卡右下的播放钮（装饰；整卡点击即启动）。MD3 = M3E 饱和 primary
+/// 色块 + 四瓣 cookie 形（形状对比：卡是圆角矩形、钮是 cookie），悬停卡片时
+/// 弹簧转半圈；Apple = 白色实心圆 + 黑色播放符（Arcade / TV 的「播放」钮）；
+/// 墨水屏 = 前景色描边圆。
 class _ContinuePlayGlyph extends StatelessWidget {
   const _ContinuePlayGlyph({required this.eink});
 
@@ -2445,28 +2804,43 @@ class _ContinuePlayGlyph extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool apple = isGlassDesign(context) && !eink;
+    final bool m3e = !eink && !apple;
     final Color fill = eink
         ? cs.surface
         : apple
             ? Colors.white
-            : cs.primaryContainer;
+            : cs.primary;
     final Color glyph = eink
         ? cs.onSurface
         : apple
             ? Colors.black
-            : cs.onPrimaryContainer;
+            : cs.onPrimary;
+    final FushiMotionScheme motion = context.fushiMotion;
+    final bool lifted = m3e && FushiHoverLift.liftedOf(context);
+    final ShapeBorder shape = m3e
+        ? const FushiCookieBorder(lobes: 4, depth: 0.12)
+        : CircleBorder(
+            side: BorderSide(
+              color: eink ? cs.onSurface : Colors.transparent,
+            ),
+          );
     return IgnorePointer(
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: fill,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: eink ? cs.onSurface : Colors.transparent,
+      child: AnimatedRotation(
+        turns: lifted ? 0.125 : 0,
+        duration: motion.spatialDefault.duration,
+        curve: motion.spatialDefault.curve,
+        child: Container(
+          width: m3e ? 40 : 36,
+          height: m3e ? 40 : 36,
+          decoration: ShapeDecoration(color: fill, shape: shape),
+          child: AnimatedRotation(
+            // 反向转回：形状在转，播放符保持正立。
+            turns: lifted ? -0.125 : 0,
+            duration: motion.spatialDefault.duration,
+            curve: motion.spatialDefault.curve,
+            child: FushiIcon(FushiIcons.play, size: 22, color: glyph),
           ),
         ),
-        child: FushiIcon(Icons.play_arrow_rounded, size: 22, color: glyph),
       ),
     );
   }
@@ -2474,3 +2848,73 @@ class _ContinuePlayGlyph extends StatelessWidget {
 
 /// 游戏库窄屏工具条溢出菜单里除排序维度外的动作。
 enum _GamesToolbarOverflowAction { scrapeAll }
+
+/// 游戏库列表行宽屏的一格元信息：小图标 + 值（等宽数字），整格带语义标签。
+class _ListMetaCell extends StatelessWidget {
+  const _ListMetaCell({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.style,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 120,
+      child: Semantics(
+        label: '$label $value',
+        excludeSemantics: true,
+        child: FushiTooltip(
+          message: label,
+          child: Row(
+            children: <Widget>[
+              FushiIcon(icon, size: 16, color: style.color),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: style,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 游戏库「网格 / 列表」切换钮（页头动作；与视频库「全部视频」的布局切换同形：
+/// 图标显示**切过去**的那种布局）。写偏好 `games_library_layout`，
+/// [GamesLibraryPage] 监听偏好跟着换；本钮也随偏好变化重建。
+class GamesLibraryLayoutToggle extends ConsumerWidget {
+  const GamesLibraryLayoutToggle({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final PreferencesRepository prefs = ref.read(appProvider).prefsRepo;
+    return ListenableBuilder(
+      listenable: prefs,
+      builder: (BuildContext context, Widget? _) {
+        final bool list = prefs.gamesLibraryListLayout;
+        final String label =
+            list ? t.game_library_view_grid : t.game_library_view_list;
+        return FushiIconButton(
+          key: const ValueKey<String>('games-library-layout-toggle'),
+          tooltip: label,
+          label: label,
+          icon: list ? FushiIcons.gridView : FushiIcons.listView,
+          onTap: () => unawaited(prefs.setGamesLibraryListLayout(!list)),
+        );
+      },
+    );
+  }
+}

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +9,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -148,8 +149,8 @@ void main() {
     // audiobook 行：headphones 图标，非 movie；按钮标签 READ（目的地是 reader）。
     await tester.longPress(find.text('朗読の文です。'));
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.headphones_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.movie_outlined), findsNothing);
+    expect(find.byIcon(FushiIcons.audio), findsOneWidget);
+    expect(find.byIcon(FushiIcons.video), findsNothing);
     expect(
       find.widgetWithText(FilledButton, t.dialog_read),
       findsOneWidget,
@@ -162,8 +163,8 @@ void main() {
     // lyrics 行：lyrics 图标，非 movie；按钮标签 READ。
     await tester.longPress(find.text('歌詞の文です。'));
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.lyrics_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.movie_outlined), findsNothing);
+    expect(find.byIcon(FushiIcons.lyrics), findsOneWidget);
+    expect(find.byIcon(FushiIcons.video), findsNothing);
     expect(find.widgetWithText(FilledButton, t.dialog_read), findsOneWidget);
     await tester.tapAt(const Offset(5, 5));
     await tester.pumpAndSettle();
@@ -171,7 +172,7 @@ void main() {
     // video 行：movie 图标 + 按钮标签 nav_video（对照组，行为不变）。
     await tester.longPress(find.text('ビデオの文です。'));
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.movie_outlined), findsOneWidget);
+    expect(find.byIcon(FushiIcons.video), findsOneWidget);
     expect(find.widgetWithText(FilledButton, t.nav_video), findsOneWidget);
   });
 }

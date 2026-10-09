@@ -29,7 +29,7 @@ void main() {
   });
 
   test('_openGallery reuses _openImageViewer (no second zoom path)', () {
-    final int idx = src.indexOf('void _openGallery()');
+    final int idx = src.indexOf('Future<void> _openGallery()');
     expect(idx, greaterThan(-1));
     // _openGallery wires onOpenImage to _openImageViewer.
     expect(src.contains('onOpenImage: (EpubImageRef ref) =>'), isTrue);

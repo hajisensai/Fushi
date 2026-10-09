@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
@@ -70,6 +70,8 @@ class _WarmSlotAppModel extends AppModel {
   double get popupInstantScrollTouchStep => 0.25;
   @override
   bool get compactGlossaries => false;
+  @override
+  bool get dictionaryUnifiedStyle => true;
   @override
   int get popupDictionaryColumns => 1;
   @override

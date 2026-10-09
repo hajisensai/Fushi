@@ -74,36 +74,9 @@ get_filename_component(
 
 # libmpv archive containing the pre-built shared libraries & headers.
 #
-# HIBIKI FORK (BUG-073): upstream media_kit_libs_windows_video pins libmpv from
-# media-kit/libmpv-win32-video-build, whose newest release is 2023-09-24 — and
-# that FFmpeg build ships NO working TrueHD/MLP decoder (`Failed to initialize a
-# decoder for codec 'truehd'` at runtime, even though the "truehd" string is in
-# the DLL). TrueHD 5.1 movies (the default audio track of most Blu-ray REMUX)
-# therefore play with NO sound; AC3/EAC3/DTS already decode fine on the old
-# build, so ONLY TrueHD was affected. The same DLL backs both the video player
-# and the audiobook player (just_audio_media_kit), so audiobooks were silent on
-# TrueHD too. Root fix: point at a maintained full-FFmpeg libmpv
-# (zhongfly/mpv-winbuild, still releasing daily) whose build decodes TrueHD and
-# exports the same client + render API media_kit needs. Verified against the
-# downloaded DLL via ctypes (truehd `Opening decoder` OK on the real movie +
-# mpv_render_context_create/render present) before the swap. Cost: libmpv-2.dll
-# grows ~30MB → ~118MB (full FFmpeg). Drop this fork once upstream ships a newer
-# libmpv with TrueHD. The .7z layout (libmpv-2.dll + include/mpv) matches what
-# the extract step below expects, so only the URL/MD5/name change.
-#
-# MIRROR (TODO-1137): zhongfly/mpv-winbuild only keeps a ~30-day rolling window
-# of releases - older tagged assets get pruned and 404, breaking every fresh
-# Windows build (V37/V38 both hit this). Root fix: we now mirror the exact
-# zhongfly .7z into our own permanent GitHub release
-# (hajisensai/hibiki `vendor-libmpv`, assets never deleted), so the cmake
-# file(DOWNLOAD) no longer depends on zhongfly's rolling deletion. To bump to a
-# newer libmpv: download the newest LIVE zhongfly `mpv-dev-x86_64-...` asset
-# (GPL full FFmpeg with TrueHD): NOT `-lgpl` (drops TrueHD -> re-opens BUG-073),
-# NOT `-v3` (needs Haswell+, crashes on older CPUs); `gh release upload
-# vendor-libmpv <file> --repo hajisensai/hibiki`; then update the name/URL/MD5
-# below. sha256 of this pin (verified against zhongfly sha256.txt before the
-# swap):
-# e105420c358b71233a0a8530d570ca9993132f92e2d3cb23c4cd1c084c9c6120
+# BUG-073: keep a full FFmpeg build with a working TrueHD/MLP decoder. The
+# original media-kit 2023 runtime listed TrueHD but failed to initialize it.
+# Validate actual decoding as well as client/render API exports before repinning.
 #
 # MINIMUM VERSION (BUG-1644): this pin must stay at or after mpv upstream
 # 1d15686142fd5d53c954aab7526cedab05ef9dc3 (2026-07-31, "hwdec_d3d11egl: fix
@@ -117,36 +90,41 @@ get_filename_component(
 # `Loading hwdec driver 'd3d11-egl'` -> `Loading failed.` with no reason; on
 # this pin the same probe reaches `d3d11-egl: Failed to create hwdevice_ctx`,
 # i.e. past that gate. Do NOT bump backwards past 2026-07-31.
-set(LIBMPV "mpv-dev-x86_64-20260813-git-7b8915bc1d.7z")
+# Fushi builds the upstream 2026-10-08 menu implementation with the narrow
+# patches/disc-navigation-state.patch. See NATIVE_BUILD.md for provenance.
+set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1.7z")
 
-# Provenance of the vendored libmpv archive (TODO-1172: no longer downloaded
-# at build time). URL is the permanent mirror (hajisensai/hibiki release),
-# kept so the origin stays auditable; the committed .7z is the source of truth.
-set(LIBMPV_URL "https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/${LIBMPV}")
-set(LIBMPV_MD5 "be118f0492bc99d17467e9419a0f948f")
+# Upstream source provenance; the committed patched archive is the build input.
+set(LIBMPV_URL "https://github.com/mpv-player/mpv/tree/36abaa32d00a7229ee206aae12dc0e97e7962dca")
+set(LIBMPV_MD5 "93da2208746a035210a76b0b39335035")
 
 # Vendored archive (committed) + build-dir extraction target (TODO-1172).
 set(LIBMPV_ARCHIVE "${VENDORED_DIR}/${LIBMPV}")
-set(LIBMPV_SRC "${CMAKE_BINARY_DIR}/libmpv")
+set(LIBMPV_SRC "${CMAKE_BINARY_DIR}/libmpv-${LIBMPV_MD5}")
+set(MEDIA_KIT_LIBMPV_SRC "${LIBMPV_SRC}" CACHE INTERNAL "Pinned libmpv SDK directory" FORCE)
 
 verify_vendored_archive("${LIBMPV_ARCHIVE}" "${LIBMPV_MD5}" "libmpv")
 
-check_directory_exists_and_not_empty(${LIBMPV_SRC} LIBMPV_SRC_VALID)
-
-# Extract the libmpv archive.
-if(NOT LIBMPV_SRC_VALID)
+# The hash-addressed SDK prevents an existing build from retaining the old DLL.
+# Extract at configure time so the verified runtime manifest is available here.
+if(NOT EXISTS "${LIBMPV_SRC}/runtime-files.cmake")
   message(STATUS "Extracting ${LIBMPV}...")
-  make_directory("${LIBMPV_SRC}")
-  add_custom_target("${PROJECT_NAME}_LIBMPV_EXTRACT" ALL)
-  add_custom_command(
-    TARGET "${PROJECT_NAME}_LIBMPV_EXTRACT"
-    COMMAND "${CMAKE_COMMAND}" -E tar xzf "\"${LIBMPV_ARCHIVE}\""
-    COMMAND xcopy "\"${LIBMPV_SRC}/include/mpv\"" "\"${LIBMPV_SRC}/mpv\"" /E /H /C /I
-    COMMAND rmdir "\"${LIBMPV_SRC}/include\"" /S /Q
-    COMMAND ren "\"${LIBMPV_SRC}/mpv\"" "\"include\""
-    WORKING_DIRECTORY "${LIBMPV_SRC}"
-  )
+  file(MAKE_DIRECTORY "${LIBMPV_SRC}")
+  execute_process(COMMAND "${CMAKE_COMMAND}" -E tar xzf "${LIBMPV_ARCHIVE}"
+    WORKING_DIRECTORY "${LIBMPV_SRC}" RESULT_VARIABLE LIBMPV_EXTRACT_RESULT)
+  if(NOT LIBMPV_EXTRACT_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to extract verified libmpv archive: ${LIBMPV_EXTRACT_RESULT}")
+  endif()
+  file(COPY "${LIBMPV_SRC}/include/mpv/" DESTINATION "${LIBMPV_SRC}/include")
 endif()
+include("${LIBMPV_SRC}/runtime-files.cmake")
+set(LIBMPV_RUNTIME_FILES)
+foreach(name IN LISTS LIBMPV_RUNTIME_NAMES)
+  if(NOT EXISTS "${LIBMPV_SRC}/${name}")
+    message(FATAL_ERROR "Incomplete native runtime: ${name}")
+  endif()
+  list(APPEND LIBMPV_RUNTIME_FILES "${LIBMPV_SRC}/${name}")
+endforeach()
 
 # ------------------------------------------------------------------------------
 
@@ -213,12 +191,32 @@ target_link_libraries(
 
 set(
   media_kit_libs_windows_video_bundled_libraries
-  "${LIBMPV_SRC}/libmpv-2.dll"
+  ${LIBMPV_RUNTIME_FILES}
+  "${LIBMPV_SRC}/libbluray-j2se-1.5.0.jar"
+  "${LIBMPV_SRC}/libbluray-awt-j2se-1.5.0.jar"
   "${ANGLE_SRC}/d3dcompiler_47.dll"
   "${ANGLE_SRC}/libEGL.dll"
   "${ANGLE_SRC}/libGLESv2.dll"
   "${ANGLE_SRC}/vk_swiftshader.dll"
+  # libmpv's newer loader has a private fbd name; preserve ANGLE's existing
+  # public loader for other consumers instead of replacing their dependency.
   "${ANGLE_SRC}/vulkan-1.dll"
   "${ANGLE_SRC}/zlib.dll"
   PARENT_SCOPE
 )
+
+# The on-demand Java runtime installer has one source of truth. Its small
+# pinned JAR/source/probe bundle is offline; the private JRE is fetched on demand.
+get_filename_component(BDJ_BUNDLE "${CMAKE_CURRENT_SOURCE_DIR}/../bdj" ABSOLUTE)
+# Keep this plugin self-contained: crossing outside Flutter's junction with
+# ../../.. is not portable, even after CMake REALPATH on Windows.
+if(NOT EXISTS "${BDJ_BUNDLE}/bdj_runtime.ps1")
+  message(FATAL_ERROR "The vendored BD-J installer is missing from ${BDJ_BUNDLE}")
+endif()
+install(DIRECTORY "${BDJ_BUNDLE}/" DESTINATION "${CMAKE_INSTALL_PREFIX}/bluray/bdj")
+install(DIRECTORY "${LIBMPV_SRC}/licenses/"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/bluray/native-licenses")
+install(FILES "${LIBMPV_SRC}/runtime-manifest.json" "${LIBMPV_SRC}/msys2-packages.json"
+  "${LIBMPV_SRC}/source-provenance.json" "${LIBMPV_SRC}/private-dll-map.json"
+  "${LIBMPV_SRC}/dynamic-dll-references.json"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/bluray")

@@ -217,3 +217,43 @@ class SectionSwipeCascade extends InheritedWidget {
   @override
   bool updateShouldNotify(SectionSwipeCascade oldWidget) => false;
 }
+
+/// 保活分区自己的主滚动控制器。
+///
+/// 库页外壳（视频库 / 书架 / 漫画库的 Offstage 栈、游戏库的 IndexedStack、浏览
+/// 模块的保活 [TabBarView]）把**所有**访问过的分区同时挂在树上，而它们都在首页
+/// 外壳为整个 tab 提供的同一个 [PrimaryScrollController] 之下。各分区里没传
+/// controller 的纵向 ScrollView 默认 `primary`，于是全部附着到这一个控制器上；
+/// 桌面端自动包的 Scrollbar 在全局 `thumbVisibility: true` 下要求控制器只有一个
+/// 位置，每次依赖变化都会抛「ScrollController is attached to more than one
+/// ScrollPosition」。给每个保活分区一份独立的主控制器，分区内的主滚动视图各挂各的；
+/// `FushiFocusScroll` 经 `PrimaryScrollController.maybeOf` 找到的也正是当前分区。
+class SectionPrimaryScrollScope extends StatefulWidget {
+  const SectionPrimaryScrollScope({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  State<SectionPrimaryScrollScope> createState() =>
+      _SectionPrimaryScrollScopeState();
+}
+
+class _SectionPrimaryScrollScopeState extends State<SectionPrimaryScrollScope> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PrimaryScrollController(
+      controller: _controller,
+      // 与首页外壳 / FushiPageScaffold 同口径：全平台继承（默认只在移动端）。
+      automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
+      child: widget.child,
+    );
+  }
+}

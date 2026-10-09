@@ -26,6 +26,10 @@ dependencies:
     path: ../fushi_anki
   fushi_audio:
     path: ../fushi_audio
+  # 只许 import 零 Flutter 的 fushi_dictionary_core.dart（词典引擎 FushiDicts + 查词结果
+  # 构建；纯度守卫同上）。原生库 libfushidicts_ffi 随包放 bin/../lib/。
+  fushi_dictionary:
+    path: ../fushi_dictionary
   fushi_engine:
     path: ../fushi_engine
   fushi_platform:
@@ -40,16 +44,18 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 308e23606ea26c31d3cea4775002fdd3ee5f0fed
+      ref: f4984a897594ebded3c34f4c260f92f605da4aa0
   fushi_asr_onnx_ffi:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_onnx_ffi
-      ref: 308e23606ea26c31d3cea4775002fdd3ee5f0fed
+      ref: f4984a897594ebded3c34f4c260f92f605da4aa0
   args: ^2.4.0
   crypto: ^3.0.0
   drift: ">=2.33.0 <2.34.0"
   http: ^1.2.0
+  # 排行榜补传封面缩略图（≤300px JPEG）；版本与 fushi_engine 同钉。
+  image: ^4.3.0
   path: ^1.8.2
   shelf: ^1.4.0
   yaml: ^3.1.0

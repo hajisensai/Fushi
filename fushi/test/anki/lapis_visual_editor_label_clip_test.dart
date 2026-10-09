@@ -6,7 +6,7 @@
 // 折叠区里第一个下拉框的标签就被削掉上半截（BUG-1677）。
 //
 // 这类几何断言不能只 `findsOneWidget`——被裁的标签照样 find 得到。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/utils.dart';
 

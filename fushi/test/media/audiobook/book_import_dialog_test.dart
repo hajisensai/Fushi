@@ -4,7 +4,7 @@
 // everywhere; only the Windows file-filter test stays gated via `testOn`.
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:file_picker/src/file_picker.dart';
 import 'package:file_picker/src/windows/file_picker_windows.dart';

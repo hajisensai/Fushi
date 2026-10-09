@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 
 import 'package:fushi/i18n/strings.g.dart';

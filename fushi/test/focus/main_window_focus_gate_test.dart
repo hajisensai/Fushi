@@ -1,7 +1,7 @@
 // BUG-1619 根治层守卫：焦点闸门把「能持有焦点 ⟺ 主窗拥有 OS 焦点」变成结构性
 // 不变量。逐点判据穷举不完（复制文本那条真机路径至今没在全仓 16 处 requestFocus
 // 里定位到），所以这条不变量必须由根部保证，且必须配套开门补焦点。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';

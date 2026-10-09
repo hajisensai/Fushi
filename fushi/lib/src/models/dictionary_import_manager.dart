@@ -340,7 +340,7 @@ class DictionaryImportManager {
         }
 
         final detectedType = _parseType(result.detectedType);
-        _dictRepo.persistDictionary(Dictionary(
+        await _dictRepo.persistDictionary(Dictionary(
           order: order,
           name: name,
           formatKey: 'yomichan',
@@ -456,8 +456,11 @@ class DictionaryImportManager {
           final Set<String> skipPaths = <String>{
             ...mddFiles,
             for (final File f in dictionaries) f.path,
+            // 只排除落在本根之下的其它 Yomitan 根（嵌套子词典）。祖先根与兄弟根
+            // 本来就不在 root 的遍历范围里；把祖先根放进来会让 isWithin 把本根
+            // 自己的全部文件判成「在别的词典里」，子词典被打成空包（BUG-2995）。
             for (final Directory d in yomitanRoots)
-              if (d.path != root) d.path,
+              if (path.isWithin(root, d.path)) d.path,
           };
           await Isolate.run(
             () => packDirectoryToZip(root, packed, skipPaths: skipPaths),
@@ -669,7 +672,7 @@ class DictionaryImportManager {
         readSourceMetadataFromIndex(finalDir),
         sourceOverride,
       );
-      _dictRepo.persistDictionary(Dictionary(
+      await _dictRepo.persistDictionary(Dictionary(
         order: order,
         name: name,
         formatKey: 'yomichan',

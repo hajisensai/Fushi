@@ -25,8 +25,9 @@ extension _VideoDanmaku on _VideoFushiPageState {
 
     final String? sidecarPath = findDanmakuSidecar(videoPath);
     if (sidecarPath != null) {
-      final VideoDanmakuLoadResult local =
-          await loadDanmakuSidecarFile(File(sidecarPath));
+      final VideoDanmakuLoadResult local = await loadDanmakuSidecarFile(
+        File(sidecarPath),
+      );
       if (seq != _danmakuLoadSeq || !mounted) return;
       if (local.tooLarge) {
         debugPrint(
@@ -50,8 +51,9 @@ extension _VideoDanmaku on _VideoFushiPageState {
     final DandanplayClient client = DandanplayClient();
     try {
       DandanplayFetchResult result;
-      final int? savedEpisodeId =
-          appModel.getVideoDanmakuEpisodeId(widget.bookUid);
+      final int? savedEpisodeId = appModel.getVideoDanmakuEpisodeId(
+        _activeBookUid,
+      );
       if (savedEpisodeId != null) {
         final DandanplayFetchResult cached = await client.fetchCommentsForMatch(
           DandanplayMatch(episodeId: savedEpisodeId),
@@ -61,8 +63,8 @@ extension _VideoDanmaku on _VideoFushiPageState {
         // 再失败一遍（BUG-1057：此前失败被吞成空列表，与 0 条弹幕无从区分）。
         result =
             cached.status == DandanplayFetchStatus.hit && cached.items.isEmpty
-                ? await client.fetchBestDanmakuForFile(file)
-                : cached;
+            ? await client.fetchBestDanmakuForFile(file)
+            : cached;
       } else {
         result = await client.fetchBestDanmakuForFile(file);
       }
@@ -71,7 +73,7 @@ extension _VideoDanmaku on _VideoFushiPageState {
           result.items.isNotEmpty) {
         final int? episodeId = result.match?.episodeId;
         if (episodeId != null) {
-          await appModel.setVideoDanmakuEpisodeId(widget.bookUid, episodeId);
+          await appModel.setVideoDanmakuEpisodeId(_activeBookUid, episodeId);
         }
         if (seq != _danmakuLoadSeq || !mounted) return;
         _rebuild(() => _applyDanmakuItems(result.items));
@@ -147,8 +149,10 @@ extension _VideoDanmaku on _VideoFushiPageState {
     if (!mounted) return;
     _rebuild(() {
       _danmakuBlockRules = parseVideoDanmakuBlockRules(rulesText);
-      _danmakuVisibleItems =
-          filterVideoDanmaku(_danmakuItems, _danmakuBlockRules);
+      _danmakuVisibleItems = filterVideoDanmaku(
+        _danmakuItems,
+        _danmakuBlockRules,
+      );
     });
   }
 
@@ -193,7 +197,9 @@ extension _VideoDanmaku on _VideoFushiPageState {
         return;
       }
       await appModel.setVideoDanmakuEpisodeId(
-          widget.bookUid, episode.episodeId);
+        _activeBookUid,
+        episode.episodeId,
+      );
       if (!appModel.videoDanmakuEnabled) {
         await appModel.setVideoDanmakuEnabled(true);
       }
@@ -232,11 +238,14 @@ extension _VideoDanmaku on _VideoFushiPageState {
 
   /// 手动匹配侧栏内容：以当前视频文件名为初始关键词，注入搜索/绑定回调。
   Widget _buildDanmakuMatchSidePanel() {
-    return DanmakuManualMatchPanel(
-      initialKeyword: p.basenameWithoutExtension(_currentVideoPath ?? ''),
-      colorScheme: _videoChromeColorScheme(context),
-      onSearch: _searchDanmakuEpisodes,
-      onEpisodeSelected: _bindDanmakuEpisode,
+    // 配色读侧栏表面**内部**的主题（M3E = 面板中性深色主题），不是页面主题。
+    return Builder(
+      builder: (BuildContext panelContext) => DanmakuManualMatchPanel(
+        initialKeyword: p.basenameWithoutExtension(_currentVideoPath ?? ''),
+        colorScheme: Theme.of(panelContext).colorScheme,
+        onSearch: _searchDanmakuEpisodes,
+        onEpisodeSelected: _bindDanmakuEpisode,
+      ),
     );
   }
 }

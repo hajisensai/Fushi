@@ -169,6 +169,10 @@ class LeaderboardService extends ChangeNotifier {
   /// 已开启时的签名客户端（UI 读榜 / 好友等直接用）；未开启为 null。
   LeaderboardClient? get client => _client;
 
+  /// 反馈用的客户端：已开启排行榜账户时是签名客户端（提交可关联账户、开发者可处理
+  /// 反馈），否则是匿名客户端（反馈本身不要求账户）。两者连同一个服务。
+  LeaderboardClient feedbackClient() => _client ?? _anonymousClient();
+
   /// 本机账户（上传开关 / 上次同步时刻等）；未开启为 null。
   LeaderboardLocalAccount? get account => _account;
 

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/base_page.dart';
@@ -11,6 +11,7 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
 import 'package:fushi/src/pages/implementations/crop_image_dialog_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
 import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
@@ -47,7 +48,7 @@ class _MiscellaneousSettingsPageState
     final SettingsDestination destination = SettingsDestination(
       id: SettingsDestinationId.appIcon,
       title: t.app_icon_label,
-      icon: Icons.widgets_outlined,
+      icon: FushiIcons.widgets,
       sections: const <SettingsSection>[],
       body: (_) => const MiscellaneousSettingsBody(),
     );
@@ -170,7 +171,7 @@ class _MiscellaneousSettingsBodyState
           scrollable: false,
           child: FushiModalSheetFrame(
             title: t.icon_custom_confirm_title,
-            leadingIcon: Icons.add_photo_alternate_outlined,
+            leadingIcon: FushiIcons.image,
             scrollable: true,
             bodyPadding: EdgeInsets.fromLTRB(
               tokens.spacing.card,
@@ -192,15 +193,14 @@ class _MiscellaneousSettingsBodyState
               children: [
                 // 统一走 slang t.*（MaterialLocalizations 跟系统 locale，与
                 // 应用内语言切换脱节）。
-                adaptiveDialogAction(
-                  context: ctx,
+                FushiDialogAction(
+                  label: t.dialog_cancel,
                   onPressed: () => Navigator.pop(ctx, false),
-                  child: Text(t.dialog_cancel),
                 ),
-                adaptiveDialogAction(
-                  context: ctx,
+                FushiDialogAction(
+                  label: t.dialog_ok,
+                  kind: FushiDialogActionKind.primary,
                   onPressed: () => Navigator.pop(ctx, true),
-                  child: Text(t.dialog_ok),
                 ),
               ],
             ),
@@ -272,7 +272,7 @@ class _MiscellaneousSettingsBodyState
     if (!Platform.isAndroid && !Platform.isWindows) {
       // 本平台不支持换图标：占位说明，不渲染空设置卡。
       return FushiPlaceholderMessage(
-        icon: Icons.widgets_outlined,
+        icon: FushiIcons.widgets,
         message: t.icon_shortcut_unsupported,
       );
     }
@@ -324,14 +324,14 @@ class _MiscellaneousSettingsBodyState
 
   Widget _buildPresetTile(_IconOption option) {
     final bool selected = _currentIcon == option.key;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return _AppIconTile(
       label: option.label,
       selected: selected,
       enabled: !_switching,
       onTap: () => _switchPreset(option.key),
       child: ClipRRect(
-        borderRadius: tokens.radii.chipRadius,
+        // M3E 卡内小块 12 圆角（与图标卡 20 圆角同心）。
+        borderRadius: FushiM3eShape.smallRadius,
         child: Image.asset(option.asset, fit: BoxFit.cover),
       ),
     );
@@ -343,7 +343,7 @@ class _MiscellaneousSettingsBodyState
       enabled: !_switching,
       onTap: _pickCustomIcon,
       child: FushiIcon(
-        Icons.add_photo_alternate_outlined,
+        FushiIcons.image,
         size: 32,
         color: theme.colorScheme.onSurfaceVariant,
       ),
@@ -397,7 +397,7 @@ class _AppIconTile extends StatelessWidget {
                     Align(
                       alignment: Alignment.bottomRight,
                       child: FushiBadge(
-                        icon: Icons.check,
+                        icon: FushiIcons.check,
                         background: theme.colorScheme.primary,
                         foreground: theme.colorScheme.onPrimary,
                       ),

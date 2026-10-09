@@ -1,17 +1,22 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/pages.dart';
-import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
-import 'package:flutter/cupertino.dart' show CupertinoSearchTextField;
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_kit.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/settings/settings_search.dart';
+import 'package:fushi/src/settings/settings_search_sheet.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show
+        FushiHeightReporter,
+        FushiTopFadeScrim,
+        kFushiTopFadeExtent,
+        kFushiTopScrimOverlayOpacity;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
@@ -39,39 +44,69 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
   // 设置搜索：跨全部分类按标题/副标题/分区/分类名过滤配置项，点结果跳转到
   // 对应分类并滚动定位（SettingsSearchReveal）。
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode(debugLabel: 'settings-search');
+  final ScrollController _narrowScrollController = ScrollController();
   String _searchQuery = '';
+
+  /// M3E 窄屏浮动页头（展开态）的实测高度：页头叠放在分类列表上，列表顶部
+  /// 内边距让开这一段，往下滚时内容滚到页头胶囊底下。
+  ///
+  /// notifier 而不是 setState：滚回顶部时页头弹簧展开，高度逐帧回报；setState
+  /// 会逐帧重建整个设置主页（宽屏还连带整块详情窗格）。现在只重建滚动视图的
+  /// 内边距与渐隐层，分类列表是同一个实例。
+  final ValueNotifier<double> _narrowHeaderHeight = ValueNotifier<double>(0);
+
+  /// 窄屏分类列表已滚离顶部：驱动共享顶部渐隐。
+  final ValueNotifier<bool> _narrowScrolledUnder = ValueNotifier<bool>(false);
+
+  /// 嵌入外壳（宽屏全屏设置）里叠放的 [FushiPageHeader] 实测高度（notifier：
+  /// 回报只重建让位那层 MediaQuery，不重建整个设置主页）。
+  final ValueNotifier<double> _shellHeaderHeight = ValueNotifier<double>(0);
+
+  void _onNarrowHeaderHeight(double height) {
+    if (!mounted || height == _narrowHeaderHeight.value) return;
+    // 只在展开态（与 SettingsFloatingHeader 同一阈值）记高度：收缩态胶囊高度
+    // 不同，跟着改让位会让列表在滚动中跳一下。
+    final bool atRest =
+        !_narrowScrollController.hasClients ||
+        _narrowScrollController.positions.first.pixels <= 12;
+    if (_narrowHeaderHeight.value > 0 && !atRest) return;
+    _narrowHeaderHeight.value = height;
+  }
+
+  void _onShellHeaderHeight(double height) {
+    if (!mounted) return;
+    _shellHeaderHeight.value = height;
+  }
+
+  void _onNarrowScroll() {
+    _narrowScrolledUnder.value =
+        _narrowScrollController.hasClients &&
+        _narrowScrollController.positions.first.pixels > 0;
+  }
+
+  /// 当前搜索结果（build 时求值；回车打开第一条用）。
+  List<SettingsSearchEntry> _results = const <SettingsSearchEntry>[];
 
   @override
   void initState() {
     super.initState();
-    ErrorLogService.instance.addListener(_onLogChanged);
-    DebugLogService.instance.addListener(_onLogChanged);
-    // 游戏内查词准入是 hook **异步**报上来的：settingsContext.refresh 只由交互驱动，
-    // 事件走不到它。不听这一条，用户开着设置页启动游戏时那一行永远停在旧状态。
-    GalIngameLookupController.instance.admission.addListener(_onLogChanged);
-    // 推荐包下载阶段同理，而且宽屏（>=720，Windows 桌面的主用形态）是**内联**
-    // 主从：详情内容直接在本页渲染，走不到 [SettingsDetailPage] 那份订阅
-    // （BUG-2165）。不听这一条，开着设置页时下载开始/下完/暂停，「推荐包」那一行
-    // 的出现与消失就只能靠 AppModel 顺带 notify 撞上，变成偶发刷新。
-    appModelNoUpdate.recommendedPackDownloadController.stage.addListener(
-      _onLogChanged,
-    );
+    _narrowScrollController.addListener(_onNarrowScroll);
+    // 错误 / 调试日志、游戏内查词准入、推荐包下载阶段（BUG-2165：宽屏内联主从
+    // 同样要实时刷新）由读它们的分组自己订阅（SettingsSection.liveListenable），
+    // 内联详情与 push 出去的详情页走同一套分组组件，宿主页不再整页 setState。
   }
 
   @override
   void dispose() {
     _searchController.dispose();
-    ErrorLogService.instance.removeListener(_onLogChanged);
-    DebugLogService.instance.removeListener(_onLogChanged);
-    GalIngameLookupController.instance.admission.removeListener(_onLogChanged);
-    appModelNoUpdate.recommendedPackDownloadController.stage.removeListener(
-      _onLogChanged,
-    );
+    _searchFocusNode.dispose();
+    _narrowScrollController.removeListener(_onNarrowScroll);
+    _narrowScrollController.dispose();
+    _narrowScrolledUnder.dispose();
+    _narrowHeaderHeight.dispose();
+    _shellHeaderHeight.dispose();
     super.dispose();
-  }
-
-  void _onLogChanged() {
-    if (mounted) setState(() {});
   }
 
   @override
@@ -307,31 +342,13 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
   /// 详情页；目标行由 SettingsSchemaItem 消费挂点后滚入视口并闪烁高亮。
   /// 正文条目仅在已声明真实挂点时登记定位请求，避免遗留未消费的目标。
   void _openSearchResult(SettingsSearchEntry entry, {required bool wide}) {
-    SettingsSearchReveal.pendingItemId = entry.hasRevealTarget
-        ? entry.item.id
-        : null;
     _searchController.clear();
     setState(() {
       _searchQuery = '';
       if (wide) _selectedDestinationId = entry.destination.id;
     });
-    final NavigatorState navigator = Navigator.of(context);
-    if (!wide) {
-      navigator.push(
-        MaterialPageRoute<void>(
-          builder: (_) => SettingsDetailPage(destination: entry.destination),
-        ),
-      );
-    }
-    // 子 schema 页里的命中：父页之上再逐级推子页，挂点由最里层页面的目标行消费。
-    for (final SettingsNavigationItem hop in entry.subPagePath) {
-      final SettingsDestination Function() child = hop.child!;
-      navigator.push(
-        MaterialPageRoute<void>(
-          builder: (_) => SettingsDetailPage.subPage(child),
-        ),
-      );
-    }
+    // 宽屏右窗格已切到该分类，只需再推子页；窄屏连顶层分类页一起推。
+    openSettingsSearchEntry(Navigator.of(context), entry, pushTopLevel: !wide);
   }
 
   Widget _buildEmbeddedShell(Widget content) {
@@ -359,20 +376,57 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     }
     // 全屏嵌入设置统一加自绘页头 + 返回箭头；叶子设置控件仍由各自渲染器保持
     // Cupertino / Material 皮肤。
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final Widget header = FushiPageHeader(
+      title: t.settings,
+      leading: widget.onBack != null
+          ? FushiIconButtonControl(
+              icon: const FushiIcon(Icons.arrow_back),
+              tooltip: t.back,
+              onPressed: widget.onBack,
+            )
+          : null,
+    );
+    if (isGlassDesign(context) || isCupertinoPlatform(context)) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          header,
+          Expanded(child: content),
+        ],
+      );
+    }
+    // M3E：页头胶囊叠放在正文上（与 FushiPageScaffold 默认同一约定），正文的
+    // MediaQuery 顶部 padding 加上页头实测高度——宽屏右窗格的 kit 壳按它把
+    // 自己的页头放到这条下面、正文滚到两层页头底下；左栏等固定版面用 SafeArea
+    // 让开（见 _buildMd3WideLayout）。
+    final MediaQueryData media = MediaQuery.of(context);
+    return Stack(
       children: <Widget>[
-        FushiPageHeader(
-          title: t.settings,
-          leading: widget.onBack != null
-              ? FushiIconButtonControl(
-                  icon: const FushiIcon(Icons.arrow_back),
-                  tooltip: t.back,
-                  onPressed: widget.onBack,
-                )
-              : null,
+        Positioned.fill(
+          child: ValueListenableBuilder<double>(
+            valueListenable: _shellHeaderHeight,
+            child: content,
+            builder: (BuildContext context, double headerHeight, Widget? body) {
+              final double inset = media.padding.top + headerHeight;
+              return MediaQuery(
+                data: media.copyWith(
+                  padding: media.padding.copyWith(top: inset),
+                  viewPadding: media.viewPadding.copyWith(top: inset),
+                ),
+                child: body!,
+              );
+            },
+          ),
         ),
-        Expanded(child: content),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: FushiHeightReporter(
+            onHeight: _onShellHeaderHeight,
+            child: header,
+          ),
+        ),
       ],
     );
   }
@@ -460,97 +514,57 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       widget.onBack == null &&
       !FushiDesktopTitleBar.isEnabled;
 
-  /// iOS / macOS 26 胶囊搜索框：控件层，无色透明液态玻璃胶囊（不铺
-  /// systemFill 灰底，Niratan 工具栏搜索同款）；桌面 13 号紧凑、触屏 17 号。
-  /// 降低透明度时玻璃回落实色。
-  Widget _buildGlassSearchField() {
-    final FushiAppleColors apple = appleColorsOf(context);
-    final bool desktop = FushiAppleMetrics.of(context).desktop;
-    final double radius = desktop ? 15 : 19;
-    return fushiClearGlassBezel(
-      context,
-      radius: radius,
-      child: _buildGlassSearchTextField(apple, desktop, radius),
-    );
-  }
-
-  Widget _buildGlassSearchTextField(
-    FushiAppleColors apple,
-    bool desktop,
-    double radius,
-  ) {
-    return CupertinoSearchTextField(
+  /// 设置搜索栏（M3E 胶囊 / Apple 液态玻璃胶囊，见 [SettingsSearchBar]）。回车
+  /// 打开第一条结果，↓ 把焦点交给结果列表。
+  Widget _buildKitSearchBar({required bool wide}) {
+    return SettingsSearchBar(
       controller: _searchController,
-      placeholder: t.settings_search_hint,
-      backgroundColor: Colors.transparent,
-      borderRadius: BorderRadius.circular(radius),
-      itemColor: apple.secondaryLabel,
-      itemSize: desktop ? 15 : 18,
-      style: TextStyle(fontSize: desktop ? 13 : 17, color: apple.label),
-      placeholderStyle: TextStyle(
-        fontSize: desktop ? 13 : 17,
-        color: apple.secondaryLabel,
-      ),
-      padding: desktop
-          ? const EdgeInsetsDirectional.fromSTEB(4, 6, 6, 6)
-          : const EdgeInsetsDirectional.fromSTEB(5, 9, 6, 9),
+      focusNode: _searchFocusNode,
       onChanged: (String value) => setState(() => _searchQuery = value),
-      onSuffixTap: () {
-        _searchController.clear();
-        setState(() => _searchQuery = '');
+      onSubmitted: (_) {
+        if (_results.isEmpty) return;
+        _openSearchResult(
+          _results.first,
+          // 与实际布局共用窄 / 宽判据；嵌入页的可用宽度可能小于整窗宽度。
+          wide: wide,
+        );
       },
+      onArrowDown: () => FocusManager.instance.primaryFocus?.focusInDirection(
+        TraversalDirection.down,
+      ),
     );
   }
 
-  /// 玻璃搜索结果。宽屏画在侧栏里（侧栏行 + 面包屑），窄屏是一张 inset
-  /// grouped 分组卡（图标 + 标题 + 面包屑 + chevron）。点击语义与 MD3 同一个
-  /// [_openSearchResult]。
-  Widget _buildGlassSearchResults({
+  /// 求当前查询的结果（同时记进 [_results] 供回车使用）。
+  List<SettingsSearchEntry> _searchResults(
+    SettingsContext settingsContext,
+    List<SettingsDestination> destinations,
+  ) {
+    _results = _searchQuery.trim().isEmpty
+        ? const <SettingsSearchEntry>[]
+        : filterSettingsEntries(
+            flattenVisibleSettings(destinations, settingsContext),
+            _searchQuery,
+          );
+    return _results;
+  }
+
+  /// 统一的搜索结果视图（两套设计系统共用 [SettingsSearchResultsView]）：按
+  /// 分类分组、命中高亮、错峰进场；空结果是空状态插画。
+  Widget _buildKitSearchResults({
     required SettingsContext settingsContext,
     required List<SettingsDestination> destinations,
     required bool wide,
+    EdgeInsetsGeometry padding = EdgeInsets.zero,
+    bool shrinkWrap = false,
   }) {
-    final List<SettingsSearchEntry> results = filterSettingsEntries(
-      flattenVisibleSettings(destinations, settingsContext),
-      _searchQuery,
-    );
-    if (results.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.all(24),
-        child: Center(
-          child: Text(
-            t.settings_search_no_results,
-            textAlign: TextAlign.center,
-            style: FushiAppleMetrics.of(context).footnoteStyle(context),
-          ),
-        ),
-      );
-    }
-    if (wide) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          for (final SettingsSearchEntry entry in results)
-            GlassSettingsSidebarRow(
-              icon: entry.item.icon ?? entry.destination.icon,
-              title: entry.title,
-              subtitle: settingsSearchBreadcrumb(entry),
-              onTap: () => _openSearchResult(entry, wide: true),
-            ),
-        ],
-      );
-    }
-    return AdaptiveSettingsSection(
-      children: <Widget>[
-        for (final SettingsSearchEntry entry in results)
-          AdaptiveSettingsNavigationRow(
-            title: entry.title,
-            subtitle: settingsSearchBreadcrumb(entry),
-            icon: entry.item.icon ?? entry.destination.icon,
-            showIcon: true,
-            onTap: () => _openSearchResult(entry, wide: false),
-          ),
-      ],
+    return SettingsSearchResultsView(
+      results: _searchResults(settingsContext, destinations),
+      query: _searchQuery,
+      padding: padding,
+      shrinkWrap: shrinkWrap,
+      onOpen: (SettingsSearchEntry entry) =>
+          _openSearchResult(entry, wide: wide),
     );
   }
 
@@ -582,37 +596,42 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
           children: <Widget>[
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-              child: _buildGlassSearchField(),
+              child: _buildKitSearchBar(wide: true),
             ),
+            // 搜索时侧栏保持分类列表（不再把结果塞进 240 宽的侧栏），结果
+            // 占满右侧详情窗格。
             Expanded(
-              child: searching
-                  ? SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(10, 0, 10, 16),
-                      child: _buildGlassSearchResults(
-                        settingsContext: settingsContext,
-                        destinations: destinations,
-                        wide: true,
-                      ),
-                    )
-                  : renderer.buildDestinationList(
-                      settingsContext: settingsContext,
-                      destinations: destinations,
-                      selectedDestinationId: selectedDestinationId,
-                      onDestinationSelected: _selectDestination,
-                      pushRoutes: false,
-                    ),
+              child: renderer.buildDestinationList(
+                settingsContext: settingsContext,
+                destinations: destinations,
+                selectedDestinationId: selectedDestinationId,
+                onDestinationSelected: _selectDestination,
+                pushRoutes: false,
+              ),
             ),
           ],
         ),
       ),
       // 详情窗格按 destination id 编码身份（同 MD3 分支的 KeyedSubtree 说明）。
-      primary: KeyedSubtree(
-        key: ValueKey<SettingsDestinationId>(selected.id),
-        child: renderer.buildDetailContent(
-          settingsContext: settingsContext,
-          destination: selected,
-        ),
-      ),
+      primary: searching
+          ? _buildKitSearchResults(
+              settingsContext: settingsContext,
+              destinations: destinations,
+              wide: true,
+              padding: EdgeInsets.fromLTRB(
+                GlassSettingsRenderer.detailHorizontalInset(context),
+                16,
+                GlassSettingsRenderer.detailHorizontalInset(context),
+                24 + mediaPadding.bottom,
+              ),
+            )
+          : KeyedSubtree(
+              key: ValueKey<SettingsDestinationId>(selected.id),
+              child: renderer.buildDetailContent(
+                settingsContext: settingsContext,
+                destination: selected,
+              ),
+            ),
     );
   }
 
@@ -652,7 +671,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
             ),
           Padding(
             padding: const EdgeInsets.only(bottom: 18),
-            child: _buildGlassSearchField(),
+            child: _buildKitSearchBar(wide: false),
           ),
           if (_searchQuery.trim().isEmpty)
             renderer.buildDestinationGroups(
@@ -661,74 +680,17 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
               onDestinationSelected: _selectDestination,
             )
           else
-            _buildGlassSearchResults(
+            _buildKitSearchResults(
               settingsContext: settingsContext,
               destinations: destinations,
               wide: false,
+              shrinkWrap: true,
             ),
         ],
       ),
     );
     if (widget.embedded) return body;
     return FushiPageScaffold(title: t.settings, body: body);
-  }
-
-  /// MD3 胶囊搜索栏（Android 16 设置顶部的 search bar）：全圆角、高 ≈ 52、
-  /// surfaceContainerHigh 填充、无描边。墨水屏下填充塌缩成背景色，交回主题的
-  /// 实描边作边界。
-  Widget _buildMd3SearchBar() {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool eink = isEinkTheme(context);
-    const BorderRadius capsule = BorderRadius.all(Radius.circular(28));
-    const InputBorder flat = OutlineInputBorder(
-      borderRadius: capsule,
-      borderSide: BorderSide.none,
-    );
-    return Material(
-      type: MaterialType.transparency,
-      child: FushiTextFieldControl(
-        controller: _searchController,
-        decoration: InputDecoration(
-          hintText: t.settings_search_hint,
-          prefixIcon: Padding(
-            padding: EdgeInsetsDirectional.only(
-              start: tokens.spacing.rowHorizontal,
-              end: tokens.spacing.gap,
-            ),
-            child: const FushiIcon(Icons.search),
-          ),
-          suffixIcon: _searchQuery.isEmpty
-              ? null
-              : FushiIconButtonControl(
-                  icon: const FushiIcon(Icons.clear),
-                  tooltip: t.clear,
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() => _searchQuery = '');
-                  },
-                ),
-          contentPadding: EdgeInsets.symmetric(
-            vertical: tokens.spacing.rowVertical + 4,
-          ),
-          filled: !eink,
-          fillColor: eink ? null : tokens.surfaces.search,
-          border: eink
-              ? const OutlineInputBorder(borderRadius: capsule)
-              : flat,
-          enabledBorder: eink ? null : flat,
-          focusedBorder: eink
-              ? null
-              : OutlineInputBorder(
-                  borderRadius: capsule,
-                  borderSide: BorderSide(
-                    color: Theme.of(context).colorScheme.primary,
-                    width: 2,
-                  ),
-                ),
-        ),
-        onChanged: (String value) => setState(() => _searchQuery = value),
-      ),
-    );
   }
 
   /// MD3 宽屏 = Android 16 平板「设置」：左栏 300（胶囊搜索栏 + 导航抽屉式
@@ -752,133 +714,169 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       supportingSide: SupportingPaneSide.start,
       supportingWidth: MaterialSettingsRenderer.navPaneWidth,
       showDivider: false,
-      supporting: Padding(
-        padding: EdgeInsets.only(bottom: mediaPadding.bottom),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.gap + 4,
-                tokens.spacing.gap,
-                tokens.spacing.gap + 4,
-                tokens.spacing.gap,
+      // 左栏是固定版面（搜索框 + 分类列表）：整体让开叠放在上面的外壳页头。
+      supporting: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: EdgeInsets.only(bottom: mediaPadding.bottom),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  tokens.spacing.gap + 4,
+                  tokens.spacing.gap,
+                  tokens.spacing.gap + 4,
+                  tokens.spacing.gap,
+                ),
+                child: _buildKitSearchBar(wide: true),
               ),
-              child: _buildMd3SearchBar(),
-            ),
-            Expanded(
-              child: _searchQuery.trim().isEmpty
-                  ? renderer.buildDestinationList(
-                      settingsContext: settingsContext,
-                      destinations: destinations,
-                      selectedDestinationId: selectedDestinationId,
-                      onDestinationSelected: _selectDestination,
-                      pushRoutes: false,
-                    )
-                  : _buildSearchResults(
-                      settingsContext: settingsContext,
-                      destinations: destinations,
-                      wide: true,
-                    ),
-            ),
-          ],
+              // 搜索时左栏保持分类列表，结果占满右侧详情窗格（此前结果挤在 240
+              // 宽的左栏里，标题两行就截断，右侧详情却空着）。
+              Expanded(
+                child: renderer.buildDestinationList(
+                  settingsContext: settingsContext,
+                  destinations: destinations,
+                  selectedDestinationId: selectedDestinationId,
+                  onDestinationSelected: _selectDestination,
+                  pushRoutes: false,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
       // 详情窗格按 destination id 编码身份（同 _buildWideLayout 的 KeyedSubtree
       // 说明）。全宽：不封顶、不居中（用户 2026-10-04）。
-      primary: KeyedSubtree(
-        key: ValueKey<SettingsDestinationId>(selected.id),
-        child: renderer.buildDetailContent(
-          settingsContext: settingsContext,
-          destination: selected,
-        ),
-      ),
+      // 搜索结果的内边距按 State context 算、读不到外壳页头让位：整体让开。
+      primary: _searchQuery.trim().isNotEmpty
+          ? SafeArea(
+              bottom: false,
+              child: _buildKitSearchResults(
+                settingsContext: settingsContext,
+                destinations: destinations,
+                wide: true,
+                padding: EdgeInsets.fromLTRB(
+                  tokens.spacing.page,
+                  tokens.spacing.card,
+                  tokens.spacing.page,
+                  tokens.spacing.page + mediaPadding.bottom,
+                ),
+              ),
+            )
+          : KeyedSubtree(
+              key: ValueKey<SettingsDestinationId>(selected.id),
+              child: renderer.buildDetailContent(
+                settingsContext: settingsContext,
+                destination: selected,
+              ),
+            ),
     );
   }
 
-  /// MD3 窄屏 = Android 16「设置」：随滚动折叠的大标题顶栏「设置」+ 胶囊搜索栏
-  /// + 分段分组的分类列表，点分类 push 详情页。自绘桌面顶栏已经显示标题时不再
-  /// 画大标题顶栏（两个「设置」）；带返回出口的全屏设置在顶栏左侧放返回箭头。
+  /// M3E 窄屏：浮动页头（返回 + 「设置」标题胶囊，随滚动收缩成浮在内容上的
+  /// 胶囊）+ 胶囊搜索栏 + 分段分组的分类列表（彩色形状图标块），点分类 push
+  /// 详情页。自绘桌面顶栏已经显示标题时不再画页头（两个「设置」）。
   Widget _buildMd3NarrowLayout({
     required SettingsContext settingsContext,
     required List<SettingsDestination> destinations,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     const MaterialSettingsRenderer renderer = MaterialSettingsRenderer();
-    final bool showAppBar =
-        !widget.embedded || !FushiDesktopTitleBar.isEnabled;
-    final List<SettingsSearchEntry> results = _searchQuery.trim().isEmpty
-        ? const <SettingsSearchEntry>[]
-        : filterSettingsEntries(
-            flattenVisibleSettings(destinations, settingsContext),
-            _searchQuery,
+    final bool showHeader = !widget.embedded || !FushiDesktopTitleBar.isEnabled;
+    final bool searching = _searchQuery.trim().isNotEmpty;
+    final Widget body = searching
+        ? _buildKitSearchResults(
+            settingsContext: settingsContext,
+            destinations: destinations,
+            wide: false,
+            shrinkWrap: true,
+          )
+        : renderer.buildDestinationGroups(
+            settingsContext: settingsContext,
+            destinations: destinations,
+            onDestinationSelected: _selectDestination,
           );
-    final Widget body;
-    if (_searchQuery.trim().isEmpty) {
-      body = renderer.buildDestinationGroups(
-        settingsContext: settingsContext,
-        destinations: destinations,
-        onDestinationSelected: _selectDestination,
-      );
-    } else if (results.isEmpty) {
-      body = Padding(
-        padding: EdgeInsets.all(tokens.spacing.page),
-        child: Center(child: Text(t.settings_search_no_results)),
-      );
-    } else {
-      body = AdaptiveSettingsSection(
+    final double bottomPadding =
+        tokens.spacing.page + MediaQuery.of(context).padding.bottom;
+    final Widget scroll = ValueListenableBuilder<double>(
+      valueListenable: _narrowHeaderHeight,
+      // 非懒加载：分类列表短而有界，全部常驻，Tab 能绕回视口外的分类。
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          for (final SettingsSearchEntry entry in results)
-            FushiListItem(
-              leading: FushiIcon(entry.item.icon ?? entry.destination.icon),
-              title: Text(entry.title),
-              titleMaxLines: 2,
-              subtitle: Text(settingsSearchBreadcrumb(entry)),
-              onTap: () => _openSearchResult(entry, wide: false),
-            ),
-        ],
-      );
-    }
-    return Material(
-      color: tokens.surfaces.page,
-      child: CustomScrollView(
-        slivers: <Widget>[
-          if (showAppBar)
-            SliverAppBar.large(
-              title: Text(t.settings),
-              backgroundColor: tokens.surfaces.page,
-              automaticallyImplyLeading: widget.onBack == null,
-              leading: widget.onBack == null
-                  ? null
-                  : FushiIconButtonControl(
-                      icon: const FushiIcon(Icons.arrow_back),
-                      tooltip: t.back,
-                      onPressed: widget.onBack,
-                    ),
-            ),
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.page,
-              showAppBar ? 0 : tokens.spacing.gap,
-              tokens.spacing.page,
-              tokens.spacing.page + MediaQuery.of(context).padding.bottom,
-            ),
-            // 非懒加载：分类列表短而有界，全部常驻，Tab 能绕回视口外的分类。
-            sliver: SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Padding(
-                    padding: EdgeInsets.only(bottom: tokens.spacing.card),
-                    child: _buildMd3SearchBar(),
-                  ),
-                  body,
-                ],
-              ),
-            ),
+          Padding(
+            padding: EdgeInsets.only(bottom: tokens.spacing.card),
+            child: _buildKitSearchBar(wide: false),
           ),
+          body,
         ],
       ),
+      builder: (BuildContext context, double headerHeight, Widget? column) =>
+          SingleChildScrollView(
+            controller: _narrowScrollController,
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              // 页头叠放在列表上：首屏让开页头（实测高度），往下滚时内容滚到页头
+              // 胶囊底下（2026-10-06 结构收口：此前页头与列表上下排，下沿硬切）。
+              showHeader ? headerHeight : tokens.spacing.gap,
+              tokens.spacing.page,
+              bottomPadding,
+            ),
+            child: column,
+          ),
+    );
+    // 整页底色（不是顶部底带）：本页是 home tab，没有 Scaffold 提供底色与 ink。
+    return Material(
+      color: tokens.surfaces.page,
+      child: !showHeader
+          ? scroll
+          : Stack(
+              children: <Widget>[
+                Positioned.fill(child: scroll),
+                // 顶部可读性只靠共享渐隐（从顶端跨过整条页头降到 0），只在
+                // 列表滚到页头底下时出现，不画实色底带。
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: ListenableBuilder(
+                    listenable: Listenable.merge(<Listenable>[
+                      _narrowScrolledUnder,
+                      _narrowHeaderHeight,
+                    ]),
+                    builder: (BuildContext context, Widget? _) =>
+                        AnimatedOpacity(
+                          opacity: _narrowScrolledUnder.value ? 1 : 0,
+                          duration: fushiMotionDuration(
+                            context,
+                            FushiMotion.short,
+                          ),
+                          child: FushiTopFadeScrim(
+                            solidHeight: 0,
+                            fadeExtent:
+                                _narrowHeaderHeight.value + kFushiTopFadeExtent,
+                            topOpacity: kFushiTopScrimOverlayOpacity,
+                          ),
+                        ),
+                  ),
+                ),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: FushiHeightReporter(
+                    onHeight: _onNarrowHeaderHeight,
+                    child: SettingsFloatingHeader(
+                      key: const ValueKey<String>('settings_home_header'),
+                      title: t.settings,
+                      scrollController: _narrowScrollController,
+                      onBack: widget.onBack,
+                    ),
+                  ),
+                ),
+              ],
+            ),
     );
   }
 

@@ -8,7 +8,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
@@ -24,6 +24,7 @@ import 'package:fushi/src/reader/masked_illustration_cover.dart';
 import 'package:fushi/src/reader/ttu_toc_flatten.dart'
     show resolveTocEntryForImage;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
@@ -692,8 +693,8 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     if (animate) {
       _scrollController.animateTo(
         target,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
+        duration: FushiMotion.medium,
+        curve: FushiSpringCurve.effects,
       );
     } else {
       _scrollController.jumpTo(target);
@@ -1703,7 +1704,8 @@ class _PositionBadge extends StatelessWidget {
   }
 }
 
-/// 网格卡片外壳：圆角 + 细边框，键盘焦点用 2px 主色描边。
+/// 网格卡片外壳（M3E 填充卡）：小件 12 圆角、无可见描边（1px 透明边保几何），
+/// 键盘焦点用 2px 主色描边；按下轻微下沉（[FushiPressScale]）。
 class _GalleryCard extends StatelessWidget {
   const _GalleryCard({
     super.key,
@@ -1722,24 +1724,39 @@ class _GalleryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final BorderRadius radius = tokens.radii.cardRadius;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 120),
-      decoration: ShapeDecoration(
-        color: tokens.surfaces.card,
-        shape: RoundedRectangleBorder(
-          borderRadius: radius,
-          side: BorderSide(
-            color: focused ? tokens.surfaces.primary : tokens.surfaces.outline,
-            width: focused ? 2 : 1,
+    const BorderRadius radius = FushiM3eShape.smallRadius;
+    // 墨水屏：填充塌缩成页面底，未聚焦的卡仍需实描边才看得出边界。
+    final bool eink = isEinkTheme(context);
+    return FushiPressScale(
+      child: AnimatedContainer(
+        duration: fushiMotionDuration(context, FushiMotion.short),
+        curve: FushiMotion.standard,
+        decoration: ShapeDecoration(
+          color: tokens.surfaces.card,
+          shape: RoundedRectangleBorder(
+            borderRadius: radius,
+            side: BorderSide(
+              color: focused
+                  ? tokens.surfaces.primary
+                  : (eink ? tokens.surfaces.outline : Colors.transparent),
+              width: focused ? 2 : 1,
+            ),
           ),
         ),
-      ),
-      child: Material(
-        type: MaterialType.transparency,
-        shape: RoundedRectangleBorder(borderRadius: radius),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(onTap: onTap, onLongPress: onLongPress, child: child),
+        child: Material(
+          type: MaterialType.transparency,
+          shape: const RoundedRectangleBorder(borderRadius: radius),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            onLongPress: onLongPress,
+            borderRadius: radius,
+            overlayColor: eink
+                ? null
+                : fushiMd3ContentStateLayer(Theme.of(context).colorScheme),
+            child: child,
+          ),
+        ),
       ),
     );
   }

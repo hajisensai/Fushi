@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
@@ -48,11 +48,18 @@ void main() {
 
   tearDownAll(() => tmp.deleteSync(recursive: true));
 
-  Widget harness(Widget child) {
+  Widget harness(Widget child, {bool reduceMotion = false}) {
     return TranslationProvider(
       child: MaterialApp(
         theme: ThemeData(useMaterial3: true),
-        home: Scaffold(body: Center(child: child)),
+        home: Builder(
+          builder: (BuildContext context) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              disableAnimations: reduceMotion,
+            ),
+            child: Scaffold(body: Center(child: child)),
+          ),
+        ),
       ),
     );
   }
@@ -113,6 +120,53 @@ void main() {
         tester.widget<FushiFileDropTarget>(find.byType(FushiFileDropTarget));
     await tester.runAsync(() => target.runDrop(paths, Offset.zero));
     await settle(tester, until);
+  }
+
+  for (final bool reduceMotion in <bool>[false, true]) {
+    testWidgets(
+      'source input switches both ways with reduceMotion=$reduceMotion',
+      (WidgetTester tester) async {
+        await tester.pumpWidget(harness(dialog(), reduceMotion: reduceMotion));
+        await tester.pumpAndSettle();
+        final Finder magnet = find.byKey(
+          const ValueKey<String>('manual-task-magnet-pane'),
+        );
+        final Finder torrent = find.byKey(
+          const ValueKey<String>('manual-task-drop-zone'),
+        );
+        final Finder sourceSwitch = find.byKey(
+          const ValueKey<String>('manual-task-source-kind'),
+        );
+        expect(magnet, findsOneWidget);
+        expect(
+          find.ancestor(of: magnet, matching: find.byType(AnimatedSize)),
+          reduceMotion ? findsNothing : findsOneWidget,
+        );
+        await tester.tap(
+          find.descendant(
+            of: sourceSwitch,
+            matching: find.text(t.download_task_add_source_torrent),
+          ),
+        );
+        await tester.pump();
+        if (!reduceMotion) await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(torrent, findsOneWidget);
+        expect(magnet, findsNothing);
+
+        await tester.tap(
+          find.descendant(
+            of: sourceSwitch,
+            matching: find.text(t.download_task_add_source_magnet),
+          ),
+        );
+        await tester.pump();
+        if (!reduceMotion) await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(magnet, findsOneWidget);
+        expect(torrent, findsNothing);
+      },
+    );
   }
 
   testWidgets('initialTorrentPath prefills file name, title and content kind',

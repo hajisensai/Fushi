@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,6 +19,7 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_home_page.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -910,7 +911,19 @@ void main() {
     expect(row.readout, '100%');
     expect(row.label, '100%');
 
+    // 27a62a0（commitOnRelease）：拖动只跟手预览，不逐 tick 写穿——否则每帧写库
+    // + 推正文 WebView 重注样式；松手 onChangeEnd 才一次性提交。
     row.onChanged(35);
+    await tester.pump();
+    expect(
+      ReaderFushiSource.instance.lookupAudioVolume,
+      100,
+      reason: '拖动期间不得写穿查词音量',
+    );
+    row = tester.widget<AdaptiveSettingsSliderRow>(sliderFinder());
+    expect(row.value, 35, reason: '滑条显示跟手到本地拖动值');
+
+    row.onChangeEnd!(35);
     await tester.pump();
 
     expect(ReaderFushiSource.instance.lookupAudioVolume, 35);
@@ -1214,6 +1227,53 @@ void main() {
       );
     },
   );
+
+  // BUG-3039：底部导航直达的根设置页没有返回出口，标题上方不能空一整行。
+  // 2026-10 settings kit：窄屏页头换成 M3E 浮动页头（返回 + 标题胶囊，随滚动
+  // 收缩）。根页标题直接在页头一行里、无返回钮；带返回出口的设置在同一行左侧
+  // 出返回钮。
+  for (final bool root in <bool>[true, false]) {
+    testWidgets(
+      'M3E narrow settings home: floating header ${root ? 'without' : 'with'} '
+      'a back button',
+      (WidgetTester tester) async {
+        await tester.binding.setSurfaceSize(const Size(400, 800));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final FushiDatabase db = _testDb();
+        addTearDown(db.close);
+        final AppModel appModel = await _prefsBackedAppModel(db);
+        await tester.pumpWidget(
+          _harness(
+            platform: TargetPlatform.android,
+            appModel: appModel,
+            builder: (SettingsContext _) =>
+                SettingsHomePage(onBack: root ? null : () {}),
+          ),
+        );
+        await tester.pump();
+
+        expect(
+          find.byKey(const ValueKey<String>('settings_home_header')),
+          findsOneWidget,
+        );
+        final Finder title = find.text(t.settings);
+        expect(title, findsWidgets);
+        expect(
+          tester.getTopLeft(title.first).dy,
+          lessThan(kToolbarHeight),
+          reason: '标题就在页头这一行，上方没有空行',
+        );
+        // 浮动页头的返回钮走语义图标 FushiIcons.back（765b65f 页头图标迁移）。
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('settings_home_header')),
+            matching: find.byIcon(FushiIcons.back),
+          ),
+          root ? findsNothing : findsOneWidget,
+        );
+      },
+    );
+  }
 
   // 宽屏设置在**第一帧**就已经选中并渲染了 destinations.first（= 外观）的详情
   // 面板：settings_home_page.dart 在 _selectedDestinationId 为 null 时无条件落到

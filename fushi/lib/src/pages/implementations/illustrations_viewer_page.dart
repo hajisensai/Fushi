@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show compute;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show ReaderPosition, ReaderPositionRepository;
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
@@ -250,12 +250,17 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
     final String? error = _error;
     return FushiPageScaffold(
       title: widget.bookTitle,
-      body: error != null
-          ? FushiPlaceholderMessage(
-              icon: Icons.error_outline_rounded,
-              message: error,
-            )
-          : FushiLoadingView(message: t.loading_illustrations),
+      // 页头浮在正文上（脚手架默认 extendBodyBehindHeader）：不滚动的占位整体
+      // 让开页头。
+      body: SafeArea(
+        bottom: false,
+        child: error != null
+            ? FushiPlaceholderMessage(
+                icon: Icons.error_outline_rounded,
+                message: error,
+              )
+            : FushiLoadingView(message: t.loading_illustrations),
+      ),
     );
   }
 }

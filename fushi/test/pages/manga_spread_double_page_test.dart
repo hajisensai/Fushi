@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -188,6 +188,33 @@ Directory _bookDir() {
   return dir;
 }
 
+/// 完整页码读数（`页 / 总页`，双页时为区间 `2-3 / 4`）。M3E chrome 下界面显示
+/// 时底部滑块胶囊只分开画「当前页」与「总页数」两枚数字，区间读数只出现在隐藏
+/// 界面后的角落页码角标（与拖动气泡同一个 `_pageLabelFor`）。所以经右上角的
+/// 「隐藏界面」（平铺按钮或 ⋮ 菜单项，与快捷键同一执行体）收起 chrome，再读角标。
+Future<String?> _hiddenPageBadgeText(WidgetTester tester) async {
+  // 右上角动作默认平铺；只有宽度不够时才收进「⋯」。两种形态都走同一执行体。
+  final Finder overflow =
+      find.byKey(const ValueKey<String>('manga_chrome_overflow'));
+  if (overflow.evaluate().isNotEmpty) {
+    await tester.tap(overflow);
+    await tester.pumpAndSettle();
+    await tester.tap(find
+        .byKey(const ValueKey<String>('manga_chrome_hide_button_menu_item')));
+  } else {
+    await tester
+        .tap(find.byKey(const ValueKey<String>('manga_chrome_hide_button')));
+  }
+  await tester.pumpAndSettle();
+  expect(find.byKey(const ValueKey<String>('manga_chrome_show_button')),
+      findsOneWidget,
+      reason: '界面已隐藏');
+  return tester
+      .widget<Text>(
+          find.byKey(const ValueKey<String>('manga_hidden_page_badge')))
+      .data;
+}
+
 void main() {
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
@@ -212,13 +239,13 @@ void main() {
 
     expect(find.byKey(const ValueKey<String>('manga_content_ready')),
         findsOneWidget);
-    expect(find.text('2-3 / 4'), findsOneWidget,
-        reason: '横屏 auto 双页 + 封面独占：恢复到含第 3 页的跨页，指示区间 2-3');
     // 布局偏好（自动/单页/双页循环）按钮在 spread 模式下可见。
     expect(
       find.byKey(const ValueKey<String>('manga_spread_preference_button')),
       findsOneWidget,
     );
+    expect(await _hiddenPageBadgeText(tester), '2-3 / 4',
+        reason: '横屏 auto 双页 + 封面独占：恢复到含第 3 页的跨页，指示区间 2-3');
   });
 
   testWidgets('竖屏视口自动单页：页码保持单页显示', (WidgetTester tester) async {
@@ -236,6 +263,7 @@ void main() {
 
     await _pumpBook(tester, db, appModel, '竖屏漫画', bookDir, savedPage: 2);
 
-    expect(find.text('3 / 4'), findsOneWidget, reason: '竖屏 auto 单页：第 3 页单页显示');
+    expect(await _hiddenPageBadgeText(tester), '3 / 4',
+        reason: '竖屏 auto 单页：第 3 页单页显示');
   });
 }

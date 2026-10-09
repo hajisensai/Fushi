@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart' show ValueNotifier, immutable;
 import 'package:flutter/painting.dart'
     show AssetImage, FileImage, ImageProvider, ResizeImage;
 import 'package:flutter/services.dart' show ByteData, rootBundle;
+import 'package:fushi/src/utils/components/accent_logo_image.dart';
+import 'package:fushi/src/utils/misc/logo_accent_tint.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -91,7 +93,14 @@ AppIconSelection resolveAppIconSelection({
 
 /// 当前选择对应的 Flutter 图片源。组件和启动预缓存共用这个映射，保证窗口恢复与
 /// 侧栏显示不会再次分叉。
-ImageProvider<Object> appIconImageProvider(AppIconSelection selection) {
+///
+/// [tint]（由当前主题 primary 推出）给了就让内置吉祥物图标跟随强调色
+/// （[tintedLogoImageProvider]；基线紫下仍是原 [AssetImage]）。用户自定义的图片
+/// 永远原样显示，不换色。
+ImageProvider<Object> appIconImageProvider(
+  AppIconSelection selection, {
+  LogoAccentTint? tint,
+}) {
   if (selection.usesCustomFile) {
     return ResizeImage(
       FileImage(File(selection.customPath!)),
@@ -99,9 +108,14 @@ ImageProvider<Object> appIconImageProvider(AppIconSelection selection) {
       allowUpscaling: false,
     );
   }
-  return AssetImage(
-    windowIconAssetForPreset(selection.presetKey) ??
-        presetIconAssets['default']!,
+  final String asset =
+      windowIconAssetForPreset(selection.presetKey) ??
+      presetIconAssets['default']!;
+  if (tint == null) return AssetImage(asset);
+  return tintedLogoImageProvider(
+    asset,
+    tint: tint,
+    decodeWidth: appIconDecodePixelWidth,
   );
 }
 

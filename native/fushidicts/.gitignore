@@ -1,1 +1,4 @@
 build-check/
+# build_linux_so.sh 的构建树与产物——不入库（repo 不放二进制），CI 现编。
+build-linux-x64/
+prebuilt/

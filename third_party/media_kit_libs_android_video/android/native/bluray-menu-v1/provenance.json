@@ -1,0 +1,9 @@
+{
+  "build_commit": "dff448cc3f0c32f1ff4d31a3ee47a017e271aeab",
+  "mpv_commit": "36abaa32d00a7229ee206aae12dc0e97e7962dca",
+  "patches": {
+    "patches/mpv/mpv_gl_dovi_p5.patch": "bff4b4bc5cafecf7cf622a85d5c5ebb5ba76739f64189e87e450f7086000b08b",
+    "patches/mpv/mpv_lavc_set_java_vm.patch": "87401381750e7885194444f3c409d9beabd0eaf4d1e9c7004e99ec087b713ba5",
+    "patches/mpv/disc-navigation-state.patch": "c01c1daddec8523ab2c9944f6ed8cf986e8eb3ae79fe1c6060d0bc9479280a87"
+  }
+}

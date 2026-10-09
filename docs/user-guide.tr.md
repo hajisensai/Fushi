@@ -32,7 +32,7 @@ Aktif olarak geliştiriliyor — geri bildirimleriniz hızla ele alınacaktır. 
 
 https://github.com/hajisensai/Fushi/releases/latest
 
-Platformunuza uyan dosyayı seçin: **Android** — `arm64-v8a` APK'si (son birkaç yılın tüm telefonları bunu kullanır; yalnızca daha eski cihazlar `armeabi-v7a` gerektirir, emülatörler ise `x86_64` kullanır); **Windows** — `windows-setup.exe`; **macOS** — `macos.zip`; **iOS** — `ios.ipa`. **Linux** için henüz hazır bir paket yok, bu yüzden kaynaktan derlenmesi gerekiyor.
+Platformunuza uyan dosyayı seçin: **Android** — `arm64-v8a` APK'si (son birkaç yılın tüm telefonları bunu kullanır; yalnızca daha eski cihazlar `armeabi-v7a` gerektirir, emülatörler ise `x86_64` kullanır); **Windows** — `windows-setup.exe`; **macOS** — `macos-arm64.zip` (Apple Silicon); **iOS** — `ios.ipa`. **Linux** için henüz hazır bir paket yok, bu yüzden kaynaktan derlenmesi gerekiyor.
 
 Adı `bridge-` ile başlayan APK'ler **eski Hibiki kullanıcıları** için geçiş köprüleridir; bunları yok sayabilirsiniz.
 

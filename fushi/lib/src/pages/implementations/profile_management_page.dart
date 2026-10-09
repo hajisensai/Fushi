@@ -1,9 +1,10 @@
 import 'dart:io';
 
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart' show ProfileMediaKind;
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
@@ -159,7 +160,7 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
   Widget _buildCreateRow(ProfileViewModel vm) {
     final bool cupertino = isCupertinoPlatform(context);
     return AdaptiveSettingsRow(
-      icon: cupertino ? CupertinoIcons.add : Icons.add,
+      icon: cupertino ? CupertinoIcons.add : FushiIcons.add,
       showIcon: true,
       title: t.profile_create,
       onTap: () => _showCreateDialog(vm),
@@ -169,9 +170,7 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
   Widget _buildImportRow(ProfileViewModel vm) {
     final bool cupertino = isCupertinoPlatform(context);
     return AdaptiveSettingsRow(
-      icon: cupertino
-          ? CupertinoIcons.square_arrow_down
-          : Icons.file_download_outlined,
+      icon: cupertino ? CupertinoIcons.square_arrow_down : FushiIcons.download,
       showIcon: true,
       title: t.profile_import,
       onTap: () => _importProfile(vm),
@@ -195,8 +194,8 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
           icon: profile.id == uiState.activeProfileId
               ? (cupertino
                   ? CupertinoIcons.check_mark_circled_solid
-                  : Icons.check_circle)
-              : (cupertino ? CupertinoIcons.circle : Icons.circle_outlined),
+                  : FushiIcons.filled(FushiIcons.success))
+              : (cupertino ? CupertinoIcons.circle : FushiIcons.profiles),
           // 行首的实心 / 空心圆就是「当前激活」的唯一信号——不 showIcon 的话
           // 共享行根本不画它，列表里看不出哪个方案在用。
           showIcon: true,
@@ -210,21 +209,21 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
             mainAxisSize: MainAxisSize.min,
             children: [
               _ProfileActionButton(
-                materialIcon: Icons.file_upload_outlined,
+                materialIcon: FushiIcons.upload,
                 cupertinoIcon: CupertinoIcons.square_arrow_up,
                 tooltip: t.profile_export,
                 onPressed: () => _exportProfile(vm, profile.id, profile.name),
               ),
               SizedBox(width: tokens.spacing.gap / 2),
               _ProfileActionButton(
-                materialIcon: Icons.copy_outlined,
+                materialIcon: FushiIcons.copy,
                 cupertinoIcon: CupertinoIcons.doc_on_doc,
                 tooltip: t.profile_copy,
                 onPressed: () => _showCopyDialog(vm, profile.id, profile.name),
               ),
               SizedBox(width: tokens.spacing.gap / 2),
               _ProfileActionButton(
-                materialIcon: Icons.edit_outlined,
+                materialIcon: FushiIcons.rename,
                 cupertinoIcon: CupertinoIcons.pencil,
                 tooltip: t.profile_rename,
                 onPressed: () =>
@@ -233,7 +232,7 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
               if (!isOnly) ...[
                 SizedBox(width: tokens.spacing.gap / 2),
                 _ProfileActionButton(
-                  materialIcon: Icons.delete_outline,
+                  materialIcon: FushiIcons.delete,
                   cupertinoIcon: CupertinoIcons.delete,
                   tooltip: t.profile_delete,
                   destructive: true,
@@ -552,6 +551,7 @@ class ProfileDeleteDialog extends StatelessWidget {
       scrollable: false,
       child: FushiModalSheetFrame(
         title: t.profile_delete,
+        leadingIcon: FushiIcons.delete,
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
@@ -638,6 +638,7 @@ class _ProfileNameDialogState extends State<ProfileNameDialog> {
       scrollable: false,
       child: FushiModalSheetFrame(
         title: widget.title,
+        leadingIcon: FushiIcons.profiles,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,

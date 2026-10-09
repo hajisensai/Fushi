@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,6 +23,8 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    show fushiM3eMenuAnimationStyle;
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
 import '../../integration_test/helpers/effect_probes.dart';
@@ -36,6 +38,20 @@ import '../helpers/test_platform_services.dart';
 /// 让覆盖测试不对「别处已覆盖」的项裸喊 UNVERIFIED/FAIL，且强制每个 changed
 /// 但未 effect-verified 的设置都必须有去处（no silent caps）。
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // 悬浮球「显示按钮文字」：生效点在悬浮球展开态（应用内球 / 系统球原生面），
+  // 设置页 harness 里没有展开的悬浮球。行为由 floating_ball_labels_test 咬住。
+  'floatingBall/Show button labels':
+      'test/floating_ball/floating_ball_labels_test.dart',
+  // 吉祥物图标换色开关：生效点是全局 appLogoFollowsAccent 与 AccentLogoImage
+  // 的着色——harness 设置页里没有 logo 渲染面，渲染输入无变化。行为由
+  // theme_app_icon_link_test（发布到全局开关）与 accent_logo_image_test 咬住。
+  'appearance/Logo follows theme color':
+      'test/models/theme_app_icon_link_test.dart + test/widgets/accent_logo_image_test.dart',
+  // 词典统一 M3E 配色：生效点在查词弹窗 WebView 里的 popup.js / popup.css，
+  // harness 没有 WebView。注入接线、默认值与 CSS 层由
+  // popup_dict_unified_style_test 咬住。
+  'lookup/Unify dictionary styles':
+      'test/pages/popup_dict_unified_style_test.dart',
   // v101 更新提醒的五个开关：写 prefsRepo（changed=true），生效点在
   // UpdateFeedService.publishBatch——关掉的域整批丢弃（不投递/不红点/不通知）、
   // 系统通知总开关只掐通知不掐红点。harness 里没有投递方（订阅检查、漫画刷新、
@@ -231,9 +247,19 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 关掉开关时跟随 app 内共享值。
   // 归属：与 #938 同一条理由，本项已从 settings_schema_lookup.dart 移进
   // settings_schema_game.dart 的双重 Platform.isWindows 门后，故 destId 是 game。
-  // 兄弟两项（最大宽/高滑杆）带 visible 门、不进覆盖清单，不需要登记。
+  // 兄弟两项（最大宽/高滑杆）带 visible 门：遍历先把上面的开关切到 ON 时它们会
+  // 出现并被驱动——生效点同在直连覆盖窗，由同一份专项测试咬住（gal 组键读写、
+  // 与 overlay 组不互串）。
   'game/Independent in-game card size':
       'test/lookup/gal_card_size_cap_test.dart',
+  'game/In-game card max width': 'test/lookup/gal_card_size_cap_test.dart',
+  'game/In-game card max height': 'test/lookup/gal_card_size_cap_test.dart',
+  // e147b5b：Hook 覆盖窗工具栏按钮下的文字标签。生效点在 runner 自有 Win32
+  // 覆盖窗（不是 Flutter 树）；由偏好默认值 + 「写 pref 后立刻推 channel」源码
+  // 守卫咬住，真显示要真机。
+  'game/Show button labels':
+      'test/lookup/gal_hook_overlay_interaction_prefs_test.dart + '
+      'DEVICE: hook overlay toolbar labels',
   // BUG-1095：galgame Hook 台词浮窗字号。写 prefsRepo（changed=true），生效点在
   // runner 自有的 Win32 分层浮窗（Direct2D/DirectWrite 直绘，不是 Flutter widget
   // 树），本进程内没有任何可探的渲染输入，故无适用探针；由三层专项测试咬住：
@@ -375,6 +401,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 真按它预选语言 chip）。
   'video/Default subtitle language':
       'test/pages/jimaku_default_language_test.dart',
+  // e53dc0f 把 AJATT / 默认字幕语言从自绘卡拆成「在线服务」下的标准行，焦点
+  // 遍历开始能驱动它们。默认字幕语言同上一条专项测试；AJATT 的生效点是
+  // configured_subtitle_providers.dart 按开关装不装 AjattVideoSubtitleProvider，
+  // 专项测试走设置行写偏好 → 生产装配函数（假 HTTP 客户端）断言装 / 不装。
+  'services/Default subtitle language':
+      'test/pages/jimaku_default_language_test.dart',
+  'services/AJATT':
+      'test/media/video/subtitle/ajatt_setting_effect_test.dart',
   // mpv Lua 脚本装载开关。写 prefsRepo（changed=true），生效点在视频播放器创建后
   // 经 libmpv `load-script` 命令装载脚本目录（widget harness 无 libmpv Player，
   // 无可探渲染输入）；由专项测试咬住目录枚举（仅顶层 .lua、排序）、load-script
@@ -413,8 +447,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/VPAL (vertical alt)': 'test/reader/reader_content_styles_test.dart',
   'appearance/Design system': 'test/models/theme_notifier_test.dart',
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
-  'appearance/Glass material':
-      'test/widgets/fushi_glass_material_test.dart',
   'reading/Spread mode': 'test/epub/epub_spread_map_test.dart',
   // 阶段 G 重排后，「模式」分区（含 view_mode）在设置页排在「排版」分区（含
   // page_columns）之前，覆盖 harness 焦点遍历会先把 view_mode 从 paginated 切走，
@@ -440,6 +472,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/floating_ball/app_floating_ball_host_test.dart: 剪贴板查词把剪贴板文字交给应用内查词弹窗 + 场景勾选',
   'floatingBall/Sync now':
       'test/floating_ball/app_floating_ball_host_test.dart: 立即同步走与设置页同一个手动同步入口 / 唤起主窗再走手动同步入口 / Android openSync',
+  'floatingBall/Feedback':
+      'test/floating_ball/app_floating_ball_host_test.dart: 反馈按钮打开反馈中心 / 场景勾选里去掉反馈：球上没有反馈按钮',
   // 应用外开关（2026-09-30 起桌面也可见）：生效点是宿主起停原生系统球。
   'floatingBall/Show over other apps':
       'test/floating_ball/app_floating_ball_host_test.dart: 桌面应用外球：打开开关即起原生球…；Android 原生服务见 BUG-2793 真机记录',
@@ -447,6 +481,17 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'floatingBall/Auto-restore floating ball':
       'test/floating_ball/app_floating_ball_host_test.dart: 自动恢复含应用内 / 不自动恢复 / 桌面应用外球「应用内外」三条',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
+  // 弹出查词 / 浏览器扩展弹窗的独立尺寸：生效点是有效尺寸解析（解锁前跟随
+  // app 内共享值、解锁后用自身宽高），由 AppModel 接线测试咬住；窗口真尺寸要
+  // 原生弹出窗 / 扩展宿主，widget 测不到。
+  'lookup/Pop-out lookup max width':
+      'test/models/lookup_effective_size_wiring_test.dart',
+  'lookup/Pop-out lookup max height':
+      'test/models/lookup_effective_size_wiring_test.dart',
+  'lookup/Extension popup max width':
+      'test/models/lookup_effective_size_wiring_test.dart',
+  'lookup/Extension popup max height':
+      'test/models/lookup_effective_size_wiring_test.dart',
   'lookup/Popup max height': 'test/pages/dictionary_popup_layer_test.dart',
   // TODO-776: 查词弹窗「词典最多列数（自动填充）」（实验性）。PR#83 语义收敛后文案
   // 从「Dictionaries per row」改为「Max dictionary columns (auto-fill)」（底层算法不变，
@@ -739,6 +784,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Channels': 'test/media/video/video_mpv_config_test.dart',
   'video/Normalize downmix loudness':
       'test/media/video/video_mpv_config_test.dart',
+  // 直通：下发值由 mpv 配置测试咬住；真正的码流直通要接功放 / 回音壁才能验。
+  'video/Dolby / DTS passthrough':
+      'test/media/video/video_mpv_config_test.dart',
   // TODO-1247：尊重 .ass 自带样式开关平移到首页（videoRespectAssStyle 纯 pref）；
   // 生效点在字幕 overlay 标记渲染，由 video_subtitle_overlay_markup_test.dart 咬住。
   "video/Respect subtitle's own style":
@@ -846,6 +894,48 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 连同 28px 底部预留一起消失），既不进 reader CSS 也不进主题树，harness 的渲染输入
   // 观测不到；由专项纯函数真值表 + widget 行为用例覆盖。默认 true=保持现状。
   'reading/Show reading timer': 'test/reader/reader_status_footer_test.dart',
+  // 视觉小说模式的六个控件：只在 view_mode=vn 时显示——本 harness 驱动「翻页 /
+  // 滚动」时会走到 VN，于是它们进入遍历。生效点在 VN 引擎（WebView 分屏 /
+  // 逐字显现 / 点空白推进），reader CSS 探针看不到；仅 VN 可见性、每项写穿与
+  // 触发一次布局重载由专项 widget 测试咬住，引擎输入由生产 JS 行为测试咬住。
+  'reading/Text reveal speed':
+      'test/settings/vn_settings_m1_test.dart + '
+      'test/reader/reader_production_js_behavior_test.dart',
+  'reading/Screen content':
+      'test/settings/vn_settings_m1_test.dart + '
+      'test/reader/reader_production_js_behavior_test.dart',
+  'reading/Sentences per screen':
+      'test/settings/vn_settings_m1_test.dart + '
+      'test/reader/reader_production_js_behavior_test.dart',
+  'reading/Keep dialogue together':
+      'test/settings/vn_settings_m1_test.dart + '
+      'test/reader/reader_production_js_behavior_test.dart',
+  'reading/Keep spoken sentence on one screen':
+      'test/settings/vn_settings_m1_test.dart',
+  'reading/Blank tap advances':
+      'test/settings/vn_settings_m1_test.dart + '
+      'test/reader/vn_blank_tap_chrome_reveal_bug1195_test.dart',
+  // 2026-10 M3E 波次新增的四个设置（harness 能改、能写穿 DB，但生效点不在
+  // reader CSS / 主题渲染输入里）：
+  // · 阅读计时起点（f68f88c）：生效点是阅读器 StudyClock 的初始暂停 / 首次翻页
+  //   起表，由纯函数真值表 + 页面接线源码守卫覆盖。
+  'reading/Reading timer start':
+      'test/stats/reader_study_clock_start_mode_test.dart + '
+      'test/pages/reader_study_clock_start_mode_wiring_guard_static_test.dart',
+  // · 阅读器工具栏样式（77a4712）：悬浮 / 贴边。阅读器页要活 WebView，专项测试
+  //   走设置行写偏好 → readerToolbarsFloating 换算（页面只经它，源码守卫）→
+  //   生产 ReaderStatusFooter 渲染形态（胶囊 vs 整宽实体条）。
+  'reading/Toolbar style':
+      'test/reader/reader_toolbar_style_setting_effect_test.dart',
+  // · 纯黑深色（4c32e76）：只在深色下把 surface 压成纯黑，harness 的 t2 渲染
+  //   输入观测不到；由 ThemeNotifier 配色真值测试覆盖。
+  'appearance/Pure black dark': 'test/models/theme_notifier_test.dart: '
+      'pure black: legacy black-theme users keep it; toggle is independent',
+  // · 底栏标签（690c490）：只影响首页 M3E 悬浮底栏的标签显隐，设置页 harness
+  //   不挂首页 shell；专项测试走设置行写偏好 → 生产 adaptiveBottomBar 标签画 /
+  //   不画（+ 首页接线源码守卫）。
+  'appearance/Show navigation bar labels':
+      'test/widgets/nav_bar_labels_setting_effect_test.dart',
   // TODO-975: 顶部进度悬浮开关 + 悬浮控件自动隐藏延时。生效点在 reader 页悬浮
   // chrome 状态机（_topProgressReserve/_bottomChromeReserve 派生 + 自动隐藏定时器，
   // 非 reader CSS / 主题树）；由专项纯函数真值表 + 持久化 + 源码守卫覆盖。
@@ -1396,6 +1486,25 @@ void main() {
         }
       }
 
+      // 两条会在窄行渲染成菜单的分段项必须真的被驱动；只数总行数无法发现
+      // 菜单按键串错行后遍历缩水（此前57行仍能越过>40门）。
+      for (final String id in <String>[
+        'reading/Page / scroll',
+        'reading/Hide furigana',
+      ]) {
+        final List<ItemVerdict> rows = verdicts
+            .where((ItemVerdict v) => v.id == id)
+            .toList();
+        expect(rows, hasLength(1), reason: '$id 必须在真实焦点遍历中可达');
+        expect(rows.single.changed, isTrue, reason: '$id 必须真正改值');
+        expect(rows.single.persisted, isTrue, reason: '$id 必须写穿DB');
+        expect(
+          rows.single.effectVerified,
+          isTrue,
+          reason: '$id 必须改变reader CSS渲染输入',
+        );
+      }
+
       // 全局还原：改过的 key 写回初值，测试新增的 key 删除，再校验快照一致。
       final Map<String, String> afterAll = Map<String, String>.from(
         await db.getAllPrefs(),
@@ -1578,8 +1687,10 @@ _FocusedRow? _focusedSettingsRow() {
   final BuildContext? ctx = FocusManager.instance.primaryFocus?.context;
   if (ctx == null) return null;
   _FocusedRow? found;
+  bool sawChoiceMenu = false;
   ctx.visitAncestorElements((Element el) {
     final Widget w = el.widget;
+    if (w is SettingsChoiceMenuRow) sawChoiceMenu = true;
     if (w is AdaptiveSettingsSwitchRow) {
       found = _FocusedRow(title: w.title, kind: _RowKind.switchRow);
       return false;
@@ -1596,6 +1707,8 @@ _FocusedRow? _focusedSettingsRow() {
       found = _FocusedRow(
         title: (w as dynamic).title as String,
         kind: _RowKind.segmented,
+        optionCount: ((w as dynamic).segments as List<Object?>).length,
+        renderedAsMenu: sawChoiceMenu,
       );
       return false;
     }
@@ -1639,6 +1752,18 @@ Future<ItemVerdict> _verifyFocusedNode({
   if (row.kind == _RowKind.switchRow) {
     await driver.activate();
     await tester.pump(const Duration(milliseconds: 50));
+  } else if (row.kind == _RowKind.segmented && row.renderedAsMenu) {
+    // 分段项在窄行里退化成菜单行（M3E 连接式按钮组更宽，2026-10 设置 kit
+    // 详情栏里 800 宽 harness 的「翻页/滚动」「隐藏注音」都走这条）。菜单行
+    // 不接左右键：照分段条那样 adjust(±4) 只会把焦点挪出这一行，随后的 Enter
+    // 落到下一行、改错设置。按菜单的真实焦点序列驱动，保持与分段条相同的
+    // 「往一端走 4 步，没变就往另一端」语义。
+    await _driveChoiceMenuRow(
+      tester: tester,
+      driver: driver,
+      db: db,
+      before: before,
+    );
   } else if (row.kind == _RowKind.picker) {
     await _driveDropdownRow(
       tester: tester,
@@ -1738,6 +1863,37 @@ Future<void> _driveDropdownRow({
   }
 }
 
+/// 焦点驱动一个「退化成菜单」的分段设置行（[SettingsChoiceMenuRow]）。
+///
+/// Enter 打开菜单（键盘打开时焦点落在当前项）→ 方向键走最多 4 项（菜单不回绕，
+/// 到端即停，与分段条 adjust(4) 的夹取同语义）→ Enter 选中。值没变（当前项已在
+/// 那一端）就反方向再来一次。
+Future<void> _driveChoiceMenuRow({
+  required WidgetTester tester,
+  required FocusDriver driver,
+  required FushiDatabase db,
+  required Map<String, String> before,
+}) async {
+  for (final LogicalKeyboardKey key in <LogicalKeyboardKey>[
+    LogicalKeyboardKey.arrowDown,
+    LogicalKeyboardKey.arrowUp,
+  ]) {
+    await driver.activate();
+    // 等菜单路由开完（fushiM3eMenuAnimationStyle 300ms）、焦点落进菜单项
+    // （_focusInitial 在首帧后）。设置页可能有常驻动画，不用 pumpAndSettle。
+    await tester.pump();
+    await tester.pump(fushiM3eMenuAnimationStyle.duration! * 2);
+    for (int i = 0; i < 4; i++) {
+      await tester.sendKeyEvent(key);
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    await driver.activate();
+    await tester.pump();
+    await tester.pump(fushiM3eMenuAnimationStyle.reverseDuration! * 2);
+    if (!_mapsEqual(before, await db.getAllPrefs())) return;
+  }
+}
+
 bool _mapsEqual(Map<String, String> a, Map<String, String> b) {
   if (a.length != b.length) return false;
   for (final MapEntry<String, String> e in a.entries) {
@@ -1770,9 +1926,14 @@ class _FocusedRow {
     required this.title,
     required this.kind,
     this.optionCount = 0,
+    this.renderedAsMenu = false,
   });
   final String title;
   final _RowKind kind;
+
+  /// [_RowKind.segmented] 的项此刻被渲染成菜单选择行（[SettingsChoiceMenuRow]，
+  /// `settingsChoiceUsesSegments` 判据：行宽放不下连接式按钮组时）。
+  final bool renderedAsMenu;
 
   /// [_RowKind.picker] 的可选项数（其它 kind 恒 0）。
   final int optionCount;

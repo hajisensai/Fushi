@@ -21,8 +21,9 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
   Future<void> _refreshStagedMineCount() async {
     try {
       final VideoMineQueue queue = await _videoMineQueue();
-      final int count = (await queue.pending(widget.bookUid)).length +
-          (await queue.failed(widget.bookUid)).length;
+      final int count =
+          (await queue.pending(_activeBookUid)).length +
+          (await queue.failed(_activeBookUid)).length;
       if (mounted) _stagedMineCount.value = count;
     } catch (_) {}
   }
@@ -42,18 +43,24 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
   void _trackBackgroundMine(Future<void> job) {
     _minesInFlight.value++;
     late final Future<void> tracked;
-    tracked = job.catchError((Object error, StackTrace stack) {
-      try {
-        ErrorLogService.instance.log('mineVideoCard.background', error, stack);
-      } catch (_) {}
-      _showOsd(
-        t.card_export_failed_detail(reason: '$error'),
-        severity: ToastSeverity.error,
-      );
-    }).whenComplete(() {
-      _backgroundMineJobs.remove(tracked);
-      if (mounted && _minesInFlight.value > 0) _minesInFlight.value--;
-    });
+    tracked = job
+        .catchError((Object error, StackTrace stack) {
+          try {
+            ErrorLogService.instance.log(
+              'mineVideoCard.background',
+              error,
+              stack,
+            );
+          } catch (_) {}
+          _showOsd(
+            t.card_export_failed_detail(reason: '$error'),
+            severity: ToastSeverity.error,
+          );
+        })
+        .whenComplete(() {
+          _backgroundMineJobs.remove(tracked);
+          if (mounted && _minesInFlight.value > 0) _minesInFlight.value--;
+        });
     _backgroundMineJobs.add(tracked);
   }
 
@@ -63,10 +70,11 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
   }) async {
     final VideoMineQueue queue = await _videoMineQueue();
     // 跨了 async gap：页面可能已经关了，不能再 `ref.read`（见 [_providerContainer]）。
-    final BaseAnkiRepository repo =
-        _providerContainer.read(ankiRepositoryProvider);
+    final BaseAnkiRepository repo = _providerContainer.read(
+      ankiRepositoryProvider,
+    );
     final VideoMineCommitSummary summary = await queue.commitAll(
-      bookUid: widget.bookUid,
+      bookUid: _activeBookUid,
       repo: repo,
       onProgress: onProgress,
     );
@@ -84,7 +92,7 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
     final VideoMineCommitSummary? summary = await showVideoMineQueueDialog(
       context: context,
       queue: queue,
-      bookUid: widget.bookUid,
+      bookUid: _activeBookUid,
       commit: (void Function(int done, int total) onProgress) =>
           _commitStagedMines(onProgress: onProgress),
       onChanged: () => unawaited(_refreshStagedMineCount()),
@@ -96,10 +104,13 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
   void _showCommitSummary(VideoMineCommitSummary summary) {
     _showOsd(
       t.video_mine_queue_committed(
-          ok: summary.succeeded, failed: summary.failed),
+        ok: summary.succeeded,
+        failed: summary.failed,
+      ),
       prominent: true,
-      severity:
-          summary.failed == 0 ? ToastSeverity.success : ToastSeverity.warning,
+      severity: summary.failed == 0
+          ? ToastSeverity.success
+          : ToastSeverity.warning,
     );
   }
 
@@ -110,10 +121,11 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
   /// 后面的异步链不再碰本页状态，结果由 [commitStagedVideoMinesAfterExit] 报（OSD 随
   /// 页面没了）。什么都没有就什么都不做。
   void _flushStagedMinesOnExit() {
-    final List<Future<void>> inFlight =
-        List<Future<void>>.of(_backgroundMineJobs);
+    final List<Future<void>> inFlight = List<Future<void>>.of(
+      _backgroundMineJobs,
+    );
     if (_stagedMineCount.value == 0 && inFlight.isEmpty) return;
-    final String bookUid = widget.bookUid;
+    final String bookUid = _activeBookUid;
     final BaseAnkiRepository repo;
     try {
       repo = _providerContainer.read(ankiRepositoryProvider);

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/visual/gamepad_button_assets.dart';
 import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';

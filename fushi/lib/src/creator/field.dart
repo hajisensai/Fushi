@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/models.dart';
 
 /// An entity that represents a broad characteristic of an item being

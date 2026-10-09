@@ -70,6 +70,7 @@ void main() {
 
       Future<int?> bare() async {
         try {
+          // ignore: unawaited_return_in_try_block
           return boom();
         } catch (_) {
           return null;

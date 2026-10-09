@@ -260,7 +260,7 @@ void main() {
         manager: MangaOcrHostJobManager(
           service: hostDefault,
           modelServices: <String, MangaOcrService>{
-            'manga_ocr': hostDefault,
+            'baberu': hostDefault,
             'manga_ctc': ctc,
           },
           jobRoot: Directory(p.join(tmpRoot.path, 'jobs')),
@@ -276,7 +276,7 @@ void main() {
           for (final MangaOcrRemoteModel m in target.capability.models)
             m.key: m.ready,
         },
-        <String, bool>{'manga_ocr': true, 'manga_ctc': false},
+        <String, bool>{'baberu': true, 'manga_ctc': false},
       );
       // 没点名：沿用 host 默认，就绪态是 host 默认模型的。
       expect(target.model, isNull);
@@ -309,8 +309,9 @@ void main() {
 
     test('a model the host does not offer is refused, not swapped', () async {
       await startMultiModelHost();
+      // 已删除的 manga-ocr：旧客户端可能还点名它，host 明确拒绝而不是悄悄换模型。
       final InterconnectMangaOcrClient client =
-          buildClient(preferredModel: 'baberu');
+          buildClient(preferredModel: 'manga_ocr');
       final MangaOcrRemoteTarget target = (await client.probe())!;
       expect(target.capability.modelsMissing, isTrue);
 

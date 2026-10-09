@@ -49,7 +49,7 @@ Dart FFI（`packages/fushi_p2p`，纯 Dart，无 Flutter / 插件依赖）。设
 | Windows x64 | `powershell -ExecutionPolicy Bypass -File native/fushi_p2p/build_windows_dll.ps1` | `prebuilt/windows-x64/fushi_p2p.dll` | `fushi/windows/CMakeLists.txt` copy-if-present 到 exe 同级；服务端放 `bundle/lib/` |
 | Android | `build_android_so.ps1 [-NdkRoot …] [-Abis …]` / `build_android_so.sh <ndk-root> [abi…]`（cargo-ndk，API 24） | `prebuilt/android/<abi>/libfushi_p2p.so` | `fushi/android/app/build.gradle` 的 `jniLibs.srcDirs` copy-if-present |
 | Linux x64 | `build_linux_so.sh` | `prebuilt/linux-x64/libfushi_p2p.so` | `fushi/linux/CMakeLists.txt` copy-if-present 到 `bundle/lib/`；服务端放 `bundle/lib/` |
-| macOS | `build_macos_dylib.sh [arm64] [x86_64]`（缺省 universal，部署目标 13.4） | `prebuilt/macos/libfushi_p2p.dylib`（install name `@rpath/…`） | Runner 构建阶段「Bundle fushi_p2p dylib」（`fushi/macos/bundle_fushi_p2p.sh`）copy-if-present 到 `Contents/Frameworks` |
+| macOS | `build_macos_dylib.sh`（只出 arm64：macOS 版不再支持 Intel Mac；部署目标 13.4） | `prebuilt/macos/libfushi_p2p.dylib`（install name `@rpath/…`） | Runner 构建阶段「Bundle fushi_p2p dylib」（`fushi/macos/bundle_fushi_p2p.sh`）copy-if-present 到 `Contents/Frameworks` |
 | iOS | `build_ios_staticlib.sh [device\|simulator\|all]`（staticlib，部署目标 15.1） | `prebuilt/ios/{iphoneos,iphonesimulator}/libfushi_p2p.a` + `prebuilt/ios/fushi_p2p.xcconfig` | `fushi/ios/Flutter/{Debug,Release}.xcconfig` 可选 `#include?` 那份 xcconfig → Runner `OTHER_LDFLAGS` 的 `$(FUSHI_P2P_LDFLAGS)` = `-force_load <.a>` + rustc 报的系统库；Dart 侧 `DynamicLibrary.process()` |
 
 - **缺库 = 能力不可用，不是构建失败**：五端都是「prebuilt 有则随包」，没装 Rust 的机器照常出包，
@@ -74,7 +74,7 @@ Android 用 `taiki-e/install-action` 装 cargo-ndk 4.1.2。**失败口径与内�
 | workflow | 平台 | 构建 | 出包后核对 |
 |---|---|---|---|
 | `release.yml` | Android arm64-v8a / armeabi-v7a / x86_64 | `build_android_so.sh` + `verify_abi.sh` | 每个 APK 里有 `libflutter.so` 的 ABI 都必须有 `libfushi_p2p.so` |
-| `release-desktop.yml` | Windows / macOS universal / iOS device | 各自脚本 | bundle 里有 DLL；Frameworks 里 dylib 双架构 + 符号齐；Runner（未签名包与 App Store archive）导出 `fp2p_*` |
+| `release-desktop.yml` | Windows / macOS arm64 / iOS device | 各自脚本 | bundle 里有 DLL；Frameworks 里 dylib 架构与 app 一致（arm64）+ 符号齐；Runner（未签名包与 App Store archive）导出 `fp2p_*` |
 | `release-server.yml` | Linux x64（ubuntu-22.04）/ Windows x64 | 同上 | 拿 bundle 里那一份跑 `packages/fushi_p2p` 真隧道测试 |
 | `build-multiplatform.yml`（PR） | Linux / Windows / macOS / iOS | 同上 | Linux、Windows 跑真隧道测试；macOS ctypes 冒烟；iOS 查 Runner 符号 |
 | `native-p2p-gate.yml`（PR，paths） | Android 三 ABI | 同上 | ELF 架构 + 符号 |

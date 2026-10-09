@@ -11,10 +11,10 @@ inputs:
     required: true
 outputs:
   torrent:
-    description: libtorrent bridge (windows DLLs / macOS universal static dylib / linux static .so)
+    description: libtorrent bridge (windows DLLs / macOS arm64 static dylib / linux static .so)
     value: ${{ steps.names.outputs.torrent }}
   p2p:
-    description: fushi_p2p (windows DLL / macOS universal dylib / iOS device staticlib / linux .so)
+    description: fushi_p2p (windows DLL / macOS arm64 dylib / iOS device staticlib / linux .so)
     value: ${{ steps.names.outputs.p2p }}
   mihon:
     description: Mihon desktop runtime (windows)
@@ -23,7 +23,7 @@ outputs:
     description: galgame helper archives (windows)
     value: ${{ steps.names.outputs.galgame }}
   anki_sync_release:
-    description: fushi-anki-sync release binary (windows exe / macOS universal)
+    description: fushi-anki-sync release binary (windows exe / macOS arm64)
     value: ${{ steps.names.outputs.anki_sync_release }}
   anki_sync_debug:
     description: fushi-anki-sync debug binary (PR gates)

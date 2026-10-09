@@ -34,6 +34,8 @@ import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
+import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_work_identity.dart';
 
 /// 一个待补字幕的视频。身份来自刮削，不是从文件名现猜的。
 class SubtitleBackfillTarget {
@@ -88,7 +90,7 @@ enum SubtitleBackfillOutcome {
   /// 搜索没有任何候选。
   noCandidate,
 
-  /// 有候选但全都没通过时长/内容校验。
+  /// 有候选但全都没通过校验：不是这部作品、不是要的语言、或时长/内容对不上。
   allCandidatesRejected,
 
   /// 视频文件不在了 / 目录读不了 / 写盘失败。
@@ -209,19 +211,48 @@ class VideoSubtitleBackfillService {
     // 一次 ffprobe 拿两件事实：时长（校验用）+ 音轨语言（选语言用）。
     final VideoProbeFacts facts = await probeVideoFacts(target.videoPath);
     final KnownVideoDuration? duration = _resolveDuration(target, facts);
-    // 默认取**视频自己的语言**。这里是排序不是过滤：只有英文字幕的日语番仍然
-    // 配得上，只是排在后面。硬过滤只属于用户显式选的语言（已进 request.languages）。
+    // 要哪种语言：用户显式选的 > 视频自己的语言（BUG-3069）。由**这部作品**的证据
+    // （显式选择 / 手动内容语言 / 刮削原语言 / 音轨 tag）解析得出就是**硬条件**
+    // ——这是无人值守地往用户片子旁边落字幕，「日语片只找到印尼语字幕」的正确
+    // 结果是不装，而不是悄悄装一条他没要的语言。
+    //
+    // 全局「默认内容语言」不是这部作品的证据（BUG-3083）：用户设了 ja，不代表这部
+    // 没有语言资料的英语片要日文字幕。它只参与排序（[ranking]），不做硬拒——否则
+    // 英语片的英文字幕在下载前与正文复核两关都被拒。
     final String? preferred = resolveSubtitleDownloadLanguage(
       explicitSubtitlePreference:
           target.explicitLanguage ?? preferredLanguages.firstOrNull,
       videoContentLanguage: target.contentLanguage,
       contentMetadataLanguage:
           target.originalLanguage ?? facts.primaryAudioLanguage,
-      globalDefaultContentLanguage: defaultContentLanguage,
     );
+    final String? ranking = preferred ??
+        resolveSubtitleDownloadLanguage(
+          globalDefaultContentLanguage: defaultContentLanguage,
+        );
+    String? lastRejection;
+    final List<VideoSubtitleCandidate> eligible = <VideoSubtitleCandidate>[];
+    for (final VideoSubtitleCandidate candidate in result.items) {
+      final String? rejection = _rejectBeforeDownload(
+        target,
+        candidate,
+        preferred,
+      );
+      if (rejection == null) {
+        eligible.add(candidate);
+        continue;
+      }
+      lastRejection = rejection;
+      debugPrint(
+        '[subtitle-backfill] skipped "${candidate.fileName}" for '
+        '${target.bookUid}: $rejection',
+      );
+    }
+    // 语言没标的候选（压缩包、文件名没写语言）也在 eligible 里，下载后按正文核；
+    // 标了且对上的排前面先试。
     List<VideoSubtitleCandidate> ordered = rankByPreferredLanguage(
-      result.items,
-      preferred,
+      eligible,
+      ranking,
       (VideoSubtitleCandidate c) => c.language,
     );
     // AI 重排只在语言排序之后、截 maxCandidates 之前插一刀：它决定的是「先下哪几条」，
@@ -244,7 +275,6 @@ class VideoSubtitleBackfillService {
         );
       }
     }
-    String? lastRejection;
     final int limit =
         ordered.length < maxCandidates ? ordered.length : maxCandidates;
     for (int i = 0; i < limit; i++) {
@@ -256,8 +286,22 @@ class VideoSubtitleBackfillService {
         lastRejection = 'download failed: $error';
         continue;
       }
+      final String text = await decodeTextBytes(download.bytes);
+      final String? languageRejection = _rejectDownloadedLanguage(
+        download,
+        text,
+        preferred,
+      );
+      if (languageRejection != null) {
+        lastRejection = languageRejection;
+        debugPrint(
+          '[subtitle-backfill] rejected "${candidate.fileName}" for '
+          '${target.bookUid}: $languageRejection',
+        );
+        continue;
+      }
       final SubtitleTimingCheck check = checkSubtitleTiming(
-        summarizeSubtitleTiming(await decodeTextBytes(download.bytes)),
+        summarizeSubtitleTiming(text),
         video: duration,
       );
       if (check.rejected) {
@@ -286,6 +330,44 @@ class VideoSubtitleBackfillService {
       SubtitleBackfillOutcome.allCandidatesRejected,
       detail: lastRejection,
     );
+  }
+
+  /// 下载前就能判死的候选：不是这部作品（BUG-3068），或来源标明了别的语言
+  /// （BUG-3069）。返回拒收原因；能进下载环节返回 null。
+  ///
+  /// 放在下载之前不只是省流量：OpenSubtitles 的下载计配额，错作品 / 错语言的
+  /// 候选此前会白白吃掉前 [maxCandidates] 个名额，把真正对的那条挤出窗口。
+  String? _rejectBeforeDownload(
+    SubtitleBackfillTarget target,
+    VideoSubtitleCandidate candidate,
+    String? preferred,
+  ) {
+    final SubtitleWorkCheck work = checkSubtitleWork(target.media, candidate);
+    if (work.rejected) return work.detail;
+    final String? declared = normalizeSubtitleLanguageCode(candidate.language);
+    if (preferred != null && declared != null && declared != preferred) {
+      return 'subtitle language is $declared, wanted $preferred';
+    }
+    return null;
+  }
+
+  /// 下载后的语言复核：解包挑出的文件可能另标了语言，文件名标签也常是错的
+  /// （上传者套模板）——正文是权威（[detectSubtitleContentLanguage]）。
+  String? _rejectDownloadedLanguage(
+    VideoSubtitleDownload download,
+    String text,
+    String? preferred,
+  ) {
+    if (preferred == null) return null;
+    final String? declared = normalizeSubtitleLanguageCode(download.language);
+    if (declared != null && declared != preferred) {
+      return 'subtitle language is $declared, wanted $preferred';
+    }
+    final SubtitleContentLanguage content = detectSubtitleContentLanguage(text);
+    if (subtitleContentContradictsLanguage(content, preferred)) {
+      return 'subtitle text reads as ${content.name}, wanted $preferred';
+    }
+    return null;
   }
 
   /// 时长来源优先级：ffprobe 探到的真实容器时长 > 刮削的播出时长 > 未知。

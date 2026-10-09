@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart' show RenderStack;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/lookup/latin_word_lookup.dart';
@@ -10,7 +10,7 @@ import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 /// BUG-175 / TODO-222 要求源文本条与弹窗 headword **同级**；那个 headword 不是
 /// Flutter 排版角色，而是 WebView 里 `assets/popup/popup.css` 的
 /// `.expression { font-size: 26px }`。所以这个数字是**跨边界对齐常量**，不是本地
-/// 重新拍板的 MD3 字号——守卫用 `md3_design_system_static_test.dart` 的
+/// 重新拍板的 MD3 字号——守卫用 `m3e_design_system_static_test.dart` 的
 /// 「source lookup strip headword size stays pinned to the popup CSS」把它与
 /// popup.css 钉在一起，改哪边都会红。
 ///
@@ -97,6 +97,21 @@ SourceLookupHighlight resolveSourceLookupHighlight({
     start: base + startGrapheme,
     length: length < 1 ? 1 : length,
   );
+}
+
+/// 源文本条是否只是在重复结果卡的词头：整段源文本恰好被一次扫描高亮从头到尾框住
+/// （搜索框直接查一个词的常态）。此时条上没有可供 Yomitan 式扫描的余文，而结果卡
+/// 词头又把同一个词带注音大字画了一遍，宿主应收起这条。[highlight] 为 null（还没
+/// 有命中跨度）时不判重复。
+bool isSourceStripRedundant({
+  required String text,
+  required SourceLookupHighlight? highlight,
+}) {
+  if (highlight == null) return false;
+  final String trimmed = text.trim();
+  if (trimmed.isEmpty) return false;
+  return highlight.start == 0 &&
+      highlight.length >= trimmed.characters.length;
 }
 
 /// 一次「扫描查词」的发起点：交给引擎的那段串，以及它在源文本条上的起始字素簇。

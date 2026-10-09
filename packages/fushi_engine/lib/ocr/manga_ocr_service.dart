@@ -135,7 +135,6 @@ class MangaOcrModelStatus {
     required this.diskBytes,
     required this.totalBytes,
     this.obtainedBytes = 0,
-    this.acceleratorMissingBytes = 0,
   });
 
   final bool detectorReady;
@@ -163,14 +162,7 @@ class MangaOcrModelStatus {
   /// Range 续传，再点就是接着下。能力早就在，缺的只是把它说出来。
   final int obtainedBytes;
 
-  /// 可选提速组件（经典 manga-ocr 的 KV cache decoder）还差多少字节没下；0 = 已装
-  /// 或本模型没有提速组件。不影响 [allReady]：缺了照样能识别，只是慢。
-  final int acceleratorMissingBytes;
-
   bool get allReady => detectorReady && recognizerReady;
-
-  /// 模型可用、但提速组件没装（设置页据此给「下载识别提速组件」）。
-  bool get acceleratorMissing => allReady && acceleratorMissingBytes > 0;
 
   /// 是否存在可续传的半成品（决定按钮显示「下载」还是「继续下载」）。
   bool get hasResumableDownload => !allReady && obtainedBytes > 0;

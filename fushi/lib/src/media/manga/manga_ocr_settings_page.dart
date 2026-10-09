@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart'
@@ -6,9 +6,12 @@ import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart'
 import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
-/// 「漫画 OCR」设置的独立页：引擎偏好 / 内置模型下载 / Lens 语言 / 外部 mokuro。
+/// 「漫画 OCR」设置的独立页（settings kit 页壳：浮动页头 + 分组跳转条）：引擎偏好 /
+/// 内置模型下载 / Lens 语言 / 外部 mokuro。
 ///
 /// 正文与设置分类里的同名子页是**同一个** [MangaOcrSettingsSection]，只是外壳换成
 /// 可 push 的整页。作品页「识别本章 / 识别全部」与 OCR 向导都是在阅读器外触发 OCR
@@ -30,33 +33,49 @@ class MangaOcrSettingsPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppModel appModel = ref.watch(appProvider);
-    return FushiPageScaffold(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return SettingsKitScaffold(
       title: t.manga_ocr_section,
-      subtitle: t.manga_ocr_section_summary,
-      body: SingleChildScrollView(
-        key: const ValueKey<String>('manga_ocr_settings_page'),
-        child: MangaOcrSettingsSection(
-          service: ref.watch(mangaOcrServiceProvider),
-          enginePreferenceGetter: () => appModel.mangaOcrEnginePreference,
-          enginePreferenceSetter: appModel.setMangaOcrEnginePreference,
-          parallelTasksGetter: () => appModel.mangaOcrParallelTasks,
-          parallelTasksSetter: appModel.setMangaOcrParallelTasks,
-          localModelGetter: () => appModel.mangaOcrLocalModel,
-          localModelSetter: appModel.setMangaOcrLocalModel,
-          lensLanguageGetter: () => appModel.mangaOcrLensLanguage,
-          lensLanguageSetter: appModel.setMangaOcrLensLanguage,
-          pairedHostModelGetter: () => appModel.mangaOcrPairedHostModel,
-          pairedHostModelSetter: appModel.setMangaOcrPairedHostModel,
-          aiModeGetter: () => appModel.mangaOcrAiMode,
-          aiModeSetter: appModel.setMangaOcrAiMode,
-          aiProviderReady: () => mangaAiOcrProviderReady(appModel),
-          openAiSettings: pushAiSettingsPage,
-          remoteRunner: createInterconnectMangaOcrRunner(
-            appModel,
-            appModel.database,
+      leadingIcon: FushiIcons.ocr,
+      leadingTone: SettingsIconTone.purple,
+      // 正文滚到叠放的页头底下：顶部内边距加上壳的页头让位。
+      bodyConsumesTopPadding: true,
+      bodyBuilder:
+          (
+            BuildContext context,
+            ScrollController controller,
+            SettingsSectionSpy spy,
+          ) => SingleChildScrollView(
+            key: const ValueKey<String>('manga_ocr_settings_page'),
+            controller: controller,
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              tokens.spacing.gap + MediaQuery.paddingOf(context).top,
+              tokens.spacing.page,
+              tokens.spacing.page + MediaQuery.paddingOf(context).bottom,
+            ),
+            child: MangaOcrSettingsSection(
+              service: ref.watch(mangaOcrServiceProvider),
+              enginePreferenceGetter: () => appModel.mangaOcrEnginePreference,
+              enginePreferenceSetter: appModel.setMangaOcrEnginePreference,
+              parallelTasksGetter: () => appModel.mangaOcrParallelTasks,
+              parallelTasksSetter: appModel.setMangaOcrParallelTasks,
+              localModelGetter: () => appModel.mangaOcrLocalModel,
+              localModelSetter: appModel.setMangaOcrLocalModel,
+              lensLanguageGetter: () => appModel.mangaOcrLensLanguage,
+              lensLanguageSetter: appModel.setMangaOcrLensLanguage,
+              pairedHostModelGetter: () => appModel.mangaOcrPairedHostModel,
+              pairedHostModelSetter: appModel.setMangaOcrPairedHostModel,
+              aiModeGetter: () => appModel.mangaOcrAiMode,
+              aiModeSetter: appModel.setMangaOcrAiMode,
+              aiProviderReady: () => mangaAiOcrProviderReady(appModel),
+              openAiSettings: pushAiSettingsPage,
+              remoteRunner: createInterconnectMangaOcrRunner(
+                appModel,
+                appModel.database,
+              ),
+            ),
           ),
-        ),
-      ),
     );
   }
 }

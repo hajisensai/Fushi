@@ -2,7 +2,7 @@
 // （查状态 / 请 Play 服务立即下载 / 修 Play 服务）。
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';

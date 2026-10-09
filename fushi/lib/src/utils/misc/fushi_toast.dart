@@ -2,10 +2,11 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show ImageFilter;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
@@ -76,10 +77,7 @@ abstract final class FushiToast {
   /// pending 信息）。有 navigator overlay（主 app，桌面与移动）时走自绘 overlay
   /// （会顶替上一条，让 pending → 结果自然过渡）；无 overlay 的独立弹窗 Activity
   /// 降级为原生着色 toast（无图标但仍着色，绝不静默）。
-  static void showMine({
-    required String msg,
-    required MineToastStatus status,
-  }) {
+  static void showMine({required String msg, required MineToastStatus status}) {
     final overlay = _toastNavigatorKey?.currentState?.overlay;
     if (overlay != null) {
       _showMineOverlay(overlay: overlay, msg: msg, status: status);
@@ -119,21 +117,59 @@ abstract final class FushiToast {
     required WidgetBuilder builder,
   }) {
     _dismissTimer?.cancel();
+    // 被新 toast 顶替时旧条立即撤（pending → 结果要无缝衔接，不叠两条）。
     _currentEntry?.remove();
     _currentEntry = null;
 
-    final entry = OverlayEntry(builder: builder);
+    final _FushiToastHandle handle = _FushiToastHandle();
+    final entry = OverlayEntry(
+      builder: (BuildContext context) =>
+          _FushiToastExitScope(handle: handle, child: builder(context)),
+    );
     _currentEntry = entry;
     overlay.insert(entry);
 
-    _dismissTimer = Timer(Duration(milliseconds: durationMs), () {
+    void remove() {
+      if (_currentEntry != entry) return;
       entry.remove();
-      if (_currentEntry == entry) _currentEntry = null;
+      _currentEntry = null;
+    }
+
+    // 到时先播退场（M3E：淡出 + 轻微下沉缩小），播完再摘 overlay；视图已不在
+    // （被顶替 / 宿主卸载）就直接摘。
+    _dismissTimer = Timer(Duration(milliseconds: durationMs), () {
+      final Future<void> Function()? dismiss = handle.dismiss;
+      if (dismiss == null) {
+        remove();
+        return;
+      }
+      dismiss().whenComplete(remove);
     });
   }
 
   static OverlayEntry? _currentEntry;
   static Timer? _dismissTimer;
+}
+
+/// overlay 条目与条目里 [_FushiToastView] 之间的退场握手：视图挂载后把自己的
+/// 退场动画登记进来，到时由计时器调用。
+class _FushiToastHandle {
+  Future<void> Function()? dismiss;
+}
+
+/// 把 [_FushiToastHandle] 交给条目里的 [_FushiToastView]（视图由调用方 builder
+/// 构造，构造时拿不到条目）。
+class _FushiToastExitScope extends InheritedWidget {
+  const _FushiToastExitScope({required this.handle, required super.child});
+
+  final _FushiToastHandle handle;
+
+  static _FushiToastHandle? maybeOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<_FushiToastExitScope>()?.handle;
+
+  @override
+  bool updateShouldNotify(_FushiToastExitScope oldWidget) =>
+      handle != oldWidget.handle;
 }
 
 /// 自绘 toast 距底边的距离：桌面沿用 50；移动端让出系统手势条与底部导航栏
@@ -192,9 +228,14 @@ Color? _appleSeverityColor(FushiAppleColors apple, ToastSeverity severity) {
 /// Apple 版 SnackBar 同一形态）。
 const Radius _kAppleToastCorner = Radius.circular(24);
 
-/// MD3 toast 浮条的圆角：中号容器 14，与全胶囊按钮、r12 填充输入框放在一起
-/// 不显方，又不至于像 chip。
-const Radius _kMd3ToastCorner = Radius.circular(14);
+/// M3E toast 浮条的圆角：单行 48 高时 24 = 全胶囊，与提示条（snackBarTheme）
+/// 同一副反色浮层（见 fushi_m3e_misc_themes.dart）。
+const Radius _kMd3ToastCorner = Radius.circular(24);
+
+/// 进场时长与曲线：M3E expressive fast spatial 弹簧的 cubic 近似（≈350ms、带过冲）。
+const Duration _kToastEnterDuration = Duration(milliseconds: 350);
+const Duration _kToastExitDuration = Duration(milliseconds: 150);
+const Curve _kToastSpatialCurve = Cubic(0.42, 1.67, 0.21, 0.90);
 
 /// 应用内 toast 的唯一渲染器（中性 / 语义 / 制卡共用，同类通知一副长相）。
 ///
@@ -228,26 +269,53 @@ class _FushiToastViewState extends State<_FushiToastView>
   late final AnimationController _controller;
   late final Animation<double> _opacity;
   late final Animation<Offset> _slide;
+  late final Animation<double> _scale;
 
   @override
   void initState() {
     super.initState();
+    // M3E 进场：淡入（effects，不过冲）+ 自下浮起并从 0.86 弹到 1（spatial，
+    // 带过冲的 expressive fast spatial 曲线）；退场反向走更短的 150ms。
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 200),
+      duration: _kToastEnterDuration,
+      reverseDuration: _kToastExitDuration,
     );
-    _opacity = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
-    _slide = Tween<Offset>(begin: const Offset(0, 0.25), end: Offset.zero)
+    _opacity = CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0, 0.45, curve: FushiMotion.enter),
+      reverseCurve: FushiMotion.exit,
+    );
+    _slide = Tween<Offset>(begin: const Offset(0, 0.35), end: Offset.zero)
         .animate(
-            CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+          CurvedAnimation(
+            parent: _controller,
+            curve: _kToastSpatialCurve,
+            reverseCurve: FushiMotion.exit,
+          ),
+        );
+    _scale = Tween<double>(begin: 0.86, end: 1).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: _kToastSpatialCurve,
+        reverseCurve: FushiMotion.exit,
+      ),
+    );
     _controller.forward();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // 墨水屏不做淡入上浮（连续重绘 = 残影），直接落到终态。
-    if (isEinkTheme(context)) _controller.value = 1;
+    // 墨水屏 / 减弱动态效果：不做进退场（连续重绘 = 残影），直接落到终态。
+    if (!fushiMotionEnabled(context)) _controller.value = 1;
+    _FushiToastExitScope.maybeOf(context)?.dismiss = dismiss;
+  }
+
+  /// 退场动画；播完（或无动效时立即）完成。
+  Future<void> dismiss() {
+    if (!mounted || !fushiMotionEnabled(context)) return Future<void>.value();
+    return _controller.reverse().orCancel.catchError((Object _) {});
   }
 
   @override
@@ -258,8 +326,9 @@ class _FushiToastViewState extends State<_FushiToastView>
 
   @override
   Widget build(BuildContext context) {
-    final Widget body =
-        isGlassDesign(context) ? _buildApple(context) : _buildMaterial(context);
+    final Widget body = isGlassDesign(context)
+        ? _buildApple(context)
+        : _buildMaterial(context);
     return Positioned(
       bottom: _toastBottomOffset(context),
       left: 16,
@@ -270,7 +339,10 @@ class _FushiToastViewState extends State<_FushiToastView>
             opacity: _opacity,
             child: SlideTransition(
               position: _slide,
-              child: Material(type: MaterialType.transparency, child: body),
+              child: ScaleTransition(
+                scale: _scale,
+                child: Material(type: MaterialType.transparency, child: body),
+              ),
             ),
           ),
         ),
@@ -310,13 +382,49 @@ class _FushiToastViewState extends State<_FushiToastView>
     final bool eink = isEinkTheme(context);
     final Color surface = widget.backgroundColor ?? cs.inverseSurface;
     final Color foreground = widget.textColor ?? cs.onInverseSurface;
+    final Color? semantic = _md3SeverityColor(
+      context,
+      widget.severity,
+      surface,
+      foreground,
+    );
+    final IconData? icon = widget.icon;
+    // M3E：反色全胶囊（单行 48 高时圆角 24 = 半高），语义图标落在同色 20% 的圆形
+    // 色块里（图标本身仍是语义色）；多行退成 24 圆角块。
+    final Widget content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (icon != null) ...<Widget>[
+          Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: ShapeDecoration(
+              shape: const CircleBorder(),
+              color: eink
+                  ? Colors.transparent
+                  : (semantic ?? foreground).withValues(alpha: 0.2),
+            ),
+            child: FushiIcon(icon, color: semantic ?? foreground, size: 20),
+          ),
+          const SizedBox(width: 12),
+        ],
+        Flexible(
+          child: Text(
+            widget.msg,
+            textAlign: icon == null ? TextAlign.center : TextAlign.start,
+            style: tokens.type.controlLabel.copyWith(color: foreground),
+          ),
+        ),
+      ],
+    );
     return Container(
-      constraints: const BoxConstraints(minHeight: 48, maxWidth: 420),
+      constraints: const BoxConstraints(minHeight: 48, maxWidth: 440),
       padding: EdgeInsetsDirectional.only(
-        start: widget.icon != null ? 14 : 20,
-        end: 20,
-        top: 12,
-        bottom: 12,
+        start: icon != null ? 8 : 24,
+        end: 24,
+        top: 8,
+        bottom: 8,
       ),
       decoration: BoxDecoration(
         color: surface,
@@ -326,26 +434,21 @@ class _FushiToastViewState extends State<_FushiToastView>
         boxShadow: eink
             ? null
             : <BoxShadow>[
+                // M3 elevation level 3。
                 BoxShadow(
                   color: cs.shadow.withValues(alpha: 0.18),
                   blurRadius: 8,
-                  offset: const Offset(0, 3),
+                  spreadRadius: 3,
+                  offset: const Offset(0, 4),
                 ),
                 BoxShadow(
-                  color: cs.shadow.withValues(alpha: 0.10),
-                  blurRadius: 2,
+                  color: cs.shadow.withValues(alpha: 0.24),
+                  blurRadius: 3,
                   offset: const Offset(0, 1),
                 ),
               ],
       ),
-      child: _content(
-        foreground: foreground,
-        iconColor:
-            _md3SeverityColor(context, widget.severity, surface, foreground),
-        textStyle: tokens.type.controlLabel,
-        iconSize: 20,
-        gap: 12,
-      ),
+      child: content,
     );
   }
 
@@ -355,9 +458,11 @@ class _FushiToastViewState extends State<_FushiToastView>
     final bool dark = theme.colorScheme.brightness == Brightness.dark;
     // 系统「降低透明度」/ 增强对比度下（材质 off）不模糊、实色铺满。
     final bool translucent = glassMaterialOf(context) != FushiGlassMaterial.off;
-    final Color fill = widget.backgroundColor ??
-        (dark ? const Color(0xFF2C2C2E) : Colors.white)
-            .withValues(alpha: translucent ? 0.92 : 1);
+    final Color fill =
+        widget.backgroundColor ??
+        (dark ? const Color(0xFF2C2C2E) : Colors.white).withValues(
+          alpha: translucent ? 0.92 : 1,
+        );
     final Color foreground = widget.textColor ?? apple.label;
     final Widget content = ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 48, maxWidth: 480),

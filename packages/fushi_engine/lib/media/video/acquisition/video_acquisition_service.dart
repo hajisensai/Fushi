@@ -104,8 +104,9 @@ class VideoAcquisitionPorts {
   /// 未启用资料站 / 未指派 AI → 空列表。默认恒空（测试与未接线的宿主不联网）。
   final Future<List<String>> Function(String query) resolveAlias;
 
-  /// 「整套下载」：[item] 所在系列的剧集与剧场版；null = 没有可用的系列来源。
-  final Future<VideoFranchise?> Function(VideoDiscoveryItem item) loadFranchise;
+  /// 「整套下载」：锚点作品所在系列的剧集与剧场版；null = 没有可用的系列来源。
+  final Future<VideoFranchise?> Function(VideoFranchiseQuery query)
+  loadFranchise;
 }
 
 /// 本机会话：页面经 [VideoAcquisitionSession] 消费它，互联 host 也用它代办。
@@ -286,7 +287,7 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
           _queue.add(const VideoAcquisitionSubmittedEvent(count: 1));
         });
       case VideoAcquisitionLoadFranchiseEffect():
-        await _loadFranchise(effect.item);
+        await _loadFranchise(effect.query);
       case VideoAcquisitionContinueFranchiseEffect():
         await _continueFranchise(effect.more);
       case VideoAcquisitionResolveFranchiseEntryEffect():
@@ -299,16 +300,16 @@ class VideoAcquisitionService implements VideoAcquisitionSession {
     return true;
   }
 
-  Future<void> _loadFranchise(VideoDiscoveryItem item) async {
+  Future<void> _loadFranchise(VideoFranchiseQuery query) async {
     VideoFranchise? franchise;
     try {
-      franchise = await _ports.loadFranchise(item);
+      franchise = await _ports.loadFranchise(query);
     } catch (error, stack) {
       // 找不到系列 = 按单部继续（reducer 会说一声）；原因必须留痕。
       lastError = error;
       engineLog.logDiagnostic(
         'VideoAcquisition.loadFranchise',
-        '${item.reference.title}: $error\n$stack',
+        '${query.item.reference.title}: $error\n$stack',
       );
     }
     _queue.add(VideoAcquisitionFranchiseLoadedEvent(franchise));

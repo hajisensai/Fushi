@@ -168,6 +168,20 @@ void main() {
       }
     });
 
+    // BUG-2963：「全部哆啦A梦剧场版」被解析成 category=movie，作品搜索只剩 TMDB，
+    // 服务端没配 TMDB key 就直接「TMDB is not configured」；动画剧场版属于 anime。
+    test('BUG-2963 category 是媒介不是形态：动画剧场版归 anime，用 scope 表达「全部剧场版」', () {
+      final String prompt = buildVideoAcquisitionIntentSystemPrompt(
+        locale: 'zh-CN',
+      );
+      expect(prompt, contains('"category" is the medium, not the format'));
+      expect(prompt, contains('including anime theatrical films'));
+      expect(
+        prompt,
+        contains('"category": "anime" with "scope": "movies", never'),
+      );
+    });
+
     test('「帮我下 X」不算选了模式：放送中的作品要留给 app 去问下载还是订阅', () {
       final String prompt = buildVideoAcquisitionIntentSystemPrompt(
         locale: 'zh-CN',

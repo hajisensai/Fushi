@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 void showSyncMessage(BuildContext context, String message) {
@@ -36,7 +37,7 @@ class SyncMessageDialog extends StatelessWidget {
       insetPadding: EdgeInsets.all(tokens.spacing.gap),
       scrollable: false,
       child: FushiModalSheetFrame(
-        leadingIcon: Icons.info_outline,
+        leadingIcon: FushiIcons.info,
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,

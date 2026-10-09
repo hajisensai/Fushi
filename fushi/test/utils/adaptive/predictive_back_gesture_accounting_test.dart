@@ -11,7 +11,7 @@
 // FushiPredictiveBackPageTransitionsBuilder 之后计数恒回零、界面仍可点击，同时断言
 // 正常的手势返回、以及首页 PopScope 拦截返回的语义都没被改变。
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/adaptive/predictive_back_page_transitions.dart';

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
@@ -12,8 +12,9 @@ enum FushiNoticeSeverity { info, success, warning, error }
 /// 卡、secondaryContainer 盒、裸 Row……），颜色、圆角、图标、密度都不一样，
 /// Apple 下也没有分支；新增横幅一律用本组件。
 ///
-/// - MD3：中性 surfaceContainerHigh 底（语义只在图标色上）圆角 12，前置单色
-///   图标；
+/// - MD3（M3E）：按语义着色的 tonal 色块（info = secondaryContainer、success /
+///   warning = tertiaryContainer、error = errorContainer），图标 / 文字 / 动作
+///   按钮一律用对应的 on- 色，圆角 16（M3E large）；
 /// - Apple：tertiaryFill 实色底（内容层，不是玻璃）圆角 10，单色 SF 图标上
 ///   语义色（info 用强调色），文字 label 色；动作是无底强调色文字按钮；
 /// - 墨水屏：无填充、前景色细描边（底色在灰阶下塌掉，描边才是边界）。
@@ -67,26 +68,48 @@ class FushiInlineNotice extends StatelessWidget {
     }
   }
 
-  /// MD3 的 (底色, 前景色, 图标色)：一律中性 surfaceContainerHigh 底 +
-  /// onSurface 文字，语义只体现在前置图标颜色上（用户 2026-10-04：去掉页面
-  /// 上的彩色块；与 fushi_neutral_decor 的信息块同一规则）。
+  /// MD3（M3E）圆角：large 档 16（卡片 / 提示块同形）。
+  static const double _md3RadiusValue = 16;
+
+  /// MD3 的 (底色, 前景色, 图标色)：按语义着色的 M3E tonal 色块，图标 / 文字
+  /// / 动作都用对应的 on- 色（用户 2026-10-06 拍板「改色块」，覆盖 10-04「去掉
+  /// 页面上的彩色块」那条中性底决定）。ColorScheme 没有 success / warning 角色，
+  /// 二者共用 tertiaryContainer，语义靠图标区分。
   static ({Color fill, Color foreground, Color iconColor}) _md3Colors(
     ColorScheme cs,
     FushiNoticeSeverity severity,
   ) {
-    final bool dark = cs.brightness == Brightness.dark;
-    final Color icon = switch (severity) {
-      FushiNoticeSeverity.info => cs.primary,
-      FushiNoticeSeverity.error => cs.error,
-      FushiNoticeSeverity.success =>
-        dark ? const Color(0xFF7DDC8C) : const Color(0xFF1E6B30),
-      FushiNoticeSeverity.warning =>
-        dark ? const Color(0xFFFFB870) : const Color(0xFF8F4A00),
+    final (Color fill, Color on) = switch (severity) {
+      FushiNoticeSeverity.info => (
+        cs.secondaryContainer,
+        cs.onSecondaryContainer,
+      ),
+      FushiNoticeSeverity.success || FushiNoticeSeverity.warning => (
+        cs.tertiaryContainer,
+        cs.onTertiaryContainer,
+      ),
+      FushiNoticeSeverity.error => (cs.errorContainer, cs.onErrorContainer),
     };
-    return (
-      fill: cs.surfaceContainerHigh,
-      foreground: cs.onSurface,
-      iconColor: icon,
+    return (fill: fill, foreground: on, iconColor: on);
+  }
+
+  /// 让色块里的动作 / trailing 控件（FushiTextButton / FushiIconButton /
+  /// tonal 按钮等）默认取色块的 on- 色：它们的默认前景读 colorScheme 的
+  /// primary / onSurfaceVariant / secondaryContainer，原样放在 tonal 底上会
+  /// 撞色（tonal 按钮与 secondaryContainer 底同色直接隐形）。
+  static ThemeData _md3ActionTheme(ThemeData theme, Color fill, Color on) {
+    final ColorScheme cs = theme.colorScheme;
+    return theme.copyWith(
+      colorScheme: cs.copyWith(
+        primary: on,
+        onPrimary: fill,
+        secondaryContainer: Color.alphaBlend(on.withValues(alpha: 0.12), fill),
+        onSecondaryContainer: on,
+        onSurface: on,
+        onSurfaceVariant: on,
+        outline: on.withValues(alpha: 0.6),
+      ),
+      iconTheme: theme.iconTheme.copyWith(color: on),
     );
   }
 
@@ -118,6 +141,7 @@ class FushiInlineNotice extends StatelessWidget {
     final Color foreground;
     final Color iconColor;
     final BorderRadius radius;
+    final bool tonal = !eink && !glass;
     if (eink) {
       fill = null;
       foreground = cs.onSurface;
@@ -137,8 +161,19 @@ class FushiInlineNotice extends StatelessWidget {
       fill = c.fill;
       foreground = c.foreground;
       iconColor = c.iconColor;
-      radius = tokens.radii.controlRadius;
+      radius = const BorderRadius.all(Radius.circular(_md3RadiusValue));
     }
+
+    // MD3 色块里的动作 / trailing 换成 on- 色主题；墨水屏与 Apple 原样。
+    Widget onTone(Widget child) => tonal
+        ? Theme(
+            data: _md3ActionTheme(theme, fill!, foreground),
+            child: IconTheme.merge(
+              data: IconThemeData(color: foreground),
+              child: child,
+            ),
+          )
+        : child;
 
     final TextStyle body = (theme.textTheme.bodyMedium ?? const TextStyle())
         .copyWith(color: foreground);
@@ -165,11 +200,13 @@ class FushiInlineNotice extends StatelessWidget {
         messageWidget,
         if (withActions && actions.isNotEmpty) ...<Widget>[
           SizedBox(height: tokens.spacing.gap),
-          Wrap(
-            spacing: tokens.spacing.gap,
-            runSpacing: tokens.spacing.gap / 2,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: actions,
+          onTone(
+            Wrap(
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap / 2,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: actions,
+            ),
           ),
         ],
       ],
@@ -182,8 +219,11 @@ class FushiInlineNotice extends StatelessWidget {
         border: eink ? Border.all(color: cs.onSurface) : null,
       ),
       child: Padding(
+        // M3E 色块内边距：MD3 水平 16（与列表行同距），其它设计系统沿用旧值。
         padding: EdgeInsets.symmetric(
-          horizontal: tokens.spacing.rowHorizontal - 2,
+          horizontal: tonal
+              ? tokens.spacing.rowHorizontal
+              : tokens.spacing.rowHorizontal - 2,
           vertical: tokens.spacing.rowVertical,
         ),
         child: Row(
@@ -210,21 +250,25 @@ class FushiInlineNotice extends StatelessWidget {
               // 动作组可伸缩：按钮多 / 文案长时在分到的宽度内换行，而不是把整行
               // 撑出横向溢出（视频页在线服务横幅曾溢出 282px）。
               Flexible(
-                child: Wrap(
-                  alignment: WrapAlignment.end,
-                  spacing: tokens.spacing.gap,
-                  runSpacing: tokens.spacing.gap / 2,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: actions,
+                child: onTone(
+                  Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: tokens.spacing.gap,
+                    runSpacing: tokens.spacing.gap / 2,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: actions,
+                  ),
                 ),
               ),
             ],
             if (trailing != null) ...<Widget>[
               SizedBox(width: tokens.spacing.gap),
               Flexible(
-                child: DefaultTextStyle.merge(
-                  style: TextStyle(color: foreground),
-                  child: trailing!,
+                child: onTone(
+                  DefaultTextStyle.merge(
+                    style: TextStyle(color: foreground),
+                    child: trailing!,
+                  ),
                 ),
               ),
             ],

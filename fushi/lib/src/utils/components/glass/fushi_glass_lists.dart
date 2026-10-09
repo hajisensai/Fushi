@@ -1,5 +1,5 @@
-import 'package:flutter/cupertino.dart' show CupertinoIcons;
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
@@ -10,6 +10,9 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+
+export 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 
 // 列表与容器族（ListTile / ExpansionTile / Divider / VerticalDivider / Card /
 // Badge）的「设计系统分派」包装：构造参数与 Material 原控件逐个同名同型（含
@@ -160,8 +163,15 @@ const double kFushiMd3RowRadius = 12;
 /// 这一段），只有高亮块比容器窄一圈。
 const double kFushiMd3RowInset = 4;
 
-/// MD3 卡片圆角（FushiCard / FushiCardControl / cardTheme 同一个值）。
-const double kFushiMd3CardRadius = 16;
+/// MD3（M3E）卡片圆角（FushiCard / FushiCardControl 同一个值）：M3E 形状分级
+/// 的「卡」档 [FushiM3eShape.card]（大容器 28 / 卡 20 / 小件 12）。
+const double kFushiMd3CardRadius = FushiM3eShape.card;
+
+/// M3E 卡片默认形状（FushiCardControl 没给 shape 时用，不再交给 cardTheme 的
+/// 旧 16 圆角）。
+const ShapeBorder _kM3eCardShape = RoundedRectangleBorder(
+  borderRadius: BorderRadius.all(Radius.circular(kFushiMd3CardRadius)),
+);
 
 /// MD3 内容层（卡片、列表行）的柔和状态层：悬停 onSurface 8%、按下 / 焦点
 /// 10%。比控件的 [WidgetState] 默认层更轻，成片的列表扫过去不跳。
@@ -518,7 +528,16 @@ class FushiListTileControl extends StatelessWidget {
       isThreeLine: isThreeLine,
       dense: dense,
       visualDensity: visualDensity,
-      shape: shape,
+      // M3E：选中行的高亮块形变到 corner-large（16），静止 / 悬停沿用主题 12。
+      shape:
+          shape ??
+          (selected && !isEinkTheme(context)
+              ? const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.all(
+                    Radius.circular(FushiM3eShape.listActive),
+                  ),
+                )
+              : null),
       style: style,
       selectedColor: selectedColor,
       iconColor: iconColor,
@@ -1242,7 +1261,7 @@ class FushiCardControl extends StatelessWidget {
             shadowColor: flatShadow,
             surfaceTintColor: flatTint,
             elevation: flatElevation,
-            shape: shape,
+            shape: shape ?? (eink ? null : _kM3eCardShape),
             borderOnForeground: borderOnForeground,
             margin: margin,
             clipBehavior: clipBehavior,
@@ -1255,7 +1274,7 @@ class FushiCardControl extends StatelessWidget {
             shadowColor: flatShadow,
             surfaceTintColor: flatTint,
             elevation: flatElevation,
-            shape: shape,
+            shape: shape ?? (eink ? null : _kM3eCardShape),
             borderOnForeground: borderOnForeground,
             margin: margin,
             clipBehavior: clipBehavior,

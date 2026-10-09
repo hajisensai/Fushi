@@ -1,15 +1,7 @@
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fushi_core/fushi_core.dart';
-import 'package:http/http.dart' as http;
 
-import 'package:fushi/src/media/manga/aidoku/aidoku_image_page.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart'
-    show aidokuChapterDisplayTitle;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/download/manga_download_sidecar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
@@ -21,7 +13,6 @@ import 'package:fushi/src/media/manga/mihon/mihon_web_url.dart';
 import 'package:fushi/src/media/manga/mihon/quirks/comico_magazine_comic_quirk.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 一条在线漫画书架条目**不可用**的原因。
 ///
@@ -32,7 +23,7 @@ enum OnlineMangaUnavailableReason {
   /// 扩展/包已卸载或被停用。
   sourceDisabled,
 
-  /// 该运行时在本平台根本不存在（Aidoku 只在 macOS/iOS）。
+  /// 该运行时在本平台根本不存在（如 iOS 上的 Mihon、已移除的 Aidoku）。
   platformUnsupported,
 
   /// 运行时在，但这次调用失败了（网络、站点抽风、Cloudflare）。
@@ -136,23 +127,6 @@ class MihonMangaPageRef extends OnlineMangaPageRef {
 
   @override
   String? get sourceUrl => page.resolvedUrl;
-}
-
-/// Aidoku：普通 https + UA / Referer / cookie jar。
-class AidokuMangaPageRef extends OnlineMangaPageRef {
-  const AidokuMangaPageRef({
-    required super.index,
-    required this.page,
-    this.referer,
-  });
-
-  final AidokuImagePage page;
-
-  /// 作品页 URL（https 才带），作为取图的 Referer。
-  final String? referer;
-
-  @override
-  String? get sourceUrl => page.url;
 }
 
 /// 源补丁（quirk）产出的裸 https 页：URL 自带签名，只需 Referer（BUG-2514）。
@@ -367,8 +341,7 @@ class MihonLibraryAdapter
   @override
   OnlineMangaRuntimeKind get kind => OnlineMangaRuntimeKind.mihon;
 
-  /// 同 [AidokuLibraryAdapter.isSupportedOnThisPlatform]：上下文已经预置好时，
-  /// 「本平台能不能自己造运行时」这条限制不适用。
+  /// 上下文已经预置好时，「本平台能不能自己造运行时」这条限制不适用。
   @override
   bool get isSupportedOnThisPlatform =>
       presetContext != null || MihonRuntimeFactory.isSupported;
@@ -784,261 +757,47 @@ class MihonLibraryAdapter
       _chapterFrom(chapter);
 }
 
-// ── Aidoku ────────────────────────────────────────────────────────────
+// ── Aidoku（已移除，只剩旧书架条目） ─────────────────────────────────────
 
-class AidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
-  AidokuLibraryAdapter({AidokuRuntime? runtime, this.presetPackage})
-    : _runtime = runtime;
+/// 旧版本留下的 Aidoku 书架条目的适配器。
+///
+/// Aidoku 宿主已整体移除，本仓不再有任何能执行 Aidoku 源的代码；但用户库里可能
+/// 还留着 `runtime: aidoku` 的书架条目（描述符 wire 值冻结，见
+/// [OnlineMangaRuntimeKind.aidoku]）。这些条目必须能照常列出、打开作品页、读已
+/// 下载到本地的章节、被删除，所以分派仍要有一个适配器——它对一切网络操作都如实
+/// 回报「本平台不可用」，作品页据此显示不可用提示，而不是崩在找不到运行时上。
+class LegacyAidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
+  const LegacyAidokuLibraryAdapter();
 
-  /// 调用方已经拿在手里的安装包（与 [MihonLibraryAdapter.presetContext] 同理）。
-  ///
-  /// 给了就不再去扫 `AidokuPackageStore.listInstalled()`——那是一次磁盘遍历，
-  /// 而源浏览页早就持有这个包。
-  final AidokuInstalledPackage? presetPackage;
-
-  AidokuRuntime? _runtime;
-
-  AidokuRuntime get _resolvedRuntime =>
-      _runtime ??= AidokuRuntimeFactory.create();
+  static const OnlineMangaUnavailable _removed = OnlineMangaUnavailable(
+    OnlineMangaUnavailableReason.platformUnsupported,
+    'The Aidoku runtime has been removed from Fushi',
+  );
 
   @override
   OnlineMangaRuntimeKind get kind => OnlineMangaRuntimeKind.aidoku;
 
-  /// 平台门只管「要不要**我自己**去造运行时」。
-  ///
-  /// `AidokuRuntimeFactory.isSupported` 表达的是「本平台能不能创建 Aidoku 运行
-  /// 时」（iOS、macOS 两个宿主已先后移除，当前恒 false）。但调用方把运行时和安装
-  /// 包都预置进来时，这条限制根本不适用——那份运行时已经在手上、能直接用。只看
-  /// 平台会把这种情况误判成不可用，于是页面明明能拉到章节却显示「本平台不支持」。
-  ///
-  /// 这条 preset 逃生口不是合规缺口：唯一能造出 [AidokuRuntime] 的工厂已经抛
-  /// `UNSUPPORTED_PLATFORM`，没有任何生产路径能把 `_runtime` 填非空。旧版本
-  /// 留下的 Aidoku 书架条目走到这里会拿到 false，作品页据此显示「本平台不支持」，
-  /// 而不是崩在懒建运行时上。
   @override
-  bool get isSupportedOnThisPlatform =>
-      (_runtime != null && presetPackage != null) ||
-      AidokuRuntimeFactory.isSupported;
+  bool get isSupportedOnThisPlatform => false;
 
   @override
-  Future<String?> sourceLabel(OnlineMangaLibraryEntry entry) async {
-    try {
-      return (await _package(entry)).name;
-    } on OnlineMangaUnavailable {
-      return null;
-    }
-  }
+  Future<String?> sourceLabel(OnlineMangaLibraryEntry entry) async => null;
 
   @override
-  Future<OnlineMangaRefreshResult> refresh(
-    OnlineMangaLibraryEntry entry,
-  ) async {
-    final AidokuInstalledPackage package = await _package(entry);
-    try {
-      final Map<String, Object?> details = await _resolvedRuntime.getDetails(
-        package.packagePath,
-        entry.series.raw,
-      );
-      return OnlineMangaRefreshResult(
-        series: seriesOf(details, fallbackKey: entry.series.key),
-        chapters: chaptersOf(details),
-      );
-    } on Object catch (error) {
-      throw OnlineMangaUnavailable(
-        OnlineMangaUnavailableReason.runtimeFailure,
-        '$error',
-        cause: error,
-        // Aidoku 的 getDetails 一次带回详情和章节，分不出更细的阶段。
-        stage: 'details',
-        sourceLabel: package.name,
-      );
-    }
-  }
+  Future<OnlineMangaRefreshResult> refresh(OnlineMangaLibraryEntry entry) =>
+      Future<OnlineMangaRefreshResult>.error(_removed);
 
   @override
   Future<List<OnlineMangaPageRef>> resolveChapterPages({
     required OnlineMangaLibraryEntry entry,
     required OnlineMangaChapter chapter,
-  }) async {
-    final AidokuInstalledPackage package = await _package(entry);
-    try {
-      final List<Object?> rawPages = await _resolvedRuntime.getPages(
-        package.packagePath,
-        entry.series.raw,
-        chapter.raw,
-      );
-      final List<AidokuImagePage> pages = aidokuImagePagesFrom(rawPages);
-      final String? referer = _httpsUrl(entry.series.raw['url']);
-      return <OnlineMangaPageRef>[
-        for (int index = 0; index < pages.length; index++)
-          AidokuMangaPageRef(
-            index: index,
-            page: pages[index],
-            referer: referer,
-          ),
-      ];
-    } on Object catch (error) {
-      throw OnlineMangaUnavailable(
-        OnlineMangaUnavailableReason.runtimeFailure,
-        '$error',
-        cause: error,
-        stage: 'pages',
-        sourceLabel: package.name,
-      );
-    }
-  }
-
-  /// 同 `AidokuRuntime._invoke`：cookie 拿不到就按无 cookie 下图，不拦下载。
-  /// client 经 `createAppHttpIoClient()`：公网请求必须跟随应用统一代理出口。
-  @override
-  Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) async {
-    if (page is! AidokuMangaPageRef) {
-      throw ArgumentError.value(page, 'page', 'not an Aidoku page reference');
-    }
-    final AidokuCookieJar jar = AidokuCookieJar.shared;
-    await jar.ensureLoadedBestEffort();
-    final http.Client client = createAppHttpIoClient();
-    try {
-      return await fetchAidokuImagePage(
-        page.page,
-        client: client,
-        referer: page.referer,
-        jar: jar,
-      );
-    } finally {
-      client.close();
-    }
-  }
+  }) => Future<List<OnlineMangaPageRef>>.error(_removed);
 
   @override
-  Future<List<int>> fetchCover(
-    OnlineMangaLibraryEntry entry,
-    String url,
-  ) async {
-    // Aidoku 封面是普通 https 资源（源包不提供图片代理接口），带上作品页作为
-    // referer 就够——与 AidokuMangaPageProvider 取页图时的做法一致。
-    //
-    // 走 `createAppHttpClient()` 而不是裸 `HttpClient()`：封面是**公网**请求，
-    // 必须跟随应用的统一代理出口（`outbound_http_discipline_guard` 钉住这条）。
-    final HttpClient client = createAppHttpClient();
-    try {
-      final HttpClientRequest request = await client.getUrl(Uri.parse(url));
-      final String? referer = entry.series.raw['url']?.toString();
-      if (referer != null && Uri.tryParse(referer)?.isScheme('https') == true) {
-        request.headers.set(HttpHeaders.refererHeader, referer);
-      }
-      final HttpClientResponse response = await request.close();
-      if (response.statusCode != HttpStatus.ok) {
-        throw OnlineMangaUnavailable(
-          OnlineMangaUnavailableReason.runtimeFailure,
-          'Cover request failed with HTTP ${response.statusCode}',
-        );
-      }
-      final List<int> bytes = <int>[];
-      await for (final List<int> chunk in response) {
-        bytes.addAll(chunk);
-      }
-      return bytes;
-    } finally {
-      client.close(force: true);
-    }
-  }
+  Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) =>
+      Future<Uint8List>.error(_removed);
 
-  Future<AidokuInstalledPackage> _package(OnlineMangaLibraryEntry entry) async {
-    final AidokuInstalledPackage? preset = presetPackage;
-    if (preset != null) return preset;
-    if (!AidokuRuntimeFactory.isSupported) {
-      throw const OnlineMangaUnavailable(
-        OnlineMangaUnavailableReason.platformUnsupported,
-        'No Aidoku runtime host is bundled in this build',
-      );
-    }
-    final List<AidokuInstalledPackage> installed =
-        await (await AidokuPackageStore.open()).listInstalled();
-    for (final AidokuInstalledPackage package in installed) {
-      if (package.id == entry.extensionPackage && package.enabled) {
-        return package;
-      }
-    }
-    throw const OnlineMangaUnavailable(
-      OnlineMangaUnavailableReason.sourceDisabled,
-      'The Aidoku source package is missing or disabled',
-    );
-  }
-
-  /// Aidoku 的详情 map 直接归一化成作品实体。
-  ///
-  /// `chapters` 键刻意从 raw 里剥掉：整份章节列表已经单独存在
-  /// [OnlineMangaLibraryEntry.chapters] 里，留在 raw 里会让 `sourceMetadata`
-  /// 把几百章存两遍。
-  static OnlineMangaSeries seriesOf(
-    Map<String, Object?> manga, {
-    required String fallbackKey,
-  }) {
-    final Map<String, Object?> raw = Map<String, Object?>.of(manga)
-      ..remove('chapters');
-    final String key = raw['key']?.toString().trim().isNotEmpty == true
-        ? raw['key']!.toString()
-        : fallbackKey;
-    raw['key'] = key;
-    final Object? authors = manga['authors'];
-    final String? author = authors is List<Object?> && authors.isNotEmpty
-        ? authors.map((Object? value) => value.toString()).join(', ')
-        : manga['author']?.toString();
-    final Object? tags = manga['tags'];
-    final String? genre = tags is List<Object?> && tags.isNotEmpty
-        ? tags.map((Object? value) => value.toString()).join(', ')
-        : manga['genre']?.toString();
-    return OnlineMangaSeries(
-      key: key,
-      title: manga['title']?.toString() ?? '',
-      coverUrl: (manga['cover'] ?? manga['coverUrl'])?.toString(),
-      author: author,
-      artist: manga['artist']?.toString(),
-      description: manga['description']?.toString(),
-      genre: genre,
-      raw: raw,
-    );
-  }
-
-  static String? _httpsUrl(Object? value) {
-    final String candidate = value?.toString().trim() ?? '';
-    return Uri.tryParse(candidate)?.isScheme('https') == true
-        ? candidate
-        : null;
-  }
-
-  static List<OnlineMangaChapter> chaptersOf(Map<String, Object?> details) {
-    final Object? raw = details['chapters'];
-    if (raw is! List<Object?>) return const <OnlineMangaChapter>[];
-    final List<OnlineMangaChapter> chapters = <OnlineMangaChapter>[];
-    for (final Object? item in raw) {
-      if (item is! Map<Object?, Object?>) continue;
-      final Map<String, Object?> map = item.cast<String, Object?>();
-      final String key = map['key']?.toString() ?? '';
-      if (key.isEmpty) continue;
-      // 字段名以 Aidoku 的 wire 形状为准：蛇形 `chapter_number` /
-      // `date_uploaded`，翻译组是**复数列表** `scanlators`（不是 Mihon 那样的
-      // 单个 `scanlator`），标题可能为空、要回退到卷/话号。抄错这几处不会报错，
-      // 只会让章节列表变成一片没有编号、没有副标题的空行。
-      final num? chapterNumber = map['chapter_number'] as num?;
-      final int uploadedAt = (map['date_uploaded'] as num?)?.toInt() ?? 0;
-      final Object? scanlators = map['scanlators'];
-      final String scanlator = scanlators is List<Object?>
-          ? scanlators.map((Object? value) => value.toString()).join(', ')
-          : map['scanlator']?.toString() ?? '';
-      chapters.add(
-        OnlineMangaChapter(
-          key: key,
-          name: aidokuChapterDisplayTitle(map),
-          scanlator: scanlator.isEmpty ? null : scanlator,
-          number: chapterNumber?.toDouble(),
-          uploadedAt: uploadedAt <= 0 ? null : uploadedAt,
-          locked: map['locked'] == true,
-          raw: map,
-        ),
-      );
-    }
-    return List<OnlineMangaChapter>.unmodifiable(chapters);
-  }
+  @override
+  Future<List<int>> fetchCover(OnlineMangaLibraryEntry entry, String url) =>
+      Future<List<int>>.error(_removed);
 }

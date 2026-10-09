@@ -1,6 +1,6 @@
 import 'dart:ui';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
@@ -229,7 +229,16 @@ void main() {
 
     expect(fontSize, isNotNull);
     expect(fontSize, 26);
-    expect(rendered.style?.fontWeight, FontWeight.w600);
+    // 字重取 pageTitle 角色：0ed90ed 起是 M3E headlineSmall Emphasized
+    // （Medium；测试默认 Android 平台不做 Windows/Linux 的 Semibold 取整）。
+    expect(rendered.style?.fontWeight, FontWeight.w500);
+    expect(
+      rendered.style?.fontWeight,
+      FushiDesignTokens.of(tester.element(find.text('あ')))
+          .type
+          .pageTitle
+          .fontWeight,
+    );
     expect(fontSize, greaterThan(labelMedium));
     expect(fontSize, greaterThan(theme.textTheme.bodyLarge?.fontSize ?? 16));
   });
@@ -247,7 +256,7 @@ void main() {
     final Text rendered = tester.widget<Text>(find.text('あ'));
 
     expect(rendered.style?.fontSize, 39);
-    expect(rendered.style?.fontWeight, FontWeight.w600);
+    expect(rendered.style?.fontWeight, FontWeight.w500);
   });
 
   // BUG-175：剪贴板查词文字「默认居中了」。回归守卫——本组件占满父级宽度并

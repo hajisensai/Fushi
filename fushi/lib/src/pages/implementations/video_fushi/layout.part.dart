@@ -86,10 +86,8 @@ extension _VideoLayout on _VideoFushiPageState {
     final ({
       MaterialVideoControlsThemeData mobile,
       MaterialDesktopVideoControlsThemeData desktop,
-    }) controlsTheme = _currentVideoControlsTheme(
-      controller,
-      _controlLayout,
-    );
+    })
+    controlsTheme = _currentVideoControlsTheme(controller, _controlLayout);
     // 两层主题嵌套：[AdaptiveVideoControls] 按平台互斥择一渲染（桌面读 Desktop
     // 主题、移动读 Material 主题），故同时提供两套互不干扰，让字幕/音轨/设置入口
     // 在桌面、移动、全屏三种场景都可达。嵌套顺序不影响——各自被对应平台 controls 读取。
@@ -122,71 +120,71 @@ extension _VideoLayout on _VideoFushiPageState {
           child: HdrHostRectReporter(
             onRect: controller.reportHdrHostRect,
             child: Video(
-          controller: videoController,
-          // BUG-2544：**由本页接管**「切后台暂停 / 回前台续播」，故显式关掉 media_kit
-          // 自带的那套。media_kit 的默认值是 `pauseUponEnteringBackgroundMode: true` +
-          // `resumeUponEnteringForegroundMode: false`（video_texture.dart 的构造器默认
-          // 参数），即**暂停了却永远不恢复**——用户报「视频切屏会暂停，切回来没续上」
-          // 就是这条不对称链：它在 `paused`/`detached` 里 pause 并把「暂停前在播」的标记
-          // 记在自己的私有字段上，回前台那一支被 `resumeUponEnteringForegroundMode`
-          // 默认 false 直接跳过，而标记本身只在恢复分支里清，外面谁也读不到。
-          // 不选「只把 resume 打开」而选整套接管，有三个理由：
-          //  ① 全屏路由另起一个 [Video]（[fullscreen.part.dart]）而窗口侧这棵仍挂载，
-          //     两个 VideoState 各自是 observer、各自持一份标记，暂停/恢复要靠两边
-          //     恰好只有一个抢到 `state.playing == true` 才不打架；
-          //  ② 恢复必须排在 [_refreshDecodeAfterResumeIfNeeded] 的重建 seek **之后**
-          //     （BUG-1863），而第三方 observer 的通知顺序不是本页能定的；
-          //  ③ 查词浮层那条暂停（[_pausedForLookup]）是本页的「单一恢复真相源」，
-          //     后台恢复必须和它互斥，判据得在本页可读、可测。
-          // 接管后的实现见 [_VideoFushiPageState.didChangeAppLifecycleState] 的
-          // `paused` 分支与 [_resumeAfterBackgroundIfNeeded]。
-          pauseUponEnteringBackgroundMode: false,
-          // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
-          // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
-          // 快捷键（见 [_focusOwnership]）。
-          focusNode: _videoFocusNode,
-          // 禁用 media_kit 内置 SubtitleView（TODO-080/092，BUG-190）：字幕统一由
-          // [VideoSubtitleOverlay] 单层承载（cue 同步 + 逐字查词）。SubtitleView 默认
-          // visible:true，会把 libmpv 解析的字幕渲染成一整块不可点 Text（白字 +
-          // 0xaa000000 半透明黑底），叠在可点 overlay 之上 → 点字幕穿透到 media_kit
-          // 自己的手势层（落句首词/点不到句中/呼出键盘，080-3）、随字幕轨异步刷新时有
-          // 时无（080-1 随机透明）、横竖屏 Video 子树重建时残留黑底（092）。这里显式
-          // visible:false 让 video_texture.dart 的 `if(...visible && ...)` 不渲染
-          // SubtitleView；窗口与全屏共享 videoViewParametersNotifier，全屏路由侧再显式
-          // 覆盖一次（不靠隐式传播，消除快照时机竞态）。
-          subtitleViewConfiguration: const SubtitleViewConfiguration(
-            visible: false,
-          ),
-          // 窗口模式画面缩放/比例由用户偏好 [_videoFitMode] 决定（TODO-152 子B），
-          // 新安装默认 [VideoFitMode.contain] → `BoxFit.contain` 保持比例完整适应；
-          // 已有用户偏好 [cover]/[fill] 会按持久化值恢复；
-          // 不会被新安装初始值覆盖。
-          // 根因背景：media_kit 默认 `BoxFit.contain` 在「媒体框宽高比 ≠ 视频宽高比」时
-          // 两侧补黑。桌面虽有窗口比例锁（[_syncWindowAspectRatioLock] → window_manager
-          // `setAspectRatio`），但其 Windows 实现只在用户**拖动窗口边框**时（WM_SIZING）
-          // 约束比例、不矫正当前窗口尺寸 → 非全屏非最大化的当前窗口若比例不等于视频，
-          // contain 仍留黑边（平台限制）。用户改选 [VideoFitMode.cover] 即铺满并裁切
-          // 超出边缘（比例锁稳态下窗口贴合视频比例 → cover≈contain 几乎不裁）；
-          // [VideoFitMode.fill] 则拉伸填满。
-          // 字幕是独立 overlay 层（[VideoSubtitleOverlay]，不在 [Video] 内）不受裁切影响。
-          // 全屏路由的 Video 在其 builder 内读同一 [_videoFitMode] 换算，跟随同偏好。
-          fit: videoFitModeToBoxFit(_videoFitMode),
-          // letterbox/pillarbox 填充色固定纯黑（TODO-053）：cover 稳态下无外围，但
-          // 视频解码前 / 极端比例残留边缘仍按播放器惯例用黑底，不跟随主题 surface。
-          fill: Colors.black,
-          // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
-          // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
-          // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
-          controls: (VideoState state) =>
-              _buildVideoControls(state, controller),
-          // BUG-221: 替换 media_kit 默认全屏方向回调，禁止移动端退全屏时
-          // `setPreferredOrientations([])` 弹回竖屏。自建全屏路由（[_pushNeutralizedVideoFullscreen]）
-          // 经 `state.widget.onEnterFullscreen`/`onExitFullscreen` 取的就是这俩，故窗口侧设
-          // 一次即覆盖全部全屏方向行为。移动端门控在 helper 内（只锁横屏，永不放开方向）；
-          // 桌面转调 media_kit 默认回调，保留「全屏 = OS 窗口真全屏」（不碰设备方向）。
-          onEnterFullscreen: _enterVideoNativeFullscreen,
-          onExitFullscreen: _exitVideoNativeFullscreen,
-        ),
+              controller: videoController,
+              // BUG-2544：**由本页接管**「切后台暂停 / 回前台续播」，故显式关掉 media_kit
+              // 自带的那套。media_kit 的默认值是 `pauseUponEnteringBackgroundMode: true` +
+              // `resumeUponEnteringForegroundMode: false`（video_texture.dart 的构造器默认
+              // 参数），即**暂停了却永远不恢复**——用户报「视频切屏会暂停，切回来没续上」
+              // 就是这条不对称链：它在 `paused`/`detached` 里 pause 并把「暂停前在播」的标记
+              // 记在自己的私有字段上，回前台那一支被 `resumeUponEnteringForegroundMode`
+              // 默认 false 直接跳过，而标记本身只在恢复分支里清，外面谁也读不到。
+              // 不选「只把 resume 打开」而选整套接管，有三个理由：
+              //  ① 全屏路由另起一个 [Video]（[fullscreen.part.dart]）而窗口侧这棵仍挂载，
+              //     两个 VideoState 各自是 observer、各自持一份标记，暂停/恢复要靠两边
+              //     恰好只有一个抢到 `state.playing == true` 才不打架；
+              //  ② 恢复必须排在 [_refreshDecodeAfterResumeIfNeeded] 的重建 seek **之后**
+              //     （BUG-1863），而第三方 observer 的通知顺序不是本页能定的；
+              //  ③ 查词浮层那条暂停（[_pausedForLookup]）是本页的「单一恢复真相源」，
+              //     后台恢复必须和它互斥，判据得在本页可读、可测。
+              // 接管后的实现见 [_VideoFushiPageState.didChangeAppLifecycleState] 的
+              // `paused` 分支与 [_resumeAfterBackgroundIfNeeded]。
+              pauseUponEnteringBackgroundMode: false,
+              // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
+              // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
+              // 快捷键（见 [_focusOwnership]）。
+              focusNode: _videoFocusNode,
+              // 禁用 media_kit 内置 SubtitleView（TODO-080/092，BUG-190）：字幕统一由
+              // [VideoSubtitleOverlay] 单层承载（cue 同步 + 逐字查词）。SubtitleView 默认
+              // visible:true，会把 libmpv 解析的字幕渲染成一整块不可点 Text（白字 +
+              // 0xaa000000 半透明黑底），叠在可点 overlay 之上 → 点字幕穿透到 media_kit
+              // 自己的手势层（落句首词/点不到句中/呼出键盘，080-3）、随字幕轨异步刷新时有
+              // 时无（080-1 随机透明）、横竖屏 Video 子树重建时残留黑底（092）。这里显式
+              // visible:false 让 video_texture.dart 的 `if(...visible && ...)` 不渲染
+              // SubtitleView；窗口与全屏共享 videoViewParametersNotifier，全屏路由侧再显式
+              // 覆盖一次（不靠隐式传播，消除快照时机竞态）。
+              subtitleViewConfiguration: const SubtitleViewConfiguration(
+                visible: false,
+              ),
+              // 窗口模式画面缩放/比例由用户偏好 [_videoFitMode] 决定（TODO-152 子B），
+              // 新安装默认 [VideoFitMode.contain] → `BoxFit.contain` 保持比例完整适应；
+              // 已有用户偏好 [cover]/[fill] 会按持久化值恢复；
+              // 不会被新安装初始值覆盖。
+              // 根因背景：media_kit 默认 `BoxFit.contain` 在「媒体框宽高比 ≠ 视频宽高比」时
+              // 两侧补黑。桌面虽有窗口比例锁（[_syncWindowAspectRatioLock] → window_manager
+              // `setAspectRatio`），但其 Windows 实现只在用户**拖动窗口边框**时（WM_SIZING）
+              // 约束比例、不矫正当前窗口尺寸 → 非全屏非最大化的当前窗口若比例不等于视频，
+              // contain 仍留黑边（平台限制）。用户改选 [VideoFitMode.cover] 即铺满并裁切
+              // 超出边缘（比例锁稳态下窗口贴合视频比例 → cover≈contain 几乎不裁）；
+              // [VideoFitMode.fill] 则拉伸填满。
+              // 字幕是独立 overlay 层（[VideoSubtitleOverlay]，不在 [Video] 内）不受裁切影响。
+              // 全屏路由的 Video 在其 builder 内读同一 [_videoFitMode] 换算，跟随同偏好。
+              fit: videoFitModeToBoxFit(_videoFitMode),
+              // letterbox/pillarbox 填充色固定纯黑（TODO-053）：cover 稳态下无外围，但
+              // 视频解码前 / 极端比例残留边缘仍按播放器惯例用黑底，不跟随主题 surface。
+              fill: Colors.black,
+              // 字幕 overlay + 拖拽挂载都包进 controls builder：media_kit 全屏推独立 root
+              // 路由并复用同一 controls，故 overlay 随全屏一起进路由，全屏时字幕仍显示且
+              // 可点查词、拖字幕也能挂载（见 [_buildVideoControls]）。
+              controls: (VideoState state) =>
+                  _buildVideoControls(state, controller),
+              // BUG-221: 替换 media_kit 默认全屏方向回调，禁止移动端退全屏时
+              // `setPreferredOrientations([])` 弹回竖屏。自建全屏路由（[_pushNeutralizedVideoFullscreen]）
+              // 经 `state.widget.onEnterFullscreen`/`onExitFullscreen` 取的就是这俩，故窗口侧设
+              // 一次即覆盖全部全屏方向行为。移动端门控在 helper 内（只锁横屏，永不放开方向）；
+              // 桌面转调 media_kit 默认回调，保留「全屏 = OS 窗口真全屏」（不碰设备方向）。
+              onEnterFullscreen: _enterVideoNativeFullscreen,
+              onExitFullscreen: _exitVideoNativeFullscreen,
+            ),
           ),
         ),
       ),
@@ -318,13 +316,13 @@ extension _VideoLayout on _VideoFushiPageState {
         if (event is! KeyDownEvent) return KeyEventResult.ignored;
         final PhysicalKeyboardKey? imeFallbackPhysicalKey =
             focusedEditableText() == null ? event.physicalKey : null;
-        final ShortcutAction? action =
-            appModel.shortcutRegistry.resolveKeyboard(
-          event.logicalKey,
-          modifiers: activeModifierKeys(),
-          scope: ShortcutScope.universal,
-          physicalKey: imeFallbackPhysicalKey,
-        );
+        final ShortcutAction? action = appModel.shortcutRegistry
+            .resolveKeyboard(
+              event.logicalKey,
+              modifiers: activeModifierKeys(),
+              scope: ShortcutScope.universal,
+              physicalKey: imeFallbackPhysicalKey,
+            );
         if (action != ShortcutAction.globalBack) return KeyEventResult.ignored;
         return _dismissTopForegroundLayer()
             ? KeyEventResult.handled
@@ -337,7 +335,8 @@ extension _VideoLayout on _VideoFushiPageState {
   ({
     MaterialVideoControlsThemeData mobile,
     MaterialDesktopVideoControlsThemeData desktop,
-  }) _currentVideoControlsTheme(
+  })
+  _currentVideoControlsTheme(
     VideoPlayerController controller,
     VideoControlLayout layout,
   ) {
@@ -402,31 +401,50 @@ extension _VideoLayout on _VideoFushiPageState {
     // 时 hideMouseOnControlsRemoval 不重算）。用 ListenableBuilder.merge 同时听三者，builder 内重
     // 新读 [_controlLayoutNotifier] 的当前值。
     return ListenableBuilder(
-      listenable: Listenable.merge(
-        <Listenable>[
-          _controlLayoutNotifier,
-          _subtitleListVisible,
-          _episodeListVisible,
-          // BUG-1798：查词浮层也进 theme 的 `hideMouseOnControlsRemoval` 判据
-          // （controls_theme.part.dart），同 r5 的教训——不并进来就是「值改了、theme 不重建」，
-          // 弹窗一开控制条 theme 仍是上一轮的 true，光标照样被 fork 那层 cursor:none 吃掉。
-          _lookupOverlayActive,
-          // 自定义「快捷键」按钮绑定：改绑后按钮的图标 / tooltip / 执行体全变，且
-          // 「从未绑定变成已绑定」还决定它显不显示（见 `_shouldRenderControlItem`）。
-          // 不并进来就是「设置里改了、播放器上纹丝不动」。
-          _customActionBindingsNotifier,
-          // 小窗表面（桌面小窗 / 系统画中画）决定密度档，而密度档决定 theme 的
-          // 按钮行高、进度条显隐、顶/底栏是否渲染。同 r5 / BUG-1798 那条教训：
-          // 不并进来就是「进了小窗、控制条还是老样子」。
-          _miniSurface,
-        ],
-      ),
+      listenable: Listenable.merge(<Listenable>[
+        controller,
+        _controlLayoutNotifier,
+        _subtitleListVisible,
+        _episodeListVisible,
+        // BUG-1798：查词浮层也进 theme 的 `hideMouseOnControlsRemoval` 判据
+        // （controls_theme.part.dart），同 r5 的教训——不并进来就是「值改了、theme 不重建」，
+        // 弹窗一开控制条 theme 仍是上一轮的 true，光标照样被 fork 那层 cursor:none 吃掉。
+        _lookupOverlayActive,
+        // 自定义「快捷键」按钮绑定：改绑后按钮的图标 / tooltip / 执行体全变，且
+        // 「从未绑定变成已绑定」还决定它显不显示（见 `_shouldRenderControlItem`）。
+        // 不并进来就是「设置里改了、播放器上纹丝不动」。
+        _customActionBindingsNotifier,
+        // 小窗表面（桌面小窗 / 系统画中画）决定密度档，而密度档决定 theme 的
+        // 按钮行高、进度条显隐、顶/底栏是否渲染。同 r5 / BUG-1798 那条教训：
+        // 不并进来就是「进了小窗、控制条还是老样子」。
+        _miniSurface,
+      ]),
       builder: (BuildContext context, _) {
+        if (controller.isBlurayNavigationSession &&
+            (controller.discMenuActive || !controller.discTitleReady)) {
+          _videoControlsContext = context;
+          // Video only stores this node in its view parameters. The normal
+          // AdaptiveVideoControls widget owns the actual Focus host, so the
+          // authored-menu replacement must host it too. The outer shared
+          // VideoControlsFocusGate keeps exactly one host across fullscreen.
+          return BlurayDiscMenuFocusHost(
+            focusNode: _videoFocusNode,
+            onAttached: _reclaimDiscMenuFocusAfterAttachment,
+            child: Stack(
+              children: <Widget>[
+                Positioned.fill(child: _buildDiscMenuSurface(controller)),
+                _buildDiscMenuBar(controller),
+                _buildOsdOverlay(),
+              ],
+            ),
+          );
+        }
         final VideoControlLayout layout = _controlLayoutNotifier.value;
         final ({
           MaterialVideoControlsThemeData mobile,
           MaterialDesktopVideoControlsThemeData desktop,
-        }) controlsTheme = _currentVideoControlsTheme(controller, layout);
+        })
+        controlsTheme = _currentVideoControlsTheme(controller, layout);
         return VideoControlsThemePair(
           mobile: controlsTheme.mobile,
           desktop: controlsTheme.desktop,
@@ -487,6 +505,19 @@ extension _VideoLayout on _VideoFushiPageState {
                             ),
                           ),
                         ),
+                        // M3E：控件显示时画面最下方一条很矮的暗角（同样排在控制条之前、
+                        // IgnorePointer、与控制条同速淡入淡出，恒在字幕避让线以下）。
+                        // Apple / mini 档 / 墨水屏为空。
+                        Positioned.fill(
+                          child: Padding(
+                            padding: _videoControlsChromeInsets(),
+                            child: VideoM3eBottomScrim(
+                              visible: _videoControlsVisible,
+                              duration: _videoControlsTransitionDuration,
+                              height: _m3eBottomScrimHeight(),
+                            ),
+                          ),
+                        ),
                         // Builder 捕获 media_kit controls 子树内的 context（[_videoControlsContext]），
                         // 供覆盖后的键盘快捷键调用全屏 helper（isFullscreen/toggle/exitFullscreen）——
                         // 本页 build context 是它们的祖先，找不到 media_kit 的 Fullscreen/VideoState
@@ -517,16 +548,15 @@ extension _VideoLayout on _VideoFushiPageState {
                               // （左侧按钮可用）；仅沉浸锁 / 真 overlay 面板 / 剧集列表 /
                               // 编辑态拦截指针。
                               return ListenableBuilder(
-                                listenable: Listenable.merge(
-                                  <Listenable>[
-                                    _immersiveLocked,
-                                    _videoSidePanel,
-                                    _episodeListVisible,
-                                    _videoControlEditMode,
-                                  ],
-                                ),
+                                listenable: Listenable.merge(<Listenable>[
+                                  _immersiveLocked,
+                                  _videoSidePanel,
+                                  _episodeListVisible,
+                                  _videoControlEditMode,
+                                ]),
                                 builder: (BuildContext _, __) => IgnorePointer(
-                                  ignoring: _immersiveLocked.value ||
+                                  ignoring:
+                                      _immersiveLocked.value ||
                                       _videoSidePanel.value != null ||
                                       _episodeListVisible.value ||
                                       _videoControlEditMode.value,
@@ -585,7 +615,9 @@ extension _VideoLayout on _VideoFushiPageState {
                               // 字幕字体链的语言：用户对本视频手动指定 > 当前字幕轨
                               // 声明的 language > 全局默认内容语言。三档全空时字幕层
                               // 退回历史兜底链，渲染逐像素不变。
-                              contentLanguage: _resolveSubtitleLanguage(controller),
+                              contentLanguage: _resolveSubtitleLanguage(
+                                controller,
+                              ),
                               onCharTap: _handleSubtitleLookupTap,
                               // TODO-756a 桌面 Shift-鼠标悬停查词：走去重入口 [_handleSubtitleHoverLookup]
                               // →（[_handleSubtitleLookupTap] → [_lookupAt]，内部已 _immersiveAllowsLookup
@@ -612,17 +644,19 @@ extension _VideoLayout on _VideoFushiPageState {
                               // TODO-840 Part B：字幕遮蔽模式三态映射成 overlay 的两个
                               // 正交标志——模糊态走 blurEnabled、隐藏态走 subtitleHidden
                               // （互斥，至多一个为 true）。不遮蔽时两者皆 false（历史外观）。
-                              blurEnabled: appModel.videoSubtitleObscureMode ==
+                              blurEnabled:
+                                  appModel.videoSubtitleObscureMode ==
                                   VideoSubtitleObscureMode.blur,
-                              subtitleHidden: appModel.videoSubtitleObscureMode ==
+                              subtitleHidden:
+                                  appModel.videoSubtitleObscureMode ==
                                   VideoSubtitleObscureMode.hide,
                               // TODO-1382：副字幕遮蔽三态同样映射成两正交标志（独立于主字幕）。
                               secondaryBlurEnabled:
                                   appModel.videoSecondarySubtitleObscureMode ==
-                                      VideoSubtitleObscureMode.blur,
+                                  VideoSubtitleObscureMode.blur,
                               secondaryHidden:
                                   appModel.videoSecondarySubtitleObscureMode ==
-                                      VideoSubtitleObscureMode.hide,
+                                  VideoSubtitleObscureMode.hide,
                               // 遮蔽态「悬停 / 点击显形」总闸（默认开）：关掉后模糊 /
                               // 隐藏不再被悬停或点击临时揭开，主 / 副字幕同时生效。
                               obscureRevealOnInteraction:
@@ -637,31 +671,34 @@ extension _VideoLayout on _VideoFushiPageState {
                               // 大屏平板 / 桌面上物理观感一致（自动缩放恒开、叠加在基准之上）。
                               // MediaQuery.sizeOf 建立尺寸依赖：横竖屏切换 / 窗口缩放会重建本
                               // builder 重算因子。
-                              fontSize: _subtitleStyle.fontSize *
+                              fontSize:
+                                  _subtitleStyle.fontSize *
                                   subtitleScreenScaleFactor(
                                     MediaQuery.sizeOf(context),
                                   ),
                               textColor: _subtitleStyle.resolveTextColor(
                                 _subtitleTextColor(
-                                    _videoChromeColorScheme(context)),
-                              ),
-                              fontWeight:
-                                  _subtitleStyle.resolveFontWeight(_videoUiScale),
-                              shadowColor: _subtitleStyle.resolveShadowColor(
-                                _subtitleShadowColor(
-                                    _videoChromeColorScheme(context)),
-                              ),
-                              shadowThickness:
-                                  _subtitleStyle.resolveShadowThickness(
-                                _videoUiScale,
-                              ),
-                              backgroundColor:
-                                  _subtitleStyle.resolveBackgroundColor(
-                                _subtitleBackgroundColor(
                                   _videoChromeColorScheme(context),
                                 ),
                               ),
-                              backgroundOpacity: _subtitleStyle.backgroundOpacity,
+                              fontWeight: _subtitleStyle.resolveFontWeight(
+                                _videoUiScale,
+                              ),
+                              shadowColor: _subtitleStyle.resolveShadowColor(
+                                _subtitleShadowColor(
+                                  _videoChromeColorScheme(context),
+                                ),
+                              ),
+                              shadowThickness: _subtitleStyle
+                                  .resolveShadowThickness(_videoUiScale),
+                              backgroundColor: _subtitleStyle
+                                  .resolveBackgroundColor(
+                                    _subtitleBackgroundColor(
+                                      _videoChromeColorScheme(context),
+                                    ),
+                                  ),
+                              backgroundOpacity:
+                                  _subtitleStyle.backgroundOpacity,
                               bottomPadding: _subtitleStyle.bottomPadding,
                               // 副字幕独立位置：null = 用户没单独调过，overlay 内回落到
                               // bottomPadding（历史行为）。非 null 时副字幕层用自己的基线，
@@ -721,6 +758,8 @@ extension _VideoLayout on _VideoFushiPageState {
                         _buildVideoSideActionRail(controller),
                         _buildVideoSidePanelOverlay(controller),
                         _buildVideoControlPopoverOverlay(controller),
+                        if (controller.isBlurayNavigationSession)
+                          _buildDiscMenuBar(controller),
                         ValueListenableBuilder<bool>(
                           valueListenable: _videoControlEditMode,
                           builder: (BuildContext _, bool editing, __) {
@@ -849,19 +888,19 @@ extension _VideoLayout on _VideoFushiPageState {
   /// 的 `topButtonBar`），此处只剩屏幕左 / 右两条浮条。
   Widget _buildVideoSideActionRail(VideoPlayerController controller) {
     Widget right({bool immersiveOnly = false}) => _buildVideoSideRailFor(
-          controller,
-          VideoControlSlot.screenRight,
-          Alignment.centerRight,
-          const EdgeInsets.only(right: 12),
-          immersiveOnly: immersiveOnly,
-        );
+      controller,
+      VideoControlSlot.screenRight,
+      Alignment.centerRight,
+      const EdgeInsets.only(right: 12),
+      immersiveOnly: immersiveOnly,
+    );
     Widget left({bool immersiveOnly = false}) => _buildVideoSideRailFor(
-          controller,
-          VideoControlSlot.screenLeft,
-          Alignment.centerLeft,
-          const EdgeInsets.only(left: 12),
-          immersiveOnly: immersiveOnly,
-        );
+      controller,
+      VideoControlSlot.screenLeft,
+      Alignment.centerLeft,
+      const EdgeInsets.only(left: 12),
+      immersiveOnly: immersiveOnly,
+    );
     return Positioned.fill(
       // rail 的显隐由「控制条可见」**或**「鼠标正悬在 rail 上」决定（BUG-283）：后者保证
       // hover 期间 rail 永不被 media_kit 控制条的瞬时 visible 抖动收走，根除 opaque 按钮
@@ -884,10 +923,12 @@ extension _VideoLayout on _VideoFushiPageState {
           }
           if (_immersiveLocked.value) {
             final bool lockOnSideRail =
-                _slotChipItems(VideoControlSlot.screenLeft)
-                        .contains(VideoControlItem.immersiveLock) ||
-                    _slotChipItems(VideoControlSlot.screenRight)
-                        .contains(VideoControlItem.immersiveLock);
+                _slotChipItems(
+                  VideoControlSlot.screenLeft,
+                ).contains(VideoControlItem.immersiveLock) ||
+                _slotChipItems(
+                  VideoControlSlot.screenRight,
+                ).contains(VideoControlItem.immersiveLock);
             if (!lockOnSideRail) {
               return Stack(children: <Widget>[_buildSideLockButton()]);
             }
@@ -907,9 +948,7 @@ extension _VideoLayout on _VideoFushiPageState {
             return const SizedBox.shrink();
           }
           if (!controlsVisible && !railHovered) return const SizedBox.shrink();
-          return Stack(
-            children: <Widget>[left(), right()],
-          );
+          return Stack(children: <Widget>[left(), right()]);
         },
       ),
     );
@@ -961,7 +1000,8 @@ extension _VideoLayout on _VideoFushiPageState {
           // TODO-604：与底栏 / 顶栏按钮的 buttonBarButtonColor 同源。UI 巡检 PR-4：
           // 同源改为 chrome 固定亮色强调色 [_videoChromeAccent]（裸图标浮在画面 /
           // 固定深色 scrim 上，跟随 cs.primary 在浅色 / eink 主题下黑压黑）。
-          color: _videoChromeAccent(cs),
+          // 2026-10-06：字形改中性前景，强调色只留给主操作与进度。
+          color: _videoChromeButtonForeground(cs),
           onPressed: () => _activateVideoControlItem(
             item,
             controller,
@@ -1058,9 +1098,10 @@ extension _VideoLayout on _VideoFushiPageState {
     // overlay rail（[_episodeOverlayPanel]），以画面本身作沉浸式背景。两者仍互斥，
     // 所以剧集轨道出现时字幕侧栏宽度必为 0。
     return ListenableBuilder(
-      listenable: Listenable.merge(
-        <Listenable>[_subtitleListVisible, _episodeListVisible],
-      ),
+      listenable: Listenable.merge(<Listenable>[
+        _subtitleListVisible,
+        _episodeListVisible,
+      ]),
       builder: (BuildContext _, __) {
         final bool visible = _subtitleListVisible.value;
         final bool episodeVisible = _episodeListVisible.value;
@@ -1080,9 +1121,7 @@ extension _VideoLayout on _VideoFushiPageState {
             if (episodeVisible)
               Positioned.fill(
                 child: GestureDetector(
-                  key: const ValueKey<String>(
-                    'video-episode-dismiss-barrier',
-                  ),
+                  key: const ValueKey<String>('video-episode-dismiss-barrier'),
                   behavior: HitTestBehavior.opaque,
                   onTap: _closeEpisodeList,
                 ),
@@ -1159,33 +1198,35 @@ extension _VideoLayout on _VideoFushiPageState {
                         child: VideoGlassSurface(
                           enabled: apple,
                           child: Material(
-                          // 锁按钮带自有 surface 圆底（非裸压 scrim），底色 / 图标
-                          // 仍按主题自配对；alpha 收敛进两档制的半透明档
-                          // （UI 巡检 PR-4，此前 0.55 独立一档）。
-                          color: apple
-                              ? Colors.transparent
-                              : cs.surface.withValues(
-                                  alpha: kVideoOverlayTranslucentAlpha,
-                                ),
-                          shape: const CircleBorder(),
-                          clipBehavior: Clip.antiAlias,
-                          child: FushiIconButtonControl(
-                            tooltip: locked
-                                ? t.video_immersive_unlock
-                                : t.video_menu_lock,
-                            iconSize: iconSize,
-                            // TODO-604：与左 / 右侧浮条按钮、底 / 顶栏按钮统一用主题
-                            // 强调色 cs.primary（此前 cs.onSurface 中性前景看上去没吃主题色）。
-                            color: apple ? videoChromeNeutralForeground : cs.primary,
-                            // 状态语义（TODO-153/BUG-216）：锁住=闭锁图标、未锁=开锁图标。
-                            icon: FushiIcon(
-                              locked
-                                  ? Icons.lock_outline
-                                  : Icons.lock_open_outlined,
+                            // 锁按钮带自有 surface 圆底（非裸压 scrim），底色 / 图标
+                            // 仍按主题自配对；alpha 收敛进两档制的半透明档
+                            // （UI 巡检 PR-4，此前 0.55 独立一档）。
+                            color: apple
+                                ? Colors.transparent
+                                : cs.surface.withValues(
+                                    alpha: kVideoOverlayTranslucentAlpha,
+                                  ),
+                            shape: const CircleBorder(),
+                            clipBehavior: Clip.antiAlias,
+                            child: FushiIconButtonControl(
+                              tooltip: locked
+                                  ? t.video_immersive_unlock
+                                  : t.video_menu_lock,
+                              iconSize: iconSize,
+                              // TODO-604：与左 / 右侧浮条按钮、底 / 顶栏按钮统一用主题
+                              // 强调色 cs.primary（此前 cs.onSurface 中性前景看上去没吃主题色）。
+                              color: apple
+                                  ? videoChromeNeutralForeground
+                                  : cs.primary,
+                              // 状态语义（TODO-153/BUG-216）：锁住=闭锁图标、未锁=开锁图标。
+                              icon: FushiIcon(
+                                locked
+                                    ? Icons.lock_outline
+                                    : Icons.lock_open_outlined,
+                              ),
+                              onPressed: _toggleImmersiveLock,
                             ),
-                            onPressed: _toggleImmersiveLock,
                           ),
-                        ),
                         ),
                       ),
                     ),
@@ -1223,10 +1264,7 @@ extension _VideoLayout on _VideoFushiPageState {
             secondaryAnchor: anchor,
             secondaryBottomPadding: padding,
           )
-        : _subtitleStyle.copyWith(
-            mainAnchor: anchor,
-            bottomPadding: padding,
-          );
+        : _subtitleStyle.copyWith(mainAnchor: anchor, bottomPadding: padding);
     unawaited(_persistSubtitleStyle(next));
   }
 
@@ -1236,23 +1274,29 @@ extension _VideoLayout on _VideoFushiPageState {
   Widget _buildSubtitleDragAdjustBanner() {
     if (!_subtitleDragAdjustActive) return const SizedBox.shrink();
     final ColorScheme cs = _videoChromeColorScheme(context);
-    final TextStyle? labelStyle =
-        Theme.of(context).textTheme.labelLarge?.copyWith(color: cs.onSurface);
+    final TextStyle? labelStyle = Theme.of(
+      context,
+    ).textTheme.labelLarge?.copyWith(color: cs.onSurface);
     return SafeArea(
       child: Align(
         alignment: Alignment.topCenter,
         child: Padding(
           padding: const EdgeInsets.only(top: 12),
           child: Material(
-            color:
-                cs.surfaceContainer.withValues(alpha: kVideoOverlaySolidAlpha),
+            color: cs.surfaceContainer.withValues(
+              alpha: kVideoOverlaySolidAlpha,
+            ),
             borderRadius: FushiBorderRadius.dialog,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  FushiIcon(Icons.open_with_outlined, size: 18, color: cs.primary),
+                  FushiIcon(
+                    Icons.open_with_outlined,
+                    size: 18,
+                    color: cs.primary,
+                  ),
                   const SizedBox(width: 8),
                   Text(t.video_subtitle_drag_adjust_hint, style: labelStyle),
                   const SizedBox(width: 12),

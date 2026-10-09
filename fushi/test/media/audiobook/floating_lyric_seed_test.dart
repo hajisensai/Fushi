@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
@@ -117,7 +118,7 @@ void main() {
       floatingLyricClickLookup: () => false,
       onFloatingLyricLookup: (_, __, ___) {},
       controlStreams: AudioControlStreams(
-        playStream: const Stream<void>.empty(),
+        playIntentStream: const Stream<MediaPlayIntent>.empty(),
         seekStream: const Stream<Duration>.empty(),
         skipNextStream: const Stream<void>.empty(),
         skipPreviousStream: const Stream<void>.empty(),

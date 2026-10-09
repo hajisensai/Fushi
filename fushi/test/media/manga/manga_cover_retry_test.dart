@@ -5,7 +5,7 @@ import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:fake_async/fake_async.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart'
     show HttpExceptionWithStatus;
 import 'package:flutter_test/flutter_test.dart';

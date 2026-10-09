@@ -1,7 +1,7 @@
 // B2 资源选版：版本卡列表 widget + 下载模式 surface 集成。
 // 契约：① 下载模式默认版本卡视图；② 单条组点卡直接选中；③ 多条组点卡展开、
 // 点行选中并使提交可用；④「全部条目」开关切回平铺列表。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/i18n/strings.g.dart';

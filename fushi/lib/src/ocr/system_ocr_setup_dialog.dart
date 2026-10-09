@@ -7,12 +7,18 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
-import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    show FushiDialogHeroIcon, FushiHeroTone;
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 弹出系统 OCR 模型配置。弹窗打开时自己查一次状态。
 Future<void> showSystemOcrSetupDialog(
@@ -145,25 +151,26 @@ class _SystemOcrSetupDialogState extends State<SystemOcrSetupDialog> {
       ),
       _ => null,
     };
+    final _StatusTone tone = switch (_phase) {
+      SystemOcrSetupPhase.ready => _StatusTone.success,
+      SystemOcrSetupPhase.failed ||
+      SystemOcrSetupPhase.playServicesUnavailable => _StatusTone.error,
+      SystemOcrSetupPhase.missing ||
+      SystemOcrSetupPhase.playServicesResolvable => _StatusTone.attention,
+      _ => _StatusTone.neutral,
+    };
     return FushiAlertDialog(
-      title: Text(t.ocr_system_model_title),
-      content: Row(
-        children: <Widget>[
-          if (busy) ...<Widget>[
-            const SizedBox.square(
-              dimension: 24,
-              child: FushiCircularProgressIndicator(strokeWidth: 3),
-            ),
-            const SizedBox(width: 16),
-          ],
-          Expanded(
-            child: Text(
-              message,
-              key: const ValueKey<String>('system_ocr_setup_message'),
-            ),
-          ),
-        ],
+      // M3E：饼干形 hero 图标按阶段换色（错误 = errorContainer）。
+      icon: FushiDialogHeroIcon(
+        icon: FushiIcons.ocr,
+        tone: tone == _StatusTone.error
+            ? FushiHeroTone.destructive
+            : (tone == _StatusTone.success
+                  ? FushiHeroTone.primary
+                  : FushiHeroTone.neutral),
       ),
+      title: Text(t.ocr_system_model_title),
+      content: _StatusBlock(tone: tone, busy: busy, message: message),
       actions: <Widget>[
         FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
@@ -171,6 +178,83 @@ class _SystemOcrSetupDialogState extends State<SystemOcrSetupDialog> {
         ),
         if (primary != null) primary,
       ],
+    );
+  }
+}
+
+enum _StatusTone { neutral, attention, success, error }
+
+/// 当前阶段的状态块：M3E tonal 色块（检查中 / 下载中 = 中性，缺模型 / 可修复 =
+/// tertiaryContainer，就绪 = primaryContainer，失败 = errorContainer），阶段切换时
+/// 底色走 effects 弹簧过渡、高度走 spatial 弹簧；左侧是进度环或语义图标。
+class _StatusBlock extends StatelessWidget {
+  const _StatusBlock({
+    required this.tone,
+    required this.busy,
+    required this.message,
+  });
+
+  final _StatusTone tone;
+  final bool busy;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool glass = isGlassDesign(context);
+    final (Color bg, Color fg) = glass
+        ? (Colors.transparent, cs.onSurface)
+        : switch (tone) {
+            _StatusTone.neutral => (
+              cs.secondaryContainer,
+              cs.onSecondaryContainer,
+            ),
+            _StatusTone.attention => (
+              cs.tertiaryContainer,
+              cs.onTertiaryContainer,
+            ),
+            _StatusTone.success => (cs.primaryContainer, cs.onPrimaryContainer),
+            _StatusTone.error => (cs.errorContainer, cs.onErrorContainer),
+          };
+    final IconData icon = switch (tone) {
+      _StatusTone.success => FushiIcons.success,
+      _StatusTone.error => FushiIcons.error,
+      _StatusTone.attention => FushiIcons.download,
+      _StatusTone.neutral => FushiIcons.info,
+    };
+    final FushiMotionScheme motion = context.fushiMotion;
+    return AnimatedSize(
+      duration: motion.spatialDefault.duration,
+      curve: motion.spatialDefault.curve,
+      alignment: Alignment.topCenter,
+      child: AnimatedContainer(
+        duration: motion.effectsDefault.duration,
+        curve: motion.effectsDefault.curve,
+        padding: glass ? EdgeInsets.zero : const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: FushiM3eShape.cardRadius,
+        ),
+        child: Row(
+          children: <Widget>[
+            if (busy)
+              const SizedBox.square(
+                dimension: 24,
+                child: FushiCircularProgressIndicator(strokeWidth: 3),
+              )
+            else
+              FushiIcon(icon, size: 24, color: fg),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                message,
+                key: const ValueKey<String>('system_ocr_setup_message'),
+                style: TextStyle(color: fg),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

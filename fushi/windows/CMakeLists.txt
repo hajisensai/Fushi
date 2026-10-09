@@ -54,6 +54,23 @@ function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_definitions(${TARGET} PRIVATE "$<$<CONFIG:Debug>:_DEBUG>")
 endfunction()
 
+# === Install prefix (bundle directory) ===
+# Settled before any subproject is added: plugins (media_kit_libs_windows_video
+# installs bluray/bdj, native licenses and runtime manifests) expand
+# ${CMAKE_INSTALL_PREFIX} when they are configured. Set after them, a fresh
+# build directory's first configure handed them the default
+# "C:/Program Files/fushi": a non-admin install failed and an elevated CI build
+# silently left bluray/ out of the app bundle (BUG-3074).
+# Support files are copied into place next to the executable, so that it can
+# run in place. This is done instead of making a separate bundle (as on Linux)
+# so that building and running from within Visual Studio will work.
+set(BUILD_BUNDLE_DIR "$<TARGET_FILE_DIR:${BINARY_NAME}>")
+# Make the "install" step default, as it's required to run.
+set(CMAKE_VS_INCLUDE_INSTALL_TO_DEFAULT_BUILD 1)
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  set(CMAKE_INSTALL_PREFIX "${BUILD_BUNDLE_DIR}" CACHE PATH "..." FORCE)
+endif()
+
 set(FLUTTER_MANAGED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/flutter")
 
 # Flutter library and tool build rules.
@@ -82,17 +99,13 @@ target_link_libraries(flutter_webrtc_plugin PRIVATE
 set(FUSHIDICTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushidicts")
 add_subdirectory("${FUSHIDICTS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/fushidicts")
 
-# === Installation ===
-# Support files are copied into place next to the executable, so that it can
-# run in place. This is done instead of making a separate bundle (as on Linux)
-# so that building and running from within Visual Studio will work.
-set(BUILD_BUNDLE_DIR "$<TARGET_FILE_DIR:${BINARY_NAME}>")
-# Make the "install" step default, as it's required to run.
-set(CMAKE_VS_INCLUDE_INSTALL_TO_DEFAULT_BUILD 1)
-if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-  set(CMAKE_INSTALL_PREFIX "${BUILD_BUNDLE_DIR}" CACHE PATH "..." FORCE)
-endif()
+# === fushi_aacs: the libaacs ABI module libbluray loads for AACS disc menus ===
+# libbluray (inside the bundled libmpv) resolves it as "libaacs.dll" from the
+# application directory, so it must sit next to the executable.
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_aacs"
+  "${CMAKE_CURRENT_BINARY_DIR}/fushi_aacs")
 
+# === Installation ===
 set(INSTALL_BUNDLE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/data")
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}")
 
@@ -135,6 +148,10 @@ install(DIRECTORY "${NATIVE_ASSETS_DIR}"
 
 # Install fushidicts DLL next to the executable
 install(TARGETS fushidicts_ffi RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
+# libaacs.dll (native/fushi_aacs) next to the executable for libbluray.
+install(TARGETS fushi_aacs RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 # === 内置 libtorrent 引擎（Debug 可选，Profile/Release 必需）===

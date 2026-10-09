@@ -48,21 +48,24 @@ void main() {
         reason: '异名确认应复用 DictionaryConfirmationDialog');
   });
 
-  test('action bar「更新全部词典」常驻且排第一，桌面/移动动作栏同样有', () {
+  // 2026-10 词典管理重做：Material 动作条按频率分层，「导入词典」成为主操作排第一；
+  // 「更新全部」不再排第一，但仍常驻（宽屏铺在动作条上、窄屏与 Apple 窄屏标题栏进
+  // 溢出菜单、Apple 桌面标题栏一枚图标钮），且绝不按可更新词典存在性隐藏。
+  test('action bar「更新全部词典」常驻，桌面/移动动作栏同样有', () {
     expect(
       src.contains(
           'appModel.dictionaries.any((Dictionary d) => d.isUpdatable)'),
       isFalse,
       reason: '更新全部词典按钮不得再按可更新词典存在性隐藏',
     );
-    final int bar = src.indexOf('Widget _buildActionBar()');
+    final int bar = src.indexOf('Widget _buildActionBar({');
+    final int barEnd = src.indexOf('Widget _buildOverflowMenu(', bar);
     final int update = src.indexOf("focusPrefix: 'dict-action-update'", bar);
-    final int download =
-        src.indexOf("focusPrefix: 'dict-action-download'", bar);
+    expect(bar, isNonNegative);
     expect(update, greaterThan(bar));
-    expect(update, lessThan(download), reason: '更新全部词典应排在第一个');
+    expect(update, lessThan(barEnd), reason: '宽屏动作条上直接铺开「更新全部」');
     expect('label: t.dict_update_all,'.allMatches(src).length, 2,
-        reason: 'Material 动作栏 + 移动端溢出菜单');
+        reason: 'Material 宽屏动作栏 + 共享溢出菜单（窄屏 / Apple 窄屏）');
     expect('tooltip: t.dict_update_all,'.allMatches(src).length, 1,
         reason: '桌面 Cupertino 动作栏');
     expect(src.contains('msg: t.dict_update_all_no_source,'), isTrue,
@@ -98,8 +101,12 @@ void main() {
     );
   });
 
-  test('非可在线更新词典的行尾按钮 tooltip 说明是从本地文件更新', () {
-    expect(src.contains('t.dict_update_from_file_tooltip'), isTrue);
+  test('非可在线更新词典的更新按钮 tooltip 说明是从本地文件更新', () {
+    // 2026-10 起单本更新按钮住在词典详情（宽屏侧板 / 窄屏底部 sheet）里。
+    final String panels = File(
+      'lib/src/pages/implementations/dictionary_manager_panels.dart',
+    ).readAsStringSync();
+    expect(panels.contains('t.dict_update_from_file_tooltip'), isTrue);
   });
 
   test('单本/批量/从文件更新以被点击词典为显式替换目标（replaceTarget）', () {

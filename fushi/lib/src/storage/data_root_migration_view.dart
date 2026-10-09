@@ -1,8 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/utils.dart';
 
 /// TODO-959：桌面「数据存储位置」整目录迁移期间的全屏遮罩内容。
 ///
@@ -41,106 +42,171 @@ class DataRootMigrationView extends StatelessWidget {
     final ({int copied, int total})? p = progress;
     final double? fraction =
         p != null && p.total > 0 ? p.copied / p.total : null;
+    final FushiTypography type = context.fushiType;
+    // 遮罩没有导航，不挂页头：全屏 Scaffold 只承担不透明底色（splash 色 / surface）。
     return Scaffold(
       backgroundColor: background ?? cs.surface,
       body: Center(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              FushiIcon(Icons.drive_file_move_outlined, size: 48, color: cs.primary),
-              const SizedBox(height: 16),
-              Text(
-                t.data_storage_migrate_overlay_title,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(color: cs.onSurface),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                t.data_storage_migrate_overlay_warning,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: cs.onSurfaceVariant),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: 240,
-                child: FushiLinearProgressIndicator(value: fraction),
-              ),
-              if (p != null && p.total > 0) ...<Widget>[
-                const SizedBox(height: 12),
-                Text(
-                  t.data_storage_migrate_overlay_progress(
-                    copied: p.copied,
-                    total: p.total,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: FushiEntranceScope(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const FushiStaggeredEntrance(
+                    index: 0,
+                    child: FushiDialogHeroIcon(
+                      icon: FushiIcons.moveFile,
+                      tone: FushiHeroTone.primary,
+                      size: 96,
+                    ),
                   ),
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: cs.onSurfaceVariant),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ],
+                  const SizedBox(height: 24),
+                  FushiStaggeredEntrance(
+                    index: 1,
+                    child: Text(
+                      t.data_storage_migrate_overlay_title,
+                      style: type.headlineSmallEmphasized.copyWith(
+                        color: cs.onSurface,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // 进度：总数已知时 Display 大数字百分比 + M3E 波浪进度；同盘
+                  // rename 没有进度 → 不定态。
+                  FushiStaggeredEntrance(
+                    index: 2,
+                    child: Column(
+                      children: <Widget>[
+                        if (fraction != null)
+                          Text(
+                            '${(fraction * 100).floor()}%',
+                            style: type.displaySmallEmphasized.tabular.copyWith(
+                              color: cs.primary,
+                            ),
+                          ),
+                        const SizedBox(height: 8),
+                        FushiLinearProgressIndicator(
+                          value: fraction,
+                          minHeight: 8,
+                        ),
+                        if (p != null && p.total > 0) ...<Widget>[
+                          const SizedBox(height: 8),
+                          Text(
+                            t.data_storage_migrate_overlay_progress(
+                              copied: p.copied,
+                              total: p.total,
+                            ),
+                            style: type.bodyMedium.tabular.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  // 「请勿关闭」是这一屏最重要的一句：tonal 警示块。
+                  FushiStaggeredEntrance(
+                    index: 3,
+                    child: FushiInlineNotice(
+                      severity: FushiNoticeSeverity.warning,
+                      message: t.data_storage_migrate_overlay_warning,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 
-  /// TODO-1182：失败态全屏视图：错误图标 + 标题 + 具体原因 + 可执行建议 + 重启按钮。
+  /// TODO-1182：失败态全屏视图：错误 hero + 标题 + 具体原因（error 色块）+ 可执行
+  /// 建议 + 重启按钮。
   Widget _buildFailure(BuildContext context, ColorScheme cs, String reason) {
+    final FushiTypography type = context.fushiType;
     return Scaffold(
       backgroundColor: background ?? cs.surface,
       body: Center(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 460),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                FushiIcon(Icons.error_outline, size: 48, color: cs.error),
-                const SizedBox(height: 16),
-                Text(
-                  t.data_storage_migrate_failed_title,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(color: cs.onSurface),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  reason,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: cs.onSurfaceVariant),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  t.data_storage_migrate_failed_suggestions,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: cs.onSurfaceVariant),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 24),
-                FushiFilledButton.icon(
-                  onPressed: onRestart,
-                  icon: const FushiIcon(Icons.restart_alt),
-                  label: Text(t.data_storage_migrate_failed_restart),
-                ),
-              ],
+            child: FushiEntranceScope(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  const FushiStaggeredEntrance(
+                    index: 0,
+                    child: Center(
+                      child: FushiDialogHeroIcon(
+                        icon: FushiIcons.error,
+                        tone: FushiHeroTone.destructive,
+                        size: 96,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  FushiStaggeredEntrance(
+                    index: 1,
+                    child: Text(
+                      t.data_storage_migrate_failed_title,
+                      style: type.headlineSmallEmphasized.copyWith(
+                        color: cs.onSurface,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  FushiStaggeredEntrance(
+                    index: 2,
+                    child: FushiCard(
+                      tone: FushiCardTone.error,
+                      child: Text(
+                        reason,
+                        // 跟卡片实际配对前景（Apple 淡染底时是系统红，
+                        // 不是 onErrorContainer）；墨水屏无配对色回落原值。
+                        style: type.bodyMedium.copyWith(
+                          color: fushiCardToneColors(
+                                context,
+                                FushiCardTone.error,
+                              )?.onContainer ??
+                              cs.onErrorContainer,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  FushiStaggeredEntrance(
+                    index: 3,
+                    child: Text(
+                      t.data_storage_migrate_failed_suggestions,
+                      style: type.bodyMedium.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  FushiStaggeredEntrance(
+                    index: 4,
+                    child: Center(
+                      child: FushiFilledButton.icon(
+                        size: FushiButtonSize.m,
+                        onPressed: onRestart,
+                        icon: const FushiIcon(FushiIcons.restart),
+                        label: Text(t.data_storage_migrate_failed_restart),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

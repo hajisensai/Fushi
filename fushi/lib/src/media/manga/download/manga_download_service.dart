@@ -19,8 +19,8 @@
 /// （BUG-1433 的「就地重试不新建行」语义）。
 ///
 /// **合规**：本服务**不**挂 `StoreRestrictedCapability.downloads`——互联对端漫画
-/// 在 iOS 是保留的在线源，改成必须下载后读，若下载被门挡住就是死路。Mihon /
-/// Aidoku 入口继续受 `onlineMangaSource` 门控（iOS 无入口）。
+/// 在 iOS 是保留的在线源，改成必须下载后读，若下载被门挡住就是死路。Mihon
+/// 入口继续受 `onlineMangaSource` 门控（iOS 无入口）。
 library;
 
 import 'dart:async';

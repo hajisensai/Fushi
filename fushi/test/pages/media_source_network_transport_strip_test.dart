@@ -7,7 +7,7 @@
 //
 // 本测试在 360dp 手机宽度下走真实入口打开表单，断言每个协议标签都横排单行。
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';

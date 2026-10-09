@@ -1,15 +1,19 @@
 import 'dart:math' as math;
 import 'dart:ui' show SemanticsRole, lerpDouble;
 
-import 'package:flutter/cupertino.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    show FushiDialogAction, FushiDialogHeroIcon, fushiM3eMenuAnimationStyle;
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
@@ -75,7 +79,12 @@ LiquidGlassSettings _overlayGlassSettings(
   bool thick = false,
   Color? tint,
 }) {
-  final LiquidGlassSettings base = fushiGlassSettings(context, tint: tint);
+  // 浮层可能压在 WebView / 原生视图上（歌词模式的「⋯」菜单），采不到背景处
+  // 用实色兜底（BUG-3055，见 [fushiGlassPlatformViewFallback]）。
+  final LiquidGlassSettings base = fushiGlassSettings(context, tint: tint)
+      .copyWith(
+        platformViewFallbackColor: fushiGlassPlatformViewFallback(context),
+      );
   if (tint != null || glassMaterialOf(context) != FushiGlassMaterial.liquid) {
     return base;
   }
@@ -451,6 +460,7 @@ bool _isPlainTextContent(Widget? content) =>
 /// 动作是不是按钮：全部是按钮时才按 iOS 26 alert 排成撑满的胶囊（两个并排、
 /// 其余竖排）；夹了 Spacer / 复选框等自定义控件就保留调用方的横排布局。
 bool _isAlertButton(Widget w) =>
+    w is FushiDialogAction ||
     w is FushiTextButton ||
     w is FushiFilledButton ||
     w is FushiOutlinedButton ||
@@ -598,7 +608,7 @@ class FushiAlertDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!isGlassDesign(context) && _adaptive) {
       return AlertDialog.adaptive(
-        icon: icon,
+        icon: _md3HeroIcon(),
         iconPadding: iconPadding,
         iconColor: iconColor,
         title: title,
@@ -635,7 +645,7 @@ class FushiAlertDialog extends StatelessWidget {
     }
     if (!isGlassDesign(context)) {
       return AlertDialog(
-        icon: icon,
+        icon: _md3HeroIcon(),
         iconPadding: iconPadding,
         iconColor: iconColor,
         title: title,
@@ -665,6 +675,14 @@ class FushiAlertDialog extends StatelessWidget {
       );
     }
     return _buildGlass(context);
+  }
+
+  /// M3E：调用方给的图标包进形状库装饰底（[FushiDialogHeroIcon]，9 瓣饼干 +
+  /// secondaryContainer；给了 [iconColor] 时按该色淡染）。已经是 hero 的原样用。
+  Widget? _md3HeroIcon() {
+    final Widget? raw = icon;
+    if (raw == null || raw is FushiDialogHeroIcon) return raw;
+    return FushiDialogHeroIcon(color: iconColor, child: raw);
   }
 
   /// Apple 形态，按内容分两种：
@@ -1064,10 +1082,24 @@ class FushiSimpleDialogOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!isGlassDesign(context)) {
-      return SimpleDialogOption(
-        onPressed: onPressed,
-        padding: padding,
-        child: child,
+      // M3E：选项行左右内缩 12、圆角 16 的状态层（不再横贯整个对话框），
+      // 文字起点与默认 SimpleDialogOption（左 24）对齐。
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Material(
+          type: MaterialType.transparency,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(16)),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: SimpleDialogOption(
+            onPressed: onPressed,
+            padding:
+                padding ??
+                const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+            child: child,
+          ),
+        ),
       );
     }
     final FushiAppleColors apple = appleColorsOf(context);
@@ -1338,7 +1370,7 @@ Widget _appleMenuDivider(BuildContext context) {
 // 动效：Apple = iOS / macOS 26 的「从按钮变形展开」——玻璃面板从触发器的
 // 位置、尺寸、圆角出发，弹簧过渡到最终矩形，内容随后淡入；关闭反向收回触发器。
 // MD3 = 淡入 + 从锚定边向外的下拉展开（翻到上方时自下而上）。
-// 系统「减少动态效果」（MediaQuery.disableAnimations）下直接出现。
+// 系统「减少动态效果」与墨水屏（fushiMotionEnabled）下直接出现。
 // ---------------------------------------------------------------------------
 
 /// 菜单与触发器之间的间距。
@@ -1359,9 +1391,11 @@ const double _kMenuPointAnchorExtent = 2;
 const Duration _kAppleMenuOpenDuration = Duration(milliseconds: 480);
 const Duration _kAppleMenuCloseDuration = Duration(milliseconds: 220);
 
-/// MD3 菜单默认时长（调用方给了 popUpAnimationStyle 就用调用方的）。
-const Duration _kMd3MenuOpenDuration = Duration(milliseconds: 250);
-const Duration _kMd3MenuCloseDuration = Duration(milliseconds: 150);
+/// MD3 菜单默认时长（调用方给了 popUpAnimationStyle 就用调用方的）：M3E
+/// fast spatial 弹簧展开（[fushiM3eMenuAnimationStyle]）。
+final Duration _kMd3MenuOpenDuration = fushiM3eMenuAnimationStyle.duration!;
+final Duration _kMd3MenuCloseDuration =
+    fushiM3eMenuAnimationStyle.reverseDuration!;
 
 /// MD3 菜单默认宽度（与 Material 弹出菜单一致：112–280）。
 const BoxConstraints _kMd3MenuConstraints = BoxConstraints(
@@ -1509,7 +1543,8 @@ Future<T?> showFushiMenu<T>({
         _FushiMenuRoute<T>(
           apple: apple,
           appleRadius: apple ? _menuRadius(context) : 0,
-          reduceMotion: MediaQuery.maybeDisableAnimationsOf(context) ?? false,
+          // 墨水屏与系统减弱动效同一入口（fushiMotionEnabled），HBK-AUDIT-042。
+          reduceMotion: !fushiMotionEnabled(context),
           focusItemOnOpen: keyboardOpened,
           position: position,
           positionBuilder: positionBuilder,
@@ -1658,9 +1693,10 @@ class _FushiMenuRoute<T> extends PopupRoute<T> {
     } else {
       _progress = CurvedAnimation(
         parent: animation,
-        curve: popUpAnimationStyle?.curve ?? Easing.emphasizedDecelerate,
+        curve: popUpAnimationStyle?.curve ?? fushiM3eMenuAnimationStyle.curve!,
         reverseCurve:
-            popUpAnimationStyle?.reverseCurve ?? Easing.emphasizedAccelerate,
+            popUpAnimationStyle?.reverseCurve ??
+            fushiM3eMenuAnimationStyle.reverseCurve!,
       );
       // 与 Material 弹出菜单同节奏：前 1/3 淡入，关闭时前 2/3 淡出。
       _opacity = CurvedAnimation(
@@ -2173,7 +2209,7 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
   /// 放进行里、前景色由行统一给（高亮时随之反色）。选中项
   /// （[CheckedPopupMenuItem.checked] / [FushiMenuItemData.selected] /
   /// initialValue 对应项）行尾画 `CupertinoIcons.checkmark`。点击语义同
-  /// Flutter 的 `PopupMenuItemState.handleTap`（先 onTap 再带 value 关菜单）。
+  /// Flutter 的 `PopupMenuItemState.handleTap`（先带 value 关菜单再 onTap）。
   /// [PopupMenuDivider] → 细分隔线。其它自定义 [PopupMenuEntry] 原样保留。
   Widget _glassEntry(
     BuildContext context,
@@ -2225,8 +2261,9 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
       padding: EdgeInsets.symmetric(horizontal: _menuRowInset(context)),
       child: _AppleMenuRow(
         onTap: () {
-          item.onTap?.call();
           Navigator.pop<T>(context, item.value);
+          // 回调可能同步打开新路由，必须先关闭当前菜单。
+          item.onTap?.call();
         },
         enabled: item.enabled,
         minHeight: rowHeight,
@@ -2258,15 +2295,45 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
     );
   }
 
-  /// MD3 菜单项：调用方的 [PopupMenuEntry] 原样放，initialValue 对应项铺
-  /// highlightColor（与 Material 弹出菜单一致）。
+  /// MD3（M3 Expressive）菜单项：调用方的 [PopupMenuEntry] 原样放；
+  /// initialValue 对应项铺 secondaryContainer 圆角块（左右内缩 4、圆角 12——
+  /// M3E 菜单的当前项不再横贯整个容器）；[PopupMenuDivider] 画成左右内缩 12
+  /// 的分组线（M3E 的分隔线同样不贯穿容器）。
   Widget _md3Entry(
     BuildContext context,
     PopupMenuEntry<T> entry, {
     required bool highlighted,
   }) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    if (entry is PopupMenuDivider) {
+      return SizedBox(
+        height: entry.height,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Divider(
+              height: 1,
+              thickness: entry.thickness ?? 1,
+              color: entry.color ?? cs.outlineVariant,
+            ),
+          ),
+        ),
+      );
+    }
     if (!highlighted) return entry;
-    return ColoredBox(color: Theme.of(context).highlightColor, child: entry);
+    if (isEinkTheme(context)) {
+      return ColoredBox(color: Theme.of(context).highlightColor, child: entry);
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: cs.secondaryContainer,
+          borderRadius: const BorderRadius.all(Radius.circular(12)),
+        ),
+        child: entry,
+      ),
+    );
   }
 
   @override
@@ -2317,9 +2384,7 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
         shape:
             route.shape ??
             popupTheme.shape ??
-            const RoundedRectangleBorder(
-              borderRadius: BorderRadius.all(Radius.circular(4)),
-            ),
+            const RoundedRectangleBorder(borderRadius: FushiBorderRadius.menu),
         color: route.color ?? popupTheme.color ?? cs.surfaceContainer,
         clipBehavior: route.clipBehavior,
         type: MaterialType.card,
@@ -2435,8 +2500,13 @@ class FushiPopupMenuButton<T> extends PopupMenuButton<T> {
 /// - MD3：主色 w600 字 + 20 号 `expand_more`，左右 12 / 上下 8；
 /// - Apple：强调色 15 号 w500 字 + 13 号 `chevron.up.chevron.down`（iOS 26
 ///   pull-down 按钮），左右 10 / 上下 6。
-class FushiMenuLabelTrigger extends StatelessWidget {
+class FushiMenuLabelTrigger extends StatelessWidget
+    implements FushiShapedMenuTrigger {
   const FushiMenuLabelTrigger({required this.label, this.color, super.key});
+
+  /// MD3 文字按钮形态：全圆角。
+  @override
+  ShapeBorder menuTriggerShape(BuildContext context) => const StadiumBorder();
 
   final String label;
 
@@ -2485,6 +2555,67 @@ class FushiMenuLabelTrigger extends StatelessWidget {
 class _FushiPopupMenuButtonState<T> extends PopupMenuButtonState<T> {
   bool _glassExpanded = false;
   RelativeRect? _lastPosition;
+
+  /// MD3 自定义触发器的可视形状：调用方显式给的 [PopupMenuButton.borderRadius]
+  /// 优先，其次是触发器自己声明的形状（[FushiShapedMenuTrigger]）。都没有时
+  /// 返回 null，走框架默认外观。
+  ShapeBorder? _materialTriggerShape(BuildContext context) {
+    final Widget? child = widget.child;
+    if (child == null) return null;
+    final BorderRadius? radius = widget.borderRadius;
+    if (radius != null) return RoundedRectangleBorder(borderRadius: radius);
+    if (child is FushiShapedMenuTrigger) {
+      return (child as FushiShapedMenuTrigger).menuTriggerShape(context);
+    }
+    return null;
+  }
+
+  /// MD3 自定义触发器：悬停 / 按压 / 焦点状态层与可视胶囊**同一个形状**、并
+  /// 画在触发器**之上**（2026-10-05 用户反馈：书架「阅读状态」筛选 chip 的灰色
+  /// 反馈范围与高亮胶囊对不上）。框架 [PopupMenuButton] 把 InkWell 直接包在
+  /// child 外：状态层是 child 的外接矩形（未给 borderRadius 时）且画在最近的
+  /// Material 上、位于 child 之下——实底胶囊盖住了中间，只在胶囊外的四角露出
+  /// 一圈灰。这里把状态层放进一块按同一形状裁剪的透明 Material，叠在 child 上。
+  Widget _buildShapedMaterialTrigger(BuildContext context, ShapeBorder shape) {
+    final bool enableFeedback =
+        widget.enableFeedback ??
+        PopupMenuTheme.of(context).enableFeedback ??
+        true;
+    final NavigationMode mode =
+        MediaQuery.maybeNavigationModeOf(context) ?? NavigationMode.traditional;
+    final bool canRequestFocus = switch (mode) {
+      NavigationMode.traditional => widget.enabled,
+      NavigationMode.directional => true,
+    };
+    final Widget trigger = Stack(
+      children: <Widget>[
+        widget.child!,
+        Positioned.fill(
+          child: Material(
+            type: MaterialType.transparency,
+            shape: shape,
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              key: const ValueKey<String>('fushi-popup-trigger-ink'),
+              customBorder: shape,
+              onTap: widget.enabled ? showButtonMenu : null,
+              canRequestFocus: canRequestFocus,
+              radius: widget.splashRadius,
+              enableFeedback: enableFeedback,
+            ),
+          ),
+        ),
+      ],
+    );
+    return Semantics(
+      expanded: _glassExpanded,
+      child: Tooltip(
+        message:
+            widget.tooltip ?? MaterialLocalizations.of(context).showMenuTooltip,
+        child: trigger,
+      ),
+    );
+  }
 
   /// 菜单锚 = 按钮矩形（加 [PopupMenuButton.offset]）。图标按钮的点击区比
   /// 可见按钮大一圈 padding，上下各收掉一半，间距按看得见的按钮量。
@@ -2561,7 +2692,11 @@ class _FushiPopupMenuButtonState<T> extends PopupMenuButtonState<T> {
 
   @override
   Widget build(BuildContext context) {
-    if (!isGlassDesign(context)) return super.build(context);
+    if (!isGlassDesign(context)) {
+      final ShapeBorder? shape = _materialTriggerShape(context);
+      if (shape == null) return super.build(context);
+      return _buildShapedMaterialTrigger(context, shape);
+    }
     final String tooltip =
         widget.tooltip ?? MaterialLocalizations.of(context).showMenuTooltip;
     if (widget.child != null) {

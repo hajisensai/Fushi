@@ -44,7 +44,7 @@ void main() {
     }
 
     test('控制条不含 Icons.compare 按钮', () {
-      expect(controlsThemes().contains('Icons.compare'), isFalse,
+      expect(controlsThemes().contains('Icons.compare') || controlsThemes().contains('FushiIcons.compare'), isFalse,
           reason: '着色器对比按钮应移出桌面 / 移动控制条');
     });
     test('_toggleShaderCompare 方法与 C 快捷键接线保留', () {

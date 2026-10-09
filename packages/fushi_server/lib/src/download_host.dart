@@ -30,7 +30,6 @@ import 'package:fushi_engine/media/video/download/video_download_pipeline_servic
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
-import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
@@ -373,14 +372,10 @@ class ServerDownloadHost implements HostDownloadHost {
   Future<List<VideoDownloadJobRow>> listJobs() => db.getVideoDownloadJobs();
 
   @override
-  Future<String> addMagnet({
-    required String magnetUri,
-    required String title,
-    String mediaKind = 'movie',
-    String? discoveryKind,
-  }) async {
+  Future<String> add(HostDownloadAddRequest request) async {
     // 能力位 `kinds` 之外的域（游戏，或不认识的值）：客户端照规矩不会投，投了按 400 拒。
     // 判据与能力位同一个集合，两边不会各说各话。
+    final String? discoveryKind = request.discoveryKind;
     DiscoveryMediaKind? kind;
     if (discoveryKind != null) {
       if (!kServerDownloadDiscoveryKinds.contains(discoveryKind)) {
@@ -393,15 +388,18 @@ class ServerDownloadHost implements HostDownloadHost {
     if (pipeline == null || sourceId == null) {
       throw const VideoDownloadPipelineActionRequired('downloads are not configured on this host');
     }
-    return pipeline.enqueueManual(VideoDownloadManualEnqueueRequest(
-      title: title,
+    return pipeline.enqueueManual(request.toEnqueueRequest(
       backendTarget: VideoDownloadBackendTarget(identity: _identity(), category: _qbConfig.category),
-      magnetUri: magnetUri,
       discoveryKind: kind,
-      mediaKind: mediaKind == 'tv' ? VideoMetadataMediaKind.tv : VideoMetadataMediaKind.movie,
       // 非视频任务不进受管视频来源（文件留在下载目录原地，整包按域入库）。
       targetSourceId: kind == null ? sourceId : null,
     ));
+  }
+
+  @override
+  Future<List<VideoDownloadJobSubtitleRow>?> listJobSubtitles(String jobId) async {
+    if (await db.getVideoDownloadJob(jobId) == null) return null;
+    return db.getVideoDownloadJobSubtitles(jobId);
   }
 
   VideoDownloadPipelineService get _requirePipeline =>

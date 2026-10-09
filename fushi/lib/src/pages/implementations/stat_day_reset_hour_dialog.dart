@@ -1,6 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 「今日」重置时刻（整点）编辑弹窗：统计中心页头「重置时刻」按钮的落点。
@@ -42,6 +44,7 @@ class _StatDayResetHourDialogState extends State<StatDayResetHourDialog> {
   @override
   Widget build(BuildContext context) {
     return FushiAlertDialog(
+      icon: const FushiIcon(FushiIcons.schedule),
       title: Text(t.stat_center_day_reset_action),
       contentPadding: const EdgeInsets.fromLTRB(8, 16, 8, 0),
       // 设置行默认活在无界高的列表里；弹窗给的是有界高，不套滚动容器它会把
@@ -53,7 +56,7 @@ class _StatDayResetHourDialogState extends State<StatDayResetHourDialog> {
           child: AdaptiveSettingsStepperRow(
             title: t.stat_center_day_reset_hour,
             subtitle: t.stat_center_day_reset_hour_hint,
-            icon: Icons.update_outlined,
+            icon: FushiIcons.schedule,
             showIcon: true,
             value: _hour.toDouble(),
             step: 1,
@@ -65,9 +68,10 @@ class _StatDayResetHourDialogState extends State<StatDayResetHourDialog> {
         ),
       ),
       actions: <Widget>[
-        FushiTextButton(
+        FushiDialogAction(
+          label: t.dialog_close,
+          kind: FushiDialogActionKind.primary,
           onPressed: () => Navigator.of(context).pop(),
-          child: Text(t.dialog_close),
         ),
       ],
     );

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -10,6 +10,7 @@ import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart'
     show FushiLinearProgressIndicator;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 Widget host(Widget child) => ProviderScope(
       child: TranslationProvider(
@@ -52,9 +53,9 @@ void main() {
     );
     final Finder select = find.widgetWithIcon(
       IconButton,
-      Icons.checklist_outlined,
+      FushiIcons.checklist,
     );
-    final Finder sort = find.widgetWithIcon(IconButton, Icons.sort);
+    final Finder sort = find.widgetWithIcon(IconButton, FushiIcons.sort);
     final Offset before = tester.getCenter(sort);
     expect(tester.getCenter(select).dy, before.dy);
     expect(tester.getSize(select).width, greaterThanOrEqualTo(44));
@@ -69,7 +70,7 @@ void main() {
     await tester.tap(find.text(ShelfSortMode.title.name));
     await tester.pumpAndSettle();
     expect(chosen, ShelfSortMode.title);
-    expect(find.byIcon(Icons.settings_outlined), findsNothing);
+    expect(find.byIcon(FushiIcons.settingsGear), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -100,6 +101,9 @@ void main() {
       0.5,
     );
     await tester.pumpWidget(host(const SyncProgressBanner()));
+    // M3E 横幅（815c0d1f2b5）的尺寸变化走 AnimatedSize 弹簧，同一 State 从紧凑
+    // 换到常规时要等尺寸动画走完再量。
+    await tester.pump(const Duration(seconds: 1));
     expect(
       tester.getSize(find.byType(SyncProgressBanner)).height,
       greaterThan(compactHeight),

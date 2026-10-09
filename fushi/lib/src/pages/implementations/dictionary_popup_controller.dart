@@ -143,6 +143,23 @@ class DictionaryPopupEntry {
   /// 尚未测量，先按用户最大高度布局；每次新顶层查词重置，增量结果则在当前高度上伸缩。
   double? autoFitHeight;
 
+  /// 查询已结束、且没有任何可渲染结果（无词条也无汉字卡）。与
+  /// `DictionaryPopupLayer` 画「未找到」的判据同口径：搜索期占位单例不算空。
+  bool get isRealEmptyResult {
+    final DictionarySearchResult? r = result;
+    return !isSearching &&
+        r != null &&
+        !identical(r, kPopupSearchingPlaceholderResult) &&
+        r.entries.isEmpty &&
+        r.kanjiResults.isEmpty;
+  }
+
+  /// 宿主排版用的外壳高度：真实空结果收成 [emptyHeight]（「未找到」占位不需要
+  /// 一整块最大高度的面板，且这条路径没有 WebView 内容测量可依），否则按
+  /// [autoFitHeight]。
+  double? layoutAutoFitHeight({required double emptyHeight}) =>
+      isRealEmptyResult ? emptyHeight : autoFitHeight;
+
   /// 原地跳转的后退 / 前进栈（栈顶在末尾）。只由 [DictionaryPopupController]
   /// 写；随本层一起消亡（关层 / 热槽复位 / 顶层新查词都清空，不跨查词会话）。
   final List<DictionaryPopupHistoryPage> _backHistory =

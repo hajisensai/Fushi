@@ -6,7 +6,7 @@
 
 ![Платформа](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![Лицензия](https://img.shields.io/badge/license-GPLv3-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | **Русский** | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
@@ -49,14 +49,14 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 flutter build windows --release
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` сводят `flutter pub get` и `ci/apply-patches.sh` в одну команду. Проект привязан к Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`); часть upstream-зависимостей vendored в `third_party/` или патчится через `ci/apply-patches.sh` — подробности см. в [docs/agent/build.md](../agent/build.md).
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` сводят `flutter pub get` и `ci/apply-patches.sh` в одну команду. Проект привязан к Flutter 3.47.6 (Dart SDK `>=3.5.0 <4.0.0`); часть upstream-зависимостей vendored в `third_party/` или патчится через `ci/apply-patches.sh` — подробности см. в [docs/agent/build.md](../agent/build.md).
 
 <details>
 <summary><b>Технологический стек</b></summary>
 
 | Уровень | Технология |
 |---|---|
-| Фреймворк | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Фреймворк | Flutter 3.47.6 (Dart SDK `>=3.5.0 <4.0.0`) |
 | Платформы | Android / Windows / macOS / iOS (Material Design 3) |
 | Читалка | Постраничный движок на WebView (на основе семейства Hoshi Reader) |
 | Видео | media_kit (ядро libmpv) |
@@ -151,7 +151,6 @@ Fushi опирается на следующие проекты и экосис�
 | [Mihon](https://github.com/mihonapp/mihon) | Экосистема расширений источников манги |
 | [Aniyomi](https://github.com/aniyomiorg/aniyomi) | Экосистема расширений источников аниме (extensions-lib 14–16, та же среда выполнения) |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Среда выполнения расширений манги для десктопа |
-| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI среды выполнения источников манги |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | Референс моста субтитров стриминга для расширения браузера |
 | [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Референс архитектуры идентификации и скрейпинга аниме |
 | [ReinaManager](https://github.com/huoshen80/ReinaManager) | Референс информационной архитектуры библиотеки galgame |

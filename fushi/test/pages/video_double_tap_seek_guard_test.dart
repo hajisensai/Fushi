@@ -100,11 +100,20 @@ void main() {
       );
     });
 
-    test('桌面 _desktopControlsTheme 不设竖滑灵敏度（无此手势，诚实降级）', () {
+    test('桌面 _desktopControlsTheme 只为触屏竖滑设同一灵敏度常量（鼠标无此手势）', () {
+      // 2026-10-05：桌面触屏（Surface）复用移动端竖滑口径，fork 的
+      // TouchSwipeGestureLayer 只认 touch / stylus 指针；灵敏度取同一常量。
       final String body = methodBodyByName(pageCorpus,
           'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(');
-      expect(body.contains('verticalGestureSensitivity'), isFalse,
-          reason: '桌面控制条无竖滑亮度/音量手势，不应设 verticalGestureSensitivity');
+      expect(
+          body.contains('verticalGestureSensitivity:') &&
+              body.contains(
+                  '_VideoFushiPageState._videoVerticalGestureSensitivity,'),
+          isTrue,
+          reason: '桌面触屏竖滑必须与移动端同一灵敏度常量');
+      expect(body.contains('touchVolumeGesture: _asbConfig.volumeSwipeGesture'),
+          isTrue,
+          reason: '桌面触屏竖滑音量受同一用户开关控制');
     });
   });
 
@@ -123,30 +132,43 @@ void main() {
           reason: '_handleDoubleTapSeek 命中左/右区后必须早返回');
       // 分区判定必须排在平台分流（BUG-221 暂停/全屏）之前。
       final int platformBranch =
-          body.indexOf(_flat('if (_isDesktopVideoControls) {'));
+          body.indexOf(_flat('resolveVideoDoubleTapCenterAction('));
       expect(platformBranch, greaterThan(seekIdx),
           reason: '左右分区早返回必须排在平台暂停/全屏分流之前（中带才落到分流）');
     });
 
-    test('中带仍保留 BUG-221 平台分流（移动 playOrPause / 桌面全屏）—不破坏 149', () {
-      final String body = methodBody(
-          pageSrc, 'void _handleVideoPointerUp(PointerUpEvent event) {');
-      // 与 video_orientation_fullscreen_guard 同样的两条断言：中带逻辑必须原样保留。
+    test('中带按平台 + 指针类型分流（移动 / 桌面触屏 playOrPause，桌面鼠标全屏）—不破坏 149', () {
+      // 2026-10-05：桌面触屏（Surface）双击落空改为与移动端一致的播放/暂停，判据收进
+      // 纯函数 resolveVideoDoubleTapCenterAction（行为由
+      // test/media/video/video_double_tap_center_action_test.dart 逐项覆盖），这里只钉
+      // 页面把三个输入如实喂进去、并把两种动作落到既有原语上。
+      final String body = _flat(methodBody(
+          pageSrc, 'void _handleVideoPointerUp(PointerUpEvent event) {'));
       expect(
-        body.contains('if (_isDesktopVideoControls) {') &&
-            body.contains(
-                'unawaited(_controller?.playOrPause() ?? Future<void>.value());'),
-        isTrue,
-        reason: '中带移动端必须仍 = playOrPause（149 双击暂停不破坏）',
-      );
-      final int desktopBranch = body.indexOf('if (_isDesktopVideoControls) {');
-      final int toggleIdx = body.indexOf(
-          '_toggleVideoFullscreen(controlsContext)', desktopBranch);
-      final int elseIdx = body.indexOf('} else {', desktopBranch);
-      expect(toggleIdx, greaterThan(desktopBranch),
-          reason: '中带桌面分支应保留 _toggleVideoFullscreen');
-      expect(toggleIdx, lessThan(elseIdx),
-          reason: '_toggleVideoFullscreen 必须在桌面分支内（else 是移动端 playOrPause）');
+          body.contains(_flat('resolveVideoDoubleTapCenterAction('
+              'desktopControls: _isDesktopVideoControls,'
+              'touchLikePointer: isTouchLikePointerKind(event.kind),'
+              'tapTogglesPlayback: _asbConfig.tapTogglesPlayback')),
+          isTrue,
+          reason: '中带分流必须按平台、指针类型与点击暂停开关判定');
+      final int fullscreenCase =
+          body.indexOf('caseVideoDoubleTapCenterAction.toggleFullscreen:');
+      final int playbackCase =
+          body.indexOf('caseVideoDoubleTapCenterAction.togglePlayback:');
+      expect(fullscreenCase, greaterThanOrEqualTo(0));
+      expect(playbackCase, greaterThan(fullscreenCase));
+      expect(
+          body.indexOf(
+              _flat('_toggleVideoFullscreen(controlsContext)'), fullscreenCase),
+          lessThan(playbackCase),
+          reason: '全屏分支必须切 _toggleVideoFullscreen');
+      expect(
+          body.indexOf(
+              _flat('unawaited(_controller?.playOrPause() ?? '
+                  'Future<void>.value());'),
+              playbackCase),
+          greaterThan(playbackCase),
+          reason: '播放分支必须 = playOrPause（149 双击暂停不破坏）');
     });
 
     test('_handleDoubleTapSeek 读配置 + globalToLocal 拿 dx 三等分 + 调既有原语', () {
@@ -219,24 +241,14 @@ void main() {
           reason: '不得把桌面单击暂停写死为 true（用户关不掉）');
     });
 
-    test('移动端双击中带 fallback 受同一开关门控（门控排在 playOrPause 之前）', () {
+    test('双击中带的播放/暂停受同一开关门控，鼠标全屏不受其影响', () {
+      // 门控已收进 resolveVideoDoubleTapCenterAction（开关关 → none，鼠标全屏分支
+      // 排在门控之前），纯函数测试逐项覆盖；这里钉页面传入的是同一个开关。
       final String body = methodBody(
           pageSrc, 'void _handleVideoPointerUp(PointerUpEvent event) {');
-      final int gateIdx =
-          body.indexOf('if (!_asbConfig.tapTogglesPlayback) return;');
-      expect(gateIdx, greaterThanOrEqualTo(0),
-          reason: '移动端中带暂停必须受 tapTogglesPlayback 门控');
-      final int playIdx = body.indexOf(
-          'unawaited(_controller?.playOrPause() ?? Future<void>.value());',
-          gateIdx);
-      expect(playIdx, greaterThan(gateIdx),
-          reason: '门控必须排在 playOrPause 之前（否则关了还会切播放态）');
-      // 门控只属移动端分支：桌面分支的全屏切换必须排在门控之前，不被它拦掉。
-      final int desktopIdx = body.indexOf('if (_isDesktopVideoControls) {');
-      final int toggleIdx =
-          body.indexOf('_toggleVideoFullscreen(controlsContext)', desktopIdx);
-      expect(toggleIdx, greaterThanOrEqualTo(0));
-      expect(toggleIdx, lessThan(gateIdx), reason: '桌面双击全屏与播放态无关，不得落进本开关门控之后');
+      expect(body.contains('tapTogglesPlayback: _asbConfig.tapTogglesPlayback'),
+          isTrue,
+          reason: '中带暂停必须受 tapTogglesPlayback 门控');
     });
 
     test('schema 有「点击画面播放/暂停」行并经双路写穿落盘', () {

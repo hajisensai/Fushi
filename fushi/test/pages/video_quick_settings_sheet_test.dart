@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -18,6 +18,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/video_shader_dialog.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_video.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
@@ -885,9 +886,13 @@ void main() {
     // 非 chevron_right）。顶栏分类条在窄宽窗（如 1000px；desktop 面板 maxWidth 900 更窄）
     // 会换行成两行、把详情下推，故先 ensureVisible 把按钮滚进可点区域再点，不依赖顶栏
     // 恰好单行的脆弱位置假设。
-    await tester.ensureVisible(find.byIcon(Icons.chevron_right));
+    final Finder plus50 = find.descendant(
+      of: find.widgetWithText(AdaptiveSettingsRow, t.video_setting_av_delay),
+      matching: find.byIcon(FushiIcons.chevronRight),
+    );
+    await tester.ensureVisible(plus50);
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.chevron_right));
+    await tester.tap(plus50);
     await tester.pump();
     expect(delay, 50);
   });
@@ -1038,7 +1043,7 @@ void main() {
       // 手动对轴控件齐全：±50/±1000ms 步进 + 滑条 + 数值输入框都在（不被自动对轴挤掉）。
       expect(
         find.descendant(
-            of: delayRow, matching: find.byIcon(Icons.chevron_right)),
+            of: delayRow, matching: find.byIcon(FushiIcons.chevronRight)),
         findsOneWidget,
         reason: '+50ms 手动对轴按钮应照常渲染',
       );
@@ -1056,7 +1061,7 @@ void main() {
       // 「自动对轴」按钮（auto_fix_high 图标 + 对应 tooltip）现在必须渲染。
       final Finder autoAlignBtn = find.descendant(
         of: delayRow,
-        matching: find.byIcon(Icons.auto_fix_high),
+        matching: find.byIcon(FushiIcons.ai),
       );
       expect(
         autoAlignBtn,
@@ -1094,7 +1099,7 @@ void main() {
       );
       final Finder autoAlignBtn = find.descendant(
         of: delayRow,
-        matching: find.byIcon(Icons.auto_fix_high),
+        matching: find.byIcon(FushiIcons.ai),
       );
       await tester.ensureVisible(autoAlignBtn);
       await tester.tap(autoAlignBtn);
@@ -1141,7 +1146,7 @@ void main() {
       );
       final Finder autoAlignBtn = find.descendant(
         of: delayRow,
-        matching: find.byIcon(Icons.auto_fix_high),
+        matching: find.byIcon(FushiIcons.ai),
       );
       await tester.ensureVisible(autoAlignBtn);
       await tester.tap(autoAlignBtn);
@@ -1167,7 +1172,7 @@ void main() {
 
       expect(find.text(t.video_setting_av_delay), findsOneWidget);
       expect(
-        find.byIcon(Icons.auto_fix_high),
+        find.byTooltip(t.video_subtitle_auto_align),
         findsNothing,
         reason: '无 onAutoAlign 回调时不应渲染自动对轴按钮',
       );
@@ -1310,7 +1315,7 @@ void main() {
 
     final Finder plusButton = find.descendant(
       of: delayRow,
-      matching: find.byIcon(Icons.chevron_right),
+      matching: find.byIcon(FushiIcons.chevronRight),
     );
     await tester.ensureVisible(plusButton);
     await tester.pumpAndSettle();

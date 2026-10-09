@@ -370,6 +370,64 @@ bool mediaStreamRequiresDolbyVisionReshape(Map<String, Object?> stream) {
   return stream['VideoRangeType'] == 'DOVI';
 }
 
+/// 条目的一条媒体源（`MediaSources[]` 的一项 = 一个版本 / 一个文件）。
+///
+/// 同一部电影 / 同一集挂了多个文件（1080p 与 4K、不同压制组）时，Emby / Jellyfin
+/// 把它们作为同一条目的多条 MediaSource 返回，`MediaSources[0]` 是服务器默认。
+class JellyfinMediaSource {
+  const JellyfinMediaSource({
+    required this.id,
+    this.name,
+    this.container,
+    this.sizeBytes,
+    this.bitrate,
+    this.width,
+    this.height,
+    this.videoCodec,
+    this.videoRange,
+    this.audioStreams = const <MediaServerStreamTrack>[],
+    this.subtitleStreams = const <JellyfinSubtitleStream>[],
+    this.videoRequiresDolbyVisionReshape = false,
+  });
+
+  final String id;
+  final String? name;
+  final String? container;
+  final int? sizeBytes;
+  final int? bitrate;
+  final int? width;
+  final int? height;
+  final String? videoCodec;
+  final String? videoRange;
+  final List<MediaServerStreamTrack> audioStreams;
+  final List<JellyfinSubtitleStream> subtitleStreams;
+  final bool videoRequiresDolbyVisionReshape;
+
+  /// 浏览层的版本投影（详情页「版本」选择与播放页线路菜单共用）。
+  MediaServerVersion toVersion() => MediaServerVersion(
+        id: id,
+        name: name,
+        container: container,
+        sizeBytes: sizeBytes,
+        bitrate: bitrate,
+        width: width,
+        height: height,
+        videoCodec: videoCodec,
+        videoRange: videoRange,
+        audioTracks: audioStreams,
+        subtitleTracks: <MediaServerStreamTrack>[
+          for (final JellyfinSubtitleStream s in subtitleStreams)
+            MediaServerStreamTrack(
+              index: s.index,
+              displayTitle: s.title,
+              language: s.language,
+              codec: s.codec,
+              isExternal: s.isExternal,
+            ),
+        ],
+      );
+}
+
 /// 一个库条目（电影 / 剧 / 季 / 集 / 文件夹）。只保留视频域消费的字段。
 class JellyfinItem {
   const JellyfinItem({
@@ -406,10 +464,17 @@ class JellyfinItem {
     this.overview,
     this.communityRating,
     this.genres = const <String>[],
+    this.mediaSources = const <JellyfinMediaSource>[],
   });
 
   final String id;
   final String name;
+
+  /// 全部媒体源（版本）；未请求 MediaSources 字段的清单条目为空。
+  /// [mediaSourceId] / [subtitleStreams] / [sizeBytes] /
+  /// [videoRequiresDolbyVisionReshape] 是**当前选中**那条的派生值：解析时取
+  /// `MediaSources[0]`（服务器默认），[withMediaSource] 换成用户选的版本。
+  final List<JellyfinMediaSource> mediaSources;
 
   /// 'Movie' | 'Series' | 'Season' | 'Episode' | 'Folder' | 'BoxSet' | ...
   final String type;
@@ -492,6 +557,49 @@ class JellyfinItem {
 
   /// 可直接播放的叶子条目（电影/单集）。
   bool get isPlayableVideo => type == 'Movie' || type == 'Episode';
+
+  /// 把派生的「当前媒体源」字段换成 [source]（它必须是 [mediaSources] 之一）。
+  /// 取流 / 字幕 / 下载都读派生字段，换版本只在这一处发生。
+  JellyfinItem withMediaSource(JellyfinMediaSource source) => JellyfinItem(
+        id: id,
+        name: name,
+        type: type,
+        isFolder: isFolder,
+        originalTitle: originalTitle,
+        seriesName: seriesName,
+        seasonNumber: seasonNumber,
+        episodeNumber: episodeNumber,
+        durationMs: durationMs,
+        hasPrimaryImage: hasPrimaryImage,
+        positionMs: positionMs,
+        playedPercentage: playedPercentage,
+        mediaSourceId: source.id,
+        subtitleStreams: source.subtitleStreams,
+        hasTextSubtitle: source.subtitleStreams.isEmpty
+            ? hasTextSubtitle
+            : source.subtitleStreams
+                .any((JellyfinSubtitleStream s) => s.isTextSubtitleStream),
+        videoRequiresDolbyVisionReshape:
+            source.videoRequiresDolbyVisionReshape,
+        sizeBytes: source.sizeBytes,
+        lastPlayedAtMs: lastPlayedAtMs,
+        childCount: childCount,
+        recursiveItemCount: recursiveItemCount,
+        productionYear: productionYear,
+        seriesId: seriesId,
+        seasonId: seasonId,
+        played: played,
+        unplayedChildCount: unplayedChildCount,
+        hasBackdrop: hasBackdrop,
+        hasThumbImage: hasThumbImage,
+        hasLogoImage: hasLogoImage,
+        parentThumbItemId: parentThumbItemId,
+        parentBackdropItemId: parentBackdropItemId,
+        overview: overview,
+        communityRating: communityRating,
+        genres: genres,
+        mediaSources: mediaSources,
+      );
 
   /// 可下钻的容器条目（剧 / 季 / 合集 / 文件夹）。
   ///
@@ -888,8 +996,8 @@ class JellyfinApi {
     int startIndex = 0,
     int limit = 200,
     String fields = 'ProductionYear',
-    String sortBy = 'SortName',
-    String sortOrder = 'Ascending',
+    String? sortBy = 'SortName',
+    String? sortOrder = 'Ascending',
   }) async {
     assert(!(includeItemType?.contains(',') ?? false),
         'IncludeItemTypes 必须单值（BUG-2254）');
@@ -902,8 +1010,9 @@ class JellyfinApi {
       'StartIndex': '$startIndex',
       'Limit': '$limit',
       'Fields': fields,
-      'SortBy': sortBy,
-      'SortOrder': sortOrder,
+      // null = 不指定排序，交给服务器（带 SearchTerm 时就是相关度序）。
+      if (sortBy != null) 'SortBy': sortBy,
+      if (sortOrder != null) 'SortOrder': sortOrder,
     });
     return parseItemsPage(json);
   }
@@ -996,8 +1105,12 @@ class JellyfinApi {
   /// 「最近添加」（GET /Users/{uid}/Items/Latest）。
   ///
   /// 这条端点回的是**裸数组**而不是 `{Items, TotalRecordCount}`，解析单独走
-  /// [parseItemList]；同时容忍对象形状（兼容层不一定照抄）。剧集库的新集会被
-  /// 服务器折成 Series 容器返回（`GroupItems` 缺省 true）。
+  /// [parseItemList]；同时容忍对象形状（兼容层不一定照抄）。剧集库的新集由
+  /// 服务器折成 Series 容器返回（`GroupItems=true`，显式带上：Emby 与 Jellyfin
+  /// 官方首页「最新 <库>」行就是这个形态——剧带 `UserData.UnplayedItemCount`
+  /// 未看数角标，而不是逐集平铺）。
+  ///
+  /// Fields 点名卡片要的轻字段（年份 / 子项数）；**不带 MediaSources**（BUG-1891）。
   Future<List<JellyfinItem>> latest({
     required String userId,
     String? parentId,
@@ -1007,6 +1120,8 @@ class JellyfinApi {
         await _getDecoded('/Users/$userId/Items/Latest', <String, String>{
       if (parentId != null) 'ParentId': parentId,
       'Limit': '$limit',
+      'GroupItems': 'true',
+      'Fields': 'ProductionYear,ChildCount,RecursiveItemCount,OriginalTitle',
     });
     if (decoded is List) return parseItemList(decoded);
     if (decoded is Map) {
@@ -1773,37 +1888,21 @@ class JellyfinApi {
     final int positionTicks =
         (userData['PlaybackPositionTicks'] as num?)?.toInt() ?? 0;
 
-    // 默认媒体源 + 字幕流：取 MediaSources[0]（direct play 与 stream URL 同源）。
-    String? mediaSourceId;
-    int? sizeBytes;
-    bool videoRequiresDolbyVisionReshape = false;
-    final List<JellyfinSubtitleStream> subs = <JellyfinSubtitleStream>[];
-    final List<Object?> sources =
-        (json['MediaSources'] as List?) ?? const <Object?>[];
-    if (sources.isNotEmpty && sources.first is Map) {
-      final Map<String, Object?> src =
-          (sources.first as Map).cast<String, Object?>();
-      mediaSourceId = src['Id'] as String?;
-      sizeBytes = (src['Size'] as num?)?.toInt();
-      final List<Object?> streams =
-          (src['MediaStreams'] as List?) ?? const <Object?>[];
-      for (final Object? raw in streams) {
-        if (raw is! Map) continue;
-        final Map<String, Object?> s = raw.cast<String, Object?>();
-        if (s['Type'] == 'Video' && mediaStreamRequiresDolbyVisionReshape(s)) {
-          videoRequiresDolbyVisionReshape = true;
-        }
-        if (s['Type'] != 'Subtitle') continue;
-        subs.add(JellyfinSubtitleStream(
-          index: (s['Index'] as num?)?.toInt() ?? 0,
-          codec: (s['Codec'] as String?) ?? '',
-          language: s['Language'] as String?,
-          title: s['DisplayTitle'] as String?,
-          isExternal: (s['IsExternal'] as bool?) ?? false,
-          isTextSubtitleStream: (s['IsTextSubtitleStream'] as bool?) ?? true,
-        ));
-      }
-    }
+    // 全部媒体源（版本）；派生的「当前源」字段取 MediaSources[0]（服务器默认，
+    // direct play 与 stream URL 同源），用户选了别的版本由 withMediaSource 换。
+    final List<JellyfinMediaSource> mediaSources = <JellyfinMediaSource>[
+      for (final Object? raw
+          in (json['MediaSources'] as List?) ?? const <Object?>[])
+        if (raw is Map) parseMediaSource(raw.cast<String, Object?>()),
+    ];
+    final JellyfinMediaSource? primary =
+        mediaSources.isEmpty ? null : mediaSources.first;
+    final String? mediaSourceId = primary?.id;
+    final int? sizeBytes = primary?.sizeBytes;
+    final bool videoRequiresDolbyVisionReshape =
+        primary?.videoRequiresDolbyVisionReshape ?? false;
+    final List<JellyfinSubtitleStream> subs =
+        primary?.subtitleStreams ?? const <JellyfinSubtitleStream>[];
 
     final Map<String, Object?> imageTags =
         (json['ImageTags'] as Map?)?.cast<String, Object?>() ??
@@ -1863,6 +1962,64 @@ class JellyfinApi {
         for (final Object? g in genres)
           if (g is String && g.isNotEmpty) g,
       ],
+      mediaSources: mediaSources,
+    );
+  }
+
+  /// `MediaSources[]` 的一项 → DTO：版本名 / 容器 / 大小 / 码率、第一条视频流的
+  /// 分辨率与编码、全部音轨与字幕轨（各版本的轨各不相同，播放页按选中的列）。
+  static JellyfinMediaSource parseMediaSource(Map<String, Object?> src) {
+    bool requiresReshape = false;
+    Map<String, Object?>? video;
+    final List<MediaServerStreamTrack> audio = <MediaServerStreamTrack>[];
+    final List<JellyfinSubtitleStream> subs = <JellyfinSubtitleStream>[];
+    final List<Object?> streams =
+        (src['MediaStreams'] as List?) ?? const <Object?>[];
+    for (final Object? raw in streams) {
+      if (raw is! Map) continue;
+      final Map<String, Object?> s = raw.cast<String, Object?>();
+      switch (s['Type']) {
+        case 'Video':
+          video ??= s;
+          if (mediaStreamRequiresDolbyVisionReshape(s)) requiresReshape = true;
+        case 'Audio':
+          audio.add(MediaServerStreamTrack(
+            index: (s['Index'] as num?)?.toInt() ?? 0,
+            displayTitle: s['DisplayTitle'] as String?,
+            language: s['Language'] as String?,
+            codec: s['Codec'] as String?,
+            isDefault: (s['IsDefault'] as bool?) ?? false,
+            isExternal: (s['IsExternal'] as bool?) ?? false,
+          ));
+        case 'Subtitle':
+          subs.add(JellyfinSubtitleStream(
+            index: (s['Index'] as num?)?.toInt() ?? 0,
+            codec: (s['Codec'] as String?) ?? '',
+            language: s['Language'] as String?,
+            title: s['DisplayTitle'] as String?,
+            isExternal: (s['IsExternal'] as bool?) ?? false,
+            isTextSubtitleStream: (s['IsTextSubtitleStream'] as bool?) ?? true,
+          ));
+      }
+    }
+    final String? range = video == null
+        ? null
+        : (video['VideoRangeType'] as String?) ??
+            (video['VideoRange'] as String?);
+    return JellyfinMediaSource(
+      id: (src['Id'] as String?) ?? '',
+      name: src['Name'] as String?,
+      container: src['Container'] as String?,
+      sizeBytes: (src['Size'] as num?)?.toInt(),
+      bitrate: (src['Bitrate'] as num?)?.toInt() ??
+          (video?['BitRate'] as num?)?.toInt(),
+      width: (video?['Width'] as num?)?.toInt(),
+      height: (video?['Height'] as num?)?.toInt(),
+      videoCodec: video?['Codec'] as String?,
+      videoRange: range,
+      audioStreams: audio,
+      subtitleStreams: subs,
+      videoRequiresDolbyVisionReshape: requiresReshape,
     );
   }
 }
@@ -1892,6 +2049,7 @@ class JellyfinVideoClient
         RemoteVideoPlaybackSession,
         RemoteVideoQualityLimit,
         RemoteVideoCollectionIsWork,
+        RemoteVideoStreamVariants,
         MediaServerBrowser {
   JellyfinVideoClient({
     required this.api,
@@ -1937,6 +2095,64 @@ class JellyfinVideoClient
       qualityPresetIndex >= 0 && qualityPresetIndex < kQualityPresets.length
           ? kQualityPresets[qualityPresetIndex]
           : null;
+
+  /// 把条目的「当前媒体源」换成用户为它（或同剧）记住的版本
+  /// （[resolveMediaServerVersionIndex]）；单版本 / 没选过原样返回（服务器默认
+  /// `MediaSources[0]`）。取流、字幕、下载三条路都先过这里，同一条目永远是同一
+  /// 个版本。
+  JellyfinItem _withChosenVersion(JellyfinItem item) {
+    if (item.mediaSources.length < 2) return item;
+    final int index = resolveMediaServerVersionIndex(
+      serverId: serverId,
+      itemId: item.id,
+      seriesId: item.seriesId,
+      versions: <MediaServerVersion>[
+        for (final JellyfinMediaSource source in item.mediaSources)
+          source.toVersion(),
+      ],
+    );
+    return index <= 0 ? item : item.withMediaSource(item.mediaSources[index]);
+  }
+
+  /// 最近一次取流的条目（已换成选中版本）：播放页「画质」菜单里的版本列表以它
+  /// 为准（[RemoteVideoStreamVariants] 契约：以当前已取流的那一集为准）。
+  JellyfinItem? _streamItem;
+
+  /// 播放页版本菜单：当前条目多于一个版本时逐条列出（`版本名 · 1080p H264 ·
+  /// 1.9 GB · 11.2 Mbps`），单版本返回空（菜单不显）。
+  @override
+  List<RemoteVideoStreamVariant> get streamVariants {
+    final JellyfinItem? item = _streamItem;
+    if (item == null || item.mediaSources.length < 2) {
+      return const <RemoteVideoStreamVariant>[];
+    }
+    return <RemoteVideoStreamVariant>[
+      for (final JellyfinMediaSource source in item.mediaSources)
+        RemoteVideoStreamVariant(label: mediaServerVersionLabel(source.toVersion())),
+    ];
+  }
+
+  @override
+  int get streamVariantIndex {
+    final JellyfinItem? item = _streamItem;
+    if (item == null) return -1;
+    return item.mediaSources.indexWhere(
+      (JellyfinMediaSource s) => s.id == item.mediaSourceId,
+    );
+  }
+
+  /// 用户在播放页换版本：记住（本条目 + 同剧），播放页随后重新取流即播这一条。
+  @override
+  set streamVariantIndex(int index) {
+    final JellyfinItem? item = _streamItem;
+    if (item == null || index < 0 || index >= item.mediaSources.length) return;
+    rememberMediaServerVersion(
+      serverId: serverId,
+      itemId: item.id,
+      seriesId: item.seriesId,
+      version: item.mediaSources[index].toVersion(),
+    );
+  }
 
   /// 按条目 id 记录的在途播放会话（FIFO：同一条目「退出 → 立刻重开」时，旧页的
   /// Stopped 可能晚于新页的 PlaybackInfo 到达，先进先出才不会拿新会话去报旧停止）。
@@ -2116,6 +2332,10 @@ class JellyfinVideoClient
         communityRating: item.communityRating,
         genres: item.genres,
         hasSubtitle: item.hasTextSubtitle,
+        versions: <MediaServerVersion>[
+          for (final JellyfinMediaSource source in item.mediaSources)
+            if (source.id.isNotEmpty) source.toVersion(),
+        ],
       );
 
   /// 只保留视频域条目的投影（[mediaServerTypeOf] 为 null 的丢掉）。
@@ -2399,15 +2619,26 @@ class JellyfinVideoClient
           startIndex: localStart,
           limit: enough ? 1 : kSearchServerPageSize,
           fields: 'ProductionYear,OriginalTitle',
+          // BUG-2970：搜索**不能**按名称排序。带 SearchTerm 时 Emby / Jellyfin /
+          // 兼容层缺省按相关度排；强制 SortName 会把真命中按字母序打散到几千行
+          // 沾边结果里——短查询（1~3 字）在按字模糊的服务器上回的沾边行最多，
+          // 真命中落在 [kSearchScanLimit] 之外，于是「少于四个字都搜不到」。
+          sortBy: null,
+          sortOrder: null,
         );
         roundTotal = page.totalCount;
         if (enough || localStart >= roundTotal || page.items.isEmpty) break;
         scanned += page.items.length;
-        hits.addAll(
-          mediaServerItemsFrom(page.items)
-              .where((MediaServerItem it) => mediaServerSearchMatches(tokens, it)),
-        );
+        final List<MediaServerItem> pageHits = mediaServerItemsFrom(page.items)
+            .where((MediaServerItem it) => mediaServerSearchMatches(tokens, it))
+            .toList();
+        hits.addAll(pageHits);
         localStart += page.items.length;
+        // BUG-2970：结果按服务器相关度排，一整页都过不了把关 = 本轮后面只剩
+        // 按字模糊的沾边行（兼容层对 1~3 字短查询能回几千行）。直接跳到本轮末尾
+        // 去问下一轮，否则电影轮的沾边尾巴会吃光 [kSearchScanLimit]，剧轮的真命中
+        // 永远扫不到。子串 / 词首前缀语义的服务器每行都命中，不会触发。
+        if (pageHits.isEmpty) localStart = roundTotal;
       }
       total += roundTotal;
       if (inRound) cursor = roundBase + localStart;
@@ -2558,7 +2789,10 @@ class JellyfinVideoClient
     // 飞牛要求 stream 端点带 MediaSourceId（BUG-2254 ③），而下载入参只有条目
     // id：先打一次 /Items/{id} 拿 MediaSources[0].Id。原版 Jellyfin/Emby 上省这发
     // 也可（stream 缺省按条目 id 解析），取一次是为了三家走同一条正确路径。
-    final JellyfinItem item = await api.itemDetail(userId: userId, itemId: id);
+    // 多版本时下的是用户为它选的那个版本（与播放同一判据）。
+    final JellyfinItem item = _withChosenVersion(
+      await api.itemDetail(userId: userId, itemId: id),
+    );
     await api.downloadToFile(
       api.streamUrl(id, mediaSourceId: item.mediaSourceId),
       dest,
@@ -2665,7 +2899,12 @@ class JellyfinVideoClient
     int episodeIndex = 0,
   }) async {
     // Jellyfin 的每一集都是独立条目，episodeIndex 恒 0（多集语义不适用）。
-    final JellyfinItem item = await api.itemDetail(userId: userId, itemId: id);
+    // 多版本条目换成用户选的版本：MediaSourceId（PlaybackInfo / 直出 URL）、字幕轨
+    // 与杜比视界判定都随之走那条源（各版本的流表各不相同）。
+    final JellyfinItem item = _withChosenVersion(
+      await api.itemDetail(userId: userId, itemId: id),
+    );
+    _streamItem = item;
     final String? mediaSourceId = item.mediaSourceId;
     final ({String streamUrl, JellyfinPlaybackSession? session}) playback =
         await _negotiatePlayback(id, item);
@@ -2758,7 +2997,10 @@ class JellyfinVideoClient
     int episodeIndex = 0,
     void Function(double progress)? onProgress,
   }) async {
-    final JellyfinItem item = await api.itemDetail(userId: userId, itemId: id);
+    // 字幕轨号属于某一个版本：必须与取流时同一个版本，否则下的是别的文件的轨。
+    final JellyfinItem item = _withChosenVersion(
+      await api.itemDetail(userId: userId, itemId: id),
+    );
     final String? mediaSourceId = item.mediaSourceId;
     if (mediaSourceId == null) {
       throw const FileSystemException('Jellyfin item has no media source');

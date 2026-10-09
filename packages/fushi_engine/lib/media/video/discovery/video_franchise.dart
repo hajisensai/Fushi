@@ -22,6 +22,19 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 
+/// 一次「整套下载」的系列查询：锚点作品 + 用户口中的系列名。
+///
+/// 资料源只认 [item]；联网补全要靠 [seriesNames] 找系列条目——锚点是单部剧场版时，
+/// 拿它自己的标题去搜只会搜到那一部的条目，列不出整个系列（BUG-2960）。
+class VideoFranchiseQuery {
+  const VideoFranchiseQuery(this.item, {this.seriesNames = const <String>[]});
+
+  final VideoDiscoveryItem item;
+
+  /// 用户说的作品名（AI 补的原名 / 罗马字等写法），按可信度排序；可为空。
+  final List<String> seriesNames;
+}
+
 /// `/search/collection` 的一条结果。
 class TmdbCollectionHit {
   const TmdbCollectionHit({

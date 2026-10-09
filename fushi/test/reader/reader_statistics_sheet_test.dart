@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart'
@@ -86,6 +87,53 @@ void main() {
       expect(totals.allChars, 6700);
       expect(totals.allMs, 402000);
     });
+
+    test('近 7 天逐日序列：恰 7 项升序、末项今天、断读补 0、窗口外与其它书不计', () {
+      final DateTime now = DateTime(2026, 9, 6, 12);
+      final String today = FushiDatabase.statDateKeyOf(now);
+      final String twoDaysAgo = FushiDatabase.statDateKeyPlusDays(today, -2);
+      final String eightDaysAgo = FushiDatabase.statDateKeyPlusDays(today, -8);
+      final ReaderBookStatTotals totals = summarizeReaderBookStats(
+        <StatFact>[
+          _fact(dateKey: today, chars: 1000, ms: 60000),
+          // 同一天两条事实（不同格式 / 会话）累加进同一根柱子。
+          _fact(dateKey: twoDaysAgo, chars: 300, ms: 20000),
+          _fact(dateKey: twoDaysAgo, chars: 200, ms: 10000),
+          // 窗口外：进累计不进 7 天序列。
+          _fact(dateKey: eightDaysAgo, chars: 5000, ms: 300000),
+          // 其它书：哪里都不计。
+          _fact(dateKey: today, chars: 999, ms: 999, mediaKey: 'other'),
+        ],
+        bookKey: 'book-1',
+        title: 'Book',
+        now: now,
+      );
+      final List<ReaderBookDayStat> week = totals.last7Days;
+      expect(week, hasLength(7));
+      expect(week.last.dateKey, today);
+      expect(week.first.dateKey, FushiDatabase.statDateKeyPlusDays(today, -6));
+      for (int i = 1; i < week.length; i++) {
+        expect(week[i].dateKey.compareTo(week[i - 1].dateKey), greaterThan(0));
+      }
+      expect(week.last.chars, 1000);
+      expect(week[4].dateKey, twoDaysAgo);
+      expect(week[4].chars, 500);
+      expect(week[4].ms, 30000);
+      expect(
+        week.fold<int>(0, (int a, ReaderBookDayStat d) => a + d.chars),
+        1500,
+      );
+      expect(totals.allChars, 6500);
+      expect(kEmptyReaderBookStatTotals.last7Days, isEmpty);
+    });
+  });
+
+  test('指标卡列数：侧栏 / 窄底板 2 列，宽底板且指标多于 2 个才 4 列', () {
+    expect(readerStatMetricColumns(400, 4), 2);
+    expect(readerStatMetricColumns(360, 4), 2);
+    expect(readerStatMetricColumns(519, 4), 2);
+    expect(readerStatMetricColumns(560, 4), 4);
+    expect(readerStatMetricColumns(560, 2), 2);
   });
 
   group('estimateFinishMs / readerFinishCph / readerRemainingChars', () {
@@ -112,6 +160,7 @@ void main() {
         todayCards: 0,
         allChars: 6000,
         allMs: 3600000,
+        last7Days: <ReaderBookDayStat>[],
       );
       expect(
         readerFinishCph(
@@ -177,6 +226,15 @@ void main() {
       todayCards: 12,
       allChars: 62140,
       allMs: 29640000,
+      last7Days: <ReaderBookDayStat>[
+        (dateKey: '2026-09-30', chars: 0, ms: 0),
+        (dateKey: '2026-10-01', chars: 4200, ms: 900000),
+        (dateKey: '2026-10-02', chars: 0, ms: 0),
+        (dateKey: '2026-10-03', chars: 8800, ms: 1800000),
+        (dateKey: '2026-10-04', chars: 3100, ms: 700000),
+        (dateKey: '2026-10-05', chars: 6400, ms: 1200000),
+        (dateKey: '2026-10-06', chars: 12640, ms: 1440000),
+      ],
     );
 
     Future<void> pumpSheet(
@@ -245,11 +303,28 @@ void main() {
         ),
         findsOneWidget,
       );
-      // 今天：查词 / 制卡来自 per-book 计数面。
-      expect(find.text(t.reader_stats_lookups(n: '83')), findsOneWidget);
-      expect(find.text(t.reader_stats_cards(n: '12')), findsOneWidget);
+      // 今天：四张指标卡，查词 / 制卡来自 per-book 计数面。
+      String valueOf(String key) =>
+          tester.widget<Text>(find.byKey(ValueKey<String>(key))).data!;
+      expect(valueOf('fushi_reader_stats_today_chars'), '12,640');
+      expect(valueOf('fushi_reader_stats_today_lookups'), '83');
+      expect(valueOf('fushi_reader_stats_today_cards'), '12');
+      expect(find.text(t.stat_lookup), findsOneWidget);
+      expect(find.text(t.stat_mined), findsOneWidget);
       // 本书累计字数千分位。
-      expect(find.text(t.stat_format_chars(n: '62,140')), findsOneWidget);
+      expect(valueOf('fushi_reader_stats_all_chars'), '62,140');
+      // 近 7 天迷你柱状图有数据时画图表，不出空态。
+      expect(
+        find.byKey(const ValueKey<String>('fushi_reader_stats_week_chart')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('fushi_reader_stats_week_empty')),
+        findsNothing,
+      );
+      // 本次阅读 hero：会话字数作副指标。
+      expect(find.text(t.reader_stats_session_title), findsOneWidget);
+      expect(find.text(t.stat_format_chars(n: '12,640')), findsOneWidget);
       // 预计读完两行有值（会话 12640 字 / 24 分 → 速度够）。
       final Text chapterLeft = tester.widget(
         find.byKey(const ValueKey<String>('fushi_reader_stats_finish_chapter')),
@@ -280,9 +355,13 @@ void main() {
         find.byKey(const ValueKey<String>('fushi_reader_stats_pause')),
       );
       expect(pauses, 1);
-      await tester.tap(
-        find.byKey(const ValueKey<String>('fushi_reader_stats_full')),
+      // 指标卡 + 近 7 天图表之后「打开完整记录」在首屏之下，先滚进视口。
+      final Finder full = find.byKey(
+        const ValueKey<String>('fushi_reader_stats_full'),
       );
+      await tester.ensureVisible(full);
+      await tester.pump();
+      await tester.tap(full);
       expect(opens, 1);
       expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
 
@@ -301,8 +380,95 @@ void main() {
       await disposeSheet(tester);
     });
 
-    testWidgets('320dp 窄侧栏不溢出', (WidgetTester tester) async {
-      await pumpSheet(tester, width: 320);
+    for (final double width in <double>[320, 400, 420, 600]) {
+      testWidgets('宽 $width 不溢出（窄底板 / 右侧栏 / 宽底板）', (
+        WidgetTester tester,
+      ) async {
+        await pumpSheet(tester, width: width);
+        expect(tester.takeException(), isNull);
+        await disposeSheet(tester);
+      });
+    }
+
+    testWidgets('宽底板指标卡一行 4 列，侧栏宽 2 列', (WidgetTester tester) async {
+      double rowOf(String key) =>
+          tester.getTopLeft(find.byKey(ValueKey<String>(key))).dy;
+      await pumpSheet(tester, width: 600);
+      expect(
+        rowOf('fushi_reader_stats_today_time'),
+        rowOf('fushi_reader_stats_today_cards'),
+      );
+      await disposeSheet(tester);
+      await pumpSheet(tester, width: 400);
+      expect(
+        rowOf('fushi_reader_stats_today_time'),
+        rowOf('fushi_reader_stats_today_chars'),
+      );
+      expect(
+        rowOf('fushi_reader_stats_today_lookups'),
+        greaterThan(rowOf('fushi_reader_stats_today_time')),
+      );
+      await disposeSheet(tester);
+    });
+
+    testWidgets('暂停键与「打开完整记录」可被 Tab 焦点遍历到', (WidgetTester tester) async {
+      await pumpSheet(tester);
+      const ValueKey<String> pauseKey = ValueKey<String>(
+        'fushi_reader_stats_pause',
+      );
+      const ValueKey<String> fullKey = ValueKey<String>(
+        'fushi_reader_stats_full',
+      );
+      final Set<Key> reached = <Key>{};
+      for (int i = 0; i < 12; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        final BuildContext? focused =
+            FocusManager.instance.primaryFocus?.context;
+        if (focused == null) continue;
+        focused.visitAncestorElements((Element e) {
+          final Key? k = e.widget.key;
+          if (k == pauseKey || k == fullKey) {
+            reached.add(k!);
+            return false;
+          }
+          return true;
+        });
+      }
+      expect(reached, containsAll(<Key>[pauseKey, fullKey]));
+      await disposeSheet(tester);
+    });
+
+    testWidgets('本书近 7 天无阅读时显示空态而不是空图表', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(400, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ReaderStatisticsSheet(
+              bookTitle: '',
+              sessionTotals: () => session,
+              loadBookTotals: () async => kEmptyReaderBookStatTotals,
+              progress: () => (
+                chapterCurrent: null,
+                chapterTotal: null,
+                bookCurrent: null,
+                bookTotal: null,
+              ),
+              onTogglePause: () {},
+              onOpenFullRecords: () {},
+              tick: const Duration(days: 1),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        find.byKey(const ValueKey<String>('fushi_reader_stats_week_empty')),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
       await disposeSheet(tester);
     });

@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
@@ -740,7 +741,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     // 外框走统一 ImportDialogFrame（审计 §1-K：与书/有声书/视频导入同一 chrome）；
     // 向导内容与阶段化动作按钮不变。
     return ImportDialogFrame(
-      leadingIcon: Icons.document_scanner_outlined,
+      leadingIcon: FushiIcons.ocr,
       // 已入库的书是「识别」不是「导入」：阅读器的「重新识别本卷」和作品页的
       // 识别入口都走这里，标题再叫「OCR 导入漫画」就是在说另一件事。
       title: widget.existingBook != null
@@ -756,11 +757,19 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
             if (_folderStatus == MangaOcrFolderStatus.noImages)
               _errorText(theme, t.manga_ocr_wizard_no_images),
             if (_folderStatus == MangaOcrFolderStatus.hasMokuro)
-              _errorText(theme, t.manga_ocr_wizard_has_mokuro),
+              _errorText(
+                theme,
+                t.manga_ocr_wizard_has_mokuro,
+                severity: FushiNoticeSeverity.info,
+              ),
             // 已入库且每页都有 OCR（mokuro.moe 下载的卷天生如此）：说清「不需要」，
             // 而不是让用户对着一个禁用的按钮猜。
             if (_folderStatus == MangaOcrFolderStatus.alreadyOcred)
-              _errorText(theme, t.manga_ocr_wizard_already_ocred),
+              _errorText(
+                theme,
+                t.manga_ocr_wizard_already_ocred,
+                severity: FushiNoticeSeverity.info,
+              ),
             if (_folderStatus == MangaOcrFolderStatus.valid) ...<Widget>[
               const SizedBox(height: 12),
               _engineSelector(busy),
@@ -811,14 +820,18 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     if (widget.existingBook != null) {
       return FushiListItem(
         padding: EdgeInsets.zero,
-        leading: const FushiIcon(Icons.menu_book_outlined),
+        leading: const FushiListLeadingIcon(
+          FushiIcons.books,
+          shape: FushiLeadingShape.square,
+          tone: FushiCardTone.primary,
+        ),
         title: Text(widget.existingBook!.title),
         subtitle: Text(p.basename(widget.existingBook!.extractDir)),
       );
     }
     return FushiOutlinedButton.icon(
       onPressed: busy ? null : _pickFolder,
-      icon: const FushiIcon(Icons.folder_open_outlined),
+      icon: const FushiIcon(FushiIcons.folderOpen),
       label: Text(
         _imageDir == null
             ? t.manga_ocr_wizard_pick_folder
@@ -974,7 +987,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
               FushiFilledButton.tonalIcon(
                 key: const ValueKey<String>('manga_ocr_wizard_model_download'),
                 onPressed: busy ? null : _downloadLocalModel,
-                icon: const FushiIcon(Icons.download_outlined, size: 18),
+                icon: const FushiIcon(FushiIcons.download, size: 18),
                 label: Text(t.manga_ocr_download),
               ),
             ],
@@ -1014,13 +1027,16 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     );
   }
 
-  Widget _errorText(ThemeData theme, String message) {
+  /// 阶段说明 / 错误：M3E 内嵌提示条（[FushiInlineNotice]，tonal 底 + 语义图标），
+  /// 「已有 mokuro / 已识别」这类说明式提示用 info，其余是 error。
+  Widget _errorText(
+    ThemeData theme,
+    String message, {
+    FushiNoticeSeverity severity = FushiNoticeSeverity.error,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: Text(
-        message,
-        style: TextStyle(color: theme.colorScheme.error),
-      ),
+      child: FushiInlineNotice(severity: severity, message: message),
     );
   }
 
@@ -1048,7 +1064,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       FushiTextButton.icon(
         key: const ValueKey<String>('manga_ocr_wizard_settings'),
         onPressed: busy ? null : () => unawaited(_openOcrSettings()),
-        icon: const FushiIcon(Icons.tune_outlined, size: 18),
+        icon: const FushiIcon(FushiIcons.settings, size: 18),
         label: Text(t.manga_ocr_settings_open),
       ),
       FushiTextButton(

@@ -248,3 +248,13 @@ export function entry(kind, refs, title, extra = {}) {
 }
 
 export const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+
+/** PNG 头 + IHDR（宽高 w×h；服务端只读文件头，不解码像素）。 */
+export function pngHeader(w = 1, h = 1) {
+  const b = new Uint8Array(33);
+  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  new DataView(b.buffer).setUint32(16, w);
+  new DataView(b.buffer).setUint32(20, h);
+  b.set([8, 2, 0, 0, 0], 24);
+  return b;
+}

@@ -170,7 +170,7 @@ List<String> synthesizeStableAssetNames(String version) {
     // 老用户升到桥后即可识别后续 fushi-* 资产。Android 无更新桥（跨包名不能
     // 就地更新，迁移链即通道），其 APK 行保持旧名直到老包停止发布。
     'fushi-$version-windows-setup.exe',
-    'fushi-$version-macos.zip',
+    'fushi-$version-macos-arm64.zip',
     for (final String abi in kAndroidReleaseAbis) 'fushi-$version-$abi.apk',
   ];
   return List<String>.unmodifiable(names);
@@ -195,7 +195,7 @@ const String kFushiAssetPrefix = 'fushi-';
 ///
 /// 改名过渡期两个产品从同一个 GitHub 仓库发版（桥包 `app.hibiki.reader` 的 `hibiki-*`
 /// 与本体的 `fushi-*`），历史 release 里还躺着更早的无前缀资产。而挑包判据只看平台后缀
-/// （`.apk` / `-windows-setup.exe` / `-macos.zip`），区分不出产品族——Android 上装到别族
+/// （`.apk` / `-windows-setup.exe` / `-macos-arm64.zip`），区分不出产品族——Android 上装到别族
 /// 就是跨包名跨签名，系统直接拒（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`）或并存成第二个
 /// 空 app；桌面上则是把自己覆盖安装成已退场的老产品。
 ///
@@ -265,14 +265,23 @@ bool _windowsAssetMatchesChannel(String name, UpdateChannel channel) {
   };
 }
 
-/// macOS 更新产物由 CI `release-desktop.yml` 的 apple job 以
-/// `ditto -c -k --keepParent hibiki.app` 打成 `hibiki-<version>-macos.zip`。debug
+/// macOS 更新产物由 CI `release-desktop.yml` 的 macos job 以
+/// `ditto -c -k --keepParent fushi.app` 打成 `fushi-<version>-macos-arm64.zip`。debug
 /// 通道的版本串内嵌 `-debug.<seq>`，故 debug 包名恒含 `-debug.`（与 Windows 同规则）。
+///
+/// 2026-10 起 macOS 版只出 Apple Silicon（arm64），资产名从 `-macos.zip` 改成
+/// `-macos-arm64.zip`：已发出去的旧版本（universal，可能跑在 Intel Mac 上）的更新器
+/// 只认 `-macos.zip`，改名让它们**选不中** arm64-only 的包——否则 Intel Mac 上的旧版
+/// 会自动下载、替换成一个根本启动不了的 app。本版本只跑在 arm64 上，两种名字都认
+/// （旧名的包是 universal，在 arm64 上照常能跑）。
+bool _isMacosAssetName(String name) =>
+    name.endsWith('-macos-arm64.zip') || name.endsWith('-macos.zip');
+
 bool _isDebugMacosAsset(String name) =>
-    name.endsWith('-macos.zip') && name.contains('-debug.');
+    _isMacosAssetName(name) && name.contains('-debug.');
 
 bool _macosAssetMatchesChannel(String name, UpdateChannel channel) {
-  if (!name.endsWith('-macos.zip')) return false;
+  if (!_isMacosAssetName(name)) return false;
   return switch (channel) {
     UpdateChannel.debug => _isDebugMacosAsset(name),
     UpdateChannel.stable || UpdateChannel.beta => !_isDebugMacosAsset(name),
@@ -364,7 +373,7 @@ class WindowsUpdater extends PlatformUpdater {
   }
 }
 
-/// macOS：去沙盒后的应用内自替换（Phase 3）。选 `-macos.zip` 包；apply 交给
+/// macOS：去沙盒后的应用内自替换（Phase 3）。选 `-macos-arm64.zip` 包；apply 交给
 /// [MacInstaller.runAndExit]——解压→写握手标记→分离脚本等本进程退出后替换
 /// `/Applications/hibiki.app` 并重启→`exit(0)`。替换失败由脚本回滚旧版本、下次
 /// 启动经 [MacUpdateHandoff.reconcile] 提示，绝不留坏档。
@@ -1608,7 +1617,7 @@ bool isZipHeader(List<int> header) =>
     header.length >= 2 && header[0] == 0x50 && header[1] == 0x4B;
 
 class MacInstaller {
-  /// 解压下载好的 `-macos.zip`→写握手标记与替换脚本→分离启动脚本→退出本进程，
+  /// 解压下载好的 `-macos-arm64.zip`→写握手标记与替换脚本→分离启动脚本→退出本进程，
   /// 让脚本在本进程退出后替换 `/Applications/hibiki.app` 并重启。
   ///
   /// 根因防护（对齐 Windows 的崩溃防护）：

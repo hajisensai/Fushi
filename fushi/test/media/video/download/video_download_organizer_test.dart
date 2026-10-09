@@ -220,6 +220,72 @@ void main() {
     },
   );
 
+  test(
+    'a numbered movie pack (Movie 01…NN) keeps every film as a standalone '
+    'movie instead of filing all but the largest under Extras (BUG-2965)',
+    () async {
+      final Directory root = await Directory.systemTemp.createTemp(
+        'fushi-organizer-moviepack-',
+      );
+      addTearDown(() async {
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+      final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+        VideoOrganizationRequest(
+          torrentId: 'hash',
+          title: 'Doraemon Movies',
+          kind: VideoOrganizationKind.movie,
+          sourceRoot: root.path,
+          pathMapping: VideoDownloadPathMapping(
+            remoteRoot: '/library',
+            localRoot: root.path,
+          ),
+        ),
+        <TorrentFileEntry>[
+          const TorrentFileEntry(
+            name: 'Pack/[Fabre-RAW] Doraemon Movie 01 (1980) [1080p].mkv',
+            size: 200,
+            progress: 1,
+            index: 0,
+          ),
+          const TorrentFileEntry(
+            name: 'Pack/[Fabre-RAW] Doraemon Movie 02 (1981) [1080p].mkv',
+            size: 190,
+            progress: 1,
+            index: 1,
+          ),
+          const TorrentFileEntry(
+            name: 'Pack/[Fabre-RAW] Doraemon Movie 25 (2004) [1080p].mkv',
+            size: 180,
+            progress: 1,
+            index: 2,
+          ),
+          // 不带电影提示的带号小片照旧进 Extras（`Bonus - 01` 不是并列正片）。
+          const TorrentFileEntry(
+            name: 'Pack/Bonus - 01.mkv',
+            size: 120,
+            progress: 1,
+            index: 3,
+          ),
+        ],
+      );
+
+      final List<String> targets = plan.files
+          .map((VideoOrganizationFilePlan file) => file.targetRelativePath)
+          .toList();
+      expect(targets.where((String t) => t.contains('/Extras/')), <String>[
+        'Doraemon Movies/Extras/Bonus - 01.mkv',
+      ]);
+      expect(
+        targets,
+        containsAll(<String>[
+          'Doraemon Movies/[Fabre-RAW] Doraemon Movie 02 (1981) [1080p].mkv',
+          'Doraemon Movies/[Fabre-RAW] Doraemon Movie 25 (2004) [1080p].mkv',
+        ]),
+      );
+    },
+  );
+
   group('movie identity holding a multi-episode pack (BUG-2760)', () {
     VideoOrganizationRequest movieRequest(String root) =>
         VideoOrganizationRequest(

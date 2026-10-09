@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/utils.dart';
@@ -207,8 +208,8 @@ void main() {
     // The "add as a new card" option is always present (decision 3).
     expect(find.text(t.anki_mined_action_add_duplicate), findsOneWidget);
     // Per-card overwrite + view affordances exist (two cards -> two each).
-    expect(find.byIcon(Icons.edit_outlined), findsNWidgets(2));
-    expect(find.byIcon(Icons.open_in_new), findsNWidgets(2));
+    expect(find.byIcon(FushiIcons.edit), findsNWidgets(2));
+    expect(find.byIcon(FushiIcons.openInNew), findsNWidgets(2));
 
     // Choosing "add as a new card" runs mineNew.
     await tester.tap(find.text(t.anki_mined_action_add_duplicate));
@@ -239,7 +240,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Overwrite the SECOND card (note 200) via its edit icon.
-    await tester.tap(find.byIcon(Icons.edit_outlined).last);
+    await tester.tap(find.byIcon(FushiIcons.edit).last);
     await tester.pumpAndSettle();
     expect(result, isNotNull);
     expect(result!.noteId, 200,
@@ -287,7 +288,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Open the viewer via the view icon.
-    await tester.tap(find.byIcon(Icons.open_in_new));
+    await tester.tap(find.byIcon(FushiIcons.openInNew));
     await tester.pumpAndSettle();
     // BUG-2503: the viewer replaces candidate content in the same dialog route.
     expect(find.byType(AlertDialog, skipOffstage: false), findsOneWidget);
@@ -409,13 +410,13 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.tap(find.byIcon(FushiIcons.edit));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(overwriteCalls, 1);
-    expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
+    expect(find.byIcon(FushiIcons.edit), findsOneWidget);
     // 复位后可重试。
-    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.tap(find.byIcon(FushiIcons.edit));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(overwriteCalls, 2, reason: '_busy 必须在失败后复位');
@@ -443,7 +444,7 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     // 打开 note viewer。
-    await tester.tap(find.byIcon(Icons.open_in_new));
+    await tester.tap(find.byIcon(FushiIcons.openInNew));
     await tester.pumpAndSettle();
     // 点对话框里的「覆写」→ overwrite 抛错。
     await tester.tap(find.text(t.anki_mined_action_overwrite));

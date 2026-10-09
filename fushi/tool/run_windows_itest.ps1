@@ -370,14 +370,23 @@ $LauncherProcessId = 0
 Write-JsonFile $before (Join-Path $EvidenceDir "process-before.json") -AsArray
 Write-JsonFile $Paths (Join-Path $EvidenceDir "paths.json")
 
-# FLUTTER_ROOT 未设置时 Join-Path 会因 null 直接抛错（Strict 模式），先判空再拼。
-$FlutterExe = if ($env:FLUTTER_ROOT) { Join-Path $env:FLUTTER_ROOT "bin\flutter.bat" } else { "" }
-if (-not $env:FLUTTER_ROOT -or -not (Test-Path -LiteralPath $FlutterExe)) {
-  $FlutterExe = "D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat"
+function Resolve-FlutterExecutable {
+  # An explicit usable SDK wins; otherwise use the caller's selected PATH SDK.
+  # Never substitute a machine-local installation with a different Dart version.
+  if (-not [string]::IsNullOrWhiteSpace($env:FLUTTER_ROOT)) {
+    $fromRoot = Join-Path $env:FLUTTER_ROOT "bin\flutter.bat"
+    if (Test-Path -LiteralPath $fromRoot -PathType Leaf) {
+      return (Get-Item -LiteralPath $fromRoot).FullName
+    }
+  }
+  $command = Get-Command flutter -CommandType Application -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+  if ($null -ne $command -and (Test-Path -LiteralPath $command.Source -PathType Leaf)) {
+    return $command.Source
+  }
+  throw 'Flutter SDK not found. Set FLUTTER_ROOT to an SDK containing bin\flutter.bat, or add the required Flutter SDK bin directory to PATH.'
 }
-if (-not (Test-Path -LiteralPath $FlutterExe)) {
-  $FlutterExe = "flutter"
-}
+$FlutterExe = Resolve-FlutterExecutable
 
 $flutterArgs = @(
   "test",

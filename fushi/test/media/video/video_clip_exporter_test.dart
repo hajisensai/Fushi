@@ -1647,6 +1647,11 @@ At least one output file must be specified
 typedef _RunHandler = FutureOr<FfmpegRunResult> Function(List<String> args);
 
 class _FakeFfmpegBackend implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   @override
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async =>
       const FfmpegRunResult(returnCode: 0, output: '{"format":{}}');

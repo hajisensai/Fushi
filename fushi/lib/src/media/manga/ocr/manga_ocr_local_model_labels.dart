@@ -5,7 +5,6 @@ import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 
 /// 本机 OCR 模型的显示名（设置区引擎下拉 / 「设置 › 存储」/ OCR 向导共用）。
 String localModelLabel(MangaOcrLocalModel model) => switch (model) {
-  MangaOcrLocalModel.mangaOcr => t.manga_ocr_manga_model,
   MangaOcrLocalModel.baberu => t.manga_ocr_baberu_model,
   MangaOcrLocalModel.mangaCtc => t.manga_ocr_ctc_model,
 };
@@ -13,7 +12,6 @@ String localModelLabel(MangaOcrLocalModel model) => switch (model) {
 /// 本机模型的一句话取舍（体积 / 速度 / 硬件要求）。
 String localModelDescription(MangaOcrLocalModel model) => switch (model) {
   MangaOcrLocalModel.baberu => t.manga_ocr_baberu_desc,
-  MangaOcrLocalModel.mangaOcr => t.manga_ocr_manga_model_desc,
   MangaOcrLocalModel.mangaCtc => t.manga_ocr_ctc_desc,
 };
 

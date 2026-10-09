@@ -1,14 +1,15 @@
 import 'dart:math' as math;
 import 'dart:ui' show PathMetric;
 
-import 'package:flutter/cupertino.dart' show CupertinoIcons;
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'package:fushi/src/controls/control_layout.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
@@ -933,7 +934,7 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
           alwaysDashed: entries.isEmpty,
           child: AnimatedSize(
             duration: style.duration(220),
-            curve: Curves.easeOutCubic,
+            curve: FushiSpringCurve.spatial,
             alignment: switch (alignment) {
               WrapAlignment.center => Alignment.center,
               WrapAlignment.end => AlignmentDirectional.centerEnd,
@@ -1052,7 +1053,7 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
         return TweenAnimationBuilder<double>(
           tween: Tween<double>(begin: justPlaced ? 0.6 : 1, end: 1),
           duration: style.duration(420),
-          curve: Curves.easeOutBack,
+          curve: FushiSpringCurve.spatialFast,
           builder: (BuildContext context, double scale, Widget? child) =>
               Transform.scale(scale: scale, child: child),
           child: _buildDraggableChip(
@@ -1246,7 +1247,7 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
     return AnimatedScale(
       scale: lifted ? 1.08 : 1,
       duration: style.duration(260),
-      curve: Curves.easeOutBack,
+      curve: FushiSpringCurve.spatialFast,
       child: AnimatedContainer(
         duration: style.duration(120),
         width: extent,
@@ -1360,7 +1361,7 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
       child: AnimatedScale(
         scale: lifted ? 1.05 : 1,
         duration: style.duration(260),
-        curve: Curves.easeOutBack,
+        curve: FushiSpringCurve.spatialFast,
         child: pill,
       ),
     );

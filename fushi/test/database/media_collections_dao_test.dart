@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -388,5 +389,63 @@ void main() {
         .timeout(const Duration(seconds: 3));
     await db.upsertCollectionItemAt(c, MediaKind.epub.dbValue, 'bk', 0);
     await emitted;
+  });
+
+  // BUG-3034：首页专用的 getLocalPrimaryCollectionMembership 只为本机库里还在的
+  // 条目查折叠归属主合集 + 组内 sortIndex。口径必须与「getPrimaryCollectionIdByEntry
+  // + getAllCollectionItems 内存分组」逐键一致，只是把本机不存在的成员（在线源 /
+  // 播放列表挂进来的集数）挡在 SQL 侧，不再整表搬进 Dart。
+  test('BUG-3034 getLocalPrimaryCollectionMembership：本机条目口径与旧两步一致',
+      () async {
+    final db = await _openDb();
+    for (final String uid in <String>['v1', 'v2']) {
+      await db.upsertVideoBook(VideoBooksCompanion(
+        bookUid: Value(uid),
+        title: Value(uid),
+        videoPath: Value('/abs/$uid.mp4'),
+      ));
+    }
+    await db.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: 'book-a',
+      title: 'Book A',
+      epubPath: '/x/a.epub',
+      extractDir: '/x/a',
+      chapterCount: 1,
+      chaptersJson: '[]',
+      importedAt: 1000,
+    ));
+    final String epubUid = (await db.resolveEpubBookUid('book-a'))!;
+    final int c1 = await db.createMediaCollection('C1');
+    final int c2 = await db.createMediaCollection('C2');
+    await db.addToCollection(c2, MediaKind.video, 'ghost'); // 本机不存在
+    await db.addToCollection(c2, MediaKind.video, 'v2'); // c2 内 1
+    await db.addToCollection(c1, MediaKind.video, 'v1'); // c1 内 0
+    await db.addToCollection(c2, MediaKind.video, 'v1'); // c2 内 2（非主）
+    await db.addToCollection(c1, MediaKind.epub, epubUid); // c1 内 1
+    await db.addToCollection(c2, MediaKind.epub, 'book-a'); // 旧 bookKey 键行
+
+    final Map<String, ({int collectionId, int sortIndex})> local =
+        await db.getLocalPrimaryCollectionMembership();
+
+    final Map<String, int> primary = await db.getPrimaryCollectionIdByEntry();
+    final Map<String, ({int collectionId, int sortIndex})> legacy =
+        <String, ({int collectionId, int sortIndex})>{
+      for (final MediaCollectionItemRow m in await db.getAllCollectionItems())
+        if (primary['${m.mediaType}|${m.entryKey}'] == m.collectionId)
+          '${m.mediaType}|${m.entryKey}': (
+            collectionId: m.collectionId,
+            sortIndex: m.sortIndex,
+          ),
+    };
+    // 本机不存在的成员被挡掉，其余逐键一致。
+    expect(local.containsKey('video|ghost'), isFalse);
+    expect(legacy.containsKey('video|ghost'), isTrue);
+    legacy.remove('video|ghost');
+    expect(local, legacy);
+    expect(local['video|v1'], (collectionId: c1, sortIndex: 0));
+    expect(local['video|v2'], (collectionId: c2, sortIndex: 1));
+    expect(local['epub|$epubUid'], (collectionId: c1, sortIndex: 1));
+    // EPUB 旧 bookKey 键行也收（v83 前的成员行）。
+    expect(local['epub|book-a']?.collectionId, c2);
   });
 }

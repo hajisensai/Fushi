@@ -78,6 +78,13 @@ class KitFfmpegBackend implements FfmpegBackend {
     );
   }
 
+  /// 查询类命令（`-filters` 等，BUG-2938）：与 [run] 同一条会话路径即可——ffmpeg-kit
+  /// 把 fftools 的 printf 改成了 `av_log(NULL, AV_LOG_STDERR, …)`，查询表本就落在
+  /// `session.getOutput()` 的合并日志里，没有桌面 CLI「stdout 被丢」的问题。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   /// 移动端 ffprobe：进程内 `FFprobeKit.executeWithArgumentsAsync`，
   /// `session.getOutput()` 拿 ffprobe 的 JSON 报告（喂
   /// `parseAudioMetadataFromFfprobeJson`）。与 [run] 同款超时/cancel 语义。

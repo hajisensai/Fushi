@@ -9,13 +9,15 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/utils.dart';
 
 import 'package:fushi/src/pages/implementations/discovery/discovery_layout.dart';
 
+export 'package:fushi/src/pages/implementations/discovery/discovery_hero_carousel.dart';
 export 'package:fushi/src/pages/implementations/discovery/discovery_layout.dart';
 
 /// 搜索框输入到发请求之间的防抖间隔。
@@ -291,7 +293,8 @@ class DiscoveryShelf extends StatelessWidget {
                     ),
                   ),
                 )
-              : HorizontalDragScrollable(
+              : FushiHorizontalEdgeFade(
+                child: HorizontalDragScrollable(
                   child: ListView.separated(
                     key: storage == null
                         ? null
@@ -308,6 +311,7 @@ class DiscoveryShelf extends StatelessWidget {
                     ),
                   ),
                 ),
+              ),
         ),
       ],
     );

@@ -7,8 +7,9 @@
 /// （面板文件）。播放页、媒体库右键、合集详情页三处入口都推这一页。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
@@ -72,7 +73,9 @@ class SubtitleCollectionSpec {
 
 /// 工作台依赖的宿主能力（全部可注入，便于 widget 测试不碰 AppModel）。
 abstract interface class SubtitleWorkbenchHost {
-  VideoSubtitleRegistry? get subtitleRegistry;
+  /// 交互式查字幕用的字幕来源（每次搜索 / 下载现取：填 key 会重建 runtime）。
+  /// null = 一个来源都没配。**不能**依赖下载管线是否已启动（BUG-3000）。
+  Future<VideoSubtitleRegistry?> subtitleRegistry();
   String get jimakuApiKey;
   Future<void> setJimakuApiKey(String key);
   Future<http.Client> createHttpClient();
@@ -93,7 +96,8 @@ class AppSubtitleWorkbenchHost implements SubtitleWorkbenchHost {
   final AppModel appModel;
 
   @override
-  VideoSubtitleRegistry? get subtitleRegistry => appModel.videoSubtitleRegistry;
+  Future<VideoSubtitleRegistry?> subtitleRegistry() =>
+      appModel.subtitleSearchRegistry();
 
   @override
   String get jimakuApiKey => appModel.jimakuApiKey;
@@ -217,7 +221,7 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
       initialSeason: spec.season,
       initialApiKey: host.jimakuApiKey,
       onApiKeyChanged: host.setJimakuApiKey,
-      subtitleRegistry: () => host.subtitleRegistry,
+      subtitleRegistry: host.subtitleRegistry,
       saveDirectory: widget.saveDirectory,
       httpClientFactory: host.createHttpClient,
       initialPreferredLanguage: host.preferredLanguageFor(spec.seriesKey),
@@ -237,7 +241,7 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
       database: host.database,
       collection: spec.collection,
       members: spec.members,
-      subtitleRegistry: () => host.subtitleRegistry,
+      subtitleRegistry: host.subtitleRegistry,
       initialApiKey: host.jimakuApiKey,
       onApiKeyChanged: host.setJimakuApiKey,
       saveDirectory: widget.saveDirectory,
@@ -256,20 +260,25 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
     final Widget panel = _scope == SubtitleWorkbenchScope.episode
         ? _buildEpisodePanel()
         : _buildCollectionPanel();
-    return Scaffold(
-      appBar: FushiAppBar(
-        title: Text(t.video_subtitle_workbench_title),
-        // 作用域开关与标题**同一行**。原来它挂在 `AppBar.bottom` 上独占 56px：
-        // 标题行右侧整条空着，开关与面板之间又多一截死白。
-        //
-        // 开关**只放图标、文案落 tooltip**。`AppBar.actions` 不给子级任何宽度上界，
-        // 带文字标签的分段开关按自身固有宽度摊开，宽度随译文长度走：实测
-        // zh 220.8px / ru 474.6px / de 502.8px / en 559.2px / fr 643.8px，360 宽
-        // 的手机上后四种当场 `RenderFlex overflowed by 127~296 pixels`、标题被压成
-        // 0 宽（zh 只是压到 44px，所以只按中文验会整批漏掉）。按屏宽设阈值挡不住：
-        // 「放不放得下」同时取决于宽度、语言和字体，一个常量在任一维度上都必然选错。
-        // 去掉文字标签，这三个变量一起消失——图标宽度是常量，再窄也不会溢出。
-        actions: <Widget>[
+    // M3E：FushiPageScaffold 浮动页头（返回 + 标题胶囊 + 动作胶囊），滚动收起；
+    // Apple 设计系统下仍是同一套页头的玻璃形态。
+    return FushiPageScaffold(
+      title: t.video_subtitle_workbench_title,
+      // 不叠放：正文是字幕面板（内部 Column + Expanded 的定高版面：顶部控件行
+      // 固定、只有列表区各自滚动），不是单一滚动视图，叠到页头底下顶部控件会被
+      // 胶囊盖住。
+      extendBodyBehindHeader: false,
+      // 作用域开关与标题**同一行**。原来它挂在 `AppBar.bottom` 上独占 56px：
+      // 标题行右侧整条空着，开关与面板之间又多一截死白。
+      //
+      // 开关**只放图标、文案落 tooltip**。页头动作区不给子级任何宽度上界，
+      // 带文字标签的分段开关按自身固有宽度摊开，宽度随译文长度走：实测
+      // zh 220.8px / ru 474.6px / de 502.8px / en 559.2px / fr 643.8px，360 宽
+      // 的手机上后四种当场 `RenderFlex overflowed by 127~296 pixels`、标题被压成
+      // 0 宽（zh 只是压到 44px，所以只按中文验会整批漏掉）。按屏宽设阈值挡不住：
+      // 「放不放得下」同时取决于宽度、语言和字体，一个常量在任一维度上都必然选错。
+      // 去掉文字标签，这三个变量一起消失——图标宽度是常量，再窄也不会溢出。
+      actions: <Widget>[
           if (_canSwitchScope)
             Padding(
               padding: const EdgeInsets.only(right: 12),
@@ -280,12 +289,12 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
                   segments: <ButtonSegment<SubtitleWorkbenchScope>>[
                     ButtonSegment<SubtitleWorkbenchScope>(
                       value: SubtitleWorkbenchScope.episode,
-                      icon: const FushiIcon(Icons.subtitles_outlined),
+                      icon: const FushiIcon(FushiIcons.subtitles),
                       tooltip: t.video_subtitle_scope_episode,
                     ),
                     ButtonSegment<SubtitleWorkbenchScope>(
                       value: SubtitleWorkbenchScope.collection,
-                      icon: const FushiIcon(Icons.video_library_outlined),
+                      icon: const FushiIcon(FushiIcons.collection),
                       tooltip: t.video_subtitle_scope_collection,
                     ),
                   ],
@@ -296,10 +305,33 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
               ),
             ),
         ],
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      body: Padding(
+        padding: withBottomSafeInset(
+          context,
+          const EdgeInsets.fromLTRB(16, 4, 16, 8),
+        ),
+        // 切换作用域：两块面板交叉淡入 + 轻微上浮（effects 弹簧，不过冲）。
+        child: AnimatedSwitcher(
+          duration: context.fushiMotion.effectsDefault.duration,
+          switchInCurve: context.fushiMotion.effectsDefault.curve,
+          switchOutCurve: context.fushiMotion.effectsFast.curve,
+          // 面板要吃满正文（内部 Column + Expanded），默认居中松约束的 Stack
+          // 会把它缩成内容宽。
+          layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+            fit: StackFit.expand,
+            children: <Widget>[...previous, ?current],
+          ),
+          transitionBuilder: (Widget child, Animation<double> animation) =>
+              FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.02),
+                end: Offset.zero,
+              ).animate(animation),
+              child: child,
+            ),
+          ),
           child: panel,
         ),
       ),

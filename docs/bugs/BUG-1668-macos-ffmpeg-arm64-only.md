@@ -76,7 +76,7 @@ cue 动图、片段导出、音频容器元数据。
     覆盖同样架构，缺一即 fail（app 将来改单架构也不用改这段）。
   - `third_party/ffmpeg-min/macos/{ffmpeg,ffprobe}`：换成 CI 产出的 universal 二进制
     （`lipo -archs` = `x86_64 arm64`，mode 保持 100755）。
-- **[x] ② 已加自动化测试** — `fushi/test/tools/ffmpeg_min_vendored_universal_guard_test.dart`：
+- **[x] ② 已加自动化测试** — `fushi/test/tools/ffmpeg_min_vendored_universal_guard_test.dart`（2026-10 macOS 版不再支持 Intel Mac 后改名 `ffmpeg_min_vendored_arch_guard_test.dart`，断言改为「恰好 arm64」）：
   纯字节解析 Mach-O/FAT header（不依赖 `lipo`/`file`，Windows/Linux CI 同样有效），断言
   入库的 macOS ffmpeg/ffprobe 同时含 x86_64 与 arm64，另有解析器自测区分 universal 与
   瘦二进制。**验证方式比人为变异更强**：该守卫是在旧的 arm64-only 二进制上先写好并

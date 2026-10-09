@@ -1,15 +1,15 @@
 import 'dart:async';
-import 'dart:math' as math;
 
+import 'package:fushi/src/media/detail/media_detail_kit.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
-import 'package:fushi/src/media/collections/collection_detail_layout.dart'
-    show CollectionHeroBadgeChips, CollectionHeroTagChips;
 import 'package:fushi/src/pages/implementations/discovery/discovery_widgets.dart';
-import 'package:fushi/src/media/video/video_home_layout.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/utils.dart';
@@ -244,7 +244,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 状态流只订阅一次（单订阅流 + 「watchStatus 只调一次」契约），hero 主按钮与
-    // 下方操作区都从这一份状态取值。
+    // 状态行都从这一份状态取值。
     return Scaffold(
       backgroundColor: tokens.surfaces.page,
       body: StreamBuilder<VideoDiscoveryAcquisitionState>(
@@ -265,6 +265,9 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
             ) {
               final VideoDiscoveryDetailData details =
                   snapshot.data ?? VideoDiscoveryDetailData(item: widget.item);
+              final VideoDiscoveryItem item = details.item;
+              final ImageProvider? backdrop = _networkImage(item.backdropUrl) ??
+                  _networkImage(item.posterUrl);
               // BUG-1901：整页一个 SelectionArea，而不是逐个把 Text 换成
               // SelectableText。
               //
@@ -283,51 +286,75 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
               // 空断言。debug 下 assert(geometry.hasSelection) 先一步拦住，**只在
               // release 崩**。
               //
-              // 本页外层 CustomScrollView 用的全是 SliverToBoxAdapter（非懒加载，
-              // 子节点不随滚动回收），本身不触发；真正的懒加载只有 _buildPeople /
-              // _buildRelated 两条横向列表 —— 它们各自用
+              // M3E 详情骨架（MediaDetailLayout）的滚动视图只放 SliverToBoxAdapter /
+              // SingleChildScrollView（非懒加载，子节点不随滚动回收），本身不触发；
+              // 真正的懒加载只有人物条与相关作品条两条横向列表 —— 它们各自用
               // SelectionContainer.disabled 把整条排除在选区外，Selectable 一个都
               // 不注册，触发条件从源头消失。
               //
               // 新增横向/懒加载区块请照做，守卫见
               // test/pages/video_discovery_detail_selectable_test.dart。
-              return SelectionArea(
-                  child: CustomScrollView(
-                key: const PageStorageKey<String>(
-                    'video-discovery-detail-scroll'),
-                slivers: <Widget>[
-                  _buildHero(details.item, state),
-                  SliverToBoxAdapter(
-                    child: _buildActionSection(details.item, state),
-                  ),
-                  if (snapshot.hasError)
-                    SliverToBoxAdapter(child: _buildDetailsError())
-                  else ...<Widget>[
-                    if (snapshot.connectionState != ConnectionState.done)
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: tokens.spacing.page,
-                            vertical: tokens.spacing.gap,
+              return Stack(
+                children: <Widget>[
+                  Positioned.fill(
+                    child: SelectionArea(
+                      child: FushiEntranceScope(
+                        child: MediaDetailLayout(
+                          key: const PageStorageKey<String>(
+                            'video-discovery-detail-scroll',
                           ),
-                          child: const FushiLinearProgressIndicator(
-                            minHeight: 2,
-                          ),
+                          backdrop: backdrop,
+                          backdropBlur: item.backdropUrl == null ? 28 : 16,
+                          header: _buildHero(item, state, backdrop),
+                          slivers: <Widget>[
+                            if (snapshot.hasError)
+                              SliverToBoxAdapter(child: _buildDetailsError())
+                            else ...<Widget>[
+                              if (snapshot.connectionState !=
+                                  ConnectionState.done)
+                                SliverToBoxAdapter(
+                                  child: _buildDetailsLoading(details),
+                                ),
+                              SliverToBoxAdapter(
+                                child: FushiStaggeredEntrance(
+                                  index: 0,
+                                  child: _buildOverview(details),
+                                ),
+                              ),
+                              if (details.people.isNotEmpty)
+                                SliverToBoxAdapter(
+                                  child: FushiStaggeredEntrance(
+                                    index: 1,
+                                    child: _buildPeople(details.people),
+                                  ),
+                                ),
+                              if (details.related.isNotEmpty)
+                                SliverToBoxAdapter(
+                                  child: FushiStaggeredEntrance(
+                                    index: 2,
+                                    child: _buildRelated(details.related),
+                                  ),
+                                ),
+                            ],
+                          ],
                         ),
                       ),
-                    SliverToBoxAdapter(child: _buildOverview(details)),
-                    if (details.people.isNotEmpty)
-                      SliverToBoxAdapter(child: _buildPeople(details.people)),
-                    if (details.related.isNotEmpty)
-                      SliverToBoxAdapter(
-                        child: _buildRelated(details.related),
+                    ),
+                  ),
+                  // 返回键：悬浮圆胶囊（M3E 页头浮动工具栏同一形态 / Apple 玻璃
+                  // 圆钮），压在 hero 背景上、滚动时常驻。
+                  PositionedDirectional(
+                    top: 0,
+                    start: 0,
+                    child: SafeArea(
+                      child: Padding(
+                        padding: EdgeInsets.all(tokens.spacing.gap),
+                        child: const FushiRouteBackButton(),
                       ),
-                  ],
-                  SliverToBoxAdapter(
-                    child: SizedBox(height: tokens.spacing.section),
+                    ),
                   ),
                 ],
-              ));
+              );
             },
           );
         },
@@ -335,151 +362,146 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
     );
   }
 
-  /// 详情 hero：合集详情 hero 的样式语言——剧照 / 海报铺底 + 上浅下深渐变、
-  /// 白字大标题、元信息胶囊、题材胶囊、白底 overImage 主按钮。
+  /// 详情 hero（M3E 详情骨架）：剧照（没有就用海报）模糊大背景 + 色晕、海报
+  /// 封面卡、Display 级标题 + 原名、年份 / 类型 / 评分 chip、主操作按钮组，页脚
+  /// 是可复制的罗马音 / 英文名、题材标签与获取状态。
   Widget _buildHero(
     VideoDiscoveryItem item,
     VideoDiscoveryAcquisitionState state,
+    ImageProvider? backdrop,
   ) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ImageProvider? backdrop = _networkImage(item.backdropUrl);
     final ImageProvider? poster = _networkImage(item.posterUrl);
-    final Size viewport = MediaQuery.sizeOf(context);
-    final double width = viewport.width;
-    final bool compact = width < kVideoDiscoveryCompactWidth;
-    // 与合集详情 hero 同口径：约 60% 视口高，不再按 16:9 撑到整屏。
-    final double expandedHeight = math.min(
-      videoDiscoveryHeroHeightForViewport(width, viewport.height),
-      math.max(compact ? 460.0 : 430.0, viewport.height * 0.62),
-    );
-    final String? original = item.reference.originalTitle?.trim();
-    return FushiSliverAppBar(
-      pinned: true,
-      expandedHeight: expandedHeight,
-      backgroundColor: tokens.surfaces.page,
-      surfaceTintColor: Colors.transparent,
-      // 返回键压在 hero 图上：深色圆底 + 白色箭头，浅色主题收起后也看得见。
-      leading: Padding(
-        padding: const EdgeInsets.all(8),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: coverBadgeScrim(context),
-            shape: BoxShape.circle,
+    final double? score = item.score;
+    return MediaDetailHero(
+      title: item.reference.title,
+      originalTitle: item.reference.originalTitle,
+      backdrop: backdrop,
+      backdropBlur: item.backdropUrl == null ? 28 : 16,
+      cover: poster == null
+          ? const MediaDetailCoverPlaceholder(icon: FushiIcons.video)
+          : Image(
+              image: poster,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              errorBuilder: (_, __, ___) =>
+                  const MediaDetailCoverPlaceholder(icon: FushiIcons.video),
+            ),
+      chips: <MediaDetailChip>[
+        if (item.reference.year != null)
+          MediaDetailChip(
+            '${item.reference.year}',
+            icon: FushiIcons.calendar,
           ),
-          child: const BackButton(color: Colors.white),
+        MediaDetailChip(
+          _kindLabel(item.reference.discoveryCategory),
+          icon: FushiIcons.video,
         ),
-      ),
-      flexibleSpace: FlexibleSpaceBar(
-        background: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            DiscoveryHeroBackdrop(
-              backdrop: backdrop,
-              poster: poster,
-              showPoster: !compact,
-              foregroundPadding: EdgeInsetsDirectional.fromSTEB(
-                0,
-                88,
-                tokens.spacing.page,
-                tokens.spacing.section,
-              ),
-            ),
-            SafeArea(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  tokens.spacing.page,
-                  compact ? 64 : 76,
-                  tokens.spacing.page,
-                  tokens.spacing.section,
-                ),
-                child: Align(
-                  alignment: AlignmentDirectional.bottomStart,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: compact ? 620 : 680),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          item.reference.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: DiscoveryHeroText.title(
-                            context,
-                            wide: !compact,
-                          ),
-                        ),
-                        if (original != null &&
-                            original.isNotEmpty &&
-                            original != item.reference.title) ...<Widget>[
-                          SizedBox(height: tokens.spacing.gap / 2),
-                          Text(
-                            original,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: DiscoveryHeroText.meta(context),
-                          ),
-                        ],
-                        for (final String latinTitle
-                            in videoDiscoveryLatinTitles(item))
-                          _buildCopyableTitle(latinTitle, tokens),
-                        SizedBox(height: tokens.spacing.gap),
-                        CollectionHeroBadgeChips(parts: _badgeParts(item)),
-                        if (item.genres.isNotEmpty) ...<Widget>[
-                          SizedBox(height: tokens.spacing.gap),
-                          CollectionHeroTagChips(
-                            names: item.genres.take(6).toList(),
-                          ),
-                        ],
-                        SizedBox(height: tokens.spacing.card),
-                        _buildPrimaryAction(item, state),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+        if (score != null)
+          MediaDetailChip(
+            score.toStringAsFixed(1),
+            icon: FushiIcons.filled(FushiIcons.star),
+            tone: MediaDetailChipTone.primary,
+          ),
+      ],
+      actions: _buildActionBar(item, state),
+      footer: _buildHeroFooter(item, state),
     );
   }
 
-  /// hero 元信息胶囊：年份 / 类型 / ★ 评分，逐项存在才出。
-  List<String> _badgeParts(VideoDiscoveryItem item) => <String>[
-        if (item.reference.year != null) '${item.reference.year}',
-        _kindLabel(item.reference.discoveryCategory),
-        if (item.score != null) '★ ${item.score!.toStringAsFixed(1)}',
-      ];
-
-  /// 已在库能播 → 「播放」；否则「订阅」是主动作。压在 hero 上：Apple 白底
-  /// prominent 玻璃（Apple TV「播放」），MD3 主色实心按钮。
+  /// 已在库能播 → 「播放」是主动作；否则「找资源」（获取）是主动作。
   bool _playIsPrimary(VideoDiscoveryAcquisitionState state) =>
       state.isInLibrary && widget.actions.onPlay != null;
 
-  Widget _buildPrimaryAction(
+  /// 主操作按钮组：主按钮（播放 / 找资源，filled 大号；下载在飞时挂不确定波浪
+  /// 进度）+ 次按钮（tonal：找资源〔播放占主位时〕/ 订阅 / 字幕）+「⋯」（AI 获取、
+  /// 下载任务）。
+  Widget _buildActionBar(
     VideoDiscoveryItem item,
     VideoDiscoveryAcquisitionState state,
   ) {
-    if (_playIsPrimary(state)) {
-      return FushiFilledButton.icon(
-        key: const ValueKey<String>('video-discovery-play'),
-        overImage: true,
-        onPressed: state.isBusy
+    final bool playPrimary = _playIsPrimary(state);
+    // 「下载中」不门控「找资源」。队列层**从来没有** per-series 并发限制
+    // （enqueue 不查重、claimNextVideoDownloadJob 无 per-series 谓词、唯一的
+    // 去重门是「同后端指纹 + 同 info hash」即同一个种子），限制只存在于这颗
+    // 按钮的 disabled 上。用户「感觉下的源不对劲，想再下一个，但是下不了，只能
+    // 取消或者等下载结束」——那是个纯 UI 造出来的死局。
+    final VoidCallback? onSearchResource =
+        widget.actions.onSearchResource == null
             ? null
-            : () => unawaited(widget.actions.onPlay!(context, item)),
-        icon: const FushiIcon(Icons.play_arrow_rounded),
-        label: Text(t.video_discovery_play),
-      );
-    }
-    return _buildSubscribeButton(item, state, primary: true);
+            : () => unawaited(widget.actions.onSearchResource!(context, item));
+    const Key resourceKey = ValueKey<String>('video-discovery-search-resource');
+    final Widget primary = playPrimary
+        ? MediaDetailPrimaryButton(
+            buttonKey: const ValueKey<String>('video-discovery-play'),
+            icon: FushiIcons.play,
+            label: t.video_discovery_play,
+            progress: state.isBusy ? -1 : null,
+            onPressed: state.isBusy
+                ? null
+                : () => unawaited(widget.actions.onPlay!(context, item)),
+          )
+        : MediaDetailPrimaryButton(
+            buttonKey: resourceKey,
+            icon: FushiIcons.search,
+            label: t.video_discovery_resource_search,
+            progress: state.isBusy ? -1 : null,
+            onPressed: onSearchResource,
+          );
+    final List<MediaDetailMenuItem> more = <MediaDetailMenuItem>[
+      if (widget.actions.onAiAcquire case final ValueChanged<String?> onAi)
+        MediaDetailMenuItem(
+          key: const ValueKey<String>('video-discovery-detail-ai-acquire'),
+          icon: FushiIcons.aiAssistant,
+          label: t.ai_video_acquire_entry,
+          onSelected: () => onAi(item.reference.title),
+        ),
+      if (widget.actions.onOpenDownloads case final VoidCallback onDownloads)
+        MediaDetailMenuItem(
+          key: const ValueKey<String>('video-discovery-detail-downloads-menu'),
+          icon: FushiIcons.download,
+          label: t.download_tasks_tab,
+          onSelected: onDownloads,
+        ),
+    ];
+    return MediaDetailActionBar(
+      key: const ValueKey<String>('video-discovery-actions'),
+      primary: primary,
+      secondary: <Widget>[
+        if (playPrimary)
+          MediaDetailSecondaryButton(
+            buttonKey: resourceKey,
+            icon: FushiIcons.search,
+            label: t.video_discovery_resource_search,
+            onPressed: onSearchResource,
+          ),
+        _buildSubscribeButton(item, state),
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('video-discovery-search-subtitle'),
+          icon: FushiIcons.subtitles,
+          label: t.video_discovery_subtitle_search,
+          // 下载进行中仍允许选择字幕并附加到持久任务；busy 只门控会创建新
+          // 下载/订阅副作用的动作。
+          onPressed: widget.actions.onSearchSubtitle == null
+              ? null
+              : () => unawaited(
+                    widget.actions.onSearchSubtitle!(context, item),
+                  ),
+        ),
+      ],
+      more: more.isEmpty
+          ? null
+          : MediaDetailMoreButton(
+              buttonKey: const ValueKey<String>('video-discovery-detail-more'),
+              items: more,
+            ),
+    );
   }
 
+  /// 订阅（已订阅 = selected，点开订阅管理）。
   Widget _buildSubscribeButton(
     VideoDiscoveryItem item,
-    VideoDiscoveryAcquisitionState state, {
-    required bool primary,
-  }) {
+    VideoDiscoveryAcquisitionState state,
+  ) {
     final VoidCallback? onPressed = state.isBusy
         ? null
         : state.isSubscribed && widget.actions.onOpenSubscriptions != null
@@ -489,53 +511,46 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
                 : () => unawaited(
                       widget.actions.onSubscribe!(context, item),
                     );
-    final Widget icon = FushiIcon(
-      state.isSubscribed
-          ? Icons.favorite_rounded
-          : Icons.favorite_border_rounded,
-    );
-    final Widget label = Text(
-      state.isSubscribed
+    return MediaDetailSecondaryButton(
+      buttonKey: const ValueKey<String>('video-discovery-subscribe'),
+      icon: FushiIcons.favorite,
+      selected: state.isSubscribed,
+      label: state.isSubscribed
           ? t.video_discovery_subscription_manage
           : t.video_discovery_subscribe,
-    );
-    const Key key = ValueKey<String>('video-discovery-subscribe');
-    if (primary) {
-      return FushiFilledButton.icon(
-        key: key,
-        overImage: true,
-        onPressed: onPressed,
-        icon: icon,
-        label: label,
-      );
-    }
-    return FushiFilledButton.tonalIcon(
-      key: key,
       onPressed: onPressed,
-      icon: icon,
-      label: label,
     );
   }
 
-  /// hero 下方的操作区（实色页面底上）：资源 / 字幕搜索 +（播放是主动作时）
-  /// 订阅，再下面是获取状态与在飞下载的取消 / 查看任务。
-  Widget _buildActionSection(
+  /// hero 页脚：罗马音 / 英文名（可复制）、题材标签、获取状态与在飞下载的
+  /// 取消 / 查看任务。
+  Widget _buildHeroFooter(
     VideoDiscoveryItem item,
     VideoDiscoveryAcquisitionState state,
   ) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.card,
-        tokens.spacing.page,
-        0,
-      ),
+    final List<String> latinTitles = videoDiscoveryLatinTitles(item);
+    final List<String> genres = item.genres.take(6).toList();
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 680),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          _buildActions(item, state),
-          SizedBox(height: tokens.spacing.gap),
+          for (final String latinTitle in latinTitles)
+            _buildCopyableTitle(latinTitle, tokens),
+          if (genres.isNotEmpty) ...<Widget>[
+            if (latinTitles.isNotEmpty) SizedBox(height: tokens.spacing.gap),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: <Widget>[
+                for (final String genre in genres) FushiTagChip(label: genre),
+              ],
+            ),
+          ],
+          if (latinTitles.isNotEmpty || genres.isNotEmpty)
+            SizedBox(height: tokens.spacing.card),
           _buildAcquisitionStatus(state),
           if (state.isBusy && state.activeJobIds.isNotEmpty)
             _buildBusyActions(state),
@@ -544,69 +559,23 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
     );
   }
 
-  Widget _buildActions(
-    VideoDiscoveryItem item,
-    VideoDiscoveryAcquisitionState state,
-  ) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Wrap(
-      spacing: tokens.spacing.gap,
-      runSpacing: tokens.spacing.gap,
-      children: <Widget>[
-        FushiOutlinedButton.icon(
-          key: const ValueKey<String>(
-            'video-discovery-search-resource',
-          ),
-          // 「下载中」不再门控这里。队列层**从来没有** per-series 并发限制
-          // （enqueue 不查重、claimNextVideoDownloadJob 无 per-series 谓词、
-          // 唯一的去重门是「同后端指纹 + 同 info hash」即同一个种子），限制只存在
-          // 于这颗按钮的 disabled 上。用户「感觉下的源不对劲，想再下一个，但是
-          // 下不了，只能取消或者等下载结束」——那是个纯 UI 造出来的死局。
-          onPressed: widget.actions.onSearchResource == null
-              ? null
-              : () => unawaited(
-                    widget.actions.onSearchResource!(context, item),
-                  ),
-          icon: const FushiIcon(Icons.search_rounded),
-          label: Text(t.video_discovery_resource_search),
-        ),
-        FushiOutlinedButton.icon(
-          key: const ValueKey<String>(
-            'video-discovery-search-subtitle',
-          ),
-          // 下载进行中仍允许选择字幕并附加到持久任务；busy 只门控会创建新
-          // 下载/订阅副作用的动作。
-          onPressed: widget.actions.onSearchSubtitle == null
-              ? null
-              : () => unawaited(
-                    widget.actions.onSearchSubtitle!(context, item),
-                  ),
-          icon: const FushiIcon(Icons.subtitles_outlined),
-          label: Text(t.video_discovery_subtitle_search),
-        ),
-        // 订阅是 hero 主按钮时这里不重复；播放占了主位才放到这里。
-        if (_playIsPrimary(state))
-          _buildSubscribeButton(item, state, primary: false),
-      ],
-    );
-  }
-
   Widget _buildAcquisitionStatus(VideoDiscoveryAcquisitionState state) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        if (state.isBusy) ...<Widget>[
+        if (state.isBusy)
           const SizedBox.square(
-            dimension: 14,
+            dimension: 16,
             child: FushiCircularProgressIndicator(strokeWidth: 2),
-          ),
-          const SizedBox(width: 8),
-        ] else
+          )
+        else
           FushiIcon(
             state.isInLibrary
-                ? Icons.check_circle_outline_rounded
-                : Icons.route_outlined,
+                ? FushiIcons.filled(FushiIcons.success)
+                : FushiIcons.cloudDownload,
             size: 18,
+            color: state.isInLibrary ? cs.primary : cs.onSurfaceVariant,
           ),
         const SizedBox(width: 8),
         Flexible(
@@ -617,7 +586,9 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
                     : t.video_discovery_pipeline_idle),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: FushiDesignTokens.of(context).type.metadata,
+            style: context.fushiType.labelLarge.copyWith(
+              color: cs.onSurfaceVariant,
+            ),
           ),
         ),
       ],
@@ -643,14 +614,14 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
               onPressed: () => unawaited(
                 widget.actions.onCancelDownloads!(state.activeJobIds),
               ),
-              icon: const FushiIcon(Icons.close, size: 16),
+              icon: const FushiIcon(FushiIcons.close, size: 16),
               label: Text(t.cancel),
             ),
           if (widget.actions.onOpenDownloads != null)
             FushiTextButton.icon(
               key: const ValueKey<String>('video-discovery-detail-downloads'),
               onPressed: widget.actions.onOpenDownloads,
-              icon: const FushiIcon(Icons.download_outlined, size: 16),
+              icon: const FushiIcon(FushiIcons.download, size: 16),
               label: Text(t.download_tasks_tab),
             ),
         ],
@@ -658,19 +629,55 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
     );
   }
 
-  Widget _buildDetailsError() {
+  /// 详情加载中：已有简介 / 资料时只顶一条细进度（不闪回空态）；什么都没有时
+  /// 给段落骨架。
+  Widget _buildDetailsLoading(VideoDiscoveryDetailData details) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final String overview = details.item.overview?.trim() ?? '';
+    if (overview.isNotEmpty || details.facts.isNotEmpty) {
+      return Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.page,
+          vertical: tokens.spacing.gap,
+        ),
+        child: const FushiLinearProgressIndicator(minHeight: 2),
+      );
+    }
     return Padding(
-      padding: EdgeInsets.all(tokens.spacing.page),
-      child: FushiCard(
-        child: Row(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.section,
+        tokens.spacing.page,
+        0,
+      ),
+      child: FushiSkeletonShimmer(
+        child: Column(
+          key: const ValueKey<String>('video-discovery-detail-loading'),
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            const FushiIcon(Icons.cloud_off_outlined),
-            SizedBox(width: tokens.spacing.gap),
-            Expanded(child: Text(t.video_discovery_details_load_failed)),
-            FushiTextButton(onPressed: _retryDetails, child: Text(t.retry)),
+            FushiSkeleton.line(widthFactor: 0.3, height: 22),
+            const SizedBox(height: 16),
+            FushiSkeleton.line(height: 14),
+            const SizedBox(height: 8),
+            FushiSkeleton.line(widthFactor: 0.92, height: 14),
+            const SizedBox(height: 8),
+            FushiSkeleton.line(widthFactor: 0.7, height: 14),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildDetailsError() {
+    return FushiPlaceholderMessage(
+      icon: FushiIcons.cloudOff,
+      tone: FushiPlaceholderTone.error,
+      message: t.video_discovery_details_load_failed,
+      action: FushiFilledButton.tonalIcon(
+        key: const ValueKey<String>('video-discovery-detail-retry'),
+        onPressed: _retryDetails,
+        icon: const FushiIcon(FushiIcons.refresh),
+        label: Text(t.retry),
       ),
     );
   }
@@ -686,25 +693,17 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          FushiSectionTitle(
-            t.download_detail_tab_overview,
-            padding: EdgeInsets.only(
-              top: tokens.spacing.section,
-              bottom: tokens.spacing.gap,
-            ),
-          ),
+          MediaDetailSectionHeader(t.download_detail_tab_overview),
           if (overview != null && overview.isNotEmpty)
-            // BUG-1901：页级 SelectionArea 已让所有文本可选。这里保持普通 Text ——
-            // 嵌套的 SelectableText 会自成一个独立选区，反而切断与标题/元数据的
-            // 跨元素拖选，是 SelectionArea 之前遗留的逐 widget 写法。
+            // BUG-1901：页级 SelectionArea 已让所有文本可选。这里保持普通 Text
+            // （selectable: false）—— 嵌套的 SelectableText 会自成一个独立选区，
+            // 反而切断与标题/元数据的跨元素拖选。
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 820),
-              child: Text(
-                overview,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyLarge
-                    ?.copyWith(height: 1.5),
+              child: MediaDetailSynopsis(
+                key: const ValueKey<String>('video-discovery-overview'),
+                text: overview,
+                collapsedLines: 6,
               ),
             ),
           if (details.facts.isNotEmpty) ...<Widget>[
@@ -755,80 +754,28 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
 
   Widget _buildPeople(List<VideoDiscoveryPerson> people) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.section,
-        0,
-        0,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          FushiSectionTitle(
-            t.video_work_cast_crew,
-            padding: EdgeInsetsDirectional.only(
-              end: tokens.spacing.page,
-              bottom: tokens.spacing.card,
+    // flutter#119355（本仓 BUG-694 / BUG-1582 同一条 release-only 崩溃）：
+    // 懒加载列表不得进入页级 SelectionArea 的选区。详见 build() 里
+    // SelectionArea 处的长注释。这一层把整条横向人物条排除在选区之外——
+    // 里面的 Selectable 一个都不注册，回收也就无从「回收掉选区端点」。
+    //
+    // 顺带解掉桌面端的手势争抢：HorizontalDragScrollable 把
+    // PointerDeviceKind.mouse 塞进了 dragDevices，而 SelectableRegion 对鼠标
+    // 用 PanGestureRecognizer，两者在同一竞技场里抢「鼠标按下横拖」到底算
+    // 「拖着滚」还是「刷选区」（精确指针下 horizontal 的 hitSlop=1 <
+    // pan 的 panSlop=2，横拖多半是滚动赢，但斜拖/纵拖会被选区抢走并触发外层
+    // 纵向视口的边缘自动滚动）。排除选区后这条竞争彻底消失，鼠标横拖恒为滚动。
+    return SelectionContainer.disabled(
+      child: MediaDetailCastStrip(
+        title: t.video_work_cast_crew,
+        padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+        people: <MediaDetailPerson>[
+          for (final VideoDiscoveryPerson person in people)
+            MediaDetailPerson(
+              name: person.name,
+              role: person.role,
+              image: _networkImage(person.imageUrl),
             ),
-          ),
-          // flutter#119355（本仓 BUG-694 / BUG-1582 同一条 release-only 崩溃）：
-          // 懒加载列表不得进入页级 SelectionArea 的选区。详见 build() 里
-          // SelectionArea 处的长注释。这一层把整条横向人物条排除在选区之外——
-          // 里面的 Selectable 一个都不注册，回收也就无从「回收掉选区端点」。
-          //
-          // 顺带解掉桌面端的手势争抢：HorizontalDragScrollable 把
-          // PointerDeviceKind.mouse 塞进了 dragDevices，而 SelectableRegion 对鼠标
-          // 用 PanGestureRecognizer，两者在同一竞技场里抢「鼠标按下横拖」到底算
-          // 「拖着滚」还是「刷选区」（精确指针下 horizontal 的 hitSlop=1 <
-          // pan 的 panSlop=2，横拖多半是滚动赢，但斜拖/纵拖会被选区抢走并触发外层
-          // 纵向视口的边缘自动滚动）。排除选区后这条竞争彻底消失，鼠标横拖恒为滚动。
-          SelectionContainer.disabled(
-            child: SizedBox(
-              height: 142,
-              child: HorizontalDragScrollable(
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: people.length,
-                  separatorBuilder: (_, __) =>
-                      SizedBox(width: tokens.spacing.card),
-                  itemBuilder: (BuildContext context, int index) {
-                    final VideoDiscoveryPerson person = people[index];
-                    final ImageProvider? image = _networkImage(person.imageUrl);
-                    return SizedBox(
-                      width: 92,
-                      child: Column(
-                        children: <Widget>[
-                          CircleAvatar(
-                            radius: 38,
-                            backgroundColor: tokens.surfaces.group,
-                            backgroundImage: image,
-                            child: image == null
-                                ? const FushiIcon(Icons.person_outline_rounded)
-                                : null,
-                          ),
-                          SizedBox(height: tokens.spacing.gap),
-                          Text(
-                            person.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: tokens.type.listTitle,
-                          ),
-                          if (person.role?.trim().isNotEmpty == true)
-                            Text(
-                              person.role!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: tokens.type.metadata,
-                            ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -863,27 +810,29 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
     );
   }
 
-  /// 罗马音 / 英文名一行：文字可选中，右侧按钮一键复制（资源站多按罗马音或
-  /// 英文名发布，搜不到时拿去别处搜）。
+  /// 罗马音 / 英文名一行：文字可选中（页级 SelectionArea），右侧按钮一键复制
+  /// （资源站多按罗马音或英文名发布，搜不到时拿去别处搜）。
   Widget _buildCopyableTitle(String value, FushiDesignTokens tokens) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
     return Padding(
       padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Flexible(
-            child: SelectableText(
+            child: Text(
               value,
               maxLines: 1,
-              style: DiscoveryHeroText.meta(context),
+              overflow: TextOverflow.ellipsis,
+              style: context.fushiType.bodyMedium.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
             ),
           ),
           SizedBox(width: tokens.spacing.gap / 2),
           FushiIconButton(
-            icon: Icons.copy,
+            icon: FushiIcons.copy,
             size: 16,
-            // 压在 hero 深色渐变上：白色图标。
-            enabledColor: Colors.white70,
             tooltip: t.copy,
             onTap: () async {
               await Clipboard.setData(ClipboardData(text: value));
@@ -925,14 +874,14 @@ class _RelatedWorkCard extends StatelessWidget {
       badges: <Widget>[
         if (score != null)
           CoverBadge(
-            icon: Icons.star_rounded,
+            icon: FushiIcons.filled(FushiIcons.star),
             iconSize: 12,
             label: score.toStringAsFixed(1),
           ),
       ],
       cover: DiscoveryImageCover(
         image: _networkImage(item.posterUrl),
-        placeholderIcon: Icons.movie_outlined,
+        placeholderIcon: FushiIcons.video,
       ),
     );
   }

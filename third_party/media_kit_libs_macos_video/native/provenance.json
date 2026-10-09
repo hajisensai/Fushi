@@ -1,0 +1,570 @@
+{
+  "source_repository": "https://github.com/hajisensai/libmpv-darwin-build",
+  "source_commit": "51124a35ce795fd0b5e31198b37b9999378d4c2d",
+  "workflow_run": "https://github.com/hajisensai/libmpv-darwin-build/actions/runs/37763570207",
+  "mpv_commit": "36abaa32d00a7229ee206aae12dc0e97e7962dca",
+  "native_navigation_patch_sha256": "c01c1daddec8523ab2c9944f6ed8cf986e8eb3ae79fe1c6060d0bc9479280a87",
+  "dovi_patch_sha256": "bff4b4bc5cafecf7cf622a85d5c5ebb5ba76739f64189e87e450f7086000b08b",
+  "archive": "libmpv-xcframeworks-bluray.tar.gz",
+  "archive_sha256": "8cab973a90ebd4c5e65e85f44b5241ef567ab44615195804ef0687f4825bcc94",
+  "host_runtime_probe": {
+    "version": "mpv v0.41.0-UNKNOWN",
+    "disc_menu_option_result": 0,
+    "discnav": [
+      {
+        "name": "discnav",
+        "args": [
+          {
+            "name": "action",
+            "type": "Choice",
+            "optional": false,
+            "choices": [
+              "up",
+              "down",
+              "left",
+              "right",
+              "select",
+              "menu",
+              "title-menu",
+              "popup",
+              "prev",
+              "mouse-move",
+              "mouse-click"
+            ]
+          },
+          {
+            "name": "x",
+            "type": "Double",
+            "optional": false,
+            "default-value": -1.0
+          },
+          {
+            "name": "y",
+            "type": "Double",
+            "optional": false,
+            "default-value": -1.0
+          }
+        ],
+        "vararg": false
+      }
+    ],
+    "disc_menu_active_property": true,
+    "disc_navigation_state_json_property": true,
+    "bluray_protocol": true,
+    "truehd_decoder": true,
+    "render_api": true
+  },
+  "host_runtime_probe_architecture": "arm64",
+  "verification": {
+    "sha256": "8cab973a90ebd4c5e65e85f44b5241ef567ab44615195804ef0687f4825bcc94",
+    "platform": "macos",
+    "frameworks": {
+      "Placebo": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "/usr/lib/libSystem.B.dylib",
+              "/usr/lib/libc++.1.dylib"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "/usr/lib/libSystem.B.dylib",
+              "/usr/lib/libc++.1.dylib"
+            ]
+          }
+        ]
+      },
+      "Mbedx509": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "@rpath/Mbedcrypto.framework/Versions/A/Mbedcrypto",
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "@rpath/Mbedcrypto.framework/Versions/A/Mbedcrypto",
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          }
+        ]
+      },
+      "Bluray": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/System/Library/Frameworks/DiskArbitration.framework/Versions/A/DiskArbitration",
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/System/Library/Frameworks/DiskArbitration.framework/Versions/A/DiskArbitration",
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          }
+        ]
+      },
+      "Freetype": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "/usr/lib/libz.1.dylib",
+              "@rpath/Png16.framework/Versions/A/Png16",
+              "@rpath/Harfbuzz.framework/Versions/A/Harfbuzz",
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "/usr/lib/libz.1.dylib",
+              "@rpath/Png16.framework/Versions/A/Png16",
+              "@rpath/Harfbuzz.framework/Versions/A/Harfbuzz",
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          }
+        ]
+      },
+      "Avformat": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "@rpath/Avcodec.framework/Versions/A/Avcodec",
+              "@rpath/Swresample.framework/Versions/A/Swresample",
+              "@rpath/Avutil.framework/Versions/A/Avutil",
+              "/usr/lib/libSystem.B.dylib",
+              "@rpath/Xml2.framework/Versions/A/Xml2",
+              "/usr/lib/libz.1.dylib",
+              "@rpath/Mbedtls.framework/Versions/A/Mbedtls",
+              "@rpath/Mbedcrypto.framework/Versions/A/Mbedcrypto",
+              "@rpath/Mbedx509.framework/Versions/A/Mbedx509",
+              "/System/Library/Frameworks/AudioToolbox.framework/Versions/A/AudioToolbox",
+              "@rpath/Dav1d.framework/Versions/A/Dav1d",
+              "/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox",
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia",
+              "/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo",
+              "/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "@rpath/Avcodec.framework/Versions/A/Avcodec",
+              "@rpath/Swresample.framework/Versions/A/Swresample",
+              "@rpath/Avutil.framework/Versions/A/Avutil",
+              "/usr/lib/libSystem.B.dylib",
+              "@rpath/Xml2.framework/Versions/A/Xml2",
+              "/usr/lib/libz.1.dylib",
+              "@rpath/Mbedtls.framework/Versions/A/Mbedtls",
+              "@rpath/Mbedcrypto.framework/Versions/A/Mbedcrypto",
+              "@rpath/Mbedx509.framework/Versions/A/Mbedx509",
+              "/System/Library/Frameworks/AudioToolbox.framework/Versions/A/AudioToolbox",
+              "@rpath/Dav1d.framework/Versions/A/Dav1d",
+              "/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox",
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia",
+              "/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo",
+              "/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices"
+            ]
+          }
+        ]
+      },
+      "Fribidi": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          }
+        ]
+      },
+      "Mbedtls": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "@rpath/Mbedx509.framework/Versions/A/Mbedx509",
+              "@rpath/Mbedcrypto.framework/Versions/A/Mbedcrypto",
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "@rpath/Mbedx509.framework/Versions/A/Mbedx509",
+              "@rpath/Mbedcrypto.framework/Versions/A/Mbedcrypto",
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          }
+        ]
+      },
+      "Uchardet": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "/usr/lib/libc++.1.dylib",
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "/usr/lib/libc++.1.dylib",
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          }
+        ]
+      },
+      "Png16": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "/usr/lib/libz.1.dylib",
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "/usr/lib/libz.1.dylib",
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          }
+        ]
+      },
+      "Dav1d": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          }
+        ]
+      },
+      "Mbedcrypto": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          }
+        ]
+      },
+      "Harfbuzz": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "/usr/lib/libSystem.B.dylib",
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/System/Library/Frameworks/CoreGraphics.framework/Versions/A/CoreGraphics",
+              "/System/Library/Frameworks/CoreText.framework/Versions/A/CoreText"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "/usr/lib/libSystem.B.dylib",
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/System/Library/Frameworks/CoreGraphics.framework/Versions/A/CoreGraphics",
+              "/System/Library/Frameworks/CoreText.framework/Versions/A/CoreText"
+            ]
+          }
+        ]
+      },
+      "Swresample": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "@rpath/Avutil.framework/Versions/A/Avutil",
+              "/usr/lib/libSystem.B.dylib",
+              "/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox",
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia",
+              "/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo",
+              "/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "@rpath/Avutil.framework/Versions/A/Avutil",
+              "/usr/lib/libSystem.B.dylib",
+              "/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox",
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia",
+              "/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo",
+              "/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices"
+            ]
+          }
+        ]
+      },
+      "Avfilter": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "@rpath/Avutil.framework/Versions/A/Avutil",
+              "/usr/lib/libSystem.B.dylib",
+              "/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox",
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia",
+              "/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo",
+              "/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "@rpath/Avutil.framework/Versions/A/Avutil",
+              "/usr/lib/libSystem.B.dylib",
+              "/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox",
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia",
+              "/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo",
+              "/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices"
+            ]
+          }
+        ]
+      },
+      "Avutil": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "/usr/lib/libSystem.B.dylib",
+              "/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox",
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia",
+              "/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo",
+              "/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "/usr/lib/libSystem.B.dylib",
+              "/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox",
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia",
+              "/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo",
+              "/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices"
+            ]
+          }
+        ]
+      },
+      "Swscale": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "@rpath/Avutil.framework/Versions/A/Avutil",
+              "/usr/lib/libSystem.B.dylib",
+              "/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox",
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia",
+              "/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo",
+              "/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "@rpath/Avutil.framework/Versions/A/Avutil",
+              "/usr/lib/libSystem.B.dylib",
+              "/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox",
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia",
+              "/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo",
+              "/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices"
+            ]
+          }
+        ]
+      },
+      "Xml2": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "/usr/lib/libz.1.dylib",
+              "/usr/lib/libiconv.2.dylib",
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "/usr/lib/libz.1.dylib",
+              "/usr/lib/libiconv.2.dylib",
+              "/usr/lib/libSystem.B.dylib"
+            ]
+          }
+        ]
+      },
+      "Avcodec": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "@rpath/Swresample.framework/Versions/A/Swresample",
+              "@rpath/Avutil.framework/Versions/A/Avutil",
+              "/usr/lib/libSystem.B.dylib",
+              "/System/Library/Frameworks/AudioToolbox.framework/Versions/A/AudioToolbox",
+              "@rpath/Dav1d.framework/Versions/A/Dav1d",
+              "/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox",
+              "/usr/lib/libz.1.dylib",
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia",
+              "/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo",
+              "/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "@rpath/Swresample.framework/Versions/A/Swresample",
+              "@rpath/Avutil.framework/Versions/A/Avutil",
+              "/usr/lib/libSystem.B.dylib",
+              "/System/Library/Frameworks/AudioToolbox.framework/Versions/A/AudioToolbox",
+              "@rpath/Dav1d.framework/Versions/A/Dav1d",
+              "/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox",
+              "/usr/lib/libz.1.dylib",
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia",
+              "/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo",
+              "/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices"
+            ]
+          }
+        ]
+      },
+      "Ass": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "/usr/lib/libiconv.2.dylib",
+              "@rpath/Freetype.framework/Versions/A/Freetype",
+              "@rpath/Fribidi.framework/Versions/A/Fribidi",
+              "@rpath/Harfbuzz.framework/Versions/A/Harfbuzz",
+              "/System/Library/Frameworks/ApplicationServices.framework/Versions/A/ApplicationServices",
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/usr/lib/libSystem.B.dylib",
+              "/System/Library/Frameworks/CoreText.framework/Versions/A/CoreText"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "/usr/lib/libiconv.2.dylib",
+              "@rpath/Freetype.framework/Versions/A/Freetype",
+              "@rpath/Fribidi.framework/Versions/A/Fribidi",
+              "@rpath/Harfbuzz.framework/Versions/A/Harfbuzz",
+              "/System/Library/Frameworks/ApplicationServices.framework/Versions/A/ApplicationServices",
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/usr/lib/libSystem.B.dylib",
+              "/System/Library/Frameworks/CoreText.framework/Versions/A/CoreText"
+            ]
+          }
+        ]
+      },
+      "Mpv": {
+        "": [
+          {
+            "architecture": "x86_64",
+            "dependencies": [
+              "@rpath/Ass.framework/Versions/A/Ass",
+              "@rpath/Avcodec.framework/Versions/A/Avcodec",
+              "@rpath/Avfilter.framework/Versions/A/Avfilter",
+              "@rpath/Avformat.framework/Versions/A/Avformat",
+              "@rpath/Avutil.framework/Versions/A/Avutil",
+              "@rpath/Placebo.framework/Versions/A/Placebo",
+              "@rpath/Swresample.framework/Versions/A/Swresample",
+              "@rpath/Swscale.framework/Versions/A/Swscale",
+              "/usr/lib/libiconv.2.dylib",
+              "@rpath/Bluray.framework/Versions/A/Bluray",
+              "/usr/lib/libSystem.B.dylib",
+              "@rpath/Uchardet.framework/Versions/A/Uchardet",
+              "/usr/lib/libz.1.dylib",
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/System/Library/Frameworks/CoreAudio.framework/Versions/A/CoreAudio",
+              "/System/Library/Frameworks/AudioUnit.framework/Versions/A/AudioUnit",
+              "/System/Library/Frameworks/AudioToolbox.framework/Versions/A/AudioToolbox",
+              "/System/Library/Frameworks/OpenGL.framework/Versions/A/OpenGL",
+              "/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo",
+              "/System/Library/Frameworks/IOSurface.framework/Versions/A/IOSurface",
+              "/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation",
+              "/usr/lib/libobjc.A.dylib"
+            ]
+          },
+          {
+            "architecture": "arm64",
+            "dependencies": [
+              "@rpath/Ass.framework/Versions/A/Ass",
+              "@rpath/Avcodec.framework/Versions/A/Avcodec",
+              "@rpath/Avfilter.framework/Versions/A/Avfilter",
+              "@rpath/Avformat.framework/Versions/A/Avformat",
+              "@rpath/Avutil.framework/Versions/A/Avutil",
+              "@rpath/Placebo.framework/Versions/A/Placebo",
+              "@rpath/Swresample.framework/Versions/A/Swresample",
+              "@rpath/Swscale.framework/Versions/A/Swscale",
+              "/usr/lib/libiconv.2.dylib",
+              "@rpath/Bluray.framework/Versions/A/Bluray",
+              "/usr/lib/libSystem.B.dylib",
+              "@rpath/Uchardet.framework/Versions/A/Uchardet",
+              "/usr/lib/libz.1.dylib",
+              "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+              "/System/Library/Frameworks/CoreAudio.framework/Versions/A/CoreAudio",
+              "/System/Library/Frameworks/AudioUnit.framework/Versions/A/AudioUnit",
+              "/System/Library/Frameworks/AudioToolbox.framework/Versions/A/AudioToolbox",
+              "/System/Library/Frameworks/OpenGL.framework/Versions/A/OpenGL",
+              "/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo",
+              "/System/Library/Frameworks/IOSurface.framework/Versions/A/IOSurface",
+              "/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation",
+              "/usr/lib/libobjc.A.dylib"
+            ]
+          }
+        ]
+      }
+    },
+    "validation": "archive structure, Mach-O CPU slices, dylib closure, navigation markers",
+    "device_menu_rendering_tested": false
+  }
+}

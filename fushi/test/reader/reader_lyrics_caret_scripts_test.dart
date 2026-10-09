@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_lyrics_caret_scripts.dart';
 
@@ -71,5 +73,64 @@ void main() {
       expect(js, contains('window.fushiLyricsCaret.init('));
       expect(js, contains('rgba(1,2,3,0.98)'));
     });
+
+    // 竖排歌词：句子是右起左排的列、字自上而下，方向键转 90°（←/→ 换句、↑/↓
+    // 句内逐字）；横排映射不变。在 node 里真执行 move() 验映射。无 node 时 skip。
+    test('arrow keys rotate with vertical lyrics (executes move via node)',
+        () async {
+      final String? node = _resolveNode();
+      if (node == null) {
+        markTestSkipped('node not found on PATH');
+        return;
+      }
+      final Directory dir =
+          Directory.systemTemp.createTempSync('lyrics_caret_vertical');
+      final File js = File('${dir.path}${Platform.pathSeparator}h.js')
+        ..writeAsStringSync('var window = {}; var document = '
+            '{ contains: function() { return true; } };\n'
+            '${ReaderLyricsCaretScripts.source()}\n$_moveHarness');
+      try {
+        final ProcessResult r = await Process.run(node, <String>[js.path]);
+        expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
+        expect('${r.stdout}', contains('MOVE_OK'));
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
+    });
   });
+}
+
+const String _moveHarness = r'''
+var c = window.fushiLyricsCaret;
+var log = [];
+c.active = true;
+c.node = {};
+c._lineMove = function(f) { log.push(f ? 'nextCue' : 'prevCue'); return {}; };
+c._stepInCue = function(f) { log.push(f ? 'nextChar' : 'prevChar'); return null; };
+function run(vertical) {
+  window.__lyricsVertical = vertical;
+  log = [];
+  ['up', 'down', 'left', 'right'].forEach(function(d) { c.move(d); });
+  return log.join(',');
+}
+var h = run(false), v = run(true);
+if (h !== 'prevCue,nextCue,prevChar,nextChar') throw new Error('horizontal ' + h);
+if (v !== 'prevChar,nextChar,nextCue,prevCue') throw new Error('vertical ' + v);
+console.log('MOVE_OK');
+''';
+
+String? _resolveNode() {
+  final String exe = Platform.isWindows ? 'node.exe' : 'node';
+  final List<String> dirs = <String>[
+    ...(Platform.environment['PATH'] ?? '')
+        .split(Platform.isWindows ? ';' : ':'),
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+  ];
+  for (final String d in dirs) {
+    if (d.isEmpty) continue;
+    final File f = File('$d${Platform.pathSeparator}$exe');
+    if (f.existsSync()) return f.path;
+  }
+  return null;
 }

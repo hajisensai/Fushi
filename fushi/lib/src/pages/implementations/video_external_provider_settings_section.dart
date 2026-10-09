@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
@@ -548,15 +549,26 @@ class _VideoExternalProviderSettingsSectionState
 
   Widget _torznabCard(ThemeData theme, int index) {
     final _TorznabDraft draft = _torznab[index];
+    // M3E：每个索引器一张描边卡（卡 20 圆角），卡头 = 形状底图标 + 启用开关 +
+    // 删除；卡间距 8 与分段列表同一节奏。
     return FushiCard(
       key: ValueKey<String>('video-torznab-${draft.id}'),
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+      variant: FushiCardVariant.outlined,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Row(
             children: <Widget>[
+              FushiListLeadingIcon(
+                FushiIcons.travelExplore,
+                shape: FushiLeadingShape.square,
+                tone: draft.enabled
+                    ? FushiCardTone.primary
+                    : FushiCardTone.secondary,
+              ),
+              const SizedBox(width: 12),
               Expanded(
                 child: FushiSwitchListTile.adaptive(
                   key: ValueKey<String>('video-torznab-$index-enabled'),
@@ -575,7 +587,7 @@ class _VideoExternalProviderSettingsSectionState
                   setState(() => _torznab.removeAt(index));
                   _saveTorznabIfValid();
                 },
-                icon: const FushiIcon(Icons.remove_circle_outline),
+                icon: const FushiIcon(FushiIcons.delete),
               ),
             ],
           ),
@@ -887,14 +899,14 @@ class _VideoExternalProviderSettingsSectionState
         // 品牌名，不进 i18n（同设置页 TMDB 的处理）。
         'Jimaku',
         t.video_jimaku_scope_hint,
-        icon: Icons.subtitles_outlined,
+        icon: FushiIcons.subtitles,
       ),
       _jimakuFields(),
       _sectionHeading(
         theme,
         t.video_opensubtitles_settings_title,
         t.video_opensubtitles_settings_hint,
-        icon: Icons.subtitles_outlined,
+        icon: FushiIcons.subtitles,
       ),
       _openSubtitlesFields(),
       _sectionHeading(
@@ -902,7 +914,7 @@ class _VideoExternalProviderSettingsSectionState
         // 品牌名，不进 i18n（同 Jimaku）。
         'SubDL',
         t.video_subdl_settings_hint,
-        icon: Icons.subtitles_outlined,
+        icon: FushiIcons.subtitles,
       ),
       _subdlFields(),
       _sectionHeading(
@@ -910,7 +922,7 @@ class _VideoExternalProviderSettingsSectionState
         // 品牌名，不进 i18n（同 Jimaku）。
         'AJATT',
         t.video_ajatt_settings_hint,
-        icon: Icons.subtitles_outlined,
+        icon: FushiIcons.subtitles,
       ),
       _ajattFields(),
       _subtitleLanguageField(),
@@ -953,7 +965,7 @@ class _VideoExternalProviderSettingsSectionState
           theme,
           t.video_builtin_sources_title,
           t.video_builtin_sources_hint,
-          icon: Icons.verified_outlined,
+          icon: FushiIcons.verified,
         ),
         SourceToggleList(
           keyPrefix: 'video-builtin-source',
@@ -1014,12 +1026,11 @@ class _VideoExternalProviderSettingsSectionState
   }
 
   Widget _saveFailedBanner(ThemeData theme) => Padding(
-    padding: const EdgeInsets.only(top: 8),
-    child: Text(
-      t.video_external_save_error,
-      style: theme.textTheme.bodySmall?.copyWith(
-        color: theme.colorScheme.error,
-      ),
+    padding: const EdgeInsets.only(top: 8, bottom: 8),
+    child: FushiInlineNotice(
+      message: t.video_external_save_error,
+      severity: FushiNoticeSeverity.error,
+      icon: FushiIcons.error,
     ),
   );
 
@@ -1097,18 +1108,18 @@ class _VideoExternalProviderSettingsSectionState
         theme,
         t.video_torznab_settings_title,
         t.video_torznab_settings_hint,
-        icon: Icons.travel_explore_outlined,
+        icon: FushiIcons.travelExplore,
       ),
       for (int index = 0; index < _torznab.length; index++)
         _torznabCard(theme, index),
       Align(
         alignment: Alignment.centerLeft,
-        child: FushiOutlinedButton.icon(
+        child: FushiFilledButton.tonalIcon(
           key: const ValueKey<String>('video-torznab-add'),
           onPressed: () => setState(
             () => _torznab.add(_TorznabDraft.empty(_newDraftId('torznab'))),
           ),
-          icon: const FushiIcon(Icons.add),
+          icon: const FushiIcon(FushiIcons.add),
           label: Text(t.video_torznab_add),
         ),
       ),
@@ -1132,7 +1143,7 @@ class _VideoExternalProviderSettingsSectionState
           AdaptiveSettingsRow(
             key: const ValueKey<String>('video-path-mapping-add'),
             title: t.video_download_path_mapping_add,
-            icon: Icons.add,
+            icon: FushiIcons.add,
             showIcon: true,
             onTap: () => setState(
               () => _mappings.add(
@@ -1252,8 +1263,9 @@ class _VideoExternalProviderSettingsSectionState
         AdaptiveSettingsRow(
           key: ValueKey<String>('video-path-mapping-$index-remove'),
           title: t.video_external_remove,
-          icon: Icons.remove_circle_outline,
+          icon: FushiIcons.delete,
           showIcon: true,
+
           onTap: () {
             setState(() => _mappings.removeAt(index));
             _saveMappingsIfValid();

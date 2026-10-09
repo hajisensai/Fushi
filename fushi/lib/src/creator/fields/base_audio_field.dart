@@ -2,9 +2,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:multi_value_listenable_builder/multi_value_listenable_builder.dart';
 import 'package:fushi/creator.dart';
@@ -60,17 +61,19 @@ abstract class BaseAudioField extends AudioExportField {
           opacity: 0.5,
           child: Row(
             children: [
-              Container(
-                height: 48,
-                width: 48,
-                padding: const EdgeInsets.all(16),
-                child: adaptiveIndicator(
-                  context: context,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+              SizedBox.square(
+                dimension: 48,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: adaptiveIndicator(
+                    context: context,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
-              const Text(
+              Text(
                 '--:-- / --:--',
+                style: context.fushiType.labelLarge.tabular,
               ),
               Expanded(
                 child: adaptiveSlider(
@@ -186,18 +189,19 @@ abstract class BaseAudioField extends AudioExportField {
       builder: (context, values, _) {
         PlayerState? playerState = values.elementAt(0);
 
-        IconData iconData = Icons.play_arrow_outlined;
+        IconData iconData = FushiIcons.play;
 
         if (playerState == null ||
             playerState.processingState == ProcessingState.completed) {
-          iconData = Icons.play_arrow_outlined;
+          iconData = FushiIcons.play;
         } else if (playerState.playing) {
-          iconData = Icons.pause_outlined;
+          iconData = FushiIcons.pause;
         } else {
-          iconData = Icons.play_arrow_outlined;
+          iconData = FushiIcons.play;
         }
 
-        return FushiIconButtonControl(
+        // M3E：播放键是 tonal 色块圆钮，与时长 / 进度条同一行。
+        return FushiIconButtonControl.filledTonal(
           icon: FushiIcon(iconData, size: 24),
           tooltip: playerState?.playing == true ? t.pause : t.play,
           onPressed: () async {
@@ -285,6 +289,8 @@ abstract class BaseAudioField extends AudioExportField {
 
         return Text(
           '${getPositionText()} / ${getDurationText()}',
+          // 逐秒变化的时长用等宽数字，宽度不跳。
+          style: context.fushiType.labelLarge.tabular,
         );
       },
     );

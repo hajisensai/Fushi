@@ -1,0 +1,7 @@
+{
+  "mpv_commit": "36abaa32d00a7229ee206aae12dc0e97e7962dca",
+  "patch_sha256": "c01c1daddec8523ab2c9944f6ed8cf986e8eb3ae79fe1c6060d0bc9479280a87",
+  "native_menu_schema": 1,
+  "runtime_manifest": "runtime-manifest.json",
+  "dependency_packages": "msys2-packages.json"
+}

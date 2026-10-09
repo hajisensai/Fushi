@@ -11,6 +11,11 @@ import 'package:path/path.dart' as p;
 /// 会抛 [ProcessException]（`系统找不到指定的文件。`）。用于验证枚举附件时被就地兜住、
 /// 降级空集且不刷错误日志。
 class _MissingFfprobeBackend implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async =>
       throw const ProcessException('ffmpeg', <String>[]);

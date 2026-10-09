@@ -78,7 +78,7 @@ void main() {
 
     test('replaceExact：引擎重载时旧目录仍在（顺序反了这里必红）', () async {
       final Directory old = dirFor('JMdict');
-      repo.persistDictionary(dict('JMdict'));
+      await repo.persistDictionary(dict('JMdict'));
       dirAliveAtRebuild.clear(); // persist 自己那次重载不算
 
       final Dictionary? preserved = await manager.resolveAndRemoveReplaced(

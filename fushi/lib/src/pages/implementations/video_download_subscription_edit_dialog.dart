@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show VideoDownloadSubtitlePolicy;

@@ -1,6 +1,6 @@
 import 'dart:ui' show BoxHeightStyle;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/video_player_controller.dart';
@@ -127,6 +127,7 @@ void main() {
         width: 360,
         height: 600,
         child: VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
           controller: controller,
           onTapCue: (_) {},
           onLookupCue: (AudioCue _, int __, Rect rect) => anchor = rect,

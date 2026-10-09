@@ -1,0 +1,1917 @@
+[
+  {
+    "name": "fbdodec-63.dll",
+    "source_name": "avcodec-63.dll",
+    "source_sha256": "464afcb48f6804cc5c6feaef9ee12112da1e92598c0c600ca399baa50e6b3386",
+    "sha256": "edc23629817b2990c3e486649eff6e0386c3719480f8558ed54af1dbb37aa3bd",
+    "bytes": 20632509,
+    "rewritten_references": 39,
+    "imports_and_forwarders": [
+      "fbdaom.dll",
+      "fbdb1.dll",
+      "fbdcairo-2.dll",
+      "fbddav1d-7.dll",
+      "fbddcore.dll",
+      "fbdesample-7.dll",
+      "fbdglib-2.0-0.dll",
+      "fbdgobject-2.0-0.dll",
+      "fbdgsm.dll",
+      "fbdiconv-2.dll",
+      "fbdjxl.dll",
+      "fbdjxl_threads.dll",
+      "fbdlc3-1.dll",
+      "fbdlzma-5.dll",
+      "fbdmp3lame-0.dll",
+      "fbdopencore-amrnb-0.dll",
+      "fbdopencore-amrwb-0.dll",
+      "fbdopenjp2-7.dll",
+      "fbdopus-0.dll",
+      "fbdrav1e.dll",
+      "fbdrsvg-2-2.dll",
+      "fbdspeex-1.dll",
+      "fbdSvtAv1Enc-4.dll",
+      "fbdtheoradec-2.dll",
+      "fbdtheoraenc-2.dll",
+      "fbdtil-61.dll",
+      "fbdva.dll",
+      "fbdvorbis-0.dll",
+      "fbdvorbisenc-2.dll",
+      "fbdvpl-2.dll",
+      "fbdvpx-1.dll",
+      "fbdwebp-7.dll",
+      "fbdwebpmux-3.dll",
+      "fbdx264-165.dll",
+      "fbdx265-217.dll",
+      "fbdzvbi-0.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "ole32.dll"
+    ]
+  },
+  {
+    "name": "fbdevice-63.dll",
+    "source_name": "avdevice-63.dll",
+    "source_sha256": "c7c1826239480702956df9781e86ebe0b892c64f2524a143bcf588681546e6af",
+    "sha256": "e0f2b3a79f9c72b253c7300192b3781e1b17d7a4348068e80f7e522fca0e5901",
+    "bytes": 174540,
+    "rewritten_references": 8,
+    "imports_and_forwarders": [
+      "AVICAP32.dll",
+      "fbdcaca-0.dll",
+      "fbdilter-12.dll",
+      "fbdodec-63.dll",
+      "fbdopenal-1.dll",
+      "fbdormat-63.dll",
+      "fbdtil-61.dll",
+      "GDI32.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "ole32.dll",
+      "OLEAUT32.dll",
+      "SHLWAPI.dll",
+      "USER32.dll"
+    ]
+  },
+  {
+    "name": "fbdilter-12.dll",
+    "source_name": "avfilter-12.dll",
+    "source_sha256": "803d2dd2f7ab01b4a3a7ccf8fb722bffc6053d73dbe3be9f866204022056dc50",
+    "sha256": "72d968b6c3b18b395ba04db567d6354dd2b24f6cd0d0902873a877be4a39bb78",
+    "bytes": 6816518,
+    "rewritten_references": 23,
+    "imports_and_forwarders": [
+      "fbdass-9.dll",
+      "fbdb1.dll",
+      "fbdcale-10.dll",
+      "fbdesample-7.dll",
+      "fbdfontconfig-1.dll",
+      "fbdfreetype-6.dll",
+      "fbdfribidi-0.dll",
+      "fbdgcc_s_seh-1.dll",
+      "fbdharfbuzz-0.dll",
+      "fbdl-0.dll",
+      "fbdodec-63.dll",
+      "fbdormat-63.dll",
+      "fbdplacebo-360.dll",
+      "fbdstdc++-6.dll",
+      "fbdtil-61.dll",
+      "fbdva.dll",
+      "fbdvidstab.dll",
+      "fbdvpl-2.dll",
+      "fbdwhisper-1.dll",
+      "fbdwinpthread-1.dll",
+      "fbdzimg-2.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "ole32.dll",
+      "USER32.dll"
+    ]
+  },
+  {
+    "name": "fbdormat-63.dll",
+    "source_name": "avformat-63.dll",
+    "source_sha256": "4eec4cf1d795cc1b7ff37ddeb87fe3aba5400974a2100412db0fc0d2d6822ab0",
+    "sha256": "17465cb2e3e35f2c7f624fb68ade35618a4e5817255c22b7693828d1de8979db",
+    "bytes": 2993106,
+    "rewritten_references": 15,
+    "imports_and_forwarders": [
+      "fbdb1.dll",
+      "fbdbluray-4.dll",
+      "fbdbz2-1.dll",
+      "fbdgme.dll",
+      "fbdgnutls-30.dll",
+      "fbdiconv-2.dll",
+      "fbdmodplug-1.dll",
+      "fbdodec-63.dll",
+      "fbdrtmp-1.dll",
+      "fbdsrt.dll",
+      "fbdssh.dll",
+      "fbdtil-61.dll",
+      "fbdxml2-16.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "WS2_32.dll"
+    ]
+  },
+  {
+    "name": "fbdtil-61.dll",
+    "source_name": "avutil-61.dll",
+    "source_sha256": "0fa873c6e1e9bb8c81d1580a61073f9327f29bdd92495ac3386b5d4d14c6001d",
+    "sha256": "bf059232657548ebfd6c3262cf973f9076f69345dc23c64f9a602fd0b307048a",
+    "bytes": 1303631,
+    "rewritten_references": 8,
+    "imports_and_forwarders": [
+      "bcrypt.dll",
+      "fbdb1.dll",
+      "fbdva.dll",
+      "fbdva_win32.dll",
+      "fbdvpl-2.dll",
+      "fbdwinpthread-1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "USER32.dll"
+    ]
+  },
+  {
+    "name": "fbdl-0.dll",
+    "source_name": "ggml-0.dll",
+    "source_sha256": "690d93646eb459aa1c56038f2fb3f1a8c7064bb97946690ff46573871fb8b541",
+    "sha256": "1b9346626437e30f0061a28147f7e70aa47909f384f04760de7d3b40cedaa650",
+    "bytes": 54685,
+    "rewritten_references": 4,
+    "imports_and_forwarders": [
+      "fbdgcc_s_seh-1.dll",
+      "fbdl-base-0.dll",
+      "fbdstdc++-6.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdl-base-0.dll",
+    "source_name": "ggml-base-0.dll",
+    "source_sha256": "50157c872ca5ab187b90994a4138db8499979f67f580b67b4d27a53625aabb8e",
+    "sha256": "516f7d7b694fc782e12f4d9756ec389096a6ff4ea11e0daeb467a72adf29ac62",
+    "bytes": 908384,
+    "rewritten_references": 5,
+    "imports_and_forwarders": [
+      "fbdgcc_s_seh-1.dll",
+      "fbdgomp-1.dll",
+      "fbdstdc++-6.dll",
+      "fbdwinpthread-1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdaom.dll",
+    "source_name": "libaom.dll",
+    "source_sha256": "0d43a27f3f2e1ebb4d25236122a6e7b14a190cc986a28f8fe0443d1f045edae8",
+    "sha256": "5f9f845cd42f54e2b6f54d7c5ceb8099dfab24b231934ffaf79e5d111a4485d7",
+    "bytes": 9688502,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdwinpthread-1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdass-9.dll",
+    "source_name": "libass-9.dll",
+    "source_sha256": "d7e21a7fa952033ff5bbacd2564b343671bf0ad4ae9338613935f2709861b9d2",
+    "sha256": "9be32cb89159771b00ff7bc8b43645307a8eda03a9f27db0d16944a752454b82",
+    "bytes": 351277,
+    "rewritten_references": 7,
+    "imports_and_forwarders": [
+      "fbdfontconfig-1.dll",
+      "fbdfreetype-6.dll",
+      "fbdfribidi-0.dll",
+      "fbdharfbuzz-0.dll",
+      "fbdiconv-2.dll",
+      "fbdunibreak-7.dll",
+      "GDI32.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "USER32.dll"
+    ]
+  },
+  {
+    "name": "fbdbluray-4.dll",
+    "source_name": "libbluray-4.dll",
+    "source_sha256": "b7d67f3dddd4cf78ef6579fd660384ca80f9f737c6fb5ac6c9e3cdf3464cfc07",
+    "sha256": "067ed731ffe506206fac7759b5c817db01b38ae26f22dcd334b7a4c5a8cea0c6",
+    "bytes": 374967,
+    "rewritten_references": 3,
+    "imports_and_forwarders": [
+      "ADVAPI32.dll",
+      "fbdfreetype-6.dll",
+      "fbdxml2-16.dll",
+      "GDI32.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "SHELL32.dll",
+      "USER32.dll"
+    ]
+  },
+  {
+    "name": "fbdbrotlicommon.dll",
+    "source_name": "libbrotlicommon.dll",
+    "source_sha256": "ca7bc06ead80259971badf2cd0bfc688db9154dad65f139f49a38b4be9976f97",
+    "sha256": "12e2c27ff04442e78d7acdb26a80e361ffceb812d47d6a6ae77a250714709495",
+    "bytes": 143429,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdbrotlidec.dll",
+    "source_name": "libbrotlidec.dll",
+    "source_sha256": "a142dc6cfa77cb907028aa9426f486f3d8de37855e8db2ae2894147908121881",
+    "sha256": "4ca07e6a9b124c931c05b7b738d67c307254310d2d1261af12caf79c27dce296",
+    "bytes": 62461,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdbrotlicommon.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdbrotlienc.dll",
+    "source_name": "libbrotlienc.dll",
+    "source_sha256": "50c3aca8abcf0d5576f0b62dbd608be285246f8fd1b48ef87d58fa6b8b744e5f",
+    "sha256": "882839a36b4cdbd9e8017da873ed13f1bd404de6a1ce126346969e027e5c4ff8",
+    "bytes": 788364,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdbrotlicommon.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdbz2-1.dll",
+    "source_name": "libbz2-1.dll",
+    "source_sha256": "a4fbb97c26662d2b8a80bf4597ed3effb69b12048b0cb1eef2c3f211e2e66673",
+    "sha256": "f03bb7b990327755c3791a32086a7e95bf95ff75c1d798948c8df67d318f7850",
+    "bytes": 108633,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdcaca-0.dll",
+    "source_name": "libcaca-0.dll",
+    "source_sha256": "54730393b26010bdb0797fe41bec38b8092400b4bbda0e35530fe8af320d8c3d",
+    "sha256": "78c22cf92413fdf1f274ac506bb478fe6bc2f3d56a7810fbf57f2f7ae622d7ad",
+    "bytes": 862030,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdb1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdcairo-2.dll",
+    "source_name": "libcairo-2.dll",
+    "source_sha256": "c474166543aed18b389b20122ca2741189504994dafd86cd5ed121e95bd82ce4",
+    "sha256": "cd87f04df510d7453f75db24d50bbd396b76ba027721743e35bd8505d584d748",
+    "bytes": 1247164,
+    "rewritten_references": 8,
+    "imports_and_forwarders": [
+      "fbdb1.dll",
+      "fbdfontconfig-1.dll",
+      "fbdfreetype-6.dll",
+      "fbdgcc_s_seh-1.dll",
+      "fbdpixman-1-0.dll",
+      "fbdpng16-16.dll",
+      "fbdstdc++-6.dll",
+      "GDI32.dll",
+      "KERNEL32.dll",
+      "MSIMG32.dll",
+      "msvcrt.dll",
+      "ole32.dll",
+      "USER32.dll"
+    ]
+  },
+  {
+    "name": "fbdcairo-gobject-2.dll",
+    "source_name": "libcairo-gobject-2.dll",
+    "source_sha256": "faf68e5929b89461ad58c5d26c549cde07bc06b368fb89ace82923df645c9bd5",
+    "sha256": "85393cd121cfb758ed911d299140fac097b4288c387b5c50a4ae31afbae72be0",
+    "bytes": 35639,
+    "rewritten_references": 4,
+    "imports_and_forwarders": [
+      "fbdcairo-2.dll",
+      "fbdglib-2.0-0.dll",
+      "fbdgobject-2.0-0.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdcrypto-3-x64.dll",
+    "source_name": "libcrypto-3-x64.dll",
+    "source_sha256": "ad397e1391ae38100fa1043d69a3495efa73fd9c2784de0ffc3ede3df1fd092e",
+    "sha256": "522635f271745e077b39fa527c8cf28d90b84b0df45cbb650aa5332d725035b9",
+    "bytes": 5495630,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "ADVAPI32.dll",
+      "CRYPT32.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "USER32.dll",
+      "WS2_32.dll"
+    ]
+  },
+  {
+    "name": "fbdcurl-4.dll",
+    "source_name": "libcurl-4.dll",
+    "source_sha256": "013cf02eccf220ae58c8b681392e617502fa498aeaad916092c4615b9279add2",
+    "sha256": "dd5b6983aae918457d19654ed91de0567242e871bcd919becc3d9125c4a94888",
+    "bytes": 1379962,
+    "rewritten_references": 13,
+    "imports_and_forwarders": [
+      "bcrypt.dll",
+      "CRYPT32.dll",
+      "fbdb1.dll",
+      "fbdbrotlidec.dll",
+      "fbdcrypto-3-x64.dll",
+      "fbdidn2-0.dll",
+      "fbdnghttp2-14.dll",
+      "fbdnghttp3-9.dll",
+      "fbdngtcp2-16.dll",
+      "fbdngtcp2_crypto_ossl-0.dll",
+      "fbdpsl-5.dll",
+      "fbdssh2-1.dll",
+      "fbdssl-3-x64.dll",
+      "fbdzstd.dll",
+      "IPHLPAPI.DLL",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "Secur32.dll",
+      "WLDAP32.dll",
+      "WS2_32.dll"
+    ]
+  },
+  {
+    "name": "fbddatrie-1.dll",
+    "source_name": "libdatrie-1.dll",
+    "source_sha256": "2f784872e6404e57847201fe1e7e591bd5b5be4a319ef38ebcb36014ac7f385d",
+    "sha256": "d322a3f0dc02b81f8319cc4621b672dd347986093d1a8067997bac8a5acfd94a",
+    "bytes": 35033,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbddav1d-7.dll",
+    "source_name": "libdav1d-7.dll",
+    "source_sha256": "29385f5f9b9f8c945eac3366403f529b3bd4bd59aa6eb492e043ffd2d82268c0",
+    "sha256": "0b150b5cfe9e5add64e1a555460077fb26bff48bc4ec38ad2114f3022f9c6141",
+    "bytes": 1931258,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbddeflate.dll",
+    "source_name": "libdeflate.dll",
+    "source_sha256": "4be2ffe36137f533825a853642051f2c1f6ddd2f6515e33c2c32712bc9a6d214",
+    "sha256": "084a1211a19ff15a62d9f2c4ea497395311012e15cdd22ee22bf30e5da643858",
+    "bytes": 95902,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbddovi.dll",
+    "source_name": "libdovi.dll",
+    "source_sha256": "d0ebc0d98ac67dc28b176f77af125f2066dcb6cf6283f71c102d67f0eeb1df7c",
+    "sha256": "d0ebc0d98ac67dc28b176f77af125f2066dcb6cf6283f71c102d67f0eeb1df7c",
+    "bytes": 1370085,
+    "rewritten_references": 0,
+    "imports_and_forwarders": [
+      "api-ms-win-core-synch-l1-2-0.dll",
+      "bcryptprimitives.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "ntdll.dll",
+      "USERENV.dll",
+      "WS2_32.dll"
+    ]
+  },
+  {
+    "name": "fbdexpat-1.dll",
+    "source_name": "libexpat-1.dll",
+    "source_sha256": "1ace13a4460a04cccb4b1e532af98a8e4610581f7ed55413a5ccb615e7d1e1ca",
+    "sha256": "c6ec99b373fc88722359a28c27d600ea0dec009c810feb20d1b0aad464e2b7e6",
+    "bytes": 237567,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdffi-8.dll",
+    "source_name": "libffi-8.dll",
+    "source_sha256": "b649c515907436a3299326f83aea0e8d75c61853eb1609602603bbcb9b00b4db",
+    "sha256": "a112b7523aa07c13b2145e66cb63e8df8808cdaa6b3e3d5d3635bfca71c49240",
+    "bytes": 39699,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdfontconfig-1.dll",
+    "source_name": "libfontconfig-1.dll",
+    "source_sha256": "bed1827dbb226483026b2b33127866ce173aa2423d89ae7da6f88d6328792ec9",
+    "sha256": "551e4755fb5ed1812cf9b5d2cb75be7c23526a4835acfe8fe65e58ebadf6758c",
+    "bytes": 508462,
+    "rewritten_references": 5,
+    "imports_and_forwarders": [
+      "fbdexpat-1.dll",
+      "fbdfreetype-6.dll",
+      "fbdgcc_s_seh-1.dll",
+      "fbdintl-8.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdfreetype-6.dll",
+    "source_name": "libfreetype-6.dll",
+    "source_sha256": "bbb3e6390ee229c867ef31f10e42a49a61a92e434a11d40c6139a2608ebc6194",
+    "sha256": "c0b4f5ee5949b209b93e025e8e1d25ef31a38c2a69bf016852fe3a39c0343e54",
+    "bytes": 790651,
+    "rewritten_references": 6,
+    "imports_and_forwarders": [
+      "fbdb1.dll",
+      "fbdbrotlidec.dll",
+      "fbdbz2-1.dll",
+      "fbdharfbuzz-0.dll",
+      "fbdpng16-16.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdfribidi-0.dll",
+    "source_name": "libfribidi-0.dll",
+    "source_sha256": "84930fd86a3b46b62794a3bbaff21fbbaeaade5ff7cdc70be7f717ad29af87ed",
+    "sha256": "86e9818ab1e32ed8e1deaedfa6ba85a73b60f3424072d218a81ce01325838182",
+    "bytes": 156403,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdgcc_s_seh-1.dll",
+    "source_name": "libgcc_s_seh-1.dll",
+    "source_sha256": "b37c1770c8ca092700875845b34918803ee6311573eba1c32ff4b1166e4a0e1e",
+    "sha256": "51974adaf50c753b75991c0c0176c76bbc29ce310b6787bd40e945af71a8eb2f",
+    "bytes": 150998,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdwinpthread-1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdgdk_pixbuf-2.0-0.dll",
+    "source_name": "libgdk_pixbuf-2.0-0.dll",
+    "source_sha256": "de8c9155341167121f1890224a152da4d283753bac74a0325dee770d76ce30ab",
+    "sha256": "1a9d66c13bd8346ed28a24ea5d2d8630ee14e35ad99e20cf8514f1cb657164ec",
+    "bytes": 362253,
+    "rewritten_references": 10,
+    "imports_and_forwarders": [
+      "fbdgio-2.0-0.dll",
+      "fbdglib-2.0-0.dll",
+      "fbdgmodule-2.0-0.dll",
+      "fbdgobject-2.0-0.dll",
+      "fbdintl-8.dll",
+      "fbdjpeg-8.dll",
+      "fbdpng16-16.dll",
+      "fbdtiff-6.dll",
+      "gdiplus.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "ole32.dll"
+    ]
+  },
+  {
+    "name": "fbdgio-2.0-0.dll",
+    "source_name": "libgio-2.0-0.dll",
+    "source_sha256": "50a134823cd2f5849f3d43889077164a16f5fc79ec8a9f26e8af77ef3e9906ca",
+    "sha256": "f1dc594f30a0cbfec9eca256ba7b0156065db3172aeb35d69d26c38a23a18f9f",
+    "bytes": 1913623,
+    "rewritten_references": 7,
+    "imports_and_forwarders": [
+      "ADVAPI32.dll",
+      "DNSAPI.dll",
+      "fbdb1.dll",
+      "fbdglib-2.0-0.dll",
+      "fbdgmodule-2.0-0.dll",
+      "fbdgobject-2.0-0.dll",
+      "fbdintl-8.dll",
+      "IPHLPAPI.DLL",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "ole32.dll",
+      "SHELL32.dll",
+      "SHLWAPI.dll",
+      "USER32.dll",
+      "WS2_32.dll"
+    ]
+  },
+  {
+    "name": "fbdglib-2.0-0.dll",
+    "source_name": "libglib-2.0-0.dll",
+    "source_sha256": "7b5c19f5540857ec2288323f3b1654cbe5655fc3ea21417a25da69bece489eec",
+    "sha256": "d1fa63d6df59a3447a65d4b30f377674a2b9ac60e8b09fe82a74f520ff3b8bf5",
+    "bytes": 1566649,
+    "rewritten_references": 4,
+    "imports_and_forwarders": [
+      "ADVAPI32.dll",
+      "fbdintl-8.dll",
+      "fbdpcre2-8-0.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "ole32.dll",
+      "SHELL32.dll",
+      "USER32.dll",
+      "WS2_32.dll"
+    ]
+  },
+  {
+    "name": "fbdgme.dll",
+    "source_name": "libgme.dll",
+    "source_sha256": "fcf63dc0a1dc22c885b8cd858b5f1e62a8d916ca6a8c7b9fd867ea46583925b1",
+    "sha256": "9d0b8b8d4d5c975e20bea41e6cd3b95e14c8b30c410b6ab1fa8abd7cc3e91335",
+    "bytes": 376413,
+    "rewritten_references": 3,
+    "imports_and_forwarders": [
+      "fbdb1.dll",
+      "fbdstdc++-6.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdgmodule-2.0-0.dll",
+    "source_name": "libgmodule-2.0-0.dll",
+    "source_sha256": "8dbef9e9647d773433cddfdfba84fd34dd699955c78cceea6ff7d7fc45efc495",
+    "sha256": "ca6f3453156b64396986aa220793b31859ad0543bb20614245830ee0bbe79692",
+    "bytes": 26748,
+    "rewritten_references": 3,
+    "imports_and_forwarders": [
+      "fbdglib-2.0-0.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdgmp-10.dll",
+    "source_name": "libgmp-10.dll",
+    "source_sha256": "37248cda33845e7c5c35a574e57da762dd0a8268f0270d179f30a33746809681",
+    "sha256": "97f589bbe0572c9e2308fffe882b63f547ca643f9f775fc60831518d65496df5",
+    "bytes": 679747,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdgnutls-30.dll",
+    "source_name": "libgnutls-30.dll",
+    "source_sha256": "aca67ef2c8429557e9ac3a02ad313e9fdad35a1416972a248f0a205f83d39fbd",
+    "sha256": "5d3411b6d3e7029810a739fdfa551dec7db9ad50c2712febcc0d68c1580721a9",
+    "bytes": 2316158,
+    "rewritten_references": 14,
+    "imports_and_forwarders": [
+      "ADVAPI32.dll",
+      "CRYPT32.dll",
+      "fbdb1.dll",
+      "fbdbrotlidec.dll",
+      "fbdbrotlienc.dll",
+      "fbdgmp-10.dll",
+      "fbdhogweed-7.dll",
+      "fbdidn2-0.dll",
+      "fbdintl-8.dll",
+      "fbdnettle-9.dll",
+      "fbdp11-kit-0.dll",
+      "fbdtasn1-6.dll",
+      "fbdunistring-5.dll",
+      "fbdwinpthread-1.dll",
+      "fbdzstd.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "ncrypt.dll",
+      "WS2_32.dll"
+    ]
+  },
+  {
+    "name": "fbdgobject-2.0-0.dll",
+    "source_name": "libgobject-2.0-0.dll",
+    "source_sha256": "912936c8782605f29db0abfd528aeecbc550c45782ae14d7e2f0aa0c4809136f",
+    "sha256": "cdaa5db2089d8c7185f1afe85c9c8337dab8f2e0b0f780aefeb70cd1e26a4458",
+    "bytes": 359475,
+    "rewritten_references": 4,
+    "imports_and_forwarders": [
+      "fbdffi-8.dll",
+      "fbdglib-2.0-0.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdgomp-1.dll",
+    "source_name": "libgomp-1.dll",
+    "source_sha256": "acf25eeee8cb358db82e3f42c96d1934b915d62b883ea8bef31d766946f1c326",
+    "sha256": "b7ea6a4eb7ced826b8772ff4d585039ede85c72b073fe2e47258fc9667808a8c",
+    "bytes": 329299,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdwinpthread-1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdgraphite2.dll",
+    "source_name": "libgraphite2.dll",
+    "source_sha256": "063a9ad34a5ec87d038b4646660957395224ecf2cf707917256b7d251a7c5f57",
+    "sha256": "8f12002c23a3d316199db7ea36d78970bf3bb9e070edb2e5e8515027f5efc7e3",
+    "bytes": 167155,
+    "rewritten_references": 3,
+    "imports_and_forwarders": [
+      "fbdgcc_s_seh-1.dll",
+      "fbdstdc++-6.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdgsm.dll",
+    "source_name": "libgsm.dll",
+    "source_sha256": "687f6fd4d7aaa7a725e856000e5e9f3bfb77fcaa554713db432cf6c4f433a3a1",
+    "sha256": "6ef82371b1fad03069cbef6fd55baa696534d8a870ff8aa0bac150f131aa4bb3",
+    "bytes": 56554,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdharfbuzz-0.dll",
+    "source_name": "libharfbuzz-0.dll",
+    "source_sha256": "d132f28331767af741e75684fdeb48a91c9be88285020afb7ba8bf0d80f7a3b5",
+    "sha256": "55cb4ec9d07913eaabebdcf7f82aa5886ded4a27d15240a169e3718e4b573c16",
+    "bytes": 1563763,
+    "rewritten_references": 5,
+    "imports_and_forwarders": [
+      "DWrite.dll",
+      "fbdfreetype-6.dll",
+      "fbdgcc_s_seh-1.dll",
+      "fbdglib-2.0-0.dll",
+      "fbdgraphite2.dll",
+      "GDI32.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "RPCRT4.dll",
+      "USER32.dll",
+      "USP10.dll"
+    ]
+  },
+  {
+    "name": "fbdhogweed-7.dll",
+    "source_name": "libhogweed-7.dll",
+    "source_sha256": "8a4785b98e5418c32035f570904f65360c89825358702954b53c77ee2df8c97d",
+    "sha256": "857c41e16a22d4acda0991c8c88fc454eeb6e167bb67cbc89d31aa825fffc484",
+    "bytes": 275389,
+    "rewritten_references": 3,
+    "imports_and_forwarders": [
+      "fbdgmp-10.dll",
+      "fbdnettle-9.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdhwy.dll",
+    "source_name": "libhwy.dll",
+    "source_sha256": "4cd65f4bb3c123471a23f3eed734adbb31522b012c2c1776640d9634fbeb623c",
+    "sha256": "f5cfe9fd52a542d70eee21f2fdeedd2c17479a83977d3ba9203c4f5d3a88bd0a",
+    "bytes": 88615,
+    "rewritten_references": 3,
+    "imports_and_forwarders": [
+      "fbdgcc_s_seh-1.dll",
+      "fbdstdc++-6.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdiconv-2.dll",
+    "source_name": "libiconv-2.dll",
+    "source_sha256": "7a282a854e01be726c6cccfe46f548c716aa45b3014818468253aaa4efbcd067",
+    "sha256": "4396b0fce6efe92cf9a20fd8741433898855507e38f3597069ac1cb79363f6b4",
+    "bytes": 1143148,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdidn2-0.dll",
+    "source_name": "libidn2-0.dll",
+    "source_sha256": "9880b52651a0247640a2531d777380f7c35fac7efa7e3979b265ddcb78db8642",
+    "sha256": "b3cad85571d9450f52b211f5e78d0ce02d55c7744471757ab1b954e0b216e13c",
+    "bytes": 247081,
+    "rewritten_references": 4,
+    "imports_and_forwarders": [
+      "fbdiconv-2.dll",
+      "fbdintl-8.dll",
+      "fbdunistring-5.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdintl-8.dll",
+    "source_name": "libintl-8.dll",
+    "source_sha256": "0537c3dd2378218508ebe3cc416d72a99ee2d24ae1c5525e23458f32544ef861",
+    "sha256": "e4701e4f3134245a7207d4167c50d3652823a2a389794193e4349b27b814cd5e",
+    "bytes": 298731,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "ADVAPI32.dll",
+      "fbdiconv-2.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdjbig-0.dll",
+    "source_name": "libjbig-0.dll",
+    "source_sha256": "9286b1f637ff4a249d81238ea9c9ebf4fb083727dfc4235c750bf749606d85f0",
+    "sha256": "422539fe42dfcbbfe0cbb42925ff0c32bd8ba23b341508461601773ac9bb1597",
+    "bytes": 60973,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdjpeg-8.dll",
+    "source_name": "libjpeg-8.dll",
+    "source_sha256": "b564d34adaca83e73af0e2231719dd0198ea6cd074c64b2ba85bfd7182f27db7",
+    "sha256": "3fcb3228eef10e2d534c8427db84bb11ecf34088b0321392ed91b25f8ca7ece9",
+    "bytes": 967968,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdjxl.dll",
+    "source_name": "libjxl.dll",
+    "source_sha256": "d8d1ba0ba4c12ae74a15d44e06a798eafe18842dde71130653dd982dab5fe2a1",
+    "sha256": "2fdd049c94e931df539c8ab33031de41364603909b14c4a6219dce443091a1b5",
+    "bytes": 6218625,
+    "rewritten_references": 7,
+    "imports_and_forwarders": [
+      "fbdbrotlidec.dll",
+      "fbdbrotlienc.dll",
+      "fbdgcc_s_seh-1.dll",
+      "fbdhwy.dll",
+      "fbdjxl_cms.dll",
+      "fbdstdc++-6.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdjxl_cms.dll",
+    "source_name": "libjxl_cms.dll",
+    "source_sha256": "6d822a9ac8288fda334b460cbe008716c7b6e9b20e160b9b6ca23871506f0a00",
+    "sha256": "baec5ab247fc275a7bd2499bd3c55e59df64a2fbc7e285b003768c314e220b16",
+    "bytes": 147921,
+    "rewritten_references": 5,
+    "imports_and_forwarders": [
+      "fbdgcc_s_seh-1.dll",
+      "fbdhwy.dll",
+      "fbdlcms2-2.dll",
+      "fbdstdc++-6.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdjxl_threads.dll",
+    "source_name": "libjxl_threads.dll",
+    "source_sha256": "5a70b49f81063b865225871a3ae0c70566a7c8357058b6c243855c23b143e076",
+    "sha256": "08d2b2816ab28062171d718c1892a7e593568f2f60c3b28e63f39b14c427188e",
+    "bytes": 25750,
+    "rewritten_references": 4,
+    "imports_and_forwarders": [
+      "fbdgcc_s_seh-1.dll",
+      "fbdstdc++-6.dll",
+      "fbdwinpthread-1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdlc3-1.dll",
+    "source_name": "liblc3-1.dll",
+    "source_sha256": "ead8e36dd9b502baccfd4814eb84e3047a597fb2b96231592367f1fac7587904",
+    "sha256": "e2c2865e7030ffbe83bd5edad77318688aaf5dac076590b367b20a50a0ea700d",
+    "bytes": 165244,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdlcms2-2.dll",
+    "source_name": "liblcms2-2.dll",
+    "source_sha256": "dc241cbdf2d295846ec564c1eb3c01639d43c0d72415a8758e65d71df31cc0ba",
+    "sha256": "cd4cd075cccef720c8a6bb657046846d508c2ef89bc739e939594d225cc9574c",
+    "bytes": 456345,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdLerc.dll",
+    "source_name": "libLerc.dll",
+    "source_sha256": "6887fb5aeabf382a835a4cb693025e8d48d9c90e82ca4eae5d2d8ffb70c6ca9a",
+    "sha256": "74882156f10dc0e31d34d41059f17e0c120f56f19f8e38c8c0b04250c2a2e3c4",
+    "bytes": 804265,
+    "rewritten_references": 3,
+    "imports_and_forwarders": [
+      "fbdgcc_s_seh-1.dll",
+      "fbdstdc++-6.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdlzma-5.dll",
+    "source_name": "liblzma-5.dll",
+    "source_sha256": "dc9edb9bd83b0371fe68d96cb3e70cd17b7a5aba958326a18f8210cb812432e9",
+    "sha256": "a37620d2a680ab5f57daf6db403906d3fad5d495d33773256ca9f343a0ed3c58",
+    "bytes": 191836,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdmodplug-1.dll",
+    "source_name": "libmodplug-1.dll",
+    "source_sha256": "e570d941ff40c0329dbd9bdbe9735d583c7836b1ecb3513d6fb767bcee889186",
+    "sha256": "d955c0e95c6c8ee0907f55f461a18c51c498f4efabeef6684f01abbdecad1b13",
+    "bytes": 399547,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdstdc++-6.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "USER32.dll"
+    ]
+  },
+  {
+    "name": "fbdmp3lame-0.dll",
+    "source_name": "libmp3lame-0.dll",
+    "source_sha256": "f40c566b56a97e32036f3d5263fd7dc2dafa6fc7ded326045dd637dd55d68c24",
+    "sha256": "2a19360c591fdc2f177bb4778a164a9daad7c7fc53b32f85eced89005b4bacf3",
+    "bytes": 329506,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "libmpv-2.dll",
+    "source_name": "libmpv-2.dll",
+    "source_sha256": "03b5deac6d5cbea9d8e37e977a466d5ab99f1137f6d329f30d0343ba7cc5bbad",
+    "sha256": "d087f62e9116a519a4d54ff15eb0e116ef30288f8e73def9801df5f988311d49",
+    "bytes": 4068726,
+    "rewritten_references": 22,
+    "imports_and_forwarders": [
+      "ADVAPI32.dll",
+      "api-ms-win-core-path-l1-1-0.dll",
+      "AVRT.dll",
+      "dwmapi.dll",
+      "fbdass-9.dll",
+      "fbdb1.dll",
+      "fbdbluray-4.dll",
+      "fbdcaca-0.dll",
+      "fbdcale-10.dll",
+      "fbdcurl-4.dll",
+      "fbdesample-7.dll",
+      "fbdevice-63.dll",
+      "fbdiconv-2.dll",
+      "fbdilter-12.dll",
+      "fbdjpeg-8.dll",
+      "fbdkan-1.dll",
+      "fbdlcms2-2.dll",
+      "fbdodec-63.dll",
+      "fbdormat-63.dll",
+      "fbdplacebo-360.dll",
+      "fbdshaderc_shared.dll",
+      "fbdspirv-cross-c-shared.dll",
+      "fbdtil-61.dll",
+      "fbdva.dll",
+      "fbdva_win32.dll",
+      "fbdzimg-2.dll",
+      "GDI32.dll",
+      "IMM32.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "ntdll.dll",
+      "ole32.dll",
+      "OPENGL32.dll",
+      "SHCORE.dll",
+      "SHELL32.dll",
+      "USER32.dll",
+      "UxTheme.dll",
+      "VERSION.dll"
+    ]
+  },
+  {
+    "name": "fbdnettle-9.dll",
+    "source_name": "libnettle-9.dll",
+    "source_sha256": "208002d990684946c7923a87022bedea588fef8e31286598c08805e37be2a95a",
+    "sha256": "cc9d04993f7253e910e11cdb3f3f52f626f2f9d9d3e7178d354c7454406566fa",
+    "bytes": 360977,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdnghttp2-14.dll",
+    "source_name": "libnghttp2-14.dll",
+    "source_sha256": "25e6516899fd5021df8c67b92e9f7246249fb03bb7bdf56a08260a8dded06b00",
+    "sha256": "520b465531d1bb37343b635b6071e7cab348957ce9ce6ef3da1509286fce372e",
+    "bytes": 215032,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdnghttp3-9.dll",
+    "source_name": "libnghttp3-9.dll",
+    "source_sha256": "f94b97f5f882e70c13c2f540e2bcb3da5f5bba0e2e40dcd784dd5ef65771f001",
+    "sha256": "716848fd6308560fa5a8817869a02258b244c67f8f74978e8af80bb1a0bea391",
+    "bytes": 207858,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdngtcp2-16.dll",
+    "source_name": "libngtcp2-16.dll",
+    "source_sha256": "5df6354a4efbd5e797dc9ec3e0f38892a2ee89d759d781e91a0f14a70344a8f5",
+    "sha256": "b1bb27f7e7b9ef259ef51d98b80d5db02cf0dd16db666b23b80378b02c8474cc",
+    "bytes": 393683,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdngtcp2_crypto_ossl-0.dll",
+    "source_name": "libngtcp2_crypto_ossl-0.dll",
+    "source_sha256": "6fe49128e600120ef04937b69e6f9a2447f1293697d4b8aa4c239d7549bc913a",
+    "sha256": "a4b076cf6d1b715f94c8bc03f0bbd173170b52f3e3f829dd641160f6ab3210ec",
+    "bytes": 54255,
+    "rewritten_references": 4,
+    "imports_and_forwarders": [
+      "fbdcrypto-3-x64.dll",
+      "fbdngtcp2-16.dll",
+      "fbdssl-3-x64.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdogg-0.dll",
+    "source_name": "libogg-0.dll",
+    "source_sha256": "3038ce8d161324a6349bf7c83b78493857ff6a3501e3adb3d541c6a07bd94a57",
+    "sha256": "22ffa250ba5d4513f29fd2c47e4b62c98a1cabbcd51e5bed5a9aa4dd07aa6910",
+    "bytes": 40580,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdopenal-1.dll",
+    "source_name": "libopenal-1.dll",
+    "source_sha256": "cb97d2f5a9797ff64db90d0691e4ff9eb2a088026351c9bad7aa26d229a354ce",
+    "sha256": "8aa979035f36dbbccfd56edff2b24a03f7497c04de3e52441e0d518cfeb5a5b7",
+    "bytes": 2728444,
+    "rewritten_references": 4,
+    "imports_and_forwarders": [
+      "AVRT.dll",
+      "fbdgcc_s_seh-1.dll",
+      "fbdstdc++-6.dll",
+      "fbdwinpthread-1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "ole32.dll",
+      "SHELL32.dll",
+      "USER32.dll",
+      "WINMM.dll"
+    ]
+  },
+  {
+    "name": "fbdopencore-amrnb-0.dll",
+    "source_name": "libopencore-amrnb-0.dll",
+    "source_sha256": "8f9b1fd5fec2042a3b6af15eae54474210569c75bcc482fe702b45dcb3e96397",
+    "sha256": "994e5e03d7e27d1cacd9eca30944478fe23650143581777c22f66273d7713cda",
+    "bytes": 174211,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdopencore-amrwb-0.dll",
+    "source_name": "libopencore-amrwb-0.dll",
+    "source_sha256": "7482267efad926b69c8304ec631fd531a2fc5d99b481b59cb5b34d8540a38dc2",
+    "sha256": "dce1e870bd8b9b723caf635da51345a3bdf7bbaf5d57d6a27c3fcb38a92f4816",
+    "bytes": 91267,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdopenjp2-7.dll",
+    "source_name": "libopenjp2-7.dll",
+    "source_sha256": "123587086cb1a25d2a338fb9b7c1d6bda10bf9062625b4f08c6a92b3d9cafe47",
+    "sha256": "8a711da651010d82aa7f0cb74523d07acf8597457fd357d68c2b475fd6ba6d7f",
+    "bytes": 519082,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdgcc_s_seh-1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdopus-0.dll",
+    "source_name": "libopus-0.dll",
+    "source_sha256": "90aa25a0a6525d7da48a7ae8dd3306e45b0c28ce09a73d2a02b56cd95418d5be",
+    "sha256": "1f6b1bdc143e8a4b5b3b7d8aa14252e83245fc56bafcde131d8a762e3b1693d6",
+    "bytes": 500112,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdp11-kit-0.dll",
+    "source_name": "libp11-kit-0.dll",
+    "source_sha256": "ada3949f3763db47a754eec56388f3305c41c259eb3bbae188a820fd01c5445b",
+    "sha256": "4421c4cc34ac1469fa1f618abd6869df5c5fb87f870cf7cd8c7db16e84d9c72d",
+    "bytes": 1594910,
+    "rewritten_references": 3,
+    "imports_and_forwarders": [
+      "fbdffi-8.dll",
+      "fbdintl-8.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "SHELL32.dll"
+    ]
+  },
+  {
+    "name": "fbdpango-1.0-0.dll",
+    "source_name": "libpango-1.0-0.dll",
+    "source_sha256": "078881c139e7dd422c4cb5f9c43b939712eb7ad4f3d7d25c41639873e8aec6d6",
+    "sha256": "d8d3379a504b555d2c48d5fa1b5cd977adbcd24a1498f1ff5442e011887382be",
+    "bytes": 434535,
+    "rewritten_references": 7,
+    "imports_and_forwarders": [
+      "fbdfribidi-0.dll",
+      "fbdgio-2.0-0.dll",
+      "fbdglib-2.0-0.dll",
+      "fbdgobject-2.0-0.dll",
+      "fbdharfbuzz-0.dll",
+      "fbdthai-0.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdpangocairo-1.0-0.dll",
+    "source_name": "libpangocairo-1.0-0.dll",
+    "source_sha256": "b9f800abeafd27c07dc9f9fa4a41bb614564038ce7ac5753ca6c60c1d7d555cc",
+    "sha256": "d037a965b2d83aa7145d18d7244ffb2068b6471dafc9d61eba09a3bae3ac17da",
+    "bytes": 83118,
+    "rewritten_references": 9,
+    "imports_and_forwarders": [
+      "fbdcairo-2.dll",
+      "fbdfontconfig-1.dll",
+      "fbdglib-2.0-0.dll",
+      "fbdgobject-2.0-0.dll",
+      "fbdharfbuzz-0.dll",
+      "fbdpango-1.0-0.dll",
+      "fbdpangoft2-1.0-0.dll",
+      "fbdpangowin32-1.0-0.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdpangoft2-1.0-0.dll",
+    "source_name": "libpangoft2-1.0-0.dll",
+    "source_sha256": "38602e75c85e149bf7294bccb8792f54299daed45509a8ac4b3a18e3921ec56e",
+    "sha256": "f5f36c299c5a188add77e776948236828a9483ad07f34bfe4effbd36c06e215e",
+    "bytes": 111841,
+    "rewritten_references": 8,
+    "imports_and_forwarders": [
+      "fbdfontconfig-1.dll",
+      "fbdfreetype-6.dll",
+      "fbdgio-2.0-0.dll",
+      "fbdglib-2.0-0.dll",
+      "fbdgobject-2.0-0.dll",
+      "fbdharfbuzz-0.dll",
+      "fbdpango-1.0-0.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdpangowin32-1.0-0.dll",
+    "source_name": "libpangowin32-1.0-0.dll",
+    "source_sha256": "2fb6d21cce830182c9d4bf22015dec9abbb0846ebce828ca0a5d4cefc74e46c6",
+    "sha256": "d87727f8eb97f92a5461ad33a5eab277d2e914321412ecc9e9c1135d9a0b7b76",
+    "bytes": 111376,
+    "rewritten_references": 6,
+    "imports_and_forwarders": [
+      "ADVAPI32.dll",
+      "DWrite.dll",
+      "fbdgio-2.0-0.dll",
+      "fbdglib-2.0-0.dll",
+      "fbdgobject-2.0-0.dll",
+      "fbdharfbuzz-0.dll",
+      "fbdpango-1.0-0.dll",
+      "GDI32.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "USER32.dll"
+    ]
+  },
+  {
+    "name": "fbdpcre2-8-0.dll",
+    "source_name": "libpcre2-8-0.dll",
+    "source_sha256": "a499fb8a7eff453d6e4f0842576bc5171d40a1505d8f7f13fff6cee51b738a62",
+    "sha256": "f6d905c5ea14f28c149c1ee3b63e24d6e24ce124353ee9c1c7e6e100d9fdc63b",
+    "bytes": 717955,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdpixman-1-0.dll",
+    "source_name": "libpixman-1-0.dll",
+    "source_sha256": "55ce45825eb8e825c635416171be4736147a6b0b690469f545d8c4ae8e85b4a3",
+    "sha256": "3d67a3f48ef34015d8ac7b13fef15c285e71f58bd10e67ed67a8802b1afc15c3",
+    "bytes": 740378,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdplacebo-360.dll",
+    "source_name": "libplacebo-360.dll",
+    "source_sha256": "4edb51d4e74ede8d9543571ed5f6fe896c4fe4894e58a14dcfafbb9c0aa6ddc2",
+    "sha256": "36c79a07fbbadf449a8a3b1629f7ed3e9f7af8a22e7e4b868d1dd1f53b2483ee",
+    "bytes": 1236730,
+    "rewritten_references": 9,
+    "imports_and_forwarders": [
+      "api-ms-win-crt-math-l1-1-0.dll",
+      "fbddovi.dll",
+      "fbdgcc_s_seh-1.dll",
+      "fbdkan-1.dll",
+      "fbdlcms2-2.dll",
+      "fbdshaderc_shared.dll",
+      "fbdspirv-cross-c-shared.dll",
+      "fbdstdc++-6.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "SHLWAPI.dll",
+      "USER32.dll",
+      "VERSION.dll"
+    ]
+  },
+  {
+    "name": "fbdpng16-16.dll",
+    "source_name": "libpng16-16.dll",
+    "source_sha256": "3737838ee8d6b893df7bdabf7439775371a57dce7e17ee6b35586023c64bd9ab",
+    "sha256": "6d239478b4ab04593b9cdb9cfaeec331120e8b15bb29191522420b22d9467865",
+    "bytes": 264269,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdb1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdpsl-5.dll",
+    "source_name": "libpsl-5.dll",
+    "source_sha256": "b31fc70eda598a39b65fe2736d815518db0652d641346f75eac40c2a0499b058",
+    "sha256": "78403acf03ac66d4503677b6c70bbd965a5f486925e11e68884808a3401da287",
+    "bytes": 105304,
+    "rewritten_references": 4,
+    "imports_and_forwarders": [
+      "fbdiconv-2.dll",
+      "fbdidn2-0.dll",
+      "fbdunistring-5.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "WS2_32.dll"
+    ]
+  },
+  {
+    "name": "fbdrav1e.dll",
+    "source_name": "librav1e.dll",
+    "source_sha256": "6fe18e4a040c471dc13bcea44ecd2c6a3c040971542c6b798627e4c787056acb",
+    "sha256": "6fe18e4a040c471dc13bcea44ecd2c6a3c040971542c6b798627e4c787056acb",
+    "bytes": 3527680,
+    "rewritten_references": 0,
+    "imports_and_forwarders": [
+      "api-ms-win-core-synch-l1-2-0.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "ntdll.dll"
+    ]
+  },
+  {
+    "name": "fbdrsvg-2-2.dll",
+    "source_name": "librsvg-2-2.dll",
+    "source_sha256": "f54d578420fc062ad703c3eea3b665ed4e676ae78be43f5bad02e1020f833c7a",
+    "sha256": "2720f295bad0ee46139e325d687cfc116cbf53191d6ced390ddd7982793d739f",
+    "bytes": 11755598,
+    "rewritten_references": 11,
+    "imports_and_forwarders": [
+      "api-ms-win-core-synch-l1-2-0.dll",
+      "bcryptprimitives.dll",
+      "fbdcairo-2.dll",
+      "fbdcairo-gobject-2.dll",
+      "fbdgcc_s_seh-1.dll",
+      "fbdgdk_pixbuf-2.0-0.dll",
+      "fbdgio-2.0-0.dll",
+      "fbdglib-2.0-0.dll",
+      "fbdgobject-2.0-0.dll",
+      "fbdpango-1.0-0.dll",
+      "fbdpangocairo-1.0-0.dll",
+      "fbdxml2-16.dll",
+      "kernel32.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "ntdll.dll",
+      "USERENV.dll",
+      "WS2_32.dll"
+    ]
+  },
+  {
+    "name": "fbdrtmp-1.dll",
+    "source_name": "librtmp-1.dll",
+    "source_sha256": "2c8c2ea1a686d954129b94c06dd2ab2163d45521211376ea2694f131d75ce6fc",
+    "sha256": "bc0461c312b57c4d0b0170d9e4711b892085e44f3753bd9a2fac93ed232e5f6d",
+    "bytes": 183492,
+    "rewritten_references": 6,
+    "imports_and_forwarders": [
+      "fbdb1.dll",
+      "fbdgmp-10.dll",
+      "fbdgnutls-30.dll",
+      "fbdhogweed-7.dll",
+      "fbdnettle-9.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "WINMM.dll",
+      "WS2_32.dll"
+    ]
+  },
+  {
+    "name": "fbdshaderc_shared.dll",
+    "source_name": "libshaderc_shared.dll",
+    "source_sha256": "e9b484362c54a1dda64f1f0d20f0b1167ad26d32752130f4b4ce28dfa01a040e",
+    "sha256": "253bfbb17fb412291681f894d6d1518ee826db30da5cc819c5aeef51c8a5280b",
+    "bytes": 10596561,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdsharpyuv-0.dll",
+    "source_name": "libsharpyuv-0.dll",
+    "source_sha256": "ab0c9f61dc69b6bcdff1011e215f8d5fd6e5096aba9be3386ab87f217fbbeffe",
+    "sha256": "02c707de8b417fb6ad02983ca47a3ad7dbac81e4107bcc041f33090c0277a31f",
+    "bytes": 53757,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdsoxr.dll",
+    "source_name": "libsoxr.dll",
+    "source_sha256": "5bb8f922b12995b0322b73bd94e2e6dadfeac58abc8beb4d0f69ca5f4747917d",
+    "sha256": "d42648452569969cb9cc4b9607d1f121d8b31ce9a4f1ac27f99e12aaf18d48f3",
+    "bytes": 312320,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdgomp-1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdspeex-1.dll",
+    "source_name": "libspeex-1.dll",
+    "source_sha256": "3cd8b5e812022307d8ba09747b648a7402fc4caa44b50e328b3424102ab98f3a",
+    "sha256": "edb34bfe497c0999f42072567c2c5ab6e70b1e8678f86b70c958362db251061b",
+    "bytes": 137822,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdspirv-cross-c-shared.dll",
+    "source_name": "libspirv-cross-c-shared.dll",
+    "source_sha256": "cc714a00bc07a0e601df77fa836e75683745b89a3bfaace192087a71cdf0a436",
+    "sha256": "abebc4438829004760a9e110341ddc2bdcfd38ffe160778c8761e229bbdeacfd",
+    "bytes": 3417093,
+    "rewritten_references": 3,
+    "imports_and_forwarders": [
+      "fbdgcc_s_seh-1.dll",
+      "fbdstdc++-6.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdsrt.dll",
+    "source_name": "libsrt.dll",
+    "source_sha256": "b22b8f07a36d4b52aaa2601c70240fd7a8a111894881192edd1de5e236fc64fa",
+    "sha256": "000260d182729a929907494b2823e4e4ea2876ff586b11dd4496f84aaff517e9",
+    "bytes": 859218,
+    "rewritten_references": 5,
+    "imports_and_forwarders": [
+      "fbdcrypto-3-x64.dll",
+      "fbdgcc_s_seh-1.dll",
+      "fbdstdc++-6.dll",
+      "fbdwinpthread-1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "WS2_32.dll",
+      "WSOCK32.dll"
+    ]
+  },
+  {
+    "name": "fbdssh.dll",
+    "source_name": "libssh.dll",
+    "source_sha256": "4e872f2b9329edfb3112c433a2c4c98efc915d0bca2b1b935a58e45e37ce0a3b",
+    "sha256": "640199fa470ac0a99a3b592a7095d5593eeb2d237f1c9a559413a8384bdb6ca6",
+    "bytes": 626451,
+    "rewritten_references": 8,
+    "imports_and_forwarders": [
+      "ADVAPI32.dll",
+      "fbdb1.dll",
+      "fbdcrypto-3-x64.dll",
+      "fbdwinpthread-1.dll",
+      "IPHLPAPI.DLL",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "SHELL32.dll",
+      "WS2_32.dll"
+    ]
+  },
+  {
+    "name": "fbdssh2-1.dll",
+    "source_name": "libssh2-1.dll",
+    "source_sha256": "a8e1cc06bfff6be779066c5dc34ce740ed0226dcb6f75f46d9c915aee19a21b1",
+    "sha256": "9613a9a931b7917bb6b46c3bc4cd7231301432090c09554376e3237855d0ea2d",
+    "bytes": 312147,
+    "rewritten_references": 4,
+    "imports_and_forwarders": [
+      "fbdb1.dll",
+      "fbdcrypto-3-x64.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "USER32.dll",
+      "WS2_32.dll"
+    ]
+  },
+  {
+    "name": "fbdssl-3-x64.dll",
+    "source_name": "libssl-3-x64.dll",
+    "source_sha256": "910b31e8f975658a934e726b92c90f71f66d20bc87d8bc758b1b4354e6cb8aa6",
+    "sha256": "f1255412692d431c6465edb182a95aa6512ed0931e7b5d9fd14a55cf81fa18fa",
+    "bytes": 992184,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdcrypto-3-x64.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "WS2_32.dll"
+    ]
+  },
+  {
+    "name": "fbdstdc++-6.dll",
+    "source_name": "libstdc++-6.dll",
+    "source_sha256": "887c21dbe2a211ac4d1a790e4f608b7dee27fae12352856963004e7a715d2e6c",
+    "sha256": "519f106617712e1d3eaaf9014d1252693c6d93f4373f600515c65cdefd2f4b20",
+    "bytes": 2661299,
+    "rewritten_references": 3,
+    "imports_and_forwarders": [
+      "fbdgcc_s_seh-1.dll",
+      "fbdwinpthread-1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdSvtAv1Enc-4.dll",
+    "source_name": "libSvtAv1Enc-4.dll",
+    "source_sha256": "c4d9e2ae03f80d43c0a16d1461503e1768b160cdba9f3fe9e95e339f69fc2b24",
+    "sha256": "10686c4e019a2c18f675bceb588057730f7fc7b63441e44256d7af27db205149",
+    "bytes": 7573028,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdtasn1-6.dll",
+    "source_name": "libtasn1-6.dll",
+    "source_sha256": "95821132a7d4ea90f7c37540118ad1459809ff23162d6dc3d5600b15755a644b",
+    "sha256": "7c4fb59f369a021484e4ef10ba02bd337389278b3aba1557392ff88e180d0f26",
+    "bytes": 113467,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdthai-0.dll",
+    "source_name": "libthai-0.dll",
+    "source_sha256": "5d741974fdec19e0f6cddbcdb539428af0c7392740a056634714c2884157fdb9",
+    "sha256": "c0aa200a0051c89b01697f348ec2363d7c8d47060361059c574424ab7fb14604",
+    "bytes": 72294,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbddatrie-1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "SHLWAPI.dll"
+    ]
+  },
+  {
+    "name": "fbdtheoradec-2.dll",
+    "source_name": "libtheoradec-2.dll",
+    "source_sha256": "4f75e430b4e9a3e7c5e6d1da1f7999d8d75c5e505b8a34863cb4c6f82236a771",
+    "sha256": "5a77416a785878ba6685be337dfc3fa285ff178802b1e18d4763a6be6fa1569b",
+    "bytes": 97211,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdtheoraenc-2.dll",
+    "source_name": "libtheoraenc-2.dll",
+    "source_sha256": "c8119dcf51d98673cc55ec47fd54ab60e65fbf6191f0b6fc907afa3ebdc26bb9",
+    "sha256": "108cda2897ba5b2cc3fdfa0f7890e11ad20ce1f1f1b1d187854099f8d9637223",
+    "bytes": 247180,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdogg-0.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdtiff-6.dll",
+    "source_name": "libtiff-6.dll",
+    "source_sha256": "47fe69165bf8e211aaa84224f51f145dc894e330fe7ca167f7c99419e0c8c894",
+    "sha256": "cf3c278773dcffab4b8d7905d512f8b51a1d1fbd6ad40dfa872834f6cbdb05b5",
+    "bytes": 625178,
+    "rewritten_references": 9,
+    "imports_and_forwarders": [
+      "fbdb1.dll",
+      "fbddeflate.dll",
+      "fbdjbig-0.dll",
+      "fbdjpeg-8.dll",
+      "fbdLerc.dll",
+      "fbdlzma-5.dll",
+      "fbdwebp-7.dll",
+      "fbdzstd.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdunibreak-7.dll",
+    "source_name": "libunibreak-7.dll",
+    "source_sha256": "e146c2f36b2e36f620238f2bf0820ef9e74f5b39fbfb9ffe99183bb4a21809f0",
+    "sha256": "26648fdc2068260c04d0bd6bcfff46bc534c4ec9372453b2e73a55789eea24e4",
+    "bytes": 140772,
+    "rewritten_references": 4,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdunistring-5.dll",
+    "source_name": "libunistring-5.dll",
+    "source_sha256": "b91e2850d3668d4931056a8f4d35783b8ec3eea3735485108a936a072cd16071",
+    "sha256": "62dd6401f2f1b4352a78b847ccd72e744024da7541203ce2cc5032f840b6ca92",
+    "bytes": 2251328,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdiconv-2.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdva.dll",
+    "source_name": "libva.dll",
+    "source_sha256": "1600880518a5c9d454dc26f151c0bf4969f60cc7fb53ade023e1816ddefdf141",
+    "sha256": "92e17db3dd17ab89a12dd8509f6aad44d7014c04398ad594b4951e55eac3813a",
+    "bytes": 286510,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdva_win32.dll",
+    "source_name": "libva_win32.dll",
+    "source_sha256": "710033877d446638b686de916595e1470d194db55395b2f907abaff26298f5d3",
+    "sha256": "3281e9a653543b20490b3bbe3704bbd0579d7ed2deae1fc270b0d0cdc5b819b0",
+    "bytes": 17070,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdva.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdvidstab.dll",
+    "source_name": "libvidstab.dll",
+    "source_sha256": "8f286dcb096c736360340f3020d84a4b49782796c9da445de275546a7f640835",
+    "sha256": "017467e50fe23729ed0db69f6674a7e21b21bea3052d61cd0a9886462f7c1f38",
+    "bytes": 146061,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdgomp-1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdvorbis-0.dll",
+    "source_name": "libvorbis-0.dll",
+    "source_sha256": "3282629e1b5d6ececcfde133b20fe73de5c81b6eadfbb4697e6718886c7c97a6",
+    "sha256": "42ea54a59890efca568256c4a5dbe06513697a9a0e3963d423b413d712bf3f7b",
+    "bytes": 184216,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdogg-0.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdvorbisenc-2.dll",
+    "source_name": "libvorbisenc-2.dll",
+    "source_sha256": "090f0734883464af440eb9084b22384951b95b1bf325236b322dbef7f93530aa",
+    "sha256": "0e2f2b300dbd2fd6f3ed99a2ca9bc4b1105460ee24c0a20c82c9a5057a5d8e2c",
+    "bytes": 578809,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdvorbis-0.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdvpl-2.dll",
+    "source_name": "libvpl-2.dll",
+    "source_sha256": "670c4a28094b9f0d2aefe1e666c61e9e5eb7315f1ffd0bf12e4731727c6254e6",
+    "sha256": "5bdbe38516fa34530584af8f9862722b4dba1cb357642b096b9c49891abb8fef",
+    "bytes": 480963,
+    "rewritten_references": 3,
+    "imports_and_forwarders": [
+      "ADVAPI32.dll",
+      "fbdgcc_s_seh-1.dll",
+      "fbdstdc++-6.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "ole32.dll"
+    ]
+  },
+  {
+    "name": "fbdvpx-1.dll",
+    "source_name": "libvpx-1.dll",
+    "source_sha256": "a91c5ff5c0316f417a8b7eea438c2a8cd5bd08323da40c6dab1fc46ea7697cd7",
+    "sha256": "91481bbe9a1d7c3f08adaf9d28072a48a60fb01adcd73519606f2ef9813638ad",
+    "bytes": 4695524,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdwinpthread-1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdwebp-7.dll",
+    "source_name": "libwebp-7.dll",
+    "source_sha256": "c6c21a10f8cfe13270832e64640b82709e1d87b956b5f15af435a6c25acd6bbf",
+    "sha256": "e33da25c5039d333681a13d821499c8a8257d98e9358506878fe180c27fcfdb6",
+    "bytes": 749724,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdsharpyuv-0.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdwebpmux-3.dll",
+    "source_name": "libwebpmux-3.dll",
+    "source_sha256": "2c8a2e9d7901ec65330f31f9989c2a07ef0506e903b485fcd8b241a6bab9b88f",
+    "sha256": "2f33fd14c7f417b9873730f51e455022d5665840781192776f95889e93d983d5",
+    "bytes": 82858,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "fbdwebp-7.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdwhisper-1.dll",
+    "source_name": "libwhisper-1.dll",
+    "source_sha256": "7c2bdd574bfa2c264331e6af6fcdc983a4650d8fa2907aaef1d6c1b106ac2d2b",
+    "sha256": "47c98a3b61cf03be3d2f2d4f349052de42676a381db668a216e9e5f01d2b8ca1",
+    "bytes": 507565,
+    "rewritten_references": 5,
+    "imports_and_forwarders": [
+      "fbdgcc_s_seh-1.dll",
+      "fbdl-0.dll",
+      "fbdl-base-0.dll",
+      "fbdstdc++-6.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdwinpthread-1.dll",
+    "source_name": "libwinpthread-1.dll",
+    "source_sha256": "029d3d2e7bc8651b4b7886708424914790e0225b6a47f650a441e5e697d2111e",
+    "sha256": "f8c439827e9d6d2604ed78567e663429291e5554a5c9e17b80cf1f3c4b100639",
+    "bytes": 63875,
+    "rewritten_references": 3,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdx264-165.dll",
+    "source_name": "libx264-165.dll",
+    "source_sha256": "0d814d13db7eeac0ff5264ed86d376f9260746323107cb07affb6c306b240329",
+    "sha256": "3e0a44d211758dd4700b20fe5a2cb686e9715be8714ffecd3c1e07c08d106d99",
+    "bytes": 2024174,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdx265-217.dll",
+    "source_name": "libx265-217.dll",
+    "source_sha256": "23a4579cf07ad233818d53f941e846847876cb68f57e4492f943d26463cc995f",
+    "sha256": "5be4ac58f4eb1e7fb36af67b66648c974c57c261ef556950ac66fba5d0429f06",
+    "bytes": 22667339,
+    "rewritten_references": 2,
+    "imports_and_forwarders": [
+      "ADVAPI32.dll",
+      "fbdstdc++-6.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdxml2-16.dll",
+    "source_name": "libxml2-16.dll",
+    "source_sha256": "beb148bc5c12cdccf7a28767981c9c3da8b3f2d607f03a1a3458d128fd650089",
+    "sha256": "5ae4460114bbd7210778d2ca9416bb53cf7c3514f631534c96c8e972708aad74",
+    "bytes": 1247830,
+    "rewritten_references": 3,
+    "imports_and_forwarders": [
+      "bcrypt.dll",
+      "fbdb1.dll",
+      "fbdiconv-2.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdzimg-2.dll",
+    "source_name": "libzimg-2.dll",
+    "source_sha256": "26ad6d01991171038ca5a4078a3854ea2f7765beb572e567a83ce15d495d75dc",
+    "sha256": "c994482ed236afdbb2ab14c84274229ed5da2bc769b84affe0e7e7cf6659398c",
+    "bytes": 636837,
+    "rewritten_references": 3,
+    "imports_and_forwarders": [
+      "fbdgcc_s_seh-1.dll",
+      "fbdstdc++-6.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdzstd.dll",
+    "source_name": "libzstd.dll",
+    "source_sha256": "b95c223a9548a9ecf51377c962e0bc8f0c51eb0c6f67a296dbc885996f0dd40d",
+    "sha256": "513e8fdcf480dd272157487441698ab17a980e39f0f1ccd1df12554231a5a0d4",
+    "bytes": 1218273,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdzvbi-0.dll",
+    "source_name": "libzvbi-0.dll",
+    "source_sha256": "8484cdf5aab21ca765549b8bc8ad532d059f63eabbee143cc1db12a5f5c94535",
+    "sha256": "7fa134bdad0cab77db7d363b80e75405ce32b00672c156d03fb023355fe0b076",
+    "bytes": 443163,
+    "rewritten_references": 5,
+    "imports_and_forwarders": [
+      "fbdiconv-2.dll",
+      "fbdintl-8.dll",
+      "fbdpng16-16.dll",
+      "fbdwinpthread-1.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "WS2_32.dll"
+    ]
+  },
+  {
+    "name": "fbdesample-7.dll",
+    "source_name": "swresample-7.dll",
+    "source_sha256": "d6d66f8b358cf2bc9c287ddc87d235faf1a55bf322b0044feb183e85c90379d2",
+    "sha256": "9e43372b11c9c794df4b11969ba7863c1ff15d9e0e4597b71b5b0ad112d1981a",
+    "bytes": 185792,
+    "rewritten_references": 4,
+    "imports_and_forwarders": [
+      "fbdsoxr.dll",
+      "fbdtil-61.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdcale-10.dll",
+    "source_name": "swscale-10.dll",
+    "source_sha256": "7e802078af97f36d8da0d56f83e63c1700021f589269568417ab707376d725db",
+    "sha256": "69266f383f8e3afd08ed26994595c4c49cb43cd213a47633dfa39a62d3bdddae",
+    "bytes": 2214871,
+    "rewritten_references": 5,
+    "imports_and_forwarders": [
+      "fbdb1.dll",
+      "fbdgcc_s_seh-1.dll",
+      "fbdtil-61.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdkan-1.dll",
+    "source_name": "vulkan-1.dll",
+    "source_sha256": "45fdd61626879ea828e162d18bc6419f46eb704162120450d4e1c9bec6366986",
+    "sha256": "23f094fb45c719785074b4f0c75091d8a5e26afc8a7cd5054fc3b4efb2b250a3",
+    "bytes": 697427,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "ADVAPI32.dll",
+      "CFGMGR32.dll",
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbddcore.dll",
+    "source_name": "xvidcore.dll",
+    "source_sha256": "1c19803a7d0d8fe21064459dd51725ffdefb07a96079967417bf597178b4db33",
+    "sha256": "eaeee9c40a230c819efe4cc2c5f328b054455f041ad82e32d1217a70b7720907",
+    "bytes": 781411,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  },
+  {
+    "name": "fbdb1.dll",
+    "source_name": "zlib1.dll",
+    "source_sha256": "93e9243a44c29200eeacaf9658efe2558581770e4b11ca4b500e18e424a6e3b5",
+    "sha256": "7bdb858cd9a6e07ca18f6a7244f640efe347f83af6367c0bd51340db9d36e254",
+    "bytes": 128488,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
+    ]
+  }
+]

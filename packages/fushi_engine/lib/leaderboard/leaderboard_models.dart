@@ -124,6 +124,7 @@ class LeaderboardSelf {
     this.shelfCount,
     this.emailVerified = false,
     this.uploadDevice,
+    this.role = 'user',
   });
 
   factory LeaderboardSelf.fromJson(JsonMap j) => LeaderboardSelf(
@@ -133,6 +134,7 @@ class LeaderboardSelf {
     shelfCount: _intOrNull(j['shelfCount']),
     emailVerified: j['emailVerified'] == true,
     uploadDevice: j['uploadDevice'] as bool?,
+    role: j['role'] as String? ?? 'user',
   );
 
   final LeaderboardAccount account;
@@ -146,6 +148,11 @@ class LeaderboardSelf {
   /// 本机钥匙是否为本账户的「上传设备」（每账户只有一台能上传书架）；旧服务端不给 = null。
   final bool? uploadDevice;
 
+  /// `user` | `dev`（开发者：可在 App 内处理反馈；权限以服务端为准）。旧服务端不给 = `user`。
+  final String role;
+
+  bool get isDeveloper => role == 'dev';
+
   JsonMap toJson() => <String, dynamic>{
     ...account.toJson(),
     'visibility': visibility,
@@ -153,6 +160,7 @@ class LeaderboardSelf {
     if (shelfCount != null) 'shelfCount': shelfCount,
     'emailVerified': emailVerified,
     if (uploadDevice != null) 'uploadDevice': uploadDevice,
+    if (role != 'user') 'role': role,
   };
 }
 

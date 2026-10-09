@@ -192,6 +192,44 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       return _handleTranscodeHls(svc, request, hlsId, suffix);
     }
 
+    // POST /api/library/videos/<id>/subtitle/backfill  {language?}
+    // 立即给这一个视频补字幕（刮削后自动补的同一条服务，单视频入口）。必须在
+    // `/subtitle` 之前匹配：bookUid 允许含 `/`，`subtitle` 后缀匹配不到这条，但
+    // 顺序写明白免得以后有人调换。
+    final String? backfillId = _extractVideoId(reqPath, 'subtitle/backfill');
+    if (backfillId != null) {
+      if (method != 'POST') return shelf.Response(405);
+      final VideoSubtitleBackfillRunner? runner = videoSubtitleBackfill;
+      if (runner == null) {
+        return shelf.Response(501, body: 'Subtitle backfill not available');
+      }
+      String? language;
+      final String body = await request.readAsString();
+      if (body.trim().isNotEmpty) {
+        final Object? decoded;
+        try {
+          decoded = jsonDecode(body);
+        } on FormatException {
+          return shelf.Response(400, body: 'Invalid JSON');
+        }
+        if (decoded is! Map) {
+          return shelf.Response(400, body: 'JSON object body required');
+        }
+        final String lang = (decoded['language'] ?? '').toString().trim();
+        if (lang.isNotEmpty) {
+          if (!RegExp(r'^[A-Za-z]{2,3}([-_][A-Za-z0-9]{1,8})*$')
+              .hasMatch(lang)) {
+            return shelf.Response(400, body: 'Invalid language tag');
+          }
+          language = lang;
+        }
+      }
+      final VideoSubtitleBackfillReport? report =
+          await runner(backfillId, language: language);
+      if (report == null) return shelf.Response.notFound('Video not found');
+      return jsonResponse(report.toJson());
+    }
+
     // GET /api/library/videos/<id>/subtitle — 字幕（需 Basic 鉴权，中间件已处理）
     // PUT 同路径 — client→host 上传该视频的外挂字幕 sidecar（BUG-964，随
     // syncVideoFiles live push）。后缀（`.srt` / `.ja.srt` …）经
@@ -256,6 +294,46 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           } catch (_) {
             // best-effort
           }
+        }
+      }
+      // DELETE ?which=primary|secondary|all（缺省 primary）[&sidecars=all]：清字幕
+      // 源（+ 主字幕 cue），本视频自己的 sidecar 改名备份，不删别处文件、不碰视频。
+      if (method == 'DELETE') {
+        if (svc is! VideoSubtitleClearHost) {
+          return shelf.Response.notFound('Subtitle clearing not supported');
+        }
+        final String whichText =
+            request.url.queryParameters['which'] ?? 'primary';
+        final VideoSubtitleClearScope? which =
+            VideoSubtitleClearScope.values.asNameMap()[whichText];
+        if (which == null) {
+          return shelf.Response(400,
+              body: 'which must be primary, secondary or all');
+        }
+        final String sidecars = request.url.queryParameters['sidecars'] ?? '';
+        if (sidecars.isNotEmpty && sidecars != 'all') {
+          return shelf.Response(400, body: 'sidecars must be all');
+        }
+        try {
+          final VideoSubtitleClearResult result =
+              await (svc as VideoSubtitleClearHost).clearVideoSubtitle(
+            subtitleId,
+            which: which,
+            allSidecars: sidecars == 'all',
+          );
+          return jsonResponse(result.toJson());
+        } on ArgumentError catch (e) {
+          return shelf.Response(400, body: 'Invalid video id: ${e.message}');
+        } on StateError {
+          return shelf.Response.notFound('Video not found');
+        } on VideoSubtitleSidecarBusy catch (e) {
+          return shelf.Response(
+            409,
+            body: jsonEncode(e.toJson()),
+            headers: const <String, String>{
+              'Content-Type': 'application/json; charset=utf-8',
+            },
+          );
         }
       }
       if (method != 'GET') return shelf.Response(405);

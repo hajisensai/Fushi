@@ -126,6 +126,20 @@ void main() {
       expect(body.contains('await Future.wait<Object?>('), isTrue);
       expect(body.contains('await db.getAllMediaImages()'), isFalse);
       expect(body.contains('await db.getAllCollectionItems()'), isFalse);
+      // BUG-3034：合集归属只查本机条目（SQL 侧收窄），不再两次全表物化成员表。
+      expect(body.contains('db.getLocalPrimaryCollectionMembership()'), isTrue);
+      expect(body.contains('getPrimaryCollectionIdByEntry()'), isFalse);
+      expect(body.contains('getAllCollectionItems()'), isFalse);
+      // 游戏库与追踪状态与其余读同批并发发出（此前排在整批之后串行），
+      // 且追踪状态只查一次。
+      final String batch = body.substring(
+          body.indexOf('await Future.wait<Object?>('),
+          body.indexOf(']);', body.indexOf('await Future.wait<Object?>(')));
+      expect(batch.contains('gamesF'), isTrue);
+      expect(batch.contains('trackingF'), isTrue);
+      expect('loadStatus()'.allMatches(body).length, 1);
+      // 重建首帧用上一轮快照（首页不保活，切回首页不再每次挂骨架等整批）。
+      expect(body.contains('_snapshots[db] = snapshot;'), isTrue);
     });
   });
 

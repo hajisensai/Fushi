@@ -58,12 +58,16 @@ class FloatingBallChannel {
   ///
   /// 桌面额外要：[iconImages]（按钮 id → 已着色的图标 PNG，原生不加载字体）、
   /// [ballImage]（球面 PNG）、初始位置 [dock] / [fraction]（位置由 Dart 持久化）。
+  /// [animate] 由宿主统一按墨水屏 / 系统减弱动画判定；Windows 原生球消费，
+  /// 尚未接入的原生端忽略这个可选字段并保留自身的动画策略。
   static Future<bool> startSystemBall({
     required List<String> actions,
     required Map<String, String> labels,
     required Map<String, int> icons,
     required Map<String, int> colors,
     required String ocrLanguage,
+    bool animate = true,
+    bool showLabels = true,
     Map<String, Uint8List>? iconImages,
     Uint8List? ballImage,
     String? dock,
@@ -75,6 +79,8 @@ class FloatingBallChannel {
         'icons': icons,
         'colors': colors,
         'ocrLanguage': ocrLanguage,
+        'animate': animate,
+        'showLabels': showLabels,
         if (iconImages != null) 'iconImages': iconImages,
         if (ballImage != null) 'ballImage': ballImage,
         if (dock != null) 'dock': dock,

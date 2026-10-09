@@ -65,6 +65,10 @@ void main() {
     '../packages/fushi_engine/lib/sync/fushi_remote_api_handlers.dart':
         '互联对端 / 浏览器扩展经 HTTP 拉词的服务端 handler：结果序列化给**远端**渲染，'
             '本机屏幕上什么都没发生，出声等于对着空气念。',
+    'lib/src/platform/desktop/ctl/ctl_dictionary_routes.dart':
+        '`fushi_cli dict search` 的控制通道 handler：结果以 JSON 回给终端，'
+            '本机屏幕上没有查词呈现；要弹窗查词用内置 `lookup` 命令（走浮窗表面，按偏好朗读）。'
+            'anki mine 补字段时的查词同理只为取回制卡字段。',
     'lib/src/sync/yomitan_api_server.dart':
         'Yomitan 兼容 API 的服务端：同上，结果给外部客户端消费，本机不该出声。',
     'lib/src/sync/fushi_remote_lookup_client.dart':

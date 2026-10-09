@@ -51,9 +51,9 @@ void main() {
     expect(preferences.mangaOcrParallelTasks, 4, reason: '来自旧配置的越界整数也必须受上限约束');
   });
 
-  test('本地模型默认 manga-ocr，Baberu 与切回选择都持久化', () async {
-    expect(preferences.mangaOcrLocalModel, 'manga_ocr');
-    for (final String selected in <String>['baberu', 'manga_ocr']) {
+  test('本地模型默认逐列 CTC，Baberu 与切回选择都持久化', () async {
+    expect(preferences.mangaOcrLocalModel, 'manga_ctc');
+    for (final String selected in <String>['baberu', 'manga_ctc']) {
       await preferences.setMangaOcrLocalModel(selected);
       final PreferencesRepository reopened = PreferencesRepository(database);
       await reopened.loadFromDb();

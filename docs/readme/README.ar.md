@@ -6,7 +6,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | **العربية**
 
@@ -49,14 +49,14 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 flutter build windows --release
 ```
 
-يَدمج `tool/bootstrap.sh` / `tool/bootstrap.ps1` كلًّا من `flutter pub get` و`ci/apply-patches.sh` في أمر واحد. هذا المشروع مثبَّت على Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`)؛ بعض التبعيات المنبع مُضمَّنة ضمن `third_party/` أو مُرقَّعة بواسطة `ci/apply-patches.sh` — راجع [docs/agent/build.md](../agent/build.md) للتفاصيل.
+يَدمج `tool/bootstrap.sh` / `tool/bootstrap.ps1` كلًّا من `flutter pub get` و`ci/apply-patches.sh` في أمر واحد. هذا المشروع مثبَّت على Flutter 3.47.6 (Dart SDK `>=3.5.0 <4.0.0`)؛ بعض التبعيات المنبع مُضمَّنة ضمن `third_party/` أو مُرقَّعة بواسطة `ci/apply-patches.sh` — راجع [docs/agent/build.md](../agent/build.md) للتفاصيل.
 
 <details>
 <summary><b>حزمة التقنيات</b></summary>
 
 | الطبقة | التقنية |
 |---|---|
-| إطار العمل | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
+| إطار العمل | Flutter 3.47.6 (Dart SDK `>=3.5.0 <4.0.0`) |
 | المنصّات | Android / Windows / macOS / iOS (Material Design 3) |
 | القارئ | محرّك ترقيم صفحات WebView (مُشتقّ من عائلة Hoshi Reader) |
 | الفيديو | media_kit (نواة libmpv) |
@@ -151,7 +151,6 @@ Fushi/                      # Repository root (Melos workspace: fushi_workspace)
 | [Mihon](https://github.com/mihonapp/mihon) | منظومة إضافات مصادر المانغا |
 | [Aniyomi](https://github.com/aniyomiorg/aniyomi) | منظومة إضافات مصادر الأنمي (extensions-lib 14–16 بنفس بيئة التشغيل) |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | بيئة تشغيل إضافات المانغا لسطح المكتب |
-| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | واجهة ABI لبيئة تشغيل مصادر المانغا |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | مرجع جسر ترجمات البث لإضافة المتصفح |
 | [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | مرجع معماري لتعريف الأنمي وجمع بياناته |
 | [ReinaManager](https://github.com/huoshen80/ReinaManager) | مرجع معمارية معلومات مكتبة الـ galgame |

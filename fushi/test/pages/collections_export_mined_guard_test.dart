@@ -80,7 +80,7 @@ void main() {
             .readAsStringSync();
     // 范围从单选 RadioListTile 升级为可勾选复选行 + 去重开关行；TODO-936 把这两类
     // 控件从 CheckboxListTile/SwitchListTile 迁到共享 MD3 行（FushiListItem +
-    // 裸 Checkbox/Switch，见 md3_design_system_static_test 守卫），故守卫改断言迁移后
+    // 裸 Checkbox/Switch，见 m3e_design_system_static_test 守卫），故守卫改断言迁移后
     // 的共享行 helper + 裸控件存在（行为等价：多选勾选 + 去重开关仍在）。
     expect(src, contains('Widget _exportCheckRow('));
     expect(src, contains('Widget _exportSwitchRow('));

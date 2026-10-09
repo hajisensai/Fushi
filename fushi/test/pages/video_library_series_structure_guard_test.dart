@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart' show compactCode;
+
 void main() {
   test('视频库固定为主页、系列、全部视频、来源四个保活分区', () {
     final String section = File(
@@ -123,9 +125,11 @@ void main() {
     expect(passesEnd, greaterThan(passesStart));
     final String passesBlock = page.substring(passesStart, passesEnd);
     expect(
-      passesBlock,
-      contains('widget.section == VideoLibrarySection.series &&\n'
-          '          _localExtraBookUids.contains(b.bookUid)'),
+      compactCode(passesBlock),
+      contains(
+        '!(widget.section==VideoLibrarySection.series&&'
+        '_localExtraBookUids.contains(b.bookUid))&&',
+      ),
       reason: '放宽准入不等于放行花絮：父作品的短篇/花絮仍须排除',
     );
 

@@ -18,10 +18,12 @@ Set<String> _flattenKeys(Map<String, dynamic> map, [String prefix = '']) {
   return keys;
 }
 
-final _interpolationRe = RegExp(r'\$\{?\w+\}?');
+final RegExp _interpolationRe = RegExp(r'\$(?:\{(\w+)\}|(\w+))');
 
-Set<String> _extractInterpolations(String value) =>
-    _interpolationRe.allMatches(value).map((m) => m.group(0)!).toSet();
+Set<String> _extractInterpolations(String value) => _interpolationRe
+    .allMatches(value)
+    .map((RegExpMatch match) => match.group(1) ?? match.group(2)!)
+    .toSet();
 
 dynamic _resolve(Map<String, dynamic> map, String dottedKey) {
   dynamic current = map;
@@ -35,6 +37,17 @@ dynamic _resolve(Map<String, dynamic> map, String dottedKey) {
 }
 
 void main() {
+  test('插值比较使用变量名，允许译文用花括号分隔相邻文字', () {
+    expect(_extractInterpolations(r'Active $n days'), <String>{'n'});
+    expect(_extractInterpolations(r'최근 ${n}일'), <String>{'n'});
+    expect(_extractInterpolations(r'$count / ${total}'), <String>{
+      'count',
+      'total',
+    });
+    expect(_extractInterpolations('No variables'), isEmpty);
+    expect(_extractInterpolations(r'${other}'), isNot(contains('n')));
+  });
+
   group('i18n completeness', () {
     late Map<String, dynamic> baseStrings;
     late Set<String> baseKeys;
@@ -51,12 +64,12 @@ void main() {
           jsonDecode(baseFile.readAsStringSync()) as Map<String, dynamic>;
       baseKeys = _flattenKeys(baseStrings);
 
-      translationFiles =
-          Directory(i18nDir).listSync().whereType<File>().where((f) {
+      translationFiles = Directory(i18nDir).listSync().whereType<File>().where((
+        f,
+      ) {
         final name = p.basename(f.path);
         return name.endsWith('.i18n.json') && name != 'strings.i18n.json';
-      }).toList()
-            ..sort((a, b) => a.path.compareTo(b.path));
+      }).toList()..sort((a, b) => a.path.compareTo(b.path));
     });
 
     test('base strings file exists and is non-empty', () {
@@ -64,10 +77,17 @@ void main() {
     });
 
     test('at least one translation file exists', () {
-      expectScanScale(translationFiles.length,
-          what: 'lib/i18n 下的译文 .i18n.json', atLeast: 12, measured: 16);
-      expect(translationFiles, isNotEmpty,
-          reason: 'Expected at least one translation besides the base');
+      expectScanScale(
+        translationFiles.length,
+        what: 'lib/i18n 下的译文 .i18n.json',
+        atLeast: 12,
+        measured: 16,
+      );
+      expect(
+        translationFiles,
+        isNotEmpty,
+        reason: 'Expected at least one translation besides the base',
+      );
     });
 
     test('all translation files are valid JSON', () {
@@ -89,8 +109,11 @@ void main() {
               '$prefix.${entry.key}',
             );
           } else {
-            expect(entry.value, isA<String>(),
-                reason: 'Key $prefix.${entry.key} should be a string');
+            expect(
+              entry.value,
+              isA<String>(),
+              reason: 'Key $prefix.${entry.key} should be a string',
+            );
           }
         }
       }
@@ -106,10 +129,14 @@ void main() {
         final translationKeys = _flattenKeys(translation);
         final missing = baseKeys.difference(translationKeys);
 
-        expect(missing, isEmpty,
-            reason: '$name is missing ${missing.length} key(s): '
-                '${missing.take(10).join(", ")}'
-                '${missing.length > 10 ? "..." : ""}');
+        expect(
+          missing,
+          isEmpty,
+          reason:
+              '$name is missing ${missing.length} key(s): '
+              '${missing.take(10).join(", ")}'
+              '${missing.length > 10 ? "..." : ""}',
+        );
       }
     });
 
@@ -121,9 +148,13 @@ void main() {
         final translationKeys = _flattenKeys(translation);
         final extra = translationKeys.difference(baseKeys);
 
-        expect(extra, isEmpty,
-            reason: '$name has ${extra.length} orphaned key(s): '
-                '${extra.take(10).join(", ")}');
+        expect(
+          extra,
+          isEmpty,
+          reason:
+              '$name has ${extra.length} orphaned key(s): '
+              '${extra.take(10).join(", ")}',
+        );
       }
     });
 
@@ -143,9 +174,12 @@ void main() {
           if (baseVars.isEmpty) continue;
 
           final missingVars = baseVars.difference(transVars);
-          expect(missingVars, isEmpty,
-              reason:
-                  '$name key "$key" is missing interpolation(s): $missingVars');
+          expect(
+            missingVars,
+            isEmpty,
+            reason:
+                '$name key "$key" is missing interpolation(s): $missingVars',
+          );
         }
       }
     });

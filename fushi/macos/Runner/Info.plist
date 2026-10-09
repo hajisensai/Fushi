@@ -5,7 +5,7 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Fushi needs the microphone to record audio for your Anki cards.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Fushi finds other Fushi devices on your local network to sync your library.</string>
+	<string>Fushi connects to your other Fushi devices on your local network to sync your library and to stream games from your computer.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_fushi-sync._tcp</string>

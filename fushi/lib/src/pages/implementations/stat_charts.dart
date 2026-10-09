@@ -1,8 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
-import 'package:fushi/i18n/strings.g.dart' show LocaleSettings;
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/i18n/strings.g.dart' show LocaleSettings, t;
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
 
 /// 统计图表的每日数据点（阅读统计 / 视频统计共用）。
@@ -90,12 +90,12 @@ String formatStatDurationAxis(int ms) {
     // BUG-892：非整点小时保留一位小数。旧代码 `ms ~/ 3600000` 向下取整，maxMs>1h 时
     // 相邻刻度（如 2.0h 与 2.5h）都塌成 "2h" → 纵轴出现 "…2h 2h" 重复标签。
     final double h = ms / 3600000;
-    return h == h.truncateToDouble()
-        ? '${h.toInt()}h'
-        : '${h.toStringAsFixed(1)}h';
+    return t.stat_axis_hours(
+      n: h == h.truncateToDouble() ? '${h.toInt()}' : h.toStringAsFixed(1),
+    );
   }
-  if (ms >= 60000) return '${ms ~/ 60000}m';
-  if (ms > 0) return '${ms ~/ 1000}s';
+  if (ms >= 60000) return t.stat_axis_minutes(n: ms ~/ 60000);
+  if (ms > 0) return t.stat_axis_seconds(n: ms ~/ 1000);
   return '0';
 }
 
@@ -180,6 +180,24 @@ List<StatAxisLabelSlot> statXAxisLabelSlots({
 
 const int _kAxisTickCount = 4;
 
+/// 纵轴标签区的宽度：至少 [minPadding]，标签更宽时（中日文单位「小时 / 時間」
+/// 比 `h` 宽）按最宽标签 + 6dp 让出，避免刻度文字被画到画布左缘之外。
+double statAxisLeftPadding(
+  List<String> labels,
+  TextStyle style,
+  double minPadding,
+) {
+  double widest = 0;
+  for (final String label in labels) {
+    final TextPainter tp = TextPainter(
+      text: TextSpan(text: label, style: style),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    widest = math.max(widest, tp.width);
+  }
+  return math.max(minPadding, widest + 6);
+}
+
 /// 时长纵轴的候选步长（毫秒）：秒 / 分 / 小时里的自然刻度，每个都是其单位的整数
 /// 倍——这保证标签整除后不留小数。
 const List<int> _kDurationAxisSteps = <int>[
@@ -202,9 +220,9 @@ int _pickAxisStep(int maxValue, List<int> candidates, int fallbackUnit) {
 /// 刻度值都是步长的整数倍，所以每个标签都能整除到整数（不再有 `2.9h`）。
 String _durationAxisLabel(int ms, int step) {
   if (ms == 0) return '0';
-  if (step >= 3600000) return '${ms ~/ 3600000}h';
-  if (step >= 60000) return '${ms ~/ 60000}m';
-  return '${ms ~/ 1000}s';
+  if (step >= 3600000) return t.stat_axis_hours(n: ms ~/ 3600000);
+  if (step >= 60000) return t.stat_axis_minutes(n: ms ~/ 60000);
+  return t.stat_axis_seconds(n: ms ~/ 1000);
 }
 
 /// 时长纵轴刻度表（最近 N 天时长图 / 今日按小时图共用）。
@@ -287,8 +305,12 @@ class StatHourlyChartPainter extends CustomPainter {
     final maxMs = totals.fold<int>(0, (prev, ms) => ms > prev ? ms : prev);
     if (maxMs == 0) return;
 
+    // 与最近 N 天时长图同一套刻度（[statDurationAxisScale]）：整轴一个单位、刻度
+    // 取整、柱高按轴顶归一。
+    final StatAxisScale scale = statDurationAxisScale(maxMs);
     const bottomPadding = 20.0;
-    const leftPadding = 32.0;
+    final double leftPadding =
+        statAxisLeftPadding(scale.labels, labelStyle, 32.0);
     final chartHeight = size.height - bottomPadding;
     final chartWidth = size.width - leftPadding;
     final step = chartWidth / kStatHourlyBuckets;
@@ -303,7 +325,7 @@ class StatHourlyChartPainter extends CustomPainter {
       ..strokeWidth = 1;
 
     canvas.drawLine(
-      const Offset(leftPadding, 0),
+      Offset(leftPadding, 0),
       Offset(leftPadding, chartHeight),
       axisPaint,
     );
@@ -313,9 +335,6 @@ class StatHourlyChartPainter extends CustomPainter {
       axisPaint,
     );
 
-    // 与最近 N 天时长图同一套刻度（[statDurationAxisScale]）：整轴一个单位、刻度
-    // 取整、柱高按轴顶归一。
-    final StatAxisScale scale = statDurationAxisScale(maxMs);
     final int axisMax = scale.max;
     for (int i = 0; i < scale.ticks.length; i++) {
       final y = chartHeight - (chartHeight * scale.ticks[i] / axisMax);
@@ -407,9 +426,13 @@ class StatBarChartPainter extends CustomPainter {
     this.axisScaleOf = statCountAxisScale,
     this.labelOf = statDayLabel,
     this.labelEvery = 5,
+    this.progress = 1,
   });
 
   final List<StatDayData> data;
+
+  /// 柱高进场进度（0..1，图表进场动画驱动；减弱动态效果时恒为 1）。
+  final double progress;
 
   /// 每隔几根柱标一个横轴标签（末柱恒标）。范围图表按柱数稀疏到约 7 个。
   final int labelEvery;
@@ -433,8 +456,12 @@ class StatBarChartPainter extends CustomPainter {
         data.fold<int>(0, (prev, d) => valueOf(d) > prev ? valueOf(d) : prev);
     if (maxValue == 0) return;
 
+    // 网格线与柱高都按轴顶（最高刻度）归一，而不是按数据最大值——否则取整后的
+    // 最高刻度线会落在画布外，最高的那根柱子也会顶破它。
+    final StatAxisScale scale = axisScaleOf(maxValue);
     const bottomPadding = 20.0;
-    const leftPadding = 36.0;
+    final double leftPadding =
+        statAxisLeftPadding(scale.labels, labelStyle, 36.0);
     final chartHeight = size.height - bottomPadding;
     final chartWidth = size.width - leftPadding;
     final barWidth = (chartWidth / data.length) * 0.7;
@@ -452,7 +479,7 @@ class StatBarChartPainter extends CustomPainter {
       ..strokeWidth = 1;
 
     canvas.drawLine(
-      const Offset(leftPadding, 0),
+      Offset(leftPadding, 0),
       Offset(leftPadding, chartHeight),
       axisPaint,
     );
@@ -462,9 +489,6 @@ class StatBarChartPainter extends CustomPainter {
       axisPaint,
     );
 
-    // 网格线与柱高都按轴顶（最高刻度）归一，而不是按数据最大值——否则取整后的
-    // 最高刻度线会落在画布外，最高的那根柱子也会顶破它。
-    final StatAxisScale scale = axisScaleOf(maxValue);
     final int axisMax = scale.max;
     for (int i = 0; i < scale.ticks.length; i++) {
       final y = chartHeight - (chartHeight * scale.ticks[i] / axisMax);
@@ -480,9 +504,11 @@ class StatBarChartPainter extends CustomPainter {
       final d = data[i];
       final x = leftPadding + i * step + gap / 2;
       final value = valueOf(d);
-      final barHeight = (value / axisMax) * chartHeight;
+      // 进场动画：柱高随 [progress] 从 0 长到满高（刻度与标签不动）。
+      final barHeight =
+          (value / axisMax) * chartHeight * progress.clamp(0.0, 1.0);
 
-      if (value > 0) {
+      if (value > 0 && barHeight > 0) {
         final rect = RRect.fromRectAndRadius(
           Rect.fromLTWH(x, chartHeight - barHeight, barWidth, barHeight),
           barRadius,
@@ -522,7 +548,8 @@ class StatBarChartPainter extends CustomPainter {
       valueOf != oldDelegate.valueOf ||
       axisScaleOf != oldDelegate.axisScaleOf ||
       labelOf != oldDelegate.labelOf ||
-      labelEvery != oldDelegate.labelEvery;
+      labelEvery != oldDelegate.labelEvery ||
+      progress != oldDelegate.progress;
 }
 
 /// 折线图的一条线：值序列 + 颜色 + 线宽 + 是否描点。值与 [StatLineChartPainter]
@@ -587,7 +614,14 @@ class StatLineChartPainter extends CustomPainter {
     if (maxValue <= 0) maxValue = 1; // 全零时退化成平底线，避免除零。
 
     const double bottomPadding = 20.0;
-    const double leftPadding = 40.0;
+    const int yTicks = 4;
+    final double leftPadding = statAxisLeftPadding(
+      <String>[
+        for (int i = 0; i <= yTicks; i++) labelFormatter(maxValue * i / yTicks),
+      ],
+      labelStyle,
+      40.0,
+    );
     final double chartHeight = size.height - bottomPadding;
     final double chartWidth = size.width - leftPadding;
     // 单点时居中，多点时等距铺满。
@@ -601,7 +635,7 @@ class StatLineChartPainter extends CustomPainter {
       ..strokeWidth = 1;
 
     canvas.drawLine(
-      const Offset(leftPadding, 0),
+      Offset(leftPadding, 0),
       Offset(leftPadding, chartHeight),
       axisPaint,
     );
@@ -611,7 +645,6 @@ class StatLineChartPainter extends CustomPainter {
       axisPaint,
     );
 
-    const int yTicks = 4;
     for (int i = 0; i <= yTicks; i++) {
       final double value = maxValue * i / yTicks;
       final double y = chartHeight - (chartHeight * i / yTicks);

@@ -76,6 +76,8 @@ void main() {
       // 2026-10 查词模块重做：查词页历史 / 最近搜索与词典管理列表。
       'lib/src/pages/implementations/home_dictionary_page.dart',
       'lib/src/pages/implementations/dictionary_dialog_page.dart',
+      // 2026-10 字体库重做：样张卡网格 / 列表（含拖拽重排两种形态）。
+      'lib/src/pages/implementations/custom_fonts_page.dart',
     ]) {
       final String src = read(path);
       expect(src, contains('FushiEntranceScope('), reason: path);

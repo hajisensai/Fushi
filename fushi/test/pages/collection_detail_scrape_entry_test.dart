@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
@@ -63,6 +66,7 @@ void main() {
 
   Widget buildApp({
     Future<void> Function(MediaCollectionRow collection)? onRescrapeCollection,
+    Future<File?> Function(String workTitle)? onPickOnlineCover,
   }) =>
       TranslationProvider(
         child: MaterialApp(
@@ -84,6 +88,7 @@ void main() {
             onOpenEpisode: (VideoBookRow _) {},
             onChanged: () {},
             onRescrapeCollection: onRescrapeCollection,
+            onPickOnlineCover: onPickOnlineCover,
           ),
         ),
       );
@@ -116,7 +121,7 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.tap(find.byIcon(FushiIcons.more));
     await tester.pumpAndSettle();
 
     expect(
@@ -137,7 +142,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.tap(find.byIcon(FushiIcons.more));
     await tester.pumpAndSettle();
 
     expect(
@@ -157,7 +162,7 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.tap(find.byIcon(FushiIcons.more));
     await tester.pumpAndSettle();
 
     expect(find.text(t.collection_cover_set), findsOneWidget,
@@ -166,6 +171,55 @@ void main() {
       find.text(t.collection_cover_reset),
       findsNothing,
       reason: 'coverPath 为空时没有可恢复的东西，不该占一行菜单',
+    );
+  });
+
+  // BUG-2999：设置封面曾经只剩本地文件——2026-08-23 换 canonical 资料源时旧
+  // 「在线匹配海报」整条删掉，没有接到新资料源上。在线入口由库页注入（候选搜索
+  // 要刮削 controller），注入了就必须在菜单里、且真的调用注入的实现。
+  testWidgets('BUG-2999 未注入在线选图时不渲染在线搜索封面', (WidgetTester tester) async {
+    useSurface(tester);
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(FushiIcons.more));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.collection_cover_set), findsOneWidget);
+    expect(
+      find.text(t.video_cover_online_search),
+      findsNothing,
+      reason: '拿不到刮削 controller 时画在线入口 = 点了必然什么都不发生',
+    );
+  });
+
+  testWidgets('BUG-2999 注入在线选图后管理菜单提供在线搜索封面并按合集名搜索',
+      (WidgetTester tester) async {
+    useSurface(tester);
+    final List<String> searched = <String>[];
+    await tester.pumpWidget(buildApp(
+      onPickOnlineCover: (String workTitle) async {
+        searched.add(workTitle);
+        return null; // 用户在搜索框里取消
+      },
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(FushiIcons.more));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.collection_cover_set), findsOneWidget,
+        reason: '本地选图入口照旧在场');
+    expect(find.text(t.video_cover_online_search), findsOneWidget,
+        reason: '设置封面不能只剩本地文件');
+
+    await tester.tap(find.text(t.video_cover_online_search));
+    await tester.pumpAndSettle();
+    expect(searched, <String>['Show'], reason: '菜单项必须真的调用注入的在线选图，并以合集名作初始搜索词');
+    expect(
+      (await db.getMediaCollectionById(collectionId))?.coverPath,
+      isNull,
+      reason: '取消时不得写任何封面',
     );
   });
 

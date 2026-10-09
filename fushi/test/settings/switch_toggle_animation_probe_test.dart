@@ -6,7 +6,7 @@
 // 1) schema 式开关行本身动画健在（判别基线）；
 // 2) 翻转 FushiFocusRoot.enabled 同帧切换开关值时，Switch State 存活且动画运行
 //    ——正是用户点「键盘/手柄焦点导航」开关的场景。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';

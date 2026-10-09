@@ -24,6 +24,10 @@ enum ReaderControlSlot implements ControlSlotSpec {
   bottomLeft('bottomLeft'),
   bottomCenter('bottomCenter'),
   bottomRight('bottomRight'),
+
+  /// 「更多」溢出菜单（⋯）：按钮仍可用，但不占工具栏位置（2026-10 工具栏精简：
+  /// 中频按钮收进这里）。悬浮 / 贴边两种工具栏样式都把它画成末尾的 ⋯ 菜单。
+  overflow('overflow'),
   hidden('hidden');
 
   const ReaderControlSlot(this.storageValue);
@@ -41,7 +45,8 @@ enum ReaderControlSlot implements ControlSlotSpec {
       this == ReaderControlSlot.bottomCenter ||
       this == ReaderControlSlot.bottomRight;
 
-  /// 编辑器舞台上的六个槽位（不含 hidden，hidden 是编辑器自己的托盘）。
+  /// 编辑器舞台上的槽位（不含 hidden，hidden 是编辑器自己的托盘）：顶栏三区、
+  /// 底栏三区、「更多」菜单。
   static const List<ReaderControlSlot> editableSlots = <ReaderControlSlot>[
     topLeft,
     topCenter,
@@ -49,6 +54,7 @@ enum ReaderControlSlot implements ControlSlotSpec {
     bottomLeft,
     bottomCenter,
     bottomRight,
+    overflow,
   ];
 }
 
@@ -157,6 +163,11 @@ enum ReaderControlItem implements ControlItemSpec<ReaderControlSlot> {
     if (this == ReaderControlItem.title) {
       return target == ReaderControlSlot.topCenter;
     }
+    // 返回是退书的唯一可见入口（BUG-2230 口径），不许藏进「更多」多一步。
+    if (this == ReaderControlItem.back &&
+        target == ReaderControlSlot.overflow) {
+      return false;
+    }
     return target != ReaderControlSlot.topCenter;
   }
 
@@ -206,6 +217,10 @@ const ControlLayoutScheme<ReaderControlSlot, ReaderControlItem>
   postNormalize: _readerPostNormalize,
 );
 
+/// 窄于此宽度（逻辑 px，MD3 compact window class 上界）用窄窗布局
+/// （[ReaderControlLayout.compactDefaults] / 偏好 `reader_control_layout_compact`）。
+const double kReaderControlCompactWidth = 600;
+
 /// 阅读器按钮布局：`ControlLayout` 的薄包装，负责出厂布局与 JSON 编解码。
 class ReaderControlLayout {
   const ReaderControlLayout._(this.core);
@@ -217,36 +232,72 @@ class ReaderControlLayout {
   ) =>
       ReaderControlLayout._(core);
 
-  /// 出厂布局 = 2026-09 之前硬编码的顶栏：左「← / 模式 / 目录 / 插图 / 统计」，
-  /// 中「书名」，右「有声书 / 全屏 / 设置」；底栏三槽为空；有声书传输键与顶栏 /
-  /// 底栏开关留在托盘。
+  /// 宽窗（≥ [kReaderControlCompactWidth]）出厂布局（2026-10 工具栏精简，按使用频率
+  /// 重排）：左「← 返回」，中「书名」（点它 = 打开导航），右主操作组「导航 /
+  /// 有声书 / 阅读设置」；中频的「歌词模式 / 统计 / 插图 / 全屏」收进「更多」；
+  /// 计时 / 开关栏 / 有声书传输键留在托盘（传输键由播放条与 FAB 承担）。
+  ///
+  /// 只影响**没有存过布局**的用户：存量布局 JSON 把每颗按钮都显式列在某个槽或
+  /// removed 里，解码不经出厂表（[decode] 的 fallback 只回填 JSON 里缺席的按钮）。
   static final ReaderControlLayout defaults = ReaderControlLayout._(
     ControlLayout<ReaderControlSlot, ReaderControlItem>.fromSlots(
       kReaderControlScheme,
       <ReaderControlSlot, List<ReaderControlItem>>{
         ReaderControlSlot.topLeft: <ReaderControlItem>[
           ReaderControlItem.back,
-          ReaderControlItem.modeToggle,
-          ReaderControlItem.navigation,
-          ReaderControlItem.gallery,
-          ReaderControlItem.statistics,
         ],
         ReaderControlSlot.topCenter: <ReaderControlItem>[
           ReaderControlItem.title,
         ],
         ReaderControlSlot.topRight: <ReaderControlItem>[
+          ReaderControlItem.navigation,
           ReaderControlItem.audiobook,
-          ReaderControlItem.fullscreen,
           ReaderControlItem.settings,
+        ],
+        ReaderControlSlot.overflow: <ReaderControlItem>[
+          ReaderControlItem.modeToggle,
+          ReaderControlItem.statistics,
+          ReaderControlItem.gallery,
+          ReaderControlItem.fullscreen,
         ],
       },
     ),
   );
 
-  static Map<ReaderControlItem, ReaderControlSlot> _defaultAssignments() =>
+  /// 窄窗（手机竖屏，< [kReaderControlCompactWidth]）出厂布局：顶部只留「← 返回 /
+  /// 书名 / ⋯」，主操作下沉到拇指区的底部悬浮工具栏「导航 / 有声书 / 设置 /
+  /// 统计」（等宽图标 + 小字标签）；有声书在场时 FAB 是变形播放键。
+  static final ReaderControlLayout compactDefaults = ReaderControlLayout._(
+    ControlLayout<ReaderControlSlot, ReaderControlItem>.fromSlots(
+      kReaderControlScheme,
+      <ReaderControlSlot, List<ReaderControlItem>>{
+        ReaderControlSlot.topLeft: <ReaderControlItem>[
+          ReaderControlItem.back,
+        ],
+        ReaderControlSlot.topCenter: <ReaderControlItem>[
+          ReaderControlItem.title,
+        ],
+        ReaderControlSlot.bottomCenter: <ReaderControlItem>[
+          ReaderControlItem.navigation,
+          ReaderControlItem.audiobook,
+          ReaderControlItem.settings,
+          ReaderControlItem.statistics,
+        ],
+        ReaderControlSlot.overflow: <ReaderControlItem>[
+          ReaderControlItem.modeToggle,
+          ReaderControlItem.gallery,
+          ReaderControlItem.fullscreen,
+        ],
+      },
+    ),
+  );
+
+  static Map<ReaderControlItem, ReaderControlSlot> _defaultAssignments(
+    ReaderControlLayout base,
+  ) =>
       <ReaderControlItem, ReaderControlSlot>{
         for (final ReaderControlItem item in ReaderControlItem.values)
-          item: defaults.core.slotOf(item),
+          item: base.core.slotOf(item),
       };
 
   List<ReaderControlItem> itemsIn(ReaderControlSlot slot) => core.itemsIn(slot);
@@ -269,24 +320,29 @@ class ReaderControlLayout {
     });
   }
 
-  /// 空 / 坏 JSON → 出厂布局；一个可见按钮都没有 → 出厂布局。
-  static ReaderControlLayout decode(String json) {
-    if (json.trim().isEmpty) return defaults;
+  /// 空 / 坏 JSON → [fallback]（缺省 = 宽窗出厂布局）；一个可见按钮都没有 →
+  /// [fallback]。JSON 里缺席的按钮按 [fallback] 的位置回填。
+  static ReaderControlLayout decode(
+    String json, {
+    ReaderControlLayout? fallback,
+  }) {
+    final ReaderControlLayout base = fallback ?? defaults;
+    if (json.trim().isEmpty) return base;
     try {
       final Object? raw = jsonDecode(json);
-      if (raw is! Map<String, dynamic>) return defaults;
+      if (raw is! Map<String, dynamic>) return base;
       final Object? slotsRaw = raw['slots'];
-      if (slotsRaw is! Map<String, dynamic>) return defaults;
+      if (slotsRaw is! Map<String, dynamic>) return base;
       final ControlLayout<ReaderControlSlot, ReaderControlItem>? core =
           ControlLayout.decodeSlots<ReaderControlSlot, ReaderControlItem>(
         kReaderControlScheme,
         slotsRaw,
         removedRaw: raw['removed'],
-        fallbackAssignments: _defaultAssignments(),
+        fallbackAssignments: _defaultAssignments(base),
       );
-      return core == null ? defaults : ReaderControlLayout._(core);
+      return core == null ? base : ReaderControlLayout._(core);
     } catch (_) {
-      return defaults;
+      return base;
     }
   }
 

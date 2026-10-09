@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
@@ -79,7 +79,7 @@ void main() {
   SettingsNavigationItem navTo(SettingsDestination Function() child) =>
       SettingsNavigationItem(id: 'p.sub', title: '进入子页', child: child);
 
-  testWidgets('Android game receiver belongs to interconnect settings',
+  testWidgets('game receiver belongs to interconnect settings',
       (WidgetTester tester) async {
     await pumpContext(tester);
     final SettingsDestination destination = buildInterconnectDestination();
@@ -89,7 +89,8 @@ void main() {
         .toList();
     expect(entries, hasLength(1));
     expect(entries.single, isA<SettingsActionItem>());
-    expect(entries.single.isVisible(sctx), Platform.isAndroid);
+    // Every platform can receive a stream, so the entry has no platform gate.
+    expect(entries.single.isVisible(sctx), isTrue);
   });
 
   SettingsDestination parentPage(SettingsNavigationItem nav) =>
@@ -390,8 +391,12 @@ void main() {
     test('搜索：索引递归进子页；命中后逐级推子页', () {
       expect(read('lib/src/settings/settings_search.dart'),
           contains('_flattenPageInto('));
+      // 「逐级推子页」已从主页抽到共享入口 openSettingsSearchEntry（窄屏 /
+      // 子页页头搜索 / 宽屏主从三处共用），主页只负责调用它。
+      expect(read('lib/src/settings/settings_search_sheet.dart'),
+          contains('in entry.subPagePath'));
       expect(read('lib/src/settings/settings_home_page.dart'),
-          contains('entry.subPagePath'));
+          contains('openSettingsSearchEntry('));
     });
 
     test('详情页：子页靠闭包取新鲜树，不按 id 到顶层找', () {

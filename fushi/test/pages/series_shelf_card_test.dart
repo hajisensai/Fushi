@@ -1,16 +1,18 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/pages/implementations/series_shelf_card.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 /// TODO-616 A2 / TODO-947 SeriesShelfCard guard:
 ///  - renders series name + member-count badge (series_item_count).
 ///  - tap fires onTap; in selection mode routes to onSelectionToggle.
-///  - phone-folder mosaic: >=2 covers tile into a 2x2 member-cover grid;
-///    a single cover degrades to a full cover (no grid); the grid is capped
-///    at 4 cells; the selection check stays visible over the mosaic.
+///  - 2026-10: stacked cover (shared ShelfCoverFrame stackedBehind, same as
+///    the video series card) + count / kind badges + optional progress strip;
+///    the selection check stays visible over the stack.
+///  - SeriesFolderCover (name-dialog preview) keeps the 2x2 folder mosaic.
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
@@ -126,89 +128,60 @@ void main() {
     expect(find.byType(FushiFocusTarget), findsNothing);
   });
 
-  // ---- TODO-947 phone-folder mosaic ----
+  // ---- 2026-10 书架重设计：叠层封面（与视频库「系列」卡同一个 ShelfCoverFrame）----
 
-  testWidgets('multi-cover tiles member covers into a folder grid',
+  testWidgets('stacked cover: front cover sits in a stacked ShelfCoverFrame',
       (tester) async {
     await tester.pumpWidget(wrap(SeriesShelfCard(
-      name: 'Folder',
+      name: 'Stack',
       itemCount: 3,
-      covers: <Widget>[
-        coverBox('a', Colors.red),
-        coverBox('b', Colors.green),
-        coverBox('c', Colors.blue),
-      ],
+      covers: <Widget>[coverBox('front', Colors.red)],
       slotAspectRatio: 160 / 260,
       onTap: () {},
     )));
-    // All three member covers render inside the mosaic (folder shows the books).
-    expect(find.byKey(const ValueKey<String>('cover_a')), findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('cover_b')), findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('cover_c')), findsOneWidget);
-    // 2x2 mosaic: cells 0..2 hold covers; cell 3 is an empty placeholder.
-    expect(find.byKey(const ValueKey<String>('series-folder-cell-0')),
-        findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('series-folder-cell-1')),
-        findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('series-folder-cell-2')),
-        findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('series-folder-cell-3')),
-        findsNothing);
+    final ShelfCoverFrame frame =
+        tester.widget<ShelfCoverFrame>(find.byType(ShelfCoverFrame));
+    expect(frame.stackedBehind, isNotNull,
+        reason: '合集格子必须走共享叠层（stackedBehind），不是自绘拼图');
+    expect(find.byKey(const ValueKey<String>('cover_front')), findsWidgets);
+    // 不再自绘 2x2 文件夹拼图。
+    expect(find.byType(SeriesFolderCover), findsNothing);
   });
 
-  testWidgets('single cover degrades to a full cover (no mosaic grid)',
-      (tester) async {
+  testWidgets('count + kind badges and progress strip', (tester) async {
     await tester.pumpWidget(wrap(SeriesShelfCard(
-      name: 'Solo',
-      itemCount: 1,
-      covers: <Widget>[coverBox('main', Colors.red)],
-      slotAspectRatio: 160 / 260,
-      onTap: () {},
-    )));
-    expect(find.byKey(const ValueKey<String>('cover_main')), findsOneWidget);
-    // No mosaic cells: the single cover fills the tile directly.
-    expect(find.byKey(const ValueKey<String>('series-folder-cell-0')),
-        findsNothing);
-    expect(find.byKey(const ValueKey<String>('series-folder-cell-1')),
-        findsNothing);
-  });
-
-  testWidgets('mosaic caps at 4 cells even with more members', (tester) async {
-    await tester.pumpWidget(wrap(SeriesShelfCard(
-      name: 'Many',
+      name: 'Badges',
       itemCount: 6,
-      covers: <Widget>[
-        coverBox('c0', Colors.red),
-        coverBox('c1', Colors.green),
-        coverBox('c2', Colors.blue),
-        coverBox('c3', Colors.yellow),
-        coverBox('c4', Colors.purple),
-      ],
+      countLabel: '6 vols',
+      kindLabel: 'Series',
+      progress: 0.5,
+      covers: <Widget>[coverBox('a', Colors.red)],
       slotAspectRatio: 160 / 260,
       onTap: () {},
     )));
-    // Exactly four cells; the fifth cover is not rendered.
-    expect(find.byKey(const ValueKey<String>('cover_c0')), findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('cover_c3')), findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('cover_c4')), findsNothing);
-    expect(find.byKey(const ValueKey<String>('series-folder-cell-3')),
-        findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('series-folder-cell-4')),
-        findsNothing);
-    // Badge still reports the true total (6), not the capped preview count.
-    expect(find.text('6 items'), findsOneWidget);
+    expect(find.text('6 vols'), findsOneWidget);
+    expect(find.text('Series'), findsOneWidget);
+    expect(find.byType(CoverProgressStrip), findsOneWidget);
   });
 
-  testWidgets('selection check stays visible over the folder mosaic',
+  testWidgets('no progress strip when nothing has been read', (tester) async {
+    await tester.pumpWidget(wrap(SeriesShelfCard(
+      name: 'Fresh',
+      itemCount: 2,
+      progress: 0,
+      covers: <Widget>[coverBox('a', Colors.red)],
+      slotAspectRatio: 160 / 260,
+      onTap: () {},
+    )));
+    expect(find.byType(CoverProgressStrip), findsNothing);
+  });
+
+  testWidgets('selection check stays visible over the stacked cover',
       (tester) async {
     await tester.pumpWidget(wrap(SeriesShelfCard(
       name: 'Sel',
       itemCount: 3,
-      covers: <Widget>[
-        coverBox('a', Colors.red),
-        coverBox('b', Colors.green),
-        coverBox('c', Colors.blue),
-      ],
+      covers: <Widget>[coverBox('a', Colors.red)],
       slotAspectRatio: 160 / 260,
       selectionMode: true,
       selectionKey: 'series_9',
@@ -220,6 +193,40 @@ void main() {
     final Finder check = find.byIcon(Icons.check);
     expect(check, findsOneWidget);
     expect(tester.getSize(check).width, greaterThan(0));
+    // 多选态册数角标让位到左下，仍可见。
+    expect(find.text('3 items'), findsOneWidget);
+  });
+
+  // ---- TODO-947 phone-folder mosaic（「组合成系列」命名弹窗预览仍在用）----
+
+  testWidgets('SeriesFolderCover tiles member covers into a folder grid',
+      (tester) async {
+    await tester.pumpWidget(wrap(SeriesFolderCover(
+      covers: <Widget>[
+        coverBox('a', Colors.red),
+        coverBox('b', Colors.green),
+        coverBox('c', Colors.blue),
+      ],
+    )));
+    expect(find.byKey(const ValueKey<String>('cover_a')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('cover_b')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('cover_c')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('series-folder-cell-0')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('series-folder-cell-2')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('series-folder-cell-3')),
+        findsNothing);
+  });
+
+  testWidgets('SeriesFolderCover single cover degrades to a full cover',
+      (tester) async {
+    await tester.pumpWidget(wrap(SeriesFolderCover(
+      covers: <Widget>[coverBox('main', Colors.red)],
+    )));
+    expect(find.byKey(const ValueKey<String>('cover_main')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('series-folder-cell-0')),
+        findsNothing);
   });
 
   testWidgets('SeriesFolderCover renders N member covers in the grid',

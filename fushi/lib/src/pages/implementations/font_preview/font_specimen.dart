@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show ReaderCustomFontCss;
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -10,6 +10,16 @@ const String kJaFontSpecimenGlyphs = 'Ag 永あア漢';
 /// 预览面板的日文正文样张。带假名、汉字、长音与句读，能同时看出字重、字距与
 /// 标点位置。
 const String kJaFontSampleSentence = '吾輩は猫である。名前はまだ無い。どこで生れたかとんと見当がつかぬ。';
+
+/// 字体库样张卡的三种样例文字（日文 / 中文 / 西文）。
+enum FontSampleScript { japanese, chinese, latin }
+
+/// 样张卡默认文字：日文取《吾輩は猫である》开头、中文取《千字文》、西文取全字母句。
+String fontSampleSentence(FontSampleScript script) => switch (script) {
+  FontSampleScript.japanese => '吾輩は猫である。名前はまだ無い。',
+  FontSampleScript.chinese => '天地玄黄，宇宙洪荒。日月盈昃，辰宿列张。',
+  FontSampleScript.latin => 'The quick brown fox jumps over the lazy dog.',
+};
 
 /// 字体库条目（系统族名或导入的文件）→ 引擎里可用的族名。
 ///

@@ -431,6 +431,15 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       if (downloads != null) 'downloads': downloads,
       if (subscriptions != null) 'subscriptions': subscriptions,
       if (assistant != null) 'assistant': assistant,
+      // 查词 / 制卡 / 查词历史 / 游戏串流：这台 host 是否接了对应 service（老 host
+      // 无这些字段，client 照旧以端点 404 判断）。只说「懂不懂这条路由」，不代表此刻
+      // 一定成功——例如制卡还要 host 已登录 Anki、查词还要 host 装了词典。
+      'lookup': <String, dynamic>{
+        'dictionary': _remoteLookupService != null,
+        'history': _historyService != null,
+      },
+      'mining': _miningService != null,
+      'gameStream': _gameStreamService != null,
       'liveLibrary': <String, dynamic>{
         'dictionaries': lib,
         'books': lib,
@@ -456,6 +465,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 不认那个 header，会走 live push 的旧路径按 client 报的后缀落盘，
         // `rename` 直接覆盖 host 上同名的旧字幕且不留备份（BUG-2728）。
         'videoSubtitleDefault': _libraryService is VideoSubtitleDefaultHost,
+        // `DELETE .../subtitle?which=`（清字幕源 + 备份本视频 sidecar）与
+        // `POST .../subtitle/backfill`（立即补字幕）。老 host 无此字段 → 404。
+        'videoSubtitleClear': _libraryService is VideoSubtitleClearHost,
+        'videoSubtitleBackfill': lib && videoSubtitleBackfill != null,
         // TMDB 备选排序（`/api/library/metadata/episode-group*`）。
         'videoMetadataOrdering': _libraryService is VideoMetadataOrderingHost,
         'serviceConfig': _securityContext != null &&

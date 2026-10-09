@@ -1,9 +1,10 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 // BUG-119 守卫（TODO-762 起从 TextField 迁到 ListView.builder 后更新）：
 // 日志页（错误日志 / 调试日志）按住鼠标拖拽选区想往上滑复制时，视口曾被「拽回」。
@@ -195,7 +196,7 @@ void main() {
         reason: '末行应在视口外未渲染；若被渲染说明列表没虚拟化，测试前提不成立');
 
     // 点「复制全部」入口。
-    await tester.tap(find.byIcon(Icons.copy_all_outlined));
+    await tester.tap(find.byIcon(FushiIcons.copyAll));
     await tester.pump();
 
     expect(copied, isNotNull, reason: '「复制全部」应写穿剪贴板');

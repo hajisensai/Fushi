@@ -8,9 +8,11 @@
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 
@@ -63,13 +65,17 @@ class _LeaderboardTabState extends ConsumerState<LeaderboardTab> {
     return FutureBuilder<void>(
       future: _loaded,
       builder: (BuildContext context, AsyncSnapshot<void> snap) {
+        // 加载 / 错误态不滚动：让开悬浮页头（正文铺在页头底下）。
         if (snap.connectionState != ConnectionState.done) {
-          return const FushiLoadingView();
+          return const SafeArea(bottom: false, child: FushiLoadingView());
         }
         if (snap.hasError) {
-          return LeaderboardErrorView(
-            error: snap.error!,
-            onRetry: () => setState(() => _loaded = service.load()),
+          return SafeArea(
+            bottom: false,
+            child: LeaderboardErrorView(
+              error: snap.error!,
+              onRetry: () => setState(() => _loaded = service.load()),
+            ),
           );
         }
         return service.status == LeaderboardStatus.active
@@ -99,9 +105,15 @@ class LeaderboardIntroView extends ConsumerWidget {
         .accountGoneNotice;
     return ListView(
       key: const ValueKey<String>('leaderboard-intro'),
+      // 正文铺到悬浮页头底下：顶部让出「状态栏 + 页头」。
       padding: withBottomSafeInset(
         context,
-        EdgeInsets.all(tokens.spacing.card),
+        EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.card + MediaQuery.paddingOf(context).top,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
       ),
       children: <Widget>[
         if (accountGone) ...<Widget>[
@@ -136,21 +148,21 @@ class LeaderboardIntroView extends ConsumerWidget {
               onPressed: () => unawaited(
                 _openSignIn(context, LeaderboardSignInMode.register),
               ),
-              icon: const FushiIcon(Icons.person_add_alt_1_outlined),
+              icon: const FushiIcon(FushiIcons.personAdd),
               label: Text(t.leaderboard_intro_register),
             ),
             FushiOutlinedButton.icon(
               key: const ValueKey<String>('leaderboard-intro-login'),
               onPressed: () =>
                   unawaited(_openSignIn(context, LeaderboardSignInMode.login)),
-              icon: const FushiIcon(Icons.login),
+              icon: const FushiIcon(FushiIcons.login),
               label: Text(t.leaderboard_intro_login),
             ),
             FushiTextButton.icon(
               key: const ValueKey<String>('leaderboard-intro-recovery'),
               onPressed: () =>
                   unawaited(showLeaderboardRecoveryImportDialog(context)),
-              icon: const FushiIcon(Icons.key_outlined),
+              icon: const FushiIcon(FushiIcons.key),
               label: Text(t.leaderboard_intro_recovery),
             ),
           ],
@@ -355,7 +367,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
             title: t.leaderboard_sync_claim_title,
             message: t.leaderboard_sync_claim_message,
             confirmLabel: t.leaderboard_sync_claim_action,
-            leadingIcon: Icons.sync_alt,
+            leadingIcon: FushiIcons.swap,
           ),
         );
     if (ok == null || !mounted) return;
@@ -406,16 +418,22 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final LeaderboardService service = ref.watch(leaderboardServiceProvider);
-    return RefreshIndicator(
+    return FushiRefreshIndicator(
+      // 下拉指示器从悬浮页头下沿出现，而不是藏在页头后面。
+      edgeOffset: MediaQuery.paddingOf(context).top,
       onRefresh: () async {
         await Future.wait(<Future<void>>[_refreshSelf(), _reload()]);
       },
       child: ListView(
         key: const ValueKey<String>('leaderboard-active'),
         physics: const AlwaysScrollableScrollPhysics(),
+        // 正文铺到悬浮页头底下：顶部让出「状态栏 + 页头」。
         padding: withBottomSafeInset(
           context,
-          EdgeInsets.only(bottom: tokens.spacing.card * 2),
+          EdgeInsets.only(
+            top: MediaQuery.paddingOf(context).top,
+            bottom: tokens.spacing.card * 2,
+          ),
         ),
         children: <Widget>[
           _buildHeader(tokens, service),
@@ -448,7 +466,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
                 else
                   const SizedBox.square(
                     dimension: 48,
-                    child: FushiIcon(Icons.account_circle_outlined, size: 40),
+                    child: FushiIcon(FushiIcons.account, size: 40),
                   ),
                 SizedBox(width: tokens.spacing.gap),
                 Expanded(
@@ -478,12 +496,12 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
               children: <Widget>[
                 FushiOutlinedButton.icon(
                   onPressed: selfId.isEmpty ? null : () => _openUser(selfId),
-                  icon: const FushiIcon(Icons.person_outline),
+                  icon: const FushiIcon(FushiIcons.person),
                   label: Text(t.leaderboard_header_profile),
                 ),
                 FushiOutlinedButton.icon(
                   onPressed: () => _push(const LeaderboardFriendsPage()),
-                  icon: const FushiIcon(Icons.group_outlined),
+                  icon: const FushiIcon(FushiIcons.group),
                   label: Text(t.leaderboard_header_friends),
                 ),
                 FushiOutlinedButton.icon(
@@ -496,12 +514,12 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
                             initialWindow: _window,
                           ),
                         ),
-                  icon: const FushiIcon(Icons.ios_share),
+                  icon: const FushiIcon(FushiIcons.share),
                   label: Text(t.leaderboard_header_share),
                 ),
                 FushiOutlinedButton.icon(
                   onPressed: () => _push(const LeaderboardAccountPage()),
-                  icon: const FushiIcon(Icons.manage_accounts_outlined),
+                  icon: const FushiIcon(FushiIcons.account),
                   label: Text(t.leaderboard_header_account),
                 ),
               ],
@@ -535,7 +553,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
           children: <Widget>[
             Row(
               children: <Widget>[
-                const FushiIcon(Icons.cloud_sync_outlined, size: 20),
+                const FushiIcon(FushiIcons.cloudSync, size: 20),
                 SizedBox(width: tokens.spacing.gap),
                 Expanded(
                   child: Text(
@@ -572,7 +590,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
               FushiFilledButton.tonalIcon(
                 key: const ValueKey<String>('leaderboard-sync-claim'),
                 onPressed: _syncing ? null : () => unawaited(_claim()),
-                icon: const FushiIcon(Icons.sync_alt),
+                icon: const FushiIcon(FushiIcons.swap),
                 label: Text(t.leaderboard_sync_claim_action),
               ),
             ],
@@ -741,7 +759,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
         Padding(
           padding: EdgeInsets.all(tokens.spacing.card),
           child: FushiPlaceholderMessage(
-            icon: Icons.leaderboard_outlined,
+            icon: FushiIcons.statistics,
             message: page.computedAt == null
                 ? t.leaderboard_board_generating
                 : t.leaderboard_board_empty,
@@ -789,7 +807,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
         Padding(
           padding: EdgeInsets.all(tokens.spacing.card),
           child: FushiPlaceholderMessage(
-            icon: Icons.local_fire_department_outlined,
+            icon: FushiIcons.streak,
             message: page.computedAt == null
                 ? t.leaderboard_board_generating
                 : t.leaderboard_board_empty,

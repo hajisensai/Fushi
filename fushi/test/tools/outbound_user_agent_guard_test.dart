@@ -14,14 +14,11 @@ import '../helpers/source_guard.dart';
 /// 身份。定向测试按功能域挑文件，结构上挑不到「哪个文件里还剩一条 UA 字面量」，
 /// 所以这里按目录全树扫。
 ///
-/// 白名单里的是**故意伪装成浏览器**的场景（不是「报自己」）：Aidoku 源站要浏览器
-/// UA 才不被 WAF 拦、Google Lens OCR 要求 Chromium UA、YouTube 分离流的回放 UA
-/// 必须与铸造 URL 时逐字一致。它们不受本守卫约束。
+/// 白名单里的是**故意伪装成浏览器**的场景（不是「报自己」）：Google Lens OCR
+/// 要求 Chromium UA、YouTube 分离流的回放 UA 必须与铸造 URL 时逐字一致。它们不受本守卫约束。
 void main() {
   /// 允许出现浏览器伪装 UA 的文件（相对 `fushi/`）。
   const Set<String> browserImpersonationFiles = <String>{
-    'lib/src/media/manga/aidoku/aidoku_reader_chapter.dart',
-    'lib/src/media/manga/aidoku/aidoku_source_browse_page.dart',
     'lib/src/media/manga/ocr/google_lens_ocr_service.dart',
     '../packages/fushi_engine/lib/media/video/youtube_source_resolver.dart',
   };

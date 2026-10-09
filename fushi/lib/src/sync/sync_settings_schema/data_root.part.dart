@@ -511,8 +511,10 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
   /// （`<Documents>\Hibiki` → 内容落 `<Documents>\Hibiki\data`、DB 留在平台固定落点），
   /// 用户必须在按下确认前就看到数据到底会去哪，而不是重启后自己找。
   Future<bool> _confirmMigrate(DataRootMigrationTarget target) async {
-    final String body = '${t.data_storage_change_confirm_body}\n\n'
-        '${target.documentsRoot.path}\n${target.supportRoot.path}';
+    final List<String> roots = <String>[
+      target.documentsRoot.path,
+      target.supportRoot.path,
+    ];
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext ctx) {
@@ -526,6 +528,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
           scrollable: false,
           child: FushiModalSheetFrame(
             title: t.data_storage_change_confirm_title,
+            leadingIcon: FushiIcons.moveFile,
             scrollable: true,
             bodyPadding: EdgeInsets.fromLTRB(
               tokens.spacing.card,
@@ -539,7 +542,40 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
               tokens.spacing.card,
               tokens.spacing.card,
             ),
-            body: Text(body),
+            // 说明 + 两个解析后的落点（M3E 分段卡片：首尾大圆角、行间 2，
+            // 等宽数字便于逐字核对路径）。
+            body: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Text(t.data_storage_change_confirm_body),
+                SizedBox(height: tokens.spacing.gap),
+                for (int i = 0; i < roots.length; i++)
+                  FushiGroupedListItem(
+                    index: i,
+                    count: roots.length,
+                    child: Padding(
+                      padding: EdgeInsets.all(tokens.spacing.gap),
+                      child: Row(
+                        children: <Widget>[
+                          const FushiListLeadingIcon(
+                            FushiIcons.folder,
+                            shape: FushiLeadingShape.square,
+                            size: 36,
+                          ),
+                          SizedBox(width: tokens.spacing.gap),
+                          Expanded(
+                            child: SelectableText(
+                              roots[i],
+                              style: ctx.fushiType.bodyMedium.tabular,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             footer: Wrap(
               alignment: WrapAlignment.end,
               spacing: tokens.spacing.gap,
@@ -598,7 +634,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       subtitle: _migrating
           ? t.data_storage_migrating
           : '${t.data_storage_location_hint}\n${_currentLocationLabel()}',
-      icon: Icons.folder_special_outlined,
+      icon: FushiIcons.folder,
       controlBelow: true,
       // 行 onTap 注册焦点目标（方向导航可达）；trailing 按钮是视觉入口。
       onTap: _changeLocation,
@@ -620,7 +656,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  const FushiIcon(Icons.drive_folder_upload_outlined, size: 18),
+                  const FushiIcon(FushiIcons.moveFile, size: 18),
                   const SizedBox(width: 8),
                   Text(t.data_storage_change_button),
                 ],

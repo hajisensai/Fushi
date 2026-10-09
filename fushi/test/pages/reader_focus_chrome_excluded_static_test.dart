@@ -24,13 +24,17 @@ void main() {
   /// 一个 test 剥了注释，另外三个裸扫：`allMatches(...).length == 1` 这条计数断言
   /// 当时之所以没红，仅仅因为其中一条注释恰好写成 `ExcludeFocus (see`——括号前多了
   /// 一个空格。删掉那个空格守卫立刻假红。掩码等长，计数语义不变。
-  String chromeSource() => maskCommentsAndScriptLines(File(
-        'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
-      ).readAsStringSync().replaceAll('\r\n', '\n'));
+  String chromeSource() => maskCommentsAndScriptLines(
+    File(
+      'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n'),
+  );
 
-  String caretSource() => maskCommentsAndScriptLines(File(
-        'lib/src/pages/implementations/reader_fushi/caret.part.dart',
-      ).readAsStringSync().replaceAll('\r\n', '\n'));
+  String caretSource() => maskCommentsAndScriptLines(
+    File(
+      'lib/src/pages/implementations/reader_fushi/caret.part.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n'),
+  );
 
   test('两条底栏（有声书条 + 设置条）经单一 _wrapBottomChromeBar 外壳被 ExcludeFocus 包住', () {
     final String chrome = chromeSource();
@@ -43,11 +47,14 @@ void main() {
       isTrue,
       reason: '底栏外壳必须收敛为单一 _wrapBottomChromeBar helper（T8 根因修复）。',
     );
-    final int excludes = RegExp(r'ExcludeFocus\(').allMatches(chrome).length;
+    final int excludes = RegExp(
+      r'ExcludeFocus\(',
+    ).allMatches(methodBody(chrome, 'Widget _wrapBottomChromeBar(')).length;
     expect(
       excludes,
       1,
-      reason: '底栏 ExcludeFocus 外壳必须唯一（在 _wrapBottomChromeBar 内），'
+      reason:
+          '底栏 ExcludeFocus 外壳必须唯一（在 _wrapBottomChromeBar 内），'
           '不留重复脚手架。',
     );
     expect(
@@ -55,9 +62,17 @@ void main() {
       isTrue,
       reason: '_wrapBottomChromeBar 必须挂 _chromeFocusScope 作底栏结构 scope。',
     );
+    expect(
+      identifierCall(
+        'ExcludeFocus',
+      ).allMatches(methodBody(chrome, 'Widget _buildFloatingBottomChrome(')),
+      hasLength(1),
+      reason: '悬浮底栏同样必须排除焦点',
+    );
     // 1 处 helper 定义 + _buildAudiobookBar / _buildSettingsBar 两处调用 = 3。
-    final int wraps =
-        RegExp(r'_wrapBottomChromeBar\(').allMatches(chrome).length;
+    final int wraps = RegExp(
+      r'_wrapBottomChromeBar\(',
+    ).allMatches(chrome).length;
     expect(
       wraps,
       greaterThanOrEqualTo(3),
@@ -72,7 +87,8 @@ void main() {
     expect(
       caret.contains('if (_chromeFocusScope.hasFocus) {'),
       isFalse,
-      reason: '底栏退出焦点遍历后 _chromeFocusScope.hasFocus 恒 false，键盘/手柄事件'
+      reason:
+          '底栏退出焦点遍历后 _chromeFocusScope.hasFocus 恒 false，键盘/手柄事件'
           '处理器里的 chrome-focus 顶部分支不可达，必须整段删除（不留死分支）。',
     );
   });
@@ -96,7 +112,8 @@ void main() {
     expect(
       chrome.contains('moveFocusToChrome'),
       isFalse,
-      reason: '显示底栏不得把焦点搬进底栏；_toggleChrome 的 moveFocusToChrome 形参与'
+      reason:
+          '显示底栏不得把焦点搬进底栏；_toggleChrome 的 moveFocusToChrome 形参与'
           '其分支必须删除（焦点恒留正文）。',
     );
     expect(

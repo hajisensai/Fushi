@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,7 +6,9 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show kCustomThemeDefaultSeed;
 import 'package:fushi/src/pages/implementations/custom_theme_page.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 
 import '../helpers/test_platform_services.dart';
 import '../helpers/glass_unwrap.dart';
@@ -97,6 +99,10 @@ class _RecordingAppModel extends AppModel {
   @override
   bool get einkMode => false;
 
+  // 4c32e76e6e4：编辑页把「纯黑深色背景」开关计入配色缓存键。
+  @override
+  bool get pureBlackDark => false;
+
   @override
   Color? get systemPrimaryColor => const Color(0xFF1F4959);
 }
@@ -106,6 +112,10 @@ Widget _host(_RecordingAppModel appModel, Widget home) {
     overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
     child: TranslationProvider(
       child: MaterialApp(
+        // 与生产根同构：取色器（flutter_colorpicker）的 hex 输入框仍是 SDK 旧
+        // Material TextField，靠根上的 LegacyDesignCompatibility（446e7b695a2）。
+        builder: (BuildContext context, Widget? child) =>
+            LegacyDesignCompatibility(child: child!),
         theme: ThemeData.light(useMaterial3: true),
         home: home,
       ),
@@ -119,18 +129,33 @@ final Finder _verticalScrollable = find
     )
     .first;
 
-Future<void> _tapApply(WidgetTester tester) async {
-  final Finder apply = find.byIcon(Icons.check);
-  await tester.scrollUntilVisible(apply, 200, scrollable: _verticalScrollable);
+/// c981bcf1533 起编辑列表滚到浮动页头与（窄屏）吸顶预览底下：
+/// `scrollUntilVisible` 只保证进了视口，目标可能正被页头 / 预览压着，
+/// 点下去落在叠放层上。再把它对到视口中下部、露出叠放层之外再点。
+Future<void> _revealUnobscured(WidgetTester tester, Finder target) async {
+  await tester.scrollUntilVisible(
+    target,
+    120,
+    scrollable: _verticalScrollable,
+  );
   await tester.pumpAndSettle();
+  await Scrollable.ensureVisible(
+    tester.element(target.first),
+    alignment: 0.7,
+  );
+  await tester.pumpAndSettle();
+}
+
+Future<void> _tapApply(WidgetTester tester) async {
+  final Finder apply = find.byKey(const ValueKey<String>('custom-theme-apply'));
+  await _revealUnobscured(tester, apply);
   await tester.tap(apply);
   await tester.pumpAndSettle();
 }
 
 Future<void> _tapRow(WidgetTester tester, String title) async {
   final Finder row = find.text(title);
-  await tester.scrollUntilVisible(row, 120, scrollable: _verticalScrollable);
-  await tester.pumpAndSettle();
+  await _revealUnobscured(tester, row);
   await tester.tap(row);
   await tester.pumpAndSettle();
 }
@@ -143,10 +168,21 @@ Finder _settingsSwitch(int index) => find
     )
     .at(index);
 
-Future<void> _tapSettingsSwitch(WidgetTester tester, int index) async {
-  final Finder toggle = _settingsSwitch(index);
-  await tester.scrollUntilVisible(toggle, 120, scrollable: _verticalScrollable);
+/// 编辑列表是懒构建的（2026-10 重设计后开关行在页头卡、AI 卡与色板之下），
+/// 先滚到最后一只开关「派生色中性灰」的标题，三只开关才都已构建。
+Future<void> _scrollToSwitches(WidgetTester tester) async {
+  await tester.scrollUntilVisible(
+    find.text(t.theme_neutral_derived),
+    120,
+    scrollable: _verticalScrollable,
+  );
   await tester.pumpAndSettle();
+}
+
+Future<void> _tapSettingsSwitch(WidgetTester tester, int index) async {
+  await _scrollToSwitches(tester);
+  final Finder toggle = _settingsSwitch(index);
+  await _revealUnobscured(tester, toggle);
   await tester.tap(toggle);
   await tester.pumpAndSettle();
 }
@@ -209,7 +245,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await _tapSettingsSwitch(tester, 0);
-      expect(find.byIcon(Icons.lock_outline), findsWidgets);
+      expect(find.byIcon(FushiIcons.lock), findsWidgets);
 
       await _tapApply(tester);
       final CustomThemeEntry saved = appModel.upserts.single;
@@ -238,13 +274,13 @@ void main() {
 
       await _tapRow(tester, t.theme_role_surface);
       expect(find.byType(ColorPickerArea), findsOneWidget);
-      // 预设第一格是纯白。
-      final Finder white = find.byWidgetPredicate(
-        (Widget w) =>
-            w is FushiColorSwatch &&
-            w.onTap != null &&
-            w.color.toARGB32() == 0xFFFFFFFF,
+      // 预设第一格是纯白（取色器色板格按颜色挂 key）。
+      final Finder white = find.byKey(
+        const ValueKey<String>('custom-theme-swatch-ffffffff'),
       );
+      // 选色 sheet 正文可滚动（矮窗口里推荐色在折线以下），先滚到再点。
+      await tester.ensureVisible(white.first);
+      await tester.pumpAndSettle();
       await tester.tap(white.first);
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.dialog_done));
@@ -293,6 +329,7 @@ void main() {
         _host(appModel, const CustomThemePage(themeId: 'ct-2')),
       );
       await tester.pumpAndSettle();
+      await _scrollToSwitches(tester);
       final Switch autoTone = tester.widget<Switch>(glassUnwrap<Switch>(_settingsSwitch(1)));
       expect(autoTone.value, isTrue);
 
@@ -357,12 +394,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final Finder reset = find.byTooltip(t.theme_role_reset);
-      await tester.scrollUntilVisible(
-        reset,
-        120,
-        scrollable: _verticalScrollable,
-      );
-      await tester.pumpAndSettle();
+      await _revealUnobscured(tester, reset);
       await tester.tap(reset);
       await tester.pumpAndSettle();
       expect(find.byTooltip(t.theme_role_reset), findsNothing);
@@ -384,38 +416,36 @@ void main() {
       await tester.pumpAndSettle();
 
       final Finder reset = find.byTooltip(t.theme_role_reset);
-      await tester.scrollUntilVisible(
-        reset,
-        120,
-        scrollable: _verticalScrollable,
-      );
-      await tester.pumpAndSettle();
+      await _revealUnobscured(tester, reset);
       await tester.tap(reset);
       await tester.pumpAndSettle();
       expect(appModel.audioHighlightWrites.last, isNull);
     });
   });
 
-  group('CustomThemePage · 宽屏两栏', () {
-    testWidgets('≥ 900 宽：点角色行不弹窗，右栏选色器切到该角色', (WidgetTester tester) async {
+  group('CustomThemePage · 宽屏：取色器按需弹出，预览常驻', () {
+    testWidgets('≥ 900 宽：不再常驻选色器；点色槽弹出取色浮层，预览仍在', (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(1280, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       final _RecordingAppModel appModel = _RecordingAppModel();
       await tester.pumpWidget(_host(appModel, const CustomThemePage()));
       await tester.pumpAndSettle();
 
-      // 右栏常驻一个选色器（默认编辑主题色）。
-      expect(find.byType(ColorPickerArea), findsOneWidget);
-      expect(find.text(t.theme_role_accent), findsNWidgets(2));
+      expect(find.byType(ColorPickerArea), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('custom-theme-preview')),
+        findsOneWidget,
+      );
 
-      // 界面背景行在第一板块、不用滚动就可见（链接行在 800 高下已在视口外）。
-      await tester.tap(find.text(t.theme_role_surface).first);
-      await tester.pumpAndSettle();
-      // 没弹窗：仍然只有一个选色器；右栏标题换成界面背景。
+      await _tapRow(tester, t.theme_role_surface);
       expect(find.byType(ColorPickerArea), findsOneWidget);
-      expect(find.text(t.dialog_done), findsNothing);
-      expect(find.text(t.theme_role_surface), findsNWidgets(2));
-      expect(find.text(t.theme_role_accent), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('custom-theme-preview')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(t.dialog_done));
+      await tester.pumpAndSettle();
+      expect(find.byType(ColorPickerArea), findsNothing);
     });
   });
 }

@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_image_page.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
@@ -425,13 +424,10 @@ void main() {
   test('别的运行时的页引用一律拒绝（密封分派不靠猜）', () async {
     await expectLater(
       InterconnectLibraryAdapter(backend: backend).fetchChapterPage(
-        const AidokuMangaPageRef(
+        const HttpMangaPageRef(
           index: 0,
-          page: AidokuImagePage(
-            url: 'https://cdn.example/p.jpg',
-            headers: <String, String>{},
-            context: <String, String>{},
-          ),
+          url: 'https://cdn.example/p.jpg',
+          referer: 'https://cdn.example',
         ),
       ),
       throwsArgumentError,

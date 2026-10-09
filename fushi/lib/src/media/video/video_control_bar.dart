@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 
@@ -103,6 +103,9 @@ int? videoControlItemBarPriority(VideoControlItem item) {
     case VideoControlItem.nextChapter:
     case VideoControlItem.chapterList:
       return 40;
+    // 弹幕开关：用户主动拖上来的才在栏上，设置面板另有同一开关，放不下时可以先收。
+    case VideoControlItem.danmaku:
+      return 35;
     case VideoControlItem.clipExport:
       return 30;
     case VideoControlItem.customAction1:
@@ -142,6 +145,7 @@ class VideoBarMeasure {
     double? compactWidth,
     this.priority,
     this.group,
+    this.folded = false,
   }) : compactWidth = compactWidth ?? fullWidth;
 
   /// 原样（带文字）时的宽。
@@ -155,6 +159,9 @@ class VideoBarMeasure {
 
   /// 见 [VideoBarHideGroup]。
   final Object? group;
+
+  /// 见 [VideoBarEntry.folded]：恒在「⋯」里，不参与栏上排布。
+  final bool folded;
 }
 
 /// [planVideoControlBar] 的结论：要不要换紧凑形态、哪些条目收进「⋯」。
@@ -210,13 +217,20 @@ VideoBarPlan planVideoControlBar({
 
   bool fits(double width) => width <= maxWidth + _kFitTolerance;
 
-  if (fits(total(compact: false, hidden: const <int>{}))) {
-    return VideoBarPlan.showAll;
+  // 常驻菜单项（[VideoBarMeasure.folded]）一开始就在「⋯」里：有它们时「⋯」恒在，
+  // 其宽度从一开始就要算进去。
+  final Set<int> folded = <int>{
+    for (int i = 0; i < entries.length; i++)
+      if (entries[i].folded) i,
+  };
+  final double moreReserve = folded.isEmpty ? 0 : overflowButtonWidth;
+  if (fits(total(compact: false, hidden: folded) + moreReserve)) {
+    return folded.isEmpty ? VideoBarPlan.showAll : VideoBarPlan(hidden: folded);
   }
-  if (fits(total(compact: true, hidden: const <int>{}))) {
-    return const VideoBarPlan(compact: true);
+  if (fits(total(compact: true, hidden: folded) + moreReserve)) {
+    return VideoBarPlan(compact: true, hidden: folded);
   }
-  final Set<int> hidden = <int>{};
+  final Set<int> hidden = <int>{...folded};
   for (final List<int> unit in _videoBarHideOrder(entries)) {
     hidden.addAll(unit);
     if (fits(total(compact: true, hidden: hidden) + overflowButtonWidth)) {
@@ -281,8 +295,9 @@ class VideoBarEntry {
     this.group,
     this.menuAction,
     this.onFolded,
+    this.folded = false,
   }) : assert(
-         priority == null || menuAction != null,
+         (priority == null && !folded) || menuAction != null,
          'a collapsible entry must say what its overflow-menu row does',
        );
 
@@ -303,9 +318,86 @@ class VideoBarEntry {
   /// 收起后在「⋯」菜单里的那一行；钉死项可不给。
   final VideoBarMenuAction? menuAction;
 
+  /// 常驻「⋯」菜单：不在栏上画，只作菜单里的一行（用户布局里移出播放器的按钮，
+  /// 默认精简布局靠它把不常用的动作收进「更多」）。[child] 不会显示。
+  final bool folded;
+
   /// 这一项刚从栏上收进「⋯」时（帧尾）调用。被收起的按钮不再绘制，挂在它身上的
   /// 东西（如以它为锚点的浮层）要在这里收场，否则会锚在一个看不见的按钮上。
   final VoidCallback? onFolded;
+}
+
+/// 簇的外形：每个非空簇画成一枚悬浮胶囊（Material 3 Expressive floating
+/// toolbar）——控制条不再是一整条贴边的实体栏，画面在胶囊之间、之外照常露出。
+///
+/// 胶囊只是同一个 [VideoControlBar] 的绘制层：收起判据（[planVideoControlBar]）、
+/// 「⋯」、焦点资格与命中链路全部不变，只是每簇多出左右 [padding]、簇与簇之间留
+/// [gap]，这部分宽度在规划前就从可用宽里扣掉，所以「放得下」的结论仍然只有一个。
+@immutable
+class VideoBarClusterStyle {
+  const VideoBarClusterStyle({
+    required this.color,
+    this.centerColor,
+    this.padding = 4,
+    this.verticalPadding = 2,
+    this.gap = 8,
+    this.shadows = const <BoxShadow>[],
+    this.border,
+    this.verticalAlignment = 0,
+  });
+
+  /// 胶囊底色（起始 / 末尾簇）。
+  final Color color;
+
+  /// 居中簇（传输键）的底色；null = 同 [color]。M3E 的「vibrant」浮动工具栏。
+  final Color? centerColor;
+
+  /// 胶囊左右内边距（按钮到胶囊边缘）。
+  final double padding;
+
+  /// 胶囊上下内边距（胶囊高 = 最高按钮 + 2 × 本值）。
+  final double verticalPadding;
+
+  /// 相邻胶囊的最小间距。
+  final double gap;
+
+  /// 胶囊投影（与共享浮动工具栏 `fushiFloatingPillDecoration` 同一组）；空 = 无
+  /// 阴影（墨水屏）。
+  final List<BoxShadow> shadows;
+
+  /// 描边（墨水屏用）；null = 无。
+  final BorderSide? border;
+
+  /// 胶囊在条高里的竖直位置：-1 顶、0 居中、1 贴底。
+  final double verticalAlignment;
+
+  /// [cluster] 那枚胶囊的底色。
+  Color colorFor(VideoBarCluster cluster) =>
+      cluster == VideoBarCluster.center ? (centerColor ?? color) : color;
+
+  @override
+  bool operator ==(Object other) =>
+      other is VideoBarClusterStyle &&
+      other.color == color &&
+      other.centerColor == centerColor &&
+      other.padding == padding &&
+      other.verticalPadding == verticalPadding &&
+      other.gap == gap &&
+      listEquals(other.shadows, shadows) &&
+      other.border == border &&
+      other.verticalAlignment == verticalAlignment;
+
+  @override
+  int get hashCode => Object.hash(
+    color,
+    centerColor,
+    padding,
+    verticalPadding,
+    gap,
+    Object.hashAll(shadows),
+    border,
+    verticalAlignment,
+  );
 }
 
 /// 按钮永远原尺寸、放不下就收进「⋯」的控制条（BUG-2832）。
@@ -323,6 +415,7 @@ class VideoControlBar extends StatefulWidget {
     required this.entries,
     required this.moreButtonBuilder,
     this.fill = true,
+    this.clusterStyle,
     super.key,
   });
 
@@ -332,6 +425,9 @@ class VideoControlBar extends StatefulWidget {
   final Widget Function(VoidCallback open) moreButtonBuilder;
 
   final bool fill;
+
+  /// 非 null 时每簇画成一枚悬浮胶囊（[VideoBarClusterStyle]）；null = 旧的透明条。
+  final VideoBarClusterStyle? clusterStyle;
 
   @override
   State<VideoControlBar> createState() => _VideoControlBarState();
@@ -445,14 +541,16 @@ class _VideoControlBarState extends State<VideoControlBar> {
 
   @override
   Widget build(BuildContext context) {
-    return _VideoControlBarLayout(
+    final Widget layout = _VideoControlBarLayout(
       fill: widget.fill,
+      clusterStyle: widget.clusterStyle,
       specs: <_VideoBarSpec>[
         for (final VideoBarEntry entry in widget.entries)
           _VideoBarSpec(
             cluster: entry.cluster,
             priority: entry.priority,
             group: entry.group,
+            folded: entry.folded,
           ),
       ],
       onPlan: _onLayoutPlan,
@@ -474,6 +572,18 @@ class _VideoControlBarState extends State<VideoControlBar> {
         ),
       ],
     );
+    if (widget.clusterStyle == null) return layout;
+    // 胶囊是实体：点在胶囊的留白上（按钮之间、胶囊边缘）不该穿透到画面——那会
+    // 被 media_kit 判成「点画面」去暂停 / 收起控制条。空 onTap 的识别器比祖先的
+    // 画面点击更深，竞技场里先胜出；按钮自身更深，照旧先拿到点击。deferToChild：
+    // 只有命中胶囊（[_RenderVideoControlBar.hitTestSelf]）或按钮时才参与，胶囊
+    // 之间的空隙照常穿透到画面。
+    return GestureDetector(
+      behavior: HitTestBehavior.deferToChild,
+      onTap: () {},
+      excludeFromSemantics: true,
+      child: layout,
+    );
   }
 }
 
@@ -481,21 +591,28 @@ enum _VideoBarChildRole { full, compact, more }
 
 @immutable
 class _VideoBarSpec {
-  const _VideoBarSpec({required this.cluster, this.priority, this.group});
+  const _VideoBarSpec({
+    required this.cluster,
+    this.priority,
+    this.group,
+    this.folded = false,
+  });
 
   final VideoBarCluster cluster;
   final int? priority;
   final Object? group;
+  final bool folded;
 
   @override
   bool operator ==(Object other) =>
       other is _VideoBarSpec &&
       other.cluster == cluster &&
       other.priority == priority &&
-      other.group == group;
+      other.group == group &&
+      other.folded == folded;
 
   @override
-  int get hashCode => Object.hash(cluster, priority, group);
+  int get hashCode => Object.hash(cluster, priority, group, folded);
 }
 
 class _VideoBarParentData extends ContainerBoxParentData<RenderBox> {
@@ -534,18 +651,25 @@ class _VideoBarSlot extends ParentDataWidget<_VideoBarParentData> {
 class _VideoControlBarLayout extends MultiChildRenderObjectWidget {
   const _VideoControlBarLayout({
     required this.fill,
+    required this.clusterStyle,
     required this.specs,
     required this.onPlan,
     required super.children,
   });
 
   final bool fill;
+  final VideoBarClusterStyle? clusterStyle;
   final List<_VideoBarSpec> specs;
   final ValueChanged<VideoBarPlan> onPlan;
 
   @override
   _RenderVideoControlBar createRenderObject(BuildContext context) =>
-      _RenderVideoControlBar(fill: fill, specs: specs, onPlan: onPlan);
+      _RenderVideoControlBar(
+        fill: fill,
+        clusterStyle: clusterStyle,
+        specs: specs,
+        onPlan: onPlan,
+      );
 
   @override
   void updateRenderObject(
@@ -554,6 +678,7 @@ class _VideoControlBarLayout extends MultiChildRenderObjectWidget {
   ) {
     renderObject
       ..fill = fill
+      ..clusterStyle = clusterStyle
       ..specs = specs
       ..onPlan = onPlan;
   }
@@ -566,10 +691,14 @@ class _VideoBarArrangement {
     required this.plan,
     required this.offsets,
     required this.contentWidth,
+    this.pills = const <(VideoBarCluster, Rect)>[],
   });
 
   final Size size;
   final VideoBarPlan plan;
+
+  /// 每枚悬浮胶囊（簇 + 本地矩形）；没有 [VideoBarClusterStyle] 时为空。
+  final List<(VideoBarCluster, Rect)> pills;
 
   /// 显示中的子节点 → 偏移；不在表里的不显示。
   final Map<RenderBox, Offset> offsets;
@@ -582,10 +711,49 @@ class _RenderVideoControlBar extends RenderBox
         RenderBoxContainerDefaultsMixin<RenderBox, _VideoBarParentData> {
   _RenderVideoControlBar({
     required bool fill,
+    required VideoBarClusterStyle? clusterStyle,
     required List<_VideoBarSpec> specs,
     required this.onPlan,
   }) : _fill = fill,
+       _clusterStyle = clusterStyle,
        _specs = specs;
+
+  VideoBarClusterStyle? _clusterStyle;
+  set clusterStyle(VideoBarClusterStyle? value) {
+    if (value == _clusterStyle) return;
+    final VideoBarClusterStyle? old = _clusterStyle;
+    final bool geometry =
+        value == null ||
+        old == null ||
+        value.padding != old.padding ||
+        value.verticalPadding != old.verticalPadding ||
+        value.gap != old.gap ||
+        value.verticalAlignment != old.verticalAlignment;
+    _clusterStyle = value;
+    if (geometry) {
+      markNeedsLayout();
+    } else {
+      markNeedsPaint();
+    }
+  }
+
+  /// 最近一次布局的胶囊（绘制 / 命中用）。
+  List<(VideoBarCluster, Rect)> _pills = const <(VideoBarCluster, Rect)>[];
+
+  /// 有条目落在哪些簇（不论本轮显不显示）。胶囊的留白按这份「可能出现的簇」预扣，
+  /// 规划结论与是否真的收起无关、不会来回抖。
+  Set<VideoBarCluster> get _presentClusters => <VideoBarCluster>{
+    for (final _VideoBarSpec spec in _specs) spec.cluster,
+  };
+
+  /// 胶囊额外占的宽（内边距 + 簇间距）。
+  double _pillReserve(Iterable<VideoBarCluster> clusters) {
+    final VideoBarClusterStyle? style = _clusterStyle;
+    if (style == null) return 0;
+    final int n = clusters.length;
+    if (n == 0) return 0;
+    return n * 2 * style.padding + (n - 1) * style.gap;
+  }
 
   bool _fill;
   set fill(bool value) {
@@ -660,9 +828,10 @@ class _RenderVideoControlBar extends RenderBox
             compactWidth: compact[i],
             priority: _specs[i].priority,
             group: _specs[i].group,
+            folded: _specs[i].folded,
           ),
       ],
-      maxWidth: constraints.maxWidth,
+      maxWidth: constraints.maxWidth - _pillReserve(_presentClusters),
       overflowButtonWidth: moreWidth,
     );
 
@@ -700,6 +869,19 @@ class _RenderVideoControlBar extends RenderBox
     final double startWidth = clusterWidth[VideoBarCluster.start]!;
     final double centerWidth = clusterWidth[VideoBarCluster.center]!;
     final double endWidth = clusterWidth[VideoBarCluster.end]!;
+    final VideoBarClusterStyle? style = _clusterStyle;
+    if (style != null) {
+      return _arrangePills(
+        constraints: constraints,
+        style: style,
+        plan: plan,
+        shown: shown,
+        sizes: sizes,
+        clusterOf: clusterOf,
+        clusterWidth: clusterWidth,
+        tallest: tallest,
+      );
+    }
     final double contentWidth = startWidth + centerWidth + endWidth;
     final Size size = Size(
       _fill && constraints.hasBoundedWidth
@@ -741,6 +923,94 @@ class _RenderVideoControlBar extends RenderBox
     );
   }
 
+  /// 悬浮胶囊排布：每个**本轮有显示内容**的簇包一枚胶囊（左右
+  /// [VideoBarClusterStyle.padding]），胶囊之间至少隔 [VideoBarClusterStyle.gap]。
+  /// fill 时 start 胶囊贴左、end 胶囊贴右、center 胶囊能居中就钉正中
+  /// （[videoBottomBarCenterStart]，相邻胶囊连同间距当作左右两簇）；非 fill 时依次
+  /// 紧排。按钮在胶囊里竖直居中，胶囊在条高里按
+  /// [VideoBarClusterStyle.verticalAlignment] 放。
+  _VideoBarArrangement _arrangePills({
+    required BoxConstraints constraints,
+    required VideoBarClusterStyle style,
+    required VideoBarPlan plan,
+    required List<RenderBox> shown,
+    required Map<RenderBox, Size> sizes,
+    required VideoBarCluster Function(RenderBox) clusterOf,
+    required Map<VideoBarCluster, double> clusterWidth,
+    required double tallest,
+  }) {
+    final List<VideoBarCluster> active = <VideoBarCluster>[
+      for (final VideoBarCluster c in VideoBarCluster.values)
+        if (clusterWidth[c]! > 0) c,
+    ];
+    final Map<VideoBarCluster, double> pillWidth = <VideoBarCluster, double>{
+      for (final VideoBarCluster c in VideoBarCluster.values)
+        c: clusterWidth[c]! > 0 ? clusterWidth[c]! + 2 * style.padding : 0,
+    };
+    final double pillHeight = tallest + 2 * style.verticalPadding;
+    final double contentWidth =
+        pillWidth.values.fold<double>(0, (double a, double b) => a + b) +
+        math.max(0, active.length - 1) * style.gap;
+    final Size size = Size(
+      _fill && constraints.hasBoundedWidth
+          ? constraints.maxWidth
+          : constraints.constrainWidth(contentWidth),
+      constraints.hasBoundedHeight
+          ? constraints.maxHeight
+          : constraints.constrainHeight(pillHeight),
+    );
+    final double startPill = pillWidth[VideoBarCluster.start]!;
+    final double centerPill = pillWidth[VideoBarCluster.center]!;
+    final double endPill = pillWidth[VideoBarCluster.end]!;
+    final double startSpan = startPill > 0 ? startPill + style.gap : 0;
+    final double centerSpan = centerPill > 0 ? centerPill + style.gap : 0;
+    final Map<VideoBarCluster, double> pillX = <VideoBarCluster, double>{};
+    if (_fill) {
+      pillX[VideoBarCluster.start] = 0;
+      pillX[VideoBarCluster.center] = videoBottomBarCenterStart(
+        width: size.width,
+        leftWidth: startSpan,
+        centerWidth: centerPill,
+        rightWidth: endPill > 0 ? endPill + style.gap : 0,
+      );
+      pillX[VideoBarCluster.end] = math.max(
+        startSpan + centerSpan,
+        size.width - endPill,
+      );
+    } else {
+      double x = 0;
+      for (final VideoBarCluster c in VideoBarCluster.values) {
+        pillX[c] = x;
+        if (pillWidth[c]! > 0) x += pillWidth[c]! + style.gap;
+      }
+    }
+    final double pillTop =
+        (size.height - pillHeight) * (style.verticalAlignment + 1) / 2;
+    final List<(VideoBarCluster, Rect)> pills = <(VideoBarCluster, Rect)>[
+      for (final VideoBarCluster c in active)
+        (c, Rect.fromLTWH(pillX[c]!, pillTop, pillWidth[c]!, pillHeight)),
+    ];
+    final Map<VideoBarCluster, double> cursor = <VideoBarCluster, double>{
+      for (final VideoBarCluster c in VideoBarCluster.values)
+        c: pillX[c]! + style.padding,
+    };
+    final double centerY = pillTop + pillHeight / 2;
+    final Map<RenderBox, Offset> offsets = <RenderBox, Offset>{};
+    for (final RenderBox child in shown) {
+      final VideoBarCluster cluster = clusterOf(child);
+      final Size childSize = sizes[child]!;
+      offsets[child] = Offset(cursor[cluster]!, centerY - childSize.height / 2);
+      cursor[cluster] = cursor[cluster]! + childSize.width;
+    }
+    return _VideoBarArrangement(
+      size: size,
+      plan: plan,
+      offsets: offsets,
+      contentWidth: contentWidth,
+      pills: pills,
+    );
+  }
+
   @override
   Size computeDryLayout(covariant BoxConstraints constraints) =>
       _arrange(constraints, ChildLayoutHelper.dryLayoutChild).size;
@@ -760,6 +1030,7 @@ class _RenderVideoControlBar extends RenderBox
         ..offset = offset ?? Offset.zero;
     }
     _clipsContent = arrangement.contentWidth > size.width + _kFitTolerance;
+    _pills = arrangement.pills;
     onPlan(arrangement.plan);
   }
 
@@ -772,7 +1043,7 @@ class _RenderVideoControlBar extends RenderBox
       final _VideoBarParentData data = _data(child);
       final bool counts = switch (data.role) {
         _VideoBarChildRole.more => _specs.any(
-          (_VideoBarSpec s) => s.priority != null,
+          (_VideoBarSpec s) => s.priority != null || s.folded,
         ),
         _VideoBarChildRole.full =>
           data.entry < _specs.length && _specs[data.entry].priority == null,
@@ -780,18 +1051,21 @@ class _RenderVideoControlBar extends RenderBox
       };
       if (counts) width += child.getMaxIntrinsicWidth(height);
     }
-    return width;
+    return width + _pillReserve(_presentClusters);
   }
 
   @override
   double computeMaxIntrinsicWidth(double height) {
     double width = 0;
+    final bool anyFolded = _specs.any((_VideoBarSpec s) => s.folded);
     for (final RenderBox child in _children) {
-      if (_data(child).role == _VideoBarChildRole.full) {
+      final _VideoBarChildRole role = _data(child).role;
+      if (role == _VideoBarChildRole.full ||
+          (anyFolded && role == _VideoBarChildRole.more)) {
         width += child.getMaxIntrinsicWidth(height);
       }
     }
-    return width;
+    return width + _pillReserve(_presentClusters);
   }
 
   double _tallestIntrinsic() {
@@ -799,7 +1073,7 @@ class _RenderVideoControlBar extends RenderBox
     for (final RenderBox child in _children) {
       height = math.max(height, child.getMaxIntrinsicHeight(double.infinity));
     }
-    return height;
+    return height + 2 * (_clusterStyle?.verticalPadding ?? 0);
   }
 
   @override
@@ -809,6 +1083,28 @@ class _RenderVideoControlBar extends RenderBox
   double computeMaxIntrinsicHeight(double width) => _tallestIntrinsic();
 
   void _paintShown(PaintingContext context, Offset offset) {
+    final VideoBarClusterStyle? style = _clusterStyle;
+    if (style != null && _pills.isNotEmpty) {
+      final Canvas canvas = context.canvas;
+      for (final (VideoBarCluster cluster, Rect rect) in _pills) {
+        final RRect pill = RRect.fromRectAndRadius(
+          rect.shift(offset),
+          Radius.circular(rect.height / 2),
+        );
+        // 与 BoxDecoration 画 BoxShadow 同法：偏移 + 外扩后按 blurSigma 模糊。
+        for (final BoxShadow shadow in style.shadows) {
+          canvas.drawRRect(
+            pill.shift(shadow.offset).inflate(shadow.spreadRadius),
+            shadow.toPaint(),
+          );
+        }
+        canvas.drawRRect(pill, Paint()..color = style.colorFor(cluster));
+        final BorderSide? border = style.border;
+        if (border != null && border.style != BorderStyle.none) {
+          canvas.drawRRect(pill.deflate(border.width / 2), border.toPaint());
+        }
+      }
+    }
     for (final RenderBox child in _children) {
       final _VideoBarParentData data = _data(child);
       if (data.shown) context.paintChild(child, offset + data.offset);
@@ -829,6 +1125,16 @@ class _RenderVideoControlBar extends RenderBox
       _paintShown,
       oldLayer: _clipLayer.layer,
     );
+  }
+
+  /// 胶囊本身是实体（见 [VideoControlBar] 的点击吸收层）；胶囊之间的空隙不是。
+  @override
+  bool hitTestSelf(Offset position) {
+    if (_clusterStyle == null) return false;
+    for (final (VideoBarCluster _, Rect rect) in _pills) {
+      if (rect.contains(position)) return true;
+    }
+    return false;
   }
 
   @override

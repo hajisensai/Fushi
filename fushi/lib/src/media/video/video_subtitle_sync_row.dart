@@ -1,8 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/subtitle_delay_input_debounce.dart';
 import 'package:fushi/src/media/video/subtitle_waveform_align_panel.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// TODO-413：「自动对轴」按钮的功能开关。音频能量互相关自动对轴（TODO-701 阶段1）算法
@@ -170,101 +172,106 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
         .clamp(-_subtitleSyncSliderRangeMs, _subtitleSyncSliderRangeMs)
         .toDouble();
 
+    // M3E：±50 / ±1000ms 是一组 tonal 圆钮，中间夹一枚等宽数字读数胶囊（非零时
+    // 换 secondaryContainer 色块；点按归零）；「一键求绝对偏移」类动作另成一组，
+    // 窄面板换行时两组各自整体换行、不把步进钮拆散。
     final Widget buttons = Wrap(
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: tokens.spacing.gap / 2,
+      spacing: tokens.spacing.gap,
       runSpacing: tokens.spacing.gap / 2,
       children: <Widget>[
-        FushiIconButton(
-          icon: Icons.keyboard_double_arrow_left,
-          tooltip: '-1000ms',
-          padding: EdgeInsets.all(tokens.spacing.gap / 2),
-          onTap: () => _commitDelay(_delayMs - 1000),
-        ),
-        FushiIconButton(
-          icon: Icons.chevron_left,
-          tooltip: '-50ms',
-          padding: EdgeInsets.all(tokens.spacing.gap / 2),
-          onTap: () => _commitDelay(_delayMs - 50),
-        ),
-        FushiFocusable(
-          onTap: shownMs == 0 ? null : () => _commitDelay(0),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 84, maxWidth: 140),
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: shownMs == 0
-                    ? theme.colorScheme.onSurfaceVariant
-                    : theme.colorScheme.primary,
+        // 极窄面板（< 270）整组等比缩小而不是溢出。
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              _stepButton(
+                icon: FushiIcons.fastRewind,
+                tooltip: '-1000ms',
+                onPressed: () => _commitDelay(_delayMs - 1000),
               ),
-            ),
+              _stepButton(
+                icon: FushiIcons.chevronLeft,
+                tooltip: '-50ms',
+                onPressed: () => _commitDelay(_delayMs - 50),
+              ),
+              _delayReadout(
+                context,
+                label: label,
+                active: shownMs != 0,
+                maxWidth: 140,
+                onTap: shownMs == 0 ? null : () => _commitDelay(0),
+              ),
+              _stepButton(
+                icon: FushiIcons.chevronRight,
+                tooltip: '+50ms',
+                onPressed: () => _commitDelay(_delayMs + 50),
+              ),
+              _stepButton(
+                icon: FushiIcons.fastForward,
+                tooltip: '+1000ms',
+                onPressed: () => _commitDelay(_delayMs + 1000),
+              ),
+            ],
           ),
         ),
-        FushiIconButton(
-          icon: Icons.chevron_right,
-          tooltip: '+50ms',
-          padding: EdgeInsets.all(tokens.spacing.gap / 2),
-          onTap: () => _commitDelay(_delayMs + 50),
-        ),
-        FushiIconButton(
-          icon: Icons.keyboard_double_arrow_right,
-          tooltip: '+1000ms',
-          padding: EdgeInsets.all(tokens.spacing.gap / 2),
-          onTap: () => _commitDelay(_delayMs + 1000),
-        ),
-        // TODO-413：「自动对轴」按钮（音频能量互相关自动对轴，TODO-701 阶段1）。门控用
-        // 编译期常量 [kSubtitleAutoAlignButtonEnabled]=true 上线；执行期切 spinner 并禁用
-        // （_runAutoAlign/_autoAligning 防重入）。手动对轴（±50/±1000ms 步进、滑条、数值
-        // 输入框）与本按钮独立，互不影响、照常可用。
-        if (kSubtitleAutoAlignButtonEnabled && host.onAutoAlign != null)
-          _autoAligning
-              ? Padding(
-                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: FushiCircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: theme.colorScheme.primary,
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            // TODO-413：「自动对轴」按钮（音频能量互相关自动对轴，TODO-701 阶段1）。门控用
+            // 编译期常量 [kSubtitleAutoAlignButtonEnabled]=true 上线；执行期切 spinner 并禁用
+            // （_runAutoAlign/_autoAligning 防重入）。手动对轴（±50/±1000ms 步进、滑条、数值
+            // 输入框）与本按钮独立，互不影响、照常可用。
+            if (kSubtitleAutoAlignButtonEnabled && host.onAutoAlign != null)
+              _autoAligning
+                  ? SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: Center(
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: FushiCircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                    )
+                  : FushiIconButtonControl(
+                      size: FushiIconButtonSize.s,
+                      tooltip: t.video_subtitle_auto_align,
+                      icon: const FushiIcon(FushiIcons.ai),
+                      onPressed: _runAutoAlign,
                     ),
-                  ),
-                )
-              : FushiIconButton(
-                  icon: Icons.auto_fix_high,
-                  tooltip: t.video_subtitle_auto_align,
-                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                  onTap: _runAutoAlign,
-                ),
-        // 「上/下一句对齐到当前时间」：此前只有键盘 Ctrl+Shift+←/→ 能触发，触摸端
-        // 完全够不着。与自动对轴并列——都是「一键求绝对偏移」，区别是这里由用户用
-        // 播放头指定对齐目标（不依赖音频探测，无 ffmpeg 也能用）。
-        if (host.onSnapDelayToCue != null) ...<Widget>[
-          FushiIconButton(
-            icon: Icons.align_horizontal_left,
-            tooltip: t.video_subtitle_prev_cue_align,
-            padding: EdgeInsets.all(tokens.spacing.gap / 2),
-            onTap: () => _snapDelayToCue(next: false),
-          ),
-          FushiIconButton(
-            icon: Icons.align_horizontal_right,
-            tooltip: t.video_subtitle_next_cue_align,
-            padding: EdgeInsets.all(tokens.spacing.gap / 2),
-            onTap: () => _snapDelayToCue(next: true),
-          ),
-        ],
+            // 「上/下一句对齐到当前时间」：此前只有键盘 Ctrl+Shift+←/→ 能触发，触摸端
+            // 完全够不着。与自动对轴并列——都是「一键求绝对偏移」，区别是这里由用户用
+            // 播放头指定对齐目标（不依赖音频探测，无 ffmpeg 也能用）。
+            if (host.onSnapDelayToCue != null) ...<Widget>[
+              FushiIconButtonControl(
+                size: FushiIconButtonSize.s,
+                tooltip: t.video_subtitle_prev_cue_align,
+                icon: const FushiIcon(FushiIcons.skipPrevious),
+                onPressed: () => _snapDelayToCue(next: false),
+              ),
+              FushiIconButtonControl(
+                size: FushiIconButtonSize.s,
+                tooltip: t.video_subtitle_next_cue_align,
+                icon: const FushiIcon(FushiIcons.skipNext),
+                onPressed: () => _snapDelayToCue(next: true),
+              ),
+            ],
+          ],
+        ),
       ],
     );
 
     return AdaptiveSettingsRow(
       title: t.video_setting_av_delay,
       subtitle: t.video_setting_av_delay_hint,
-      icon: Icons.sync_outlined,
+      icon: FushiIcons.sync,
       controlBelow: true,
       trailing: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -374,7 +381,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
             Expanded(
               child: Text(
                 t.video_setting_secondary_av_delay,
-                style: theme.textTheme.titleSmall,
+                style: context.fushiType.titleSmallEmphasized,
               ),
             ),
             // 显式设置过才给「跟随主字幕」重置入口（跟随态本身无可重置）。
@@ -404,62 +411,51 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
           },
         ),
         SizedBox(height: tokens.spacing.gap / 2),
-        Wrap(
-          alignment: WrapAlignment.center,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: tokens.spacing.gap / 2,
-          runSpacing: tokens.spacing.gap / 2,
-          children: <Widget>[
-            FushiIconButton(
-              icon: Icons.keyboard_double_arrow_left,
-              tooltip: '-1000ms',
-              padding: EdgeInsets.all(tokens.spacing.gap / 2),
-              // 跟随态微调以主轨生效值为基准起步（首次微调 = 主轨值 ± 步进）。
-              onTap: () =>
-                  _commitSecondaryDelay((_secondaryDelayMs ?? _delayMs) - 1000),
-            ),
-            FushiIconButton(
-              icon: Icons.chevron_left,
-              tooltip: '-50ms',
-              padding: EdgeInsets.all(tokens.spacing.gap / 2),
-              onTap: () =>
-                  _commitSecondaryDelay((_secondaryDelayMs ?? _delayMs) - 50),
-            ),
-            FushiFocusable(
-              onTap: shownMs == 0 && !following
-                  ? null
-                  : () => _commitSecondaryDelay(0),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 84, maxWidth: 160),
-                child: Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: following
-                        ? theme.colorScheme.onSurfaceVariant
-                        : theme.colorScheme.primary,
+        Center(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                _stepButton(
+                  icon: FushiIcons.fastRewind,
+                  tooltip: '-1000ms',
+                  // 跟随态微调以主轨生效值为基准起步（首次微调 = 主轨值 ± 步进）。
+                  onPressed: () => _commitSecondaryDelay(
+                    (_secondaryDelayMs ?? _delayMs) - 1000,
                   ),
                 ),
-              ),
+                _stepButton(
+                  icon: FushiIcons.chevronLeft,
+                  tooltip: '-50ms',
+                  onPressed: () => _commitSecondaryDelay(
+                      (_secondaryDelayMs ?? _delayMs) - 50),
+                ),
+                _delayReadout(
+                  context,
+                  label: label,
+                  active: !following,
+                  maxWidth: 160,
+                  onTap: shownMs == 0 && !following
+                      ? null
+                      : () => _commitSecondaryDelay(0),
+                ),
+                _stepButton(
+                  icon: FushiIcons.chevronRight,
+                  tooltip: '+50ms',
+                  onPressed: () => _commitSecondaryDelay(
+                      (_secondaryDelayMs ?? _delayMs) + 50),
+                ),
+                _stepButton(
+                  icon: FushiIcons.fastForward,
+                  tooltip: '+1000ms',
+                  onPressed: () => _commitSecondaryDelay(
+                    (_secondaryDelayMs ?? _delayMs) + 1000,
+                  ),
+                ),
+              ],
             ),
-            FushiIconButton(
-              icon: Icons.chevron_right,
-              tooltip: '+50ms',
-              padding: EdgeInsets.all(tokens.spacing.gap / 2),
-              onTap: () =>
-                  _commitSecondaryDelay((_secondaryDelayMs ?? _delayMs) + 50),
-            ),
-            FushiIconButton(
-              icon: Icons.keyboard_double_arrow_right,
-              tooltip: '+1000ms',
-              padding: EdgeInsets.all(tokens.spacing.gap / 2),
-              onTap: () =>
-                  _commitSecondaryDelay((_secondaryDelayMs ?? _delayMs) + 1000),
-            ),
-          ],
+          ),
         ),
         SizedBox(height: tokens.spacing.gap / 2),
         AdaptiveSettingsTextField(
@@ -471,6 +467,67 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
           onSubmitted: _secondaryDelayInput.onSubmitted,
         ),
       ],
+    );
+  }
+
+  /// ± 步进钮：M3E tonal 圆钮（S 档 40dp），手柄 / 方向键可逐个聚焦。
+  Widget _stepButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: FushiIconButtonControl.filledTonal(
+        size: FushiIconButtonSize.s,
+        tooltip: tooltip,
+        icon: FushiIcon(icon),
+        onPressed: onPressed,
+      ),
+    );
+  }
+
+  /// 延迟读数胶囊：等宽数字（逐帧拖动不抖宽）；[active]（非零 / 已单独设置）时
+  /// 换 secondaryContainer 色块，颜色过渡走 effects 弹簧。[onTap] 非 null 时可
+  /// 点按 / Enter 归零。
+  Widget _delayReadout(
+    BuildContext context, {
+    required String label,
+    required bool active,
+    required double maxWidth,
+    required VoidCallback? onTap,
+  }) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiSpringSpec spring = context.fushiMotion.effectsFast;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: FushiFocusable(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: spring.duration,
+          curve: spring.curve,
+          constraints: BoxConstraints(
+            minWidth: 84,
+            maxWidth: maxWidth,
+            minHeight: 40,
+          ),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: active ? cs.secondaryContainer : cs.surfaceContainer,
+            borderRadius: FushiM3eShape.cardRadius,
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: context.fushiType.titleMediumEmphasized.tabular.copyWith(
+              color: active ? cs.onSecondaryContainer : cs.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

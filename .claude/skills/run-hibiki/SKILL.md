@@ -15,10 +15,10 @@ Hibiki 有一条已验证的落地路径：**Windows 离屏集成测试 runner**
 
 ## 0. 工具链（本机 flutter 不在 PATH）
 
-一律用 `D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat`（3.44.0，与 CI 同版），
-`dart.bat` 同目录。**不要**用 `D:\flutter_sdk\flutter_3.41.6\...` 跑 `pub get` / `dart run`
-——它会把 `.dart_tool/package_config.json` 与 `pubspec.lock` 切到 3.41.6，3.44 的
-analyze 随即报一堆假错。其余本机约定见仓库根 `CLAUDE.local.md`。
+一律用 `D:/flutter_sdk/flutter_3.47.6/bin/flutter.bat`（Flutter 3.47.6，与 CI 和 `fushi/.fvmrc` 同版），
+`dart.bat` 同目录。用户 PATH 上的 `flutter` 仍是旧 3.44.0，**不要**用它——3.47 起 Material/Cupertino
+拆成 material_ui/cupertino_ui 包，3.44 编不过本仓；用错版本后删 `.dart_tool/hooks_runner` 再用 3.47.6 重跑。
+其余本机约定见仓库根 `CLAUDE.local.md`。
 
 ## 1. 写一个驱动脚本（integration_test/*.dart）
 

@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart';
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
+    show kManualVideoDownloadResourceProvider;
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
@@ -36,6 +38,7 @@ void main() {
     VideoMetadataMediaKind kind = VideoMetadataMediaKind.tv,
     int? collectionId,
     Map<String, int> sizes = const <String, int>{},
+    int? anidbId,
   }) async {
     final int now = DateTime.now().millisecondsSinceEpoch;
     await db.upsertVideoDownloadJob(
@@ -53,6 +56,7 @@ void main() {
               mediaKind: kind,
               discoveryCategory: VideoDiscoveryCategory.anime,
               title: 'FX戦士くるみちゃん',
+              anidbId: anidbId,
               externalIds: <String, String>{'mal': malId},
             ),
           ),
@@ -192,5 +196,122 @@ void main() {
       ),
       isEmpty,
     );
+  });
+
+  // 手动任务（互联代下载 / `ctl downloads add --provider anidb`）显式给的 AniDB
+  // 身份：单条判据与库内补刮的列表判据必须一致，否则下载那一轮没刮成的作品，
+  // 补刮时就丢了用户亲手给的身份。
+  group('手动任务的显式 AniDB 身份', () {
+    Future<void> manualJob(
+      String jobId, {
+      required String file,
+      required String provider,
+      required String externalId,
+    }) async {
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      await db.upsertVideoDownloadJob(
+        VideoDownloadJobsCompanion.insert(
+          jobId: jobId,
+          resourceProvider: kManualVideoDownloadResourceProvider,
+          selectedResourceId: jobId,
+          metadataProvider: Value<String?>(provider),
+          externalId: Value<String?>(externalId),
+          mediaKind: VideoMetadataMediaKind.movie.name,
+          title: 'Liz and the Blue Bird',
+          backendKind: 'embedded',
+          fingerprint: 'fp',
+          lifecycle: const Value<String>(VideoDownloadJobLifecycle.completed),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      await db.upsertVideoDownloadJobFile(
+        VideoDownloadJobFilesCompanion.insert(
+          jobId: jobId,
+          backendFileIndex: const Value<int?>(0),
+          originalRelativePath: '$file.mkv',
+          currentRelativePath: '$file.mkv',
+          finalAbsolutePath: Value<String?>(pathOf(file)),
+          kind: const Value<String>('video'),
+          status: const Value<String>(VideoDownloadJobFileStatus.imported),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+    }
+
+    test('补刮的身份列表带上手动 AniDB 身份，且与单条判据同一个首选', () async {
+      final VideoBookRow movie = await book('liz');
+      await manualJob('m1', file: 'liz', provider: 'anidb', externalId: '13140');
+      final VideoSourceScrapeWork work = bookWork(movie);
+
+      final Map<String, List<VideoMetadataLookup>> lists =
+          await downloadConfirmedLookupListsForWorks(
+        db,
+        <VideoSourceScrapeWork>[work],
+      );
+
+      final List<VideoMetadataLookup> lookups = lists[work.stableKey]!;
+      expect(lookups.map((VideoMetadataLookup l) => l.provider),
+          <VideoMetadataProviderKind>[VideoMetadataProviderKind.anidb]);
+      expect(lookups.single.externalId, '13140');
+      expect(lookups.single.mediaKind, VideoMetadataMediaKind.movie);
+      final VideoDownloadJobRow row = (await db.getVideoDownloadJob('m1'))!;
+      expect(videoDownloadJobConfirmedLookup(row)?.provider,
+          VideoMetadataProviderKind.anidb);
+      expect(
+        (await downloadConfirmedLookupsForWorks(
+          db,
+          <VideoSourceScrapeWork>[work],
+        ))[work.stableKey]
+            ?.externalId,
+        '13140',
+      );
+    });
+
+    test('手动 MAL 身份照旧（不被当成 AniDB）', () async {
+      final VideoBookRow movie = await book('liz');
+      await manualJob('m1', file: 'liz', provider: 'mal', externalId: '35677');
+      final VideoDownloadJobRow row = (await db.getVideoDownloadJob('m1'))!;
+      expect(
+        videoDownloadJobConfirmedLookups(row)
+            .map((VideoMetadataLookup l) => (l.provider, l.externalId)),
+        <(VideoMetadataProviderKind, String)>[
+          (VideoMetadataProviderKind.mal, '35677'),
+        ],
+      );
+      expect(
+        (await downloadConfirmedLookupListsForWorks(
+          db,
+          <VideoSourceScrapeWork>[bookWork(movie)],
+        ))
+            .values
+            .single
+            .single
+            .provider,
+        VideoMetadataProviderKind.mal,
+      );
+    });
+
+    test('发现页快照里的 AniDB 交叉引用仍不算确认身份（只认 MAL / TMDB）', () async {
+      final VideoBookRow ep1 = await book('ep1');
+      await job('j1', files: <String>['ep1'], anidbId: 18060);
+      final VideoDownloadJobRow row = (await db.getVideoDownloadJob('j1'))!;
+      expect(
+        videoDownloadJobConfirmedLookups(row)
+            .map((VideoMetadataLookup l) => l.provider),
+        <VideoMetadataProviderKind>[VideoMetadataProviderKind.mal],
+      );
+      expect(
+        (await downloadConfirmedLookupListsForWorks(
+          db,
+          <VideoSourceScrapeWork>[bookWork(ep1)],
+        ))
+            .values
+            .single
+            .map((VideoMetadataLookup l) => l.provider),
+        <VideoMetadataProviderKind>[VideoMetadataProviderKind.mal],
+      );
+    });
   });
 }

@@ -1,8 +1,15 @@
 import 'package:audio_service/audio_service.dart' as ag;
 
+/// 系统媒体控制（通知栏 / 锁屏 / 蓝牙 AVRCP / 车机 / 耳机线控）发来的播放意图。
+///
+/// PLAY 与 PAUSE 是两种**有方向**的命令：蓝牙耳机 / 车机重连时常自动补发 PLAY，
+/// 播放中收到它必须保持播放。只有耳机单击（[ag.MediaButton.media]）本身是「切换」
+/// 语义。三者不能压成同一个无方向事件，否则播放中补发的 PLAY 会把声音暂停。
+enum MediaPlayIntent { play, pause, toggle }
+
 class FushiAudioHandler extends ag.BaseAudioHandler {
   FushiAudioHandler({
-    required this.onPlayPause,
+    required this.onPlayIntent,
     required this.onSeek,
     required this.onRewind,
     required this.onFastForward,
@@ -11,7 +18,7 @@ class FushiAudioHandler extends ag.BaseAudioHandler {
     this.onToggleFloatingLyric,
   });
 
-  final Function() onPlayPause;
+  final void Function(MediaPlayIntent intent) onPlayIntent;
   final Function(Duration) onSeek;
   final Function() onRewind;
   final Function() onFastForward;
@@ -24,12 +31,24 @@ class FushiAudioHandler extends ag.BaseAudioHandler {
 
   @override
   Future<void> play() async {
-    onPlayPause();
+    onPlayIntent(MediaPlayIntent.play);
   }
 
   @override
   Future<void> pause() async {
-    onPlayPause();
+    onPlayIntent(MediaPlayIntent.pause);
+  }
+
+  /// 耳机单击是切换语义，交给会话按播放器真实状态切换。不走基类实现：基类按
+  /// [playbackState] 分派 play / pause，而关掉媒体通知时 [playbackState] 从不更新、
+  /// 恒为初始的「未播放」，单击会被恒判成 PLAY，播放中按耳机再也停不下来。
+  @override
+  Future<void> click([ag.MediaButton button = ag.MediaButton.media]) async {
+    if (button == ag.MediaButton.media) {
+      onPlayIntent(MediaPlayIntent.toggle);
+      return;
+    }
+    await super.click(button);
   }
 
   @override

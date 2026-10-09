@@ -1,15 +1,16 @@
 import 'dart:ui' as ui;
 
-import 'package:flutter/cupertino.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 // 输入框族的「设计系统分派」包装：构造参数与 Material 原控件逐个同名同型，
 // 调用点只改类名。MD3 设计系统下原样构造 [TextField] / [TextFormField]（像素、
@@ -54,7 +55,15 @@ Widget _cupertinoContextMenuBuilder(
 /// （UISearchBar），普通输入框是圆角 10 的矩形——这是唯一能从调用点无侵入
 /// 读出的信号。
 bool _isSearchDecoration(InputDecoration decoration) {
-  final Widget? prefix = decoration.prefixIcon;
+  Widget? prefix = decoration.prefixIcon;
+  // 调用点给放大镜自配留白（设置页 MD3 胶囊搜索栏的 `Padding(FushiIcon)`）时
+  // 要看穿这层包装：认不出来就会把调用方写好的胶囊边框压成 12 圆角方框
+  // （BUG-3038，Android 设置页搜索栏变成圆角矩形）。
+  while (prefix is Padding) {
+    prefix = prefix.child;
+  }
+  // 自定义 leading（M3E search bar 的返回箭头 / 菜单钮）显式声明自己是搜索框。
+  if (prefix is FushiSearchLeading) return true;
   // 调用点的图标经全局替换是 FushiIcon（玻璃下映射成 SF 字形），原生 Icon
   // 也认——只认 Icon 会让全部搜索框失去胶囊形态。
   final IconData? icon = switch (prefix) {
@@ -63,11 +72,54 @@ bool _isSearchDecoration(InputDecoration decoration) {
     _ => null,
   };
   if (icon == null) return false;
+  // 调用点的放大镜已迁到语义图标层 `FushiIcons.search`（FushiSymbols 字族码位，
+  // 与 Icons.search 不相等）；只认旧 Material 图标会让全部搜索框丢掉胶囊形态
+  // ——MD3 退成 12 圆角方框、Apple 退成 48 高普通输入框（BUG-3054）。线框与
+  // 实心两个字族都认。
+  if (isFushiSymbol(icon) && icon.codePoint == FushiIcons.search.codePoint) {
+    return true;
+  }
   return icon == Icons.search ||
       icon == Icons.search_rounded ||
       icon == Icons.search_outlined ||
       icon == CupertinoIcons.search;
 }
+
+/// 搜索框的自定义 leading 包装：把返回箭头 / 菜单钮等放进搜索框前缀位时，
+/// 用它包一层，[fushiMd3FieldDecoration] 与 Apple 分支仍按「搜索框」给全胶囊
+/// （否则前缀不是放大镜就认不出，会退成圆角 12 的普通输入框）。
+class FushiSearchLeading extends StatelessWidget {
+  const FushiSearchLeading({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => child;
+}
+
+/// M3E outlined 文本框的边框标记：调用方给 `border: const FushiOutlinedFieldBorder()`
+/// 即选 outlined 变体——[fushiMd3FieldDecoration] 认出它后给透明底 + 1px outline
+/// 描边（聚焦 2px 主色、错误 error），标题骑在描边线上（M3
+/// outlined text field）。其余调用默认是 filled 变体。
+class FushiOutlinedFieldBorder extends OutlineInputBorder {
+  const FushiOutlinedFieldBorder({
+    super.borderSide,
+    super.borderRadius = const BorderRadius.all(Radius.circular(12)),
+  });
+
+  @override
+  FushiOutlinedFieldBorder copyWith({
+    BorderSide? borderSide,
+    BorderRadius? borderRadius,
+    double? gapPadding,
+  }) => FushiOutlinedFieldBorder(
+    borderSide: borderSide ?? this.borderSide,
+    borderRadius: borderRadius ?? this.borderRadius,
+  );
+}
+
+/// M3E 文本框状态层：悬停在填充色上叠 8% onSurface（M3 hover state layer）。
+const double kFushiFieldHoverStateOpacity = 0.08;
 
 /// MD3 设计系统下的输入框外观（用户 2026-10-04：「所有输入框都很丑」）。
 ///
@@ -84,6 +136,9 @@ InputDecoration? fushiMd3FieldDecoration(
   if (decoration == null || isEinkTheme(context)) return decoration;
   final InputBorder? border = decoration.border;
   if (border == InputBorder.none) return decoration;
+  if (border is FushiOutlinedFieldBorder) {
+    return _fushiMd3OutlinedDecoration(context, decoration, border);
+  }
   if (border != null &&
       border is! OutlineInputBorder &&
       border is! UnderlineInputBorder) {
@@ -114,7 +169,11 @@ InputDecoration? fushiMd3FieldDecoration(
   return decoration.copyWith(
     filled: true,
     fillColor: decoration.fillColor ?? cs.surfaceContainerHigh,
-    hoverColor: Colors.transparent,
+    // M3E 状态层：悬停 8% onSurface 叠在填充上（InputDecorator 把 hoverColor
+    // 混进 fillColor），鼠标指上去看得见可输入。
+    hoverColor:
+        decoration.hoverColor ??
+        cs.onSurface.withValues(alpha: kFushiFieldHoverStateOpacity),
     border: outline(),
     enabledBorder: outline(),
     disabledBorder: outline(),
@@ -125,6 +184,32 @@ InputDecoration? fushiMd3FieldDecoration(
     prefixIconColor: decoration.prefixIconColor ?? cs.onSurfaceVariant,
     suffixIconColor: decoration.suffixIconColor ?? cs.onSurfaceVariant,
     contentPadding: padding,
+  );
+}
+
+/// M3E outlined 变体（见 [FushiOutlinedFieldBorder]）：透明底、1px outline 描边，
+/// 聚焦 2px 主色、错误 error、禁用 12% onSurface；圆角跟调用方给的边框走。
+InputDecoration _fushiMd3OutlinedDecoration(
+  BuildContext context,
+  InputDecoration decoration,
+  FushiOutlinedFieldBorder border,
+) {
+  final ColorScheme cs = Theme.of(context).colorScheme;
+  InputBorder side(Color color, double width) => border.copyWith(
+    borderSide: BorderSide(color: color, width: width),
+  );
+  return decoration.copyWith(
+    filled: false,
+    hoverColor: Colors.transparent,
+    border: side(cs.outline, 1),
+    enabledBorder: side(cs.outline, 1),
+    disabledBorder: side(cs.onSurface.withValues(alpha: 0.12), 1),
+    focusedBorder: side(cs.primary, 2),
+    errorBorder: side(cs.error, 1),
+    focusedErrorBorder: side(cs.error, 2),
+    hintStyle: decoration.hintStyle ?? TextStyle(color: cs.onSurfaceVariant),
+    prefixIconColor: decoration.prefixIconColor ?? cs.onSurfaceVariant,
+    suffixIconColor: decoration.suffixIconColor ?? cs.onSurfaceVariant,
   );
 }
 
@@ -659,9 +744,15 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
       style: style,
       strutStyle: _c.strutStyle,
       textAlign: _c.textAlign,
+      // 多行框必须显式顶对齐（BUG-2973）：CupertinoTextField 在有占位符时把
+      // 缺省的竖直对齐当成 center，而它的占位符栈高度取「占位符全部行」与
+      // 「编辑区一行」的并集——空框里一行高的编辑区被居中进两行高的栈，占位符
+      // 再按基线贴到编辑区上，于是整段占位符下沉半行、第二行掉出框外被裁。
+      // 顶对齐时编辑区与占位符都从栈顶开始，外层壳（对称内边距 + 行内竖直
+      // 居中）负责把整块内容放在框的中线上。
       textAlignVertical:
           _c.textAlignVertical ??
-          (_c.maxLines == 1 ? TextAlignVertical.center : null),
+          (_c.maxLines == 1 ? TextAlignVertical.center : TextAlignVertical.top),
       textDirection: _c.textDirection,
       readOnly: _c.readOnly,
       showCursor: _c.showCursor,
@@ -817,7 +908,9 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     // 搜索框的放大镜换成 SF 风格的 CupertinoIcons.search（iOS 搜索栏的
     // magnifyingglass），其余前缀图标原样。
     final Widget? prefixIcon = iconSlot(
-      search ? const FushiIcon(CupertinoIcons.search) : decoration.prefixIcon,
+      search && decoration.prefixIcon is! FushiSearchLeading
+          ? const FushiIcon(CupertinoIcons.search)
+          : decoration.prefixIcon,
     );
     // 搜索胶囊定高 36：调用方常把标准图标按钮（40–48 高）塞进 suffixIcon 当
     // 清除钮，它会把输入行撑高、在定高父级里溢出，文字随之偏离竖直中线（用户

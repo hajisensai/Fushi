@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ffi';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -830,11 +829,10 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   }
 
   String _javaExecutablePath() {
-    final String runtimeName = Platform.isMacOS
-        ? (Abi.current() == Abi.macosArm64
-            ? 'runtime-macos-arm64'
-            : 'runtime-macos-x64')
-        : 'runtime';
+    // macOS 版只出 Apple Silicon（arm64），bundle 里只有这一份 JVM 镜像
+    // （tool/mihon/build_desktop_runtime.sh）；Intel Mac 不再支持。
+    final String runtimeName =
+        Platform.isMacOS ? 'runtime-macos-arm64' : 'runtime';
     return p.join(
       resourceDirectory.path,
       runtimeName,

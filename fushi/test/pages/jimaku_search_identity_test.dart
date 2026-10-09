@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
@@ -62,7 +62,7 @@ void main() {
               initialApiKey: 'jimaku-key',
               onApiKeyChanged: (String _) async {},
               saveDirectory: saveDirectory,
-              subtitleRegistry: () => registry,
+              subtitleRegistry: () async => registry,
               seed: seed,
               videoPath: videoPath,
               initialSeason: initialSeason,
@@ -489,6 +489,13 @@ void main() {
         find.textContaining('401'),
         findsOneWidget,
         reason: 'key 过期时用户换多少次关键词都不会好，必须把真实原因说出来',
+      );
+      // BUG-3000：只给状态码用户仍看不出是 key 的问题，要直说。
+      expect(
+        find.textContaining(
+          t.video_subtitle_error_key_rejected(provider: 'Jimaku'),
+        ),
+        findsOneWidget,
       );
     });
 

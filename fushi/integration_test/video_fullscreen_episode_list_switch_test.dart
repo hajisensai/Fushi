@@ -9,7 +9,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart'
     show HitTestEntry, HitTestResult, PointerDeviceKind;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -20,6 +20,7 @@ import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show openLocalVideoBook;
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
     show VideoFushiPage;
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi_core/fushi_core.dart' show MediaKind, VideoBooksCompanion;
 import 'package:integration_test/integration_test.dart';
@@ -128,7 +129,7 @@ Future<int> _switchByMouseClick(
 }) async {
   final int viewId = tester.view.viewId;
   final Finder episodeButton = find.byIcon(
-    Icons.playlist_play,
+    FushiIcons.playlist,
     skipOffstage: false,
   );
   final RenderBox videoBox = tester.renderObject<RenderBox>(

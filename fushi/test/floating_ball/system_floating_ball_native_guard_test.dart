@@ -111,10 +111,112 @@ void main() {
   test('按钮图标 / 配色来自 Dart（与应用内同一颗 IconData、同一套主题色）', () {
     expect(service, contains('PREF_ICONS'));
     expect(service, contains('PREF_COLORS'));
-    expect(service, contains('fonts/MaterialIcons-Regular.otf'));
-    expect(service, contains('assets/meta/icon.png'));
+    // 图标是 FushiIcons 语义图标（FushiSymbols 字体码位），不再是 Material Icons。
+    expect(service, contains('assets/icon_fonts/FushiSymbolsRounded.ttf'));
+    expect(service, isNot(contains('MaterialIcons-Regular.otf')));
+    // 球面 = 主题色 FAB + 与应用内同一只吉祥物、同一放大倍数。
+    expect(service, contains('"$kReaderFloatingBallIconAsset"'));
+    expect(
+      _floatConst(service, 'MASCOT_SCALE'),
+      closeTo(kReaderFloatingBallMascotScale, 1e-6),
+    );
+    // M3E 配色角色：球本体 / tonal 圆钮 / 墨水屏描边都取 Dart 下发的主题色。
+    for (final String key in <String>[
+      'ballContainer',
+      'buttonContainer',
+      'onButtonContainer',
+      'outline',
+    ]) {
+      expect(service, contains('"$key"'));
+    }
     final String channel = _read('FloatingBallChannel.java');
     expect(channel, contains('intMap(call.argument("icons"))'));
     expect(channel, contains('intMap(call.argument("colors"))'));
+  });
+
+  test('M3E FAB menu：展开态球、标签胶囊、48dp 命中区与应用内同值', () {
+    // 球收起圆角方块 → 展开 primary 正圆 + onPrimary ×，颜色全取 Dart 下发的键。
+    expect(
+      _intConst(service, 'BALL_COLLAPSED_RADIUS_DP').toDouble(),
+      kReaderFloatingBallCollapsedRadius,
+    );
+    expect(service, contains('"ballOpen"'));
+    expect(service, contains('"onBallOpen"'));
+    expect(
+      service,
+      contains('lerpColor(colorBallContainer, colorBallOpen, c)'),
+    );
+    // 标签胶囊几何与应用内 _LabelCapsule 同值；只在单列时显示。
+    expect(
+      _intConst(service, 'LABEL_GAP_DP').toDouble(),
+      kReaderFloatingBallLabelGap,
+    );
+    expect(
+      _intConst(service, 'LABEL_HEIGHT_DP').toDouble(),
+      kReaderFloatingBallLabelHeight,
+    );
+    expect(
+      _intConst(service, 'LABEL_MAX_WIDTH_DP').toDouble(),
+      kReaderFloatingBallLabelMaxWidth,
+    );
+    expect(
+      _intConst(service, 'LABEL_PADDING_DP').toDouble(),
+      kReaderFloatingBallLabelPadding,
+    );
+    expect(service, contains('g.columnCount() == 1'));
+    // 标签文案用 Dart 下发的本地化 labels（labelFor），点胶囊 = 点按钮。
+    final int labelStart = service.indexOf(
+      'private TextView buildLabel(final String id',
+    );
+    expect(labelStart, isNot(-1));
+    final String labelBody = service.substring(
+      labelStart,
+      service.indexOf('\n    }\n', labelStart),
+    );
+    expect(labelBody, contains('labelFor(id)'));
+    expect(labelBody, contains('runAction(id)'));
+    // 命中区 48dp（圆钮画 40dp）。
+    expect(
+      _intConst(service, 'MIN_TOUCH_DP').toDouble(),
+      kReaderFloatingBallMinTouchTarget,
+    );
+    expect(
+      service,
+      contains('int hit = Math.max(g.button, dp(MIN_TOUCH_DP));'),
+    );
+  });
+
+  test('按钮顺序与应用内一致：关闭在最上（离球最远），勾选的动作在下', () {
+    final int start = service.indexOf('private List<String> menuIds() {');
+    expect(start, isNot(-1));
+    final String body = service.substring(
+      start,
+      service.indexOf('\n    }\n', start),
+    );
+    final int close = body.indexOf('ids.add(ACTION_CLOSE);');
+    final int open = body.indexOf('ids.add(ACTION_OPEN_APP);');
+    final int actions = body.indexOf('ids.addAll(actions);');
+    expect(close, isNot(-1));
+    expect(open, greaterThan(close));
+    expect(actions, greaterThan(open));
+  });
+
+  test('减弱动态效果：系统动画缩放为 0 时展开 / 收起 / 吸附都不做动画', () {
+    expect(service, contains('Settings.Global.ANIMATOR_DURATION_SCALE'));
+    final int start = service.indexOf(
+      'private void animateProgress(final float target, long fullDuration) {',
+    );
+    expect(start, isNot(-1));
+    final String body = service.substring(
+      start,
+      service.indexOf('ValueAnimator anim', start),
+    );
+    expect(body, contains('if (!motionEnabled()) {'));
+    final int drag = service.indexOf('private void endDrag() {');
+    final String dragBody = service.substring(
+      drag,
+      service.indexOf('ValueAnimator anim', drag),
+    );
+    expect(dragBody, contains('if (!motionEnabled()) {'));
   });
 }

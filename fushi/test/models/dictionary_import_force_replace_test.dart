@@ -251,7 +251,7 @@ void main() {
         hiddenLanguages: <String>['en'],
         collapsedLanguages: <String>['zh'],
       );
-      repo.persistDictionary(old);
+      await repo.persistDictionary(old);
       final Directory oldDir = dirFor(oldName);
 
       // 旧的按 title 决策对这个形状确实误判 newDictionary——这就是两版并存根因。
@@ -284,7 +284,7 @@ void main() {
     test('同名替换（在线更新 title 不变）：与 replaceExact 同待遇', () async {
       const String name = 'JMdict';
       final Dictionary old = _dict(name: name, order: 7);
-      repo.persistDictionary(old);
+      await repo.persistDictionary(old);
       final Directory oldDir = dirFor(name);
 
       final Dictionary? preserved = await manager.resolveAndRemoveReplaced(
@@ -301,8 +301,8 @@ void main() {
     test('撞名收尾：新包 title 恰好等于另一本已存词典 → 两本都删、设置继承自目标', () async {
       final Dictionary target = _dict(name: '旧标题词典', order: 2);
       final Dictionary colliding = _dict(name: '新标题词典', order: 5);
-      repo.persistDictionary(target);
-      repo.persistDictionary(colliding);
+      await repo.persistDictionary(target);
+      await repo.persistDictionary(colliding);
       final Directory targetDir = dirFor(target.name);
       final Directory collidingDir = dirFor(colliding.name);
 
@@ -324,7 +324,7 @@ void main() {
 
     test('无显式目标：replaceExact 按精确同名反查（TODO-609 旧行为不变）', () async {
       final Dictionary old = _dict(name: 'Pixiv', order: 4);
-      repo.persistDictionary(old);
+      await repo.persistDictionary(old);
       final Directory oldDir = dirFor('Pixiv');
 
       final Dictionary? preserved = await manager.resolveAndRemoveReplaced(
@@ -341,7 +341,7 @@ void main() {
 
     test('无显式目标：replaceOldVersion 走 findUpdatable（日期尾缀旧行为不变）', () async {
       final Dictionary old = _dict(name: 'JMdict [2026-05-17]', order: 1);
-      repo.persistDictionary(old);
+      await repo.persistDictionary(old);
       final Directory oldDir = dirFor(old.name);
 
       final Dictionary? preserved = await manager.resolveAndRemoveReplaced(
@@ -357,7 +357,7 @@ void main() {
 
     test('非替换类决策：不删任何东西、返 null', () async {
       final Dictionary old = _dict(name: 'KANJIDIC', order: 6);
-      repo.persistDictionary(old);
+      await repo.persistDictionary(old);
       final Directory oldDir = dirFor('KANJIDIC');
 
       for (final UpdateDecision decision in <UpdateDecision>[
@@ -377,7 +377,7 @@ void main() {
 
     test('目标目录已不存在（只剩 meta）：容忍缺目录，仍删 meta', () async {
       final Dictionary old = _dict(name: 'GhostDict', order: 9);
-      repo.persistDictionary(old);
+      await repo.persistDictionary(old);
       // 故意不建磁盘目录。
 
       final Dictionary? preserved = await manager.resolveAndRemoveReplaced(

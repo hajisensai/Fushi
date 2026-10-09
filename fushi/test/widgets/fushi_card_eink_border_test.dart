@@ -1,6 +1,6 @@
 // eink 下 FushiCard 必须自带描边：eink scheme 把 surface container 全部塌缩为
 // 背景色，无边卡片与页面融为一体（巡检 C1，docs/reviews/2026-07-22-ui-ux-survey.md）。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';

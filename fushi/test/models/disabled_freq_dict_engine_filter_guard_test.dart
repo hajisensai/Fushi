@@ -80,7 +80,7 @@ void main() {
   test(
       'toggleDictionaryHidden clears the dictionary result cache so a stale '
       'popupJson does not keep resurfacing the disabled dictionary', () {
-    final String body = bodyOf('void toggleDictionaryHidden(');
+    final String body = bodyOf('Future<void> toggleDictionaryHidden(');
     expect(body.contains('clearDictionaryResultsCache'), isTrue,
         reason: 'toggling visibility must invalidate cached search results, '
             'otherwise a cached popupJson built while the dictionary was still '

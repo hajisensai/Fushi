@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 
 /// 卡片悬浮抬升：鼠标移入时轻微放大，并把 hover 态交给 [builder]，由调用方决定
@@ -40,6 +41,7 @@ class FushiHoverLift extends StatefulWidget {
     required this.builder,
     this.enabled = true,
     this.scale = kFushiHoverLiftScale,
+    this.forceLifted = false,
   });
 
   /// 拿到当前 hover 态自行构建内容。hover 态在 [enabled] 为 false 时恒为 false。
@@ -50,6 +52,11 @@ class FushiHoverLift extends StatefulWidget {
 
   /// 悬停时的缩放倍数。默认与游戏库既有观感一致。
   final double scale;
+
+  /// 不靠指针也保持抬升（例如桌面拖文件悬停在导入卡上：拖拽期间 [MouseRegion]
+  /// 收不到 enter/exit，由调用方从 `FushiFileDropTarget.onHoverChanged` 传进来）。
+  /// [enabled] 为 false 时无效；滚动压制不作用于它（拖拽期间不会滚动）。
+  final bool forceLifted;
 
   @override
   State<FushiHoverLift> createState() => _FushiHoverLiftState();
@@ -127,7 +134,10 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
       vsync: this,
       duration: kFushiHoverLiftDuration,
     );
-    _curved = CurvedAnimation(parent: _lift, curve: Curves.easeOut);
+    _curved = CurvedAnimation(
+      parent: _lift,
+      curve: FushiSpringCurve.effects,
+    );
   }
 
   /// 抬升的唯一判据：指针在这张卡上，且**这一帧刚滚过**（BUG-2124）。
@@ -139,7 +149,8 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   /// 失效。而按帧位判本来就更准：ScrollStart 那一刻还没有任何位移，第一条 ScrollUpdate
   /// 才是真的滚起来了；`SmoothWheelScrollScope` 的 140ms 补间走 `DrivenScrollActivity`，
   /// 每帧都发 ScrollUpdate，同样被这一位盖住。
-  bool get _lifted => widget.enabled && _hovering && !_moved;
+  bool get _lifted =>
+      widget.enabled && (widget.forceLifted || (_hovering && !_moved));
 
   /// [immediate] 为真时同帧落位，不走缓动。
   void _syncLift({bool immediate = false}) {
@@ -208,6 +219,8 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
     if (oldWidget.enabled != widget.enabled ||
         oldWidget.scale != widget.scale) {
       _syncLift(immediate: true);
+    } else if (oldWidget.forceLifted != widget.forceLifted) {
+      _syncLift();
     }
   }
 

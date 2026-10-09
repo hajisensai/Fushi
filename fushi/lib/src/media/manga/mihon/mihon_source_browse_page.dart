@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/manga_cover_failure.dart';

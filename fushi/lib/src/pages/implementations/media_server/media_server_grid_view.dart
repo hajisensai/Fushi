@@ -1,15 +1,18 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart' show SliverConstraints;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_routes.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/utils.dart';
 
 /// 库 / 文件夹 / BoxSet 的分页网格；搜索框非空时改走 [MediaServerBrowser.search]
 /// （同样分页），排序只对浏览生效。
@@ -226,20 +229,20 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
 
   @override
   Widget build(BuildContext context) {
-    // 本视图是嵌套 Navigator 里的一条路由：没有 Scaffold 就没有 Material 祖先。
-    return Scaffold(
-      body: Column(
-        children: <Widget>[
-          FushiPageHeader(
-            title: widget.title,
-            compact: true,
-            leading: BackButton(
-              onPressed: () => Navigator.of(context).maybePop(),
-            ),
-          ),
-          _buildControls(),
-          Expanded(child: _buildBody()),
-        ],
+    // 本视图是嵌套 Navigator 里的一条路由：页面外壳自带 Scaffold（Material 祖先）
+    // 与 M3E 悬浮页头。搜索 / 排序行挂在页头底部，与标题胶囊一起随滚动收起、
+    // 往回滚弹出（与库页工具行同一口径）。
+    return MediaServerPageFrame(
+      header: FushiPageHeader(
+        title: widget.title,
+        compact: true,
+        leading: BackButton(onPressed: () => Navigator.of(context).maybePop()),
+        bottom: _buildControls(),
+      ),
+      // 页头（含搜索 / 排序行）叠在正文上：网格把让位加成顶部内边距，空态 /
+      // 错误整体让开。
+      body: MediaServerBodyInset(
+        builder: (BuildContext context, double top) => _buildBody(top),
       ),
     );
   }
@@ -247,71 +250,65 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
   Widget _buildControls() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String prefix = widget.session.serverId;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        0,
-        tokens.spacing.page,
-        tokens.spacing.gap,
-      ),
-      // 2026-10 体验优化：窄于 480 时排序收成图标菜单。写死 180 宽的下拉在
-      // 手机竖屏上把搜索框挤到不足一半。
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints box) {
-          final bool compactSort = box.maxWidth < 480;
-          final Widget search = FushiSearchField(
-            fieldKey: const ValueKey<String>('media-server-grid-search'),
-            clearButtonKey: const ValueKey<String>(
-              'media-server-grid-search-clear',
-            ),
-            focusId: FushiFocusId('$prefix-grid-search'),
-            controller: _searchController,
-            focusNode: _searchFocusNode,
-            hintText: t.media_server_search_hint,
-            onChanged: _scheduleSearch,
-            onSubmitted: _submitSearch,
-            onClear: _clearSearch,
-          );
-          // 与库页工具行（LibraryToolbar）同一形态：宽屏搜索框限宽 240–460 靠左、
-          // 排序贴右；窄屏搜索撑满、排序收成图标菜单。
-          // 结构恒定（宽窄只换约束值），跨断点缩放窗口时搜索框不重挂、不丢焦点。
-          final double searchMax = box.maxWidth >= 640
-              ? (box.maxWidth * 0.36).clamp(240.0, 460.0)
-              : double.infinity;
-          return Row(
-            children: <Widget>[
-              Expanded(
-                child: Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: searchMax),
-                    child: search,
-                  ),
+    // 2026-10 体验优化：窄于 480 时排序收成图标菜单。写死 180 宽的下拉在
+    // 手机竖屏上把搜索框挤到不足一半。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        final bool compactSort = box.maxWidth < 480;
+        // M3E 搜索胶囊。防抖仍由本页自己做（[_scheduleSearch] 一输入就作废在途
+        // 响应），所以这里 debounce 为零、只借它的 IME 组字门与同值去重。
+        final Widget search = FushiSearchBar(
+          fieldKey: const ValueKey<String>('media-server-grid-search'),
+          clearButtonKey: const ValueKey<String>(
+            'media-server-grid-search-clear',
+          ),
+          focusId: FushiFocusId('$prefix-grid-search'),
+          controller: _searchController,
+          focusNode: _searchFocusNode,
+          hintText: t.media_server_search_hint,
+          onQueryChanged: _scheduleSearch,
+          onSubmitted: _submitSearch,
+          onClear: _clearSearch,
+        );
+        // 与库页工具行（LibraryToolbar）同一形态：宽屏搜索框限宽 240–460 靠左、
+        // 排序贴右；窄屏搜索撑满、排序收成图标菜单。
+        // 结构恒定（宽窄只换约束值），跨断点缩放窗口时搜索框不重挂、不丢焦点。
+        final double searchMax = box.maxWidth >= 640
+            ? (box.maxWidth * 0.36).clamp(240.0, 460.0)
+            : double.infinity;
+        return Row(
+          children: <Widget>[
+            Expanded(
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: searchMax),
+                  child: search,
                 ),
               ),
-              SizedBox(width: tokens.spacing.gap),
-              // 搜索走服务器的相关度序，排序只对浏览生效；搜索态禁用而不是藏起来。
-              // 下拉里是 DropdownMenu（InputDecorator），在 Row 里必须给定宽。
-              if (compactSort)
-                _buildCompactSortButton()
-              else
-                SizedBox(
-                  width: 180,
-                  child: FushiDropdown<MediaServerSort>(
-                    inline: true,
-                    key: const ValueKey<String>('media-server-grid-sort'),
-                    options: MediaServerSort.values,
-                    initialOption: _sort,
-                    generateLabel: _sortLabel,
-                    onChanged: _changeSort,
-                    enabled: !_searchMode,
-                    focusId: FushiFocusId('$prefix-grid-sort'),
-                  ),
+            ),
+            SizedBox(width: tokens.spacing.gap),
+            // 搜索走服务器的相关度序，排序只对浏览生效；搜索态禁用而不是藏起来。
+            // 下拉里是 DropdownMenu（InputDecorator），在 Row 里必须给定宽。
+            if (compactSort)
+              _buildCompactSortButton()
+            else
+              SizedBox(
+                width: 180,
+                child: FushiDropdown<MediaServerSort>(
+                  inline: true,
+                  key: const ValueKey<String>('media-server-grid-sort'),
+                  options: MediaServerSort.values,
+                  initialOption: _sort,
+                  generateLabel: _sortLabel,
+                  onChanged: _changeSort,
+                  enabled: !_searchMode,
+                  focusId: FushiFocusId('$prefix-grid-sort'),
                 ),
-            ],
-          );
-        },
-      ),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -321,7 +318,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
       key: const ValueKey<String>('media-server-grid-sort-compact'),
       tooltip: t.sort_by,
       enabled: !_searchMode,
-      icon: const FushiIcon(Icons.sort_rounded),
+      icon: const FushiIcon(FushiIcons.sort),
       initialValue: _sort,
       onSelected: _changeSort,
       itemBuilder: (BuildContext context) => <PopupMenuEntry<MediaServerSort>>[
@@ -335,40 +332,44 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(double top) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    if (_loading && _items.isEmpty) return const FushiLoadingView();
+    if (_loading && _items.isEmpty) return _buildSkeleton(tokens, top);
     if (_firstPageError != null && _items.isEmpty) {
-      return FushiPlaceholderMessage(
-        icon: Icons.cloud_off_outlined,
-        message: t.media_server_items_load_failed,
-        detail: '$_firstPageError',
-        action: FushiFilledButton.icon(
-          key: const ValueKey<String>('media-server-grid-retry'),
-          onPressed: () => unawaited(_reload()),
-          icon: const FushiIcon(Icons.refresh_rounded),
-          label: Text(t.retry),
+      return Padding(
+        padding: EdgeInsets.only(top: top),
+        child: FushiPlaceholderMessage(
+          icon: FushiIcons.cloudOff,
+          tone: FushiPlaceholderTone.error,
+          message: t.media_server_items_load_failed,
+          detail: '$_firstPageError',
+          action: FushiFilledButton.icon(
+            key: const ValueKey<String>('media-server-grid-retry'),
+            onPressed: () => unawaited(_reload()),
+            icon: const FushiIcon(FushiIcons.refresh),
+            label: Text(t.retry),
+          ),
         ),
       );
     }
     if (_items.isEmpty && (_hasMore || _loadingMore)) {
-      // 首页 0 条但服务器还有后续页（搜索把关后常见）：续扫期间显示进度而不是
+      // 首页 0 条但服务器还有后续页（搜索把关后常见）：续扫期间显示骨架而不是
       // 先闪一下「无结果」。
-      return const FushiLoadingView();
+      return _buildSkeleton(tokens, top);
     }
     if (_items.isEmpty) {
-      return FushiPlaceholderMessage(
-        icon: _searchMode
-            ? Icons.search_off_rounded
-            : Icons.video_library_outlined,
-        message: _searchMode
-            ? t.video_discovery_empty
-            : t.media_server_items_empty,
+      return Padding(
+        padding: EdgeInsets.only(top: top),
+        child: FushiPlaceholderMessage(
+          icon: _searchMode ? FushiIcons.searchOff : FushiIcons.collection,
+          message: _searchMode
+              ? t.video_discovery_empty
+              : t.media_server_items_empty,
+        ),
       );
     }
     final String prefix = widget.session.serverId;
     // 2026-10 动效重做：首屏卡片错峰淡入；翻页补进来的卡在窗口外，瞬间出现。
-    final double cardGap = tokens.spacing.card;
     return FushiEntranceScope(
       replayKey: _listEpoch,
       child: CustomScrollView(
@@ -377,46 +378,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
         ),
         controller: _scrollController,
         slivers: <Widget>[
-          SliverPadding(
-            // 顶部留出悬停抬升的余量：第一排卡放大 5% 时不被视口上沿裁掉。
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.page,
-              tokens.spacing.gap / 2,
-              tokens.spacing.page,
-              0,
-            ),
-            sliver: SliverLayoutBuilder(
-              builder: (BuildContext context, SliverConstraints constraints) {
-                // 行高按「实际列宽 × 3/2（2:3 海报）+ 文字块」精确给：发现页那种
-                // `childAspectRatio: 0.50` 是把文字区按列宽的一半留，桌面 210 列宽下
-                // 文字块只要 ~60，卡片底部空出一截（像素预览实测）。列数与
-                // [SliverGridDelegateWithMaxCrossAxisExtent] 同一算法（ceil）。
-                // 封面即卡片没有卡底：列间 / 行间都用卡片级间距，标题与下一排
-                // 封面之间留得开。
-                final double gap = cardGap;
-                final double maxExtent = readerShelfGridExtentForWidth(
-                  MediaQuery.sizeOf(context).width,
-                );
-                final double width = constraints.crossAxisExtent;
-                final int columns = ((width + gap) / (maxExtent + gap))
-                    .ceil()
-                    .clamp(1, 1 << 16)
-                    .toInt();
-                final double cardWidth =
-                    (width - gap * (columns - 1)) / columns;
-                return SliverGrid(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: columns,
-                    mainAxisSpacing: gap + tokens.spacing.gap / 2,
-                    crossAxisSpacing: gap,
-                    mainAxisExtent:
-                        cardWidth * 3 / 2 + mediaServerCardTextBlock(context),
-                  ),
-                  delegate: _cardDelegate(context, prefix),
-                );
-              },
-            ),
-          ),
+          _posterGrid(tokens, top, (int _) => _cardDelegate(context, prefix)),
           if (_loadingMore)
             SliverToBoxAdapter(
               child: Padding(
@@ -432,7 +394,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
                   child: FushiTextButton.icon(
                     key: const ValueKey<String>('media-server-grid-retry-more'),
                     onPressed: _retryLoadMore,
-                    icon: const FushiIcon(Icons.refresh_rounded),
+                    icon: const FushiIcon(FushiIcons.refresh),
                     label: Text(t.retry),
                   ),
                 ),
@@ -440,6 +402,77 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
             )
           else
             SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.section)),
+        ],
+      ),
+    );
+  }
+
+  /// 海报网格 sliver：真实网格与加载骨架共用同一套列数 / 行高算法，骨架换成
+  /// 数据时版面不跳。[delegateFor] 拿到本次布局的列数。
+  Widget _posterGrid(
+    FushiDesignTokens tokens,
+    double top,
+    SliverChildDelegate Function(int columns) delegateFor,
+  ) {
+    final double gap = tokens.spacing.card;
+    return SliverPadding(
+      // 顶部先让开叠在上面的页头（[top]，内容滚到胶囊底下），再留出悬停抬升的
+      // 余量：第一排卡放大 5% 时不被页头 / 视口上沿裁掉。
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        top + tokens.spacing.gap / 2,
+        tokens.spacing.page,
+        0,
+      ),
+      sliver: SliverLayoutBuilder(
+        builder: (BuildContext context, SliverConstraints constraints) {
+          // 行高按「实际列宽 × 3/2（2:3 海报）+ 文字块」精确给：发现页那种
+          // `childAspectRatio: 0.50` 是把文字区按列宽的一半留，桌面 210 列宽下
+          // 文字块只要 ~60，卡片底部空出一截（像素预览实测）。列数与
+          // [SliverGridDelegateWithMaxCrossAxisExtent] 同一算法（ceil）。
+          // 封面即卡片没有卡底：列间 / 行间都用卡片级间距，标题与下一排
+          // 封面之间留得开。
+          final double maxExtent = readerShelfGridExtentForWidth(
+            MediaQuery.sizeOf(context).width,
+          );
+          final double width = constraints.crossAxisExtent;
+          final int columns = ((width + gap) / (maxExtent + gap))
+              .ceil()
+              .clamp(1, 1 << 16)
+              .toInt();
+          final double cardWidth = (width - gap * (columns - 1)) / columns;
+          return SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              mainAxisSpacing: gap + tokens.spacing.gap / 2,
+              crossAxisSpacing: gap,
+              mainAxisExtent:
+                  cardWidth * 3 / 2 + mediaServerCardTextBlock(context),
+            ),
+            delegate: delegateFor(columns),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 加载骨架：与真实网格同几何的三排海报卡块（有界闪光）。不挂本页滚动控制器
+  /// ——那是真实网格的，骨架只是占位。
+  Widget _buildSkeleton(FushiDesignTokens tokens, double top) {
+    return FushiSkeletonShimmer(
+      child: CustomScrollView(
+        key: const ValueKey<String>('media-server-grid-skeleton'),
+        physics: const NeverScrollableScrollPhysics(),
+        slivers: <Widget>[
+          _posterGrid(
+            tokens,
+            top,
+            (int columns) => SliverChildBuilderDelegate(
+              (BuildContext context, int index) =>
+                  const MediaServerPosterSkeleton(),
+              childCount: columns * 3,
+            ),
+          ),
         ],
       ),
     );

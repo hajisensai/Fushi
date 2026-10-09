@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
@@ -586,14 +587,54 @@ void main() {
 }
 
 class _FakeNic implements NetworkInterface {
-  _FakeNic(this.name, this.addresses);
+  _FakeNic(this.name, List<InternetAddress> addresses)
+    : addresses = <InterfaceAddress>[
+        for (final InternetAddress a in addresses) _FakeInterfaceAddress(a),
+      ];
 
   @override
   final String name;
 
+  // Dart 3.13 起 `NetworkInterface.addresses` 是 `List<InterfaceAddress>`。
   @override
-  final List<InternetAddress> addresses;
+  final List<InterfaceAddress> addresses;
 
   @override
   int get index => 0;
+}
+
+class _FakeInterfaceAddress implements InterfaceAddress {
+  _FakeInterfaceAddress(this._address);
+
+  final InternetAddress _address;
+
+  @override
+  int get prefixLength => _address.type == InternetAddressType.IPv4 ? 24 : 64;
+
+  @override
+  InternetAddress? get broadcast => null;
+
+  @override
+  InternetAddressType get type => _address.type;
+
+  @override
+  String get address => _address.address;
+
+  @override
+  String get host => _address.host;
+
+  @override
+  Uint8List get rawAddress => _address.rawAddress;
+
+  @override
+  bool get isLoopback => _address.isLoopback;
+
+  @override
+  bool get isLinkLocal => _address.isLinkLocal;
+
+  @override
+  bool get isMulticast => _address.isMulticast;
+
+  @override
+  Future<InternetAddress> reverse() => _address.reverse();
 }

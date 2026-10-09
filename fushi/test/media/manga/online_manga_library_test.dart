@@ -481,47 +481,26 @@ void main() {
       expect(series.raw.containsKey('url'), isTrue);
     });
 
-    test('Aidoku：scanlators 是复数列表、字段是蛇形、标题可回退到话号', () {
-      final List<OnlineMangaChapter> parsed =
-          AidokuLibraryAdapter.chaptersOf(<String, Object?>{
-        'chapters': <Map<String, Object?>>[
-          <String, Object?>{
-            'key': '/c/10',
-            'title': '',
-            'chapter_number': 10,
-            'date_uploaded': 1234,
-            'scanlators': <String>['Alpha', 'Beta'],
-          },
-        ],
-      });
-      expect(parsed, hasLength(1));
-      expect(parsed.single.key, '/c/10');
-      expect(parsed.single.number, 10);
-      expect(parsed.single.uploadedAt, 1234);
-      expect(
-        parsed.single.scanlator,
-        'Alpha, Beta',
-        reason: 'Aidoku 用复数 scanlators 列表；读成单数 scanlator 会得到 null',
+    test('旧 Aidoku 条目：适配器一律回报本平台不可用，不发任何网络请求', () async {
+      const LegacyAidokuLibraryAdapter adapter = LegacyAidokuLibraryAdapter();
+      expect(adapter.kind, OnlineMangaRuntimeKind.aidoku);
+      expect(adapter.isSupportedOnThisPlatform, isFalse);
+      await expectLater(
+        adapter.fetchChapterPage(
+          const HttpMangaPageRef(
+            index: 0,
+            url: 'https://cdn.example/p.jpg',
+            referer: 'https://cdn.example',
+          ),
+        ),
+        throwsA(
+          isA<OnlineMangaUnavailable>().having(
+            (OnlineMangaUnavailable e) => e.reason,
+            'reason',
+            OnlineMangaUnavailableReason.platformUnsupported,
+          ),
+        ),
       );
-      expect(
-        parsed.single.name,
-        'Ch. 10',
-        reason: '标题为空要回退到话号，否则章节列表是一排空行',
-      );
-    });
-
-    test('Aidoku：作品 raw 剥掉 chapters，避免几百章存两遍', () {
-      final OnlineMangaSeries series =
-          AidokuLibraryAdapter.seriesOf(<String, Object?>{
-        'key': '/s/1',
-        'title': 'S',
-        'authors': <String>['A', 'B'],
-        'tags': <String>['x', 'y'],
-        'chapters': <Object?>[<String, Object?>{'key': '/c/1'}],
-      }, fallbackKey: '/s/1');
-      expect(series.raw.containsKey('chapters'), isFalse);
-      expect(series.author, 'A, B');
-      expect(series.genreLabels, <String>['x', 'y']);
     });
   });
 }

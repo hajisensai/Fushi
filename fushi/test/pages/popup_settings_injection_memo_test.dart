@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -17,6 +17,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show FushiEinkTheme;
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -288,6 +289,45 @@ void main() {
         theme: ThemeData(brightness: Brightness.light),
       );
       expect(js.head, contains("classList.toggle('eink', false)"));
+    });
+  });
+
+  // 「调整上下文」按钮的 Apple 口径挂在 html.fushi-glass-host.fushi-apple 上：设计系统
+  // 只能从主题的 FushiAppleColors 扩展读出来，注入串必须真 toggle 这个 class。
+  group('fushi-apple class 注入', () {
+    test('Apple 主题（带 FushiAppleColors）→ toggle 成 true', () {
+      final MemoAppModel appModel = MemoAppModel();
+      final PopupStaticSettingsJs js = build(
+        appModel,
+        theme: ThemeData(
+          brightness: Brightness.light,
+          extensions: <ThemeExtension<dynamic>>[
+            FushiAppleColors.of(Brightness.light, const Color(0xFF0A84FF)),
+          ],
+        ),
+      );
+      expect(js.head, contains("classList.toggle('fushi-apple', true)"));
+    });
+
+    test('MD3 主题（无 Apple 色板）→ toggle 成 false', () {
+      final MemoAppModel appModel = MemoAppModel();
+      final PopupStaticSettingsJs js = build(appModel);
+      expect(js.head, contains("classList.toggle('fushi-apple', false)"));
+    });
+
+    test('墨水屏不是玻璃宿主 → 即使是 Apple 主题也 false', () {
+      final MemoAppModel appModel = MemoAppModel();
+      final PopupStaticSettingsJs js = build(
+        appModel,
+        theme: ThemeData(
+          brightness: Brightness.light,
+          extensions: <ThemeExtension<dynamic>>[
+            const FushiEinkTheme(true),
+            FushiAppleColors.of(Brightness.light, const Color(0xFF0A84FF)),
+          ],
+        ),
+      );
+      expect(js.head, contains("classList.toggle('fushi-apple', false)"));
     });
   });
 
@@ -868,6 +908,8 @@ class MemoAppModel extends AppModel {
   double get popupInstantScrollTouchStep => popupInstantScrollTouchStepValue;
   @override
   bool get compactGlossaries => compactGlossariesValue;
+  @override
+  bool get dictionaryUnifiedStyle => true;
   @override
   List<Dictionary> get dictionaries => dictionariesValue;
   @override

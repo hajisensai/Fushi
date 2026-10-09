@@ -11,7 +11,7 @@
 ///    同一个整本下载对话框（EPUB 入书架）。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart'
     show EpubBookRow, MangaOnlineSourceRow;
@@ -187,10 +187,7 @@ class MihonMangaAcquisitionBackend implements MediaAcquisitionBackend {
         MangaSourceSearchRun(MihonGlobalSource(row)),
     ];
     if (runs.isEmpty) return const <MediaAcquisitionCandidate>[];
-    await MangaGlobalSearchRunner(
-      mihonManager: _manager,
-      resolveAidokuRuntime: () => null,
-    ).search(
+    await MangaGlobalSearchRunner(mihonManager: _manager).search(
       runs: runs,
       query: query,
       isCancelled: () => false,

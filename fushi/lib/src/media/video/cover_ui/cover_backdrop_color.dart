@@ -15,7 +15,7 @@ library;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 参与主色统计的最低 alpha：低于此值算「背景空白」，不计入色相，也不计入
 /// [CoverBackdropSeed.opaqueRatio]。取 32/255≈12.5%，抗 PNG 边缘羽化。

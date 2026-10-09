@@ -112,7 +112,7 @@ void main() {
 
   test('B: deleteDictionaries (delete-all) reloads the FFI engine', () {
     final String body = bodyOf('Future<void> deleteDictionaries(');
-    expect(body.contains('_rebuildDictPathsCache'), isTrue,
+    expect(body.contains('await dictRepo.clearDictionaryMetadata()'), isTrue,
         reason: 'deleting ALL dictionaries must rebuild the engine so no stale '
             'index survives until restart (BUG-171 hole B).');
   });
@@ -152,7 +152,9 @@ void main() {
 
   test('E: deleteDictionaries（清空全部）先重载引擎再删目录', () {
     final String body = bodyOf('Future<void> deleteDictionaries(');
-    final int rebuild = body.indexOf('_rebuildDictPathsCache()');
+    final int rebuild = body.indexOf(
+      'await dictRepo.clearDictionaryMetadata()',
+    );
     final int dir = body.indexOf('deleteDictionaryDirectory(');
     expect(rebuild, greaterThanOrEqualTo(0));
     expect(dir, greaterThanOrEqualTo(0),
@@ -173,7 +175,7 @@ void main() {
   test(
       'updateDictionaryOrder forwards to the repo AND nudges open lookups to '
       're-query (BUG-355)', () {
-    final String body = bodyOf('void updateDictionaryOrder(');
+    final String body = bodyOf('Future<void> updateDictionaryOrder(');
     expect(
       body.contains('dictRepo.updateDictionaryOrder('),
       isTrue,

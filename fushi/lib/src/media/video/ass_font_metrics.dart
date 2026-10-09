@@ -256,7 +256,7 @@ Future<void> _indexFontFile(File file, Map<String, double> out) async {
     Future<ByteData?> readAt(int off, int len) async {
       if (off < 0 || len <= 0 || off + len > fileLen) return null;
       await raf!.setPosition(off);
-      final Uint8List b = await raf.read(len);
+      final Uint8List b = await raf!.read(len);
       return b.length == len ? ByteData.sublistView(b) : null;
     }
 

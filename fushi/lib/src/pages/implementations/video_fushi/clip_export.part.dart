@@ -8,6 +8,7 @@ part of '../video_fushi_page.dart';
 /// directly).
 extension _VideoClipExport on _VideoFushiPageState {
   Future<void> _toggleClipExport() async {
+    if (_controller != null && !_discExtractionAllowed(_controller!)) return;
     if (_clipExporting) {
       _showOsd(t.video_clip_exporting, severity: ToastSeverity.info);
       return;
@@ -175,7 +176,8 @@ extension _VideoClipExport on _VideoFushiPageState {
       // （BUG-2542）。旧实现先无条件报「已导出」再 fire-and-forget 分享，面板被
       // FushiShare 的防重入门丢弃时，用户看到的是绿色成功提示 + 一个进不去的路径，
       // 相册里没有、分享面板也没弹——体感就是「导出没反应」。
-      final bool shared = isDesktop ||
+      final bool shared =
+          isDesktop ||
           await FushiShare.shareFiles(<XFile>[
             XFile(exported),
           ], subject: p.basename(exported));
@@ -294,10 +296,7 @@ extension _VideoClipExport on _VideoFushiPageState {
     return (ClipSubtitleCue cue, ClipFrameSize frame) {
       final double viewportHeight = (area == null || frame.width <= 0)
           ? 0 // 拿不到就交给渲染器的回退基准，绝不让 scale 变成 0 或无穷
-          : math.min(
-              area.height,
-              area.width * frame.height / frame.width,
-            );
+          : math.min(area.height, area.width * frame.height / frame.width);
       // 锚定复用屏幕上那套解析（TODO-2838）：主层只有选了顶部才算显式，副层任何
       // 非 null 都算显式，都没有时副层自动取主层的对侧。ownNonBottom 恒 false——
       // 导出渲染的是纯文本，没有 ASS 自带定位。
@@ -306,8 +305,8 @@ extension _VideoClipExport on _VideoFushiPageState {
         userAnchor: cue.isSecondary
             ? style.secondaryAnchor
             : (style.mainAnchor == SubtitleLayerVAnchor.top
-                ? SubtitleLayerVAnchor.top
-                : null),
+                  ? SubtitleLayerVAnchor.top
+                  : null),
         mainUserAnchor: style.mainAnchor,
         ownNonBottom: false,
       );
@@ -434,8 +433,10 @@ extension _VideoClipExport on _VideoFushiPageState {
     Uint8List bytes = raw;
     String extension = 'jpg';
     if (withSubtitles && controller != null) {
-      final Uint8List? composed =
-          await _composeScreenshotWithSubtitles(controller, raw);
+      final Uint8List? composed = await _composeScreenshotWithSubtitles(
+        controller,
+        raw,
+      );
       // 合成不出来（此刻屏幕上本就没字幕 / 渲染失败）就落回裸帧：少一层字幕远好过
       // 整张截图失败。
       if (composed != null) {
@@ -495,8 +496,9 @@ extension _VideoClipExport on _VideoFushiPageState {
     VideoPlayerController controller,
     Uint8List frameBytes,
   ) async {
-    final ({int width, int height})? size =
-        await screenshotFrameSize(frameBytes);
+    final ({int width, int height})? size = await screenshotFrameSize(
+      frameBytes,
+    );
     if (size == null || size.width <= 0 || size.height <= 0) return null;
     // 位置未知时按 0 处理：取不到当前时刻就选不出 cue，下面 cues 为空、落回裸帧。
     final int positionMs = controller.positionMs ?? 0;
@@ -605,8 +607,10 @@ extension _VideoClipExport on _VideoFushiPageState {
           allowedExtensions: <String>[extension],
         );
         if (savePath != null) {
-          final String finalPath =
-              _uniqueScreenshotSavePath(savePath, extension: extension);
+          final String finalPath = _uniqueScreenshotSavePath(
+            savePath,
+            extension: extension,
+          );
           await tmp.copy(finalPath);
           _showOsd(
             t.video_screenshot_saved_to(path: finalPath),
@@ -655,8 +659,9 @@ extension _VideoClipExport on _VideoFushiPageState {
     String savePath, {
     String extension = 'jpg',
   }) {
-    final String desiredPath =
-        p.extension(savePath).isEmpty ? '$savePath.$extension' : savePath;
+    final String desiredPath = p.extension(savePath).isEmpty
+        ? '$savePath.$extension'
+        : savePath;
     return uniqueVideoScreenshotPath(
       desiredPath,
       exists: (String path) => File(path).existsSync(),

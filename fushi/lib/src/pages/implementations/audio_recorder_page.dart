@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:multi_value_listenable_builder/multi_value_listenable_builder.dart';
@@ -72,7 +74,7 @@ class _AudioRecorderDialogPageState
       scrollable: false,
       child: FushiModalSheetFrame(
         title: t.creator_enhancement_audio_recorder,
-        leadingIcon: Icons.mic_none_outlined,
+        leadingIcon: FushiIcons.mic,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -97,28 +99,41 @@ class _AudioRecorderDialogPageState
   }
 
   List<Widget> get actions => [
-        if (_isRecording) buildStopButton() else buildRecordButton(),
-        buildSaveButton(),
-      ];
+    if (_isRecording) buildStopButton() else buildRecordButton(),
+    buildSaveButton(),
+  ];
+
+  FushiCardTone get _playerCardTone =>
+      _isRecording ? FushiCardTone.error : FushiCardTone.secondary;
 
   Widget buildContent() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // M3E：播放器放进一张饱和色块卡——录音中是 errorContainer（录音态一眼可辨），
+    // 平时 secondaryContainer；Apple 下 FushiCard 自动换成强调色淡染。
     return SizedBox(
       width: double.maxFinite,
-      child: _audioFile == null || _isRecording
-          ? buildDisabledPlayer()
-          : buildAudioPlayer(),
+      child: FushiCard(
+        pressScale: false,
+        tone: _playerCardTone,
+        padding: EdgeInsets.all(tokens.spacing.gap),
+        child: _audioFile == null || _isRecording
+            ? buildDisabledPlayer()
+            : buildAudioPlayer(),
+      ),
     );
   }
 
   final AudioPlayer _audioPlayer = AudioPlayer();
 
-  final ValueNotifier<Duration> _positionNotifier =
-      ValueNotifier<Duration>(Duration.zero);
+  final ValueNotifier<Duration> _positionNotifier = ValueNotifier<Duration>(
+    Duration.zero,
+  );
   // Consumers (buildSlider/buildDurationAndPosition) always treat this as a
   // non-null Duration, so the notifier is non-nullable and stream nulls are
   // mapped to Duration.zero at the listener (HBK-AUDIT-107).
-  final ValueNotifier<Duration> _durationNotifier =
-      ValueNotifier<Duration>(Duration.zero);
+  final ValueNotifier<Duration> _durationNotifier = ValueNotifier<Duration>(
+    Duration.zero,
+  );
   final ValueNotifier<PlayerState?> _playerStateNotifier =
       ValueNotifier<PlayerState?>(null);
 
@@ -135,9 +150,7 @@ class _AudioRecorderDialogPageState
             children: [
               buildPlayButton(),
               if (showTime) buildDurationAndPosition(),
-              Expanded(
-                child: buildSlider(),
-              ),
+              Expanded(child: buildSlider()),
             ],
           );
         },
@@ -148,30 +161,31 @@ class _AudioRecorderDialogPageState
   /// Build the play/pause button
   Widget buildPlayButton() {
     return MultiValueListenableBuilder(
-      valueListenables: [
-        _playerStateNotifier,
-      ],
+      valueListenables: [_playerStateNotifier],
       builder: (context, values, _) {
-        final FushiDesignTokens tokens = FushiDesignTokens.of(context);
         PlayerState? playerState = values.elementAt(0);
 
-        IconData iconData = Icons.play_arrow_outlined;
+        IconData iconData = FushiIcons.filled(FushiIcons.play);
+        bool playing = false;
 
         if (playerState == null ||
             playerState.processingState == ProcessingState.completed) {
-          iconData = Icons.play_arrow_outlined;
+          iconData = FushiIcons.filled(FushiIcons.play);
         } else if (playerState.playing) {
-          iconData = Icons.pause_outlined;
+          iconData = FushiIcons.filled(FushiIcons.pause);
+          playing = true;
         } else {
-          iconData = Icons.play_arrow_outlined;
+          iconData = FushiIcons.filled(FushiIcons.play);
         }
 
-        return FushiIconButton(
-          icon: iconData,
-          size: 24,
-          padding: EdgeInsets.all(tokens.spacing.gap),
+        // M3E：实心主色播放钮，播放中弹簧变形成方圆角（形状即状态）。
+        return FushiIconButtonControl.filled(
+          icon: FushiIcon(iconData),
+          shape: playing
+              ? FushiIconButtonShape.square
+              : FushiIconButtonShape.round,
           tooltip: playerState?.playing == true ? t.pause : t.play,
-          onTap: () async {
+          onPressed: () async {
             AudioSession? session;
             if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
               session = await AudioSession.instance;
@@ -196,8 +210,9 @@ class _AudioRecorderDialogPageState
               );
 
               _noisySub?.cancel();
-              _noisySub =
-                  session.becomingNoisyEventStream.listen((event) async {
+              _noisySub = session.becomingNoisyEventStream.listen((
+                event,
+              ) async {
                 await _audioPlayer.pause();
                 session?.setActive(false);
               });
@@ -254,8 +269,18 @@ class _AudioRecorderDialogPageState
           return FushiTimeFormat.getVideoDurationText(duration).trim();
         }
 
-        return Text(
-          '${getPositionText()} / ${getDurationText()}',
+        return Padding(
+          padding: EdgeInsetsDirectional.only(
+            start: FushiDesignTokens.of(context).spacing.gap,
+          ),
+          child: Text(
+            '${getPositionText()} / ${getDurationText()}',
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              // 卡片饱和色块的配对前景（labelLarge 自带页面 onSurface 会盖掉它）。
+              color: fushiCardToneColors(context, _playerCardTone)?.onContainer,
+              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+            ),
+          ),
         );
       },
     );
@@ -341,32 +366,22 @@ class _AudioRecorderDialogPageState
                     ),
                   )
                 else
-                  Opacity(
-                    opacity: 0.5,
-                    child: FushiIconButton(
-                      icon: Icons.play_arrow_outlined,
-                      size: 24,
-                      enabled: false,
-                      disabledColor: theme.colorScheme.onSurfaceVariant,
-                      padding: EdgeInsets.all(tokens.spacing.gap),
-                      tooltip: t.play,
-                    ),
+                  FushiIconButtonControl.filled(
+                    icon: FushiIcon(FushiIcons.filled(FushiIcons.play)),
+                    tooltip: t.play,
+                    onPressed: null,
                   ),
                 if (showTime)
-                  const Opacity(
-                    opacity: 0.5,
-                    child: Text(
-                      '--:-- / --:--',
-                    ),
-                  ),
+                  const Opacity(opacity: 0.5, child: Text('--:-- / --:--')),
                 Expanded(
                   child: Opacity(
                     opacity: 0.5,
                     child: adaptiveSlider(
                       context: context,
                       value: 0,
-                      thumbColor:
-                          Theme.of(context).colorScheme.onSurfaceVariant,
+                      thumbColor: Theme.of(
+                        context,
+                      ).colorScheme.onSurfaceVariant,
                       onChanged: (value) {},
                     ),
                   ),
@@ -383,9 +398,7 @@ class _AudioRecorderDialogPageState
     return adaptiveDialogAction(
       context: context,
       isDestructiveAction: true,
-      child: Text(
-        t.dialog_stop,
-      ),
+      child: Text(t.dialog_stop),
       onPressed: () async {
         await _recorder.stop();
         _audioFile = File(widget.filePath);
@@ -441,10 +454,7 @@ class _AudioRecorderDialogPageState
 
   void executeSave() {
     if (_audioFile == null) {
-      FushiToast.show(
-        msg: t.no_audio_file,
-        severity: ToastSeverity.error,
-      );
+      FushiToast.show(msg: t.no_audio_file, severity: ToastSeverity.error);
       return;
     }
 

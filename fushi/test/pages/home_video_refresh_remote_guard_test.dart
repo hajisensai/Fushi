@@ -19,7 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final String src = File(
     'lib/src/pages/implementations/home_video_page.dart',
-  ).readAsStringSync();
+  ).readAsStringSync().replaceAll('\r\n', '\n');
 
   test('_refresh 带 remote 开关且默认关（本地刷新不重拉远端）', () {
     expect(

@@ -61,12 +61,11 @@ if [[ "$verify_only" == false ]]; then
   mihon_cache="$repository_root/.dart_tool/mihon_bridge"
   case "$(uname -m)" in
     arm64) mihon_host_runtime="runtime-macos-arm64" ;;
-    x86_64) mihon_host_runtime="runtime-macos-x64" ;;
-    *) echo "unsupported macOS architecture: $(uname -m)" >&2; exit 1 ;;
+    *) echo "unsupported macOS architecture: $(uname -m) (the macOS app ships arm64 only)" >&2; exit 1 ;;
   esac
   if [[ ! -f "$mihon_cache/m-extension-server.jar" || \
         ! -x "$mihon_cache/$mihon_host_runtime/bin/java" ]]; then
-    FUSHI_MIHON_ARCHS=host bash "$repository_root/tool/mihon/build_desktop_runtime.sh" \
+    bash "$repository_root/tool/mihon/build_desktop_runtime.sh" \
       "$mihon_cache" \
       "$repository_root/.dart_tool/mihon-downloads"
   fi
@@ -107,8 +106,7 @@ fi
 
 case "$(uname -m)" in
   arm64) mihon_host_runtime="runtime-macos-arm64" ;;
-  x86_64) mihon_host_runtime="runtime-macos-x64" ;;
-  *) echo "unsupported macOS architecture: $(uname -m)" >&2; exit 1 ;;
+  *) echo "unsupported macOS architecture: $(uname -m) (the macOS app ships arm64 only)" >&2; exit 1 ;;
 esac
 if [[ ! -f "$app/Contents/Resources/mihon_bridge/m-extension-server.jar" || \
       ! -x "$app/Contents/Resources/mihon_bridge/$mihon_host_runtime/bin/java" ]]; then

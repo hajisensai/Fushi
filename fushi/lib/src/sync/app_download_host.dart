@@ -22,8 +22,6 @@ import 'package:fushi_engine/media/torrent/video_resource_provider.dart'
     show VideoResourceProvider;
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
-import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
-    show VideoMetadataMediaKind;
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/pipeline_subscription_host.dart';
@@ -90,18 +88,14 @@ class AppDownloadHost implements HostDownloadHost {
       ));
 
   @override
-  Future<String> addMagnet({
-    required String magnetUri,
-    required String title,
-    String mediaKind = 'movie',
-    String? discoveryKind,
-  }) async {
+  Future<String> add(HostDownloadAddRequest request) async {
     final VideoDownloadPipelineService pipeline = _requirePipeline;
     if (_readyBackend() == null) {
       throw const VideoDownloadPipelineActionRequired(
         'no torrent backend configured on this host',
       );
     }
+    final String? discoveryKind = request.discoveryKind;
     DiscoveryMediaKind? kind;
     if (discoveryKind != null) {
       if (!discoveryImportSupported ||
@@ -126,17 +120,21 @@ class AppDownloadHost implements HostDownloadHost {
       throw VideoDownloadPipelineActionRequired(error.message);
     }
     return pipeline.enqueueManual(
-      VideoDownloadManualEnqueueRequest(
-        title: title,
+      request.toEnqueueRequest(
         backendTarget: target,
-        magnetUri: magnetUri,
         discoveryKind: kind,
-        mediaKind: mediaKind == 'tv'
-            ? VideoMetadataMediaKind.tv
-            : VideoMetadataMediaKind.movie,
         targetSourceId: sourceId,
       ),
     );
+  }
+
+  @override
+  Future<List<VideoDownloadJobSubtitleRow>?> listJobSubtitles(
+    String jobId,
+  ) async {
+    final FushiDatabase db = _database();
+    if (await db.getVideoDownloadJob(jobId) == null) return null;
+    return db.getVideoDownloadJobSubtitles(jobId);
   }
 
   @override

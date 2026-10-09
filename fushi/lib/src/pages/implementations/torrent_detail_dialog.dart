@@ -1,9 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
@@ -337,14 +338,37 @@ class _TorrentTaskDetailDialogState
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Text(widget.title, style: theme.textTheme.titleLarge),
-          const SizedBox(height: 2),
-          Text(
-            widget.torrentTitle,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          // M3E 对话框头：饼干形图标徽标 + Emphasized 标题（Apple 下徽标退化成
+          // 单色图标，见 FushiDialogHeroIcon）。
+          Row(
+            children: <Widget>[
+              const FushiDialogHeroIcon(
+                icon: FushiIcons.downloading,
+                tone: FushiHeroTone.primary,
+                size: 48,
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      widget.title,
+                      style: context.fushiType.titleLargeEmphasized,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.torrentTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           FushiTabBar(
@@ -429,7 +453,7 @@ class _TorrentTaskDetailDialogState
         constraints: const BoxConstraints(maxWidth: 480),
         child: FushiPlaceholderMessage(
           key: const Key('torrent-detail-empty-note'),
-          icon: Icons.info_outline,
+          icon: FushiIcons.info,
           iconSize: 36,
           message: text,
           messageStyle: theme.textTheme.bodyMedium

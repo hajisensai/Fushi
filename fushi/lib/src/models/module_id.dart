@@ -35,7 +35,8 @@ enum ModuleId {
   video('module_video_enabled'),
 
   /// 游戏。Windows 上是本机 galgame 库与文本/语音捕获（galgame hook 平台边界）；
-  /// Android 上是串流接收端的远端游戏库（从已配对 Windows 主机启动并串流）。
+  /// Android / iOS / macOS / Linux 上是串流接收端的远端游戏库（从已配对 Windows
+  /// 主机启动并串流）。iOS 上只有串流这一种形态，不属于 App Store 受限能力。
   /// 两种形态见 [GamesModuleForm]。
   games('module_games_enabled'),
 
@@ -88,18 +89,16 @@ enum ModuleId {
   /// 两者会在同一个平台上给出相反的答案——下载中心在 iOS 上技术可行（外接
   /// qBittorrent 是纯 HTTP），但不允许上架。
   ///
-  /// [isAndroid] 只服务于 [games] 的串流形态（[GamesModuleForm]）：串流接收端
-  /// 只在 Android 上有 WebRTC 接收入口——这是技术边界，不是商店合规边界。
+  /// [isAndroid] 目前没有模块按它区分（串流接收端已覆盖全部平台，见
+  /// [GamesModuleForm]）；保留它让调用方始终给出完整的平台元组。
   bool availableOn({
     required bool isWindows,
     required bool isDesktop,
     required bool isIOS,
     required bool isAndroid,
   }) => switch (this) {
-    // galgame hook 只做 Windows 端（见 CLAUDE.md「Galgame Hook 硬规则」）；
-    // Android 上同一个模块换成串流接收端的远端游戏库。
-    ModuleId.games =>
-      GamesModuleForm.on(isWindows: isWindows, isAndroid: isAndroid) != null,
+    // 每个平台都有 games 模块，只是形态不同（见 [GamesModuleForm.on]）。
+    ModuleId.games => true,
     // 手机浏览器不支持加载未解压扩展，故按平台而非实验开关门控。
     ModuleId.browserExtension => isDesktop,
     // 「浏览」装的是发现页、三域在线扩展源与通用 torrent / 磁力下载器，都不能进
@@ -135,28 +134,20 @@ enum ModuleId {
 /// [ModuleId.games] 在当前平台上的形态。
 ///
 /// 同一个模块开关、同一个底栏 tab，两种截然不同的页面：Windows 是本机 galgame
-/// 库（hook 注入、捕获工作台、兼容性诊断），Android 是串流接收端（列出已配对
-/// Windows 主机的游戏库，远程启动后直接串流）。平台判据只在 [on] 写一次，消费端
-/// 问 [AppModel.gamesModuleForm]，不各自判 `Platform.isAndroid`。
+/// 库（hook 注入、捕获工作台、兼容性诊断，另有「串流」子区接别的主机），其余平台
+/// 是串流接收端（列出已配对 Windows 主机的游戏库，远程启动后直接串流）。平台判据
+/// 只在 [on] 写一次，消费端问 [AppModel.gamesModuleForm]，不各自判平台。
 enum GamesModuleForm {
   /// Windows：本机 galgame 库 + 文本/语音捕获。
   localLibrary,
 
-  /// Android：远端主机游戏库 + 远程启动 + 串流接收。
+  /// Android / iOS / macOS / Linux：远端主机游戏库 + 远程启动 + 串流接收。
   streamClient;
 
-  /// 本平台上 games 模块的形态；`null` = 本平台没有 games 模块。
-  ///
-  /// iOS 没有串流接收入口（WebRTC 接收端只接了 Android），macOS / Linux 没有
-  /// galgame hook，故只有两个平台有形态。
-  static GamesModuleForm? on({
-    required bool isWindows,
-    required bool isAndroid,
-  }) {
-    if (isWindows) return GamesModuleForm.localLibrary;
-    if (isAndroid) return GamesModuleForm.streamClient;
-    return null;
-  }
+  /// 本平台上 games 模块的形态。galgame hook 与画面采集只做 Windows（见
+  /// CLAUDE.md「Galgame Hook 硬规则」），其余平台只能当串流接收端。
+  static GamesModuleForm on({required bool isWindows}) =>
+      isWindows ? GamesModuleForm.localLibrary : GamesModuleForm.streamClient;
 }
 
 /// 「此刻哪些模块可见」的不可变快照：用户意愿（pref）与平台可用性的**唯一合成**。

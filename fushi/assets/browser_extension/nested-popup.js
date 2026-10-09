@@ -119,6 +119,9 @@
       window.fushiTheme.applyPopupPalette(container, scheme);
       window.fushiTheme.applyPopupPalette(document.documentElement, scheme);
     }
+    if (window.fushiTheme && typeof window.fushiTheme.applyPopupStyle === 'function') {
+      window.fushiTheme.applyPopupStyle(container, theme['--fushi-glass'] === '0');
+    }
     const wheelSpeed = Number.parseFloat(theme['--fushi-wheel-speed']);
     window.__fushiPopupWheelSpeed = Number.isFinite(wheelSpeed) && wheelSpeed > 0 ? wheelSpeed : 1;
     applyFushiPopupCss(data);

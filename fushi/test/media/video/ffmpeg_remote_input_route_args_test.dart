@@ -5,6 +5,11 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 
 /// 只回 `-h demuxer=hls` 帮助文本的假后端（能力探测用）。
 class _HelpBackend implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   _HelpBackend(this.help);
   final String help;
   int probes = 0;

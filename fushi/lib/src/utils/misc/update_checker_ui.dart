@@ -57,7 +57,6 @@ class UpdateAvailableDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ThemeData theme = Theme.of(context);
 
     return FushiDialogFrame(
       maxWidth: 520,
@@ -66,7 +65,7 @@ class UpdateAvailableDialog extends StatelessWidget {
       insetPadding: EdgeInsets.all(tokens.spacing.gap),
       child: FushiModalSheetFrame(
         title: t.update_available,
-        leadingIcon: Icons.system_update_alt_outlined,
+        leadingIcon: FushiIcons.downloading,
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
@@ -105,7 +104,11 @@ class UpdateAvailableDialog extends StatelessWidget {
                     mode: LaunchMode.externalApplication,
                   );
                 },
-                styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+                // flutter_markdown 0.6 未迁 material_ui，只收 SDK 旧 ThemeData：经
+                // LegacyDesignCompatibility 桥出来的旧主题（与 app 主题同色同字）。
+                styleSheet: MarkdownStyleSheet.fromTheme(
+                  legacy.Theme.of(context),
+                ).copyWith(
                   p: tokens.type.listSubtitle,
                 ),
               ),
@@ -159,7 +162,7 @@ class InstallPermissionRetryDialog extends StatelessWidget {
       insetPadding: EdgeInsets.all(tokens.spacing.gap),
       child: FushiModalSheetFrame(
         title: t.update_install_permission_title,
-        leadingIcon: Icons.security_outlined,
+        leadingIcon: FushiIcons.shield,
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
@@ -228,9 +231,9 @@ class WindowsUpdateHandoffResultDialog extends StatelessWidget {
         t.update_install_launch_failed_message(version: record.targetVersion),
     };
     final IconData icon = switch (result.status) {
-      WindowsUpdateHandoffStatus.installed => Icons.check_circle_outline,
-      WindowsUpdateHandoffStatus.incomplete => Icons.error_outline,
-      WindowsUpdateHandoffStatus.launchFailed => Icons.warning_amber_outlined,
+      WindowsUpdateHandoffStatus.installed => FushiIcons.success,
+      WindowsUpdateHandoffStatus.incomplete => FushiIcons.error,
+      WindowsUpdateHandoffStatus.launchFailed => FushiIcons.warning,
     };
 
     return FushiDialogFrame(
@@ -502,9 +505,13 @@ class _DownloadOverlay extends StatelessWidget {
                   children: [
                     ValueListenableBuilder<String>(
                       valueListenable: status,
+                      // M3E：状态行 titleLarge emphasized。
                       builder: (_, s, __) => Text(
                         s,
-                        style: Theme.of(context).textTheme.titleMedium,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w600),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -532,11 +539,24 @@ class _DownloadOverlay extends StatelessWidget {
                         return Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            // M3E：百分比是 Display 级大数字（primary），
+                            // 下方波浪进度条（MD3 下 Fushi 包装画波浪）。
+                            Text(
+                              '${(clamped * 100).toStringAsFixed(0)}%',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .displaySmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: isGlassDesign(context)
+                                        ? null
+                                        : Theme.of(context).colorScheme.primary,
+                                  ),
+                            ),
+                            SizedBox(height: tokens.spacing.gap),
                             FushiLinearProgressIndicator(
                               value: clamped > 0 ? clamped : null,
                             ),
-                            SizedBox(height: tokens.spacing.gap / 2),
-                            Text('${(clamped * 100).toStringAsFixed(0)}%'),
                           ],
                         );
                       },

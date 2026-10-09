@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
@@ -26,6 +26,8 @@ const List<String> _globals = <String>[
   'clipboard',
   'screen_ocr',
   'camera_ocr',
+  // 反馈出厂勾上；应用外球虽在目录里，但按能力过滤掉（availableIn）。
+  'feedback',
 ];
 
 void main() {
@@ -85,6 +87,7 @@ void main() {
             FloatingBallGlobalAction.lookup,
             FloatingBallGlobalAction.clipboard,
             FloatingBallGlobalAction.sync,
+            FloatingBallGlobalAction.feedback,
           },
         );
       }
@@ -132,7 +135,11 @@ void main() {
         expect(scope.catalog, contains(sync), reason: scope.storageValue);
         expect(scope.defaultButtons, isNot(contains(sync)));
         final List<String> withSync = <String>[...scope.defaultButtons, sync];
-        expect(scope.decodeButtons(scope.encodeButtons(withSync)), withSync);
+        // 编解码按目录顺序排（sync 在 feedback 之前）。
+        expect(scope.decodeButtons(scope.encodeButtons(withSync)), <String>[
+          for (final String id in scope.catalog)
+            if (withSync.contains(id)) id,
+        ]);
       }
       // 同步与平台无关：Android / iOS / 桌面都有。
       for (final (bool android, bool ios) in <(bool, bool)>[
@@ -252,8 +259,42 @@ void main() {
       expect(nativeIds, <String>{
         for (final FloatingBallGlobalAction action
             in FloatingBallGlobalAction.values)
-          action.storageValue,
+          if (action.availableIn(
+            FloatingBallScope.system,
+            isAndroid: true,
+            isIOS: false,
+            isDesktop: false,
+            lookupModuleEnabled: true,
+          ))
+            action.storageValue,
       });
+    });
+
+    test('反馈只在应用内球上（各平台都有），应用外球没有', () {
+      const FloatingBallGlobalAction feedback =
+          FloatingBallGlobalAction.feedback;
+      expect(FloatingBallGlobalAction.fromStorage('feedback'), feedback);
+      expect(feedback.onByDefault, isTrue);
+      for (final (bool android, bool ios, bool desktop) in <(bool, bool, bool)>[
+        (true, false, false),
+        (false, true, false),
+        (false, false, true),
+      ]) {
+        expect(feedback.availableOn(isAndroid: android, isIOS: ios), isTrue);
+        for (final FloatingBallScope scope in FloatingBallScope.values) {
+          expect(
+            feedback.availableIn(
+              scope,
+              isAndroid: android,
+              isIOS: ios,
+              isDesktop: desktop,
+              lookupModuleEnabled: true,
+            ),
+            scope != FloatingBallScope.system,
+            reason: '$scope android=$android ios=$ios desktop=$desktop',
+          );
+        }
+      }
     });
 
     test('应用外查词（独立查词窗）只在 Android 提供', () {

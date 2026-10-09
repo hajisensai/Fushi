@@ -453,8 +453,8 @@ void main() {
           reason: 'the note must say the other device pairs with that server',
         );
         // C2：对端列表 + LAN 发现（整页最高的两个 widget）挪进子页「配对与设备」，
-        // 主页只留一行带已配对数摘要的入口；其后是 Android 接收端的「加入游戏串流」
-        // 入口（PR #1611）——只有 Android 是接收端，所以该行必须自带平台门控。
+        // 主页只留一行带已配对数摘要的入口；其后是「加入游戏串流」入口
+        // （PR #1611）——每个平台都能当接收端，所以该行不带平台门控。
         expect(idsOf(dest.sections[1]), <String>[
           'interconnect.devices',
           'interconnect.game_stream',
@@ -462,8 +462,8 @@ void main() {
         expect(dest.sections[1].visible, isNotNull);
         expect(
           dest.sections[1].items[1].visible,
-          isNotNull,
-          reason: '串流接收端只在 Android，入口不能在其它平台常显',
+          isNull,
+          reason: '串流接收端覆盖全部平台，入口不该再按平台藏起来',
         );
         final SettingsNavigationItem devices =
             dest.sections[1].items.first as SettingsNavigationItem;

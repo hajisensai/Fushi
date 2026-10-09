@@ -8,13 +8,14 @@
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 const String _hash = 'aa11bb22cc33dd44ee55ff66aa77bb88cc99dd00';
 
@@ -324,7 +325,7 @@ void main() {
       findsOneWidget,
       reason: 'BUG-1953：缺少实时数据时必须使用统一空态卡，不能只留一段漂浮文本。',
     );
-    expect(find.byIcon(Icons.info_outline), findsOneWidget);
+    expect(find.byIcon(FushiIcons.info), findsOneWidget);
     final Size emptyNoteSize = tester.getSize(
       find.byKey(const Key('torrent-detail-empty-note')),
     );

@@ -23,16 +23,12 @@ server_commit="ee55c65106bb18bf81a5ddc660d321b4e14ea2f9"
 server_revision="${server_commit:0:7}"
 corretto_version="21.0.12.8.1"
 corretto_base_url="https://corretto.aws/downloads/resources/$corretto_version"
-x64_archive="amazon-corretto-$corretto_version-macosx-x64.tar.gz"
-x64_archive_sha256="a018ae6221babf065f770479b1bf0ab0d23bea78ed18f236c40bb5d4736612ff"
+# macOS 版只出 Apple Silicon（arm64），不再支持 Intel Mac：macOS 只出
+# runtime-macos-arm64 一份 JVM 镜像，也只钉 aarch64 的 JDK（x64 归档与哈希已删除）。
+x64_archive=""
+x64_archive_sha256=""
 arm64_archive="amazon-corretto-$corretto_version-macosx-aarch64.tar.gz"
 arm64_archive_sha256="cb230d7ac82784a4438663cdaf91d0d04037a9b4fb99ea41e138d88ce1224ab7"
-requested_architectures="${FUSHI_MIHON_ARCHS:-all}"
-
-case "$requested_architectures" in
-  all|host) ;;
-  *) echo "FUSHI_MIHON_ARCHS must be 'all' or 'host'" >&2; exit 64 ;;
-esac
 
 # Linux：Dart 侧按 `<exe 目录>/mihon_bridge/runtime/bin/java` 找 JVM
 # （desktop_mihon_runtime.dart `_javaExecutablePath`，与 Windows 同布局），bundle
@@ -42,7 +38,6 @@ host_os="$(uname -s)"
 case "$host_os" in
   Darwin) ;;
   Linux)
-    requested_architectures="host"
     x64_archive="amazon-corretto-$corretto_version-linux-x64.tar.gz"
     x64_archive_sha256="75faed442d38a89c27f920e45ab24f9f71ff8ca6b732bfea90cdb500decd3c6b"
     arm64_archive="amazon-corretto-$corretto_version-linux-aarch64.tar.gz"
@@ -56,6 +51,10 @@ case "$(uname -m)" in
   x86_64) host_architecture="x64" ;;
   *) echo "unsupported build architecture: $(uname -m)" >&2; exit 1 ;;
 esac
+if [[ "$host_os" == Darwin && "$host_architecture" != arm64 ]]; then
+  echo "macOS 版只支持 Apple Silicon（arm64），不在 Intel Mac 上构建 Mihon runtime" >&2
+  exit 1
+fi
 
 # 按宿主选校验工具，不按「PATH 里有没有 sha256sum」：macOS 14+ 自带的
 # /sbin/sha256sum 是 BSD 实现，不认 GNU 的 `--status` 选项，探测到它就走
@@ -161,19 +160,7 @@ download_verified_archive() {
   fi
 }
 
-if [[ "$requested_architectures" == all ]]; then
-  download_verified_archive "$x64_archive" "$x64_archive_sha256" &
-  x64_download_pid=$!
-  download_verified_archive "$arm64_archive" "$arm64_archive_sha256" &
-  arm64_download_pid=$!
-  download_failed=false
-  wait "$x64_download_pid" || download_failed=true
-  wait "$arm64_download_pid" || download_failed=true
-  if [[ "$download_failed" == true ]]; then
-    echo "failed to download the pinned macOS JDK archives" >&2
-    exit 1
-  fi
-elif [[ "$host_architecture" == arm64 ]]; then
+if [[ "$host_architecture" == arm64 ]]; then
   download_verified_archive "$arm64_archive" "$arm64_archive_sha256"
 else
   download_verified_archive "$x64_archive" "$x64_archive_sha256"
@@ -199,25 +186,16 @@ prepare_jdk() {
   fi
 }
 
-x64_jdk_home=""
-arm64_jdk_home=""
-if [[ "$requested_architectures" == all || "$host_architecture" == x64 ]]; then
-  x64_jdk_home="$(prepare_jdk \
-    "x64" \
-    "$x64_archive" \
-    "$x64_archive_sha256")"
-fi
-if [[ "$requested_architectures" == all || "$host_architecture" == arm64 ]]; then
-  arm64_jdk_home="$(prepare_jdk \
+if [[ "$host_architecture" == arm64 ]]; then
+  host_jdk_home="$(prepare_jdk \
     "arm64" \
     "$arm64_archive" \
     "$arm64_archive_sha256")"
-fi
-
-if [[ "$host_architecture" == arm64 ]]; then
-  host_jdk_home="$arm64_jdk_home"
 else
-  host_jdk_home="$x64_jdk_home"
+  host_jdk_home="$(prepare_jdk \
+    "x64" \
+    "$x64_archive" \
+    "$x64_archive_sha256")"
 fi
 
 # Compile and execute the Java 21-targeted server tests with the same verified
@@ -255,12 +233,7 @@ mkdir -p "$staging_root"
 if [[ "$host_os" == Linux ]]; then
   build_runtime "$host_jdk_home" "runtime"
 else
-  if [[ -n "$x64_jdk_home" ]]; then
-    build_runtime "$x64_jdk_home" "runtime-macos-x64"
-  fi
-  if [[ -n "$arm64_jdk_home" ]]; then
-    build_runtime "$arm64_jdk_home" "runtime-macos-arm64"
-  fi
+  build_runtime "$host_jdk_home" "runtime-macos-arm64"
 fi
 
 cp "$server_jar" "$staging_root/m-extension-server.jar"
@@ -268,8 +241,12 @@ cp "$source_root/LICENSE" "$staging_root/LICENSE-M-Extension-Server.txt"
 cp "$overlay_root/NOTICE" "$staging_root/NOTICE-M-Extension-Server.txt"
 
 server_sha256="$(sha256_of "$staging_root/m-extension-server.jar")"
-host_os_key=macos
-[[ "$host_os" == Linux ]] && host_os_key=linux
+if [[ "$host_os" == Linux ]]; then
+  corretto_archive_hashes="    \"linuxX64ArchiveSha256\": \"$x64_archive_sha256\",
+    \"linuxArm64ArchiveSha256\": \"$arm64_archive_sha256\""
+else
+  corretto_archive_hashes="    \"macosArm64ArchiveSha256\": \"$arm64_archive_sha256\""
+fi
 cat >"$staging_root/checksums.json" <<EOF
 {
   "mExtensionServer": {
@@ -279,8 +256,7 @@ cat >"$staging_root/checksums.json" <<EOF
   },
   "corretto": {
     "version": "$corretto_version",
-    "${host_os_key}X64ArchiveSha256": "$x64_archive_sha256",
-    "${host_os_key}Arm64ArchiveSha256": "$arm64_archive_sha256"
+$corretto_archive_hashes
   }
 }
 EOF

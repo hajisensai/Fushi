@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
@@ -156,39 +157,52 @@ class _InterconnectMangaBrowsePageState
       );
 
   Widget _buildResults() {
+    // 页头浮在正文上（FushiPageScaffold 默认 extendBodyBehindHeader）：不滚动的
+    // 加载 / 错误 / 空态整体让开页头，网格把让位加进顶部内边距。
     if (_loading && _items.isEmpty) {
-      return Center(child: adaptiveIndicator(context: context));
+      return SafeArea(
+        bottom: false,
+        child: Center(child: adaptiveIndicator(context: context)),
+      );
     }
     // 2026-10 体验优化：错误 / 空态统一 FushiPlaceholderMessage，重试统一
     // FilledButton.icon；错误文案经 describeOnlineSourceError 归一。
     final Object? error = _error;
     if (error != null && _items.isEmpty) {
-      return FushiPlaceholderMessage(
-        icon: Icons.error_outline,
-        message: describeOnlineSourceError(error),
-        action: FushiFilledButton.icon(
-          key: const ValueKey<String>('interconnect_manga_retry'),
-          onPressed: () => unawaited(_load()),
-          icon: const FushiIcon(Icons.refresh_rounded),
-          label: Text(t.retry),
+      return SafeArea(
+        bottom: false,
+        child: FushiPlaceholderMessage(
+          icon: Icons.error_outline,
+          message: describeOnlineSourceError(error),
+          action: FushiFilledButton.icon(
+            key: const ValueKey<String>('interconnect_manga_retry'),
+            onPressed: () => unawaited(_load()),
+            icon: const FushiIcon(Icons.refresh_rounded),
+            label: Text(t.retry),
+          ),
         ),
       );
     }
     final List<RemoteBookInfo> visible = _visible;
     if (visible.isEmpty) {
-      return FushiPlaceholderMessage(
-        icon: Icons.search_off_outlined,
-        message: t.mihon_source_no_results,
+      return SafeArea(
+        bottom: false,
+        child: FushiPlaceholderMessage(
+          icon: Icons.search_off_outlined,
+          message: t.mihon_source_no_results,
+        ),
       );
     }
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final int columns = (constraints.maxWidth / 180).floor().clamp(2, 8);
-        return RefreshIndicator(
+        return FushiRefreshIndicator(
           onRefresh: _load,
           child: FushiEntranceScope(
             child: GridView.builder(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16).copyWith(
+              top: 16 + MediaQuery.paddingOf(context).top,
+            ),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
               childAspectRatio: 0.62,

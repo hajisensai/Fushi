@@ -133,6 +133,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'floating_ball.dock',
   'floating_ball.in_app',
   'floating_ball.mode',
+  // bool：展开按钮旁显示文字，默认 true；保留 tooltip / 无障碍名称。
+  'floating_ball.show_labels',
   'floating_ball.system',
   // 桌面应用外悬浮球的停靠边（String）与纵向比例（double），与应用内球的
   // `.dock` / `.y` 分开存：两颗球可以同时在。
@@ -169,6 +171,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'gal_hook_text_vertical_alignment',
   'gal_hook_text_window_bg_opacity',
   'gal_hook_toolbar_auto_hide',
+  'gal_hook_toolbar_labels',
   'gal_mining_animated_format',
   'gal_mining_clip_format',
   'gal_mining_image_mode',
@@ -176,6 +179,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'galgame_library',
   'galgame_library_view',
   'games_collapsed_collection_ids',
+  // String（默认 'grid'）：游戏库主体布局，'grid' 海报网格 / 'list' 分段卡列表。
+  // 页头切换钮写入，跨会话记住。
+  'games_library_layout',
   'global_dict_css',
   'harmonic_frequency',
   // bool（默认 true，BUG-1891）：进视频页时是否自动向 Jellyfin/Emby 服务器枚举
@@ -265,6 +271,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'module_games_enabled',
   'module_manga_enabled',
   'module_video_enabled',
+  // bool（默认 true）：MD3 悬浮底栏图标下是否显示标签。
+  'nav_bar_labels_visible',
+  // String：宽屏主导航 rail 手动展开 / 收起（'' 跟随窗口尺寸 / expanded /
+  // collapsed）。描述本机窗口布局，不进 Profile 快照。
+  'nav_rail_expanded',
   // String：全局公网出口模式 auto / direct / manual（BUG-1980）。
   'network_proxy_mode',
   // bool：P2P（torrent）传输是否也走全局代理（旧键，冻结；三态 mode 键未写过
@@ -290,6 +301,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // "Compact Glossaries"）。默认 false。
   'popup_compact_glossaries',
   'popup_dictionary_columns',
+  // bool：词典样式统一（导入词典颜色按语义映射到当前 ColorScheme）。默认 true。
+  'popup_dictionary_unified_style',
   'popup_instant_scroll',
   // double：瞬时滚动步长（占被滚表面视口高度的比例，0.1–1.0）。触摸 = 手指滑满
   // 这么多才跳一步，默认 0.25；滚轮 = 一格跳这么多（再乘滚轮速度），默认 0.5。
@@ -301,8 +314,14 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'qb_connection_config',
   // 阅读器顶栏 / 底栏按钮布局 JSON（ReaderControlLayout，v1 槽位表）。
   'reader_control_layout',
+  // 窄窗（手机竖屏）按钮布局 JSON（同 reader_control_layout 形；空 = 沿用宽窗那份）。
+  'reader_control_layout_compact',
   // String 'left' | 'right'：小说 / 漫画阅读设置侧边弹窗停靠在哪一侧（与翻页方向无关）。
   'reader_settings_panel_side',
+  // String 'floating' | 'docked'：阅读器工具栏样式（M3E 悬浮工具栏 / 贴边实体条）。
+  'reader_toolbar_style',
+  // bool：「工具栏样式强制悬浮」一次性迁移已跑（2026-10-06，非 Profile 键）。
+  'reader_toolbar_style_floating_migrated',
   'reading_goal_daily_chars',
   'reading_goal_weekly_chars',
   'remote_lookup_enabled',
@@ -314,6 +333,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'sandbox_last_support_root',
   'saved_tags',
   'scan_non_japanese_text',
+  // String：书架合集呈现方式（ShelfCollectionLayout.name：rows 横排行 / cards
+  // 单个格子），默认 rows。
+  'shelf_collection_layout',
   // String：书架「阅读状态」筛选（ShelfReadStatus.name，'' = 全部）。
   'shelf_read_status_filter',
   'shelf_sort_mode',
@@ -384,6 +406,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // JellyfinVideoClient.kQualityPresets 里的下标；选档 = 向服务器声明码率 / 宽度上限，
   // 超限由服务器转码。
   'video_media_server_quality_preset',
+  // String（JSON 对象）：媒体服务器多版本条目「选哪个版本」的记忆
+  // （`MediaServerVersionMemory`）。键 `<serverId>|item|<itemId>` → MediaSource id、
+  // `<serverId>|series|<seriesId>` → 规格签名 + 版本名；按写入先后保留最近
+  // 500 条。非凭据、跨设备（服务器条目 id 在哪台设备上都一样）。
+  'video_media_server_version_choices',
   'video_mining_animated_format',
   'video_mining_clip_format',
   'video_mining_image_mode',

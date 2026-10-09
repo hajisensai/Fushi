@@ -2,8 +2,9 @@
 // 配 Material 图标并给图标上语义色（浮条底色恒为主题 inverseSurface），走
 // 应用 navigator overlay 的自绘路径。这正是本次新增的、区别于弹窗内 mine 按钮图标
 // 变化的、可见的桌面/移动统一制卡反馈通道。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 Future<void> _pumpToastHost(WidgetTester tester) async {
@@ -47,12 +48,13 @@ void main() {
     expect(mineToastPalette(MineToastStatus.added).background,
         const Color(0xFF2E7D32));
     expect(mineToastPalette(MineToastStatus.added).icon,
-        Icons.check_circle_rounded);
+        FushiIcons.filled(FushiIcons.success));
     expect(mineToastPalette(MineToastStatus.duplicate).background,
         const Color(0xFFEF6C00));
     expect(mineToastPalette(MineToastStatus.failed).background,
         const Color(0xFFC62828));
-    expect(mineToastPalette(MineToastStatus.failed).icon, Icons.error_rounded);
+    expect(mineToastPalette(MineToastStatus.failed).icon,
+        FushiIcons.filled(FushiIcons.error));
     expect(mineToastPalette(MineToastStatus.pending).background,
         const Color(0xFF1565C0));
     // orange 800 配白字只有 3.08:1；duplicate/warning 用黑字达到 6.81:1。
@@ -76,10 +78,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.text('已添加到牌组'), findsOneWidget);
-    expect(find.byIcon(Icons.check_circle_rounded), findsOneWidget);
+    expect(find.byIcon(FushiIcons.filled(FushiIcons.success)), findsOneWidget);
     expect(_toastBg(tester), _inverseSurface(tester),
         reason: '底色是主题浮条色，不整块铺状态色');
-    expect(_iconColor(tester, Icons.check_circle_rounded),
+    expect(_iconColor(tester, FushiIcons.filled(FushiIcons.success)),
         const Color(0xFF7DDC8C));
 
     await tester.pump(const Duration(seconds: 3)); // 跑完自动消失计时器
@@ -91,9 +93,9 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.byIcon(Icons.library_add_check_rounded), findsOneWidget);
+    expect(find.byIcon(FushiIcons.filled(FushiIcons.libraryAdd)), findsOneWidget);
     expect(_toastBg(tester), _inverseSurface(tester));
-    expect(_iconColor(tester, Icons.library_add_check_rounded),
+    expect(_iconColor(tester, FushiIcons.filled(FushiIcons.libraryAdd)),
         const Color(0xFFFFB870));
     await tester.pump(const Duration(seconds: 3));
   });
@@ -104,9 +106,9 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.byIcon(Icons.error_rounded), findsOneWidget);
+    expect(find.byIcon(FushiIcons.filled(FushiIcons.error)), findsOneWidget);
     expect(_toastBg(tester), _inverseSurface(tester));
-    expect(_iconColor(tester, Icons.error_rounded), const Color(0xFFFFB4AB));
+    expect(_iconColor(tester, FushiIcons.filled(FushiIcons.error)), const Color(0xFFFFB4AB));
     await tester.pump(const Duration(seconds: 3));
   });
 
@@ -117,17 +119,17 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.byIcon(Icons.sync_rounded), findsOneWidget);
+    expect(find.byIcon(FushiIcons.sync), findsOneWidget);
     expect(_toastBg(tester), _inverseSurface(tester));
 
     // 结果 toast 顶替 pending：只剩一张 added 绿卡片。
     FushiToast.showMine(msg: '已添加', status: MineToastStatus.added);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
-    expect(find.byIcon(Icons.sync_rounded), findsNothing,
+    expect(find.byIcon(FushiIcons.sync), findsNothing,
         reason: 'pending 应被结果 toast 顶替');
-    expect(find.byIcon(Icons.check_circle_rounded), findsOneWidget);
-    expect(_iconColor(tester, Icons.check_circle_rounded),
+    expect(find.byIcon(FushiIcons.filled(FushiIcons.success)), findsOneWidget);
+    expect(_iconColor(tester, FushiIcons.filled(FushiIcons.success)),
         const Color(0xFF7DDC8C));
 
     await tester.pump(const Duration(seconds: 3));

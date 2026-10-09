@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -6,6 +6,7 @@ import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/home_game_page.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 import '../../integration_test/helpers/focus_driver.dart';
@@ -35,6 +36,18 @@ Widget _stubDiscover(BuildContext _, Widget navigation) => Column(
         const Text('game-discover'),
       ],
     );
+
+int _streamBuilds = 0;
+
+Widget _stubStream(BuildContext _, Widget navigation) {
+  _streamBuilds++;
+  return Column(
+    children: <Widget>[
+      navigation,
+      const Text('game-stream'),
+    ],
+  );
+}
 
 Widget _testMonitorWithSections(
   BuildContext _,
@@ -81,6 +94,7 @@ void main() {
           dashboardBuilder: _stubDashboard,
           settingsBuilder: _stubSettings,
           discoverBuilder: _stubDiscover,
+          streamBuilder: _stubStream,
         ),
       ),
     );
@@ -102,6 +116,7 @@ void main() {
           dashboardBuilder: _stubDashboard,
           settingsBuilder: _stubSettings,
           discoverBuilder: _stubDiscover,
+          streamBuilder: _stubStream,
           monitorBuilder: (_, VoidCallback onShowLibrary) => _TestMonitor(
             onShowLibrary: onShowLibrary,
             onInit: () => initCount++,
@@ -142,6 +157,7 @@ void main() {
             dashboardBuilder: _stubDashboard,
             settingsBuilder: _stubSettings,
             discoverBuilder: _stubDiscover,
+            streamBuilder: _stubStream,
           ),
         ),
       ),
@@ -197,7 +213,19 @@ void main() {
     expect(controller.primaryFocusIsManagedTarget, isTrue);
     await driver.adjust(steps: 1);
 
-    // 捕获之后是「发现」（2026-10-01 加回库页子标签，排在「导入」之前，与书 /
+    // 捕获之后是「串流」（把别的主机上的游戏串流到本机）。
+    expect(find.text('game-stream'), findsOneWidget);
+    expect(
+      controller.requestById(
+        const FushiFocusId('game-stream-tab-sections'),
+      ),
+      isTrue,
+      reason: '切到串流页后，新的稳定分段 ID 必须可聚焦',
+    );
+    await tester.pump();
+    await driver.adjust(steps: 1);
+
+    // 再之后是「发现」（2026-10-01 加回库页子标签，排在「导入」之前，与书 /
     // 漫画 / 视频库页「发现 → 导入」同序）。
     expect(find.text('game-discover'), findsOneWidget);
     expect(
@@ -232,8 +260,9 @@ void main() {
     gameSectionNotifier.value = GameSection.diagnostics;
     await tester.pump();
     expect(find.byKey(HomeGamePage.diagnosticsKey), findsOneWidget);
-    expect(find.byIcon(Icons.account_tree_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.multitrack_audio_outlined), findsOneWidget);
+    // 诊断页分段卡片的行首形状图标（M3E：FushiIcons 语义名）。
+    expect(find.byIcon(FushiIcons.hub), findsOneWidget);
+    expect(find.byIcon(FushiIcons.audio), findsOneWidget);
   });
 
   testWidgets('game tabs participate in managed focus navigation',
@@ -246,6 +275,7 @@ void main() {
             dashboardBuilder: _stubDashboard,
             settingsBuilder: _stubSettings,
             discoverBuilder: _stubDiscover,
+            streamBuilder: _stubStream,
             monitorBuilder: (_, __) => const Text('focused-monitor'),
           ),
         ),
@@ -283,6 +313,7 @@ void main() {
             dashboardBuilder: _stubDashboard,
             settingsBuilder: _stubSettings,
             discoverBuilder: _stubDiscover,
+            streamBuilder: _stubStream,
           ),
         ),
       );
@@ -291,6 +322,35 @@ void main() {
       expect(find.byKey(HomeGamePage.libraryKey), findsOneWidget);
     });
   }
+
+  testWidgets('Windows reaches the stream receiver from its own tab, lazily', (
+    WidgetTester tester,
+  ) async {
+    _streamBuilds = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FushiFocusRoot(
+          child: HomeGamePage(
+            monitorBuilder: _testMonitorWithSections,
+            libraryBuilder: _testLibrary,
+            dashboardBuilder: _stubDashboard,
+            settingsBuilder: _stubSettings,
+            discoverBuilder: _stubDiscover,
+            streamBuilder: _stubStream,
+          ),
+        ),
+      ),
+    );
+    await _settleOnLibrary(tester);
+    // Building it would reach out to every paired host.
+    expect(_streamBuilds, 0);
+    expect(kGameSectionTabOrder, contains(GameSection.stream));
+
+    gameSectionNotifier.value = GameSection.stream;
+    await tester.pumpAndSettle();
+    expect(_streamBuilds, greaterThan(0));
+    expect(find.text('game-stream'), findsOneWidget);
+  });
 }
 
 class _TestMonitor extends StatefulWidget {
@@ -336,4 +396,5 @@ class _TestMonitorState extends State<_TestMonitor> {
       ],
     );
   }
+
 }

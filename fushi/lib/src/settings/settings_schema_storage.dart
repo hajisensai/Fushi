@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_models_settings_section.dart';
 import 'package:fushi/src/media/manga/manga_ocr_models_storage_section.dart';
@@ -38,7 +38,7 @@ SettingsDestination buildStorageDestination() {
     id: SettingsDestinationId.storage,
     title: t.settings_destination_storage,
     summary: t.settings_destination_storage_summary,
-    icon: Icons.sd_storage_outlined,
+    icon: FushiIcons.sdStorage,
     sections: <SettingsSection>[
       buildDataStorageLocationSection(),
       SettingsSection(
@@ -51,7 +51,7 @@ SettingsDestination buildStorageDestination() {
             id: 'listening.asr_models',
             title: t.asr_models_section,
             subtitle: t.asr_models_section_summary,
-            icon: Icons.record_voice_over_outlined,
+            icon: FushiIcons.voice,
             visible: (_) => isAsrSupported,
             child: _buildAsrModelsDestination,
           ),
@@ -59,7 +59,7 @@ SettingsDestination buildStorageDestination() {
             id: 'storage.ocr_models',
             title: t.manga_ocr_local_model,
             subtitle: t.storage_ocr_models_hint,
-            icon: Icons.document_scanner_outlined,
+            icon: FushiIcons.ocr,
             visible: (_) => _isMangaOcrLocalSupported,
             child: _buildMangaOcrModelsDestination,
           ),
@@ -230,7 +230,7 @@ SettingsDestination _buildAsrModelsDestination() {
     id: SettingsDestinationId.storage,
     visible: (_) => isAsrSupported,
     title: t.asr_models_section,
-    icon: Icons.record_voice_over_outlined,
+    icon: FushiIcons.voice,
     sections: const <SettingsSection>[],
     body: (SettingsContext _) => AsrModelsSettingsSection(
       service: createAsrTranscriptionService(),
@@ -248,7 +248,7 @@ SettingsDestination _buildMangaOcrModelsDestination() {
     id: SettingsDestinationId.storage,
     visible: (_) => _isMangaOcrLocalSupported,
     title: t.manga_ocr_local_model,
-    icon: Icons.document_scanner_outlined,
+    icon: FushiIcons.ocr,
     sections: const <SettingsSection>[],
     body: (SettingsContext _) => MangaOcrModelsStorageSection(
       serviceFor: (model) => createMangaOcrService(localModel: model),

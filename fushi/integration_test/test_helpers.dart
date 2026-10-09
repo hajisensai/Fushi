@@ -1,7 +1,8 @@
-import 'package:flutter/cupertino.dart' show CupertinoTabBar;
+import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoTabBar;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomeTab, homeNavItemFor;
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
@@ -30,7 +31,9 @@ bool isHomeReady() {
 }
 
 Future<int> takeScreenshot(
-    IntegrationTestWidgetsFlutterBinding binding, String name) async {
+  IntegrationTestWidgetsFlutterBinding binding,
+  String name,
+) async {
   try {
     await binding.takeScreenshot(name).timeout(const Duration(seconds: 10));
     debugPrint('[test] Screenshot saved: $name');
@@ -54,9 +57,13 @@ void assertStrictErrors(List<FlutterErrorDetails> errors) {
     return true;
   }).toList();
 
-  expect(unexpected, isEmpty,
-      reason: 'Errors (including WebView/renderer) are fatal: '
-          '${unexpected.map((e) => e.exceptionAsString()).join('; ')}');
+  expect(
+    unexpected,
+    isEmpty,
+    reason:
+        'Errors (including WebView/renderer) are fatal: '
+        '${unexpected.map((e) => e.exceptionAsString()).join('; ')}',
+  );
 }
 
 Finder findBookEntries() {
@@ -71,8 +78,9 @@ Finder findBookEntries() {
 }
 
 Finder findSearchField() {
-  final Finder homeDictionarySearch =
-      find.byKey(const ValueKey<String>('home_dictionary_search_field'));
+  final Finder homeDictionarySearch = find.byKey(
+    const ValueKey<String>('home_dictionary_search_field'),
+  );
   if (homeDictionarySearch.evaluate().isNotEmpty) {
     return homeDictionarySearch.first;
   }
@@ -83,15 +91,16 @@ Finder findSearchField() {
     return find.byType(TextFormField).first;
   }
   final Finder searchBar = find.byType(SearchBar);
-  expect(searchBar, findsWidgets,
-      reason: 'No TextField, TextFormField, or SearchBar found');
+  expect(
+    searchBar,
+    findsWidgets,
+    reason: 'No TextField, TextFormField, or SearchBar found',
+  );
   return searchBar.first;
 }
 
 Finder findDictionaryResultEvidence() {
-  return find.byKey(
-    const ValueKey<String>('home_dictionary_result_evidence'),
-  );
+  return find.byKey(const ValueKey<String>('home_dictionary_result_evidence'));
 }
 
 List<Finder> findPrimaryNavigationTargets() {
@@ -117,8 +126,7 @@ Finder findNavTargetForTab(HomeTab tab) {
   );
   if (root == null) {
     // 导航根还没挂载：返回一个此刻必空的 finder（调用方按「不可达」处理）。
-    return find.descendant(
-        of: find.byKey(fushiMaterialNavKey), matching: icon);
+    return find.descendant(of: find.byKey(fushiMaterialNavKey), matching: icon);
   }
   return find.descendant(of: root, matching: icon);
 }
@@ -147,6 +155,29 @@ Finder? _primaryNavigationRoot() {
 }
 
 List<Finder> _navigationIconsInside(Finder navigationRoot) {
+  if (find.byKey(fushiMaterialNavKey).evaluate().isNotEmpty) {
+    // The custom rail also contains a menu button and branding. Only numbered
+    // destination focus targets represent tabs; arbitrary icons do not.
+    final RegExp destinationId = RegExp(r'^nav-(bar|rail)-\d+$');
+    final Finder destinations = find.descendant(
+      of: navigationRoot,
+      matching: find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is FushiFocusTarget &&
+            destinationId.hasMatch(widget.id.value),
+      ),
+    );
+    return destinations.evaluate().map((Element element) {
+      final String id = (element.widget as FushiFocusTarget).id.value;
+      return find.descendant(
+        of: navigationRoot,
+        matching: find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is FushiFocusTarget && widget.id.value == id,
+        ),
+      );
+    }).toList();
+  }
   final Finder icons = find.descendant(
     of: navigationRoot,
     matching: find.byType(Icon),

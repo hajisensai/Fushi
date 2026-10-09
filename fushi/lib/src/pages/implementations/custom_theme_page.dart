@@ -1,21 +1,31 @@
 import 'dart:async';
+import 'dart:ui' show lerpDouble;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart'
+    show FushiRichTooltip;
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiHeightReporter;
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_theme_assistant.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
-    show buildEinkColorScheme, kCustomThemeDefaultSeed;
+    show isAchromaticSeed, kCustomThemeDefaultSeed;
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
     show aiFailureText;
 import 'package:fushi/utils.dart';
+import 'package:material_color_utilities/material_color_utilities.dart' as mcu;
 
 /// 自定义主题编辑页里可改的颜色「角色」——按用户看得见的用途命名，不按 Material
 /// 术语命名（seed/primary/tertiary 对用户没有意义）。每个角色在预览卡里都有一个
@@ -113,13 +123,43 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   /// 预览用的明暗：默认跟当前 app 明暗，可在预览卡上临时切换查看另一种模式。
   late Brightness _previewBrightness;
 
-  /// 当前正在编辑/被框出的角色。宽屏下右栏选色器编辑它；窄屏下弹窗打开期间有效。
+  /// 当前正在编辑/被框出的角色（取色器打开期间有效）。
   _ThemeRole? _selectedRole;
+
+  /// 鼠标悬停的色槽：预览里对应元素同样弹簧描边。
+  _ThemeRole? _hoverRole;
+
+  /// hero 名称是否在原位编辑中（平时是大号标题）。
+  bool _editingName = false;
+  final FocusNode _nameFocus = FocusNode(debugLabel: 'custom-theme-name');
+
+  /// 窄屏吸顶预览是否展开。
+  bool _previewExpanded = true;
+
+  final FocusNode _aiFocus = FocusNode(debugLabel: 'custom-theme-ai');
+  final GlobalKey _aiCardKey = GlobalKey(debugLabel: 'custom-theme-ai-card');
+
+  /// 取色器「最近使用」：本进程内跨编辑页共享，不落盘（不新增偏好键）。
+  static final List<int> _recentColors = <int>[];
+
+  /// 每种明暗的 ColorScheme 缓存（键 = 参与派生的输入哈希）：一次 build 里
+  /// 十几个色槽都要取实际显示色，不必每次重算整套动态方案。
+  final Map<Brightness, (int, ColorScheme)> _schemeCache =
+      <Brightness, (int, ColorScheme)>{};
 
   /// 本次 build 走的是否宽屏两栏（由 [LayoutBuilder] 的真实约束决定，是「点角色
   /// 行该切右栏还是弹窗」的唯一真相；不用 MediaQuery——它与实际给到本页的约束可能
   /// 不一致，例如被上层缩放/分栏包裹时）。
   bool _wideLayout = false;
+
+  /// 窄屏吸顶预览（含下方 gap）的实测高度：预览浮在正文上，编辑列表的顶部
+  /// 内边距按它让位（键盘弹出时预览收起，高度随 AnimatedSize 一路报到 0）。
+  double _pinnedPreviewHeight = 0;
+
+  void _onPinnedPreviewHeight(double height) {
+    if (!mounted || height == _pinnedPreviewHeight) return;
+    setState(() => _pinnedPreviewHeight = height);
+  }
 
   // TODO-930: the entry being edited. Resolved in initState from widget.themeId
   // (a fresh id when null). Name is optional.
@@ -158,7 +198,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         ? appModelNoUpdate.customThemeById(widget.themeId!)
         : null;
     _isDraft = persisted == null;
-    final CustomThemeEntry entry = persisted ??
+    final CustomThemeEntry entry =
+        persisted ??
         CustomThemeEntry(
           id: widget.themeId ?? 'ct-${DateTime.now().microsecondsSinceEpoch}',
           name: '',
@@ -168,9 +209,11 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         );
     _entryId = entry.id;
     _nameController = TextEditingController(text: entry.name);
-    _previewBrightness =
-        appModelNoUpdate.isDarkMode ? Brightness.dark : Brightness.light;
+    _previewBrightness = appModelNoUpdate.isDarkMode
+        ? Brightness.dark
+        : Brightness.light;
     _loadEntry(entry, audioHighlight: appModelNoUpdate.audioHighlightColor);
+    _nameFocus.addListener(_onNameFocusChanged);
   }
 
   /// 把一条条目装进编辑状态。已钉主色的条目主题色 = 钉的那个（自动调色调关）；
@@ -199,6 +242,10 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
 
   @override
   void dispose() {
+    _nameFocus
+      ..removeListener(_onNameFocusChanged)
+      ..dispose();
+    _aiFocus.dispose();
     _nameController.dispose();
     _aiRequestController.dispose();
     super.dispose();
@@ -213,19 +260,31 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   Color get _resolvedAccent =>
       _followSystemAccent ? (_systemAccent ?? _accent) : _accent;
 
+  int get _schemeInputsHash => Object.hash(
+    _resolvedAccent.toARGB32(),
+    _accentAutoTone,
+    _neutralDerived,
+    _overrides[_ThemeRole.secondary]?.toARGB32(),
+    _overrides[_ThemeRole.tertiary]?.toARGB32(),
+    _overrides[_ThemeRole.container]?.toARGB32(),
+    _overrides[_ThemeRole.surface]?.toARGB32(),
+    appModelNoUpdate.einkMode,
+    appModelNoUpdate.pureBlackDark,
+  );
+
   ColorScheme _schemeFor(Brightness brightness) {
-    // 墨水屏模式下真机整套 ColorScheme 会被黑白顶掉，预览必须同样如此，
-    // 否则编辑页彩色、书里黑白。
-    if (appModelNoUpdate.einkMode) return buildEinkColorScheme(brightness);
-    return buildFushiColorScheme(
-      seedColor: _resolvedAccent,
-      brightness: brightness,
-      primary: _accentAutoTone ? null : _resolvedAccent,
-      secondary: _overrides[_ThemeRole.secondary],
-      tertiary: _overrides[_ThemeRole.tertiary],
-      primaryContainer: _overrides[_ThemeRole.container],
-      surface: _overrides[_ThemeRole.surface],
-      neutralDerived: _neutralDerived,
+    final int key = _schemeInputsHash;
+    final (int, ColorScheme)? cached = _schemeCache[brightness];
+    if (cached != null && cached.$1 == key) return cached.$2;
+    final ColorScheme scheme = _buildSchemeFor(brightness);
+    _schemeCache[brightness] = (key, scheme);
+    return scheme;
+  }
+
+  ColorScheme _buildSchemeFor(Brightness brightness) {
+    return appModelNoUpdate.buildCustomThemeColorScheme(
+      _buildEntry(),
+      brightness,
     );
   }
 
@@ -344,25 +403,25 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   IconData _roleIcon(_ThemeRole role) {
     switch (role) {
       case _ThemeRole.accent:
-        return Icons.palette_outlined;
+        return FushiIcons.appearance;
       case _ThemeRole.surface:
-        return Icons.web_asset_outlined;
+        return FushiIcons.dashboardCustomize;
       case _ThemeRole.readerText:
-        return Icons.text_fields;
+        return FushiIcons.textFields;
       case _ThemeRole.readerBackground:
-        return Icons.crop_portrait_outlined;
+        return FushiIcons.readingMode;
       case _ThemeRole.link:
-        return Icons.link;
+        return FushiIcons.link;
       case _ThemeRole.selection:
-        return Icons.highlight_alt_outlined;
+        return FushiIcons.lookup;
       case _ThemeRole.audioHighlight:
-        return Icons.graphic_eq;
+        return FushiIcons.audio;
       case _ThemeRole.secondary:
-        return Icons.label_outline;
+        return FushiIcons.tag;
       case _ThemeRole.tertiary:
-        return Icons.auto_awesome_outlined;
+        return FushiIcons.statistics;
       case _ThemeRole.container:
-        return Icons.toggle_on_outlined;
+        return FushiIcons.widgets;
     }
   }
 
@@ -550,7 +609,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
             scrollable: false,
             child: FushiModalSheetFrame(
               title: t.import_theme,
-              leadingIcon: Icons.content_paste_outlined,
+              leadingIcon: FushiIcons.importFile,
               bodyPadding: EdgeInsets.fromLTRB(
                 tokens.spacing.card,
                 0,
@@ -597,8 +656,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                         result,
                         audioHighlight:
                             result.sentenceAudioHighlightColor != null
-                                ? Color(result.sentenceAudioHighlightColor!)
-                                : null,
+                            ? Color(result.sentenceAudioHighlightColor!)
+                            : null,
                       );
                       FushiToast.show(
                         msg: t.import_theme_success,
@@ -678,8 +737,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         // 的全局偏好清掉。
         audioHighlight:
             suggestion.colors.containsKey(AiThemeRole.audioHighlight)
-                ? Color(merged.sentenceAudioHighlightColor!)
-                : audioBefore,
+            ? Color(merged.sentenceAudioHighlightColor!)
+            : audioBefore,
       );
       setState(() {
         _aiMessage = t.theme_ai_applied;
@@ -705,265 +764,466 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     if (snapshot == null) return;
     _aiUndoSnapshot = null;
     _nameController.text = snapshot.entry.name;
-    _applyImportedTheme(snapshot.entry,
-        audioHighlight: snapshot.audioHighlight);
+    _applyImportedTheme(
+      snapshot.entry,
+      audioHighlight: snapshot.audioHighlight,
+    );
     setState(() {
       _aiMessage = null;
       _aiExplanation = '';
     });
   }
 
-  /// 「让 AI 帮忙」区：一行输入 + 生成按钮，结果状态与撤销在下面。
-  Widget _buildAiSection() {
+  // ── 「让 AI 帮忙」：紧凑卡（2026-10 M3E 重设计）──
+
+  /// 「让 AI 帮忙」紧凑卡：单行描述输入 + 生成按钮；生成中按钮换成转圈、下方
+  /// 出现波浪进度条，结果提示 / 说明 / 撤销在卡内展开（尺寸变化走弹簧）。
+  /// hero 的「更多」菜单里也有入口：滚到这张卡并把焦点交给输入框。
+  Widget _buildAiCard() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.card,
-        vertical: tokens.spacing.gap,
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiTypography type = context.fushiType;
+    final FushiMotionScheme motion = context.fushiMotion;
+    final bool apple = isGlassDesign(context);
+    final double gap = tokens.spacing.gap;
+    // 徽章：M3E 是 tertiaryContainer 的 cookie 形图形强调；Apple 是强调色实底
+    // 圆角方块 + 白字形（iOS 设置图标的语言）。
+    final Widget badge = FushiTooltip(
+      message: t.ai_assist_section,
+      child: Container(
+        width: 40,
+        height: 40,
+        alignment: Alignment.center,
+        decoration: ShapeDecoration(
+          color: apple ? appleColorsOf(context).accent : cs.tertiaryContainer,
+          shape: apple
+              ? const RoundedRectangleBorder(
+                  borderRadius: FushiM3eShape.smallRadius,
+                )
+              : const FushiCookieBorder(lobes: 9),
+        ),
+        child: FushiIcon(
+          FushiIcons.ai,
+          size: 20,
+          color: apple
+              ? appleColorsOf(context).onAccent
+              : cs.onTertiaryContainer,
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: <Widget>[
-              Expanded(
-                child: FushiTextField(
-                  key: const ValueKey<String>('custom-theme-ai-request'),
-                  controller: _aiRequestController,
-                  hintText: t.theme_ai_hint,
-                  minLines: 1,
-                  maxLines: 2,
-                ),
-              ),
-              SizedBox(width: tokens.spacing.gap),
-              FushiFilledButton.icon(
-                key: const ValueKey<String>('custom-theme-ai-generate'),
-                onPressed: _aiBusy ? null : () => unawaited(_runAi()),
-                icon: _aiBusy
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: FushiCircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const FushiIcon(Icons.auto_awesome_outlined),
-                label: Text(
-                  _aiBusy ? t.ai_assist_working : t.ai_assist_generate,
-                ),
-              ),
-            ],
+    );
+    final List<Widget> feedback = <Widget>[
+      if (_aiMessage != null)
+        Text(
+          _aiMessage!,
+          key: const ValueKey<String>('custom-theme-ai-message'),
+          style: type.bodyMedium,
+        ),
+      if (_aiExplanation.isNotEmpty)
+        Text(
+          _aiExplanation,
+          key: const ValueKey<String>('custom-theme-ai-explanation'),
+          style: type.bodySmall.copyWith(color: cs.onSurfaceVariant),
+        ),
+      if (_aiUndoSnapshot != null)
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FushiTextButton.icon(
+            key: const ValueKey<String>('custom-theme-ai-undo'),
+            onPressed: _aiBusy ? null : _undoAi,
+            icon: const FushiIcon(FushiIcons.undo),
+            label: Text(t.theme_ai_undo),
           ),
-          if (_aiMessage != null) ...<Widget>[
-            SizedBox(height: tokens.spacing.gap / 2),
-            Text(
-              _aiMessage!,
-              key: const ValueKey<String>('custom-theme-ai-message'),
-              style: tokens.type.listSubtitle,
+        ),
+    ];
+    return KeyedSubtree(
+      key: _aiCardKey,
+      child: FushiCard(
+        key: const ValueKey<String>('custom-theme-ai-card'),
+        pressScale: false,
+        borderRadius: BorderRadius.circular(
+          SettingsKitRadii.card(SettingsKitStyle.of(context)),
+        ),
+        padding: EdgeInsets.all(gap + gap / 2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                badge,
+                SizedBox(width: gap + gap / 2),
+                Expanded(
+                  child: FushiTextField(
+                    key: const ValueKey<String>('custom-theme-ai-request'),
+                    controller: _aiRequestController,
+                    focusNode: _aiFocus,
+                    hintText: t.theme_ai_hint,
+                    size: FushiInputSize.medium,
+                    readOnly: _aiBusy,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => unawaited(_runAi()),
+                  ),
+                ),
+                SizedBox(width: gap),
+                FushiFilledButton.icon(
+                  key: const ValueKey<String>('custom-theme-ai-generate'),
+                  onPressed: _aiBusy ? null : () => unawaited(_runAi()),
+                  icon: _aiBusy
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: FushiCircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const FushiIcon(FushiIcons.ai),
+                  label: Text(t.ai_assist_generate),
+                ),
+              ],
+            ),
+            AnimatedSize(
+              duration: motion.spatialDefault.duration,
+              curve: motion.spatialDefault.curve,
+              alignment: Alignment.topCenter,
+              child: _aiBusy
+                  ? Padding(
+                      padding: EdgeInsets.only(top: gap),
+                      child: Semantics(
+                        label: t.ai_assist_working,
+                        child: const FushiLinearProgressIndicator(
+                          key: ValueKey<String>('custom-theme-ai-progress'),
+                        ),
+                      ),
+                    )
+                  : const SizedBox(width: double.infinity),
+            ),
+            AnimatedSize(
+              duration: motion.spatialDefault.duration,
+              curve: motion.spatialDefault.curve,
+              alignment: Alignment.topCenter,
+              child: feedback.isEmpty
+                  ? const SizedBox(width: double.infinity)
+                  : Padding(
+                      padding: EdgeInsets.only(top: gap),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          for (int i = 0; i < feedback.length; i++) ...<Widget>[
+                            if (i > 0) SizedBox(height: gap / 2),
+                            feedback[i],
+                          ],
+                        ],
+                      ),
+                    ),
             ),
           ],
-          if (_aiExplanation.isNotEmpty) ...<Widget>[
-            SizedBox(height: tokens.spacing.gap / 2),
-            Text(
-              _aiExplanation,
-              key: const ValueKey<String>('custom-theme-ai-explanation'),
-              style: tokens.type.listSubtitle,
-            ),
-          ],
-          if (_aiUndoSnapshot != null) ...<Widget>[
-            SizedBox(height: tokens.spacing.gap / 2),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FushiTextButton.icon(
-                key: const ValueKey<String>('custom-theme-ai-undo'),
-                onPressed: _aiBusy ? null : _undoAi,
-                icon: const FushiIcon(Icons.undo),
-                label: Text(t.theme_ai_undo),
-              ),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }
 
+  /// hero「更多」菜单的 AI 入口：滚到 AI 卡并聚焦输入框。
+  void _focusAiCard() {
+    final BuildContext? cardContext = _aiCardKey.currentContext;
+    if (cardContext != null) {
+      unawaited(
+        FushiFocusScroll.ensureVisible(
+          cardContext,
+          alignment: 0.2,
+          duration: context.fushiMotion.spatialDefault.duration,
+          curve: context.fushiMotion.spatialDefault.curve,
+        ),
+      );
+    }
+    _aiFocus.requestFocus();
+  }
+
   // ── 页面骨架 ──
+  //
+  // 2026-10 M3 Expressive 重设计（Apple 设计系统共用骨架，视觉由共享组件分派）：
+  // - 外壳是设置模块统一的 [SettingsKitScaffold]：浮动页头 + 自动登记的分组
+  //   跳转 chip（页内带标题的 AdaptiveSettingsSection 自动出现在跳转条里）；
+  // - 宽屏（≥ [kCustomThemeWideLayoutMinWidth]）：左栏 sticky 大预览，右栏编辑；
+  // - 窄屏：预览吸顶（可折叠，键盘弹出时自动让位），下面是编辑列表；
+  // - 取色器不再常驻，点色块才弹出（宽屏是贴在预览右侧的浮层，窄屏是 sheet），
+  //   改色期间预览始终看得见；
+  // - 编辑列表错峰进场，色槽 / 色板的选中与形变走弹簧。
+
+  /// 宽屏左栏（预览）的宽度。
+  static const double _kWidePreviewWidth = 440;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
-    final double bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    final EdgeInsets listPadding = EdgeInsets.fromLTRB(
-      tokens.spacing.page,
-      tokens.spacing.gap + tokens.spacing.gap / 2,
-      tokens.spacing.page,
-      tokens.spacing.gap +
-          tokens.spacing.gap / 2 +
-          mediaPadding.bottom +
-          bottomInset,
-    );
-    final List<Widget> actions = <Widget>[
-      FushiIconButton(
-        icon: Icons.content_paste_outlined,
-        tooltip: t.import_theme,
-        onTap: _importTheme,
-      ),
-      FushiIconButton(
-        icon: Icons.share_outlined,
-        tooltip: t.share_theme,
-        onTap: _shareTheme,
-      ),
-    ];
+    final EdgeInsets mediaPadding = MediaQuery.paddingOf(context);
+    final double bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final FushiMotionScheme motion = context.fushiMotion;
+    final double gap = tokens.spacing.gap;
+    final double page = tokens.spacing.page;
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool wide =
             constraints.maxWidth >= kCustomThemeWideLayoutMinWidth &&
-                !isCupertinoPlatform(context);
+            !isCupertinoPlatform(context);
         _wideLayout = wide;
-        if (!wide) {
-          return AdaptiveSettingsScaffold(
-            title: Text(t.custom_theme),
-            padding: listPadding,
-            actions: actions,
-            children: <Widget>[
-              _buildPreviewCard(),
-              SizedBox(height: tokens.spacing.card),
-              ..._buildSettingsColumn(),
-            ],
-          );
-        }
-        // 宽屏：左栏设置列表 / 右栏固定的预览 + 当前角色的选色器。选色器从此不在
-        // 滚动主路径上，鼠标滚轮只滚列表。
-        return FushiToolScaffold.customTitle(
-          title: Text(t.custom_theme),
-          actions: actions,
-          body: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Expanded(
-                child: ListView(
-                  padding: listPadding,
-                  children: _buildSettingsColumn(),
-                ),
-              ),
-              SizedBox(
-                width: 400,
-                child: SingleChildScrollView(
-                  padding: listPadding.copyWith(left: 0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      _buildPreviewCard(),
-                      SizedBox(height: tokens.spacing.card),
-                      _buildSidePickerCard(),
-                    ],
+        return SettingsKitScaffold(
+          title: t.custom_theme,
+          leadingIcon: FushiIcons.appearance,
+          leadingTone: SettingsIconTone.purple,
+          // 正文滚到叠放的页头底下：编辑列表 / 宽屏预览栏的顶部内边距加上壳的
+          // 页头让位；窄屏吸顶预览浮在页头下方，编辑列表再让开它的高度。
+          bodyConsumesTopPadding: true,
+          bodyBuilder:
+              (
+                BuildContext context,
+                ScrollController controller,
+                SettingsSectionSpy spy,
+              ) {
+                final List<Widget> editor = _buildEditorColumn();
+                final double headerInset = MediaQuery.paddingOf(context).top;
+                final EdgeInsets listPadding = EdgeInsets.fromLTRB(
+                  page,
+                  gap / 2 + headerInset + (wide ? 0 : _pinnedPreviewHeight),
+                  page,
+                  page * 2 + mediaPadding.bottom + bottomInset,
+                );
+                // 用不懒构建的滚动列：分组锚点要全部挂载，跳转 chip 才列得全。
+                final Widget editorList = FushiEntranceScope(
+                  child: SingleChildScrollView(
+                    key: const ValueKey<String>('custom-theme-editor-list'),
+                    controller: controller,
+                    padding: wide
+                        ? listPadding.copyWith(left: gap)
+                        : listPadding,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        for (int i = 0; i < editor.length; i++)
+                          FushiStaggeredEntrance(index: i, child: editor[i]),
+                      ],
+                    ),
                   ),
-                ),
-              ),
-            ],
-          ),
+                );
+                if (!wide) {
+                  // 键盘弹出（在改名称 / AI 描述）时收起吸顶预览，把高度让给输入框。
+                  // 预览浮在页头下方（与页头同为叠放层），编辑列表铺满整页、按预览
+                  // 实测高度让位，往下滚时内容滚到预览与页头底下。
+                  final bool keyboardOpen = bottomInset > 0;
+                  return Stack(
+                    children: <Widget>[
+                      Positioned.fill(child: editorList),
+                      Positioned(
+                        top: headerInset,
+                        left: 0,
+                        right: 0,
+                        child: FushiHeightReporter(
+                          onHeight: _onPinnedPreviewHeight,
+                          child: AnimatedSize(
+                            duration: motion.spatialDefault.duration,
+                            curve: motion.spatialDefault.curve,
+                            alignment: Alignment.topCenter,
+                            child: keyboardOpen
+                                ? const SizedBox(width: double.infinity)
+                                : Padding(
+                                    key: const ValueKey<String>(
+                                      'custom-theme-pinned-preview',
+                                    ),
+                                    padding: EdgeInsets.fromLTRB(
+                                      page,
+                                      0,
+                                      page,
+                                      gap,
+                                    ),
+                                    child: FushiStaggeredEntrance(
+                                      index: 0,
+                                      child: _buildPreviewCard(compact: true),
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                // 宽屏：左栏 sticky 预览（不随编辑列表滚动），右栏编辑列表。
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    SizedBox(
+                      width: _kWidePreviewWidth,
+                      child: FushiEntranceScope(
+                        child: SingleChildScrollView(
+                          primary: false,
+                          padding: EdgeInsets.fromLTRB(
+                            page,
+                            gap / 2 + headerInset,
+                            gap,
+                            page + mediaPadding.bottom,
+                          ),
+                          child: FushiStaggeredEntrance(
+                            index: 0,
+                            child: _buildPreviewCard(),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(child: editorList),
+                  ],
+                );
+              },
         );
       },
     );
   }
 
-  List<Widget> _buildSettingsColumn() {
+  List<Widget> _buildEditorColumn() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double card = tokens.spacing.card;
+    final bool lowLight = _accentLowContrast(Brightness.light);
+    final bool lowDark = _accentLowContrast(Brightness.dark);
     return <Widget>[
-      // ── 让 AI 帮忙 ──
+      // ── hero：名称 + 导入 / 分享 / 更多 + 预览明暗 ──
+      _buildHeaderCard(),
+      SizedBox(height: card),
+      // ── 主题色：种子色块 + 推荐色板 + 色阶 ──
       AdaptiveSettingsSection(
-        title: t.ai_assist_section,
-        children: <Widget>[_buildAiSection()],
+        title: t.theme_role_accent,
+        children: <Widget>[_buildSeedPanel()],
       ),
-      // ── 主题色 ──
+      // ── 选项：分段开关行（一行副标题，长说明收进 info 提示）──
       AdaptiveSettingsSection(
-        title: t.theme_section_accent,
         children: <Widget>[
-          // TODO-930: 主题名称（可选，留空显示「自定义 N」默认名）。
-          _buildNameField(),
-          _buildAccentRow(),
-          AdaptiveSettingsSwitchRow(
+          _buildCompactSwitchRow(
             title: t.theme_accent_follow_system,
             subtitle: _systemAccent == null
                 ? t.theme_accent_follow_system_unavailable
-                : t.theme_accent_follow_system_desc,
+                : t.theme_accent_follow_system_short,
+            info: t.theme_accent_follow_system_desc,
             value: _followSystemAccent && _systemAccent != null,
             onChanged: _systemAccent == null
                 ? null
                 : (bool value) => setState(() => _followSystemAccent = value),
           ),
-          AdaptiveSettingsSwitchRow(
+          _buildCompactSwitchRow(
             title: t.theme_accent_auto_tone,
-            subtitle: t.theme_accent_auto_tone_desc,
+            subtitle: t.theme_accent_auto_tone_short,
+            info: t.theme_accent_auto_tone_desc,
             value: _accentAutoTone,
             onChanged: (bool value) => setState(() => _accentAutoTone = value),
           ),
-          _buildRoleRow(_ThemeRole.surface),
-          AdaptiveSettingsSwitchRow(
+          _buildCompactSwitchRow(
             title: t.theme_neutral_derived,
-            subtitle: t.theme_neutral_derived_desc,
+            subtitle: t.theme_neutral_derived_short,
+            info: t.theme_neutral_derived_desc,
             value: _neutralDerived,
             onChanged: (bool value) => setState(() => _neutralDerived = value),
           ),
-          if (_accentLowContrast(Brightness.light))
-            _buildHintRow(t.theme_accent_low_contrast_light),
-          if (_accentLowContrast(Brightness.dark))
-            _buildHintRow(t.theme_accent_low_contrast_dark),
+          if (lowLight || lowDark)
+            _buildContrastWarnings(light: lowLight, dark: lowDark),
         ],
       ),
-      // ── 阅读器 ──
+      // ── 让 AI 帮忙（紧凑卡）──
+      _buildAiCard(),
+      SizedBox(height: card),
+      // ── 界面配色 ──
+      AdaptiveSettingsSection(
+        title: t.theme_section_accent,
+        children: <Widget>[
+          _buildRoleGrid(const <_ThemeRole>[
+            _ThemeRole.surface,
+            _ThemeRole.secondary,
+            _ThemeRole.tertiary,
+            _ThemeRole.container,
+          ]),
+        ],
+      ),
+      // ── 阅读器（含有声书当前句高亮：全局偏好，说明见色槽提示）──
       AdaptiveSettingsSection(
         title: t.theme_section_reader,
         children: <Widget>[
-          _buildRoleRow(_ThemeRole.readerText),
-          _buildRoleRow(_ThemeRole.readerBackground),
-          _buildRoleRow(_ThemeRole.link),
-          _buildRoleRow(_ThemeRole.selection),
+          _buildRoleGrid(const <_ThemeRole>[
+            _ThemeRole.readerText,
+            _ThemeRole.readerBackground,
+            _ThemeRole.link,
+            _ThemeRole.selection,
+            _ThemeRole.audioHighlight,
+          ]),
         ],
-      ),
-      // ── 有声书 ──
-      AdaptiveSettingsSection(
-        title: t.theme_section_audiobook,
-        children: <Widget>[_buildRoleRow(_ThemeRole.audioHighlight)],
       ),
       // TODO-072：视频字幕颜色不在此页配置，只放一行说明。
       _buildNoteRow(t.video_subtitle_color_note),
-      // ── 微调派生色（默认折叠：多数用户只需要主题色）──
-      AdaptiveSettingsSection(
-        title: t.theme_section_fine_tune,
-        titlePlacement: SettingsSectionTitlePlacement.inside,
-        collapsible: true,
-        initiallyExpanded: _overrides[_ThemeRole.secondary] != null ||
-            _overrides[_ThemeRole.tertiary] != null ||
-            _overrides[_ThemeRole.container] != null,
-        children: <Widget>[
-          _buildRoleRow(_ThemeRole.secondary),
-          _buildRoleRow(_ThemeRole.tertiary),
-          _buildRoleRow(_ThemeRole.container),
-        ],
-      ),
-      SizedBox(height: tokens.spacing.card),
+      SizedBox(height: card),
       FushiFilledButton.icon(
+        key: const ValueKey<String>('custom-theme-apply'),
+        size: FushiButtonSize.m,
         onPressed: _applyAndClose,
-        icon: const FushiIcon(Icons.check),
+        icon: const FushiIcon(FushiIcons.check),
         label: Text(t.apply_theme),
       ),
-      // TODO-930 M2: 删除当前编辑的主题（确认后），回退由 deleteCustomTheme +
-      // _resolveThemeKeyAfterDelete 处理（决策 1：列表非空选第一项，空→system）。
-      // BUG-1841：草稿还没进列表、没有东西可删，也不该借删除去改全局主题键——
-      // 直接不渲染删除按钮，返回即丢弃草稿。
-      if (!_isDraft) ...<Widget>[
-        SizedBox(height: tokens.spacing.gap),
-        FushiOutlinedButton.icon(
-          onPressed: _confirmDelete,
-          destructive: true,
-          icon: const FushiIcon(Icons.delete_outline),
-          label: Text(t.delete_custom_theme),
-        ),
-      ],
     ];
+  }
+
+  /// 开关行：一行副标题（省略号截断），完整说明收进悬停 / 长按的 info 提示。
+  Widget _buildCompactSwitchRow({
+    required String title,
+    required String subtitle,
+    required String info,
+    required bool value,
+    required ValueChanged<bool>? onChanged,
+  }) {
+    return FushiRichTooltip(
+      title: title,
+      message: info,
+      child: AdaptiveSettingsSwitchRow(
+        title: title,
+        subtitle: subtitle,
+        subtitleMaxLines: 1,
+        value: value,
+        onChanged: onChanged,
+      ),
+    );
+  }
+
+  /// 主题色对比度不足：行内警示 chip（长说明在 chip 的提示里）。
+  Widget _buildContrastWarnings({required bool light, required bool dark}) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final double gap = tokens.spacing.gap;
+    Widget chip(String label, String detail) => FushiTooltip(
+      message: detail,
+      child: FushiChip(
+        avatar: FushiIcon(
+          FushiIcons.warning,
+          size: 18,
+          color: cs.onErrorContainer,
+        ),
+        label: Text(label),
+        labelStyle: context.fushiType.labelLarge.copyWith(
+          color: cs.onErrorContainer,
+        ),
+        backgroundColor: cs.errorContainer,
+        side: BorderSide.none,
+      ),
+    );
+    return Padding(
+      key: const ValueKey<String>('custom-theme-contrast-warning'),
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.card,
+        gap,
+        tokens.spacing.card,
+        gap,
+      ),
+      child: Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: <Widget>[
+          if (light)
+            chip(t.theme_contrast_low_light, t.theme_accent_low_contrast_light),
+          if (dark)
+            chip(t.theme_contrast_low_dark, t.theme_accent_low_contrast_dark),
+        ],
+      ),
+    );
   }
 
   /// TODO-930 M2: persist the edited theme into the list, select it, point the
@@ -984,7 +1244,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   /// system-theme) so the app never points at a now-missing custom entry.
   Future<void> _confirmDelete() async {
     final NavigatorState navigator = Navigator.of(context);
-    final bool confirmed = await showAppDialog<bool>(
+    final bool confirmed =
+        await showAppDialog<bool>(
           context: context,
           builder: (BuildContext ctx) {
             final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
@@ -994,7 +1255,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
               scrollable: false,
               child: FushiModalSheetFrame(
                 title: t.delete_custom_theme,
-                leadingIcon: Icons.delete_outline,
+                leadingIcon: FushiIcons.delete,
                 bodyPadding: EdgeInsets.fromLTRB(
                   tokens.spacing.card,
                   0,
@@ -1055,139 +1316,640 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     return 'custom-theme:${remaining.first.id}';
   }
 
-  /// TODO-930 M2: the optional name field. Empty name is allowed (decision 3);
-  /// the hint shows the localized default `Custom N`.
-  Widget _buildNameField() {
+  // ── hero ──
+
+  /// hero 卡（M3E primaryContainer 饱和色块）：主题色块 + 大号可内联编辑的
+  /// 名称（TODO-930 M2：可留空，留空显示本地化默认名「自定义 N」，决策 3）；
+  /// 下面一排按钮组（导入 / 分享 / 更多）+ 预览明暗分段控件。
+  Widget _buildHeaderCard() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.card,
-        vertical: tokens.spacing.gap,
-      ),
-      child: FushiTextField(
-        controller: _nameController,
-        labelText: t.custom_theme_name,
-        hintText: t.custom_theme_default_name(n: _defaultNameIndex),
-        onChanged: (_) => setState(() {}),
+    final SettingsKitStyle style = SettingsKitStyle.of(context);
+    final double gap = tokens.spacing.gap;
+    return FushiCard(
+      key: const ValueKey<String>('custom-theme-header'),
+      tone: FushiCardTone.primary,
+      pressScale: false,
+      borderRadius: BorderRadius.circular(SettingsKitRadii.container(style)),
+      padding: EdgeInsets.all(tokens.spacing.card),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              _morphBlock(
+                color: _effectiveColor(_ThemeRole.accent),
+                size: 48,
+                squared: true,
+              ),
+              SizedBox(width: gap + gap / 2),
+              Expanded(child: _buildNameField()),
+            ],
+          ),
+          SizedBox(height: gap + gap / 2),
+          Wrap(
+            spacing: gap,
+            runSpacing: gap,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              FushiButtonGroup(
+                children: <Widget>[
+                  FushiFilledButton.tonalIcon(
+                    key: const ValueKey<String>('custom-theme-import'),
+                    onPressed: _importTheme,
+                    icon: const FushiIcon(FushiIcons.importFile),
+                    label: Text(t.import_theme),
+                  ),
+                  FushiFilledButton.tonalIcon(
+                    key: const ValueKey<String>('custom-theme-share'),
+                    onPressed: _shareTheme,
+                    icon: const FushiIcon(FushiIcons.share),
+                    label: Text(t.share_theme),
+                  ),
+                  _buildMoreMenu(),
+                ],
+              ),
+              _buildBrightnessToggle(),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  // ── 角色行 ──
-
-  /// 点角色行：宽屏切右栏选色器；窄屏弹选色窗，关窗后取消框选。
-  Future<void> _openRole(_ThemeRole role) async {
-    setState(() => _selectedRole = role);
-    if (_wideLayout) return;
-    await _showRolePickerDialog(role);
-    if (mounted) setState(() => _selectedRole = null);
+  /// 「更多」：让 AI 帮忙（跳到 AI 卡）/ 删除主题（草稿没有东西可删，不出现，
+  /// BUG-1841：草稿还没进列表，也不该借删除去改全局主题键）。
+  Widget _buildMoreMenu() {
+    final bool apple = isGlassDesign(context);
+    final Color destructive = apple
+        ? appleColorsOf(context).destructive
+        : Theme.of(context).colorScheme.error;
+    Widget item(IconData icon, String label, {Color? color}) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        FushiIcon(icon, size: 20, color: color),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            label,
+            style: color == null ? null : TextStyle(color: color),
+          ),
+        ),
+      ],
+    );
+    return FushiPopupMenuButton<String>(
+      key: const ValueKey<String>('custom-theme-more'),
+      tooltip: t.common_more_actions,
+      icon: FushiIcon(apple ? FushiIcons.moreHoriz : FushiIcons.more),
+      onSelected: (String value) {
+        switch (value) {
+          case 'ai':
+            _focusAiCard();
+          case 'delete':
+            unawaited(_confirmDelete());
+        }
+      },
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+        PopupMenuItem<String>(
+          value: 'ai',
+          child: item(FushiIcons.ai, t.ai_assist_section),
+        ),
+        if (!_isDraft)
+          PopupMenuItem<String>(
+            key: const ValueKey<String>('custom-theme-delete'),
+            value: 'delete',
+            child: item(
+              FushiIcons.delete,
+              t.delete_custom_theme,
+              color: destructive,
+            ),
+          ),
+      ],
+    );
   }
 
-  Widget _buildAccentRow() {
+  /// 预览明暗：自定义主题跟随全局明暗，这里只是临时切换预览。
+  Widget _buildBrightnessToggle() {
+    return FushiSegmentedButton<Brightness>(
+      key: const ValueKey<String>('custom-theme-preview-brightness'),
+      showSelectedIcon: false,
+      style: const ButtonStyle(
+        visualDensity: VisualDensity.compact,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      segments: <ButtonSegment<Brightness>>[
+        ButtonSegment<Brightness>(
+          value: Brightness.light,
+          icon: const FushiIcon(FushiIcons.lightMode, size: 18),
+          label: Text(t.theme_preview_light),
+        ),
+        ButtonSegment<Brightness>(
+          value: Brightness.dark,
+          icon: const FushiIcon(FushiIcons.darkMode, size: 18),
+          label: Text(t.theme_preview_dark),
+        ),
+      ],
+      selected: <Brightness>{_previewBrightness},
+      onSelectionChanged: (Set<Brightness> s) =>
+          setState(() => _previewBrightness = s.first),
+    );
+  }
+
+  void _setEditingName(bool editing) {
+    if (_editingName == editing) return;
+    setState(() => _editingName = editing);
+  }
+
+  void _onNameFocusChanged() {
+    if (!_nameFocus.hasFocus) _setEditingName(false);
+  }
+
+  /// TODO-930 M2：名称可留空（决策 3），留空显示本地化默认名「自定义 N」。
+  /// 平时是大号标题（点按 / Enter 进入编辑），编辑时原位换成同字号的输入框，
+  /// 回车或失焦回到标题。
+  Widget _buildNameField() {
+    final FushiTypography type = context.fushiType;
+    final Color onContainer =
+        fushiCardToneColors(context, FushiCardTone.primary)?.onContainer ??
+        Theme.of(context).colorScheme.onPrimaryContainer;
+    final TextStyle style = type.headlineSmallEmphasized.copyWith(
+      color: onContainer,
+    );
+    final String name = _nameController.text.trim();
+    final String placeholder = t.custom_theme_default_name(
+      n: _defaultNameIndex,
+    );
+    final Widget child = _editingName
+        ? FushiTextField(
+            key: const ValueKey<String>('custom-theme-name-input'),
+            controller: _nameController,
+            focusNode: _nameFocus,
+            autofocus: true,
+            labelText: t.custom_theme_name,
+            hintText: placeholder,
+            style: type.titleLarge,
+            textInputAction: TextInputAction.done,
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) => _setEditingName(false),
+          )
+        : FushiTooltip(
+            key: const ValueKey<String>('custom-theme-name-display'),
+            message: t.custom_theme_name,
+            child: Material(
+              type: MaterialType.transparency,
+              child: InkWell(
+                borderRadius: FushiM3eShape.smallRadius,
+                onTap: () => _setEditingName(true),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Flexible(
+                        child: Text(
+                          name.isEmpty ? placeholder : name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: name.isEmpty
+                              ? style.copyWith(
+                                  color: onContainer.withValues(alpha: 0.6),
+                                )
+                              : style,
+                        ),
+                      ),
+                      SizedBox(
+                        width: FushiDesignTokens.of(context).spacing.gap,
+                      ),
+                      FushiIcon(
+                        FushiIcons.edit,
+                        size: 20,
+                        color: onContainer.withValues(alpha: 0.8),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+    return KeyedSubtree(
+      key: const ValueKey<String>('custom-theme-name'),
+      child: AnimatedSwitcher(
+        duration: context.fushiMotion.effectsDefault.duration,
+        switchInCurve: context.fushiMotion.effectsDefault.curve,
+        switchOutCurve: context.fushiMotion.effectsDefault.curve,
+        layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+          alignment: AlignmentDirectional.centerStart,
+          children: <Widget>[...previous, if (current != null) current],
+        ),
+        child: child,
+      ),
+    );
+  }
+
+  // ── 主题色（种子）──
+
+  /// 种子色：一行大色块（点开取色器）+ 推荐色板（圆形，选中弹簧变成圆角方块）+
+  /// 由种子生成的 tonal palette 色阶条。跟随系统取色时上锁、色板收起；开了自动
+  /// 调色调且实际显示色 ≠ 所选色时，把实际色摆在旁边，用户不用猜按钮为什么
+  /// 不是自己选的那个颜色。
+  Widget _buildSeedPanel() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme appCs = Theme.of(context).colorScheme;
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiTypography type = context.fushiType;
+    final FushiMotionScheme motion = context.fushiMotion;
+    final bool apple = isGlassDesign(context);
+    final double gap = tokens.spacing.gap;
     final Color picked = _resolvedAccent;
     final Color shown = _effectiveColor(_ThemeRole.accent);
     final bool differs = shown.toARGB32() != picked.toARGB32();
     final bool locked = _followSystemAccent && _systemAccent != null;
-    return _highlightIfSelected(
-      _ThemeRole.accent,
-      AdaptiveSettingsRow(
-        title: t.theme_role_accent,
-        subtitle:
-            locked ? t.theme_accent_follow_system : t.theme_role_accent_desc,
-        icon: _roleIcon(_ThemeRole.accent),
-        showIcon: true,
-        // 跟随系统取色时主题色不可手选。
-        onTap: locked ? null : () => _openRole(_ThemeRole.accent),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            _swatchDot(picked),
-            // 开了自动调色调且派生结果 ≠ 所选：把「实际显示」直接摆在旁边，
-            // 用户不用猜为什么按钮不是自己选的那个颜色。
-            if (differs) ...<Widget>[
-              SizedBox(width: tokens.spacing.gap / 2),
-              FushiIcon(
-                Icons.arrow_forward,
-                size: 14,
-                color: appCs.onSurfaceVariant,
+    final Widget seedRow = MouseRegion(
+      onEnter: (_) => _setHoverRole(_ThemeRole.accent),
+      onExit: (_) => _setHoverRole(null),
+      child: FushiTooltip(
+        message: _roleDescription(_ThemeRole.accent),
+        child: FushiCard(
+          key: const ValueKey<String>('custom-theme-role-accent'),
+          selected: _selectedRole == _ThemeRole.accent,
+          color: _selectedRole == _ThemeRole.accent
+              ? null
+              : (apple
+                    ? appleColorsOf(context).tertiaryFill
+                    : cs.surfaceContainerHigh),
+          borderRadius: BorderRadius.circular(
+            SettingsKitRadii.card(SettingsKitStyle.of(context)),
+          ),
+          padding: EdgeInsets.all(gap + gap / 2),
+          onTap: locked ? null : () => unawaited(_openRole(_ThemeRole.accent)),
+          child: Row(
+            children: <Widget>[
+              _morphBlock(color: picked, size: 56, squared: true),
+              SizedBox(width: gap * 2),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      t.theme_role_accent,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: type.titleMediumEmphasized,
+                    ),
+                    Text(
+                      locked ? t.theme_accent_follow_system : _hex(picked),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: type.bodyMedium.tabular.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              SizedBox(width: tokens.spacing.gap / 2),
-              FushiTooltip(
-                message: t.theme_role_actual_color,
-                child: _swatchDot(shown),
+              if (differs) ...<Widget>[
+                FushiTooltip(
+                  message: t.theme_role_actual_color,
+                  child: _swatchDot(shown),
+                ),
+                SizedBox(width: gap),
+              ],
+              FushiIcon(
+                locked ? FushiIcons.lock : FushiIcons.edit,
+                size: 20,
+                color: cs.onSurfaceVariant,
               ),
             ],
-            SizedBox(width: tokens.spacing.gap),
-            FushiIcon(
-              locked ? Icons.lock_outline : Icons.chevron_right,
-              color: appCs.onSurfaceVariant,
-            ),
-          ],
+          ),
         ),
+      ),
+    );
+    return Padding(
+      padding: EdgeInsets.all(gap),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          seedRow,
+          AnimatedSize(
+            duration: motion.spatialDefault.duration,
+            curve: motion.spatialDefault.curve,
+            alignment: Alignment.topCenter,
+            child: locked
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    padding: EdgeInsets.only(top: gap + gap / 2),
+                    child: Wrap(
+                      spacing: gap,
+                      runSpacing: gap,
+                      children: <Widget>[
+                        for (final Color preset in _accentPresets)
+                          _ShapeSwatch(
+                            key: ValueKey<String>(
+                              'custom-theme-accent-preset-${preset.toARGB32()}',
+                            ),
+                            color: preset,
+                            size: 40,
+                            selected: preset.toARGB32() == _accent.toARGB32(),
+                            onTap: () =>
+                                _setRoleColor(_ThemeRole.accent, preset),
+                          ),
+                      ],
+                    ),
+                  ),
+          ),
+          // 墨水屏下整套配色被黑白顶掉，色阶没有意义。
+          if (!appModelNoUpdate.einkMode) ...<Widget>[
+            SizedBox(height: gap * 2),
+            _buildTonalPalette(),
+          ],
+        ],
       ),
     );
   }
 
-  Widget _buildRoleRow(_ThemeRole role) {
+  /// 种子派生的 Material 动态方案（与真机同口径：中性灰 → monochrome，无彩度
+  /// 种子 → tonalSpot，其余 → vibrant），只用来展示四条色阶。
+  mcu.DynamicScheme _seedDynamicScheme() {
+    final mcu.Hct source = mcu.Hct.fromInt(_resolvedAccent.toARGB32());
+    final bool dark = _previewBrightness == Brightness.dark;
+    if (_neutralDerived) {
+      return mcu.SchemeMonochrome(
+        sourceColorHct: source,
+        isDark: dark,
+        contrastLevel: 0,
+      );
+    }
+    if (isAchromaticSeed(_resolvedAccent)) {
+      return mcu.SchemeTonalSpot(
+        sourceColorHct: source,
+        isDark: dark,
+        contrastLevel: 0,
+      );
+    }
+    return mcu.SchemeVibrant(
+      sourceColorHct: source,
+      isDark: dark,
+      contrastLevel: 0,
+    );
+  }
+
+  /// tonal palette 预览：primary / secondary / tertiary / neutral 四条色阶，
+  /// 每条 10–95 十档；换种子时逐格颜色过渡。
+  Widget _buildTonalPalette() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final Color? override = _overrides[role];
-    return _highlightIfSelected(
-      role,
-      AdaptiveSettingsRow(
-        title: _roleTitle(role),
-        subtitle: _roleDescription(role),
-        icon: _roleIcon(role),
-        showIcon: true,
-        onTap: () => _openRole(role),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            if (override == null) ...<Widget>[
+    final FushiMotionScheme motion = context.fushiMotion;
+    final double gap = tokens.spacing.gap;
+    final mcu.DynamicScheme scheme = _seedDynamicScheme();
+    const List<int> tones = <int>[10, 20, 30, 40, 50, 60, 70, 80, 90, 95];
+    final List<(String, mcu.TonalPalette)> rows = <(String, mcu.TonalPalette)>[
+      (t.theme_role_accent, scheme.primaryPalette),
+      (t.theme_role_secondary, scheme.secondaryPalette),
+      (t.theme_role_tertiary, scheme.tertiaryPalette),
+      (t.theme_role_surface, scheme.neutralPalette),
+    ];
+    return Column(
+      key: const ValueKey<String>('custom-theme-tonal-palette'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          t.theme_tonal_palette,
+          style: context.fushiType.labelLarge.copyWith(
+            color: cs.onSurfaceVariant,
+          ),
+        ),
+        SizedBox(height: gap * 0.75),
+        for (int i = 0; i < rows.length; i++)
+          Padding(
+            padding: EdgeInsets.only(bottom: i < rows.length - 1 ? gap / 2 : 0),
+            child: FushiTooltip(
+              message: rows[i].$1,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(
+                  isGlassDesign(context) ? 6 : 10,
+                ),
+                child: SizedBox(
+                  height: 20,
+                  child: Row(
+                    children: <Widget>[
+                      for (final int tone in tones)
+                        Expanded(
+                          child: AnimatedContainer(
+                            duration: motion.effectsDefault.duration,
+                            curve: motion.effectsDefault.curve,
+                            color: Color(rows[i].$2.get(tone)),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ── 色槽 tile ──
+
+  void _setHoverRole(_ThemeRole? role) {
+    if (_hoverRole == role) return;
+    setState(() => _hoverRole = role);
+  }
+
+  /// 点色块：标出预览里对应的元素，弹出取色器；关闭后取消标记，并把新颜色记进
+  /// 「最近使用」。
+  Future<void> _openRole(_ThemeRole role) async {
+    setState(() => _selectedRole = role);
+    final Color before = _pickerColorFor(role);
+    await _showRolePickerDialog(role);
+    if (!mounted) return;
+    final Color after = _pickerColorFor(role);
+    if (after.toARGB32() != before.toARGB32()) _rememberRecent(after);
+    setState(() => _selectedRole = null);
+  }
+
+  Color _pickerColorFor(_ThemeRole role) => role == _ThemeRole.accent
+      ? _accent
+      : (_overrides[role] ?? _effectiveColor(role));
+
+  void _rememberRecent(Color color) {
+    final int argb = color.toARGB32();
+    _recentColors
+      ..remove(argb)
+      ..insert(0, argb);
+    if (_recentColors.length > 8) {
+      _recentColors.removeRange(8, _recentColors.length);
+    }
+  }
+
+  /// 「跟随主题」→「自定义」：先把当前实际显示色钉成覆盖值（观感不跳），再打开
+  /// 取色器微调。
+  void _customizeRole(_ThemeRole role) {
+    _setRoleColor(role, _effectiveColor(role));
+    unawaited(_openRole(role));
+  }
+
+  /// 一组色槽的统一网格：每格是「色块 + 跟随/自定义 小切换 + 名称 + 值」，
+  /// 按可用宽度 2–4 列；长说明收进格子的悬停 / 长按提示。
+  Widget _buildRoleGrid(List<_ThemeRole> roles) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double gap = tokens.spacing.gap;
+    return Padding(
+      padding: EdgeInsets.all(gap),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final int columns = (constraints.maxWidth / 168)
+              .floor()
+              .clamp(2, 4)
+              .toInt();
+          final double width =
+              (constraints.maxWidth - gap * (columns - 1)) / columns;
+          return Wrap(
+            spacing: gap,
+            runSpacing: gap,
+            children: <Widget>[
+              for (final _ThemeRole role in roles)
+                SizedBox(width: width, child: _buildRoleTile(role)),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// 色槽格子：可点（Tab / 方向键 / 手柄可达、Enter 确认）、按压回弹，当前编辑
+  /// 的角色高亮；悬停时预览里对应元素弹簧描边。色块形状表达状态：跟随主题是
+  /// 圆，自定义弹簧变成圆角方块（Apple 恒为圆形颜色井）。
+  Widget _buildRoleTile(_ThemeRole role) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiTypography type = context.fushiType;
+    final bool apple = isGlassDesign(context);
+    final double gap = tokens.spacing.gap;
+    final bool custom = _overrides[role] != null;
+    final bool selected = _selectedRole == role;
+    final Color shown = _effectiveColor(role);
+    return MouseRegion(
+      onEnter: (_) => _setHoverRole(role),
+      onExit: (_) => _setHoverRole(null),
+      child: FushiTooltip(
+        message: _roleDescription(role),
+        child: FushiCard(
+          key: ValueKey<String>('custom-theme-role-${role.name}'),
+          selected: selected,
+          color: selected
+              ? null
+              : (apple
+                    ? appleColorsOf(context).tertiaryFill
+                    : cs.surfaceContainerHigh),
+          borderRadius: BorderRadius.circular(
+            SettingsKitRadii.card(SettingsKitStyle.of(context)),
+          ),
+          padding: EdgeInsets.all(gap + gap / 2),
+          onTap: () => unawaited(_openRole(role)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  _morphBlock(color: shown, size: 40, squared: custom),
+                  SizedBox(width: gap),
+                  Expanded(
+                    child: Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: _buildFollowToggle(role, custom),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: gap),
               Text(
-                t.theme_role_follows_theme,
-                style: tokens.type.metadata.copyWith(
+                _roleTitle(role),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: type.titleSmallEmphasized,
+              ),
+              Text(
+                _hex(shown),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: type.bodySmall.tabular.copyWith(
                   color: cs.onSurfaceVariant,
                 ),
               ),
-              SizedBox(width: tokens.spacing.gap),
             ],
-            _swatchDot(_effectiveColor(role)),
-            SizedBox(width: tokens.spacing.gap / 2),
-            if (override != null)
-              FushiIconButton(
-                icon: Icons.restart_alt,
-                tooltip: t.theme_role_reset,
-                size: 20,
-                onTap: () => _resetRole(role),
-              )
-            else
-              // Apple：行尾小号 chevron + tertiaryLabel（iOS 设置行的披露
-              // 指示）；MD3 原样。
-              FushiIcon(
-                Icons.chevron_right,
-                size: isGlassDesign(context) ? 16 : null,
-                color: isGlassDesign(context)
-                    ? appleColorsOf(context).tertiaryLabel
-                    : cs.onSurfaceVariant,
-              ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _highlightIfSelected(_ThemeRole role, Widget row) {
-    final bool selected = _selectedRole == role;
-    return ColoredBox(
-      color: selected
-          ? FushiDesignTokens.of(context).surfaces.selected
-          : Colors.transparent,
-      child: row,
+  /// tile 上的「跟随主题 / 自定义」小切换：未选 = 跟随主题，选中 = 自定义；
+  /// 取消选中即恢复跟随主题。
+  Widget _buildFollowToggle(_ThemeRole role, bool custom) {
+    return FushiTooltip(
+      message: custom ? t.theme_role_reset : t.theme_role_customize,
+      child: FushiFilterChip(
+        key: ValueKey<String>('custom-theme-role-toggle-${role.name}'),
+        selected: custom,
+        showCheckmark: false,
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        label: Text(
+          custom ? t.theme_role_customize : t.theme_role_follows_theme,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        onSelected: (bool value) {
+          if (value) {
+            _customizeRole(role);
+          } else {
+            _resetRole(role);
+          }
+        },
+      ),
     );
   }
+
+  /// 弹簧形变色块：[squared] 时是圆角方块（M3E 形状语言），否则正圆；Apple
+  /// 设计系统恒为正圆颜色井。换色走颜色过渡而不是跳变。
+  Widget _morphBlock({
+    required Color color,
+    required double size,
+    required bool squared,
+  }) {
+    final bool apple = isGlassDesign(context);
+    final FushiMotionScheme motion = context.fushiMotion;
+    final Color border = Theme.of(context).colorScheme.outlineVariant;
+    return SettingsSpringValue(
+      value: squared && !apple ? 1 : 0,
+      spring: fushiExpressiveFastSpatial,
+      builder: (BuildContext context, double v, Widget? _) {
+        final double radius = (lerpDouble(size / 2, size * 0.3, v) ?? size / 2)
+            .clamp(4.0, size / 2);
+        return AnimatedContainer(
+          duration: motion.effectsDefault.duration,
+          curve: motion.effectsDefault.curve,
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(color: border),
+          ),
+        );
+      },
+    );
+  }
+
+  String _hex(Color color) => _hexLabel(color);
 
   Widget _swatchDot(Color color) {
     return FushiColorSwatch(
@@ -1198,303 +1960,421 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     );
   }
 
-  // ── 选色器（宽屏右栏 / 窄屏弹窗共用同一个 widget）──
+  // ── 取色器（宽屏贴预览右侧的浮层 / 窄屏 sheet，共用同一个 widget）──
 
-  Widget _buildPickerFor(_ThemeRole role) {
+  Widget _buildPickerFor(_ThemeRole role, {VoidCallback? onLocalChange}) {
     final bool optional = role != _ThemeRole.accent;
-    final Color current = role == _ThemeRole.accent
-        ? _accent
-        : (_overrides[role] ?? _effectiveColor(role));
     return _ThemeColorPicker(
       key: ValueKey<_ThemeRole>(role),
-      color: current,
+      color: _pickerColorFor(role),
       enableAlpha: _roleAllowsAlpha(role),
       presets: switch (role) {
         _ThemeRole.accent => _accentPresets,
         _ThemeRole.surface || _ThemeRole.readerBackground => _surfacePresets,
         _ => const <Color>[],
       },
-      onChanged: (Color c) => _setRoleColor(role, c),
-      onReset:
-          optional && _overrides[role] != null ? () => _resetRole(role) : null,
+      recents: <Color>[for (final int argb in _recentColors) Color(argb)],
+      recentLabel: t.theme_picker_recent,
+      onChanged: (Color c) {
+        _setRoleColor(role, c);
+        onLocalChange?.call();
+      },
+      onReset: optional && _overrides[role] != null
+          ? () {
+              _resetRole(role);
+              onLocalChange?.call();
+            }
+          : null,
       resetLabel: t.theme_role_reset,
     );
   }
 
-  Widget _buildSidePickerCard() {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final _ThemeRole role = _selectedRole ?? _ThemeRole.accent;
-    return FushiCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
+  Future<void> _showRolePickerDialog(_ThemeRole role) {
+    Widget content(BuildContext ctx) => StatefulBuilder(
+      // 路由不随页面 setState 重建：本地刷新让「恢复跟随主题」等随改色出现。
+      builder: (BuildContext ctx, StateSetter setLocal) {
+        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+        return FushiModalSheetFrame(
+          title: _roleTitle(role),
+          subtitle: _roleDescription(role),
+          leadingIcon: _roleIcon(role),
+          // 选色器（HSV 面板 + 色条 + 十六进制 + 推荐色 + 最近使用）固有高
+          // 约 300；矮窗口（横屏手机 / 600 高桌面窗）里 sheet 正文给不到，
+          // 不滚动就底部溢出、推荐色点不到。内容放得下时不产生滚动手势。
+          scrollable: true,
+          bodyPadding: EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            0,
+            tokens.spacing.card,
+            tokens.spacing.gap,
+          ),
+          footerPadding: EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            tokens.spacing.gap,
+            tokens.spacing.card,
+            tokens.spacing.card,
+          ),
+          body: _buildPickerFor(role, onLocalChange: () => setLocal(() {})),
+          footer: Wrap(
+            alignment: WrapAlignment.end,
+            spacing: tokens.spacing.gap,
             children: <Widget>[
-              FushiIcon(_roleIcon(role), color: cs.onSurfaceVariant),
-              SizedBox(width: tokens.spacing.gap),
-              Expanded(
-                child: Text(_roleTitle(role), style: tokens.type.listTitle),
+              adaptiveDialogAction(
+                context: ctx,
+                isDefaultAction: true,
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(t.dialog_done),
               ),
             ],
-          ),
-          SizedBox(height: tokens.spacing.gap / 2),
-          Text(
-            _roleDescription(role),
-            style: tokens.type.metadata.copyWith(color: cs.onSurfaceVariant),
-          ),
-          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-          if (role == _ThemeRole.accent &&
-              _followSystemAccent &&
-              _systemAccent != null)
-            Row(
-              children: <Widget>[
-                FushiIcon(Icons.lock_outline, size: 18, color: cs.onSurfaceVariant),
-                SizedBox(width: tokens.spacing.gap),
-                Expanded(
-                  child: Text(
-                    t.theme_accent_follow_system_desc,
-                    style: tokens.type.listSubtitle,
-                  ),
-                ),
-              ],
-            )
-          else
-            _buildPickerFor(role),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showRolePickerDialog(_ThemeRole role) {
-    return showAppDialog<void>(
-      context: context,
-      builder: (BuildContext ctx) {
-        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
-        return FushiDialogFrame(
-          maxWidth: 400,
-          maxHeightFactor: 0.9,
-          child: FushiModalSheetFrame(
-            title: _roleTitle(role),
-            subtitle: _roleDescription(role),
-            leadingIcon: _roleIcon(role),
-            bodyPadding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              0,
-              tokens.spacing.card,
-              tokens.spacing.gap,
-            ),
-            footerPadding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              tokens.spacing.gap,
-              tokens.spacing.card,
-              tokens.spacing.card,
-            ),
-            // 弹窗自己持 HSV 状态；页面 setState 只重绘弹窗下面的预览卡。
-            body: _buildPickerFor(role),
-            footer: Wrap(
-              alignment: WrapAlignment.end,
-              spacing: tokens.spacing.gap,
-              children: <Widget>[
-                adaptiveDialogAction(
-                  context: ctx,
-                  isDefaultAction: true,
-                  onPressed: () => Navigator.pop(ctx),
-                  child: Text(t.dialog_done),
-                ),
-              ],
-            ),
           ),
         );
       },
     );
+    if (_wideLayout) {
+      // 宽屏：浮层贴在预览右侧、不压暗页面，改色时左栏预览完整可见。
+      return showAppDialog<void>(
+        context: context,
+        barrierColor: Colors.transparent,
+        builder: (BuildContext ctx) => FushiDialogFrame(
+          maxWidth: 420,
+          maxHeightFactor: 0.9,
+          insetPadding: const EdgeInsets.fromLTRB(
+            _kWidePreviewWidth + 24,
+            24,
+            24,
+            24,
+          ),
+          child: content(ctx),
+        ),
+      );
+    }
+    return adaptiveModalSheet<void>(context: context, builder: content);
   }
 
-  // ── 预览卡：一张缩小的「真 app」——每个元素的颜色都取自真实 ColorScheme /
-  //    真实阅读器解析链，选中某个角色时框出它影响的元素。──
+  // ── 预览：一张缩小的「真 app」截面——导航胶囊 + 卡片 + 按钮 / 开关 / 标签 /
+  //    进度 + 阅读器正文页（含查词高亮 / 当前句 / 链接）。每个元素的颜色都取
+  //    自真实 ColorScheme / 真实阅读器解析链，按当前预览明暗实时渲染；悬停或
+  //    点开某个色槽时，对应元素弹簧描边脉冲。──
 
-  Widget _buildPreviewCard() {
+  /// [compact]：窄屏吸顶用的紧凑形态——阅读器页与 app 截面左右并排，可折叠成
+  /// 只剩标题行。
+  Widget _buildPreviewCard({bool compact = false}) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FushiTypography type = context.fushiType;
+    final FushiMotionScheme motion = context.fushiMotion;
     final ColorScheme cs = _scheme;
     final ReaderThemeColors reader = _readerColorsFor(cs);
-    final ColorScheme appCs = Theme.of(context).colorScheme;
-    final TextStyle titleStyle = tokens.type.listTitle.copyWith(
-      color: cs.onSurface,
-      fontWeight: FontWeight.bold,
+    final double gap = tokens.spacing.gap;
+    final bool expanded = !compact || _previewExpanded;
+    final Widget header = Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(
+            t.preview,
+            style: type.titleSmallEmphasized.copyWith(color: cs.onSurface),
+          ),
+        ),
+        FushiTooltip(
+          message: t.theme_preview_hint,
+          child: FushiIcon(
+            FushiIcons.info,
+            size: 18,
+            color: cs.onSurfaceVariant,
+          ),
+        ),
+        if (compact) ...<Widget>[
+          SizedBox(width: gap / 2),
+          FushiIconButton(
+            key: const ValueKey<String>('custom-theme-preview-toggle'),
+            icon: expanded ? FushiIcons.expandLess : FushiIcons.expandMore,
+            tooltip: expanded
+                ? t.theme_preview_collapse
+                : t.theme_preview_expand,
+            size: 20,
+            enabledColor: cs.onSurfaceVariant,
+            onTap: () => setState(() => _previewExpanded = !_previewExpanded),
+          ),
+        ],
+      ],
     );
-
-    return FushiCard(
-      color: cs.surface,
-      borderColor: cs.outlineVariant,
-      padding: EdgeInsets.all(tokens.spacing.card),
+    final Widget body = compact
+        ? Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                flex: 5,
+                child: _buildReaderPreview(reader, compact: true),
+              ),
+              SizedBox(width: gap),
+              Expanded(flex: 4, child: _buildAppPreview(cs, compact: true)),
+            ],
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              _buildAppPreview(cs),
+              SizedBox(height: gap + gap / 2),
+              _buildReaderPreview(reader),
+            ],
+          );
+    return AnimatedContainer(
+      key: ValueKey<String>(
+        compact ? 'custom-theme-preview-compact' : 'custom-theme-preview',
+      ),
+      duration: motion.effectsDefault.duration,
+      curve: motion.effectsDefault.curve,
+      padding: EdgeInsets.all(compact ? gap + gap / 2 : tokens.spacing.card),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(
+          SettingsKitRadii.container(SettingsKitStyle.of(context)),
+        ),
+        border: Border.all(color: cs.outlineVariant),
+      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(child: Text(t.preview, style: titleStyle)),
-              FushiSegmentedButton<Brightness>(
-                showSelectedIcon: false,
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                segments: <ButtonSegment<Brightness>>[
-                  ButtonSegment<Brightness>(
-                    value: Brightness.light,
-                    icon: const FushiIcon(Icons.light_mode_outlined, size: 16),
-                    label: Text(t.theme_preview_light),
-                  ),
-                  ButtonSegment<Brightness>(
-                    value: Brightness.dark,
-                    icon: const FushiIcon(Icons.dark_mode_outlined, size: 16),
-                    label: Text(t.theme_preview_dark),
-                  ),
-                ],
-                selected: <Brightness>{_previewBrightness},
-                onSelectionChanged: (Set<Brightness> s) =>
-                    setState(() => _previewBrightness = s.first),
-              ),
-            ],
-          ),
-          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-          // 界面控件行：按钮 / 开关 / 标签 / 点缀进度
-          Wrap(
-            spacing: tokens.spacing.gap + tokens.spacing.gap / 2,
-            runSpacing: tokens.spacing.gap,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: <Widget>[
-              _spot(
-                _ThemeRole.accent,
-                Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.gap * 2,
-                    vertical: tokens.spacing.gap * 0.75,
-                  ),
-                  decoration: BoxDecoration(
-                    color: cs.primary,
-                    // 预览里的「按钮」要长得跟 app 真按钮一样，所以走共享控件
-                    // 同一枚半径 token（FushiButton 用的也是 controlRadius）。
-                    // 写死 20 会让预览展示一个 app 里并不存在的形状。
-                    borderRadius: tokens.radii.controlRadius,
-                  ),
-                  child: Text(
-                    t.theme_preview_button,
-                    style: tokens.type.controlLabel.copyWith(
-                      color: cs.onPrimary,
-                    ),
-                  ),
-                ),
-              ),
-              _spot(
-                _ThemeRole.accent,
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    FushiIcon(Icons.favorite, color: cs.primary, size: 20),
-                    SizedBox(width: tokens.spacing.gap / 2),
-                    FushiIcon(Icons.bookmark, color: cs.primary, size: 20),
-                  ],
-                ),
-              ),
-              _spot(
-                _ThemeRole.container,
-                FushiPreviewSwitch(
-                  trackColor: cs.primaryContainer,
-                  thumbColor: cs.primary,
-                ),
-              ),
-              _spot(
-                _ThemeRole.secondary,
-                Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.gap,
-                    vertical: tokens.spacing.gap * 0.375,
-                  ),
-                  decoration: BoxDecoration(
-                    color: cs.secondaryContainer,
-                    borderRadius: tokens.radii.controlRadius,
-                  ),
-                  child: Text(
-                    t.theme_preview_tag,
-                    style: tokens.type.metadata.copyWith(
-                      color: cs.onSecondaryContainer,
-                    ),
-                  ),
-                ),
-              ),
-              _spot(
-                _ThemeRole.surface,
-                Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.gap,
-                    vertical: tokens.spacing.gap * 0.375,
-                  ),
-                  decoration: BoxDecoration(
-                    color: cs.surfaceContainer,
-                    borderRadius: tokens.radii.chipRadius,
-                    border: Border.all(color: cs.outlineVariant),
-                  ),
-                  child: Text(
-                    t.theme_preview_card,
-                    style: tokens.type.metadata.copyWith(color: cs.onSurface),
-                  ),
-                ),
-              ),
-              _spot(
-                _ThemeRole.tertiary,
-                SizedBox(
-                  width: 72,
-                  height: 8,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: cs.surfaceContainerHighest,
-                      borderRadius: tokens.radii.chipRadius,
-                    ),
-                    child: FractionallySizedBox(
-                      alignment: Alignment.centerLeft,
-                      widthFactor: 0.6,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: cs.tertiary,
-                          borderRadius: tokens.radii.chipRadius,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-          _buildReaderPreview(reader),
-          SizedBox(height: tokens.spacing.gap),
-          Text(
-            t.theme_preview_hint,
-            style: tokens.type.metadata.copyWith(color: appCs.onSurfaceVariant),
+          header,
+          AnimatedSize(
+            duration: motion.spatialDefault.duration,
+            curve: motion.spatialDefault.curve,
+            alignment: Alignment.topCenter,
+            child: expanded
+                ? Padding(
+                    padding: EdgeInsets.only(top: gap),
+                    child: body,
+                  )
+                : const SizedBox(width: double.infinity),
           ),
         ],
       ),
     );
   }
 
-  /// 阅读器缩略：纸底 + 工具栏 + 正文（含查词选区 / 当前句高亮 / 链接）。
-  Widget _buildReaderPreview(ReaderThemeColors reader) {
+  /// app 截面：一张内容卡（封面块 / 标题 / 进度 / 按钮 / 标签 / 开关）+ 底部
+  /// 导航胶囊。
+  Widget _buildAppPreview(ColorScheme cs, {bool compact = false}) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final TextStyle bodyStyle = tokens.type.listSubtitle.copyWith(
-      color: reader.fg,
-      height: 1.6,
+    final FushiTypography type = context.fushiType;
+    final double gap = tokens.spacing.gap;
+    const StadiumBorder pill = StadiumBorder();
+    final Widget cover = _spot(
+      _ThemeRole.tertiary,
+      Container(
+        width: compact ? 28 : 40,
+        height: compact ? 28 : 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: cs.tertiaryContainer,
+          borderRadius: FushiM3eShape.smallRadius,
+        ),
+        child: FushiIcon(
+          FushiIcons.books,
+          size: compact ? 16 : 20,
+          color: cs.onTertiaryContainer,
+        ),
+      ),
     );
+    final Widget button = _spot(
+      _ThemeRole.accent,
+      Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? gap : gap * 2,
+          vertical: gap * 0.75,
+        ),
+        decoration: ShapeDecoration(color: cs.primary, shape: pill),
+        child: Text(
+          t.theme_preview_button,
+          style: type.labelLarge.copyWith(color: cs.onPrimary),
+        ),
+      ),
+    );
+    final Widget tag = _spot(
+      _ThemeRole.secondary,
+      Container(
+        padding: EdgeInsets.symmetric(horizontal: gap, vertical: gap * 0.375),
+        decoration: BoxDecoration(
+          color: cs.secondaryContainer,
+          borderRadius: FushiM3eShape.smallRadius,
+        ),
+        child: Text(
+          t.theme_preview_tag,
+          style: type.labelMedium.copyWith(color: cs.onSecondaryContainer),
+        ),
+      ),
+    );
+    final Widget previewSwitch = FushiPreviewSwitch(
+      trackColor: cs.primaryContainer,
+      thumbColor: cs.primary,
+    );
+    final Widget toggle = _spot(
+      _ThemeRole.container,
+      // 紧凑（窄屏吸顶）预览里示意开关按 28 高等比缩小：原尺寸（MD3 开关
+      // 约 66×46）在约 130 宽的 app 截面里把「按钮 / 标签 / 开关」挤成三行，
+      // 吸顶预览超过视口高度的三分之一。
+      compact
+          ? SizedBox(height: 28, child: FittedBox(child: previewSwitch))
+          : previewSwitch,
+    );
+    final Widget progress = _spot(
+      _ThemeRole.tertiary,
+      SizedBox(
+        height: 6,
+        child: DecoratedBox(
+          decoration: ShapeDecoration(
+            color: cs.surfaceContainerHighest,
+            shape: pill,
+          ),
+          child: FractionallySizedBox(
+            alignment: AlignmentDirectional.centerStart,
+            widthFactor: 0.6,
+            child: DecoratedBox(
+              decoration: ShapeDecoration(color: cs.tertiary, shape: pill),
+            ),
+          ),
+        ),
+      ),
+    );
+    final Widget card = _spot(
+      _ThemeRole.surface,
+      Container(
+        padding: EdgeInsets.all(compact ? gap : gap + gap / 2),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerLow,
+          borderRadius: compact
+              ? FushiM3eShape.smallRadius
+              : FushiM3eShape.cardRadius,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                cover,
+                SizedBox(width: gap),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        t.theme_preview_card,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: type.titleSmallEmphasized.copyWith(
+                          color: cs.onSurface,
+                        ),
+                      ),
+                      Text(
+                        '第一章',
+                        maxLines: 1,
+                        style: type.bodySmall.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!compact)
+                  _spot(
+                    _ThemeRole.accent,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        FushiIcon(
+                          FushiIcons.filled(FushiIcons.favorite),
+                          color: cs.primary,
+                          size: 20,
+                        ),
+                        SizedBox(width: gap / 2),
+                        FushiIcon(
+                          FushiIcons.filled(FushiIcons.bookmark),
+                          color: cs.primary,
+                          size: 20,
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            SizedBox(height: gap),
+            progress,
+            SizedBox(height: gap),
+            Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: <Widget>[button, tag, toggle],
+            ),
+          ],
+        ),
+      ),
+    );
+    Widget navItem(IconData icon, {bool selected = false}) => Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? gap : gap * 1.5,
+        vertical: gap * 0.75,
+      ),
+      decoration: selected
+          ? ShapeDecoration(color: cs.secondaryContainer, shape: pill)
+          : null,
+      child: FushiIcon(
+        selected ? FushiIcons.filled(icon) : icon,
+        size: 20,
+        color: selected ? cs.onSecondaryContainer : cs.onSurfaceVariant,
+      ),
+    );
+    final Widget nav = _spot(
+      _ThemeRole.secondary,
+      Container(
+        padding: EdgeInsets.all(gap / 2),
+        decoration: ShapeDecoration(color: cs.surfaceContainer, shape: pill),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            navItem(FushiIcons.home, selected: true),
+            navItem(FushiIcons.books),
+            navItem(FushiIcons.video),
+            if (!compact) navItem(FushiIcons.search),
+          ],
+        ),
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        card,
+        SizedBox(height: gap),
+        Center(
+          child: FittedBox(fit: BoxFit.scaleDown, child: nav),
+        ),
+      ],
+    );
+  }
+
+  /// 阅读器正文页：纸底 + 工具栏 + 正文（含查词选区 / 当前句高亮 / 链接）。
+  Widget _buildReaderPreview(ReaderThemeColors reader, {bool compact = false}) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FushiTypography type = context.fushiType;
+    final double gap = tokens.spacing.gap;
+    final TextStyle bodyStyle = (compact ? type.bodySmall : type.bodyLarge)
+        .copyWith(color: reader.fg, height: 1.7);
     // 与阅读器 CSS 同一规则：查词选区色按 alpha 预合成到纸底上（BUG-125）。
     final Color selectionOnPage = Color.alphaBlend(reader.selection, reader.bg);
     return _spot(
       _ThemeRole.readerBackground,
       Container(
         width: double.infinity,
-        padding: EdgeInsets.all(tokens.spacing.gap + tokens.spacing.gap / 2),
+        padding: EdgeInsets.all(compact ? gap : gap * 2),
         decoration: BoxDecoration(
           color: reader.bg,
-          borderRadius: tokens.radii.chipRadius,
+          borderRadius: compact
+              ? FushiM3eShape.smallRadius
+              : FushiM3eShape.cardRadius,
           border: Border.all(
             color: Theme.of(context).dividerColor.withValues(alpha: 0.4),
           ),
@@ -1507,15 +2387,15 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  FushiIcon(Icons.arrow_back, size: 16, color: reader.fg),
-                  SizedBox(width: tokens.spacing.gap),
+                  FushiIcon(FushiIcons.back, size: 16, color: reader.fg),
+                  SizedBox(width: gap),
                   Text('第一章', style: bodyStyle),
-                  SizedBox(width: tokens.spacing.gap),
-                  FushiIcon(Icons.tune, size: 16, color: reader.fg),
+                  SizedBox(width: gap),
+                  FushiIcon(FushiIcons.settings, size: 16, color: reader.fg),
                 ],
               ),
             ),
-            SizedBox(height: tokens.spacing.gap),
+            SizedBox(height: gap),
             Wrap(
               crossAxisAlignment: WrapCrossAlignment.center,
               children: <Widget>[
@@ -1527,13 +2407,12 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                     child: Text('テキスト', style: bodyStyle),
                   ),
                 ),
-                Text('プレビュー', style: bodyStyle),
+                Text('を読む。', style: bodyStyle),
               ],
             ),
             Wrap(
               crossAxisAlignment: WrapCrossAlignment.center,
               children: <Widget>[
-                Text('♪ ', style: bodyStyle),
                 _spot(
                   _ThemeRole.audioHighlight,
                   ColoredBox(
@@ -1561,53 +2440,39 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     );
   }
 
-  /// 预览里「某角色影响的位置」：该角色被选中时画一圈反色描边，其余时候只留
-  /// 同宽透明边（布局不跳）。
+  /// 预览里「某角色影响的位置」：该角色被悬停 / 选中时弹簧描边（反色环淡入 +
+  /// 一次 overshoot 脉冲缩放），其余时候只留同宽透明边（布局不跳）。墨水屏 /
+  /// 减弱动态效果下直接到位。
   Widget _spot(_ThemeRole role, Widget child) {
-    final bool on = _selectedRole == role;
-    final ColorScheme appCs = Theme.of(context).colorScheme;
-    return AnimatedContainer(
-      duration: fushiMd3StateDuration,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        // 选中环走共享半径 token（此前写死 8，不在 app 的半径尺度上）。
-        borderRadius: FushiBorderRadius.group,
-        border: Border.all(
-          width: 2,
-          color: on ? appCs.inverseSurface : Colors.transparent,
-        ),
-      ),
+    final bool on = _selectedRole == role || _hoverRole == role;
+    final Color ring = Theme.of(context).colorScheme.inverseSurface;
+    return SettingsSpringValue(
+      value: on ? 1 : 0,
+      spring: fushiExpressiveFastSpatial,
       child: child,
-    );
-  }
-
-  // ── 提示与说明行 ──
-
-  /// A non-interactive hint row (lightbulb icon + secondary text) used inside a
-  /// settings section to explain a behaviour to the user.
-  Widget _buildHintRow(String text) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.card,
-        vertical: tokens.spacing.gap,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          FushiIcon(Icons.lightbulb_outline, size: 18, color: cs.primary),
-          SizedBox(width: tokens.spacing.gap),
-          Expanded(
-            child: Text(
-              text,
-              style: tokens.type.metadata.copyWith(color: cs.onSurfaceVariant),
+      builder: (BuildContext context, double v, Widget? spotChild) {
+        final double settled = v.clamp(0.0, 1.0);
+        // 弹簧越界的那一截就是脉冲：落定后缩放回到 1。
+        final double pulse = (v - settled).abs();
+        return Transform.scale(
+          scale: 1 + pulse * 0.6,
+          child: DecoratedBox(
+            position: DecorationPosition.foreground,
+            decoration: BoxDecoration(
+              borderRadius: FushiM3eShape.smallRadius,
+              border: Border.all(
+                width: 2,
+                color: ring.withValues(alpha: settled),
+              ),
             ),
+            child: Padding(padding: const EdgeInsets.all(3), child: spotChild),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
+
+  // ── 说明行 ──
 
   /// A standalone note line (info icon + secondary text) shown between or below
   /// sections. TODO-072 uses it to point out that subtitle colours live in the
@@ -1623,12 +2488,14 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          FushiIcon(Icons.info_outline, size: 16, color: cs.onSurfaceVariant),
+          FushiIcon(FushiIcons.info, size: 16, color: cs.onSurfaceVariant),
           SizedBox(width: tokens.spacing.gap),
           Expanded(
             child: Text(
               text,
-              style: tokens.type.metadata.copyWith(color: cs.onSurfaceVariant),
+              style: context.fushiType.bodySmall.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
             ),
           ),
         ],
@@ -1637,8 +2504,97 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   }
 }
 
+/// `#RRGGBB`（带透明度时追加百分比）。
+String _hexLabel(Color color) {
+  final int argb = color.toARGB32();
+  final String rgb = (argb & 0xFFFFFF)
+      .toRadixString(16)
+      .padLeft(6, '0')
+      .toUpperCase();
+  final int alpha = (argb >> 24) & 0xFF;
+  return alpha == 0xFF ? '#$rgb' : '#$rgb · ${(alpha * 100 / 255).round()}%';
+}
+
+/// M3E 色板格：未选是圆，选中弹簧变成圆角方块并加对勾与描边；Apple 恒为圆形
+/// 颜色井，选中只加强调色外环。可 Tab / 方向键聚焦、Enter 选中。
+class _ShapeSwatch extends StatelessWidget {
+  const _ShapeSwatch({
+    required this.color,
+    required this.selected,
+    required this.onTap,
+    super.key,
+    this.size = 36,
+  });
+
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool apple = isGlassDesign(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final Color ring = apple ? appleColorsOf(context).accent : cs.onSurface;
+    final Color check = color.computeLuminance() > 0.5
+        ? const Color(0xFF000000)
+        : const Color(0xFFFFFFFF);
+    return FushiTooltip(
+      message: _hexLabel(color),
+      child: SettingsSpringValue(
+        value: selected ? 1 : 0,
+        spring: fushiExpressiveFastSpatial,
+        builder: (BuildContext context, double v, Widget? _) {
+          final double settled = v.clamp(0.0, 1.0);
+          final double radius = apple
+              ? size / 2
+              : (lerpDouble(size / 2, size * 0.28, v) ?? size / 2).clamp(
+                  4.0,
+                  size / 2,
+                );
+          final BorderRadius shape = BorderRadius.circular(radius);
+          return Semantics(
+            selected: selected,
+            button: true,
+            child: Material(
+              type: MaterialType.transparency,
+              child: InkWell(
+                onTap: onTap,
+                customBorder: RoundedRectangleBorder(borderRadius: shape),
+                child: Container(
+                  width: size,
+                  height: size,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: shape,
+                    border: Border.all(
+                      width: 1 + 1.5 * settled,
+                      color: Color.lerp(cs.outlineVariant, ring, settled)!,
+                    ),
+                  ),
+                  child: apple
+                      ? null
+                      : Opacity(
+                          opacity: settled,
+                          child: FushiIcon(
+                            FushiIcons.check,
+                            size: size * 0.5,
+                            color: check,
+                          ),
+                        ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 /// 紧凑选色器：固定尺寸的 HSV 面板 + 色相条（+ 可选透明度条）+ 十六进制输入
-/// + 可选预设色 + 「恢复跟随主题」。自己持 HSV 状态（灰色时保住色相，与包内
+/// + 推荐色 + 最近使用 + 「恢复跟随主题」。自己持 HSV 状态（灰色时保住色相，与包内
 /// [ColorPicker] 一致），每次变化经 [onChanged] 通知页面即时重绘预览。
 ///
 /// 不再用包内整块 [ColorPicker]：它按可用宽度撑满（桌面上 1900px 宽 → 近千像素
@@ -1649,9 +2605,11 @@ class _ThemeColorPicker extends StatefulWidget {
     required this.enableAlpha,
     required this.onChanged,
     required this.resetLabel,
+    required this.recentLabel,
     super.key,
     this.onReset,
     this.presets = const <Color>[],
+    this.recents = const <Color>[],
   });
 
   final Color color;
@@ -1659,7 +2617,9 @@ class _ThemeColorPicker extends StatefulWidget {
   final ValueChanged<Color> onChanged;
   final VoidCallback? onReset;
   final String resetLabel;
+  final String recentLabel;
   final List<Color> presets;
+  final List<Color> recents;
 
   @override
   State<_ThemeColorPicker> createState() => _ThemeColorPickerState();
@@ -1689,21 +2649,51 @@ class _ThemeColorPickerState extends State<_ThemeColorPicker> {
     widget.onChanged(value.toColor());
   }
 
+  Widget _swatchRow(List<Color> colors, Color current) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Wrap(
+      spacing: tokens.spacing.gap,
+      runSpacing: tokens.spacing.gap,
+      children: <Widget>[
+        for (final Color c in colors)
+          _ShapeSwatch(
+            key: ValueKey<String>(
+              'custom-theme-swatch-${c.toARGB32().toRadixString(16).padLeft(8, '0')}',
+            ),
+            color: c,
+            size: 32,
+            selected: c.toARGB32() == current.toARGB32(),
+            onTap: () => _set(HSVColor.fromColor(c)),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiMotionScheme motion = context.fushiMotion;
+    final double gap = tokens.spacing.gap;
     final Color current = _hsv.toColor();
+    final List<Color> recents = <Color>[
+      for (final Color c in widget.recents)
+        if (!widget.presets.any((Color p) => p.toARGB32() == c.toARGB32())) c,
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         ClipRRect(
-          borderRadius: tokens.radii.controlRadius,
+          borderRadius: BorderRadius.circular(
+            SettingsKitRadii.small(SettingsKitStyle.of(context)),
+          ),
           child: SizedBox(
             height: 160,
             child: ColorPickerArea(_hsv, _set, PaletteType.hsvWithHue),
           ),
         ),
-        SizedBox(height: tokens.spacing.gap),
+        SizedBox(height: gap),
         SizedBox(
           height: 32,
           child: ColorPickerSlider(
@@ -1723,13 +2713,19 @@ class _ThemeColorPickerState extends State<_ThemeColorPicker> {
               displayThumbColor: true,
             ),
           ),
-        SizedBox(height: tokens.spacing.gap),
+        SizedBox(height: gap),
         Row(
           children: <Widget>[
-            FushiColorSwatch(
-              color: current,
-              size: 36,
-              borderColor: Theme.of(context).dividerColor,
+            AnimatedContainer(
+              duration: motion.effectsFast.duration,
+              curve: motion.effectsFast.curve,
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: current,
+                borderRadius: FushiM3eShape.smallRadius,
+                border: Border.all(color: cs.outlineVariant),
+              ),
             ),
             const Spacer(),
             ColorPickerInput(
@@ -1741,30 +2737,27 @@ class _ThemeColorPickerState extends State<_ThemeColorPicker> {
           ],
         ),
         if (widget.presets.isNotEmpty) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap),
-          Wrap(
-            spacing: tokens.spacing.gap,
-            runSpacing: tokens.spacing.gap,
-            children: <Widget>[
-              for (final Color preset in widget.presets)
-                FushiColorSwatch(
-                  color: preset,
-                  size: 28,
-                  shape: FushiColorSwatchShape.dot,
-                  selected: preset.toARGB32() == current.toARGB32(),
-                  borderColor: Theme.of(context).dividerColor,
-                  onTap: () => _set(HSVColor.fromColor(preset)),
-                ),
-            ],
+          SizedBox(height: gap + gap / 2),
+          _swatchRow(widget.presets, current),
+        ],
+        if (recents.isNotEmpty) ...<Widget>[
+          SizedBox(height: gap + gap / 2),
+          Text(
+            widget.recentLabel,
+            style: context.fushiType.labelLarge.copyWith(
+              color: cs.onSurfaceVariant,
+            ),
           ),
+          SizedBox(height: gap / 2),
+          _swatchRow(recents, current),
         ],
         if (widget.onReset != null) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap),
+          SizedBox(height: gap),
           Align(
-            alignment: Alignment.centerRight,
+            alignment: AlignmentDirectional.centerEnd,
             child: FushiTextButton.icon(
               onPressed: widget.onReset,
-              icon: const FushiIcon(Icons.restart_alt, size: 18),
+              icon: const FushiIcon(FushiIcons.restart, size: 18),
               label: Text(widget.resetLabel),
             ),
           ),

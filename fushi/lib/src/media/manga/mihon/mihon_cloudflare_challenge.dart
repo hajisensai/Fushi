@@ -1,17 +1,17 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/src/media/manga/aidoku/aidoku_cloudflare_challenge_page.dart';
+import 'package:fushi/src/media/manga/cookie/cloudflare_challenge_page.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_gate.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 
 /// 把「在 WebView 里解 Cloudflare 挑战」装成 [MihonCloudflareGate.resolver]。
 /// 在 app 根 navigator 就绪后调用一次；桌面 Mihon 运行时的 `solveCloudflare`
-/// 会推一页 [AidokuCloudflareChallengePage]，拿到 `cf_clearance` 后自动关闭。
+/// 会推一页 [CloudflareChallengePage]，拿到 `cf_clearance` 后自动关闭。
 ///
-/// 页面本体与 Aidoku 共用：两边的需求逐字相同（同 UA 打开被拦 URL、轮询到
-/// 一个值不同于 jar 现存条目的 `cf_clearance`、整站回存），分成两页只会让完成
-/// 判据悄悄漂移。
+/// 页面本体与 LNReader 小说源共用：两边的需求逐字相同（同 UA 打开被拦 URL、
+/// 轮询到一个值不同于 jar 现存条目的 `cf_clearance`、整站回存），分成两页只会
+/// 让完成判据悄悄漂移。
 ///
 /// 按 host 单飞：同站的并发解题共享同一次，后到的等第一次的结果。顺序是硬要求
 /// ——**先建 future → 再写 map → 最后挂清理**；`map[k] ??= asyncFn()` 会在
@@ -56,7 +56,7 @@ Future<bool> _solveChallenge(
       builder: (BuildContext context) => FushiAppUiScaleNeutralizer(
         child:
             pageBuilder?.call(challengeUrl, userAgent, jar) ??
-            AidokuCloudflareChallengePage(
+            CloudflareChallengePage(
               challengeUrl: challengeUrl,
               userAgent: userAgent,
               jar: jar,

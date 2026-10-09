@@ -5,7 +5,7 @@
 // 保留本对话框入口的原因：视频页等处仍以「页头按钮 → 弹框管理」的既有交互暴露来源
 // 管理，逐像素不变（Never break userspace）；新的页面入口只是多一条路进同一间屋子。
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi/utils.dart';

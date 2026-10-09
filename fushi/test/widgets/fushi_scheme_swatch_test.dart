@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -60,28 +60,26 @@ void main() {
     expect(lightColors[0], isNot(equals(darkColors[0])));
   });
 
-  test('the three dark presets are visibly distinct swatches (TODO-100)', () {
-    // 用户报「三个暗色主题选择时完全看不出差别」。三个暗色预设种子不同，
-    // 经 M3 fromSeed 后背景/文字/按钮组合必须各不相同，色板才能一眼区分。
-    final List<String> darkKeys = <String>[
-      'gray-theme',
-      'dark-theme',
-      'black-theme',
-    ];
-    final List<List<Color>> swatches = darkKeys.map((String key) {
-      final ThemePreset preset = AppModel.themePresets[key]!;
-      return fushiSchemeSwatchColors(
-        AppModel.buildPresetColorScheme(preset, preset.brightness),
-      );
-    }).toList();
-    // 每一对暗色预设的四色组合都必须不同（不存在两个完全一样的暗色色板）。
-    for (int i = 0; i < swatches.length; i++) {
-      for (int j = i + 1; j < swatches.length; j++) {
-        expect(
-          swatches[i],
-          isNot(equals(swatches[j])),
-          reason: '${darkKeys[i]} 与 ${darkKeys[j]} 的色板四色完全相同，看不出差别',
+  test('current presets have distinguishable swatches in light and dark modes', () {
+    // 当前预设只定义种子和变体；明暗模式独立选择。每套模式下所有预设都必须
+    // 保留可辨认的四色组合，避免旧单种子色点掩盖实际主题差异（TODO-100）。
+    final List<String> keys = AppModel.themePresets.keys.toList();
+    expect(keys, containsAll(<String>['m3-baseline', 'm3-blue', 'm3-neutral']));
+    for (final Brightness brightness in Brightness.values) {
+      final List<List<Color>> swatches = keys.map((String key) {
+        final ThemePreset preset = AppModel.themePresets[key]!;
+        return fushiSchemeSwatchColors(
+          AppModel.buildPresetColorScheme(preset, brightness),
         );
+      }).toList();
+      for (int i = 0; i < swatches.length; i++) {
+        for (int j = i + 1; j < swatches.length; j++) {
+          expect(
+            swatches[i],
+            isNot(equals(swatches[j])),
+            reason: '${keys[i]} 与 ${keys[j]} 在 $brightness 下色板四色完全相同',
+          );
+        }
       }
     }
   });
@@ -91,6 +89,7 @@ void main() {
     int taps = 0;
     await tester.pumpWidget(
       MaterialApp(
+        theme: ThemeData(splashFactory: NoSplash.splashFactory),
         home: Scaffold(
           body: Center(
             child: FushiSchemeSwatch(
@@ -118,6 +117,7 @@ void main() {
     int longPresses = 0;
     await tester.pumpWidget(
       MaterialApp(
+        theme: ThemeData(splashFactory: NoSplash.splashFactory),
         home: Scaffold(
           body: Center(
             child: FushiSchemeSwatch(
@@ -150,6 +150,7 @@ void main() {
       (WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        theme: ThemeData(splashFactory: NoSplash.splashFactory),
         home: Scaffold(
           body: Center(
             child: FushiSchemeSwatch(
@@ -178,6 +179,7 @@ void main() {
     const Color background = Color(0xFF445566);
     await tester.pumpWidget(
       MaterialApp(
+        theme: ThemeData(splashFactory: NoSplash.splashFactory),
         home: Scaffold(
           body: Center(
             child: FushiSchemeSwatch(
@@ -247,6 +249,7 @@ void main() {
         (WidgetTester tester) async {
       await tester.pumpWidget(
         MaterialApp(
+          theme: ThemeData(splashFactory: NoSplash.splashFactory),
           home: Scaffold(
             body: Center(child: FushiSchemeSwatch(colors: colors)),
           ),
@@ -261,6 +264,7 @@ void main() {
       // 居中徽章盖住对角预览，只剩底色。撤回旧实现这条会红。
       await tester.pumpWidget(
         MaterialApp(
+          theme: ThemeData(splashFactory: NoSplash.splashFactory),
           home: Scaffold(
             body: Center(
               child: FushiSchemeSwatch(
@@ -279,6 +283,7 @@ void main() {
         (WidgetTester tester) async {
       await tester.pumpWidget(
         MaterialApp(
+          theme: ThemeData(splashFactory: NoSplash.splashFactory),
           home: Scaffold(
             body: Center(
               child: FushiSchemeSwatch(
@@ -297,6 +302,7 @@ void main() {
         (WidgetTester tester) async {
       await tester.pumpWidget(
         MaterialApp(
+          theme: ThemeData(splashFactory: NoSplash.splashFactory),
           home: Scaffold(
             body: Center(
               child: FushiSchemeSwatch(
@@ -366,7 +372,9 @@ void main() {
       );
       await tester.pumpWidget(
         MaterialApp(
-          theme: ThemeData.from(colorScheme: darkAppScheme),
+          theme: ThemeData.from(colorScheme: darkAppScheme).copyWith(
+            splashFactory: NoSplash.splashFactory,
+          ),
           home: Scaffold(
             body: Center(
               child: FushiSchemeSwatch(
@@ -403,7 +411,9 @@ void main() {
       );
       await tester.pumpWidget(
         MaterialApp(
-          theme: ThemeData.from(colorScheme: lightAppScheme),
+          theme: ThemeData.from(colorScheme: lightAppScheme).copyWith(
+            splashFactory: NoSplash.splashFactory,
+          ),
           home: Scaffold(
             body: Center(
               child: FushiSchemeSwatch(
@@ -427,6 +437,7 @@ void main() {
       ];
       await tester.pumpWidget(
         MaterialApp(
+          theme: ThemeData(splashFactory: NoSplash.splashFactory),
           home: Scaffold(
             body: Center(
               child: FushiSchemeSwatch(
@@ -487,6 +498,7 @@ void main() {
     }) async {
       await tester.pumpWidget(
         MaterialApp(
+          theme: ThemeData(splashFactory: NoSplash.splashFactory),
           home: Scaffold(
             body: Center(
               child: FushiSchemeSwatch(

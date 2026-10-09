@@ -165,7 +165,7 @@ void main() {
       // `(… "-macos.zip", ".apk")` 下照样为真，那种写法拦不住往白名单里加东西——
       // 实测过，加 `.apk` 后子串版一声不吭。
       expect(
-        RegExp(r'suffixes = \("-windows-setup\.exe", "-macos\.zip"\)')
+        RegExp(r'suffixes = \("-windows-setup\.exe", "-macos-arm64\.zip"\)')
             .hasMatch(script),
         isTrue,
         reason: '镜像的资产白名单必须恰好是 Windows/macOS 两种桌面安装包；'

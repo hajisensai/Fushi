@@ -4,13 +4,14 @@
 // 所以服务端自己设两道硬上限，默认值都低于免费额度：
 //   - 全局日预算（budgets 表，UTC 日）：写入行数 / 媒体上传次数 / 注册数。超了返回 503，次日自动恢复。
 //   - R2 总存储配额（media_usage 单行）：超了拒收新图片（507），删除图片时归还。
-// 预算用 env 覆盖：BUDGET_WRITE_ROWS / BUDGET_MEDIA / BUDGET_REGISTER / BUDGET_EMAIL / MEDIA_QUOTA_BYTES。
+// 预算用 env 覆盖：BUDGET_WRITE_ROWS / BUDGET_MEDIA / BUDGET_REGISTER / BUDGET_EMAIL / BUDGET_FEEDBACK / MEDIA_QUOTA_BYTES。
 
 import { HttpError, utcDateKey } from './util.js';
 
 /** D1 免费额度 10 万行写入/天；留两成余量给限流计数、防重放记录与定时快照。 */
 /** email 默认 90：低于 Resend 免费额度 100 封/天。 */
-export const DEFAULT_BUDGETS = { write_rows: 80000, media: 3000, register: 2000, email: 90 };
+/** feedback 默认 300：每天新反馈条数上限（附件另扣 media）。 */
+export const DEFAULT_BUDGETS = { write_rows: 80000, media: 3000, register: 2000, email: 90, feedback: 300 };
 /** R2 免费额度 10 GB；默认只用 8 GB。 */
 export const DEFAULT_MEDIA_QUOTA_BYTES = 8 * 1024 * 1024 * 1024;
 

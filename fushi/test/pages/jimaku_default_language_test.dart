@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -16,6 +16,7 @@ import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 import '../helpers/test_platform_services.dart';
 import '../helpers/glass_unwrap.dart';
@@ -192,7 +193,7 @@ Future<void> _pumpDialog(WidgetTester tester, String language) async {
   ));
   await tester.pumpAndSettle();
   // 触发一次字幕搜索，语言选择器才会出现（它依赖搜到的条目）。
-  await tester.tap(find.byIcon(Icons.search).last);
+  await tester.tap(find.byIcon(FushiIcons.search).last);
   await tester.pumpAndSettle();
 }
 

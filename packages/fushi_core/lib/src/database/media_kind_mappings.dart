@@ -64,3 +64,22 @@ String tagTombstoneDomainOf(TagHostKind kind) => switch (kind) {
       TagHostKind.game => MediaKind.game.dbValue,
       TagHostKind.collection => TagHostKind.collection.dbValue,
     };
+
+/// 合集所属的**库页域**（书架 / 漫画库 / 视频库 / 游戏库）。合集表本身不带种类列
+/// （同一张 `media_collections` 承载全部库页），一个合集属于哪个库页由它的成员
+/// 推导：任一成员落在某域，该合集就在那个域的「加入合集」列表里出现（BUG-2974）。
+enum CollectionShelfDomain { books, manga, video, games }
+
+/// 合集/书架种类 → 库页域。[MediaKind.epub] 同时承载书与漫画（`epub_books.format`
+/// 为 `manga` 的行住漫画库），由调用方按格式给出 [isManga]；其它种类忽略它。
+CollectionShelfDomain collectionShelfDomainOf(
+  MediaKind kind, {
+  bool isManga = false,
+}) =>
+    switch (kind) {
+      MediaKind.epub =>
+        isManga ? CollectionShelfDomain.manga : CollectionShelfDomain.books,
+      MediaKind.srt => CollectionShelfDomain.books,
+      MediaKind.video => CollectionShelfDomain.video,
+      MediaKind.game => CollectionShelfDomain.games,
+    };

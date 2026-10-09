@@ -491,9 +491,15 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
         borderRadius: const BorderRadius.all(Radius.circular(10)),
       );
     }
+    // M3E：primaryContainer 饱和色块 + primary 描边，16 圆角（激活态形状档）；
+    // 墨水屏只留描边。
+    final bool eink = isEinkTheme(context);
     return BoxDecoration(
+      color: eink ? null : themeData.colorScheme.primaryContainer,
       border: Border.all(color: themeData.colorScheme.primary),
-      borderRadius: tokens.radii.controlRadius,
+      borderRadius: const BorderRadius.all(
+        Radius.circular(FushiM3eShape.listActive),
+      ),
     );
   }
 
@@ -504,7 +510,9 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
     return themeData.textTheme.bodyMedium?.copyWith(
       color: isGlassDesign(context)
           ? appleColorsOf(context).label
-          : themeData.colorScheme.primary,
+          : isEinkTheme(context)
+          ? themeData.colorScheme.primary
+          : themeData.colorScheme.onPrimaryContainer,
     );
   }
 
@@ -532,7 +540,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
           scrollable: false,
           child: FushiModalSheetFrame(
             title: t.shortcut_conflict(s: conflict.label),
-            leadingIcon: Icons.warning_amber_outlined,
+            leadingIcon: FushiIcons.warning,
             scrollable: true,
             bodyPadding: EdgeInsets.fromLTRB(
               tokens.spacing.card,
@@ -571,24 +579,21 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
               spacing: tokens.spacing.gap,
               runSpacing: tokens.spacing.gap,
               children: <Widget>[
-                adaptiveDialogAction(
-                  context: ctx,
+                FushiDialogAction(
+                  label: t.dialog_cancel,
                   onPressed: () => Navigator.pop(ctx, null),
-                  child: Text(t.dialog_cancel),
                 ),
                 if (keepBothResolvable)
-                  adaptiveDialogAction(
-                    context: ctx,
+                  FushiDialogAction(
+                    label: t.shortcut_conflict_keep_both,
                     onPressed: () =>
                         Navigator.pop(ctx, _ConflictResolution.keepBoth),
-                    child: Text(t.shortcut_conflict_keep_both),
                   ),
-                adaptiveDialogAction(
-                  context: ctx,
-                  isDefaultAction: true,
+                FushiDialogAction(
+                  label: MaterialLocalizations.of(ctx).okButtonLabel,
+                  kind: FushiDialogActionKind.primary,
                   onPressed: () =>
                       Navigator.pop(ctx, _ConflictResolution.replace),
-                  child: Text(MaterialLocalizations.of(ctx).okButtonLabel),
                 ),
               ],
             ),
@@ -711,7 +716,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
       scrollable: false,
       child: FushiModalSheetFrame(
         title: widget.action.label,
-        leadingIcon: Icons.keyboard_outlined,
+        leadingIcon: FushiIcons.keyboard,
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
@@ -784,7 +789,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                 )
               else if (canAddKeyboard)
                 FushiTextButton.icon(
-                  icon: const FushiIcon(Icons.add, size: 18),
+                  icon: const FushiIcon(FushiIcons.add, size: 18),
                   label: Text(t.shortcut_keyboard),
                   onPressed: _startCapture,
                 ),
@@ -865,7 +870,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                   children: <Widget>[
                     FushiTextButton.icon(
                       key: const Key('shortcut_add_gamepad_capture'),
-                      icon: const FushiIcon(Icons.add, size: 18),
+                      icon: const FushiIcon(FushiIcons.add, size: 18),
                       label: Text(t.shortcut_gamepad),
                       onPressed: _startGamepadCapture,
                     ),
@@ -878,7 +883,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                         for (final GamepadButton btn in GamepadButton.values)
                           FushiPopupMenuItem<GamepadButton>(
                             label: btn.label,
-                            icon: Icons.gamepad_outlined,
+                            icon: FushiIcons.game,
                             value: btn,
                           ),
                       ],
@@ -891,7 +896,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                           mainAxisSize: MainAxisSize.min,
                           children: <Widget>[
                             FushiIcon(
-                              Icons.list_outlined,
+                              FushiIcons.listView,
                               size: 18,
                               color: themeData.colorScheme.primary,
                             ),
@@ -973,7 +978,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                 else
                   FushiTextButton.icon(
                     key: const Key('shortcut_add_mouse'),
-                    icon: const FushiIcon(Icons.mouse_outlined, size: 18),
+                    icon: const FushiIcon(FushiIcons.mouse, size: 18),
                     label: Text(t.shortcut_mouse_button),
                     onPressed: _startMouseCapture,
                   ),
@@ -1044,7 +1049,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
               else if (canAddWheel)
                 FushiTextButton.icon(
                   key: const Key('shortcut_add_wheel'),
-                  icon: const FushiIcon(Icons.mouse_outlined, size: 18),
+                  icon: const FushiIcon(FushiIcons.mouse, size: 18),
                   label: Text(t.shortcut_wheel),
                   onPressed: _startWheelCapture,
                 ),
@@ -1053,11 +1058,9 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
             // Conflict warning
             if (_conflictWarning != null) ...[
               SizedBox(height: tokens.spacing.gap),
-              Text(
-                _conflictWarning!,
-                style: themeData.textTheme.bodySmall?.copyWith(
-                  color: themeData.colorScheme.error,
-                ),
+              FushiInlineNotice(
+                severity: FushiNoticeSeverity.warning,
+                message: _conflictWarning!,
               ),
             ],
           ],
@@ -1071,14 +1074,13 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
               onPressed: _clearAll,
               child: Text(t.shortcut_clear),
             ),
-            adaptiveDialogAction(
-              context: context,
+            FushiDialogAction(
+              label: t.dialog_cancel,
               onPressed: () => Navigator.pop(context),
-              child: Text(t.dialog_cancel),
             ),
-            adaptiveDialogAction(
-              context: context,
-              isDefaultAction: true,
+            FushiDialogAction(
+              label: MaterialLocalizations.of(context).okButtonLabel,
+              kind: FushiDialogActionKind.primary,
               onPressed: () => Navigator.pop(
                 context,
                 ShortcutBindingEditResult(
@@ -1100,7 +1102,6 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                       List<WheelBinding>.unmodifiable(_wheelReassignments),
                 ),
               ),
-              child: Text(MaterialLocalizations.of(context).okButtonLabel),
             ),
           ],
         ),

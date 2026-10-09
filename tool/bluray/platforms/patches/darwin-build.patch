@@ -1,0 +1,1295 @@
+diff --git a/nix/packages/mk-out-libs/default.nix b/nix/packages/mk-out-libs/default.nix
+index 7540281..920bc74 100644
+--- a/nix/packages/mk-out-libs/default.nix
++++ b/nix/packages/mk-out-libs/default.nix
+@@ -43,6 +43,8 @@ if arch != archs.universal then
+     dav1d = callPackage ../mk-pkg-dav1d/default.nix { };
+     libxml2 = callPackage ../mk-pkg-libxml2/default.nix { };
+     uchardet = callPackage ../mk-pkg-uchardet/default.nix { };
++    libplacebo = callPackage ../mk-pkg-libplacebo/default.nix { };
++    libbluray = callPackage ../mk-pkg-libbluray/default.nix { };
+     libass = callPackage ../mk-pkg-libass/default.nix { };
+     harfbuzz = callPackage ../mk-pkg-harfbuzz/default.nix { };
+     fribidi = callPackage ../mk-pkg-fribidi/default.nix { };
+@@ -63,6 +65,8 @@ if arch != archs.universal then
+         libogg
+       ]
+       ++ pkgs.lib.optionals (variant == variants.video) [
++        libplacebo
++        libbluray
+         dav1d
+         libxml2
+         uchardet
+diff --git a/nix/packages/mk-pkg-libbluray/default.nix b/nix/packages/mk-pkg-libbluray/default.nix
+new file mode 100644
+index 0000000..ba206d6
+--- /dev/null
++++ b/nix/packages/mk-pkg-libbluray/default.nix
+@@ -0,0 +1,34 @@
++{
++  pkgs ? import ../../utils/default/pkgs.nix,
++  os ? import ../../utils/default/os.nix,
++  arch ? pkgs.callPackage ../../utils/default/arch.nix { },
++}:
++let
++  lock = (import ../../../packages.lock.nix).libbluray;
++  callPackage = pkgs.lib.callPackageWith { inherit pkgs os arch; };
++  nativeFile = callPackage ../../utils/native-file/default.nix { };
++  crossFile = callPackage ../../utils/cross-file/default.nix { };
++  source = callPackage ../../utils/fetch-tarball/default.nix {
++    name = "libbluray-source-${lock.version}";
++    inherit (lock) url sha256;
++  };
++  patchedSource = pkgs.runCommand "libbluray-darwin-source" { } ''
++    cp -r ${source} source
++    chmod -R u+w source
++    cd source
++    patch -p1 <${../../../patches/libbluray-ios-files.patch}
++    cp -r . $out
++  '';
++in pkgs.stdenvNoCC.mkDerivation {
++  pname = "libbluray-${os}-${arch}";
++  version = lock.version;
++  src = patchedSource;
++  dontUnpack = true;
++  nativeBuildInputs = [ pkgs.meson pkgs.ninja pkgs.pkg-config pkgs.python3 ];
++  configurePhase = ''
++    meson setup build $src --native-file ${nativeFile} --cross-file ${crossFile} \
++      --prefix=$out --default-library=shared --wrap-mode=nodownload -Dbdj_jar=disabled -Denable_tools=false -Denable_examples=false -Dfontconfig=disabled -Dfreetype=disabled -Dlibxml2=disabled -Dembed_udfread=true
++  '';
++  buildPhase = "meson compile -vC build";
++  installPhase = "meson install -C build";
++}
+diff --git a/nix/packages/mk-pkg-libbluray/targets.nix b/nix/packages/mk-pkg-libbluray/targets.nix
+new file mode 100644
+index 0000000..501961b
+--- /dev/null
++++ b/nix/packages/mk-pkg-libbluray/targets.nix
+@@ -0,0 +1 @@
++import ../../utils/targets/pkgs.nix
+diff --git a/nix/packages/mk-pkg-libplacebo/default.nix b/nix/packages/mk-pkg-libplacebo/default.nix
+new file mode 100644
+index 0000000..402ac41
+--- /dev/null
++++ b/nix/packages/mk-pkg-libplacebo/default.nix
+@@ -0,0 +1,45 @@
++{
++  pkgs ? import ../../utils/default/pkgs.nix,
++  os ? import ../../utils/default/os.nix,
++  arch ? pkgs.callPackage ../../utils/default/arch.nix { },
++}:
++let
++  lock = (import ../../../packages.lock.nix).libplacebo;
++  callPackage = pkgs.lib.callPackageWith { inherit pkgs os arch; };
++  nativeFile = callPackage ../../utils/native-file/default.nix { };
++  crossFile = callPackage ../../utils/cross-file/default.nix { };
++  source = callPackage ../../utils/fetch-tarball/default.nix {
++    name = "libplacebo-source-${lock.version}";
++    inherit (lock) url sha256;
++  };
++  fastFloat = callPackage ../../utils/fetch-tarball/default.nix {
++    name = "libplacebo-fast-float-source";
++    inherit ((import ../../../packages.lock.nix).fast-float) url sha256;
++  };
++  vulkanHeaders = callPackage ../../utils/fetch-tarball/default.nix {
++    name = "libplacebo-vulkan-headers-source";
++    inherit ((import ../../../packages.lock.nix).vulkan-headers) url sha256;
++  };
++  completeSource = pkgs.runCommand "libplacebo-complete-source-${lock.version}" { } ''
++    cp -r ${source} source
++    chmod -R u+w source
++    cp -r ${fastFloat}/. source/3rdparty/fast_float/
++    cp -r ${vulkanHeaders}/. source/3rdparty/Vulkan-Headers/
++    cp -r source $out
++  '';
++in pkgs.stdenvNoCC.mkDerivation {
++  pname = "libplacebo-${os}-${arch}";
++  version = lock.version;
++  src = completeSource;
++  dontUnpack = true;
++  nativeBuildInputs = [ pkgs.meson pkgs.ninja pkgs.pkg-config pkgs.python3 ];
++  # Meson's find_installation() selects Meson's interpreter, not a PATH wrapper.
++  # Its generated commands must receive the template engine explicitly.
++  PYTHONPATH = "${pkgs.python3Packages.jinja2}/${pkgs.python3.sitePackages}:${pkgs.python3Packages.markupsafe}/${pkgs.python3.sitePackages}";
++  configurePhase = ''
++    meson setup build $src --native-file ${nativeFile} --cross-file ${crossFile} \
++      --prefix=$out --default-library=shared --wrap-mode=nodownload -Dauto_features=disabled -Ddovi=enabled -Ddemos=false -Dtests=false
++  '';
++  buildPhase = "meson compile -vC build";
++  installPhase = "meson install -C build";
++}
+diff --git a/nix/packages/mk-pkg-libplacebo/targets.nix b/nix/packages/mk-pkg-libplacebo/targets.nix
+new file mode 100644
+index 0000000..501961b
+--- /dev/null
++++ b/nix/packages/mk-pkg-libplacebo/targets.nix
+@@ -0,0 +1 @@
++import ../../utils/targets/pkgs.nix
+diff --git a/nix/packages/mk-pkg-libpng/default.nix b/nix/packages/mk-pkg-libpng/default.nix
+index 9a5fafd..cb2909a 100644
+--- a/nix/packages/mk-pkg-libpng/default.nix
++++ b/nix/packages/mk-pkg-libpng/default.nix
+@@ -38,6 +38,7 @@ let
+         # extract and patch libpng dependency
+         unzip ${libpngPatch} -d libpng-patch
+         rsync -a libpng-patch/libpng-*/ $src/
++        (cd $src && patch -p1 <${../../../patches/libpng-modern-apple-math.patch})
+ 
+         cp -r $src $out
+       '';
+diff --git a/nix/packages/mk-pkg-mpv/default.nix b/nix/packages/mk-pkg-mpv/default.nix
+index bb20b83..b405c46 100644
+--- a/nix/packages/mk-pkg-mpv/default.nix
++++ b/nix/packages/mk-pkg-mpv/default.nix
+@@ -3,275 +3,8 @@
+   os ? import ../../utils/default/os.nix,
+   arch ? pkgs.callPackage ../../utils/default/arch.nix { },
+   variant ? import ../../utils/default/variant.nix,
++  flavor ? import ../../utils/default/flavor.nix,
+ }:
+-
+-let
+-  name = "mpv";
+-  packageLock = (import ../../../packages.lock.nix).${name};
+-  inherit (packageLock) version;
+-
+-  variants = import ../../utils/constants/variants.nix;
+-  oses = import ../../utils/constants/oses.nix;
+-  callPackage = pkgs.lib.callPackageWith {
+-    inherit
+-      pkgs
+-      os
+-      arch
+-      variant
+-      ;
+-  };
+-  nativeFile = callPackage ../../utils/native-file/default.nix { };
+-  crossFile = callPackage ../../utils/cross-file/default.nix { };
+-  xctoolchainLipo = callPackage ../../utils/xctoolchain/lipo.nix { };
+-  ffmpeg = callPackage ../mk-pkg-ffmpeg/default.nix { };
+-  uchardet = callPackage ../mk-pkg-uchardet/default.nix { };
+-  libass = callPackage ../mk-pkg-libass/default.nix { };
+-
+-  nativeBuildInputs = [
+-    pkgs.meson
+-    pkgs.ninja
+-    pkgs.pkg-config
+-    pkgs.python3
+-    xctoolchainLipo
+-  ];
+-
+-  pname = import ../../utils/name/package.nix name;
+-  src = callPackage ../../utils/fetch-tarball/default.nix {
+-    name = "${pname}-source-${version}";
+-    inherit (packageLock) url sha256;
+-  };
+-  patchedSource = pkgs.runCommand "${pname}-patched-source-${variant}-${version}" { } ''
+-    cp -r ${src} src
+-    export src=$PWD/src
+-    chmod -R 777 $src
+-
+-    cd $src
+-    patch -p1 <${../../../patches/mpv-fix-missing-objc.patch}
+-    patch -p1 <${../../../patches/mpv-audiounit-shared-session.patch}
+-    patch -p1 <${../../../patches/mpv-gl-dovi-p5.patch}
+-    if [ "${variant}" == "${variants.audio}" ]; then
+-      patch -p1 <${../../../patches/mpv-remove-libass.patch}
+-    fi
+-    cd -
+-
+-    cp -r $src $out
+-  '';
+-  fixedSource = callPackage ../../utils/patch-shebangs/default.nix {
+-    name = "${pname}-fixed-source-${variant}-${version}";
+-    src = patchedSource;
+-    inherit nativeBuildInputs;
+-  };
+-in
+-
+-pkgs.stdenvNoCC.mkDerivation {
+-  name = "${pname}-${os}-${arch}-${variant}-${version}";
+-  pname = pname;
+-  inherit version;
+-  src = fixedSource;
+-  dontUnpack = true;
+-  enableParallelBuilding = true;
+-  inherit nativeBuildInputs;
+-  buildInputs =
+-    [ ffmpeg ]
+-    ++ pkgs.lib.optionals (variant == "video") [
+-      uchardet
+-      libass
+-    ];
+-  configurePhase = ''
+-    DISABLE_ALL_OPTIONS=(
+-      `# booleans`
+-      -Dgpl=false `# GPL (version 2 or later) build`
+-      -Dcplayer=false `# mpv CLI player`
+-      -Dlibmpv=false `# libmpv library`
+-      -Dbuild-date=false `# whether to include binary compile time`
+-      -Dtests=false `# unit tests (development only)`
+-      -Dta-leak-report=false `# enable ta leak report by default (development only)`
+-
+-      `# misc features`
+-      -Dcdda=disabled `# cdda support (libcdio)`
+-      -Dcplugins=disabled `# C plugins`
+-      -Ddvbin=disabled `# DVB input module`
+-      -Ddvdnav=disabled `# dvdnav support`
+-      -Diconv=disabled `# iconv`
+-      -Djavascript=disabled `# Javascript (MuJS backend)`
+-      -Dlcms2=disabled `# LCMS2 support`
+-      -Dlibarchive=disabled `# libarchive wrapper for reading zip files and more`
+-      -Dlibavdevice=disabled `# libavdevice`
+-      -Dlibbluray=disabled `# Bluray support`
+-      -Dlua=disabled `# Lua`
+-      -Dpthread-debug=disabled `# pthread runtime debugging wrappers`
+-      -Drubberband=disabled `# librubberband support`
+-      -Dsdl2=disabled `# SDL2`
+-      -Dsdl2-gamepad=disabled `# SDL2 gamepad input`
+-      -Dstdatomic=disabled `# C11 stdatomic.h`
+-      -Duchardet=disabled `# uchardet support`
+-      -Duwp=disabled `# Universal Windows Platform`
+-      -Dvapoursynth=disabled `# VapourSynth filter bridge`
+-      -Dvector=disabled `# GCC vector instructions`
+-      -Dwin32-internal-pthreads=disabled `#internal pthread wrapper for win32 (Vista+)`
+-      -Dzimg=disabled `# libzimg support (high quality software scaler)`
+-      -Dzlib=disabled `# zlib`
+-
+-      `# audio output features`
+-      -Dalsa=disabled `# ALSA audio output`
+-      -Daudiounit=disabled `# AudioUnit output for iOS`
+-      -Dcoreaudio=disabled `# CoreAudio audio output`
+-      -Djack=disabled `# JACK audio output`
+-      -Dopenal=disabled `# OpenAL audio output`
+-      -Dopensles=disabled `# OpenSL ES audio output`
+-      -Doss-audio=disabled `# OSSv4 audio output`
+-      -Dpipewire=disabled `# PipeWire audio output`
+-      -Dpulse=disabled `# PulseAudio audio output`
+-      -Dsdl2-audio=disabled `# SDL2 audio output`
+-      -Dsndio=disabled `# sndio audio output`
+-      -Dwasapi=disabled `# WASAPI audio output`
+-
+-      `# video output features`
+-      -Dcaca=disabled `# CACA`
+-      -Dcocoa=disabled `# Cocoa`
+-      -Dd3d11=disabled `# Direct3D 11 video output`
+-      -Ddirect3d=disabled `# Direct3D support`
+-      -Ddrm=disabled `# DRM`
+-      -Degl=disabled `# EGL 1.4`
+-      -Degl-android=disabled `# Android EGL support`
+-      -Degl-angle=disabled `# OpenGL ANGLE headers`
+-      -Degl-angle-lib=disabled `# OpenGL Win32 ANGLE library`
+-      -Degl-angle-win32=disabled `# OpenGL Win32 ANGLE Backend`
+-      -Degl-drm=disabled `# OpenGL DRM EGL Backend`
+-      -Degl-wayland=disabled `# OpenGL Wayland Backend`
+-      -Degl-x11=disabled `# OpenGL X11 EGL Backend`
+-      -Dgbm=disabled `# GBM`
+-      -Dgl=disabled `# OpenGL context support`
+-      -Dgl-cocoa=disabled `# gl-cocoa`
+-      -Dgl-dxinterop=disabled `# OpenGL/DirectX Interop Backend`
+-      -Dgl-win32=disabled `# OpenGL Win32 Backend`
+-      -Dgl-x11=disabled `# OpenGL X11/GLX (deprecated/legacy)`
+-      -Djpeg=disabled `# JPEG support`
+-      -Dlibplacebo=disabled `# libplacebo support`
+-      -Drpi=disabled `# Raspberry Pi support`
+-      -Dsdl2-video=disabled `# SDL2 video output`
+-      -Dshaderc=disabled `# libshaderc SPIR-V compiler`
+-      -Dsixel=disabled `# Sixel`
+-      -Dspirv-cross=disabled `# SPIRV-Cross SPIR-V shader converter`
+-      -Dplain-gl=disabled `# OpenGL without platform-specific code (e.g. for libmpv)`
+-      -Dvdpau=disabled `# VDPAU acceleration`
+-      -Dvdpau-gl-x11=disabled `# VDPAU with OpenGl/X11`
+-      -Dvaapi=disabled `# VAAPI acceleration`
+-      -Dvaapi-drm=disabled `# VAAPI (DRM/EGL support)`
+-      -Dvaapi-wayland=disabled `# VAAPI (Wayland support)`
+-      -Dvaapi-x11=disabled `# VAAPI (X11 support)`
+-      -Dvaapi-x-egl=disabled `# VAAPI EGL on X11`
+-      -Dvulkan=disabled `# Vulkan context support`
+-      -Dwayland=disabled `# Wayland`
+-      -Dx11=disabled `# X11`
+-      -Dxv=disabled `# Xv video output`
+-
+-      `# hwaccel features`
+-      -Dandroid-media-ndk=disabled `# Android Media APIs`
+-      -Dcuda-hwaccel=disabled `# CUDA acceleration`
+-      -Dcuda-interop=disabled `# CUDA with graphics interop`
+-      -Dd3d-hwaccel=disabled `# D3D11VA hwaccel`
+-      -Dd3d9-hwaccel=disabled `# DXVA2 hwaccel`
+-      -Dgl-dxinterop-d3d9=disabled `# OpenGL/DirectX Interop Backend DXVA2 interop`
+-      -Dios-gl=disabled `# iOS OpenGL ES hardware decoding interop support`
+-      -Drpi-mmal=disabled `# Raspberry Pi MMAL hwaccel`
+-      -Dvideotoolbox-gl=disabled `# Videotoolbox with OpenGL`
+-
+-      `# macOS features`
+-      -Dmacos-10-11-features=disabled `# macOS 10.11 SDK Features`
+-      -Dmacos-10-12-2-features=disabled `# macOS 10.12.2 SDK Features`
+-      -Dmacos-10-14-features=disabled `# macOS 10.14 SDK Features`
+-      -Dmacos-cocoa-cb=disabled `# macOS libmpv backend`
+-      -Dmacos-media-player=disabled `# macOS Media Player support`
+-      -Dmacos-touchbar=disabled `# macOS Touch Bar support`
+-      -Dswift-build=disabled `# macOS Swift build tools`
+-      -Dswift-flags= `# Optional Swift compiler flags`
+-
+-      `# manpages`
+-      -Dhtml-build=disabled `# html manual generation`
+-      -Dmanpage-build=disabled `# manpage generation`
+-      -Dpdf-build=disabled `# pdf manual generation`
+-    )
+-
+-    COMMON_OPTIONS=(
+-      `# booleans`
+-      -Dlibmpv=true `# libmpv library`
+-      -Dbuild-date=true `# whether to include binary compile time`
+-
+-      `# misc features`
+-      -Diconv=enabled `# iconv`
+-    )
+-
+-    COMMON_VIDEO_OPTIONS=(
+-      `# misc features`
+-      -Duchardet=enabled `# uchardet support`
+-      -Dzlib=enabled `# zlib`
+-
+-      `# video output features`
+-      -Dgl=enabled `# OpenGL context support`
+-      -Dplain-gl=enabled `# OpenGL without platform-specific code (e.g. for libmpv)`
+-    )
+-
+-    MACOS_OPTIONS=(
+-      `# audio output features`
+-      -Dcoreaudio=enabled `# CoreAudio audio output`
+-
+-      `# video output features`
+-      -Dcocoa=enabled `# Cocoa` `# BUG: required in audio mode since v0.36.0`
+-    )
+-
+-    MACOS_VIDEO_OPTIONS=(
+-      `# video output features`
+-      -Dgl-cocoa=enabled `# gl-cocoa`
+-
+-      `# hwaccel features`
+-      -Dvideotoolbox-gl=enabled `# Videotoolbox with OpenGL`
+-    )
+-
+-    IOS_OPTIONS=(
+-      `# audio output features`
+-      -Daudiounit=enabled `# AudioUnit output for iOS`
+-    )
+-
+-    IOS_VIDEO_OPTIONS=(
+-      `# hwaccel features`
+-      -Dios-gl=enabled `# iOS OpenGL ES hardware decoding interop support`
+-    )
+-
+-    OPTIONS=("''${DISABLE_ALL_OPTIONS[@]}")
+-
+-    OPTIONS+=("''${COMMON_OPTIONS[@]}")
+-    if [ "${variant}" == "${variants.video}" ]; then
+-      OPTIONS+=("''${COMMON_VIDEO_OPTIONS[@]}")
+-    fi
+-
+-    if [ "${os}" == "${oses.macos}" ]; then
+-      OPTIONS+=("''${MACOS_OPTIONS[@]}")
+-      if [ "${variant}" == "${variants.video}" ]; then
+-        OPTIONS+=("''${MACOS_VIDEO_OPTIONS[@]}")
+-      fi
+-    elif [ "${os}" == "${oses.ios}" ]; then
+-      OPTIONS+=("''${IOS_OPTIONS[@]}")
+-      if [ "${variant}" == "${variants.video}" ]; then
+-        OPTIONS+=("''${IOS_VIDEO_OPTIONS[@]}")
+-      fi
+-    fi
+-
+-    meson setup build $src \
+-      --native-file ${nativeFile} \
+-      --cross-file ${crossFile} \
+-      --prefix=$out \
+-      "''${OPTIONS[@]}" |
+-      tee configure.log
+-  '';
+-  buildPhase = ''
+-    meson compile -vC build
+-  '';
+-  installPhase = ''
+-    meson install -C build
+-
+-    # copy configure.log
+-    mkdir -p $out/share/mpv
+-    cp configure.log $out/share/mpv/
+-  '';
+-}
++if variant == "video"
++then import ./video.nix { inherit pkgs os arch variant flavor; }
++else import ./legacy.nix { inherit pkgs os arch variant; }
+diff --git a/nix/packages/mk-pkg-mpv/legacy.nix b/nix/packages/mk-pkg-mpv/legacy.nix
+new file mode 100644
+index 0000000..bb20b83
+--- /dev/null
++++ b/nix/packages/mk-pkg-mpv/legacy.nix
+@@ -0,0 +1,277 @@
++{
++  pkgs ? import ../../utils/default/pkgs.nix,
++  os ? import ../../utils/default/os.nix,
++  arch ? pkgs.callPackage ../../utils/default/arch.nix { },
++  variant ? import ../../utils/default/variant.nix,
++}:
++
++let
++  name = "mpv";
++  packageLock = (import ../../../packages.lock.nix).${name};
++  inherit (packageLock) version;
++
++  variants = import ../../utils/constants/variants.nix;
++  oses = import ../../utils/constants/oses.nix;
++  callPackage = pkgs.lib.callPackageWith {
++    inherit
++      pkgs
++      os
++      arch
++      variant
++      ;
++  };
++  nativeFile = callPackage ../../utils/native-file/default.nix { };
++  crossFile = callPackage ../../utils/cross-file/default.nix { };
++  xctoolchainLipo = callPackage ../../utils/xctoolchain/lipo.nix { };
++  ffmpeg = callPackage ../mk-pkg-ffmpeg/default.nix { };
++  uchardet = callPackage ../mk-pkg-uchardet/default.nix { };
++  libass = callPackage ../mk-pkg-libass/default.nix { };
++
++  nativeBuildInputs = [
++    pkgs.meson
++    pkgs.ninja
++    pkgs.pkg-config
++    pkgs.python3
++    xctoolchainLipo
++  ];
++
++  pname = import ../../utils/name/package.nix name;
++  src = callPackage ../../utils/fetch-tarball/default.nix {
++    name = "${pname}-source-${version}";
++    inherit (packageLock) url sha256;
++  };
++  patchedSource = pkgs.runCommand "${pname}-patched-source-${variant}-${version}" { } ''
++    cp -r ${src} src
++    export src=$PWD/src
++    chmod -R 777 $src
++
++    cd $src
++    patch -p1 <${../../../patches/mpv-fix-missing-objc.patch}
++    patch -p1 <${../../../patches/mpv-audiounit-shared-session.patch}
++    patch -p1 <${../../../patches/mpv-gl-dovi-p5.patch}
++    if [ "${variant}" == "${variants.audio}" ]; then
++      patch -p1 <${../../../patches/mpv-remove-libass.patch}
++    fi
++    cd -
++
++    cp -r $src $out
++  '';
++  fixedSource = callPackage ../../utils/patch-shebangs/default.nix {
++    name = "${pname}-fixed-source-${variant}-${version}";
++    src = patchedSource;
++    inherit nativeBuildInputs;
++  };
++in
++
++pkgs.stdenvNoCC.mkDerivation {
++  name = "${pname}-${os}-${arch}-${variant}-${version}";
++  pname = pname;
++  inherit version;
++  src = fixedSource;
++  dontUnpack = true;
++  enableParallelBuilding = true;
++  inherit nativeBuildInputs;
++  buildInputs =
++    [ ffmpeg ]
++    ++ pkgs.lib.optionals (variant == "video") [
++      uchardet
++      libass
++    ];
++  configurePhase = ''
++    DISABLE_ALL_OPTIONS=(
++      `# booleans`
++      -Dgpl=false `# GPL (version 2 or later) build`
++      -Dcplayer=false `# mpv CLI player`
++      -Dlibmpv=false `# libmpv library`
++      -Dbuild-date=false `# whether to include binary compile time`
++      -Dtests=false `# unit tests (development only)`
++      -Dta-leak-report=false `# enable ta leak report by default (development only)`
++
++      `# misc features`
++      -Dcdda=disabled `# cdda support (libcdio)`
++      -Dcplugins=disabled `# C plugins`
++      -Ddvbin=disabled `# DVB input module`
++      -Ddvdnav=disabled `# dvdnav support`
++      -Diconv=disabled `# iconv`
++      -Djavascript=disabled `# Javascript (MuJS backend)`
++      -Dlcms2=disabled `# LCMS2 support`
++      -Dlibarchive=disabled `# libarchive wrapper for reading zip files and more`
++      -Dlibavdevice=disabled `# libavdevice`
++      -Dlibbluray=disabled `# Bluray support`
++      -Dlua=disabled `# Lua`
++      -Dpthread-debug=disabled `# pthread runtime debugging wrappers`
++      -Drubberband=disabled `# librubberband support`
++      -Dsdl2=disabled `# SDL2`
++      -Dsdl2-gamepad=disabled `# SDL2 gamepad input`
++      -Dstdatomic=disabled `# C11 stdatomic.h`
++      -Duchardet=disabled `# uchardet support`
++      -Duwp=disabled `# Universal Windows Platform`
++      -Dvapoursynth=disabled `# VapourSynth filter bridge`
++      -Dvector=disabled `# GCC vector instructions`
++      -Dwin32-internal-pthreads=disabled `#internal pthread wrapper for win32 (Vista+)`
++      -Dzimg=disabled `# libzimg support (high quality software scaler)`
++      -Dzlib=disabled `# zlib`
++
++      `# audio output features`
++      -Dalsa=disabled `# ALSA audio output`
++      -Daudiounit=disabled `# AudioUnit output for iOS`
++      -Dcoreaudio=disabled `# CoreAudio audio output`
++      -Djack=disabled `# JACK audio output`
++      -Dopenal=disabled `# OpenAL audio output`
++      -Dopensles=disabled `# OpenSL ES audio output`
++      -Doss-audio=disabled `# OSSv4 audio output`
++      -Dpipewire=disabled `# PipeWire audio output`
++      -Dpulse=disabled `# PulseAudio audio output`
++      -Dsdl2-audio=disabled `# SDL2 audio output`
++      -Dsndio=disabled `# sndio audio output`
++      -Dwasapi=disabled `# WASAPI audio output`
++
++      `# video output features`
++      -Dcaca=disabled `# CACA`
++      -Dcocoa=disabled `# Cocoa`
++      -Dd3d11=disabled `# Direct3D 11 video output`
++      -Ddirect3d=disabled `# Direct3D support`
++      -Ddrm=disabled `# DRM`
++      -Degl=disabled `# EGL 1.4`
++      -Degl-android=disabled `# Android EGL support`
++      -Degl-angle=disabled `# OpenGL ANGLE headers`
++      -Degl-angle-lib=disabled `# OpenGL Win32 ANGLE library`
++      -Degl-angle-win32=disabled `# OpenGL Win32 ANGLE Backend`
++      -Degl-drm=disabled `# OpenGL DRM EGL Backend`
++      -Degl-wayland=disabled `# OpenGL Wayland Backend`
++      -Degl-x11=disabled `# OpenGL X11 EGL Backend`
++      -Dgbm=disabled `# GBM`
++      -Dgl=disabled `# OpenGL context support`
++      -Dgl-cocoa=disabled `# gl-cocoa`
++      -Dgl-dxinterop=disabled `# OpenGL/DirectX Interop Backend`
++      -Dgl-win32=disabled `# OpenGL Win32 Backend`
++      -Dgl-x11=disabled `# OpenGL X11/GLX (deprecated/legacy)`
++      -Djpeg=disabled `# JPEG support`
++      -Dlibplacebo=disabled `# libplacebo support`
++      -Drpi=disabled `# Raspberry Pi support`
++      -Dsdl2-video=disabled `# SDL2 video output`
++      -Dshaderc=disabled `# libshaderc SPIR-V compiler`
++      -Dsixel=disabled `# Sixel`
++      -Dspirv-cross=disabled `# SPIRV-Cross SPIR-V shader converter`
++      -Dplain-gl=disabled `# OpenGL without platform-specific code (e.g. for libmpv)`
++      -Dvdpau=disabled `# VDPAU acceleration`
++      -Dvdpau-gl-x11=disabled `# VDPAU with OpenGl/X11`
++      -Dvaapi=disabled `# VAAPI acceleration`
++      -Dvaapi-drm=disabled `# VAAPI (DRM/EGL support)`
++      -Dvaapi-wayland=disabled `# VAAPI (Wayland support)`
++      -Dvaapi-x11=disabled `# VAAPI (X11 support)`
++      -Dvaapi-x-egl=disabled `# VAAPI EGL on X11`
++      -Dvulkan=disabled `# Vulkan context support`
++      -Dwayland=disabled `# Wayland`
++      -Dx11=disabled `# X11`
++      -Dxv=disabled `# Xv video output`
++
++      `# hwaccel features`
++      -Dandroid-media-ndk=disabled `# Android Media APIs`
++      -Dcuda-hwaccel=disabled `# CUDA acceleration`
++      -Dcuda-interop=disabled `# CUDA with graphics interop`
++      -Dd3d-hwaccel=disabled `# D3D11VA hwaccel`
++      -Dd3d9-hwaccel=disabled `# DXVA2 hwaccel`
++      -Dgl-dxinterop-d3d9=disabled `# OpenGL/DirectX Interop Backend DXVA2 interop`
++      -Dios-gl=disabled `# iOS OpenGL ES hardware decoding interop support`
++      -Drpi-mmal=disabled `# Raspberry Pi MMAL hwaccel`
++      -Dvideotoolbox-gl=disabled `# Videotoolbox with OpenGL`
++
++      `# macOS features`
++      -Dmacos-10-11-features=disabled `# macOS 10.11 SDK Features`
++      -Dmacos-10-12-2-features=disabled `# macOS 10.12.2 SDK Features`
++      -Dmacos-10-14-features=disabled `# macOS 10.14 SDK Features`
++      -Dmacos-cocoa-cb=disabled `# macOS libmpv backend`
++      -Dmacos-media-player=disabled `# macOS Media Player support`
++      -Dmacos-touchbar=disabled `# macOS Touch Bar support`
++      -Dswift-build=disabled `# macOS Swift build tools`
++      -Dswift-flags= `# Optional Swift compiler flags`
++
++      `# manpages`
++      -Dhtml-build=disabled `# html manual generation`
++      -Dmanpage-build=disabled `# manpage generation`
++      -Dpdf-build=disabled `# pdf manual generation`
++    )
++
++    COMMON_OPTIONS=(
++      `# booleans`
++      -Dlibmpv=true `# libmpv library`
++      -Dbuild-date=true `# whether to include binary compile time`
++
++      `# misc features`
++      -Diconv=enabled `# iconv`
++    )
++
++    COMMON_VIDEO_OPTIONS=(
++      `# misc features`
++      -Duchardet=enabled `# uchardet support`
++      -Dzlib=enabled `# zlib`
++
++      `# video output features`
++      -Dgl=enabled `# OpenGL context support`
++      -Dplain-gl=enabled `# OpenGL without platform-specific code (e.g. for libmpv)`
++    )
++
++    MACOS_OPTIONS=(
++      `# audio output features`
++      -Dcoreaudio=enabled `# CoreAudio audio output`
++
++      `# video output features`
++      -Dcocoa=enabled `# Cocoa` `# BUG: required in audio mode since v0.36.0`
++    )
++
++    MACOS_VIDEO_OPTIONS=(
++      `# video output features`
++      -Dgl-cocoa=enabled `# gl-cocoa`
++
++      `# hwaccel features`
++      -Dvideotoolbox-gl=enabled `# Videotoolbox with OpenGL`
++    )
++
++    IOS_OPTIONS=(
++      `# audio output features`
++      -Daudiounit=enabled `# AudioUnit output for iOS`
++    )
++
++    IOS_VIDEO_OPTIONS=(
++      `# hwaccel features`
++      -Dios-gl=enabled `# iOS OpenGL ES hardware decoding interop support`
++    )
++
++    OPTIONS=("''${DISABLE_ALL_OPTIONS[@]}")
++
++    OPTIONS+=("''${COMMON_OPTIONS[@]}")
++    if [ "${variant}" == "${variants.video}" ]; then
++      OPTIONS+=("''${COMMON_VIDEO_OPTIONS[@]}")
++    fi
++
++    if [ "${os}" == "${oses.macos}" ]; then
++      OPTIONS+=("''${MACOS_OPTIONS[@]}")
++      if [ "${variant}" == "${variants.video}" ]; then
++        OPTIONS+=("''${MACOS_VIDEO_OPTIONS[@]}")
++      fi
++    elif [ "${os}" == "${oses.ios}" ]; then
++      OPTIONS+=("''${IOS_OPTIONS[@]}")
++      if [ "${variant}" == "${variants.video}" ]; then
++        OPTIONS+=("''${IOS_VIDEO_OPTIONS[@]}")
++      fi
++    fi
++
++    meson setup build $src \
++      --native-file ${nativeFile} \
++      --cross-file ${crossFile} \
++      --prefix=$out \
++      "''${OPTIONS[@]}" |
++      tee configure.log
++  '';
++  buildPhase = ''
++    meson compile -vC build
++  '';
++  installPhase = ''
++    meson install -C build
++
++    # copy configure.log
++    mkdir -p $out/share/mpv
++    cp configure.log $out/share/mpv/
++  '';
++}
+diff --git a/nix/packages/mk-pkg-mpv/video.nix b/nix/packages/mk-pkg-mpv/video.nix
+new file mode 100644
+index 0000000..bc5bf16
+--- /dev/null
++++ b/nix/packages/mk-pkg-mpv/video.nix
+@@ -0,0 +1,60 @@
++{
++  pkgs ? import ../../utils/default/pkgs.nix,
++  os ? import ../../utils/default/os.nix,
++  arch ? pkgs.callPackage ../../utils/default/arch.nix { },
++  variant ? import ../../utils/default/variant.nix,
++  flavor ? import ../../utils/default/flavor.nix,
++}:
++let
++  lock = (import ../../../packages.lock.nix).mpv-menu;
++  callPackage = pkgs.lib.callPackageWith { inherit pkgs os arch variant flavor; };
++  nativeFile = callPackage ../../utils/native-file/default.nix { };
++  crossFile = callPackage ../../utils/cross-file/default.nix { };
++  xctoolchainLipo = callPackage ../../utils/xctoolchain/lipo.nix { };
++  src = callPackage ../../utils/fetch-tarball/default.nix {
++    name = "mpv-menu-source-${lock.version}";
++    inherit (lock) url sha256;
++  };
++  patchedSource = pkgs.runCommand "mpv-menu-source-patched" { nativeBuildInputs = [ pkgs.python3 ]; } ''
++    cp -r ${src} source
++    chmod -R u+w source
++    cd source
++    patchShebangs .
++    patch -p1 <${../../../patches/mpv-darwin-cross-sdk.patch}
++    patch -p1 <${../../../patches/mpv-audiounit-shared-session-menu.patch}
++    patch -p1 <${../../../patches/mpv-gl-dovi-p5-menu.patch}
++    patch -p1 <${../../../patches/disc-navigation-state.patch}
++    cp -r . $out
++  '';
++in pkgs.stdenvNoCC.mkDerivation {
++  pname = "mpv-menu-${os}-${arch}";
++  version = lock.version;
++  src = patchedSource;
++  dontUnpack = true;
++  nativeBuildInputs = [ pkgs.meson pkgs.ninja pkgs.pkg-config pkgs.python3 xctoolchainLipo ];
++  buildInputs = builtins.map (path: callPackage path { }) [
++    ../mk-pkg-ffmpeg/default.nix
++    ../mk-pkg-libass/default.nix
++    ../mk-pkg-uchardet/default.nix
++    ../mk-pkg-libplacebo/default.nix
++    ../mk-pkg-libbluray/default.nix
++  ];
++  configurePhase = ''
++    OPTIONS=(-Db_lundef=true -Dauto_features=disabled -Dgpl=false -Dcplayer=false -Dlibmpv=true
++      -Diconv=enabled -Duchardet=enabled -Dzlib=enabled -Dgl=enabled
++      -Dplain-gl=enabled -Dlibbluray=enabled)
++    if [ "${os}" = macos ]; then
++      OPTIONS+=(-Dcoreaudio=enabled -Dcocoa=enabled -Dgl-cocoa=enabled -Dvideotoolbox-gl=enabled)
++    else
++      OPTIONS+=(-Daudiounit=enabled -Dios-gl=enabled)
++    fi
++    meson setup build $src --native-file ${nativeFile} --cross-file ${crossFile} \
++      --prefix=$out --wrap-mode=nofallback "''${OPTIONS[@]}" | tee configure.log
++  '';
++  buildPhase = "meson compile -vC build";
++  installPhase = ''
++    meson install -C build
++    mkdir -p $out/share/mpv
++    cp configure.log $out/share/mpv/
++  '';
++}
+diff --git a/packages.lock.nix b/packages.lock.nix
+index 3e0b25d..d36babb 100644
+--- a/packages.lock.nix
++++ b/packages.lock.nix
+@@ -1,8 +1,8 @@
+ {
+   dav1d = {
+     version = "1.2.1";
+-    url = "https://code.videolan.org/videolan/dav1d/-/archive/1.2.1/dav1d-1.2.1.tar.bz2";
+-    sha256 = "a4003623cdc0109dec3aac8435520aa3fb12c4d69454fa227f2658cdb6dab5fa";
++    url = "https://download.videolan.org/pub/videolan/dav1d/1.2.1/dav1d-1.2.1.tar.xz";
++    sha256 = "4e33eb61ec54c768a16da0cf8fa0928b4c4593f5f804a3c887d4a21c318340b2";
+   };
+   # HIBIKI FORK: 6.0 (2023-02) left the maintenance branches long ago and gets no
+   # security backports. 6.1.6 is the tip of the 6.1 LTS branch and carries the
+@@ -82,6 +82,33 @@
+     url = "https://github.com/Mbed-TLS/mbedtls/archive/refs/tags/v3.4.1.tar.gz";
+     sha256 = "a420fcf7103e54e775c383e3751729b8fb2dcd087f6165befd13f28315f754f5";
+   };
++  mpv-menu = {
++    version = "36abaa32d00a7229ee206aae12dc0e97e7962dca";
++    url = "https://github.com/mpv-player/mpv/archive/36abaa32d00a7229ee206aae12dc0e97e7962dca.tar.gz";
++    sha256 = "641330092b4d3271bae46397de8dbd32dc377611f896a23fc87afadc67410007";
++  };
++  fast-float = {
++    # Exact submodule revision from libplacebo v7.360.1.
++    version = "97b54ca9e75f5303507699d27c6b4f4efe4641a1";
++    url = "https://github.com/fastfloat/fast_float/archive/97b54ca9e75f5303507699d27c6b4f4efe4641a1.tar.gz";
++    sha256 = "2b132274539286e41f37857cac22aa8441d21bd86d55de825a3342b149f66801";
++  };
++  vulkan-headers = {
++    # libplacebo's disabled Vulkan backend still exports typed stub functions.
++    version = "450bd2232225d6c7728a4108055ac2e37cef6475";
++    url = "https://github.com/KhronosGroup/Vulkan-Headers/archive/450bd2232225d6c7728a4108055ac2e37cef6475.tar.gz";
++    sha256 = "26df9841c30806a994e2fdf42f7c87bcb1ced9db9a06033469123939fb3fa075";
++  };
++  libplacebo = {
++    version = "7.360.1";
++    url = "https://github.com/haasn/libplacebo/archive/refs/tags/v7.360.1.tar.gz";
++    sha256 = "d05fdf90bea2f629eaa2d115e909fd356388ac639e54f77b87a018a6d76224bd";
++  };
++  libbluray = {
++    version = "1.5.0";
++    url = "https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz";
++    sha256 = "f676408e91a5d321abf8b8d4dfdae36205c297dab5c54c3ec519639025f474a2";
++  };
+   mpv = {
+     version = "0.36.0";
+     url = "https://github.com/mpv-player/mpv/archive/refs/tags/v0.36.0.tar.gz";
+diff --git a/patches/libbluray-ios-files.patch b/patches/libbluray-ios-files.patch
+new file mode 100644
+index 0000000..9882d6a
+--- /dev/null
++++ b/patches/libbluray-ios-files.patch
+@@ -0,0 +1,133 @@
++--- a/meson.build
+++++ b/meson.build
++@@ -52,9 +52,13 @@
++     test_args += '-D_POSIX_C_SOURCE=200809L'
++ endif
++ 
+++darwin_disk_arbitration = false
++ if host_machine.system() == 'darwin'
++-    extra_dependencies += dependency('appleframeworks',
++-        modules: ['CoreFoundation', 'DiskArbitration'])
+++    extra_dependencies += dependency('appleframeworks', modules: ['CoreFoundation'])
+++    darwin_disk_arbitration = cc.has_header('DiskArbitration/DADisk.h')
+++    if darwin_disk_arbitration
+++        extra_dependencies += dependency('appleframeworks', modules: ['DiskArbitration'])
+++    endif
++ elif host_machine.system() == 'netbsd'
++     test_args += '-D_NETBSD_SOURCE'
++ elif host_machine.system() == 'openbsd'
++--- a/src/meson.build
+++++ b/src/meson.build
++@@ -77,8 +77,12 @@
++         'file/dirs_darwin.c',
++         'file/dl_posix.c',
++         'file/file_posix.c',
++-        'file/mount_darwin.c',
++     )
+++    if darwin_disk_arbitration
+++        libbluray_src += files('file/mount_darwin.c')
+++    else
+++        libbluray_src += files('file/mount.c')
+++    endif
++ else
++     libbluray_src += files(
++         'file/dir_posix.c',
++--- a/src/libbluray/bdj/bdj.c
+++++ b/src/libbluray/bdj/bdj.c
++@@ -34,12 +34,16 @@
++ #include "util/logging.h"
++ 
++ 
+++#ifdef __APPLE__
+++#include <TargetConditionals.h>
+++#endif
+++
++ #include <jni.h>
++ #include <stdio.h>
++ #include <stdlib.h>
++ #include <string.h>
++ 
++-#ifdef __APPLE__
+++#if defined(__APPLE__) && TARGET_OS_OSX
++ #include <sys/types.h>
++ #include <sys/wait.h>
++ #include <limits.h>
++@@ -58,7 +62,7 @@
++ #endif
++ 
++ struct bdjava_s {
++-#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME)
+++#if defined(__APPLE__) && TARGET_OS_OSX && !defined(HAVE_BDJ_J2ME)
++     void   *h_libjli;
++ #endif
++     void   *h_libjvm;
++@@ -232,13 +236,13 @@
++ }
++ #endif
++ 
++-#ifdef __APPLE__
+++#if defined(__APPLE__) && TARGET_OS_OSX
++ // The current official JRE is installed by Oracle's Java Applet internet plugin:
++ #define MACOS_JRE_HOME "/Library/Internet Plug-Ins/JavaAppletPlugin.plugin/Contents/Home"
++ static const char *jre_plugin_path = MACOS_JRE_HOME;
++ #endif
++ 
++-#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME)
+++#if defined(__APPLE__) && TARGET_OS_OSX && !defined(HAVE_BDJ_J2ME)
++ 
++ #define MACOS_JAVA_HOME "/usr/libexec/java_home"
++ static char *_java_home_macos()
++@@ -343,7 +347,7 @@
++   return dll;
++ }
++ 
++-#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME)
+++#if defined(__APPLE__) && TARGET_OS_OSX && !defined(HAVE_BDJ_J2ME)
++ static void *_load_jli_macos()
++ {
++     const char *java_home = NULL;
++@@ -395,7 +399,7 @@
++     };
++     static const char         jvm_lib[]  = "jvm";
++ # else
++-#  ifdef __APPLE__
+++#  if defined(__APPLE__) && TARGET_OS_OSX
++     static const char * const jvm_path[] = {NULL, JDK_HOME, MACOS_JRE_HOME};
++     static const char * const jvm_dir[]  = {"jre/lib/server",
++                                             "lib/server"};
++@@ -467,7 +471,7 @@
++     }
++ #endif
++ 
++-#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME)
+++#if defined(__APPLE__) && TARGET_OS_OSX && !defined(HAVE_BDJ_J2ME)
++     java_home = _java_home_macos();
++     if (java_home) {
++         handle = _jvm_dlopen_a(java_home, jvm_dir, num_jvm_dir, jvm_lib);
++@@ -1030,7 +1034,7 @@
++         return NULL;
++     }
++ 
++-#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME)
+++#if defined(__APPLE__) && TARGET_OS_OSX && !defined(HAVE_BDJ_J2ME)
++     /* On macOS we need to load libjli to workaround a bug where the wrong
++      * version would be used: https://bugs.openjdk.java.net/browse/JDK-7131356
++      */
++@@ -1065,7 +1069,7 @@
++         return NULL;
++     }
++ 
++-#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME)
+++#if defined(__APPLE__) && TARGET_OS_OSX && !defined(HAVE_BDJ_J2ME)
++     bdjava->h_libjli = jli_lib;
++ #endif
++     bdjava->h_libjvm = jvm_lib;
++@@ -1130,7 +1134,7 @@
++         dl_dlclose(bdjava->h_libjvm);
++     }
++ 
++-#if defined(__APPLE__) && !defined(HAVE_BDJ_J2ME)
+++#if defined(__APPLE__) && TARGET_OS_OSX && !defined(HAVE_BDJ_J2ME)
++     if (bdjava->h_libjli) {
++         dl_dlclose(bdjava->h_libjli);
++     }
+diff --git a/patches/libpng-modern-apple-math.patch b/patches/libpng-modern-apple-math.patch
+new file mode 100644
+index 0000000..eb5dacf
+--- /dev/null
++++ b/patches/libpng-modern-apple-math.patch
+@@ -0,0 +1,26 @@
++Backport the standard math.h include from libpng v1.6.43 pngpriv.h.
++The legacy TARGET_OS_MAC branch requests fp.h, absent from modern Apple SDKs.
++
++--- a/pngpriv.h
+++++ b/pngpriv.h
++@@ -514,18 +514,8 @@
++     */
++ #  include <float.h>
++ 
++-#  if (defined(__MWERKS__) && defined(macintosh)) || defined(applec) || \
++-    defined(THINK_C) || defined(__SC__) || defined(TARGET_OS_MAC)
++-   /* We need to check that <math.h> hasn't already been included earlier
++-    * as it seems it doesn't agree with <fp.h>, yet we should really use
++-    * <fp.h> if possible.
++-    */
++-#    if !defined(__MATH_H__) && !defined(__MATH_H) && !defined(__cmath__)
++-#      include <fp.h>
++-#    endif
++-#  else
++-#    include <math.h>
++-#  endif
+++#  include <math.h>
+++
++ #  if defined(_AMIGA) && defined(__SASC) && defined(_M68881)
++    /* Amiga SAS/C: We must include builtin FPU functions when compiling using
++     * MATH=68881
+diff --git a/patches/mpv-audiounit-shared-session-menu.patch b/patches/mpv-audiounit-shared-session-menu.patch
+new file mode 100644
+index 0000000..313e207
+--- /dev/null
++++ b/patches/mpv-audiounit-shared-session-menu.patch
+@@ -0,0 +1,138 @@
++diff --git a/audio/out/ao_audiounit.m b/audio/out/ao_audiounit.m
++index 8d4eb4d37..a1857bde6 100644
++--- a/audio/out/ao_audiounit.m
+++++ b/audio/out/ao_audiounit.m
++@@ -24,6 +24,8 @@
++ #include "ao_coreaudio_utils.h"
++ #include "ao_coreaudio_chmap.h"
++ 
+++#include <pthread.h>
+++
++ #import <AudioUnit/AudioUnit.h>
++ #import <CoreAudio/CoreAudioTypes.h>
++ #import <AudioToolbox/AudioToolbox.h>
++@@ -33,8 +35,13 @@
++ struct priv {
++     AudioUnit audio_unit;
++     double device_latency;
+++    bool session_acquired;
+++    bool skip_session_management;
++ };
++ 
+++static pthread_mutex_t audiounit_session_lock = PTHREAD_MUTEX_INITIALIZER;
+++static int audiounit_session_use_count;
+++
++ static OSStatus au_get_ary(AudioUnit unit, AudioUnitPropertyID inID, AudioUnitScope inScope, AudioUnitElement inElement, void **data, UInt32 *outDataSize)
++ {
++     OSStatus err;
++@@ -83,6 +90,60 @@ static AudioChannelLayout *convert_layout(AudioChannelLayout *layout, UInt32* si
++ }
++ 
++ 
+++static void acquire_audio_session(struct ao *ao, NSInteger pref_channels)
+++{
+++    struct priv *p = ao->priv;
+++    AVAudioSession *instance = AVAudioSession.sharedInstance;
+++
+++    pthread_mutex_lock(&audiounit_session_lock);
+++
+++    if (audiounit_session_use_count == 0) {
+++        AVAudioSessionCategoryOptions options = (ao->init_flags & AO_INIT_EXCLUSIVE)
+++            ? 0 : AVAudioSessionCategoryOptionMixWithOthers;
+++        [instance setCategory:AVAudioSessionCategoryPlayback
+++                  withOptions:options
+++                        error:nil];
+++        [instance setMode:AVAudioSessionModeMoviePlayback error:nil];
+++        [instance setActive:YES error:nil];
+++        [instance setPreferredOutputNumberOfChannels:pref_channels error:nil];
+++    }
+++
+++    audiounit_session_use_count++;
+++    p->session_acquired = true;
+++
+++    MP_VERBOSE(ao, "audio session users: %d\n", audiounit_session_use_count);
+++
+++    pthread_mutex_unlock(&audiounit_session_lock);
+++}
+++
+++static void release_audio_session(struct ao *ao)
+++{
+++    struct priv *p = ao->priv;
+++
+++    if (!p->session_acquired)
+++        return;
+++
+++    pthread_mutex_lock(&audiounit_session_lock);
+++    if (audiounit_session_use_count > 0)
+++        audiounit_session_use_count--;
+++    else
+++        MP_WARN(ao, "audio session reference count underflow\n");
+++    p->session_acquired = false;
+++
+++    if (audiounit_session_use_count == 0) {
+++        [AVAudioSession.sharedInstance
+++            setActive:NO
+++            withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
+++            error:nil];
+++    } else {
+++        MP_VERBOSE(ao, "keeping audio session active for %d other user(s)\n",
+++                   audiounit_session_use_count);
+++    }
+++
+++    pthread_mutex_unlock(&audiounit_session_lock);
+++}
+++
+++
++ static OSStatus render_cb_lpcm(void *ctx, AudioUnitRenderActionFlags *aflags,
++                               const AudioTimeStamp *ts, UInt32 bus,
++                               UInt32 frames, AudioBufferList *buffer_list)
++@@ -115,15 +176,8 @@ static bool init_audiounit(struct ao *ao)
++ 
++     MP_VERBOSE(ao, "max channels: %ld, requested: %d\n", maxChannels, (int)ao->channels.num);
++ 
++-    AVAudioSessionCategoryOptions options = 0;
++-    if (!(ao->init_flags & AO_INIT_EXCLUSIVE)) {
++-        options |= AVAudioSessionCategoryOptionMixWithOthers;
++-    }
++-
++-    [instance setCategory:AVAudioSessionCategoryPlayback withOptions:options error:nil];
++-    [instance setMode:AVAudioSessionModeMoviePlayback error:nil];
++-    [instance setActive:YES error:nil];
++-    [instance setPreferredOutputNumberOfChannels:prefChannels error:nil];
+++    if (!p->skip_session_management)
+++        acquire_audio_session(ao, prefChannels);
++ 
++     AudioComponentDescription desc = (AudioComponentDescription) {
++         .componentType         = kAudioUnitType_Output,
++@@ -206,6 +260,8 @@ coreaudio_error_audiounit:
++ coreaudio_error_component:
++     AudioComponentInstanceDispose(p->audio_unit);
++ coreaudio_error:
+++    if (!p->skip_session_management)
+++        release_audio_session(ao);
++     talloc_free(layout);
++     return false;
++ }
++@@ -235,10 +291,8 @@ static void uninit(struct ao *ao)
++     AudioUnitUninitialize(p->audio_unit);
++     AudioComponentInstanceDispose(p->audio_unit);
++ 
++-    [AVAudioSession.sharedInstance
++-        setActive:NO
++-        withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
++-        error:nil];
+++    if (!p->skip_session_management)
+++        release_audio_session(ao);
++ }
++ 
++ static int init(struct ao *ao)
++@@ -262,4 +316,9 @@ const struct ao_driver audio_out_audiounit = {
++     .reset          = stop,
++     .start          = start,
++     .priv_size      = sizeof(struct priv),
+++    .options        = (const struct m_option[]) {
+++        {"skip-session-management", OPT_BOOL(skip_session_management)},
+++        {0}
+++    },
+++    .options_prefix = "audiounit",
++ };
+diff --git a/patches/mpv-darwin-cross-sdk.patch b/patches/mpv-darwin-cross-sdk.patch
+new file mode 100644
+index 0000000..63a9435
+--- /dev/null
++++ b/patches/mpv-darwin-cross-sdk.patch
+@@ -0,0 +1,153 @@
++diff --git a/input/input.c b/input/input.c
++index e15d4c60b..8533b4b0e 100644
++--- a/input/input.c
+++++ b/input/input.c
++@@ -51,7 +51,7 @@
++ #include "stream/stream.h"
++ #include "common/common.h"
++ 
++-#if HAVE_COCOA
+++#if HAVE_COCOA && HAVE_SWIFT
++ #include "osdep/mac/app_bridge.h"
++ #endif
++ 
++@@ -1745,7 +1745,7 @@ static void reload_opts(struct input_ctx *ictx, bool shutdown)
++ {
++     m_config_cache_update(ictx->opts_cache);
++ 
++-#if HAVE_COCOA
+++#if HAVE_COCOA && HAVE_SWIFT
++     struct input_opts *opts = ictx->opts;
++ 
++     if (ictx->using_cocoa_media_keys != (opts->use_media_keys && !shutdown)) {
++diff --git a/meson.build b/meson.build
++index c49aa3cec..e6ac35790 100644
++--- a/meson.build
+++++ b/meson.build
++@@ -325,6 +325,9 @@ if cc.get_id() == 'gcc'
++ endif
++ 
++ darwin = host_machine.system() == 'darwin'
+++if darwin
+++    add_languages('objc', native: false)
+++endif
++ win32 = host_machine.system() == 'cygwin' or host_machine.system() == 'windows'
++ posix = not win32
++ 
++@@ -435,8 +438,7 @@ if features['cocoa']
++     path_source += files('osdep/path-mac.m')
++     sources += files('osdep/language-mac.c',
++                      'osdep/utils-mac.c',
++-                     'osdep/mac/app_bridge.m',
++-                     'player/clipboard/clipboard-mac.m')
+++                     'osdep/mac/app_bridge.m')
++     main_fn_source = files('osdep/main-fn-mac.c')
++ endif
++ 
++@@ -843,7 +845,7 @@ endif
++ 
++ audiounit_opt = get_option('audiounit').require(darwin)
++ audiounit = {
++-    'deps': dependency('appleframeworks', modules: ['Foundation', 'AudioToolbox'],
+++    'deps': dependency('appleframeworks', modules: ['Foundation', 'AudioToolbox', 'AVFoundation'],
++                        required: audiounit_opt),
++     'symbol': cc.has_header_symbol('AudioToolbox/AudioToolbox.h', 'kAudioUnitSubType_RemoteIO',
++                                    required: audiounit_opt),
++@@ -1473,6 +1475,7 @@ ios_gl = cc.has_header_symbol('OpenGLES/ES3/glext.h', 'GL_RGB32F', required:
++     get_option('ios-gl').require(darwin))
++ features += {'ios-gl': ios_gl}
++ if features['ios-gl']
+++    dependencies += dependency('appleframeworks', modules: ['OpenGLES'])
++     sources += files('video/out/hwdec/hwdec_ios_gl.m')
++ endif
++ 
++@@ -1558,9 +1561,11 @@ videotoolbox_pl = get_option('videotoolbox-pl').require(
++ )
++ features += {'videotoolbox-pl': videotoolbox_pl.allowed()}
++ if features['videotoolbox-gl'] or features['videotoolbox-pl'] or features['ios-gl']
+++    dependencies += dependency('appleframeworks', modules: ['CoreVideo', 'CoreMedia', 'VideoToolbox'])
++     sources += files('video/out/hwdec/hwdec_vt.c')
++ endif
++ if features['videotoolbox-gl']
+++    dependencies += dependency('appleframeworks', modules: ['IOSurface'])
++     sources += files('video/out/hwdec/hwdec_mac_gl.c')
++ endif
++ if features['videotoolbox-pl']
++@@ -1571,14 +1576,14 @@ endif
++ 
++ # macOS features
++ macos_sdk_version_py = ''
++-if darwin
+++if darwin and not meson.is_cross_build()
++     macos_sdk_version_py = find_program(join_paths(source_root, 'TOOLS', 'macos-sdk-version.py'),
++                                                    required: true)
++ endif
++ 
++ macos_sdk_path = ''
++ macos_sdk_version = '0.0'
++-if darwin and macos_sdk_version_py.found()
+++if darwin and not meson.is_cross_build() and macos_sdk_version_py.found()
++     macos_sdk_info = run_command(macos_sdk_version_py, check: true).stdout().split(',')
++     macos_sdk_path = macos_sdk_info[0]
++     macos_sdk_version = macos_sdk_info[1]
++@@ -1628,6 +1633,7 @@ endif
++ 
++ swift_sources = []
++ if features['cocoa'] and features['swift']
+++    sources += files('player/clipboard/clipboard-mac.m')
++     swift_sources += files('osdep/mac/application.swift',
++                            'osdep/mac/app_hub.swift',
++                            'osdep/mac/clipboard.swift',
++diff --git a/player/clipboard/clipboard.c b/player/clipboard/clipboard.c
++index 7b2f9058a..d2e1b356b 100644
++--- a/player/clipboard/clipboard.c
+++++ b/player/clipboard/clipboard.c
++@@ -40,7 +40,7 @@ static const struct clipboard_backend *const clipboard_backend_list[] = {
++ #if HAVE_WIN32_DESKTOP
++     &clipboard_backend_win32,
++ #endif
++-#if HAVE_COCOA
+++#if HAVE_COCOA && HAVE_SWIFT
++     &clipboard_backend_mac,
++ #endif
++ #if HAVE_WAYLAND && HAVE_WAYLAND_PROTOCOLS_1_39
++diff --git a/player/main.c b/player/main.c
++index 5cc273c3e..e4f90666c 100644
++--- a/player/main.c
+++++ b/player/main.c
++@@ -84,7 +84,7 @@ static const char def_config[] =
++ #include "osdep/w32_register.h"
++ #endif
++ 
++-#if HAVE_COCOA
+++#if HAVE_COCOA && HAVE_SWIFT
++ #include "osdep/mac/app_bridge.h"
++ #endif
++ 
++@@ -196,7 +196,7 @@ void mp_destroy(struct MPContext *mpctx)
++ 
++     osd_free(mpctx->osd);
++ 
++-#if HAVE_COCOA
+++#if HAVE_COCOA && HAVE_SWIFT
++     cocoa_set_input_context(NULL);
++ #endif
++ 
++@@ -322,7 +322,7 @@ struct MPContext *mp_create(void)
++     mp_clients_init(mpctx);
++     mpctx->osd = osd_create(mpctx->global);
++ 
++-#if HAVE_COCOA
+++#if HAVE_COCOA && HAVE_SWIFT
++     cocoa_set_input_context(mpctx->input);
++ #endif
++ 
++@@ -417,7 +417,7 @@ int mp_initialize(struct MPContext *mpctx, char **options)
++ 
++     MP_STATS(mpctx, "start init");
++ 
++-#if HAVE_COCOA
+++#if HAVE_COCOA && HAVE_SWIFT
++     mpv_handle *ctx = mp_new_client(mpctx->clients, "mac");
++     cocoa_set_mpv_handle(ctx);
++ #endif

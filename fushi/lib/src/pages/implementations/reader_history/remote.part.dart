@@ -378,7 +378,13 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// * 「删除远端」→ 仅当远端后端支持删除（[InterconnectSyncBackend] 互联后端，
   ///   有 deleteRemoteBook/deleteRemoteAudiobook）才显示；云盘后端
   ///   （[CloudRemoteBookClient]）无此能力，按类型门控隐藏（真实能力边界）。
-  void _showRemoteBookDialog(RemoteBookInfo book) {
+  ///
+  /// [removeFromCollection] 非空 = 合集详情页成员语境，菜单补「移出合集」
+  /// （BUG-2969：合集内外同一个菜单，见 [_showCollectionMemberMenu]）。
+  void _showRemoteBookDialog(
+    RemoteBookInfo book, {
+    VoidCallback? removeFromCollection,
+  }) {
     final RemoteBookClient? client = _remoteBookClient;
     final bool canDelete = client is InterconnectSyncBackend;
     showAppDialog<void>(
@@ -388,6 +394,10 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         coverBackdrop: _remoteBookCoverBackdrop(book),
         title: book.displayName,
         showLaunchAction: false,
+        listActions: _removeFromCollectionActions(
+          dialogContext,
+          removeFromCollection,
+        ),
         quickActions: <DialogQuickAction>[
           DialogQuickAction(
             label: t.remote_book_download,
@@ -421,6 +431,25 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         ],
       ),
     );
+  }
+
+  /// 合集详情页成员语境下菜单末尾的「移出合集」（本地书卡 / SRT 卡 / 远端占位卡
+  /// 同一条，BUG-2969）；[removeFromCollection] 为 null（书架语境）返回空表。
+  List<DialogListAction> _removeFromCollectionActions(
+    BuildContext dialogContext,
+    VoidCallback? removeFromCollection,
+  ) {
+    if (removeFromCollection == null) return const <DialogListAction>[];
+    return <DialogListAction>[
+      DialogListAction(
+        label: t.collection_remove_member,
+        icon: Icons.remove_circle_outline,
+        onPressed: () {
+          Navigator.pop(dialogContext);
+          removeFromCollection();
+        },
+      ),
+    ];
   }
 
   /// 展示远端书的基本元数据（书名 + 是否含有声书）。纯信息弹窗。
@@ -1253,7 +1282,10 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// SRT 不接删除，真实能力边界」——那条描述偏保守：`DELETE /api/library/audiobooks/
   /// <identity>` 的 host 端 identity 解析同时查 `Audiobooks(bookKey)` 与 `SrtBooks(uid)`，
   /// 传 uid 本就能命中，缺的只是这个 UI 入口。
-  void _showRemoteSrtDialog(RemoteAudiobookInfo book) {
+  void _showRemoteSrtDialog(
+    RemoteAudiobookInfo book, {
+    VoidCallback? removeFromCollection,
+  }) {
     final String title = book.title ?? book.identity;
     final RemoteBookClient? client = _remoteBookClient;
     final bool canDelete = client is InterconnectSyncBackend;
@@ -1263,6 +1295,10 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         cover: _coverPlaceholderIcon(Icons.headphones_outlined),
         title: title,
         showLaunchAction: false,
+        listActions: _removeFromCollectionActions(
+          dialogContext,
+          removeFromCollection,
+        ),
         quickActions: <DialogQuickAction>[
           DialogQuickAction(
             label: t.remote_book_download,

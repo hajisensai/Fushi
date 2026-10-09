@@ -1,9 +1,10 @@
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show einkSafeDuration;
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 /// TODO-407/716 单一真相：查词弹窗"水平滑动关闭"的位移阈值（px）。
 ///
@@ -243,7 +244,7 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper>
       if (mounted) setState(() => _dismissing = true);
       _controller
         ..reset()
-        ..animateTo(1.0, curve: Curves.easeOut);
+        ..animateTo(1.0, curve: FushiSpringCurve.effects);
       return;
     }
     // 未过阈值 / 非横滑：补间弹回原位（spring-back）。
@@ -252,7 +253,7 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper>
       _animTarget = 0;
       _controller
         ..reset()
-        ..animateTo(1.0, curve: Curves.easeOut);
+        ..animateTo(1.0, curve: FushiSpringCurve.effects);
       return;
     }
     _reset();

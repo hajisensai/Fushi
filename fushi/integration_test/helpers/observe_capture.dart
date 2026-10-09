@@ -120,7 +120,7 @@ Future<ObserveShot> captureFlutterFrame(
           rgba != null && rgbaLooksNonBlank(rgba.buffer.asUint8List());
       final ByteData? png =
           await image.toByteData(format: ui.ImageByteFormat.png);
-      return _save(name, png?.buffer.asUint8List(), nonBlank);
+      return await _save(name, png?.buffer.asUint8List(), nonBlank);
     } finally {
       image.dispose();
     }
@@ -150,7 +150,7 @@ Future<ObserveShot> captureReaderWebView(String name) async {
     final Uint8List? png = await hook();
     final bool nonBlank =
         png != null && png.isNotEmpty && await _pngLooksNonBlank(png);
-    return _save(name, png, nonBlank);
+    return await _save(name, png, nonBlank);
   } catch (_) {
     return ObserveShot(
         name: name, path: '', saved: false, nonBlank: false, bytes: 0);

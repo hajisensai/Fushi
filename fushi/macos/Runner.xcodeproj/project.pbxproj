@@ -277,6 +277,7 @@
 				B20100000000000000000001 /* Build FushiDicts FFI */,
 				B20100000000000000000002 /* Bundle fushi_p2p dylib */,
 				B20100000000000000000003 /* Bundle fushi_torrent dylib */,
+				B20100000000000000000004 /* Bundle fushi_aacs dylib */,
 				6BD9B3C08D0CCB6379299F3A /* [CP] Embed Pods Frameworks */,
 				9B7ACE8C08531AD7CBBD7799 /* [CP] Copy Pods Resources */,
 			);
@@ -523,6 +524,25 @@
 			shellPath = /bin/bash;
 			shellScript = "/bin/bash \"$PROJECT_DIR/bundle_fushi_p2p.sh\"\n";
 		};
+		B20100000000000000000004 /* Bundle fushi_aacs dylib */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Bundle fushi_aacs dylib";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "/bin/bash \"$PROJECT_DIR/bundle_fushi_aacs.sh\"\n";
+		};
 		B20100000000000000000003 /* Bundle fushi_torrent dylib */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -680,6 +700,7 @@
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				EXCLUDED_ARCHS = x86_64;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -756,6 +777,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				EXCLUDED_ARCHS = x86_64;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -812,6 +834,7 @@
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				EXCLUDED_ARCHS = x86_64;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;

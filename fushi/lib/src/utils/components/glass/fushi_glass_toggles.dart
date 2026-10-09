@@ -1,15 +1,16 @@
 import 'dart:math' as math;
 
-import 'package:flutter/cupertino.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -408,6 +409,14 @@ class _AppleToggleHitState extends State<_AppleToggleHit> {
 // Switch
 // ---------------------------------------------------------------------------
 
+/// MD3（M3 Expressive）开关默认带 thumb 图标：开 = 对勾、关 = 叉（关态圆钮
+/// 由 16 撑到 24，按下 28，M3 位移曲线 easeOutBack 带回弹）。调用方显式给了
+/// thumbIcon 的照用；墨水屏交回主题（只在开态画勾，保持以前的观感）。
+WidgetStateProperty<Icon?>? _md3SwitchThumbIcon(BuildContext context) {
+  if (isEinkTheme(context)) return null;
+  return fushiExpressiveSwitchThumbIcon(Theme.of(context).colorScheme);
+}
+
 /// [Switch] 的设计系统分派版（含 `.adaptive`）。
 class FushiSwitch extends StatelessWidget {
   const FushiSwitch({
@@ -525,7 +534,7 @@ class FushiSwitch extends StatelessWidget {
         trackColor: trackColor,
         trackOutlineColor: trackOutlineColor,
         trackOutlineWidth: trackOutlineWidth,
-        thumbIcon: thumbIcon,
+        thumbIcon: thumbIcon ?? _md3SwitchThumbIcon(context),
         dragStartBehavior: dragStartBehavior,
         mouseCursor: mouseCursor,
         focusColor: focusColor,
@@ -555,7 +564,7 @@ class FushiSwitch extends StatelessWidget {
       trackColor: trackColor,
       trackOutlineColor: trackOutlineColor,
       trackOutlineWidth: trackOutlineWidth,
-      thumbIcon: thumbIcon,
+      thumbIcon: thumbIcon ?? _md3SwitchThumbIcon(context),
       materialTapTargetSize: materialTapTargetSize,
       dragStartBehavior: dragStartBehavior,
       mouseCursor: mouseCursor,
@@ -1084,6 +1093,8 @@ class FushiSlider extends StatelessWidget {
     this.showValueIndicator,
     this.year2023,
     this.ticks = const <double>[],
+    this.size,
+    this.axis = Axis.horizontal,
   }) : _adaptive = false;
 
   const FushiSlider.adaptive({
@@ -1110,6 +1121,8 @@ class FushiSlider extends StatelessWidget {
     this.showValueIndicator,
     this.year2023,
     this.ticks = const <double>[],
+    this.size,
+    this.axis = Axis.horizontal,
   }) : padding = null,
        _adaptive = true;
 
@@ -1141,9 +1154,46 @@ class FushiSlider extends StatelessWidget {
   /// 设计系统读——MD3 的刻度由调用方经 [SliderTheme] 的 trackShape 画。
   final List<double> ticks;
 
+  /// M3 Expressive 滑块尺寸档（轨道 16 / 24 / 40 / 56 / 96，竖条把手随之加高，
+  /// 只影响 MD3）。null = 主题默认（XS，16 粗轨道）。
+  final FushiSliderSize? size;
+
+  /// [Axis.vertical] = 竖直滑块（M3 Expressive vertical slider）：底端为
+  /// [min]、顶端为 [max]，方向键上 / 右增大、下 / 左减小（Material 滑块本身
+  /// 对上下键就是增减）。竖直时不弹数值气泡（气泡会随旋转横躺）。
+  final Axis axis;
+
   @override
   Widget build(BuildContext context) {
-    if (isGlassDesign(context)) return _buildGlass(context);
+    final Widget slider = isGlassDesign(context)
+        ? _buildGlass(context)
+        : _buildMd3(context);
+    if (axis == Axis.horizontal) return slider;
+    // 竖直：整体逆时针转 90°，布局尺寸随之互换（RotatedBox 参与布局）。
+    return RotatedBox(quarterTurns: 3, child: slider);
+  }
+
+  Widget _buildMd3(BuildContext context) {
+    final FushiSliderSize? sliderSize = size;
+    final ShowValueIndicator? valueIndicator = axis == Axis.vertical
+        ? ShowValueIndicator.never
+        : showValueIndicator;
+    Widget slider = _buildMd3Slider(valueIndicator);
+    if (sliderSize != null && !isEinkTheme(context)) {
+      slider = SliderTheme(
+        data: fushiSliderSizeTheme(SliderTheme.of(context), sliderSize),
+        child: slider,
+      );
+    }
+    // 竖直：Material Slider 在有界高度下会吃满父级给的最大高度，旋转后就成了
+    // 横向吃满父级宽度的一大块（命中区与布局都按整宽算）。按 Slider 自己的固有
+    // 高度（轨道 / 把手 / 光晕里最高的那个）定厚度，旋转后才是一根竖条
+    // （BUG-3057）。Apple 分支自带定高，不需要。
+    if (axis == Axis.vertical) slider = IntrinsicHeight(child: slider);
+    return slider;
+  }
+
+  Widget _buildMd3Slider(ShowValueIndicator? showValueIndicator) {
     if (_adaptive) {
       return Slider.adaptive(
         value: value,
@@ -3535,7 +3585,7 @@ class FushiSwitchListTile extends StatelessWidget {
         thumbColor: thumbColor,
         trackColor: trackColor,
         trackOutlineColor: trackOutlineColor,
-        thumbIcon: thumbIcon,
+        thumbIcon: thumbIcon ?? _md3SwitchThumbIcon(context),
         materialTapTargetSize: materialTapTargetSize,
         dragStartBehavior: dragStartBehavior,
         mouseCursor: mouseCursor,
@@ -3582,7 +3632,7 @@ class FushiSwitchListTile extends StatelessWidget {
       thumbColor: thumbColor,
       trackColor: trackColor,
       trackOutlineColor: trackOutlineColor,
-      thumbIcon: thumbIcon,
+      thumbIcon: thumbIcon ?? _md3SwitchThumbIcon(context),
       materialTapTargetSize: materialTapTargetSize,
       dragStartBehavior: dragStartBehavior,
       mouseCursor: mouseCursor,

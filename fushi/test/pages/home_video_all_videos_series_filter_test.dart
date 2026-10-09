@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,6 +15,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -382,7 +383,7 @@ void main() {
     await pumpSection(tester, VideoLibrarySection.allVideos);
     await pickSeriesFilter(tester, t.video_filter_series_in);
 
-    await tester.tap(find.byIcon(Icons.checklist_outlined));
+    await tester.tap(find.byIcon(FushiIcons.checklist));
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.batch_select_all));
     await tester.pumpAndSettle();
@@ -400,7 +401,7 @@ void main() {
     await prefs.setVideoAllSeriesFilterName('all');
     await pumpSection(tester, VideoLibrarySection.allVideos);
 
-    await tester.tap(find.byIcon(Icons.checklist_outlined));
+    await tester.tap(find.byIcon(FushiIcons.checklist));
     await tester.pumpAndSettle();
     await tester.tap(cardOf('video/ep1'));
     await tester.pump();
@@ -431,7 +432,7 @@ void main() {
     await seedSeriesAndLoose();
     await prefs.setVideoAllSeriesFilterName('all');
     await pumpSection(tester, VideoLibrarySection.allVideos);
-    await tester.tap(find.byIcon(Icons.checklist_outlined));
+    await tester.tap(find.byIcon(FushiIcons.checklist));
     await tester.pumpAndSettle();
     await tester.tap(cardOf('video/ep1'));
     await tester.pump();
@@ -475,7 +476,7 @@ void main() {
     await prefs.setVideoAllSeriesFilterName('all');
 
     await pumpSection(tester, VideoLibrarySection.allVideos);
-    await tester.tap(find.byIcon(Icons.checklist_outlined));
+    await tester.tap(find.byIcon(FushiIcons.checklist));
     await tester.pumpAndSettle();
     await tester.tap(cardOf('video/ep1'));
     await tester.pump();
@@ -521,7 +522,7 @@ void main() {
     expect(cardOf('video/ep1'), findsNothing, reason: '前提：确实筛成了空态');
     expect(cardOf('video/ep2'), findsNothing);
 
-    await tester.tap(find.byIcon(Icons.checklist_outlined));
+    await tester.tap(find.byIcon(FushiIcons.checklist));
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.batch_select_all));
     await tester.pumpAndSettle();

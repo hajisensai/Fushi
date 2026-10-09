@@ -4,10 +4,18 @@
 // 页面在 >=820 宽时走左右分栏、控件列固定 340——窄屏 Column 布局会溢出，所以
 // 用例统一先放大逻辑窗口（[useWideWindow]），再用 addTearDown 还原，不泄漏给
 // 同进程其它测试。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';
+import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+
+/// 与生产根（main.dart）同构：取色器 `ColorPicker`（flutter_colorpicker）的
+/// hex 输入框仍是 SDK 旧 Material 的 TextField，靠根上的
+/// [LegacyDesignCompatibility] 拿到旧 Material 祖先与旧主题（446e7b695a2）。
+Widget lapisLegacyBridgeBuilder(BuildContext context, Widget? child) =>
+    LegacyDesignCompatibility(child: child!);
 
 void useWideWindow(WidgetTester tester) {
   tester.view.physicalSize = const Size(1600, 1400);
@@ -49,6 +57,7 @@ Future<EditorSession> pumpEditor(
   late BuildContext hostContext;
   await tester.pumpWidget(
     MaterialApp(
+      builder: lapisLegacyBridgeBuilder,
       home: Builder(
         builder: (BuildContext context) {
           hostContext = context;
@@ -101,7 +110,7 @@ Future<LapisVisualEditorResult?> openEditorAndSave(
 
   await (interact ?? toggleBold)(tester);
 
-  await tester.tap(find.byIcon(Icons.save_outlined));
+  await tester.tap(find.byIcon(FushiIcons.save));
   await tester.pumpAndSettle();
   await session.popped;
   return result;

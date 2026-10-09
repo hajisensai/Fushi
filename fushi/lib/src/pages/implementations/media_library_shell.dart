@@ -1,7 +1,11 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
+import 'package:fushi/src/utils/components/section_visibility.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
+    show fushiNotificationFromVisibleSubtree;
 import 'package:fushi/utils.dart';
 
 /// 库页视图种类：一个顶层 tab 内部的几个平级视图。
@@ -47,11 +51,17 @@ class MediaLibraryViewSpec {
     required this.kind,
     required this.label,
     required this.builder,
+    this.handlesChromeInset = false,
   });
 
   final MediaLibraryViewKind kind;
   final String label;
   final Widget Function(BuildContext context, Widget navigation) builder;
+
+  /// 视图自己的主滚动视图把 [FushiFloatingChromeInset] 加成顶部内边距（内容滚到
+  /// 壳的浮动工具栏底下，如书架）。false 时壳把整个视图下移工具栏高度
+  /// （[FushiFloatingChromeInsetPadding]），视图不必知道工具栏的存在。
+  final bool handlesChromeInset;
 }
 
 /// 向壳内子树暴露「切到某个视图」的能力（[InheritedWidget]，不改 builder 签名）。
@@ -103,8 +113,12 @@ class MediaLibraryShellScope extends InheritedWidget {
 /// - 视图**惰性构建 + 保活**（Offstage + TickerMode），与顶层 tab 的做法同源
 ///   （`home_page.dart` 的 `_visitedKeepAliveTabs`）：没访问过的视图不构建（在线目录
 ///   不会因为壳挂载就发网络请求），访问过的切走仍保留滚动位置/搜索词，切回不重建。
-/// - 导航条只交给**当前**视图。分段条内部要注册一个方向焦点停靠点，同一个
-///   focusIdPrefix 注册两次会互相打架，所以隐藏的视图拿到的是空占位（它们本就不可见）。
+/// - 顶部与视频库同一套 M3E 浮动工具栏（2026-10-06「书架 / 漫画 / 游戏库与视频库
+///   顶部结构统一」，[FushiFloatingChromeBar]）：外壳大标题下面一行是贴合内容宽的
+///   分区页签浮动胶囊 + 右侧同高的悬浮动作组。各视图照旧用 [FushiPageHeader] 声明
+///   自己的动作，壳挂一个自己的 [FushiShellActionsSlot]，页头把动作登记进来、由
+///   浮动动作组画出；所以视图拿到的 `navigation` 一律是空占位（页签由壳画出）。
+///   往下滚收起、往上滚 / 回顶 / 切视图弹回（[FushiFloatingChromeController]）。
 class MediaLibraryShell extends StatefulWidget {
   const MediaLibraryShell({
     required this.views,
@@ -135,6 +149,25 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
     debugLabel: 'media-library-sections',
   );
 
+  /// 浮动工具栏的显隐（滚动驱动）。
+  final FushiFloatingChromeController _chrome = FushiFloatingChromeController();
+
+  /// 视图页头登记动作的槽：由浮动动作组画出（见类注释）。
+  final FushiShellActionsSlot _actionsSlot = FushiShellActionsSlot();
+
+  @override
+  void dispose() {
+    _chrome.dispose();
+    _actionsSlot.dispose();
+    super.dispose();
+  }
+
+  bool _onScroll(ScrollNotification notification) {
+    // 隐藏的保活视图后台加载 / 横滚卡片行发来的通知不算（后者 controller 内按轴过滤）。
+    if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+    return _chrome.handleScrollNotification(notification);
+  }
+
   void _select(MediaLibraryViewKind kind) {
     final int index = widget.views
         .indexWhere((MediaLibraryViewSpec spec) => spec.kind == kind);
@@ -147,6 +180,8 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
       Navigator.of(context).popUntil((Route<dynamic> above) => above == route);
     }
     if (index == _currentIndex) return;
+    // 换了视图，新页面从顶部开始：工具栏回来。
+    _chrome.resetToTop();
     setState(() {
       _currentIndex = index;
       _visited.add(index);
@@ -179,17 +214,14 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
       );
     }
     final Widget navigation = _buildNavigation(views);
-    return MediaLibraryShellScope(
-      kinds: kinds,
-      select: _select,
+    final Widget sections = SectionSwipeNavigator<MediaLibraryViewKind>(
       // 触屏横滑切到相邻视图，序即 [views] 声明序（与分段条同一份真相）。
-      child: SectionSwipeNavigator<MediaLibraryViewKind>(
-        sections: <MediaLibraryViewKind>[
-          for (final MediaLibraryViewSpec spec in views) spec.kind,
-        ],
-        selected: views[_currentIndex].kind,
-        onSelect: _select,
-        child: Stack(
+      sections: <MediaLibraryViewKind>[
+        for (final MediaLibraryViewSpec spec in views) spec.kind,
+      ],
+      selected: views[_currentIndex].kind,
+      onSelect: _select,
+      child: Stack(
         children: <Widget>[
           for (int i = 0; i < views.length; i++)
             if (_visited.contains(i))
@@ -205,20 +237,59 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
                   // 照样是 true —— 隐藏的书架仍会把拖入的文件夹当漫画导入。
                   // 判据与上面 `offstage:` 用的是同一个表达式，且写成回调、在 drop
                   // 落地那一刻求值。
-                  child: DropSurfaceScope(
-                    isActive: () => i == _currentIndex,
-                    child: views[i].builder(
-                      context,
-                      i == _currentIndex ? navigation : const SizedBox.shrink(),
+                  // 隐藏视图不参与焦点遍历与系统返回（HBK-AUDIT-017），判据同
+                  // `offstage:`。
+                  child: SectionVisibilityScope(
+                    visible: i == _currentIndex,
+                    child: DropSurfaceScope(
+                      isActive: () => i == _currentIndex,
+                      // 每个保活视图自己的主滚动控制器：共用 tab 外壳那一个会让
+                      // 多个主滚动视图附着同一控制器、Scrollbar 断言。
+                      child: SectionPrimaryScrollScope(
+                        child: _insetFor(
+                          views[i],
+                          // 页签由壳的浮动工具栏画出，视图页头的主位留空。
+                          views[i].builder(context, const SizedBox.shrink()),
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
         ],
+      ),
+    );
+    // 保留外壳给本 tab 的页面名（页头据它判断「标题已由外壳画出」），只把动作槽
+    // 换成壳自己的，动作改由浮动动作组画（与视频库外壳同构）。
+    return MediaLibraryShellScope(
+      kinds: kinds,
+      select: _select,
+      child: FushiShellTitleScope(
+        title: FushiShellTitleScope.maybeTitleOf(context) ?? '',
+        actionsSlot: _actionsSlot,
+        child: FushiFloatingChromeScope(
+          controller: _chrome,
+          // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（滚轮上下「回弹、
+          // 滚不动」的根因是收起改了视口高度，BUG-2975，见
+          // [FushiFloatingChromeOverlay]）。
+          child: FushiFloatingChromeOverlay(
+            chrome: FushiFloatingChromeBar(tabs: navigation, slot: _actionsSlot),
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _onScroll,
+              child: sections,
+            ),
+          ),
         ),
       ),
     );
   }
+
+  /// 不自己处理工具栏让位的视图整体下移工具栏高度（见
+  /// [MediaLibraryViewSpec.handlesChromeInset]）。
+  Widget _insetFor(MediaLibraryViewSpec spec, Widget view) =>
+      spec.handlesChromeInset
+          ? view
+          : FushiFloatingChromeInsetPadding(child: view);
 
   Widget _buildNavigation(List<MediaLibraryViewSpec> views) {
     final MediaLibraryViewKind selected = views[_currentIndex].kind;
@@ -236,6 +307,7 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
       selected: selected,
       onChanged: _select,
       focusIdPrefix: widget.focusIdPrefix,
+      floating: true,
     );
   }
 }

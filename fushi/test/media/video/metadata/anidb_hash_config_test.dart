@@ -206,19 +206,26 @@ void main() {
     });
 
     test('home page assembly points use the shared fingerprint', () {
-      final String source = File(
+      // 发现页控制器在 HomePage；手动刮削控制器随刮削运行时搬到了
+      // video_scrape_runtime.dart。
+      final String home = File(
         'lib/src/pages/implementations/home_page.dart',
       ).readAsStringSync();
-      expect(
-        source,
-        isNot(contains('fingerprint = <Object>[')),
-        reason: '别再手抄指纹字段，统一走 config.runtimeFingerprint',
-      );
-      expect(
-        RegExp(r'config\.runtimeFingerprint').allMatches(source).length,
-        greaterThanOrEqualTo(2),
-        reason: '发现页控制器与手动刮削控制器都必须用 runtimeFingerprint',
-      );
+      final String runtime = File(
+        'lib/src/media/video/metadata/video_scrape_runtime.dart',
+      ).readAsStringSync();
+      for (final String source in <String>[home, runtime]) {
+        expect(
+          source,
+          isNot(contains('fingerprint = <Object>[')),
+          reason: '别再手抄指纹字段，统一走 config.runtimeFingerprint',
+        );
+        expect(
+          RegExp(r'config\.runtimeFingerprint').allMatches(source).length,
+          greaterThanOrEqualTo(1),
+          reason: '发现页控制器与手动刮削控制器都必须用 runtimeFingerprint',
+        );
+      }
     });
   });
 }

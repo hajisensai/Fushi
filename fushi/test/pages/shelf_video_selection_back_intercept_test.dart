@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,6 +16,7 @@ import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// BUG-250 (TODO-306): 书架/视频 tab 的批量选择模式（`_selectionMode`）活在 tab
 /// 内容里、不是独立 route。修复前返回键冒泡到 HomePage 顶层 PopScope 直接退出
@@ -96,7 +97,7 @@ void main() {
     // Tooltip，故按 checklist 图标定位（与 home_video_page_menu_test 一致）。
     final Finder selectBtn = find.descendant(
       of: find.byType(FushiTagFilterBar),
-      matching: find.byIcon(Icons.checklist_outlined),
+      matching: find.byIcon(FushiIcons.checklist),
     );
     expect(selectBtn, findsOneWidget, reason: '视频标签栏旁应有「批量选择」按钮');
     await tester.tap(selectBtn);
@@ -141,7 +142,7 @@ void main() {
     expect(find.text('My Episode'), findsOneWidget);
   });
 
-  test('视频/书架 build 根都包了 PopScope 拦截多选态返回（源码守卫）', () {
+  test('视频/书架 build 根都包了 SectionPopScope 拦截多选态返回（源码守卫）', () {
     String read(String path) => File(path).readAsStringSync();
 
     final String videoSrc =
@@ -155,8 +156,9 @@ void main() {
     }.entries) {
       final int buildStart = e.value.indexOf('Widget build(BuildContext');
       expect(buildStart, isNonNegative, reason: '${e.key} 应有 build 方法');
-      // build 根第一个返回的 widget 必须是 PopScope（在 FushiFileDropTarget 外）。
-      final int popScope = e.value.indexOf('return PopScope(', buildStart);
+      // build 根第一个返回的 widget 必须是 SectionPopScope（在 FushiFileDropTarget
+      // 外）：只在所在库页分区可见时拦返回（HBK-AUDIT-017）。
+      final int popScope = e.value.indexOf('return SectionPopScope(', buildStart);
       final int dropTarget =
           e.value.indexOf('FushiFileDropTarget(', buildStart);
       expect(popScope, isNonNegative,
@@ -165,9 +167,9 @@ void main() {
           reason: '${e.key} 的 PopScope 必须包在 FushiFileDropTarget 外层');
 
       final String region = e.value.substring(popScope, dropTarget);
-      expect(region, contains('canPop: !_selectionMode'),
-          reason: '${e.key} 多选态 canPop=false，普通态不变');
-      expect(region, contains('_exitSelectionMode()'),
+      expect(region, contains('intercepting: _selectionMode'),
+          reason: '${e.key} 多选态拦返回，普通态不变');
+      expect(region, contains('onIntercept: _exitSelectionMode'),
           reason: '${e.key} 返回被拦时应退出多选态');
     }
   });

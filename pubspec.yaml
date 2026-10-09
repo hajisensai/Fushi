@@ -25,6 +25,7 @@ workspace:
   - packages/flutter_inappwebview_windows
   - packages/fushi_anki
   - packages/fushi_audio
+  - packages/fushi_cli
   - packages/fushi_core
   - packages/fushi_dictionary
   - packages/fushi_engine
@@ -46,6 +47,10 @@ dev_dependencies:
 # pub.dev 版本；再写一条 override 会让 pub 直接报
 # "Cannot override workspace packages."。vendor 的理由见各自 pubspec 顶部。
 dependency_overrides:
+  # HBK-AUDIT-053: use material_ui inside ColorPicker / ColorPickerInput so they
+  # inherit complete app and locally overridden dialog themes. See PATCHES.md.
+  flutter_colorpicker:
+    path: third_party/flutter_colorpicker
   # TODO-1306 / TODO-1275 / BUG-361: vendored desktop_drop 0.5.0. Adds (a) URL
   # drag import — browsers drop a URL as CFSTR_INETURLW (Windows) / public.url
   # (macOS) / an http(s) line in text/uri-list (Linux), all of which upstream
@@ -152,7 +157,7 @@ dependency_overrides:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 308e23606ea26c31d3cea4775002fdd3ee5f0fed
+      ref: f4984a897594ebded3c34f4c260f92f605da4aa0
   # fushi_asr_onnx_ffi（仅无头 fushi_server 依赖）把 archive 钉成 ^4.0.0，本仓其余
   # 全部钉 ^3.6.1；pub workspace 只解析一次，两者无法共存。
   #

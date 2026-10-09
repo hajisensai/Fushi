@@ -11,6 +11,7 @@ import 'package:fushi_engine/media/video/video_sidecar.dart'
         defaultSidecarSubtitleSuffix,
         findSidecarSubtitle,
         isSidecarSubtitleSuffix,
+        listSidecarSubtitles,
         pickSidecar,
         sidecarSuffixesDisplacedBy;
 import 'package:fushi_audio/fushi_audio_core.dart'
@@ -126,6 +127,7 @@ abstract class _LocalLibraryHostBase
         VideoPlaybackSyncHost,
         AudiobookDelayHost,
         VideoSubtitleDefaultHost,
+        VideoSubtitleClearHost,
         InterconnectServiceConfigHost,
         InterconnectProfileHost,
         VideoMetadataHost,

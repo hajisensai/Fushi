@@ -16,23 +16,26 @@ part of '../video_fushi_page.dart';
 /// scope.
 extension _VideoEpisode on _VideoFushiPageState {
   void _handlePlaybackCompleted() {
+    if (_controller?.isBlurayNavigationSession == true) return;
     if (_sourceReviewActive) return;
     final int? positionMs = _controller?.positionMs;
     if (positionMs != null) {
-      unawaited(_reportRemotePlaybackStopped(
-        info: _effectiveRemoteInfo,
-        client: _effectiveRemoteClient,
-        positionMs: positionMs,
-        generation: _remotePlaybackGeneration,
-      ));
+      unawaited(
+        _reportRemotePlaybackStopped(
+          info: _effectiveRemoteInfo,
+          client: _effectiveRemoteClient,
+          positionMs: positionMs,
+          generation: _remotePlaybackGeneration,
+        ),
+      );
     }
     if (!mounted) return;
     // 有下一集才连播（单集 / 末集 / 越界不推进，停在本集结束）。
     final int cur = _currentEpisode;
     final int? nextEpisode =
         (_episodes.length > 1 && cur >= 0 && cur < _episodes.length - 1)
-            ? cur + 1
-            : null;
+        ? cur + 1
+        : null;
     // TODO-639　三门控(自动连播开关/有下一集/未在换集)任一不满足都停在本集结束。
     if (!shouldAutoPlayNextOnCompletion(
       autoPlayNextEnabled: appModel.videoAutoPlayNext,
@@ -51,23 +54,22 @@ extension _VideoEpisode on _VideoFushiPageState {
     _autoAdvanceCountdownTimer?.cancel();
     _autoAdvanceCountdownTarget = targetEpisode;
     _autoAdvanceCountdownNotifier.value = kAutoPlayNextCountdownSeconds;
-    _autoAdvanceCountdownTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) {
-        if (!mounted) {
-          _cancelAutoAdvanceCountdown();
-          return;
-        }
-        final int remaining = (_autoAdvanceCountdownNotifier.value ?? 0) - 1;
-        if (remaining <= 0) {
-          final int? target = _autoAdvanceCountdownTarget;
-          _cancelAutoAdvanceCountdown();
-          if (target != null) _runAutoAdvance(target);
-        } else {
-          _autoAdvanceCountdownNotifier.value = remaining;
-        }
-      },
-    );
+    _autoAdvanceCountdownTimer = Timer.periodic(const Duration(seconds: 1), (
+      _,
+    ) {
+      if (!mounted) {
+        _cancelAutoAdvanceCountdown();
+        return;
+      }
+      final int remaining = (_autoAdvanceCountdownNotifier.value ?? 0) - 1;
+      if (remaining <= 0) {
+        final int? target = _autoAdvanceCountdownTarget;
+        _cancelAutoAdvanceCountdown();
+        if (target != null) _runAutoAdvance(target);
+      } else {
+        _autoAdvanceCountdownNotifier.value = remaining;
+      }
+    });
   }
 
   /// 取消 / 清掉自动连播倒计时(用户点「取消」、倒计时归零推进前、或页面销毁时)。
@@ -104,9 +106,10 @@ extension _VideoEpisode on _VideoFushiPageState {
   Future<void> _switchEpisode(
     int index, {
     required EpisodeStartIntent intent,
+    bool openBlurayMenu = false,
   }) async {
-    if (index < 0 || index >= _episodes.length) return;
-    if (index == _currentEpisode) return;
+    if (!openBlurayMenu && (index < 0 || index >= _episodes.length)) return;
+    if (!openBlurayMenu && index == _currentEpisode) return;
     // TODO-639：任何换集（手动上/下一集、列表选集、倒计时推进）都先清掉挂着的自动连播
     // 倒计时 overlay，避免它停在旧目标上。
     _cancelAutoAdvanceCountdown();
@@ -127,7 +130,7 @@ extension _VideoEpisode on _VideoFushiPageState {
         // 列表、连播全部失灵，与本地分支此前那条同形。
         persistInBackground(
           persist: () => _persistRemotePositionAndReportPlaybackStopped(
-            uid: widget.bookUid,
+            uid: _activeBookUid,
             positionMs: curPos,
             info: currentInfo,
             client: currentClient,
@@ -148,10 +151,12 @@ extension _VideoEpisode on _VideoFushiPageState {
     }
 
     // 统一合集 Phase 3：本地每集是独立 VideoBooks 行 → 换集 = pushReplacement 到兄弟集
-    // 的单视频页（同 playlistCollectionId 让新页仍带剧集面板/上下集/连播；widget.bookUid
+    // 的单视频页（同 playlistCollectionId 让新页仍带剧集面板/上下集/连播；_activeBookUid
     // 恒为当前集，整套单视频 load/cue/收藏/持久化机制原样复用）。先落当前集精确位置
     // （tick 只整秒写，补这一下避免丢尾部几百 ms）；新页 _init 从该集行 lastPositionMs 续播。
-    final String? targetUid = _episodes[index].bookUid;
+    final String? targetUid = openBlurayMenu
+        ? _activeBookUid
+        : _episodes[index].bookUid;
     if (targetUid == null) return;
     // BUG-839：全屏播放时 app 全屏路由压在剧集页之上（fullscreen.part.dart 推到 root
     // navigator）。裸 pushReplacement 会替换掉栈顶的**全屏路由**、把本集页漏在栈里 →
@@ -169,8 +174,10 @@ extension _VideoEpisode on _VideoFushiPageState {
     final PageRoute<void>? oldFullscreenRoute = _videoFullscreenRoute;
     // 捕获 NavigatorState / 本页路由（在 await 前），避免跨 async gap 用 context。
     final NavigatorState navigator = Navigator.of(context);
-    final NavigatorState rootNavigator =
-        Navigator.of(context, rootNavigator: true);
+    final NavigatorState rootNavigator = Navigator.of(
+      context,
+      rootNavigator: true,
+    );
     final Route<Object?>? currentRoute = ModalRoute.of(context);
     // 「接管 vs 顶替」与「是否把原生全屏交给新页」收敛进纯函数（真值表单测：
     // test/media/video/video_episode_start_policy_test.dart）。这里不再手写布尔
@@ -186,7 +193,7 @@ extension _VideoEpisode on _VideoFushiPageState {
       // 在这里——连接被毒化时 `setPref` 事务 COMMIT 抛错 / 挂死，换集按钮、剧集列表、
       // 连播全部卡死。drift 请求已同步排进队列，新页读该集行排在它之后。
       persistInBackground(
-        persist: () => _persistPosition(widget.bookUid, curPos),
+        persist: () => _persistPosition(_activeBookUid, curPos),
         onPersistError: (Object error, StackTrace stack) => ErrorLogService
             .instance
             .log('VideoFushiPage.switchEpisodePersist', error, stack),
@@ -203,6 +210,7 @@ extension _VideoEpisode on _VideoFushiPageState {
       context: context,
       builder: (_) => VideoFushiPage.neutralized(
         bookUid: targetUid,
+        openBlurayMenu: openBlurayMenu,
         repo: widget.repo,
         playlistCollectionId: widget.playlistCollectionId,
         // BUG-2043：字幕列表随集常驻——换集前开着就带到新页，不再随旧页一起丢。
@@ -331,7 +339,8 @@ extension _VideoEpisode on _VideoFushiPageState {
           groupKey: collectionGroupKeyForFilename(
             e.path.isNotEmpty ? e.path : e.title,
           ),
-          cover: resolveMediaCoverImage(
+          cover:
+              resolveMediaCoverImage(
                 kind: MediaKind.video,
                 localPath: e.coverPath,
                 remoteUrl: e.coverUrl,
@@ -341,6 +350,7 @@ extension _VideoEpisode on _VideoFushiPageState {
               seriesFallback,
           completed: e.completed,
           started: e.started,
+          progress: e.progress,
         ),
     ];
     _episodePanelEntriesEpisodes = _episodes;
@@ -385,44 +395,57 @@ extension _VideoEpisode on _VideoFushiPageState {
   /// 浏览剧集卡片后关面板，焦点滞留在 opacity=0 的卡片 InkWell 上，焦点环在画面上
   /// 画出一个空框）。× / Esc / 控制条按钮仍全部经 [_closeEpisodeList]，关闭副作用不分叉。
   Widget _episodeOverlayPanel(bool visible) {
-    final ColorScheme cs = _videoChromeColorScheme(context);
-    final double panelHeight = (220 * _videoUiScale).clamp(200.0, 360.0);
-    final Duration duration =
-        einkSafeDuration(context, const Duration(milliseconds: 220));
+    // M3E：剧集轨道与设置侧板同一层播放器 chrome——无色相中性深色渐变底 +
+    // 面板中性主题（季 chip、卡片文字读白前景，强调色仍是 app 主色）；Apple /
+    // 墨水屏照旧跟页面主题。
+    final bool neutral = videoM3ePanelNeutral(context);
+    final ColorScheme pageCs = _videoChromeColorScheme(context);
+    final ColorScheme cs = neutral ? videoM3ePanelScheme(pageCs) : pageCs;
+    // M3E 进出场：透明度走 effects 弹簧（不过冲），位移 + 轻微缩放走 spatial
+    // 弹簧（带一点回弹）；墨水屏 / 减弱动态效果下 token 时长归零，瞬时到位。
+    final FushiMotionScheme motion = context.fushiMotion;
     return PositionedDirectional(
       start: 0,
       end: 0,
       bottom: 0,
       child: FadingChromeGate(
         visible: visible,
-        duration: duration,
-        curve: Curves.easeOut,
+        duration: motion.effectsDefault.duration,
+        curve: motion.effectsDefault.curve,
         child: AnimatedSlide(
-          offset: visible ? Offset.zero : const Offset(0, 0.18),
-          duration: duration,
-          curve: Curves.easeOutCubic,
-          child: _withSidePanelOpaqueCursor(
-            SafeArea(
-              top: false,
-              // 手柄重设计 P3：轨道打开即把焦点领进面板（关闭还给页面焦点），
-              // D-pad 才能选集——本面板常驻挂载靠 FadingChromeGate 显隐，认领
-              // 必须跟 visible 边沿走而非挂载。
-              child: PanelFocusScope(
-                visible: visible,
-                restoreFocus: () =>
-                    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
-                child: VideoEpisodePanel(
-                  key: const ValueKey<String>('video-episode-panel'),
-                  episodes: _episodePanelEntries(),
-                  currentIndex: _currentEpisode,
-                  onTapEpisode: _handleEpisodeListTap,
-                  onClose: _closeEpisodeList,
-                  colorScheme: cs,
-                  title: t.video_episode_list,
-                  emptyHint: t.video_episode_list_empty,
-                  seasonLabelOf: _episodeSeasonLabel,
-                  fontSize: 14 * _videoUiScale,
-                  height: panelHeight,
+          offset: visible ? Offset.zero : const Offset(0, 0.14),
+          duration: motion.spatialDefault.duration,
+          curve: motion.spatialDefault.curve,
+          child: AnimatedScale(
+            scale: visible ? 1 : 0.97,
+            alignment: Alignment.bottomCenter,
+            duration: motion.spatialDefault.duration,
+            curve: motion.spatialDefault.curve,
+            child: _withSidePanelOpaqueCursor(
+              SafeArea(
+                top: false,
+                // 手柄重设计 P3：轨道打开即把焦点领进面板（关闭还给页面焦点），
+                // D-pad 才能选集——本面板常驻挂载靠 FadingChromeGate 显隐，认领
+                // 必须跟 visible 边沿走而非挂载。
+                child: PanelFocusScope(
+                  visible: visible,
+                  restoreFocus: () =>
+                      _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
+                  child: VideoM3ePanelTheme(
+                    child: VideoEpisodePanel(
+                      key: const ValueKey<String>('video-episode-panel'),
+                      episodes: _episodePanelEntries(),
+                      currentIndex: _currentEpisode,
+                      onTapEpisode: _handleEpisodeListTap,
+                      onClose: _closeEpisodeList,
+                      colorScheme: cs,
+                      title: t.video_episode_list,
+                      emptyHint: t.video_episode_list_empty,
+                      seasonLabelOf: _episodeSeasonLabel,
+                      fontSize: 14 * _videoUiScale,
+                      visible: visible,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -506,15 +529,8 @@ extension _VideoEpisode on _VideoFushiPageState {
     // 底缘 = 轨道上缘 + 16×缩放 呼吸间距——此前固定 88 不吃 [_videoUiScale] 也不
     // 吃系统 inset，缩放 >1 或手势导航高 inset 时压进进度条 / 按钮条。
     final ({double bottom, double height}) band = videoSeekBarTrackBand(
-      isDesktop: _isDesktopVideoControls,
-      // Apple 底栏胶囊的抬升（MD3 恒 0），见 [_appleBottomLift]。
-      buttonBarHeight: _videoButtonBarHeight + _videoGeometryButtonBarLift,
-      seekBarButtonGap: _videoSeekBarButtonGap,
-      seekBarContainerHeight: _videoSeekBarContainerHeight,
-      seekBarTrackHeight: _videoSeekBarTrackHeight,
-      bottomChromeBaseline: _videoGeometryBottomBaseline,
-      bottomSystemInset: _videoBottomSystemInset(),
-      tickHeight: _videoSeekBarTrackHeight,
+      trackCenter: _videoSeekBarTrackCenter,
+      tickHeight: _videoSeekBarTrackHeight * _controlsDensityScale,
     );
     final double countdownBottom =
         band.bottom + band.height + 16 * _videoUiScale;

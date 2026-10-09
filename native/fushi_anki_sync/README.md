@@ -37,7 +37,8 @@ resolves twice and its types do not match).
 `--install-dir DIR` (`-InstallDirectory DIR` on Windows) also copies the binary plus its
 AGPL source notice `fushi-anki-sync.SOURCE.txt` (generated from `SOURCE.txt.in` with the
 checkout's commit) into `DIR` and smoke-tests the copy with a `version` request.
-`--universal` (macOS) builds arm64 + x86_64 and `lipo`s them. CI
+On macOS it builds for the host architecture only (the macOS app is Apple Silicon /
+arm64 only; Intel Macs are not supported), so CI builds it on an arm64 runner. CI
 (`.github/actions/setup-fushi-anki-sync` + the desktop / server release workflows) uses
 these to put the helper next to `fushi.exe`, inside `fushi.app/Contents/MacOS/` (notice in
 `Contents/Resources/`), and in the server's `bundle/bin/`.

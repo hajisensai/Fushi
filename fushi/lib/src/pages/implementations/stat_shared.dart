@@ -1,4 +1,6 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
+
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
@@ -89,7 +91,7 @@ Widget buildStatMediaRow(
         // 2026-10 体验优化：删除入口统一为可见按钮（与会话列表一致），长按 /
         // 右键仍保留作快捷方式。
         if (onDelete != null)
-          IconButton(
+          FushiIconButtonControl(
             tooltip: t.stat_delete_title,
             icon: const Icon(Icons.delete_outline),
             onPressed: onDelete,
@@ -191,32 +193,52 @@ class _StatAnalysisFoldState extends State<StatAnalysisFold> {
             tokens.spacing.card,
             0,
           ),
-          child: Material(
-            type: MaterialType.transparency,
-            child: InkWell(
-              borderRadius: FushiBorderRadius.card,
-              onTap: () => setState(() => _expanded = !_expanded),
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        t.stat_analysis,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
+          // 2026-10 统计中心重设计：折叠头是一张可聚焦的卡（键盘 / 手柄 Enter
+          // 展开），chevron 随展开转半圈、内容按 FushiMotion 时长展开——减弱
+          // 动态效果时两者瞬间到位。
+          child: FushiCard(
+            onTap: () => setState(() => _expanded = !_expanded),
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.card,
+              vertical: tokens.spacing.gap,
+            ),
+            child: Semantics(
+              expanded: _expanded,
+              child: Row(
+                children: <Widget>[
+                  FushiIcon(Icons.insights_outlined, color: colors.primary),
+                  SizedBox(width: tokens.spacing.gap),
+                  Expanded(
+                    child: Text(
+                      t.stat_analysis,
+                      style: statSectionTitleStyle(context),
                     ),
-                    FushiIcon(
-                      _expanded ? Icons.expand_less : Icons.expand_more,
+                  ),
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0,
+                    duration: fushiMotionDuration(context, FushiMotion.medium),
+                    curve: FushiMotion.standard,
+                    child: FushiIcon(
+                      Icons.expand_more,
                       color: colors.onSurfaceVariant,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
         ),
-        if (_expanded) ...widget.children,
+        AnimatedSize(
+          duration: fushiMotionDuration(context, FushiMotion.medium),
+          curve: FushiMotion.enter,
+          alignment: Alignment.topCenter,
+          child: _expanded
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: widget.children,
+                )
+              : const SizedBox(width: double.infinity),
+        ),
       ],
     );
   }
@@ -224,27 +246,23 @@ class _StatAnalysisFoldState extends State<StatAnalysisFold> {
 
 /// 阅读、视频与游戏统计页共用的聚合 / 格式化 / 页面状态 / 卡片与图表辅助。
 
-/// 统一统计页的加载、错误、空态分派。
+/// 统一统计页的加载、错误分派。
 ///
-/// 三个页面只提供自己的数据判据和内容；状态优先级与空态视觉不再各复制一份三元表达式。
+/// 空数据不在这里分派（2026-10 统计中心重设计）：各页在内容里画
+/// `StatDashboardEmpty`——指标区照常显示，版式与有数据时一致，而不是整页换成
+/// 一行居中的占位文案。
 Widget buildStatPageBody({
   required bool loading,
   required String? error,
-  required bool isEmpty,
   required Widget Function() loadingBuilder,
   required Widget Function(String error) errorBuilder,
-  required String emptyMessage,
   required Widget Function() contentBuilder,
 }) {
-  if (loading) return loadingBuilder();
-  if (error != null) return errorBuilder(error);
-  if (isEmpty) {
-    return Center(
-      child: FushiPlaceholderMessage(
-        icon: Icons.bar_chart_outlined,
-        message: emptyMessage,
-      ),
-    );
+  // 不滚动的加载 / 错误态让开叠放在上面的浮动页头（正文铺到页头底下时顶部
+  // 让位在 MediaQuery padding 里）；滚动内容自己消费（[StatDashboardBody]）。
+  if (loading) return SafeArea(bottom: false, child: loadingBuilder());
+  if (error != null) {
+    return SafeArea(bottom: false, child: errorBuilder(error));
   }
   return contentBuilder();
 }
@@ -252,6 +270,110 @@ Widget buildStatPageBody({
 /// 汇总卡上「无数据」的统一占位（2026-10 体验优化：速度等可能算不出的行不再
 /// 时有时无，统一渲染并显示该占位，四张卡行数一致）。
 const String kStatEmptyValue = '—';
+
+/// 统计页区块卡内标题的统一字重（2026-10 统计中心重设计）：MD3 = titleMedium
+/// w600 onSurface；Apple = 同字号 label 色。卡外的大区块标题走 [FushiSectionTitle]。
+TextStyle statSectionTitleStyle(BuildContext context) {
+  final ThemeData theme = Theme.of(context);
+  final TextStyle base = theme.textTheme.titleMedium ?? const TextStyle();
+  return base.copyWith(
+    fontWeight: FontWeight.w600,
+    color: isGlassDesign(context)
+        ? appleColorsOf(context).label
+        : theme.colorScheme.onSurface,
+  );
+}
+
+/// 统计中心的区块卡（2026-10 重设计）：一张 [FushiCard]，卡头 = 可选图标 +
+/// 标题 + 可选副标题 / 尾部控件，卡身 = [child]。图表、日历、范围汇总共用这
+/// 一种外框，两套设计系统的卡面、圆角、内边距由 [FushiCard] 一处决定。
+class StatSectionCard extends StatelessWidget {
+  const StatSectionCard({
+    required this.title,
+    required this.child,
+    super.key,
+    this.icon,
+    this.subtitle,
+    this.trailing,
+    this.margin,
+  });
+
+  final String title;
+  final Widget child;
+  final IconData? icon;
+
+  /// 标题下的一行说明（如所选区间、区间总时长）。
+  final String? subtitle;
+
+  /// 卡头行尾控件。
+  final Widget? trailing;
+
+  /// 卡外边距；null = 左右上 [FushiSpacingTokens.card]、下 0（区块纵向堆叠时
+  /// 两卡之间的间距由下一张卡的上边距提供）。
+  final EdgeInsetsGeometry? margin;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final String? sub = subtitle;
+    return Padding(
+      padding: margin ??
+          EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            tokens.spacing.card,
+            tokens.spacing.card,
+            0,
+          ),
+      child: FushiCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Semantics(
+              header: true,
+              child: Row(
+                children: <Widget>[
+                  if (icon != null) ...<Widget>[
+                    FushiIcon(icon, size: 20, color: colors.primary),
+                    SizedBox(width: tokens.spacing.gap),
+                  ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: statSectionTitleStyle(context),
+                        ),
+                        if (sub != null && sub.isNotEmpty)
+                          Text(
+                            sub,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: tokens.type.metadata.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  // 行尾控件可收窄（窄屏时自身换行 / 省略），不把卡头撑出界。
+                  if (trailing != null) Flexible(child: trailing!),
+                ],
+              ),
+            ),
+            SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// 汇总周期卡的一条次级指标。[label] 为空时只显示值（如阅读卡主字数下的时长）。
 class StatSummaryLine {
@@ -278,27 +400,146 @@ class StatPeriodSummary {
   final VoidCallback? onTap;
 }
 
-/// 统计中心 tab 嵌入态外壳（阶段 2）：右对齐动作行 + 内容。三域统计页在
-/// TabBarView 里不再套各自的 FushiPageScaffold——那会叠出双 Scaffold / 双顶栏，
-/// 且每个 scaffold 都往 PageScrollRegistry 注册滚动控制器互踩手柄翻页目标。
+/// 统计中心各 tab 的页头动作登记处（2026-10-06）：每个 tab 的「目标 / 刷新 /
+/// 清空」不再在页签下方自起一排孤立的图标行，而是登记到这里，由统计中心页头
+/// 右侧的按钮组胶囊画出——只画**当前 tab** 的那一份。
+///
+/// 登记发生在 tab 的 build 期，通知延到帧末（build 期不能让树上更早的页头
+/// 重建）；只有页头本身重建，tab 内容不随之重建，不会形成循环。
+class StatCenterTabActions extends ChangeNotifier {
+  final Map<int, List<Widget>> _byTab = <int, List<Widget>>{};
+  bool _notifyScheduled = false;
+  bool _disposed = false;
+
+  /// 第 [index] 个 tab 当前登记的动作；没登记过（还没建出来）为空。
+  List<Widget> actionsFor(int index) => _byTab[index] ?? const <Widget>[];
+
+  /// 第 [index] 个 tab 登记 / 更新自己的动作。
+  void claim(int index, List<Widget> actions) {
+    _byTab[index] = actions;
+    _scheduleNotify();
+  }
+
+  /// 第 [index] 个 tab 撤回登记（被 TabBarView 卸载时）。
+  void release(int index, List<Widget> actions) {
+    if (!identical(_byTab[index], actions)) return;
+    _byTab.remove(index);
+    _scheduleNotify();
+  }
+
+  void _scheduleNotify() {
+    if (_notifyScheduled || _disposed) return;
+    _notifyScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      _notifyScheduled = false;
+      if (!_disposed) notifyListeners();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _byTab.clear();
+    super.dispose();
+  }
+}
+
+/// 告诉统计中心里的某个 tab：它是第几个 tab、动作登记到哪里。
+class StatCenterTabScope extends InheritedWidget {
+  const StatCenterTabScope({
+    required this.registry,
+    required this.index,
+    required super.child,
+    super.key,
+  });
+
+  final StatCenterTabActions registry;
+  final int index;
+
+  static StatCenterTabScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<StatCenterTabScope>();
+
+  @override
+  bool updateShouldNotify(StatCenterTabScope oldWidget) =>
+      registry != oldWidget.registry || index != oldWidget.index;
+}
+
+/// 统计中心 tab 嵌入态外壳（阶段 2）。三域统计页在 TabBarView 里不再套各自的
+/// FushiPageScaffold——那会叠出双 Scaffold / 双顶栏，且每个 scaffold 都往
+/// PageScrollRegistry 注册滚动控制器互踩手柄翻页目标。
+///
+/// 在统计中心里（有 [StatCenterTabScope]）：[actions] 登记进页头右侧的按钮组
+/// 胶囊，本层只剩内容。不在统计中心（独立嵌入）时回退旧形态：右对齐动作行 +
+/// 内容。
 Widget buildEmbeddedStatTab(
   BuildContext context,
   List<Widget> actions,
   Widget body,
 ) {
+  final StatCenterTabScope? scope = StatCenterTabScope.maybeOf(context);
+  if (scope != null) {
+    return _StatTabActionsClaim(
+      registry: scope.registry,
+      index: scope.index,
+      actions: actions,
+      child: body,
+    );
+  }
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-  return Column(
-    children: <Widget>[
-      Padding(
-        padding: EdgeInsets.only(right: tokens.spacing.card),
-        child: Align(
-          alignment: Alignment.centerRight,
-          child: Row(mainAxisSize: MainAxisSize.min, children: actions),
+  // 动作行不滚动：整体让开顶部 padding（SafeArea 同时把它从正文里移除，滚动
+  // 视图不再重复让位）。
+  return SafeArea(
+    bottom: false,
+    child: Column(
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.only(right: tokens.spacing.card),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Row(mainAxisSize: MainAxisSize.min, children: actions),
+          ),
         ),
-      ),
-      Expanded(child: body),
-    ],
+        Expanded(child: body),
+      ],
+    ),
   );
+}
+
+/// 把一个 tab 的动作登记进 [StatCenterTabActions]，卸载时撤回。
+class _StatTabActionsClaim extends StatefulWidget {
+  const _StatTabActionsClaim({
+    required this.registry,
+    required this.index,
+    required this.actions,
+    required this.child,
+  });
+
+  final StatCenterTabActions registry;
+  final int index;
+  final List<Widget> actions;
+  final Widget child;
+
+  @override
+  State<_StatTabActionsClaim> createState() => _StatTabActionsClaimState();
+}
+
+class _StatTabActionsClaimState extends State<_StatTabActionsClaim> {
+  List<Widget>? _claimed;
+
+  @override
+  void dispose() {
+    final List<Widget>? claimed = _claimed;
+    if (claimed != null) widget.registry.release(widget.index, claimed);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _claimed = widget.actions;
+    widget.registry.claim(widget.index, widget.actions);
+    return widget.child;
+  }
 }
 
 /// 汇总卡两列布局的最小列宽（dp）。低于此宽度时「1234 小时 56 分钟」这类长主值
@@ -322,99 +563,6 @@ Widget buildStatTailSliver(BuildContext context) {
     padding: EdgeInsets.only(
       bottom: tokens.spacing.card * 2 + bottomSafeInsetOf(context),
     ),
-  );
-}
-
-/// 横屏双栏的最小内容区宽度（dp）。两栏各分一半、再扣掉左右 [FushiSpacingTokens.card]
-/// 后，每栏仍刚好能让时段卡排两列（见 [kStatPeriodSummaryMinColumnWidth]）；再窄
-/// 就是把竖排布局硬劈两半，每栏都挤，不如单列。
-const double kStatLandscapeMinWidth = 720;
-
-/// 纯函数：统计 tab 的内容区该不该走横屏双栏。
-///
-/// 判的是**内容区**（tab 内扣掉页头 / TabBar / 动作行之后）的形状，不是屏幕朝向：
-/// 手机横过来、平板横放、桌面宽窗口都落在这里；桌面窄高窗口与竖屏仍是单列。
-/// 高度无界（放进外层滚动容器）时没有「横」可言，按单列。
-bool useStatLandscapeLayout(Size size) =>
-    size.width.isFinite &&
-    size.height.isFinite &&
-    size.width > size.height &&
-    size.width >= kStatLandscapeMinWidth;
-
-/// 横屏双栏里一个区块归哪一栏。
-enum StatPane {
-  /// 左栏「概览」：目标、时段卡、图表、分析——回答「多少」。
-  overview,
-
-  /// 右栏「明细」：最近会话、按媒体列表——回答「是什么」。
-  detail,
-}
-
-/// 统计 tab 的一个区块：一条 sliver + 它在横屏下归哪一栏。
-class StatPaneSliver {
-  const StatPaneSliver(this.pane, this.sliver);
-
-  final StatPane pane;
-  final Widget sliver;
-}
-
-/// 统计 tab 的自适应滚动主体：竖屏 = 一条 [CustomScrollView]，区块按 [sections]
-/// 给出的顺序原样排（竖排布局一处不改）；横屏（[useStatLandscapeLayout]）= 按
-/// [StatPaneSliver.pane] 拆成左「概览」右「明细」两栏、各自独立滚动，栏内保持
-/// 原相对顺序。
-///
-/// 横屏下竖排布局只是被拉宽：时段卡、图表铺满一屏高度后，最近会话与按媒体列表
-/// 全被挤到折线以下，要看数字对应哪本书 / 哪次会话得来回滚。双栏让「多少」和
-/// 「是什么」同屏——左栏数字、右栏条目，任一栏滚动不影响另一栏。
-///
-/// [sections] 收到区块所在栏的宽度（竖屏即整宽），供区块自己决定是否并排。
-Widget buildStatAdaptiveScrollView(
-  BuildContext context, {
-  required List<StatPaneSliver> Function(double columnWidth) sections,
-}) {
-  return LayoutBuilder(
-    builder: (BuildContext context, BoxConstraints constraints) {
-      if (!useStatLandscapeLayout(constraints.biggest)) {
-        return CustomScrollView(
-          slivers: <Widget>[
-            for (final StatPaneSliver s in sections(constraints.maxWidth))
-              s.sliver,
-            buildStatTailSliver(context),
-          ],
-        );
-      }
-      final List<StatPaneSliver> all = sections((constraints.maxWidth - 1) / 2);
-      List<Widget> paneSlivers(StatPane pane) => <Widget>[
-            for (final StatPaneSliver s in all)
-              if (s.pane == pane) s.sliver,
-            buildStatTailSliver(context),
-          ];
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Expanded(
-            child: CustomScrollView(
-              key: const ValueKey<String>('stat-landscape-overview'),
-              slivers: paneSlivers(StatPane.overview),
-            ),
-          ),
-          FushiVerticalDivider(
-            width: 1,
-            thickness: 1,
-            color: Theme.of(context).colorScheme.outlineVariant,
-          ),
-          Expanded(
-            // 两栏都挂 PrimaryScrollController 时（移动端默认继承），状态栏点按回顶
-            // 会撞「一个控制器挂两个视图」；主栏留给左侧概览。
-            child: CustomScrollView(
-              key: const ValueKey<String>('stat-landscape-detail'),
-              primary: false,
-              slivers: paneSlivers(StatPane.detail),
-            ),
-          ),
-        ],
-      );
-    },
   );
 }
 
@@ -571,18 +719,34 @@ class _StatPeriodSummaryCard extends StatelessWidget {
     final double? valueMaxWidth = cardWidth != null && cardWidth.isFinite
         ? (cardWidth - padding * 2) * 0.6
         : null;
-    final Widget card = FushiCard(
+    // 2026-10 统计中心重设计：可点卡直接走 FushiCard.onTap——两套设计系统的
+    // 按压下沉 / 焦点环 / Enter 激活一处给齐（原 InkWell 外包没有按压反馈）。
+    return FushiCard(
       padding: EdgeInsets.all(padding),
+      onTap: summary.onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(
-            summary.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  summary.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ),
+              // 可点卡给一个去向提示（点开 = 该时段按作品的明细）。
+              if (summary.onTap != null)
+                FushiIcon(
+                  Icons.chevron_right,
+                  size: 18,
                   color: colorScheme.onSurfaceVariant,
                 ),
+            ],
           ),
           SizedBox(height: tokens.spacing.gap),
           FittedBox(
@@ -609,12 +773,6 @@ class _StatPeriodSummaryCard extends StatelessWidget {
           ],
         ],
       ),
-    );
-    if (summary.onTap == null) return card;
-    return InkWell(
-      onTap: summary.onTap,
-      borderRadius: FushiBorderRadius.card,
-      child: card,
     );
   }
 }
@@ -678,45 +836,92 @@ class _StatSummaryLineRow extends StatelessWidget {
 
 /// 时长柱状图（四个统计 tab 共用）。[title] 缺省为「近 30 天」；范围图表经
 /// `buildStatRangeChartSection` 传区间标题与按柱数稀疏的 [labelEvery]。
+///
+/// 2026-10 统计中心重设计：整块是一张 [StatSectionCard]（标题 + 区间 / 合计副标题），
+/// 柱子经 [StatChartEntrance] 从 0 长到满高；换范围 / 换筛选（数据签名变了）时重播。
 Widget buildStatDailyDurationChartSection(
   BuildContext context,
   List<StatDayData> daily, {
   String? title,
+  String? subtitle,
   int labelEvery = 5,
 }) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   final ColorScheme colorScheme = Theme.of(context).colorScheme;
-  return Padding(
-    padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(
-          title ?? t.stat_last_30_days,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-        SizedBox(
-          height: 160,
-          child: CustomPaint(
-            size: Size.infinite,
-            painter: StatBarChartPainter(
-              data: daily,
-              barColor: colorScheme.primary,
-              barRadius: tokens.radii.chipCorner,
-              labelColor: colorScheme.onSurfaceVariant,
-              labelStyle: tokens.type.metadata.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-              valueOf: statMsValue,
-              axisScaleOf: statDurationAxisScale,
-              labelEvery: labelEvery,
+  final StatChartColors chartColors = statChartColorsOf(context);
+  return StatSectionCard(
+    title: title ?? t.stat_last_30_days,
+    subtitle: subtitle,
+    icon: Icons.bar_chart_rounded,
+    child: SizedBox(
+      height: 168,
+      child: StatChartEntrance(
+        replayKey: statDayDataSignature(daily),
+        builder: (BuildContext context, double progress) => CustomPaint(
+          size: Size.infinite,
+          painter: StatBarChartPainter(
+            data: daily,
+            barColor: chartColors.series,
+            barRadius: tokens.radii.chipCorner,
+            labelColor: colorScheme.onSurfaceVariant,
+            labelStyle: tokens.type.metadata.copyWith(
+              color: colorScheme.onSurfaceVariant,
             ),
+            valueOf: statMsValue,
+            axisScaleOf: statDurationAxisScale,
+            labelEvery: labelEvery,
+            progress: progress,
           ),
         ),
-      ],
+      ),
     ),
   );
+}
+
+/// 纯函数：一组柱数据的签名（柱数 + 首尾键 + 时长 / 字数合计）。[StatChartEntrance]
+/// 拿它当重播键：同一份数据重建（父级 setState）不重播，换了范围 / 筛选才重播。
+Object statDayDataSignature(List<StatDayData> data) {
+  int ms = 0;
+  int chars = 0;
+  for (final StatDayData d in data) {
+    ms += d.ms;
+    chars += d.chars;
+  }
+  return Object.hash(
+    data.length,
+    data.isEmpty ? '' : data.first.dateKey,
+    data.isEmpty ? '' : data.last.dateKey,
+    ms,
+    chars,
+  );
+}
+
+/// 图表进场动画（2026-10 统计中心重设计）：把 0→1 的进度喂给 [builder]，柱高 /
+/// 环弧随之长满。时长取 [FushiMotion.long]、曲线 [FushiMotion.enter]——两套设计
+/// 系统共用；墨水屏 / 系统「减弱动态效果」下 [fushiMotionDuration] 归零，图表
+/// 直接画满。[replayKey] 变化时重播一次。
+class StatChartEntrance extends StatelessWidget {
+  const StatChartEntrance({
+    required this.replayKey,
+    required this.builder,
+    super.key,
+  });
+
+  final Object replayKey;
+  final Widget Function(BuildContext context, double progress) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    final Duration duration = fushiMotionDuration(context, FushiMotion.long);
+    return TweenAnimationBuilder<double>(
+      key: ValueKey<Object>(replayKey),
+      tween: Tween<double>(begin: duration == Duration.zero ? 1 : 0, end: 1),
+      duration: duration,
+      curve: FushiMotion.enter,
+      builder: (BuildContext context, double value, Widget? _) =>
+          builder(context, value),
+    );
+  }
 }
 
 /// v76 读取端身份分组（v39「读取端按 title 回退」的成文契约）：把带可空身份的
@@ -1375,16 +1580,21 @@ Widget _buildStatHourlyChartSection(
   required List<StatHourlyFormatBand> legendBands,
   required bool showUnattributedNote,
 }) {
-  final tokens = FushiDesignTokens.of(context);
-  final colorScheme = Theme.of(context).colorScheme;
-  return Padding(
-    padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  final ColorScheme colorScheme = Theme.of(context).colorScheme;
+  // 2026-10 统计中心重设计：与范围时长图同一张区块卡外框（[StatSectionCard]）。
+  return StatSectionCard(
+    title: t.stat_today_hourly,
+    icon: Icons.schedule_outlined,
+    margin: EdgeInsets.fromLTRB(
+      tokens.spacing.card,
+      0,
+      tokens.spacing.card,
+      tokens.spacing.card,
+    ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(t.stat_today_hourly,
-            style: Theme.of(context).textTheme.titleMedium),
-        SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
+      children: <Widget>[
         SizedBox(
           height: 140,
           child: CustomPaint(
@@ -1419,7 +1629,6 @@ Widget _buildStatHourlyChartSection(
             ),
           ),
         ],
-        SizedBox(height: tokens.spacing.card + tokens.spacing.gap),
       ],
     ),
   );

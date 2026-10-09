@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- TODO-1184：点浏览器工具栏 Fushi 图标弹出的「制卡队列管理」菜单。
+<!-- TODO-1184：点浏览器工具栏 Fushi 图标弹出的菜单（连接状态 + 快捷开关 + 制卡队列管理）。
      站点无关的 browser-action popup（default_popup），普通网页 / Netflix / YouTube 都能点开。
      和 vendor/popup.html（查词渲染壳，注入到宿主页 #entries-container）是两回事，别混。
      设了 default_popup 后 chrome.action.onClicked 永不触发，故「开始生成/录制」入口迁到这里的
@@ -10,204 +10,375 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="../theme.css">
   <style>
-    /* 调色板来自 ../theme.css（扩展所有自有界面同一套；明暗由 theme.js 按扩展设置写根 data-theme）。 */
+    /* 颜色与风格 token 全来自 ../theme.css（调色板 + M3 系统 token + 外观风格；theme.js 写根
+       data-theme / data-style），表面材质（液态玻璃 / M3E 实色分段）由 ../material.css 按 token 统一落地。
+       这里管布局，外加 M3E（缺省风格，:root:not([data-style="glass"])）专属的色角色 / 字阶 / 按压形变。
+       信息架构（2026-10-05 去信息过载）：顶栏（品牌 + 设置）→ 连接状态 → 三个最高频开关 →
+       字幕侧边栏 → 制卡队列。其余设置一律进设置页。图标一律 Material Symbols Rounded（../icons.js）。 */
     body {
       margin: 0;
-      width: 320px;
-      font: 13px/1.5 "Hiragino Sans", "Segoe UI", sans-serif;
+      width: 340px;
+      font: 13px/1.45 "Hiragino Sans", "Segoe UI", system-ui, sans-serif;
       background: var(--fushi-bg);
       color: var(--fushi-text);
     }
-    .hp-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      padding: 12px 14px 8px;
+    .hp-shell { display: grid; gap: 10px; padding: 12px; }
+    .msr-slot { display: inline-flex; flex: none; align-items: center; justify-content: center; }
+    .msr-slot svg, svg.msr { display: block; flex: none; }
+    .hp-header { display: flex; align-items: center; gap: 10px; padding: 2px 2px 0 4px; }
+    .hp-brand { width: 24px; height: 24px; border-radius: 7px; }
+    .hp-brand-name { flex: 1 1 auto; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+    .hp-icon-btn {
+      display: grid; place-items: center; width: 40px; height: 40px; padding: 0;
+      border: 0; border-radius: var(--fushi-shape-control); background: transparent;
+      color: var(--fushi-muted); cursor: pointer;
+      transition: background-color var(--fushi-dur-short) var(--fushi-ease), border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial), color var(--fushi-dur-short) var(--fushi-ease), transform var(--fushi-dur-medium) var(--fushi-ease-spatial);
     }
-    .hp-title { font-weight: 600; }
-    .hp-count { opacity: 0.7; font-size: 12px; }
-    .hp-gen {
-      display: block;
-      width: calc(100% - 28px);
-      margin: 4px 14px 12px;
-      padding: 9px 12px;
-      border: none;
-      border-radius: 8px;
-      background: var(--fushi-primary);
-      color: var(--fushi-on-primary);
-      font: inherit;
-      font-weight: 600;
+    .hp-icon-btn:hover { color: var(--fushi-text); background: color-mix(in oklch, var(--fushi-text) 8%, transparent); }
+    .hp-icon-btn:active { border-radius: var(--fushi-shape-control-pressed); }
+    /* 连接状态卡：整卡可点 = 强制重检。图标按 data-tone 四态切换（loading 转圈 / good / warn / danger）。 */
+    .hp-connection {
       cursor: pointer;
+      display: grid; grid-template-columns: 40px minmax(0, 1fr) 20px; align-items: center; gap: 12px;
+      padding: 10px 14px 10px 10px;
+      border-radius: var(--fushi-shape-item);
+      transition: background-color var(--fushi-dur-short) var(--fushi-ease), border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial), transform var(--fushi-dur-medium) var(--fushi-ease-spatial);
     }
-    .hp-gen:hover { filter: brightness(1.08); }
-    .hp-gen:active { opacity: 0.7; }
+    .hp-connection-icon {
+      display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--fushi-shape-control);
+      color: var(--fushi-warn);
+      transition: background-color var(--fushi-dur-short) var(--fushi-ease), color var(--fushi-dur-short) var(--fushi-ease);
+    }
+    .hp-connection-icon > .msr-slot { grid-area: 1 / 1; display: none; }
+    .hp-connection[data-tone="loading"] .hp-tone-loading,
+    .hp-connection[data-tone="good"] .hp-tone-good,
+    .hp-connection[data-tone="warn"] .hp-tone-warn,
+    .hp-connection[data-tone="danger"] .hp-tone-danger { display: inline-flex; }
+    .hp-connection:not([data-tone="loading"]):not([data-tone="good"]):not([data-tone="warn"]):not([data-tone="danger"]) .hp-tone-warn { display: inline-flex; }
+    .hp-connection[data-tone="loading"] .hp-connection-icon { color: var(--fushi-muted); }
+    .hp-connection[data-tone="loading"] .hp-tone-loading svg { animation: hp-spin 1.1s linear infinite; }
+    .hp-connection[data-tone="good"] .hp-connection-icon { color: var(--fushi-primary); }
+    .hp-connection[data-tone="danger"] .hp-connection-icon { color: var(--fushi-danger); }
+    @keyframes hp-spin { to { transform: rotate(-360deg); } }
+    .hp-connection-copy { min-width: 0; }
+    .hp-connection-title { display: block; overflow: hidden; font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .hp-connection-detail { display: block; overflow: hidden; margin-top: 1px; color: var(--fushi-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .hp-connection-recheck { color: var(--fushi-muted); opacity: 0.8; }
+    /* BUG-1079：自更新失效提示（fushiUpdateStale 存在时显示）：需到扩展管理页手动重新加载。 */
+    .hp-update {
+      display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start;
+      padding: 10px 12px;
+      border: 1px solid color-mix(in oklch, var(--fushi-warn) 55%, transparent);
+      border-radius: var(--fushi-shape-item);
+      background: color-mix(in oklch, var(--fushi-warn) 14%, transparent);
+    }
+    .hp-update[hidden] { display: none; }
+    .hp-update > .msr-slot { color: var(--fushi-warn); margin-top: 1px; }
+    .hp-update-title { display: block; font-size: 12px; font-weight: 650; }
+    .hp-update-detail { display: block; margin-top: 2px; color: var(--fushi-muted); font-size: 11px; line-height: 1.5; }
+    /* 快捷开关：整行是一颗 aria-pressed 按钮，左侧图标、右侧画开关（与设置页同一套 .switch 视觉）。 */
+    .hp-group { display: grid; }
+    .hp-toggle {
+      display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; margin: 0;
+      padding: 8px 12px; border: 0; background: transparent; color: inherit;
+      font: inherit; font-size: 13px; text-align: start; cursor: pointer;
+    }
+    .hp-tg-icon { color: var(--fushi-muted); transition: color var(--fushi-dur-short) var(--fushi-ease); }
+    .hp-toggle[data-on="1"] .hp-tg-icon { color: var(--fushi-primary); }
+    .hp-toggle-label { flex: 1 1 auto; min-width: 0; font-weight: 550; }
+    .hp-toggle .switch { pointer-events: none; }
+    .hp-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    /* 动作按钮（字幕侧边栏 = 色调按钮；开始生成 = 实心按钮）：图标 + 文字，按压时弹簧缩放 + 圆角形变。 */
+    .hp-side-panel, .hp-gen {
+      display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 40px;
+      padding: 8px 16px; border: 0; border-radius: var(--fushi-shape-control);
+      font: inherit; font-weight: 650; cursor: pointer;
+      transition: background-color var(--fushi-dur-short) var(--fushi-ease), filter var(--fushi-dur-short) var(--fushi-ease), border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial), transform var(--fushi-dur-medium) var(--fushi-ease-spatial);
+    }
+    .hp-side-panel {
+      color: var(--fushi-primary-strong);
+      background: color-mix(in oklch, var(--fushi-primary-soft) 70%, transparent);
+    }
+    .hp-side-panel:hover { background: var(--fushi-primary-soft); }
+    .hp-side-panel:active, .hp-gen:not(:disabled):active { border-radius: var(--fushi-shape-control-pressed); }
+    /* 制卡队列卡片 */
+    .hp-queue { display: grid; gap: 8px; padding: 12px; border-radius: var(--fushi-shape-card); }
+    .hp-queue-head { display: flex; align-items: center; gap: 10px; }
+    .hp-queue-head > .msr-slot { color: var(--fushi-primary); }
+    .hp-title { flex: 1 1 auto; font-weight: 700; }
+    .hp-count:not(:empty) {
+      min-width: 22px; padding: 1px 8px; border-radius: 999px; text-align: center;
+      color: var(--fushi-on-primary); background: var(--fushi-primary); font-size: 11px; font-weight: 700;
+    }
+    .hp-gen { background: var(--fushi-primary); color: var(--fushi-on-primary); }
+    :root[data-style="glass"] .hp-gen:hover { filter: brightness(1.08); }
+    /* 生成按钮图标随状态机 data-mode 切换：取消 = ×，进行中 = 沙漏，其余 = 播放。 */
+    .hp-gen-icon { display: inline-grid; }
+    .hp-gen-icon > .msr-slot { grid-area: 1 / 1; display: none; }
+    .hp-gen:not([data-mode="cancel"]):not([data-mode="running"]) .hp-gen-go,
+    .hp-gen[data-mode="cancel"] .hp-gen-stop,
+    .hp-gen[data-mode="running"] .hp-gen-wait { display: inline-flex; }
     /* TODO-1881：显式按钮状态——禁用（队列空/站点不对）灰化不可点；取消态（生成中）转警示色。 */
-    .hp-gen:disabled { background: rgba(128, 128, 128, 0.28); color: inherit; opacity: 0.55; cursor: default; }
+    .hp-gen:disabled { background: color-mix(in oklch, var(--fushi-text) 12%, transparent); color: var(--fushi-muted); cursor: default; }
     .hp-gen:disabled:hover { filter: none; }
-    .hp-gen[data-mode="cancel"] { background: var(--fushi-danger); color: #fff; }
-    .hp-gen-hint { margin: -8px 14px 10px; font-size: 11px; line-height: 1.4; opacity: 0.6; }
-    .hp-list { max-height: 320px; overflow-y: auto; padding: 0 6px 8px; }
-    .hp-list-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px 4px; font-size: 11px; font-weight: 600; opacity: 0.55; text-transform: none; }
+    .hp-gen[data-mode="cancel"] { background: var(--fushi-danger); color: var(--fushi-on-danger); }
+    .hp-gen-hint { margin: -2px 2px 0; color: var(--fushi-muted); font-size: 11px; line-height: 1.4; }
+    .hp-list { max-height: 260px; overflow-y: auto; margin: 0 -6px; padding: 0 6px; }
+    .hp-list-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 2px 4px; color: var(--fushi-muted); font-size: 11px; font-weight: 650; }
     /* TODO-1881：清空队列（二次确认时文字变「确认清空？」并转警示色）。 */
-    .hp-clear { border: 0; padding: 2px 6px; border-radius: 4px; background: transparent; color: inherit; font: inherit; font-size: 11px; cursor: pointer; opacity: 0.8; }
-    .hp-clear:hover { background: rgba(128, 128, 128, 0.2); opacity: 1; }
-    .hp-clear[data-confirm="1"] { background: rgba(211, 47, 47, 0.85); color: #fff; opacity: 1; }
-    .hp-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 8px;
-      border-radius: 6px;
-    }
-    .hp-row:hover { background: rgba(128, 128, 128, 0.16); }
-    .hp-row-main {
-      flex: 1 1 auto;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 1px;
-    }
+    .hp-clear { border: 0; padding: 2px 8px; border-radius: 999px; background: transparent; color: inherit; font: inherit; font-size: 11px; cursor: pointer; }
+    .hp-clear:hover { background: color-mix(in oklch, var(--fushi-text) 10%, transparent); color: var(--fushi-text); }
+    .hp-clear[data-confirm="1"] { background: var(--fushi-danger); color: var(--fushi-on-danger); }
+    .hp-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--fushi-shape-item); }
+    .hp-row:hover { background: color-mix(in oklch, var(--fushi-text) 7%, transparent); }
+    .hp-row-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
     /* TODO-1881：带跳转 URL 的条目可点击回到对应视频页（hover 主标签加下划线示意）。 */
     .hp-row-main[data-url] { cursor: pointer; }
     .hp-row-main[data-url]:hover .hp-row-text { text-decoration: underline; }
-    .hp-row-text {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
+    .hp-row-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     /* TODO-1270：暗色上下文句子行，让同句不同词的卡片区分开又保留语境。 */
-    .hp-row-sub {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 11px;
-      opacity: 0.55;
-    }
-    .hp-row-site { opacity: 0.55; font-size: 11px; margin-right: 2px; align-self: flex-start; margin-top: 1px; }
+    .hp-row-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fushi-muted); font-size: 11px; }
+    .hp-row-site { color: var(--fushi-muted); font-size: 11px; margin-right: 2px; align-self: flex-start; margin-top: 1px; }
     .hp-del {
-      flex: 0 0 auto;
-      width: 22px;
-      height: 22px;
-      border: none;
-      border-radius: 50%;
-      background: transparent;
-      color: inherit;
-      font-size: 16px;
-      line-height: 1;
-      cursor: pointer;
-      opacity: 0.6;
+      flex: 0 0 auto; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: none; border-radius: 50%;
+      background: transparent; color: var(--fushi-muted); font-size: 16px; line-height: 1; cursor: pointer;
+      transition: background-color var(--fushi-dur-short) var(--fushi-ease), color var(--fushi-dur-short) var(--fushi-ease), border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial);
     }
-    .hp-del:hover { background: rgba(211, 47, 47, 0.85); color: #fff; opacity: 1; }
-    .hp-empty { padding: 20px 14px 24px; text-align: center; opacity: 0.6; }
-    .hp-connection {
-      cursor: pointer; /* TODO-1881：整行可点=强制重检连接 */
-      display: grid;
-      grid-template-columns: 9px minmax(0, 1fr) auto;
-      align-items: center;
-      gap: 8px;
-      margin: 0 14px 10px;
-      padding: 9px 10px;
-      border: 1px solid rgba(128, 128, 128, 0.25);
-      border-radius: 8px;
-      background: rgba(128, 128, 128, 0.08);
+    .hp-del:hover { background: var(--fushi-danger); color: var(--fushi-on-danger); }
+    .hp-empty { padding: 14px 8px 10px; text-align: center; color: var(--fushi-muted); }
+
+    /* ══ M3E（缺省风格）：色角色 / 字阶 / 形状全取 theme.css 的 --md-sys-*。特异性都带 .hp-shell，
+       压得过 ../material.css 里同目标的 :root[data-style] 规则（它在本 <style> 之后加载）。 ══ */
+    :root:not([data-style="glass"]) body {
+      font-family: var(--md-sys-typescale-font);
+      font-size: var(--md-sys-typescale-body-medium-size);
+      line-height: var(--md-sys-typescale-body-medium-line-height);
+      background: var(--md-sys-color-surface);
+      color: var(--md-sys-color-on-surface);
     }
-    .hp-connection-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fushi-warn); }
-    .hp-connection[data-tone="good"] .hp-connection-dot { background: var(--fushi-primary); }
-    .hp-connection[data-tone="danger"] .hp-connection-dot { background: var(--fushi-danger); }
-    .hp-connection-copy { min-width: 0; }
-    .hp-connection-title { display: block; overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-    .hp-connection-detail { display: block; overflow: hidden; margin-top: 1px; opacity: .55; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-    .hp-open-options {
-      display: block;
-      width: 100%;
-      margin-top: 10px;
-      padding: 9px 10px;
-      border: 1px solid rgba(128, 128, 128, 0.45);
-      border-radius: 8px;
-      background: rgba(128, 128, 128, 0.10);
-      color: inherit;
-      font: inherit;
-      font-size: 12px;
-      cursor: pointer;
-      text-align: center;
+    :root:not([data-style="glass"]) .hp-shell { gap: 12px; padding: 12px 12px 14px; }
+    :root:not([data-style="glass"]) .hp-shell .hp-brand-name {
+      font-size: var(--md-sys-typescale-title-large-size);
+      line-height: var(--md-sys-typescale-title-large-line-height);
+      font-weight: var(--md-sys-typescale-weight-emphasized);
+      letter-spacing: 0;
     }
-    .hp-open-options:hover { background: rgba(128, 128, 128, 0.20); border-color: rgba(128, 128, 128, 0.7); }
-    /* BUG-1079：自更新失效提示（fushiUpdateStale 存在时显示）：需到扩展管理页手动重新加载。 */
-    .hp-update {
-      margin: 0 14px 10px;
-      padding: 9px 10px;
-      border: 1px solid rgba(212, 154, 66, 0.55);
-      border-radius: 8px;
-      background: rgba(212, 154, 66, 0.12);
+    /* 连接卡 / 自更新提示的色块（按 data-tone 选语义容器）与设置页连接卡同一份，在 ../material.css
+       「语义 tonal 色块」；这里只管字阶。 */
+    :root:not([data-style="glass"]) .hp-shell .hp-connection-title {
+      font-size: var(--md-sys-typescale-title-small-size);
+      line-height: var(--md-sys-typescale-title-small-line-height);
+      font-weight: var(--md-sys-typescale-weight-emphasized);
     }
-    .hp-update-title { display: block; font-size: 12px; font-weight: 600; }
-    .hp-update-detail { display: block; margin-top: 1px; opacity: .7; font-size: 10px; line-height: 1.5; }
-    /* 字幕列表使用浏览器原生 Side Panel。独立页脚区，不属于上方制卡队列。 */
-    .hp-settings { border-top: 1px solid rgba(128, 128, 128, 0.22); padding: 10px 14px 12px; }
-    .hp-side-panel { width: 100%; padding: 9px 10px; border: 1px solid rgba(128,128,128,.45); border-radius: 8px; background: rgba(128,128,128,.10); color: inherit; font: inherit; font-size: 12px; cursor: pointer; }
-    .hp-side-panel:hover { background: rgba(128,128,128,.20); border-color: rgba(128,128,128,.7); }
-    .hp-toggle-hint { margin: 4px 0 0; font-size: 11px; opacity: 0.55; }
-    /* 「Fushi 字幕」开关：读写 subtitleOverlayEnabled（options 页「在视频上显示外挂字幕」同一个键），
-       让用户不进设置页就能在「Fushi 自绘字幕 ↔ 站点自带字幕」之间切。开态圆点绿、边框着色，
-       与上方连接行的状态点同一套视觉语言。 */
-    .hp-overlay-toggle {
-      display: flex; align-items: center; gap: 8px; width: 100%; margin-bottom: 10px;
-      padding: 9px 10px; border: 1px solid rgba(128,128,128,.45); border-radius: 8px;
-      background: rgba(128,128,128,.10); color: inherit; font: inherit; font-size: 12px;
-      cursor: pointer; text-align: left;
+    :root:not([data-style="glass"]) .hp-shell .hp-connection-detail {
+      font-size: var(--md-sys-typescale-body-small-size);
+      line-height: var(--md-sys-typescale-body-small-line-height);
     }
-    .hp-overlay-toggle:hover { background: rgba(128,128,128,.20); border-color: rgba(128,128,128,.7); }
-    .hp-overlay-toggle-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: rgba(128,128,128,.55); }
-    .hp-overlay-toggle[data-on="1"] { border-color: var(--fushi-primary); background: var(--fushi-primary-soft); }
-    .hp-overlay-toggle[data-on="1"] .hp-overlay-toggle-dot { background: var(--fushi-primary); }
-    .hp-overlay-toggle-label { flex: 1 1 auto; min-width: 0; }
-    .hp-overlay-toggle-state { flex: 0 0 auto; font-weight: 600; opacity: .85; }
+    /* 快捷开关：M3E 分段列表（material.css 给分段形状与开关），这里补字阶与图标色。 */
+    :root:not([data-style="glass"]) .hp-shell .hp-toggle {
+      font-size: var(--md-sys-typescale-body-large-size);
+      line-height: var(--md-sys-typescale-body-large-line-height);
+      color: var(--md-sys-color-on-surface);
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-toggle-label { font-weight: var(--md-sys-typescale-weight-regular); }
+    :root:not([data-style="glass"]) .hp-shell .hp-tg-icon { color: var(--md-sys-color-on-surface-variant); }
+    :root:not([data-style="glass"]) .hp-shell .hp-toggle[data-on="1"] .hp-tg-icon { color: var(--md-sys-color-primary); }
+    :root:not([data-style="glass"]) .hp-shell .hp-toggle:focus-visible {
+      outline: 3px solid color-mix(in oklch, var(--md-sys-color-primary) 70%, transparent);
+      outline-offset: -3px;
+    }
+    /* 按钮：两颗整宽按钮挂 .text-button（字幕侧边栏 = tonal）/ .primary-button（开始生成 = filled），
+       胶囊形态、按压形变、悬停 / 禁用态全在 ../material.css「② 按钮」，与设置页同一份；这里只补生成
+       按钮的取消态（error filled）与连接卡的按压形变。 */
+    :root:not([data-style="glass"]) .hp-shell .hp-gen[data-mode="cancel"]:not(:disabled) {
+      color: var(--md-sys-color-on-error);
+      background: var(--md-sys-color-error);
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-gen[data-mode="cancel"]:not(:disabled):hover {
+      background: color-mix(in oklch, var(--md-sys-color-on-error) var(--md-sys-state-hover-opacity), var(--md-sys-color-error));
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-connection:active { border-radius: var(--md-sys-shape-corner-large); transform: scale(0.98); }
+    /* 制卡队列：surface-container 大圆角卡。 */
+    :root:not([data-style="glass"]) .hp-shell .hp-queue {
+      gap: 10px;
+      padding: 16px;
+      border: 0;
+      border-radius: var(--md-sys-shape-corner-extra-large);
+      background: var(--md-sys-color-surface-container);
+      background-image: none;
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-title {
+      font-size: var(--md-sys-typescale-title-medium-size);
+      line-height: var(--md-sys-typescale-title-medium-line-height);
+      font-weight: var(--md-sys-typescale-weight-emphasized);
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-queue-head > .msr-slot { color: var(--md-sys-color-primary); }
+    :root:not([data-style="glass"]) .hp-shell .hp-count:not(:empty) {
+      min-width: 24px;
+      padding: 2px 8px;
+      color: var(--md-sys-color-on-primary);
+      background: var(--md-sys-color-primary);
+      font-size: var(--md-sys-typescale-label-medium-size);
+      line-height: var(--md-sys-typescale-label-medium-line-height);
+    }
+    :root:not([data-style="glass"]) .hp-shell :is(.hp-gen-hint, .hp-row-sub, .hp-empty) { color: var(--md-sys-color-on-surface-variant); }
+    :root:not([data-style="glass"]) .hp-shell .hp-gen-hint {
+      font-size: var(--md-sys-typescale-body-small-size);
+      line-height: var(--md-sys-typescale-body-small-line-height);
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-list-title {
+      color: var(--md-sys-color-on-surface-variant);
+      font-size: var(--md-sys-typescale-label-medium-size);
+      line-height: var(--md-sys-typescale-label-medium-line-height);
+      font-weight: var(--md-sys-typescale-weight-medium);
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-clear {
+      min-height: 28px;
+      padding: 4px 12px;
+      color: var(--md-sys-color-primary);
+      font-size: var(--md-sys-typescale-label-medium-size);
+      font-weight: var(--md-sys-typescale-weight-medium);
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-clear:hover {
+      color: var(--md-sys-color-primary);
+      background: color-mix(in oklch, var(--md-sys-color-primary) var(--md-sys-state-hover-opacity), transparent);
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-clear[data-confirm="1"] {
+      color: var(--md-sys-color-on-error);
+      background: var(--md-sys-color-error);
+    }
+    /* 队列条目：surface-container-lowest 小卡，组内 2px 缝；站点标签是一枚小号 label chip。 */
+    :root:not([data-style="glass"]) .hp-shell .hp-list { display: grid; gap: 2px; }
+    :root:not([data-style="glass"]) .hp-shell .hp-row {
+      padding: 8px 6px 8px 12px;
+      border-radius: var(--md-sys-shape-corner-extra-small);
+      background: var(--md-sys-color-surface-container-lowest);
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-list-title + .hp-row {
+      border-top-left-radius: var(--md-sys-shape-corner-large);
+      border-top-right-radius: var(--md-sys-shape-corner-large);
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-row:last-child {
+      border-bottom-left-radius: var(--md-sys-shape-corner-large);
+      border-bottom-right-radius: var(--md-sys-shape-corner-large);
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-row:hover {
+      background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container-lowest));
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-row-site {
+      align-self: center;
+      margin: 0;
+      padding: 2px 6px;
+      border-radius: var(--md-sys-shape-corner-small);
+      color: var(--md-sys-color-on-tertiary-container);
+      background: var(--md-sys-color-tertiary-container);
+      font-size: var(--md-sys-typescale-label-small-size);
+      line-height: var(--md-sys-typescale-label-small-line-height);
+      font-weight: var(--md-sys-typescale-weight-medium);
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-row-text {
+      font-size: var(--md-sys-typescale-body-medium-size);
+      line-height: var(--md-sys-typescale-body-medium-line-height);
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-row-sub {
+      font-size: var(--md-sys-typescale-body-small-size);
+      line-height: var(--md-sys-typescale-body-small-line-height);
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-del { color: var(--md-sys-color-on-surface-variant); }
+    :root:not([data-style="glass"]) .hp-shell .hp-del:hover {
+      color: var(--md-sys-color-error);
+      background: color-mix(in oklch, var(--md-sys-color-error) 12%, transparent);
+    }
+    :root:not([data-style="glass"]) .hp-shell .hp-del:active { border-radius: var(--md-sys-shape-corner-small); }
+    @media (prefers-reduced-motion: reduce) {
+      .hp-connection[data-tone="loading"] .hp-tone-loading svg { animation: none; }
+      :root .hp-shell :is(.hp-side-panel, .hp-gen, .hp-connection, .hp-icon-btn, .hp-del):active { transform: none; }
+    }
   </style>
-  <link rel="stylesheet" href="../glass.css">
+  <link rel="stylesheet" href="../material.css">
 </head>
 <body>
-  <div class="hp-header">
-    <span class="hp-title" data-i18n="ap_title">Fushi 制卡队列</span>
-    <span class="hp-count" id="hp-count"></span>
-  </div>
-  <div class="hp-connection" id="hp-connection" data-tone="loading" title="点击重新检测连接" data-i18n-title="ap_connection_recheck_title">
-    <span class="hp-connection-dot" aria-hidden="true"></span>
-    <span class="hp-connection-copy">
-      <span class="hp-connection-title" id="hp-connection-title" data-i18n="ap_connection_checking">正在检测 Fushi…</span>
-      <span class="hp-connection-detail" id="hp-connection-detail" data-i18n="ap_connection_detail">查词与字幕服务</span>
-    </span>
-  </div>
-  <!-- BUG-1079：自更新失效提示（默认隐藏；chrome.storage.local.fushiUpdateStale 存在时显示）。 -->
-  <div class="hp-update" id="hp-update" hidden>
-    <span class="hp-update-title" id="hp-update-title"></span>
-    <span class="hp-update-detail" id="hp-update-detail"></span>
-  </div>
-  <button class="hp-gen" id="hp-gen" type="button" data-i18n="ap_hp_gen_button">开始生成 / 录制</button>
-  <!-- TODO-1881：按钮不可用/跨站点剩余量的原因提示（状态机 hint，空则隐藏）。 -->
-  <div class="hp-gen-hint" id="hp-gen-hint" hidden></div>
-  <div class="hp-list" id="hp-list"></div>
-  <div class="hp-settings">
-    <!-- 「Fushi 字幕」开关（subtitleOverlayEnabled）：此前只能进 options 页翻，看片中途想切回站点
-         字幕/切回 Fushi 字幕要跑一趟设置页。这里一键开关；「一句都不看」的纯听力模式仍是 Shift+H。 -->
-    <button class="hp-overlay-toggle" id="hp-overlay-toggle" type="button" data-on="" aria-pressed="false">
-      <span class="hp-overlay-toggle-dot" aria-hidden="true"></span>
-      <span class="hp-overlay-toggle-label" data-i18n="ap_hp_overlay_toggle_label">Fushi 字幕</span>
-      <span class="hp-overlay-toggle-state" id="hp-overlay-toggle-state">…</span>
+  <div class="hp-shell">
+    <header class="hp-header">
+      <img class="hp-brand" src="../icon-32.png" width="24" height="24" alt="">
+      <span class="hp-brand-name">Fushi</span>
+      <!-- 设置页入口：顶栏右侧的齿轮按钮（有 title / aria-label）。工具栏图标被 default_popup 占着，
+           chrome.action.onClicked 永不触发（见 background.js），这里是产品里通往设置页的主入口。 -->
+      <button class="hp-icon-btn hp-open-options" id="hp-open-options" type="button" title="设置" aria-label="设置" data-i18n-title="ap_hp_open_options_button" data-i18n-aria-label="ap_hp_open_options_button">
+        <span class="msr-slot" data-fushi-icon="settings" data-fushi-icon-size="24"></span>
+      </button>
+    </header>
+    <div class="hp-connection" id="hp-connection" data-tone="loading" title="点击重新检测连接" data-i18n-title="ap_connection_recheck_title">
+      <span class="hp-connection-icon" aria-hidden="true">
+        <span class="msr-slot hp-tone-loading" data-fushi-icon="sync" data-fushi-icon-size="22"></span>
+        <span class="msr-slot hp-tone-good" data-fushi-icon="check_circle" data-fushi-icon-size="22"></span>
+        <span class="msr-slot hp-tone-warn" data-fushi-icon="warning" data-fushi-icon-size="22"></span>
+        <span class="msr-slot hp-tone-danger" data-fushi-icon="error" data-fushi-icon-size="22"></span>
+      </span>
+      <span class="hp-connection-copy">
+        <span class="hp-connection-title" id="hp-connection-title" data-i18n="ap_connection_checking">正在检测 Fushi…</span>
+        <span class="hp-connection-detail" id="hp-connection-detail" data-i18n="ap_connection_detail">查词与字幕服务</span>
+      </span>
+      <span class="msr-slot hp-connection-recheck" data-fushi-icon="refresh" data-fushi-icon-size="20" aria-hidden="true"></span>
+    </div>
+    <!-- BUG-1079：自更新失效提示（默认隐藏；chrome.storage.local.fushiUpdateStale 存在时显示）。 -->
+    <div class="hp-update" id="hp-update" data-tone="warn" hidden>
+      <span class="msr-slot" data-fushi-icon="update" data-fushi-icon-size="20" aria-hidden="true"></span>
+      <span class="hp-update-copy">
+        <span class="hp-update-title" id="hp-update-title"></span>
+        <span class="hp-update-detail" id="hp-update-detail"></span>
+      </span>
+    </div>
+    <!-- 最高频的三个开关（与设置页同键）：Fushi 字幕（subtitleOverlayEnabled，翻开时顺带开总门）、
+         隐藏字幕（subtitleHidden，同 Shift+H）、Shift 悬停查词（shiftHoverLookup）。 -->
+    <div class="hp-group" role="group">
+      <button class="hp-toggle hp-overlay-toggle" id="hp-overlay-toggle" type="button" data-on="" aria-pressed="false">
+        <span class="msr-slot hp-tg-icon" data-fushi-icon="subtitles" data-fushi-icon-size="22" aria-hidden="true"></span>
+        <span class="hp-toggle-label" data-i18n="ap_hp_overlay_toggle_label">Fushi 字幕</span>
+        <span class="hp-sr" id="hp-overlay-toggle-state">…</span>
+        <span class="switch" aria-hidden="true"><span></span></span>
+      </button>
+      <button class="hp-toggle hp-quick-toggle" type="button" data-key="subtitleHidden" data-on="" aria-pressed="false">
+        <span class="msr-slot hp-tg-icon" data-fushi-icon="visibility_off" data-fushi-icon-size="22" aria-hidden="true"></span>
+        <span class="hp-toggle-label" data-i18n="opt_subtitleHidden_title">隐藏字幕</span>
+        <span class="switch" aria-hidden="true"><span></span></span>
+      </button>
+      <button class="hp-toggle hp-quick-toggle" type="button" data-key="shiftHoverLookup" data-on="" aria-pressed="false">
+        <span class="msr-slot hp-tg-icon" data-fushi-icon="dictionary" data-fushi-icon-size="22" aria-hidden="true"></span>
+        <span class="hp-toggle-label" data-i18n="opt_shiftHoverLookup_title">Shift 悬停查词</span>
+        <span class="switch" aria-hidden="true"><span></span></span>
+      </button>
+    </div>
+    <!-- 字幕列表使用浏览器原生 Side Panel，不向视频网页注入列表或修改布局。 -->
+    <button class="hp-side-panel text-button" id="hp-nf-sublist" type="button">
+      <span class="msr-slot" data-fushi-icon="view_sidebar" data-fushi-icon-size="20" aria-hidden="true"></span>
+      <span data-i18n="ap_hp_nf_sublist_button">字幕侧边栏</span>
     </button>
-    <button class="hp-side-panel" id="hp-nf-sublist" type="button" data-i18n="ap_hp_nf_sublist_button">▤ 打开字幕侧边栏</button>
-    <div class="hp-toggle-hint" data-i18n="ap_hp_nf_sublist_text">使用浏览器原生侧边栏，不向视频网页注入列表或修改布局。</div>
-    <!-- 用户反馈「扩展配置根本看不见」：此前通往设置页的唯一入口，是上方连接行里一个无边框、
-         无文字、opacity .72 的「⚙」字符，而那一整行本身可点（点击=重检连接），齿轮读起来像
-         状态行的装饰而不是按钮——还要靠 stopPropagation 才不被误判成重检。工具栏图标又被
-         default_popup 占着，chrome.action.onClicked 永不触发（见 background.js），
-         options_page 因此在产品里几乎不可达。现在改成页脚一整行、有边框有文字的按钮。 -->
-    <button class="hp-open-options" id="hp-open-options" type="button" data-i18n="ap_hp_open_options_button">⚙ 扩展设置（连接 · 字幕 · 快捷键）</button>
+    <section class="hp-queue" aria-labelledby="hp-queue-title">
+      <div class="hp-queue-head">
+        <span class="msr-slot" data-fushi-icon="add_card" data-fushi-icon-size="22" aria-hidden="true"></span>
+        <span class="hp-title" id="hp-queue-title" data-i18n="ap_title">制卡队列</span>
+        <span class="hp-count" id="hp-count"></span>
+      </div>
+      <button class="hp-gen primary-button" id="hp-gen" type="button">
+        <span class="hp-gen-icon" aria-hidden="true">
+          <span class="msr-slot hp-gen-go" data-fushi-icon="play_arrow" data-fushi-icon-size="20"></span>
+          <span class="msr-slot hp-gen-stop" data-fushi-icon="close" data-fushi-icon-size="20"></span>
+          <span class="msr-slot hp-gen-wait" data-fushi-icon="hourglass_empty" data-fushi-icon-size="20"></span>
+        </span>
+        <span class="hp-gen-label" id="hp-gen-label" data-i18n="ap_hp_gen_button">开始生成 / 录制</span>
+      </button>
+      <!-- TODO-1881：按钮不可用/跨站点剩余量的原因提示（状态机 hint，空则隐藏）。 -->
+      <div class="hp-gen-hint" id="hp-gen-hint" hidden></div>
+      <div class="hp-list" id="hp-list"></div>
+    </section>
   </div>
   <script src="../locales/en.js"></script>
   <script src="../i18n.js"></script>
+  <script src="../material-color.js"></script>
   <script src="../theme-palette.js"></script>
   <script src="../theme.js"></script>
+  <script src="../icons.js"></script>
   <script src="../connection-diagnostics.js"></script>
   <script src="action-popup.js"></script>
 </body>

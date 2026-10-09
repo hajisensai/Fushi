@@ -12,16 +12,20 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 
+import 'package:fushi/src/pages/implementations/stat_dashboard.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart'
     show computeCph;
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 一个库条目（或一个合集）在统计域里的身份。
@@ -291,15 +295,17 @@ class _MediaItemStatsDialogState extends State<MediaItemStatsDialog> {
     } else if (summary == null) {
       body = const FushiLoadingView();
     } else if (summary.isEmpty) {
-      body = Text(
-        t.media_stats_empty,
+      body = FushiPlaceholderMessage(
         key: const ValueKey<String>('media-item-stats-empty'),
+        icon: FushiIcons.statistics,
+        message: t.media_stats_empty,
       );
     } else {
       body = _buildSummary(theme, summary);
     }
     return FushiAlertDialog(
       key: const ValueKey<String>('media-item-stats-dialog'),
+      icon: const FushiIcon(FushiIcons.barChart),
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -323,27 +329,52 @@ class _MediaItemStatsDialogState extends State<MediaItemStatsDialog> {
             onPressed: () => unawaited(_openSessions(summary)),
             child: Text(t.stat_sessions_show_all),
           ),
-        FushiTextButton(
+        FushiDialogAction(
+          label: MaterialLocalizations.of(context).closeButtonLabel,
+          kind: FushiDialogActionKind.primary,
           autofocus: true,
           onPressed: () => Navigator.of(context).maybePop(),
-          child: Text(MaterialLocalizations.of(context).closeButtonLabel),
         ),
       ],
     );
   }
 
+  /// 2026-10 统计中心重设计：与统计页同一套指标卡（[StatHero] 2×2：累计 /
+  /// 今日 / 近 7 日 / 近 30 日），其余明细是同一种卡面里的键值行，
+  /// 卡与行错峰进场。
   Widget _buildSummary(ThemeData theme, MediaItemStatsSummary s) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 视频 / 游戏也可能有字数（字幕 / 文本钩子），没有就不占一格。
     final bool hasChars = s.totalChars > 0;
     final double? cph = hasChars ? computeCph(s.totalChars, s.totalMs) : null;
-    String amount(int ms, int chars) => hasChars
-        ? '${formatStatTime(ms)} · ${formatStatChars(chars)}'
-        : formatStatTime(ms);
+    String? chars(int n) => hasChars ? formatStatChars(n) : null;
+    final List<Widget> tiles = <Widget>[
+      StatKpiTile(
+        icon: FushiIcons.functions,
+        label: t.media_stats_total,
+        value: formatStatTime(s.totalMs),
+        caption: chars(s.totalChars),
+      ),
+      StatKpiTile(
+        icon: FushiIcons.calendar,
+        label: t.stat_today,
+        value: formatStatTime(s.todayMs),
+        caption: chars(s.todayChars),
+      ),
+      StatKpiTile(
+        icon: FushiIcons.calendar,
+        label: t.media_stats_last_7_days,
+        value: formatStatTime(s.weekMs),
+        caption: chars(s.weekChars),
+      ),
+      StatKpiTile(
+        icon: FushiIcons.calendar,
+        label: t.stat_last_30_days,
+        value: formatStatTime(s.monthMs),
+        caption: chars(s.monthChars),
+      ),
+    ];
     final List<(String, String)> rows = <(String, String)>[
-      (t.media_stats_total, amount(s.totalMs, s.totalChars)),
-      (t.stat_today, amount(s.todayMs, s.todayChars)),
-      (t.media_stats_last_7_days, amount(s.weekMs, s.weekChars)),
-      (t.stat_last_30_days, amount(s.monthMs, s.monthChars)),
       if (cph != null) (t.stat_metric_speed, formatStatCph(cph)),
       (t.media_stats_active_days, t.stat_format_days(n: '${s.activeDays}')),
       (
@@ -355,38 +386,61 @@ class _MediaItemStatsDialogState extends State<MediaItemStatsDialog> {
       if (s.lookups > 0) (t.stat_lookup, '${s.lookups}'),
       if (s.cards > 0) (t.stat_mined, '${s.cards}'),
     ];
-    return Column(
-      key: const ValueKey<String>('media-item-stats-summary'),
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        for (final (String label, String value) in rows)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    label,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
+    return FushiEntranceScope(
+      child: Column(
+        key: const ValueKey<String>('media-item-stats-summary'),
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          FushiStaggeredEntrance(
+            index: 0,
+            child: StatHero(tiles: tiles, padding: EdgeInsets.zero),
+          ),
+          FushiStaggeredEntrance(
+            index: 1,
+            child: Padding(
+              padding: EdgeInsets.only(top: tokens.spacing.card),
+              child: FushiCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    for (final (String label, String value) in rows)
+                      Padding(
+                        padding: EdgeInsets.symmetric(
+                          vertical: tokens.spacing.gap / 2,
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Expanded(
+                              child: Text(
+                                label,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: tokens.spacing.gap),
+                            Flexible(
+                              flex: 2,
+                              child: Text(
+                                value,
+                                textAlign: TextAlign.end,
+                                style: theme.textTheme.bodyLarge?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                Flexible(
-                  flex: 2,
-                  child: Text(
-                    value,
-                    textAlign: TextAlign.end,
-                    style: theme.textTheme.bodyLarge,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 }

@@ -27,6 +27,7 @@
 - `ballImage: Uint8List` — 球面 PNG（`assets/meta/icon.png` 原图字节）。
 - `colors: Map<String, int>` — `surface` / `onSurface` / `primary` 的 ARGB。
 - `dock: 'left' | 'right'`，`fraction: double`（0..1）— 初始位置（Dart 持久化值）。
+- `animate: bool`（可选，默认 `true`）— Windows 的动效策略：Dart 按墨水屏 / 系统减弱动画统一判定，纳入配置签名，切换时即使颜色不变也重新下发。macOS 暂未消费此字段，仍需在该平台单独修复与验证；Android 保留自身原生动画策略。
 
 ### 原生 → Dart（`invokeMethod`，同一通道）
 
@@ -50,6 +51,7 @@
 
 ## 动画（与应用内同时长同曲线）
 
+- Windows `animate=false` 时展开、收起、拖后吸附直接落到最终几何，不启动动画计时器；运行中切换通过原地配置更新取消旧动画，位置回调仍正常发送。
 - 展开 280ms、收起 190ms，进度 t 线性；中途反向按剩余路程缩短。球位置 / 不透明度 / 描边随 t 插值。
 - 按钮 i（共 n 颗）：`begin = (n−1−i)·0.35/(n−1)`（n=1 时 0），`end = min(1, begin + 0.65)`，`k = easeOutBack((t − begin)/(end − begin))`，easeOutBack = 三次贝塞尔 (0.175, 0.885, 0.32, 1.275)。按钮从球心飞到落点：`center = ballCenter + offset·k`，缩放 `0.4 + 0.6·min(k, 1.2)`，不透明度 `clamp(k, 0, 1)`。
 - 拖动：越过系统拖动阈值（Windows 取 `SM_CXDRAG/SM_CYDRAG` 按球窗 DPI 以 `MulDiv(…, dpi, 96)` 换成物理像素——`GetSystemMetricsForDpi` 对这两项不缩放（实测恒回 4），macOS 4pt）即拖动——先**立即收起**，球跟手（纵向夹在 `[minTop, maxTop]`），不透明度 1。松手：按球心在视口左右哪一半定停靠边、比例按落点，220ms easeOutCubic (0.215, 0.61, 0.355, 1) 吸附到收起位，并报 `systemBallPositionChanged`。拖到另一块显示器就以那块的工作区为视口。

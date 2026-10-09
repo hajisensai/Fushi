@@ -57,7 +57,7 @@ class _LegacyAssetSyncNoticeState extends State<_LegacyAssetSyncNotice> {
     return AdaptiveSettingsRow(
       title: t.sync_asset_legacy_notice_title,
       subtitle: t.sync_asset_legacy_notice_body,
-      icon: Icons.info_outline,
+      icon: FushiIcons.info,
       controlBelow: true,
       // 行级 onTap 让本行注册成 FushiFocusTarget，方向导航 / 手柄 A 能到达（BUG-016）。
       onTap: _dismiss,
@@ -116,12 +116,12 @@ class _AssetTransferMenuRow extends StatelessWidget {
         FushiPopupMenuItem<SyncAssetDirection>(
           label: t.sync_asset_upload_action,
           value: SyncAssetDirection.upload,
-          icon: Icons.upload_outlined,
+          icon: FushiIcons.cloudUpload,
         ),
         FushiPopupMenuItem<SyncAssetDirection>(
           label: t.sync_asset_download_action,
           value: SyncAssetDirection.download,
-          icon: Icons.download_outlined,
+          icon: FushiIcons.cloudDownload,
         ),
       ],
       onSelected: (SyncAssetDirection direction) => _run(context, direction),
@@ -160,21 +160,59 @@ class _AssetTransferMenuRow extends StatelessWidget {
                     )
                   : _menu(context),
             );
-            if (!syncing) return row;
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                row,
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: FushiLinearProgressIndicator(value: p?.fraction),
-                ),
-              ],
+            return _SyncInlineProgress(
+              visible: syncing,
+              value: p?.fraction,
+              child: row,
             );
           },
         );
       },
+    );
+  }
+}
+
+/// 设置行下方的在飞进度条（M3E 波浪线性进度）：出现 / 消失用 spatial 弹簧展开
+/// 收起高度、effects 弹簧淡入淡出，不再整行硬跳。「立即同步」与资产传输两行共用。
+/// 墨水屏 / 减弱动态效果下时长归零，瞬间到位。
+class _SyncInlineProgress extends StatelessWidget {
+  const _SyncInlineProgress({
+    required this.visible,
+    required this.value,
+    required this.child,
+  });
+
+  final bool visible;
+
+  /// null = 不确定进度（阶段没有可度量的总量）。
+  final double? value;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiMotionScheme motion = context.fushiMotion;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        child,
+        AnimatedSize(
+          duration: motion.spatialDefault.duration,
+          curve: motion.spatialDefault.curve,
+          alignment: Alignment.topCenter,
+          child: AnimatedOpacity(
+            opacity: visible ? 1 : 0,
+            duration: motion.effectsDefault.duration,
+            curve: motion.effectsDefault.curve,
+            child: visible
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: FushiLinearProgressIndicator(value: value),
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -254,7 +292,7 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
             final AdaptiveSettingsRow row = AdaptiveSettingsRow(
               title: t.sync_now,
               subtitle: subtitle,
-              icon: Icons.sync,
+              icon: FushiIcons.sync,
               controlBelow: true,
               // The action lives on the trailing button; giving the ROW an onTap
               // is what registers it as a FushiFocusTarget so gamepad/keyboard
@@ -268,25 +306,19 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
                       height: 20,
                       child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : FushiFilledButton(
+                  : FushiFilledButton.icon(
                       onPressed: _syncNow,
-                      child: Text(t.sync_now),
+                      icon: const FushiIcon(FushiIcons.sync),
+                      label: Text(t.sync_now),
                     ),
             );
-            if (!syncing) return row;
             // Inline determinate bar below the row (indeterminate when a phase
             // has no measurable total), matching the compare dialog's Apply
             // progress.
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                row,
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: FushiLinearProgressIndicator(value: p?.fraction),
-                ),
-              ],
+            return _SyncInlineProgress(
+              visible: syncing,
+              value: p?.fraction,
+              child: row,
             );
           },
         );

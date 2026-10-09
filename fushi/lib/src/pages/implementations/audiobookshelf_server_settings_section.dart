@@ -13,7 +13,7 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
@@ -84,7 +84,7 @@ class _AudiobookshelfServerSettingsSectionState
           for (int index = 0; index < _drafts.length; index++) _card(index),
           Align(
             alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
+            child: FushiOutlinedButton.icon(
               key: const ValueKey<String>('abs-server-add'),
               onPressed: () => setState(
                 () => _drafts.add(
@@ -116,7 +116,7 @@ class _AudiobookshelfServerSettingsSectionState
           Row(
             children: <Widget>[
               Expanded(
-                child: SwitchListTile.adaptive(
+                child: FushiSwitchListTile.adaptive(
                   key: ValueKey<String>('abs-server-$index-enabled'),
                   contentPadding: EdgeInsets.zero,
                   dense: true,
@@ -126,7 +126,7 @@ class _AudiobookshelfServerSettingsSectionState
                       _update(index, draft.copyWith(enabled: value)),
                 ),
               ),
-              IconButton(
+              FushiIconButtonControl(
                 key: ValueKey<String>('abs-server-$index-remove'),
                 tooltip: t.discovery_audiobookshelf_server_remove,
                 onPressed: () {
@@ -160,7 +160,7 @@ class _AudiobookshelfServerSettingsSectionState
             onChanged: (String value) =>
                 _update(index, draft.copyWith(url: value).signedOut()),
           ),
-          SwitchListTile.adaptive(
+          FushiSwitchListTile.adaptive(
             key: ValueKey<String>('abs-server-$index-allow-http'),
             contentPadding: EdgeInsets.zero,
             dense: true,
@@ -190,7 +190,7 @@ class _AudiobookshelfServerSettingsSectionState
             runSpacing: 4,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: <Widget>[
-              OutlinedButton.icon(
+              FushiOutlinedButton.icon(
                 key: ValueKey<String>('abs-server-$index-connect'),
                 onPressed: !draft.canConnect || probe?.running == true
                     ? null
@@ -199,7 +199,7 @@ class _AudiobookshelfServerSettingsSectionState
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
                     : Icon(
                         signedIn
@@ -213,7 +213,7 @@ class _AudiobookshelfServerSettingsSectionState
                 ),
               ),
               if (signedIn)
-                TextButton.icon(
+                FushiTextButton.icon(
                   key: ValueKey<String>('abs-server-$index-sign-out'),
                   onPressed: () {
                     setState(() => _probes.remove(draft.id));

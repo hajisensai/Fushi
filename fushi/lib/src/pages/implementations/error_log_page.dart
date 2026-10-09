@@ -1,6 +1,7 @@
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
@@ -8,6 +9,7 @@ import 'package:fushi/src/utils/misc/log_exporter.dart';
 import 'package:fushi/src/utils/misc/log_upload_config.dart';
 import 'package:fushi/src/utils/misc/log_uploader.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/settings/settings_kit.dart';
 
 class ErrorLogPage extends StatefulWidget {
   const ErrorLogPage({super.key});
@@ -47,11 +49,14 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
   Widget build(BuildContext context) {
     final int count = ErrorLogService.instance.entries.length;
 
-    return FushiPageScaffold(
+    // 设置子页统一壳（settings kit）：浮动页头 + 动作组胶囊，与 schema 详情页一致。
+    return SettingsKitScaffold(
+      leadingIcon: FushiIcons.error,
+      leadingTone: SettingsIconTone.gray,
       title: t.error_log_label(n: count),
       actions: <Widget>[
         FushiIconButton(
-          icon: Icons.copy_outlined,
+          icon: FushiIcons.copy,
           tooltip: t.copy,
           onTap: () async {
             await Clipboard.setData(ClipboardData(text: _log));
@@ -63,7 +68,7 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
           },
         ),
         FushiIconButton(
-          icon: Icons.share_outlined,
+          icon: FushiIcons.share,
           tooltip: t.share,
           onTap: () {
             final bytes = Uint8List.fromList(utf8.encode(_log));
@@ -77,7 +82,7 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
         ),
         if (showUploadLogAction)
           FushiIconButton(
-            icon: Icons.cloud_upload_outlined,
+            icon: FushiIcons.cloudUpload,
             tooltip: t.log_upload_action,
             onTap: () => uploadLogToServer(
               context: context,
@@ -87,7 +92,7 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
           ),
         if (showSaveLogAction)
           FushiIconButton(
-            icon: Icons.save_alt_outlined,
+            icon: FushiIcons.save,
             tooltip: t.log_export_file,
             onTap: () => saveLogToFile(
               context: context,
@@ -97,7 +102,7 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
             ),
           ),
         FushiIconButton(
-          icon: Icons.delete_outline,
+          icon: FushiIcons.delete,
           tooltip: t.clear,
           onTap: () {
             ErrorLogService.instance.clear();
@@ -105,10 +110,24 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
           },
         ),
       ],
-      body: FushiLogPanel(
-        log: _log,
-        shareAction: (text) => FushiShare.shareText(text),
-      ),
+      // 保留 false（壳替正文整体让开页头）：日志正文是 FushiLogPanel——定高圆角卡
+      // 内自带滚动的 ListView（自持选区滚动控制器，BUG-119 / BUG-1582 防线），
+      // 不接壳的滚动控制器；卡片外框是固定版面，内容滚不到页头底下，强行顶到
+      // 页头下只会让卡片上沿被浮动页头盖住。
+      bodyConsumesTopPadding: false,
+      bodyBuilder:
+          (
+            BuildContext context,
+            ScrollController controller,
+            SettingsSectionSpy spy,
+          ) => count == 0
+          // 空状态：settings kit 统一空态（M3E 形状图标 + 标题），不是一块只写着
+          // 「暂无日志」的空日志面板。
+          ? SettingsEmptyState(icon: FushiIcons.success, title: t.error_log_empty)
+          : FushiLogPanel(
+              log: _log,
+              shareAction: (text) => FushiShare.shareText(text),
+            ),
     );
   }
 }

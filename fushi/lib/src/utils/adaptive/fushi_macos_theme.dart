@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' show Brightness, ColorScheme;
+import 'package:material_ui/material_ui.dart' show Brightness, ColorScheme;
 import 'package:macos_ui/macos_ui.dart';
 
 /// Derives a [MacosThemeData] from Hibiki's existing [ColorScheme] single source
