@@ -1,8 +1,12 @@
 ## BUG-3105 · 歌词模式竖排不逐字推进、暂停或查词时当前句被纯色块盖住
-- **报告**：2026-10-09（用户：群聊截图 `294159bfdb63cee127831a66b6ddae4e`——竖排歌词暂停时当前句是一整块青色竖条、字看不见；竖排播放时不像横排那样按字推进）
+- **报告**：2026-10-08 群聊 Soraction（`3eedeb31684b7b098f45f531d9046f73`「竖排是从左往右的，正常应该从上往下」、`ea0fcf246d3e287eeb01a9d747897f4d`「进去的时候有一大块粉色色块」，shishamo 确认已知 bug）；2026-10-09（用户：群聊截图 `294159bfdb63cee127831a66b6ddae4e`——竖排歌词暂停时当前句是一整块青色竖条、字看不见；竖排播放时不像横排那样按字推进）
 - **真实性**：✅ 真 bug。两个现象同一个根因：`fushi/lib/src/media/audiobook/lyrics_mode_html.dart` 的竖排扫过规则写成 `body.ly-sweep.ly-vertical .cue.current .tx`（修前约 406 行）。
   - 它**没有**横排规则的 `:not(.ly-paused)` / `:not(.ly-nosweep)` 门。暂停（`__lyricsSetPlaying(false)` 挂 `ly-paused`）或查词（`ly-nosweep`）时横排规则退场、`background-clip: text` 一起没了，只剩这条竖排规则的 `background-image`——渐变画成实心底，文字颜色与底色同为当前行色，当前句变成一整块色条（截图里的青色竖条；查词截图里只剩「聞いて」三字的查词高亮露出来）。
   - 播放中它的特异性（5 个类）又**低于**横排规则（6 个类：`:not(...)` 里的类计入），于是竖排也吃 `linear-gradient(to right, …)`。竖排一列文字的盒是窄竖条，`to right` 只沿列宽横向过渡，看不出逐字推进。
 - **[x] ① 已修复** — 竖排规则改为 `body.ly-sweep.ly-vertical:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx`（`lyrics_mode_html.dart:417`）：与横排同门、多一个 `.ly-vertical` 类特异性更高，播放中走 `to bottom`、暂停 / 查词时整行用纯色。同 PR 加了「逐字跟读渐变」开关（`lyrics_sweep`），关掉时不挂 `ly-sweep`。
 - **[x] ② 已加自动化测试** — `fushi/test/reader/audiobook_highlight_style_test.dart`（`BUG-3105` 组）：抽出生成 CSS 里所有给当前行 `.tx` 铺渐变的规则，断言每条都带 `:not(.ly-paused)` 与 `:not(.ly-nosweep)`，且竖排规则类数多于横排规则、方向为 `to bottom`。旧选择器下两条断言都会红。
 - **备注**：像素证据用 headless Chrome 渲染生成的歌词页（横排 / 竖排 × 播放中 / 暂停 × 修前 / 修后），见 PR 描述。歌词页不分翻页 / 滚动 / VN 三种正文 view mode（它是独立 WebView），三模式只影响正文当前句高亮，那部分在同 PR 的高亮样式改动里另验。
+- **同根因的两条群聊报告（2026-10-08）**：
+  - 「进入时一大块粉色色块」：进歌词模式时音频多半未在播放，`__lyricsSetPlaying(false)` 挂上 `ly-paused`，正中本 bug 的「暂停只剩背景」分支——粉色是那本书封面取色的当前行色。修复后竖排规则与横排同门，进入 / 暂停 / 查词都是整行纯色字，不再出色块（截图 `lyrics_vertical_paused_before/after.png` 与用户图同形）。
+  - 「竖排是从左往右的、应该从上往下」：用户截图是单列当前句，说的是**扫过方向**（旧规则播放中吃横排的 `to right`，一列字只左右渐变），不是列序。修复后改走 `to bottom`。
+  - 列序本身核实无误：`html, body { writing-mode: vertical-rl }` + 容器 `flex-direction: column`（vertical-rl 下即块方向右→左），headless Chrome 渲染出的句序是右起左排（`lyrics_vertical_*_after.png` 里「由比ヶ浜…」在最右、其后依次向左）。补了守卫：竖排 HTML 必须是 vertical-rl + `flex-direction: column`，不得出现 `*-reverse` / `direction: rtl`。

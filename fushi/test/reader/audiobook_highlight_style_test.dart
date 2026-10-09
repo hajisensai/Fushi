@@ -217,6 +217,22 @@ void main() {
       }
     });
 
+    test('竖排列序右起左排：vertical-rl + 块方向 flex，不得反转', () {
+      final String html = _lyricsHtml(vertical: true);
+      expect(html, contains('writing-mode: vertical-rl;'));
+      // vertical-rl 下 flex column 的主轴就是块方向（右 → 左）；row 会把句子
+      // 叠进一屏高，*-reverse 会把列序翻成左起右排。
+      expect(
+        html,
+        contains(
+          'flex-direction: column; justify-content: flex-start; align-items: center;',
+        ),
+      );
+      expect(html, isNot(contains('column-reverse')));
+      expect(html, isNot(contains('row-reverse')));
+      expect(html, isNot(contains('direction: rtl')));
+    });
+
     test('竖排规则特异性高于横排规则（播放中改走 to bottom）', () {
       final Map<String, String> rules = _sweepBackgroundRules(
         _lyricsHtml(vertical: true),
