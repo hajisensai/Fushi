@@ -635,7 +635,7 @@ class StatWeekFlameRow extends StatelessWidget {
           dimension: 44,
           child: Center(
             child: Transform.scale(
-              scale: Curves.easeOutBack.transform(p),
+              scale: FushiSpringCurve.spatialFast.transform(p),
               child: FushiIcon(
                 FushiIcons.streak,
                 key: ValueKey<String>('stat-week-flame-tier-$tier'),
@@ -755,7 +755,9 @@ class _StatWeekDayCell extends StatelessWidget {
                   dimension: 22,
                   child: Center(
                     child: Transform.scale(
-                      scale: active ? Curves.easeOutBack.transform(progress) : 1,
+                      scale: active
+                          ? FushiSpringCurve.spatialFast.transform(progress)
+                          : 1,
                       child: FushiIcon(
                         FushiIcons.streak,
                         size: active ? 20 : 16,

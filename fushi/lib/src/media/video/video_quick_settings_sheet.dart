@@ -213,7 +213,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
           child: AnimatedSwitcher(
             duration: fushiMotionDuration(context, FushiMotion.medium),
             switchInCurve: FushiMotion.enter,
-            switchOutCurve: Curves.easeOut,
+            switchOutCurve: FushiMotion.exit,
             layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
               alignment: Alignment.topCenter,
               children: <Widget>[...previous, if (current != null) current],

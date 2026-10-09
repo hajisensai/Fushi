@@ -6402,7 +6402,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                           FushiMotion.medium,
                         ),
                         switchInCurve: FushiMotion.enter,
-                        switchOutCurve: Curves.easeOut,
+                        switchOutCurve: FushiMotion.exit,
                         transitionBuilder:
                             (Widget child, Animation<double> animation) =>
                                 FadeTransition(

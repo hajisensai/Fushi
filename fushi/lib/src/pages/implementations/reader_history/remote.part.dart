@@ -446,7 +446,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           if (client != null)
             DialogDangerAction(
               label: t.remote_book_hide_local,
-              icon: Icons.visibility_off_outlined,
+              icon: FushiIcons.visibilityOff,
               muted: true,
               onPressed: () {
                 Navigator.pop(dialogContext);

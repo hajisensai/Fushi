@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/media/video/subtitle_delay_input_debounce.dart';
 import 'package:fushi/src/media/video/subtitle_waveform_align_panel.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
@@ -344,7 +345,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         // 归零：此前藏在「点读数」里（读数现在是输入框），改成显式小钮，只在非零时出现。
-        AnimatedSize(
+        FushiAnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.short),
           curve: FushiMotion.standard,
           child: shownMs == 0

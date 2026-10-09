@@ -7,6 +7,8 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_local_model_labels.dart';
@@ -174,7 +176,7 @@ class VideoGraphicSubtitleOcrProgressCard extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 6, 14),
-          child: AnimatedSize(
+          child: FushiAnimatedSize(
             duration: fushiMotionDuration(context, FushiMotion.medium),
             curve: FushiMotion.standard,
             alignment: Alignment.topCenter,
@@ -185,7 +187,7 @@ class VideoGraphicSubtitleOcrProgressCard extends StatelessWidget {
                 Row(
                   children: <Widget>[
                     Icon(
-                      Icons.document_scanner_outlined,
+                      FushiIcons.ocr,
                       size: 18,
                       color: scheme.primary,
                     ),
@@ -198,7 +200,7 @@ class VideoGraphicSubtitleOcrProgressCard extends StatelessWidget {
                       ),
                     ),
                     FushiIconButton(
-                      icon: Icons.close,
+                      icon: FushiIcons.close,
                       tooltip: t.dialog_cancel,
                       size: 20,
                       onTap: onCancel,
@@ -302,7 +304,7 @@ class VideoGraphicSubtitleOcrStatusPill extends StatelessWidget {
       GraphicSubtitlePauseOcrStatus.ready => _pill(
         context,
         leading: Icon(
-          Icons.check_circle_outline,
+          FushiIcons.success,
           size: 14,
           color: scheme.inversePrimary,
         ),
@@ -311,7 +313,7 @@ class VideoGraphicSubtitleOcrStatusPill extends StatelessWidget {
       GraphicSubtitlePauseOcrStatus.empty => _pill(
         context,
         leading: Icon(
-          Icons.subtitles_off_outlined,
+          FushiIcons.subtitlesOff,
           size: 14,
           color: scheme.onInverseSurface,
         ),
@@ -322,7 +324,7 @@ class VideoGraphicSubtitleOcrStatusPill extends StatelessWidget {
       child: AnimatedSwitcher(
         duration: fushiMotionDuration(context, FushiMotion.medium),
         switchInCurve: FushiMotion.enter,
-        switchOutCurve: Curves.easeOut,
+        switchOutCurve: FushiMotion.exit,
         transitionBuilder: (Widget child, Animation<double> animation) =>
             FadeTransition(
               opacity: animation,

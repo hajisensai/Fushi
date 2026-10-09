@@ -2751,7 +2751,7 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
                 ),
               ),
               FushiIcon(
-                Icons.arrow_drop_down,
+                FushiIcons.dropDown,
                 size: 20,
                 color: theme.colorScheme.primary,
               ),

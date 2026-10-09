@@ -1,4 +1,6 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -144,7 +146,7 @@ class _FushiPillSegmentedButtonState<T> extends State<SegmentedButton<T>> {
       );
       final String? tip = s.tooltip;
       if (tip != null && tip.isNotEmpty) {
-        body = Tooltip(message: tip, child: body);
+        body = FushiTooltip(message: tip, child: body);
       }
       return body;
     }
