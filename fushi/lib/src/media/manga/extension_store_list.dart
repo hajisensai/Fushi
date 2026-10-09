@@ -12,7 +12,7 @@ import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 /// 扩展仓库管理页（漫画 Mihon / 视频 Aniyomi / 小说 LNReader 三域共用）的
 /// 视觉零件：限宽居中、顶部动作、信任提示、仓库行、添加 / 改地址对话框。
 ///
-/// 三域的数据模型与动作各不相同（Mihon 有签名 / 明文确认，LNReader 有内置仓库），
+/// 三域的数据模型与动作各不相同（Mihon 有签名 / 明文确认，LNReader 没有签名），
 /// 但仓库页长什么样只在这里写一次——此前两边各自把「刷新 / 添加」降级成一行
 /// 药丸按钮、仓库行副标题把完整 URL 与状态硬换行塞成三行、行尾两枚孤零零的
 /// 图标，宽屏上整页拉满一千多像素宽。
@@ -126,8 +126,8 @@ typedef ExtensionStoreStatus = ({String text, FushiStatusTone? tone});
 
 /// 仓库列表的一行（共享分组列表的一格）。
 ///
-/// 前置图标（普通仓库 / 内置仓库的锁）+ 名称 + 副标题两行：地址单行省略、
-/// 状态（扩展数 / 零扩展提示 / 刷新错误）；行尾是「内置」标记与动作。
+/// 前置图标 + 名称 + 副标题两行：地址单行省略、
+/// 状态（扩展数 / 零扩展提示 / 刷新错误）；行尾是动作。
 ///
 /// - MD3：分段分组行；行宽够时动作是行尾图标按钮（带 tooltip），窄行收进
 ///   ⋮ 溢出菜单。
@@ -143,8 +143,6 @@ class ExtensionStoreTile extends StatelessWidget {
     super.key,
     this.rowKey,
     this.menuKey,
-    this.builtin = false,
-    this.builtinLabel,
     this.status,
   });
 
@@ -160,10 +158,6 @@ class ExtensionStoreTile extends StatelessWidget {
 
   /// 溢出菜单按钮的键。
   final Key? menuKey;
-  final bool builtin;
-
-  /// 内置仓库的行尾标记文案（[builtin] 时显示）。
-  final String? builtinLabel;
   final ExtensionStoreStatus? status;
 
   @override
@@ -189,9 +183,9 @@ class ExtensionStoreTile extends StatelessWidget {
           return FushiListItem(
             key: rowKey,
             // M3E 行首形状底（12 圆角方块，secondaryContainer）；Apple 是 iOS
-            // 设置式彩色圆角方块。内置仓库用锁，普通仓库用枢纽。
+            // 设置式彩色圆角方块。
             leading: FushiListLeadingIcon(
-              builtin ? FushiIcons.lock : FushiIcons.hub,
+              FushiIcons.hub,
               shape: FushiLeadingShape.square,
             ),
             title: Text(name),
@@ -215,12 +209,6 @@ class ExtensionStoreTile extends StatelessWidget {
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                if (builtin && builtinLabel != null)
-                  FushiTag(
-                    text: builtinLabel!,
-                    tone: FushiTagTone.neutral,
-                    dense: true,
-                  ),
                 if (actions.isNotEmpty)
                   if (menu)
                     _ExtensionStoreRowMenu(menuKey: menuKey, actions: actions)

@@ -1,15 +1,11 @@
-// 默认扩展仓库自动装配（用户诉求：「漫画扩展仓库默认添加 keiyoushi」）。
+// 扩展仓库**不内置**（2026-10-09 用户口径：「扩展仓库内置仓库全部不内置」）。
 //
-// 守三条不变量：
-// 1. 首次初始化把 [kMihonDefaultStoreIndexUrl] 装进来——不装的话「漫画扩展」一节
-//    开箱是空的，用户得先自己知道一个仓库地址；
-// 2. **只装一次**——用户删掉它之后重启不会被塞回来（置位 pref
-//    [kMihonDefaultStoreSeededPref]）。这条比第 1 条更容易写坏：任何「没有仓库就
-//    补一个」的写法都会把用户的删除操作每次启动撤销掉；
-// 3. **装配不依赖网络**（BUG-1722）——装配是一次本地 DB 写，连不上 github.com 也
-//    照样落地一行，目录由统一的 _refreshStores 去拉、失败写进该行的 lastError。
-//    把这两件事绑在一起就是 BUG-1722 的形状：用户手机长期连不上 github，于是一行
-//    都写不出来，扩展页永远空着，而「下次启动重试」永远也重试不成。
+// 文件名沿用旧的「默认仓库装配」测试（BUG-1717 / BUG-1722 / BUG-2641 的记录指向
+// 这里）。守的不变量换成：
+// 1. 全新安装：漫画 / 视频两个生态初始化后仓库列表都为空，也不发任何索引请求；
+// 2. 存量：旧版本首启落库的默认仓库行是普通记录——升级后原样保留、照常刷新（已装
+//    扩展继续能检查更新），用户删掉后重启不会被塞回来；
+// 3. 源码里不再有写死的默认仓库地址，也没有首启装配开关。
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -38,36 +34,70 @@ void main() {
     if (await root.exists()) await root.delete(recursive: true);
   });
 
-  MihonManager build(MihonExtensionStoreClient client) => MihonManager(
+  MihonManager build(
+    MihonExtensionStoreClient client, {
+    MihonMediaKind kind = MihonMediaKind.manga,
+  }) =>
+      MihonManager(
         database: database,
         rootDirectory: root,
         runtime: _SeedRuntime(),
         storeClient: client,
-        seedDefaultStore: true,
+        kind: kind,
       );
 
-  test('首次初始化自动装上 keiyoushi 仓库，且只拉这一个索引', () async {
+  Future<void> insertLegacySeededRow(
+    String url, {
+    String mediaKind = 'manga',
+    String name = 'Keiyoushi',
+  }) =>
+      database.upsertMangaExtensionStore(
+        MangaExtensionStoresCompanion.insert(
+          indexUrl: url,
+          mediaKind: Value(mediaKind),
+          name: name,
+          format: MihonStoreFormat.currentProtobuf.name,
+          sortOrder: const Value(0),
+        ),
+      );
+
+  for (final MihonMediaKind kind in MihonMediaKind.values) {
+    test('全新安装（${kind.name}）：仓库列表为空，不请求任何索引', () async {
+      final _FakeStoreClient client = _FakeStoreClient();
+      final MihonManager manager = build(client, kind: kind);
+      addTearDown(manager.dispose);
+
+      await manager.initialise();
+
+      expect(manager.stores, isEmpty);
+      expect(manager.available, isEmpty);
+      expect(client.fetchedStoreUrls, isEmpty);
+      expect(manager.error, isNull);
+    });
+  }
+
+  test('存量：旧版本首启落库的默认仓库原样保留并照常刷新，删掉后重启不回来', () async {
+    // 旧版本的状态：默认仓库是一行普通记录 + 「已装配」偏好位。
+    await insertLegacySeededRow(_kLegacyMangaRepo);
+    await database.setPrefTyped<bool>('mihon_default_store_seeded', true);
+
     final _FakeStoreClient client = _FakeStoreClient();
-    final MihonManager manager = build(client);
-    addTearDown(manager.dispose);
-
-    await manager.initialise();
-
-    expect(
-      manager.stores.map((MangaExtensionStoreRow row) => row.indexUrl),
-      contains(kMihonDefaultStoreIndexUrl),
-    );
-    expect(client.fetchedStoreUrls, <String>[kMihonDefaultStoreIndexUrl]);
-    expect(
-      await database.getPrefTyped<bool>(kMihonDefaultStoreSeededPref, false),
-      isTrue,
-    );
-  });
-
-  test('用户删掉默认仓库后重启不会被重新塞回来', () async {
-    final MihonManager first = build(_FakeStoreClient());
+    final MihonManager first = build(client);
     await first.initialise();
-    await first.removeStore(kMihonDefaultStoreIndexUrl);
+
+    expect(
+      first.stores.map((MangaExtensionStoreRow row) => row.indexUrl),
+      <String>[_kLegacyMangaRepo],
+      reason: '存量仓库是用户的数据，升级不得删除',
+    );
+    expect(client.fetchedStoreUrls, <String>[_kLegacyMangaRepo]);
+    expect(
+      first.available.map((MihonAvailableExtension item) => item.packageName),
+      contains('org.example.rawkuma'),
+      reason: '已装扩展仍有来源目录，可以检查更新',
+    );
+
+    await first.removeStore(_kLegacyMangaRepo);
     expect(first.stores, isEmpty);
     first.dispose();
 
@@ -80,52 +110,23 @@ void main() {
     expect(second.fetchedStoreUrls, isEmpty);
   });
 
-  // BUG-1722 的核心回归。旧实现在种子里直接 `addStore()`，于是「默认仓库存在」被
-  // 绑死在「首次启动连得上 github.com」上：连不上就一行都不写，用户看到的是一个
-  // 空列表，而且无从知道本该有一个默认仓库；所谓「下次启动重试」在长期连不上的
-  // 网络（用户手机就是）下等于永远没有。配置和目录是两件事，配置必须无条件落地。
-  test('首次启动连不上也照样有默认仓库：行先落地，失败挂在行上，联网后自动补齐目录', () async {
-    final MihonManager offline = build(_FailingStoreClient());
-    await offline.initialise();
+  test('存量：旧版本装配偏好位未置位也不会补种任何仓库', () async {
+    await database.setPrefTyped<bool>('mihon_default_store_seeded', false);
+    await database.setPrefTyped<bool>(
+      'mihon_default_anime_store_seeded',
+      false,
+    );
+    final MihonManager manga = build(_FakeStoreClient());
+    final MihonManager anime =
+        build(_FakeStoreClient(), kind: MihonMediaKind.anime);
+    addTearDown(manga.dispose);
+    addTearDown(anime.dispose);
 
-    expect(
-      offline.stores.map((MangaExtensionStoreRow row) => row.indexUrl),
-      contains(kMihonDefaultStoreIndexUrl),
-      reason: '装配是一次本地 DB 写，不该被网络失败取消掉',
-    );
-    final MangaExtensionStoreRow seeded = offline.stores.single;
-    expect(
-      seeded.lastError,
-      isNotNull,
-      reason: '拉不到目录要让用户在扩展页看见，而不是整个仓库静默消失',
-    );
-    expect(seeded.lastSyncAt, isNull, reason: '一次都没成功同步过');
-    expect(
-      offline.error,
-      isNull,
-      reason: '默认仓库不是用户发起的操作，拉不到不该在扩展页顶上挂一条全局报错',
-    );
-    expect(
-      await database.getPrefTyped<bool>(kMihonDefaultStoreSeededPref, false),
-      isTrue,
-      reason: '置位语义是「已经替用户装配过」，不是「已经拉到过目录」',
-    );
-    offline.dispose();
+    await manga.initialise();
+    await anime.initialise();
 
-    // 同一个库换成能联网的下一次启动：不重新装配（pref 已置位），但统一的
-    // _refreshStores 会把目录补齐、把 lastError 清掉。
-    final _FakeStoreClient client = _FakeStoreClient();
-    final MihonManager online = build(client);
-    addTearDown(online.dispose);
-    await online.initialise();
-
-    expect(client.fetchedStoreUrls, <String>[kMihonDefaultStoreIndexUrl]);
-    expect(online.stores.single.lastError, isNull);
-    expect(online.stores.single.lastSyncAt, isNotNull);
-    expect(
-      online.available.map((MihonAvailableExtension item) => item.packageName),
-      contains('org.example.rawkuma'),
-    );
+    expect(manga.stores, isEmpty);
+    expect(anime.stores, isEmpty);
   });
 
   // BUG-2641：默认视频仓库的入口是 legacy `index.min.json`，解析器会跟到同目录
@@ -138,10 +139,15 @@ void main() {
           runtime: _SeedRuntime(),
           storeClient: client,
           kind: MihonMediaKind.anime,
-          seedDefaultStore: true,
         );
 
-    test('首启 + 再刷新：只剩解析后的一行，扩展不重复', () async {
+    test('入口行 + 再刷新：只剩解析后的一行，扩展不重复', () async {
+      // 旧版本首启落下的入口行（legacy `index.min.json`）。
+      await insertLegacySeededRow(
+        _kLegacyAnimeRepo,
+        mediaKind: 'anime',
+        name: 'Yūzōnō',
+      );
       final _HoppingStoreClient client = _HoppingStoreClient();
       final MihonManager manager = buildAnime(client);
       addTearDown(manager.dispose);
@@ -164,20 +170,23 @@ void main() {
     test('已被旧版本写出两行的库：刷新一次即删掉别名行、列表不再翻倍', () async {
       int order = 0;
       for (final String url in <String>[
-        kMihonDefaultAnimeStoreIndexUrl,
+        _kLegacyAnimeRepo,
         _kResolvedAnimeRepo,
       ]) {
         await database.upsertMangaExtensionStore(
           MangaExtensionStoresCompanion.insert(
             indexUrl: url,
             mediaKind: const Value('anime'),
-            name: kMihonDefaultAnimeStoreName,
+            name: 'Yūzōnō',
             format: MihonStoreFormat.legacy.name,
             sortOrder: Value(order++),
           ),
         );
       }
-      await database.setPrefTyped<bool>(kMihonDefaultAnimeStoreSeededPref, true);
+      await database.setPrefTyped<bool>(
+        'mihon_default_anime_store_seeded',
+        true,
+      );
       final MihonManager manager = buildAnime(_HoppingStoreClient());
       addTearDown(manager.dispose);
 
@@ -194,9 +203,9 @@ void main() {
       // 用户看到每个扩展两条，停用其中一行来去重——停的恰是解析后的那行。
       await database.upsertMangaExtensionStore(
         MangaExtensionStoresCompanion.insert(
-          indexUrl: kMihonDefaultAnimeStoreIndexUrl,
+          indexUrl: _kLegacyAnimeRepo,
           mediaKind: const Value('anime'),
-          name: kMihonDefaultAnimeStoreName,
+          name: 'Yūzōnō',
           format: MihonStoreFormat.legacy.name,
           sortOrder: const Value(0),
         ),
@@ -205,13 +214,16 @@ void main() {
         MangaExtensionStoresCompanion.insert(
           indexUrl: _kResolvedAnimeRepo,
           mediaKind: const Value('anime'),
-          name: kMihonDefaultAnimeStoreName,
+          name: 'Yūzōnō',
           format: MihonStoreFormat.legacy.name,
           enabled: const Value(false),
           sortOrder: const Value(1),
         ),
       );
-      await database.setPrefTyped<bool>(kMihonDefaultAnimeStoreSeededPref, true);
+      await database.setPrefTyped<bool>(
+        'mihon_default_anime_store_seeded',
+        true,
+      );
       final MihonManager manager = buildAnime(_HoppingStoreClient());
       addTearDown(manager.dispose);
 
@@ -226,29 +238,20 @@ void main() {
     });
   });
 
-  // 装默认仓库是**应用启动策略**，不是「构造一个 manager」的语义。挂成 manager
-  // 的默认行为，等于让每个构造 manager 的单测都去拉 keiyoushi 的真实索引
-  // （1900+ 条）——本轮就是这样把 `mihon_manager_install_test` 那条 cold-start
-  // 用例打红的：setUp 里种进来的默认仓库让后续 refresh 多刷了一个仓库。
-  test('默认仓库装配默认关闭，只有真实 app 启动那一处打开', () {
+  test('源码守卫：Mihon 管理器不再写死默认仓库地址，也没有首启装配开关', () {
     final String managerSource = maskComments(
       File(p.join(
               'lib', 'src', 'media', 'manga', 'mihon', 'mihon_manager.dart'))
           .readAsStringSync(),
     );
-    expect(
-      managerSource,
-      contains('this.seedDefaultStore = false'),
-      reason: '构造 manager 不得默认触发网络装配',
-    );
     final String appModelSource = maskComments(
       File(p.join('lib', 'src', 'models', 'app_model.dart')).readAsStringSync(),
     );
-    expect(
-      appModelSource,
-      contains('seedDefaultStore: true'),
-      reason: '真实 app 启动必须开，否则用户拿不到默认仓库',
-    );
+    for (final String source in <String>[managerSource, appModelSource]) {
+      expect(source, isNot(contains('keiyoushi/extensions')));
+      expect(source, isNot(contains('yuzono/anime-repo')));
+      expect(source, isNot(contains('seedDefaultStore')));
+    }
   });
 }
 
@@ -306,6 +309,12 @@ class _FakeStoreClient extends Fake implements MihonExtensionStoreClient {
   void close() {}
 }
 
+const String _kLegacyMangaRepo =
+    'https://github.com/keiyoushi/extensions/raw/repo/index.pb';
+
+const String _kLegacyAnimeRepo =
+    'https://raw.githubusercontent.com/yuzono/anime-repo/repo/index.min.json';
+
 const String _kResolvedAnimeRepo =
     'https://raw.githubusercontent.com/yuzono/anime-repo/repo/repo.json';
 
@@ -321,7 +330,7 @@ class _HoppingStoreClient extends Fake implements MihonExtensionStoreClient {
       MihonStoreFetchResult(
         store: MihonStore(
           indexUrl: _kResolvedAnimeRepo,
-          name: kMihonDefaultAnimeStoreName,
+          name: 'Yūzōnō',
           badgeLabel: '',
           signingKey: 'aabb',
           contact: const <String, String?>{},
@@ -353,20 +362,6 @@ class _HoppingStoreClient extends Fake implements MihonExtensionStoreClient {
           sources: const <MihonAvailableSource>[],
         ),
       ];
-
-  @override
-  void close() {}
-}
-
-class _FailingStoreClient extends Fake implements MihonExtensionStoreClient {
-  @override
-  Future<MihonStoreFetchResult> fetchStore(
-    String rawUrl, {
-    String? etag,
-    String? lastModified,
-    bool allowInsecure = false,
-  }) async =>
-      throw const SocketException('offline');
 
   @override
   void close() {}

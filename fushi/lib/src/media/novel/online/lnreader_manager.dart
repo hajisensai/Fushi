@@ -10,20 +10,43 @@ import 'package:fushi/src/media/novel/online/lnreader_download_counts.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_runtime.dart';
 
-/// 官方 LNReader 插件仓库。上游 app 不内置任何仓库；本仓把它**内置**（恒在、
-/// 排第一、不可删改），装上就能直接装官方扩展（2026-09-25 用户口径）。
-const String kLnReaderOfficialStoreUrl =
+/// LNReader 官方插件仓库地址。**不再内置**（2026-10-09 用户口径：「扩展仓库内置
+/// 仓库全部不内置」）——仓库列表与漫画 / 视频一样从空开始，由用户自己添加。
+///
+/// 这个常量只服务存量迁移：2026-09-25 ~ 2026-10-09 的版本把它当成运行时合成、
+/// 不落盘、不可删的内置项（迁移见 [migrateLegacyBuiltinLnReaderStore]）。
+const String kLnReaderLegacyOfficialStoreUrl =
     'https://raw.githubusercontent.com/LNReader/lnreader-plugins/plugins/v3.0.0/.dist/plugins.min.json';
 
-/// 在用户仓库前补上内置仓库（去重）。
-List<LnReaderStore> withBuiltinLnReaderStore(
-  List<LnReaderStore> stores, {
-  required String builtinUrl,
-}) => <LnReaderStore>[
-  LnReaderStore(indexUrl: builtinUrl, name: 'LNReader'),
-  for (final LnReaderStore store in stores)
-    if (store.indexUrl != builtinUrl) store,
-];
+/// `state.json` 里「旧内置仓库迁移已做过」的标记键（持久化名，冻结）。
+const String kLnReaderLegacyStoreMigratedKey = 'legacyBuiltinStoreMigrated';
+
+/// 旧内置仓库的迁移判据（纯函数，单测直接钉）：
+///
+/// - 已迁移过（[migrated]）→ 原样返回。用户迁移后自己删掉这个仓库，下次启动
+///   不会被塞回来；
+/// - 有已装插件的来源仓库是 [legacyUrl]、而用户仓库里还没有它 → 把它补成一条
+///   **普通的**用户仓库（排第一，与旧内置位置一致），已装插件因此继续能检查更新；
+/// - 从没装过官方插件 → 不补，旧内置仓库从此不再出现。
+List<LnReaderStore> migrateLegacyBuiltinLnReaderStore({
+  required List<LnReaderStore> stores,
+  required List<LnReaderInstalledPlugin> installed,
+  required String legacyUrl,
+  required bool migrated,
+}) {
+  if (migrated) return stores;
+  if (stores.any((LnReaderStore store) => store.indexUrl == legacyUrl)) {
+    return stores;
+  }
+  final bool used = installed.any(
+    (LnReaderInstalledPlugin plugin) => plugin.storeUrl == legacyUrl,
+  );
+  if (!used) return stores;
+  return <LnReaderStore>[
+    LnReaderStore(indexUrl: legacyUrl, name: 'LNReader'),
+    ...stores,
+  ];
+}
 
 /// 小说在线源（LNReader 插件）的仓库 / 安装 / 源设置管理器。
 ///
@@ -37,7 +60,7 @@ class LnReaderManager extends ChangeNotifier {
     required this.rootDirectory,
     required this.runtime,
     required HttpClient Function() httpClientFactory,
-    this.builtinStoreUrl = kLnReaderOfficialStoreUrl,
+    this.legacyBuiltinStoreUrl = kLnReaderLegacyOfficialStoreUrl,
     this.refreshOnInitialise = false,
     this.cloudflare,
     this.fetchDownloadCounts = false,
@@ -56,12 +79,14 @@ class LnReaderManager extends ChangeNotifier {
   /// null = 不支持验证（单测）。
   final LnReaderCloudflare? cloudflare;
 
-  /// 内置仓库地址。生产恒为 [kLnReaderOfficialStoreUrl]；单测指向本地服务器。
-  final String builtinStoreUrl;
+  /// 旧版本内置仓库的地址，只用于存量迁移（见
+  /// [migrateLegacyBuiltinLnReaderStore]）。生产恒为
+  /// [kLnReaderLegacyOfficialStoreUrl]；单测可指向本地服务器。
+  final String legacyBuiltinStoreUrl;
 
   /// 初始化后是否立即后台刷新目录。只有真实 app 开（见 AppModel），别改成默认
   /// true——那会让每个构造 manager 的单测都去拉真实网络索引（与
-  /// `MihonManager.seedDefaultStore` 同一纪律）。
+  /// `MihonManager.fetchDownloadCounts` 同一纪律）。
   final bool refreshOnInitialise;
 
   /// 目录刷新后是否去拉插件的公开下载量（见 `lnreader_download_counts.dart`）。
@@ -120,20 +145,18 @@ class LnReaderManager extends ChangeNotifier {
   static String _safeName(String id) =>
       id.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_').replaceAll('..', '_');
 
-  /// 读盘；幂等，页面进来就调。随后后台刷新目录（内置官方仓库恒在，所以
-  /// 进页就有官方扩展可装）。
+  /// 读盘；幂等，页面进来就调。随后后台刷新用户添加的仓库目录。
   Future<void> initialise() => _initialising ??= _initialise();
 
   Future<void> _initialise() async {
     await rootDirectory.create(recursive: true);
     final Map<String, Object?> state = await _readState();
-    _stores =
-        withBuiltinLnReaderStore(builtinUrl: builtinStoreUrl, <LnReaderStore>[
-          if (state['stores'] is List)
-            for (final Object? raw in state['stores'] as List)
-              if (LnReaderStore.tryFromJson(raw) case final LnReaderStore store)
-                store,
-        ]);
+    final List<LnReaderStore> stored = <LnReaderStore>[
+      if (state['stores'] is List)
+        for (final Object? raw in state['stores'] as List)
+          if (LnReaderStore.tryFromJson(raw) case final LnReaderStore store)
+            store,
+    ];
     _installed = _sorted(<LnReaderInstalledPlugin>[
       if (state['installed'] is List)
         for (final Object? raw in state['installed'] as List)
@@ -141,12 +164,22 @@ class LnReaderManager extends ChangeNotifier {
               case final LnReaderInstalledPlugin plugin)
             plugin,
     ]);
+    final bool migrated = state[kLnReaderLegacyStoreMigratedKey] == true;
+    _stores = migrateLegacyBuiltinLnReaderStore(
+      stores: stored,
+      installed: _installed,
+      legacyUrl: legacyBuiltinStoreUrl,
+      migrated: migrated,
+    );
+    // 迁移只做一次：无论补没补仓库都落一次标记，此后用户删掉它不会被塞回来。
+    // 全新安装（没有 state.json、没装过任何插件）不写盘，等第一次真实改动时
+    // 由 [_writeState] 一并带上标记。
+    if (!migrated && (state.isNotEmpty || _stores.isNotEmpty)) {
+      await _writeState();
+    }
     _notify();
     if (refreshOnInitialise) unawaited(refreshStores());
   }
-
-  /// 内置仓库不可删、不可改（2026-09-25 用户口径：「lnreader 官方扩展也内置」）。
-  bool isBuiltinStore(LnReaderStore store) => store.indexUrl == builtinStoreUrl;
 
   Future<Map<String, Object?>> _readState() async {
     try {
@@ -169,15 +202,15 @@ class LnReaderManager extends ChangeNotifier {
     await _writeAtomically(
       _stateFile,
       const JsonEncoder.withIndent('  ').convert(<String, Object?>{
-        // 内置仓库不落盘：它的地址跟着 app 版本走（上游换 tag 时随版本更新）。
         'stores': <Object?>[
-          for (final LnReaderStore store in _stores)
-            if (!isBuiltinStore(store)) store.toJson(),
+          for (final LnReaderStore store in _stores) store.toJson(),
         ],
         'installed': <Object?>[
           for (final LnReaderInstalledPlugin plugin in _installed)
             plugin.toJson(),
         ],
+        // 能走到写盘说明 initialise 已经跑过迁移判据。
+        kLnReaderLegacyStoreMigratedKey: true,
       }),
     );
   }
@@ -263,7 +296,6 @@ class LnReaderManager extends ChangeNotifier {
   }
 
   Future<void> editStore(LnReaderStore store, String rawUrl) async {
-    if (isBuiltinStore(store)) return;
     final String? url = normaliseStoreUrl(rawUrl);
     if (url == null) throw FormatException('Invalid repository URL', rawUrl);
     _stores = <LnReaderStore>[
@@ -279,7 +311,6 @@ class LnReaderManager extends ChangeNotifier {
   }
 
   Future<void> removeStore(LnReaderStore store) async {
-    if (isBuiltinStore(store)) return;
     _stores = <LnReaderStore>[
       for (final LnReaderStore existing in _stores)
         if (existing.indexUrl != store.indexUrl) existing,

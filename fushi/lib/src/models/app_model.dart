@@ -4816,12 +4816,8 @@ class AppModel with ChangeNotifier {
       kind: kind,
       ownsRuntime: false,
       coverCacheMaxAge: Duration(days: prefsRepo.mangaCoverCacheMaxAgeDays),
-      // 只有真实 app 启动这一处装默认扩展仓库（用户诉求：漫画扩展仓库默认带
-      // keiyoushi，视频默认带 yuzono）。别把它挪进 MihonManager 的默认值——那会
-      // 让每个构造 manager 的单测都去拉真实网络索引，见
-      // MihonManager.seedDefaultStore 的说明。
-      seedDefaultStore: true,
-      // 同理只有真实 app 去拉扩展的公开下载量（一次 5 MB 量级的 GitHub API
+      // 扩展仓库不内置（2026-10-09）：新装为空，由用户自己添加。
+      // 只有真实 app 去拉扩展的公开下载量（一次 5 MB 量级的 GitHub API
       // 请求）；单测构造的 manager 一律不碰外网。
       fetchDownloadCounts: true,
     );
@@ -4858,7 +4854,7 @@ class AppModel with ChangeNotifier {
       runtime: runtime,
       cloudflare: cloudflare,
       httpClientFactory: createAppHttpClient,
-      // 只有真实 app 进页即刷新内置官方仓库（单测构造的 manager 不碰外网）。
+      // 只有真实 app 进页即刷新用户添加的仓库（单测构造的 manager 不碰外网）。
       refreshOnInitialise: true,
       fetchDownloadCounts: true,
     );

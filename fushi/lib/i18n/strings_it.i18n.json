@@ -2323,7 +2323,7 @@
   "mihon_source_search": "Cerca manga",
   "mihon_store_add": "Aggiungi store estensioni",
   "mihon_store_edit": "Modifica URL del repository",
-  "mihon_store_empty": "Nessuno store di estensioni. Aggiungi uno store Mihon compatibile o importa un APK locale.",
+  "mihon_store_empty": "Nessun repository di estensioni. Fushi non ne include nessuno: aggiungi l'URL dell'indice di un repository compatibile con Mihon di cui ti fidi, oppure importa un APK locale.",
   "mihon_store_extension_count": "$count estensioni",
   "mihon_store_refresh": "Aggiorna store",
   "mihon_store_remove": "Rimuovi store estensioni",
@@ -5502,9 +5502,8 @@
   "novel_online_sources_hint": "Plugin LNReader di terze parti. I contenuti provengono dai siti web delle fonti; i romanzi scaricati vengono salvati nella tua libreria come EPUB.",
   "novel_online_sources_empty": "Ancora nessuna fonte di romanzi. Installa prima un plugin in Estensioni.",
   "novel_extensions_search_hint": "Cerca plugin",
-  "novel_store_builtin_label": "Integrato",
   "novel_store_add_warning": "I plugin LNReader sono script di terze parti che recuperano contenuti dai siti web. Aggiungi solo repository di cui ti fidi.",
-  "novel_store_empty": "Nessun repository di plugin.",
+  "novel_store_empty": "Nessun repository di plugin. Fushi non ne include nessuno: aggiungi l'URL dell'indice di un repository di plugin LNReader di cui ti fidi.",
   "novel_source_search_hint": "Cerca romanzi",
   "novel_source_no_results": "Nessun romanzo trovato.",
   "novel_source_filters_title": "Filtri",
@@ -6895,5 +6894,6 @@
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
+  "extension_nsfw_badge": "NSFW",
   "mihon_extension_min_downloads_any": "Qualsiasi"
 }

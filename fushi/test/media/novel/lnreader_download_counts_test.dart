@@ -234,7 +234,6 @@ void main() {
       rootDirectory: root,
       runtime: FakeLnReaderRuntime(),
       httpClientFactory: HttpClient.new,
-      builtinStoreUrl: '$base/index.json',
       fetchDownloadCounts: fetch,
       downloadCountsClient: LnReaderDownloadCountsClient(
         httpClientFactory: HttpClient.new,
@@ -246,7 +245,7 @@ void main() {
     final LnReaderManager off = build(fetch: false);
     addTearDown(off.dispose);
     await off.initialise();
-    await off.refreshStores();
+    await off.addStore('$base/index.json');
     expect(off.available.single.downloadCount, isNull);
     expect(statsRequests, 0, reason: '单测 / 未开开关的 manager 不碰统计接口');
 

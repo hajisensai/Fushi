@@ -2323,7 +2323,7 @@
   "mihon_source_search": "Manga zoeken",
   "mihon_store_add": "Extensiewinkel toevoegen",
   "mihon_store_edit": "Repository-URL bewerken",
-  "mihon_store_empty": "Nog geen extensiewinkels. Voeg een compatibele Mihon-winkel toe of importeer een lokale APK.",
+  "mihon_store_empty": "Nog geen extensierepositories. Fushi bevat er geen — voeg de index-URL toe van een Mihon-compatibele repository die je vertrouwt, of importeer een lokale APK.",
   "mihon_store_extension_count": "$count extensies",
   "mihon_store_refresh": "Winkels vernieuwen",
   "mihon_store_remove": "Extensiewinkel verwijderen",
@@ -5502,9 +5502,8 @@
   "novel_online_sources_hint": "LNReader-plug-ins van derden. De inhoud komt van de bronwebsites; gedownloade romans worden als EPUB in je boekenplank opgeslagen.",
   "novel_online_sources_empty": "Nog geen romanbronnen. Installeer eerst een plug-in onder Extensies.",
   "novel_extensions_search_hint": "Plug-ins zoeken",
-  "novel_store_builtin_label": "Ingebouwd",
   "novel_store_add_warning": "LNReader-plug-ins zijn scripts van derden die inhoud van websites ophalen. Voeg alleen repositories toe die je vertrouwt.",
-  "novel_store_empty": "Geen plug-inrepositories.",
+  "novel_store_empty": "Nog geen plug-inrepositories. Fushi bevat er geen — voeg de index-URL toe van een LNReader-plug-inrepository die je vertrouwt.",
   "novel_source_search_hint": "Romans zoeken",
   "novel_source_no_results": "Geen romans gevonden.",
   "novel_source_filters_title": "Filters",
@@ -6895,5 +6894,6 @@
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
+  "extension_nsfw_badge": "NSFW",
   "mihon_extension_min_downloads_any": "Willekeurig"
 }

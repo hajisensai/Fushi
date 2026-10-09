@@ -16,34 +16,13 @@ import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 
-/// 开箱即用的默认扩展仓库（用户指定）。没有它的话「漫画扩展」一节首次打开是空的，
-/// 用户得先自己知道一个仓库地址才能开始——而这个仓库就是社区事实标准。
-const String kMihonDefaultStoreIndexUrl =
-    'https://github.com/keiyoushi/extensions/raw/repo/index.pb';
-
-/// 默认仓库在拉到真实索引之前的显示名。第一次成功刷新会用仓库自报的名字覆写。
-const String kMihonDefaultStoreName = 'Keiyoushi';
-
-/// 默认仓库**只自动装配一次**：置位后用户删掉它就不会被下次启动重新塞回来。
+/// 扩展仓库**不内置**（2026-10-09 用户口径：「扩展仓库内置仓库全部不内置」）。
 ///
-/// 置位的判据是「装配这一步做完了」，而装配现在是一次**本地** DB 写（见
-/// [MihonManager._seedDefaultStore]），不依赖网络，所以不存在「置早了导致永不重试」
-/// 的窗口。存量里 pref 仍为 false 的用户（旧代码下装配因断网失败过）下次启动即自愈。
-const String kMihonDefaultStoreSeededPref = 'mihon_default_store_seeded';
-
-/// 视频（Aniyomi）扩展的默认仓库：yuzono/anime-repo（Anikku 维护者，GitHub 原仓、
-/// 有签名指纹、内容是已消失的 Kohi-den 仓库的超集，2026-09 仍在日更）。旧格式
-/// `index.min.json` + 同目录 `repo.json`，与 Mihon legacy 索引同构，走同一个解析器。
-const String kMihonDefaultAnimeStoreIndexUrl =
-    'https://raw.githubusercontent.com/yuzono/anime-repo/repo/index.min.json';
-
-/// 默认视频仓库在拉到真实索引之前的显示名。
-const String kMihonDefaultAnimeStoreName = 'Yūzōnō';
-
-/// 与 [kMihonDefaultStoreSeededPref] 语义相同，按生态各置一位。
-const String kMihonDefaultAnimeStoreSeededPref =
-    'mihon_default_anime_store_seeded';
-
+/// 新安装时仓库列表为空，空态引导用户自己添加信任的仓库。早先版本首次启动会
+/// 替用户落一行默认仓库（漫画 keiyoushi、视频 yuzono/anime-repo），并置位偏好
+/// `mihon_default_store_seeded` / `mihon_default_anime_store_seeded`；那些行是
+/// 普通仓库记录，升级后原样保留（已装扩展照常检查更新），用户可以自己删。两个
+/// 偏好键只是历史残留，不再读写（持久化名冻结，不做清理迁移）。
 class MihonManager extends ChangeNotifier {
   MihonManager({
     required this.database,
@@ -51,7 +30,6 @@ class MihonManager extends ChangeNotifier {
     required this.runtime,
     MihonExtensionStoreClient? storeClient,
     MihonDownloadCountsClient? downloadCountsClient,
-    this.seedDefaultStore = false,
     this.fetchDownloadCounts = false,
     this.kind = MihonMediaKind.manga,
     this.ownsRuntime = true,
@@ -80,7 +58,7 @@ class MihonManager extends ChangeNotifier {
   ///
   /// 三张扩展表按 `media_kind` 分片（v107），[reload] 只读本生态的行；安装门只收
   /// 本生态的 APK（[MihonExtensionInspection.kind] 不符即 `WRONG_MEDIA_KIND`）；
-  /// 默认仓库与其「已装配」偏好位也按生态各一份。运行时可以共用——同一个
+  /// 仓库同样按生态各一份。运行时可以共用——同一个
   /// sidecar / 原生宿主两种扩展都认，见 [ownsRuntime]。
   final MihonMediaKind kind;
 
@@ -94,20 +72,10 @@ class MihonManager extends ChangeNotifier {
   late final MihonCoverCache coverCache;
   final MihonExtensionStoreClient _storeClient;
 
-  /// 是否在 [initialise] 里装配默认扩展仓库（见 [kMihonDefaultStoreIndexUrl]）。
-  ///
-  /// 默认 **false**，只有真实 app 启动那一处（`AppModel.mihonManager`）传 true。
-  /// 装默认仓库是**应用启动策略**，不是「构造一个 manager」的语义：挂在
-  /// [initialise] 上无条件执行，会让任何构造 manager 的单测都去真实网络拉
-  /// keiyoushi 索引（1900+ 条），既慢又把测试结果绑在外网上——这正是本轮
-  /// `mihon_manager_install_test` 那条 cold-start 用例变红的原因。
-  final bool seedDefaultStore;
-
   /// 是否在目录刷新后去 GitHub 拉扩展的公开下载量（见 [MihonDownloadCounts]）。
   ///
-  /// 与 [seedDefaultStore] 同样的理由默认 **false**，只有真实 app 启动那一处传
-  /// true：这是一次 5 MB 量级的外网请求，挂在构造函数的默认值上会让每个构造
-  /// manager 的单测都去打 `api.github.com`（既慢又把测试绑在外网和 60 次/小时的
+  /// 默认 **false**，只有真实 app 启动那一处传 true：这是一次 5 MB 量级的外网
+  /// 请求，挂在构造函数的默认值上会让每个构造 manager 的单测都去打 `api.github.com`（既慢又把测试绑在外网和 60 次/小时的
   /// 未认证配额上）。
   final bool fetchDownloadCounts;
 
@@ -177,9 +145,6 @@ class MihonManager extends ChangeNotifier {
       // 必须在 reload 之后：判断孤儿要拿 installed 跟标记里的包名比对。
       await _recoverAbandonedPreview();
       await _clearStagedApks();
-      // 种子必须在刷新**之前**：它只往本地写一行，写完紧接着的 _refreshStores
-      // 就把它的目录一并拉下来——默认仓库从此和用户自己加的仓库走同一条路径。
-      await _seedDefaultStore();
       await _refreshStores();
     } catch (exception) {
       error = '$exception';
@@ -188,39 +153,6 @@ class MihonManager extends ChangeNotifier {
       loading = false;
       _notify();
     }
-  }
-
-  /// 首次启动把 [kMihonDefaultStoreIndexUrl] 落成一行本地仓库配置（见常量文档）。
-  ///
-  /// **纯本地写，不碰网络。** 早先这里调 [addStore]，于是「默认仓库存在」被绑死在
-  /// 「首次启动能连上 github.com」上：连不上就一行都不写，用户看到的是一个空列表，
-  /// 而且完全不知道本该有一个默认仓库——所谓「下次启动重试」在长期连不上的网络下
-  /// 等于永远没有。仓库**配置**和仓库**目录**是两件事：配置该无条件落地，目录由
-  /// 紧随其后的 [_refreshStores] 用和其它仓库完全相同的路径去拉，失败就照常写进
-  /// `lastError` 让用户看见并可手动重试，而不是静默消失。
-  ///
-  /// 落地后即置位 [kMihonDefaultStoreSeededPref]：置位语义是「已经替用户装配过」，
-  /// 不是「已经拉到过目录」——所以用户删掉它之后不会被下次启动塞回来。
-  Future<void> _seedDefaultStore() async {
-    if (!seedDefaultStore) return;
-    final String seededPref = _defaultStoreSeededPref;
-    final bool seeded = await database.getPrefTyped<bool>(seededPref, false);
-    if (seeded) return;
-    // 用户自己先加过同一个地址：认下它，别用种子行覆盖掉他的排序/启用状态。
-    final String indexUrl = defaultStoreIndexUrl;
-    if (!stores.any((MangaExtensionStoreRow row) => row.indexUrl == indexUrl)) {
-      await database.upsertMangaExtensionStore(
-        MangaExtensionStoresCompanion.insert(
-          indexUrl: indexUrl,
-          mediaKind: Value(kind.dbValue),
-          name: _defaultStoreName,
-          format: _defaultStoreFormat.name,
-          sortOrder: Value(_nextStoreSortOrder()),
-        ),
-      );
-      await reload();
-    }
-    await database.setPrefTyped<bool>(seededPref, true);
   }
 
   int _nextStoreSortOrder() => stores.isEmpty
@@ -237,30 +169,6 @@ class MihonManager extends ChangeNotifier {
     sources = await database.getMangaOnlineSources(mediaKind: mediaKind);
     _notify();
   }
-
-  /// 本生态默认仓库的三件套（地址 / 显示名 / 已装配偏好位）。
-  String get defaultStoreIndexUrl => switch (kind) {
-    MihonMediaKind.manga => kMihonDefaultStoreIndexUrl,
-    MihonMediaKind.anime => kMihonDefaultAnimeStoreIndexUrl,
-  };
-
-  String get _defaultStoreName => switch (kind) {
-    MihonMediaKind.manga => kMihonDefaultStoreName,
-    MihonMediaKind.anime => kMihonDefaultAnimeStoreName,
-  };
-
-  String get _defaultStoreSeededPref => switch (kind) {
-    MihonMediaKind.manga => kMihonDefaultStoreSeededPref,
-    MihonMediaKind.anime => kMihonDefaultAnimeStoreSeededPref,
-  };
-
-  /// 默认仓库的索引格式：keiyoushi 是 `index.pb`，yuzono 是旧格式 `index.min.json`。
-  /// 真实格式由第一次成功刷新覆写，这里只让「从未刷新过」的行能被 _refreshStores
-  /// 正常处理（etag/lastModified 都为空，不会走 304）。
-  MihonStoreFormat get _defaultStoreFormat => switch (kind) {
-    MihonMediaKind.manga => MihonStoreFormat.currentProtobuf,
-    MihonMediaKind.anime => MihonStoreFormat.legacy,
-  };
 
   Future<void> addStore(String url, {bool allowInsecure = false}) async {
     await _guarded(() async {

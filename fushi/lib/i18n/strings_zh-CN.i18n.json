@@ -2323,7 +2323,7 @@
   "mihon_source_search": "搜索漫画",
   "mihon_store_add": "添加扩展仓库",
   "mihon_store_edit": "编辑仓库地址",
-  "mihon_store_empty": "还没有扩展仓库。可添加兼容的 Mihon 仓库，或导入本地 APK。",
+  "mihon_store_empty": "还没有扩展仓库。Fushi 不内置任何仓库——请添加你信任的 Mihon 兼容仓库的索引地址，或导入本地 APK。",
   "mihon_store_extension_count": "$count 个扩展",
   "mihon_store_refresh": "刷新仓库",
   "mihon_store_remove": "移除扩展仓库",
@@ -5502,9 +5502,8 @@
   "novel_online_sources_hint": "第三方 LNReader 插件。内容来自源站；下载的小说以 EPUB 存进书架。",
   "novel_online_sources_empty": "还没有小说源。请先在「扩展」里安装插件。",
   "novel_extensions_search_hint": "搜索插件",
-  "novel_store_builtin_label": "内置",
   "novel_store_add_warning": "LNReader 插件是从网站抓取内容的第三方脚本。只添加你信任的仓库。",
-  "novel_store_empty": "没有插件仓库。",
+  "novel_store_empty": "还没有插件仓库。Fushi 不内置任何仓库——请添加你信任的 LNReader 插件仓库的索引地址。",
   "novel_source_search_hint": "搜索小说",
   "novel_source_no_results": "没有找到小说。",
   "novel_source_filters_title": "筛选",
@@ -6895,5 +6894,6 @@
   "shortcut_action_video_lookup_next_word": "下一个词（扫词）",
   "shortcut_action_video_lookup_prev_word": "上一个词（扫词）",
   "media_source_open_folder_failed": "无法打开文件夹，它可能已被移动、删除或断开连接。",
+  "extension_nsfw_badge": "NSFW",
   "mihon_extension_min_downloads_any": "不限"
 }

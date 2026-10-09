@@ -2323,7 +2323,7 @@
   "mihon_source_search": "Manga ara",
   "mihon_store_add": "Eklenti mağazası ekle",
   "mihon_store_edit": "Depo adresini düzenle",
-  "mihon_store_empty": "Henüz eklenti mağazası yok. Uyumlu bir Mihon mağazası ekleyin veya yerel bir APK içe aktarın.",
+  "mihon_store_empty": "Henüz eklenti deposu yok. Fushi hiçbir depo içermez; güvendiğiniz Mihon uyumlu bir deponun dizin URL'sini ekleyin veya yerel bir APK içe aktarın.",
   "mihon_store_extension_count": "$count uzantı",
   "mihon_store_refresh": "Mağazaları yenile",
   "mihon_store_remove": "Eklenti mağazasını kaldır",
@@ -5502,9 +5502,8 @@
   "novel_online_sources_hint": "Üçüncü taraf LNReader eklentileri. İçerik kaynak web sitelerinden gelir; indirilen romanlar EPUB olarak kitaplığınıza kaydedilir.",
   "novel_online_sources_empty": "Henüz roman kaynağı yok. Önce Eklentiler altında bir eklenti yükleyin.",
   "novel_extensions_search_hint": "Eklenti ara",
-  "novel_store_builtin_label": "Yerleşik",
   "novel_store_add_warning": "LNReader eklentileri, web sitelerinden içerik getiren üçüncü taraf betiklerdir. Yalnızca güvendiğiniz depoları ekleyin.",
-  "novel_store_empty": "Eklenti deposu yok.",
+  "novel_store_empty": "Henüz eklenti deposu yok. Fushi hiçbir depo içermez; güvendiğiniz bir LNReader eklenti deposunun dizin URL'sini ekleyin.",
   "novel_source_search_hint": "Roman ara",
   "novel_source_no_results": "Roman bulunamadı.",
   "novel_source_filters_title": "Filtreler",
@@ -6895,5 +6894,6 @@
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
+  "extension_nsfw_badge": "NSFW",
   "mihon_extension_min_downloads_any": "Herhangi"
 }

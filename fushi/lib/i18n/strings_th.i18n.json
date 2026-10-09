@@ -2323,7 +2323,7 @@
   "mihon_source_search": "ค้นหามังงะ",
   "mihon_store_add": "เพิ่มร้านส่วนขยาย",
   "mihon_store_edit": "แก้ไข URL คลังส่วนขยาย",
-  "mihon_store_empty": "ยังไม่มีร้านส่วนขยาย เพิ่มร้าน Mihon ที่เข้ากันได้หรือนำเข้า APK จากเครื่อง",
+  "mihon_store_empty": "ยังไม่มีที่เก็บส่วนขยาย Fushi ไม่ได้รวมที่เก็บใดไว้ — เพิ่ม URL ดัชนีของที่เก็บที่เข้ากันได้กับ Mihon ที่คุณเชื่อถือ หรือนำเข้า APK จากเครื่อง",
   "mihon_store_extension_count": "ส่วนขยาย $count รายการ",
   "mihon_store_refresh": "รีเฟรชร้าน",
   "mihon_store_remove": "ลบร้านส่วนขยาย",
@@ -5502,9 +5502,8 @@
   "novel_online_sources_hint": "ปลั๊กอิน LNReader ของบุคคลที่สาม เนื้อหามาจากเว็บไซต์ต้นทาง นิยายที่ดาวน์โหลดจะบันทึกลงชั้นหนังสือของคุณเป็น EPUB",
   "novel_online_sources_empty": "ยังไม่มีแหล่งนิยาย ติดตั้งปลั๊กอินในส่วนขยายก่อน",
   "novel_extensions_search_hint": "ค้นหาปลั๊กอิน",
-  "novel_store_builtin_label": "ในตัว",
   "novel_store_add_warning": "ปลั๊กอิน LNReader เป็นสคริปต์ของบุคคลที่สามที่ดึงเนื้อหาจากเว็บไซต์ เพิ่มเฉพาะที่เก็บที่คุณเชื่อถือ",
-  "novel_store_empty": "ไม่มีที่เก็บปลั๊กอิน",
+  "novel_store_empty": "ยังไม่มีที่เก็บปลั๊กอิน Fushi ไม่ได้รวมที่เก็บใดไว้ — เพิ่ม URL ดัชนีของที่เก็บปลั๊กอิน LNReader ที่คุณเชื่อถือ",
   "novel_source_search_hint": "ค้นหานิยาย",
   "novel_source_no_results": "ไม่พบนิยาย",
   "novel_source_filters_title": "ตัวกรอง",
@@ -6895,5 +6894,6 @@
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
+  "extension_nsfw_badge": "NSFW",
   "mihon_extension_min_downloads_any": "ไม่จำกัด"
 }

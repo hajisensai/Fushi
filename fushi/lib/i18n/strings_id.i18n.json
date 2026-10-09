@@ -2323,7 +2323,7 @@
   "mihon_source_search": "Cari manga",
   "mihon_store_add": "Tambah toko ekstensi",
   "mihon_store_edit": "Ubah alamat repositori",
-  "mihon_store_empty": "Belum ada toko ekstensi. Tambahkan toko Mihon yang kompatibel atau impor APK lokal.",
+  "mihon_store_empty": "Belum ada repositori ekstensi. Fushi tidak menyertakan satu pun — tambahkan URL indeks repositori yang kompatibel dengan Mihon dan Anda percayai, atau impor APK lokal.",
   "mihon_store_extension_count": "$count ekstensi",
   "mihon_store_refresh": "Segarkan toko",
   "mihon_store_remove": "Hapus toko ekstensi",
@@ -5502,9 +5502,8 @@
   "novel_online_sources_hint": "Plugin LNReader pihak ketiga. Konten berasal dari situs web sumber; novel yang diunduh disimpan ke rak buku Anda sebagai EPUB.",
   "novel_online_sources_empty": "Belum ada sumber novel. Pasang plugin di Ekstensi dulu.",
   "novel_extensions_search_hint": "Cari plugin",
-  "novel_store_builtin_label": "Bawaan",
   "novel_store_add_warning": "Plugin LNReader adalah skrip pihak ketiga yang mengambil konten dari situs web. Tambahkan hanya repositori yang Anda percayai.",
-  "novel_store_empty": "Tidak ada repositori plugin.",
+  "novel_store_empty": "Belum ada repositori plugin. Fushi tidak menyertakan satu pun — tambahkan URL indeks repositori plugin LNReader yang Anda percayai.",
   "novel_source_search_hint": "Cari novel",
   "novel_source_no_results": "Tidak ada novel ditemukan.",
   "novel_source_filters_title": "Filter",
@@ -6895,5 +6894,6 @@
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
+  "extension_nsfw_badge": "NSFW",
   "mihon_extension_min_downloads_any": "Apa saja"
 }

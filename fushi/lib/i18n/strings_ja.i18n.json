@@ -2323,7 +2323,7 @@
   "mihon_source_search": "マンガを検索",
   "mihon_store_add": "拡張機能ストアを追加",
   "mihon_store_edit": "リポジトリのアドレスを編集",
-  "mihon_store_empty": "拡張機能ストアがまだありません。互換性のあるMihonストアを追加するか、ローカルAPKをインポートしてください。",
+  "mihon_store_empty": "拡張機能リポジトリがまだありません。Fushi にはリポジトリが同梱されていません。信頼できる Mihon 互換リポジトリのインデックス URL を追加するか、ローカル APK をインポートしてください。",
   "mihon_store_extension_count": "拡張機能 $count 件",
   "mihon_store_refresh": "ストアを更新",
   "mihon_store_remove": "拡張機能ストアを削除",
@@ -5502,9 +5502,8 @@
   "novel_online_sources_hint": "サードパーティの LNReader プラグインです。内容は各サイトから取得され、ダウンロードした小説は EPUB として本棚に保存されます。",
   "novel_online_sources_empty": "小説ソースがまだありません。先に「拡張」でプラグインをインストールしてください。",
   "novel_extensions_search_hint": "プラグインを検索",
-  "novel_store_builtin_label": "内蔵",
   "novel_store_add_warning": "LNReader プラグインは Web サイトからコンテンツを取得するサードパーティのスクリプトです。信頼できるリポジトリだけを追加してください。",
-  "novel_store_empty": "プラグインリポジトリがありません。",
+  "novel_store_empty": "プラグインリポジトリがまだありません。Fushi にはリポジトリが同梱されていません。信頼できる LNReader プラグインリポジトリのインデックス URL を追加してください。",
   "novel_source_search_hint": "小説を検索",
   "novel_source_no_results": "小説が見つかりません。",
   "novel_source_filters_title": "絞り込み",
@@ -6895,5 +6894,6 @@
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
+  "extension_nsfw_badge": "NSFW",
   "mihon_extension_min_downloads_any": "指定なし"
 }
