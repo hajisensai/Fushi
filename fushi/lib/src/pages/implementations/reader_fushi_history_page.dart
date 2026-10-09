@@ -97,6 +97,7 @@ import 'package:fushi/src/media/collections/shelf_collection_layout.dart';
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:fushi/src/pages/implementations/series_shelf_card.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/shelf_ordering.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
@@ -2977,14 +2978,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           _remoteAudiobookRefetchFor(bookKey) != null) ...<DialogAction>[
         DialogListAction(
           label: t.remote_book_subtitles_refresh,
-          icon: Icons.subtitles_outlined,
+          icon: FushiIcons.subtitles,
           onPressed: () => _refetchRemoteAudiobook(
               _remoteAudiobookRefetchFor(bookKey)!, bookKey,
               subtitlesOnly: true),
         ),
         DialogListAction(
           label: t.remote_book_audiobook_redownload,
-          icon: Icons.cloud_sync_outlined,
+          icon: FushiIcons.cloudSync,
           onPressed: () => _refetchRemoteAudiobook(
               _remoteAudiobookRefetchFor(bookKey)!, bookKey,
               subtitlesOnly: false),

@@ -3351,7 +3351,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           if (_remoteSubtitleRefetchSource(book) != null)
             DialogQuickAction(
               label: t.video_remote_subtitle_refetch,
-              icon: Icons.subtitles_outlined,
+              icon: FushiIcons.subtitles,
               onPressed: () {
                 Navigator.pop(dialogContext);
                 unawaited(_refetchRemoteSubtitle(book));
@@ -3487,7 +3487,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       option = await showFushiChoiceDialog<RemoteSubtitleRefetchOption>(
         context: context,
         title: t.video_remote_subtitle_refetch_pick,
-        icon: Icons.subtitles_outlined,
+        icon: FushiIcons.subtitles,
         options: <FushiChoiceOption<RemoteSubtitleRefetchOption>>[
           for (final RemoteSubtitleRefetchOption o in options)
             FushiChoiceOption<RemoteSubtitleRefetchOption>(

@@ -240,7 +240,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           _remoteSrtRefetchFor(book.uid) != null) ...<DialogAction>[
         DialogListAction(
           label: t.remote_book_subtitles_refresh,
-          icon: Icons.subtitles_outlined,
+          icon: FushiIcons.subtitles,
           onPressed: () async {
             final RemoteAudiobookInfo remote = _remoteSrtRefetchFor(book.uid)!;
             Navigator.pop(dialogContext);
@@ -249,7 +249,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         ),
         DialogListAction(
           label: t.remote_book_audiobook_redownload,
-          icon: Icons.cloud_sync_outlined,
+          icon: FushiIcons.cloudSync,
           onPressed: () async {
             final RemoteAudiobookInfo remote = _remoteSrtRefetchFor(book.uid)!;
             Navigator.pop(dialogContext);
