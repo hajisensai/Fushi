@@ -17,15 +17,6 @@
       "sha256": "bb0d1d3e6466e24cb4b697316641f6846990bcee062356efeaaa5028f207c042"
     },
     {
-      "name": "fushi-2.10.0-debug.18598-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.18598-ios.ipa",
-      "releaseSequence": 18598,
-      "tag": "v2.10.0-debug.18598+329efb5",
-      "version": "2.10.0-debug.18598",
-      "size": 79379693,
-      "sha256": "55a81f7acd126ab522deb22b0525e2a2c103e92be5d8e3c699bc87b2a0ab40e1"
-    },
-    {
       "name": "fushi-2.10.0-debug.18629-d3ba367-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.18629-d3ba367-debug.apk",
       "releaseSequence": 18629,
@@ -33,6 +24,15 @@
       "version": "2.10.0-debug.18629",
       "size": 373907480,
       "sha256": "9590f4891a4e59742ed46ebc614af07a8e293fe3be782f32bf4779fbf51873f1"
+    },
+    {
+      "name": "fushi-2.10.0-debug.18629-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.18629-ios.ipa",
+      "releaseSequence": 18629,
+      "tag": "v2.10.0-debug.18629+d3ba367",
+      "version": "2.10.0-debug.18629",
+      "size": 79422829,
+      "sha256": "aa8e689fbcc44bf05597c8ed46f5d6140d4ec1b3403a23a0e5a85e49dbbbac89"
     },
     {
       "name": "fushi-2.10.0-debug.18629-windows-setup.exe",
