@@ -8,24 +8,6 @@
   "notes": "Automated desktop debug-channel build from develop @ 6da60c4. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-2.10.0-debug.18345-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.18345-ios.ipa",
-      "releaseSequence": 18345,
-      "tag": "v2.10.0-debug.18345+9c18eac",
-      "version": "2.10.0-debug.18345",
-      "size": 78399208,
-      "sha256": "ed1dca4ccff54bdff35f521635c400e663e10ced552a7ffd6aae7e680a4b7b19"
-    },
-    {
-      "name": "fushi-2.10.0-debug.18345-macos-arm64.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.18345-macos-arm64.zip",
-      "releaseSequence": 18345,
-      "tag": "v2.10.0-debug.18345+9c18eac",
-      "version": "2.10.0-debug.18345",
-      "size": 242058415,
-      "sha256": "14d59f4b5dfa54fcab2cb04019dc156b39dd7d8f8bf4e7292e3a0203478b043a"
-    },
-    {
       "name": "fushi-2.10.0-debug.18353-6da60c4-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.18353-6da60c4-debug.apk",
       "releaseSequence": 18353,
@@ -33,6 +15,24 @@
       "version": "2.10.0-debug.18353",
       "size": 372881941,
       "sha256": "3d107da7385013198cf4fb29ba07a053a14850dfc36bca9a940a0c14fd2eb154"
+    },
+    {
+      "name": "fushi-2.10.0-debug.18353-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.18353-ios.ipa",
+      "releaseSequence": 18353,
+      "tag": "v2.10.0-debug.18353+6da60c4",
+      "version": "2.10.0-debug.18353",
+      "size": 78969704,
+      "sha256": "8203d77203973f3b34857c6e8904f8e24f3313c5fb769656af4f095165c5be7c"
+    },
+    {
+      "name": "fushi-2.10.0-debug.18353-macos-arm64.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.18353-macos-arm64.zip",
+      "releaseSequence": 18353,
+      "tag": "v2.10.0-debug.18353+6da60c4",
+      "version": "2.10.0-debug.18353",
+      "size": 242492357,
+      "sha256": "fbdf844683adcb21c399dd05ad3c6346318cee8cdff49730ed7623c057c3ff06"
     },
     {
       "name": "fushi-2.10.0-debug.18353-windows-setup.exe",
