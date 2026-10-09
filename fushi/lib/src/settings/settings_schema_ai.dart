@@ -10,6 +10,7 @@ import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dar
 import 'package:fushi/src/pages/implementations/ai_web_knowledge_sites_section.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_kit.dart' show settingsResetSpecFor;
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart'
     show subtitleLanguageNativeName;
@@ -47,10 +48,16 @@ SettingsDestination buildAiDestination() {
       // 联网资料：app 自己抓条目正文喂给 AI，与提供商有没有联网工具无关，所以不另设
       // 门控——整页已经过 AI 模块门，这一段跟着页面走。内置站是声明式开关；自定义
       // MediaWiki 站点是可增删的记录列表，走 custom 行（同提供商列表的切法）。
+      //
+      // 2026-10-08 所有者：AI 页外层只放总配置（提供商 / 默认提供商），各功能的单独
+      // 配置折叠起来。下面两段都是功能级配置，默认折叠，收起时摘要报改过几项。
       SettingsSection(
         id: 'ai.web_knowledge',
         title: t.ai_web_knowledge_section,
         footer: t.ai_web_knowledge_section_hint,
+        presentation: SettingsSectionPresentation.collapsed,
+        summaryBuilder: (SettingsContext c) =>
+            _aiSectionModifiedSummary('ai.web_knowledge', c),
         items: <SettingsItem>[
           for (final WebKnowledgeSite site in kBuiltinWebKnowledgeSites)
             SettingsSwitchItem(
@@ -94,6 +101,9 @@ SettingsDestination buildAiDestination() {
             StoreRestrictedCapability.downloads.isAvailable &&
             StoreRestrictedCapability.externalDiscovery.isAvailable &&
             c.appModel.moduleVisibility.isEnabled(ModuleId.browse),
+        presentation: SettingsSectionPresentation.collapsed,
+        summaryBuilder: (SettingsContext c) =>
+            _aiSectionModifiedSummary('ai.video_download', c),
         items: <SettingsItem>[
           // 经 Fushi 互联交给已配对电脑办（PR #1749 的 `/api/assistant` 会话）：判据一直是
           // 「下载执行设备」偏好，此前只挂在下载设置页，AI 页看不到这条路。这里是同一
@@ -261,4 +271,23 @@ SettingsDestination buildAiDestination() {
       ),
     ],
   );
+}
+
+/// 折叠分组的摘要：本组有几项改过默认值（判据与页级「恢复本页默认」同一个
+/// [settingsResetSpecFor]）；一项都没改就不显示摘要。
+///
+/// 在渲染时按 id 回查本页 schema 的那一组，而不是在构造期捕获 item 列表——
+/// [buildAiDestination] 必须保持零参的纯字面量树（见其文档）。
+String? _aiSectionModifiedSummary(String sectionId, SettingsContext context) {
+  if (!context.appModel.isPreferencesReady) return null;
+  final SettingsSection section = buildAiDestination().sections.firstWhere(
+    (SettingsSection candidate) => candidate.id == sectionId,
+  );
+  final int count = section.items
+      .where(
+        (SettingsItem item) =>
+            settingsResetSpecFor(item, context)?.modified ?? false,
+      )
+      .length;
+  return count == 0 ? null : t.settings_section_modified_count(n: count);
 }

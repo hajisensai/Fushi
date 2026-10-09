@@ -250,7 +250,6 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onHostInputToken,
     this.nudgeSurfaceOnRender = false,
     this.restoreScrollTop,
-    this.reorderOf,
     this.lookupPending = false,
   });
 
@@ -271,13 +270,6 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 应用（尾批渲染完兜底应用一次）——Dart 侧渲染后直接 scrollTo 不可靠：内容分批
   /// 进 DOM，首发 popupRendered 时文档往往还不够高，滚不到目标位。
   final double? restoreScrollTop;
-
-  /// 查词「按句意挑词条」：[result] 只是 [reorderOf] 这份已渲染结果的**换序**
-  /// （同一批词头，只是顺序变了）时由宿主传入（[DictionaryPopupEntry.reorderBase]）。
-  /// 此时 [didUpdateWidget] 不走全量重渲染（那会滚回顶、清已选释义、把句子上下文
-  /// 镜像归 0，而宿主制卡草稿没清——BUG-297 型错位），只让 popup.js 的
-  /// `fushiReorderPopupEntries` 挪已渲染的卡片。null = 常态，结果一变就全量推。
-  final DictionarySearchResult? reorderOf;
 
   /// TODO-869：本层弹窗是否有子（后代）弹窗。注入 `window.__hasChildPopup`，让
   /// popup.js 在点卡片本体留白时据此决定是否发 `tapOutside`（有子层才关后代，叶子层
@@ -1504,8 +1496,7 @@ JSON.stringify((function(){
   void didUpdateWidget(DictionaryPopupWebView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.result != widget.result) {
-      // 只是同一批词条换了顺序（AI 挑词）就只挪 DOM，否则全量重推。
-      if (!_tryPushReorder(oldWidget.result)) _pushResults();
+      _pushResults();
     } else if (oldWidget.lookupPending != widget.lookupPending) {
       // 结果对象没变、查询状态变了：复用热槽查词（占位单例 → 占位单例）激活时翻 true，
       // 停驻 / 结果前被关掉时翻 false。只比结果身份会漏掉这两次，页面要么收不到
@@ -1602,47 +1593,6 @@ JSON.stringify((function(){
     await _controller!.evaluateJavascript(
       source: ReaderCaretScripts.instantScrollInvocation(enabled),
     );
-  }
-
-  /// [DictionaryPopupWebView.reorderOf] 的只换序路径：新结果是上一份**已推送**结果
-  /// 的换序时，只把新顺序的词头键交给 popup.js 挪卡片，返回 true。任一条件不满足
-  /// （宿主没声明换序 / 上一份不是页面上那份 / 页面未就绪）返回 false，由调用方照常
-  /// 全量推送——宁可多一次全量渲染，也不把不同内容当换序吞掉。
-  bool _tryPushReorder(DictionarySearchResult previous) {
-    final DictionarySearchResult? base = widget.reorderOf;
-    final InAppWebViewController? controller = _controller;
-    if (base == null || !identical(base, previous)) return false;
-    if (!identical(_lastPushedResult, previous)) return false;
-    if (controller == null || !_ready) return false;
-    final List<String>? keys = _entryOrderKeys(widget.result);
-    if (keys == null) return false;
-    _lastPushedResult = widget.result;
-    if (identical(_lastRenderedResult, previous)) {
-      _lastRenderedResult = widget.result;
-    }
-    controller.evaluateJavascript(
-      source: 'window.fushiReorderPopupEntries && '
-          'window.fushiReorderPopupEntries(${jsonEncode(keys)});',
-    );
-    return true;
-  }
-
-  /// 弹窗词头分组的顺序键（与 popup.js `popupEntryOrderKey` 同形：
-  /// `expression + U+0001 + reading`）；解码不了返回 null。
-  static List<String>? _entryOrderKeys(DictionarySearchResult result) {
-    final String json = result.popupJson ?? buildLookupEntriesJson(result);
-    final Object? decoded;
-    try {
-      decoded = jsonDecode(json);
-    } on FormatException {
-      return null;
-    }
-    if (decoded is! List) return null;
-    return <String>[
-      for (final Object? group in decoded)
-        if (group is Map)
-          '${group['expression'] ?? ''}\u0001${group['reading'] ?? ''}',
-    ];
   }
 
   void _pushResults() {

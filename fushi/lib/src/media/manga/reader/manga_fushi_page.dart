@@ -4367,7 +4367,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         final int highlightCount = await searchDictionaryResult(
           searchTerm: term,
           selectionRect: selectionRect,
-          // Shift 悬停扫过 OCR 字时 JS 回传 fromHover：不为每个扫到的词付费挑词条。
+          // Shift 悬停扫过 OCR 字时 JS 回传 fromHover，记成悬停查词。
           origin: data.fromHover ? LookupOrigin.hover : LookupOrigin.explicit,
         );
         if (!mounted) return;

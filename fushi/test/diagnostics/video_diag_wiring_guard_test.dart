@@ -230,7 +230,7 @@ void main() {
       expect(idx, greaterThan(0));
       final String body = src.substring(
         idx,
-        src.indexOf('Future<void> aiPickLookupEntry(', idx),
+        src.indexOf('Future<void> loadMoreForLayer(', idx),
       );
       expect(body, contains('LookupPerfTrace.begin('));
       expect(body, contains("host: 'reader'"));

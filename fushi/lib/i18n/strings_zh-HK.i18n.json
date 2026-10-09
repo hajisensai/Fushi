@@ -6203,14 +6203,6 @@
   "manga_ocr_ai_mode_desc": "文字框仍在本機偵測，框裡的字交給視覺大模型重讀。裁出的文字框會上傳給「設定 › AI」裡指派的供應商並由其計費。「只重讀沒把握的字」需要本機模型；其他引擎不提供置信度，請用「全部交給大模型」。",
   "manga_ocr_ai_mode_no_provider": "還沒有給漫畫 OCR 指派 AI 供應商，目前不會傳送任何內容。",
   "manga_ocr_ai_mode_open_settings": "開啟 AI 設定",
-  "ai_feature_lookup_context": "查詞：按句意挑詞條",
-  "ai_feature_lookup_context_summary": "把句子、被查的詞和詞典查到的詞頭交給 AI，它挑出符合句意的那個，彈窗把它移到最前。在彈窗頂欄點 ✨，或在查詞設定裡開啟自動判斷。",
-  "lookup_ai_pick_tooltip": "按句意挑詞條（AI）",
-  "lookup_ai_pick_no_sentence": "沒有可供判斷的句子",
-  "lookup_ai_pick_nothing": "只有一個詞頭，無需挑選",
-  "lookup_ai_pick_kept": "AI 認為第一個詞頭就是對的",
-  "lookup_ai_context_auto": "用 AI 按句意挑詞條",
-  "lookup_ai_context_auto_desc": "每次帶句子的查詞都會詢問「設定 › AI」裡指派的供應商，由其計費。關閉時可在彈窗頂欄手動點 ✨。",
   "floating_ball_auto_restore": "自動恢復懸浮球",
   "floating_ball_auto_restore_hint": "關掉懸浮球後，回到 Fushi 時自動重新顯示；選「不自動恢復」則關掉後要在這裡重新打開",
   "floating_ball_auto_restore_both": "應用內外",
@@ -6897,5 +6889,7 @@
   "video_setting_mpv_passthrough_hint": "將 AC-3 / E-AC-3 / TrueHD / DTS-HD 原封不動交給擴音機或 Soundbar 解碼（包括 Atmos）。只應在裝置支援這些格式時開啟，否則可能無聲。直通時請在擴音機上調校音量：應用內的音量與靜音對這些碼流無效，所以倍速不是 1×、音量未調至最大或靜音時，會暫時改由 Fushi 解碼（擴音機上的 Atmos / DTS 標示隨之熄滅）。關閉時一律由 Fushi 解碼，5.1 / 7.1 照樣以環迴立體聲輸出。",
   "shortcut_action_video_lookup_next_word": "下一個詞（掃詞）",
   "shortcut_action_video_lookup_prev_word": "上一個詞（掃詞）",
-  "media_source_open_folder_failed": "無法開啟資料夾，可能已被移動、刪除或中斷連線。"
+  "media_source_open_folder_failed": "無法開啟資料夾，可能已被移動、刪除或中斷連線。",
+  "ai_feature_overrides_none": "全部跟隨預設提供商",
+  "ai_feature_overrides_count": "${n} 項已單獨指定"
 }

@@ -145,7 +145,7 @@ extension _ReaderLookup on _ReaderFushiPageState {
   }
 
   /// 选词来源：JS 回传的 `fromHover`（Shift 悬停 / 悬停查词）是悬停，其余是明确的
-  /// 点击 / 按键。宿主据此决定是否跑「每查一次就付费一次」的旁路工作。
+  /// 点击 / 按键。
   LookupOrigin _lookupOriginOf(ReaderSelectionData data) =>
       data.fromHover ? LookupOrigin.hover : LookupOrigin.explicit;
 
