@@ -867,6 +867,14 @@ VideoKeyboardResolution resolveVideoKeyboardShortcut(
     );
   }
 
+  // 暂停句「整句扫词」：与制卡同族必须绕开下面的「浮层可见 → 先关浮层」。扫词每停
+  // 一词都会弹/换同一张浮层，被守卫吃掉就永远只能关浮层、推不动下一词。浮层不可见
+  // 时照旧消费（执行体自带「无字幕则早退」，不会误吞）。
+  if (action == ShortcutAction.videoLookupNextWord ||
+      action == ShortcutAction.videoLookupPrevWord) {
+    return VideoKeyboardResolution(VideoKeyboardDispatch.run, action);
+  }
+
   // 进入字级选词光标：命中绑定键（默认 Enter）但**画面不精确持焦**时必须放行，让
   // Enter 继续上浮到 WidgetsApp 的 Enter→ActivateIntent，否则控制条 / 面板上每个
   // 按钮的焦点确认被整片吃掉。浮层可见优先于焦点判据（与旧 decideVideoEnterCaretKey

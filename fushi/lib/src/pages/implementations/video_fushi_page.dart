@@ -194,6 +194,7 @@ import 'package:fushi/src/media/video/audio_energy_probe.dart';
 import 'package:fushi/src/media/video/waveform_envelope_cache.dart';
 import 'package:fushi/src/media/video/subtitle_auto_align.dart';
 import 'package:fushi/src/media/video/subtitle_waveform_align_panel.dart';
+import 'package:fushi/src/media/video/subtitle_word_sweep.dart';
 import 'package:fushi/src/media/video/video_chapter_markers.dart';
 import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
@@ -304,6 +305,7 @@ part 'video_fushi/lookup_mining.part.dart';
 part 'video_fushi/disc_menu.part.dart';
 part 'video_fushi/mine_queue.part.dart';
 part 'video_fushi/subtitle_caret.part.dart';
+part 'video_fushi/word_sweep.part.dart';
 part 'video_fushi/fullscreen.part.dart';
 part 'video_fushi/mini_window.part.dart';
 part 'video_fushi/layout.part.dart';
@@ -2240,6 +2242,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 字幕字符命中句柄：查词浮层的 dismiss barrier 用它反查「点到的是不是另一个字幕
   /// 字符」，是则切换查词、保持暂停（见 [_onDismissBarrierTap] / [VideoSubtitleHitTester]）。
   final VideoSubtitleHitTester _subtitleHitTester = VideoSubtitleHitTester();
+
+  /// 暂停句「整句扫词」的会话状态（仅内存）：当前句 / 词序列 / 词游标。执行体见
+  /// `_VideoWordSweep`（`video_fushi/word_sweep.part.dart`）。它是有模态的字级选词
+  /// 光标之外的**无光标查词**路径——正因为不进 caret，浮层的 X=制卡 / Y=发音
+  /// 在扫词中才永远可达。
+  final _WordSweepState _wordSweep = _WordSweepState();
 
   /// 字幕**列表侧栏**字符命中句柄（BUG-874）：与 [_subtitleHitTester] 对称。查词浮层的
   /// dismiss barrier 盖在推挤式字幕列表侧栏之上、抢走点击，故 barrier 在底部字幕 miss 后再
@@ -7137,6 +7145,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           scope: ShortcutScope.universal,
         );
     if (action == null) return false;
+    // 暂停句「整句扫词」：必须排在下面那条「浮层可见 → 已绑键先关浮层」**之前**。
+    // 扫词每停一词都复用/替换同一张浮层（replaceStack + reuseWarmSlot），浮层恒可见；
+    // 排在守卫之后就会变成「按一次只关浮层、不推进下一词」，功能完全失效。与键盘
+    // 通道把 popupMineEntry 绕开同一条守卫是同一个道理。
+    if (action == ShortcutAction.videoLookupNextWord) {
+      _sweepSubtitleWord(forward: true);
+      return true;
+    }
+    if (action == ShortcutAction.videoLookupPrevWord) {
+      _sweepSubtitleWord(forward: false);
+      return true;
+    }
     // BUG-924：词典浮层可见时，任一已绑手柄键先关顶层浮层并消费（对齐阅读器 + 键盘通道），
     // 而非穿透控制后台视频。放在解析出 action 之后——未绑定的键仍交回 GamepadService 兜底
     // （焦点移动等），不误吞导航。
@@ -7414,6 +7434,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // 制卡属于 dictionaryPopup scope，执行体不在 videoActionCallbacks 里。
         if (action == ShortcutAction.popupMineEntry) {
           _mineFromTopPopup();
+          return true;
+        }
+        // 暂停句「整句扫词」：与制卡同族——恰恰只在浮层可见时才有意义（每停一词就是
+        // 一次换词重查），执行体不在 videoActionCallbacks 里，且必须绕开
+        // [resolveVideoKeyboardShortcut] 的「浮层可见 → 先关浮层」守卫（那里已同步
+        // 放行本动作）。手柄通道在 [_handleVideoGamepadButton] 有对应的前置分支。
+        if (action == ShortcutAction.videoLookupNextWord ||
+            action == ShortcutAction.videoLookupPrevWord) {
+          _sweepSubtitleWord(
+            forward: action == ShortcutAction.videoLookupNextWord,
+          );
           return true;
         }
         // 「返回上一级」的执行体是本页的逐级退出阶梯，整条不碰播放器
