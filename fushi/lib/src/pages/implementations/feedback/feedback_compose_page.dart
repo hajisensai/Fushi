@@ -1,15 +1,18 @@
-// 提交反馈：分类 / 标题 / 描述 / 联系方式 + 截图（默认带上打开反馈前的画面）+
+// 提交反馈：分类 / 标题 / 描述 / 联系方式 + 截图（默认带上打开反馈前的画面；可从
+// 相册选、也可直接粘贴剪贴板里的截图——桌面 Ctrl/Cmd+V、描述框长按菜单「粘贴图片」、
+// 显式「粘贴图片」按钮、Android 输入法插入的图片）+
 // 附带日志与设备信息开关 + 已登录排行榜账户时「以 xx 身份提交」。成功后
 // `pop(FeedbackSubmitResult)`，失败就地显示原因（不靠 toast，用户要一直看得到）。
 
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
+import 'package:fushi/src/utils/misc/clipboard_image.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -40,10 +43,22 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   FeedbackSubmitStage? _stage;
   String? _error;
 
+  /// 正在读剪贴板：Ctrl+V 与菜单 / 按钮同时触发时只读一次，避免同一张图加两遍。
+  bool _pasting = false;
+
   bool get _busy => _stage != null;
+
+  int get _room => FeedbackLimits.screenshots - _shots.length;
+
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_onKey);
+  }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
     _title.dispose();
     _body.dispose();
     _contact.dispose();
@@ -59,15 +74,126 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       return;
     }
     if (file == null) return;
+    await _addRawImage(await file.readAsBytes());
+  }
+
+  /// 原始图片字节 → 按反馈上限处理 → 加进附件（满了就不加）。
+  Future<void> _addRawImage(Uint8List raw) async {
     try {
-      final Uint8List bytes = await prepareFeedbackImage(
-        await file.readAsBytes(),
-      );
-      if (!mounted || _shots.length >= FeedbackLimits.screenshots) return;
+      final Uint8List bytes = await prepareFeedbackImage(raw);
+      if (!mounted || _room <= 0) return;
       setState(() => _shots.add(bytes));
     } on Object catch (e, st) {
       ErrorLogService.instance.log('feedback.prepare_image', e, st);
     }
+  }
+
+  /// 桌面 Ctrl+V（macOS Cmd+V）：不论焦点在不在输入框都看一眼剪贴板，有图就收。
+  /// 不吃掉按键——输入框里照常粘贴文字（剪贴板里只有图时那一步什么也不贴）。
+  bool _onKey(KeyEvent event) {
+    if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.keyV) {
+      return false;
+    }
+    final HardwareKeyboard keyboard = HardwareKeyboard.instance;
+    final bool primary = Platform.isMacOS
+        ? keyboard.isMetaPressed
+        : keyboard.isControlPressed;
+    if (!primary || keyboard.isAltPressed || keyboard.isShiftPressed) {
+      return false;
+    }
+    // 只认最上层：提交页上面又压了别的页面 / 弹窗时不抢。
+    if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) return false;
+    unawaited(_pasteFromClipboard(explicit: false));
+    return false;
+  }
+
+  /// 把剪贴板里的图片加进附件。[explicit]（按钮 / 菜单）时没图、满了、读失败都给
+  /// 一句提示；Ctrl+V 粘的多半是文字，没图时不打扰。
+  Future<void> _pasteFromClipboard({required bool explicit}) async {
+    if (_busy || _pasting) return;
+    _pasting = true;
+    try {
+      if (_room <= 0) {
+        // 满了：剪贴板里确实有图才提示（Ctrl+V 粘文字不该冒出「图片满了」）。
+        if (explicit || await readClipboardImage() != null) {
+          _notice(
+            t.feedback_compose_paste_full(max: FeedbackLimits.screenshots),
+          );
+        }
+        return;
+      }
+      final List<Uint8List> images = await readFeedbackImagesFromClipboard(
+        limit: _room,
+      );
+      if (!mounted) return;
+      if (images.isEmpty) {
+        if (explicit) _notice(t.feedback_compose_paste_none);
+        return;
+      }
+      setState(() {
+        for (final Uint8List image in images) {
+          if (_room <= 0) break;
+          _shots.add(image);
+        }
+      });
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('feedback.paste_image', e, st);
+      if (explicit) _notice(t.feedback_compose_paste_failed);
+    } finally {
+      _pasting = false;
+    }
+  }
+
+  void _notice(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
+  }
+
+  /// 描述框的长按 / 右键菜单：系统默认项 + 「粘贴图片」（剪贴板里只有图时系统的
+  /// 「粘贴」不出现，这一项总在，没图就提示）。
+  Widget _bodyContextMenu(BuildContext context, EditableTextState state) {
+    final List<ContextMenuButtonItem> items = <ContextMenuButtonItem>[
+      ...state.contextMenuButtonItems,
+      if (_room > 0 && !_busy)
+        ContextMenuButtonItem(
+          label: t.feedback_compose_paste_image,
+          onPressed: () {
+            state.hideToolbar();
+            unawaited(_pasteFromClipboard(explicit: true));
+          },
+        ),
+    ];
+    return AdaptiveTextSelectionToolbar.buttonItems(
+      anchors: state.contextMenuAnchors,
+      buttonItems: items,
+    );
+  }
+
+  /// Android 输入法（如 Gboard 的剪贴板 / 贴图）直接插入的图片。
+  static const List<String> _kInsertMimeTypes = <String>[
+    'image/png',
+    'image/jpeg',
+    'image/webp',
+    'image/gif',
+  ];
+
+  void _onContentInserted(KeyboardInsertedContent content) {
+    final Uint8List? data = content.data;
+    if (data == null || data.isEmpty || _busy || _room <= 0) return;
+    unawaited(_addRawImage(data));
+  }
+
+  /// 桌面提示 Ctrl+V / ⌘V 粘贴截图；移动端提示长按菜单。
+  String get _pasteHint {
+    if (Platform.isMacOS) {
+      return t.feedback_compose_paste_hint_desktop(key: '⌘V');
+    }
+    if (Platform.isWindows || Platform.isLinux) {
+      return t.feedback_compose_paste_hint_desktop(key: 'Ctrl+V');
+    }
+    return t.feedback_compose_paste_hint_mobile;
   }
 
   Future<void> _submit() async {
@@ -175,6 +301,11 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
               minLines: 5,
               maxLines: 12,
               maxLength: FeedbackLimits.bodyMax,
+              contextMenuBuilder: _bodyContextMenu,
+              contentInsertionConfiguration: ContentInsertionConfiguration(
+                allowedMimeTypes: _kInsertMimeTypes,
+                onContentInserted: _onContentInserted,
+              ),
             ),
             SizedBox(height: tokens.spacing.gap),
             FushiTextField(
@@ -193,6 +324,14 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
               ),
               style: tokens.type.listSubtitle,
             ),
+            if (_room > 0) ...<Widget>[
+              const SizedBox(height: 2),
+              Text(
+                _pasteHint,
+                key: const ValueKey<String>('feedback-paste-hint'),
+                style: tokens.type.metadata,
+              ),
+            ],
             SizedBox(height: tokens.spacing.gap),
             Wrap(
               spacing: tokens.spacing.gap,
@@ -206,23 +345,22 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
                         ? null
                         : () => setState(() => _shots.removeAt(i)),
                   ),
-                if (_shots.length < FeedbackLimits.screenshots)
-                  FushiPressScale(
-                    child: FushiCard(
-                      key: const ValueKey<String>('feedback-add-image'),
-                      onTap: _busy ? null : () => unawaited(_addImage()),
-                      child: SizedBox(
-                        width: 96,
-                        height: 128,
-                        child: FushiTooltip(
-                          message: t.feedback_compose_add_image,
-                          child: const Center(
-                            child: FushiIcon(FushiIcons.addCircle),
-                          ),
-                        ),
-                      ),
-                    ),
+                if (_room > 0) ...<Widget>[
+                  _AddTile(
+                    key: const ValueKey<String>('feedback-add-image'),
+                    icon: FushiIcons.addCircle,
+                    label: t.feedback_compose_add_image,
+                    onTap: _busy ? null : () => unawaited(_addImage()),
                   ),
+                  _AddTile(
+                    key: const ValueKey<String>('feedback-paste-image'),
+                    icon: FushiIcons.paste,
+                    label: t.feedback_compose_paste_image,
+                    onTap: _busy
+                        ? null
+                        : () => unawaited(_pasteFromClipboard(explicit: true)),
+                  ),
+                ],
               ],
             ),
             SizedBox(height: tokens.spacing.card),
@@ -286,6 +424,55 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 附件区的「添加图片」/「粘贴图片」方块：图标 + 一行小字（与缩略图同尺寸）。
+class _AddTile extends StatelessWidget {
+  const _AddTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    super.key,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiPressScale(
+      enabled: onTap != null,
+      child: FushiCard(
+        onTap: onTap,
+        child: SizedBox(
+          width: 96,
+          height: 128,
+          child: FushiTooltip(
+            message: label,
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  FushiIcon(icon),
+                  const SizedBox(height: 6),
+                  Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: tokens.type.metadata,
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

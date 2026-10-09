@@ -29,6 +29,7 @@
 #include "external_video_handoff.h"
 #include "flutter/generated_plugin_registrant.h"
 #include "audio_loopback_capture.h"
+#include "clipboard_image_reader.h"
 #include "voice_hook_reader.h"
 #include "foreground_selection.h"
 #include "game_client_extent.h"
@@ -705,6 +706,35 @@ bool FlutterWindow::OnCreate() {
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
                  result) {
+        if (call.method_name() == "readImage") {
+          // 反馈提交页「粘贴截图」：剪贴板里的位图（编成 PNG）或复制的文件路径。
+          fushi_clipboard::ClipboardImage image;
+          const std::optional<std::string> error =
+              fushi_clipboard::ReadClipboardImage(GetHandle(), &image);
+          if (error.has_value()) {
+            result->Error("read_failed", error.value());
+            return;
+          }
+          if (image.empty()) {
+            result->Success();
+            return;
+          }
+          flutter::EncodableMap map;
+          if (!image.bytes.empty()) {
+            map[flutter::EncodableValue("bytes")] =
+                flutter::EncodableValue(std::move(image.bytes));
+          }
+          if (!image.paths.empty()) {
+            flutter::EncodableList paths;
+            for (std::string& path : image.paths) {
+              paths.emplace_back(std::move(path));
+            }
+            map[flutter::EncodableValue("paths")] =
+                flutter::EncodableValue(std::move(paths));
+          }
+          result->Success(flutter::EncodableValue(std::move(map)));
+          return;
+        }
         if (call.method_name() != "copyImageFile") {
           result->NotImplemented();
           return;

@@ -6897,5 +6897,11 @@
   "video_setting_mpv_passthrough_hint": "Send AC-3, E-AC-3, TrueHD and DTS-HD untouched to your receiver or soundbar so it decodes them (Atmos included). Only turn on if that device supports these formats — otherwise there may be no sound. While passing through, set the volume on the receiver: Fushi's volume and mute can't act on these streams, so at any speed other than 1×, below full volume or when muted, Fushi decodes them itself for the time being (the receiver's Atmos / DTS indicator goes off). When off, Fushi always decodes them and 5.1 / 7.1 still play as surround.",
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
-  "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected."
+  "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
+  "feedback_compose_paste_image": "Paste image",
+  "feedback_compose_paste_hint_desktop": "Press ${key} to paste a screenshot (QQ, WeChat, system screenshots, or image files copied in the file manager)",
+  "feedback_compose_paste_hint_mobile": "Long-press the description box and choose “Paste image” to attach a copied screenshot",
+  "feedback_compose_paste_none": "No image on the clipboard",
+  "feedback_compose_paste_full": "You can attach up to ${max} images; remove one first",
+  "feedback_compose_paste_failed": "Couldn't read the image on the clipboard"
 }

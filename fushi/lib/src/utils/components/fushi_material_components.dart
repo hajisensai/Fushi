@@ -1568,6 +1568,8 @@ class FushiTextField extends StatefulWidget {
     this.onClear,
     this.showObscureToggle = true,
     this.inputFormatters,
+    this.contextMenuBuilder,
+    this.contentInsertionConfiguration,
   }) : assert(controller == null || initialValue == null);
 
   final TextEditingController? controller;
@@ -1617,6 +1619,13 @@ class FushiTextField extends StatefulWidget {
   /// [obscureText] 为真时在尾部给显隐切换钮（M3E 密码框）。
   final bool showObscureToggle;
   final List<TextInputFormatter>? inputFormatters;
+
+  /// 自定义长按 / 右键菜单（给了就整个替换默认菜单，调用方自己带上
+  /// `editableTextState.contextMenuButtonItems`）；为空用设计系统默认菜单。
+  final EditableTextContextMenuBuilder? contextMenuBuilder;
+
+  /// 输入法插入的富内容（Android 键盘的剪贴板图片 / 贴图等）。
+  final ContentInsertionConfiguration? contentInsertionConfiguration;
 
   @override
   State<FushiTextField> createState() => _FushiTextFieldState();
@@ -1751,6 +1760,9 @@ class _FushiTextFieldState extends State<FushiTextField> {
       enabled: widget.enabled,
       maxLength: widget.maxLength,
       inputFormatters: widget.inputFormatters,
+      contextMenuBuilder:
+          widget.contextMenuBuilder ?? fushiDefaultTextContextMenuBuilder,
+      contentInsertionConfiguration: widget.contentInsertionConfiguration,
       keyboardType: widget.keyboardType,
       textInputAction: widget.textInputAction,
       maxLines: widget.expands ? null : widget.maxLines,

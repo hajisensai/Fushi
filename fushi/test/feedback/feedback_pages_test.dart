@@ -337,7 +337,9 @@ void main() {
       find.byKey(const ValueKey<String>('feedback-ticket-newnewnew0')),
       findsOneWidget,
     );
-    expect(find.text(t.feedback_submitted), findsOneWidget);
+    // 提交页退场动画还没走完时它的 Scaffold 也挂着同一条 SnackBar（ScaffoldMessenger
+    // 给每个已注册的 Scaffold 都显示），走得快慢看机器，所以不数个数。
+    expect(find.text(t.feedback_submitted), findsWidgets);
   });
 
   testWidgets('开发者账户：中心出现处理台入口', (WidgetTester tester) async {

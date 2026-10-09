@@ -23,6 +23,7 @@ add_custom_command(
 add_executable(${BINARY_NAME} WIN32
   "attached_text_surface_window.cpp"
   "audio_loopback_capture.cpp"
+  "clipboard_image_reader.cpp"
   "layer_origin_solver.cpp"
   "voice_hook_reader.cpp"
   "crash_dump.cpp"
@@ -131,6 +132,24 @@ add_custom_target(fushi_windows_ime_space_gate
   VERBATIM
 )
 add_dependencies(${BINARY_NAME} fushi_windows_ime_space_gate)
+
+# 反馈「粘贴截图」：截图工具的 32bpp DIB（alpha 常全 0）→ 不透明 PNG、掩码偏移、
+# CF_HDROP → UTF-8 路径。只测纯转换、不碰真剪贴板，所以能随每次构建跑。
+add_executable(fushi_windows_clipboard_image_reader_test
+  "clipboard_image_reader.cpp"
+  "tests/clipboard_image_reader_test.cpp"
+)
+apply_standard_settings(fushi_windows_clipboard_image_reader_test)
+target_compile_definitions(fushi_windows_clipboard_image_reader_test
+  PRIVATE "NOMINMAX")
+target_link_libraries(fushi_windows_clipboard_image_reader_test PRIVATE
+  ole32 shell32 windowscodecs user32)
+add_custom_target(fushi_windows_clipboard_image_reader_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_clipboard_image_reader_test>"
+  DEPENDS fushi_windows_clipboard_image_reader_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_clipboard_image_reader_gate)
 
 # BUG-1450: same treatment for the IME association state machine. Getting the
 # coalescing or the failure path wrong either strands the window with the IME
