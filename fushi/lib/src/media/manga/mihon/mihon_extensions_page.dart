@@ -13,6 +13,7 @@ import 'package:fushi/src/media/manga/extension_store_list.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_updates.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_extension_uninstall.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
@@ -441,19 +442,13 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     }
   }
 
-  Future<void> _uninstall(MangaExtensionRow extension) async {
-    final bool confirmed = await showFushiConfirmDialog(
-      context: context,
-      title: t.mihon_extension_uninstall,
-      message: extension.name,
-      icon: FushiIcons.delete,
-      confirmLabel: t.mihon_extension_uninstall,
-      destructive: true,
-    );
-    if (confirmed) {
-      await _manager!.uninstallExtension(extension);
-    }
-  }
+  /// 与来源页「卸载扩展」同一处确认 + 执行（确认框列出会一起移除的源）。
+  Future<void> _uninstall(MangaExtensionRow extension) =>
+      confirmAndUninstallMihonExtension(
+        context,
+        manager: _manager!,
+        extension: extension,
+      );
 
   /// 页头三动作。内嵌时降级成本节顶部的按钮行，能力一个不少。
   ///
@@ -1396,8 +1391,21 @@ class _AvailableExtensionTileState extends State<_AvailableExtensionTile> {
       busy: widget.busy,
       enabled: installed?.enabled,
       onEnabledChanged: widget.onEnabledChanged,
-      secondaryLabel: widget.showPreview ? t.mihon_extension_preview : null,
-      onSecondary: widget.onPreview,
+      // 次要动作：未安装 = 预览；已安装且有更新 = 卸载——主按钮此时是「更新」，
+      // 不另给卸载入口的话，不想更新的用户就卸不掉（应用内反馈）。
+      secondaryLabel: widget.showPreview
+          ? t.mihon_extension_preview
+          : update && installed != null
+          ? t.mihon_extension_uninstall
+          : null,
+      onSecondary: widget.showPreview
+          ? widget.onPreview
+          : update && installed != null
+          ? widget.onUninstall
+          : null,
+      secondaryStyle: !widget.showPreview && update && installed != null
+          ? ExtensionTileActionStyle.outlined
+          : ExtensionTileActionStyle.text,
       // 安装 = filled 主操作；有更新 = tonal 强调；卸载 = outlined 次要。
       primaryLabel: installed == null
           ? t.mihon_extension_install
