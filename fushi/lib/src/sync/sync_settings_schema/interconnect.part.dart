@@ -2103,6 +2103,8 @@ class _InterconnectProfileTransferWidgetState
             ? t.interconnect_profile_uploaded(name: name)
             : t.interconnect_profile_downloaded(name: name),
       );
+      // 下载已切到新配置：设置页自己也按新配置重建（与配置选择器切换后同一做法）。
+      if (!_isUpload) widget.settingsContext.refresh();
     } catch (e, stack) {
       ErrorLogService.instance.log('Interconnect.profileTransfer', e, stack);
       if (!mounted) return;
@@ -2136,12 +2138,17 @@ class _InterconnectProfileTransferWidgetState
     final String? json = await InterconnectSyncBackend.instance
         .getRemoteProfileJson(repo: SyncRepository(appModel.database));
     if (json == null) return null;
-    final ProfileRepository repo = appModel.interconnectProfileRepository();
-    // createNew（默认）：本机现有配置一份都不动。
-    final int id = await repo.importProfileFromJson(json);
-    final ProfileRow? row = await repo.getProfileById(id);
+    // 所有者 2026-10-09 拍板（issue #1997）：下载完直接切到这份配置。导入仍是
+    // createNew（本机既有配置一份都不覆盖），切换走配置选择器同一条 switchProfile：
+    // 先把当前配置的实时设置快照回它自己、作废在飞草稿，再应用新配置并刷新各缓存。
+    final ProfileViewModel profiles =
+        widget.settingsContext.ref.read(profileViewModelProvider.notifier);
+    final int id = await profiles.importAndSwitchProfile(json);
+    final ProfileRow? row =
+        await appModel.interconnectProfileRepository().getProfileById(id);
     return row?.name ?? '';
   }
+
 
   @override
   Widget build(BuildContext context) {

@@ -17,6 +17,7 @@ import 'package:fushi/src/pages/implementations/migration_import_page.dart';
 import 'package:fushi/src/pages/implementations/external_reader_import_page.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';

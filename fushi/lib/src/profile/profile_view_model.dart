@@ -229,6 +229,19 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
         await _onProfileApplied();
       });
 
+  /// 互联「下载配置」：把收到的配置作为**新**配置落地（不覆盖任何既有配置），再走
+  /// 与配置选择器同一条 [switchProfile] 切过去（issue #1997，所有者 2026-10-09 拍板：
+  /// 下载完直接生效，不再让用户自己去「配置管理」里切）。
+  ///
+  /// 切换前的规矩与手动切换完全一致：当前配置的实时设置先快照回它自己那一份，在飞的
+  /// 设置草稿随配置代次一起作废，切换后 [_onProfileApplied] 刷新偏好缓存 / 词典 /
+  /// 阅读器设置。返回新配置的 id。
+  Future<int> importAndSwitchProfile(String json) async {
+    final int id = await importProfile(json);
+    await switchProfile(id);
+    return id;
+  }
+
   Future<void> createProfile(String name) =>
       _whileInvalidatingProfileDrafts(() async {
         await _repo.snapshotCurrentSettings(state.activeProfileId);
