@@ -138,7 +138,6 @@
  "lib/src/pages/implementations/series_shelf_card.dart": 1,
  "lib/src/pages/implementations/shortcut_settings_page.dart": 10,
  "lib/src/pages/implementations/source_toggle_section.dart": 1,
- "lib/src/pages/implementations/stat_overview.dart": 4,
  "lib/src/pages/implementations/stat_period_detail_sheet.dart": 4,
  "lib/src/pages/implementations/stat_range_bar.dart": 5,
  "lib/src/pages/implementations/stat_session_list.dart": 6,

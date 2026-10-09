@@ -7,11 +7,12 @@ import 'package:fushi_core/fushi_core.dart';
 void main() {
   final StatWindow w = StatWindow(DateTime(2026, 8, 29, 15, 30));
 
-  test('近 7 天恰 7 个自然日（含今日）', () {
+  test('本周 = 自然周（周一起）；近 7 天恰 7 个自然日（含今日）', () {
+    // 2026-08-29 是周六。
     expect(w.todayKey, '2026-08-29');
-    expect(w.weekFromKey, '2026-08-23');
-    expect(w.inWeek('2026-08-23'), isTrue);
-    expect(w.inWeek('2026-08-22'), isFalse, reason: '第 8 天不在窗口内');
+    expect(w.weekFromKey, '2026-08-24');
+    expect(w.inWeek('2026-08-24'), isTrue, reason: '周一属本周');
+    expect(w.inWeek('2026-08-23'), isFalse, reason: '上周日不属本周');
     expect(w.inWeek('2026-08-29'), isTrue);
     expect(w.inWeek('2026-08-30'), isFalse, reason: '未来日期不算');
     expect(w.lastDayKeys(7), hasLength(7));
@@ -19,12 +20,19 @@ void main() {
     expect(w.lastDayKeys(7).last, '2026-08-29');
   });
 
-  test('上一个 7 天窗口与本周不重叠、恰 7 天', () {
-    expect(w.prevWeekFromKey, '2026-08-16');
-    expect(w.inPrevWeek('2026-08-16'), isTrue);
+  test('上周 = 上周同期：与本周已过天数同长、不重叠', () {
+    expect(w.prevWeekFromKey, '2026-08-17');
+    expect(w.prevWeekToKey, '2026-08-22');
+    expect(w.inPrevWeek('2026-08-17'), isTrue);
     expect(w.inPrevWeek('2026-08-22'), isTrue);
-    expect(w.inPrevWeek('2026-08-23'), isFalse, reason: '本周首日不属于上周');
-    expect(w.inPrevWeek('2026-08-15'), isFalse);
+    expect(w.inPrevWeek('2026-08-23'), isFalse, reason: '上周日超出同期');
+    expect(w.inPrevWeek('2026-08-24'), isFalse, reason: '本周首日不属于上周');
+    expect(w.inPrevWeek('2026-08-16'), isFalse);
+    // 周一：本周只有今天，上周同期只有上周一。
+    final StatWindow monday = StatWindow(DateTime(2026, 8, 24, 9));
+    expect(monday.weekFromKey, '2026-08-24');
+    expect(monday.prevWeekFromKey, '2026-08-17');
+    expect(monday.prevWeekToKey, '2026-08-17');
   });
 
   test('近 30 天恰 30 个自然日', () {
@@ -67,7 +75,7 @@ void main() {
 
   test('跨月 / 跨年边界按日历减天', () {
     final StatWindow ny = StatWindow(DateTime(2026, 1, 3));
-    expect(ny.weekFromKey, '2025-12-28');
+    expect(ny.weekFromKey, '2025-12-29', reason: '跨年的自然周从上年周一起');
     expect(ny.monthFromKey, '2025-12-05');
   });
 
@@ -79,8 +87,8 @@ void main() {
     test('凌晨 2 点仍属昨日：todayKey 与所有窗口起点整体前移一天', () {
       final StatWindow early = StatWindow(DateTime(2026, 8, 30, 2));
       expect(early.todayKey, '2026-08-29');
-      expect(early.weekFromKey, '2026-08-23');
-      expect(early.prevWeekFromKey, '2026-08-16');
+      expect(early.weekFromKey, '2026-08-24');
+      expect(early.prevWeekFromKey, '2026-08-17');
       expect(early.monthFromKey, '2026-07-31');
       expect(early.lastDayKeys(7).last, '2026-08-29');
       expect(early.inWeek('2026-08-30'), isFalse, reason: '日历今日还没开始');

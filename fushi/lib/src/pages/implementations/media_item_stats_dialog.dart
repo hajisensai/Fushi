@@ -133,6 +133,7 @@ MediaItemStatsSummary summarizeMediaItemStats(
   required DateTime now,
 }) {
   final StatWindow window = StatWindow(now);
+  final String last7FromKey = window.lastDayKeys(7).first;
   int totalMs = 0;
   int totalChars = 0;
   int todayMs = 0;
@@ -158,7 +159,9 @@ MediaItemStatsSummary summarizeMediaItemStats(
       todayMs += f.ms;
       todayChars += f.chars;
     }
-    if (window.inWeek(f.dateKey)) {
+    // 「近 7 天」是滚动窗口（含今日恰 7 天），不是 [StatWindow.inWeek] 的自然周。
+    if (f.dateKey.compareTo(last7FromKey) >= 0 &&
+        f.dateKey.compareTo(window.todayKey) <= 0) {
       weekMs += f.ms;
       weekChars += f.chars;
     }

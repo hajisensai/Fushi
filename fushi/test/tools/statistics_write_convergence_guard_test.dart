@@ -101,9 +101,6 @@ const List<String> kStatPages = <String>[
   'lib/src/pages/implementations/home_dashboard_page.dart',
   'lib/src/pages/implementations/statistics_center_page.dart',
   'lib/src/pages/implementations/stat_period_detail_sheet.dart',
-  // 统计页共享的关键指标（今日 / 本周 / 近 7 日活跃、本周目标）按 StatWindow 切片
-  // （2026-10 统计中心重设计，四个统计页同一个 computeStatKpis）。
-  'lib/src/pages/implementations/stat_dashboard.dart',
   'lib/src/pages/implementations/video_stat_aggregates.dart',
   'lib/src/pages/implementations/game_stat_aggregates.dart',
   'lib/src/pages/implementations/stat_activity.dart',
@@ -270,13 +267,19 @@ void main() {
     }
     final String window = read('lib/src/stats/stat_window.dart');
     expect(
-      containsCodeLine(window, '_keyDaysAgo(now, 6)'),
+      containsCodeLine(window, 'for (int i = n - 1; i >= 0; i--) _keyDaysAgo(_now, i),'),
       isTrue,
-      reason: '近 7 天起点 = 6 天前（含今日恰 7 天）',
+      reason: '近 n 天 = lastDayKeys(n)：含今日恰 n 天（近 7 天起点 = 6 天前）',
     );
     expect(containsCodeLine(window, '_keyDaysAgo(now, 29)'), isTrue);
+    // 本周 = 自然周（周一起，2026-10-09，与范围条「周」同口径）；上周 = 上周同期
+    // （上周一 .. 今日-7），与本周已过天数同长、不重叠。
+    expect(containsCodeLine(window, 'weekFromKey = _mondayOf(today),'), isTrue);
     expect(
-      containsCodeLine(window, '_keyDaysAgo(now, 13)'),
+      containsCodeLine(
+        window,
+        'prevWeekToKey = FushiDatabase.statDateKeyPlusDays(today, -7),',
+      ),
       isTrue,
       reason: '上周窗口与本周不重叠且同长',
     );
@@ -302,10 +305,11 @@ void main() {
     expect(
       containsCodeLine(
         read('lib/src/pages/implementations/reader_fushi/navigation.part.dart'),
-        '_readLedger.arrive(',
+        'ledger: _readLedger,',
       ),
       isTrue,
-      reason: 'EPUB 新读字数经 ReadUnitLedger（翻走即计）记进当前段',
+      reason: 'EPUB 新读字数经 ReadUnitLedger（翻走即计，经开始方式门落定，'
+          'BUG-3100）记进当前段',
     );
     final String manga = read(
       'lib/src/media/manga/reader/manga_fushi_page.dart',
