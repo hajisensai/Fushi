@@ -60,6 +60,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_delete.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show localVideoFileCandidates, videoBookHasLocalFiles;
+import 'package:fushi/src/media/video/remote_video_subtitle_refetch.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
@@ -1530,7 +1531,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       );
       // BUG-2714：清单到手才知道哪些中断的下载还能接（不挡列表渲染）。
       unawaited(_resumeInterruptedRemoteDownloads(source, remoteOnly));
-      return _RemoteVideoState(videos: remoteOnly);
+      return _RemoteVideoState(
+        videos: remoteOnly,
+        localCopies: <String, RemoteVideoInfo>{
+          for (final RemoteVideoInfo video in videos)
+            if (localUids.contains(video.id)) video.id: video,
+        },
+      );
     } catch (e) {
       // spec §2.4 离线语义：拉取失败 → 占位卡不出现（failed 门控），只剩本地库。
       // 云盘侧清单结构非法（FormatException）也落这里 → 本轮云视频不可用。
@@ -3339,6 +3346,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               _pickSubtitle(book);
             },
           ),
+          // 从服务端（互联 host / 媒体服务器）下载来的视频：服务端换了字幕、或下载
+          // 时拿的那份不对，从这里重新拉一份（服务端有多份文本字幕时让用户挑）。
+          if (_remoteSubtitleRefetchSource(book) != null)
+            DialogQuickAction(
+              label: t.video_remote_subtitle_refetch,
+              icon: Icons.subtitles_outlined,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                unawaited(_refetchRemoteSubtitle(book));
+              },
+            ),
           DialogQuickAction(
             label: t.add_to_collection,
             icon: Icons.collections_bookmark_outlined,
@@ -3440,6 +3458,103 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ],
       ),
     );
+  }
+
+  /// [book] 若是从当前远端来源（互联 host / 媒体服务器）下载来的，返回服务端清单里
+  /// 对应的那一条；否则 null（菜单不露「重新从服务端拉取字幕」）。云盘来源没有字幕
+  /// 端点（[_remoteVideoClient] 为 null），播放列表书没有单一字幕语义，都不露。
+  RemoteVideoInfo? _remoteSubtitleRefetchSource(VideoBookRow book) {
+    if (_remoteVideoClient == null) return null;
+    if (playlistEpisodeCount(book.playlistJson) >= 2) return null;
+    return _lastRemoteState?.localCopies[book.bookUid];
+  }
+
+  /// 「重新从服务端拉取字幕」：列出服务端当前能给的文本字幕（默认外挂 + 容器文本轨），
+  /// 多于一份时让用户挑，然后经 [refetchRemoteVideoSubtitle] 原子替换本机字幕与 cue。
+  /// 观看进度 / 调轴 / 统计不受影响。
+  Future<void> _refetchRemoteSubtitle(VideoBookRow book) async {
+    final RemoteVideoClient? client = _remoteVideoClient;
+    final RemoteVideoInfo? video = _remoteSubtitleRefetchSource(book);
+    if (client == null || video == null) return;
+    final List<RemoteSubtitleRefetchOption> options =
+        remoteSubtitleRefetchOptions(video);
+    if (options.isEmpty) {
+      FushiToast.show(msg: t.video_remote_subtitle_refetch_none);
+      return;
+    }
+    RemoteSubtitleRefetchOption? option = options.first;
+    if (options.length > 1) {
+      option = await showFushiChoiceDialog<RemoteSubtitleRefetchOption>(
+        context: context,
+        title: t.video_remote_subtitle_refetch_pick,
+        icon: Icons.subtitles_outlined,
+        options: <FushiChoiceOption<RemoteSubtitleRefetchOption>>[
+          for (final RemoteSubtitleRefetchOption o in options)
+            FushiChoiceOption<RemoteSubtitleRefetchOption>(
+              value: o,
+              label: _remoteSubtitleOptionLabel(o),
+              subtitle: o.fileName,
+            ),
+        ],
+      );
+      if (option == null || !mounted) return;
+    }
+    final SubtitleAttachResult result;
+    final Directory tempDir = await Directory.systemTemp.createTemp(
+      'fushi_subtitle_refetch',
+    );
+    try {
+      result = await refetchRemoteVideoSubtitle(
+        client: client,
+        video: video,
+        option: option,
+        repo: widget.repo,
+        book: book,
+        tempDir: tempDir,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('HomeVideo.refetchRemoteSubtitle', e, stack);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.video_remote_subtitle_refetch_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    } finally {
+      try {
+        tempDir.deleteSync(recursive: true);
+      } catch (_) {
+        // best-effort temp cleanup
+      }
+    }
+    if (!mounted) return;
+    if (result.outcome == SubtitleAttachOutcome.attached) {
+      _refresh();
+      FushiToast.show(
+        msg: t.video_remote_subtitle_refetched,
+        severity: ToastSeverity.success,
+      );
+      return;
+    }
+    FushiToast.show(
+      msg: subtitleAttachMessage(result, title: book.title),
+      severity: ToastSeverity.error,
+    );
+  }
+
+  /// 选择框里一条服务端字幕的标题：默认字幕用固定文案，内封轨按「标题 · 语言 ·
+  /// codec」拼（服务端没给的段落省略）。
+  String _remoteSubtitleOptionLabel(RemoteSubtitleRefetchOption option) {
+    final RemoteVideoEmbeddedSubtitleTrack? track = option.track;
+    if (track == null) return t.video_remote_subtitle_refetch_default;
+    final List<String> parts = <String>[
+      if (track.title != null && track.title!.trim().isNotEmpty)
+        track.title!.trim(),
+      if (track.language != null && track.language!.trim().isNotEmpty)
+        track.language!.trim(),
+      track.codec,
+    ];
+    return parts.join(' · ');
   }
 
   /// 清除这一集的观看进度（行级四列 + 互联 LWW 镜像键，见
@@ -8551,9 +8666,18 @@ bool shouldFetchRemoteVideoList({
 }) => forceRefresh || source is! JellyfinVideoClient || jellyfinAutoList;
 
 class _RemoteVideoState {
-  const _RemoteVideoState({required this.videos, this.failed = false});
+  const _RemoteVideoState({
+    required this.videos,
+    this.failed = false,
+    this.localCopies = const <String, RemoteVideoInfo>{},
+  });
 
   final List<RemoteVideoInfo> videos;
+
+  /// 远端清单里**本机已经下载过**的条目（被去重藏掉、不出占位卡），按 bookUid（=
+  /// 远端 id）索引：视频卡菜单「重新从服务端拉取字幕」据此知道服务端当前给得出
+  /// 哪些字幕。
+  final Map<String, RemoteVideoInfo> localCopies;
 
   /// 远端目录拉取失败（离线/未配对/后端不可达/host 响应超时）：占位卡不渲染
   /// （spec §2.4）。初次静默加载走离线语义不打扰用户；**显式下拉刷新**失败时

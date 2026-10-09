@@ -1724,15 +1724,38 @@ class InterconnectSyncBackend extends SyncBackend
       _listRemote('/api/library/audiobooks', RemoteAudiobookInfo.fromJson);
 
   /// 从对端 host 下载 bookKey 为 [bookKey] 的有声书到 [dest] 文件。
+  ///
+  /// [fresh]：用户显式「重新下载」——让 host 作废它 15 分钟导出缓存里的旧包
+  /// （`?fresh=1`），否则 host 刚重新转录 / 换了字幕，拿到的仍是改之前打的包。
+  /// 旧 host 不认这个参数，照旧回缓存包（最多旧 15 分钟）。
   Future<void> getRemoteAudiobook(
     String bookKey,
+    File dest, {
+    SyncTransferProgress? onProgress,
+    bool fresh = false,
+  }) async {
+    await _ensureResolved();
+    await downloadContentFile(
+      fileId:
+          '$_apiBase/api/library/audiobooks/${Uri.encodeComponent(bookKey)}'
+          '${fresh ? '?fresh=1' : ''}',
+      destination: dest,
+      onProgress: onProgress,
+    );
+  }
+
+  /// 只下载有声书 [identity] 的**字幕侧**包（对齐文件 + 字幕 + cue，不含音频）到
+  /// [dest]，供「只更新字幕」。旧 host 没有这条端点 → 404 抛 [SyncBackendError]，
+  /// 调用方提示用户改走整本重下。
+  Future<void> getRemoteAudiobookSubtitles(
+    String identity,
     File dest, {
     SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     await downloadContentFile(
-      fileId:
-          '$_apiBase/api/library/audiobooks/${Uri.encodeComponent(bookKey)}',
+      fileId: '$_apiBase/api/library/audiobooks/'
+          '${Uri.encodeComponent(identity)}/subtitles',
       destination: dest,
       onProgress: onProgress,
     );

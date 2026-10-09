@@ -61,6 +61,34 @@ class SyncAssetPackageIncompleteException implements Exception {
   }
 }
 
+/// [SyncAssetPackageService.importAudioSubtitlePackage] 拒绝「只更新字幕」的原因。
+enum AudiobookSubtitleRefreshFailure {
+  /// 本机没有这本有声书（没有音频可配）：只更新字幕无从谈起，要走整本下载。
+  notLocal,
+
+  /// 本机音频条数与 host 不同：cue 的 `audioFileIndex` 是位置索引，硬搬会整本
+  /// 错位，要改走「重新下载有声书」把音频一起换掉。
+  audioMismatch,
+}
+
+/// 「只更新字幕」在写盘 / 写库之前被拒绝（见 [AudiobookSubtitleRefreshFailure]）。
+class AudiobookSubtitleRefreshException implements Exception {
+  const AudiobookSubtitleRefreshException(
+    this.reason, {
+    this.localAudioCount,
+    this.remoteAudioCount,
+  });
+
+  final AudiobookSubtitleRefreshFailure reason;
+  final int? localAudioCount;
+  final int? remoteAudioCount;
+
+  @override
+  String toString() => 'AudiobookSubtitleRefreshException(${reason.name}'
+      '${localAudioCount == null ? '' : ', local=$localAudioCount'}'
+      '${remoteAudioCount == null ? '' : ', remote=$remoteAudioCount'})';
+}
+
 class SyncAssetPackageService {
   SyncAssetPackageService({required FushiDatabase db}) : _db = db;
 
@@ -383,8 +411,16 @@ class SyncAssetPackageService {
         followAudio: Value(_nullableBool(audiobook, 'followAudio')),
       ));
 
+      // BUG-3098：本机已有这本书的 SrtBooks 行（重新下载有声书、坏包补拉）时必须
+      // 带上它的 `id` 做原位更新——`upsertSrtBook` 的冲突目标是主键 `id`，不带
+      // id 的插入撞的是 UNIQUE(uid)，整个事务回滚，「重新下载」永远失败。按 bookKey
+      // 找到的行沿用本机 uid：书架条目 / 标签 / 合集都挂在本机 uid 上，换成 host
+      // uid 会凭空多出一本同 bookKey 的 SRT 书。
+      final SrtBookRow? existingSrt = await _existingSrtBookFor(
+          bookKey: bookKey, uid: _stringValue(srtBook, 'uid'));
       await _db.upsertSrtBook(SrtBooksCompanion.insert(
-        uid: _stringValue(srtBook, 'uid'),
+        id: existingSrt == null ? const Value.absent() : Value(existingSrt.id),
+        uid: existingSrt?.uid ?? _stringValue(srtBook, 'uid'),
         title: _stringValue(srtBook, 'title'),
         author: Value(_nullableString(srtBook, 'author')),
         audioRoot: Value(targetDir.path),
@@ -405,7 +441,8 @@ class SyncAssetPackageService {
             ]
           : const <String>[];
       if (srtTagNames.isNotEmpty) {
-        final String importedSrtUid = _stringValue(srtBook, 'uid');
+        final String importedSrtUid =
+            existingSrt?.uid ?? _stringValue(srtBook, 'uid');
         for (final String name in srtTagNames) {
           if (name.isEmpty) continue;
           final int tagId = await _db.getOrCreateTagByName(name);
@@ -482,7 +519,10 @@ class SyncAssetPackageService {
     // 与 srt-backed 分支同纪律：写库段原子（BUG-2551）。半写下的 SrtBooks 行会让
     // 书架上的 standalone 占位卡永久消失，用户再没有第二次下载的入口。
     await _db.transaction(() async {
+      // BUG-3098：同 uid 已在本机（重新下载）→ 带 id 原位更新，不撞 UNIQUE(uid)。
+      final SrtBookRow? existingSrt = await _db.getSrtBookByUid(uid);
       await _db.upsertSrtBook(SrtBooksCompanion.insert(
+        id: existingSrt == null ? const Value.absent() : Value(existingSrt.id),
         uid: uid,
         title: _stringValue(srtBook, 'title'),
         author: Value(_nullableString(srtBook, 'author')),
@@ -528,6 +568,250 @@ class SyncAssetPackageService {
         }).toList(),
       );
     });
+  }
+
+  /// BUG-3098：本机与包对应的那一行 SrtBooks——先按包里的 [uid]，再按 [bookKey]
+  /// （本机自己导入、uid 与 host 不同的同一本书）。按 bookKey 只取一行：历史上
+  /// 撞过号的库里同 bookKey 可能不止一行，`getSingleOrNull` 会直接抛。
+  Future<SrtBookRow?> _existingSrtBookFor({
+    required String bookKey,
+    required String uid,
+  }) async {
+    final SrtBookRow? byUid = await _db.getSrtBookByUid(uid);
+    if (byUid != null) return byUid;
+    if (bookKey.isEmpty) return null;
+    return (_db.select(_db.srtBooks)
+          ..where(($SrtBooksTable t) => t.bookKey.equals(bookKey))
+          ..orderBy(<OrderClauseGenerator<$SrtBooksTable>>[
+            ($SrtBooksTable t) => OrderingTerm.asc(t.id),
+          ])
+          ..limit(1))
+        .getSingleOrNull();
+  }
+
+  /// 只含**字幕侧**的有声书包（`kind: audioSubtitles`）：对齐文件 + 字幕 + 逐 token
+  /// 时间 sidecar（有则带）+ 全部 cue，**不含音频与封面**。
+  ///
+  /// 用途是 client「只更新字幕」：host 上重新转录 / 重新对齐 / 换了字幕之后，client
+  /// 不必为几十 KB 的字幕把几百 MB 的音频重下一遍。manifest 仍带 `audioPaths`
+  /// （host 侧的音频清单），导入端只拿它的**条数**核对本机音频——cue 的
+  /// `audioFileIndex` 是位置索引，音频条数不同的两份有声书之间搬 cue 会整本错位。
+  ///
+  /// 身份解析与 [exportAudioDatabasePackage] 相同：[bookKey] 非空且有 Audiobooks 行
+  /// 走 srt-backed（cue 在 bookKey 命名空间），否则走纯 SRT（cue 在 uid 命名空间）。
+  Future<File> exportAudioSubtitlePackage({
+    required String srtBookUid,
+    required File outputFile,
+    String? bookKey,
+  }) async {
+    final SrtBookRow srtBook = (await _db.getSrtBookByUid(srtBookUid))!;
+    final String effectiveBookKey =
+        (bookKey != null && bookKey.isNotEmpty) ? bookKey : srtBook.bookKey;
+    final AudiobookRow? audiobook = effectiveBookKey.isNotEmpty
+        ? await _db.getAudiobookByBookKey(effectiveBookKey)
+        : null;
+    final String cueKey = audiobook != null ? effectiveBookKey : srtBookUid;
+    final List<AudioCueRow> cues = await _db.getCuesForBook(cueKey);
+    final _EffectiveAudio audiobookAudio = audiobook == null
+        ? const _EffectiveAudio.empty()
+        : await _resolveEffectiveAudio(
+            audiobook.audioPathsJson, audiobook.audioRoot);
+    final _EffectiveAudio srtAudio =
+        await _resolveEffectiveAudio(srtBook.audioPathsJson, srtBook.audioRoot);
+
+    final List<String> missingResources = <String>[];
+    final Map<String, String> resourceNames = <String, String>{};
+    final Map<String, String> archivePathToSource = <String, String>{};
+    final Set<String> usedNames = <String>{};
+    void addResource(String sourcePath, {String? name}) {
+      if (resourceNames.containsKey(sourcePath)) return;
+      if (!File(sourcePath).existsSync()) {
+        missingResources.add(sourcePath);
+        return;
+      }
+      final String resolved = name != null && usedNames.add(name)
+          ? name
+          : _uniqueFileName(File(sourcePath), usedNames);
+      resourceNames[sourcePath] = resolved;
+      archivePathToSource['resources/$resolved'] = sourcePath;
+    }
+
+    if (audiobook != null) addResource(audiobook.alignmentPath);
+    addResource(srtBook.srtPath);
+    // 逐 token 时间 sidecar 与字幕**同名不同扩展**才会被读到（`<srt>.tokens.jsonl`），
+    // 所以落地名跟着字幕在包里的名字走，不能独立去重成 `1-xxx.tokens.jsonl`。
+    final String? srtName = resourceNames[srtBook.srtPath];
+    final String tokensSidecar =
+        p.setExtension(srtBook.srtPath, '.tokens.jsonl');
+    if (srtName != null && File(tokensSidecar).existsSync()) {
+      addResource(tokensSidecar,
+          name: p.setExtension(srtName, '.tokens.jsonl'));
+    }
+
+    final String manifestJson = jsonEncode(<String, Object?>{
+      'schemaVersion': 1,
+      'kind': 'audioSubtitles',
+      'audiobook': audiobook != null
+          ? _audiobookManifest(audiobook, audiobookAudio.paths)
+          : null,
+      'srtBook': _srtBookManifest(srtBook, srtAudio.paths),
+      'cues': cues.map(_audioCueManifest).toList(),
+      'resources': resourceNames,
+      if (missingResources.isNotEmpty) 'missingResources': missingResources,
+    });
+
+    outputFile.parent.createSync(recursive: true);
+    await _zipPackageInIsolate(
+      outputPath: outputFile.path,
+      manifestJson: manifestJson,
+      archivePathToSource: archivePathToSource,
+      storeResources: false,
+    );
+    return outputFile;
+  }
+
+  /// 导入 [exportAudioSubtitlePackage] 产出的字幕包，**原位**换掉本机这本有声书的
+  /// 字幕 / 对齐文件 / cue，音频、封面、标签、阅读进度、听书断点、调轴一概不动。
+  ///
+  /// [bookKeyOverride] 与 [importAudioDatabasePackage] 同义：把包钉到本机这本书上
+  /// （本机 bookKey 可能与 host 不同，BUG-414）。
+  ///
+  /// 失败一律在写盘 / 写库**之前**抛：
+  /// - 本机没有这本有声书 → [AudiobookSubtitleRefreshException] `notLocal`
+  ///   （只更新字幕的前提是本机已有音频，没有就该走整本下载）；
+  /// - 本机音频条数与 host 不同 → `audioMismatch`（cue 的 `audioFileIndex` 是位置
+  ///   索引，硬搬只会整本错位，要用户改走「重新下载有声书」）；
+  /// - 包里缺字幕 / 对齐文件 → [SyncAssetPackageIncompleteException]。
+  ///
+  /// 写库段原子（与整包导入同纪律）：对齐文件路径、字幕路径、cue 三者要么一起换新，
+  /// 要么一个都不换——cue 换了、字幕路径没换，播放端会拿新 cue 对旧字幕。
+  Future<void> importAudioSubtitlePackage({
+    required File packageFile,
+    required Directory audioDatabaseRoot,
+    String? bookKeyOverride,
+  }) async {
+    final String manifestJson = await _readManifestInIsolate(packageFile.path);
+    final Map<String, Object?> manifest = _typedMap(jsonDecode(manifestJson));
+    if (manifest['kind'] != 'audioSubtitles') {
+      throw FormatException('Unexpected package kind: ${manifest['kind']}');
+    }
+    final Object? rawAudiobook = manifest['audiobook'];
+    final Map<String, Object?>? audiobook =
+        rawAudiobook is Map ? _typedMap(rawAudiobook) : null;
+    final Map<String, Object?> srtBook = _mapValue(manifest, 'srtBook');
+    final Map<String, Object?> resources = _mapValue(manifest, 'resources');
+    final List<String> missingAtExport = _missingAtExport(manifest);
+    List<AudioCuesCompanion> cueRows(String cueKey) =>
+        _listValue(manifest, 'cues').map((Object? raw) {
+          final Map<String, Object?> cue = _typedMap(raw);
+          return AudioCuesCompanion.insert(
+            bookKey: cueKey,
+            chapterHref: _stringValue(cue, 'chapterHref'),
+            sentenceIndex: _intValue(cue, 'sentenceIndex'),
+            textFragmentId: _stringValue(cue, 'textFragmentId'),
+            cueText: _stringValue(cue, 'cueText'),
+            startMs: _intValue(cue, 'startMs'),
+            endMs: _intValue(cue, 'endMs'),
+            audioFileIndex: _intValue(cue, 'audioFileIndex'),
+          );
+        }).toList();
+
+    if (audiobook == null) {
+      // 纯 SRT（standalone）：身份 = uid，cue 在 uid 命名空间。
+      final String uid = _stringValue(srtBook, 'uid');
+      final SrtBookRow? local = await _db.getSrtBookByUid(uid);
+      if (local == null) {
+        throw const AudiobookSubtitleRefreshException(
+            AudiobookSubtitleRefreshFailure.notLocal);
+      }
+      await _checkSubtitleAudioCount(
+        localAudioPathsJson: local.audioPathsJson,
+        localAudioRoot: local.audioRoot,
+        remoteCount: _stringList(srtBook, 'audioPaths').length,
+      );
+      final Directory targetDir =
+          Directory(p.join(audioDatabaseRoot.path, _safeDirName(uid)));
+      final String srtPath = _requiredResourcePath(targetDir, resources,
+          _stringValue(srtBook, 'srtPath'), missingAtExport);
+      await _extractResourcesInIsolate(
+        packagePath: packageFile.path,
+        targetDirPath: targetDir.path,
+        prefix: 'resources',
+      );
+      await _db.transaction(() async {
+        await (_db.update(_db.srtBooks)
+              ..where(($SrtBooksTable t) => t.id.equals(local.id)))
+            .write(SrtBooksCompanion(srtPath: Value(srtPath)));
+        await _db.replaceCuesForBook(uid, cueRows(uid));
+      });
+      return;
+    }
+
+    final String bookKey =
+        bookKeyOverride ?? _stringValue(audiobook, 'bookKey');
+    final AudiobookRow? localAudiobook =
+        await _db.getAudiobookByBookKey(bookKey);
+    final SrtBookRow? localSrt = await _existingSrtBookFor(
+        bookKey: bookKey, uid: _stringValue(srtBook, 'uid'));
+    if (localAudiobook == null || localSrt == null) {
+      throw const AudiobookSubtitleRefreshException(
+          AudiobookSubtitleRefreshFailure.notLocal);
+    }
+    await _checkSubtitleAudioCount(
+      localAudioPathsJson: localAudiobook.audioPathsJson,
+      localAudioRoot: localAudiobook.audioRoot,
+      remoteCount: _stringList(audiobook, 'audioPaths').length,
+    );
+    // 落点与整包导入同一目录：从对端下载来的书字幕就在这里，原位覆盖；本机自己
+    // 导入的书（字幕在用户目录）不改写用户文件，改为指向这里的新副本。
+    final Directory targetDir =
+        Directory(p.join(audioDatabaseRoot.path, _safeDirName(bookKey)));
+    final String alignmentPath = _requiredResourcePath(targetDir, resources,
+        _stringValue(audiobook, 'alignmentPath'), missingAtExport);
+    final String srtPath = _requiredResourcePath(targetDir, resources,
+        _stringValue(srtBook, 'srtPath'), missingAtExport);
+    await _extractResourcesInIsolate(
+      packagePath: packageFile.path,
+      targetDirPath: targetDir.path,
+      prefix: 'resources',
+    );
+    await _db.transaction(() async {
+      // 只写字幕侧的列：audioRoot / audioPathsJson / followAudio（用户的本机设置）
+      // 原样不动。健康度是对齐质量的度量，跟着新对齐一起换。
+      await _db.patchAudiobook(
+        bookKey,
+        AudiobooksCompanion(
+          alignmentFormat: Value(_stringValue(audiobook, 'alignmentFormat')),
+          alignmentPath: Value(alignmentPath),
+          healthKindRaw: Value(_nullableString(audiobook, 'healthKindRaw')),
+          matchRatePct: Value(_nullableInt(audiobook, 'matchRatePct')),
+          healthMeasuredAt: Value(_nullableDate(audiobook, 'healthMeasuredAt')),
+          healthReason: Value(_nullableString(audiobook, 'healthReason')),
+        ),
+      );
+      await (_db.update(_db.srtBooks)
+            ..where(($SrtBooksTable t) => t.id.equals(localSrt.id)))
+          .write(SrtBooksCompanion(srtPath: Value(srtPath)));
+      await _db.replaceCuesForBook(bookKey, cueRows(bookKey));
+    });
+  }
+
+  Future<void> _checkSubtitleAudioCount({
+    required String? localAudioPathsJson,
+    required String? localAudioRoot,
+    required int remoteCount,
+  }) async {
+    final int localCount =
+        (await _resolveEffectiveAudio(localAudioPathsJson, localAudioRoot))
+            .paths
+            .length;
+    if (localCount != remoteCount) {
+      throw AudiobookSubtitleRefreshException(
+        AudiobookSubtitleRefreshFailure.audioMismatch,
+        localAudioCount: localCount,
+        remoteAudioCount: remoteCount,
+      );
+    }
   }
 
   /// 打包一个本地音频库：单个 .db（STORE 流式）+ manifest（displayName/enabled/子来源）。

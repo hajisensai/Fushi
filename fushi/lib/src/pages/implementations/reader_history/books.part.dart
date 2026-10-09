@@ -231,6 +231,32 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
             await _relocateSrtBookAudio(book);
           },
         ),
+      // 纯字幕（standalone）有声书的「从互联对端重新拉取」：host 上重新转录 / 换了
+      // 字幕之后把新字幕（或整本）拉回来。与 EPUB 书卡的同名两项同一语义、同一套
+      // 拉取与导入（只更新字幕不动音频，本机进度 / 断点 / 调轴保留）；配对书
+      // （bookKey 非空）的入口在 EPUB 书卡上，这里不重复给。
+      if (bookKey.isEmpty &&
+          modules.isEnabled(ModuleId.listening) &&
+          _remoteSrtRefetchFor(book.uid) != null) ...<DialogAction>[
+        DialogListAction(
+          label: t.remote_book_subtitles_refresh,
+          icon: Icons.subtitles_outlined,
+          onPressed: () async {
+            final RemoteAudiobookInfo remote = _remoteSrtRefetchFor(book.uid)!;
+            Navigator.pop(dialogContext);
+            await _refetchRemoteSrtAudiobook(remote, subtitlesOnly: true);
+          },
+        ),
+        DialogListAction(
+          label: t.remote_book_audiobook_redownload,
+          icon: Icons.cloud_sync_outlined,
+          onPressed: () async {
+            final RemoteAudiobookInfo remote = _remoteSrtRefetchFor(book.uid)!;
+            Navigator.pop(dialogContext);
+            await _refetchRemoteSrtAudiobook(remote, subtitlesOnly: false);
+          },
+        ),
+      ],
       // 三库页对称：与 EPUB / 视频 / 游戏卡一样，「重命名」排在列表项首位。落的是
       // 显示名覆盖层，SrtBooks.title 不动（同 bookKey 换身份的理由）。
       DialogListAction(

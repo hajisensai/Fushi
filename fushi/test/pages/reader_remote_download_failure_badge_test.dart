@@ -267,6 +267,7 @@ class _FakeInterconnectRemoteClient extends InterconnectSyncBackend {
     String bookKey,
     File dest, {
     void Function(double progress)? onProgress,
+    bool fresh = false,
   }) async {
     throw const SocketException('connection reset by peer');
   }

@@ -132,10 +132,13 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       // 有声书，只留 standalone（bookKey 空、身份=uid）且本地无同 uid SrtBook 的项，
       // 作为可下载占位卡。云盘后端无此 API → 空列表（占位卡不出现，与能力边界一致）。
       // 漫画书架与有声书无交集，恒空。
-      final ({List<RemoteAudiobookInfo> audiobooks, bool failed}) remoteSrt =
-          _mangaOnly
-              ? (audiobooks: const <RemoteAudiobookInfo>[], failed: false)
-              : await _loadStandaloneRemoteSrtAudiobooks(
+      final _RemoteSrtLists remoteSrt = _mangaOnly
+          ? (
+              audiobooks: const <RemoteAudiobookInfo>[],
+              refetch: const <String, RemoteAudiobookInfo>{},
+              failed: false,
+            )
+          : await _loadStandaloneRemoteSrtAudiobooks(
                   client,
                   forceRefresh: forceRefresh,
                 );
@@ -151,7 +154,14 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           localAudiobookKeys: localAudiobookKeys,
           keyOf: sanitizeTtuFilename,
         ),
+        audiobookRefetch: remoteAudiobookRefetchCandidates(
+          remote: withContent,
+          localBookKeys: localKeys,
+          localAudiobookKeys: localAudiobookKeys,
+          keyOf: sanitizeTtuFilename,
+        ),
         srtAudiobooks: remoteSrt.audiobooks,
+        srtRefetch: remoteSrt.refetch,
         srtFailed: remoteSrt.failed,
       );
     } catch (e) {
@@ -999,6 +1009,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     RemoteBookClient client,
     String? localBookKey, {
     void Function(double progress)? onProgress,
+    bool fresh = false,
   }) async {
     if (!book.hasAudiobook) return;
     // 注入式测试钩子：绕过 backend 类型门，直接驱动下载/导入接线（与
@@ -1032,6 +1043,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           // 原始 0..1；整书任务里由调用方映射到后半段（0.5..1.0），只补有声书的
           // 任务（BUG-2505）则整条进度就是它。
           onProgress: syncTransferFractionOnly(onProgress),
+          fresh: fresh,
         );
       }
 
@@ -1141,6 +1153,115 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     );
   }
 
+  /// 本机已有书**和**有声书时，从互联对端重新拉取它：[subtitlesOnly] 为 true 只拉
+  /// 字幕侧（对齐文件 + 字幕 + cue，几十 KB），否则整本有声书重下（`?fresh=1`
+  /// 绕过 host 的导出缓存）。用于 host 上重新转录 / 重新对齐 / 换了字幕之后。
+  ///
+  /// 与补拉（[_downloadRemoteAudiobookOnly]）同一套任务挂法：app 级
+  /// [InterconnectDownloadManager]、键 [InterconnectDownloadManager.bookTaskId]
+  /// （与整书下载 / 补拉互斥，不会两条并跑写同一本书）。**刻意不回填 host 的听书
+  /// 断点**：这是「本机已经在听的书换一份字幕」，本机的阅读进度 / 听书断点 / 统计
+  /// 都是用户在本机的真实状态，导入只换字幕侧的列与 cue（见
+  /// [SyncAssetPackageService.importAudioSubtitlePackage]）。
+  Future<void> _refetchRemoteAudiobook(
+    RemoteBookInfo book,
+    String localBookKey, {
+    required bool subtitlesOnly,
+  }) async {
+    final RemoteBookClient? client = _remoteBookClient;
+    if (client is! InterconnectSyncBackend) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        FushiSnackBar(content: Text(t.remote_book_unavailable)),
+      );
+      return;
+    }
+    final InterconnectDownloadManager manager =
+        ref.read(interconnectDownloadManagerProvider);
+    if (manager
+        .isRunning(InterconnectDownloadManager.bookTaskId(book.downloadId))) {
+      return;
+    }
+    final File dest = await _remoteAudiobookDestination(book);
+    try {
+      _markAudiobookDownloading(localBookKey, downloading: true);
+      await manager.startBookDownload(
+        downloadId: book.downloadId,
+        title: book.displayName,
+        dest: dest,
+        run: (File target, {void Function(double progress)? onProgress}) =>
+            subtitlesOnly
+                ? _runRemoteAudiobookSubtitleRefetch(
+                    book, client, localBookKey, target,
+                    onProgress: onProgress)
+                : _downloadRemoteAudiobook(book, client, localBookKey,
+                    onProgress: onProgress, fresh: true),
+      );
+    } catch (e, stack) {
+      final Object cause = e is _RemoteAudiobookException ? e.cause : e;
+      ErrorLogService.instance.log(
+          'ReaderFushiHistoryPage.refetchRemoteAudiobook', cause, stack);
+      if (!mounted) return;
+      final String message;
+      if (cause is AudiobookSubtitleRefreshException &&
+          cause.reason == AudiobookSubtitleRefreshFailure.audioMismatch) {
+        message = t.remote_book_subtitles_audio_mismatch;
+      } else if (subtitlesOnly) {
+        message = t.remote_book_subtitles_refresh_failed;
+      } else {
+        message = t.remote_book_audiobook_download_failed;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        FushiSnackBar(content: Text(message)),
+      );
+      return;
+    } finally {
+      _markAudiobookDownloading(localBookKey, downloading: false);
+    }
+    if (!mounted) return;
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+    _refreshSrtBooks();
+    ScaffoldMessenger.of(context).showSnackBar(
+      FushiSnackBar(
+        content: Text(subtitlesOnly
+            ? t.remote_book_subtitles_refreshed
+            : t.remote_book_audiobook_redownloaded),
+      ),
+    );
+  }
+
+  /// 「只更新字幕」任务本体：拉字幕侧包到 [target] → 原位导入 → 删临时包。
+  /// 本机没有这本有声书 / 本机音频条数与 host 不同时导入在写盘前抛
+  /// [AudiobookSubtitleRefreshException]，调用方据此提示改走整本重下。
+  Future<void> _runRemoteAudiobookSubtitleRefetch(
+    RemoteBookInfo book,
+    InterconnectSyncBackend client,
+    String localBookKey,
+    File target, {
+    void Function(double progress)? onProgress,
+  }) async {
+    final File package = File(p.setExtension(target.path, '.fushisubs'));
+    try {
+      await client.getRemoteAudiobookSubtitles(
+        book.downloadId,
+        package,
+        onProgress: syncTransferFractionOnly(onProgress),
+      );
+      await SyncAssetPackageService(db: appModel.database)
+          .importAudioSubtitlePackage(
+        packageFile: package,
+        audioDatabaseRoot: _audiobookDatabaseRoot(),
+        bookKeyOverride: localBookKey,
+      );
+    } finally {
+      try {
+        if (package.existsSync()) package.deleteSync();
+      } catch (_) {
+        // best-effort temp cleanup
+      }
+    }
+  }
+
   /// 拉取对端「纯 SRT（standalone）有声书」清单：仅互联后端有 live 有声书 API，
   /// 只留 standalone（bookKey 空、身份=uid）且本地无同 uid SrtBook 的项作占位卡。
   /// 云盘后端无此能力 → 空列表（占位卡不出现，与真实能力边界一致，不静默 fail-open）。
@@ -1148,13 +1269,20 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// BUG-1693 批审计 P3：清单拉取**失败**不再降级成「空」——返回 `failed: true`，
   /// 由 [_RemoteBookState.srtFailed] 汇入下拉刷新的失败提示；旧实现返回空列表，
   /// 有声书占位卡静默消失、与「对端真没有」不可区分。
-  Future<({List<RemoteAudiobookInfo> audiobooks, bool failed})>
-      _loadStandaloneRemoteSrtAudiobooks(
+  ///
+  /// 同一份清单顺带算出 `refetch`：本端已有同 uid 纯字幕书的对端条目，喂纯字幕书
+  /// 详情（长按对话框）里的「从对端更新字幕 / 重新下载有声书」
+  /// （[remoteStandaloneSrtRefetchCandidates]，与占位卡互斥）。
+  Future<_RemoteSrtLists> _loadStandaloneRemoteSrtAudiobooks(
     RemoteBookClient client, {
     bool forceRefresh = false,
   }) async {
     if (client is! InterconnectSyncBackend) {
-      return (audiobooks: const <RemoteAudiobookInfo>[], failed: false);
+      return (
+        audiobooks: const <RemoteAudiobookInfo>[],
+        refetch: const <String, RemoteAudiobookInfo>{},
+        failed: false,
+      );
     }
     List<RemoteAudiobookInfo> all;
     try {
@@ -1167,7 +1295,11 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       );
     } catch (e) {
       debugPrint('[reader-shelf] remote audiobook list failed: $e');
-      return (audiobooks: const <RemoteAudiobookInfo>[], failed: true);
+      return (
+        audiobooks: const <RemoteAudiobookInfo>[],
+        refetch: const <String, RemoteAudiobookInfo>{},
+        failed: true,
+      );
     }
     final List<SrtBookRow> localSrt = await appModel.database.getAllSrtBooks();
     final Set<String> localUids = localSrt.map((SrtBookRow r) => r.uid).toSet();
@@ -1201,6 +1333,11 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
                   needsAudio.contains(ab.identity)))
             ab,
       ],
+      refetch: remoteStandaloneSrtRefetchCandidates(
+        remote: all,
+        localSrtUids: localUids,
+        excludeUids: needsAudio,
+      ),
       failed: false,
     );
   }
@@ -1416,28 +1553,9 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         identity: book.identity,
         title: book.title ?? book.identity,
         dest: audioTmp,
-        run: (File target, {void Function(double progress)? onProgress}) async {
-          try {
-            await client.getRemoteAudiobook(
-              book.identity,
-              target,
-              onProgress: syncTransferFractionOnly(onProgress),
-            );
-            await SyncAssetPackageService(db: appModel.database)
-                .importAudioDatabasePackage(
-              packageFile: target,
-              audioDatabaseRoot: _audiobookDatabaseRoot(),
-              // 纯 SRT 包无 audiobook 段：importAudioDatabasePackage 走 standalone
-              // 分支、忽略 bookKeyOverride，bookKey 保持空、身份=uid。
-            );
-          } finally {
-            // 临时音频包成功/失败都即删（导入已落盘到 audiobook 根目录，不依赖
-            // 临时文件）。
-            try {
-              if (target.existsSync()) target.deleteSync();
-            } catch (_) {/* best-effort */}
-          }
-        },
+        run: (File target, {void Function(double progress)? onProgress}) =>
+            _runRemoteSrtAudiobookDownload(book, client, target,
+                onProgress: onProgress),
       );
     } catch (e, stack) {
       ErrorLogService.instance
@@ -1472,6 +1590,139 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     ScaffoldMessenger.of(context).showSnackBar(
       FushiSnackBar(content: Text(t.remote_book_downloaded)),
     );
+  }
+
+  /// 纯 SRT 有声书整包下载任务本体：`getRemoteAudiobook(identity=uid)` 拉包到
+  /// [target] → `importAudioDatabasePackage` 纯 SRT 分支落库 → 删临时包。首次下载与
+  /// 详情里的「重新下载有声书」共用；[fresh] 让 host 作废 15 分钟导出缓存
+  /// （host 刚重新转录时，不带它拿回来的还是改之前打的包）。
+  Future<void> _runRemoteSrtAudiobookDownload(
+    RemoteAudiobookInfo book,
+    InterconnectSyncBackend client,
+    File target, {
+    void Function(double progress)? onProgress,
+    bool fresh = false,
+  }) async {
+    try {
+      await client.getRemoteAudiobook(
+        book.identity,
+        target,
+        onProgress: syncTransferFractionOnly(onProgress),
+        fresh: fresh,
+      );
+      await SyncAssetPackageService(db: appModel.database)
+          .importAudioDatabasePackage(
+        packageFile: target,
+        audioDatabaseRoot: _audiobookDatabaseRoot(),
+        // 纯 SRT 包无 audiobook 段：importAudioDatabasePackage 走 standalone
+        // 分支、忽略 bookKeyOverride，bookKey 保持空、身份=uid。二次导入同一 uid
+        // 按 uid 原位更新（BUG-3098）。
+      );
+    } finally {
+      // 临时音频包成功/失败都即删（导入已落盘到 audiobook 根目录，不依赖
+      // 临时文件）。
+      try {
+        if (target.existsSync()) target.deleteSync();
+      } catch (_) {/* best-effort */}
+    }
+  }
+
+  /// 本端纯字幕书 [uid] 在对端的「重新拉取」候选（详情对话框入口的门）。
+  RemoteAudiobookInfo? _remoteSrtRefetchFor(String uid) =>
+      _shouldLoadRemoteBooks ? _lastRemoteState?.srtRefetch[uid] : null;
+
+  /// 纯字幕（standalone SRT）有声书：从互联对端重新拉取。[subtitlesOnly] 为 true
+  /// 只拉字幕侧（`/subtitles` 端点 → `importAudioSubtitlePackage` standalone 分支：
+  /// 只换 srtPath 与 cue，音频不动），否则整本重下（`?fresh=1`）。与书卡的
+  /// [_refetchRemoteAudiobook] 同一套语义：**不回填 host 的听书断点**，本机进度 /
+  /// 断点 / 调轴都保留；失败按 [AudiobookSubtitleRefreshFailure] 给对应提示。
+  /// 任务挂 app 级 [InterconnectDownloadManager] 的纯 SRT 槽（与首次下载互斥）。
+  Future<void> _refetchRemoteSrtAudiobook(
+    RemoteAudiobookInfo book, {
+    required bool subtitlesOnly,
+  }) async {
+    final RemoteBookClient? client = _remoteBookClient;
+    if (client is! InterconnectSyncBackend) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        FushiSnackBar(content: Text(t.remote_book_unavailable)),
+      );
+      return;
+    }
+    final InterconnectDownloadManager manager =
+        ref.read(interconnectDownloadManagerProvider);
+    if (manager.isRunning(
+        InterconnectDownloadManager.srtAudiobookTaskId(book.identity))) {
+      return;
+    }
+    final File dest = await _remoteSrtDestination(book);
+    try {
+      await manager.startSrtAudiobookDownload(
+        identity: book.identity,
+        title: book.title ?? book.identity,
+        dest: dest,
+        run: (File target, {void Function(double progress)? onProgress}) =>
+            subtitlesOnly
+                ? _runRemoteSrtSubtitleRefetch(book, client, target,
+                    onProgress: onProgress)
+                : _runRemoteSrtAudiobookDownload(book, client, target,
+                    onProgress: onProgress, fresh: true),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderFushiHistoryPage.refetchRemoteSrtAudiobook', e, stack);
+      if (!mounted) return;
+      final String message;
+      if (e is AudiobookSubtitleRefreshException &&
+          e.reason == AudiobookSubtitleRefreshFailure.audioMismatch) {
+        message = t.remote_book_subtitles_audio_mismatch;
+      } else if (subtitlesOnly) {
+        message = t.remote_book_subtitles_refresh_failed;
+      } else {
+        message = t.remote_book_audiobook_download_failed;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        FushiSnackBar(content: Text(message)),
+      );
+      return;
+    }
+    if (!mounted) return;
+    _refreshSrtBooks();
+    ScaffoldMessenger.of(context).showSnackBar(
+      FushiSnackBar(
+        content: Text(subtitlesOnly
+            ? t.remote_book_subtitles_refreshed
+            : t.remote_book_audiobook_redownloaded),
+      ),
+    );
+  }
+
+  /// 纯字幕书「只更新字幕」任务本体：拉字幕侧包 → standalone 分支原位导入 → 删临时包。
+  Future<void> _runRemoteSrtSubtitleRefetch(
+    RemoteAudiobookInfo book,
+    InterconnectSyncBackend client,
+    File target, {
+    void Function(double progress)? onProgress,
+  }) async {
+    final File package = File(p.setExtension(target.path, '.fushisubs'));
+    try {
+      await client.getRemoteAudiobookSubtitles(
+        book.identity,
+        package,
+        onProgress: syncTransferFractionOnly(onProgress),
+      );
+      await SyncAssetPackageService(db: appModel.database)
+          .importAudioSubtitlePackage(
+        packageFile: package,
+        audioDatabaseRoot: _audiobookDatabaseRoot(),
+      );
+    } finally {
+      try {
+        if (package.existsSync()) package.deleteSync();
+      } catch (_) {
+        // best-effort temp cleanup
+      }
+    }
   }
 
   /// 纯 SRT 有声书包下载临时目标文件（`.fushiaudio`）。
@@ -1548,11 +1799,21 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   }
 }
 
+/// [_ReaderHistoryRemote._loadStandaloneRemoteSrtAudiobooks] 的返回：占位卡清单、
+/// 详情重拉候选（按 uid）、清单是否拉取失败。
+typedef _RemoteSrtLists = ({
+  List<RemoteAudiobookInfo> audiobooks,
+  Map<String, RemoteAudiobookInfo> refetch,
+  bool failed,
+});
+
 class _RemoteBookState {
   const _RemoteBookState({
     required this.books,
     this.audiobookOnly = const <String, RemoteBookInfo>{},
+    this.audiobookRefetch = const <String, RemoteBookInfo>{},
     this.srtAudiobooks = const <RemoteAudiobookInfo>[],
+    this.srtRefetch = const <String, RemoteAudiobookInfo>{},
     this.failed = false,
     this.srtFailed = false,
   });
@@ -1564,9 +1825,19 @@ class _RemoteBookState {
   /// 本端已有去重藏掉），它们的有声书只能从本地书卡菜单的「从对端下载有声书」补拉。
   final Map<String, RemoteBookInfo> audiobookOnly;
 
+  /// 本端已有书**和**有声书、对端也有配套有声书的远端条目，按本端 bookKey 索引
+  /// （[remoteAudiobookRefetchCandidates]）：书卡菜单「从对端更新字幕 / 重新下载
+  /// 有声书」的候选。与 [audiobookOnly] 互斥。
+  final Map<String, RemoteBookInfo> audiobookRefetch;
+
   /// 纯 SRT（standalone）远端有声书（互联后端 listRemoteAudiobooks 的 standalone 项，
   /// 本地无同 uid 的 SrtBook）。云盘后端无 live 有声书 API → 恒空。
   final List<RemoteAudiobookInfo> srtAudiobooks;
+
+  /// 本端已有同 uid 纯字幕书的对端 standalone 有声书，按 uid 索引
+  /// （[remoteStandaloneSrtRefetchCandidates]）：纯字幕书详情里「从对端更新字幕 /
+  /// 重新下载有声书」的候选。与 [srtAudiobooks] 占位卡互斥。
+  final Map<String, RemoteAudiobookInfo> srtRefetch;
 
   /// 远端目录拉取失败（离线/未配对/后端不可达）：占位卡不渲染（spec §2.4）。
   final bool failed;
