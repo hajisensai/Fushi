@@ -150,7 +150,11 @@ void main() {
     test('磁链 + 种子同时给、或都不给 → 400，不进 host', () async {
       final _RecordingHost host = _RecordingHost();
       for (final Map<String, Object?> body in <Map<String, Object?>>[
-        <String, Object?>{'magnet': 'magnet:?x', 'torrent': torrent, 'title': 't'},
+        <String, Object?>{
+          'magnet': 'magnet:?x',
+          'torrent': torrent,
+          'title': 't'
+        },
         <String, Object?>{'title': 't'},
       ]) {
         expect((await _post(host, body)).statusCode, 400);
@@ -161,10 +165,26 @@ void main() {
     test('fileIndexes 只认 .torrent、且必须是非负整数列表 → 否则 400', () async {
       final _RecordingHost host = _RecordingHost();
       for (final Map<String, Object?> body in <Map<String, Object?>>[
-        <String, Object?>{'magnet': 'magnet:?x', 'fileIndexes': <int>[0], 'title': 't'},
-        <String, Object?>{'torrent': torrent, 'fileIndexes': <int>[], 'title': 't'},
-        <String, Object?>{'torrent': torrent, 'fileIndexes': <Object>['0'], 'title': 't'},
-        <String, Object?>{'torrent': torrent, 'fileIndexes': <int>[-1], 'title': 't'},
+        <String, Object?>{
+          'magnet': 'magnet:?x',
+          'fileIndexes': <int>[0],
+          'title': 't'
+        },
+        <String, Object?>{
+          'torrent': torrent,
+          'fileIndexes': <int>[],
+          'title': 't'
+        },
+        <String, Object?>{
+          'torrent': torrent,
+          'fileIndexes': <Object>['0'],
+          'title': 't'
+        },
+        <String, Object?>{
+          'torrent': torrent,
+          'fileIndexes': <int>[-1],
+          'title': 't'
+        },
       ]) {
         expect((await _post(host, body)).statusCode, 400, reason: '$body');
       }
@@ -173,9 +193,13 @@ void main() {
 
     test('坏 base64 / 坏种子 → 400', () async {
       final _RecordingHost host = _RecordingHost();
-      for (final String bad in <String>['!!!', base64Encode(utf8.encode('not a torrent'))]) {
+      for (final String bad in <String>[
+        '!!!',
+        base64Encode(utf8.encode('not a torrent'))
+      ]) {
         expect(
-          (await _post(host, <String, Object?>{'torrent': bad, 'title': 't'})).statusCode,
+          (await _post(host, <String, Object?>{'torrent': bad, 'title': 't'}))
+              .statusCode,
           400,
         );
       }
@@ -204,7 +228,10 @@ Uint8List _moviePackTorrent() => _bencode(<String, Object?>{
             'Doraemon Movie 02 (1981).mkv',
             'Doraemon Movie 05 (1984).mkv',
           ])
-            <String, Object?>{'length': 1024, 'path': <Object?>[name]},
+            <String, Object?>{
+              'length': 1024,
+              'path': <Object?>[name]
+            },
         ],
         'name': 'Pack',
         'piece length': 16384,

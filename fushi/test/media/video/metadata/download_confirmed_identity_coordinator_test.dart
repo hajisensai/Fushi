@@ -237,9 +237,8 @@ class _MalProvider implements VideoMetadataProvider {
   VideoMetadataWork _work(String id) => VideoMetadataWork(
         provider: kind,
         kind: VideoMetadataMediaKind.tv,
-        title: id == '63337' || id == '311842'
-            ? 'FX戦士くるみちゃん'
-            : 'Manually bound',
+        title:
+            id == '63337' || id == '311842' ? 'FX戦士くるみちゃん' : 'Manually bound',
         episodeCount: 12,
         ids: <VideoMetadataId>[
           VideoMetadataId(type: kind.name, value: id, isDefault: true),

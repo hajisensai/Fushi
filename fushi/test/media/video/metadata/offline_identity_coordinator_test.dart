@@ -218,7 +218,8 @@ void main() {
   // 形态还原成 movie lookup）重刮时排在映射前面复用，照样拉 /movie/62564——修复版
   // 里重刮也救不回。第一轮用「映射说 62564 是电影」造出这份存量，第二轮换成真实
   // 映射（`{tv: 62564}`）重刮。
-  test('rescrape drops a stored TMDB id that the mapping places in the other '
+  test(
+      'rescrape drops a stored TMDB id that the mapping places in the other '
       'namespace (BUG-3071)', () async {
     final SourceLibraryRow source =
         await _source(db, directory, fileName: 'Show (2018).mkv');
