@@ -267,7 +267,7 @@ void main() {
   });
 
   test(
-    'BUG-3068: playlist on a non-.m3u8 path with text/plain is served as HLS',
+    'BUG-3079: playlist on a non-.m3u8 path with text/plain is served as HLS',
     () async {
       // ffmpeg 的 hls_probe 遇到非标准扩展名 + 非标准 mime 拒认 HLS，libmpv 退到
       // demux_playlist 把每个分片当独立条目播（进度条每 3～4 秒一段）。中继认出

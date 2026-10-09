@@ -1,4 +1,4 @@
-## BUG-3068 · 在线视频源进度条被切成三四秒一段（HLS 播放列表被当普通列表逐分片播放）
+## BUG-3079 · 在线视频源进度条被切成三四秒一段（HLS 播放列表被当普通列表逐分片播放）
 - **报告**：2026-10-07（QQ 群用户：Aniyomi 扩展源视频能播放，但进度条每三四秒成为一段，多个源都有此现象）。
 - **真实性**：✅ 真 bug。`fushi/lib/src/utils/net/app_native_proxy.dart:517` 在正文识别为 HLS 后改写播放列表 URI，却仍透传上游 Content-Type。非 `.m3u8` 路径与 `text/plain` 等非标准 MIME 组合使 native 无法正确识别 HLS，可能退为普通播放列表、逐个播放仅三四秒的分片。真实调用链为 `fushi/lib/src/media/video/video_player_controller.dart:2257` 的 `nativePlaybackUri` 与 `:2485` 的本机代理装配，随后进入 `_relayBody` / `_relayWholeBody`。
 - **[x] ① 已修复** — `ccd07448a3`（`pr/online-video-segmented-bar`）：在完整正文确认是 HLS、URI 改写成功后，将响应 MIME 规范为 `application/vnd.apple.mpegurl`（`app_native_proxy.dart:531`）。保留原有 gzip 解码、长度重算与完整 Range 转 200；部分 Range、普通视频及真实图片继续透传。
