@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2827 条。点号进各自文件。
+> 共 2828 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -37,6 +37,7 @@
 | [BUG-3073](bugs/BUG-3073-download-identity-locks-unreachable-provider.md) | ✅ | ✅ | 下载任务身份被当用户锁定：那家资料源连不上就永远providerUnavailable，不换任务里的TMDB id |
 | [BUG-3072](bugs/BUG-3072-sweep-retry-storm.md) | ✅ | ✅ | 补刮批次自己的写入触发下一轮+临时失败清账，同一作品每分钟重刮十几次 |
 | [BUG-3071](bugs/BUG-3071-stored-tmdb-tv-id-rescrape.md) | ✅ | ✅ | BUG-2828存量未修：重刮仍复用存成movie的TMDB tv id，リズと青い鳥仍是挪威电影 |
+| [BUG-3070](bugs/BUG-3070-devconsole-bad-origin.md) | ✅ | ✅ | 反馈处理台网页登录一律 403 bad_origin |
 | [BUG-3064](bugs/BUG-3064-lookup-bottom-bar-scroll.md) | ✅ | ✅ | 移动端查词页往下滑底部栏不收起 |
 | [BUG-3063](bugs/BUG-3063-collection-continue-btn-overflow.md) | ✅ | ✅ | 合集详情 hero「继续」按钮图标溢出左边缘、内边距不对称 |
 | [BUG-3062](bugs/BUG-3062-video-chapter-markers-off-track.md) | ✅ | ✅ | 移动端视频章节刻度没落在进度条轨道上 |
