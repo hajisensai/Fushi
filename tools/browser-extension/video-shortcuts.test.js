@@ -461,3 +461,66 @@ test('runtime 实际 keydown 只接管已开启动作；Shift+H 无扩展轨仍�
     { prevented: false, stopped: false },
   );
 });
+
+// ── 自定义组合键（用户群 10-09「快捷键可自定义」）──
+const VS = require('./video-shortcuts.js');
+
+test('自定义组合键：comboFromEvent / normalizeCombo 规范形（修饰键排序、Meta=Ctrl、纯修饰键不成立）', () => {
+  assert.strictEqual(VS.comboFromEvent(ev({ shift: true, ctrl: true, code: 'KeyJ' })), 'Ctrl+Shift+KeyJ');
+  assert.strictEqual(VS.comboFromEvent(ev({ alt: true, code: 'Digit1' })), 'Alt+Digit1');
+  assert.strictEqual(VS.comboFromEvent(ev({ key: 'ArrowLeft' })), 'ArrowLeft', '只给 key 的方向键也认');
+  assert.strictEqual(VS.comboFromEvent(ev({ shift: true, code: 'ShiftLeft' })), '');
+  assert.strictEqual(VS.normalizeCombo('Shift+Ctrl+KeyJ'), 'Ctrl+Shift+KeyJ');
+  for (const bad of ['', 'Ctrl+', 'Hyper+KeyJ', 'Ctrl+ShiftLeft', 'Ctrl+K J', 42, null]) {
+    assert.strictEqual(VS.normalizeCombo(bad), '', String(bad));
+  }
+});
+
+test('自定义组合键：resolveCombos 只覆盖改过的动作，非法覆盖回落默认', () => {
+  const combos = VS.resolveCombos({ 'prev-cue': 'KeyA', 'next-cue': 'garbage' });
+  assert.strictEqual(combos['prev-cue'], 'KeyA');
+  assert.strictEqual(combos['next-cue'], VS.DEFAULT_COMBOS['next-cue']);
+  assert.strictEqual(combos['rate-up'], 'Ctrl+Shift+BracketRight');
+  assert.strictEqual(VS.conflictOf(combos, 'replay-cue', 'KeyA'), 'prev-cue');
+  assert.strictEqual(VS.conflictOf(combos, 'prev-cue', 'KeyA'), '', '自己不算冲突');
+});
+
+test('自定义组合键：decide 按新组合接管，旧默认键不再接管；独立开关与字幕轨门照旧', () => {
+  const combos = VS.resolveCombos({ 'prev-cue': 'Alt+KeyA', 'toggle-subtitle-hide': 'KeyH' });
+  const ctx = { ...CTX, combos };
+  assert.deepStrictEqual(decide(ev({ alt: true, code: 'KeyA' }), ctx), { action: 'prev-cue' });
+  assert.strictEqual(decide(ev({ key: 'ArrowLeft', code: 'ArrowLeft' }), ctx), null, '旧默认键让给站点');
+  assert.deepStrictEqual(decide(ev({ code: 'KeyH' }), { ...ctx, hasTrack: false }), { action: 'toggle-subtitle-hide' });
+  assert.strictEqual(decide(ev({ alt: true, code: 'KeyA' }), { ...ctx, hasTrack: false }), null, '上一句仍要字幕轨');
+  assert.strictEqual(decide(ev({ alt: true, code: 'KeyA' }), { ...ctx, bindings: { 'prev-cue': false } }), null);
+  assert.strictEqual(decide(ev({ code: 'KeyH', editable: true }), ctx), null, '输入框里照旧放行');
+});
+
+test('formatCombo：给人看的键名', () => {
+  assert.strictEqual(VS.formatCombo('Ctrl+Shift+ArrowLeft'), 'Ctrl+Shift+←');
+  assert.strictEqual(VS.formatCombo('Shift+KeyH'), 'Shift+H');
+  assert.strictEqual(VS.formatCombo('Ctrl+Shift+BracketLeft'), 'Ctrl+Shift+[');
+  assert.strictEqual(VS.formatCombo('Alt+Digit3'), 'Alt+3');
+  assert.strictEqual(VS.formatCombo('bad+'), '');
+});
+
+test('runtime：videoShortcutKeys 初读与热更新都生效（改完不必刷新页面）', () => {
+  const rt = createRuntime({ videoShortcutKeys: { 'prev-cue': 'KeyJ' } });
+  assert.ok(rt.requestedKeys.includes('videoShortcutKeys'));
+  assert.strictEqual(rt.key({ key: 'j', code: 'KeyJ' }).prevented, true);
+  assert.deepStrictEqual(rt.actions, ['prev-cue']);
+  assert.strictEqual(rt.key({ key: 'ArrowLeft', code: 'ArrowLeft' }).prevented, false, '旧键放行');
+  rt.change('videoShortcutKeys', { 'prev-cue': 'Shift+KeyJ' });
+  assert.strictEqual(rt.key({ key: 'j', code: 'KeyJ' }).prevented, false);
+  assert.strictEqual(rt.key({ key: 'J', code: 'KeyJ', shiftKey: true }).prevented, true);
+  rt.change('videoShortcutKeys', undefined);
+  assert.strictEqual(rt.key({ key: 'ArrowLeft', code: 'ArrowLeft' }).prevented, true, '删键回到默认');
+});
+
+test('options：每个快捷键行的键帽都是可点的改键按钮，覆盖全部动作', () => {
+  const actions = [...optionsHtml.matchAll(/data-shortcut-action="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepStrictEqual(actions.slice().sort(), Object.keys(VS.DEFAULT_COMBOS).sort());
+  assert.ok(/<script src="video-shortcuts\.js"><\/script>[\s\S]*<script src="options\.js"><\/script>/.test(optionsHtml),
+    '设置页要先装 video-shortcuts.js 才能复用规范化 / 显示');
+  assert.ok(/loadShortcutKeys\(\)/.test(optionsJs));
+});

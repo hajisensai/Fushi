@@ -26,6 +26,7 @@ class YomitanApiServerManager {
     RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
     void Function(BrowserVideoSample sample)? onExtensionStudy,
+    ExtensionFavoriteHandler? onExtensionFavorite,
     void Function()? onExtensionSeen,
     void Function()? onLookupActivity,
     void Function(String build, String? version)? onExtensionReport,
@@ -45,6 +46,7 @@ class YomitanApiServerManager {
         _popupDictionaryCssProvider = popupDictionaryCssProvider,
         _onExtensionPopupSize = onExtensionPopupSize,
         _onExtensionStudy = onExtensionStudy,
+        _onExtensionFavorite = onExtensionFavorite,
         _onExtensionSeen = onExtensionSeen,
         _onLookupActivity = onLookupActivity,
         _onExtensionReport = onExtensionReport,
@@ -73,6 +75,7 @@ class YomitanApiServerManager {
   final void Function(double maxWidth, double maxHeight)? _onExtensionPopupSize;
   // 扩展视频沉浸时间样本的 sink，透传给 [YomitanApiServer]（app 侧进学习统计）。
   final void Function(BrowserVideoSample sample)? _onExtensionStudy;
+  final ExtensionFavoriteHandler? _onExtensionFavorite;
   // 浏览器扩展连接探活回调，透传给 [YomitanApiServer]（app 侧记录 last-seen）。
   final void Function()? _onExtensionSeen;
   // TODO-2936：查词/制卡活动回调，透传给 [YomitanApiServer]（app 侧应用「浏览器」
@@ -111,6 +114,7 @@ class YomitanApiServerManager {
       popupDictionaryCssProvider: _popupDictionaryCssProvider,
       onExtensionPopupSize: _onExtensionPopupSize,
       onExtensionStudy: _onExtensionStudy,
+      onExtensionFavorite: _onExtensionFavorite,
       onExtensionSeen: _onExtensionSeen,
       onLookupActivity: _onLookupActivity,
       onExtensionReport: _onExtensionReport,

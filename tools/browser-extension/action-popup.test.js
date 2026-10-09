@@ -164,17 +164,23 @@ test('YouTube batch in progress shows progress and blocks a second click', () =>
 });
 
 // ── popup「Fushi 字幕」开关：subtitleOverlayEnabled 的读判据与写集合 ──
-test('overlay toggle: default on, only explicit false counts as off (same rule as subtitle-panel.js)', () => {
-  assert.strictEqual(fushiOverlayToggleState({}).on, true);
-  assert.strictEqual(fushiOverlayToggleState(null).on, true);
-  assert.strictEqual(fushiOverlayToggleState(undefined).on, true);
-  assert.strictEqual(fushiOverlayToggleState({ subtitleOverlayEnabled: true }).on, true);
-  assert.strictEqual(fushiOverlayToggleState({ subtitleOverlayEnabled: false }).on, false);
+test('overlay toggle: on = overlay not explicitly off AND capability gate open (same rule as subtitle-panel.js)', () => {
+  const gate = { netflixSubtitlePanel: true };
+  assert.strictEqual(fushiOverlayToggleState(gate).on, true);
+  assert.strictEqual(fushiOverlayToggleState({ ...gate, subtitleOverlayEnabled: true }).on, true);
+  assert.strictEqual(fushiOverlayToggleState({ ...gate, subtitleOverlayEnabled: false }).on, false);
   // 历史脏值（字符串 'false' / 0）不算关——subtitle-panel.js 的 `!== false` 也不会把它们当关。
-  assert.strictEqual(fushiOverlayToggleState({ subtitleOverlayEnabled: 'false' }).on, true);
-  assert.strictEqual(fushiOverlayToggleState({ subtitleOverlayEnabled: 0 }).on, true);
-  assert.strictEqual(fushiOverlayToggleState({ subtitleOverlayEnabled: true }).state, '开');
-  assert.strictEqual(fushiOverlayToggleState({ subtitleOverlayEnabled: false }).state, '关');
+  assert.strictEqual(fushiOverlayToggleState({ ...gate, subtitleOverlayEnabled: 'false' }).on, true);
+  assert.strictEqual(fushiOverlayToggleState({ ...gate, subtitleOverlayEnabled: 0 }).on, true);
+  assert.strictEqual(fushiOverlayToggleState({ ...gate, subtitleOverlayEnabled: true }).state, '开');
+  assert.strictEqual(fushiOverlayToggleState({ ...gate, subtitleOverlayEnabled: false }).state, '关');
+  // BUG-3145：总门没开时 subtitle-panel.js 整体 teardown，覆盖层画不出任何字——开关不能显示「开」
+  // （此前缺省即「开」，用户导入字幕后看不到，只能拨关再拨开才「导进去」）。
+  assert.strictEqual(fushiOverlayToggleState({}).on, false);
+  assert.strictEqual(fushiOverlayToggleState(null).on, false);
+  assert.strictEqual(fushiOverlayToggleState(undefined).on, false);
+  assert.strictEqual(fushiOverlayToggleState({ subtitleOverlayEnabled: true }).on, false);
+  assert.strictEqual(fushiOverlayToggleState({ subtitleOverlayEnabled: true, netflixSubtitlePanel: 'true' }).on, false);
 });
 test('overlay toggle: turning on also opens the subtitle capability gate; turning off leaves it alone', () => {
   // 关→开：覆盖层受 netflixSubtitlePanel 门控，单开覆盖层等于没开，必须一起写。
@@ -182,4 +188,15 @@ test('overlay toggle: turning on also opens the subtitle capability gate; turnin
       { subtitleOverlayEnabled: true, netflixSubtitlePanel: true });
   // 开→关：只翻自己，不动总门（用户可能还在用侧边栏列表）。
   assert.deepStrictEqual(fushiOverlayToggleWrite(true), { subtitleOverlayEnabled: false });
+});
+
+// 工具栏菜单的词典字号步进器（用户群 10-09）：从「跟随 Fushi」起步以 16px 为起点，夹进 10–40。
+test('fushiFontSizeStep: follow starts from 16, clamps into the popup-size.js range', () => {
+  const { fushiFontSizeStep } = require('./vendor/action-popup.js');
+  const S = require('./popup-size.js');
+  assert.strictEqual(fushiFontSizeStep(null, 1), 17);
+  assert.strictEqual(fushiFontSizeStep(undefined, -1), 15);
+  assert.strictEqual(fushiFontSizeStep(20, 1), 21);
+  assert.strictEqual(fushiFontSizeStep(S.FUSHI_POPUP_FONT_SIZE_MIN, -1), S.FUSHI_POPUP_FONT_SIZE_MIN);
+  assert.strictEqual(fushiFontSizeStep(S.FUSHI_POPUP_FONT_SIZE_MAX, 1), S.FUSHI_POPUP_FONT_SIZE_MAX);
 });

@@ -342,6 +342,27 @@ summary:focus-visible {
   text-align: center;
 }
 
+/* 可点的键帽（自定义快捷键）：悬停 / 聚焦有状态层，录入中换主色描边并呼吸，改过的键帽主色字。 */
+.keycap-edit {
+  cursor: pointer;
+  transition: border-color var(--fushi-motion-short, 150ms) ease, background-color var(--fushi-motion-short, 150ms) ease,
+    transform var(--fushi-motion-short, 150ms) ease;
+}
+.keycap-edit:hover { background: color-mix(in oklch, var(--md-sys-color-primary, currentColor) 12%, var(--surface)); }
+.keycap-edit:active { transform: scale(0.95); }
+.keycap-edit:focus-visible { outline: 2px solid var(--md-sys-color-primary, currentColor); outline-offset: 2px; }
+.keycap-edit[data-custom="1"] { color: var(--md-sys-color-primary, var(--text)); }
+.keycap-edit[data-recording="1"] {
+  border-color: var(--md-sys-color-primary, currentColor);
+  color: var(--md-sys-color-primary, var(--text));
+  animation: fushi-keycap-pulse 1.2s ease-in-out infinite;
+}
+@keyframes fushi-keycap-pulse { 50% { background: color-mix(in oklch, var(--md-sys-color-primary, currentColor) 18%, var(--surface)); } }
+@media (prefers-reduced-motion: reduce) {
+  .keycap-edit { transition: none; }
+  .keycap-edit[data-recording="1"] { animation: none; }
+}
+
 .shortcut-row .setting-copy { flex: 1 1 auto; }
 
 .shortcut-row .setting-copy strong {

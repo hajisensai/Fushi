@@ -128,6 +128,48 @@ window.flutter_inappwebview = {
             return false;
           }
         })();
+      case 'favoriteEntry':
+      case 'favoriteCheck':
+        // BUG-3141：☆/★ 收藏。此前这两个桥落到 default 回 null——popup.js 拿 null 当「没收藏」，
+        // 点了图标不变、Fushi 收藏夹也没有新行。经 background.js 转发到 server
+        // /api/extension/favorite（与 app 外浮窗同一份收藏读写），回**切换后**的布尔态。
+        // favoriteCheck 只读不写；失败一律 fail-soft 成 false（☆），绝不阻断查词。
+        // favoriteEntry 失败时如实 toast：用户点了收藏，没收藏上必须看得见。
+        return (async function () {
+          var toggle = name === 'favoriteEntry';
+          try {
+            var a = args[0] || {};
+            var sentence = '';
+            if (toggle && typeof window.fushiMineContext === 'function') {
+              try {
+                var fctx = window.fushiMineContext();
+                sentence = (fctx && (fctx.contextSentence || (fctx.window && fctx.window.text) ||
+                  fctx.pageSentence)) || '';
+              } catch (_) { sentence = ''; }
+            }
+            var resp = await chrome.runtime.sendMessage({
+              type: 'favorite',
+              toggle: toggle,
+              expression: a.expression || '',
+              reading: a.reading || '',
+              glossary: toggle ? (a.glossary || '') : '',
+              sentence: sentence,
+            });
+            if (resp && resp.ok && resp.data && typeof resp.data.favorite === 'boolean') {
+              return resp.data.favorite;
+            }
+            if (toggle && typeof window.fushiToast === 'function') {
+              window.fushiToast('✗ ' + fushiShimT(resp && resp.status === 404
+                ? 'favorite_failed_old_app' : 'favorite_failed'));
+            }
+            return false;
+          } catch (_) {
+            if (toggle && typeof window.fushiToast === 'function') {
+              window.fushiToast('✗ ' + fushiShimT('favorite_failed'));
+            }
+            return false;
+          }
+        })();
       case 'openInAnki':
         // Issue #1409：↗「在 Anki 中打开这个词的卡」。经 background.js 转发到 server
         // /api/anki/open（与 app 内 openInAnki 桥同一 repo.openWordInAnki）。回三态名

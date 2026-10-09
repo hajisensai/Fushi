@@ -159,3 +159,39 @@ test('fushiParsePx 只接受纯 px 数值，函数式长度回落 fallback', () 
   assert.strictEqual(fushiParsePx('', 7), 7);
   assert.strictEqual(fushiParsePx(undefined, 7), 7);
 });
+
+// 用户群 10-09：PC 扩展的弹窗和设置里都找不到调词典字号的地方。扩展加一个**只作用于浏览器**
+// 的字号覆盖 popupFontSize（px），缺省跟随 Fushi 下发的 --fushi-popup-zoom。
+test('词典字号覆盖：zoom = 字号 / 16，压过 app 下发的 zoom；缺省跟随 app', () => {
+  const S = require('./popup-size.js');
+  const theme = { '--fushi-popup-max-width': '400px', '--fushi-popup-max-height': '360px', '--fushi-popup-zoom': '1.2500' };
+  assert.strictEqual(S.fushiResolvePopupBox(theme, null).zoom, 1.25, '没有覆盖 = 跟随 Fushi');
+  assert.strictEqual(S.fushiResolvePopupBox(theme, null, { fontSizePx: 24 }).zoom, 1.5);
+  assert.strictEqual(S.fushiResolvePopupBox(theme, null, { fontSizePx: 12 }).zoom, 0.75);
+  // 非法 / 越界覆盖不静默夹成别的值：等于没有覆盖。
+  assert.strictEqual(S.fushiResolvePopupBox(theme, null, { fontSizePx: 99 }).zoom, 1.25);
+  assert.strictEqual(S.fushiResolvePopupBox(theme, null, { fontSizePx: null }).zoom, 1.25);
+  // 视口夹取仍然生效（覆盖只换起点，不绕过「只缩不放」）。
+  const narrow = S.fushiResolvePopupBox(theme, { width: 300, height: 800 }, { fontSizePx: 32 });
+  assert.ok(narrow.width * narrow.zoom <= 300, '放大字号也不许横向溢出视口');
+});
+
+test('fushiNormalizePopupFontSize：只认 10–40 的数（含数字串），其余 = 跟随', () => {
+  const S = require('./popup-size.js');
+  assert.strictEqual(S.fushiNormalizePopupFontSize(18), 18);
+  assert.strictEqual(S.fushiNormalizePopupFontSize('20'), 20);
+  assert.strictEqual(S.fushiNormalizePopupFontSize(17.6), 18);
+  for (const bad of [undefined, null, '', 'abc', 9, 41, NaN, Infinity, {}]) {
+    assert.strictEqual(S.fushiNormalizePopupFontSize(bad), null, String(bad));
+  }
+});
+
+test('fushiSetPopupFontSize：变化才通知监听者（已开的弹窗据此就地换 zoom）', () => {
+  const S = require('./popup-size.js');
+  const seen = [];
+  S.fushiOnPopupFontSizeChange((v) => seen.push(v));
+  S.fushiSetPopupFontSize(20);
+  S.fushiSetPopupFontSize(20);
+  S.fushiSetPopupFontSize('bad');
+  assert.deepStrictEqual(seen, [20, null]);
+});

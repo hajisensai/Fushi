@@ -139,8 +139,11 @@ function fushiUpdateNotice(stale) {
 // subtitleOverlayEnabled——subtitle-panel.js 自绘覆盖层的总开关（外挂轨 / 替代原生 / 全轨覆盖层
 // 都经它出画），与 options 页「在视频上显示外挂字幕」同一个键。判据与
 // subtitle-panel.js applySubtitlePreferences 同型：只有显式 false 才算关，缺省 = 开。
+// BUG-3145：「开」还必须字幕能力总门 netflixSubtitlePanel 已开（fushiReadPanelEnabled）——
+// 总门关着时 subtitle-panel.js 整体 teardown，覆盖层一个字都不画；开关却显示「开」，用户导入
+// 字幕后什么都看不到，只能把开关拨关再拨开（那一下 fushiOverlayToggleWrite 顺带写开总门）。
 function fushiOverlayToggleState(stored) {
-  const on = !(stored && stored.subtitleOverlayEnabled === false);
+  const on = !(stored && stored.subtitleOverlayEnabled === false) && fushiReadPanelEnabled(stored);
   return {
     on,
     state: fushiApT(on ? 'ap_toggle_on' : 'ap_toggle_off'),
@@ -168,13 +171,24 @@ function fushiQuickToggleOn(key, stored) {
   return FUSHI_AP_QUICK_DEFAULTS[key] === true;
 }
 
+// 词典字号步进（纯函数）：current = 存储里的覆盖（null/缺省 = 跟随 Fushi），delta = ±1。
+// 从「跟随」起步时以 16px（app 词典字号缺省、zoom = 1 的那个基准）为起点；夹进 10–40。
+// 返回要写的新字号（数字）。范围与 popup-size.js 的 FUSHI_POPUP_FONT_SIZE_MIN/MAX 同值
+// （action-popup 页面也加载 popup-size.js，运行时取那边的常量，这里只是 node 测试的回落）。
+function fushiFontSizeStep(current, delta) {
+  const min = typeof FUSHI_POPUP_FONT_SIZE_MIN === 'number' ? FUSHI_POPUP_FONT_SIZE_MIN : 10;
+  const max = typeof FUSHI_POPUP_FONT_SIZE_MAX === 'number' ? FUSHI_POPUP_FONT_SIZE_MAX : 40;
+  const cur = typeof current === 'number' && isFinite(current) ? current : 16;
+  return Math.min(max, Math.max(min, Math.round(cur + (Number(delta) || 0))));
+}
+
 // node 单测导出（浏览器里 module 未定义，直接跳过）。
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     fushiFilterQueue, fushiQueueItemLabel, fushiQueueItemContext, fushiReadPanelEnabled,
     fushiQueueItemUrl, fushiTabSite, fushiGenButtonState, fushiUpdateNotice,
     fushiOverlayToggleState, fushiOverlayToggleWrite, fushiQuickToggleOn,
-    FUSHI_AP_QUICK_DEFAULTS,
+    FUSHI_AP_QUICK_DEFAULTS, fushiFontSizeStep,
   };
 }
 
@@ -475,6 +489,7 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   const overlayEl = document.getElementById('hp-overlay-toggle');
   const overlayStateEl = document.getElementById('hp-overlay-toggle-state');
   let overlayOn = true;
+  let overlayStored = {};
   function renderOverlayToggle(stored) {
     const s = fushiOverlayToggleState(stored);
     overlayOn = s.on;
@@ -485,14 +500,53 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
     if (overlayStateEl) overlayStateEl.textContent = s.state;
   }
   try {
-    chrome.storage.local.get(['subtitleOverlayEnabled'], (r) => renderOverlayToggle(r || {}));
+    chrome.storage.local.get(['subtitleOverlayEnabled', 'netflixSubtitlePanel'], (r) => {
+      overlayStored = r || {};
+      renderOverlayToggle(overlayStored);
+    });
   } catch (_) { renderOverlayToggle({}); }
   if (overlayEl) {
     overlayEl.addEventListener('click', () => {
       const write = fushiOverlayToggleWrite(overlayOn);
-      renderOverlayToggle(write); // 先按目标态画（点击即反馈），落盘后 onChanged 再对一次
+      overlayStored = Object.assign({}, overlayStored, write);
+      renderOverlayToggle(overlayStored); // 先按目标态画（点击即反馈），落盘后 onChanged 再对一次
       try { chrome.storage.local.set(write); } catch (_) {}
     });
+  }
+
+  // 词典字号步进器：写 popupFontSize（与设置页同键）；点中间的值 = 删键回到跟随 Fushi。
+  // 已打开的查词弹窗经 popup-size.js 的 storage 监听就地换 zoom，不必重新查词。
+  const fontValueEl = document.getElementById('hp-font-value');
+  const fontDecEl = document.getElementById('hp-font-dec');
+  const fontIncEl = document.getElementById('hp-font-inc');
+  const fontKey = typeof FUSHI_POPUP_FONT_SIZE_KEY === 'string' ? FUSHI_POPUP_FONT_SIZE_KEY : 'popupFontSize';
+  let fontPx = null;
+  function renderFont(value) {
+    fontPx = typeof fushiNormalizePopupFontSize === 'function' ? fushiNormalizePopupFontSize(value) : null;
+    if (!fontValueEl) return;
+    fontValueEl.textContent = fontPx == null ? fushiApT('ap_font_follow') : String(fontPx);
+    fontValueEl.dataset.follow = fontPx == null ? '1' : '';
+    if (fontDecEl) fontDecEl.disabled = fontPx != null && fontPx <= fushiFontSizeStep(fontPx, -1000);
+    if (fontIncEl) fontIncEl.disabled = fontPx != null && fontPx >= fushiFontSizeStep(fontPx, 1000);
+  }
+  if (fontValueEl) {
+    try { chrome.storage.local.get([fontKey], (r) => renderFont(r && r[fontKey])); } catch (_) { renderFont(null); }
+    const step = (delta) => {
+      const next = fushiFontSizeStep(fontPx, delta);
+      renderFont(next);
+      try { chrome.storage.local.set({ [fontKey]: next }); } catch (_) {}
+    };
+    if (fontDecEl) fontDecEl.addEventListener('click', () => step(-1));
+    if (fontIncEl) fontIncEl.addEventListener('click', () => step(1));
+    fontValueEl.addEventListener('click', () => {
+      renderFont(null);
+      try { chrome.storage.local.remove(fontKey); } catch (_) {}
+    });
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && changes[fontKey]) renderFont(changes[fontKey].newValue);
+      });
+    } catch (_) {}
   }
 
   // 其余快捷开关（隐藏字幕 / Shift 悬停查词）：翻转即写设置页同一把键，popup 不关——用户要看到
@@ -542,8 +596,12 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
-      if (changes.subtitleOverlayEnabled) {
-        renderOverlayToggle({ subtitleOverlayEnabled: changes.subtitleOverlayEnabled.newValue });
+      if (changes.subtitleOverlayEnabled || changes.netflixSubtitlePanel) {
+        const patch = {};
+        if (changes.subtitleOverlayEnabled) patch.subtitleOverlayEnabled = changes.subtitleOverlayEnabled.newValue;
+        if (changes.netflixSubtitlePanel) patch.netflixSubtitlePanel = changes.netflixSubtitlePanel.newValue;
+        overlayStored = Object.assign({}, overlayStored, patch);
+        renderOverlayToggle(overlayStored);
       }
       if (changes.fushiQueue) {
         render(Array.isArray(changes.fushiQueue.newValue) ? changes.fushiQueue.newValue : []);

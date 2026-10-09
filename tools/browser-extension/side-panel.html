@@ -35,7 +35,8 @@
     <div id="offset" class="offset-row" hidden>
       <button type="button" data-offset="-500">−0.5</button>
       <button type="button" data-offset="-100">−0.1</button>
-      <span id="offset-value">+0.0s</span>
+      <input id="offset-value" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="0"
+             title="偏移秒数，回车生效（0 = 复位）" data-i18n-title="pc_offset_input_label" data-i18n-aria-label="pc_offset_input_label">
       <button type="button" data-offset="100">+0.1</button>
       <button type="button" data-offset="500">+0.5</button>
       <button id="offset-reset" type="button" title="重置时轴偏移" data-i18n-title="sp_offset_reset_title" data-i18n-aria-label="sp_offset_reset_title"><span class="msr-slot" data-fushi-icon="restart_alt" data-fushi-icon-size="20"></span></button>

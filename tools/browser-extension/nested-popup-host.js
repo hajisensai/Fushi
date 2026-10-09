@@ -366,7 +366,7 @@
     });
   }
   const allowed = new Set(['mineEntry', 'duplicateCheck', 'resolveWordAudio', 'listWordAudioSources', 'openLink', 'openInAnki',
-    'setSentenceContext', 'clearSentenceDraft', 'sentenceContextPreview']);
+    'favoriteEntry', 'favoriteCheck', 'setSentenceContext', 'clearSentenceDraft', 'sentenceContextPreview']);
   function receive(layer, message) {
     if (!layers.includes(layer) || !message || message.__fushiPopupFrame !== true) return;
     if (message.type === 'close') {

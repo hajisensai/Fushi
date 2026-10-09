@@ -75,6 +75,7 @@ import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/lookup_ime_language.dart';
+import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi_engine/models/dictionary_directory.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
@@ -264,6 +265,7 @@ import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart'
     show RemotePopupDictionaryCss;
 import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/sync/browser_extension_test_page.dart';
+import 'package:fushi/src/sync/yomitan_api_server.dart';
 import 'package:fushi/src/sync/yomitan_api_server_manager.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/shortcut_preferences.dart';
@@ -8752,6 +8754,9 @@ class AppModel with ChangeNotifier {
       // 扩展网页视频沉浸时间：每条播放样本喂给桥 → 每个 mediaKey 一个
       // VideoWatchTracker + StudyClock（只计首次覆盖，与视频页同口径）。
       onExtensionStudy: _ensureBrowserVideoStudyBridge().onSample,
+      // BUG-3141：扩展查词弹窗 ☆/★ 收藏。浏览器同属「app 外查词表面」，与 app 外浮窗 /
+      // 剪贴板面板的 favoriteEntry / favoriteCheck 走同一份读写（跨源判 / 跨源删 / 单源写）。
+      onExtensionFavorite: _browserExtensionFavorite,
       // 浏览器扩展连接探活：扩展任一端点命中即刷新 last-seen 时间戳，供扩展管理页
       // 的「验证插件已正常启用」连接检测显示（扩展 SW 启动时主动打 /api/extension/status，
       // 故装完扩展即刷新，无需用户先划词）。
@@ -8785,6 +8790,19 @@ class AppModel with ChangeNotifier {
       },
     );
   }
+
+  /// BUG-3141：浏览器扩展查词弹窗收藏的 app 侧实现（`/api/extension/favorite`）。
+  Future<bool> _browserExtensionFavorite(ExtensionFavoriteRequest request) =>
+      overlayToggleOrCheckFavoriteWord(
+        db: database,
+        toggle: request.toggle,
+        expression: request.expression,
+        reading: request.reading,
+        addSourceType: overlayStatSourceType(),
+        dateKey: FushiDatabase.statDateKeyOf(DateTime.now()),
+        glossary: request.glossary,
+        sentence: request.sentence,
+      );
 
   /// TODO-2936：「浏览器」媒体类型 Profile 绑定的应用委托。AppModel 不在
   /// Riverpod 图里，无法直接触达 [ProfileViewModel]，由 main.dart 在根容器建好

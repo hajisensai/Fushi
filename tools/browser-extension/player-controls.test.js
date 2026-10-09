@@ -190,6 +190,10 @@ function load(options = {}) {
   const sent = [];
   const shortcuts = [];
   let hideToggles = 0;
+  const picks = [];
+  const offsets = [];
+  const toasts = [];
+  const trackState = options.tracks || { tracks: [], active: null, offsetMs: 0 };
   const storageListeners = [];
   const docListeners = {};
   let timer = null;
@@ -201,10 +205,18 @@ function load(options = {}) {
     fushiVideoKey() { return 'yt:abc'; },
     fushiSubtitleShortcut(action) { shortcuts.push(action); return true; },
     fushiToggleSubtitleHiding() { hideToggles += 1; return true; },
+    fushiSubtitleTrackList() { return trackState; },
+    fushiSubtitleSelectTrack(lang) { picks.push(lang); trackState.active = lang; return true; },
+    fushiSubtitleSetOffset(ms) {
+      if (!trackState.active) return false;
+      offsets.push(ms); trackState.offsetMs = ms; return true;
+    },
+    fushiToast(t) { toasts.push(t); },
     innerWidth: 1280,
     innerHeight: 720,
     addEventListener() {},
   };
+  Object.assign(windowObject, options.window || {});
   const documentObject = {
     body,
     fullscreenElement: null,
@@ -258,6 +270,7 @@ function load(options = {}) {
     api, body, video, rightControls, sets, removes, sent, shortcuts, menu, button, rowFor, changed,
     doc: documentObject,
     hideToggles: () => hideToggles,
+    picks, offsets, toasts, trackState,
     tick: () => timer && timer(),
     fire(type, ev) { for (const fn of docListeners[type] || []) fn(ev); },
   };
@@ -296,7 +309,7 @@ test('menuModel：总开关关掉时从属项置灰，隐藏字幕不受影响',
   const on = PC.menuModel({ overlayOn: true });
   assert.deepStrictEqual(
     on.map((i) => i.id),
-    ['overlay', 'replaceNative', 'allTracks', 'background', 'hidden', 'list', 'offset', 'style', 'settings'],
+    ['overlay', 'replaceNative', 'allTracks', 'background', 'hidden', 'study', 'track', 'list', 'offset', 'style', 'settings'],
   );
   assert.ok(on.every((i) => !i.disabled));
 
@@ -420,7 +433,7 @@ test('点按钮开菜单：菜单挂在 body 而不是控制栏里（控制栏 o
 });
 
 test('菜单里翻「Fushi 字幕」：写的键与工具栏弹窗逐字相同', () => {
-  const t = load({ stored: { subtitleOverlayEnabled: true } });
+  const t = load({ stored: { subtitleOverlayEnabled: true, netflixSubtitlePanel: true } });
   t.button().click();
   t.rowFor('overlay').click();
   assert.deepStrictEqual(plain(t.sets.pop()), fushiOverlayToggleWrite(true));
@@ -454,9 +467,9 @@ test('时轴偏移 / 字幕列表：复用 subtitle-panel 的执行端，不另�
   t.button().click();
   const seg = t.rowFor('offset');
   const buttons = findAll(seg, (el) => el.dataset && el.dataset.action);
-  assert.deepStrictEqual(buttons.map((b) => b.dataset.action), ['offset-minus', 'offset-reset', 'offset-plus']);
-  for (const b of buttons) b.click();
-  assert.deepStrictEqual(t.shortcuts, ['offset-minus', 'offset-reset', 'offset-plus']);
+  assert.deepStrictEqual(buttons.map((b) => b.dataset.action), ['offset-minus', 'offset-value', 'offset-plus']);
+  for (const b of buttons) if (b.tagName === 'BUTTON') b.click();
+  assert.deepStrictEqual(t.shortcuts, ['offset-minus', 'offset-plus']);
 
   t.rowFor('list').click();
   assert.strictEqual(t.shortcuts.pop(), 'toggle-panel');
@@ -489,8 +502,17 @@ test('字幕样式子页：改字号写 subtitleStyle；恢复默认删键', () 
   assert.strictEqual(t.removes.pop(), 'subtitleStyle');
 });
 
-test('别处改了设置（options 页 / 工具栏）：菜单与按钮跟着变，不需要刷新页面', () => {
+test('BUG-3145：总门没开时「Fushi 字幕」显示关，翻开时连总门一起写', () => {
   const t = load({ stored: { subtitleOverlayEnabled: true } });
+  assert.strictEqual(t.button().dataset.on, '', '总门关着时覆盖层画不出字，按钮不能显示开');
+  t.button().click();
+  t.rowFor('overlay').click();
+  assert.deepStrictEqual(plain(t.sets.pop()), fushiOverlayToggleWrite(false));
+  assert.strictEqual(t.button().dataset.on, '1');
+});
+
+test('别处改了设置（options 页 / 工具栏）：菜单与按钮跟着变，不需要刷新页面', () => {
+  const t = load({ stored: { subtitleOverlayEnabled: true, netflixSubtitlePanel: true } });
   assert.strictEqual(t.button().dataset.on, '1');
   t.changed({ subtitleOverlayEnabled: false });
   assert.strictEqual(t.button().dataset.on, '');
@@ -576,4 +598,124 @@ test('本模块不自己定义字幕外观的默认值或上下限（真源只�
   for (const forbidden of ['fontScale: 100', 'lineHeight: 145', 'backgroundOpacity: 72', "shadow: 'soft'"]) {
     assert.ok(!body.includes(forbidden), '外观默认值不得在 player-controls.js 里复制一份：' + forbidden);
   }
+});
+
+// ── 用户群 10-09：菜单里的沉浸统计开关 / 选字幕轨 / 手填偏移 ───────────────────────
+
+test('沉浸统计开关：写设置页同一个键 studyTrackVideo（缺省开），别处改了菜单跟着变', () => {
+  const t = load({ stored: { netflixSubtitlePanel: true } });
+  t.button().click();
+  const row = t.rowFor('study');
+  assert.ok(row, '菜单里要有沉浸统计开关');
+  assert.strictEqual(row.getAttribute('aria-checked'), 'true', '缺省 = 开（与 study-tracker.js 同）');
+  row.click();
+  assert.deepStrictEqual(plain(t.sets.pop()), { studyTrackVideo: false });
+  assert.strictEqual(t.rowFor('study').getAttribute('aria-checked'), 'false');
+  t.changed({ studyTrackVideo: true });
+  assert.strictEqual(t.rowFor('study').getAttribute('aria-checked'), 'true');
+});
+
+test('选字幕轨：子页列出全部轨，点一条经 subtitle-panel 的选轨执行端切过去', () => {
+  const t = load({
+    tracks: {
+      tracks: [
+        { lang: 'ja', label: 'ja', length: 320 },
+        { lang: '外挂:ep01.srt', label: '外挂:ep01.srt', length: 300 },
+      ],
+      active: 'ja',
+      offsetMs: 0,
+    },
+  });
+  t.button().click();
+  const entry = t.rowFor('track');
+  assert.ok(entry);
+  assert.ok(findAll(entry, (el) => el.tagName === 'SMALL' && el.textContent === 'ja').length, '主页上直接显示当前轨');
+  entry.click();
+  const rows = findAll(t.menu(), (el) => el.dataset && el.dataset.lang);
+  assert.deepStrictEqual(rows.map((r) => r.dataset.lang), ['ja', '外挂:ep01.srt']);
+  assert.strictEqual(rows[0].getAttribute('aria-checked'), 'true');
+  rows[1].click();
+  assert.deepStrictEqual(t.picks, ['外挂:ep01.srt']);
+  const after = findAll(t.menu(), (el) => el.dataset && el.dataset.lang);
+  assert.strictEqual(after[1].getAttribute('aria-checked'), 'true', '选中后就地刷新');
+});
+
+test('选字幕轨：这个视频还没有轨时如实说，不给一张空列表', () => {
+  const t = load();
+  t.button().click();
+  t.rowFor('track').click();
+  const empty = walk(t.menu(), (el) => el.className === 'fushi-pc-empty');
+  assert.ok(empty);
+  assert.strictEqual(empty.textContent, FUSHI_T('pc_track_none'));
+});
+
+test('手填偏移：输入秒数回车即设绝对偏移（0 = 复位），坏输入不动、回显原值', () => {
+  const t = load({ tracks: { tracks: [{ lang: 'ja', label: 'ja', length: 1 }], active: 'ja', offsetMs: 1500 } });
+  t.button().click();
+  const input = walk(t.menu(), (el) => el.dataset && el.dataset.action === 'offset-value');
+  assert.ok(input, '偏移组中间是输入框');
+  assert.strictEqual(input.value, '+1.5', '回显当前偏移');
+  const enter = (v) => {
+    input.value = v;
+    for (const fn of input.handlers.keydown || []) fn({ key: 'Enter', preventDefault() {} });
+  };
+  enter('-42');
+  assert.deepStrictEqual(t.offsets, [-42000]);
+  assert.strictEqual(input.value, '-42');
+  enter('abc');
+  assert.deepStrictEqual(t.offsets, [-42000], '坏输入不写');
+  assert.strictEqual(input.value, '-42', '回显真值');
+  enter('０');
+  enter('0');
+  assert.deepStrictEqual(t.offsets, [-42000, 0]);
+});
+
+test('手填偏移：没有活动轨时提示，不假装成功', () => {
+  const t = load();
+  t.button().click();
+  const input = walk(t.menu(), (el) => el.dataset && el.dataset.action === 'offset-value');
+  input.value = '3';
+  for (const fn of input.handlers.keydown || []) fn({ key: 'Enter', preventDefault() {} });
+  assert.deepStrictEqual(t.offsets, []);
+  assert.deepStrictEqual(t.toasts, [FUSHI_T('pc_track_none')]);
+  assert.strictEqual(input.value, '0');
+});
+
+test('parseOffsetSeconds / formatOffsetSeconds', () => {
+  const P = PC.parseOffsetSeconds;
+  assert.strictEqual(P('1.5'), 1500);
+  assert.strictEqual(P('+90'), 90000);
+  assert.strictEqual(P('−12.25'), -12250, '数学减号');
+  assert.strictEqual(P('－3'), -3000, '全角减号');
+  assert.strictEqual(P('2,5'), 2500, '逗号小数点');
+  assert.strictEqual(P('7s'), 7000);
+  assert.strictEqual(P('7 秒'), 7000);
+  for (const bad of ['', 'abc', '1.2.3', '--1', '3601', null]) assert.strictEqual(P(bad), null, String(bad));
+  const F = PC.formatOffsetSeconds;
+  assert.strictEqual(F(0), '0');
+  assert.strictEqual(F(1500), '+1.5');
+  assert.strictEqual(F(-42000), '-42');
+  assert.strictEqual(F(123), '+0.12');
+});
+
+// BUG-3144：通用悬浮按钮跟 video-target.js 挑出的正片走，并按父级包含块折算 fixed 坐标。
+test('悬浮按钮：贴正片右上角（不是第一个 <video>），坐标按父级包含块折算', () => {
+  const main = makeEl('video');
+  main.rect = { left: 200, right: 1000, top: 100, bottom: 550, width: 800, height: 450 };
+  main.clientWidth = 800;
+  main.clientHeight = 450;
+  main.duration = 1400;
+  const t = load({
+    hostname: 'anichan.to',
+    site: 'none',
+    window: {
+      fushiMainVideo: () => main,
+      // body 被站点 transform: translate(30px, 20px)。
+      fushiFixedOrigin: () => ({ x: 30, y: 20, sx: 1, sy: 1 }),
+    },
+  });
+  const btn = t.button();
+  assert.ok(btn && btn.classList.contains('is-floating'));
+  assert.strictEqual(btn.style.left, (1000 - 48 - 8 - 30) + 'px');
+  assert.strictEqual(btn.style.top, (100 + 8 - 20) + 'px');
 });

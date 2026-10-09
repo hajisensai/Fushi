@@ -384,6 +384,10 @@
   // fushiResolvePopupBox 把上限折回基准尺度；压到最窄可读宽度仍放不下时改压 zoom，
   // 让整窗等比缩小而不是切内容。
   var lookupThemeForBox = null;
+  // 扩展字号覆盖（popup-size.js）变化：已打开的侧边栏弹窗就地按新 zoom 重算尺寸盒。
+  if (typeof fushiOnPopupFontSizeChange === 'function') {
+    fushiOnPopupFontSizeChange(function () { if (lookupThemeForBox) applyLookupBox(); });
+  }
   function applyLookupBox() {
     var box = fushiResolvePopupBox(
       lookupThemeForBox, { width: window.innerWidth, height: window.innerHeight });
@@ -745,6 +749,28 @@
           return (outcome === 'opened' || outcome === 'noMatch') ? outcome : 'failed';
         });
       }
+      if (name === 'favoriteEntry' || name === 'favoriteCheck') {
+        // BUG-3141：与 bridge-shim 同契约——回处理后的收藏态；失败 fail-soft 成 false（☆），
+        // 切换失败时 toast，用户点了收藏没收藏上必须看得见。
+        var favToggle = name === 'favoriteEntry';
+        var favReq = args[0] || {};
+        return sendRuntime({
+          type: 'favorite',
+          toggle: favToggle,
+          expression: favReq.expression || '',
+          reading: favReq.reading || '',
+          glossary: favToggle ? (favReq.glossary || '') : '',
+          sentence: favToggle && currentLookupCue && currentLookupCue.text ? String(currentLookupCue.text) : '',
+        }).then(function (response) {
+          if (response && response.ok && response.data && typeof response.data.favorite === 'boolean') {
+            return response.data.favorite;
+          }
+          if (favToggle) {
+            toast('✗ ' + tr(response && response.status === 404 ? 'favorite_failed_old_app' : 'favorite_failed'));
+          }
+          return false;
+        });
+      }
       if (name === 'resolveWordAudio') {
         var audio = args[0] || {};
         return sendRuntime({
@@ -866,8 +892,8 @@
       trackEl.value = state.activeLang || '';
       offsetEl.hidden = tracks.length === 0;
     }
-    offsetValueEl.textContent = ((Number(state.offsetMs) || 0) >= 0 ? '+' : '') +
-      ((Number(state.offsetMs) || 0) / 1000).toFixed(1) + 's';
+    // 正在手填时不打断（state 每秒刷新一次）。
+    if (document.activeElement !== offsetValueEl) offsetValueEl.value = formatOffsetSeconds(state.offsetMs);
   }
 
   function renderCues() {
@@ -1057,6 +1083,43 @@
     });
     if (state && state.ok) { stateSignature = metadataSignature(state); applyState(state, true); }
   });
+
+  // 手填偏移（用户群 10-09）：输入秒数回车 = 绝对偏移，0 = 复位；解析规则与播放器菜单
+  // （player-controls.js parseOffsetSeconds）一致，守卫 side-panel-offset-input.test.js 交叉比对。
+  function formatOffsetSeconds(ms) {
+    var n = Number(ms);
+    if (!isFinite(n) || n === 0) return '0';
+    var sec = Math.round(n / 10) / 100;
+    return (sec > 0 ? '+' : '-') + String(Math.abs(sec));
+  }
+  function parseOffsetSeconds(text) {
+    var t = String(text == null ? '' : text).trim()
+      .replace(/[−－–]/g, '-').replace(/＋/g, '+').replace(/[，,]/g, '.').replace(/\s*(s|秒)$/i, '');
+    if (!/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(t)) return null;
+    var ms = Math.round(parseFloat(t) * 1000);
+    if (!isFinite(ms) || Math.abs(ms) > 3600 * 1000) return null;
+    return ms;
+  }
+  async function commitOffsetInput() {
+    var ms = parseOffsetSeconds(offsetValueEl.value);
+    if (ms === null) {
+      offsetValueEl.value = formatOffsetSeconds(currentState ? currentState.offsetMs : 0);
+      return;
+    }
+    var state = await sendToTab({ type: 'fushiSubtitleSidePanelOffset', absoluteMs: ms });
+    if (state && state.ok) { stateSignature = metadataSignature(state); applyState(state, true); }
+    offsetValueEl.value = formatOffsetSeconds(state && state.ok ? state.offsetMs : ms);
+  }
+  // 回车 = 失焦提交（失焦触发 change）；文本框不在 <form> 里，回车 / Esc 本就没有默认动作。
+  offsetValueEl.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') offsetValueEl.blur();
+    else if (event.key === 'Escape') {
+      offsetValueEl.value = formatOffsetSeconds(currentState ? currentState.offsetMs : 0);
+      offsetValueEl.blur();
+    }
+  });
+  offsetValueEl.addEventListener('change', commitOffsetInput);
+  offsetValueEl.addEventListener('focus', function () { try { offsetValueEl.select(); } catch (_) {} });
 
   document.getElementById('offset-reset').addEventListener('click', async function () {
     var state = await sendToTab({ type: 'fushiSubtitleSidePanelOffset', reset: true });

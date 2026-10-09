@@ -2387,6 +2387,8 @@ function fushiShowConnectionFailure(resp) {
     message = fushiTr('conn_unauthorized');
   } else if (c && c.state === 'wrong-service') {
     message = fushiTr('conn_wrong_service');
+  } else if (c && c.state === 'no-response') {
+    message = fushiTr('conn_no_response');
   }
   // unauthorized / wrong-service 两态的解法就在扩展设置页（核对 token / 恢复自动配置），
   // 故把 toast 做成可点直达；其余两态（app 侧没开 API、Yomitan 抢端口）要去 Fushi app 或
@@ -2799,6 +2801,27 @@ function fushiSendPopupSize(maxWidth, maxHeight) {
   } catch (_) { /* 扩展上下文失效：静默（尺寸只是没落库，不崩查词） */ }
 }
 
+// BUG-3142：拖右下角改了弹窗宽度后当前词条不重排，要重新查词才对。popup.js 的多列 masonry
+// 把每张词典卡的宽度 / 位置写成 inline px（列宽按铺排那一刻的容器宽算），只在 window resize /
+// 卡片自身高度变化时重铺；扩展弹窗是宿主页里一个可调宽的 host，宿主页 window 根本没变，
+// 于是卡片停在旧列宽上（拖窄被裁、拖宽留白）。改宽就是这份布局的输入变了：直接调 popup.js
+// 对宿主开放的重铺入口（in-app 改列数也走它），拖动中按帧合并、松手再落实一次。
+function fushiRelayoutPopupContent() {
+  if (!fushiHost) return;
+  try {
+    if (typeof window.fushiRelayoutDictionaries === 'function') window.fushiRelayoutDictionaries();
+  } catch (_) { /* 弹窗已销毁 */ }
+}
+let fushiRelayoutRaf = 0;
+function fushiScheduleRelayoutPopupContent() {
+  if (fushiRelayoutRaf) return;
+  if (typeof requestAnimationFrame !== 'function') { fushiRelayoutPopupContent(); return; }
+  fushiRelayoutRaf = requestAnimationFrame(() => {
+    fushiRelayoutRaf = 0;
+    fushiRelayoutPopupContent();
+  });
+}
+
 // 在把手上装拖拽逻辑（每个 grip 只装一次）。pointerdown 快照起始基准 + 视口可用空间夹取上界，
 // pointermove 经纯函数 fushiComputeResizedSize 实时改 host 的 width/maxHeight（place() 只在查词当
 // 帧跑一次、无 rAF 循环，故手动尺寸不会被每帧覆盖回去），pointerup 落库并经 bridge 回写 app。
@@ -2840,6 +2863,7 @@ function fushiInstallResizeDrag(grip) {
     fushiHost.style.width = size.width + 'px';
     fushiHost.style.maxHeight = size.height + 'px';
     fushiPositionResizeGrip();
+    fushiScheduleRelayoutPopupContent();
   };
   const up = () => {
     const d = fushiResizeDrag;
@@ -2847,6 +2871,8 @@ function fushiInstallResizeDrag(grip) {
     // 拖即解锁：仅当本次确实拖动过（位移超阈值）才回写尺寸 + 翻 independent；
     // 纯点击（把手盖住的内容点击）不脱钩「跟随 app 内尺寸」（BUG review LOW）。
     if (!d || !fushiHost || !d.moved) return;
+    // 松手再铺一次（拖动中按帧合并的那次可能还没跑，最终宽度必须落实）。
+    fushiRelayoutPopupContent();
     const w = parseFloat(fushiHost.style.width);
     const h = parseFloat(fushiHost.style.maxHeight);
     if (w > 0 && h > 0) fushiSendPopupSize(w, h);
@@ -2985,6 +3011,19 @@ function fushiApplyGlass(c, enabled, radius) {
   }
 }
 
+// 最近一次建立尺寸盒用的主题（扩展字号覆盖变化时就地重算 zoom，不必重新查词）。
+let fushiLastBoxTheme = null;
+if (typeof fushiOnPopupFontSizeChange === 'function') {
+  fushiOnPopupFontSizeChange(function () {
+    if (!fushiHost || !fushiContainer || !fushiLastBoxTheme) return;
+    const box = fushiResolvePopupBox(fushiLastBoxTheme, null);
+    fushiHost.style.zoom = String(box.zoom);
+    try { fushiApplyPlacement(); } catch (_) { /* 弹窗已销毁 */ }
+    fushiPositionResizeGrip();
+    fushiRelayoutPopupContent();
+  });
+}
+
 function fushiApplyTheme(c, theme, applyBox) {
   if (!theme || typeof theme !== 'object') return;
   for (const k in theme) {
@@ -3058,6 +3097,7 @@ function fushiApplyTheme(c, theme, applyBox) {
     // 尺寸真相源是 app 下发的 theme（扩展设置页「查词框大小」写的也是它，经
     // POST /api/extension/popup-size）。视口夹取交给下面 fushiPlacePopup 的既有逻辑
     // （它还要额外满足「不遮住被查词」），这里只解析出基准尺度的宽/高/zoom，不传 viewport。
+    fushiLastBoxTheme = theme;
     const box = fushiResolvePopupBox(theme, null);
     // 设置页要显示「当前多大」，但它读不到查词响应。这里把下发值镜像进 storage 供其回显。
     // 只是镜像，不参与任何决策——真相源仍是 app。
@@ -3071,6 +3111,19 @@ function fushiApplyTheme(c, theme, applyBox) {
     fushiHost.style.maxHeight = fushiHostBaseMaxHeight;
     fushiHost.style.zoom = String(box.zoom);
   }
+  // 右侧滚动条那一列与卡片同色（用户群 10-09「右侧条」）：卡片底色画在 shadow 里的
+  // #entries-container 上，而它的宽度不含宿主滚动条那一列——那一列此前透出网页底色，深色弹窗
+  // 贴在浅色网页上就是一条白边。明暗 / 液态玻璃 / 调色板都已落到卡片上，此刻量到的底色就是
+  // 那一列该有的颜色；content.css 的 #hibiki-popup-host 规则用它只画最右一列（见那里的说明）。
+  fushiPaintHostGutter(fushiHost, c);
+}
+
+function fushiPaintHostGutter(host, c) {
+  if (!host || !host.style || typeof host.style.setProperty !== 'function') return;
+  let bg = '';
+  try { bg = typeof getComputedStyle === 'function' && c ? getComputedStyle(c).backgroundColor : ''; } catch (_) { bg = ''; }
+  if (!bg || bg === 'transparent' || /^rgba\([^)]*,\s*0\)$/.test(bg)) host.style.removeProperty('--fushi-host-gutter');
+  else host.style.setProperty('--fushi-host-gutter', bg);
 }
 
 function fushiRender(popupJson, termLen, theme, anchorRect) {

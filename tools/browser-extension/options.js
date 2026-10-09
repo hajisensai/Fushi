@@ -211,6 +211,8 @@ async function loadSettings() {
     });
   }
   await loadPopupSize(saved);
+  await loadPopupFontSize();
+  await loadShortcutKeys();
 }
 
 // ── 查词框大小 ──
@@ -256,6 +258,148 @@ async function loadPopupSize(saved) {
     // change（失焦/回车）而非 input：边打字边发请求会把「4」当成 4px 提交上去。
     on(id, 'change', submitPopupSize);
   }
+}
+
+// ── 词典字号（只作用于浏览器的可选覆盖，见 popup-size.js FUSHI_POPUP_FONT_SIZE_KEY）──
+// 留空 = 跟随 Fushi（删键，不存等值快照）；越界值夹进范围后回显，让用户当场看到实际生效值。
+// ── 自定义快捷键（用户群 10-09）──
+// 判定 / 规范化 / 显示全在 video-shortcuts.js（页面先于本文件加载，FUSHI_VIDEO_SHORTCUTS），
+// 这里只做录入：点键帽 → 按下新组合 → 查重 → 写 videoShortcutKeys（只存改过的动作，
+// 改回默认即删项，全删则删键）。Esc 取消，Backspace / Delete 恢复该动作的默认键。
+const VS = (typeof self !== 'undefined' && self.FUSHI_VIDEO_SHORTCUTS) || null;
+const SHORTCUT_KEYS_SETTING = VS ? VS.KEYS_SETTING : 'videoShortcutKeys';
+let shortcutCustom = {};
+let shortcutRecording = null; // {button, action, onKey, onBlur}
+
+function shortcutActionName(action) {
+  const btn = document.querySelector ? document.querySelector('[data-shortcut-action="' + action + '"]') : null;
+  const strong = btn && btn.closest ? btn.closest('.shortcut-row').querySelector('strong') : null;
+  return strong ? strong.textContent : action;
+}
+
+function renderShortcutKeys() {
+  if (!VS || !document.querySelectorAll) return;
+  const combos = VS.resolveCombos(shortcutCustom);
+  for (const btn of document.querySelectorAll('[data-shortcut-action]')) {
+    if (shortcutRecording && shortcutRecording.button === btn) continue;
+    const action = btn.dataset.shortcutAction;
+    btn.textContent = VS.formatCombo(combos[action]) || '—';
+    btn.dataset.custom = shortcutCustom[action] ? '1' : '';
+    btn.dataset.recording = '';
+  }
+}
+
+function stopShortcutRecording() {
+  const rec = shortcutRecording;
+  if (!rec) return;
+  shortcutRecording = null;
+  window.removeEventListener('keydown', rec.onKey, true);
+  rec.button.removeEventListener('blur', rec.onBlur);
+  renderShortcutKeys();
+}
+
+async function saveShortcutCustom(next) {
+  shortcutCustom = next;
+  if (Object.keys(next).length) await chrome.storage.local.set({ [SHORTCUT_KEYS_SETTING]: next });
+  else await chrome.storage.local.remove(SHORTCUT_KEYS_SETTING);
+}
+
+function startShortcutRecording(button) {
+  if (!VS) return;
+  if (shortcutRecording) stopShortcutRecording();
+  const action = button.dataset.shortcutAction;
+  const onKey = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (e.key === 'Escape' && !ctrl && !e.shiftKey && !e.altKey) { stopShortcutRecording(); return; }
+    if ((e.key === 'Backspace' || e.key === 'Delete') && !ctrl && !e.shiftKey && !e.altKey) {
+      const next = Object.assign({}, shortcutCustom);
+      delete next[action];
+      stopShortcutRecording();
+      await saveShortcutCustom(next);
+      renderShortcutKeys();
+      toast(tr('opt_toast_shortcut_reset', { name: shortcutActionName(action) }));
+      return;
+    }
+    const combo = VS.comboFromEvent({ key: e.key, code: e.code, ctrl, shift: e.shiftKey, alt: e.altKey });
+    if (!combo) return; // 只按了修饰键：继续等主键
+    const conflict = VS.conflictOf(VS.resolveCombos(shortcutCustom), action, combo);
+    if (conflict) {
+      toast(tr('opt_toast_shortcut_conflict', { combo: VS.formatCombo(combo), name: shortcutActionName(conflict) }));
+      return; // 留在录入态，换一个组合
+    }
+    const next = Object.assign({}, shortcutCustom);
+    if (combo === VS.DEFAULT_COMBOS[action]) delete next[action];
+    else next[action] = combo;
+    stopShortcutRecording();
+    await saveShortcutCustom(next);
+    renderShortcutKeys();
+    toast(tr('opt_toast_shortcut_saved', { name: shortcutActionName(action), combo: VS.formatCombo(combo) }));
+  };
+  const onBlur = () => stopShortcutRecording();
+  shortcutRecording = { button, action, onKey, onBlur };
+  button.dataset.recording = '1';
+  button.textContent = tr('opt_shortcut_recording');
+  window.addEventListener('keydown', onKey, true);
+  button.addEventListener('blur', onBlur);
+}
+
+async function loadShortcutKeys() {
+  if (!VS || !document.querySelectorAll) return;
+  const store = await chrome.storage.local.get([SHORTCUT_KEYS_SETTING]);
+  const raw = store[SHORTCUT_KEYS_SETTING];
+  shortcutCustom = raw && typeof raw === 'object' ? Object.assign({}, raw) : {};
+  for (const btn of document.querySelectorAll('[data-shortcut-action]')) {
+    btn.addEventListener('click', (e) => {
+      // 键帽在 <label for=开关> 里：点它是改键，不是翻开关。
+      e.preventDefault();
+      e.stopPropagation();
+      if (shortcutRecording && shortcutRecording.button === btn) stopShortcutRecording();
+      else startShortcutRecording(btn);
+    });
+  }
+  renderShortcutKeys();
+}
+
+// popup-size.js 在页面里先于本文件加载；node 测试壳只装本文件时按同值回落。
+const POPUP_FONT_KEY = typeof FUSHI_POPUP_FONT_SIZE_KEY === 'string' ? FUSHI_POPUP_FONT_SIZE_KEY : 'popupFontSize';
+const POPUP_FONT_MIN = typeof FUSHI_POPUP_FONT_SIZE_MIN === 'number' ? FUSHI_POPUP_FONT_SIZE_MIN : 10;
+const POPUP_FONT_MAX = typeof FUSHI_POPUP_FONT_SIZE_MAX === 'number' ? FUSHI_POPUP_FONT_SIZE_MAX : 40;
+function normalizePopupFontSize(value) {
+  if (typeof fushiNormalizePopupFontSize === 'function') return fushiNormalizePopupFontSize(value);
+  const n = Math.round(Number(value));
+  return typeof value === 'number' && n >= POPUP_FONT_MIN && n <= POPUP_FONT_MAX ? n : null;
+}
+
+function fillPopupFontSize(value) {
+  const input = $('popupFontSize');
+  if (!input || document.activeElement === input) return;
+  const px = normalizePopupFontSize(value);
+  input.value = px == null ? '' : String(px);
+}
+
+async function submitPopupFontSize() {
+  const input = $('popupFontSize');
+  if (!input) return;
+  const raw = String(input.value || '').trim();
+  if (!raw) {
+    await chrome.storage.local.remove(POPUP_FONT_KEY);
+    toast(tr('opt_toast_popup_font_size_follow'));
+    return;
+  }
+  const n = Number(raw);
+  if (!isFinite(n)) { input.value = ''; return; }
+  const px = Math.min(POPUP_FONT_MAX, Math.max(POPUP_FONT_MIN, Math.round(n)));
+  input.value = String(px);
+  await chrome.storage.local.set({ [POPUP_FONT_KEY]: px });
+  toast(tr('opt_toast_popup_font_size_saved', { size: px }));
+}
+
+async function loadPopupFontSize() {
+  const store = await chrome.storage.local.get([POPUP_FONT_KEY]);
+  fillPopupFontSize(store[POPUP_FONT_KEY]);
+  on('popupFontSize', 'change', submitPopupFontSize);
 }
 
 on('connectionForm', 'submit', async (event) => {
@@ -400,6 +544,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (select) select.value = changes[spec.key].newValue || spec.fallback;
   }
   if (changes.popupSizeFromApp) fillPopupSizeInputs(changes.popupSizeFromApp.newValue);
+  if (changes[POPUP_FONT_KEY]) fillPopupFontSize(changes[POPUP_FONT_KEY].newValue);
+  if (changes[SHORTCUT_KEYS_SETTING]) {
+    const v = changes[SHORTCUT_KEYS_SETTING].newValue;
+    shortcutCustom = v && typeof v === 'object' ? Object.assign({}, v) : {};
+    renderShortcutKeys();
+  }
   if (changes.fushiUpdateStale) refreshUpdateCard();
 });
 

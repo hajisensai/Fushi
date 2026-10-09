@@ -124,7 +124,23 @@
     if (/(^|\.)netflix\.com$/.test(location.hostname) && m) return m[1];
     return (location.hostname + location.pathname).replace(/\|/g, '_');
   }
-  function videoEl() { return document.querySelector('video'); }
+  // 正片 <video>：video-target.js 按全屏元素 / 可见面积挑（BUG-3143/3144：第一个 <video> 常是
+  // 预告片、广告位或缩略图预览，浮层贴错元素）。契约缺席（单测壳）时回落旧取法。
+  function videoEl() {
+    if (typeof window.fushiMainVideo === 'function') {
+      var v = window.fushiMainVideo();
+      if (v) return v;
+    }
+    return document.querySelector('video');
+  }
+  // 覆盖层父级里 position:fixed 的坐标系（BUG-3143：站点给全屏容器 / body 加 transform 时
+  // fixed 的包含块不再是视口，视口坐标会整体偏移出屏）。契约缺席时恒等。
+  function fixedOriginOf(el) {
+    if (el && el.parentNode && typeof window.fushiFixedOrigin === 'function') {
+      try { return window.fushiFixedOrigin(el.parentNode); } catch (_) { /* fallthrough */ }
+    }
+    return { x: 0, y: 0, sx: 1, sy: 1 };
+  }
   function videoTimeMs() {
     var v = videoEl();
     return v && typeof v.currentTime === 'number' ? Math.round(v.currentTime * 1000) : 0;
@@ -597,11 +613,12 @@
     var cx = rect.left + rect.width * pos.x;
     var halfToEdge = Math.max(0, Math.min(cx, vv - cx));
     var maxW = Math.max(200, Math.min(vv * 0.94, (halfToEdge - 6) * 2));
-    el.style.left = cx + 'px';
+    var origin = fixedOriginOf(el);
+    el.style.left = ((cx - origin.x) / origin.sx) + 'px';
     // 底边锚定：文本块从这条线**往上**长。旧版中心锚 84% 时，非全屏矮视频（~200px 高）会垂出
     // 视频底缘压住进度条——底锚后任何视频高度都出不了界。
-    el.style.top = (rect.top + rect.height * pos.y) + 'px';
-    el.style.maxWidth = Math.round(maxW) + 'px';
+    el.style.top = ((rect.top + rect.height * pos.y - origin.y) / origin.sy) + 'px';
+    el.style.maxWidth = Math.round(maxW / origin.sx) + 'px';
     // 底板宽 / 高（外观设置 boxWidth / boxHeight，视频盒的百分比；0 = 随内容）。是视频盒的比例
     // 而非视口的，所以不能交给 CSS 百分比，随每次重摆按当前 rect 折 px；宽仍被上面的 max-width
     // 夹住，永远不出视口。subtitle-style.js 缺席（旧测试壳）时不写，观感同旧版。
@@ -1008,6 +1025,14 @@
     store[key] = base;
     delete st.trackOffsets[key];
     st.activeLang = label;
+    // BUG-3145：装外挂轨 = 用户明确要在这个视频上看 Fushi 字幕。字幕能力总门（SETTING_KEY，
+    // 缺省关）没开时 tick() 直接返回、覆盖层一个字都不画——从 Chrome 自己的侧边栏入口或
+    // 「查字幕」装轨都会落到这里，用户只看到「已加载 N 条」却什么都不显示，要把「Fushi 字幕」
+    // 拨关再拨开（那一下顺带写开总门）才出来。拖放入口（drop 监听）本就先开门，这里补齐其余入口。
+    if (!st.enabled) {
+      try { var gate = {}; gate[SETTING_KEY] = true; chrome.storage.local.set(gate); } catch (_) {}
+      applyEnabled(true);
+    }
     showPanel();
     toast(tr('subtitle_external_loaded', { n: base.length }));
   }
@@ -1018,6 +1043,7 @@
     if (c.state === 'yomitan-conflict') return tr('conn_yomitan_conflict', { port: c.port || 19633 });
     if (c.state === 'unauthorized') return tr('conn_unauthorized');
     if (c.state === 'offline') return tr('conn_api_off');
+    if (c.state === 'no-response') return tr('conn_no_response');
     return fallback;
   }
 
@@ -1262,6 +1288,50 @@
     };
   }
 
+  // ── 播放器内嵌菜单（player-controls.js）的轨 / 偏移入口（用户群 10-09）──
+  // 与 Side Panel 消息同一份状态与执行端：选轨就是 fushiSubtitleSidePanelSelectTrack，偏移就是
+  // trackOffsets，不另起一条链路。菜单在视频画面上，所以选轨 / 填偏移是「就地看片」的入口。
+  window.fushiSubtitleTrackList = function () {
+    var state = sidePanelState(false);
+    return {
+      tracks: state.tracks,
+      active: state.activeLang,
+      offsetMs: state.offsetMs,
+      hasVideo: state.hasVideo,
+    };
+  };
+  // 选轨 = 用户明确要在这个视频上看这条 Fushi 字幕：总门没开时一并打开（同外挂轨安装）。
+  window.fushiSubtitleSelectTrack = function (lang) {
+    var wanted = String(lang || '');
+    var available = tracksForVideo();
+    var found = false;
+    for (var i = 0; i < available.length; i++) {
+      if (available[i].lang === wanted) { found = true; break; }
+    }
+    if (!found) return false;
+    st.activeLang = wanted;
+    if (!st.enabled) {
+      try { var gate = {}; gate[SETTING_KEY] = true; chrome.storage.local.set(gate); } catch (_) {}
+      applyEnabled(true);
+    } else {
+      refreshHeadless();
+    }
+    return true;
+  };
+  // 绝对偏移（毫秒）：手填数值（app 视频页同款「直接输入」），盗版源片头多出几十秒时不必
+  // 按几百下 ±0.1。0 = 复位。没有活动轨时返回 false（调用方提示，不吞）。
+  window.fushiSubtitleSetOffset = function (ms) {
+    if (!st.activeLang) refreshHeadless(); // 面板 / 侧边栏都没开过：先按同一规则挑出当前轨
+    var key = activeTrackKey();
+    var value = Math.round(Number(ms));
+    if (!key || !isFinite(value)) return false;
+    if (value === 0) delete st.trackOffsets[key];
+    else st.trackOffsets[key] = value;
+    refreshHeadless();
+    toast(tr('subtitle_offset_toast', { offset: fmtOffset(trackOffset(key)) }));
+    return true;
+  };
+
   // 浏览器 Side Panel 与当前标签之间的唯一契约。列表 DOM 完全位于扩展页面；这里仅做
   // 序列化、seek、偏移、外挂轨安装和查词命令，不向宿主网页挂字幕列表节点。
   try {
@@ -1291,7 +1361,12 @@
         var key = activeTrackKey();
         if (key) {
           if (msg.reset === true) delete st.trackOffsets[key];
-          else st.trackOffsets[key] = (st.trackOffsets[key] || 0) + (Number(msg.deltaMs) || 0);
+          else if (typeof msg.absoluteMs === 'number' && isFinite(msg.absoluteMs)) {
+            // 侧边栏手填偏移（与播放器菜单同一语义）：绝对值，0 = 复位。
+            var abs = Math.round(msg.absoluteMs);
+            if (abs === 0) delete st.trackOffsets[key];
+            else st.trackOffsets[key] = abs;
+          } else st.trackOffsets[key] = (st.trackOffsets[key] || 0) + (Number(msg.deltaMs) || 0);
         }
         sendResponse(sidePanelState(true));
         return false;
@@ -1351,10 +1426,27 @@
 
   document.addEventListener('fullscreenchange', function () {
     if (!st.enabled) return;
+    // 全屏切换打断进行中的拖动 / 缩放：会话里存的是旧坐标系的点，带进新画面只会把字幕甩飞。
+    endOverlayDrag(false);
+    endOverlayResize(false);
     sync();
     // 全屏切换后播放器整体挪位（body transform/滚动锁很常见）：立刻重测重摆一次，
     // 不等下一个 200ms tick——重挂父级（fsEl↔html）也在这一步完成。
     if (st.overlayCue) updateSubtitleOverlay(st.overlayCue);
+    // BUG-3143：站点常在 fullscreenchange **之后**才按新尺寸重排播放器（resize 回调 / 过渡动画），
+    // 这一刻量到的还是旧矩形；再等两帧（布局落定）按新几何重摆，并把覆盖层挪到父级最后一个
+    // 子节点——同为最高 z-index 时 DOM 靠后者在上，站点全屏后才插入的控件层不会再盖住缩放把手。
+    var settle = function () {
+      if (!st.overlayEl || !st.overlayEl.parentNode) return;
+      var parent = st.overlayEl.parentNode;
+      if (parent.lastElementChild && parent.lastElementChild !== st.overlayEl) parent.appendChild(st.overlayEl);
+      if (st.overlayCue) updateSubtitleOverlay(st.overlayCue);
+    };
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(function () { requestAnimationFrame(settle); });
+    } else {
+      settle();
+    }
   });
 
   var lastPath = location.pathname;
