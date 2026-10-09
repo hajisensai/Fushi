@@ -155,6 +155,10 @@ class _FakeAppModel extends AppModel {
   @override
   bool get torrentUploadIntroShown => true;
 
+  // BT 前的 P2P 说明不在这些用例的范围里。
+  @override
+  bool get p2pDownloadNoticeDismissed => true;
+
   @override
   AnimeDownloadPlanStore? get animeDownloadPlanStore => store;
 

@@ -116,6 +116,22 @@ class _FakeAppModel extends AppModel {
   @override
   DiscoveryDownloadQueue get discoveryDownloadQueue => _queue;
 
+  @override
+  String discoveryDownloadDirFor(DiscoveryMediaKind kind) =>
+      '${Directory.systemTemp.path}/fushi-discovery-test/${kind.name}';
+
+  bool gameNoticeDismissed = false;
+
+  @override
+  bool get gameResourceNoticeDismissed => gameNoticeDismissed;
+
+  @override
+  Future<void> setGameResourceNoticeDismissed() async =>
+      gameNoticeDismissed = true;
+
+  @override
+  bool get p2pDownloadNoticeDismissed => true;
+
   late final DiscoveryDownloadQueue _queue = DiscoveryDownloadQueue(
     resolvePayload: (DiscoveryResourceItem item) async =>
         throw UnimplementedError(),
@@ -395,6 +411,68 @@ void main() {
     expect(folderItem, findsOneWidget);
   });
 
+  // 10-09 所有者 / 用户：第三方游戏资源站的下载结果标「直链 · HTTP」+「外部来源」，
+  // 第一次下载前弹风险说明（「不再提示」默认不勾），取消就不入队。
+  testWidgets('游戏资源站结果标外部来源，下载前先过风险说明', (WidgetTester tester) async {
+    final _RecursiveSearchSource site = _RecursiveSearchSource();
+    service = MediaDiscoveryService(sources: <MediaDiscoverySource>[site]);
+    appModel = _FakeAppModel(service);
+    await pumpPage(tester);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('discovery_source_pick_site')),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder row = find.widgetWithText(FushiListItem, 'disc1.rar');
+    expect(row, findsOneWidget);
+    expect(
+      find.descendant(
+        of: row,
+        matching: find.byKey(const ValueKey<String>('download-method-direct')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: row,
+        matching: find.byKey(const ValueKey<String>('download-source-external')),
+      ),
+      findsOneWidget,
+    );
+
+    final Finder download = find.descendant(
+      of: row,
+      matching: find.byIcon(Icons.download_outlined),
+    );
+    // 取消：不入队。
+    await tester.tap(download);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('download-notice-gameResource')),
+      findsOneWidget,
+    );
+    expect(find.text(t.download_game_notice_body), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('download-notice-cancel')),
+    );
+    await tester.pumpAndSettle();
+    expect(appModel.discoveryDownloadQueue.tasks, isEmpty);
+
+    // 勾「不再提示」+ 继续：入队，偏好落下，下次不再弹。
+    await tester.tap(download);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('download-notice-dont-show')),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('download-notice-continue')),
+    );
+    await tester.pumpAndSettle();
+    expect(appModel.gameNoticeDismissed, isTrue);
+    expect(appModel.discoveryDownloadQueue.tasks, hasLength(1));
+  });
+
   // BUG-1770：整源失败不得显示成「无结果」。失败徽标原先只挂在非空列表分支上，
   // 空列表直接返回 discovery_empty，于是「请求全挂了」和「真的没东西」在界面上
   // 长得一模一样——实例是 erogame.space 的 fs/list 对匿名访问恒返回
@@ -569,9 +647,10 @@ void main() {
     expect(paged.requestedPages, <int>[1]);
     expect(find.text('paged-1-0'), findsOneWidget);
 
+    // 拖到底（行带方式标签后整页更高，-1500 已不够进入离底 600 的范围）。
     await tester.drag(
       find.byKey(const ValueKey<String>('discovery-results-scroll')),
-      const Offset(0, -1500),
+      const Offset(0, -5000),
     );
     await tester.pumpAndSettle();
     expect(paged.requestedPages, <int>[1, 2], reason: '不用点「加载更多」');
@@ -733,6 +812,11 @@ void main() {
 
     /// 选 Nyaa 源并搜一次。
     Future<void> searchNyaa(WidgetTester tester) async {
+      // 结果行带下载方式 / 外部来源标签后更高：给足高度让五条结果都在视口里
+      // （列表是懒构建的，视口外的行查不到）。
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       await pumpPage(tester, kind: DiscoveryMediaKind.novel);
       await tester.tap(
         find.byKey(const ValueKey<String>('discovery_source_pick_nyaa')),

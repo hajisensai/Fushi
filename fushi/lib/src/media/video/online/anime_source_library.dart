@@ -616,6 +616,8 @@ Future<void> startAnimeEpisodeDownloads({
             id: id,
             title: info.title,
             dest: dest,
+            // 扩展从第三方站点取流：下载中心标「扩展源 · 外部来源」。
+            origin: InterconnectDownloadOrigin.extension,
             run:
                 (
                   File target, {

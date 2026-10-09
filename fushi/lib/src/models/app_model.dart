@@ -7846,6 +7846,17 @@ class AppModel with ChangeNotifier {
   Future<void> setTorrentUploadIntroShown() =>
       prefsRepo.setTorrentUploadIntroShown();
 
+  /// BT / 磁力下载前的 P2P 说明是否已勾「不再提示」（见 `p2p_download_notice.dart`）。
+  bool get p2pDownloadNoticeDismissed => prefsRepo.p2pDownloadNoticeDismissed;
+  Future<void> setP2pDownloadNoticeDismissed() =>
+      prefsRepo.setP2pDownloadNoticeDismissed();
+
+  /// 第三方游戏资源站下载前的风险说明是否已勾「不再提示」。
+  bool get gameResourceNoticeDismissed =>
+      prefsRepo.gameResourceNoticeDismissed;
+  Future<void> setGameResourceNoticeDismissed() =>
+      prefsRepo.setGameResourceNoticeDismissed();
+
   /// 「下载」改名「浏览」的一次性搬迁提示是否已处理（见 `browse_moved_notice.dart`）。
   bool get browseMovedNoticeHandled => prefsRepo.browseMovedNoticeHandled;
   Future<void> setBrowseMovedNoticeHandled() =>

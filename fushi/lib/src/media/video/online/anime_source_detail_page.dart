@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -597,6 +598,8 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
             icon: FushiIcons.video,
             tone: MediaDetailChipTone.primary,
           ),
+        // Aniyomi 扩展从第三方站点取流（10-09「外部来源」提示）。
+        ...extensionSourceDetailChips(),
       ],
       genres: splitOnlineWorkGenres(_anime.genre),
       description: _anime.description,

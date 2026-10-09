@@ -1,3 +1,4 @@
+import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'dart:async';
 import 'dart:io';
@@ -1805,6 +1806,15 @@ Widget buildPendingGameDownloadCard(DiscoveryDownloadTask task) {
             icon: Icons.download_outlined,
             iconSize: 32,
           ),
+        // 在途下载只来自发现页直链队列的游戏资源站（真红小站 / 内置 AList），
+        // 都是第三方站点：封面左上角标「外部来源」（10-09 风险提示）。
+        const Align(
+          alignment: AlignmentDirectional.topStart,
+          child: Padding(
+            padding: EdgeInsets.all(6),
+            child: DownloadExternalSourceTag(),
+          ),
+        ),
         // 进度走封面卡共享进度条（MD3 贴底细线 / Apple 内缩胶囊 / 墨水屏实色），
         // 与书架、视频库同一处定义；总大小未知时退回不定进度的平直细线。
         Align(

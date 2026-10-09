@@ -18,6 +18,7 @@ import 'package:fushi_core/fushi_core.dart'
 import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 
+import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
@@ -59,6 +60,8 @@ class MediaAcquisitionCandidate {
     required this.payload,
     this.details = const <String>[],
     this.score = 0,
+    this.method = DownloadTransferMethod.extension,
+    this.externalSource = true,
   });
 
   /// 本次运行内唯一（后端前缀 + 来源 + 条目身份）。
@@ -71,6 +74,13 @@ class MediaAcquisitionCandidate {
 
   /// 本地排序分（做种数等）；AI 未指派 / 失败时就按它排。
   final int score;
+
+  /// 下载方式（候选行的方式标签）：发现源按 payload 分 BT / 直链，Mihon /
+  /// LNReader 是扩展源。
+  final DownloadTransferMethod method;
+
+  /// 内容来自第三方站点（候选行多一枚「外部来源」）。
+  final bool externalSource;
 
   AiMediaAcquisitionCandidateFact toFact() => AiMediaAcquisitionCandidateFact(
     id: id,
@@ -135,6 +145,11 @@ class DiscoveryAcquisitionBackend implements MediaAcquisitionBackend {
               backend: this,
               payload: entry,
               score: entry.seeders ?? 0,
+              method: discoveryTransferMethodOf(entry.payloadKind),
+              externalSource: isExternalDiscoverySource(
+                service,
+                entry.sourceId,
+              ),
               details: <String>[
                 discoveryMediaKindLabel(entry.kind),
                 if (entry.sizeBytes != null)

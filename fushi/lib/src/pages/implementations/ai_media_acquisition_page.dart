@@ -10,6 +10,7 @@ library;
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 
@@ -522,7 +523,16 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
           : const FushiListLeadingIcon(FushiIcons.download),
       title: Text(c.title),
       titleMaxLines: 2,
-      subtitle: Text(<String>[c.sourceLabel, ...c.details].join(' · ')),
+      // 下载方式 + 外部来源（10-09）：用户点「下载」前就知道走 BT 还是直链。
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(<String>[c.sourceLabel, ...c.details].join(' · ')),
+          const SizedBox(height: 4),
+          DownloadSourceTags(method: c.method, external: c.externalSource),
+        ],
+      ),
       trailing: action,
     );
   }

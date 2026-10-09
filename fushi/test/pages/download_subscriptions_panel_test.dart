@@ -119,6 +119,10 @@ class _FakeAppModel extends AppModel {
   @override
   bool get torrentUploadIntroShown => true;
 
+  // BT 前的 P2P 说明不在这些用例的范围里。
+  @override
+  bool get p2pDownloadNoticeDismissed => true;
+
   // #794 起下载页任务 tab 直接读 appModel.database(VideoDownloadJobsPanel),
   // fake 懒建内存库,用到任务 tab 的用例负责 close。
   FushiDatabase? testDatabase;

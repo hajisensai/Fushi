@@ -6908,6 +6908,8 @@
   "download_source_external_hint": "内容来自第三方站点，不由 Fushi 提供或托管。",
   "download_p2p_notice_title": "关于 BT / 磁力下载",
   "download_p2p_notice_body": "BT / 磁力下载是点对点（P2P）传输：文件来自其他用户，不是 Fushi 提供的；分享同一种子的其他用户能看到你的 IP 地址。开启上传（做种）时，你也会向他们上传数据——Fushi 内置引擎默认关闭上传，外接 qBittorrent 按它自己的设置。请遵守你所在地区的法律。",
-  "download_p2p_notice_dont_show": "不再提示",
-  "download_p2p_notice_continue": "继续下载"
+  "download_notice_dont_show": "不再提示",
+  "download_notice_continue": "继续下载",
+  "download_game_notice_title": "关于游戏资源站",
+  "download_game_notice_body": "这些文件来自第三方站点，不是 Fushi 提供的。压缩包和安装程序可能含有恶意软件，建议先用杀毒软件扫描，再解压或运行。请遵守你所在地区的法律与版权规定。"
 }

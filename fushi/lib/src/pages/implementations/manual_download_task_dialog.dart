@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/pages/implementations/download_notice.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:path/path.dart' as p;
@@ -435,6 +436,8 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
 
   Future<void> _submit() async {
     if (!_canSubmit) return;
+    // 手动添加的只有磁力 / 种子：同样先过 P2P 说明。
+    if (!await confirmP2pDownloadNotice(context) || !mounted) return;
     if (_useRemote) return _submitRemote();
     final VideoDownloadPipelineService? pipeline = widget.pipeline;
     final VideoDownloadBackendTarget? target = widget.target;
