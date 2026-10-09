@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2859 条。点号进各自文件。
+> 共 2860 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3220](bugs/BUG-3220-ios-ankimobile-no-return.md) | 🚧 | 🚧 | iOS 制卡后不跳回 Fushi，已制卡打勾不见 |
 | [BUG-3216](bugs/BUG-3216-dictionary-page-mining-sentence.md) | ✅ | ✅ | 查词页制卡卡片没有句子 |
 | [BUG-3215](bugs/BUG-3215-lapis-ipad-audio-buttons.md) | 🚧 | 🚧 | iPad 上 Lapis 卡片播放按钮孤零零落在左下角 |
 | [BUG-3214](bugs/BUG-3214-video-graphic-ocr-mining.md) | 🚧 | 🚧 | 视频暂停 OCR 出的文字无法制卡 |
