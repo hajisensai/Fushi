@@ -1598,11 +1598,23 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
   final SettingsSectionSpy _spy = SettingsSectionSpy();
 
   /// 叠放形态下页头（展开态）与跳转条的实测高度：正文顶部让位 = 状态栏 + 两者。
-  double _headerHeight = 0;
-  double _jumpBarHeight = 0;
+  ///
+  /// 放在 notifier 里而不是 State 字段 + setState：跳转条出现 / 页头收展时高度
+  /// **逐帧**变化（尺寸过渡动画 + FushiHeightReporter 每帧回报），若每帧 setState
+  /// 整个壳，正文 [SettingsKitScaffold.bodyBuilder] 就跟着逐帧整页重建（进详情页
+  /// 前 ~20 帧每帧重建全部设置行，实测的掉帧主因）。现在只有让位那一层 MediaQuery
+  /// 重建，正文按 `MediaQuery.paddingOf` 的精确依赖只刷新真正读让位的叶子。
+  final ValueNotifier<double> _headerHeight = ValueNotifier<double>(0);
+  final ValueNotifier<double> _jumpBarHeight = ValueNotifier<double>(0);
 
   /// 正文已滚离顶部（内容在页头底下）：驱动共享顶部渐隐。
   final ValueNotifier<bool> _scrolledUnder = ValueNotifier<bool>(false);
+
+  /// 正文子树缓存：壳自身因外层依赖（窗口尺寸、软键盘 viewInsets 逐帧动画等）
+  /// 重建时复用同一个实例，不重跑 [SettingsKitScaffold.bodyBuilder]；宿主重建
+  /// （带来新的 bodyBuilder 闭包）时在 [didUpdateWidget] 里作废。正文自己的依赖
+  /// （主题、让位 padding 等）照常由框架按依赖通知刷新。
+  Widget? _body;
 
   /// 页头只在展开态（内容在顶，与 [SettingsFloatingHeader] 同一阈值）记高度：
   /// 收缩态的胶囊高度不同，若跟着改让位，正文会在滚动中跳一下。
@@ -1610,14 +1622,14 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
       !_controller.hasClients || _controller.positions.first.pixels <= 12;
 
   void _onHeaderHeight(double height) {
-    if (!mounted || height == _headerHeight) return;
-    if (_headerHeight > 0 && !_headerAtRest) return;
-    setState(() => _headerHeight = height);
+    if (!mounted || height == _headerHeight.value) return;
+    if (_headerHeight.value > 0 && !_headerAtRest) return;
+    _headerHeight.value = height;
   }
 
   void _onJumpBarHeight(double height) {
-    if (!mounted || height == _jumpBarHeight) return;
-    setState(() => _jumpBarHeight = height);
+    if (!mounted) return;
+    _jumpBarHeight.value = height;
   }
 
   void _onScroll() {
@@ -1630,7 +1642,6 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
   void initState() {
     super.initState();
     _spy.attach(_controller);
-    _spy.addListener(_onSpy);
     _controller.addListener(_onScroll);
     // 独立路由页登记为当前页滚动控制器：手柄 LB / RB 翻屏兜底够得到正文
     // （与 FushiPageScaffold 同一约定）。嵌在宽屏右窗格时不登记——那里由宿主页负责。
@@ -1638,18 +1649,21 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
   }
 
   @override
+  void didUpdateWidget(SettingsKitScaffold oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _body = null;
+  }
+
+  @override
   void dispose() {
     if (widget.showBack) PageScrollRegistry.pop(_controller);
-    _spy.removeListener(_onSpy);
     _spy.dispose();
     _controller.removeListener(_onScroll);
     _controller.dispose();
+    _headerHeight.dispose();
+    _jumpBarHeight.dispose();
     _scrolledUnder.dispose();
     super.dispose();
-  }
-
-  void _onSpy() {
-    if (mounted) setState(() {});
   }
 
   @override
@@ -1661,16 +1675,9 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
         : tokens.surfaces.page;
     final bool canPop =
         widget.showBack && (ModalRoute.of(context)?.canPop ?? false);
-    // 分组跳转条：页内只要有 ≥ 2 个带标题的分组就出现（单组页不画）。
-    final List<(String, String)> sections = _spy.sections;
-    final bool jump = sections.length >= 2;
-    String? activeTitle;
-    for (final (String id, String title) in sections) {
-      if (id == _spy.activeId) activeTitle = title;
-    }
     // 正文在 Builder 里构建：[bodyBuilder] 拿到的 context 在下面的 MediaQuery
     // 让位之下（叠放形态）/ SafeArea 之下（上下排），读顶部 padding 才对。
-    final Widget body = SettingsSectionSpyScope(
+    final Widget body = _body ??= SettingsSectionSpyScope(
       spy: _spy,
       child: PrimaryScrollController(
         controller: _controller,
@@ -1681,35 +1688,56 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
         ),
       ),
     );
-    final Widget header = SettingsFloatingHeader(
-      title: widget.title,
-      subtitle: jump ? activeTitle : null,
-      leadingIcon: widget.leadingIcon,
-      leadingTone: widget.leadingTone,
-      scrollController: _controller,
-      onBack: canPop ? () => Navigator.of(context).maybePop() : null,
-      actions: widget.actions,
+    // 页头副标题（当前分组名）与跳转条只随 spy 刷新：滚动跨过分组边界时只重建
+    // 这两块，不再 setState 整个壳（此前那会连带整页设置行重建，滚动掉帧）。
+    final Widget header = ListenableBuilder(
+      listenable: _spy,
+      builder: (BuildContext context, Widget? _) {
+        // 分组跳转条：页内只要有 ≥ 2 个带标题的分组就出现（单组页不画）。
+        final List<(String, String)> sections = _spy.sections;
+        String? activeTitle;
+        if (sections.length >= 2) {
+          for (final (String id, String title) in sections) {
+            if (id == _spy.activeId) activeTitle = title;
+          }
+        }
+        return SettingsFloatingHeader(
+          title: widget.title,
+          subtitle: activeTitle,
+          leadingIcon: widget.leadingIcon,
+          leadingTone: widget.leadingTone,
+          scrollController: _controller,
+          onBack: canPop ? () => Navigator.of(context).maybePop() : null,
+          actions: widget.actions,
+        );
+      },
     );
     // 跳转条吸在页头下方（不随正文滚动），出现 / 消失走尺寸 + 淡入过渡。
     // 与下方第一个分组标题之间留一档 gap：此前胶囊底紧贴分组标题，两排
     // 文字读成一行。
-    final Widget jumpBar = FushiAnimatedSize(
-      duration: fushiMotionDuration(context, FushiMotion.medium),
-      curve: FushiMotion.enter,
-      alignment: Alignment.topCenter,
-      child: jump
-          ? Padding(
-              padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-              child: SettingsSectionJumpBar(
-                sections: sections,
-                activeId: _spy.activeId,
-                onSelected: (String id) => _spy.jumpTo(
-                  id,
-                  duration: fushiMotionDuration(context, FushiMotion.long),
-                ),
-              ),
-            )
-          : const SizedBox(width: double.infinity),
+    final Widget jumpBar = ListenableBuilder(
+      listenable: _spy,
+      builder: (BuildContext context, Widget? _) {
+        final List<(String, String)> sections = _spy.sections;
+        return FushiAnimatedSize(
+          duration: fushiMotionDuration(context, FushiMotion.medium),
+          curve: FushiMotion.enter,
+          alignment: Alignment.topCenter,
+          child: sections.length >= 2
+              ? Padding(
+                  padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+                  child: SettingsSectionJumpBar(
+                    sections: sections,
+                    activeId: _spy.activeId,
+                    onSelected: (String id) => _spy.jumpTo(
+                      id,
+                      duration: fushiMotionDuration(context, FushiMotion.long),
+                    ),
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        );
+      },
     );
     final Widget column = apple || isGlassDesign(context)
         ? SafeArea(
@@ -1754,6 +1782,9 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
   /// M3E 叠放形态（与 [FushiPageScaffold] 的 extendBodyBehindHeader 同一约定）：
   /// 正文占满整页，页头 + 跳转条浮在它上面；正文的 MediaQuery 顶部 padding =
   /// 状态栏 + 两者实测高度。内容滚离顶部后的可读性只靠共享顶部渐隐，不画底带。
+  ///
+  /// 让位高度变化只重建这里的 MediaQuery 与渐隐层（[_headerHeight] /
+  /// [_jumpBarHeight] 是 notifier），[body] 作为同一个 child 实例透传、不重建。
   Widget _buildOverlaid(
     BuildContext context, {
     required Widget header,
@@ -1762,39 +1793,54 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
   }) {
     final MediaQueryData media = MediaQuery.of(context);
     final double statusTop = media.padding.top;
-    final double inset = statusTop + _headerHeight + _jumpBarHeight;
+    final Listenable insetChanged = Listenable.merge(<Listenable>[
+      _headerHeight,
+      _jumpBarHeight,
+    ]);
+    double inset() => statusTop + _headerHeight.value + _jumpBarHeight.value;
     return SafeArea(
       top: false,
       bottom: false,
       child: Stack(
         children: <Widget>[
           Positioned.fill(
-            child: MediaQuery(
-              data: media.copyWith(
-                padding: media.padding.copyWith(top: inset, left: 0, right: 0),
-                viewPadding: media.viewPadding.copyWith(top: inset),
-              ),
+            child: ListenableBuilder(
+              listenable: insetChanged,
               child: widget.bodyConsumesTopPadding
                   ? body
                   : SafeArea(bottom: false, child: body),
+              builder: (BuildContext context, Widget? content) => MediaQuery(
+                data: media.copyWith(
+                  padding: media.padding.copyWith(
+                    top: inset(),
+                    left: 0,
+                    right: 0,
+                  ),
+                  viewPadding: media.viewPadding.copyWith(top: inset()),
+                ),
+                child: content!,
+              ),
             ),
           ),
           Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: ValueListenableBuilder<bool>(
-              valueListenable: _scrolledUnder,
-              builder: (BuildContext context, bool under, Widget? scrim) =>
-                  AnimatedOpacity(
-                    opacity: under && widget.bodyConsumesTopPadding ? 1 : 0,
-                    duration: fushiMotionDuration(context, FushiMotion.short),
-                    child: scrim,
-                  ),
-              child: FushiTopFadeScrim(
-                solidHeight: 0,
-                fadeExtent: inset + kFushiTopFadeExtent,
-                topOpacity: kFushiTopScrimOverlayOpacity,
+            child: ListenableBuilder(
+              listenable: Listenable.merge(<Listenable>[
+                _scrolledUnder,
+                insetChanged,
+              ]),
+              builder: (BuildContext context, Widget? _) => AnimatedOpacity(
+                opacity: _scrolledUnder.value && widget.bodyConsumesTopPadding
+                    ? 1
+                    : 0,
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                child: FushiTopFadeScrim(
+                  solidHeight: 0,
+                  fadeExtent: inset() + kFushiTopFadeExtent,
+                  topOpacity: kFushiTopScrimOverlayOpacity,
+                ),
               ),
             ),
           ),
