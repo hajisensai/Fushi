@@ -9,6 +9,7 @@
 library fushi_anki_core;
 
 export 'src/anki_compact_glossaries.dart';
+export 'src/anki_glossary_css.dart';
 export 'src/anki_media_dedup.dart';
 export 'src/anki_models.dart';
 export 'src/anki_note_composer.dart';
