@@ -20,6 +20,45 @@ const double kReaderPreviewFontScale = 0.6;
 /// 预览卡固定高度（逻辑 px）：字号变化不推动下方设置行上下跳。
 const double kReaderPreviewHeight = 128;
 
+/// 竖排时的预览卡高度。横排的 128 只够竖排每列放两三个字，整段样文被切成
+/// 「れた / かと / んと」这种两字一列的碎片、读起来像乱序（2026-10-09 桌面反馈）；
+/// 竖排加高到能放下一个短句的列高。
+const double kReaderPreviewVerticalHeight = 208;
+
+/// 竖排预览每列至少放下的字数（样文首句「吾輩は猫である。」正好 8 个字）。列高
+/// 按当前字号放不下时，按预览框实际高度缩小预览字号（不低于 10）。
+const int kReaderPreviewMinCharsPerColumn = 8;
+
+/// 竖排预览的排布（纯函数，供测试）：在 [width] × [height] 的框里、首选字号
+/// [preferredFontSize] 下，返回实际字号、每列字数与能放下的列数。
+///
+/// 字号先按「每列至少 [kReaderPreviewMinCharsPerColumn] 个字」收小（下限 10），
+/// 列数按框宽算；样文从第一个字开始自右向左排，放不下的尾部截掉，而不是让
+/// 开头被挤出框外。
+({double fontSize, int perColumn, int columns}) readerPreviewVerticalLayout({
+  required double width,
+  required double height,
+  required double preferredFontSize,
+  required double lineHeight,
+}) {
+  const double advance = 1.15;
+  double size = preferredFontSize;
+  if (height / (size * advance) < kReaderPreviewMinCharsPerColumn) {
+    size = (height / (kReaderPreviewMinCharsPerColumn * advance)).clamp(
+      10.0,
+      preferredFontSize,
+    );
+  }
+  final int perColumn = (height / (size * advance)).floor().clamp(1, 1 << 20);
+  final double gap = size * (lineHeight.clamp(1.0, 3.0) - 1);
+  final double columnWidth = size * 1.1;
+  final int columns = ((width + gap) / (columnWidth + gap)).floor().clamp(
+    1,
+    1 << 20,
+  );
+  return (fontSize: size, perColumn: perColumn, columns: columns);
+}
+
 /// 预览样文的显示字号（纯函数，供测试）：正文字号 × [kReaderPreviewFontScale]，
 /// 夹在 10–30 之间（极端字号下仍能看出「变大 / 变小」而不撑破卡片）。
 double readerPreviewFontSize(double readerFontSize) =>
@@ -90,7 +129,9 @@ class ReaderSettingsPreviewCard extends StatelessWidget {
           key: const ValueKey<String>('reader_settings_preview'),
           duration: duration,
           curve: FushiMotion.standard,
-          height: kReaderPreviewHeight,
+          height: vertical
+              ? kReaderPreviewVerticalHeight
+              : kReaderPreviewHeight,
           decoration: BoxDecoration(
             color: background,
             borderRadius: fushiNeutralBlockRadius(context),
@@ -124,7 +165,9 @@ class ReaderSettingsPreviewCard extends StatelessWidget {
   }
 }
 
-/// 竖排近似：逐字自上而下成列、列自右向左排（vertical-rl）。
+/// 竖排近似：逐字自上而下成列、列自右向左排（vertical-rl）。按预览框实际尺寸
+/// 排（[readerPreviewVerticalLayout]）：从第一个字开始，每列放满再换下一列，
+/// 放不下的尾部截掉。
 class _VerticalSample extends StatelessWidget {
   const _VerticalSample({
     required this.sample,
@@ -138,21 +181,58 @@ class _VerticalSample extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double fontSize = style.fontSize ?? 14;
-    final double columnGap = fontSize * ((style.height ?? 1.5) - 1);
-    return AnimatedDefaultTextStyle(
-      duration: duration,
-      curve: FushiMotion.standard,
-      style: style.copyWith(height: 1.15),
-      child: Wrap(
-        direction: Axis.vertical,
-        textDirection: TextDirection.rtl,
-        runSpacing: columnGap,
-        clipBehavior: Clip.hardEdge,
-        children: <Widget>[
-          for (final int rune in sample.runes) Text(String.fromCharCode(rune)),
-        ],
-      ),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final ({double fontSize, int perColumn, int columns}) layout =
+            readerPreviewVerticalLayout(
+              width: constraints.maxWidth,
+              height: constraints.maxHeight,
+              preferredFontSize: style.fontSize ?? 14,
+              lineHeight: style.height ?? 1.5,
+            );
+        final double size = layout.fontSize;
+        final double gap = size * ((style.height ?? 1.5).clamp(1.0, 3.0) - 1);
+        final List<String> chars = <String>[
+          for (final int rune in sample.runes) String.fromCharCode(rune),
+        ];
+        final List<Widget> columns = <Widget>[];
+        for (int c = 0; c < layout.columns; c++) {
+          final int start = c * layout.perColumn;
+          if (start >= chars.length) break;
+          final int end = (start + layout.perColumn).clamp(0, chars.length);
+          if (c > 0) columns.add(SizedBox(width: gap));
+          columns.add(
+            SizedBox(
+              width: size * 1.1,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  for (final String ch in chars.sublist(start, end))
+                    Text(ch, textAlign: TextAlign.center),
+                ],
+              ),
+            ),
+          );
+        }
+        return AnimatedDefaultTextStyle(
+          key: const ValueKey<String>('reader_settings_preview_vertical'),
+          duration: duration,
+          curve: FushiMotion.standard,
+          style: style.copyWith(fontSize: size, height: 1.15),
+          child: ClipRect(
+            child: OverflowBox(
+              alignment: AlignmentDirectional.topEnd,
+              maxHeight: double.infinity,
+              child: Row(
+                textDirection: TextDirection.rtl,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: columns,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
