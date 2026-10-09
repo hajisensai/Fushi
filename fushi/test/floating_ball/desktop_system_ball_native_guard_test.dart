@@ -113,4 +113,46 @@ void main() {
     expect(mac, contains('toolTip = label'));
     expect(mac, contains('setAccessibilityLabel(label)'));
   });
+
+  test('setAppForeground 让位：原生藏球而不是空转（应用内外两颗球并排）', () {
+    final String flutterWindow = _read('$_runner/flutter_window.cpp');
+    final int start = flutterWindow.indexOf(
+      '} else if (method == "setAppForeground")',
+    );
+    expect(start, isNot(-1));
+    final String branch = flutterWindow.substring(
+      start,
+      flutterWindow.indexOf('} else if (method ==', start + 10),
+    );
+    expect(branch, contains('floating_ball_window_->SetHiddenForApp(hidden);'));
+    // 起球时按让位值决定首帧显不显示；截屏恢复不越过让位。
+    expect(window, contains('(Suppressed() ? 0 : SWP_SHOWWINDOW)'));
+    expect(
+      window,
+      contains('void FloatingBallWindow::RestoreAfterCapture() {'),
+    );
+    final int restore = window.indexOf(
+      'void FloatingBallWindow::RestoreAfterCapture() {',
+    );
+    final String restoreBody = window.substring(
+      restore,
+      window.indexOf('\n}\n', restore),
+    );
+    expect(restoreBody, contains('ShowBallWindows();'));
+    expect(restoreBody, isNot(contains('SWP_SHOWWINDOW')));
+    // 让位状态跨 Stop / Start 保留：Stop 不得清掉它。
+    final int stop = window.indexOf('void FloatingBallWindow::Stop() {');
+    expect(
+      window.substring(stop, window.indexOf('\n}\n', stop)),
+      isNot(contains('hidden_for_app_')),
+    );
+
+    final String mac = _read('macos/Runner/FushiDesktopFloatingBall.swift');
+    expect(
+      mac,
+      contains('setHiddenForApp((args?["foreground"] as? Bool) ?? false)'),
+    );
+    expect(mac, contains('if !hiddenForApp { panel.orderFrontRegardless() }'));
+    expect(mac, contains('guard !hiddenForApp, let panel = ballPanel'));
+  });
 }

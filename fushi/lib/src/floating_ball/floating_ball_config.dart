@@ -7,6 +7,7 @@
 library;
 
 import 'dart:io' show Platform;
+import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi/src/reader/reader_control_layout.dart';
@@ -21,6 +22,38 @@ bool? debugDesktopSystemBallPlatformOverride;
 bool get isDesktopSystemBallPlatform =>
     debugDesktopSystemBallPlatformOverride ??
     (Platform.isWindows || Platform.isMacOS);
+
+/// 应用外（系统级）悬浮球此刻是否该给应用内球让位（隐藏）。两颗球同时出现在
+/// Fushi 里是重复入口（群反馈：歌词页右侧并排两颗球），所以：
+///
+///  - 只在「应用内悬浮球」开关开着时让位（[inAppBallEnabled]）——用户关了应用内
+///    球，前台也保留应用外球，否则 Fushi 里一颗球都没有。页面临时不画球（场景
+///    要求隐藏、本页点了关闭、截屏中）不算关掉，照样让位：那是页面 / 用户此刻
+///    不要球，不是要另一颗球顶上。
+///  - 「在前台」按平台分：
+///    - 桌面（[desktop]）只认 [AppLifecycleState.resumed]：主窗失焦只到
+///      inactive，那时用户在用别的程序，正是应用外球该露面的时候。
+///    - Android 认 [mobileForeground]（宿主按 resumed → true、paused / hidden →
+///      false、inactive / detached 维持原判算出的「在前台」）：下拉通知栏、系统
+///      对话框只到 inactive，不该让球闪一下。分屏多窗口时 Fushi 那一格是
+///      resumed，仍算前台、球照样让位（应用内球就在那一格里）。
+///    - Android 画中画（[inPictureInPicture]）一律不让位：Fushi 只剩一个小窗，
+///      用户在用别的应用。
+///
+/// 只决定显隐，不碰开关与位置：两颗球的「显示」开关与停靠位置各存各的，前后台
+/// 切换不会把用户关掉的应用外球打开（关着时原生球根本没起）。
+bool floatingBallSystemBallYieldsToInApp({
+  required bool inAppBallEnabled,
+  required AppLifecycleState lifecycle,
+  required bool mobileForeground,
+  required bool desktop,
+  required bool inPictureInPicture,
+}) {
+  if (!inAppBallEnabled) return false;
+  if (desktop) return lifecycle == AppLifecycleState.resumed;
+  if (inPictureInPicture) return false;
+  return mobileForeground;
+}
 
 /// 悬浮球所处的场景：应用内按当前页面的语料分，应用外是 Android 系统球。
 enum FloatingBallScope {

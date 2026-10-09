@@ -93,7 +93,11 @@ class FloatingBallChannel {
   static Future<bool> isSystemBallRunning() async =>
       await _invoke<bool>('isSystemBallRunning') ?? false;
 
-  /// Fushi 在前台时原生球隐藏（由 Flutter 球接管），退到后台再露出来。
+  /// 原生球让位（true = 隐藏，由应用内的 Flutter 球接管）还是露面（false）。
+  /// 线协议名与参数名沿用历史的 `setAppForeground` / `foreground`，但值已不是裸
+  /// 「Fushi 在前台」：宿主把「应用内悬浮球开着」「Android 画中画」折了进去（见
+  /// `floatingBallSystemBallYieldsToInApp`）。原生跨起停保留这个值，宿主在
+  /// `startSystemBall` 之前先下发，新球首帧就按它决定显不显示。
   static Future<void> setAppForeground(bool foreground) => _invoke<void>(
     'setAppForeground',
     <String, Object?>{'foreground': foreground},
