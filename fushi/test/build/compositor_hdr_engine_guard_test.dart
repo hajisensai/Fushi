@@ -109,6 +109,16 @@ void main() {
     );
   });
 
+  test('runner 钉 Skia：补丁只实现 Skia 路径，3.47 起 Windows 默认 Impeller', () {
+    final String main = _read('$fushi/windows/runner/main.cpp');
+    expect(
+      main,
+      contains(
+        'project.set_impeller_switch(flutter::ImpellerSwitch::Disabled);',
+      ),
+    );
+  });
+
   test('media_kit：半浮点纹理与 mpv 渲染目标同一任务内切换', () {
     final String output = _read('$mediaKit/video_output.cc');
     final int setHdr = output.indexOf('void VideoOutput::SetHdrOutput(');

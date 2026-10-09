@@ -18,10 +18,10 @@ index 9979e9a2..3bec41f2 100644
  
  // An image buffer object.
 diff --git a/engine/src/flutter/shell/platform/embedder/embedder.cc b/engine/src/flutter/shell/platform/embedder/embedder.cc
-index a9a4b213..12c2b124 100644
+index d7f02e79..73196e1b 100644
 --- a/engine/src/flutter/shell/platform/embedder/embedder.cc
 +++ b/engine/src/flutter/shell/platform/embedder/embedder.cc
-@@ -286,12 +286,21 @@ static const flutter::DlIRect FlutterRectToDlIRect(FlutterRect flutter_rect) {
+@@ -288,12 +288,21 @@ static const flutter::DlIRect FlutterRectToDlIRect(FlutterRect flutter_rect) {
  #define GL_BGRA8_EXT 0x93A1
  #endif
  
@@ -44,10 +44,10 @@ index a9a4b213..12c2b124 100644
        FML_LOG(ERROR) << "Cannot convert format " << format
                       << " to SkColorType.";
 diff --git a/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc b/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc
-index d6279fee..bdde33b0 100644
+index 61fc5de6..dedd646c 100644
 --- a/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc
 +++ b/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc
-@@ -102,11 +102,16 @@ sk_sp<DlImage> EmbedderExternalTextureGL::ResolveTextureSkia(
+@@ -107,11 +107,16 @@ sk_sp<DlImage> EmbedderExternalTextureGL::ResolveTextureSkia(
    auto gr_backend_texture = GrBackendTextures::MakeGL(
        width, height, skgpu::Mipmapped::kNo, gr_texture_info);
    SkImages::TextureReleaseProc release_proc = texture->destruction_callback;
@@ -66,7 +66,7 @@ index d6279fee..bdde33b0 100644
                                    nullptr,                   // colorspace
                                    release_proc,       // texture release proc
 diff --git a/engine/src/flutter/shell/platform/embedder/embedder_external_view.h b/engine/src/flutter/shell/platform/embedder/embedder_external_view.h
-index 809a60a1..4da0c734 100644
+index b3987e7d..c5cbfec1 100644
 --- a/engine/src/flutter/shell/platform/embedder/embedder_external_view.h
 +++ b/engine/src/flutter/shell/platform/embedder/embedder_external_view.h
 @@ -47,22 +47,32 @@ class EmbedderExternalView {
@@ -231,18 +231,18 @@ index 00000000..5ab8fc20
 +
 +#endif  // FLUTTER_SHELL_PLATFORM_EMBEDDER_EMBEDDER_RENDER_TARGET_FORMAT_GENERATION_H_
 diff --git a/engine/src/flutter/shell/platform/windows/compositor_opengl.cc b/engine/src/flutter/shell/platform/windows/compositor_opengl.cc
-index 2e2de8a9..7c11c107 100644
+index d1b1f5bc..f40a7696 100644
 --- a/engine/src/flutter/shell/platform/windows/compositor_opengl.cc
 +++ b/engine/src/flutter/shell/platform/windows/compositor_opengl.cc
-@@ -5,6 +5,7 @@
- #include "flutter/shell/platform/windows/compositor_opengl.h"
+@@ -6,6 +6,7 @@
  
  #include "GLES3/gl3.h"
+ #include "flutter/fml/logging.h"
 +#include "flutter/shell/platform/embedder/embedder_render_target_format_generation.h"
  #include "flutter/shell/platform/windows/flutter_windows_engine.h"
  #include "flutter/shell/platform/windows/flutter_windows_view.h"
  
-@@ -14,10 +15,164 @@ namespace {
+@@ -15,12 +16,166 @@ namespace {
  
  constexpr uint32_t kWindowFrameBufferId = 0;
  
@@ -252,8 +252,10 @@ index 2e2de8a9..7c11c107 100644
 +
  // The metadata for an OpenGL framebuffer backing store.
  struct FramebufferBackingStore {
-   uint32_t framebuffer_id;
-   uint32_t texture_id;
+   uint32_t framebuffer_id = 0;
+   uint32_t texture_id = 0;
+   uint32_t color_renderbuffer_id = 0;
+   uint32_t depth_stencil_id = 0;
 +  // Fushi patch (HDR output): RGBA16F (extended-range sRGB) contents.
 +  bool half_float = false;
 +};
@@ -407,29 +409,15 @@ index 2e2de8a9..7c11c107 100644
  };
  
  typedef const impeller::GLProc<decltype(glBlitFramebuffer)> BlitFramebufferProc;
-@@ -50,6 +205,12 @@ bool CompositorOpenGL::CreateBackingStore(
+@@ -53,6 +208,19 @@ bool CompositorOpenGL::CreateBackingStore(
  
    auto store = std::make_unique<FramebufferBackingStore>();
  
 +  // Fushi patch (HDR output): half-float backing stores for views with HDR
 +  // output requested (Skia path only).
 +  FlutterWindowsView* view = engine_->view(config.view_id);
-+  store->half_float =
-+      !enable_impeller_ && view != nullptr && view->hdr_output_requested();
-+
-   gl_->GenTextures(1, &store->texture_id);
-   gl_->GenFramebuffers(1, &store->framebuffer_id);
- 
-@@ -60,9 +221,32 @@ bool CompositorOpenGL::CreateBackingStore(
-   gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-   gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-   gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
--  gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.general_format, config.size.width,
--                  config.size.height, 0, format_.general_format,
--                  GL_UNSIGNED_BYTE, nullptr);
-+  if (store->half_float && !half_float_renderable_) {
-+    store->half_float = false;
-+  }
++  store->half_float = !enable_impeller_ && half_float_renderable_ &&
++                      view != nullptr && view->hdr_output_requested();
 +  if (logged_half_float_ != static_cast<int>(store->half_float)) {
 +    logged_half_float_ = static_cast<int>(store->half_float);
 +    FML_LOG(IMPORTANT) << "HDR output: backing stores "
@@ -437,26 +425,35 @@ index 2e2de8a9..7c11c107 100644
 +                       << " (renderable=" << half_float_renderable_
 +                       << " sized=" << half_float_sized_format_ << ")";
 +  }
-+  if (store->half_float) {
-+    // ES 3.0 takes the sized internal format; an ES 2.0 context (what the
-+    // Windows embedder requests) needs the unsized form with
-+    // OES_texture_half_float.
-+    if (half_float_sized_format_) {
++
+   gl_->GenFramebuffers(1, &store->framebuffer_id);
+   gl_->BindFramebuffer(GL_FRAMEBUFFER, store->framebuffer_id);
+ 
+@@ -136,9 +304,20 @@ bool CompositorOpenGL::CreateBackingStore(
+     gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+     gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+     gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+-    gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.sized_format, config.size.width,
+-                    config.size.height, 0, format_.general_format,
+-                    GL_UNSIGNED_BYTE, nullptr);
++    if (!store->half_float) {
++      gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.sized_format,
++                      config.size.width, config.size.height, 0,
++                      format_.general_format, GL_UNSIGNED_BYTE, nullptr);
++    } else if (half_float_sized_format_) {
++      // Fushi patch (HDR output): ES 3.0 takes the sized internal format; an
++      // ES 2.0 context (what the Windows embedder requests) needs the unsized
++      // form with OES_texture_half_float.
 +      gl_->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, config.size.width,
 +                      config.size.height, 0, GL_RGBA, GL_HALF_FLOAT, nullptr);
 +    } else {
 +      gl_->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, config.size.width,
 +                      config.size.height, 0, GL_RGBA, kHalfFloatOes, nullptr);
 +    }
-+  } else {
-+    gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.general_format,
-+                    config.size.width, config.size.height, 0,
-+                    format_.general_format, GL_UNSIGNED_BYTE, nullptr);
-+  }
-   gl_->BindTexture(GL_TEXTURE_2D, 0);
+     gl_->BindTexture(GL_TEXTURE_2D, 0);
  
-   if (enable_impeller_) {
-@@ -96,7 +280,10 @@ bool CompositorOpenGL::CreateBackingStore(
+     gl_->FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+@@ -148,7 +327,10 @@ bool CompositorOpenGL::CreateBackingStore(
    result->type = kFlutterBackingStoreTypeOpenGL;
    result->open_gl.type = kFlutterOpenGLTargetTypeFramebuffer;
    result->open_gl.framebuffer.name = store->framebuffer_id;
@@ -468,7 +465,7 @@ index 2e2de8a9..7c11c107 100644
    result->open_gl.framebuffer.user_data = store.release();
    result->open_gl.framebuffer.destruction_callback = [](void* user_data) {
      // Backing store destroyed in `CompositorOpenGL::CollectBackingStore`, set
-@@ -160,11 +347,46 @@ bool CompositorOpenGL::Present(FlutterWindowsView* view,
+@@ -220,11 +402,46 @@ bool CompositorOpenGL::Present(FlutterWindowsView* view,
    FML_DCHECK(view->surface() != nullptr);
    FML_DCHECK(view->surface()->IsValid());
  
@@ -515,8 +512,8 @@ index 2e2de8a9..7c11c107 100644
    auto source_id = layers[0]->backing_store->open_gl.framebuffer.name;
  
    // Disable the scissor test as it can affect blit operations.
-@@ -227,10 +449,134 @@ bool CompositorOpenGL::Initialize() {
-     return false;
+@@ -299,10 +516,134 @@ bool CompositorOpenGL::Initialize() {
+     FML_LOG(WARNING) << "Rendering without MSAA.";
    }
  
 +  // Fushi patch (HDR output): can backing stores be half float?
@@ -651,12 +648,12 @@ index 2e2de8a9..7c11c107 100644
    FML_DCHECK(is_initialized_);
  
 diff --git a/engine/src/flutter/shell/platform/windows/compositor_opengl.h b/engine/src/flutter/shell/platform/windows/compositor_opengl.h
-index 18451c46..ecf036dd 100644
+index 0304d168..0a167792 100644
 --- a/engine/src/flutter/shell/platform/windows/compositor_opengl.h
 +++ b/engine/src/flutter/shell/platform/windows/compositor_opengl.h
-@@ -63,9 +63,45 @@ class CompositorOpenGL : public Compositor {
-   // Whether the Impeller rendering backend is enabled.
-   bool enable_impeller_ = false;
+@@ -69,9 +69,45 @@ class CompositorOpenGL : public Compositor {
+   // Whether the OpenGL context supports offscreen MSAA.
+   bool supports_offscreen_msaa_ = false;
  
 +  // Fushi patch (HDR output): program that copies a backing store to the
 +  // window surface, optionally decoding extended-range sRGB into scRGB.
@@ -886,7 +883,7 @@ index 64fb765b..486f4914 100644
  
  bool Manager::GetDevice(ID3D11Device** device) {
 diff --git a/engine/src/flutter/shell/platform/windows/egl/manager.h b/engine/src/flutter/shell/platform/windows/egl/manager.h
-index 420b0060..91f972f3 100644
+index ca44a4b8..9327530c 100644
 --- a/engine/src/flutter/shell/platform/windows/egl/manager.h
 +++ b/engine/src/flutter/shell/platform/windows/egl/manager.h
 @@ -60,13 +60,30 @@ class Manager {
@@ -921,7 +918,7 @@ index 420b0060..91f972f3 100644
  
    // Gets the |EGLDisplay|.
    EGLDisplay egl_display() const { return display_; };
-@@ -103,6 +120,15 @@ class Manager {
+@@ -106,6 +123,15 @@ class Manager {
    // Initialize the EGL configs.
    bool InitializeConfig();
  
@@ -937,7 +934,7 @@ index 420b0060..91f972f3 100644
    // Initialize the EGL render and resource contexts.
    bool InitializeContexts();
  
-@@ -120,6 +146,14 @@ class Manager {
+@@ -123,6 +149,14 @@ class Manager {
    // EGL framebuffer configuration.
    EGLConfig config_ = nullptr;
  
@@ -1029,10 +1026,10 @@ index 628c2065..cb8943bb 100644
    FML_DISALLOW_COPY_AND_ASSIGN(ExternalTextureD3d);
  };
 diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows.cc b/engine/src/flutter/shell/platform/windows/flutter_windows.cc
-index 2e0a0c3c..82948226 100644
+index 616fcbaa..afd18f68 100644
 --- a/engine/src/flutter/shell/platform/windows/flutter_windows.cc
 +++ b/engine/src/flutter/shell/platform/windows/flutter_windows.cc
-@@ -254,6 +254,15 @@ HWND FlutterDesktopViewGetHWND(FlutterDesktopViewRef view) {
+@@ -284,6 +284,15 @@ HWND FlutterDesktopViewGetHWND(FlutterDesktopViewRef view) {
    return ViewFromHandle(view)->GetWindowHandle();
  }
  
@@ -1064,7 +1061,7 @@ index 720a65a7..3b9f9474 100644
      return window_proc_delegate_manager_.get();
    }
 diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc b/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc
-index 5fa04fe1..3161605a 100644
+index cc0505d6..9d6fff0b 100644
 --- a/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc
 +++ b/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc
 @@ -12,6 +12,7 @@
@@ -1075,7 +1072,7 @@ index 5fa04fe1..3161605a 100644
  #include "flutter/shell/platform/windows/keyboard_key_channel_handler.h"
  #include "flutter/shell/platform/windows/text_input_plugin.h"
  #include "flutter/third_party/accessibility/ax/platform/ax_platform_node_win.h"
-@@ -805,8 +806,7 @@ void FlutterWindowsView::CreateRenderSurface() {
+@@ -809,8 +810,7 @@ void FlutterWindowsView::CreateRenderSurface() {
  
    if (engine_->egl_manager()) {
      PhysicalWindowBounds bounds = binding_handler_->GetPhysicalWindowBounds();
@@ -1085,7 +1082,7 @@ index 5fa04fe1..3161605a 100644
  
      UpdateVsync(*engine_, surface_.get(), NeedsVsync());
  
-@@ -834,8 +834,7 @@ bool FlutterWindowsView::ResizeRenderSurface(size_t width, size_t height) {
+@@ -838,8 +838,7 @@ bool FlutterWindowsView::ResizeRenderSurface(size_t width, size_t height) {
    }
  
    std::unique_ptr<egl::WindowSurface> resized_surface =
@@ -1095,7 +1092,7 @@ index 5fa04fe1..3161605a 100644
    if (!resized_surface) {
      FML_LOG(ERROR) << "View resize failed to create surface";
      return false;
-@@ -857,6 +856,87 @@ egl::WindowSurface* FlutterWindowsView::surface() const {
+@@ -861,6 +860,87 @@ egl::WindowSurface* FlutterWindowsView::surface() const {
    return surface_.get();
  }
  
@@ -1184,18 +1181,10 @@ index 5fa04fe1..3161605a 100644
    engine_->UpdateHighContrastMode();
  }
 diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_view.h b/engine/src/flutter/shell/platform/windows/flutter_windows_view.h
-index 2f68436b..be32cf5c 100644
+index 4e5c47fb..641f5fe0 100644
 --- a/engine/src/flutter/shell/platform/windows/flutter_windows_view.h
 +++ b/engine/src/flutter/shell/platform/windows/flutter_windows_view.h
-@@ -5,6 +5,7 @@
- #ifndef FLUTTER_SHELL_PLATFORM_WINDOWS_FLUTTER_WINDOWS_VIEW_H_
- #define FLUTTER_SHELL_PLATFORM_WINDOWS_FLUTTER_WINDOWS_VIEW_H_
- 
-+#include <atomic>
- #include <memory>
- #include <mutex>
- #include <string>
-@@ -97,6 +98,25 @@ class FlutterWindowsView : public WindowBindingHandlerDelegate {
+@@ -98,6 +98,25 @@ class FlutterWindowsView : public WindowBindingHandlerDelegate {
    // Tells the engine to generate a new frame
    void ForceRedraw();
  
@@ -1221,7 +1210,7 @@ index 2f68436b..be32cf5c 100644
    // Callback to clear a previously presented software bitmap.
    virtual bool ClearSoftwareBitmap();
  
-@@ -343,6 +363,12 @@ class FlutterWindowsView : public WindowBindingHandlerDelegate {
+@@ -359,6 +378,12 @@ class FlutterWindowsView : public WindowBindingHandlerDelegate {
    // Width and height are the surface's desired physical pixel dimensions.
    bool ResizeRenderSurface(size_t width, size_t height);
  
@@ -1234,7 +1223,7 @@ index 2f68436b..be32cf5c 100644
    // Sends a window metrics update to the Flutter engine using current window
    // dimensions in physical pixels.
    void SendWindowMetrics(size_t width, size_t height, double pixel_ratio) const;
-@@ -473,6 +499,11 @@ class FlutterWindowsView : public WindowBindingHandlerDelegate {
+@@ -483,6 +508,11 @@ class FlutterWindowsView : public WindowBindingHandlerDelegate {
    // or if surface creation failed.
    std::unique_ptr<egl::WindowSurface> surface_ = nullptr;
  
@@ -1247,10 +1236,10 @@ index 2f68436b..be32cf5c 100644
    std::unordered_map<int32_t, std::unique_ptr<PointerState>> pointer_states_;
  
 diff --git a/engine/src/flutter/shell/platform/windows/public/flutter_windows.h b/engine/src/flutter/shell/platform/windows/public/flutter_windows.h
-index 527566b4..23a1fcf7 100644
+index 2194cca1..c5d0cdfe 100644
 --- a/engine/src/flutter/shell/platform/windows/public/flutter_windows.h
 +++ b/engine/src/flutter/shell/platform/windows/public/flutter_windows.h
-@@ -266,6 +266,27 @@ FLUTTER_EXPORT HWND FlutterDesktopViewGetHWND(FlutterDesktopViewRef view);
+@@ -305,6 +305,27 @@ FLUTTER_EXPORT HWND FlutterDesktopViewGetHWND(FlutterDesktopViewRef view);
  FLUTTER_EXPORT IDXGIAdapter* FlutterDesktopViewGetGraphicsAdapter(
      FlutterDesktopViewRef view);
  
