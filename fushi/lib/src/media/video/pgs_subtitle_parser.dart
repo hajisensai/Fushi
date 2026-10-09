@@ -66,6 +66,8 @@ class PgsCue {
   PgsCue._({
     required this.startMs,
     required this.endMs,
+    required this.canvasWidth,
+    required this.canvasHeight,
     required List<PgsPlacement> placements,
     required Uint32List palette,
   }) : _placements = placements,
@@ -74,6 +76,11 @@ class PgsCue {
   /// 相对 `.sup` 时间轴原点（ffmpeg 抽取时已减去容器起点）的毫秒。
   final int startMs;
   final int endMs;
+
+  /// PCS 声明的合成画布尺寸（[bounds] 所在的坐标系；通常等于视频分辨率，片源被缩放
+  /// 重编码时可能不同——播放器按它把位图等比映射到画面）。段里没写（0）时为 0。
+  final int canvasWidth;
+  final int canvasHeight;
   final List<PgsPlacement> _placements;
   final Uint32List _palette;
 
@@ -233,8 +240,16 @@ int _u32(Uint8List d, int o) =>
 
 /// 一个显示集收束时屏上的状态快照。
 class _PgsEvent {
-  _PgsEvent(this.pts, this.placements, this.palette);
+  _PgsEvent(
+    this.pts,
+    this.placements,
+    this.palette, {
+    this.canvasWidth = 0,
+    this.canvasHeight = 0,
+  });
   final int pts;
+  final int canvasWidth;
+  final int canvasHeight;
   final List<PgsPlacement> placements;
   final Uint32List palette;
 }
@@ -261,6 +276,8 @@ class _PgsState {
   final Map<int, _PgsPendingObject> _pending = <int, _PgsPendingObject>{};
   int? _pts;
   int _paletteId = 0;
+  int _canvasWidth = 0;
+  int _canvasHeight = 0;
   List<_PgsCompositionObject>? _composition;
 
   _PgsEvent? apply(int type, int pts, Uint8List body) {
@@ -279,6 +296,8 @@ class _PgsState {
 
   void _readPcs(int pts, Uint8List b) {
     if (b.length < 11) return;
+    _canvasWidth = _u16(b, 0);
+    _canvasHeight = _u16(b, 2);
     final int state = b[7];
     if (state & 0x80 != 0) {
       // epoch start：之前的对象与调色板全部作废。
@@ -359,7 +378,13 @@ class _PgsState {
     final Uint32List palette = Uint32List.fromList(
       _palettes[_paletteId] ?? Uint32List(256),
     );
-    return _PgsEvent(pts, placements, palette);
+    return _PgsEvent(
+      pts,
+      placements,
+      palette,
+      canvasWidth: _canvasWidth,
+      canvasHeight: _canvasHeight,
+    );
   }
 
   PgsPlacement? _place(_PgsCompositionObject c) {
@@ -388,11 +413,15 @@ class _PgsState {
 class _PgsCueBuilder {
   _PgsCueBuilder(_PgsEvent first)
     : _startPts = first.pts,
+      _canvasWidth = first.canvasWidth,
+      _canvasHeight = first.canvasHeight,
       _placements = first.placements,
       _palette = first.palette,
       _opacity = _opacityOf(first.palette);
 
   final int _startPts;
+  final int _canvasWidth;
+  final int _canvasHeight;
   final List<PgsPlacement> _placements;
   Uint32List _palette;
   int _opacity;
@@ -418,6 +447,8 @@ class _PgsCueBuilder {
     return PgsCue._(
       startMs: startMs,
       endMs: endMs > startMs ? endMs : startMs + 1,
+      canvasWidth: _canvasWidth,
+      canvasHeight: _canvasHeight,
       placements: _placements,
       palette: _palette,
     );

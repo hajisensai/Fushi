@@ -253,6 +253,9 @@ void main() {
         right: 104,
         bottom: 202,
       ));
+      // PCS 声明的合成画布：位图坐标所在的坐标系（模糊遮蔽按它映射到画面）。
+      expect(cues.single.canvasWidth, 1920);
+      expect(cues.single.canvasHeight, 1080);
     });
 
     test('renderPng 取最不透明的调色板、按 padding 留边', () {

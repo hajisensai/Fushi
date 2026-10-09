@@ -433,6 +433,11 @@ class VideoPlayerController extends ChangeNotifier
   /// `_cues.isEmpty` 推断——图形轨与「无字幕的 OP 段」都是空 cue，会误判。
   bool _graphicSubtitleActive = false;
 
+  /// 最近一次 [selectEmbeddedGraphicTrack] 选中的轨（去 auto/no 后的序号 + mpv codec）。
+  /// 只在 [_graphicSubtitleActive] 为 true 时有意义，见 [activeGraphicSubtitleTrack]。
+  int? _graphicSubtitleStreamIndex;
+  String? _graphicSubtitleCodec;
+
   /// 图形字幕此刻在 libmpv 上是否可见（`sub-visibility`）。只有「隐藏」遮蔽态会把它
   /// 关掉（[setGraphicSubtitleVisible]）；选图形轨时恒打开。
   bool _graphicSubtitleVisible = true;
@@ -1553,6 +1558,8 @@ class VideoPlayerController extends ChangeNotifier
     // `sub-delay`——否则图形字幕忽略 Dart 侧 cue 偏移，调轴滑条对它无效（BUG-301）。
     _graphicSubtitleActive = true;
     _graphicSubtitleVisible = true;
+    _graphicSubtitleStreamIndex = streamIndex;
+    _graphicSubtitleCodec = real[streamIndex].codec;
     await applySubtitleMpvPropertiesToPlayer(
       player,
       buildSubtitleDelayProperty(_delayMs),
@@ -3726,6 +3733,15 @@ class VideoPlayerController extends ChangeNotifier
   /// BUG-2590）——此时没有 cue、不可查词。播放页取证钩子用。
   bool get isPlayerRenderedSubtitleActive => _graphicSubtitleActive;
 
+  /// libmpv 正在渲染的图形字幕轨：去 auto/no 后的序号 + mpv codec（如
+  /// `hdmv_pgs_subtitle`）。不在图形字幕模式时为 null。图形字幕「模糊」按它抽轨拿每句
+  /// 位图的坐标（`video_graphic_subtitle_regions.dart`）。
+  ({int streamIndex, String? codec})? get activeGraphicSubtitleTrack {
+    final int? index = _graphicSubtitleStreamIndex;
+    if (!_graphicSubtitleActive || index == null) return null;
+    return (streamIndex: index, codec: _graphicSubtitleCodec);
+  }
+
   /// 图形字幕此刻是否在画面上可见（隐藏遮蔽态关掉时为 false）。
   bool get isGraphicSubtitleVisible => _graphicSubtitleVisible;
 
@@ -3758,8 +3774,14 @@ class VideoPlayerController extends ChangeNotifier
   /// 选轨即返回 false）的前提下，模拟「已进入图形字幕渲染模式」，以驱动 [setDelayMs]
   /// 的图形/文本分流决策（BUG-301）。
   @visibleForTesting
-  void debugSetGraphicSubtitleActiveForTesting(bool active) {
+  void debugSetGraphicSubtitleActiveForTesting(
+    bool active, {
+    int? streamIndex,
+    String? codec,
+  }) {
     _graphicSubtitleActive = active;
+    _graphicSubtitleStreamIndex = streamIndex;
+    _graphicSubtitleCodec = codec;
   }
 
   @visibleForTesting

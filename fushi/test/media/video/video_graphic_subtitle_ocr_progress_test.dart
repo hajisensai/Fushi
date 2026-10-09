@@ -13,6 +13,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_obscure_layer.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_ocr_progress.dart';
+import 'package:fushi/src/media/video/video_graphic_subtitle_regions.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -414,7 +415,49 @@ void main() {
         ),
       );
     }, skip: _shotDir == null);
+
+    testWidgets('图形字幕模糊遮蔽：只糊位图本身', (WidgetTester tester) async {
+      await shoot(tester, 'graphic_subtitle_blur_region', (
+        VideoPlayerController c,
+      ) {
+        c.debugSetPositionForTesting(5000);
+        return VideoGraphicSubtitleObscureLayer(
+          controller: c,
+          fit: BoxFit.contain,
+          obscure: GraphicSubtitleObscure.blur,
+          revealOnInteraction: true,
+          lookupPopupVisible: false,
+          regionRequest: (videoPath: '/v/ep03.mkv', streamIndex: 0),
+          // 位图框 = 假画面底部那行字（1920x1080 画布坐标），与 PGS 解析出的形状一致。
+          regionLoader: _FixedRegionLoader(
+            GraphicSubtitleRegionTrack(
+              canvas: const Size(1920, 1080),
+              regions: const <GraphicSubtitleRegion>[
+                GraphicSubtitleRegion(
+                  startMs: 4000,
+                  endMs: 7000,
+                  rect: Rect.fromLTRB(500, 900, 1420, 996),
+                ),
+              ],
+            ),
+          ),
+        );
+      });
+    }, skip: _shotDir == null);
   });
+}
+
+class _FixedRegionLoader implements GraphicSubtitleRegionLoader {
+  const _FixedRegionLoader(this.track);
+
+  final GraphicSubtitleRegionTrack track;
+
+  @override
+  Future<GraphicSubtitleRegionTrack?> load(
+    GraphicSubtitleRegionRequest request, {
+    required Size fallbackCanvas,
+    Future<void>? cancel,
+  }) async => track;
 }
 
 /// 一帧假的「视频画面」：渐变背景 + 底部一行位图字幕样式的文字。
