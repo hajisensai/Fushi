@@ -39,8 +39,9 @@ import 'package:fushi/src/sync/desktop_oauth_wait_dialog.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/remote_book_client.dart' show RemoteBookClient;
 import 'package:fushi/src/sync/hidden_remote_books.dart'
-    show resolveShelfRemoteBookClient;
+    show remoteBookSourceHost, resolveShelfRemoteBookClient;
 import 'package:fushi/src/pages/implementations/hidden_remote_books_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -976,6 +977,8 @@ SettingsItem buildHiddenRemoteBooksItem() {
         prefs: ctx.appModel.prefsRepo,
         remoteClientLoader: () =>
             resolveShelfRemoteBookClient(ctx.appModel.database),
+        sourceHostResolver: (RemoteBookClient client) =>
+            remoteBookSourceHost(ctx.appModel.database, client),
       ),
     ),
   );

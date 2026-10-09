@@ -20,17 +20,23 @@ import 'package:fushi_engine/sync/sync_backend_type.dart';
 /// 回来；「清除记录」= 同样删掉这条（远端那本书已经不存在时用它收拾）。页头「全部
 /// 恢复」清空整张清单。
 ///
-/// [remoteClientLoader] 非空时会问一次当前远端来源的书目：来源对得上、书目里已
-/// 没有这本的行标「远端已不存在」。拉取失败 / 来源不是当前来源时不下结论。
+/// [remoteClientLoader] 非空时会问一次当前远端来源的书目：来源对得上（互联还要对端
+/// 身份对得上）、书目里已没有这本的行标「远端已不存在」。拉取失败 / 来源不是当前
+/// 来源 / 旧条目没记对端身份时不下结论。
 class HiddenRemoteBooksPage extends StatefulWidget {
   const HiddenRemoteBooksPage({
     required this.prefs,
     this.remoteClientLoader,
+    this.sourceHostResolver,
     super.key,
   });
 
   final PreferencesRepository prefs;
   final Future<RemoteBookClient?> Function()? remoteClientLoader;
+
+  /// 当前远端来源的对端身份（生产接 [remoteBookSourceHost]）。null = 不知道，互联
+  /// 条目一律不判「远端已不存在」。
+  final Future<String?> Function(RemoteBookClient client)? sourceHostResolver;
 
   @override
   State<HiddenRemoteBooksPage> createState() => _HiddenRemoteBooksPageState();
@@ -39,6 +45,7 @@ class HiddenRemoteBooksPage extends StatefulWidget {
 class _HiddenRemoteBooksPageState extends State<HiddenRemoteBooksPage> {
   /// 当前远端来源及其书目里的身份键；null = 未知（没有来源 / 拉取失败）。
   String? _liveSourceId;
+  String? _liveSourceHost;
   Set<String>? _liveRemoteIds;
 
   @override
@@ -66,9 +73,13 @@ class _HiddenRemoteBooksPageState extends State<HiddenRemoteBooksPage> {
       final RemoteBookClient? client = await loader();
       if (client == null) return;
       final List<RemoteBookInfo> books = await client.listRemoteBooks();
+      final Future<String?> Function(RemoteBookClient)? hostOf =
+          widget.sourceHostResolver;
+      final String? host = hostOf == null ? null : await hostOf(client);
       if (!mounted) return;
       setState(() {
         _liveSourceId = client.remoteLibrarySourceId;
+        _liveSourceHost = host;
         _liveRemoteIds = <String>{
           for (final RemoteBookInfo b in books) b.downloadId,
         };
@@ -78,10 +89,17 @@ class _HiddenRemoteBooksPageState extends State<HiddenRemoteBooksPage> {
     }
   }
 
-  bool _isMissing(HiddenRemoteBook book) =>
-      _liveSourceId == book.sourceId &&
-      _liveRemoteIds != null &&
-      !_liveRemoteIds!.contains(book.remoteId);
+  /// 只在确定问的是同一个来源时下结论：互联的 sourceId 全局只有一个，必须再比对端
+  /// 身份——拿 B 机的书目判 A 机的书「不存在」会诱导用户清掉还有效的记录。
+  bool _isMissing(HiddenRemoteBook book) {
+    final Set<String>? live = _liveRemoteIds;
+    if (live == null || _liveSourceId != book.sourceId) return false;
+    if (book.sourceId == kInterconnectRemoteLibrarySourceId &&
+        (book.sourceHost == null || book.sourceHost != _liveSourceHost)) {
+      return false;
+    }
+    return !live.contains(book.remoteId);
+  }
 
   Future<void> _drop(Set<String> keys) =>
       widget.prefs.setHiddenRemoteBooks(<HiddenRemoteBook>[
@@ -116,7 +134,9 @@ class _HiddenRemoteBooksPageState extends State<HiddenRemoteBooksPage> {
     final Map<String, List<HiddenRemoteBook>> groups =
         <String, List<HiddenRemoteBook>>{};
     for (final HiddenRemoteBook h in all) {
-      (groups[h.sourceId] ??= <HiddenRemoteBook>[]).add(h);
+      // 互联按对端分组：不同 host 上隐藏的书不混在同一个标题下。
+      (groups['${h.sourceId}\n${h.sourceHost ?? ''}'] ??= <HiddenRemoteBook>[])
+          .add(h);
     }
     return SettingsKitScaffold(
       title: t.remote_hidden_books_title,
@@ -184,7 +204,12 @@ class _HiddenRemoteBooksPageState extends State<HiddenRemoteBooksPage> {
 
   Widget _row(HiddenRemoteBook book, int index, int count) {
     final bool missing = _isMissing(book);
-    final String safe = book.key.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
+    // 测试 / 焦点驱动用的稳定键：来源 + 远端身份（不带对端身份，各行在各自的条目
+    // 包裹下，跨对端同名不冲突）。
+    final String safe = hiddenRemoteBookKey(
+      sourceId: book.sourceId,
+      remoteId: book.remoteId,
+    ).replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
     return FushiGroupedListItem(
       key: ValueKey<String>('hidden_remote_book_$safe'),
       index: index,

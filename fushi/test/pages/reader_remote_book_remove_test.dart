@@ -223,6 +223,8 @@ void main() {
         builder: (_) => HiddenRemoteBooksPage(
           prefs: prefs,
           remoteClientLoader: () async => client,
+          sourceHostResolver: (RemoteBookClient c) =>
+              remoteBookSourceHost(db, c),
         ),
       ),
     );
@@ -237,6 +239,12 @@ void main() {
     await tester.tap(find.text(t.remote_book_hide_local));
     await tester.pumpAndSettle();
     expect(card, findsNothing);
+
+    expect(
+      prefs.hiddenRemoteBooks.single.sourceHost,
+      _FakeInterconnectClient.baseUrl,
+      reason: '互联条目记下是哪台对端（没有 hostId 时用地址）',
+    );
 
     await openHiddenList(tester, client);
     expect(
@@ -275,12 +283,14 @@ void main() {
         sourceId: 'interconnect',
         remoteId: 'Gone Book',
         title: 'Gone Book',
+        sourceHost: _FakeInterconnectClient.baseUrl,
         sourceLabel: 'Study-PC',
       ),
       HiddenRemoteBook(
         sourceId: 'interconnect',
         remoteId: 'Remote Book',
         title: 'Remote Book',
+        sourceHost: _FakeInterconnectClient.baseUrl,
         sourceLabel: 'Study-PC',
       ),
       HiddenRemoteBook(
@@ -333,6 +343,66 @@ void main() {
     Navigator.of(tester.element(find.byType(HiddenRemoteBooksPage))).pop();
     await tester.pumpAndSettle();
     expect(card, findsOneWidget);
+  });
+
+  testWidgets('另一台对端上隐藏的书：本机书架照常显示，找回列表不误判「远端已不存在」', (
+    WidgetTester tester,
+  ) async {
+    final _FakeInterconnectClient client = _FakeInterconnectClient();
+    await prefs.setHiddenRemoteBooks(const <HiddenRemoteBook>[
+      // 同一个 downloadId，但是在另一台 host 上隐藏的。
+      HiddenRemoteBook(
+        sourceId: 'interconnect',
+        remoteId: 'Remote Book',
+        title: 'Remote Book',
+        sourceHost: 'host-a-id',
+        sourceLabel: 'Host-A',
+      ),
+      HiddenRemoteBook(
+        sourceId: 'interconnect',
+        remoteId: 'Only On A',
+        title: 'Only On A',
+        sourceHost: 'host-a-id',
+        sourceLabel: 'Host-A',
+      ),
+    ]);
+    await tester.pumpWidget(buildApp(client));
+    await tester.pumpAndSettle();
+    expect(card, findsOneWidget, reason: 'A 机上的隐藏不该牵连当前对端的同名书');
+
+    await openHiddenList(tester, client);
+    expect(
+      find.text(t.remote_hidden_books_source_interconnect(name: 'Host-A')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(t.remote_hidden_books_missing),
+      findsNothing,
+      reason: '当前对端的书目不能拿来判 A 机的书已不存在',
+    );
+  });
+
+  test('旧版只存键串的清单读进来不丢', () {
+    final List<HiddenRemoteBook> books = decodeHiddenRemoteBooks(
+      '["interconnect/Remote%20Book","cloud:webDav/a%2Fb"]',
+    );
+    expect(
+      books.map((HiddenRemoteBook h) => (h.sourceId, h.remoteId, h.sourceHost)),
+      <(String, String, String?)>[
+        ('interconnect', 'Remote Book', null),
+        ('cloud:webDav', 'a/b', null),
+      ],
+    );
+    expect(
+      isRemoteBookHidden(
+        books,
+        sourceId: 'interconnect',
+        sourceHost: 'any-host',
+        remoteId: 'Remote Book',
+      ),
+      isTrue,
+      reason: '旧条目不分对端，保持升级前行为',
+    );
   });
 }
 

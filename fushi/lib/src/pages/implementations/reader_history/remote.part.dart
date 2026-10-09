@@ -120,19 +120,23 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
                   client,
                   forceRefresh: forceRefresh,
                 );
-      // 「仅从本机移除」过的远端书不再出占位卡（对端那份不动）。
-      final Set<String> hidden = <String>{
-        for (final HiddenRemoteBook h in appModelNoUpdate.prefsRepo.hiddenRemoteBooks)
-          h.key,
-      };
+      // 「仅从本机移除」过的远端书不再出占位卡（对端那份不动）。互联按对端身份区分：
+      // 在 A 机隐藏的书换到 B 机不受牵连。
+      final List<HiddenRemoteBook> hidden =
+          appModelNoUpdate.prefsRepo.hiddenRemoteBooks;
+      final String? sourceHost = hidden.isEmpty
+          ? null
+          : await remoteBookSourceHost(appModel.database, client);
       return _RemoteBookState(
         books: dedupeRemoteBooks(
           remote: <RemoteBookInfo>[
             for (final RemoteBookInfo book in notAdopted)
-              if (!hidden.contains(hiddenRemoteBookKey(
+              if (!isRemoteBookHidden(
+                hidden,
                 sourceId: client.remoteLibrarySourceId,
+                sourceHost: sourceHost,
                 remoteId: book.downloadId,
-              )))
+              ))
                 book,
           ],
           localBookKeys: localKeys,
@@ -447,12 +451,15 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     RemoteBookClient client,
   ) async {
     final PreferencesRepository prefs = appModelNoUpdate.prefsRepo;
+    final ({String? identity, String label})? host =
+        client is InterconnectSyncBackend
+            ? await _describeInterconnectHost(client)
+            : null;
     final HiddenRemoteBook hidden = HiddenRemoteBook.of(
       sourceId: client.remoteLibrarySourceId,
       book: book,
-      sourceLabel: client is InterconnectSyncBackend
-          ? await _interconnectHostLabel(client)
-          : null,
+      sourceHost: host?.identity,
+      sourceLabel: host?.label,
     );
     // 写偏好即可：书架订阅了偏好变更（[_onPrefsChangedForRemoteGate]），隐藏清单
     // 一变就重取远端列表——找回列表里「恢复」也走同一条路。
@@ -478,23 +485,19 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     );
   }
 
-  /// 「彻底删除」二次确认里点名的 host：配对时记下的对端展示名，没有就用地址的主机名。
-  Future<String> _interconnectHostLabel(InterconnectSyncBackend backend) async {
-    final String? base = backend.resolvedHostBaseUrl;
+  /// 当前互联对端的身份与展示名（[describeInterconnectHost]）：「彻底删除」二次确认
+  /// 点名用展示名，「仅从本机移除」按身份记。
+  Future<({String? identity, String label})> _describeInterconnectHost(
+    InterconnectSyncBackend backend,
+  ) async {
+    List<FushiClientUrl> urls = const <FushiClientUrl>[];
     try {
-      for (final FushiClientUrl url
-          in await SyncRepository(appModel.database).getFushiClientUrls()) {
-        final String? name = url.deviceName?.trim();
-        if (base != null && url.url == base && name != null && name.isNotEmpty) {
-          return name;
-        }
-      }
+      urls = await SyncRepository(appModel.database).getFushiClientUrls();
     } catch (e, stack) {
       ErrorLogService.instance
           .log('ReaderFushiHistoryPage.interconnectHostLabel', e, stack);
     }
-    final String? host = base == null ? null : Uri.tryParse(base)?.host;
-    return (host == null || host.isEmpty) ? (base ?? '?') : host;
+    return describeInterconnectHost(urls, backend.resolvedHostBaseUrl);
   }
 
   /// 合集详情页成员语境下菜单末尾的「移出合集」（本地书卡 / SRT 卡 / 远端占位卡
@@ -551,7 +554,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   ) async {
     // 确认文案是给人看的 → 显示名（BUG-1488）；下面的删除仍走 downloadId 身份键。
     // 写明是哪台 host 上的哪本书（反馈 nvlhtczbro）。
-    final String host = await _interconnectHostLabel(backend);
+    final String host = (await _describeInterconnectHost(backend)).label;
     if (!mounted) return;
     final bool? confirmed = await _confirmRemoteDelete(
       book.displayName,
