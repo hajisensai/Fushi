@@ -3076,6 +3076,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
                               onAutoScrollChanged: (bool value) => unawaited(
                                 appModel.setVideoSubtitleListAutoScroll(value),
                               ),
+                              // 「点字幕查词」开关：关掉后列表只做跳转，不再误触查词。
+                              initialTapLookup:
+                                  appModel.videoSubtitleListTapLookup,
+                              onTapLookupChanged: (bool value) => unawaited(
+                                appModel.setVideoSubtitleListTapLookup(value),
+                              ),
                               // BUG-878：行字号档位初值从 Drift preferences 读，A+/A- 或
                               // Ctrl+滚轮调节时落盘，跨开关 / 跨重启记住。
                               initialFontScaleIndex:

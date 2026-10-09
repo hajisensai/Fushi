@@ -2,8 +2,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
+import 'package:fushi/src/reader/reader_desktop_chrome.dart'
+    show kReaderPanelBottomSheetMaxWidth, kReaderPanelCompactWidth;
 import 'package:fushi/src/reader/reader_panel_kit.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -30,10 +33,21 @@ class VideoFloatingPanelSurface extends StatelessWidget {
   const VideoFloatingPanelSurface({
     required this.child,
     this.surfaceKey,
+    this.borderRadius,
+    this.opaque = false,
     super.key,
   });
 
+  /// MD3：true 时表面用不透明底色（不透出下面的画面 / 字幕）。设置面板与调轴浮条
+  /// 用它——面板里是成片的文字与控件，背后透出字幕会和面板文字叠在一起难读。
+  /// Apple 液态玻璃不受影响（玻璃本身已压得住画面）。
+  final bool opaque;
+
   final Widget child;
+
+  /// MD3 / 墨水屏表面的圆角；null = 四角 [radiusOf]。贴底面板只圆上两角。
+  /// Apple 液态玻璃恒为四角超椭圆（玻璃形状不支持分角）。
+  final BorderRadius? borderRadius;
 
   /// 挂在表面本体上的 key（测试 / 几何断言按它取面板矩形）。
   final Key? surfaceKey;
@@ -81,7 +95,7 @@ class VideoFloatingPanelSurface extends StatelessWidget {
         elevation: 0,
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(radius),
+          borderRadius: borderRadius ?? BorderRadius.circular(radius),
           side: BorderSide(color: scheme.outline),
         ),
         child: child,
@@ -93,13 +107,17 @@ class VideoFloatingPanelSurface extends StatelessWidget {
       data: videoM3ePanelTheme(Theme.of(context)),
       child: Material(
         key: surfaceKey,
-        color: videoM3eFloatingColor(Theme.of(context).colorScheme),
+        color: opaque
+            ? videoM3eFloatingColor(
+                Theme.of(context).colorScheme,
+              ).withValues(alpha: 1)
+            : videoM3eFloatingColor(Theme.of(context).colorScheme),
         surfaceTintColor: Colors.transparent,
         shadowColor: Colors.black,
         elevation: kFushiFloatingElevation,
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(radius),
+          borderRadius: borderRadius ?? BorderRadius.circular(radius),
         ),
         child: child,
       ),
@@ -331,18 +349,36 @@ class _VideoTranslucentBottomDrawerState
   }
 }
 
+/// 视频页浮层面板（设置 / 倍速 / 章节 / 画质 / 弹幕匹配）的外壳。
+///
+/// 两种形态（2026-10 视频设置面板重设计，与阅读器设置面板同一判据
+/// [kReaderPanelCompactWidth]）：
+/// - **侧板**：浮在画面一侧、四边留安全间距、四角全圆；
+/// - **贴底面板**（[bottomSheetWhenCompact] 且窗口窄于 600，即手机竖屏）：从底部
+///   升起、只圆上两角、顶端一条拖动把手（向下甩 / 点按关闭），高度半屏——竖屏
+///   画面在屏幕中部，面板不再从上到下整列盖住它。
+///
+/// 进场：侧板从所在一侧滑入 + 淡入，贴底面板从底部升起（[FushiMotion.long] +
+/// [FushiMotion.enter]；墨水屏 / 系统「减弱动态效果」下瞬时出现）。
 class VideoTranslucentSidePanel extends StatelessWidget {
   const VideoTranslucentSidePanel({
-    required this.title,
     required this.child,
+    this.title,
     this.onClose,
     this.alignment = Alignment.centerRight,
     this.width = 400,
     this.icon,
+    this.bottomSheetWhenCompact = false,
+    this.opaque = false,
     super.key,
   });
 
-  final String title;
+  /// 表面不透明（见 [VideoFloatingPanelSurface.opaque]）。
+  final bool opaque;
+
+  /// 页头标题；null = 不画页头（内容自带顶行，如视频设置面板的分类页签——反馈
+  /// nGxUGtYot9：一打开最上面一整行「视频设置」大标题没用、占空间）。
+  final String? title;
   final Widget child;
   final VoidCallback? onClose;
   final Alignment alignment;
@@ -352,27 +388,97 @@ class VideoTranslucentSidePanel extends StatelessWidget {
   /// 墨水屏不画（保持原来的纯标题页头）。
   final IconData? icon;
 
+  /// 窄窗（手机竖屏）时改为贴底面板，见类注释。
+  final bool bottomSheetWhenCompact;
+
+  /// 贴底面板占屏高的比例：半屏。竖屏画面居中，面板只压到画面下半截，上半截
+  /// 照常可见（要看字幕实时效果的调轴走浮条，见 `VideoSubtitleSyncRow.floatBar`）。
+  static const double bottomSheetHeightFraction = 0.5;
+
+  /// 本次是否以贴底面板呈现（页面与测试共用的判据）。
+  static bool presentsAsBottomSheet(
+    Size screen, {
+    required bool bottomSheetWhenCompact,
+  }) => bottomSheetWhenCompact && screen.width < kReaderPanelCompactWidth;
+
   @override
   Widget build(BuildContext context) {
-    final bool glass = isGlassDesign(context);
     final Size screen = MediaQuery.sizeOf(context);
-    const double horizontalMargin = 10.0;
-    final double availableWidth =
-        (screen.width - horizontalMargin * 2).clamp(0.0, double.infinity);
-    final double maxPanelWidth = availableWidth * 0.94;
-    final double minPanelWidth = maxPanelWidth < 280.0 ? maxPanelWidth : 280.0;
-    final double panelWidth =
-        width.clamp(minPanelWidth, maxPanelWidth).toDouble();
-    // 面板四边都离窗口留安全间距、四角全圆（浮动面板，不是贴边抽屉）；表面与
-    // 圆角按设计系统见 [VideoFloatingPanelSurface]。
+    if (presentsAsBottomSheet(
+      screen,
+      bottomSheetWhenCompact: bottomSheetWhenCompact,
+    )) {
+      return _buildBottomSheet(context, screen);
+    }
+    return _buildSidePanel(context, screen);
+  }
+
+  /// 页头（标题 + 可选饼干徽标）；[title] 为 null 时不画。
+  Widget? _buildHeader(BuildContext context, {required bool compact}) {
+    final String? text = title;
+    if (text == null) return null;
+    final bool glass = isGlassDesign(context);
     final EdgeInsets headerPadding = glass
-        ? (fushiAppleCompact(context)
+        ? (fushiAppleCompact(context) || compact
               ? const EdgeInsets.fromLTRB(18, 14, 18, 4)
               : const EdgeInsets.fromLTRB(20, 18, 20, 6))
-        // MD3：左右 28 = 面板内容的 page + gap 水平缩进（设置面板分类栏 /
-        // 详情都按它排），标题与下方内容同一左缘。
-        : const EdgeInsets.fromLTRB(28, 20, 28, 8);
+        // MD3：左右 28 = 面板内容的 page + gap 水平缩进，标题与下方内容同一左缘；
+        // 贴底面板顶上已有把手，页头收紧。
+        : (compact
+              ? const EdgeInsets.fromLTRB(20, 4, 20, 4)
+              : const EdgeInsets.fromLTRB(28, 20, 28, 8));
+    return Padding(
+      padding: headerPadding,
+      // 页头读表面内部的主题（M3E 中性深色面板上是白字）。
+      child: Builder(
+        builder: (BuildContext inner) {
+          final Widget label = Text(
+            text,
+            maxLines: 2,
+            softWrap: true,
+            style: videoPanelTitleStyle(inner),
+          );
+          final IconData? headerIcon = icon;
+          if (headerIcon == null || !videoM3ePanelNeutral(inner)) {
+            return label;
+          }
+          final ColorScheme cs = Theme.of(inner).colorScheme;
+          return Row(
+            children: <Widget>[
+              ReaderShapeBadge(
+                icon: headerIcon,
+                size: compact ? 32 : 40,
+                shape: ReaderBadgeShape.cookie9,
+                color: cs.primaryContainer,
+                iconColor: cs.onPrimaryContainer,
+                iconSize: compact ? 18 : 22,
+              ),
+              const SizedBox(width: 14),
+              Expanded(child: label),
+            ],
+          );
+        },
+      ),
+    );
+  }
 
+  Widget _buildSidePanel(BuildContext context, Size screen) {
+    const double horizontalMargin = 10.0;
+    final double availableWidth = (screen.width - horizontalMargin * 2).clamp(
+      0.0,
+      double.infinity,
+    );
+    final double maxPanelWidth = availableWidth * 0.94;
+    final double minPanelWidth = maxPanelWidth < 280.0 ? maxPanelWidth : 280.0;
+    final double panelWidth = width
+        .clamp(minPanelWidth, maxPanelWidth)
+        .toDouble();
+    final Widget? header = _buildHeader(context, compact: false);
+    // 面板四边都离窗口留安全间距、四角全圆（浮动面板，不是贴边抽屉）；表面与
+    // 圆角按设计系统见 [VideoFloatingPanelSurface]。
+    // BUG-254：不渲染 X 关闭按钮，点面板外的空白区域关闭（页面层的全屏透明
+    // barrier，见 video_fushi_page 的 [_buildVideoSidePanelOverlay]）。
+    final bool fromLeft = alignment.x < 0;
     return Align(
       alignment: alignment,
       child: SafeArea(
@@ -381,53 +487,65 @@ class VideoTranslucentSidePanel extends StatelessWidget {
             horizontal: horizontalMargin,
             vertical: 10,
           ),
-          child: SizedBox(
-            width: panelWidth,
-            child: VideoFloatingPanelSurface(
+          child: _VideoPanelEntrance(
+            from: Offset(fromLeft ? -0.12 : 0.12, 0),
+            child: SizedBox(
+              width: panelWidth,
+              child: VideoFloatingPanelSurface(
+                opaque: opaque,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    if (header != null) header,
+                    // 标题与内容之间：Apple / MD3 都不压线（留白分区）；墨水屏
+                    // 保留细线。
+                    if (header != null && isEinkTheme(context))
+                      const FushiDividerControl(height: 1),
+                    Expanded(child: child),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomSheet(BuildContext context, Size screen) {
+    final EdgeInsets padding = MediaQuery.paddingOf(context);
+    final double maxHeight = (screen.height - padding.top - 24).clamp(
+      0.0,
+      double.infinity,
+    );
+    final double height = (screen.height * bottomSheetHeightFraction)
+        .clamp(0.0, maxHeight)
+        .toDouble();
+    final double sheetWidth = screen.width < kReaderPanelBottomSheetMaxWidth
+        ? screen.width
+        : kReaderPanelBottomSheetMaxWidth;
+    final double radius = VideoFloatingPanelSurface.radiusOf(context);
+    final Widget? header = _buildHeader(context, compact: true);
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: _VideoPanelEntrance(
+        from: const Offset(0, 1),
+        child: SizedBox(
+          key: const ValueKey<String>('video-side-panel-bottom-sheet'),
+          width: sheetWidth,
+          height: height,
+          child: VideoFloatingPanelSurface(
+            opaque: opaque,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(radius)),
+            child: SafeArea(
+              top: false,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  // BUG-254：去掉右上角 X 关闭按钮，改为点击面板外的空白区域关闭
-                  // （由页面层的全屏透明 barrier 承载，见 video_fushi_page 的
-                  // [_buildVideoSidePanelOverlay]）。[onClose] 仍保留供 barrier / 其他
-                  // 调用方复用，header 不再渲染关闭按钮。
-                  Padding(
-                    padding: headerPadding,
-                    // 页头读表面内部的主题（M3E 中性深色面板上是白字）。
-                    child: Builder(
-                      builder: (BuildContext inner) {
-                        final Widget text = Text(
-                          title,
-                          maxLines: 2,
-                          softWrap: true,
-                          style: videoPanelTitleStyle(inner),
-                        );
-                        final IconData? headerIcon = icon;
-                        if (headerIcon == null ||
-                            !videoM3ePanelNeutral(inner)) {
-                          return text;
-                        }
-                        final ColorScheme cs = Theme.of(inner).colorScheme;
-                        return Row(
-                          children: <Widget>[
-                            ReaderShapeBadge(
-                              icon: headerIcon,
-                              size: 40,
-                              shape: ReaderBadgeShape.cookie9,
-                              color: cs.primaryContainer,
-                              iconColor: cs.onPrimaryContainer,
-                              iconSize: 22,
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(child: text),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                  // 标题与内容之间：Apple 不压线（留白分区），MD3 也不压
-                  // （Expressive 侧边面板标题直接坐在面板上）；墨水屏保留细线。
-                  if (isEinkTheme(context)) const FushiDividerControl(height: 1),
+                  _VideoPanelDragHandle(onClose: onClose),
+                  if (header != null) header,
+                  if (header != null && isEinkTheme(context))
+                    const FushiDividerControl(height: 1),
                   Expanded(child: child),
                 ],
               ),
@@ -435,6 +553,73 @@ class VideoTranslucentSidePanel extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 贴底面板顶端的拖动把手（MD3 drag handle 32×4）：向下甩 / 点按关闭面板（语义
+/// 按钮，键盘焦点不停在这里）。
+class _VideoPanelDragHandle extends StatelessWidget {
+  const _VideoPanelDragHandle({required this.onClose});
+
+  final VoidCallback? onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color = isGlassDesign(context)
+        ? appleColorsOf(context).tertiaryLabel
+        : Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.4);
+    return ExcludeFocus(
+      child: Semantics(
+        button: true,
+        label: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+        onTap: onClose,
+        child: GestureDetector(
+          key: const ValueKey<String>('video-side-panel-drag-handle'),
+          behavior: HitTestBehavior.opaque,
+          onTap: onClose,
+          onVerticalDragEnd: (DragEndDetails details) {
+            if ((details.primaryVelocity ?? 0) > 300) onClose?.call();
+          },
+          child: SizedBox(
+            height: 22,
+            child: Center(
+              child: Container(
+                width: 32,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: const BorderRadius.all(Radius.circular(2)),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 浮层面板的进场：从 [from]（面板自身尺寸的比例偏移）滑到原位并淡入。
+class _VideoPanelEntrance extends StatelessWidget {
+  const _VideoPanelEntrance({required this.from, required this.child});
+
+  final Offset from;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: fushiMotionDuration(context, FushiMotion.long),
+      curve: FushiMotion.enter,
+      child: child,
+      builder: (BuildContext context, double t, Widget? child) {
+        return FractionalTranslation(
+          translation: from * (1 - t),
+          child: Opacity(opacity: t.clamp(0.0, 1.0), child: child),
+        );
+      },
     );
   }
 }

@@ -14,14 +14,28 @@ import 'package:fushi/utils.dart';
 /// 低相关一律不改 delayMs 仅提示，翻开关最坏只是「低置信」提示（降级非破坏）。
 const bool kSubtitleAutoAlignButtonEnabled = true;
 
-/// 字幕调轴行（A/V 延迟）：滑条 / ±50ms·±1000ms 步进 / 数值输入框 / 自动对轴按钮 /
-/// 波形对轴面板五处共享同一权威延迟值。从旧 `VideoQuickSettingsSheet._buildDelayRow`
-/// 原样抽出为独立控件（阶段 B：面板改 schema 投影，本行以 `SettingsCustomItem` 入
-/// schema、仅播放中可见），逻辑逐字保留。
+/// 字幕调轴行（A/V 延迟）：滑条 / ±50ms·±1000ms 步进 / 可点按输入的读数胶囊 /
+/// 自动对轴按钮 / 上下句对齐 / 波形对轴面板共享同一权威延迟值。本行以
+/// `SettingsCustomItem` 入 schema、仅播放中可见。
+///
+/// [floatBar] = true 时是「浮条调轴」形态（视频页画面顶部的紧凑浮条，见
+/// [VideoQuickSettingsHost.onEnterSubtitleDelayBar]）：只留步进 + 读数 + 一键对齐 +
+/// 「完成」（[onDone]），把字幕区域让出来看实时效果。
 class VideoSubtitleSyncRow extends StatefulWidget {
-  const VideoSubtitleSyncRow({required this.host, super.key});
+  const VideoSubtitleSyncRow({
+    required this.host,
+    this.floatBar = false,
+    this.onDone,
+    super.key,
+  });
 
   final VideoQuickSettingsHost host;
+
+  /// 浮条形态（见类注释）。
+  final bool floatBar;
+
+  /// 浮条形态的「完成」：退出浮条模式。
+  final VoidCallback? onDone;
 
   @override
   State<VideoSubtitleSyncRow> createState() => _VideoSubtitleSyncRowState();
@@ -37,7 +51,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
   // [_commitDelay] 统一提交（页面侧对同值早退，不重复 OSD）。
   late int _delayMs = widget.host.delayMs();
 
-  /// 字幕调轴数值输入框控制器（与滑条/± 按钮共享同一权威 [_delayMs]）。
+  /// 字幕调轴数值输入（读数胶囊的编辑态）控制器（与滑条/± 按钮共享同一权威 [_delayMs]）。
   late final TextEditingController _delayController =
       TextEditingController(text: '$_delayMs');
 
@@ -159,118 +173,39 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    if (widget.floatBar) return _buildFloatBar(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final VideoQuickSettingsHost host = widget.host;
+    final bool compact = SettingsCompactRowsScope.of(context);
     // 拖动中显示预览值，否则显示已落盘的权威值。
     final int shownMs = _delayDragMs ?? _delayMs;
-    final String label = '${shownMs >= 0 ? '+' : ''}$shownMs ms';
+    final String label = _delayLabel(shownMs);
 
     // 滑条只在 ±[_subtitleSyncSliderRangeMs] 内拖（细调常见偏移）；超出范围的当前值
-    // 仍能通过输入框设置，滑条把手 clamp 到端点显示。
+    // 仍能点读数直接输入，滑条把手 clamp 到端点显示。
     final double sliderValue = shownMs
         .clamp(-_subtitleSyncSliderRangeMs, _subtitleSyncSliderRangeMs)
         .toDouble();
 
     // M3E：±50 / ±1000ms 是一组 tonal 圆钮，中间夹一枚等宽数字读数胶囊（非零时
-    // 换 secondaryContainer 色块；点按归零）；「一键求绝对偏移」类动作另成一组，
-    // 窄面板换行时两组各自整体换行、不把步进钮拆散。
+    // 换 secondaryContainer 色块）。读数胶囊本身就是输入框：点按原地变成数字输入
+    // （反馈 nGxUGtYot9：「当前延迟」与「手动输入偏移」合成一行）。「一键求绝对
+    // 偏移」类动作另成一组，窄面板换行时两组各自整体换行、不把步进钮拆散。
     final Widget buttons = Wrap(
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
       spacing: tokens.spacing.gap,
       runSpacing: tokens.spacing.gap / 2,
       children: <Widget>[
-        // 极窄面板（< 270）整组等比缩小而不是溢出。
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              _stepButton(
-                icon: FushiIcons.fastRewind,
-                tooltip: '-1000ms',
-                onPressed: () => _commitDelay(_delayMs - 1000),
-              ),
-              _stepButton(
-                icon: FushiIcons.chevronLeft,
-                tooltip: '-50ms',
-                onPressed: () => _commitDelay(_delayMs - 50),
-              ),
-              _delayReadout(
-                context,
-                label: label,
-                active: shownMs != 0,
-                maxWidth: 140,
-                onTap: shownMs == 0 ? null : () => _commitDelay(0),
-              ),
-              _stepButton(
-                icon: FushiIcons.chevronRight,
-                tooltip: '+50ms',
-                onPressed: () => _commitDelay(_delayMs + 50),
-              ),
-              _stepButton(
-                icon: FushiIcons.fastForward,
-                tooltip: '+1000ms',
-                onPressed: () => _commitDelay(_delayMs + 1000),
-              ),
-            ],
-          ),
-        ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            // TODO-413：「自动对轴」按钮（音频能量互相关自动对轴，TODO-701 阶段1）。门控用
-            // 编译期常量 [kSubtitleAutoAlignButtonEnabled]=true 上线；执行期切 spinner 并禁用
-            // （_runAutoAlign/_autoAligning 防重入）。手动对轴（±50/±1000ms 步进、滑条、数值
-            // 输入框）与本按钮独立，互不影响、照常可用。
-            if (kSubtitleAutoAlignButtonEnabled && host.onAutoAlign != null)
-              _autoAligning
-                  ? SizedBox(
-                      width: 40,
-                      height: 40,
-                      child: Center(
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: FushiCircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: theme.colorScheme.primary,
-                          ),
-                        ),
-                      ),
-                    )
-                  : FushiIconButtonControl(
-                      size: FushiIconButtonSize.s,
-                      tooltip: t.video_subtitle_auto_align,
-                      icon: const FushiIcon(FushiIcons.ai),
-                      onPressed: _runAutoAlign,
-                    ),
-            // 「上/下一句对齐到当前时间」：此前只有键盘 Ctrl+Shift+←/→ 能触发，触摸端
-            // 完全够不着。与自动对轴并列——都是「一键求绝对偏移」，区别是这里由用户用
-            // 播放头指定对齐目标（不依赖音频探测，无 ffmpeg 也能用）。
-            if (host.onSnapDelayToCue != null) ...<Widget>[
-              FushiIconButtonControl(
-                size: FushiIconButtonSize.s,
-                tooltip: t.video_subtitle_prev_cue_align,
-                icon: const FushiIcon(FushiIcons.skipPrevious),
-                onPressed: () => _snapDelayToCue(next: false),
-              ),
-              FushiIconButtonControl(
-                size: FushiIconButtonSize.s,
-                tooltip: t.video_subtitle_next_cue_align,
-                icon: const FushiIcon(FushiIcons.skipNext),
-                onPressed: () => _snapDelayToCue(next: true),
-              ),
-            ],
-          ],
-        ),
+        _stepperRow(context, label: label, shownMs: shownMs),
+        _actionRow(context, host, shownMs: shownMs, includeFloatBar: true),
       ],
     );
 
     return AdaptiveSettingsRow(
       title: t.video_setting_av_delay,
-      subtitle: t.video_setting_av_delay_hint,
+      // 说明收成一句（正负号含义）；完整用法在读数胶囊的提示里。
+      subtitle: t.video_setting_av_delay_hint_short,
       icon: FushiIcons.sync,
       controlBelow: true,
       trailing: Column(
@@ -281,33 +216,25 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
           // [FushiAppUiScale] 的 Transform.scale 子树里，裸 Slider 的值指示器水平钳制在两
           // 空间差 s² 下会把气泡甩到拇指反方向（根因与守卫见 adaptive_widgets.dart /
           // slider_value_indicator_scale_test.dart）。
-          adaptiveSlider(
-            context: context,
-            value: sliderValue,
-            min: -_subtitleSyncSliderRangeMs.toDouble(),
-            max: _subtitleSyncSliderRangeMs.toDouble(),
-            divisions: _subtitleSyncSliderRangeMs ~/ 50, // 50ms 一档
-            label: label,
-            onChanged: (double v) => setState(() => _delayDragMs = v.round()),
-            onChangeEnd: (double v) {
-              setState(() => _delayDragMs = null);
-              _commitDelay(v.round());
-            },
-          ),
+          // 手机紧凑档（[SettingsCompactRowsScope]）不放滑条：±步进 + 可输入读数已覆盖
+          // 它的用途，省下的一截留给首屏更多设置项。
+          if (!compact) ...<Widget>[
+            adaptiveSlider(
+              context: context,
+              value: sliderValue,
+              min: -_subtitleSyncSliderRangeMs.toDouble(),
+              max: _subtitleSyncSliderRangeMs.toDouble(),
+              divisions: _subtitleSyncSliderRangeMs ~/ 50, // 50ms 一档
+              label: label,
+              onChanged: (double v) => setState(() => _delayDragMs = v.round()),
+              onChangeEnd: (double v) {
+                setState(() => _delayDragMs = null);
+                _commitDelay(v.round());
+              },
+            ),
+          ],
           SizedBox(height: tokens.spacing.gap / 2),
           buttons,
-          SizedBox(height: tokens.spacing.gap / 2),
-          // 数值输入框：可直接键入正负毫秒值（支持超出滑条范围的大偏移）。
-          AdaptiveSettingsTextField(
-            controller: _delayController,
-            labelText: t.video_setting_subtitle_sync_input,
-            keyboardType: const TextInputType.numberWithOptions(signed: true),
-            textInputAction: TextInputAction.done,
-            // 边键入边去抖生效（BUG-918）：不再要求按回车，退格 / 键入实时反映到延迟；
-            // 回车立即提交，非法输入回退当前权威值（共享 [SubtitleDelayInputDebounce]）。
-            onChanged: _delayInput.onChanged,
-            onSubmitted: _delayInput.onSubmitted,
-          ),
           // TODO-1051 阶段B / TODO-1207：音频波形对轴入口（有字幕 cue + 可抽波形时才挂）。
           // 调轴经 onCommitDelay 写回权威 [_delayMs]（同源、零第二套状态）；五端同一条
           // 抽取路径（逐帧 RMS 走 ffmpeg 写文件），抽不出波形时入口内联提示、不隐藏。
@@ -353,9 +280,177 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
     );
   }
 
-  /// 副字幕独立调轴段（TODO-2837）：标题 + 滑条 + ±50/±1000 微调 + 数值输入 +
-  /// 「跟随主字幕」重置。未单独设置（null=跟随）时滑条/数值回显主轨生效值、数值
-  /// 染次要色；显式设置后染主色并出现重置按钮。副字幕轨未激活时整段收起。
+  String _delayLabel(int ms) => '${ms >= 0 ? '+' : ''}$ms ms';
+
+  /// ±1000 / ±50 步进钮夹一枚可点按输入的读数胶囊。极窄面板（< 270）整组等比
+  /// 缩小而不是溢出。
+  Widget _stepperRow(
+    BuildContext context, {
+    required String label,
+    required int shownMs,
+  }) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          _stepButton(
+            icon: FushiIcons.fastRewind,
+            tooltip: '-1000ms',
+            onPressed: () => _commitDelay(_delayMs - 1000),
+          ),
+          _stepButton(
+            icon: FushiIcons.chevronLeft,
+            tooltip: '-50ms',
+            onPressed: () => _commitDelay(_delayMs - 50),
+          ),
+          _DelayReadoutField(
+            key: const ValueKey<String>('video-subtitle-delay-readout'),
+            fieldKey: const ValueKey<String>('video-subtitle-delay-input'),
+            label: label,
+            active: shownMs != 0,
+            maxWidth: 140,
+            semanticsLabel: t.video_setting_subtitle_sync_input,
+            tooltip: '${t.video_setting_av_delay_tap_to_type}\n'
+                '${t.video_setting_av_delay_hint}',
+            controller: _delayController,
+            onChanged: _delayInput.onChanged,
+            onSubmitted: _delayInput.onSubmitted,
+          ),
+          _stepButton(
+            icon: FushiIcons.chevronRight,
+            tooltip: '+50ms',
+            onPressed: () => _commitDelay(_delayMs + 50),
+          ),
+          _stepButton(
+            icon: FushiIcons.fastForward,
+            tooltip: '+1000ms',
+            onPressed: () => _commitDelay(_delayMs + 1000),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 「一键」动作组：归零（非零时）/ 自动对轴 / 上一句、下一句对齐到此刻 / 浮条调轴。
+  Widget _actionRow(
+    BuildContext context,
+    VideoQuickSettingsHost host, {
+    required int shownMs,
+    required bool includeFloatBar,
+  }) {
+    final ThemeData theme = Theme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        // 归零：此前藏在「点读数」里（读数现在是输入框），改成显式小钮，只在非零时出现。
+        AnimatedSize(
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.standard,
+          child: shownMs == 0
+              ? const SizedBox.shrink()
+              : FushiIconButtonControl(
+                  key: const ValueKey<String>('video-subtitle-delay-reset'),
+                  size: FushiIconButtonSize.s,
+                  tooltip: t.video_setting_av_delay_reset,
+                  icon: const FushiIcon(FushiIcons.undo),
+                  onPressed: () => _commitDelay(0),
+                ),
+        ),
+        // TODO-413：「自动对轴」按钮（音频能量互相关自动对轴，TODO-701 阶段1）。门控用
+        // 编译期常量 [kSubtitleAutoAlignButtonEnabled]=true 上线；执行期切 spinner 并禁用
+        // （_runAutoAlign/_autoAligning 防重入）。手动对轴（±50/±1000ms 步进、滑条、读数
+        // 输入）与本按钮独立，互不影响、照常可用。
+        if (kSubtitleAutoAlignButtonEnabled && host.onAutoAlign != null)
+          _autoAligning
+              ? SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: FushiCircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                )
+              : FushiIconButtonControl(
+                  size: FushiIconButtonSize.s,
+                  tooltip: t.video_subtitle_auto_align,
+                  icon: const FushiIcon(FushiIcons.ai),
+                  onPressed: _runAutoAlign,
+                ),
+        // 「上/下一句对齐到当前时间」（asbplayer 式）：暂停在某句真正开口的那一刻点一下，
+        // 一步求出绝对偏移，不用 ± 来回试。与自动对轴并列——都是「一键求绝对偏移」，
+        // 区别是这里由用户用播放头指定对齐目标（不依赖音频探测，无 ffmpeg 也能用）。
+        if (host.onSnapDelayToCue != null) ...<Widget>[
+          FushiIconButtonControl(
+            key: const ValueKey<String>('video-subtitle-delay-snap-prev'),
+            size: FushiIconButtonSize.s,
+            tooltip: t.video_subtitle_prev_cue_align,
+            icon: const FushiIcon(FushiIcons.skipPrevious),
+            onPressed: () => _snapDelayToCue(next: false),
+          ),
+          FushiIconButtonControl(
+            key: const ValueKey<String>('video-subtitle-delay-snap-next'),
+            size: FushiIconButtonSize.s,
+            tooltip: t.video_subtitle_next_cue_align,
+            icon: const FushiIcon(FushiIcons.skipNext),
+            onPressed: () => _snapDelayToCue(next: true),
+          ),
+        ],
+        // 浮条调轴：收起设置面板、只在画面顶上留一条调轴浮条，字幕区域整片让出来
+        // （反馈 JsICLVdq0i：调延迟时字幕被面板挡住，看不到实时效果）。
+        if (includeFloatBar && host.onEnterSubtitleDelayBar != null)
+          FushiIconButtonControl.filledTonal(
+            key: const ValueKey<String>('video-subtitle-delay-float'),
+            size: FushiIconButtonSize.s,
+            tooltip: t.video_setting_av_delay_float,
+            icon: const FushiIcon(FushiIcons.pictureInPicture),
+            onPressed: host.onEnterSubtitleDelayBar,
+          ),
+      ],
+    );
+  }
+
+  /// 浮条形态（[VideoSubtitleSyncRow.floatBar]）：只留步进 + 可输入读数 + 一键对齐 +
+  /// 完成，放不下时两组各自整体换行。滑条 / 波形 / 副字幕这些需要面积的控件留在面板里。
+  Widget _buildFloatBar(BuildContext context) {
+    final int shownMs = _delayDragMs ?? _delayMs;
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 4,
+      children: <Widget>[
+        _stepperRow(context, label: _delayLabel(shownMs), shownMs: shownMs),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            _actionRow(
+              context,
+              widget.host,
+              shownMs: shownMs,
+              includeFloatBar: false,
+            ),
+            const SizedBox(width: 4),
+            FushiFilledButton(
+              key: const ValueKey<String>('video-subtitle-delay-bar-done'),
+              onPressed: widget.onDone,
+              child: Text(t.dialog_done),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// 副字幕独立调轴段（TODO-2837）：标题 + 滑条 + ±50/±1000 微调（中间读数可点按
+  /// 输入）+ 「跟随主字幕」重置。未单独设置（null=跟随）时滑条/数值回显主轨生效值、
+  /// 数值染次要色；显式设置后染主色并出现重置按钮。副字幕轨未激活时整段收起。
   Widget _buildSecondarySection(BuildContext context) {
     if (!(widget.host.hasSecondarySubtitle?.call() ?? false)) {
       return const SizedBox.shrink();
@@ -367,7 +462,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
     final int shownMs = _secondaryDragMs ?? _secondaryDelayMs ?? _delayMs;
     final String label = following
         ? t.video_setting_secondary_delay_follow
-        : '${shownMs >= 0 ? '+' : ''}$shownMs ms';
+        : _delayLabel(shownMs);
     final double sliderValue = shownMs
         .clamp(-_subtitleSyncSliderRangeMs, _subtitleSyncSliderRangeMs)
         .toDouble();
@@ -394,8 +489,9 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
         ),
         Text(
           t.video_setting_secondary_av_delay_hint,
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
         adaptiveSlider(
           context: context,
@@ -429,22 +525,31 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
                   icon: FushiIcons.chevronLeft,
                   tooltip: '-50ms',
                   onPressed: () => _commitSecondaryDelay(
-                      (_secondaryDelayMs ?? _delayMs) - 50),
+                    (_secondaryDelayMs ?? _delayMs) - 50,
+                  ),
                 ),
-                _delayReadout(
-                  context,
+                _DelayReadoutField(
+                  key: const ValueKey<String>(
+                    'video-subtitle-secondary-delay-readout',
+                  ),
+                  fieldKey: const ValueKey<String>(
+                    'video-subtitle-secondary-delay-input',
+                  ),
                   label: label,
                   active: !following,
                   maxWidth: 160,
-                  onTap: shownMs == 0 && !following
-                      ? null
-                      : () => _commitSecondaryDelay(0),
+                  semanticsLabel: t.video_setting_subtitle_sync_input,
+                  tooltip: t.video_setting_av_delay_tap_to_type,
+                  controller: _secondaryDelayController,
+                  onChanged: _secondaryDelayInput.onChanged,
+                  onSubmitted: _secondaryDelayInput.onSubmitted,
                 ),
                 _stepButton(
                   icon: FushiIcons.chevronRight,
                   tooltip: '+50ms',
                   onPressed: () => _commitSecondaryDelay(
-                      (_secondaryDelayMs ?? _delayMs) + 50),
+                    (_secondaryDelayMs ?? _delayMs) + 50,
+                  ),
                 ),
                 _stepButton(
                   icon: FushiIcons.fastForward,
@@ -456,15 +561,6 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
               ],
             ),
           ),
-        ),
-        SizedBox(height: tokens.spacing.gap / 2),
-        AdaptiveSettingsTextField(
-          controller: _secondaryDelayController,
-          labelText: t.video_setting_subtitle_sync_input,
-          keyboardType: const TextInputType.numberWithOptions(signed: true),
-          textInputAction: TextInputAction.done,
-          onChanged: _secondaryDelayInput.onChanged,
-          onSubmitted: _secondaryDelayInput.onSubmitted,
         ),
       ],
     );
@@ -486,47 +582,152 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
       ),
     );
   }
+}
 
-  /// 延迟读数胶囊：等宽数字（逐帧拖动不抖宽）；[active]（非零 / 已单独设置）时
-  /// 换 secondaryContainer 色块，颜色过渡走 effects 弹簧。[onTap] 非 null 时可
-  /// 点按 / Enter 归零。
-  Widget _delayReadout(
-    BuildContext context, {
-    required String label,
-    required bool active,
-    required double maxWidth,
-    required VoidCallback? onTap,
-  }) {
+/// 延迟读数胶囊 + 原地数字输入（反馈 nGxUGtYot9：「当前延迟」与「手动输入偏移」
+/// 合成一行）。
+///
+/// 平时是等宽数字的读数胶囊（逐帧拖动不抖宽；[active] = 非零 / 已单独设置时换
+/// secondaryContainer 色块，颜色过渡走 effects 弹簧）；点按 / Enter 原地变成同尺寸
+/// 的数字输入框（全选当前值，键入即去抖生效，回车或失焦提交并变回读数）。输入
+/// 走宿主同一个 [controller] 与去抖（[SubtitleDelayInputDebounce]），与滑条 / 步进钮
+/// 共享同一权威值。
+class _DelayReadoutField extends StatefulWidget {
+  const _DelayReadoutField({
+    required this.fieldKey,
+    required this.label,
+    required this.active,
+    required this.maxWidth,
+    required this.tooltip,
+    required this.controller,
+    required this.onChanged,
+    required this.onSubmitted,
+    required this.semanticsLabel,
+    super.key,
+  });
+
+  /// 编辑态输入框的 key（测试按它输入）。
+  final Key fieldKey;
+
+  /// 读数 / 输入框的无障碍名（「偏移 (ms)」），读屏念得出这是可输入的偏移值。
+  final String semanticsLabel;
+  final String label;
+  final bool active;
+  final double maxWidth;
+  final String tooltip;
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final ValueChanged<String> onSubmitted;
+
+  @override
+  State<_DelayReadoutField> createState() => _DelayReadoutFieldState();
+}
+
+class _DelayReadoutFieldState extends State<_DelayReadoutField> {
+  final FocusNode _focusNode = FocusNode(debugLabel: 'subtitle-delay-input');
+  bool _editing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(_onFocusChanged);
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocusChanged);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _startEditing() {
+    setState(() => _editing = true);
+    widget.controller.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: widget.controller.text.length,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _editing) _focusNode.requestFocus();
+    });
+  }
+
+  /// 失焦（点别处 / Tab 走开）即提交并变回读数；回车走 [_submit]。
+  void _onFocusChanged() {
+    if (!_focusNode.hasFocus && _editing) _submit(widget.controller.text);
+  }
+
+  void _submit(String raw) {
+    if (!_editing) return;
+    widget.onSubmitted(raw);
+    if (mounted) setState(() => _editing = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final FushiSpringSpec spring = context.fushiMotion.effectsFast;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: FushiFocusable(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: spring.duration,
-          curve: spring.curve,
-          constraints: BoxConstraints(
-            minWidth: 84,
-            maxWidth: maxWidth,
-            minHeight: 40,
-          ),
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            color: active ? cs.secondaryContainer : cs.surfaceContainer,
-            borderRadius: FushiM3eShape.cardRadius,
-          ),
-          child: Text(
-            label,
+    final TextStyle digits = context.fushiType.titleMediumEmphasized.tabular;
+    final Color fill =
+        _editing || widget.active ? cs.secondaryContainer : cs.surfaceContainer;
+    final Color foreground = _editing || widget.active
+        ? cs.onSecondaryContainer
+        : cs.onSurfaceVariant;
+    final Widget content = _editing
+        ? FushiTextFieldControl(
+            key: widget.fieldKey,
+            controller: widget.controller,
+            focusNode: _focusNode,
+            autofocus: true,
+            textAlign: TextAlign.center,
+            keyboardType: const TextInputType.numberWithOptions(signed: true),
+            textInputAction: TextInputAction.done,
+            style: digits.copyWith(color: foreground),
+            cursorColor: foreground,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.zero,
+              suffixText: 'ms',
+            ),
+            onChanged: widget.onChanged,
+            onSubmitted: _submit,
+          )
+        : Text(
+            widget.label,
             textAlign: TextAlign.center,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: context.fushiType.titleMediumEmphasized.tabular.copyWith(
-              color: active ? cs.onSecondaryContainer : cs.onSurfaceVariant,
-            ),
-          ),
-        ),
+            style: digits.copyWith(color: foreground),
+          );
+    final Widget pill = AnimatedContainer(
+      duration: spring.duration,
+      curve: spring.curve,
+      constraints: BoxConstraints(
+        minWidth: 96,
+        maxWidth: widget.maxWidth,
+        minHeight: 40,
+      ),
+      width: _editing ? widget.maxWidth : null,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: FushiM3eShape.cardRadius,
+        border: _editing ? Border.all(color: cs.primary, width: 2) : null,
+      ),
+      child: content,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Semantics(
+        label: widget.semanticsLabel,
+        textField: true,
+        child: _editing
+            ? pill
+            : FushiTooltip(
+                message: widget.tooltip,
+                child: FushiFocusable(onTap: _startEditing, child: pill),
+              ),
       ),
     );
   }

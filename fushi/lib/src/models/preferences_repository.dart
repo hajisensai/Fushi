@@ -1499,6 +1499,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 视频字幕列表「点字幕查词」开关：默认开（与旧行为一致）；关掉后列表行只做跳转，
+  /// 与 [VideoSubtitleJumpPanel] 头部的切换钮一一对应，跨开关 / 跨重启记住。
+  bool get videoSubtitleListTapLookup =>
+      getPref('video_subtitle_list_tap_lookup', defaultValue: true) as bool;
+
+  Future<void> setVideoSubtitleListTapLookup(bool value) async {
+    await setPref('video_subtitle_list_tap_lookup', value);
+    notifyListeners();
+  }
+
   /// 视频字幕列表**行字号档位**（BUG-878）：档位下标（见 [VideoSubtitleJumpPanel] 的
   /// `_kFontScaleSteps`），默认 1（1.0x）。旧版本这是面板纯内存 State、每次重开都重置成
   /// 默认档；现在落 Drift `preferences`，用户放大后跨开关 / 跨重启都记住。仅在该 key 从未

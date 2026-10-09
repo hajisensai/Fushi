@@ -772,6 +772,8 @@ extension _VideoLayout on _VideoFushiPageState {
                         // TODO-2838：拖拽调整字幕位置模式的顶部横幅（提示 + 「完成」退出）。
                         // 非模式态零尺寸。
                         _buildSubtitleDragAdjustBanner(),
+                        // 浮条调轴（反馈 JsICLVdq0i）：画面顶部的紧凑调轴浮条。非模式态零尺寸。
+                        _buildSubtitleDelayBar(),
                         _buildLevelHudOverlay(),
                         _buildVideoSideActionRail(controller),
                         _buildVideoSidePanelOverlay(controller),
@@ -1266,6 +1268,67 @@ extension _VideoLayout on _VideoFushiPageState {
   void _enterSubtitleDragAdjust() {
     _hideVideoSidePanel();
     _rebuild(() => _subtitleDragAdjustActive = true);
+  }
+
+  /// 进入「浮条调轴」模式（设置面板「字幕调轴」行的浮条按钮，经
+  /// [VideoQuickSettingsHost.onEnterSubtitleDelayBar] 调到这里）：关掉设置侧栏（它
+  /// 盖着字幕看不到实时效果），在画面顶部挂一条只含调轴控件的浮条。
+  void _enterSubtitleDelayBar() {
+    _hideVideoSidePanel();
+    _rebuild(() => _subtitleDelayBarActive = true);
+  }
+
+  /// 「浮条调轴」浮条：画面顶部居中一条紧凑浮层（与设置面板同一中性深色表面），
+  /// 内容是 [VideoSubtitleSyncRow] 的浮条形态——±步进 + 可点按输入的读数 + 上/下句
+  /// 对齐到此刻 + 自动对轴 + 完成。字幕区域（画面底部）完全不遮，调一下立刻看到
+  /// 效果；「完成」退出。非模式态零尺寸。
+  Widget _buildSubtitleDelayBar() {
+    if (!_subtitleDelayBarActive) return const SizedBox.shrink();
+    return SafeArea(
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: 1),
+            duration: fushiMotionDuration(context, FushiMotion.medium),
+            curve: FushiMotion.enter,
+            builder: (BuildContext context, double t, Widget? child) =>
+                FractionalTranslation(
+                  translation: Offset(0, -0.4 * (1 - t)),
+                  child: Opacity(opacity: t.clamp(0.0, 1.0), child: child),
+                ),
+            child: FushiAppUiScale(
+              scale: _videoUiScale,
+              child: PanelFocusScope(
+                visible: true,
+                restoreFocus: () =>
+                    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: VideoFloatingPanelSurface(
+                    opaque: true,
+                    surfaceKey: const ValueKey<String>('video-subtitle-delay-bar'),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      child: VideoSubtitleSyncRow(
+                        host: _buildVideoQuickSettingsHost(),
+                        floatBar: true,
+                        onDone: () =>
+                            _rebuild(() => _subtitleDelayBarActive = false),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   /// 拖拽松手回调（[VideoSubtitleOverlay.onDragAdjustEnd]）：把落点解析出的锚定边 +

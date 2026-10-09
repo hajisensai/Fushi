@@ -368,8 +368,9 @@ void main() {
     ]) {
       expect(_categoryChip(id), findsOneWidget, reason: '$id 必须是顶栏分类 chip');
     }
-    // 选中分类（playback）标签出现两处：顶栏 chip 完整文字（TODO-1351）+ 详情区大标题。
-    expect(find.text(t.video_settings_cat_playback), findsNWidgets(2));
+    // 选中分类（playback）标签只在顶部页签出现一次：2026-10 重设计删掉了详情区带
+    // 徽标的大标题（反馈 nGxUGtYot9：大标题没用、占空间）。
+    expect(find.text(t.video_settings_cat_playback), findsOneWidget);
     expect(find.text(t.video_setting_speed), findsOneWidget);
     expect(find.text(t.video_setting_av_delay), findsNothing,
         reason: '字幕调轴已移到「字幕」分类，播放分类不再显示');
@@ -434,61 +435,27 @@ void main() {
     // tab），标签按固有宽度完整渲染、不得省略号截断；顶栏空间不够时整条横滑兜底
     // （TODO-640 的纯图标 + tooltip 方案被用户否决）。
     expect(find.byType(MaterialSupportingPaneLayout), findsNothing);
-    for (final ({String id, IconData icon, String label}) cat
-        in <({String id, IconData icon, String label})>[
-      (
-        id: 'playback',
-        icon: Icons.play_circle_outline,
-        label: t.video_settings_cat_playback
-      ),
-      (
-        id: 'audio',
-        icon: Icons.audiotrack_outlined,
-        label: t.video_settings_cat_audio
-      ),
-      (
-        id: 'shaders',
-        icon: Icons.auto_fix_high_outlined,
-        label: t.video_settings_cat_shaders
-      ),
-      (id: 'mpv', icon: Icons.tune, label: t.video_settings_cat_picture),
-      (
-        id: 'subtitle',
-        icon: Icons.subtitles_outlined,
-        label: t.video_settings_cat_subtitle
-      ),
-      (
-        id: 'danmaku',
-        icon: Icons.forum_outlined,
-        label: t.video_settings_cat_danmaku
-      ),
-      (
-        id: 'controls',
-        icon: Icons.dashboard_customize_outlined,
-        label: t.video_settings_cat_controls
-      ),
+    for (final ({String id, String label}) cat in <({String id, String label})>[
+      (id: 'playback', label: t.video_settings_cat_playback),
+      (id: 'audio', label: t.video_settings_cat_audio),
+      (id: 'shaders', label: t.video_settings_cat_shaders),
+      (id: 'mpv', label: t.video_settings_cat_picture),
+      (id: 'subtitle', label: t.video_settings_cat_subtitle),
+      (id: 'danmaku', label: t.video_settings_cat_danmaku),
+      (id: 'controls', label: t.video_settings_cat_controls),
     ]) {
       final Finder chip = _categoryChip(cat.id);
-      // 全文标签把顶栏撑宽，末位分类可能在横滑视口外，先滑入视口再断言几何。
+      // 全文标签把页签条撑宽，末位分类可能在横滑视口外，先滑入视口再断言几何。
       await tester.ensureVisible(chip);
       await tester.pumpAndSettle();
-      expect(chip, findsOneWidget, reason: '${cat.id} 必须是顶栏分类 chip');
-      // chip 内有该分类图标（图标 + 文字并列，观感对齐「检查器」tab）。
-      expect(find.descendant(of: chip, matching: find.byIcon(cat.icon)),
-          findsOneWidget,
-          reason: '${cat.id} chip 须渲染分类图标');
-      // chip 内联渲染完整文字标签（TODO-1351 用户复诉：不许只剩图标 / tooltip）。
-      final Finder labelText =
-          find.descendant(of: chip, matching: find.text(cat.label));
-      expect(labelText, findsOneWidget,
-          reason: '${cat.id} chip 必须内联渲染完整文字标签（TODO-1351）');
-      // 标签不得省略号截断：Text 配置为 visible（allowLabelOverflow）……
-      final Text labelWidget = tester.widget<Text>(labelText);
-      expect(labelWidget.overflow, TextOverflow.visible,
-          reason: '${cat.id} 标签不得用 ellipsis 截断（TODO-1351）');
-      // ……且实际布局宽度容纳全部文字（按固有宽度完整铺开，无视觉裁切）。
-      final RenderParagraph paragraph =
-          tester.renderObject<RenderParagraph>(labelText);
+      expect(chip, findsOneWidget, reason: '${cat.id} 必须是顶部分类页签');
+      // 页签就是完整文字标签（TODO-1351 用户复诉：不许只剩图标 / tooltip）。
+      final Text labelWidget = tester.widget<Text>(chip);
+      expect(labelWidget.data, cat.label);
+      // 实际布局宽度容纳全部文字（按固有宽度完整铺开，无视觉裁切）。
+      final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+        chip,
+      );
       expect(
         paragraph.size.width,
         greaterThanOrEqualTo(
@@ -696,46 +663,37 @@ void main() {
   });
 
   testWidgets(
-      'wide-but-short video settings falls back to push below the min height',
+      'short windows keep the tabs + detail layout (no push fallback)',
       (tester) async {
-    // 宽度够分栏（>= kFushiSettingsWideThreshold=560），但可用高度低于
-    // kFushiSettingsWideMinHeight=440：确定性几何判据应回退窄窗 push（与书籍
-    // 设置同条件，不出滚动条）。
+    // 2026-10 重设计：面板不再分「宽窗分栏 / 窄窗 push」两套——任何尺寸都是顶部
+    // 分类页签 + 下方当前分类内容，矮窗口也一样（内容区自己滚动）。
     await tester.binding.setSurfaceSize(const Size(1000, 150));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pumpSheet(tester);
     await tester.pumpAndSettle();
 
-    // 回退 push 主页：默认 playback 详情（倍速）不再随分栏展开。
-    expect(find.text(t.video_setting_speed), findsNothing,
-        reason: '高度低于阈值时应回退 push，而非保持 master-detail 显示右详情');
-    // push 主页仍列出分类导航行。
-    expect(find.text(t.video_settings_cat_playback), findsOneWidget);
-
-    // 点分类 → push 子页 + 返回箭头（证明走的是窄窗 push 语义）。
-    await _tapCategory(tester, 'playback', t.video_settings_cat_playback);
-    expect(find.text(t.video_setting_speed), findsOneWidget);
-    expect(find.byIcon(Icons.arrow_back), findsOneWidget);
+    expect(_categoryChip('playback'), findsOneWidget);
+    expect(find.text(t.video_setting_speed), findsOneWidget,
+        reason: '默认分类（播放）的内容直接在页签下方，不需要先点进子页');
+    expect(find.byIcon(Icons.arrow_back), findsNothing);
   });
 
-  testWidgets('narrow video settings pushes detail sub-pages', (tester) async {
+  testWidgets('narrow video settings shows tabs + detail directly (no push)',
+      (tester) async {
     await tester.binding.setSurfaceSize(const Size(420, 1200));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pumpSheet(tester);
 
-    // 窄窗主页：只列分类导航行，详情未展开（倍速未显示）。
-    expect(find.text(t.video_settings_cat_playback), findsOneWidget);
-    expect(find.text(t.video_setting_speed), findsNothing);
+    // 手机宽度也直接是页签 + 默认分类内容，没有「分类列表 → push 子页」两级。
+    expect(_categoryChip('playback'), findsOneWidget);
+    expect(find.text(t.video_setting_speed), findsOneWidget);
     expect(find.byIcon(Icons.arrow_back), findsNothing);
 
-    // push 进「播放」→ 详情 + 返回箭头；返回回主页。
-    await _tapCategory(tester, 'playback', t.video_settings_cat_playback);
-    expect(find.text(t.video_setting_speed), findsOneWidget);
-    expect(find.byIcon(Icons.arrow_back), findsOneWidget);
-
-    await tester.tap(find.byIcon(Icons.arrow_back));
-    await tester.pumpAndSettle();
+    // 切到「字幕」→ 内容原地换成字幕设置。
+    await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
     expect(find.text(t.video_setting_speed), findsNothing);
+    expect(find.text(t.video_setting_subtitle_font_size), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_back), findsNothing);
   });
 
   testWidgets('scaled settings side panel stays inside a narrow viewport',
@@ -753,13 +711,12 @@ void main() {
       ),
     );
     expect(tester.takeException(), isNull);
-    expect(find.text(t.video_settings_cat_playback), findsOneWidget);
+    expect(_categoryChip('playback'), findsOneWidget);
 
     await _tapCategory(tester, 'playback', t.video_settings_cat_playback);
 
     expect(tester.takeException(), isNull);
     expect(find.text(t.video_setting_speed), findsOneWidget);
-    expect(find.byIcon(Icons.arrow_back), findsOneWidget);
   });
 
   // ── TODO-561：mpv 高级「额外 mpv 选项」标题文本显示不全 ─────────────────
@@ -964,14 +921,26 @@ void main() {
     expect(slider.min, -10000);
     expect(slider.max, 10000);
 
-    // 还有一个数值输入框（可输入正负 ms），初值回显当前延迟。
-    final Finder field = find.descendant(
-      of: delayRow,
-      matching: find.byType(TextField),
+    // 「当前延迟」与「手动输入」合成一行（反馈 nGxUGtYot9）：不再有单独的输入框，
+    // 读数胶囊本身点按即原地变成数字输入，初值回显当前延迟。
+    expect(
+      find.descendant(of: delayRow, matching: find.byType(TextField)),
+      findsNothing,
     );
+    expect(find.text('+1200 ms'), findsOneWidget);
+    final Finder readout =
+        find.byKey(const ValueKey<String>('video-subtitle-delay-readout'));
+    await tester.ensureVisible(readout);
+    await tester.pumpAndSettle();
+    await tester.tap(readout);
+    await tester.pumpAndSettle();
+    final Finder field =
+        find.byKey(const ValueKey<String>('video-subtitle-delay-input'));
     expect(field, findsOneWidget);
-    final TextField tf = tester.widget<TextField>(glassUnwrap<TextField>(field));
-    expect(tf.controller!.text, '1200');
+    final EditableText editable = tester.widget<EditableText>(
+      find.descendant(of: field, matching: find.byType(EditableText)),
+    );
+    expect(editable.controller.text, '1200');
   });
 
   testWidgets('字幕调轴：在输入框键入正负值提交绝对偏移', (tester) async {
@@ -985,14 +954,22 @@ void main() {
       AdaptiveSettingsRow,
       t.video_setting_av_delay,
     );
-    final Finder field = find.descendant(
-      of: delayRow,
-      matching: find.byType(TextField),
-    );
+    expect(delayRow, findsOneWidget);
+    final Finder readout =
+        find.byKey(const ValueKey<String>('video-subtitle-delay-readout'));
+    await tester.ensureVisible(readout);
+    await tester.pumpAndSettle();
+    await tester.tap(readout);
+    await tester.pumpAndSettle();
+    final Finder field =
+        find.byKey(const ValueKey<String>('video-subtitle-delay-input'));
     await tester.enterText(field, '-350');
     await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(delay, -350, reason: '负值代表字幕提前，绝对提交而非叠加');
+    // 提交后输入框变回读数胶囊，显示新值。
+    expect(field, findsNothing);
+    expect(find.text('-350 ms'), findsOneWidget);
   });
 
   testWidgets('字幕调轴：拖滑条提交吸附到 50ms 档的偏移', (tester) async {
@@ -1053,9 +1030,9 @@ void main() {
         reason: '手动对轴滑条应照常渲染',
       );
       expect(
-        find.descendant(of: delayRow, matching: find.byType(TextField)),
+        find.byKey(const ValueKey<String>('video-subtitle-delay-readout')),
         findsOneWidget,
-        reason: '手动对轴数值输入框应照常渲染',
+        reason: '手动对轴数值输入（读数胶囊）应照常渲染',
       );
 
       // 「自动对轴」按钮（auto_fix_high 图标 + 对应 tooltip）现在必须渲染。
@@ -1108,15 +1085,24 @@ void main() {
       // 回传非 null offset => 经 _commitDelay 写穿 onSetDelay + 同步本地权威值。
       expect(committedDelay, 750,
           reason: 'TODO-1206：自动对轴返回值应经 _commitDelay 写穿 onSetDelay');
-      // 数值输入框文本同步到新延迟。
-      expect(
-        find.descendant(
-          of: delayRow,
-          matching: find.widgetWithText(TextField, '750'),
-        ),
-        findsOneWidget,
-        reason: 'TODO-1206：数值输入框应同步刷新到自动算出的延迟',
+      // 数值输入（读数胶囊的编辑态）文本同步到新延迟：点开读数即回显 750。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('video-subtitle-delay-readout')),
       );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<EditableText>(find.descendant(
+              of: find.byKey(const ValueKey<String>('video-subtitle-delay-input')),
+              matching: find.byType(EditableText),
+            ))
+            .controller
+            .text,
+        '750',
+        reason: 'TODO-1206：数值输入应同步刷新到自动算出的延迟',
+      );
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
       // 归零标签同步显示 +750 ms（滑条把手 clamp 到端点，标签为权威值）。
       expect(
         find.descendant(of: delayRow, matching: find.text('+750 ms')),
@@ -1304,12 +1290,14 @@ void main() {
       t.video_setting_av_delay,
     );
     expect(delayRow, findsOneWidget);
+    // 界面缩放 2.0 把窗口缩成 160 宽 → 手机紧凑档：不放滑条（±步进 + 可输入读数
+    // 已覆盖它），把首屏留给更多设置项。
     expect(
       find.descendant(of: delayRow, matching: find.byType(Slider)),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
-      find.descendant(of: delayRow, matching: find.byType(TextField)),
+      find.byKey(const ValueKey<String>('video-subtitle-delay-readout')),
       findsOneWidget,
     );
 
@@ -1369,7 +1357,9 @@ void main() {
     }
     // 字幕调轴提供滑条 + 数值输入框。
     expect(syncRow, contains('video_setting_subtitle_sync_input'),
-        reason: '字幕调轴须有数值输入框');
+        reason: '字幕调轴须有数值输入（读数胶囊点按即输入）');
+    expect(syncRow, contains('class _DelayReadoutField'),
+        reason: '数值输入与读数合成一行（反馈 nGxUGtYot9）');
     expect(syncRow, contains('_commitDelay'), reason: '滑条/按钮/输入框须经统一权威提交');
   });
 
@@ -1653,25 +1643,10 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pumpSheet(tester);
 
-    // 顶部分类 chip 条外层 Padding：水平 inset = page+gap=28，顶部 card=20（不再贴死），
-    // 底部留 gap/2=4 与下方分隔线呼吸。chip 条本身是横向 scroll（无 padding 属性），
-    // 故 padding 落在它外层那个 Padding widget 上，按值精确定位。
-    final Finder firstCategoryChip = _categoryChip('playback');
-    final Iterable<Padding> categoryPads = tester.widgetList<Padding>(
-      find.ancestor(
-        of: firstCategoryChip,
-        matching: find.byType(Padding),
-      ),
-    );
-    final Padding categoryOuterPad = categoryPads.firstWhere((Padding p) {
-      final EdgeInsets? e = p.padding as EdgeInsets?;
-      return e != null && e.left == 28 && e.top == 20 && e.bottom == 4;
-    });
-    final EdgeInsets categoryPadding = categoryOuterPad.padding as EdgeInsets;
-    expect(categoryPadding.left, 28);
-    expect(categoryPadding.right, 28);
-    expect(categoryPadding.top, 20);
-    expect(categoryPadding.bottom, 4);
+    // 顶部分类页签：页签轨道与下方内容同一左缘（28），首段文字再进轨道内衬 4 +
+    // 页签内边距 16。
+    final double tabTextLeft = tester.getTopLeft(_categoryChip('playback')).dx;
+    expect(tabTextLeft, closeTo(28 + 4 + 16, 1.5));
 
     // 下方详情（纵向 SingleChildScrollView，KeyedSubtree 内）：水平 inset 同 28、独占整宽。
     // picker 离屏 dropdown 测量树里也有无 padding 的 scroll，按「padding.left==28 的纵向
@@ -1690,20 +1665,30 @@ void main() {
     expect(primaryPadding.top, 20);
   });
 
-  testWidgets('narrow video settings uses roomy MD3 padding (TODO-344)',
+  testWidgets('phone-size video settings uses the compact padding',
       (tester) async {
-    await tester.binding.setSurfaceSize(const Size(420, 1200));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    // 手机（窗口最短边 < 600）：左右 16、顶部 gap（反馈 nGxUGtYot9：手机上太大、
+    // 太空）。判据读窗口（MediaQuery），所以改的是 view 尺寸而不是 surface。
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(420, 1200);
+    addTearDown(tester.view.reset);
     await _pumpSheet(tester);
 
-    // 窄窗主页同样用放宽后的 padding（顶部 >= 20，不再贴死）。窄窗 body 的最外层
-    // SingleChildScrollView 承载本功能的 padding（内部组件可能另有自己的 scroll，故取 first）。
-    final SingleChildScrollView scroll = tester.widget<SingleChildScrollView>(
-        find.byType(SingleChildScrollView).first);
+    final SingleChildScrollView scroll = tester
+        .widgetList<SingleChildScrollView>(find.byType(SingleChildScrollView))
+        .firstWhere(
+          (SingleChildScrollView s) => s.scrollDirection == Axis.vertical,
+        );
     final EdgeInsets padding = scroll.padding! as EdgeInsets;
-    expect(padding.left, 28);
-    expect(padding.right, 28);
-    expect(padding.top, 20);
+    expect(padding.left, 16);
+    expect(padding.right, 16);
+    expect(padding.top, 8);
+    // 设置行走紧凑档（单行说明 + ⓘ、下拉与标题同行），页顶说明行不放。
+    expect(find.byType(SettingsCompactRowsScope), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('video-settings-hint-playback')),
+      findsNothing,
+    );
   });
 
   // ── TODO-470：设置页内控制按钮编辑器使用播放器方位预览舞台 ─
@@ -2407,43 +2392,29 @@ void main() {
     });
 
     test(
-        'source guard: wide branch builds the top category bar, not a left '
-        'master-detail pane', () {
+        'source guard: categories are the shared LibrarySectionTabs, not a '
+        'left master-detail pane or a hand-rolled chip bar', () {
       final String src =
           File('lib/src/media/video/video_quick_settings_sheet.dart')
               .readAsStringSync();
-      // 宽窗大分类置顶：必须有顶栏构建器，且不再用左右 master-detail 容器/侧栏。
-      expect(src, contains('_buildTopCategoryBar('),
-          reason: '宽窗分类须经顶栏 chip 构建器渲染');
+      // 2026-10 重设计：分类页签复用阅读器「阅读设置」面板 / 库页同一个分区导航组件，
+      // 不另写一套 chip 条，也不回退左右 master-detail / 窄窗 push。
+      expect(src, contains('LibrarySectionTabs<String>('),
+          reason: '分类页签须复用共享的 LibrarySectionTabs');
       expect(src, isNot(contains('MaterialSupportingPaneLayout(')),
-          reason: '视频设置宽窗不得再回退到左右 master-detail（书籍设置才用它）');
-      expect(src, isNot(contains('_buildWidePane(')),
-          reason: '旧左栏构建器 _buildWidePane 必须删除');
-      // TODO-1351（用户复诉）：顶栏 chip 恢复「图标 + 完整文字」标签，按固有宽度完整
-      // 渲染（allowLabelOverflow，无 ellipsis），放不下由横滑条兜底；TODO-640 的
-      // 纯图标 + tooltip 方案废弃，不得回退。
-      expect(src, contains('overflow: TextOverflow.visible'),
-          reason: '顶栏分类标签须完整渲染不省略（TODO-1351）');
-      expect(src, isNot(contains('iconOnly: true')),
-          reason: '顶栏分类 chip 不得退回仅图标模式（TODO-1351 用户复诉）');
-      expect(src, contains('_buildWideDetailTitle('),
-          reason: '宽窗详情顶部须渲染当前分类标题（详情区页头）');
-      // BUG（末位分类被裁）：顶栏须用 Wrap 换行堆叠，不得回退横向 SingleChildScrollView
-      // 裁断（旧实现把「弹幕 / 控制」推到视口外，用户看不全也点不到）。
-      final String barSrc = src.substring(
-        src.indexOf('Widget _buildTopCategoryBar('),
-        src.indexOf('Widget _buildWideDetailTitle('),
-      );
-      expect(barSrc, contains('Wrap('),
-          reason: '顶栏分类条须用 Wrap 换行堆叠（放不下自动折行，不裁断）');
-      expect(barSrc, isNot(contains('scrollDirection: Axis.horizontal')),
-          reason: '顶栏分类条不得回退横向滚动（会把末位分类裁到视口外）');
+          reason: '视频设置不得回退到左右 master-detail');
+      expect(src, isNot(contains('FushiMasterDetailSettingsSheet(')),
+          reason: '不再有「宽窗分栏 / 窄窗 push」两套外壳');
+      expect(src, isNot(contains('_VideoSettingsCategoryTab')),
+          reason: '手写的分类 chip 已由共享页签取代');
+      expect(src, isNot(contains('_buildWideDetailTitle(')),
+          reason: '详情区带徽标的大标题已删除（反馈 nGxUGtYot9）');
     });
 
-    testWidgets('BUG（顶栏末位分类被裁）：窄宽窗顶栏 chip 换行堆叠，7 个分类全部可见不被右裁', (tester) async {
-      // 宽窗阈值 560×440；取 620 宽——进宽窗分支，但 7 个「图标 + 完整文字」chip 一行
-      // 装不下。旧横向滚动实现会把末位「弹幕 / 控制」推到视口右侧外裁掉；Wrap 换行后全可见。
-      await tester.binding.setSurfaceSize(const Size(620, 800));
+    testWidgets('all 7 categories stay reachable in a narrow panel (tabs scroll)',
+        (tester) async {
+      // 页签放不下时横向滚动（不换行、不裁断）：末位分类滚入视口后可见可点。
+      await tester.binding.setSurfaceSize(const Size(400, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await _pumpSheet(tester);
 
@@ -2457,22 +2428,13 @@ void main() {
         'controls',
       ];
       for (final String id in ids) {
-        expect(_categoryChip(id), findsOneWidget, reason: '$id chip 必须在顶栏渲染');
+        expect(_categoryChip(id), findsOneWidget, reason: '$id 页签必须渲染');
       }
-
-      // 末位分类「控制」的右缘不得超出面板宽度（不被横向裁到视口外）。
+      await tester.ensureVisible(_categoryChip('controls'));
+      await tester.pumpAndSettle();
       final Rect controls = tester.getRect(_categoryChip('controls'));
-      expect(controls.right, lessThanOrEqualTo(620.0),
-          reason: '末位分类 chip 不得被裁到视口右侧外（须换行，而非横向滚动裁断）');
-
-      // 一行放不下 → 换行：末位「控制」应落到比首位「播放」更低的行（dy 更大）。
-      final double playbackTop =
-          tester.getTopLeft(_categoryChip('playback')).dy;
-      final double controlsTop =
-          tester.getTopLeft(_categoryChip('controls')).dy;
-      expect(controlsTop, greaterThan(playbackTop),
-          reason: '装不下时顶栏必须换行堆叠（Wrap），末位分类落到下一行');
-
+      expect(controls.right, lessThanOrEqualTo(400.0));
+      expect(controls.left, greaterThanOrEqualTo(0.0));
       _expectNoFlutterErrors(tester);
     });
   });
@@ -2528,15 +2490,15 @@ void main() {
       expect(trackY, lessThan(fontSizeY), reason: '字幕轨切换区须在字幕外观设置之上');
     });
 
-    testWidgets('TODO-1351：initialCategory 直接把面板开在目标分类（窄窗 push 音频）',
+    testWidgets('TODO-1351：initialCategory 直接把面板开在目标分类（手机宽度）',
         (tester) async {
       await tester.binding.setSurfaceSize(const Size(420, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await _pumpSheet(tester, initialCategory: 'audio');
-      // 窄窗直接 push 到「音频」子页：子页标题 + 返回箭头 + 占位（无 section 时）。
-      expect(find.text(t.video_settings_cat_audio), findsWidgets);
-      expect(find.byIcon(Icons.arrow_back), findsOneWidget);
+      // 直接停在「音频」页签：内容是音轨占位（无 section 时），默认播放页不出现。
+      expect(_categoryChip('audio'), findsOneWidget);
       expect(find.text(t.video_audio_track_empty), findsOneWidget);
+      expect(find.text(t.video_setting_speed), findsNothing);
     });
 
     // 主题切换行已从视频设置移除（用户诉求「哪有单独的一个主题的说法」）：主题属于全局

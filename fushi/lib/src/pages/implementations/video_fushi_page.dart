@@ -146,7 +146,7 @@ import 'package:fushi/src/platform/mobile/android_picture_in_picture.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
-    show ReaderHeaderAction;
+    show ReaderHeaderAction, readerSideSheetWidth;
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_danmaku_overlay.dart';
 import 'package:fushi/src/media/video/video_backing_render_size.dart';
@@ -216,6 +216,8 @@ import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
 import 'package:fushi/src/media/video/video_quick_settings_sheet.dart';
+import 'package:fushi/src/media/video/video_subtitle_sync_row.dart'
+    show VideoSubtitleSyncRow;
 import 'package:fushi_engine/media/video/video_sidecar.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
@@ -2732,6 +2734,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// [VideoSubtitleOverlay.dragAdjustEnabled]），松手经 [_handleSubtitleDragAdjustEnd]
   /// 写回 [_subtitleStyle] 并持久化。
   bool _subtitleDragAdjustActive = false;
+
+  /// 「浮条调轴」模式（反馈 JsICLVdq0i）：设置面板收起、画面顶部挂一条只含调轴
+  /// 控件的紧凑浮条，字幕区域整片让出来看实时效果。见 layout.part 的
+  /// `_buildSubtitleDelayBar`。
+  bool _subtitleDelayBarActive = false;
   VideoAsbplayerConfig _asbConfig = VideoAsbplayerConfig.defaults;
 
   /// Live 9-slot control button layout (TODO-274/312 phase 2). This is loaded
@@ -10249,6 +10256,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       onSubtitleStyleCommit: _persistSubtitleStyle,
       // TODO-2838：进入「拖拽调整字幕位置」模式（关设置侧栏 + 开拖拽，见 layout.part）。
       onEnterSubtitleDragAdjust: _enterSubtitleDragAdjust,
+      // 浮条调轴：关设置侧栏 + 画面顶部挂调轴浮条（见 layout.part）。
+      onEnterSubtitleDelayBar: _enterSubtitleDelayBar,
       // TODO-1105：尊重 .ass 自带样式切换回调（持久化 + 重建让 overlay 即时生效）。
       onSubtitleObscureRevealChanged: _setVideoSubtitleObscureReveal,
       onRespectAssStyleChanged: _setVideoRespectAssStyle,

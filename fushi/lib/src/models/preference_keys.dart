@@ -463,6 +463,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_subtitle_blur',
   'video_subtitle_list_auto_scroll',
   'video_subtitle_list_font_scale_index',
+  // bool（默认 true）：字幕列表里点字幕文字是否查词；关掉后点哪里都只跳到该句
+  // （手机上列表旁的查词弹窗太扁，多数人只拿列表跳转，群反馈 GbN9MoKDCQ）。
+  'video_subtitle_list_tap_lookup',
   'video_subtitle_list_width',
   'video_subtitle_obscure_hide',
   // bool（默认 true）：遮蔽（模糊 / 隐藏）态是否允许悬停 / 点击临时显形。关掉后

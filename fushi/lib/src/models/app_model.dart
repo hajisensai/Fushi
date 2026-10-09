@@ -4273,6 +4273,12 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoSubtitleListAutoScroll(bool value) =>
       prefsRepo.setVideoSubtitleListAutoScroll(value);
 
+  /// 视频字幕列表「点字幕查词」开关（落 Drift preferences，默认开）。
+  bool get videoSubtitleListTapLookup => prefsRepo.videoSubtitleListTapLookup;
+
+  Future<void> setVideoSubtitleListTapLookup(bool value) =>
+      prefsRepo.setVideoSubtitleListTapLookup(value);
+
   /// 视频字幕列表行字号档位（BUG-878，落 Drift preferences，默认 1=1.0x）。
   int get videoSubtitleListFontScaleIndex =>
       prefsRepo.videoSubtitleListFontScaleIndex;

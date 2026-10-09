@@ -349,6 +349,8 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     this.loadingHint,
     this.initialAutoScroll = true,
     this.onAutoScrollChanged,
+    this.initialTapLookup = true,
+    this.onTapLookupChanged,
     this.initialFontScaleIndex = _kDefaultFontScaleIndex,
     this.onFontScaleIndexChanged,
     this.hoverAutoLookupEnabled = false,
@@ -399,6 +401,14 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   /// 用户在面板头部切换「自动滚动」时回调（TODO-613）。null 时仍可切换（纯本地），
   /// 但不通知外部持久化（部分调用方 / 测试不接落盘）。
   final ValueChanged<bool>? onAutoScrollChanged;
+
+  /// 「点字幕查词」初值（群反馈 GbN9MoKDCQ）：false = 列表行文本不查词，点哪里都只是
+  /// 跳到该句——手机上列表旁的查词弹窗又扁又窄，多数人只拿列表来跳转，点到字上反而
+  /// 误触查词。只在 [onLookupCue] 非 null（本就能查词）时有意义；面板头部出现切换钮。
+  final bool initialTapLookup;
+
+  /// 用户切换「点字幕查词」时回调，页面层落 Drift preferences（null 时纯本地切换）。
+  final ValueChanged<bool>? onTapLookupChanged;
 
   /// 行字号档位初值（BUG-878）：面板内 [_fontScaleIndex] 以此为种子（seed 时 clamp 到
   /// [_kFontScaleSteps] 范围），用户 A+/A- 或 Ctrl+滚轮调节时回调 [onFontScaleIndexChanged]
@@ -501,6 +511,14 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// 本帧是否走 M3E 中性深色面板（[videoM3ePanelNeutral]），测量与渲染同源。
   bool _m3e = false;
   late bool _autoScroll = widget.initialAutoScroll;
+
+  /// 「点字幕查词」当前开关（见 [VideoSubtitleJumpPanel.initialTapLookup]）。
+  late bool _tapLookup = widget.initialTapLookup;
+
+  /// 本面板此刻生效的查词回调：关掉「点字幕查词」后视同调用方没接查词——行文本不登记
+  /// 命中、点按与悬停都不查词，整行点按回到纯跳转（与无查词能力的历史行为同一条路）。
+  void Function(AudioCue cue, int graphemeIndex, Rect charRect)?
+  get _lookupCue => _tapLookup ? widget.onLookupCue : null;
   bool _scrollPostFrameScheduled = false;
   // BUG-878：字号档位以持久化初值为种子（clamp 防越界），不再每次重开都回默认档。
   late int _fontScaleIndex = widget.initialFontScaleIndex.clamp(
@@ -616,7 +634,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           _kM3eRowPadRight -
           _timestampColumnWidth -
           kSubtitleRowTimestampGap -
-          (favorited ? _m3eStarSize + _kM3eStarGap : 0);
+          (favorited ? _m3eStarSize + _kM3eStarGap : 0) -
+          (_m3eActionColumn ? _m3eActionColumnWidth + _kM3eStarGap : 0);
       return width < 48 ? 48 : width;
     }
     return subtitleRowTextWidth(
@@ -635,6 +654,15 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   /// M3E 收藏星的尺寸（收藏行右上角常驻，正文右侧为它让位）。
   double get _m3eStarSize => _effectiveFontSize - 1;
+
+  /// M3E 行尾动作（跳转 / 复制 / 收藏）是否占一列独立的列宽（反馈 otakuDt：动作浮在
+  /// 句尾上，被盖住的词点不了查词，例如「チャート」）。桌面有悬停，动作随悬停出现，
+  /// 必须给它留出自己的一列、正文不进这一列；触屏没有悬停（动作走长按菜单），不留列，
+  /// 窄屏不白白少掉一截正文宽。
+  bool get _m3eActionColumn => isDesktopPlatform;
+
+  /// 动作列宽：三枚 [SubtitleTranscriptAction]（图标 + 四周 2 的内边距）。
+  double get _m3eActionColumnWidth => 3 * (_effectiveFontSize + 2 + 4);
 
   /// M3E 时间戳胶囊的文字样式。测量与渲染**同一份**（显式行高 + 字重），不吃
   /// DefaultTextStyle 的行高——否则单行行里胶囊比测得的高 2px，整行 RenderFlex
@@ -863,7 +891,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// 8px 阈值 + 同 cue 同 grapheme 短路去重都与 overlay `_handleShiftHover` 同构。命中经
   /// [VideoSubtitleJumpPanel.onLookupCue] → 页面 `_handleSubtitleListLookup` → `_lookupAt`。
   void _handleListShiftHover(PointerHoverEvent event) {
-    final void Function(AudioCue, int, Rect)? onLookup = widget.onLookupCue;
+    final void Function(AudioCue, int, Rect)? onLookup = _lookupCue;
     if (onLookup == null) return;
     if (!widget.hoverAutoLookupEnabled &&
         !HardwareKeyboard.instance.isShiftPressed) {
@@ -950,7 +978,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// 返回 null（barrier 落回原 dismiss）。遍历 [_rowTextKeys]：滚出屏的行 `currentContext`
   /// 为 null 自动跳过；先粗判点落在哪行的段落框内，再逐字符精查。
   SubtitleListHit? _hitTestRows(Offset globalPos, {bool exactOnly = false}) {
-    if (widget.onLookupCue == null || _rowHitCues.isEmpty) return null;
+    if (_lookupCue == null || _rowHitCues.isEmpty) return null;
     for (final MapEntry<int, GlobalKey> entry in _rowTextKeys.entries) {
       final AudioCue? cue = _rowHitCues[entry.key];
       if (cue == null) continue;
@@ -1080,6 +1108,15 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     if (_autoScroll) {
       _scheduleScrollToCurrentCue();
     }
+  }
+
+  void _toggleTapLookup() {
+    setState(() {
+      _tapLookup = !_tapLookup;
+      // 行文本是否登记命中随之翻转，旧 key 映射作废。
+      _rowKeys.clear();
+    });
+    widget.onTapLookupChanged?.call(_tapLookup);
   }
 
   void _stepFont(int delta) {
@@ -1635,6 +1672,21 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                       visualDensity: VisualDensity.compact,
                       style: _kHeaderIconButtonStyle,
                     ),
+                    if (widget.onLookupCue != null)
+                      FushiIconButtonControl(
+                        key: const ValueKey<String>(
+                          'video-subtitle-list-tap-lookup',
+                        ),
+                        tooltip: t.video_subtitle_list_tap_lookup,
+                        icon: FushiIcon(
+                          _tapLookup ? FushiIcons.lookup : FushiIcons.touch,
+                          size: iconSize,
+                        ),
+                        color: _tapLookup ? cs.primary : cs.onSurfaceVariant,
+                        onPressed: _toggleTapLookup,
+                        visualDensity: VisualDensity.compact,
+                        style: _kHeaderIconButtonStyle,
+                      ),
                   ],
                   <Widget>[
                     // TODO-637：字幕列表是「带 × 的非阻塞侧栏」——头部带回右上角 × 关闭
@@ -1844,7 +1896,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   ) {
     // BUG-874：可查词时给本行文本一个稳定 [GlobalKey]（按 builder 下标）并登记所属 cue，供
     // [_hitTestRows] 反查。不可查词（onLookupCue==null）时不登记，行为与历史一致。
-    final GlobalKey? textKey = widget.onLookupCue == null
+    final GlobalKey? textKey = _lookupCue == null
         ? null
         : _rowTextKeys.putIfAbsent(index, GlobalKey.new);
     if (textKey != null) _rowHitCues[index] = cue;
@@ -1913,7 +1965,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   ) {
     // BUG-1034：与行高测量（[_measureRowExtent]）共用同一样式，断行结果一致，末行不被裁。
     final TextStyle textStyle = _rowTextStyle(bold: selected, color: textColor);
-    final void Function(AudioCue, int, Rect)? onLookup = widget.onLookupCue;
+    final void Function(AudioCue, int, Rect)? onLookup = _lookupCue;
     if (onLookup == null) {
       // 无查词能力：整段文本（换行），不叠 tap 层，外层 InkWell 行点击仍 seek。
       return Text(cue.text, style: textStyle);
@@ -2297,6 +2349,20 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                   selected: _autoScroll,
                   onPressed: _toggleAutoScroll,
                 ),
+                if (widget.onLookupCue != null) ...<Widget>[
+                  const SizedBox(width: 4),
+                  KeyedSubtree(
+                    key: const ValueKey<String>(
+                      'video-subtitle-list-tap-lookup',
+                    ),
+                    child: toolButton(
+                      icon: _tapLookup ? FushiIcons.lookup : FushiIcons.touch,
+                      tooltip: t.video_subtitle_list_tap_lookup,
+                      selected: _tapLookup,
+                      onPressed: _toggleTapLookup,
+                    ),
+                  ),
+                ],
                 const SizedBox(width: 4),
                 fontStepper,
               ],
@@ -2395,7 +2461,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     required bool first,
     required bool last,
   }) {
-    final GlobalKey? textKey = widget.onLookupCue == null
+    final GlobalKey? textKey = _lookupCue == null
         ? null
         : _rowTextKeys.putIfAbsent(index, GlobalKey.new);
     if (textKey != null) _rowHitCues[index] = cue;
@@ -2468,21 +2534,26 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         ignoring: !showActions,
         child: ExcludeFocus(
           excluding: !showActions,
-          // 与行同色的左侧渐隐底：浮出的动作盖住正文末尾时，被盖的字渐隐进行色，
-          // 不再与图标叠字。
+          // 触屏叠层形态：与行同色的左侧渐隐底，浮出的动作（聚焦 / 刚复制）盖住
+          // 正文末尾时被盖的字渐隐进行色，不与图标叠字。桌面是独立动作列，不叠字、
+          // 不需要渐隐。
           child: DecoratedBox(
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: <Color>[
-                  background.withValues(alpha: 0),
-                  background,
-                  background,
-                ],
-                stops: const <double>[0, 0.28, 1],
-              ),
+              gradient: _m3eActionColumn
+                  ? null
+                  : LinearGradient(
+                      colors: <Color>[
+                        background.withValues(alpha: 0),
+                        background,
+                        background,
+                      ],
+                      stops: const <double>[0, 0.28, 1],
+                    ),
             ),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 2, 2, 2),
+              padding: _m3eActionColumn
+                  ? EdgeInsets.zero
+                  : const EdgeInsets.fromLTRB(24, 2, 2, 2),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
@@ -2587,6 +2658,21 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                                     : cs.tertiary,
                               ),
                             ],
+                            // 桌面：动作独占行尾一列（悬停才显形，列宽常驻、测量同源），
+                            // 正文永远不在动作底下，句尾的词照常可点查词。
+                            if (_m3eActionColumn) ...<Widget>[
+                              const SizedBox(width: _kM3eStarGap),
+                              SizedBox(
+                                key: const ValueKey<String>(
+                                  'video-subtitle-row-action-column',
+                                ),
+                                width: _m3eActionColumnWidth,
+                                child: Align(
+                                  alignment: Alignment.topRight,
+                                  child: actions,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -2610,9 +2696,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                           ),
                         ),
                       ),
-                      // 行尾动作：悬停 / 聚焦才浮出，不占文本列宽；同色渐隐底盖住正文
-                      // 末尾，不叠字。
-                      Positioned(top: 4, right: 6, child: actions),
+                      // 触屏行尾动作：聚焦 / 刚复制才浮出，不占文本列宽；同色渐隐底盖住
+                      // 正文末尾，不叠字（桌面走上面的独立动作列）。
+                      if (!_m3eActionColumn)
+                        Positioned(top: 4, right: 6, child: actions),
                     ],
                   ),
                 ),

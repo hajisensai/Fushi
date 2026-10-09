@@ -6,8 +6,9 @@ import 'package:fushi/src/media/video/video_m3e_chrome.dart'
 import 'package:fushi/src/media/video/video_side_panel.dart';
 
 void main() {
-  testWidgets('VideoTranslucentSidePanel keeps the video area visible',
-      (WidgetTester tester) async {
+  testWidgets('VideoTranslucentSidePanel keeps the video area visible', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Stack(
@@ -25,10 +26,7 @@ void main() {
 
     final Material material = tester.widget<Material>(
       find
-          .ancestor(
-            of: find.text('Speed'),
-            matching: find.byType(Material),
-          )
+          .ancestor(of: find.text('Speed'), matching: find.byType(Material))
           .first,
     );
     // M3E：浮动面板与播放器悬浮胶囊同一层表面（videoM3eFloatingColor）。
@@ -48,8 +46,9 @@ void main() {
     expect(find.byIcon(Icons.close), findsNothing);
   });
 
-  testWidgets('VideoTranslucentSidePanel mirrors rounded side on the left',
-      (WidgetTester tester) async {
+  testWidgets('VideoTranslucentSidePanel mirrors rounded side on the left', (
+    WidgetTester tester,
+  ) async {
     Future<Material> pumpPanel(Alignment alignment) async {
       await tester.pumpWidget(
         MaterialApp(
@@ -64,11 +63,14 @@ void main() {
           ),
         ),
       );
+      // 面板带滑入进场动效，等它落位再量几何。
+      await tester.pumpAndSettle();
       return tester.widget<Material>(
         find
             .ancestor(
-              of: find
-                  .text(alignment == Alignment.centerLeft ? 'Left' : 'Right'),
+              of: find.text(
+                alignment == Alignment.centerLeft ? 'Left' : 'Right',
+              ),
               matching: find.byType(Material),
             )
             .first,
@@ -93,8 +95,11 @@ void main() {
       floatingRadius,
       reason: '浮动侧栏四边都有间距，四个角都应是圆角（不是贴边抽屉的半圆角）',
     );
-    expect(tester.getTopLeft(find.byType(Material).last).dx, 10,
-        reason: '左对齐时面板贴左，留 10 的安全间距');
+    expect(
+      tester.getTopLeft(find.byType(Material).last).dx,
+      10,
+      reason: '左对齐时面板贴左，留 10 的安全间距',
+    );
 
     final Material right = await pumpPanel(Alignment.centerRight);
     expect(
@@ -102,7 +107,98 @@ void main() {
       floatingRadius,
       reason: '左右两侧圆角必须一致——镜像体现在位置上，不再体现在圆角换边',
     );
-    expect(tester.getTopRight(find.byType(Material).last).dx, 790,
-        reason: '右对齐时面板贴右，留同样 10 的安全间距（800 - 10）');
+    expect(
+      tester.getTopRight(find.byType(Material).last).dx,
+      790,
+      reason: '右对齐时面板贴右，留同样 10 的安全间距（800 - 10）',
+    );
+  });
+
+  testWidgets(
+    'phone portrait: bottomSheetWhenCompact docks the panel to the bottom '
+    'without a title header',
+    (WidgetTester tester) async {
+      // 视频设置面板重设计（反馈 nGxUGtYot9）：手机竖屏（宽 < 600）贴底升起、只圆上
+      // 两角、顶上一条拖动把手；title 为 null 时不画「视频设置」大标题页头。
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(384, 853);
+      addTearDown(tester.view.reset);
+      int closed = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Stack(
+            children: <Widget>[
+              const ColoredBox(color: Colors.green),
+              VideoTranslucentSidePanel(
+                bottomSheetWhenCompact: true,
+                onClose: () => closed++,
+                child: const Text('Tabs + content'),
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final Rect sheet = tester.getRect(
+        find.byKey(const ValueKey<String>('video-side-panel-bottom-sheet')),
+      );
+      expect(sheet.bottom, 853, reason: '贴底');
+      expect(sheet.width, 384, reason: '手机竖屏吃满宽');
+      expect(
+        sheet.height,
+        closeTo(853 * VideoTranslucentSidePanel.bottomSheetHeightFraction, 0.5),
+        reason: '半屏高，画面中部不被整列盖住',
+      );
+      final Material material = tester.widget<Material>(
+        find
+            .ancestor(
+              of: find.text('Tabs + content'),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      expect(
+        (material.shape! as RoundedRectangleBorder).borderRadius,
+        const BorderRadius.vertical(top: Radius.circular(28)),
+      );
+
+      // 把手：点按关闭。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('video-side-panel-drag-handle')),
+      );
+      expect(closed, 1);
+    },
+  );
+
+  testWidgets('wide windows keep the floating side panel even when '
+      'bottomSheetWhenCompact is set', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(853, 384);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: VideoTranslucentSidePanel(
+          bottomSheetWhenCompact: true,
+          width: 400,
+          child: const Text('Tabs + content'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('video-side-panel-bottom-sheet')),
+      findsNothing,
+    );
+    final Rect panel = tester.getRect(
+      find
+          .ancestor(
+            of: find.text('Tabs + content'),
+            matching: find.byType(Material),
+          )
+          .first,
+    );
+    expect(panel.width, 400);
+    expect(panel.right, 853 - 10, reason: '右对齐侧板，留 10 安全间距');
   });
 }

@@ -105,79 +105,41 @@ void main() {
   });
 
   test(
-      'VideoQuickSettingsSheet stacks top category chips over the detail '
-      '(TODO-556 video-only top bar)', () {
+      'VideoQuickSettingsSheet is shared section tabs over the detail '
+      '(2026-10 redesign aligned with the reader settings panel)', () {
     final String source =
         File('lib/src/media/video/video_quick_settings_sheet.dart')
             .readAsStringSync();
 
     expect(source, contains('class VideoQuickSettingsSheet'));
-    // 与阅读器同源的「不套外层滚动 + 宽窗撑满有界高度」范式（BUG-096）：外壳骨架
-    // （PopScope + FushiModalSheetFrame + scrollable:false + 几何判据）已抽到共享
-    // FushiMasterDetailSettingsSheet（TODO-583），由 master_detail_settings_sheet_test
-    // 守它。这里只锁视频走共享外壳，且宽窗撑满有界高度的 height:constraints.maxHeight
-    // 仍在视频自己的 wideBuilder 回调里。
-    expect(source, contains('FushiMasterDetailSettingsSheet('));
-    expect(source, contains('height: constraints.maxHeight'));
-
-    // TODO-427-③：宽窗从左右 master-detail（窄左栏 + 右详情）改成顶部横向分类 chip 行 +
-    // 下方详情上下分栏，根治窄侧栏左右劈半把右详情挤窄、下拉抢宽裁标题。
-    // 旧的左右分栏符号必须删除（防回退）。
+    // 2026-10 重设计（对齐阅读器「阅读设置」面板）：顶部分类页签复用共享的
+    // LibrarySectionTabs（与阅读器 / 库页同一个分区导航组件），手机与桌面同一结构；
+    // 不再有「宽窗分栏 / 窄窗 push」两套外壳，也不再有带徽标的大标题页头。
+    expect(source, contains('LibrarySectionTabs<String>('),
+        reason: 'categories must use the shared section tabs');
+    expect(source, isNot(contains('FushiMasterDetailSettingsSheet(')),
+        reason: 'no more wide/narrow dual shell');
+    expect(source, isNot(contains('_buildWideDetailTitle(')),
+        reason: 'the big badge title above the detail was removed');
+    expect(source, isNot(contains('_VideoSettingsCategoryTab')),
+        reason: 'hand-rolled category chips were replaced by the shared tabs');
     expect(source, isNot(contains('MaterialSupportingPaneLayout(')),
         reason:
             'video settings wide layout must not regress to left master-detail');
-    expect(source, isNot(contains('_videoSupportingPaneWidth')),
-        reason:
-            'video-specific supporting width constants should stay removed');
     expect(source, isNot(contains('_buildWidePane')),
         reason: 'old left-pane builder _buildWidePane must be removed');
     expect(source, isNot(contains('SupportingPaneSide.start')),
         reason: 'video settings must not use a supporting (left) pane anymore');
-    expect(source, isNot(contains('_videoSettingsSupportingPaneReadableWidth')),
-        reason: 'left supporting-pane width constants must stay removed');
-    expect(source, isNot(contains('_videoSettingsSupportingPaneWidth(')),
-        reason: 'left supporting-pane width helper must stay removed');
-    expect(source, isNot(contains('232,')),
-        reason: 'video settings must not regress to the fixed 232px pane');
     expect(source, isNot(contains('FushiListItem(')),
-        reason: 'wide categories must not render as a left list anymore');
-    expect(source, contains('_buildTopCategoryBar('),
-        reason: 'wide categories must render in a top horizontal tab bar');
-    // 2026-10-04：顶栏由 chip 行改成标签栏（MD3 primary tab / Apple 文字标签），
-    // 每个分类一个 _VideoSettingsCategoryTab，按分类 id 稳定 key 命中。
-    expect(source, contains('_VideoSettingsCategoryTab('),
-        reason: 'each top-bar category is a selectable tab');
-    expect(source, contains("ValueKey<String>('video-settings-cat-\${cat.id}')"),
-        reason: 'category tabs keep their stable id keys');
-    // TODO-1351（用户复诉）：分类标签「图标 + 完整文字」，标签按固有宽度完整
-    // 渲染（TextOverflow.visible，无 ellipsis）；TODO-640 的纯图标 + tooltip 方案废弃。
-    expect(source, contains('overflow: TextOverflow.visible'),
-        reason: 'top-bar category tabs render full labels (TODO-1351)');
-    expect(source, isNot(contains('iconOnly: true')),
-        reason:
-            'icon-only top-bar chips were rejected by the user (TODO-1351)');
-    expect(source, isNot(contains('tooltip: cat.label')),
-        reason: 'labels are inline now, not tooltip-only (TODO-1351)');
-    expect(source, contains('_buildWideDetailTitle('),
-        reason: 'the selected category title renders atop the detail pane');
-    // BUG（用户复诉「弹幕 / 控制 分类被截在视口外、点不到」）：顶栏分类条放不下时必须
-    // 换行堆叠（Wrap），不得回退横向 SingleChildScrollView 裁断——横滑会把末位分类推到
-    // 视口外、无滚动条提示。守卫只扫 _buildTopCategoryBar 方法体，与
-    // video_quick_settings_sheet_test 的同款守卫互为镜像。
-    final String topBarSource = source.substring(
-      source.indexOf('Widget _buildTopCategoryBar('),
-      source.indexOf('Widget _buildWideDetailTitle('),
+        reason: 'categories must not render as a list anymore');
+    expect(
+      source,
+      contains("labelKey: ValueKey<String>('video-settings-cat-\${cat.id}')"),
+      reason: 'category tabs keep their stable id keys',
     );
-    expect(topBarSource, contains('Wrap('),
-        reason: 'the top category bar wraps so no category tab is clipped');
-    expect(topBarSource, isNot(contains('scrollDirection: Axis.horizontal')),
-        reason:
-            'top category bar must wrap, not horizontally scroll (last chip '
-            'was pushed off-screen and unclickable)');
-    expect(source, contains('padding: widePrimaryPadding'));
     // 详情按选中 id KeyedSubtree，防 Element 复用副作用。
     expect(source, contains('KeyedSubtree('));
-    expect(source, contains("_subPage ?? 'playback'"));
+    expect(source, contains('_subPage ?? VideoGroup.playback.name'));
     // 分类齐全（chip 行 + 窄窗导航行共用 _categories）：审查 Finding 9 后由
     // VideoGroup 枚举驱动（id == 枚举名），每个分组必有 exhaustive switch 的
     // icon/label 映射分支——新增分组漏接面板会在编译期报错。
@@ -242,12 +204,8 @@ void main() {
         File('lib/src/media/video/video_quick_settings_sheet.dart')
             .readAsStringSync();
 
-    expect(source, contains('Widget _buildTopCategoryBar('),
-        reason: 'wide categories render in a top horizontal chip bar');
-    expect(source,
-        contains('titlePlacement: SettingsSectionTitlePlacement.inside'),
-        reason:
-            'video detail section headings should be visually part of their group surface');
+    expect(source, contains('LibrarySectionTabs<String>('),
+        reason: 'categories render in the shared top section tabs');
     expect(
         source,
         isNot(contains(
