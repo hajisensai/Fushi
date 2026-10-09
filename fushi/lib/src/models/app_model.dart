@@ -8741,6 +8741,9 @@ class AppModel with ChangeNotifier {
       // ReaderFushiSource 真相源），扩展弹窗渲染后自动播首条词发音，不再只能手动点 ♪。
       autoReadOnLookupProvider: () =>
           ReaderFushiSource.instance.autoReadOnLookup,
+      // 「统一词典样式」：与 app 内弹窗 / 桌面查词窗同一个偏好（popup_settings_injection
+      // 注入的 window.__fushiDictUnifiedStyle），扩展弹窗据此决定是否统一词典配色。
+      dictionaryUnifiedStyleProvider: () => dictionaryUnifiedStyle,
       // BUG-726：内置扩展内容指纹随查词响应下发（`extensionBuild`），扩展 background
       // 与自身 FUSHI_DEFAULTS.build 比对，不一致即 chrome.runtime.reload() 从磁盘拉新。
       // 指纹由 refreshBrowserExtensionCopy 在启动时算好缓存；算好前返回 null（字段省略）。

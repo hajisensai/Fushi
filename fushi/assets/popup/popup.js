@@ -5764,7 +5764,7 @@ function __fushiScheduleM3eDictTone(root) {
         __fushiM3eToneRoots.clear();
         const dark = __fushiM3eDarkSurface();
         __fushiM3eLastDark = dark;
-        // 词典样式统一（默认开）：颜色整体交给 popup.css 的令牌规则，暗色调色这层不再
+        // 词典样式统一（开着时）：颜色整体交给 popup.css 的令牌规则，暗色调色这层不再
         // 需要——先复原它写过的内联色，否则统一层量到的是调过色的值而不是词典原色。
         if (__fushiDictUnifiedEnabled()) {
             __fushiRestoreDictTone();
@@ -5867,7 +5867,7 @@ function __fushiToneDictColors(root) {
 }
 
 /* =====================================================================
- * 词典样式统一（M3E，默认开）：导入词典的 styles.css / 结构化内容 inline style 各自
+ * 词典样式统一（M3E，按宿主开关）：导入词典的 styles.css / 结构化内容 inline style 各自
  * 写死颜色（红底词性标签、绿/蓝/红强调字、深红汉字框、彩色边框……），与 app 主题
  * 毫无关系。统一模式按**语义**把它们重映射到 ColorScheme 令牌：
  *   - 带底色的短行内元素（标签 / 徽标）→ chip：secondaryContainer / onSecondaryContainer；
@@ -5880,8 +5880,10 @@ function __fushiToneDictColors(root) {
  * CSS 读不到「这个元素被词典涂成了什么」，所以在渲染后量一次计算样式（量的时候作用域
  * 类必须摘掉，量到的才是词典原色），把语义写成 data-fushi-dt* 属性；配色全在 popup.css
  * 里按 --md-sys-color-* 取，换强调色 / 明暗只是 CSS 变量变化，不必重新分类。
- * 不按词典名写任何特例。关掉（window.__fushiDictUnifiedStyle === false）就摘掉作用域
- * 类，词典原样式原样回来。宿主没注入（浏览器扩展）= 默认开。
+ * 不按词典名写任何特例。只有宿主明确打开（window.__fushiDictUnifiedStyle === true）才统一；
+ * 关掉就摘掉作用域类，词典原样式原样回来。宿主没注入 / 浏览器扩展连不上 app = 关，与 app
+ * 默认值一致（app 内由 popup_settings_injection 注入；扩展由查词响应 dictionaryUnifiedStyle
+ * 经 dict-media.js applyFushiPopupCss 落到同一个全局）。
  * ===================================================================== */
 const FUSHI_DICT_UNIFIED_CLASS = 'fushi-dict-unified';
 // 量原色期间挂的类：popup.css 里会改写词典颜色的旧规则（暗色浅底调灰）见到它就让路，
@@ -5894,7 +5896,7 @@ const FUSHI_DICT_UNIFIED_SKIP = 'img, svg, svg *, canvas, video, audio, picture,
 const FUSHI_DICT_UNIFIED_CHIP_MAX_CHARS = 16;
 
 function __fushiDictUnifiedEnabled() {
-    return typeof window === 'undefined' || window.__fushiDictUnifiedStyle !== false;
+    return typeof window !== 'undefined' && window.__fushiDictUnifiedStyle === true;
 }
 
 function __fushiDictUnifiedScopes(root) {

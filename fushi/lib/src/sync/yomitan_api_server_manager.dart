@@ -21,6 +21,7 @@ class YomitanApiServerManager {
     RemoteThemeColorsProvider? themeColorsProvider,
     List<String> Function()? audioSourcesProvider,
     bool Function()? autoReadOnLookupProvider,
+    bool Function()? dictionaryUnifiedStyleProvider,
     String? Function()? extensionBuildProvider,
     String Function()? appLocaleProvider,
     RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
@@ -40,6 +41,7 @@ class YomitanApiServerManager {
         _themeColorsProvider = themeColorsProvider,
         _audioSourcesProvider = audioSourcesProvider,
         _autoReadOnLookupProvider = autoReadOnLookupProvider,
+        _dictionaryUnifiedStyleProvider = dictionaryUnifiedStyleProvider,
         _extensionBuildProvider = extensionBuildProvider,
         _appLocaleProvider = appLocaleProvider,
         _popupDictionaryCssProvider = popupDictionaryCssProvider,
@@ -62,6 +64,8 @@ class YomitanApiServerManager {
   // 单词音频：已启用音频源供给器，透传给 [YomitanApiServer]，随查词响应下发给扩展。
   final List<String> Function()? _audioSourcesProvider;
   final bool Function()? _autoReadOnLookupProvider;
+  // 「统一词典样式」偏好供给器，透传给 [YomitanApiServer]，随查词响应下发给扩展弹窗。
+  final bool Function()? _dictionaryUnifiedStyleProvider;
   // BUG-726：扩展内容指纹供给器，透传给 [YomitanApiServer]，驱动扩展自 reload 拉新。
   final String? Function()? _extensionBuildProvider;
   // app 当前 UI 语言供给器，透传给 [YomitanApiServer]（status `locale` / 查词 `appLocale`）。
@@ -106,6 +110,7 @@ class YomitanApiServerManager {
       themeColorsProvider: _themeColorsProvider,
       audioSourcesProvider: _audioSourcesProvider,
       autoReadOnLookupProvider: _autoReadOnLookupProvider,
+      dictionaryUnifiedStyleProvider: _dictionaryUnifiedStyleProvider,
       extensionBuildProvider: _extensionBuildProvider,
       appLocaleProvider: _appLocaleProvider,
       popupDictionaryCssProvider: _popupDictionaryCssProvider,
