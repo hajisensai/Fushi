@@ -10,6 +10,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -154,6 +155,9 @@ class _RemoteDownloadTasksSectionState
       builder: (BuildContext context) => DownloadTaskCard(
         key: ValueKey<String>('remote:${target.baseUrl}:${job.jobId}'),
         taskId: 'remote:${target.baseUrl}:${job.jobId}',
+        // host 代下载跑的是它自己的视频下载管线：BT。
+        method: DownloadTransferMethod.torrent,
+        externalSource: true,
         title: job.title,
         status: '${job.stage} · ${(job.stageProgress * 100).toStringAsFixed(0)}%',
         subtitle: target.label,

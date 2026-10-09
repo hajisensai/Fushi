@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart' show Bookmark;
 import 'package:fushi_core/fushi_core.dart' show BookFormat, EpubBookRow;
@@ -467,6 +468,8 @@ class _LnReaderNovelDetailPageState
             icon: FushiIcons.books,
             tone: MediaDetailChipTone.primary,
           ),
+        // LNReader 插件从第三方站点抓取（10-09「外部来源」提示）。
+        ...extensionSourceDetailChips(),
       ],
       genres: splitOnlineWorkGenres(novel?.genres),
       description: summary,

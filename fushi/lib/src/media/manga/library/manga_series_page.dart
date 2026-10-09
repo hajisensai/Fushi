@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'dart:io';
@@ -1744,6 +1745,11 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             tone: MediaDetailChipTone.primary,
             key: const ValueKey<String>('manga_series_in_library_chip'),
           ),
+        // 扩展源的作品来自第三方站点（10-09 所有者「外部来源」提示）；互联对端
+        // 是用户自己的设备，本地卷没有在线来源，都不标。
+        if (_entry case final OnlineMangaLibraryEntry entry
+            when entry.runtime != OnlineMangaRuntimeKind.interconnect)
+          ...extensionSourceDetailChips(),
       ],
       genres: series?.genreLabels ?? const <String>[],
       description: series?.description,

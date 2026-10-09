@@ -10,7 +10,9 @@ import 'package:fushi_engine/media/video/download/video_download_backend_identit
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/media/downloads/download_execution_target.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
+import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/download_notice.dart';
 import 'package:fushi/src/pages/implementations/torrent_upload_consent_dialog.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/discovery/sources/core_audio_discovery_source.dart';
@@ -270,8 +272,25 @@ Future<bool> startDiscoveryItemDownload({
   required DiscoveryResourceItem item,
 }) async {
   if (!item.isDownloadable) return false;
+  // 第三方游戏资源站（真红小站 / 内置 AList）：压缩包、安装程序有恶意软件风险，
+  // 先给一次风险说明（勾过「不再提示」就跳过），取消 = 这次不下。
+  if (item.kind == DiscoveryMediaKind.game &&
+      isExternalDiscoverySource(appModel.mediaDiscoveryService, item.sourceId)) {
+    if (!await confirmDownloadNotice(
+          context,
+          DownloadNoticeKind.gameResource,
+          method: discoveryTransferMethodOf(item.payloadKind),
+        ) ||
+        !context.mounted) {
+      return false;
+    }
+  }
   switch (item.payloadKind) {
     case DiscoveryPayloadKind.torrent:
+      // BT / 磁力是 P2P：先说明（勾过「不再提示」就跳过），取消 = 这次不下。
+      if (!await confirmP2pDownloadNotice(context) || !context.mounted) {
+        return false;
+      }
       bool resolving = true;
       try {
         final MediaDiscoverySource? source = appModel.mediaDiscoveryService

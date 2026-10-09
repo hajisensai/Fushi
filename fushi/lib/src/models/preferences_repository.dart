@@ -1911,6 +1911,23 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('torrent_upload_intro_shown', true);
   }
 
+  /// BT / 磁力下载前的 P2P 说明是否已被勾选「不再提示」（默认 false = 每次
+  /// 发起 BT 下载前都说明一次，见 `p2p_download_notice.dart`）。
+  bool get p2pDownloadNoticeDismissed =>
+      getPref('p2p_download_notice_dismissed', defaultValue: false) as bool;
+
+  Future<void> setP2pDownloadNoticeDismissed() async {
+    await setPref('p2p_download_notice_dismissed', true);
+  }
+
+  /// 从第三方游戏资源站下载前的风险说明是否已勾「不再提示」（默认 false）。
+  bool get gameResourceNoticeDismissed =>
+      getPref('game_resource_notice_dismissed', defaultValue: false) as bool;
+
+  Future<void> setGameResourceNoticeDismissed() async {
+    await setPref('game_resource_notice_dismissed', true);
+  }
+
   /// 「下载」改名「浏览」（2026-09-27）的一次性搬迁提示是否已处理：弹过，或首次
   /// 启动新版时判定本安装不需要弹（全新安装 / 升级前开着下载）。默认 false。
   bool get browseMovedNoticeHandled =>

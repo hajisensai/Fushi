@@ -2,6 +2,8 @@ import 'dart:async' show unawaited;
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/downloads/download_source_method.dart';
+import 'package:fushi/src/pages/implementations/download_notice.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -1023,6 +1025,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       _snack(t.anime_download_push_failed);
       return;
     }
+    // BT 是 P2P：先说明（勾过「不再提示」就跳过），取消 = 这次不下。
+    if (!await confirmP2pDownloadNotice(context) || !mounted) return;
     // 首次下载：弹一次「上传/做种」提示（默认关上传、询问是否开启+配限速/时长/
     // 分享率）。仅内置引擎相关（外接 qb 自管上传）；展示后置 flag 不再弹。
     await maybeShowTorrentUploadConsent(context, appModel);
@@ -1581,6 +1585,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   Future<void> _pushGeneric() async {
     if (_pushingGeneric) return;
     final AppModel appModel = ref.read(appProvider);
+    if (!await confirmP2pDownloadNotice(context) || !mounted) return;
     setState(() => _pushingGeneric = true);
     final GenericPushOutcome outcome = await pushGenericMagnet(
       context: context,
@@ -2971,6 +2976,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
               builder: (BuildContext context) => DownloadTaskCard(
                 key: ValueKey<String>('legacy-plan:${plan.id}'),
                 taskId: 'legacy-plan:${plan.id.trim().toLowerCase()}',
+                // 旧番剧下载计划全是 BT（Nyaa 磁力 / 通用磁力）。
+                method: DownloadTransferMethod.torrent,
+                externalSource: true,
                 title: plan.seriesTitle.isEmpty
                     ? plan.torrentTitle
                     : plan.seriesTitle,

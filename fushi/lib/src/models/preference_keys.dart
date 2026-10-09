@@ -178,6 +178,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'gal_mining_still_format',
   'galgame_library',
   'galgame_library_view',
+  // bool：第三方游戏资源站下载前的风险说明勾了「不再提示」（download_notice.dart）。
+  'game_resource_notice_dismissed',
   'games_collapsed_collection_ids',
   // String（默认 'grid'）：游戏库主体布局，'grid' 海报网格 / 'list' 分段卡列表。
   // 页头切换钮写入，跨会话记住。
@@ -289,6 +291,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'overlay_lookup_independent_size',
   'overlay_lookup_max_height',
   'overlay_lookup_max_width',
+  // bool：BT / 磁力下载前的 P2P 说明勾了「不再提示」（p2p_download_notice.dart）。
+  'p2p_download_notice_dismissed',
   'player_hardware_acceleration',
   'popup_auto_expand_dictionaries',
   'popup_bottom_docked',

@@ -1,3 +1,4 @@
+import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_browser.dart';
@@ -1306,6 +1307,9 @@ class _VideoDownloadJobCard extends StatelessWidget {
       return DownloadTaskCard(
         taskId: job.jobId,
         title: job.title,
+        // 视频下载管线只走 torrent 后端（内置引擎 / 外接 qBittorrent）。
+        method: DownloadTransferMethod.torrent,
+        externalSource: true,
         status: _torrentStatusLabel ??
             lifecycleLabel?.call(job.lifecycle) ??
             _defaultLifecycleLabel(job.lifecycle),

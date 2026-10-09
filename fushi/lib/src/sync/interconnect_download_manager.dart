@@ -19,6 +19,15 @@ enum InterconnectDownloadStatus { running, paused, completed, failed }
 /// 任务的内容域（下载中心按它选图标 / 分类）。
 enum InterconnectDownloadKind { video, book, audiobook }
 
+/// 任务的数据来自哪里（下载中心按它标下载方式 / 外部来源）。
+enum InterconnectDownloadOrigin {
+  /// 用户自己的已配对设备或媒体服务器（HTTP 拉取，不算外部来源）。
+  ownDevice,
+
+  /// 在线视频扩展源（Aniyomi）：扩展从第三方站点取流。
+  extension,
+}
+
 /// 一个互联下载任务的不可变快照。UI 只读这个渲染进度/状态。
 @immutable
 class InterconnectDownloadTask {
@@ -28,6 +37,7 @@ class InterconnectDownloadTask {
     required this.status,
     required this.progress,
     this.kind = InterconnectDownloadKind.video,
+    this.origin = InterconnectDownloadOrigin.ownDevice,
     this.receivedBytes,
     this.totalBytes,
     this.startedAt,
@@ -47,6 +57,8 @@ class InterconnectDownloadTask {
   final double? progress;
 
   final InterconnectDownloadKind kind;
+
+  final InterconnectDownloadOrigin origin;
 
   /// 已落盘字节（**含续传前已有的 `.part`**）；传输原语不报字节时为 null。
   final int? receivedBytes;
@@ -78,6 +90,7 @@ class InterconnectDownloadTask {
       status: status ?? this.status,
       progress: clearProgress ? null : (progress ?? this.progress),
       kind: kind,
+      origin: origin,
       receivedBytes: receivedBytes ?? this.receivedBytes,
       totalBytes: totalBytes ?? this.totalBytes,
       startedAt: startedAt,
@@ -214,10 +227,12 @@ class _DownloadSpec {
     required this.onComplete,
     required this.pausable,
     this.resumeRecord,
+    this.origin = InterconnectDownloadOrigin.ownDevice,
   });
 
   final String title;
   final InterconnectDownloadKind kind;
+  final InterconnectDownloadOrigin origin;
   final File dest;
   final InterconnectVideoDownloadRunner run;
   final InterconnectDownloadComplete? onComplete;
@@ -449,6 +464,7 @@ class InterconnectDownloadManager extends ChangeNotifier {
     required InterconnectVideoDownloadRunner run,
     InterconnectDownloadComplete? onComplete,
     InterconnectVideoResumeRecord? resumeRecord,
+    InterconnectDownloadOrigin origin = InterconnectDownloadOrigin.ownDevice,
   }) =>
       _startDownload(
         id,
@@ -460,6 +476,7 @@ class InterconnectDownloadManager extends ChangeNotifier {
           onComplete: onComplete,
           pausable: true,
           resumeRecord: resumeRecord,
+          origin: origin,
         ),
       );
 
@@ -598,6 +615,7 @@ class InterconnectDownloadManager extends ChangeNotifier {
       // 继续暂停任务时先沿用暂停前的进度，首个回报（含已有 part）会立刻校正。
       progress: existing?.isPaused == true ? existing!.progress : null,
       kind: spec.kind,
+      origin: spec.origin,
       receivedBytes:
           existing?.isPaused == true ? existing!.receivedBytes : null,
       totalBytes: existing?.isPaused == true ? existing!.totalBytes : null,

@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -105,6 +106,8 @@ class DownloadTaskCard extends StatefulWidget {
     this.metrics = const <DownloadTaskMetric>[],
     this.quickAction,
     this.menuActions = const <DownloadTaskMenuAction>[],
+    this.method,
+    this.externalSource = false,
     super.key,
   });
 
@@ -121,6 +124,13 @@ class DownloadTaskCard extends StatefulWidget {
   final List<DownloadTaskMetric> metrics;
   final DownloadTaskQuickAction? quickAction;
   final List<DownloadTaskMenuAction> menuActions;
+
+  /// 这条任务实际走的传输方式（BT / 直链 / 扩展源）；null = 不是下载（如转录
+  /// 任务），不画方式标签。
+  final DownloadTransferMethod? method;
+
+  /// 内容来自第三方站点：方式标签旁多一枚「外部来源」。
+  final bool externalSource;
 
   @override
   State<DownloadTaskCard> createState() => _DownloadTaskCardState();
@@ -211,10 +221,14 @@ class _DownloadTaskCardState extends State<DownloadTaskCard> {
     final TextStyle style = context.fushiType.labelMedium.tabular.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
     );
+    final DownloadTransferMethod? method = widget.method;
     return Wrap(
       spacing: 6,
       runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
+        if (method != null)
+          DownloadSourceTags(method: method, external: widget.externalSource),
         for (final DownloadTaskMetric metric in widget.metrics)
           _MetricChip(metric: metric, style: style),
       ],
@@ -317,7 +331,7 @@ class _DownloadTaskCardState extends State<DownloadTaskCard> {
             ),
             trailing: _buildTrailing(context),
           ),
-          if (widget.metrics.isNotEmpty)
+          if (widget.metrics.isNotEmpty || widget.method != null)
             Padding(
               padding: EdgeInsets.fromLTRB(
                 tokens.spacing.card,

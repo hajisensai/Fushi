@@ -2,6 +2,7 @@ import 'dart:async' show unawaited;
 import 'package:collection/collection.dart' show mergeSort;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
@@ -1281,7 +1282,27 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
             // むさぼるまで 3」），两行 ellipsis 恰好把唯一的区分信息
             // 切掉，用户分不出哪一卷。
             titleMaxLines: null,
-            subtitle: Text(_subtitleFor(entry, service)),
+            // 下载方式（BT / 直链）+ 外部来源：发现源全是第三方站点，用户
+            // 要在点「下载」之前就知道这条走 P2P 还是 HTTP（10-09 所有者）。
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(_subtitleFor(entry, service)),
+                if (entry.isDownloadable) ...<Widget>[
+                  const SizedBox(height: 4),
+                  DownloadSourceTags(
+                    method: discoveryTransferMethodOf(entry.payloadKind),
+                    // 用户自配的 OPDS / Audiobookshelf 是自己指定的服务器，
+                    // 不标外部来源；内置源都是第三方站点。
+                    external: isExternalDiscoverySource(
+                      service,
+                      entry.sourceId,
+                    ),
+                  ),
+                ],
+              ],
+            ),
             trailing: _resolvingTorrentIds.contains(
                       '${entry.sourceId}\u0000${entry.id}',
                     ) ||

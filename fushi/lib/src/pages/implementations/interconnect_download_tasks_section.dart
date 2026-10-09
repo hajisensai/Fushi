@@ -10,6 +10,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
+import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
@@ -95,6 +96,10 @@ DownloadTaskEntry interconnectDownloadTaskEntry(
       title: task.title,
       status: interconnectDownloadStatusLabel(task),
       subtitle: t.download_interconnect_section_title,
+      method: task.origin == InterconnectDownloadOrigin.extension
+          ? DownloadTransferMethod.extension
+          : DownloadTransferMethod.direct,
+      externalSource: task.origin == InterconnectDownloadOrigin.extension,
       progress: task.status == InterconnectDownloadStatus.completed
           ? 1
           : task.progress,

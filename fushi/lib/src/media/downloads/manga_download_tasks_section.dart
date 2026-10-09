@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
@@ -125,6 +126,8 @@ DownloadTaskEntry mangaDownloadTaskEntry(
   final String? seriesName = mokuroMoeSeriesNameOf(job.bookKey);
   final String collectionTitle = seriesName ?? job.title;
   final String status = _statusLabel(job);
+  final ({DownloadTransferMethod method, bool external}) source =
+      mangaDownloadSourceOf(job.runtime);
   return DownloadTaskEntry(
     id: id,
     title: job.kind == MangaDownloadJobKind.mokuroVolume
@@ -153,6 +156,8 @@ DownloadTaskEntry mangaDownloadTaskEntry(
     builder: (BuildContext context) => DownloadTaskCard(
       key: ValueKey<String>(id),
       taskId: id,
+      method: source.method,
+      externalSource: source.external,
       title: job.kind == MangaDownloadJobKind.mokuroVolume
           ? job.title
           : job.chapterTitle,
@@ -167,6 +172,24 @@ DownloadTaskEntry mangaDownloadTaskEntry(
     ),
   );
 }
+
+/// 漫画下载任务的传输方式与是否外部来源（按 `runtime` 列）：Mihon / 旧
+/// Aidoku 是扩展从第三方站点抓、mokuro.moe 是该站的 HTTP 直链、互联是从自己
+/// 已配对的设备 HTTP 拉取（不算外部来源）。未知值按扩展源处理并标外部。
+({DownloadTransferMethod method, bool external}) mangaDownloadSourceOf(
+  String runtime,
+) =>
+    switch (runtime) {
+      kMokuroMoeDownloadRuntime => (
+          method: DownloadTransferMethod.direct,
+          external: true,
+        ),
+      'interconnect' => (
+          method: DownloadTransferMethod.direct,
+          external: false
+        ),
+      _ => (method: DownloadTransferMethod.extension, external: true),
+    };
 
 bool _isFinished(MangaDownloadJobRow job) =>
     job.status == MangaDownloadJobStatus.done ||

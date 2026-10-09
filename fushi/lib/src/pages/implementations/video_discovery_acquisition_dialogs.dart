@@ -5,6 +5,8 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:collection/collection.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/downloads/download_source_method.dart';
+import 'package:fushi/src/pages/implementations/download_notice.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
@@ -773,6 +775,9 @@ class _VideoResourceSearchSurfaceState
   }
 
   Future<void> _submit() async {
+    if (_submitting) return;
+    // 资源搜索的候选全是 BT / 磁力（本机下、交给 host 下、建订阅都一样）。
+    if (!await confirmP2pDownloadNotice(context) || !mounted) return;
     if (_remoteTarget != null) return _submitRemote();
     if (_remoteDownloadTarget != null) return _submitRemoteDownload();
     final VideoMediaReference? media = _media;
@@ -1307,7 +1312,37 @@ class _VideoResourceSearchSurfaceState
       (_source != null || _remote) &&
       (!widget.subscription || (filter != null && _strictConfirmed));
 
+  /// 结果区：有候选时顶部一条统一的「BT / 磁力 · P2P」+「外部来源」标签。
+  /// 这里的候选全部来自第三方资源索引站、全部走 BT，逐行重复同一对标签只是
+  /// 噪音（10-09 拍板：只在顶部放一条）。
   Widget _buildResults() {
+    final Widget list = _buildResultList();
+    final ProviderBatchResult<VideoResourceCandidate>? result = _result;
+    if (_loading ||
+        result == null ||
+        result.isTotalFailure ||
+        result.items.isEmpty) {
+      return list;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        const Padding(
+          padding: EdgeInsets.only(bottom: 6),
+          child: Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: DownloadSourceTags(
+              key: ValueKey<String>('video-resource-source-tags'),
+              method: DownloadTransferMethod.torrent,
+            ),
+          ),
+        ),
+        Expanded(child: list),
+      ],
+    );
+  }
+
+  Widget _buildResultList() {
     if (_loading) return const FushiLoadingView();
     final ProviderBatchResult<VideoResourceCandidate>? result = _result;
     if (result == null) {
