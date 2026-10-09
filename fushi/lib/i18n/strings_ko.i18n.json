@@ -6355,8 +6355,6 @@
   "manga_reader_all_settings": "모든 설정",
   "video_time_remaining_toggle": "Show elapsed / remaining time",
   "video_player_episode_of": "Episode $n of $count",
-  "video_skip_opening": "Skip opening",
-  "video_skip_ending": "Skip ending",
   "download_network_fake_ip_udp_blocked": "Your proxy (fake-ip / TUN mode) doesn't forward UDP, so DHT and UDP trackers can't find peers and tasks may stay at 0 connections. Switch to a proxy node that supports UDP, or route Fushi directly (DIRECT rule).",
   "download_network_dht_unreachable": "DHT can't reach any nodes: outbound UDP may be blocked by a firewall or the network, so peers can only be found through HTTP trackers.",
   "game_stream_host_https_required": "The host has HTTPS turned off. Turn on encrypted connections in the interconnect settings of Fushi on Windows.",

@@ -1,7 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/video_chapter_skip.dart';
 import 'package:fushi/src/media/video/video_control_bar.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
@@ -54,49 +53,6 @@ void main() {
       expect(d[0], 1.0);
       expect(d[1], 0.0);
       expect(d[3], closeTo(0.5, 1e-9));
-    });
-  });
-
-  group('videoSkippableChapterKind', () {
-    test('recognises opening / ending chapter names', () {
-      for (final String t in <String>[
-        'OP',
-        'Opening',
-        'op2',
-        'オープニング',
-        'Intro',
-      ]) {
-        expect(
-          videoSkippableChapterKind(t),
-          VideoSkippableChapter.opening,
-          reason: t,
-        );
-      }
-      for (final String t in <String>[
-        'ED',
-        'Ending',
-        'Credits',
-        'エンディング',
-        'ed 1',
-      ]) {
-        expect(
-          videoSkippableChapterKind(t),
-          VideoSkippableChapter.ending,
-          reason: t,
-        );
-      }
-    });
-
-    test('content chapters are never skippable', () {
-      for (final String t in <String>[
-        'Part A',
-        'Episode Preview',
-        'Prologue',
-        '',
-        'Opening Act One',
-      ]) {
-        expect(videoSkippableChapterKind(t), isNull, reason: t);
-      }
     });
   });
 
