@@ -8,7 +8,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 /// `{glossary-first}` 映射到两个字段，整条笔记 700 KB+，AnkiDroid 预览把字段过 Binder
 /// 时 `TransactionTooLargeException`，预览打不开。
 ///
-/// 修复：落卡渲染前按本条释义实际内容裁掉命中不到的作用域规则、只在交互时生效的规则、
+/// 修复：落卡渲染前按本条释义实际内容裁掉命中不到的作用域规则（交互态同样按命中判断）、
 /// 没被引用的 @font-face / @keyframes，并去掉注释与空白（anki_glossary_css.dart）。
 /// 这里钉两层：① 裁剪语义（只会多留、不会误删）；② 真实落卡路径上一张典型多词典卡的
 /// 字段总大小上限、字段内不重复带同一份词典 CSS。
@@ -116,21 +116,27 @@ void main() {
       expect(css, isNot(contains('table')));
     });
 
-    test('只在交互时生效的规则去掉；:not(:hover) 是静态条件，保留', () {
+    // Anki 桌面有鼠标 hover，Android WebView 点按也触发 :hover（「点一下显示」的提示靠它）：
+    // 交互态与其它伪类同样放宽后按命中判断，命中本条元素的保留，命中不到的才去掉。
+    test('交互态规则按命中判断：本条有的元素保留，没有的去掉', () {
       final String css = _styleOf(
         slimAnkiGlossaryHtml(
           _glossary(
-            '<span class="icon">x</span>',
+            '<span class="icon">x<span class="tip">t</span></span>',
             '$_scope .icon { background: url(data:image/png;base64,AAAA); }\n'
                 '$_scope .icon:hover { background: url(data:image/png;base64,BBBB); }\n'
                 '$_scope .icon:active, $_scope .icon:focus-visible { outline: 0; }\n'
+                '$_scope .icon:hover .tip { display: inline; }\n'
+                '$_scope .absent:hover { background: url(data:image/png;base64,CCCC); }\n'
                 '$_scope .icon:not(:hover) { opacity: 1; }',
           ),
         ),
       );
       expect(css, contains('AAAA'));
-      expect(css, isNot(contains('BBBB')));
-      expect(css, isNot(contains('outline')));
+      expect(css, contains('BBBB'));
+      expect(css, contains('outline'));
+      expect(css, contains('.icon:hover .tip{display: inline;}'));
+      expect(css, isNot(contains('CCCC')));
       expect(css, contains('.icon:not(:hover){opacity: 1;}'));
     });
 
@@ -170,6 +176,23 @@ void main() {
       expect(css, isNot(contains('DDDD')));
       expect(css, contains('@keyframes spin'));
       expect(css, isNot(contains('@keyframes fade')));
+    });
+
+    test('@font-face 被释义正文的内联样式 / <font face> 引用时保留', () {
+      // MDX 词典的 HTML 释义常直接写内联 font-family（音标字体）而不经 styles.css 规则。
+      final String css = _styleOf(
+        slimAnkiGlossaryHtml(
+          _glossary(
+            '<span style="font-family: \'Phonetic\'">x</span><font face="Kana">y</font>',
+            '@font-face { font-family: "Phonetic"; src: url(data:font/woff2;base64,PPPP); }\n'
+                '@font-face { font-family: Kana; src: url(data:font/woff2;base64,KKKK); }\n'
+                '@font-face { font-family: Dead; src: url(data:font/woff2;base64,DDDD); }',
+          ),
+        ),
+      );
+      expect(css, contains('PPPP'));
+      expect(css, contains('KKKK'));
+      expect(css, isNot(contains('DDDD')));
     });
 
     test('去注释、压空白，但字符串内容逐字保留', () {
@@ -322,7 +345,9 @@ void main() {
       expect(fields['Glossary'], contains('data:image/svg+xml;base64,'));
       // 本条用不到的：其余组件、hover 态、没被引用的字体、注释。
       expect(fields['Glossary'], isNot(contains('part-3"')));
-      expect(fields['Glossary'], isNot(contains(':hover')));
+      // hover 态只留本条元素的（part-1 / part-2），其余组件的不带。
+      expect(fields['Glossary'], contains('[data-sc-content="part-1"]:hover'));
+      expect(fields['Glossary'], isNot(contains('part-5"]:hover')));
       expect(fields['Glossary'], isNot(contains('@font-face')));
       expect(fields['Glossary'], isNot(contains('/*')));
     });
@@ -338,7 +363,8 @@ void main() {
         ).allMatches(e.value).map((Match m) => m.group(1)!).toList();
         expect(blocks.toSet(), hasLength(blocks.length), reason: e.key);
         for (final String d in dicts) {
-          final int rules = '[data-dictionary="$d"] [data-sc-content="part-1"]'
+          // 只数基础规则（`…"part-1"]{`）；同一元素的 hover 态是另一条规则。
+          final int rules = '[data-dictionary="$d"] [data-sc-content="part-1"]{'
               .allMatches(e.value)
               .length;
           expect(rules, lessThanOrEqualTo(1), reason: '${e.key} / $d');

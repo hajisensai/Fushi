@@ -16,10 +16,13 @@
 ///   卡片模板里的元素，这一层看不见模板，一律原样保留。
 /// * 判断命中前先把伪类 / 伪元素整段去掉（`:hover`、`::before`、`:not(…)`、`:nth-child(…)`
 ///   等）。去掉它们只会让选择器命中更多元素，所以只可能多留，不会误删：hover 态、
-///   结构伪类在卡片上照常生效。
+///   结构伪类在卡片上照常生效。交互态（`:hover` / `:active` / `:focus*`）**不**整条丢：
+///   Anki 桌面有鼠标 hover，Android WebView 点按也会触发 `:hover`（「点一下显示」的
+///   提示 / 展开写法靠它），只留命中本条元素的那几条，体积代价有限。
 /// * 选择器解析不了（本实现不认识的语法）就当作命中，整条保留。
 /// * `@media` / `@supports` / `@container` / `@layer` 等条件组递归裁剪，裁空了整组去掉；
-///   `@font-face` / `@keyframes` 只在剩下的规则还引用它们时保留；其余 at-rule 原样保留。
+///   `@font-face` / `@keyframes` 只在剩下的规则或释义 HTML 本身（MDX 词典常见的内联
+///   `style="font-family:…"`、`<font face>`）还引用它们时保留；其余 at-rule 原样保留。
 ///
 /// 规则命中不到本段释义里的任何元素，就不可能影响这段释义的渲染：作用域前缀把它限定在
 /// `.yomitan-glossary [data-dictionary=…]` 之内，同一张卡上别的字段各自带着自己裁过的那份。
@@ -47,9 +50,15 @@ String slimAnkiGlossaryHtml(String html) {
   final dom.Document document = html_parser.parse(html);
   final _SelectorProbe probe = _SelectorProbe(document);
   final Set<String> seen = <String>{};
+  // 释义正文（去掉 <style> 本身）：内联样式也可能引用词典 @font-face / @keyframes。
+  final String markup = html.replaceAll(_styleBlock, '');
   return html.replaceAllMapped(_styleBlock, (Match match) {
     final String attributes = match.group(1) ?? '';
-    final String css = slimGlossaryCss(match.group(2)!, probe.matches);
+    final String css = slimGlossaryCss(
+      match.group(2)!,
+      probe.matches,
+      referencingMarkup: markup,
+    );
     if (css.isEmpty || !seen.add('$attributes\u0000$css')) return '';
     return '<style$attributes>$css</style>';
   });
@@ -73,10 +82,15 @@ class AnkiGlossaryCssSlimmer {
   }
 }
 
-/// 裁剪一份 CSS：[matches] 判断一条（已去掉伪类的）作用域选择器是否命中内容。
+/// 裁剪一份 CSS：[matches] 判断一条（已去掉伪类的）作用域选择器是否命中内容；
+/// [referencingMarkup] 是释义正文，`@font-face` / `@keyframes` 被它引用（内联样式）也保留。
 ///
 /// 公开给测试；生产代码走 [slimAnkiGlossaryHtml]。
-String slimGlossaryCss(String css, bool Function(String selector) matches) {
+String slimGlossaryCss(
+  String css,
+  bool Function(String selector) matches, {
+  String referencingMarkup = '',
+}) {
   final List<_CssNode> nodes = _CssParser(
     css,
   ).parseBlockContents(nested: false);
@@ -85,12 +99,14 @@ String slimGlossaryCss(String css, bool Function(String selector) matches) {
       .where((_CssNode n) => !n.isNamedResource)
       .map((_CssNode n) => n.text)
       .join();
+  // 引用面 = 留下的规则 + 释义正文（内联 style / `<font face>`），统一小写只算一次。
+  final String references = '$rulesText\u0000$referencingMarkup'.toLowerCase();
   final List<_CssNode> result = kept.where((_CssNode n) {
     if (!n.isNamedResource) return true;
     // 引用不到的 @font-face / @keyframes 不会被用到，留着只是背着 base64 字体走。
     final String? name = n.resourceName;
     if (name == null || name.isEmpty) return true;
-    return rulesText.toLowerCase().contains(name.toLowerCase());
+    return references.contains(name.toLowerCase());
   }).toList();
   return result.map((_CssNode n) => n.text).join().trim();
 }
@@ -120,56 +136,9 @@ bool _ruleMayApply(String selectorList, bool Function(String) matches) {
   for (final String raw in selectors) {
     final String selector = raw.trim();
     if (!selector.startsWith(_glossaryScope)) return true;
-    // 只在用户交互时生效的选择器（顶层 `:hover` / `:active` / `:focus*`）：卡片是静态展示，
-    // AnkiDroid 触屏上根本没有 hover。牛津这类词典给每个图标各存一份 hover 态 data URI，
-    // 单条就是几 KB。括号里的（`:not(:hover)`）是静态条件，不算。
-    if (_hasTopLevelInteractivePseudo(selector)) continue;
     final String? relaxed = _stripPseudos(selector);
     if (relaxed == null) return true;
     if (matches(relaxed)) return true;
-  }
-  return false;
-}
-
-const Set<String> _interactivePseudos = <String>{
-  ':hover',
-  ':active',
-  ':focus',
-  ':focus-visible',
-  ':focus-within',
-};
-
-bool _hasTopLevelInteractivePseudo(String selector) {
-  int i = 0;
-  int depth = 0;
-  while (i < selector.length) {
-    final String c = selector[i];
-    if (c == '\\') {
-      i += 2;
-      continue;
-    }
-    if (c == '"' || c == "'") {
-      final int end = _skipString(selector, i);
-      if (end < 0) return false;
-      i = end;
-      continue;
-    }
-    if (c == '[' || c == '(') depth++;
-    if (c == ']' || c == ')') depth--;
-    if (c == ':' && depth == 0) {
-      int j = i + 1;
-      while (j < selector.length && _isIdentChar(selector[j])) {
-        j++;
-      }
-      if (_interactivePseudos.contains(
-        selector.substring(i, j).toLowerCase(),
-      )) {
-        return true;
-      }
-      i = j;
-      continue;
-    }
-    i++;
   }
   return false;
 }
