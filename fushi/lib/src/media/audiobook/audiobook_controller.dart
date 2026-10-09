@@ -1072,23 +1072,11 @@ class AudiobookPlayerController extends ChangeNotifier {
     _rebuildFileDurations();
   }
 
-  /// 从全书 cue 推算每个文件时长 = 该文件内 cue 的最大 endMs。
+  /// 从全书 cue 推算每个文件时长 = 该文件内 cue 的最大 endMs。推算口径只有
+  /// [audiobookFileDurationsFromCues] 一份：持久化的全书毫秒按它编码，换字幕时
+  /// 仓库层按同一口径换算进度（BUG-3197），两处口径漂开就会错位。
   void _rebuildFileDurations() {
-    int maxIdx = -1;
-    for (final AudioCue cue in _allBookCues) {
-      if (cue.audioFileIndex > maxIdx) maxIdx = cue.audioFileIndex;
-    }
-    if (maxIdx < 0) {
-      _fileDurationsMs = const <int>[];
-      return;
-    }
-    final List<int> durations = List<int>.filled(maxIdx + 1, 0);
-    for (final AudioCue cue in _allBookCues) {
-      final int idx = cue.audioFileIndex;
-      if (idx < 0) continue;
-      if (cue.endMs > durations[idx]) durations[idx] = cue.endMs;
-    }
-    _fileDurationsMs = durations;
+    _fileDurationsMs = audiobookFileDurationsFromCues(_allBookCues);
     _sectionFirstCueCache.clear();
   }
 
@@ -2151,6 +2139,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     //     往上接，新链就永远等不到那个不会被推进的时钟）。这条是实测结论，别凭
     //     「反正最后都要 await」把两者合并回一处。
     Future<void>? pendingWrite;
+    _stopSampledGlobalMs = sampledPosMs;
     if (uid != null && sampledPosMs != null) {
       _lastSavedWholeSec = sampledPosMs ~/ 1000;
       pendingWrite = _enqueuePositionWrite(uid, sampledPosMs);
@@ -2182,6 +2171,34 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (error != null) {
       Error.throwWithStackTrace(error, firstStack!);
     }
+  }
+
+  /// [stopPlayback] 同步采样到的全书毫秒（按采样那一刻手里的 cue 编码）；
+  /// 未 stop 过为 null。供 [reencodeStoppedPositionForCues] 换编码用。
+  int? _stopSampledGlobalMs;
+
+  /// BUG-3197：会话期间字幕被整组替换（库里的 cue 已是新的、仓库层也已把存着的
+  /// 进度换成新编码）时，[stopPlayback] 按控制器手里的**旧 cue** 落的那次位置是
+  /// 旧编码。这里在 stop 之后把控制器的 cue 换成 [cues]，并把 stop 采样的位置按
+  /// 新 cue 重新编码再落一次——真实时间位置（文件下标 + 文件内偏移）不变。
+  ///
+  /// 为什么不在 stop **之前**换 cue：那要先 await 一次读库，[stopPlayback] 的同步
+  /// 采样 / 止声 fence / 位置写接链就都被推到一个异步缺口之后（见
+  /// [_stopPlaybackOnce] 里「绝不能把 `_enqueuePositionWrite` 挪到 stop 之后」那段
+  /// 实测结论）。两份 cue 推出的文件时长相同（没换字幕 / 只改文本）时是空操作。
+  Future<void> reencodeStoppedPositionForCues(List<AudioCue> cues) async {
+    final List<int> previous = _fileDurationsMs;
+    final List<int> next = audiobookFileDurationsFromCues(cues);
+    if (listEquals(previous, next)) return;
+    setAllBookCues(cues);
+    final String? uid = _audiobook?.bookKey;
+    final int? sampled = _stopSampledGlobalMs;
+    if (uid == null || sampled == null) return;
+    final int rebased =
+        rebaseAudiobookGlobalPositionMs(sampled, previous, next);
+    _stopSampledGlobalMs = rebased;
+    _lastSavedWholeSec = rebased ~/ 1000;
+    await _enqueuePositionWrite(uid, rebased);
   }
 
   /// 测试钩子：主播放器是否处于播放态（just_audio 公开状态）。

@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'audiobook_model.dart';
 import 'audiobook_path_relocator.dart';
+import 'audiobook_position_rebase.dart';
 import 'audiobook_repository.dart';
 import 'audiobook_local_files.dart';
 import 'srt_book_model.dart';
@@ -430,11 +431,19 @@ class SrtBookRepository {
     return rows.map(AudioCue.fromRow).toList();
   }
 
+  /// 整组替换字幕书 [uid] 的 cue；进度键 `audiobook_pos_<uid>` 按真实时间位置
+  /// 换编码（BUG-3197，同 [AudiobookRepository.saveCues]）。
   Future<void> saveCues({
     required String uid,
     required List<AudioCue> cues,
   }) async {
+    final List<AudioCue> before = await cuesFor(uid);
     await _db.replaceCuesForBook(uid, cues.map(AudioCue.toCompanion).toList());
+    await AudiobookRepository(_db).rebaseStoredPositionForCueChange(
+      positionKey: uid,
+      oldDurationsMs: audiobookFileDurationsFromCues(before),
+      newDurationsMs: audiobookFileDurationsFromCues(cues),
+    );
   }
 
   static SrtBook _rowToModel(SrtBookRow r) {
