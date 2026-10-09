@@ -448,6 +448,76 @@ void main() {
     expect(session.book?.bookKey, 'new');
     expect(session.controller, isNotNull);
   });
+
+  test('BUG-3197 stop re-encodes the live position against the replaced cues',
+      () async {
+    // 会话期间字幕被整组替换（阅读器内重新导入字幕 -> forceReload 先 stop 旧会话）：
+    // stop 落库的全书毫秒必须按**库里新 cue** 推出的文件时长编码，否则下次开书按
+    // 新 cue 一拆，听书断点落到别的文件 / 偏移。
+    AudioCue fileCue(int index, int file, int endMs) => AudioCue()
+      ..id = index + 1
+      ..bookKey = 'a'
+      ..chapterHref = 'chapter'
+      ..sentenceIndex = index
+      ..textFragmentId = 'cue-$index'
+      ..text = 'cue $index'
+      ..startMs = 0
+      ..endMs = endMs
+      ..audioFileIndex = file;
+
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    // 库里已经是新字幕：文件 0 的末句结束于 12s（旧字幕是 10s）。
+    await AudiobookRepository(db).saveCues(
+      bookKey: 'a',
+      cues: <AudioCue>[fileCue(0, 0, 12000), fileCue(1, 1, 25000)],
+    );
+
+    installPlatform();
+    final AudiobookSession session = makeSession(db: db);
+    addTearDown(session.dispose);
+    final List<int> writes = <int>[];
+    await session.start(
+      info: SessionBookInfo(
+        bookKey: 'a',
+        audiobook: ab('a'),
+        title: 'Book a',
+        mediaIdentifier: 'fushi://book/a',
+      ),
+      audioFiles: <File>[
+        makeFile('hibiki-session-bug3197-0.mp3'),
+        makeFile('hibiki-session-bug3197-1.mp3'),
+      ],
+      // 旧字幕编码下的「文件 1 第 3 秒」= 10000 + 3000。
+      prefs: const SessionPrefs(
+        followAudio: true,
+        delayMs: 0,
+        speed: 1.0,
+        positionMs: 13000,
+        imagePauseSec: 0,
+        volume: 1.0,
+      ),
+      persist: SessionPersistCallbacks(
+        onPositionWrite: (_, int ms) async => writes.add(ms),
+        onDelayPersist: (_) async {},
+        onSpeedPersist: (_) async {},
+        onVolumePersist: (_) async {},
+        onImagePausePersist: (_) async {},
+        onFollowAudioPersist: (_) async {},
+      ),
+      cues: <AudioCue>[fileCue(0, 0, 10000), fileCue(1, 1, 20000)],
+    );
+    final AudiobookPlayerController c = session.controller!;
+    expect(c.globalPosition.inMilliseconds, 13000,
+        reason: 'precondition: restored to file 1 at 3s under the old cues');
+
+    writes.clear();
+    await session.stop();
+
+    expect(writes, isNotEmpty);
+    expect(writes.last, 12000 + 3000,
+        reason: 'file 1 at 3s, encoded with the new per-file cue durations');
+  });
 }
 
 class _FakeReader implements ReaderAudiobookView {

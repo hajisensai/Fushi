@@ -347,6 +347,7 @@ class AudiobookSession extends ChangeNotifier {
 
   Future<void> _stopInternal() async {
     final AudiobookPlayerController? controller = _controller;
+    final SessionBookInfo? stoppingBook = _book;
     // BUG-2558：在 _book / _controller 被清空**之前**结算后台听书时钟——清空之后判据
     // 恒 false，但那时已经没人持有这只时钟了。
     _retireStudyClock();
@@ -380,6 +381,21 @@ class AudiobookSession extends ChangeNotifier {
 
     if (controller != null) {
       controller.removeListener(_onControllerChanged);
+      // BUG-3197：stopPlayback 落库的是按**控制器手里那份 cue** 编码的全书毫秒。
+      // 会话期间字幕被换过（阅读器内 / 书架重新导入字幕）时，库里已经是新 cue，
+      // 仓库层也已把存着的进度换成新编码；这时再按旧 cue 落一次，下一次开书按
+      // 新 cue 一拆就落到别的文件 / 偏移——「重新导入字幕后听书进度被重置」。
+      // 落库前把控制器的 cue 对齐到库里那份，真实时间位置（文件下标 + 文件内
+      // 偏移，来自播放器本身）不变，只换编码。
+      try {
+        await _adoptStoredCueTimeline(controller, stoppingBook);
+      } catch (error, stack) {
+        ErrorLogService.instance.log(
+          'AudiobookSession.adoptStoredCueTimeline',
+          error,
+          stack,
+        );
+      }
       // BUG-278/TODO-367：dispose 前必须真正 stop（释放 native 解码器止声），不能
       // 只 pause（pause 保留解码器，紧随的同步 dispose 又抢不过异步平台拆除，
       // Android 上表现为停止后仍在响）。stopPlayback 可 await 到平台切换 settle，
@@ -410,6 +426,28 @@ class AudiobookSession extends ChangeNotifier {
     if (error != null) {
       Error.throwWithStackTrace(error, firstStack!);
     }
+  }
+
+  /// BUG-3197：把 [controller] 的全书 cue 换成库里当前那份（仅当两者推出的文件
+  /// 时长不同，即会话期间字幕被整组替换过）。cue 的命名空间与
+  /// `AudiobookSessionLauncher` / 阅读器灌 cue 同源：字幕书按 uid 取扁平 cue，
+  /// EPUB 有声书按 bookKey 取全书 cue。
+  Future<void> _adoptStoredCueTimeline(
+    AudiobookPlayerController controller,
+    SessionBookInfo? book,
+  ) async {
+    final FushiDatabase? db = _databaseGetter();
+    if (db == null || book == null || book.bookKey.isEmpty) return;
+    final List<AudioCue> stored = book.isSrtBookSource
+        ? await SrtBookRepository(db).cuesFor(book.bookKey)
+        : await AudiobookRepository(db).cuesForBook(book.bookKey);
+    if (listEquals(
+      audiobookFileDurationsFromCues(stored),
+      controller.fileDurationsMs,
+    )) {
+      return;
+    }
+    controller.setAllBookCues(stored);
   }
 
   // ── 后台听书的学习统计（BUG-2558） ──────────────────────────────────────

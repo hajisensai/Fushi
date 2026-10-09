@@ -5,6 +5,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'audiobook_health.dart';
 import 'audiobook_model.dart';
 import 'audiobook_local_files.dart';
+import 'audiobook_position_rebase.dart';
 import 'audiobook_storage.dart';
 
 class AudiobookRepository {
@@ -52,12 +53,22 @@ class AudiobookRepository {
     return AudioCue.fromRow(row);
   }
 
+  /// 整组替换 [bookKey] 的 cue。播放进度按**真实时间位置**跟着换编码
+  /// （BUG-3197，见 [rebaseStoredPositionForCueChange]）：全书毫秒是按 cue 推出的
+  /// 文件时长编码的，换字幕不换算就等于把听书断点挪到别处。
   Future<void> saveCues({
     required String bookKey,
     required List<AudioCue> cues,
   }) async {
+    final List<AudioCueRow> before = await _db.getCuesForBook(bookKey);
     await _db.replaceCuesForBook(
         bookKey, cues.map(AudioCue.toCompanion).toList());
+    await rebaseStoredPositionForCueChange(
+      positionKey: bookKey,
+      oldDurationsMs:
+          audiobookFileDurationsFromCues(before.map(AudioCue.fromRow)),
+      newDurationsMs: audiobookFileDurationsFromCues(cues),
+    );
   }
 
   // ── 窄写入：一次只改一件事 ───────────────────────────────────────
@@ -237,6 +248,32 @@ class AudiobookRepository {
     await _db.setPrefTyped(posKey, positionMs);
     await _db.setPrefTyped('$_kPositionAtMsKeyPrefix$bookKey',
         DateTime.now().millisecondsSinceEpoch);
+  }
+
+  /// BUG-3197：cue 整组换过之后，把 `audiobook_pos_<positionKey>` 存着的全书毫秒
+  /// 从 [oldDurationsMs] 编码换算到 [newDurationsMs] 编码（真实时间位置不变，见
+  /// [rebaseAudiobookGlobalPositionMs]）。
+  ///
+  /// **不盖时间戳**：`audiobook_pos_at_` 的语义是「位置最后一次变动的时刻」
+  /// （BUG-2328），这里用户听到的地方一毫秒没动，只是同一个位置换了个写法；
+  /// 盖了新戳，开书 LWW 会让音频进度无故压过阅读进度。
+  Future<void> rebaseStoredPositionForCueChange({
+    required String positionKey,
+    required List<int> oldDurationsMs,
+    required List<int> newDurationsMs,
+  }) async {
+    final String posKey = '$_kPositionMsKeyPrefix$positionKey';
+    final int current = await _db.getPrefTyped<int>(posKey, 0);
+    if (current <= 0) return;
+    final int rebased = rebaseAudiobookGlobalPositionMs(
+      current,
+      oldDurationsMs,
+      newDurationsMs,
+    );
+    if (rebased == current) return;
+    await _db.setPrefTyped(posKey, rebased);
+    fushiDebugPrint('[hibiki-audiobook] rebase position key=$positionKey '
+        '$current -> $rebased (cue durations changed)');
   }
 
   // ── follow audio (preferences) ─────────────────────────────────

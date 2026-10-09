@@ -1072,23 +1072,11 @@ class AudiobookPlayerController extends ChangeNotifier {
     _rebuildFileDurations();
   }
 
-  /// 从全书 cue 推算每个文件时长 = 该文件内 cue 的最大 endMs。
+  /// 从全书 cue 推算每个文件时长 = 该文件内 cue 的最大 endMs。推算口径只有
+  /// [audiobookFileDurationsFromCues] 一份：持久化的全书毫秒按它编码，换字幕时
+  /// 仓库层按同一口径换算进度（BUG-3197），两处口径漂开就会错位。
   void _rebuildFileDurations() {
-    int maxIdx = -1;
-    for (final AudioCue cue in _allBookCues) {
-      if (cue.audioFileIndex > maxIdx) maxIdx = cue.audioFileIndex;
-    }
-    if (maxIdx < 0) {
-      _fileDurationsMs = const <int>[];
-      return;
-    }
-    final List<int> durations = List<int>.filled(maxIdx + 1, 0);
-    for (final AudioCue cue in _allBookCues) {
-      final int idx = cue.audioFileIndex;
-      if (idx < 0) continue;
-      if (cue.endMs > durations[idx]) durations[idx] = cue.endMs;
-    }
-    _fileDurationsMs = durations;
+    _fileDurationsMs = audiobookFileDurationsFromCues(_allBookCues);
     _sectionFirstCueCache.clear();
   }
 
