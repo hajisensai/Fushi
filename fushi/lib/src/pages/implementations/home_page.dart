@@ -26,7 +26,11 @@ import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/updates/update_probes.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show FushiFloatingChromeInset, FushiHeightReporter, kFushiFloatingChromeGap;
+    show
+        FushiFloatingChromeInset,
+        FushiHeightReporter,
+        FushiShellInlineTitle,
+        kFushiFloatingChromeGap;
 import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
@@ -1453,11 +1457,14 @@ class _HomePageState extends BasePageState<HomePage>
           FushiAppUiScale.of(context),
         ) ==
         WindowSizeClass.compact;
+    // 页面名并进库页工具栏行（[_shellTitleInline]）的 tab 不再叠标题行。
+    final bool inlineTitle = _shellTitleInline(_visibleTab);
     // 叠放标题让出的高度：宽窗 = 标题条展开高度 + 6（收起成 48 的标题胶囊后，
-    // 胶囊下沿到页签胶囊恰好 12，M3E 组间距）；窄窗不显示标题，只留 8 的呼吸。
+    // 胶囊下沿到页签胶囊恰好 12，M3E 组间距）；窄窗不显示标题、标题并进工具栏
+    // 行的宽窗也不另占一行，只留 8 的呼吸。
     final double titleInset = !overlayTitle
         ? 0
-        : narrow
+        : narrow || inlineTitle
         ? kFushiFloatingChromeGap
         : _overlayTitleHeight + 6;
     return NotificationListener<Notification>(
@@ -1491,7 +1498,7 @@ class _HomePageState extends BasePageState<HomePage>
             child: _withAppleTopEdge(
               FushiFloatingChromeInset(top: titleInset, child: content),
               apple: apple,
-              overlay: overlayTitle && !narrow
+              overlay: overlayTitle && !narrow && !inlineTitle
                   ? _floatingTitleOverlay()
                   : const <Widget>[],
             ),
@@ -1525,6 +1532,24 @@ class _HomePageState extends BasePageState<HomePage>
     HomeTab.browse => true,
     _ => false,
   };
+
+  /// 宽窗 M3E 下 [tab] 的页面名并进库页自己的浮动工具栏行（标题胶囊排在页签
+  /// 胶囊左边，[FushiShellInlineTitle]），外壳不再在页签上面叠一整行标题
+  /// （2026-10-10「库页顶部只留两行」）。只给确定挂着 [FushiFloatingChromeBar]
+  /// 的 tab：串流接收形态的游戏库是普通页头，仍由外壳画标题。窄窗本来就不显示
+  /// 这条标题（见 [_floatingTitleOverlay]），这里一律 false。
+  bool _shellTitleInline(HomeTab tab) {
+    if (isGlassDesign(context) || !_tabHasFloatingChrome(tab)) return false;
+    if (tab == HomeTab.games &&
+        appModelNoUpdate.gamesModuleForm == GamesModuleForm.streamClient) {
+      return false;
+    }
+    return windowSizeClassReal(
+          MediaQuery.sizeOf(context).width,
+          FushiAppUiScale.of(context),
+        ) !=
+        WindowSizeClass.compact;
+  }
 
   /// 叠放大标题条的实测高度（取见过的最大值 = 展开高度；收起变矮不改它，
   /// 所以内容让出的高度恒定）。
@@ -3363,13 +3388,16 @@ class _HomePageState extends BasePageState<HomePage>
     return FushiShellTitleScope(
       title: _shellTitleFor(tab),
       actionsSlot: _shellActions,
-      child: PrimaryScrollController(
-        controller: _tabScrollControllers.putIfAbsent(
-          tab,
-          ScrollController.new,
+      child: FushiShellInlineTitle(
+        enabled: _shellTitleInline(tab),
+        child: PrimaryScrollController(
+          controller: _tabScrollControllers.putIfAbsent(
+            tab,
+            ScrollController.new,
+          ),
+          automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
+          child: content,
         ),
-        automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
-        child: content,
       ),
     );
   }

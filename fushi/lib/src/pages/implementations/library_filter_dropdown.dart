@@ -300,6 +300,7 @@ class LibraryToolbar extends StatelessWidget {
     this.compactTrailing,
     this.filtersKey,
     this.compactKey,
+    this.wideMiddle,
     super.key,
   });
 
@@ -318,6 +319,11 @@ class LibraryToolbar extends StatelessWidget {
 
   /// 窄屏布局时挂在整块工具条上的 key（测试按它判定走了窄屏两行布局）。
   final Key? compactKey;
+
+  /// 宽屏且没有 [filters] 时，搜索框与行尾工具之间那段的内容（书架：横滚标签
+  /// chip）。只在宽屏一行布局里出现；窄屏不画——调用方自己把它收到别处（书架
+  /// 收进排序菜单），工具条在窄屏仍是 `[搜索][工具]` 一行。
+  final Widget? wideMiddle;
 
   /// 行尾工具的容器：Material 下是与搜索框同高的悬浮按钮组胶囊。
   static Widget _trailingPill(BuildContext context, Widget child) {
@@ -387,6 +393,14 @@ class LibraryToolbar extends StatelessWidget {
                 if (filterSlot != null) ...<Widget>[
                   const SizedBox(width: 12),
                   Expanded(child: filterSlot),
+                ] else if (wideMiddle != null) ...<Widget>[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FocusTraversalOrder(
+                      order: const NumericFocusOrder(2),
+                      child: wideMiddle!,
+                    ),
+                  ),
                 ] else
                   const Spacer(),
                 if (trailingSlot != null) ...<Widget>[
