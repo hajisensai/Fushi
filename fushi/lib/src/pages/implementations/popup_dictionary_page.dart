@@ -13,6 +13,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/misc/popup_channel.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
@@ -541,18 +542,32 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   }
 
   Widget _buildCard(FushiDesignTokens tokens) {
+    // M3E 顶部区域（MD3 设计系统；Apple 与墨水屏维持各自原样）：关闭钮并进搜索栏
+    // 同一枚 tonal 胶囊，顶栏与源文本条之间不再画硬分隔线、改用间距区分，源文本条
+    // 命中高亮走 primaryContainer。见 [_buildM3eSearchToolbar]。
+    final bool m3e = !isGlassDesign(context) && !isEinkTheme(context);
+    // 移动端的 app 外查词窗是全屏透明窗里的一张浮卡，投影不会被窗边裁掉：M3E 浮动
+    // 表面用投影托起、去掉发丝描边。桌面独立窗贴着窗边，投影会被裁掉，仍靠描边勾
+    // 轮廓（BUG-2166 / BUG-818），不动。
+    final TargetPlatform platform = Theme.of(context).platform;
+    final bool floatingSurface = m3e &&
+        (platform == TargetPlatform.android || platform == TargetPlatform.iOS);
     final Widget card = FushiPopupSurface(
       color: (appModel.overrideDictionaryColor ?? tokens.surfaces.page)
           .withValues(alpha: 1.0),
       // 独立的系统查词浮窗：Apple 下玻璃采不到窗口背后的其它 app，画不透明面板。
       standaloneWindow: true,
+      showBorder: !floatingSurface,
+      elevation: floatingSurface ? 3 : 0,
       child: Column(
         children: [
           // TODO-951 症状B：关闭是「结果」，滑动只是其中一种「触发行为」，二者解耦。
           // 关闭 X 渲染在 [SwipeDismissWrapper] 之外（不在其 Listener 子树内）——点 X 永远
           // 直接 [_close]（无滑出动画），不会因 X 落在可滑区里被横拖手势误判/连带播放滑动
           // 特效。横滑只裹搜索栏本体（拖它仍可滑出关闭，那是滑动这一触发行为本身的动画）。
-          if (widget.showSearchBar)
+          if (widget.showSearchBar && m3e)
+            _buildM3eSearchToolbar(tokens)
+          else if (widget.showSearchBar)
             Row(
               children: <Widget>[
                 _buildCloseButton(),
@@ -569,10 +584,18 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
                 _buildCloseButton(),
               ],
             ),
-          FushiDividerControl(height: 1, thickness: 1, color: tokens.surfaces.outline),
+          if (m3e)
+            const SizedBox(height: 4)
+          else
+            FushiDividerControl(
+              height: 1,
+              thickness: 1,
+              color: tokens.surfaces.outline,
+            ),
           if (_sourceLookupText.trim().isNotEmpty)
             SourceLookupTextPanel(
               text: _sourceLookupText,
+              tonalHighlight: m3e,
               coordinateSpaceKey: _resultStackKey,
               dictionaryHeadwordScale: _dictionaryHeadwordScale,
               highlight: _sourceHighlight,
@@ -591,6 +614,33 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // TODO-407②：平台/偏好禁用滑动关闭时（Windows/Linux 默认）整卡不给鼠标挂横滑，
     // 用搜索栏的关闭按钮兜底；BUG-2770 起触摸 / 触控笔仍可横滑（见 _buildSwipeChrome）。
     return card;
+  }
+
+  /// M3E 顶部区域：一枚 tonal 全圆角胶囊（与搜索框同色 `surfaces.search`）托住
+  /// 「关闭 + 搜索输入 + 粘贴 + 搜索」，四周留 8 不贴卡边——M3 Expressive 搜索栏
+  /// 形态，取代旧的「光秃的 × + 一枚独立搜索胶囊」。关闭钮仍在
+  /// [SwipeDismissWrapper] 之外（TODO-951 症状B：点 × 直接关、不连带滑出动画），
+  /// 横滑只裹搜索输入区；关闭钮套 [FushiPressScale] 带按压弹簧。
+  Widget _buildM3eSearchToolbar(FushiDesignTokens tokens) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      child: DecoratedBox(
+        key: const ValueKey<String>('popup_dictionary_search_toolbar'),
+        decoration: ShapeDecoration(
+          color: tokens.surfaces.search,
+          shape: const StadiumBorder(),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.only(left: 4),
+          child: Row(
+            children: <Widget>[
+              FushiPressScale(child: _buildCloseButton()),
+              Expanded(child: _buildSwipeChrome(_buildSearchBar())),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildSwipeChrome(Widget child) {
