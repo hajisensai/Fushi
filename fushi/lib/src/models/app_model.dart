@@ -3202,6 +3202,9 @@ class AppModel with ChangeNotifier {
         }
       }
 
+      // 词典样式规则的 CSS 编译产物按当前编译器重算（Android 独立弹窗只读这份缓存）。
+      await refreshCompiledDictStyleCssCache();
+
       // TODO-1260：内部对每本词典的资源目录做 exists() 探测（数据根派生），同样叠超时。
       ErrorLogService.instance
           .markInitStep('rebuild-dict-paths（词典资源目录 exists + 物化探测）');
@@ -8389,6 +8392,18 @@ class AppModel with ChangeNotifier {
     await prefsRepo.setDictStyleRulesRaw(encodeDictStyleRules(rules));
     await prefsRepo.setDictStyleRulesCss(encodeCompiledDictStyleCss(rules));
     notifyListeners();
+  }
+
+  /// 启动时把 CSS 编译产物缓存与规则表对齐。
+  ///
+  /// 缓存是编译器的**产物**：编译器修了（例如圆角不再附带 `display: inline-block`），
+  /// 已存的旧产物不会自己变。Android 独立弹窗只读缓存，不重编，于是存量用户的弹窗会
+  /// 一直吃旧的错误 CSS，直到他们碰巧重新保存一次规则。这里按当前编译器重算，内容
+  /// 不同才写——仍是 [saveDictStyleRules] 同一个编译函数，不引入第二套产物。
+  Future<void> refreshCompiledDictStyleCssCache() async {
+    final String compiled = encodeCompiledDictStyleCss(dictStyleRules);
+    if (prefsRepo.dictStyleRulesCss == compiled) return;
+    await prefsRepo.setDictStyleRulesCss(compiled);
   }
 
   /// 注入弹窗的全局 CSS：可视化产物 + 用户手写。

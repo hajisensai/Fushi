@@ -22,7 +22,13 @@ class DictStyleVisualEditor extends StatelessWidget {
     required this.selectedPart,
     required this.onSelectPart,
     required this.onRulesChanged,
+    this.compact = false,
   });
+
+  /// 窄屏（手机竖屏）形态：部位选择收成一行横向滑动的 chip，不再三四行 Wrap 占掉
+  /// 半屏——窄屏上预览与控件上下分屏，控件区要把高度留给属性本身（应用内反馈
+  /// 10-09「手机上预览要自己上下滑、排版有优化空间」）。
+  final bool compact;
 
   /// 当前规则表（全部作用域）。
   final List<DictStyleRule> rules;
@@ -145,21 +151,7 @@ class DictStyleVisualEditor extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Wrap(
-              spacing: tokens.spacing.gap,
-              runSpacing: tokens.spacing.gap,
-              children: <Widget>[
-                for (final DictStylePart part in DictStylePart.values)
-                  FushiFilterChip(
-                    selected: part == selectedPart,
-                    onSelected: (_) => onSelectPart(part),
-                    avatar: _hasRules(part)
-                        ? const FushiIcon(FushiIcons.appearance, size: 16)
-                        : null,
-                    label: Text(dictStylePartLabel(part)),
-                  ),
-              ],
-            ),
+            _buildPartPicker(tokens),
             SizedBox(height: tokens.spacing.gap),
             if (scopeIgnored)
               Padding(
@@ -183,6 +175,41 @@ class DictStyleVisualEditor extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 部位选择：宽屏 Wrap 多行；窄屏一行横向滑动（见 [compact]）。
+  Widget _buildPartPicker(FushiDesignTokens tokens) {
+    final List<Widget> chips = <Widget>[
+      for (final DictStylePart part in DictStylePart.values)
+        FushiFilterChip(
+          key: ValueKey<String>('dict_style_part_${part.name}'),
+          selected: part == selectedPart,
+          onSelected: (_) => onSelectPart(part),
+          avatar: _hasRules(part)
+              ? const FushiIcon(FushiIcons.appearance, size: 16)
+              : null,
+          label: Text(dictStylePartLabel(part)),
+        ),
+    ];
+    if (!compact) {
+      return Wrap(
+        spacing: tokens.spacing.gap,
+        runSpacing: tokens.spacing.gap,
+        children: chips,
+      );
+    }
+    return SingleChildScrollView(
+      key: const ValueKey<String>('dict_style_part_strip'),
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: <Widget>[
+          for (int i = 0; i < chips.length; i++) ...<Widget>[
+            if (i > 0) SizedBox(width: tokens.spacing.gap),
+            chips[i],
+          ],
+        ],
       ),
     );
   }

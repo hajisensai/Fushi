@@ -3833,8 +3833,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final DictionaryPopupTheme resolved = resolveDictionaryPopupTheme(
       eink: appModel.einkMode,
       einkDark: appModel.isDarkMode,
-      readerBackground: _themeBackgroundColor(),
-      readerForeground: _themeTextColor(),
       readerDark: _isReaderThemeDark,
       buildColorScheme: appModel.buildColorScheme,
       textTheme: appModel.textTheme,

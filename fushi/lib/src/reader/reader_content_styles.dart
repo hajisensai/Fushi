@@ -974,6 +974,7 @@ ruby.fushi-hl-purple-ruby-active {
 ruby.fushi-sentence-audio-ruby-active {
   color: var(--fushi-sentence-audio-text-color) !important;
   background-color: var(--fushi-sentence-audio-background-color) !important;
+  border-radius: 0.2em;
 }
 /* BUG-125：同一 <ruby> 同时带查词+音频两个 class 时（元素只渲染一个背景），用双类
    高于单类的特异性让查词不透明色胜出 → 重叠的振假名字也只显示查词层（查词优先）。 */
@@ -995,6 +996,11 @@ ruby.fushi-selection-ruby-active.fushi-sentence-audio-ruby-active {
 .fushi-sentence-audio-cue.fushi-sentence-audio-active {
   color: var(--fushi-sentence-audio-text-color) !important;
   background-color: var(--fushi-sentence-audio-background-color) !important;
+  /* 用户 10-09：高亮条做圆角。clone 让折行 / 跨栏的每一段各自带圆角端（slice 只有整句
+     首尾两端圆），半径随字号走；只是背景形状，不改任何几何。 */
+  border-radius: 0.2em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 /* BUG-2806 起基字 wrapper 在 <ruby> 里面：子元素背景画在 ruby 的查词背景之上，
    BUG-125 的「查词优先」要由 wrapper 让位（连同内联的补缝 box-shadow）。 */

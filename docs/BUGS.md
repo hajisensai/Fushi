@@ -29,11 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2852 条。点号进各自文件。
+> 共 2856 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3096](bugs/BUG-3096-popup-android-expand-blue-flash.md) | ✅ | ✅ | 安卓展开词典先闪一下蓝光 |
+| [BUG-3095](bugs/BUG-3095-popup-zoom-columns-overflow.md) | ✅ | ✅ | 弹窗缩放后词典条目横向溢出 |
+| [BUG-3094](bugs/BUG-3094-popup-pitch-tooltip-residue.md) | ✅ | ✅ | 视频查词弹窗词典名提示框残留关不掉 |
 | [BUG-3093](bugs/BUG-3093-feedback-snackbar-transition-race.md) | ✅ | ✅ | 反馈提交测试在提交页退场动画中断言提示条数，CI 慢时数到两条 |
+| [BUG-3093](bugs/BUG-3093-dict-style-radius-collapses-layout.md) | ✅ | ✅ | 词典样式开圆角后释义塌成一字一行 |
 | [BUG-3092](bugs/BUG-3092-espeak-kana-only-symbols.md) | ✅ | ✅ | isKanaOnlyText 拒收〜…等读音常见符号、却放行 espeak-ng 读不了的・与小片假名扩展 |
 | [BUG-3091](bugs/BUG-3091-linux-tts-real-engine-test-skip.md) | ✅ | ✅ | Linux 真引擎 TTS 测试只判 open_jtalk 在 PATH，缺辞书或声音时误红 |
 | [BUG-3090](bugs/BUG-3090-source-open-folder-symlink-silent.md) | ✅ | ✅ | 来源「打开文件夹」：根目录是符号链接/联接点时被当文件选中，打不开时无提示 |

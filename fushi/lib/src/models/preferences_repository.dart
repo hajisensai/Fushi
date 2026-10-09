@@ -2896,10 +2896,11 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   // 词典样式统一：查词弹窗把导入词典自带的颜色（styles.css / 结构化内容 inline
-  // style）按语义重映射到当前 ColorScheme（M3E）。默认 true；关掉 = 保留词典原样式。
+  // style）按语义重映射到当前 ColorScheme（M3E）。默认 false（用户 10-09：统一着色会盖掉
+  // 词典自带配色，改为显式开启；存量用户写过的偏好值原样保留）；关掉 = 保留词典原样式。
   // popup.js 读 window.__fushiDictUnifiedStyle。
   bool get dictionaryUnifiedStyle =>
-      getPref('popup_dictionary_unified_style', defaultValue: true) as bool;
+      getPref('popup_dictionary_unified_style', defaultValue: false) as bool;
 
   void toggleDictionaryUnifiedStyle() async {
     await setPref('popup_dictionary_unified_style', !dictionaryUnifiedStyle);
@@ -2958,7 +2959,8 @@ class PreferencesRepository extends ChangeNotifier
   ///
   /// 供跑不了 Dart 编译器的消费方直接读（Android 独立弹窗 Activity 直连 prefs
   /// 表）。Dart 侧一律走 `AppModel.effective*DictCSS` 现算，不读这个缓存——
-  /// 冗余数据只允许有一个写入点（`AppModel.saveDictStyleRules`）和一类读者。
+  /// 冗余数据只由同一个编译函数产出：`AppModel.saveDictStyleRules`（保存时）与
+  /// `AppModel.refreshCompiledDictStyleCssCache`（启动时按当前编译器对齐），一类读者。
   String get dictStyleRulesCss =>
       getPref(dictStyleRulesCssPrefKey, defaultValue: '') as String;
 

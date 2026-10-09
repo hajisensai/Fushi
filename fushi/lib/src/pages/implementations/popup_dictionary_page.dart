@@ -698,6 +698,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       // TODO-869：本层有后代弹窗时注入 __hasChildPopup，点卡片本体留白才能关子窗。
       hasChildPopup: index < _popup.entries.length - 1,
       isDark: isDark,
+      topBarScale: dictionaryPopupTopBarScale(
+        appUiScale: appModel.appUiScale,
+        dictionaryFontSize: appModel.dictionaryFontSize,
+      ),
       showBorder: false,
       swipeDismissible: !isBase,
       enableSwipeToClose: ReaderFushiSource.instance.enableSwipeToClose,

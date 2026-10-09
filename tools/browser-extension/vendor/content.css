@@ -236,6 +236,15 @@
     padding: 0 10px 10px;
 }
 
+/* 用户 10-09「安卓展开词典时先闪一下蓝光」：Android 的 Chromium WebView 给任何可点元素
+   （<summary> 词典标题行、链接、按钮）按下时画默认的 tap highlight——半透明的蓝色
+   覆盖块，与展开动画无关（动画已另行移除，这条单独成立）。弹窗里每个可点控件都有
+   自己的按压态（:active 透明度 / M3E 状态层），系统那层蓝块只是多余的闪烁。
+   该属性可继承，挂在根上全文档生效；扩展生成器把 html 重根到容器，不外溢到宿主页。 */
+:where(#entries-container) {
+    -webkit-tap-highlight-color: transparent;
+}
+
 /* Themed scrollbar — Niratan 对齐（2026-08-23，取代 TODO-789 的常驻细滚动条）。
    静止时完全隐形；鼠标落在文档上（:hover）或滚动进行中（popup.js 的滚动监听给
    根节点加 .popup-scroll-active，900ms 衰减，覆盖触屏无 hover 的情形）才浮现
@@ -366,6 +375,38 @@
     display: none;
 }
 
+/* 用户 10-09：词头左簇 = 词头 + 右侧元数据列（频率行 / 音调行）。左簇吃掉按钮之外的
+   全部宽度（flex 1 1 0），簇内 flex-wrap：元数据列至少要 14em 才肯排在词头右边，
+   放不下就整列换到词头下方——按真实内容宽度自适应，窄弹窗 / 长词头自动回到上下排。
+   词头不伸展（长词头仍由 .expression-scroll 横向滚动）。 */
+.entry-header-main {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 4px;
+}
+
+.entry-header-main > .expression-scroll {
+    flex: 0 1 auto;
+}
+
+/* 行距沿用各 section 自己的 margin-top（频率→音调那条 BUG-178 的 8px 照旧生效，
+   音调高低线不压频率 chip），列本身不另加 gap；只把列首的上边距收掉。 */
+.entry-header-meta {
+    flex: 1 1 14em;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.entry-header-meta > :first-child {
+    margin-top: 0;
+}
+
 .expression {
     font-size: 26px;
     cursor: pointer;
@@ -373,6 +414,12 @@
        `.expression ruby` block below for why the line box alone is not enough
        and why the unit is em. */
     padding-top: 0.66em;
+}
+
+/* 无注音的词头不留注音预留带（用户 10-09「额头太高」：なんて 这类纯假名词头上方空出
+   0.66em）。createEntryHeader 只在没有读音时给 .entry-header 挂 .no-ruby。 */
+.entry-header.no-ruby .expression {
+    padding-top: 0;
 }
 
 .expression:active {
@@ -1577,6 +1624,16 @@
     font-size: 1em !important;
 }
 
+/* 用户反馈（应用内反馈 10-09）：明鏡这类带注音的释义，拖选复制会把振假名一起带出来
+   （「折檻せっかん」）。Yomitan / Hoshi 都不让注音参与选区——与词头 `.expression rt`
+   同一口径，释义里的注音盒（.ruby-rt 及其 <rt>、裸 <rt>/<rp> 回退）一律不可选，选区
+   与复制只剩基字。查词不受影响：selection.js 本就把 rt/rp/.ruby-reserve 当忽略文本，
+   点到注音时按 ruby 基字解析（BUG-110/123/125/129）。 */
+:where(.glossary-group, .glossary-content) :where(.ruby-rt, rt, rp) {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
 /* BUG-1778: the hidden reading twin must NOT participate in inline layout.
    BUG-850 made it in-flow to widen every base unit to max(base, reading), which
    prevents adjacent readings from touching but visibly pulls Japanese正文 apart
@@ -1741,6 +1798,27 @@
     border-radius: var(--md-sys-shape-corner-medium) !important;
 }
 
+/* 词典里的 SVG 小图标（popup.js 给图标尺寸的 SVG 打 data-fushi-svg-icon，并把图片
+   URL 放进 --fushi-svg-image）：以图为遮罩、currentColor 着色——外层 .gloss-image-link
+   是 <a>，统一层里取 primary，落在 chip / 色块里则跟随容器的 on-color。img 透明但保留
+   占位（无尺寸外字的行内宽高由它撑开），canvas 渲染的单色小图本就跟随 currentColor。 */
+:where(.fushi-dict-unified) :where(.gloss-image-link[data-fushi-svg-icon="true"]) :where(.gloss-image-background) {
+    display: block !important;
+    background-color: currentColor !important;
+    -webkit-mask-image: var(--fushi-svg-image) !important;
+    mask-image: var(--fushi-svg-image) !important;
+    -webkit-mask-repeat: no-repeat !important;
+    mask-repeat: no-repeat !important;
+    -webkit-mask-position: center center !important;
+    mask-position: center center !important;
+    -webkit-mask-size: contain !important;
+    mask-size: contain !important;
+}
+
+:where(.fushi-dict-unified) :where(.gloss-image-link[data-fushi-svg-icon="true"]) :where(img.gloss-image) {
+    opacity: 0 !important;
+}
+
 /* 容器里的链接跟随容器的 on-color，不在色块上再叠一层 primary。 */
 :where(.fushi-dict-unified) :where([data-fushi-dt="chip"], [data-fushi-dt="block"]) :where(a) {
     color: inherit !important;
@@ -1893,6 +1971,33 @@
 /* 合并行的「N 本辞典」药丸：点击就地展开 / 收起各来源药丸（触屏没有悬停）。 */
 .pitch-dict-count {
     cursor: pointer;
+    position: relative;
+}
+
+/* 来源名单的悬停提示画在文档里（不用原生 title：WebView2 的原生提示是独立 Win32 弹窗，
+   查词浮层关掉后会残留，用户 10-09 反馈）。随文档一起销毁，鼠标移开即消失。 */
+.pitch-dict-count[data-sources]::after {
+    content: attr(data-sources);
+    position: absolute;
+    left: 0;
+    top: calc(100% + 4px);
+    z-index: 30;
+    display: none;
+    width: max-content;
+    max-width: 16em;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background-color: var(--md-inverse-surface, rgba(40, 40, 40, 0.92));
+    color: var(--md-inverse-on-surface, #ffffff);
+    font-size: 12px;
+    font-weight: normal;
+    line-height: 1.4;
+    white-space: normal;
+    pointer-events: none;
+}
+
+.pitch-dict-count[data-sources][aria-expanded="false"]:hover::after {
+    display: block;
 }
 
 /* TODO-1354（按 Niratan 文字位置对齐，参考 W1ght/Niratan compactPitchAccents）：音高
@@ -2513,7 +2618,6 @@
     background-color: var(--md-sys-color-surface-container);
     box-shadow: none;
     padding: 0 16px 12px;
-    transition: padding-bottom var(--md-sys-motion-spring-default-spatial-duration) var(--md-sys-motion-spring-default-spatial);
 }
 
 :where(#entries-container).fushi-m3e .glossary-section > .category-body > .glossary-group {
@@ -2556,12 +2660,15 @@
     opacity: 1;
 }
 
+/* 词典名放不下时换行（用户 10-09「词典名显示不全」），不再省略号截断：多列窄卡里
+   「小学館例解学習国語 第十二版」只剩「小学館例解学習国語 …」，用户分不清是哪一版。
+   overflow-wrap:anywhere 兜住无空格的超长名，行高随 title-small 走，箭头仍垂直居中。 */
 :where(#entries-container).fushi-m3e .dict-label > .dict-name {
     flex: 1 1 auto;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    padding: 6px 0;
 }
 
 /* 折叠箭头：纯 CSS 描边 chevron（零字体依赖，同 TODO-1337 的边框三角），收起指右、
@@ -2586,25 +2693,11 @@
     transform: rotate(45deg);
 }
 
-/* 展开 / 收起的高度 spring（Chromium 131+ ::details-content + interpolate-size；不支持
-   的引擎整条规则失效 = 瞬间开合，与改动前一致）。只裁纵向，长释义 / 宽表格横向照旧
-   不裁。卡高逐帧变化由 masonry 的卡片 ResizeObserver 跟随重排。单独成条：选择器列表里
-   混进不认识的伪元素会让整条规则作废。 */
-:where(#entries-container).fushi-m3e {
-    interpolate-size: allow-keywords;
-}
-
-:where(#entries-container).fushi-m3e .glossary-group::details-content {
-    height: 0;
-    overflow-x: visible;
-    overflow-y: clip;
-    transition: height var(--md-sys-motion-spring-default-spatial-duration) var(--md-sys-motion-spring-default-spatial),
-        content-visibility var(--md-sys-motion-spring-default-spatial-duration) allow-discrete;
-}
-
-:where(#entries-container).fushi-m3e .glossary-group[open]::details-content {
-    height: auto;
-}
+/* 展开 / 收起即时完成（用户 10-09 确认砍掉展开动画）：曾用 ::details-content 高度
+   spring + interpolate-size 做展开动画，现已移除——不再给 ::details-content 任何
+   height / transition，<details> 回到原生的即时开合。Android 展开前的那一下蓝光
+   与动画无关，是 Chromium 安卓的默认点按高亮（见下方 summary 的
+   -webkit-tap-highlight-color），单独修。 */
 
 :where(#entries-container).fushi-m3e .dict-label.selected {
     color: var(--md-sys-color-primary);
@@ -2662,8 +2755,20 @@
 :where(#entries-container).fushi-m3e .header-buttons {
     margin-left: auto;
     gap: 4px;
-    align-self: flex-end;
-    margin-bottom: max(0px, calc((var(--fushi-m3e-headword-size) * 1.2 - var(--fushi-m3e-action-size)) / 2));
+    /* 词头右侧多了元数据列后，左簇可能比大字一行高（频率 + 音调两行、或换行到词头
+       下方）。按钮组改为贴顶，再下移到「注音预留 0.66em + 半个字行 0.6em」减半个
+       按钮高——与大字同一条中线，无论左簇多高都钉在词头那一行。 */
+    align-self: flex-start;
+    margin-top: max(0px, calc(var(--fushi-m3e-headword-size) * 1.26 - var(--fushi-m3e-action-size) / 2));
+}
+
+/* 无注音词头没有 0.66em 预留，大字行的中线在 0.6em 处。 */
+:where(#entries-container).fushi-m3e .entry-header.no-ruby .header-buttons {
+    margin-top: max(0px, calc(var(--fushi-m3e-headword-size) * 0.6 - var(--fushi-m3e-action-size) / 2));
+}
+
+:where(#entries-container).fushi-m3e .entry-header-meta > :first-child {
+    margin-top: 0;
 }
 
 :where(#entries-container).fushi-m3e .header-buttons > .inline-action-button {
@@ -3137,16 +3242,8 @@
     transition: none;
 }
 
-:where(#entries-container).fushi-m3e.fushi-reduced-motion .glossary-group {
-    transition: none;
-}
-
 :where(#entries-container).fushi-m3e.fushi-reduced-motion .no-results-icon {
     animation: none;
-}
-
-:where(#entries-container).fushi-m3e.fushi-reduced-motion .glossary-group::details-content {
-    transition: none;
 }
 
 :where(#entries-container).fushi-m3e.fushi-reduced-motion .inline-action-button:active,

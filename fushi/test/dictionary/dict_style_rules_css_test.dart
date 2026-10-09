@@ -150,15 +150,18 @@ void main() {
       expect(css, contains('text-decoration: none !important'));
     });
 
-    test('圆角连带 inline-block，否则 inline 元素上看不见', () {
-      final String css = buildGlobalDictStyleCss(<DictStyleRule>[
-        const DictStyleRule(
-          part: DictStylePart.expressionTag,
-          props: DictStyleProps(cornerRadius: 4),
-        ),
-      ]);
-      expect(css, contains('border-radius: 4px !important'));
-      expect(css, contains('display: inline-block !important'));
+    // 用户 10-09「开圆角后样式改炸」：圆角曾连带 `display: inline-block !important`，
+    // 把 .entry / .glossary-content 等块级部位压成收缩包裹的行内块，多列卡片里释义
+    // 塌成一字一行。圆角是纯外观，任何部位都不得改 display。
+    test('圆角只产 border-radius，任何部位都不改 display', () {
+      for (final DictStylePart part in DictStylePart.values) {
+        final String css = buildGlobalDictStyleCss(<DictStyleRule>[
+          DictStyleRule(
+              part: part, props: const DictStyleProps(cornerRadius: 4)),
+        ]);
+        expect(css, contains('border-radius: 4px !important'), reason: '$part');
+        expect(css, isNot(contains('display')), reason: '$part');
+      }
     });
 
     test('浮点尾巴被裁掉', () {

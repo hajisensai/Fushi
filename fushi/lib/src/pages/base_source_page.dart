@@ -1321,6 +1321,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                 onDictionaryPopupInputToken(token);
               },
         headerWidget: index == 0 ? buildPopupAudioControls() : null,
+        topBarScale: dictionaryPopupTopBarScale(
+          appUiScale: appModel.appUiScale,
+          dictionaryFontSize: appModel.dictionaryFontSize,
+        ),
         overlayWidget: isTop ? buildDictionaryLoading() : null,
         onTextSelected: (text, localRect) async {
           final childRect = localRect == Rect.zero

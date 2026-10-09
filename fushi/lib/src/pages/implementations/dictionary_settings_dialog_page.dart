@@ -1291,7 +1291,8 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
         ),
       ],
     );
-    final Widget controls = DictStyleVisualEditor(
+    Widget controls({required bool compact}) => DictStyleVisualEditor(
+      compact: compact,
       rules: rules,
       scopeDictionary: scope,
       selectedPart: _draft.selectedPart,
@@ -1321,17 +1322,21 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
                 ),
               ),
               SizedBox(width: tokens.spacing.card),
-              SizedBox(width: 340, child: controls),
+              SizedBox(width: 340, child: controls(compact: false)),
             ],
           );
         }
+        // 窄屏（应用内反馈 10-09，Android 384×853）：预览钉在上半、控件在下半自己滚，
+        // 改任何属性时预览都在视野里。旧比例 2:3 留给预览的不到 140dp，预览本身还得
+        // 上下滑才看得到正在改的部位；改成对半分，部位选择收成一行横滑（compact），
+        // 预览按所选部位自动滚到它（DictStylePreview）。
         return Column(
           children: <Widget>[
-            Expanded(flex: 2, child: preview),
+            Expanded(child: preview),
             SizedBox(height: tokens.spacing.gap / 2),
             hint,
             SizedBox(height: tokens.spacing.gap / 2),
-            Expanded(flex: 3, child: controls),
+            Expanded(child: controls(compact: true)),
           ],
         );
       },

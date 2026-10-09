@@ -5,7 +5,7 @@
 // 把相同发音合并成一条、后面挂全部来源标签；popup.js 之前是一本词典一行。
 //
 // 后续（2026-09-30 用户要求）：合并行一排五枚来源药丸读起来仍像重复，改成默认只挂
-// 一枚「N 本辞典」药丸；悬停看 title，点击就地展开 / 收起各来源药丸（触屏没有悬停）。
+// 一枚「N 本辞典」药丸；悬停看文档内提示（data-sources，10-09 起不用原生 title），点击就地展开 / 收起各来源药丸（触屏没有悬停）。
 //
 // 本测试 EXECUTES 真实的 popup.js（vm + 极简假 DOM），驱动真实的
 // `createPitchSection`，然后走产出的元素树数点 `.pitch-group` 行数、来源药丸
@@ -71,8 +71,13 @@ const FIVE_NAMES = ['词典14', '词典13', '词典15', '词典16', '词典17'];
     assert.strictEqual(counts.length, 1, 'a merged row carries exactly one count pill');
     const count = counts[0];
     assert.strictEqual(count.textContent, '5 本辞典');
-    assert.strictEqual(count.title, FIVE_NAMES.join(', '),
+    // 用户 10-09：来源名单走文档内 CSS 悬停提示（data-sources → ::after），不用原生
+    // title——WebView2 的原生提示是独立 Win32 弹窗，视频页浮层关掉后残留关不掉。
+    assert.strictEqual(count.getAttribute('data-sources'), FIVE_NAMES.join(', '),
       'hovering the count pill must reveal every source, in first-appearance order');
+    assert.strictEqual(count.title, '',
+      'the count pill must not use a native title tooltip (it outlives the popup on WebView2)');
+    assert.strictEqual(count.getAttribute('aria-label'), FIVE_NAMES.join(', '));
     assert.strictEqual(count.getAttribute('aria-expanded'), 'false');
     assert.deepStrictEqual(labelNames(section), FIVE_NAMES,
       'every source pill must stay in the DOM, in first-appearance order');
@@ -153,7 +158,7 @@ const FIVE_NAMES = ['词典14', '词典13', '词典15', '词典16', '词典17'];
     assert.strictEqual(pitchGroupCount(section), 1,
       '[1,0] and [0,1] are the same accent set; key must sort before comparing');
     assert.deepStrictEqual(labelNames(section), ['A', 'B']);
-    assert.strictEqual(countPills(section)[0].title, 'A, B');
+    assert.strictEqual(countPills(section)[0].getAttribute('data-sources'), 'A, B');
   }
 
   // Case 5: 两本纯 IPA 词典给出完全相同的 transcriptions → 合并。

@@ -90,15 +90,10 @@ void main() {
   });
 
   group('书内查词弹窗主题', () {
-    const Color paperBg = Color(0xFFF5EFE0);
-    const Color paperFg = Color(0xFF3B3229);
-
     DictionaryPopupTheme resolve({required bool eink}) =>
         resolveDictionaryPopupTheme(
           eink: eink,
           einkDark: false,
-          readerBackground: paperBg,
-          readerForeground: paperFg,
           readerDark: false,
           buildColorScheme: eink
               ? buildEinkColorScheme
@@ -110,15 +105,19 @@ void main() {
           designSystem: FushiDesignSystem.material,
         );
 
-    test('组件主题与字号阶梯同源，中性表面换成纸色', () {
+    test('组件主题与字号阶梯同源，配色即 app ColorScheme（不再叠纸色）', () {
       final ThemeData theme = resolve(eink: false).theme;
       final ThemeData reference = buildFushiThemeData(
         scheme: theme.colorScheme,
         textTheme: appText,
         designSystem: FushiDesignSystem.material,
       );
-      expect(theme.colorScheme.surface, isNot(Colors.white));
-      expect(theme.colorScheme.onSurface, paperFg);
+      final ColorScheme app = buildFushiColorScheme(
+        seedColor: kFushiDefaultSeed,
+        brightness: Brightness.light,
+      );
+      expect(theme.colorScheme.surface, app.surface);
+      expect(theme.colorScheme.onSurface, app.onSurface);
       expect(theme.cardTheme, reference.cardTheme);
       expect(theme.chipTheme, reference.chipTheme);
       expect(theme.dialogTheme, reference.dialogTheme);

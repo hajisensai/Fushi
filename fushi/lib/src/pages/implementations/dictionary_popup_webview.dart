@@ -608,6 +608,7 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
       container.style.width = layoutWidth + 'px';
       container.style.maxWidth = layoutWidth + 'px';
     }
+    window.__fushiRelayoutPopupColumns && window.__fushiRelayoutPopupColumns();
   };
   window.__fushiApplyPopupViewport();
 })();''');
@@ -952,7 +953,11 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
 JSON.stringify((function(){
   function readSel(win){
     var out = '';
-    try { var s = win.getSelection && win.getSelection(); if (s) out = String(s); } catch (e) {}
+    try {
+      var s = win.getSelection && win.getSelection();
+      // 注音不进复制文本（popup.js __fushiSelectionPlainText，与 Yomitan 同口径）。
+      if (s) out = win.__fushiSelectionPlainText ? win.__fushiSelectionPlainText(s) : String(s);
+    } catch (e) {}
     if (out) return out;
     var frames;
     try { frames = win.document.querySelectorAll('iframe,frame'); } catch (e) { return ''; }

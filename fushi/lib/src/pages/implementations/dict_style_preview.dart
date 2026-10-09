@@ -315,6 +315,15 @@ final String _kPickerJs = '''
         ? highlightSelector + '{outline:2px dashed rgba(120,160,255,.9);outline-offset:1px;}'
         : '';
       styleEl.textContent = css + '\\n' + marker;
+      // 换了部位就把它滚进视野（应用内反馈 10-09：窄屏预览框只有半屏，选「频率」「词典名」
+      // 还得自己去预览里上下找）。同一部位改属性不滚，免得拖滑块时画面来回跳。
+      if (highlightSelector && highlightSelector !== window.__fushiStylePreviewLastSel) {
+        window.__fushiStylePreviewLastSel = highlightSelector;
+        var target = document.querySelector(highlightSelector);
+        if (target && target.scrollIntoView) {
+          target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+      }
     };
 
     document.addEventListener('mousemove', function (e) {
