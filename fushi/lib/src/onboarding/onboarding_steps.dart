@@ -8,7 +8,7 @@ import 'package:fushi/src/models/module_id.dart';
 
 /// 功能选择步骤里可勾选的项，分两类：
 ///
-/// - **功能模块**（[ModuleId] 全部 11 个）：勾选状态在离开功能选择步骤时写进
+/// - **功能模块**（[ModuleId] 中除首页外的 11 个）：勾选状态在离开功能选择步骤时写进
 ///   `module_*_enabled` 偏好，未勾选的模块整套入口都不再露出（底栏/侧栏 tab、
 ///   设置一级分类、快捷键分区、首页聚合；设置 → 外观 → 功能模块 可随时改回）。
 ///   模块本身**不产生**引导步骤，但它是本模块名下配置步骤的总闸：模块都不要了，
@@ -87,8 +87,12 @@ const Set<OnboardingFeature> kOnboardingDefaultCapabilities =
 /// [ModuleId] → 功能选择步骤里代表它的勾选项。**穷尽 switch**：加模块时编译器
 /// 强制在这里补齐，向导的模块方格、写回 `module_*_enabled` 的循环与下面的步骤
 /// 总闸全部从这一张表推导，不会再出现「加了模块但向导只认 5 个」的漂移。
-OnboardingFeature onboardingFeatureOfModule(ModuleId module) =>
+///
+/// 首页（[ModuleId.home]）返回 `null`：它不是「要不要这项功能」的选择，向导不出
+/// 它的方格、也不改写它（关首页只在 设置 → 外观 → 功能模块 里做）。
+OnboardingFeature? onboardingFeatureOfModule(ModuleId module) =>
     switch (module) {
+      ModuleId.home => null,
       ModuleId.books => OnboardingFeature.books,
       ModuleId.manga => OnboardingFeature.manga,
       ModuleId.video => OnboardingFeature.video,
@@ -106,7 +110,8 @@ OnboardingFeature onboardingFeatureOfModule(ModuleId module) =>
 final Map<OnboardingFeature, ModuleId> _moduleOfFeature =
     <OnboardingFeature, ModuleId>{
       for (final ModuleId module in ModuleId.values)
-        onboardingFeatureOfModule(module): module,
+        if (onboardingFeatureOfModule(module) case final OnboardingFeature f)
+          f: module,
     };
 
 /// 勾选项所属的功能模块；`null` = 纯配置能力（不写任何持久化开关）。

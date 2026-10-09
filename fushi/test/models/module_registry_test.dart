@@ -183,12 +183,58 @@ void main() {
   });
 
   group('HomeTab 映射', () {
-    test('首页与设置恒在——它们是全部模块关光后的安全回退面', () {
-      expect(moduleOfHomeTab(HomeTab.home), isNull);
+    test('设置恒在——它是全部模块关光后的安全回退面', () {
       expect(moduleOfHomeTab(HomeTab.settings), isNull);
       const ModuleVisibility none = ModuleVisibility(<ModuleId>{});
-      expect(isHomeTabVisible(HomeTab.home, none), isTrue);
       expect(isHomeTabVisible(HomeTab.settings, none), isTrue);
+    });
+
+    test('首页是可关模块（2026-10-09 用户反馈「首页没用但偏偏不给关」）', () {
+      expect(moduleOfHomeTab(HomeTab.home), ModuleId.home);
+      expect(homeTabOfModule(ModuleId.home), HomeTab.home);
+      expect(ModuleId.home.prefKey, 'module_home_enabled');
+      const ModuleVisibility none = ModuleVisibility(<ModuleId>{});
+      expect(isHomeTabVisible(HomeTab.home, none), isFalse);
+      expect(
+        isHomeTabVisible(
+          HomeTab.home,
+          const ModuleVisibility(<ModuleId>{ModuleId.home}),
+        ),
+        isTrue,
+      );
+    });
+
+    test('至少保留一个导航模块：最后一个有 tab 的模块才算「最后一个」', () {
+      // 只剩首页 + 横切模块：首页是最后一个导航模块，关不掉。
+      const ModuleVisibility onlyHome = ModuleVisibility(<ModuleId>{
+        ModuleId.home,
+        ModuleId.sync,
+        ModuleId.listening,
+      });
+      expect(isLastNavigationModule(ModuleId.home, onlyHome), isTrue);
+      // 横切模块没有 tab，永远不是「最后一个导航模块」。
+      expect(isLastNavigationModule(ModuleId.sync, onlyHome), isFalse);
+      expect(hasAnyNavigationModule(onlyHome), isTrue);
+
+      // 首页 + 书架：两个都能单独关。
+      const ModuleVisibility two = ModuleVisibility(<ModuleId>{
+        ModuleId.home,
+        ModuleId.books,
+      });
+      expect(isLastNavigationModule(ModuleId.home, two), isFalse);
+      expect(isLastNavigationModule(ModuleId.books, two), isFalse);
+
+      // 只剩书架：书架是最后一个；已经关着的首页不算。
+      const ModuleVisibility onlyBooks = ModuleVisibility(<ModuleId>{
+        ModuleId.books,
+      });
+      expect(isLastNavigationModule(ModuleId.books, onlyBooks), isTrue);
+      expect(isLastNavigationModule(ModuleId.home, onlyBooks), isFalse);
+
+      const ModuleVisibility crossCutOnly = ModuleVisibility(<ModuleId>{
+        ModuleId.sync,
+      });
+      expect(hasAnyNavigationModule(crossCutOnly), isFalse);
     });
 
     test('homeTabOfModule 与 moduleOfHomeTab 互为逆映射', () {

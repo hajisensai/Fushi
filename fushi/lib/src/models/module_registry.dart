@@ -22,10 +22,10 @@ import 'package:fushi_core/fushi_core.dart' show MediaKind;
 
 // ── HomeTab ────────────────────────────────────────────────────────────────
 
-/// 顶层 tab → 所属模块。`home` / `settings` 恒在（全部模块关光后的安全回退面），
-/// 故返回 `null`。
+/// 顶层 tab → 所属模块。`settings` 恒在（全部模块关光后的安全回退面），故返回
+/// `null`；首页 2026-10-09 起是可关的 [ModuleId.home]。
 ModuleId? moduleOfHomeTab(HomeTab tab) => switch (tab) {
-  HomeTab.home => null,
+  HomeTab.home => ModuleId.home,
   HomeTab.settings => null,
   HomeTab.books => ModuleId.books,
   HomeTab.manga => ModuleId.manga,
@@ -44,6 +44,7 @@ bool isHomeTabVisible(HomeTab tab, ModuleVisibility visibility) =>
 /// 模块 → 它的顶层 tab。四个横切模块（听书/制卡/在线服务/同步）**没有 tab**，
 /// 返回 `null`——它们只有设置分类与散落在各页的入口。
 HomeTab? homeTabOfModule(ModuleId module) => switch (module) {
+  ModuleId.home => HomeTab.home,
   ModuleId.books => HomeTab.books,
   ModuleId.manga => HomeTab.manga,
   ModuleId.video => HomeTab.video,
@@ -56,6 +57,25 @@ HomeTab? homeTabOfModule(ModuleId module) => switch (module) {
   ModuleId.services ||
   ModuleId.sync => null,
 };
+
+/// [module] 是否是此刻**唯一**还开着的导航模块（有顶层 tab 的模块）。
+///
+/// 「至少保留一个模块」的判据：设置 tab 恒在但它不是内容页，导航模块全关后
+/// 用户一打开 app 就只剩设置，等于把 app 关成了空壳。所以最后一个导航模块的
+/// 开关不允许关（设置页开关拒绝 + 提示），新手引导写回后若一个都不剩则把首页
+/// 开回来（见 `onboarding_wizard_page.dart` 的 `_applyModuleSelection`）。
+bool isLastNavigationModule(ModuleId module, ModuleVisibility visibility) {
+  if (homeTabOfModule(module) == null) return false;
+  if (!visibility.isEnabled(module)) return false;
+  for (final ModuleId other in visibility.enabled) {
+    if (other != module && homeTabOfModule(other) != null) return false;
+  }
+  return true;
+}
+
+/// 可见性快照里是否还有任何导航模块开着。
+bool hasAnyNavigationModule(ModuleVisibility visibility) =>
+    visibility.enabled.any((ModuleId id) => homeTabOfModule(id) != null);
 
 // ── SettingsDestinationId ──────────────────────────────────────────────────
 

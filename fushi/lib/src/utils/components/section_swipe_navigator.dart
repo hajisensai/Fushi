@@ -96,7 +96,12 @@ class _SectionSwipeNavigatorState<T extends Object>
     final int index = widget.sections.indexOf(widget.selected);
     if (index < 0) return;
     final int target = index + (forward ? 1 : -1);
-    if (target < 0 || target >= widget.sections.length) return;
+    if (target < 0 || target >= widget.sections.length) {
+      // 越过首 / 末分区：交给外层（首页外壳的横滑切模块）接力；没有外层就
+      // 什么都不发生。
+      SectionSwipeOverflowScope.maybeOf(context)?.call(forward: forward);
+      return;
+    }
     widget.onSelect(widget.sections[target]);
   }
 
@@ -200,6 +205,32 @@ class _SectionSwipeNavigatorState<T extends Object>
       ),
     );
   }
+}
+
+/// 分区横滑越过首 / 末分区时的外层接力点（见 [SectionSwipeNavigator._step]）。
+///
+/// 首页外壳在手机布局里用它把「库页最左分区再往右滑」「最右分区再往左滑」接成
+/// 切换功能模块（`home_module_swipe.dart`）。[onOverflow] 的 `forward` 是阅读方向
+/// 上的「下一个」（LTR 下即手指左移）。不在外壳里（推出来的页面、测试）时没有
+/// 这一层，越界照旧什么都不发生。
+class SectionSwipeOverflowScope extends InheritedWidget {
+  const SectionSwipeOverflowScope({
+    required this.onOverflow,
+    required super.child,
+    super.key,
+  });
+
+  final void Function({required bool forward}) onOverflow;
+
+  /// 不建立依赖：只在手势那一刻取。
+  static void Function({required bool forward})? maybeOf(
+    BuildContext context,
+  ) => context
+      .getInheritedWidgetOfExactType<SectionSwipeOverflowScope>()
+      ?.onOverflow;
+
+  @override
+  bool updateShouldNotify(SectionSwipeOverflowScope oldWidget) => false;
 }
 
 /// 圈定「参与边缘级联」的横向滚动区（见 [SectionSwipeNavigator]）。

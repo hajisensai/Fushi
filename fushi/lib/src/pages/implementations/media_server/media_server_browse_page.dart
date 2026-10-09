@@ -15,6 +15,8 @@ import 'package:fushi/src/shortcuts/input_binding.dart'
     show GamepadButton, activeModifierKeys;
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/utils/components/section_visibility.dart'
+    show ModuleRootAwayReporter;
 import 'package:fushi/utils.dart';
 
 export 'package:fushi/src/pages/implementations/media_server/media_server_server_list_view.dart'
@@ -84,6 +86,18 @@ class _MediaServerBrowsePageState extends State<MediaServerBrowsePage> {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>(
     debugLabel: 'media-server-browse',
   );
+
+  /// 嵌套栈此刻能不能退一层（嵌套 Navigator 发来的 [NavigationNotification]）。
+  /// 钻进了服务器 / 媒体库就不在模块根：首页外壳不让横滑切模块（见
+  /// [ModuleRootAwayReporter]）。
+  bool _nestedCanPop = false;
+
+  bool _onNavigationNotification(NavigationNotification notification) {
+    if (notification.canHandlePop != _nestedCanPop && mounted) {
+      setState(() => _nestedCanPop = notification.canHandlePop);
+    }
+    return false;
+  }
 
   void _play(BuildContext context, MediaServerPlayRequest request) {
     final MediaServerPlayHandler? injected = widget.onPlay;
@@ -204,24 +218,30 @@ class _MediaServerBrowsePageState extends State<MediaServerBrowsePage> {
             if (!isCupertinoPlatform(context))
               FushiPageHeader.customTitle(title: widget.navigation),
             Expanded(
-              child: NavigatorPopHandler(
-                enabled: widget.systemBackActive,
-                onPopWithResult: (void _) => _popNested(),
-                // 根 MaterialApp 的 HeroController 不能同时挂两个 Navigator；分区内
-                // 不做 Hero 动画，显式断开。
-                child: HeroControllerScope.none(
-                  child: Navigator(
-                    key: _navigatorKey,
-                    onGenerateRoute: (RouteSettings settings) =>
-                        adaptivePageRoute<void>(
-                          context: context,
-                          settings: settings,
-                          builder: (_) => MediaServerListView(
-                            loadServers: widget.loadServers,
-                            play: _play,
-                            onOpenSettings: _openSettings,
-                          ),
-                        ),
+              child: ModuleRootAwayReporter(
+                away: widget.systemBackActive && _nestedCanPop,
+                child: NotificationListener<NavigationNotification>(
+                  onNotification: _onNavigationNotification,
+                  child: NavigatorPopHandler(
+                    enabled: widget.systemBackActive,
+                    onPopWithResult: (void _) => _popNested(),
+                    // 根 MaterialApp 的 HeroController 不能同时挂两个 Navigator；分区内
+                    // 不做 Hero 动画，显式断开。
+                    child: HeroControllerScope.none(
+                      child: Navigator(
+                        key: _navigatorKey,
+                        onGenerateRoute: (RouteSettings settings) =>
+                            adaptivePageRoute<void>(
+                              context: context,
+                              settings: settings,
+                              builder: (_) => MediaServerListView(
+                                loadServers: widget.loadServers,
+                                play: _play,
+                                onOpenSettings: _openSettings,
+                              ),
+                            ),
+                      ),
+                    ),
                   ),
                 ),
               ),

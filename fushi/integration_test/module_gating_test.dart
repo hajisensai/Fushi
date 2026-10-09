@@ -171,7 +171,8 @@ void main() {
 
         // ── 只留书架 ───────────────────────────────────────────────────────
         for (final ModuleId module in ModuleId.values) {
-          if (module == ModuleId.books) continue;
+          // 首页 2026-10-09 起也是可关模块；本用例下面还要看首页筛选条，留着它。
+          if (module == ModuleId.books || module == ModuleId.home) continue;
           await appModel.setModuleEnabled(module, false);
         }
         await tester.pump(const Duration(seconds: 2));

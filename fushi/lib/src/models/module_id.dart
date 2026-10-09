@@ -10,10 +10,14 @@
 /// （[ModuleVisibility.resolve]）：平台判据只在 [ModuleId.availableOn] 里写一次，
 /// 消费端一律只问 [ModuleVisibility.isEnabled]，不再各自判平台。
 ///
-/// 刻意**不含**首页与设置：它们恒在（是全部模块关光后的安全回退面），没有开关，
-/// 因此也不该出现在这个枚举里 —— 值域里没有它们，就没人写得出
-/// `isEnabled(settings)` 这种脏状态。首页/设置属于 `HomeTab` 而非 `ModuleId`，
-/// 两个值域的映射见 `module_registry.dart`。
+/// 刻意**不含**设置：它恒在（是全部模块关光后的安全回退面），没有开关，因此也
+/// 不该出现在这个枚举里 —— 值域里没有它，就没人写得出 `isEnabled(settings)` 这种
+/// 脏状态。设置属于 `HomeTab` 而非 `ModuleId`，两个值域的映射见
+/// `module_registry.dart`。
+///
+/// 首页（dashboard）此前也恒在；2026-10-09 起它是可关的 [ModuleId.home]（用户反馈
+/// 「首页没什么用但偏偏不给关」）。关掉后落地页改为第一个启用的 tab，首页工具栏
+/// 上的入口迁到 设置 → 系统（见 `settings_schema_system.dart`）。
 library;
 
 import 'package:flutter/foundation.dart';
@@ -25,6 +29,10 @@ import 'package:fushi/src/models/store_compliance.dart';
 /// 顺序 = 设置页「功能模块」分区的展示顺序，也与底栏/侧栏的 tab 顺序同向
 /// （库页 → 工具页 → 横切能力 → 设备数据）。
 enum ModuleId {
+  /// 首页 dashboard（继续 / 学习统计 / 活动 / 更新提醒）。可关：关掉后落地页改为
+  /// 第一个启用的 tab；导航 tab 至少要留一个（见 `isLastNavigationModule`）。
+  home('module_home_enabled'),
+
   /// 书架（EPUB / 字幕书阅读）。
   books('module_books_enabled'),
 
@@ -107,6 +115,7 @@ enum ModuleId {
     ModuleId.browse => StoreRestrictedCapability.downloads.availableOn(
       isIOS: isIOS,
     ),
+    ModuleId.home ||
     ModuleId.books ||
     ModuleId.manga ||
     ModuleId.video ||
