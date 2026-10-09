@@ -22,6 +22,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
@@ -29,6 +30,9 @@ import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
+import 'package:fushi/src/settings/settings_destination.dart'
+    show debugSettingsForceExpandAllSections;
+import 'package:fushi/src/settings/settings_kit.dart' show SettingsModifiedRow;
 import 'package:fushi/utils.dart' show t;
 
 import '../helpers/test_platform_services.dart';
@@ -295,6 +299,10 @@ void main() {
     late AppModel appModel;
 
     setUp(() async {
+      // 功能指派行收在默认折叠的分组里（2026-10-08 所有者：外层只放总配置）。
+      // 写穿契约测试要直接够到那些行，强制展开；折叠本身另有测试覆盖。
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      debugSettingsForceExpandAllSections = true;
       db = FushiDatabase.forTesting(
         DatabaseConnection(NativeDatabase.memory()),
       );
@@ -309,6 +317,7 @@ void main() {
     });
 
     tearDown(() async {
+      debugSettingsForceExpandAllSections = false;
       await db.close();
       if (storeDir.existsSync()) storeDir.deleteSync(recursive: true);
     });
@@ -465,6 +474,97 @@ void main() {
         'p1',
         reason: '草稿重新有效即按草稿自己的启用状态写回，指派照常生效',
       );
+    });
+
+    testWidgets('外层只放总配置：功能指派默认折叠，摘要报单独指定了几项', (
+      WidgetTester tester,
+    ) async {
+      debugSettingsForceExpandAllSections = false;
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', name: 'Alpha'),
+      ]);
+      await pumpSection(tester);
+
+      final Finder providerList = find.byKey(
+        const ValueKey<String>('ai-provider-list'),
+      );
+      expect(
+        find.descendant(
+          of: providerList,
+          matching: find.byKey(const ValueKey<String>('ai-feature-default')),
+        ),
+        findsOneWidget,
+        reason: '默认提供商属于总配置，跟提供商清单一起常显',
+      );
+      final Finder featureRow = find.byKey(
+        ValueKey<String>(
+          'ai-feature-${AiFeature.galgameTextProcess.storageKey}',
+        ),
+      );
+      expect(featureRow, findsNothing, reason: '各功能的单独指派默认收起');
+      expect(find.text(t.ai_feature_overrides_none), findsOneWidget);
+
+      await tester.tap(find.text(t.ai_features_section));
+      await tester.pumpAndSettle();
+      expect(featureRow, findsOneWidget, reason: '点分组头展开后功能行出现');
+    });
+
+    testWidgets('折叠头摘要：单独指定（含「不使用 AI」）几项就报几项', (
+      WidgetTester tester,
+    ) async {
+      debugSettingsForceExpandAllSections = false;
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', name: 'Alpha'),
+      ]);
+      await prefs.setAiFeatureAssignments(
+        const AiFeatureAssignments(defaultProviderId: 'p1')
+            .withAssignment(AiFeature.galgameTextProcess, 'p1')
+            .withAssignment(AiFeature.dictStyle, kAiFeatureDisabled),
+      );
+      await pumpSection(tester);
+      expect(find.text(t.ai_feature_overrides_count(n: 2)), findsOneWidget);
+    });
+
+    testWidgets('单独指定过的功能行带「改过默认值」标记，恢复默认即跟随默认', (
+      WidgetTester tester,
+    ) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', name: 'Alpha'),
+      ]);
+      await prefs.setAiFeatureAssignments(
+        const AiFeatureAssignments(
+          defaultProviderId: 'p1',
+        ).withAssignment(AiFeature.galgameTextProcess, kAiFeatureDisabled),
+      );
+      await pumpSection(tester);
+
+      SettingsModifiedRow marker(AiFeature feature) =>
+          tester.widget<SettingsModifiedRow>(
+            find.byKey(
+              ValueKey<String>('ai-feature-${feature.storageKey}-modified'),
+            ),
+          );
+      expect(marker(AiFeature.galgameTextProcess).modified, isTrue);
+      expect(marker(AiFeature.dictStyle).modified, isFalse);
+
+      final Finder reset = find.descendant(
+        of: find.byKey(
+          ValueKey<String>(
+            'ai-feature-${AiFeature.galgameTextProcess.storageKey}-modified',
+          ),
+        ),
+        matching: find.byKey(const ValueKey<String>('settings-reset-default')),
+      );
+      await tester.ensureVisible(reset);
+      await tester.pumpAndSettle();
+      await tester.tap(reset);
+      await tester.pumpAndSettle();
+
+      expect(
+        prefs.aiFeatureAssignments.providerIdFor(AiFeature.galgameTextProcess),
+        isNull,
+      );
+      expect(marker(AiFeature.galgameTextProcess).modified, isFalse);
     });
 
     testWidgets('功能下拉选中一家 → 立刻写穿映射偏好', (WidgetTester tester) async {

@@ -209,8 +209,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'local_audio_dbs',
   'lookup.global_context_capture',
   'lookup.ime_language',
-  // bool（默认 false）：查词后自动让 AI 按句意把符合用法的词头挪到最前
-  // （「设置 › AI」指派了查词用的提供商才生效；悬停查词与嵌套查词不触发）。
+  // bool（默认 false）：已删除的「查词时让 AI 按句意挑词条」开关（2026-10-09
+  // 所有者拍板移除）。存量键冻结、不再读写；留在这里只为键名不被别的功能复用。
   'lookup_ai_context_auto',
   // bool（默认 false，桌面端）：查词页按「返回上一级」直接最小化主窗（一键收窗
   // 回到之前的程序），不走关弹窗 → 清查询的阶梯。

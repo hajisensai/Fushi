@@ -61,15 +61,11 @@ class DictionaryPopupHistoryPage {
     required this.result,
     required this.allLoaded,
     required this.scrollTop,
-    this.lookupSentence,
   });
 
   final String searchTerm;
   final DictionarySearchResult? result;
   final bool allLoaded;
-
-  /// 该页的词是在哪句话里查的（见 [DictionaryPopupEntry.lookupSentence]）。
-  final String? lookupSentence;
 
   /// 离开该页时弹窗内容的 `scrollTop`（CSS px，WebView 局部）；回来时恢复。
   final double scrollTop;
@@ -91,17 +87,6 @@ class DictionaryPopupEntry {
   String searchTerm;
   Rect selectionRect;
   DictionarySearchResult? result;
-
-  /// 本层的词是在哪句话里查的；null = 没有可信的句子。只有从正文（阅读器 / 漫画 /
-  /// PDF 的句子）直接查的那一层才有——在释义里再点词叠出的子层、原地跳到的词头 /
-  /// 交叉引用都不在那句话里，拿外层句子去问「这句里是什么意思」只会得到错答案。
-  /// 换词时由宿主写（[DictionaryPopupController] 的原地跳转清空、历史页随页恢复）。
-  String? lookupSentence;
-
-  /// 非 null 当且仅当当前 [result] 只是这一份的**重排**（同一批词条换顺序，见
-  /// [DictionaryPopupController.reorderResult]）。弹窗 WebView 据此只挪已渲染的卡片，
-  /// 保住滚动位、已选释义与句子上下文镜像；任何换内容的写入都清空它。
-  DictionarySearchResult? reorderBase;
 
   /// 该层是否被绘制/可交互。常驻热槽在两次查词之间 `visible=false` 隐身，
   /// 但 WebView 仍挂载预热；一次查词把它翻为可见。
@@ -452,8 +437,6 @@ class DictionaryPopupController extends ChangeNotifier {
       ..searchTerm = ''
       ..selectionRect = Rect.zero
       ..result = kPopupSearchingPlaceholderResult
-      ..reorderBase = null
-      ..lookupSentence = null
       ..visible = false
       ..revealOnRender = false
       ..isSearching = false
@@ -507,8 +490,6 @@ class DictionaryPopupController extends ChangeNotifier {
         ..searchTerm = term
         ..selectionRect = rect
         ..result = initialResult
-        ..reorderBase = null
-        ..lookupSentence = null
         ..allLoaded = false
         ..autoFitHeight = null
         ..isSearching = true
@@ -617,28 +598,11 @@ class DictionaryPopupController extends ChangeNotifier {
   }) {
     e
       ..result = result
-      ..reorderBase = null
       ..allLoaded = allLoaded
       ..isSearching = false
       // 新结果 / load-more 都从当前滚动位出发；只有历史页回退才带恢复位
       //（[goBack] / [goForward] 自己设）。
       ..restoreScrollTop = null;
-    notifyListeners();
-  }
-
-  /// 把 [e] 的结果换成 [reordered]——它必须只是当前结果的**重排**（同一批词条换了
-  /// 顺序，如查词「按句意挑词条」把 AI 选中的词头挪到最前）。与 [fillResult] 的区别：
-  /// 记下 [DictionaryPopupEntry.reorderBase]，弹窗 WebView 据此只挪已渲染的卡片
-  /// （popup.js `fushiReorderPopupEntries`），不全量重渲染——全量会滚回顶、清已选
-  /// 释义、把句子上下文镜像归 0，而宿主的制卡草稿并没有清（BUG-297 型错位）。
-  /// 滚动位、分页状态、句子都不动。
-  void reorderResult(DictionaryPopupEntry e, DictionarySearchResult reordered) {
-    if (!_entries.contains(e)) return;
-    final DictionarySearchResult? base = e.result;
-    if (base == null || identical(base, reordered)) return;
-    e
-      ..result = reordered
-      ..reorderBase = base;
     notifyListeners();
   }
 
@@ -651,7 +615,6 @@ class DictionaryPopupController extends ChangeNotifier {
       result: e.result,
       allLoaded: e.allLoaded,
       scrollTop: scrollTop,
-      lookupSentence: e.lookupSentence,
     );
   }
 
@@ -663,8 +626,6 @@ class DictionaryPopupController extends ChangeNotifier {
     e
       ..searchTerm = page.searchTerm
       ..result = page.result
-      ..reorderBase = null
-      ..lookupSentence = page.lookupSentence
       ..allLoaded = page.allLoaded
       ..isSearching = false
       ..restoreScrollTop = restoreScrollTop;

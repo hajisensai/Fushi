@@ -29,6 +29,9 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
     show GlassSettingsRenderer;
+import 'package:fushi/src/settings/settings_destination.dart'
+    show SettingsSectionPresentation;
+import 'package:fushi/src/settings/settings_section_container.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart'
     show SettingsSectionFooter;
 import 'package:fushi/utils.dart';
@@ -119,12 +122,14 @@ class _AiProviderSettingsSectionState
       key: const ValueKey<String>('ai-provider-settings'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        // 提供商：每家一行（名称 / 模型 / 状态 / chevron），点进去是这家的
-        // 编辑页（[_openEditor]）；末行「添加提供商」。
+        // 总配置（外层常显）：默认提供商 + 每家一行（名称 / 模型 / 状态 /
+        // chevron，点进去是这家的编辑页 [_openEditor]）+ 末行「添加提供商」。
+        // 2026-10-08 所有者：「外面只放一个总配置，各功能的单独配置点开展开」。
         AdaptiveSettingsSection(
           key: const ValueKey<String>('ai-provider-list'),
           title: t.ai_providers_section,
           children: <Widget>[
+            _defaultProviderRow(),
             for (int index = 0; index < _drafts.length; index++)
               _providerRow(index),
             AdaptiveSettingsRow(
@@ -144,12 +149,16 @@ class _AiProviderSettingsSectionState
               ? const ValueKey<String>('ai-provider-empty')
               : null,
         ),
-        // 功能 → 提供商：每个功能一条选择行（行尾是当前值 + 弹出菜单）。
-        AdaptiveSettingsSection(
+        // 各功能的单独指派：默认折叠（展开状态按设备记住），收起时摘要报
+        // 「几项单独指定了」；展开后每个功能一条选择行，单独指定过的行首带
+        // 「改过默认值」圆点 + 行尾「恢复默认」（= 跟随默认提供商）。
+        SettingsSectionContainer(
           key: const ValueKey<String>('ai-feature-list'),
+          id: 'ai.feature_overrides',
           title: t.ai_features_section,
+          summary: _featureOverridesSummary(),
+          presentation: SettingsSectionPresentation.collapsed,
           children: <Widget>[
-            _defaultProviderRow(),
             for (final AiFeature feature in AiFeature.values)
               if (_featureAvailableOnThisStore(feature)) _featureRow(feature),
           ],
@@ -157,6 +166,18 @@ class _AiProviderSettingsSectionState
         SettingsSectionFooter(t.ai_features_section_summary),
       ],
     );
+  }
+
+  /// 折叠头的摘要：单独指定（含「不使用 AI」）了几个功能；一个都没有就说全部跟随
+  /// 默认。只数本平台列出的功能行，与展开后看到的行数同口径。
+  String _featureOverridesSummary() {
+    final int count = AiFeature.values
+        .where(_featureAvailableOnThisStore)
+        .where((AiFeature f) => _assignments.providerIdFor(f) != null)
+        .length;
+    return count == 0
+        ? t.ai_feature_overrides_none
+        : t.ai_feature_overrides_count(n: count);
   }
 
   /// 「AI 下载」属于下载中心 + 在线发现两类 App Store 合规受限能力：入口与
@@ -678,7 +699,7 @@ class _AiProviderSettingsSectionState
         .map((AiProviderConfig c) => c.displayName)
         .firstOrNull;
 
-    return _assignmentRow(
+    final Widget row = _assignmentRow(
       key: ValueKey<String>('ai-feature-${feature.storageKey}'),
       menuKey: ValueKey<String>('ai-feature-${feature.storageKey}-provider'),
       icon: _featureIcon(feature),
@@ -698,6 +719,14 @@ class _AiProviderSettingsSectionState
         (kAiFeatureDisabled, t.ai_feature_disabled),
       ],
       onChanged: (String? value) => _setAssignment(feature, value),
+    );
+    // 单独指定过（含「不使用 AI」与指向失效的那家）= 改过默认值：行首圆点标记，
+    // 行尾「恢复默认」清掉显式指派、回到跟随默认提供商。
+    return SettingsModifiedRow(
+      key: ValueKey<String>('ai-feature-${feature.storageKey}-modified'),
+      modified: assigned != null,
+      onReset: () => _setAssignment(feature, null),
+      child: row,
     );
   }
 
@@ -746,7 +775,6 @@ class _AiProviderSettingsSectionState
     AiFeature.customTheme => FushiIcons.appearance,
     AiFeature.acquire => FushiIcons.download,
     AiFeature.mangaOcr => FushiIcons.ocr,
-    AiFeature.lookupContext => FushiIcons.manageSearch,
   };
 
   // ---------------------------------------------------------------------------
@@ -957,7 +985,6 @@ class _AiProviderSettingsSectionState
     AiFeature.customTheme => t.ai_feature_custom_theme,
     AiFeature.acquire => t.ai_feature_acquire,
     AiFeature.mangaOcr => t.ai_feature_manga_ocr,
-    AiFeature.lookupContext => t.ai_feature_lookup_context,
   };
 
   String _featureSummary(AiFeature feature) => switch (feature) {
@@ -969,7 +996,6 @@ class _AiProviderSettingsSectionState
     AiFeature.customTheme => t.ai_feature_custom_theme_summary,
     AiFeature.acquire => t.ai_feature_acquire_summary,
     AiFeature.mangaOcr => t.ai_feature_manga_ocr_summary,
-    AiFeature.lookupContext => t.ai_feature_lookup_context_summary,
   };
 
   /// 协议名是 wire 事实（各家 API 文档里的原名），不翻译。

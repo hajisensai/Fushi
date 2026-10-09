@@ -14,6 +14,7 @@ import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_ai.dart';
+import 'package:fushi/utils.dart' show t;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart'
     show subtitleLanguageNativeName;
@@ -77,6 +78,20 @@ void main() {
       ),
     );
   }
+
+  testWidgets('folded by default; the header summary counts changed defaults', (
+    WidgetTester tester,
+  ) async {
+    await pumpContext(tester);
+    expect(section().presentation, SettingsSectionPresentation.collapsed);
+    expect(section().summaryBuilder!(settingsContext), isNull);
+
+    await prefs.setAiVideoDownloadQuality('1080p');
+    expect(
+      section().summaryBuilder!(settingsContext),
+      t.settings_section_modified_count(n: 1),
+    );
+  });
 
   testWidgets('options are generated from the code enums', (
     WidgetTester tester,

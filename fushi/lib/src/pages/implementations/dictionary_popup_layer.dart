@@ -850,21 +850,12 @@ class DictionaryPopupHistoryNav {
   final VoidCallback onForward;
 }
 
-/// 弹窗顶栏「✨ 按句意挑词条」（`ai_lookup_context_assistant.dart`）的接线。宿主只在
-/// 给查词功能解析到了 AI 提供商时传入；[busy] 时按钮换成转圈且不可再点。
-class DictionaryPopupAiPick {
-  const DictionaryPopupAiPick({required this.busy, required this.onTap});
-
-  final bool busy;
-  final VoidCallback onTap;
-}
-
 /// 顶栏动作按钮的命中边长（2026-10 体验优化）：桌面 36（鼠标精确，压缩顶栏）；
 /// 移动端 44——触控目标下限，图标仍是 20，视觉不变、只是可点区域变大。
 double dictionaryPopupTopActionExtent({required bool mobile}) =>
     mobile ? 44 : 36;
 
-/// 顶栏宽度低于此值且有 [DictionaryPopupLayer.headerWidget] 时，A−/A+/AI 收进
+/// 顶栏宽度低于此值且有 [DictionaryPopupLayer.headerWidget] 时，A−/A+ 收进
 /// 「⋯」溢出菜单（2026-10 体验优化），优先保住居中 header 与关闭按钮的宽度。
 const double kDictionaryPopupTopBarCompactWidth = 360;
 
@@ -966,7 +957,7 @@ class DictionaryPopupToolGroup extends StatelessWidget {
 }
 
 /// 顶栏溢出菜单里的动作。
-enum _PopupTopBarOverflowAction { zoomOut, zoomIn, aiPick }
+enum _PopupTopBarOverflowAction { zoomOut, zoomIn }
 
 class DictionaryPopupLayer extends StatelessWidget {
   const DictionaryPopupLayer({
@@ -1012,9 +1003,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onClose,
     this.onBack,
     this.historyNav,
-    this.aiPick,
     this.restoreScrollTop,
-    this.resultReorderOf,
     this.transparentDocumentBackground = false,
     this.showResizeGrip = false,
     this.onResizeStart,
@@ -1162,16 +1151,9 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 间来回。
   final DictionaryPopupHistoryNav? historyNav;
 
-  /// 顶栏「✨ 按句意挑词条」（见 [DictionaryPopupAiPick]）。null = 不画。
-  final DictionaryPopupAiPick? aiPick;
-
   /// 透传 [DictionaryPopupWebView.restoreScrollTop]：后退 / 前进回到历史页时该页离开
   /// 时的滚动位（[DictionaryPopupEntry.restoreScrollTop]）；常态 null。
   final double? restoreScrollTop;
-
-  /// 透传 [DictionaryPopupWebView.reorderOf]：[result] 只是这一份的重排时非 null
-  /// （[DictionaryPopupEntry.reorderBase]）；常态 null。
-  final DictionarySearchResult? resultReorderOf;
 
   /// TODO-1065：转发给 [DictionaryPopupWebView] —— 本层属「app 外 / 悬浮字幕」独立
   /// 查词窗（popup_main 宿主）时 true，令弹窗 `<html>` 透明消除整窗泛白（默认 false =
@@ -1511,12 +1493,11 @@ class DictionaryPopupLayer extends StatelessWidget {
     if (headerWidget == null &&
         onClose == null &&
         onBack == null &&
-        historyNav == null &&
-        aiPick == null) {
+        historyNav == null) {
       return null;
     }
 
-    // 2026-10 体验优化：窄宽（且有居中 header）时 A−/A+/AI 收进「⋯」菜单。
+    // 2026-10 体验优化：窄宽（且有居中 header）时 A−/A+ 收进「⋯」菜单。
     // LayoutBuilder 只读本层拿到的有界宽度，不改 BUG-822 的 Row 三段结构。
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -1576,7 +1557,6 @@ class DictionaryPopupLayer extends StatelessWidget {
         : <Widget>[
             _buildZoomFontButton(context, zoomIn: false),
             _buildZoomFontButton(context, zoomIn: true),
-            if (aiPick != null) _buildAiPickButton(context, aiPick!),
           ];
     final Widget leftCluster = Row(
       mainAxisSize: MainAxisSize.min,
@@ -1645,10 +1625,8 @@ class DictionaryPopupLayer extends StatelessWidget {
     ],
   );
 
-  /// 窄宽顶栏的「⋯」溢出菜单：A−/A+（与独立按钮走同一条 zoomFontStep 路径）
-  /// + AI 挑词（进行中时禁用）。
+  /// 窄宽顶栏的「⋯」溢出菜单：A−/A+（与独立按钮走同一条 zoomFontStep 路径）。
   Widget _buildOverflowMenuButton(BuildContext context) {
-    final DictionaryPopupAiPick? pick = aiPick;
     return PopupMenuButton<_PopupTopBarOverflowAction>(
       key: const ValueKey<String>('popup_topbar_overflow'),
       tooltip: MaterialLocalizations.of(context).showMenuTooltip,
@@ -1659,8 +1637,6 @@ class DictionaryPopupLayer extends StatelessWidget {
             webViewKey.currentState?.zoomFontStep(zoomIn: false);
           case _PopupTopBarOverflowAction.zoomIn:
             webViewKey.currentState?.zoomFontStep(zoomIn: true);
-          case _PopupTopBarOverflowAction.aiPick:
-            pick?.onTap();
         }
       },
       itemBuilder: (BuildContext context) =>
@@ -1679,26 +1655,10 @@ class DictionaryPopupLayer extends StatelessWidget {
                 t.popup_font_size_increase,
               ),
             ),
-            if (pick != null)
-              PopupMenuItem<_PopupTopBarOverflowAction>(
-                value: _PopupTopBarOverflowAction.aiPick,
-                enabled: !pick.busy,
-                child: _overflowMenuLabel(
-                  Icons.auto_awesome_outlined,
-                  t.lookup_ai_pick_tooltip,
-                ),
-              ),
           ],
       child: ConstrainedBox(
         constraints: _topActionConstraints,
-        child: Center(
-          child: pick != null && pick.busy
-              ? const SizedBox.square(
-                  dimension: 16,
-                  child: FushiCircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.more_horiz, size: 20),
-        ),
+        child: Center(child: const Icon(Icons.more_horiz, size: 20)),
       ),
     );
   }
@@ -1714,30 +1674,6 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 只有标签的单行气泡，TODO-1353 想给的提示等于没给。现在收成一层：把完整 message 直接
   /// 交给 [FushiIconButton.tooltip]，由那唯一一层负责显示（并带
   /// [kIconButtonTooltipHoverDelay] 悬停延迟，避免子弹窗落到光标下就自动冒泡盖住父层正文）。
-  Widget _buildAiPickButton(BuildContext context, DictionaryPopupAiPick pick) {
-    if (pick.busy) {
-      return ConstrainedBox(
-        key: const ValueKey<String>('popup_ai_pick_busy'),
-        constraints: _topActionConstraints,
-        child: const Center(
-          child: SizedBox.square(
-            dimension: 16,
-            child: FushiCircularProgressIndicator(strokeWidth: 2),
-          ),
-        ),
-      );
-    }
-    return FushiIconButton(
-      key: const ValueKey<String>('popup_ai_pick'),
-      icon: Icons.auto_awesome_outlined,
-      size: 20,
-      tooltip: t.lookup_ai_pick_tooltip,
-      constraints: _topActionConstraints,
-      padding: EdgeInsets.zero,
-      onTap: pick.onTap,
-    );
-  }
-
   Widget _buildZoomFontButton(BuildContext context, {required bool zoomIn}) {
     final String label = zoomIn
         ? t.popup_font_size_increase
@@ -1816,7 +1752,6 @@ class DictionaryPopupLayer extends StatelessWidget {
               result: result ?? kPopupSearchingPlaceholderResult,
               lookupPending: lookupPending,
               restoreScrollTop: restoreScrollTop,
-              reorderOf: resultReorderOf,
               hasChildPopup: hasChildPopup,
               onTapOutside: onTapOutside,
               onTextSelected: onTextSelected,

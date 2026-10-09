@@ -5399,9 +5399,6 @@ function buildEntryElement(entry, idx, maximumDictionaryBlocks = Infinity) {
     }
 
     const entryDiv = el('div', { className: 'entry' });
-    // 卡片自带它在 window.lookupEntries 里的下标：「只换顺序」（fushiReorderPopupEntries）
-    // 之后 DOM 序不再等于数组序，DOM 下标映射一律按这个身份重建（rebuildEntryDomIndex）。
-    entryDiv.__fushiLookupIndex = idx;
     entryDiv.appendChild(createEntryHeader(entry, idx));
 
     const exprTags = createExpressionTagsSection(entry);
@@ -6416,8 +6413,6 @@ function __fushiApplyPendingScrollTop(isFinal) {
 // 不可做增量 diff）。
 function _firePopupRendered(stillRendering) {
     window._renderInProgress = !!stillRendering;
-    // 尾批期间到达的「只换顺序」（fushiReorderPopupEntries）在全部卡片建好后落地。
-    if (!stillRendering) applyPendingPopupEntryOrder();
     const generation = window._renderGeneration;
     const finish = () => {
         // A newer lookup replaced this DOM while the cold font was decoding.
@@ -7296,11 +7291,18 @@ window.updatePopupIncremental = function() {
     }
 
     // TODO-833: rebuild the dom-index map so a subsequent incremental call still
-    // locates nodes correctly (tail entries may have been skipped above). Built from
-    // each card's own lookup index, not by counting: after an order-only update
-    // (fushiReorderPopupEntries) the DOM order is no longer the array order.
+    // locates nodes correctly (tail entries may have been skipped above).
+    const rebuiltDomIndex = new Array(entries.length).fill(-1);
+    const finalEntries = container.querySelectorAll(':scope > .entry');
+    let domCursor = 0;
+    for (let idx = 0; idx < entries.length; idx++) {
+        if (entryGlossaryWrapperOrNull(entries[idx]) !== null) {
+            rebuiltDomIndex[idx] = domCursor < finalEntries.length ? domCursor : -1;
+            domCursor++;
+        }
+    }
     window._renderedGlossaryCounts = entries.map(e => e.glossaries.length);
-    window._entryDomIndex = rebuildEntryDomIndex(container, entries.length);
+    window._entryDomIndex = rebuiltDomIndex;
     applyCustomCSS();
 
     // 增量追加了新的词典方框，重排 masonry 并观察新卡片。
@@ -7311,113 +7313,6 @@ window.updatePopupIncremental = function() {
         window.__fushiRenderToken || 0,
         window.innerHeight || document.documentElement.clientHeight || 0);
 };
-
-// lookupEntries 下标 → `.entry` 的 DOM 下标（-1 = 没有卡片）。按卡片自带的身份
-// （buildEntryElement 写的 __fushiLookupIndex）建表，与 DOM 顺序是否等于数组顺序无关。
-function rebuildEntryDomIndex(container, length) {
-    const map = new Array(length).fill(-1);
-    const nodes = container.querySelectorAll(':scope > .entry');
-    for (let d = 0; d < nodes.length; d++) {
-        const idx = nodes[d].__fushiLookupIndex;
-        if (typeof idx === 'number' && idx >= 0 && idx < length) map[idx] = d;
-    }
-    return map;
-}
-
-function popupEntryOrderKey(entry) {
-    return String((entry && entry.expression) || '') + '\u0001' +
-        String((entry && entry.reading) || '');
-}
-
-// 查词「按句意挑词条」（ai_lookup_context_assistant.dart）：宿主只换词条顺序时走这里，
-// 而不是 renderPopup 全量重渲染。[keys] 是新顺序的词头身份（表记 + \u0001 + 读音）。
-//
-// 只挪已渲染的 `.entry` 卡片，别的一概不动：
-//   * window.lookupEntries 保持原数组——词条按钮闭包、selectedDictionaries、音频缓存都按
-//     它的下标记账，重排数组会让它们指向别的词条；DOM 与数组的对应关系本来就由卡片自带
-//     的下标 + _entryDomIndex 承担（TODO-833）。
-//   * 不重置滚动位、已选释义、句子上下文镜像：用户此刻可能已滚动 / 选了释义 / 调过前后句，
-//     而宿主的制卡草稿也没清——全量重渲染会把三者归零，界面与草稿错位（BUG-297 同型）。
-//     已滚动时以视口顶部那张卡为锚，挪完把它放回原来的屏上位置，内容不跳。
-// 尾批还在建时先记下，收尾（_firePopupRendered 终信号）再挪；被新一轮渲染取代就作废。
-window.fushiReorderPopupEntries = function(keys) {
-    if (!Array.isArray(keys)) return false;
-    if (window._renderInProgress) {
-        window.__fushiPendingEntryOrder = {
-            generation: window._renderGeneration,
-            keys: keys,
-        };
-        return true;
-    }
-    window.__fushiPendingEntryOrder = null;
-    return applyPopupEntryOrder(keys);
-};
-
-function applyPendingPopupEntryOrder() {
-    const pending = window.__fushiPendingEntryOrder;
-    if (!pending) return;
-    window.__fushiPendingEntryOrder = null;
-    if (pending.generation !== window._renderGeneration) return;
-    applyPopupEntryOrder(pending.keys);
-}
-
-function applyPopupEntryOrder(keys) {
-    const container = __fushiContainer();
-    const entries = window.lookupEntries;
-    if (!container || !Array.isArray(entries)) return false;
-    const nodes = Array.prototype.slice.call(
-        container.querySelectorAll(':scope > .entry'));
-    if (nodes.length < 2) return false;
-
-    // 新顺序：先按 keys 认领（同一身份按数组序逐个认领），漏掉的按原 DOM 序垫后，绝不丢卡。
-    const nodeOf = new Map();
-    for (const node of nodes) nodeOf.set(node.__fushiLookupIndex, node);
-    const ordered = [];
-    const claimed = new Set();
-    for (const key of keys) {
-        for (let idx = 0; idx < entries.length; idx++) {
-            if (claimed.has(idx) || popupEntryOrderKey(entries[idx]) !== key) continue;
-            claimed.add(idx);
-            if (nodeOf.has(idx)) ordered.push(nodeOf.get(idx));
-            break;
-        }
-    }
-    for (const node of nodes) {
-        if (ordered.indexOf(node) < 0) ordered.push(node);
-    }
-    if (ordered.every((node, i) => node === nodes[i])) return true;
-
-    const scroller = document.scrollingElement || document.documentElement;
-    let anchorNode = null;
-    let anchorTop = 0;
-    if (scroller && scroller.scrollTop > 0) {
-        anchorNode = nodes.find(n => n.getBoundingClientRect().bottom > 0) || null;
-        if (anchorNode) anchorTop = anchorNode.getBoundingClientRect().top;
-    }
-
-    // 卡片之间的分隔线随卡片重排：先摘下，按新顺序重插（数目不变）。首卡前有没有
-    // 分隔线（汉字卡在上方时有）照旧。
-    const isSeparator = (n) => !!n && n.tagName === 'HR';
-    const leadingSeparator = isSeparator(nodes[0].previousSibling);
-    for (const node of nodes) {
-        const prev = node.previousSibling;
-        if (isSeparator(prev)) container.removeChild(prev);
-    }
-    const tail = nodes[nodes.length - 1].nextSibling;
-    ordered.forEach((node, i) => {
-        if (i > 0 || leadingSeparator) {
-            container.insertBefore(document.createElement('hr'), tail);
-        }
-        container.insertBefore(node, tail);
-    });
-    window._entryDomIndex = rebuildEntryDomIndex(container, entries.length);
-
-    if (anchorNode) {
-        const delta = anchorNode.getBoundingClientRect().top - anchorTop;
-        if (delta) scroller.scrollTop += delta;
-    }
-    return true;
-}
 
 
 // BUG-260: finer mouse-wheel scroll granularity for the lookup popup.
