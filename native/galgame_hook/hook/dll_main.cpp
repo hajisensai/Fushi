@@ -689,9 +689,11 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
 
   g_header->hooked = 1;
   fushi_voice_hook::g_geometry_provider_registry.Reset(g_header);
-  // BUG-2339: proof-of-life must not let Luna claim a pending Siglus entry.
-  // This cheap engine classification precedes Ready; ABI work stays async.
-  fushi_voice_hook::InitializeNativeTextOwner(g_header, IsSiglusEngine());
+  // BUG-2339: proof-of-life must not let Luna claim a pending native text
+  // entry (SiglusEngine, LucaSystem). This cheap engine classification
+  // precedes Ready; ABI work stays async.
+  fushi_voice_hook::InitializeNativeTextOwner(g_header,
+                                              registry.native_text_candidate());
   // 此时 DLL、共享内存与契约均已就绪，先让 injector 进入 hold 保住映射。
   // 后面的 MinHook/Siglus/KiriKiri 探测允许异步继续，不能阻塞 proof-of-life。
   if (!SignalReady(pid, legacy_hibiki_ipc)) {

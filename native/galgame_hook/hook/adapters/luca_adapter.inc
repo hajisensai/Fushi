@@ -471,6 +471,12 @@ bool InstallLucaText() {
   return hooked;
 }
 
+// True once the MESSAGE lane is final: installed, or rejected for good.
+bool LucaTextSettled(bool* installed) {
+  *installed = g_luca.hooks_installed;
+  return g_luca.hooks_installed || g_luca.resolved;
+}
+
 // Returns the text event the line is published under (0 = not published).
 uint64_t PublishLucaTextLine(const std::wstring& text, uint64_t tick) {
   auto& rt = g_luca;
@@ -738,6 +744,10 @@ void DrainLucaMessages() {
 
 volatile LONG g_luca_diag = 0;
 bool InstallLucaText() { return false; }
+bool LucaTextSettled(bool* installed) {
+  *installed = false;
+  return true;
+}
 void DrainLucaMessages() {}
 void ProcessLucaLookupTick() {}
 void ShutdownLucaLookup() {}
@@ -767,13 +777,21 @@ class LucaAdapter final : public fushi_voice_hook::EngineAdapter {
     NoteLucaDiag(kLucaDiagIdentityMatched);
 #endif
     installed_ = InstallLucaText() || installed_;
+    SettleTextOwner();
     return installed_;
+  }
+  // Startup failed before the MESSAGE lane could be installed: Luna is the
+  // only text source left, so it must not stay fenced by a Pending owner.
+  void FailTextStartup() {
+    if (!probe()) return;
+    fushi_voice_hook::CompleteNativeTextOwner(g_header, false, false);
   }
   // HookWorker: finish a deferred site resolution, then drain messages.
   void ProcessPendingEvents() {
     if (!installed_) {
       if (!probe()) return;
       installed_ = InstallLucaText();
+      SettleTextOwner();
       if (!installed_) return;
     }
     DrainLucaMessages();
@@ -817,6 +835,15 @@ class LucaAdapter final : public fushi_voice_hook::EngineAdapter {
   }
 
  private:
+  // Installed MESSAGE lane: the native owner fences Luna (its generic hooks
+  // would only add unrelated threads). Final rejection: Luna is the fallback
+  // text source. During the bounded site retry the owner stays Pending.
+  void SettleTextOwner() {
+    bool hooked = false;
+    if (!LucaTextSettled(&hooked)) return;
+    fushi_voice_hook::CompleteNativeTextOwner(g_header, hooked, false);
+  }
+
   mutable std::atomic<int> probe_state_{0};  // 0 unmeasured, 1 Luca, 2 not
   bool installed_ = false;
 };
