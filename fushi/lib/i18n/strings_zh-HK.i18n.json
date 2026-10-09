@@ -6899,5 +6899,9 @@
   "shortcut_action_video_lookup_prev_word": "上一個詞（掃詞）",
   "media_source_open_folder_failed": "無法開啟資料夾，可能已被移動、刪除或中斷連線。",
   "reader_body_font": "Body font",
-  "reader_body_font_default": "Default (book / system font)"
+  "reader_body_font_default": "Default (book / system font)",
+  "remote_book_hide_local": "僅從本機移除",
+  "remote_book_delete_everywhere": "徹底刪除",
+  "remote_book_hidden_message": "已從本機書架移除，伺服端那份沒有動",
+  "remote_book_delete_everywhere_confirm": "確定在 host「$host」上刪除「$name」嗎？那台裝置上的檔案、閱讀進度、書籤和有聲書會被永久刪除，本機沒有副本，此操作不可撤銷。"
 }

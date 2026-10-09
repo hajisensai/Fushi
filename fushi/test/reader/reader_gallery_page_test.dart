@@ -588,6 +588,62 @@ void main() {
     );
   });
 
+  testWidgets('触屏查看器：放大后单指拖动只平移不翻页，双击复原后才横滑切图', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.iOS),
+        home: ReaderGalleryPage(
+          images: _images(6),
+          currentChapter: 1,
+          fileForRef: (_) => null,
+          onOpenImage: (_) {},
+          onJumpTo: (_) {},
+        ),
+      ),
+    );
+    await _pumpAtTop(tester);
+    await tester.tap(_card('img0.png'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 4'), findsOneWidget);
+    final Finder stage = find.byKey(
+      const ValueKey<String>('fushi_gallery_zoom_img0.png'),
+    );
+    Future<void> doubleTap() async {
+      await tester.tap(stage);
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.tap(stage);
+      await tester.pumpAndSettle();
+    }
+
+    double scale() => tester
+        .widget<InteractiveViewer>(
+          find.descendant(of: stage, matching: find.byType(InteractiveViewer)),
+        )
+        .transformationController!
+        .value
+        .getMaxScaleOnAxis();
+
+    await doubleTap();
+    expect(scale(), greaterThan(1.5), reason: '双击放大');
+    // 放大态：单指横拖一段（没拖到图边外）只平移，不翻页。
+    await tester.drag(stage, const Offset(-120, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 4'), findsOneWidget);
+    expect(scale(), greaterThan(1.5));
+
+    await doubleTap();
+    expect(scale(), closeTo(1, 0.01), reason: '再双击复原');
+    await tester.fling(
+      find.byKey(const ValueKey<String>('fushi_gallery_viewer_pages')),
+      const Offset(-400, 0),
+      1500,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 4'), findsOneWidget, reason: '复原后横滑切图');
+  });
+
   testWidgets('桌面查看器：左右按钮在图外两侧，悬停才出现', (tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1;

@@ -6899,5 +6899,9 @@
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
   "reader_body_font": "Body font",
-  "reader_body_font_default": "Default (book / system font)"
+  "reader_body_font_default": "Default (book / system font)",
+  "remote_book_hide_local": "Remove from this device only",
+  "remote_book_delete_everywhere": "Delete permanently",
+  "remote_book_hidden_message": "Removed from this device's shelf. The copy on the server is untouched.",
+  "remote_book_delete_everywhere_confirm": "Delete \"$name\" on host \"$host\"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone."
 }

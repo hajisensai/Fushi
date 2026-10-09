@@ -456,6 +456,10 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   /// 桌面查看器：指针是否悬停在查看区（左右切图按钮只在悬停时出现）。
   bool _viewerHover = false;
 
+  /// 触屏查看器当前页是否处于放大态：放大时 PageView 不吃单指横滑（交给
+  /// InteractiveViewer 平移），复原后才恢复横滑切图。
+  bool _viewerZoomed = false;
+
   _GalleryLayout? _layout;
 
   /// 当前查看那一卷里每张图的像素尺寸（按 `src` 记），开页 / 切卷后在 isolate 里
@@ -1011,6 +1015,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
 
   /// 查看器落到第 [index] 张（键盘切图与触屏横滑共用）。
   void _showViewerPage(int index) {
+    if (_viewerZoomed) setState(() => _viewerZoomed = false);
     if (_viewerIndex == index) return;
     final List<EpubImageRef> unlocked = _unlocked;
     if (index < 0 || index >= unlocked.length) return;
@@ -1658,19 +1663,30 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   }
 
   /// 触屏查看器（手机 / 平板）：图片铺满整个查看区，左右横滑切上一张 / 下一张
-  /// （2026-10-09 反馈：移动端不要左右两个按钮，点进来就是大图）。双击交给
-  /// 缩放查看器（[ReaderGalleryPage.onOpenImage]）看细节。
+  /// （2026-10-09 反馈：移动端不要左右两个按钮，点进来就是大图）。双指缩放与
+  /// 横滑同时支持，见 [_ZoomableGalleryImage]。
   Widget _buildTouchStage(FushiDesignTokens tokens, int unlockedCount) {
     final List<EpubImageRef> unlocked = _unlocked;
     return PageView.builder(
       key: const ValueKey<String>('fushi_gallery_viewer_pages'),
       controller: _viewerPages,
       itemCount: unlockedCount,
+      // 放大态下单指拖动归 InteractiveViewer 平移，PageView 不参与；拖到图边再
+      // 继续拖由 [_ZoomableGalleryImage.onEdgePage] 切图（系统相册手感）。
+      physics: _viewerZoomed
+          ? const NeverScrollableScrollPhysics()
+          : const PageScrollPhysics(),
       onPageChanged: _showViewerPage,
       itemBuilder: (BuildContext context, int i) {
         final EpubImageRef ref = unlocked[i];
-        return GestureDetector(
-          onDoubleTap: () => _openImage(ref),
+        return _ZoomableGalleryImage(
+          key: ValueKey<String>('fushi_gallery_zoom_${ref.src}'),
+          active: i == _viewerIndex,
+          onZoomChanged: (bool zoomed) {
+            if (i != _viewerIndex || zoomed == _viewerZoomed) return;
+            setState(() => _viewerZoomed = zoomed);
+          },
+          onEdgePage: _viewerStep,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Center(child: _viewerImage(tokens, ref)),
@@ -1777,6 +1793,146 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
 
 /// 桌面查看器两侧放左右切图按钮的栏宽：按钮在栏里、不压在图上。
 const double _kViewerArrowGutter = 72;
+
+/// 触屏查看器的一页：[InteractiveViewer] 双指缩放 / 放大后单指平移，双击在
+/// 放大与复原之间切换（以双击点为中心放大到 [_kZoomDoubleTapScale] 倍）。
+///
+/// 手势冲突不自己识别：未放大时外层 PageView 用 PageScrollPhysics 吃单指横滑
+/// （横向拖动识别器的 slop 先于缩放识别器的平移 slop 胜出），双指仍交给
+/// InteractiveViewer；放大后宿主把 PageView 换成 NeverScrollableScrollPhysics，
+/// 单指拖动全归 InteractiveViewer 平移。平移已贴到左 / 右边、手指还在往外拖，
+/// 累计超过 [_kZoomEdgePageDistance] 就回调 [onEdgePage] 切上一张 / 下一张。
+class _ZoomableGalleryImage extends StatefulWidget {
+  const _ZoomableGalleryImage({
+    required this.active,
+    required this.onZoomChanged,
+    required this.onEdgePage,
+    required this.child,
+    super.key,
+  });
+
+  /// 是否是当前页；滑走后复原缩放，回来时从全图开始。
+  final bool active;
+  final ValueChanged<bool> onZoomChanged;
+  final ValueChanged<int> onEdgePage;
+  final Widget child;
+
+  @override
+  State<_ZoomableGalleryImage> createState() => _ZoomableGalleryImageState();
+}
+
+const double _kZoomDoubleTapScale = 2.5;
+const double _kZoomEdgePageDistance = 64;
+
+class _ZoomableGalleryImageState extends State<_ZoomableGalleryImage>
+    with SingleTickerProviderStateMixin<_ZoomableGalleryImage> {
+  final TransformationController _transform = TransformationController();
+  late final AnimationController _zoomAnimation = AnimationController(
+    vsync: this,
+  );
+  Animation<Matrix4>? _zoomTween;
+  Offset _doubleTapAt = Offset.zero;
+  bool _zoomed = false;
+  double _edgePull = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _transform.addListener(_onTransform);
+    _zoomAnimation.addListener(() {
+      final Animation<Matrix4>? tween = _zoomTween;
+      if (tween != null) _transform.value = tween.value;
+    });
+  }
+
+  @override
+  void didUpdateWidget(_ZoomableGalleryImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.active && !widget.active) {
+      _zoomAnimation.stop();
+      _transform.value = Matrix4.identity();
+    }
+  }
+
+  @override
+  void dispose() {
+    _zoomAnimation.dispose();
+    _transform.dispose();
+    super.dispose();
+  }
+
+  void _onTransform() {
+    final bool zoomed = _transform.value.getMaxScaleOnAxis() > 1.01;
+    if (zoomed == _zoomed || !mounted) return;
+    // panEnabled 跟着放大态切换：未放大时单指不平移，留给外层 PageView 横滑。
+    setState(() => _zoomed = zoomed);
+    widget.onZoomChanged(zoomed);
+  }
+
+  void _animateTo(Matrix4 target) {
+    _zoomTween = Matrix4Tween(begin: _transform.value, end: target).animate(
+      CurvedAnimation(parent: _zoomAnimation, curve: FushiMotion.standard),
+    );
+    _zoomAnimation
+      ..duration = fushiMotionDuration(context, FushiMotion.medium)
+      ..forward(from: 0);
+  }
+
+  void _onDoubleTap() {
+    if (_zoomed) {
+      _animateTo(Matrix4.identity());
+      return;
+    }
+    const double s = _kZoomDoubleTapScale;
+    final Offset p = _doubleTapAt;
+    _animateTo(
+      Matrix4.identity()
+        ..translateByDouble(-p.dx * (s - 1), -p.dy * (s - 1), 0, 1)
+        ..scaleByDouble(s, s, 1, 1),
+    );
+  }
+
+  void _onInteractionUpdate(ScaleUpdateDetails details) {
+    if (!_zoomed || details.pointerCount != 1) {
+      _edgePull = 0;
+      return;
+    }
+    final Size? size = context.size;
+    if (size == null) return;
+    final Matrix4 m = _transform.value;
+    final double scale = m.getMaxScaleOnAxis();
+    final double tx = m.getTranslation().x;
+    final bool atLeft = tx >= -0.5;
+    final bool atRight = tx + size.width * scale <= size.width + 0.5;
+    final double dx = details.focalPointDelta.dx;
+    if ((dx > 0 && atLeft) || (dx < 0 && atRight)) {
+      _edgePull += dx;
+    } else {
+      _edgePull = 0;
+    }
+    if (_edgePull.abs() >= _kZoomEdgePageDistance) {
+      final int direction = _edgePull > 0 ? -1 : 1;
+      _edgePull = 0;
+      widget.onEdgePage(direction);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onDoubleTapDown: (TapDownDetails d) => _doubleTapAt = d.localPosition,
+      onDoubleTap: _onDoubleTap,
+      child: InteractiveViewer(
+        transformationController: _transform,
+        maxScale: 5,
+        panEnabled: _zoomed,
+        onInteractionStart: (_) => _edgePull = 0,
+        onInteractionUpdate: _onInteractionUpdate,
+        child: SizedBox.expand(child: widget.child),
+      ),
+    );
+  }
+}
 
 /// 「当前阅读位置」徽标：竖线 + 小号标签。节头里当前章带它；当前章没插图时
 /// 它独占一条标记行插在前后章之间。

@@ -6899,5 +6899,9 @@
   "shortcut_action_video_lookup_prev_word": "上一个词（扫词）",
   "media_source_open_folder_failed": "无法打开文件夹，它可能已被移动、删除或断开连接。",
   "reader_body_font": "正文字体",
-  "reader_body_font_default": "默认（书籍自带 / 系统字体）"
+  "reader_body_font_default": "默认（书籍自带 / 系统字体）",
+  "remote_book_hide_local": "仅从本机移除",
+  "remote_book_delete_everywhere": "彻底删除",
+  "remote_book_hidden_message": "已从本机书架移除，服务端那份没有动",
+  "remote_book_delete_everywhere_confirm": "确定在 host「$host」上删除「$name」吗？那台设备上的文件、阅读进度、书签和有声书会被永久删除，本机没有副本，此操作不可撤销。"
 }
