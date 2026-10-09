@@ -206,8 +206,9 @@ void main() {
                     appModel: model,
                     ref: ref,
                     isFushiReader: true,
-                    presentation:
-                        ReaderQuickSettingsPresentation.audiobookPanel,
+                    // 2026-10-09（#2024）起有声书面板不再有「设置」子页签，高亮组在
+                    // 「阅读设置 › 有声书」页（与阅读器快捷键同一入口：直开 audiobook 子页）。
+                    initialSubPage: 'audiobook',
                     onStyleChanged: () async => styleChanges++,
                     onThemeChanged: () async {},
                   ),
@@ -217,9 +218,6 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text(t.settings).last);
-    await tester.pumpAndSettle();
-
     expect(find.text(t.audiobook_highlight_section), findsOneWidget);
     Finder switchIn(String key) => find.descendant(
       of: find.byKey(ValueKey<String>(key)),

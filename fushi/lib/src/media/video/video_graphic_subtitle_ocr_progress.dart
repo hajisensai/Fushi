@@ -7,6 +7,8 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiCircularProgressIndicator;
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -294,7 +296,7 @@ class VideoGraphicSubtitleOcrStatusPill extends StatelessWidget {
         context,
         leading: SizedBox.square(
           dimension: 12,
-          child: CircularProgressIndicator(
+          child: FushiCircularProgressIndicator(
             strokeWidth: 1.6,
             color: scheme.onInverseSurface,
           ),

@@ -273,8 +273,11 @@ void main() {
 
   test('词典弹窗：没有注音的词头不背注音预留（顶栏与词头之间不再空一行）', () {
     final String css = File('assets/popup/popup.css').readAsStringSync();
+    // 判据与 #2019 统一：createEntryHeader 只在没有读音时给 .entry-header 挂
+    // .no-ruby（不用 :has(rt)——旧 Android WebView 不支持 :has，且按钮位置的 M3E
+    // 规则也按同一个 class 调整）。
     final RegExp rule = RegExp(
-      r'\.expression:not\(:has\(rt\)\)\s*\{[^}]*padding-top:\s*0;',
+      r'\.entry-header\.no-ruby \.expression\s*\{[^}]*padding-top:\s*0;',
     );
     expect(rule.hasMatch(css), isTrue);
     // 有注音时预留照旧（BUG-1098 / BUG-2568 的裁切防线）。

@@ -105,7 +105,9 @@ void main() {
         'parseReaderStableProgressDetails(result)',
         '_applyImagePageProgressFallback()',
         '_lastProgressSection =',
-        '_readLedger.arrive(',
+        // BUG-3100：经开始方式门再 arrive（arriveReadUnitThroughStartGate 内部调
+        // ledger.arrive，门与顺序由 reader_study_clock_start_mode_wiring_guard 钉）。
+        'arriveReadUnitThroughStartGate(',
         '_debouncedSavePosition(',
       ]) {
         expect(code.indexOf(consumer), greaterThan(gateEnd));
@@ -126,9 +128,7 @@ void main() {
       final int gate = body.indexOf(
         'if (unitStart >= 0 && unitEnd > unitStart) {',
       );
-      final int arrive = body.indexOf(
-        '_readLedger.arrive(unitStart, unitEnd);',
-      );
+      final int arrive = body.indexOf('arriveReadUnitThroughStartGate(');
       expect(gate, isNonNegative, reason: 'JS 拿不到起 / 止点时不 arrive（宁可不计）');
       expect(arrive, greaterThan(gate));
     });
@@ -138,11 +138,13 @@ void main() {
       expect(containsIdentifier(body, 'addChars'), isFalse);
     });
 
-    test('全语料只有 _refreshProgress 调 _readLedger.arrive(（歌词覆盖层不入账）', () {
+    test('全语料只有 _refreshProgress 落定入账（歌词覆盖层不入账）', () {
       // 2026-10-04 歌词覆盖层（对齐 Niratan，取代 BUG-2597 的「歌词单元入账」）：
       // 歌词模式是盖在正文上的一层，正文在下面照常跟随音频翻页，字数照常由正文的
       // _refreshProgress 入账；歌词层不写任何统计，全语料只剩这一处 arrive。
-      expect('_readLedger.arrive('.allMatches(masked), hasLength(1));
+      // BUG-3100 起这唯一一处经 arriveReadUnitThroughStartGate(ledger: _readLedger)。
+      expect('arriveReadUnitThroughStartGate('.allMatches(masked), hasLength(1));
+      expect('_readLedger.arrive('.allMatches(masked), isEmpty);
       expect(masked.contains('_arriveLyricsCueUnit'), isFalse);
     });
   });

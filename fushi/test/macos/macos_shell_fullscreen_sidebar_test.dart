@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -123,7 +124,11 @@ void main() {
     // 0→52.5px 被正确回喂、pitchDelta=0（几何无失配）。
     final int didChangeDeps = reader.indexOf('void didChangeDependencies()');
     expect(didChangeDeps, isNonNegative);
-    final String body = reader.substring(didChangeDeps, didChangeDeps + 900);
+    // 窗口放宽到 1600：didChangeDependencies 开头还挂着歌词主题宿主的订阅（#2025）。
+    final String body = reader.substring(
+      didChangeDeps,
+      math.min(reader.length, didChangeDeps + 1600),
+    );
     expect(body, contains('insetChanged'),
         reason: 'didChangeDependencies must detect a real inset change.');
     expect(body, contains('_applyChromeInsets'),

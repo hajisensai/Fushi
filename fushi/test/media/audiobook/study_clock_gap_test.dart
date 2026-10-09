@@ -237,7 +237,8 @@ void main() {
       final String nav = readMasked(
         'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
       );
-      expect(nav.contains('_readLedger.arrive('), isTrue);
+      // BUG-3100：经开始方式门交给同一本账（arriveReadUnitThroughStartGate）。
+      expect(nav.contains('ledger: _readLedger,'), isTrue);
     });
 
     test('恢复完成（每次重排版都会跑）不得重锚会话时钟', () {

@@ -559,6 +559,9 @@ void main() {
         '-webkit-box-decoration-break',
         // BUG-2806：box-shadow 不占盒、不改排版；补缝就是靠它做到「只画不排」。
         'box-shadow',
+        // 用户 10-09（#2019）：高亮条圆角。border-radius 只裁背景的绘制形状，不改盒
+        // 尺寸与排版（这些规则不带 padding / border）。
+        'border-radius',
       };
       final RegExp blockPattern = RegExp(r'([^{}]+)\{([^{}]*)\}');
       final RegExp declPattern = RegExp(r'^\s*([a-zA-Z-]+)\s*:');

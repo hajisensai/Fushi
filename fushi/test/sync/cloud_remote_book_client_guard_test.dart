@@ -43,9 +43,14 @@ void main() {
 
     test('book shelf wires CloudRemoteBookClient for non-fushiServer backends',
         () {
-      final File part =
-          File('lib/src/pages/implementations/reader_history/remote.part.dart');
-      final String code = part.readAsStringSync();
+      // 书架与「已从本机移除的远端书」列表共用 resolveShelfRemoteBookClient（#2024
+      // 起抽到 hidden_remote_books.dart），书架只委托它。
+      final String shelf = File(
+        'lib/src/pages/implementations/reader_history/remote.part.dart',
+      ).readAsStringSync();
+      expect(shelf.contains('resolveShelfRemoteBookClient('), isTrue);
+      final String code =
+          File('lib/src/sync/hidden_remote_books.dart').readAsStringSync();
       // 非 fushiServer 分支经 resolveSyncBackend 并返回 CloudRemoteBookClient。
       expect(code.contains('resolveSyncBackend('), isTrue);
       expect(code.contains('CloudRemoteBookClient('), isTrue);
