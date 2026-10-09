@@ -11,6 +11,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
@@ -32,7 +33,7 @@ import '../helpers/test_platform_services.dart';
 /// 守卫：门控必须在**取数之前**（不是渲染期丢弃）。互联配置齐全（开关开 + 已配对
 /// 地址/令牌，`restoreAuth` 不发网络、只建暂定句柄）时：
 /// 1. 开关关闭 → [RemoteLibraryCache.read] 一次都不被调用（零远端请求）；
-/// 2. 开关开启 → 三个域（books / videos / activity）各被取数（阳性对照，证明本
+/// 2. 开关开启 → 两个域（books / videos）各被取数（阳性对照，证明本
 ///    harness 真能走到取数处，排除「0 次是因为配置/鉴权没过」的假绿）；
 /// 3. 页面存活期间翻开开关 → prefsRepo 监听触发补拉（不用重进页面）。
 class _CountingRemoteLibraryCache extends RemoteLibraryCache {
@@ -130,6 +131,17 @@ void main() {
             .overrideWith((ref) async => const <String, int>{}),
         epubBookUidByKeyProvider
             .overrideWith((ref) async => const <String, String>{}),
+        // 左上角头像读排行榜服务：给一个没开账户的服务（不 load、不联网），免得
+        // 真 provider 连带建 ProfileViewModel 改写本测试的偏好。
+        leaderboardServiceProvider.overrideWith(
+          (Ref _) => LeaderboardService(
+            database: () => db,
+            supportRoot: () async => storeDir,
+            profileId: () async => 1,
+            httpClientFactory: () async =>
+                throw StateError('no network in dashboard tests'),
+          ),
+        ),
       ];
 
   Widget buildApp() => ProviderScope(
@@ -170,7 +182,7 @@ void main() {
             '之前（BUG-1182），不是取回来再丢弃');
   });
 
-  testWidgets('开关开启（阳性对照）：三个域各取数，证明 harness 真能到达取数处',
+  testWidgets('开关开启（阳性对照）：书 / 视频两个域各取数，证明 harness 真能到达取数处',
       (WidgetTester tester) async {
     // 默认即 true，显式写出以固定前提。
     await prefs.setShowRemoteEntries(true);
@@ -184,9 +196,8 @@ void main() {
       containsAll(<String>[
         RemoteLibraryCacheKeys.books,
         RemoteLibraryCacheKeys.videos,
-        RemoteLibraryCacheKeys.activity(200),
       ]),
-      reason: '开关开着时三个远端域都必须取数；此对照保证上一条用例的 0 次不是'
+      reason: '开关开着时两个远端域都必须取数；此对照保证上一条用例的 0 次不是'
           '「互联配置/鉴权没过」造成的假绿',
     );
   });
@@ -208,10 +219,14 @@ void main() {
       containsAll(<String>[
         RemoteLibraryCacheKeys.books,
         RemoteLibraryCacheKeys.videos,
-        RemoteLibraryCacheKeys.activity(200),
       ]),
       reason: '开关翻开必须立即补拉远端（对齐 BUG-1182 的 prefsRepo 监听模式），'
           '不能要求用户重进首页',
+    );
+    // 2026-10 首页精简删掉了活动时间轴：远端活动流不再拉（省一次网络往返）。
+    expect(
+      remoteCache.readKeys,
+      isNot(contains(RemoteLibraryCacheKeys.activity(200))),
     );
   });
 }

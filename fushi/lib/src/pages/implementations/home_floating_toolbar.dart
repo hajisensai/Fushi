@@ -3,8 +3,9 @@
 /// 小说 / 漫画 / 视频的顶底栏统一成 M3 Expressive floating toolbar 之后，首页
 /// 也换成同一套组件（`fushi_floating_toolbar.dart` 的 [FushiFloatingTopBar] /
 /// [FushiToolbarFab] / [FushiChromeReveal]）：页面顶上不再是贴边的实体条，而是
-/// 悬浮胶囊——起始侧标题胶囊（页面名）、末尾侧动作按钮组（更新中心 · 统计中心 ·
-/// 排行榜）。MD3 = M3E 胶囊 + 阴影；Apple = iOS 26 浮动材质胶囊。
+/// 悬浮胶囊——起始侧头像胶囊（2026-10 精简：原「首页」标题胶囊换成用户头像，
+/// 页面名本就写在导航栏上）、末尾侧动作按钮组（更新中心 · 统计中心 · 排行榜 ·
+/// 反馈）。MD3 = M3E 胶囊 + 阴影；Apple = iOS 26 浮动材质胶囊。
 ///
 /// 滚动行为（M3 Expressive「floating toolbar 随滚动退场」）：内容离开顶部后继续
 /// 向下滚，整条栏弹簧上滑退场；任意位置向上回滚，栏弹簧回落；顶部一屏栏高之内
@@ -126,17 +127,18 @@ class HomeUpdateCount extends ValueNotifier<int> {
   }
 }
 
-/// 首页浮动工具栏：[FushiFloatingTopBar]（标题胶囊 + 动作按钮组胶囊），外包
-/// [FushiChromeReveal] 做弹簧显隐。
+/// 首页浮动工具栏：起始侧 [leading]（头像胶囊）+ [FushiFloatingTopBar] 的动作按钮组
+/// 胶囊（放不下才收进「⋯」），外包 [FushiChromeReveal] 做弹簧显隐。
 class HomeFloatingToolbar extends StatelessWidget {
   const HomeFloatingToolbar({
     super.key,
-    required this.title,
+    required this.leading,
     required this.actions,
     required this.visible,
   });
 
-  final String title;
+  /// 起始侧胶囊（首页 = 用户头像）。
+  final Widget leading;
   final List<FushiToolbarItem> actions;
 
   /// 栏是否在场（false = 弹簧上滑退场）。
@@ -155,9 +157,17 @@ class HomeFloatingToolbar extends StatelessWidget {
           child: SizedBox(
             height: kHomeToolbarHeight,
             child: FocusTraversalGroup(
-              child: FushiFloatingTopBar(
-                title: title,
-                actions: <List<FushiToolbarItem>>[actions],
+              child: Row(
+                children: <Widget>[
+                  leading,
+                  const SizedBox(width: 8),
+                  // 动作组的自适应溢出按剩余宽度测（无标题胶囊，不保底标题宽）。
+                  Expanded(
+                    child: FushiFloatingTopBar(
+                      actions: <List<FushiToolbarItem>>[actions],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

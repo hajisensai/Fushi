@@ -452,7 +452,7 @@ void main() {
           r'Widget _sectionCard\([\s\S]*?isEinkTheme\(context\)',
         ).hasMatch(src),
         isTrue,
-        reason: '四张分区卡的 group 面层塌成底色后必须描边',
+        reason: '分区卡的 group 面层塌成底色后必须描边',
       );
       expect(src, contains('Widget _bookCoverImage('));
       expect(
@@ -461,8 +461,12 @@ void main() {
         reason: '书封面只能经 _bookCoverImage 淡入（eink 下它换成直出的 Image）',
       );
       // 封面进度条的 eink 实心轨道收进共享的 CoverProgressStrip（书架 / 视频库
-      // 同用）：首页必须走它，组件里轨道在 eink 下换成页面底色。
-      expect(src, contains('CoverProgressStrip('));
+      // 同用）：首页「继续」封面卡（2026-10 精简后在展示件文件里）必须走它，组件
+      // 里轨道在 eink 下换成页面底色。
+      expect(
+        read('lib/src/pages/implementations/home_dashboard_widgets.dart'),
+        contains('CoverProgressStrip('),
+      );
       expect(
         RegExp(
           r'class CoverProgressStrip[\s\S]*?backgroundColor: eink\s*\?\s*tokens\.surfaces\.page',

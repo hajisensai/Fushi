@@ -631,23 +631,28 @@ class FushiDialogHeroIcon extends StatelessWidget {
     }
     final (Color bg, Color fg) = _colors(cs);
     final bool eink = isEinkTheme(context);
-    final Widget body = SizedBox.square(
-      dimension: size,
-      child: DecoratedBox(
-        decoration: ShapeDecoration(
-          color: eink ? cs.surface : bg,
-          shape: FushiExpressiveShapeBorder(
-            shape,
-            side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
-          ),
-        ),
-        child: Center(
-          child: IconTheme.merge(
-            data: IconThemeData(
-              size: size * 0.44,
-              color: eink ? cs.onSurface : fg,
+    // 对话框的图标槽给的是横向撑满的紧约束：不居中的话饼干形会被拉成一条横带。
+    final Widget body = Center(
+      widthFactor: 1,
+      heightFactor: 1,
+      child: SizedBox.square(
+        dimension: size,
+        child: DecoratedBox(
+          decoration: ShapeDecoration(
+            color: eink ? cs.surface : bg,
+            shape: FushiExpressiveShapeBorder(
+              shape,
+              side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
             ),
-            child: glyph,
+          ),
+          child: Center(
+            child: IconTheme.merge(
+              data: IconThemeData(
+                size: size * 0.44,
+                color: eink ? cs.onSurface : fg,
+              ),
+              child: glyph,
+            ),
           ),
         ),
       ),

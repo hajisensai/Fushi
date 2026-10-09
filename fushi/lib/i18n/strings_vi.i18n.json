@@ -6874,6 +6874,8 @@
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
+  "home_continue_episode": "Tập $n",
+  "home_recent_badge": "Mới",
   "stat_this_year": "This year",
   "stat_week_past": "Past week",
   "stat_center_settings": "Statistics settings",

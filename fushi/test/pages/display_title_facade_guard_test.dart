@@ -72,31 +72,18 @@ void main() {
   });
 
   group('dashboard 上屏面（home_dashboard_page.dart）', () {
-    test('时段明细 sheet 事实行「书」分支经 displayTitleForStatRow', () {
-      // 原锚点是 `String _readingStatDisplayTitle(` 起点 + 邻居 `_gameDisplayTitle(`
-      // 终点。统计中心大改造把按域拆的三个行构造器合并成一个按 StatFact 种类分派的
-      // 解析器 _statEntryTitle（注入 showStatPeriodDetailSheet 的 titleOf），起点与
-      // 终点双双失效——正是下面 115 行那条已写死的教训：别把邻居长什么样当成本函数
-      // 的不变量。改用 methodBody 的花括号配对定边界，只依赖本函数自己的签名。
-      final String fn = methodBody(dashboard, 'String _statEntryTitle(');
-      expect(fn, contains('displayTitleForStatRow('));
+    // 2026-10 首页精简删掉了学习日历的日明细 sheet 与活动时间轴，剩下的上屏面
+    // 只有「继续」卡的显示名（读屏标签 / 悬停提示 / 无封面兜底）。
+    test('「继续」书卡显示名走 override 门面（BUG-1018 A1）', () {
+      expect(
+        dashboard,
+        contains('ReaderFushiSource.instance.getDisplayTitleFromMediaItem(item)'),
+      );
     });
 
-    test('日明细「游戏」节与活动时间轴游戏行经 _gameDisplayTitle → displayTitleForGame', () {
-      // 日明细游戏节（v92：事实面自带 mediaKey，按身份精确命中再回落标题快照）。
-      expect(
-        dashboard,
-        contains('_gameDisplayTitle(f.title, mediaKey: f.mediaKey)'),
-      );
-      // 活动时间轴游戏行。
-      expect(
-        dashboard,
-        contains('_gameDisplayTitle(entry.title, mediaKey: entry.mediaKey)'),
-      );
-      // helper 委托门面。终点锚原是邻居 `_watchDayRows`，统计中心大改造把它合并进
-      // showStatPeriodDetailSheet 后消失；helper 本体一字未改，同上改用 methodBody。
-      final String fn = methodBody(dashboard, 'String _gameDisplayTitle(');
-      expect(fn, contains('displayTitleForGame(entry: entry'));
+    test('「继续」游戏卡显示名用库内显示名（改名 / 刮削后首页同步）', () {
+      final String fn = methodBody(dashboard, '_ContinueEntry _gameContinueEntry(');
+      expect(fn, contains('title: game.displayName'));
     });
   });
 
