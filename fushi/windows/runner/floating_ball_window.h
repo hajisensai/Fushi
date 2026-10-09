@@ -99,6 +99,10 @@ class FloatingBallWindow {
   void HideForCapture();
   void RestoreAfterCapture();
 
+  // Fushi 在前台且应用内球开着时让位（Dart setAppForeground）：藏球、收起菜单。
+  // 状态跨 Stop / Start 保留——Dart 在起球之前先下发，新球首帧就按它决定显不显示。
+  void SetHiddenForApp(bool hidden);
+
  private:
   struct Screen {
     HMONITOR monitor = nullptr;
@@ -202,6 +206,8 @@ class FloatingBallWindow {
                          const std::vector<uint8_t>& png, UINT px,
                          bool crop_square);
   void ClearBitmapCache();
+  bool Suppressed() const { return hidden_for_capture_ || hidden_for_app_; }
+  void ShowBallWindows();
 
   Config config_;
   bool dock_left_ = false;
@@ -214,6 +220,8 @@ class FloatingBallWindow {
   HWND ball_hwnd_ = nullptr;
   // HideForCapture 生效中：新建的按钮窗也保持隐藏，直到 RestoreAfterCapture。
   bool hidden_for_capture_ = false;
+  // SetHiddenForApp 生效中（与截屏隐藏独立，任一成立球都不显示）。
+  bool hidden_for_app_ = false;
   HWND menu_hwnd_ = nullptr;
   bool classes_registered_ = false;
 

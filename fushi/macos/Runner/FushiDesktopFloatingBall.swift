@@ -742,6 +742,9 @@ final class DesktopFloatingBallController: NSObject {
   private var screenOcrOverlay: DesktopScreenOcrOverlay?
   private var screenOcrGeneration = 0
   private var screenOcrBallHidden = false
+  /// Fushi 在前台且应用内球开着时让位（Dart `setAppForeground`）。跨 destroy / start
+  /// 保留：Dart 在起球之前先下发，新球首帧就按它决定显不显示。
+  private var hiddenForApp = false
 
   init(binaryMessenger: FlutterBinaryMessenger) {
     channel = FlutterMethodChannel(
@@ -771,7 +774,10 @@ final class DesktopFloatingBallController: NSObject {
     case "isSystemBallRunning":
       result(ballPanel != nil)
     case "setAppForeground":
-      // 桌面上应用内外两颗球共存，不因主窗前后台让位。
+      // true = Fushi 在前台且应用内球开着：应用外球让位（藏起来）；false = 露面。
+      // Dart 已把「应用内球是否开着」折进这个值。
+      let args = call.arguments as? [String: Any]
+      setHiddenForApp((args?["foreground"] as? Bool) ?? false)
       result(nil)
     case "takeSystemBallClosedByUser":
       // 关闭即时推给 Dart（进程就是 app），没有需要补取的持久标记。
@@ -900,7 +906,8 @@ final class DesktopFloatingBallController: NSObject {
     progress = 0
     expandTarget = false
     setProgress(0)
-    panel.orderFrontRegardless()
+    // 起球时 Fushi 多半就在前台：让位中的球只建面板、不显示。
+    if !hiddenForApp { panel.orderFrontRegardless() }
 
     if screenObserver == nil {
       screenObserver = NotificationCenter.default.addObserver(
@@ -1496,7 +1503,26 @@ final class DesktopFloatingBallController: NSObject {
   private func restoreBallAfterScreenOcr() {
     guard screenOcrBallHidden else { return }
     screenOcrBallHidden = false
+    guard !hiddenForApp, let panel = ballPanel else { return }
+    setProgress(0)
+    panel.orderFrontRegardless()
+  }
+
+  /// 让位 / 露面。让位时收起菜单（回到前台再露面的是收起态的球）；截屏识字
+  /// 正藏着球时只记状态，由截屏收尾决定是否放回。
+  private func setHiddenForApp(_ hidden: Bool) {
+    guard hidden != hiddenForApp else { return }
+    hiddenForApp = hidden
     guard let panel = ballPanel else { return }
+    if hidden {
+      dragging = false
+      mouseDownPoint = nil
+      dragScreen = nil
+      collapseImmediately()
+      panel.orderOut(nil)
+      return
+    }
+    guard !screenOcrBallHidden else { return }
     setProgress(0)
     panel.orderFrontRegardless()
   }

@@ -308,8 +308,10 @@ bool FloatingBallWindow::Start(const Config& config, bool dock_left,
   }
   // 先把像素推上去再显示：分层窗首帧就是完整的球，不会闪一块空白。
   RenderBall();
+  // 起球时 Fushi 多半就在前台：让位中的球只建窗、不显示。
   SetWindowPos(ball_hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
-               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
+                   (Suppressed() ? 0 : SWP_SHOWWINDOW));
   return true;
 }
 
@@ -354,7 +356,32 @@ void FloatingBallWindow::RestoreAfterCapture() {
     return;
   }
   hidden_for_capture_ = false;
+  ShowBallWindows();
+}
+
+void FloatingBallWindow::SetHiddenForApp(bool hidden) {
+  if (hidden == hidden_for_app_) {
+    return;
+  }
+  hidden_for_app_ = hidden;
   if (!IsRunning()) {
+    return;
+  }
+  if (hidden) {
+    // 让位时收起：回到前台再露面的是收起态的球，不会留一列悬空的按钮。
+    CollapseImmediately();
+    HideTooltip();
+    ShowWindow(ball_hwnd_, SW_HIDE);
+    if (menu_hwnd_ != nullptr) {
+      ShowWindow(menu_hwnd_, SW_HIDE);
+    }
+    return;
+  }
+  ShowBallWindows();
+}
+
+void FloatingBallWindow::ShowBallWindows() {
+  if (Suppressed() || !IsRunning()) {
     return;
   }
   SetWindowPos(ball_hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
@@ -548,7 +575,7 @@ void FloatingBallWindow::EnsureMenuWindow() {
   RenderMenu();
   SetWindowPos(menu_hwnd_, ball_hwnd_, 0, 0, 0, 0,
                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
-                   (hidden_for_capture_ ? 0 : SWP_SHOWWINDOW));
+                   (Suppressed() ? 0 : SWP_SHOWWINDOW));
 }
 
 void FloatingBallWindow::DestroyMenuWindow() {

@@ -2329,7 +2329,19 @@ void FlutterWindow::RegisterFloatingBallChannel() {
           result->Success(
               flutter::EncodableValue(floating_ball_window_->IsRunning()));
         } else if (method == "setAppForeground") {
-          // 桌面上应用内外两颗球共存，前台状态不影响原生球。
+          // true = Fushi 在前台且应用内球开着：应用外球让位（藏起来），
+          // false = 露面。Dart 已把「应用内球是否开着」折进这个值。
+          bool hidden = false;
+          if (const auto* map = std::get_if<flutter::EncodableMap>(
+                  call.arguments())) {
+            auto it = map->find(flutter::EncodableValue("foreground"));
+            if (it != map->end()) {
+              if (const auto* value = std::get_if<bool>(&it->second)) {
+                hidden = *value;
+              }
+            }
+          }
+          floating_ball_window_->SetHiddenForApp(hidden);
           result->Success();
         } else if (method == "takeSystemBallClosedByUser") {
           // 关闭即时推给 Dart（进程就是 app），没有待取的持久标记。
