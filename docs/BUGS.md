@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2836 条。点号进各自文件。
+> 共 2837 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3081](bugs/BUG-3081-settings-jank.md) | ✅ | ✅ | 设置页多处掉帧 |
 | [BUG-3080](bugs/BUG-3080-subtitle-preview-overlap.md) | ✅ | ✅ | 字幕样式预览字号调大后主副字幕串行 |
 | [BUG-3079](bugs/BUG-3068-online-hls-nonstandard-mime-split.md) | ✅ | ✅ | 在线视频源进度条被切成三四秒一段（HLS 播放列表被当普通列表逐分片播放） |
 | [BUG-3078](bugs/BUG-3070-video-tab-visible.md) | ✅ | ✅ | 视频库导入动作挤窄页签条后选中项不可见 |

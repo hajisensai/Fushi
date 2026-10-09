@@ -1,4 +1,4 @@
-## BUG-3065 · 设置页多处掉帧
+## BUG-3081 · 设置页多处掉帧
 - **报告**：2026-10-07（用户：「设置页好多地方都掉帧优化一下不仅限于这个按钮」，10-06 M3E settings kit 迁移后）
 - **真实性**：✅ 真 bug。用帧探针（`fushi/test/settings/settings_frame_perf_probe_test.dart`，逐帧 `pump(16ms)` 记 CPU 时间 + `debugOnRebuildDirtyWidget` 重建计数）量出：掉帧几乎全部来自「局部变化把整页设置行重建一遍」，四条根因（行号为修复前 upstream/develop `eece7d2e0ac`）：
   1. 进详情页 / 页头收展：跳转条 `FushiAnimatedSize` 与页头高度经 `FushiHeightReporter` **逐帧**回报 → `_SettingsKitScaffoldState._onHeaderHeight/_onJumpBarHeight` 逐帧 `setState`（`fushi/lib/src/settings/settings_kit.dart:1611`、`:1616`）→ 正文 `bodyBuilder` 在 `build` 里新建（`:1669`）、且 `material_settings_renderer.dart:233` 在 bodyBuilder 顶层读 `MediaQuery.paddingOf(context).top` → 每帧整页（视频页 43 行）重建，进页 ~23 帧超 16ms。窄屏主页页头同理（`settings_home_page.dart:70`）。
