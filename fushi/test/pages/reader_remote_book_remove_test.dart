@@ -10,6 +10,8 @@ import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
+import 'package:fushi/src/pages/implementations/hidden_remote_books_page.dart';
+import 'package:fushi/src/sync/hidden_remote_books.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -120,12 +122,13 @@ void main() {
     await tester.tap(find.text(t.remote_book_hide_local));
     await tester.pumpAndSettle();
     expect(card, findsNothing);
-    expect(prefs.hiddenRemoteBooks, <String>{
+    expect(prefs.hiddenRemoteBooks.map((HiddenRemoteBook h) => h.key), <String>[
       hiddenRemoteBookKey(
         sourceId: client.remoteLibrarySourceId,
-        book: client.book,
+        remoteId: client.book.downloadId,
       ),
-    });
+    ]);
+    expect(prefs.hiddenRemoteBooks.single.title, 'Remote Book');
     expect(find.text(t.remote_book_hidden_message), findsOneWidget);
 
     await tester.tap(find.text(t.undo));
@@ -207,6 +210,129 @@ void main() {
       contains('hidden_remote_books'),
       reason: '「仅从本机」漂到另一台设备会让那边的同一份远端书也被隐藏',
     );
+  });
+
+  // ── 找回列表（所有者 2026-10-10 拍板）──────────────────────────────
+
+  Future<void> openHiddenList(
+    WidgetTester tester,
+    RemoteBookClient client,
+  ) async {
+    Navigator.of(tester.element(find.byType(ReaderFushiHistoryPage))).push(
+      MaterialPageRoute<void>(
+        builder: (_) => HiddenRemoteBooksPage(
+          prefs: prefs,
+          remoteClientLoader: () async => client,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('找回列表：按来源分组列出，「恢复」后书重新出现在书架上', (WidgetTester tester) async {
+    final _FakeInterconnectClient client = _FakeInterconnectClient();
+    await tester.pumpWidget(buildApp(client));
+    await tester.pumpAndSettle();
+    await openMenu(tester);
+    await tester.tap(find.text(t.remote_book_hide_local));
+    await tester.pumpAndSettle();
+    expect(card, findsNothing);
+
+    await openHiddenList(tester, client);
+    expect(
+      find.text(
+        t.remote_hidden_books_source_interconnect(name: '192.168.1.20'),
+      ),
+      findsOneWidget,
+      reason: '没有配对设备名时用地址主机名作分组标题',
+    );
+    expect(find.text('Remote Book'), findsOneWidget);
+    final Finder restore = find.byKey(
+      const ValueKey<String>(
+        'hidden_remote_book_restore_interconnect_Remote_20Book',
+      ),
+    );
+    expect(restore, findsOneWidget);
+    await tester.tap(restore);
+    await tester.pumpAndSettle();
+    expect(prefs.hiddenRemoteBooks, isEmpty);
+    expect(
+      find.byKey(const ValueKey<String>('hidden_remote_books_empty')),
+      findsOneWidget,
+    );
+
+    Navigator.of(tester.element(find.byType(HiddenRemoteBooksPage))).pop();
+    await tester.pumpAndSettle();
+    expect(card, findsOneWidget, reason: '恢复后占位卡回到书架');
+    expect(client.deleted, isEmpty);
+  });
+
+  // 两个分组时设置壳会画分组跳转条（同名标题出现不止一次），故用 findsWidgets。
+  testWidgets('找回列表：远端已不存在的书只给「清除记录」，「全部恢复」清空清单', (WidgetTester tester) async {
+    final _FakeInterconnectClient client = _FakeInterconnectClient();
+    await prefs.setHiddenRemoteBooks(const <HiddenRemoteBook>[
+      HiddenRemoteBook(
+        sourceId: 'interconnect',
+        remoteId: 'Gone Book',
+        title: 'Gone Book',
+        sourceLabel: 'Study-PC',
+      ),
+      HiddenRemoteBook(
+        sourceId: 'interconnect',
+        remoteId: 'Remote Book',
+        title: 'Remote Book',
+        sourceLabel: 'Study-PC',
+      ),
+      HiddenRemoteBook(
+        sourceId: 'cloud:webDav',
+        remoteId: 'Cloud Book',
+        title: 'Cloud Book',
+      ),
+    ]);
+    await tester.pumpWidget(buildApp(client));
+    await tester.pumpAndSettle();
+    expect(card, findsNothing);
+    await openHiddenList(tester, client);
+
+    expect(
+      find.text(t.remote_hidden_books_source_interconnect(name: 'Study-PC')),
+      findsWidgets,
+    );
+    expect(
+      find.text(t.remote_hidden_books_source_cloud(name: 'WebDAV')),
+      findsWidgets,
+    );
+    // 远端书目里没有 Gone Book → 标「远端已不存在」，动作是「清除记录」。
+    expect(find.text(t.remote_hidden_books_missing), findsOneWidget);
+    final Finder forget = find.byKey(
+      const ValueKey<String>(
+        'hidden_remote_book_forget_interconnect_Gone_20Book',
+      ),
+    );
+    expect(forget, findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey<String>(
+          'hidden_remote_book_restore_interconnect_Gone_20Book',
+        ),
+      ),
+      findsNothing,
+    );
+    await tester.tap(forget);
+    await tester.pumpAndSettle();
+    expect(find.text('Gone Book'), findsNothing);
+    expect(prefs.hiddenRemoteBooks, hasLength(2));
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('hidden_remote_books_restore_all_button'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(prefs.hiddenRemoteBooks, isEmpty);
+    Navigator.of(tester.element(find.byType(HiddenRemoteBooksPage))).pop();
+    await tester.pumpAndSettle();
+    expect(card, findsOneWidget);
   });
 }
 

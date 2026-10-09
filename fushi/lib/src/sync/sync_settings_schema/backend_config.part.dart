@@ -331,6 +331,9 @@ List<SyncBackendType> _selectableBackends(SyncBackendType current) {
   return list;
 }
 
+/// 同步后端的展示名（书架「已从本机移除的远端书」按来源分组时也用它）。
+String syncBackendLabel(SyncBackendType type) => _backendLabel(type);
+
 String _backendLabel(SyncBackendType type) {
   switch (type) {
     case SyncBackendType.googleDrive:

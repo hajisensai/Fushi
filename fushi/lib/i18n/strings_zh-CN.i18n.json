@@ -6903,5 +6903,15 @@
   "remote_book_hide_local": "仅从本机移除",
   "remote_book_delete_everywhere": "彻底删除",
   "remote_book_hidden_message": "已从本机书架移除，服务端那份没有动",
-  "remote_book_delete_everywhere_confirm": "确定在 host「$host」上删除「$name」吗？那台设备上的文件、阅读进度、书签和有声书会被永久删除，本机没有副本，此操作不可撤销。"
+  "remote_book_delete_everywhere_confirm": "确定在 host「$host」上删除「$name」吗？那台设备上的文件、阅读进度、书签和有声书会被永久删除，本机没有副本，此操作不可撤销。",
+  "remote_hidden_books_title": "已从本机移除的远端书",
+  "remote_hidden_books_hint": "找回在书架上「仅从本机移除」的远端书",
+  "remote_hidden_books_empty_title": "没有已移除的远端书",
+  "remote_hidden_books_empty_message": "在书架上对远端书选「仅从本机移除」后，它会出现在这里，可以随时恢复。",
+  "remote_hidden_books_restore": "恢复",
+  "remote_hidden_books_restore_all": "全部恢复",
+  "remote_hidden_books_forget": "清除记录",
+  "remote_hidden_books_missing": "远端已不存在",
+  "remote_hidden_books_source_interconnect": "互联 host：$name",
+  "remote_hidden_books_source_cloud": "云盘：$name"
 }
