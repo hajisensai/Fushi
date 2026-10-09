@@ -472,6 +472,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/floating_ball/app_floating_ball_host_test.dart: 剪贴板查词把剪贴板文字交给应用内查词弹窗 + 场景勾选',
   'floatingBall/Sync now':
       'test/floating_ball/app_floating_ball_host_test.dart: 立即同步走与设置页同一个手动同步入口 / 唤起主窗再走手动同步入口 / Android openSync',
+  'floatingBall/Feedback':
+      'test/floating_ball/app_floating_ball_host_test.dart: 反馈按钮打开反馈中心 / 场景勾选里去掉反馈：球上没有反馈按钮',
   // 应用外开关（2026-09-30 起桌面也可见）：生效点是宿主起停原生系统球。
   'floatingBall/Show over other apps':
       'test/floating_ball/app_floating_ball_host_test.dart: 桌面应用外球：打开开关即起原生球…；Android 原生服务见 BUG-2793 真机记录',

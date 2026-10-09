@@ -1,0 +1,459 @@
+diff --git a/options/options.h b/options/options.h
+index 26a791343..99fc7c423 100644
+--- a/options/options.h
++++ b/options/options.h
+@@ -161,6 +161,7 @@ struct mp_osd_render_opts {
+ 
+ struct mp_bluray_opts {
+     char *bluray_device;
++    char *java_home;
+     int angle;
+ };
+ 
+diff --git a/player/command.c b/player/command.c
+index da61e1c8f..e8337480b 100644
+--- a/player/command.c
++++ b/player/command.c
+@@ -77,6 +77,7 @@
+ #include "misc/dispatch.h"
+ #include "misc/language.h"
+ #include "misc/node.h"
++#include "misc/json.h"
+ #include "misc/thread_pool.h"
+ #include "misc/thread_tools.h"
+ 
+@@ -1151,6 +1152,60 @@ static int mp_property_disc_menu_active(void *ctx, struct m_property *prop,
+     return m_property_bool_ro(action, arg, st.menu_active);
+ }
+ 
++// Fushi v1: one native snapshot, never infer MPLS from display labels.
++static int mp_property_disc_navigation_state(void *ctx, struct m_property *prop,
++                                             int action, void *arg)
++{
++    MPContext *mpctx = ctx;
++    struct stream *s = disc_nav_get_stream(mpctx);
++    struct stream_nav_state st = {0};
++    if (!s || stream_control(s, STREAM_CTRL_GET_NAV_STATE, &st) < 1 || !st.bluray_state)
++        return M_PROPERTY_UNAVAILABLE;
++    double position = get_current_time(mpctx);
++    struct m_sub_property props[] = {
++        {"version", SUB_PROP_INT(1)},
++        {"nav-active", SUB_PROP_BOOL(st.nav_active)},
++        {"menu-active", SUB_PROP_BOOL(st.menu_active)},
++        {"menu-domain", SUB_PROP_BOOL(st.menu_domain)},
++        {"menu-call-allowed", SUB_PROP_BOOL(st.menu_call_allowed)},
++        {"title", SUB_PROP_INT(st.disc_title)},
++        {"playlist", SUB_PROP_INT(st.disc_playlist)},
++        {"generation", SUB_PROP_INT64(st.generation)},
++        {"angle", SUB_PROP_INT(st.angle > 0 ? st.angle - 1 : -1)},
++        {"position", SUB_PROP_DOUBLE(position)},
++        {"stable", SUB_PROP_BOOL(!st.drain_pending && disc_nav_generation_ready(mpctx, st.generation) && st.disc_playlist >= 0 && position >= 0)},
++        {"bdj-detected", SUB_PROP_BOOL(st.bdj_detected)},
++        {"bdj-handled", SUB_PROP_BOOL(st.bdj_handled)},
++        {"src-width", SUB_PROP_INT(st.src_w)},
++        {"src-height", SUB_PROP_INT(st.src_h)},
++        {0}
++    };
++    return m_property_read_sub(props, action, arg);
++}
++
++// media_kit's public getProperty uses MPV_FORMAT_STRING. Keep its wire
++// format explicit instead of depending on generic node-to-string printing.
++static int mp_property_disc_navigation_state_json(void *ctx, struct m_property *prop,
++                                                  int action, void *arg)
++{
++    if (action == M_PROPERTY_GET_TYPE)
++        return m_property_strdup_ro(action, arg, "");
++    struct mpv_node node = {0};
++    int r = mp_property_disc_navigation_state(ctx, prop, M_PROPERTY_GET, &node);
++    if (r != M_PROPERTY_OK)
++        return r;
++    char *json = NULL;
++    if (json_write(&json, &node) < 0) {
++        talloc_free(node.u.list);
++        talloc_free(json);
++        return M_PROPERTY_ERROR;
++    }
++    r = m_property_strdup_ro(action, arg, json);
++    talloc_free(node.u.list);
++    talloc_free(json);
++    return r;
++}
++
+ static int mp_property_edition(void *ctx, struct m_property *prop,
+                                int action, void *arg)
+ {
+@@ -4685,6 +4740,8 @@ static const struct m_property mp_properties_base[] = {
+     {"edition", mp_property_edition},
+     {"current-edition", mp_property_current_edition},
+     {"disc-menu-active", mp_property_disc_menu_active},
++    {"disc-navigation-state", mp_property_disc_navigation_state},
++    {"disc-navigation-state-json", mp_property_disc_navigation_state_json},
+     {"chapters", mp_property_chapters},
+     {"editions", mp_property_editions},
+     {"metadata", mp_property_metadata},
+@@ -4891,7 +4948,7 @@ static const char *const *const mp_event_property_change[] = {
+     E(MP_EVENT_TRACKS_CHANGED, "track-list", "current-tracks"),
+     E(MP_EVENT_TRACK_SWITCHED, "track-list", "current-tracks"),
+     E(MPV_EVENT_IDLE, "*"),
+-    E(MPV_EVENT_TICK, "time-pos", "audio-pts", "stream-pos", "avsync",
++    E(MPV_EVENT_TICK, "disc-navigation-state", "disc-navigation-state-json", "time-pos", "audio-pts", "stream-pos", "avsync",
+       "percent-pos", "time-remaining", "playtime-remaining", "playback-time",
+       "estimated-vf-fps", "total-avsync-change", "audio-speed-correction",
+       "video-speed-correction", "vo-delayed-frame-count", "mistimed-frame-count",
+diff --git a/player/core.h b/player/core.h
+index 2889d352b..cff14a9da 100644
+--- a/player/core.h
++++ b/player/core.h
+@@ -678,6 +678,7 @@ bool update_subtitles(struct MPContext *mpctx, double video_pts);
+ struct stream;
+ struct stream_nav_state;
+ void disc_nav_update(struct MPContext *mpctx);
++bool disc_nav_generation_ready(struct MPContext *mpctx, uint32_t generation);
+ void disc_nav_reset(struct MPContext *mpctx);
+ void disc_nav_destroy(struct MPContext *mpctx);
+ struct stream *disc_nav_get_stream(struct MPContext *mpctx);
+diff --git a/player/discnav.c b/player/discnav.c
+index 6eb885edf..8f63030d3 100644
+--- a/player/discnav.c
++++ b/player/discnav.c
+@@ -37,6 +37,7 @@
+ 
+ struct disc_nav_state {
+     // True while the disc-menu input section is enabled (a menu is on screen).
++    bool input_active;
+     bool overlay_visible;
+ 
+     // Blu-ray HDMV menu staging. libbluray hands us a pre-composited BGRA IG
+@@ -50,6 +51,8 @@ struct disc_nav_state {
+     uint32_t last_overlay_change_id;
+     bool overlay_change_seen;
+ 
++    bool generation_seen, generation_accepted, generation_restarting;
++    uint32_t observed_generation, accepted_generation;
+     bool drain_was_pending; // last poll saw a boundary awaiting resync
+ 
+     // DVD-only: dvd_subtitle track we force-selected for the menu, and the
+@@ -95,10 +98,10 @@ void disc_nav_reset(struct MPContext *mpctx)
+     struct disc_nav_state *st = mpctx->disc_nav;
+     if (!st)
+         return;
+-    if (st->overlay_visible) {
++    if (st->overlay_visible)
+         osd_set_bitmaps(mpctx->osd, OSDTYPE_DISC_MENU, NULL);
++    if (st->input_active)
+         mp_input_disable_section(mpctx->input, "discnav");
+-    }
+     mp_image_unrefp(&st->bd_image);
+     *st = (struct disc_nav_state){0};
+ }
+@@ -308,14 +311,28 @@ static void sync_disc_track_selection(struct MPContext *mpctx, struct stream *s,
+     st->last_track_disc_id = nav->discontinuity_id;
+     st->track_sync_seen = true;
+ 
+-    if (!first && hopped && nav->no_audio &&
+-        mpctx->opts->stream_id[0][STREAM_AUDIO] != -2)
++    // Restoring aid/sid=auto hands selection back to the disc even if its
++    // desired IDs have not changed since an explicit player override. Compare
++    // actual tracks too: cached disc events alone cannot detect that handoff.
++    struct track *desired_audio = find_track_by_demuxer_id(mpctx, STREAM_AUDIO,
++                                                           nav->active_audio_id);
++    struct track *desired_sub = find_track_by_demuxer_id(mpctx, STREAM_SUB,
++                                                         nav->active_sub_id);
++    bool audio_mismatch = desired_audio &&
++                          mpctx->current_track[0][STREAM_AUDIO] != desired_audio;
++    bool sub_mismatch = nav->sub_visible
++        ? desired_sub && mpctx->current_track[0][STREAM_SUB] != desired_sub
++        : mpctx->current_track[0][STREAM_SUB] != NULL;
++
++    if (nav->no_audio && mpctx->opts->stream_id[0][STREAM_AUDIO] != -2 &&
++        ((!first && hopped) || mpctx->opts->stream_id[0][STREAM_AUDIO] == -1))
+     {
+         // The disc hopped into a domain without any audio stream. Deselect audio.
+         if (mpctx->current_track[0][STREAM_AUDIO])
+             mp_switch_track_n(mpctx, 0, STREAM_AUDIO, NULL, 0);
+         st->last_audio_id = -1;
+-    } else if (!first && (hopped || nav->active_audio_id != st->last_audio_id) &&
++    } else if (!first && (hopped || nav->active_audio_id != st->last_audio_id ||
++                          audio_mismatch) &&
+         mpctx->opts->stream_id[0][STREAM_AUDIO] == -1)
+     {
+         struct track *t = find_track_by_demuxer_id(mpctx, STREAM_AUDIO,
+@@ -349,7 +366,7 @@ static void sync_disc_track_selection(struct MPContext *mpctx, struct stream *s,
+ 
+     if (!first && (hopped ||
+                    nav->active_sub_id != st->last_sub_id ||
+-                   nav->sub_visible != st->last_sub_visible) &&
++                   nav->sub_visible != st->last_sub_visible || sub_mismatch) &&
+         !nav->menu_active && !st->menu_selected_track &&
+         mpctx->opts->stream_id[0][STREAM_SUB] == -1)
+     {
+@@ -451,6 +468,13 @@ static void ensure_menu_sub_selection(struct MPContext *mpctx, bool menu_on)
+     }
+ }
+ 
++bool disc_nav_generation_ready(struct MPContext *mpctx, uint32_t generation)
++{
++    struct disc_nav_state *st = mpctx->disc_nav;
++    return st && st->generation_accepted &&
++           st->accepted_generation == generation && mpctx->restart_complete;
++}
++
+ void disc_nav_update(struct MPContext *mpctx)
+ {
+     struct stream *s = disc_nav_get_stream(mpctx);
+@@ -484,9 +508,12 @@ void disc_nav_update(struct MPContext *mpctx)
+     if (!have) {
+         if (st->overlay_visible) {
+             osd_set_bitmaps(mpctx->osd, OSDTYPE_DISC_MENU, NULL);
+-            mp_input_disable_section(mpctx->input, "discnav");
+             st->overlay_visible = false;
+         }
++        if (st->input_active)
++            mp_input_disable_section(mpctx->input, "discnav");
++        st->input_active = false;
++        st->generation_seen = st->generation_accepted = false;
+         st->bd_last_change_id = 0;
+         st->bd_last_vo_res = (struct mp_osd_res){0};
+         st->menu_selected_track = NULL;
+@@ -506,12 +533,37 @@ void disc_nav_update(struct MPContext *mpctx)
+     }
+ 
+     check_async_discontinuity(mpctx, s, &nav);
++    // The stream may read the next playlist before the old frame is shown.
++    // Accept its identity only after the player's resync has restarted output.
++    if (nav.bluray_state) {
++        if (!st->generation_seen || st->observed_generation != nav.generation) {
++            st->observed_generation = nav.generation;
++            st->generation_seen = true;
++            st->generation_restarting = nav.drain_pending || !mpctx->restart_complete;
++        }
++        // A short resync can begin at the end of one playloop and finish
++        // before disc_nav_update in the next. The drain boundary is the
++        // reliable evidence, not merely polling restart_complete=false.
++        if (nav.drain_pending || !mpctx->restart_complete)
++            st->generation_restarting = true;
++        if ((!st->generation_accepted || st->generation_restarting) &&
++            mpctx->restart_complete && !nav.drain_pending && nav.disc_playlist >= 0)
++        {
++            st->accepted_generation = nav.generation;
++            st->generation_accepted = true;
++            st->generation_restarting = false;
++        }
++    }
+     sync_current_edition(mpctx, s, &nav);
+     sync_disc_track_selection(mpctx, s, &nav);
+ 
+     bool is_bd = strcmp(s->info->name, "bd") == 0 || strcmp(s->info->name, "bdmv/bluray") == 0;
+-    bool visible = nav.menu_active &&
+-                   (is_bd || (mp_rect_w(nav.hl.rect) > 0 && mp_rect_h(nav.hl.rect) > 0));
++    bool visible = is_bd ? nav.overlay_visible :
++                   nav.menu_active && (mp_rect_w(nav.hl.rect) > 0 && mp_rect_h(nav.hl.rect) > 0);
++    if (is_bd) {
++        mp_notify_property(mpctx, "disc-navigation-state");
++        mp_notify_property(mpctx, "disc-navigation-state-json");
++    }
+ 
+     if (is_bd) {
+         push_bd_overlay(mpctx, s, &nav, visible);
+@@ -526,14 +578,14 @@ void disc_nav_update(struct MPContext *mpctx)
+         osd_changed(mpctx->osd);
+     }
+ 
+-    if (visible != st->overlay_visible) {
+-        MP_VERBOSE(s, "overlay %s\n", visible ? "on" : "off");
+-        if (visible) {
++    if (nav.menu_active != st->input_active) {
++        if (nav.menu_active) {
+             mp_input_enable_section(mpctx->input, "discnav",
+                 MP_INPUT_ON_TOP | MP_INPUT_ALLOW_VO_DRAGGING | MP_INPUT_ALLOW_HIDE_CURSOR);
+         } else {
+             mp_input_disable_section(mpctx->input, "discnav");
+         }
+-        st->overlay_visible = visible;
++        st->input_active = nav.menu_active;
+     }
++    st->overlay_visible = visible;
+ }
+diff --git a/stream/stream.h b/stream/stream.h
+index ca688170d..5350a0429 100644
+--- a/stream/stream.h
++++ b/stream/stream.h
+@@ -169,6 +169,13 @@ struct mp_dvdnav_highlight {
+ struct stream_nav_state {
+     bool nav_active;         // interactive disc navigation is enabled
+     bool menu_active;        // a selectable menu/highlight is currently visible
++    bool overlay_visible;    // BD PG/IG rendering, independent of menu input
++    bool bluray_state;       // fields below contain a Blu-ray state snapshot
++    bool menu_domain;
++    bool menu_call_allowed;
++    bool bdj_detected, bdj_handled;
++    int disc_title, disc_playlist;
++    uint32_t generation;
+     bool still_active;       // holding an indefinite still frame
+     int  src_w, src_h;       // dimensions of the coordinate space mouse uses
+     struct mp_dvdnav_highlight hl; // focused button highlight (DVD only)
+diff --git a/stream/stream_bluray.c b/stream/stream_bluray.c
+index 04b25202d..d0a40da2b 100644
+--- a/stream/stream_bluray.c
++++ b/stream/stream_bluray.c
+@@ -86,6 +86,7 @@
+ const struct m_sub_options stream_bluray_conf = {
+     .opts = (const struct m_option[]) {
+         {"device", OPT_STRING(bluray_device), .flags = M_OPT_FILE},
++        {"java-home", OPT_STRING(java_home), .flags = M_OPT_FILE},
+         {"angle", OPT_INT(angle), M_RANGE(1, 999)},
+         {0},
+     },
+@@ -125,6 +126,10 @@ struct bluray_priv_s {
+     int current_angle;
+     int current_title;
+     int current_playlist;
++    int navigation_title;
++    uint32_t generation;
++    uint32_t uo_mask;
++    bool bdj_detected, bdj_handled;
+ 
+     // Cached map from filtered title index (0..num_titles-1) to mpls_id.
+     uint32_t *title_to_playlist;
+@@ -589,6 +594,7 @@ static int bluray_stream_fill_buffer(stream_t *s, void *buf, int len)
+                 bd_free_title_info(b->title_info);
+             b->title_info = ti;
+             b->current_playlist = playlist;
++            b->generation++;
+             b->current_title = title;
+             if (b->hdmv_mode)
+                 b->discontinuity_id++;
+@@ -603,6 +609,9 @@ static int bluray_stream_fill_buffer(stream_t *s, void *buf, int len)
+                 b->title_info = NULL;
+             }
+             b->current_title = title;
++            b->navigation_title = ev.param;
++            b->current_playlist = -1;
++            b->generation++;
+             if (b->hdmv_mode)
+                 b->discontinuity_id++;
+             mp_mutex_unlock(&b->overlay_lock);
+@@ -624,6 +633,12 @@ static int bluray_stream_fill_buffer(stream_t *s, void *buf, int len)
+             mp_mutex_unlock(&b->overlay_lock);
+             break;
+         }
++        case BD_EVENT_UO_MASK_CHANGED:
++            mp_mutex_lock(&b->overlay_lock);
++            b->uo_mask = ev.param;
++            b->nav_change_id++;
++            mp_mutex_unlock(&b->overlay_lock);
++            break;
+         case BD_EVENT_AUDIO_STREAM:
+             mp_mutex_lock(&b->overlay_lock);
+             b->audio_stream_num = ev.param;
+@@ -941,7 +956,8 @@ static int bluray_stream_control(stream_t *s, int cmd, void *arg)
+         case STREAM_NAV_MENU_ROOT:
+         case STREAM_NAV_MENU_TITLE:
+             // BD doesn't distinguish "title menu", both map to disc root.
+-            bd_menu_call(b->bd, -1);
++            if (!bd_menu_call(b->bd, -1))
++                return STREAM_ERROR;
+             break;
+         case STREAM_NAV_MENU_POPUP:
+             key = BD_VK_POPUP;
+@@ -953,15 +969,17 @@ static int bluray_stream_control(stream_t *s, int cmd, void *arg)
+             key = BD_VK_POPUP;
+             break;
+         case STREAM_NAV_MOUSE_MOVE:
+-            bd_mouse_select(b->bd, -1, nav->x, nav->y);
++            if (bd_mouse_select(b->bd, -1, nav->x, nav->y) < 0)
++                return STREAM_ERROR;
+             break;
+         case STREAM_NAV_MOUSE_CLICK:
+-            bd_mouse_select(b->bd, -1, nav->x, nav->y);
++            if (bd_mouse_select(b->bd, -1, nav->x, nav->y) < 0)
++                return STREAM_ERROR;
+             key = BD_VK_MOUSE_ACTIVATE;
+             break;
+         }
+-        if (key != BD_VK_NONE)
+-            bd_user_input(b->bd, -1, key);
++        if (key != BD_VK_NONE && bd_user_input(b->bd, -1, key) < 0)
++            return STREAM_ERROR;
+         // If an activation just ran a button command, it may have released a
+         // held still, bump discontinuity_id.
+         if (stream_nav_action_activates(nav->action)) {
+@@ -1008,12 +1026,22 @@ static int bluray_stream_control(stream_t *s, int cmd, void *arg)
+             mp_mutex_unlock(&b->overlay_lock);
+             return STREAM_OK;
+         }
+-        // There is no reliable "menu on screen" signal that covers both HDMV
+-        // and BD-J (BD_EVENT_MENU is HDMV-only). Any visible overlay plane is
+-        // treated as an active menu.
++        // PG is presentation graphics (including BD-J subtitles), not input.
++        // Continue rendering both planes, but only IG owns menu interaction.
+         *st = (struct stream_nav_state){
+             .nav_active = true,
+-            .menu_active = b->ig.visible || b->pg.visible,
++            .menu_active = b->ig.visible,
++            .overlay_visible = b->ig.visible || b->pg.visible,
++            .bluray_state = true,
++            .menu_domain = b->ig.visible || b->navigation_title == BLURAY_TITLE_TOP_MENU ||
++                           b->navigation_title == BLURAY_TITLE_FIRST_PLAY,
++            .menu_call_allowed = b->navigation_title >= 0 &&
++                                 !(b->uo_mask & BLURAY_UO_MENU_CALL),
++            .disc_title = b->navigation_title,
++            .disc_playlist = b->current_playlist,
++            .generation = b->generation,
++            .bdj_detected = b->bdj_detected,
++            .bdj_handled = b->bdj_handled,
+             .still_active = b->still_active,
+             .src_w = MPMAX(b->ig.disp_w, b->pg.disp_w),
+             .src_h = MPMAX(b->ig.disp_h, b->pg.disp_h),
+@@ -1215,9 +1243,17 @@ static int bluray_stream_open_internal(stream_t *s)
+ 
+     /* open device */
+     char *device_tmp = mp_get_user_path(NULL, s->global, device);
+-    BLURAY *bd = bd_open(device_tmp, NULL);
++    BLURAY *bd = bd_init();
++    if (bd && b->opts->java_home && b->opts->java_home[0]) {
++        char *java_home = mp_get_user_path(NULL, s->global, b->opts->java_home);
++        bd_set_player_setting_str(bd, BLURAY_PLAYER_JAVA_HOME, java_home);
++        talloc_free(java_home);
++    }
++    bool opened = bd && bd_open_disc(bd, device_tmp, NULL);
+     talloc_free(device_tmp);
+-    if (!bd) {
++    if (!opened) {
++        if (bd)
++            bd_close(bd);
+         if (!b->probing)
+             MP_ERR(s, "Couldn't open Blu-ray device: %s\n", device);
+         ret = STREAM_UNSUPPORTED;
+@@ -1263,11 +1299,15 @@ static int bluray_stream_open_internal(stream_t *s)
+     // these should be set before any callback
+     b->current_angle = -1;
+     b->current_title = -1;
++    b->current_playlist = -1;
++    b->navigation_title = -1;
+ 
+     // initialize libbluray event queue
+     bd_get_event(bd, NULL);
+ 
+     const BLURAY_DISC_INFO *info = bd_get_disc_info(bd);
++    b->bdj_detected = info->bdj_detected;
++    b->bdj_handled = info->bdj_handled;
+     MP_VERBOSE(s, "First play: %i, Top menu: %i, "
+                   "HDMV Titles: %i, BD-J Titles: %i, Other: %i\n",
+                info->first_play_supported, info->top_menu_supported,
+@@ -1278,11 +1318,11 @@ static int bluray_stream_open_internal(stream_t *s)
+ 
+     // BD-J menus require a usable Java VM and libbluray.jar.
+     if (b->hdmv_mode && info->bdj_detected && !info->bdj_handled) {
+-        MP_WARN(s, "BD-J menus not supported. Playing without menus. "
++        MP_WARN(s, "BD-J menus unavailable: install a matching libbluray.jar and Java runtime. "
+                    "Java VM: %d, libbluray.jar: %d\n",
+                 info->libjvm_detected, info->bdj_handled);
+-        b->hdmv_mode = false;
+-        b->cfg_title = BLURAY_DEFAULT_TITLE;
++        ret = STREAM_UNSUPPORTED;
++        goto err;
+     }
+ 
+     MP_VERBOSE(s, "bdnav: cfg_title=%d hdmv_mode=%d\n", b->cfg_title, b->hdmv_mode);

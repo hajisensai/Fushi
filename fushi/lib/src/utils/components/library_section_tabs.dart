@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart' show RenderAbstractViewport;
+import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -10,6 +12,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingToolbarSurface;
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -330,7 +333,7 @@ class _FushiSectionTabBarState<T extends Object>
     setState(() {});
   }
 
-  /// 自持 controller 的指示条滑动时长：eink 下归零（滑动 = 一串局部刷新的残影），
+  /// 自持 controller 的指示条滑动时长：eink / 系统减弱动态效果下归零，
   /// 首帧 initState 里读不到 Theme，先按默认建，didChangeDependencies 再对齐。
   Duration _animationDuration = kTabScrollDuration;
 
@@ -357,7 +360,7 @@ class _FushiSectionTabBarState<T extends Object>
       _follow?.removeListener(_onFollowChanged);
       _follow = follow?..addListener(_onFollowChanged);
     }
-    final Duration duration = einkSafeDuration(context, kTabScrollDuration);
+    final Duration duration = fushiMotionDuration(context, kTabScrollDuration);
     if (duration == _animationDuration) return;
     _animationDuration = duration;
     if (_owned == null) return;
@@ -431,7 +434,105 @@ class _FushiSectionTabBarState<T extends Object>
 
   bool _handleScrollMetrics(ScrollMetricsNotification notification) {
     _updateOverflowCues(notification.metrics);
+    _trackViewportExtent(notification.metrics);
     return false;
+  }
+
+  /// 每段一个 key（全量段序）：量选中段在 TabBar 横向滚动视口里的位置。
+  final Map<int, GlobalKey> _tabKeys = <int, GlobalKey>{};
+
+  GlobalKey _tabKeyFor(int index) =>
+      _tabKeys.putIfAbsent(index, () => GlobalKey());
+
+  /// 本次 build 的排布档位（[_revealSelected] 只在可滚动的档位里动手）。
+  _SectionTabFit? _fit;
+
+  /// 上一次看到的 TabBar 滚动视口宽；null = 还没有过滚动视口。
+  double? _viewportExtent;
+
+  /// 页签条可用宽度变了（2026-10-07 用户录屏：手机竖屏切到视频库「导入」，
+  /// 右侧动作胶囊随之出现，把页签胶囊挤窄，选中的「导入」被挤出可视区）。
+  ///
+  /// [TabBar] 只在**下标变化那一刻**按当时的视口宽算「选中段居中」的滚动目标
+  /// （`_scrollToCurrentIndex`），之后视口再变窄 / 变宽它不会重算：切换与动作
+  /// 出现同帧时目标按旧宽算好，晚一帧出现时动画已经在按旧目标走，两种时序下
+  /// 选中段都会停在可视区外。这里在视口宽变化后按新宽度把选中段重新滚入。
+  void _trackViewportExtent(ScrollMetrics metrics) {
+    if (metrics.axis != Axis.horizontal) return;
+    final double extent = metrics.viewportDimension;
+    final double? previous = _viewportExtent;
+    _viewportExtent = extent;
+    if (previous == null || (previous - extent).abs() < 0.5) return;
+    // 视口宽的 metrics 通知在布局完成后异步派发，几何已是新值，
+    // 可以直接量、直接滚；万一在 build / layout 阶段收到，排到本帧末尾再做
+    // （此时帧正在进行，post-frame 回调一定会跑）。
+    final SchedulerPhase phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.idle ||
+        phase == SchedulerPhase.postFrameCallbacks) {
+      _revealSelected();
+    } else {
+      SchedulerBinding.instance.addPostFrameCallback(
+        (Duration _) => _revealSelected(),
+      );
+    }
+  }
+
+  /// 把选中段滚到页签滚动视口正中（与 [TabBar] 切换时的滚入口径一致，选中段
+  /// 不贴边）。
+  ///
+  /// 选中段已完整可见、且没有进行中的滚动时保留当前偏移，不强行居中。
+  /// 有进行中的滚动（多半是 [TabBar] 按旧宽度
+  /// 算好的滚入动画）时一律按新宽度重定目标，不能等它停在错误位置。
+  void _revealSelected() {
+    if (!mounted || _fit == null || _fit == _SectionTabFit.fill) return;
+    final int index = _realIndex;
+    final BuildContext? tabContext = _tabKeys[index]?.currentContext;
+    final RenderObject? tab = tabContext?.findRenderObject();
+    if (tabContext == null || tab == null || !tab.attached) return;
+    final ScrollableState? scrollable = Scrollable.maybeOf(
+      tabContext,
+      axis: Axis.horizontal,
+    );
+    final RenderAbstractViewport? viewport = RenderAbstractViewport.maybeOf(
+      tab,
+    );
+    if (scrollable == null || viewport == null) return;
+    final ScrollPosition position = scrollable.position;
+    if (!position.hasContentDimensions || !position.hasViewportDimension) {
+      return;
+    }
+    // alignment 0 / 1 = 选中段贴视口首 / 尾边时的滚动偏移；当前偏移落在两者
+    // 之间即完整可见（RTL 下两者大小互换，取 min / max）。
+    final double atStart = viewport
+        .getOffsetToReveal(tab, 0.0, axis: Axis.horizontal)
+        .offset;
+    final double atEnd = viewport
+        .getOffsetToReveal(tab, 1.0, axis: Axis.horizontal)
+        .offset;
+    final double pixels = position.pixels;
+    final bool fullyVisible =
+        pixels >= math.min(atStart, atEnd) - 0.5 &&
+        pixels <= math.max(atStart, atEnd) + 0.5;
+    if (fullyVisible && !position.isScrollingNotifier.value) return;
+    final double target = clampDouble(
+      viewport.getOffsetToReveal(tab, 0.5, axis: Axis.horizontal).offset,
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    if ((target - pixels).abs() < 0.5) {
+      // 当前位置已到新目标附近，也要终止仍朝旧终点前进的滚动动画。
+      if (position.isScrollingNotifier.value) position.jumpTo(target);
+      return;
+    }
+    if (_animationDuration == Duration.zero) {
+      position.jumpTo(target);
+    } else {
+      position.animateTo(
+        target,
+        duration: _animationDuration,
+        curve: FushiMotion.standard,
+      );
+    }
   }
 
   bool _handleScroll(ScrollNotification notification) {
@@ -487,6 +588,7 @@ class _FushiSectionTabBarState<T extends Object>
           context,
           constraints.maxWidth,
         );
+        _fit = layout.fit;
         final bool scrollFit = layout.fit == _SectionTabFit.scroll;
         if (!scrollFit) {
           // 非滚动档没有 Scrollable，也就没有滚动通知来收回渐隐：窗口先窄（出了
@@ -848,10 +950,14 @@ class _FushiSectionTabBarState<T extends Object>
     final List<Widget> tabs = <Widget>[
       if (overflow)
         for (final int i in layout.visible)
-          Tab(text: widget.tabs[i].label, height: tabHeight)
+          Tab(key: _tabKeyFor(i), text: widget.tabs[i].label, height: tabHeight)
       else
-        for (final LibrarySectionTab<T> tab in widget.tabs)
-          Tab(text: tab.label, height: tabHeight),
+        for (int i = 0; i < widget.tabs.length; i++)
+          Tab(
+            key: _tabKeyFor(i),
+            text: widget.tabs[i].label,
+            height: tabHeight,
+          ),
     ];
     final double? font = layout.fontSize;
     final TextStyle? labelStyle = font == null

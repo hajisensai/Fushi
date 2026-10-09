@@ -616,7 +616,7 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
     //   顶端开始、跨过整条栏连续降到 0——曾经仍从栏下沿起画（栏内透明），不
     //   透明度在下沿处从 0 跳到 0.92，滚动后集卡在栏下沿被一条水平硬边切开。
     //
-    // 渐隐画在栏外（Stack 不裁），不占正文版面、不接指针。
+    // 渐隐画在栏外（Stack 不裁）且画在栏**之下**，不占正文版面、不接指针。
     final ScaffoldState? scaffold = Scaffold.maybeOf(context);
     final bool bodyBehindBar = scaffold?.widget.extendBodyBehindAppBar ?? false;
     final Color? scaffoldColor = scaffold?.widget.backgroundColor;
@@ -654,7 +654,6 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
               ),
             ),
           ),
-        bar,
         if (!bodyBehindBar)
           Positioned(
             left: 0,
@@ -669,6 +668,12 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
               ),
             ),
           ),
+        // 栏（胶囊）排在两种遮罩之后：胶囊的悬浮投影（向下 3 + 模糊 8）落在
+        // 栏下沿之外，正好压在栏下沿遮罩的不透明顶边上。遮罩若画在栏之上，
+        // 一滚动就把投影在栏下沿齐刷刷盖掉，返回圆 / 标题胶囊 / 动作胶囊的下半
+        // 圈像被切平、整宽一条直线。与库页
+        // [FushiFloatingChromeOverlay]「遮罩在内容之上、chrome 之下」同一约定。
+        bar,
       ],
     );
   }

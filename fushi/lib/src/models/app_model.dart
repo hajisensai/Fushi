@@ -161,6 +161,7 @@ import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
+import 'package:fushi/src/media/video/subtitle/library_video_subtitle_backfill.dart';
 import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/subtitle/configured_subtitle_providers.dart';
@@ -686,6 +687,16 @@ class AppModel with ChangeNotifier {
     // AI 助手会话：手机经互联把「下载 xxx」交给本机，用本机的 AI 指派 / 资源
     // 搜索 / 下载管线办（装配与首页对话页入口同一份）。
     assistantFactory: () => createVideoAcquisitionAssistantHost(this),
+    // 对端点名「给这个视频补字幕」：与刮削后自动补同一个服务（运行时随下载管线
+    // 起停，每次现取）。
+    videoSubtitleBackfill: (String videoId, {String? language}) =>
+        backfillLibraryVideoSubtitle(
+      database: database,
+      service: _videoSubtitleBackfillService,
+      videoId: videoId,
+      language: language,
+      seriesLanguage: _seriesSubtitleLanguage,
+    ),
     // 引擎按请求实时读的 host 偏好（「允许为对端转码视频」）：给仓库本体而不是
     // 启动时的快照，用户改完设置不必重启互联服务。
     prefsStore: () => prefsRepo,

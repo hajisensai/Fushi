@@ -29,10 +29,31 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2823 条。点号进各自文件。
+> 共 2844 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3085](bugs/BUG-3085-scrape-sweep-deferred-depends-on-page.md) | ✅ | ✅ | 补刮被挡下的请求只靠视频页忙到闲兑现，页面未挂载或在飞闸门时丢失 |
+| [BUG-3084](bugs/BUG-3084-subtitle-anidb-movie-english-release.md) | 🚧 | 🚧 | AniDB 主源电影无 tmdb/imdb 时 OpenSubtitles 英文发布名被拒（核查别名是否带英文名） |
+| [BUG-3083](bugs/BUG-3083-subtitle-backfill-global-default-hard-filter.md) | ✅ | ✅ | 补字幕在无作品语言证据时把全局默认内容语言当硬过滤，英语片的英文字幕被拒 |
+| [BUG-3082](bugs/BUG-3082-subtitle-id-confirmed-edition-suffix.md) | ✅ | ✅ | OpenSubtitles 候选 id 已确认、发布名带 Extended Cut 等版本修饰时被判别作 |
+| [BUG-3081](bugs/BUG-3081-settings-jank.md) | ✅ | ✅ | 设置页多处掉帧 |
+| [BUG-3080](bugs/BUG-3080-subtitle-preview-overlap.md) | ✅ | ✅ | 字幕样式预览字号调大后主副字幕串行 |
+| [BUG-3079](bugs/BUG-3079-online-hls-nonstandard-mime-split.md) | ✅ | ✅ | 在线视频源进度条被切成三四秒一段（HLS 播放列表被当普通列表逐分片播放） |
+| [BUG-3078](bugs/BUG-3078-video-tab-visible.md) | ✅ | ✅ | 视频库导入动作挤窄页签条后选中项不可见 |
+| [BUG-3077](bugs/BUG-3077-android-reader-system-bars-flutter347.md) | ✅ | ✅ | Android 阅读器顶部留白变大：Flutter 3.47 的 edgeToEdge 清掉沉浸标志，状态栏回来并计入正文顶部 inset |
+| [BUG-3076](bugs/BUG-3076-audiobook-sheet-open-top.md) | ✅ | ✅ | 有声书面板打开时滚离顶部且底部进场过冲 |
+| [BUG-3075](bugs/BUG-3075-floating-appbar-scrim-cuts-shadow.md) | ✅ | ✅ | M3E 悬浮顶栏的栏下沿遮罩盖住胶囊投影 |
+| [BUG-3074](bugs/BUG-3074-bluray-menu-aacs-black.md) | ✅ | ✅ | 加密原盘进入原盘菜单纯黑（libbluray 找不到 libaacs） |
+| [BUG-3073](bugs/BUG-3073-download-identity-locks-unreachable-provider.md) | ✅ | ✅ | 下载任务身份被当用户锁定：那家资料源连不上就永远providerUnavailable，不换任务里的TMDB id |
+| [BUG-3072](bugs/BUG-3072-sweep-retry-storm.md) | ✅ | ✅ | 补刮批次自己的写入触发下一轮+临时失败清账，同一作品每分钟重刮十几次 |
+| [BUG-3071](bugs/BUG-3071-stored-tmdb-tv-id-rescrape.md) | ✅ | ✅ | BUG-2828存量未修：重刮仍复用存成movie的TMDB tv id，リズと青い鳥仍是挪威电影 |
+| [BUG-3070](bugs/BUG-3070-devconsole-bad-origin.md) | ✅ | ✅ | 反馈处理台网页登录一律 403 bad_origin |
+| [BUG-3069](bugs/BUG-3069-subtitle-backfill-other-language.md) | ✅ | ✅ | 自动补字幕在原语言无候选时装上其它语言的字幕 |
+| [BUG-3068](bugs/BUG-3068-subtitle-backfill-wrong-work.md) | ✅ | ✅ | 自动补字幕把重制版/TV集/无关剧集的字幕装到电影上 |
+| [BUG-3067](bugs/BUG-3067-acquisition-quality-fallback-upscale.md) | ✅ | ✅ | AI video download quality fallback prefers upscales and DVD over the requested 1080p tier |
+| [BUG-3066](bugs/BUG-3066-acquisition-ignores-original-language.md) | ✅ | ✅ | AI video download picks dubbed or hardsubbed releases when original language was requested |
+| [BUG-3065](bugs/BUG-3065-acquisition-sibling-work-releases.md) | ✅ | ✅ | AI video download picks remake or sequel releases as the target work |
 | [BUG-3064](bugs/BUG-3064-lookup-bottom-bar-scroll.md) | ✅ | ✅ | 移动端查词页往下滑底部栏不收起 |
 | [BUG-3063](bugs/BUG-3063-collection-continue-btn-overflow.md) | ✅ | ✅ | 合集详情 hero「继续」按钮图标溢出左边缘、内边距不对称 |
 | [BUG-3062](bugs/BUG-3062-video-chapter-markers-off-track.md) | ✅ | ✅ | 移动端视频章节刻度没落在进度条轨道上 |

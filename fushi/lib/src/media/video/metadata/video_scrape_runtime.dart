@@ -133,6 +133,8 @@ class VideoScrapeRuntime {
     }
     final VoidCallback? listener = _onTaskChanged;
     if (listener != null) existing?.removeListener(listener);
+    // 旧一代调度器先断开监听，否则它还会对旧 controller 的通知发起补刮。
+    _sweep?.dispose();
     existing?.dispose();
     _coordinator?.close();
     final AiVideoIdentityAdvisor aiIdentityAdvisor = _createAiIdentityAdvisor();
@@ -205,6 +207,8 @@ class VideoScrapeRuntime {
     _controller = null;
     _coordinator = null;
     _configFingerprint = null;
+    // 在途批次之后才结束：调度器先断开，结束通知不能再发起补刮。
+    _sweep?.dispose();
     _sweep = null;
     if (controller == null) {
       coordinator?.close();

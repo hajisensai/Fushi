@@ -31,8 +31,9 @@ void main() {
 
   setUpAll(() {
     src = readVideoFushiSource();
-    shortcuts = File('lib/src/media/video/video_player_shortcuts.dart')
-        .readAsStringSync();
+    shortcuts = File(
+      'lib/src/media/video/video_player_shortcuts.dart',
+    ).readAsStringSync();
   });
 
   test('① 锁定可见性用 ValueNotifier（全屏路由也响应），并在 dispose 释放', () {
@@ -46,8 +47,11 @@ void main() {
       isTrue,
       reason: '锁定态层未监听 _immersiveLocked（全屏路由不随页面 setState 重建，BUG-120）',
     );
-    expect(src.contains('_immersiveLocked.dispose();'), isTrue,
-        reason: 'notifier 未在 dispose 释放');
+    expect(
+      src.contains('_immersiveLocked.dispose();'),
+      isTrue,
+      reason: 'notifier 未在 dispose 释放',
+    );
   });
 
   test('② 锁定态 gate AdaptiveVideoControls 的指针（控制条不弹）', () {
@@ -56,13 +60,17 @@ void main() {
     // （_videoSidePanel），故只断言 ignoring 含 _immersiveLocked.value、child 是
     // AdaptiveVideoControls（折行无关，压成单空格后匹配）。
     final int idx = src.indexOf('IgnorePointer(');
-    expect(idx, greaterThanOrEqualTo(0),
-        reason: '锁定态必须用 IgnorePointer 拦掉送往 media_kit controls 的指针');
+    expect(
+      idx,
+      greaterThanOrEqualTo(0),
+      reason: '锁定态必须用 IgnorePointer 拦掉送往 media_kit controls 的指针',
+    );
     final String flat = src.replaceAll(RegExp(r'\s+'), ' ');
     expect(
-      RegExp(r'IgnorePointer\( ignoring: _immersiveLocked\.value[^,]*, '
-              r'child: AdaptiveVideoControls\(state\),')
-          .hasMatch(flat),
+      RegExp(
+        r'IgnorePointer\( ignoring: _immersiveLocked\.value[^,]*, '
+        r'child: AdaptiveVideoControls\(state\),',
+      ).hasMatch(flat),
       isTrue,
       reason: 'IgnorePointer.ignoring 必须跟随锁定态、child 必须是 AdaptiveVideoControls',
     );
@@ -73,26 +81,40 @@ void main() {
     // BUG-2453 之前「唤醒」是派合成 hover（GestureBinding.handlePointerEvent），旧守卫拿它
     // 当顺序锚点；现在唤醒是 `_restartHideTimerSignal.poke()`（fork 的 wakeSignal），锚点换成
     // 它，不变量不变：门控在出口之前。方法体用花括号配对切出，只在体内比顺序。
-    final String poke =
-        maskComments(methodBody(src, 'void _pokeControlsVisible()'));
+    final String poke = maskComments(
+      methodBody(src, 'void _pokeControlsVisible()'),
+    );
     const String exit = '_restartHideTimerSignal.poke();';
     final int exitIdx = poke.indexOf(exit);
-    expect(exitIdx, greaterThanOrEqualTo(0),
-        reason: '_pokeControlsVisible 的出口已不是 $exit，守卫需同步更新');
+    expect(
+      exitIdx,
+      greaterThanOrEqualTo(0),
+      reason: '_pokeControlsVisible 的出口已不是 $exit，守卫需同步更新',
+    );
     final int gateIdx = poke.indexOf('if (_immersiveLocked.value) return;');
-    expect(gateIdx, greaterThanOrEqualTo(0),
-        reason: 'poke 未在锁定态早返回（锁定态键盘交互会弹控制条）');
-    expect(gateIdx, lessThan(exitIdx),
-        reason: '锁定态早返回必须排在发唤醒信号之前——信号本身分不出「续命」和「唤起」');
+    expect(
+      gateIdx,
+      greaterThanOrEqualTo(0),
+      reason: 'poke 未在锁定态早返回（锁定态键盘交互会弹控制条）',
+    );
+    expect(
+      gateIdx,
+      lessThan(exitIdx),
+      reason: '锁定态早返回必须排在发唤醒信号之前——信号本身分不出「续命」和「唤起」',
+    );
   });
 
   test('② poke 在字幕列表等强压制态早返回，不让 hover 与控制条互相拉起', () {
-    final String poke =
-        maskComments(methodBody(src, 'void _pokeControlsVisible()'));
+    final String poke = maskComments(
+      methodBody(src, 'void _pokeControlsVisible()'),
+    );
     const String exit = '_restartHideTimerSignal.poke();';
     final int exitIdx = poke.indexOf(exit);
-    expect(exitIdx, greaterThanOrEqualTo(0),
-        reason: '_pokeControlsVisible 的出口已不是 $exit，守卫需同步更新');
+    expect(
+      exitIdx,
+      greaterThanOrEqualTo(0),
+      reason: '_pokeControlsVisible 的出口已不是 $exit，守卫需同步更新',
+    );
 
     for (final String gate in <String>[
       'if (_immersiveLocked.value) return;',
@@ -101,8 +123,11 @@ void main() {
       'if (_videoControlEditMode.value) return;',
     ]) {
       final int gateIdx = poke.indexOf(gate);
-      expect(gateIdx, greaterThanOrEqualTo(0),
-          reason: '_pokeControlsVisible 缺强压制态早返回：$gate');
+      expect(
+        gateIdx,
+        greaterThanOrEqualTo(0),
+        reason: '_pokeControlsVisible 缺强压制态早返回：$gate',
+      );
       expect(gateIdx, lessThan(exitIdx), reason: '$gate 必须排在发唤醒信号之前');
     }
   });
@@ -113,8 +138,11 @@ void main() {
     final int overlayIdx = src.indexOf('VideoSubtitleOverlay(');
     expect(controlsIdx, greaterThanOrEqualTo(0));
     expect(overlayIdx, greaterThanOrEqualTo(0));
-    expect(overlayIdx, greaterThan(controlsIdx),
-        reason: '字幕查词 overlay 必须叠在 controls 之上，锁定态点字幕仍能查词');
+    expect(
+      overlayIdx,
+      greaterThan(controlsIdx),
+      reason: '字幕查词 overlay 必须叠在 controls 之上，锁定态点字幕仍能查词',
+    );
     // 锁定态绝不能把整条键盘通道 gate 掉。方案 D 之后快捷键不再是传给 media_kit 的
     // 一张表，而是页级 press-time 派发 [_handleVideoKeyboardShortcut]；沉浸锁的门控
     // 只允许落在**单个动作**上（_runWhenImmersiveAllowsShortcuts），绝不允许提到通道
@@ -131,21 +159,26 @@ void main() {
       expect(
         body.contains('_immersiveAllows'),
         isFalse,
-        reason: '$signature 的方法体里出现了沉浸锁条件——门控只能落在单个动作上，'
+        reason:
+            '$signature 的方法体里出现了沉浸锁条件——门控只能落在单个动作上，'
             '门住通道的任何一段都等于锁定态整表失效（快捷键 / 查词全死，'
             '而锁定的本意只是挡触摸误触）',
       );
     }
     // 活性自证：上面两条是**否定**断言，门控被整个删光时它们也全绿。真相是门控确实
     // 存在、且落在逐个动作上（[_buildVideoShortcutActions] 里几乎每个实参都包了一层）。
-    final String actions = maskComments(methodBody(
+    final String actions = maskComments(
+      methodBody(
         src,
         'VideoPlayerShortcutActions '
-        '_buildVideoShortcutActions('));
+        '_buildVideoShortcutActions(',
+      ),
+    );
     expect(
       '_runWhenImmersiveAllowsShortcuts('.allMatches(actions).length,
       greaterThan(20),
-      reason: '沉浸锁门控必须真的逐个动作包着——它整个消失时上面两条否定断言会一起'
+      reason:
+          '沉浸锁门控必须真的逐个动作包着——它整个消失时上面两条否定断言会一起'
           '变成空转，这条负责把「门控还在」钉住',
     );
   });
@@ -170,22 +203,25 @@ void main() {
     // 开锁，与用户「锁住=闭锁」的状态预期相反，也与 OSD / 悬浮字幕锁 / 原生两端不一致。
     // 修复后状态语义：locked → Icons.lock_outline（闭锁），未锁 → Icons.lock_open_outlined。
     expect(
-      RegExp(r'locked\s*\?\s*Icons\.lock_outline\s*:\s*Icons\.lock_open_outlined')
-          .hasMatch(src),
+      RegExp(
+        r'locked\s*\?\s*Icons\.lock_outline\s*:\s*Icons\.lock_open_outlined',
+      ).hasMatch(src),
       isTrue,
       reason: '侧边锁按钮图标必须是状态语义：锁住显闭锁、未锁显开锁',
     );
     // 防回归倒回旧的「动作提示」反向。
     expect(
-      RegExp(r'locked\s*\?\s*Icons\.lock_open_outlined\s*:\s*Icons\.lock_outline')
-          .hasMatch(src),
+      RegExp(
+        r'locked\s*\?\s*Icons\.lock_open_outlined\s*:\s*Icons\.lock_outline',
+      ).hasMatch(src),
       isFalse,
       reason: '不得倒回「锁住显开锁」的反向动作语义（回归 BUG-216）',
     );
     // tooltip 保持动作语义（锁住时「点击解锁」合理），与图标状态语义并存。
     expect(
-      RegExp(r'tooltip: locked\s*\?\s*t\.video_immersive_unlock\s*:\s*t\.video_menu_lock')
-          .hasMatch(src),
+      RegExp(
+        r'tooltip: locked\s*\?\s*t\.video_immersive_unlock\s*:\s*t\.video_menu_lock',
+      ).hasMatch(src),
       isTrue,
       reason: 'tooltip 应保持动作语义（locked → 点击解锁）',
     );
@@ -193,25 +229,48 @@ void main() {
 
   test('④ 沉浸态常驻解锁层移到视频左侧居中（_buildSideLockButton，挂在 controls Stack）', () {
     final int railIdx = src.indexOf('Widget _buildVideoSideActionRail(');
-    expect(railIdx, greaterThanOrEqualTo(0),
-        reason: 'controls Stack 应该挂载侧边 rail / 锁按钮层');
-    expect(src.indexOf('_buildSideLockButton()', railIdx), greaterThan(railIdx),
-        reason: '侧边锁 / 解锁层未挂进 controls Stack（全屏将看不到解锁按钮）');
-    expect(src.contains('_slotChipItems(VideoControlSlot.screenLeft)'), isTrue,
-        reason: '沉浸锁应能放进可调整的左侧 rail');
-    expect(src.contains('_slotChipItems(VideoControlSlot.screenRight)'), isTrue,
-        reason: '沉浸锁被移到右侧 rail 后也应仍可发现');
-    expect(src.contains('Widget _buildSideLockButton()'), isTrue,
-        reason: '缺侧边锁 / 解锁层构建函数');
+    expect(
+      railIdx,
+      greaterThanOrEqualTo(0),
+      reason: 'controls Stack 应该挂载侧边 rail / 锁按钮层',
+    );
+    expect(
+      src.indexOf('_buildSideLockButton()', railIdx),
+      greaterThan(railIdx),
+      reason: '侧边锁 / 解锁层未挂进 controls Stack（全屏将看不到解锁按钮）',
+    );
+    final String rail = compactCode(
+      methodBody(src, 'Widget _buildVideoSideActionRail('),
+    ).replaceAll(',)', ')');
+    for (final String slot in <String>['screenLeft', 'screenRight']) {
+      expect(
+        rail,
+        contains(
+          '_slotChipItems(VideoControlSlot.$slot).contains(VideoControlItem.immersiveLock)',
+        ),
+        reason:
+            'both adjustable side rails must test their actual immersive-lock placement',
+      );
+    }
+    expect(
+      src.contains('Widget _buildSideLockButton()'),
+      isTrue,
+      reason: '缺侧边锁 / 解锁层构建函数',
+    );
     // 解锁层点击退出锁定。
     final int idx = src.indexOf('Widget _buildSideLockButton()');
     expect(
-        src.indexOf('onPressed: _toggleImmersiveLock,', idx), greaterThan(idx),
-        reason: '侧边解锁按钮未接到 _toggleImmersiveLock');
+      src.indexOf('onPressed: _toggleImmersiveLock,', idx),
+      greaterThan(idx),
+      reason: '侧边解锁按钮未接到 _toggleImmersiveLock',
+    );
     // TODO-126：放在视频正左边、垂直居中（左侧贴边 + centerLeft 对齐）。
     final int alignIdx = src.indexOf('alignment: Alignment.centerLeft', idx);
-    expect(alignIdx, greaterThan(idx),
-        reason: '侧边锁按钮应在视频正左边垂直居中（Alignment.centerLeft）');
+    expect(
+      alignIdx,
+      greaterThan(idx),
+      reason: '侧边锁按钮应在视频正左边垂直居中（Alignment.centerLeft）',
+    );
   });
 
   test('④ 沉浸锁只压制普通 rail，仍保留可见解锁入口', () {
@@ -226,20 +285,35 @@ void main() {
     expect(afterLocked, greaterThan(lockedIdx));
     final String lockedBranch = railBody.substring(lockedIdx, afterLocked);
 
-    expect(lockedBranch.contains('_buildSideLockButton()'), isTrue,
-        reason: '沉浸锁下若锁按钮不在 rail 配置中，仍必须渲染独立解锁入口');
-    expect(lockedBranch.contains('immersiveOnly: true'), isTrue,
-        reason: '沉浸锁下若锁按钮在 rail 配置中，只能渲染 immersiveLock，不得保留普通 rail 按钮');
-    expect(lockedBranch.contains('VideoControlItem.immersiveLock'), isTrue,
-        reason: '沉浸锁分支必须保留 immersiveLock 解锁入口');
+    expect(
+      lockedBranch.contains('_buildSideLockButton()'),
+      isTrue,
+      reason: '沉浸锁下若锁按钮不在 rail 配置中，仍必须渲染独立解锁入口',
+    );
+    expect(
+      lockedBranch.contains('immersiveOnly: true'),
+      isTrue,
+      reason: '沉浸锁下若锁按钮在 rail 配置中，只能渲染 immersiveLock，不得保留普通 rail 按钮',
+    );
+    expect(
+      lockedBranch.contains('VideoControlItem.immersiveLock'),
+      isTrue,
+      reason: '沉浸锁分支必须保留 immersiveLock 解锁入口',
+    );
   });
 
   test('④ 侧边解锁按钮无操作淡出 + 鼠标 / 触屏唤回（TODO-126），退出仍可达', () {
     // 独立可见性源（不被锁 gate），AnimatedOpacity 淡出。
-    expect(src.contains('ValueNotifier<bool> _lockButtonVisible'), isTrue,
-        reason: '缺侧边锁按钮独立可见性 notifier');
-    expect(src.contains('void _pokeLockButton()'), isTrue,
-        reason: '缺侧边锁按钮唤回方法');
+    expect(
+      src.contains('ValueNotifier<bool> _lockButtonVisible'),
+      isTrue,
+      reason: '缺侧边锁按钮独立可见性 notifier',
+    );
+    expect(
+      src.contains('void _pokeLockButton()'),
+      isTrue,
+      reason: '缺侧边锁按钮唤回方法',
+    );
     final int sideIdx = src.indexOf('Widget _buildSideLockButton()');
     // TODO-388（BUG-295）：可见性源从单一 ValueListenableBuilder 升级为
     // Listenable.merge([_lockButtonVisible, _lockButtonHovered])，判据
@@ -251,19 +325,31 @@ void main() {
     final int sideEnd = src.indexOf('\n  }', sideIdx);
     expect(sideEnd, greaterThan(sideIdx));
     final String sideBody = src.substring(sideIdx, sideEnd);
-    expect(sideBody.contains('_lockButtonVisible.value'), isTrue,
-        reason: '侧边锁按钮淡出仍由 _lockButtonVisible 驱动');
-    expect(sideBody.contains('_lockButtonHovered.value'), isTrue,
-        reason: 'hover 期间应由 _lockButtonHovered 顶住显示（BUG-295）');
+    expect(
+      sideBody.contains('_lockButtonVisible.value'),
+      isTrue,
+      reason: '侧边锁按钮淡出仍由 _lockButtonVisible 驱动',
+    );
+    expect(
+      sideBody.contains('_lockButtonHovered.value'),
+      isTrue,
+      reason: 'hover 期间应由 _lockButtonHovered 顶住显示（BUG-295）',
+    );
     // BUG-1301：AnimatedOpacity + IgnorePointer 搬进共享 FadingChromeGate，
     // 调用点断「走了共享门控」，组件那半由 expectFadingChromeGateContract 断
     // （它自己就断 AnimatedOpacity 仍在）。
-    expect(sideBody.contains('FadingChromeGate('), isTrue,
-        reason: '侧边锁按钮淡出应走共享门控 FadingChromeGate');
+    expect(
+      sideBody.contains('FadingChromeGate('),
+      isTrue,
+      reason: '侧边锁按钮淡出应走共享门控 FadingChromeGate',
+    );
     expectFadingChromeGateContract();
     // 唤回路径：桌面 hover（onEnter/onHover）+ 移动 / 触屏点画面（_handleVideoPointerUp）。
-    expect('_pokeLockButton()'.allMatches(src).length, greaterThanOrEqualTo(3),
-        reason: 'hover + 触屏 + toggle 三处都应唤回侧边锁按钮');
+    expect(
+      '_pokeLockButton()'.allMatches(src).length,
+      greaterThanOrEqualTo(3),
+      reason: 'hover + 触屏 + toggle 三处都应唤回侧边锁按钮',
+    );
     // 退出仍可达：_pokeLockButton 不被锁 gate（与 _markControlsVisible 区分），故沉浸态
     // 解锁按钮淡出后仍能唤回；Esc / Shift+L 另有专门用例钉死。
     final int pokeIdx = src.indexOf('void _pokeLockButton()');
@@ -273,11 +359,17 @@ void main() {
     final int pokeEnd = src.indexOf('\n  }', pokeIdx);
     expect(pokeEnd, greaterThan(pokeIdx));
     final String pokeBody = src.substring(pokeIdx, pokeEnd);
-    expect(pokeBody.contains('_immersiveLocked.value'), isFalse,
-        reason: '_pokeLockButton 不得被锁 gate（否则沉浸态解锁按钮淡出后唤不回，失去退出口）');
+    expect(
+      pokeBody.contains('_immersiveLocked.value'),
+      isFalse,
+      reason: '_pokeLockButton 不得被锁 gate（否则沉浸态解锁按钮淡出后唤不回，失去退出口）',
+    );
     // 释放。
-    expect(src.contains('_lockButtonVisible.dispose();'), isTrue,
-        reason: '_lockButtonVisible 未在 dispose 释放');
+    expect(
+      src.contains('_lockButtonVisible.dispose();'),
+      isTrue,
+      reason: '_lockButtonVisible 未在 dispose 释放',
+    );
   });
 
   test('④ Shift+L 切换锁定（与裸 L 字幕列表区分，未撞键），并接到本页 action', () {
@@ -288,24 +380,32 @@ void main() {
         ShortcutDefaults.forPlatform(TargetPlatform.windows);
     expect(
       vd[ShortcutAction.videoToggleImmersiveLock]!.keyboardBindings.contains(
-          const InputBinding(
-              key: LogicalKeyboardKey.keyL,
-              modifiers: <ModifierKey>{ModifierKey.shift})),
+        const InputBinding(
+          key: LogicalKeyboardKey.keyL,
+          modifiers: <ModifierKey>{ModifierKey.shift},
+        ),
+      ),
       isTrue,
       reason: 'Shift+L is the default key for immersive lock',
     );
     expect(
-        shortcuts.contains('ShortcutAction.videoToggleImmersiveLock: '
-            'actions.toggleImmersiveLock'),
-        isTrue,
-        reason: 'Shift+L action wired to toggleImmersiveLock');
-    expect(src.contains('toggleImmersiveLock: _toggleImmersiveLock'), isTrue,
-        reason: 'toggleImmersiveLock action wired to _toggleImmersiveLock');
+      shortcuts.contains(
+        'ShortcutAction.videoToggleImmersiveLock: '
+        'actions.toggleImmersiveLock',
+      ),
+      isTrue,
+      reason: 'Shift+L action wired to toggleImmersiveLock',
+    );
+    expect(
+      src.contains('toggleImmersiveLock: _toggleImmersiveLock'),
+      isTrue,
+      reason: 'toggleImmersiveLock action wired to _toggleImmersiveLock',
+    );
     // bare L still owns the subtitle list (Shift+L must not steal it).
     expect(
-      vd[ShortcutAction.videoToggleSubtitleList]!
-          .keyboardBindings
-          .contains(const InputBinding(key: LogicalKeyboardKey.keyL)),
+      vd[ShortcutAction.videoToggleSubtitleList]!.keyboardBindings.contains(
+        const InputBinding(key: LogicalKeyboardKey.keyL),
+      ),
       isTrue,
       reason: 'bare L still opens the subtitle list',
     );
@@ -319,25 +419,35 @@ void main() {
     // VideoPlayerController 的动作，加载态下键盘 / 手柄要能单独调到它）。锚点跟着换成
     // 方法体本身——比原来「从 `escape: () {` 起在**整份剩余语料**里 indexOf」更严：
     // 那种写法即使执行体搬到别处、闭包里什么都不做，也照样能在后文里撞到这三个 token。
-    final String escapeBody =
-        maskComments(methodBody(src, 'void _handleVideoEscapeAction() {'));
+    final String escapeBody = maskComments(
+      methodBody(src, 'void _handleVideoEscapeAction() {'),
+    );
     final int dismissIdx = escapeBody.indexOf('_dismissTopForegroundLayer()');
-    final int fullscreenExitIdx =
-        escapeBody.indexOf('_exitVideoFullscreen(ctx)');
+    final int fullscreenExitIdx = escapeBody.indexOf(
+      '_exitVideoFullscreen(ctx)',
+    );
     final int exitIdx = escapeBody.indexOf('_handleBackOrExit()');
     expect(dismissIdx, greaterThanOrEqualTo(0), reason: 'Esc 未先逐级关前台层');
-    expect(fullscreenExitIdx, greaterThan(dismissIdx),
-        reason: 'Esc 关前台层必须排在退全屏之前');
+    expect(
+      fullscreenExitIdx,
+      greaterThan(dismissIdx),
+      reason: 'Esc 关前台层必须排在退全屏之前',
+    );
     expect(exitIdx, greaterThan(dismissIdx), reason: 'Esc 关前台层必须排在退页之前（逐级退出）');
     // 它确实还是 globalBack 的执行体（抽成具名方法之后不能忘了接回去）。
-    expect(src.contains('escape: _handleVideoEscapeAction,'), isTrue,
-        reason: 'globalBack 的执行体必须仍接在 VideoPlayerShortcutActions.escape 上');
+    expect(
+      src.contains('escape: _handleVideoEscapeAction,'),
+      isTrue,
+      reason: 'globalBack 的执行体必须仍接在 VideoPlayerShortcutActions.escape 上',
+    );
 
     // 解锁确实还在那张共用层级表里。
     final int tableIdx = src.indexOf('bool _dismissTopForegroundLayer() {');
     expect(tableIdx, greaterThanOrEqualTo(0), reason: '缺共用层级表');
-    final int lockGate =
-        src.indexOf('immersiveLocked: _immersiveLocked.value', tableIdx);
+    final int lockGate = src.indexOf(
+      'immersiveLocked: _immersiveLocked.value',
+      tableIdx,
+    );
     final int unlockIdx = src.indexOf('_toggleImmersiveLock();', tableIdx);
     expect(lockGate, greaterThanOrEqualTo(0), reason: '层级表未读锁定态');
     expect(unlockIdx, greaterThan(lockGate), reason: '层级表未在锁定态解锁');

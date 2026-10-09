@@ -182,6 +182,7 @@ class OpenSubtitlesSearchRecord {
     this.uploadedAtMs,
     this.aiTranslated = false,
     this.fromTrusted = false,
+    this.work,
   });
 
   final int fileId;
@@ -202,6 +203,39 @@ class OpenSubtitlesSearchRecord {
 
   /// `attributes.from_trusted`：可信上传者。
   final bool fromTrusted;
+
+  /// `attributes.feature_details` 自述的作品身份（BUG-3068）。moviehash 档会撞车：
+  /// 一部电影按哈希搜回过毫不相干的剧集，只有这里的 id / 种类能把它认出来。
+  final SubtitleWorkClaim? work;
+}
+
+/// `feature_details` → 作品身份。剧集类（`Episode` / `Tvshow`）取**父级**（剧本身）
+/// 的标题与 id：目标作品是整部剧，单集 id 与它无从比较。纯函数。
+SubtitleWorkClaim? parseOpenSubtitlesFeatureWork(
+    Map<Object?, Object?> feature) {
+  if (feature.isEmpty) return null;
+  final String type = (_string(feature['feature_type']) ?? '').toLowerCase();
+  final bool series = type == 'episode' || type == 'tvshow';
+  final VideoMetadataMediaKind? kind = type == 'movie'
+      ? VideoMetadataMediaKind.movie
+      : series
+          ? VideoMetadataMediaKind.tv
+          : null;
+  int? positive(Object? raw) {
+    final int? value = _int(raw);
+    return value == null || value <= 0 ? null : value;
+  }
+
+  final int? imdb =
+      positive(series ? feature['parent_imdb_id'] : feature['imdb_id']);
+  return SubtitleWorkClaim(
+    titles: <String?>[_string(feature[series ? 'parent_title' : 'title'])]
+        .nonNulls,
+    year: positive(feature['year']),
+    kind: kind,
+    tmdbId: positive(series ? feature['parent_tmdb_id'] : feature['tmdb_id']),
+    imdbId: imdb == null ? null : 'tt$imdb',
+  );
 }
 
 List<OpenSubtitlesSearchRecord> parseOpenSubtitlesSearchResponse(String body) {
@@ -248,6 +282,7 @@ List<OpenSubtitlesSearchRecord> parseOpenSubtitlesSearchResponse(String body) {
               : null,
           aiTranslated: attributes['ai_translated'] == true,
           fromTrusted: attributes['from_trusted'] == true,
+          work: parseOpenSubtitlesFeatureWork(feature),
         ),
       );
     }
@@ -735,6 +770,7 @@ class _OpenSubtitlesCandidate extends VideoSubtitleCandidate {
           episode: record.episode,
           downloadCount: record.downloadCount,
           hearingImpaired: record.hearingImpaired,
+          work: record.work,
           fps: record.fps,
           uploadedAtMs: record.uploadedAtMs,
           aiTranslated: record.aiTranslated,
