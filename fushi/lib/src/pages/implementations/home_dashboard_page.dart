@@ -24,10 +24,7 @@ import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
-import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
-import 'package:fushi/src/media/video/video_home_layout.dart'
-    show VideoCardOrientation;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/base_module_tab_page.dart';
@@ -417,8 +414,7 @@ class _HomeDashboardSnapshot {
     required this.gameRows,
     required this.collectionNamesById,
     required this.primaryCollectionByEntry,
-    required this.mediaImagesByCollection,
-    required this.mediaImagesByBookUid,
+    required this.collectionCoverById,
     required this.epubUidByBookKey,
     required this.memberSortIndex,
     required this.videoWatchAtByUid,
@@ -434,8 +430,7 @@ class _HomeDashboardSnapshot {
   final List<StatFact> gameRows;
   final Map<int, String> collectionNamesById;
   final Map<String, int> primaryCollectionByEntry;
-  final Map<int, List<MediaImageRow>> mediaImagesByCollection;
-  final Map<String, List<MediaImageRow>> mediaImagesByBookUid;
+  final Map<int, String> collectionCoverById;
   final Map<String, String> epubUidByBookKey;
   final Map<String, int> memberSortIndex;
   final Map<String, int> videoWatchAtByUid;
@@ -583,13 +578,13 @@ class _HomeDashboardPageState
   _ContinueEntry? _resumeEntry;
 
   /// 「继续」封面行（2026-10 精简：只有封面，不再挂标题 / 副标题文字块）：书 /
-  /// 游戏竖版 5:7 槽，视频按选中的那张图自适应横竖（BUG-1299 / BUG-2005 口径，
-  /// 走 [PortraitCoverImage]——竖图铺满、横版截帧模糊垫底）。窄屏封面高
+  /// 视频 / 游戏统一 2:3 竖卡、等高等宽（视频优先用作品海报，只有横版截帧时裁进
+  /// 竖卡，不再横竖混排）。窄屏封面高
   /// [_kContinueCoverHeight]，宽屏（主列 ≥ [_kWideLayoutMinWidth]）放大到
   /// [_kContinueCoverHeightWide]——行里没有文字了，封面是唯一的信息载体。
   static const double _kContinueCoverHeight = 148;
   static const double _kContinueCoverHeightWide = 176;
-  static const double _kContinueCoverAspect = 5 / 7;
+  static const double _kContinueCoverAspect = 2 / 3;
   static const double _kWideLayoutMinWidth = 900;
 
   /// 视频文件路径 → 容器时长（毫秒，[VideoFileSpecs] 探测缓存，只查在看的
@@ -600,12 +595,9 @@ class _HomeDashboardPageState
   /// [initState] 异步载入的视频库（继续观看 + 视频计数）。
   List<VideoBookRow> _videos = const <VideoBookRow>[];
 
-  /// v68 附加图组（media_images）按归属分桶：续播区视频横卡的选图链
-  /// （合集带字横图 → 无字背景 → 目标集封面）。与视频库同批预取。
-  Map<int, List<MediaImageRow>> _mediaImagesByCollection =
-      const <int, List<MediaImageRow>>{};
-  Map<String, List<MediaImageRow>> _mediaImagesByBookUid =
-      const <String, List<MediaImageRow>>{};
+  /// 合集主封面（`MediaCollections.coverPath`，刮削落地的作品海报）：「继续」
+  /// 竖卡的视频优先用它，集封面多是横版截帧。
+  Map<int, String> _collectionCoverById = const <int, String>{};
 
   /// [_loadDashboardDataUnsafe] 载入的游戏库整表缓存（P4：日明细「游戏」节 +
   /// 活动时间轴游戏行的显示名反查用；空表 = 库为空或尚未载入）。
@@ -862,7 +854,6 @@ class _HomeDashboardPageState
     // 全表物化，在线源 / 播放列表合集把成员表撑到八万行时单这两步 640–950 ms）。
     final Future<Map<String, ({int collectionId, int sortIndex})>>
         membershipF = db.getLocalPrimaryCollectionMembership();
-    final Future<List<MediaImageRow>> mediaImagesF = db.getAllMediaImages();
     // 游戏库整表（「继续」区在玩的游戏）。仓储缓存与表恒一致，
     // 未载入过才真查 DB（毫秒级）；load() 会 notify → 本页监听器防抖重载一次
     // 后 isLoaded=true，不再形成回环。与其余读并发发出（此前排在整批之后串行）。
@@ -880,7 +871,6 @@ class _HomeDashboardPageState
       factsF,
       collectionsF,
       membershipF,
-      mediaImagesF,
       gamesF,
       trackingF,
     ]);
@@ -891,8 +881,14 @@ class _HomeDashboardPageState
     final List<StatFact> game = facts.dailyGames.toList(growable: false);
     final List<GalgameEntry> games = await gamesF;
     // 合集归属映射（统计页/书架同源）：显示名规则「非合集上下文拼合集名」用。
+    final List<MediaCollectionRow> collections = await collectionsF;
     final Map<int, String> collectionNamesById = <int, String>{
-      for (final MediaCollectionRow c in await collectionsF) c.id: c.name,
+      for (final MediaCollectionRow c in collections) c.id: c.name,
+    };
+    final Map<int, String> collectionCoverById = <int, String>{
+      for (final MediaCollectionRow c in collections)
+        if (c.coverPath case final String path when path.isNotEmpty)
+          c.id: path,
     };
     final Map<String, ({int collectionId, int sortIndex})> membership =
         await membershipF;
@@ -901,19 +897,6 @@ class _HomeDashboardPageState
           in membership.entries)
         e.key: e.value.collectionId,
     };
-    // v68 附加图组：一次全表查询按归属分桶（续播区视频横卡选图链）。
-    final Map<int, List<MediaImageRow>> imagesByCollection =
-        <int, List<MediaImageRow>>{};
-    final Map<String, List<MediaImageRow>> imagesByBookUid =
-        <String, List<MediaImageRow>>{};
-    for (final MediaImageRow imageRow in await mediaImagesF) {
-      final int? cid = imageRow.collectionId;
-      if (cid != null) {
-        (imagesByCollection[cid] ??= <MediaImageRow>[]).add(imageRow);
-      } else if (imageRow.bookUid case final String uid) {
-        (imagesByBookUid[uid] ??= <MediaImageRow>[]).add(imageRow);
-      }
-    }
     // 组内序：条目在其主折叠合集里的 sortIndex（视频页/书架 _loadShelfMaps 同
     // 口径——只记归属主合集的行；SQL 侧已按主键回查好）。
     final Map<String, int> memberSortIndex = <String, int>{
@@ -965,8 +948,7 @@ class _HomeDashboardPageState
       gameRows: game,
       collectionNamesById: collectionNamesById,
       primaryCollectionByEntry: primaryByEntry,
-      mediaImagesByCollection: imagesByCollection,
-      mediaImagesByBookUid: imagesByBookUid,
+      collectionCoverById: collectionCoverById,
       epubUidByBookKey: epubUidByBookKey,
       memberSortIndex: memberSortIndex,
       videoWatchAtByUid: watchAt,
@@ -991,8 +973,7 @@ class _HomeDashboardPageState
     _gameRows = s.gameRows;
     _collectionNamesById = s.collectionNamesById;
     _primaryCollectionByEntry = s.primaryCollectionByEntry;
-    _mediaImagesByCollection = s.mediaImagesByCollection;
-    _mediaImagesByBookUid = s.mediaImagesByBookUid;
+    _collectionCoverById = s.collectionCoverById;
     _epubUidByBookKey = s.epubUidByBookKey;
     _memberSortIndex = s.memberSortIndex;
     _videoWatchAtByUid = s.videoWatchAtByUid;
@@ -1579,10 +1560,7 @@ class _HomeDashboardPageState
 
   /// 「继续」封面行：定高横向 ListView，只有封面（2026-10 精简）。
   ///
-  /// 书 / 游戏恒竖版 5:7；视频卡朝向随**选图链选中的那张图**探测（titleCard /
-  /// backdrop / 横版截帧 → 16:9 横卡，只有竖版海报 → 竖卡；BUG-2005 / BUG-1299
-  /// 口径，探测与渲染共用同一 provider 键，零额外解码）。两种卡封面同高、宽度
-  /// 不同，底边天然对齐。
+  /// 整排 2:3 竖卡等高等宽（书 / 视频 / 游戏同一几何），横向滚动。
   Widget _continueCardsRow(
     FushiDesignTokens tokens,
     AppModel appModel,
@@ -1595,7 +1573,7 @@ class _HomeDashboardPageState
     // 行外。
     final double liftHeadroom = coverHeight * (kFushiHoverLiftScale - 1) / 2;
     final double liftSideRoom =
-        coverHeight * 16 / 9 * (kFushiHoverLiftScale - 1) / 2;
+        coverHeight * _kContinueCoverAspect * (kFushiHoverLiftScale - 1) / 2;
     return SizedBox(
       key: const ValueKey<String>('home-continue-row'),
       height: coverHeight + liftHeadroom * 2,
@@ -1626,41 +1604,24 @@ class _HomeDashboardPageState
     );
   }
 
-  /// 「继续」单卡：[HomeContinueCoverCard]（封面 + 底部进度条 + 右上角进度角标），
-  /// 视频卡先过朝向探测再定宽。
+  /// 「继续」单卡：[HomeContinueCoverCard]（封面 + 底部进度条 + 右上角进度角标）。
+  /// 一行卡片统一 2:3 竖版、等高等宽（书 / 视频 / 游戏同一几何，不再横竖混排）。
   Widget _buildContinueCard(
     FushiDesignTokens tokens,
     AppModel appModel,
     _ContinueEntry entry, {
     required double coverHeight,
   }) {
-    Widget card(bool landscape) => HomeContinueCoverCard(
-          cover: _continueCover(
-            tokens,
-            appModel,
-            entry,
-            landscapeSlot: landscape,
-          ),
-          width: landscape
-              ? coverHeight * 16 / 9
-              : coverHeight * _kContinueCoverAspect,
-          height: coverHeight,
-          title: _continueDisplayTitle(entry),
-          progress: entry.progress,
-          badgeLabel: entry.badgeLabel,
-          badgeIcon: entry.badgeIcon,
-          onTap: () => unawaited(_openContinueEntry(appModel, entry)),
-        );
-    if (entry.isVideo) {
-      final ImageProvider? probe =
-          _continueArtworkProvider(entry) ?? _continueVideoCoverProvider(entry);
-      return CoverOrientationBuilder(
-        image: probe,
-        builder: (BuildContext context, VideoCardOrientation orientation) =>
-            card(orientation == VideoCardOrientation.landscape),
-      );
-    }
-    return card(false);
+    return HomeContinueCoverCard(
+      cover: _continueCover(tokens, appModel, entry),
+      width: coverHeight * _kContinueCoverAspect,
+      height: coverHeight,
+      title: _continueDisplayTitle(entry),
+      progress: entry.progress,
+      badgeLabel: entry.badgeLabel,
+      badgeIcon: entry.badgeIcon,
+      onTap: () => unawaited(_openContinueEntry(appModel, entry)),
+    );
   }
 
   /// 卡的显示名（读屏标签 / 悬停提示 / 无封面兜底）：合集成员显示合集名（非合集
@@ -1792,57 +1753,26 @@ class _HomeDashboardPageState
     return (row: resume, index: idx, count: sorted.length);
   }
 
-  /// 续播视频卡的朝向探测 provider（与 [_continueCover] 渲染路共用键）：远端走
-  /// 互联封面，本地走条目封面；取不到 → null（探测默认竖卡）。
-  ImageProvider? _continueVideoCoverProvider(_ContinueEntry entry) {
-    final RemoteContinueCandidate? remote = entry.remote;
-    if (remote != null) {
-      final RemoteCoverFetcher? fetcher = _remoteCoverFetcher;
-      final String? url = remote.coverUrl;
-      if (url == null || url.isEmpty || fetcher == null) return null;
-      return RemoteCoverImage(url, fetcher, cacheKey: remote.id);
-    }
-    final VideoBookRow? video = entry.video;
-    if (video == null) return null;
-    return resolveMediaCoverImage(
-      kind: MediaKind.video,
-      localPath: video.coverPath,
-    );
-  }
-
   /// 「继续」卡封面本体（远端 / 视频 / 游戏 / 书四路）。封面行不再挂标题文字，
   /// 取不到图的条目一律画「图标 + 条目名」兜底（[_coverPlaceholder]）。
   Widget _continueCover(
     FushiDesignTokens tokens,
     AppModel appModel,
-    _ContinueEntry entry, {
-    bool landscapeSlot = false,
-  }) {
+    _ContinueEntry entry,
+  ) {
     final String title = _continueDisplayTitle(entry);
-    if (entry.remote != null) {
-      return _remoteCover(tokens, entry, landscapeSlot: landscapeSlot);
-    }
+    if (entry.remote != null) return _remoteCover(tokens, entry);
     if (entry.isVideo) {
-      // v68 横版选图链（Jellyfin preferThumb 口径）：合集/散装的带字横图 →
-      // 无字背景 → 目标集封面（剧照天然合槽；竖版海报模糊垫底）。
-      final ImageProvider? artwork =
-          landscapeSlot ? _continueArtworkProvider(entry) : null;
-      if (artwork != null) {
-        return PortraitCoverImage(
-          image: artwork,
-          landscapeSlot: true,
-          errorBuilder: (BuildContext _) => _coverPlaceholder(
-            tokens,
-            mediaCoverFallbackIcon(MediaKind.video),
-            title: title,
-          ),
-        );
-      }
+      // 竖卡选图：作品海报（合集主封面）优先；没有竖版海报才用这一集自己的
+      // 封面（多是横版截帧），裁进竖卡。
+      final String? poster = entry.collectionId == null
+          ? null
+          : _collectionCoverById[entry.collectionId];
       return _videoCover(
         tokens,
         entry.video!,
+        posterPath: poster,
         title: title,
-        landscapeSlot: landscapeSlot,
       );
     }
     if (entry.isGame) return _gameCover(tokens, entry.game!, title: title);
@@ -1886,11 +1816,7 @@ class _HomeDashboardPageState
 
   /// 远端条目封面：互联 coverUrl + 取图器可用则 [RemoteCoverImage]（按稳定 id
   /// 磁盘缓存），否则「图标 + 条目名」兜底。
-  Widget _remoteCover(
-    FushiDesignTokens tokens,
-    _ContinueEntry entry, {
-    bool landscapeSlot = false,
-  }) {
+  Widget _remoteCover(FushiDesignTokens tokens, _ContinueEntry entry) {
     final RemoteContinueCandidate remote = entry.remote!;
     final String? coverUrl = remote.coverUrl;
     final RemoteCoverFetcher? fetcher = _remoteCoverFetcher;
@@ -1900,36 +1826,13 @@ class _HomeDashboardPageState
     if (coverUrl == null || coverUrl.isEmpty || fetcher == null) {
       return _coverPlaceholder(tokens, icon, title: title);
     }
-    // BUG-1299：远端封面横竖不可知（host 侧可能是截帧也可能是海报），槽向自适应。
+    // 远端封面横竖不可知（host 侧可能是截帧也可能是海报）：竖卡，横图裁进去。
     return PortraitCoverImage(
       image: RemoteCoverImage(coverUrl, fetcher, cacheKey: remote.id),
-      landscapeSlot: landscapeSlot,
+      cropMismatch: true,
       errorBuilder: (BuildContext _) =>
           _coverPlaceholder(tokens, icon, title: title),
     );
-  }
-
-  /// v68：续播视频卡的附加图 provider（合集归属查合集图组，散卡查视频图组；
-  /// titleCard 优先于 backdrop）。null = 无附加图，回落条目封面。
-  ImageProvider? _continueArtworkProvider(_ContinueEntry entry) {
-    final List<MediaImageRow>? rows = entry.collectionId != null
-        ? _mediaImagesByCollection[entry.collectionId]
-        : _mediaImagesByBookUid[entry.video?.bookUid];
-    if (rows == null) return null;
-    for (final MediaImageKind kind in const <MediaImageKind>[
-      MediaImageKind.titleCard,
-      MediaImageKind.backdrop,
-    ]) {
-      for (final MediaImageRow row in rows) {
-        if (row.kind == kind.dbValue && row.path.isNotEmpty) {
-          return resolveMediaCoverImage(
-            kind: MediaKind.video,
-            localPath: row.path,
-          );
-        }
-      }
-    }
-    return null;
   }
 
   /// 视频封面：来源解析与游戏/剧集列表共用 [resolveMediaCoverImage]。
@@ -1938,15 +1841,14 @@ class _HomeDashboardPageState
   Widget _videoCover(
     FushiDesignTokens tokens,
     VideoBookRow video, {
+    String? posterPath,
     required String title,
-    bool landscapeSlot = false,
   }) {
     return _localCover(
       tokens,
       kind: MediaKind.video,
-      path: video.coverPath,
+      path: posterPath ?? video.coverPath,
       title: title,
-      landscapeSlot: landscapeSlot,
     );
   }
 
@@ -1967,14 +1869,13 @@ class _HomeDashboardPageState
   }
 
   /// 本地视频 / 游戏封面：来源解析共用 [resolveMediaCoverImage]，渲染交给
-  /// [PortraitCoverImage] 做槽向自适应（BUG-1299：抽帧 16:9 / 刮削海报 2:3 /
-  /// exe 方图标都不硬裁）。取不到图 →「图标 + [title]」兜底。
+  /// [PortraitCoverImage]（2:3 竖槽，横图居中裁切）。取不到图 →「图标 + [title]」
+  /// 兜底。
   Widget _localCover(
     FushiDesignTokens tokens, {
     required MediaKind kind,
     required String? path,
     required String title,
-    bool landscapeSlot = false,
   }) {
     final ImageProvider? provider = resolveMediaCoverImage(
       kind: kind,
@@ -1988,9 +1889,11 @@ class _HomeDashboardPageState
         title: title,
       );
     }
+    // 统一竖卡：竖版海报直接铺满；只有横版截帧时按用户要求裁进竖卡（不走
+    // 模糊垫底——首页这一行要整齐的同尺寸海报墙）。
     return PortraitCoverImage(
       image: provider,
-      landscapeSlot: landscapeSlot,
+      cropMismatch: true,
       errorBuilder: (BuildContext _) => _coverPlaceholder(
         tokens,
         mediaCoverFallbackIcon(kind),

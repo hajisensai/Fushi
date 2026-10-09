@@ -471,11 +471,19 @@ class HomeContinueCoverCard extends StatelessWidget {
                         bottom: 0,
                         child: CoverProgressStrip(value: value.clamp(0.0, 1.0)),
                       ),
+                    // 角标恒完整显示：窄卡放不下时整枚等比缩小，不被卡边裁掉。
                     if (label != null || icon != null)
                       PositionedDirectional(
                         top: 6,
                         end: 6,
-                        child: CoverBadge(icon: icon, label: label),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: width - 12),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: AlignmentDirectional.topEnd,
+                            child: CoverBadge(icon: icon, label: label),
+                          ),
+                        ),
                       ),
                     Positioned.fill(
                       child: Material(

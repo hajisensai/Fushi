@@ -27,6 +27,7 @@ class PortraitCoverImage extends StatefulWidget {
     this.imageKey,
     this.errorBuilder,
     this.landscapeSlot = false,
+    this.cropMismatch = false,
   });
 
   /// 已解析好的图片源。本地文件请自带解码上限（如 `resizedFileImage`），远端用
@@ -42,6 +43,11 @@ class PortraitCoverImage extends StatefulWidget {
   /// 槽位朝向：false = 竖版槽（默认，主网格 2:3），横图垫底；true = 横版槽
   /// （合集详情 16:9 单集缩略图等），竖图垫底（BUG-1299）。
   final bool landscapeSlot;
+
+  /// true = 朝向不合槽时也直接 `BoxFit.cover` 居中裁切，不走模糊垫底。只给要求
+  /// 「整排同尺寸海报墙」的地方用（首页「继续」行：没有竖版海报的视频把横版
+  /// 截帧裁进 2:3 竖卡）；默认 false 保持 BUG-1299 的不硬裁口径。
+  final bool cropMismatch;
 
   /// 竖图判定阈值：宽高比 ≤ 此值直接 cover（海报 2:3≈0.67，留裕量收到 0.85）。
   static const double portraitAspectThreshold = 0.85;
@@ -64,9 +70,11 @@ class _PortraitCoverImageState extends State<PortraitCoverImage>
   ImageProvider probedImageOf(PortraitCoverImage widget) => widget.image;
 
   /// 朝向是否不合槽 —— build 的渲染分支与主色采样开关共用的唯一判据。
-  bool _mismatch(double aspect) => widget.landscapeSlot
-      ? aspect < PortraitCoverImage.landscapeAspectThreshold
-      : aspect > PortraitCoverImage.portraitAspectThreshold;
+  bool _mismatch(double aspect) =>
+      !widget.cropMismatch &&
+      (widget.landscapeSlot
+          ? aspect < PortraitCoverImage.landscapeAspectThreshold
+          : aspect > PortraitCoverImage.portraitAspectThreshold);
 
   @override
   bool needsBackdropSeed(double aspect) => _mismatch(aspect);

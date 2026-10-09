@@ -28,6 +28,7 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
     show CoverProgressStrip;
+import 'package:fushi/src/utils/components/cover_badge.dart' show CoverBadge;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
@@ -612,7 +613,7 @@ void main() {
     expect(tester.getRect(card), originalRect);
   });
 
-  testWidgets('BUG-2005 口径保留：横版封面的视频卡随封面自适应成 16:9 横卡',
+  testWidgets('精简 · 整排统一 2:3 竖卡：横版截帧的视频也裁进竖卡（不再横竖混排）',
       (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     final File cover = File('${storeDir.path}/landscape_cover.png')
@@ -624,9 +625,13 @@ void main() {
       coverPath: Value(cover.path),
       lastPositionMs: const Value(60000),
     ));
+    final MediaItem book = readingBook('书A', '书A', position: 30);
     // 卡片是数据回填后才建的、解码是真异步 I/O：两段都必须在同一个 runAsync 里。
     await tester.runAsync(() async {
-      await tester.pumpWidget(buildApp());
+      await tester.pumpWidget(buildAppWithBooks(
+        <MediaItem>[book],
+        const <String, int>{'书A': 1},
+      ));
       await Future<void>.delayed(const Duration(milliseconds: 600));
       await tester.pump();
       await Future<void>.delayed(const Duration(milliseconds: 600));
@@ -635,8 +640,86 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    final HomeContinueCoverCard c = onlyCard(tester);
-    expect(c.width, closeTo(c.height * 16 / 9, 0.01));
+    final List<HomeContinueCoverCard> cards =
+        tester.widgetList<HomeContinueCoverCard>(coverCards()).toList();
+    expect(cards, hasLength(2));
+    for (final HomeContinueCoverCard c in cards) {
+      expect(c.width, closeTo(c.height * 2 / 3, 0.01), reason: c.title);
+    }
+    expect(tester.getSize(coverCards().first), tester.getSize(coverCards().last));
+    // 横版截帧裁进竖卡：直接 cover 铺满，不走模糊垫底 + contain。
+    final Image frame = tester.widget<Image>(find.descendant(
+      of: find.byWidgetPredicate((Widget w) =>
+          w is HomeContinueCoverCard && w.title == '在看的横版视频'),
+      matching: find.byType(Image),
+    ).first);
+    expect(frame.fit, BoxFit.cover);
+  });
+
+  testWidgets('精简 · 视频竖卡优先用作品海报（合集主封面），不用集的横版截帧',
+      (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    final File poster = File('${storeDir.path}/poster.png')
+      ..writeAsBytesSync(_kOnePixelPng);
+    final File frame = File('${storeDir.path}/frame.png')
+      ..writeAsBytesSync(_kLandscapePng);
+    final int cid = await seedCollectionTwoEpisodes(
+      e1: VideoBooksCompanion(
+        bookUid: const Value('e1'),
+        title: const Value('S01E01'),
+        videoPath: const Value('/abs/e1.mp4'),
+        coverPath: Value(frame.path),
+        lastPositionMs: const Value(60000),
+      ),
+      e2: const VideoBooksCompanion(
+        bookUid: Value('e2'),
+        title: Value('S01E02'),
+        videoPath: Value('/abs/e2.mp4'),
+      ),
+    );
+    await db.updateMediaCollectionCoverPath(cid, poster.path);
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    final Iterable<Image> images = tester.widgetList<Image>(
+      find.descendant(of: coverCards(), matching: find.byType(Image)),
+    );
+    String pathOf(Image i) {
+      ImageProvider p = i.image;
+      if (p is ResizeImage) p = p.imageProvider;
+      return (p as FileImage).file.path;
+    }
+
+    expect(images.map(pathOf), everyElement(poster.path));
+  });
+
+  testWidgets('精简 · 窄卡上的集数角标完整显示，不被卡边裁掉', (WidgetTester tester) async {
+    useSize(tester, const Size(320, 700));
+    final int cid = await db.createMediaCollection('很长的作品名');
+    for (int i = 1; i <= 12; i++) {
+      await db.upsertVideoBook(VideoBooksCompanion(
+        bookUid: Value('ep$i'),
+        title: Value('E$i'),
+        videoPath: Value('/abs/ep$i.mp4'),
+        lastPositionMs: Value(i == 12 ? 60000 : 1400000),
+        completedAt: i < 12 ? Value(DateTime.now()) : const Value(null),
+      ));
+      await db.addToCollection(cid, MediaKind.video, 'ep$i');
+    }
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(onlyCard(tester).badgeLabel, t.home_continue_episode(n: 12));
+    final Rect card = tester.getRect(coverCards());
+    final Rect badge = tester.getRect(find.descendant(
+      of: coverCards(),
+      matching: find.byType(CoverBadge),
+    ));
+    expect(badge.left, greaterThanOrEqualTo(card.left));
+    expect(badge.right, lessThanOrEqualTo(card.right));
+    expect(find.text(t.home_continue_episode(n: 12)), findsOneWidget);
   });
 
   testWidgets('点继续区视频卡直接续播（带主合集 id），不再只是切视频 tab；合集卡角标 = 集数',
