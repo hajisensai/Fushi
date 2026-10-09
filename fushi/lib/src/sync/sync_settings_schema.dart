@@ -578,6 +578,10 @@ SettingsDestination buildInterconnectDestination() {
                     ctx.appModel.prefsRepo.gameStreamVideoSettings,
                 writeSettings:
                     ctx.appModel.prefsRepo.setGameStreamVideoSettings,
+                readLookupLayout: () =>
+                    ctx.appModel.prefsRepo.gameStreamLookupLayout,
+                writeLookupLayout:
+                    ctx.appModel.prefsRepo.setGameStreamLookupLayout,
               ),
             ),
           ),

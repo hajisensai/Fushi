@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/pages/implementations/game_stream_session_opener.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
@@ -25,6 +26,8 @@ class GameStreamJoinPage extends StatefulWidget {
     required this.repository,
     required this.readSettings,
     required this.writeSettings,
+    this.readLookupLayout,
+    this.writeLookupLayout,
     super.key,
   });
 
@@ -33,6 +36,11 @@ class GameStreamJoinPage extends StatefulWidget {
   /// 串流参数的读写（生产接 `PreferencesRepository.gameStreamVideoSettings`）。
   final GameStreamVideoSettings Function() readSettings;
   final Future<void> Function(GameStreamVideoSettings settings) writeSettings;
+
+  /// Lookup rail geometry stored on this device; null = defaults, unsaved.
+  final GameStreamLookupLayout Function()? readLookupLayout;
+  final Future<void> Function(GameStreamLookupLayout layout)?
+  writeLookupLayout;
 
   @override
   State<GameStreamJoinPage> createState() => _GameStreamJoinPageState();
@@ -117,6 +125,12 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
         clientId: _clientId,
         onSettingsChanged: (GameStreamVideoSettings next) =>
             unawaited(widget.writeSettings(next)),
+        lookupLayout:
+            widget.readLookupLayout?.call() ?? const GameStreamLookupLayout(),
+        onLookupLayoutChanged: widget.writeLookupLayout == null
+            ? null
+            : (GameStreamLookupLayout next) =>
+                  unawaited(widget.writeLookupLayout!(next)),
       );
     } on GameStreamLeaveError catch (error) {
       if (mounted) {
