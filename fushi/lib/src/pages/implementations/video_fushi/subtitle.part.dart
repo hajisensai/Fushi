@@ -392,7 +392,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
             ),
           ),
           // 图形轨整轨 OCR 成文字字幕：生成后播放中就能直接点字查词，不必暂停。
-          if (source.isGraphicEmbedded && source.streamIndex != null)
+          if (source.isGraphicEmbedded &&
+              source.streamIndex != null &&
+              graphicSubtitleTrackOcrSupportsCodec(source.codec))
             FushiListTileControl(
               leading: const Icon(Icons.document_scanner_outlined),
               title: Text(t.video_subtitle_graphic_ocr_track),
@@ -2056,9 +2058,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
   }
 
-  /// 把图形字幕轨（PGS）整轨 OCR 成文字 SRT 并当外挂字幕加载：抽轨 → 解析位图 →
-  /// 逐条识别（低置信度交 AI，与漫画同一开关）→ 合并相邻同文。产物落字幕目录，
-  /// 与 ASR 产物同口径，之后播放中直接点字查词。
+  /// 把图形字幕轨（PGS）整轨 OCR 成文字 SRT 并当外挂字幕加载：确认引擎 → 解析引擎 →
+  /// 抽轨 → 解析位图 → 逐条识别（低置信度交 AI，与漫画同一开关）→ 合并相邻同文。产物
+  /// 落字幕目录，与 ASR 产物同口径，之后播放中直接点字查词。
+  ///
+  /// 全程挂一张进度卡（[_graphicSubtitleOcrJob]）：阶段 + 百分比 + 实际引擎 / AI 重读来源
+  /// + 取消。引擎与模型复用漫画 OCR 设置（开始前的确认框可直达），不另起一套。
   Future<void> _generateSubtitleFromGraphicTrack(
     VideoPlayerController controller,
     SubtitleSource source,
@@ -2075,18 +2080,45 @@ extension _VideoSubtitle on _VideoFushiPageState {
         _currentVideoPath == videoPath;
 
     _rebuild(() => _graphicSubtitleOcrRunning = true);
+    final Completer<void> cancel = Completer<void>();
+    _graphicSubtitleOcrCancel = cancel;
+    bool cancelled() => cancel.isCompleted;
     final GraphicSubtitleOcrSession session = GraphicSubtitleOcrSession(
       prepare: _prepareGraphicSubtitleOcr,
     );
     Directory? work;
     try {
-      _showOsd(t.video_subtitle_graphic_ocr_extracting);
+      if (!await _confirmGraphicSubtitleOcrStart() || !isCurrent()) return;
+      final int durationMs = controller.durationMs ?? 0;
+      _graphicSubtitleOcrJob.value = GraphicSubtitleOcrJobState(
+        phase: GraphicSubtitleOcrJobPhase.preparing,
+        duration: durationMs > 0 ? Duration(milliseconds: durationMs) : null,
+      );
+      // 先解析引擎（含 Lens 上传同意）再读整个文件：引擎不可用时几秒内就告诉用户，
+      // 不必先白读几分钟磁盘；解析出的引擎 / AI 来源同时写进进度卡。
+      final GraphicSubtitleOcrEngineInfo engine = await session.resolveEngine();
+      if (!isCurrent() || cancelled()) return;
+      _updateGraphicSubtitleOcrJob(
+        (GraphicSubtitleOcrJobState job) => job.copyWith(
+          phase: GraphicSubtitleOcrJobPhase.extracting,
+          engineLabel: graphicSubtitleOcrEngineLabel(
+            engine.engine,
+            localModelKey: appModel.mangaOcrLocalModel,
+          ),
+          aiLabel: engine.aiProvider,
+        ),
+      );
       work = await Directory.systemTemp.createTemp('fushi_graphic_sub_track_');
       final String supPath = p.join(work.path, 'track.sup');
       final bool extracted = await extractGraphicSubtitleTrackToSup(
         videoPath: videoPath,
         streamIndex: streamIndex,
         supPath: supPath,
+        cancel: cancel.future,
+        onProgress: (Duration processed) => _updateGraphicSubtitleOcrJob(
+          (GraphicSubtitleOcrJobState job) =>
+              job.copyWith(processed: processed),
+        ),
         onFailure: (String summary) => ErrorLogService.instance.log(
           'video.graphicSubtitleOcr.extract',
           summary,
@@ -2094,6 +2126,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
         ),
       );
       if (!isCurrent()) return;
+      if (cancelled()) {
+        _showOsd(t.video_subtitle_graphic_ocr_job_cancelled);
+        return;
+      }
       if (!extracted) {
         _showOsd(t.video_subtitle_import_failed, severity: ToastSeverity.error);
         return;
@@ -2106,26 +2142,30 @@ extension _VideoSubtitle on _VideoFushiPageState {
         _showOsd(t.video_subtitle_graphic_ocr_empty);
         return;
       }
-      int lastDecile = -1;
+      _updateGraphicSubtitleOcrJob(
+        (GraphicSubtitleOcrJobState job) => job.copyWith(
+          phase: GraphicSubtitleOcrJobPhase.recognizing,
+          total: cues.length,
+        ),
+      );
       final List<GraphicSubtitleTextCue>? texts =
           await recognizeGraphicSubtitleCues(
             cues: cues,
             session: session,
-            isCancelled: () => !isCurrent(),
-            onProgress: (int done, int total) {
-              // 每 10% 报一次，别把 OSD 刷成跑马灯。
-              final int decile = done * 10 ~/ total;
-              if (decile == lastDecile) return;
-              lastDecile = decile;
-              _showOsd(
-                t.video_subtitle_graphic_ocr_progress(done: done, total: total),
-              );
-            },
+            isCancelled: () => !isCurrent() || cancelled(),
+            onProgress: (int done, int total) => _updateGraphicSubtitleOcrJob(
+              (GraphicSubtitleOcrJobState job) =>
+                  job.copyWith(done: done, total: total),
+            ),
             onRefineError: (Object error, StackTrace stack) => ErrorLogService
                 .instance
                 .log('video.graphicSubtitleOcr.refine', error, stack),
           );
-      if (texts == null || !isCurrent()) return;
+      if (!isCurrent()) return;
+      if (texts == null) {
+        if (cancelled()) _showOsd(t.video_subtitle_graphic_ocr_job_cancelled);
+        return;
+      }
       final String srt = buildGraphicSubtitleSrt(texts);
       if (srt.isEmpty) {
         _showOsd(t.video_subtitle_graphic_ocr_empty);
@@ -2144,6 +2184,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       await directory.create(recursive: true);
       await File(target).writeAsString(srt, flush: true);
       if (!isCurrent()) return;
+      _graphicSubtitleOcrJob.value = null;
       await _importExternalSubtitle(controller, target);
       if (!isCurrent()) return;
       if (controller.cues.isNotEmpty && _currentSubtitleSource == target) {
@@ -2157,6 +2198,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
         _showOsd(t.video_subtitle_import_failed, severity: ToastSeverity.error);
       }
     } finally {
+      if (identical(_graphicSubtitleOcrCancel, cancel)) {
+        _graphicSubtitleOcrCancel = null;
+      }
+      if (mounted) _graphicSubtitleOcrJob.value = null;
       await session.close();
       try {
         await work?.delete(recursive: true);
@@ -2165,6 +2210,94 @@ extension _VideoSubtitle on _VideoFushiPageState {
       }
       if (mounted) _rebuild(() => _graphicSubtitleOcrRunning = false);
     }
+  }
+
+  /// 进度卡的增量更新（任务已结束 / 已取消时为 no-op）。
+  void _updateGraphicSubtitleOcrJob(
+    GraphicSubtitleOcrJobState Function(GraphicSubtitleOcrJobState job) update,
+  ) {
+    final GraphicSubtitleOcrJobState? job = _graphicSubtitleOcrJob.value;
+    if (job == null || !mounted) return;
+    _graphicSubtitleOcrJob.value = update(job);
+  }
+
+  /// 进度卡 ✕：强杀在途的抽轨进程 / 停止逐条识别。产物不落盘。
+  void _cancelGraphicSubtitleOcr() {
+    final Completer<void>? cancel = _graphicSubtitleOcrCancel;
+    if (cancel == null || cancel.isCompleted) return;
+    cancel.complete();
+  }
+
+  /// 开始整轨转文字前的确认框：说明会用哪个识别引擎（漫画 OCR 设置里的引擎偏好 /
+  /// 本机模型）与 AI 重读是否开启，「OCR 设置」直达同一个设置页改模型 / 引擎 /
+  /// AI 档位，回来后确认框按新设置重绘。返回是否开始。
+  Future<bool> _confirmGraphicSubtitleOcrStart() async {
+    if (!mounted) return false;
+    final bool? start = await _focusOwnership.guardOverlay(
+      () => showAppDialog<bool>(
+        context: context,
+        builder: (BuildContext ctx) => StatefulBuilder(
+          builder: (BuildContext ctx, StateSetter setDialogState) {
+            final ThemeData theme = Theme.of(ctx);
+            final String engine = graphicSubtitleOcrPreferenceLabel(
+              MangaOcrEnginePreferenceKey.fromKey(
+                appModel.mangaOcrEnginePreference,
+              ),
+              localModelKey: appModel.mangaOcrLocalModel,
+            );
+            final MangaAiOcrRefiner? ai = createMangaAiOcrRefiner(appModel);
+            final String model = ai?.provider.model.trim() ?? '';
+            final String? aiLabel = ai == null
+                ? null
+                : model.isEmpty
+                ? ai.provider.name
+                : '${ai.provider.name} · $model';
+            return FushiAlertDialog(
+              key: const ValueKey<String>('graphic_subtitle_ocr_start_dialog'),
+              title: Text(t.video_subtitle_graphic_ocr_track),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(t.video_subtitle_graphic_ocr_start_body),
+                  const SizedBox(height: 12),
+                  Text(
+                    t.video_subtitle_graphic_ocr_job_engine(engine: engine),
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  Text(
+                    aiLabel == null
+                        ? t.video_subtitle_graphic_ocr_job_ai_off
+                        : t.video_subtitle_graphic_ocr_job_ai_on(
+                            provider: aiLabel,
+                          ),
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ],
+              ),
+              actions: <Widget>[
+                FushiTextButton(
+                  onPressed: () async {
+                    await MangaOcrSettingsPage.push(ctx);
+                    if (ctx.mounted) setDialogState(() {});
+                  },
+                  child: Text(t.video_subtitle_graphic_ocr_open_settings),
+                ),
+                FushiTextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: Text(t.dialog_cancel),
+                ),
+                FushiFilledButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  child: Text(t.video_subtitle_graphic_ocr_start_action),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+    return start ?? false;
   }
 
   /// 从视频音轨生成文字字幕，允许无字幕或仅有 PGS 的视频直接进入查词和制卡链路。
@@ -2745,17 +2878,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
         return false;
       }
       final String persisted = source.toPersistedValue();
-      // 图形轨没有 cue，只落源指针（单视频也清掉旧 cue，避免上次文本 cue 残留把
-      // overlay 又显示回来）；播放列表各集只存源指针，与文本分支一致。
-      if (_episodes.isEmpty) {
-        await widget.repo.saveSubtitleSelection(
-          bookUid: bookUid,
-          subtitleSource: persisted,
-          cues: const <AudioCue>[],
-        );
-      } else {
-        await widget.repo.updateSubtitleSource(bookUid, persisted);
-      }
+      // 图形轨没有 cue：源指针与「清空库里的 cue」原子写入。播放列表里的一集也要清——
+      // 那份 cue 是之前选过的文本字幕 / OCR 转出的字幕留下的，留着它重开时会盖掉图形
+      // 字幕、看起来像「图形字幕被自动取消选中」（BUG-3103）。
+      await widget.repo.saveSubtitleSelection(
+        bookUid: bookUid,
+        subtitleSource: persisted,
+        cues: const <AudioCue>[],
+      );
       if (!isCurrent()) return false;
       _rebuild(() => _currentSubtitleSource = persisted);
       // 图形轨只能当画面渲染、逐字查词失效——是降级而非成功，配色要说清。

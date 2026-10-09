@@ -733,11 +733,33 @@ extension _VideoLayout on _VideoFushiPageState {
                             ),
                           ),
                         ),
+                        // 图形字幕的模糊 / 隐藏遮蔽（与文本字幕同一个三态开关与显形门；
+                        // 非图形字幕零尺寸）。挂在 OCR 查词层之下，暂停时的可点字在上面。
+                        Positioned.fill(
+                          child: VideoGraphicSubtitleObscureLayer(
+                            controller: controller,
+                            fit: videoFitModeToBoxFit(_videoFitMode),
+                            obscure:
+                                switch (appModel.videoSubtitleObscureMode) {
+                                  VideoSubtitleObscureMode.none =>
+                                    GraphicSubtitleObscure.none,
+                                  VideoSubtitleObscureMode.blur =>
+                                    GraphicSubtitleObscure.blur,
+                                  VideoSubtitleObscureMode.hide =>
+                                    GraphicSubtitleObscure.hide,
+                                },
+                            revealOnInteraction:
+                                appModel.videoSubtitleObscureReveal,
+                            lookupPopupVisible: _hasVisiblePopup,
+                          ),
+                        ),
                         // 图形字幕（PGS / VobSub / DVB）没有 cue：暂停时对画面做 OCR，
                         // 识别出的字原位铺可点区域查词（非图形字幕 / 播放中零尺寸）。
                         Positioned.fill(
                           child: _buildGraphicSubtitleOcrOverlay(controller),
                         ),
+                        // 图形字幕整轨转文字的进度卡（没在跑时零尺寸）。
+                        _buildGraphicSubtitleOcrProgressOverlay(),
                         _buildOsdOverlay(),
                         // 在线视频后台制卡 / 看完再制卡的右上角角标（无任务时零尺寸）。
                         _buildMineQueueBadgeOverlay(),

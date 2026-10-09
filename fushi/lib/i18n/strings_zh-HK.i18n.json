@@ -6256,7 +6256,6 @@
   "video_subtitle_graphic_ocr_track": "轉成文字字幕（OCR）",
   "video_subtitle_graphic_ocr_track_hint": "整軌辨識一次，之後播放中直接點字查詞",
   "video_subtitle_graphic_ocr_extracting": "正在抽取圖形字幕軌…",
-  "video_subtitle_graphic_ocr_progress": "正在辨識字幕 $done/$total",
   "video_subtitle_graphic_ocr_empty": "這條字幕軌沒有辨識出文字",
   "ai_video_acquire_franchise_unavailable": "沒能取到「$title」的完整系列清單（資料源出錯或不可用）。",
   "ai_video_acquire_ask_franchise_fallback": "沒找到符合要求的其它作品。只下載「$title」這一部嗎？",
@@ -6897,5 +6896,18 @@
   "video_setting_mpv_passthrough_hint": "將 AC-3 / E-AC-3 / TrueHD / DTS-HD 原封不動交給擴音機或 Soundbar 解碼（包括 Atmos）。只應在裝置支援這些格式時開啟，否則可能無聲。直通時請在擴音機上調校音量：應用內的音量與靜音對這些碼流無效，所以倍速不是 1×、音量未調至最大或靜音時，會暫時改由 Fushi 解碼（擴音機上的 Atmos / DTS 標示隨之熄滅）。關閉時一律由 Fushi 解碼，5.1 / 7.1 照樣以環迴立體聲輸出。",
   "shortcut_action_video_lookup_next_word": "下一個詞（掃詞）",
   "shortcut_action_video_lookup_prev_word": "上一個詞（掃詞）",
-  "media_source_open_folder_failed": "無法開啟資料夾，可能已被移動、刪除或中斷連線。"
+  "media_source_open_folder_failed": "無法開啟資料夾，可能已被移動、刪除或中斷連線。",
+  "video_subtitle_graphic_ocr_job_preparing": "Preparing the OCR engine…",
+  "video_subtitle_graphic_ocr_job_extracting": "Reading the subtitle track $percent%",
+  "video_subtitle_graphic_ocr_job_recognizing": "Recognizing $done/$total ($percent%)",
+  "video_subtitle_graphic_ocr_job_engine": "Engine: $engine",
+  "video_subtitle_graphic_ocr_job_ai_on": "AI re-read: $provider",
+  "video_subtitle_graphic_ocr_job_ai_off": "AI re-read: off",
+  "video_subtitle_graphic_ocr_job_cancelled": "Text subtitle conversion cancelled",
+  "video_subtitle_graphic_ocr_start_body": "Recognizes every line of this image subtitle track with your OCR settings (shared with manga OCR). Large files take a while to read.",
+  "video_subtitle_graphic_ocr_start_action": "Start",
+  "video_subtitle_graphic_ocr_open_settings": "OCR settings",
+  "video_subtitle_graphic_ocr_status_recognizing": "Reading subtitle…",
+  "video_subtitle_graphic_ocr_status_ready": "Subtitle recognized · tap a word",
+  "video_subtitle_graphic_ocr_status_empty": "No subtitle text here"
 }

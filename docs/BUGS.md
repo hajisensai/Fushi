@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2852 条。点号进各自文件。
+> 共 2855 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3104](bugs/BUG-3104-graphic-subtitle-seek-mid-cue.md) | ✅ | ✅ | 往回跳到图形字幕一句中间时不显示，要等下一句 |
+| [BUG-3103](bugs/BUG-3103-graphic-subtitle-restore-lost.md) | ✅ | ✅ | 选中图形字幕后重开视频被取消选中（库里残留文本 cue 时恢复分支丢掉图形轨） |
+| [BUG-3102](bugs/BUG-3102-graphic-subtitle-extract-timeout.md) | ✅ | ✅ | 图形字幕整轨转文字抽轨按体积估总超时，慢盘上误杀仍在推进的 ffmpeg |
 | [BUG-3093](bugs/BUG-3093-feedback-snackbar-transition-race.md) | ✅ | ✅ | 反馈提交测试在提交页退场动画中断言提示条数，CI 慢时数到两条 |
 | [BUG-3092](bugs/BUG-3092-espeak-kana-only-symbols.md) | ✅ | ✅ | isKanaOnlyText 拒收〜…等读音常见符号、却放行 espeak-ng 读不了的・与小片假名扩展 |
 | [BUG-3091](bugs/BUG-3091-linux-tts-real-engine-test-skip.md) | ✅ | ✅ | Linux 真引擎 TTS 测试只判 open_jtalk 在 PATH，缺辞书或声音时误红 |

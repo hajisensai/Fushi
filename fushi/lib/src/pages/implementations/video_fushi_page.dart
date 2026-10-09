@@ -59,6 +59,7 @@ import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart'
     show MihonRuntimeException;
+import 'package:fushi/src/media/manga/manga_ocr_settings_page.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
@@ -66,7 +67,10 @@ import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
 import 'package:fushi/src/media/video/graphic_subtitle_track_ocr.dart';
 import 'package:fushi/src/media/video/pgs_subtitle_parser.dart';
+import 'package:fushi/src/media/video/video_graphic_subtitle_obscure_layer.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_ocr_overlay.dart';
+import 'package:fushi/src/media/video/video_graphic_subtitle_ocr_progress.dart';
+import 'package:fushi/src/media/video/video_subtitle_restore_plan.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
@@ -76,6 +80,8 @@ import 'package:fushi/src/media/source_library/source_stream_headers.dart';
 import 'package:fushi/src/media/video/stream_url_resolver.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi_engine/media/video/strm_file.dart' show isStrmPath;
+import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart'
+    show MangaAiOcrRefiner;
 import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart'
     show BlurayEncryptedStreamException;
 import 'package:fushi_engine/media/video/bluray/aacs_configuration.dart';
@@ -4544,18 +4550,24 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         persisted: externalSub,
         crossEpisode: false,
       );
-      if (restored != null && restored.cues.isNotEmpty) {
-        cues = restored.cues;
-        externalSub = restored.persisted;
-      }
-      // restored 为空（缓存被清 / 容器不可读）：保留 DB 缓存 cues，仅缺样式不缺内容。
+      // BUG-3103：重解析出的是**图形轨**时，库里的 cue 是别的源留下的旧数据——清掉并
+      // 把图形轨序号交给播放器渲染；restored 为空（缓存被清 / 容器不可读）时保留 DB
+      // 缓存 cues，仅缺样式不缺内容。三种去向见 [mergeRestoredEmbeddedSubtitle]。
+      final SubtitleLoadPlan plan = mergeRestoredEmbeddedSubtitle(
+        cachedCues: cues,
+        persisted: externalSub,
+        restored: restored,
+      );
+      cues = plan.cues;
+      externalSub = plan.externalSubtitle;
+      graphicStreamIndex = plan.graphicStreamIndex;
     }
 
-    // 兜底链：只要**还没拿到 cue** 就逐级往下试。这里刻意独立于上面那条 else-if 链
+    // 兜底链：只要**还没拿到 cue** 就逐级往下试（已确定渲染图形轨时不再试，BUG-3103）。这里刻意独立于上面那条 else-if 链
     // ——上面任何一支「试过但没成功」都必须能落到这里。合集里的每一集没有 DB cue 缓存
     // 兜底（只落字幕源指针），一旦挂在同一条链上，「解析一次没成功」就直接空手收场
     // （BUG-1848）。
-    if (!subtitleExplicitlyOff && cues.isEmpty) {
+    if (!subtitleExplicitlyOff && cues.isEmpty && graphicStreamIndex == null) {
       // ① 优先恢复持久化的字幕源（精确匹配本视频的同一源）。
       if (paths.subtitleSource != null && paths.subtitleSource!.isNotEmpty) {
         final ({
@@ -5508,6 +5520,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   void dispose() {
     _discBindingGeneration++;
+    // 退页即停整轨转文字：强杀在途的抽轨 ffmpeg（否则它会在后台把整个文件读完）。
+    _cancelGraphicSubtitleOcr();
+    _graphicSubtitleOcrJob.dispose();
     _controller?.removeListener(_onDiscNavigationChanged);
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。
@@ -6329,6 +6344,72 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         'VideoFushiPage.graphicSubtitleOcr',
         error,
         stack,
+      ),
+      // 暂停识别的状态标记落在顶栏下方（暂停时顶栏通常可见），不压画面下方的字幕。
+      statusTopInset:
+          MediaQuery.paddingOf(context).top +
+          _videoButtonBarHeight +
+          8 * _videoUiScale,
+    );
+  }
+
+  /// 图形字幕整轨转文字的进度卡（左上角、顶栏下方；没在跑时零尺寸）。进度经
+  /// [_graphicSubtitleOcrJob] 推送，只重建卡片本身。
+  Widget _buildGraphicSubtitleOcrProgressOverlay() {
+    return Positioned.fill(
+      child: SafeArea(
+        child: ValueListenableBuilder<GraphicSubtitleOcrJobState?>(
+          valueListenable: _graphicSubtitleOcrJob,
+          builder:
+              (
+                BuildContext context,
+                GraphicSubtitleOcrJobState? job,
+                Widget? _,
+              ) {
+                final ThemeData theme = Theme.of(context);
+                return Align(
+                  alignment: Alignment.topLeft,
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      left: 16,
+                      right: 16,
+                      top: _videoButtonBarHeight + 8 * _videoUiScale,
+                    ),
+                    child: Theme(
+                      data: theme.copyWith(
+                        colorScheme: _videoChromeColorScheme(context),
+                      ),
+                      child: AnimatedSwitcher(
+                        duration: fushiMotionDuration(
+                          context,
+                          FushiMotion.medium,
+                        ),
+                        switchInCurve: FushiMotion.enter,
+                        switchOutCurve: Curves.easeOut,
+                        transitionBuilder:
+                            (Widget child, Animation<double> animation) =>
+                                FadeTransition(
+                                  opacity: animation,
+                                  child: SlideTransition(
+                                    position: Tween<Offset>(
+                                      begin: const Offset(0, -0.15),
+                                      end: Offset.zero,
+                                    ).animate(animation),
+                                    child: child,
+                                  ),
+                                ),
+                        child: job == null
+                            ? const SizedBox.shrink()
+                            : VideoGraphicSubtitleOcrProgressCard(
+                                state: job,
+                                onCancel: _cancelGraphicSubtitleOcr,
+                              ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+        ),
       ),
     );
   }
@@ -10373,6 +10454,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 正在把图形字幕轨整轨 OCR 成文字字幕（一次只跑一轨）。
   bool _graphicSubtitleOcrRunning = false;
+
+  /// 整轨转文字的进度卡状态（null = 没在跑）。ValueNotifier：进度高频变化只重建卡片，
+  /// 不重建整页。
+  final ValueNotifier<GraphicSubtitleOcrJobState?> _graphicSubtitleOcrJob =
+      ValueNotifier<GraphicSubtitleOcrJobState?>(null);
+
+  /// 整轨转文字的取消信号（进度卡的 ✕）；没在跑为 null。
+  Completer<void>? _graphicSubtitleOcrCancel;
 
   @override
   Widget build(BuildContext context) {

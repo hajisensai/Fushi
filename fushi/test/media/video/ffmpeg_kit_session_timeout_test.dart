@@ -5,6 +5,7 @@ import 'package:ffmpeg_kit_flutter/session.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/ffmpeg_kit_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 
 /// BUG-2542：移动端 ffmpeg-kit 后端的**每一次** method channel 往返都必须在时间
 /// 预算内。
@@ -147,6 +148,76 @@ void main() {
     expect(result.isSuccess, isFalse);
     expect(result.returnCode, 1);
     expect(result.output, 'Unknown encoder');
+  });
+
+  group('观察式会话（BUG-3102）：按统计回调的进度判活', () {
+    test('一直推进就不判卡死，总耗时远超窗口也照常收尾', () async {
+      final List<Duration> seen = <Duration>[];
+      final FfmpegRunResult result = await runKitFfmpegWatchedSession(
+        start: (
+          void Function() onComplete,
+          void Function(double timeMs) onTime,
+        ) async {
+          unawaited(() async {
+            for (int i = 1; i <= 6; i++) {
+              await Future<void>.delayed(const Duration(milliseconds: 40));
+              onTime(i * 1000.0);
+            }
+            onComplete();
+          }());
+          return _FakeSession(sessionId: 5, returnCode: 0);
+        },
+        watch: FfmpegWatch(
+          stallTimeout: const Duration(milliseconds: 100),
+          onProgress: seen.add,
+        ),
+        executable: 'ffmpeg-kit',
+        cancelSession: (int id) async => fail('不该取消一直在推进的会话'),
+      );
+      expect(result.returnCode, 0);
+      expect(seen.last, const Duration(seconds: 6));
+    });
+
+    test('进度停住：只精确取消本次 session，返回卡死标记', () async {
+      final List<int> cancelledIds = <int>[];
+      final FfmpegRunResult result = await runKitFfmpegWatchedSession(
+        start: (
+          void Function() onComplete,
+          void Function(double timeMs) onTime,
+        ) async {
+          onTime(1000);
+          return _FakeSession(sessionId: 9);
+        },
+        watch: const FfmpegWatch(stallTimeout: Duration(milliseconds: 80)),
+        executable: 'ffmpeg-kit',
+        cancelSession: (int id) async => cancelledIds.add(id),
+      );
+      expect(result.returnCode, isNull);
+      expect(result.output, contains('stalled'));
+      expect(cancelledIds, <int>[9]);
+    });
+
+    test('取消信号：立刻取消本次 session', () async {
+      final Completer<void> cancel = Completer<void>();
+      final List<int> cancelledIds = <int>[];
+      final Future<FfmpegRunResult> pending = runKitFfmpegWatchedSession(
+        start: (
+          void Function() onComplete,
+          void Function(double timeMs) onTime,
+        ) async =>
+            _FakeSession(sessionId: 3),
+        watch: FfmpegWatch(
+          stallTimeout: const Duration(minutes: 5),
+          cancel: cancel.future,
+        ),
+        executable: 'ffmpeg-kit',
+        cancelSession: (int id) async => cancelledIds.add(id),
+      );
+      cancel.complete();
+      final FfmpegRunResult result = await pending;
+      expect(result.output, contains(kFfmpegCancelledMarker));
+      expect(cancelledIds, <int>[3]);
+    });
   });
 }
 

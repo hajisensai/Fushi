@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/media/video/bluray/bluray_ffmpeg_input.dart';
 import 'package:fushi_engine/media/video/bluray/aacs_media_session.dart';
+import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 
 import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -743,8 +744,22 @@ Future<FfmpegRunResult> runCliFfprobeForTesting({
 
 /// 系统 ffmpeg（`Process.start`）后端：桌面三端（Windows/macOS/Linux）。
 /// 委托 [runFfmpegProcess]，可执行文件经 [resolveFfmpegExecutable] 解析（覆盖>捆绑>PATH）。
-class CliFfmpegBackend implements FfmpegBackend {
+class CliFfmpegBackend implements FfmpegBackend, FfmpegWatchedRunner {
   const CliFfmpegBackend();
+
+  /// 观察式运行（BUG-3102）：同一条「覆盖 > 捆绑 > PATH」解析与捆绑损坏回退，只是
+  /// 进程按进度判活（[runFfmpegWatchedProcess]），不吃固定总超时。
+  @override
+  Future<FfmpegRunResult> runWatched(List<String> args, FfmpegWatch watch) =>
+      _runCliFfmpeg(
+        override: ffmpegExplicitOverride(),
+        bundledPath: _bundledFfmpegPath(),
+        isWindows: Platform.isWindows,
+        args: args,
+        timeout: watch.stallTimeout,
+        runner: (String executable, List<String> a, Duration _) =>
+            runFfmpegWatchedProcess(executable, a, watch),
+      );
 
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) =>
@@ -792,10 +807,34 @@ FfmpegBackend resolveFfmpegBackend() =>
     _cachedBackend ??= BlurayFfmpegBackend(_selectBackend());
 
 /// Adapts the shared input contract for desktop and platform FFmpeg backends.
-class BlurayFfmpegBackend implements FfmpegBackend {
+class BlurayFfmpegBackend implements FfmpegBackend, FfmpegWatchedRunner {
   const BlurayFfmpegBackend(this.delegate);
 
   final FfmpegBackend delegate;
+
+  /// 观察式运行：与 [run] 同一条蓝光输入改写；底层后端不支持观察式运行时退回它的
+  /// [FfmpegBackend.run]，用 [FfmpegWatch.stallTimeout] 当总预算（测试替身 / 未知后端）。
+  @override
+  Future<FfmpegRunResult> runWatched(List<String> args, FfmpegWatch watch) async {
+    final AacsMediaSession session = AacsMediaSession();
+    BlurayFfmpegInput? input;
+    try {
+      input = await prepareBlurayFfmpegArgs(
+        args,
+        resolveStream: session.resolve,
+      );
+      final List<String> resolved = await session.ffmpegInputs(input.args);
+      final FfmpegRunResult result = switch (delegate) {
+        final FfmpegWatchedRunner watched =>
+          await watched.runWatched(resolved, watch),
+        final FfmpegBackend other => await other.run(resolved, watch.stallTimeout),
+      };
+      return _redactResult(result, session);
+    } finally {
+      await input?.dispose();
+      await session.close();
+    }
+  }
 
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {

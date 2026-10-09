@@ -10,10 +10,16 @@ import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
+import 'package:fushi/src/media/video/video_graphic_subtitle_ocr_progress.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 
 /// 识别触发的防抖：逐帧步进 / 连续 seek 时只识别停下来的那一帧。
 const Duration kGraphicSubtitleOcrSettleDelay = Duration(milliseconds: 250);
+
+/// 「这一帧没有字」的提示停留多久后淡出（「已识别」标记在暂停期间常驻）。
+const Duration kGraphicSubtitleOcrEmptyHintDuration = Duration(
+  milliseconds: 2500,
+);
 
 /// 图形字幕 OCR 查词覆盖层。尺寸须与视频控件一致（挂在 controls 层里）。
 class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
@@ -25,6 +31,7 @@ class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
     this.onUnavailable,
     this.onError,
     this.captureFrame,
+    this.statusTopInset = 12,
     super.key,
   });
 
@@ -49,6 +56,10 @@ class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
   /// 截帧；默认走 [VideoPlayerController.captureFrameWithSubtitles]（测试注入用）。
   final Future<Uint8List?> Function()? captureFrame;
 
+  /// 状态标记（识别中 / 已识别）距顶部的距离——页面传顶栏高度，标记落在顶栏下方、
+  /// 不压字幕（图形字幕绝大多数在画面下方）。
+  final double statusTopInset;
+
   @override
   State<VideoGraphicSubtitleOcrOverlay> createState() =>
       _VideoGraphicSubtitleOcrOverlayState();
@@ -63,8 +74,13 @@ class _VideoGraphicSubtitleOcrOverlayState
   GraphicSubtitleOcrFrame? _frame;
   _FrameKey? _key;
   Timer? _settle;
+  Timer? _statusFade;
   int _generation = 0;
   bool _unavailableReported = false;
+
+  /// 暂停自动 OCR 的状态：给用户一个轻量反馈，知道这一帧识别过了（以前完全无提示，
+  /// 用户不知道暂停后已经可以点字）。
+  GraphicSubtitlePauseOcrStatus _status = GraphicSubtitlePauseOcrStatus.idle;
 
   @override
   void initState() {
@@ -87,6 +103,7 @@ class _VideoGraphicSubtitleOcrOverlayState
   void dispose() {
     widget.controller.removeListener(_onControllerChanged);
     _settle?.cancel();
+    _statusFade?.cancel();
     _generation++;
     unawaited(_session?.close());
     _session = null;
@@ -117,8 +134,28 @@ class _VideoGraphicSubtitleOcrOverlayState
     _settle?.cancel();
     _settle = null;
     _generation++;
+    _setStatus(GraphicSubtitlePauseOcrStatus.idle);
     if (_frame != null && mounted) setState(() => _frame = null);
     _frame = null;
+  }
+
+  void _setStatus(GraphicSubtitlePauseOcrStatus status) {
+    _statusFade?.cancel();
+    _statusFade = null;
+    if (status == GraphicSubtitlePauseOcrStatus.empty) {
+      final int generation = _generation;
+      _statusFade = Timer(kGraphicSubtitleOcrEmptyHintDuration, () {
+        if (mounted && generation == _generation) {
+          _setStatus(GraphicSubtitlePauseOcrStatus.idle);
+        }
+      });
+    }
+    if (status == _status) return;
+    if (mounted) {
+      setState(() => _status = status);
+    } else {
+      _status = status;
+    }
   }
 
   Future<void> _recognize() async {
@@ -129,6 +166,7 @@ class _VideoGraphicSubtitleOcrOverlayState
           await (widget.captureFrame ??
               widget.controller.captureFrameWithSubtitles)();
       if (bytes == null || stale()) return;
+      _setStatus(GraphicSubtitlePauseOcrStatus.recognizing);
       final GraphicSubtitleOcrSession session = _session ??=
           GraphicSubtitleOcrSession(prepare: widget.prepare);
       final GraphicSubtitleOcrFrame? frame = await session.recognize(
@@ -142,19 +180,34 @@ class _VideoGraphicSubtitleOcrOverlayState
       );
       if (frame == null || stale()) return;
       setState(() => _frame = frame);
+      _setStatus(
+        frame.isEmpty
+            ? GraphicSubtitlePauseOcrStatus.empty
+            : GraphicSubtitlePauseOcrStatus.ready,
+      );
     } on GraphicSubtitleOcrUnavailable catch (e) {
+      if (!stale()) _setStatus(GraphicSubtitlePauseOcrStatus.idle);
       if (_unavailableReported || !mounted) return;
       _unavailableReported = true;
       widget.onUnavailable?.call(e.reason);
     } catch (error, stack) {
+      if (!stale()) _setStatus(GraphicSubtitlePauseOcrStatus.idle);
       if (mounted) widget.onError?.call(error, stack);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final Widget pill = Positioned(
+      top: widget.statusTopInset,
+      left: 0,
+      right: 0,
+      child: Center(child: VideoGraphicSubtitleOcrStatusPill(status: _status)),
+    );
     final GraphicSubtitleOcrFrame? frame = _frame;
-    if (frame == null || frame.isEmpty) return const SizedBox.shrink();
+    if (frame == null || frame.isEmpty) {
+      return Stack(children: <Widget>[pill]);
+    }
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final Size viewSize = constraints.biggest;
@@ -176,6 +229,7 @@ class _VideoGraphicSubtitleOcrOverlayState
                 ),
                 child: _CharHitBox(char: char, onTap: widget.onCharTap),
               ),
+            pill,
           ],
         );
       },
