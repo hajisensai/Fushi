@@ -6898,5 +6898,6 @@
   "shortcut_action_video_lookup_next_word": "下一个词（扫词）",
   "shortcut_action_video_lookup_prev_word": "上一个词（扫词）",
   "media_source_open_folder_failed": "无法打开文件夹，它可能已被移动、删除或断开连接。",
-  "home_continue_episode": "第 $n 集"
+  "home_continue_episode": "第 $n 集",
+  "home_recent_badge": "新"
 }

@@ -281,7 +281,15 @@ void main() {
     return cid;
   }
 
-  Finder coverCards() => find.byType(HomeContinueCoverCard);
+  // 只数「继续」行里的卡：宽屏下方还有一行「最近添加」，用的是同一个卡组件。
+  Finder coverCards() => find.descendant(
+        of: find.byKey(const ValueKey<String>('home-continue-row')),
+        matching: find.byType(HomeContinueCoverCard),
+      );
+  Finder recentCards() => find.descendant(
+        of: find.byKey(const ValueKey<String>('home-recent-row')),
+        matching: find.byType(HomeContinueCoverCard),
+      );
   HomeContinueCoverCard onlyCard(WidgetTester tester) =>
       tester.widget<HomeContinueCoverCard>(coverCards());
 
@@ -294,7 +302,8 @@ void main() {
         (WidgetTester tester) async {
       useSize(tester, size);
       await seedSampleData();
-      // 只导入、没看过：旧版会进「最近添加」，现在首页根本没有这一栏。
+      // 只导入、没看过：旧版会进「最近添加」大栏；现在手机宽度没有这一栏，宽屏
+      // 只在主卡下方补一行无标题的精简封面（见下方宽屏专项测试）。
       await db.upsertVideoBook(VideoBooksCompanion(
         bookUid: const Value('recent-only'),
         title: const Value('刚导入的视频'),
@@ -320,11 +329,15 @@ void main() {
         t.home_filter_watch,
         t.home_filter_game,
         t.stat_goal_daily,
-        '刚导入的视频',
+        if (size.width < 900) '刚导入的视频',
       ]) {
         expect(find.text(gone), findsNothing, reason: gone);
       }
       expect(find.byType(StatContributionHeatmap), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('home-recent-row')),
+        size.width < 900 ? findsNothing : findsOneWidget,
+      );
       // 学习头部行在封面行之上（原第 2 栏移到原第 1 栏上面）。
       expect(
         tester.getTopLeft(find.byType(HomeStudyHeader)).dy,
@@ -332,6 +345,100 @@ void main() {
       );
     });
   }
+
+  test('宽屏封面高度随内容宽放大并夹在 176…260', () {
+    expect(dashboardWideCoverHeight(900), 180);
+    expect(dashboardWideCoverHeight(1024), closeTo(204.8, 0.01));
+    expect(dashboardWideCoverHeight(1440), 260);
+    expect(dashboardWideCoverHeight(2560), 260);
+    expect(dashboardWideCoverHeight(800), 176);
+  });
+
+  testWidgets(
+      '宽屏补内容：主卡下方一行「最近添加」精简封面（无标题行、挂「新」角标、'
+      '按导入时间倒序、与「继续」去重）；封面随宽度放大', (WidgetTester tester) async {
+    useSize(tester, const Size(1440, 900));
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    for (final (String, int) b in <(String, int)>[
+      ('新书A', 3000),
+      ('在读书', 2000),
+      ('新书B', 1000),
+    ]) {
+      await db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: b.$1,
+        title: b.$1,
+        epubPath: '/abs/${b.$1}.epub',
+        extractDir: '/abs/${b.$1}',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: now - b.$2,
+      ));
+    }
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value('fresh-video'),
+      title: const Value('刚导入的视频'),
+      videoPath: const Value('/abs/fresh.mp4'),
+      importedAt: Value(now - 1500),
+    ));
+    await tester.pumpWidget(buildAppWithBooks(
+      <MediaItem>[
+        readingBook('新书A', '新书A', position: 0),
+        readingBook('在读书', '在读书', position: 40),
+        readingBook('新书B', '新书B', position: 0),
+      ],
+      const <String, int>{'在读书': 1},
+    ));
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    // 「继续」只有在读的那本，封面按 1440 宽放大到 260。
+    expect(tester.widgetList<HomeContinueCoverCard>(coverCards()).map(
+        (HomeContinueCoverCard c) => c.title), <String>['在读书']);
+    expect(tester.widget<HomeContinueCoverCard>(coverCards()).height, 260);
+    // 「最近添加」：导入时间倒序、在读书已在「继续」里不重复出现、角标「新」、
+    // 比「继续」小一号；没有任何标题字样。
+    final List<HomeContinueCoverCard> recent =
+        tester.widgetList<HomeContinueCoverCard>(recentCards()).toList();
+    expect(recent.map((HomeContinueCoverCard c) => c.title),
+        <String>['新书B', '刚导入的视频', '新书A']);
+    for (final HomeContinueCoverCard c in recent) {
+      expect(c.badgeLabel, t.home_recent_badge);
+      expect(c.progress, isNull);
+      expect(c.height, closeTo(260 * 0.82, 0.01));
+    }
+    expect(find.text(t.home_recently_added), findsNothing);
+    expect(
+      tester.getTopLeft(recentCards().first).dy,
+      greaterThan(tester.getBottomLeft(coverCards()).dy),
+    );
+  });
+
+  testWidgets('宽屏补内容只在宽屏：手机宽度不出「最近添加」行、封面仍是 148',
+      (WidgetTester tester) async {
+    useSize(tester, const Size(412, 900));
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await db.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: '新书A',
+      title: '新书A',
+      epubPath: '/abs/a.epub',
+      extractDir: '/abs/a',
+      chapterCount: 1,
+      chaptersJson: '[]',
+      importedAt: now,
+    ));
+    await tester.pumpWidget(buildAppWithBooks(
+      <MediaItem>[
+        readingBook('新书A', '新书A', position: 0),
+        readingBook('在读书', '在读书', position: 40),
+      ],
+      const <String, int>{'在读书': 1},
+    ));
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey<String>('home-recent-row')), findsNothing);
+    expect(tester.widget<HomeContinueCoverCard>(coverCards()).height, 148);
+  });
 
   testWidgets('精简 · 学习头部行：今日字数 + 同一行右侧今日时长（不挂小字标签）',
       (WidgetTester tester) async {

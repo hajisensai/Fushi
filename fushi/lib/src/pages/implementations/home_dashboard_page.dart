@@ -92,6 +92,14 @@ bool isDashboardContinueBook(MediaItem item, Set<String> completedBookKeys) {
       ShelfReadStatus.reading;
 }
 
+/// 宽屏首页的封面高度：随内容区宽度放大（宽 × 0.2），夹在 176…260 之间。
+///
+/// 1024 宽平板约 205、1300 以上（桌面 1440）封顶 260——「继续」最多 10 张
+/// 2:3 竖卡在 1440 下正好铺满一行，下方「最近添加」行按 0.82 倍跟随。
+@visibleForTesting
+double dashboardWideCoverHeight(double contentWidth) =>
+    (contentWidth * 0.2).clamp(176.0, 260.0);
+
 /// 「继续」视频卡的进度（[dashboardVideoContinueProgress] 的结果）。
 ///
 /// - [fraction]：封面底部进度条（0..1）；null = 不画。
@@ -416,6 +424,7 @@ class _HomeDashboardSnapshot {
     required this.primaryCollectionByEntry,
     required this.collectionCoverById,
     required this.epubUidByBookKey,
+    required this.epubImportedAtByKey,
     required this.memberSortIndex,
     required this.videoWatchAtByUid,
     required this.videoDurationMsByPath,
@@ -432,6 +441,7 @@ class _HomeDashboardSnapshot {
   final Map<String, int> primaryCollectionByEntry;
   final Map<int, String> collectionCoverById;
   final Map<String, String> epubUidByBookKey;
+  final Map<String, int> epubImportedAtByKey;
   final Map<String, int> memberSortIndex;
   final Map<String, int> videoWatchAtByUid;
   final Map<String, int> videoDurationMsByPath;
@@ -580,10 +590,11 @@ class _HomeDashboardPageState
   /// 「继续」封面行（2026-10 精简：只有封面，不再挂标题 / 副标题文字块）：书 /
   /// 视频 / 游戏统一 2:3 竖卡、等高等宽（视频优先用作品海报，只有横版截帧时裁进
   /// 竖卡，不再横竖混排）。窄屏封面高
-  /// [_kContinueCoverHeight]，宽屏（主列 ≥ [_kWideLayoutMinWidth]）放大到
-  /// [_kContinueCoverHeightWide]——行里没有文字了，封面是唯一的信息载体。
+  /// [_kContinueCoverHeight]，宽屏（主列 ≥ [_kWideLayoutMinWidth]）按窗口宽放大
+  /// （[dashboardWideCoverHeight]）——行里没有文字了，封面是唯一的信息载体。
   static const double _kContinueCoverHeight = 148;
-  static const double _kContinueCoverHeightWide = 176;
+  /// 宽屏「最近添加」行封面相对「继续」行的缩放：次要信息，比「继续」小一号。
+  static const double _kRecentCoverScale = 0.82;
   static const double _kContinueCoverAspect = 2 / 3;
   static const double _kWideLayoutMinWidth = 900;
 
@@ -642,6 +653,15 @@ class _HomeDashboardPageState
   Map<int, String> _collectionNamesById = const <int, String>{};
   Map<String, int> _primaryCollectionByEntry = const <String, int>{};
   Map<String, String> _epubUidByBookKey = const <String, String>{};
+
+  /// epub bookKey → 导入时刻（epoch 毫秒，`EpubBooks.importedAt`）：宽屏「最近
+  /// 添加」封面行的书侧排序时间源（视频用 [VideoBookRow.importedAt]、游戏用
+  /// [GalgameEntry.addedAt]）。
+  Map<String, int> _epubImportedAtByKey = const <String, int>{};
+
+  /// 本帧「继续」行实际显示的条目（[_buildStudyContinueCard] 写入）：宽屏「最近
+  /// 添加」行据此去重，同一部作品不在两行各出一张。
+  List<_ContinueEntry> _continueVisible = const <_ContinueEntry>[];
 
   /// '<mediaType>|<entryKey>' → 条目在其主折叠合集里的组内 sortIndex（只记归属
   /// 主合集的行，书架/视频页同口径）。继续区合集 Next-Up 的组内排序键。
@@ -911,6 +931,9 @@ class _HomeDashboardPageState
       for (final EpubBookMeta r in epubRows)
         if (r.uid.isNotEmpty) r.bookKey: r.uid,
     };
+    final Map<String, int> epubImportedAtByKey = <String, int>{
+      for (final EpubBookMeta r in epubRows) r.bookKey: r.importedAt,
+    };
 
     // 每个视频的最近观看时刻（按 bookUid 取 lastActiveMs 最大值；legacy 无身份行
     // mediaKey '' 跳过）。
@@ -950,6 +973,7 @@ class _HomeDashboardPageState
       primaryCollectionByEntry: primaryByEntry,
       collectionCoverById: collectionCoverById,
       epubUidByBookKey: epubUidByBookKey,
+      epubImportedAtByKey: epubImportedAtByKey,
       memberSortIndex: memberSortIndex,
       videoWatchAtByUid: watchAt,
       videoDurationMsByPath: durationByPath,
@@ -975,6 +999,7 @@ class _HomeDashboardPageState
     _primaryCollectionByEntry = s.primaryCollectionByEntry;
     _collectionCoverById = s.collectionCoverById;
     _epubUidByBookKey = s.epubUidByBookKey;
+    _epubImportedAtByKey = s.epubImportedAtByKey;
     _memberSortIndex = s.memberSortIndex;
     _videoWatchAtByUid = s.videoWatchAtByUid;
     _videoDurationMsByPath = s.videoDurationMsByPath;
@@ -1146,7 +1171,15 @@ class _HomeDashboardPageState
         // 今日时长），下面是只有封面的「继续」行。热力图（统计中心能看）、最近
         // 添加、活动时间轴（本机 + 同步同一本书各出一条，重复）全部删掉。宽屏不再
         // 分主列 / 侧列，卡片通栏，封面随宽度放大。
+        //
+        // 宽屏（桌面 / 平板横屏，用户 2026-10-09：下方空白太多）补两样，手机宽度
+        // 不变：① 封面随窗口宽放大（[dashboardWideCoverHeight]）；② 主卡下方加
+        // 一行「最近添加」封面（无标题行，每张卡挂「新」角标自解释；与「继续」
+        // 已有的作品去重）。不恢复学习日历 / 活动栏 / 标题行 / 筛选。
         final bool wide = constraints.maxWidth >= _kWideLayoutMinWidth;
+        final double coverHeight = wide
+            ? dashboardWideCoverHeight(constraints.maxWidth)
+            : _kContinueCoverHeight;
         final Widget studyCard = _buildStudyContinueCard(
           tokens,
           appModel,
@@ -1154,16 +1187,29 @@ class _HomeDashboardPageState
           lastReadByKey,
           epubUidByKey,
           completedBookKeys,
-          coverHeight: wide ? _kContinueCoverHeightWide : _kContinueCoverHeight,
+          coverHeight: coverHeight,
         );
+        final Widget? recentCard = wide && _initialLoadDone
+            ? _buildRecentlyAddedCard(
+                tokens,
+                appModel,
+                books,
+                coverHeight: coverHeight * _kRecentCoverScale,
+              )
+            : null;
+        int entrance = 0;
         final Widget body = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            FushiStaggeredEntrance(index: 0, child: studyCard),
+            FushiStaggeredEntrance(index: entrance++, child: studyCard),
+            if (recentCard != null) ...<Widget>[
+              SizedBox(height: tokens.spacing.card),
+              FushiStaggeredEntrance(index: entrance++, child: recentCard),
+            ],
             if (trackingCard != null) ...<Widget>[
               SizedBox(height: tokens.spacing.card),
-              FushiStaggeredEntrance(index: 1, child: trackingCard),
+              FushiStaggeredEntrance(index: entrance++, child: trackingCard),
             ],
           ],
         );
@@ -1475,6 +1521,7 @@ class _HomeDashboardPageState
         .take(10)
         .toList();
     _resumeEntry = visible.isEmpty ? null : visible.first;
+    _continueVisible = visible;
 
     // 首载未结束时挂同轮廓骨架，而不是先闪空态再跳成真数据；新用户空库给空态
     // 说明 + 去书架 / 去媒体库的引导按钮（首页不会是一片空白）。
@@ -1485,6 +1532,7 @@ class _HomeDashboardPageState
         appModel,
         visible,
         coverHeight: coverHeight,
+        rowKey: 'home-continue-row',
       );
     } else if (!_initialLoadDone) {
       continueContent = HomeContinueRowSkeleton(coverHeight: coverHeight);
@@ -1558,6 +1606,144 @@ class _HomeDashboardPageState
         MediaKind.game => FushiIcons.games,
       };
 
+  /// 宽屏「最近添加」卡（用户 2026-10-09：桌面 / 平板横屏下方空白太多）。
+  ///
+  /// 只在宽屏挂（手机宽度布局不变），形态是一行比「继续」小一号的 2:3 封面：
+  /// **没有标题行、没有筛选**（用户要求删掉的都不回来），每张卡右上角挂「新」
+  /// 角标自解释。数据源是本页快照里已有的书 / 视频 / 游戏行（不新增查询）：
+  /// 书按 `EpubBooks.importedAt`、视频按 `VideoBooks.importedAt`（合集按成员
+  /// 最大值收成一张，封面取合集海报）、游戏按 `addedAt` 倒序混排；已在「继续」
+  /// 行出现的作品去重；关掉的模块先出局；取前 12。没有可显示的条目 → null
+  /// （不出空卡）。
+  Widget? _buildRecentlyAddedCard(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    List<MediaItem> books, {
+    required double coverHeight,
+  }) {
+    final Set<String> shownBooks = <String>{};
+    final Set<String> shownVideos = <String>{};
+    final Set<int> shownVideoCollections = <int>{};
+    final Set<String> shownGames = <String>{};
+    for (final _ContinueEntry e in _continueVisible) {
+      if (e.remote != null) continue;
+      if (e.book != null) shownBooks.add(e.book!.mediaIdentifier);
+      if (e.video != null) {
+        if (e.collectionId != null) {
+          shownVideoCollections.add(e.collectionId!);
+        } else {
+          shownVideos.add(e.video!.bookUid);
+        }
+      }
+      if (e.game != null) shownGames.add(e.game!.id);
+    }
+
+    final String badge = t.home_recent_badge;
+    final List<_ContinueEntry> entries = <_ContinueEntry>[];
+    for (final MediaItem item in books) {
+      if (shownBooks.contains(item.mediaIdentifier)) continue;
+      final String? bookKey =
+          ReaderFushiSource.parseBookKey(item.mediaIdentifier);
+      final int addedAt =
+          bookKey == null ? 0 : (_epubImportedAtByKey[bookKey] ?? 0);
+      if (addedAt <= 0) continue;
+      entries.add(_ContinueEntry(
+        kind: _bookMediaKind(item),
+        title: ReaderFushiSource.instance.getDisplayTitleFromMediaItem(item),
+        recentMs: addedAt,
+        badgeLabel: badge,
+        book: item,
+      ));
+    }
+
+    final Map<int, List<VideoBookRow>> videosByCollection =
+        <int, List<VideoBookRow>>{};
+    for (final VideoBookRow v in _videos) {
+      final int? cid =
+          _primaryCollectionByEntry[MediaKind.video.compositeKey(v.bookUid)];
+      if (cid != null) {
+        (videosByCollection[cid] ??= <VideoBookRow>[]).add(v);
+        continue;
+      }
+      final int addedAt = v.importedAt ?? 0;
+      if (addedAt <= 0 || shownVideos.contains(v.bookUid)) continue;
+      entries.add(_ContinueEntry(
+        kind: MediaKind.video,
+        title: v.title,
+        recentMs: addedAt,
+        badgeLabel: badge,
+        video: v,
+      ));
+    }
+    for (final MapEntry<int, List<VideoBookRow>> ce
+        in videosByCollection.entries) {
+      if (shownVideoCollections.contains(ce.key)) continue;
+      int addedAt = 0;
+      for (final VideoBookRow m in ce.value) {
+        final int at = m.importedAt ?? 0;
+        if (at > addedAt) addedAt = at;
+      }
+      if (addedAt <= 0) continue;
+      // 点开落到组内第一集（sortIndex 序，缺失沉底）——新加的合集还没看过，从头
+      // 开始；播放器按主合集建剧集面板，上下集照常可切。
+      final VideoBookRow first = ce.value.reduce(
+        (VideoBookRow a, VideoBookRow b) {
+          final int ai =
+              _memberSortIndex[MediaKind.video.compositeKey(a.bookUid)] ??
+                  1 << 30;
+          final int bi =
+              _memberSortIndex[MediaKind.video.compositeKey(b.bookUid)] ??
+                  1 << 30;
+          if (ai != bi) return ai < bi ? a : b;
+          return a.bookUid.compareTo(b.bookUid) <= 0 ? a : b;
+        },
+      );
+      entries.add(_ContinueEntry(
+        kind: MediaKind.video,
+        title: first.title,
+        recentMs: addedAt,
+        badgeLabel: badge,
+        collectionName: _collectionNamesById[ce.key],
+        collectionId: ce.key,
+        video: first,
+      ));
+    }
+
+    for (final GalgameEntry g in _games) {
+      if (shownGames.contains(g.id)) continue;
+      entries.add(_ContinueEntry(
+        kind: MediaKind.game,
+        title: g.displayName,
+        recentMs: g.addedAt.millisecondsSinceEpoch,
+        badgeLabel: badge,
+        game: g,
+      ));
+    }
+
+    final ModuleVisibility visibility = appModel.moduleVisibility;
+    entries.sort(
+      (_ContinueEntry a, _ContinueEntry b) => b.recentMs.compareTo(a.recentMs),
+    );
+    final List<_ContinueEntry> visible = entries
+        .where((_ContinueEntry e) => visibility.isEnabled(e.module))
+        .take(12)
+        .toList();
+    if (visible.isEmpty) return null;
+    return _sectionCard(
+      tokens,
+      child: KeyedSubtree(
+        key: const ValueKey<String>('home-recent-card'),
+        child: _continueCardsRow(
+          tokens,
+          appModel,
+          visible,
+          coverHeight: coverHeight,
+          rowKey: 'home-recent-row',
+        ),
+      ),
+    );
+  }
+
   /// 「继续」封面行：定高横向 ListView，只有封面（2026-10 精简）。
   ///
   /// 整排 2:3 竖卡等高等宽（书 / 视频 / 游戏同一几何），横向滚动。
@@ -1566,6 +1752,7 @@ class _HomeDashboardPageState
     AppModel appModel,
     List<_ContinueEntry> entries, {
     required double coverHeight,
+    required String rowKey,
   }) {
     // BUG-2002 同款几何：悬停放大是纯绘制变换（以卡中心放大），行视口高度恰等于
     // 卡高时，溢出的上下各 (scale-1)/2 会被 ListView 视口裁成平边。行高留出余量、
@@ -1575,7 +1762,7 @@ class _HomeDashboardPageState
     final double liftSideRoom =
         coverHeight * _kContinueCoverAspect * (kFushiHoverLiftScale - 1) / 2;
     return SizedBox(
-      key: const ValueKey<String>('home-continue-row'),
+      key: ValueKey<String>(rowKey),
       height: coverHeight + liftHeadroom * 2,
       // 桌面默认 MaterialScrollBehavior 的 dragDevices 不含鼠标——横排行
       // 用鼠标左右拖会毫无反应。共享件统一放开 mouse/trackpad/stylus 拖动
