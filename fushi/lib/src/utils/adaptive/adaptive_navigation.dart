@@ -1914,6 +1914,10 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
       // 桌面窄窗里长按拖动没有这个语义。
       child = GestureDetector(
         behavior: HitTestBehavior.translucent,
+        // 拖选是纯指针手势，不进语义树：长按识别器默认挂的 longPress 语义动作
+        // 会以 Offset.zero 回放 start/end，读屏用户「双击按住」就被静默切到
+        // 胶囊最左那一项。读屏切模块走各目的地自己的点击语义。
+        excludeFromSemantics: true,
         supportedDevices: const <PointerDeviceKind>{
           PointerDeviceKind.touch,
           PointerDeviceKind.stylus,

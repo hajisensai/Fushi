@@ -228,4 +228,26 @@ void main() {
     expect(recorder.drags, <int>[3]);
     expect(recorder.taps, isEmpty);
   });
+
+  testWidgets('拖选手势不进无障碍树：读屏长按动作不会把用户甩到最左一项', (WidgetTester tester) async {
+    // 长按识别器默认会给语义树挂一个 longPress 动作，它用 Offset.zero 回放
+    // start/end：读屏用户双击按住 → 松手点落在胶囊最左 → 静默切到第一项。
+    final SemanticsHandle handle = tester.ensureSemantics();
+    final _Recorder recorder = await _pumpBar(tester);
+    final List<SemanticsNode> withLongPress = <SemanticsNode>[];
+    void visit(SemanticsNode node) {
+      if (node.getSemanticsData().hasAction(SemanticsAction.longPress)) {
+        withLongPress.add(node);
+      }
+      node.visitChildren((SemanticsNode child) {
+        visit(child);
+        return true;
+      });
+    }
+
+    visit(tester.binding.pipelineOwner.semanticsOwner!.rootSemanticsNode!);
+    expect(withLongPress, isEmpty);
+    expect(recorder.drags, isEmpty);
+    handle.dispose();
+  });
 }
