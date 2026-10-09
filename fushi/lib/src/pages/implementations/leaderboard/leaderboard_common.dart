@@ -345,20 +345,24 @@ class LeaderboardAvatar extends ConsumerWidget {
     // 不再是 primaryContainer 彩色圆。
     final bool glass = isGlassDesign(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Widget initialText = Text(
+      initial,
+      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+        color: glass
+            ? appleColorsOf(context).secondaryLabel
+            : colors.onSurfaceVariant,
+      ),
+    );
     final Widget fallback = ColoredBox(
       color: glass ? appleColorsOf(context).fill : tokens.surfaces.search,
-      child: Center(
-        child: Text(
-          initial,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            // 大头像（大西瓜的球）首字跟着放大；常规 40 尺寸维持 titleSmall。
-            fontSize: size > 48 ? size * 0.36 : null,
-            color: glass
-                ? appleColorsOf(context).secondaryLabel
-                : colors.onSurfaceVariant,
-          ),
-        ),
-      ),
+      // 大头像（大西瓜的球）首字按比例放大：仍是 titleSmall 字阶，只由
+      // FittedBox 等比缩放；常规尺寸原样居中。
+      child: size > 48
+          ? Padding(
+              padding: EdgeInsets.all(size * 0.28),
+              child: FittedBox(child: initialText),
+            )
+          : Center(child: initialText),
     );
     final Widget circle = SizedBox.square(
       dimension: size,

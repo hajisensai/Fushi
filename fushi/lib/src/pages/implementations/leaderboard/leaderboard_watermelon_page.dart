@@ -316,6 +316,7 @@ class _WatermelonBallView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double ring = math.max(2, radius * 0.06);
     final bool showValue = radius >= 30;
     return FushiPressScale(
@@ -326,7 +327,7 @@ class _WatermelonBallView extends StatelessWidget {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: isSelf ? colors.primary : colors.surfaceContainerHighest,
+                color: isSelf ? colors.primary : tokens.surfaces.card,
                 boxShadow: <BoxShadow>[
                   BoxShadow(
                     color: colors.shadow.withValues(alpha: 0.18),
@@ -352,9 +353,10 @@ class _WatermelonBallView extends StatelessWidget {
               left: radius * 0.25,
               right: radius * 0.25,
               bottom: radius * 0.12,
+              // 胶囊高度随球大小走：labelMedium 字阶由 FittedBox 等比缩放到这一高度。
+              height: radius * 0.34,
               child: IgnorePointer(
                 child: FittedBox(
-                  fit: BoxFit.scaleDown,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: (isSelf ? colors.primary : colors.inverseSurface)
@@ -374,8 +376,6 @@ class _WatermelonBallView extends StatelessWidget {
                         ).format(row.value),
                         style: Theme.of(context).textTheme.labelMedium
                             ?.copyWith(
-                              // 字号随球大小走，FittedBox 只负责缩小防溢出。
-                              fontSize: math.max(10, radius * 0.24),
                               color: isSelf
                                   ? colors.onPrimary
                                   : colors.onInverseSurface,
