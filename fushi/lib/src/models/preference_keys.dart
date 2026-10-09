@@ -186,6 +186,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'games_library_layout',
   'global_dict_css',
   'harmonic_frequency',
+  // String（JSON 数组，默认空）：书架上「仅从本机移除」的远端书（反馈 nvlhtczbro），
+  // 元素是 `hiddenRemoteBookKey` 拼的「来源身份/远端身份键」。设备本地（见
+  // SyncRepository 的设备本地清单）：别的设备恢复备份不该把这台的隐藏带过去。
+  'hidden_remote_books',
   // bool（默认 true，BUG-1891）：进视频页时是否自动向 Jellyfin/Emby 服务器枚举
   // 条目。几十万条目的公共 Emby 服上自动枚举会被当成爬虫，关掉后改由下拉刷新手动触发。
   'jellyfin_auto_list_videos',
