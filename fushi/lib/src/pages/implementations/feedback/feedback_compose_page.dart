@@ -16,6 +16,7 @@ import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/utils/misc/clipboard_image.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_color_roles.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
@@ -675,7 +676,9 @@ class _Thumb extends StatelessWidget {
           ClipRRect(
             borderRadius: FushiM3eShape.smallRadius,
             child: DecoratedBox(
-              decoration: BoxDecoration(color: colors.surfaceContainerHighest),
+              decoration: BoxDecoration(
+                color: colors.containerOf(FushiTone.neutral),
+              ),
               child: Image.memory(
                 bytes,
                 fit: BoxFit.cover,
