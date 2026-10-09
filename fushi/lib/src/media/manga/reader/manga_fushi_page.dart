@@ -2095,8 +2095,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (row.uid.isNotEmpty) {
       final MangaChapterStateRow? state = await appModel.database
           .getMangaChapterState(bookUid: row.uid, chapterKey: chapter.key);
-      // 读完过的章怎么开由「重新打开时」偏好决定：最远进度 = 从头看（「重读」
-      // 是明确意图）；最后阅读位置 = 落回上次停下的那一页，停在末尾才从头。
+      // 读完过的章怎么开由「重新打开时」偏好决定：跳过读完的章节（furthest）=
+      // 从头看（「重读」是明确意图）；最后阅读位置 = 落回上次停下的那一页，停在
+      // 末尾才从头。
       initialPage = resolveMangaChapterResumePoint(
         state,
         target: MangaResumeTargetKey.fromKey(appModel.mangaResumeTarget),
