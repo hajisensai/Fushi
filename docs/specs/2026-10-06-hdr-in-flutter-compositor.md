@@ -66,4 +66,4 @@ Windows「SDR 内容亮度」，HDR 片源按绝对亮度出，面板峰值以�
 
 ## 产物与发布
 
-见 `ci/patches/flutter-engine/3.44.0/README.md` 与 `docs/agent/build.md`「依赖补丁」。
+见 `ci/patches/flutter-engine/3.47.6/README.md` 与 `docs/agent/build.md`「依赖补丁」。

@@ -97,7 +97,12 @@ function Set-WindowsSdk {
 function Invoke-Patch {
   param([string]$RepoDir, [string]$PatchFile)
   $name = Split-Path $PatchFile -Leaf
-  & git -C $RepoDir apply --check --reverse $PatchFile 2>$null
+  # A probe: its stderr is the expected "not applied" answer. Windows
+  # PowerShell 5.1 turns native stderr into a terminating error under Stop.
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try { & git -C $RepoDir apply --check --reverse $PatchFile 2>$null }
+  finally { $ErrorActionPreference = $previous }
   if ($LASTEXITCODE -eq 0) { "already applied: $name"; return }
   Invoke-Native "git apply $name" { git -C $RepoDir apply --whitespace=nowarn $PatchFile }
   "applied: $name"
@@ -109,6 +114,24 @@ if ($Steps -contains 'sync') {
   if (-not (Test-Path (Join-Path $flutter '.git'))) {
     Invoke-Native 'clone' {
       git clone --depth 1 --branch $FlutterVersion https://github.com/flutter/flutter.git $flutter
+    }
+  } else {
+    # An existing tree from an older Flutter: move it to -FlutterVersion so the
+    # incremental gclient sync below reuses the downloaded dependencies. The
+    # tree must be clean (reverse the old patches first).
+    Invoke-Native 'fetch tag' { git -C $flutter fetch --depth 1 origin tag $FlutterVersion }
+    $want = (& git -C $flutter rev-parse "$FlutterVersion^{commit}").Trim()
+    $head = (& git -C $flutter rev-parse HEAD).Trim()
+    if ($want -ne $head) {
+      # Set-WindowsSdk's own edit; the build step re-applies it.
+      Invoke-Native 'restore setup_toolchain.py' {
+        git -C $flutter checkout -- engine/src/build/toolchain/win/setup_toolchain.py
+      }
+      if (& git -C $flutter status --porcelain --untracked-files=no) {
+        throw "$flutter has local changes; reverse the old patches before switching to $FlutterVersion."
+      }
+      # The checkout hook needs vpython3 from depot_tools (already on PATH).
+      Invoke-Native 'checkout' { git -C $flutter checkout -q $FlutterVersion }
     }
   }
   Copy-Item (Join-Path $flutter 'engine\scripts\standard.gclient') (Join-Path $flutter '.gclient') -Force

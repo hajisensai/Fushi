@@ -1,4 +1,4 @@
-# Flutter 3.44.0 Windows 引擎补丁：合成器内 HDR 输出
+# Flutter 3.47.6 Windows 引擎补丁：合成器内 HDR 输出
 
 让 HDR 视频画在 Flutter **自己的**交换链里（R16G16B16A16_FLOAT + scRGB），
 不再需要把 libmpv 的 gpu-next 画进主窗后面的独立宿主窗。只改 Windows 嵌入层
@@ -8,11 +8,11 @@
 
 | 仓库 | 提交 |
 |---|---|
-| flutter/flutter（tag 3.44.0） | `559ffa3f75e7402d65a8def9c28389a9b2e6fe42` |
-| 引擎版本（`bin/internal/engine.version`） | `4c525dac5ebe5971c5708ef73558ed8edcf4a362` |
+| flutter/flutter（tag 3.47.6） | `5fc346839b5d0eef006ed8404392afb4dfae428d` |
+| 引擎版本（`bin/internal/engine.version`） | `692136cb6582dbfc5af3fb33c2515a069f2f66d0` |
 | ANGLE（`engine/src/flutter/third_party/angle`，DEPS 拉取） | `84027aca9b71c9ba335bd000dad1107b8810a511` |
 
-升级 Flutter 时两份补丁都要重新对齐基线；`tool/engine_overlay.ps1` 会拒绝把
+升级 Flutter 时两份补丁都要重新对齐基线（3.44.0 → 3.47.6 的移植记录见文末）；`tool/engine_overlay.ps1` 会拒绝把
 引擎版本不符的产物装进 SDK。
 
 ## 两份补丁
@@ -34,7 +34,9 @@
 - 渲染目标缓存按尺寸命中，补了「格式代」计数：开关 HDR 时作废旧 backing store。
 - 诊断：`FUSHI_HDR_PROBE=1` 时在切到 RGBA16F 后第 120 帧回读 backing store 三个点；
   状态切换以 `FML_LOG(IMPORTANT)` 记一行（只在变化时）。
-- Impeller 路径不支持（`SetHdrOutput` 直接返回 false）。
+- Impeller 路径不支持（`SetHdrOutput` 直接返回 false）。Flutter 3.47 起 Windows **默认 Impeller**，
+  所以 runner（`fushi/windows/runner/main.cpp`）显式 `set_impeller_switch(Disabled)` 钉 Skia——
+  删了它不会编译失败，只会让 HDR 静默退回宿主窗（守卫咬住）。
 
 ### `angle-scrgb-swapchain.patch`（ANGLE 仓库根目录 `git apply`）
 
@@ -53,30 +55,43 @@ sRGB 合成，>1.0 全被钳掉（实测：backing store 里 2.57，桌面上 1.
 `<工作目录>\depot_tools`）：
 
 ```powershell
-tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-1
+tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-1   # 自动取 fushi/.fvmrc 的 Flutter 版本
 # 只重编 / 只打包：-Steps build,stage,pack -Modes release
 # 本机 VS 缺 ATL 时：-AtlDir '<另一套 VS>\VC\Tools\MSVC\<ver>\atlmfc'
 ```
 
-步骤：sync（clone 3.44.0 + `gclient sync`）→ patch（两份补丁，已打过则跳过）→
+步骤：sync（clone `.fvmrc` 版本 + `gclient sync`；已有源码树就 fetch 新 tag 切过去再增量 sync）→ patch（两份补丁，已打过则跳过）→
 build（`gn --runtime-mode <mode>` + `ninja flutter_windows`，与官方产物同配置）→
 stage（按 `windows-x64{,-profile,-release}` 布局 + `engine-overlay.json`）→
 pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutter_windows.dll.pdb`，
 缺了 assemble 直接失败；打印 `artifacts.json` 片段：填上发布地址后放进本目录）。
 
 安装：`tool/engine_overlay.ps1 -ArtifactDir <stage 目录>` 或
-`-Manifest ci/patches/flutter-engine/3.44.0/artifacts.json`（下载 + SHA-256 校验），
+`-Manifest ci/patches/flutter-engine/3.47.6/artifacts.json`（下载 + SHA-256 校验），
 原文件备份到 `.stock-backup`，`-Restore` 还原。CI 走
 `.github/actions/flutter-engine-overlay`，`artifacts.json` 不存在时用原版引擎构建（app
 运行期回退宿主窗，并打 warning）。
 
 ## 当前产物
 
-`artifacts.json` → release `flutter-engine-3.44.0-hdr-output-2`（prerelease、非 Latest；
-`-1` 是同一批 DLL 但缺 pdb，`flutter build windows` 用它会在 assemble 失败，勿用；
-tag 不以数字 / `v`+数字开头，app 更新检查与发布 workflow 都不会把它当 app 版本）。
-重编后换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`，旧 release 留着
-给旧提交复现用。
+`artifacts.json` → release `flutter-engine-3.47.6-hdr-output-1`（prerelease、非 Latest；
+三种模式 + 匹配的 pdb——`flutter build windows` 缺 pdb 会在 assemble 失败；tag 不以数字 /
+`v`+数字开头，app 更新检查与发布 workflow 都不会把它当 app 版本）。重编后换一个新的
+`patchVersion` 发新 release，再改本目录的 `artifacts.json`，旧 release 留着给旧提交复现用
+（3.44.0 时代的是 `flutter-engine-3.44.0-hdr-output-2`）。
+
+## 3.44.0 → 3.47.6 移植记录
+
+- ANGLE 版本没变（`84027ac`），`angle-scrgb-swapchain.patch` 原样沿用。
+- `compositor_opengl.cc`：上游把 backing store 分配拆成 Impeller 的三条 MSAA 分支 + Skia
+  分支，8-bit 纹理改用 `format_.sized_format`。半浮点分配挪进 Skia 分支，8-bit 沿用上游；
+  `half_float` 的判定前移并直接并入 `half_float_renderable_`。
+- `flutter_windows_view.h`：上游已自带 `<atomic>`，补丁不再加。
+- embedder：上游把 `EmbedderExternalView::Render` 的渲染目标处理挪进
+  `embedder_external_view_embedder.cc`，新增的缓存查找点用单参 `RenderTargetDescriptor`
+  （取当前格式代），格式代失效语义不变。
+- **Windows 默认渲染器变成 Impeller**（3.44 要显式 `--enable-impeller=true` 才开）：补丁只有
+  Skia 路径，runner 因此显式钉 Skia（见上文「两份补丁」）。
 
 ## 运行时契约
 
