@@ -6897,5 +6897,17 @@
   "video_setting_mpv_passthrough_hint": "Send AC-3, E-AC-3, TrueHD and DTS-HD untouched to your receiver or soundbar so it decodes them (Atmos included). Only turn on if that device supports these formats — otherwise there may be no sound. While passing through, set the volume on the receiver: Fushi's volume and mute can't act on these streams, so at any speed other than 1×, below full volume or when muted, Fushi decodes them itself for the time being (the receiver's Atmos / DTS indicator goes off). When off, Fushi always decodes them and 5.1 / 7.1 still play as surround.",
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
-  "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected."
+  "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
+  "download_method_torrent": "BT / Magnet · P2P",
+  "download_method_torrent_hint": "Peer-to-peer (BitTorrent): the data comes from other users sharing the same torrent, and they can see your IP address. If uploading (seeding) is on, you also upload to them.",
+  "download_method_direct": "Direct · HTTP",
+  "download_method_direct_hint": "Downloaded over HTTP(S) straight from the site's server, not through a P2P network.",
+  "download_method_extension": "Extension source",
+  "download_method_extension_hint": "Fetched from a third-party website by an extension you installed.",
+  "download_source_external": "External source",
+  "download_source_external_hint": "This content comes from a third-party site. It is not provided or hosted by Fushi.",
+  "download_p2p_notice_title": "About BT / magnet downloads",
+  "download_p2p_notice_body": "BT / magnet downloads are peer-to-peer (P2P). The files come from other users, not from Fushi, and others sharing the same torrent can see your IP address. If uploading (seeding) is on, you also upload data to them — Fushi's built-in engine keeps uploading off by default, and an external qBittorrent follows its own settings. Please follow the laws where you live.",
+  "download_p2p_notice_dont_show": "Don't show again",
+  "download_p2p_notice_continue": "Continue"
 }
