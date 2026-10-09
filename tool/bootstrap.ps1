@@ -67,7 +67,10 @@ function Get-FlutterExeInSdk {
     [OutputType([string])]
     param([string]$SdkRoot)
 
-    foreach ($name in @('flutter.bat', 'flutter')) {
+    # SDK 的 bin/ 在所有平台上都同时带 flutter.bat 与 flutter（shell 脚本）：
+    # 必须按平台挑，macOS / Linux 上返回 flutter.bat 会让后面的 `& $flutter` 直接失败。
+    $names = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { @('flutter.bat') } else { @('flutter') }
+    foreach ($name in $names) {
         $exe = Join-Path $SdkRoot (Join-Path 'bin' $name)
         if (Test-Path -LiteralPath $exe) { return $exe }
     }
@@ -145,7 +148,18 @@ function Resolve-FlutterExe {
     $seenSdks = @{}
     foreach ($cmd in $onPath) {
         # PATH 上同一 bin 目录会同时命中 flutter.bat 与无扩展名的 shell 脚本，按 SDK 去重。
-        $sdk = Split-Path -Parent (Split-Path -Parent $cmd.Source)
+        # PATH 上的 flutter 常是指向 SDK 的符号链接（Homebrew、/usr/local/bin、snap）：
+        # 按链接目标推 SDK 根，否则会推成 /usr 之类、版本读不到被误判为不符。
+        $source = $cmd.Source
+        $cmdItem = Get-Item -LiteralPath $source -ErrorAction SilentlyContinue
+        if ($cmdItem -and $cmdItem.LinkType -and $cmdItem.Target) {
+            $linkTarget = @($cmdItem.Target)[0]
+            if (-not [IO.Path]::IsPathRooted($linkTarget)) {
+                $linkTarget = Join-Path (Split-Path -Parent $source) $linkTarget
+            }
+            $source = [IO.Path]::GetFullPath($linkTarget)
+        }
+        $sdk = Split-Path -Parent (Split-Path -Parent $source)
         if ($seenSdks.ContainsKey($sdk)) { continue }
         $seenSdks[$sdk] = $true
         $reported = Get-FlutterSdkVersion -SdkRoot $sdk
