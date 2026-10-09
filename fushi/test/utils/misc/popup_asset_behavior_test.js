@@ -3430,7 +3430,7 @@ Promise.all([
   testConfirmMiningReportsDisabledButton(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
 
-// BUG-3086：SelectionText 串字段。选区只在「+」的 pointerdown/touchstart 快照，
+// BUG-3210：SelectionText 串字段。选区只在「+」的 pointerdown/touchstart 快照，
 // 而「调整上下文」确认回点（fushiPopupMineEntryByIndex）与快捷键/手柄制卡
 // （fushiPopupMineFirstEntry）都不经那颗按钮的 pointerdown——它们沿用的是**上一次**
 // 点「+」时的快照，热槽 WebView 跨查词不重载，于是上一个词释义里选中的文字被写进

@@ -145,7 +145,7 @@ add_test(NAME en_inflection_lookup_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json"
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/en_irregular.json")
 
-# BUG-3088：关西方言「うた → った」不得跨词吞掉「ため / たび」的「た」（真 ja.json）。
+# BUG-3212：关西方言「うた → った」不得跨词吞掉「ため / たび」的「た」（真 ja.json）。
 add_executable(ja_kansai_ta_boundary_test
     "${CMAKE_CURRENT_SOURCE_DIR}/ja_kansai_ta_boundary_test.cpp")
 target_link_libraries(ja_kansai_ta_boundary_test PRIVATE fushidicts)

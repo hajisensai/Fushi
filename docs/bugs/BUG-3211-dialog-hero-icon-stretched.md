@@ -1,4 +1,4 @@
-## BUG-3087 · 对话框 hero 图标底板被撑成满宽横条（选择句子上下文顶部的 99）
+## BUG-3211 · 对话框 hero 图标底板被撑成满宽横条（选择句子上下文顶部的 99）
 - **报告**：2026-10-09（用户 Android 截图：「制卡前调整 / 选择句子上下文」面板顶部一块黄色波浪，中间写着 99）
 - **真实性**：✅ 真 bug，widget test 真实像素渲染复现。「99」是 `FushiIcons.quote`（Material Symbols `format_quote`）引号图标；
   黄色波浪是 M3E 9 瓣饼干底板。`AlertDialog` 把 icon 槽放在 `CrossAxisAlignment.stretch` 的 Column 里（scrollable 与否都是），

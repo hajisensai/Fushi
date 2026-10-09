@@ -3,7 +3,7 @@ import 'package:fushi/src/lookup/sentence_extraction.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart'
     show SourceLookupHighlight;
 
-/// 查词页（`HomeDictionaryPage`）制卡用的例句（BUG-3092）。
+/// 查词页（`HomeDictionaryPage`）制卡用的例句（BUG-3216）。
 ///
 /// 查词页的结果卡没有书 / 视频那样的「当前句」，但源文本条上就是用户粘贴 / 输入 /
 /// 桌面取词送来的那段原文，扫描高亮 [highlight] 标着这次查的是其中哪几个字。

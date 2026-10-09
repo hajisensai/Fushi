@@ -1,4 +1,4 @@
-## BUG-3090 · 视频暂停 OCR 出的文字无法制卡
+## BUG-3214 · 视频暂停 OCR 出的文字无法制卡
 - **报告**：2026-10-09（用户：视频暂停后自动 OCR 出的文字没法制卡）
 - **真实性**：❌ 未复现（无 PGS / VobSub 样片与 OCR 引擎环境，未真机跑）。走查：暂停 OCR 层
   `fushi/lib/src/media/video/video_graphic_subtitle_ocr_overlay.dart` 点字 → `video_fushi_page.dart` `_buildGraphicSubtitleOcrOverlay`

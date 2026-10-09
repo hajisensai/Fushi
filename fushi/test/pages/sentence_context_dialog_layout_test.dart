@@ -6,7 +6,7 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiDialogHeroIcon;
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-3087 续：「选择句子上下文」对话框在 360dp 窄屏上的版式。
+/// BUG-3211 续：「选择句子上下文」对话框在 360dp 窄屏上的版式。
 ///
 /// - 顶部不再放 hero 图标（引号字形被用户读成「99」，还把标题拉成居中）。
 /// - ±上下文四颗按钮的文案必须完整可见：以前前文 / 后文各占半宽，英文

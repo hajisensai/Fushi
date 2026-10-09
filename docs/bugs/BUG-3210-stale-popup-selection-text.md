@@ -1,4 +1,4 @@
-## BUG-3086 · SelectionText 写入上一次查词的旧选区
+## BUG-3210 · SelectionText 写入上一次查词的旧选区
 - **报告**：2026-10-09（用户：「自体」卡的 SelectionText 是「② 好ましくないことばを口に出す。こく。」，往回看很多卡都选飞了；哈吉千歳：真正的 bug 是选中文本制卡不生效）
 - **真实性**：✅ 真 bug。`{popup-selection-text}` 取自 `fushi/assets/popup/popup.js` 的全局 `lastSelection`，
   它只在「+」按钮的 `onpointerdown` / `ontouchstart` 里由 `snapshotSelection()` 刷新（`popup.js` `function snapshotSelection`）。

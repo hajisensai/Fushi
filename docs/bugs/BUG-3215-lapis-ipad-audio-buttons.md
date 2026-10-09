@@ -1,4 +1,4 @@
-## BUG-3091 · iPad 上 Lapis 卡片播放按钮孤零零落在左下角
+## BUG-3215 · iPad 上 Lapis 卡片播放按钮孤零零落在左下角
 - **报告**：2026-10-09（用户：iPad 上 Anki 卡片排版差，播放按钮孤零零地落在左下角）
 - **真实性**：✅ 根因已定位，未修。Fushi 随包的 Lapis 模板（`packages/fushi_anki/lib/src/lapis_note_type.dart`）默认
   `--mobile-audio-buttons: "fixed"`，AnkiMobile 给 `<html>` 加 `.mobile`（iPad 同样是 mobile），于是

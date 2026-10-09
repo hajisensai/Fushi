@@ -1,4 +1,4 @@
-## BUG-3092 · 查词页制卡卡片没有句子
+## BUG-3216 · 查词页制卡卡片没有句子
 - **报告**：2026-10-09（应用内反馈，Windows 2.10.0-debug.18345，匿名：「查词页制卡卡片没有句子」；截图里搜索框输入整句「働き手として専用できるような状態に置く」、点源文本条上的 専用 后制卡，Anki 预览无 Sentence）
 - **真实性**：✅ 真 bug。弹窗 `buildMinePayload`（`fushi/assets/popup/popup.js`）从不带 `sentence`，各媒体页都在自己的 `onMineEntry` 里注入当前句；
   独立查词页（`fushi/lib/src/pages/implementations/home_dictionary_page.dart`）把结果区 `DictionaryPopupWebView.onMineEntry` 直接接到

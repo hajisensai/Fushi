@@ -5,7 +5,7 @@ import 'package:fushi/src/lookup/source_lookup_sentence.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart'
     show SourceLookupHighlight;
 
-/// BUG-3092：查词页制卡卡片没有句子。查词页的结果卡以前把 JS 给的空 `sentence`
+/// BUG-3216：查词页制卡卡片没有句子。查词页的结果卡以前把 JS 给的空 `sentence`
 /// 原样交给制卡，源文本条上明明有用户输入的整句，Sentence 却恒空。
 void main() {
   group('sourceLookupMiningSentence', () {

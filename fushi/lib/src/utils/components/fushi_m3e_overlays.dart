@@ -652,7 +652,7 @@ class FushiDialogHeroIcon extends StatelessWidget {
         ),
       ),
     );
-    // BUG-3087：[AlertDialog] 把 icon 槽放进 `CrossAxisAlignment.stretch` 的 Column，
+    // BUG-3211：[AlertDialog] 把 icon 槽放进 `CrossAxisAlignment.stretch` 的 Column，
     // 给的是**紧**宽约束——裸 `SizedBox.square` 会被撑成「满宽 × size 高」，饼干被
     // 拉成横贯对话框的黄色波浪条、图标缩在正中（用户报「顶部奇怪的 99」）。外包
     // Center 把紧约束放松，底板才真是 [size] 见方。

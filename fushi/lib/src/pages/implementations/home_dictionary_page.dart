@@ -1833,7 +1833,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                           reuseWarmSlot: true,
                         );
                       },
-                      // BUG-3092：结果卡制卡补上源文本条那一句作例句（查词页没有书 /
+                      // BUG-3216：结果卡制卡补上源文本条那一句作例句（查词页没有书 /
                       // 视频的「当前句」，以前 Sentence 恒空）。只接结果区：浮层里从
                       // 释义点出来的词，源文本那句不是它的语境。
                       onMineEntry: (Map<String, String> fields) =>
@@ -2039,7 +2039,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     );
   }
 
-  /// BUG-3092：结果区制卡用的例句——源文本条上扫描高亮所在的那一句。
+  /// BUG-3216：结果区制卡用的例句——源文本条上扫描高亮所在的那一句。
   Map<String, String> _withSourceSentence(Map<String, String> fields) =>
       withFallbackMiningSentence(
         fields,

@@ -101,7 +101,7 @@ bool matches_primary_reading(const TermResult& term, std::string_view primary_re
   return term.reading == primary_reading;
 }
 
-// BUG-3088：关西方言变形跨词吞掉「ため / たび」的「た」。
+// BUG-3212：关西方言变形跨词吞掉「ため / たび」的「た」。
 //
 // ja.json 的 kansai-ben -た 有一条与 Yomitan 上游逐字相同的 `うた → った`（用于
 // 思うた / 言うた），于是「もらうためには」里的「もらうた」会被还原成 もらう；同一
@@ -152,7 +152,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
                                          const LookupOptions& options) const {
   std::map<std::pair<std::string, std::string>, LookupResult> result_map;
 
-  // BUG-3088：扫描窗口（前 scan_length 个码点）的字节视图，供关西方言保护结构判定。
+  // BUG-3212：扫描窗口（前 scan_length 个码点）的字节视图，供关西方言保护结构判定。
   std::size_t window_bytes = 0;
   {
     auto it = lookup_string.begin();
@@ -201,7 +201,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
           auto key = std::make_pair(term.expression, term.reading);
           auto it = result_map.find(key);
           if (it != result_map.end()) {
-            // BUG-3088：关西方言跨进「ため / たび」时留无需变形的短候选。扫描从长到短，
+            // BUG-3212：关西方言跨进「ため / たび」时留无需变形的短候选。扫描从长到短，
             // 通常是长候选先进来、短候选后到时替换；反过来（短的已在、长的后到）同一
             // 判据挡住长的。一旦留下短候选，后续更短的候选按下面的常规规则进不来，
             // 选定结果不会被再次覆盖。

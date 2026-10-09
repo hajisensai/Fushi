@@ -634,7 +634,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
         onPressed: onPressed,
         // M3E XS 档（32 高胶囊）：横屏矮窗里四颗按钮占位要小。
         size: FushiButtonSize.xs,
-        // BUG-3087：XS 档把高度钉死在 32（maximumSize.height），文案一折行第二行就被
+        // BUG-3211：XS 档把高度钉死在 32（maximumSize.height），文案一折行第二行就被
         // 裁掉。放开最大高度（调用方字段优先于尺寸档），单行时仍是 32 高，
         // 折行时高度跟着文字长。
         style: const ButtonStyle(
@@ -715,7 +715,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
     return PopScope(
       canPop: !_busy,
       child: FushiAlertDialog(
-        // BUG-3087：不放顶部 hero 图标。M3 对话框的图标是可选项，只在需要强调提醒类
+        // BUG-3211：不放顶部 hero 图标。M3 对话框的图标是可选项，只在需要强调提醒类
         // 内容时用，带图标时标题必须居中。这里的标题区是「小标题 + 大标题 + 关闭 X」，
         // 靠左对齐，正文是一叠句子卡，图标既不提供额外信息（引号字形被用户读成「99」），
         // 还会把标题拉成居中、和靠左的小标题错位。
@@ -777,7 +777,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
                     const SizedBox(height: 12),
                     // ±上下文：前文一行、后文一行，每行两颗等宽按钮（对齐 Niratan
                     // rangeControls 的「Remove/Add Previous … Remove/Add Next」分组）。
-                    // BUG-3087：以前前文 / 后文左右各占半宽、每半区再挤两颗，360dp 窄屏下
+                    // BUG-3211：以前前文 / 后文左右各占半宽、每半区再挤两颗，360dp 窄屏下
                     // 英文「Remove previous」折成两行后第二行被 32 高的 XS 胶囊裁掉。现在
                     // 每个方向独占一行、两颗按钮平分整行；放不下时文案在按钮里折行、按钮
                     // 跟着长高（见 [_adjustButton]），绝不截字，四颗仍排成整齐的 2×2。

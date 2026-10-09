@@ -4789,7 +4789,7 @@ function createEntryHeader(entry, idx) {
     if (window.sentenceContextPreviewEnabled) {
         const adjustBtn = el('button', {
             className: 'inline-action-button ctx-adjust-button',
-            // BUG-3086：确认制卡走 fushiPopupMineEntryByIndex 回点「+」，那条路没有
+            // BUG-3210：确认制卡走 fushiPopupMineEntryByIndex 回点「+」，那条路没有
             // pointerdown，选区只能在**这里**快照（document click 处理器清选区之前）。
             onpointerdown: () => {
                 snapshotSelection();
@@ -4837,7 +4837,7 @@ window.fushiPopupMineFirstEntry = async function() {
     if (!mineButton || mineButton.disabled) {
         return false;
     }
-    // BUG-3086：快捷键/手柄制卡不经按钮的 pointerdown，选区要在这里按「此刻」快照，
+    // BUG-3210：快捷键/手柄制卡不经按钮的 pointerdown，选区要在这里按「此刻」快照，
     // 否则沿用的是上一次点按钮时的旧选区。
     snapshotSelection();
     mineButton.click();
@@ -6939,7 +6939,7 @@ window.renderPopup = function() {
     // 变形说明属于上一轮查词结果，不能独立于查询会话存活。它挂在 entries-container
     // 外面，单纯重建词条 DOM 不会移除，因此每轮渲染必须显式关闭并清空（含钉住态）。
     hideGrammarTooltip();
-    // BUG-3086：选区快照属于上一轮查词结果。热槽 WebView 跨查词不重载，不清的话
+    // BUG-3210：选区快照属于上一轮查词结果。热槽 WebView 跨查词不重载，不清的话
     // 下一次**不经 pointerdown 的**制卡（「调整上下文」确认回点、快捷键/手柄制卡）会
     // 把上一个词释义里选中的文字写进这张卡的 SelectionText。
     clearSelectionSnapshot();

@@ -277,7 +277,7 @@ void main() {
     final double expanded = tester.getSize(find.byType(BottomSheet)).height;
     expect(expanded, closeTo(900 * kFushiSheetFullFraction, 1));
   });
-  // BUG-3087：AlertDialog 的 icon 槽在 stretch Column 里（宽约束是紧的），hero 底板
+  // BUG-3211：AlertDialog 的 icon 槽在 stretch Column 里（宽约束是紧的），hero 底板
   // 曾被撑成满宽横条（「选择句子上下文」顶部的黄色波浪 + 小小的「99」引号）。
   for (final bool scrollable in <bool>[false, true]) {
     testWidgets('对话框 hero 图标底板保持见方（scrollable: $scrollable）', (

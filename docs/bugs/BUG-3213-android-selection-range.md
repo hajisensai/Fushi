@@ -1,4 +1,4 @@
-## BUG-3089 · Android 长按选词高亮范围与实际不符
+## BUG-3213 · Android 长按选词高亮范围与实际不符
 - **报告**：2026-10-09（用户：Android 上长按选词的蓝色高亮范围和实际不符；Windows / iOS 复现不了；附视频无法查看）
 - **真实性**：❌ 未复现。本次没有可用的 Android 设备（`adb devices` 为空），也看不到用户视频。静态走查：触屏长按选区走
   `fushi/lib/src/reader/reader_selection_scripts.dart` 的 `beginRangeSelection` / `updateRangeSelection` / `endRangeSelection`（app 自绘

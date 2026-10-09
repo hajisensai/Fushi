@@ -49,7 +49,7 @@ class JapaneseLanguage extends Language {
       LinkedHashMap<String, int>();
 
   /// 匹配长度缓存的键：引擎只看查询串的前 [FushiDicts.defaultScanLength] 个
-  /// **码点**——候选前缀都在这个扫描窗口内，BUG-3088 的关西方言保护结构判定也只
+  /// **码点**——候选前缀都在这个扫描窗口内，BUG-3212 的关西方言保护结构判定也只
   /// 读窗口内的文本——所以键取的正是这段，结果只依赖键里的文本。
   ///
   /// 旧键是前 20 个 UTF-16 单元：全 BMP 文本时恰好盖住 16 个码点，但窗口里每多

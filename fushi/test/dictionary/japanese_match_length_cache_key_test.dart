@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
-/// BUG-3088：`JapaneseLanguage` 的匹配长度缓存键必须盖住引擎结果依赖的全部文本。
+/// BUG-3212：`JapaneseLanguage` 的匹配长度缓存键必须盖住引擎结果依赖的全部文本。
 ///
 /// 引擎只看查询串前 [FushiDicts.defaultScanLength] 个码点（候选前缀 + 关西方言
 /// 保护结构判定都在这个扫描窗口内），所以键取的就是这段码点；旧键是前 20 个
