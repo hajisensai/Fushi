@@ -207,6 +207,16 @@ void main() {
         },
         'non-empty',
       ),
+      // admin / 互联两个入口共用：WebUI / ctl / app 客户端都只发 movie|tv，
+      // 未知值不再静默当 movie。
+      'mediaKind 非 movie/tv': (
+        <String, Object?>{
+          'magnet': 'magnet:?x',
+          'title': 't',
+          'mediaKind': 'anime',
+        },
+        'mediaKind must be movie or tv',
+      ),
       'year 不像年份': (
         <String, Object?>{'magnet': 'magnet:?x', 'title': 't', 'year': 19},
         'plausible year',
@@ -263,6 +273,73 @@ void main() {
         expect(await r.readAsString(), contains(c.$2));
         expect(host.added, isEmpty);
       });
+    });
+  });
+
+  // #2015 先上线的字段名 `fileIndexes`：合入统一请求（HostDownloadAddRequest）后
+  // 仍原样认，行为与 `files` 一致（合集包里只要其中几部）。
+  group('旧字段名 fileIndexes（与 files 同义）', () {
+    final String torrent = base64Encode(_packTorrent());
+
+    test('解析种子、把选中的下标原样透传给 host', () async {
+      final _RecordingHost host = _RecordingHost();
+      final shelf.Response r = await _post(host, <String, Object?>{
+        'torrent': torrent,
+        'fileIndexes': <int>[0, 2],
+        'title': 'Doraemon Movies',
+      });
+      expect(r.statusCode, 200, reason: await r.readAsString());
+      final HostDownloadAddRequest req = host.requests.single;
+      expect(req.selectedFileIndexes, <int>{0, 2});
+      expect(req.metainfo!.files.map((f) => f.path),
+          <String>['a.mkv', 'b.mkv', 'c.mkv']);
+      expect(req.mediaKind, 'movie');
+    });
+
+    test('只给种子不给下标 → 整颗种子（null）', () async {
+      final _RecordingHost host = _RecordingHost();
+      final shelf.Response r = await _post(host, <String, Object?>{
+        'torrent': torrent,
+        'title': 'Doraemon Movies',
+      });
+      expect(r.statusCode, 200);
+      expect(host.requests.single.selectedFileIndexes, isNull);
+    });
+
+    test('配磁链 / 空列表 / 非整数 / 负数 / 与 files 同给 → 400，不进 host',
+        () async {
+      final _RecordingHost host = _RecordingHost();
+      for (final Map<String, Object?> body in <Map<String, Object?>>[
+        <String, Object?>{
+          'magnet': 'magnet:?x',
+          'fileIndexes': <int>[0],
+          'title': 't',
+        },
+        <String, Object?>{
+          'torrent': torrent,
+          'fileIndexes': <int>[],
+          'title': 't',
+        },
+        <String, Object?>{
+          'torrent': torrent,
+          'fileIndexes': <Object>['0'],
+          'title': 't',
+        },
+        <String, Object?>{
+          'torrent': torrent,
+          'fileIndexes': <int>[-1],
+          'title': 't',
+        },
+        <String, Object?>{
+          'torrent': torrent,
+          'files': <int>[0],
+          'fileIndexes': <int>[1],
+          'title': 't',
+        },
+      ]) {
+        expect((await _post(host, body)).statusCode, 400, reason: '$body');
+      }
+      expect(host.added, isEmpty);
     });
   });
 

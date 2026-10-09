@@ -202,6 +202,15 @@ fushi_server ctl host <METHOD> <互联路径> ['<json>']       直调任意互�
 正则，匹配种子内路径，可重复）与 `--index`（可重复）取并集，只下选中的文件——下载后端（内置 libtorrent /
 qBittorrent）里其余文件优先级设为「不下载」并回读核对。`--year` 与 `--provider` + `--external-id` 写进
 任务行：入库后按这个身份直接刮削，不再按标题搜。正则写错 / 没匹配到 / 下标越界都是 64，不会退化成整颗下载。
+选中的恰好是种子里的全部文件（单文件种子选 `0` 同理）时按整颗种子下载，不落「文件选择」。
+
+**`POST /api/admin/downloads` 与互联 `POST /api/downloads` 的请求体**（同一个解析器
+`HostDownloadAddRequest.fromJson`，非法一律 400 + 原因）：`magnet` 与 `torrent`（.torrent 字节的 base64）
+恰好给一个；`title` 必填；`mediaKind` 只收 `movie` | `tv`（缺省 movie，其它值 400——WebUI / ctl /
+app 客户端都只发这两个值，旧版 admin 把未知值静默当 movie，现在不再猜）；`discoveryKind` = 非视频域
+（`novel` / `manga` / `audiobook` / `game`，host 不收的域 400）；`files`（旧字段名 `fileIndexes` 照认，
+两个同给 400）= 只下这些种子文件下标，要求 `torrent`；`year`；`metadataProvider` + `externalId`
+（`anidb` | `mal` | `tmdb` + 正整数，成对给，仅视频任务）；`subtitlePolicy` = `none` | `bestEffort` | `required`。
 
 ### 直连运行中的 Fushi app（`--interconnect`）
 
@@ -236,6 +245,8 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 文件侧只碰**这个视频自己的 sidecar**（同目录、`<视频文件名><字幕后缀>`），而且是改名成
 `<原名>.fushi-bak`（已有备份时 `.2.fushi-bak`…）不是删除；别处的文件与视频本体永远不动。`--all-sidecars`
 把视频旁全部 sidecar 字幕都挪走——自动补字幕把任何现存 sidecar 当「已有字幕」跳过，想重新补就得先清干净。
+先挪文件、全部挪成才清 DB：某个 sidecar 改名失败（Windows 上被播放器 / 编辑器占用）时已挪的改回原名、DB
+不动，接口回 **409** `{"error":"subtitle_sidecar_busy","path":…,"reason":…}`（ctl 退出码 75），关掉占用再试。
 `videos subtitle backfill` 用的是刮削后自动补字幕的同一个服务，身份取已落库的刮削结论（没刮过回
 `noIdentity`，先 `scrape identify`）；它只在 app 当 host 时有（无头服务端回 501）。
 

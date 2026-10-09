@@ -143,10 +143,7 @@ libraryVideoSubtitleTarget(
         kind: work.mediaType == 'movie'
             ? VideoMetadataMediaKind.movie
             : VideoMetadataMediaKind.tv,
-        externalIds: <String, String>{
-          for (final VideoMetadataProviderIdentityRow row in identities)
-            row.provider.trim().toLowerCase(): row.externalId,
-        },
+        externalIds: libraryWorkExternalIds(identities),
         title: work.title,
         originalTitle: work.originalTitle,
         year: work.year,
@@ -162,4 +159,29 @@ libraryVideoSubtitleTarget(
     ),
     reason: null,
   );
+}
+
+/// 作品的 provider 身份行 → `externalIds`（provider 归一成小写）。同一 provider
+/// 有多行（大小写不同的旧行）时**保留首选**：主身份（`isPrimary`）在前，其余按
+/// 原顺序，先到先得——与刮削确认的身份优先序一致，不让一条旧的非主身份行把
+/// 主身份 id 顶掉（否则字幕会按另一部作品去搜）。
+Map<String, String> libraryWorkExternalIds(
+  List<VideoMetadataProviderIdentityRow> identities,
+) {
+  final Map<String, String> ids = <String, String>{};
+  for (final VideoMetadataProviderIdentityRow row
+      in <VideoMetadataProviderIdentityRow>[
+        ...identities.where(
+          (VideoMetadataProviderIdentityRow r) => r.isPrimary,
+        ),
+        ...identities.where(
+          (VideoMetadataProviderIdentityRow r) => !r.isPrimary,
+        ),
+      ]) {
+    final String provider = row.provider.trim().toLowerCase();
+    final String id = row.externalId.trim();
+    if (provider.isEmpty || id.isEmpty) continue;
+    ids.putIfAbsent(provider, () => id);
+  }
+  return ids;
 }

@@ -326,6 +326,14 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           return shelf.Response(400, body: 'Invalid video id: ${e.message}');
         } on StateError {
           return shelf.Response.notFound('Video not found');
+        } on VideoSubtitleSidecarBusy catch (e) {
+          return shelf.Response(
+            409,
+            body: jsonEncode(e.toJson()),
+            headers: const <String, String>{
+              'Content-Type': 'application/json; charset=utf-8',
+            },
+          );
         }
       }
       if (method != 'GET') return shelf.Response(405);

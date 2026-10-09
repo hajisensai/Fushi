@@ -3188,6 +3188,86 @@ void main() {
       expect(await environment.database.getVideoDownloadJobFiles(jobId), isEmpty);
     });
 
+    test('单文件种子传 [0] = 整颗 torrent：同样不落选择行', () async {
+      final (
+        :_PipelineEnvironment environment,
+        backend: _,
+        :VideoDownloadPipelineService service,
+      ) = await setUpSelective();
+      final String jobId = await service.enqueueManual(
+        VideoDownloadManualEnqueueRequest(
+          title: 'Single',
+          backendTarget: _expectedTarget,
+          metainfo: inspectTorrentMetainfo(_manualV1Metainfo()),
+          selectedFileIndexes: <int>{0},
+          targetSourceId: environment.sourceId,
+        ),
+      );
+      expect(await environment.database.getVideoDownloadJobFiles(jobId), isEmpty);
+    });
+
+    test('重启恢复：旧版本落库的「全选」文件行按整颗 torrent 投递，不卡「选择不完整」',
+        () async {
+      final (
+        :_PipelineEnvironment environment,
+        :_FakePausedMetainfoBackend backend,
+        :VideoDownloadPipelineService service,
+      ) = await setUpSelective();
+      final FushiDatabase database = environment.database;
+      final InspectedTorrentMetainfo metainfo =
+          inspectTorrentMetainfo(_manualPackMetainfo());
+      final String jobId = await service.enqueueManual(
+        VideoDownloadManualEnqueueRequest(
+          title: 'Legacy Whole Pack',
+          backendTarget: _expectedTarget,
+          metainfo: metainfo,
+          selectedFileIndexes: <int>{1},
+          targetSourceId: environment.sourceId,
+        ),
+      );
+      // 降级逻辑上线前（develop 上 #2015 的入口）建的任务：文件行全是 selected。
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      for (final VideoDownloadJobFileRow row
+          in await database.getVideoDownloadJobFiles(jobId)) {
+        await database.upsertVideoDownloadJobFile(
+          VideoDownloadJobFilesCompanion(
+            jobId: Value<String>(jobId),
+            backendFileIndex: Value<int?>(row.backendFileIndex),
+            originalRelativePath: Value<String>(row.originalRelativePath),
+            currentRelativePath: Value<String>(row.currentRelativePath),
+            kind: Value<String>(row.kind),
+            sizeBytes: Value<int?>(row.sizeBytes),
+            selected: const Value<bool>(true),
+            status: const Value<String>(VideoDownloadJobFileStatus.pending),
+            createdAt: Value<int>(row.createdAt),
+            updatedAt: Value<int>(now),
+          ),
+        );
+      }
+      expect(
+        (await database.getVideoDownloadJobFiles(jobId))
+            .every((VideoDownloadJobFileRow row) => row.selected),
+        isTrue,
+      );
+
+      service.wake();
+      final VideoDownloadJobRow job = await _waitForJob(
+        database,
+        jobId,
+        (VideoDownloadJobRow row) =>
+            row.claimedBy == null &&
+            (row.stage == VideoDownloadJobStage.download ||
+                row.lifecycle != VideoDownloadJobLifecycle.active),
+      );
+      expect(job.lifecycle, VideoDownloadJobLifecycle.active,
+          reason: job.lastError ?? '');
+      expect(job.stage, VideoDownloadJobStage.download);
+      expect(job.lastError, isNull);
+      expect(backend.pausedAdds, isEmpty, reason: '全选不走暂停 + 写优先级');
+      expect(backend.wholeAdds, <String>[metainfo.torrentId.toLowerCase()]);
+      expect(backend.priorities, isEmpty);
+    });
+
     test('显式 AniDB 身份也能直取（默认主源），MAL 同理', () async {
       final (
         :_PipelineEnvironment environment,
@@ -5059,7 +5139,7 @@ class _FakeDetailTorrentBackend extends _FakeTorrentBackend
 /// 能以暂停态添加 .torrent 的 fake：单文件选择（CoreAudio/TMW）走这条路。
 /// 后端当前持有哪些种子随 add/remove 变化，文件优先级按写入回读。
 class _FakePausedMetainfoBackend extends _FakeDetailTorrentBackend
-    implements TorrentPausedMetainfoBackend {
+    implements TorrentPausedMetainfoBackend, TorrentMetainfoBackend {
   _FakePausedMetainfoBackend({required this.fileCount})
       : super(
           snapshots: const <TorrentSnapshot>[],
@@ -5069,6 +5149,23 @@ class _FakePausedMetainfoBackend extends _FakeDetailTorrentBackend
   final int fileCount;
   final Set<String> held = <String>{};
   final List<String> pausedAdds = <String>[];
+
+  /// 整颗（非选择性）.torrent 加入：不暂停、不写优先级。
+  final List<String> wholeAdds = <String>[];
+
+  @override
+  Future<bool> addTorrentMetainfo(
+    TorrentMetainfoPayload payload, {
+    required String category,
+    String? savePath,
+    bool sequential = false,
+    bool firstLastPiecePrio = false,
+  }) async {
+    final String hash = (payload.torrentId ?? '').toLowerCase();
+    wholeAdds.add(hash);
+    held.add(hash);
+    return true;
+  }
 
   @override
   Future<bool> addTorrentMetainfoPaused(

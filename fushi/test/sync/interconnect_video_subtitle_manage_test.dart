@@ -186,6 +186,46 @@ void main() {
       expect(all.remainingSidecars, isEmpty);
     });
 
+    test('sidecar 改名失败：已挪的改回、DB 不动，抛带错误码的 VideoSubtitleSidecarBusy', () async {
+      final File ja = File(p.join(work.path, 'movie.ja.srt'))
+        ..writeAsStringSync(_srt);
+      final File en = File(p.join(work.path, 'movie.en.ass'))
+        ..writeAsStringSync('en');
+      // 备份名被一个目录占着：文件改名到目录上在所有平台都失败（等同 Windows 上
+      // 文件被占用时 rename 抛 FileSystemException），而且不受 root 权限影响。
+      Directory('${en.path}.fushi-bak').createSync();
+      await _seedVideo(db, work, subtitleSource: ja.path);
+
+      await expectLater(
+        _hostService(
+          db,
+          work,
+        ).clearVideoSubtitle('video/movie', allSidecars: true),
+        throwsA(
+          isA<VideoSubtitleSidecarBusy>()
+              .having((VideoSubtitleSidecarBusy e) => e.path, 'path', en.path)
+              .having(
+                (VideoSubtitleSidecarBusy e) => e.toJson()['error'],
+                'error',
+                'subtitle_sidecar_busy',
+              )
+              .having(
+                (VideoSubtitleSidecarBusy e) => e.notRestored,
+                'notRestored',
+                isEmpty,
+              ),
+        ),
+      );
+
+      expect(ja.readAsStringSync(), _srt, reason: '先挪走的主字幕要改回原名');
+      expect(File('${ja.path}.fushi-bak').existsSync(), isFalse);
+      expect(en.readAsStringSync(), 'en');
+      final VideoBookRow row = (await db.getVideoBookByBookUid('video/movie'))!;
+      expect(row.subtitleSource, ja.path, reason: '文件没挪成就不能先清 DB');
+      expect(row.subtitleFormat, 'srt');
+      expect(await db.getCuesForBook('video/movie'), hasLength(1));
+    });
+
     test('未知视频 StateError；路径穿越 id ArgumentError', () async {
       final LocalLibraryHostService host = _hostService(db, work);
       await expectLater(
@@ -272,6 +312,31 @@ void main() {
       });
       expect(sidecar.existsSync(), isFalse);
     });
+
+    test(
+      'DELETE subtitle：sidecar 被占用 → 409 + subtitle_sidecar_busy，DB 不动',
+      () async {
+        final File sidecar = File(p.join(work.path, 'movie.ja.srt'))
+          ..writeAsStringSync(_srt);
+        Directory('${sidecar.path}.fushi-bak').createSync();
+        await _seedVideo(db, work, subtitleSource: sidecar.path);
+
+        final (int status, String body) = await send(
+          'DELETE',
+          '/api/library/videos/video%2Fmovie/subtitle',
+        );
+        expect(status, 409, reason: body);
+        final Map<String, Object?> json =
+            (jsonDecode(body) as Map<String, Object?>);
+        expect(json['error'], 'subtitle_sidecar_busy');
+        expect(json['path'], sidecar.path);
+        expect(sidecar.existsSync(), isTrue);
+        expect(
+          (await db.getVideoBookByBookUid('video/movie'))!.subtitleSource,
+          sidecar.path,
+        );
+      },
+    );
 
     test('POST subtitle/backfill：未接线 501；接线后透传语言，未知视频 404', () async {
       expect(
@@ -375,6 +440,53 @@ void main() {
         ],
       );
     }
+
+    test('同一 provider 多行（大小写不同的旧行）→ 保留主身份的 id，不被后写顶掉', () async {
+      await _seedVideo(db, work);
+      final VideoBookRow book = (await db.getVideoBookByBookUid(
+        'video/movie',
+      ))!;
+      final int workId = await db.upsertVideoMetadataWork(
+        VideoMetadataWorksCompanion.insert(
+          bookUid: const Value<String?>('video/movie'),
+          mediaType: 'movie',
+          title: 'リズと青い鳥',
+          updatedAt: 1,
+        ),
+      );
+      await db.replaceVideoMetadataProviderIdentities(
+        workId: workId,
+        identities: <VideoMetadataProviderIdentitiesCompanion>[
+          VideoMetadataProviderIdentitiesCompanion.insert(
+            identityKey: 'work:video/movie:tmdb',
+            workId: Value<int?>(workId),
+            provider: 'TMDB',
+            externalId: '12345',
+            isPrimary: const Value<bool>(true),
+            updatedAt: 1,
+          ),
+          VideoMetadataProviderIdentitiesCompanion.insert(
+            identityKey: 'work:video/movie:tmdb-legacy',
+            workId: Value<int?>(workId),
+            provider: 'tmdb',
+            externalId: '62564',
+            updatedAt: 1,
+          ),
+        ],
+      );
+
+      final SubtitleBackfillTarget target = (await libraryVideoSubtitleTarget(
+        db,
+        book,
+      )).target!;
+      expect(target.media.tmdbId, 12345, reason: '主身份优先，旧的非主行不能覆盖它');
+      expect(
+        libraryWorkExternalIds(
+          await db.getVideoMetadataProviderIdentities(workId: workId),
+        ),
+        <String, String>{'tmdb': '12345'},
+      );
+    });
 
     test('刮过的视频：身份取落库的作品 + provider id；没刮过 → 不猜', () async {
       await _seedVideo(db, work);
