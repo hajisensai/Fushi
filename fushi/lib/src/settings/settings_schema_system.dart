@@ -5,6 +5,13 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart'
+    show openFeedbackCenter;
+import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart'
+    show LeaderboardPage;
+import 'package:fushi/src/pages/implementations/updates_center_open.dart'
+    show openUpdatesCenter;
 import 'package:fushi/src/onboarding/recommended_pack_discard.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_row.dart';
 import 'package:fushi/src/onboarding/recommended_pack_import.dart';
@@ -26,6 +33,54 @@ import 'package:fushi/utils.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+/// 「首页入口」：首页模块关掉后，首页浮动工具栏上那四个入口的落脚处。
+///
+/// 首页工具栏（`home_dashboard_page.dart` 的 `_buildFloatingToolbar`）是更新中心、
+/// 统计中心、排行榜、反馈四个页面的常驻入口，其中统计中心与排行榜**只有**这一处
+/// 入口。2026-10-09 首页可关（[ModuleId.home]）之后，关掉首页不能把它们一起关成
+/// 不可达——所以首页关着时这里出现同样四行，打开的是同一个页面、同一个函数。
+/// 首页开着时整段隐藏（不在设置里多一份重复入口，也不进搜索）。
+SettingsSection _homeShortcutsSection() {
+  return SettingsSection(
+    id: 'system.section.home_shortcuts',
+    presentation: SettingsSectionPresentation.alwaysExpanded,
+    title: t.settings_section_home_shortcuts,
+    visible: (SettingsContext c) =>
+        !c.appModel.moduleVisibility.isEnabled(ModuleId.home),
+    items: <SettingsItem>[
+      SettingsNavigationItem(
+        id: 'system.home_shortcut_updates',
+        title: t.updates_center_title,
+        icon: FushiIcons.notifications,
+        onTap: (SettingsContext c) =>
+            openUpdatesCenter(c.context, c.appModel.updateFeedService),
+      ),
+      SettingsNavigationItem(
+        id: 'system.home_shortcut_statistics',
+        title: t.stat_center_title,
+        icon: FushiIcons.barChart,
+        onTap: (SettingsContext c) =>
+            pushSettingsPage(c, (_) => const StatisticsCenterPage()),
+      ),
+      SettingsNavigationItem(
+        id: 'system.home_shortcut_leaderboard',
+        title: t.leaderboard_title,
+        icon: FushiIcons.trophy,
+        onTap: (SettingsContext c) =>
+            pushSettingsPage(c, (_) => const LeaderboardPage()),
+      ),
+      SettingsNavigationItem(
+        id: 'system.home_shortcut_feedback',
+        title: t.feedback_title,
+        icon: FushiIcons.forum,
+        // 从设置里点开时截到的是设置页，没有意义；不预截图。
+        onTap: (SettingsContext c) =>
+            openFeedbackCenter(c.context, captureScreen: false),
+      ),
+    ],
+  );
+}
+
 SettingsDestination buildSystemDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.system,
@@ -33,6 +88,7 @@ SettingsDestination buildSystemDestination() {
     summary: t.settings_destination_system_summary,
     icon: FushiIcons.system,
     sections: <SettingsSection>[
+      _homeShortcutsSection(),
       SettingsSection(
         id: 'system.section.updates',
         presentation: SettingsSectionPresentation.alwaysExpanded,

@@ -20,6 +20,8 @@ import 'package:fushi/utils.dart';
 /// 解耦（同款先例见下面 app_shell 里关于 `appearance.startup_default_dictionary_tab`
 /// 的注释），改 id 只会平白动摇锚点。四个后加的模块沿用同一前缀保持一致。
 String _moduleItemId(ModuleId module) => switch (module) {
+  // 2026-10-09 新增，无历史包袱，但仍跟随同一前缀保持一致。
+  ModuleId.home => 'system.module_home',
   ModuleId.books => 'system.module_books',
   ModuleId.manga => 'system.module_manga',
   ModuleId.video => 'system.module_video',
@@ -65,6 +67,7 @@ String _moduleItemId(ModuleId module) => switch (module) {
     ),
     // 上面 homeTabOfModule 已经把有 tab 的七个消化掉了；这里补齐 switch 让编译器
     // 在新增模块时强制点名，而不是静默落进一个 default 里显示错标签。
+    ModuleId.home ||
     ModuleId.books ||
     ModuleId.manga ||
     ModuleId.video ||
@@ -96,6 +99,22 @@ SettingsSwitchItem _moduleSwitch(ModuleId module) {
     value: (SettingsContext settingsContext) =>
         settingsContext.appModel.moduleEnabled(module),
     onChanged: (SettingsContext settingsContext, bool enabled) async {
+      // 「至少保留一个导航模块」：最后一个有 tab 的模块关不掉（否则打开 app 只剩
+      // 设置这一页）。拒绝时开关保持开着，并说明原因。
+      if (!enabled &&
+          isLastNavigationModule(
+            module,
+            settingsContext.appModel.moduleVisibility,
+          )) {
+        final BuildContext ctx = settingsContext.context;
+        if (ctx.mounted) {
+          ScaffoldMessenger.of(ctx).showSnackBar(
+            FushiSnackBar(content: Text(t.settings_module_keep_one_navigation)),
+          );
+        }
+        settingsContext.refresh();
+        return;
+      }
       await settingsContext.appModel.setModuleEnabled(module, enabled);
       settingsContext.refresh();
     },
@@ -296,7 +315,7 @@ SettingsDestination buildAppearanceDestination() {
           ),
         ],
       ),
-      // 「功能模块」：11 个模块的总开关，值域与顺序都是 [ModuleId]。
+      // 「功能模块」：12 个模块的总开关，值域与顺序都是 [ModuleId]。
       //
       // **本区管的不再只是底栏**。这些开关原来只喂 `homeActiveTabs()`（底栏/侧栏
       // tab 列表），于是「关掉视频」之后设置页仍列着「视频」「在线服务」，首页活动
@@ -306,7 +325,9 @@ SettingsDestination buildAppearanceDestination() {
       // 以及它专属后台的下次自启。
       //
       // 两条刻意的例外：
-      // - 首页/设置**恒在**，是全部模块关光后的安全回退面，没有 ModuleId。
+      // - 设置**恒在**，是全部模块关光后的安全回退面，没有 ModuleId。首页
+      //   2026-10-09 起可关（[ModuleId.home]），但导航模块至少留一个
+      //   （[isLastNavigationModule]）。
       // - 关掉「查词」只关**页面入口**，查词**能力全留**（阅读器划词弹窗、设置 →
       //   查词 分类里的词典导入管理与音频来源）——用户拍板：纯阅读器仍要能查词。
       //

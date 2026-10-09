@@ -28,6 +28,7 @@ void main() {
   /// 模块 → 开关行 item id。id 带历史 `system.` 前缀（设置搜索的定位锚点，冻结
   /// 不改）。这张表同时钉死**顺序**：必须与 [ModuleId.values] 一致。
   const Map<ModuleId, String> moduleItemIds = <ModuleId, String>{
+    ModuleId.home: 'system.module_home',
     ModuleId.books: 'system.module_books',
     ModuleId.manga: 'system.module_manga',
     ModuleId.video: 'system.module_video',
@@ -90,7 +91,8 @@ void main() {
       expect(
         item.title,
         navItem.label,
-        reason: '${item.id} 的标题与底栏「${navItem.label}」对不上——'
+        reason:
+            '${item.id} 的标题与底栏「${navItem.label}」对不上——'
             '别在设置里手写第二份标签，取 homeNavItemFor(tab).label',
       );
       expect(

@@ -104,6 +104,7 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
+import 'package:fushi/src/pages/implementations/home_module_swipe.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart'
     show FushiFocusController, FushiFocusRoot;
@@ -152,9 +153,10 @@ export 'package:fushi/src/models/home_tab.dart';
 /// 说成「macOS 恒 false」。收成一个快照后平台判据只在 [ModuleId.availableOn] 判
 /// 一次，两个调用点各减七行，也不可能再漏配。
 List<HomeTab> homeActiveTabs(ModuleVisibility visibility) => <HomeTab>[
-  HomeTab.home,
+  // 首页 2026-10-09 起可关（[ModuleId.home]，用户反馈「首页没用但偏偏不给关」）。
+  if (visibility.isEnabled(ModuleId.home)) HomeTab.home,
   // 七个库页/工具 tab 都可按「功能模块」偏好隐藏（设置 → 外观 → 功能模块）；
-  // 首页/设置恒在，是全部隐藏后的安全回退面（故 [ModuleId] 里没有它们）。
+  // 设置恒在，是全部隐藏后的安全回退面（故 [ModuleId] 里没有它）。
   if (visibility.isEnabled(ModuleId.books)) HomeTab.books,
   if (visibility.isEnabled(ModuleId.manga)) HomeTab.manga,
   if (visibility.isEnabled(ModuleId.video)) HomeTab.video,
@@ -170,6 +172,12 @@ List<HomeTab> homeActiveTabs(ModuleVisibility visibility) => <HomeTab>[
   if (visibility.isEnabled(ModuleId.browserExtension)) HomeTab.browserExtension,
   HomeTab.settings,
 ];
+
+/// 默认落地 tab：可见列表的第一项。首页开着就是首页；首页被关掉时是第一个
+/// 启用的模块（底栏最左边那一项）；导航模块全关时只剩设置。设置恒在，所以
+/// [tabs]（[homeActiveTabs] 的结果）永不为空。
+HomeTab homeLandingTab(List<HomeTab> tabs) =>
+    tabs.isEmpty ? HomeTab.settings : tabs.first;
 
 /// 启动落地 tab。「启动默认打开查词」只在查词 tab 真的可见时成立——查词模块被
 /// 关掉时返回它会让 `_currentTab` 从第一帧起就指向一个不在 [homeActiveTabs] 里的
@@ -204,8 +212,10 @@ HomeTab homeTabForVisualIndex({
   final int logicalIndex = reversed
       ? (tabs.length - 1 - visualIndex)
       : visualIndex;
-  // 回退到恒在的 home（书架 tab 现可被「功能模块」偏好隐藏，不再是安全回退）。
-  if (logicalIndex < 0 || logicalIndex >= tabs.length) return HomeTab.home;
+  // 回退到默认落地 tab（首页 / 书架都可被「功能模块」偏好隐藏，不再是安全回退）。
+  if (logicalIndex < 0 || logicalIndex >= tabs.length) {
+    return homeLandingTab(tabs);
+  }
   return tabs[logicalIndex];
 }
 
@@ -457,13 +467,19 @@ class _HomePageState extends BasePageState<HomePage>
         _videoSourceScrapeController;
     appModelNoUpdate.videoScrapeRuntime = _videoScrapeRuntime;
 
+    // 首页可能被「功能模块」关掉：默认落地改为第一个启用的 tab，不让
+    // `_currentTab` 从第一帧起就指向一个隐藏 tab（同 [homeInitialTab] 的理由）。
+    final List<HomeTab> initialTabs = homeActiveTabs(
+      appModelNoUpdate.moduleVisibility,
+    );
     _currentTab = homeInitialTab(
       startupDefaultDictionaryTab: appModelNoUpdate.startupDefaultDictionaryTab,
       dictionariesEnabled: appModelNoUpdate.moduleVisibility.isEnabled(
         ModuleId.lookup,
       ),
-      fallback: _currentTab,
+      fallback: homeLandingTab(initialTabs),
     );
+    _previousTab = homeLandingTab(initialTabs);
     // Seed the shared shell notifier (drives the macOS root sidebar) and listen
     // for external selection from it. No-op on non-macOS (the sidebar that writes
     // it only exists under the macOS shell).
@@ -1031,16 +1047,20 @@ class _HomePageState extends BasePageState<HomePage>
   List<HomeTab> _activeTabs() => homeActiveTabs(appModel.moduleVisibility);
 
   /// 渲染用的当前 tab：若 `_currentTab` 已不在可见列表（例如刚在「功能模块」里
-  /// 关掉当前所在库页），回落到恒在的首页，避免渲染一个不存在的 tab。
+  /// 关掉当前所在库页），回落到默认落地 tab（[homeLandingTab]：首页开着是首页，
+  /// 关了是第一个启用的模块），避免渲染一个不存在的 tab。
   /// `_currentTab` 自身保持不变，下一次 [_selectTab] 会纠正它。
   HomeTab get _visibleTab {
     final List<HomeTab> tabs = _activeTabs();
-    return tabs.contains(_currentTab) ? _currentTab : HomeTab.home;
+    return tabs.contains(_currentTab) ? _currentTab : homeLandingTab(tabs);
   }
 
-  /// 设置页返回箭头的目标：来源 tab 若在设置里刚被「功能模块」关掉，回落首页。
-  HomeTab get _previousVisibleTab =>
-      _activeTabs().contains(_previousTab) ? _previousTab : HomeTab.home;
+  /// 设置页返回箭头的目标：来源 tab 若在设置里刚被「功能模块」关掉，回落到默认
+  /// 落地 tab。
+  HomeTab get _previousVisibleTab {
+    final List<HomeTab> tabs = _activeTabs();
+    return tabs.contains(_previousTab) ? _previousTab : homeLandingTab(tabs);
+  }
 
   /// 查词 tab 被「功能模块」隐藏时用来承载查词页的独立路由（见 [_revealDictionary]）。
   /// 存住它是为了「已经开着就把它翻到最上层」而不是叠第二份 —— 同一时刻全 app 只能有
@@ -1625,6 +1645,7 @@ class _HomePageState extends BasePageState<HomePage>
   /// back button). Tab identity is [HomeTab]-driven — the dynamic [_activeTabs]
   /// list (video/games toggles) flows through the same enum, never int.
   Widget _buildMacosLayout() {
+    _inMobileLayout = false;
     _shellFabHostedByBar = false;
     final AdaptiveNavItem currentItem = _navItemFor(_visibleTab);
     // TODO-1375（症状③）：macOS ToolBar 的 automaticallyImplyLeading 只在
@@ -1667,6 +1688,7 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
+    _inMobileLayout = false;
     _shellFabHostedByBar = false;
     // 自绘标题栏（[FushiDesktopTitleBar.isEnabled]，Windows + macOS）已经把当前
     // tab 名画在应用顶栏上，主导航 rail 始终可见，再叠一层「隐藏 rail + 页头返回
@@ -1787,7 +1809,17 @@ class _HomePageState extends BasePageState<HomePage>
     return Column(
       key: _homeBodyKey,
       children: <Widget>[
-        Expanded(child: buildBody()),
+        // 横滑切模块（只在手机底栏布局启用）。结构三套布局恒定，只翻 enabled：
+        // 按布局增删这一层会让 GlobalKey 下的整棵正文重挂（BUG-2719 的那个坑）。
+        Expanded(
+          child: HomeModuleSwipeDetector(
+            enabled: _moduleSwipeEnabled(),
+            tracker: _moduleRoot,
+            targetFor: _moduleSwipeTarget,
+            onSwipe: _selectTab,
+            child: buildBody(),
+          ),
+        ),
         // 玻璃设计系统的移动布局里内容延伸到悬浮标签栏下面（extendBody），
         // 迷你条得抬到胶囊之上；它们空闲时收成零高，此时不能留空白，否则内容
         // 就滚不到胶囊底下了——见 [_FloatingBarInset]。其余布局这里的 bottom
@@ -1807,7 +1839,33 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
+  /// tab 内容的「模块根」登记表（多选模式 / 嵌套栈钻进去时不许横滑切模块）。
+  final ModuleRootTracker _moduleRoot = ModuleRootTracker();
+
+  /// 当前是否在手机底栏布局（[_buildMobileLayout] 每次构建时置位）。
+  bool _inMobileLayout = false;
+
+  /// 横滑切模块此刻是否启用：手机底栏布局、Material 设计系统（Apple 的玻璃底栏
+  /// 单独保持 iOS 的点按切换语义），且当前 tab 是参与横滑的模块页。
+  bool _moduleSwipeEnabled() {
+    if (!_inMobileLayout || isGlassDesign(context)) return false;
+    return homeSwipeTabs(
+      tabs: _activeTabs(),
+      reversed: false,
+    ).contains(_visibleTab);
+  }
+
+  HomeTab? _moduleSwipeTarget({required bool fingerTowardStart}) =>
+      homeModuleSwipeTarget(
+        tabs: _activeTabs(),
+        current: _visibleTab,
+        reversed: appModel.reverseNavigationBar,
+        fingerTowardStart: fingerTowardStart,
+        textDirection: Directionality.of(context),
+      );
+
   Widget _buildMobileLayout() {
+    _inMobileLayout = true;
     _shellFabHostedByBar = !isGlassDesign(context);
     final List<HomeTab> tabs = _activeTabs();
     final bool reversed = appModel.reverseNavigationBar;

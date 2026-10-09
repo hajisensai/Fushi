@@ -21,6 +21,8 @@ ModuleVisibility _visibility({
   bool lookup = true,
   bool browserExtension = false,
 }) => ModuleVisibility(<ModuleId>{
+  // 首页 2026-10-09 起是可关模块；这些用例的语义是「首页开着」。
+  ModuleId.home,
   if (books) ModuleId.books,
   if (manga) ModuleId.manga,
   if (video) ModuleId.video,
@@ -296,6 +298,45 @@ void main() {
         homeTabForVisualIndex(tabs: tabs, visualIndex: 99, reversed: false),
         HomeTab.home,
       );
+    });
+  });
+
+  group('首页可关（2026-10-09）', () {
+    test('首页关掉：首页不在可见列表，默认落地改为第一个启用的模块', () {
+      final List<HomeTab> withoutHome = homeActiveTabs(
+        const ModuleVisibility(<ModuleId>{
+          ModuleId.books,
+          ModuleId.manga,
+          ModuleId.video,
+        }),
+      );
+      expect(withoutHome, isNot(contains(HomeTab.home)));
+      expect(homeLandingTab(withoutHome), HomeTab.books);
+      expect(
+        homeLandingTab(
+          homeActiveTabs(
+            const ModuleVisibility(<ModuleId>{ModuleId.video, ModuleId.lookup}),
+          ),
+        ),
+        HomeTab.video,
+      );
+      // 越界视觉索引也回落到默认落地 tab，而不是已隐藏的首页。
+      expect(
+        homeTabForVisualIndex(tabs: withoutHome, visualIndex: 99, reversed: false),
+        HomeTab.books,
+      );
+    });
+
+    test('首页开着：默认落地仍是首页', () {
+      expect(homeLandingTab(homeActiveTabs(_visibility(video: true))), HomeTab.home);
+    });
+
+    test('导航模块全关：只剩设置，落地设置（设置恒在）', () {
+      final List<HomeTab> tabs = homeActiveTabs(
+        const ModuleVisibility(<ModuleId>{ModuleId.sync}),
+      );
+      expect(tabs, <HomeTab>[HomeTab.settings]);
+      expect(homeLandingTab(tabs), HomeTab.settings);
     });
   });
 

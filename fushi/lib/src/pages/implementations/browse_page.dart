@@ -383,7 +383,11 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     final int index = _controllerTabs.indexOf(from);
     final int target = index + delta;
     if (index < 0 || index != controller.index) return;
-    if (target < 0 || target >= _controllerTabs.length) return;
+    if (target < 0 || target >= _controllerTabs.length) {
+      // 越过首 / 末顶层页签：再往外交给首页外壳切功能模块（手机布局）。
+      SectionSwipeOverflowScope.maybeOf(context)?.call(forward: delta > 0);
+      return;
+    }
     // 来源 / 扩展共用同一份内容域：两者之间接力只切顶层页签、落在同一个域上。
     // 若按「往后首段 / 往前末段」去改共享域，被拖的那一页的二级控制器会在拖动
     // 途中被改下标（TabBarView 拖动中不跟随跳页），标签条与页面就此错位。

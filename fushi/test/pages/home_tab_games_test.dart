@@ -18,6 +18,8 @@ ModuleVisibility _visibility({
   bool lookup = true,
   bool browserExtension = false,
 }) => ModuleVisibility(<ModuleId>{
+  // 首页 2026-10-09 起是可关模块；这些用例的语义是「首页开着」。
+  ModuleId.home,
   if (books) ModuleId.books,
   if (manga) ModuleId.manga,
   if (video) ModuleId.video,

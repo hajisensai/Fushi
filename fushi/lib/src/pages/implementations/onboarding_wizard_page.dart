@@ -11,6 +11,8 @@ import 'package:fushi/src/anki/ankiconnect_addon_installer.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/module_registry.dart'
+    show hasAnyNavigationModule;
 import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
 import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
@@ -208,9 +210,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     // 没被读也没被写，用户在引导里「只留阅读」压根做不到。
     for (final ModuleId module in ModuleId.values) {
       if (!_moduleAvailable(module)) continue;
-      if (appModelNoUpdate.moduleEnabled(module)) {
-        _selected.add(onboardingFeatureOfModule(module));
-      }
+      final OnboardingFeature? feature = onboardingFeatureOfModule(module);
+      if (feature == null) continue;
+      if (appModelNoUpdate.moduleEnabled(module)) _selected.add(feature);
     }
     // 包目录进场收尾（删已导入的残包、搬旧命名的半截文件、按磁盘对齐阶段）。
     // 下载正在跑时 controller 整体跳过——那些都是在动同一批文件。
@@ -256,9 +258,17 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   Future<void> _applyModuleSelection() async {
     for (final ModuleId module in ModuleId.values) {
       if (!_moduleAvailable(module)) continue;
-      final bool wanted = _selected.contains(onboardingFeatureOfModule(module));
+      final OnboardingFeature? feature = onboardingFeatureOfModule(module);
+      // 向导不提供勾选的模块（首页）不写，保留用户在设置里的选择。
+      if (feature == null) continue;
+      final bool wanted = _selected.contains(feature);
       if (appModel.moduleEnabled(module) == wanted) continue;
       await appModel.setModuleEnabled(module, wanted);
+    }
+    // 「至少保留一个导航模块」：用户之前在设置里关了首页、这里又把库页全取消，
+    // 打开 app 就只剩设置。此时把首页开回来兜底（见 [isLastNavigationModule]）。
+    if (!hasAnyNavigationModule(appModel.moduleVisibility)) {
+      await appModel.setModuleEnabled(ModuleId.home, true);
     }
   }
 
@@ -1228,7 +1238,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// （与设置 → 外观 → 功能模块 同向），平台判据只走 [_moduleAvailable]。
   List<OnboardingFeature> get _visibleModuleFeatures => <OnboardingFeature>[
     for (final ModuleId module in ModuleId.values)
-      if (_moduleAvailable(module)) onboardingFeatureOfModule(module),
+      if (_moduleAvailable(module))
+        if (onboardingFeatureOfModule(module) case final OnboardingFeature f) f,
   ];
 
   List<OnboardingFeature> get _capabilityFeatures => <OnboardingFeature>[
