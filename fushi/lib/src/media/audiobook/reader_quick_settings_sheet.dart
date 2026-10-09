@@ -798,8 +798,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   /// 标题下固定一条标签栏——主题与字体 / 排版 / 翻页与手势 / 有声书 / 查词 /
   /// 歌词模式（按任务分组，[readerSettingsTabs]）。每页各自滚动、切走再切回保留
   /// 滚动位置；页内常用小节展开置顶、高级小节默认折叠（[kReaderSettingsSections]）。
-  /// 有声书的播放控制不在这里——它有自己的面板
-  /// （[ReaderQuickSettingsPresentation.audiobookPanel]）。
+  /// 有声书的传输（播放 / 上下句 / 章节）在它自己的面板
+  /// （[ReaderQuickSettingsPresentation.audiobookPanel]），播放设置在本面板「有声书」页。
   Widget _buildAppearanceSideSheet(BuildContext context, ThemeData theme) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<ReaderSettingsTab> tabs = _settingsTabs;
@@ -881,6 +881,11 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
               ),
             _buildThemeSelectorSection(),
           ],
+          // 有声书的播放设置（音量 / 速度 / 延迟 / 插图暂停 / 跳转方式 / 播放条 /
+          // 换音频）置于「有声书」页顶：它们原在有声书面板的「设置」子页签，与本页
+          // 重复入口，2026-10-09 起只留这一处（面板只剩章节）。
+          if (tab == ReaderSettingsTab.listening)
+            _buildAudiobookSettingsSection(Theme.of(context)),
           _buildReaderTabSchema(tab),
           if (tab == ReaderSettingsTab.appearance && widget.extractDir != null)
             _buildBookCssEditorSection(),
@@ -988,8 +993,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     ];
   }
 
-  /// 桌面端居中「有声书」面板：外壳与三个 tab 在 [ReaderAudiobookPanel]；「设置」
-  /// tab 的内容仍由本 sheet 提供（音量 / 速度 / 延迟等行的写路径在这里）。
+  /// 桌面端居中「有声书」面板：外壳与章节列表在 [ReaderAudiobookPanel]；播放设置
+  /// （音量 / 速度 / 延迟等）在「阅读设置 › 有声书」页（[_buildSettingsTabContent]）。
   Widget _buildAudiobookPanel(BuildContext context, ThemeData theme) {
     return ReaderSideSheet(
       title: t.section_audiobook,
@@ -1015,8 +1020,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       onPickAlignment: widget.onPickAlignment,
       onTranscribe: widget.onTranscribe,
       cueStudyOffset: widget.cueStudyOffset,
-      settingsBuilder: (BuildContext ctx) =>
-          _buildAudiobookSettingsSection(Theme.of(ctx)),
     );
   }
 

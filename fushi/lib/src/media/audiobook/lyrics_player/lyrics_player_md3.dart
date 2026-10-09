@@ -1965,6 +1965,17 @@ class _NarrowTopBar extends StatelessWidget {
     final FushiTypography type = context.fushiType;
     return Row(
       children: <Widget>[
+        // 窄屏（手机）左上角的返回键：退出歌词模式回到书页。此前唯一的出口是
+        // 右侧动作胶囊最末一枚 ×，与遮罩 / 排版 / 统计挤在一起，用户找不到
+        // 「返回」（2026-10-09 反馈：有声阅读界面没有返回键）；iOS 又没有系统
+        // 返回键兜底。
+        FushiIconButtonControl(
+          key: const ValueKey<String>('lyrics_player_back'),
+          tooltip: t.back,
+          onPressed: callbacks.onClose,
+          icon: const FushiIcon(FushiIcons.back),
+        ),
+        const SizedBox(width: 4),
         Expanded(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -2013,11 +2024,6 @@ class _NarrowTopBar extends StatelessWidget {
                 tooltip: t.reading_statistics,
                 onPressed: callbacks.onOpenStatistics,
                 icon: const FushiIcon(FushiIcons.statistics),
-              ),
-              FushiIconButtonControl(
-                tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                onPressed: callbacks.onClose,
-                icon: const FushiIcon(FushiIcons.close),
               ),
             ],
           ),

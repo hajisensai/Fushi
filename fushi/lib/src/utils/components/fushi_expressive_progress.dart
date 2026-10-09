@@ -284,9 +284,20 @@ class _WavyLinearPainter extends CustomPainter {
       final double hi = math.max(a, b);
       final Path path = Path();
       final double dir = rtl ? -1 : 1;
+      // 两端包络：波形在已填段首尾各半个波长内从中线平滑起落。否则起点落在
+      // 正弦的任意相位上——段很短时（如全书 7%）整段只剩一个翘起的「钩子」，
+      // 段首也会离开轨道中线（2026-10-09 书内统计面板反馈）。
+      const double taperSpan = FushiWavyLinearProgress.wavelength / 2;
+      double envelope(double x) {
+        final double edge = math.min(x - lo, hi - x);
+        final double f = (edge / taperSpan).clamp(0.0, 1.0);
+        return f * f * (3 - 2 * f);
+      }
+
       double yAt(double x) =>
           cy +
           amp *
+              envelope(x) *
               math.sin(
                 2 * math.pi * (x * dir) / FushiWavyLinearProgress.wavelength -
                     phase,

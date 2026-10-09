@@ -42,7 +42,6 @@ Widget _panel(
     title: 'Book',
     chapterLabel: 'こうして平塚静は',
     coverPath: null,
-    settingsBuilder: (_) => const Text('Panel settings'),
   ),
 );
 

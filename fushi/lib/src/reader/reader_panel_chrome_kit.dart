@@ -359,12 +359,18 @@ class ReaderPanelProgress extends StatelessWidget {
     required this.value,
     this.semanticsLabel,
     this.color,
+    this.trackColor,
   });
 
   /// 0..1；null = 不定态。
   final double? value;
   final String? semanticsLabel;
   final Color? color;
+
+  /// M3E 波浪形态的轨道色；null = secondaryContainer。放在彩色卡面上（如统计面板
+  /// 的 tertiaryContainer 阅读位置卡）时须由调用方给一个与卡面拉开对比的轨道，
+  /// 否则淡紫轨道融进粉色卡面、只剩一截悬空的波浪。
+  final Color? trackColor;
 
   @override
   Widget build(BuildContext context) {
@@ -396,7 +402,7 @@ class ReaderPanelProgress extends StatelessWidget {
     return FushiWavyLinearProgress(
       value: v,
       color: color ?? scheme.primary,
-      trackColor: scheme.secondaryContainer,
+      trackColor: trackColor ?? scheme.secondaryContainer,
       semanticsLabel: semanticsLabel,
       semanticsValue: v == null ? null : '${(v * 100).round()}%',
     );

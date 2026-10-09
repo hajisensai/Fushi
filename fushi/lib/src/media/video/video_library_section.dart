@@ -15,5 +15,4 @@ enum VideoLibrarySection {
   /// 视频源扩展目录，仓库在页头动作（与「浏览 › 扩展」同一组件）。
   extensions,
   sources,
-  settings
 }

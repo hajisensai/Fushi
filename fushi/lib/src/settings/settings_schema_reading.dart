@@ -1,7 +1,9 @@
 import 'dart:io' show Platform;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/reader/reader_control_layout_editor.dart';
@@ -368,6 +370,29 @@ SettingsDestination buildReadingDestination() {
         presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.section_typography,
         items: <SettingsItem>[
+          // 正文字体切换：复用全 app 唯一的字体库（[CustomFontsPage]，导入 / 下载 /
+          // 用途勾选 / 排序都在那里），以「正文」作用域打开——新加的字体默认挂到
+          // 小说正文，副标题显示当前正文字体链。字体库落库后自己触发
+          // `onSettingsChangedLive` 热替换正文 CSS，回来再刷一次面板副标题。
+          SettingsNavigationItem(
+            id: 'reading_display.body_font',
+            title: t.reader_body_font,
+            subtitleBuilder: (SettingsContext c) => readerBodyFontSummary(
+              ReaderFushiSource.readerSettings?.customFonts ??
+                  const <Map<String, dynamic>>[],
+            ),
+            icon: FushiIcons.font,
+            // order 接在 layout 组末尾（组内 order 须连续无洞、无撞号，见
+            // reader_settings_reorg_guard_test）；侧板里的位置由 IA 表决定。
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 26),
+            onTap: (SettingsContext c) async {
+              await pushSettingsPage(
+                c,
+                (_) => const CustomFontsPage(target: FontTarget.body),
+              );
+              notifyReaderSettingsChanged(c);
+            },
+          ),
           SettingsStepperItem(
             id: 'reading_display.font_size',
             title: t.reader_font_size,
@@ -1110,4 +1135,15 @@ Widget buildReaderControlLayoutEditor(SettingsContext context) {
       ),
     ],
   );
+}
+
+/// 「正文字体」行的副标题：正文字体链里各字体的显示名（按回退顺序，「 › 」连接）；
+/// 空链 = 书籍自带 / 系统字体。
+String readerBodyFontSummary(List<Map<String, dynamic>> fonts) {
+  final List<String> names = <String>[
+    for (final Map<String, dynamic> font in fonts)
+      if (font['name'] case final String name when name.trim().isNotEmpty)
+        name.trim(),
+  ];
+  return names.isEmpty ? t.reader_body_font_default : names.join(' › ');
 }

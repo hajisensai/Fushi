@@ -226,6 +226,84 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  // 2026-10-09 反馈：移动端开着小说设置切深色模式，面板组件没有立即变色。生产
+  // 切明暗走 MaterialApp 的 themeMode（含默认 200ms AnimatedTheme 补间），不是换
+  // 一份 theme；底部 sheet 形态（手机竖屏）下也必须跟着变。
+  testWidgets('compact settings sheet follows light → dark themeMode switch', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(392, 853);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    ThemeData build(Brightness b) => buildFushiThemeData(
+      scheme: ColorScheme.fromSeed(
+        seedColor: const Color(0xFF6200EE),
+        brightness: b,
+      ),
+      textTheme: b == Brightness.dark
+          ? Typography.material2021().white
+          : Typography.material2021().black,
+    ).copyWith(platform: TargetPlatform.android);
+    final ThemeData light = build(Brightness.light);
+    final ThemeData dark = build(Brightness.dark);
+    final ValueNotifier<ThemeMode> mode = ValueNotifier<ThemeMode>(
+      ThemeMode.light,
+    );
+    addTearDown(mode.dispose);
+    late BuildContext owner;
+    late BuildContext content;
+    await tester.pumpWidget(
+      ValueListenableBuilder<ThemeMode>(
+        valueListenable: mode,
+        builder: (BuildContext context, ThemeMode value, Widget? _) =>
+            MaterialApp(
+              theme: light,
+              darkTheme: dark,
+              themeMode: value,
+              home: LyricsThemeHost(
+                child: Builder(
+                  builder: (BuildContext context) {
+                    owner = context;
+                    return const Scaffold();
+                  },
+                ),
+              ),
+            ),
+      ),
+    );
+    unawaited(
+      showReaderSettingsSideDialog<void>(
+        context: owner,
+        preferences: _MemoryPrefs(),
+        bottomSheetWhenCompact: true,
+        builder: (BuildContext context) {
+          content = context;
+          final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+          return ListTile(
+            title: const Text('Dark mode'),
+            tileColor: tokens.surfaces.card,
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(Theme.of(content).colorScheme.brightness, Brightness.light);
+
+    mode.value = ThemeMode.dark;
+    await tester.pumpAndSettle();
+    expect(Theme.of(content).colorScheme, dark.colorScheme);
+    expect(
+      tester
+          .widget<ListTile>(find.byType(ListTile))
+          .tileColor,
+      dark.colorScheme.surfaceContainer,
+    );
+    Navigator.of(content).pop();
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('closing the source before its side panel leaves no listener', (
     WidgetTester tester,
   ) async {

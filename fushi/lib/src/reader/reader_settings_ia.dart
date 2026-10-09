@@ -115,6 +115,7 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
         tab: ReaderSettingsTab.appearance,
         title: () => t.reader_panel_section_font,
         itemIds: const <String>[
+          'reading_display.body_font',
           'reading_display.font_size',
           'reading_display.font_weight',
           'reading_display.furigana_mode',

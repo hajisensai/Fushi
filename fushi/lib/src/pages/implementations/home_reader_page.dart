@@ -11,10 +11,8 @@ import 'package:fushi/src/pages/implementations/library_online_sources_view.dart
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
-import 'package:fushi/src/pages/implementations/module_settings_view.dart';
-import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show FushiFloatingChromeInsetPadding, FushiFloatingChromeScrollInset;
+    show FushiFloatingChromeInsetPadding;
 import 'package:fushi/utils.dart';
 
 /// The body content for the Reader tab in the main menu.
@@ -30,7 +28,7 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
   @override
   MediaType get mediaType => ReaderMediaType.instance;
 
-  /// 书 tab：书架 / 发现 / 来源 / 扩展 / 导入 / 设置，与漫画 / 视频同一套导航结构。
+  /// 书 tab：书架 / 发现 / 来源 / 扩展 / 导入，与漫画 / 视频同一套导航结构。
   ///
   /// 书架视图仍走 `mediaSource.buildHistoryPage()`——书 tab 支持切换来源
   /// （EPUB / PDF / 通用），页面类型由当前来源决定，壳不得硬编某一个实现。
@@ -115,19 +113,6 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
           label: t.library_view_import,
           builder: (BuildContext context, Widget navigation) =>
               MediaSourcesPage(mediaKind: 'book', navigation: navigation),
-        ),
-        MediaLibraryViewSpec(
-          kind: MediaLibraryViewKind.settings,
-          // 设置正文的滚动视图自己吃掉工具区让位（MediaQuery 顶部 padding）。
-          handlesChromeInset: true,
-          label: t.settings,
-          builder: (BuildContext context, Widget navigation) =>
-              FushiFloatingChromeScrollInset(
-            child: ModuleSettingsView(
-              destinationId: SettingsDestinationId.reading,
-              navigation: navigation,
-            ),
-          ),
         ),
       ],
     );

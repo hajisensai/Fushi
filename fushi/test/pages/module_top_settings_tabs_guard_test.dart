@@ -86,33 +86,38 @@ TorrentSettingsSection()
     expect(_hasFullWidthTorrentSettings(stringsOnly), isFalse);
   });
 
-  test('书架、漫画、视频和游戏顶部导航都提供设置页', () {
+  // 2026-10-09 用户拍板：书架 / 漫画 / 视频 / 游戏四个模块库页里的「设置」子页签
+  // 全部移除——它们只是全局「设置 › 阅读 / 漫画 / 视频 / 游戏」分类的投影
+  // （[ModuleSettingsView] 读的就是全局 schema），与全局设置、阅读时的设置面板
+  // 重复。守卫反转为「不得再出现」，防止有人把投影页签加回来。
+  test('书架、漫画、视频和游戏顶部导航不再提供模块内设置页', () {
     for (final String path in <String>[
       'lib/src/pages/implementations/home_reader_page.dart',
       'lib/src/media/manga/manga_library_page.dart',
+      'lib/src/pages/implementations/video_library_shell.dart',
+      'lib/src/pages/implementations/home_game_page.dart',
     ]) {
+      final String code = source(path);
       expect(
-        _containsCode(source(path), 'kind: MediaLibraryViewKind.settings'),
-        isTrue,
-        reason: '$path 顶部导航缺少设置页',
+        containsIdentifier(code, 'ModuleSettingsView'),
+        isFalse,
+        reason: '$path 不得再内嵌模块设置页（设置一律走全局设置）',
+      );
+      expect(
+        _containsCode(code, 'kind: MediaLibraryViewKind.settings'),
+        isFalse,
       );
     }
-
-    // #792 起视频模块从 home_page 的 MediaLibraryShell 换成独立
-    // VideoLibraryShell,设置段随之搬家——守卫针跟着扎到新位置。
     final String video = source(
       'lib/src/pages/implementations/video_library_shell.dart',
     );
     expect(
       _containsCode(video, 'value: VideoLibrarySection.settings'),
-      isTrue,
-      reason: '视频顶部导航缺少设置页',
+      isFalse,
+      reason: '视频顶部导航不得再有设置页',
     );
 
-    // 2026-09 起游戏页签序收敛进 [kGameSectionTabOrder]（横滑切区与页签共用同
-    // 一份真相），tab 行由它循环生成——旧锚点 `value: GameSection.settings` 的
-    // 字面不复存在。守的行为不变，锚点跟着搬：源码上钉「页签确实从序生成」，
-    // 行为上直接钉序的内容（比字面扫描更强）。
+    // 游戏页签由 [kGameSectionTabOrder] 循环生成（序的唯一真相）。
     final String game = source(
       'lib/src/pages/implementations/game_shared.dart',
     );
@@ -124,12 +129,15 @@ TorrentSettingsSection()
       isTrue,
       reason: '游戏页签必须由 kGameSectionTabOrder 循环生成（序的唯一真相）',
     );
-    expect(kGameSectionTabOrder.contains(GameSection.settings), isTrue,
-        reason: '游戏顶部导航缺少设置页');
+    expect(
+      GameSection.values.map((GameSection s) => s.name),
+      isNot(contains('settings')),
+      reason: '游戏模块不得再有设置子区',
+    );
     expect(kGameSectionTabOrder.contains(GameSection.diagnostics), isFalse,
         reason: '兼容性诊断不能继续占用游戏顶部高频 tab');
-    expect(kGameSectionTabOrder.last, GameSection.settings,
-        reason: '设置恒排末位，与书 / 漫画 / 视频库页同构');
+    expect(kGameSectionTabOrder.last, GameSection.importGames,
+        reason: '导入恒排末位，与书 / 漫画 / 视频库页同构');
   });
 
   // 2026-09-27 起「下载」模块改名「浏览」（Mihon Browse 形态）：顶部页签变成
@@ -177,17 +185,17 @@ TorrentSettingsSection()
     );
   });
 
-  test('模块设置和诊断详情都保留返回模块导航的真实入口', () {
+  test('独立设置页与诊断详情都保留真实返回入口', () {
     final String moduleSettings = source(
       'lib/src/pages/implementations/module_settings_view.dart',
     );
     expect(
       _containsCode(
         moduleSettings,
-        'FushiPageHeader.customTitle(title: widget.navigation!)',
+        'FushiPageHeader.route(title: title)',
       ),
       isTrue,
-      reason: '隐藏 Cupertino 外观也不能删掉模块分段导航',
+      reason: '推出来的独立设置页必须有带返回键的页头',
     );
 
     final String diagnostics = source(
@@ -199,13 +207,12 @@ TorrentSettingsSection()
         'icon: FushiIcons.back',
       ),
       isTrue,
-      reason: '诊断页高亮设置段时，重选当前段不会回调，必须另有显式返回入口',
+      reason: '诊断页高亮捕获工作台段时，重选当前段不会回调，必须另有显式返回入口',
     );
     expect(
-      RegExp(
-        r'gameSectionNotifier\.value\s*=\s*GameSection\.settings',
-      ).hasMatch(_code(diagnostics)),
+      RegExp(r'onTap:\s*widget\.onShowCapture').hasMatch(_code(diagnostics)),
       isTrue,
+      reason: '诊断返回键回到捕获工作台（模块内设置页已移除）',
     );
   });
 }

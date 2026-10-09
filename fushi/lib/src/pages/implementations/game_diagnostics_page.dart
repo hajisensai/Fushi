@@ -159,22 +159,21 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
                 title: GameSectionTabsHostScope.hostedOf(context)
                     ? const SizedBox.shrink()
                     : GameSectionTabs(
-                        selected: GameSection.settings,
+                        selected: GameSection.diagnostics,
                         focusIdPrefix: 'game-diagnostics-tab',
                         onSelectLibrary: widget.onShowLibrary,
                         onSelectMonitor: widget.onShowCapture,
-                        onSelectSettings: () =>
-                            gameSectionNotifier.value = GameSection.settings,
                       ),
                 actions: <Widget>[
                   FushiIconButton(
+                    // 模块内「设置」页签已移除（2026-10-09）：诊断返回它的另一个
+                    // 入口——捕获工作台（页签高亮的也是它）。
                     key: const ValueKey<String>(
-                      'game-diagnostics-back-to-settings',
+                      'game-diagnostics-back-to-capture',
                     ),
                     icon: FushiIcons.back,
-                    tooltip: t.settings,
-                    onTap: () =>
-                        gameSectionNotifier.value = GameSection.settings,
+                    tooltip: t.game_capture_workbench,
+                    onTap: widget.onShowCapture,
                   ),
                   // BUG-1027：「刷新音轨」已就近移入「活跃音轨」卡片标题行；
                   // 页头只保留全局性的清事件动作。

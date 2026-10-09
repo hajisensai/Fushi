@@ -698,7 +698,7 @@ class _SessionPauseButton extends StatelessWidget {
   }
 }
 
-/// 阅读位置卡：本章 / 全书两行，全书百分比用 Display 级大数字；M3E 下是
+/// 阅读位置卡：本章 / 全书两行，两行百分比同一字级；M3E 下是
 /// tertiaryContainer 色块 + 波浪进度，Apple 下分组卡 + 细线进度。
 class _PositionCard extends StatelessWidget {
   const _PositionCard({required this.pos});
@@ -726,7 +726,6 @@ class _PositionCard extends StatelessWidget {
             total: pos.chapterTotal,
             keyPrefix: 'chapter',
             tone: tone,
-            emphasized: false,
           ),
           const SizedBox(height: 16),
           _PositionRow(
@@ -735,7 +734,6 @@ class _PositionCard extends StatelessWidget {
             total: pos.bookTotal,
             keyPrefix: 'book',
             tone: tone,
-            emphasized: true,
           ),
         ],
       ),
@@ -937,8 +935,9 @@ class _WeekChart extends StatelessWidget {
 }
 
 /// 阅读位置一行：`本章 / 1,842 / 4,930 字 … 37%` + 统一进度条
-/// （[ReaderPanelProgress]：M3E 波浪 / Apple 细线）。[emphasized]（全书）的百分比
-/// 用 Display 级大数字，本章用次一级。
+/// （[ReaderPanelProgress]：M3E 波浪 / Apple 细线）。本章与全书两行的百分比同一
+/// 字级（headlineMedium）：两个读数并排比较，字号不一会被读成「全书更重要 / 排版
+/// 出错」（2026-10-09 反馈：「本章 42%」与「全书 7%」字号不一致）。
 class _PositionRow extends StatelessWidget {
   const _PositionRow({
     required this.label,
@@ -946,7 +945,6 @@ class _PositionRow extends StatelessWidget {
     required this.total,
     required this.keyPrefix,
     required this.tone,
-    required this.emphasized,
   });
 
   final String label;
@@ -954,7 +952,6 @@ class _PositionRow extends StatelessWidget {
   final int? total;
   final String keyPrefix;
   final ReaderPanelCardTone tone;
-  final bool emphasized;
 
   @override
   Widget build(BuildContext context) {
@@ -965,9 +962,12 @@ class _PositionRow extends StatelessWidget {
     final Color secondary = glass
         ? appleColorsOf(context).secondaryLabel
         : fg.withValues(alpha: 0.75);
-    final Color? progressColor = !glass && tone == ReaderPanelCardTone.tertiary
-        ? theme.colorScheme.tertiary
-        : null;
+    final bool tertiaryCard = !glass && tone == ReaderPanelCardTone.tertiary;
+    final Color? progressColor =
+        tertiaryCard ? theme.colorScheme.tertiary : null;
+    // 轨道取卡面前景的淡色：secondaryContainer 在 tertiaryContainer 卡面上几乎
+    // 看不见（2026-10-09 反馈截图：只剩一截悬空的波浪）。
+    final Color? trackColor = tertiaryCard ? fg.withValues(alpha: 0.16) : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -1014,7 +1014,7 @@ class _PositionRow extends StatelessWidget {
               key: ValueKey<String>('fushi_reader_stats_${keyPrefix}_pct'),
               value: ratio == null ? '—' : '${(ratio * 100).round()}%',
               color: fg,
-              large: emphasized,
+              large: false,
             ),
           ],
         ),
@@ -1023,6 +1023,7 @@ class _PositionRow extends StatelessWidget {
           key: ValueKey<String>('fushi_reader_stats_${keyPrefix}_bar'),
           value: ratio ?? 0,
           color: progressColor,
+          trackColor: trackColor,
           semanticsLabel: label,
         ),
       ],

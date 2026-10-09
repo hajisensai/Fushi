@@ -145,17 +145,10 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     // 拆出的标签段不钉住动作：齿轮跟在标签后面滚动。
     final bool pinned = widget.pinActions && !tagsOnly;
 
-    // 拆段形态（库页标签栏）：行首一枚「管理」chip（新建 / 改名 / 改色 / 合并 /
-    // 排序的入口），有筛选时行尾一枚「清除」chip。
-    final List<Widget> leadingChips = <Widget>[
-      if (tagsOnly && widget.showTagManagement)
-        FushiTagActionChip(
-          key: const ValueKey<String>('library_tag_manage_chip'),
-          icon: FushiIcons.settings,
-          label: t.tag_manage,
-          onTap: () => _openTagManagement(context),
-        ),
-    ];
+    // 拆段形态（库页标签栏）：不再有行首「管理标签」大 chip——它与工具行行尾常驻
+    // 的「管理标签」齿轮（`library_tag_settings`）是同一个入口，重复（2026-10-09
+    // 用户拍板砍掉大的）。有筛选时行尾一枚「清除」chip。
+    const List<Widget> leadingChips = <Widget>[];
     final List<Widget> trailingChips = <Widget>[
       if (tagsOnly && selectedIds.isNotEmpty)
         FushiTagActionChip(

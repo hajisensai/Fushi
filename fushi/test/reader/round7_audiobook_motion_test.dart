@@ -1,6 +1,6 @@
-// 有声书侧栏页签切换与当前章自动定位的回归测试（Round7 审查复现迁入）。
-// HBK045：章节→设置→章节 20ms 内反切，AnimatedSwitcher 新旧章节页同时存活，
-//         不得共享 GlobalKey / ScrollController。
+// 有声书侧栏当前章自动定位的回归测试（Round7 审查复现迁入）。
+// HBK045（章节↔设置页签反切）随 2026-10-09 移除「设置」页签而不复存在：面板只剩
+// 章节一页，没有页签切换。
 // HBK046：第 80/100 章 + 多行长标题 + 200% 文字，点「定位当前章」后估算跳转的
 //         目标仍未构建时要继续收敛，直到当前章确实可见（打开时不自动定位）。
 import 'package:material_ui/material_ui.dart';
@@ -11,12 +11,6 @@ import 'package:fushi/src/reader/reader_audiobook_panel.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 
 const Key _chaptersKey = ValueKey<String>('fushi_audiobook_chapters');
-const Key _chaptersTab = ValueKey<String>(
-  'fushi_audiobook_tab_button_chapters',
-);
-const Key _settingsTab = ValueKey<String>(
-  'fushi_audiobook_tab_button_settings',
-);
 const Key _revealKey = ValueKey<String>(
   'fushi_audiobook_reveal_current_chapter',
 );
@@ -27,7 +21,6 @@ Future<void> _pumpPanel(
   bool longTitles = false,
   double textScale = 1,
   bool reduceMotion = false,
-  bool eink = false,
 }) async {
   tester.view.physicalSize = const Size(600, 1000);
   tester.view.devicePixelRatio = 1;
@@ -37,7 +30,7 @@ Future<void> _pumpPanel(
     MaterialApp(
       theme: ThemeData(
         splashFactory: NoSplash.splashFactory,
-        extensions: <ThemeExtension<dynamic>>[FushiEinkTheme(eink)],
+        extensions: const <ThemeExtension<dynamic>>[FushiEinkTheme(false)],
       ),
       builder: (BuildContext context, Widget? child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
@@ -58,7 +51,6 @@ Future<void> _pumpPanel(
           title: 'Book',
           chapterLabel: null,
           coverPath: null,
-          settingsBuilder: (_) => const Text('Panel settings'),
         ),
       ),
     ),
@@ -72,47 +64,7 @@ String _title(int i, bool longTitles) => longTitles
           'multiple lines in the audiobook navigation panel'
     : 'Chapter $i';
 
-Future<void> _switchBackQuickly(WidgetTester tester) async {
-  await tester.tap(find.byKey(_settingsTab));
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 20));
-  await tester.tap(find.byKey(_chaptersTab));
-  await tester.pump();
-}
-
 void main() {
-  testWidgets(
-    'quick chapter-settings-chapter switches keep unique list state',
-    (WidgetTester tester) async {
-      await _pumpPanel(tester);
-      await _switchBackQuickly(tester);
-      expect(
-        tester.takeException(),
-        isNull,
-        reason:
-            'Outgoing and incoming chapter tabs cannot share a GlobalKey '
-            'or attach one ScrollController to concurrent lists.',
-      );
-      await tester.pumpAndSettle();
-      expect(find.byKey(_chaptersKey), findsOneWidget);
-      await tester.pumpWidget(const SizedBox.shrink());
-    },
-  );
-
-  for (final bool eink in <bool>[false, true]) {
-    testWidgets(
-      'quick tab switch control with ${eink ? 'eink' : 'reduced motion'}',
-      (WidgetTester tester) async {
-        await _pumpPanel(tester, eink: eink, reduceMotion: !eink);
-        await _switchBackQuickly(tester);
-        await tester.pumpAndSettle();
-        expect(tester.takeException(), isNull);
-        expect(find.byKey(_chaptersKey), findsOneWidget);
-        await tester.pumpWidget(const SizedBox.shrink());
-      },
-    );
-  }
-
   testWidgets(
     'current distant long chapter is revealed on demand at text scale two',
     (WidgetTester tester) async {

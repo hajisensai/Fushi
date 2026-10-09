@@ -10,10 +10,7 @@ import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
-import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
-import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 
 import '../helpers/source_guard.dart';
 
@@ -97,7 +94,8 @@ void main() {
       );
       expect(built, isA<MediaLibraryShell>());
       final MediaLibraryShell shell = built! as MediaLibraryShell;
-      // 书架 / 发现 / 来源 / 扩展 / 导入 / 设置（测试宿主不是 iOS，合规门全开）。
+      // 书架 / 发现 / 来源 / 扩展 / 导入（测试宿主不是 iOS，合规门全开）。
+      // 「设置」视图已移除，漫画设置走全局「设置 › 漫画」（2026-10-09）。
       // 「发现」与在线来源 / 扩展和顶层「浏览」模块是同一组组件（2026-10-01 加回）。
       expect(
         shell.views.map((MediaLibraryViewSpec v) => v.kind).toList(),
@@ -107,7 +105,6 @@ void main() {
           MediaLibraryViewKind.onlineSources,
           MediaLibraryViewKind.extensions,
           MediaLibraryViewKind.sources,
-          MediaLibraryViewKind.settings,
         ],
       );
       expect(
@@ -130,16 +127,6 @@ void main() {
                 tester.element(find.byType(SizedBox)), const SizedBox.shrink()),
         isA<MangaSourcesPage>(),
       );
-      // 设置视图外包 [FushiFloatingChromeScrollInset]（15bb9c53c50：设置正文滚到
-      // 浮动工具区底下、不留空白带），里面才是漫画设置分类的 ModuleSettingsView。
-      final Widget settings = shell.views.last.builder(
-          tester.element(find.byType(SizedBox)), const SizedBox.shrink());
-      expect(settings, isA<FushiFloatingChromeScrollInset>());
-      final Widget settingsBody =
-          (settings as FushiFloatingChromeScrollInset).child;
-      expect(settingsBody, isA<ModuleSettingsView>());
-      expect((settingsBody as ModuleSettingsView).destinationId,
-          SettingsDestinationId.manga);
       // 反向锚：普通书架的默认值必须仍是 false，否则漫画会在两边都出现。
       expect(const ReaderFushiHistoryPage().mangaOnly, isFalse);
     });
@@ -182,6 +169,7 @@ void main() {
         'mangaSources',
         'mangaExtensions',
         'sourceSettings',
+        'settings',
       ]) {
         expect(
           MediaLibraryViewKind.values

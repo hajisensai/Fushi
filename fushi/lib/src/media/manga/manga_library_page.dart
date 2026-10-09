@@ -11,14 +11,10 @@ import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart'
 import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart';
 import 'package:fushi/src/pages/implementations/library_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
-import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
-import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show FushiFloatingChromeScrollInset;
 import 'package:fushi/utils.dart';
 
-/// 顶层漫画库页：书架 / 发现 / 来源 / 扩展 / 导入 / 设置。
+/// 顶层漫画库页：书架 / 发现 / 来源 / 扩展 / 导入。
 ///
 /// - **书架**：数据、卡片、搜索、排序、合集、进度和删除全部复用小说书架；唯一差异
 ///   是只展示 `EpubBooks.format == 'manga'` 的条目。普通书架由同一页面反向排除漫画。
@@ -105,21 +101,6 @@ class MangaLibraryPage extends StatelessWidget {
           label: t.library_view_import,
           builder: (BuildContext context, Widget navigation) =>
               MangaSourcesPage(navigation: navigation),
-        ),
-        MediaLibraryViewSpec(
-          kind: MediaLibraryViewKind.settings,
-          // 设置正文的滚动视图自己吃掉工具区让位（MediaQuery 顶部 padding）。
-          handlesChromeInset: true,
-          label: t.settings,
-          builder: (BuildContext context, Widget navigation) =>
-              FushiFloatingChromeScrollInset(
-                child: ModuleSettingsView(
-                  // 漫画有独立的「漫画」设置分类（观看偏好 + OCR 引擎/模型 + 在线目录）；
-                  // 此前误指 reading（EPUB 字体/排版），漫画库页的设置标签里根本找不到 OCR。
-                  destinationId: SettingsDestinationId.manga,
-                  navigation: navigation,
-                ),
-              ),
         ),
       ],
     );

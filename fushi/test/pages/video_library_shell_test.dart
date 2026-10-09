@@ -155,8 +155,9 @@ void main() {
   // 本地库的各视图（首页 / 系列 / 全部视频）排完才是管理类分区。发现紧跟本地库
   // 视图（2026-10-05 用户要求与媒体服务器对调），随后是媒体服务器（用户自己登录的
   // Jellyfin/Emby，远端的自有库）、来源 / 扩展（与「浏览」模块同一组组件），最后
-  // 是导入与设置。测试宿主不是 iOS，合规门与视频源宿主门都开。
-  testWidgets('页签顺序固定为首页、系列、全部视频、发现、媒体服务器、来源、扩展、导入、设置',
+  // 是导入。设置页签已移除（与全局「设置 › 视频」重复，2026-10-09 用户拍板）。
+  // 测试宿主不是 iOS，合规门与视频源宿主门都开。
+  testWidgets('页签顺序固定为首页、系列、全部视频、发现、媒体服务器、来源、扩展、导入（无设置）',
       (WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.pump();
@@ -177,7 +178,6 @@ void main() {
         if (isVideoOnlineSourcesAvailable) VideoLibrarySection.onlineSources,
         if (isVideoOnlineSourcesAvailable) VideoLibrarySection.extensions,
         VideoLibrarySection.sources,
-        VideoLibrarySection.settings,
       ],
     );
     expect(

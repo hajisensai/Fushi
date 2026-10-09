@@ -154,16 +154,11 @@ class CollectionDetailHeroCard extends StatelessWidget {
     if (apple) {
       return Padding(padding: EdgeInsets.all(tokens.spacing.card), child: body);
     }
-    // M3E：饱和的 primaryContainer 大色块分区（圆角 28），把 hero 和成员区分开。
+    // M3E：primaryContainer 色块分区（圆角 28），把 hero 和成员区分开。
     return Container(
       padding: EdgeInsets.all(tokens.spacing.card * (wide ? 1.5 : 1)),
       decoration: BoxDecoration(
-        color: eink
-            ? scheme.surface
-            : Color.alphaBlend(
-                scheme.primaryContainer.withValues(alpha: 0.62),
-                scheme.surfaceContainerLow,
-              ),
+        color: eink ? scheme.surface : collectionHeroBackground(scheme),
         borderRadius: FushiM3eShape.containerLargeRadius,
         border: eink ? Border.all(color: scheme.outline) : null,
       ),
@@ -171,6 +166,18 @@ class CollectionDetailHeroCard extends StatelessWidget {
     );
   }
 }
+
+/// hero 色块底色：primaryContainer 叠在 surfaceContainerLow 上。
+///
+/// 深色下 vibrant 方案的 primaryContainer 是 tone 30 的满彩度色（紫色主题下一大块
+/// 纯紫，iOS 深色反馈截图），叠 62% 后整块 hero 像一面纯色墙、压过封面与正文；
+/// 深色改叠 32%，色相仍在、彩度降到与其它深色卡面同一档。浅色维持原配比。
+Color collectionHeroBackground(ColorScheme scheme) => Color.alphaBlend(
+  scheme.primaryContainer.withValues(
+    alpha: scheme.brightness == Brightness.dark ? 0.32 : 0.62,
+  ),
+  scheme.surfaceContainerLow,
+);
 
 /// 整体进度：「整体进度」小标题 + Display 级百分比 + 波浪进度条（Apple 细线条）。
 class _HeroProgress extends StatelessWidget {
@@ -283,8 +290,10 @@ class _ContinueButton extends StatelessWidget {
   }
 }
 
-/// hero 里的小动作 chip（「编辑标签」）：M3E secondaryContainer 圆角方，Apple 玻璃
-/// 胶囊。
+/// hero 里的小动作 chip（「编辑标签」）：M3E 下是叠在 hero 色块上的 tonal 圆角方
+/// （onPrimaryContainer 12% 填充 + onPrimaryContainer 前景，与色块同一色相族），
+/// Apple 玻璃胶囊。此前用 secondaryContainer：深色下是一块灰紫，压在 hero 的
+/// 饱和紫上显得突兀（iOS 深色反馈截图）。
 class _HeroActionChip extends StatelessWidget {
   const _HeroActionChip({
     required this.icon,
@@ -302,8 +311,10 @@ class _HeroActionChip extends StatelessWidget {
     if (isGlassDesign(context)) return FushiTagChip(label: label, onTap: onTap);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
-    final Color fill = eink ? scheme.surface : scheme.secondaryContainer;
-    final Color fg = eink ? scheme.onSurface : scheme.onSecondaryContainer;
+    final Color fill = eink
+        ? scheme.surface
+        : scheme.onPrimaryContainer.withValues(alpha: 0.12);
+    final Color fg = eink ? scheme.onSurface : scheme.onPrimaryContainer;
     final OutlinedBorder shape = RoundedRectangleBorder(
       borderRadius: const BorderRadius.all(Radius.circular(12)),
       side: eink ? BorderSide(color: scheme.outline) : BorderSide.none,

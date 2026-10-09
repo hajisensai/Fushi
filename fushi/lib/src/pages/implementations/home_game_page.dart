@@ -21,9 +21,7 @@ import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/game_stream_library_page.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
-import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
-import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
@@ -47,8 +45,6 @@ typedef GameLibraryBuilder =
 /// `appProvider`（Drift DB / 仓储）的依赖。
 typedef GameDashboardBuilder =
     Widget Function(BuildContext context, VoidCallback onShowLibrary);
-typedef GameSettingsBuilder =
-    Widget Function(BuildContext context, Widget navigation);
 
 /// 「发现」子区构造器；测试可注入桩，绕开 [MediaDiscoveryPage] 对 `appProvider`
 /// （发现服务 / 偏好）的依赖。
@@ -71,7 +67,6 @@ class HomeGamePage extends StatefulWidget {
     this.monitorBuilder,
     this.libraryBuilder,
     this.dashboardBuilder,
-    this.settingsBuilder,
     this.discoverBuilder,
     this.streamBuilder,
     this.controller,
@@ -80,7 +75,6 @@ class HomeGamePage extends StatefulWidget {
   final GameMonitorBuilder? monitorBuilder;
   final GameLibraryBuilder? libraryBuilder;
   final GameDashboardBuilder? dashboardBuilder;
-  final GameSettingsBuilder? settingsBuilder;
   final GameDiscoverBuilder? discoverBuilder;
   final GameStreamSectionBuilder? streamBuilder;
   final GalHookSessionController? controller;
@@ -89,7 +83,6 @@ class HomeGamePage extends StatefulWidget {
   static const Key libraryKey = ValueKey<String>('game-library');
   static const Key monitorKey = ValueKey<String>('game-monitor');
   static const Key diagnosticsKey = ValueKey<String>('game-diagnostics');
-  static const Key settingsKey = ValueKey<String>('game-settings');
   static const Key importKey = ValueKey<String>('game-import');
   static const Key discoverKey = ValueKey<String>('game-discover');
   static const Key streamKey = ValueKey<String>('game-stream');
@@ -171,7 +164,6 @@ class _HomeGamePageState extends State<HomeGamePage> {
   void _showLibrary() => _showSection(GameSection.library);
   void _showMonitor() => _showSection(GameSection.monitor);
   void _showDiagnostics() => _showSection(GameSection.diagnostics);
-  void _showSettings() => _showSection(GameSection.settings);
 
   /// 「导入」视图的进行中标记：选文件 / 拖放落库期间拖放区底部亮波浪进度。
   bool _importBusy = false;
@@ -241,28 +233,6 @@ class _HomeGamePageState extends State<HomeGamePage> {
           onShowCapture: _showMonitor,
         ),
       ),
-      GameSection.settings: KeyedSubtree(
-        key: HomeGamePage.settingsKey,
-        child: Builder(
-          builder: (BuildContext context) {
-            final Widget navigation = GameSectionTabs(
-              selected: GameSection.settings,
-              focusIdPrefix: 'game-settings-tab',
-              onSelectDashboard: _showDashboard,
-              onSelectLibrary: _showLibrary,
-              onSelectMonitor: _showMonitor,
-              onSelectSettings: _showSettings,
-            );
-            return widget.settingsBuilder?.call(context, navigation) ??
-                ModuleSettingsView(
-                  destinationId: SettingsDestinationId.game,
-                  // 页签由外壳浮动工具栏画：页头主位给零尺寸占位，整行零高度，
-                  // 设置正文从工具区下方开始（不再隔一条空白带）。
-                  navigation: const SizedBox.shrink(),
-                );
-          },
-        ),
-      ),
       GameSection.importGames: KeyedSubtree(
         key: HomeGamePage.importKey,
         child: _buildImport(context),
@@ -290,7 +260,6 @@ class _HomeGamePageState extends State<HomeGamePage> {
         GameSection.monitor => 'game-capture-tab',
         GameSection.discover => 'game-discover-tab',
         GameSection.importGames => 'game-import-tab',
-        GameSection.settings => 'game-settings-tab',
         GameSection.diagnostics => 'game-diagnostics-tab',
         GameSection.stream => 'game-stream-tab',
       },
@@ -298,7 +267,6 @@ class _HomeGamePageState extends State<HomeGamePage> {
       onSelectDashboard: _showDashboard,
       onSelectLibrary: _showLibrary,
       onSelectMonitor: _showMonitor,
-      onSelectSettings: _showSettings,
     );
     final Widget body = LibrarySectionFollowScope(
       current: gameSectionNotifier,
@@ -316,7 +284,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
               // 布局，而 desktop_drop 是进程级全局广播、只按各 drop target 的
               // `RenderBox.paintBounds` 过滤 —— 于是六个子区的 drop target 会全部命中
               // 同一次 OS drop。外层 home-shell 的作用域只回答「游戏 tab 可见吗」，
-              // 用户停在诊断/设置子区时答案照样是 true。判据与 `index:` 用的是同一个
+              // 用户停在诊断/导入子区时答案照样是 true。判据与 `index:` 用的是同一个
               // `_section`，且写成回调、在 drop 落地那一刻求值。
               // 每个子区自己的主滚动控制器：六个子区同时挂在 IndexedStack 里，
               // 共用 tab 外壳那一个会让多个主滚动视图附着同一控制器、Scrollbar 断言。
@@ -357,7 +325,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
 
   /// 子区怎么让出叠放的浮动工具区（2026-10-06 结构收口）：
   ///
-  /// - 首页 / 导入 / 设置：主滚动视图自己吃掉让位——[FushiFloatingChromeScrollInset]
+  /// - 首页 / 导入：主滚动视图自己吃掉让位——[FushiFloatingChromeScrollInset]
   ///   把它交成 MediaQuery 顶部 padding，内容从工具区下方开始、往下滚时滚到
   ///   工具区底下，工具区收起后顶部不留空白（旧的整体下移让出的那段永远是空的
   ///   页面底色，往下一滚顶部就是一整块白，用户 2026-10-06 截图）。
@@ -370,8 +338,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
   Widget _chromeInsetFor(GameSection section, {required Widget child}) =>
       switch (section) {
         GameSection.dashboard ||
-        GameSection.importGames ||
-        GameSection.settings => FushiFloatingChromeScrollInset(child: child),
+        GameSection.importGames => FushiFloatingChromeScrollInset(child: child),
         GameSection.library ||
         GameSection.diagnostics ||
         GameSection.discover => child,
@@ -411,7 +378,6 @@ class _HomeGamePageState extends State<HomeGamePage> {
       onSelectDashboard: _showDashboard,
       onSelectLibrary: _showLibrary,
       onSelectMonitor: _showMonitor,
-      onSelectSettings: _showSettings,
     );
     final GameDiscoverBuilder? builder = widget.discoverBuilder;
     if (builder != null) {

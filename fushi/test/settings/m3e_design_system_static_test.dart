@@ -733,7 +733,8 @@ class AnotherPopupPart {
     const Map<String, String> allowedFiles = <String, String>{
       'lib/src/utils/components/fushi_design_tokens.dart':
           'Token source owns app radii and semantic surface roles.',
-      'lib/src/utils/components/fushi_material_components.dart': 'Shared MD3 component implementation may map tokens to framework widgets.',
+      'lib/src/utils/components/fushi_material_components.dart':
+          'Shared MD3 component implementation may map tokens to framework widgets.',
       'lib/src/utils/components/settings_shared.dart':
           'Shared adaptive settings primitives own compact settings controls '
           '(including the Apple pop-up button capsule radius).',
@@ -807,7 +808,8 @@ class AnotherPopupPart {
       // 同一份「书架内容 chrome」豁免理由随之延伸到各 part 文件（仅拆分搬运，零行为变化）。
       'lib/src/pages/implementations/reader_history/remote.part.dart':
           'Remote book download control density is reader-shelf content.',
-      'lib/src/pages/implementations/reader_fushi_page.dart': 'Hoshi reader content and reader chrome have separate migration rules.',
+      'lib/src/pages/implementations/reader_fushi_page.dart':
+          'Hoshi reader content and reader chrome have separate migration rules.',
       // TODO-589 batch1: reader_fushi_page.dart 拆成主壳 + reader_fushi/*.part.dart；
       // 同一份「reader content / 悬浮歌词数据」豁免随搬运延伸到 part 文件（零行为变化）。
       'lib/src/pages/implementations/reader_fushi/lyrics.part.dart':
@@ -1897,8 +1899,9 @@ class AnotherPopupPart {
   });
 
   test('manga.json writeback stays a pure data layer', () {
-    final String source = File('lib/src/media/manga/manga_json_writeback.dart')
-        .readAsStringSync();
+    final String source = File(
+      'lib/src/media/manga/manga_json_writeback.dart',
+    ).readAsStringSync();
     final String code = maskComments(source);
 
     // 无 Flutter import ⇒ 这个文件里不可能存在页面 chrome。
@@ -1990,12 +1993,13 @@ class AnotherPopupPart {
 
     expect(tagBar, contains('class FushiTagFilterBar'));
     expect(tagBar, contains('FushiTagChip('));
-    // 首尾「管理」「清除」动作 chip 走共享标签 chip 套件（tag_chips.dart），
+    // 行尾「清除」动作 chip 走共享标签 chip 套件（tag_chips.dart），
     // 不在标签栏里私拼一枚。
     expect(tagBar, contains('FushiTagActionChip('));
     expect(tagBar, isNot(contains('class _TagBarActionChip')));
-    final String tagChips = File('lib/src/media/tags/tag_chips.dart')
-        .readAsStringSync();
+    final String tagChips = File(
+      'lib/src/media/tags/tag_chips.dart',
+    ).readAsStringSync();
     final String actionChip = _sectionSource(
       tagChips,
       'class FushiTagActionChip',
@@ -2158,8 +2162,9 @@ class AnotherPopupPart {
 
   test('settings renderer rows use shared M3E row primitives', () {
     // schema 行渲染已从两个渲染器收口到共享 settings_schema_widgets.SettingsSchemaItem。
-    final String source = File('lib/src/settings/settings_schema_widgets.dart')
-        .readAsStringSync();
+    final String source = File(
+      'lib/src/settings/settings_schema_widgets.dart',
+    ).readAsStringSync();
     final String itemSource = _sectionSource(
       source,
       'class SettingsSchemaItem',
@@ -2573,8 +2578,9 @@ class AnotherPopupPart {
   });
 
   test('sentenceAudioHighlight rematch controls use shared M3E tokens', () {
-    final String source = File('lib/src/media/audiobook/subtitle_rematch.dart')
-        .readAsStringSync();
+    final String source = File(
+      'lib/src/media/audiobook/subtitle_rematch.dart',
+    ).readAsStringSync();
     final String rematchSheet = _functionSource(
       source,
       'Widget buildSheetBody(BuildContext sheetCtx, StateSetter setSheet)',
@@ -2637,8 +2643,9 @@ class AnotherPopupPart {
   });
 
   test('anki integration dialogs use shared M3E dialog chrome', () {
-    final String source = File('lib/src/models/anki_integration.dart')
-        .readAsStringSync();
+    final String source = File(
+      'lib/src/models/anki_integration.dart',
+    ).readAsStringSync();
     final String apiFlow = _functionSource(
       source,
       'Future<void> showApiMessage(BuildContext? ctx) async',
@@ -2663,8 +2670,9 @@ class AnotherPopupPart {
     final String releaseSource = File(
       'lib/src/utils/misc/update_checker_release.dart',
     ).readAsStringSync();
-    final String uiSource = File('lib/src/utils/misc/update_checker_ui.dart')
-        .readAsStringSync();
+    final String uiSource = File(
+      'lib/src/utils/misc/update_checker_ui.dart',
+    ).readAsStringSync();
     final String updateFlow = _functionSource(
       releaseSource,
       'static Future<void> _showUpdateDialog(',
@@ -2695,10 +2703,12 @@ class AnotherPopupPart {
   });
 
   test('sync feedback dialogs use shared M3E dialog chrome', () {
-    final String messageSource = File('lib/src/sync/sync_message_dialog.dart')
-        .readAsStringSync();
-    final String compareSource = File('lib/src/sync/sync_compare_dialog.dart')
-        .readAsStringSync();
+    final String messageSource = File(
+      'lib/src/sync/sync_message_dialog.dart',
+    ).readAsStringSync();
+    final String compareSource = File(
+      'lib/src/sync/sync_compare_dialog.dart',
+    ).readAsStringSync();
     // TODO-585: schema 拆成主库 + 5 个 part；读合并语料，正向 showSyncMessage(
     // 与负向 alert 禁令都覆盖全部 part。
     final String settingsSource = readSyncSettingsSchemaSource();
@@ -2714,8 +2724,9 @@ class AnotherPopupPart {
   });
 
   test('settings action dialogs use shared M3E inset tokens', () {
-    final String source = File('lib/src/settings/settings_actions.dart')
-        .readAsStringSync();
+    final String source = File(
+      'lib/src/settings/settings_actions.dart',
+    ).readAsStringSync();
     final String confirmationDialog = _functionSource(
       source,
       'Future<bool> showSettingsConfirmationDialog(',
@@ -2769,8 +2780,9 @@ class AnotherPopupPart {
     expect(sharedMenu, contains('tokens.radii.menuRadius'));
     expect(sharedMenu, contains('PopupMenuPosition.under'));
 
-    final String dropdown = File('lib/src/utils/components/fushi_dropdown.dart')
-        .readAsStringSync();
+    final String dropdown = File(
+      'lib/src/utils/components/fushi_dropdown.dart',
+    ).readAsStringSync();
     expect(dropdown, contains('MenuAnchor('));
     expect(dropdown, contains('tokens.radii.menuRadius'));
     expect(dropdown, contains('tokens.surfaces.overlay'));
@@ -2817,17 +2829,21 @@ class AnotherPopupPart {
     expect(motion, contains('Easing.emphasizedDecelerate'));
     expect(motion, contains('Easing.emphasizedAccelerate'));
 
-    final String dialog = File('lib/src/utils/misc/show_app_dialog.dart')
-        .readAsStringSync();
-    final String sheet = File('lib/src/utils/adaptive/adaptive_widgets.dart')
-        .readAsStringSync();
+    final String dialog = File(
+      'lib/src/utils/misc/show_app_dialog.dart',
+    ).readAsStringSync();
+    final String sheet = File(
+      'lib/src/utils/adaptive/adaptive_widgets.dart',
+    ).readAsStringSync();
     final String menu = File(
       'lib/src/utils/components/fushi_material_components.dart',
     ).readAsStringSync();
-    final String home = File('lib/src/pages/implementations/home_page.dart')
-        .readAsStringSync();
-    final String sync = File('lib/src/sync/sync_compare_dialog.dart')
-        .readAsStringSync();
+    final String home = File(
+      'lib/src/pages/implementations/home_page.dart',
+    ).readAsStringSync();
+    final String sync = File(
+      'lib/src/sync/sync_compare_dialog.dart',
+    ).readAsStringSync();
 
     // 2026-10-05 浮层统一成 M3E：三个浮层动效换成弹簧 token（定义在
     // fushi_m3e_overlays.dart），旧 fushiMd3*AnimationStyle 仍留在 motion 文件里。
@@ -2988,8 +3004,9 @@ class AnotherPopupPart {
     expect(managerTile, contains('FushiGroupedListItem('));
     expect(containsIdentifierCall(managerTile, 'Card'), isFalse);
     final String groupedListItem = _functionSource(
-      File('lib/src/utils/components/glass/fushi_glass_lists.dart')
-          .readAsStringSync(),
+      File(
+        'lib/src/utils/components/glass/fushi_glass_lists.dart',
+      ).readAsStringSync(),
       'class FushiGroupedListItem extends StatelessWidget {',
       'class FushiGroupedList extends StatelessWidget {',
     );
@@ -3018,8 +3035,9 @@ class AnotherPopupPart {
     expect(managerPopupItem, isNot(contains('const SizedBox(width: 8)')));
     expect(managerMenu, isNot(contains('const SizedBox(width: 8)')));
 
-    final String sourcePage = File('lib/src/pages/base_source_page.dart')
-        .readAsStringSync();
+    final String sourcePage = File(
+      'lib/src/pages/base_source_page.dart',
+    ).readAsStringSync();
     final String dictionaryLoading = _functionSource(
       sourcePage,
       'Widget buildDictionaryLoading()',
@@ -3152,8 +3170,9 @@ class AnotherPopupPart {
   });
 
   test('theme selector uses shared M3E swatches', () {
-    final String source = File('lib/src/settings/settings_actions.dart')
-        .readAsStringSync();
+    final String source = File(
+      'lib/src/settings/settings_actions.dart',
+    ).readAsStringSync();
     final String themeSelector = _functionSource(
       source,
       'Widget buildThemeSelector(SettingsContext settingsContext)',
@@ -3839,8 +3858,9 @@ class AnotherPopupPart {
   });
 
   test('M3E review report does not reopen completed app chrome scope', () {
-    final String report = File('../docs/reviews/2026-05-26-project-review.md')
-        .readAsStringSync();
+    final String report = File(
+      '../docs/reviews/2026-05-26-project-review.md',
+    ).readAsStringSync();
     final String finalJudgment = _sectionSource(
       report,
       '### Overall Judgment',
@@ -3867,8 +3887,9 @@ bool _containsMigratedBan(String source, String banned) {
   if (banned.startsWith('re:')) {
     return RegExp(banned.substring(3)).hasMatch(source);
   }
-  final RegExpMatch? call = RegExp(r'^([A-Za-z_][A-Za-z0-9_]*)[<(]$')
-      .firstMatch(banned);
+  final RegExpMatch? call = RegExp(
+    r'^([A-Za-z_][A-Za-z0-9_]*)[<(]$',
+  ).firstMatch(banned);
   if (call != null) {
     return containsIdentifierCall(
       maskCommentsAndStrings(source),
@@ -3881,9 +3902,9 @@ bool _containsMigratedBan(String source, String banned) {
 String _withoutPopupScrolledUnderDecoration(String source) {
   final String code = maskCommentsAndStrings(source);
   final String owner = methodBody(code, 'class _PopupScrolledUnderBar');
-  final List<RegExpMatch> decorations = identifierCall('BoxDecoration')
-      .allMatches(owner)
-      .toList();
+  final List<RegExpMatch> decorations = identifierCall(
+    'BoxDecoration',
+  ).allMatches(owner).toList();
   expect(
     decorations,
     hasLength(1),

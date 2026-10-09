@@ -4,9 +4,9 @@
 ///  * 「正在播放」卡：M3E primaryContainer 饱和色块（Apple 分组卡）——封面、当前句
 ///    （交叉淡入）、可拖动的全书进度（章节刻度 + 随播放波动的波浪）、大号时间、
 ///    传输行（中间是形状变形的播放 FAB）、倍速滑块（与歌词模式同款）与跟随键；
-///  * 页签「章节 / 设置」：章节页从概览与资源入口开始，当前章高亮且可按需定位；
-///    点章跳转阅读与音频位置。
-/// 设置页内容由调用方经 [settingsBuilder] 提供（音量 / 延迟等行的写路径在设置 sheet）。
+///  * 章节列表：从概览与资源入口开始，当前章高亮且可按需定位；点章跳转阅读与
+///    音频位置。音量 / 速度 / 延迟 / 播放条等播放设置在「阅读设置 › 有声书」页
+///    （2026-10-09 起本面板不再有重复的「设置」页签）。
 library;
 
 import 'dart:async';
@@ -53,8 +53,9 @@ bool readerAudiobookPanelPinsHero(double availableHeight) =>
     availableHeight.isFinite &&
     availableHeight >= kReaderAudiobookPanelPinnedMinHeight;
 
-/// 标签页顺序（也是 [ReaderAudiobookPanel.initialTab] 的取值域）。
-const List<String> kReaderAudiobookPanelTabs = <String>['chapters', 'settings'];
+/// 「有声书」面板只剩章节一页（2026-10-09 用户拍板砍掉面板里的「设置」子页签：
+/// 它与「阅读设置 › 有声书」页重复；音量 / 速度 / 延迟 / 播放条等行已并进那一页，
+/// 见 `ReaderQuickSettingsSheet._buildSettingsTabContent`）。
 
 class ReaderAudiobookPanel extends StatefulWidget {
   const ReaderAudiobookPanel({
@@ -67,12 +68,10 @@ class ReaderAudiobookPanel extends StatefulWidget {
     required this.title,
     required this.chapterLabel,
     required this.coverPath,
-    required this.settingsBuilder,
     this.onAudioImport,
     this.onPickAlignment,
     this.onTranscribe,
     this.cueStudyOffset,
-    this.initialTab = 'chapters',
     this.tick = const Duration(seconds: 1),
   });
 
@@ -92,9 +91,6 @@ class ReaderAudiobookPanel extends StatefulWidget {
   /// 书籍封面文件路径；null 不显示。
   final String? coverPath;
 
-  /// 「设置」tab 的内容（音量 / 速度 / 延迟 / 播放条开关…）。
-  final WidgetBuilder settingsBuilder;
-
   final VoidCallback? onAudioImport;
   final VoidCallback? onPickAlignment;
   final VoidCallback? onTranscribe;
@@ -105,9 +101,6 @@ class ReaderAudiobookPanel extends StatefulWidget {
   /// 音频定位到锚点处的那句，而不是整个 spine 的首句（HBK040）。
   final int? Function(SubtitleRematchFragment fragment)? cueStudyOffset;
 
-  /// chapters / settings（见 [kReaderAudiobookPanelTabs]）。
-  final String initialTab;
-
   /// 进度条刷新周期（控制器只在 cue 切换 / 播放暂停时 notify，拖动条需要秒级 tick）。
   final Duration tick;
 
@@ -116,9 +109,6 @@ class ReaderAudiobookPanel extends StatefulWidget {
 }
 
 class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
-  late String _tab = kReaderAudiobookPanelTabs.contains(widget.initialTab)
-      ? widget.initialTab
-      : kReaderAudiobookPanelTabs.first;
   Timer? _ticker;
 
   /// 拖动整书进度条期间 / 跨文件 seek 落定前本地保留的目标位置（毫秒），避免松手
@@ -139,16 +129,6 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
     }
     return target;
   }
-
-  /// 页签切换方向（shared-axis X 的进出方向）：true = 往右边的页签走。
-  bool _tabForward = true;
-
-  /// 页签每切一次 +1：AnimatedSwitcher 里同时存活的进/出子树各有独立身份。
-  /// 「章节→设置→章节」快速反切时，退出中的章节页与新进的章节页曾共用同一个
-  /// tab key、同一个 GlobalKey 和 ScrollController → Duplicate GlobalKey
-  /// （HBK045）。现在每次进入都是新的 [_AudiobookChapterList] 实例，滚动与当前
-  /// 章 key 都归实例自己持有。
-  int _tabSerial = 0;
 
   /// 侧板路由的进场动画是否已落定。错峰进场在它落定之后才开窗：之前进场窗口从
   /// 面板挂载起算（600ms），恰好和侧板自己的滑入（约 300–400ms）重叠，各卡的
@@ -237,74 +217,14 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final AudiobookPlayerController? ctrl = widget.controller;
-    final Widget tabContent = switch (_tab) {
-      'settings' => _buildSettingsTab(theme, ctrl),
-      _ => _buildChaptersTab(theme, ctrl),
-    };
     final List<Widget> head = <Widget>[
       readerPanelStagger(0, _buildHero(theme, ctrl)),
-      const SizedBox(height: 4),
-      readerPanelStagger(
-        1,
-        ReaderPanelTabs<String>(
-          padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
-          tabs: <ReaderPanelTab<String>>[
-            ReaderPanelTab<String>(
-              value: 'chapters',
-              label: t.reader_audiobook_tab_chapters,
-              icon: Icons.format_list_bulleted,
-              key: const ValueKey<String>(
-                'fushi_audiobook_tab_button_chapters',
-              ),
-            ),
-            ReaderPanelTab<String>(
-              value: 'settings',
-              label: t.settings,
-              icon: Icons.tune_outlined,
-              key: const ValueKey<String>(
-                'fushi_audiobook_tab_button_settings',
-              ),
-            ),
-          ],
-          selected: _tab,
-          onChanged: (String id) => setState(() {
-            _tabForward =
-                kReaderAudiobookPanelTabs.indexOf(id) >=
-                kReaderAudiobookPanelTabs.indexOf(_tab);
-            if (id != _tab) _tabSerial++;
-            _tab = id;
-          }),
-        ),
-      ),
+      const SizedBox(height: 12),
     ];
-    final ValueKey<String> tabKey = ValueKey<String>(
-      'fushi_audiobook_tab_${_tab}_$_tabSerial',
-    );
-    // M3E shared-axis X：新页签从前进方向滑入淡入，旧页签朝反方向滑出淡出。
-    // 每个页签内容自带一个进场窗口（新挂载的 scope），切过去也有一轮错峰进场——
-    // 之前整块共用面板挂载时的那一个窗口，切页签时窗口早已关了，行瞬间出现。
-    final Widget body = AnimatedSwitcher(
-      duration: fushiMotionDuration(context, FushiMotion.medium),
-      switchInCurve: FushiMotion.enter,
-      switchOutCurve: FushiMotion.exit,
-      transitionBuilder: (Widget child, Animation<double> a) {
-        final double dir = _tabForward ? 1 : -1;
-        final bool incoming = child.key == tabKey;
-        return FadeTransition(
-          opacity: a,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: Offset((incoming ? 0.08 : -0.08) * dir, 0),
-              end: Offset.zero,
-            ).animate(a),
-            child: child,
-          ),
-        );
-      },
-      child: KeyedSubtree(
-        key: tabKey,
-        child: FushiEntranceScope(child: tabContent),
-      ),
+    // 章节列表自带一个进场窗口（新挂载的 scope），与「正在播放」卡错峰进场。
+    final Widget body = KeyedSubtree(
+      key: const ValueKey<String>('fushi_audiobook_tab_chapters'),
+      child: FushiEntranceScope(child: _buildChaptersTab(theme, ctrl)),
     );
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -347,7 +267,7 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
           );
           if (!constraints.maxHeight.isFinite) return gate(column);
           return SingleChildScrollView(
-            key: ValueKey<String>('fushi_audiobook_scroll_$_tab'),
+            key: const ValueKey<String>('fushi_audiobook_scroll_chapters'),
             primary: false,
             child: gate(FushiEntranceScope(child: column)),
           );
@@ -749,14 +669,6 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
 
   /// 「设置」页：音量 / 速度 / 延迟等（调用方提供），底部次级分组收低频的资源操作
   /// （音频文件、对齐文件、转录、导入音频）。
-  Widget _buildSettingsTab(ThemeData theme, AudiobookPlayerController? ctrl) {
-    return ListView(
-      key: const ValueKey<String>('fushi_audiobook_settings_list'),
-      primary: false,
-      children: <Widget>[widget.settingsBuilder(context)],
-    );
-  }
-
   /// 「对齐与转录」卡：对齐文件（当前文件名 / 未选）+ 音频文件数，下面一排 tonal
   /// 按钮是低频的资源操作（重新选对齐文件 / 设备转录 / 导入音频），多文件时再列出
   /// 各文件名。只读控制器已有的数据，操作都是调用方原有的回调。

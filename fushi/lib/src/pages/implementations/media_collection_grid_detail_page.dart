@@ -1450,11 +1450,30 @@ class _MemberListRow extends StatelessWidget {
                           SizedBox(height: tokens.spacing.gap),
                           ClipRRect(
                             borderRadius: FushiBorderRadius.chip,
+                            // 与书架封面进度条（[CoverProgressStrip]）同一套配色：
+                            // 在读 primary、读完换完成色（MD3 tertiary / Apple 系统
+                            // 绿），平直静态形态。此前恒为 primary 的 M3E 波浪条：
+                            // vibrant 方案下 primary 是高彩度蓝紫，一列「读完」行
+                            // 全是同一道饱和蓝，读作与主题无关的固定蓝（2026-10-09
+                            // 反馈），且波浪常驻动画。
                             child: FushiLinearProgressIndicator(
+                              key: const ValueKey<String>(
+                                'collection_member_list_progress',
+                              ),
                               value: progress.clamp(0.0, 1.0),
                               minHeight: 4,
-                              color: scheme.primary,
-                              backgroundColor: scheme.surfaceContainerHighest,
+                              year2023: apple ? null : true,
+                              color: info?.readStatus ==
+                                      ShelfReadStatus.finished
+                                  ? (apple
+                                        ? appleColorsOf(context).success
+                                        : scheme.tertiary)
+                                  : (apple
+                                        ? appleColorsOf(context).accent
+                                        : scheme.primary),
+                              backgroundColor: apple
+                                  ? appleColorsOf(context).tertiaryFill
+                                  : scheme.secondaryContainer,
                             ),
                           ),
                         ],

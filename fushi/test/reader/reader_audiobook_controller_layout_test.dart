@@ -39,7 +39,6 @@ Future<void> _pumpPanel(
           title: 'Book',
           chapterLabel: 'Chapter one',
           coverPath: null,
-          settingsBuilder: (_) => const Text('AUDIO_SETTINGS'),
         ),
       ),
     ),
