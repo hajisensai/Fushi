@@ -152,10 +152,16 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
       return;
     }
     try {
-      final MediaServerPage page = await _browser.listChildren(
-        parentId: library.id,
-        limit: kMediaServerRowLimit,
-      );
+      final MediaServerBrowser browser = _browser;
+      final MediaServerPage page = browser is MediaServerLibraryItems
+          ? await (browser as MediaServerLibraryItems).listLibraryItems(
+              library: library,
+              limit: kMediaServerRowLimit,
+            )
+          : await browser.listChildren(
+              parentId: library.id,
+              limit: kMediaServerRowLimit,
+            );
       if (!mounted || generation != _generation) return;
       setState(() => _libraryRows[library.id] = page.items);
     } catch (e) {
@@ -169,6 +175,7 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
       widget.session,
       parentId: library.id,
       title: library.name,
+      library: library,
     );
   }
 

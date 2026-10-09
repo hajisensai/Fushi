@@ -180,6 +180,27 @@ const int kMediaServerRowLimit = 20;
 /// 同量级：网格卡最宽约 240 逻辑像素 × 3 倍 dpr。
 const int kMediaServerCoverMaxWidth = 720;
 
+/// 可选能力：「查看全部」按**库类型**列一个媒体库的作品（BUG-3198）。
+///
+/// [MediaServerBrowser.listChildren] 列的是库的**直接子级**——Emby 的库下面挂的是
+/// 库路径对应的物理文件夹（一个库配了两条路径就是两个「动漫」文件夹），用户点
+/// 「查看全部」看到的是文件夹而不是剧。Emby 官方客户端与 Jellyfin web 的做法是按
+/// 库类型递归取作品：剧集库递归取 Series、电影库递归取 Movie；混合库没有单一作品
+/// 类型，仍按文件夹树浏览。按文件夹浏览的入口保留（网格页头的切换）。
+///
+/// 能力判据沿用本仓口径 `browser is MediaServerLibraryItems`；不实现它的服务器
+/// （Plex 的分区本来就直接是作品）照旧走 [MediaServerBrowser.listChildren]。
+abstract interface class MediaServerLibraryItems {
+  /// 列 [library] 的作品（翻页与 [MediaServerBrowser.listChildren] 同口径：只认
+  /// [MediaServerPage.nextStartIndex]）。混合库等价于 `listChildren(library.id)`。
+  Future<MediaServerPage> listLibraryItems({
+    required MediaServerLibrary library,
+    int startIndex = 0,
+    int limit = kMediaServerPageSize,
+    MediaServerSort sort = MediaServerSort.name,
+  });
+}
+
 /// 服务器上的一个媒体库（Jellyfin「视图」）。
 class MediaServerLibrary {
   const MediaServerLibrary({

@@ -6908,5 +6908,7 @@
   "subscription_edit_list_helper": "多个用逗号分隔",
   "subscription_edit_rule_required": "这个来源的订阅必须填写",
   "video_detail_layout_poster": "海报横幅布局",
-  "video_detail_layout_two_pane": "两栏布局"
+  "video_detail_layout_two_pane": "两栏布局",
+  "media_server_browse_by_folder": "按文件夹浏览",
+  "media_server_browse_by_title": "按作品浏览"
 }

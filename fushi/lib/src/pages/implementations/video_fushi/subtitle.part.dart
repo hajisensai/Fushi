@@ -1241,6 +1241,32 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 而不是该集的 bookUid 上，故有 [VideoFushiPage.playlistCollectionId] 时必须走合集口，
   /// 否则恒查不到。读不到元数据一律降级为纯文本检索（= 旧行为），绝不因此挡住搜索。
   Future<SubtitleSearchSeed> _buildJimakuSeed(String fallbackTitle) async {
+    // BUG-3199：媒体服务器的条目自带原名与外部 ID，显示名是服务器的译名。远端视频
+    // 没有本地 DB 作品行，身份向服务器要。
+    final Object? remoteClient = _isRemote ? _effectiveRemoteClient : null;
+    final String? remoteId = _effectiveRemoteInfo?.id;
+    if (remoteClient is RemoteVideoTitleIdentityFetch && remoteId != null) {
+      try {
+        final RemoteVideoTitleIdentity? identity = await remoteClient
+            .remoteVideoTitleIdentity(remoteId);
+        if (identity != null) {
+          return buildSubtitleSearchSeed(
+            originalTitle: identity.originalTitle,
+            metadataTitle: identity.title,
+            displayTitle: fallbackTitle,
+            collectionTitle: _playlistTitle,
+            externalIds: identity.externalIds,
+            isMovie: identity.isMovie,
+          );
+        }
+      } on Object catch (error) {
+        // 身份拿不到只是少了捷径，照旧按显示名搜（不挡住搜索）。
+        ErrorLogService.instance.logDiagnostic(
+          'VideoFushiPage._buildJimakuSeed.remote',
+          error,
+        );
+      }
+    }
     try {
       final FushiDatabase db = appModel.database;
       final int? collectionId = widget.playlistCollectionId;

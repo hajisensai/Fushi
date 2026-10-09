@@ -465,10 +465,15 @@ class JellyfinItem {
     this.communityRating,
     this.genres = const <String>[],
     this.mediaSources = const <JellyfinMediaSource>[],
+    this.providerIds = const <String, String>{},
   });
 
   final String id;
   final String name;
+
+  /// 外部 ID（`ProviderIds`），键转小写：`tmdb` / `imdb` / `tvdb` / `anidb` /
+  /// `anilist` …（BUG-3199，字幕检索按 ID 搜）。
+  final Map<String, String> providerIds;
 
   /// 全部媒体源（版本）；未请求 MediaSources 字段的清单条目为空。
   /// [mediaSourceId] / [subtitleStreams] / [sizeBytes] /
@@ -1500,6 +1505,19 @@ class JellyfinApi {
   }
 
   /// 单条目详情（含 MediaSources/MediaStreams，字幕流选择用）。
+  /// 条目身份（原名 + 外部 ID，BUG-3199）。Emby 的清单字段要显式 `Fields` 才给，
+  /// 单条目端点各版本口径不一，这里显式要。
+  Future<JellyfinItem> itemIdentity({
+    required String userId,
+    required String itemId,
+  }) async {
+    final Map<String, Object?> json = await _getJson(
+      '/Users/$userId/Items/$itemId',
+      <String, String>{'Fields': 'OriginalTitle,ProviderIds'},
+    );
+    return parseItem(json);
+  }
+
   Future<JellyfinItem> itemDetail({
     required String userId,
     required String itemId,
@@ -2005,6 +2023,18 @@ class JellyfinApi {
           if (raw is Map) parseItem(raw.cast<String, Object?>()),
       ];
 
+  /// `ProviderIds` → 键小写、值去空白的映射；空值丢掉（BUG-3199）。
+  static Map<String, String> parseProviderIds(Object? raw) {
+    if (raw is! Map) return const <String, String>{};
+    final Map<String, String> out = <String, String>{};
+    raw.forEach((Object? key, Object? value) {
+      final String k = key?.toString().trim().toLowerCase() ?? '';
+      final String v = value?.toString().trim() ?? '';
+      if (k.isNotEmpty && v.isNotEmpty) out[k] = v;
+    });
+    return Map<String, String>.unmodifiable(out);
+  }
+
   static JellyfinItem parseItem(Map<String, Object?> json) {
     final Map<String, Object?> userData =
         (json['UserData'] as Map?)?.cast<String, Object?>() ??
@@ -2045,6 +2075,7 @@ class JellyfinApi {
       type: (json['Type'] as String?) ?? '',
       isFolder: (json['IsFolder'] as bool?) ?? false,
       originalTitle: json['OriginalTitle'] as String?,
+      providerIds: parseProviderIds(json['ProviderIds']),
       seriesName: json['SeriesName'] as String?,
       seasonNumber: (json['ParentIndexNumber'] as num?)?.toInt(),
       episodeNumber: (json['IndexNumber'] as num?)?.toInt(),
@@ -2175,7 +2206,9 @@ class JellyfinVideoClient
         RemoteVideoQualityLimit,
         RemoteVideoCollectionIsWork,
         RemoteVideoStreamVariants,
-        MediaServerBrowser {
+        MediaServerBrowser,
+        MediaServerLibraryItems,
+        RemoteVideoTitleIdentityFetch {
   JellyfinVideoClient({
     required this.api,
     required this.userId,
@@ -2591,6 +2624,50 @@ class JellyfinVideoClient
     return _pageFrom(page, startIndex);
   }
 
+  /// 库类型 → 「查看全部」递归取的作品类型（BUG-3198）。混合 / 未标类型的库返回
+  /// null：没有单一作品类型，按文件夹树浏览（Jellyfin web 同口径）。
+  static String? libraryItemTypeFor(MediaServerLibraryKind kind) =>
+      switch (kind) {
+        MediaServerLibraryKind.tvShows => 'Series',
+        MediaServerLibraryKind.movies => 'Movie',
+        MediaServerLibraryKind.mixed => null,
+      };
+
+  /// 「查看全部」：剧集库递归取 Series、电影库递归取 Movie（单值
+  /// `IncludeItemTypes`，BUG-2254），不再列库路径对应的物理文件夹（BUG-3198）。
+  /// 忽略 `Recursive` 的兼容层（BUG-2567）回的是直接子级，原样展示——与改动前
+  /// 的浏览结果一致，文件夹照样能点进去。
+  @override
+  Future<MediaServerPage> listLibraryItems({
+    required MediaServerLibrary library,
+    int startIndex = 0,
+    int limit = kMediaServerPageSize,
+    MediaServerSort sort = MediaServerSort.name,
+  }) async {
+    final String? type = libraryItemTypeFor(library.kind);
+    if (type == null) {
+      return listChildren(
+        parentId: library.id,
+        startIndex: startIndex,
+        limit: limit,
+        sort: sort,
+      );
+    }
+    final ({String sortBy, String sortOrder}) s = sortParamsFor(sort);
+    final JellyfinItemsPage page = await api.items(
+      userId: userId,
+      parentId: library.id,
+      recursive: true,
+      includeItemType: type,
+      startIndex: startIndex,
+      limit: limit,
+      fields: 'ChildCount,RecursiveItemCount,ProductionYear',
+      sortBy: s.sortBy,
+      sortOrder: s.sortOrder,
+    );
+    return _pageFrom(page, startIndex);
+  }
+
   /// `/Shows/*` 这族端点在飞牛等兼容层上不保证存在：HTTP 非 2xx，或 200 却回
   /// SPA index.html（jsonDecode 抛 [FormatException]，BUG-2254 备注④），都算
   /// 「端点不可用」，退回通用 `/Items` 树。**网络层异常不在此列**——那是真断网，
@@ -2930,6 +3007,27 @@ class JellyfinVideoClient
         await api.itemDetail(userId: userId, itemId: listInfo.id);
     return infoFromItem(item);
   }
+
+  /// 字幕检索的作品身份（BUG-3199）：集的原名与外部 ID 挂在**剧**上（集自己的
+  /// `OriginalTitle` 是集名、`ProviderIds` 是集级 ID），所以集先跳到所属剧再取。
+  @override
+  Future<RemoteVideoTitleIdentity?> remoteVideoTitleIdentity(String id) async {
+    JellyfinItem item = await api.itemIdentity(userId: userId, itemId: id);
+    final String? seriesId = item.seriesId;
+    if (item.type == 'Episode' && seriesId != null && seriesId.isNotEmpty) {
+      item = await api.itemIdentity(userId: userId, itemId: seriesId);
+    }
+    return remoteTitleIdentityOf(item);
+  }
+
+  /// [JellyfinItem] → 字幕检索身份（纯函数，便于单测）。
+  static RemoteVideoTitleIdentity remoteTitleIdentityOf(JellyfinItem item) =>
+      RemoteVideoTitleIdentity(
+        originalTitle: item.originalTitle,
+        title: item.name,
+        externalIds: item.providerIds,
+        isMovie: item.type == 'Movie',
+      );
 
   @override
   Future<void> downloadRemoteVideo(

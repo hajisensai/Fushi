@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2860 条。点号进各自文件。
+> 共 2862 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3199](bugs/BUG-3199-media-server-subtitle-search-original-title.md) | ✅ | ✅ | 媒体服务器在线观看搜字幕用的是中文显示标题 |
+| [BUG-3198](bugs/BUG-3198-emby-view-all-shows-folders.md) | ✅ | ✅ | Emby「查看全部」显示文件夹而不是剧 |
 | [BUG-3195](bugs/BUG-3195-video-paused-seek-buffering-spinner.md) | ✅ | ✅ | 暂停状态下拖进度条后加载圈和 0 B/s 一直挂着 |
 | [BUG-3191](bugs/BUG-3191-emby-external-ass-subtitle.md) | ✅ | ✅ | Emby 外挂 ASS 字幕加载失败 |
 | [BUG-3190](bugs/BUG-3190-collection-detail-skeleton-dup-actions.md) | ✅ | ✅ | 作品资料页骨架旧样式、背景海报看不见、右上角与左侧按钮重复 |
