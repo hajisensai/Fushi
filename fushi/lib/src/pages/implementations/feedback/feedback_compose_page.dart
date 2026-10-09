@@ -430,7 +430,12 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   }
 }
 
-/// 附件区的「添加图片」/「粘贴图片」方块：图标 + 一行小字（与缩略图同尺寸）。
+/// 附件区方块的统一尺寸：缩略图与「添加图片」/「粘贴图片」同宽同高同圆角，`Wrap`
+/// 放不下就换行（窄屏 360dp 下一行两三个）。
+const double _kTileWidth = 96;
+const double _kTileHeight = 128;
+
+/// 附件区的「添加图片」/「粘贴图片」方块：图标 + 一行小字。
 class _AddTile extends StatelessWidget {
   const _AddTile({
     required this.icon,
@@ -446,31 +451,31 @@ class _AddTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return FushiPressScale(
-      enabled: onTap != null,
+    return SizedBox(
+      width: _kTileWidth,
+      height: _kTileHeight,
       child: FushiCard(
         onTap: onTap,
-        child: SizedBox(
-          width: 96,
-          height: 128,
-          child: FushiTooltip(
-            message: label,
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: <Widget>[
-                  FushiIcon(icon),
-                  const SizedBox(height: 6),
-                  Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: tokens.type.metadata,
-                  ),
-                ],
-              ),
+        padding: EdgeInsets.zero,
+        margin: EdgeInsets.zero,
+        borderRadius: FushiM3eShape.smallRadius,
+        child: FushiTooltip(
+          message: label,
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                FushiIcon(icon),
+                const SizedBox(height: 6),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.metadata,
+                ),
+              ],
             ),
           ),
         ),
@@ -479,6 +484,7 @@ class _AddTile extends StatelessWidget {
   }
 }
 
+/// 已添加的截图：cover 填满方块，删除钮在右上角。
 class _Thumb extends StatelessWidget {
   const _Thumb({required this.bytes, required this.onRemove, super.key});
 
@@ -487,30 +493,45 @@ class _Thumb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
     return SizedBox(
-      width: 96,
-      height: 128,
+      width: _kTileWidth,
+      height: _kTileHeight,
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[
           ClipRRect(
             borderRadius: FushiM3eShape.smallRadius,
-            child: Image.memory(
-              bytes,
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-              errorBuilder: (BuildContext _, Object _, StackTrace? _) =>
-                  const Center(child: FushiIcon(FushiIcons.brokenImage)),
+            child: DecoratedBox(
+              decoration: BoxDecoration(color: colors.surfaceContainerHighest),
+              child: Image.memory(
+                bytes,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+                errorBuilder: (BuildContext _, Object _, StackTrace? _) =>
+                    const Center(child: FushiIcon(FushiIcons.brokenImage)),
+              ),
+            ),
+          ),
+          // 浅色截图上也看得清边界。
+          DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: FushiM3eShape.smallRadius,
+              border: Border.all(color: colors.outlineVariant),
             ),
           ),
           Positioned(
-            top: 0,
-            right: 0,
+            top: 4,
+            right: 4,
             child: FushiIconButton(
               icon: FushiIcons.close,
               tooltip: t.feedback_compose_remove_image,
               enabled: onRemove != null,
               onTap: onRemove ?? () {},
+              size: 16,
+              constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+              padding: EdgeInsets.zero,
+              backgroundColor: colors.surface.withValues(alpha: 0.85),
             ),
           ),
         ],
