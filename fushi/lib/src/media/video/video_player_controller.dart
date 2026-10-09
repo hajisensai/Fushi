@@ -433,6 +433,15 @@ class VideoPlayerController extends ChangeNotifier
   /// `_cues.isEmpty` 推断——图形轨与「无字幕的 OP 段」都是空 cue，会误判。
   bool _graphicSubtitleActive = false;
 
+  /// 最近一次 [selectEmbeddedGraphicTrack] 选中的轨（去 auto/no 后的序号 + mpv codec）。
+  /// 只在 [_graphicSubtitleActive] 为 true 时有意义，见 [activeGraphicSubtitleTrack]。
+  int? _graphicSubtitleStreamIndex;
+  String? _graphicSubtitleCodec;
+
+  /// 图形字幕此刻在 libmpv 上是否可见（`sub-visibility`）。只有「隐藏」遮蔽态会把它
+  /// 关掉（[setGraphicSubtitleVisible]）；选图形轨时恒打开。
+  bool _graphicSubtitleVisible = true;
+
   /// 远端内嵌文本轨交给 libmpv **只解码不画**、文本经 `sub-text` 回流成可点 cue
   /// （[selectEmbeddedTextTrackViaPlayer]）时的订阅。非 null = 处于该模式；
   /// [setCues]（换字幕源）/ [load] / [dispose] 时取消。
@@ -1463,6 +1472,7 @@ class VideoPlayerController extends ChangeNotifier
     // 的裸 `player.setSubtitleTrack`，不经此处）→ 离开图形渲染，复位图形标志（BUG-301）。
     // 这是纯 Dart 同步状态，与 await 后的原生下发无关：必须在 player 空判 / await 之前
     // 无条件执行，否则未 [load] 时关字幕不复位标志（回归 BUG-301）。
+    final bool leavingGraphic = track.id == 'no' && _graphicSubtitleActive;
     if (track.id == 'no') _graphicSubtitleActive = false;
     final Player? player = _player;
     if (player == null) return; // 未 load：原生下发 no-op，标志已复位即可。
@@ -1478,6 +1488,13 @@ class VideoPlayerController extends ChangeNotifier
     await player.setSubtitleTrack(track);
     if (!_isCurrentLoad(player, loadToken)) return; // await 期间换片/销毁：放弃下发。
     if (_discTitleGeneration != discGeneration) return;
+    // BUG-3104：图形字幕的 seek 预读只为它开；离开图形渲染就还原 mpv 默认值。
+    if (leavingGraphic) {
+      await applySubtitleMpvPropertiesToPlayer(
+        player,
+        buildDefaultSubtitleSeekPrerollProperties(),
+      );
+    }
   }
 
   /// 把内嵌**图形**字幕轨（PGS/DVD 等位图，无法转文本 cue）交给 libmpv 当画面字幕
@@ -1526,9 +1543,23 @@ class VideoPlayerController extends ChangeNotifier
     );
     if (!_isCurrentLoad(player, loadToken)) return false; // 设可见性后换片/销毁。
     if (_discTitleGeneration != discGeneration) return false;
+    // BUG-3104：往回跳到一句图形字幕中间时那句要立刻出现——让 demuxer 从 seek 目标前
+    // 预读，把那句的开始包读进来（见 [buildGraphicSubtitleSeekPrerollProperties]）。
+    final bool matroska = isMatroskaFileFormat(await _readFileFormat(player));
+    if (!_isCurrentLoad(player, loadToken)) return false;
+    if (_discTitleGeneration != discGeneration) return false;
+    await applySubtitleMpvPropertiesToPlayer(
+      player,
+      buildGraphicSubtitleSeekPrerollProperties(matroska: matroska),
+    );
+    if (!_isCurrentLoad(player, loadToken)) return false;
+    if (_discTitleGeneration != discGeneration) return false;
     // 进入图形轨渲染：标记图形模式，并把当前字幕调轴（[_delayMs]）下发到 libmpv
     // `sub-delay`——否则图形字幕忽略 Dart 侧 cue 偏移，调轴滑条对它无效（BUG-301）。
     _graphicSubtitleActive = true;
+    _graphicSubtitleVisible = true;
+    _graphicSubtitleStreamIndex = streamIndex;
+    _graphicSubtitleCodec = real[streamIndex].codec;
     await applySubtitleMpvPropertiesToPlayer(
       player,
       buildSubtitleDelayProperty(_delayMs),
@@ -1536,6 +1567,21 @@ class VideoPlayerController extends ChangeNotifier
     if (!_isCurrentLoad(player, loadToken)) return false;
     if (_discTitleGeneration != discGeneration) return false;
     return true;
+  }
+
+  /// 当前文件的 mpv `file-format`；非 libmpv / 读不到返回 null。
+  Future<String?> _readFileFormat(Player player) async {
+    final dynamic native = player.platform;
+    if (native == null) return null;
+    try {
+      final Object? value = await native.getProperty(
+        'file-format',
+        waitForInitialization: false,
+      );
+      return value is String && value.isNotEmpty ? value : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 把容器内**文本**字幕轨交给 libmpv 解码、但**不画**：保持 `sub-visibility=no`，
@@ -2764,6 +2810,12 @@ class VideoPlayerController extends ChangeNotifier
         player,
         buildSubtitleSuppressionProperties(),
       );
+      // 换片复用同一 player：上一段图形字幕开的 seek 预读不带到新片（BUG-3104），
+      // 新片要渲染图形轨时由 [selectEmbeddedGraphicTrack] 重新打开。
+      await applySubtitleMpvPropertiesToPlayer(
+        player,
+        buildDefaultSubtitleSeekPrerollProperties(),
+      );
     }
     if (!_isCurrentLoad(player, loadToken)) return; // 字幕抑制后换片/销毁。
 
@@ -3681,6 +3733,36 @@ class VideoPlayerController extends ChangeNotifier
   /// BUG-2590）——此时没有 cue、不可查词。播放页取证钩子用。
   bool get isPlayerRenderedSubtitleActive => _graphicSubtitleActive;
 
+  /// libmpv 正在渲染的图形字幕轨：去 auto/no 后的序号 + mpv codec（如
+  /// `hdmv_pgs_subtitle`）。不在图形字幕模式时为 null。图形字幕「模糊」按它抽轨拿每句
+  /// 位图的坐标（`video_graphic_subtitle_regions.dart`）。
+  ({int streamIndex, String? codec})? get activeGraphicSubtitleTrack {
+    final int? index = _graphicSubtitleStreamIndex;
+    if (!_graphicSubtitleActive || index == null) return null;
+    return (streamIndex: index, codec: _graphicSubtitleCodec);
+  }
+
+  /// 图形字幕此刻是否在画面上可见（隐藏遮蔽态关掉时为 false）。
+  bool get isGraphicSubtitleVisible => _graphicSubtitleVisible;
+
+  /// 字幕「隐藏」遮蔽对图形字幕生效：只切 libmpv `sub-visibility`，不动选轨、不清
+  /// 图形模式（悬停 / 暂停显形时再打开）。非图形模式 / 未 load / 状态没变为 no-op。
+  Future<void> setGraphicSubtitleVisible(bool visible) async {
+    if (!_graphicSubtitleActive || _graphicSubtitleVisible == visible) return;
+    final Player? player = _player;
+    if (player == null) return;
+    _graphicSubtitleVisible = visible;
+    final int loadToken = _loadToken;
+    await applySubtitleMpvPropertiesToPlayer(
+      player,
+      visible
+          ? buildGraphicSubtitleVisibilityProperties()
+          : buildSubtitleSuppressionProperties(),
+    );
+    if (!_isCurrentLoad(player, loadToken)) return;
+    notifyListeners();
+  }
+
   /// 测试可见：[setDelayMs] / [selectEmbeddedGraphicTrack] 会下发到 libmpv
   /// `sub-delay` 的延迟（毫秒）——图形模式用真实 delay，文本模式恒 0（BUG-301）。
   /// 宿主无 libmpv（[_player] 恒 null）时 mpv 属性下发被跳过，本 getter 让单测仍能
@@ -3692,8 +3774,14 @@ class VideoPlayerController extends ChangeNotifier
   /// 选轨即返回 false）的前提下，模拟「已进入图形字幕渲染模式」，以驱动 [setDelayMs]
   /// 的图形/文本分流决策（BUG-301）。
   @visibleForTesting
-  void debugSetGraphicSubtitleActiveForTesting(bool active) {
+  void debugSetGraphicSubtitleActiveForTesting(
+    bool active, {
+    int? streamIndex,
+    String? codec,
+  }) {
     _graphicSubtitleActive = active;
+    _graphicSubtitleStreamIndex = streamIndex;
+    _graphicSubtitleCodec = codec;
   }
 
   @visibleForTesting

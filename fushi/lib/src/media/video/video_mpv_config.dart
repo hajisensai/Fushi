@@ -858,6 +858,55 @@ Map<String, String> buildGraphicSubtitleVisibilityProperties() {
   };
 }
 
+/// 图形字幕 seek 后让「正在显示的那一句」立刻出现的预读属性（BUG-3104）。纯函数。
+///
+/// 图形字幕（PGS / VobSub）由 libmpv 画面渲染，一句字幕只有一个「开始显示」的包。
+/// 往回跳到某句**中间**时，demuxer 从目标附近的关键帧开始读，那句的开始包在更早的
+/// 位置，于是这句不显示、要等下一句开头才出字幕。文本字幕不受影响：Dart overlay 每拍
+/// 按当前时间从全部 cue 里重新求当前句。
+///
+/// - Matroska：`demuxer-mkv-subtitle-preroll=yes` + 10 s 预读窗口。mpv 默认 `index`
+///   只在文件带 CueDuration / CueRelativePosition 索引时预读、窗口仅 1 s（无索引）；
+///   这里只多读数据、不解码，代价小。
+/// - 其它容器（BD 的 m2ts / ts 等）mpv 没有字幕预读，只能用 `hr-seek-demuxer-offset`
+///   让精确 seek 从目标前 [kGraphicSubtitleSeekOffsetSeconds] 秒开始解复用（要多解码
+///   这段音视频，seek 稍慢）。实测 libmpv（本仓随包）：m2ts 里往回跳到一句开始后
+///   1.8 s 处，默认不显示，设 offset 后与该句正常显示的画面逐像素一致。
+///
+/// [matroska] 由当前文件的 `file-format` 决定；拿不到时传 false（两条都下发，宁可 seek
+/// 慢一点也要显示对）。
+Map<String, String> buildGraphicSubtitleSeekPrerollProperties({
+  required bool matroska,
+}) {
+  return <String, String>{
+    'demuxer-mkv-subtitle-preroll': 'yes',
+    'demuxer-mkv-subtitle-preroll-secs': '10',
+    'hr-seek-demuxer-offset': matroska
+        ? '0'
+        : kGraphicSubtitleSeekOffsetSeconds.toString(),
+  };
+}
+
+/// 非 Matroska 容器里图形字幕的 seek 解复用提前量（秒），覆盖常见的一句字幕时长。
+const int kGraphicSubtitleSeekOffsetSeconds = 6;
+
+/// 离开图形字幕渲染时把 [buildGraphicSubtitleSeekPrerollProperties] 改过的属性还原成
+/// mpv 默认值（文本字幕走 overlay，不需要预读，也不该为它多付 seek 代价）。纯函数。
+Map<String, String> buildDefaultSubtitleSeekPrerollProperties() {
+  return <String, String>{
+    'demuxer-mkv-subtitle-preroll': 'index',
+    'demuxer-mkv-subtitle-preroll-secs': '1',
+    'hr-seek-demuxer-offset': '0',
+  };
+}
+
+/// mpv `file-format`（逗号分隔的 demuxer 名）是否 Matroska / WebM。
+bool isMatroskaFileFormat(String? fileFormat) {
+  if (fileFormat == null) return false;
+  final String f = fileFormat.toLowerCase();
+  return f.contains('mkv') || f.contains('matroska') || f.contains('webm');
+}
+
 /// 副字幕交给 libmpv「只解码不画」的属性 map（远端直出容器、服务器抽不出的内嵌
 /// 文本轨作副字幕，[VideoPlayerController.selectEmbeddedSecondaryTextTrackViaPlayer]）。
 /// 纯函数。

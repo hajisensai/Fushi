@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -9,6 +10,7 @@ import 'package:fushi/src/media/video/graphic_subtitle_track_ocr.dart';
 import 'package:fushi/src/media/video/pgs_subtitle_parser.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
@@ -23,7 +25,7 @@ class _RecordingFfmpegBackend implements FfmpegBackend {
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
     this.args = args;
-    File(args.last).writeAsBytesSync(writeSup ? _sup() : <int>[]);
+    File(_supOutput(args)).writeAsBytesSync(writeSup ? _sup() : <int>[]);
     return FfmpegRunResult(returnCode: returnCode, output: 'boom');
   }
 
@@ -34,6 +36,46 @@ class _RecordingFfmpegBackend implements FfmpegBackend {
   @override
   Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
       run(args, timeout);
+}
+
+/// 参数里 `-f sup` 后面那个就是 `.sup` 输出路径（其后还有进度用的 `-f null -` 输出）。
+String _supOutput(List<String> args) => args[args.indexOf('sup') + 1];
+
+/// 支持观察式运行的假后端：按脚本报进度、可被取消；记下收到的 [FfmpegWatch]。
+class _WatchedFfmpegBackend extends _RecordingFfmpegBackend
+    implements FfmpegWatchedRunner {
+  _WatchedFfmpegBackend({required this.progress, this.waitForCancel = false})
+    : super(returnCode: 0, writeSup: true);
+
+  final List<Duration> progress;
+  final bool waitForCancel;
+  FfmpegWatch? watch;
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) =>
+      throw StateError('支持观察式运行的后端不该走固定超时的 run');
+
+  @override
+  Future<FfmpegRunResult> runWatched(
+    List<String> args,
+    FfmpegWatch watch,
+  ) async {
+    this.args = args;
+    this.watch = watch;
+    for (final Duration d in progress) {
+      watch.onProgress?.call(d);
+    }
+    if (waitForCancel) {
+      await watch.cancel;
+      File(_supOutput(args)).writeAsBytesSync(<int>[1, 2, 3]);
+      return const FfmpegRunResult(
+        returnCode: null,
+        output: kFfmpegCancelledMarker,
+      );
+    }
+    File(_supOutput(args)).writeAsBytesSync(_sup());
+    return const FfmpegRunResult(returnCode: 0, output: '');
+  }
 }
 
 /// 直接起入库的精简 ffmpeg 进程。
@@ -192,6 +234,13 @@ class _FakeRecognizer implements MangaStreamPageRecognizer {
 }
 
 void main() {
+  test('整轨转文字只给 PGS 轨（VobSub / DVB 封不进 .sup）', () {
+    expect(graphicSubtitleTrackOcrSupportsCodec('hdmv_pgs_subtitle'), isTrue);
+    expect(graphicSubtitleTrackOcrSupportsCodec('dvd_subtitle'), isFalse);
+    expect(graphicSubtitleTrackOcrSupportsCodec('dvb_subtitle'), isFalse);
+    expect(graphicSubtitleTrackOcrSupportsCodec(null), isFalse);
+  });
+
   group('PgsSubtitleParser', () {
     test('淡入只换调色板不拆 cue；清屏收尾；时间按 90kHz 换算', () {
       final List<PgsCue> cues = PgsSubtitleParser.parse(_sup());
@@ -204,6 +253,9 @@ void main() {
         right: 104,
         bottom: 202,
       ));
+      // PCS 声明的合成画布：位图坐标所在的坐标系（模糊遮蔽按它映射到画面）。
+      expect(cues.single.canvasWidth, 1920);
+      expect(cues.single.canvasHeight, 1080);
     });
 
     test('renderPng 取最不透明的调色板、按 padding 留边', () {
@@ -265,7 +317,60 @@ void main() {
         '-f',
         'sup',
         out,
+        // 进度伴随输出：同一次读文件，视频包拷进 null，让已处理时间连续推进（BUG-3102）。
+        '-map',
+        '0:v:0?',
+        '-map',
+        '0:s:2',
+        '-c',
+        'copy',
+        '-f',
+        'null',
+        '-',
       ]);
+    });
+
+    test('观察式后端：按进度判活、进度原样转给调用方（BUG-3102）', () async {
+      final _WatchedFfmpegBackend backend = _WatchedFfmpegBackend(
+        progress: const <Duration>[Duration(minutes: 1), Duration(minutes: 7)],
+      );
+      final List<Duration> seen = <Duration>[];
+      final bool ok = await extractGraphicSubtitleTrackToSup(
+        videoPath: video.path,
+        streamIndex: 0,
+        supPath: p.join(dir.path, 'track.sup'),
+        onProgress: seen.add,
+        backend: backend,
+      );
+      expect(ok, isTrue);
+      expect(seen, const <Duration>[
+        Duration(minutes: 1),
+        Duration(minutes: 7),
+      ]);
+      // 判活靠「多久没推进」，不是按体积估的总时长。
+      expect(backend.watch!.stallTimeout, kGraphicSubtitleExtractStallTimeout);
+    });
+
+    test('取消：不算失败、不留半截 .sup', () async {
+      final _WatchedFfmpegBackend backend = _WatchedFfmpegBackend(
+        progress: const <Duration>[Duration(seconds: 3)],
+        waitForCancel: true,
+      );
+      final Completer<void> cancel = Completer<void>();
+      final List<String> failures = <String>[];
+      final String out = p.join(dir.path, 'track.sup');
+      final Future<bool> running = extractGraphicSubtitleTrackToSup(
+        videoPath: video.path,
+        streamIndex: 0,
+        supPath: out,
+        onFailure: failures.add,
+        cancel: cancel.future,
+        backend: backend,
+      );
+      cancel.complete();
+      expect(await running, isFalse);
+      expect(File(out).existsSync(), isFalse);
+      expect(failures, isEmpty);
     });
 
     test('失败：删掉空壳文件、交出失败摘要', () async {

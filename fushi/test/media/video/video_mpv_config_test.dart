@@ -602,6 +602,74 @@ keep-open=yes
     });
   });
 
+  group('图形字幕 seek 预读（BUG-3104）', () {
+    test('Matroska：开字幕预读、不加解码提前量（只多读数据不多解码）', () {
+      final Map<String, String> m =
+          buildGraphicSubtitleSeekPrerollProperties(matroska: true);
+      expect(m['demuxer-mkv-subtitle-preroll'], 'yes');
+      expect(m['demuxer-mkv-subtitle-preroll-secs'], '10');
+      expect(m['hr-seek-demuxer-offset'], '0');
+    });
+
+    test('m2ts / ts 等：mpv 没有字幕预读，只能让精确 seek 提前解复用', () {
+      final Map<String, String> m =
+          buildGraphicSubtitleSeekPrerollProperties(matroska: false);
+      expect(
+        m['hr-seek-demuxer-offset'],
+        '$kGraphicSubtitleSeekOffsetSeconds',
+      );
+      expect(kGraphicSubtitleSeekOffsetSeconds, greaterThanOrEqualTo(5));
+    });
+
+    test('离开图形字幕：还原成 mpv 默认值，键集合与开启时一致', () {
+      final Map<String, String> reset =
+          buildDefaultSubtitleSeekPrerollProperties();
+      expect(reset, <String, String>{
+        'demuxer-mkv-subtitle-preroll': 'index',
+        'demuxer-mkv-subtitle-preroll-secs': '1',
+        'hr-seek-demuxer-offset': '0',
+      });
+      expect(
+        reset.keys.toSet(),
+        buildGraphicSubtitleSeekPrerollProperties(matroska: false).keys.toSet(),
+      );
+    });
+
+    test('file-format 判 Matroska', () {
+      expect(isMatroskaFileFormat('mkv'), isTrue);
+      expect(isMatroskaFileFormat('matroska,webm'), isTrue);
+      expect(isMatroskaFileFormat('mpegts'), isFalse);
+      expect(isMatroskaFileFormat(null), isFalse);
+    });
+
+    test('控制器接线：选图形轨开预读、关字幕 / 换片还原', () {
+      final String src = File(
+        'lib/src/media/video/video_player_controller.dart',
+      ).readAsStringSync();
+      final int select = src.indexOf(
+        'Future<bool> selectEmbeddedGraphicTrack(int streamIndex)',
+      );
+      final String selectBody = src.substring(
+        select,
+        src.indexOf('\n  }\n', select),
+      );
+      expect(
+        selectBody.contains('buildGraphicSubtitleSeekPrerollProperties('),
+        isTrue,
+      );
+      final int off = src.indexOf(
+        'Future<void> selectSubtitleTrack(SubtitleTrack track)',
+      );
+      final String offBody = src.substring(off, src.indexOf('\n  }\n', off));
+      expect(offBody.contains('buildDefaultSubtitleSeekPrerollProperties()'), isTrue);
+      expect(
+        'buildDefaultSubtitleSeekPrerollProperties()'.allMatches(src).length,
+        greaterThanOrEqualTo(2),
+        reason: 'load 换片也要还原，不把上一段图形字幕的预读带到新片',
+      );
+    });
+  });
+
   group('buildSubtitleDelayProperty (BUG-301 图形字幕调轴)', () {
     test('positive delay -> sub-delay seconds, same sign (no flip)', () {
       // _delayMs 正＝字幕延后，mpv sub-delay 正＝字幕延后，同向不翻符号。

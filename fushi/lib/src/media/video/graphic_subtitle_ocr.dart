@@ -19,6 +19,7 @@ import 'package:flutter/painting.dart'
     show Alignment, BoxFit, FittedSizes, applyBoxFit;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
@@ -61,6 +62,12 @@ class GraphicSubtitleOcrFrame {
   bool get isEmpty => chars.isEmpty;
 }
 
+/// 本会话实际用的引擎：识别引擎 + AI 重读来源（供应商 · 模型；没开为 null）。
+typedef GraphicSubtitleOcrEngineInfo = ({
+  MangaOcrEngineId engine,
+  String? aiProvider,
+});
+
 /// 识别器构造：给一个临时目录，交回引擎（与 [prepareMangaStreamOcr] 同形）。
 typedef GraphicSubtitleOcrPrepare =
     Future<MangaStreamOcrSetup> Function(String workDirPath);
@@ -81,6 +88,15 @@ class GraphicSubtitleOcrSession {
   bool _closed = false;
 
   bool get isClosed => _closed;
+
+  /// 解析引擎并返回本会话实际用的识别引擎与 AI 重读来源（没开 AI 重读为 null）。
+  /// 会触发 [GraphicSubtitleOcrPrepare]（含 Lens 上传同意）；不可用抛
+  /// [GraphicSubtitleOcrUnavailable]。整轨转文字在识别前调它，把「用的是哪个引擎、
+  /// AI 开没开」如实告诉用户。
+  Future<GraphicSubtitleOcrEngineInfo> resolveEngine() async {
+    final MangaStreamOcrReady ready = await _ensureReady();
+    return (engine: ready.engine, aiProvider: ready.ai?.providerLabel);
+  }
 
   /// 识别一帧 [frameBytes]（PNG/JPEG）。本地结果直接返回；有 AI 重读时，重读出的
   /// 新结果经 [onRefined] 再交一次（没有替换任何块则不回调）。会话已关闭返回 null。

@@ -246,6 +246,13 @@ class MangaStreamAiRefinement {
 
   /// 中止在途请求，此后不再发请求。
   void cancel() => _refiner.cancel();
+
+  /// 给用户看的重读来源：供应商名 · 模型（模型空则只有供应商名）。
+  String get providerLabel {
+    final String model = _refiner.provider.model.trim();
+    final String name = _refiner.provider.name.trim();
+    return model.isEmpty ? name : '$name · $model';
+  }
 }
 
 /// Lens / 系统 OCR：读出页图字节直接识别，没有常驻资源。
