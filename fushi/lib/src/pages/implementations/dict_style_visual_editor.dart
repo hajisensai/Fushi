@@ -200,16 +200,20 @@ class DictStyleVisualEditor extends StatelessWidget {
         children: chips,
       );
     }
-    return SingleChildScrollView(
-      key: const ValueKey<String>('dict_style_part_strip'),
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: <Widget>[
-          for (int i = 0; i < chips.length; i++) ...<Widget>[
-            if (i > 0) SizedBox(width: tokens.spacing.gap),
-            chips[i],
+    // 窄布局的单行部位条：桌面端鼠标默认拖不动横向滚动区，放开鼠标 / 触控板拖动
+    // （与全 app 横向条同一个包裹件，见 horizontal_drag_scroll_guard_test）。
+    return HorizontalDragScrollable(
+      child: SingleChildScrollView(
+        key: const ValueKey<String>('dict_style_part_strip'),
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: <Widget>[
+            for (int i = 0; i < chips.length; i++) ...<Widget>[
+              if (i > 0) SizedBox(width: tokens.spacing.gap),
+              chips[i],
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
