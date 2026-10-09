@@ -341,6 +341,24 @@ void TestSystemCnf() {
 
 }  // namespace
 
+void TestShift() {
+  luca::ShiftState shift;
+  // The first sample only seeds: a Shift held (or tapped) while lookup was
+  // off never replays.
+  assert(!luca::ConsumeShiftSample(0x8001u, &shift));
+  assert(!luca::ConsumeShiftSample(0x8000u, &shift));  // still held
+  assert(!luca::ConsumeShiftSample(0x0000u, &shift));  // released
+  assert(luca::ConsumeShiftSample(0x8001u, &shift));   // down edge
+  assert(!luca::ConsumeShiftSample(0x8000u, &shift));  // held: once only
+  assert(!luca::ConsumeShiftSample(0x0000u, &shift));
+  // A tap shorter than the poll: up now, pressed-since bit set.
+  assert(luca::ConsumeShiftSample(0x0001u, &shift));
+  assert(!luca::ConsumeShiftSample(0x0000u, &shift));
+  luca::ResetShiftState(&shift);
+  assert(!luca::ConsumeShiftSample(0x0001u, &shift));  // reseeded
+  assert(!luca::ConsumeShiftSample(0x0000u, &shift));
+}
+
 int main() {
   TestPakIndex();
   TestOggPak();
@@ -349,6 +367,7 @@ int main() {
   TestLayoutSite();
   TestModel();
   TestClaim();
+  TestShift();
   TestSystemCnf();
   // A directory without system.cnf is not LucaSystem.
   assert(!fushi_voice_hook::MatchesLucaLayout(L"C:\\nonexistent-luca-dir"));

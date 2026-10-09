@@ -375,4 +375,30 @@ inline bool IsFreshPress(uint16_t raw, const ClaimState& claim) {
   return (raw & kAsyncDown) != 0u && !claim.was_down;
 }
 
+// ── Shift lookup over HookWorker GetAsyncKeyState(VK_SHIFT) samples ─────
+
+struct ShiftState {
+  bool synchronized = false;  // seeded since lookup was last (re)enabled
+  bool was_down = false;
+};
+
+// One worker sample of VK_SHIFT.  True once per press: on the down edge, or
+// for a tap shorter than the poll interval (up now, pressed-since bit set).
+// The first sample after Reset only seeds the state, so a Shift already held
+// (or tapped) while lookup was off never replays as a lookup.
+inline bool ConsumeShiftSample(uint16_t raw, ShiftState* state) {
+  const bool down = (raw & kAsyncDown) != 0u;
+  if (!state->synchronized) {
+    state->synchronized = true;
+    state->was_down = down;
+    return false;
+  }
+  const bool press = (down && !state->was_down) ||
+                     (!down && (raw & kAsyncPressedSince) != 0u);
+  state->was_down = down;
+  return press;
+}
+
+inline void ResetShiftState(ShiftState* state) { *state = ShiftState{}; }
+
 }  // namespace fushi_voice_hook::luca
