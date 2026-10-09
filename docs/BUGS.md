@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3221](bugs/BUG-3221-leaderboard-summary-stuck-loading.md) | ✅ | ✅ | 排行榜总字数卡加载失败后永远停在加载条 |
+| [BUG-3228](bugs/BUG-3228-leaderboard-summary-stuck-loading.md) | ✅ | ✅ | 排行榜总字数卡加载失败后永远停在加载条 |
 | [BUG-3220](bugs/BUG-3220-ios-ankimobile-no-return.md) | 🚧 | 🚧 | iOS 制卡后不跳回 Fushi，已制卡打勾不见 |
 | [BUG-3218](bugs/BUG-3218-video-skip-intro-removed.md) | ✅ | ✅ | 跳过片头/片尾按钮无法关闭，按用户决定移除该功能 |
 | [BUG-3217](bugs/BUG-3217-dict-style-radius-collapses-layout.md) | ✅ | ✅ | 词典样式开圆角后释义塌成一字一行 |
