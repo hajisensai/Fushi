@@ -1,6 +1,6 @@
 /// 漫画阅读器的界面件（chrome）：顶部悬浮条 [MangaReaderTopBar]、底部页码滑块胶囊
 /// [MangaReaderBottomBar] + 悬浮工具栏 [MangaReaderToolbar]（两者由
-/// [MangaReaderBottomChrome] 摆位）、章末「下一章」卡片 [MangaChapterEndCard]、
+/// [MangaReaderBottomChrome] 摆位）、换章加载指示 [MangaChapterSwitchingOverlay]、
 /// 隐藏界面时的页码角标 [MangaHiddenPageBadge]、OCR 状态胶囊。
 ///
 /// 2026-10 二次重设计：与小说阅读器统一成 **M3 Expressive 悬浮工具栏**（共享组件
@@ -1715,118 +1715,78 @@ class _MangaBubbleEntranceState extends State<_MangaBubbleEntrance>
   }
 }
 
-/// 章末「下一章」卡片：读到本章最后一页时浮在底栏上方——封面 + 「下一章」+
-/// 章节名 + 继续按钮（MD3 Expressive 按压形变的实心按钮；Apple 玻璃强调色胶囊）。
+/// 换章装载中的加载指示（BUG-3221）：半透明遮罩 + 居中卡片（进度环 + 目标章名）。
 ///
-/// 只负责画；点「继续」走页面现成的换章执行体（与翻过最后一页同一条路：先记已读
-/// 再换章），本组件不碰任何阅读逻辑。
-class MangaChapterEndCard extends StatelessWidget {
-  const MangaChapterEndCard({
+/// 章末不再弹「下一章」卡片——翻过末页本来就直接换章，卡片只是多余的一步；换章
+/// 真正缺的是「正在加载」的反馈，否则用户以为没翻动、会多滑几下。
+///
+/// 淡入淡出走 [fushiMotionDuration]（墨水屏 / 系统减弱动态时归零）。整层
+/// **不吃指针**：换章期间的翻页输入由页面直接丢弃，这里只负责让人看见，不挡返回键
+/// 与顶栏。页图可能白底也可能黑底，所以文字放在自带底色的容器里，不直接压在遮罩上。
+class MangaChapterSwitchingOverlay extends StatelessWidget {
+  const MangaChapterSwitchingOverlay({
     super.key,
-    required this.eyebrow,
-    required this.title,
-    required this.actionLabel,
-    required this.onContinue,
-    this.cover,
+    required this.visible,
+    required this.label,
+    this.chapterName,
   });
 
-  /// 小标题（「下一章」）。
-  final String eyebrow;
+  final bool visible;
 
-  /// 下一章的章节名。
-  final String title;
+  /// 「正在加载章节…」：进度环的无障碍名称，也是没有章名时的可见文字。
+  final String label;
 
-  /// 继续按钮文案。
-  final String actionLabel;
-  final VoidCallback? onContinue;
-
-  /// 作品封面（本地文件）；null 画占位图标。
-  final ImageProvider? cover;
+  /// 正在换去的章名。
+  final String? chapterName;
 
   @override
   Widget build(BuildContext context) {
-    return FushiAppleDarkTier(
-      child: Builder(
-        builder: (BuildContext context) {
-          final MangaChromePalette colors = MangaChromePalette.of(context);
-          final TextTheme text = Theme.of(context).textTheme;
-          final ImageProvider? image = cover;
-          return MangaChromeSurface(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
-              child: Row(
-                children: <Widget>[
-                  SizedBox(
-                    width: 52,
-                    height: 74,
-                    child: ShelfCoverFrame(
-                      child: image == null
-                          ? Center(
-                              child: FushiIcon(
-                                Icons.auto_stories_outlined,
-                                color: colors.secondaryForeground,
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    return IgnorePointer(
+      child: AnimatedOpacity(
+        key: const ValueKey<String>('manga_chapter_switching'),
+        opacity: visible ? 1 : 0,
+        duration: fushiMotionDuration(context, FushiMotion.short),
+        curve: FushiMotion.standard,
+        child: ColoredBox(
+          color: scheme.scrim.withValues(alpha: 0.32),
+          child: Center(
+            child: visible
+                ? DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHigh,
+                      borderRadius: FushiM3eShape.containerLargeRadius,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 20,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          FushiCircularProgressIndicator(semanticsLabel: label),
+                          const SizedBox(height: 12),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 240),
+                            child: Text(
+                              chapterName ?? label,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: scheme.onSurface,
                               ),
-                            )
-                          : Image(
-                              image: image,
-                              fit: BoxFit.cover,
-                              gaplessPlayback: true,
-                              errorBuilder:
-                                  (
-                                    BuildContext context,
-                                    Object error,
-                                    StackTrace? stack,
-                                  ) => Center(
-                                    child: FushiIcon(
-                                      Icons.auto_stories_outlined,
-                                      color: colors.secondaryForeground,
-                                    ),
-                                  ),
                             ),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          eyebrow,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: text.labelMedium?.copyWith(
-                            color: colors.accent,
-                            fontWeight: FontWeight.w600,
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: text.titleMedium?.copyWith(
-                            color: colors.foreground,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  FushiFilledButton.icon(
-                    key: const ValueKey<String>(
-                      'manga_chapter_end_continue_button',
-                    ),
-                    onPressed: onContinue,
-                    icon: const FushiIcon(Icons.arrow_forward_rounded),
-                    label: Text(actionLabel),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ),
       ),
     );
   }

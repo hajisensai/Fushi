@@ -183,6 +183,11 @@ enum MangaReaderInputAction {
 /// 一次键盘平移移动的视口比例。按比例而非像素，1080p 与 4K 手感一致。
 const double kMangaPanStepFraction = 0.15;
 
+/// 「落在末页」的起始页码：远大于任何章的页数，装载链在页数已知处把它钳到
+/// `pageCount - 1`（`_presentPayload` 与在线直读落点都是 `clamp(0, n - 1)`）。
+/// 换章往回翻时用它，让上一章**一开始**就停在末页，而不是先画第 0 页再跳。
+const int kMangaLandOnLastPage = 1 << 30;
+
 enum _MangaReaderInputSource {
   flutter,
   nativeWebView,
@@ -237,12 +242,30 @@ class MangaTurnQueue {
     await drain(canApply: canApply, applyStep: applyStep);
   }
 
+  /// 丢弃所有未消费的步数（换章：攒下的步数属于旧章）。正在执行的那一步不受
+  /// 影响，drain 循环在它返回后看到 0 就停。
+  void clear() => _pendingDelta = 0;
+
+  /// 正在跑的 drain 循环结束时完成；没在 drain 时立即完成。
+  Completer<void>? _drainDone;
+
+  /// 等到眼下这一轮 drain 跑完（[enqueue] 在已有 drain 进行中时会立刻返回，
+  /// 它排进去的那一步要等那一轮 drain 才消费）。
+  ///
+  /// 横滑跟手松手后，JS 要等 Dart「处理完这次翻页请求」才判断换没换页、没换才
+  /// 回弹（BUG-3219）。只等 [enqueue] 不够：连滑时第二下的 enqueue 撞上第一下
+  /// 还在跑的 drain 就立即返回，JS 以为没翻页先回弹，紧接着 drain 又把它翻过去，
+  /// 页面「弹回去再翻过来」。**不能**在 applyStep 内部 await 它（自己等自己）。
+  Future<void> get whenIdle => _drainDone?.future ?? Future<void>.value();
+
   Future<void> drain({
     required bool Function() canApply,
     required Future<void> Function(int step) applyStep,
   }) async {
     if (_draining || !canApply()) return;
     _draining = true;
+    final Completer<void> done = Completer<void>();
+    _drainDone = done;
     try {
       while (_pendingDelta != 0 && canApply()) {
         final int step = _pendingDelta > 0 ? 1 : -1;
@@ -251,6 +274,8 @@ class MangaTurnQueue {
       }
     } finally {
       _draining = false;
+      _drainDone = null;
+      done.complete();
     }
   }
 }
@@ -882,19 +907,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 正在换章：挡住换章期间的翻页与重复触发。
   bool _switchingChapter = false;
 
+  /// 正在换去的章（[_switchingChapter] 期间有效），加载指示上显示它的章名。
+  int? _switchingChapterTarget;
+
   /// 「已经是最新/第一章了」这一章内是否已经提示过。开新章时归零。
   bool _edgeToastShown = false;
-
-  /// 章末「下一章」卡片的数据：读到本章最后一页时按与翻页换章同一判据
-  /// （[_adjacentChapterIndex]）解出一次，按章节 key 缓存，换章后自然失效。
-  int? _upNextChapterIndex;
-  String? _upNextResolvedFor;
-  bool _upNextResolving = false;
-
-  /// 章末卡片的作品封面：按封面绝对路径缓存，读到末页时（不是 build 里）异步
-  /// 判一次文件在不在；[_upNextCoverFor] 记的是已判过的路径。
-  ImageProvider? _upNextCover;
-  String? _upNextCoverFor;
 
   /// 当前选中的在线章还没下载、在线直读也没成（源不可用 / 取不到页）：正文区显示
   /// 「本章未下载」态（入队 / 选章两个出口），
@@ -1634,7 +1651,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _currentPage = MangaFushiPage.firstPageOfSpread(spreads, _currentSpread);
     });
     _pageNotifier.value = _currentPage;
-    _syncChapterEndCard();
     await _loadInitialWindow();
     _updateCurrentPageImagePath();
     _recordProgress();
@@ -1972,8 +1988,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     });
     _resetPanelNavigation();
     _pageNotifier.value = _currentPage;
-    // 换章停在原页码时 notifier 不通知：显式补一次章末卡片的数据准备。
-    _syncChapterEndCard();
     // 首屏页成为当前单元：开书直接停在恢复位置时不会再有 _recordProgress，
     // 翻走时才入账（存档页不预置，续读也计一次）。
     _noteVisiblePages();
@@ -2064,11 +2078,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 在线直读（[_openStreamingChapter]，2026-09-26 用户撤回设计稿 §1.1「必须先下载
   /// 再读」）。直读失败（源不可用 / 页表为空 / 首屏页取不到）才退到「本章未下载」态，
   /// 由用户入队或换章，下载表一变就复核。
+  ///
+  /// [landOnLastPage]：往回翻进上一章时直接以末页作为**起始页**装载（BUG-3222）。
+  /// 此前是按章级进度（多半是第 0 页）装好、首帧画出来之后再 `_jumpToPage`
+  /// 翻到末页——用户先看到上一章开头闪一下，再看到它滑到末尾。页数在装载前
+  /// 未知，所以用 [kMangaLandOnLastPage] 这个「越界即末页」的页码交给装载链，
+  /// 由已知页数的那一层（[_presentPayload] / 直读落点）钳到末页。
   Future<void> _openShelfChapter({
     required EpubBookRow row,
     required OnlineMangaLibraryService service,
     required OnlineMangaLibraryEntry entry,
     required int chapterIndex,
+    bool landOnLastPage = false,
   }) async {
     final OnlineMangaChapter chapter = entry.chapters[chapterIndex];
     _shelfLibraryService = service;
@@ -2091,8 +2112,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 那行** `reader_positions`，而那一行装的是**上一章**读到哪。读完第 3 话第
     // 20 页 → 自动换到未读的第 4 话 → 第 4 话从第 20 页开始，整章整章跳过内容。
     // 每章进度的真相源是 `manga_chapter_states`；书级那行只服务单章 / 本地条目。
-    int initialPage = 0;
-    if (row.uid.isNotEmpty) {
+    int initialPage = landOnLastPage ? kMangaLandOnLastPage : 0;
+    if (!landOnLastPage && row.uid.isNotEmpty) {
       final MangaChapterStateRow? state = await appModel.database
           .getMangaChapterState(bookUid: row.uid, chapterKey: chapter.key);
       // 读完过的章怎么开由「重新打开时」偏好决定：跳过读完的章节（furthest）=
@@ -2962,13 +2983,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 同步更新制卡卡图（ERRATA C2）并记进度。
   Future<void> _onMangaTurn(String dir) async {
     if (_spreads.isEmpty) return;
+    // 换章装载期间的翻页输入一律丢弃（BUG-3221）。此前这里照常 enqueue：
+    // canApply 只是让 drain 暂停，pendingDelta 却一直在累加——用户嫌换章卡、
+    // 多滑了几下，新章一装好这些积攒的步数就被逐页消费，「加载完后它还真给
+    // 往后翻几页」。这些输入是对着旧章 / 加载画面发的，对新章没有意义。
+    if (_switchingChapter) return;
     final int delta = dir == 'next' ? 1 : -1;
     await _turnQueue.enqueue(
       delta,
       maxMagnitude: _spreads.length,
       // 换章期间必须停止 drain：换章是在 applyStep 里 await 的，队列里剩下的
       // step 会在新章上继续消费。长按翻页撞到章尾时，那意味着一次按键连跳好几
-      // 章。加上这一条，换章期间排队的 step 直接被丢掉。
+      // 章。换章开始时队列被清空（[_switchToChapter]），换章期间的输入在上面
+      // 就被丢掉，这里只负责暂停 drain。
       canApply: () => mounted && !_navigating && !_switchingChapter,
       applyStep: _applyMangaTurnStep,
     );
@@ -3156,7 +3183,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         index >= entry.chapters.length) {
       return;
     }
-    setState(() => _switchingChapter = true);
+    setState(() {
+      _switchingChapter = true;
+      _switchingChapterTarget = index;
+    });
+    // 换章前排队的剩余步（长按 / 连滑撞到章尾时攒下的）属于旧章，丢掉，否则
+    // 新章一装好就被继续消费成「自己往后翻几页」（BUG-3221）。
+    _turnQueue.clear();
     try {
       // 目标章下没下载都能换：已下载从章目录读，未下载在线直读（2026-09-26 用户
       // 撤回设计稿 §1.1），分流在 [_openShelfChapter] 里只做一次。
@@ -3176,14 +3209,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         service: service,
         entry: selected,
         chapterIndex: index,
+        landOnLastPage: landOnLastPage,
       );
-      final int pageCount = _payload?.images.length ?? 0;
-      // 直读失败退到「本章未下载」态时 _payload 还是旧章的，不能拿它跳页。
-      if (landOnLastPage &&
-          mounted &&
-          !_chapterNotDownloaded &&
-          pageCount > 0) {
-        await _jumpToPage(pageCount);
+      // 末页是装载时的起始页，不再「装好再跳」（BUG-3222）；这里只把落点记成
+      // 本章进度（与翻页同一条路径）。直读失败退到「本章未下载」态时没有正文。
+      if (landOnLastPage && mounted && !_chapterNotDownloaded) {
+        _recordProgress();
       }
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
@@ -3982,7 +4013,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   void _onReaderPageChanged() {
     _observedOcrJob?.focusPage(_pageNotifier.value);
     _streamOcr?.focus(_pageNotifier.value);
-    _syncChapterEndCard();
   }
 
   /// 在线直读章的边看边识别：从读者当前页起识别眼前这页与后面几页，识别完一页
@@ -4576,7 +4606,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     });
     _resetPanelNavigation();
     _pageNotifier.value = _currentPage;
-    _syncChapterEndCard();
     _noteVisiblePages();
     await _loadInitialWindow();
     // 布局变化会换掉当前 spread 背后的页（ERRATA C2）。
@@ -5170,7 +5199,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (!mounted) return;
     if (modeChanged) {
       _pageNotifier.value = _currentPage;
-      _syncChapterEndCard();
       _noteVisiblePages();
       await _loadInitialWindow();
       if (!mounted) return;
@@ -5232,12 +5260,21 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     return <int>{page};
   }
 
-  /// 是否读到了本章（本卷）最后一页（双页 spread 含末页也算）。
-  bool _atLastPage() {
-    final int pageCount = _payload?.images.length ?? 0;
-    if (pageCount <= 0) return false;
-    return _pageNotifier.value >= pageCount - 1 ||
-        _currentScreenPages().contains(pageCount - 1);
+  /// 换章装载中的加载指示（BUG-3221），显示正在换去的那一章的章名。
+  Widget _buildChapterSwitchingOverlay() {
+    final OnlineMangaLibraryEntry? entry = _shelfEntry;
+    final int? target = _switchingChapterTarget;
+    return MangaChapterSwitchingOverlay(
+      visible: _switchingChapter,
+      label: t.manga_chapter_switching_loading,
+      chapterName:
+          entry != null &&
+              target != null &&
+              target >= 0 &&
+              target < entry.chapters.length
+          ? mangaChapterDisplayName(entry.chapters[target])
+          : null,
+    );
   }
 
   Future<void> _showPageGrid() async {
@@ -5314,103 +5351,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       return;
     }
     await _switchToChapter(target);
-  }
-
-  /// 章末卡片的数据准备：读到本章末页时解出「下一章」并判作品封面，结果按章节
-  /// key / 封面路径缓存。只在可见单元变化处调（翻页监听、换章装载、单元边界
-  /// 重建），**不在 build 里**——build 只读缓存。
-  void _syncChapterEndCard() {
-    if (!mounted ||
-        _shelfEntry == null ||
-        !_chromeContentReady ||
-        !_atLastPage()) {
-      return;
-    }
-    unawaited(_resolveUpNextChapter());
-    unawaited(_resolveUpNextCover());
-  }
-
-  Future<void> _resolveUpNextChapter() async {
-    final String? key = _shelfChapterKey;
-    if (key == null || _upNextResolving || _upNextResolvedFor == key) return;
-    _upNextResolving = true;
-    int? target;
-    try {
-      target = await _adjacentChapterIndex(forward: true);
-    } on Object catch (error, stack) {
-      ErrorLogService.instance.log('MangaFushiPage.upNext', error, stack);
-    } finally {
-      _upNextResolving = false;
-    }
-    if (!mounted) return;
-    setState(() {
-      _upNextResolvedFor = key;
-      _upNextChapterIndex = target;
-    });
-  }
-
-  /// 作品封面（本地文件），章末卡片用；不存在就留 null 画占位。
-  Future<void> _resolveUpNextCover() async {
-    final EpubBookRow? row = _bookRow;
-    final String? cover = row?.coverPath;
-    String? path;
-    if (row != null && cover != null && cover.isNotEmpty) {
-      path = p.isAbsolute(cover) ? cover : p.join(row.extractDir, cover);
-    }
-    if (path == _upNextCoverFor) return;
-    _upNextCoverFor = path;
-    final bool exists = path != null && await File(path).exists();
-    if (!mounted || _upNextCoverFor != path) return;
-    final String? existing = exists ? path : null;
-    setState(() {
-      _upNextCover = existing == null
-          ? null
-          : ResizeImage(
-              FileImage(File(existing)),
-              width: 160,
-              policy: ResizeImagePolicy.fit,
-            );
-    });
-  }
-
-  /// 章末「下一章」卡片（只有书架在线条目才有「章」）。点「继续」走与翻过最后
-  /// 一页完全相同的 [_onReachedChapterEdge]：先记本章已读、再换章。
-  Widget _buildChapterEndCard({required bool chromeShown}) {
-    final OnlineMangaLibraryEntry? entry = _shelfEntry;
-    final bool atEnd = entry != null && _chromeContentReady && _atLastPage();
-    final int? next = _upNextResolvedFor == _shelfChapterKey
-        ? _upNextChapterIndex
-        : null;
-    final bool hasNext =
-        entry != null && next != null && next >= 0 && next < entry.chapters.length;
-    final bool visible = chromeShown && atEnd && hasNext && !_switchingChapter;
-    return MangaChromeReveal(
-      visible: visible,
-      fromTop: false,
-      child: hasNext
-          ? Align(
-              alignment: Alignment.bottomCenter,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: kMangaChromeEdgeInset,
-                  ),
-                  child: MangaChapterEndCard(
-                    key: const ValueKey<String>('manga_chapter_end_card'),
-                    eyebrow: t.manga_series_next_chapter,
-                    title: mangaChapterDisplayName(entry.chapters[next]),
-                    actionLabel: t.manga_chapter_transition,
-                    cover: atEnd ? _upNextCover : null,
-                    onContinue: _switchingChapter
-                        ? null
-                        : () => unawaited(_onReachedChapterEdge(1)),
-                  ),
-                ),
-              ),
-            )
-          : const SizedBox.shrink(),
-    );
   }
 
   Future<File?> _currentMangaPageFile() async {
@@ -5752,31 +5692,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                       child: _buildTopChrome(),
                     ),
                   ),
-                  // 章末「下一章」卡片：读到本章最后一页、且有下一章时浮在底栏上方；
-                  // 与底栏同一条可见性（chrome 收起时它也收起，不挡页图）。
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom:
-                        MediaQuery.paddingOf(context).bottom +
-                        kMangaChromeBottomBarHeight -
-                        kMangaChromeBottomGap +
-                        8,
-                    child: ListenableBuilder(
-                      listenable: _pageNotifier,
-                      builder: (BuildContext context, Widget? _) =>
-                          _buildChapterEndCard(
-                            chromeShown:
-                                _chromeActionsEnabled &&
-                                mangaChromeBarPainted(
-                                  floating: _chromeFloating,
-                                  chromeVisible: _chromeVisible,
-                                  transientVisible: _chrome.transientVisible,
-                                  contentReady: _chromeActionsEnabled,
-                                ),
-                          ),
-                    ),
-                  ),
+                  // 换章装载中：正文上盖一层加载指示（BUG-3221）。章末不再弹「下一章」
+                  // 卡片——翻过末页本来就直接换章，卡片只是多余的一步（用户反馈）；
+                  // 换章真正缺的是「正在加载」的反馈，否则用户以为没翻动、会多滑。
+                  Positioned.fill(child: _buildChapterSwitchingOverlay()),
                   // 底部 chrome = 页码滑块胶囊 + M3E 悬浮工具栏（按钮组 + FAB）。
                   // 可见性与顶栏同判据（同一条 chrome），但额外要求有正文——没有
                   // 页就没有可跳的页，工具栏动作也无意义。
@@ -6651,11 +6570,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         controller.addJavaScriptHandler(
           handlerName: 'onMangaTurn',
           callback: (List<dynamic> args) {
-            if (args.isEmpty) return;
+            if (args.isEmpty) return null;
             // 手势/滚轮翻页经原生 WebView 触发，指针已夺焦：翻完把键盘收回，
             // 否则「滑一下之后方向键就不灵了」（与阅读器 BUG-136 同源）。
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
-            unawaited(_onMangaTurn(args[0] as String));
+            // 返回 Future：桥在它完成后才答复 JS 的 callHandler Promise。横滑跟手
+            // 松手后靠这个答复判断「Dart 换没换页」，没换才回弹（BUG-3219）。
+            // 还要等进行中的那一轮 drain：连滑时本次 enqueue 会立即返回，步数要等
+            // 那一轮才消费（见 [MangaTurnQueue.whenIdle]）。
+            return _onMangaTurn(
+              args[0] as String,
+            ).then((void _) => _turnQueue.whenIdle);
           },
         );
         controller.addJavaScriptHandler(
