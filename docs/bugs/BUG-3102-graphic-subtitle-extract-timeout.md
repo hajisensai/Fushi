@@ -17,7 +17,7 @@
     ④ 页缓存热态下精简版 11.1 s 读完 7.5 GB，命令本身是快的。
   - 复现（`-readrate 1.5` 把读取限速成「慢盘」，2 分钟 / 60 MB mkv，捆绑精简 ffmpeg）：旧的固定预算 60 s →
     `rc=null after 0:01:00.21 (ffmpeg timed out)`，正是用户日志；新实现 → `rc=0 after 0:01:20.23`，期间 28 次进度推进。
-- **[x] ① 已修复** — 新增 `packages/fushi_engine/lib/media/video/ffmpeg_watched_run.dart`：长任务按**进度**判活——
+- **[x] ① 已修复**（4869645cba）— 新增 `packages/fushi_engine/lib/media/video/ffmpeg_watched_run.dart`：长任务按**进度**判活——
   ffmpeg `-progress pipe:1` 的 `out_time_us` 连续 `stallTimeout`（抽轨用 90 s）不推进才算卡死强杀，一直推进就不设
   总时长上限；带取消信号（进度卡 ✕ / 退页强杀进程，不再在后台把整个文件读完）。`CliFfmpegBackend` /
   `BlurayFfmpegBackend` / 移动端 `KitFfmpegBackend`（统计回调 `Statistics.getTime()`）都实现 `FfmpegWatchedRunner`，
@@ -25,7 +25,7 @@
   伴随输出，让已处理时间跟着文件读取位置**连续**推进（只映射稀疏字幕流时长段无对白会几分钟不动，按进度判活会误判）；
   实测双输出与单输出耗时相同（11.0 s vs 11.1 s）。不支持观察式运行的后端（测试替身）退回旧总预算。
   卡死仍然真卡死时（实测：从没人写的 `pipe:0` 读）3 s 窗口内被判 `stalled` 杀掉，日志写明「no progress for Ns」。
-- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/media/video/ffmpeg_watched_run_test.dart`（一直推进超过
+- **[x] ② 已加自动化测试**（4869645cba）— `packages/fushi_engine/test/media/video/ffmpeg_watched_run_test.dart`（一直推进超过
   4 倍窗口不杀 / 进度停住被杀并带 stalled 标记 / 取消 / 失败原样带回 / CLI 前缀）；
   `fushi/test/media/video/graphic_subtitle_track_ocr_test.dart`（抽轨命令含进度伴随输出、观察式后端走进度判活且
   进度转给调用方、取消不报失败不留半截 `.sup`、入库精简 ffmpeg 真跑抽轨）。

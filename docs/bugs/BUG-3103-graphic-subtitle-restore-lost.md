@@ -9,14 +9,14 @@
     「空 cue + graphicStreamIndex」，但这条分支只认 `restored.cues.isNotEmpty`，把图形轨结果当成「解析不出来」丢掉，
     继续用库里的旧 cue，且 `renderGraphicStreamIndex` 没传给播放器——libmpv 不渲染图形字幕、画面上换成旧文本字幕，
     用户看到的就是「图形字幕被自动取消选中」。之后的兜底链又因为 cue 非空整段跳过。
-- **[x] ① 已修复** — 两侧一起修：
+- **[x] ① 已修复**（4869645cba）— 两侧一起修：
   1. 恢复：重解析结果的三种去向收成纯函数 `mergeRestoredEmbeddedSubtitle`
      （`fushi/lib/src/media/video/video_subtitle_restore_plan.dart`）——图形轨清掉库里的 cue 并把序号交给
      `_applyLoad(renderGraphicStreamIndex:)`；文本轨用重解析的 cue；失败才保留缓存 cue。已确定渲染图形轨时不再进
      「没 cue → sidecar」兜底链。
   2. 选轨：图形轨无论单视频还是播放列表的一集，都用 `saveSubtitleSelection(cues: [])` 原子写源指针 + 清 cue，不再留
      会顶掉图形字幕的旧数据。
-- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_subtitle_restore_plan_test.dart`：三种去向（图形轨清旧 cue
+- **[x] ② 已加自动化测试**（4869645cba）— `fushi/test/media/video/video_subtitle_restore_plan_test.dart`：三种去向（图形轨清旧 cue
   并透传序号 / 文本轨用新 cue / 失败保留缓存）+ 视频页接线源码守卫（`_loadSingle` 走纯函数并透传 `graphicStreamIndex`、
   图形轨选轨分支清 cue 且不再只写指针）。
 - **备注**：另一种「看起来没恢复」的路径是枚举内嵌轨的 `ffmpeg -i` 超时（预算 ≥60 s，罕见），那时恢复拿不到轨表、
