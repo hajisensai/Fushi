@@ -45,6 +45,8 @@ void main() {
       expect(body.contains('track.isExternalFile'), isTrue,
           reason: '外挂文件轨（在线源字幕链接 / Emby 外挂字幕）不在流里，'
               '按 streamIndex 去选会选中另一条不相干的内嵌轨');
+      expect(body.contains('selectExternalTextSubtitleViaPlayer(url)'), isTrue,
+          reason: 'BUG-3191：外挂文件轨按它自己的地址交给 libmpv 原格式读');
       expect(
         body.contains('track.containerTrackOrdinal ?? track.streamIndex'),
         isTrue,
@@ -66,8 +68,10 @@ void main() {
       );
       expect(body.contains('playerRenderedTrack = track'), isTrue,
           reason: '恢复路径的下载失败不能再静默落回无字幕');
-      expect(body.contains('!track.isExternalFile'), isTrue,
-          reason: '恢复路径同样不得把外挂文件轨交给 libmpv 自绘');
+      expect(body.contains('? (track.url?.isNotEmpty ?? false)'), isTrue,
+          reason: '恢复路径：外挂文件轨按自己的地址回落（BUG-3191）');
+      expect(body.contains(': urls.streamIsOriginalContainer'), isTrue,
+          reason: '恢复路径：内嵌轨只在原始容器上回落，不能按流号去选容器里不相干的轨');
       expect(body.contains('_showRemoteEmbeddedTrackViaPlayer('), isTrue);
       expect(
           body.contains(

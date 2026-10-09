@@ -172,8 +172,8 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
     final String rawUrl = _urlController.text;
     final String username = _userController.text.trim();
     final String password = _passwordController.text;
-    final String serverUrl = JellyfinApi.normalizeServerUrl(rawUrl);
-    if (serverUrl.isEmpty || username.isEmpty) {
+    final String typedUrl = JellyfinApi.normalizeServerUrl(rawUrl);
+    if (typedUrl.isEmpty || username.isEmpty) {
       FushiToast.show(
         msg: t.jellyfin_sign_in_failed,
         severity: ToastSeverity.error,
@@ -184,14 +184,22 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
     // 设备身份：本机 per-install id（见 JellyfinApi.deviceId），令牌与它绑定、随
     // 配置一起持久化。
     final String deviceId = await _syncRepo.getOrCreateDeviceId();
-    final JellyfinApi api = _api(serverUrl: serverUrl, deviceId: deviceId);
+    JellyfinApi api = _api(serverUrl: typedUrl, deviceId: deviceId);
     try {
-      // 先探连通性再登录：连不上与账号错是两种完全不同的处置。
+      // 先探连通性再登录：连不上与账号错是两种完全不同的处置。探测会按 Emby 官方
+      // 客户端的顺序在 `/emby` 前缀与 `/System/Ping` 之间回落（BUG-3137），探出来的
+      // 根地址才是之后登录与存盘用的地址。
+      final JellyfinServerProbe probe;
       try {
-        await api.publicSystemInfo();
+        probe = await api.probeServer();
       } catch (e) {
-        await _showSignInError(_describeConnectFailure(serverUrl, e));
+        await _showSignInError(_describeConnectFailure(typedUrl, e));
         return;
+      }
+      final String serverUrl = probe.baseUrl;
+      if (serverUrl != api.serverUrl) {
+        api.close();
+        api = _api(serverUrl: serverUrl, deviceId: deviceId);
       }
       final JellyfinAuthResult auth =
           await api.authenticateByName(username, password);
@@ -336,18 +344,36 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
       return;
     }
     setState(() => _busy = true);
-    final JellyfinApi api = _api(
+    JellyfinApi api = _api(
       serverUrl: url,
       accessToken: config.accessToken,
       deviceId: config.deviceId,
     );
     try {
+      final JellyfinServerProbe probe;
       try {
-        await api.publicSystemInfo();
+        probe = await api.probeServer();
       } catch (e) {
         await _showErrorDialog(
           t.jellyfin_route_add_failed,
           _describeConnectFailure(url, e),
+        );
+        return;
+      }
+      // 探测可能补上 / 去掉 `/emby` 前缀（BUG-3137）：存的是探出来的根地址。
+      if (probe.baseUrl != url) {
+        api.close();
+        api = _api(
+          serverUrl: probe.baseUrl,
+          accessToken: config.accessToken,
+          deviceId: config.deviceId,
+        );
+      }
+      final String routeUrl = probe.baseUrl;
+      if (routeUrl != url && config.routeUrls.contains(routeUrl)) {
+        FushiToast.show(
+          msg: t.jellyfin_route_exists,
+          severity: ToastSeverity.error,
         );
         return;
       }
@@ -356,13 +382,13 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
       } catch (e) {
         await _showErrorDialog(
           t.jellyfin_route_add_failed,
-          t.jellyfin_route_verify_failed(url: url, reason: '$e'),
+          t.jellyfin_route_verify_failed(url: routeUrl, reason: '$e'),
         );
         return;
       }
       await _syncRepo.upsertJellyfinServer(
         config.copyWithRoutes(
-          alternateUrls: <String>[...config.alternateUrls, url],
+          alternateUrls: <String>[...config.alternateUrls, routeUrl],
         ),
       );
       if (!mounted) return;

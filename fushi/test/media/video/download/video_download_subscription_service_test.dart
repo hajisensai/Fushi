@@ -1223,6 +1223,60 @@ void main() {
     );
   });
 
+  // 「编辑订阅」写入的标题关键词（包含全部 / 一个都不含），与版本规则叠加过滤。
+  test(
+      'title include / exclude keywords from subscription edit narrow releases',
+      () async {
+    final FushiDatabase database = await _openDatabase();
+    final int sourceId = await _insertVideoSource(database);
+    await _insertSubscription(
+      database,
+      id: 'keywords',
+      sourceId: sourceId,
+      resourceProvider: 'nyaa',
+      mediaKind: 'tv',
+      discoveryCategory: 'anime',
+      season: 1,
+      filters: <String, Object?>{
+        'strict': true,
+        'releaseGroup': 'SubsPlease',
+        'resolution': '1080p',
+        'trustedOnly': true,
+        kVideoSubscriptionTitleIncludeKey: <String>['example show'],
+        kVideoSubscriptionTitleExcludeKey: <String>['HEVC'],
+      },
+    );
+    final List<String> enqueued = <String>[];
+    final VideoDownloadSubscriptionService service = _service(
+      database: database,
+      provider: _FakeResourceProvider(
+        id: 'nyaa',
+        candidates: <VideoResourceCandidate>[
+          _candidate(
+            remoteId: 'hevc',
+            episode: 1,
+            mediaTitle: '[SubsPlease] Example Show - 1 (HEVC) [1080p]',
+            seeders: 50,
+          ),
+          _candidate(remoteId: 'plain', episode: 1),
+          _candidate(
+            remoteId: 'other-show',
+            episode: 2,
+            mediaTitle: '[SubsPlease] Another Show - 2 [1080p]',
+          ),
+        ],
+      ),
+      enqueue: (VideoDownloadEnqueueRequest request) async {
+        enqueued.add(request.resource.remoteId);
+        return _persistFakeJob(database, request, 'job-${enqueued.length}');
+      },
+    );
+
+    await service.checkNow();
+
+    expect(enqueued, <String>['plain']);
+  });
+
   test('provider errors use exponential retry and redact credential URLs',
       () async {
     final FushiDatabase database = await _openDatabase();

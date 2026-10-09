@@ -127,17 +127,21 @@ void main() {
       expect(discovery.contains('FushiTopFadeScrim('), isTrue);
     });
 
-    test('library toolbar scrim is a short fade, not a solid block', () {
-      // 曾经整个工具区高度都是 0.92 的实色段：库页一滚顶部两三百 px 全白。
-      final String chrome = File(
-        'lib/src/utils/components/fushi_floating_chrome.dart',
-      ).readAsStringSync();
-      expect(
-        chrome.contains('solidHeight: outer + shown * _chromeHeight'),
-        isFalse,
-      );
-      expect(chrome.contains('kFushiTopScrimChromeReach'), isTrue);
-    });
+    test(
+      'library toolbar scrim follows the visible chrome, nested rows included',
+      () {
+        // 2026-10-06：整个工具区高度恒为 0.92 实色段，工具区收起后仍留两三百 px 白底。
+        // BUG-3132：改成只伸进第一行胶囊 40 px 后，页面自己的搜索 / 标签行背后整片
+        // 透出内容。现在遮罩的不透明段 = 此刻看得见的工具区下沿（含嵌套工具行，跟着
+        // 弹簧收起），行为由 test/widgets/fushi_floating_chrome_library_test.dart 钉住。
+        final String chrome = File(
+          'lib/src/utils/components/fushi_floating_chrome.dart',
+        ).readAsStringSync();
+        expect(chrome.contains('kFushiTopScrimChromeReach'), isFalse);
+        expect(chrome.contains('_nestedReach.value'), isTrue);
+        expect(chrome.contains('outer + shown * _chromeHeight'), isTrue);
+      },
+    );
 
     test('discovery pages float their search rows in the toolbar', () {
       // 发现页的搜索 / 筛选行曾是 Column 里的一整块不透明控件区。

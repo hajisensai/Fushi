@@ -3185,7 +3185,6 @@
   "storage_permissions": "กรุณาให้สิทธิ์ต่อไปนี้เพื่อส่งออกไปยัง AnkiDroid",
   "storage_shaders_delete_anime4k": "ลบเชดเดอร์ Anime4K",
   "stream": "สตรีม",
-  "subscription_edit_rule_hint": "ไม่สามารถเปลี่ยนกฎตัวตนและเวอร์ชันที่นี่ได้ สมัครใหม่เพื่อเปลี่ยนเวอร์ชัน ประวัติจะถูกเก็บไว้",
   "subscription_edit_title": "แก้ไขการสมัครสมาชิก",
   "subscription_item_status_discovered": "รอดำเนินการ",
   "subscription_item_status_failed": "ล้มเหลว",
@@ -6897,5 +6896,17 @@
   "video_setting_mpv_passthrough_hint": "Send AC-3, E-AC-3, TrueHD and DTS-HD untouched to your receiver or soundbar so it decodes them (Atmos included). Only turn on if that device supports these formats — otherwise there may be no sound. While passing through, set the volume on the receiver: Fushi's volume and mute can't act on these streams, so at any speed other than 1×, below full volume or when muted, Fushi decodes them itself for the time being (the receiver's Atmos / DTS indicator goes off). When off, Fushi always decodes them and 5.1 / 7.1 still play as surround.",
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
-  "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected."
+  "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
+  "audiobook_transcribe_retranscribe": "Re-transcribe",
+  "audiobook_transcribe_options_changed_hint": "Options changed. This subtitle was made with the previous ones; tap Re-transcribe to regenerate it with the new options.",
+  "audiobook_transcribe_retranscribe_hint": "To transcribe again with different options, change the language, model or acceleration above.",
+  "subscription_edit_filter_hint": "Changing the release group or keywords only affects episodes that have not been downloaded yet.",
+  "subscription_edit_release_group": "Release group",
+  "subscription_edit_resolution": "Resolution",
+  "subscription_edit_title_include": "Title must contain",
+  "subscription_edit_title_exclude": "Title must not contain",
+  "subscription_edit_list_helper": "Separate multiple values with commas",
+  "subscription_edit_rule_required": "Required for this source",
+  "video_detail_layout_poster": "Poster banner layout",
+  "video_detail_layout_two_pane": "Two-column layout"
 }

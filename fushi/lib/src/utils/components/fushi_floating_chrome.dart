@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart' show SchedulerPhase;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -159,6 +160,26 @@ class FushiFloatingChromeController extends ChangeNotifier {
     } else if (_accumulated < -_kHideDistance) {
       show();
     }
+    return false;
+  }
+
+  /// 喂一条 [ScrollMetricsNotification]（内容长度 / 视口变化后的版面修正）。
+  ///
+  /// BUG-3133：版面把滚动位置夹回去（删掉视频后列表缩短到一屏放得下）只发这类
+  /// 通知、**不发** ScrollUpdate——[handleScrollNotification] 看不见它。工具区停在
+  /// 收起态，内容却已经滚不动，用户再也唤不回顶部那一块（只能改缩放 / 重启）。
+  /// 这里只认主滚动区：位置落回顶部（含「整页都放得下」）就弹回工具区并撤遮罩。
+  bool handleScrollMetricsNotification(ScrollMetricsNotification notification) {
+    final ScrollMetrics metrics = notification.metrics;
+    if (metrics.axis != Axis.vertical) return false;
+    final int? owner = _ownerDepth;
+    if (owner != null && notification.depth > owner) return false;
+    final bool underTop = metrics.extentBefore > 0.5;
+    if (underTop != _contentUnderTop) {
+      _contentUnderTop = underTop;
+      notifyListeners();
+    }
+    if (metrics.pixels <= metrics.minScrollExtent + 0.5) show();
     return false;
   }
 }
@@ -516,6 +537,79 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
   /// 本层工具区完全显示时的下沿（外层 inset + 本层实测高度）。
   double _travel = 0;
 
+  /// 最近的外层工具区（本层是页面自己的搜索 / 筛选行时非 null）。
+  _FushiFloatingChromeOverlayState? _parent;
+
+  /// 本层是否在可见子树里（保活的隐藏分区 [TickerMode] 关着，不该撑大遮罩）。
+  bool _active = true;
+
+  /// 嵌套工具区此刻的可见下沿（**全局**坐标），按上报者分开存。
+  final Map<_FushiFloatingChromeOverlayState, double> _nestedBottoms =
+      <_FushiFloatingChromeOverlayState, double>{};
+
+  /// 嵌套工具区里最深的可见下沿（本层坐标）。BUG-3132：顶部遮罩只归最外层画，
+  /// 但它必须盖到页面自己那几行工具（搜索框、标签行）的下沿，否则那几行背后整片
+  /// 透出内容。
+  final ValueNotifier<double> _nestedReach = ValueNotifier<double>(0);
+
+  double? _globalTop() {
+    final RenderObject? box = context.findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero).dy;
+  }
+
+  /// 把本层（含更深的嵌套层）此刻的可见下沿报给外层。
+  ///
+  /// 构建期间（本层在 didChangeDependencies 里把弹簧跳到位、可见下沿随之变）不能
+  /// 直接改外层的通知值——外层的 AnimatedBuilder 不是本层的祖先，构建中标脏会断言；
+  /// 推到帧末再报。
+  void _reportReach() {
+    if (WidgetsBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _reportReach();
+      });
+      return;
+    }
+    final _FushiFloatingChromeOverlayState? parent = _parent;
+    if (parent == null || !parent.mounted) return;
+    final double? top = _active ? _globalTop() : null;
+    parent._setNestedBottom(
+      this,
+      top == null
+          ? null
+          : top + math.max(_visibleBottom.value, _nestedReach.value),
+    );
+  }
+
+  void _setNestedBottom(
+    _FushiFloatingChromeOverlayState child,
+    double? globalBottom,
+  ) {
+    if (globalBottom == null) {
+      _nestedBottoms.remove(child);
+    } else {
+      _nestedBottoms[child] = globalBottom;
+    }
+    final double? top = _globalTop();
+    double reach = 0;
+    if (top != null) {
+      for (final double bottom in _nestedBottoms.values) {
+        reach = math.max(reach, bottom - top);
+      }
+    }
+    _nestedReach.value = reach;
+  }
+
+  bool _onScrollMetrics(ScrollMetricsNotification notification) {
+    // 隐藏的保活分区也会发版面通知，不能拿它去撤遮罩 / 弹工具区。
+    if (!TickerMode.getValuesNotifier(notification.context).value.enabled) {
+      return false;
+    }
+    _controller?.handleScrollMetricsNotification(notification);
+    return false;
+  }
+
   void _syncVisibleBottom() {
     final FushiSpring? spring = _shown;
     final double shown = spring == null
@@ -525,8 +619,19 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
   }
 
   @override
+  void initState() {
+    super.initState();
+    // 本层的可见下沿 / 更深层的下沿变了都要往上报（弹簧逐帧推进时也是）。
+    _visibleBottom.addListener(_reportReach);
+    _nestedReach.addListener(_reportReach);
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _parent = context
+        .findAncestorStateOfType<_FushiFloatingChromeOverlayState>();
+    _active = TickerMode.of(context);
     final FushiFloatingChromeController? controller =
         FushiFloatingChromeScope.maybeOf(context);
     _controller = controller;
@@ -558,6 +663,16 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
     _shown?.dispose();
     _fade?.dispose();
     _visibleBottom.dispose();
+    _nestedReach.dispose();
+    // 卸载期间不能让外层重建（树已锁定）：下一帧再把本层从外层的遮罩范围里摘掉。
+    final _FushiFloatingChromeOverlayState? parent = _parent;
+    if (parent != null) {
+      WidgetsBinding.instance
+        ..addPostFrameCallback((_) {
+          if (parent.mounted) parent._setNestedBottom(this, null);
+        })
+        ..ensureVisualUpdate();
+    }
     super.dispose();
   }
 
@@ -592,9 +707,13 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
     // 嵌套的工具区（页面自己的搜索 / 筛选行叠在外壳页签之下）不再画第二层
     // 遮罩：两层「从视口顶边起、顶端不透明」的渐隐叠在一起，就是库页往下滚
     // 时页签下面那一整块白底（2026-10-06 用户截图）。顶部可读性只归最外层。
-    final bool nested =
-        context.findAncestorStateOfType<_FushiFloatingChromeOverlayState>() !=
-        null;
+    final bool nested = _parent != null;
+    if (nested) {
+      // 版面（本层位置 / 高度）每次重建后都可能变：帧末把可见下沿报给外层遮罩。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _reportReach();
+      });
+    }
     final Widget chrome = Focus(
       canRequestFocus: false,
       skipTraversal: true,
@@ -619,7 +738,17 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
         Positioned.fill(
           child: FushiFloatingChromeVisibleExtent(
             extent: _visibleBottom,
-            child: FushiFloatingChromeInset(top: travel, child: widget.child),
+            child: FushiFloatingChromeInset(
+              top: travel,
+              // 版面修正（列表缩短被夹回顶部）只发 ScrollMetricsNotification，
+              // 由最外层统一喂给 controller（BUG-3133）。
+              child: nested
+                  ? widget.child
+                  : NotificationListener<ScrollMetricsNotification>(
+                      onNotification: _onScrollMetrics,
+                      child: widget.child,
+                    ),
+            ),
           ),
         ),
         // 顶部渐隐遮罩 + 工具区：同一弹簧驱动。遮罩只盖「此刻看得见的工具区」
@@ -629,6 +758,7 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
           animation: Listenable.merge(<Listenable>[
             spring.animation,
             fade.animation,
+            _nestedReach,
           ]),
           child: chrome,
           builder: (BuildContext context, Widget? chrome) {
@@ -639,35 +769,35 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
             final bool hidden = opacity <= 0.001 && shown <= 0.001;
             return Stack(
               children: <Widget>[
-                // 遮罩在内容之上、所有 chrome（外壳标题、页签、按钮组、搜索行）
-                // 之下，只是一段**短**的无硬边渐隐：从视口顶边（不透明，与上方
-                // 底色 / 窗口标题行连续）起，跨过外壳标题区与第一行胶囊后降到
-                // 0。工具区再往下的搜索框 / 筛选行是自带底色的胶囊，背后内容
-                // 照常可见——曾经整个工具区高度都是 0.92 的实色段，库页往下一滚
-                // 顶部两三百 px 一整块白底把内容盖死（2026-10-06 用户截图）。
-                // 没滚动时不画（工具区下面就是第一行内容）。
-                if (!nested)
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: AnimatedOpacity(
-                      opacity: controller.contentUnderTop ? 1 : 0,
-                      duration: fushiMotionDuration(context, FushiMotion.short),
-                      child: FushiTopFadeScrim(
-                        solidHeight: 0,
-                        fadeExtent:
-                            outer +
-                            shown *
-                                math.min(
-                                  _chromeHeight,
-                                  kFushiTopScrimChromeReach,
-                                ) +
-                            kFushiTopFadeExtent,
-                        topOpacity: 1,
-                      ),
+                // 遮罩在内容之上、本层工具区之下。最外层从视口顶边（不透明，
+                // 与上方底色 / 窗口标题行连续）盖到本层工具区下沿；页面自己的
+                // 工具行（嵌套层：搜索 / 标签行）各画自己那一段，接在上一层下沿、
+                // 从 [kFushiNestedScrimOpacity] 起（= 上一层肩段末端），画在**它
+                // 自己的**工具行之下——只能各画各的：嵌套工具行住在外层的内容层
+                // 里，外层的遮罩若一路盖下来会把它们也压成半透明。最深一层的下沿
+                // 再往下柔和渐隐（[_nestedReach] 判「下面还有没有工具行」）。
+                // BUG-3132：曾经只伸进第一行胶囊 40 px，搜索 / 标签行背后整片透出
+                // 封面。遮罩跟着弹簧走：工具区收起时一起收回顶边，不会像更早的版本
+                // 那样留下两三百 px 的整块底色（2026-10-06 用户截图）。没滚动时不画。
+                Positioned(
+                  top: nested ? outer : 0,
+                  left: 0,
+                  right: 0,
+                  child: AnimatedOpacity(
+                    opacity: controller.contentUnderTop ? 1 : 0,
+                    duration: fushiMotionDuration(context, FushiMotion.short),
+                    child: FushiTopFadeScrim(
+                      solidHeight: (nested ? 0 : outer) + shown * _chromeHeight,
+                      // 下面还接着嵌套工具行：不在本层渐隐，由下一层接着画。
+                      fadeExtent:
+                          _nestedReach.value >
+                              outer + shown * _chromeHeight + 0.5
+                          ? 1
+                          : kFushiTopFadeExtent,
+                      topOpacity: nested ? kFushiNestedScrimOpacity : 1,
                     ),
                   ),
+                ),
                 Positioned(
                   top: outer,
                   left: 0,
@@ -800,12 +930,12 @@ Color fushiTopFadeScrimColor(BuildContext context) {
   return FushiDesignTokens.of(context).surfaces.page;
 }
 
+/// 嵌套工具行那一段遮罩的起始不透明度：= 外层遮罩肩段末端
+/// （[FushiTopFadeScrim] 的 `_kShoulderFloor`），两段在接缝处连续。
+const double kFushiNestedScrimOpacity = 0.82;
+
 /// [FushiTopFadeScrim] 渐隐段的默认长度（胶囊 / 栏下沿再往下 32）。
 const double kFushiTopFadeExtent = 32;
-
-/// [FushiFloatingChromeOverlay] 的顶部渐隐最多伸进工具区多深：只罩住第一行
-/// 胶囊（页签 / 标题胶囊）的上半，往下的工具行自带底色，不再整块垫底。
-const double kFushiTopScrimChromeReach = 40;
 
 /// 遮罩盖在可滚动内容上、从窗口顶端起画时的顶边不透明度（见
 /// [FushiTopFadeScrim.topOpacity]）：够让悬浮胶囊之间的内容退后，又不至于在

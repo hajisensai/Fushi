@@ -627,6 +627,34 @@ class VideoPlayerController extends ChangeNotifier
   /// 重新评估就绪并挂载 [Video]（否则只能等兜底定时器）。
   StreamSubscription<bool>? _bufferingReadySub;
 
+  /// 中途缓冲圈该不该显示（BUG-3195）：**正在播放且在等数据**。
+  ///
+  /// media_kit 把 mpv 的 `core-idle` 直接当缓冲：暂停时 `core-idle` 恒为真，只是
+  /// `pause()` 调用时临时屏蔽了一次。暂停状态下拖进度条跳转，seek 让 `core-idle`
+  /// 落下再升起，升起那一下就被记成「缓冲中」，而暂停时它再也不会落下——画面
+  /// 正中一直挂着加载圈和「0 B/s」，按播放才消失。暂停时画面不需要数据（seek 帧
+  /// 出完就是静止画面），所以缓冲圈只在 [Player] 正在播放时才算数；继续播放后若
+  /// 真缺数据，`core-idle` / `paused-for-cache` 照常把它点亮。
+  final ValueNotifier<bool> bufferingIndicatorVisible = ValueNotifier<bool>(
+    false,
+  );
+  StreamSubscription<bool>? _bufferingIndicatorSub;
+  StreamSubscription<bool>? _playingIndicatorSub;
+
+  /// **纯函数**：缓冲圈显示判据（见 [bufferingIndicatorVisible]）。
+  @visibleForTesting
+  static bool shouldShowBufferingIndicator({
+    required bool buffering,
+    required bool playing,
+  }) => buffering && playing;
+
+  void _syncBufferingIndicator(Player player) {
+    bufferingIndicatorVisible.value = shouldShowBufferingIndicator(
+      buffering: player.state.buffering,
+      playing: player.state.playing,
+    );
+  }
+
   /// 媒体时长首次就绪订阅：duration > 0 是 media_kit/libmpv 已解析媒体头的真实信号。
   /// 章节读取和进度条章节刻度都依赖这个信号，而不是 open() 返回后的时间猜测。
   StreamSubscription<Duration>? _durationReadySub;
@@ -1598,6 +1626,57 @@ class VideoPlayerController extends ChangeNotifier
     return true;
   }
 
+  /// 把一条**外挂**文本字幕（媒体服务器 / 在线源给的字幕 URL，如 Emby 的外挂 ASS）
+  /// 交给 libmpv 按原格式读取、解码但不画，文本回流成可点 cue——与
+  /// [selectEmbeddedTextTrackViaPlayer] 同一条回流，只是轨来自 `sub-add <url>` 而不是
+  /// 容器（BUG-3191）。用于本端下载 / 解析不出那份字幕时：libass 认的 ASS 写法比本仓
+  /// 解析器宽得多，原格式交给它不经任何转换。选中返回 true；未 [load] / 加载失败 /
+  /// 播放器已换片返回 false。
+  Future<bool> selectExternalTextSubtitleViaPlayer(String url) async {
+    claimDiscTrackOwnership();
+    final Player? player = _player;
+    if (player == null) return false;
+    final int loadToken = _loadToken;
+    final int discGeneration = _discTitleGeneration;
+    setCues(const <AudioCue>[]);
+    _graphicSubtitleActive = false;
+    try {
+      await player.setSubtitleTrack(SubtitleTrack.uri(url));
+    } catch (e) {
+      debugPrint('[VideoPlayerController] sub-add failed: $e');
+      return false;
+    }
+    if (!_isCurrentLoad(player, loadToken)) return false;
+    if (_discTitleGeneration != discGeneration) return false;
+    await applySubtitleMpvPropertiesToPlayer(
+      player,
+      buildSubtitleSuppressionProperties(),
+    );
+    if (!_isCurrentLoad(player, loadToken)) return false;
+    if (_discTitleGeneration != discGeneration) return false;
+    await applySubtitleMpvPropertiesToPlayer(
+      player,
+      buildSubtitleDelayProperty(_subtitleDelayMpvMs),
+    );
+    if (!_isCurrentLoad(player, loadToken)) return false;
+    if (_discTitleGeneration != discGeneration) return false;
+    _stopPlayerDecodedText();
+    final String current = playerSubtitleSlotText(player.state.subtitle, 0);
+    late final StreamSubscription<String> sub;
+    sub = playerSubtitleSlotChanges(player.stream.subtitle, 0, current).listen((
+      String text,
+    ) {
+      if (!_isCurrentLoad(player, loadToken)) return;
+      if (_discTitleGeneration != discGeneration) return;
+      unawaited(_onPlayerDecodedText(player, loadToken, sub, text));
+    });
+    _playerDecodedTextSub = sub;
+    if (current.trim().isNotEmpty) {
+      unawaited(_onPlayerDecodedText(player, loadToken, sub, current));
+    }
+    return true;
+  }
+
   /// [selectEmbeddedTextTrackViaPlayer] 的**副字幕**版（远端直出容器、服务器抽不出
   /// 该轨时的副字幕回落）：libmpv `secondary-sid` 选中这条轨、`secondary-sub-visibility=no`
   /// 只解码不画，`secondary-sub-text` + `secondary-sub-start` / `secondary-sub-end`
@@ -2461,6 +2540,11 @@ class VideoPlayerController extends ChangeNotifier
     _heightSub = null;
     await _bufferingReadySub?.cancel();
     _bufferingReadySub = null;
+    await _bufferingIndicatorSub?.cancel();
+    _bufferingIndicatorSub = null;
+    await _playingIndicatorSub?.cancel();
+    _playingIndicatorSub = null;
+    bufferingIndicatorVisible.value = false;
     await _durationReadySub?.cancel();
     _durationReadySub = null;
     _setSubtitleCuesLoading(false);
@@ -2880,6 +2964,13 @@ class VideoPlayerController extends ChangeNotifier
     _bufferingReadySub = player.stream.buffering.listen((_) {
       notifyListeners();
     });
+    _bufferingIndicatorSub = player.stream.buffering.listen(
+      (_) => _syncBufferingIndicator(player),
+    );
+    _playingIndicatorSub = player.stream.playing.listen(
+      (_) => _syncBufferingIndicator(player),
+    );
+    _syncBufferingIndicator(player);
 
     // 125ms 周期读位置，驱动 cue 同步（对齐有声书 createPositionStream 的节奏）。
     _tick = Timer.periodic(const Duration(milliseconds: 125), (_) {
@@ -4926,6 +5017,10 @@ class VideoPlayerController extends ChangeNotifier
     }
     unawaited(_bufferingReadySub?.cancel());
     _bufferingReadySub = null;
+    unawaited(_bufferingIndicatorSub?.cancel());
+    _bufferingIndicatorSub = null;
+    unawaited(_playingIndicatorSub?.cancel());
+    _playingIndicatorSub = null;
     unawaited(_durationReadySub?.cancel());
     _durationReadySub = null;
     unawaited(_audioDeviceSub?.cancel());
@@ -4958,6 +5053,7 @@ class VideoPlayerController extends ChangeNotifier
     luaScriptStates.dispose();
     networkReadBytesPerSecond.dispose();
     networkCacheSeconds.dispose();
+    bufferingIndicatorVisible.dispose();
     _videoPath = null;
     _chapters = const <VideoChapter>[];
     super.dispose();

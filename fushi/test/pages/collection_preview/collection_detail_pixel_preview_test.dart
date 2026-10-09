@@ -548,6 +548,15 @@ void main() {
     await _capture(tester, key, '${name}_top');
     await _scrollToEnd(tester);
     await _capture(tester, key, '${name}_bottom');
+    // 宽屏「海报横幅」版式（右上角切换，BUG-3190）；没有该开关的版本跳过。
+    final Finder toggle = find.byKey(
+      const ValueKey<String>('collection-detail-layout-toggle'),
+    );
+    if (toggle.evaluate().isNotEmpty) {
+      await tester.tap(toggle);
+      await _settleWithImages(tester);
+      await _capture(tester, key, '${name}_poster');
+    }
   }
 
   testWidgets('01 legacy 全量 · desktop', (WidgetTester tester) async {

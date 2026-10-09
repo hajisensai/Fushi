@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
+import 'package:flutter/services.dart' show FontLoader;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_asr_core/asr_core.dart';
@@ -246,6 +249,9 @@ String _statusText(WidgetTester tester) =>
 OnnxSessionFactory _unusedOnnxFactory() =>
     throw UnimplementedError('本用例不该在 isolate 里建 ONNX 后端');
 
+/// 预览截图的根（MaterialApp.builder 包住导航器，弹层也在里面）。
+final GlobalKey _previewBoundary = GlobalKey();
+
 void main() {
   late Directory tmp;
 
@@ -270,10 +276,16 @@ void main() {
     AsrModelCatalog Function()? catalogGetter,
     Future<void> Function(AsrModelCatalog catalog)? catalogSetter,
     Future<String?> Function()? directoryPicker,
+    ThemeData? theme,
   }) {
     return ProviderScope(
       child: TranslationProvider(
         child: MaterialApp(
+          theme: theme,
+          builder: theme == null
+              ? null
+              : (BuildContext context, Widget? child) =>
+                  RepaintBoundary(key: _previewBoundary, child: child),
           home: Scaffold(
             body: Builder(
               builder: (BuildContext context) => Center(
@@ -680,6 +692,137 @@ void main() {
     await tester.pumpAndSettle();
     expect(result, isNull);
   });
+
+  // BUG-3138：完成态曾把语言 / 模型 / 加速全锁死，加速分段还传了个空回调——看着
+  // 能点、点了没反应。现在完成态照样能改，改了提示并给「重新转录」。
+  testWidgets('完成态能改加速：提示需要重新转录，「重新转录」放掉旧结果按新选项开跑', (
+    WidgetTester tester,
+  ) async {
+    final File srt = File('${tmp.path}/old.srt')..writeAsStringSync('1\n');
+    final _FakeService service = _FakeService(
+      ready: true,
+      jobsDir: tmp,
+      existingSrt: srt.path,
+    );
+    await tester.pumpWidget(wrap(service, (String? _) {}));
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+    expect(
+      find.widgetWithText(FilledButton, t.audiobook_transcribe_use_result),
+      findsOneWidget,
+    );
+    expect(_statusText(tester),
+        contains(t.audiobook_transcribe_retranscribe_hint));
+    final FushiSegmentedButton<AsrAccelerationPreference> accel =
+        tester.widget<FushiSegmentedButton<AsrAccelerationPreference>>(
+      find.byType(FushiSegmentedButton<AsrAccelerationPreference>),
+    );
+    expect(accel.onSelectionChanged, isNotNull, reason: '完成态加速分段可用');
+
+    final Finder cpu = find.text(t.audiobook_transcribe_accel_cpu);
+    await tester.ensureVisible(cpu);
+    await tester.pumpAndSettle();
+    await tester.tap(cpu);
+    await tester.pumpAndSettle();
+    expect(service.planPreferences.last, AsrAccelerationPreference.cpuOnly);
+    expect(
+      _statusText(tester),
+      contains(t.audiobook_transcribe_options_changed_hint),
+    );
+    final Finder retranscribe = find.byKey(
+      const ValueKey<String>('asr-transcribe-retranscribe'),
+    );
+    expect(retranscribe, findsOneWidget);
+
+    await tester.ensureVisible(retranscribe);
+    await tester.pumpAndSettle();
+    // 重新转录真的开跑（与「就绪 → 开始 → 完成」同一种等法：任务在真实事件循环里跑）。
+    await tester.runAsync(() async {
+      await tester.tap(retranscribe);
+      for (int i = 0; i < 50; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        if (find
+            .widgetWithText(FilledButton, t.audiobook_transcribe_use_result)
+            .evaluate()
+            .isNotEmpty) {
+          break;
+        }
+      }
+    });
+    await tester.pumpAndSettle();
+    expect(service.discardCalls, 1);
+    expect(service.lastStartPreference, AsrAccelerationPreference.cpuOnly);
+    expect(
+      find.byKey(const ValueKey<String>('asr-transcribe-retranscribe')),
+      findsNothing,
+      reason: '按新选项重新生成后，结果与选项又一致了',
+    );
+  });
+
+  // 真实像素预览（只在 FUSHI_PREVIEW=1 时跑，写 PNG 给 PR 当改后截图）：完成态改了
+  // 加速之后的样子。
+  testWidgets('preview: 完成态改选项后的弹层（BUG-3138）', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(560, 760) * 1.5;
+    tester.view.devicePixelRatio = 1.5;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.runAsync(() async {
+      for (final String path in <String>[
+        r'C:\Windows\Fonts\NotoSansSC-VF.ttf',
+        r'C:\Windows\Fonts\segoeui.ttf',
+      ]) {
+        final File file = File(path);
+        if (!file.existsSync()) continue;
+        final Uint8List bytes = await file.readAsBytes();
+        await (FontLoader('PreviewCJK')
+              ..addFont(Future<ByteData>.value(ByteData.sublistView(bytes))))
+            .load();
+        return;
+      }
+    });
+    LocaleSettings.setLocale(AppLocale.zhCn);
+    addTearDown(() => LocaleSettings.setLocale(AppLocale.en));
+    final File srt = File('${tmp.path}/old.srt')..writeAsStringSync('1\n');
+    final _FakeService service = _FakeService(
+      ready: true,
+      jobsDir: tmp,
+      existingSrt: srt.path,
+    );
+    await tester.pumpWidget(
+      wrap(
+        service,
+        (String? _) {},
+        theme: ThemeData(
+          useMaterial3: true,
+          colorSchemeSeed: const Color(0xFF6750A4),
+          fontFamily: 'PreviewCJK',
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text(t.audiobook_transcribe_accel_cpu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.audiobook_transcribe_accel_cpu));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      final ui.Image image = await (_previewBoundary.currentContext!
+              .findRenderObject()! as RenderRepaintBoundary)
+          .toImage(pixelRatio: 1.5);
+      final ByteData? png = await image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+      final File out = File(
+        Platform.environment['FUSHI_PREVIEW_OUT'] ??
+            '../.claude/preview/video_library_chrome/05_asr_finished_after.png',
+      );
+      out.parent.createSync(recursive: true);
+      out.writeAsBytesSync(png!.buffer.asUint8List());
+    });
+  }, skip: Platform.environment['FUSHI_PREVIEW'] != '1');
 
   // BUG-2375：模型文件被截断/内容不是 onnx 时 ORT 报 `Protobuf parsing failed`，
   // 而整本转录跑在后台 isolate，错误跨边界只剩字符串（`Bad state: ...`），所以

@@ -683,9 +683,16 @@ class JellyfinPlaybackMediaSource {
     this.transcodingSubProtocol,
     this.container,
     this.bitrate,
+    this.subtitleDeliveryUrls = const <int, String>{},
   });
 
   final String id;
+
+  /// 服务器为外挂交付的字幕流签发的 `DeliveryUrl`（键 = `MediaStreams[].Index`，值多为
+  /// 相对根路径）。这是服务器按 DeviceProfile 的 `SubtitleProfiles`（ass / srt / vtt
+  /// 一律 External）裁决出的**原格式**取流地址，Emby 官方客户端就拿它取字幕；拼出来
+  /// 的 `/Subtitles/{n}/Stream.{ext}` 只作回落（BUG-3191）。
+  final Map<int, String> subtitleDeliveryUrls;
   final bool supportsDirectPlay;
   final bool supportsDirectStream;
   final bool supportsTranscoding;
@@ -773,6 +780,17 @@ class JellyfinApiException implements Exception {
   String toString() => serverMessage == null
       ? 'JellyfinApiException($statusCode, $endpoint)'
       : 'JellyfinApiException($statusCode, $endpoint): $serverMessage';
+}
+
+/// [JellyfinApi.probeServer] 的结果：之后所有请求该用的根地址 + 服务器自报名。
+class JellyfinServerProbe {
+  const JellyfinServerProbe({required this.baseUrl, this.serverName});
+
+  /// 实际可用的根地址（可能比用户填的多 / 少一段 `/emby`）。
+  final String baseUrl;
+
+  /// `/System/Info/Public` 的 `ServerName`；只靠 `/System/Ping` 确认时为 null。
+  final String? serverName;
 }
 
 /// 薄 HTTP 封装。所有 JSON 解析走纯静态方法（离线可测）。
@@ -874,6 +892,72 @@ class JellyfinApi {
     return json['ServerName'] as String?;
   }
 
+  /// 添加服务器时的连接探测（BUG-3137），探测顺序对齐 Emby 官方客户端 / SenPlayer：
+  ///
+  /// 1. `<地址>/System/Info/Public`；
+  /// 2. 404 时换 `/emby` 前缀（地址本身已带 `/emby` 则换成去掉前缀）再试——Emby
+  ///    的 API 同时挂在根路径与 `/emby` 下，部分非标准部署（反代只转发 `/emby`、
+  ///    兼容层只实现带前缀的路由）根路径整片 404；
+  /// 3. 两处 Info/Public 都 404：兼容层砍了这条公开端点，改用 `/System/Ping`
+  ///    （原版回 `Emby Server` / `Jellyfin Server`）证明这里确实是媒体服务器。
+  ///
+  /// 只有 404 才继续往下试：401 / 403（客户端白名单，BUG-2848）、5xx、非 JSON 都是
+  /// 服务器明确的答复，原样抛出。全部 404 时抛第一条（根路径 Info/Public）的异常。
+  /// 返回的 [JellyfinServerProbe.baseUrl] 就是之后所有请求该用的根地址。
+  Future<JellyfinServerProbe> probeServer() async {
+    final List<String> bases = probeBaseCandidates(serverUrl);
+    JellyfinApiException? first;
+    for (final String base in bases) {
+      try {
+        final Object? decoded = await _getDecodedAt(
+          base,
+          '/System/Info/Public',
+        );
+        final String? name =
+            decoded is Map ? decoded['ServerName'] as String? : null;
+        return JellyfinServerProbe(baseUrl: base, serverName: name);
+      } on JellyfinApiException catch (e) {
+        if (e.statusCode != 404) rethrow;
+        first ??= e;
+      }
+    }
+    for (final String base in bases) {
+      final http.Response res;
+      try {
+        res = await _client
+            .get(Uri.parse('$base/System/Ping'), headers: _headers)
+            .timeout(kRequestTimeout);
+      } on http.ClientException catch (e) {
+        throw Exception(redactCredentialsInText(e.toString()));
+      }
+      final String body =
+          utf8.decode(res.bodyBytes, allowMalformed: true).trim();
+      // 反代 / SPA 对任何路由都回 200 网页：那不是媒体服务器。
+      if (res.statusCode >= 200 &&
+          res.statusCode < 300 &&
+          !body.startsWith('<')) {
+        return JellyfinServerProbe(baseUrl: base);
+      }
+      if (res.statusCode != 404 &&
+          (res.statusCode < 200 || res.statusCode >= 300)) {
+        throw JellyfinApiException.fromResponse(res, '/System/Ping');
+      }
+    }
+    throw first!;
+  }
+
+  /// **纯函数**：[probeServer] 依次尝试的根地址（已归一化的 [serverUrl] 在前）。
+  static List<String> probeBaseCandidates(String serverUrl) {
+    const String prefix = '/emby';
+    if (serverUrl.toLowerCase().endsWith(prefix)) {
+      return <String>[
+        serverUrl,
+        serverUrl.substring(0, serverUrl.length - prefix.length),
+      ];
+    }
+    return <String>[serverUrl, '$serverUrl$prefix'];
+  }
+
   /// [error] 是否是「主机名解析失败」（`SocketException` 的 host lookup 失败 /
   /// getaddrinfo 错误码）。Android / iOS 不解析 `.local`（mDNS）与 Windows 计算机名
   /// （NetBIOS / LLMNR），而桌面能——用户在桌面填的主机名到手机上就是「直接连不上」，
@@ -923,10 +1007,22 @@ class JellyfinApi {
   Future<Object?> _getDecoded(
     String path, [
     Map<String, String>? query,
+  ]) =>
+      _getDecodedAt(serverUrl, path, query);
+
+  /// [_getDecoded] 的「指定根地址」版（连接探测要在候选根地址之间试，见
+  /// [probeServer]）。
+  Future<Object?> _getDecodedAt(
+    String base,
+    String path, [
+    Map<String, String>? query,
   ]) async {
     try {
       final http.Response res = await _client
-          .get(_uri(path, query), headers: _headers)
+          .get(
+            Uri.parse('$base$path').replace(queryParameters: query),
+            headers: _headers,
+          )
           .timeout(kRequestTimeout);
       if (res.statusCode < 200 || res.statusCode >= 300) {
         throw JellyfinApiException.fromResponse(res, path);
@@ -1566,8 +1662,19 @@ class JellyfinApi {
       final Map<String, Object?> src = raw.cast<String, Object?>();
       final String? id = src['Id'] as String?;
       if (id == null || id.isEmpty) continue;
+      final Map<int, String> deliveryUrls = <int, String>{};
+      for (final Object? rawStream
+          in (src['MediaStreams'] as List?) ?? const <Object?>[]) {
+        if (rawStream is! Map || rawStream['Type'] != 'Subtitle') continue;
+        final Object? index = rawStream['Index'];
+        final Object? url = rawStream['DeliveryUrl'];
+        if (index is num && url is String && url.trim().isNotEmpty) {
+          deliveryUrls[index.toInt()] = url.trim();
+        }
+      }
       sources.add(JellyfinPlaybackMediaSource(
         id: id,
+        subtitleDeliveryUrls: deliveryUrls,
         supportsDirectPlay: (src['SupportsDirectPlay'] as bool?) ?? false,
         supportsDirectStream: (src['SupportsDirectStream'] as bool?) ?? false,
         supportsTranscoding: (src['SupportsTranscoding'] as bool?) ?? false,
@@ -1742,6 +1849,24 @@ class JellyfinApi {
     final String ext = _subtitleExt(codec);
     return '$serverUrl/Videos/$itemId/$mediaSourceId/Subtitles/$streamIndex'
         '/Stream.$ext?api_key=${accessToken ?? ''}';
+  }
+
+  /// 把服务器签发的字幕 `DeliveryUrl`（相对根路径或绝对地址）补成可直接请求的绝对
+  /// URL，并在缺令牌时附上 `api_key`（与 [subtitleUrl] 一样交给下载器 / libmpv）。
+  String subtitleDeliveryUrl(String deliveryUrl) {
+    final String absolute = deliveryUrl.startsWith('http://') ||
+            deliveryUrl.startsWith('https://')
+        ? deliveryUrl
+        : '$serverUrl${deliveryUrl.startsWith('/') ? '' : '/'}$deliveryUrl';
+    final Uri uri = Uri.parse(absolute);
+    final String? token = accessToken;
+    if (token == null ||
+        token.isEmpty ||
+        uri.queryParameters.keys
+            .any((String k) => k.toLowerCase() == 'api_key')) {
+      return absolute;
+    }
+    return '$absolute${uri.hasQuery ? '&' : '?'}api_key=$token';
   }
 
   static String _subtitleExt(String codec) {
@@ -2158,6 +2283,34 @@ class JellyfinVideoClient
   /// Stopped 可能晚于新页的 PlaybackInfo 到达，先进先出才不会拿新会话去报旧停止）。
   final Map<String, List<JellyfinPlaybackSession>> _sessions =
       <String, List<JellyfinPlaybackSession>>{};
+
+  /// 最近一次起播协商里服务器签发的字幕 `DeliveryUrl`（键 = 条目 id + 媒体源 id，
+  /// 值 = 流号 → 相对地址），见 [JellyfinPlaybackMediaSource.subtitleDeliveryUrls]。
+  final Map<String, Map<int, String>> _subtitleDeliveryUrls =
+      <String, Map<int, String>>{};
+
+  static String _deliveryKey(String itemId, String mediaSourceId) =>
+      '$itemId/$mediaSourceId';
+
+  /// 字幕流的取流地址候选：服务器签发的原格式 `DeliveryUrl` 在前（有的话），拼出来
+  /// 的 `/Subtitles/{n}/Stream.{ext}` 在后（BUG-3191）。
+  List<String> _subtitleUrlCandidates(
+    String itemId,
+    String mediaSourceId,
+    JellyfinSubtitleStream s,
+  ) {
+    final String built = api.subtitleUrl(
+      itemId: itemId,
+      mediaSourceId: mediaSourceId,
+      streamIndex: s.index,
+      codec: s.codec,
+    );
+    final String? delivery =
+        _subtitleDeliveryUrls[_deliveryKey(itemId, mediaSourceId)]?[s.index];
+    if (delivery == null) return <String>[built];
+    final String resolved = api.subtitleDeliveryUrl(delivery);
+    return resolved == built ? <String>[built] : <String>[resolved, built];
+  }
 
   JellyfinPlaybackSession? _latestSession(String itemId) {
     final List<JellyfinPlaybackSession>? list = _sessions[itemId];
@@ -2864,6 +3017,8 @@ class JellyfinVideoClient
         session: null,
       );
     }
+    _subtitleDeliveryUrls[_deliveryKey(id, source.id)] =
+        source.subtitleDeliveryUrls;
     final String? transcodingUrl = source.transcodingUrl;
     final bool direct = source.supportsDirectPlay || source.supportsDirectStream;
     final JellyfinPlaybackSession session;
@@ -2918,12 +3073,7 @@ class JellyfinVideoClient
     );
     for (final JellyfinSubtitleStream s in item.subtitleStreams) {
       if (!s.isTextSubtitleStream || mediaSourceId == null) continue;
-      final String url = api.subtitleUrl(
-        itemId: id,
-        mediaSourceId: mediaSourceId,
-        streamIndex: s.index,
-        codec: s.codec,
-      );
+      final String url = _subtitleUrlCandidates(id, mediaSourceId, s).first;
       external ??= s.isExternal ? s : null;
       tracks.add(RemoteVideoEmbeddedSubtitleTrack(
         streamIndex: s.index,
@@ -2944,12 +3094,7 @@ class JellyfinVideoClient
       streamUrl: playback.streamUrl,
       subtitleUrl: external == null || mediaSourceId == null
           ? null
-          : api.subtitleUrl(
-              itemId: id,
-              mediaSourceId: mediaSourceId,
-              streamIndex: external.index,
-              codec: external.codec,
-            ),
+          : _subtitleUrlCandidates(id, mediaSourceId, external).first,
       subtitleFileName:
           external == null ? null : _subtitleFileName(item, external),
       // direct play 是单条 muxed 流（自带音轨）。
@@ -3019,16 +3164,19 @@ class JellyfinVideoClient
     if (pick == null) {
       throw const FileSystemException('Jellyfin item has no text subtitle');
     }
-    await api.downloadToFile(
-      api.subtitleUrl(
-        itemId: id,
-        mediaSourceId: mediaSourceId,
-        streamIndex: pick.index,
-        codec: pick.codec,
-      ),
-      dest,
-      onProgress: onProgress,
-    );
+    // 原格式 DeliveryUrl 优先，失败再试拼出来的端点；都失败报第一条的真实错误。
+    Object? firstError;
+    StackTrace? firstStack;
+    for (final String url in _subtitleUrlCandidates(id, mediaSourceId, pick)) {
+      try {
+        await api.downloadToFile(url, dest, onProgress: onProgress);
+        return;
+      } catch (e, st) {
+        firstError ??= e;
+        firstStack ??= st;
+      }
+    }
+    Error.throwWithStackTrace(firstError!, firstStack!);
   }
 
   @override

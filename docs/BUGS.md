@@ -29,10 +29,18 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2852 条。点号进各自文件。
+> 共 2860 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3195](bugs/BUG-3195-video-paused-seek-buffering-spinner.md) | ✅ | ✅ | 暂停状态下拖进度条后加载圈和 0 B/s 一直挂着 |
+| [BUG-3191](bugs/BUG-3191-emby-external-ass-subtitle.md) | ✅ | ✅ | Emby 外挂 ASS 字幕加载失败 |
+| [BUG-3190](bugs/BUG-3190-collection-detail-skeleton-dup-actions.md) | ✅ | ✅ | 作品资料页骨架旧样式、背景海报看不见、右上角与左侧按钮重复 |
+| [BUG-3139](bugs/BUG-3139-popup-columns-coarse-landscape.md) | ✅ | ✅ | 安卓横屏视频查词设最多三列也只出一列 |
+| [BUG-3138](bugs/BUG-3138-asr-sheet-finished-locked.md) | ✅ | ✅ | 转录完成状态下选项锁死、加速按钮点了没反应 |
+| [BUG-3137](bugs/BUG-3137-emby-probe-404-system-info.md) | ✅ | ✅ | 部分 Emby 服务器添加失败 404 System/Info/Public |
+| [BUG-3133](bugs/BUG-3133-video-chrome-lost-after-shrink.md) | ✅ | ✅ | 删视频后列表缩短，收起的顶部工具区回不来 |
+| [BUG-3132](bugs/BUG-3132-video-chrome-scrim-nested.md) | ✅ | ✅ | 视频库页滚动时内容透到顶栏与页签下面 |
 | [BUG-3093](bugs/BUG-3093-feedback-snackbar-transition-race.md) | ✅ | ✅ | 反馈提交测试在提交页退场动画中断言提示条数，CI 慢时数到两条 |
 | [BUG-3092](bugs/BUG-3092-espeak-kana-only-symbols.md) | ✅ | ✅ | isKanaOnlyText 拒收〜…等读音常见符号、却放行 espeak-ng 读不了的・与小片假名扩展 |
 | [BUG-3091](bugs/BUG-3091-linux-tts-real-engine-test-skip.md) | ✅ | ✅ | Linux 真引擎 TTS 测试只判 open_jtalk 在 PATH，缺辞书或声音时误红 |

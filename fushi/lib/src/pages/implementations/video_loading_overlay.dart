@@ -154,12 +154,27 @@ class VideoReadSpeedLabel extends StatelessWidget {
 /// 缓冲段时用户同样分不清「在下」还是「卡死」。[readSpeed] 为 null（本地文件）时
 /// 与 fork 默认外观一致。
 class VideoBufferingIndicator extends StatelessWidget {
-  const VideoBufferingIndicator({this.readSpeed, super.key});
+  const VideoBufferingIndicator({this.readSpeed, this.visible, super.key});
 
   final ValueListenable<double?>? readSpeed;
 
+  /// 播放器侧的显示判据（[VideoPlayerController.bufferingIndicatorVisible]）。
+  /// media_kit 只在它认为「缓冲中」时才挂这个组件，但它的判据在暂停跳转后会卡在
+  /// 真（BUG-3195）；为 false 时什么都不画。null = 不额外过滤。
+  final ValueListenable<bool>? visible;
+
   @override
   Widget build(BuildContext context) {
+    final ValueListenable<bool>? visible = this.visible;
+    if (visible == null) return _buildIndicator(context);
+    return ValueListenableBuilder<bool>(
+      valueListenable: visible,
+      builder: (BuildContext context, bool show, Widget? _) =>
+          show ? _buildIndicator(context) : const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildIndicator(BuildContext context) {
     const Color color = Color(0xFFFFFFFF);
     final ValueListenable<double?>? speed = readSpeed;
     // MD3（非墨水屏）：M3 Expressive 形变加载指示（深色容器 + 主色形状，压在画面

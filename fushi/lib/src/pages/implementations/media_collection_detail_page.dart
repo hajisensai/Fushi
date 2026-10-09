@@ -1,4 +1,4 @@
-import 'dart:async' show Timer, unawaited;
+import 'dart:async' show Completer, Timer, unawaited;
 import 'dart:io';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -284,23 +284,17 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 附加图组（v68）：横版背景（轮换序）与标题 logo。
     final List<MediaImageRow> imageRows = await widget.database
         .getMediaImagesForCollection(widget.collection.id);
-    VideoMetadataWorkRow? canonicalWork = await widget.database
+    final VideoMetadataWorkRow? canonicalWork = await widget.database
         .resolveVideoMetadataWorkForCollection(widget.collection.id);
+    // 没有规范作品行：兜底给成员所在来源建一次本地索引。**不在这里同步等**——
+    // 索引一个来源要规划全来源的作品、逐部 stat NFO，曾经每打开一次详情页就在
+    // 转场期间把整个来源重扫一遍（打开慢、转场掉帧）。改成先把已有数据画出来，
+    // 转场结束后在后台做、本会话每个来源只做一次，建出作品行再刷新一次。
     if (canonicalWork == null) {
-      final Set<int> sourceIds = <int>{
+      _scheduleSourceIndexing(<int>{
         for (final VideoBookRow member in members)
           if (member.sourceId != null) member.sourceId!,
-      };
-      final VideoSourceMetadataIndexer indexer = VideoSourceMetadataIndexer(
-        widget.database,
-      );
-      for (final int sourceId in sourceIds) {
-        final SourceLibraryRow? source = await widget.database
-            .getMediaSourceById(sourceId);
-        if (source != null) await indexer.index(source);
-      }
-      canonicalWork = await widget.database
-          .resolveVideoMetadataWorkForCollection(widget.collection.id);
+      });
     }
     final VideoMetadataWorkCredits? workCredits =
         await VideoMetadataCreditRepository(
@@ -347,16 +341,18 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 合集没有自己的作品行时（成员按 AniDB 作品拆成了各自的电影作品），成员自己
     // 的作品级投影（episodeNumber 为空）也拿来当卡片标题 / 简介——那就是这部
     // 电影的资料。
+    // 一次批量取完（曾经逐集一次往返，长篇几百集就是几百次查询）。
+    final Map<String, VideoScrapeMetaRow> allMeta = await widget.database
+        .getVideoScrapeMetaForBooks(
+          members.map((VideoBookRow member) => member.bookUid),
+        );
     final Map<String, VideoScrapeMetaRow> episodeMeta =
-        <String, VideoScrapeMetaRow>{};
-    for (final VideoBookRow member in members) {
-      final VideoScrapeMetaRow? row = await widget.database.getVideoScrapeMeta(
-        member.bookUid,
-      );
-      if (row != null && (row.episodeNumber != null || canonicalWork == null)) {
-        episodeMeta[member.bookUid] = row;
-      }
-    }
+        <String, VideoScrapeMetaRow>{
+          for (final MapEntry<String, VideoScrapeMetaRow> entry
+              in allMeta.entries)
+            if (entry.value.episodeNumber != null || canonicalWork == null)
+              entry.key: entry.value,
+        };
     final MediaCollectionRow? fresh = await widget.database
         .getMediaCollectionById(widget.collection.id);
     if (!mounted) return;
@@ -434,6 +430,63 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       _loading = false;
     });
     _syncBackdropRotation();
+  }
+
+  /// 本会话里已经在详情页兜底索引过的来源 id，按数据库实例分（见
+  /// [_scheduleSourceIndexing]）。
+  static final Expando<Set<int>> _sourcesIndexedThisSession =
+      Expando<Set<int>>();
+
+  /// 后台兜底索引 [sourceIds] 里本会话还没索引过的来源：等路由转场结束再做（不和
+  /// 转场动画抢主 isolate），建出规范作品行后重载一次。
+  void _scheduleSourceIndexing(Set<int> sourceIds) {
+    final Set<int> done = _sourcesIndexedThisSession[widget.database] ??=
+        <int>{};
+    final List<int> pending = <int>[
+      for (final int id in sourceIds)
+        if (!done.contains(id)) id,
+    ];
+    if (pending.isEmpty) return;
+    done.addAll(pending);
+    unawaited(() async {
+      await _routeTransitionSettled();
+      if (!mounted) return;
+      final VideoSourceMetadataIndexer indexer = VideoSourceMetadataIndexer(
+        widget.database,
+      );
+      bool changed = false;
+      for (final int sourceId in pending) {
+        final SourceLibraryRow? source = await widget.database
+            .getMediaSourceById(sourceId);
+        if (source != null && await indexer.index(source)) changed = true;
+      }
+      if (!mounted) return;
+      final VideoMetadataWorkRow? work = await widget.database
+          .resolveVideoMetadataWorkForCollection(widget.collection.id);
+      if (mounted && (changed || work != null) && _canonicalWork == null) {
+        await _reload();
+      }
+    }());
+  }
+
+  /// 本页路由的进场转场结束（已结束 / 没有转场时立即完成）。
+  Future<void> _routeTransitionSettled() {
+    final Animation<double>? animation = ModalRoute.of(context)?.animation;
+    if (animation == null || animation.status == AnimationStatus.completed) {
+      return Future<void>.value();
+    }
+    final Completer<void> done = Completer<void>();
+    void listener(AnimationStatus status) {
+      if (status == AnimationStatus.forward ||
+          status == AnimationStatus.reverse) {
+        return;
+      }
+      animation.removeStatusListener(listener);
+      if (!done.isCompleted) done.complete();
+    }
+
+    animation.addStatusListener(listener);
+    return done.future;
   }
 
   /// 让背景轮换定时器跟上当前背景张数：≥2 张且未禁用动效才轮（Jellyfin 详情页
@@ -1145,6 +1198,27 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         .isEnabled(ModuleId.browse);
   }
 
+  /// 宽屏版式：true = 海报横幅（与竖屏同形，fanart 横幅在顶、清楚露出），false =
+  /// 两栏。用户在右上角切换，跨作品记住（偏好 `video_detail_poster_layout`）。
+  /// 没有 [ProviderScope]（部分 widget 测试）时恒为两栏。
+  bool get _posterLayout =>
+      _posterLayoutOverride ??
+      (_maybeProviderContainer()
+              ?.read(appProvider)
+              .prefsRepo
+              .videoDetailPosterLayout ??
+          false);
+  bool? _posterLayoutOverride;
+
+  Future<void> _togglePosterLayout() async {
+    final bool next = !_posterLayout;
+    setState(() => _posterLayoutOverride = next);
+    await _maybeProviderContainer()
+        ?.read(appProvider)
+        .prefsRepo
+        .setVideoDetailPosterLayout(next);
+  }
+
   /// 本页所在树上的 Riverpod 容器；没有 [ProviderScope] 时返回 null。
   ///
   /// 用 `getElementForInheritedWidgetOfExactType` 而不是 `dependOnInherited...`：
@@ -1494,8 +1568,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       playLabel: started ? t.video_continue_watching : t.collection_play,
       playButtonKey: const ValueKey<String>('collection-hero-play'),
       onPlay: () => _openSlot(episode),
+      // hero 不再挂「⋯」：它只是右上角管理菜单的子集，左右两处同样的按钮
+      // （BUG-3190）。完整管理只在右上角；hero 只留主操作与两个次按钮。
       secondaryActions: _heroSecondaryActions(),
-      moreItems: _heroMoreItems(),
       // 用户自建标签（可增删）压在简介下面；与作品题材标签是两条正交轴。
       footer: buildDetailTagChips(),
     );
@@ -1520,58 +1595,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           label: t.collection_episode_fill_missing,
           onPressed: _slots.isEmpty ? null : _fillMissingEpisodes,
         ),
-    ];
-  }
-
-  /// hero「⋯」：AppBar 管理菜单里的高频项（完整管理仍在 AppBar 菜单）。
-  List<MediaDetailMenuItem> _heroMoreItems() {
-    MediaDetailMenuItem item(
-      _CollectionManageAction action,
-      IconData icon,
-      String label, {
-      bool enabled = true,
-    }) => MediaDetailMenuItem(
-      icon: icon,
-      label: label,
-      enabled: enabled,
-      onSelected: () => unawaited(_handleManageAction(action)),
-    );
-    return <MediaDetailMenuItem>[
-      if (widget.onRescrapeCollection != null)
-        item(
-          _CollectionManageAction.rescrape,
-          FushiIcons.refresh,
-          t.collection_rescrape,
-        ),
-      item(
-        _CollectionManageAction.subtitles,
-        FushiIcons.subtitles,
-        t.video_jimaku_batch_title,
-        enabled: _members.isNotEmpty,
-      ),
-      item(
-        _CollectionManageAction.setCover,
-        FushiIcons.image,
-        t.collection_cover_set,
-      ),
-      if (widget.onPickOnlineCover != null)
-        item(
-          _CollectionManageAction.setCoverOnline,
-          FushiIcons.imageSearch,
-          t.video_cover_online_search,
-        ),
-      if (widget.remote?.downloadMembers != null)
-        item(
-          _CollectionManageAction.downloadRemote,
-          FushiIcons.cloudDownload,
-          t.remote_collection_download_members,
-          enabled: _remoteMembers.isNotEmpty,
-        ),
-      item(
-        _CollectionManageAction.rename,
-        FushiIcons.rename,
-        t.rename_collection,
-      ),
     ];
   }
 
@@ -2302,9 +2325,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       case _CollectionManageAction.renameEpisodes:
         await _renameEpisodesFromScrape();
         return;
-      case _CollectionManageAction.fillMissing:
-        _fillMissingEpisodes();
-        return;
       case _CollectionManageAction.downloadRemote:
         // 批下载在 app 级管理器里跑到底；这里只等它排完，回来重载让新落地的
         // 本地行替换远端占位。
@@ -2331,9 +2351,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         return;
       case _CollectionManageAction.rename:
         await renameDetailCollection();
-        return;
-      case _CollectionManageAction.tags:
-        await editDetailCollectionTags();
         return;
       case _CollectionManageAction.delete:
         await _delete();
@@ -2393,6 +2410,21 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       actions: <Widget>[
+        // 宽屏才有两种版式可切（窄屏本来就是海报横幅）。
+        if (MediaDetailLayout.isTwoPane(
+          context,
+          MediaQuery.sizeOf(context).width,
+        ))
+          FushiIconButtonControl(
+            key: const ValueKey<String>('collection-detail-layout-toggle'),
+            tooltip: _posterLayout
+                ? t.video_detail_layout_two_pane
+                : t.video_detail_layout_poster,
+            icon: FushiIcon(
+              _posterLayout ? FushiIcons.viewColumn : FushiIcons.viewAgenda,
+            ),
+            onPressed: () => unawaited(_togglePosterLayout()),
+          ),
         _buildSortMenu(),
         FushiPopupMenuButton<_CollectionManageAction>(
           icon: const FushiIcon(FushiIcons.more),
@@ -2451,15 +2483,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                   t.collection_episode_rename,
                   enabled: _members.isNotEmpty,
                 ),
-                // 「补齐缺集」做的事就是打开番剧下载对话框，所以它和另外两个下载
-                // 入口同门：没有下载中心时整项不出，而不是出一项点了打不开对话框的菜单。
-                if (_downloadsAvailable)
-                  _manageMenuItem(
-                    _CollectionManageAction.fillMissing,
-                    FushiIcons.download,
-                    t.collection_episode_fill_missing,
-                    enabled: _slots.isNotEmpty,
-                  ),
+                // 「补齐缺集」与「标签」是 hero 上常驻的次按钮，菜单里不再重复
+                // （BUG-3190：右上角与左侧按钮重复）。
                 // 合集整体下载（#6）：把只在对端的成员整批拉到本机。与「补齐缺集」
                 // （torrent 下载中心）是两条不同的路，入口分开、文案分开。
                 if (widget.remote?.downloadMembers != null)
@@ -2507,11 +2532,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                   t.rename_collection,
                 ),
                 _manageMenuItem(
-                  _CollectionManageAction.tags,
-                  FushiIcons.tag,
-                  t.tag_label,
-                ),
-                _manageMenuItem(
                   _CollectionManageAction.delete,
                   FushiIcons.delete,
                   t.delete_collection,
@@ -2553,6 +2573,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           ),
           backdropKey: _heroBackdropIndex,
           backdropBlur: collectionHeroBackdropBlur(backdrop: backdrop),
+          // 海报横幅版式：宽屏也走单列（hero 连同 fanart 横幅在顶），与竖屏同形。
+          twoPaneMinWidth: _posterLayout
+              ? double.infinity
+              : kMediaDetailTwoPaneMinWidth,
           bottomPadding: tokens.spacing.page,
           header: _buildHero(),
           slivers: <Widget>[
@@ -2620,13 +2644,11 @@ enum _CollectionManageAction {
   sortBySeason,
   subtitles,
   renameEpisodes,
-  fillMissing,
   downloadRemote,
   scrapeOnHost,
   scrapeForHost,
   splitBySeason,
   lockFields,
   rename,
-  tags,
   delete,
 }
