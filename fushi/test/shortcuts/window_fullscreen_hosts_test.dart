@@ -173,6 +173,109 @@ void main() {
     );
   });
 
+  group('BUG-3223：全屏路由在 post-frame 里压栈、同帧旧宿主离场', () {
+    // BUG-2913 的修法只在全屏路由的 pageBuilder 里包 [WindowFullscreenHost]，登记要等
+    // 路由内容首次 build。真实换集里新集页就绪后在 post-frame 回调里压全屏路由，被
+    // removeRoute 摘掉的旧集页恰好在同一批 post-frame 里做离场判定——此刻全屏路由
+    // 已是 current、内容还没 build，注册表里只剩被它盖住的新集页，于是误退全屏
+    // （Windows itest 复现：换集后约 1.3 s 原生全屏掉线）。
+    late List<bool> setFullscreenCalls;
+
+    setUp(() {
+      setFullscreenCalls = <bool>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_windowChannel, (MethodCall call) async {
+            switch (call.method) {
+              case 'isFullscreen':
+                return true;
+              case 'setFullscreen':
+                setFullscreenCalls.add(
+                  (call.arguments as Map<Object?, Object?>)['fullscreen']!
+                      as bool,
+                );
+                return null;
+            }
+            return null;
+          });
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_windowChannel, null);
+    });
+
+    Future<void> runSameFrameTakeover(
+      WidgetTester tester, {
+      required bool hostRoute,
+    }) async {
+      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(navigatorKey: navKey, home: const SizedBox()),
+      );
+      Route<void> page() => MaterialPageRoute<void>(
+        builder: (BuildContext _) =>
+            const WindowFullscreenHost(child: SizedBox()),
+      );
+      final Route<void> oldEpisode = page();
+      navKey.currentState!.push(oldEpisode);
+      await tester.pumpAndSettle();
+      // 接管：新集页压在上面（旧全屏路由已被 removeRoute，这里省略）。
+      navKey.currentState!.push(page());
+      await tester.pumpAndSettle();
+
+      // 同一帧：先登记「新集页就绪 → 压全屏路由」的 post-frame 回调，再摘掉旧集页
+      // （它的离场判定在这一帧 build 时登记，排在压栈回调之后）。
+      Widget content(
+        BuildContext _,
+        Animation<double> __,
+        Animation<double> ___,
+      ) => const WindowFullscreenHost(child: SizedBox());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        navKey.currentState!.push(
+          hostRoute
+              ? WindowFullscreenHostPageRoute<void>(
+                  pageBuilder: content,
+                  transitionDuration: Duration.zero,
+                  reverseTransitionDuration: Duration.zero,
+                )
+              : PageRouteBuilder<void>(
+                  pageBuilder: content,
+                  transitionDuration: Duration.zero,
+                  reverseTransitionDuration: Duration.zero,
+                ),
+        );
+      });
+      navKey.currentState!.removeRoute(oldEpisode);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('路由级登记：同帧离场判定看得见刚压上的全屏路由，不退全屏', (WidgetTester tester) async {
+      await runSameFrameTakeover(tester, hostRoute: true);
+      expect(WindowFullscreenHosts.hasVisibleHost, isTrue);
+      expect(setFullscreenCalls, isEmpty, reason: '全屏路由 push 即登记，不该归还窗口全屏');
+    });
+
+    testWidgets('对照：只靠 widget 登记时同帧离场判定会退全屏（证明本组能咬住回归）', (
+      WidgetTester tester,
+    ) async {
+      await runSameFrameTakeover(tester, hostRoute: false);
+      expect(setFullscreenCalls, <bool>[false]);
+    }, skip: !Platform.isWindows);
+
+    test('视频全屏路由用的是路由级宿主', () {
+      final String src = maskComments(
+        File(
+          'lib/src/pages/implementations/video_fushi/fullscreen.part.dart',
+        ).readAsStringSync(),
+      );
+      expect(
+        src,
+        contains('WindowFullscreenHostPageRoute<void>('),
+        reason: '视频全屏路由必须 push 即登记宿主，否则换集同帧离场判定会误退全屏',
+      );
+    });
+  });
+
   group('源码守卫', () {
     final String navSrc = File(
       'lib/src/shortcuts/global_navigation.dart',

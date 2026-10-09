@@ -173,7 +173,11 @@ extension _VideoFullscreen on _VideoFushiPageState {
       // 全屏侧 controls 挂载，保证共享 [_videoFocusNode] 任意时刻只被一个 Focus
       // 持有（见 _videoFullscreenActive 的文档）。
       if (mounted) _rebuild(() => _videoFullscreenActive = true);
-      final PageRouteBuilder<void> fullscreenRoute = PageRouteBuilder<void>(
+      // 路由本身也登记为宿主（[WindowFullscreenHostPageRoute]，BUG-3223）：子树里的
+      // [WindowFullscreenHost] 要等首次 build 才登记，晚于 push 一帧；换集接管时
+      // 旧集页的离场判定恰好落在这一帧里，只靠 widget 登记仍会误退全屏。
+      final PageRouteBuilder<void> fullscreenRoute =
+          WindowFullscreenHostPageRoute<void>(
         // BUG-697（TODO-1378）：全屏路由内容必须包进与窗口模式同一个
         // [_wrapVideoGamepadControls]（Actions<GamepadButtonIntent> + 旁观 Focus）。
         // 全屏是推到根 navigator 的独立路由，窗口侧 build() 外层的手柄输入层不是
@@ -198,6 +202,7 @@ extension _VideoFullscreen on _VideoFushiPageState {
         // removeRoute 摘掉的旧集页，它要等新页入场过渡结束才真正 dispose，而新页
         // 往往已经压上了自己的全屏路由）都会在帧末判「无宿主」并
         // [exitWindowFullscreenIfActive]，把用户正在看的全屏退掉（BUG-2913）。
+        // 这份 widget 登记负责「离场时归还」；「push 即可见」由路由级登记保证。
         pageBuilder: (_, __, ___) => WindowFullscreenHost(
             child: _wrapVideoGamepadControls(
           _buildVideoFloatingBallScene(

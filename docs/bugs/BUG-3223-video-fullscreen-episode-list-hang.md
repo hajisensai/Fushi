@@ -1,0 +1,15 @@
+## BUG-3223 · 全屏下从剧集列表换下一集：原生全屏中途掉线（反馈「点剧集列表就卡住了」）
+- **报告**：2026-10-09（反馈处理台 X5OX9t9lEG，Windows 11 build 26200，2.10.0-debug.18433，1.25 缩放：「全屏模式下看完了想要换下一集，点剧集列表就卡住了」，截图窗口标题为「Fushi (未响应)」）
+- **真实性**：⚠️ 部分复现。
+  - **「卡死（未响应）」本身未复现**。用户日志里这次运行（pid 45368）没有 `MainThread.hangRecovered` / hang dump（看门狗在 `IsHungAppWindow` 持续 10 s 后才抓 dump，说明用户在那之前就强杀了，或停泵不足 10 s 自行恢复），日志在 21:31 之后没有任何视频相关记录，拿不到停泵时的栈。本机 Windows 离屏真 app 覆盖了这些路径，主线程均未停泵：12 集合集、播第 5 集、F 进原生全屏、鼠标点顶栏剧集按钮（每帧计墙钟，最慢一次 pump 60 ms）、带 1080p 封面的剧集卡、窗口态对照。
+  - **同一用户路径上的真缺陷已复现、已修**：全屏下打开剧集列表点下一集后约 1.3 s，原生全屏被退掉（窗口回到非全屏矩形，Flutter 仍是全屏布局）。BUG-2913 的旧回归用例 `video_fullscreen_episode_list_switch_test.dart` 在当前 develop 上就是红的（采样 54/56 次非全屏）。
+  - 根因：`fushi/lib/src/shortcuts/window_fullscreen_hosts.dart` 的 `_releaseWindowFullscreenIfNoHostLeft` 在帧末判 `hasVisibleHost`。BUG-2913 的修法只在全屏路由 `pageBuilder` 里包 `WindowFullscreenHost`（`fushi/lib/src/pages/implementations/video_fushi/fullscreen.part.dart` `_pushNeutralizedVideoFullscreen`），而 widget 要等路由内容**首次 build** 才登记。换集接管时，新集页就绪后在 post-frame 回调（`_scheduleInitialFullscreenIfNeeded`）里压全屏路由；被 `removeRoute` 摘掉的旧集页 / 旧全屏路由恰好在**同一批 post-frame** 里做离场判定。此刻新全屏路由已是 current，但内容还没 build，注册表里只剩被它盖住的新集页（非 current）。于是判定为「无可见宿主」，调 `exitWindowFullscreenIfActive()`。临时探针实测：`host release check visible=false n=1 routes=MaterialPageRoute/cur=false`。
+  - 与「卡死」的关系：BUG-2043 记录过「换集时原生全屏退出（Windows 同步 resize）与 media_kit 纹理拆建叠在一起偶发卡死」。本条的掉线正好发生在新集页建纹理的窗口期，是这条反馈路径上最可能的卡死诱因。但本机没有复现到停泵，这一点只是推断。
+- **[x] ① 已修复** — 新增 `WindowFullscreenHostPageRoute`（`window_fullscreen_hosts.dart`）：路由在 `install()`（push 的同一刻）登记为宿主，在 `dispose()` 时注销。视频全屏路由改用它。这样「栈顶是全屏路由」和「注册表里有可见宿主」同时成立，不再依赖帧序。子树里的 `WindowFullscreenHost` 保留，继续负责离场归还。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/shortcuts/window_fullscreen_hosts_test.dart`「BUG-3223」组：按真实时序构造用例（post-frame 里压全屏路由，同帧 `removeRoute` 旧宿主），断言不调 `setFullscreen(false)`。附反向对照：只靠 widget 登记时会退全屏，已在 Windows 上验证能咬住回归。另有源码守卫，钉住视频全屏路由使用的是 `WindowFullscreenHostPageRoute<void>(`。
+  - 端到端：`fushi/integration_test/video_fullscreen_episode_list_switch_test.dart` 的按钮 finder 已修。原 finder 只认 `FushiIcons.playlist`，而控制条实际字形是 `Icons.playlist_play`，用例在「找不到按钮」处就提前失败，被测路径根本没跑到。修复后 ep1→ep2→ep1 两次换集原生全屏零掉线。
+  - 新增 `fushi/integration_test/video_fullscreen_episode_list_open_test.dart`：12 集、第 5 集、全屏下鼠标点剧集按钮，逐帧计墙钟，任何一次 pump ≥3 s 即判主线程停泵；附窗口态对照。
+- **备注**：
+  - 「卡死」还缺用户的信息：① 再遇到时等到窗口「未响应」后**至少再等 15 秒**再关，让看门狗写出 `hang-*.dmp`，再到「诊断 → 崩溃转储」分享；② 当时是点了顶栏剧集按钮就卡，还是点了列表里的某一集才卡（截图里列表没打开、控制条还在）；③ 片源是本地文件还是 Emby / Jellyfin / 在线源，是否开着弹幕或查词弹窗。
+  - itest 本身的坑：鼠标 hover 唤醒控制条之后，中间如果夹一次 `captureFlutterFrame`，控制条会在截图期间自动淡出（`mount=false`）。之后对旧坐标的点击会落到下面的触摸滑动层，看起来像「点了没反应」。点击前必须按当前帧重新取一次命中点。

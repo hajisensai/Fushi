@@ -187,7 +187,7 @@ import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
 import 'package:fushi/src/shortcuts/reader_caret_router.dart'
     show CaretAction, ReaderCaretRouter;
 import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
-    show WindowFullscreenHost;
+    show WindowFullscreenHost, WindowFullscreenHostPageRoute;
 import 'package:fushi/src/shortcuts/shortcut_action.dart'
     show ShortcutAction, ShortcutScope;
 import 'package:fushi/src/media/video/video_foreground_layers.dart'
