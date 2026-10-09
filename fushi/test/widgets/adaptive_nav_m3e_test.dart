@@ -110,10 +110,10 @@ void main() {
 
       await tester.pumpAndSettle();
       expect(railWidth(tester), kMaterialNavRailExpandedWidth);
-      expect(find.byIcon(FushiIcons.chevronLeft), findsOneWidget);
+      expect(find.byIcon(FushiIcons.menuOpen), findsOneWidget);
       expect(find.byTooltip('Collapse navigation'), findsOneWidget);
 
-      await tester.tap(find.byIcon(FushiIcons.chevronLeft));
+      await tester.tap(find.byIcon(FushiIcons.menuOpen));
       await tester.pumpAndSettle();
       expect(expanded.value, isFalse);
       expect(railWidth(tester), kMaterialNavRailCollapsedWidth);
@@ -204,7 +204,7 @@ void main() {
       final InkWell menuInk = tester.widget<InkWell>(
         find
             .ancestor(
-              of: find.byIcon(FushiIcons.chevronLeft),
+              of: find.byIcon(FushiIcons.menuOpen),
               matching: find.byWidgetPredicate((Widget w) => w is InkWell),
             )
             .first,
@@ -212,7 +212,7 @@ void main() {
       final Size menu = tester.getSize(
         find
             .ancestor(
-              of: find.byIcon(FushiIcons.chevronLeft),
+              of: find.byIcon(FushiIcons.menuOpen),
               matching: find.byWidgetPredicate((Widget w) => w is InkWell),
             )
             .first,

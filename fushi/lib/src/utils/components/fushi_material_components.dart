@@ -4003,7 +4003,13 @@ Widget fushiFloatingHeaderActionGroups(
   List<Widget> run = <Widget>[];
   void flushRun() {
     if (run.isEmpty) return;
-    segments.add(FushiPageChromeCapsule(child: iconGroup(run)));
+    // 只有一颗图标按钮：可见形状就是一枚圆，按钮撑满它（state layer / 命中区
+    // = 圆，2026-10-09 用户截图「反馈页刷新键的灰色悬停比圆小一圈」）。
+    segments.add(
+      run.length == 1 && fushiIsChromeIconButton(run.single)
+          ? FushiPageChromeCircle(child: run.single)
+          : FushiPageChromeCapsule(child: iconGroup(run)),
+    );
     run = <Widget>[];
   }
 

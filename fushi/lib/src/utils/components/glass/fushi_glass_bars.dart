@@ -325,18 +325,24 @@ class _AppleBarScrollEdgeState extends State<_AppleBarScrollEdge> {
         clipBehavior: Clip.none,
         fit: StackFit.passthrough,
         children: <Widget>[
-          widget.child,
+          // 画在顶栏**之下**、盖住整段栏区再往下延伸一条渐隐带：页面把正文铺到
+          // 透明顶栏下面（extendBodyBehindAppBar，如作品详情 hero）时，只在栏
+          // 下沿画「上实下透」的带，带的实色上沿与栏区里透出来的内容之间是一条
+          // 硬线（2026-10-09 用户 iOS 截图）。栏区实色与带最靠边处同色，正文
+          // 排在栏下的普通页面观感不变（栏区本来就是页面底色）。
           if (widget.enabled)
             Positioned(
               left: 0,
               right: 0,
+              top: 0,
               bottom: -_kGlassTopEdgeExtent,
-              height: _kGlassTopEdgeExtent,
               child: FushiAppleScrollEdge(
                 side: FushiScrollEdgeSide.top,
                 visible: _scrolledUnder,
+                bandExtent: _kGlassTopEdgeExtent,
               ),
             ),
+          widget.child,
         ],
     );
   }

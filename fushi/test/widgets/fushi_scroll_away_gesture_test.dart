@@ -73,4 +73,40 @@ void main() {
     expect(scroll.offset, 500);
     expect(chrome.hidden, isFalse);
   });
+
+  testWidgets('拖动中的几 px 来回抖动不会让页头来回跳（滞回）', (WidgetTester tester) async {
+    final FushiScrollAwayController chrome = FushiScrollAwayController();
+    final ScrollController scroll = ScrollController();
+    addTearDown(chrome.dispose);
+    addTearDown(scroll.dispose);
+    await tester.pumpWidget(_scrollAwayHarness(chrome, scroll));
+
+    final TestGesture gesture = await tester.startGesture(
+      tester.getCenter(find.byType(ListView)),
+    );
+    await gesture.moveBy(const Offset(0, -200));
+    await tester.pump();
+    expect(chrome.hidden, isTrue);
+
+    // 手指抖回 10px 再继续往下看：旧实现方向一变就叫出页头、再一变又收起。
+    await gesture.moveBy(const Offset(0, 10));
+    await tester.pump();
+    expect(chrome.hidden, isTrue, reason: '回程不足滞回距离，页头保持收起');
+    await gesture.moveBy(const Offset(0, -10));
+    await tester.pump();
+    expect(chrome.hidden, isTrue);
+
+    // 真正往回滚过滞回距离才叫出。
+    await gesture.moveBy(
+      const Offset(0, FushiScrollAwayController.toggleDistance + 6),
+    );
+    await tester.pump();
+    expect(chrome.hidden, isFalse);
+    // 再抖 10px 往下：仍不收起。
+    await gesture.moveBy(const Offset(0, -10));
+    await tester.pump();
+    expect(chrome.hidden, isFalse, reason: '同理，收起也要攒够滞回距离');
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
 }

@@ -110,7 +110,10 @@ void main() {
       final Rect settingsRect = tester.getRect(sheet);
       expect(settingsRect.right, screen.width,
           reason: 'settings drawer is right-anchored');
-      expect(find.byType(SegmentedButton<String>), findsWidgets);
+      expect(
+        find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
+        findsWidgets,
+      );
       await key(tester, LogicalKeyboardKey.escape);
       await pumpFor(tester, 4);
       expect(sheet, findsNothing);

@@ -17,6 +17,8 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeVisiblePadding;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/galgame_poster_card.dart';
@@ -443,8 +445,14 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
       ),
     ];
     final Widget? navigation = widget.navigation;
+    // 作为首页外壳的顶层 tab（非 Windows 的串流接收端）时，外壳把大标题胶囊
+    // 叠在内容上方、经 [FushiFloatingChromeInset] 下发让位高度；这里必须让开，
+    // 否则页头（外壳已画标题时只剩副标题一行）整段压在标题胶囊底下
+    // （2026-10-09 用户截图：「游戏」胶囊挡住「在电脑上启动游戏并串流到这里」）。
+    // 嵌在游戏模块分区里时外层已消费过 inset（这里读到 0），不会重复让位。
     return Scaffold(
-      body: Column(
+      body: FushiFloatingChromeVisiblePadding(
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           if (navigation == null)
@@ -473,6 +481,7 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

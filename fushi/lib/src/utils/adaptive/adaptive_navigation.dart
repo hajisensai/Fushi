@@ -2093,7 +2093,9 @@ class _NavRailMenuButton extends StatelessWidget {
     final String tooltip = extended
         ? t.home_nav_rail_collapse
         : t.home_nav_rail_expand;
-    final IconData icon = extended ? FushiIcons.chevronLeft : FushiIcons.menu;
+    // 展开态用 menu_open（M3 navigation rail 的「收起」语义），不用 ‹：‹ 读作
+    // 「返回」（2026-10-09 用户截图「看起来像返回，不像收起」）。
+    final IconData icon = extended ? FushiIcons.menuOpen : FushiIcons.menu;
     const BorderRadius radius = BorderRadius.all(
       Radius.circular(_kMaterialMenuPillHeight / 2),
     );

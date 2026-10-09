@@ -168,6 +168,12 @@ abstract final class FushiIcons {
     fontFamily: kFushiSymbolsFontFamily,
   );
 
+  /// 收起侧栏 / 导航栏（menu 的展开态）：Symbols `menu_open`（取代 Icons.menu_open / Icons.menu_open）
+  static const IconData menuOpen = IconData(
+    0xe9bd,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
   /// 新增：Symbols `add`（取代 Icons.add / Icons.add）
   static const IconData add = IconData(
     0xe145,
@@ -1644,6 +1650,7 @@ abstract final class FushiIcons {
     'more': more,
     'moreHoriz': moreHoriz,
     'menu': menu,
+    'menuOpen': menuOpen,
     'add': add,
     'addCircle': addCircle,
     'edit': edit,
@@ -2179,6 +2186,7 @@ abstract final class FushiIcons {
     0xe9b0: IconData(0xe9b0, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe9b2: IconData(0xe9b2, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe9ba: IconData(0xe9ba, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe9bd: IconData(0xe9bd, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe9e0: IconData(0xe9e0, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe9e4: IconData(0xe9e4, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe9ec: IconData(0xe9ec, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2560,6 +2568,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
     CupertinoIcons.square_arrow_right,
     CupertinoIcons.square_arrow_right,
   ),
+  0xe9bd: (CupertinoIcons.sidebar_left, CupertinoIcons.sidebar_left),
   0xe9e0: (CupertinoIcons.shield, CupertinoIcons.shield_fill),
   0xe9e4: (CupertinoIcons.speedometer, CupertinoIcons.speedometer),
   0xe9ec: (CupertinoIcons.hand_draw, CupertinoIcons.hand_draw_fill),

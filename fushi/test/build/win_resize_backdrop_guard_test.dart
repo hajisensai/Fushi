@@ -192,10 +192,25 @@ void main() {
       expect(callEnd, greaterThan(callAt));
       final String call = mainDart.substring(callAt, callEnd);
       expect(
-        RegExp(r'caption:\s*cs\.surface(?![A-Za-z0-9_])').hasMatch(call),
+        RegExp(r'caption:\s*settled\.surface(?![A-Za-z0-9_])').hasMatch(call),
         isTrue,
         reason: 'the caption/backdrop colour must be the theme surface colour '
             '(the page background), not any other role.',
+      );
+      // 2026-10-09: and it must be the SETTLED (target) theme's surface, not the
+      // per-frame lerped `Theme.of(context)` the builder sees under
+      // AnimatedTheme — every distinct colour makes the runner repaint the
+      // whole window backdrop, so a theme / dark-mode switch flashed the page
+      // a dozen times.
+      expect(
+        RegExp(r'settledTheme\s*=\s*fushiSettledTheme\(').hasMatch(mainDart),
+        isTrue,
+        reason: 'caption colours must come from fushiSettledTheme(...), not '
+            'from the animated Theme.of(context) inside MaterialApp.builder',
+      );
+      expect(
+        RegExp(r'settled\s*=\s*settledTheme\.colorScheme').hasMatch(mainDart),
+        isTrue,
       );
     });
   });

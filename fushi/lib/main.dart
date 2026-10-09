@@ -49,6 +49,7 @@ import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 import 'package:fushi/src/utils/misc/hang_watchdog_log.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/rasterized_frame_size_reporter.dart';
+import 'package:fushi/src/utils/settled_theme.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/adaptive/fushi_macos_theme.dart';
@@ -2399,6 +2400,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     // navigation stack) and only fires on an explicit language change, not on
     // ordinary [notifyListeners] ticks.
     _scheduleInitialThemeAnimationRestore();
+    final ThemeData lightTheme = appModel.theme;
+    final ThemeData darkTheme = appModel.darkTheme;
     return KeyedSubtree(
       key: ValueKey<String>('app-locale-${locale.toLanguageTag()}'),
       child: TranslationProvider(
@@ -2420,8 +2423,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: appModel.locales.values,
           themeMode: themeMode,
-          theme: appModel.theme,
-          darkTheme: appModel.darkTheme,
+          theme: lightTheme,
+          darkTheme: darkTheme,
           // 启动首帧从 fallback 主题切到持久化主题时不做过渡；首帧呈现后恢复
           // 正常的主题交叉过渡。墨水屏下始终关闭（中间灰帧每帧一次局部刷新）。
           themeAnimationStyle:
@@ -2433,6 +2436,18 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           builder: (context, child) {
             _scheduleWindowsUpdateHandoffReconcile();
             final cs = Theme.of(context).colorScheme;
+            // 推给原生窗口的颜色一律取**目标**主题，而不是 builder 所在
+            // AnimatedTheme 里逐帧插值出来的过渡主题（BUG 见下方 setCaptionColors
+            // 注释）：主题交叉过渡 280ms 内 builder 每帧重跑，插值色每帧都不同，
+            // 原生侧每次都 DwmSetWindowAttribute + FillSurfaceBackdrop 整窗铺底，
+            // 切主题 / 切深色时整页连闪十几下。
+            final ThemeData settledTheme = fushiSettledTheme(
+              themeMode: themeMode,
+              platformBrightness: MediaQuery.platformBrightnessOf(context),
+              light: lightTheme,
+              dark: darkTheme,
+            );
+            final ColorScheme settled = settledTheme.colorScheme;
             // BUG-1916: this is no longer about the *caption* — the Windows
             // native caption is hidden for good (see main()), and the themed
             // native title bar this call used to feed was correctly deleted
@@ -2452,8 +2467,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             // `test/build/win_resize_backdrop_guard_test.dart` (the native chain
             // is only as good as what Dart feeds it).
             WindowCaptionChannel.setCaptionColors(
-              caption: cs.surface,
-              text: cs.onSurface,
+              caption: settled.surface,
+              text: settled.onSurface,
             );
             // Glass design system: ask for the system window material (Windows
             // 11 Mica via the runner, macOS NSVisualEffectView vibrancy). The
@@ -2461,7 +2476,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             // success (`systemBackdropActive`), so Win10 / others stay solid.
             WindowCaptionChannel.setSystemBackdrop(
               mica: glassMaterialOf(context) != FushiGlassMaterial.off,
-              dark: Theme.of(context).brightness == Brightness.dark,
+              dark: settled.brightness == Brightness.dark,
             );
             // Drive the status/navigation bar icon brightness from the *live*
             // theme so switching themes repaints the system bars. The builder

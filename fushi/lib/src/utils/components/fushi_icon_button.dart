@@ -7,6 +7,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -358,8 +359,12 @@ class _FushiIconButtonState extends State<FushiIconButton>
   Widget _buildMaterialIcon(BuildContext context, FushiDesignTokens tokens) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
+    // 装在填充槽里（返回圆胶囊 / 单按钮动作胶囊）：按钮 = 可见容器，state
+    // layer 与命中区撑满容器、形状取容器的，不做按压变形（容器本身不变形）。
+    final FushiFillSlot? slot = FushiFillSlot.maybeOf(context);
     final bool round = widget.shapeBorder is CircleBorder;
-    final bool morph = round && fushiExpressiveMotionEnabled(context);
+    final bool morph =
+        slot == null && round && fushiExpressiveMotionEnabled(context);
     final bool tonalSelected = widget.selected && !eink;
     final Color iconColor = !enabled
         ? disabledColor
@@ -377,6 +382,8 @@ class _FushiIconButtonState extends State<FushiIconButton>
           startPill: pill,
           endPill: pill,
         );
+      } else if (slot != null) {
+        shape = slot.shape;
       } else if (widget.selected && round) {
         shape = const RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(14)));
@@ -389,14 +396,19 @@ class _FushiIconButtonState extends State<FushiIconButton>
                   alpha: cs.secondaryContainer.a * (morph ? select : 1))
               : Colors.transparent);
       // 底色跟随形状画（默认圆），不再用矩形 ColoredBox 露出方角。
+      Widget glyph = Padding(
+        padding: widget.padding ?? EdgeInsets.all(tokens.spacing.gap),
+        child: FushiIcon(widget.icon, size: widget.size, color: iconColor),
+      );
+      if (slot != null) {
+        glyph =
+            SizedBox.fromSize(size: slot.extent, child: Center(child: glyph));
+      }
       Widget touchTarget = DecoratedBox(
         decoration: ShapeDecoration(color: fill, shape: shape),
-        child: Padding(
-          padding: widget.padding ?? EdgeInsets.all(tokens.spacing.gap),
-          child: FushiIcon(widget.icon, size: widget.size, color: iconColor),
-        ),
+        child: glyph,
       );
-      if (widget.constraints != null) {
+      if (slot == null && widget.constraints != null) {
         touchTarget = ConstrainedBox(
           constraints: widget.constraints!,
           child: Center(child: touchTarget),

@@ -214,7 +214,7 @@ void main() {
       reason: '六段等分 1600 宽（扣掉 M3E 分段胶囊轨道两侧内缩）',
     );
     expect(
-      find.byType(SegmentedButton<int>),
+      find.byWidgetPredicate((Widget w) => w is SegmentedButton<int>),
       findsNothing,
       reason: 'MD3：分段按钮是 section 级单选控件，不得替代导航 tabs',
     );
