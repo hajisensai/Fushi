@@ -674,6 +674,8 @@ String mangaWindowDocument(
 
   final StringBuffer pagesHtml = StringBuffer();
   final Map<int, StringBuffer> spreadPages = <int, StringBuffer>{};
+  // spread 模式下落点跨页在 strip 里的槽位（DOM 顺序，RTL 已倒序）。
+  int initialStripSlot = 0;
   final int count = pages.length < imgSrcs.length
       ? pages.length
       : imgSrcs.length;
@@ -742,6 +744,7 @@ String mangaWindowDocument(
     if (rtl) {
       spreadOrder = spreadOrder.reversed.toList();
     }
+    initialStripSlot = math.max(0, spreadOrder.indexOf(currentSpread));
     for (final int spreadIndex in spreadOrder) {
       pagesHtml.write(
         '<div class="manga-spread" '
@@ -778,7 +781,11 @@ String mangaWindowDocument(
   final String content = isWebtoon
       ? '<div id="manga-root">${pagesHtml.toString()}</div>'
       : '<div id="manga-viewport">'
-            '<div id="manga-root">${pagesHtml.toString()}</div>'
+            // 首帧就停在落点跨页（BUG-3222）：脚本的 _reanchor 要等 load / 双 rAF
+            // 才跑，在那之前 strip 是 transform:none——屏上是窗口里 DOM 最左的那个
+            // 跨页（LTR 的首页）。每个跨页恰好 100vw，所以落点能直接写成 vw。
+            '<div id="manga-root" style="transform:translateX(-${initialStripSlot * 100}vw)">'
+            '${pagesHtml.toString()}</div>'
             '</div>';
   final String body = '<div id="manga-canvas">$content</div>';
 
@@ -1257,8 +1264,28 @@ String _mangaGestureJs({
       'translateX(' + (spread ? -spread.offsetLeft : 0) + 'px)';
     _applyWidePolicy();
     _updateAutomaticBackground();
+    _warmNeighbours(target);
   }
+  // 预解码邻页：文档生成时只有首屏 ±1 跨页是 eager，翻过去之后新的 ±2 还是
+  // lazy——它们要等进了视口附近才开始取图 / 解码，下一次滑动跟手拖出来的就是
+  // 一块空白，松手动画里再补解码掉帧。每次落位都把 ±2 跨页提成 eager 并请求
+  // 异步解码（decode() 只排队、不阻塞主线程）。
+  function _warmNeighbours(target){
+    for (var d = -2; d <= 2; d++) {
+      var imgs = document.querySelectorAll(
+        '.manga-page[data-spread="'+(target + d)+'"] img');
+      for (var i = 0; i < imgs.length; i++) {
+        var im = imgs[i];
+        if (im.loading === 'lazy') im.loading = 'eager';
+        if (im.decode) im.decode().catch(function(){});
+      }
+    }
+  }
+  // 每次 Dart 推进跨页 +1。跟手拖动松手后要等 Dart 答复：Dart 换了页就由翻页
+  // 动画接管；没换（到头、分镜翻页、半页翻页）才由拖动自己回弹（见 _swipeSettle）。
+  var TURN_SERIAL = 0;
   window.__mangaApplyTranslate = function(target){
+    TURN_SERIAL++;
     if(target !== CURRENT) _flashPageChange();
     if(target!==CURRENT) PAGE_HALF=target<CURRENT ? 1 : 0;
     CURRENT = target;
@@ -1391,6 +1418,7 @@ String _mangaGestureJs({
     panDrag.lastT = pnow;
     panDrag.vy = pdy / pdt * 1000;
     _panBy(pdx, pdy);
+    _swipeMove(e.clientX, e.clientY);
   }, {passive: false});
   var CURRENT = $currentSpread;
   var RESTORE_FRACTION = ${restoreFraction.toStringAsFixed(6)};
@@ -1483,7 +1511,65 @@ String _mangaGestureJs({
   // spx：按下时的 PAN_X。松手时「手指横移 − 画布实际横移」= 平移**没吃掉**的
   // 那段（贴边被 _clampPan 钳住的余量），它才参与 swipe 判定。
   var sx = 0, sy = 0, st = 0, spx = 0, has = false;
-  function _start(x, y){ has = true; sx = x; sy = y; st = Date.now(); spx = PAN_X; }
+  // ── 横滑跟手（spread）──
+  // 此前横滑是「松手才翻页」：拖动全程页面纹丝不动，松手后才从静止状态播一段
+  // 翻页动画——手指走了 200px 页面一像素没动，这就是「滑动翻页不跟手」。现在
+  // 横向锁定后 #manga-root 的 translateX 逐帧 = 落位值 + 手指横移（扣掉放大态
+  // 平移吃掉的那段），1:1 跟随；松手由 _end 的阈值决定交给 Dart 翻页还是回弹。
+  // 拖动中关掉 root 的 transition（否则每一帧都在追一段 ease-out，永远慢半拍），
+  // 松手前还原，翻页 / 回弹动画都从手指停下的位置接着走。
+  // swipe：null = 没有在跟的手势；axis 在越过 SWIPE_SLOP 后锁定为 'x' / 'y'。
+  var SWIPE_SLOP = 8;
+  var swipe = null;
+  var swipeToken = 0;
+  function _start(x, y){
+    has = true; sx = x; sy = y; st = Date.now(); spx = PAN_X;
+    swipe = {axis: null, base: null, vx: 0, lastX: x, lastT: st};
+  }
+  function _swipeMove(x, y){
+    if (!has || !swipe || IS_WEBTOON) return;
+    var now = Date.now(), dt = Math.max(1, now - swipe.lastT);
+    swipe.vx = (x - swipe.lastX) / dt * 1000;
+    swipe.lastX = x; swipe.lastT = now;
+    if (!swipe.axis) {
+      var adx = Math.abs(x - sx), ady = Math.abs(y - sy);
+      if (Math.max(adx, ady) < SWIPE_SLOP) return;
+      swipe.axis = adx > ady ? 'x' : 'y';
+    }
+    // 宽页切半（SPLIT_ACTIVE）的翻页是同一跨页内的视图变换，平移整条 strip
+    // 露出的是相邻跨页、不是另一半——这种页不跟手，保持松手判定。
+    if (swipe.axis !== 'x' || SPLIT_ACTIVE) return;
+    var root = document.getElementById('manga-root');
+    if (!root) return;
+    if (swipe.base === null) {
+      var spread = root.querySelector('.manga-spread[data-spread="'+CURRENT+'"]');
+      swipe.base = spread ? -spread.offsetLeft : 0;
+      root.style.transition = 'none';
+    }
+    // 手指横移 − 画布平移吃掉的那段 = 交给翻页的余量（与 _end 的 ux 同口径）。
+    var follow = (x - sx) - (PAN_X - spx);
+    _hintWillChange(root, PAGE_ANIM_MS + 400);
+    root.style.transform = 'translateX(' + (swipe.base + follow) + 'px)';
+  }
+  // 结束跟手。turning=false：立即回弹到当前跨页。turning=true：只还原
+  // transition，返回一个 settle 回调——Dart 处理完翻页请求后调用它：Dart 真换了
+  // 页（TURN_SERIAL 变了）就什么都不做，由翻页动画接管；没换（到头 / 分镜翻页 /
+  // 换章中）才回弹。新的一次拖动开始后旧 settle 作废。
+  function _swipeRelease(turning){
+    var s = swipe;
+    swipe = null;
+    if (!s || s.base === null) return null;
+    var root = document.getElementById('manga-root');
+    if (!root) return null;
+    root.style.transition = '';
+    var token = ++swipeToken;
+    if (!turning) { _translateToSpread(CURRENT); return null; }
+    var serial = TURN_SERIAL;
+    return function(){
+      if (token !== swipeToken || swipe || TURN_SERIAL !== serial) return;
+      _translateToSpread(CURRENT);
+    };
+  }
   // ── 触屏双指捏合缩放 ──
   // 此前触屏**完全无法缩放**：viewport 声明了 user-scalable=no（必须的：浏览器原生
   // 缩放会和 #manga-canvas 的 transform 打架），而 JS 侧没有任何 touch/多指处理。
@@ -1760,10 +1846,13 @@ String _mangaGestureJs({
   function _end(x, y){
     // 无配对 pointerdown（has=false）：合成事件或捕获丢失，没有位移可判 swipe →
     // 只能是 tap，直接走 tap 路径（不丢选词）。
-    if (!has) { _onTap(x, y); return; }
+    if (!has) { _swipeRelease(false); _onTap(x, y); return; }
     has = false;
     var dx = x - sx, dy = y - sy, el = Date.now() - st;
     var ax = Math.abs(dx), ay = Math.abs(dy);
+    // 松手瞬时速度（最后一段 pointermove，px/s）：跟手之后手势的意图看的是
+    // 「最后往哪甩」——拖过阈值再往回甩是取消，与 Mihon 的 ViewPager 同口径。
+    var rvx = swipe ? swipe.vx : 0;
     // 放大态（ZOOM>1）的拖动先被 _panBy 消费为平移（放大后必须能看页面各处）；
     // 只有平移**贴边后没吃掉**的横向余量才算翻页 swipe——与 Mihon、与滚轮的
     // 「能平移就平移，贴边才翻页」（BUG-1760）同一口径。未放大时 _panBy 不动
@@ -1774,10 +1863,12 @@ String _mangaGestureJs({
     // 只剩点边缘能翻（用户 2026-10-02「划不动」）。
     var ux = dx - (PAN_X - spx), aux = Math.abs(ux);
     var vel = aux / Math.max(1, el) * 1000;
-    if (!IS_WEBTOON && ax > ay && (ux > 0) === (dx > 0) &&
+    var flingBack = rvx * ux < 0 && Math.abs(rvx) >= 900;
+    if (!IS_WEBTOON && ax > ay && (ux > 0) === (dx > 0) && !flingBack &&
         (aux >= 72 || (aux >= 36 && vel >= 900))) {
+      var settle = _swipeRelease(true);
       var b = _bridge();
-      if (!b) return;
+      if (!b) { if (settle) settle(); return; }
       // swipe 跟手：拖动内容向左（dx<0）露出的是 strip **右边**那一跨页。右边是哪
       // 一页取决于几何顺序——LTR 正序时右边是 next，RTL 倒序时右边是 prev（见文档
       // 生成处的 spreadOrder）。所以必须按 IS_RTL 镜像，RTL 下「向右滑 = 下一页」，
@@ -1786,10 +1877,15 @@ String _mangaGestureJs({
       // 旧注释声称「dir 由 Dart 端依据阅读方向 clamp」——Dart 侧（_onMangaTurn）只有
       // `next ? +1 : -1` 和边界钳位，从来没有方向 clamp，按那句推理必然推错。
       var swipeRight = dx > 0;
-      b.callHandler('onMangaTurn',
+      var answer = b.callHandler('onMangaTurn',
           (swipeRight === IS_RTL) ? 'next' : 'prev');
-    } else if (ax < 20 && ay < 20 && el < 500) {
-      _onTap(x, y);
+      // Dart 的处理器在翻页请求处理完（含换章）才答复。
+      if (settle) {
+        if (answer && answer.then) answer.then(settle, settle); else settle();
+      }
+    } else {
+      _swipeRelease(false);
+      if (ax < 20 && ay < 20 && el < 500) _onTap(x, y);
     }
   }
   document.addEventListener('pointerdown', function(e){
@@ -1801,6 +1897,7 @@ String _mangaGestureJs({
         pinch = {dist: g.dist, zoom: ZOOM, cx: g.cx, cy: g.cy};
         pinchGuard = true;
         has = false;
+        _swipeRelease(false);
         panDrag = null;
         _stopFlick();
         return;
@@ -1881,7 +1978,12 @@ String _mangaGestureJs({
   // 注意：本注释随文档注入 WebView，不能出现松手事件的字面名——
   // manga_overlay_html_test 的 C1 不变式按该字面量计数，恰好允许一个。
   document.addEventListener('pointercancel', function(e){
-    if (panDrag && panDrag.id === e.pointerId) panDrag = null;
+    if (panDrag && panDrag.id === e.pointerId) {
+      panDrag = null;
+      // 系统夺走指针：跟到一半的页面不能挂在半路，回弹到当前跨页。
+      has = false;
+      _swipeRelease(false);
+    }
     if (e.pointerType === 'touch') {
       delete touchPts[e.pointerId];
       if (Object.keys(touchPts).length < 2) pinch = null;

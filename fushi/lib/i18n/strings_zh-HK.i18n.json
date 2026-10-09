@@ -5139,7 +5139,6 @@
   "manga_page_copy": "複製圖片",
   "manga_page_share": "分享圖片",
   "manga_page_save": "儲存圖片",
-  "manga_chapter_transition": "進入下一章",
   "manga_reader_save_directory": "圖片儲存目錄",
   "manga_reader_save_flat": "統一目錄",
   "manga_reader_save_book": "按作品",
@@ -6897,5 +6896,6 @@
   "video_setting_mpv_passthrough_hint": "將 AC-3 / E-AC-3 / TrueHD / DTS-HD 原封不動交給擴音機或 Soundbar 解碼（包括 Atmos）。只應在裝置支援這些格式時開啟，否則可能無聲。直通時請在擴音機上調校音量：應用內的音量與靜音對這些碼流無效，所以倍速不是 1×、音量未調至最大或靜音時，會暫時改由 Fushi 解碼（擴音機上的 Atmos / DTS 標示隨之熄滅）。關閉時一律由 Fushi 解碼，5.1 / 7.1 照樣以環迴立體聲輸出。",
   "shortcut_action_video_lookup_next_word": "下一個詞（掃詞）",
   "shortcut_action_video_lookup_prev_word": "上一個詞（掃詞）",
-  "media_source_open_folder_failed": "無法開啟資料夾，可能已被移動、刪除或中斷連線。"
+  "media_source_open_folder_failed": "無法開啟資料夾，可能已被移動、刪除或中斷連線。",
+  "manga_chapter_switching_loading": "Loading chapter…"
 }
