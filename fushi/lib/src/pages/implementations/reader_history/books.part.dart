@@ -763,27 +763,21 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         final SrtBookRepository repo = SrtBookRepository(appModel.database);
         final SrtBook? book = await repo.findByUid(uid);
         if (book != null) {
-          if (book.bookKey.isNotEmpty) {
-            await ReaderFushiSource.instance.deleteBook(
-              db: appModel.database,
-              bookKey: book.bookKey,
-              scope: scope,
-              deleteLocalFiles: deleteLocalFiles,
-              deleteStatistics: deleteStatistics,
-            );
-          }
-          // 纯字幕书（bookKey 空）刻意不删统计：它的统计只能按 title 定位，会连坐
-          // 同名 EPUB（见 [_selectionHasStatisticsTarget]）。
-          // BUG-439：以前无条件 deleted++，即便 repo.delete 实际没删到行也计数，
-          // 末尾照样弹「已删除 N 本」谎报。改为只对真删掉的 srt_books 行计数。
-          // TODO-2470 死角①：纯字幕书（bookKey 空）没有上面那次 deleteBook，
-          // scope 以前到这里就被丢弃、勾了「从所有设备删除」完全无效。propagateDeletion
-          // 由 repo 按 standalone 判据决定写不写墓碑（srt-backed 已由 deleteBook 写过）。
-          final SrtBookDeleteResult removed = await repo.delete(uid,
-              propagateDeletion: scope == DeleteScope.syncEverywhere,
-              deleteLocalFiles: deleteLocalFiles);
+          // BUG-3101：配对了 EPUB 的字幕书由 deleteBook 整本删（srt 行随事务级联
+          // 删除），纯字幕书走 repo（scope 落地为 srtbook 墓碑）——只走一条路径，
+          // 计数按这条路径的真实结果（以前 deleteBook 后再按 uid 删一次，回报 0 行，
+          // 「已删除 N 本」少算）。纯字幕书刻意不删统计：它的统计只能按 title 定位，
+          // 会连坐同名 EPUB（见 [_selectionHasStatisticsTarget]）。
+          final DeleteBookResult removed =
+              await ReaderFushiSource.instance.deleteSrtShelfBook(
+            db: appModel.database,
+            book: book,
+            scope: scope,
+            deleteLocalFiles: deleteLocalFiles,
+            deleteStatistics: deleteStatistics,
+          );
           localFiles = localFiles.merge(removed.localFiles);
-          if (removed.deleted > 0) deleted++;
+          if (removed.deleted) deleted++;
         }
       } else {
         final String? bookKey = _parseBookKey(key);
@@ -1190,7 +1184,6 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     if (decision == null) return;
     final DeleteScope scope = decision.scope;
 
-    LocalFileDeleteReport localFiles = const LocalFileDeleteReport();
     if (decision.deleteLocalFiles) {
       // 先停止引用再销毁实体（会话身份：srt-backed 是 uid，EPUB 是 bookKey）。
       await appModel.audiobookSession.stopIfPlayingAny(<String>[
@@ -1198,34 +1191,30 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         if (book.bookKey.isNotEmpty) book.bookKey,
       ]);
     }
-    if (book.bookKey.isNotEmpty) {
-      final DeleteBookResult result =
-          await ReaderFushiSource.instance.deleteBook(
-        db: appModel.database,
-        bookKey: book.bookKey,
-        scope: scope,
-        deleteLocalFiles: decision.deleteLocalFiles,
-        deleteStatistics: decision.deleteStatistics,
-      );
-      localFiles = localFiles.merge(result.localFiles);
-    }
-    // TODO-2470 死角①：纯字幕书（bookKey 空）不走上面的 deleteBook，删除范围必须在
-    // 这里落地，否则勾了「从所有设备删除」静默无效。
-    final SrtBookDeleteResult srtResult =
-        await SrtBookRepository(appModel.database).delete(book.uid,
-            propagateDeletion: scope == DeleteScope.syncEverywhere,
-            deleteLocalFiles: decision.deleteLocalFiles);
-    localFiles = localFiles.merge(srtResult.localFiles);
+    // BUG-3101：按身份只走一条删除路径（配对了 EPUB 的走 deleteBook 整本删，纯
+    // 字幕书走 SrtBookRepository，删除范围在两条路上都落地）。以前 deleteBook 之后
+    // 又按 uid 删一次 srt 行，行已被级联删掉、回报 0 行，于是每次都弹「删除书籍失败」。
+    final DeleteBookResult result =
+        await ReaderFushiSource.instance.deleteSrtShelfBook(
+      db: appModel.database,
+      book: book,
+      scope: scope,
+      deleteLocalFiles: decision.deleteLocalFiles,
+      deleteStatistics: decision.deleteStatistics,
+    );
     if (mounted) {
       reportLocalFileDeleteFailures(
-        localFiles,
+        result.localFiles,
         source: 'ReaderHistory.deleteSrtBookLocalFiles',
       );
       // 2026-10 体验优化：单本删除此前成功失败都静默；没删到行（已被别处删掉 /
       // 写库失败）时卡片原样留着，用户只会以为没点上。
-      if (srtResult.deleted == 0) {
+      if (!result.deleted) {
+        final String reason = result.failureReason ?? '';
         FushiToast.show(
-          msg: t.epub_delete_error,
+          msg: reason.isEmpty
+              ? t.epub_delete_error
+              : '${t.epub_delete_error}: $reason',
           severity: ToastSeverity.error,
         );
       } else {

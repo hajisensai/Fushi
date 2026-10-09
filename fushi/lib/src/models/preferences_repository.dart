@@ -568,6 +568,27 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 「仅从本机移除」的远端书（反馈 nvlhtczbro）：只在本机书架隐藏、对端那份不动。
+  /// 元素是 [hiddenRemoteBookKey] 拼出的「来源身份 + 远端身份键」——同名书在另一台
+  /// host / 云盘上不受牵连。按设备记（不进 Profile 快照语义以外的同步）。
+  Set<String> get hiddenRemoteBooks {
+    final Object? raw = getPref('hidden_remote_books', defaultValue: null);
+    if (raw is! String || raw.isEmpty) return <String>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! List) return <String>{};
+      return <String>{for (final Object? e in decoded) if (e is String) e};
+    } on FormatException {
+      return <String>{};
+    }
+  }
+
+  Future<void> setHiddenRemoteBooks(Set<String> keys) async {
+    final List<String> sorted = keys.toList()..sort();
+    await setPref('hidden_remote_books', jsonEncode(sorted));
+    notifyListeners();
+  }
+
   // ── Jellyfin / Emby 媒体服务器 ───────────────────────────────────────
 
   /// BUG-1891：进视频页（含切回视频 tab）时是否**自动**向已登录的 Jellyfin/Emby

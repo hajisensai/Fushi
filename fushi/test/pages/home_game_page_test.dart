@@ -23,13 +23,6 @@ Widget _testLibrary(
 /// setUp 里把 IndexedStack 起始子区切到库（与旧默认行为等价）。
 Widget _stubDashboard(BuildContext _, VoidCallback __) => const SizedBox();
 
-Widget _stubSettings(BuildContext _, Widget navigation) => Column(
-      children: <Widget>[
-        navigation,
-        const Text('game-settings'),
-      ],
-    );
-
 Widget _stubDiscover(BuildContext _, Widget navigation) => Column(
       children: <Widget>[
         navigation,
@@ -61,7 +54,6 @@ Widget _testMonitorWithSections(
           gameSectionNotifier.value = GameSection.dashboard,
       onSelectLibrary: onShowLibrary,
       onSelectMonitor: () {},
-      onSelectSettings: () => gameSectionNotifier.value = GameSection.settings,
     ),
   );
 }
@@ -92,7 +84,6 @@ void main() {
           monitorBuilder: (_, __) => const SizedBox(),
           libraryBuilder: _testLibrary,
           dashboardBuilder: _stubDashboard,
-          settingsBuilder: _stubSettings,
           discoverBuilder: _stubDiscover,
           streamBuilder: _stubStream,
         ),
@@ -114,7 +105,6 @@ void main() {
         home: HomeGamePage(
           libraryBuilder: _testLibrary,
           dashboardBuilder: _stubDashboard,
-          settingsBuilder: _stubSettings,
           discoverBuilder: _stubDiscover,
           streamBuilder: _stubStream,
           monitorBuilder: (_, VoidCallback onShowLibrary) => _TestMonitor(
@@ -144,7 +134,7 @@ void main() {
     expect(disposeCount, 0);
   });
 
-  testWidgets('800x600 top tabs replace diagnostics with settings',
+  testWidgets('800x600 top tabs carry neither diagnostics nor settings',
       (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -155,7 +145,6 @@ void main() {
             monitorBuilder: _testMonitorWithSections,
             libraryBuilder: _testLibrary,
             dashboardBuilder: _stubDashboard,
-            settingsBuilder: _stubSettings,
             discoverBuilder: _stubDiscover,
             streamBuilder: _stubStream,
           ),
@@ -173,17 +162,6 @@ void main() {
     expect(find.text(t.game_dashboard), findsOneWidget);
     expect(find.text(t.game_library), findsOneWidget);
     expect(find.text(t.game_capture_workbench_tab), findsOneWidget);
-    // 2026-10-04 全宽顶栏：摆不下的尾段收进末尾「更多」下拉，不再横滑截断。
-    // 测试字体（每字 1em 宽）下 800px 排不下全部六段，「设置」可能在下拉里——
-    // 不变式是它必须**够得到**：要么直接画在顶栏上，要么在「更多」菜单里。
-    if (find.text(t.settings).evaluate().isEmpty) {
-      await tester.tap(find.byIcon(Icons.expand_more));
-      await tester.pumpAndSettle();
-      expect(find.text(t.settings), findsOneWidget,
-          reason: '800px 页头必须能到达设置分段（顶栏或「更多」菜单）');
-      Navigator.of(tester.element(find.text(t.settings))).pop();
-      await tester.pumpAndSettle();
-    }
     expect(
       controller.requestById(
         const FushiFocusId('game-library-tab-sections'),
@@ -238,8 +216,8 @@ void main() {
     await tester.pump();
     await driver.adjust(steps: 1);
 
-    // 2026-08-13 入库入口统一：捕获工作台与设置之间插入「导入」分段（与书 /
-    // 漫画 / 视频库页的「导入在设置前一位」同构）。
+    // 2026-08-13 入库入口统一：「导入」分段；2026-10-09 起「设置」页签移除后它排
+    // 末位（与书 / 漫画 / 视频库页同构）。
     expect(find.byKey(HomeGamePage.importKey), findsOneWidget);
     expect(
       controller.requestById(
@@ -248,15 +226,15 @@ void main() {
       isTrue,
       reason: '切到导入页后，新的稳定分段 ID 必须可聚焦',
     );
-    await tester.pump();
-    await driver.adjust(steps: 1);
-
-    expect(find.byKey(HomeGamePage.settingsKey), findsOneWidget);
-    expect(find.text('game-settings'), findsOneWidget);
+    expect(
+      kGameSectionTabOrder.last,
+      GameSection.importGames,
+      reason: '模块内「设置」页签已移除（设置走全局「设置 › 游戏」），导入排末位',
+    );
     expect(find.text(t.game_diagnostics), findsNothing,
         reason: '兼容性诊断不得继续占用游戏顶部高频页签');
 
-    // 诊断能力仍保留给设置页导航：程序化入口能进入详情，但顶部高亮设置。
+    // 诊断能力保留给捕获工作台 / 全局设置导航：程序化入口能进入详情。
     gameSectionNotifier.value = GameSection.diagnostics;
     await tester.pump();
     expect(find.byKey(HomeGamePage.diagnosticsKey), findsOneWidget);
@@ -273,7 +251,6 @@ void main() {
           child: HomeGamePage(
             libraryBuilder: _testLibrary,
             dashboardBuilder: _stubDashboard,
-            settingsBuilder: _stubSettings,
             discoverBuilder: _stubDiscover,
             streamBuilder: _stubStream,
             monitorBuilder: (_, __) => const Text('focused-monitor'),
@@ -311,7 +288,6 @@ void main() {
             monitorBuilder: (_, __) => const SizedBox(),
             libraryBuilder: _testLibrary,
             dashboardBuilder: _stubDashboard,
-            settingsBuilder: _stubSettings,
             discoverBuilder: _stubDiscover,
             streamBuilder: _stubStream,
           ),
@@ -334,7 +310,6 @@ void main() {
             monitorBuilder: _testMonitorWithSections,
             libraryBuilder: _testLibrary,
             dashboardBuilder: _stubDashboard,
-            settingsBuilder: _stubSettings,
             discoverBuilder: _stubDiscover,
             streamBuilder: _stubStream,
           ),

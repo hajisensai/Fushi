@@ -1192,6 +1192,56 @@ class ReaderFushiSource extends ReaderMediaSource {
     }
   }
 
+  /// 删除书架上的一张**字幕书卡**（srt_books 行；书架卡 key `srt_<uid>`）。
+  ///
+  /// BUG-3101：配对了 EPUB 的字幕书（`bookKey` 非空）由 [deleteBook] 整本删——
+  /// `deleteEpubBook` 的事务按 bookKey 级联删掉这本书的 srt_books 行。调用方以前在
+  /// [deleteBook] 之后又按 uid 调一次 `SrtBookRepository.delete`，行早已不在，回报
+  /// 删了 0 行，于是单本删除**每次**弹「删除书籍失败」（不论删除范围）、批量删除把它
+  /// 计成 0 本。这里按身份二选一，只走一条删除路径：
+  ///
+  /// * `bookKey` 非空 → [deleteBook]（EPUB 行、SRT 行、cue、有声书、墓碑 `book`、
+  ///   原件、统计一并处理）；
+  /// * `bookKey` 为空（纯字幕书）→ `SrtBookRepository.delete`（standalone 行按
+  ///   [scope] 写 `srtbook` 墓碑）。纯字幕书不删统计：它的统计只能按 title 定位，会
+  ///   连坐同名 EPUB（[deleteStatistics] 对它无效）。
+  Future<DeleteBookResult> deleteSrtShelfBook({
+    required FushiDatabase db,
+    required SrtBook book,
+    DeleteScope scope = DeleteScope.keepLocalOnly,
+    bool deleteLocalFiles = false,
+    bool deleteStatistics = false,
+  }) async {
+    if (book.bookKey.isNotEmpty) {
+      return deleteBook(
+        db: db,
+        bookKey: book.bookKey,
+        scope: scope,
+        deleteLocalFiles: deleteLocalFiles,
+        deleteStatistics: deleteStatistics,
+      );
+    }
+    try {
+      final SrtBookDeleteResult removed = await SrtBookRepository(db).delete(
+        book.uid,
+        propagateDeletion: scope == DeleteScope.syncEverywhere,
+        deleteLocalFiles: deleteLocalFiles,
+      );
+      if (removed.deleted == 0) {
+        final String reason = '找不到这本字幕书的数据（uid="${book.uid}" 无对应行，'
+            '可能已删除或书架条目已失效）';
+        ErrorLogService.instance
+            .logDiagnostic('ReaderFushiSource.deleteSrtShelfBook', reason);
+        return DeleteBookResult.failure(reason);
+      }
+      return DeleteBookResult.success(localFiles: removed.localFiles);
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderFushiSource.deleteSrtShelfBook', e, stack);
+      return DeleteBookResult.failure(e.toString());
+    }
+  }
+
   /// 这本书（按 [bookKey]）有没有本机可删的原件——删除确认框据此决定摆不摆
   /// 「同时删除本地文件」勾选框。只看附带有声书 / 配对字幕书**显式登记在 app 持久
   /// 目录之外**的原始音频（见 [deleteBook] 与 `audiobook_local_files.dart`）。

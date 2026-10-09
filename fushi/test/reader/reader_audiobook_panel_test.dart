@@ -6,8 +6,9 @@ import 'package:fushi/src/reader/reader_audiobook_panel.dart';
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/utils.dart';
 
-/// 有声书侧板（2026-10 重设计）：正在播放卡 + 「章节 / 设置」页签；章节页顶部是
-/// 收听概览与「对齐与转录」卡（资源操作），设置页只放 settingsBuilder。
+/// 有声书侧板（2026-10 重设计）：正在播放卡 + 章节列表；章节页顶部是收听概览与
+/// 「对齐与转录」卡（资源操作）。2026-10-09 起不再有「设置」页签（播放设置并进
+/// 「阅读设置 › 有声书」页）。
 Widget _host(Widget child, {Size size = const Size(400, 800)}) => MaterialApp(
   home: Scaffold(
     body: Center(
@@ -23,7 +24,6 @@ ReaderAudiobookPanel _panel({
   VoidCallback? onImport,
   VoidCallback? onPickAlignment,
   VoidCallback? onTranscribe,
-  String initialTab = 'chapters',
 }) => ReaderAudiobookPanel(
   controller: null,
   toc: toc,
@@ -32,18 +32,26 @@ ReaderAudiobookPanel _panel({
   title: 'Book',
   chapterLabel: null,
   coverPath: null,
-  settingsBuilder: (_) => const Text('SETTINGS_TAB'),
   onAudioImport: onImport,
   onPickAlignment: onPickAlignment,
   onTranscribe: onTranscribe,
-  initialTab: initialTab,
 );
 
 void main() {
   setUpAll(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
-  test('页签顺序：章节 / 设置，默认章节（句子页签已移除）', () {
-    expect(kReaderAudiobookPanelTabs, <String>['chapters', 'settings']);
+  testWidgets('面板没有页签栏（「设置」页签已移除，只剩章节）', (tester) async {
+    await tester.pumpWidget(_host(_panel(onImport: () {})));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('fushi_audiobook_tab_button_settings')),
+      findsNothing,
+    );
+    expect(find.byType(ReaderPanelTabs<String>), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('fushi_audiobook_tab_chapters')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('无控制器：正在播放卡给导入入口，没有句子页签', (tester) async {
@@ -78,7 +86,6 @@ void main() {
           ],
           currentSection: 5,
           onJump: (int i, String? _) async => jumped = i,
-          initialTab: 'chapters',
         ),
       ),
     );
@@ -92,22 +99,9 @@ void main() {
     expect(jumped, 7);
   });
 
-  testWidgets('设置页只放 settingsBuilder', (tester) async {
-    await tester.pumpWidget(
-      _host(
-        _panel(onImport: () {}, onPickAlignment: () {}, initialTab: 'settings'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('SETTINGS_TAB'), findsOneWidget);
-    expect(find.text(t.reader_audiobook_section_tools), findsNothing);
-  });
-
   testWidgets('章节页顶部：对齐与转录卡按回调显隐（2026-10-06 从设置页挪来）', (tester) async {
     await tester.pumpWidget(
-      _host(
-        _panel(onImport: () {}, onPickAlignment: () {}, initialTab: 'chapters'),
-      ),
+      _host(_panel(onImport: () {}, onPickAlignment: () {})),
     );
     await tester.pumpAndSettle();
     expect(find.text(t.reader_audiobook_section_tools), findsOneWidget);
@@ -138,7 +132,6 @@ void main() {
               30,
               (int i) => TtuTocEntry(index: i, label: 'Chapter $i'),
             ),
-            initialTab: 'chapters',
           ),
           size: size,
         ),

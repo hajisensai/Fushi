@@ -93,7 +93,6 @@ void main() {
                             title: 'Book',
                             chapterLabel: 'Part One',
                             coverPath: null,
-                            settingsBuilder: (_) => const SizedBox.shrink(),
                           ),
                         ),
                       ),

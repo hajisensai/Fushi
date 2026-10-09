@@ -38,9 +38,9 @@ Widget _stubLibrary(
 ) =>
     const Center(child: Icon(Icons.sports_esports_outlined));
 
-/// 镜像生产 [ModuleSettingsView] 的顶栏形状（FushiPageHeader.customTitle 包分段
-/// 导航），但不构建需要 provider 的设置正文。
-Widget _stubSettings(BuildContext _, Widget navigation) => Column(
+/// 发现子区桩：FushiPageHeader.customTitle 包分段导航，不构建需要 provider 的
+/// 发现正文（「设置」子区已于 2026-10-09 移除，几何守卫改由发现子区补位）。
+Widget _stubDiscover(BuildContext _, Widget navigation) => Column(
       children: <Widget>[FushiPageHeader.customTitle(title: navigation)],
     );
 
@@ -119,7 +119,7 @@ void main() {
             home: HomeGamePage(
               dashboardBuilder: _stubDashboard,
               libraryBuilder: _stubLibrary,
-              settingsBuilder: _stubSettings,
+              discoverBuilder: _stubDiscover,
             ),
           ),
         ),
@@ -130,7 +130,7 @@ void main() {
         GameSection.library: HomeGamePage.libraryKey,
         GameSection.monitor: HomeGamePage.monitorKey,
         GameSection.importGames: HomeGamePage.importKey,
-        GameSection.settings: HomeGamePage.settingsKey,
+        GameSection.discover: HomeGamePage.discoverKey,
       };
       final Map<GameSection, Rect> rects = <GameSection, Rect>{
         for (final MapEntry<GameSection, Key> entry in sections.entries)

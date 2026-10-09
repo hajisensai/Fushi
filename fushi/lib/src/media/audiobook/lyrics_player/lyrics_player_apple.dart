@@ -866,18 +866,21 @@ class _NarrowChrome extends StatelessWidget {
           height: _kNarrowHeaderHeight,
           child: Row(
             children: <Widget>[
-              _NarrowIllustrationEntry(data: data, callbacks: callbacks),
-              Expanded(
-                child: _NarrowHeader(title: data.title, clock: data.clock),
-              ),
-              const SizedBox(width: 8),
+              // 窄屏左上角返回键（iOS 没有系统返回键；此前只有右上角 ×，用户
+              // 认不出它是「返回」，2026-10-09 反馈）。
               _LyricsIconButton(
-                icon: CupertinoIcons.xmark,
+                key: const ValueKey<String>('lyrics_player_back'),
+                icon: CupertinoIcons.chevron_left,
                 diameter: 38,
                 iconSize: 18,
                 color: Colors.white.withValues(alpha: 0.74),
-                tooltip: t.floating_lyric_close,
+                tooltip: t.back,
                 onPressed: callbacks.onClose,
+              ),
+              const SizedBox(width: 6),
+              _NarrowIllustrationEntry(data: data, callbacks: callbacks),
+              Expanded(
+                child: _NarrowHeader(title: data.title, clock: data.clock),
               ),
             ],
           ),
@@ -1139,6 +1142,7 @@ class _LyricsIconButton extends StatelessWidget {
     this.onPressedWithRect,
     this.color,
     this.iconKey,
+    super.key,
   });
 
   final IconData icon;

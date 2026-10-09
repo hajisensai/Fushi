@@ -311,6 +311,10 @@ class InterconnectSyncBackend extends SyncBackend
   @visibleForTesting
   String? get activeBaseUrl => _ops?.baseUrl;
 
+  /// 当前会话已选定的 host 地址（未解析 = null）。书架「彻底删除」二次确认据此
+  /// 对上配对记录里的 host 展示名（反馈 nvlhtczbro）。
+  String? get resolvedHostBaseUrl => _ops?.baseUrl;
+
   /// BUG-891：当前选中 host 的 TOFU 钉扎证书 SHA-256 指纹（`aa:bb:..`），供制卡把它
   /// 下发给 ffmpeg 的 `-tls_pin_sha256` 以按指纹接受自签流。http 主机 / 未解析 = null。
   String? get activeFingerprintSha256 => _activeFingerprint;

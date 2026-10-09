@@ -337,6 +337,37 @@ void main() {
       await disposeSheet(tester);
     });
 
+    testWidgets('本章 / 全书百分比同一字级（2026-10-09 反馈：字号不一致）', (
+      WidgetTester tester,
+    ) async {
+      await pumpSheet(tester);
+      double pctFontSize(String key) {
+        final RichText text = tester.widget<RichText>(
+          find
+              .descendant(
+                of: find.byKey(ValueKey<String>(key)),
+                matching: find.byType(RichText),
+              )
+              .first,
+        );
+        double? size;
+        text.text.visitChildren((InlineSpan span) {
+          if (span is TextSpan && (span.text ?? '').endsWith('%')) {
+            size = span.style?.fontSize;
+            return false;
+          }
+          return true;
+        });
+        return size!;
+      }
+
+      expect(
+        pctFontSize('fushi_reader_stats_chapter_pct'),
+        pctFontSize('fushi_reader_stats_book_pct'),
+      );
+      await disposeSheet(tester);
+    });
+
     testWidgets('暂停键与「打开完整记录」接到回调；暂停态换图标与文案', (WidgetTester tester) async {
       int pauses = 0;
       int opens = 0;

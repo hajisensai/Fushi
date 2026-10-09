@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/epub/epub_book.dart'
@@ -521,7 +522,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
     expect(find.text('2 / 4'), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.chevron_right));
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
     expect(find.text('3 / 4'), findsOneWidget);
     // 锁着的 img4/img5 不在查看器序列里：末尾停在第 4 张。
@@ -542,6 +543,157 @@ void main() {
     expect(viewer, findsNothing);
     // 查看器关掉后焦点跟到了刚看的那张卡。
     expect(_cardBorderWidth(tester, 'img2.png'), 2);
+  });
+
+  // 2026-10-09 反馈（iOS）：点卡就是大图；移动端不要左右按钮、横滑切图；
+  // 桌面保留按钮但不压在图上；关闭 / 跳转在右上角。
+  testWidgets('触屏查看器：没有左右按钮，横滑切到下一张 / 上一张', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.iOS),
+        home: ReaderGalleryPage(
+          images: _images(6),
+          currentChapter: 1,
+          fileForRef: (_) => null,
+          onOpenImage: (_) {},
+          onJumpTo: (_) {},
+        ),
+      ),
+    );
+    await _pumpAtTop(tester);
+    await tester.tap(_card('img0.png'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 4'), findsOneWidget);
+    expect(find.byIcon(Icons.chevron_left), findsNothing);
+    expect(find.byIcon(Icons.chevron_right), findsNothing);
+    final Finder pages = find.byKey(
+      const ValueKey<String>('fushi_gallery_viewer_pages'),
+    );
+    await tester.fling(pages, const Offset(-400, 0), 1500);
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 4'), findsOneWidget);
+    await tester.fling(pages, const Offset(400, 0), 1500);
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 4'), findsOneWidget);
+    // 关闭与跳转贴在顶栏右上角（不是被 Spacer 推到中间偏右）。
+    final double width = tester.getSize(find.byType(MaterialApp)).width;
+    final Rect close = tester.getRect(
+      find.byKey(const ValueKey<String>('fushi_gallery_viewer_close')),
+    );
+    expect(width - close.right, lessThanOrEqualTo(16));
+    expect(
+      tester.getRect(find.byKey(const ValueKey<String>('fushi_gallery_jump')))
+          .right,
+      lessThanOrEqualTo(close.left + 1),
+    );
+  });
+
+  testWidgets('触屏查看器：放大后单指拖动只平移不翻页，双击复原后才横滑切图', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.iOS),
+        home: ReaderGalleryPage(
+          images: _images(6),
+          currentChapter: 1,
+          fileForRef: (_) => null,
+          onOpenImage: (_) {},
+          onJumpTo: (_) {},
+        ),
+      ),
+    );
+    await _pumpAtTop(tester);
+    await tester.tap(_card('img0.png'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 4'), findsOneWidget);
+    final Finder stage = find.byKey(
+      const ValueKey<String>('fushi_gallery_zoom_img0.png'),
+    );
+    Future<void> doubleTap() async {
+      await tester.tap(stage);
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.tap(stage);
+      await tester.pumpAndSettle();
+    }
+
+    double scale() => tester
+        .widget<InteractiveViewer>(
+          find.descendant(of: stage, matching: find.byType(InteractiveViewer)),
+        )
+        .transformationController!
+        .value
+        .getMaxScaleOnAxis();
+
+    await doubleTap();
+    expect(scale(), greaterThan(1.5), reason: '双击放大');
+    // 放大态：单指横拖一段（没拖到图边外）只平移，不翻页。
+    await tester.drag(stage, const Offset(-120, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 4'), findsOneWidget);
+    expect(scale(), greaterThan(1.5));
+
+    await doubleTap();
+    expect(scale(), closeTo(1, 0.01), reason: '再双击复原');
+    await tester.fling(
+      find.byKey(const ValueKey<String>('fushi_gallery_viewer_pages')),
+      const Offset(-400, 0),
+      1500,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 4'), findsOneWidget, reason: '复原后横滑切图');
+  });
+
+  testWidgets('桌面查看器：左右按钮在图外两侧，悬停才出现', (tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.windows),
+        home: ReaderGalleryPage(
+          images: _images(6),
+          currentChapter: 1,
+          fileForRef: (_) => null,
+          onOpenImage: (_) {},
+          onJumpTo: (_) {},
+        ),
+      ),
+    );
+    await _pumpAtTop(tester);
+    await tester.tap(_card('img0.png'));
+    await tester.pumpAndSettle();
+    double opacityOf(IconData icon) => tester
+        .widget<AnimatedOpacity>(
+          find.ancestor(
+            of: find.byIcon(icon),
+            matching: find.byType(AnimatedOpacity),
+          ),
+        )
+        .opacity;
+    expect(opacityOf(Icons.chevron_right), 0);
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: const Offset(640, 400));
+    await mouse.moveTo(const Offset(640, 420));
+    await tester.pumpAndSettle();
+    expect(opacityOf(Icons.chevron_right), 1);
+    // 按钮落在图片区（Expanded 中栏）之外。
+    final Rect stage = tester.getRect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('fushi_gallery_viewer')),
+        matching: find.byType(Expanded),
+      ).last,
+    );
+    expect(
+      tester.getRect(find.byIcon(Icons.chevron_right)).left,
+      greaterThanOrEqualTo(stage.right),
+    );
+    await tester.tap(find.byIcon(Icons.chevron_right));
+    await tester.pump();
+    expect(find.text('2 / 4'), findsOneWidget);
   });
 
   testWidgets('网格键盘：方向键移焦、Enter 打开焦点卡、Esc 关页面', (tester) async {

@@ -299,6 +299,76 @@ void main() {
       expect(readerPreviewFontWeight(720), FontWeight.w700);
     });
 
+    test('竖排预览排布：每列至少放下一个短句，列高不够就按框高缩字号', () {
+      // 桌面侧板实测：正文 36px → 预览 21.6px；旧 128 高的框每列只剩 2 个字。
+      final ({double fontSize, int perColumn, int columns}) big =
+          readerPreviewVerticalLayout(
+            width: 340,
+            height: kReaderPreviewVerticalHeight - 42,
+            preferredFontSize: readerPreviewFontSize(36),
+            lineHeight: 1.6,
+          );
+      expect(
+        big.perColumn,
+        greaterThanOrEqualTo(kReaderPreviewMinCharsPerColumn),
+      );
+      expect(big.fontSize, lessThanOrEqualTo(readerPreviewFontSize(36)));
+      expect(big.columns, greaterThan(1));
+      // 小字号放得下就不缩。
+      final ({double fontSize, int perColumn, int columns}) small =
+          readerPreviewVerticalLayout(
+            width: 340,
+            height: 166,
+            preferredFontSize: 12,
+            lineHeight: 1.6,
+          );
+      expect(small.fontSize, 12);
+    });
+
+    testWidgets('竖排预览从首字开始、每列是连续的一段（2026-10-09 乱序反馈）', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 380,
+              child: ReaderSettingsPreviewCard(
+                sample: '吾輩は猫である。名前はまだ無い。',
+                background: Colors.white,
+                foreground: Colors.black,
+                readerFontSize: 36,
+                lineHeight: 1.6,
+                fontWeight: 400,
+                vertical: true,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final List<Column> columns = tester
+          .widgetList<Column>(
+            find.descendant(
+              of: find.byKey(
+                const ValueKey<String>('reader_settings_preview_vertical'),
+              ),
+              matching: find.byType(Column),
+            ),
+          )
+          .toList();
+      String textOf(Column c) =>
+          c.children.map((Widget w) => (w as Text).data).join();
+      expect(textOf(columns.first), startsWith('吾輩は猫である。'));
+      // 首列在最右（vertical-rl）。
+      final double firstX = tester.getCenter(find.text('吾')).dx;
+      final double secondColX = tester
+          .getCenter(find.text(textOf(columns[1]).substring(0, 1)).first)
+          .dx;
+      expect(firstX, greaterThan(secondColX));
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('改字号 / 主题后预览即时变化（动画结束后落到新值）', (WidgetTester tester) async {
       Widget card(double size, Color bg) => MaterialApp(
         home: Scaffold(

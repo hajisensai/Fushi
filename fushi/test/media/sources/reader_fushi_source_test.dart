@@ -7,10 +7,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import '../../pages/reader_history_source_corpus.dart';
 import 'package:fushi/media.dart';
+import 'package:fushi_audio/fushi_audio.dart' show SrtBook, SrtBookRepository;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart' show DeleteScope;
 import 'package:fushi_engine/sync/ttu_filename.dart';
 
 void main() {
@@ -711,6 +713,73 @@ void main() {
           .deleteBook(db: db, bookKey: 'no-such-book');
       expect(missingKeyResult.deleted, isFalse);
       expect(missingKeyResult.failureReason, contains('no-such-book'));
+    });
+
+    // BUG-3101：配对了 EPUB 的字幕书卡删除后弹「删除书籍失败」——deleteBook 已按
+    // bookKey 级联删掉 srt 行，调用方再按 uid 删一次拿到 0 行就判失败。
+    SrtBooksCompanion srtRow(String uid, {String bookKey = ''}) =>
+        SrtBooksCompanion.insert(
+          uid: uid,
+          title: uid,
+          srtPath: '/tmp/$uid.srt',
+          importedAt: 0,
+          bookKey: Value(bookKey),
+        );
+
+    for (final DeleteScope scope in DeleteScope.values) {
+      test('BUG-3101 配对字幕书卡删除如实回报成功（scope=${scope.name}）',
+          () async {
+        final db = FushiDatabase.forTesting(NativeDatabase.memory());
+        addTearDown(db.close);
+        MediaSource.setDatabase(db);
+        await db.insertEpubBook(epubBook('Paired'));
+        await db.upsertSrtBook(srtRow('srt/paired', bookKey: 'Paired'));
+        final SrtBook book =
+            (await SrtBookRepository(db).findByUid('srt/paired'))!;
+
+        final DeleteBookResult result = await ReaderFushiSource.instance
+            .deleteSrtShelfBook(db: db, book: book, scope: scope);
+
+        expect(result.deleted, isTrue,
+            reason: 'srt 行随 deleteBook 事务级联删除，不得再判「删除书籍失败」');
+        expect(result.failureReason, isNull);
+        expect(await db.getEpubBook('Paired'), isNull);
+        expect(await SrtBookRepository(db).findByUid('srt/paired'), isNull);
+        final List<SyncDeletionTombstoneRow> bookTombstones =
+            await db.getSyncDeletionTombstonesOfType('book');
+        expect(
+          bookTombstones.map((SyncDeletionTombstoneRow r) => r.itemKey),
+          scope == DeleteScope.syncEverywhere
+              ? contains('Paired')
+              : isNot(contains('Paired')),
+          reason: '删除范围照常落地',
+        );
+      });
+    }
+
+    test('BUG-3101 纯字幕书卡走 repo 删除并如实回报；已不存在则回报失败', () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+      await db.upsertSrtBook(srtRow('srt/lonely'));
+      final SrtBook book =
+          (await SrtBookRepository(db).findByUid('srt/lonely'))!;
+
+      final DeleteBookResult first = await ReaderFushiSource.instance
+          .deleteSrtShelfBook(
+              db: db, book: book, scope: DeleteScope.syncEverywhere);
+      expect(first.deleted, isTrue);
+      expect(await SrtBookRepository(db).findByUid('srt/lonely'), isNull);
+      expect(
+        (await db.getSyncDeletionTombstonesOfType('srtbook'))
+            .map((SyncDeletionTombstoneRow r) => r.itemKey),
+        contains('srt/lonely'),
+      );
+
+      final DeleteBookResult again = await ReaderFushiSource.instance
+          .deleteSrtShelfBook(db: db, book: book);
+      expect(again.deleted, isFalse);
+      expect(again.failureReason, contains('srt/lonely'));
     });
   });
 

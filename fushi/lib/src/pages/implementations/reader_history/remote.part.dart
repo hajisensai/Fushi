@@ -142,9 +142,18 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
                   client,
                   forceRefresh: forceRefresh,
                 );
+      // 「仅从本机移除」过的远端书不再出占位卡（对端那份不动）。
+      final Set<String> hidden = appModelNoUpdate.prefsRepo.hiddenRemoteBooks;
       return _RemoteBookState(
         books: dedupeRemoteBooks(
-          remote: notAdopted,
+          remote: <RemoteBookInfo>[
+            for (final RemoteBookInfo book in notAdopted)
+              if (!hidden.contains(hiddenRemoteBookKey(
+                sourceId: client.remoteLibrarySourceId,
+                book: book,
+              )))
+                book,
+          ],
           localBookKeys: localKeys,
           keyOf: sanitizeTtuFilename,
         ),
@@ -385,9 +394,13 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// * 「下载」→ 复用 [_downloadRemoteBook]（与短按、封面下载按钮同一入口，
   ///   内部已对重复下载去重）。
   /// * 「信息」→ 弹基本元数据（书名 + 是否含有声书）。
-  /// * 「删除远端」→ 仅当远端后端支持删除（[InterconnectSyncBackend] 互联后端，
-  ///   有 deleteRemoteBook/deleteRemoteAudiobook）才显示；云盘后端
-  ///   （[CloudRemoteBookClient]）无此能力，按类型门控隐藏（真实能力边界）。
+  /// * 「仅从本机移除」→ 恒显示：只把这张占位卡从本机书架隐藏（按来源 + 远端身份
+  ///   记进 [PreferencesRepository.hiddenRemoteBooks]），对端 / 云盘那份不动。
+  /// * 「彻底删除」→ 仅当 host 允许 client 删除时显示。判据 = 当前远端来源是
+  ///   [InterconnectSyncBackend]（已配对互联 host）：host 对任一鉴权通过的已配对
+  ///   peer 开放 `DELETE /api/library/books/<id>`，没有按 peer 的只读权限；云盘
+  ///   后端（[CloudRemoteBookClient]）没有删除接口，按类型隐藏（真实能力边界）。
+  ///   二次确认写明是哪台 host 上的哪本书（反馈 nvlhtczbro）。
   ///
   /// [removeFromCollection] 非空 = 合集详情页成员语境，菜单补「移出合集」
   /// （BUG-2969：合集内外同一个菜单，见 [_showCollectionMemberMenu]）。
@@ -430,9 +443,19 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
             ),
         ],
         dangerActions: <DialogDangerAction>[
+          if (client != null)
+            DialogDangerAction(
+              label: t.remote_book_hide_local,
+              icon: Icons.visibility_off_outlined,
+              muted: true,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _hideRemoteBookLocally(book, client);
+              },
+            ),
           if (canDelete)
             DialogDangerAction(
-              label: t.dialog_delete,
+              label: t.remote_book_delete_everywhere,
               onPressed: () {
                 Navigator.pop(dialogContext);
                 _confirmDeleteRemoteBook(book, client);
@@ -441,6 +464,55 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         ],
       ),
     );
+  }
+
+  /// 「仅从本机移除」：把远端书记进本机隐藏清单并立刻从网格摘掉，对端不发任何请求。
+  /// 给一条带「撤销」的提示，误点能当场找回。
+  Future<void> _hideRemoteBookLocally(
+    RemoteBookInfo book,
+    RemoteBookClient client,
+  ) async {
+    final PreferencesRepository prefs = appModelNoUpdate.prefsRepo;
+    final String key = hiddenRemoteBookKey(
+      sourceId: client.remoteLibrarySourceId,
+      book: book,
+    );
+    await prefs.setHiddenRemoteBooks(<String>{...prefs.hiddenRemoteBooks, key});
+    if (!mounted) return;
+    _refreshRemoteBooks();
+    ScaffoldMessenger.of(context).showSnackBar(
+      FushiSnackBar(
+        content: Text(t.remote_book_hidden_message),
+        action: SnackBarAction(
+          label: t.undo,
+          onPressed: () async {
+            await prefs.setHiddenRemoteBooks(
+              prefs.hiddenRemoteBooks..remove(key),
+            );
+            if (mounted) _refreshRemoteBooks();
+          },
+        ),
+      ),
+    );
+  }
+
+  /// 「彻底删除」二次确认里点名的 host：配对时记下的对端展示名，没有就用地址的主机名。
+  Future<String> _interconnectHostLabel(InterconnectSyncBackend backend) async {
+    final String? base = backend.resolvedHostBaseUrl;
+    try {
+      for (final FushiClientUrl url
+          in await SyncRepository(appModel.database).getFushiClientUrls()) {
+        final String? name = url.deviceName?.trim();
+        if (base != null && url.url == base && name != null && name.isNotEmpty) {
+          return name;
+        }
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderFushiHistoryPage.interconnectHostLabel', e, stack);
+    }
+    final String? host = base == null ? null : Uri.tryParse(base)?.host;
+    return (host == null || host.isEmpty) ? (base ?? '?') : host;
   }
 
   /// 合集详情页成员语境下菜单末尾的「移出合集」（本地书卡 / SRT 卡 / 远端占位卡
@@ -496,7 +568,17 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     InterconnectSyncBackend backend,
   ) async {
     // 确认文案是给人看的 → 显示名（BUG-1488）；下面的删除仍走 downloadId 身份键。
-    final bool? confirmed = await _confirmRemoteDelete(book.displayName);
+    // 写明是哪台 host 上的哪本书（反馈 nvlhtczbro）。
+    final String host = await _interconnectHostLabel(backend);
+    if (!mounted) return;
+    final bool? confirmed = await _confirmRemoteDelete(
+      book.displayName,
+      message: t.remote_book_delete_everywhere_confirm(
+        name: book.displayName,
+        host: host,
+      ),
+      confirmLabel: t.remote_book_delete_everywhere,
+    );
     if (confirmed != true) return;
     // BUG-1565：删除是**两次**远端调用（书 + 有声书），必须分别记账。旧实现只有
     // 一个 failed 布尔：书删成功、有声书删失败时，它弹「无法在对端设备上删除」并
@@ -1494,12 +1576,17 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// 条目全部滤掉了。所以「本地数据保留」保留的是空集，读起来却像「删了本机还留
   /// 着一份」，而实际确认之后对端的 DB 行、阅读进度、书签、有声书和整个 extractDir
   /// 页图目录全没了，用户手上一份都不剩。用说实话的对端专用文案。
-  Future<bool?> _confirmRemoteDelete(String name) {
+  Future<bool?> _confirmRemoteDelete(
+    String name, {
+    String? message,
+    String? confirmLabel,
+  }) {
     return showAppDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => FushiAlertDialog(
+        key: const ValueKey<String>('remote_book_delete_confirm'),
         title: Text(name),
-        content: Text(t.sync_peer_book_delete_confirm(name: name)),
+        content: Text(message ?? t.sync_peer_book_delete_confirm(name: name)),
         actions: <Widget>[
           FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -1507,7 +1594,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           ),
           FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(t.dialog_delete),
+            child: Text(confirmLabel ?? t.dialog_delete),
           ),
         ],
       ),
@@ -1861,3 +1948,11 @@ class _RemoteAudiobookException implements Exception {
   @override
   String toString() => '_RemoteAudiobookException: $cause';
 }
+
+/// 「仅从本机移除」隐藏清单的键：来源身份（互联对端 / 某个云盘书库）+ 远端身份键
+/// （[RemoteBookInfo.downloadId]，与下载 / 删除同键，BUG-414）。
+String hiddenRemoteBookKey({
+  required String sourceId,
+  required RemoteBookInfo book,
+}) =>
+    '$sourceId/${Uri.encodeComponent(book.downloadId)}';

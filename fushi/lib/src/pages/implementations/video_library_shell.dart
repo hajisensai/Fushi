@@ -14,10 +14,8 @@ import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/pages/implementations/library_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart';
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
-import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart';
-import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
@@ -123,7 +121,6 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
   VideoLibrarySection _localSection = VideoLibrarySection.home;
   bool _mediaServersVisited = false;
   bool _sourcesVisited = false;
-  bool _settingsVisited = false;
 
   /// 发现 / 在线来源 / 扩展三个分区的已访问集合（惰性构建 + 保活）。
   final Set<VideoLibrarySection> _onlineVisited = <VideoLibrarySection>{};
@@ -162,7 +159,6 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         _mediaServersVisited = true;
       }
       if (value == VideoLibrarySection.sources) _sourcesVisited = true;
-      if (value == VideoLibrarySection.settings) _settingsVisited = true;
       if (value == VideoLibrarySection.discover ||
           value == VideoLibrarySection.onlineSources ||
           value == VideoLibrarySection.extensions) {
@@ -180,8 +176,7 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         VideoLibrarySection.discover ||
         VideoLibrarySection.onlineSources ||
         VideoLibrarySection.extensions ||
-        VideoLibrarySection.sources ||
-        VideoLibrarySection.settings =>
+        VideoLibrarySection.sources =>
           false,
       };
 
@@ -256,10 +251,6 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         LibrarySectionTab<VideoLibrarySection>(
           value: VideoLibrarySection.sources,
           label: t.library_view_import,
-        ),
-        LibrarySectionTab<VideoLibrarySection>(
-          value: VideoLibrarySection.settings,
-          label: t.settings,
         ),
       ];
     final Widget navigation = LibrarySectionTabs<VideoLibrarySection>(
@@ -395,30 +386,6 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                     scrapeTaskController: widget.scrapeTaskController,
                     onOpenScrapeTasks: widget.onOpenScrapeTasks,
                     onLibraryChanged: widget.onLibraryChanged,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        if (_settingsVisited)
-          Offstage(
-            offstage: _section != VideoLibrarySection.settings,
-            child: SectionVisibilityScope(
-              visible: _section == VideoLibrarySection.settings,
-              child: TickerMode(
-                enabled: _section == VideoLibrarySection.settings,
-                child: _dropScoped(
-                  () => _section == VideoLibrarySection.settings,
-                  // 设置正文的滚动视图自己吃掉工具区让位（MediaQuery 顶部
-                  // padding），内容滚到工具区底下，收起后顶部不留空白。
-                  FushiFloatingChromeScrollInset(
-                  child: ModuleSettingsView(
-                    destinationId: SettingsDestinationId.video,
-                    navigation: _navigationFor(
-                      _section == VideoLibrarySection.settings,
-                      navigation,
-                    ),
-                  ),
                   ),
                 ),
               ),

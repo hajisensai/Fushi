@@ -26,24 +26,25 @@ void main() {
       final String body =
           end > start ? source.substring(start, end) : source.substring(start);
 
-      // The repo.delete result must be captured and gate the counter.
-      // 前缀匹配（`(uid` 而非 `(uid)`）：TODO-2470 起这次调用要多带一个具名参数
-      // `propagateDeletion:`（纯字幕书的删除范围），写死右括号会把一次合法的签名
-      // 扩展误报成「SRT 分支不再经 repo 删除」。BUG-439 真正的不变量是下面那条
-      // ——删除结果必须被捕获并门控计数器——它一字未改。
+      // BUG-3101 起 SRT 卡的删除收进 `ReaderFushiSource.deleteSrtShelfBook`（配对
+      // EPUB 的走 deleteBook、纯字幕书走 repo，只走一条路径）；以前 deleteBook 后再
+      // `repo.delete(uid…)` 一次，行已被级联删掉、回报 0 行，计数少算。
+      expect(
+        body.contains('deleteSrtShelfBook('),
+        isTrue,
+        reason: 'the SRT branch deletes via deleteSrtShelfBook (BUG-3101)',
+      );
       expect(
         body.contains('await repo.delete(uid'),
-        isTrue,
-        reason: 'the SRT branch still deletes via the repo',
+        isFalse,
+        reason: 'BUG-3101：不得在 deleteBook 之后再按 uid 删一次 srt 行',
       );
-      // 同理不写死 `removed > 0`：删除结果的类型会随需求扩展（PR #1024 起
-      // `repo.delete` 返回 SrtBookDeleteResult，本地文件删除报告要随它一起回传，
-      // 门控表达式因此是 `removed.deleted > 0`）。BUG-439 的不变量是**门控本身**
-      // ——计数器只能由这次删除的返回值决定，不是它写成哪个字面形状。
+      // 不写死门控的字面形状：删除结果的类型会随需求扩展。BUG-439 的不变量是
+      // **门控本身**——计数器只能由这次删除的返回值决定。
       expect(
-        RegExp(r'if \(removed(\.\w+)? > 0\) deleted\+\+').hasMatch(body),
+        RegExp(r'if \(removed(\.\w+)?( > 0)?\) deleted\+\+').hasMatch(body),
         isTrue,
-        reason: 'only real srt_books deletions may be counted (BUG-439).',
+        reason: 'only real deletions may be counted (BUG-439).',
       );
       // 这一条正向匹配就足以钉住 BUG-439：它的原始形态是**删掉门控**、`repo.delete`
       // 之后无条件 `deleted++`；门控一没，上面的正则就不匹配 → 红。（变异实测过。）

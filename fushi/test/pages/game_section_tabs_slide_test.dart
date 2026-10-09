@@ -29,8 +29,8 @@ Widget _stubLibrary(
 ) =>
     const SizedBox();
 
-/// 镜像生产 [ModuleSettingsView] 的顶栏形状，但不构建需要 provider 的设置正文。
-Widget _stubSettings(BuildContext _, Widget navigation) => Column(
+/// 发现子区桩：只带页头分段导航主位，不构建需要 provider 的发现正文。
+Widget _stubDiscover(BuildContext _, Widget navigation) => Column(
       children: <Widget>[FushiPageHeader.customTitle(title: navigation)],
     );
 
@@ -62,7 +62,7 @@ void main() {
     return tabBar.controller!;
   }
 
-  testWidgets('库 → 设置：外壳页签从「库」滑到「设置」，而不是原地落位',
+  testWidgets('库 → 发现：外壳页签从「库」滑到「发现」，而不是原地落位',
       (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(1440, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -75,7 +75,7 @@ void main() {
           home: HomeGamePage(
             dashboardBuilder: _stubDashboard,
             libraryBuilder: _stubLibrary,
-            settingsBuilder: _stubSettings,
+            discoverBuilder: _stubDiscover,
           ),
         ),
       ),
@@ -85,23 +85,23 @@ void main() {
     final double from =
         kGameSectionTabOrder.indexOf(GameSection.library).toDouble();
     final double to =
-        kGameSectionTabOrder.indexOf(GameSection.settings).toDouble();
-    final TabController settingsTabs = shellController(tester);
-    expect(settingsTabs.animation!.value, from,
+        kGameSectionTabOrder.indexOf(GameSection.discover).toDouble();
+    final TabController shellTabs = shellController(tester);
+    expect(shellTabs.animation!.value, from,
         reason: '外壳页签应停在用户真正所在的「库」');
 
-    gameSectionNotifier.value = GameSection.settings;
+    gameSectionNotifier.value = GameSection.discover;
     await tester.pump();
     // 投影在帧末 animateTo；Ticker 第一帧只记起点，再推一帧才有中途值。
     await tester.pump(const Duration(milliseconds: 60));
     await tester.pump(const Duration(milliseconds: 60));
 
-    expect(settingsTabs.index, to.toInt());
-    expect(settingsTabs.animation!.value, greaterThan(from));
-    expect(settingsTabs.animation!.value, lessThan(to),
+    expect(shellTabs.index, to.toInt());
+    expect(shellTabs.animation!.value, greaterThan(from));
+    expect(shellTabs.animation!.value, lessThan(to),
         reason: '切出来的那一刻指示条应正在滑动');
 
     await tester.pumpAndSettle();
-    expect(settingsTabs.animation!.value, to);
+    expect(shellTabs.animation!.value, to);
   });
 }
