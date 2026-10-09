@@ -219,6 +219,34 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
     let flags = NSEvent.ModifierFlags(rawValue: shift ? 0x20002 : 0)
     let now = ProcessInfo.processInfo.systemUptime
     switch call.method {
+    case "resize":
+      let w = (args["w"] as? Double) ?? 600
+      let h = (args["h"] as? Double) ?? 800
+      var frame = window.frame
+      frame.size = NSSize(width: w, height: h)
+      window.setFrame(frame, display: true)
+      result(["w": window.contentView?.bounds.width ?? 0])
+    case "imeMarked", "imeCommit", "imeUnmark":
+      // 模拟 IMK 输入法对「当前输入上下文的 client」的调用（输入法只认第一响应者
+      // 的 inputContext）。first responder 不是文本 client 时如实回报。
+      let responder = window.firstResponder
+      guard let client = (responder as? NSView)?.inputContext?.client else {
+        result(["ok": false, "firstResponder": AppDelegate.responderName(responder)])
+        return
+      }
+      let text = (args["text"] as? String) ?? ""
+      switch call.method {
+      case "imeMarked":
+        let len = (text as NSString).length
+        client.setMarkedText(text, selectedRange: NSRange(location: len, length: 0),
+          replacementRange: NSRange(location: NSNotFound, length: 0))
+      case "imeCommit":
+        client.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+      default:
+        client.unmarkText()
+      }
+      result(["ok": true, "firstResponder": AppDelegate.responderName(responder),
+              "markedRange": NSStringFromRange(client.markedRange())])
     case "activate":
       NSApp.setActivationPolicy(.regular)
       NSApp.activate(ignoringOtherApps: true)
