@@ -44,6 +44,8 @@ bundle 布局：`build/linux/x64/<mode>/bundle/{fushi, lib/, data/, mihon_bridge
 
 > **代理**：`pub get` 只认继承来的 `HTTPS_PROXY`/`HTTP_PROXY`，而 agent 每次工具调用都是新 shell —— 上一条命令里设的代理不会留到下一条，这是「`setup_worktree.ps1` 首跑 socket error、带代理重跑就过」的根因。`bootstrap.ps1` 按 `调用方环境变量 > FUSHI_BOOTSTRAP_PROXY > <主 checkout>/tool/bootstrap.local.env`（gitignore，本机私有，一次配好所有 worktree 通用）取代理，三者都没有也照常直连跑（CI 不受影响），只是会先探一次 pub.dev 并在不通时把配法打在前面——**探测只示警不拦路**（实测单次探测会误报：探测 10s 超时失败的同一时刻，`pub get` 自带重试仍 45s 跑通），真判死刑交给 `pub get` 自己，失败时把同一份配法作为报错抛出。代理地址绝不写进入库脚本。
 
+> **Flutter 与 bash 的定位**：`bootstrap.ps1` 按 `fushi/.fvmrc` 的版本号找 Flutter：`FUSHI_FLUTTER`（显式覆盖）> fvm 缓存（`FVM_CACHE_PATH` / `FVM_HOME` / `%LOCALAPPDATA%vm` / `~/fvm`）> 常见安装目录（各固定盘与家目录下的 `flutter_sdk/flutter_<版本>`、`flutter_<版本>`）> PATH 上**自报版本相符**的 flutter；都找不到就报错并列出查过的目录，**不回退到别的版本**。`ci/apply-patches.sh` 用 `git --exec-path` 推导出的 Git for Windows `bash.exe` 跑，不用 PATH 上的裸 `bash`（Windows 上常是 `System32ash.exe` 即 WSL）。
+
 > **Windows 构建先决条件：Visual Studio 的「C++ ATL」组件**（2026-09-09，v101 统一
 > 更新提醒引入 `flutter_local_notifications` 之后成为硬要求）。它的 Windows 实现
 > `flutter_local_notifications_windows` 直接 `#include <atlbase.h>`，装了 VS 的
