@@ -1,4 +1,4 @@
-## BUG-3067 · Android 阅读器顶部留白变大：Flutter 3.47 的 edgeToEdge 清掉沉浸标志，状态栏回来并计入正文顶部 inset
+## BUG-3077 · Android 阅读器顶部留白变大：Flutter 3.47 的 edgeToEdge 清掉沉浸标志，状态栏回来并计入正文顶部 inset
 - **报告**：2026-10-07（用户：marv，Discord「the new update broke the top margin in novel reader — now the margin is bigger than before」；平台 / 书 / 视图模式未说明）
 - **真实性**：✅ 真回归（Android）。引入提交 `4cadca674a build: bump Flutter to 3.47.6`（2026-10-05，随 PR #1984「M3 Expressive wave 1 and Flutter 3.47.6 migration」于 2026-10-06 合入 develop，10-07 的调试版 APK 起带它；10-03 的正式版 v2.9.1 用的是 3.44，不受影响）。
   - 触发点：`fushi/lib/src/pages/implementations/reader_fushi/navigation.part.dart:138`（修前）——正文首次恢复完成时裸调 `SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge)`。打开书时 `AppModel.openMedia`（`fushi/lib/src/models/app_model.dart:7111`）先设了 `immersiveSticky`。
@@ -15,7 +15,7 @@
 ### 交接后复核（2026-10-07）
 - 修复提交：`0fe9c4b09f`。追加退出生命周期保护：`navigation.part.dart` 内容就绪回调仅在 `!_popInProgress` 时声明 reader 模式；路由退出动画期间仍 mounted，晚到回调不得盖掉 `closeMedia()` 已恢复的首页系统栏。`reader_system_ui_mode_test.dart` 对此添加源码守卫。
 - Mac / Flutter 3.47.6 定向验证：`reader_system_ui_mode_test.dart`、`home_shell_system_ui_mode_test.dart`、`reader_exit_bounded_probe_test.dart`，**19 tests / exit 0**。
-- `FUSHI_BUG_BASE=upstream/develop dart run tool/bug.dart check --strict`：**exit 0**，本分支新增 BUG-3067 无撞号。
+- `FUSHI_BUG_BASE=upstream/develop dart run tool/bug.dart check --strict`：**exit 0**，本分支新增 BUG-3077 无撞号。
 
 ### 真机数值与验收边界
 - Android 14 / API 34 真机，824×1648、300dpi；Flutter 3.47.6 debug APK，独立包 `app.fushi.reader.topmargintest`。APK build **exit 0**；`flutter drive` 连接已运行的测试包，**exit 0**，1 个 probe 场景（runner 计数 +2 含 tearDownAll），6 个组合 × 3 个阶段 = **18 组独立采样**。逐组数值校验 **18/18、exit 0**。

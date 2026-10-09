@@ -62,7 +62,7 @@ Future<void> setHomeShellSystemUiMode() async {
 }
 
 /// The system-UI mode the **novel reader body** declares once its content is
-/// ready (BUG-3067).
+/// ready (BUG-3077).
 ///
 /// Android keeps both system bars hidden ([SystemUiMode.immersiveSticky], the
 /// mode `AppModel.openMedia` already entered): the reader draws its own

@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2831 条。点号进各自文件。
+> 共 2833 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3077](bugs/BUG-3077-android-reader-system-bars-flutter347.md) | ✅ | ✅ | Android 阅读器顶部留白变大：Flutter 3.47 的 edgeToEdge 清掉沉浸标志，状态栏回来并计入正文顶部 inset |
+| [BUG-3076](bugs/BUG-3071-audiobook-sheet-open-top.md) | ✅ | ✅ | 有声书面板打开时滚离顶部且底部进场过冲 |
 | [BUG-3075](bugs/BUG-3075-floating-appbar-scrim-cuts-shadow.md) | ✅ | ✅ | M3E 悬浮顶栏的栏下沿遮罩盖住胶囊投影 |
 | [BUG-3074](bugs/BUG-3074-bluray-menu-aacs-black.md) | ✅ | ✅ | 加密原盘进入原盘菜单纯黑（libbluray 找不到 libaacs） |
 | [BUG-3073](bugs/BUG-3073-download-identity-locks-unreachable-provider.md) | ✅ | ✅ | 下载任务身份被当用户锁定：那家资料源连不上就永远providerUnavailable，不换任务里的TMDB id |

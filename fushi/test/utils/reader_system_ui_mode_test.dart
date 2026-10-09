@@ -6,7 +6,7 @@ import 'package:fushi/utils.dart';
 
 import '../helpers/source_guard.dart';
 
-/// BUG-3067 守卫：小说阅读器正文就绪时声明的系统 UI 模式。
+/// BUG-3077 守卫：小说阅读器正文就绪时声明的系统 UI 模式。
 ///
 /// Flutter 3.47 的 Android `PlatformPlugin.enableEdgeToEdge()` 先
 /// `decorView.setSystemUiVisibility(0)`，会清掉 `openMedia` 设下的
@@ -96,7 +96,7 @@ void main() {
         isFalse,
         reason:
             '${file.path} sets a system-UI mode directly; the novel reader '
-            'must go through setReaderSystemUiMode() (BUG-3067)',
+            'must go through setReaderSystemUiMode() (BUG-3077)',
       );
     }
     final String navigation = File(
