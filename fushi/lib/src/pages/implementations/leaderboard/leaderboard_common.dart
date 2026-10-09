@@ -14,6 +14,7 @@ import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_sync.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
@@ -292,10 +293,14 @@ String leaderboardWindowLabel(LeaderboardWindow window) => switch (window) {
 };
 
 /// 指标数值带单位：字数 = 「N 字」，其余 = 「N 部」。
+/// 数字按当前语言加千分位（10068859 → 10,068,859）。
+String leaderboardGroupedNumber(num value) =>
+    NumberFormat.decimalPattern(Intl.getCurrentLocale()).format(value);
+
 String leaderboardMetricValue(LeaderboardMetric metric, int value) =>
     metric == LeaderboardMetric.chars
-    ? t.leaderboard_value_chars(n: value)
-    : t.leaderboard_value_works(n: value);
+    ? t.leaderboard_value_chars(n: leaderboardGroupedNumber(value))
+    : t.leaderboard_value_works(n: leaderboardGroupedNumber(value));
 
 /// 相对路径（`/img/...`）或绝对地址 → 可加载的 URL；未开启（没有 client）或空时 null。
 String? leaderboardMediaUrl(WidgetRef ref, String? path) {
@@ -340,18 +345,24 @@ class LeaderboardAvatar extends ConsumerWidget {
     // 不再是 primaryContainer 彩色圆。
     final bool glass = isGlassDesign(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Widget initialText = Text(
+      initial,
+      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+        color: glass
+            ? appleColorsOf(context).secondaryLabel
+            : colors.onSurfaceVariant,
+      ),
+    );
     final Widget fallback = ColoredBox(
       color: glass ? appleColorsOf(context).fill : tokens.surfaces.search,
-      child: Center(
-        child: Text(
-          initial,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: glass
-                ? appleColorsOf(context).secondaryLabel
-                : colors.onSurfaceVariant,
-          ),
-        ),
-      ),
+      // 大头像（大西瓜的球）首字按比例放大：仍是 titleSmall 字阶，只由
+      // FittedBox 等比缩放；常规尺寸原样居中。
+      child: size > 48
+          ? Padding(
+              padding: EdgeInsets.all(size * 0.28),
+              child: FittedBox(child: initialText),
+            )
+          : Center(child: initialText),
     );
     final Widget circle = SizedBox.square(
       dimension: size,
