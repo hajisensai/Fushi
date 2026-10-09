@@ -522,6 +522,16 @@ class AppNativeProxy {
           final List<int> body = utf8.encode(rewritten);
           _asWholeEntity(out);
           out.headers.removeAll(HttpHeaders.contentEncodingHeader);
+          // 正文已确认是 HLS 播放列表，就按 RFC 8216 的 mime 回给 native，不沿用上游
+          // 的 Content-Type（BUG-3079）。视频源扩展的 CDN 常把播放列表挂在非 .m3u8
+          // 路径上、回 `text/plain` / `application/octet-stream` / 图片类型；ffmpeg
+          // 的 hls_probe 遇到「扩展名与 mime 都不标准」直接拒认 HLS，libmpv 退到自己
+          // 的 demux_playlist，把每个分片当成独立的播放列表条目逐个播——每条只有一个
+          // 分片长（3～4 秒），进度条就被切成一段一段。
+          out.headers.contentType = ContentType(
+            'application',
+            'vnd.apple.mpegurl',
+          );
           out.contentLength = body.length;
           out.add(body);
           return;

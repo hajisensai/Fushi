@@ -1707,7 +1707,7 @@ void main() {
     }
   }
 
-  testWidgets('浮动工具栏：标题胶囊 + 更新/统计/排行榜按钮组常驻首页顶部，统计入口不再挂在学习卡里',
+  testWidgets('浮动工具栏：标题胶囊 + 更新/统计/排行榜/反馈按钮组常驻首页顶部，统计入口不再挂在学习卡里',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -1726,6 +1726,7 @@ void main() {
       'home-toolbar-updates',
       'home-toolbar-stats',
       'home-toolbar-leaderboard',
+      'home-toolbar-feedback',
     ]) {
       final Finder button = find.byKey(ValueKey<String>(key));
       expect(button, findsOneWidget, reason: key);
@@ -1746,7 +1747,7 @@ void main() {
     expect(resumeFab(tester).visible, isFalse);
   });
 
-  testWidgets('浮动工具栏：Tab 可达三颗动作按钮（焦点可遍历）', (WidgetTester tester) async {
+  testWidgets('浮动工具栏：Tab 可达四颗动作按钮（焦点可遍历）', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -1774,6 +1775,7 @@ void main() {
       'home-toolbar-updates',
       'home-toolbar-stats',
       'home-toolbar-leaderboard',
+      'home-toolbar-feedback',
     ];
     for (int i = 0; i < 40 && reached.length < keys.length; i++) {
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);

@@ -10,6 +10,8 @@ import 'package:fushi_engine/media/video/download/video_media_reference_codec.da
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart'
+    show VideoMetadataNetworkException;
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
@@ -33,7 +35,9 @@ void main() {
 
   const String localTitle = 'fx外汇战士';
 
-  Future<(SourceLibraryRow, int)> library() async {
+  Future<(SourceLibraryRow, int)> library({
+    Map<String, String> externalIds = const <String, String>{'mal': '63337'},
+  }) async {
     final int sourceId = await db.insertMediaSource(
       MediaSourcesCompanion.insert(
         label: 'Source',
@@ -60,7 +64,7 @@ void main() {
               mediaKind: VideoMetadataMediaKind.tv,
               discoveryCategory: VideoDiscoveryCategory.anime,
               title: 'FX戦士くるみちゃん',
-              externalIds: const <String, String>{'mal': '63337'},
+              externalIds: externalIds,
             ),
           ),
         ),
@@ -175,26 +179,69 @@ void main() {
     expect(mal.fetchedIds, contains('1'), reason: '按已有规范身份刮过');
     expect(mal.fetchedIds, isNot(contains('63337')));
   });
+
+  // BUG-3073：下载身份曾被当成用户锁定——那家资料源连不上（Jikan 停摆数日），
+  // 每轮都只剩 providerUnavailable，任务里同时记着的 TMDB id 从没被用过。
+  test('下载身份那家连不上 → 换任务里记着的另一个 id（TMDB），不卡在 MAL', () async {
+    final (SourceLibraryRow source, int collectionId) = await library(
+      externalIds: const <String, String>{'mal': '63337', 'tmdb': '311842'},
+    );
+    final _MalProvider mal = _MalProvider(unreachable: true);
+    final _MalProvider tmdb =
+        _MalProvider(kind: VideoMetadataProviderKind.tmdb);
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.mal,
+      database: db,
+      config: const VideoSourceScrapeGlobalConfig(),
+      registry:
+          VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal, tmdb]),
+    );
+    addTearDown(coordinator.close);
+
+    final SourceScrapeReport report = await coordinator.scrapeSource(
+      source,
+      cancellationToken: VideoSourceScrapeCancellationToken(),
+      onProgress: (_) {},
+    );
+
+    expect(mal.fetchedIds, contains('63337'), reason: '先按首选身份试');
+    expect(tmdb.fetchedIds, contains('311842'), reason: 'MAL 连不上就换 TMDB id');
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    expect(
+      (await db.getVideoMetadataWorkByCollection(collectionId))!.title,
+      'FX戦士くるみちゃん',
+    );
+  });
 }
 
-/// MAL 假源：按标题搜不到任何东西（俗称），按 id 取资料恒能取到。
+/// 假源（默认 MAL）：按标题搜不到任何东西（俗称），按 id 取资料恒能取到；
+/// [unreachable] 时取资料抛网络异常（resolver 折成 providerUnavailable）。
 class _MalProvider implements VideoMetadataProvider {
+  _MalProvider({
+    this.kind = VideoMetadataProviderKind.mal,
+    this.unreachable = false,
+  });
+
+  final VideoMetadataProviderKind kind;
+  final bool unreachable;
   final List<String> searchedTitles = <String>[];
   final List<String> fetchedIds = <String>[];
 
   @override
-  VideoMetadataProviderKind get providerKind => VideoMetadataProviderKind.mal;
+  VideoMetadataProviderKind get providerKind => kind;
 
   @override
   bool get isAvailable => true;
 
   VideoMetadataWork _work(String id) => VideoMetadataWork(
-        provider: VideoMetadataProviderKind.mal,
+        provider: kind,
         kind: VideoMetadataMediaKind.tv,
-        title: id == '63337' ? 'FX戦士くるみちゃん' : 'Manually bound',
+        title:
+            id == '63337' || id == '311842' ? 'FX戦士くるみちゃん' : 'Manually bound',
         episodeCount: 12,
         ids: <VideoMetadataId>[
-          VideoMetadataId(type: 'mal', value: id, isDefault: true),
+          VideoMetadataId(type: kind.name, value: id, isDefault: true),
         ],
       );
 
@@ -209,6 +256,11 @@ class _MalProvider implements VideoMetadataProvider {
   @override
   Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async {
     fetchedIds.add(lookup.externalId);
+    if (unreachable) {
+      throw const VideoMetadataNetworkException(
+        'MAL anime request failed: HandshakeException',
+      );
+    }
     return _work(lookup.externalId);
   }
 

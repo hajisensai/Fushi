@@ -92,7 +92,9 @@ class HostDownloadAddRequest {
   /// 解析并校验 wire JSON；不合法抛 [FormatException]（路由映射成 400，消息即原因）：
   ///
   /// * `magnet` 与 `torrent`（.torrent 文件字节的 base64）恰好给一个；
-  /// * `files`：只下载这些 metainfo 文件下标（要求 `torrent`，下标必须存在）；
+  /// * `files`（旧名 `fileIndexes` 照认）：只下载这些 metainfo 文件下标（要求
+  ///   `torrent`，下标必须存在）；选中全部文件 = 整颗 torrent（管线
+  ///   `enqueueManual` 统一降级，单文件种子传 `[0]` 同理）；
   /// * `year`：作品年份；
   /// * `metadataProvider` + `externalId`：成对给出，`anidb` | `mal` | `tmdb` + 正整数
   ///   id；入库后按这个身份直接刮削，不再按标题搜。只用于视频任务；
@@ -140,7 +142,17 @@ class HostDownloadAddRequest {
         'discoveryKind must be one of ${kHostDownloadDiscoveryKinds.join(', ')}',
       );
     }
-    final Set<int>? files = _parseFileIndexes(json['files'], metainfo);
+    // `fileIndexes` 是 #2015 先上线的同义字段名（develop 预发布版的对端可能在发），
+    // 照样认；两个都给时不猜哪个算数。
+    if (json['files'] != null && json['fileIndexes'] != null) {
+      throw const FormatException(
+        'give either files or fileIndexes (legacy alias), not both',
+      );
+    }
+    final Set<int>? files = _parseFileIndexes(
+      json['files'] ?? json['fileIndexes'],
+      metainfo,
+    );
     final int? year = _parseYear(json['year']);
     final String? provider = str('metadataProvider')?.toLowerCase();
     final String? rawExternalId = str('externalId');

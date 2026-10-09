@@ -48,7 +48,12 @@ void main() {
       methodBody(src, 'void _flushStagedMinesOnExit()'),
     );
     expect(flush, isNot(contains('ref.read(')));
-    expect(flush, contains('_providerContainer.read(ankiRepositoryProvider)'));
+    expect(
+      flush,
+      matches(RegExp(r'_providerContainer\.read\(ankiRepositoryProvider,?\)')),
+      reason:
+          'exit writes must use the cached container; a formatter trailing comma is immaterial',
+    );
     // 失败不能静默吞掉。
     expect(flush, isNot(contains('catch(_)')));
     expect(flush, contains('ErrorLogService.instance.log('));
@@ -66,11 +71,17 @@ void main() {
     expect(src, isNot(contains('ref.read(')));
     final String commit = compactCode(
       methodBody(
-          read(queuePartPath),
-          'Future<VideoMineCommitSummary> '
-          '_commitStagedMines('),
+        read(queuePartPath),
+        'Future<VideoMineCommitSummary> '
+        '_commitStagedMines(',
+      ),
     );
-    expect(commit, contains('_providerContainer.read(ankiRepositoryProvider)'));
+    expect(
+      commit,
+      matches(RegExp(r'_providerContainer\.read\(ankiRepositoryProvider,?\)')),
+      reason:
+          'async commits must resolve Anki from the cached container, never ref/context',
+    );
   });
 
   test('后台落地用 State 的 mounted；打开列表在 await 前抓住 context', () {
@@ -95,8 +106,9 @@ void main() {
 
   test('后台落地回调写制卡历史用点击时冻结的库，不经 ref / context', () {
     final String src = read(miningPartPath);
-    final int anchor =
-        src.indexOf('onBackgroundLanded: (MinePopupResult landed)');
+    final int anchor = src.indexOf(
+      'onBackgroundLanded: (MinePopupResult landed)',
+    );
     expect(anchor, greaterThan(0));
     final String callback = compactCode(balancedBlockFrom(src, anchor));
     expect(callback, contains('_recordMinedSentenceForVideo('));

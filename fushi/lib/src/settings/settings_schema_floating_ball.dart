@@ -234,6 +234,7 @@ String _buttonLabel(FloatingBallScope scope, String id) {
       FloatingBallGlobalAction.screenOcr => t.floating_ball_action_screen_ocr,
       FloatingBallGlobalAction.cameraOcr => t.floating_ball_action_camera_ocr,
       FloatingBallGlobalAction.sync => t.sync_now,
+      FloatingBallGlobalAction.feedback => t.feedback_title,
     };
   }
   if (scope == FloatingBallScope.reader) {
@@ -265,12 +266,12 @@ IconData _buttonIcon(FloatingBallScope scope, String id) {
   if (global != null) {
     return switch (global) {
       FloatingBallGlobalAction.lookup => FushiIcons.search,
-      FloatingBallGlobalAction.popupLookup =>
-        FushiIcons.pictureInPicture,
+      FloatingBallGlobalAction.popupLookup => FushiIcons.pictureInPicture,
       FloatingBallGlobalAction.clipboard => Icons.content_paste_search,
       FloatingBallGlobalAction.screenOcr => FushiIcons.ocr,
       FloatingBallGlobalAction.cameraOcr => Icons.photo_camera_outlined,
       FloatingBallGlobalAction.sync => FushiIcons.sync,
+      FloatingBallGlobalAction.feedback => FushiIcons.forum,
     };
   }
   if (scope == FloatingBallScope.reader) {
