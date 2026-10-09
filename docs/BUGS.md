@@ -29,12 +29,18 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2909 条。点号进各自文件。
+> 共 2915 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3228](bugs/BUG-3228-leaderboard-summary-stuck-loading.md) | ✅ | ✅ | 排行榜总字数卡加载失败后永远停在加载条 |
+| [BUG-3225](bugs/BUG-3225-android-global-lookup-black-panel.md) | ✅ | ✅ | Android app 外查词窗词条区整块黑底、浅色主题文字看不见 |
+| [BUG-3224](bugs/BUG-3224-anki-card-css-size.md) | ✅ | ✅ | 制卡把整份词典 CSS 内联进每个释义字段，AnkiDroid 预览 TransactionTooLargeException 打不开 |
+| [BUG-3223](bugs/BUG-3223-video-fullscreen-episode-list-hang.md) | ✅ | ✅ | 全屏下从剧集列表换下一集：原生全屏中途掉线（反馈「点剧集列表就卡住了」） |
+| [BUG-3222](bugs/BUG-3222-manga-prev-chapter-flash-first-page.md) | ✅ | ✅ | 翻回上一章先闪上一章开头再跳到末尾 |
+| [BUG-3221](bugs/BUG-3221-manga-chapter-switch-queued-turns.md) | ✅ | ✅ | 换章装载期间多滑的几下在新章装好后被逐页消费 |
 | [BUG-3220](bugs/BUG-3220-ios-ankimobile-no-return.md) | 🚧 | 🚧 | iOS 制卡后不跳回 Fushi，已制卡打勾不见 |
+| [BUG-3219](bugs/BUG-3219-manga-swipe-not-following.md) | ✅ | ✅ | 漫画横滑翻页不跟手：拖动中页面不动，松手才翻 |
 | [BUG-3218](bugs/BUG-3218-video-skip-intro-removed.md) | ✅ | ✅ | 跳过片头/片尾按钮无法关闭，按用户决定移除该功能 |
 | [BUG-3217](bugs/BUG-3217-dict-style-radius-collapses-layout.md) | ✅ | ✅ | 词典样式开圆角后释义塌成一字一行 |
 | [BUG-3216](bugs/BUG-3216-dictionary-page-mining-sentence.md) | ✅ | ✅ | 查词页制卡卡片没有句子 |
