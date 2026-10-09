@@ -3331,6 +3331,9 @@ class _HomePageState extends BasePageState<HomePage>
         // 键，于是本次会话下载入库的作品永远赶不上那唯一一轮。
         loadPendingScrapeWorks: () =>
             _videoLibraryScrapeSweep.sweepAndListPending(),
+        // 刮削结果落库只读重算，绝不发起补刮（BUG-3072）。
+        refreshPendingScrapeWorks: () =>
+            _videoLibraryScrapeSweep.refreshPendingAfterScrapeResults(),
         mediaServerServersLoader: _loadMediaServerEntries,
         // 视频库「发现」分区与浏览页签共用同一个生产端口（同一实例）。
         discoveryController: _productionVideoDiscoveryController,

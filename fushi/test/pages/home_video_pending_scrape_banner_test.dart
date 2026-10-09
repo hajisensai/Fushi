@@ -118,7 +118,9 @@ void main() {
   /// 清单、不真发批次（本用例断的是提醒，不是刮削本身）。
   ({
     Future<List<VideoPendingScrapeWork>> Function() load,
+    Future<List<VideoPendingScrapeWork>> Function() refresh,
     List<int> callCount,
+    List<int> refreshCount,
   }) makePort() {
     final VideoLibraryScrapeSweep sweep = VideoLibraryScrapeSweep(
       database: db,
@@ -126,17 +128,24 @@ void main() {
       isEnabled: () => false,
     );
     final List<int> calls = <int>[0];
+    final List<int> refreshes = <int>[0];
     return (
       load: () {
         calls[0]++;
         return sweep.sweepAndListPending();
       },
+      refresh: () {
+        refreshes[0]++;
+        return sweep.refreshPendingAfterScrapeResults();
+      },
       callCount: calls,
+      refreshCount: refreshes,
     );
   }
 
   Widget buildApp(Future<List<VideoPendingScrapeWork>> Function()? load,
-          {VoidCallback? onOpenScrapeTasks}) =>
+          {VoidCallback? onOpenScrapeTasks,
+          Future<List<VideoPendingScrapeWork>> Function()? refresh}) =>
       ProviderScope(
         overrides: <Override>[
           platformServicesProvider.overrideWithValue(platformServices),
@@ -150,6 +159,7 @@ void main() {
                 repo: VideoBookRepository(db),
                 section: VideoLibrarySection.allVideos,
                 loadPendingScrapeWorks: load,
+                refreshPendingScrapeWorks: refresh,
                 onOpenScrapeTasks: onOpenScrapeTasks,
                 scrapeTaskController: controller,
               ),
@@ -271,5 +281,61 @@ void main() {
       findsOneWidget,
       reason: '下载入库的作品必须当场进提醒，不能等到重启 app',
     );
+  });
+
+  testWidgets('刮削结果落库只重算提醒条计数，不发起补刮（BUG-3072）',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final int sourceId = await addSource();
+    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+        'Unscraped Movie');
+    final ({
+      Future<List<VideoPendingScrapeWork>> Function() load,
+      Future<List<VideoPendingScrapeWork>> Function() refresh,
+      List<int> callCount,
+      List<int> refreshCount,
+    }) port = makePort();
+    await tester.pumpWidget(buildApp(port.load, refresh: port.refresh));
+    await tester.pumpAndSettle();
+    expect(port.callCount[0], 1, reason: '进页面那一次是补刮请求');
+    expect(
+      find.text(t.video_library_scrape_pending_banner(count: 1)),
+      findsOneWidget,
+    );
+
+    // 刮削把身份写进库（补刮批次自己的写入走的是同一条展示层变更流）。
+    final int workId = await db.into(db.videoMetadataWorks).insert(
+          VideoMetadataWorksCompanion.insert(
+            bookUid: const Value<String?>('movie-a'),
+            mediaType: 'movie',
+            title: 'seeded',
+            updatedAt: 1,
+          ),
+        );
+    await db.into(db.videoMetadataProviderIdentities).insert(
+          VideoMetadataProviderIdentitiesCompanion.insert(
+            identityKey: 'work:$workId:anidb',
+            workId: Value<int?>(workId),
+            provider: 'anidb',
+            externalId: '123',
+            updatedAt: 1,
+          ),
+        );
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    expect(port.refreshCount[0], greaterThanOrEqualTo(1),
+        reason: '结果落库后提醒条的数字要跟着掉下去');
+    expect(
+      find.text(t.video_library_scrape_pending_banner(count: 1)),
+      findsNothing,
+    );
+    expect(port.callCount[0], 1,
+        reason: '结果写入不是补刮请求：否则补刮批次的写入会启动下一轮，'
+            '资料源连不上时同一作品被每分钟重刮十几次');
   });
 }
