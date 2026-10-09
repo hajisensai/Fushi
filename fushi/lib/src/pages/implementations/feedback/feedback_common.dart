@@ -203,7 +203,7 @@ class FeedbackIdLabel extends StatelessWidget {
         excludeSemantics: true,
         child: InkWell(
           key: ValueKey<String>('feedback-id-$id'),
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: FushiM3eShape.smallRadius,
           onTap: () => unawaited(_copy(context)),
           onLongPress: () => unawaited(_copy(context)),
           child: Padding(

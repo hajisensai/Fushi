@@ -730,6 +730,20 @@ void main() {
           seenAt: 300,
         ),
       ]);
+      // 另一条还没写完的新反馈草稿：重新提交不读写草稿，交完它必须原样还在。
+      await FeedbackDraftStore(root).write(
+        const FeedbackComposeDraft(
+          category: FeedbackCategory.bug,
+          title: '另一条没写完的',
+          body: '草稿正文',
+          contact: '',
+          includeLogs: true,
+          includeDevice: true,
+          linkAccount: true,
+          screenshots: <Uint8List>[],
+          savedAt: 50,
+        ),
+      );
     });
     final LeaderboardService b = board();
     final FeedbackService f = feedback(b);
@@ -824,6 +838,11 @@ void main() {
     );
     // 回到原反馈详情：反向显示「已被重新提交为」。
     expect(find.text(t.feedback_reopened_as(id: 'newnewnew0')), findsOneWidget);
+    // 普通新反馈的草稿没被这次重新提交清掉。
+    final FeedbackComposeDraft? kept = await tester
+        .runAsync<FeedbackComposeDraft?>(() => FeedbackDraftStore(root).read());
+    expect(kept?.title, '另一条没写完的');
+    expect(kept?.body, '草稿正文');
 
     // 「我的反馈」列表：两条之间的关联看得出来（先等提交页的退场动画走完）。
     await tester.pump(const Duration(seconds: 1));

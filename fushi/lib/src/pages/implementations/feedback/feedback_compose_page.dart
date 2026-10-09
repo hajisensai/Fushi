@@ -479,10 +479,13 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
           );
       _submitted = true;
       _draftTimer?.cancel();
-      try {
-        await (await _service.draftStore()).clear();
-      } on Object catch (e, st) {
-        ErrorLogService.instance.log('feedback.draft_clear', e, st);
+      // 重新提交不读写草稿：磁盘上的草稿属于另一条还没写完的新反馈，不能被这次提交顺手删掉。
+      if (widget.reopenOf == null) {
+        try {
+          await (await _service.draftStore()).clear();
+        } on Object catch (e, st) {
+          ErrorLogService.instance.log('feedback.draft_clear', e, st);
+        }
       }
       if (mounted) Navigator.of(context).pop(result);
     } on Object catch (e, st) {
