@@ -8,6 +8,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable;
+import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/page_scroll_registry.dart';
@@ -1251,7 +1252,11 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
 /// 页内分组跳转条：一排胶囊（分组名），当前分组胶囊弹簧变宽 + 填色
 /// （M3E secondaryContainer / Apple 强调色）。可横向滚动；键盘 Tab 可达、
 /// Enter 跳转。
-class SettingsSectionJumpBar extends StatelessWidget {
+///
+/// 当前分组变化（滚动正文跨过分组边界 / 点胶囊跳转）时，跳转条自己横向滚动把当前
+/// 胶囊带进可见区（反馈 anuYVUChGs：「设置 › 视频」滚到「音频」时高亮胶囊停在屏外）。
+/// 所有走 [SettingsKitScaffold] 的设置页共用这一个组件，一处修复全部受益。
+class SettingsSectionJumpBar extends StatefulWidget {
   const SettingsSectionJumpBar({
     required this.sections,
     required this.activeId,
@@ -1267,29 +1272,119 @@ class SettingsSectionJumpBar extends StatelessWidget {
   final EdgeInsetsGeometry? padding;
 
   @override
+  State<SettingsSectionJumpBar> createState() => _SettingsSectionJumpBarState();
+}
+
+class _SettingsSectionJumpBarState extends State<SettingsSectionJumpBar> {
+  final ScrollController _controller = ScrollController();
+
+  /// 每个分组胶囊一把 key，按分组 id 取：定位当前胶囊的几何用。分组集合变了就
+  /// 只保留仍在的那些。
+  final Map<String, GlobalKey> _chipKeys = <String, GlobalKey>{};
+
+  GlobalKey _keyFor(String id) =>
+      _chipKeys.putIfAbsent(id, () => GlobalKey(debugLabel: 'jump-chip-$id'));
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleRevealActive(animate: false);
+  }
+
+  @override
+  void didUpdateWidget(SettingsSectionJumpBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final Set<String> live = <String>{
+      for (final (String id, String _) in widget.sections) id,
+    };
+    _chipKeys.removeWhere((String id, GlobalKey _) => !live.contains(id));
+    if (oldWidget.activeId != widget.activeId) {
+      _scheduleRevealActive(animate: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  /// 布局完成后把当前分组胶囊滚进跳转条可见区（两侧各留一点余量，让相邻胶囊露头，
+  /// 用户看得出还能往哪边滑）。只动跳转条**自己**这一层横向滚动视图：
+  /// `Scrollable.ensureVisible` 会顺着祖先链把外层纵向正文也一起对齐，那会打断
+  /// 用户正在进行的纵向滚动。
+  void _scheduleRevealActive({required bool animate}) {
+    final String? id = widget.activeId;
+    if (id == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      if (!mounted || !_controller.hasClients) return;
+      final BuildContext? chipContext = _chipKeys[id]?.currentContext;
+      final RenderObject? chip = chipContext?.findRenderObject();
+      if (chip is! RenderBox || !chip.attached || !chip.hasSize) return;
+      final RenderAbstractViewport? viewport = RenderAbstractViewport.maybeOf(
+        chip,
+      );
+      if (viewport == null) return;
+      final ScrollPosition position = _controller.position;
+      const double margin = 24;
+      final double startEdge = viewport.getOffsetToReveal(chip, 0).offset;
+      final double endEdge = viewport.getOffsetToReveal(chip, 1).offset;
+      final double current = position.pixels;
+      double? target;
+      if (startEdge - margin < current) {
+        target = startEdge - margin;
+      } else if (endEdge + margin > current) {
+        target = endEdge + margin;
+      }
+      if (target == null) return;
+      final double to = target.clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      );
+      if ((to - current).abs() < 0.5) return;
+      final Duration duration = animate
+          ? fushiMotionDuration(context, FushiMotion.medium)
+          : Duration.zero;
+      if (duration == Duration.zero) {
+        position.jumpTo(to);
+      } else {
+        position.animateTo(to, duration: duration, curve: FushiMotion.standard);
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 分组只有寥寥几个：一次全部建出（Row），而不是懒建的 ListView——离屏胶囊
+    // 也要有几何，当前分组滚到屏外时才定位得到它。
     return SizedBox(
       height: 44,
       child: HorizontalDragScrollable(
-        child: ListView.separated(
+        child: SingleChildScrollView(
+          key: const ValueKey<String>('settings-jump-bar-scroll'),
+          controller: _controller,
           scrollDirection: Axis.horizontal,
           padding:
-              padding ?? EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-          itemCount: sections.length,
-          separatorBuilder: (BuildContext context, int index) =>
-              const SizedBox(width: 6),
-          itemBuilder: (BuildContext context, int index) {
-            final (String id, String title) = sections[index];
-            return Center(
-              child: _JumpChip(
-                key: ValueKey<String>('settings-jump.$id'),
-                label: title,
-                selected: id == activeId,
-                onTap: () => onSelected(id),
-              ),
-            );
-          },
+              widget.padding ??
+              EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+          child: Row(
+            children: <Widget>[
+              for (final (int index, (String id, String title))
+                  in widget.sections.indexed) ...<Widget>[
+                if (index > 0) const SizedBox(width: 6),
+                Center(
+                  child: _JumpChip(
+                    key: _keyFor(id),
+                    valueKey: ValueKey<String>('settings-jump.$id'),
+                    label: title,
+                    selected: id == widget.activeId,
+                    onTap: () => widget.onSelected(id),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -1301,9 +1396,13 @@ class _JumpChip extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    required this.valueKey,
     super.key,
   });
 
+  /// 稳定的 `settings-jump.<id>` key（测试按它找胶囊）；外层 [key] 是跳转条定位
+  /// 几何用的 GlobalKey。
+  final Key valueKey;
   final String label;
   final bool selected;
   final VoidCallback onTap;
@@ -1325,7 +1424,9 @@ class _JumpChip extends StatelessWidget {
     final Color activeFg = apple
         ? appleColorsOf(context).onAccent
         : scheme.onSecondaryContainer;
-    return SettingsSpringValue(
+    return KeyedSubtree(
+      key: valueKey,
+      child: SettingsSpringValue(
       value: selected ? 1 : 0,
       builder: (BuildContext context, double t, Widget? _) {
         final double c = t.clamp(0.0, 1.0);
@@ -1359,6 +1460,7 @@ class _JumpChip extends StatelessWidget {
           ),
         );
       },
+    ),
     );
   }
 }

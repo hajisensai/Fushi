@@ -2272,6 +2272,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         initialAutoScroll: _appModel.videoSubtitleListAutoScroll,
         onAutoScrollChanged: (bool value) =>
             unawaited(_appModel.setVideoSubtitleListAutoScroll(value)),
+        initialTapLookup: _appModel.videoSubtitleListTapLookup,
+        onTapLookupChanged: (bool value) =>
+            unawaited(_appModel.setVideoSubtitleListTapLookup(value)),
         initialFontScaleIndex: _appModel.videoSubtitleListFontScaleIndex,
         onFontScaleIndexChanged: (int value) =>
             unawaited(_appModel.setVideoSubtitleListFontScaleIndex(value)),

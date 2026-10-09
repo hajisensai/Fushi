@@ -103,6 +103,8 @@ VideoQuickSettingsHost buildTestVideoHost({
   bool isTouchControls = false,
   void Function(int delayMs)? onSetDelay,
   Future<int?> Function()? onAutoAlign,
+  int? Function({required bool next})? onSnapDelayToCue,
+  VoidCallback? onEnterSubtitleDelayBar,
   List<AudioCue> subtitleWaveformCues = const <AudioCue>[],
   int videoDurationMs = 60000,
   Future<List<double>> Function()? loadSubtitleWaveform,
@@ -148,6 +150,8 @@ VideoQuickSettingsHost buildTestVideoHost({
       onSetDelay?.call(v);
     },
     onAutoAlign: onAutoAlign,
+    onSnapDelayToCue: onSnapDelayToCue,
+    onEnterSubtitleDelayBar: onEnterSubtitleDelayBar,
     subtitleWaveformCues: subtitleWaveformCues,
     videoDurationMs: videoDurationMs,
     loadSubtitleWaveform: loadSubtitleWaveform,

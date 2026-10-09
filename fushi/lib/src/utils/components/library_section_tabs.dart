@@ -85,10 +85,18 @@ class LibrarySectionFollowScope extends InheritedWidget {
 
 /// [LibrarySectionTabs] 的一段：值 + 用户可读标签。
 class LibrarySectionTab<T> {
-  const LibrarySectionTab({required this.value, required this.label});
+  const LibrarySectionTab({
+    required this.value,
+    required this.label,
+    this.labelKey,
+  });
 
   final T value;
   final String label;
+
+  /// 挂在这一段文字上的稳定 key（测试 / 焦点驱动按 id 命中某段，不依赖文案）；
+  /// null 不挂。
+  final Key? labelKey;
 }
 
 /// 库页（书架 / 漫画 / 视频 / 游戏）顶栏共用的分区导航，形态是 MD3 primary tabs。
@@ -395,6 +403,26 @@ class _FushiSectionTabBarState<T extends Object>
     _owned?.dispose();
     _display?.dispose();
     super.dispose();
+  }
+
+  /// 第 [i] 段的 [Tab]：段带 [LibrarySectionTab.labelKey] 时把 key 挂在文字上
+  /// （与 [Tab.text] 同形：不换行、溢出淡出）。
+  Tab _tabFor(int i, double? height) {
+    final LibrarySectionTab<T> tab = widget.tabs[i];
+    final Key? labelKey = tab.labelKey;
+    if (labelKey == null) {
+      return Tab(key: _tabKeyFor(i), text: tab.label, height: height);
+    }
+    return Tab(
+      key: _tabKeyFor(i),
+      height: height,
+      child: Text(
+        tab.label,
+        key: labelKey,
+        softWrap: false,
+        overflow: TextOverflow.fade,
+      ),
+    );
   }
 
   bool _projectionScheduled = false;
@@ -949,15 +977,9 @@ class _FushiSectionTabBarState<T extends Object>
         : null;
     final List<Widget> tabs = <Widget>[
       if (overflow)
-        for (final int i in layout.visible)
-          Tab(key: _tabKeyFor(i), text: widget.tabs[i].label, height: tabHeight)
+        for (final int i in layout.visible) _tabFor(i, tabHeight)
       else
-        for (int i = 0; i < widget.tabs.length; i++)
-          Tab(
-            key: _tabKeyFor(i),
-            text: widget.tabs[i].label,
-            height: tabHeight,
-          ),
+        for (int i = 0; i < widget.tabs.length; i++) _tabFor(i, tabHeight),
     ];
     final double? font = layout.fontSize;
     final TextStyle? labelStyle = font == null

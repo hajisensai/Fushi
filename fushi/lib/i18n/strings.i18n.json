@@ -4098,7 +4098,7 @@
   "video_setting_torrent_zero_default": "0 = default",
   "video_setting_torrent_zero_off": "0 = off",
   "video_setting_youtube_quality": "YouTube quality",
-  "video_setting_youtube_quality_hint": "Start streams at the highest tier up to this target; Auto prefers smooth playback (hardware-friendly codec, up to 1080p)",
+  "video_setting_youtube_quality_hint": "Start streams at the highest tier up to this target; Auto prefers smooth playback (hardware-friendly codec, up to 1080p); pick 1440p / 2160p for higher",
   "video_settings_cat_audio": "Audio",
   "video_settings_cat_controls": "Controls",
   "video_settings_cat_danmaku": "Danmaku",
@@ -6897,5 +6897,10 @@
   "video_setting_mpv_passthrough_hint": "Send AC-3, E-AC-3, TrueHD and DTS-HD untouched to your receiver or soundbar so it decodes them (Atmos included). Only turn on if that device supports these formats — otherwise there may be no sound. While passing through, set the volume on the receiver: Fushi's volume and mute can't act on these streams, so at any speed other than 1×, below full volume or when muted, Fushi decodes them itself for the time being (the receiver's Atmos / DTS indicator goes off). When off, Fushi always decodes them and 5.1 / 7.1 still play as surround.",
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
-  "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected."
+  "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
+  "video_subtitle_list_tap_lookup": "Tap subtitle text to look up (off: tapping only jumps)",
+  "video_setting_av_delay_float": "Adjust over the video (keeps subtitles visible)",
+  "video_setting_av_delay_hint_short": "+ = later, − = earlier",
+  "video_setting_av_delay_reset": "Reset to 0",
+  "video_setting_av_delay_tap_to_type": "Tap to type a value"
 }

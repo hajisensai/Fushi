@@ -987,12 +987,10 @@ class AnotherPopupPart {
           'the centre transport. Same reviewed media-page overlay class as '
           'video_apple_chrome / video_volume_overlays.',
       'lib/src/media/video/video_quick_settings_sheet.dart':
-          'Video settings sheet category bar (2026-10-05 M3E connected button '
-          'group): the segment corner radii (10 idle / pill selected), the '
-          'surfaceContainerHigh idle segment fill and the Apple footnote / '
-          'section-title font sizes are the reviewed segment geometry of that '
-          'one control; the rows below are rendered by the shared settings '
-          'renderer.',
+          'Video settings panel (2026-10 redesign): categories are the shared '
+          'LibrarySectionTabs and rows are the shared settings renderer; the '
+          'only fontSize: is the phone compact theme scaling every text-theme '
+          'style by 0.92 (relative, not a hard-coded size).',
       'lib/src/media/video/video_long_press_speed_badge.dart':
           'TODO-1154 long-press temporary-speed badge: a video-subsystem '
           'transient overlay bubble (BorderRadius.circular(8) pill + speed '
@@ -1331,7 +1329,6 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/media/video/video_quick_settings_sheet.dart': <String>{
-        'BorderRadius.circular(',
         'fontSize:',
       },
       'lib/src/media/video/video_long_press_speed_badge.dart': <String>{

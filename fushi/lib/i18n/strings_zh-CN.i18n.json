@@ -4098,7 +4098,7 @@
   "video_setting_torrent_zero_default": "0 = 默认",
   "video_setting_torrent_zero_off": "0 = 关闭",
   "video_setting_youtube_quality": "YouTube 画质",
-  "video_setting_youtube_quality_hint": "起播自动选不超过目标的最高档；「自动」优先流畅（硬解友好编码，最高 1080p）",
+  "video_setting_youtube_quality_hint": "起播自动选不超过目标的最高档；「自动」优先流畅（硬解友好编码，最高 1080p）；要 2K / 4K 请选 1440p / 2160p",
   "video_settings_cat_audio": "音频",
   "video_settings_cat_controls": "控制按钮",
   "video_settings_cat_danmaku": "弹幕",
@@ -6897,5 +6897,10 @@
   "video_setting_mpv_passthrough_hint": "把 AC-3 / E-AC-3 / TrueHD / DTS-HD 原样交给功放或回音壁解码（含 Atmos）。仅在设备支持这些格式时打开，否则可能无声。直通时请在功放上调音量：应用内音量与静音作用不到这些码流，所以倍速不为 1×、音量未满或静音时会临时改由 Fushi 解码（功放上的 Atmos / DTS 标识随之熄灭）。关闭时始终由 Fushi 解码，5.1 / 7.1 照样环绕输出。",
   "shortcut_action_video_lookup_next_word": "下一个词（扫词）",
   "shortcut_action_video_lookup_prev_word": "上一个词（扫词）",
-  "media_source_open_folder_failed": "无法打开文件夹，它可能已被移动、删除或断开连接。"
+  "media_source_open_folder_failed": "无法打开文件夹，它可能已被移动、删除或断开连接。",
+  "video_subtitle_list_tap_lookup": "点字幕文字查词（关闭后点字幕只跳转）",
+  "video_setting_av_delay_float": "收起面板调轴（看得到字幕）",
+  "video_setting_av_delay_hint_short": "正数延后，负数提前",
+  "video_setting_av_delay_reset": "归零",
+  "video_setting_av_delay_tap_to_type": "点按直接输入"
 }

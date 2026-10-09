@@ -110,9 +110,15 @@ extension _VideoSidePanel on _VideoFushiPageState {
   double _videoSidePanelWidth(_VideoSidePanelKind kind) {
     switch (kind) {
       case _VideoSidePanelKind.settings:
-        // BUG-1546：设置侧栏不再固定 560——桌面大窗口下随窗口宽度自适应放宽
-        // （560..900），窄窗仍是旧值；上限与快捷设置弹窗同源。
-        return fushiQuickSettingsPanelWidth(MediaQuery.sizeOf(context).width);
+        final Size window = MediaQuery.sizeOf(context);
+        // 手机横屏（最短边 < 600）：与阅读器设置侧板同宽档（400 上限），不再占掉
+        // 大半个画面；手机竖屏走贴底面板，宽度由外壳决定。
+        if (videoQuickSettingsCompact(window)) {
+          return readerSideSheetWidth(window.width);
+        }
+        // BUG-1546：桌面设置侧栏不固定 560——大窗口下随窗口宽度自适应放宽
+        // （560..900）；上限与快捷设置弹窗同源。
+        return fushiQuickSettingsPanelWidth(window.width);
       case _VideoSidePanelKind.chapters:
         return 420;
       case _VideoSidePanelKind.danmakuMatch:
@@ -190,11 +196,15 @@ extension _VideoSidePanel on _VideoFushiPageState {
     VideoPlayerController controller,
   ) {
     final _VideoSidePanelKind kind = panelState.kind;
+    final bool settings = kind == _VideoSidePanelKind.settings;
     final Widget panel = VideoTranslucentSidePanel(
-      title: _videoSidePanelTitle(kind),
+      // 设置面板顶上就是分类页签，不再画「视频设置」大标题页头（反馈 nGxUGtYot9）；
+      // 手机竖屏改贴底面板（与阅读器设置面板同一判据）。
+      title: settings ? null : _videoSidePanelTitle(kind),
       icon: _videoSidePanelIcon(kind),
       width: _videoSidePanelWidth(kind),
       alignment: panelState.alignment,
+      bottomSheetWhenCompact: settings,
       onClose: _hideVideoSidePanel,
       child: _buildVideoSidePanelChild(kind, controller),
     );

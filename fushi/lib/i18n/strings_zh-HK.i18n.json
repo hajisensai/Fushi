@@ -4098,7 +4098,7 @@
   "video_setting_torrent_zero_default": "0 = 預設",
   "video_setting_torrent_zero_off": "0 = 關閉",
   "video_setting_youtube_quality": "YouTube 畫質",
-  "video_setting_youtube_quality_hint": "起播自動選不超過目標的最高檔；「自動」優先流暢（硬解友好編碼，最高 1080p）",
+  "video_setting_youtube_quality_hint": "起播自動選不超過目標的最高檔；「自動」優先流暢（硬解友好編碼，最高 1080p）；要 2K / 4K 請選 1440p / 2160p",
   "video_settings_cat_audio": "音頻",
   "video_settings_cat_controls": "控制按鈕",
   "video_settings_cat_danmaku": "彈幕",
@@ -6897,5 +6897,10 @@
   "video_setting_mpv_passthrough_hint": "將 AC-3 / E-AC-3 / TrueHD / DTS-HD 原封不動交給擴音機或 Soundbar 解碼（包括 Atmos）。只應在裝置支援這些格式時開啟，否則可能無聲。直通時請在擴音機上調校音量：應用內的音量與靜音對這些碼流無效，所以倍速不是 1×、音量未調至最大或靜音時，會暫時改由 Fushi 解碼（擴音機上的 Atmos / DTS 標示隨之熄滅）。關閉時一律由 Fushi 解碼，5.1 / 7.1 照樣以環迴立體聲輸出。",
   "shortcut_action_video_lookup_next_word": "下一個詞（掃詞）",
   "shortcut_action_video_lookup_prev_word": "上一個詞（掃詞）",
-  "media_source_open_folder_failed": "無法開啟資料夾，可能已被移動、刪除或中斷連線。"
+  "media_source_open_folder_failed": "無法開啟資料夾，可能已被移動、刪除或中斷連線。",
+  "video_subtitle_list_tap_lookup": "點字幕文字查詞（關閉後點字幕只跳轉）",
+  "video_setting_av_delay_float": "收起面板調軸（看得到字幕）",
+  "video_setting_av_delay_hint_short": "正數延後，負數提前",
+  "video_setting_av_delay_reset": "歸零",
+  "video_setting_av_delay_tap_to_type": "點按直接輸入"
 }
