@@ -10,6 +10,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_local_model_labels.dart';
+import 'package:fushi/src/media/video/video_m3e_chrome.dart'
+    show videoM3eFloatingColor;
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -161,9 +165,12 @@ class VideoGraphicSubtitleOcrProgressCard extends StatelessWidget {
       constraints: const BoxConstraints(maxWidth: 340),
       child: Material(
         key: const ValueKey<String>('graphic_subtitle_ocr_progress_card'),
-        color: scheme.surfaceContainerHigh.withValues(alpha: 0.94),
+        // 与播放器其它浮层（设置 / 章节面板）同一中性深色表面令牌。
+        color: videoM3eFloatingColor(scheme),
         elevation: 3,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: const RoundedRectangleBorder(
+          borderRadius: FushiM3eShape.cardRadius,
+        ),
         clipBehavior: Clip.antiAlias,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 6, 14),
@@ -346,9 +353,9 @@ class VideoGraphicSubtitleOcrStatusPill extends StatelessWidget {
       label: text,
       child: DecoratedBox(
         key: const ValueKey<String>('graphic_subtitle_ocr_status_pill'),
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: scheme.inverseSurface.withValues(alpha: 0.72),
-          borderRadius: BorderRadius.circular(999),
+          shape: const StadiumBorder(),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),

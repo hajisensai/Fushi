@@ -3783,6 +3783,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return;
     }
     final int seq = ++_episodeLoadSeq;
+    _cancelGraphicSubtitleOcr(); // 换集：旧集的整轨转文字作废，见 [_applyLoad]。
     _remoteLastAttemptedEpisode = index;
     // 换集（页上已有在播的 controller）才亮换集 OSD；首开走页级加载态。
     final bool switching = _controller != null;
@@ -5060,6 +5061,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 音量控件显示真相源对齐 controller 实际音量（换集复用同一 controller，TODO-377/438）。
     _syncVolumeDisplay(controller.volume);
     final bool clipExportSourceChanged = _currentVideoPath != videoPath;
+    // 换了视频源（换集 / 换片）：上一个视频的图形字幕整轨转文字已经作废（结果按
+    // isCurrent 丢弃），强杀它在途的抽轨 ffmpeg——否则它在后台把旧文件整个读完，
+    // 进度卡与「一次只跑一轨」的闸门一直挂在新视频上。
+    if (clipExportSourceChanged) _cancelGraphicSubtitleOcr();
     setState(() {
       if (clipExportSourceChanged) _clearClipExportState();
       _controller = controller;

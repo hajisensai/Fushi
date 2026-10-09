@@ -212,6 +212,8 @@ extension _VideoDiscMenu on _VideoFushiPageState {
         _discNativeGeneration != controller.discTitleGeneration) {
       _discNativeGeneration = controller.discTitleGeneration;
       _episodeLoadSeq++;
+      // 换了光盘标题：旧标题的图形字幕整轨转文字作废，强杀在途抽轨（见 _applyLoad）。
+      _cancelGraphicSubtitleOcr();
       _discBindingPath = selected;
       final int generation = ++_discBindingGeneration;
       if (selected != null) {
