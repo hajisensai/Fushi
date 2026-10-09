@@ -1051,24 +1051,24 @@ class AdapterStructureTest(unittest.TestCase):
         install_text = self._member_body(siglus_adapter, "void InstallText()")
         self.assertIn("!complete && IsSiglusLookupIdentityUndecided()",
                       install_text)
-        self.assertIn("CompleteSiglusTextOwner", install_text)
+        self.assertIn("CompleteNativeTextOwner", install_text)
         pending = self._member_body(siglus_adapter, "void ProcessPendingEvents()")
         self.assertIn("if (text_pending_) InstallText();", pending)
         self.assertNotIn("lookup_enabled", pending)
 
-    def test_siglus_text_ownership_fences_every_luna_start(self) -> None:
+    def test_native_text_ownership_fences_every_luna_start(self) -> None:
         worker_source = self._strip_comments(
             (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
         )
         worker = self._function_body(worker_source, "DWORD WINAPI HookWorker(")
-        self.assertLess(worker.index("InitializeSiglusTextOwner"),
+        self.assertLess(worker.index("InitializeNativeTextOwner"),
                         worker.index("SignalReady"))
-        self.assertIn("registry.FailSiglusTextStartup();", worker)
+        self.assertIn("registry.FailNativeTextStartup();", worker)
         ready_failure = self._function_body(worker, "if (!SignalReady(")
         self.assertIn("AtomicStoreShared32(&g_header->hooked, 0u)", ready_failure)
         self.assertLess(ready_failure.index("&g_header->hooked, 0u"),
-                        ready_failure.index("registry.FailSiglusTextStartup();"))
-        self.assertLess(ready_failure.index("registry.FailSiglusTextStartup();"),
+                        ready_failure.index("registry.FailNativeTextStartup();"))
+        self.assertLess(ready_failure.index("registry.FailNativeTextStartup();"),
                         ready_failure.index("return 1;"))
         injector = self._strip_comments(
             (ROOT / "injector" / "injector_main.cpp").read_text(encoding="utf-8")
@@ -1077,7 +1077,7 @@ class AdapterStructureTest(unittest.TestCase):
         start = self._function_body(run, "auto maybe_start_luna =")
         self.assertEqual(run.count("InitLunaHook("), 1)
         self.assertLess(start.index("ShouldAttempt"), start.index("InitLunaHook("))
-        self.assertIn("ReadSiglusTextOwner(header)", start)
+        self.assertIn("ReadNativeTextOwner(header)", start)
         self.assertNotIn("Sleep(", start)
         guarded = self._function_body(run, "auto init_guarded_luna =")
         self.assertIn("maybe_start_luna();", guarded)

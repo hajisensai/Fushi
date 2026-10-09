@@ -135,7 +135,7 @@
 #include "visual_arts_ovk.h"
 #include "reallive_nwk.h"
 #include "voice_hook_ipc.h"
-#include "siglus_text_owner.h"
+#include "native_text_owner.h"
 #include "voice_resource_filename.h"
 #include "voice_resource_pairing.h"
 #include "kirikiri_voice_storage_name.h"
@@ -691,14 +691,14 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
   fushi_voice_hook::g_geometry_provider_registry.Reset(g_header);
   // BUG-2339: proof-of-life must not let Luna claim a pending Siglus entry.
   // This cheap engine classification precedes Ready; ABI work stays async.
-  fushi_voice_hook::InitializeSiglusTextOwner(g_header, IsSiglusEngine());
+  fushi_voice_hook::InitializeNativeTextOwner(g_header, IsSiglusEngine());
   // 此时 DLL、共享内存与契约均已就绪，先让 injector 进入 hold 保住映射。
   // 后面的 MinHook/Siglus/KiriKiri 探测允许异步继续，不能阻塞 proof-of-life。
   if (!SignalReady(pid, legacy_hibiki_ipc)) {
     // This worker will never install hooks or advance Pending. A later helper
     // must not reuse its mapping as a live, ready injection session.
     fushi_voice_hook::AtomicStoreShared32(&g_header->hooked, 0u);
-    registry.FailSiglusTextStartup();
+    registry.FailNativeTextStartup();
     return 1;
   }
 
@@ -748,7 +748,7 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
     TryInstallGenericLookupInputShield();
     TryInstallOverlayCursorGuard();
   } else {
-    registry.FailSiglusTextStartup();
+    registry.FailNativeTextStartup();
   }
 
   // registry 保留原有各 adapter 的 150 次重试预算和调用顺序；工作线程只管生命周期。

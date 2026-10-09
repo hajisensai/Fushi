@@ -1023,11 +1023,11 @@ void TestV19AdmissionIsPureAppendOverV17() {
   Check(offsetof(SharedHeader, adapter_report_count) % 4 == 0 &&
             offsetof(SharedHeader, adapter_report_seq) % 4 == 0,
         "count/seq 必须 4 字节对齐（Interlocked 前提）");
-  Check(offsetof(SharedHeader, siglus_text_owner) ==
+  Check(offsetof(SharedHeader, native_text_owner) ==
             offsetof(SharedHeader, adapter_report_seq) + sizeof(uint32_t),
         "v24 owner 只能追加在 v23 adapter 读数之后");
   Check(offsetof(SharedHeader, game_stream_input_request_seq) ==
-            offsetof(SharedHeader, siglus_text_owner) + sizeof(uint32_t),
+            offsetof(SharedHeader, native_text_owner) + sizeof(uint32_t),
         "v25 game-stream input 必须纯追加在 v24 owner 之后");
   Check(offsetof(SharedHeader, game_stream_input_status_seq) ==
             offsetof(SharedHeader, game_stream_input_request_seq) + 4u &&
