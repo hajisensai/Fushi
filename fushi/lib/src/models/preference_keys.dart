@@ -269,6 +269,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'module_dictionaries_enabled',
   'module_downloads_enabled',
   'module_games_enabled',
+  // bool（默认 true）：「功能模块」里的首页 dashboard 开关（2026-10-09 起可关）。
+  'module_home_enabled',
   'module_manga_enabled',
   'module_video_enabled',
   // bool（默认 true）：MD3 悬浮底栏图标下是否显示标签。
