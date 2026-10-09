@@ -2061,21 +2061,19 @@ jobs:
           # 2026-10 起只出 arm64，资产名带 `-arm64`：旧版（universal、可能跑在 Intel
           # Mac 上）的更新器只认 `-macos.zip`，改名让它们选不中这个 Intel 上启动不了的包。
           rm -f "$out_dir"/fushi-*-macos.zip "$out_dir"/fushi-*-macos-arm64.zip "$out_dir"/fushi-*-macos-arm64.dmg
-          # zip 是应用内更新器吃的（MacUpdater 只认 `-macos-arm64.zip`，不能动）。
           ditto -c -k --keepParent "$app_dir" "$out_dir/fushi-${BUILD_VERSION_NAME}-macos-arm64.zip"
-          # dmg 是给人手动下载装的：双击挂载、把 fushi.app 拖进旁边的「Applications」
-          # 即可，不用另装解压工具（2026-10-09 用户反馈 zip 解压麻烦）。与 zip 同名同版本
-          # 同序号，rolling prune / 发布 glob 都按同一形状处理。
-          dmg_stage="$RUNNER_TEMP/fushi-dmg-stage"
-          rm -rf "$dmg_stage"
-          mkdir -p "$dmg_stage"
-          # ditto 保留 .app 的符号链接、扩展属性与（已装订的）公证票据。
-          ditto "$app_dir" "$dmg_stage/fushi.app"
-          ln -s /Applications "$dmg_stage/Applications"
+          # dmg 只给「网页上手动下载、首次安装」用：拖进 Applications 的标准形态。
+          # 应用内自动更新**只认 zip**（platform_updater.dart 的 -macos-arm64.zip 判据，
+          # 老客户端也只认它），所以 dmg 不进更新清单；两者装的是同一个已装订的 .app。
+          dmg_root="$RUNNER_TEMP/fushi-dmg-root"
+          rm -rf "$dmg_root"
+          mkdir -p "$dmg_root"
+          ditto "$app_dir" "$dmg_root/fushi.app"
+          ln -s /Applications "$dmg_root/Applications"
           if [ "${MACOS_SIGNED:-false}" != "true" ]; then
             # 仓库没配 Developer ID 证书时 app 只有 ad-hoc 签名、没公证，Gatekeeper 首次
             # 打开会拦「Apple 无法验证 fushi.app」。这不是包坏了，把放行步骤随包写清楚。
-            cat > "$dmg_stage/打开说明 How to open.txt" <<'TXT'
+            cat > "$dmg_root/打开说明 How to open.txt" <<'TXT'
           本安装包没有经过 Apple 公证（ad-hoc 签名），首次打开会被 Gatekeeper 拦下，
           提示「Apple 无法验证 fushi.app 是否包含可能危害 Mac 安全或泄漏隐私的恶意软件」。
 
@@ -2103,9 +2101,46 @@ jobs:
           You only need to do this once; in-app updates do not require it again.
           TXT
           fi
-          hdiutil create -volname "Fushi ${BUILD_VERSION_NAME}"             -srcfolder "$dmg_stage" -fs HFS+ -format UDZO -ov             "$out_dir/fushi-${BUILD_VERSION_NAME}-macos-arm64.dmg"
+          hdiutil create -volname "Fushi" -srcfolder "$dmg_root" -fs HFS+ \
+            -format UDZO -ov "$out_dir/fushi-${BUILD_VERSION_NAME}-macos-arm64.dmg"
+          rm -rf "$dmg_root"
           hdiutil verify "$out_dir/fushi-${BUILD_VERSION_NAME}-macos-arm64.dmg"
-          rm -rf "$dmg_stage"
+      # 新版 macOS 对「签了名但没公证」的 dmg 一样拦，所以 dmg 自身也要签名 + 公证 +
+      # 装订（里面的 .app 上面已单独装订，zip 那条路不受影响）。没有 Developer ID 时
+      # dmg 与 zip 一样是 ad-hoc 内容，照常发布。
+      - name: Sign and notarize macOS dmg
+        if: steps.signing.outputs.macos_signed == 'true'
+        working-directory: fushi
+        shell: bash
+        env:
+          BUILD_VERSION_NAME: ${{ steps.channel.outputs.build_version_name }}
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          DMG="build/release-artifacts/fushi-${BUILD_VERSION_NAME}-macos-arm64.dmg"
+          codesign --force --timestamp --keychain "$MACOS_KEYCHAIN_PATH" \
+            --sign "$MACOS_SIGN_IDENTITY" "$DMG"
+          codesign --verify --strict --verbose=2 "$DMG"
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${APPSTORE_API_KEY_ID}.p8"
+          printf '%s\n' "$APPSTORE_API_PRIVATE_KEY" > "$KEY_PATH"
+          set +e
+          xcrun notarytool submit "$DMG" \
+            --key "$KEY_PATH" \
+            --key-id "$APPSTORE_API_KEY_ID" \
+            --issuer "$APPSTORE_API_ISSUER_ID" \
+            --wait --timeout 45m
+          NOTARY_STATUS=$?
+          set -e
+          rm -f "$KEY_PATH"
+          if [ "$NOTARY_STATUS" -ne 0 ]; then
+            echo "::error title=DMG notarization failed::notarytool exited $NOTARY_STATUS. Run 'xcrun notarytool log <submission-id>' with the same key to see why."
+            exit "$NOTARY_STATUS"
+          fi
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
       # The single non-blocking `publish` job downloads this artifact and does
       # all Release publishing, so macOS builds in parallel with Windows/iOS and
       # never blocks (or is blocked by) the other platforms.
@@ -3006,7 +3041,7 @@ jobs:
           # KEEP_SEQS by the OTHER platforms' newer seqs -- so another platform's
           # prune deletes it and the rolling release "loses" that device. Scope
           # the candidate set to THIS workflow's filename shapes (Windows:
-          # *-windows-setup.exe / macOS: *-macos-arm64.{zip,dmg} (+ legacy *-macos.zip) /
+          # *-windows-setup.exe / macOS: *-macos-arm64.zip + .dmg (+ legacy *-macos.zip) /
           # iOS: *-ios.ipa) so it keeps
           # its own top KEEP_SEQS and never touches Android's assets.
           PLATFORM_ASSETS=()
@@ -3140,6 +3175,6 @@ jobs:
           VERSION: ${{ steps.channel.outputs.build_version_name }}
           RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
           ARTIFACTS_DIR: fushi/build/release-artifacts
-          ASSET_GLOB: fushi-*-macos-arm64.zip fushi-*-ios.ipa
+          ASSET_GLOB: fushi-*-macos-arm64.zip fushi-*-macos-arm64.dmg fushi-*-ios.ipa
           PLATFORM_LABEL: apple
         run: bash tool/publish_update_manifest.sh

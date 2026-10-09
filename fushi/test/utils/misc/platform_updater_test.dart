@@ -609,6 +609,20 @@ void main() {
       expect(url, 'https://example.com/fushi-0.4.2-macos.zip');
     });
 
+    // 清单里与 zip 并列的 `-macos-arm64.dmg` 只给官网首装下载用：自替换流程按
+    // zip 解包，dmg 排在前面也绝不能被选中；只有 dmg 时宁可不更新。
+    test('never selects the -macos-arm64.dmg first-install download', () async {
+      final MacUpdater u = MacUpdater();
+      final String? url = await _urlOf(u.selectAsset(_assets(<String>[
+        'fushi-0.4.2-macos-arm64.dmg',
+        'fushi-0.4.2-macos-arm64.zip',
+      ])));
+      expect(url, 'https://example.com/fushi-0.4.2-macos-arm64.zip');
+      final UpdateAsset? dmgOnly = await u
+          .selectAsset(_assets(<String>['fushi-0.4.2-macos-arm64.dmg']));
+      expect(dmgOnly, isNull);
+    });
+
     test('returns null when no macOS asset present', () async {
       final MacUpdater u = MacUpdater();
       final UpdateAsset? asset = await u.selectAsset(_assets(<String>[
