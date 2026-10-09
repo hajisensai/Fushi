@@ -3143,6 +3143,6 @@ jobs:
           VERSION: ${{ steps.channel.outputs.build_version_name }}
           RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
           ARTIFACTS_DIR: fushi/build/release-artifacts
-          ASSET_GLOB: fushi-*-macos-arm64.zip fushi-*-ios.ipa
+          ASSET_GLOB: fushi-*-macos-arm64.zip fushi-*-macos-arm64.dmg fushi-*-ios.ipa
           PLATFORM_LABEL: apple
         run: bash tool/publish_update_manifest.sh

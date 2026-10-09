@@ -156,6 +156,26 @@ def test_macos_arm64_zip_supersedes_legacy_macos_zip():
     check(_names(m) == [arm64], "a stale legacy macOS zip cannot come back")
 
 
+def test_macos_dmg_travels_with_its_zip():
+    # The dmg (website first-install download) shares the "macos" slot with the
+    # zip: same publish -> both kept; a newer publish replaces both, so a stale
+    # dmg can never outlive a newer zip, and a publish without a dmg drops it.
+    def mac(seq, suffixes):
+        tag = "v0.11.1-debug." + str(seq) + "+sha" + str(seq)
+        version = "0.11.1-debug." + str(seq)
+        names = ["fushi-0.11.1-debug." + str(seq) + s for s in suffixes]
+        assets = [{"name": n, "browser_download_url": _url(tag, n)} for n in names]
+        return tag, version, assets, names
+
+    both = ("-macos-arm64.zip", "-macos-arm64.dmg")
+    m, n100 = _publish({}, lambda seq: mac(seq, both), 100)
+    check(_names(m) == sorted(n100), "zip and dmg of one publish are both kept")
+    m, n105 = _publish(m, lambda seq: mac(seq, both), 105)
+    check(_names(m) == sorted(n105), "a newer publish replaces both zip and dmg")
+    m, n106 = _publish(m, lambda seq: mac(seq, ("-macos-arm64.zip",)), 106)
+    check(_names(m) == sorted(n106), "a publish without a dmg drops the stale dmg")
+
+
 def test_concurrent_same_tag_both_platforms():
     # TODO-781: same tag, two platforms -> both kept.
     m, apk = _publish({}, _android, 100)
@@ -414,6 +434,7 @@ def main():
         test_same_platform_upgrade_replaces,
         test_concurrent_same_tag_both_platforms,
         test_macos_arm64_zip_supersedes_legacy_macos_zip,
+        test_macos_dmg_travels_with_its_zip,
         test_backward_compat_legacy_no_seq,
         test_backward_compat_no_seq_unparseable,
         test_idempotent,
