@@ -225,11 +225,14 @@ inline std::wstring StripKeywordMarkers(const std::wstring& text) {
 
 // Decodes one MESSAGE record.  A role prefix is `` `speaker@`` with a speaker
 // free of control units, or a lone leading `@`; the body after it must be
-// non-empty.  Anything else is narration and is kept whole.
-inline MessageText DecodeMessageRecord(const std::wstring& record) {
+// non-empty. Newer engines can opt into `@speaker@body` with named_at;
+// default decoding retains the older engine's exact behavior.
+inline MessageText DecodeMessageRecord(const std::wstring& record,
+                                       bool named_at = false) {
   MessageText out;
   size_t body_start = 0u;
-  if (!record.empty() && record[0] == L'`') {
+  if (!record.empty() &&
+      (record[0] == L'`' || (named_at && record[0] == L'@'))) {
     const size_t at = record.find(L'@', 1u);
     bool clean = at != std::wstring::npos && at > 1u &&
                  at + 1u < record.size();
@@ -242,7 +245,8 @@ inline MessageText DecodeMessageRecord(const std::wstring& record) {
       out.role = true;
       body_start = at + 1u;
     }
-  } else if (record.size() > 1u && record[0] == L'@') {
+  }
+  if (body_start == 0u && record.size() > 1u && record[0] == L'@') {
     out.role = true;
     body_start = 1u;
   }
@@ -252,13 +256,14 @@ inline MessageText DecodeMessageRecord(const std::wstring& record) {
 
 // The record published as the line: the first one written in Japanese (the
 // engine stores one record per script language; Fushi mines Japanese).
-// Returns kMessageRecordCount when no record is Japanese.
+// This is the legacy two-language selector. Win64 uses VM-owned calibration
+// instead, so adding its Chinese record does not change this behavior.
 inline uint32_t PickJapaneseRecord(const std::wstring* records,
                                    uint32_t count) {
   for (uint32_t i = 0; i < count; ++i) {
     if (ContainsJapanese(records[i])) return i;
   }
-  return kMessageRecordCount;
+  return count;
 }
 
 }  // namespace fushi_voice_hook::luca

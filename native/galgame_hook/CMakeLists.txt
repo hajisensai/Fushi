@@ -100,6 +100,9 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/luca_lookup_core.h"
   "hook/adapters/luca_profile.h"
   "hook/adapters/luca_text_core.h"
+  "hook/adapters/luca_x64_text_core.h"
+  "hook/adapters/luca_x64_lookup_core.h"
+  "hook/adapters/luca_x64_lookup.inc"
   "hook/adapters/yuris_adapter.inc"
   "hook/adapters/yuris_lookup.inc"
   "hook/adapters/yuris_lookup_core.h"
@@ -1214,3 +1217,11 @@ add_executable(fushi_luca_adapter_test "tests/luca_adapter_test.cpp")
 target_include_directories(fushi_luca_adapter_test PRIVATE "hook" "hook/adapters")
 target_compile_definitions(fushi_luca_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_luca_adapter_test COMMAND fushi_luca_adapter_test)
+add_executable(fushi_luca_x64_text_test "tests/luca_x64_text_test.cpp")
+target_include_directories(fushi_luca_x64_text_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_luca_x64_text_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_luca_x64_text_test COMMAND fushi_luca_x64_text_test)
+add_executable(fushi_luca_x64_lookup_test "tests/luca_x64_lookup_test.cpp")
+target_include_directories(fushi_luca_x64_lookup_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_luca_x64_lookup_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_luca_x64_lookup_test COMMAND fushi_luca_x64_lookup_test)

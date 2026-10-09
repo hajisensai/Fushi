@@ -451,6 +451,18 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("if (ui_visible) idle_since = now;", gate)
         self.assertIn('"WAIT pid=%lu reason=%s\\n"', gate)
 
+    def test_luca_x64_language_count_is_read_per_message(self) -> None:
+        # The count global is zero until the engine boots; a launch-time
+        # injection must not turn that zero into a final site rejection.
+        source = (ROOT / "hook" / "adapters" / "luca_adapter.inc").read_text(
+            encoding="utf-8")
+        resolve = self._function_body(source, "bool ResolveLucaSites()")
+        self.assertIn("rt.record_count_source =", resolve)
+        self.assertNotIn("rt.record_count == 0u", resolve)
+        self.assertNotIn("rt.record_count > luca::kMaxMessageRecords", resolve)
+        reader = self._function_body(source, "uint32_t ReadLucaMessageRecordCount()")
+        self.assertIn("luca::X64AdmittedRecordCount(count)", reader)
+
     def test_every_adapter_is_an_independent_include(self) -> None:
         source = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
         adapters = {
@@ -504,8 +516,9 @@ class AdapterStructureTest(unittest.TestCase):
             )
             self.assertIn("g_geometry_provider_registry.Retire", lifecycle_source)
 
-        self.assertEqual(18, len(publishers), publishers)
+        self.assertEqual(19, len(publishers), publishers)
         self.assertIn("luca_lookup.inc", publishers)
+        self.assertIn("luca_x64_lookup.inc", publishers)
         self.assertIn("kogado_hy_lookup.inc", publishers)
         self.assertIn("artemis_lookup.inc", publishers)
         self.assertIn("yuris_lookup.inc", publishers)
@@ -570,9 +583,12 @@ class AdapterStructureTest(unittest.TestCase):
             )
             seen[name] = spaces[0]
 
-        self.assertEqual(18, len(seen), seen)
+        self.assertEqual(19, len(seen), seen)
         self.assertEqual(
             "kLookupCoordinateSpaceClientPhysicalPixels", seen["luca_lookup.inc"]
+        )
+        self.assertEqual(
+            "kLookupCoordinateSpaceClientPhysicalPixels", seen["luca_x64_lookup.inc"]
         )
         self.assertEqual(
             "kLookupCoordinateSpaceClientPhysicalPixels", seen["fvp_lookup.inc"]
@@ -2424,24 +2440,26 @@ class AdapterStructureTest(unittest.TestCase):
 
     def test_luca_lookup_claims_only_engine_samples_and_stays_gated(self) -> None:
         """LucaSystem 查词：只认领主映像自己的 GetAsyncKeyState 采样，受原生输入放行门控；游戏线程回调不做 IO。"""
-        runtime = self._strip_comments(
-            (ROOT / "hook" / "adapters" / "luca_lookup.inc").read_text(
-                encoding="utf-8"
-            )
-        )
-        eligible = self._function_body(runtime, "bool LucaPressEligible(")
-        self.assertIn("NativeInputAllowed", eligible)
-        self.assertIn("LucaShieldActive", eligible)
-        self.assertIn("GetForegroundWindow", eligible)
-        sample = self._function_body(runtime, "bool FilterLucaLeftButtonSample(")
-        # 只有返回地址落在主映像里的采样参与认领（宿主 / 其它模块的轮询不受影响）。
-        self.assertIn("g_luca.image_base", sample)
-        self.assertIn("g_luca.image_size", sample)
-        self.assertIn("DecideLeftButtonSample", sample)
-        for body in (eligible, sample):
-            for forbidden in ("CreateFile", "LucaLog", "WideCharToMultiByte",
-                              "std::wstring", "std::vector"):
-                self.assertNotIn(forbidden, body)
+        for filename in ("luca_lookup.inc", "luca_x64_lookup.inc"):
+            with self.subTest(runtime=filename):
+                runtime = self._strip_comments(
+                    (ROOT / "hook" / "adapters" / filename).read_text(
+                        encoding="utf-8"
+                    )
+                )
+                eligible = self._function_body(runtime, "bool LucaPressEligible(")
+                self.assertIn("NativeInputAllowed", eligible)
+                self.assertIn("LucaShieldActive", eligible)
+                self.assertIn("GetForegroundWindow", eligible)
+                sample = self._function_body(runtime, "bool FilterLucaLeftButtonSample(")
+                # 只有返回地址落在主映像里的采样参与认领（宿主 / 其它模块的轮询不受影响）。
+                self.assertIn("g_luca.image_base", sample)
+                self.assertIn("g_luca.image_size", sample)
+                self.assertIn("DecideLeftButtonSample", sample)
+                for body in (eligible, sample):
+                    for forbidden in ("CreateFile", "LucaLog", "WideCharToMultiByte",
+                                      "std::wstring", "std::vector"):
+                        self.assertNotIn(forbidden, body)
         shield = self._strip_comments(
             (ROOT / "hook" / "generic_input_shield.inc").read_text(
                 encoding="utf-8"

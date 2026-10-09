@@ -46,6 +46,18 @@ std::vector<uint8_t> MakePak(uint32_t count, uint32_t id_start,
   return pak;
 }
 
+std::vector<uint8_t> MakeNamedPak(uint32_t count, uint32_t index_start) {
+  std::vector<uint8_t> pak = MakePak(count, 55001u, index_start, 0u, 100u);
+  const uint32_t names_start = index_start + count * 8u;
+  PutU32(&pak, index_start - 4u, names_start);
+  for (uint32_t i = 0u; i < count; ++i) {
+    pak[names_start + i * 2u] = 'A';
+    pak[names_start + i * 2u + 1u] = 0u;
+  }
+  PutU32(&pak, 0x24u, names_start + count * 2u);
+  return pak;
+}
+
 // One complete single-page Ogg stream carrying a Vorbis identification
 // header for `channels` channels.
 std::vector<uint8_t> MakeOgg(uint8_t channels) {
@@ -53,6 +65,7 @@ std::vector<uint8_t> MakeOgg(uint8_t channels) {
   body[0] = 0x01;
   std::memcpy(body.data() + 1, "vorbis", 6);
   body[11] = channels;
+  PutU32(&body, 12u, 48000u);
   std::vector<uint8_t> page = {'O', 'g', 'g', 'S', 0, 0x06};
   page.resize(27u, 0u);
   page[14] = 0x2A;  // serial
@@ -132,6 +145,74 @@ void TestOggPak() {
   assert(!luca::ParseOggPakMember(bad.data(), bad.size(), &streams));
 }
 
+void TestNamedPakIndex() {
+  for (const uint32_t start : {0x2Cu, 0x34u, 0x38u, 0x40u, 0x100u}) {
+    const std::vector<uint8_t> pak = MakeNamedPak(3u, start);
+    luca::PakIndex index;
+    std::vector<luca::PakEntry> entries;
+    assert(luca::ParsePakHeader(pak.data(), pak.size(), pak.size(), &index));
+    assert(luca::HasNamedPakIndex(pak.data(), pak.size(), index, start));
+    assert(luca::ParsePakIndex(pak.data(), pak.size(), pak.size(), &index,
+                               &entries) == luca::PakIndexResult::kValid);
+    assert(index.index_start == start && entries.size() == 3u);
+    assert(luca::PakMemberForId(index, 55003u) == 2);
+  }
+  const std::vector<uint8_t> pak = MakeNamedPak(3u, 0x38u);
+  for (const uint32_t field : {0x24u, 0x34u}) {
+    std::vector<uint8_t> bad = pak;
+    PutU32(&bad, field, 0xFFFFu);
+    assert(luca::ParsePakIndex(bad.data(), bad.size(), bad.size(), nullptr,
+                               nullptr) == luca::PakIndexResult::kNoLayout);
+  }
+  std::vector<uint8_t> bad = pak;
+  bad[0x38u + 3u * 8u] = 0u;  // empty name
+  assert(luca::ParsePakIndex(bad.data(), bad.size(), bad.size(), nullptr,
+                             nullptr) == luca::PakIndexResult::kNoLayout);
+  bad = pak;
+  bad[0x38u + 3u * 8u + 5u] = 'Z';  // missing final NUL
+  assert(luca::ParsePakIndex(bad.data(), bad.size(), bad.size(), nullptr,
+                             nullptr) == luca::PakIndexResult::kNoLayout);
+  bad = pak;
+  PutU32(&bad, 0x38u + 8u, 1u);  // overlapping second member
+  assert(luca::ParsePakIndex(bad.data(), bad.size(), bad.size(), nullptr,
+                             nullptr) == luca::PakIndexResult::kNoLayout);
+  bad = MakeNamedPak(1u, 0x38u);
+  // A legacy table and a named table both pass but name different ranges.
+  // Header extension must not silently override a valid legacy reading.
+  PutU32(&bad, 0x28u, 1u);
+  PutU32(&bad, 0x2Cu, 80u);
+  assert(luca::ParsePakIndex(bad.data(), bad.size(), bad.size(), nullptr,
+                             nullptr) == luca::PakIndexResult::kAmbiguousLayout);
+}
+
+void TestDirectOgg() {
+  const std::vector<uint8_t> mono = MakeOgg(1u);
+  luca::OggPakStream stream;
+  assert(luca::ParseDirectOggMember(mono.data(), mono.size(), &stream));
+  assert(stream.offset == 0u && stream.length == mono.size() &&
+          stream.sample_rate == 48000u);
+  const std::vector<uint8_t> stereo = MakeOgg(2u);
+  assert(luca::ParseDirectOggMember(stereo.data(), stereo.size(), &stream));
+  assert(luca::OggVorbisChannels(stereo.data(), stereo.size()) == 2u);
+  std::vector<uint8_t> bad = mono;
+  bad.push_back(0u);
+  assert(!luca::ParseDirectOggMember(bad.data(), bad.size(), &stream));
+  bad = mono;
+  bad.pop_back();
+  assert(!luca::ParseDirectOggMember(bad.data(), bad.size(), &stream));
+  bad = mono;
+  bad[5] = 0x02u;  // no EOS
+  assert(!luca::ParseDirectOggMember(bad.data(), bad.size(), &stream));
+  bad = mono;
+  bad[28] = 3u;  // not a Vorbis identification packet
+  assert(!luca::ParseDirectOggMember(bad.data(), bad.size(), &stream));
+  bad = mono;
+  PutU32(&bad, 40u, 7999u);
+  assert(!luca::ParseDirectOggMember(bad.data(), bad.size(), &stream));
+  const std::vector<uint8_t> container = MakeOggPak({48000u}, 1u);
+  assert(!luca::ParseDirectOggMember(container.data(), container.size(), &stream));
+}
+
 // MESSAGE operand shape at `at`, readers at `u16` and `str` (all RVAs inside
 // one span starting at RVA 0).
 std::vector<uint8_t> MakeMessageCode(uint32_t at, uint32_t u16, uint32_t str) {
@@ -198,6 +279,37 @@ void TestMessageRecords() {
   assert(luca::PickJapaneseRecord(records, 2u) == 0u);
   const std::wstring english[] = {L"Hello", L"World"};
   assert(luca::PickJapaneseRecord(english, 2u) == luca::kMessageRecordCount);
+
+  // Newer named-at records are explicitly enabled; the default retains the
+  // older unnamed-at behavior rather than altering the x86 contract.
+  t = luca::DecodeMessageRecord(L"@太郎@「合成例」");
+  assert(t.role && t.speaker.empty() && t.body == L"太郎@「合成例」");
+  t = luca::DecodeMessageRecord(L"@太郎@「合成例」", true);
+  assert(t.role && t.speaker == L"太郎" && t.body == L"「合成例」");
+  t = luca::DecodeMessageRecord(L"@「名前なし」", true);
+  assert(t.role && t.speaker.empty() && t.body == L"「名前なし」");
+  t = luca::DecodeMessageRecord(L"@Ａ@…", true);
+  assert(t.role && t.speaker == L"Ａ" && t.body == L"…");
+  t = luca::DecodeMessageRecord(L"@太郎@$K30合成$K0", true);
+  assert(t.role && t.speaker == L"太郎" && t.body == L"合成");
+  t = luca::DecodeMessageRecord(L"`太郎@「旧形式」", true);
+  assert(t.role && t.speaker == L"太郎" && t.body == L"「旧形式」");
+  t = luca::DecodeMessageRecord(L"@@本文", true);
+  assert(t.role && t.speaker.empty() && t.body == L"@本文");
+  t = luca::DecodeMessageRecord(L"@太郎@", true);
+  assert(t.role && t.speaker.empty() && t.body == L"太郎@");
+  t = luca::DecodeMessageRecord(L"@悪\t名@本文", true);
+  assert(t.role && t.speaker.empty() && t.body == L"悪\t名@本文");
+  t = luca::DecodeMessageRecord(L"@悪`名@本文", true);
+  assert(t.role && t.speaker.empty() && t.body == L"悪`名@本文");
+  t = luca::DecodeMessageRecord(L"@悪\x7F名@本文", true);
+  assert(t.role && t.speaker.empty() && t.body == L"悪\x7F名@本文");
+  t = luca::DecodeMessageRecord(L"@", true);
+  assert(!t.role && t.speaker.empty() && t.body == L"@");
+  t = luca::DecodeMessageRecord(L"普通の本文$n次行", true);
+  assert(!t.role && t.body == L"普通の本文$n次行");
+  t = luca::DecodeMessageRecord(L"", true);
+  assert(!t.role && t.body.empty());
 }
 
 std::vector<uint8_t> MakeLayoutCode(uint32_t at, bool with_fields) {
@@ -361,7 +473,9 @@ void TestShift() {
 
 int main() {
   TestPakIndex();
+  TestNamedPakIndex();
   TestOggPak();
+  TestDirectOgg();
   TestMessageSites();
   TestMessageRecords();
   TestLayoutSite();
