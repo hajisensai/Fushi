@@ -83,4 +83,132 @@ void main() {
     ]);
     expect(split.overflow, <FushiToolbarItem>[b, c]);
   });
+
+  test('menu 常驻：⋯ 恒占一格，测宽按它算', () {
+    final List<List<FushiToolbarItem>> groups = <List<FushiToolbarItem>>[
+      actions.sublist(0, 2),
+    ];
+    final double plain = fushiTopBarActionsWidth(groups, const [], 2);
+    final double pinned = fushiTopBarActionsWidth(
+      groups,
+      const [],
+      2,
+      pinnedMenu: true,
+    );
+    expect(pinned, greaterThan(plain));
+    // 预算刚好放下两颗、不够再放「⋯」时，常驻菜单要让出一颗。
+    expect(fushiTopBarFitCount(groups, const [], 2, plain), 2);
+    expect(
+      fushiTopBarFitCount(groups, const [], 2, plain, pinnedMenu: true),
+      1,
+    );
+  });
+
+  testWidgets('menu 宽窗也不平铺；actionsFollowLeading 让动作紧跟返回键', (
+    WidgetTester tester,
+  ) async {
+    final FushiToolbarItem menuItem = FushiToolbarItem(
+      key: const ValueKey<String>('menu_item'),
+      icon: Icons.delete,
+      label: 'Clear',
+      onPressed: () {},
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 900,
+              child: FushiFloatingTopBar(
+                actionsFollowLeading: true,
+                leading: <FushiToolbarItem>[
+                  FushiToolbarItem(
+                    key: const ValueKey<String>('back'),
+                    icon: Icons.arrow_back,
+                    label: 'Back',
+                    onPressed: () {},
+                  ),
+                ],
+                actions: <List<FushiToolbarItem>>[
+                  <FushiToolbarItem>[
+                    FushiToolbarItem(
+                      key: const ValueKey<String>('filter'),
+                      icon: Icons.movie,
+                      label: 'Filter',
+                      selected: true,
+                      onPressed: () {},
+                    ),
+                  ],
+                ],
+                menu: <FushiToolbarItem>[menuItem],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('menu_item')), findsNothing);
+    expect(more, findsOneWidget, reason: 'menu 非空时 ⋯ 恒在');
+    final double backRight = tester
+        .getRect(find.byKey(const ValueKey<String>('back')))
+        .right;
+    final double filterLeft = tester
+        .getRect(find.byKey(const ValueKey<String>('filter')))
+        .left;
+    expect(filterLeft - backRight, lessThan(40), reason: '筛选紧跟返回键');
+    await tester.tap(more);
+    await tester.pumpAndSettle();
+    expect(find.text('Clear'), findsOneWidget);
+  });
+
+  group('inlineLabels 逐级降档', () {
+    FushiToolbarItem item(String label, {bool selected = false}) =>
+        FushiToolbarItem(
+          icon: Icons.movie,
+          label: label,
+          selected: selected,
+          onPressed: () {},
+        );
+    final List<FushiToolbarItem> items = <FushiToolbarItem>[
+      item('a'),
+      item('b'),
+      item('c', selected: true),
+      item('d'),
+    ];
+    double width(FushiToolbarItem _) => 100;
+    FushiTopBarLabeledLayout at(double budget) => fushiTopBarLabeledLayout(
+      items: items,
+      labeledWidth: width,
+      budget: budget,
+      pinnedMenu: true,
+    );
+
+    test('宽：全部带字', () {
+      final FushiTopBarLabeledLayout l = at(1000);
+      expect(l.labeled, items.toSet());
+      expect(l.hidden, isEmpty);
+    });
+
+    test('中：只有选中项带字，全部平铺', () {
+      // 8 + 104 + 3×52 + 52 = 320
+      final FushiTopBarLabeledLayout l = at(320);
+      expect(l.labeled, <FushiToolbarItem>{items[2]});
+      expect(l.shown, items);
+    });
+
+    test('窄：选中项带字恒平铺，其余按优先级收进 ⋯', () {
+      // 8 + 104 + 52(⋯) + 1×52 = 216
+      final FushiTopBarLabeledLayout l = at(216);
+      expect(l.labeled, <FushiToolbarItem>{items[2]});
+      expect(l.shown, <FushiToolbarItem>[items[0], items[2]]);
+      expect(l.hidden, <FushiToolbarItem>[items[1], items[3]]);
+    });
+
+    test('极窄：退成纯图标自适应溢出', () {
+      final FushiTopBarLabeledLayout l = at(120);
+      expect(l.labeled, isEmpty);
+      expect(l.shown, <FushiToolbarItem>[items[0]]);
+    });
+  });
 }
