@@ -582,4 +582,57 @@ void main() {
       expect(FilenameParser.parse('タイトル.Rmvb').title, 'タイトル');
     });
   });
+
+  // BUG-3192：带年份的作品目录名。括号年份走块分类；不带括号的裸年份
+  // （scene 命名 `Title.2023.1080p` / `Title 2023`）此前原样留在标题里，
+  // 严格标题门对不上，回落标题匹配整条查无。
+  group('带年份的目录名（BUG-3192）', () {
+    const Map<String, (String, int)> cases = <String, (String, int)>{
+      '葬送のフリーレン (2023)': ('葬送のフリーレン', 2023),
+      '葬送のフリーレン（2023）': ('葬送のフリーレン', 2023),
+      '葬送のフリーレン [2023]': ('葬送のフリーレン', 2023),
+      '[2023] 葬送のフリーレン': ('葬送のフリーレン', 2023),
+      '【2023】葬送のフリーレン': ('葬送のフリーレン', 2023),
+      'Sousou no Frieren (2023) [1080p]': ('Sousou no Frieren', 2023),
+      'Sousou.no.Frieren.2023.1080p.WEB-DL.x265': ('Sousou no Frieren', 2023),
+      'Sousou no Frieren 2023': ('Sousou no Frieren', 2023),
+      'Sousou_no_Frieren_2023': ('Sousou no Frieren', 2023),
+      'Frieren.2023': ('Frieren', 2023),
+      'DEATH NOTE (2006)': ('DEATH NOTE', 2006),
+      'FX戦士くるみちゃん (2026)': ('FX戦士くるみちゃん', 2026),
+    };
+    for (final MapEntry<String, (String, int)> e in cases.entries) {
+      test('「${e.key}」年份进 year、不混进标题', () {
+        final ParsedMediaName p = FilenameParser.parse(e.key);
+        expect(p.title, e.value.$1);
+        expect(p.year, e.value.$2);
+      });
+    }
+
+    test('裸年份 + 集号：两者都解出', () {
+      final ParsedMediaName p =
+          FilenameParser.parse('Sousou no Frieren 2023 - 03 [1080p].mkv');
+      expect(p.title, 'Sousou no Frieren');
+      expect(p.year, 2023);
+      expect(p.episode, 3);
+    });
+
+    test('括号年份优先于标题尾部数字', () {
+      final ParsedMediaName p = FilenameParser.parse('Godzilla 2000 (1999)');
+      expect(p.year, 1999);
+      expect(p.title, 'Godzilla 2000');
+    });
+
+    test('片名本身的数字不当年份', () {
+      // 晚于明年：片名的一部分。
+      expect(
+          FilenameParser.parse('Blade Runner 2049').title, 'Blade Runner 2049');
+      expect(FilenameParser.parse('Blade Runner 2049').year, isNull);
+      // 纯年份片名：左边没有标题文字。
+      expect(FilenameParser.parse('2012').year, isNull);
+      // 三位数 / 非 19xx-20xx：不动。
+      expect(FilenameParser.parse('Mob Psycho 100').title, 'Mob Psycho 100');
+      expect(FilenameParser.parse('Gundam 0083').title, 'Gundam 0083');
+    });
+  });
 }
