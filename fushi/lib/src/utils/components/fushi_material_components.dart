@@ -4241,9 +4241,15 @@ class FushiPageScaffold extends StatefulWidget {
     this.bottomNavigationBar,
     this.headerCompact,
     this.extendBodyBehindHeader = true,
+    this.topBar,
   });
 
   final String title;
+
+  /// 非 null 时整条页头换成它（通常是 [FushiFloatingTopBar]：标题胶囊可带头像、
+  /// 动作按宽度自适应收进「⋯」）。仍享有页头的收起 / 让位 / 顶部渐隐；
+  /// [title] / [subtitle] / [leading] / [actions] / [headerBottom] 此时不再画。
+  final Widget? topBar;
   final String? subtitle;
   final Widget body;
 
@@ -4342,10 +4348,21 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
         (widget.automaticallyImplyLeading ? _defaultLeading(context) : null);
     final bool floatingChrome = !isGlassDesign(context);
     final bool extendBody = widget.extendBodyBehindHeader && floatingChrome;
+    final Widget? topBar = widget.topBar;
     final Widget header = FushiScrollAwayChrome(
       controller: _chrome,
       enabled: floatingChrome,
-      child: FushiPageHeader(
+      child: topBar != null
+          ? Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                tokens.spacing.gap,
+                tokens.spacing.page,
+                tokens.spacing.gap + 4,
+              ),
+              child: topBar,
+            )
+          : FushiPageHeader(
         title: widget.title,
         subtitle: widget.subtitle,
         leading: effectiveLeading,

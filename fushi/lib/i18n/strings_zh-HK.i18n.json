@@ -6897,5 +6897,18 @@
   "video_setting_mpv_passthrough_hint": "將 AC-3 / E-AC-3 / TrueHD / DTS-HD 原封不動交給擴音機或 Soundbar 解碼（包括 Atmos）。只應在裝置支援這些格式時開啟，否則可能無聲。直通時請在擴音機上調校音量：應用內的音量與靜音對這些碼流無效，所以倍速不是 1×、音量未調至最大或靜音時，會暫時改由 Fushi 解碼（擴音機上的 Atmos / DTS 標示隨之熄滅）。關閉時一律由 Fushi 解碼，5.1 / 7.1 照樣以環迴立體聲輸出。",
   "shortcut_action_video_lookup_next_word": "下一個詞（掃詞）",
   "shortcut_action_video_lookup_prev_word": "上一個詞（掃詞）",
-  "media_source_open_folder_failed": "無法開啟資料夾，可能已被移動、刪除或中斷連線。"
+  "media_source_open_folder_failed": "無法開啟資料夾，可能已被移動、刪除或中斷連線。",
+  "leaderboard_summary_total": "總字數",
+  "leaderboard_summary_week": "本週 +${n} 字，佔總數 ${pct}",
+  "leaderboard_summary_next": "離下一個百萬還差 ${n} 字",
+  "leaderboard_summary_empty": "還沒有字數記錄",
+  "leaderboard_summary_equiv_volumes": "夠讀完 ${n} 卷《${title}》",
+  "leaderboard_summary_equiv_episodes": "夠看完 ${n} 集《${title}》",
+  "leaderboard_summary_equiv_read_times": "夠把《${title}》讀完 ${n} 遍",
+  "leaderboard_summary_equiv_watch_times": "夠把《${title}》看完 ${n} 遍",
+  "leaderboard_summary_equiv_play_times": "夠把《${title}》通關 ${n} 遍",
+  "leaderboard_watermelon_title": "超級大西瓜",
+  "leaderboard_watermelon_subtitle": "本週字數 · 字數越多球越大",
+  "leaderboard_watermelon_fit": "適應螢幕",
+  "leaderboard_account_sync": "同步"
 }

@@ -14,6 +14,7 @@ import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_sync.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
@@ -292,10 +293,14 @@ String leaderboardWindowLabel(LeaderboardWindow window) => switch (window) {
 };
 
 /// 指标数值带单位：字数 = 「N 字」，其余 = 「N 部」。
+/// 数字按当前语言加千分位（10068859 → 10,068,859）。
+String leaderboardGroupedNumber(num value) =>
+    NumberFormat.decimalPattern(Intl.getCurrentLocale()).format(value);
+
 String leaderboardMetricValue(LeaderboardMetric metric, int value) =>
     metric == LeaderboardMetric.chars
-    ? t.leaderboard_value_chars(n: value)
-    : t.leaderboard_value_works(n: value);
+    ? t.leaderboard_value_chars(n: leaderboardGroupedNumber(value))
+    : t.leaderboard_value_works(n: leaderboardGroupedNumber(value));
 
 /// 相对路径（`/img/...`）或绝对地址 → 可加载的 URL；未开启（没有 client）或空时 null。
 String? leaderboardMediaUrl(WidgetRef ref, String? path) {
@@ -346,6 +351,8 @@ class LeaderboardAvatar extends ConsumerWidget {
         child: Text(
           initial,
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            // 大头像（大西瓜的球）首字跟着放大；常规 40 尺寸维持 titleSmall。
+            fontSize: size > 48 ? size * 0.36 : null,
             color: glass
                 ? appleColorsOf(context).secondaryLabel
                 : colors.onSurfaceVariant,

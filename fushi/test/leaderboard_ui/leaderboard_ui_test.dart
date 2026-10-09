@@ -8,6 +8,7 @@ import 'package:flutter/services.dart' show MethodCall, SystemChannels;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/leaderboard/leaderboard_features.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_store.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_account_page.dart';
@@ -16,6 +17,7 @@ import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_share_ca
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_sign_in_page.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_user_page.dart';
+import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_watermelon_page.dart';
 import 'package:fushi/utils.dart'
     show FushiDestructiveConfirmDialog, FushiLoadingView, FushiSelectableChip;
 import 'package:fushi_core/fushi_core.dart';
@@ -515,7 +517,7 @@ void main() {
       find.text(
         t.leaderboard_board_me(
           rank: 2,
-          value: leaderboardMetricValue(LeaderboardMetric.book, 3),
+          value: leaderboardMetricValue(LeaderboardMetric.chars, 3),
         ),
       ),
       findsOneWidget,
@@ -524,14 +526,57 @@ void main() {
       find.textContaining(t.leaderboard_board_updated(time: '')),
       findsOneWidget,
     );
+    // 2026-10-09 精简：同步卡挪进账户页；好友榜 / 作品人气只隐藏入口。
+    expect(
+      find.byKey(const ValueKey<String>('leaderboard-sync-status')),
+      findsNothing,
+    );
     expect(
       find.byKey(const ValueKey<String>('leaderboard-sync-claim')),
       findsNothing,
     );
-    final http.Request rank = server.requests.firstWhere(
-      (http.Request r) => r.url.path == '/v1/rank',
+    expect(
+      find.byKey(
+        ValueKey<String>('leaderboard-scope-${t.leaderboard_scope_friends}'),
+      ),
+      findsNothing,
     );
-    expect(rank.url.queryParameters['metric'], 'book');
+    expect(
+      find.byKey(
+        ValueKey<String>('leaderboard-view-${t.leaderboard_view_works}'),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('leaderboard-header-friends')),
+      findsNothing,
+    );
+    // 字数排在指标行第一位。
+    final double charsX = tester
+        .getTopLeft(
+          find.byKey(
+            ValueKey<String>('leaderboard-metric-${t.leaderboard_metric_chars}'),
+          ),
+        )
+        .dx;
+    final double bookX = tester
+        .getTopLeft(
+          find.byKey(
+            ValueKey<String>('leaderboard-metric-${t.leaderboard_kind_book}'),
+          ),
+        )
+        .dx;
+    expect(charsX, lessThan(bookX));
+    // 总字数卡：总榜 / 周榜字数榜上「我」的值。
+    expect(
+      find.byKey(const ValueKey<String>('leaderboard-summary-total')),
+      findsOneWidget,
+    );
+    final http.Request rank = server.requests.firstWhere(
+      (http.Request r) =>
+          r.url.path == '/v1/rank' && r.url.queryParameters['limit'] == '50',
+    );
+    expect(rank.url.queryParameters['metric'], 'chars');
     expect(rank.url.queryParameters['window'], 'week');
     expect(rank.url.queryParameters['scope'], 'global');
     expect(rank.headers.containsKey('X-Fushi-Sig'), isTrue);
@@ -547,7 +592,7 @@ void main() {
     expect(
       find.text(
         t.leaderboard_board_me_pending(
-          value: leaderboardMetricValue(LeaderboardMetric.book, 9),
+          value: leaderboardMetricValue(LeaderboardMetric.chars, 9),
           time: leaderboardDateTime(
             1790000000000 + kLeaderboardSnapshotInterval.inMilliseconds,
           ),
@@ -566,7 +611,8 @@ void main() {
     expect(find.text(t.leaderboard_board_me_unranked), findsOneWidget);
   });
 
-  testWidgets('榜单快照未生成：显示「榜单生成中」；上传设备在别处：给出接管按钮', (WidgetTester tester) async {
+  testWidgets('榜单快照未生成：显示「榜单生成中」；上传设备在别处：账户页给出接管按钮', (WidgetTester tester) async {
+    tallView(tester);
     server.rankComputedAt = null;
     final LeaderboardService service = await activeService(
       tester,
@@ -576,6 +622,15 @@ void main() {
     await settle(tester);
 
     expect(find.text(t.leaderboard_board_generating), findsWidgets);
+    expect(
+      find.byKey(const ValueKey<String>('leaderboard-sync-claim')),
+      findsNothing,
+      reason: '同步卡已挪进账户页',
+    );
+
+    // 同一个 ProviderScope 换页（不能先 pump 空树：那会连带 dispose 服务）。
+    await tester.pumpWidget(wrap(service, const LeaderboardAccountPage()));
+    await settle(tester);
     expect(
       find.byKey(const ValueKey<String>('leaderboard-sync-elsewhere')),
       findsOneWidget,
@@ -619,9 +674,10 @@ void main() {
       findsOneWidget,
     );
     expect(find.text(t.leaderboard_user_shelf_private), findsOneWidget);
+    // 好友入口默认隐藏（LeaderboardFeatures.friendsEnabled = false）。
     expect(
       find.byKey(const ValueKey<String>('leaderboard-user-add-friend')),
-      findsOneWidget,
+      findsNothing,
     );
   });
 
@@ -1107,7 +1163,7 @@ void main() {
     final Finder share = find.byKey(
       const ValueKey<String>('leaderboard-header-share'),
     );
-    expect(tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(share)).onPressed, isNotNull);
+    expect(share, findsOneWidget);
     await tester.tap(share);
     await settle(tester);
 
@@ -1399,6 +1455,8 @@ void main() {
   testWidgets('用户页：服务端给 relation none 时不再拉好友列表；缺字段才回退', (
     WidgetTester tester,
   ) async {
+    LeaderboardFeatures.friendsEnabled = true;
+    addTearDown(() => LeaderboardFeatures.friendsEnabled = false);
     Future<void> open() async {
       final LeaderboardService service = await activeService(tester);
       await tester.pumpWidget(
@@ -1431,5 +1489,34 @@ void main() {
       hasLength(1),
       reason: '旧服务端没有 relation 字段：回退按好友列表推断',
     );
+  });
+
+  testWidgets('大西瓜：顶栏入口进页，本周字数榜画成头像球，字数越多球越大', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    final LeaderboardService service = await activeService(tester);
+    await tester.pumpWidget(wrap(service, const LeaderboardTab()));
+    await settle(tester);
+    await tester.tap(byKey('leaderboard-header-watermelon'));
+    await settle(tester);
+    expect(find.byType(LeaderboardWatermelonPage), findsOneWidget);
+    final http.Request req = server.requests.lastWhere(
+      (http.Request r) => r.url.path == '/v1/rank',
+    );
+    expect(req.url.queryParameters['metric'], 'chars');
+    expect(req.url.queryParameters['window'], 'week');
+    expect(byKey('leaderboard-watermelon-viewer'), findsOneWidget);
+    double sizeOf(String id) => tester
+        .widget<LeaderboardAvatar>(
+          find.descendant(
+            of: find.byType(LeaderboardWatermelonPage),
+            matching: find.byWidgetPredicate(
+              (Widget w) => w is LeaderboardAvatar && w.account.id == id,
+            ),
+          ),
+        )
+        .size;
+    expect(sizeOf(_otherId), greaterThan(sizeOf(_selfId)));
   });
 }

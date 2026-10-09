@@ -6897,5 +6897,18 @@
   "video_setting_mpv_passthrough_hint": "把 AC-3 / E-AC-3 / TrueHD / DTS-HD 原样交给功放或回音壁解码（含 Atmos）。仅在设备支持这些格式时打开，否则可能无声。直通时请在功放上调音量：应用内音量与静音作用不到这些码流，所以倍速不为 1×、音量未满或静音时会临时改由 Fushi 解码（功放上的 Atmos / DTS 标识随之熄灭）。关闭时始终由 Fushi 解码，5.1 / 7.1 照样环绕输出。",
   "shortcut_action_video_lookup_next_word": "下一个词（扫词）",
   "shortcut_action_video_lookup_prev_word": "上一个词（扫词）",
-  "media_source_open_folder_failed": "无法打开文件夹，它可能已被移动、删除或断开连接。"
+  "media_source_open_folder_failed": "无法打开文件夹，它可能已被移动、删除或断开连接。",
+  "leaderboard_summary_total": "总字数",
+  "leaderboard_summary_week": "本周 +${n} 字，占总数 ${pct}",
+  "leaderboard_summary_next": "离下一个百万还差 ${n} 字",
+  "leaderboard_summary_empty": "还没有字数记录",
+  "leaderboard_summary_equiv_volumes": "够读完 ${n} 卷《${title}》",
+  "leaderboard_summary_equiv_episodes": "够看完 ${n} 集《${title}》",
+  "leaderboard_summary_equiv_read_times": "够把《${title}》读完 ${n} 遍",
+  "leaderboard_summary_equiv_watch_times": "够把《${title}》看完 ${n} 遍",
+  "leaderboard_summary_equiv_play_times": "够把《${title}》通关 ${n} 遍",
+  "leaderboard_watermelon_title": "超级大西瓜",
+  "leaderboard_watermelon_subtitle": "本周字数 · 字数越多球越大",
+  "leaderboard_watermelon_fit": "适应屏幕",
+  "leaderboard_account_sync": "同步"
 }

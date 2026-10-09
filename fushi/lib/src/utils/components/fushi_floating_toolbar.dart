@@ -558,6 +558,7 @@ class FushiFloatingTopBar extends StatefulWidget {
     this.leading = const <FushiToolbarItem>[],
     this.title = '',
     this.subtitle = '',
+    this.titleLeading,
     this.onTitleTap,
     this.titleTooltip,
     this.actions = const <List<FushiToolbarItem>>[],
@@ -570,6 +571,9 @@ class FushiFloatingTopBar extends StatefulWidget {
   final List<FushiToolbarItem> leading;
   final String title;
   final String subtitle;
+
+  /// 标题胶囊里排在标题文字前的小组件（如用户头像，约 32 见方）。
+  final Widget? titleLeading;
   final VoidCallback? onTitleTap;
   final String? titleTooltip;
 
@@ -771,7 +775,8 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
         overflow.isNotEmpty;
     final String t = title.trim();
     final String s = subtitle.trim();
-    final Widget? titlePill = t.isEmpty && s.isEmpty
+    final Widget? titleLeading = widget.titleLeading;
+    final Widget? titlePill = t.isEmpty && s.isEmpty && titleLeading == null
         ? null
         : FushiFloatingPill(
             key: const ValueKey<String>('fushi_floating_top_bar_title'),
@@ -787,39 +792,55 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
                     minHeight: kFushiFloatingToolbarCompactExtent,
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
+                    padding: EdgeInsetsDirectional.only(
+                      start: titleLeading == null ? 16 : 6,
+                      end: 16,
+                    ),
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        if (t.isNotEmpty)
-                          Text(
-                            t,
-                            key: const ValueKey<String>(
-                              'fushi_floating_top_bar_title_text',
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              color: palette.foreground,
-                              fontWeight: FontWeight.w700,
-                              height: 1.15,
-                            ),
+                        if (titleLeading != null) ...<Widget>[
+                          titleLeading,
+                          const SizedBox(width: 8),
+                        ],
+                        Flexible(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              if (t.isNotEmpty)
+                                Text(
+                                  t,
+                                  key: const ValueKey<String>(
+                                    'fushi_floating_top_bar_title_text',
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    color: palette.foreground,
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.15,
+                                  ),
+                                ),
+                              if (s.isNotEmpty)
+                                Text(
+                                  s,
+                                  key: const ValueKey<String>(
+                                    'fushi_floating_top_bar_subtitle_text',
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: palette.foreground.withValues(
+                                      alpha: 0.7,
+                                    ),
+                                    height: 1.15,
+                                  ),
+                                ),
+                            ],
                           ),
-                        if (s.isNotEmpty)
-                          Text(
-                            s,
-                            key: const ValueKey<String>(
-                              'fushi_floating_top_bar_subtitle_text',
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: palette.foreground.withValues(alpha: 0.7),
-                              height: 1.15,
-                            ),
-                          ),
+                        ),
                       ],
                     ),
                   ),
