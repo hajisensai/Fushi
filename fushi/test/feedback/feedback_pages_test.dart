@@ -306,6 +306,16 @@ void main() {
           .evaluate()
           .isNotEmpty,
     );
+    // 提交页退场动画期间 ScaffoldMessenger 把同一条 SnackBar 同时挂在两个
+    // Scaffold 上（Flutter 的路由过渡设计）；等提交页真正离开路由树再数。
+    await settleIo(
+      tester,
+      () => find
+          .byKey(const ValueKey<String>('feedback-submit'))
+          .evaluate()
+          .isEmpty,
+    );
+    expect(find.byKey(const ValueKey<String>('feedback-submit')), findsNothing);
 
     final http.Request submit = server.requests.firstWhere(
       (http.Request r) => r.url.path == '/v1/feedback',
