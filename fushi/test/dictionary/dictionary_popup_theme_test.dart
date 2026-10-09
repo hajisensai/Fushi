@@ -119,4 +119,88 @@ void main() {
       expect(resolved.theme.colorScheme.brightness, Brightness.dark);
     });
   });
+
+  // 歌词模式（用户 10-09 选方案 A）：歌词页按封面取色（青），查词弹窗原来跟
+  // 阅读器纸色 + app 主色（紫），两者撞色。现在歌词模式下弹窗直接复用歌词页
+  // 那份封面 scheme，退出（传 null）回到原纸色主题。
+  group('歌词模式：弹窗跟随封面取色 scheme', () {
+    final ColorScheme coverLight = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF00838F),
+    );
+    final ColorScheme coverDark = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF00838F),
+      brightness: Brightness.dark,
+    );
+    ColorScheme purple(Brightness b) => ColorScheme.fromSeed(
+        seedColor: const Color(0xFF6750A4), brightness: b);
+
+    DictionaryPopupTheme resolve({
+      ColorScheme? cover,
+      bool eink = false,
+      bool glassDesign = false,
+    }) =>
+        resolveDictionaryPopupTheme(
+          eink: eink,
+          einkDark: false,
+          readerBackground: paperBg,
+          readerForeground: paperFg,
+          readerDark: false,
+          buildColorScheme: eink ? buildEinkColorScheme : purple,
+          textTheme: const TextTheme(),
+          glassDesign: glassDesign,
+          lyricsCoverScheme: cover,
+        );
+
+    test('传入封面 scheme：弹窗主题就是这份 scheme，外壳填充取它的 surface', () {
+      final DictionaryPopupTheme resolved = resolve(cover: coverLight);
+      final ColorScheme cs = resolved.theme.colorScheme;
+      expect(cs.primary, coverLight.primary);
+      expect(cs.surface, coverLight.surface);
+      expect(cs.onSurface, coverLight.onSurface);
+      expect(cs.surfaceContainerHigh, coverLight.surfaceContainerHigh);
+      expect(cs.primary, isNot(purple(Brightness.light).primary),
+          reason: '歌词模式下不得再用 app 主色');
+      expect(resolved.fillColor, coverLight.surface);
+      expect(resolved.fillColor, isNot(paperBg),
+          reason: '歌词页铺的是封面色，弹窗外壳不能再是正文纸色');
+    });
+
+    test('明暗跟封面 scheme（与歌词页一致），不读阅读器纸色明暗', () {
+      // 阅读器是浅色纸（readerDark: false），歌词页按 app 深色取色。
+      final DictionaryPopupTheme resolved = resolve(cover: coverDark);
+      expect(resolved.theme.colorScheme.brightness, Brightness.dark);
+      expect(resolved.theme.colorScheme.surface, coverDark.surface);
+      expect(resolved.fillColor, coverDark.surface);
+    });
+
+    test('不传（退出歌词模式）= 原来的纸色 + app 主色主题，逐字段一致', () {
+      final DictionaryPopupTheme normal = resolve();
+      final DictionaryPopupTheme baseline = resolveDictionaryPopupTheme(
+        eink: false,
+        einkDark: false,
+        readerBackground: paperBg,
+        readerForeground: paperFg,
+        readerDark: false,
+        buildColorScheme: purple,
+        textTheme: const TextTheme(),
+      );
+      expect(normal.fillColor, paperBg);
+      expect(normal.theme.colorScheme, baseline.theme.colorScheme);
+      expect(normal.theme.colorScheme.primary,
+          purple(Brightness.light).primary);
+    });
+
+    test('墨水屏与 Apple 设计系统下忽略封面 scheme', () {
+      final DictionaryPopupTheme eink = resolve(cover: coverLight, eink: true);
+      expect(eink.fillColor, Colors.white);
+      expect(eink.theme.colorScheme.surface, Colors.white);
+      expect(eink.theme.extension<FushiEinkTheme>()?.einkMode, isTrue);
+
+      final DictionaryPopupTheme apple =
+          resolve(cover: coverLight, glassDesign: true);
+      final DictionaryPopupTheme appleBaseline = resolve(glassDesign: true);
+      expect(apple.theme.colorScheme, appleBaseline.theme.colorScheme);
+      expect(apple.fillColor, appleBaseline.fillColor);
+    });
+  });
 }

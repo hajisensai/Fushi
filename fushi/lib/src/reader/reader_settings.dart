@@ -248,6 +248,24 @@ class ReaderSettings {
   bool get lyricsBlur => _get<bool>('lyrics_blur', false);
   Future<void> setLyricsBlur(bool v) => _set<bool>('lyrics_blur', v);
 
+  /// 歌词模式当前行的逐字跟读渐变（按播放进度从已读色扫到未读色）。默认 `true`
+  /// = 历史行为；关掉后当前行整行用当前行色，不扫过（封面 / 背景与当前行同色系时
+  /// 渐变看久了刺眼）。
+  bool get lyricsSweep => _get<bool>('lyrics_sweep', true);
+  Future<void> setLyricsSweep(bool v) => _set<bool>('lyrics_sweep', v);
+
+  /// 有声书正文当前句是否铺底色。默认 `true` = 历史行为；关掉后只靠
+  /// [audioHighlightTextColor]（未设时用高亮色本身）给字上色、不加底色。
+  bool get audioHighlightBackground =>
+      _get<bool>('audio_highlight_background', true);
+  Future<void> setAudioHighlightBackground(bool v) =>
+      _set<bool>('audio_highlight_background', v);
+
+  /// 有声书正文当前句的文字颜色。ARGB int；`0` 哨兵 = 不改字色（跟随正文）。
+  int get audioHighlightTextColor => _get<int>('audio_highlight_text_color', 0);
+  Future<void> setAudioHighlightTextColor(int v) =>
+      _set<int>('audio_highlight_text_color', v);
+
   double get lineHeight => _get<double>('line_height', 1.65);
   Future<void> setLineHeight(double v) => _set<double>('line_height', v);
 

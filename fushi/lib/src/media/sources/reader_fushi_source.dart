@@ -1878,6 +1878,37 @@ class ReaderFushiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
+  /// 歌词模式逐字跟读渐变（`lyrics_sweep`，默认 `true`）。热更走
+  /// `onSettingsChangedLive` → `_updateLyricsStyleLive` 换 body class。
+  bool get lyricsSweep =>
+      readerSettings?.lyricsSweep ??
+      getPreference<bool>(key: 'lyrics_sweep', defaultValue: true);
+  Future<void> setLyricsSweep(bool v) async {
+    await (readerSettings?.setLyricsSweep(v) ??
+        setPreference<bool>(key: 'lyrics_sweep', value: v));
+    onSettingsChangedLive?.call();
+  }
+
+  /// 有声书正文当前句铺底色（`audio_highlight_background`，默认 `true`）。
+  bool get audioHighlightBackground =>
+      readerSettings?.audioHighlightBackground ??
+      getPreference<bool>(key: 'audio_highlight_background', defaultValue: true);
+  Future<void> setAudioHighlightBackground(bool v) async {
+    await (readerSettings?.setAudioHighlightBackground(v) ??
+        setPreference<bool>(key: 'audio_highlight_background', value: v));
+    onSettingsChangedLive?.call();
+  }
+
+  /// 有声书正文当前句字色（`audio_highlight_text_color`，ARGB；`0` = 不改字色）。
+  int get audioHighlightTextColor =>
+      readerSettings?.audioHighlightTextColor ??
+      getPreference<int>(key: 'audio_highlight_text_color', defaultValue: 0);
+  Future<void> setAudioHighlightTextColor(int v) async {
+    await (readerSettings?.setAudioHighlightTextColor(v) ??
+        setPreference<int>(key: 'audio_highlight_text_color', value: v));
+    onSettingsChangedLive?.call();
+  }
+
   double get readerLineHeight =>
       readerSettings?.lineHeight ??
       getPreference<double>(key: 'line_height', defaultValue: 1.65);

@@ -47,6 +47,7 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/media/audiobook/lyrics_cue_text.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -79,6 +80,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show DictionaryPopupWebViewState, MinePopupResult;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/reader/audio_highlight_style.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
 import 'package:fushi/src/reader/reader_ruby_metrics_script.dart';
 import 'package:fushi/src/reader/reader_audio_position.dart';
@@ -2060,6 +2062,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   bool _lyricsMode = false;
   bool _lyricsModeTransition = false;
+  // 页面外的歌词主题宿主（路由 builder 包的那层）。歌词模式下查词弹窗跟随它的
+  // 封面取色 scheme（[_syncDictionaryTheme]），宿主主题一变就重算弹窗主题。
+  LyricsThemeHostState? _lyricsThemeHost;
   // BUG-785: 「上次退出时在歌词模式」的待恢复意图。fresh open 仍先以正文加载
   // （_lyricsMode=false，避免直接整页加载歌词 HTML 跳过 EPUB → iOS 白屏），等 EPUB
   // 内容就绪 + 有声书已挂载后再切歌词（等价用户手动切，已知安全）。一次性，恢复后清零。
@@ -3330,6 +3335,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _clearGamepadAHold();
     VolumeKeyChannel.instance.setHandlers();
     VolumeKeyChannel.instance.setInterceptEnabled(false);
+    _lyricsThemeHost?.themeChanges.removeListener(_onLyricsThemeHostChanged);
+    _lyricsThemeHost = null;
     appModel.setOverrideDictionaryTheme(null);
     appModel.setOverrideDictionaryColor(null);
     // 退出那一刻的位置（BUG-203/032）交给退出汇合点，dispose 里不发起（同上：无人
@@ -3629,6 +3636,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final LyricsThemeHostState? themeHost = LyricsThemeHost.maybeOf(context);
+    if (!identical(themeHost, _lyricsThemeHost)) {
+      _lyricsThemeHost?.themeChanges.removeListener(_onLyricsThemeHostChanged);
+      _lyricsThemeHost = themeHost;
+      themeHost?.themeChanges.addListener(_onLyricsThemeHostChanged);
+    }
     final EdgeInsets vp = MediaQuery.of(context).viewPadding;
     // TODO-1375：inset（系统安全区 / notch / 全屏进出改变的 viewPadding）变化时，
     // 过去只更新这两个 Dart 字段，却从不把新 inset 回喂给 WebView 的分页几何——
@@ -4007,6 +4020,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   String _currentReaderCss() {
     final ReaderThemeColors rc = _readerThemeColors;
     final FushiReaderPalette? palette = _followThemePalette;
+    // 有声书当前句：底色开关 + 自定义字色（只变字色、无底色也是一种组合）。
+    final AudioHighlightStyle audioStyle = resolveAudioHighlightStyle(
+      highlight: rc.sentenceAudioHighlight,
+      showBackground: _settings!.audioHighlightBackground,
+      customTextColor: _settings!.audioHighlightTextColor,
+    );
     _cssThemeSignature = _readerThemeSignature();
     return ReaderContentStyles.css(
       settings: _settings!,
@@ -4027,7 +4046,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // 真相源）——preset 透传手调专色（与旧 switch 值逐一相等，零变化）、custom 用
       // 用户色、system/light 从真实 ColorScheme 强调色派生（不再落硬编码天蓝/灰/蓝）。
       selectionColor: _colorToCssRgba(rc.selection),
-      sentenceAudioHighlightColor: _colorToCssRgba(rc.sentenceAudioHighlight),
+      sentenceAudioHighlightColor: _colorToCssRgba(audioStyle.background),
+      sentenceAudioTextColor: audioStyle.text == null
+          ? null
+          : _colorToCssRgba(audioStyle.text!),
       linkColor: _colorToCssRgba(rc.link),
       // 跟随主题的 M3E 阅读配色才写注音色 / 原生选区；预设与钉纸色保持旧行为。
       // 分页 / 滚动 / VN 三种布局共用这一份 CSS，取色同源。

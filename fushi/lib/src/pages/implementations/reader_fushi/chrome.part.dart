@@ -3842,9 +3842,19 @@ extension _ReaderChrome on _ReaderFushiPageState {
       glassDesign: appModel.themeNotifier.designSystem == 'glass',
       glass: appModel.themeNotifier.glassMaterial,
       monochromeAccent: appModel.themeNotifier.appThemeKey == 'system-theme',
+      // 歌词模式：弹窗跟歌词页同一份封面取色 scheme；退出后这里回到 null，
+      // 弹窗恢复阅读器纸色主题。
+      lyricsCoverScheme: _lyricsMode ? _lyricsThemeHost?.coverScheme : null,
     );
     appModel.setOverrideDictionaryColor(resolved.fillColor);
     appModel.setOverrideDictionaryTheme(resolved.theme);
+  }
+
+  /// 歌词主题宿主发布了新主题（封面取色到达 / 歌词覆盖层挂上或撤下 / 根主题变）：
+  /// 弹窗覆盖主题跟着重算。
+  void _onLyricsThemeHostChanged() {
+    if (!mounted) return;
+    _syncDictionaryTheme();
   }
 
   // ── JS result helpers (evaluateJavascript returns dynamic) ────────

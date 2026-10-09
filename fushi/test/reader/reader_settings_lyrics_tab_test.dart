@@ -158,6 +158,97 @@ void main() {
     await tester.tap(highlightSwitch.first);
     await tester.pumpAndSettle();
     expect(ReaderFushiSource.instance.lyricsHighlightColor, 0);
+
+    // 逐字跟读渐变：默认开，关掉写穿偏好并触发实时样式更新。
+    expect(ReaderFushiSource.instance.lyricsSweep, isTrue);
+    final Finder sweepSwitch = find.descendant(
+      of: find.byKey(const ValueKey<String>('reader_lyrics_sweep')),
+      matching: find.byWidgetPredicate((Widget w) => w is Switch),
+    );
+    final int before = styleChanges;
+    await tester.ensureVisible(sweepSwitch.first);
+    await tester.tap(sweepSwitch.first);
+    await tester.pumpAndSettle();
+    expect(ReaderFushiSource.instance.lyricsSweep, isFalse);
+    expect(styleChanges, greaterThan(before));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('有声书设置：当前句高亮组（底色 / 字色 / 逐字渐变）写穿偏好', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final FushiDatabase db = FushiDatabase.forTesting(
+      DatabaseConnection(NativeDatabase.memory()),
+    );
+    final AppModel model = await _testAppModel(tester, db);
+    final ReaderSettings? previous = ReaderFushiSource.readerSettings;
+    ReaderFushiSource.readerSettings = ReaderSettings(db)
+      ..applyPrefsSnapshot(const <String, String>{});
+    addTearDown(() => ReaderFushiSource.readerSettings = previous);
+    int styleChanges = 0;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          builder: (BuildContext context, Widget? child) =>
+              LegacyDesignCompatibility(child: child!),
+          home: Scaffold(
+            body: Consumer(
+              builder: (BuildContext context, WidgetRef ref, _) =>
+                  ReaderQuickSettingsSheet(
+                    controller: null,
+                    toc: const [],
+                    readerProgress: const (1, 3),
+                    onJumpSection: (_, __) async {},
+                    onExitReader: () {},
+                    webViewController: _FakeInAppWebViewController(),
+                    appModel: model,
+                    ref: ref,
+                    isFushiReader: true,
+                    presentation:
+                        ReaderQuickSettingsPresentation.audiobookPanel,
+                    onStyleChanged: () async => styleChanges++,
+                    onThemeChanged: () async {},
+                  ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.settings).last);
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.audiobook_highlight_section), findsOneWidget);
+    Finder switchIn(String key) => find.descendant(
+      of: find.byKey(ValueKey<String>(key)),
+      matching: find.byWidgetPredicate((Widget w) => w is Switch),
+    );
+
+    // 底色：关 → 偏好落 false。
+    expect(ReaderFushiSource.instance.audioHighlightBackground, isTrue);
+    await tester.tap(switchIn('reader_audio_highlight_background').first);
+    await tester.pumpAndSettle();
+    expect(ReaderFushiSource.instance.audioHighlightBackground, isFalse);
+
+    // 字色：开 → 写入不透明颜色；关 → 回哨兵 0。
+    expect(ReaderFushiSource.instance.audioHighlightTextColor, 0);
+    await tester.tap(switchIn('reader_audio_highlight_text_color').first);
+    await tester.pumpAndSettle();
+    final int stored = ReaderFushiSource.instance.audioHighlightTextColor;
+    expect(stored, isNot(0));
+    expect(stored >>> 24, 0xFF);
+    await tester.tap(switchIn('reader_audio_highlight_text_color').first);
+    await tester.pumpAndSettle();
+    expect(ReaderFushiSource.instance.audioHighlightTextColor, 0);
+
+    // 逐字渐变也在这一组。
+    await tester.ensureVisible(switchIn('reader_lyrics_sweep').first);
+    await tester.tap(switchIn('reader_lyrics_sweep').first);
+    await tester.pumpAndSettle();
+    expect(ReaderFushiSource.instance.lyricsSweep, isFalse);
+    expect(styleChanges, greaterThanOrEqualTo(4));
     expect(tester.takeException(), isNull);
   });
 

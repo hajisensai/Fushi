@@ -967,6 +967,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
           _lyricsFontSizeRow(),
           _buildLyricsTextColorRow(context),
           _buildLyricsHighlightColorRow(context),
+          _lyricsSweepRow(),
         ],
       ),
       AdaptiveSettingsSection(
@@ -2153,7 +2154,14 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     // side effects, so they are rendered bespoke (not via the schema). With no
     // audiobook loaded, the toggles are the entire sub-page.
     if (widget.controller == null) {
-      return _buildPlayBarToggle();
+      // 高亮样式是纯偏好，没装有声书时也能先调好。
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          _buildAudioHighlightStyleSection(context),
+          _buildPlayBarToggle(),
+        ],
+      );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2169,6 +2177,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
             _buildSkipActionSection(),
           ],
         ),
+        _buildAudioHighlightStyleSection(context),
         _buildPlayBarToggle(),
         if (widget.onAudioImport != null)
           AdaptiveSettingsSection(
@@ -2227,6 +2236,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         _lyricsFontSizeRow(),
         _buildLyricsTextColorRow(context),
         _buildLyricsHighlightColorRow(context),
+        _lyricsSweepRow(),
         ..._lyricsMarginRows(),
       ],
     );
@@ -2432,6 +2442,111 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                     final Color opaque =
                         Color(0xFF000000 | (c.value & 0xFFFFFF));
                     _src.setLyricsTextColor(opaque.value);
+                    setState(() {});
+                    widget.onStyleChanged?.call();
+                  },
+                  portraitOnly: true,
+                  colorPickerWidth: pickerWidth,
+                  pickerAreaHeightPercent: 0.5,
+                  enableAlpha: false,
+                  displayThumbColor: true,
+                  hexInputBar: true,
+                  labelTypes: const <ColorLabelType>[],
+                );
+              },
+            )
+          : null,
+    );
+  }
+
+  /// 歌词模式当前行的逐字跟读渐变开关（`lyrics_sweep`，默认开）。live 维度：
+  /// 写偏好 → `_updateLyricsStyleLive` 换 body class，不重建歌词页。
+  Widget _lyricsSweepRow() {
+    return AdaptiveSettingsSwitchRow(
+      key: const ValueKey<String>('reader_lyrics_sweep'),
+      title: t.lyrics_sweep,
+      subtitle: t.lyrics_sweep_hint,
+      value: _src.lyricsSweep,
+      onChanged: (bool enabled) async {
+        await _src.setLyricsSweep(enabled);
+        if (!mounted) return;
+        setState(() {});
+        widget.onStyleChanged?.call();
+      },
+    );
+  }
+
+  /// 有声书「当前句高亮」样式组：正文底色开关、正文字色、歌词逐字渐变。三项
+  /// 正交，能组合出「底色 + 原字色」（默认）、「只变字色、无底色」、「底色 +
+  /// 字色」，歌词模式另可关掉渐变只留纯色。底色的颜色本身仍在主题编辑器里调。
+  Widget _buildAudioHighlightStyleSection(BuildContext context) {
+    return AdaptiveSettingsSection(
+      key: const ValueKey<String>('reader_audio_highlight_style'),
+      title: t.audiobook_highlight_section,
+      children: <Widget>[
+        AdaptiveSettingsSwitchRow(
+          key: const ValueKey<String>('reader_audio_highlight_background'),
+          title: t.audiobook_highlight_background,
+          subtitle: t.audiobook_highlight_background_hint,
+          value: _src.audioHighlightBackground,
+          onChanged: (bool enabled) async {
+            await _src.setAudioHighlightBackground(enabled);
+            if (!mounted) return;
+            setState(() {});
+            widget.onStyleChanged?.call();
+          },
+        ),
+        _buildAudioHighlightTextColorRow(context),
+        _lyricsSweepRow(),
+      ],
+    );
+  }
+
+  /// 正文当前句字色。开关 = 是否自定义（关 = 不改字色，哨兵 0）；开时展开取色器。
+  Widget _buildAudioHighlightTextColorRow(BuildContext context) {
+    final int stored = _src.audioHighlightTextColor;
+    final bool custom = stored != 0;
+    final Color seedFallback = widget.appModel.audioHighlightColor ??
+        Theme.of(context).colorScheme.primary;
+    final Color current = custom ? Color(stored) : seedFallback;
+    return AdaptiveSettingsSwitchActionRow(
+      key: const ValueKey<String>('reader_audio_highlight_text_color'),
+      title: t.audiobook_highlight_text_color,
+      subtitle: t.audiobook_highlight_text_color_hint,
+      value: custom,
+      onChanged: (bool enabled) async {
+        // 开启时种不透明的高亮色（避免落哨兵 0）；关闭回到不改字色。
+        await _src.setAudioHighlightTextColor(
+          enabled ? 0xFF000000 | (seedFallback.toARGB32() & 0xFFFFFF) : 0,
+        );
+        if (!mounted) return;
+        setState(() {});
+        widget.onStyleChanged?.call();
+      },
+      body: Row(
+        children: [
+          FushiColorSwatch(
+            color: current,
+            size: 20,
+            shape: FushiColorSwatchShape.dot,
+            borderColor: Theme.of(context).dividerColor,
+          ),
+        ],
+      ),
+      panel: custom
+          ? LayoutBuilder(
+              builder:
+                  (BuildContext layoutContext, BoxConstraints constraints) {
+                final double pickerWidth = constraints.maxWidth.clamp(
+                  0.0,
+                  MediaQuery.of(layoutContext).size.width - 64,
+                );
+                return ColorPicker(
+                  pickerColor: current,
+                  onColorChanged: (Color c) {
+                    _src.setAudioHighlightTextColor(
+                      0xFF000000 | (c.toARGB32() & 0xFFFFFF),
+                    );
                     setState(() {});
                     widget.onStyleChanged?.call();
                   },

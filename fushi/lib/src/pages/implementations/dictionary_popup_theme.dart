@@ -52,6 +52,14 @@ class DictionaryPopupTheme {
 /// `appleColorScheme`），不做纸色派生——表面整套换成 Apple 系统色、亮暗仍跟
 /// 阅读器纸色；外壳填充随之取主题的页面底，与主题同源不出色带。墨水屏下
 /// Apple 设计系统本就不生效（`buildFushiThemeData` 内 `glassDesign && !eink`）。
+///
+/// [lyricsCoverScheme]：歌词模式（MD3）下歌词页按封面取色得到的那份 ColorScheme
+/// （`LyricsThemeHostState.coverScheme`，歌词页自己也是拿它经
+/// `rethemeFushiWithScheme` → [buildFushiThemeData] 重走工厂）。非 null 时弹窗
+/// 直接复用这份 scheme、不再盖纸色中性梯度——歌词页铺的是封面色，不是正文纸色，
+/// 再盖纸色就是「青色歌词页上弹出紫色弹窗」的撞色。明暗随 scheme 本身（与歌词页
+/// 一致），外壳填充取它的 surface。墨水屏与 Apple 设计系统下忽略：墨水屏要守
+/// 不变式 ②，Apple 歌词页恒深色档、不吃封面色。
 DictionaryPopupTheme resolveDictionaryPopupTheme({
   required bool eink,
   required bool einkDark,
@@ -64,6 +72,7 @@ DictionaryPopupTheme resolveDictionaryPopupTheme({
   bool glassDesign = false,
   FushiGlassMaterial glass = FushiGlassMaterial.off,
   bool monochromeAccent = false,
+  ColorScheme? lyricsCoverScheme,
 }) {
   final Color bg =
       eink ? (einkDark ? Colors.black : Colors.white) : readerBackground;
@@ -77,8 +86,9 @@ DictionaryPopupTheme resolveDictionaryPopupTheme({
   // 非墨水屏：弹窗配色 = app 真实 ColorScheme（主题色 / 高亮 / 描边跟用户主题）
   // + 纸色与字色盖上去的中性角色，与编辑页预览共用 [deriveSurfaceRolesFrom]。
   final bool apple = glassDesign && !eink;
-  ColorScheme dictionaryScheme = scheme;
-  if (!eink && !apple) {
+  final ColorScheme? lyricsScheme = eink || apple ? null : lyricsCoverScheme;
+  ColorScheme dictionaryScheme = lyricsScheme ?? scheme;
+  if (!eink && !apple && lyricsScheme == null) {
     final SurfaceRoles paper = deriveSurfaceRolesFrom(bg);
     dictionaryScheme = scheme.copyWith(
       surface: paper.surface,
@@ -110,6 +120,6 @@ DictionaryPopupTheme resolveDictionaryPopupTheme({
   );
   return DictionaryPopupTheme(
     theme: theme,
-    fillColor: apple ? theme.colorScheme.surface : bg,
+    fillColor: apple || lyricsScheme != null ? theme.colorScheme.surface : bg,
   );
 }

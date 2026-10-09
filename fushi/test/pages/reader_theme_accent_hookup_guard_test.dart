@@ -65,4 +65,43 @@ void main() {
       isTrue,
     );
   });
+
+  test('歌词模式：弹窗跟随宿主封面 scheme，退出即恢复（接线）', () {
+    final String page = File(
+      'lib/src/pages/implementations/reader_fushi_page.dart',
+    ).readAsStringSync();
+    final int start = chrome.indexOf('void _syncDictionaryTheme()');
+    final String body = chrome.substring(
+      start,
+      chrome.indexOf('\n  }\n', start),
+    );
+    // 只在歌词模式下喂封面 scheme；普通阅读传 null，弹窗颜色不变。
+    expect(
+      body.contains(
+        'lyricsCoverScheme: _lyricsMode ? _lyricsThemeHost?.coverScheme : null',
+      ),
+      isTrue,
+    );
+    // 封面取色异步到达 / 覆盖层撤下时宿主发布新主题，弹窗主题跟着重算。
+    expect(
+      page.contains(
+        'themeHost?.themeChanges.addListener(_onLyricsThemeHostChanged)',
+      ),
+      isTrue,
+    );
+    expect(
+      page.contains(
+        '_lyricsThemeHost?.themeChanges.removeListener(_onLyricsThemeHostChanged)',
+      ),
+      isTrue,
+    );
+    // 退出歌词模式当场恢复阅读器原覆盖值。
+    expect(
+      RegExp(
+        r'_rebuild\(\(\) => _lyricsMode = false\);\s*(//[^\n]*\n\s*)*'
+        r'_syncDictionaryTheme\(\);',
+      ).hasMatch(lyrics),
+      isTrue,
+    );
+  });
 }
