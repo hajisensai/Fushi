@@ -504,7 +504,8 @@ class AdapterStructureTest(unittest.TestCase):
             )
             self.assertIn("g_geometry_provider_registry.Retire", lifecycle_source)
 
-        self.assertEqual(17, len(publishers), publishers)
+        self.assertEqual(18, len(publishers), publishers)
+        self.assertIn("luca_lookup.inc", publishers)
         self.assertIn("kogado_hy_lookup.inc", publishers)
         self.assertIn("artemis_lookup.inc", publishers)
         self.assertIn("yuris_lookup.inc", publishers)
@@ -569,7 +570,10 @@ class AdapterStructureTest(unittest.TestCase):
             )
             seen[name] = spaces[0]
 
-        self.assertEqual(17, len(seen), seen)
+        self.assertEqual(18, len(seen), seen)
+        self.assertEqual(
+            "kLookupCoordinateSpaceClientPhysicalPixels", seen["luca_lookup.inc"]
+        )
         self.assertEqual(
             "kLookupCoordinateSpaceClientPhysicalPixels", seen["fvp_lookup.inc"]
         )
@@ -2417,6 +2421,43 @@ class AdapterStructureTest(unittest.TestCase):
         ]
         gated = gated[: gated.index("};")]
         self.assertIn("kLookupGeometryProviderIdMalie", gated)
+
+    def test_luca_lookup_claims_only_engine_samples_and_stays_gated(self) -> None:
+        """LucaSystem 查词：只认领主映像自己的 GetAsyncKeyState 采样，受原生输入放行门控；游戏线程回调不做 IO。"""
+        runtime = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "luca_lookup.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        eligible = self._function_body(runtime, "bool LucaPressEligible(")
+        self.assertIn("NativeInputAllowed", eligible)
+        self.assertIn("LucaShieldActive", eligible)
+        self.assertIn("GetForegroundWindow", eligible)
+        sample = self._function_body(runtime, "bool FilterLucaLeftButtonSample(")
+        # 只有返回地址落在主映像里的采样参与认领（宿主 / 其它模块的轮询不受影响）。
+        self.assertIn("g_luca.image_base", sample)
+        self.assertIn("g_luca.image_size", sample)
+        self.assertIn("DecideLeftButtonSample", sample)
+        for body in (eligible, sample):
+            for forbidden in ("CreateFile", "LucaLog", "WideCharToMultiByte",
+                              "std::wstring", "std::vector"):
+                self.assertNotIn(forbidden, body)
+        shield = self._strip_comments(
+            (ROOT / "hook" / "generic_input_shield.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        detour = self._function_body(shield, "Detour_GenericGetAsyncKeyState(")
+        self.assertIn("FilterLucaLeftButtonSample(", detour)
+        self.assertIn("_ReturnAddress()", detour)
+        registry = (ROOT / "hook" / "geometry_provider_registry.h").read_text(
+            encoding="utf-8"
+        )
+        gated = registry[
+            registry.index("kLookupGeometryNativeInputGatedProviders[]") :
+        ]
+        gated = gated[: gated.index("};")]
+        self.assertIn("kLookupGeometryProviderIdLuca", gated)
 
     def test_kogado_hy_lookup_claims_in_the_window_and_stays_gated(self) -> None:
         """Kogado Hy 查词：点击只在游戏窗口子类里认领，受原生输入放行门控；游戏线程回调不做 IO。"""
