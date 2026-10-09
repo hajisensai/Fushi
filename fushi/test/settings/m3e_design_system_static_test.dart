@@ -838,15 +838,8 @@ class AnotherPopupPart {
           'Windows image context-menu font size is a fixed constant by '
           'design (BUG-1438: the menu already lives inside the ui-scale '
           'canvas), extracted verbatim from reader_fushi/chrome.part.dart.',
-      // BUG-2434：书内查词弹窗的覆盖主题决策从 chrome.part.dart 抽成纯函数
-      // （抽出来才能对「墨水屏下不叠纸色」「必须挂 FushiEinkTheme」直接写断言，
-      // 而不是只能扫源码）。那段 ColorScheme.copyWith 是逐字搬运的，豁免随之
-      // 延伸，理由与父条目 reader_fushi/chrome.part.dart 同一类。
-      'lib/src/pages/implementations/dictionary_popup_theme.dart':
-          'The dictionary popup override theme derives its neutral container '
-          'ladder from the reader paper color (deriveSurfaceRolesFrom) — it is '
-          'reader content chrome, same rationale as the parent '
-          'reader_fushi/chrome.part.dart allowlist (extracted verbatim).',
+      // （dictionary_popup_theme.dart 的豁免已删除：#2019 起书内查词弹窗直接用
+      // app ColorScheme，不再按纸色派生 surfaceContainer* 梯度，文件里没有禁用项了。）
       // BUG-1425：reader_fushi/webview.part.dart 的豁免已删除。它的理由写的是
       // 「shellScript 收到 fontSize: s.fontSize.round()」，但该文件如今一个禁用
       // token 都不剩（`shellScript` 这个符号在整个 lib/src 里也已不存在），豁免早与
@@ -1411,12 +1404,6 @@ class AnotherPopupPart {
       },
       'lib/src/media/collections/collection_detail_layout.dart': <String>{
         'BorderRadius.circular(',
-      },
-      'lib/src/pages/implementations/dictionary_popup_theme.dart': <String>{
-        'surfaceContainerHigh',
-        'surfaceContainerHighest',
-        'surfaceContainerLow',
-        'surfaceContainerLowest',
       },
       'lib/src/pages/implementations/popup_settings_injection.dart': <String>{
         'surfaceContainerHigh',
@@ -2384,8 +2371,12 @@ class AnotherPopupPart {
     }
     expect(lyricsHint, contains('FushiDialogFrame('));
     expect(lyricsHint, contains('FushiModalSheetFrame('));
-    expect(sentenceActionBar, contains('FushiDesignTokens.of(context)'));
-    expect(sentenceActionBar, contains('tokens.spacing'));
+    // 2026-10-09（#2019）：查词弹窗顶栏按钮统一尺寸——header 里的按钮不再各自
+    // 用 tokens.spacing 凑 padding / 间距，而是取顶栏共享命中盒
+    // [dictionaryPopupTopActionConstraints]（与左右两簇同一个来源），间距交给
+    // [DictionaryPopupToolGroup]。守卫意图不变：不许手写魔数间距。
+    expect(sentenceActionBar, contains('dictionaryPopupTopActionConstraints()'));
+    expect(sentenceActionBar, contains('DictionaryPopupToolGroup('));
     expect(sentenceActionBar, isNot(contains('const SizedBox(width: 8)')));
   });
 
@@ -3846,8 +3837,12 @@ class AnotherPopupPart {
       '  // ── Helpers ',
     );
 
-    expect(popupAudio, contains('FushiDesignTokens.of(context)'));
-    expect(popupAudio, contains('tokens.spacing'));
+    // 2026-10-09（#2019）：按钮尺寸与间距取顶栏共享来源（命中盒
+    // [dictionaryPopupTopActionConstraints] + [DictionaryPopupToolGroup]），
+    // 整条顶栏的缩放由 DictionaryPopupLayer.topBarScale 统一处理；仍不许手写魔数。
+    expect(popupAudio, contains('dictionaryPopupTopActionConstraints()'));
+    expect(popupAudio, contains('DictionaryPopupToolGroup('));
+    expect(popupAudio, isNot(contains('SizedBox(width: 8)')));
     expect(
       popupAudio,
       isNot(contains('padding: const EdgeInsets.symmetric(vertical: 2)')),

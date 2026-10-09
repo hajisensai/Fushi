@@ -467,6 +467,7 @@ class PopupDictActivity : Activity() {
             window.deduplicatePitchAccents = ${prefs.deduplicatePitch};
             window.harmonicFrequency = ${prefs.harmonicFrequency};
             window.showExpressionTags = ${prefs.showExpressionTags};
+            window.__fushiDictUnifiedStyle = ${prefs.dictionaryUnifiedStyle};
             window.collapseDictionaries = ${prefs.collapseDictionaries};
             window.collapsedDictionaryNames = $collapsedJson;
             window.needsAudio = false;
