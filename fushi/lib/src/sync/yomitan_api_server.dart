@@ -129,6 +129,7 @@ class YomitanApiServer {
     RemoteThemeColorsProvider? themeColorsProvider,
     List<String> Function()? audioSourcesProvider,
     bool Function()? autoReadOnLookupProvider,
+    bool Function()? dictionaryUnifiedStyleProvider,
     String? Function()? extensionBuildProvider,
     String Function()? appLocaleProvider,
     RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
@@ -152,6 +153,7 @@ class YomitanApiServer {
        _themeColorsProvider = themeColorsProvider,
        _audioSourcesProvider = audioSourcesProvider,
        _autoReadOnLookupProvider = autoReadOnLookupProvider,
+       _dictionaryUnifiedStyleProvider = dictionaryUnifiedStyleProvider,
        _extensionBuildProvider = extensionBuildProvider,
        _appLocaleProvider = appLocaleProvider,
        _popupDictionaryCssProvider = popupDictionaryCssProvider,
@@ -182,6 +184,9 @@ class YomitanApiServer {
   /// 查词后自动朗读偏好（`autoReadOnLookup`）：随查词响应下发给浏览器扩展，让扩展弹窗
   /// 与 app 内/app 外三个表面用同一个开关自动发音。
   final bool Function()? _autoReadOnLookupProvider;
+
+  /// 「统一词典样式」偏好：随查词响应下发，扩展弹窗与 app 内弹窗同一个开关。
+  final bool Function()? _dictionaryUnifiedStyleProvider;
   // BUG-726：app 内置扩展内容指纹供给器，随查词响应下发，驱动扩展自 reload 拉新。
   final String? Function()? _extensionBuildProvider;
   // app 当前 UI 语言供给器（Slang languageTag）：随 /api/extension/status 的 `locale` 与
@@ -703,6 +708,7 @@ class YomitanApiServer {
           themeColorsProvider: _themeColorsProvider,
           audioSourcesProvider: _audioSourcesProvider,
           autoReadOnLookupProvider: _autoReadOnLookupProvider,
+          dictionaryUnifiedStyleProvider: _dictionaryUnifiedStyleProvider,
           extensionBuildProvider: _extensionBuildProvider,
           popupDictionaryCssProvider: _popupDictionaryCssProvider,
           appLocaleProvider: _appLocaleProvider,

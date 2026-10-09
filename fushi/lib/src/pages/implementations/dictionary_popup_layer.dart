@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/foundation.dart' show ValueListenable, listEquals;
@@ -855,6 +856,30 @@ class DictionaryPopupHistoryNav {
 double dictionaryPopupTopActionExtent({required bool mobile}) =>
     mobile ? 44 : 36;
 
+/// 顶栏所有动作按钮（左簇字号 / 导航、中段宿主 header 的收藏 / 有声书 / 视频句子动作、
+/// 右簇关闭）共用的命中盒（用户 10-09「中间的收藏句子按钮比其他按钮小一圈」）。宿主的
+/// [DictionaryPopupLayer.headerWidget] 里的按钮也用它，整条顶栏一个尺寸。
+BoxConstraints dictionaryPopupTopActionConstraints() {
+  final double extent = dictionaryPopupTopActionExtent(
+    mobile: isMobilePlatform,
+  );
+  return BoxConstraints.tightFor(width: extent, height: extent);
+}
+
+/// 顶栏随正文一起缩放的系数（用户 10-09「顶栏按钮不随缩放变化」）。与正文 CSS zoom
+/// 同一个公式（`DictionaryPopupWebViewState.popupContentZoom`：界面大小 × 词典字号/16，
+/// A−/A+ / Ctrl+滚轮改的就是词典字号），夹到 [0.8, 1.5]：再小点不中，再大顶栏会吃掉
+/// 正文高度。弹窗处在界面缩放中和器之下（净缩放 1），界面大小只能由这里乘进来——此前
+/// 只有阅读器 header 自己乘了界面大小，左右两簇没乘，于是中间的收藏按钮与两侧大小不一。
+double dictionaryPopupTopBarScale({
+  required double appUiScale,
+  required double dictionaryFontSize,
+}) {
+  final double raw = appUiScale * dictionaryFontSize / 16.0;
+  if (!raw.isFinite || raw <= 0) return 1.0;
+  return raw.clamp(0.8, 1.5).toDouble();
+}
+
 /// 顶栏宽度低于此值且有 [DictionaryPopupLayer.headerWidget] 时，A−/A+ 收进
 /// 「⋯」溢出菜单（2026-10 体验优化），优先保住居中 header 与关闭按钮的宽度。
 const double kDictionaryPopupTopBarCompactWidth = 360;
@@ -919,6 +944,9 @@ class _PopupScrolledUnderBar extends StatelessWidget {
 const double _kTopBarGroupGap = 6;
 const double _kTopBarInset = 6;
 
+/// [DictionaryPopupToolGroup] 胶囊的左右内边距（顶栏对称居中按它算簇宽）。
+const double _kToolGroupHorizontalPadding = 2;
+
 /// 查词弹窗顶栏按钮组 / 关闭圆钮的 tonal 底色；玻璃设计系统与墨水屏不铺色（null）。
 Color? dictionaryPopupToolGroupColor(BuildContext context) {
   if (isGlassDesign(context) || isEinkTheme(context)) return null;
@@ -949,7 +977,9 @@ class DictionaryPopupToolGroup extends StatelessWidget {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2),
+        padding: const EdgeInsets.symmetric(
+          horizontal: _kToolGroupHorizontalPadding,
+        ),
         child: row,
       ),
     );
@@ -991,6 +1021,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onHostInputToken,
     this.debugHostOwnsPointer,
     this.headerWidget,
+    this.topBarScale = 1.0,
     this.overlayWidget,
     this.isDark = false,
     this.overrideFillColor,
@@ -1119,6 +1150,10 @@ class DictionaryPopupLayer extends StatelessWidget {
   @visibleForTesting
   final bool? debugHostOwnsPointer;
   final Widget? headerWidget;
+
+  /// 顶栏整体缩放（宿主传 [dictionaryPopupTopBarScale]）。按钮、
+  /// 图标与 [headerWidget] 一起等比缩放，跟随正文的 A−/A+。
+  final double topBarScale;
   final Widget? overlayWidget;
   final bool isDark;
   final Color? overrideFillColor;
@@ -1499,13 +1534,36 @@ class DictionaryPopupLayer extends StatelessWidget {
 
     // 2026-10 体验优化：窄宽（且有居中 header）时 A−/A+ 收进「⋯」菜单。
     // LayoutBuilder 只读本层拿到的有界宽度，不改 BUG-822 的 Row 三段结构。
+    //
+    // 用户 10-09「顶栏按钮不随缩放变化」：整条顶栏按 [topBarScale] 等比缩放——在
+    // 「宽 / scale」的逻辑宽度里排好，再用 FittedBox 放回实际宽度，按钮 / 图标 /
+    // header 一起变大变小，命中区与绘制一致（FittedBox 的变换参与命中测试）。
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
+        final double scale = topBarScale.isFinite && topBarScale > 0
+            ? topBarScale
+            : 1.0;
+        final bool bounded =
+            constraints.hasBoundedWidth && constraints.maxWidth.isFinite;
+        final double? logicalWidth = bounded
+            ? constraints.maxWidth / scale
+            : null;
         final bool compact =
             headerWidget != null &&
-            constraints.hasBoundedWidth &&
-            constraints.maxWidth < kDictionaryPopupTopBarCompactWidth;
-        return _buildTopBarRow(context, compact: compact);
+            logicalWidth != null &&
+            logicalWidth < kDictionaryPopupTopBarCompactWidth;
+        final Widget row = _buildTopBarRow(context, compact: compact);
+        if (logicalWidth == null || scale == 1.0) return row;
+        // 外层定死实际宽度：顶栏在 Column 里拿到的是宽松约束，FittedBox 自己会缩成
+        // 子尺寸（logicalWidth）而不放大。
+        return SizedBox(
+          width: constraints.maxWidth,
+          child: FittedBox(
+            fit: BoxFit.fitWidth,
+            alignment: Alignment.topCenter,
+            child: SizedBox(width: logicalWidth, child: row),
+          ),
+        );
       },
     );
   }
@@ -1584,26 +1642,43 @@ class DictionaryPopupLayer extends StatelessWidget {
           )
         : const SizedBox.shrink();
 
-    // 中段：header 在左右簇之间的剩余（有界）宽度里居中，永不压到两侧按钮。收缩交给
-    // 内容侧（reader 音频行内部 FittedBox），本层只负责「夹在中间、给有界宽」。
-    final Widget middle = headerWidget == null
-        ? const Spacer()
-        : Expanded(child: Center(child: headerWidget!));
+    // 中段：header 相对**整条顶栏**居中（用户 10-09「中间的收藏句子按钮没居中」）。
+    // 旧实现把 header 放进「左簇与右簇之间的剩余宽度」里居中：左簇（A−/A+ 两颗）比右簇
+    // （关闭一颗）宽，剩余区的中心就整体偏右半个按钮。现在两侧按较宽的一簇对称预留，
+    // header 落在对称区间里居中，仍永不压到两侧按钮（BUG-822 的不重叠不变式不变）；
+    // 收缩照旧交给内容侧（FittedBox scaleDown）。簇宽由按钮个数 × 命中盒确定，是确定值。
+    final double extent = _topActionExtent;
+    double groupWidth(int buttons) =>
+        buttons == 0 ? 0 : buttons * extent + 2 * _kToolGroupHorizontalPadding;
+    final double leftWidth =
+        (navButtons.isEmpty
+            ? 0
+            : groupWidth(navButtons.length) + _kTopBarGroupGap) +
+        groupWidth(textButtons.length);
+    final double rightWidth = onClose != null ? extent : 0;
+    final double sideReserve =
+        math.max(leftWidth, rightWidth) + _kTopBarGroupGap;
 
+    final Widget buttonsRow = Row(
+      children: <Widget>[leftCluster, const Spacer(), rightCluster],
+    );
     final Widget bar = Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: _kTopBarInset,
         vertical: _kTopBarInset / 2,
       ),
-      child: Row(
-        children: <Widget>[
-          leftCluster,
-          const SizedBox(width: _kTopBarGroupGap),
-          middle,
-          const SizedBox(width: _kTopBarGroupGap),
-          rightCluster,
-        ],
-      ),
+      child: headerWidget == null
+          ? buttonsRow
+          : Stack(
+              alignment: Alignment.center,
+              children: <Widget>[
+                buttonsRow,
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: sideReserve),
+                  child: Center(child: headerWidget),
+                ),
+              ],
+            ),
     );
 
     // 无 header 的层（app 外覆盖窗/嵌套返回层）顶栏高度贴住 36×36 的

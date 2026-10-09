@@ -1034,6 +1034,10 @@ mixin DictionaryPageMixin {
                     )
                 : null,
             headerWidget: buildPopupHeaderFor(index),
+            topBarScale: dictionaryPopupTopBarScale(
+              appUiScale: mixinAppModel.appUiScale,
+              dictionaryFontSize: mixinAppModel.dictionaryFontSize,
+            ),
           )),
     );
   }

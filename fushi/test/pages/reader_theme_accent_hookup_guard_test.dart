@@ -4,8 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// 自定义主题「未接入颜色」补齐的源码守卫（2026-09 审计）：
 /// - 词典弹窗配色不再拿阅读器纸色当 seed 重造 ColorScheme（那样弹窗里的按钮 /
-///   查到词高亮 / 描边全由纸色派生，与用户主题色脱钩），改为 app 真实 ColorScheme
-///   + `deriveSurfaceRolesFrom(纸色)` 推出的中性角色；
+///   查到词高亮 / 描边全由纸色派生，与用户主题色脱钩），用 app 真实 ColorScheme；
+///   2026-10-09 起连纸色派生的中性梯度也不叠（与外部查词模块同源）；
 /// - 歌词模式高亮与 caret 焦点环在深色纸底下不再硬编码高亮黄，两档都取当前明暗的
 ///   主题 primary。
 void main() {
@@ -23,7 +23,7 @@ void main() {
     'lib/src/pages/implementations/dictionary_popup_theme.dart',
   ).readAsStringSync();
 
-  test('词典弹窗：app ColorScheme 为基底 + 纸色中性梯度，不再 fromSeed(纸色)', () {
+  test('词典弹窗：配色即 app ColorScheme，不 fromSeed(纸色)、不叠纸色梯度', () {
     // 决策住在纯函数 resolveDictionaryPopupTheme 里（BUG-2434 从
     // chrome.part.dart 抽出），断言面因此在 dictionary_popup_theme.dart。
     expect(popupTheme.contains('ColorScheme.fromSeed('), isFalse,
@@ -33,8 +33,9 @@ void main() {
       isTrue,
       reason: 'app 真实 ColorScheme 必须是基底',
     );
-    expect(popupTheme.contains('deriveSurfaceRolesFrom(bg)'), isTrue,
-        reason: '纸色只贡献中性角色梯度');
+    // 用户 10-09：以外部查词模块为准——书内弹窗不再用纸色覆盖中性梯度。
+    expect(popupTheme.contains('deriveSurfaceRolesFrom('), isFalse,
+        reason: '纸色覆盖会让书内弹窗与外部查词模块配色分叉');
   });
 
   test('词典弹窗：chrome.part 仍然只是把当前取值喂给那个纯函数', () {

@@ -3828,13 +3828,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// [deriveSurfaceRolesFrom]，所见即所得。
   void _syncDictionaryTheme() {
     // 决策全在 [resolveDictionaryPopupTheme]（纯函数、可直接断言）：它保证覆盖
-    // 主题带上 FushiEinkTheme 扩展，并在墨水屏下跳过纸色派生。这里只负责把
+    // 主题带上 FushiEinkTheme 扩展、配色取 app ColorScheme。这里只负责把
     // AppModel / 阅读器主题的当前取值喂进去。
     final DictionaryPopupTheme resolved = resolveDictionaryPopupTheme(
       eink: appModel.einkMode,
       einkDark: appModel.isDarkMode,
-      readerBackground: _themeBackgroundColor(),
-      readerForeground: _themeTextColor(),
       readerDark: _isReaderThemeDark,
       buildColorScheme: appModel.buildColorScheme,
       textTheme: appModel.textTheme,
@@ -3843,7 +3841,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       glass: appModel.themeNotifier.glassMaterial,
       monochromeAccent: appModel.themeNotifier.appThemeKey == 'system-theme',
       // 歌词模式：弹窗跟歌词页同一份封面取色 scheme；退出后这里回到 null，
-      // 弹窗恢复阅读器纸色主题。
+      // 弹窗恢复 app ColorScheme。
       lyricsCoverScheme: _lyricsMode ? _lyricsThemeHost?.coverScheme : null,
     );
     appModel.setOverrideDictionaryColor(resolved.fillColor);

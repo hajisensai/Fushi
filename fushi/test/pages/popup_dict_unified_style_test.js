@@ -1,8 +1,8 @@
 // 词典样式统一（M3E）的行为测试：用 node 真执行 popup.js 的
 // __fushiScheduleM3eDictTone → __fushiUnifyDictStyles / __fushiClearDictUnify，
 // 喂一棵带「计算样式」的假 DOM，断言：
-//   1. 默认开（宿主没注入 window.__fushiDictUnifiedStyle）：作用域挂上
-//      .fushi-dict-unified，各元素按语义打上 data-fushi-dt*；
+//   0. 默认关（宿主没注入 window.__fushiDictUnifiedStyle）：不统一，词典原样式；
+//   1. 宿主打开（true）：作用域挂上 .fushi-dict-unified，各元素按语义打上 data-fushi-dt*；
 //   2. 量样式时作用域类必须已摘掉（否则量到的是统一后的颜色而不是词典原色）；
 //   3. 关掉（false）后经 __fushiApplyDictUnifiedStyle 就地摘类 → 词典原样式回来；
 //      再打开又按原色重新分类。
@@ -149,12 +149,21 @@ function buildTree() {
 const schedule = fn('__fushiScheduleM3eDictTone');
 const dt = (n, attr) => n.getAttribute(attr || 'data-fushi-dt');
 
-// ── 1. 默认开：宿主没注入开关 ─────────────────────────────────────────────
+// ── 0. 默认关：宿主没注入开关（浏览器扩展连不上 app / 旧 app）= 词典原样式 ──
 assert.strictEqual(sandbox.window.__fushiDictUnifiedStyle, undefined);
+const untouched = buildTree();
+schedule(untouched.root);
+assert.ok(!untouched.scope.classList.contains(UNIFIED), 'no host flag must NOT unify (app default is off)');
+assert.strictEqual(dt(untouched.els.posTag), null, 'no classification without an explicit host flag');
+measuredUnderUnifiedClass = 0;
+measuredWithoutMeasuringClass = 0;
+
+// ── 1. 宿主打开（app 设置开 → 注入 / 查词响应下发 true） ───────────────────
+sandbox.window.__fushiDictUnifiedStyle = true;
 const { root, scope, els } = buildTree();
 schedule(root);
 
-assert.ok(scope.classList.contains(UNIFIED), 'default (no host flag) must unify');
+assert.ok(scope.classList.contains(UNIFIED), 'host flag true must unify');
 assert.strictEqual(measuredUnderUnifiedClass, 0,
   'computed styles must be read with the unified class removed (dictionary originals)');
 assert.strictEqual(measuredWithoutMeasuringClass, 0,

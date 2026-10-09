@@ -993,6 +993,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
               title: t.onboarding_click_lookup_mine_title,
               description: t.onboarding_click_lookup_mine_body,
             ),
+            // 用户 10-09：「统一词典样式」改为默认关，在查词教程里点明有这个开关。
+            OnboardingTutorialItem(
+              icon: FushiIcons.appearance,
+              title: t.lookup_dictionary_unified_style,
+              description: t.onboarding_click_lookup_unified_style_desc,
+            ),
           ],
           actions: <OnboardingAction>[
             OnboardingAction(

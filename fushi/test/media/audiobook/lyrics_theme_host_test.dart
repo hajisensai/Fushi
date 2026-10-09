@@ -228,15 +228,11 @@ void main() {
   // `_syncDictionaryTheme` 同一个纯函数、同一个入参）。这里用同样的接线复刻：
   // 进入歌词模式（封面取色到达）→ 弹窗 = 封面 scheme；退出 → 恢复原覆盖值。
   testWidgets('查词弹窗：进入歌词模式跟随封面 scheme，退出恢复原主题', (WidgetTester tester) async {
-    const Color paper = Color(0xFFF5EFE0);
-    const Color ink = Color(0xFF3B3229);
     final ThemeData root = _rootTheme(apple: false);
     DictionaryPopupTheme resolve(ColorScheme? cover) =>
         resolveDictionaryPopupTheme(
           eink: false,
           einkDark: false,
-          readerBackground: paper,
-          readerForeground: ink,
           readerDark: false,
           buildColorScheme: (Brightness b) => root.colorScheme,
           textTheme: root.textTheme,
@@ -287,6 +283,6 @@ void main() {
     await tester.pump();
     expect(host.currentState!.coverScheme, isNull);
     expect(popup.theme.colorScheme, original.theme.colorScheme);
-    expect(popup.fillColor, paper);
+    expect(popup.fillColor, original.fillColor);
   });
 }

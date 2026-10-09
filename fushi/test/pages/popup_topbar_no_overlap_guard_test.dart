@@ -40,6 +40,7 @@ void main() {
     WidgetTester tester,
     double width, {
     Widget? header,
+    double topBarScale = 1.0,
   }) async {
     await tester.pumpWidget(
       buildTestApp(
@@ -54,6 +55,7 @@ void main() {
               isSearching: false,
               webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
               headerWidget: header ?? shrinkableHeader(),
+              topBarScale: topBarScale,
               onClose: () {},
               onDismiss: () {},
               onTextSelected: (text, rect) {},
@@ -254,5 +256,94 @@ void main() {
       isNull,
       reason: 'FittedBox(scaleDown) 必须把按钮行缩到有界宽内，绝不横向溢出/裁切。',
     );
+  });
+
+  // ── 用户 10-09：顶栏中间的收藏按钮没居中 / 比两侧小 / 不随缩放 ─────────────────
+  //
+  // 旧实现把 header 放进「左簇与右簇之间的剩余宽度」里居中：左簇（A−/A+ 两颗）比右簇
+  // （关闭一颗）宽，header 中心就整体偏右。现在 header 相对整条顶栏居中。
+  testWidgets('header is centred on the whole top bar, not on the leftover gap '
+      '(user 10-09)', (WidgetTester tester) async {
+    const double width = 520;
+    await pumpLayer(tester, width);
+    expect(tester.takeException(), isNull);
+    final Rect header = tester.getRect(
+      find.byKey(const Key('test-popup-header')),
+    );
+    expect(header.center.dx, moreOrLessEquals(width / 2, epsilon: 0.5),
+        reason: 'header 中心必须落在顶栏中线上（旧实现偏右半个按钮）');
+    // 不重叠不变式（BUG-826）仍成立。
+    final Rect zoomIn = tester.getRect(find.byIcon(Icons.text_increase));
+    final Rect close = tester.getRect(find.byIcon(Icons.close));
+    expect(zoomIn.right, lessThanOrEqualTo(header.left + 0.5));
+    expect(header.right, lessThanOrEqualTo(close.left + 0.5));
+  });
+
+  testWidgets('top bar scales with the dictionary zoom (user 10-09)',
+      (WidgetTester tester) async {
+    const double width = 520;
+    await pumpLayer(tester, width);
+    final Size closeAt1 = tester.getRect(find.byIcon(Icons.close)).size;
+    final Rect headerAt1 = tester.getRect(
+      find.byKey(const Key('test-popup-header')),
+    );
+
+    await pumpLayer(tester, width, topBarScale: 1.25);
+    expect(tester.takeException(), isNull);
+    final Size closeAt125 = tester.getRect(find.byIcon(Icons.close)).size;
+    final Rect headerAt125 = tester.getRect(
+      find.byKey(const Key('test-popup-header')),
+    );
+    expect(closeAt125.width, moreOrLessEquals(closeAt1.width * 1.25,
+        epsilon: 0.5));
+    expect(headerAt125.height, moreOrLessEquals(headerAt1.height * 1.25,
+        epsilon: 0.5));
+    // 缩放后仍居中、不越界。
+    expect(headerAt125.center.dx, moreOrLessEquals(width / 2, epsilon: 0.5));
+    final Rect closeRect = tester.getRect(find.byIcon(Icons.close));
+    expect(closeRect.right, lessThanOrEqualTo(width + 0.5));
+  });
+
+  test('top bar scale follows UI scale × dictionary font size, clamped', () {
+    expect(
+      dictionaryPopupTopBarScale(appUiScale: 1, dictionaryFontSize: 16),
+      1.0,
+    );
+    expect(
+      dictionaryPopupTopBarScale(appUiScale: 1, dictionaryFontSize: 20),
+      1.25,
+    );
+    expect(
+      dictionaryPopupTopBarScale(appUiScale: 1, dictionaryFontSize: 8),
+      0.8,
+    );
+    expect(
+      dictionaryPopupTopBarScale(appUiScale: 2, dictionaryFontSize: 40),
+      1.5,
+    );
+    expect(
+      dictionaryPopupTopBarScale(appUiScale: 1, dictionaryFontSize: double.nan),
+      1.0,
+    );
+  });
+
+  test('reader / video popup header buttons share the top-bar hit box '
+      '(user 10-09)', () {
+    // 源码守卫：中段 header 的按钮必须用 dictionaryPopupTopActionConstraints()，
+    // 与左右簇同一个命中盒；reader header 不再自己套 ReaderChromeScaler（只缩中段、
+    // 不缩两侧 = 中间按钮与两侧大小不一）。
+    final String reader = File(
+      'lib/src/pages/implementations/reader_fushi_page.dart',
+    ).readAsStringSync();
+    final int start = reader.indexOf('Widget? buildPopupAudioControls()');
+    final String fn = reader.substring(start, reader.indexOf('// ── Helpers', start));
+    expect(fn.contains('dictionaryPopupTopActionConstraints()'), isTrue);
+    expect(fn.contains('ReaderChromeScaler('), isFalse);
+    final String video = File(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    ).readAsStringSync();
+    final int vs = video.indexOf('Widget? buildPopupHeaderFor(int index)');
+    final String vfn = video.substring(vs, video.indexOf('/// 关闭查词浮层栈中第', vs));
+    expect(vfn.contains('dictionaryPopupTopActionConstraints()'), isTrue);
   });
 }

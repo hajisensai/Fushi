@@ -297,8 +297,6 @@ void main() {
     }) => resolveDictionaryPopupTheme(
       eink: eink,
       einkDark: false,
-      readerBackground: const Color(0xFFF7F1E3),
-      readerForeground: const Color(0xFF222222),
       readerDark: false,
       buildColorScheme: (Brightness b) =>
           ColorScheme.fromSeed(seedColor: Colors.teal, brightness: b),
@@ -315,7 +313,9 @@ void main() {
       expect(glassy.fillColor.a, 1);
     }
     final DictionaryPopupTheme eink = resolvePopup(eink: true);
-    expect(eink.fillColor, Colors.white);
+    // 填充色 = 主题自己的 surface（真实墨水屏下 buildColorScheme 给的就是纯白 / 纯黑）。
+    expect(eink.fillColor, eink.theme.colorScheme.surface);
+    expect(eink.fillColor.a, 1);
     expect(
       eink.theme.extension<FushiGlassTheme>()?.material ??
           FushiGlassMaterial.off,

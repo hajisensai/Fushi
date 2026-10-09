@@ -95,6 +95,22 @@ test('applyFushiPopupCss 对老 app 的缺字段响应归零，绝不留 undefin
   assert.strictEqual(JSON.stringify(ctx.window.customDictCSS), '{}');
 });
 
+test('applyFushiPopupCss 把 app 的「统一词典样式」落到 popup.js 读的全局上（与 app 内弹窗同一开关）', () => {
+  const ctx = loadCtx();
+  ctx.applyFushiPopupCss({ dictionaryUnifiedStyle: true });
+  assert.strictEqual(ctx.window.__fushiDictUnifiedStyle, true, 'app 开着 -> 扩展弹窗统一');
+  ctx.applyFushiPopupCss({ dictionaryUnifiedStyle: false });
+  assert.strictEqual(ctx.window.__fushiDictUnifiedStyle, false, 'app 关掉 -> 下次查词即关');
+});
+
+test('applyFushiPopupCss：响应没带「统一词典样式」（旧 app / 未接线）一律按关，不沿用上次的值', () => {
+  const ctx = loadCtx({ window: { __fushiDictUnifiedStyle: true } });
+  ctx.applyFushiPopupCss({ type: 'dictionaryResult' });
+  assert.strictEqual(ctx.window.__fushiDictUnifiedStyle, false);
+  ctx.applyFushiPopupCss({ dictionaryUnifiedStyle: 'true' });
+  assert.strictEqual(ctx.window.__fushiDictUnifiedStyle, false, '只认布尔 true');
+});
+
 test('扩展环境下词条里的 <link> 样式表降级成无 token 占位（dictmedia:// 在真浏览器是死链）', () => {
   const ctx = loadCtx({ window: { __fushiDictMedia: { base: 'http://127.0.0.1:19633', token: 'secret-tok' } } });
   const out = ctx.rewriteDictLinks('<link rel="stylesheet" href="oaldpe.css">', 'OALDPE');

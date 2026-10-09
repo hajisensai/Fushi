@@ -6,16 +6,16 @@ import 'package:material_ui/material_ui.dart';
 
 import '../helpers/source_guard.dart';
 
-/// 词典样式统一（M3E，默认开）：导入词典的 styles.css / 结构化内容 inline style 自带的
+/// 词典样式统一（M3E，app 内默认关；宿主未注入 / 扩展连不上 app 时也关）：导入词典的 styles.css / 结构化内容 inline style 自带的
 /// 颜色按语义换成当前 ColorScheme 令牌；开关关掉退回词典原样式。
 ///
 /// 三层守护：
-/// ① 行为级——node 真执行 popup.js（popup_dict_unified_style_test.js）：默认开、按语义
+/// ① 行为级——node 真执行 popup.js（popup_dict_unified_style_test.js）：未注入即关、打开后按语义
 ///    分类、量样式时作用域类已摘、关掉就地还原、再开重新分类。无 node 时 skip。
 /// ② CSS 级——popup.css 的统一层只用 ColorScheme 派生的 `--md-sys-color-*` 令牌上色，
 ///    选择器全部零特异度（`:where`），且都挂在 `.fushi-dict-unified` 作用域下（关掉即失效）；
 ///    浏览器扩展的 content.css 镜像同步。
-/// ③ 接线级——偏好默认 true、注入体下发 `window.__fushiDictUnifiedStyle`、设置页有开关。
+/// ③ 接线级——偏好默认 false（10-09 起）、注入体下发 `window.__fushiDictUnifiedStyle`、设置页有开关。
 void main() {
   test(
     'popup.js unifies dictionary colours by semantics (executes via node)',
@@ -241,14 +241,16 @@ void main() {
   );
 
   group('wiring', () {
-    test('preference defaults to on and is a known key', () {
+    // 用户 10-09：默认改为关（统一着色会盖掉词典自带配色）；存量用户写过的值不动——
+    // 偏好只改「没写过时」的默认，不迁移、不覆盖已存值。
+    test('preference defaults to off and is a known key', () {
       final String repo = File(
         'lib/src/models/preferences_repository.dart',
       ).readAsStringSync();
       expect(
         repo,
         contains(
-          "getPref('popup_dictionary_unified_style', defaultValue: true)",
+          "getPref('popup_dictionary_unified_style', defaultValue: false)",
         ),
       );
       final String keys = File(
@@ -286,10 +288,14 @@ void main() {
       expect(schema, contains('appModel.toggleDictionaryUnifiedStyle()'));
     });
 
-    test('popup.js treats a missing host flag as on (browser extension)', () {
-      final String js = File('assets/popup/popup.js').readAsStringSync();
-      expect(js, contains('window.__fushiDictUnifiedStyle !== false'));
-    });
+    test(
+      'popup.js treats a missing host flag as off (extension offline / old app)',
+      () {
+        final String js = File('assets/popup/popup.js').readAsStringSync();
+        expect(js, contains('window.__fushiDictUnifiedStyle === true'));
+        expect(js, isNot(contains('window.__fushiDictUnifiedStyle !== false')));
+      },
+    );
   });
 }
 

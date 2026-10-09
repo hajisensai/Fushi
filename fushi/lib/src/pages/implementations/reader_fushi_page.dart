@@ -30,7 +30,7 @@ import 'package:fushi/src/models/theme_notifier.dart'
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/fushi_reader_palette.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart'
-    show DictionaryPopupToolGroup;
+    show DictionaryPopupToolGroup, dictionaryPopupTopActionConstraints;
 import 'package:fushi/src/pages/implementations/dictionary_popup_theme.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -1790,7 +1790,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   static const double _readerChromeBaseHeight = 56;
 
   /// 查词弹窗顶部四按钮栏的自然（未缩放）高度。
-  static const double _readerPopupHeaderBaseHeight = 48;
 
   /// 阅读器底栏的隐形界面缩放系数：取自全局 appUiScale（阅读器子树被中和器改写成
   /// 1.0，故不能用 FushiAppUiScale.of）。在 build 里读 appModel 会随缩放变化重建。
@@ -5050,90 +5049,77 @@ $liveConfigJs
     final bool hasAudio = ctrl != null && ctrl.chapterCueCount > 0;
 
     Widget buildRow(ThemeData theme) {
-      final FushiDesignTokens tokens = FushiDesignTokens.of(context);
       final AudioCue? cue = _lookupCue;
       final bool hasCue = cue != null;
-      return ReaderChromeScaler(
-        scale: _readerChromeScale,
-        baseHeight: _readerPopupHeaderBaseHeight,
-        child: SizedBox(
-          height: _readerPopupHeaderBaseHeight,
-          // TODO-1187：header 底边框已移出 —— 分隔线改由 [DictionaryPopupLayer] 在
-          // 「有词条」时才画（无结果/搜索中悬空的多余横线消除）。
-          child: Container(
-            padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 4),
-            // BUG-826：查词弹窗顶栏收窄时按钮曾相互重叠。顶栏改由 [DictionaryPopupLayer]
-            // 用 Row 把本 header 夹在左右按钮簇之间的有界宽度里居中（不再全宽居中压两侧）。
-            // 但音频行是固定尺寸按钮，窄宽下会溢出该有界区被裁切；用 [FittedBox]
-            // (`scaleDown`) 把整行等比缩小到刚好放下——绝不横向溢出/裁切，也不重叠。
-            // `mainAxisSize: min` 让行取按钮总宽（有限内在宽），FittedBox 才能量到并缩放。
-            // M3E：收藏 + 有声书动作落进一枚 tonal 胶囊按钮组（与左侧字号组、右侧
-            // 关闭圆钮同一口径，见 [DictionaryPopupToolGroup]）。
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: DictionaryPopupToolGroup(
-                children: [
-                  FushiIconButton(
-                    icon: _currentSentenceIsFavorited
-                        ? Icons.star
-                        : Icons.star_border,
-                    size: 20,
-                    enabledColor: _currentSentenceIsFavorited
-                        ? theme.colorScheme.primary
-                        : null,
-                    onTap: _toggleFavoriteSentence,
-                    tooltip: t.action_favorite,
-                    padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                  ),
-                  if (hasAudio) ...[
-                    SizedBox(width: tokens.spacing.gap),
-                    FushiIconButton(
-                      icon: Icons.replay_outlined,
-                      size: 20,
-                      onTap: hasCue
-                          ? () {
-                              final AudioCue? cue = _lookupCue;
-                              if (cue == null) return;
-                              ctrl.playCueOnce(cue);
-                            }
-                          : null,
-                      tooltip: t.repeat_cue,
-                      padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                    ),
-                    SizedBox(width: tokens.spacing.gap),
-                    FushiIconButton(
-                      icon: ctrl.isPlaying
-                          ? Icons.pause_outlined
-                          : Icons.play_arrow_outlined,
-                      size: 24,
-                      onTap: ctrl.togglePlayPause,
-                      tooltip: ctrl.isPlaying ? t.pause : t.play,
-                      padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                    ),
-                    SizedBox(width: tokens.spacing.gap),
-                    FushiIconButton(
-                      icon: Icons.play_circle_outline,
-                      size: 20,
-                      onTap: hasCue
-                          ? () {
-                              final AudioCue? cue = _lookupCue;
-                              if (cue == null) return;
-                              ctrl.playCueAndContinue(cue);
-                              clearDictionaryResult();
-                            }
-                          : null,
-                      tooltip: t.play_from_cue,
-                      padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                    ),
-                    // TODO-954：导出片段入口已从查词弹窗 header 迁到「文字选区右键菜单」
-                    // （Windows Flutter 菜单 / 移动端原生 ContextMenu），见
-                    // chrome.part.dart `_showReaderTextContextMenu` 与 webview.part.dart。
-                    // 这里只保留播放控制，避免弹窗里塞与查词无关的导出按钮。
-                  ],
-                ],
-              ),
+      // 用户 10-09：顶栏按钮统一尺寸——每颗都用 [dictionaryPopupTopActionConstraints]
+      // （与左簇 A−/A+、右簇关闭同一个命中盒、同 20 的图标），不再各自 padding 凑大小。
+      // 整条顶栏（含本 header）的界面大小 / 词典字号缩放由 [DictionaryPopupLayer] 统一
+      // 处理（topBarScale），这里不再套 ReaderChromeScaler：只缩 header 不缩两侧，
+      // 中间的收藏按钮就和两侧大小不一。高度贴住按钮（不再额外 48 高 + 上下留白，
+      // 「额头太高」）。
+      final BoxConstraints actionBox = dictionaryPopupTopActionConstraints();
+      // BUG-826：窄宽下顶栏只给 header 有界宽度；音频行是固定尺寸按钮，用 [FittedBox]
+      // (`scaleDown`) 把整行等比缩小到刚好放下——绝不横向溢出/裁切，也不重叠。
+      return FittedBox(
+        fit: BoxFit.scaleDown,
+        child: DictionaryPopupToolGroup(
+          children: [
+            FushiIconButton(
+              icon: _currentSentenceIsFavorited ? Icons.star : Icons.star_border,
+              size: 20,
+              enabledColor: _currentSentenceIsFavorited
+                  ? theme.colorScheme.primary
+                  : null,
+              onTap: _toggleFavoriteSentence,
+              tooltip: t.action_favorite,
+              constraints: actionBox,
+              padding: EdgeInsets.zero,
             ),
-          ),
+            if (hasAudio) ...[
+              FushiIconButton(
+                icon: Icons.replay_outlined,
+                size: 20,
+                onTap: hasCue
+                    ? () {
+                        final AudioCue? cue = _lookupCue;
+                        if (cue == null) return;
+                        ctrl.playCueOnce(cue);
+                      }
+                    : null,
+                tooltip: t.repeat_cue,
+                constraints: actionBox,
+                padding: EdgeInsets.zero,
+              ),
+              FushiIconButton(
+                icon: ctrl.isPlaying
+                    ? Icons.pause_outlined
+                    : Icons.play_arrow_outlined,
+                size: 20,
+                onTap: ctrl.togglePlayPause,
+                tooltip: ctrl.isPlaying ? t.pause : t.play,
+                constraints: actionBox,
+                padding: EdgeInsets.zero,
+              ),
+              FushiIconButton(
+                icon: Icons.play_circle_outline,
+                size: 20,
+                onTap: hasCue
+                    ? () {
+                        final AudioCue? cue = _lookupCue;
+                        if (cue == null) return;
+                        ctrl.playCueAndContinue(cue);
+                        clearDictionaryResult();
+                      }
+                    : null,
+                tooltip: t.play_from_cue,
+                constraints: actionBox,
+                padding: EdgeInsets.zero,
+              ),
+              // TODO-954：导出片段入口已从查词弹窗 header 迁到「文字选区右键菜单」
+              // （Windows Flutter 菜单 / 移动端原生 ContextMenu），见
+              // chrome.part.dart `_showReaderTextContextMenu` 与 webview.part.dart。
+            ],
+          ],
         ),
       );
     }

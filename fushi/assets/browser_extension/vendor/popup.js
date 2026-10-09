@@ -2125,6 +2125,16 @@ function createDefinitionImage(data, dictionary, exporting = false) {
         if (imageUrl === null) return node;
         enableDefinitionImagePreview(node, imageUrl, nodeData?.alt || title || '');
         const inlineSvg = !hasDimensions && isSvg;
+        // 用户 10-09：词典里的 SVG 小图标（◆ / ✓ / 「例」这类外字与记号）也按统一样式着色。
+        // <img> 里的 SVG 改不了 fill，只能把它当遮罩：.gloss-image-background 以同一张图为
+        // mask、底色取 currentColor（统一层里链接色 = primary），img 本身透明但保留占位。
+        // 只认「图标尺寸」的 SVG（无尺寸外字 1.2em，或 ≤3em 的 em 单位小图）：插图级 SVG
+        // 涂成单色剪影就毁了，不碰。真正生效与否由 popup.css 的 .fushi-dict-unified 作用域决定，
+        // 关掉统一样式时这个标记无任何效果。
+        if (isSvg && (inlineSvg || (useEmUnits && usedWidth <= 3 && usedWidth * invAspectRatio <= 3))) {
+            node.dataset.fushiSvgIcon = 'true';
+            imageBackground.style.setProperty('--fushi-svg-image', `url("${imageUrl.replace(/"/g, '%22')}")`);
+        }
         if (!inlineSvg && shouldRenderDefinitionImageToCanvas(path, appearance, usedWidth, invAspectRatio)) {
             imageContainer.appendChild(createDefinitionImageCanvas(imageUrl, nodeData?.alt || title || '', (canvas, sourceImage) => {
                 renderDefinitionImageToCanvas(canvas, sourceImage, usedWidth, invAspectRatio, appearance);
@@ -3199,15 +3209,21 @@ function createPitchGroup(pitchData, reading) {
     const container = el('div', { className: 'pitch-group', 'data-details': dictionaries.join(', ') });
     const sourcePills = dictionaries.map((dictionary) => el('span', { className: 'pitch-dict-label', textContent: __fushiDictDisplayName(dictionary) }));
     if (sourcePills.length > 1) {
-        // 合并行默认只挂**一枚**「N 本辞典」药丸：五本音调词典同标 [3] 时一排五枚来源
+        // 合并行默认只挂**一枚**「音调 · N」药丸：五本音调词典同标 [3] 时一排五枚来源
         // 药丸把读音挤到下一行，读起来仍像重复。来源名单不丢——悬停看 title，点击
         // （触屏没有悬停）就地展开 / 收起各来源药丸。
+        // 来源名单走文档内的 CSS 悬停提示（data-sources → ::after），**不用原生 title**：
+        // Windows WebView2 的 title 提示是一个独立的 Win32 顶层弹窗，视频页查词浮层关闭 /
+        // 热槽 WebView 被藏起时它不随文档消失，残留在画面上关不掉（用户 10-09 反馈）。
+        const sourceNames = sourcePills.map((pill) => pill.textContent).join(', ');
         const countPill = el('span', {
             className: 'pitch-dict-label pitch-dict-count',
-            textContent: (window.i18nPitchSourceCount || '{count} 本辞典')
+            // 用户 10-09：「N 本辞典」看不出这是音调，改成「音调 · N」（标出是什么 + 保留来源数）。
+            textContent: (window.i18nPitchSourceCount || '音调 · {count}')
                 .replace('{count}', String(sourcePills.length)),
-            title: sourcePills.map((pill) => pill.textContent).join(', '),
+            'data-sources': sourceNames,
         });
+        countPill.setAttribute('aria-label', sourceNames);
         countPill.setAttribute('role', 'button');
         countPill.setAttribute('aria-expanded', 'false');
         sourcePills.forEach((pill) => { pill.style.display = 'none'; });
@@ -4327,6 +4343,9 @@ function createEntryHeader(entry, idx) {
         needsScroll = buildFuriganaEl(expressionSpan, expression, reading);
     } else {
         expressionSpan.textContent = expression;
+        // 没有注音的词头（なんて / すたすた）不需要注音预留带：popup.css 据此收掉
+        // .expression 的 0.66em padding-top（用户 10-09「额头太高」）。
+        header.classList.add('no-ruby');
     }
     expressionSpan.style.cursor = 'pointer';
     expressionSpan.addEventListener('click', (e) => {
@@ -4348,13 +4367,19 @@ function createEntryHeader(entry, idx) {
             height: rect.height
         });
     });
+    // 词头左簇：词头 + 词头右侧的元数据列（频率行 / 音调行，buildEntryElement 填入）。
+    // 用户 10-09：词头右边原本是一大片空白，频率与「音调 · N / 读音」两行却各占一整行
+    // 压在词头下面，顶部留白很多。改成左簇内 flex-wrap：宽度够时元数据列贴在词头右侧，
+    // 不够（窄弹窗 / 长词头）时整列自然换到词头下方——纯布局自适应，不量宽、不分支。
+    const headerMain = el('div', { className: 'entry-header-main' });
     if (needsScroll) {
         const expressionScroll = el('div', { className: 'expression-scroll' });
         expressionScroll.appendChild(expressionSpan);
-        header.appendChild(expressionScroll);
+        headerMain.appendChild(expressionScroll);
     } else {
-        header.appendChild(expressionSpan);
+        headerMain.appendChild(expressionSpan);
     }
+    header.appendChild(headerMain);
     
     const buttonsContainer = el('div', { className: 'header-buttons' });
 
@@ -5411,14 +5436,15 @@ function buildEntryElement(entry, idx, maximumDictionaryBlocks = Infinity) {
         entryDiv.appendChild(deinflection);
     }
 
+    // 频率 / 音调进词头右侧的元数据列（见 createEntryHeader 的 .entry-header-main）。
     const freqSection = createFrequencySection(entry.frequencies);
-    if (freqSection) {
-        entryDiv.appendChild(freqSection);
-    }
-
     const pitchSection = createPitchSection(entry.pitches, entry.reading);
-    if (pitchSection) {
-        entryDiv.appendChild(pitchSection);
+    if (freqSection || pitchSection) {
+        const meta = el('div', { className: 'entry-header-meta' });
+        if (freqSection) meta.appendChild(freqSection);
+        if (pitchSection) meta.appendChild(pitchSection);
+        const headerMain = entryDiv.querySelector('.entry-header-main');
+        (headerMain || entryDiv).appendChild(meta);
     }
 
     const { details, body, grouped, dictNames } = glossaryWrapper;
@@ -5751,7 +5777,7 @@ function __fushiScheduleM3eDictTone(root) {
         __fushiM3eToneRoots.clear();
         const dark = __fushiM3eDarkSurface();
         __fushiM3eLastDark = dark;
-        // 词典样式统一（默认开）：颜色整体交给 popup.css 的令牌规则，暗色调色这层不再
+        // 词典样式统一（开着时）：颜色整体交给 popup.css 的令牌规则，暗色调色这层不再
         // 需要——先复原它写过的内联色，否则统一层量到的是调过色的值而不是词典原色。
         if (__fushiDictUnifiedEnabled()) {
             __fushiRestoreDictTone();
@@ -5854,7 +5880,7 @@ function __fushiToneDictColors(root) {
 }
 
 /* =====================================================================
- * 词典样式统一（M3E，默认开）：导入词典的 styles.css / 结构化内容 inline style 各自
+ * 词典样式统一（M3E，按宿主开关）：导入词典的 styles.css / 结构化内容 inline style 各自
  * 写死颜色（红底词性标签、绿/蓝/红强调字、深红汉字框、彩色边框……），与 app 主题
  * 毫无关系。统一模式按**语义**把它们重映射到 ColorScheme 令牌：
  *   - 带底色的短行内元素（标签 / 徽标）→ chip：secondaryContainer / onSecondaryContainer；
@@ -5867,8 +5893,10 @@ function __fushiToneDictColors(root) {
  * CSS 读不到「这个元素被词典涂成了什么」，所以在渲染后量一次计算样式（量的时候作用域
  * 类必须摘掉，量到的才是词典原色），把语义写成 data-fushi-dt* 属性；配色全在 popup.css
  * 里按 --md-sys-color-* 取，换强调色 / 明暗只是 CSS 变量变化，不必重新分类。
- * 不按词典名写任何特例。关掉（window.__fushiDictUnifiedStyle === false）就摘掉作用域
- * 类，词典原样式原样回来。宿主没注入（浏览器扩展）= 默认开。
+ * 不按词典名写任何特例。只有宿主明确打开（window.__fushiDictUnifiedStyle === true）才统一；
+ * 关掉就摘掉作用域类，词典原样式原样回来。宿主没注入 / 浏览器扩展连不上 app = 关，与 app
+ * 默认值一致（app 内由 popup_settings_injection 注入；扩展由查词响应 dictionaryUnifiedStyle
+ * 经 dict-media.js applyFushiPopupCss 落到同一个全局）。
  * ===================================================================== */
 const FUSHI_DICT_UNIFIED_CLASS = 'fushi-dict-unified';
 // 量原色期间挂的类：popup.css 里会改写词典颜色的旧规则（暗色浅底调灰）见到它就让路，
@@ -5881,7 +5909,7 @@ const FUSHI_DICT_UNIFIED_SKIP = 'img, svg, svg *, canvas, video, audio, picture,
 const FUSHI_DICT_UNIFIED_CHIP_MAX_CHARS = 16;
 
 function __fushiDictUnifiedEnabled() {
-    return typeof window === 'undefined' || window.__fushiDictUnifiedStyle !== false;
+    return typeof window !== 'undefined' && window.__fushiDictUnifiedStyle === true;
 }
 
 function __fushiDictUnifiedScopes(root) {
@@ -6505,6 +6533,12 @@ function masonryGap() {
     return 6;
 }
 
+// 收起的卡片下方的纵向间距（用户 10-09「折叠状态紧凑一点」：一屏要能看到更多本词典）。
+// 只作用在「收起卡片之后」的行距，展开的卡片与列间距仍是 masonryGap()。
+function masonryCollapsedRowGap() {
+    return 4;
+}
+
 function masonryBodies() {
     const root = __fushiContainer();
     if (!root || typeof root.querySelectorAll !== 'function') return [];
@@ -6599,6 +6633,7 @@ function layoutMasonry(targetBodies) {
             });
 
         const heights = new Array(cols).fill(0);
+        const lastGaps = new Array(cols).fill(0);
         items.forEach((item, index) => {
             let c;
             if (canReuse) {
@@ -6614,10 +6649,14 @@ function layoutMasonry(targetBodies) {
             setStyleIfChanged(item, 'transform', transform);
             item.style.visibility = ''; // BUG-1727：增量预藏的卡片定位完成即恢复可见
             item.__fushiMasonryHeight = itemHeights[index]; // 供 ResizeObserver 判「真变了没」
-            heights[c] += itemHeights[index] + gap;
+            const rowGap = item.open === false ? masonryCollapsedRowGap() : gap;
+            heights[c] += itemHeights[index] + rowGap;
+            lastGaps[c] = rowGap;
         });
         body.dataset.masonryCols = String(cols);
-        setStyleIfChanged(body, 'height', `${Math.max(...heights) - gap}px`);
+        // 容器高 = 各列「末张卡底」的最大值（去掉各列最后一张卡后面那段行距）。
+        for (let i = 0; i < cols; i++) heights[i] -= lastGaps[i];
+        setStyleIfChanged(body, 'height', `${Math.max(...heights)}px`);
     });
 }
 
@@ -6759,12 +6798,37 @@ function effectiveDictColumns() {
         configured = 1;
     }
     if (!(configured > 0)) configured = 1;
-    const width = __fushiViewportWidth();
+    // 列宽门槛是 CSS px，比较对象必须是**布局**宽度：A−/A+（documentElement.style.zoom）
+    // 改的是 CSS px 与屏幕 px 的比例，视口物理宽不变、可排版的 CSS px 却按 1/zoom 变化。
+    // 拿物理宽比，放大字号后仍按小字号时的列数排，卡片被挤成一字一行（反向缩小时少排列）。
+    const width = __fushiViewportWidth() / __fushiDocumentZoom();
     const fit = width > 0
         ? Math.max(1, Math.floor(width / colFloor))
         : configured;
     return Math.min(configured, fit);
 }
+// documentElement 上的 CSS zoom（A−/A+ 与「词典字号」注入写在这里）；非法值按 1。
+function __fushiDocumentZoom() {
+    let z = 1;
+    try {
+        z = parseFloat(document.documentElement.style.zoom);
+    } catch (e) {
+        z = 1;
+    }
+    return (z > 0 && isFinite(z)) ? z : 1;
+}
+
+// A−/A+ 缩放后的重排入口（宿主的 __fushiApplyPopupViewport 收尾调用）。缩放改了
+// #entries-container 的 CSS 宽度，但 masonry 卡片的 inline 宽是上一次按旧宽度写死的 px：
+// 收起的卡片高度在 CSS px 下不随 zoom 变，ResizeObserver 不报，于是旧列宽一直留着——
+// 放大后两列卡片总宽超过容器，右列被裁出弹窗（PDF 第 2 页「缩放时词典条目溢出」）。
+// 这里按新宽度重算有效列数并整体重铺，不依赖 resize / 卡片高度变化去碰运气。
+function __fushiRelayoutPopupColumns() {
+    updateEffectiveDictColumns();
+    scheduleMasonryAll();
+}
+if (typeof window !== 'undefined') window.__fushiRelayoutPopupColumns = __fushiRelayoutPopupColumns;
+
 function updateEffectiveDictColumns() {
     const doc = document.documentElement;
     if (!doc || !doc.style || typeof doc.style.setProperty !== 'function') {
@@ -7898,6 +7962,40 @@ function linkVisibleBaseText(root) {
     };
     walk(root);
     return out.replace(/\s+/g, ' ').trim();
+}
+
+// 用户反馈（10-09）：拖选复制释义时把振假名一起带出来（「折檻せっかん」），Yomitan /
+// Hoshi 都只复制基字。CSS 已让注音不可选（popup.css .ruby-rt / rt / rp user-select:none），
+// 但各引擎对「选区跨过 user-select:none 节点时序列化要不要带上它」并不一致，所以复制
+// 与宿主取选区文本（右键「复制 / 搜索」走 evaluateJavascript）都改由这里出文本：克隆
+// 选区片段，剔掉 rt / rp / .ruby-rt / .ruby-reserve 再取文本——与 linkVisibleBaseText
+// 同一套过滤集。选区不碰任何注音时与 String(selection) 逐字相同。
+function __fushiSelectionPlainText(selection) {
+    const sel = selection || __fushiSel();
+    if (!sel || !sel.rangeCount) return '';
+    const raw = String(sel);
+    let out = '';
+    let touchedRuby = false;
+    for (let i = 0; i < sel.rangeCount; i++) {
+        const frag = sel.getRangeAt(i).cloneContents();
+        frag.querySelectorAll('rt, rp, .ruby-rt, .ruby-reserve').forEach((n) => {
+            touchedRuby = true;
+            n.remove();
+        });
+        out += frag.textContent || '';
+    }
+    return touchedRuby ? out : raw;
+}
+if (typeof window !== 'undefined') window.__fushiSelectionPlainText = __fushiSelectionPlainText;
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('copy', (event) => {
+        const sel = __fushiSel();
+        if (!sel || !sel.rangeCount || !event.clipboardData) return;
+        const text = __fushiSelectionPlainText(sel);
+        if (text === String(sel)) return; // 没碰注音：交给浏览器原生复制（保留富文本）
+        event.clipboardData.setData('text/plain', text);
+        event.preventDefault();
+    });
 }
 
 function handleGlossaryAnchorClick(event, anchor) {

@@ -289,6 +289,10 @@ function applyFushiPopupCss(data) {
     window.__fushiDictionaryLanguages =
         (data.dictionaryLanguages && typeof data.dictionaryLanguages === 'object')
             ? data.dictionaryLanguages : {};
+    // 「统一词典样式」：app 内弹窗由 popup_settings_injection 注入同名全局，扩展从查词响应的
+    // dictionaryUnifiedStyle 取 app 的同一个偏好。只认 true：字段缺失（旧 app / 未接线）一律关，
+    // 与 app 默认值一致。不进 stylesRevision 门控——每次查词都随响应下发，改了下次查词即生效。
+    window.__fushiDictUnifiedStyle = data.dictionaryUnifiedStyle === true;
     fushiApplyDictionaryFont(data);
 }
 

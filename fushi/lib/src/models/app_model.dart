@@ -3205,6 +3205,9 @@ class AppModel with ChangeNotifier {
         }
       }
 
+      // 词典样式规则的 CSS 编译产物按当前编译器重算（Android 独立弹窗只读这份缓存）。
+      await refreshCompiledDictStyleCssCache();
+
       // TODO-1260：内部对每本词典的资源目录做 exists() 探测（数据根派生），同样叠超时。
       ErrorLogService.instance
           .markInitStep('rebuild-dict-paths（词典资源目录 exists + 物化探测）');
@@ -8401,6 +8404,18 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
+  /// 启动时把 CSS 编译产物缓存与规则表对齐。
+  ///
+  /// 缓存是编译器的**产物**：编译器修了（例如圆角不再附带 `display: inline-block`），
+  /// 已存的旧产物不会自己变。Android 独立弹窗只读缓存，不重编，于是存量用户的弹窗会
+  /// 一直吃旧的错误 CSS，直到他们碰巧重新保存一次规则。这里按当前编译器重算，内容
+  /// 不同才写——仍是 [saveDictStyleRules] 同一个编译函数，不引入第二套产物。
+  Future<void> refreshCompiledDictStyleCssCache() async {
+    final String compiled = encodeCompiledDictStyleCss(dictStyleRules);
+    if (prefsRepo.dictStyleRulesCss == compiled) return;
+    await prefsRepo.setDictStyleRulesCss(compiled);
+  }
+
   /// 注入弹窗的全局 CSS：可视化产物 + 用户手写。
   ///
   /// 手写那半走 [globalDictCSS] 而不是 `prefsRepo.globalDictCSS`：前者是可被子类
@@ -8736,6 +8751,9 @@ class AppModel with ChangeNotifier {
       // ReaderFushiSource 真相源），扩展弹窗渲染后自动播首条词发音，不再只能手动点 ♪。
       autoReadOnLookupProvider: () =>
           ReaderFushiSource.instance.autoReadOnLookup,
+      // 「统一词典样式」：与 app 内弹窗 / 桌面查词窗同一个偏好（popup_settings_injection
+      // 注入的 window.__fushiDictUnifiedStyle），扩展弹窗据此决定是否统一词典配色。
+      dictionaryUnifiedStyleProvider: () => dictionaryUnifiedStyle,
       // BUG-726：内置扩展内容指纹随查词响应下发（`extensionBuild`），扩展 background
       // 与自身 FUSHI_DEFAULTS.build 比对，不一致即 chrome.runtime.reload() 从磁盘拉新。
       // 指纹由 refreshBrowserExtensionCopy 在启动时算好缓存；算好前返回 null（字段省略）。
