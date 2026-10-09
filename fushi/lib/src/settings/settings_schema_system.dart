@@ -155,6 +155,10 @@ SettingsDestination buildSystemDestination() {
         // 内存 / 手柄导航 / 快捷键 / GitHub 这类通用应用项。框架层另有面包屑去重
         // （settingsSearchBreadcrumb），双保险消灭整类重复。
         title: t.settings_section_general,
+        // 「推荐包下载」行随 controller 的阶段实时显隐：本分组自己订阅 stage
+        // （SettingsSection.liveListenable），不再靠宿主页整页重建。
+        liveListenable: (SettingsContext settingsContext) =>
+            settingsContext.appModel.recommendedPackDownloadController.stage,
         items: <SettingsItem>[
           // 「界面语言」（id 'appearance.language'）已归位到「外观 · 界面」分区
           //（与主题/明暗/缩放并列）；id 前缀本就是 appearance，此前放系统分类
@@ -219,7 +223,7 @@ SettingsDestination buildSystemDestination() {
           // controller 所有，关掉向导也照跑——那就必须有一个不依赖向导的地方
           // 看得到它、停得掉它、下完能就地导入。空闲时整行不渲染，设置页不常驻
           // 一条恒为「无任务」的死行；本行随 controller 的阶段变化实时显隐，靠
-          // [SettingsDetailPage] 订阅 stage 重建（同 galgame 准入那一行的做法）。
+          // 所在分组的 liveListenable 订阅 stage 重建（同 galgame 准入那一行的做法）。
           SettingsCustomItem(
             id: 'system.recommended_pack_download',
             searchTitle: t.onboarding_step_pack_title,
@@ -537,6 +541,13 @@ SettingsDestination buildSystemDestination() {
         id: 'system.section.diagnostics',
         presentation: SettingsSectionPresentation.collapsed,
         title: t.settings_destination_diagnostics,
+        // 错误 / 调试日志的实时条数与「调试日志」行的显隐：本分组自己订阅两个日志
+        // 服务。此前由宿主页整页 setState，调试日志开着时每条 debugPrint 都把整页
+        // 设置行重建一遍。
+        liveListenable: (_) => Listenable.merge(<Listenable>[
+          ErrorLogService.instance,
+          DebugLogService.instance,
+        ]),
         items: <SettingsItem>[
           // 标题里的实时条数走 titleBuilder（渲染时求值）。写成构造期插值会把整棵
           // schema 变成「每次 setState 都得重建才能刷新计数」的状态载体——那正是

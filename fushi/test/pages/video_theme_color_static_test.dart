@@ -31,17 +31,28 @@ void main() {
     expect(source, contains('TextStyle _videoControlTitleStyle()'));
     expect(source, contains('_osdSurfaceColor(ColorScheme'));
     expect(source, contains('_osdTextColor(ColorScheme'));
-    expect(source, contains('_subtitleStyle.resolveTextColor('));
-    expect(source, contains('_subtitleStyle.resolveShadowColor('));
-    expect(source, contains('_subtitleStyle.resolveBackgroundColor('));
+    // 链式调用允许 formatter 在 receiver 与方法名之间断行；仍锁同一 receiver/method。
+    for (final String method in <String>[
+      'resolveTextColor',
+      'resolveShadowColor',
+      'resolveBackgroundColor',
+      'resolveFontWeight',
+      'resolveShadowThickness',
+    ]) {
+      expect(
+        RegExp('_subtitleStyle\\s*\\.\\s*$method\\s*\\(').hasMatch(source),
+        isTrue,
+        reason: '字幕样式必须经 _subtitleStyle.$method 解析，不能绕过主题/缩放',
+      );
+    }
     expect(source, contains('double get _videoUiScale => appModel.appUiScale'));
-    expect(source, contains('_subtitleStyle.resolveFontWeight('));
-    expect(source, contains('_subtitleStyle.resolveShadowThickness('));
     expect(source, contains('uiScale: _videoUiScale'));
     expect(source, isNot(contains('FushiAppUiScale.of(context)')));
     expect(source, isNot(contains('fontWeight: _subtitleStyle.fontWeight')));
-    expect(source,
-        isNot(contains('shadowThickness: _subtitleStyle.shadowThickness')));
+    expect(
+      source,
+      isNot(contains('shadowThickness: _subtitleStyle.shadowThickness')),
+    );
     expect(source, isNot(contains('color: Colors.white')));
     expect(source, isNot(contains('color: Colors.black.withValues')));
   });

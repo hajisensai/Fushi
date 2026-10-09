@@ -222,6 +222,26 @@ JimakuAnimeFilter _animeFilterFor(VideoSubtitleSearchRequest request) {
   };
 }
 
+/// Jimaku 条目 → 作品身份自述（BUG-3068）。纯函数。
+///
+/// 种类只认正面证据：`flags.movie` 为真、或 TMDB id 带 `movie:` / `tv:` 号段。
+/// `flags.movie` 为假**不**等于剧集——条目没被编辑标记过的电影同样是假。
+SubtitleWorkClaim jimakuEntryWorkClaim(JimakuEntry entry) {
+  final RegExpMatch? tmdb = RegExp(r'^(movie|tv):(\d+)$')
+      .firstMatch(entry.tmdbId?.trim().toLowerCase() ?? '');
+  final VideoMetadataMediaKind? tmdbKind = switch (tmdb?.group(1)) {
+    'movie' => VideoMetadataMediaKind.movie,
+    'tv' => VideoMetadataMediaKind.tv,
+    _ => null,
+  };
+  return SubtitleWorkClaim(
+    titles: <String?>[entry.name, entry.japaneseName].nonNulls,
+    kind: tmdbKind ?? (entry.flags.movie ? VideoMetadataMediaKind.movie : null),
+    anilistId: entry.anilistId,
+    tmdbId: tmdbKind == null ? null : int.tryParse(tmdb!.group(2)!),
+  );
+}
+
 class _JimakuSubtitleCandidate extends VideoSubtitleCandidate {
   _JimakuSubtitleCandidate({
     required this.entry,
@@ -248,6 +268,7 @@ class _JimakuSubtitleCandidate extends VideoSubtitleCandidate {
          collectionId: '${entry.id}',
          collectionLabel: entry.name,
          archiveFormat: file.archiveFormat,
+         work: jimakuEntryWorkClaim(entry),
        );
 
   final JimakuEntry entry;

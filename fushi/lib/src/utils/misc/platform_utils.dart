@@ -61,6 +61,37 @@ Future<void> setHomeShellSystemUiMode() async {
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 }
 
+/// The system-UI mode the **novel reader body** declares once its content is
+/// ready (BUG-3077).
+///
+/// Android keeps both system bars hidden ([SystemUiMode.immersiveSticky], the
+/// mode `AppModel.openMedia` already entered): the reader draws its own
+/// chrome, and its top / bottom text inset is `viewPadding` plus the reader's
+/// own reserves, so any visible bar pushes the page body away from the edge.
+/// iOS and desktop keep [SystemUiMode.edgeToEdge] (iOS shows the status bar in
+/// the reader, as it always has; desktop has no system bars).
+///
+/// Android must not send edgeToEdge here. Up to Flutter 3.44 the Android
+/// `PlatformPlugin.enableEdgeToEdge()` only changed decor fitting and left the
+/// IMMERSIVE_STICKY flags from `openMedia` in place, so the bars stayed hidden
+/// and `viewPadding.top` stayed at the cutout inset. Flutter 3.47 first calls
+/// `decorView.setSystemUiVisibility(0)`, which clears those flags: the status
+/// and navigation bars came back as soon as a book finished loading, and the
+/// status-bar height went straight into the text's top padding (the "top
+/// margin got bigger" report). Declaring the wanted mode directly does not
+/// depend on that engine detail.
+///
+/// [android] defaults to the running platform; tests pass it explicitly.
+Future<void> setReaderSystemUiMode({bool? android}) async {
+  await SystemChrome.setEnabledSystemUIMode(
+    readerSystemUiMode(android: android ?? Platform.isAndroid),
+  );
+}
+
+/// The mode [setReaderSystemUiMode] sends (see there).
+SystemUiMode readerSystemUiMode({required bool android}) =>
+    android ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge;
+
 /// Windows/Linux 桌面用 MD3 的钳制滚动（去掉 iOS 风格回弹）；macOS（Cupertino
 /// 平台，刻意不动）与移动端保持原有可回弹物理。始终保留 AlwaysScrollable 外层，
 /// 使短内容也可滚动 / 触发下拉刷新等行为。

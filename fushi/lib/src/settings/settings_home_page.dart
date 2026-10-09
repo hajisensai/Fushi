@@ -1,6 +1,5 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/pages.dart';
-import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
@@ -51,28 +50,33 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
 
   /// M3E 窄屏浮动页头（展开态）的实测高度：页头叠放在分类列表上，列表顶部
   /// 内边距让开这一段，往下滚时内容滚到页头胶囊底下。
-  double _narrowHeaderHeight = 0;
+  ///
+  /// notifier 而不是 setState：滚回顶部时页头弹簧展开，高度逐帧回报；setState
+  /// 会逐帧重建整个设置主页（宽屏还连带整块详情窗格）。现在只重建滚动视图的
+  /// 内边距与渐隐层，分类列表是同一个实例。
+  final ValueNotifier<double> _narrowHeaderHeight = ValueNotifier<double>(0);
 
   /// 窄屏分类列表已滚离顶部：驱动共享顶部渐隐。
   final ValueNotifier<bool> _narrowScrolledUnder = ValueNotifier<bool>(false);
 
-  /// 嵌入外壳（宽屏全屏设置）里叠放的 [FushiPageHeader] 实测高度。
-  double _shellHeaderHeight = 0;
+  /// 嵌入外壳（宽屏全屏设置）里叠放的 [FushiPageHeader] 实测高度（notifier：
+  /// 回报只重建让位那层 MediaQuery，不重建整个设置主页）。
+  final ValueNotifier<double> _shellHeaderHeight = ValueNotifier<double>(0);
 
   void _onNarrowHeaderHeight(double height) {
-    if (!mounted || height == _narrowHeaderHeight) return;
+    if (!mounted || height == _narrowHeaderHeight.value) return;
     // 只在展开态（与 SettingsFloatingHeader 同一阈值）记高度：收缩态胶囊高度
     // 不同，跟着改让位会让列表在滚动中跳一下。
     final bool atRest =
         !_narrowScrollController.hasClients ||
         _narrowScrollController.positions.first.pixels <= 12;
-    if (_narrowHeaderHeight > 0 && !atRest) return;
-    setState(() => _narrowHeaderHeight = height);
+    if (_narrowHeaderHeight.value > 0 && !atRest) return;
+    _narrowHeaderHeight.value = height;
   }
 
   void _onShellHeaderHeight(double height) {
-    if (!mounted || height == _shellHeaderHeight) return;
-    setState(() => _shellHeaderHeight = height);
+    if (!mounted) return;
+    _shellHeaderHeight.value = height;
   }
 
   void _onNarrowScroll() {
@@ -88,18 +92,9 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
   void initState() {
     super.initState();
     _narrowScrollController.addListener(_onNarrowScroll);
-    ErrorLogService.instance.addListener(_onLogChanged);
-    DebugLogService.instance.addListener(_onLogChanged);
-    // 游戏内查词准入是 hook **异步**报上来的：settingsContext.refresh 只由交互驱动，
-    // 事件走不到它。不听这一条，用户开着设置页启动游戏时那一行永远停在旧状态。
-    GalIngameLookupController.instance.admission.addListener(_onLogChanged);
-    // 推荐包下载阶段同理，而且宽屏（>=720，Windows 桌面的主用形态）是**内联**
-    // 主从：详情内容直接在本页渲染，走不到 [SettingsDetailPage] 那份订阅
-    // （BUG-2165）。不听这一条，开着设置页时下载开始/下完/暂停，「推荐包」那一行
-    // 的出现与消失就只能靠 AppModel 顺带 notify 撞上，变成偶发刷新。
-    appModelNoUpdate.recommendedPackDownloadController.stage.addListener(
-      _onLogChanged,
-    );
+    // 错误 / 调试日志、游戏内查词准入、推荐包下载阶段（BUG-2165：宽屏内联主从
+    // 同样要实时刷新）由读它们的分组自己订阅（SettingsSection.liveListenable），
+    // 内联详情与 push 出去的详情页走同一套分组组件，宿主页不再整页 setState。
   }
 
   @override
@@ -109,17 +104,9 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     _narrowScrollController.removeListener(_onNarrowScroll);
     _narrowScrollController.dispose();
     _narrowScrolledUnder.dispose();
-    ErrorLogService.instance.removeListener(_onLogChanged);
-    DebugLogService.instance.removeListener(_onLogChanged);
-    GalIngameLookupController.instance.admission.removeListener(_onLogChanged);
-    appModelNoUpdate.recommendedPackDownloadController.stage.removeListener(
-      _onLogChanged,
-    );
+    _narrowHeaderHeight.dispose();
+    _shellHeaderHeight.dispose();
     super.dispose();
-  }
-
-  void _onLogChanged() {
-    if (mounted) setState(() {});
   }
 
   @override
@@ -413,16 +400,22 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     // 自己的页头放到这条下面、正文滚到两层页头底下；左栏等固定版面用 SafeArea
     // 让开（见 _buildMd3WideLayout）。
     final MediaQueryData media = MediaQuery.of(context);
-    final double inset = media.padding.top + _shellHeaderHeight;
     return Stack(
       children: <Widget>[
         Positioned.fill(
-          child: MediaQuery(
-            data: media.copyWith(
-              padding: media.padding.copyWith(top: inset),
-              viewPadding: media.viewPadding.copyWith(top: inset),
-            ),
+          child: ValueListenableBuilder<double>(
+            valueListenable: _shellHeaderHeight,
             child: content,
+            builder: (BuildContext context, double headerHeight, Widget? body) {
+              final double inset = media.padding.top + headerHeight;
+              return MediaQuery(
+                data: media.copyWith(
+                  padding: media.padding.copyWith(top: inset),
+                  viewPadding: media.viewPadding.copyWith(top: inset),
+                ),
+                child: body!,
+              );
+            },
           ),
         ),
         Positioned(
@@ -804,16 +797,10 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
             destinations: destinations,
             onDestinationSelected: _selectDestination,
           );
-    final Widget scroll = SingleChildScrollView(
-      controller: _narrowScrollController,
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        // 页头叠放在列表上：首屏让开页头（实测高度），往下滚时内容滚到页头
-        // 胶囊底下（2026-10-06 结构收口：此前页头与列表上下排，下沿硬切）。
-        showHeader ? _narrowHeaderHeight : tokens.spacing.gap,
-        tokens.spacing.page,
-        tokens.spacing.page + MediaQuery.of(context).padding.bottom,
-      ),
+    final double bottomPadding =
+        tokens.spacing.page + MediaQuery.of(context).padding.bottom;
+    final Widget scroll = ValueListenableBuilder<double>(
+      valueListenable: _narrowHeaderHeight,
       // 非懒加载：分类列表短而有界，全部常驻，Tab 能绕回视口外的分类。
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -825,6 +812,19 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
           body,
         ],
       ),
+      builder: (BuildContext context, double headerHeight, Widget? column) =>
+          SingleChildScrollView(
+            controller: _narrowScrollController,
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              // 页头叠放在列表上：首屏让开页头（实测高度），往下滚时内容滚到页头
+              // 胶囊底下（2026-10-06 结构收口：此前页头与列表上下排，下沿硬切）。
+              showHeader ? headerHeight : tokens.spacing.gap,
+              tokens.spacing.page,
+              bottomPadding,
+            ),
+            child: column,
+          ),
     );
     // 整页底色（不是顶部底带）：本页是 home tab，没有 Scaffold 提供底色与 ink。
     return Material(
@@ -840,23 +840,25 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
                   top: 0,
                   left: 0,
                   right: 0,
-                  child: ValueListenableBuilder<bool>(
-                    valueListenable: _narrowScrolledUnder,
-                    builder:
-                        (BuildContext context, bool under, Widget? scrim) =>
-                            AnimatedOpacity(
-                              opacity: under ? 1 : 0,
-                              duration: fushiMotionDuration(
-                                context,
-                                FushiMotion.short,
-                              ),
-                              child: scrim,
-                            ),
-                    child: FushiTopFadeScrim(
-                      solidHeight: 0,
-                      fadeExtent: _narrowHeaderHeight + kFushiTopFadeExtent,
-                      topOpacity: kFushiTopScrimOverlayOpacity,
-                    ),
+                  child: ListenableBuilder(
+                    listenable: Listenable.merge(<Listenable>[
+                      _narrowScrolledUnder,
+                      _narrowHeaderHeight,
+                    ]),
+                    builder: (BuildContext context, Widget? _) =>
+                        AnimatedOpacity(
+                          opacity: _narrowScrolledUnder.value ? 1 : 0,
+                          duration: fushiMotionDuration(
+                            context,
+                            FushiMotion.short,
+                          ),
+                          child: FushiTopFadeScrim(
+                            solidHeight: 0,
+                            fadeExtent:
+                                _narrowHeaderHeight.value + kFushiTopFadeExtent,
+                            topOpacity: kFushiTopScrimOverlayOpacity,
+                          ),
+                        ),
                   ),
                 ),
                 Positioned(

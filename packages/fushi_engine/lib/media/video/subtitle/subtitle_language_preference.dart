@@ -11,11 +11,11 @@
 /// 而这里猜错的代价是给用户装上一条他看不懂的字幕。**尤其不许硬编码日语**——
 /// 本 app 没有全局学习语言这回事。
 ///
-/// **② 是排序，不是过滤。** [rankByPreferredLanguage] 把首选语言的候选排到前面，
-/// **不丢弃**其余候选。如果按语言硬过滤，一部只有英文字幕的日语番就会从「有字幕」
-/// 倒退成「没字幕」——那是拿一个改进换一个回归。真正的硬过滤只属于用户在设置里
-/// **显式**指定的语言（那是他自己说的），由 `VideoSubtitleSearchRequest.languages`
-/// 承担。
+/// **② 本函数只管排序。** [rankByPreferredLanguage] 把首选语言的候选排到前面，
+/// **不丢弃**其余候选；要不要另加硬过滤由调用方按场景定：用户显式指定的语言由
+/// `VideoSubtitleSearchRequest.languages` 在搜索时过滤；刮削后的**无人值守**补字幕
+/// （`video_subtitle_backfill.dart`）把解析出的语言当硬条件——没人在场确认，悄悄
+/// 装上一条用户没要的语言比不装更糟（BUG-3069）。
 ///
 /// ## 语言从哪来
 ///
@@ -41,8 +41,12 @@ String? normalizeSubtitleLanguageCode(String? tag) {
     '-',
   );
   if (normalized.isEmpty) return null;
-  final String base = normalized.split('-').first;
-  if (base.isEmpty) return null;
+  // 只取主标签开头的字母：provider 偶尔报 `ja[cc]` 这类带修饰的标签，整段当码
+  // 就永远对不上 `ja`。
+  final String base =
+      RegExp('^[a-z]+').firstMatch(normalized.split('-').first)?.group(0) ?? '';
+  // `und` 是 ISO 639-2 的「未确定」（sidecar 落盘兜底也写它），即认不出。
+  if (base.isEmpty || base == 'und') return null;
   // ISO 639-2/T、639-2/B 与常见俗写 → 639-1。只列本 app 真会遇到的，
   // 不搬一整张 ISO 表进来：认不出就返回主标签本身，比错映射安全。
   const Map<String, String> aliases = <String, String>{

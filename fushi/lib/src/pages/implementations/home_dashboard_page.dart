@@ -67,6 +67,7 @@ import 'package:fushi_engine/foundation/engine_notifier.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 
 /// 首页「继续」区是否收这本书：与书架读完筛选 / hero 计数同一判据
 /// [classifyShelfReadStatus]（`EpubBooks.completedAt` 优先于进度）。
@@ -1323,7 +1324,7 @@ class _HomeDashboardPageState
   // ── 浮动工具栏 + 「继续」FAB（2026-10 首页统一浮动工具栏） ───────────────────
 
   /// 顶部浮动工具栏：标题胶囊（页面名）+ 动作按钮组（更新中心 · 统计中心 ·
-  /// 排行榜）。首页此前没有页头，这三个入口分散在更新横幅（只在有未读时出现）
+  /// 排行榜 · 反馈）。首页此前没有页头，这三个入口分散在更新横幅（只在有未读时出现）
   /// 与学习卡标题行尾；收进一条与阅读器 / 视频同款的 M3E 浮动工具栏后，常驻
   /// 可达、滚动时让位。
   Widget _buildFloatingToolbar() {
@@ -1334,6 +1335,7 @@ class _HomeDashboardPageState
       listenable: Listenable.merge(<Listenable?>[_toolbarScroll, updateCount]),
       builder: (BuildContext context, Widget? _) {
         final int unseen = updateCount?.value ?? 0;
+        final int feedbackUnseen = watchFeedbackUnseen(ref);
         return HomeFloatingToolbar(
           title: title,
           visible: _toolbarScroll.visible,
@@ -1362,6 +1364,16 @@ class _HomeDashboardPageState
               icon: FushiIcons.trophy,
               label: t.leaderboard_title,
               onPressed: _openLeaderboard,
+            ),
+            // 反馈：提交问题 / 建议并看处理进度（悬浮球上也有同一个入口）。
+            // 开发者有新回复时把条数写进 tooltip / 语义标签（同更新中心的做法）。
+            FushiToolbarItem(
+              key: const ValueKey<String>('home-toolbar-feedback'),
+              icon: FushiIcons.forum,
+              label: feedbackUnseen > 0
+                  ? '${t.feedback_title} ($feedbackUnseen)'
+                  : t.feedback_title,
+              onPressed: () => unawaited(openFeedbackCenter(context)),
             ),
           ],
         );

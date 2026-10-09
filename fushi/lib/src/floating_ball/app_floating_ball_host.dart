@@ -28,6 +28,7 @@ import 'package:fushi/src/floating_ball/desktop_system_ball_assets.dart';
 import 'package:fushi/src/utils/components/accent_logo_image.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
@@ -115,6 +116,7 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
   FloatingBallGlobalAction.cameraOcr.storageValue:
       t.floating_ball_action_camera_ocr,
   FloatingBallGlobalAction.sync.storageValue: t.sync_now,
+  FloatingBallGlobalAction.feedback.storageValue: t.feedback_title,
   'open_app': t.floating_ball_action_open_app,
   'close': t.floating_ball_action_close,
   'ball': t.reader_floating_ball,
@@ -137,6 +139,7 @@ IconData floatingBallGlobalActionIcon(FloatingBallGlobalAction action) =>
       FloatingBallGlobalAction.screenOcr => FushiIcons.ocr,
       FloatingBallGlobalAction.cameraOcr => FushiIcons.camera,
       FloatingBallGlobalAction.sync => FushiIcons.sync,
+      FloatingBallGlobalAction.feedback => FushiIcons.forum,
     };
 
 /// 「关闭悬浮球」按钮的图标（应用内 / 应用外同一颗）。
@@ -1000,6 +1003,13 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     );
   }
 
+  /// 反馈：截下当前页面（球不在截图边界里，不用先藏）再打开反馈中心。
+  Future<void> _openFeedback() async {
+    final BuildContext? ctx = _navigatorContext;
+    if (ctx == null) return;
+    await openFeedbackCenter(ctx);
+  }
+
   /// Android 截屏 OCR 截到帧（或放弃）：把藏起来的球放回来。
   void _onScreenOcrFinished() {
     if (mounted && _capturing) setState(() => _capturing = false);
@@ -1183,6 +1193,12 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           icon: floatingBallGlobalActionIcon(action),
           label: t.sync_now,
           onPressed: () => unawaited(_manualSync()),
+        ),
+        FloatingBallGlobalAction.feedback => ReaderHeaderAction(
+          key: const ValueKey<String>('floating_ball_action_feedback'),
+          icon: floatingBallGlobalActionIcon(action),
+          label: t.feedback_title,
+          onPressed: () => unawaited(_openFeedback()),
         ),
       };
 

@@ -1,0 +1,271 @@
+diff --git a/buildscripts/build.sh b/buildscripts/build.sh
+index 33282bd..9adc9f2 100755
+--- a/buildscripts/build.sh
++++ b/buildscripts/build.sh
+@@ -112,7 +112,7 @@ build () {
+ 	printf >&2 '\e[1;34m%s\e[m\n' "Building $1..."
+ 	pushd deps/$1
+ 	BUILDSCRIPT=../../scripts/$1.sh
+- 	sudo chmod +x $BUILDSCRIPT
++	chmod +x "$BUILDSCRIPT"
+ 	[ $cleanbuild -eq 1 ] && $BUILDSCRIPT clean
+     $BUILDSCRIPT build
+     popd
+diff --git a/buildscripts/include/depinfo.sh b/buildscripts/include/depinfo.sh
+index 75a07b9..5bb9792 100755
+--- a/buildscripts/include/depinfo.sh
++++ b/buildscripts/include/depinfo.sh
+@@ -3,7 +3,7 @@
+ ## Dependency versions
+ 
+ v_sdk=9123335_latest
+-v_ndk=25.2.9519653
++v_ndk=27.3.13750724
+ v_sdk_build_tools=33.0.2
+ 
+ v_libass=0.17.1
+@@ -18,11 +18,13 @@ v_libxml2=2.10.3
+ # fixes Hibiki needs: magicyuv slice_height/median (the OOB-write RCE that a
+ # crafted mkv/mov/avi can reach), vp9 dimension rollback/realloc, mov CENC
+ # 64-bit subsample bounds, mpegts descriptor accounting, plus a large batch of
+-# matroskadec bounds checks. Staying inside 6.x keeps the FFmpeg API stable, so
+-# mpv is untouched; both ffmpeg patches below still apply cleanly (verified with
++# matroskadec bounds checks. Staying inside 6.x keeps the FFmpeg API stable;
++# the existing FFmpeg patches still apply cleanly (verified with
+ # patch --dry-run against the n6.1.6 tree).
+ v_ffmpeg=6.1.6
+-v_mpv=78d43740f52db817d98bcf24fb30a76ab6fa13ff
++v_mpv=36abaa32d00a7229ee206aae12dc0e97e7962dca
++v_libbluray=1.5.0
++v_libplacebo=cee9b076f2c63104ccfd497fa79c39a867293ec4
+ v_libogg=1.3.5
+ v_libvorbis=1.3.7
+ v_libvpx=1.13
+@@ -45,8 +47,10 @@ dep_harfbuzz=()
+ dep_libass=(freetype fribidi harfbuzz)
+ dep_lua=()
+ dep_shaderc=()
++dep_libbluray=(freetype libxml2)
++dep_libplacebo=()
+ if [ -n "${ENCODERS_GPL+x}" ]; then
+-	dep_mpv=(ffmpeg libass fftools_ffi)
++	dep_mpv=(ffmpeg libass libbluray libplacebo fftools_ffi)
+ else
+-	dep_mpv=(ffmpeg libass)
++	dep_mpv=(ffmpeg libass libbluray libplacebo)
+ fi
+diff --git a/buildscripts/include/download-deps.sh b/buildscripts/include/download-deps.sh
+index bec6b31..8c5878e 100755
+--- a/buildscripts/include/download-deps.sh
++++ b/buildscripts/include/download-deps.sh
+@@ -49,8 +49,23 @@ Shaderc sources are provided by the NDK.
+ see <ndk>/sources/third_party/shaderc
+ HEREDOC
+ 
++# libbluray release includes its pinned libudfread subproject (ISO support).
++if [ ! -d libbluray ]; then
++    $WGET "https://download.videolan.org/pub/videolan/libbluray/$v_libbluray/libbluray-$v_libbluray.tar.xz"
++    echo "f676408e91a5d321abf8b8d4dfdae36205c297dab5c54c3ec519639025f474a2  libbluray-$v_libbluray.tar.xz" | sha256sum -c -
++    tar -xf "libbluray-$v_libbluray.tar.xz"
++    mv "libbluray-$v_libbluray" libbluray
++fi
++
++# libplacebo is mandatory for the navigation-capable mpv revision.
++if [ ! -d libplacebo ]; then
++    git clone https://code.videolan.org/videolan/libplacebo.git libplacebo
++    git -C libplacebo checkout --detach "$v_libplacebo"
++    git -C libplacebo submodule update --init --recursive --depth 1
++fi
++
+ # mpv
+-[ ! -d mpv ] && git clone https://github.com/mpv-player/mpv.git mpv && cd mpv && git reset --hard 78d43740f52db817d98bcf24fb30a76ab6fa13ff && cd ..
++[ ! -d mpv ] && git clone https://github.com/mpv-player/mpv.git mpv && cd mpv && git reset --hard "$v_mpv" && cd ..
+ 
+ # fftools_ffi
+ [ ! -d fftools_ffi ] && git clone https://github.com/moffatman/fftools-ffi.git fftools_ffi && cd fftools_ffi && git reset --hard 9b0d4da026d9c830702ec043c1f1f98d407025af && cd ..
+diff --git a/buildscripts/include/path.sh b/buildscripts/include/path.sh
+index 5b9839e..ecfcb3f 100755
+--- a/buildscripts/include/path.sh
++++ b/buildscripts/include/path.sh
+@@ -23,7 +23,8 @@ if [ -n "$ndk_triple" ]; then
+ 	unset PKG_CONFIG_PATH
+ fi
+ 
+-toolchain=$(echo "$DIR/sdk/android-sdk-linux/ndk/$v_ndk/toolchains/llvm/prebuilt/"*)
+-export PATH="$toolchain/bin:$DIR/sdk/android-sdk-linux/ndk/$v_ndk:$DIR/sdk/bin:$PATH"
++ndk_root=${ANDROID_NDK_HOME:-"$DIR/sdk/android-sdk-$os/ndk/$v_ndk"}
++toolchain=$(echo "$ndk_root/toolchains/llvm/prebuilt/"*)
++export PATH="$toolchain/bin:$ndk_root:$DIR/sdk/bin:$PATH"
+ export ANDROID_HOME="$DIR/sdk/android-sdk-$os"
+ unset ANDROID_SDK_ROOT ANDROID_NDK_ROOT
+diff --git a/buildscripts/patches/mbedtls/clang18-aes-target.patch b/buildscripts/patches/mbedtls/clang18-aes-target.patch
+new file mode 100644
+index 0000000..44a232f
+--- /dev/null
++++ b/buildscripts/patches/mbedtls/clang18-aes-target.patch
+@@ -0,0 +1,13 @@
++diff --git a/library/aesce.c b/library/aesce.c
++index fe056dc..473e6b3 100644
++--- a/library/aesce.c
+++++ b/library/aesce.c
++@@ -53,7 +53,7 @@
++ #       if __clang_major__ < 4
++ #           error "A more recent Clang is required for MBEDTLS_AESCE_C"
++ #       endif
++-#       pragma clang attribute push (__attribute__((target("crypto"))), apply_to=function)
+++#       pragma clang attribute push (__attribute__((target("aes"))), apply_to=function)
++ #       define MBEDTLS_POP_TARGET_PRAGMA
++ #   elif defined(__GNUC__)
++ #       if __GNUC__ < 6
+diff --git a/buildscripts/patches/mpv/mpv_lavc_set_java_vm.patch b/buildscripts/patches/mpv/mpv_lavc_set_java_vm.patch
+index a5a5e92..3213048 100644
+--- a/buildscripts/patches/mpv/mpv_lavc_set_java_vm.patch
++++ b/buildscripts/patches/mpv/mpv_lavc_set_java_vm.patch
+@@ -1,44 +1,34 @@
+-diff --git a/libmpv/client.h b/libmpv/client.h
+-index fb10e5e..afbc952 100644
+---- a/libmpv/client.h
+-+++ b/libmpv/client.h
+-@@ -1707,6 +1707,15 @@ MPV_EXPORT mpv_event *mpv_wait_event(mpv_handle *ctx, double timeout);
++--- a/include/mpv/client.h
+++++ b/include/mpv/client.h
++@@ -1733,6 +1733,9 @@
++  * Safe to be called from mpv render API threads.
+   */
+  MPV_EXPORT void mpv_wakeup(mpv_handle *ctx);
+- 
+-+/**
+-+ * Calls av_jni_set_java_vm() with the given JavaVM*.
+-+ * https://github.com/FFmpeg/FFmpeg/blob/0ba719f726632d73592311615087a0d64aa2fb60/libavcodec/jni.h#L26-L36
+-+ * 
+-+ * The av_jni_set_java_vm() symbol is not visible when statically linking with libavcodec.
+-+ * It is important to call this method so that libavcodec can access JNI environment & thus, mediacodec APIs.
+-+ */
+-+MPV_EXPORT int mpv_lavc_set_java_vm(void *vm);
+ +
+++/** Set the JavaVM used by statically linked FFmpeg MediaCodec. */
+++MPV_EXPORT int mpv_lavc_set_java_vm(void *vm);
++ 
+  /**
+   * Set a custom function that should be called when there are new events. Use
+-  * this if blocking in mpv_wait_event() to wait for new events is not feasible.
+-diff --git a/libmpv/mpv.def b/libmpv/mpv.def
+-index 232490d..d7a2842 100644
+ --- a/player/client.c
+ +++ b/player/client.c
+-@@ -22,6 +22,8 @@
++@@ -17,6 +17,7 @@
++ #include <errno.h>
++ #include <fcntl.h>
+  #include <math.h>
+- #include <assert.h>
+- 
+ +#include <libavcodec/jni.h>
++ #include <stdatomic.h>
++ #include <stddef.h>
++ #include <stdint.h>
++@@ -964,6 +965,11 @@
++     ctx->queued_wakeup = true;
++     wakeup_client(ctx);
++     mp_mutex_unlock(&ctx->lock);
+++}
+ +
+- #include "common/common.h"
+- #include "common/global.h"
+- #include "common/msg.h"
+-@@ -967,6 +969,10 @@ void mpv_wakeup(mpv_handle *ctx)
+-     pthread_mutex_unlock(&ctx->lock);
+++int mpv_lavc_set_java_vm(void *vm)
+++{
+++    return av_jni_set_java_vm(vm, NULL);
+  }
+  
+-+int mpv_lavc_set_java_vm(void *vm) {
+-+    return av_jni_set_java_vm(vm, NULL);
+-+}
+-+
+  // map client API types to internal types
+- static const struct m_option type_conv[] = {
+-     [MPV_FORMAT_STRING]     = { .type = CONF_TYPE_STRING },
+diff --git a/buildscripts/scripts/libbluray.sh b/buildscripts/scripts/libbluray.sh
+new file mode 100644
+index 0000000..639a023
+--- /dev/null
++++ b/buildscripts/scripts/libbluray.sh
+@@ -0,0 +1,17 @@
++#!/bin/bash -e
++. ../../include/depinfo.sh
++. ../../include/path.sh
++build=_build$ndk_suffix
++case "$1" in
++  build) ;;
++  clean) rm -rf "$build"; exit 0 ;;
++  *) exit 255 ;;
++esac
++unset CC CXX
++# Android's ART is not a desktop JVM. Build HDMV/ISO navigation without
++# advertising BD-J availability; libbluray reports JVM absence at runtime.
++meson setup "$build" --cross-file "$prefix_dir/crossfile.txt" \
++    --prefer-static -Dbdj_jar=disabled -Denable_tools=false \
++    -Dfontconfig=disabled -Dfreetype=enabled -Dlibxml2=enabled
++ninja -C "$build" -j"$cores"
++DESTDIR="$prefix_dir" ninja -C "$build" install
+diff --git a/buildscripts/scripts/libplacebo.sh b/buildscripts/scripts/libplacebo.sh
+new file mode 100644
+index 0000000..ab0e423
+--- /dev/null
++++ b/buildscripts/scripts/libplacebo.sh
+@@ -0,0 +1,20 @@
++#!/bin/bash -e
++. ../../include/depinfo.sh
++. ../../include/path.sh
++build=_build$ndk_suffix
++case "$1" in
++  build) ;;
++  clean) rm -rf "$build"; exit 0 ;;
++  *) exit 255 ;;
++esac
++unset CC CXX
++meson setup "$build" --cross-file "$prefix_dir/crossfile.txt" \
++    --prefer-static -Dvulkan=disabled -Dopengl=enabled -Dd3d11=disabled \
++    -Dglslang=disabled -Dshaderc=disabled -Dlcms=disabled -Dlibdovi=disabled \
++    -Ddovi=enabled -Dunwind=disabled -Dxxhash=disabled -Ddemos=false -Dtests=false
++ninja -C "$build" -j"$cores"
++DESTDIR="$prefix_dir" ninja -C "$build" install
++# mpv links with the C driver. The static libplacebo archive contains C++
++# charconv code but its generated pkg-config file omits the C++ runtime.
++# Keep that runtime private/static, avoiding an unbundled libc++_shared.so.
++printf '\nLibs.private: -lc++_static -lc++abi -lunwind\n' >> "$prefix_dir/lib/pkgconfig/libplacebo.pc"
+diff --git a/buildscripts/scripts/libxml2.sh b/buildscripts/scripts/libxml2.sh
+index 4418462..dd23cfb 100755
+--- a/buildscripts/scripts/libxml2.sh
++++ b/buildscripts/scripts/libxml2.sh
+@@ -12,7 +12,7 @@ else
+ 	exit 255
+ fi
+ 
+-[ -f configure ] || ./autogen.sh
++[ -f configure ] || NOCONFIGURE=1 ./autogen.sh
+ 
+ mkdir -p _build$ndk_suffix
+ cd _build$ndk_suffix
+diff --git a/buildscripts/scripts/mpv.sh b/buildscripts/scripts/mpv.sh
+index 7e4ea4e..101525e 100755
+--- a/buildscripts/scripts/mpv.sh
++++ b/buildscripts/scripts/mpv.sh
+@@ -19,13 +19,14 @@ unset CC CXX # meson wants these unset
+ meson setup $build --cross-file "$prefix_dir"/crossfile.txt \
+ 	--prefer-static \
+ 	--default-library shared \
++	-Db_lundef=true \
+ 	-Dgpl=false \
+ 	-Dlibmpv=true \
+  	-Dlua=disabled \
+  	-Dcplayer=false \
+ 	-Diconv=disabled \
+ 	-Dvulkan=disabled \
+-   	-Dlibplacebo=disabled \
++	-Dlibbluray=enabled \
+  	-Dmanpage-build=disabled
+ 
+ ninja -C $build -j$cores

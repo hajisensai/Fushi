@@ -115,6 +115,19 @@ class SubdlWorkRecord {
   final String? imdbId;
   final int? tmdbId;
   final int? year;
+
+  /// 本页字幕所属作品的身份自述（BUG-3068），供调用方核对是不是目标作品。
+  SubtitleWorkClaim get claim => SubtitleWorkClaim(
+        titles: <String>[name],
+        year: year,
+        kind: switch (type?.toLowerCase()) {
+          'movie' => VideoMetadataMediaKind.movie,
+          'tv' => VideoMetadataMediaKind.tv,
+          _ => null,
+        },
+        tmdbId: tmdbId,
+        imdbId: imdbId,
+      );
 }
 
 class SubdlSubtitleRecord {
@@ -651,6 +664,7 @@ class _SubdlCandidate extends VideoSubtitleCandidate {
           collectionId: work == null ? null : '${work.sdId}',
           collectionLabel: work?.name,
           aiTranslated: record.aiTranslated,
+          work: work?.claim,
         );
 
   final SubdlSubtitleRecord record;

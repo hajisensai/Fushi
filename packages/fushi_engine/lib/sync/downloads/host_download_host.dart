@@ -9,6 +9,8 @@
 library;
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/torrent/torrent_metainfo.dart'
+    show InspectedTorrentMetainfo;
 
 /// `/api/downloads` POST 的 `discoveryKind` 可取值（`DiscoveryMediaKind.name`）。
 /// 视频任务不带这个字段；host 在 `capability()['kinds']` 里宣告自己收哪些。
@@ -31,6 +33,18 @@ abstract interface class HostDownloadHost {
   /// 该域时抛 [ArgumentError]（路由映射成 400）。
   Future<String> addMagnet({
     required String magnetUri,
+    required String title,
+    String mediaKind = 'movie',
+    String? discoveryKind,
+  });
+
+  /// 交一份 `.torrent`（[metainfo]），只下其中 [fileIndexes] 那几个文件；null =
+  /// 整个种子。磁链拿不到文件清单，「合集包里只要其中几部」只能走这里——否则只能
+  /// 整包下完再删（158 GiB 的 25 部剧场版合集，只缺其中 14 部）。其余同 [addMagnet]；
+  /// index 不在种子文件清单里时抛 [ArgumentError]（路由映射成 400）。
+  Future<String> addTorrent({
+    required InspectedTorrentMetainfo metainfo,
+    Set<int>? fileIndexes,
     required String title,
     String mediaKind = 'movie',
     String? discoveryKind,
