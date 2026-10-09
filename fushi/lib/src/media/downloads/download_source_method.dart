@@ -17,6 +17,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 一条下载实际走的传输方式。
 enum DownloadTransferMethod {
@@ -44,9 +45,9 @@ extension DownloadTransferMethodLabels on DownloadTransferMethod {
   };
 
   IconData get icon => switch (this) {
-    DownloadTransferMethod.torrent => Icons.hub_outlined,
-    DownloadTransferMethod.direct => Icons.link_rounded,
-    DownloadTransferMethod.extension => Icons.extension_outlined,
+    DownloadTransferMethod.torrent => FushiIcons.hub,
+    DownloadTransferMethod.direct => FushiIcons.link,
+    DownloadTransferMethod.extension => FushiIcons.browserExtension,
   };
 }
 
@@ -66,7 +67,7 @@ bool isExternalDiscoverySource(
 ) => service.sourceById(sourceId)?.isUserConfigured != true;
 
 /// 「外部来源」标签的图标（作品页 chip 与下载标签共用）。
-const IconData kExternalSourceIcon = Icons.public_rounded;
+const IconData kExternalSourceIcon = FushiIcons.globe;
 
 /// 方式标签 + （可选）外部来源标签，一行小胶囊。
 class DownloadSourceTags extends StatelessWidget {
