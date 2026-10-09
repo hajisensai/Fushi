@@ -7,6 +7,7 @@ import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -1256,13 +1257,25 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // 预设按钮组的选中态跟随输入框（手输 5000 也点亮「5000」那一格）。
+    _daily.addListener(_onDailyChanged);
+  }
+
+  void _onDailyChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    _daily.removeListener(_onDailyChanged);
     _daily.dispose();
     _weekly.dispose();
     super.dispose();
   }
 
-  /// 预设 chip → 填入每日输入框（光标置尾，用户可继续改）。
+  /// 预设 / 近 7 日日均 → 填入每日输入框（光标置尾，用户可继续改）。
   void _applyPreset(int chars) {
     final String text = chars.toString();
     _daily.value = TextEditingValue(
@@ -1271,60 +1284,107 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
     );
   }
 
+  /// 2026-10 M3E 重做（用户反馈「这个设定目标的界面没有经历过 ai 的洗礼」）：
+  /// 旧版是两个裸下划线输入框 + 一排散落的纯文字预设，层级全靠缩进。现在：
+  /// - 顶部 M3E 饼干形 hero 图标（旗子）+ 标题；
+  /// - 每日目标是大号填充输入框（数字用 headline 字号，单位后缀），是这张卡的主角；
+  /// - 近 7 日日均变成一颗可点的建议 chip（点一下直接填进去），不再是一行灰字；
+  /// - 快捷预设是 M3E 连接按钮组（单选，选中态随输入框联动，弹簧切换）；
+  /// - 每周目标是次要的填充输入框；
+  /// - 动作区「取消」文字按钮 +「保存」实心主按钮。
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ThemeData theme = Theme.of(context);
+    final int daily = _parse(_daily);
+    final int average = widget.recentDailyAverage;
+    // 填充色要和对话框底色拉开（主题默认填充色与 M3 对话框容器几乎同色）。
+    final Color fill = Color.alphaBlend(
+      theme.colorScheme.primary.withValues(alpha: 0.08),
+      theme.colorScheme.surface,
+    );
+    InputDecoration filled({required String label}) => InputDecoration(
+          labelText: label,
+          suffixText: t.stat_goal_unit_chars,
+          suffixStyle: theme.textTheme.titleMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          filled: true,
+          fillColor: fill,
+          border: OutlineInputBorder(
+            borderRadius: tokens.radii.cardRadius,
+            borderSide: BorderSide.none,
+          ),
+        );
     return FushiAlertDialog(
+      icon: const FushiDialogHeroIcon(
+        icon: FushiIcons.flag,
+        tone: FushiHeroTone.primary,
+      ),
       title: Text(t.stat_goal_set),
       // 内容可能变高：横屏/小窗下用滚动兜底，不再顶到溢出。
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            // BUG-1075：单位后缀。口径说明行已按用户要求删除——统计口径由实际
-            // 计入的来源（阅读/漫画/视频字幕/游戏文本）自解释。
-            FushiTextFieldControl(
-              key: const ValueKey<String>('stat-goal-daily-field'),
-              controller: _daily,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: t.stat_goal_daily,
-                suffixText: t.stat_goal_unit_chars,
+      content: SizedBox(
+        width: 400,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              FushiTextFieldControl(
+                key: const ValueKey<String>('stat-goal-daily-field'),
+                controller: _daily,
+                keyboardType: TextInputType.number,
+                style: (theme.textTheme.headlineSmall ??
+                        tokens.type.listTitle)
+                    .copyWith(fontWeight: FontWeight.w700),
+                decoration: filled(label: t.stat_goal_daily),
               ),
-            ),
-            if (widget.recentDailyAverage > 0) ...<Widget>[
-              SizedBox(height: tokens.spacing.gap),
+              if (average > 0) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: FushiActionChipControl(
+                    key: const ValueKey<String>('stat-goal-average-chip'),
+                    avatar: const FushiIcon(FushiIcons.trendingUp, size: 18),
+                    label: Text(t.stat_goal_recent_average(n: average)),
+                    onPressed: () => _applyPreset(average),
+                  ),
+                ),
+              ],
+              SizedBox(height: tokens.spacing.card),
               Text(
-                t.stat_goal_recent_average(n: widget.recentDailyAverage),
-                style: tokens.type.metadata,
+                t.stat_goal_presets,
+                style: context.fushiType.titleSmallEmphasized,
+              ),
+              SizedBox(height: tokens.spacing.gap),
+              FushiConnectedButtonGroup<int>(
+                key: const ValueKey<String>('stat-goal-presets'),
+                showSelectedIcon: false,
+                emptySelectionAllowed: true,
+                expandedInsets: EdgeInsets.zero,
+                segments: <ButtonSegment<int>>[
+                  for (final int preset in StatGoalEditDialog.presets)
+                    ButtonSegment<int>(
+                      value: preset,
+                      label: Text(formatStatCharsAxis(preset)),
+                    ),
+                ],
+                selected: StatGoalEditDialog.presets.contains(daily)
+                    ? <int>{daily}
+                    : const <int>{},
+                onSelectionChanged: (Set<int> picked) {
+                  if (picked.isNotEmpty) _applyPreset(picked.first);
+                },
+              ),
+              SizedBox(height: tokens.spacing.card + tokens.spacing.gap),
+              FushiTextFieldControl(
+                key: const ValueKey<String>('stat-goal-weekly-field'),
+                controller: _weekly,
+                keyboardType: TextInputType.number,
+                decoration: filled(label: t.stat_goal_weekly),
               ),
             ],
-            SizedBox(height: tokens.spacing.gap + 4),
-            Text(t.stat_goal_presets, style: tokens.type.metadata),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Wrap(
-              spacing: tokens.spacing.gap,
-              runSpacing: tokens.spacing.gap / 2,
-              children: <Widget>[
-                for (final int preset in StatGoalEditDialog.presets)
-                  FushiActionChipControl(
-                    label: Text(preset.toString()),
-                    onPressed: () => _applyPreset(preset),
-                  ),
-              ],
-            ),
-            SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-            FushiTextFieldControl(
-              key: const ValueKey<String>('stat-goal-weekly-field'),
-              controller: _weekly,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: t.stat_goal_weekly,
-                suffixText: t.stat_goal_unit_chars,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
       actions: <Widget>[
@@ -1332,7 +1392,8 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.cancel),
         ),
-        FushiTextButton(
+        FushiFilledButton(
+          key: const ValueKey<String>('stat-goal-save'),
           onPressed: () => Navigator.of(context).pop<StatGoalEditResult>(
             (daily: _parse(_daily), weekly: _parse(_weekly)),
           ),

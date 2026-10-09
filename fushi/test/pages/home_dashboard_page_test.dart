@@ -18,6 +18,7 @@ import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_page.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
 import 'package:fushi/src/pages/implementations/home_floating_toolbar.dart';
@@ -27,9 +28,15 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
     show CoverProgressStrip;
-import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    show FushiDialogHeroIcon;
+import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
+    show FushiConnectedButtonGroup;
+import 'package:fushi/src/pages/implementations/stat_shared.dart'
+    show formatStatChars, formatStatTime;
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -124,6 +131,18 @@ void main() {
         // 与上面 lastReadAt 的键域（bookKey）一致。
         epubBookUidByKeyProvider
             .overrideWith((ref) async => <String, String>{}),
+        // 左上角头像读排行榜服务；真 provider 会连带建 ProfileViewModel，它在空测试
+        // 库上「应用默认 Profile」会把按 Profile 存的模块开关（游戏等）改写掉。
+        // 首页测试只要一个没开账户的服务（不 load、不联网）。
+        leaderboardServiceProvider.overrideWith(
+          (Ref _) => LeaderboardService(
+            database: () => db,
+            supportRoot: () async => storeDir,
+            profileId: () async => 1,
+            httpClientFactory: () async =>
+                throw StateError('no network in dashboard tests'),
+          ),
+        ),
       ];
 
   Widget buildApp({
@@ -161,17 +180,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump(const Duration(milliseconds: 200));
   }
-
-  /// 区块作用域 finder：`_sectionCard` 最外层是 DecoratedBox，`find.ancestor` 由近及
-  /// 远，第一个即本区块卡。**断言不收进区块就会被另一个区块里的同名文本 /
-  /// 同款封面兜住**——游戏同时出现在「继续」「最近添加」「活动」三处，裸
-  /// `find.text` / 裸 FileImage 谓词会让本文件的游戏用例变成假阳性（把被测分支删光
-  /// 仍全绿）。
-  Finder sectionCard(String title) => find
-      .ancestor(of: find.text(title), matching: find.byType(DecoratedBox))
-      .first;
-  Finder inSection(String title, Finder matching) =>
-      find.descendant(of: sectionCard(title), matching: matching);
 
   /// v92 起阅读只写 `study_segments`，`reading_statistics` 冻结为 legacy 只读投影
   /// （历史数据仍要进首页热力图 / 今日目标）。这里按 legacy 形状直插（OVERWRITE 版
@@ -216,423 +224,437 @@ void main() {
     ));
   }
 
-  testWidgets('宽屏（1280）有数据：渲染不抛无限高度，三区块结构可见', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
+  void useSize(WidgetTester tester, Size size) {
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+  }
 
+  /// 书侧装配（「继续」区的书来自 provider，测试直接喂 MediaItem）。
+  Widget buildAppWithBooks(List<MediaItem> books, Map<String, int> lastReadAt) =>
+      ProviderScope(
+        overrides: <Override>[
+          platformServicesProvider.overrideWithValue(platformServices),
+          ankiRepositoryProvider.overrideWithValue(ankiRepository),
+          appProvider.overrideWith((ref) => appModel),
+          ...bookStreamOverrides(books: books, lastReadAt: lastReadAt),
+        ],
+        child: TranslationProvider(
+          child: MaterialApp(
+            home: Scaffold(
+              body: HomeDashboardPage(videoRepo: VideoBookRepository(db)),
+            ),
+          ),
+        ),
+      );
+
+  MediaItem readingBook(
+    String key,
+    String title, {
+    required int position,
+    String? imageUrl,
+  }) =>
+      MediaItem(
+        mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(key),
+        title: title,
+        mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
+        mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
+        imageUrl: imageUrl,
+        position: position,
+        duration: 100,
+        canDelete: false,
+        canEdit: true,
+      );
+
+  /// 合集 Next-Up 三态的公共装配：合集「进击的巨人」+ 两集独立行 E1/E2。
+  Future<int> seedCollectionTwoEpisodes({
+    required VideoBooksCompanion e1,
+    required VideoBooksCompanion e2,
+  }) async {
+    await db.upsertVideoBook(e1);
+    await db.upsertVideoBook(e2);
+    final int cid = await db.createMediaCollection('进击的巨人');
+    await db.addToCollection(cid, MediaKind.video, 'e1');
+    await db.addToCollection(cid, MediaKind.video, 'e2');
+    return cid;
+  }
+
+  Finder coverCards() => find.byType(HomeContinueCoverCard);
+  HomeContinueCoverCard onlyCard(WidgetTester tester) =>
+      tester.widget<HomeContinueCoverCard>(coverCards());
+
+  // ── 2026-10 首页精简（用户反馈 PDF「1.首页」） ─────────────────────────────
+
+  for (final Size size in const <Size>[Size(1280, 900), Size(420, 900)]) {
+    testWidgets(
+        '精简 · ${size.width.toInt()} 宽：一张主卡（学习头部行 + 封面行），'
+        '「继续」/「学习活动」标题、四类筛选、学习日历、最近添加、活动全部删除',
+        (WidgetTester tester) async {
+      useSize(tester, size);
+      await seedSampleData();
+      // 只导入、没看过：旧版会进「最近添加」，现在首页根本没有这一栏。
+      await db.upsertVideoBook(VideoBooksCompanion(
+        bookUid: const Value('recent-only'),
+        title: const Value('刚导入的视频'),
+        videoPath: const Value('/abs/recent-only.mp4'),
+        importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ));
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(HomeStudyHeader), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('home-continue-row')),
+          findsOneWidget);
+      expect(coverCards(), findsOneWidget);
+      // 被删掉的字样 / 控件。
+      for (final String gone in <String>[
+        t.home_continue,
+        t.reading_activity,
+        t.home_recently_added,
+        t.home_activity,
+        t.home_filter_all,
+        t.home_filter_read,
+        t.home_filter_watch,
+        t.home_filter_game,
+        t.stat_goal_daily,
+        '刚导入的视频',
+      ]) {
+        expect(find.text(gone), findsNothing, reason: gone);
+      }
+      expect(find.byType(StatContributionHeatmap), findsNothing);
+      // 学习头部行在封面行之上（原第 2 栏移到原第 1 栏上面）。
+      expect(
+        tester.getTopLeft(find.byType(HomeStudyHeader)).dy,
+        lessThan(tester.getTopLeft(coverCards()).dy),
+      );
+    });
+  }
+
+  testWidgets('精简 · 学习头部行：今日字数 + 同一行右侧今日时长（不挂小字标签）',
+      (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    // 今天读 800 字 / 10 分钟（seedSampleData）。
     await seedSampleData();
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
 
-    expect(tester.takeException(), isNull);
-    // 三区块标题结构可见（不依赖异步数据回填即渲染）：阅读活动热力图（置顶）/ 继续 /
-    // Activity。原顶部统计卡已移除。
-    expect(find.text(t.home_continue), findsOneWidget);
-    expect(find.text(t.reading_activity), findsOneWidget);
-    expect(find.text(t.home_activity), findsOneWidget);
-    expect(find.byType(StatContributionHeatmap), findsOneWidget);
-  });
-
-  testWidgets('窄屏（420）空 DB：堆叠分支渲染不抛异常', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(420, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await tester.pumpWidget(buildApp());
-    await pumpDashboard(tester);
-
-    expect(tester.takeException(), isNull);
-    expect(find.byType(StatContributionHeatmap), findsOneWidget);
-    expect(find.text(t.home_activity), findsOneWidget);
-  });
-
-  testWidgets('窄屏（420）单列：「最近添加」排在「继续」与「活动」之间', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(420, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    // 仅导入（无播放断点）：让「最近添加」区块有内容而非被空库折叠。
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('recent-narrow'),
-      title: const Value('窄屏新导入'),
-      videoPath: const Value('/abs/recent-narrow.mp4'),
-      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-    ));
-
-    await tester.pumpWidget(buildApp());
-    await pumpDashboard(tester);
-    expect(tester.takeException(), isNull);
-
-    // 单列里三个标题的纵坐标必须严格递增：活动时间轴天然很长，最近添加若压在
-    // 它下面，用户得滚到底才看得见新入库条目。
-    double top(String text) =>
-        tester.getTopLeft(find.text(text, skipOffstage: false)).dy;
-    final double continueY = top(t.home_continue);
-    final double recentY = top(t.home_recently_added);
-    final double activityY = top(t.home_activity);
-    expect(continueY, lessThan(recentY));
-    expect(recentY, lessThan(activityY));
-  });
-
-  testWidgets('宽屏 1280 + 真实载入数据（异步回填后）：下段两列渲染不抛无限高度',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    final DateTime now = DateTime.now();
-    for (int i = 0; i < 20; i++) {
-      final String dk = FushiTimeFormat.dayKey(now.subtract(Duration(days: i)));
-      await seedLegacyReading(
-        title: '书$i',
-        dateKey: dk,
-        charsRead: 500 + i * 10,
-        timeMs: 300000,
-      );
-      await db.addActivityEvent(
-        eventType: i.isEven ? kActivityRead : kActivityWatch,
-        mediaType: i.isEven ? kActivityMediaBook : kActivityMediaVideo,
-        title: '活动$i',
-        dateKey: dk,
-        timestampMs: now.subtract(Duration(days: i)).millisecondsSinceEpoch,
-        durationMs: 120000,
-      );
-    }
-    for (int i = 0; i < 3; i++) {
-      await db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value('video/watch$i'),
-        title: Value('在看$i'),
-        videoPath: Value('/abs/w$i.mp4'),
-        lastPositionMs: const Value(60000),
-      ));
-    }
-
-    // runAsync 让真实 DB isolate 的 _loadDashboardData 跑完（fakeAsync 的 pump 不推进
-    // 后台 isolate），再退出 runAsync pump 应用 setState → 用真数据重建下段。
-    await tester.runAsync(() async {
-      await tester.pumpWidget(buildApp());
-      await Future<void>.delayed(const Duration(milliseconds: 600));
-    });
+    final String time = formatStatTime(600000);
+    expect(find.text(time), findsOneWidget);
+    expect(find.text(formatStatChars(800)), findsOneWidget);
+    // 同一行：时长与字数垂直居中对齐、在右侧。
+    final Rect value = tester.getRect(find.text(formatStatChars(800)));
+    final Rect timeRect = tester.getRect(find.text(time));
+    expect((value.center.dy - timeRect.center.dy).abs(), lessThan(8));
+    expect(timeRect.left, greaterThan(value.right));
+    // 读屏仍能听到这是「今日」时长（屏上只有图标 + 数字）。
+    final SemanticsHandle semantics = tester.ensureSemantics();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-
-    expect(tester.takeException(), isNull);
-    expect(find.text(t.home_continue), findsOneWidget);
-    expect(find.text(t.home_activity), findsOneWidget);
-    expect(find.byType(StatContributionHeatmap), findsOneWidget);
+    expect(
+      find.bySemanticsLabel('${t.stat_today} · $time'),
+      findsOneWidget,
+    );
+    semantics.dispose();
   });
 
-  testWidgets('BUG-1018：「继续」区显示 override 书名而非 DB 原名',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  for (final double width in <double>[320, 360, 420]) {
+    testWidgets('精简 · $width 宽手机：学习统计完整显示，不省略号截断、不溢出',
+        (WidgetTester tester) async {
+      useSize(tester, Size(width, 800));
+      await appModel.setReadingGoalDailyChars(30000);
+      // 大数 + 长时长：最容易把一行挤爆的组合。
+      final String todayKey = FushiTimeFormat.dayKey(DateTime.now());
+      await seedLegacyReading(
+        title: '长时间阅读',
+        dateKey: todayKey,
+        charsRead: 123456,
+        timeMs: (12 * 60 + 34) * 60000,
+      );
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
 
-    // 一本在读的书（0 < position < duration 才进「继续」区）。
-    final MediaItem book = MediaItem(
-      mediaIdentifier: ReaderFushiSource.mediaIdentifierFor('测试书key'),
-      title: '原书名',
-      mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
-      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
-      position: 50,
-      duration: 100,
-      canDelete: false,
-      canEdit: true,
-    );
-    // 编辑对话框同一写入通道设置 override 书名；测试后清除（instance 是单例）。
+      expect(tester.takeException(), isNull);
+      final String value =
+          t.stat_goal_progress(read: 123456, goal: 30000);
+      final String time = formatStatTime((12 * 60 + 34) * 60000);
+      final Rect header = tester.getRect(find.byType(HomeStudyHeader));
+      for (final String text in <String>[value, time]) {
+        final Finder f = find.text(text);
+        expect(f, findsOneWidget, reason: text);
+        final RenderParagraph p = tester.renderObject<RenderParagraph>(f);
+        expect(p.didExceedMaxLines, isFalse, reason: text);
+        // 段落按自然宽度排版（没被压窄、没被裁掉一截）。
+        expect(
+          p.size.width,
+          greaterThanOrEqualTo(p.getMaxIntrinsicWidth(double.infinity) - 0.5),
+          reason: '$text 被截断',
+        );
+        final Rect r = tester.getRect(f);
+        expect(r.left, greaterThanOrEqualTo(header.left - 0.5), reason: text);
+        expect(r.right, lessThanOrEqualTo(header.right + 0.5), reason: text);
+      }
+    });
+  }
+
+  testWidgets('精简 · 封面行只有封面：有封面的书不再挂标题文字，角标 = 阅读进度',
+      (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    final File cover = File('${storeDir.path}/book_cover.png')
+      ..writeAsBytesSync(_kOnePixelPng);
+    final MediaItem a = readingBook('书A', '有封面的书',
+        position: 30, imageUrl: Uri.file(cover.path).toString());
+    final MediaItem b = readingBook('书B', '另一本书',
+        position: 50, imageUrl: Uri.file(cover.path).toString());
+    await tester.pumpWidget(buildAppWithBooks(
+      <MediaItem>[a, b],
+      const <String, int>{'书A': 2, '书B': 1},
+    ));
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    final List<HomeContinueCoverCard> cards =
+        tester.widgetList<HomeContinueCoverCard>(coverCards()).toList();
+    // 最近读的在前；没有「主角卡」了，所有条目同一行。
+    expect(cards.map((HomeContinueCoverCard c) => c.title),
+        <String>['有封面的书', '另一本书']);
+    expect(cards.map((HomeContinueCoverCard c) => c.badgeLabel),
+        <String?>['30%', '50%']);
+    expect(cards.first.progress, 0.3);
+    // 标题只进读屏 / 悬停提示，屏上不画。
+    expect(find.text('有封面的书'), findsNothing);
+    expect(find.text('另一本书'), findsNothing);
+    expect(find.text('30%'), findsOneWidget);
+    final SemanticsHandle semantics = tester.ensureSemantics();
+    await tester.pump();
+    expect(find.bySemanticsLabel('有封面的书 · 30%'), findsOneWidget);
+    semantics.dispose();
+    expect(find.byType(CoverProgressStrip), findsNWidgets(2));
+  });
+
+  testWidgets('精简 · 没有封面的条目兜底显示标题（BUG-1018：用 override 书名）',
+      (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    final MediaItem book = readingBook('测试书key', '原书名', position: 50);
     await ReaderFushiSource.instance.setOverrideTitleFromMediaItem(
       item: book,
       title: '改后的书名',
     );
     addTearDown(() => ReaderFushiSource.instance
         .setOverrideTitleFromMediaItem(item: book, title: null));
-
-    await tester.pumpWidget(ProviderScope(
-      overrides: <Override>[
-        platformServicesProvider.overrideWithValue(platformServices),
-        ankiRepositoryProvider.overrideWithValue(ankiRepository),
-        appProvider.overrideWith((ref) => appModel),
-        ...bookStreamOverrides(
-          books: <MediaItem>[book],
-          lastReadAt: const <String, int>{'测试书key': 1},
-        ),
-      ],
-      child: TranslationProvider(
-        child: MaterialApp(
-          home: Scaffold(
-            body: HomeDashboardPage(videoRepo: VideoBookRepository(db)),
-          ),
-        ),
-      ),
-    ));
+    await tester.pumpWidget(
+      buildAppWithBooks(<MediaItem>[book], const <String, int>{'测试书key': 1}),
+    );
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    expect(find.text('改后的书名'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('home-continue-cover-fallback')),
+        matching: find.text('改后的书名'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('原书名'), findsNothing);
   });
 
-  testWidgets('「继续」区：最近一条是主角卡，其余是横滑卡片行（书卡带封面底部进度条）',
+  testWidgets('精简 · 无封面的视频：封面槽是类型图标 + 标题，不是空黑块',
       (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    useSize(tester, const Size(1280, 900));
+    await seedSampleData(); // 「继续看的视频」无 coverPath
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
 
-    // 2026-10 重设计：最近读的一本放大成主角卡，另一本留在下方横滑行。
-    final MediaItem heroBook = MediaItem(
-      mediaIdentifier: ReaderFushiSource.mediaIdentifierFor('主角书key'),
-      title: '主角测试书',
-      mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
-      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
-      position: 30,
-      duration: 100,
-      canDelete: false,
-      canEdit: true,
-    );
-    final MediaItem book = MediaItem(
-      mediaIdentifier: ReaderFushiSource.mediaIdentifierFor('横滑书key'),
-      title: '横滑测试书',
-      mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
-      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
-      position: 50,
-      duration: 100,
-      canDelete: false,
-      canEdit: true,
-    );
-    await tester.pumpWidget(ProviderScope(
-      overrides: <Override>[
-        platformServicesProvider.overrideWithValue(platformServices),
-        ankiRepositoryProvider.overrideWithValue(ankiRepository),
-        appProvider.overrideWith((ref) => appModel),
-        ...bookStreamOverrides(
-          books: <MediaItem>[heroBook, book],
-          lastReadAt: const <String, int>{'横滑书key': 1, '主角书key': 2},
-        ),
-      ],
-      child: TranslationProvider(
-        child: MaterialApp(
-          home: Scaffold(
-            body: HomeDashboardPage(videoRepo: VideoBookRepository(db)),
-          ),
-        ),
+    final Finder fallback =
+        find.byKey(const ValueKey<String>('home-continue-cover-fallback'));
+    expect(
+      find.descendant(
+        of: fallback,
+        matching: find.byWidgetPredicate((Widget w) =>
+            w is FushiIcon && w.icon == mediaCoverFallbackIcon(MediaKind.video)),
       ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: fallback, matching: find.text('继续看的视频')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('精简 · 视频也显示进度：知道总时长 → 进度条 + 百分比；不知道 → 看到的时间点',
+      (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('v-known'),
+      title: Value('知道时长的视频'),
+      videoPath: Value('/abs/known.mp4'),
+      lastPositionMs: Value(600000),
+      lastPlayedAt: Value(2),
     ));
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('v-unknown'),
+      title: Value('不知道时长的视频'),
+      videoPath: Value('/abs/unknown.mp4'),
+      lastPositionMs: Value(754000),
+      lastPlayedAt: Value(1),
+    ));
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await db.upsertVideoFileSpec(VideoFileSpecsCompanion.insert(
+      filePath: '/abs/known.mp4',
+      fileSizeBytes: 1,
+      fileModifiedAt: now,
+      probedAt: now,
+      probeVersion: 1,
+      durationMs: const Value(2400000),
+    ));
+    await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    // 「继续」区改为横向滑动列表（Jellyfin 式卡片行）。
-    expect(
-      find.byWidgetPredicate(
-          (Widget w) => w is ListView && w.scrollDirection == Axis.horizontal),
-      findsOneWidget,
-    );
-    // 主角卡：最近读的那本（lastReadAt 更大），进度 30/100，主按钮「继续阅读」。
-    final HomeContinueHero hero =
-        tester.widget<HomeContinueHero>(find.byType(HomeContinueHero));
-    expect(hero.title, '主角测试书');
-    expect(hero.subtitle, '${t.home_filter_read} · 30%');
-    expect(hero.progress, 0.3);
-    expect(hero.actionLabel, t.book_continue_reading);
-    // 横滑行里的书卡封面底部进度条 = percent/100（50/100 → 0.5）。
-    final CoverProgressStrip bar =
-        tester.widget<CoverProgressStrip>(find.byType(CoverProgressStrip));
-    expect(bar.value, 0.5);
-    // 散卡：标题=书名，副标题=「阅读 · 50%」。
-    expect(find.text('横滑测试书'), findsOneWidget);
-    expect(find.text('${t.home_filter_read} · 50%'), findsOneWidget);
+    final Map<String, HomeContinueCoverCard> byTitle =
+        <String, HomeContinueCoverCard>{
+      for (final HomeContinueCoverCard c
+          in tester.widgetList<HomeContinueCoverCard>(coverCards()))
+        c.title: c,
+    };
+    expect(byTitle['知道时长的视频']!.progress, 0.25);
+    expect(byTitle['知道时长的视频']!.badgeLabel, '25%');
+    expect(byTitle['不知道时长的视频']!.progress, isNull);
+    expect(byTitle['不知道时长的视频']!.badgeLabel, '12:34');
+    expect(byTitle['不知道时长的视频']!.badgeIcon, FushiIcons.play);
+  });
 
-    // 悬停绘制须超出卡片原始边界，同时完整落在列表视口内，不被截平。
-    final Finder card = find.ancestor(
-      of: find.text('横滑测试书'),
-      matching: find.byType(InkWell),
-    ).first;
-    final Finder row = find.ancestor(
-      of: card,
-      matching: find.byType(ListView),
-    ).first;
-    final Rect viewport = tester.getRect(row);
+  group('dashboardVideoContinueProgress', () {
+    test('单行多集播放列表：集数角标 + 集粒度进度', () {
+      final DashboardVideoProgress p = dashboardVideoContinueProgress(
+        completed: false,
+        positionMs: 1000,
+        durationMs: null,
+        currentEpisode: 2,
+        playlistEpisodeCount: 12,
+      );
+      expect(p.episode, 3);
+      expect(p.fraction, 2 / 12);
+      expect(p.percent, isNull);
+    });
+
+    test('合集里的一集：集数角标 + 本集看到哪（知道时长时）', () {
+      final DashboardVideoProgress p = dashboardVideoContinueProgress(
+        completed: false,
+        positionMs: 300000,
+        durationMs: 1200000,
+        currentEpisode: 0,
+        playlistEpisodeCount: 0,
+        collectionEpisode: 5,
+        collectionEpisodeCount: 12,
+      );
+      expect(p.episode, 5);
+      expect(p.fraction, 0.25);
+    });
+
+    test('只有一集的合集按单视频处理（不标「第 1 集」）', () {
+      final DashboardVideoProgress p = dashboardVideoContinueProgress(
+        completed: false,
+        positionMs: 300000,
+        durationMs: 1200000,
+        currentEpisode: 0,
+        playlistEpisodeCount: 0,
+        collectionEpisode: 1,
+        collectionEpisodeCount: 1,
+      );
+      expect(p.episode, isNull);
+      expect(p.percent, 25);
+    });
+
+    test('单视频不知道时长：退回看到的时间点', () {
+      final DashboardVideoProgress p = dashboardVideoContinueProgress(
+        completed: false,
+        positionMs: 754000,
+        durationMs: null,
+        currentEpisode: 0,
+        playlistEpisodeCount: 0,
+      );
+      expect(p.fraction, isNull);
+      expect(p.percent, isNull);
+      expect(p.positionMs, 754000);
+    });
+  });
+
+  testWidgets('精简 · 封面卡悬停抬升：绘制超出卡片原始边界但不被横滚行视口截平',
+      (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    final MediaItem a = readingBook('书A', '书A', position: 30);
+    final MediaItem b = readingBook('书B', '书B', position: 50);
+    await tester.pumpWidget(buildAppWithBooks(
+      <MediaItem>[a, b],
+      const <String, int>{'书A': 2, '书B': 1},
+    ));
+    await pumpDashboard(tester);
+
+    // 悬停放大是 FushiHoverLift 内层的绘制变换：量卡体（ClipRRect），不量外壳。
+    final Finder card = find
+        .descendant(of: coverCards().last, matching: find.byType(ClipRRect))
+        .first;
+    final Rect viewport =
+        tester.getRect(find.byKey(const ValueKey<String>('home-continue-row')));
     final Rect originalRect = tester.getRect(card);
-    final Size originalSize = tester.getSize(card);
-    final TestGesture mouse = await tester.createGesture(
-      kind: PointerDeviceKind.mouse,
-    );
+    final TestGesture mouse =
+        await tester.createGesture(kind: PointerDeviceKind.mouse);
     await mouse.addPointer(location: Offset.zero);
-    await mouse.moveTo(tester.getCenter(find.text('横滑测试书')));
+    await mouse.moveTo(tester.getCenter(card));
     await pumpDashboard(tester);
     final Rect liftedRect = tester.getRect(card);
     expect(liftedRect.top, lessThan(originalRect.top));
-    expect(liftedRect.left, lessThan(originalRect.left));
     expect(liftedRect.top, greaterThanOrEqualTo(viewport.top - 0.01));
-    expect(liftedRect.left, greaterThanOrEqualTo(viewport.left - 0.01));
     expect(liftedRect.bottom, lessThanOrEqualTo(viewport.bottom + 0.01));
-    expect(liftedRect.right, lessThanOrEqualTo(viewport.right + 0.01));
-    expect(tester.getSize(card), originalSize);
-    await mouse.moveTo(Offset.zero);
+    await mouse.removePointer();
     await pumpDashboard(tester);
     expect(tester.getRect(card), originalRect);
-    await mouse.removePointer();
   });
 
-  testWidgets('显示名统一：合集成员的继续卡标题=合集名，活动时间轴拼「合集名 - 名字」',
+  testWidgets('BUG-2005 口径保留：横版封面的视频卡随封面自适应成 16:9 横卡',
       (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    final DateTime now = DateTime.now();
-    final String todayKey = FushiTimeFormat.dayKey(now);
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('v1'),
-      title: Value('S01E01'),
-      videoPath: Value('/abs/s01e01.mp4'),
-      lastPositionMs: Value(60000),
+    useSize(tester, const Size(1280, 900));
+    final File cover = File('${storeDir.path}/landscape_cover.png')
+      ..writeAsBytesSync(_kLandscapePng);
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value('continue-landscape'),
+      title: const Value('在看的横版视频'),
+      videoPath: const Value('/abs/continue-landscape.mp4'),
+      coverPath: Value(cover.path),
+      lastPositionMs: const Value(60000),
     ));
-    final int cid = await db.createMediaCollection('进击的巨人');
-    await db.addToCollection(cid, MediaKind.video, 'v1');
-    await db.addActivityEvent(
-      eventType: kActivityWatch,
-      mediaType: kActivityMediaVideo,
-      title: 'S01E01',
-      mediaKey: 'v1',
-      dateKey: todayKey,
-      timestampMs: now.millisecondsSinceEpoch,
-      durationMs: 60000,
-    );
-
-    await tester.pumpWidget(buildApp());
-    await pumpDashboard(tester);
+    // 卡片是数据回填后才建的、解码是真异步 I/O：两段都必须在同一个 runAsync 里。
+    await tester.runAsync(() async {
+      await tester.pumpWidget(buildApp());
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await tester.pump();
+    });
+    await tester.pump();
 
     expect(tester.takeException(), isNull);
-    // 继续卡（非合集上下文）：标题行=合集名，副标题=「条目名 · 状态」。
-    expect(find.text('进击的巨人'), findsOneWidget);
-    expect(find.text('S01E01 · ${t.home_filter_watch}'), findsOneWidget);
-    // 活动时间轴：单行拼「合集名 - 名字」。
-    expect(find.text('进击的巨人 - S01E01'), findsOneWidget);
-    // 裸 'S01E01' 不再单独出现（用户抱怨「分不清是哪部」的根治点）。
-    expect(find.text('S01E01'), findsNothing);
+    final HomeContinueCoverCard c = onlyCard(tester);
+    expect(c.width, closeTo(c.height * 16 / 9, 0.01));
   });
 
-  testWidgets('热力图卡「今日目标」行：未设目标只显示设定入口；对话框设 1000 后进度行 = 800/1000',
+  testWidgets('点继续区视频卡直接续播（带主合集 id），不再只是切视频 tab；合集卡角标 = 集数',
       (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    // 未设目标（默认 0）：只显示「设定目标」按钮，无进度条/进度文案。
-    // 单次装配全程复用（appProvider 是 ChangeNotifierProvider：重挂第二棵
-    // ProviderScope 会让第一个 container 先 dispose 共享 appModel，第二棵再
-    // 用到/再 dispose 都是 use-after-dispose——目标变更走真实对话框通道）。
-    await seedSampleData();
-    await tester.pumpWidget(buildApp());
-    await pumpDashboard(tester);
-    expect(find.text(t.stat_goal_set), findsOneWidget);
-    // 未设目标：环里放旗子（fraction=null），不画进度。
-    expect(
-      tester.widget<HomeGoalRing>(find.byType(HomeGoalRing)).fraction,
-      isNull,
+    useSize(tester, const Size(1280, 900));
+    final int cid = await seedCollectionTwoEpisodes(
+      e1: const VideoBooksCompanion(
+        bookUid: Value('e1'),
+        title: Value('S01E01'),
+        videoPath: Value('/abs/e1.mp4'),
+        lastPositionMs: Value(60000),
+      ),
+      e2: const VideoBooksCompanion(
+        bookUid: Value('e2'),
+        title: Value('S01E02'),
+        videoPath: Value('/abs/e2.mp4'),
+      ),
     );
-
-    // 点设定入口 → 对话框输入 1000 → 保存（_editDailyGoal 真实写回 +
-    // setState 刷新，与阅读统计页同一持久化）。
-    await tester.tap(find.text(t.stat_goal_set));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    // 2026-10 体验优化：首页与统计页目标对话框合并，对话框里有每日 + 每周两个
-    // 输入框，按 key 定位每日那一个。
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('stat-goal-daily-field')),
-      '1000',
-    );
-    await tester.tap(find.text(t.dialog_save));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(tester.takeException(), isNull);
-    expect(
-      find.text(t.stat_goal_progress(read: 800, goal: 1000)),
-      findsOneWidget,
-    );
-    // 2026-10 重设计：目标并进学习卡头部的环形进度（800/1000 = 0.8）。
-    expect(
-      tester.widget<HomeGoalRing>(find.byType(HomeGoalRing)).fraction,
-      0.8,
-    );
-    expect(find.text(t.stat_goal_set), findsNothing);
-  });
-
-  testWidgets('点热力图某日弹当日明细 sheet：按类型分节列出条目', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await seedSampleData();
-    await tester.pumpWidget(buildApp());
-    await pumpDashboard(tester);
-
-    // 网格是热力图内唯一 GestureDetector；1280 宽下自适应列数、FittedBox 不缩放，
-    // 格子坐标可按自然坐标（cell=12, spacing=3）直接计算。今天 = 末列、行 =
-    // weekday-1（周一在上）。
-    final Finder grid = find.descendant(
-      of: find.byType(StatContributionHeatmap),
-      matching: find.byType(GestureDetector),
-    );
-    final Size gridSize = tester.getSize(grid);
-    const double step = 15; // cell 12 + spacing 3
-    final int cols = ((gridSize.width + 3) / step).round();
-    final int row = DateTime.now().weekday - 1;
-    await tester.tapAt(
-      tester.getTopLeft(grid) + Offset((cols - 1) * step + 6, row * step + 6),
-    );
-    // 明细 sheet：先等 DB 聚合 future，再等 bottom sheet 入场动画。
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(tester.takeException(), isNull);
-    // 阅读节列出当日读的书（seedSampleData 今天读了 800 字的这本）。
-    expect(find.text('吾輩は猫である'), findsOneWidget);
-  });
-
-  testWidgets('点继续区视频卡/活动条直接续播（带主合集 id），不再只是切视频 tab',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    final DateTime now = DateTime.now();
-    final String todayKey = FushiTimeFormat.dayKey(now);
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('v1'),
-      title: Value('S01E01'),
-      videoPath: Value('/abs/s01e01.mp4'),
-      lastPositionMs: Value(60000),
-    ));
-    final int cid = await db.createMediaCollection('进击的巨人');
-    await db.addToCollection(cid, MediaKind.video, 'v1');
-    // 活动条命中同一本地 uid：点击也应走同一条续播路径。
-    await db.addActivityEvent(
-      eventType: kActivityWatch,
-      mediaType: kActivityMediaVideo,
-      title: 'S01E01',
-      mediaKey: 'v1',
-      dateKey: todayKey,
-      timestampMs: now.millisecondsSinceEpoch,
-      durationMs: 60000,
-    );
-
-    // 注入打开替身（widget 测试无法构建 media_kit 播放页），记录续播调用。
     final List<(String, int?)> opened = <(String, int?)>[];
     await tester.pumpWidget(buildApp(
       openVideoOverride: (
@@ -647,159 +669,22 @@ void main() {
     await pumpDashboard(tester);
 
     final HomeTab tabBefore = homeShellTabNotifier.value;
-    // 继续卡点击 → 直接续播（合集成员带 playlistCollectionId 从合集续播）。
-    await tester.tap(find.text('S01E01 · ${t.home_filter_watch}'));
+    // 合集成员：显示名 = 合集名，角标 = 在看中的 E1 是第 1 集。
+    final HomeContinueCoverCard c = onlyCard(tester);
+    expect(c.title, '进击的巨人');
+    expect(c.badgeLabel, t.home_continue_episode(n: 1));
+    await tester.tap(coverCards());
     await tester.pump();
-    expect(opened, <(String, int?)>[('v1', cid)]);
-    // 活动条点击 → 同一条续播路径。
-    await tester.tap(find.text('进击的巨人 - S01E01'));
-    await tester.pump();
-    expect(opened.length, 2);
-    expect(opened.last, ('v1', cid));
-    // 旧行为（只把首页切到视频 tab）不再发生。
+    expect(opened, <(String, int?)>[('e1', cid)]);
     expect(homeShellTabNotifier.value, tabBefore);
-    // 活动条前置已是视频封面缩略槽（占位图标兜底），不再是裸 20px 图标；且槽是
-    // **竖版 40×56**，与同列表的书/游戏同槽——刮削回来的 2:3 海报塞进旧的 68×40
-    // 横槽会被 PortraitCoverImage 判为不合槽，缩成模糊垫底里的一小条。
-    expect(
-      find.byWidgetPredicate(
-          (Widget w) => w is SizedBox && w.width == 40 && w.height == 56),
-      findsWidgets,
-    );
-    expect(
-      find.byWidgetPredicate(
-          (Widget w) => w is SizedBox && w.width == 68 && w.height == 40),
-      findsNothing,
-      reason: '视频活动条不得回退横版槽（竖版海报会被缩成模糊垫底里的一小条）',
-    );
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('「最近添加」通栏：按导入时间列出本地视频卡（类型 · 相对时间）', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    // 仅导入（无播放断点）：不进「继续」，只进「最近添加」。
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('recent-v'),
-      title: const Value('新导入的视频'),
-      videoPath: const Value('/abs/recent.mp4'),
-      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-    ));
-
-    await tester.pumpWidget(buildApp());
-    await pumpDashboard(tester);
-
-    expect(tester.takeException(), isNull);
-    expect(find.text(t.home_recently_added), findsOneWidget);
-    expect(find.text('新导入的视频'), findsOneWidget);
-    // 副标题 = 类型 · 相对添加时间（刚导入 → 「刚刚」）。
-    expect(
-      find.text('${t.home_filter_watch} · ${t.activity_just_now}'),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('BUG-2005：「最近添加」与「继续」同口径，横版封面的视频卡走 16:9 横槽',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    // 真实可解码的 16:9 封面：朝向探测读的是解码宽高比，假路径只会走占位（恒竖卡）。
-    final File cover = File('${storeDir.path}/landscape_cover.png')
-      ..writeAsBytesSync(_kLandscapePng);
-    // 只导入 → 只进「最近添加」；有断点 → 只进「继续」。两行各一张视频卡，断言
-    // 按区块隔开（同名文本会互相兜住）。
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('recent-landscape'),
-      title: const Value('刚导入的横版视频'),
-      videoPath: const Value('/abs/recent-landscape.mp4'),
-      coverPath: Value(cover.path),
-      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-    ));
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('continue-landscape'),
-      title: const Value('在看的横版视频'),
-      videoPath: const Value('/abs/continue-landscape.mp4'),
-      coverPath: Value(cover.path),
-      lastPositionMs: const Value(60000),
-    ));
-
-    // 两段都必须在**同一个** runAsync 里：卡片是 `_loadDashboardData` 回填后才建
-    // 的，那次 pump 之前根本没有 ImageStream；而退出 runAsync 再 pump 的话，解码
-    // 这段真异步 I/O 在 fakeAsync 下永不完成，探测停在「朝向未知 → 竖卡」，两行
-    // 都恒量到竖槽宽（实测踩过）。
-    await tester.runAsync(() async {
-      await tester.pumpWidget(buildApp());
-      await Future<void>.delayed(const Duration(milliseconds: 600));
-      await tester.pump(); // 用真数据重建 → 卡出现 → 封面开始解码
-      await Future<void>.delayed(const Duration(milliseconds: 600));
-      await tester.pump(); // 应用探测回来的朝向
-    });
-    await tester.pump();
-
-    expect(tester.takeException(), isNull);
-    // 卡宽 = 封面槽宽：竖槽 94，横槽 132×16/9 ≈ 234.7。断言「明显宽于竖槽」而不是
-    // 精确值，免得日后调封面高度就得改数字（数字变了不代表行为坏了）。
-    const double portraitWidth = 94;
-    // 「继续」只有一条 → 是主角卡：视频按 16:9 横槽摆封面。
-    final HomeContinueHero hero =
-        tester.widget<HomeContinueHero>(find.byType(HomeContinueHero));
-    expect(hero.title, '在看的横版视频');
-    expect(hero.landscapeCover, isTrue);
-    for (final (String, String) row in <(String, String)>[
-      (t.home_recently_added, '刚导入的横版视频'),
-    ]) {
-      final Finder card = inSection(
-        row.$1,
-        find.ancestor(of: find.text(row.$2), matching: find.byType(InkWell)),
-      ).first;
-      expect(
-        tester.getSize(card).width,
-        greaterThan(portraitWidth * 1.5),
-        reason: '${row.$1} 行的视频卡应随横版封面自适应成 16:9 横槽，'
-            '恒竖槽会把 16:9 抽帧模糊垫底成白条',
-      );
-      await tester.ensureVisible(card);
-      await pumpDashboard(tester);
-      final Finder list = find.ancestor(
-        of: card,
-        matching: find.byType(ListView),
-      ).first;
-      final Rect viewport = tester.getRect(list);
-      final Rect original = tester.getRect(card);
-      final TestGesture mouse =
-          await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await mouse.addPointer(location: Offset.zero);
-      await mouse.moveTo(tester.getCenter(card));
-      await pumpDashboard(tester);
-      final Rect lifted = tester.getRect(card);
-      expect(lifted.width, greaterThan(original.width));
-      expect(lifted.top, greaterThanOrEqualTo(viewport.top - 0.01));
-      expect(lifted.left, greaterThanOrEqualTo(viewport.left - 0.01));
-      expect(lifted.bottom, lessThanOrEqualTo(viewport.bottom + 0.01));
-      expect(lifted.right, lessThanOrEqualTo(viewport.right + 0.01));
-      await mouse.removePointer();
-      await pumpDashboard(tester);
-    }
-  });
-
-  /// BUG-1111/BUG-1112 公共装配：塞一个游戏行；[playedAt] 非空则再塞一条游玩会话
-  /// （仓储的 lastPlayedMs 由 `galgame_sessions` 现算，不是 `galgames` 上的列）。
-  /// 让本用例以 **Windows** 语义组装 [AppModel]。
+  /// BUG-1111/BUG-1112 公共装配：让本用例以 **Windows** 语义组装 [AppModel]。
   ///
   /// galgame 只做 Windows 端，判据收在 [ModuleId.availableOn]（`games => isWindows`），
-  /// 而仪表盘自「功能模块关闭全部入口」那批起会按 [ModuleVisibility] 过滤条目种类。
-  /// 于是「游戏出现在继续区 / 最近添加 / 活动时间轴」这一整类断言**只在 Windows 上
-  /// 成立**：本机是 Windows 所以全绿，CI 跑 Linux 所以全红（develop 上实测 4 条）。
-  ///
-  /// 更阴的是另外两条只做否定断言的用例（封面反查、活动身份门禁）：在 Linux 上游戏
-  /// 整块不渲染，`findsNothing` 恒真、照样绿，等于在 CI 上从来没跑过。所以凡是喂了
-  /// 游戏数据的用例一律显式声明平台，不靠宿主平台碰运气。
+  /// 而仪表盘会按 [ModuleVisibility] 过滤条目种类。凡是喂了游戏数据的用例一律显式
+  /// 声明平台，不靠宿主平台碰运气（Linux CI 上游戏整块不渲染，否定断言恒真）。
   void useWindowsPlatform() {
     platformServices = testPlatformServices(isWindows: true, isDesktop: true);
     appModel = AppModel(platformServices)
@@ -833,17 +718,11 @@ void main() {
     }
   }
 
-  testWidgets('BUG-1111：玩过的游戏进「继续」区，且「游戏」筛选档只留游戏', (WidgetTester tester) async {
+  testWidgets('BUG-1111：玩过的游戏进「继续」区（游戏无完成度，不画角标）',
+      (WidgetTester tester) async {
     useWindowsPlatform();
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
+    useSize(tester, const Size(1280, 900));
     final DateTime now = DateTime.now();
-    // 在看的视频（进继续区）+ 玩过的游戏（本条修复前**结构上进不来**）。
-    // 刻意不设 importedAt：让视频只出现在「继续」区，不进「最近添加」——否则
-    // 下面按文本断言「游戏档滤掉视频」会被「最近添加」里的同名卡干扰。
     await db.upsertVideoBook(const VideoBooksCompanion(
       bookUid: Value('v-1'),
       title: Value('某视频'),
@@ -861,34 +740,22 @@ void main() {
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    expect(find.text(t.home_continue), findsOneWidget);
-    // 游戏出现在「继续」区（修复前恒不出现）。断言必须收进本区块：同一只游戏
-    // 的 addedAt 也落在「最近添加」，裸 find.text('某游戏') 会被那张卡兜住——把继续
-    // 区的游戏循环删光也照样绿（实测过的假阳性）。
-    expect(inSection(t.home_continue, find.text('某游戏')), findsOneWidget);
-
-    // 「游戏」筛选档存在（与热力图同一组档位），点它只剩游戏、视频被滤掉。
-    // 页面上共有三组档位（热力图 / 继续 / 活动时间轴）都含「游戏」档，且游戏卡
-    // 的状态副标题本身也是「游戏」——按裸文本或按树序取都会点错。
-    final Finder gameChip = inSection(
-      t.home_continue,
-      find.widgetWithText(ChoiceChip, t.home_filter_game),
+    final List<HomeContinueCoverCard> cards =
+        tester.widgetList<HomeContinueCoverCard>(coverCards()).toList();
+    expect(
+      cards.map((HomeContinueCoverCard c) => c.title),
+      containsAll(<String>['某游戏', '某视频']),
     );
-    expect(gameChip, findsOneWidget);
-    await tester.tap(gameChip);
-    await tester.pump(const Duration(milliseconds: 200));
-    expect(inSection(t.home_continue, find.text('某游戏')), findsOneWidget);
-    expect(inSection(t.home_continue, find.text('某视频')), findsNothing);
+    final HomeContinueCoverCard game =
+        cards.singleWhere((HomeContinueCoverCard c) => c.title == '某游戏');
+    expect(game.badgeLabel, isNull);
+    expect(game.progress, isNull);
   });
 
   testWidgets('BUG-1111：同合集的多个游戏在「继续」区收敛成一张卡（与视频侧同口径）',
       (WidgetTester tester) async {
     useWindowsPlatform();
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
+    useSize(tester, const Size(1280, 900));
     final DateTime now = DateTime.now();
     await seedGame(
       id: 'gc-1',
@@ -910,240 +777,18 @@ void main() {
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    // 一合集一卡：标题=合集名，只出一张（不收敛时这里是两张同名卡）。
-    expect(inSection(t.home_continue, find.text('某系列')), findsOneWidget);
-    // 续玩目标=组内最近玩过的那部（副标题=条目名 · 状态）。
     expect(
-      inSection(t.home_continue, find.text('游戏B · ${t.home_filter_game}')),
-      findsOneWidget,
-    );
-    expect(
-      inSection(t.home_continue, find.text('游戏A · ${t.home_filter_game}')),
-      findsNothing,
+      tester
+          .widgetList<HomeContinueCoverCard>(coverCards())
+          .map((HomeContinueCoverCard c) => c.title),
+      <String>['某系列'],
     );
   });
 
-  testWidgets('BUG-1111：新添加的游戏进「最近添加」（类型 · 相对时间）', (WidgetTester tester) async {
-    useWindowsPlatform();
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    // 只添加、没玩过：不进「继续」，只进「最近添加」（与视频「只导入」同口径）。
-    await seedGame(id: 'g-2', name: '刚加的游戏', addedAt: DateTime.now());
-
-    await tester.pumpWidget(buildApp());
-    await pumpDashboard(tester);
-
-    expect(tester.takeException(), isNull);
-    expect(find.text(t.home_recently_added), findsOneWidget);
-    expect(find.text('刚加的游戏'), findsWidgets);
-    expect(
-      find.text('${t.home_filter_game} · ${t.activity_just_now}'),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('BUG-1112/BUG-1284：旧 exePath 活动身份也能反查并渲染游戏封面',
+  testWidgets('继续区合集 Next-Up：看完 E1 后合集卡推进为 E2（角标第 2 集），点击直接打开 E2',
       (WidgetTester tester) async {
-    useWindowsPlatform();
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    // 真封面文件：1x1 PNG（Image.file 需要真实可解码文件）。
-    final File cover = File('${storeDir.path}/g3_cover.png')
-      ..writeAsBytesSync(_kOnePixelPng);
-
-    final DateTime now = DateTime.now();
-    await seedGame(
-      id: 'g-3',
-      name: '有封面的游戏',
-      addedAt: now,
-      playedAt: now,
-      coverPath: cover.path,
-    );
-    // 历史启动链路把 exePath 误写进 mediaKey，而且路径大小写/分隔符不一定一致；
-    // 活动展示必须兼容回查，不能只认 galgames.id。
-    await db.addActivityEvent(
-      eventType: kActivityGame,
-      mediaType: kActivityMediaGame,
-      title: '有封面的游戏',
-      dateKey: FushiTimeFormat.dayKey(now),
-      timestampMs: now.millisecondsSinceEpoch,
-      mediaKey: r'\ABS\G-3.EXE',
-      durationMs: 60000,
-    );
-
-    await tester.pumpWidget(buildApp());
-    await pumpDashboard(tester);
-
-    expect(tester.takeException(), isNull);
-    // 修复前 `_gameById(mediaKey)` 拿 exePath 去比 id，时间轴上不会有任何本地封面。
-    // 必须收进「活动」区块：同一只游戏同时在「继续」与「最近添加」里各有一张
-    // `_gameCover`，裸本地 Image 谓词会被它们兜住——把 _activityLeading 的 game 分支
-    // 删光也照样绿（实测过的假阳性）。
-    // BUG-1299 后 `_gameCover` 走 [PortraitCoverImage]：朝向不合槽时同图再渲染一张
-    // 模糊垫底，活动条里的 Image 数量因此可能 >1，数量断言放宽为 ≥1；但**谓词仍要求
-    // ResizeImage 包 FileImage**（`resolveMediaCoverImage` 的解码上限口径），
-    // 不放宽成裸 FileImage，否则少了这层就测不出来源解析被绕过。
-    final Finder fileImages = inSection(
-      t.home_activity,
-      find.byWidgetPredicate(
-        (Widget w) =>
-            w is Image &&
-            w.image is ResizeImage &&
-            (w.image as ResizeImage).imageProvider is FileImage,
-      ),
-    );
-    expect(fileImages, findsWidgets,
-        reason: '游戏活动条应兼容旧 exePath 并渲染 galgames.coverPath 封面（BUG-1284）');
-  });
-
-  testWidgets('BUG-1412：活动身份门禁——不因重复标题、deleted id 或脏 key 误绑现存游戏封面',
-      (WidgetTester tester) async {
-    useWindowsPlatform();
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    final File cover = File('${storeDir.path}/identity_guard_cover.png')
-      ..writeAsBytesSync(_kOnePixelPng);
-    final DateTime now = DateTime.now();
-    await seedGame(
-      id: 'duplicate-a',
-      name: '重复标题',
-      addedAt: now,
-      coverPath: cover.path,
-    );
-    await seedGame(
-      id: 'duplicate-b',
-      name: '重复标题',
-      addedAt: now,
-      coverPath: cover.path,
-    );
-    await seedGame(
-      id: 'replacement',
-      name: '已删除游戏的标题',
-      addedAt: now,
-      coverPath: cover.path,
-    );
-    await seedGame(
-      id: 'dirty-current',
-      name: '脏键标题',
-      addedAt: now,
-      coverPath: cover.path,
-    );
-
-    Future<void> addLegacyActivity({
-      required String title,
-      String? mediaKey,
-      required int offsetMs,
-    }) =>
-        db.addActivityEvent(
-          eventType: kActivityGame,
-          mediaType: kActivityMediaGame,
-          title: title,
-          dateKey: FushiTimeFormat.dayKey(now),
-          timestampMs: now.millisecondsSinceEpoch - offsetMs,
-          mediaKey: mediaKey,
-          durationMs: 60000,
-        );
-
-    await addLegacyActivity(title: '重复标题', offsetMs: 1000);
-    await addLegacyActivity(
-      title: '已删除游戏的标题',
-      mediaKey: 'deleted-stable-id',
-      offsetMs: 2000,
-    );
-    await addLegacyActivity(
-      title: '脏键标题',
-      mediaKey: 'dirty-key',
-      offsetMs: 3000,
-    );
-
-    await tester.pumpWidget(buildApp());
-    await pumpDashboard(tester);
-
-    expect(tester.takeException(), isNull);
-    final Finder fileImages = inSection(
-      t.home_activity,
-      find.byWidgetPredicate(
-        (Widget w) =>
-            w is Image &&
-            w.image is ResizeImage &&
-            (w.image as ResizeImage).imageProvider is FileImage,
-      ),
-    );
-    expect(
-      fileImages,
-      findsNothing,
-      reason: '身份不唯一或 key 不可信时必须回退类型图标，不能借标题取任意现存封面',
-    );
-  });
-
-  testWidgets('BUG-1112：点活动时间轴的游戏条切到「游戏」tab，不再落到视频 tab',
-      (WidgetTester tester) async {
-    useWindowsPlatform();
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    final HomeTab tabBefore = homeShellTabNotifier.value;
-    addTearDown(() => homeShellTabNotifier.value = tabBefore);
-
-    final DateTime now = DateTime.now();
-    await seedGame(id: 'g-4', name: '点开的游戏', addedAt: now, playedAt: now);
-    await db.addActivityEvent(
-      eventType: kActivityGame,
-      mediaType: kActivityMediaGame,
-      title: '点开的游戏',
-      dateKey: FushiTimeFormat.dayKey(now),
-      timestampMs: now.millisecondsSinceEpoch,
-      mediaKey: 'g-4',
-      durationMs: 60000,
-    );
-
-    await tester.pumpWidget(buildApp());
-    await pumpDashboard(tester);
-
-    // 同名文本在「继续」「最近添加」也各有一张卡，点击必须锁到活动区那一条。
-    final Finder activityRow = inSection(t.home_activity, find.text('点开的游戏'));
-    expect(activityRow, findsOneWidget);
-    await tester.tap(activityRow);
-    await tester.pump();
-
-    // 修复前游戏条没分支，直接掉进 else → HomeTab.video。
-    expect(homeShellTabNotifier.value, HomeTab.games);
-    expect(tester.takeException(), isNull);
-  });
-
-  /// 合集 Next-Up 三态的公共装配：合集「进击的巨人」+ 两集独立行 E1/E2。
-  Future<int> seedCollectionTwoEpisodes({
-    required VideoBooksCompanion e1,
-    required VideoBooksCompanion e2,
-  }) async {
-    await db.upsertVideoBook(e1);
-    await db.upsertVideoBook(e2);
-    final int cid = await db.createMediaCollection('进击的巨人');
-    await db.addToCollection(cid, MediaKind.video, 'e1');
-    await db.addToCollection(cid, MediaKind.video, 'e2');
-    return cid;
-  }
-
-  testWidgets('继续区合集 Next-Up：看完 E1 后合集卡推进为 E2，点击直接打开 E2（带合集 id）',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
+    useSize(tester, const Size(1280, 900));
     final int cid = await seedCollectionTwoEpisodes(
-      // E1 已看完（旧逻辑会把它踢出继续区、整个合集消失——用户实报）。
       e1: VideoBooksCompanion(
         bookUid: const Value('e1'),
         title: const Value('S01E01'),
@@ -1151,7 +796,6 @@ void main() {
         lastPositionMs: const Value(1200000),
         completedAt: Value(DateTime.now()),
       ),
-      // E2 全新未看。
       e2: const VideoBooksCompanion(
         bookUid: Value('e2'),
         title: Value('S01E02'),
@@ -1173,23 +817,17 @@ void main() {
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    // 合集卡仍在，且推进为下一集：标题=合集名、副标题=「S01E02 · 观看」。
-    expect(find.text('进击的巨人'), findsOneWidget);
-    expect(find.text('S01E02 · ${t.home_filter_watch}'), findsOneWidget);
-    expect(find.text('S01E01 · ${t.home_filter_watch}'), findsNothing);
-    // 点击 Next-Up 卡 → 直接打开 E2（带合集 id 进合集连播）。
-    await tester.tap(find.text('S01E02 · ${t.home_filter_watch}'));
+    final HomeContinueCoverCard c = onlyCard(tester);
+    expect(c.title, '进击的巨人');
+    expect(c.badgeLabel, t.home_continue_episode(n: 2));
+    await tester.tap(coverCards());
     await tester.pump();
     expect(opened, <(String, int?)>[('e2', cid)]);
   });
 
   testWidgets('继续区合集 Next-Up：整个合集全部看完 → 不出卡（自然滚出继续区）',
       (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
+    useSize(tester, const Size(1280, 900));
     await seedCollectionTwoEpisodes(
       e1: VideoBooksCompanion(
         bookUid: const Value('e1'),
@@ -1211,337 +849,53 @@ void main() {
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    expect(find.text('进击的巨人'), findsNothing);
-    expect(find.text('S01E01 · ${t.home_filter_watch}'), findsNothing);
-    expect(find.text('S01E02 · ${t.home_filter_watch}'), findsNothing);
+    expect(coverCards(), findsNothing);
+    expect(find.byType(HomeEmptyState), findsOneWidget);
   });
 
-  testWidgets('继续区合集 Next-Up：有在看中的集 → 显示该集（回归现行为）',
+  testWidgets('精简 · 新用户空库：不是一片空白——头部行 + 空态说明 + 去书架 / 去媒体库',
       (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await seedCollectionTwoEpisodes(
-      // E1 在看中（有断点未完成）。
-      e1: const VideoBooksCompanion(
-        bookUid: Value('e1'),
-        title: Value('S01E01'),
-        videoPath: Value('/abs/e1.mp4'),
-        lastPositionMs: Value(60000),
-      ),
-      e2: const VideoBooksCompanion(
-        bookUid: Value('e2'),
-        title: Value('S01E02'),
-        videoPath: Value('/abs/e2.mp4'),
-      ),
-    );
-
+    useSize(tester, const Size(420, 900));
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    // 每合集最多一张卡：显示在看中的 E1，而不是 E2、也不是两张。
-    expect(find.text('进击的巨人'), findsOneWidget);
-    expect(find.text('S01E01 · ${t.home_filter_watch}'), findsOneWidget);
-    expect(find.text('S01E02 · ${t.home_filter_watch}'), findsNothing);
-  });
-
-  /// BUG-1073 用的装配：继续区 + 最近添加 + 活动 + 热力图四块都有内容。
-  Future<void> seedAllSections() async {
-    await seedSampleData();
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('recent-added-v'),
-      title: const Value('刚导入的视频'),
-      videoPath: const Value('/abs/recent-added.mp4'),
-      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-    ));
-  }
-
-  testWidgets('BUG-1073 宽屏排版：学习活动/继续/最近添加同在主列，活动时间轴独占侧列',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1600, 1000);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await seedAllSections();
-    await tester.pumpWidget(buildApp());
-    await pumpDashboard(tester);
-
-    expect(tester.takeException(), isNull);
-    // 2026-10 重设计：主列 =「继续」主角卡 + 最近添加（左边缘对齐）；侧列 =
-    // 学习紧凑卡 → 活动时间轴（同一左边缘，在主列右侧）。
-    final double mainX = tester.getTopLeft(find.text(t.home_continue)).dx;
-    expect(tester.getTopLeft(find.text(t.home_recently_added)).dx, mainX);
-    final double sideX = tester.getTopLeft(find.text(t.reading_activity)).dx;
-    expect(sideX, greaterThan(mainX + 200));
-    expect(tester.getTopLeft(find.text(t.home_activity)).dx, sideX);
-    // 侧列内：学习卡在活动时间轴之上。
-    expect(
-      tester.getTopLeft(find.text(t.reading_activity)).dy,
-      lessThan(tester.getTopLeft(find.text(t.home_activity)).dy),
-    );
-    // 热力图不再被拉到整页宽。
-    expect(
-      tester.getSize(find.byType(StatContributionHeatmap)).width,
-      lessThan(1600 * 0.7),
-    );
-  });
-
-  testWidgets('BUG-1073 病灶 1 根因守卫：热力图空周底色必须与卡底拉开对比',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1600, 1000);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await seedAllSections();
-    await tester.pumpWidget(buildApp());
-    await pumpDashboard(tester);
-
-    final Finder heatmapFinder = find.byType(StatContributionHeatmap);
-    final StatContributionHeatmap heatmap =
-        tester.widget<StatContributionHeatmap>(heatmapFinder);
-    final FushiDesignTokens tokens =
-        FushiDesignTokens.of(tester.element(heatmapFinder));
-    // 此前传的是 surfaces.card（surfaceContainer），与区块卡底 surfaces.group
-    // （surfaceContainerLow）几乎同色 → 没活动的周等于没画（用户看到「大片死黑」）。
-    expect(heatmap.emptyColor, isNot(tokens.surfaces.group));
-    expect(
-      (heatmap.emptyColor.computeLuminance() -
-              tokens.surfaces.group.computeLuminance())
-          .abs(),
-      greaterThan(0.01),
-    );
-  });
-
-  testWidgets('超宽屏（1920）：内容随窗口铺满，不再限宽居中（撤 BUG-1073 的 1600px 上限）',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1920, 1000);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await seedAllSections();
-    await tester.pumpWidget(buildApp());
-    await pumpDashboard(tester);
-
-    expect(tester.takeException(), isNull);
-    // 用户实报「首页左右强制的间距」：旧 1600px 限宽居中在 1920 宽下左侧凭空
-    // 挤出 ~140px 空带。撤限宽后内容左缘只剩页面 padding + 卡片内边距。
-    expect(
-      tester.getTopLeft(find.text(t.home_continue)).dx,
-      lessThan(100),
-    );
-  });
-
-  /// 撤整页 1600 限宽后的**宽屏兜底**：1920 恰好是「主列 ~1076 < 网格自然上限
-  /// 1110」的临界点，热力图刚好被填满，所以只测 1920 结构上测不到 BUG-1073 症状 3
-  /// 的复发。2560 起主列就宽过 1110，热力图卡再拉满就是右侧死空白（3840 下实测卡内
-  /// 2244 对网格 1110，空 1134px）。这里直接量真实几何：网格必须长到自然上限，且卡
-  /// 内不许剩下富余宽度；同时侧列位置仍随窗口走，证明没有把整页限宽偷偷加回来。
-  for (final double width in <double>[2560, 3840]) {
-    testWidgets('宽屏兜底（$width）：热力图卡按网格自然上限封顶，卡内无右侧死空白',
-        (WidgetTester tester) async {
-      tester.view.physicalSize = Size(width, 1200);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-
-      await seedAllSections();
-      await tester.pumpWidget(buildApp());
-      await pumpDashboard(tester);
-
-      expect(tester.takeException(), isNull);
-
-      // 网格 = 热力图内最后一个 GestureDetector（Column 里翻页箭头在前、网格在后）。
-      final Finder heatmapFinder = find.byType(StatContributionHeatmap);
-      final Finder gridFinder = find
-          .descendant(
-            of: heatmapFinder,
-            matching: find.byType(GestureDetector),
-          )
-          .last;
-      // 卡内可用宽（= 卡宽 − 两侧内边距）：热力图在 stretch 的 Column 里，宽度就是它。
-      final double cardInnerWidth = tester.getSize(heatmapFinder).width;
-      final double gridWidth = tester.getSize(gridFinder).width;
-
-      // 网格不超过自身两道封顶（53 列 × 18px 格 + 52 × 3px 间距 = 1110）。
-      // 2026-10 重设计后学习卡在侧列（约 2/5 宽）：2560 下侧列窄于 1110，网格
-      // 按列数自适应；3840 下侧列宽于 1110，网格铺到上限。
-      expect(gridWidth, lessThanOrEqualTo(statHeatmapMaxGridWidth()),
-          reason: 'width=$width');
-      // 富余宽度不超过一列格子——回归时这里是 2244 − 1110 = 1134px 死空白。
-      expect(
-        cardInnerWidth - gridWidth,
-        lessThan(24),
-        reason: 'width=$width 卡内右侧死空白',
-      );
-      // 只封顶热力图这一块：整页没有重新限宽居中，左缘仍贴页面 padding，
-      // 侧列（学习卡 / 活动时间轴）起点仍按窗口宽的 ~60% 走。
-      expect(
-        tester.getTopLeft(find.text(t.home_continue)).dx,
-        lessThan(100),
-        reason: 'width=$width 左缘',
-      );
-      expect(
-        tester.getTopLeft(find.text(t.home_activity)).dx,
-        greaterThan(width * 0.5),
-        reason: 'width=$width 侧列起点',
-      );
-    });
-  }
-
-  testWidgets('BUG-1073 窄屏（420）：四个区块仍单列堆叠、左边缘一致', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(420, 1400);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await seedAllSections();
-    await tester.pumpWidget(buildApp());
-    await pumpDashboard(tester);
-
-    expect(tester.takeException(), isNull);
-    final double x = tester.getTopLeft(find.text(t.reading_activity)).dx;
-    expect(tester.getTopLeft(find.text(t.home_continue)).dx, x);
-    expect(tester.getTopLeft(find.text(t.home_activity)).dx, x);
-  });
-
-  testWidgets('BUG-1075 目标对话框：单位 + 口径说明 + 近 7 日日均 + 预设 chip 填入',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    // 今天读了 800 字（seedSampleData）→ 近 7 日日均 = 800 ~/ 7 = 114。
-    await seedSampleData();
-    await tester.pumpWidget(buildApp());
-    await pumpDashboard(tester);
-
-    await tester.tap(find.text(t.stat_goal_set));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    final Finder dialog = find.byType(AlertDialog);
-    // 单位（suffixText）+ 近 7 日日均：用户「不知道该填什么」的解药。口径说明行按用户
-    // 要求删除，这里守卫它不再出现（i18n key 也已下线）。
-    // 2026-10 体验优化：合并后的对话框有每日 + 每周两个输入框，单位后缀各一个。
-    expect(
-      find.descendant(of: dialog, matching: find.text(t.stat_goal_unit_chars)),
-      findsNWidgets(2),
-    );
-    // key 挂在设计系统分派包装（FushiTextFieldControl）上，解包到它渲染的
-    // TextField 再读字段。
-    final Finder dailyFinder = glassUnwrap<TextField>(
-        find.byKey(const ValueKey<String>('stat-goal-daily-field')));
-    final TextField dailyField = tester.widget<TextField>(dailyFinder);
-    expect(dailyField.decoration?.helperText, isNull);
-    // 参考值：与目标同口径（全来源合计）的近 7 日日均。
-    expect(
-      find.descendant(
-        of: dialog,
-        matching: find.text(t.stat_goal_recent_average(n: 114)),
-      ),
-      findsOneWidget,
-    );
-
-    // 预设 chip 点一下就填进输入框。
-    await tester.tap(find.widgetWithText(ActionChip, '5000'));
-    await tester.pump();
-    expect(tester.widget<TextField>(dailyFinder).controller?.text, '5000');
-
-    // 保存后目标行按填入值生效（与阅读统计页同一持久化）。
-    await tester.tap(find.text(t.dialog_save));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(tester.takeException(), isNull);
-    expect(
-      find.text(t.stat_goal_progress(read: 800, goal: 5000)),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('中等宽度（700，<900 窄分支）单列堆叠不抛无限高度', (WidgetTester tester) async {
-    // 700px < 900：走窄屏单列堆叠分支（热力图置顶 + 继续 + Activity）。曾因把
-    // stretch/Expanded 的 Row 直接放进纵向 ListView 而在此宽度崩溃，锁死不再复发。
-    tester.view.physicalSize = const Size(700, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await seedSampleData();
-    await tester.pumpWidget(buildApp());
-    await pumpDashboard(tester);
-
-    expect(tester.takeException(), isNull);
-    expect(find.byType(StatContributionHeatmap), findsOneWidget);
-  });
-
-  // ── 2026-10 首页重设计 ──────────────────────────────────────────────────
-
-  testWidgets('重设计 · 空库：「继续」与「活动」走同一个空态件，不再是两行裸灰字',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await tester.pumpWidget(buildApp());
-    await pumpDashboard(tester);
-
-    expect(tester.takeException(), isNull);
-    expect(
-      inSection(t.home_continue, find.byType(HomeEmptyState)),
-      findsOneWidget,
-    );
-    expect(
-      inSection(t.home_activity, find.byType(HomeEmptyState)),
-      findsOneWidget,
-    );
+    expect(find.byType(HomeStudyHeader), findsOneWidget);
+    expect(find.text(t.stat_goal_set), findsOneWidget);
     expect(find.text(t.home_continue_empty), findsOneWidget);
-    expect(find.text(t.home_activity_empty), findsOneWidget);
-    // 首载结束后不再挂骨架。
-    expect(find.byType(HomeContinueHeroSkeleton), findsNothing);
-    expect(find.byType(HomeActivitySkeleton), findsNothing);
+    expect(find.byKey(const ValueKey<String>('home-empty-go-books')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('home-empty-go-video')),
+        findsOneWidget);
+    expect(find.byType(HomeContinueRowSkeleton), findsNothing);
+
+    // 引导按钮切到对应 tab。
+    final HomeTab tabBefore = homeShellTabNotifier.value;
+    addTearDown(() => homeShellTabNotifier.value = tabBefore);
+    await tester.tap(find.byKey(const ValueKey<String>('home-empty-go-books')));
+    await tester.pump();
+    expect(homeShellTabNotifier.value, HomeTab.books);
   });
 
-  testWidgets('重设计 · 首载未完成：各区挂同轮廓骨架，不先闪空态', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
+  testWidgets('精简 · 首载未完成：头部行与封面行挂同轮廓骨架，不先闪空态', (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
     await seedSampleData();
     await tester.pumpWidget(buildApp());
 
-    // 首帧：聚合还在后台跑，三区都是骨架，空态文案不出现。
-    expect(find.byType(HomeContinueHeroSkeleton), findsOneWidget);
+    expect(find.byType(HomeContinueRowSkeleton), findsOneWidget);
     expect(find.byType(HomeGoalSkeleton), findsOneWidget);
-    expect(find.byType(HomeHeatmapSkeleton), findsOneWidget);
-    expect(find.byType(HomeActivitySkeleton), findsOneWidget);
     expect(find.byType(HomeEmptyState), findsNothing);
 
     await pumpDashboard(tester);
-    expect(find.byType(HomeContinueHeroSkeleton), findsNothing);
-    expect(find.byType(HomeContinueHero), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byType(HomeContinueRowSkeleton), findsNothing);
+    expect(coverCards(), findsOneWidget);
   });
 
   testWidgets('BUG-3034 · 切回首页（页面重建）首帧直接用上一轮快照，不再挂骨架等整批',
       (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
+    useSize(tester, const Size(1280, 900));
     await seedSampleData();
-    // 同一棵 ProviderScope 里卸载 / 重挂页面（与首页 tab 不保活、切走再切回同形；
-    // 换 ProviderScope 会先 dispose 共享 appModel）。
     final ValueNotifier<bool> showPage = ValueNotifier<bool>(true);
     addTearDown(showPage.dispose);
     await tester.pumpWidget(ProviderScope(
@@ -1565,7 +919,7 @@ void main() {
       ),
     ));
     await pumpDashboard(tester);
-    expect(find.byType(HomeContinueHero), findsOneWidget);
+    expect(coverCards(), findsOneWidget);
 
     showPage.value = false;
     await tester.pump();
@@ -1574,117 +928,148 @@ void main() {
     showPage.value = true;
     await tester.pump();
     // 重建后的**第一帧**：快照已上屏，没有骨架。
-    expect(find.byType(HomeContinueHeroSkeleton), findsNothing);
-    expect(find.byType(HomeActivitySkeleton), findsNothing);
-    expect(find.byType(HomeContinueHero), findsOneWidget);
-    expect(find.text('继续看的视频'), findsOneWidget);
+    expect(find.byType(HomeContinueRowSkeleton), findsNothing);
+    expect(find.byType(HomeGoalSkeleton), findsNothing);
+    expect(onlyCard(tester).title, '继续看的视频');
     await pumpDashboard(tester);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('重设计 · 无封面的视频：主角卡封面槽显示类型占位图标，不是空黑块',
+  testWidgets('今日目标：未设目标只显示设定入口；对话框设 1000 后进度行 = 800/1000',
       (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await seedSampleData(); // 「继续看的视频」无 coverPath
+    useSize(tester, const Size(1280, 900));
+    await seedSampleData();
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
-
-    final Finder hero = find.byType(HomeContinueHero);
-    expect(hero, findsOneWidget);
+    expect(find.text(t.stat_goal_set), findsOneWidget);
     expect(
-      find.descendant(
-        of: hero,
-        matching: find.byWidgetPredicate(
-          (Widget w) =>
-              w is FushiIcon && w.icon == mediaCoverFallbackIcon(MediaKind.video),
-        ),
-      ),
+      tester.widget<HomeGoalRing>(find.byType(HomeGoalRing)).fraction,
+      isNull,
+    );
+
+    await tester.tap(find.text(t.stat_goal_set));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('stat-goal-daily-field')),
+      '1000',
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('stat-goal-save')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(tester.takeException(), isNull);
+    expect(
+      find.text(t.stat_goal_progress(read: 800, goal: 1000)),
       findsOneWidget,
     );
     expect(
-      tester.widget<HomeContinueHero>(hero).actionLabel,
-      t.video_continue_watching,
+      tester.widget<HomeGoalRing>(find.byType(HomeGoalRing)).fraction,
+      0.8,
     );
+    expect(find.text(t.stat_goal_set), findsNothing);
   });
 
-  for (final (double, bool) c in <(double, bool)>[(1600, true), (420, false)]) {
-    testWidgets('重设计 · ${c.$1.toInt()} 宽：视频主角卡${c.$2 ? '横排（封面在左）' : '通栏 16:9 顶图'}',
-        (WidgetTester tester) async {
-      tester.view.physicalSize = Size(c.$1, 1000);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-
-      await seedSampleData();
-      await tester.pumpWidget(buildApp());
-      await pumpDashboard(tester);
-
-      expect(tester.takeException(), isNull);
-      final Finder hero = find.byType(HomeContinueHero);
-      final Finder action = find.byKey(
-        const ValueKey<String>('home-continue-hero-action'),
-      );
-      final Rect heroRect = tester.getRect(hero);
-      final Rect actionRect = tester.getRect(action);
-      if (c.$2) {
-        // 横排：主按钮在卡片右半（封面占左侧）。
-        expect(actionRect.left, greaterThan(heroRect.left + 200));
-      } else {
-        // 窄屏：16:9 封面通栏在上，按钮在封面之下、贴左。
-        expect(
-          find.descendant(of: hero, matching: find.byType(AspectRatio)),
-          findsOneWidget,
-        );
-        expect(actionRect.left, lessThan(heroRect.left + 40));
-        expect(actionRect.top, greaterThan(heroRect.top + 150));
-      }
-      // 宽屏两栏：学习卡在侧列；窄屏单列：学习卡在「继续」之下。
-      final Offset study = tester.getTopLeft(find.text(t.reading_activity));
-      final Offset cont = tester.getTopLeft(find.text(t.home_continue));
-      if (c.$2) {
-        expect(study.dx, greaterThan(cont.dx + 200));
-      } else {
-        expect(study.dx, cont.dx);
-        expect(study.dy, greaterThan(cont.dy));
-      }
-    });
-  }
-
-  testWidgets('重设计 · 焦点可遍历：Tab 能落到主角卡的「继续观看」按钮', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
+  testWidgets('设定目标弹窗（M3E 重做）：hero 图标 + 大号填充输入 + 近 7 日日均建议 chip + '
+      '连接按钮组预设（选中态随输入联动）+ 实心保存按钮',
+      (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    // 今天读了 800 字（seedSampleData）→ 近 7 日日均 = 800 ~/ 7 = 114。
     await seedSampleData();
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
 
-    final Finder action =
-        find.byKey(const ValueKey<String>('home-continue-hero-action'));
-    bool focusedOnAction() {
+    await tester.tap(find.text(t.stat_goal_set));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final Finder dialog = find.byType(AlertDialog);
+    expect(
+      find.descendant(of: dialog, matching: find.byType(FushiDialogHeroIcon)),
+      findsOneWidget,
+    );
+    // 每日 + 每周两个输入框，单位后缀各一个。
+    expect(
+      find.descendant(of: dialog, matching: find.text(t.stat_goal_unit_chars)),
+      findsNWidgets(2),
+    );
+    final Finder dailyFinder = glassUnwrap<TextField>(
+        find.byKey(const ValueKey<String>('stat-goal-daily-field')));
+    expect(tester.widget<TextField>(dailyFinder).decoration?.filled, isTrue);
+
+    // 近 7 日日均是一颗可点的建议 chip：点一下就填进去。
+    final Finder average =
+        find.byKey(const ValueKey<String>('stat-goal-average-chip'));
+    expect(
+      find.descendant(
+        of: average,
+        matching: find.text(t.stat_goal_recent_average(n: 114)),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(average);
+    await tester.pump();
+    expect(tester.widget<TextField>(dailyFinder).controller?.text, '114');
+
+    // 预设：连接按钮组，点「5000」填入且该格变成选中态。
+    final Finder presets =
+        find.byKey(const ValueKey<String>('stat-goal-presets'));
+    await tester.tap(find.descendant(of: presets, matching: find.text('5000')));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.widget<TextField>(dailyFinder).controller?.text, '5000');
+    expect(
+      tester.widget<FushiConnectedButtonGroup<int>>(presets).selected,
+      <int>{5000},
+    );
+    // 手输一个非预设值：选中态清空。
+    await tester.enterText(dailyFinder, '4321');
+    await tester.pump();
+    expect(
+      tester.widget<FushiConnectedButtonGroup<int>>(presets).selected,
+      isEmpty,
+    );
+    await tester.enterText(dailyFinder, '5000');
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey<String>('stat-goal-save')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(tester.takeException(), isNull);
+    expect(
+      find.text(t.stat_goal_progress(read: 800, goal: 5000)),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('精简 · 焦点可遍历：Tab 能落到「继续」封面卡', (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    await seedSampleData();
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    final Finder card = coverCards();
+    bool focusedOnCard() {
       final BuildContext? ctx = FocusManager.instance.primaryFocus?.context;
       if (ctx == null) return false;
-      final Element actionEl = tester.element(action);
+      final Element cardEl = tester.element(card);
       bool hit = false;
       ctx.visitAncestorElements((Element e) {
-        if (identical(e, actionEl)) hit = true;
+        if (identical(e, cardEl)) hit = true;
         return !hit;
       });
-      return hit || identical(ctx, actionEl);
+      return hit;
     }
 
     bool reached = false;
     for (int i = 0; i < 40 && !reached; i++) {
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.pump();
-      reached = focusedOnAction();
+      reached = focusedOnCard();
     }
-    expect(reached, isTrue, reason: '主角卡主按钮必须是 Tab 可达的焦点停靠点');
+    expect(reached, isTrue, reason: '封面卡必须是 Tab 可达的焦点停靠点');
   });
 
   // ── 2026-10 首页统一浮动工具栏 ────────────────────────────────────────────
@@ -1707,21 +1092,22 @@ void main() {
     }
   }
 
-  testWidgets('浮动工具栏：标题胶囊 + 更新/统计/排行榜/反馈按钮组常驻首页顶部，统计入口不再挂在学习卡里',
+  testWidgets('浮动工具栏：左上角是头像（不再是「首页」标题胶囊），右侧更新/统计/排行榜/反馈',
       (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
+    useSize(tester, const Size(1280, 900));
     await seedSampleData();
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(HomeFloatingToolbar), findsOneWidget);
+    final Finder avatar =
+        find.byKey(const ValueKey<String>('home-toolbar-avatar'));
+    expect(avatar, findsOneWidget);
     expect(find.byKey(const ValueKey<String>('fushi_floating_top_bar_title')),
-        findsOneWidget);
+        findsNothing);
+    final double cardTop = tester.getTopLeft(find.byType(HomeStudyHeader)).dy;
+    expect(tester.getTopLeft(avatar).dy, lessThan(cardTop));
+    expect(tester.getTopLeft(avatar).dx, lessThan(100));
     for (final String key in <String>[
       'home-toolbar-updates',
       'home-toolbar-stats',
@@ -1730,29 +1116,14 @@ void main() {
     ]) {
       final Finder button = find.byKey(ValueKey<String>(key));
       expect(button, findsOneWidget, reason: key);
-      // 栏浮在内容之上：按钮顶边在第一张分区卡标题之上。
-      expect(tester.getTopLeft(button).dy,
-          lessThan(tester.getTopLeft(find.text(t.home_continue)).dy));
+      expect(tester.getTopLeft(button).dy, lessThan(cardTop));
     }
-    // 统计中心 / 排行榜从学习卡标题行尾挪进了工具栏：卡里不再有第二份入口。
-    expect(
-      inSection(t.reading_activity, find.byIcon(FushiIcons.barChart)),
-      findsNothing,
-    );
-    expect(
-      inSection(t.reading_activity, find.byIcon(FushiIcons.trophy)),
-      findsNothing,
-    );
-    // 首屏主角卡在视野里：FAB 不出现（不与主角卡主按钮重复）。
+    // 首屏封面行在视野里：FAB 不出现。
     expect(resumeFab(tester).visible, isFalse);
   });
 
   testWidgets('浮动工具栏：Tab 可达四颗动作按钮（焦点可遍历）', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
+    useSize(tester, const Size(1280, 900));
     await seedSampleData();
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
@@ -1787,59 +1158,29 @@ void main() {
     expect(reached, keys.toSet());
   });
 
-  testWidgets('浮动工具栏随滚动：下滚退场（不可聚焦），回滚弹回；主角卡滚出后出现「继续」FAB',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(420, 700);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await seedAllSections();
-    final List<String> opened = <String>[];
-    await tester.pumpWidget(buildApp(
-      openVideoOverride: (
-        BuildContext _,
-        VideoBookRepository __,
-        String bookUid,
-        int? ___,
-      ) async {
-        opened.add(bookUid);
-      },
-    ));
+  testWidgets('浮动工具栏随滚动：下滚退场（不可聚焦），回滚弹回', (WidgetTester tester) async {
+    // 首页精简后内容只剩一张卡，矮视口才滚得动。
+    useSize(tester, const Size(420, 260));
+    await seedSampleData();
+    await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
 
     expect(toolbar(tester).visible, isTrue);
-    // 退场后栏在 Offstage 里（FushiChromeReveal），查找要带上 offstage。
     final Finder stats = find.byKey(
         const ValueKey<String>('home-toolbar-stats'),
         skipOffstage: false);
     expect(excludedFromFocus(tester, stats), isFalse);
 
-    // 下滚：越过主角卡 → 栏退场，FAB 出现。
-    await tester.drag(dashboardList(), const Offset(0, -500));
+    await tester.drag(dashboardList(), const Offset(0, -150));
     await settleSpring(tester);
     expect(toolbar(tester).visible, isFalse);
     expect(excludedFromFocus(tester, stats), isTrue,
         reason: '退场中的栏不能还被 Tab 到');
-    expect(resumeFab(tester).visible, isTrue);
 
-    // 回滚一小段：栏弹回，FAB 仍在（主角卡还没回到视野）。
-    await tester.drag(dashboardList(), const Offset(0, 120));
+    await tester.drag(dashboardList(), const Offset(0, 60));
     await settleSpring(tester);
     expect(toolbar(tester).visible, isTrue);
     expect(excludedFromFocus(tester, stats), isFalse);
-    expect(resumeFab(tester).visible, isTrue);
-
-    // FAB 续开的是「继续」主角卡那一条（同一出口）。
-    await tester.tap(find.byKey(const ValueKey<String>('home-resume-fab')));
-    await tester.pump();
-    expect(opened, <String>['video/keep-watching']);
-
-    // 回到顶部：栏恒显示、FAB 退场。
-    await tester.drag(dashboardList(), const Offset(0, 3000));
-    await settleSpring(tester);
-    expect(toolbar(tester).visible, isTrue);
-    expect(resumeFab(tester).visible, isFalse);
     expect(tester.takeException(), isNull);
   });
 
