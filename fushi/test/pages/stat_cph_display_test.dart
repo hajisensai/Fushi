@@ -21,33 +21,32 @@ StatFact _fact(
   required String dateKey,
   required int ms,
   required int chars,
-}) =>
-    StatFact(
-      mediaKind: kind,
-      mediaKey: 'k-$kind',
-      title: kind,
-      format: '',
-      dateKey: dateKey,
-      hour: -1,
-      ms: ms,
-      chars: chars,
-      pages: 0,
-      lastActiveMs: 0,
-    );
+}) => StatFact(
+  mediaKind: kind,
+  mediaKey: 'k-$kind',
+  title: kind,
+  format: '',
+  dateKey: dateKey,
+  hour: -1,
+  ms: ms,
+  chars: chars,
+  pages: 0,
+  lastActiveMs: 0,
+);
 
 StudySession _session({required int ms, required int chars}) => StudySession(
-      mediaKind: kActivityMediaBook,
-      mediaKey: 'k',
-      title: 'T',
-      format: '',
-      deviceId: 'dev',
-      startAt: 0,
-      endAt: ms,
-      durationMs: ms,
-      chars: chars,
-      pages: 0,
-      segmentUids: const <String>['u'],
-    );
+  mediaKind: kActivityMediaBook,
+  mediaKey: 'k',
+  title: 'T',
+  format: '',
+  deviceId: 'dev',
+  startAt: 0,
+  endAt: ms,
+  durationMs: ms,
+  chars: chars,
+  pages: 0,
+  segmentUids: const <String>['u'],
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -111,17 +110,19 @@ void main() {
     expect(noSpeed, isNot(contains('/')), reason: '30 秒样本不外推速度');
   });
 
-  test('源码守卫：总览时段卡按阅读域切片、阅读页时段卡带速度行', () {
+  // 2026-10-09 统计中心精简删了「时段明细」四张卡：速度行只在「所选范围」卡上，
+  // 总览与阅读页都按阅读域切片（[statBookCphOf]）。
+  test('源码守卫：总览 / 阅读页所选范围卡按阅读域切片出速度行', () {
     final String center = File(
       'lib/src/pages/implementations/statistics_center_page.dart',
     ).readAsStringSync();
-    expect(center, contains('statBookCphOf(_daily, contains)'));
+    expect(center, contains('statBookCphOf(_daily, range.contains)'));
     expect(center, contains('label: t.stat_reading_speed'));
 
     final String reading = File(
       'lib/src/pages/implementations/reading_statistics_page.dart',
     ).readAsStringSync();
-    expect(reading, contains('formatStatCphOf(chars, ms)'));
+    expect(reading, contains('statBookCphOf(_bookFacts, range.contains)'));
     expect(reading, contains('label: t.stat_reading_speed'));
     expect(
       reading,

@@ -9,7 +9,7 @@ import 'video_fushi_page_source_corpus.dart';
 /// B=视频端收藏句子按钮（且为句子星标、非 BUG-123 删的单词☆）
 /// C=视频页头收藏夹入口 + 图标顺序统一
 /// D=收藏夹页展示 video 来源句子
-/// E=两统计页有「收藏语句」卡片
+/// E=两统计页的「所选范围」卡有「收藏语句」行
 void main() {
   String read(String rel) => File(rel).readAsStringSync();
 
@@ -282,13 +282,23 @@ void main() {
       final String src = read(
         'lib/src/pages/implementations/reading_statistics_page.dart',
       );
-      expect(src, contains('_favoritedSentences'));
-      expect(src, contains('t.stat_favorited_sentence'));
+      // 2026-10-09 统计中心精简删了「时段明细」四张卡：收藏语句只剩「所选范围」卡的
+      // 计数行（共享件 [buildStatRangeCounterLines]，标签在那里出）。
+      expect(src, contains('favoritedSentences: _favoritedSentenceEvents'));
       expect(
         src,
         contains('favoriteSentenceEvents(source: StatSourceKind.book)'),
         reason: '取数与分桶判据收敛进 StatCounterFacts（三个统计 tab 共用一份）',
       );
+    });
+
+    test('所选范围卡的计数行带「收藏语句」（四个 tab 共用）', () {
+      final String src = read(
+        'lib/src/pages/implementations/stat_range_bar.dart',
+      );
+      expect(src, contains('buildStatRangeCounterLines'));
+      expect(src, contains('label: t.stat_favorited_sentence'));
+      expect(src, contains('sumStatEventsInRange(favoritedSentences, range)'));
     });
 
     test('收藏语句的来源切分与日期回退判据只在 StatCounterFacts 里', () {
@@ -319,8 +329,7 @@ void main() {
       final String src = read(
         'lib/src/pages/implementations/video_statistics_page.dart',
       );
-      expect(src, contains('_favoritedSentences'));
-      expect(src, contains('t.stat_favorited_sentence'));
+      expect(src, contains('favoritedSentences: _favoritedSentenceEvents'));
       expect(
         src,
         contains('favoriteSentenceEvents(source: StatSourceKind.video)'),
