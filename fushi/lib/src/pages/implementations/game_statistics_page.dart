@@ -12,6 +12,7 @@ import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_dashboard.dart';
+import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
@@ -295,6 +296,52 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
     );
   }
 
+  /// 范围条「明细」→ 所选范围的时段明细 sheet（本页是游戏统计，明细只吃游戏域
+  /// 切片 [_gameFacts]）。时段谓词就是范围条的 [StatRange.contains]（周 = 自然
+  /// 周）。条目点击进游戏详情页（不静默拉起游戏，BUG-1111 同一约定）；已删游戏
+  /// 点了没有目标页，原地不动。
+  Future<void> _showRangeDetail(StatRange range) async {
+    final FushiDatabase db = appModelNoUpdate.database;
+    final bool deleted = await showStatPeriodDetailSheet(
+      context,
+      periodLabel: formatStatRange(range),
+      contains: range.contains,
+      facts: _gameFacts,
+      resolvers: StatPeriodDetailResolvers(
+        titleOf: (StatFact f) {
+          final GalgameEntry? entry = findGalgameForActivity(
+            _games,
+            mediaKey: f.mediaKey,
+            title: f.title,
+          );
+          final String name = displayTitleForGame(
+            entry: entry,
+            rawTitle: f.title,
+          );
+          return name.isEmpty ? f.mediaKey : name;
+        },
+        collectionOf: (StatFact f) => f.mediaKey.isEmpty
+            ? null
+            : statCollectionName(
+                MediaKind.game.compositeKey(f.mediaKey),
+                _primaryCollectionByEntry,
+                _collectionNamesById,
+              ),
+        onEntryTap: (String mediaKind, String mediaKey) async {
+          for (final GalgameEntry game in _games) {
+            if (game.id == mediaKey) {
+              await _openGame(game);
+              return;
+            }
+          }
+        },
+        onEntryDelete: (StatPeriodEntryTarget t) =>
+            deleteStatPeriodEntry(db, t),
+      ),
+    );
+    if (deleted && mounted) await _load();
+  }
+
   /// 范围区块：范围条（时间窗口分段 + 日期翻页）→ 范围时长图 → 所选范围卡
   /// （与总览 / 阅读 / 观看 tab 同序；学习日历在顶部）。
   List<Widget> _buildRangeSection() {
@@ -310,7 +357,10 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
       StatRangeBar(
         range: range,
         onChanged: (StatRangeSelection s) => _rangeSelection.value = s,
-        trailing: StatSettingsButton(settings: _statSettings),
+        trailing: StatRangeActions(
+          settings: _statSettings,
+          onOpenDetail: () => unawaited(_showRangeDetail(range)),
+        ),
       ),
       buildStatRangeChartSection(context, range, _byDay),
       buildStatRangeSummary(

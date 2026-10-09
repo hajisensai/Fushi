@@ -6888,5 +6888,6 @@
   "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
   "stat_this_year": "今年",
   "stat_week_past": "過去1週間",
-  "stat_center_settings": "統計の設定"
+  "stat_center_settings": "統計の設定",
+  "stat_range_detail_open": "作品別の内訳"
 }

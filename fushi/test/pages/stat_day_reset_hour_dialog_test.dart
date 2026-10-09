@@ -243,7 +243,8 @@ void main() {
     final String center = File(
       'lib/src/pages/implementations/statistics_center_page.dart',
     ).readAsStringSync();
-    expect(center, contains('trailing: StatSettingsButton('));
+    expect(center, contains('trailing: StatRangeActions('));
+    expect(center, contains('settings: _statSettings,'));
     expect(center, isNot(contains('actions:')), reason: '页头不再有动作按钮');
     expect(center, contains('headerTitle: tabBar,'),
         reason: '页签在页头第一行、与返回键同排');

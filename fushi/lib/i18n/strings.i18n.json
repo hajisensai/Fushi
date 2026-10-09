@@ -6888,5 +6888,6 @@
   "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
   "stat_this_year": "This year",
   "stat_week_past": "Past week",
-  "stat_center_settings": "Statistics settings"
+  "stat_center_settings": "Statistics settings",
+  "stat_range_detail_open": "Breakdown by title"
 }

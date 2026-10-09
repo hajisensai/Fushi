@@ -6888,5 +6888,6 @@
   "media_source_open_folder_failed": "無法開啟資料夾，可能已被移動、刪除或中斷連線。",
   "stat_this_year": "本年",
   "stat_week_past": "過去一週",
-  "stat_center_settings": "統計設定"
+  "stat_center_settings": "統計設定",
+  "stat_range_detail_open": "按作品明細"
 }

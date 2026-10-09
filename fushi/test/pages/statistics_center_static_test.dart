@@ -42,7 +42,6 @@ void main() {
     for (final String gone in <String>[
       'StatMediaFilterBar(',
       'StatGoalPanel(',
-      'showStatPeriodDetailSheet(',
       'buildStatPeriodSummaryGrid(',
     ]) {
       expect(center, isNot(contains(gone)), reason: '总览不再有 $gone');
@@ -134,8 +133,9 @@ void main() {
       for (final String path in tabPages) {
         final String src = File(path).readAsStringSync();
         expect(src, contains('StatTabSettings('), reason: path);
-        expect(src, contains('trailing: StatSettingsButton(settings: _statSettings)'),
+        expect(src, contains('trailing: StatRangeActions('),
             reason: '$path 的统计设置挂在范围条行尾');
+        expect(src, contains('settings: _statSettings,'), reason: path);
         expect(src, contains('onClearAll: _confirmAndClearAll'), reason: path);
         for (final String gone in <String>[
           't.stat_goal_set',
@@ -145,6 +145,29 @@ void main() {
         ]) {
           expect(src, isNot(contains(gone)), reason: '$path 还留着 $gone');
         }
+      }
+    });
+
+    test('四个 tab 的范围条都有「明细」入口：打开所选范围的时段明细 sheet', () {
+      // 2026-10-09 删掉「时段明细」卡后补回的入口（齿轮旁，不是再加一张卡）。
+      // 时段 = 范围条当前所选区间：谓词就是 StatRange.contains（周 = 自然周，
+      // 与所选范围卡同口径），标题就是范围条上那行区间文字。
+      for (final String path in tabPages) {
+        final String src = File(path).readAsStringSync();
+        expect(
+          src,
+          contains('onOpenDetail: () => unawaited(_showRangeDetail(range))'),
+          reason: path,
+        );
+        final int start = src.indexOf(
+          'Future<void> _showRangeDetail(StatRange range) async {',
+        );
+        expect(start, greaterThanOrEqualTo(0), reason: path);
+        final String body = src.substring(start, src.indexOf('\n  }\n', start));
+        expect(body, contains('showStatPeriodDetailSheet('), reason: path);
+        expect(body, contains('periodLabel: formatStatRange(range)'),
+            reason: path);
+        expect(body, contains('contains: range.contains'), reason: path);
       }
     });
 

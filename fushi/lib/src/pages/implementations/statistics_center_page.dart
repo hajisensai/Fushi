@@ -8,11 +8,13 @@ import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/game_statistics_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_dashboard.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
+import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
@@ -159,6 +161,11 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   Map<int, String> _collectionNamesById = <int, String>{};
   List<GalgameEntry> _games = <GalgameEntry>[];
 
+  /// 明细 sheet 的书身份解析：legacy 无身份行按 title 反查 bookKey，以及库表判为
+  /// 多身份的 title（不吸收进唯一身份组，BUG-2216）。
+  Map<String, String> _bookKeyByTitle = <String, String>{};
+  Set<String> _ambiguousBookTitles = <String>{};
+
   /// 会话行封面的两张表：书条目（键 = 段 mediaKey，bookKey / 有声书 srt uid
   /// 两种书身份都收）与视频封面路径（键 = bookUid）。游戏封面直接从 [_games] 取。
   Map<String, MediaItem> _bookItemsByKey = <String, MediaItem>{};
@@ -228,6 +235,8 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       _favoritedEvents = counters.favoriteWordEvents().toList();
       _favoritedSentenceEvents = counters.favoriteSentenceEvents().toList();
       _window = StatWindow(DateTime.now());
+      _bookKeyByTitle = uniqueBookKeyByTitle(facts.epubRows);
+      _ambiguousBookTitles = ambiguousBookTitles(facts.epubRows);
       _epubUidByBookKey = <String, String>{
         for (final EpubBookMeta r in facts.epubRows)
           if (r.uid.isNotEmpty) r.bookKey: r.uid,
@@ -333,7 +342,10 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
         StatRangeBar(
           range: range,
           onChanged: _selectRange,
-          trailing: StatSettingsButton(settings: _statSettings),
+          trailing: StatRangeActions(
+            settings: _statSettings,
+            onOpenDetail: () => unawaited(_showRangeDetail(range)),
+          ),
         ),
         buildStatRangeChartSection(context, range, _byDay),
         buildStatRangeSummary(
@@ -490,5 +502,118 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   Future<void> _clearSessions(List<StudySession> batch) async {
     await deleteStudySessions(ref.read(appProvider).database, batch);
     if (mounted) await _load();
+  }
+
+  /// 范围条「明细」→ 所选范围的时段明细 sheet（跨三域，来源分节 + 合集分组 +
+  /// 按作品时长倒序）。时段谓词就是范围条的 [StatRange.contains]（周 = 自然周，
+  /// 与上面的所选范围卡同口径）。删过条目就整页重聚合。
+  Future<void> _showRangeDetail(StatRange range) async {
+    final FushiDatabase db = ref.read(appProvider).database;
+    final bool deleted = await showStatPeriodDetailSheet(
+      context,
+      periodLabel: formatStatRange(range),
+      contains: range.contains,
+      facts: _daily,
+      resolvers: StatPeriodDetailResolvers(
+        titleOf: _entryTitle,
+        collectionOf: _entryCollection,
+        onEntryTap: _openEntry,
+        onEntryDelete: (StatPeriodEntryTarget t) =>
+            deleteStatPeriodEntry(db, t),
+        ambiguousTitlesOf: (String kind) => kind == kActivityMediaBook
+            ? _ambiguousBookTitles
+            : const <String>{},
+      ),
+    );
+    if (deleted && mounted) await _load();
+  }
+
+  /// 事实行 → 展示标题（合集名走 sheet 组头；与首页 dashboard 同判据）。
+  String _entryTitle(StatFact f) {
+    if (f.isGame) {
+      final GalgameEntry? entry = findGalgameForActivity(
+        _games,
+        mediaKey: f.mediaKey,
+        title: f.title,
+      );
+      final String name = displayTitleForGame(entry: entry, rawTitle: f.title);
+      return name.isEmpty ? f.mediaKey : name;
+    }
+    if (f.isBook) {
+      final String? bookKey = f.mediaKey.isNotEmpty
+          ? f.mediaKey
+          : _bookKeyByTitle[f.title];
+      if (bookKey == null) return f.title;
+      return ReaderFushiSource.instance.overrideTitleForBookKey(bookKey) ??
+          f.title;
+    }
+    return f.title;
+  }
+
+  /// 事实行 → 所属合集名（v83 键契约：epub 经 bookKey→uid 换算）。
+  String? _entryCollection(StatFact f) {
+    if (f.isBook) {
+      final String? bookKey = f.mediaKey.isNotEmpty
+          ? f.mediaKey
+          : _bookKeyByTitle[f.title];
+      if (bookKey == null) return null;
+      return statCollectionName(
+        MediaKind.epub.compositeKey(_epubUidByBookKey[bookKey] ?? bookKey),
+        _primaryCollectionByEntry,
+        _collectionNamesById,
+      );
+    }
+    if (f.mediaKey.isEmpty) return null;
+    return statCollectionName(
+      (f.isVideo ? MediaKind.video : MediaKind.game).compositeKey(f.mediaKey),
+      _primaryCollectionByEntry,
+      _collectionNamesById,
+    );
+  }
+
+  /// 明细条目 → 打开媒体：视频直达播放、书直达阅读器、游戏进详情页（不静默
+  /// 拉起游戏，BUG-1111 同一约定）；查不到的历史条目原地不动。
+  Future<void> _openEntry(String mediaKind, String mediaKey) async {
+    if (mediaKey.isEmpty || !mounted) return;
+    final AppModel appModel = ref.read(appProvider);
+    if (mediaKind == kActivityMediaVideo) {
+      await openLocalVideoBook(
+        context: context,
+        repo: VideoBookRepository(appModel.database),
+        bookUid: mediaKey,
+        playlistCollectionId:
+            _primaryCollectionByEntry[MediaKind.video.compositeKey(mediaKey)],
+      );
+      return;
+    }
+    if (mediaKind == kActivityMediaGame) {
+      for (final GalgameEntry game in _games) {
+        if (game.id == mediaKey) {
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (BuildContext _) =>
+                  GalgameDetailPage(gameId: game.id, initialTab: 0),
+            ),
+          );
+          return;
+        }
+      }
+      return;
+    }
+    if (mediaKind == kActivityMediaBook) {
+      final List<MediaItem> books =
+          ref.read(fushiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
+          const <MediaItem>[];
+      for (final MediaItem item in books) {
+        final String? key =
+            ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
+            ReaderFushiSource.parseSrtBookUid(item.mediaIdentifier);
+        if (key == mediaKey) {
+          final MediaSource source = item.getMediaSource(appModel: appModel);
+          await appModel.openMedia(ref: ref, mediaSource: source, item: item);
+          return;
+        }
+      }
+    }
   }
 }

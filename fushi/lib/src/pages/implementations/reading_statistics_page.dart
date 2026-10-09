@@ -14,6 +14,7 @@ import 'package:fushi/src/pages/implementations/stat_dashboard.dart';
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_kpi_strip.dart';
+import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
 import 'package:fushi/src/pages/implementations/stat_ring.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
@@ -550,6 +551,53 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         StatRangeSelection(mode: StatRangeMode.day, anchorKey: dateKey),
   );
 
+  /// 范围条「明细」→ 所选范围的时段明细 sheet（本页是阅读统计，明细只吃阅读域
+  /// 切片 [_bookFacts]——域=行集，与 [studyGoalCharsForDay] 同原则）。时段谓词
+  /// 就是范围条的 [StatRange.contains]（周 = 自然周，与所选范围卡同口径）。
+  Future<void> _showRangeDetail(StatRange range) async {
+    final FushiDatabase db = appModelNoUpdate.database;
+    final bool deleted = await showStatPeriodDetailSheet(
+      context,
+      periodLabel: formatStatRange(range),
+      contains: range.contains,
+      facts: _bookFacts,
+      resolvers: StatPeriodDetailResolvers(
+        titleOf: _statFactDisplayTitle,
+        collectionOf: _statFactCollectionName,
+        onEntryDelete: (StatPeriodEntryTarget t) =>
+            deleteStatPeriodEntry(db, t),
+        ambiguousTitlesOf: (String kind) => kind == kActivityMediaBook
+            ? _ambiguousBookTitles
+            : const <String>{},
+      ),
+    );
+    if (deleted && mounted) await _loadFromDatabase();
+  }
+
+  /// 事实行 → 显示名（[_bookDisplayTitle] 的事实行版：override 书名上屏生效，
+  /// 合集名走 sheet 组头不拼前缀）。
+  String _statFactDisplayTitle(StatFact f) {
+    final String? bookKey = f.mediaKey.isNotEmpty
+        ? f.mediaKey
+        : _bookKeyByTitle[f.title];
+    if (bookKey == null) return f.title;
+    return ReaderFushiSource.instance.overrideTitleForBookKey(bookKey) ??
+        f.title;
+  }
+
+  /// 事实行 → 所属合集名（[_collectionNameForBook] 的事实行版，同一 v83 键契约）。
+  String? _statFactCollectionName(StatFact f) {
+    final String? bookKey = f.mediaKey.isNotEmpty
+        ? f.mediaKey
+        : _bookKeyByTitle[f.title];
+    if (bookKey == null) return null;
+    return statCollectionName(
+      MediaKind.epub.compositeKey(_epubUidByBookKey[bookKey] ?? bookKey),
+      _primaryCollectionByEntry,
+      _collectionNamesById,
+    );
+  }
+
   /// 范围区块（Niratan「Range」）：范围条（时间窗口分段 + 日期翻页）→ 范围
   /// 时长图 → 所选范围卡 → 学习日历，与总览 / 观看 / 游戏 tab 同序。范围驱动
   /// 下方趋势 / 速度摘要 / 来源分布 / 按书列表；时段卡恒为当下。
@@ -559,7 +607,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       StatRangeBar(
         range: range,
         onChanged: (StatRangeSelection s) => _rangeSelection.value = s,
-        trailing: StatSettingsButton(settings: _statSettings),
+        trailing: StatRangeActions(
+          settings: _statSettings,
+          onOpenDetail: () => unawaited(_showRangeDetail(range)),
+        ),
       ),
       buildStatRangeChartSection(context, range, _byDay),
       buildStatRangeSummary(

@@ -8,6 +8,7 @@ import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart'
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_dashboard.dart';
+import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
 import 'package:fushi/src/stats/stat_range.dart';
 import 'package:fushi/src/utils/cover_image.dart';
@@ -378,6 +379,49 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     );
   }
 
+  /// 范围条「明细」→ 所选范围的时段明细 sheet（本页是视频统计，明细只吃观看域
+  /// 切片 [_videoFacts]）。时段谓词就是范围条的 [StatRange.contains]（周 = 自然
+  /// 周）。条目点击直达播放（合集成员带 playlistCollectionId，与首页续播同口径）。
+  Future<void> _showRangeDetail(StatRange range) async {
+    // 身份在库集合：明细行可能是已删视频的历史统计，点它不该假装能播。
+    final Set<String> libraryUids = <String>{
+      for (final Set<String> uids in _libraryUidsByTitle.values) ...uids,
+    };
+    final FushiDatabase db = appModelNoUpdate.database;
+    final bool deleted = await showStatPeriodDetailSheet(
+      context,
+      periodLabel: formatStatRange(range),
+      contains: range.contains,
+      facts: _videoFacts,
+      resolvers: StatPeriodDetailResolvers(
+        titleOf: (StatFact f) => f.title,
+        collectionOf: (StatFact f) => f.mediaKey.isEmpty
+            ? null
+            : statCollectionName(
+                MediaKind.video.compositeKey(f.mediaKey),
+                _primaryCollectionByEntry,
+                _collectionNamesById,
+              ),
+        onEntryTap: (String mediaKind, String mediaKey) async {
+          if (mediaKey.isEmpty || !libraryUids.contains(mediaKey)) return;
+          await openLocalVideoBook(
+            context: context,
+            repo: VideoBookRepository(db),
+            bookUid: mediaKey,
+            playlistCollectionId:
+                _primaryCollectionByEntry[MediaKind.video.compositeKey(
+                  mediaKey,
+                )],
+          );
+        },
+        onEntryDelete: (StatPeriodEntryTarget t) =>
+            deleteStatPeriodEntry(db, t),
+      ),
+    );
+    // 删过就从 DB 重新聚合：所选范围卡 / 排行都得跟着变。
+    if (deleted && mounted) await _loadFromDatabase();
+  }
+
   /// 范围区块：范围条（时间窗口分段 + 日期翻页）→ 范围时长图 → 所选范围卡
   /// （与总览 / 阅读 / 游戏 tab 同序；学习日历在顶部）。
   List<Widget> _buildRangeSection() {
@@ -386,7 +430,10 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       StatRangeBar(
         range: range,
         onChanged: (StatRangeSelection s) => _rangeSelection.value = s,
-        trailing: StatSettingsButton(settings: _statSettings),
+        trailing: StatRangeActions(
+          settings: _statSettings,
+          onOpenDetail: () => unawaited(_showRangeDetail(range)),
+        ),
       ),
       buildStatRangeChartSection(context, range, _byDay),
       buildStatRangeSummary(

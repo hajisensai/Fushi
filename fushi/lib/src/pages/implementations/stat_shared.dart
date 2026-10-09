@@ -454,6 +454,42 @@ class StatSettingsButton extends ConsumerWidget {
   }
 }
 
+/// 范围条行尾的两颗按钮：「明细」+ 统计设置（[StatSettingsButton]）。
+///
+/// 「明细」打开时段明细 sheet（`showStatPeriodDetailSheet`：来源分节 → 合集分组
+/// → 按作品时长倒序），时段 = 范围条当前所选区间（日 / 自然周 / 月 / 年 / 全部 /
+/// 自定义，与总览同一个 [StatRange]），事实行 = 本 tab 那一域。2026-10-09 删掉
+/// 「时段明细」卡片后统计中心里没有别处能看按作品的明细（首页热力图点日仍有），
+/// 入口挂在范围条上而不是再加一张卡：明细本来就是「所选范围」的下钻。
+class StatRangeActions extends StatelessWidget {
+  const StatRangeActions({
+    required this.settings,
+    required this.onOpenDetail,
+    super.key,
+  });
+
+  final StatTabSettings settings;
+
+  /// 打开所选范围的时段明细 sheet。
+  final VoidCallback onOpenDetail;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        FushiIconButton(
+          key: const ValueKey<String>('stat-range-detail-button'),
+          icon: FushiIcons.toc,
+          tooltip: t.stat_range_detail_open,
+          onTap: onOpenDetail,
+        ),
+        StatSettingsButton(settings: settings),
+      ],
+    );
+  }
+}
+
 /// 空数据态顶部的统计设置行（范围条不出现时，重置时刻 / 清空仍要够得着）。
 Widget buildStatSettingsHeader(StatTabSettings settings) => Align(
   alignment: AlignmentDirectional.centerEnd,

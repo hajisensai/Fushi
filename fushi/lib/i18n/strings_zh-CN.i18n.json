@@ -6888,5 +6888,6 @@
   "media_source_open_folder_failed": "无法打开文件夹，它可能已被移动、删除或断开连接。",
   "stat_this_year": "本年",
   "stat_week_past": "过去一周",
-  "stat_center_settings": "统计设置"
+  "stat_center_settings": "统计设置",
+  "stat_range_detail_open": "按作品明细"
 }
