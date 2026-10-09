@@ -398,6 +398,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_danmaku_max_active',
   'video_danmaku_online_enabled',
   'video_danmaku_style',
+  // bool（默认 false）：系列详情页宽屏版式——true = 海报横幅（与竖屏同形），
+  // false = 两栏。详情页右上角切换，跨作品记住。
+  'video_detail_poster_layout',
   'video_download_backend_path_mappings',
   'video_download_embedded_installation_id',
   // bool：下载进受管视频来源时跳过特典（PV / CM / NCOP / NCED / 菜单…）——管线
