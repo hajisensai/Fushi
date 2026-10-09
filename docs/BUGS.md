@@ -29,11 +29,66 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2853 条。点号进各自文件。
+> 共 2908 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3220](bugs/BUG-3220-ios-ankimobile-no-return.md) | 🚧 | 🚧 | iOS 制卡后不跳回 Fushi，已制卡打勾不见 |
+| [BUG-3218](bugs/BUG-3218-video-skip-intro-removed.md) | ✅ | ✅ | 跳过片头/片尾按钮无法关闭，按用户决定移除该功能 |
+| [BUG-3217](bugs/BUG-3217-dict-style-radius-collapses-layout.md) | ✅ | ✅ | 词典样式开圆角后释义塌成一字一行 |
+| [BUG-3216](bugs/BUG-3216-dictionary-page-mining-sentence.md) | ✅ | ✅ | 查词页制卡卡片没有句子 |
+| [BUG-3215](bugs/BUG-3215-lapis-ipad-audio-buttons.md) | 🚧 | 🚧 | iPad 上 Lapis 卡片播放按钮孤零零落在左下角 |
+| [BUG-3214](bugs/BUG-3214-video-graphic-ocr-mining.md) | 🚧 | 🚧 | 视频暂停 OCR 出的文字无法制卡 |
+| [BUG-3213](bugs/BUG-3213-android-selection-range.md) | 🚧 | 🚧 | Android 长按选词高亮范围与实际不符 |
+| [BUG-3212](bugs/BUG-3212-kansai-ta-deinflection.md) | ✅ | ✅ | もらうた 被推断成 もらう + 关西方言 -た |
+| [BUG-3211](bugs/BUG-3211-dialog-hero-icon-stretched.md) | ✅ | ✅ | 对话框 hero 图标底板被撑成满宽横条（选择句子上下文顶部的 99） |
+| [BUG-3210](bugs/BUG-3210-stale-popup-selection-text.md) | ✅ | ✅ | SelectionText 写入上一次查词的旧选区 |
+| [BUG-3203](bugs/BUG-3203-macos-shortcut-display.md) | ✅ | ✅ | macOS 快捷键显示写死 Ctrl/Alt，引导键帽横向撑满 |
+| [BUG-3202](bugs/BUG-3202-onboarding-hero-overlap.md) | ✅ | ✅ | 新手引导步骤 hero 压到页头进度条上 |
+| [BUG-3201](bugs/BUG-3201-floating-ball-dedupe.md) | ✅ | ✅ | Fushi 在前台时应用内与应用外两颗悬浮球并排出现 |
+| [BUG-3200](bugs/BUG-3200-feedback-reporter-attachments-hidden.md) | ✅ | ✅ | 反馈人在自己的反馈详情里看不到提交的截图和日志 |
+| [BUG-3199](bugs/BUG-3199-media-server-subtitle-search-original-title.md) | ✅ | ✅ | 媒体服务器在线观看搜字幕用的是中文显示标题 |
+| [BUG-3198](bugs/BUG-3198-emby-view-all-shows-folders.md) | ✅ | ✅ | Emby「查看全部」显示文件夹而不是剧 |
+| [BUG-3197](bugs/BUG-3197-audiobook-reimport-keeps-progress.md) | ✅ | ✅ | 重新导入字幕后有声书音频进度被重置 |
+| [BUG-3196](bugs/BUG-3196-host-tls-cn-non-ascii.md) | ✅ | ✅ | 计算机名含中文时主机服务开不起来（自签证书 CN/SAN 只收 ASCII） |
+| [BUG-3195](bugs/BUG-3195-video-paused-seek-buffering-spinner.md) | ✅ | ✅ | 暂停状态下拖进度条后加载圈和 0 B/s 一直挂着 |
+| [BUG-3194](bugs/BUG-3194-subtitle-list-actions-cover-text.md) | ✅ | ✅ | 字幕列表行尾动作按钮压住句尾、被压的词点不了查词 |
+| [BUG-3193](bugs/BUG-3193-home-video-progress.md) | ✅ | ✅ | 首页继续栏视频缺进度显示 |
 | [BUG-3192](bugs/BUG-3192-scrape-year-folder.md) | ✅ | ✅ | 带年份文件夹的番没刮上：裸年份未剥离 |
+| [BUG-3191](bugs/BUG-3191-emby-external-ass-subtitle.md) | ✅ | ✅ | Emby 外挂 ASS 字幕加载失败 |
+| [BUG-3190](bugs/BUG-3190-collection-detail-skeleton-dup-actions.md) | ✅ | ✅ | 作品资料页骨架旧样式、背景海报看不见、右上角与左侧按钮重复 |
+| [BUG-3176](bugs/BUG-3176-ios-appbar-scroll-edge-line.md) | ✅ | ✅ | iOS详情页下拉时顶栏下沿露出一条线 |
+| [BUG-3175](bugs/BUG-3175-page-header-scroll-jitter.md) | ✅ | ✅ | 页头随滚动收起来回跳 |
+| [BUG-3174](bugs/BUG-3174-settings-slider-not-tracking.md) | ✅ | ✅ | 设置数值滑条拖动不跟手松手才变 |
+| [BUG-3173](bugs/BUG-3173-theme-switch-window-flash.md) | ✅ | ✅ | 切主题或切深色时整页连闪 |
+| [BUG-3149](bugs/BUG-3149-settings-jump-bar-follow.md) | ✅ | ✅ | 设置页分组跳转条不跟随当前分组横向滚动 |
+| [BUG-3148](bugs/BUG-3148-profile-list-stale-after-import.md) | ✅ | ✅ | 互联下载/入站配置后配置管理列表不刷新，需重启才看到 |
+| [BUG-3147](bugs/BUG-3147-interconnect-profile-stale-session.md) | ✅ | ✅ | 互联配置传输复用未重载的会话，重新配对后仍报「配对凭据被拒」 |
+| [BUG-3146](bugs/BUG-3146-browser-ext-fullscreen-lookup-offline.md) | ✅ | ✅ | 浏览器扩展切全屏后查词连不上并误报 API 未开启 |
+| [BUG-3145](bugs/BUG-3145-browser-ext-import-gate.md) | ✅ | ✅ | 浏览器扩展导入本地字幕后不显示，要拨一下 Fushi 字幕开关 |
+| [BUG-3144](bugs/BUG-3144-browser-ext-floating-button.md) | ✅ | ✅ | 浏览器扩展悬浮按钮在非 YouTube 站点乱飞 |
+| [BUG-3143](bugs/BUG-3143-browser-ext-fullscreen-subtitle.md) | ✅ | ✅ | 浏览器扩展全屏下字幕拖动贴底、把手点不着、切全屏后飞出屏幕 |
+| [BUG-3142](bugs/BUG-3142-browser-ext-resize-relayout.md) | ✅ | ✅ | 浏览器扩展拖右下角改弹窗大小后词条不重排 |
+| [BUG-3141](bugs/BUG-3141-browser-ext-favorite.md) | ✅ | ✅ | 浏览器扩展查词弹窗收藏按钮无反应 |
+| [BUG-3140](bugs/BUG-3140-ext-min-downloads-any-label.md) | ✅ | ✅ | 扩展页最低下载量首档显示成「全部语言」 |
+| [BUG-3139](bugs/BUG-3139-popup-columns-coarse-landscape.md) | ✅ | ✅ | 安卓横屏视频查词设最多三列也只出一列 |
+| [BUG-3138](bugs/BUG-3138-asr-sheet-finished-locked.md) | ✅ | ✅ | 转录完成状态下选项锁死、加速按钮点了没反应 |
+| [BUG-3137](bugs/BUG-3137-emby-probe-404-system-info.md) | ✅ | ✅ | 部分 Emby 服务器添加失败 404 System/Info/Public |
+| [BUG-3133](bugs/BUG-3133-video-chrome-lost-after-shrink.md) | ✅ | ✅ | 删视频后列表缩短，收起的顶部工具区回不来 |
+| [BUG-3132](bugs/BUG-3132-video-chrome-scrim-nested.md) | ✅ | ✅ | 视频库页滚动时内容透到顶栏与页签下面 |
+| [BUG-3131](bugs/BUG-3131-mac-lookup-input-focus-loss.md) | 🚧 | 🚧 | macOS 查词页手动输入框查到词后退出输入框、清空后再触发（未复现） |
+| [BUG-3105](bugs/BUG-3105-lyrics-vertical-sweep.md) | ✅ | ✅ | 歌词模式竖排不逐字推进、暂停或查词时当前句被纯色块盖住 |
+| [BUG-3104](bugs/BUG-3104-graphic-subtitle-seek-mid-cue.md) | ✅ | ✅ | 往回跳到图形字幕一句中间时不显示，要等下一句 |
+| [BUG-3103](bugs/BUG-3103-graphic-subtitle-restore-lost.md) | ✅ | ✅ | 选中图形字幕后重开视频被取消选中（库里残留文本 cue 时恢复分支丢掉图形轨） |
+| [BUG-3102](bugs/BUG-3102-graphic-subtitle-extract-timeout.md) | ✅ | ✅ | 图形字幕整轨转文字抽轨按体积估总超时，慢盘上误杀仍在推进的 ffmpeg |
+| [BUG-3101](bugs/BUG-3101-srt-book-delete-false-error.md) | ✅ | ✅ | 有声书书架条目删除总提示删除书籍失败 |
+| [BUG-3100](bugs/BUG-3100-reader-first-page-uncounted.md) | ✅ | ✅ | 翻页后开始计时模式下打开时那一页不计字数 |
+| [BUG-3099](bugs/BUG-3099-mihon-update-no-uninstall.md) | ✅ | ✅ | 扩展页「有更新」状态没有卸载按钮 |
+| [BUG-3098](bugs/BUG-3098-audiobook-reimport-unique-uid.md) | ✅ | ✅ | 重复导入同一有声书包撞 SrtBooks UNIQUE uid |
+| [BUG-3097](bugs/BUG-3097-feedback-shot-mid-transition.md) | ✅ | ✅ | 反馈自动截图截到页面转场中途的半透明叠画 |
+| [BUG-3096](bugs/BUG-3096-popup-android-expand-blue-flash.md) | ✅ | ✅ | 安卓展开词典先闪一下蓝光 |
+| [BUG-3095](bugs/BUG-3095-popup-zoom-columns-overflow.md) | ✅ | ✅ | 弹窗缩放后词典条目横向溢出 |
+| [BUG-3094](bugs/BUG-3094-popup-pitch-tooltip-residue.md) | ✅ | ✅ | 视频查词弹窗词典名提示框残留关不掉 |
 | [BUG-3093](bugs/BUG-3093-feedback-snackbar-transition-race.md) | ✅ | ✅ | 反馈提交测试在提交页退场动画中断言提示条数，CI 慢时数到两条 |
 | [BUG-3092](bugs/BUG-3092-espeak-kana-only-symbols.md) | ✅ | ✅ | isKanaOnlyText 拒收〜…等读音常见符号、却放行 espeak-ng 读不了的・与小片假名扩展 |
 | [BUG-3091](bugs/BUG-3091-linux-tts-real-engine-test-skip.md) | ✅ | ✅ | Linux 真引擎 TTS 测试只判 open_jtalk 在 PATH，缺辞书或声音时误红 |
