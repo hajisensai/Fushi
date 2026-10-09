@@ -6125,7 +6125,7 @@
   "reader_toolbars_show": "Afficher les barres supérieure et inférieure",
   "reader_toolbars_hide_subtitle": "La bulle flottante prend le relais : retour, réglages et un bouton pour réafficher les barres y restent",
   "reader_toolbars_hide_ball_off": "La bulle flottante de l’app est désactivée, les barres restent donc visibles",
-  "dictionary_pitch_source_count": "$count dictionnaires",
+  "dictionary_pitch_source_count": "Accent · $count",
   "manga_ocr_ctc_model": "Manga CTC (rapide)",
   "manga_ocr_ctc_desc": "Lit chaque colonne de texte séparément avec un modèle PP-OCRv6 adapté au manga. Téléchargement léger, rapide et précis, même avec beaucoup de furigana. Modèle : Kellenok/PP-OCRv6_manga (entraîné avec Manga109-s et AnimeText).",
   "download_task_import_blocked_host_unsupported": "Cet appareil ne peut pas importer ce type de fichier (par exemple les PDF ou les jeux sur le serveur sans interface). Téléchargez-le plutôt sur un appareil exécutant l'application Fushi.",

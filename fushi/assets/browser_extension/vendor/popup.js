@@ -3204,7 +3204,7 @@ function createPitchGroup(pitchData, reading) {
     const container = el('div', { className: 'pitch-group', 'data-details': dictionaries.join(', ') });
     const sourcePills = dictionaries.map((dictionary) => el('span', { className: 'pitch-dict-label', textContent: __fushiDictDisplayName(dictionary) }));
     if (sourcePills.length > 1) {
-        // 合并行默认只挂**一枚**「N 本辞典」药丸：五本音调词典同标 [3] 时一排五枚来源
+        // 合并行默认只挂**一枚**「音调 · N」药丸：五本音调词典同标 [3] 时一排五枚来源
         // 药丸把读音挤到下一行，读起来仍像重复。来源名单不丢——悬停看 title，点击
         // （触屏没有悬停）就地展开 / 收起各来源药丸。
         // 来源名单走文档内的 CSS 悬停提示（data-sources → ::after），**不用原生 title**：
@@ -3213,7 +3213,8 @@ function createPitchGroup(pitchData, reading) {
         const sourceNames = sourcePills.map((pill) => pill.textContent).join(', ');
         const countPill = el('span', {
             className: 'pitch-dict-label pitch-dict-count',
-            textContent: (window.i18nPitchSourceCount || '{count} 本辞典')
+            // 用户 10-09：「N 本辞典」看不出这是音调，改成「音调 · N」（标出是什么 + 保留来源数）。
+            textContent: (window.i18nPitchSourceCount || '音调 · {count}')
                 .replace('{count}', String(sourcePills.length)),
             'data-sources': sourceNames,
         });
@@ -4362,7 +4363,7 @@ function createEntryHeader(entry, idx) {
         });
     });
     // 词头左簇：词头 + 词头右侧的元数据列（频率行 / 音调行，buildEntryElement 填入）。
-    // 用户 10-09：词头右边原本是一大片空白，频率与「N 本辞典 / 音调」两行却各占一整行
+    // 用户 10-09：词头右边原本是一大片空白，频率与「音调 · N / 读音」两行却各占一整行
     // 压在词头下面，顶部留白很多。改成左簇内 flex-wrap：宽度够时元数据列贴在词头右侧，
     // 不够（窄弹窗 / 长词头）时整列自然换到词头下方——纯布局自适应，不量宽、不分支。
     const headerMain = el('div', { className: 'entry-header-main' });
@@ -6519,6 +6520,12 @@ function masonryGap() {
     return 6;
 }
 
+// 收起的卡片下方的纵向间距（用户 10-09「折叠状态紧凑一点」：一屏要能看到更多本词典）。
+// 只作用在「收起卡片之后」的行距，展开的卡片与列间距仍是 masonryGap()。
+function masonryCollapsedRowGap() {
+    return 4;
+}
+
 function masonryBodies() {
     const root = __fushiContainer();
     if (!root || typeof root.querySelectorAll !== 'function') return [];
@@ -6613,6 +6620,7 @@ function layoutMasonry(targetBodies) {
             });
 
         const heights = new Array(cols).fill(0);
+        const lastGaps = new Array(cols).fill(0);
         items.forEach((item, index) => {
             let c;
             if (canReuse) {
@@ -6628,10 +6636,14 @@ function layoutMasonry(targetBodies) {
             setStyleIfChanged(item, 'transform', transform);
             item.style.visibility = ''; // BUG-1727：增量预藏的卡片定位完成即恢复可见
             item.__fushiMasonryHeight = itemHeights[index]; // 供 ResizeObserver 判「真变了没」
-            heights[c] += itemHeights[index] + gap;
+            const rowGap = item.open === false ? masonryCollapsedRowGap() : gap;
+            heights[c] += itemHeights[index] + rowGap;
+            lastGaps[c] = rowGap;
         });
         body.dataset.masonryCols = String(cols);
-        setStyleIfChanged(body, 'height', `${Math.max(...heights) - gap}px`);
+        // 容器高 = 各列「末张卡底」的最大值（去掉各列最后一张卡后面那段行距）。
+        for (let i = 0; i < cols; i++) heights[i] -= lastGaps[i];
+        setStyleIfChanged(body, 'height', `${Math.max(...heights)}px`);
     });
 }
 

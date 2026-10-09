@@ -555,6 +555,8 @@ function drainFrames(sb) {
     body.appendChild(card);
     return card;
   });
+  // 收起态显式为 false（用户 10-09：收起卡片下方的 masonry 行距是 4px，展开卡是 6px）。
+  cards.forEach((card) => { card.open = false; });
   cards[0].open = true;
   const cleanBody = makeBody(sb, container, 3);
   sb.window.__test.layoutMasonry();
@@ -563,7 +565,8 @@ function drainFrames(sb) {
   const columns = () => cards.map(card => Number(card.dataset.masonryCol));
   const positions = () => cards.map(card => card.style.transform);
   assert.deepStrictEqual(columns(), [0, 1, 1, 1], 'initial shortest-column packing');
-  assert.strictEqual(body.style.height, '132px');
+  // 三张收起卡（40px）叠在第二列：40 + 4 + 40 + 4 + 40。
+  assert.strictEqual(body.style.height, '128px');
   const initialPositions = positions();
   const initialNodes = [...body.children];
   const cleanPositions = cleanBody.children.map(card => card.style.transform);
@@ -596,7 +599,7 @@ function drainFrames(sb) {
   assert.strictEqual(drainFrames(sb), 1);
   assert.deepStrictEqual(columns(), [0, 1, 1, 1], 'collapse redistributes using the smaller height');
   assert.deepStrictEqual(positions(), initialPositions, 'collapse restores the compact layout');
-  assert.strictEqual(body.style.height, '132px');
+  assert.strictEqual(body.style.height, '128px');
   assert.deepStrictEqual(body.children, initialNodes, 'relayout preserves the original DOM cards and order');
   assert.strictEqual(cards[0].open, true, 'another dictionary keeps its disclosure state');
   assert.strictEqual(cards[1].open, false, 'the changed dictionary stays collapsed');

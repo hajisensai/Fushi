@@ -6125,7 +6125,7 @@
   "reader_toolbars_show": "แสดงแถบบนและแถบล่าง",
   "reader_toolbars_hide_subtitle": "ลูกบอลลอยจะทำหน้าที่แทน: ย้อนกลับ การตั้งค่า และปุ่มเรียกแถบกลับมาจะอยู่บนลูกบอล",
   "reader_toolbars_hide_ball_off": "ลูกบอลลอยในแอปปิดอยู่ แถบจึงยังแสดงอยู่",
-  "dictionary_pitch_source_count": "พจนานุกรม $count เล่ม",
+  "dictionary_pitch_source_count": "ระดับเสียง · $count",
   "manga_ocr_ctc_model": "มังงะ CTC (เร็ว)",
   "manga_ocr_ctc_desc": "อ่านข้อความทีละคอลัมน์ด้วยโมเดล PP-OCRv6 ที่ปรับแต่งสำหรับมังงะ ขนาดดาวน์โหลดเล็ก เร็ว และแม่นยำแม้ในหน้าที่มีฟุริงานะมาก โมเดล: Kellenok/PP-OCRv6_manga (ฝึกด้วย Manga109-s และ AnimeText)",
   "download_task_import_blocked_host_unsupported": "อุปกรณ์นี้นำเข้าไฟล์ประเภทนี้ไม่ได้ (เช่น PDF หรือเกมบนเซิร์ฟเวอร์แบบไม่มีหน้าจอ) ให้ดาวน์โหลดบนอุปกรณ์ที่รันแอป Fushi แทน",

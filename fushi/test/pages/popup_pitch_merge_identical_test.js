@@ -70,7 +70,7 @@ const FIVE_NAMES = ['词典14', '词典13', '词典15', '词典16', '词典17'];
     const counts = countPills(section);
     assert.strictEqual(counts.length, 1, 'a merged row carries exactly one count pill');
     const count = counts[0];
-    assert.strictEqual(count.textContent, '5 本辞典');
+    assert.strictEqual(count.textContent, '音调 · 5');
     // 用户 10-09：来源名单走文档内 CSS 悬停提示（data-sources → ::after），不用原生
     // title——WebView2 的原生提示是独立 Win32 弹窗，视频页浮层关掉后残留关不掉。
     assert.strictEqual(count.getAttribute('data-sources'), FIVE_NAMES.join(', '),
@@ -141,7 +141,7 @@ const FIVE_NAMES = ['词典14', '词典13', '词典15', '词典16', '词典17'];
     assert.deepStrictEqual(labelNames(section), FIVE_NAMES,
       'dedup ON must keep EVERY source — dropping four of them is the '
         + '"one setting loses information" half of BUG-2122');
-    assert.strictEqual(countPills(section)[0].textContent, '5 本辞典');
+    assert.strictEqual(countPills(section)[0].textContent, '音调 · 5');
     const text = collectText(section);
     assert.strictEqual(text.split('[1]').length - 1, 1,
       'the accent [1] must still be drawn exactly once; got ' + JSON.stringify(text));
@@ -172,7 +172,7 @@ const FIVE_NAMES = ['词典14', '词典13', '词典15', '词典16', '词典17'];
     assert.strictEqual(pitchGroupCount(section), 1,
       'two IPA dicts with identical transcriptions must merge into one row');
     assert.deepStrictEqual(labelNames(section), ['IPA-1', 'IPA-2']);
-    assert.strictEqual(countPills(section)[0].textContent, '2 本辞典');
+    assert.strictEqual(countPills(section)[0].textContent, '音调 · 2');
     const text = collectText(section);
     assert.strictEqual(text.split('[neꜜko]').length - 1, 1,
       'the shared transcription must be printed once; got ' + JSON.stringify(text));

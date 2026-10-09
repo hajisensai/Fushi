@@ -2803,10 +2803,19 @@ html.fushi-m3e .glossary-section > .category-body[data-masonry-cols]:not([data-m
     border-radius: var(--md-sys-shape-corner-large-increased);
 }
 
-/* 收起的卡只剩标题行：底部内边距跟着收掉，标题行本身 44px 高、上下居中。 */
+/* 收起的卡只剩标题行：底部内边距跟着收掉，标题行上下居中。
+   用户 10-09「折叠状态紧凑一点」：收起行从 44px 收到 40px（仍 ≥ 40dp 的点按区，
+   且随 A−/A+ 的 zoom 等比放大），展开态标题行仍是 44px，展开后的版式不变。 */
 html.fushi-m3e .glossary-group:not([open]) {
     padding-bottom: 0;
 }
+
+html.fushi-m3e .glossary-group:not([open]) > .dict-label {
+    min-height: 40px;
+}
+
+/* 单列分段列表：两张收起卡之间仍是 2px（与查词历史分段列表同口径），这里不加大；
+   多列 masonry 里收起卡下方的行距由 popup.js masonryCollapsedRowGap()（4px）决定。 */
 
 /* 词典名（卡头）：title-small、onSurfaceVariant；当前选中词典 = primary 强调。整行是
    折叠 / 展开的点击目标，箭头（::before）挪到行尾。 */
@@ -2822,6 +2831,40 @@ html.fushi-m3e .dict-label {
     letter-spacing: 0.01em;
     color: var(--md-sys-color-on-surface-variant);
     opacity: 1;
+    /* 标题行铺满卡片宽（抵消卡片左右 16px 内边距再补回来，文字位置不变），圆角跟卡片
+       走：按压状态层（下方 :active）与圆角卡片同形，不再是一块直角矩形（用户 10-09，
+       iOS 截图里那块盖住整行的灰色方块是 WebKit 默认 tap highlight，根上已设透明）。 */
+    margin: 0 -16px;
+    padding-left: 16px;
+    padding-right: 16px;
+    border-radius: var(--md-sys-shape-corner-extra-small);
+}
+
+/* 标题行的圆角逐条对齐卡片（不能用 border-radius:inherit——<summary> 在扁平树里的父节点
+   是 <details> UA 影子树里的 slot，inherit 拿到的是 slot 的 0，按压层又成了直角矩形）。
+   收起卡 = 标题行就是整张卡，四角全对齐；展开卡只对齐上两角。 */
+html.fushi-m3e .glossary-section > .category-body > .glossary-group:first-child > .dict-label {
+    border-top-left-radius: 24px;
+    border-top-right-radius: 24px;
+}
+
+html.fushi-m3e .glossary-section > .category-body > .glossary-group:last-child:not([open]) > .dict-label {
+    border-bottom-left-radius: 24px;
+    border-bottom-right-radius: 24px;
+}
+
+html.fushi-m3e .glossary-section > .category-body[data-masonry-cols]:not([data-masonry-cols="1"]) > .glossary-group > .dict-label {
+    border-top-left-radius: var(--md-sys-shape-corner-large-increased);
+    border-top-right-radius: var(--md-sys-shape-corner-large-increased);
+}
+
+html.fushi-m3e .glossary-section > .category-body[data-masonry-cols]:not([data-masonry-cols="1"]) > .glossary-group:not([open]) > .dict-label {
+    border-bottom-left-radius: var(--md-sys-shape-corner-large-increased);
+    border-bottom-right-radius: var(--md-sys-shape-corner-large-increased);
+}
+
+html.fushi-m3e .dict-label:active {
+    background-color: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-pressed-opacity, 10%), transparent);
 }
 
 /* 词典名放不下时换行（用户 10-09「词典名显示不全」），不再省略号截断：多列窄卡里
@@ -2832,7 +2875,7 @@ html.fushi-m3e .dict-label > .dict-name {
     min-width: 0;
     white-space: normal;
     overflow-wrap: anywhere;
-    padding: 6px 0;
+    padding: 2px 0;
 }
 
 /* 折叠箭头：纯 CSS 描边 chevron（零字体依赖，同 TODO-1337 的边框三角），收起指右、

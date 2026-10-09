@@ -136,4 +136,30 @@ void main() {
     );
     expect(applyBody.contains('window.__fushiRelayoutPopupColumns'), isTrue);
   });
+
+  test('collapsed dictionary rows are compact; press layer follows the card '
+      'shape (user 10-09)', () {
+    expect(
+      ruleBody('html.fushi-m3e .glossary-group:not([open]) > .dict-label'),
+      contains('min-height: 40px'),
+      reason: '收起行收紧但点按区仍 ≥ 40',
+    );
+    expect(js.contains('function masonryCollapsedRowGap()'), isTrue);
+    expect(
+      js.contains('item.open === false ? masonryCollapsedRowGap() : gap'),
+      isTrue,
+    );
+    final String label = ruleBody('html.fushi-m3e .dict-label');
+    // summary 在扁平树里的父节点是 details 影子树的 slot，inherit 拿到 0（直角按压层）。
+    expect(label.contains('border-radius: inherit'), isFalse);
+    expect(label.contains('margin: 0 -16px'), isTrue);
+    expect(css.contains('html.fushi-m3e .dict-label:active {'), isTrue);
+    expect(
+      css.contains(
+        'html.fushi-m3e .glossary-section > .category-body > '
+        '.glossary-group:first-child > .dict-label {',
+      ),
+      isTrue,
+    );
+  });
 }

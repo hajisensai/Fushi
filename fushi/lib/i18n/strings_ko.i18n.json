@@ -6125,7 +6125,7 @@
   "reader_toolbars_show": "상단 바와 하단 바 표시",
   "reader_toolbars_hide_subtitle": "플로팅 볼이 대신합니다: 뒤로, 설정, 바를 다시 표시하는 버튼이 볼에 고정됩니다",
   "reader_toolbars_hide_ball_off": "앱 내 플로팅 볼이 꺼져 있어 바가 계속 표시됩니다",
-  "dictionary_pitch_source_count": "사전 $count개",
+  "dictionary_pitch_source_count": "악센트 · $count",
   "manga_ocr_ctc_model": "만화 CTC(빠름)",
   "manga_ocr_ctc_desc": "만화에 맞게 조정한 PP-OCRv6 모델로 텍스트 열을 하나씩 인식합니다. 다운로드가 작고 빠르며, 후리가나가 많은 페이지에서도 정확합니다. 모델: Kellenok/PP-OCRv6_manga(Manga109-s와 AnimeText로 학습).",
   "download_task_import_blocked_host_unsupported": "이 기기는 이 파일 형식(예: 헤드리스 서버의 PDF 또는 게임)을 가져올 수 없습니다. 대신 Fushi 앱이 실행되는 기기에서 다운로드하세요.",

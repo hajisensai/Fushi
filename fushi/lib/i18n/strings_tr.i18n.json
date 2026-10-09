@@ -6125,7 +6125,7 @@
   "reader_toolbars_show": "Üst ve alt çubukları göster",
   "reader_toolbars_hide_subtitle": "Yüzen top devralır: geri, ayarlar ve çubukları geri getiren düğme üzerinde kalır",
   "reader_toolbars_hide_ball_off": "Uygulama içi yüzen top kapalı, bu yüzden çubuklar görünür kalır",
-  "dictionary_pitch_source_count": "$count sözlük",
+  "dictionary_pitch_source_count": "Vurgu · $count",
   "manga_ocr_ctc_model": "Manga CTC (hızlı)",
   "manga_ocr_ctc_desc": "Her metin sütununu mangaya göre ayarlanmış bir PP-OCRv6 modeliyle ayrı ayrı okur. İndirmesi küçük ve hızlıdır; bol furigana içeren sayfalarda da doğrudur. Model: Kellenok/PP-OCRv6_manga (Manga109-s ve AnimeText ile eğitildi).",
   "download_task_import_blocked_host_unsupported": "Bu cihaz bu dosya türünü içe aktaramıyor (örneğin başsız sunucuda PDF veya oyunlar). Bunun yerine Fushi uygulamasını çalıştıran bir cihazda indirin.",

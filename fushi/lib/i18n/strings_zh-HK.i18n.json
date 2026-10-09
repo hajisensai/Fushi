@@ -6125,7 +6125,7 @@
   "reader_toolbars_show": "顯示頂欄和底欄",
   "reader_toolbars_hide_subtitle": "由懸浮球接管：返回、設定和「顯示頂欄和底欄」固定在球上",
   "reader_toolbars_hide_ball_off": "應用程式內懸浮球已關閉，頂欄和底欄照常顯示",
-  "dictionary_pitch_source_count": "$count 本辭典",
+  "dictionary_pitch_source_count": "音調 · $count",
   "manga_ocr_ctc_model": "漫畫 CTC（快速）",
   "manga_ocr_ctc_desc": "用漫畫微調的 PP-OCRv6 模型逐列識別：下載體積小、速度快，注音密集的頁面也認得準。模型：Kellenok/PP-OCRv6_manga（以 Manga109-s 與 AnimeText 訓練）。",
   "download_task_import_blocked_host_unsupported": "執行下載的裝置不支持匯入這種檔案（例如無頭服務端不能匯入 PDF 和遊戲）。請改由運行 Fushi 應用的裝置下載。",

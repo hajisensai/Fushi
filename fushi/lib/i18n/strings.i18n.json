@@ -6125,7 +6125,7 @@
   "reader_toolbars_show": "Show top and bottom bars",
   "reader_toolbars_hide_subtitle": "The floating ball takes over: back, settings and a button to bring the bars back stay on it",
   "reader_toolbars_hide_ball_off": "The in-app floating ball is off, so the bars stay visible",
-  "dictionary_pitch_source_count": "$count dictionaries",
+  "dictionary_pitch_source_count": "Pitch · $count",
   "manga_ocr_ctc_model": "Manga CTC (fast)",
   "manga_ocr_ctc_desc": "Reads each text column on its own with a manga-tuned PP-OCRv6 model. Small download and fast, and accurate even on furigana-heavy pages. Model: Kellenok/PP-OCRv6_manga (trained with Manga109-s and AnimeText).",
   "download_task_import_blocked_host_unsupported": "This device can't import this file type (for example PDF or games on the headless server). Download it on a device running the Fushi app instead.",
