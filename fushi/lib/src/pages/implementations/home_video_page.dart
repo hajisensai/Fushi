@@ -320,6 +320,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 待人工确认身份的作品数（0 = 不显示提醒条）。
   int _pendingScrapeCount = 0;
   bool _pendingScrapeInFlight = false;
+
+  /// 计数重算在飞时又来了一次请求：在飞那次读到的可能是旧状态（批次结束前那
+  /// 一刻），完成后必须再补一次，不能整个吞掉（BUG-3085）。
+  bool _pendingScrapeRecountQueued = false;
   _AllVideosLayout _allVideosLayout = _AllVideosLayout.grid;
 
   /// 当前远端视频来源：互联 host live 库 或 云盘目录，**至多一个**（TODO-2119）。
@@ -3740,10 +3744,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 只重算待确认数（刮削结果落库 / 批次结束）。不发起补刮（BUG-3072）。
   Future<void> _refreshPendingScrapeCount() async {
-    if (_pendingScrapeInFlight) return;
+    if (_pendingScrapeInFlight) {
+      _pendingScrapeRecountQueued = true;
+      return;
+    }
     _pendingScrapeInFlight = true;
     try {
-      await _applyPendingScrape(widget.refreshPendingScrapeWorks);
+      do {
+        _pendingScrapeRecountQueued = false;
+        await _applyPendingScrape(widget.refreshPendingScrapeWorks);
+      } while (_pendingScrapeRecountQueued && mounted);
     } finally {
       _pendingScrapeInFlight = false;
     }

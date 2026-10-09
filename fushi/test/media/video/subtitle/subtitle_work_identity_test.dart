@@ -105,6 +105,96 @@ void main() {
       );
     });
 
+    group('BUG-3082 id 已确认时标题后的版本修饰不推翻 id', () {
+      for (final String file in <String>[
+        'Your.Name.Extended.Cut.2016.1080p.BluRay.x264-GROUP.srt',
+        'Your.Name.Directors.Cut.1080p.WEBRip.en.srt',
+      ]) {
+        test('TMDB 确认 + $file → 收', () {
+          final SubtitleWorkCheck check = checkSubtitleWork(
+            movie(
+              '君の名は。',
+              2016,
+              tmdbId: 372058,
+              aliases: <String>['Your Name.', 'Kimi no Na wa.'],
+            ),
+            _Candidate(
+              file,
+              work: SubtitleWorkClaim(
+                titles: <String>['Your Name.'],
+                kind: VideoMetadataMediaKind.movie,
+                tmdbId: 372058,
+              ),
+            ),
+          );
+          expect(check.rejected, isFalse, reason: check.detail);
+        });
+      }
+
+      test('IMDb 确认 + 版本修饰 → 收', () {
+        expect(
+          checkSubtitleWork(
+            movie(
+              '君の名は。',
+              2016,
+              imdbId: 'tt5311514',
+              aliases: <String>['Your Name.'],
+            ),
+            _Candidate(
+              'Your.Name.Extended.Cut.srt',
+              work: SubtitleWorkClaim(imdbId: '5311514'),
+            ),
+          ).rejected,
+          isFalse,
+        );
+      });
+
+      test('id 确认但目标标题比发布名多出一截（发布名指的是原作）→ 仍拒', () {
+        final SubtitleWorkCheck check = checkSubtitleWork(
+          movie('映画ドラえもん のび太の恐竜2006', 2006, tmdbId: 9001),
+          _Candidate(
+            '映画ドラえもん.のび太の恐竜.WEBRip.Netflix.ja[cc].srt',
+            work: SubtitleWorkClaim(
+              kind: VideoMetadataMediaKind.movie,
+              tmdbId: 9001,
+            ),
+          ),
+        );
+        expect(check.rejected, isTrue);
+        expect(check.detail, contains('different work'));
+      });
+
+      test('只有来源条目名相等（无 id）时版本修饰仍按变体拒', () {
+        expect(
+          checkSubtitleWork(
+            movie('Your Name.', 2016),
+            _Candidate(
+              'Your.Name.Extended.Cut.srt',
+              work: SubtitleWorkClaim(titles: <String>['Your Name.']),
+            ),
+          ).rejected,
+          isTrue,
+          reason: '条目名相等是弱确认，重制版 / 续作的发布名同样包含原标题',
+        );
+      });
+    });
+
+    test('BUG-3084 AniDB 主源电影无 tmdb/imdb：别名里的英文官方名对上发布名即收', () {
+      // AniDB 的 `_selectTitles` 把主标题之外的全部语言标题（en official、x-jat
+      // main、synonym）放进 aliases，scrapedMediaReference 原样带到这里。
+      expect(
+        checkSubtitleWork(
+          movie(
+            '君の名は。',
+            2016,
+            aliases: <String>['Kimi no Na wa.', 'Your Name.'],
+          ),
+          _Candidate('Your.Name.2016.1080p.BluRay.x264-SPARKS.srt'),
+        ).rejected,
+        isFalse,
+      );
+    });
+
     test('⑤ 发布名写着 SxxEyy、来源什么都没说 → 电影目标拒', () {
       expect(
         checkSubtitleWork(

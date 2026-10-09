@@ -211,18 +211,25 @@ class VideoSubtitleBackfillService {
     // 一次 ffprobe 拿两件事实：时长（校验用）+ 音轨语言（选语言用）。
     final VideoProbeFacts facts = await probeVideoFacts(target.videoPath);
     final KnownVideoDuration? duration = _resolveDuration(target, facts);
-    // 要哪种语言：用户显式选的 > 视频自己的语言（BUG-3069）。解析得出就是**硬条件**
+    // 要哪种语言：用户显式选的 > 视频自己的语言（BUG-3069）。由**这部作品**的证据
+    // （显式选择 / 手动内容语言 / 刮削原语言 / 音轨 tag）解析得出就是**硬条件**
     // ——这是无人值守地往用户片子旁边落字幕，「日语片只找到印尼语字幕」的正确
-    // 结果是不装，而不是悄悄装一条他没要的语言（设置里也没有「允许其它语言」这一
-    // 项）。解析不出（null）才不限语言。
+    // 结果是不装，而不是悄悄装一条他没要的语言。
+    //
+    // 全局「默认内容语言」不是这部作品的证据（BUG-3083）：用户设了 ja，不代表这部
+    // 没有语言资料的英语片要日文字幕。它只参与排序（[ranking]），不做硬拒——否则
+    // 英语片的英文字幕在下载前与正文复核两关都被拒。
     final String? preferred = resolveSubtitleDownloadLanguage(
       explicitSubtitlePreference:
           target.explicitLanguage ?? preferredLanguages.firstOrNull,
       videoContentLanguage: target.contentLanguage,
       contentMetadataLanguage:
           target.originalLanguage ?? facts.primaryAudioLanguage,
-      globalDefaultContentLanguage: defaultContentLanguage,
     );
+    final String? ranking = preferred ??
+        resolveSubtitleDownloadLanguage(
+          globalDefaultContentLanguage: defaultContentLanguage,
+        );
     String? lastRejection;
     final List<VideoSubtitleCandidate> eligible = <VideoSubtitleCandidate>[];
     for (final VideoSubtitleCandidate candidate in result.items) {
@@ -245,7 +252,7 @@ class VideoSubtitleBackfillService {
     // 标了且对上的排前面先试。
     List<VideoSubtitleCandidate> ordered = rankByPreferredLanguage(
       eligible,
-      preferred,
+      ranking,
       (VideoSubtitleCandidate c) => c.language,
     );
     // AI 重排只在语言排序之后、截 maxCandidates 之前插一刀：它决定的是「先下哪几条」，

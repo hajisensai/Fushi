@@ -18,8 +18,15 @@
 /// 2. **外部 id**：两侧都有且相等 → 来源已确认；都有且全不等 → 拒；
 /// 3. （以下只对电影）**年份**：来源或发布名的年份与目标差一年以上 → 拒；
 /// 4. **标题**：发布名本身带标题时，它必须就是目标的某个标题（归一后相等）；来源
-///    已确认（id 或条目名相等）时放宽为「不是目标标题的变体」（重制版 / 续作常把
-///    原标题整个包含在内）。发布名不带标题（`01.srt`）时看来源条目名。
+///    已确认时放宽：
+///    - 外部 id（TMDB / IMDb / AniList）相等：发布名只要**不是目标标题的真子串**
+///      就收。发布名在标题后多几个词（`Title.Extended.Cut`、`Title.Directors.Cut`）
+///      是上传者的版本修饰，弱的标题证据推翻不了强的 id 证据（BUG-3082）；反过来，
+///      目标标题比发布名多出一截（目标「のび太の恐竜2006」、发布名「のび太の恐竜」）
+///      说明发布名指的是那个更短的原作，照拒；
+///    - 只有来源条目名与目标相等：发布名还须「不是目标标题的变体」（两个方向的
+///      包含都拒——重制版 / 续作常把原标题整个包含在内）。
+///    发布名不带标题（`01.srt`）时看来源条目名。
 ///
 /// 剧集只用 1、2：剧集字幕文件名是「系列名 + 集号」，系列名写法五花八门，季与季之间
 /// 的 AniList id 也各不相同，拿标题 / AniList 硬卡只会把对的拒掉；剧集的错配由集号
@@ -151,15 +158,19 @@ SubtitleWorkCheck checkSubtitleWork(
     target.originalTitle,
     ...target.aliases,
   ]);
+  final bool idConfirmed = ids == _IdVerdict.confirmed;
   final bool confirmed =
-      ids == _IdVerdict.confirmed ||
+      idConfirmed ||
       _titleForms(claim?.titles ?? const <String>[]).any(targetTitles.contains);
   if (release.hasTitle) {
     final Set<String> releaseTitles = _releaseForms(release);
     if (releaseTitles.any(targetTitles.contains)) {
       return const SubtitleWorkCheck.accepted();
     }
-    if (!confirmed || _isVariantOf(releaseTitles, targetTitles)) {
+    final bool namesOtherWork = idConfirmed
+        ? _targetExtends(releaseTitles, targetTitles)
+        : _isVariantOf(releaseTitles, targetTitles);
+    if (!confirmed || namesOtherWork) {
       return const SubtitleWorkCheck.rejected(
         'release title names a different work',
       );
@@ -236,6 +247,18 @@ bool _isVariantOf(Set<String> release, Set<String> target) {
   for (final String r in release) {
     for (final String t in target) {
       if (r != t && (r.contains(t) || t.contains(r))) return true;
+    }
+  }
+  return false;
+}
+
+/// 目标标题把发布名整个包含且更长：发布名指的是目标所在系列里那个标题更短的
+/// 作品（原作 / 前作），即使来源 id 说是同一部也不收。发布名比目标长的方向不算
+/// ——id 已确认时，多出来的词只是版本修饰。
+bool _targetExtends(Set<String> release, Set<String> target) {
+  for (final String r in release) {
+    for (final String t in target) {
+      if (r != t && t.contains(r)) return true;
     }
   }
   return false;
