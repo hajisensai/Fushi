@@ -11,5 +11,17 @@
     "resource_audio": true,
     "pcm_audio": false
   },
-  "evidence": []
+  "evidence": [],
+  "profile_metadata": {
+    "platform_scope": "Windows only",
+    "architectures": [
+      "x86",
+      "x64"
+    ],
+    "admission": "x86: valid external boot keys and one whole PAK index; x64 embedded-config branch: two whole PAK indexes plus independently resolved unique MESSAGE reader/cursor/language-count contracts. No title, file-name or hash pin.",
+    "text_contract": "MESSAGE voice id and bounded per-language UTF-16LE/UTF-8 records; Win64 Japanese slot is calibrated from unique body kana for VM identity and language count. Ambiguous/conflicting/uninitialized calibration withholds text.",
+    "audio_contract": "Unique voice-id PAK ownership; bounded files/immediate-subdirectory discovery; complete mono OGGPAK copies or direct Ogg Vorbis stream. Resource publication stays bound to the text event.",
+    "lookup_contract": "Architecture-specific exact cText row/glyph ABI; unique selected-line unit matching; actual row origins and engine-derived dimensions; host input admission and engine-only left-button claim.",
+    "verification_boundary": "implemented_unverified. Win64 synthetic/structural resolver validation does not establish four-standard runtime acceptance or a real card transaction."
+  }
 }
