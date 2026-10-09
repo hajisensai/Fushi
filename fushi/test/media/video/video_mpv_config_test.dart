@@ -86,6 +86,94 @@ keep-open=yes
       expect(m['audio-normalize-downmix'], 'yes');
     });
 
+    // 直通时 mpv 手里是压缩码流：软件音量 / 静音不作用（ao.c process_plane 不认 spdif
+    // 格式），倍速只能插 drop 整帧丢弃 / 重复。所以倍速 ≠ 1、音量未满、静音时必须改回
+    // 本地解码，而不是让这些操作静默失效或断续。
+    group('resolveAudioSpdif (passthrough vs. speed / volume)', () {
+      test('off stays off regardless of speed / volume', () {
+        expect(resolveAudioSpdif(passthrough: false), '');
+        expect(
+          resolveAudioSpdif(
+              passthrough: false, playbackSpeed: 1.0, outputVolume: 100),
+          '',
+        );
+      });
+
+      test('on at 1x and full volume passes through', () {
+        expect(resolveAudioSpdif(passthrough: true), kAudioPassthroughCodecs);
+        expect(
+          resolveAudioSpdif(
+              passthrough: true, playbackSpeed: 1.0, outputVolume: 100),
+          kAudioPassthroughCodecs,
+        );
+      });
+
+      test('speed other than 1x falls back to local decode', () {
+        for (final double speed in <double>[0.5, 0.75, 1.25, 1.5, 2.0, 3.0]) {
+          expect(
+            resolveAudioSpdif(passthrough: true, playbackSpeed: speed),
+            '',
+            reason: 'speed $speed',
+          );
+        }
+      });
+
+      test('volume below 100 or muted (0) falls back to local decode', () {
+        expect(resolveAudioSpdif(passthrough: true, outputVolume: 99.0), '');
+        expect(resolveAudioSpdif(passthrough: true, outputVolume: 50.0), '');
+        expect(resolveAudioSpdif(passthrough: true, outputVolume: 0.0), '');
+      });
+
+      test('buildMpvProperties applies the same rule', () {
+        final VideoMpvConfig on =
+            VideoMpvConfig.defaults.copyWith(audioPassthrough: true);
+        expect(buildMpvProperties(on)['audio-spdif'], kAudioPassthroughCodecs);
+        expect(
+          buildMpvProperties(on, playbackSpeed: 1.5)['audio-spdif'],
+          '',
+        );
+        expect(
+          buildMpvProperties(on, outputVolume: 0)['audio-spdif'],
+          '',
+        );
+        expect(
+          buildMpvProperties(on, playbackSpeed: 1.0, outputVolume: 100)[
+              'audio-spdif'],
+          kAudioPassthroughCodecs,
+        );
+      });
+
+      // 接线守卫：倍速 / 音量 / 静音三个入口都要重新判定直通，开片与运行时改配置
+      // 都要把当前倍速与可听音量带进去，否则上面的规则只在设置页生效。
+      test('VideoPlayerController re-evaluates spdif on speed / volume / mute',
+          () {
+        final String src = File(
+          'lib/src/media/video/video_player_controller.dart',
+        ).readAsStringSync();
+        String body(String signature) {
+          final int start = src.indexOf(signature);
+          expect(start, isNonNegative, reason: signature);
+          final int end = src.indexOf('\n  }\n', start);
+          return src.substring(start, end);
+        }
+
+        expect(body('Future<void> setSpeed(double rate)'),
+            contains('_syncAudioSpdif()'));
+        expect(body('Future<void> setVolume(double value)'),
+            contains('_syncAudioSpdif()'));
+        expect(body('Future<double> toggleMute()'),
+            contains('_syncAudioSpdif()'));
+        expect(body('Future<void> applyMpvConfig(VideoMpvConfig config)'),
+            contains('outputVolume: _outputVolume'));
+        expect(
+          RegExp(r'applyMpvConfigToPlayer\(\s*player,\s*effectiveMpvConfig,\s*'
+                  r'playbackSpeed: initialSpeed,')
+              .hasMatch(src),
+          isTrue,
+        );
+      });
+    });
+
     // BUG-798：特殊多声道布局（6.1 FL+FR+FC+LFE+BL+BR+FLC）无声——auto-safe 透传源布局
     // 令 libswresample 无法为含 FLC 的输出布局建矩阵。修复=auto-safe 解析成标准布局白名单。
     group('resolveAudioChannels (BUG-798 exotic layout silence)', () {
