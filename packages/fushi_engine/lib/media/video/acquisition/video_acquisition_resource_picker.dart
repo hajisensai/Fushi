@@ -7,12 +7,17 @@
 library;
 
 import 'package:fushi_engine/media/torrent/anime_release_descriptor.dart';
+import 'package:fushi_engine/media/torrent/video_release_language.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
+import 'package:fushi_engine/media/torrent/video_resource_work_match.dart';
 import 'package:fushi_engine/media/video/download/video_release_extras.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi_engine/media/video/download/video_discovery_selection.dart';
 import 'package:fushi_engine/media/video/download/video_resource_version_groups.dart';
+
+export 'package:fushi_engine/media/torrent/video_resource_work_match.dart'
+    show VideoResourceWorkTarget, releaseYearConflicts;
 
 /// 过滤结果的定性。
 enum VideoAcquisitionResourceReason {
@@ -52,12 +57,19 @@ class VideoAcquisitionResourceOutcome {
 ///
 /// 画质不命中时**不静默降级**：返回 `resolutionMismatch` + 可用分辨率，让对话层去问
 /// 「没有 1080p，只有 720p / 2160p，要吗？」。
+///
+/// [nearestHeight]：只对 `best` 生效——不再「最高优先」，而是「离这一档最近优先」
+/// （同距取高）。整套下载里会话画质（如 1080p）一部都没有时退到这里：用户选了
+/// 1080p，就该拿 720p 而不是 2160p 的超分（BUG-3067）。[workYear] 供
+/// [isSuspectedUpscale] 判「前高清时代作品的 4K」。
 VideoAcquisitionResourceOutcome filterResourceGroups(
   List<VideoResourceVersionGroup> groups, {
   required VideoAcquisitionMode mode,
   required VideoAcquisitionQuality quality,
   VideoAcquisitionSourcePref source = VideoAcquisitionSourcePref.any,
   VideoAcquisitionBitratePref bitrate = VideoAcquisitionBitratePref.any,
+  int? nearestHeight,
+  int? workYear,
 }) {
   if (groups.isEmpty) {
     return const VideoAcquisitionResourceOutcome(
@@ -66,7 +78,9 @@ VideoAcquisitionResourceOutcome filterResourceGroups(
     );
   }
   final List<String> available = availableResolutionsOf(groups);
-  final bool highestFirst = quality == VideoAcquisitionQuality.best;
+  final bool best = quality == VideoAcquisitionQuality.best;
+  final bool highestFirst = best && nearestHeight == null;
+  final int? near = best ? nearestHeight : null;
   final List<VideoResourceVersionGroup> byQuality = <VideoResourceVersionGroup>[
     for (final VideoResourceVersionGroup group in groups)
       if (quality.matchesResolution(group.resolution)) group,
@@ -83,6 +97,8 @@ VideoAcquisitionResourceOutcome filterResourceGroups(
       eligible: rankResourceGroups(
         byQuality,
         highestFirst: highestFirst,
+        nearestHeight: near,
+        workYear: workYear,
         source: source,
         bitrate: bitrate,
       ),
@@ -107,6 +123,8 @@ VideoAcquisitionResourceOutcome filterResourceGroups(
     eligible: rankResourceGroups(
       subscribable,
       highestFirst: highestFirst,
+      nearestHeight: near,
+      workYear: workYear,
       source: source,
       bitrate: bitrate,
     ),
@@ -115,38 +133,41 @@ VideoAcquisitionResourceOutcome filterResourceGroups(
   );
 }
 
-/// 按分辨率（仅 [highestFirst]）→ 片源 → 码率偏好**稳定**重排；全都不要求时原样
-/// 返回输入次序（= 版本卡的相关度次序，见 `buildVideoResourceVersionGroups`）。
-/// 解析不出分辨率的卡在 [highestFirst] 下殿后。
+/// 按分辨率（[highestFirst] 取最高 / [nearestHeight] 取最近）→ 保真度 → 片源 →
+/// 码率偏好**稳定**重排；全都不要求、也没有低保真卡时原样返回输入次序（= 版本卡的
+/// 相关度次序，见 `buildVideoResourceVersionGroups`）。解析不出分辨率的卡、以及
+/// [isSuspectedUpscale] 的卡在分辨率排序下都殿后（超分的「4K」不是真 4K）。
+///
+/// 保真度**总是**生效：超分嫌疑与 DVD 片源的卡排在同档其它卡后面（BUG-3067）——
+/// 「1080p」的 DVD 只能是放大出来的。
 ///
 /// 码率拿不到（没有体积、只有整季合集）的卡排在有估值的卡后面，两个方向都一样——
 /// 「不知道」既不算大也不算小。
 List<VideoResourceVersionGroup> rankResourceGroups(
   List<VideoResourceVersionGroup> groups, {
   bool highestFirst = false,
+  int? nearestHeight,
+  int? workYear,
   required VideoAcquisitionSourcePref source,
   required VideoAcquisitionBitratePref bitrate,
 }) {
   final List<_RankKey> keyed = <_RankKey>[
     for (int i = 0; i < groups.length; i++)
-      (
-        index: i,
-        group: groups[i],
-        height: highestFirst
-            ? VideoAcquisitionQuality.parseResolutionHeight(
-                    groups[i].resolution,
-                  ) ??
-                  0
-            : 0,
-        source: _sourceScore(groups[i], source),
-        bytes: bitrate == VideoAcquisitionBitratePref.any
-            ? null
-            : estimatedBytesPerEpisode(groups[i]),
+      _rankKeyOf(
+        i,
+        groups[i],
+        highestFirst: highestFirst,
+        nearestHeight: nearestHeight,
+        workYear: workYear,
+        source: source,
+        bitrate: bitrate,
       ),
   ];
   keyed.sort((_RankKey a, _RankKey b) {
     final int byHeight = b.height.compareTo(a.height);
     if (byHeight != 0) return byHeight;
+    final int byFidelity = b.fidelity.compareTo(a.fidelity);
+    if (byFidelity != 0) return byFidelity;
     final int bySource = b.source.compareTo(a.source);
     if (bySource != 0) return bySource;
     final int byBytes = _compareBytes(a.bytes, b.bytes, bitrate);
@@ -162,9 +183,85 @@ typedef _RankKey = ({
   int index,
   VideoResourceVersionGroup group,
   int height,
+  int fidelity,
   int source,
   int? bytes,
 });
+
+_RankKey _rankKeyOf(
+  int index,
+  VideoResourceVersionGroup group, {
+  required bool highestFirst,
+  required int? nearestHeight,
+  required int? workYear,
+  required VideoAcquisitionSourcePref source,
+  required VideoAcquisitionBitratePref bitrate,
+}) {
+  final bool upscale = isSuspectedUpscale(group, workYear: workYear);
+  return (
+    index: index,
+    group: group,
+    height: _heightRank(
+      upscale ? null : _heightOf(group),
+      highestFirst: highestFirst,
+      nearestHeight: nearestHeight,
+    ),
+    fidelity: upscale || _isDvd(group) ? 0 : 1,
+    source: _sourceScore(group, source),
+    bytes: bitrate == VideoAcquisitionBitratePref.any
+        ? null
+        : estimatedBytesPerEpisode(group),
+  );
+}
+
+/// 分辨率排序键，越大越靠前；不排分辨率时恒 0。未知高度在两种排序下都殿后。
+int _heightRank(
+  int? height, {
+  required bool highestFirst,
+  required int? nearestHeight,
+}) {
+  if (nearestHeight != null) {
+    if (height == null) return -(1 << 30);
+    // 距离 ×2，同距时更高的那档 +1：1080p 要求下 720p 与 1440p 等距取 1440p。
+    final int distance = (height - nearestHeight).abs();
+    return -distance * 2 + (height > nearestHeight ? 1 : 0);
+  }
+  if (highestFirst) return height ?? 0;
+  return 0;
+}
+
+/// 版本卡的垂直分辨率：结构化字段 / 标题 `1080p` 优先，再退到描述符（认 `4K` /
+/// `1920x1080`）。
+int? _heightOf(VideoResourceVersionGroup group) =>
+    VideoAcquisitionQuality.parseResolutionHeight(group.resolution) ??
+    parseAnimeReleaseDescriptor(group.representative.title).resolutionHeight;
+
+bool _isDvd(VideoResourceVersionGroup group) =>
+    parseAnimeReleaseDescriptor(group.representative.title).videoSource ==
+    AnimeVideoSource.dvd;
+
+/// 前高清时代：此前的作品没有原生 2160p 母带可言，非蓝光片源的 4K 只能是放大。
+const int kVideoPreHdEraYear = 2006;
+
+final RegExp _upscaleMarker = RegExp(
+  r'upscal\w*|waifu2x|topaz|超分|(?<![a-z])ai[ ._-]?(?:enhanc\w*|remaster\w*|修复|修復|增强|增強)',
+  caseSensitive: false,
+);
+
+/// 这张卡是不是放大（超分）出来的：标题明写 `upscale` / `超分` / `AI 修复`…，或
+/// 前高清时代（[kVideoPreHdEraYear] 之前）作品的 ≥2160p 而片源不是蓝光 / Remux
+/// （官方 UHD 蓝光是胶片重扫，算真 4K；网络源的「WEB-4k」老片是平台超分）。
+bool isSuspectedUpscale(VideoResourceVersionGroup group, {int? workYear}) {
+  final String title = group.representative.title;
+  if (_upscaleMarker.hasMatch(title)) return true;
+  if (workYear == null || workYear >= kVideoPreHdEraYear) return false;
+  final int? height = _heightOf(group);
+  if (height == null || height < 2160) return false;
+  final AnimeVideoSource source = parseAnimeReleaseDescriptor(
+    title,
+  ).videoSource;
+  return source != AnimeVideoSource.bluRay && source != AnimeVideoSource.remux;
+}
 
 int _compareBytes(int? a, int? b, VideoAcquisitionBitratePref bitrate) {
   if (bitrate == VideoAcquisitionBitratePref.any || a == b) return 0;
@@ -221,6 +318,56 @@ String? videoResourceSourceTag(VideoResourceVersionGroup group) =>
       AnimeVideoSource.dvd => 'DVD',
       AnimeVideoSource.unknown => null,
     };
+
+/// 版本卡的编码短标签（`HEVC 10bit HDR` 这类字面量）；标题里一样都没写返回 null。
+/// 同组成员按「组 + 分辨率」归在一起，编码可能各异，只看代表条——与片源标签同口径。
+String? videoResourceTraitsTag(VideoResourceVersionGroup group) {
+  final AnimeReleaseDescriptor d = parseAnimeReleaseDescriptor(
+    group.representative.title,
+  );
+  final String tag = <String>[
+    if (_codecTag(d.videoCodec) case final String codec) codec,
+    if (d.bitDepth != null) '${d.bitDepth}bit',
+    if (d.dynamicRanges.contains(AnimeDynamicRange.dolbyVision)) 'DV',
+    if (d.dynamicRanges.any(_isHdr10Family)) 'HDR',
+  ].join(' ');
+  return tag.isEmpty ? null : tag;
+}
+
+String? _codecTag(AnimeVideoCodec codec) => switch (codec) {
+  AnimeVideoCodec.avc => 'AVC',
+  AnimeVideoCodec.hevc => 'HEVC',
+  AnimeVideoCodec.av1 => 'AV1',
+  AnimeVideoCodec.vp9 => 'VP9',
+  AnimeVideoCodec.mpeg4 => 'MPEG-4',
+  AnimeVideoCodec.unknown => null,
+};
+
+bool _isHdr10Family(AnimeDynamicRange range) => switch (range) {
+  AnimeDynamicRange.hdr ||
+  AnimeDynamicRange.hdr10 ||
+  AnimeDynamicRange.hdr10Plus ||
+  AnimeDynamicRange.hlg => true,
+  AnimeDynamicRange.sdr || AnimeDynamicRange.dolbyVision => false,
+};
+
+/// 一个版本的全部可比较事实（与语言无关）：当前版本卡（summary 发言）与候选版本
+/// chip（`alt:<i>` 选项）共用这一份，两处说的是同一件事、用同一套字段（BUG-2958）。
+Map<String, Object?> videoAcquisitionVersionArgs(
+  VideoAcquisitionResourcePlan plan,
+) => <String, Object?>{
+  'releaseGroup': plan.group.releaseGroup,
+  'resolution': plan.group.resolution,
+  'source': videoResourceSourceTag(plan.group),
+  'traits': videoResourceTraitsTag(plan.group),
+  'provider': plan.group.providerId,
+  'count': plan.picks.length,
+  'batch': plan.usesBatch,
+  'seeders': plan.group.bestSeeders,
+  'missing': plan.missingEpisodes,
+  'startAfterEpisode': plan.startAfterEpisode,
+  'bytesPerEpisode': estimatedBytesPerEpisode(plan.group),
+};
 
 /// 每集平均体积（码率的代理量）；估不出返回 null。
 ///
@@ -411,35 +558,38 @@ List<String> availableResolutionsOf(List<VideoResourceVersionGroup> groups) {
   return List<String>.unmodifiable(resolutions);
 }
 
-/// 选版本前的候选清洗（两条都是**丢弃**，不是排序——留着只会被选中）：
+/// 选版本前的候选清洗（全部是**丢弃**，不是排序——留着只会被选中）：
 ///
 /// * [skipExtras]：只有特典的发布（PV / NCOP / 菜单…，判据在引擎
 ///   `looksLikeExtrasOnlyRelease`）。
-/// * [movieYear]：电影标题里写了别的年份的发布。长寿系列的重制版同名不同年
-///   （哆啦A梦《大雄的恐龙》1980 / 2006），不按年份排除就会下错那一部。标题里
-///   没写年份的照留；允许 ±1（首映与上映跨年）。
+/// * [work]：与目标作品身份矛盾的发布（别的年份 / 重制版 / 别的续作序号，判据在
+///   [videoResourceWorkMismatch]）。长寿系列的兄弟作品共用几乎全部标题词
+///   （哆啦A梦《大雄的恐龙》1980 / 《大雄的新恐龙》2020），不按身份排除就会下错
+///   那一部（BUG-3065）。
+/// * [originalLanguageOnly]：用户要原语言时，标题明写「只有配音」或「硬字幕」的
+///   发布（[releaseIsDubOnly] / [releaseHasBurnedInSubtitles]，BUG-3066）。
+///   [workLanguage] 是作品原语言码：国产片的「国语」、粤语片的「粤语」是原音轨，
+///   中文作品的「中字」是同语言字幕，都不算不合格；判不出语言时传 null（按外语
+///   作品判）。
 List<VideoResourceCandidate> cleanResourceCandidates(
   List<VideoResourceCandidate> items, {
   required bool skipExtras,
-  int? movieYear,
+  VideoResourceWorkTarget? work,
+  bool originalLanguageOnly = false,
+  String? workLanguage,
 }) => <VideoResourceCandidate>[
   for (final VideoResourceCandidate item in items)
     if (!(skipExtras && looksLikeExtrasOnlyRelease(item.title)) &&
-        !(movieYear != null && releaseYearConflicts(item.title, movieYear)))
+        !(work != null &&
+            videoResourceWorkMismatch(item.title, work) != null) &&
+        !(originalLanguageOnly &&
+            (releaseIsDubOnly(item.title, workLanguage: workLanguage) ||
+                releaseHasBurnedInSubtitles(
+                  item.title,
+                  workLanguage: workLanguage,
+                ))))
       item,
 ];
-
-/// [title] 里出现了年份，且没有一个落在 [year] ±1 内。
-bool releaseYearConflicts(String title, int year) {
-  final List<int> years = <int>[
-    for (final RegExpMatch match in RegExp(
-      r'(?<![0-9])(19[3-9][0-9]|20[0-9][0-9])(?![0-9])',
-    ).allMatches(title))
-      int.parse(match.group(1)!),
-  ];
-  if (years.isEmpty) return false;
-  return !years.any((int value) => (value - year).abs() <= 1);
-}
 
 /// 供 tie-break / 摘要用：这张卡的代表条。
 VideoResourceCandidate representativeOf(VideoResourceVersionGroup group) =>

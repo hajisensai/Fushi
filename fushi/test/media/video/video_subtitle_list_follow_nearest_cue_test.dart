@@ -5,7 +5,7 @@
 // 字幕消失，BUG-074 的正确行为），而面板把这个 -1 直接当成「没有可定位的行」。本文件钉死
 // 新的「最近一行」求法（[nearestCueIndexAtOrBefore] / [resolveFollowCueIndex]）与它在真
 // 面板上的行为，包括跟随关闭时**不得**改变历史行为。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
@@ -48,6 +48,7 @@ Widget _wrap(Widget child) => MaterialApp(
 
 Widget _panel(VideoPlayerController controller, {required bool autoScroll}) =>
     VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
       controller: controller,
       onTapCue: (_) {},
       onClose: () {},

@@ -19,14 +19,16 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show compute;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/floating_ball/camera_ocr_photo.dart';
 import 'package:fushi/src/floating_ball/desktop_system_ball_assets.dart';
+import 'package:fushi/src/utils/components/accent_logo_image.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
@@ -40,6 +42,7 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_floating_ball.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 截屏识字送给系统 OCR 的语言。Fushi 的查词对象是日语；ML Kit / Vision 的日文
@@ -113,6 +116,7 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
   FloatingBallGlobalAction.cameraOcr.storageValue:
       t.floating_ball_action_camera_ocr,
   FloatingBallGlobalAction.sync.storageValue: t.sync_now,
+  FloatingBallGlobalAction.feedback.storageValue: t.feedback_title,
   'open_app': t.floating_ball_action_open_app,
   'close': t.floating_ball_action_close,
   'ball': t.reader_floating_ball,
@@ -124,24 +128,25 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
   'ocr_failed': t.floating_ball_ocr_failed,
 };
 
-/// 全局按钮的图标：应用内球与原生系统球共用这一张表（原生按码位从 app 自带的
-/// Material Icons 字体取字形），两边画出来是同一颗。
+/// 全局按钮的图标：应用内球与原生系统球共用这一张表（FushiIcons 语义图标；
+/// Android 原生按码位从 app 自带的 FushiSymbols 字体取字形，桌面由 Dart 画成
+/// PNG），两边画出来是同一颗。
 IconData floatingBallGlobalActionIcon(FloatingBallGlobalAction action) =>
     switch (action) {
-      FloatingBallGlobalAction.lookup => Icons.search,
-      FloatingBallGlobalAction.popupLookup =>
-        Icons.picture_in_picture_alt_outlined,
-      FloatingBallGlobalAction.clipboard => Icons.content_paste_search,
-      FloatingBallGlobalAction.screenOcr => Icons.document_scanner_outlined,
-      FloatingBallGlobalAction.cameraOcr => Icons.photo_camera_outlined,
-      FloatingBallGlobalAction.sync => Icons.sync,
+      FloatingBallGlobalAction.lookup => FushiIcons.search,
+      FloatingBallGlobalAction.popupLookup => FushiIcons.pictureInPicture,
+      FloatingBallGlobalAction.clipboard => FushiIcons.paste,
+      FloatingBallGlobalAction.screenOcr => FushiIcons.ocr,
+      FloatingBallGlobalAction.cameraOcr => FushiIcons.camera,
+      FloatingBallGlobalAction.sync => FushiIcons.sync,
+      FloatingBallGlobalAction.feedback => FushiIcons.forum,
     };
 
 /// 「关闭悬浮球」按钮的图标（应用内 / 应用外同一颗）。
-const IconData kFloatingBallCloseIcon = Icons.close;
+const IconData kFloatingBallCloseIcon = FushiIcons.close;
 
 /// 原生系统球「打开 Fushi」按钮的图标。
-const IconData kFloatingBallOpenAppIcon = Icons.open_in_new;
+const IconData kFloatingBallOpenAppIcon = FushiIcons.openInNew;
 
 /// 原生系统球每颗按钮的图标（与应用内球同一颗 IconData）。
 Map<String, IconData> floatingBallNativeIconData() => <String, IconData>{
@@ -151,7 +156,7 @@ Map<String, IconData> floatingBallNativeIconData() => <String, IconData>{
   'close': kFloatingBallCloseIcon,
 };
 
-/// 原生系统球的按钮图标（Material Icons 码位，Android 用）。常量 IconData 在
+/// 原生系统球的按钮图标（FushiSymbols 码位，Android 用）。常量 IconData 在
 /// Dart 里被引用，图标字体按码位裁剪时这些字形才会留下，原生侧才取得到。
 Map<String, int> floatingBallNativeIcons() => <String, int>{
   for (final MapEntry<String, IconData> e
@@ -159,13 +164,40 @@ Map<String, int> floatingBallNativeIcons() => <String, int>{
     e.key: e.value.codePoint,
 };
 
-/// 原生系统球的配色：取当前主题，与应用内球同源（按钮底色 = surface 叠 6%
-/// onSurface、图标 onSurface、展开环 primary）。
-Map<String, int> floatingBallNativeColors(ColorScheme colors) => <String, int>{
+/// 原生系统球的配色：取当前主题，与应用内球（M3E FAB menu）同源——
+/// - `ballContainer` / `onBallContainer`：球本体 FAB（primaryContainer）；
+/// - `buttonContainer` / `onButtonContainer`：tonal 小圆钮（secondaryContainer）
+///   与图标色；
+/// - `outline`：描边，只有墨水屏不透明（此时上面两组都降级成 surface /
+///   onSurface，「描边无填色」），其余为全透明（原生不画环）；
+/// - `ballOpen` / `onBallOpen`：展开态球变成的关闭钮（primary 底 + onPrimary ×，
+///   墨水屏 surface / onSurface）；
+/// - `surface` / `onSurface` / `primary`：截屏识字冻结层的行框与提示条沿用。
+///
+/// 原生侧持久化这张表（Android 存 SharedPreferences），主题一变 Dart 重新下发
+/// （配色进起球签名）。
+Map<String, int> floatingBallNativeColors(
+  ColorScheme colors, {
+  bool eink = false,
+}) => <String, int>{
   'surface': colors.surface.toARGB32(),
   'onSurface': colors.onSurface.toARGB32(),
   'primary': colors.primary.toARGB32(),
+  'ballContainer': (eink ? colors.surface : colors.primaryContainer).toARGB32(),
+  'onBallContainer': (eink ? colors.onSurface : colors.onPrimaryContainer)
+      .toARGB32(),
+  'buttonContainer': (eink ? colors.surface : colors.secondaryContainer)
+      .toARGB32(),
+  'onButtonContainer': (eink ? colors.onSurface : colors.onSecondaryContainer)
+      .toARGB32(),
+  'outline': eink ? colors.onSurface.toARGB32() : 0x00000000,
+  'ballOpen': (eink ? colors.surface : colors.primary).toARGB32(),
+  'onBallOpen': (eink ? colors.onSurface : colors.onPrimary).toARGB32(),
 };
+
+/// 展开态球（M3E FAB menu 的关闭钮）上那颗 × 的图标 PNG 键：桌面原生球在
+/// iconImages 里按这个键取，着 `onBallOpen` 色（按钮图标是 `onButtonContainer`）。
+const String kFloatingBallNativeBallCloseKey = 'ball_close';
 
 /// 本平台有没有这个全局按钮的能力。
 bool floatingBallGlobalActionAvailable(FloatingBallGlobalAction action) =>
@@ -282,6 +314,19 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   /// 连着变两次，旧闭包都不能再把球拉起来 / 用旧配置盖掉新配置。
   int _systemGeneration = 0;
 
+  /// 还在路上的那一代起球请求下发的签名（[_systemPendingGeneration] 记它是哪一
+  /// 代）。去重按「在途目标」判：在途期间任何无关偏好写入都会再进
+  /// [_syncSystemBall]，签名与在途目标相同就不该再开一代、重渲染图标——否则频繁
+  /// 的偏好写入会一直顶掉上一代，迟迟起不了球。代数被别处 +1（停球 / 用户关球 /
+  /// dispose）后自动失效，不用逐处清。
+  String? _systemPendingSignature;
+  int _systemPendingGeneration = -1;
+
+  String? get _systemInFlightSignature =>
+      _systemPendingGeneration == _systemGeneration
+      ? _systemPendingSignature
+      : null;
+
   /// 自上次停球以来是否已经要求过起球（含还在路上的起球闭包）。停球要看它而
   /// 不是看 [_systemSignature]：签名要等原生回话才落，在那之前关开关也得停。
   bool _systemRequested = false;
@@ -308,6 +353,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
 
   /// 当前主题给原生系统球的配色（build 里按 Theme 刷新；变了就重新下发）。
   Map<String, int> _systemBallColors = const <String, int>{};
+  bool _systemBallAnimate = true;
 
   /// 刘海 / 灵动岛所在的边（只有 iOS 会有值），见 [appFloatingBallViewport]。
   ///
@@ -343,6 +389,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingCameraOcr.addListener(_onChanged);
     pendingSync.addListener(_onChanged);
     pendingSystemOcrSetup.addListener(_onChanged);
+    // 「图标跟随主题色」开关一变，桌面系统球球面要重画。
+    appLogoFollowsAccent.addListener(_onLogoTintChanged);
     if (Platform.isIOS ||
         Platform.isAndroid ||
         isDesktopSystemBallPlatform ||
@@ -380,6 +428,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingCameraOcr.removeListener(_onChanged);
     pendingSync.removeListener(_onChanged);
     pendingSystemOcrSetup.removeListener(_onChanged);
+    appLogoFollowsAccent.removeListener(_onLogoTintChanged);
     _prefs?.removeListener(_onPrefsChanged);
     // 还在路上的起球闭包作废。
     _systemGeneration++;
@@ -388,6 +437,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
 
   void _onChanged() {
     if (mounted) setState(() {});
+  }
+
+  void _onLogoTintChanged() {
+    if (mounted) _syncSystemBall();
   }
 
   void _onPrefsChanged() {
@@ -494,12 +547,25 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final Map<String, String> labels = floatingBallNativeLabels();
     final Map<String, int> icons = floatingBallNativeIcons();
     final Map<String, int> colors = _systemBallColors;
-    // 文案 / 配色进签名：切换界面语言或主题后原生球也要换。
+    final bool animate = _systemBallAnimate;
+    final bool showLabels = prefs.floatingBallShowLabels;
+    final bool tintMascot = appLogoFollowsAccent.value;
+    // 文案 / 配色 / 吉祥物换色开关 / 动效 / 文字开关都进签名：切换界面语言、主题、
+    // 换色开关，或这些偏好切换（配色可能完全没变）后原生球也要换。
     final String signature =
         '${actions.join(',')}|${labels.values.join('|')}|'
-        '${colors.values.join(',')}';
-    if (!force && signature == _systemSignature) return;
+        '${colors.values.join(',')}|$tintMascot|$animate|$showLabels';
+    // 与「在途目标」比（没有在途请求时才是稳态签名）：A→B→A 时最后的 A 与在途
+    // 的 B 不同，必须开新一代取代 B；在途期间同签名的重复同步则直接跳过。
+    if (!force && signature == (_systemInFlightSignature ?? _systemSignature)) {
+      return;
+    }
+    // 新请求在途时旧签名不再代表稳态：A→B→A 必须让最后的 A 取代 B，
+    // 不能因上一次成功下发过 A 就提前返回，留下 B 越过后面的 stale 门。
+    _systemSignature = null;
     final int generation = ++_systemGeneration;
+    _systemPendingSignature = signature;
+    _systemPendingGeneration = generation;
     _systemRequested = true;
     // 起球要 await 原生回话与桌面资源；回来时还是最新一代、开关还开着，才继续。
     // 「用户关过、等回到 Fushi 再起」也算过期：那个标记可能是同时在路上的另一代
@@ -536,13 +602,31 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       // Dart 持久化后交给它。
       final bool desktop = isDesktopSystemBallPlatform;
       final Map<String, Uint8List>? iconImages = desktop
-          ? await renderFloatingBallIconPngs(
-              floatingBallNativeIconData(),
-              Color(colors['onSurface'] ?? 0xFF1D1B20),
-            )
+          ? <String, Uint8List>{
+              ...await renderFloatingBallIconPngs(
+                floatingBallNativeIconData(),
+                Color(
+                  colors['onButtonContainer'] ??
+                      colors['onSurface'] ??
+                      0xFF1D1B20,
+                ),
+              ),
+              // 展开态球上的 ×：与按钮图标不同色（onPrimary）。
+              ...await renderFloatingBallIconPngs(const <String, IconData>{
+                kFloatingBallNativeBallCloseKey: kFloatingBallCloseIcon,
+              }, Color(colors['onBallOpen'] ?? 0xFFFFFFFF)),
+            }
           : null;
+      // 球面 = 主题 primaryContainer 上的吉祥物（主题一变配色进签名、重新合成）。
       final Uint8List? ballImage = desktop
-          ? await loadFloatingBallImage()
+          ? await renderFloatingBallFacePng(
+              Color(colors['ballContainer'] ?? 0xFFEADDFF),
+              // 「图标跟随主题色」开着时吉祥物跟随强调色（ballOpen = primary，
+              // 墨水屏 surface）；关着始终原图。
+              accent: tintMascot
+                  ? Color(colors['ballOpen'] ?? 0xFF6750A4)
+                  : null,
+            )
           : null;
       // 调 start 之前唯一一道门：此前的 await 只产出本地数据（图标、球面），
       // 过期代多做完它们不留任何痕迹，逐个 await 设门只是重复同一个判断。
@@ -552,6 +636,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         labels: labels,
         icons: icons,
         colors: colors,
+        animate: animate,
+        showLabels: showLabels,
         ocrLanguage: kFloatingBallOcrLanguage,
         iconImages: iconImages,
         ballImage: ballImage,
@@ -567,7 +653,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       if (started) {
         await FloatingBallChannel.setAppForeground(_foreground);
       }
-    }();
+    }().whenComplete(() {
+      // 本代收尾（成功 / 失败 / 提前返回）：不再是在途目标。已被新一代取代时
+      // 在途目标归新一代，不动。
+      if (generation == _systemGeneration) _systemPendingSignature = null;
+    });
     debugLatestSystemBallSync = run;
     unawaited(run);
   }
@@ -581,11 +671,22 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     unawaited(FloatingBallChannel.stopSystemBall());
   }
 
-  /// 主题变了（明暗 / 自定义主题）：原生系统球跟着换色。
-  void _syncSystemBallColors(ColorScheme scheme) {
-    final Map<String, int> colors = floatingBallNativeColors(scheme);
-    if (_mapEquals(colors, _systemBallColors)) return;
+  /// 配色与动效独立同步：无障碍开关变化也要让已运行的系统球收到新策略。
+  void _syncSystemBallAppearance(
+    ColorScheme scheme, {
+    required bool eink,
+    required bool animate,
+  }) {
+    final Map<String, int> colors = floatingBallNativeColors(
+      scheme,
+      eink: eink,
+    );
+    if (_mapEquals(colors, _systemBallColors) &&
+        animate == _systemBallAnimate) {
+      return;
+    }
     _systemBallColors = colors;
+    _systemBallAnimate = animate;
     // build 里触发：等这一帧结束再下发，不在 build 期间改状态。
     if (_prefs != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _syncSystemBall());
@@ -684,7 +785,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _desktopOcr = null;
     // 冻结层的行框与提示条跟球同一套主题色（球还没起过时取当前主题）。
     final Map<String, int> colors = _systemBallColors.isEmpty
-        ? floatingBallNativeColors(Theme.of(context).colorScheme)
+        ? floatingBallNativeColors(
+            Theme.of(context).colorScheme,
+            eink: isEinkTheme(context),
+          )
         : _systemBallColors;
     // 开着的查词卡会被截进图里，而且它挡着的字点不到。
     await target.dismissLookup();
@@ -899,6 +1003,13 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     );
   }
 
+  /// 反馈：截下当前页面（球不在截图边界里，不用先藏）再打开反馈中心。
+  Future<void> _openFeedback() async {
+    final BuildContext? ctx = _navigatorContext;
+    if (ctx == null) return;
+    await openFeedbackCenter(ctx);
+  }
+
   /// Android 截屏 OCR 截到帧（或放弃）：把藏起来的球放回来。
   void _onScreenOcrFinished() {
     if (mounted && _capturing) setState(() => _capturing = false);
@@ -1083,6 +1194,12 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           label: t.sync_now,
           onPressed: () => unawaited(_manualSync()),
         ),
+        FloatingBallGlobalAction.feedback => ReaderHeaderAction(
+          key: const ValueKey<String>('floating_ball_action_feedback'),
+          icon: floatingBallGlobalActionIcon(action),
+          label: t.feedback_title,
+          onPressed: () => unawaited(_openFeedback()),
+        ),
       };
 
   /// 勾选的按钮 id → 此刻能显示的动作：全局按钮看平台能力，专属按钮看页面此刻
@@ -1104,7 +1221,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final AppModel appModel = ref.watch(appProvider);
     if (!appModel.isInitialised) return const SizedBox.shrink();
     final PreferencesRepository prefs = appModel.prefsRepo;
-    _syncSystemBallColors(Theme.of(context).colorScheme);
+    _syncSystemBallAppearance(
+      Theme.of(context).colorScheme,
+      eink: isEinkTheme(context) || appModel.einkMode,
+      animate: !appModel.einkMode && fushiMotionEnabled(context),
+    );
     _attachPrefs(prefs);
     _flushExternalLookup();
     _flushOpenLookupPage(appModel);
@@ -1163,6 +1284,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
             dock: ReaderFloatingBallDock.decode(prefs.floatingBallDock),
             verticalFraction: prefs.floatingBallVerticalFraction,
             animate: !appModel.einkMode,
+            showLabels: prefs.floatingBallShowLabels,
             onDockChanged: (ReaderFloatingBallDock dock, double fraction) {
               unawaited(prefs.setFloatingBallPosition(dock.id, fraction));
             },
@@ -1209,7 +1331,10 @@ class _ManualLookupDialogState extends State<_ManualLookupDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: Text(l10n.cancelButtonLabel),
         ),
-        FushiFilledButton(onPressed: _submit, child: Text(l10n.searchFieldLabel)),
+        FushiFilledButton(
+          onPressed: _submit,
+          child: Text(l10n.searchFieldLabel),
+        ),
       ],
     );
   }

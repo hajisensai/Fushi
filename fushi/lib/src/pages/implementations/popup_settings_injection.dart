@@ -12,7 +12,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -25,6 +25,7 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_native_material.dart';
 import 'package:fushi/src/utils/popup_theme_css.dart';
 import 'package:fushi/src/reader/dictionary_font_css.dart';
@@ -134,9 +135,26 @@ String _themeVariablesJs({
             highContrast: WidgetsBinding
                 .instance.platformDispatcher.accessibilityFeatures.highContrast,
           ));
+  // Apple 设计系统（色板扩展 [FushiAppleColors] 只挂在 Apple 主题上）：popup.css 的
+  // `html.fushi-glass-host.fushi-apple` 把顶栏 tonal 按钮（「调整上下文」）换成 Apple
+  // 胶囊口径（系统灰填充 + 按下变暗、不做形状变形）；MD3 下走 M3 Expressive 的按压
+  // 形状变形。只随玻璃宿主挂（墨水屏 / 桌面全局查词窗不挂）；toggle 同上要能摘除。
+  final bool appleDesign =
+      glassHost && theme.extension<FushiAppleColors>() != null;
+  // M3 Expressive 视觉层（用户 2026-10-05：Material 设计系统一律 M3E）：popup.css 的
+  // `html.fushi-m3e` 段把卡片 / 标签 / 动作按钮 / 提示 / 菜单换成 M3E 色块与形状。
+  // 只看设计系统本身（不随玻璃宿主）：桌面全局查词窗与 app 外窗同样是 Material。
+  // 墨水屏与 Apple 设计系统不挂。减弱动态效果（系统无障碍「关闭动画」）挂
+  // fushi-reduced-motion，CSS 侧归零按压位移与过渡（CSS 不能写 @media，见生成器）。
+  final bool m3e = !eink && theme.extension<FushiAppleColors>() == null;
+  final bool reducedMotion = WidgetsBinding
+      .instance.platformDispatcher.accessibilityFeatures.disableAnimations;
   final String glassLine =
       "document.documentElement.classList.toggle('fushi-glass-host', $glassHost);\n"
-      "document.documentElement.classList.toggle('fushi-solid-backdrop', $solidBackdrop);\n";
+      "document.documentElement.classList.toggle('fushi-solid-backdrop', $solidBackdrop);\n"
+      "document.documentElement.classList.toggle('fushi-apple', $appleDesign);\n"
+      "document.documentElement.classList.toggle('fushi-m3e', $m3e);\n"
+      "document.documentElement.classList.toggle('fushi-reduced-motion', $reducedMotion);\n";
   return '''
       $classLine      $einkLine      $glassLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       document.documentElement.style.setProperty('--fushi-primary-highlight', '${vars['--fushi-primary-highlight']}');
@@ -149,6 +167,21 @@ String _themeVariablesJs({
       document.documentElement.style.setProperty('--md-on-surface-variant', '${vars['--md-on-surface-variant']}');
       document.documentElement.style.setProperty('--md-primary', '${vars['--md-primary']}');
       document.documentElement.style.setProperty('--md-on-primary', '${vars['--md-on-primary']}');
+      document.documentElement.style.setProperty('--md-on-surface', '${vars['--md-on-surface']}');
+      document.documentElement.style.setProperty('--md-primary-container', '${vars['--md-primary-container']}');
+      document.documentElement.style.setProperty('--md-on-primary-container', '${vars['--md-on-primary-container']}');
+      document.documentElement.style.setProperty('--md-secondary-container', '${vars['--md-secondary-container']}');
+      document.documentElement.style.setProperty('--md-on-secondary-container', '${vars['--md-on-secondary-container']}');
+      document.documentElement.style.setProperty('--md-tertiary', '${vars['--md-tertiary']}');
+      document.documentElement.style.setProperty('--md-on-tertiary', '${vars['--md-on-tertiary']}');
+      document.documentElement.style.setProperty('--md-tertiary-container', '${vars['--md-tertiary-container']}');
+      document.documentElement.style.setProperty('--md-on-tertiary-container', '${vars['--md-on-tertiary-container']}');
+      document.documentElement.style.setProperty('--md-surface-container-low', '${vars['--md-surface-container-low']}');
+      document.documentElement.style.setProperty('--md-surface-container-highest', '${vars['--md-surface-container-highest']}');
+      document.documentElement.style.setProperty('--md-outline', '${vars['--md-outline']}');
+      document.documentElement.style.setProperty('--md-inverse-surface', '${vars['--md-inverse-surface']}');
+      document.documentElement.style.setProperty('--md-inverse-on-surface', '${vars['--md-inverse-on-surface']}');
+      document.documentElement.style.setProperty('--md-error', '${vars['--md-error']}');
       document.documentElement.style.setProperty('--fushi-radius-card', '${vars['--fushi-radius-card']}');
       document.documentElement.style.setProperty('--dict-columns', '${vars['--dict-columns']}');
 ''';
@@ -781,6 +814,7 @@ class _PopupStaticSettingsMemo {
     required this.showExpressionTags,
     required this.collapseDictionaries,
     required this.compactGlossaries,
+    required this.dictionaryUnifiedStyle,
     required this.autoExpandRows,
     required this.collapsedNames,
     required this.expandedNames,
@@ -812,6 +846,7 @@ class _PopupStaticSettingsMemo {
   final bool showExpressionTags;
   final bool collapseDictionaries;
   final bool compactGlossaries;
+  final bool dictionaryUnifiedStyle;
   final int autoExpandRows;
   final String collapsedNames;
   final String expandedNames;
@@ -953,6 +988,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       cached.showExpressionTags == appModel.showExpressionTags &&
       cached.collapseDictionaries == appModel.collapseDictionaries &&
       cached.compactGlossaries == appModel.compactGlossaries &&
+      cached.dictionaryUnifiedStyle == appModel.dictionaryUnifiedStyle &&
       cached.autoExpandRows == appModel.popupAutoExpandDictionaries &&
       cached.collapsedNames == collapsedNames &&
       // BUG-2158 补修：命中判据必须是产物**全部输入**的廉价投影（本类文档写死的
@@ -1061,6 +1097,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.__fushiMiningEnabled = $miningEnabled;
     window.sentenceDraftEnabled = ${options.sentenceDraftEnabled};
     window._noResultsMessage = ${jsonEncode(t.no_search_results)};
+    window._noResultsHint = ${jsonEncode(t.settings_search_empty_hint)};
     window.embedMedia = true;
     window.deduplicatePitchAccents = ${appModel.deduplicatePitchAccents};
     window.i18nPitchSourceCount = ${jsonEncode(t.dictionary_pitch_source_count(count: '{count}'))};
@@ -1072,6 +1109,13 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // 紧凑 CSS（assets/popup/popup.js 的 compactCss），但此前全 app 无人给它赋值，
     // 恒 undefined = 恒关。这里补上唯一的写入点。
     window.compactGlossaries = ${appModel.compactGlossaries};
+    // 词典样式统一（默认开）：popup.js 把导入词典自带的颜色按语义换成当前
+    // ColorScheme 令牌（__fushiUnifyDictStyles）。值变了才就地重排已渲染的词条，
+    // 每次查词都重注入的宿主不会白白把旧 DOM 再分类一遍。
+    if (window.__fushiDictUnifiedStyle !== ${appModel.dictionaryUnifiedStyle}) {
+      window.__fushiDictUnifiedStyle = ${appModel.dictionaryUnifiedStyle};
+      window.__fushiApplyDictUnifiedStyle?.();
+    }
     window.autoExpandRows = ${appModel.popupAutoExpandDictionaries};
     window.collapsedDictionaryNames = $collapsedNames;
     window.expandedDictionaryNames = $expandedNames;
@@ -1109,6 +1153,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     showExpressionTags: appModel.showExpressionTags,
     collapseDictionaries: appModel.collapseDictionaries,
     compactGlossaries: appModel.compactGlossaries,
+    dictionaryUnifiedStyle: appModel.dictionaryUnifiedStyle,
     autoExpandRows: appModel.popupAutoExpandDictionaries,
     collapsedNames: collapsedNames,
     expandedNames: expandedNames,

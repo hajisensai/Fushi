@@ -21,7 +21,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart' show FontLoader;
 import 'package:flutter_test/flutter_test.dart';
@@ -1049,14 +1049,14 @@ class _CurvesScene extends StatelessWidget {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final TextTheme tt = Theme.of(context).textTheme;
     final List<(String, Curve, Duration)> curves = <(String, Curve, Duration)>[
-      ('enter · emphasizedDecelerate', FushiMotion.enter, FushiMotion.long),
+      ('enter · 临界阻尼弹簧', FushiMotion.enter, FushiMotion.long),
       (
         'exit · emphasizedAccelerate',
         FushiMotion.exit,
         FushiMotion.longReverse,
       ),
       ('standard', FushiMotion.standard, FushiMotion.short),
-      ('release · 轻过冲回弹', FushiMotion.release, FushiMotion.short),
+      ('release · spatial fast 弹簧回弹', FushiMotion.release, FushiMotion.short),
     ];
     return Scaffold(
       backgroundColor: cs.surface,

@@ -32,7 +32,7 @@ https://github.com/hajisensai/Fushi
 
 https://github.com/hajisensai/Fushi/releases/latest
 
-사용하는 플랫폼에 맞는 파일을 선택하세요: **Android**——`arm64-v8a` APK(최근 몇 년간의 스마트폰은 모두 이것을 사용합니다. 오래된 기기만 `armeabi-v7a`가 필요하고, 에뮬레이터는 `x86_64`를 사용합니다), **Windows**——`windows-setup.exe`, **macOS**——`macos.zip`, **iOS**——`ios.ipa`. **Linux**는 아직 미리 빌드된 패키지가 없으므로 소스에서 직접 빌드해야 합니다.
+사용하는 플랫폼에 맞는 파일을 선택하세요: **Android**——`arm64-v8a` APK(최근 몇 년간의 스마트폰은 모두 이것을 사용합니다. 오래된 기기만 `armeabi-v7a`가 필요하고, 에뮬레이터는 `x86_64`를 사용합니다), **Windows**——`windows-setup.exe`, **macOS**——`macos-arm64.zip` (Apple Silicon), **iOS**——`ios.ipa`. **Linux**는 아직 미리 빌드된 패키지가 없으므로 소스에서 직접 빌드해야 합니다.
 
 이름이 `bridge-`로 시작하는 APK는 **기존 Hibiki 사용자**를 위한 마이그레이션 브리지이므로 무시하셔도 됩니다.
 

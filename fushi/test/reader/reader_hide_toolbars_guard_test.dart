@@ -45,12 +45,10 @@ void main() {
     expect(src, contains('prefsRepo.addListener(_onPrefsRepoChanged);'));
     expect(src, contains('prefsRepo.removeListener(_onPrefsRepoChanged);'));
     // 设置页拨开关走重锚通道，那条回调里要同步状态。
-    final int hook = src.indexOf(
-      'ReaderFushiSource.onChromeReanchorLive = () {',
-    );
+    final int hook = src.indexOf('chromeReanchor: () {');
     expect(hook, isNot(-1));
     expect(
-      src.substring(hook, src.indexOf('};', hook)),
+      src.substring(hook, src.indexOf('},', hook)),
       contains('_syncToolbarsHidden(reanchor: false);'),
     );
   });

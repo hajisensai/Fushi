@@ -162,7 +162,12 @@ enum FloatingBallGlobalAction {
   /// 立即同步：与设置页「立即同步」、媒体页下拉刷新同一个入口
   /// （`runManualSyncWithFeedback`）。应用外球把 Fushi 唤到前台再同步——结果、
   /// 冲突裁决与重新登录提示都在主窗里给。
-  sync('sync');
+  sync('sync'),
+
+  /// 反馈：截下当前画面后打开反馈中心（与首页顶栏的反馈按钮同一个入口
+  /// `openFeedbackCenter`）。只在应用内球上：截图截的是 Fushi 自己的页面，应用外
+  /// 球浮在别的程序上，截不到也没有页面可附。
+  feedback('feedback');
 
   const FloatingBallGlobalAction(this.storageValue);
 
@@ -207,6 +212,10 @@ enum FloatingBallGlobalAction {
     required bool isDesktop,
     required bool lookupModuleEnabled,
   }) {
+    if (scope == FloatingBallScope.system &&
+        this == FloatingBallGlobalAction.feedback) {
+      return false;
+    }
     if (scope == FloatingBallScope.system && isDesktop) {
       return switch (this) {
         FloatingBallGlobalAction.lookup ||
@@ -215,6 +224,7 @@ enum FloatingBallGlobalAction {
         FloatingBallGlobalAction.clipboard => true,
         FloatingBallGlobalAction.cameraOcr => false,
         FloatingBallGlobalAction.sync => true,
+        FloatingBallGlobalAction.feedback => false,
       };
     }
     return availableOn(isAndroid: isAndroid, isIOS: isIOS);

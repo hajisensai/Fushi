@@ -164,7 +164,10 @@ class ReaderSelectionScripts {
     lpsClearTimer();
     lpsActive = false;
   }, {passive: false});
-  document.addEventListener('touchcancel', function() { lpsReset(); }, {passive: true});
+  document.addEventListener('touchcancel', function() {
+    lpsReset();
+    if (window.fushiSelection) window.fushiSelection.dragAnchor = null;
+  }, {passive: true});
 })();''';
   }
 
@@ -379,6 +382,8 @@ window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window
 window.fushiSelection = {
   selection: null,
   // TODO-1317: mobile long-press selection anchor.
+  // 本次修复把它扩成**区间**：{node, offset, endNode, endOffset}，空格分词词里长按定下的
+  // 是整词（词首..词末），其它脚本是单字（首尾同一位置）。见 selectionAnchorAtHit。
   dragAnchor: null,
   // TODO-1366: start/end drag handles (touch grips) for the app-drawn selection.
   // Elements are lazily created and parented to <html> (like the caret ring),
@@ -714,6 +719,283 @@ window.fushiSelection = {
       }
     }
     return null;
+  },
+  // ---- 坐标 -> 文本位置（选区拖动端点解析层） --------------------------------
+  //
+  // 根因（用户报「长按拖选 / 拖手柄到字缝、行尾、段间空白，手柄就卡住、松手再拖也过不
+  // 去」）：拖动路径原来**只**认几何命中 `getSelectableCharacterAtPoint`——它要求手指压
+  // 在某个字符矩形上（先精确、再 ±6px）。字缝、行距、行尾/行首空白（text-indent、两端
+  // 对齐的伸缩空隙、段间 margin）上没有任何字符矩形盖住手指，命中返回 null；于是
+  // `updateRangeSelection` 把端点钉回锚点（整段选区当场塌回锚点字）、`moveSelectionHandle`
+  // 直接 return（手柄视觉冻结）。修法不是把 ±6px 调大——那只是把卡住的位置推迟到下一个
+  // 缝隙。这里补一层真正的「坐标 -> 文本位置」解析，语义与 Android
+  // `TextView.getOffsetForPosition()` / Flutter `TextPainter.getPositionForOffset()` 一致：
+  //
+  //   手指坐标 -> 最近 caret（字符之间的位置）-> 方向修正 -> 端点字符 -> collectRangeBetween
+  //
+  // 三级解析（每级都过 BUG-1797 的可见性收口：分页页边距带里被 clip 掉的相邻页字符永不
+  // 参与竞争，否则手柄会被拉到看不见的另一页文字上）：
+  //   ① 原生 caret API（`caretPositionFromPoint` / `caretRangeFromPoint`）：Chrome WebView
+  //      与 WKWebView 都实现了「最近 caret」语义（落在行距/字缝/行尾会按最近行盒 clamp），
+  //      O(1)，绝大多数帧走这条。只认文本节点结果（BUG-765：手柄 div / documentElement
+  //      的命中不可信），并复核相邻字符可见。
+  //   ② 原生不可用 / 命中被遮挡 / 结果不可见时，在命中元素所在的**文本块**里逐字符几何
+  //      扫描：交叉轴（横排 = y，竖排 = x）先定行，行内轴再按字符矩形中点规则定 caret
+  //      （与 `Layout.getOffsetForHorizontal` 同判据）。扫描有界于块、有字符数上限。
+  //   ③ 都失败 -> null。调用方保持旧端点（不收缩、不清高亮），旧路径零回归。
+  //
+  // 字符 (node, offset) 的 Range（按码点算 1~2 个 UTF-16 单元）。越界 / 非文本节点返回 null。
+  charRangeAt: function(node, offset) {
+    if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+    var text = node.textContent || '';
+    if (offset < 0 || offset >= text.length) return null;
+    var codePoint = text.codePointAt(offset);
+    var length = (codePoint !== undefined && codePoint > 0xffff) ? 2 : 1;
+    var range = document.createRange();
+    range.setStart(node, offset);
+    range.setEnd(node, Math.min(offset + length, text.length));
+    return range;
+  },
+  // 字符矩形的交叉轴 / 行内轴区间（横排：交叉轴 = y、行内轴 = x；竖排 vertical-rl：
+  // 交叉轴 = x、行内轴 = y）。阅读方向（列内从上到下 / 行内从左到右）与偏移增长方向
+  // 一致，故中点规则两个轴向共用一套判据。
+  charAxisBounds: function(rect, vertical) {
+    return {
+      crossLo: vertical ? rect.left : rect.top,
+      crossHi: vertical ? rect.right : rect.bottom,
+      inlineLo: vertical ? rect.top : rect.left,
+      inlineHi: vertical ? rect.bottom : rect.right,
+    };
+  },
+  // 两个文本位置 (node, offset) 的文档序：-1 在前 / 0 同一位置 / 1 在后。判据与
+  // collectRangeBetween 的端点排序同源（compareDocumentPosition）。
+  compareTextPosition: function(nodeA, offsetA, nodeB, offsetB) {
+    if (nodeA === nodeB) return offsetA < offsetB ? -1 : (offsetA > offsetB ? 1 : 0);
+    if (!nodeA || !nodeB) return 0;
+    return (nodeA.compareDocumentPosition(nodeB) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1;
+  },
+  // 空格分词词的边界 [start, end)（`isSpaceDelimitedLetter` + 词内撇号，与扫描模型同一套
+  // 真值）。`index` 处的字符不属于这样的词（CJK / 标点 / 空白）时返回 null。
+  spaceDelimitedWordBounds: function(text, index) {
+    if (!text || index < 0 || index >= text.length) return null;
+    if (!this.isSpaceDelimitedLetter(text[index])) return null;
+    var start = index;
+    var end = index + 1;
+    while (start > 0 &&
+        (this.isSpaceDelimitedLetter(text[start - 1]) || this.isIntraWordApostrophe(text, start - 1))) {
+      start--;
+    }
+    while (end < text.length &&
+        (this.isSpaceDelimitedLetter(text[end]) || this.isIntraWordApostrophe(text, end))) {
+      end++;
+    }
+    return { start: start, end: end };
+  },
+  // 端点规范化：collectRangeBetween 的游走用 createWalker（REJECT 纯空白节点与振假名），
+  // Endpoints must belong to the walker, not filtered whitespace / ruby nodes.
+  // Prefer the drag direction, then the other side: no previous text at a leading
+  // indent does NOT mean no body text. Only failure on both sides returns null.
+  normalizeEndpoint: function(node, offset, forward) {
+    if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+    var text = node.textContent || '';
+    var walkable = text.length > 0 && !this.isFurigana(node) && !/^[\s　]*$/.test(text);
+    if (walkable) return { node: node, offset: Math.max(0, Math.min(offset, text.length - 1)) };
+    for (var attempt = 0; attempt < 2; attempt++) {
+      var searchForward = attempt === 0 ? forward : !forward;
+      var walker = this.createWalker(document.body);
+      walker.currentNode = node;
+      var adjacent = searchForward ? walker.nextNode() : walker.previousNode();
+      if (adjacent) {
+        return { node: adjacent, offset: searchForward ? 0 : adjacent.textContent.length - 1 };
+      }
+    }
+    return null;
+  },
+  // caret (node, offset) 相邻字符里有没有可见的（BUG-1797 可见性收口）。相邻 = caret 左右
+  // 各一个字；都不在（节点首尾 / 都不可见）时返回 false，交给几何兜底再试。
+  caretHasVisibleNeighbour: function(node, offset, box) {
+    var offsets = [offset - 1, offset];
+    for (var i = 0; i < offsets.length; i++) {
+      var range = this.charRangeAt(node, offsets[i]);
+      if (!range) continue;
+      if (this.charRangeVisible(range, box)) return true;
+    }
+    return false;
+  },
+  // ① 原生 caret 快路。返回 {node, offset}（caret 语义，offset ∈ [0, len]）或 null。
+  nativeCaretAtPoint: function(x, y, box) {
+    // Presence does not imply success: null / element / invisible results must
+    // try the range dialect before resorting to geometric hit-testing.
+    for (var api = 0; api < 2; api++) {
+      var node = null;
+      var offset = 0;
+      try {
+        if (api === 0 && document.caretPositionFromPoint) {
+          var pos = document.caretPositionFromPoint(x, y);
+          if (pos) { node = pos.offsetNode; offset = pos.offset; }
+        } else if (api === 1 && document.caretRangeFromPoint) {
+          var range = document.caretRangeFromPoint(x, y);
+          if (range) { node = range.startContainer; offset = range.startOffset; }
+        }
+      } catch (err) {
+        // A WebView may expose an unsupported native entry point. Try the other.
+        continue;
+      }
+      if (!node || node.nodeType !== Node.TEXT_NODE || this.isFurigana(node)) continue;
+      if (!this.caretHasVisibleNeighbour(node, offset, box)) continue;
+      return { node: node, offset: offset };
+    }
+    return null;
+  },
+  // Fallback for callers outside the shared transparent endpoint window. Skip
+  // grips in the stack when available; a single-point hit on a grip is no text.
+  _hitElementUnderPoint: function(x, y) {
+    var isHandle = function(candidate) {
+      return !!(candidate && candidate.closest &&
+        candidate.closest('[data-fushi-sel-handle]'));
+    };
+    if (document.elementsFromPoint) {
+      var stack = document.elementsFromPoint(x, y) || [];
+      for (var i = 0; i < stack.length; i++) {
+        if (isHandle(stack[i])) continue;
+        if (stack[i]) return stack[i];
+      }
+      return null;
+    }
+    var single = document.elementFromPoint(x, y);
+    if (isHandle(single)) return null;
+    return single;
+  },
+  // ② 几何兜底：在命中元素所在的文本块里逐字符扫描，按「交叉轴最近 -> 行内轴最近」定
+  // caret。交叉轴优先是关键：行距/段距里的点必须先归到最近的**行**，否则拖到行尾右侧时
+  // 下一行的字在内联轴上贴着手指、交叉轴只差一个行距，端点会跳行。行内轴按字符矩形的
+  // 中点规则取前沿/后沿：落在字符前的空隙取前沿、字符后的空隙取后沿 -> 行尾右侧空白
+  // clamp 到行尾（最后一个字被包含）、行首左侧空白 clamp 到行首。
+  // 有界：根 = 命中元素所在的块（绝不落到整个 body），并且有字符数上限。
+  geometricCaretAtPoint: function(x, y, box) {
+    var el = this._hitElementUnderPoint(x, y);
+    if (!el) return null;
+    var container = (el.closest && el.closest('p, div, span, ruby, a')) || document.body;
+    if (!container) return null;
+    var vertical = this._selectionVertical();
+    var inlineCoord = vertical ? y : x;
+    var crossCoord = vertical ? x : y;
+    var walker = this.createWalker(container);
+    var best = null;
+    var scanned = 0;
+    var node;
+    while ((node = walker.nextNode()) && scanned < 4000) {
+      var text = node.textContent || '';
+      for (var i = 0; i < text.length && scanned < 4000;) {
+        var codePoint = text.codePointAt(i);
+        var charLength = (codePoint !== undefined && codePoint > 0xffff) ? 2 : 1;
+        var charRange = this.charRangeAt(node, i);
+        scanned++;
+        if (charRange && this.charRangeVisible(charRange, box)) {
+          var rects = charRange.getClientRects();
+          for (var r = 0; r < rects.length; r++) {
+            var rect = rects[r];
+            if (!rect || !(rect.width > 0) || !(rect.height > 0)) continue;
+            var bounds = this.charAxisBounds(rect, vertical);
+            var crossDist = crossCoord < bounds.crossLo ? bounds.crossLo - crossCoord
+              : (crossCoord > bounds.crossHi ? crossCoord - bounds.crossHi : 0);
+            var inlineDist = inlineCoord < bounds.inlineLo ? bounds.inlineLo - inlineCoord
+              : (inlineCoord > bounds.inlineHi ? inlineCoord - bounds.inlineHi : 0);
+            if (best && (crossDist > best.crossDist ||
+                (crossDist === best.crossDist && inlineDist >= best.inlineDist))) continue;
+            // 中点规则：点越过字符中线（或已在其后沿之外）-> 取后沿（下一个字符的前面 /
+            // 行尾）；否则取前沿。
+            var afterGlyph = inlineCoord > bounds.inlineHi ||
+              (inlineCoord >= bounds.inlineLo &&
+               inlineCoord >= (bounds.inlineLo + bounds.inlineHi) / 2);
+            best = {
+              node: node,
+              offset: afterGlyph ? i + charLength : i,
+              crossDist: crossDist,
+              inlineDist: inlineDist
+            };
+          }
+        }
+        i += charLength;
+      }
+    }
+    return best ? { node: best.node, offset: best.offset } : null;
+  },
+  // 坐标 -> caret：原生快路 -> 几何兜底 -> null。[box] 由调用方复用（一次拖动只在需要时量
+  // 一次几何）；不传时自己算一份。
+  caretPositionAtPoint: function(x, y, box) {
+    if (box === undefined) box = this.visibleContentBox();
+    var native = this.nativeCaretAtPoint(x, y, box);
+    if (native) return native;
+    return this.geometricCaretAtPoint(x, y, box);
+  },
+  // 拖动入口的端点解析（唯一出口）：
+  //   [strictHit] 严格几何命中的字符（getSelectableCharacterAtPoint 的结果，可为 null）；
+  //   (refNode, refOffset) 定锚端，用来判定这次拖动是向锚点之后扩（forward）还是之前缩。
+  // 返回 {node, offset, forward}，或 null（解析失败 -> 调用方保持旧选区，绝不收缩）。
+  // 严格命中优先 = 旧行为零回归（手指压在字符矩形上时端点就是那个字）；只有严格命中落空
+  // （字缝 / 行距 / 行尾 / 行首等没有字符矩形盖住手指的点）才走「坐标 -> 文本位置」解析。
+  resolveSelectionEndpoint: function(x, y, strictHit, refNode, refOffset) {
+    var node = null;
+    var offset = 0;
+    var forward = true;
+    if (strictHit) {
+      node = strictHit.node;
+      offset = strictHit.offset;
+      forward = this.compareTextPosition(node, offset, refNode, refOffset) >= 0;
+    } else {
+      var box = this.visibleContentBox();
+      var caret = this.caretPositionAtPoint(x, y, box);
+      if (!caret) return null;
+      forward = this.compareTextPosition(caret.node, caret.offset, refNode, refOffset) > 0;
+      // caret 是**字符之间**的位置：正向（往锚点之后拖）取 caret 前一个字符，反向取 caret
+      // 所在字符 —— 与 collectRangeBetween「端点字符计入区间」的语义配套。
+      var neighbour = forward
+        ? this.charBefore(caret.node, caret.offset)
+        : this.charAt(caret.node, caret.offset);
+      if (!neighbour || !neighbour.node) return null;
+      node = neighbour.node;
+      offset = neighbour.offset;
+      // BUG-1797：端点必须是**可见**字符。分页页边距带里被 clip 掉的相邻页字符可以被
+      // clamp 命中（布局期几何仍在），但用户看不见它 —— 那种点解析不出端点，保持旧端点，
+      // 绝不把选区拉到看不见的另一页文字上。
+      var endpointRange = this.charRangeAt(node, offset);
+      if (!endpointRange || !this.charRangeVisible(endpointRange, box)) return null;
+    }
+    var endpoint = this.normalizeEndpoint(node, offset, forward);
+    if (!endpoint) return null;
+    var normalizedRange = this.charRangeAt(endpoint.node, endpoint.offset);
+    if (!normalizedRange || !this.charRangeVisible(normalizedRange, this.visibleContentBox())) return null;
+    return { node: endpoint.node, offset: endpoint.offset, forward: forward };
+  },
+  // Strict hit AND caret/geometric resolution share one transparent window.
+  // No visual hiding, no dependence on elementsFromPoint; restore even on throw.
+  selectionEndpointAtPoint: function(x, y, refNode, refOffset) {
+    var handles = this.selectionHandles;
+    var savedStartPe = handles ? handles.start.style.pointerEvents : null;
+    var savedEndPe = handles ? handles.end.style.pointerEvents : null;
+    try {
+      if (handles) {
+        handles.start.style.pointerEvents = 'none';
+        handles.end.style.pointerEvents = 'none';
+      }
+      var hit = this.getSelectableCharacterAtPoint(x, y);
+      return this.resolveSelectionEndpoint(x, y, hit, refNode, refOffset);
+    } finally {
+      if (handles) {
+        handles.start.style.pointerEvents = savedStartPe;
+        handles.end.style.pointerEvents = savedEndPe;
+      }
+    }
+  },
+  // 长按定锚的锚点区间：空格分词词里长按 -> 整词锚点（词首..词末），原地长按即选中整词、
+  // 向两侧拖动都不丢词尾；CJK / 标点 / 空白 -> 单字锚点（与 BUG-609 起的老行为一致）。
+  selectionAnchorAtHit: function(hit) {
+    var bounds = this.spaceDelimitedWordBounds(hit.node.textContent, hit.offset);
+    if (!bounds) {
+      return { node: hit.node, offset: hit.offset, endNode: hit.node, endOffset: hit.offset };
+    }
+    return { node: hit.node, offset: bounds.start, endNode: hit.node, endOffset: bounds.end - 1 };
   },
   getSentenceContext: function(startNode, startOffset) {
     var container = this.findParagraph(startNode) || document.body;
@@ -1428,6 +1710,13 @@ window.fushiSelection = {
   fireSelectionMenu: function(x, y) {
     var payload = this.buildSelectionPayload(x, y);
     if (!payload) return null;
+    // Viewport CSS pixels, including BOTH 32px touch targets. Lookup's
+    // single-glyph getSelectionRect remains unchanged.
+    payload.handlesRect = this.selectionHandlesRect();
+    // 两个球**各自**的触控盒：宿主避让操作条要按单个球算 —— 只有并集 bbox 时，两球之间
+    // 的整段正文空白也算成障碍（竖排长选区里 bbox 一路延伸到末字球），宿主在页顶"上方
+    // 放不下"就只能翻到 bbox 底端，操作条于是掉到选区尾部下方。
+    payload.handlesBoxes = this.selectionHandlesBoxes();
     window.flutter_inappwebview.callHandler('onSelectionMenu', JSON.stringify(payload));
     return payload.text;
   },
@@ -1498,28 +1787,78 @@ window.fushiSelection = {
     if (el && el.closest && el.closest('a')) return false;
     var hit = this.getSelectableCharacterAtPoint(x, y);
     if (!hit) return false;
+    // Clearing legacy wrappers unwraps + normalizes text nodes, invalidating
+    // hits obtained before that mutation. Resolve against the resulting DOM.
+    var hadWrappers = this.highlightWrappers.length > 0;
     this.clearSelection();
-    this.dragAnchor = { node: hit.node, offset: hit.offset };
+    if (hadWrappers) hit = this.getSelectableCharacterAtPoint(x, y);
+    if (!hit) return false;
+    // 锚点区间：空格分词词里长按定的是整词（原地长按即选中整词 —— 浏览器 / Android 长按
+    // 的语义），CJK / 标点 / 空白定的是单字（与 BUG-609 起的老行为一致）。
+    var anchor = this.selectionAnchorAtHit(hit);
+    this.dragAnchor = {
+      node: anchor.node, offset: anchor.offset,
+      endNode: anchor.endNode, endOffset: anchor.endOffset,
+      startX: x, startY: y, moved: false
+    };
     // Establish and paint the anchor glyph immediately. This is the feedback the
     // native Android selection path gives at long-press time; the old path only
     // armed an anchor and made selection contingent on a later drag.
-    this.updateRangeSelection(x, y);
-    return true;
+    //
+    // 这里**直接画锚点区间**，不经过端点解析：手指此刻还压在这次长按的锚点上，解析会把
+    // 端点收到手指所在的那一个字、把刚定下的词截成半截。浏览器同理——不拖就不动；拖动
+    // 由 touchmove 的 updateRangeSelection 负责，那边端点逐字跟随手指（不再有词边界吸附），
+    // 所以拉丁文本照样能选到词内的任意字符。
+    var built = this.collectRangeBetween(
+      anchor.node, anchor.offset, anchor.endNode, anchor.endOffset);
+    if (built) {
+      this.selection = {
+        startNode: built.startNode, startOffset: built.startOffset,
+        ranges: built.ranges, text: built.text
+      };
+      this.renderSelectionHighlight();
+      this.showSelectionHandles();
+      this.notifySelectionDragStarted();
+      return true;
+    }
+    this.clearSelection();
+    return false;
+  },
+  notifySelectionDragStarted: function() {
+    if (window.flutter_inappwebview &&
+        typeof window.flutter_inappwebview.callHandler === 'function') {
+      window.flutter_inappwebview.callHandler('onSelectionDragStarted');
+    }
+  },
+  liveDragAnchor: function() {
+    var anchor = this.dragAnchor;
+    return !!(anchor && this.liveSelectionPoint(anchor.node, anchor.offset) &&
+      this.liveSelectionPoint(anchor.endNode, anchor.endOffset) && this.selectionEndpoints());
   },
   updateRangeSelection: function(x, y) {
     if (!this.dragAnchor) return null;
-    var hit = this.getSelectableCharacterAtPoint(x, y);
-    // Over a gap/blank while dragging, keep the anchor as the end (no shrink).
-    var endNode = hit ? hit.node : this.dragAnchor.node;
-    var endOffset = hit ? hit.offset : this.dragAnchor.offset;
-    var built = this.collectRangeBetween(
-      this.dragAnchor.node, this.dragAnchor.offset, endNode, endOffset);
+    if (!this.liveDragAnchor()) { this.clearSelection(); return null; }
+    var anchor = this.dragAnchor;
+    if (x !== anchor.startX || y !== anchor.startY) anchor.moved = true;
+    if (!anchor.moved) return this.selection ? this.selection.text : null;
+    // 端点**始终**跟随手指：压在字符矩形上就用那个字，落在字缝 / 行距 / 行尾 / 行首等没有
+    // 字符矩形的位置就走「坐标 -> 文本位置」解析（Android TextView.getOffsetForPosition 语义），
+    // 端点才能连续跟随手指。锚点区间只是长按那一刻选中的初始范围（浏览器语义：不拖不动），
+    // 拖动可以自由收缩到词内、也可以越过词尾向外扩 —— 这里刻意**不**保留「落在锚点区间内
+    // 就维持锚点」的粘滞判定：那会让拉丁词永远只按整词进退、选不到词内的任意字符（用户
+    // 报「拉丁语言没法随意选择字符」的根因，与网上的实现不一致）。
+    var endpoint = this.selectionEndpointAtPoint(x, y, anchor.node, anchor.offset);
+    if (!endpoint) return null;
+    var built = endpoint.forward
+      ? this.collectRangeBetween(anchor.node, anchor.offset, endpoint.node, endpoint.offset)
+      : this.collectRangeBetween(endpoint.node, endpoint.offset, anchor.endNode, anchor.endOffset);
     if (!built) return null;
     this.selection = {
       startNode: built.startNode, startOffset: built.startOffset,
       ranges: built.ranges, text: built.text
     };
     this.renderSelectionHighlight();
+    this.positionSelectionHandles();
     return built.text;
   },
   // Finalize the long-press selection: extend to the release point, then present
@@ -1529,7 +1868,14 @@ window.fushiSelection = {
   // this.selection (highlight stays up) and hands Dart a menu so a plain-text
   // range selection (copy) and lookup/mining coexist instead of forcing lookup.
   endRangeSelection: function(x, y) {
-    this.updateRangeSelection(x, y);
+    // A late touchend after clear / DOM replacement must not confirm a lookup
+    // selection established by a different action in the meantime.
+    if (!this.dragAnchor) return false;
+    if (!this.liveDragAnchor()) { this.clearSelection(); return false; }
+    // Stationary holds retain the word; an actual drag consumes the release
+    // coordinate, which need not have arrived in the last touchmove event.
+    if (this.dragAnchor && this.dragAnchor.moved) this.updateRangeSelection(x, y);
+    if (!this.dragAnchor) return false;
     this.dragAnchor = null;
     if (!this.selection || !this.selection.text) {
       this.clearSelection();
@@ -1559,13 +1905,22 @@ window.fushiSelection = {
   // Visual endpoints of the current selection as {startNode, startOffset (first
   // glyph), endNode, endOffset (index of the last glyph = one before range end)}.
   // null when there is no live glyph selection.
+  liveSelectionPoint: function(node, offset) {
+    return !!(node && node.nodeType === Node.TEXT_NODE && node.isConnected &&
+      document.body.contains(node) && offset >= 0 && offset < node.textContent.length);
+  },
   selectionEndpoints: function() {
     if (!this.selection || !this.selection.ranges || !this.selection.ranges.length) {
       return null;
     }
+    for (var i = 0; i < this.selection.ranges.length; i++) {
+      var segment = this.selection.ranges[i];
+      if (segment.end <= segment.start ||
+          !this.liveSelectionPoint(segment.node, segment.start) ||
+          !this.liveSelectionPoint(segment.node, segment.end - 1)) return null;
+    }
     var first = this.selection.ranges[0];
     var last = this.selection.ranges[this.selection.ranges.length - 1];
-    if (last.end <= last.start) return null;
     return {
       startNode: first.node, startOffset: first.start,
       endNode: last.node, endOffset: last.end - 1
@@ -1602,8 +1957,13 @@ window.fushiSelection = {
         // 滚动手势并可拖。视觉抓手是内层 18px 实心圆钮，用主题色 var(--fushi-sel-handle)
         // （reader CSS 从 linkColor 下发，随主题变）+ 白描边（任意背景都可见）+ 单柔和阴
         // 影，去掉旧的刺眼橙色 + 双重发光 box-shadow（用户投诉「难看」）。
+        // html itself is a multi-column/overflow container in paged books.
+        // Promote the SAME touch target out of column clipping when supported;
+        // older WebViews keep the fixed-position path.
+        if (typeof el.showPopover === 'function') el.setAttribute('popover', 'manual');
         el.style.cssText = 'position:fixed;z-index:2147483645;width:32px;height:32px;' +
-          'margin-left:-16px;margin-top:-16px;box-sizing:border-box;' +
+          'inset:auto;margin:0;margin-left:-16px;margin-top:-16px;padding:0;' +
+          'overflow:visible;writing-mode:horizontal-tb;box-sizing:border-box;' +
           'background:transparent;border:0;' +
           'pointer-events:auto;touch-action:none;display:none;';
         var ball = document.createElement('div');
@@ -1630,7 +1990,10 @@ window.fushiSelection = {
     el.addEventListener('touchstart', function(e) {
       if (e.cancelable) e.preventDefault();
       e.stopPropagation();
+      if (!e.touches || e.touches.length !== 1 || !self.selectionEndpoints() ||
+          !self.selectionHandles || self.selectionHandles[which] !== el) return;
       self.activeHandle = which;
+      self.notifySelectionDragStarted();
     }, {passive: false});
     el.addEventListener('touchmove', function(e) {
       if (self.activeHandle !== which) return;
@@ -1643,8 +2006,12 @@ window.fushiSelection = {
       if (self.activeHandle !== which) return;
       if (e.cancelable) e.preventDefault();
       e.stopPropagation();
-      self.activeHandle = null;
       var t = (e.changedTouches && e.changedTouches[0]) || null;
+      if (t) self.moveSelectionHandle(which, t.clientX, t.clientY);
+      // move can invalidate the session if its source DOM was replaced.
+      if (self.activeHandle !== which) return;
+      if (!self.selectionEndpoints()) { self.clearSelection(); return; }
+      self.activeHandle = null;
       var x = t ? t.clientX : 0;
       var y = t ? t.clientY : 0;
       self.positionSelectionHandles();
@@ -1664,37 +2031,17 @@ window.fushiSelection = {
   // reposition both grips. No-op over a gap so the range never collapses.
   moveSelectionHandle: function(which, x, y) {
     var eps = this.selectionEndpoints();
-    if (!eps) return;
-    // The grip div sits directly under the finger (pointer-events:auto, top
-    // z-index). A hit-test at the raw finger point resolves elementFromPoint /
-    // caretPositionFromPoint to the grip element (an ELEMENT_NODE, not a text
-    // node) -> getCharacterAtPoint returns null -> the grip appears frozen and
-    // the range never adjusts. Make both grips transparent to hit-testing for
-    // the duration of the point resolution so the finger coordinate falls
-    // through to the glyph underneath, then restore. No native selection is
-    // touched (still app-drawn only).
-    var handles = this.selectionHandles;
-    var savedStartPe = handles ? handles.start.style.pointerEvents : null;
-    var savedEndPe = handles ? handles.end.style.pointerEvents : null;
-    if (handles) {
-      handles.start.style.pointerEvents = 'none';
-      handles.end.style.pointerEvents = 'none';
-    }
-    // 手柄拖动是在调整**选区范围**，不是查词：用选择命中，才能把选区端点停在标点
-    // 或句读上（旧实现走查词命中，拖到句号处 hit 为 null → 手柄卡住不动）。
-    var hit = this.getSelectableCharacterAtPoint(x, y);
-    if (handles) {
-      handles.start.style.pointerEvents = savedStartPe || 'auto';
-      handles.end.style.pointerEvents = savedEndPe || 'auto';
-    }
-    if (!hit) return;
+    if (!eps) { this.clearSelection(); return; }
+    // 定锚端（对侧端点）：拖 end 手柄时锚点是选区起点，拖 start 手柄时锚点是选区终点。
     var anchorNode, anchorOffset;
     if (which === 'end') {
       anchorNode = eps.startNode; anchorOffset = eps.startOffset;
     } else {
       anchorNode = eps.endNode; anchorOffset = eps.endOffset;
     }
-    var built = this.collectRangeBetween(anchorNode, anchorOffset, hit.node, hit.offset);
+    var endpoint = this.selectionEndpointAtPoint(x, y, anchorNode, anchorOffset);
+    if (!endpoint) return;
+    var built = this.collectRangeBetween(anchorNode, anchorOffset, endpoint.node, endpoint.offset);
     if (!built) return;
     this.selection = {
       startNode: built.startNode, startOffset: built.startOffset,
@@ -1710,6 +2057,17 @@ window.fushiSelection = {
     var vertical = this._selectionVertical();
     var sRect = this._glyphRect(eps.startNode, eps.startOffset);
     var eRect = this._glyphRect(eps.endNode, eps.endOffset);
+    // Clamp only the controls, never the text range or its visibility test.
+    var vw = window.innerWidth || document.documentElement.clientWidth || 0;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    var SIZE = 32, half = SIZE / 2; // Same outer touch box as ensureSelectionHandles.
+    var box = this.visibleContentBox() || { left: 0, top: 0, right: vw, bottom: vh };
+    if (vw < SIZE || vh < SIZE ||
+        !this.charRangeVisible(this.charRangeAt(eps.startNode, eps.startOffset), box) ||
+        !this.charRangeVisible(this.charRangeAt(eps.endNode, eps.endOffset), box)) {
+      this.hideSelectionHandles();
+      return;
+    }
     var sx, sy, ex, ey;
     // 圆钮离开文字的间隙（约半个钮），让抓手悬在选区外缘、不压住字。
     var GAP = 8;
@@ -1728,12 +2086,73 @@ window.fushiSelection = {
       ex = eRect.right;
       ey = eRect.bottom + GAP;
     }
+    var clampCenter = function(value, extent) {
+      return Math.max(half, Math.min(extent - half, value));
+    };
+    var edgeClamped = sx < half || sx > vw - half || ex < half || ex > vw - half ||
+      sy < half || sy > vh - half || ey < half || ey > vh - half;
+    sx = clampCenter(sx, vw); ex = clampCenter(ex, vw);
+    sy = clampCenter(sy, vh); ey = clampCenter(ey, vh);
+    // Preserve ordinary interior placement. At an edge a single glyph can put
+    // both balls under one touch box after clamping. Separate those boxes along
+    // the reading axis, moving the pair together when it meets a viewport edge.
+    if (edgeClamped && Math.abs(sx - ex) < SIZE && Math.abs(sy - ey) < SIZE) {
+      var alongY = vertical;
+      if ((alongY ? vh : vw) < SIZE * 2) alongY = !alongY;
+      var extent = alongY ? vh : vw;
+      // No room for two full non-overlapping boxes on either axis: fail closed
+      // rather than shrink targets, overlap them or manufacture more text.
+      if (extent < SIZE * 2) { this.hideSelectionHandles(); return; }
+      var a = alongY ? sy : sx, b = alongY ? ey : ex;
+      var mid = Math.max(SIZE, Math.min(extent - SIZE, (a + b) / 2));
+      var direction = a <= b ? 1 : -1;
+      a = mid - direction * half; b = mid + direction * half;
+      if (alongY) { sy = a; ey = b; }
+      else { sx = a; ex = b; }
+    }
     handles.start.style.left = sx + 'px';
     handles.start.style.top = sy + 'px';
-    handles.start.style.display = 'block';
     handles.end.style.left = ex + 'px';
     handles.end.style.top = ey + 'px';
-    handles.end.style.display = 'block';
+    [handles.start, handles.end].forEach(function(el) {
+      // Never hide/reopen a live target: it owns the whole touch stream.
+      if (el.style.display !== 'block') el.style.display = 'block';
+      if (typeof el.showPopover === 'function' && !el.matches(':popover-open')) {
+        el.showPopover();
+      }
+    });
+  },
+  selectionHandlesRect: function() {
+    var handles = this.selectionHandles;
+    if (!handles || !this.selectionEndpoints()) return null;
+    var bounds = null;
+    for (var i = 0; i < 2; i++) {
+      var el = i === 0 ? handles.start : handles.end;
+      if (!el.isConnected || el.style.display === 'none') return null;
+      var r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return null;
+      if (!bounds) bounds = { x: r.left, y: r.top, right: r.right, bottom: r.bottom };
+      else {
+        bounds.x = Math.min(bounds.x, r.left); bounds.y = Math.min(bounds.y, r.top);
+        bounds.right = Math.max(bounds.right, r.right); bounds.bottom = Math.max(bounds.bottom, r.bottom);
+      }
+    }
+    return { x: bounds.x, y: bounds.y, width: bounds.right - bounds.x, height: bounds.bottom - bounds.y };
+  },
+  // 两个球各自的触控盒（视口 CSS 像素，顺序 = start, end）。宿主避让操作条时按单个盒子
+  // 算：只有并集 bbox 会把两球之间的正文也算成障碍。任一端不可用 -> null（宿主退回并集）。
+  selectionHandlesBoxes: function() {
+    var handles = this.selectionHandles;
+    if (!handles || !this.selectionEndpoints()) return null;
+    var boxes = [];
+    for (var i = 0; i < 2; i++) {
+      var el = i === 0 ? handles.start : handles.end;
+      if (!el.isConnected || el.style.display === 'none') return null;
+      var r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return null;
+      boxes.push({ x: r.left, y: r.top, width: r.width, height: r.height });
+    }
+    return boxes;
   },
   showSelectionHandles: function() {
     this.positionSelectionHandles();
@@ -1741,8 +2160,10 @@ window.fushiSelection = {
   hideSelectionHandles: function() {
     this.activeHandle = null;
     if (this.selectionHandles) {
-      this.selectionHandles.start.style.display = 'none';
-      this.selectionHandles.end.style.display = 'none';
+      [this.selectionHandles.start, this.selectionHandles.end].forEach(function(el) {
+        if (typeof el.hidePopover === 'function' && el.matches(':popover-open')) el.hidePopover();
+        el.style.display = 'none';
+      });
     }
   },
   getSelectionRect: function(x, y) {
@@ -1916,6 +2337,10 @@ window.fushiSelection = {
       window.fushiReader.buildNodeOffsets();
     }
   },
+  clearSelectionOnViewportChange: function() {
+    if (this.dragAnchor || this.activeHandle) return;
+    this.clearSelection();
+  },
   clearSelection: function() {
     window.getSelection()?.removeAllRanges();
     if (window.__fushiCssHighlightsSupported) {
@@ -1926,6 +2351,15 @@ window.fushiSelection = {
     }
     this.hideSelectionHandles();
     this.selection = null;
+    // 锚点是「一次长按拖选」的会话状态：选区清掉就复位，下次长按重新建立。
+    this.dragAnchor = null;
+    // Always notify, including already-empty JS state, to clear stale host UI.
+    // The host clears only its own toolbar, never calls back into JS. begin's
+    // clear notification precedes the new selection/menu notification.
+    if (window.flutter_inappwebview &&
+        typeof window.flutter_inappwebview.callHandler === 'function') {
+      window.flutter_inappwebview.callHandler('onSelectionCleared');
+    }
   }
 };
 """;

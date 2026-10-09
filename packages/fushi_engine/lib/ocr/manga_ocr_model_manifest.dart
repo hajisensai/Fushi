@@ -5,9 +5,9 @@
 ///   `detector-v4-s_int8.onnx`（11,120,765 B，Apache-2.0）——与
 ///   `text_detector.dart` 的 RT-DETR-v2 IO 规格（640 输入 / 300 query / 3 类）
 ///   同仓同规格；fp32 全量档 `detector.onnx`（168MB）刻意不下。
-/// - 识别器取 mayocream/manga-ocr-onnx（Apache-2.0）双模型导出 + 词表：
-///   `encoder_model.onnx`（343,454,249 B）/ `decoder_model.onnx`
-///   （117,480,262 B）/ `vocab.txt`（30,216 B）。
+/// - 块识别器的清单住在 `manga_ocr_local_model.dart`（逐列 CTC / Baberu）；
+///   2026-10 删除了 kha-white manga-ocr（mayocream/manga-ocr-onnx encoder/decoder
+///   + KV 提速组件），本文件只剩共享的文件类型、PP-OCRv6 行模型与下载源规则。
 /// - 横排行路径（2026-09-13，`routing_ocr_recognizer.dart`）取 PaddlePaddle 官方
 ///   PP-OCRv6 small ONNX（Apache-2.0）：`PP-OCRv6_small_det_onnx/inference.onnx`
 ///   （9,880,512 B）/ `PP-OCRv6_small_rec_onnx/inference.onnx`（21,159,378 B）+
@@ -54,78 +54,6 @@ class MangaOcrModelFile implements DownloadableModelFile {
   /// 钉住的 sha256（release asset 可被覆盖上传，下载后按它校验）；null = 不校验。
   final String? sha256;
 }
-
-/// 全套模型清单（检测器 int8 + 识别 encoder/decoder + vocab）。
-const List<MangaOcrModelFile> kMangaOcrModelManifest = <MangaOcrModelFile>[
-  MangaOcrModelFile(
-    fileName: 'detector-v4-s_int8.onnx',
-    url:
-        'https://huggingface.co/ogkalu/comic-text-and-bubble-detector/'
-        'resolve/main/detector-v4-s_int8.onnx',
-    expectedBytes: 11120765,
-    role: MangaOcrModelRole.detector,
-  ),
-  MangaOcrModelFile(
-    fileName: 'encoder_model.onnx',
-    url:
-        'https://huggingface.co/mayocream/manga-ocr-onnx/'
-        'resolve/main/encoder_model.onnx',
-    expectedBytes: 343454249,
-    role: MangaOcrModelRole.recognizer,
-  ),
-  MangaOcrModelFile(
-    fileName: 'decoder_model.onnx',
-    url:
-        'https://huggingface.co/mayocream/manga-ocr-onnx/'
-        'resolve/main/decoder_model.onnx',
-    expectedBytes: 117480262,
-    role: MangaOcrModelRole.recognizer,
-  ),
-  MangaOcrModelFile(
-    fileName: 'vocab.txt',
-    url:
-        'https://huggingface.co/mayocream/manga-ocr-onnx/'
-        'resolve/main/vocab.txt',
-    expectedBytes: 30216,
-    role: MangaOcrModelRole.recognizer,
-  ),
-  ...kPpOcrLineModelManifest,
-];
-
-/// 经典 manga-ocr 的**提速组件**：KV cache 版 decoder（`cross_kv.onnx` 每块算一次
-/// cross-attention K/V，`decoder_kv.onnx` 每步只喂一个新 token）。encoder 沿用
-/// [kMangaOcrModelManifest] 里的那份。
-///
-/// 刻意不并进 [kMangaOcrModelManifest]：两者识别结果逐 token 相同（240 块实测
-/// 240/240），并进去会改变模型指纹、让已识别的卷被当成「换了模型」整卷重认，
-/// 还会让已装好经典模型的用户突然变成「模型不完整」。所以它只决定走不走快路径，
-/// 不参与就绪判定与缓存签名。导出脚本、契约与校验见 `tool/manga_ocr_kv/`。
-const List<MangaOcrModelFile>
-kMangaOcrKvAcceleratorManifest = <MangaOcrModelFile>[
-  MangaOcrModelFile(
-    fileName: kMangaOcrKvCrossFileName,
-    url: '$kMangaOcrKvReleaseBase/$kMangaOcrKvCrossFileName',
-    expectedBytes: 9456696,
-    role: MangaOcrModelRole.recognizer,
-    sha256: '3355a58b0e05f874d7fbb332df6824c0e6634d0b99c756322ba119a9d3f35722',
-  ),
-  MangaOcrModelFile(
-    fileName: kMangaOcrKvDecoderFileName,
-    url: '$kMangaOcrKvReleaseBase/$kMangaOcrKvDecoderFileName',
-    expectedBytes: 89050460,
-    role: MangaOcrModelRole.recognizer,
-    sha256: 'db4907131dc96308c3d9e4910db2238cf2dee5cfcb1cd3ae7c7b52d630cd8de5',
-  ),
-];
-
-/// 提速组件的不可变 release（与 `manga-panel-detector-onnx-v1` 同一形态：
-/// prerelease、非 Latest、正文写来源 revision / 契约 / sha256）。
-const String kMangaOcrKvReleaseBase =
-    'https://github.com/hajisensai/Fushi/releases/download/'
-    'manga-ocr-kv-onnx-v1';
-
-const String kMangaOcrKvCrossFileName = 'cross_kv.onnx';
-const String kMangaOcrKvDecoderFileName = 'decoder_kv.onnx';
 
 /// Shared original-resolution horizontal-line path for every crop recognizer.
 const List<MangaOcrModelFile> kPpOcrLineModelManifest = <MangaOcrModelFile>[

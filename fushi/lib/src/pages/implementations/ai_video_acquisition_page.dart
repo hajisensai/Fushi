@@ -14,11 +14,15 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart' show CupertinoIcons;
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
+import 'package:material_ui/material_ui.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show GlassTextField, LiquidRoundedSuperellipse;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show fushiFloatingPillDecoration;
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart'
     show formatDiscoveryBytes;
@@ -304,25 +308,34 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
         : t.ai_video_acquire_recommend_preference_switch(index: index);
   }
 
-  String _summaryText(Map<String, Object?> a) {
-    final List<String> parts = <String>[
-      if ('${a['releaseGroup'] ?? ''}'.isNotEmpty) '${a['releaseGroup']}',
-      if ('${a['resolution'] ?? ''}'.isNotEmpty) '${a['resolution']}',
-      if ('${a['source'] ?? ''}'.isNotEmpty) '${a['source']}',
-      '${a['provider'] ?? ''}',
-    ];
-    final String body = a['batch'] == true
+  /// 一个版本的可比较事实（`videoAcquisitionVersionArgs`）：当前版本卡与候选版本
+  /// chip 共用，两处说法一致才比得出差别（BUG-2958）。
+  String _versionBody(Map<String, Object?> a) {
+    final String version = <String>[
+      for (final String key in const <String>[
+        'releaseGroup',
+        'resolution',
+        'source',
+        'traits',
+        'provider',
+      ])
+        if ('${a[key] ?? ''}'.isNotEmpty) '${a[key]}',
+    ].join(' · ');
+    return a['batch'] == true
         ? t.ai_video_acquire_summary_batch(
-            version: parts.join(' · '),
+            version: version,
             seeders: '${a['seeders'] ?? 0}',
           )
         : t.ai_video_acquire_summary(
-            version: parts.join(' · '),
+            version: version,
             count: '${a['count'] ?? 0}',
             seeders: '${a['seeders'] ?? 0}',
           );
+  }
+
+  String _summaryText(Map<String, Object?> a) {
     final List<String> lines = <String>[
-      body,
+      _versionBody(a),
       <String>[
         if (a['total'] is int && (a['total']! as int) > 1)
           t.ai_video_acquire_summary_position(
@@ -392,7 +405,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
         );
     }
     if (o.id.startsWith(kVideoAcquisitionOptionAltPrefix)) {
-      return _alternativeLabel(o.id);
+      return _alternativeLabel(o);
     }
     return switch (slot) {
       VideoAcquisitionSlot.mode || VideoAcquisitionSlot.subscribeFallback =>
@@ -411,15 +424,26 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
     };
   }
 
-  /// 候选版本 chip：`组 · 分辨率 · 片源 · 每集体积`（全是字面量事实，不翻译）。
-  String _alternativeLabel(String optionId) {
+  /// 候选版本 chip：与当前版本卡同一份事实（组 · 分辨率 · 片源 · 编码 · 站点 ·
+  /// 集数 / 合集 · 做种 · 每集体积）。旧 host 的选项不带 args，退回它投影好的
+  /// 字面量标签。
+  String _alternativeLabel(VideoAcquisitionOption o) {
+    if (o.args.isNotEmpty) {
+      return <String>[
+        _versionBody(o.args),
+        if (o.args['bytesPerEpisode'] is int)
+          t.ai_video_acquire_summary_size(
+            size: formatDiscoveryBytes(o.args['bytesPerEpisode']! as int),
+          ),
+      ].join(' · ');
+    }
     final int? index = int.tryParse(
-      optionId.substring(kVideoAcquisitionOptionAltPrefix.length),
+      o.id.substring(kVideoAcquisitionOptionAltPrefix.length),
     );
     if (index == null ||
         index < 0 ||
         index >= _state.alternativeLabels.length) {
-      return optionId;
+      return o.id;
     }
     return _state.alternativeLabels[index];
   }
@@ -505,97 +529,94 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
     // 提交在飞时不许退出：返回会让用户以为「没下」，而入队仍在后台继续。
     return PopScope(
       canPop: !submitting,
-      child: Scaffold(
-        appBar: FushiAppBar(
-          title: widget.executorLabel == null
-              ? Text(t.ai_video_acquire_title)
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(t.ai_video_acquire_title),
-                    Text(
-                      t.ai_video_acquire_remote_executor(
-                        device: widget.executorLabel!,
-                      ),
-                      key: const ValueKey<String>(
-                        'ai-video-acquire-remote-executor',
-                      ),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-        ),
+      // 统一页面壳：M3E 浮动页头 / Apple 大标题；远端代办时执行设备作副标题。
+      child: FushiPageScaffold(
+        title: t.ai_video_acquire_title,
+        subtitle: widget.executorLabel == null
+            ? null
+            : t.ai_video_acquire_remote_executor(device: widget.executorLabel!),
         // 对话流铺满整页，输入栏浮在底部（iOS 26 Messages：玻璃胶囊压在气泡上；
-        // MD3：输入栏自带页面底色，滚到底时与气泡不重叠）。列表底部留出输入栏
-        // 的高度，最后一条消息不会被压住。
+        // M3E：浮起的输入胶囊工具条）。列表底部留出输入栏的高度，最后一条消息
+        // 不会被压住。
         body: SafeArea(
+          top: false,
+          bottom: false,
           child: Stack(
             children: <Widget>[
+              // 页头浮在对话流上（脚手架默认 extendBodyBehindHeader）：顶部让位
+              // 从 body 子树的 context 读（State 的 context 在脚手架之上）。
               Positioned.fill(
-                child: ListView(
-                  key: const ValueKey<String>('ai-video-acquire-transcript'),
-                  controller: _scroll,
-                  padding: EdgeInsets.fromLTRB(
-                    tokens.spacing.page,
-                    tokens.spacing.gap,
-                    tokens.spacing.page,
-                    _kComposerReserve,
+                child: Builder(
+                  builder: (BuildContext bodyContext) => ListView(
+                    key: const ValueKey<String>('ai-video-acquire-transcript'),
+                    controller: _scroll,
+                    padding: EdgeInsets.fromLTRB(
+                      tokens.spacing.page,
+                      tokens.spacing.gap +
+                          MediaQuery.paddingOf(bodyContext).top,
+                      tokens.spacing.page,
+                      _kComposerReserve + bottomSafeInsetOf(context),
+                    ),
+                    children: <Widget>[
+                      if (_state.transcript.isEmpty) ...<Widget>[
+                        _greetingHeader(context),
+                        _assistantBubble(
+                          context,
+                          Text(t.ai_video_acquire_greeting),
+                        ),
+                      ],
+                      for (final VideoAcquisitionMessage message
+                          in _state.transcript)
+                        switch (message) {
+                          VideoAcquisitionUserMessage(:final String text) =>
+                            _userBubble(context, text),
+                          VideoAcquisitionAssistantMessage(
+                            :final VideoAcquisitionSay say,
+                            question: final VideoAcquisitionQuestion? q,
+                          ) =>
+                            _assistantBubble(
+                              context,
+                              Text(
+                                q != null &&
+                                        say.kind ==
+                                            VideoAcquisitionSayKind.question
+                                    ? _questionText(q)
+                                    : _sayText(say),
+                              ),
+                            ),
+                        },
+                      if (_state.franchise.isNotEmpty) _franchiseCard(context),
+                      if (question != null && !finished)
+                        _questionChips(context, question),
+                      if (_state.workActions.isNotEmpty) _workActions(context),
+                      if (finished)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: FushiActionChipControl(
+                              key: const ValueKey<String>(
+                                'ai-video-acquire-restart',
+                              ),
+                              avatar: const FushiIcon(FushiIcons.add, size: 16),
+                              label: Text(t.ai_video_acquire_restart),
+                              onPressed: () =>
+                                  unawaited(widget.service.restart()),
+                            ),
+                          ),
+                        ),
+                      if (_state.busy)
+                        FushiStaggeredEntrance(
+                          index: 0,
+                          child: Padding(
+                            padding: EdgeInsets.only(top: tokens.spacing.gap),
+                            child: const FushiLinearProgressIndicator(
+                              key: ValueKey<String>('ai-video-acquire-busy'),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                  children: <Widget>[
-                    if (_state.transcript.isEmpty)
-                      _assistantBubble(
-                        context,
-                        Text(t.ai_video_acquire_greeting),
-                      ),
-                    for (final VideoAcquisitionMessage message
-                        in _state.transcript)
-                      switch (message) {
-                        VideoAcquisitionUserMessage(:final String text) =>
-                          _userBubble(context, text),
-                        VideoAcquisitionAssistantMessage(
-                          :final VideoAcquisitionSay say,
-                          question: final VideoAcquisitionQuestion? q,
-                        ) =>
-                          _assistantBubble(
-                            context,
-                            Text(
-                              q != null &&
-                                      say.kind ==
-                                          VideoAcquisitionSayKind.question
-                                  ? _questionText(q)
-                                  : _sayText(say),
-                            ),
-                          ),
-                      },
-                    if (_state.franchise.isNotEmpty) _franchiseCard(context),
-                    if (question != null && !finished)
-                      _questionChips(context, question),
-                    if (_state.workActions.isNotEmpty) _workActions(context),
-                    if (finished)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: FushiActionChipControl(
-                            key: const ValueKey<String>(
-                              'ai-video-acquire-restart',
-                            ),
-                            avatar: const FushiIcon(Icons.add_rounded, size: 16),
-                            label: Text(t.ai_video_acquire_restart),
-                            onPressed: () =>
-                                unawaited(widget.service.restart()),
-                          ),
-                        ),
-                      ),
-                    if (_state.busy)
-                      Padding(
-                        padding: EdgeInsets.only(top: tokens.spacing.gap),
-                        child: const FushiLinearProgressIndicator(
-                          key: ValueKey<String>('ai-video-acquire-busy'),
-                        ),
-                      ),
-                  ],
                 ),
               ),
               // 结束后照样能打字：直接说下一部就是「再下一部」。
@@ -647,15 +668,46 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
       fill = fromUser ? scheme.primaryContainer : scheme.surfaceContainerHigh;
       foreground = fromUser ? scheme.onPrimaryContainer : scheme.onSurface;
     }
-    const Radius big = Radius.circular(20);
+    const Radius big = Radius.circular(24);
     const Radius tail = Radius.circular(6);
     final double maxWidth = MediaQuery.sizeOf(context).width * 0.78;
+    // 新消息挂载时弹入（淡入 + 弹簧上移）；已显示的气泡 rebuild 不重播。
+    // 不包 FushiEntranceScope：窗口常开，对话里每条新消息都该有进场。
+    return FushiStaggeredEntrance(
+      index: 0,
+      child: _bubbleBody(
+        context,
+        fromUser: fromUser,
+        fill: fill,
+        foreground: foreground,
+        border: eink ? Border.all(color: scheme.onSurface) : null,
+        big: big,
+        tail: tail,
+        maxWidth: maxWidth,
+        child: child,
+      ),
+    );
+  }
+
+  Widget _bubbleBody(
+    BuildContext context, {
+    required bool fromUser,
+    required Widget child,
+    required Color fill,
+    required Color foreground,
+    required Border? border,
+    required Radius big,
+    required Radius tail,
+    required double maxWidth,
+  }) {
     return Align(
       alignment: fromUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Padding(
         padding: const EdgeInsets.only(top: 8),
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: maxWidth < 640 ? maxWidth : 640),
+          constraints: BoxConstraints(
+            maxWidth: maxWidth < 640 ? maxWidth : 640,
+          ),
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: fill,
@@ -665,7 +717,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
                 bottomLeft: fromUser ? big : tail,
                 bottomRight: fromUser ? tail : big,
               ),
-              border: eink ? Border.all(color: scheme.onSurface) : null,
+              border: border,
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
@@ -693,7 +745,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
             'ai-video-acquire-option-${q.slot.name}-${q.options[i].id}',
           ),
           avatar: q.preselectedIndex == i
-              ? const FushiIcon(Icons.star_outline, size: 16)
+              ? const FushiIcon(FushiIcons.star, size: 16)
               : null,
           label: Text(switch (q.slot == VideoAcquisitionSlot.work
               ? _workHint(q.options[i])
@@ -747,8 +799,8 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
               key: ValueKey<String>('ai-video-acquire-action-$id'),
               avatar: FushiIcon(
                 id == kVideoAcquisitionOptionNone
-                    ? Icons.swap_horiz_rounded
-                    : Icons.video_library_outlined,
+                    ? FushiIcons.swap
+                    : FushiIcons.collection,
                 size: 16,
               ),
               label: Text(_workActionLabel(id)),
@@ -891,40 +943,79 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
               ),
             ),
           );
-    return ColoredBox(
-      // Apple 的玻璃胶囊直接压在对话上；MD3 输入条用页面底色托住。
-      color: glass ? Colors.transparent : scheme.surface,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          tokens.spacing.page,
-          tokens.spacing.gap,
-          tokens.spacing.page,
-          tokens.spacing.gap + tokens.spacing.gap / 2,
+    final Widget row = Row(
+      children: <Widget>[
+        Expanded(child: input),
+        SizedBox(width: tokens.spacing.gap),
+        FushiIconButtonControl.filled(
+          key: const ValueKey<String>('ai-video-acquire-send'),
+          tooltip: t.ai_video_acquire_send,
+          onPressed: enabled ? () => unawaited(_send()) : null,
+          icon: FushiIcon(glass ? CupertinoIcons.arrow_up : FushiIcons.forward),
         ),
+        SizedBox(width: tokens.spacing.gap),
+        FushiIconButtonControl(
+          key: const ValueKey<String>('ai-video-acquire-cancel'),
+          tooltip: t.cancel,
+          onPressed: switch (_state.stage) {
+            // 提交在飞：取消不了（reducer 同样不接），按钮禁用而不是假装取消。
+            VideoAcquisitionStage.submitting => null,
+            VideoAcquisitionStage.done || VideoAcquisitionStage.cancelled =>
+              () => Navigator.of(context).maybePop(),
+            _ => () => unawaited(widget.service.cancel()),
+          },
+          icon: const FushiIcon(FushiIcons.close),
+        ),
+      ],
+    );
+    final EdgeInsets outer = EdgeInsets.fromLTRB(
+      tokens.spacing.page,
+      tokens.spacing.gap,
+      tokens.spacing.page,
+      tokens.spacing.gap + tokens.spacing.gap / 2 + bottomSafeInsetOf(context),
+    );
+    // Apple：玻璃胶囊直接压在对话上；墨水屏：页面底色托住；M3E：浮起的
+    // 工具条胶囊（与浮动页头同一套 pill 装饰），对话从它下面滚过。
+    if (glass) return Padding(padding: outer, child: row);
+    if (isEinkTheme(context)) {
+      return ColoredBox(
+        color: scheme.surface,
+        child: Padding(padding: outer, child: row),
+      );
+    }
+    return Padding(
+      padding: outer,
+      child: DecoratedBox(
+        decoration: fushiFloatingPillDecoration(
+          context,
+          color: scheme.surfaceContainer,
+        ),
+        child: Padding(padding: const EdgeInsets.all(6), child: row),
+      ),
+    );
+  }
+
+  /// 空对话时气泡上方的引导头：cookie 形 AI 色块 + 标题（M3E 饱和色块；
+  /// Apple 走强调色方块）。
+  Widget _greetingHeader(BuildContext context) {
+    return FushiStaggeredEntrance(
+      index: 0,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 16, bottom: 8),
         child: Row(
           children: <Widget>[
-            Expanded(child: input),
-            SizedBox(width: tokens.spacing.gap),
-            FushiIconButtonControl.filled(
-              key: const ValueKey<String>('ai-video-acquire-send'),
-              tooltip: t.ai_video_acquire_send,
-              onPressed: enabled ? () => unawaited(_send()) : null,
-              icon: FushiIcon(
-                glass ? CupertinoIcons.arrow_up : Icons.send_rounded,
-              ),
+            const FushiListLeadingIcon(
+              FushiIcons.ai,
+              shape: FushiLeadingShape.cookie,
+              tone: FushiCardTone.primary,
+              size: 48,
             ),
-          SizedBox(width: tokens.spacing.gap),
-            FushiIconButtonControl(
-              key: const ValueKey<String>('ai-video-acquire-cancel'),
-              tooltip: t.cancel,
-              onPressed: switch (_state.stage) {
-                // 提交在飞：取消不了（reducer 同样不接），按钮禁用而不是假装取消。
-                VideoAcquisitionStage.submitting => null,
-                VideoAcquisitionStage.done || VideoAcquisitionStage.cancelled =>
-                  () => Navigator.of(context).maybePop(),
-                _ => () => unawaited(widget.service.cancel()),
-              },
-              icon: const FushiIcon(Icons.close_rounded),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                t.ai_video_acquire_title,
+                style: context.fushiType.titleLargeEmphasized,
+              ),
             ),
           ],
         ),

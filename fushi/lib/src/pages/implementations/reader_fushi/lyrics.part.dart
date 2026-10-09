@@ -72,8 +72,8 @@ class LyricsCueWindow {
 
 /// 歌词覆盖层 ⋯ 菜单里列出的阅读器操作（与顶栏同一套 [ReaderControlItem]）。
 /// 不含：返回（出口是覆盖层的 ✕ / 回到阅读器）、模式切换（就是 ✕）、标题、插图
-/// 画廊（歌词里没有插图）、隐藏工具栏（覆盖层没有工具栏）、三颗传输键（覆盖层
-/// 自己有播放控件）。
+/// 画廊（覆盖层封面位自带插图入口，见 lyrics_illustration_view）、隐藏工具栏
+/// （覆盖层没有工具栏）、三颗传输键（覆盖层自己有播放控件）。
 const List<ReaderControlItem> kLyricsOverlayMenuItems = <ReaderControlItem>[
   ReaderControlItem.navigation,
   ReaderControlItem.audiobook,
@@ -167,6 +167,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         _audiobookController!.setReaderFollowOverride(true);
         // 挂上覆盖层：歌词 WebView 在 onWebViewCreated 里装载歌词文档。
         _rebuild(() => _lyricsMode = true);
+        // 书中插图：后台探测尺寸、筛掉外字 / 装饰小图，装好后封面位才开始换图。
+        unawaited(_prepareLyricsIllustrations());
       } else {
         _rebuild(() => _lyricsMode = false);
         await _exitLyricsMode();
@@ -232,6 +234,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       fontFaceCss: bodyFont?.fontFaces ?? '',
       theme: _lyricsHtmlTheme,
       textColorOverride: _lyricsCustomTextColor(),
+      currentColorOverride: _lyricsCustomHighlightColor(),
       followLabel: t.audiobook_follow_audio,
     );
 
@@ -267,6 +270,15 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   /// 它覆盖非当前行颜色；未设时跟随设计系统（Apple 白 / MD3 onSurfaceVariant）。
   Color? _lyricsCustomTextColor() {
     final int custom = ReaderFushiSource.instance.lyricsTextColor;
+    return custom != 0 ? Color(custom) : null;
+  }
+
+  /// 用户自定义的歌词当前行高亮色（设置「当前行高亮色」，哨兵 0 = 未设 → null，
+  /// 跟随播放器设计系统）。覆盖层主题下当前行色只认 `--ly-current`，所以每个
+  /// 生成 / 热更歌词主题的调用点都必须带上它（源码守卫
+  /// lyrics_highlight_color_test.dart）。
+  Color? _lyricsCustomHighlightColor() {
+    final int custom = ReaderFushiSource.instance.lyricsHighlightColor;
     return custom != 0 ? Color(custom) : null;
   }
 
@@ -333,6 +345,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
           source: LyricsModeHtml.applyThemeInvocation(
             theme,
             textColorOverride: _lyricsCustomTextColor(),
+            currentColorOverride: _lyricsCustomHighlightColor(),
           ),
         );
       }
@@ -374,6 +387,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   /// Niratan `exitLyricsMode` 的 `syncBookmarkToCurrentLyricsCue` 同义。
   Future<void> _exitLyricsMode() async {
     ++_lyricsLoadGeneration;
+    ++_lyricsIllustrationGeneration;
+    _lyricsIllustrations = null;
     _lyricsReadyFinalizingGeneration = null;
     _lyricsDocumentLoadGeneration = null;
     // 歌词 WebView 随覆盖层一起卸载，lyrics caret JS 随之消失；复位 surface，
@@ -427,7 +442,12 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       child: RepaintBoundary(
         child: FocusTraversalGroup(
           child: ListenableBuilder(
-            listenable: ctrl,
+            // 睡眠定时也要驱动重建：暂停时控制器不通知，按钮的剩余分钟 / 到点
+            // 熄灭靠定时器自己的通知。
+            listenable: Listenable.merge(<Listenable>[
+              ctrl,
+              AudiobookSleepTimer.of(ctrl),
+            ]),
             builder: (BuildContext context, Widget? _) {
               return ReaderLyricsPlayerOverlay(
                 key: const ValueKey<String>('fushi_lyrics_overlay'),
@@ -460,6 +480,10 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       speed: ctrl.speed,
       lyricsMasked: ReaderFushiSource.instance.lyricsBlur,
       clock: _ReaderLyricsClock(this),
+      // 覆盖层期间正文强制跟随音频，_currentChapter 就是音频所在章。
+      chapterLabel: _book == null ? null : _currentChapterLabel(),
+      sleepTimerMinutes: AudiobookSleepTimer.of(ctrl).remainingMinutes,
+      illustrations: _lyricsIllustrations,
     );
   }
 
@@ -476,12 +500,103 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       onToggleMask: () => unawaited(_toggleLyricsMask()),
       onOpenStatistics: _openReadingStatistics,
       onSpeedChanged: (double speed) => unawaited(ctrl.setSpeed(speed)),
-      onMore: (Rect anchor) => unawaited(_showLyricsMoreMenu(anchor)),
+      onMore: (LyricsMenuAnchor anchor) =>
+          unawaited(_showLyricsMoreMenu(anchor)),
+      onTypography: (LyricsMenuAnchor anchor) =>
+          unawaited(_showLyricsTypographyPanel(anchor)),
+      // ±10 秒与有声书侧栏同一条 seekRelative 漏斗。
+      onSeekRelative: (int seconds) => unawaited(ctrl.seekRelative(seconds)),
+      onSleepTimer: (LyricsMenuAnchor anchor) =>
+          unawaited(_showLyricsSleepTimerMenu(ctrl, anchor)),
+      onOpenIllustration: (int index, {required bool returnToCover}) =>
+          unawaited(
+            _openLyricsIllustrationViewer(index, returnToCover: returnToCover),
+          ),
       onTapBackground: () {
         if (isDictionaryShown) clearDictionaryResult();
         _focusOwnership.reclaim(FocusReclaimCause.gesture);
       },
     );
+  }
+
+  /// Aa：歌词文字快捷面板（2026-10，用户：「歌词模式字体调节感觉还需要个入口」）。
+  /// 字号写 `lyrics_font_size` 后走热更样式通道（[_updateLyricsStyleLive]，不重载
+  /// 歌词页）；竖排写 `lyrics_vertical_writing` 后整页重建（[_loadLyricsPage]，排版
+  /// 方向变了热更不够）；「更多歌词设置」打开阅读设置（歌词模式下首页即「歌词
+  /// 模式」页）。面板从按钮自己的 context 弹，跟随歌词模式主题。
+  Future<void> _showLyricsTypographyPanel(LyricsMenuAnchor anchor) async {
+    final ReaderFushiSource src = ReaderFushiSource.instance;
+    await showLyricsTypographyPanel(
+      anchorContext: anchor.context,
+      fontSize: src.lyricsFontSize,
+      vertical: src.lyricsVerticalWriting,
+      onFontSizeChanged: (double v) => unawaited(
+        applyLyricsFontSize(
+          value: v,
+          write: src.setLyricsFontSize,
+          applyLive: _updateLyricsStyleLive,
+        ),
+      ),
+      onVerticalChanged: (bool v) => unawaited(
+        applyLyricsVertical(
+          value: v,
+          write: src.setLyricsVerticalWriting,
+          reload: _loadLyricsPage,
+        ),
+      ),
+      onOpenMore: () =>
+          unawaited(_showAppearanceSheet(initialSettingsTab: 'lyrics')),
+    );
+  }
+
+  /// 睡眠定时：与有声书侧栏的定时 chip 同一个 [AudiobookSleepTimer]（挂在控制器
+  /// 上，关掉歌词模式照样走）。菜单从按钮 context 弹，跟随歌词模式主题。
+  Future<void> _showLyricsSleepTimerMenu(
+    AudiobookPlayerController ctrl,
+    LyricsMenuAnchor menuAnchor,
+  ) async {
+    final BuildContext menuContext = menuAnchor.context;
+    if (!mounted || !menuContext.mounted) return;
+    final RenderBox overlay =
+        Overlay.of(menuContext).context.findRenderObject()! as RenderBox;
+    final Rect local = Rect.fromPoints(
+      overlay.globalToLocal(menuAnchor.rect.topLeft),
+      overlay.globalToLocal(menuAnchor.rect.bottomRight),
+    );
+    final AudiobookSleepTimer timer = AudiobookSleepTimer.of(ctrl);
+    final int? remaining = timer.remainingMinutes;
+    const List<int> options = <int>[15, 30, 45, 60];
+    final int? choice = await showFushiMenu<int>(
+      context: menuContext,
+      position: RelativeRect.fromRect(local, Offset.zero & overlay.size),
+      items: <PopupMenuEntry<int>>[
+        PopupMenuItem<int>(
+          value: 0,
+          enabled: remaining != null,
+          child: Row(
+            children: <Widget>[
+              const FushiIcon(FushiIcons.timerOff, size: 20),
+              const SizedBox(width: 12),
+              Flexible(child: Text(t.reader_audiobook_sleep_off)),
+            ],
+          ),
+        ),
+        for (final int m in options)
+          PopupMenuItem<int>(
+            value: m,
+            child: Row(
+              children: <Widget>[
+                const FushiIcon(FushiIcons.timer, size: 20),
+                const SizedBox(width: 12),
+                Flexible(child: Text(t.stat_format_minutes(n: m))),
+              ],
+            ),
+          ),
+      ],
+    );
+    if (choice == null || !mounted) return;
+    timer.start(choice == 0 ? null : choice);
+    _rebuild(() {});
   }
 
   /// 👁：歌词遮罩（听力沉浸模糊，设置项 `lyrics_blur`）。与设置面板同一个偏好。
@@ -496,20 +611,25 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   /// ⋯：阅读器顶栏 / 底栏的完整操作（目录、设置、有声书面板、统计、跟随、全屏…）。
   /// 覆盖层自己只放播放控件，其余能力一律复用 [_readerControlAction]——与顶栏
   /// 按钮同一个真相源，歌词模式不丢任何入口。
-  Future<void> _showLyricsMoreMenu(Rect anchor) async {
+  ///
+  /// 菜单从按钮自己的 context 弹（[LyricsMenuAnchor.context]）：歌词模式整棵
+  /// 子树换了封面取色主题，页面 context 在它之外，从页面弹会是全局表面色。
+  Future<void> _showLyricsMoreMenu(LyricsMenuAnchor menuAnchor) async {
+    final Rect anchor = menuAnchor.rect;
+    final BuildContext menuContext = menuAnchor.context;
     final List<ReaderHeaderAction> actions = <ReaderHeaderAction>[
       for (final ReaderControlItem item in kLyricsOverlayMenuItems)
         if (_shouldRenderReaderControl(item)) _readerControlAction(item),
     ];
-    if (actions.isEmpty || !mounted) return;
+    if (actions.isEmpty || !mounted || !menuContext.mounted) return;
     final RenderBox overlay =
-        Overlay.of(context).context.findRenderObject()! as RenderBox;
+        Overlay.of(menuContext).context.findRenderObject()! as RenderBox;
     final Rect local = Rect.fromPoints(
       overlay.globalToLocal(anchor.topLeft),
       overlay.globalToLocal(anchor.bottomRight),
     );
     final ReaderHeaderAction? choice = await showFushiMenu<ReaderHeaderAction>(
-      context: context,
+      context: menuContext,
       position: RelativeRect.fromRect(local, Offset.zero & overlay.size),
       items: <PopupMenuEntry<ReaderHeaderAction>>[
         for (final ReaderHeaderAction action in actions)
@@ -540,6 +660,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       LyricsModeHtml.applyThemeInvocation(
         theme,
         textColorOverride: _lyricsCustomTextColor(),
+        currentColorOverride: _lyricsCustomHighlightColor(),
       ),
       'applyTheme',
     );
@@ -601,6 +722,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     final bool scroll = controller.followAudio.value || forceReveal;
     final bool playing = controller.isPlaying;
     final AudioCue cue = _lyricsCueList[idx];
+    _observeLyricsIllustrations(cue, controller.globalPosition);
     final int rawDurMs = cue.endMs - cue.startMs;
     final int durMs = rawDurMs > 0 ? rawDurMs : 1;
     final int posMs = controller.globalPosition.inMilliseconds -
@@ -622,6 +744,109 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       'window.__lyricsSetProgress($idx,${fraction.toStringAsFixed(4)},'
       '${ratePerSec.toStringAsFixed(5)});',
       'setCue',
+    );
+  }
+
+  // ── 歌词模式插图（2026-10-07）─────────────────────────────────────────
+  //
+  // 播放走过书中插图时，覆盖层封面位换成插图（横屏左栏 / 竖屏小封面）。判据见
+  // lyrics_illustrations.dart：插图位置是 `EpubImageRef` 的（章, 章内学习单位
+  // 偏移），播放位置是当前 cue 的 `fushi-cue://` 片段经 [_studyRangeForAudioFragment]
+  // 映射出的同一把尺——与「退出歌词模式时把正文对齐到当前句」同一条映射。
+
+  /// 进歌词模式时探测本书插图：解析每张图的磁盘文件、在 isolate 里读文件头拿像素
+  /// 尺寸，经 [classifyLyricsIllustration] 筛掉封面、外字、章节装饰等小图，再按
+  /// 当前播放位置定好「已听到」的基线（基线之前的插图不弹出）。
+  Future<void> _prepareLyricsIllustrations() async {
+    final int generation = ++_lyricsIllustrationGeneration;
+    _lyricsIllustrations = null;
+    final EpubBook? book = _book;
+    final String? extractDir = _extractDir;
+    if (book == null || extractDir == null) return;
+    final List<EpubImageRef> refs = book.images;
+    final Map<String, String> pathByKey = <String, String>{};
+    for (final EpubImageRef ref in refs) {
+      final File? file =
+          _readerImageFileForUrl(ReaderFushiSource.epubUrl(ref.src));
+      if (file != null) pathByKey[ref.revealKey] = file.path;
+    }
+    final String? coverPath = ReaderFushiSource.resolveCoverFilePath(
+      extractDir: extractDir,
+      coverPath: book.coverHref,
+    );
+    final Map<String, LyricsIllustrationFileProbe> probes = await compute(
+      probeLyricsIllustrationFiles,
+      <String>{...pathByKey.values, if (coverPath != null) coverPath}.toList(),
+    );
+    if (!mounted || !_lyricsMode || generation != _lyricsIllustrationGeneration) {
+      return;
+    }
+    final List<LyricsIllustration> items = selectLyricsIllustrations(
+      refs: refs,
+      pathByKey: pathByKey,
+      probes: probes,
+      coverPath: coverPath,
+    ).items;
+    if (items.isEmpty) return;
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    final AudioCue? cue = ctrl == null ? null : _lyricsCurrentAudioCue(ctrl);
+    final LyricsIllustrationController illustrations =
+        LyricsIllustrationController()
+          ..load(
+            items,
+            position: cue == null ? null : _lyricsBookPositionOfCue(cue),
+            audioPosition: ctrl?.globalPosition,
+          );
+    _rebuild(() => _lyricsIllustrations = illustrations);
+  }
+
+  /// 播放器当前所在的 cue（整书 cue 优先，按播放位置解析；暂停重开时
+  /// `currentCue` 可能还没被 tick 填充）。
+  AudioCue? _lyricsCurrentAudioCue(AudiobookPlayerController ctrl) {
+    final List<AudioCue> all = ctrl.allBookCuesSnapshot;
+    final int index = ctrl.allBookCueIdxAtPosition;
+    if (index >= 0 && index < all.length) return all[index];
+    return ctrl.currentCue;
+  }
+
+  /// cue 在书中的位置（章 + 章内学习单位偏移）。有 `fushi-cue://` 片段的 cue 走
+  /// 精确映射；只有章 href 的 cue 退到章首（只认得章首插图）；都没有为 null。
+  /// 片段坐标映射不出来（失效坐标）也为 null——不能退到章首：那会把「已听到」
+  /// 往回拽、收回正在显示的插图，下一句映射正常时又当成「刚走过」重新弹出。
+  LyricsBookPosition? _lyricsBookPositionOfCue(AudioCue cue) {
+    final SubtitleRematchFragment? frag =
+        SubtitleRematchCodec.tryDecode(cue.textFragmentId);
+    if (frag != null && frag.sectionIndex >= 0) {
+      final int? offset = _studyRangeForAudioFragment(frag)?.offset;
+      if (offset == null) return null;
+      return LyricsBookPosition(frag.sectionIndex, offset);
+    }
+    final int chapter = _chapterIndexForCue(cue);
+    return chapter >= 0 ? LyricsBookPosition(chapter, 0) : null;
+  }
+
+  /// cue 推进时喂插图状态机（换图 / 收回都在状态机里判）。
+  void _observeLyricsIllustrations(AudioCue cue, Duration audioPosition) {
+    final LyricsIllustrationController? illustrations = _lyricsIllustrations;
+    if (illustrations == null) return;
+    final LyricsBookPosition? position = _lyricsBookPositionOfCue(cue);
+    if (position == null) return;
+    illustrations.observe(position, audioPosition: audioPosition);
+  }
+
+  /// 插图大图浏览（可缩放，看清印在插图上的文字）。音频照常播放、阅读计时不停：
+  /// 看插图是听书的一部分，不是离开阅读器。
+  Future<void> _openLyricsIllustrationViewer(
+    int index, {
+    required bool returnToCover,
+  }) async {
+    final LyricsIllustrationController? illustrations = _lyricsIllustrations;
+    if (illustrations == null || !mounted) return;
+    await showLyricsIllustrationViewer(
+      context,
+      controller: illustrations,
+      index: index,
+      returnToCover: returnToCover,
     );
   }
 
@@ -651,7 +876,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     final LyricsHtmlTheme? theme = _lyricsHtmlTheme;
     await controller.evaluateJavascript(
       source: 'window.__lyricsReduceMotion = $reduceMotion;'
-          '${theme == null ? '' : LyricsModeHtml.applyThemeInvocation(theme, textColorOverride: _lyricsCustomTextColor())}',
+          "document.body.classList.toggle('ly-reduce', $reduceMotion);"
+          '${theme == null ? '' : LyricsModeHtml.applyThemeInvocation(theme, textColorOverride: _lyricsCustomTextColor(), currentColorOverride: _lyricsCustomHighlightColor())}',
     );
     if (!currentLyricsLoad()) return;
     // 注入歌词专用行级 caret（键盘/手柄逐词查词），镜像 reader 的 fushiCaret 注入。

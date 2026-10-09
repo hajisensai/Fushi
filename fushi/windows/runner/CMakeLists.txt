@@ -112,6 +112,10 @@ target_link_libraries(${BINARY_NAME} PRIVATE imm32)
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 add_dependencies(${BINARY_NAME} flutter_assemble)
 
+# HBK-AUDIT-052: timeout/failed installer waits must not restart an app into a
+# bundle still being copied or rolled back. Uses live native function bodies.
+include("tests/update_launcher_completion_test.cmake")
+
 # BUG-1239: compile and execute the production IME Space predicate/dispatch
 # seam as part of every Windows runner build. Source-string tests could not
 # detect WM_KEYDOWN -> WM_KEYUP or removed Alt/Win guards.
@@ -459,6 +463,47 @@ add_custom_target(fushi_windows_floating_ball_geometry_gate
   VERBATIM
 )
 add_dependencies(${BINARY_NAME} fushi_windows_floating_ball_geometry_gate)
+
+# A layered window routes alpha-zero pixels to the window below it, even if
+# ButtonAt accepts the point. Exercise the production D2D renderer in memory
+# at 100/150/200% DPI, including e-ink without shadows, and keep the rest of the
+# menu transparent. This gate creates no HWND and sends no user input.
+add_executable(fushi_windows_floating_ball_hit_region_test
+  "tests/floating_ball_hit_region_test.cpp"
+)
+apply_standard_settings(fushi_windows_floating_ball_hit_region_test)
+target_compile_definitions(fushi_windows_floating_ball_hit_region_test PRIVATE
+  "NOMINMAX" "_WIN32_WINNT=0x0A00" "WINVER=0x0A00")
+target_include_directories(fushi_windows_floating_ball_hit_region_test PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/floating_ball_stubs")
+target_link_libraries(fushi_windows_floating_ball_hit_region_test PRIVATE
+  d2d1 dwrite windowscodecs gdi32 user32 ole32 comctl32 uuid)
+add_custom_target(fushi_windows_floating_ball_hit_region_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_floating_ball_hit_region_test>"
+  DEPENDS fushi_windows_floating_ball_hit_region_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_floating_ball_hit_region_gate)
+
+# HBK-AUDIT-051: the native ball must honor the host's reduced-motion policy
+# for expand/collapse/snap and live config updates, while preserving callbacks.
+# The test intercepts HWND/timer/monitor boundaries and renders only to memory.
+add_executable(fushi_windows_floating_ball_motion_test
+  "tests/floating_ball_motion_test.cpp"
+)
+apply_standard_settings(fushi_windows_floating_ball_motion_test)
+target_compile_definitions(fushi_windows_floating_ball_motion_test PRIVATE
+  "NOMINMAX" "_WIN32_WINNT=0x0A00" "WINVER=0x0A00")
+target_include_directories(fushi_windows_floating_ball_motion_test PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/floating_ball_stubs")
+target_link_libraries(fushi_windows_floating_ball_motion_test PRIVATE
+  d2d1 dwrite windowscodecs gdi32 user32 ole32 comctl32 uuid)
+add_custom_target(fushi_windows_floating_ball_motion_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_floating_ball_motion_test>"
+  DEPENDS fushi_windows_floating_ball_motion_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_floating_ball_motion_gate)
 
 # 桌面应用外悬浮球「截屏识字」与 Windows 系统 OCR 的纯逻辑（screen_ocr_logic.h）：
 # OCR 词拼接（CJK 不插空格）、识别语言挑选、OCR 最大边长缩放、截哪块显示器、

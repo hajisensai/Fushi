@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_clip_subtitle_image.dart'
@@ -36,7 +36,8 @@ const Size _kFallbackVideoArea = Size(1280, 720);
 ///
 /// **比例忠实**：先在「当前窗口里 16:9 视频会占的那块区域」大小的虚拟画布上按
 /// 真实逻辑像素排版，再整体缩进预览框——字幕占画面的比例、离边距离与播放时一致，
-/// 而不是把 36px 原样塞进一个两百像素高的小框里。
+/// 而不是把 36px 原样塞进一个两百像素高的小框里。主 / 副两组按换行后的实际高度
+/// 依次排布；放不下时画布增高后整体等比缩小，绝不叠字（BUG-3080）。
 ///
 /// 只读、不可聚焦（纯展示，不占键盘 / 手柄的焦点停靠）。
 class SubtitleStylePreview extends StatefulWidget {
@@ -227,8 +228,24 @@ class _SubtitleStylePreviewState extends State<SubtitleStylePreview> {
     );
 
     final SubtitleLayerVAnchor mainAnchor = style.mainAnchor;
-    final double mainPadding = style.bottomPadding;
-    final List<Widget> layers = <Widget>[];
+    final double mainPadding = _clampDistance(style.bottomPadding);
+    // 每边的字幕盒按**离锚定边由近到远**排列；两边各自成一组。
+    final List<Widget> topLines = <Widget>[];
+    final List<Widget> bottomLines = <Widget>[];
+    double topDistance = 0;
+    double bottomDistance = 0;
+    void place(SubtitleLayerVAnchor anchor, double distance, Widget box) {
+      if (anchor == SubtitleLayerVAnchor.top) {
+        if (topLines.isEmpty) topDistance = distance;
+        topLines.add(box);
+      } else {
+        if (bottomLines.isEmpty) bottomDistance = distance;
+        bottomLines.add(box);
+      }
+    }
+
+    // 主层先放：同边时它离锚定边最近、副字幕在外侧更靠画面中央（不互相压字）。
+    place(mainAnchor, mainPadding, line(_kPreviewSampleLine));
     if (widget.showSecondary) {
       // 副字幕层的锚定边与位置基线：与 overlay 同一套解析（无显式选择时取主层
       // 对侧；位置 null = 跟随主字幕）。
@@ -240,86 +257,64 @@ class _SubtitleStylePreviewState extends State<SubtitleStylePreview> {
             ownNonBottom: false,
           ) ??
           SubtitleLayerVAnchor.top;
-      final double secondaryPadding =
-          style.secondaryBottomPadding ?? style.bottomPadding;
-      if (secondaryAnchor == mainAnchor) {
-        // 同一边：两层叠成一列（副字幕在外侧更靠画面中央），不互相压字。
-        final bool bottom = mainAnchor == SubtitleLayerVAnchor.bottom;
-        layers.add(
-          _anchored(
-            anchor: mainAnchor,
-            padding: mainPadding,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: bottom
-                  ? <Widget>[
-                      line(t.video_subtitle_preview_translation),
-                      line(_kPreviewSampleLine),
-                    ]
-                  : <Widget>[
-                      line(_kPreviewSampleLine),
-                      line(t.video_subtitle_preview_translation),
-                    ],
-            ),
-          ),
-        );
-      } else {
-        layers
-          ..add(
-            _anchored(
-              anchor: secondaryAnchor,
-              padding: secondaryPadding,
-              child: line(t.video_subtitle_preview_translation),
-            ),
-          )
-          ..add(
-            _anchored(
-              anchor: mainAnchor,
-              padding: mainPadding,
-              child: line(_kPreviewSampleLine),
-            ),
-          );
-      }
-    } else {
-      layers.add(
-        _anchored(
-          anchor: mainAnchor,
-          padding: mainPadding,
-          child: line(_kPreviewSampleLine),
-        ),
+      place(
+        secondaryAnchor,
+        _clampDistance(style.secondaryBottomPadding ?? style.bottomPadding),
+        line(t.video_subtitle_preview_translation),
       );
     }
 
-    final bool eink = isEinkTheme(context);
-    return FittedBox(
-      fit: BoxFit.contain,
-      child: SizedBox.fromSize(
-        size: area,
-        child: Stack(
+    // BUG-3080：两层曾各自用 Positioned 钉在**固定高度**画布的对边（顶层离顶 N、底层
+    // 离底 N），彼此不知道对方多高。竖屏手机上画布只有「屏宽 × 9/16」≈ 220 高，
+    // 字号一大、主字幕换行，底锚盒向上长过顶锚盒——换出来的字与副字幕画在同一处
+    // （串行），而且主字幕第一行跑到副字幕上面（顺序反转）。真播放页的字幕层铺满
+    // 整个播放容器（竖屏 ≈ 整屏高），本次默认设置在那里两层相隔几百像素。
+    //
+    // 修法：两组按实际（换行后）高度在一列里依次排布——顶组、弹性空隙、底组——
+    // 画布高度取「16:9 显示区高」与「两组 + 离边距离总高」的较大者。放得下时与旧
+    // 版逐像素同位；放不下时画布增高、再由 FittedBox 整体等比缩进预览框，字小一点
+    // 但绝不串行，顶组永远在底组之上（与播放页同序）。
+    final Widget subtitleCanvas = SizedBox(
+      width: area.width,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: area.height),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: <Widget>[
-            Positioned.fill(child: _SimulatedScene(eink: eink)),
-            ...layers,
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                SizedBox(height: topDistance),
+                ...topLines,
+              ],
+            ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                // 底组离锚定边由近到远 = 列里自下而上，故倒序放入。
+                ...bottomLines.reversed,
+                SizedBox(height: bottomDistance),
+              ],
+            ),
           ],
         ),
       ),
     );
-  }
 
-  /// 把一层字幕按锚定边与距边距离摆进画布（水平居中）。
-  Widget _anchored({
-    required SubtitleLayerVAnchor anchor,
-    required double padding,
-    required Widget child,
-  }) {
-    final double distance = padding.clamp(0, kVideoSubtitleMaxPadding);
-    return Positioned(
-      left: 0,
-      right: 0,
-      top: anchor == SubtitleLayerVAnchor.top ? distance : null,
-      bottom: anchor == SubtitleLayerVAnchor.bottom ? distance : null,
-      child: Center(child: child),
+    final bool eink = isEinkTheme(context);
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        _SimulatedScene(eink: eink),
+        FittedBox(fit: BoxFit.contain, child: subtitleCanvas),
+      ],
     );
   }
+
+  /// 距锚定边的距离夹到 [0, [kVideoSubtitleMaxPadding]]（与滑条 / 持久化同一上限）。
+  static double _clampDistance(double padding) =>
+      padding.clamp(0, kVideoSubtitleMaxPadding).toDouble();
 
   /// 当前窗口里一段 16:9 视频（contain）会占的显示区。
   static Size _videoAreaIn(Size window) {

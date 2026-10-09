@@ -1,4 +1,4 @@
-/// 封面左下角的规格角标（v95）：`4K` / `HDR10`。
+/// 封面左下角的规格角标（v95）：`4K` / `HDR10` / `Atmos`（或 `7.1` / `5.1`）。
 ///
 /// 单独一个 widget 而不是在 `_buildCard` 里内联，是为了**把重建面钉死在角标本身**。
 /// [VideoSpecsService] 每探完一个文件就通知一次（滚一屏几十次），如果在库页
@@ -14,7 +14,7 @@
 /// 会让那些测试全部抛。注入让依赖显式，也让「不传就不显示」成为测试宿主的默认行为。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/video_specs_display.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
@@ -23,6 +23,9 @@ import 'package:fushi_engine/media/video/strm_file.dart'
     show lacksLocalMediaFile;
 
 /// 压在封面左下角的规格角标条。规格未知时**整个不占位**（返回 SizedBox.shrink）。
+///
+/// 宿主要给它**有界宽度**（左右都钉住）：窄卡（约 154px）放不下三个角标时，排不下的
+/// 往**上**换一行，而不是溢出卡边——首行贴底的仍是清晰度 / HDR。
 class VideoSpecsBadgeStrip extends StatefulWidget {
   const VideoSpecsBadgeStrip({
     required this.service,
@@ -100,13 +103,12 @@ class _VideoSpecsBadgeStripState extends State<VideoSpecsBadgeStrip> {
         final List<String> badges =
             videoSpecsCoverBadges(service.specsFor(path));
         if (badges.isEmpty) return const SizedBox.shrink();
-        return Row(
-          mainAxisSize: MainAxisSize.min,
+        return Wrap(
+          spacing: 4,
+          runSpacing: 4,
+          verticalDirection: VerticalDirection.up,
           children: <Widget>[
-            for (final String badge in badges) ...<Widget>[
-              if (badge != badges.first) const SizedBox(width: 4),
-              CoverBadge(label: badge),
-            ],
+            for (final String badge in badges) CoverBadge(label: badge),
           ],
         );
       },

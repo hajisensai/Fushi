@@ -132,7 +132,7 @@ jobs:
 
     - uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.44.0'
+        flutter-version: '3.47.6'
         cache: true
     # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
     # runner; restore it so a release-asset hiccup cannot fail the build.
@@ -815,6 +815,33 @@ jobs:
           done
         done
 
+    # libbluray opens the Blu-ray libaacs module as soname libaacs.so.0; the app
+    # preloads libfushi_aacs.so (native/fushi_aacs) from every ABI it runs on.
+    - name: Verify fushi_aacs is packaged in every APK ABI
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      working-directory: fushi
+      shell: bash
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        apks=(build/release-artifacts/fushi-*.apk)
+        if [ "${#apks[@]}" -eq 0 ]; then
+          echo "::error title=No APK to verify::build/release-artifacts has no fushi-*.apk"
+          exit 1
+        fi
+        for apk in "${apks[@]}"; do
+          listing="$(unzip -Z1 "$apk")"
+          abis="$(printf '%s\n' "$listing" | sed -n 's#^lib/\([^/]*\)/libflutter\.so$#\1#p' | sort -u)"
+          for abi in $abis; do
+            # here-string, not printf | grep -q (BUG-2804 SIGPIPE false red).
+            if ! grep -qx "lib/$abi/libfushi_aacs.so" <<< "$listing"; then
+              echo "::error title=fushi_aacs missing from APK::$apk lib/$abi/ has no libfushi_aacs.so"
+              exit 1
+            fi
+            echo "ok: $apk lib/$abi/libfushi_aacs.so"
+          done
+        done
+
     # TODO-866: the prepared APKs in build/release-artifacts/ are otherwise only
     # ever uploaded as GitHub Release assets (the softprops steps below). When
     # that release publish intermittently 403s ("Resource not accessible by
@@ -1151,7 +1178,7 @@ jobs:
 
     - uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.44.0'
+        flutter-version: '3.47.6'
         cache: true
     # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
     # runner; restore it so a release-asset hiccup cannot fail the build.

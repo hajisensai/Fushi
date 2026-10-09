@@ -152,9 +152,9 @@ void main() {
     final String source =
         File('lib/src/models/app_model.dart').readAsStringSync();
     expect(
-        source, contains('_autoRedownloadAndReimport(dictionary, remote, job)'),
+        source, contains('redownloadAndReimportDictionary(dictionary, remote, job)'),
         reason: '远端 index 结果必须传进重导函数');
-    final int fn = source.indexOf('Future<void> _autoRedownloadAndReimport(');
+    final int fn = source.indexOf('Future<void> redownloadAndReimportDictionary(');
     final int end = source.indexOf('\n  }\n', fn);
     final String body = source.substring(fn, end);
     // BUG-2707（#1670）：本地 downloadUrl 只能作为 resolveDownloadUrl /
@@ -179,10 +179,12 @@ void main() {
     expect(body, contains('needsSourceMetadataBackfill('));
     expect(body, contains('await indexFile.readAsString()'),
         reason: '异步读盘，不在 UI isolate 上同步 IO');
-    expect(body, contains('dictRepo.persistDictionaries('),
+    expect(body, contains('dictRepo.updateDictionaryMetadata('),
         reason: '一次批量落库，只重载一次引擎');
     expect(
-      RegExp(r'try \{\s*await dictRepo\.persistDictionaries\(updated\);\s*\} catch')
+      RegExp(
+        r'try \{\s*await dictRepo\.updateDictionaryMetadata\([\s\S]*?\);\s*\} catch',
+      )
           .hasMatch(body),
       isTrue,
       reason: '调用方 unawaited：落库失败必须就地捕获并记日志，不能漏成 zone 错误',

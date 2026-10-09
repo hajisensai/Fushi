@@ -21,6 +21,141 @@ TextStyle? _interconnectFieldLabelStyle(BuildContext context) =>
         ? FushiAppleMetrics.of(context).footnoteStyle(context)
         : Theme.of(context).textTheme.labelSmall;
 
+/// 互联状态色块（M3E tonal 胶囊）：成功 = tertiary、进行中 = primary、错误 =
+/// error、中性 = secondary。Apple 设计系统走 [fushiCardToneColors] 的淡染底；
+/// 墨水屏描边无底。换色走 effects 弹簧（不过冲）。
+class _InterconnectStatusPill extends StatelessWidget {
+  const _InterconnectStatusPill({
+    required this.icon,
+    required this.label,
+    this.tone = FushiCardTone.secondary,
+  });
+
+  final IconData icon;
+  final String label;
+  final FushiCardTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    final FushiCardColors colors =
+        fushiCardToneColors(context, tone) ??
+        FushiCardColors(
+          container: cs.secondaryContainer,
+          onContainer: cs.onSecondaryContainer,
+        );
+    final Color fg = eink ? cs.onSurface : (colors.onContainer ?? cs.onSecondaryContainer);
+    final FushiSpringSpec effects = context.fushiMotion.effectsDefault;
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: AnimatedContainer(
+        duration: effects.duration,
+        curve: effects.curve,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: ShapeDecoration(
+          color: eink ? cs.surface : colors.container,
+          shape: StadiumBorder(
+            side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            FushiIcon(icon, size: 16, color: fg),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: context.fushiType.labelLargeEmphasized.copyWith(
+                  color: fg,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 互联自绘块里的内联提示（空列表 / 角色锁 / 扫描失败）：M3E tonal 小色块 +
+/// 语义图标，取代一行裸 bodySmall 灰字。
+class _InterconnectInlineNotice extends StatelessWidget {
+  const _InterconnectInlineNotice({
+    required this.icon,
+    required this.message,
+    this.tone = FushiCardTone.neutral,
+  });
+
+  final IconData icon;
+  final String message;
+  final FushiCardTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final Color fg =
+        fushiCardToneColors(context, tone)?.onContainer ?? cs.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: FushiCard(
+        tone: tone,
+        pressScale: false,
+        borderRadius: FushiM3eShape.smallRadius,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: <Widget>[
+            FushiIcon(icon, size: 18, color: fg),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: context.fushiType.bodyMedium.copyWith(color: fg),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 令牌 / 证书指纹 / 地址这类要逐字核对的长串：等宽数字卡（M3E tonal 色块 +
+/// 可选中文本）。[large] 用 titleMedium Emphasized 字阶，给 host 令牌这种用户
+/// 要照着输的值。
+class _InterconnectSecretCard extends StatelessWidget {
+  const _InterconnectSecretCard({
+    required this.text,
+    this.tone = FushiCardTone.secondary,
+    this.large = false,
+  });
+
+  final String text;
+  final FushiCardTone tone;
+  final bool large;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiTypography type = context.fushiType;
+    final TextStyle base = large
+        ? type.titleMediumEmphasized
+        : type.bodyMediumEmphasized;
+    final Color? fg = fushiCardToneColors(context, tone)?.onContainer;
+    return FushiCard(
+      tone: tone,
+      pressScale: false,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: SelectableText(
+        text,
+        style: base.tabular.copyWith(fontFamily: 'monospace', color: fg),
+      ),
+    );
+  }
+}
+
 // ── Hibiki server config widget (connect to another Hibiki instance) ─
 
 class _FushiServerConfigWidget extends StatefulWidget {
@@ -194,17 +329,15 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
 
   /// 地址行副标题：连通性测试结果；`p2p://` 地址另挂隧道路径（直连 / 中继）。
   Widget? _urlRowSubtitle(ThemeData theme, String url, bool? ok) {
+    // M3E tonal 状态色块：成功 tertiary（Apple 落系统绿淡染）、失败 error。
     final Widget? reach = ok == null
         ? null
-        : Text(
-            ok ? t.sync_connection_success : t.sync_connection_failed,
-            style: theme.textTheme.bodySmall?.copyWith(
-              // Apple：强调色是单色（黑 / 白），成功态改用系统绿。
-              color: ok
-                  ? (isGlassDesign(context)
-                      ? appleColorsOf(context).success
-                      : theme.colorScheme.primary)
-                  : theme.colorScheme.error,
+        : Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: _InterconnectStatusPill(
+              icon: ok ? FushiIcons.success : FushiIcons.error,
+              label: ok ? t.sync_connection_success : t.sync_connection_failed,
+              tone: ok ? FushiCardTone.tertiary : FushiCardTone.error,
             ),
           );
     if (parseInterconnectP2pUrl(url) == null) return reach;
@@ -276,6 +409,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
           scrollable: false,
           child: FushiModalSheetFrame(
             title: 'URL',
+            leadingIcon: FushiIcons.link,
             scrollable: true,
             bodyPadding: EdgeInsets.fromLTRB(
               tokens.spacing.card,
@@ -560,10 +694,6 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   Widget build(BuildContext context) {
     if (!_loaded) return const SizedBox.shrink();
     final ThemeData theme = Theme.of(context);
-    // 「已连接」是成功态：Apple 下强调色是单色，改用系统绿。
-    final Color connectedColor = isGlassDesign(context)
-        ? appleColorsOf(context).success
-        : theme.colorScheme.primary;
     // Mutual exclusion: while this device serves peers, it can't also connect
     // out as a client. Block adding/editing connections; deleting stays allowed
     // so the user can clear them and switch roles.
@@ -581,11 +711,9 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
               style: _interconnectSubheadStyle(context)),
           const SizedBox(height: 8),
           if (_urls.isEmpty)
-            Text(
-              t.interconnect_peer_list_empty,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+            _InterconnectInlineNotice(
+              icon: FushiIcons.devices,
+              message: t.interconnect_peer_list_empty,
             ),
           if (_urls.isNotEmpty)
             // 自实现的 FushiReorderableColumn 而非 SDK ReorderableListView：
@@ -596,91 +724,101 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
             // 本组件把浮层渲染在列表自身 Stack、指针经 globalToLocal 消掉祖先
             // 缩放，任意缩放系数下都精确跟手。原本就是 shrinkWrap +
             // NeverScrollableScrollPhysics（外层滚动），与本组件语义一致。
+            // M3E 分段卡片：每台对端一格（首尾大圆角、行间 2px 由列表 spacing
+            // 给出），行首形状图标按连通性着色（成功 tertiary / 失败 error）。
             FushiReorderableColumn(
               itemCount: _urls.length,
               keyForIndex: (int index) => ValueKey<String>(_urls[index].url),
               onReorder: _reorderUrls,
+              spacing: fushiGroupedListGap(context),
               itemBuilder: (BuildContext context, int index) {
                 final FushiClientUrl u = _urls[index];
                 final bool? ok = _reachable[u.url];
                 return FushiReorderDragListener(
                   key: ValueKey<String>(u.url),
                   index: index,
-                  child: FushiListItem(
-                    padding: EdgeInsets.zero,
-                    // BUG-1184：标题是对端 URL，右侧还有一排控件；单行 ellipsis 在窄屏
-                    // 上只显示得到 `http…`，等于认不出是哪台设备。行高自由，放宽两行。
-                    titleMaxLines: 2,
-                    title: Text(
-                      u.url,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: u.enabled
-                            ? theme.colorScheme.onSurface
-                            : theme.colorScheme.onSurfaceVariant,
+                  child: FushiGroupedListItem(
+                    index: index,
+                    count: _urls.length,
+                    includeGap: false,
+                    child: FushiListItem(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      leading: FushiListLeadingIcon(
+                        FushiIcons.server,
+                        tone: ok == null
+                            ? FushiCardTone.secondary
+                            : (ok ? FushiCardTone.tertiary : FushiCardTone.error),
                       ),
-                    ),
-                    subtitle: _urlRowSubtitle(theme, u.url, ok),
-                    onTap: lockedByServer
-                        ? null
-                        : () => _addOrEditUrl(index: index),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        // Gamepad/keyboard reorder equivalent for the drag handle.
-                        FushiIconButton(
-                          icon: Icons.keyboard_arrow_up,
-                          size: 18,
-                          tooltip: t.move_up,
-                          enabled: index > 0,
-                          onTap: () => _reorderUrls(index, index - 1),
+                      // BUG-1184：标题是对端 URL，右侧还有一排控件；单行 ellipsis 在窄屏
+                      // 上只显示得到 `http…`，等于认不出是哪台设备。行高自由，放宽两行。
+                      titleMaxLines: 2,
+                      title: Text(
+                        u.url,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: u.enabled
+                              ? theme.colorScheme.onSurface
+                              : theme.colorScheme.onSurfaceVariant,
                         ),
-                        FushiIconButton(
-                          icon: Icons.keyboard_arrow_down,
-                          size: 18,
-                          tooltip: t.move_down,
-                          enabled: index < _urls.length - 1,
-                          onTap: () => _reorderUrls(index, index + 1),
-                        ),
-                        adaptiveSwitch(
-                          context: context,
-                          value: u.enabled,
-                          onChanged: (_) => _toggleUrl(index),
-                        ),
-                        // TODO-1330：失败后「重新配对」入口——复用 _attemptManualPair
-                        // 的 v2 编排（探测 → 确认身份 → 按需输 PIN → 落 token+指纹），
-                        // 不必删地址再手动重加。LAN 免 PIN 会话重配对无需任何输入；公网
-                        // 会话仍需按对方 PIN（安全设计使然，host 屏此时会常驻显示 PIN）。
-                        FushiIconButton(
-                          icon: Icons.sync,
-                          size: 18,
-                          tooltip: t.sync_pair_repair,
-                          enabled: !lockedByServer && !_pairingManual,
-                          onTap: () => _attemptManualPair(u.url),
-                        ),
-                        FushiIconButton(
-                          icon: Icons.delete_outline,
-                          size: 18,
-                          tooltip: t.dialog_delete,
-                          onTap: () => _deleteUrl(index),
-                        ),
-                      ],
+                      ),
+                      subtitle: _urlRowSubtitle(theme, u.url, ok),
+                      onTap: lockedByServer
+                          ? null
+                          : () => _addOrEditUrl(index: index),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          // Gamepad/keyboard reorder equivalent for the drag handle.
+                          FushiIconButton(
+                            icon: FushiIcons.expandLess,
+                            size: 18,
+                            tooltip: t.move_up,
+                            enabled: index > 0,
+                            onTap: () => _reorderUrls(index, index - 1),
+                          ),
+                          FushiIconButton(
+                            icon: FushiIcons.expandMore,
+                            size: 18,
+                            tooltip: t.move_down,
+                            enabled: index < _urls.length - 1,
+                            onTap: () => _reorderUrls(index, index + 1),
+                          ),
+                          adaptiveSwitch(
+                            context: context,
+                            value: u.enabled,
+                            onChanged: (_) => _toggleUrl(index),
+                          ),
+                          // TODO-1330：失败后「重新配对」入口——复用 _attemptManualPair
+                          // 的 v2 编排（探测 → 确认身份 → 按需输 PIN → 落 token+指纹），
+                          // 不必删地址再手动重加。LAN 免 PIN 会话重配对无需任何输入；公网
+                          // 会话仍需按对方 PIN（安全设计使然，host 屏此时会常驻显示 PIN）。
+                          FushiIconButton(
+                            icon: FushiIcons.sync,
+                            size: 18,
+                            tooltip: t.sync_pair_repair,
+                            enabled: !lockedByServer && !_pairingManual,
+                            onTap: () => _attemptManualPair(u.url),
+                          ),
+                          FushiIconButton(
+                            icon: FushiIcons.delete,
+                            size: 18,
+                            tooltip: t.dialog_delete,
+                            onTap: () => _deleteUrl(index),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
               },
             ),
           if (lockedByServer)
-            Padding(
-              padding: const EdgeInsets.only(top: 4, bottom: 4),
-              child: Text(
-                t.sync_role_locked_by_server,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
+            _InterconnectInlineNotice(
+              icon: FushiIcons.lock,
+              message: t.sync_role_locked_by_server,
             ),
+          const SizedBox(height: 4),
           Wrap(
             spacing: 8,
             runSpacing: 4,
@@ -696,7 +834,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                         child: adaptiveIndicator(
                             context: context, strokeWidth: 2),
                       )
-                    : const FushiIcon(Icons.add, size: 18),
+                    : const FushiIcon(FushiIcons.add, size: 18),
                 label:
                     Text(_pairingManual ? t.sync_pair_pairing : t.dialog_add),
               ),
@@ -707,21 +845,21 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                   onPressed: (lockedByServer || _pairingManual)
                       ? null
                       : () => _pairFromLink(scan: true),
-                  icon: const FushiIcon(Icons.qr_code_scanner, size: 18),
+                  icon: const FushiIcon(FushiIcons.imageSearch, size: 18),
                   label: Text(t.sync_pair_scan),
                 ),
               FushiTextButton.icon(
                 onPressed: (lockedByServer || _pairingManual)
                     ? null
                     : () => _pairFromLink(scan: false),
-                icon: const FushiIcon(Icons.link, size: 18),
+                icon: const FushiIcon(FushiIcons.link, size: 18),
                 label: Text(t.sync_pair_link_paste),
               ),
               if (interconnectPairNfcWriteSupported &&
                   _urls.any((FushiClientUrl u) => u.hostId != null))
                 FushiTextButton.icon(
                   onPressed: _writeNfcSticker,
-                  icon: const FushiIcon(Icons.nfc, size: 18),
+                  icon: const FushiIcon(FushiIcons.touch, size: 18),
                   label: Text(t.sync_pair_nfc_write),
                 ),
             ],
@@ -736,17 +874,11 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
           if (_tokenPresent)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                children: <Widget>[
-                  FushiIcon(Icons.check_circle_outline,
-                      size: 18, color: connectedColor),
-                  const SizedBox(width: 6),
-                  Text(
-                    t.sync_client_connected,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: connectedColor),
-                  ),
-                ],
+              // 「已连接」是成功态：M3E tertiary 色块（Apple 落系统绿淡染）。
+              child: _InterconnectStatusPill(
+                icon: FushiIcons.success,
+                label: t.sync_client_connected,
+                tone: FushiCardTone.tertiary,
               ),
             ),
           FushiExpansionTile(
@@ -915,10 +1047,6 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
       context: context,
       builder: (BuildContext ctx) {
         final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
-        final TextStyle? mono = Theme.of(ctx)
-            .textTheme
-            .bodySmall
-            ?.copyWith(fontFamily: 'monospace');
         return FushiDialogFrame(
           maxWidth: 460,
           insetPadding: EdgeInsets.symmetric(
@@ -928,6 +1056,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
           scrollable: false,
           child: FushiModalSheetFrame(
             title: t.sync_pair_fingerprint_changed_title,
+            leadingIcon: FushiIcons.warning,
             scrollable: true,
             bodyPadding: EdgeInsets.fromLTRB(
               tokens.spacing.card,
@@ -950,12 +1079,15 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
                 Text(t.sync_pair_fingerprint_stored_label,
                     style: Theme.of(ctx).textTheme.labelSmall),
                 const SizedBox(height: 4),
-                SelectableText(stored, style: mono),
+                _InterconnectSecretCard(text: stored),
                 SizedBox(height: tokens.spacing.gap),
                 Text(t.sync_pair_fingerprint_new_label,
                     style: Theme.of(ctx).textTheme.labelSmall),
                 const SizedBox(height: 4),
-                SelectableText(incoming, style: mono),
+                _InterconnectSecretCard(
+                  text: incoming,
+                  tone: FushiCardTone.error,
+                ),
               ],
             ),
             footer: Wrap(
@@ -1374,10 +1506,13 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
             ),
             if (running)
               Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                    '${t.sync_server_running}: ${_serverController.boundPort}',
-                    style: Theme.of(context).textTheme.bodySmall),
+                padding: const EdgeInsets.only(top: 8),
+                child: _InterconnectStatusPill(
+                  icon: FushiIcons.success,
+                  label:
+                      '${t.sync_server_running}: ${_serverController.boundPort}',
+                  tone: FushiCardTone.tertiary,
+                ),
               ),
             const SizedBox(height: 8),
             // TODO-961: 互联加密开关——接 setServerTlsEnabled（自签证书 + TOFU
@@ -1396,7 +1531,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                 child: FushiTextButton.icon(
                   onPressed: () =>
                       showInterconnectPairQrDialog(context, _serverController),
-                  icon: const FushiIcon(Icons.qr_code_2, size: 18),
+                  icon: const FushiIcon(FushiIcons.share, size: 18),
                   label: Text(t.sync_pair_qr_show),
                 ),
               ),
@@ -1450,11 +1585,11 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
             const SizedBox(height: 4),
             // BUG-1184：令牌是等宽长串，原先硬钳 2 行且无 ellipsis —— 窄屏上尾部被
             // 直接切掉且毫无提示。令牌必须整串可见（用户要照着输/核对），去掉行数上限。
-            SelectableText(
-              _token ?? '',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontFamily: 'monospace',
-                  ),
+            // M3E 大号等宽数字卡（primary 色块）：令牌整串可见、可选中。
+            _InterconnectSecretCard(
+              text: _token ?? '',
+              tone: FushiCardTone.primary,
+              large: true,
             ),
             const SizedBox(height: 8),
             // BUG-1184：两个 icon+label 按钮此前用 Row，窄屏（尤其英文/德文文案更长）
@@ -1471,12 +1606,12 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                       _showSnackBar(context, t.sync_server_copy_token);
                     }
                   },
-                  icon: const FushiIcon(Icons.copy, size: 18),
+                  icon: const FushiIcon(FushiIcons.copy, size: 18),
                   label: Text(t.sync_server_copy_token),
                 ),
                 FushiTextButton.icon(
                   onPressed: _regenerateToken,
-                  icon: const FushiIcon(Icons.refresh, size: 18),
+                  icon: const FushiIcon(FushiIcons.refresh, size: 18),
                   label: Text(t.sync_server_regenerate_token),
                 ),
               ],
@@ -1487,43 +1622,58 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                 style: _interconnectFieldLabelStyle(context)),
             const SizedBox(height: 4),
             if (_pairedPeers.isEmpty)
-              Text(
-                t.sync_paired_peers_empty,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+              _InterconnectInlineNotice(
+                icon: FushiIcons.devices,
+                message: t.sync_paired_peers_empty,
               )
             else
-              ..._pairedPeers.map(
-                (FushiPairedPeerRow peer) => FushiListItem(
-                  padding: EdgeInsets.zero,
-                  // BUG-1184：设备名由用户自定义，可以很长；行高自由，放宽两行。
-                  titleMaxLines: 2,
-                  title: Text(
-                    (peer.deviceName != null &&
-                            peer.deviceName!.trim().isNotEmpty)
-                        ? peer.deviceName!
-                        : t.sync_paired_peer_unknown,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: (peer.lastSeenIp != null &&
-                          peer.lastSeenIp!.trim().isNotEmpty)
-                      ? Text(
-                          peer.lastSeenIp!,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        )
-                      : null,
-                  trailing: FushiIconButton(
-                    icon: Icons.delete_outline,
-                    size: 18,
-                    tooltip: t.sync_paired_peer_remove,
-                    onTap: () => _revokePeer(peer),
-                  ),
-                ),
+              // M3E 分段卡片列表：每台已配对设备一格，错峰进场。
+              FushiGroupedList(
+                children: <Widget>[
+                  for (int i = 0; i < _pairedPeers.length; i++)
+                    _pairedPeerRow(context, i, _pairedPeers[i]),
+                ],
               ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _pairedPeerRow(
+    BuildContext context,
+    int index,
+    FushiPairedPeerRow peer,
+  ) {
+    return FushiStaggeredEntrance(
+      key: ValueKey<Object>(peer.peerId),
+      index: index,
+      child: FushiListItem(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        leading: const FushiListLeadingIcon(FushiIcons.devices),
+        // BUG-1184：设备名由用户自定义，可以很长；行高自由，放宽两行。
+        titleMaxLines: 2,
+        title: Text(
+          (peer.deviceName != null &&
+                  peer.deviceName!.trim().isNotEmpty)
+              ? peer.deviceName!
+              : t.sync_paired_peer_unknown,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: (peer.lastSeenIp != null &&
+                peer.lastSeenIp!.trim().isNotEmpty)
+            ? Text(
+                peer.lastSeenIp!,
+                style: Theme.of(context).textTheme.bodySmall,
+              )
+            : null,
+        trailing: FushiIconButton(
+          icon: FushiIcons.delete,
+          size: 18,
+          tooltip: t.sync_paired_peer_remove,
+          onTap: () => _revokePeer(peer),
+        ),
       ),
     );
   }
@@ -1817,46 +1967,68 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
           ),
           const SizedBox(height: 8),
           if (lockedByServer)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Text(
-                t.sync_role_locked_by_server,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-              ),
+            _InterconnectInlineNotice(
+              icon: FushiIcons.lock,
+              message: t.sync_role_locked_by_server,
             ),
           if (_scanFailed)
-            Text(t.sync_lan_scan_failed,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.error,
-                    ))
+            _InterconnectInlineNotice(
+              icon: FushiIcons.error,
+              message: t.sync_lan_scan_failed,
+              tone: FushiCardTone.error,
+            )
           else if (_devices.isEmpty)
-            Text(t.sync_lan_no_devices,
-                style: Theme.of(context).textTheme.bodySmall),
-          for (final FushiDevice device in _devices)
-            FushiListItem(
-              leading: const FushiIcon(Icons.devices_outlined, size: 20),
-              // BUG-1184：发现到的设备名 + WebDAV URL 都可能超出窄屏一行。
-              titleMaxLines: 2,
-              title: Text(device.name),
-              subtitle: Text(device.webDavUrl),
-              trailing: _pairingUrl == device.webDavUrl
-                  ? SizedBox(
-                      width: 18,
-                      height: 18,
-                      child:
-                          adaptiveIndicator(context: context, strokeWidth: 2),
-                    )
-                  : null,
-              minHeight: 52,
-              padding: EdgeInsets.zero,
-              // Disable taps while serving peers, or while a pairing is running.
-              onTap: (lockedByServer || _pairingUrl != null)
-                  ? null
-                  : () => _connectToDevice(device),
+            _InterconnectInlineNotice(
+              icon: _scanning ? FushiIcons.wifi : FushiIcons.searchOff,
+              message: t.sync_lan_no_devices,
+            ),
+          // M3E 分段卡片列表：发现到的每台设备一格，错峰进场。
+          if (_devices.isNotEmpty)
+            FushiGroupedList(
+              children: <Widget>[
+                for (int i = 0; i < _devices.length; i++)
+                  _lanDeviceRow(context, i, _devices[i], lockedByServer),
+              ],
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _lanDeviceRow(
+    BuildContext context,
+    int index,
+    FushiDevice device,
+    bool lockedByServer,
+  ) {
+    return FushiStaggeredEntrance(
+      key: ValueKey<String>(device.webDavUrl),
+      index: index,
+      child: FushiListItem(
+        leading: FushiListLeadingIcon(
+          FushiIcons.devices,
+          tone: _pairingUrl == device.webDavUrl
+              ? FushiCardTone.primary
+              : FushiCardTone.secondary,
+        ),
+        // BUG-1184：发现到的设备名 + WebDAV URL 都可能超出窄屏一行。
+        titleMaxLines: 2,
+        title: Text(device.name),
+        subtitle: Text(device.webDavUrl),
+        trailing: _pairingUrl == device.webDavUrl
+            ? SizedBox(
+                width: 18,
+                height: 18,
+                child:
+                    adaptiveIndicator(context: context, strokeWidth: 2),
+              )
+            : null,
+        minHeight: 52,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        // Disable taps while serving peers, or while a pairing is running.
+        onTap: (lockedByServer || _pairingUrl != null)
+            ? null
+            : () => _connectToDevice(device),
       ),
     );
   }
@@ -1977,7 +2149,7 @@ class _InterconnectProfileTransferWidgetState
       subtitle: _isUpload
           ? t.interconnect_profile_upload_desc
           : t.interconnect_profile_download_desc,
-      icon: Icons.settings_backup_restore_outlined,
+      icon: FushiIcons.restoreBackup,
       controlBelow: true,
       // 行级 onTap 让本行注册成焦点目标（方向导航 / 手柄 A 能触发），与
       // [_AssetTransferWidget] 同因（BUG-016）。
@@ -2086,7 +2258,7 @@ class _InterconnectBackupBackendWidgetState
                 : (paired
                     ? t.interconnect_backup_backend_hint
                     : t.interconnect_backup_backend_needs_pairing),
-            icon: Icons.backup_outlined,
+            icon: FushiIcons.backup,
           ),
           Text(
             t.interconnect_backup_backend_current(
@@ -2169,6 +2341,7 @@ Future<bool> confirmInterconnectPairIdentity(
         scrollable: false,
         child: FushiModalSheetFrame(
           title: t.sync_pair_confirm_identity_title,
+          leadingIcon: FushiIcons.verified,
           scrollable: true,
           bodyPadding: EdgeInsets.fromLTRB(
             tokens.spacing.card,
@@ -2193,23 +2366,16 @@ Future<bool> confirmInterconnectPairIdentity(
               )),
               if (address != null && address.isNotEmpty) ...<Widget>[
                 SizedBox(height: tokens.spacing.gap),
-                SelectableText(
-                  address,
-                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                        fontFamily: 'monospace',
-                      ),
-                ),
+                _InterconnectSecretCard(text: address),
               ],
               if (fingerprint != null && fingerprint.isNotEmpty) ...<Widget>[
                 SizedBox(height: tokens.spacing.gap),
                 Text(t.sync_pair_fingerprint_label,
                     style: Theme.of(ctx).textTheme.labelSmall),
                 const SizedBox(height: 4),
-                SelectableText(
-                  fingerprint,
-                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                        fontFamily: 'monospace',
-                      ),
+                _InterconnectSecretCard(
+                  text: fingerprint,
+                  tone: FushiCardTone.primary,
                 ),
               ],
             ],
@@ -2254,6 +2420,7 @@ Future<String?> promptInterconnectPairPin(BuildContext context) async {
         scrollable: false,
         child: FushiModalSheetFrame(
           title: t.sync_pair_enter_pin_title,
+          leadingIcon: FushiIcons.key,
           scrollable: true,
           bodyPadding: EdgeInsets.fromLTRB(
             tokens.spacing.card,
@@ -2273,10 +2440,15 @@ Future<String?> promptInterconnectPairPin(BuildContext context) async {
             children: <Widget>[
               Text(t.sync_pair_enter_pin_body),
               SizedBox(height: tokens.spacing.gap),
+              // M3E 大号等宽数字输入：PIN 逐位对照 host 屏幕。
               FushiTextField(
                 controller: pinController,
                 labelText: t.sync_pair_enter_pin_title,
                 keyboardType: TextInputType.number,
+                size: FushiInputSize.large,
+                style: ctx.fushiType.headlineSmallEmphasized.tabular.copyWith(
+                  letterSpacing: 6,
+                ),
               ),
             ],
           ),

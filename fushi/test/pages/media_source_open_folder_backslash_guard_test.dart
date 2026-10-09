@@ -47,10 +47,7 @@ void main() {
   });
 
   test('入口不再只给 Windows：桌面三端本地来源都可用', () {
-    expect(
-      source,
-      contains('enabled: isLocal && currentRevealHost() != null,'),
-    );
+    expect(source, contains('onTap: isLocal && currentRevealHost() != null'));
     expect(source, isNot(contains('enabled: isLocal && Platform.isWindows,')));
   });
 }

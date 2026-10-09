@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart'
     show kStatSourceBook, kStatSourceVideo;
@@ -194,6 +194,12 @@ mixin DictionaryPageMixin {
   Future<void> Function(SentenceContextSlot slot, int index, String text)?
       get onEditSentenceContextText => null;
 
+  /// 「制卡前调整·选择句子上下文」里把上文/下文第 index 句从卡片里移除或恢复
+  /// （视频/首页查词车道）。默认 null = 不支持，对话框不渲染移除入口。视频页覆写。
+  /// 与 reader 车道（[BaseSourcePageState.onRemoveSentenceContext]）对称。
+  Future<void> Function(SentenceContextSlot slot, int index, bool removed)?
+      get onRemoveSentenceContext => null;
+
   /// BUG-797 / BUG-1040：有多少个「必须盖住查词弹窗」的 Flutter 对话框正开着。
   ///
   /// 查词弹窗是**原生平台视图**（桌面 WebView2 / Android platform view），靠 airspace 永远
@@ -253,6 +259,8 @@ mixin DictionaryPageMixin {
           // 手改某一句文本：只改这次会写进卡片的**文本**，cue 的时间窗（音频/画面
           // 身份）原样保留。宿主没接就传 null，对话框不渲染编辑入口。
           editSentence: onEditSentenceContextText,
+          // 移除 / 恢复某一句前文/后文（剔掉夹在中间的旁白）。宿主没接传 null。
+          removeSentence: onRemoveSentenceContext,
           // BUG-2627：回传「有没有真的点到制卡按钮」。弹窗层在这次往返途中被关栈
           // （或 State 已卸载）时为 false，对话框据此提示，不再静默关窗。
           onConfirm: () async =>
@@ -780,19 +788,23 @@ mixin DictionaryPageMixin {
     Widget Function(Widget child)? wrapContent,
   }) {
     final DictionaryPopupEntry entry = controller.entries[index];
+    // 真实空结果收成「未找到」空态的高度，否则按内容测量（见 layoutAutoFitHeight）。
+    final double emptyHeight =
+        kLookupPopupEmptyHeight * mixinAppModel.appUiScale;
+    final double? fitHeight =
+        entry.layoutAutoFitHeight(emptyHeight: emptyHeight);
     final Rect pos = _calcMixinPopupPosition(
       entry.selectionRect,
       screen,
-      autoFitHeight: entry.autoFitHeight,
+      autoFitHeight: fitHeight,
     );
     // 自适应高度只收外壳，WebView 仍按外壳取最大高度时的正文高度布局、超出裁掉
     // （[DictionaryPopupLayer.webViewOverflowHeight]）：内容增减不再改原生表面尺寸，
     // 杜绝 Windows 上旧尺寸帧被拉伸的那几帧。外壳本就是最大高度时差值为 0。
-    final double fullPopupHeight = entry.autoFitHeight == null ||
-            _popupBottomDocked ||
-            _popupResizePreview != null
-        ? pos.height
-        : _calcMixinPopupPosition(entry.selectionRect, screen).height;
+    final double fullPopupHeight =
+        fitHeight == null || _popupBottomDocked || _popupResizePreview != null
+            ? pos.height
+            : _calcMixinPopupPosition(entry.selectionRect, screen).height;
     final double webViewOverflowHeight =
         fullPopupHeight > pos.height ? fullPopupHeight - pos.height : 0.0;
     // Phase B 拖拽尺寸：缓存顶层卡当前 rect/选区，供 [_onMixinPopupResizeStart] 冻结左上角。
@@ -819,7 +831,9 @@ mixin DictionaryPageMixin {
             _calcMixinPopupPosition(
               controller.entries[j].selectionRect,
               screen,
-              autoFitHeight: controller.entries[j].autoFitHeight,
+              autoFitHeight: controller.entries[j].layoutAutoFitHeight(
+                emptyHeight: emptyHeight,
+              ),
             ),
       ],
       // BUG-797 / BUG-1040：任何「必须盖住弹窗」的 Flutter 对话框（选择句子上下文 /

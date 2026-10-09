@@ -93,10 +93,11 @@ void main() {
           isTrue);
     });
 
-    test('overlay：failed 态画 error_outline（cs.error），done 态画 check_circle', () {
+    test('overlay：failed 态画 error（errorContainer hero / cs.error），done 态画 success', () {
       final String src = read('lib/src/sync/backup_import_overlay_view.dart');
-      expect(src.contains('Icons.error_outline'), isTrue);
-      expect(src.contains('Icons.check_circle'), isTrue);
+      expect(src.contains('FushiIcons.error'), isTrue);
+      expect(src.contains('FushiIcons.success'), isTrue);
+      expect(src.contains('FushiHeroTone.destructive'), isTrue);
       expect(src.contains('cs.error'), isTrue, reason: '失败图标用主题 error 色（红）');
     });
   });

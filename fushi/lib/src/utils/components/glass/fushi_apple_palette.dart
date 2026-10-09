@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
 
 /// 「玻璃」设计系统的 Apple 设计语言色板（iOS 26 / macOS 26 系统色）。
@@ -277,20 +278,21 @@ ColorScheme appleColorScheme(ColorScheme base, {bool monochrome = false}) {
   );
 }
 
-/// 玻璃设计系统的字阶：字号沿用 [FushiTypeScale]（正文 17 / 15 / 13 本就是
-/// HIG 的 body / subheadline / footnote），只把标题层改成 Apple 的字重——
-/// 大标题、页标题粗体（iOS large title / title1 bold），分组标题 semibold。
-/// 不加负字距：SF 的负 tracking 套到 CJK 字形上会让字挤在一起。
+/// Apple 设计系统的字阶：把 [base]（Material 字阶，携带 locale 字体链 / 基线 /
+/// 颜色）换成 [FushiAppleTypeScale] 的 HIG 字号、行高与字重——组件取的仍是同
+/// 15 个 TextTheme 槽位，Apple 下拿到的就是 Body 17 / Headline 17 semibold /
+/// Large Title 34 bold 这套。SF 的 tracking 只在 Apple 平台的拉丁 UI 上加，
+/// CJK 一律 0（套到 CJK 字形上会让字挤在一起）。
 TextTheme appleTextTheme(TextTheme base) {
-  TextStyle? w(TextStyle? s, FontWeight weight) =>
-      s?.copyWith(fontWeight: weight);
-  return base.copyWith(
-    headlineLarge: w(base.headlineLarge, FontWeight.w700),
-    headlineMedium: w(base.headlineMedium, FontWeight.w700),
-    headlineSmall: w(base.headlineSmall, FontWeight.w700),
-    titleLarge: w(base.titleLarge, FontWeight.w600),
-    titleMedium: w(base.titleMedium, FontWeight.w600),
-    titleSmall: w(base.titleSmall, FontWeight.w600),
-    labelLarge: w(base.labelLarge, FontWeight.w500),
+  final TextStyle? body = base.bodyMedium;
+  final TextStyle seed = TextStyle(
+    color: body?.color,
+    fontFamily: body?.fontFamily,
+    fontFamilyFallback: body?.fontFamilyFallback,
+    fontFeatures: body?.fontFeatures,
+    locale: body?.locale,
+    textBaseline: body?.textBaseline,
+    decorationColor: body?.decorationColor,
   );
+  return FushiAppleTypeScale.buildTextTheme(seed);
 }

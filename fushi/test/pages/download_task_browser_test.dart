@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -75,6 +75,13 @@ Future<void> _pumpPastTransitions(WidgetTester tester) async {
   await tester.pump();
   await tester.pump(const Duration(seconds: 1));
 }
+
+/// 批量栏里的「全选」。M3E 任务中心的状态分段第一项「All」与它同文案，
+/// 按文本找会歧义，限定在 [BatchActionBar] 内。
+final Finder _batchSelectAll = find.descendant(
+  of: find.byType(BatchActionBar),
+  matching: find.text(t.batch_select_all),
+);
 
 void _viewport(WidgetTester tester, Size size) {
   tester.view.physicalSize = size;
@@ -399,9 +406,22 @@ void main() {
       );
       await _pumpPastTransitions(tester);
       expect(tester.takeException(), isNull);
-      await tester.tap(
-        find.byKey(const ValueKey<String>('download-task-toggle-long')),
+      // M3E 任务中心（468ceed6a93）在列表头加了汇总卡 + 状态分段，2.0 字号下
+      // 360 宽一屏放不下卡片：先滚到卡片再展开，溢出断言照旧覆盖整条路径。
+      final Finder toggle = find.byKey(
+        const ValueKey<String>('download-task-toggle-long'),
       );
+      await tester.scrollUntilVisible(
+        toggle,
+        200,
+        scrollable: find.descendant(
+          of: find.byKey(const PageStorageKey<String>('download-task-list')),
+          matching: find.byType(Scrollable),
+        ).first,
+      );
+      await _pumpPastTransitions(tester);
+      expect(tester.takeException(), isNull);
+      await tester.tap(toggle);
       await _pumpPastTransitions(tester);
       expect(find.text('details-long'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -570,7 +590,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
 
       await tester.tap(
@@ -601,7 +621,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
 
       expect(
@@ -652,7 +672,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey<String>('download-batch-clear')),
@@ -681,7 +701,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     });
@@ -741,7 +761,7 @@ void main() {
       expect(find.byKey(const ValueKey<String>('hidden-1')), findsNothing);
 
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey<String>('download-batch-clear')),
@@ -772,7 +792,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey<String>('download-batch-delete')),
@@ -803,7 +823,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey<String>('download-batch-delete')),
@@ -832,7 +852,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey<String>('download-batch-delete')),
@@ -867,7 +887,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
 
       await tester.tap(
@@ -942,7 +962,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
 
       expect(find.byType(BatchActionBar), findsOneWidget);

@@ -49,12 +49,13 @@ toolchain_env="CC=${CC:-} CXX=${CXX:-}"
 
 # tree_hash <extra-identity> <path>... : sha256 over the committed tree of <path>s plus
 # the extra identity string. Fails when the paths match nothing (a renamed directory
-# must not silently turn the name into a constant).
+# must not silently turn the name into a constant). Markdown is left out: no build in
+# these trees reads a .md, and a README edit used to cold-rebuild every platform.
 tree_hash() {
   local extra="$1"
   shift
   local listing
-  listing="$(git ls-tree -r --full-tree HEAD -- "$@")"
+  listing="$(git ls-tree -r --full-tree HEAD -- "$@" | grep -viE '\.md$' || true)"
   if [ -z "$listing" ]; then
     echo "::error title=native-store-names::git ls-tree matched nothing for: $*" >&2
     exit 1
@@ -83,13 +84,14 @@ case "$platform" in
     ;;
   macos)
     names+=(
-      # Universal (arm64 + x86_64) release dylib: the PR gate and the desktop release
-      # build the same bytes with the same script, so they share one name.
-      "p2p=macos-universal-fushi-p2p-dylib-v1-rust$P2P_RUST-$image_os-$image-$(tree_hash "$toolchain_env rust=$P2P_RUST" "${P2P[@]}")"
-      # Universal (arm64 + x86_64) static libtorrent bridge (build_macos_dylib.sh); same
-      # sharing rule as p2p. The runner's vcpkg checkout is part of the image identity.
-      "torrent=macos-universal-fushi-torrent-dylib-v1-$image_os-$image-$(tree_hash "$toolchain_env" "${TORRENT[@]}")"
-      "anki_sync_release=macos-universal-fushi-anki-sync-release-v1-$image_os-$image-$(tree_hash "$toolchain_env" "${ANKI_SYNC[@]}")"
+      # macOS ships Apple Silicon (arm64) only; Intel Macs are not supported. Release
+      # dylib: the PR gate and the desktop release build the same bytes with the same
+      # script, so they share one name.
+      "p2p=macos-arm64-fushi-p2p-dylib-v1-rust$P2P_RUST-$image_os-$image-$(tree_hash "$toolchain_env rust=$P2P_RUST" "${P2P[@]}")"
+      # arm64 static libtorrent bridge (build_macos_dylib.sh); same sharing rule as p2p.
+      # The runner's vcpkg checkout is part of the image identity.
+      "torrent=macos-arm64-fushi-torrent-dylib-v1-$image_os-$image-$(tree_hash "$toolchain_env" "${TORRENT[@]}")"
+      "anki_sync_release=macos-arm64-fushi-anki-sync-release-v1-$image_os-$image-$(tree_hash "$toolchain_env" "${ANKI_SYNC[@]}")"
       # The PR gate's debug build targets the runner's own arch only.
       "anki_sync_debug=macos-$arch-fushi-anki-sync-debug-v1-$image_os-$image-$(tree_hash "$toolchain_env" "${ANKI_SYNC[@]}")"
     )

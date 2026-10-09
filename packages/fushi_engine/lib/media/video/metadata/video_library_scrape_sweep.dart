@@ -18,9 +18,13 @@
 ///
 /// 触发：进入视频 tab、切回视频 tab、以及视频库新增条目时（任意导入路径，含
 /// 内置下载管线）。批次经 [VideoSourceScrapeTaskController] 走全应用统一互斥门；
-/// 忙时直接放弃本轮，下次触发再试。幂等键是**作品**不是进程（BUG-2199），重复
-/// 触发廉价。
+/// 忙时不发批次、记下请求，批次结束时由调度器自己兑现（监听 controller 的
+/// 忙→闲，不依赖视频页挂载）。幂等键是**作品**不是进程
+/// （BUG-2199），重复触发廉价。刮削结果落库（含补刮批次自己的写入）**不是**
+/// 触发点，只刷新待确认清单（BUG-3072）。
 library;
+
+import 'dart:async';
 
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
@@ -31,6 +35,7 @@ import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:meta/meta.dart';
 
 /// 「[since] 之后 TMDB 上有变动的剧 id」探针（生产装配
 /// `TmdbVideoMetadataProvider.changedTvShowIds`）。
@@ -180,7 +185,9 @@ class VideoLibraryScrapeSweep {
         _ledger = ledger ?? VideoScrapeSweepLedger(),
         _configFingerprint = configFingerprint,
         _aiCapabilityKey = aiCapabilityKey,
-        _now = now ?? DateTime.now;
+        _now = now ?? DateTime.now {
+    _controller.addListener(_onControllerChanged);
+  }
 
   final FushiDatabase _database;
   final DateTime Function() _now;
@@ -244,6 +251,59 @@ class VideoLibraryScrapeSweep {
   /// 防重入：一轮还在飞时再次触发直接返回（[pendingWorks] 要全量查库）。
   bool _sweeping = false;
 
+  /// 有一次「库里的条目变了」的补刮请求撞上了在飞的一轮（本调度器自己的，或
+  /// 别处发起的批次）而没跑成。它不能丢：下载入库常落在批次期间（BUG-2199）。
+  /// 由调度器自己兑现：本轮收尾（`finally`）或 controller 忙→闲
+  /// （[_onControllerChanged]）。以前只靠视频页「批次忙→闲」时调
+  /// [refreshPendingAfterScrapeResults] 兑现——视频页没挂载（用户在别的 tab、
+  /// 无头服务端根本没有页面）就一直拖着，页面那边的在飞闸门还可能把这次兑现
+  /// 整个吞掉（BUG-3085）。
+  ///
+  /// 只有 [sweepAndListPending]（库里条目变了的真实请求）会置位它；刮削结果的
+  /// 写入（运行记录、作品资料，含补刮批次自己的）绝不置位，否则一轮的写入会
+  /// 触发下一轮，临时失败的作品被无限重刮（BUG-3072）。
+  bool _sweepDeferred = false;
+
+  /// 最近一次由调度器自己发起的兑现（见 [whenDeferredSettled]）。
+  Future<void>? _deferredRun;
+
+  bool _disposed = false;
+
+  /// controller 每次通知都看一眼：有被挡下的请求、自己没在跑、批次已闲 → 兑现。
+  /// [sweepAndListPending] 的同步前缀就会置 [_sweeping]，同一轮通知里不会重复发起。
+  void _onControllerChanged() {
+    if (_disposed || !_sweepDeferred || _sweeping || _controller.isBusy) return;
+    _runDeferred();
+  }
+
+  void _runDeferred() {
+    final Future<void> run = sweepAndListPending().then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stack) =>
+          engineLog.log('VideoLibraryScrapeSweep.deferred', error, stack),
+    );
+    _deferredRun = run;
+  }
+
+  /// 等调度器自己发起的兑现（含兑现期间又被挡下、接着再跑的那一轮）全部跑完。
+  @visibleForTesting
+  Future<void> whenDeferredSettled() async {
+    while (true) {
+      final Future<void>? run = _deferredRun;
+      if (run == null) return;
+      await run;
+      if (identical(run, _deferredRun)) return;
+    }
+  }
+
+  /// 断开与 controller 的监听。controller 换代 / 关停前调用：之后在途批次结束
+  /// 也不会再由这一代调度器发起补刮。
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _controller.removeListener(_onControllerChanged);
+  }
+
   /// 最近一次算出的待确认清单。批次在跑（含本调度器自己发起的那一批）时，
   /// 重复触发直接回它：每次重算都要把所有来源重新规划一遍 + 逐作品查身份，
   /// 批次期间每写一部作品就触发一次，正是刮削时库页卡顿的来源之一。批次结束
@@ -251,8 +311,17 @@ class VideoLibraryScrapeSweep {
   List<VideoPendingScrapeWork> _lastPending = const <VideoPendingScrapeWork>[];
 
   /// 当前所有本地视频来源里「从未刮出规范身份」的作品——待确认队列的数据源。
+  /// 只读：不发起补刮。
   Future<List<VideoPendingScrapeWork>> pendingWorks() async =>
       _lastPending = (await _plannedWorks()).pending;
+
+  /// 刮削结果落库 / 批次结束后刷新待确认清单（提醒条计数）。
+  ///
+  /// 只读，**不**发起补刮——刮削结果的写入（含补刮批次自己的）会触发这里，若它
+  /// 也发起补刮，一轮的写入就会启动下一轮（BUG-3072）。批次期间被挡下的真实请求
+  /// 由调度器自己在批次结束时兑现（[_onControllerChanged]），不经这里。
+  Future<List<VideoPendingScrapeWork>> refreshPendingAfterScrapeResults() =>
+      pendingWorks();
 
   /// 同 [pendingWorks]，每部作品再带上最近一次刮削留下的挂起原因（见
   /// `video_scrape_pending_note.dart`）。待确认清单用；只要计数的地方别用它。
@@ -401,18 +470,23 @@ class VideoLibraryScrapeSweep {
 
   /// 自动补刮一轮，并返回当前待确认作品清单。
   ///
+  /// 只在「库里可能有新作品」时调用（进视频页、条目集合变化、服务端扫描后）；
+  /// 刮削结果变化走 [refreshPendingAfterScrapeResults]。
+  ///
   /// 一次查库两用：清单喂视频页的待确认提醒条，其中没自动试过的作品同时进补刮
   /// 批次。总闸关、controller 忙、作品已试过都只是不发起批次，**清单照常返回**
   /// ——「不自动刮」不等于「不告诉用户有东西待确认」。
   Future<List<VideoPendingScrapeWork>> sweepAndListPending() async {
-    if (_sweeping || _controller.isBusy) return _lastPending;
+    if (_sweeping || _controller.isBusy) return _deferUntilIdle(_lastPending);
     _sweeping = true;
+    _sweepDeferred = false;
     try {
       final _PlannedWorks planned = await _plannedWorksOrEmpty();
       final List<VideoPendingScrapeWork> pending = _lastPending = planned.pending;
       if (_isEnabled != null && !_isEnabled()) return pending;
-      // 不排队：已有批次在跑就放弃本轮，避免和手动刮削抢互斥门。
-      if (_controller.isBusy) return pending;
+      // 不排队：已有批次在跑就不发批次，避免和手动刮削抢互斥门；请求记下，
+      // 批次结束时兑现。
+      if (_controller.isBusy) return _deferUntilIdle(pending);
       await _ledger.ensureLoaded(fingerprint: _ledgerFingerprint);
       final DateTime startedAt = _now();
       final bool hashReady = _isHashReady?.call() ?? false;
@@ -463,7 +537,7 @@ class VideoLibraryScrapeSweep {
         await _saveLedger();
         return pending;
       }
-      if (_controller.isBusy) return pending;
+      if (_controller.isBusy) return _deferUntilIdle(pending);
       // 记账放在真正提交批次前一刻：中途被互斥门挡回的作品不算「已尝试」，
       // 否则再也不会自动碰它们。
       final DateTime submittedAt = _now();
@@ -473,19 +547,24 @@ class VideoLibraryScrapeSweep {
       try {
         final SourceScrapeReport report =
             await _controller.scrapeWorkSubsets(subsets);
-        // 只因资料源 / AI 临时不可用（504 / 超时 / 限流 / AI 请求失败）而没认出
-        // 的作品不是「查无」：撤掉记账，下次触发（进视频页 / 库里有新条目）就
-        // 再试，而不是等 7 天。AI 失败记在 warnings（作品本身是待确认，不算错）。
+        // 只因资料源 / AI 临时不可用（504 / 握手失败 / 超时 / 限流 / AI 请求失败）
+        // 而没认出的作品不是「查无」：改按短间隔
+        // （[VideoScrapeSweepLedger.transientRetryAfter]）退避，而不是挡 7 天
+        // （BUG-2796）；也不是直接撤账——撤账后任意一次触发都会重新认领它，
+        // 资料源连不上期间同一作品被反复重刮（BUG-3072）。AI 失败记在 warnings
+        // （作品本身是待确认，不算错）。
         final List<String> transient = <String>[
           for (final SourceScrapeIssue issue in <SourceScrapeIssue>[
             ...report.errors,
             ...report.warnings,
           ])
-            if (issue.providerUnavailable && issue.workKey != null)
+            if (issue.providerUnavailable &&
+                issue.workKey != null &&
+                claimed.contains(issue.workKey))
               issue.workKey!,
         ];
         if (transient.isNotEmpty) {
-          _ledger.forgetAttempts(transient);
+          _ledger.markTransientFailure(transient, _now());
           await _saveLedger();
         }
       } catch (_) {
@@ -494,7 +573,18 @@ class VideoLibraryScrapeSweep {
       return pending;
     } finally {
       _sweeping = false;
+      // 本轮在飞期间有条目变化被挡下：这里兑现（控制器仍忙则等它忙→闲时由
+      // [_onControllerChanged] 兑现）。
+      if (!_disposed && _sweepDeferred && !_controller.isBusy) {
+        _runDeferred();
+      }
     }
+  }
+
+  List<VideoPendingScrapeWork> _deferUntilIdle(
+      List<VideoPendingScrapeWork> pending) {
+    _sweepDeferred = true;
+    return pending;
   }
 
   Future<void> _saveLedger() =>

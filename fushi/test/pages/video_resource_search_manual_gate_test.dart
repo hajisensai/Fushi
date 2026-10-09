@@ -1,7 +1,7 @@
 // BUG-1539 守卫：下载「资源」tab 的手动搜索按钮在元数据身份（外部 ID/年份）
 // 未填齐时按设计禁用，但必须给出可见的禁用原因（tooltip + 内联提示），
 // 且身份填齐后按钮必须真正可点并触发搜索。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -485,22 +485,26 @@ void main() {
       return tapped;
     }
 
-    // MD3 Expressive：宽窗口是图标 + 文字横排的展开 rail（200），窄窗口收成
-    // 80 宽的收起 rail；与标题栏缩进用的 adaptiveNavRailWidthFor 同一口径。
-    testWidgets('MD3 rail: expanded 200 when extended, 80 when collapsed', (
+    // MD3 Expressive：展开 rail（220，图标 + 文字横排）/ 收起 rail（96），
+    // 都是悬浮面板，占位宽再加左右留白 kMaterialNavRailFloatingInset；与标题栏
+    // 缩进用的 adaptiveNavRailWidthFor 同一口径。
+    testWidgets('MD3 rail: expanded 220 when extended, 96 when collapsed', (
       WidgetTester tester,
     ) async {
       await pumpRail(tester, glass: false, extended: true);
       expect(
         tester.getSize(find.byKey(fushiMaterialNavKey)).width,
-        kMaterialNavRailExpandedWidth,
+        kMaterialNavRailExpandedWidth + kMaterialNavRailFloatingInset,
       );
+      expect(kMaterialNavRailExpandedWidth, 220);
       expect(liquidWidgets(), findsNothing);
       await pumpRail(tester, glass: false, extended: false);
+      await tester.pumpAndSettle();
       expect(
         tester.getSize(find.byKey(fushiMaterialNavKey)).width,
-        kAdaptiveNavRailWidth,
+        kMaterialNavRailCollapsedWidth + kMaterialNavRailFloatingInset,
       );
+      expect(kMaterialNavRailCollapsedWidth, 96);
       expect(liquidWidgets(), findsNothing);
     });
 
@@ -523,7 +527,9 @@ void main() {
       expect((icon.center.dy - label.center.dy).abs(), lessThan(2));
     });
 
-    testWidgets('glass collapsed sidebar is an icon-only strip', (
+    // 2026-10-05 用户反馈「所有文字不要隐藏」：窄条不再只有图标，图标下方恒
+    // 显示标签（与 MD3 收起 rail 一致），总宽不变。
+    testWidgets('glass collapsed sidebar strip shows icon + label', (
       WidgetTester tester,
     ) async {
       await pumpRail(tester, glass: true, extended: false);
@@ -531,8 +537,9 @@ void main() {
         tester.getSize(find.byKey(fushiMaterialNavKey)).width,
         kAdaptiveNavRailWidth,
       );
-      expect(find.text('Books'), findsNothing);
+      expect(find.text('Books'), findsOneWidget);
       expect(_fushiIcon(Icons.book), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('glass sidebar row: focus + Enter selects', (

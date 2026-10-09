@@ -1,5 +1,5 @@
 /*
- *  theme.css — 扩展自有界面的**唯一**调色板（options 页 / 字幕侧边栏 / 工具栏菜单 /
+ *  theme.css — 扩展自有界面的**唯一**调色板与风格 token 源（options 页 / 字幕侧边栏 / 工具栏菜单 /
  *  嵌套查词壳 / 页内抽屉与字幕覆盖层）。
  *
  *  此前四个表面各画各的（options 绿 oklch、侧边栏暖米色、工具栏菜单墨绿、抽屉硬编码
@@ -7,6 +7,17 @@
  *  变量别名到 --fushi-* 上；页内（content script 注入宿主页）的那几块由
  *  scripts/generate-content-css.mjs 把本文件重根到 #fushi-* 宿主上再拼进 content.css，
  *  不会泄漏到宿主页 :root。
+ *
+ *  三层：
+ *    ① 调色板 --fushi-*（种子色经 material-color.js 的 M3 动态方案 + app 同一套表面阶梯派生的明暗
+ *       两套；theme-palette.js 的 derive / tokensFromAppTheme 输出同一组键，预设 / 自定义 / 跟随 Fushi
+ *       都只改这一层。下面的缺省值 = app 缺省种子 #1f4959 的派生结果，theme-palette.test.js 钉住）；
+ *    ② M3 色角色 --md-sys-color-*：**只别名**到 ①，不另立颜色（与 app 查词弹窗 popup.css /
+ *       fushi/assets/popup/m3e-tokens.css 同名同义，扩展页面与弹窗用同一套变量名）；
+ *       形状 / 字阶 / 状态层 / 高度 / 动效 --md-sys-* 与 m3e-tokens.css 同名同值
+ *       （extension-style.test.js 逐项比对）；
+ *    ③ 外观风格 --fushi-shape-* / --fushi-mat-* / 缓动：M3E（缺省）取 ② 的形状与弹簧，
+ *       液态玻璃（data-style="glass"）覆盖成半透明模糊材质。
  *
  *  明暗：默认跟随系统（prefers-color-scheme）；theme.js 按扩展设置 extensionTheme
  *  （auto / light / dark）把 data-theme 写到根上，显式值压过系统。
@@ -16,22 +27,41 @@
  *  SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+/* ── ① 调色板 ── */
 :root {
   color-scheme: light dark;
-  --fushi-bg: oklch(0.965 0.012 145);
-  --fushi-surface: oklch(0.99 0.008 145);
-  --fushi-surface-muted: oklch(0.935 0.018 145);
-  --fushi-surface-strong: oklch(0.9 0.022 145);
-  --fushi-text: oklch(0.245 0.026 145);
-  --fushi-muted: oklch(0.47 0.025 145);
-  --fushi-outline: oklch(0.79 0.025 145);
-  --fushi-primary: oklch(0.46 0.085 155);
-  --fushi-primary-strong: oklch(0.37 0.09 155);
-  --fushi-primary-soft: oklch(0.89 0.055 150);
-  --fushi-on-primary: oklch(0.985 0.008 145);
-  --fushi-warn: oklch(0.62 0.135 78);
-  --fushi-danger: oklch(0.55 0.18 28);
-  --fushi-focus: oklch(0.61 0.13 155);
+  --fushi-bg: #fdfeff;
+  --fushi-surface: #ffffff;
+  --fushi-surface-low: #ebf7fd;
+  --fushi-surface-muted: #e2eef4;
+  --fushi-surface-high: #dae6ec;
+  --fushi-surface-strong: #d0dce2;
+  --fushi-text: #121d22;
+  --fushi-muted: #3b494f;
+  --fushi-outline: #bac9d1;
+  --fushi-outline-strong: #6b7980;
+  --fushi-primary: #006782;
+  --fushi-primary-strong: #005369;
+  --fushi-primary-soft: #bbe9ff;
+  --fushi-on-primary: #ffffff;
+  --fushi-on-primary-soft: #004d63;
+  --fushi-secondary: #456179;
+  --fushi-on-secondary: #ffffff;
+  --fushi-secondary-soft: #cce5ff;
+  --fushi-on-secondary-soft: #2d4960;
+  --fushi-tertiary: #455f89;
+  --fushi-on-tertiary: #ffffff;
+  --fushi-tertiary-soft: #d6e3ff;
+  --fushi-on-tertiary-soft: #2c4770;
+  --fushi-inverse-surface: #273237;
+  --fushi-inverse-on-surface: #e7f2f9;
+  --fushi-inverse-primary: #60d4ff;
+  --fushi-focus: #006782;
+  --fushi-warn: #b07a00;
+  --fushi-danger: #ba1a1a;
+  --fushi-on-danger: #ffffff;
+  --fushi-danger-soft: #ffdad6;
+  --fushi-on-danger-soft: #93000a;
   /* 页内浮层（字幕覆盖层 / 拖柄 / 排队 chip / 拖放提示）压在视频画面上，明暗两态都用深底
      浅字——画面本身什么颜色都有，浮层要的是稳定可读，不是跟页面同色。 */
   --fushi-scrim: rgba(12, 15, 13, 0.72);
@@ -45,37 +75,353 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --fushi-bg: oklch(0.18 0.018 145);
-    --fushi-surface: oklch(0.225 0.022 145);
-    --fushi-surface-muted: oklch(0.27 0.026 145);
-    --fushi-surface-strong: oklch(0.31 0.028 145);
-    --fushi-text: oklch(0.91 0.018 145);
-    --fushi-muted: oklch(0.72 0.02 145);
-    --fushi-outline: oklch(0.39 0.025 145);
-    --fushi-primary: oklch(0.78 0.085 155);
-    --fushi-primary-strong: oklch(0.84 0.075 155);
-    --fushi-primary-soft: oklch(0.31 0.065 155);
-    --fushi-on-primary: oklch(0.19 0.03 155);
-    --fushi-warn: oklch(0.77 0.12 78);
-    --fushi-danger: oklch(0.72 0.15 28);
-    --fushi-focus: oklch(0.78 0.11 155);
+    --fushi-bg: #081217;
+    --fushi-surface: #040c11;
+    --fushi-surface-low: #121c21;
+    --fushi-surface-muted: #1b252a;
+    --fushi-surface-high: #263035;
+    --fushi-surface-strong: #303b40;
+    --fushi-text: #d9e4eb;
+    --fushi-muted: #bac9d1;
+    --fushi-outline: #3b494f;
+    --fushi-outline-strong: #84939a;
+    --fushi-primary: #60d4ff;
+    --fushi-primary-strong: #ace5ff;
+    --fushi-primary-soft: #004d63;
+    --fushi-on-primary: #003545;
+    --fushi-on-primary-soft: #bbe9ff;
+    --fushi-secondary: #adcae5;
+    --fushi-on-secondary: #143349;
+    --fushi-secondary-soft: #2d4960;
+    --fushi-on-secondary-soft: #cce5ff;
+    --fushi-tertiary: #adc7f8;
+    --fushi-on-tertiary: #133058;
+    --fushi-tertiary-soft: #2c4770;
+    --fushi-on-tertiary-soft: #d6e3ff;
+    --fushi-inverse-surface: #d9e4eb;
+    --fushi-inverse-on-surface: #273237;
+    --fushi-inverse-primary: #006782;
+    --fushi-focus: #60d4ff;
+    --fushi-warn: #deaa54;
+    --fushi-danger: #ffb4ab;
+    --fushi-on-danger: #690005;
+    --fushi-danger-soft: #93000a;
+    --fushi-on-danger-soft: #ffdad6;
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --fushi-bg: oklch(0.18 0.018 145);
-  --fushi-surface: oklch(0.225 0.022 145);
-  --fushi-surface-muted: oklch(0.27 0.026 145);
-  --fushi-surface-strong: oklch(0.31 0.028 145);
-  --fushi-text: oklch(0.91 0.018 145);
-  --fushi-muted: oklch(0.72 0.02 145);
-  --fushi-outline: oklch(0.39 0.025 145);
-  --fushi-primary: oklch(0.78 0.085 155);
-  --fushi-primary-strong: oklch(0.84 0.075 155);
-  --fushi-primary-soft: oklch(0.31 0.065 155);
-  --fushi-on-primary: oklch(0.19 0.03 155);
-  --fushi-warn: oklch(0.77 0.12 78);
-  --fushi-danger: oklch(0.72 0.15 28);
-  --fushi-focus: oklch(0.78 0.11 155);
+  --fushi-bg: #081217;
+  --fushi-surface: #040c11;
+  --fushi-surface-low: #121c21;
+  --fushi-surface-muted: #1b252a;
+  --fushi-surface-high: #263035;
+  --fushi-surface-strong: #303b40;
+  --fushi-text: #d9e4eb;
+  --fushi-muted: #bac9d1;
+  --fushi-outline: #3b494f;
+  --fushi-outline-strong: #84939a;
+  --fushi-primary: #60d4ff;
+  --fushi-primary-strong: #ace5ff;
+  --fushi-primary-soft: #004d63;
+  --fushi-on-primary: #003545;
+  --fushi-on-primary-soft: #bbe9ff;
+  --fushi-secondary: #adcae5;
+  --fushi-on-secondary: #143349;
+  --fushi-secondary-soft: #2d4960;
+  --fushi-on-secondary-soft: #cce5ff;
+  --fushi-tertiary: #adc7f8;
+  --fushi-on-tertiary: #133058;
+  --fushi-tertiary-soft: #2c4770;
+  --fushi-on-tertiary-soft: #d6e3ff;
+  --fushi-inverse-surface: #d9e4eb;
+  --fushi-inverse-on-surface: #273237;
+  --fushi-inverse-primary: #006782;
+  --fushi-focus: #60d4ff;
+  --fushi-warn: #deaa54;
+  --fushi-danger: #ffb4ab;
+  --fushi-on-danger: #690005;
+  --fushi-danger-soft: #93000a;
+  --fushi-on-danger-soft: #ffdad6;
+}
+
+/*
+ *  ── ② M3 Expressive 系统 token（与查词弹窗共用的变量名）──
+ *
+ *  颜色角色只是 ① 的别名：任何预设 / 自定义 / 跟随 Fushi 的调色板只改 --fushi-*，这里自动跟上；
+ *  「跟随 Fushi」时 ① 由 app 的 ColorScheme 镜像而来（primaryContainer / tertiary / surfaceContainer*
+ *  逐项对应），扩展页面与 app 同色。表面阶梯：--fushi-bg = surface（页面底），--fushi-surface =
+ *  surfaceContainerLowest（卡片），muted / strong = surfaceContainer / Highest。
+ *  形状 / 字阶 / 状态层 / 高度 / 动效与 fushi/assets/popup/m3e-tokens.css 同名同值（弹窗那份的
+ *  颜色角色读 app 下发的 --md-*，所以不能直接 <link>；数值由 extension-style.test.js 钉成一致）。
+ */
+:root {
+  /* 颜色角色 */
+  --md-sys-color-primary: var(--fushi-primary);
+  --md-sys-color-on-primary: var(--fushi-on-primary);
+  --md-sys-color-primary-container: var(--fushi-primary-soft);
+  --md-sys-color-on-primary-container: var(--fushi-on-primary-soft);
+  --md-sys-color-secondary: var(--fushi-secondary);
+  --md-sys-color-on-secondary: var(--fushi-on-secondary);
+  --md-sys-color-secondary-container: var(--fushi-secondary-soft);
+  --md-sys-color-on-secondary-container: var(--fushi-on-secondary-soft);
+  --md-sys-color-tertiary: var(--fushi-tertiary);
+  --md-sys-color-on-tertiary: var(--fushi-on-tertiary);
+  --md-sys-color-tertiary-container: var(--fushi-tertiary-soft);
+  --md-sys-color-on-tertiary-container: var(--fushi-on-tertiary-soft);
+  --md-sys-color-error: var(--fushi-danger);
+  --md-sys-color-on-error: var(--fushi-on-danger);
+  --md-sys-color-error-container: var(--fushi-danger-soft);
+  --md-sys-color-on-error-container: var(--fushi-on-danger-soft);
+  --md-sys-color-surface: var(--fushi-bg);
+  --md-sys-color-on-surface: var(--fushi-text);
+  --md-sys-color-on-surface-variant: var(--fushi-muted);
+  --md-sys-color-surface-container-lowest: var(--fushi-surface);
+  --md-sys-color-surface-container-low: var(--fushi-surface-low);
+  --md-sys-color-surface-container: var(--fushi-surface-muted);
+  --md-sys-color-surface-container-high: var(--fushi-surface-high);
+  --md-sys-color-surface-container-highest: var(--fushi-surface-strong);
+  --md-sys-color-outline: var(--fushi-outline-strong);
+  --md-sys-color-outline-variant: var(--fushi-outline);
+  --md-sys-color-inverse-surface: var(--fushi-inverse-surface);
+  --md-sys-color-inverse-on-surface: var(--fushi-inverse-on-surface);
+  --md-sys-color-inverse-primary: var(--fushi-inverse-primary);
+  --md-sys-color-scrim: var(--fushi-scrim);
+
+  /* 形状（M3E shape scale） */
+  --md-sys-shape-corner-none: 0px;
+  --md-sys-shape-corner-extra-small: 4px;
+  --md-sys-shape-corner-small: 8px;
+  --md-sys-shape-corner-medium: 12px;
+  --md-sys-shape-corner-large: 16px;
+  --md-sys-shape-corner-large-increased: 20px;
+  --md-sys-shape-corner-extra-large: 28px;
+  --md-sys-shape-corner-extra-large-increased: 32px;
+  --md-sys-shape-corner-extra-extra-large: 48px;
+  --md-sys-shape-corner-full: 999px;
+
+  /* 字阶（px；size / line-height / weight）。emphasized = M3E 强调字重 */
+  --md-sys-typescale-display-small-size: 36px;
+  --md-sys-typescale-display-small-line-height: 44px;
+  --md-sys-typescale-headline-small-size: 24px;
+  --md-sys-typescale-headline-small-line-height: 32px;
+  --md-sys-typescale-title-large-size: 22px;
+  --md-sys-typescale-title-large-line-height: 28px;
+  --md-sys-typescale-title-medium-size: 16px;
+  --md-sys-typescale-title-medium-line-height: 24px;
+  --md-sys-typescale-title-small-size: 14px;
+  --md-sys-typescale-title-small-line-height: 20px;
+  --md-sys-typescale-body-large-size: 16px;
+  --md-sys-typescale-body-large-line-height: 24px;
+  --md-sys-typescale-body-medium-size: 14px;
+  --md-sys-typescale-body-medium-line-height: 20px;
+  --md-sys-typescale-body-small-size: 12px;
+  --md-sys-typescale-body-small-line-height: 16px;
+  --md-sys-typescale-label-large-size: 14px;
+  --md-sys-typescale-label-large-line-height: 20px;
+  --md-sys-typescale-label-medium-size: 12px;
+  --md-sys-typescale-label-medium-line-height: 16px;
+  --md-sys-typescale-label-small-size: 11px;
+  --md-sys-typescale-label-small-line-height: 16px;
+  --md-sys-typescale-weight-regular: 400;
+  --md-sys-typescale-weight-medium: 500;
+  --md-sys-typescale-weight-emphasized: 600;
+
+  /* 状态层不透明度 */
+  --md-sys-state-hover-opacity: 8%;
+  --md-sys-state-focus-opacity: 10%;
+  --md-sys-state-pressed-opacity: 10%;
+  --md-sys-state-dragged-opacity: 16%;
+  --md-sys-state-disabled-content-opacity: 0.38;
+  --md-sys-state-disabled-container-opacity: 12%;
+
+  /* 高度（投影） */
+  --md-sys-elevation-level1: 0 1px 2px rgba(0, 0, 0, 0.18), 0 1px 3px 1px rgba(0, 0, 0, 0.08);
+  --md-sys-elevation-level2: 0 1px 2px rgba(0, 0, 0, 0.2), 0 2px 6px 2px rgba(0, 0, 0, 0.1);
+  --md-sys-elevation-level3: 0 1px 3px rgba(0, 0, 0, 0.2), 0 4px 8px 3px rgba(0, 0, 0, 0.1);
+
+  /* 动效：M3E 弹簧的 cubic-bezier 近似（spatial 带过冲，effects 不过冲） */
+  --md-sys-motion-spring-fast-spatial: cubic-bezier(0.42, 1.67, 0.21, 0.90);
+  --md-sys-motion-spring-fast-spatial-duration: 350ms;
+  --md-sys-motion-spring-default-spatial: cubic-bezier(0.38, 1.21, 0.22, 1.00);
+  --md-sys-motion-spring-default-spatial-duration: 500ms;
+  --md-sys-motion-spring-slow-spatial: cubic-bezier(0.39, 1.29, 0.35, 0.98);
+  --md-sys-motion-spring-slow-spatial-duration: 650ms;
+  --md-sys-motion-spring-fast-effects: cubic-bezier(0.31, 0.94, 0.34, 1.00);
+  --md-sys-motion-spring-fast-effects-duration: 150ms;
+  --md-sys-motion-spring-default-effects: cubic-bezier(0.34, 0.80, 0.34, 1.00);
+  --md-sys-motion-spring-default-effects-duration: 200ms;
+  --md-sys-motion-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+
+  /* 字体：正文无衬线栈；图标是内联 SVG（icons.js，Material Symbols Rounded 子集），不加载图标字体。 */
+  --md-sys-typescale-font: "Google Sans Flex", "Google Sans", "Roboto Flex", "Roboto", "Hiragino Sans", "Yu Gothic UI", "Segoe UI", system-ui, sans-serif;
+}
+
+/*
+ *  ── ③ 外观风格（extensionStyle）：形状 / 表面 / 层次 / 动效 token ──
+ *
+ *  与配色正交：配色只决定颜色，风格只决定「东西长什么形状、表面是什么材质、靠什么分层、怎么动」。
+ *    · m3e（Material 3 Expressive，缺省——用户 2026-10-06「浏览器扩展也统一成 m3e」）：实色色调表面
+ *      （tonal elevation，不靠阴影和描边分层）、M3E 形状分级与按压形变、弹簧缓动；页面是平的底色，
+ *      设置行是分段的色块。数值全取 ② 的 --md-sys-*。
+ *    · glass（液态玻璃，第二套）：半透明填充 + backdrop-filter 模糊增饱和 + 顶缘高光 + 柔和投影，
+ *      页面背后铺一层随主色变化的光斑给玻璃「有东西可透」。数值与 app 侧同源
+ *      （fushi_glass_surface.dart：模糊 sigma 20、填充亮 0.72 / 暗 0.62、描边黑白 8%）。
+ *  theme.js 把 data-style 写到扩展页面根；页内浮层宿主（content.css 里本文件重根后的 #fushi-*）
+ *  由 theme.js stampStyle 写同名属性。没有 data-style（或未知值）= M3E。
+ *  material.css 只消费这里的 token，不另立数值。
+ */
+:root {
+  /* 形状 */
+  --fushi-shape-card: var(--md-sys-shape-corner-extra-large);
+  --fushi-shape-item: var(--md-sys-shape-corner-large);
+  --fushi-shape-control: var(--md-sys-shape-corner-full);
+  --fushi-shape-control-pressed: var(--md-sys-shape-corner-medium);
+  --fushi-shape-field: var(--md-sys-shape-corner-large);
+  --fushi-shape-menu: var(--md-sys-shape-corner-large);
+  --fushi-shape-segment: var(--md-sys-shape-corner-extra-small);
+  /* 提示条（语义 tonal 色块，对齐 app FushiInlineNotice 的 M3E large 16）与 snackbar（对齐 app
+     kFushiM3eInverseSurfaceRadius 24） */
+  --fushi-shape-notice: var(--md-sys-shape-corner-large);
+  --fushi-shape-snackbar: 24px;
+  /* 动效：标准（效果）缓动 / 空间（位移、形变）弹簧 / 三档时长 */
+  --fushi-ease: var(--md-sys-motion-easing-emphasized);
+  --fushi-ease-spatial: var(--md-sys-motion-spring-fast-spatial);
+  --fushi-dur-short: var(--md-sys-motion-spring-default-effects-duration);
+  --fushi-dur-medium: var(--md-sys-motion-spring-fast-spatial-duration);
+  --fushi-dur-long: var(--md-sys-motion-spring-default-spatial-duration);
+  /* 表面材质（M3E：实色色调，无描边 / 高光 / 模糊 / 光斑） */
+  --fushi-mat-fill: var(--md-sys-color-surface-container-lowest);
+  --fushi-mat-fill-strong: var(--md-sys-color-surface-container);
+  --fushi-mat-fill-subtle: color-mix(in oklch, var(--md-sys-color-surface-container) 70%, transparent);
+  --fushi-mat-stroke: transparent;
+  --fushi-mat-edge: transparent;
+  --fushi-mat-highlight: transparent;
+  /* 浮层（菜单 / toast）才用阴影：elevation level 2 */
+  --fushi-mat-shadow: var(--md-sys-elevation-level2);
+  --fushi-mat-filter: none;
+  --fushi-mat-orb-1: transparent;
+  --fushi-mat-orb-2: transparent;
+  --fushi-mat-orb-3: transparent;
+  --fushi-mat-orb-strength: 0%;
+  --fushi-mat-field: var(--md-sys-color-surface-container-highest);
+  --fushi-mat-field-hover: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container-highest));
+  --fushi-mat-field-focus: var(--md-sys-color-surface-container-highest);
+  --fushi-mat-thumb: var(--md-sys-color-on-primary);
+  --fushi-mat-thumb-shadow: none;
+}
+
+/* ── 液态玻璃（data-style="glass"）。特异性 (0,2,0) 压过 M3E 缺省；暗色块 (0,3,0)；兼容层同为 (0,3,0)
+   且排在暗色块之后，暗色下也不会把实心回落盖回半透明。 ── */
+:root[data-style="glass"] {
+  --fushi-shape-card: 20px;
+  --fushi-shape-item: 10px;
+  --fushi-shape-control: 999px;
+  --fushi-shape-control-pressed: 999px;
+  --fushi-shape-field: 999px;
+  --fushi-shape-menu: 14px;
+  --fushi-shape-segment: 0px;
+  --fushi-shape-notice: 14px;
+  --fushi-shape-snackbar: 20px;
+  --fushi-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --fushi-ease-spatial: cubic-bezier(0.22, 1, 0.36, 1);
+  --fushi-dur-short: 160ms;
+  --fushi-dur-medium: 240ms;
+  --fushi-dur-long: 420ms;
+  --fushi-mat-fill: color-mix(in oklch, var(--fushi-surface) 54%, transparent);
+  --fushi-mat-fill-strong: color-mix(in oklch, var(--fushi-surface) 70%, transparent);
+  --fushi-mat-fill-subtle: color-mix(in oklch, var(--fushi-surface) 32%, transparent);
+  --fushi-mat-stroke: rgba(255, 255, 255, 0.62);
+  --fushi-mat-edge: color-mix(in oklch, var(--fushi-text) 9%, transparent);
+  --fushi-mat-highlight: rgba(255, 255, 255, 0.7);
+  --fushi-mat-shadow:
+    0 1px 2px color-mix(in oklch, var(--fushi-text) 6%, transparent),
+    0 14px 36px -14px color-mix(in oklch, var(--fushi-text) 30%, transparent);
+  --fushi-mat-filter: blur(20px) saturate(1.8);
+  --fushi-mat-orb-1: color-mix(in oklch, var(--fushi-primary) 55%, oklch(0.8 0.13 300));
+  --fushi-mat-orb-2: color-mix(in oklch, var(--fushi-primary) 45%, oklch(0.84 0.11 215));
+  --fushi-mat-orb-3: color-mix(in oklch, var(--fushi-primary-soft) 50%, oklch(0.88 0.1 70));
+  --fushi-mat-orb-strength: 62%;
+  /* 输入框填充：玻璃面里的一层正文色薄染（亮色下比卡片略深），悬停 / 聚焦时换成更实的表面。 */
+  --fushi-mat-field: color-mix(in oklch, var(--fushi-text) 5.5%, transparent);
+  --fushi-mat-field-hover: color-mix(in oklch, var(--fushi-text) 8%, transparent);
+  --fushi-mat-field-focus: color-mix(in oklch, var(--fushi-surface) 86%, transparent);
+  /* 开关拇指：玻璃下是一颗带投影的白色水滴 */
+  --fushi-mat-thumb: #fff;
+  --fushi-mat-thumb-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-style="glass"]:not([data-theme="light"]) {
+    --fushi-mat-fill: color-mix(in oklch, color-mix(in oklch, var(--fushi-surface) 55%, black) 34%, transparent);
+    --fushi-mat-fill-strong: color-mix(in oklch, color-mix(in oklch, var(--fushi-surface) 65%, black) 50%, transparent);
+    --fushi-mat-fill-subtle: color-mix(in oklch, color-mix(in oklch, var(--fushi-surface) 55%, black) 22%, transparent);
+    --fushi-mat-stroke: rgba(255, 255, 255, 0.22);
+    --fushi-mat-highlight: rgba(255, 255, 255, 0.2);
+    --fushi-mat-edge: rgba(255, 255, 255, 0.12);
+    --fushi-mat-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 18px 40px -16px rgba(0, 0, 0, 0.7);
+    --fushi-mat-orb-1: color-mix(in oklch, var(--fushi-primary) 45%, oklch(0.5 0.17 300));
+    --fushi-mat-orb-2: color-mix(in oklch, var(--fushi-primary) 40%, oklch(0.52 0.13 220));
+    --fushi-mat-orb-3: color-mix(in oklch, var(--fushi-primary-soft) 50%, oklch(0.48 0.11 60));
+    --fushi-mat-orb-strength: 72%;
+    --fushi-mat-field: color-mix(in oklch, var(--fushi-text) 9%, transparent);
+    --fushi-mat-field-hover: color-mix(in oklch, var(--fushi-text) 13%, transparent);
+    --fushi-mat-field-focus: color-mix(in oklch, var(--fushi-surface) 78%, transparent);
+    --fushi-mat-thumb: #f4f4f4;
+  }
+}
+
+:root[data-style="glass"][data-theme="dark"] {
+  --fushi-mat-fill: color-mix(in oklch, color-mix(in oklch, var(--fushi-surface) 55%, black) 34%, transparent);
+  --fushi-mat-fill-strong: color-mix(in oklch, color-mix(in oklch, var(--fushi-surface) 65%, black) 50%, transparent);
+  --fushi-mat-fill-subtle: color-mix(in oklch, color-mix(in oklch, var(--fushi-surface) 55%, black) 22%, transparent);
+  --fushi-mat-stroke: rgba(255, 255, 255, 0.22);
+  --fushi-mat-highlight: rgba(255, 255, 255, 0.2);
+  --fushi-mat-edge: rgba(255, 255, 255, 0.12);
+  --fushi-mat-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 18px 40px -16px rgba(0, 0, 0, 0.7);
+  --fushi-mat-orb-1: color-mix(in oklch, var(--fushi-primary) 45%, oklch(0.5 0.17 300));
+  --fushi-mat-orb-2: color-mix(in oklch, var(--fushi-primary) 40%, oklch(0.52 0.13 220));
+  --fushi-mat-orb-3: color-mix(in oklch, var(--fushi-primary-soft) 50%, oklch(0.48 0.11 60));
+  --fushi-mat-orb-strength: 72%;
+  --fushi-mat-field: color-mix(in oklch, var(--fushi-text) 9%, transparent);
+  --fushi-mat-field-hover: color-mix(in oklch, var(--fushi-text) 13%, transparent);
+  --fushi-mat-field-focus: color-mix(in oklch, var(--fushi-surface) 78%, transparent);
+  --fushi-mat-thumb: #f4f4f4;
+}
+
+/* 玻璃的兼容层：内核不支持 backdrop-filter，或用户要求减少透明度 → 实心填充、不模糊（层次靠
+   描边与投影还在）。特异性 (0,3,0)、又排在玻璃明暗两块之后：暗色块不会把实心填充盖回半透明。 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root[data-style="glass"]:is([data-theme], :not([data-theme])) {
+    --fushi-mat-fill: var(--fushi-surface);
+    --fushi-mat-fill-strong: var(--fushi-surface);
+    --fushi-mat-fill-subtle: var(--fushi-surface-muted);
+    --fushi-mat-field: var(--fushi-surface-muted);
+    --fushi-mat-field-hover: var(--fushi-surface-strong);
+    --fushi-mat-field-focus: var(--fushi-surface);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-style="glass"]:is([data-theme], :not([data-theme])) {
+    --fushi-mat-fill: var(--fushi-surface);
+    --fushi-mat-fill-strong: var(--fushi-surface);
+    --fushi-mat-fill-subtle: var(--fushi-surface-muted);
+    --fushi-mat-field: var(--fushi-surface-muted);
+    --fushi-mat-field-hover: var(--fushi-surface-strong);
+    --fushi-mat-field-focus: var(--fushi-surface);
+    --fushi-mat-filter: none;
+  }
+}
+
+/* 减少动态效果：弹簧过冲换成不过冲的效果曲线、时长压到最短（material.css / 页内浮层再把
+   入场动画归零）。两套风格都适用。 */
+@media (prefers-reduced-motion: reduce) {
+  :root:is([data-style], :not([data-style])) {
+    --fushi-ease-spatial: var(--md-sys-motion-easing-emphasized);
+    --fushi-dur-short: 1ms;
+    --fushi-dur-medium: 1ms;
+    --fushi-dur-long: 1ms;
+  }
 }

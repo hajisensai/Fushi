@@ -1,10 +1,12 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/stats/stat_range.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -17,72 +19,237 @@ import 'package:fushi_core/fushi_core.dart';
 /// 列表）；顶部四张时段卡（今日 / 本周 / 本月 / 全部）与目标卡是**固定**的当下
 /// 视图，不跟范围走——与 Niratan「Today / This Week 恒为当下」同一取舍。
 class StatRangeBar extends StatelessWidget {
-  const StatRangeBar({required this.range, required this.onChanged, super.key});
+  const StatRangeBar({
+    required this.range,
+    required this.onChanged,
+    super.key,
+    this.padding,
+  });
 
   final StatRange range;
   final ValueChanged<StatRangeSelection> onChanged;
 
+  /// 外边距；null = 左右上 [FushiSpacingTokens.card]、下 0（与区块卡同一节奏）。
+  final EdgeInsetsGeometry? padding;
+
+  /// 粒度分段控件的最大宽度：宽屏下不把六段拉满整栏（每段会宽到像按钮条），
+  /// 窄屏按可用宽度等分。
+  static const double kSegmentsMaxWidth = 480;
+
+  void _selectMode(BuildContext context, StatRangeMode mode) {
+    if (mode == StatRangeMode.custom) {
+      _pickCustomRange(context);
+      return;
+    }
+    onChanged(
+      StatRangeSelection(
+        mode: mode,
+        // 换粒度保留锚点：在「2026-05」里切到「周」落在 5 月那一周，而不是跳回本周。
+        anchorKey: range.anchorKey == range.todayKey ? null : range.anchorKey,
+      ),
+    );
+  }
+
+  /// 「自定义」：弹 Material 日期区间选择器，初值 = 当前所选区间，可选到今日
+  /// （统计日口径的今日——重置整点前的凌晨仍算昨天）为止；取消则范围不变。
+  /// 选择器给的是日历日，按 [FushiDatabase.statCalendarDayKeyOf] 直接当统计日
+  /// key（统计日的标签就是它那一天的日历日），不再过 [FushiDatabase.statDateKeyOf]
+  /// 前移重置整点。
+  Future<void> _pickCustomRange(BuildContext context) async {
+    final DateTime lastDate = FushiDatabase.statDateKeyToDay(range.todayKey);
+    final DateTime earliest = FushiDatabase.statDateKeyToDay(
+      range.earliestKey,
+    );
+    final DateTime tenYearsBack = DateTime(lastDate.year - 10);
+    final DateTime domainStart = earliest.isBefore(tenYearsBack)
+        ? earliest
+        : tenYearsBack;
+    // 选择跨 tab 共享，当前域可能没有这么早的数据；编辑不能截短原区间。
+    final DateTime selectedStart = FushiDatabase.statDateKeyToDay(range.fromKey);
+    final DateTime firstDate = selectedStart.isBefore(domainStart)
+        ? selectedStart
+        : domainStart;
+    DateTime clamp(DateTime d) => d.isBefore(firstDate)
+        ? firstDate
+        : d.isAfter(lastDate)
+        ? lastDate
+        : d;
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: firstDate,
+      lastDate: lastDate,
+      currentDate: lastDate,
+      initialDateRange: DateTimeRange(
+        start: clamp(FushiDatabase.statDateKeyToDay(range.fromKey)),
+        end: clamp(FushiDatabase.statDateKeyToDay(range.toKey)),
+      ),
+      helpText: t.stat_range_custom_pick,
+    );
+    if (picked == null || !context.mounted) return;
+    onChanged(
+      StatRangeSelection.custom(
+        fromKey: FushiDatabase.statCalendarDayKeyOf(picked.start),
+        toKey: FushiDatabase.statCalendarDayKeyOf(picked.end),
+      ),
+    );
+  }
+
+  /// 期间步进器「‹ 区间 ›」：与粒度分段同高（40）的紧凑胶囊。M3E 是扁平
+  /// surfaceContainerHigh 底的小胶囊（不浮、无投影，曾是 56 高的悬浮大胶囊，
+  /// 与旁边 40 高的分段按钮组一高一矮、两种样式）；Apple 保持无底一排。
+  Widget _periodStepper(BuildContext context, FushiDesignTokens tokens) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    const BoxConstraints button = BoxConstraints.tightFor(
+      width: _kStepperHeight,
+      height: _kStepperHeight,
+    );
+    final Widget row = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        FushiIconButton(
+          icon: Icons.chevron_left,
+          tooltip: t.stat_range_previous,
+          enabled: range.canGoPrevious,
+          size: 20,
+          padding: EdgeInsets.zero,
+          constraints: button,
+          onTap: () => onChanged(range.shifted(-1)),
+        ),
+        Flexible(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 88),
+            child: _customAware(
+              context,
+              AnimatedSwitcher(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                switchInCurve: FushiMotion.enter,
+                switchOutCurve: FushiMotion.exit,
+                // 完整起止日期比月标签长；只在空间不足时缩小，保留两端日期。
+                child: FittedBox(
+                  key: ValueKey<String>(formatStatRange(range)),
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    formatStatRange(range),
+                    textAlign: TextAlign.center,
+                    style: tokens.type.metadata.copyWith(
+                      color: scheme.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        FushiIconButton(
+          icon: Icons.chevron_right,
+          tooltip: t.stat_range_next,
+          enabled: range.canGoNext,
+          size: 20,
+          padding: EdgeInsets.zero,
+          constraints: button,
+          onTap: () => onChanged(range.shifted(1)),
+        ),
+      ],
+    );
+    if (isGlassDesign(context)) return row;
+    final bool eink = isEinkTheme(context);
+    return SizedBox(
+      height: _kStepperHeight,
+      child: DecoratedBox(
+        key: const ValueKey<String>('stat-range-stepper'),
+        decoration: ShapeDecoration(
+          color: eink ? Colors.transparent : scheme.surfaceContainerHigh,
+          shape: StadiumBorder(
+            side: eink ? BorderSide(color: scheme.outline) : BorderSide.none,
+          ),
+        ),
+        child: row,
+      ),
+    );
+  }
+
+  /// 自定义区间下，步进器中间的区间文字本身可点 → 重新选区间。
+  Widget _customAware(BuildContext context, Widget child) {
+    if (range.mode != StatRangeMode.custom) return child;
+    return FushiTooltip(
+      message: t.stat_range_custom_edit,
+      child: InkWell(
+        key: const ValueKey<String>('stat-range-custom-label'),
+        customBorder: const StadiumBorder(),
+        onTap: () => _pickCustomRange(context),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: child,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme scheme = Theme.of(context).colorScheme;
+    // 2026-10 统计中心重设计：粒度是分段控件（MD3 = M3 Expressive 连接式按钮
+    // 组，Apple = 分段控件，经 [FushiSegmentedButton] 一处分派）。2026-10-06：
+    // 粒度分段与期间步进器同一行、同高 40（此前分两行、步进器是悬浮大胶囊），
+    // 窄屏摆不下时步进器折到下一行。
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.card,
-        tokens.spacing.card,
-        tokens.spacing.card,
-        0,
-      ),
+      padding: padding ??
+          EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            tokens.spacing.card,
+            tokens.spacing.card,
+            0,
+          ),
       child: Wrap(
         spacing: tokens.spacing.gap,
         runSpacing: tokens.spacing.gap,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: <Widget>[
-          for (final StatRangeMode mode in StatRangeMode.values)
-            FushiSelectableChip(
-              label: statRangeModeLabel(mode),
-              selected: range.mode == mode,
-              // 换粒度保留锚点：在「2026-05」里切到「周」落在 5 月那一周，
-              // 而不是跳回本周。
-              onSelected: (_) => onChanged(
-                StatRangeSelection(
-                  mode: mode,
-                  anchorKey: range.anchorKey == range.todayKey
-                      ? null
-                      : range.anchorKey,
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: kSegmentsMaxWidth),
+            child: FushiSegmentedButton<StatRangeMode>(
+              key: const ValueKey<String>('stat-range-modes'),
+              segments: <ButtonSegment<StatRangeMode>>[
+                for (final StatRangeMode mode in StatRangeMode.values)
+                  if (mode == StatRangeMode.custom)
+                    // 「自定义」是纯图标段（文案进 tooltip / 语义）：六段等分
+                    // 在手机宽下每段不到 60，任何语言的「自定义」都会被截断。
+                    ButtonSegment<StatRangeMode>(
+                      value: mode,
+                      icon: const FushiIcon(
+                        FushiIcons.calendar,
+                        key: ValueKey<String>('stat-range-mode-custom'),
+                      ),
+                      tooltip: statRangeModeLabel(mode),
+                    )
+                  else
+                    ButtonSegment<StatRangeMode>(
+                      value: mode,
+                      label: Text(
+                        statRangeModeLabel(mode),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+              ],
+              selected: <StatRangeMode>{range.mode},
+              showSelectedIcon: false,
+              // 六段（含「自定义」）在手机宽（约 358 可用）下等分每段不到 60，
+              // 默认左右各 16 会把「全部」「自定义」挤成省略号；收到 8。
+              style: const ButtonStyle(
+                padding: WidgetStatePropertyAll<EdgeInsetsGeometry>(
+                  EdgeInsets.symmetric(horizontal: 8),
                 ),
               ),
+              onSelectionChanged: (Set<StatRangeMode> modes) {
+                if (modes.isNotEmpty) _selectMode(context, modes.first);
+              },
             ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              FushiIconButton(
-                icon: Icons.chevron_left,
-                tooltip: t.stat_range_previous,
-                enabled: range.canGoPrevious,
-                onTap: () => onChanged(range.shifted(-1)),
-              ),
-              ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 96),
-                child: Text(
-                  formatStatRange(range),
-                  textAlign: TextAlign.center,
-                  style: tokens.type.metadata.copyWith(
-                    color: scheme.onSurface,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              FushiIconButton(
-                icon: Icons.chevron_right,
-                tooltip: t.stat_range_next,
-                enabled: range.canGoNext,
-                onTap: () => onChanged(range.shifted(1)),
-              ),
-            ],
           ),
+          _periodStepper(context, tokens),
           // 2026-10 体验优化：学习日历点某天会把范围切到单日，原先只能再点
-          // 「月」芯片 + 连按箭头才回得去。单日态下给一个显眼的「本月」快捷
+          // 「月」+ 连按箭头才回得去。单日态下给一个显眼的「本月」快捷
           // 入口，一步回到当月（锚点跟随今日）。
           if (range.mode == StatRangeMode.day)
             FushiActionChip(
@@ -91,11 +258,22 @@ class StatRangeBar extends StatelessWidget {
               icon: Icons.calendar_month_outlined,
               onPressed: () => onChanged(const StatRangeSelection()),
             ),
+          // 自定义区间：分段里「自定义」已选中、再点不会触发，给一个改区间的入口。
+          if (range.mode == StatRangeMode.custom)
+            FushiActionChip(
+              key: const ValueKey<String>('stat-range-custom-edit'),
+              label: t.stat_range_custom_edit,
+              icon: FushiIcons.edit,
+              onPressed: () => _pickCustomRange(context),
+            ),
         ],
       ),
     );
   }
 }
+
+/// 期间步进器的高：与 M3E 连接式分段按钮组（40）同高。
+const double _kStepperHeight = 40;
 
 String statRangeModeLabel(StatRangeMode mode) => switch (mode) {
   StatRangeMode.day => t.stat_range_mode_day,
@@ -103,10 +281,11 @@ String statRangeModeLabel(StatRangeMode mode) => switch (mode) {
   StatRangeMode.month => t.stat_range_mode_month,
   StatRangeMode.year => t.stat_range_mode_year,
   StatRangeMode.all => t.stat_all_time,
+  StatRangeMode.custom => t.stat_range_mode_custom,
 };
 
 /// 区间文字：日 `2026-09-28`、周 `09-22 ~ 09-28`、月 `2026-09`、年 `2026`、
-/// 全部 `2025-03-01 ~ 2026-09-28`。
+/// 全部 / 自定义 `2025-03-01 ~ 2026-09-28`（单日只写一天）。
 String formatStatRange(StatRange range) {
   switch (range.mode) {
     case StatRangeMode.day:
@@ -118,6 +297,7 @@ String formatStatRange(StatRange range) {
     case StatRangeMode.year:
       return range.fromKey.substring(0, 4);
     case StatRangeMode.all:
+    case StatRangeMode.custom:
       return range.fromKey == range.toKey
           ? range.fromKey
           : '${range.fromKey} ~ ${range.toKey}';
@@ -156,7 +336,12 @@ List<StatDayData> buildStatRangeChartData(
           bucket,
           () => StatDayData(
             dateKey: bucket,
-            label: weekly ? bucket.substring(5) : bucket.substring(2),
+            // 周桶键是周一，可能早于区间起点（自定义区间从周中开始）；标签夹到
+            // 区间起点，免得首柱写着区间外的日期。
+            label: weekly
+                ? (bucket.compareTo(range.fromKey) < 0 ? range.fromKey : bucket)
+                      .substring(5)
+                : bucket.substring(2),
           ),
         );
         final StatDayData? day = byDay[key];
@@ -200,10 +385,15 @@ Widget buildStatRangeChartSection(
   Map<String, StatDayData> byDay,
 ) {
   final List<StatDayData> data = buildStatRangeChartData(byDay, range);
+  int totalMs = 0;
+  for (final StatDayData d in data) {
+    totalMs += d.ms;
+  }
   return buildStatDailyDurationChartSection(
     context,
     data,
-    title: '${t.stat_metric_time} · ${formatStatRange(range)}',
+    title: t.stat_metric_time,
+    subtitle: '${formatStatRange(range)} · ${formatStatTime(totalMs)}',
     labelEvery: math.max(1, (data.length / 7).ceil()),
   );
 }
@@ -235,72 +425,54 @@ Widget buildStatRangeSummary(
     (t.stat_daily_average, formatStatTime(avgMs)),
     for (final StatSummaryLine l in extraLines) (l.label ?? '', l.value),
   ];
-  return Padding(
-    padding: EdgeInsets.fromLTRB(
-      tokens.spacing.card,
-      tokens.spacing.card,
-      tokens.spacing.card,
-      tokens.spacing.card,
-    ),
-    child: FushiCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            '${t.stat_range_summary} · ${formatStatRange(range)}',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          SizedBox(height: tokens.spacing.gap),
-          // 等宽列网格（2026-10-04 用户截图）：原先是按内容宽度排的 Wrap，每行
-          // 能塞几个取决于数字长短——手机上第一行两格、第二行两格、第三行三格，
-          // 列不对齐，像随手堆的。改成手机 2 列、宽屏 4 列的等宽格，数字过长时
-          // 在格内等比缩小而不是换行或撑出。
-          LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final double gap = tokens.spacing.card;
-              final int columns = constraints.maxWidth >= 520 ? 4 : 2;
-              final double cellWidth =
-                  (constraints.maxWidth - gap * (columns - 1)) / columns;
-              return Wrap(
-                spacing: gap,
-                runSpacing: tokens.spacing.gap,
-                children: <Widget>[
-                  for (final (String label, String value) in cells)
-                    SizedBox(
-                      width: cellWidth,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: AlignmentDirectional.centerStart,
-                            child: Text(
-                              value,
-                              maxLines: 1,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          Text(
-                            label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: tokens.type.metadata.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
+  // 2026-10 统计中心重设计：区块卡外框（[StatSectionCard]），区间进副标题。
+  return StatSectionCard(
+    title: t.stat_range_summary,
+    subtitle: formatStatRange(range),
+    icon: Icons.summarize_outlined,
+    child: LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double gap = tokens.spacing.card;
+        final int columns = constraints.maxWidth >= 520 ? 4 : 2;
+        final double cellWidth =
+            (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(
+          spacing: gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            for (final (String label, String value) in cells)
+              SizedBox(
+                width: cellWidth,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        value,
+                        maxLines: 1,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                     ),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: tokens.type.metadata.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
     ),
   );
 }
@@ -319,38 +491,28 @@ Widget buildStatRangeCalendarSection(
       if (e.value.ms > 0 || e.value.chars > 0)
         e.key: math.max(e.value.ms ~/ 1000, 1),
   };
-  return Padding(
-    // 底部留一个 card 间距：此前为 0，热力图最后一行与下方「时长 · 区间」
-    // 图表标题贴死（2026-10-04 用户截图）。
-    padding: EdgeInsets.all(tokens.spacing.card),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Text(
-          t.stat_range_calendar,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        SizedBox(height: tokens.spacing.gap),
-        StatContributionHeatmap(
-          valueByDateKey: values,
-          now: now,
-          baseColor: tokens.surfaces.primary,
-          emptyColor: statHeatmapEmptyColors(context).$1,
-          emptyBorderColor: statHeatmapEmptyColors(context).$2,
-          valueLabel: (String dateKey, int _) {
-            final StatDayData? d = byDay[dateKey];
-            final String day = formatStatHeatmapDay(dateKey);
-            if (d == null) return day;
-            final List<String> parts = <String>[
-              day,
-              if (d.ms > 0) formatStatTime(d.ms),
-              if (d.chars > 0) formatStatChars(d.chars),
-            ];
-            return parts.join(' · ');
-          },
-          onDaySelected: (String dateKey, int _) => onDaySelected(dateKey),
-        ),
-      ],
+  // 2026-10 统计中心重设计：区块卡外框（[StatSectionCard]）。
+  return StatSectionCard(
+    title: t.stat_range_calendar,
+    icon: Icons.calendar_month_outlined,
+    child: StatContributionHeatmap(
+      valueByDateKey: values,
+      now: now,
+      baseColor: tokens.surfaces.primary,
+      emptyColor: statHeatmapEmptyColors(context).$1,
+      emptyBorderColor: statHeatmapEmptyColors(context).$2,
+      valueLabel: (String dateKey, int _) {
+        final StatDayData? d = byDay[dateKey];
+        final String day = formatStatHeatmapDay(dateKey);
+        if (d == null) return day;
+        final List<String> parts = <String>[
+          day,
+          if (d.ms > 0) formatStatTime(d.ms),
+          if (d.chars > 0) formatStatChars(d.chars),
+        ];
+        return parts.join(' · ');
+      },
+      onDaySelected: (String dateKey, int _) => onDaySelected(dateKey),
     ),
   );
 }

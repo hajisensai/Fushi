@@ -127,6 +127,20 @@ final List<_Exemption> _appIdExemptions = <_Exemption>[
 /// B：owner 相同但仓库不是当前仓库的 slug。
 final List<_Exemption> _repoSlugExemptions = <_Exemption>[
   _Exemption(
+    pathSuffix: 'tool/bluray/platforms/build_android.sh',
+    context: RegExp(
+      r'git .*clone https://github\.com/hajisensai/libmpv-android-video-build\.git ',
+    ),
+    reason: '蓝光 Android 原生依赖在独立构建仓编译，此行克隆真实依赖源码，不是本仓旧名。',
+  ),
+  _Exemption(
+    pathSuffix: 'tool/bluray/platforms/build_darwin.sh',
+    context: RegExp(
+      r'git clone --bare https://github\.com/hajisensai/libmpv-darwin-build ',
+    ),
+    reason: '蓝光 Apple 原生依赖在独立构建仓编译，此行克隆真实依赖源码，不是本仓旧名。',
+  ),
+  _Exemption(
     pathSuffix: 'tools/build_magpie_slim.ps1',
     context: null,
     reason:

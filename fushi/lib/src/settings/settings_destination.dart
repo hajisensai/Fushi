@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 
 enum SettingsDestinationId {
@@ -139,6 +139,7 @@ class SettingsDestination {
     this.body,
     this.bodyBeforeSections = false,
     this.bodySearchEntries = const <SettingsBodySearchEntry>[],
+    this.bodyFillsViewport = false,
   });
 
   final SettingsDestinationId id;
@@ -162,6 +163,19 @@ class SettingsDestination {
   /// 自绘正文的搜索元数据。索引器沿子页路径递归收集；声明 hasRevealTarget 的
   /// 行使用真实 SettingsSearchTarget 定位，其余兼容条目只导航到所在页。
   final List<SettingsBodySearchEntry> bodySearchEntries;
+
+  /// 正文自己管滚动、要占满详情视口（吸顶的工具区 / 两栏左侧导航 / 粘性分组
+  /// 标题都依赖这一点——装进外层 SingleChildScrollView 就只能整页一起滚）。
+  ///
+  /// 只对**推入的独立详情页**（[buildDetailPage]）且没有 schema [sections] 的
+  /// destination 生效：此时渲染器保留页头与水平内边距，把 [body] 直接放进剩余
+  /// 视口，不再套外层滚动容器。嵌进父级可滚动宿主（shrinkWrap）的场合仍按旧
+  /// 契约平铺，因为那里本来就没有可占满的视口。
+  final bool bodyFillsViewport;
+
+  /// [bodyFillsViewport] 真正生效的判据（三个渲染器共用，免得各写一份）。
+  bool fillsViewport(SettingsContext context) =>
+      bodyFillsViewport && body != null && visibleSections(context).isEmpty;
 
   bool isVisible(SettingsContext context) => visible?.call(context) ?? true;
 
@@ -218,11 +232,27 @@ class SettingsSection {
     bool collapsedByDefault = false,
     SettingsSectionPresentation? presentation,
     this.summaryBuilder,
+    this.liveListenable,
   }) : presentation =
            presentation ??
            (collapsedByDefault
                ? SettingsSectionPresentation.collapsed
-               : SettingsSectionPresentation.alwaysExpanded);
+               : SettingsSectionPresentation.alwaysExpanded),
+       _unfiltered = null;
+
+  /// [visibleCopy] 的产物：记住过滤前的分组，[liveListenable] 触发时据此重新
+  /// 求值行级可见性（被过滤掉的行要能重新出现）。
+  const SettingsSection._filtered({
+    required this.items,
+    required this.presentation,
+    required SettingsSection unfiltered,
+    this.id,
+    this.title,
+    this.footer,
+    this.visible,
+    this.summaryBuilder,
+    this.liveListenable,
+  }) : _unfiltered = unfiltered;
 
   /// Stable identity independent of translated titles or visible row positions.
   final String? id;
@@ -234,6 +264,20 @@ class SettingsSection {
   final SettingsVisibility? visible;
   final List<SettingsItem> items;
 
+  /// 本分组的行（标题 / 副标题 / 值 / 行级可见性）读的**外部事件源**——不是设置
+  /// 偏好、不经 `SettingsContext.refresh` 变化的运行期状态（错误 / 调试日志条数、
+  /// galgame hook 异步报上来的准入、推荐包下载阶段……）。渲染层订阅它，变化时
+  /// **只重建本分组**（并按 [visibleCopy] 重算行级可见性）。
+  ///
+  /// 此前这类状态由设置宿主页整页 setState 刷新：调试日志开着时每条 debugPrint
+  /// 都把整页设置行重建一遍，日志一刷屏设置页就逐帧掉帧。
+  ///
+  /// 限制：只能增删本分组里的行，分组本身至少要有一行恒可见（整组的出现 /
+  /// 消失仍由宿主重建决定）。
+  final Listenable? Function(SettingsContext context)? liveListenable;
+
+  final SettingsSection? _unfiltered;
+
   /// 旧调用点的兼容读取；新代码显式使用 presentation。折叠仅影响展示，
   /// 搜索可临时展开，业务配置值不受影响。
   bool get collapsedByDefault =>
@@ -242,14 +286,19 @@ class SettingsSection {
   bool isVisible(SettingsContext context) => visible?.call(context) ?? true;
 
   SettingsSection visibleCopy(SettingsContext context) {
-    return SettingsSection(
-      id: id ?? (items.isEmpty ? null : 'section.${items.first.id}'),
-      title: title,
-      footer: footer,
-      visible: visible,
-      presentation: presentation,
-      summaryBuilder: summaryBuilder,
-      items: items
+    final SettingsSection source = _unfiltered ?? this;
+    return SettingsSection._filtered(
+      unfiltered: source,
+      id:
+          source.id ??
+          (source.items.isEmpty ? null : 'section.${source.items.first.id}'),
+      title: source.title,
+      footer: source.footer,
+      visible: source.visible,
+      presentation: source.presentation,
+      summaryBuilder: source.summaryBuilder,
+      liveListenable: source.liveListenable,
+      items: source.items
           .where((SettingsItem item) => item.isVisible(context))
           .toList(growable: false),
     );
@@ -385,6 +434,7 @@ class SettingsActionItem extends SettingsItem {
     required super.id,
     required super.title,
     required this.onTap,
+    this.destructive = false,
     super.subtitle,
     super.subtitleBuilder,
     super.icon,
@@ -394,6 +444,11 @@ class SettingsActionItem extends SettingsItem {
   });
 
   final SettingsItemAction onTap;
+
+  /// true = 不可撤销的危险动作（清空 / 删除 / 重置），渲染成 error 色调的
+  /// 危险操作行（settings_kit 的 SettingsDangerRow）。只影响外观，确认框仍由
+  /// [onTap] 自己负责。
+  final bool destructive;
 }
 
 class SettingsSwitchItem extends SettingsItem {
@@ -408,10 +463,17 @@ class SettingsSwitchItem extends SettingsItem {
     super.visible,
     super.reader,
     super.video,
+    this.defaultValue,
   });
 
   final SettingsSwitchGetter value;
   final SettingsSwitchChanged onChanged;
+
+  /// 出厂默认值；非 null 时渲染层在值偏离默认时标「已改过」并提供单项恢复默认
+  /// （见 settings_kit 的 settingsResetSpecFor）。只是 UI 元数据，与持久化无关——
+  /// 必须与读取端（AppModel getter 的 defaultValue）保持一致，守卫见
+  /// test/settings/settings_default_values_test.dart。
+  final bool? defaultValue;
 }
 
 class SettingsSegmentOption<T extends Object> {
@@ -442,7 +504,11 @@ class SettingsSegmentedItem<T extends Object> extends SettingsItem {
     super.video,
     this.controlBelow = true,
     this.dropdown = false,
+    this.defaultValue,
   });
+
+  /// 出厂默认选项；语义同 [SettingsSwitchItem.defaultValue]。
+  final T? defaultValue;
 
   final List<SettingsSegmentOption<T>> options;
   final SettingsValueGetter<T> selected;
@@ -479,6 +545,7 @@ class SettingsSliderItem extends SettingsItem {
     this.step,
     this.titleReadout = false,
     this.commitOnRelease = false,
+    this.defaultValue,
   }) : assert(
          !commitOnRelease || onChangeEnd == null,
          'commitOnRelease 滑条松手统一走 onChanged 提交，不得再声明 onChangeEnd',
@@ -505,6 +572,9 @@ class SettingsSliderItem extends SettingsItem {
   /// rebuild 掉帧）且拖动过程无实时预览意义的滑条；键盘/手柄步进仍每按即提交。
   /// 与 [onChangeEnd] 互斥（松手提交统一走 [onChanged]）。
   final bool commitOnRelease;
+
+  /// 出厂默认值；语义同 [SettingsSwitchItem.defaultValue]。
+  final double? defaultValue;
 }
 
 class SettingsStepperItem extends SettingsItem {
@@ -522,7 +592,11 @@ class SettingsStepperItem extends SettingsItem {
     super.visible,
     super.reader,
     super.video,
+    this.defaultValue,
   });
+
+  /// 出厂默认值；语义同 [SettingsSwitchItem.defaultValue]。
+  final double? defaultValue;
 
   final double Function(SettingsContext context) value;
   final double step;
@@ -615,6 +689,7 @@ class SettingsCustomItem extends SettingsItem {
     required this.builder,
     super.title = '',
     this.searchTitle,
+    this.reset,
     super.subtitle,
     super.icon,
     super.visible,
@@ -637,7 +712,8 @@ class SettingsCustomItem extends SettingsItem {
     super.visible,
     super.reader,
     super.video,
-  }) : builder = ((SettingsContext context) => Column(
+  }) : reset = null,
+       builder = ((SettingsContext context) => Column(
          mainAxisSize: MainAxisSize.min,
          crossAxisAlignment: CrossAxisAlignment.stretch,
          children: rowsBuilder(context),
@@ -652,4 +728,25 @@ class SettingsCustomItem extends SettingsItem {
   /// 默认不可搜。声明本字段后该行以此标题进入设置搜索（展平/打分/结果展示均用它，
   /// 见 settingsItemSearchTitle）；不影响渲染。
   final String? searchTitle;
+
+  /// 自绘行的「恢复默认」元数据：声明后该行参与详情页的「恢复本页默认」
+  /// （settings_kit 的 settingsResetSpecFor），与声明了 defaultValue 的开关 /
+  /// 滑杆同一套判据。
+  final SettingsCustomReset? reset;
+}
+
+/// [SettingsCustomItem.reset]：自绘行改没改过默认值、怎么恢复、恢复确认框里
+/// 当前值 / 默认值怎么写。
+class SettingsCustomReset {
+  const SettingsCustomReset({
+    required this.isModified,
+    required this.reset,
+    required this.currentLabel,
+    required this.defaultLabel,
+  });
+
+  final bool Function(SettingsContext context) isModified;
+  final Future<void> Function(SettingsContext context) reset;
+  final String Function(SettingsContext context) currentLabel;
+  final String Function(SettingsContext context) defaultLabel;
 }

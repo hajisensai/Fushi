@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
@@ -59,6 +59,7 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
     this.checkedDisclosure,
     this.deleteSubscriptionsLabel,
     this.checkboxKey,
+    this.confirmKey,
     this.requireCheckboxToConfirm = false,
     super.key,
   }) : assert(
@@ -121,6 +122,9 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
   /// 勾选行的 key（供测试 / 集成测试焦点驱动定位）。
   final Key? checkboxKey;
 
+  /// 确认（破坏性）按钮的 key（供测试 / 集成测试定位）。
+  final Key? confirmKey;
+
   /// **防呆闸**：true 时确认按钮在勾选前恒禁用（`onPressed: null`）。
   ///
   /// 与默认的「可选项」勾选（如「连同书籍本体一起删除」）是两种语义，别混：
@@ -166,7 +170,10 @@ class _FushiDestructiveConfirmDialogState
     return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.74,
+      // 勾选后披露正文会长于矮窗口：仅正文滚动，确认/取消始终留在面板内。
+      scrollable: false,
       child: FushiModalSheetFrame(
+        scrollable: true,
         title: widget.title,
         leadingIcon: widget.leadingIcon,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -196,8 +203,8 @@ class _FushiDestructiveConfirmDialogState
                 // 原始视频文件）」），不是列表里的标题短语。[FushiListItem] 的
                 // titleMaxLines 默认 1 + ellipsis，在 420 宽的对话框里会把括号
                 // 里的免责说明整段吃掉，用户读到的是「…保留你的原始视…」——恰好
-                // 是最需要看清的那半句。此处父容器高度自由（外层
-                // [FushiDialogFrame] 默认 scrollable），放开行数不会像
+                // 是最需要看清的那半句。此处正文在 [FushiModalSheetFrame] 内滚动，
+                // 高度自由，放开行数不会像
                 // BUG-1184 的固定高容器那样撑破布局。
                 titleMaxLines: 3,
                 title: Text(widget.checkboxLabel!),
@@ -286,27 +293,30 @@ class _FushiDestructiveConfirmDialogState
               onPressed: () => Navigator.pop(context),
               child: Text(t.dialog_cancel),
             ),
-            adaptiveDialogAction(
-              context: context,
-              isDestructiveAction: true,
-              // 防呆闸：未勾选时 onPressed 为 null，按钮真禁用（不是点了没反应）。
-              onPressed: widget.requireCheckboxToConfirm && !_checked
-                  ? null
-                  : () => Navigator.pop(
-                        context,
-                        FushiDestructiveConfirmResult(
-                          checked: _checked,
-                          deleteLocalFiles: _checked &&
-                              widget.localFilesSubtitle != null &&
-                              _deleteLocalFiles,
-                          deleteStatistics:
-                              _statisticsOffered && _deleteStatistics,
-                          deleteSubscriptions:
-                              widget.deleteSubscriptionsLabel != null &&
-                                  _deleteSubscriptions,
+            KeyedSubtree(
+              key: widget.confirmKey,
+              child: adaptiveDialogAction(
+                context: context,
+                isDestructiveAction: true,
+                // 防呆闸：未勾选时 onPressed 为 null，按钮真禁用（不是点了没反应）。
+                onPressed: widget.requireCheckboxToConfirm && !_checked
+                    ? null
+                    : () => Navigator.pop(
+                          context,
+                          FushiDestructiveConfirmResult(
+                            checked: _checked,
+                            deleteLocalFiles: _checked &&
+                                widget.localFilesSubtitle != null &&
+                                _deleteLocalFiles,
+                            deleteStatistics:
+                                _statisticsOffered && _deleteStatistics,
+                            deleteSubscriptions:
+                                widget.deleteSubscriptionsLabel != null &&
+                                    _deleteSubscriptions,
+                          ),
                         ),
-                      ),
-              child: Text(widget.confirmLabel ?? t.dialog_delete),
+                child: Text(widget.confirmLabel ?? t.dialog_delete),
+              ),
             ),
           ],
         ),

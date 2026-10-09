@@ -90,6 +90,11 @@ void main() {
       expect(prefs.galHookToolbarAutoHide, isTrue);
     });
 
+    test('工具条文字说明默认开（用户要求每个按钮都有文字说明）', () {
+      expect(prefs.galHookToolbarLabels, isTrue);
+      expect(kKnownPreferenceKeys, contains('gal_hook_toolbar_labels'));
+    });
+
     test('穿透时仍拦截鼠标默认开（点字查词是既有行为，不能被这次改动掀掉）', () {
       expect(prefs.galHookPassThroughBlocksMouse, isTrue);
     });
@@ -132,6 +137,7 @@ void main() {
         <String>['setGalHookClickLookup(', 'setClickLookupEnabled('],
         <String>['setGalHookLookupTrigger(', 'setLookupTrigger('],
         <String>['setGalHookToolbarAutoHide(', 'setToolbarAutoHide('],
+        <String>['setGalHookToolbarLabels(', 'setToolbarLabels('],
         <String>[
           'setGalHookPassThroughBlocksMouse(',
           'setPassThroughBlocksMouse(',

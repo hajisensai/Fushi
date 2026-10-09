@@ -101,6 +101,9 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
       '外接 qBittorrent WebUI，默认 127.0.0.1:8080（用户可改成局域网 NAS）。',
   'packages/fushi_engine/lib/media/torrent/torznab_client.dart':
       '用户自配 indexer，实践中多为自建/局域网/loopback（源码里另有 loopback 明文放行判据）。',
+  'packages/fushi_server/lib/src/ctl/admin_client.dart':
+      '`fushi_server ctl` 打本机正在运行的 serve 管理 API：通配绑定改写成 127.0.0.1，'
+          'TLS 按本地证书指纹钉死；走用户代理会把带 admin_token 的本机请求送进代理。',
   // --- 局域网互联（peer 发现 / 配对 / 直连） ---
   'fushi/lib/src/sync/interconnect_post_transport.dart':
       '互联 POST 传输：目标恒为已配对的局域网 peer。',
@@ -116,6 +119,9 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
       '互联内容订阅客户端：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
   'fushi/lib/src/sync/interconnect_assistant_client.dart':
       '互联 AI 助手会话客户端（手机把一句话交给电脑办）：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
+  'packages/fushi_server/lib/src/commands/sync_commands.dart':
+      '`fushi_server sync push|pull` 聚合同步：目标恒为用户给出的已配对互联 host'
+          '（https 走指纹钉扎，http 需显式允许），与 interconnect_sync_backend 同一理由。',
   'packages/fushi_engine/lib/sync/pairing/fushi_ping_client.dart':
       '配对 peer 存活 ping：目标是 mDNS 发现出来的局域网地址。',
   'fushi/lib/src/sync/interconnect_peer_addresses.dart':
@@ -127,7 +133,7 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
 
 /// 登记在案的文件总数（装配点 + 豁免）。**这是自校验用的哨兵**：改清单必须同步改这个数，
 /// 光靠「新增未登记即红」挡不住「悄悄多登记一条」。
-const int kRegisteredOutboundFileCount = 24;
+const int kRegisteredOutboundFileCount = 26;
 
 /// 裸出站构造的判据。
 ///

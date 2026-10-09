@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
@@ -25,6 +26,8 @@ import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig;
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
+import 'package:fushi_engine/media/video/jimaku_client.dart'
+    show jimakuLanguageLabel, kJimakuLanguageCodes;
 
 /// 「在线服务」一级设置分类：第三方 API / 索引器 / 媒体服务器的凭据与端点。
 ///
@@ -51,7 +54,7 @@ SettingsDestination buildServicesDestination() {
     ),
     title: t.settings_destination_services,
     summary: t.settings_destination_services_summary,
-    icon: Icons.cloud_outlined,
+    icon: FushiIcons.cloud,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'services.subtitles',
@@ -138,13 +141,41 @@ SettingsDestination buildServicesDestination() {
               ),
             ],
           ),
-          SettingsCustomItem(
+          // AJATT 与默认字幕语言：此前是一张自绘卡（开关 + 下拉内嵌、字号层级
+          // 自成一套），现在拆成两条标准分段行，与上面的来源行同一视觉语言。
+          // 读写走与旧卡完全相同的 AppModel 入口，持久化键不变。
+          SettingsSwitchItem(
             id: 'services.subtitle_preferences',
-            searchTitle: 'AJATT · ${t.video_setting_jimaku_default_language}',
-            builder: (SettingsContext c) =>
-                const VideoExternalProviderSettingsSection(
-                  scope: VideoExternalProviderScope.subtitlePreferences,
+            // 品牌名，不进 i18n（同 Jimaku / SubDL）。
+            title: 'AJATT',
+            subtitle: t.video_ajatt_enabled_hint,
+            icon: FushiIcons.subtitles,
+            value: (SettingsContext c) => c.appModel.videoSubtitleAjattEnabled,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setVideoSubtitleAjattEnabled(value),
+            defaultValue: true,
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'services.subtitle_default_language',
+            title: t.video_setting_jimaku_default_language,
+            subtitle: t.video_setting_jimaku_default_language_hint,
+            icon: FushiIcons.language,
+            dropdown: true,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: '',
+                label: t.video_jimaku_language_follow_video,
+              ),
+              for (final String language in kJimakuLanguageCodes)
+                SettingsSegmentOption<String>(
+                  value: language,
+                  label: jimakuLanguageLabel(language),
                 ),
+            ],
+            selected: (SettingsContext c) => c.appModel.jimakuDefaultLanguage,
+            onChanged: (SettingsContext c, String value) =>
+                c.appModel.setJimakuDefaultLanguage(value),
+            defaultValue: '',
           ),
         ],
       ),
@@ -239,7 +270,7 @@ SettingsDestination buildServicesDestination() {
             child: () => SettingsDestination(
               id: SettingsDestinationId.services,
               title: t.section_services_metadata,
-              icon: Icons.fingerprint,
+              icon: FushiIcons.fingerprint,
               sections: <SettingsSection>[
                 SettingsSection(
                   id: 'services.metadata.credentials',
@@ -248,7 +279,7 @@ SettingsDestination buildServicesDestination() {
                       id: 'services.metadata.anidb_hash_enabled',
                       title: t.video_anidb_hash_enabled,
                       subtitle: t.video_anidb_hash_hint,
-                      icon: Icons.fingerprint,
+                      icon: FushiIcons.fingerprint,
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.prefsRepo.getPref(
                                 kVideoAniDbHashEnabledPref,
@@ -268,7 +299,7 @@ SettingsDestination buildServicesDestination() {
                     SettingsTextItem(
                       id: 'services.metadata.anidb_username',
                       title: t.video_anidb_username,
-                      icon: Icons.person_outline,
+                      icon: FushiIcons.person,
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.prefsRepo.getPref(
                                 kVideoAniDbUsernamePref,
@@ -286,7 +317,7 @@ SettingsDestination buildServicesDestination() {
                     SettingsTextItem(
                       id: 'services.metadata.anidb_password',
                       title: t.video_anidb_password,
-                      icon: Icons.lock_outline,
+                      icon: FushiIcons.lock,
                       secret: true,
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.prefsRepo.getPref(
@@ -363,7 +394,7 @@ SettingsDestination buildServicesDestination() {
                     SettingsStatusItem(
                       id: 'services.metadata.anidb_http_api',
                       title: t.video_anidb_http_api,
-                      icon: Icons.cloud_outlined,
+                      icon: FushiIcons.cloud,
                       subtitleBuilder: (SettingsContext c) =>
                           anidbHttpApiStatusLabel(
                             VideoSourceScrapeGlobalConfig.fromPreferences(
@@ -394,7 +425,7 @@ SettingsDestination buildServicesDestination() {
             child: () => SettingsDestination(
               id: SettingsDestinationId.services,
               title: 'TMDB',
-              icon: Icons.key_outlined,
+              icon: FushiIcons.key,
               sections: <SettingsSection>[
                 SettingsSection(
                   id: 'services.tmdb.credentials',
@@ -410,7 +441,7 @@ SettingsDestination buildServicesDestination() {
                       id: 'services.metadata.tmdb_api_key',
                       title: t.video_setting_tmdb_key,
                       subtitle: t.video_setting_tmdb_key_hint,
-                      icon: Icons.key_outlined,
+                      icon: FushiIcons.key,
                       secret: true,
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.prefsRepo.getPref(
@@ -459,7 +490,7 @@ SettingsDestination buildServicesDestination() {
             child: () => SettingsDestination(
               id: SettingsDestinationId.services,
               title: 'Dandanplay',
-              icon: Icons.dns_outlined,
+              icon: FushiIcons.server,
               sections: <SettingsSection>[
                 SettingsSection(
                   id: 'services.danmaku.endpoint',
@@ -467,7 +498,7 @@ SettingsDestination buildServicesDestination() {
                     SettingsTextItem(
                       id: 'services.danmaku.server_url',
                       title: t.video_setting_danmaku_server_url,
-                      icon: Icons.dns_outlined,
+                      icon: FushiIcons.server,
                       keyboardType: TextInputType.url,
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.videoDanmakuConfig.baseUrl,
@@ -524,7 +555,7 @@ SettingsNavigationItem _servicePage({
   child: () => SettingsDestination(
     id: SettingsDestinationId.services,
     title: title,
-    icon: Icons.cloud_outlined,
+    icon: FushiIcons.cloud,
     sections: const <SettingsSection>[],
     body: body,
     bodySearchEntries: entries,
@@ -541,7 +572,7 @@ SettingsNavigationItem buildOpenServicesItem(String id) {
     id: id,
     title: t.settings_destination_services,
     subtitle: t.settings_services_link_subtitle,
-    icon: Icons.cloud_outlined,
+    icon: FushiIcons.cloud,
     showIcon: true,
     // 与它指向的分类同门控：services 模块关掉时整行不渲染。留着就是一条通往已关
     // 模块的暗门（宿主分类——视频 / 下载——可能仍开着，所以宿主的 destination 级
@@ -593,7 +624,7 @@ class _JellyfinSettingsLinkState extends State<_JellyfinSettingsLink> {
         () => SettingsDestination(
           id: SettingsDestinationId.services,
           title: 'Jellyfin · Emby',
-          icon: Icons.cloud_outlined,
+          icon: FushiIcons.cloud,
           sections: const <SettingsSection>[],
           body: (SettingsContext c) => JellyfinConfigWidget(settingsContext: c),
         ),
@@ -656,7 +687,7 @@ class _PlexSettingsLinkState extends State<_PlexSettingsLink> {
         () => SettingsDestination(
           id: SettingsDestinationId.services,
           title: 'Plex',
-          icon: Icons.cloud_outlined,
+          icon: FushiIcons.cloud,
           sections: const <SettingsSection>[],
           body: (SettingsContext c) => PlexConfigWidget(settingsContext: c),
         ),

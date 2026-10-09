@@ -123,11 +123,11 @@ void main() {
     expect(kHostDownloadDiscoveryKinds.containsAll(kServerDownloadDiscoveryKinds), isTrue);
     expect(kServerDownloadDiscoveryKinds, isNot(contains('game')));
     await expectLater(
-      host.addMagnet(magnetUri: magnet, title: 'Game', discoveryKind: 'game'),
+      host.add(HostDownloadAddRequest.magnet(magnetUri: magnet, title: 'Game', discoveryKind: 'game')),
       throwsA(isA<ArgumentError>()),
     );
     await expectLater(
-      host.addMagnet(magnetUri: magnet, title: 'X', discoveryKind: 'nonsense'),
+      host.add(HostDownloadAddRequest.magnet(magnetUri: magnet, title: 'X', discoveryKind: 'nonsense')),
       throwsA(isA<ArgumentError>()),
     );
     expect(await db.getVideoDownloadJobs(), isEmpty, reason: '被拒的域不能留下任务行');
@@ -138,7 +138,7 @@ void main() {
       ('Novel/吾輩は猫である.txt', utf8.encode('吾輩は猫である。名前はまだ無い。\n\nどこで生れたかとんと見当がつかぬ。\n')),
     ]);
 
-    final String jobId = await host.addMagnet(magnetUri: magnet, title: '吾輩は猫である', discoveryKind: 'novel');
+    final String jobId = await host.add(HostDownloadAddRequest.magnet(magnetUri: magnet, title: '吾輩は猫である', discoveryKind: 'novel'));
     final VideoDownloadJobRow row = await waitFor(jobId, settled);
     expect(row.lifecycle, VideoDownloadJobLifecycle.completed, reason: '${row.lastError}');
     expect(row.organizationPolicy, 'discovery-novel');
@@ -151,7 +151,7 @@ void main() {
 
   test('小说包里的 PDF：服务端接不了，任务带 unsupportedOnThisHost 挡下、书库不动', () async {
     host = await build(<(String, List<int>)>[('Novel/scan.pdf', '%PDF-1.4\n'.codeUnits)]);
-    final String jobId = await host.addMagnet(magnetUri: magnet, title: 'scan', discoveryKind: 'novel');
+    final String jobId = await host.add(HostDownloadAddRequest.magnet(magnetUri: magnet, title: 'scan', discoveryKind: 'novel'));
     final VideoDownloadJobRow row = await waitFor(jobId, settled);
     expect(row.lifecycle, isNot(VideoDownloadJobLifecycle.completed));
     expect(row.lastError, contains('unsupportedOnThisHost'));

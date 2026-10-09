@@ -197,6 +197,14 @@ class ServerAnkiLanding {
     return n;
   }
 
+  /// 本机的同步客户端制卡器（null = 没带 `fushi-anki-sync`）。互联制卡的查重读它。
+  AnkiSyncMiner? get miner => _miner;
+
+  /// 直接落一张卡（互联对端经 `/api/mine*` 发来的制卡请求）：与落地队列同一条渲染 /
+  /// 查重 / 写库链路、同一份服务端 Anki 设置，只是不经待发队列。
+  Future<MineOutcome> mineCard(String rawPayloadJson, AnkiMiningContext context) =>
+      _mine(rawPayloadJson, context);
+
   Future<MineOutcome> _mine(String raw, AnkiMiningContext context) async {
     final AnkiSyncMiner? miner = _miner;
     if (miner == null) {

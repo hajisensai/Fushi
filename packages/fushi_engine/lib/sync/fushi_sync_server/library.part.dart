@@ -335,7 +335,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
         try {
           final File page =
               await svc.mangaChapterPageFile(bookKey, digest, index);
-          return serveFileWithRange(page, request);
+          return await serveFileWithRange(page, request);
         } on StateError {
           return shelf.Response.notFound('Manga chapter page not found');
         } on ArgumentError {
@@ -373,7 +373,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
       if (index == null) return shelf.Response.notFound('Missing page index');
       try {
         final File page = await svc.mangaPageFile(bookKey, index);
-        return serveFileWithRange(page, request);
+        return await serveFileWithRange(page, request);
       } on StateError {
         return shelf.Response.notFound('Manga page not found');
       } on ArgumentError {

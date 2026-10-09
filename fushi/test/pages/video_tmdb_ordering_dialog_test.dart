@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_locked_fields.dart';
@@ -197,9 +197,14 @@ void main() {
       expect(find.text(t.collection_tmdb_ordering_default), findsOneWidget);
       expect(find.text('Seasons'), findsOneWidget);
       expect(find.textContaining('Split by cour'), findsOneWidget);
-      await tester.tap(
-        find.byKey(const ValueKey<String>('video-tmdb-ordering-seasons')),
+      // M3E 弹窗（页眉图标 + 说明 + 带描述的选项行）在 800×600 下正文要滚：
+      // 末项落在正文滚动区下沿、被动作行盖住。先滚进来再点。
+      final Finder seasons = find.byKey(
+        const ValueKey<String>('video-tmdb-ordering-seasons'),
       );
+      await tester.ensureVisible(seasons);
+      await tester.pumpAndSettle();
+      await tester.tap(seasons);
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.dialog_save));
       await tester.pumpAndSettle();

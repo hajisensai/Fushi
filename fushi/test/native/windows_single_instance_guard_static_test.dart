@@ -116,4 +116,21 @@ void main() {
         isTrue,
         reason: '收到转交路径必须复用现有 _openExternalVideo 打开链路');
   });
+
+  test('开发并存开关只在 debug 构建生效，且换掉主窗标题', () {
+    final String src = read('windows/runner/main.cpp');
+    final int start = src.indexOf('bool IsDevSideBySideMode()');
+    expect(start, greaterThanOrEqualTo(0),
+        reason: '热重载与已安装 Fushi 并存要靠 IsDevSideBySideMode');
+    final String body = src.substring(start, src.indexOf('\n}\n', start));
+    // release 包必须恒为 false：否则任何人设个环境变量就能绕过真单实例守卫，
+    // 两个 release 实例共享 WebView2 userDataFolder（BUG-437）。
+    expect(body.contains('#ifdef NDEBUG') && body.contains('return false;'),
+        isTrue,
+        reason: 'FUSHI_DEV_SIDE_BY_SIDE 只能在 debug 构建生效');
+    expect(body.contains('FUSHI_DEV_SIDE_BY_SIDE'), isTrue);
+    // 已安装实例的二次启动按标题 "Fushi" 转交文件，开发实例不能抢走。
+    expect(src.contains('dev_side_by_side ? L"Fushi Dev" : L"Fushi"'), isTrue,
+        reason: '并存模式下主窗标题须与正式实例不同');
+  });
 }

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 
@@ -346,6 +346,69 @@ void main() {
     await tester.pumpAndSettle();
     expect(leader.offset, 120);
     expect(follower.offset, 120);
+  });
+
+  group('WheelScrollForwarder（游戏捕获工作台：任意位置滚轮滚台词列表）', () {
+    Widget buildWorkbench(ScrollController controller) => scoped(
+      WheelScrollForwarder(
+        controller: controller,
+        child: Column(
+          children: <Widget>[
+            // 非滚动区（状态卡 / 筛选行）：不接滚轮。
+            const SizedBox(height: 200, child: Text('overview')),
+            Expanded(
+              child: ListView(
+                controller: controller,
+                children: const <Widget>[SizedBox(height: 30000)],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    Future<void> wheelAt(WidgetTester tester, Offset at, double delta) async {
+      await tester.sendEventToBinding(
+        PointerScrollEvent(position: at, scrollDelta: Offset(0, delta)),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+
+    testWidgets('指针在非滚动区：转给列表，并照常分帧补间', (WidgetTester tester) async {
+      final ScrollController controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(buildWorkbench(controller));
+
+      await wheelAt(tester, const Offset(20, 100), 120);
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(
+        controller.offset,
+        allOf(greaterThan(0.0), lessThan(120.0)),
+        reason: '转发的滚动也要走根部补间，不能单帧瞬移',
+      );
+      await tester.pumpAndSettle();
+      expect(controller.offset, 120);
+    });
+
+    testWidgets('指针在列表上：列表自己接，不重复滚两份', (WidgetTester tester) async {
+      final ScrollController controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(buildWorkbench(controller));
+
+      await wheelAt(tester, const Offset(20, 400), 120);
+      await tester.pumpAndSettle();
+      expect(controller.offset, 120);
+    });
+
+    testWidgets('列表已在顶端时往上滚：不登记、不动', (WidgetTester tester) async {
+      final ScrollController controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(buildWorkbench(controller));
+
+      await wheelAt(tester, const Offset(20, 100), -120);
+      await tester.pumpAndSettle();
+      expect(controller.offset, 0);
+    });
   });
 
   test('主 app 与弹窗词典的根部都挂了本层', () {

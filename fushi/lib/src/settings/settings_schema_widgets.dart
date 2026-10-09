@@ -1,8 +1,10 @@
-import 'package:flutter/cupertino.dart' show CupertinoColors;
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoColors;
+import 'package:flutter/foundation.dart' show listEquals;
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_kit.dart';
 import 'package:fushi/src/settings/settings_schema_fields.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_section_container.dart';
@@ -48,6 +50,19 @@ class SettingsSchemaSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 分组读外部事件源（日志条数 / hook 准入 / 下载阶段）时自己订阅：事件只重建
+    // 本分组并重算行级可见性，不再由宿主页整页 setState（见
+    // SettingsSection.liveListenable）。
+    final Listenable? live = section.liveListenable?.call(settingsContext);
+    if (live == null) return _buildSection(section);
+    return ListenableBuilder(
+      listenable: live,
+      builder: (BuildContext context, Widget? _) =>
+          _buildSection(section.visibleCopy(settingsContext)),
+    );
+  }
+
+  Widget _buildSection(SettingsSection section) {
     if (section.items.isEmpty) return const SizedBox.shrink();
     final List<Widget> rows = <Widget>[
       for (final SettingsItem item in section.items)
@@ -102,7 +117,15 @@ class SettingsSchemaSection extends StatelessWidget {
 ///
 /// 实现 [SettingsRowIconProbe]：分组按「上一行有没有行首图标」决定 Apple 分隔线
 /// 缩进，而 section 的直接子节点是本派发包装、不是行本身。
-class SettingsSchemaItem extends StatelessWidget
+///
+/// **按渲染输入记忆化**（[_SettingsSchemaItemState]）：`SettingsContext.refresh`
+/// 恒为宿主整页 setState，切一个开关 / 拖一格滑条都会把整页每一行重新派发一遍
+/// （视频页 43 行，实测单帧 80ms+ debug）。每行的可见输出只由
+/// [_renderSignature] 列出的那几个闭包求值决定（值、标题 / 副标题等），
+/// 签名不变就复用上一次构建的行 widget 实例，框架据此跳过整棵行子树；
+/// 主题等继承依赖变化由 didChangeDependencies 作废缓存。自绘行
+/// （[SettingsCustomItem]）读什么不可知，不做记忆化。
+class SettingsSchemaItem extends StatefulWidget
     implements SettingsRowIconProbe {
   const SettingsSchemaItem({
     super.key,
@@ -127,7 +150,57 @@ class SettingsSchemaItem extends StatelessWidget
   };
 
   @override
-  Widget build(BuildContext context) {
+  State<SettingsSchemaItem> createState() => _SettingsSchemaItemState();
+
+  /// 本行可见输出依赖的全部渲染期输入（与 [_buildRow] 里求值的闭包一一对应）；
+  /// null = 不可记忆化（自绘行）。改 [_buildRow] 读的东西时必须同步这里。
+  List<Object?>? _renderSignature() {
+    final SettingsContext ctx = settingsContext;
+    final List<Object?> values = switch (item) {
+      SettingsCustomItem() => const <Object?>[],
+      SettingsNavigationItem navigation => <Object?>[
+        navigation.resolveTitle(ctx),
+        navigation.resolveSubtitle(ctx),
+      ],
+      SettingsStatusItem status => <Object?>[
+        status.resolveTitle(ctx),
+        status.resolveSubtitle(ctx),
+      ],
+      SettingsActionItem action => <Object?>[action.resolveSubtitle(ctx)],
+      SettingsSwitchItem toggle => <Object?>[
+        toggle.value(ctx),
+        toggle.resolveSubtitle(ctx),
+      ],
+      SettingsSegmentedItem<dynamic> segmented => <Object?>[
+        (segmented as SettingsSegmentedItem<Object>).selected(ctx),
+      ],
+      SettingsSliderItem slider => <Object?>[
+        slider.value(ctx),
+        slider.label?.call(slider.value(ctx)),
+      ],
+      SettingsStepperItem stepper => <Object?>[stepper.value(ctx)],
+      SettingsTextItem text => <Object?>[
+        text.value(ctx),
+        text.resetValue?.call(ctx),
+      ],
+      SettingsNumberItem number => <Object?>[
+        number.value(ctx),
+        number.resetValue?.call(ctx),
+      ],
+    };
+    if (item is SettingsCustomItem) return null;
+    return <Object?>[
+      item,
+      showIcons,
+      // 行里的回调闭包捕获的是构建那一刻的上下文：宿主 / 能力槽换了就重建。
+      ctx.context,
+      ctx.appModel,
+      ctx.video,
+      ...values,
+    ];
+  }
+
+  Widget _buildRow(BuildContext context) {
     final Widget row = switch (item) {
       SettingsNavigationItem navigation => _routeRow(context, navigation),
       SettingsActionItem action => _action(action),
@@ -144,6 +217,8 @@ class SettingsSchemaItem extends StatelessWidget
     };
     // 设置搜索跳转落点：本项是待定位目标时消费一次性挂点，包上滚动定位 +
     // 闪烁高亮（见 SettingsSearchReveal）。消费即清除，后续 rebuild 不再包装。
+    // 「改过默认值」不在行内标记：行保持标准 M3E 列表项，恢复默认收进详情页
+    // 页头溢出菜单的「恢复本页默认」（settings_page_reset.dart）。
     return SettingsSearchTarget(id: item.id, child: row);
   }
 
@@ -423,6 +498,33 @@ class SettingsSchemaItem extends StatelessWidget
   }
 }
 
+class _SettingsSchemaItemState extends State<SettingsSchemaItem> {
+  Widget? _row;
+  List<Object?>? _signature;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 主题 / 设计系统 / 平台等继承依赖变了：行的外观要按新依赖重算。
+    _row = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Object?>? signature = widget._renderSignature();
+    final Widget? cached = _row;
+    if (cached != null &&
+        signature != null &&
+        listEquals(signature, _signature) &&
+        // 搜索跳转落点在构建时消费（SettingsSearchTarget），待定位的行必须真建。
+        SettingsSearchReveal.pendingItemId != widget.item.id) {
+      return cached;
+    }
+    _signature = signature;
+    return _row = widget._buildRow(context);
+  }
+}
+
 /// [SettingsSliderItem.commitOnRelease] 滑条的渲染载体：拖动中的临时值放在与
 /// 拖动 UI 同生命周期的本 State（滑块跟手、label/读数实时），不调 item.onChanged、
 /// 不 refresh；松手（onChangeEnd）才把最终值经 item.onChanged 一次性提交。与
@@ -463,6 +565,14 @@ class _SettingsActionRowState extends State<_SettingsActionRow> {
   @override
   Widget build(BuildContext context) {
     final SettingsActionItem action = widget.action;
+    if (action.destructive) {
+      return SettingsDangerRow(
+        title: action.title,
+        subtitle: action.resolveSubtitle(widget.settingsContext),
+        icon: widget.showIcons ? action.icon : null,
+        onTap: _run,
+      );
+    }
     return AdaptiveSettingsRow(
       title: action.title,
       // resolveSubtitle：运行期状态（如游戏 exe 摘要）在这里求值。

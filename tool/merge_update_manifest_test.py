@@ -137,6 +137,25 @@ def test_same_platform_upgrade_replaces():
     check(m["releaseSequence"] == 105, "same-platform upgrade advances to 105")
 
 
+def test_macos_arm64_zip_supersedes_legacy_macos_zip():
+    # 2026-10: macOS ships arm64 only and the asset was renamed from
+    # *-macos.zip to *-macos-arm64.zip. Both shapes are the same "macos" slot,
+    # so a newer arm64 zip replaces the legacy universal zip instead of both
+    # lingering (an old Intel client must not find a *-macos.zip of a newer seq).
+    def mac(seq, suffix):
+        tag = "v0.11.1-debug." + str(seq) + "+sha" + str(seq)
+        version = "0.11.1-debug." + str(seq)
+        name = "fushi-0.11.1-debug." + str(seq) + suffix
+        assets = [{"name": name, "browser_download_url": _url(tag, name)}]
+        return tag, version, assets, name
+
+    m, legacy = _publish({}, lambda seq: mac(seq, "-macos.zip"), 100)
+    m, arm64 = _publish(m, lambda seq: mac(seq, "-macos-arm64.zip"), 105)
+    check(_names(m) == [arm64], "arm64 macOS zip replaces the legacy macOS zip")
+    m, stale = _publish(m, lambda seq: mac(seq, "-macos.zip"), 101)
+    check(_names(m) == [arm64], "a stale legacy macOS zip cannot come back")
+
+
 def test_concurrent_same_tag_both_platforms():
     # TODO-781: same tag, two platforms -> both kept.
     m, apk = _publish({}, _android, 100)
@@ -394,6 +413,7 @@ def main():
         test_same_platform_downgrade_rejected,
         test_same_platform_upgrade_replaces,
         test_concurrent_same_tag_both_platforms,
+        test_macos_arm64_zip_supersedes_legacy_macos_zip,
         test_backward_compat_legacy_no_seq,
         test_backward_compat_no_seq_unparseable,
         test_idempotent,

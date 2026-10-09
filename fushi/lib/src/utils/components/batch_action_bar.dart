@@ -1,7 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
@@ -12,8 +14,10 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 /// 候选都复用它，新增多选表面不再各写一份。
 ///
 /// 外观：
-/// - MD3：离边 12 的浮动工具条，surfaceContainerHigh 圆角 20 + 轻阴影，按钮是
-///   主题的全胶囊文字按钮；
+/// - MD3（M3 Expressive floating toolbar，2026-10-05 起）：离边 12 的 vibrant
+///   悬浮工具栏——primaryContainer 全胶囊 + Elevation 3 投影（与阅读器悬浮
+///   工具栏同一份 [fushiFloatingPillDecoration]），进入多选时从底部弹入
+///   （[FushiMotion.release] 轻回弹）；按钮是主题的全胶囊文字按钮；
 /// - Apple：浮在内容上的玻璃胶囊工具条（Mail / Photos 选择模式底栏），动作是
 ///   单色 SF 图标钮；
 /// - 墨水屏：保留贴底整条 + 上边框（阴影与半透明在灰阶下都会糊成脏边）。
@@ -135,32 +139,50 @@ class BatchActionBar extends StatelessWidget {
       );
     }
     final ColorScheme cs = theme.colorScheme;
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: outer,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: cs.surfaceContainerHigh,
-            borderRadius: const BorderRadius.all(Radius.circular(20)),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: cs.shadow.withValues(alpha: 0.14),
-                blurRadius: 10,
-                offset: const Offset(0, 3),
+    // 多选态切换成 vibrant 批量操作浮动栏：从底部弹入，与普通页头 / 工具栏的
+    // standard 面一眼区分开。
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: fushiMotionDuration(context, FushiMotion.long),
+      // 线性进度分属性上曲线：位移走 spatial 弹簧形状（[FushiMotion.release]，
+      // 带回弹），透明度走 effects 形状（[FushiMotion.enter]，临界阻尼、不过冲）
+      // ——透明度不跟位移共用 spatial 轨迹（HBK-AUDIT-023）。
+      builder: (BuildContext context, double t, Widget? child) => Opacity(
+        opacity: FushiMotion.enter.transform(t).clamp(0.0, 1.0),
+        child: Transform.translate(
+          offset: Offset(0, (1 - FushiMotion.release.transform(t)) * 24),
+          child: child,
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: outer,
+          child: DecoratedBox(
+            decoration: fushiFloatingPillDecoration(
+              context,
+              color: cs.primaryContainer,
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(28)),
               ),
-            ],
-          ),
-          child: Padding(
-            padding: EdgeInsetsDirectional.only(
-              start: tokens.spacing.card,
-              end: gap,
-              top: gap / 2,
-              bottom: gap / 2,
             ),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 48),
-              child: content,
+            child: Padding(
+              padding: EdgeInsetsDirectional.only(
+                start: tokens.spacing.card + 4,
+                end: gap,
+                top: gap / 2,
+                bottom: gap / 2,
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 56),
+                child: IconTheme.merge(
+                  data: IconThemeData(color: cs.onPrimaryContainer),
+                  child: DefaultTextStyle.merge(
+                    style: TextStyle(color: cs.onPrimaryContainer),
+                    child: content,
+                  ),
+                ),
+              ),
             ),
           ),
         ),

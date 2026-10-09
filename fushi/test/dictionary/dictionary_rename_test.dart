@@ -224,17 +224,17 @@ void main() {
       );
     });
 
-    test('只装改过名的那本', () {
-      repo.setDictionaryDisplayName(repo.dictionaries.first, '日汉大辞典');
+    test('只装改过名的那本', () async {
+      await repo.setDictionaryDisplayName(repo.dictionaries.first, '日汉大辞典');
       expect(
         repo.displayNameOverrides,
         <String, String>{'JMdict [2026-05-17]': '日汉大辞典'},
       );
     });
 
-    test('改成与真名相同 → 存 null，投影里不出现', () {
+    test('改成与真名相同 → 存 null，投影里不出现', () async {
       final Dictionary d = repo.dictionaries.first;
-      repo.setDictionaryDisplayName(d, d.name);
+      await repo.setDictionaryDisplayName(d, d.name);
       expect(
         d.displayName,
         isNull,
@@ -243,18 +243,18 @@ void main() {
       expect(repo.displayNameOverrides, isEmpty);
     });
 
-    test('空串 / 纯空白 → 存 null（等于清除改名）', () {
+    test('空串 / 纯空白 → 存 null（等于清除改名）', () async {
       final Dictionary d = repo.dictionaries.first;
-      repo.setDictionaryDisplayName(d, '日汉');
+      await repo.setDictionaryDisplayName(d, '日汉');
       expect(d.displayName, '日汉');
 
-      repo.setDictionaryDisplayName(d, '   ');
+      await repo.setDictionaryDisplayName(d, '   ');
       expect(d.displayName, isNull);
       expect(repo.displayNameOverrides, isEmpty);
     });
 
-    test('投影的值已 trim', () {
-      repo.setDictionaryDisplayName(repo.dictionaries.first, '  日汉  ');
+    test('投影的值已 trim', () async {
+      await repo.setDictionaryDisplayName(repo.dictionaries.first, '  日汉  ');
       expect(repo.displayNameOverrides.values.single, '日汉');
     });
   });

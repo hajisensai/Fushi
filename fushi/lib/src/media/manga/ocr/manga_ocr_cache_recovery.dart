@@ -6,7 +6,7 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
-import 'package:fushi_engine/ocr/manga_ocr_model_fingerprint.dart';
+import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 
 /// A non-network reconstruction of the pages already completed by incremental
@@ -48,6 +48,9 @@ Future<MangaOcrCacheRecovery> recoverCachedMangaOcr({
     kMangaOcrOutDirName,
     kMangaOcrPagesCacheDirName,
   ));
+  // 生产调用方（阅读器重开）在本地服务是 MangaOcrPageService 时总会传入按已选
+  // 模型解析的签名；只有拿不到服务签名时才走这里，此处没有已选模型可用，按默认
+  // 模型解析。
   final String localSignature = localEngineSignature ??
       await resolveInstalledLocalMangaOcrEngineSignature();
   final Directory localDirectory =

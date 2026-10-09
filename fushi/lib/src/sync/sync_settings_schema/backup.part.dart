@@ -6,8 +6,10 @@ part of '../sync_settings_schema.dart';
 
 @visibleForTesting
 Set<BackupCategory> defaultBackupExportCategories() => BackupCategory.values
-    .where((BackupCategory c) =>
-        c != BackupCategory.videos && c != BackupCategory.localAudio)
+    .where(
+      (BackupCategory c) =>
+          c != BackupCategory.videos && c != BackupCategory.localAudio,
+    )
     .toSet();
 
 /// Localised display name for a backup [category] (TODO-1358). Shared by the
@@ -65,6 +67,35 @@ String backupCategoryDescription(BackupCategory category) {
       return t.backup_category_settings_desc;
     case BackupCategory.profiles:
       return t.backup_category_profiles_desc;
+  }
+}
+
+/// M3E 语义图标：备份分类在导出 / 导入清单里的行首图标（FushiIcons 语义名，
+/// Apple 设计系统下由 [FushiIcon] 自动换成同语义 SF 符号）。
+IconData backupCategoryIcon(BackupCategory category) {
+  switch (category) {
+    case BackupCategory.dictionary:
+      return FushiIcons.dictionary;
+    case BackupCategory.books:
+      return FushiIcons.books;
+    case BackupCategory.audiobooks:
+      return FushiIcons.audiobook;
+    case BackupCategory.fonts:
+      return FushiIcons.font;
+    case BackupCategory.videos:
+      return FushiIcons.video;
+    case BackupCategory.localAudio:
+      return FushiIcons.audio;
+    case BackupCategory.games:
+      return FushiIcons.games;
+    case BackupCategory.progress:
+      return FushiIcons.bookmark;
+    case BackupCategory.statistics:
+      return FushiIcons.statistics;
+    case BackupCategory.settings:
+      return FushiIcons.settings;
+    case BackupCategory.profiles:
+      return FushiIcons.profiles;
   }
 }
 
@@ -166,8 +197,10 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       // crossed over and the fonts silently never apply.
       fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
       // Game covers travel with the `games` category (rows + cover files).
-      gameCoversRootDirectory:
-          p.join(appModel.appDirectory.path, 'game_covers'),
+      gameCoversRootDirectory: p.join(
+        appModel.appDirectory.path,
+        'game_covers',
+      ),
     );
     // TODO-1358: summarize what is on this device so the category picker shows
     // per-category counts (the database itself is always included).
@@ -175,8 +208,9 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
     if (!mounted) return;
     // Ask which sidecar trees to include (default all). Null = the user
     // cancelled the dialog -> abort the export entirely (TODO-106).
-    final Set<BackupCategory>? categories =
-        await _pickExportCategories(summary);
+    final Set<BackupCategory>? categories = await _pickExportCategories(
+      summary,
+    );
     if (categories == null || !mounted) return;
     // 交棒点：此后一律由 AppModel 驱动，不再看本 State 的 mounted / context。
     await runBackupExportFlow(
@@ -185,8 +219,9 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       categories: categories,
       // Per-book selection (TODO-1195 part A) only applies when the Books
       // category is packed; excluding Books strips every book regardless.
-      bookKeys:
-          categories.contains(BackupCategory.books) ? _selectedBookKeys : null,
+      bookKeys: categories.contains(BackupCategory.books)
+          ? _selectedBookKeys
+          : null,
       videoKeys: categories.contains(BackupCategory.videos)
           ? _selectedVideoKeys
           : null,
@@ -198,7 +233,8 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
   /// so confirming without touching anything reproduces the legacy all-in
   /// export. Returns the chosen set, or null if the user cancelled.
   Future<Set<BackupCategory>?> _pickExportCategories(
-      BackupContentSummary summary) async {
+    BackupContentSummary summary,
+  ) async {
     final Set<BackupCategory> selected = defaultBackupExportCategories();
     assert(!selected.contains(BackupCategory.videos));
     assert(!selected.contains(BackupCategory.localAudio));
@@ -223,6 +259,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
             scrollable: false,
             child: FushiModalSheetFrame(
               title: t.backup_export_categories_title,
+              leadingIcon: FushiIcons.backup,
               scrollable: true,
               bodyPadding: EdgeInsets.fromLTRB(
                 tokens.spacing.card,
@@ -236,72 +273,84 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                 tokens.spacing.card,
                 tokens.spacing.card,
               ),
-              body: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    t.backup_export_categories_hint,
-                    style: Theme.of(ctx).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 4),
-                  // Each category is a toggle; the Books/Videos toggles carry a
-                  // nested per-item picker glued DIRECTLY beneath them (not
-                  // floated to the list bottom) so "选择书籍/选择视频" reads as a
-                  // sub-option of its category instead of a duplicate top row.
-                  for (final BackupCategory c
-                      in BackupCategory.values) ...<Widget>[
-                    AdaptiveSettingsSwitchRow(
-                      title: backupCategoryLabel(c),
-                      subtitle: summary.counts.containsKey(c)
-                          ? '${backupCategoryDescription(c)} '
-                              '(${summary.countFor(c)})'
-                          : backupCategoryDescription(c),
-                      value: selected.contains(c),
-                      onChanged: (bool v) => setLocal(() {
-                        if (v) {
-                          selected.add(c);
-                        } else {
-                          selected.remove(c);
-                        }
-                      }),
+              // M3E：分类行错峰进场（首屏一次，墨水屏 / 减弱动态效果下瞬间到位）。
+              body: FushiEntranceScope(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      t.backup_export_categories_hint,
+                      style: Theme.of(ctx).textTheme.bodySmall,
                     ),
-                    // Per-book selection row (TODO-1195 part A): only meaningful
-                    // when the Books category itself is packed.
-                    if (c == BackupCategory.books &&
-                        selected.contains(BackupCategory.books))
-                      AdaptiveSettingsRow(
-                        title: t.backup_export_choose_books,
-                        subtitle: chosenBooks == null
-                            ? t.backup_export_books_all
-                            : t.backup_export_books_selected(
-                                count: chosenBooks!.length.toString()),
-                        trailing: const FushiIcon(Icons.chevron_right),
-                        onTap: () async {
-                          final Set<String>? picked =
-                              await _pickBooks(chosenBooks);
-                          setLocal(() => chosenBooks = picked);
-                        },
+                    const SizedBox(height: 4),
+                    // Each category is a toggle; the Books/Videos toggles carry a
+                    // nested per-item picker glued DIRECTLY beneath them (not
+                    // floated to the list bottom) so "选择书籍/选择视频" reads as a
+                    // sub-option of its category instead of a duplicate top row.
+                    for (final BackupCategory c
+                        in BackupCategory.values) ...<Widget>[
+                      FushiStaggeredEntrance(
+                        index: c.index,
+                        child: AdaptiveSettingsSwitchRow(
+                          title: backupCategoryLabel(c),
+                          subtitle: summary.counts.containsKey(c)
+                              ? '${backupCategoryDescription(c)} '
+                                    '(${summary.countFor(c)})'
+                              : backupCategoryDescription(c),
+                          icon: backupCategoryIcon(c),
+                          showIcon: true,
+                          value: selected.contains(c),
+                          onChanged: (bool v) => setLocal(() {
+                            if (v) {
+                              selected.add(c);
+                            } else {
+                              selected.remove(c);
+                            }
+                          }),
+                        ),
                       ),
-                    // Per-video selection row (books analogue): only meaningful
-                    // when the Videos category itself is packed.
-                    if (c == BackupCategory.videos &&
-                        selected.contains(BackupCategory.videos))
-                      AdaptiveSettingsRow(
-                        title: t.backup_export_choose_videos,
-                        subtitle: chosenVideos == null
-                            ? t.backup_export_videos_all
-                            : t.backup_export_videos_selected(
-                                count: chosenVideos!.length.toString()),
-                        trailing: const FushiIcon(Icons.chevron_right),
-                        onTap: () async {
-                          final Set<String>? picked =
-                              await _pickVideos(chosenVideos);
-                          setLocal(() => chosenVideos = picked);
-                        },
-                      ),
+                      // Per-book selection row (TODO-1195 part A): only meaningful
+                      // when the Books category itself is packed.
+                      if (c == BackupCategory.books &&
+                          selected.contains(BackupCategory.books))
+                        AdaptiveSettingsRow(
+                          title: t.backup_export_choose_books,
+                          subtitle: chosenBooks == null
+                              ? t.backup_export_books_all
+                              : t.backup_export_books_selected(
+                                  count: chosenBooks!.length.toString(),
+                                ),
+                          trailing: const FushiIcon(FushiIcons.chevronRight),
+                          onTap: () async {
+                            final Set<String>? picked = await _pickBooks(
+                              chosenBooks,
+                            );
+                            setLocal(() => chosenBooks = picked);
+                          },
+                        ),
+                      // Per-video selection row (books analogue): only meaningful
+                      // when the Videos category itself is packed.
+                      if (c == BackupCategory.videos &&
+                          selected.contains(BackupCategory.videos))
+                        AdaptiveSettingsRow(
+                          title: t.backup_export_choose_videos,
+                          subtitle: chosenVideos == null
+                              ? t.backup_export_videos_all
+                              : t.backup_export_videos_selected(
+                                  count: chosenVideos!.length.toString(),
+                                ),
+                          trailing: const FushiIcon(FushiIcons.chevronRight),
+                          onTap: () async {
+                            final Set<String>? picked = await _pickVideos(
+                              chosenVideos,
+                            );
+                            setLocal(() => chosenVideos = picked);
+                          },
+                        ),
+                    ],
                   ],
-                ],
+                ),
               ),
               footer: Wrap(
                 alignment: WrapAlignment.end,
@@ -338,8 +387,11 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
   /// (null = every book). Returns the chosen set, collapsing "all ticked" back
   /// to null (the legacy full-export path), or [current] unchanged on cancel.
   Future<Set<String>?> _pickBooks(Set<String>? current) async {
-    final List<EpubBookRow> books =
-        await widget.settingsContext.appModel.database.getAllEpubBooks();
+    final List<EpubBookRow> books = await widget
+        .settingsContext
+        .appModel
+        .database
+        .getAllEpubBooks();
     // State.context guarded by State.mounted (coherent for the lint): the
     // settings page may have unmounted while the library loaded.
     if (!mounted) return current;
@@ -347,8 +399,9 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       _showSnackBar(context, t.backup_export_no_books);
       return current;
     }
-    final List<String> keys =
-        books.map((EpubBookRow b) => b.bookKey).toList(growable: false);
+    final List<String> keys = books
+        .map((EpubBookRow b) => b.bookKey)
+        .toList(growable: false);
     // Seed: null (all) → every book ticked; otherwise the given subset.
     final Set<String> sel = current == null
         ? keys.toSet()
@@ -368,6 +421,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
             scrollable: false,
             child: FushiModalSheetFrame(
               title: t.backup_export_choose_books,
+              leadingIcon: FushiIcons.books,
               scrollable: true,
               bodyPadding: EdgeInsets.fromLTRB(
                 tokens.spacing.card,
@@ -394,17 +448,21 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                     spacing: 8,
                     runSpacing: 4,
                     children: <Widget>[
-                      Text('${sel.length} / ${keys.length}',
-                          style: Theme.of(ctx).textTheme.bodySmall),
+                      _BackupSelectionCount(
+                        selected: sel.length,
+                        total: keys.length,
+                      ),
                       Wrap(
                         spacing: 4,
                         runSpacing: 4,
                         children: <Widget>[
                           adaptiveDialogAction(
                             context: ctx,
-                            onPressed: () => setLocal(() => sel
-                              ..clear()
-                              ..addAll(keys)),
+                            onPressed: () => setLocal(
+                              () => sel
+                                ..clear()
+                                ..addAll(keys),
+                            ),
                             child: Text(t.backup_export_select_all),
                           ),
                           adaptiveDialogAction(
@@ -465,8 +523,11 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
   /// "all ticked" back to null (the legacy full-export path), or [current]
   /// unchanged on cancel.
   Future<Set<String>?> _pickVideos(Set<String>? current) async {
-    final List<VideoBookRow> videos =
-        await widget.settingsContext.appModel.database.allVideoBooks();
+    final List<VideoBookRow> videos = await widget
+        .settingsContext
+        .appModel
+        .database
+        .allVideoBooks();
     // State.context guarded by State.mounted (coherent for the lint): the
     // settings page may have unmounted while the library loaded.
     if (!mounted) return current;
@@ -474,8 +535,9 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       _showSnackBar(context, t.backup_export_no_videos);
       return current;
     }
-    final List<String> keys =
-        videos.map((VideoBookRow v) => v.bookUid).toList(growable: false);
+    final List<String> keys = videos
+        .map((VideoBookRow v) => v.bookUid)
+        .toList(growable: false);
     // Seed: null (all) → every video ticked; otherwise the given subset.
     final Set<String> sel = current == null
         ? keys.toSet()
@@ -495,6 +557,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
             scrollable: false,
             child: FushiModalSheetFrame(
               title: t.backup_export_choose_videos,
+              leadingIcon: FushiIcons.video,
               scrollable: true,
               bodyPadding: EdgeInsets.fromLTRB(
                 tokens.spacing.card,
@@ -521,17 +584,21 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                     spacing: 8,
                     runSpacing: 4,
                     children: <Widget>[
-                      Text('${sel.length} / ${keys.length}',
-                          style: Theme.of(ctx).textTheme.bodySmall),
+                      _BackupSelectionCount(
+                        selected: sel.length,
+                        total: keys.length,
+                      ),
                       Wrap(
                         spacing: 4,
                         runSpacing: 4,
                         children: <Widget>[
                           adaptiveDialogAction(
                             context: ctx,
-                            onPressed: () => setLocal(() => sel
-                              ..clear()
-                              ..addAll(keys)),
+                            onPressed: () => setLocal(
+                              () => sel
+                                ..clear()
+                                ..addAll(keys),
+                            ),
                             child: Text(t.backup_export_select_all),
                           ),
                           adaptiveDialogAction(
@@ -597,54 +664,52 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
         return AdaptiveSettingsRow(
           title: t.backup_export,
           subtitle: t.backup_export_hint,
-          icon: Icons.upload_file_outlined,
+          icon: FushiIcons.backup,
           controlBelow: true,
           // Row onTap registers the focus target so directional nav reaches the
           // export action (BUG-016); the trailing button is the visual
           // affordance.
           onTap: _export,
-          trailing: exporting
-              ? ValueListenableBuilder<double?>(
-                  valueListenable: appModel.backupExportProgress,
-                  builder: (
-                    BuildContext context,
-                    double? progress,
-                    Widget? _,
-                  ) =>
-                      Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: adaptiveIndicator(
-                          context: context,
-                          strokeWidth: 2,
-                          // null = 还在准备阶段（VACUUM INTO / 按分类裁剪 /
-                          // 枚举待打包文件），没有可分的量，走不确定动画；
-                          // 进了打包阶段就按已写字节走确定进度。
-                          value: progress,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(progress == null
-                          ? t.backup_exporting
-                          : '${t.backup_exporting} '
-                              '${(progress * 100).floor()}%'),
-                    ],
+          trailing: _BackupBusySwitcher(
+            busy: exporting,
+            child: exporting
+                ? ValueListenableBuilder<double?>(
+                    valueListenable: appModel.backupExportProgress,
+                    builder:
+                        (BuildContext context, double? progress, Widget? _) =>
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: adaptiveIndicator(
+                                    context: context,
+                                    strokeWidth: 2,
+                                    // null = 还在准备阶段（VACUUM INTO / 按分类裁剪 /
+                                    // 枚举待打包文件），没有可分的量，走不确定动画；
+                                    // 进了打包阶段就按已写字节走确定进度。
+                                    value: progress,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                // 百分比用等宽数字：逐帧变化时宽度不跳。
+                                Text(
+                                  progress == null
+                                      ? t.backup_exporting
+                                      : '${t.backup_exporting} '
+                                            '${(progress * 100).floor()}%',
+                                  style: context.fushiType.labelLarge.tabular,
+                                ),
+                              ],
+                            ),
+                  )
+                : FushiFilledButton.tonalIcon(
+                    onPressed: _export,
+                    icon: const FushiIcon(FushiIcons.upload, size: 18),
+                    label: Text(t.backup_export),
                   ),
-                )
-              : FushiFilledButton.tonal(
-                  onPressed: _export,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      const FushiIcon(Icons.upload_file_outlined, size: 18),
-                      const SizedBox(width: 8),
-                      Text(t.backup_export),
-                    ],
-                  ),
-                ),
+          ),
         );
       },
     );
@@ -666,8 +731,9 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
 /// 周期一致——否则用户会以为那 200MB 是自己的存档，点一次导出却发现它没了。
 Future<void> _sweepStaleBackupArchives(Directory tmpDir) async {
   try {
-    await for (final FileSystemEntity entity
-        in tmpDir.list(followLinks: false)) {
+    await for (final FileSystemEntity entity in tmpDir.list(
+      followLinks: false,
+    )) {
       if (entity is! File) continue;
       if (!isBackupArchiveName(p.basename(entity.path))) continue;
       try {
@@ -719,10 +785,9 @@ Future<void> runBackupExportFlow({
           skippedDictionaries = names,
     );
     if (Platform.isAndroid || Platform.isIOS) {
-      await FushiShare.shareFiles(
-        <XFile>[XFile(tmpPath, mimeType: 'application/zip')],
-        subject: filename,
-      );
+      await FushiShare.shareFiles(<XFile>[
+        XFile(tmpPath, mimeType: 'application/zip'),
+      ], subject: filename);
     } else {
       final String? savePath = await FilePicker.platform.saveFile(
         dialogTitle: t.backup_export,
@@ -755,11 +820,11 @@ Future<void> runBackupExportFlow({
     rootCtx,
     failure == null
         ? (skippedDictionaries.isEmpty
-            ? t.backup_export_success
-            : t.backup_export_dictionaries_skipped(
-                n: skippedDictionaries.length,
-                names: skippedDictionaries.join('、'),
-              ))
+              ? t.backup_export_success
+              : t.backup_export_dictionaries_skipped(
+                  n: skippedDictionaries.length,
+                  names: skippedDictionaries.join('、'),
+                ))
         : t.backup_export_failed(message: failure),
   );
 }
@@ -769,7 +834,66 @@ Future<void> runBackupExportFlow({
 /// How a backup is applied (TODO-888). [overwrite] is the legacy behavior
 /// (replace the whole DB + content trees); [merge] keeps everything on this
 /// device and only ADDS what's missing from the backup (no overwrite/delete).
-enum _BackupImportMode { overwrite, merge }
+enum BackupImportMode { overwrite, merge }
+
+/// 调用方预先替用户做好的导入选择（桌面控制通道 `backup restore --merge|--replace`）。
+///
+/// 交给 [runBackupImportFlowForFile] 时跳过「覆盖 / 合并 + 分类勾选」确认框：那个框
+/// 本身就是最终确认，预设的调用方必须已经拿到等价确认（CLI 侧 `--yes` + 路由 body
+/// `confirm: true`）。校验 / 版本检查 / 遮罩 / 重启等其余步骤一步不少。
+class BackupImportPreset {
+  const BackupImportPreset({
+    required this.mode,
+    this.categories,
+    this.importSettings = false,
+  });
+
+  final BackupImportMode mode;
+
+  /// 本模式下**可勾选**分类里要保留勾上的那些（语义同确认框里的开关）；null = 确认框
+  /// 默认（备份里有的全部勾上）。不可勾选的分类恒恢复，与确认框一致。
+  final Set<BackupCategory>? categories;
+
+  /// 覆盖模式下是否连设置层一起导入（确认框的同名开关，默认关）；合并模式忽略。
+  final bool importSettings;
+}
+
+/// 本模式下确认框里可勾选的分类集。
+Set<BackupCategory> backupImportSelectableCategories(BackupImportMode mode) =>
+    mode == BackupImportMode.overwrite
+    ? importSelectableCategories
+    : importMergeSelectableCategories;
+
+/// 确认框收口时的分类计算（单一实现，确认框与 [BackupImportPreset] 共用）：本模式
+/// 不可勾选的分类恒恢复，可勾选的只留 [selected] 里的。
+Set<BackupCategory> backupImportCategoriesFor(
+  BackupImportMode mode,
+  Set<BackupCategory> selected,
+) {
+  final Set<BackupCategory> modeSelectable = backupImportSelectableCategories(
+    mode,
+  );
+  return BackupCategory.values
+      .where(
+        (BackupCategory c) =>
+            !modeSelectable.contains(c) || selected.contains(c),
+      )
+      .toSet();
+}
+
+/// 预设 → 等价于用户在确认框里那样勾选后的分类集。确认框只给备份里**确实有**的
+/// 可勾选分类出开关，所以勾选集同样先与 [summary] 求交；null 预设 = 默认全勾。
+Set<BackupCategory> backupImportPresetCategories(
+  BackupImportPreset preset,
+  BackupContentSummary summary,
+) {
+  final Set<BackupCategory> selected = <BackupCategory>{
+    for (final BackupCategory c
+        in preset.categories ?? BackupCategory.values.toSet())
+      if (summary.has(c)) c,
+  };
+  return backupImportCategoriesFor(preset.mode, selected);
+}
 
 /// The user's choices from the import confirm dialog: which [mode] to apply and
 /// (overwrite-only) whether to also pull the backup's settings layer.
@@ -779,7 +903,7 @@ class _BackupImportChoice {
     required this.importSettings,
     required this.categories,
   });
-  final _BackupImportMode mode;
+  final BackupImportMode mode;
   final bool importSettings;
 
   /// Categories to RESTORE on an overwrite import (TODO-1358): every
@@ -828,28 +952,25 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
     return AdaptiveSettingsRow(
       title: t.backup_import,
       subtitle: t.backup_import_hint,
-      icon: Icons.download_outlined,
+      icon: FushiIcons.restoreBackup,
       controlBelow: true,
       // Row onTap registers the focus target so directional nav reaches the
       // import action (BUG-016); the trailing button is the visual affordance.
       onTap: _import,
-      trailing: _isImporting
-          ? SizedBox(
-              width: 24,
-              height: 24,
-              child: adaptiveIndicator(context: context, strokeWidth: 2),
-            )
-          : FushiFilledButton.tonal(
-              onPressed: _import,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  const FushiIcon(Icons.download_outlined, size: 18),
-                  const SizedBox(width: 8),
-                  Text(t.backup_import),
-                ],
+      trailing: _BackupBusySwitcher(
+        busy: _isImporting,
+        child: _isImporting
+            ? SizedBox(
+                width: 24,
+                height: 24,
+                child: adaptiveIndicator(context: context, strokeWidth: 2),
+              )
+            : FushiFilledButton.tonalIcon(
+                onPressed: _import,
+                icon: const FushiIcon(FushiIcons.importFile, size: 18),
+                label: Text(t.backup_import),
               ),
-            ),
+      ),
     );
   }
 }
@@ -860,10 +981,12 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
 /// 正常返回（进程不重启）；导入成功或失败都会走 appModel 的遮罩收口并重启进程。
 /// [onImportSucceeded] 仅在恢复成功后、重启前回调。推荐包用它记录待办教程和
 /// 成功清理凭据；校验失败、取消或恢复失败均不会触发。
+/// [preset] 非 null 时跳过确认框（见 [BackupImportPreset]）；缺省行为不变。
 Future<void> runBackupImportFlowForFile({
   required AppModel appModel,
   required String filePath,
   Future<void> Function()? onImportSucceeded,
+  BackupImportPreset? preset,
 }) async {
   // appModel 驱动全程遮罩，此后不依赖任何页面 `mounted`/context；确认对话框由全局
   // [AppModel.navigatorKey] 宿主弹出。
@@ -891,8 +1014,9 @@ Future<void> runBackupImportFlowForFile({
   try {
     // 校验 / 读包摘要是恢复侧的静态操作（B1 分家）：不再为此构造一个导出用的
     // BackupService 实例。
-    final BackupMeta? validated =
-        await BackupRestoreService.validateBackup(filePath);
+    final BackupMeta? validated = await BackupRestoreService.validateBackup(
+      filePath,
+    );
     // 已取消/被新一轮校验取代 → 丢弃陈旧结果（遮罩已由 cancel 退出，无需再动）。
     if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
     if (validated == null) {
@@ -912,10 +1036,10 @@ Future<void> runBackupImportFlowForFile({
     // Runs against the still-open live DB; null on any failure → generic UI.
     final BackupMergePreview? preview =
         await BackupRestoreService.previewMergeRestore(
-      liveDb: appModel.database,
-      dbDirectory: appModel.databaseDirectory.path,
-      zipPath: filePath,
-    );
+          liveDb: appModel.database,
+          dbDirectory: appModel.databaseDirectory.path,
+          zipPath: filePath,
+        );
     if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
     // TODO-1358: read the archive "what is inside" manifest for the confirm
     // dialog (per-category counts + the restore toggles). Cheap central-dir
@@ -959,20 +1083,38 @@ Future<void> runBackupImportFlowForFile({
     return;
   }
 
-  final _BackupImportChoice? choice = await _showBackupImportConfirmDialog(
-      rootCtx, meta, mergePreview, summary);
+  // 预设（控制通道）：调用方已拿到等价确认，跳过确认框，按与确认框同一套规则
+  // 折算分类（[backupImportPresetCategories]）。
+  final _BackupImportChoice? choice = preset != null
+      ? _BackupImportChoice(
+          mode: preset.mode,
+          importSettings:
+              preset.mode == BackupImportMode.overwrite &&
+              preset.importSettings,
+          categories: backupImportPresetCategories(preset, summary),
+        )
+      : await _showBackupImportConfirmDialog(
+          rootCtx,
+          meta,
+          mergePreview,
+          summary,
+        );
   if (choice == null) {
     // 用户取消确认 → 彻底退出遮罩态，回到调用方页面（validating 遮罩已退出）。
     return;
   }
 
   final String booksRoot = p.join(appModel.appDirectory.path, 'fushi_books');
-  final String audiobooksRoot =
-      p.join(appModel.appDirectory.path, 'audiobooks');
+  final String audiobooksRoot = p.join(
+    appModel.appDirectory.path,
+    'audiobooks',
+  );
   final String fontsRoot = p.join(appModel.appDirectory.path, 'custom_fonts');
   final String videosRoot = p.join(appModel.appDirectory.path, 'videos');
-  final String gameCoversRoot =
-      p.join(appModel.appDirectory.path, 'game_covers');
+  final String gameCoversRoot = p.join(
+    appModel.appDirectory.path,
+    'game_covers',
+  );
 
   try {
     // TODO-1151: 用户已确认 → 上屏全屏「正在导入备份，请勿关闭」遮罩（running 相位），
@@ -987,7 +1129,7 @@ Future<void> runBackupImportFlowForFile({
     // 再继续（复用 validating→app 切换 [_rootContextAfterOverlay] 已依赖的同一原语）。
     await WidgetsBinding.instance.endOfFrame;
     await appModel.closeDatabase();
-    if (choice.mode == _BackupImportMode.merge) {
+    if (choice.mode == BackupImportMode.merge) {
       // TODO-888 merge: keep this device's library + settings, only ADD what
       // the backup carries (row-level upsert + copy-if-absent content trees).
       // Never overwrites/deletes existing data, so importSettings is moot.
@@ -1144,7 +1286,7 @@ Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
   final String dateStr = FushiTimeFormat.dayKey(meta.createdAt);
   // Default: OVERWRITE (Never break userspace — the existing behavior), and
   // within overwrite, keep this device's settings (importSettings=false).
-  _BackupImportMode mode = _BackupImportMode.overwrite;
+  BackupImportMode mode = BackupImportMode.overwrite;
   bool importSettings = false;
   // TODO-1358: the selectable content categories this backup actually carries,
   // all ticked by default; unticking one skips restoring it. The set differs
@@ -1156,10 +1298,12 @@ Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
       BackupCategory.values
           .where((BackupCategory c) => selectable.contains(c) && summary.has(c))
           .toList();
-  final List<BackupCategory> overwriteSelectablePresent =
-      presentFor(importSelectableCategories);
-  final List<BackupCategory> mergeSelectablePresent =
-      presentFor(importMergeSelectableCategories);
+  final List<BackupCategory> overwriteSelectablePresent = presentFor(
+    importSelectableCategories,
+  );
+  final List<BackupCategory> mergeSelectablePresent = presentFor(
+    importMergeSelectableCategories,
+  );
   final Set<BackupCategory> selectedRestore = <BackupCategory>{
     ...overwriteSelectablePresent,
     ...mergeSelectablePresent,
@@ -1178,6 +1322,7 @@ Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
           scrollable: false,
           child: FushiModalSheetFrame(
             title: t.backup_import_confirm_title,
+            leadingIcon: FushiIcons.restoreBackup,
             scrollable: true,
             bodyPadding: EdgeInsets.fromLTRB(
               tokens.spacing.card,
@@ -1191,105 +1336,113 @@ Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
               tokens.spacing.card,
               tokens.spacing.card,
             ),
-            body: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  t.backup_import_confirm(
-                    date: dateStr,
-                    bookCount: meta.bookCount.toString(),
-                    statsCount: meta.statsCount.toString(),
+            body: FushiEntranceScope(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    t.backup_import_confirm(
+                      date: dateStr,
+                      bookCount: meta.bookCount.toString(),
+                      statsCount: meta.statsCount.toString(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  t.backup_import_mode_label,
-                  style: Theme.of(ctx).textTheme.labelLarge,
-                ),
-                FushiRadioListTile<_BackupImportMode>(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  title: Text(t.backup_import_mode_overwrite),
-                  value: _BackupImportMode.overwrite,
-                  groupValue: mode,
-                  onChanged: (_BackupImportMode? v) =>
-                      setLocal(() => mode = v ?? _BackupImportMode.overwrite),
-                ),
-                FushiRadioListTile<_BackupImportMode>(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  title: Text(t.backup_import_mode_merge),
-                  subtitle: preview == null
-                      ? null
-                      : Text(
-                          t.backup_import_merge_preview(
-                            bookCount: preview.newBooks.toString(),
-                            progressCount:
-                                preview.updatedReaderPositions.toString(),
-                          ),
-                          style: Theme.of(ctx).textTheme.bodySmall,
-                        ),
-                  value: _BackupImportMode.merge,
-                  groupValue: mode,
-                  onChanged: (_BackupImportMode? v) =>
-                      setLocal(() => mode = v ?? _BackupImportMode.overwrite),
-                ),
-                // TODO-1358: "what is inside" manifest + per-category toggles.
-                // Both modes are now live: untick a category to skip
-                // restoring/merging it. The selectable set is mode-dependent —
-                // merge can additionally gate books/statistics (row-level).
-                ...<Widget>[
-                  if (mode == _BackupImportMode.overwrite
-                      ? overwriteSelectablePresent.isNotEmpty
-                      : mergeSelectablePresent.isNotEmpty) ...<Widget>[
-                    const SizedBox(height: 8),
-                    Text(
-                      t.backup_import_contents_title,
-                      style: Theme.of(ctx).textTheme.labelLarge,
-                    ),
-                    Text(
-                      t.backup_import_contents_hint,
-                      style: Theme.of(ctx).textTheme.bodySmall,
-                    ),
-                    for (final BackupCategory c
-                        in mode == _BackupImportMode.overwrite
-                            ? overwriteSelectablePresent
-                            : mergeSelectablePresent)
-                      AdaptiveSettingsSwitchRow(
-                        title: '${backupCategoryLabel(c)} '
-                            '(${summary.countFor(c)})',
-                        subtitle: backupCategoryDescription(c),
-                        value: selectedRestore.contains(c),
-                        onChanged: (bool v) => setLocal(() {
-                          if (v) {
-                            selectedRestore.add(c);
-                          } else {
-                            selectedRestore.remove(c);
-                          }
-                        }),
-                      ),
-                  ],
-                ],
-                // The settings-layer toggle only applies to overwrite; merge
-                // always keeps this device's settings.
-                if (mode == _BackupImportMode.overwrite) ...<Widget>[
+                  const SizedBox(height: 8),
+                  Text(
+                    t.backup_import_mode_label,
+                    style: Theme.of(ctx).textTheme.labelLarge,
+                  ),
                   const SizedBox(height: 4),
-                  AdaptiveSettingsSwitchRow(
-                    title: t.backup_import_settings_toggle,
-                    subtitle: importSettings
-                        ? t.backup_import_settings_on_hint
-                        : t.backup_import_settings_off_hint,
-                    value: importSettings,
-                    onChanged: (bool v) => setLocal(() => importSettings = v),
+                  // M3E 选择卡（分段卡片：首尾大圆角、行间 2，选中 =
+                  // secondaryContainer + 形变）。覆盖是破坏性的 → error 色块图标，
+                  // 合并 → tertiary 色块图标。
+                  _BackupImportModeOption(
+                    index: 0,
+                    icon: FushiIcons.swap,
+                    tone: FushiCardTone.error,
+                    title: t.backup_import_mode_overwrite,
+                    selected: mode == BackupImportMode.overwrite,
+                    onTap: () =>
+                        setLocal(() => mode = BackupImportMode.overwrite),
+                  ),
+                  _BackupImportModeOption(
+                    index: 1,
+                    icon: FushiIcons.libraryAdd,
+                    tone: FushiCardTone.tertiary,
+                    title: t.backup_import_mode_merge,
+                    subtitle: preview == null
+                        ? null
+                        : t.backup_import_merge_preview(
+                            bookCount: preview.newBooks.toString(),
+                            progressCount: preview.updatedReaderPositions
+                                .toString(),
+                          ),
+                    selected: mode == BackupImportMode.merge,
+                    onTap: () => setLocal(() => mode = BackupImportMode.merge),
+                  ),
+                  // TODO-1358: "what is inside" manifest + per-category toggles.
+                  // Both modes are now live: untick a category to skip
+                  // restoring/merging it. The selectable set is mode-dependent —
+                  // merge can additionally gate books/statistics (row-level).
+                  ...<Widget>[
+                    if (mode == BackupImportMode.overwrite
+                        ? overwriteSelectablePresent.isNotEmpty
+                        : mergeSelectablePresent.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 8),
+                      Text(
+                        t.backup_import_contents_title,
+                        style: Theme.of(ctx).textTheme.labelLarge,
+                      ),
+                      Text(
+                        t.backup_import_contents_hint,
+                        style: Theme.of(ctx).textTheme.bodySmall,
+                      ),
+                      for (final BackupCategory c
+                          in mode == BackupImportMode.overwrite
+                              ? overwriteSelectablePresent
+                              : mergeSelectablePresent)
+                        FushiStaggeredEntrance(
+                          index: c.index,
+                          child: AdaptiveSettingsSwitchRow(
+                            title:
+                                '${backupCategoryLabel(c)} '
+                                '(${summary.countFor(c)})',
+                            subtitle: backupCategoryDescription(c),
+                            icon: backupCategoryIcon(c),
+                            showIcon: true,
+                            value: selectedRestore.contains(c),
+                            onChanged: (bool v) => setLocal(() {
+                              if (v) {
+                                selectedRestore.add(c);
+                              } else {
+                                selectedRestore.remove(c);
+                              }
+                            }),
+                          ),
+                        ),
+                    ],
+                  ],
+                  // The settings-layer toggle only applies to overwrite; merge
+                  // always keeps this device's settings.
+                  if (mode == BackupImportMode.overwrite) ...<Widget>[
+                    const SizedBox(height: 4),
+                    AdaptiveSettingsSwitchRow(
+                      title: t.backup_import_settings_toggle,
+                      subtitle: importSettings
+                          ? t.backup_import_settings_on_hint
+                          : t.backup_import_settings_off_hint,
+                      value: importSettings,
+                      onChanged: (bool v) => setLocal(() => importSettings = v),
+                    ),
+                  ],
+                  const SizedBox(height: 4),
+                  Text(
+                    t.backup_import_preserve_sync_note,
+                    style: Theme.of(ctx).textTheme.bodySmall,
                   ),
                 ],
-                const SizedBox(height: 4),
-                Text(
-                  t.backup_import_preserve_sync_note,
-                  style: Theme.of(ctx).textTheme.bodySmall,
-                ),
-              ],
+              ),
             ),
             footer: Wrap(
               alignment: WrapAlignment.end,
@@ -1303,7 +1456,7 @@ Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
                 adaptiveDialogAction(
                   context: ctx,
                   isDefaultAction: true,
-                  isDestructiveAction: mode == _BackupImportMode.overwrite,
+                  isDestructiveAction: mode == BackupImportMode.overwrite,
                   onPressed: () => Navigator.pop(ctx, true),
                   child: Text(t.dialog_ok),
                 ),
@@ -1320,16 +1473,142 @@ Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
   // selectable set is mode-dependent (merge can gate books/statistics too), so
   // an unticked merge-only category (books/statistics) is correctly dropped
   // from the set, while for overwrite those stay always-on.
-  final Set<BackupCategory> modeSelectable = mode == _BackupImportMode.overwrite
-      ? importSelectableCategories
-      : importMergeSelectableCategories;
-  final Set<BackupCategory> categories = BackupCategory.values
-      .where((BackupCategory c) =>
-          !modeSelectable.contains(c) || selectedRestore.contains(c))
-      .toSet();
+  final Set<BackupCategory> categories = backupImportCategoriesFor(
+    mode,
+    selectedRestore,
+  );
   return _BackupImportChoice(
     mode: mode,
     importSettings: importSettings,
     categories: categories,
   );
+}
+
+/// 本地备份行的「按钮 ↔ 进行中」切换：effects 弹簧交叉淡入（墨水屏 / 减弱动态
+/// 效果下瞬切）。[busy] 作为子树 key，状态一翻转就做一次过渡。
+class _BackupBusySwitcher extends StatelessWidget {
+  const _BackupBusySwitcher({required this.busy, required this.child});
+
+  final bool busy;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiSpringSpec fade = context.fushiMotion.effectsFast;
+    return AnimatedSwitcher(
+      duration: fade.duration,
+      switchInCurve: fade.curve,
+      switchOutCurve: fade.curve,
+      child: KeyedSubtree(key: ValueKey<bool>(busy), child: child),
+    );
+  }
+}
+
+/// 逐本 / 逐部选择对话框顶部的「已选 / 总数」：M3E secondaryContainer 胶囊 +
+/// 等宽数字（勾选时宽度不跳）；Apple 设计系统下同一 tonal 配色由
+/// [fushiCardToneColors] 给出系统色淡染。
+class _BackupSelectionCount extends StatelessWidget {
+  const _BackupSelectionCount({required this.selected, required this.total});
+
+  final int selected;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    // 墨水屏下 tone 配色为 null：退回描边胶囊、不上色。
+    final FushiCardColors? colors = fushiCardToneColors(
+      context,
+      FushiCardTone.secondary,
+    );
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        color: colors?.container ?? cs.surface,
+        shape: StadiumBorder(
+          side: colors == null
+              ? BorderSide(color: cs.outline)
+              : BorderSide.none,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Text(
+          '$selected / $total',
+          style: context.fushiType.labelLargeEmphasized.tabular.copyWith(
+            color: colors?.onContainer ?? cs.onSurface,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 导入方式选择卡（覆盖 / 合并）：两张分段卡片组成一组，行首 M3E 色块图标，
+/// 选中行走分段卡片的 secondaryContainer 底 + 形变，行尾对勾弹簧缩放进出。
+/// 整张卡是一个焦点目标（方向键 / 手柄 A / Enter 选择）。
+class _BackupImportModeOption extends StatelessWidget {
+  const _BackupImportModeOption({
+    required this.index,
+    required this.icon,
+    required this.tone,
+    required this.title,
+    required this.selected,
+    required this.onTap,
+    this.subtitle,
+  });
+
+  final int index;
+  final IconData icon;
+  final FushiCardTone tone;
+  final String title;
+  final String? subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiMotionScheme motion = context.fushiMotion;
+    final TextTheme text = Theme.of(context).textTheme;
+    return Semantics(
+      inMutuallyExclusiveGroup: true,
+      checked: selected,
+      child: FushiGroupedListItem(
+        index: index,
+        count: 2,
+        selected: selected,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: <Widget>[
+              FushiListLeadingIcon(
+                icon,
+                tone: tone,
+                shape: FushiLeadingShape.square,
+                size: 36,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(title, style: text.titleSmall),
+                    if (subtitle != null)
+                      Text(subtitle!, style: text.bodySmall),
+                  ],
+                ),
+              ),
+              AnimatedScale(
+                scale: selected ? 1 : 0,
+                duration: motion.spatialFast.duration,
+                curve: motion.spatialFast.curve,
+                child: const FushiIcon(FushiIcons.check),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

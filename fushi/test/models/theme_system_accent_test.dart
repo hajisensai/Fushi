@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 
@@ -37,6 +37,7 @@ void main() {
           ColorScheme.fromSeed(
             seedColor: osAccent,
             brightness: Brightness.light,
+            dynamicSchemeVariant: kFushiDefaultSchemeVariant,
           ).primary,
         ),
       );
@@ -56,6 +57,7 @@ void main() {
           ColorScheme.fromSeed(
             seedColor: fallbackTeal,
             brightness: Brightness.dark,
+            dynamicSchemeVariant: kFushiDefaultSchemeVariant,
           ).primary,
         ),
       );

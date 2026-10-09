@@ -2,8 +2,10 @@
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 
@@ -117,87 +119,97 @@ class _LeaderboardWorkPageState extends ConsumerState<LeaderboardWorkPage> {
       title: page?.work.title ?? t.leaderboard_work_title,
       actions: <Widget>[
         FushiIconButton(
-          icon: Icons.flag_outlined,
+          icon: FushiIcons.flag,
           tooltip: t.leaderboard_report,
           enabled: page != null,
           onTap: _report,
         ),
         FushiIconButton(
-          icon: Icons.ios_share,
+          icon: FushiIcons.share,
           tooltip: t.leaderboard_share,
           onTap: _share,
         ),
       ],
-      body: RefreshIndicator(
-        onRefresh: () => _load(reset: true),
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: withBottomSafeInset(
-            context,
-            EdgeInsets.all(tokens.spacing.card),
-          ),
-          children: <Widget>[
-            if (page == null && _error != null)
-              LeaderboardErrorView(
-                error: _error!,
-                onRetry: () => unawaited(_load(reset: true)),
-              )
-            else if (page == null)
-              const FushiLoadingView()
-            else ...<Widget>[
-              FushiCard(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    LeaderboardCover(work: page.work, width: 96),
-                    SizedBox(width: tokens.spacing.card),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(page.work.title, style: tokens.type.pageTitle),
-                          if (page.work.author.isNotEmpty)
+      body: Builder(
+        builder: (BuildContext context) => FushiRefreshIndicator(
+          // 正文铺到悬浮页头底下：指示器与列表都让出「状态栏 + 页头」（Builder
+          // 的 context 在页头脚手架之内才读得到这段 padding）。
+          edgeOffset: MediaQuery.paddingOf(context).top,
+          onRefresh: () => _load(reset: true),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: withBottomSafeInset(
+              context,
+              EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                tokens.spacing.card + MediaQuery.paddingOf(context).top,
+                tokens.spacing.card,
+                tokens.spacing.card,
+              ),
+            ),
+            children: <Widget>[
+              if (page == null && _error != null)
+                LeaderboardErrorView(
+                  error: _error!,
+                  onRetry: () => unawaited(_load(reset: true)),
+                )
+              else if (page == null)
+                const FushiLoadingView()
+              else ...<Widget>[
+                FushiCard(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      LeaderboardCover(work: page.work, width: 96),
+                      SizedBox(width: tokens.spacing.card),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(page.work.title, style: tokens.type.pageTitle),
+                            if (page.work.author.isNotEmpty)
+                              Text(
+                                page.work.author,
+                                style: tokens.type.listSubtitle,
+                              ),
+                            SizedBox(height: tokens.spacing.gap),
                             Text(
-                              page.work.author,
-                              style: tokens.type.listSubtitle,
+                              leaderboardKindLabel(page.work.kind),
+                              style: tokens.type.metadata,
                             ),
-                          SizedBox(height: tokens.spacing.gap),
-                          Text(
-                            leaderboardKindLabel(page.work.kind),
-                            style: tokens.type.metadata,
-                          ),
-                          Text(
-                            t.leaderboard_work_readers(n: page.readers),
-                            style: tokens.type.listTitle,
-                          ),
-                        ],
+                            Text(
+                              t.leaderboard_work_readers(n: page.readers),
+                              style: tokens.type.listTitle,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              LeaderboardSectionTitle(t.leaderboard_work_reader_list),
-              for (final WorkReader r in _readers)
-                FushiListItem(
-                  leading: LeaderboardAvatar(account: r.account),
-                  title: Text(r.account.tag),
-                  subtitle: Text(
-                    leaderboardFinishedLabel(r.finishedDate, r.finishedAt),
+                    ],
                   ),
-                  onTap: () => _openUser(r.account.id),
                 ),
-              if (_readers.isEmpty && !_loading)
-                FushiPlaceholderMessage(
-                  icon: Icons.people_outline,
-                  message: t.leaderboard_work_no_readers,
+                LeaderboardSectionTitle(t.leaderboard_work_reader_list),
+                for (final WorkReader r in _readers)
+                  FushiListItem(
+                    leading: LeaderboardAvatar(account: r.account),
+                    title: Text(r.account.tag),
+                    subtitle: Text(
+                      leaderboardFinishedLabel(r.finishedDate, r.finishedAt),
+                    ),
+                    onTap: () => _openUser(r.account.id),
+                  ),
+                if (_readers.isEmpty && !_loading)
+                  FushiPlaceholderMessage(
+                    icon: FushiIcons.group,
+                    message: t.leaderboard_work_no_readers,
+                  ),
+                LeaderboardLoadMore(
+                  hasMore: _next != null,
+                  loading: _loading,
+                  onLoadMore: () => unawaited(_load(reset: false)),
                 ),
-              LeaderboardLoadMore(
-                hasMore: _next != null,
-                loading: _loading,
-                onLoadMore: () => unawaited(_load(reset: false)),
-              ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

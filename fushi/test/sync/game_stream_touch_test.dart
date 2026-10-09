@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/game_stream_touch.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
@@ -183,6 +184,102 @@ void main() {
         GameStreamInputAction.up,
       ]);
       expect(touch.cancel(), isEmpty);
+    });
+  });
+
+  group('GameStreamMouseInterpreter', () {
+    const Offset a = Offset(.25, .5);
+    const Offset b = Offset(.75, .5);
+
+    test('buttons press and release as themselves', () {
+      final GameStreamMouseInterpreter mouse = GameStreamMouseInterpreter(
+        extraButtonsSupported: true,
+      );
+      expect(mouse.update(a, kPrimaryMouseButton), <GameStreamPointerCommand>[
+        const GameStreamPointerCommand.down(a),
+      ]);
+      expect(mouse.active, isTrue);
+      expect(mouse.update(b, kPrimaryMouseButton), <GameStreamPointerCommand>[
+        const GameStreamPointerCommand.move(b),
+      ]);
+      expect(mouse.update(b, 0), <GameStreamPointerCommand>[
+        const GameStreamPointerCommand.up(b),
+      ]);
+      expect(mouse.update(a, kSecondaryMouseButton), <GameStreamPointerCommand>[
+        const GameStreamPointerCommand.down(a, button: 'right'),
+      ]);
+      expect(mouse.update(a, 0), <GameStreamPointerCommand>[
+        const GameStreamPointerCommand.up(a, button: 'right'),
+      ]);
+      expect(mouse.update(a, kMiddleMouseButton), <GameStreamPointerCommand>[
+        const GameStreamPointerCommand.down(a, button: 'middle'),
+      ]);
+    });
+
+    test('hover moves the host cursor without a button', () {
+      final GameStreamMouseInterpreter mouse = GameStreamMouseInterpreter();
+      expect(mouse.update(a, 0), <GameStreamPointerCommand>[
+        const GameStreamPointerCommand.move(a),
+      ]);
+      expect(mouse.active, isFalse);
+    });
+
+    test('right/middle are swallowed when the host lacks pointer buttons', () {
+      final GameStreamMouseInterpreter mouse = GameStreamMouseInterpreter();
+      // Not a left click in disguise: only the motion goes through.
+      expect(mouse.update(a, kSecondaryMouseButton), <GameStreamPointerCommand>[
+        const GameStreamPointerCommand.move(a),
+      ]);
+      expect(mouse.active, isFalse);
+    });
+
+    test('wheel accumulates logical pixels into host notches', () {
+      final GameStreamMouseInterpreter mouse = GameStreamMouseInterpreter(
+        wheelSupported: true,
+      );
+      expect(mouse.scroll(a, const Offset(0, 30)), isEmpty);
+      expect(mouse.scroll(a, const Offset(0, 30)), <GameStreamPointerCommand>[
+        const GameStreamPointerCommand.wheel(a, dy: 1),
+      ]);
+      expect(mouse.scroll(a, const Offset(-120, 0)), <GameStreamPointerCommand>[
+        const GameStreamPointerCommand.wheel(a, dx: -2),
+      ]);
+    });
+
+    test('a platform detent size turns each detent into one notch', () {
+      final GameStreamMouseInterpreter mouse = GameStreamMouseInterpreter(
+        wheelSupported: true,
+      );
+      // Windows at 100%: one detent = 100 logical px.
+      expect(
+        mouse.scroll(a, const Offset(0, 100), step: 100),
+        <GameStreamPointerCommand>[
+          const GameStreamPointerCommand.wheel(a, dy: 1),
+        ],
+      );
+      // A high-resolution wheel's small deltas add up instead of each
+      // becoming a whole notch.
+      expect(mouse.scroll(a, const Offset(0, 30), step: 100), isEmpty);
+      expect(mouse.scroll(a, const Offset(0, 30), step: 100), isEmpty);
+      expect(mouse.scroll(a, const Offset(0, 40), step: 100), hasLength(1));
+    });
+
+    test('no wheel without host support', () {
+      final GameStreamMouseInterpreter mouse = GameStreamMouseInterpreter();
+      expect(mouse.scroll(a, const Offset(0, 500)), isEmpty);
+    });
+
+    test('cancel releases every held button exactly once', () {
+      final GameStreamMouseInterpreter mouse = GameStreamMouseInterpreter(
+        extraButtonsSupported: true,
+      );
+      mouse.update(a, kPrimaryMouseButton | kSecondaryMouseButton);
+      expect(mouse.cancel(), <GameStreamPointerCommand>[
+        const GameStreamPointerCommand.up(a),
+        const GameStreamPointerCommand.up(a, button: 'right'),
+      ]);
+      expect(mouse.cancel(), isEmpty);
+      expect(mouse.active, isFalse);
     });
   });
 }

@@ -495,4 +495,203 @@ void main() {
       expect(p['currentOffset'], isNull);
     });
   });
+
+  // 用户报「中间是旁白，也做进字幕了，不能删么 / 删除了确定也还变回原样」：
+  // 「−」只能从两端减句，清空编辑框又被当成还原——中间那句没有任何办法拿掉。
+  group('MiningSentenceDraft.setSentenceRemoved (drop a middle sentence)', () {
+    MiningDraftSentence s(String text, {int? file, int? start, int? end}) =>
+        MiningDraftSentence(
+          sentence: text,
+          audioRange: file == null
+              ? null
+              : AudioPlaybackRange(
+                  audioFileIndex: file,
+                  startMs: start ?? 0,
+                  endMs: end ?? 0,
+                ),
+        );
+
+    MiningSentenceDraft draftWith({
+      List<MiningDraftSentence> prev = const <MiningDraftSentence>[],
+      List<MiningDraftSentence> next = const <MiningDraftSentence>[],
+    }) =>
+        MiningSentenceDraft()..setContext(prev: prev, next: next);
+
+    test('removing a middle sentence drops it from composeText', () {
+      final MiningSentenceDraft draft = draftWith(
+        prev: <MiningDraftSentence>[s('前二。'), s('あい'), s('前一。')],
+      );
+      expect(
+        draft.setSentenceRemoved(
+          slot: SentenceContextSlot.prev,
+          index: 1,
+          removed: true,
+        ),
+        isTrue,
+      );
+      expect(draft.composeText('現在。'), '前二。\n前一。\n現在。');
+      // 仍占着上下文的位置：宿主按 length 重解析，keptLength 才是会进卡的句数。
+      expect(draft.length, 3);
+      expect(draft.keptLength, 2);
+      expect(draft.prevSentences[1].removed, isTrue);
+      expect(draft.hasEdits, isFalse);
+    });
+
+    test('restoring brings the sentence back', () {
+      final MiningSentenceDraft draft = draftWith(
+        next: <MiningDraftSentence>[s('後一。'), s('後二。')],
+      );
+      draft.setSentenceRemoved(
+        slot: SentenceContextSlot.next,
+        index: 0,
+        removed: true,
+      );
+      draft.setSentenceRemoved(
+        slot: SentenceContextSlot.next,
+        index: 0,
+        removed: false,
+      );
+      expect(draft.composeText('現在。'), '現在。\n後一。\n後二。');
+      expect(draft.keptLength, 2);
+    });
+
+    test('removal follows the original sentence across setContext', () {
+      final MiningSentenceDraft draft = draftWith(
+        prev: <MiningDraftSentence>[s('あい'), s('前一。')],
+      );
+      draft.setSentenceRemoved(
+        slot: SentenceContextSlot.prev,
+        index: 0,
+        removed: true,
+      );
+      // 「前加一句」：宿主整体重解析，被移除的那句后移一位——移除必须跟着它走，
+      // 不能留在下标 0 上砸到新加进来的句子。
+      draft.setContext(
+        prev: <MiningDraftSentence>[s('前三。'), s('あい'), s('前一。')],
+      );
+      expect(draft.prevSentences[0].removed, isFalse);
+      expect(draft.prevSentences[1].removed, isTrue);
+      expect(draft.composeText('現在。'), '前三。\n前一。\n現在。');
+    });
+
+    test('removed sentences do not contribute to the audio range', () {
+      final MiningSentenceDraft draft = draftWith(
+        prev: <MiningDraftSentence>[s('前一。', file: 0, start: 100, end: 200)],
+        next: <MiningDraftSentence>[
+          s('後一。', file: 0, start: 400, end: 500),
+          s('後二。', file: 0, start: 600, end: 900),
+        ],
+      );
+      const AudioPlaybackRange current = AudioPlaybackRange(
+        audioFileIndex: 0,
+        startMs: 250,
+        endMs: 350,
+      );
+      // 去掉末尾一句：区间随之收窄到 後一 的结尾。
+      draft.setSentenceRemoved(
+        slot: SentenceContextSlot.next,
+        index: 1,
+        removed: true,
+      );
+      AudioPlaybackRange? merged = draft.composeAudioRange(current);
+      expect(merged!.startMs, 100);
+      expect(merged.endMs, 500);
+      // 去掉中间一句：首尾不变，音频照旧连续。
+      draft.setSentenceRemoved(
+        slot: SentenceContextSlot.next,
+        index: 1,
+        removed: false,
+      );
+      draft.setSentenceRemoved(
+        slot: SentenceContextSlot.next,
+        index: 0,
+        removed: true,
+      );
+      merged = draft.composeAudioRange(current);
+      expect(merged!.startMs, 100);
+      expect(merged.endMs, 900);
+    });
+
+    test('current sentence cannot be removed; out of range is a no-op', () {
+      final MiningSentenceDraft draft = draftWith(
+        prev: <MiningDraftSentence>[s('前一。')],
+      );
+      expect(
+        draft.setSentenceRemoved(
+          slot: SentenceContextSlot.current,
+          index: 0,
+          removed: true,
+        ),
+        isFalse,
+      );
+      expect(
+        draft.setSentenceRemoved(
+          slot: SentenceContextSlot.prev,
+          index: 5,
+          removed: true,
+        ),
+        isFalse,
+      );
+      expect(draft.composeText('現在。'), '前一。\n現在。');
+    });
+
+    test('edit and removal are independent and both survive', () {
+      final MiningSentenceDraft draft = draftWith(
+        prev: <MiningDraftSentence>[s('前一。')],
+      );
+      draft.editSentence(
+        slot: SentenceContextSlot.prev,
+        index: 0,
+        text: '前一（改）。',
+      );
+      draft.setSentenceRemoved(
+        slot: SentenceContextSlot.prev,
+        index: 0,
+        removed: true,
+      );
+      expect(draft.composeText('現在。'), '現在。');
+      draft.setSentenceRemoved(
+        slot: SentenceContextSlot.prev,
+        index: 0,
+        removed: false,
+      );
+      expect(draft.composeText('現在。'), '前一（改）。\n現在。');
+    });
+
+    test('clear() forgets removals', () {
+      final MiningSentenceDraft draft = draftWith(
+        prev: <MiningDraftSentence>[s('あい')],
+      );
+      draft.setSentenceRemoved(
+        slot: SentenceContextSlot.prev,
+        index: 0,
+        removed: true,
+      );
+      draft.clear();
+      draft.setContext(prev: <MiningDraftSentence>[s('あい')]);
+      expect(draft.prevSentences.single.removed, isFalse);
+      expect(draft.composeText('現在。'), 'あい\n現在。');
+    });
+
+    test('preview lists removed sentences with flags; total counts kept only',
+        () {
+      final MiningSentenceDraft draft = draftWith(
+        prev: <MiningDraftSentence>[s('前一。'), s('あい')],
+        next: <MiningDraftSentence>[s('後一。')],
+      );
+      draft.setSentenceRemoved(
+        slot: SentenceContextSlot.prev,
+        index: 1,
+        removed: true,
+      );
+      final Map<String, Object?> p = buildSentenceContextPreview(
+        draft: draft,
+        current: '現在。',
+      );
+      expect(p['prev'], <String>['前一。', 'あい']);
+      expect(p['prevRemoved'], <bool>[false, true]);
+      expect(p['nextRemoved'], <bool>[false]);
+      expect(p['total'], 2);
+    });
+  });
 }

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
@@ -12,6 +12,8 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 
 import '../helpers/source_guard.dart';
 
@@ -128,11 +130,16 @@ void main() {
                 tester.element(find.byType(SizedBox)), const SizedBox.shrink()),
         isA<MangaSourcesPage>(),
       );
-      expect(
-        shell.views.last.builder(
-            tester.element(find.byType(SizedBox)), const SizedBox.shrink()),
-        isA<ModuleSettingsView>(),
-      );
+      // 设置视图外包 [FushiFloatingChromeScrollInset]（15bb9c53c50：设置正文滚到
+      // 浮动工具区底下、不留空白带），里面才是漫画设置分类的 ModuleSettingsView。
+      final Widget settings = shell.views.last.builder(
+          tester.element(find.byType(SizedBox)), const SizedBox.shrink());
+      expect(settings, isA<FushiFloatingChromeScrollInset>());
+      final Widget settingsBody =
+          (settings as FushiFloatingChromeScrollInset).child;
+      expect(settingsBody, isA<ModuleSettingsView>());
+      expect((settingsBody as ModuleSettingsView).destinationId,
+          SettingsDestinationId.manga);
       // 反向锚：普通书架的默认值必须仍是 false，否则漫画会在两边都出现。
       expect(const ReaderFushiHistoryPage().mangaOnly, isFalse);
     });

@@ -129,8 +129,9 @@ void main() {
     // 确实消费了它、两个输入都接在真字段上、分支条件没被额外析取项撑成恒真」——
     // 语义正确性由真值表负责，可达性由「条件必须逐字等于 plan 查询」负责。
     expect(
-      switchBody
-          .contains('final EpisodeSwitchPlan plan = resolveEpisodeSwitchPlan('),
+      switchBody.contains(
+        'final EpisodeSwitchPlan plan = resolveEpisodeSwitchPlan(',
+      ),
       isTrue,
       reason: '换集的路由决策必须走纯函数 resolveEpisodeSwitchPlan，不得手写布尔表达式',
     );
@@ -261,18 +262,32 @@ void main() {
       isTrue,
       reason: '认领时 Windows 必须立刻持有标题栏 owner，否则旧页 dispose 后标题栏闪出',
     );
-    // dispose 兜底：加载中被退出 → 亲自退原生全屏。
-    final int disposeIdx = pageSrc.indexOf('  void dispose() {');
-    expect(disposeIdx, isNonNegative);
-    final int releaseIdx = pageSrc.indexOf(
+    // Dispose ordering is the contract, independent of comments or additional
+    // listener cleanup inserted before the fullscreen handoff is released.
+    final String dispose = compactCode(
+      methodBody(pageSrc, 'void dispose()'),
+    ).replaceAll(',)', ')');
+    final int releaseIdx = dispose.indexOf(
       '_releaseHandedOverNativeFullscreen();',
-      disposeIdx,
     );
-    expect(releaseIdx, isNonNegative, reason: 'dispose 必须释放接管来的原生全屏');
+    final int titleBarReleaseIdx = dispose.indexOf(
+      'FushiDesktopTitleBar.setContentFullscreen(owner:this,enabled:false);',
+    );
+    final int controllerDisposeIdx = dispose.indexOf('_controller?.dispose();');
     expect(
-      releaseIdx - disposeIdx,
-      lessThan(600),
-      reason: '释放应在 dispose 开头（先于标题栏 owner 释放与 controller dispose）',
+      releaseIdx,
+      isNonNegative,
+      reason: 'dispose must release the handed-over native fullscreen',
+    );
+    expect(
+      titleBarReleaseIdx,
+      greaterThan(releaseIdx),
+      reason: 'restore native fullscreen before releasing the title-bar owner',
+    );
+    expect(
+      controllerDisposeIdx,
+      greaterThan(releaseIdx),
+      reason: 'restore native fullscreen before disposing the video controller',
     );
     // 放弃重进全屏（失败 / 缺失 / 超时）同样释放。
     final int giveUpIdx = fullscreenSrc.indexOf(
@@ -296,8 +311,11 @@ void main() {
     final int pushDefIdx = fullscreenSrc.indexOf(
       'Future<void> _pushNeutralizedVideoFullscreen(BuildContext context) async {',
     );
-    expect(pushDefIdx, isNonNegative,
-        reason: '找不到 _pushNeutralizedVideoFullscreen');
+    expect(
+      pushDefIdx,
+      isNonNegative,
+      reason: '找不到 _pushNeutralizedVideoFullscreen',
+    );
     final int routeAssignIdx = fullscreenSrc.indexOf(
       '_videoFullscreenRoute = fullscreenRoute;',
       pushDefIdx,
@@ -307,11 +325,7 @@ void main() {
       '_ownsHandedOverNativeFullscreen = false;',
       pushDefIdx,
     );
-    expect(
-      handIdx,
-      isNonNegative,
-      reason: '建出全屏路由时必须把接管来的所有权移交路由',
-    );
+    expect(handIdx, isNonNegative, reason: '建出全屏路由时必须把接管来的所有权移交路由');
     expect(
       handIdx,
       lessThan(routeAssignIdx),
@@ -328,8 +342,10 @@ void main() {
       'void _scheduleInitialFullscreenIfNeeded()',
     );
     expect(scheduleIdx, isNonNegative);
-    final String scheduleBody =
-        fullscreenSrc.substring(scheduleIdx, pushDefIdx);
+    final String scheduleBody = fullscreenSrc.substring(
+      scheduleIdx,
+      pushDefIdx,
+    );
     expect(
       'unawaited(_pushNeutralizedVideoFullscreen(ctx))'
           .allMatches(scheduleBody)
@@ -342,11 +358,7 @@ void main() {
     );
     expect(schedHandIdx, isNonNegative, reason: '已全屏分支仍要把所有权还给路由');
     final int schedGateIdx = scheduleBody.indexOf('if (isFullscreen(ctx)) {');
-    expect(
-      schedGateIdx,
-      isNonNegative,
-      reason: '调用点放手必须被「栈上已有全屏路由」这道门框住',
-    );
+    expect(schedGateIdx, isNonNegative, reason: '调用点放手必须被「栈上已有全屏路由」这道门框住');
     expect(
       schedHandIdx,
       greaterThan(schedGateIdx),

@@ -198,3 +198,11 @@ if(ANDROID)
       log
   )
 endif()
+
+# The Android app has a single externalNativeBuild entry (this file). The
+# Blu-ray libaacs ABI module (native/fushi_aacs) rides along so every ABI
+# split ships libfushi_aacs.so, whose soname libbluray opens as libaacs.so.0.
+if(ANDROID)
+  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../fushi_aacs"
+      "${CMAKE_CURRENT_BINARY_DIR}/fushi_aacs")
+endif()

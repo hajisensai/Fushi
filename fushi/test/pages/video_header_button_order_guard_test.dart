@@ -116,11 +116,11 @@ void main() {
     final List<VideoControlItem> topRightItems =
         VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
     final int screenshot = topRightItems.indexOf(VideoControlItem.screenshot);
-    final int clip = topRightItems.indexOf(VideoControlItem.clipExport);
     expect(screenshot, greaterThanOrEqualTo(0), reason: '顶栏应保留截图按钮');
-    expect(clip, greaterThanOrEqualTo(0), reason: '顶栏应新增片段导出按钮');
-    expect(clip, greaterThan(screenshot), reason: '片段导出必须放在截图按钮后面');
-    expect(clip, screenshot + 1, reason: '片段导出必须紧挨截图按钮，中间不能插入其它按钮');
+    // 2026-10-06 遮挡最小化：片段导出默认移出播放器、常驻右上「⋯」，仍可拖回。
+    expect(topRightItems.contains(VideoControlItem.clipExport), isFalse);
+    expect(VideoControlLayout.currentChrome.removedItems,
+        contains(VideoControlItem.clipExport));
     expect(
       RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight')
           .allMatches(text)
@@ -134,7 +134,7 @@ void main() {
     expect(text.contains('_toggleClipExport()'), isTrue);
   });
 
-  test('默认右上角顶栏是 6 个低频入口（TODO-642 → 2026-10-05 M3E 重排）', () {
+  test('默认右上角顶栏只留选集 / 章节 / 截图 / 设置（2026-10-06 遮挡最小化）', () {
     // 2026-10-05 播放器 UI 重做按使用频率重排默认布局（见 VideoControlLayout
     // .currentChrome 的文档）：字幕轨挪到底栏右，设置从右侧栏挪到右上；右上 =
     // 音轨 / 选集 / 章节 / 截图 / 片段导出 / 设置，窄窗按优先级收进「⋮」。
@@ -144,24 +144,22 @@ void main() {
     expect(
         topRight,
         <VideoControlItem>[
-          VideoControlItem.audioTrack,
           VideoControlItem.episodeList,
           VideoControlItem.chapterList,
           VideoControlItem.screenshot,
-          VideoControlItem.clipExport,
           VideoControlItem.settings,
         ],
-        reason: '默认右上角是 6 个低频入口');
+        reason: '默认右上角只留常用入口，其余进「⋯」');
 
-    // 上 / 下一集默认在底栏左夹着播放键（只在合集里渲染）；上 / 下一章默认移出
-    // 播放器（章节列表 + PageUp/PageDown + 跳过片头片尾仍在），可从编辑器拖回。
-    expect(VideoControlLayout.currentChrome.slotOf(VideoControlItem.previousEpisode),
-        VideoControlSlot.bottomLeft);
-    expect(VideoControlLayout.currentChrome.slotOf(VideoControlItem.nextEpisode),
-        VideoControlSlot.bottomLeft);
+    // 上 / 下一集、上 / 下一章、音轨、片段导出默认移出播放器（常驻右上「⋯」），
+    // 可从编辑器拖回。
     const List<VideoControlItem> trimmedNav = <VideoControlItem>[
+      VideoControlItem.previousEpisode,
+      VideoControlItem.nextEpisode,
       VideoControlItem.previousChapter,
       VideoControlItem.nextChapter,
+      VideoControlItem.audioTrack,
+      VideoControlItem.clipExport,
     ];
     for (final VideoControlItem nav in trimmedNav) {
       expect(VideoControlLayout.currentChrome.isOnPlayer(nav), isFalse,

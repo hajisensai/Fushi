@@ -21,7 +21,7 @@ void main() {
         File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
             .readAsStringSync();
 
-    final int start = sheet.indexOf('Widget _buildThemeSelectorSection()');
+    final int start = sheet.indexOf('Widget _buildThemeSelectorSection(');
     expect(start, greaterThanOrEqualTo(0),
         reason: 'theme selector section builder must exist');
     final int end = sheet.indexOf('\n  }', start);

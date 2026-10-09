@@ -7,7 +7,7 @@
 /// 走应用内检查 + 下载安装。这里没有 `launchUrl`——「更新」不该把人送出 app。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:fushi_core/fushi_core.dart'
     show FushiDatabase, UpdateFeedEntryRow;

@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -18,6 +18,11 @@ import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.dart';
+import 'package:fushi/src/feedback/feedback_service.dart';
+import 'package:fushi/src/leaderboard/leaderboard_service.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -80,10 +85,17 @@ void main() {
     if (storeDir.existsSync()) storeDir.deleteSync(recursive: true);
   });
 
-  Future<void> pumpHost(WidgetTester tester, {Widget? home}) async {
+  Future<void> pumpHost(
+    WidgetTester tester, {
+    Widget? home,
+    List<Override> extraOverrides = const <Override>[],
+  }) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
+        overrides: <Override>[
+          appProvider.overrideWith((Ref ref) => appModel),
+          ...extraOverrides,
+        ],
         child: TranslationProvider(
           child: MaterialApp(
             navigatorKey: appModel.navigatorKey,
@@ -131,6 +143,8 @@ void main() {
     );
     // 立即同步出厂不勾（多数人没配同步），要在设置里自己勾上。
     expect(byKey('floating_ball_action_sync'), findsNothing);
+    // 反馈出厂勾上、各平台都有（打开反馈中心并附当前画面截图）。
+    expect(byKey('floating_ball_action_feedback'), findsOneWidget);
   });
 
   testWidgets('设置里关掉应用内悬浮球：不画球', (WidgetTester tester) async {
@@ -242,6 +256,47 @@ void main() {
     await tester.tap(byKey('floating_ball_action_sync'));
     await tester.pump();
     expect(find.text(t.sync_now_busy), findsOneWidget);
+  });
+
+  testWidgets('反馈按钮打开反馈中心', (WidgetTester tester) async {
+    await prefs.setFloatingBallButtons(FloatingBallScope.general, <String>[
+      'feedback',
+    ]);
+    // 反馈中心读排行榜账户（开发者入口）与本机回执：换成不联网的测试实例。
+    final LeaderboardService board = LeaderboardService(
+      database: () => throw StateError('no database'),
+      supportRoot: () async => storeDir,
+      profileId: () async => 1,
+      httpClientFactory: () async => MockClient(
+        (http.Request _) async => http.Response('{"items":[]}', 200),
+      ),
+    );
+    await pumpHost(
+      tester,
+      extraOverrides: <Override>[
+        leaderboardServiceProvider.overrideWith((Ref _) => board),
+        feedbackServiceProvider.overrideWith(
+          (Ref _) => FeedbackService(
+            supportRoot: () async => storeDir,
+            client: board.feedbackClient,
+          ),
+        ),
+      ],
+    );
+    await expand(tester);
+    await tester.tap(byKey('floating_ball_action_feedback'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byType(FeedbackCenterPage), findsOneWidget);
+  });
+
+  testWidgets('场景勾选里去掉反馈：球上没有反馈按钮', (WidgetTester tester) async {
+    await prefs.setFloatingBallButtons(FloatingBallScope.general, <String>[
+      'lookup',
+    ]);
+    await pumpHost(tester);
+    await expand(tester);
+    expect(byKey('floating_ball_action_feedback'), findsNothing);
   });
 
   testWidgets('球外的空白处点击照常落到底下页面', (WidgetTester tester) async {
@@ -555,16 +610,40 @@ void main() {
     expect(floatingBallNativeLabels()['ball'], isNotEmpty);
   });
 
-  test('原生系统球的配色取当前主题三色', () {
+  test('原生系统球的配色取当前主题的 M3E 角色（墨水屏降级为描边无填色）', () {
     const ColorScheme scheme = ColorScheme.light(
       surface: Color(0xFF101112),
       onSurface: Color(0xFF202122),
       primary: Color(0xFF303132),
+      primaryContainer: Color(0xFF404142),
+      onPrimaryContainer: Color(0xFF505152),
+      secondaryContainer: Color(0xFF606162),
+      onSecondaryContainer: Color(0xFF707172),
+      onPrimary: Color(0xFF808182),
     );
     expect(floatingBallNativeColors(scheme), <String, int>{
       'surface': 0xFF101112,
       'onSurface': 0xFF202122,
       'primary': 0xFF303132,
+      'ballContainer': 0xFF404142,
+      'onBallContainer': 0xFF505152,
+      'buttonContainer': 0xFF606162,
+      'onButtonContainer': 0xFF707172,
+      'outline': 0x00000000,
+      'ballOpen': 0xFF303132,
+      'onBallOpen': 0xFF808182,
+    });
+    expect(floatingBallNativeColors(scheme, eink: true), <String, int>{
+      'surface': 0xFF101112,
+      'onSurface': 0xFF202122,
+      'primary': 0xFF303132,
+      'ballContainer': 0xFF101112,
+      'onBallContainer': 0xFF202122,
+      'buttonContainer': 0xFF101112,
+      'onButtonContainer': 0xFF202122,
+      'outline': 0xFF202122,
+      'ballOpen': 0xFF101112,
+      'onBallOpen': 0xFF202122,
     });
   });
 
@@ -862,6 +941,61 @@ void main() {
       });
       await tester.pump();
       expect(starts(), hasLength(1));
+    }
+
+    for (final String actionId in <String>['popup_lookup', 'screen_ocr']) {
+      testWidgets(
+        'system $actionId OFF→ON updates native actions in isolation',
+        (WidgetTester tester) async {
+          mockNative(tester);
+          addTearDown(
+            () => tester.binding.defaultBinaryMessenger
+                .setMockMethodCallHandler(FloatingBallChannel.channel, null),
+          );
+          const List<String> allActions = <String>[
+            'lookup',
+            'popup_lookup',
+            'clipboard',
+            'screen_ocr',
+          ];
+          await startSystemBall(tester);
+          expect(startedActions(starts().single), allActions);
+
+          final List<String> remaining = allActions
+              .where((String id) => id != actionId)
+              .toList();
+          await tester.runAsync(() async {
+            await prefs.setFloatingBallButtons(
+              FloatingBallScope.system,
+              remaining,
+            );
+            await debugLatestSystemBallSync;
+          });
+          await tester.pump();
+          expect(starts(), hasLength(2));
+          expect(
+            startedActions(starts().last),
+            remaining,
+            reason: 'only $actionId disappears from the actual native payload',
+          );
+
+          await tester.runAsync(() async {
+            await prefs.setFloatingBallButtons(
+              FloatingBallScope.system,
+              allActions,
+            );
+            await debugLatestSystemBallSync;
+          });
+          await tester.pump();
+          expect(starts(), hasLength(3));
+          expect(
+            startedActions(starts().last),
+            allActions,
+            reason:
+                '$actionId returns without changing the other native actions',
+          );
+        },
+      );
     }
 
     testWidgets('出厂「仅应用内」：用户在应用外球上点关闭 → 关掉「应用外显示」', (

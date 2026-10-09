@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/anki/source_review_session.dart';
+import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi_core/fushi_core.dart' show kStatSourceBook;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -404,6 +405,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     _pendingSelectionRect = selectionRect;
     _deferredPopupItem = null;
 
+    // 诊断：阅读器 / 有声书家族此前不开查词流水，`searchDictionary` 与弹窗各段在
+    // 诊断日志里没有归属（「空闲后首查慢」无从拆段）。与 mixin 宿主同一把尺：
+    // begin → search → warm → fill → shown → push → rendered。嵌套层不开新流水
+    // （父层仍在屏上，游标被覆盖只会让父层余段串台）。
+    final LookupPerfTrace? trace = origin == LookupOrigin.nested
+        ? null
+        : LookupPerfTrace.begin(
+            term: searchTerm,
+            host: 'reader',
+            lowMemory: _popup.lowMemory,
+          );
     try {
       if (!deferDisplay) {
         _isSearchingNotifier.value = true;
@@ -414,8 +426,16 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         searchWithWildcards: false,
         overrideMaximumTerms: overrideMaximumTerms,
       );
+      trace?.mark(
+        'search',
+        detail: 'entries=${dictionaryResult.entries.length} '
+            'kanji=${dictionaryResult.kanjiResults.length}',
+      );
 
-      if (_searchGeneration != gen) return 0;
+      if (_searchGeneration != gen) {
+        trace?.finish('superseded');
+        return 0;
+      }
 
       appModel.addToDictionaryHistory(result: dictionaryResult);
 
@@ -442,6 +462,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         result: dictionaryResult,
         allLoaded: !dictionaryResult.truncated,
       );
+      trace?.mark('fill', detail: 'warm-reuse=$reuse defer=$deferDisplay');
       // 这一层查词时的原句（✨ 与自动挑词条只认它，不再回头读页面「当前句」——
       // 嵌套层的词来自释义，外层阅读器的句子与它无关）。
       item.lookupSentence = origin == LookupOrigin.nested
@@ -835,10 +856,13 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       }
       // item 已在栈内（beginTop 时加入，隐藏）。需要 WebView 渲染的结果先带盖板
       // 翻可见，等当前结果 popupRendered 后再撤盖板，避免 macOS 隐藏热槽漏注入后露白。
+      LookupPerfTrace.current?.mark('shown');
       if (_itemNeedsWebViewRender(item)) {
         _showPopupWaitingForRender(item, gen);
       } else {
         _popup.show(item);
+        // 空结果走 Flutter 占位、不经 WebView，没有 rendered / reveal 两段。
+        LookupPerfTrace.current?.finish('empty');
       }
     }
     if (_searchGeneration == gen && _visibleRenderPendingItem == null) {
@@ -1152,11 +1176,29 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     required bool isTop,
   }) {
     final item = stack[index];
+    // 真实空结果收成「未找到」空态的高度，否则按内容测量（见 layoutAutoFitHeight）。
+    final double emptyHeight = kLookupPopupEmptyHeight * appModel.appUiScale;
+    final double? fitHeight = item.layoutAutoFitHeight(emptyHeight: emptyHeight);
     final pos = _calculatePopupPosition(
       item.selectionRect,
       screen,
       verticalWriting: _layerVerticalWriting(index),
+      autoFitHeight: fitHeight,
     );
+    // 自适应高度只收外壳，WebView 仍按最大高度布局、超出部分裁掉
+    // （[DictionaryPopupLayer.webViewOverflowHeight]，与 mixin 家族同一手法）：内容增减
+    // 不改原生表面尺寸，避免 Windows 上旧尺寸帧被拉伸。
+    final double fullPopupHeight = fitHeight == null ||
+            popupBottomDocked ||
+            _popupResizePreview != null
+        ? pos.height
+        : _calculatePopupPosition(
+            item.selectionRect,
+            screen,
+            verticalWriting: _layerVerticalWriting(index),
+          ).height;
+    final double webViewOverflowHeight =
+        fullPopupHeight > pos.height ? fullPopupHeight - pos.height : 0.0;
     // Phase B 拖拽尺寸：缓存顶层卡当前 rect/选区，供 [_onPopupResizeStart] 冻结其左上角。
     if (isTop) {
       _topPopupSelectionRect = item.selectionRect;
@@ -1196,6 +1238,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
               stack[j].selectionRect,
               screen,
               verticalWriting: _layerVerticalWriting(j),
+              autoFitHeight: stack[j].layoutAutoFitHeight(
+                emptyHeight: emptyHeight,
+              ),
             ),
       ],
       // BUG-797 / BUG-1040：任何「必须盖住弹窗」的 Flutter 对话框（选择句子上下文 /
@@ -1238,6 +1283,29 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         // 保留本层 + 祖先（不关母代）。点顶层（无后代）= no-op 栈不变。
         onTapOutside: () => dismissDescendantsOf(index),
         onRendered: () => _onPopupLayerRendered(index, item),
+        webViewOverflowHeight: webViewOverflowHeight,
+        // 阅读器弹窗此前从不收缩：永远按「最大宽高」偏好铺满（默认约 1000×700），
+        // 一个词条 / 空结果也是一大块面板。按 WebView 上报的内容高度收外壳（mixin
+        // 家族 [buildNestedPopupLayer] 同一算法）。
+        onContentMetrics: (double contentHeight, double viewportHeight) {
+          if (!mounted ||
+              !_popup.entries.contains(item) ||
+              popupBottomDocked ||
+              _popupResizePreview != null) {
+            return;
+          }
+          final double nextHeight = resolveAutoFitPopupHeight(
+            currentPopupHeight: fullPopupHeight,
+            contentHeight: contentHeight,
+            viewportHeight: viewportHeight,
+            minHeight: kLookupPopupMinHeight * appModel.appUiScale,
+            maxHeight: popupMaxHeight,
+          );
+          if ((nextHeight - (item.autoFitHeight ?? pos.height)).abs() < 1) {
+            return;
+          }
+          setState(() => item.autoFitHeight = nextHeight);
+        },
         // TODO-058 fail-safe：弹窗 WebView 加载失败也走同一翻可见入口（加载失败
         // 也显示，不卡死「点查词什么都不出」）。
         onRenderError: () => _onPopupLayerRendered(index, item),
@@ -1432,6 +1500,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           // （本入口只在 sentenceDraftEnabled 时才挂上，这里再按
           // [supportsSentenceDraft] 兜一层）；不支持的表面传 null，对话框不渲染编辑入口。
           editSentence: supportsSentenceDraft ? onEditSentenceContextText : null,
+          // 移除 / 恢复某一句前文/后文（剔掉夹在中间的旁白），门控同编辑。
+          removeSentence:
+              supportsSentenceDraft ? onRemoveSentenceContext : null,
           // BUG-2196 ②：只有真的能出声的表面才给试听按钮。
           previewAudio: supportsSentenceAudioPreview ? onPreviewSentenceAudio : null,
           stopAudioPreview:
@@ -1459,6 +1530,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   void _onPopupLayerRendered(int index, DictionaryPopupEntry item) {
     if (!mounted) return;
     _popup.revealRendered(item);
+    // 阅读器路径先带盖板翻可见（[showDeferredPopup]），revealRendered 不再收尾；
+    // 渲染完成即这次查词的终点，在这里收（已收尾时幂等）。
+    LookupPerfTrace.current?.finish('revealed');
     _clearVisibleRenderPending(item: item);
     onDictionaryPopupRendered(index);
   }
@@ -1545,6 +1619,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     String text,
   ) async {}
 
+  /// 「制卡前调整·选择句子上下文」里把 [slot]（上文/下文）第 [index] 句从卡片里
+  /// 移除（[removed] = true）或恢复。被移除的句子不进卡片文本与音频区间，但仍占着
+  /// 上下文的位置（加减句数不会把它挤丢）。
+  /// 默认 no-op（[supportsSentenceDraft] 为 false 时不会被调用）。reader 覆写。
+  @protected
+  Future<void> onRemoveSentenceContext(
+    SentenceContextSlot slot,
+    int index,
+    bool removed,
+  ) async {}
+
   /// BUG-2196 ②：试听**这次制卡真正会写进卡片的那段音频**。
   ///
   /// 为什么值得单独一个钩子而不是「播当前句的 cue」：写进卡的区间是
@@ -1612,6 +1697,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     Rect sel,
     Size screen, {
     bool verticalWriting = false,
+    double? autoFitHeight,
   }) {
     // TODO-108：查词弹窗位置计算的单一收口点（reader/有声书/独立查词页家族共用），
     // 底部固定模式忽略选区放屏幕底部全宽面板。video 家族在 dictionary_page_mixin
@@ -1622,7 +1708,12 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       screen: screen,
       bottomDocked: popupBottomDocked,
       maxWidth: popupMaxWidth,
-      maxHeight: popupMaxHeight,
+      // 查词弹窗按内容收缩（与 mixin 家族 [_calcMixinPopupPosition] 同口径）：
+      // [autoFitHeight] 来自 WebView 上报的内容高度，只收不放（夹在偏好最大高度内）；
+      // 拖尺寸把手期间以预览态为准，不收缩。
+      maxHeight: _popupResizePreview != null || autoFitHeight == null
+          ? popupMaxHeight
+          : autoFitHeight.clamp(0.0, popupMaxHeight).toDouble(),
       padding: popupPadding,
       bottomReserve: popupBottomReserve,
       topReserve: popupTopReserve,

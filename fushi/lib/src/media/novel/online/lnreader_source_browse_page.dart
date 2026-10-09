@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
 import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
@@ -11,6 +11,7 @@ import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_novel_detail_page.dart';
 import 'package:fushi/src/media/online/online_source_browse_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/utils.dart';
 
@@ -213,7 +214,7 @@ class LnReaderCover extends StatelessWidget {
     final Widget fallback = ColoredBox(
       // 与扩展行图标占位同一个设计 token（不在页面里另挑 colorScheme 色）。
       color: FushiDesignTokens.of(context).surfaces.group,
-      child: const Center(child: FushiIcon(Icons.menu_book_outlined, size: 36)),
+      child: const Center(child: FushiIcon(FushiIcons.books, size: 36)),
     );
     final ImageProvider<Object>? image = lnReaderCoverImage(
       url,
@@ -305,7 +306,9 @@ class _LnReaderFilterDialogState extends State<LnReaderFilterDialog> {
   Widget build(BuildContext context) {
     // 普通 AlertDialog：内含 Dropdown / FilterChip，`.adaptive` 在 iOS / macOS 主题
     // 下没有 Material 祖先。
+    // M3E：28 圆角 + 饼干形图标徽标；「应用」为主操作（filled）。
     return FushiAlertDialog(
+      icon: const FushiIcon(FushiIcons.filter),
       title: Text(t.novel_source_filters_title),
       content: SizedBox(
         width: 480,
@@ -317,22 +320,20 @@ class _LnReaderFilterDialogState extends State<LnReaderFilterDialog> {
         ),
       ),
       actions: <Widget>[
-        adaptiveDialogAction(
-          context: context,
+        FushiDialogAction(
+          label: t.novel_source_filters_reset,
           onPressed: () => setState(
             () => _filters = List<LnReaderFilter>.of(widget.defaults),
           ),
-          child: Text(t.novel_source_filters_reset),
         ),
-        adaptiveDialogAction(
-          context: context,
+        FushiDialogAction(
+          label: t.dialog_cancel,
           onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_cancel),
         ),
-        adaptiveDialogAction(
-          context: context,
+        FushiDialogAction(
+          label: t.novel_source_filters_apply,
+          kind: FushiDialogActionKind.primary,
           onPressed: () => Navigator.pop(context, _filters),
-          child: Text(t.novel_source_filters_apply),
         ),
       ],
     );

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/utils.dart';
 
 /// 各导入对话框逐字相同的外框脚手架（FushiDialogFrame 560/0.86 +

@@ -1,6 +1,7 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/game_stream_page.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
@@ -20,7 +21,8 @@ class GameStreamLeaveError implements Exception {
 /// Stable receiver id for this app process: one phone rejoining its own
 /// session keeps the same id, so the host does not see a second client.
 final String gameStreamReceiverClientId =
-    'android-${Platform.localHostname}-${DateTime.now().microsecondsSinceEpoch}';
+    '${defaultTargetPlatform.name}-${Platform.localHostname}-'
+    '${DateTime.now().microsecondsSinceEpoch}';
 
 /// Joins [session] on [client]'s bound [peer], shows [GameStreamPage] until
 /// the user leaves, then disconnects and tells the host to stop.

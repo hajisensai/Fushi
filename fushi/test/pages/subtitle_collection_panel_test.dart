@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/external_provider.dart';
@@ -120,7 +120,7 @@ void main() {
             database: db,
             collection: collection,
             members: <VideoBookRow>[member],
-            subtitleRegistry: () => registry,
+            subtitleRegistry: () async => registry,
             initialApiKey: 'test-key',
             onApiKeyChanged: (_) async {},
             saveDirectory: tempDir.path,
@@ -727,6 +727,33 @@ void main() {
     expect(empty, findsOneWidget);
     expect(tester.widget<Text>(empty).data, t.video_jimaku_no_results);
     expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton())).onPressed, isNull);
+  });
+
+  // BUG-3000：截图里 key 输入框明明有值，顶部却报「请先填写 Jimaku API key」——
+  // 判据看的是「有没有 registry」而不是 key。key 填了还拿不到来源时，要说真实原因。
+  testWidgets('BUG-3000 key 已填但没有任何来源：不再报「请先填写 key」',
+      (WidgetTester tester) async {
+    final VideoBookRow member = await seedMember();
+    // 绑了系列 → 进页即直接搜来源（不经 AniList），走到无来源分支。
+    final MediaCollectionRow collection = await seedCollection(anilistId: 21);
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        withProvider: false,
+        httpClientFactory: () async =>
+            MockClient((_) async => http.Response('', 404)),
+        onSearch: (_) async =>
+            ProviderBatchResult<VideoSubtitleCandidate>.success(
+              const <VideoSubtitleCandidate>[],
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.video_jimaku_no_key), findsNothing,
+        reason: 'initialApiKey 是 test-key：说「请先填写 key」是在骗用户');
+    expect(find.text(t.video_subtitle_sources_all_disabled), findsOneWidget);
   });
 
   testWidgets('一个字幕来源都没配：不自动发搜，来源区给引导', (WidgetTester tester) async {

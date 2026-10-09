@@ -98,6 +98,18 @@ class FloatingLyricWindow {
     uint32_t button_bg_color = 0x33000000;
     uint32_t highlight_color = 0x80FFD54F;
     uint32_t active_color = 0xFFFFD54F;
+    // M3E floating toolbar palette resolved from the app theme on the Dart side
+    // (galgame hook overlay only). toolbar_bg_color alpha 0 = field absent ->
+    // the pass-through toolbar keeps the legacy look built from the four colours
+    // above. See hook_toolbar::Style::surface_color.
+    uint32_t toolbar_bg_color = 0;
+    uint32_t toolbar_icon_color = 0;
+    uint32_t toolbar_hover_color = 0;
+    uint32_t toolbar_active_bg_color = 0;
+    uint32_t toolbar_active_icon_color = 0;
+    // 工具条悬停提示气泡（alpha 0 = 系统样式）。
+    uint32_t toolbar_tooltip_bg_color = 0;
+    uint32_t toolbar_tooltip_text_color = 0;
     // TODO-708 P2: 窗宽/窗高仍用 0 = 平台原生默认（720dip 起始宽 + 可拖拽）：0 宽窗
     // 不是合法用户取值，拿它当哨兵没有歧义。
     //
@@ -185,6 +197,9 @@ class FloatingLyricWindow {
   // 工具条所在区域才现身。**真隐藏而不是降透明度**——这个窗口盖在游戏上，每一个
   // 还在的像素都是玩家点不到的像素（BUG-951 的原话）。
   void SetToolbarAutoHide(bool enabled);
+  // 工具条在图标下方显示简短文字（文案经 hook_toolbar::SetSlotLabels 下发）。
+  // 台词窗不够宽放不下带字的一排时自动退回纯图标 + 悬停提示。
+  void SetToolbarLabels(bool enabled);
   // 穿透态下正文是否仍然拦截落在**文字行盒**上的鼠标（默认 true = 拦截，历史行为，
   // 点字查词才成立）。关掉后连字也不接，整窗对游戏彻底透明——用户原话「穿透不彻底
   // 等于彻底不穿透」「我想点击文字底下的东西点不到了」。关掉后自然也没有点字查词，
@@ -467,6 +482,10 @@ class FloatingLyricWindow {
   int lookup_trigger_ = 0;
   // 工具条自动隐藏（见 SetToolbarAutoHide）。
   bool toolbar_auto_hide_ = true;
+  // 工具条文字标签开关（见 SetToolbarLabels）。
+  bool toolbar_labels_ = false;
+  // 当前宽度 |body_width_px| 下是否真的画文字标签（开关开 + 有文案 + 放得下）。
+  bool ToolbarLabelsActive(float body_width_px) const;
   // 工具条当前是否处于「已揭示」状态（自动隐藏关时恒 true）。
   bool toolbar_revealed_ = false;
   // 揭示轮询定时器是否已挂。

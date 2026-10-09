@@ -6,6 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_diag_stats.dart';
 import 'package:fushi/src/media/video/video_black_flicker_detector.dart';
+import 'package:fushi/src/media/video/video_disc_menu.dart';
+import 'package:fushi/src/media/video/bluray_aacs_module.dart';
+import 'package:fushi/src/media/video/bluray_java_runtime.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/startup/media_handle_registry.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
@@ -23,6 +26,9 @@ import 'package:fushi_engine/media/metadata/credential_redaction.dart'
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
 import 'package:fushi_engine/media/video/bluray/aacs_media_session.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_menu_info.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -30,6 +36,9 @@ import 'package:fushi/src/utils/net/app_native_proxy.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:path/path.dart' as p;
+
+part 'video_disc_menu.part.dart';
 
 @visibleForTesting
 String mediaUriForVideoPath(String path, {bool? windows}) {
@@ -489,6 +498,35 @@ class VideoPlayerController extends ChangeNotifier
   /// 当前 mpv 配置（[load] 复用 / [applyMpvConfig] 实时切换）。
   VideoMpvConfig _mpvConfig = VideoMpvConfig.defaults;
 
+  /// 最近一次真正下发给 mpv 的 `audio-spdif`（null = 尚未下发）。倍速 / 音量 / 静音
+  /// 变化时据此判断要不要切换直通，避免无谓地重建音频输出（[_syncAudioSpdif]）。
+  String? _appliedAudioSpdif;
+
+  /// 实际可听音量：静音时为 0（本仓静音就是把 player 音量压 0）。
+  double get _outputVolume => _muted ? 0.0 : _lastVolume;
+
+  /// 按当前倍速 / 可听音量重新判定杜比 / DTS 直通是否生效，变了才下发。
+  ///
+  /// 直通下 mpv 的音量 / 静音不作用于压缩码流、倍速只能整帧丢弃（见
+  /// [resolveAudioSpdif]），所以倍速 ≠ 1、音量 < 100 或静音时临时改为本地解码，
+  /// 回到条件内再恢复直通。用户设置 [_mpvConfig] 不动。
+  Future<void> _syncAudioSpdif() async {
+    final dynamic native = _player?.platform;
+    if (native == null) return;
+    final String next = resolveAudioSpdif(
+      passthrough: _mpvConfigForCurrentSource(_mpvConfig).audioPassthrough,
+      playbackSpeed: _lastSpeed,
+      outputVolume: _outputVolume,
+    );
+    if (next == _appliedAudioSpdif) return;
+    _appliedAudioSpdif = next;
+    try {
+      await native.setProperty('audio-spdif', next);
+    } catch (_) {
+      // 非 libmpv 后端：与 [applyMpvConfigToPlayer] 同口径静默跳过。
+    }
+  }
+
   /// 当前 mpv 视频亮度（libmpv `brightness` 属性，范围 -100..100，0=原始）。桌面
   /// 左半区竖拖手势（TODO-754）在系统屏幕亮度不可控时改写它，给视频画面真实的亮
   /// 度反馈。player 未实例化 / 非 libmpv 后端时只保留此目标值，[load] 不复用（每片
@@ -624,6 +662,35 @@ class VideoPlayerController extends ChangeNotifier
   /// 每次 [load] 递增。复用同一个 [Player] 换片时，单靠 player identity 无法区分
   /// 旧媒体的异步章节读取结果；token 让旧 load 的结果可被丢弃。
   int _loadToken = 0;
+  String? _discRootPath;
+  VideoDiscNavigationState? _discState;
+  String? _selectedDiscPlaylistPath;
+  String? _boundDiscPlaylistPath;
+  bool _discNavigationSupported = false;
+  bool _discMenuConfigured = false;
+  bool _discNavigationOpened = false;
+  bool _discInitialMenuPending = false;
+  bool _discInitialMenuRequested = false;
+  VideoDiscTrackOwner _discTrackOwner = VideoDiscTrackOwner.disc;
+  StreamSubscription<Track>? _discTrackSub;
+  StreamSubscription<Tracks>? _discTracksSub;
+  StreamSubscription<PlayerLog>? _discLogSub;
+  BlurayMenuAacsState _discAacsState = BlurayMenuAacsState.notProtected;
+  bool _discNavigationConfirmed = false;
+  String? _discResolvedAudioTrackId;
+  String? _discResolvedSubtitleTrackId;
+  String? _discResolvedSubtitleCodec;
+  int? _discResolvedTracksGeneration;
+  Player? _discObservedPlayer;
+  Future<void>? _discSampleFuture;
+  bool _discMiningAvailable = false;
+  String? _discExtractionError;
+  int _discTitleGeneration = 0;
+  String? _discMenuError;
+  String? _discLoadStage;
+  BlurayJavaRuntimeManager? _discJavaRuntimeProbe;
+
+  void _notifyDiscMenuChanged() => notifyListeners();
 
   String? _bookUid;
 
@@ -805,7 +872,9 @@ class VideoPlayerController extends ChangeNotifier
       _miningSourceOverride = source;
 
   /// 制卡抽取源：优先覆盖源（流 URL），否则本地 [videoPath]。
-  String? get miningSource => _miningSourceOverride ?? videoPath;
+  String? get miningSource => isBlurayNavigationSession && !discMiningAvailable
+      ? null
+      : _miningSourceOverride ?? videoPath;
 
   /// TODO-1000：YouTube 分离流时视频流无音轨，制卡音频须从 audio-only 流裁。null =
   /// 用 [miningSource]（本地文件/muxed 自带音轨）。
@@ -831,10 +900,11 @@ class VideoPlayerController extends ChangeNotifier
   }
 
   @override
-  bool get isPlaying =>
-      _debugIsPlayingOverride ??
-      _externalIsPlaying ??
-      (_player?.state.playing ?? false);
+  bool get isPlaying => isBlurayNavigationSession && !discTitleReady
+      ? false
+      : _debugIsPlayingOverride ??
+            _externalIsPlaying ??
+            (_player?.state.playing ?? false);
 
   /// 是否持有真 media_kit [Player]（BUG-2544）。
   ///
@@ -856,10 +926,11 @@ class VideoPlayerController extends ChangeNotifier
   /// 当前播放位置（毫秒）；未 [load] 时为 null。换集前用它补记当前集精确进度
   /// （tick 整秒节流外的尾差）。
   @override
-  int? get positionMs =>
-      _debugPositionOverride ??
-      _externalPositionMs ??
-      _player?.state.position.inMilliseconds;
+  int? get positionMs => isBlurayNavigationSession
+      ? (discTitleReady ? (_discState!.positionSeconds * 1000).round() : null)
+      : _debugPositionOverride ??
+            _externalPositionMs ??
+            _player?.state.position.inMilliseconds;
 
   /// 「按当前位置重开流」该用的位置：有未落地的 seek 时取它的目标，否则取 [positionMs]。
   ///
@@ -1049,13 +1120,15 @@ class VideoPlayerController extends ChangeNotifier
   /// [_refreshChaptersWhenDurationReady] 的调用点注释，此前只用于读章节）。
   ///
   /// 由 [load] 复位、由 [_markMediaOpenedIfEvident] 翻真、由 [dispose] 复位。
-  bool get mediaOpened => _mediaOpened;
+  bool get mediaOpened =>
+      _mediaOpened && (!isBlurayNavigationSession || discTitleReady);
 
   /// 观测到「媒体确实打开了」的任一证据即翻真 [mediaOpened]（单向，本次 load 内）。
   ///
   /// 三个位置写入点与页面的首帧兜底都读它，故任何能证明媒体活着的观测都应经过这里：
   /// duration 首次就绪、125ms tick 读到非零 position、open 后的即时快照。
   void _markMediaOpenedIfEvident(Player player) {
+    if (isBlurayNavigationSession && !discTitleReady) return;
     if (_mediaOpened) return;
     if (player.state.duration <= Duration.zero &&
         player.state.position <= Duration.zero) {
@@ -1384,7 +1457,17 @@ class VideoPlayerController extends ChangeNotifier
   /// 内嵌轨的 language 常被打包者写错或干脆不写，外挂 SRT 更是基本没有，所以它只能
   /// 当线索用，不能当唯一依据——这正是 VideoBooks.language 手动指定存在的理由。
   String? get currentSubtitleLanguage {
-    final String? language = _player?.state.track.subtitle.language?.trim();
+    final String? resolvedId = isBlurayNavigationSession
+        ? resolvedDiscSubtitleTrackId
+        : null;
+    final String? language =
+        (isBlurayNavigationSession
+                ? subtitleTracks
+                      .where((SubtitleTrack track) => track.id == resolvedId)
+                      .firstOrNull
+                      ?.language
+                : _player?.state.track.subtitle.language)
+            ?.trim();
     if (language == null || language.isEmpty) return null;
     const Set<String> placeholders = <String>{'und', 'auto', 'no', 'unknown'};
     if (placeholders.contains(language.toLowerCase())) return null;
@@ -1393,6 +1476,7 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 切换字幕轨（运行时 / Phase 1 预留）。未 [load] 时 no-op 安全。
   Future<void> selectSubtitleTrack(SubtitleTrack track) async {
+    claimDiscTrackOwnership();
     // 关字幕 / 切到文本 overlay 都经 `no()`（图形轨改走 [selectEmbeddedGraphicTrack]
     // 的裸 `player.setSubtitleTrack`，不经此处）→ 离开图形渲染，复位图形标志（BUG-301）。
     // 这是纯 Dart 同步状态，与 await 后的原生下发无关：必须在 player 空判 / await 之前
@@ -1408,8 +1492,10 @@ class VideoPlayerController extends ChangeNotifier
     // 一致：await 前捕获 loadToken 快照，await 后用 [_isCurrentLoad] 双判据
     // （player identity + loadToken）重校验，过期立即放弃（TODO-409）。
     final int loadToken = _loadToken;
+    final int discGeneration = _discTitleGeneration;
     await player.setSubtitleTrack(track);
     if (!_isCurrentLoad(player, loadToken)) return; // await 期间换片/销毁：放弃下发。
+    if (_discTitleGeneration != discGeneration) return;
   }
 
   /// 把内嵌**图形**字幕轨（PGS/DVD 等位图，无法转文本 cue）交给 libmpv 当画面字幕
@@ -1421,6 +1507,7 @@ class VideoPlayerController extends ChangeNotifier
   /// overlay（图形轨无文本）。选中返回 true；未 [load] / 轨未就绪 / 序号越界返回
   /// false（调用方据此提示失败）。
   Future<bool> selectEmbeddedGraphicTrack(int streamIndex) async {
+    claimDiscTrackOwnership();
     final Player? player = _player;
     if (player == null) return false;
     // 图形轨就绪等待最长 5s（[_waitUntilSubtitleTracksReady]），其后还有 3 次连续
@@ -1432,10 +1519,12 @@ class VideoPlayerController extends ChangeNotifier
     // （[load] / [_refreshChaptersForLoad] 等）一致，**每个 await 后都用
     // [_isCurrentLoad] 双判据（player identity + loadToken）重校验**，过期立即放弃下发。
     final int loadToken = _loadToken;
+    final int discGeneration = _discTitleGeneration;
     // 等**目标序号那条轨**解析就绪（不是「任意一条」），否则容器多轨逐条异步解析时
     // 越界早退放弃（TODO-1295 同款竞态，与副字幕一致）。
     await _waitUntilSubtitleTracksReady(player, minTrackCount: streamIndex + 1);
     if (!_isCurrentLoad(player, loadToken)) return false; // 等待期间换片/销毁。
+    if (_discTitleGeneration != discGeneration) return false;
     final List<SubtitleTrack> real = player.state.tracks.subtitle
         .where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no')
         .toList(growable: false);
@@ -1444,6 +1533,7 @@ class VideoPlayerController extends ChangeNotifier
     setCues(const <AudioCue>[]);
     await player.setSubtitleTrack(real[streamIndex]);
     if (!_isCurrentLoad(player, loadToken)) return false; // 选轨后换片/销毁。
+    if (_discTitleGeneration != discGeneration) return false;
     // 图形 PGS 轨是 BUG-190 字幕抑制（sub-visibility=no）的唯一例外：位图字幕没有文本
     // cue，只能靠 libmpv 画面渲染。显式打开 sub-visibility=yes 覆盖 load 时设的 no，
     // 否则用户选了图形字幕却看不到（回归 BUG-122）。sub-auto 仍保持 no（轨由这里显式
@@ -1453,6 +1543,7 @@ class VideoPlayerController extends ChangeNotifier
       buildGraphicSubtitleVisibilityProperties(),
     );
     if (!_isCurrentLoad(player, loadToken)) return false; // 设可见性后换片/销毁。
+    if (_discTitleGeneration != discGeneration) return false;
     // 进入图形轨渲染：标记图形模式，并把当前字幕调轴（[_delayMs]）下发到 libmpv
     // `sub-delay`——否则图形字幕忽略 Dart 侧 cue 偏移，调轴滑条对它无效（BUG-301）。
     _graphicSubtitleActive = true;
@@ -1460,6 +1551,8 @@ class VideoPlayerController extends ChangeNotifier
       player,
       buildSubtitleDelayProperty(_delayMs),
     );
+    if (!_isCurrentLoad(player, loadToken)) return false;
+    if (_discTitleGeneration != discGeneration) return false;
     return true;
   }
 
@@ -1471,12 +1564,15 @@ class VideoPlayerController extends ChangeNotifier
   /// [streamIndex] 与 [selectEmbeddedGraphicTrack] 同义（去 auto/no 后的第 N 条）。
   /// 选中返回 true；未 [load] / 轨未就绪 / 序号越界返回 false。
   Future<bool> selectEmbeddedTextTrackViaPlayer(int streamIndex) async {
+    claimDiscTrackOwnership();
     final Player? player = _player;
     if (player == null) return false;
     // 与 [selectEmbeddedGraphicTrack] 同一条防 UAF 纪律：每个 await 后重校验。
     final int loadToken = _loadToken;
+    final int discGeneration = _discTitleGeneration;
     await _waitUntilSubtitleTracksReady(player, minTrackCount: streamIndex + 1);
     if (!_isCurrentLoad(player, loadToken)) return false;
+    if (_discTitleGeneration != discGeneration) return false;
     final List<SubtitleTrack> real = player.state.tracks.subtitle
         .where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no')
         .toList(growable: false);
@@ -1486,17 +1582,20 @@ class VideoPlayerController extends ChangeNotifier
     _graphicSubtitleActive = false;
     await player.setSubtitleTrack(real[streamIndex]);
     if (!_isCurrentLoad(player, loadToken)) return false;
+    if (_discTitleGeneration != discGeneration) return false;
     // 显式复位：load 时已是 no，但上一条若是图形轨会被打开过。字幕只由 overlay 画。
     await applySubtitleMpvPropertiesToPlayer(
       player,
       buildSubtitleSuppressionProperties(),
     );
     if (!_isCurrentLoad(player, loadToken)) return false;
+    if (_discTitleGeneration != discGeneration) return false;
     await applySubtitleMpvPropertiesToPlayer(
       player,
       buildSubtitleDelayProperty(_subtitleDelayMpvMs),
     );
     if (!_isCurrentLoad(player, loadToken)) return false;
+    if (_discTitleGeneration != discGeneration) return false;
     // 上面几次 await 期间可能已有另一次选轨（起播恢复 + 用户手动选）装上了订阅：
     // 先结束它，否则两个订阅并存、每句处理两遍，旧的直到 player 销毁才释放。
     _stopPlayerDecodedText();
@@ -1507,6 +1606,7 @@ class VideoPlayerController extends ChangeNotifier
       String text,
     ) {
       if (!_isCurrentLoad(player, loadToken)) return;
+      if (_discTitleGeneration != discGeneration) return;
       unawaited(_onPlayerDecodedText(player, loadToken, sub, text));
     });
     _playerDecodedTextSub = sub;
@@ -1527,11 +1627,14 @@ class VideoPlayerController extends ChangeNotifier
   Future<bool> selectEmbeddedSecondaryTextTrackViaPlayer(
     int streamIndex,
   ) async {
+    claimDiscTrackOwnership();
     final Player? player = _player;
     if (player == null) return false;
     final int loadToken = _loadToken;
+    final int discGeneration = _discTitleGeneration;
     await _waitUntilSubtitleTracksReady(player, minTrackCount: streamIndex + 1);
     if (!_isCurrentLoad(player, loadToken)) return false;
+    if (_discTitleGeneration != discGeneration) return false;
     final List<SubtitleTrack> real = player.state.tracks.subtitle
         .where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no')
         .toList(growable: false);
@@ -1547,6 +1650,7 @@ class VideoPlayerController extends ChangeNotifier
       buildSecondarySubtitleDecodeProperties(real[streamIndex].id),
     );
     if (!_isCurrentLoad(player, loadToken)) return false;
+    if (_discTitleGeneration != discGeneration) return false;
     // await 期间另一次选副轨已装上订阅：先结束它（同主字幕那条纪律）。
     _stopSecondaryPlayerDecodedText(resetPlayerTrack: false);
     final String current = playerSubtitleSlotText(player.state.subtitle, 1);
@@ -1555,6 +1659,7 @@ class VideoPlayerController extends ChangeNotifier
       String text,
     ) {
       if (!_isCurrentLoad(player, loadToken)) return;
+      if (_discTitleGeneration != discGeneration) return;
       unawaited(_onSecondaryPlayerDecodedText(player, loadToken, sub, text));
     });
     _secondaryPlayerDecodedTextSub = sub;
@@ -1785,6 +1890,7 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 切换音轨。未 [load] 时 no-op 安全。
   Future<void> selectAudioTrack(AudioTrack track) async {
+    claimDiscTrackOwnership();
     await _player?.setAudioTrack(track);
   }
 
@@ -1800,14 +1906,24 @@ class VideoPlayerController extends ChangeNotifier
   int? get currentAudioStreamIndex {
     final Player? player = _player;
     if (player == null) return null;
-    final AudioTrack selected = player.state.track.audio;
-    if (selected.id == 'auto' || selected.id == 'no') return null;
+    final String? selectedId = isBlurayNavigationSession
+        ? resolvedDiscAudioTrackId
+        : player.state.track.audio.id;
+    if (selectedId == null || selectedId == 'auto' || selectedId == 'no') {
+      return null;
+    }
+    if (isBlurayNavigationSession) {
+      return videoDiscResolvedTrackOrdinal(
+        selectedId,
+        player.state.tracks.audio.map((AudioTrack track) => track.id),
+      );
+    }
     final List<AudioTrack> real = player.state.tracks.audio
         .where((AudioTrack t) => t.id != 'auto' && t.id != 'no')
         .toList(growable: false);
     // 单条真实轨时无需显式映射（ffmpeg 默认就选它），返回 null 保持简单。
     if (real.length <= 1) return null;
-    final int idx = real.indexWhere((AudioTrack t) => t.id == selected.id);
+    final int idx = real.indexWhere((AudioTrack t) => t.id == selectedId);
     return idx < 0 ? null : idx;
   }
 
@@ -2165,7 +2281,18 @@ class VideoPlayerController extends ChangeNotifier
     _mpvConfig = config;
     final Player? player = _player;
     if (player == null) return;
-    await applyMpvConfigToPlayer(player, _mpvConfigForCurrentSource(config));
+    final VideoMpvConfig effective = _mpvConfigForCurrentSource(config);
+    await applyMpvConfigToPlayer(
+      player,
+      effective,
+      playbackSpeed: _lastSpeed,
+      outputVolume: _outputVolume,
+    );
+    _appliedAudioSpdif = resolveAudioSpdif(
+      passthrough: effective.audioPassthrough,
+      playbackSpeed: _lastSpeed,
+      outputVolume: _outputVolume,
+    );
   }
 
   /// BUG-2691：Android 上服务器元数据已知是 DV P5 的片源，本次开片强制软解
@@ -2200,6 +2327,7 @@ class VideoPlayerController extends ChangeNotifier
     VideoMpvConfig mpvConfig = VideoMpvConfig.defaults,
     Map<String, String> httpHeaderFields = const <String, String>{},
     bool autoPlay = false,
+    bool openBlurayMenu = false,
     // TODO-1280：YouTube 等分离流（video-only 主流 + audio-only 外挂）的 audio-only 流 URL。
     // 必须在本次 load 内、恢复 seek + play() **之前**经 `audio-add ... select` 外挂，libmpv
     // 才会让它随首个 seek / 起播与视频时间轴同步；若等 load 返回后再挂（play 已开始），新加的
@@ -2214,6 +2342,16 @@ class VideoPlayerController extends ChangeNotifier
       'Provide exactly one of videoFile or mediaUri.',
     );
     final int loadToken = ++_loadToken;
+    _resetDiscMenu();
+    if (openBlurayMenu) {
+      final String? root = videoFile == null
+          ? null
+          : blurayDiscRootForPlaylistPath(videoFile.path);
+      if (root == null) throw const VideoDiscMenuException('invalid-disc-root');
+      _discRootPath = root;
+      _miningSourceOverride = null;
+      _miningAudioSourceOverride = null;
+    }
     // 换片同样要复位：上一片的「已打开」不能给新片背书，否则新片 open 失败时旧
     // 证据仍让三个位置写入点放行、把 0 写进新片的进度。
     _mediaOpened = false;
@@ -2221,25 +2359,31 @@ class VideoPlayerController extends ChangeNotifier
     // （BUG-2731 后续）。重开流（换档 / 换音轨 / 自适应降档）还在打开、缓冲时再换一次档，
     // 读 [resumePositionMs] 必须拿到这次要去的起点，而不是复用的 Player 上一条流的残留
     // 位置或新流起播前的 0。open 后按真实 duration 复核出 resolvedStartMs 再覆盖一次。
-    final int requestedStartMs = initialPositionMs < 0 ? 0 : initialPositionMs;
+    final int requestedStartMs = openBlurayMenu || initialPositionMs < 0
+        ? 0
+        : initialPositionMs;
     final int preloadStartMs = resolveEpisodeStart(
       startIntent,
       requestedStartMs,
       null,
     );
     _setPendingSeekLanding(preloadStartMs);
-    _bookUid = bookUid;
+    _bookUid = openBlurayMenu ? null : bookUid;
     // 蓝光播放列表：`videoPath` 指向 `BDMV/PLAYLIST/*.mpls` 时，先把它解析成内核吃
     // 得下的东西——单段完整覆盖给 `STREAM/*.m2ts` 真实路径，多段/需截取给 `edl://`
     // 拼接。放在 load 里而不是页面里，是为了让外部打开、画质重载这些别的入口一起覆
     // 盖到。解析不出来（盘坏了/被删了一半）时原样透传，让 libmpv 的真实错误经
     // `onPlaybackError` 浮上来，而不是在这里编一个更像样但不真的理由。
     final BluraySource? bluray =
-        videoFile != null && isBlurayPlaylistPath(videoFile.path)
+        !openBlurayMenu &&
+            videoFile != null &&
+            isBlurayPlaylistPath(videoFile.path)
         ? await resolveBluraySource(videoFile.path)
         : null;
     // Keep the local identity for subtitles/mining. Only the native playback
-    // URI receives a command-scoped decrypted loopback capability.
+    // URI receives a command-scoped decrypted loopback capability. The disc
+    // menu (`bd://menu`) is read by libbluray itself; `resolve` returns its
+    // `.mpls` path unchanged, so the session stays empty there.
     final AacsMediaSession aacsSession = AacsMediaSession();
     final String? localPlaybackSource;
     try {
@@ -2268,7 +2412,9 @@ class VideoPlayerController extends ChangeNotifier
     // 上，拿它去第一段码流上按同一毫秒裁，制出来的卡音频是别的句子、截图是别的画面，
     // 而且是静默错。那时保留 `.mpls` 身份，由共享 ffmpeg 后端按同一播放列表的
     // IN/OUT 构造完整时间轴，制卡、ASR 与字幕对轴都不得借用第一段的文件时间轴。
-    _videoPath = bluray != null && bluray.isPlainFile
+    _videoPath = openBlurayMenu
+        ? null
+        : bluray != null && bluray.isPlainFile
         ? bluray.primaryStreamPath
         : videoFile?.path;
     _blurayChapters = bluray?.chapters;
@@ -2277,11 +2423,14 @@ class VideoPlayerController extends ChangeNotifier
     // 公网流原样。native 侧从此不碰互联 host 的 TLS（随包 libmpv 换成 libcurl 后默认
     // 校验证书，自签 host 直连必失败）。
     final String sourceUri = nativePlaybackUri(
-      mediaUri ??
-          (localPlaybackSource!.startsWith('http://') ||
-                  localPlaybackSource.startsWith('edl://')
-              ? localPlaybackSource
-              : mediaUriForVideoPath(localPlaybackSource)),
+      openBlurayMenu
+          ? 'bd://menu'
+          : mediaUri ??
+                // EDL 串与解密回环 URL 都不是文件路径，不能再过 `mediaUriForVideoPath` 包成 file://。
+                (localPlaybackSource!.startsWith('http://') ||
+                        localPlaybackSource.startsWith('edl://')
+                    ? localPlaybackSource
+                    : mediaUriForVideoPath(localPlaybackSource)),
     );
     _sourceIsNetwork = isNetworkStreamUri(sourceUri);
     // 远端流 URL 带 api_key / PlaySessionId；调试日志可一键上传，先脱敏。
@@ -2297,7 +2446,7 @@ class VideoPlayerController extends ChangeNotifier
     _activeSecondaryCueIndices = const <int>[];
     _secondaryDrawingCues = <AudioCue>[];
     _activeSecondaryDrawingIndices = const <int>[];
-    setCues(cues);
+    setCues(openBlurayMenu ? const <AudioCue>[] : cues);
     _clearChaptersForNewLoad();
     // 换片（复用 player）复位图形字幕标志：新片默认非图形轨，仅当下面
     // [renderGraphicStreamIndex] 触发的 [selectEmbeddedGraphicTrack] 成功才重新置 true。
@@ -2410,7 +2559,7 @@ class VideoPlayerController extends ChangeNotifier
       // 「删这一集前先放句柄」放错对象。
       _mediaHandleRegistration ??= MediaHandleRegistry.instance.register(
         _releaseMediaHandles,
-        mediaPath: () => videoPath,
+        mediaPath: () => _discRootPath ?? videoPath,
       );
       // BUG-739：设备切换后回补音量目标（详见 [_audioDeviceSub] 字段注释）。随 Player
       // 生命周期挂一次；换集复用同一 Player 不重挂，避免叠加订阅。
@@ -2427,6 +2576,15 @@ class VideoPlayerController extends ChangeNotifier
       // 下发的那份），这里默认只留 info 及以上（过滤串 `mpv=info`），避免把统一时间轴
       // 淹掉。独立订阅、不动上面那行——它被接线守卫逐字钉住。
       _diagLogSub = player.stream.log.listen(_onMpvLogForDiagnostics);
+      _discTrackSub = player.stream.track.listen((Track _) {
+        _onDiscTracksChanged(player);
+      });
+      _discLogSub = player.stream.log.listen((PlayerLog log) {
+        _onDiscNativeLog(player, log);
+      });
+      _discTracksSub = player.stream.tracks.listen((Tracks _) {
+        _onDiscTracksChanged(player);
+      });
       // BUG-2441：给 libmpv 层错误一个归宿。同样随 Player 生命周期挂一次。
       //
       // 这里**只校验 player identity、不校验 loadToken**，是因为消费端
@@ -2468,6 +2626,7 @@ class VideoPlayerController extends ChangeNotifier
     // （sidecar/内嵌文本轨抽成 cue 走 overlay，图形 PGS 轨由 [selectEmbeddedGraphicTrack]
     // 显式选轨渲染，均不受 `sub-auto=no` 影响）。open 后仍再下发一次做兜底（内嵌轨 open 后异步
     // 就绪的重选竞态，BUG-190）。仅 libmpv 后端生效，非 libmpv 静默 no-op（见 helper）。
+    _setDiscLoadStage('subtitle-setup');
     await applySubtitleMpvPropertiesToPlayer(
       player,
       buildSubtitleSuppressionProperties(),
@@ -2483,7 +2642,11 @@ class VideoPlayerController extends ChangeNotifier
     // 分支已把 manualPrevious/autoAdvance 归 0，不会给「本就该从头」的入口设 start）；
     // near-end 判定要等 open 后真实 duration，在下面复核并按需拉回 0。
     // （[requestedStartMs] / [preloadStartMs] 在方法开头算好，同时登记成在途目标。）
-    final bool startArmed = await applyMpvStartPosition(player, preloadStartMs);
+    _setDiscLoadStage('disc-prepare');
+    await _prepareDiscMenu(player, loadToken);
+    if (!_isCurrentLoad(player, loadToken)) return;
+    final bool startArmed =
+        !openBlurayMenu && await applyMpvStartPosition(player, preloadStartMs);
     if (!_isCurrentLoad(player, loadToken)) return; // start 下发后换片/销毁。
 
     // 装载 mpv Lua 脚本（开关开启时页面传入目录全集）。幂等：同一 Player 内已装载
@@ -2499,6 +2662,7 @@ class VideoPlayerController extends ChangeNotifier
     // BUG-2032：先探一次随包 libmpv 有没有编 Lua（每 controller 一次，`getProperty`
     // 同样自带 waitForInitialization）。探测不门控下发——Android 没 Lua 时
     // `load-script` 本就是无害 no-op，门控的意义在设置页如实说明，不在这里省一条命令。
+    _setDiscLoadStage('lua-setup');
     await _probeLuaCapability();
     if (!_isCurrentLoad(player, loadToken)) return; // 能力探测后换片/销毁。
     await applyLuaScripts(luaScriptPaths);
@@ -2506,6 +2670,7 @@ class VideoPlayerController extends ChangeNotifier
 
     // Resolve every HLS segment, redirect and external audio request in Dart.
     // Configure before loadfile so its first request uses the same policy.
+    _setDiscLoadStage('proxy-setup');
     final Uri nativeProxy = await ensureAppNativeProxyEndpoint();
     if (!_isCurrentLoad(player, loadToken)) return;
     final dynamic nativePlayer = player.platform;
@@ -2539,17 +2704,21 @@ class VideoPlayerController extends ChangeNotifier
     // 恒 0，页面等满宽限后报「播放器打不开该视频」——用户观感就是「点开必超时」。
     // 属性放到 open 后再设已经太迟（第一个请求早就发出去了），首次 open 永远吃 5s。
     // 这几条都是 libmpv 运行时全局属性，open 前设合法且正是 mpv 自己的配置时序。
+    _setDiscLoadStage('cache-setup');
     await applyNetworkCachePropertiesToPlayer(player, sourceUri);
     if (!_isCurrentLoad(player, loadToken)) return; // 网络缓存调优后换片/销毁。
 
+    _setDiscLoadStage('open');
     await player.open(
       Media(
         sourceUri,
         httpHeaders: httpHeaderFields.isEmpty ? null : httpHeaderFields,
       ),
-      play: false,
+      play: openBlurayMenu,
     );
     if (!_isCurrentLoad(player, loadToken)) return; // open 后换片/销毁。
+    if (openBlurayMenu) _discNavigationOpened = true;
+    _setDiscLoadStage('opened');
     unawaited(_closeAacsSessionsExcept(aacsSession));
     if (!aacsSession.hasProtectedStreams &&
         hadProtectedAacsSession &&
@@ -2599,7 +2768,7 @@ class VideoPlayerController extends ChangeNotifier
     // mkv 内嵌字幕会被 libmpv 默认渲染成画面像素（不可点）；用户点它会穿透到视频层
     // 触发暂停而非查词。故一律关 libmpv 字幕，由 overlay 承载所有字幕（外挂 sidecar
     // 与内嵌抽取的 cue 都走 overlay）。externalSubtitlePath 已在上层解析成 cues 传入。
-    await player.setSubtitleTrack(SubtitleTrack.no());
+    if (!openBlurayMenu) await player.setSubtitleTrack(SubtitleTrack.no());
     if (!_isCurrentLoad(player, loadToken)) return; // 关字幕后换片/销毁。
     // 根除「字幕轨异步就绪后被 mpv 自动重选」竞态（TODO-080/092，BUG-190）：上面的
     // setSubtitleTrack(no()) 只在「调用那一刻」清掉选轨，但字幕轨是 open 后异步解析就绪
@@ -2608,10 +2777,12 @@ class VideoPlayerController extends ChangeNotifier
     // overlay 上 → 字幕透明随机 / 点字幕穿透落空 / 横竖屏残留黑底。注入 sub-auto=no +
     // sub-visibility=no 让 libmpv 永不自动选轨、永不画画面字幕（图形 PGS 轨例外，
     // selectEmbeddedGraphicTrack 内会按需打开 sub-visibility）。
-    await applySubtitleMpvPropertiesToPlayer(
-      player,
-      buildSubtitleSuppressionProperties(),
-    );
+    if (!openBlurayMenu) {
+      await applySubtitleMpvPropertiesToPlayer(
+        player,
+        buildSubtitleSuppressionProperties(),
+      );
+    }
     if (!_isCurrentLoad(player, loadToken)) return; // 字幕抑制后换片/销毁。
 
     // 应用启用的 mpv 着色器（Anime4K 等）。五平台 libmpv 后端均生效——移动端 media_kit
@@ -2623,12 +2794,28 @@ class VideoPlayerController extends ChangeNotifier
 
     // 应用 mpv 画质/解码配置（五平台 libmpv 生效；仅非 libmpv 后端 / 不支持属性 no-op）。
     _mpvConfig = mpvConfig;
+    // 直通是否生效取决于开片倍速与可听音量（见 [resolveAudioSpdif]），这里按本次
+    // 即将下发的初值判定，下面设音量 / 速率时不必再切一次。
+    final VideoMpvConfig effectiveMpvConfig = _mpvConfigForCurrentSource(
+      _mpvConfig,
+    );
+    final double initialOutputVolume = initialVolume
+        .clamp(0.0, 100.0)
+        .toDouble();
     await applyMpvConfigToPlayer(
       player,
-      _mpvConfigForCurrentSource(_mpvConfig),
+      effectiveMpvConfig,
+      playbackSpeed: initialSpeed,
+      outputVolume: initialOutputVolume,
+    );
+    _appliedAudioSpdif = resolveAudioSpdif(
+      passthrough: effectiveMpvConfig.audioPassthrough,
+      playbackSpeed: initialSpeed,
+      outputVolume: initialOutputVolume,
     );
     if (!_isCurrentLoad(player, loadToken)) return; // mpv 配置下发后换片/销毁。
 
+    _setDiscLoadStage('playback-properties');
     initialVolume = initialVolume.clamp(0.0, 100.0).toDouble();
     _lastVolume = initialVolume;
     if (initialVolume > 0) _muted = false;
@@ -2716,6 +2903,11 @@ class VideoPlayerController extends ChangeNotifier
     _tick = Timer.periodic(const Duration(milliseconds: 125), (_) {
       final Player? p = _player;
       if (p == null) return;
+      if (!_isCurrentLoad(p, loadToken)) return;
+      if (isBlurayNavigationSession) {
+        unawaited(_sampleDiscMenu(p, loadToken));
+        return;
+      }
       // 媒体是否真的活着，只有持续观测能回答（直播流要等 position 推进，慢容器要
       // 等 duration 解析）。放在读位置之前，让本拍的位置写入已能看到正确的判据。
       _markMediaOpenedIfEvident(p);
@@ -2737,7 +2929,9 @@ class VideoPlayerController extends ChangeNotifier
     // 恢复「图形内封字幕」选择（BUG-122）：上次选的是 PGS 等位图轨，没有文本 cue，
     // 交给 libmpv 当画面字幕渲染。不阻塞首帧（轨列表 open 后才就绪，方法内等待）。
     // 与下面的「抽文本 cue 自动加载」互斥——图形轨没有可抽的文本。
-    if (renderGraphicStreamIndex != null) {
+    if (openBlurayMenu) {
+      await _sampleDiscMenu(player, loadToken);
+    } else if (renderGraphicStreamIndex != null) {
       unawaited(selectEmbeddedGraphicTrack(renderGraphicStreamIndex));
     } else if (!subtitleExplicitlyOff &&
         (externalSubtitlePath == null || externalSubtitlePath.isEmpty) &&
@@ -2759,6 +2953,7 @@ class VideoPlayerController extends ChangeNotifier
     // `chapter-list`。open() 返回时媒体头/章节元数据可能尚未解析完；duration > 0
     // 是真实 ready 信号。换集复用同一 player 时用 loadToken 丢弃旧媒体迟到结果。
     _refreshChaptersWhenDurationReady(player, loadToken);
+    _setDiscLoadStage('ready');
   }
 
   bool _isCurrentLoad(Player player, int loadToken) =>
@@ -2977,6 +3172,7 @@ class VideoPlayerController extends ChangeNotifier
   }
 
   void _handleCompletedChanged(bool completed) {
+    if (isBlurayNavigationSession) return;
     if (!completed) return;
     if (_completedFiredForLoad) return;
     _completedFiredForLoad = true;
@@ -3115,6 +3311,7 @@ class VideoPlayerController extends ChangeNotifier
   }
 
   void _syncCueForPosition(int posMs, {required bool persistPosition}) {
+    if (isBlurayNavigationSession && !discTitleReady) return;
     if (persistPosition) {
       _maybeSavePosition(posMs);
     }
@@ -3612,7 +3809,7 @@ class VideoPlayerController extends ChangeNotifier
     if (bookUid == null) return;
     // 媒体没打开：此刻的 position 不是「用户在片头」，是「没东西可播」。写它会把
     // 真实进度抹成 0。见 [mediaOpened]。
-    if (!_mediaOpened) return;
+    if (!mediaOpened) return;
     // 恢复 seek 未落地：当前 position 是过渡期小值，写它会覆盖真实进度。跳过。
     if (_isRestoringPast(posMs)) return;
     final int sec = posMs ~/ 1000;
@@ -3634,12 +3831,27 @@ class VideoPlayerController extends ChangeNotifier
   /// （[_switchEpisode]）也调一次记录当前集精确进度。未 [load]（无 player /
   /// 无 bookUid）时 no-op 安全。
   Future<void> flushPosition() async {
+    if (isBlurayNavigationSession) {
+      final Player? player = _player;
+      if (player == null) return;
+      final int token = _loadToken;
+      await _discSampleFuture;
+      if (!_isCurrentLoad(player, token)) return;
+      await _sampleDiscMenu(player, token);
+      if (!_isCurrentLoad(player, token)) return;
+      if (!discTitleReady) return;
+      final String? uid = _bookUid;
+      if (uid == null) return;
+      final int position = (_discState!.positionSeconds * 1000).round();
+      await onPositionWrite?.call(uid, position);
+      return;
+    }
     final String? bookUid = _bookUid;
     final int? posMs = positionMs;
     if (bookUid == null || posMs == null) return;
     // 媒体没打开（open 失败 / VO 建不出来）：退出时这里的 posMs 恒 0，写下去就是把
     // 用户上一程的真实进度抹掉。见 [mediaOpened]。
-    if (!_mediaOpened) return;
+    if (!mediaOpened) return;
     // 恢复 seek 未落地：退出瞬间的 position 仍是过渡期小值，写它会覆盖真实进度。跳过。
     if (_isRestoringPast(posMs)) return;
     _lastSavedSec = posMs ~/ 1000;
@@ -4056,6 +4268,9 @@ class VideoPlayerController extends ChangeNotifier
 
   Future<void> _refreshChaptersForLoad(Player player, int loadToken) async {
     if (!_isCurrentLoad(player, loadToken)) return;
+    // The disc VM can change titles inside this load. Only the currently bound
+    // MPLS owns its chapter axis; an in-flight demux chapter read could be stale.
+    if (isBlurayNavigationSession && _blurayChapters == null) return;
     // 蓝光：章节来自 MPLS 的 PlayListMark，不问 libmpv。EDL 拼接时 libmpv 会把每个
     // 分段的边界当成一章（分段是授权切割，不是章节），单段时它又只看得到 m2ts 里没
     // 有的容器章节——两种情况下 `chapter-list` 给的都不是这张盘的章节表。
@@ -4304,6 +4519,7 @@ class VideoPlayerController extends ChangeNotifier
   /// 设置播放倍速（未 load 时也记下 [_lastSpeed]，下次 load 不丢）。
   Future<void> setSpeed(double rate) async {
     _lastSpeed = rate;
+    await _syncAudioSpdif();
     await _player?.setRate(rate);
   }
 
@@ -4313,6 +4529,7 @@ class VideoPlayerController extends ChangeNotifier
   Future<void> setVolume(double value) async {
     _lastVolume = value.clamp(0.0, 100.0).toDouble();
     if (_lastVolume > 0) _muted = false;
+    await _syncAudioSpdif();
     await _player?.setVolume(_lastVolume);
   }
 
@@ -4348,6 +4565,7 @@ class VideoPlayerController extends ChangeNotifier
         .clamp(0.0, 100.0)
         .toDouble();
     _muted = true;
+    await _syncAudioSpdif();
     await _player?.setVolume(0.0);
     return 0.0;
   }
@@ -4780,6 +4998,15 @@ class VideoPlayerController extends ChangeNotifier
   @override
   void dispose() {
     _loadToken++;
+    _discJavaRuntimeProbe?.cancel();
+    _discJavaRuntimeProbe = null;
+    _discObservedPlayer = null;
+    unawaited(_discTrackSub?.cancel());
+    unawaited(_discTracksSub?.cancel());
+    unawaited(_discLogSub?.cancel());
+    _discTrackSub = null;
+    _discTracksSub = null;
+    _discLogSub = null;
     unawaited(_closeAacsSessionsExcept(null));
     // 退出前强制记录当前位置：周期保存的整秒节流会吞掉退出瞬间同一整秒内的最后
     // 几百毫秒进度。这里在 [_player] 仍存活时同步读位置并 fire-and-forget 写一次
@@ -4885,6 +5112,15 @@ class VideoPlayerController extends ChangeNotifier
   Future<void> _releaseMediaHandles() async {
     _loadToken++;
     final Future<void> closingAacs = _closeAacsSessionsExcept(null);
+    _discJavaRuntimeProbe?.cancel();
+    _discJavaRuntimeProbe = null;
+    _discObservedPlayer = null;
+    unawaited(_discTrackSub?.cancel());
+    unawaited(_discTracksSub?.cancel());
+    unawaited(_discLogSub?.cancel());
+    _discTrackSub = null;
+    _discTracksSub = null;
+    _discLogSub = null;
     final Player? player = _player;
     if (player == null) {
       await closingAacs;
@@ -4906,12 +5142,15 @@ class VideoPlayerController extends ChangeNotifier
   /// 同步强制写一次当前位置（绕过整秒节流），供 [dispose] 兜底调用。
   /// [onPositionWrite] 的写库 Future 在此 fire-and-forget（dispose 不能 await）。
   void _forceSavePositionSync() {
+    // Disc transitions are atomic native snapshots; never save a stale cached
+    // identity from synchronous dispose. The page awaits flushPosition first.
+    if (isBlurayNavigationSession) return;
     final String? bookUid = _bookUid;
     final int? posMs = positionMs;
     if (bookUid == null || posMs == null) return;
     // 媒体没打开：dispose 瞬间的 position 恒 0，写它等于用一次失败的打开清空进度。
     // 见 [mediaOpened]。
-    if (!_mediaOpened) return;
+    if (!mediaOpened) return;
     // 恢复 seek 未落地：dispose 瞬间的 position 仍是过渡期小值，勿覆盖真实进度。
     if (_isRestoringPast(posMs)) return;
     _lastSavedSec = posMs ~/ 1000;

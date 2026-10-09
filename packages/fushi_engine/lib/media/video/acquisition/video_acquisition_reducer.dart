@@ -281,19 +281,11 @@ Map<String, Object?>? _candidateOf(
   if (index == null) return null;
   final VideoAcquisitionResourcePlan? plan = _planAt(state, index);
   if (plan == null) return null;
-  final VideoResourceVersionGroup group = plan.group;
   return <String, Object?>{
     'optionIndex': optionIndex,
     'rank': index + 1,
     'current': index == state.groupCursor,
-    'releaseGroup': group.releaseGroup,
-    'resolution': group.resolution,
-    'source': videoResourceSourceTag(group),
-    'provider': group.providerId,
-    'seeders': group.bestSeeders,
-    'bytesPerEpisode': estimatedBytesPerEpisode(group),
-    'episodes': plan.picks.length,
-    'batch': plan.usesBatch,
+    ...videoAcquisitionVersionArgs(plan),
   };
 }
 
@@ -1450,9 +1442,11 @@ VideoAcquisitionReduction _onResourcesLoaded(
       cleanResourceCandidates(
         event.items,
         skipExtras: defaults.skipExtras,
-        movieYear: reference.mediaKind == VideoMetadataMediaKind.movie
-            ? reference.year
+        work: reference.mediaKind == VideoMetadataMediaKind.movie
+            ? VideoResourceWorkTarget.fromReference(reference)
             : null,
+        originalLanguageOnly: wantsOriginalLanguageRelease(state),
+        workLanguage: state.contentLanguage?.code,
       ),
     ),
     busy: false,
@@ -1474,6 +1468,7 @@ VideoAcquisitionReduction _refilter(
     quality: quality,
     source: defaults.sourcePref,
     bitrate: defaults.bitratePref,
+    workYear: state.reference?.year,
   );
   final VideoAcquisitionState base = state.copyWith(
     eligibleGroups: outcome.eligible,
@@ -1568,7 +1563,6 @@ VideoAcquisitionState _presentPlan(
   int index,
   VideoAcquisitionResourcePlan plan,
 ) {
-  final VideoResourceVersionGroup group = plan.group;
   final VideoAcquisitionState next = state
       .copyWith(
         stage: VideoAcquisitionStage.awaitingResourceConfirm,
@@ -1582,18 +1576,9 @@ VideoAcquisitionState _presentPlan(
           args: <String, Object?>{
             'title': state.reference?.title,
             'mode': state.slots.mode?.name,
-            'releaseGroup': group.releaseGroup,
-            'resolution': group.resolution,
-            'provider': group.providerId,
-            'count': plan.picks.length,
-            'batch': plan.usesBatch,
-            'seeders': group.bestSeeders,
-            'missing': plan.missingEpisodes,
-            'startAfterEpisode': plan.startAfterEpisode,
+            ...videoAcquisitionVersionArgs(plan),
             'index': index + 1,
             'total': state.eligibleGroups.length,
-            'source': videoResourceSourceTag(group),
-            'bytesPerEpisode': estimatedBytesPerEpisode(group),
           },
         ),
       );
@@ -1613,9 +1598,14 @@ VideoAcquisitionState _presentPlan(
       slot: VideoAcquisitionSlot.resource,
       options: <VideoAcquisitionOption>[
         const VideoAcquisitionOption(id: kVideoAcquisitionOptionConfirm),
-        // 直接点其它版本：不用一张张「换一个」翻过去。
-        for (final int alt in _alternativeIndexes(state, index))
-          VideoAcquisitionOption(id: '$kVideoAcquisitionOptionAltPrefix$alt'),
+        // 直接点其它版本：不用一张张「换一个」翻过去。带上与当前卡同一份事实，
+        // 否则 chip 上只有组 / 分辨率，几个版本比不出差别（BUG-2958）。
+        for (final (int alt, VideoAcquisitionResourcePlan altPlan)
+            in _alternativePlans(state, index))
+          VideoAcquisitionOption(
+            id: '$kVideoAcquisitionOptionAltPrefix$alt',
+            args: videoAcquisitionVersionArgs(altPlan),
+          ),
         if (canPickLatest)
           const VideoAcquisitionOption(id: kVideoAcquisitionOptionLatest),
         if (canPickAll)
@@ -1905,12 +1895,18 @@ VideoAcquisitionReduction _changeScope(
 /// 当前卡之外、给得出计划的前几张卡（按 eligibleGroups 次序）。
 const int kVideoAcquisitionMaxAlternatives = 3;
 
-List<int> _alternativeIndexes(VideoAcquisitionState state, int current) {
-  final List<int> result = <int>[];
+List<(int, VideoAcquisitionResourcePlan)> _alternativePlans(
+  VideoAcquisitionState state,
+  int current,
+) {
+  final List<(int, VideoAcquisitionResourcePlan)> result =
+      <(int, VideoAcquisitionResourcePlan)>[];
   for (int i = 0; i < state.eligibleGroups.length; i++) {
     if (i == current) continue;
     if (result.length >= kVideoAcquisitionMaxAlternatives) break;
-    if (_planAt(state, i) != null) result.add(i);
+    if (_planAt(state, i) case final VideoAcquisitionResourcePlan plan) {
+      result.add((i, plan));
+    }
   }
   return result;
 }
@@ -2003,7 +1999,11 @@ VideoAcquisitionReduction _startFranchise(VideoAcquisitionState state) {
       );
   return (
     next,
-    <VideoAcquisitionEffect>[VideoAcquisitionLoadFranchiseEffect(item)],
+    <VideoAcquisitionEffect>[
+      VideoAcquisitionLoadFranchiseEffect(
+        VideoFranchiseQuery(item, seriesNames: state.slots.workQueries),
+      ),
+    ],
   );
 }
 
@@ -2219,6 +2219,8 @@ VideoAcquisitionReduction _onFranchiseEntryResolved(
     // 剧集时按年份排除写了别的年份的发布。独一份的长寿剧不排（逐集发布常带
     // 播出年份，按首播年排会误杀）。
     filterSeriesByYear: _hasSameTitledSeries(state.franchiseEntries, target),
+    originalLanguageOnly: wantsOriginalLanguageRelease(state),
+    workLanguage: state.contentLanguage?.code,
   );
   final List<VideoAcquisitionFranchiseEntry> entries =
       List<VideoAcquisitionFranchiseEntry>.of(state.franchiseEntries);
@@ -2261,7 +2263,13 @@ VideoAcquisitionReduction _onFranchiseEntryResolved(
 ///
 /// * 模式：电影 / 已完结 / 已取消 → 下载；在播 / 未开播 / 状态未知 → 订阅（订阅
 ///   从已知最小集号起，已出的集会一起下）。订阅推不出严格规则时退回下载。
-/// * 画质：会话画质找不到时退到「最高可用」——整套里不逐部追问。
+/// * 身份：电影按完整身份（年份 / 重制版 / 续作序号）排除兄弟作品的发布
+///   （BUG-3065）；剧集只在清单里有同名剧集时按年份排除。
+/// * 语言：[originalLanguageOnly] 时排除只有配音 / 硬字幕的发布（BUG-3066）；
+///   「配音 / 硬字幕」按这一部的原语言判（详情给得出就用它，否则用会话的
+///   [workLanguage]）——国产片的国语、粤语片的粤语、中文作品的中字都不算。
+/// * 画质：会话画质找不到时退到「离会话画质最近的可用档」（同距取高，超分殿后，
+///   BUG-3067）——整套里不逐部追问。
 /// * 已在库 / 已订阅：照样给计划，默认不勾。
 VideoAcquisitionFranchiseEntry planFranchiseEntry(
   VideoAcquisitionFranchiseEntry entry,
@@ -2269,6 +2277,8 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
   required VideoAcquisitionQuality quality,
   required VideoAcquisitionDefaults defaults,
   bool filterSeriesByYear = false,
+  bool originalLanguageOnly = false,
+  String? workLanguage,
 }) {
   final VideoMediaReference reference = entry.item.reference;
   final VideoMetadataMediaKind kind = reference.mediaKind;
@@ -2284,9 +2294,17 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
         cleanResourceCandidates(
           event.items,
           skipExtras: defaults.skipExtras,
-          movieYear: kind == VideoMetadataMediaKind.movie || filterSeriesByYear
-              ? reference.year
+          work: kind == VideoMetadataMediaKind.movie
+              ? VideoResourceWorkTarget.fromReference(
+                  reference.withWorkLatinTitles(event.work),
+                )
+              : filterSeriesByYear
+              ? VideoResourceWorkTarget.yearOnly(reference.year)
               : null,
+          originalLanguageOnly: originalLanguageOnly,
+          workLanguage:
+              resolveVideoWorkContentLanguage(event.work, reference).code ??
+              workLanguage,
         ),
       );
   ({VideoAcquisitionMode mode, VideoAcquisitionResourcePlan plan})? found;
@@ -2305,6 +2323,9 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
         quality: wanted,
         source: defaults.sourcePref,
         bitrate: defaults.bitratePref,
+        // 会话画质的退路：离它最近的一档，而不是最高（BUG-3067）。
+        nearestHeight: wanted == quality ? null : quality.height,
+        workYear: reference.year,
       );
       for (final VideoResourceVersionGroup group in outcome.eligible) {
         final VideoAcquisitionResourcePlan? plan = planResourceFromGroup(
@@ -2344,6 +2365,15 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
     selected: !owned,
     owned: owned,
   );
+}
+
+/// 用户要原语言（字幕选「原语言」或正好选了作品语言）：只有配音 / 硬字幕的发布
+/// 不合格（BUG-3066）。
+bool wantsOriginalLanguageRelease(VideoAcquisitionState state) {
+  final String? subtitle = state.slots.subtitleLanguage;
+  if (subtitle == kVideoAcquisitionSubtitleOriginal) return true;
+  final String? content = state.contentLanguage?.code;
+  return content != null && subtitle == content;
 }
 
 bool _hasSameTitledSeries(

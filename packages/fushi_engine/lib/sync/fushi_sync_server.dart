@@ -405,6 +405,11 @@ class FushiSyncServer {
   /// §1）。null（老调用方 / 单测）→ 不公布，client 行为同升级前。
   String? hostId;
 
+  /// 「立即给这个视频补字幕」（`POST /api/library/videos/<id>/subtitle/backfill`）。
+  /// 补字幕服务住在 app（字幕来源 / 刮削身份 / AI 重排都在那边装配），无头服务端
+  /// 不接——null 时该端点回 501，能力位 `videoSubtitleBackfill=false`。
+  VideoSubtitleBackfillRunner? videoSubtitleBackfill;
+
   /// 用户在 host 上填的公网 / 反代 / DDNS 地址（每次 capabilities 实时读）。
   Future<List<String>> Function()? publicUrlsProvider;
 
@@ -515,6 +520,21 @@ class FushiSyncServer {
       .addMiddleware(_gzipTextMiddleware())
       .addMiddleware(_authMiddleware())
       .addHandler(_handleRequest);
+
+  shelf.Handler? _inProcessHandler;
+
+  /// 进程内调用互联 API：与网络请求同一条 pipeline（鉴权、路由、错误码一致），
+  /// 以 host token 的身份通过 Basic 鉴权。
+  ///
+  /// 只给**已鉴权的可信进程内调用方**用——无头服务端的 admin API 先验过
+  /// admin_token，再经它让管理员用到「只对已配对 peer 开放」的库 / 刮削 / 进度
+  /// 等接口，不必另写一套同功能路由。配对路由依赖对端地址，不走这里：调用方
+  /// 负责挡掉（见 fushi_server 的 `/api/admin/host/*`）。
+  Future<shelf.Response> handleInProcess(shelf.Request request) async {
+    final shelf.Handler handler = _inProcessHandler ??= _buildHandler();
+    final String basic = base64Encode(utf8.encode('admin:$_token'));
+    return handler(request.change(headers: <String, String>{'authorization': 'Basic $basic'}));
+  }
 
   /// P2P 隧道的信任区监听口（docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
   HttpServer? _p2pServer;

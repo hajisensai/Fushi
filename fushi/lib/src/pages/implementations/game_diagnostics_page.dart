@@ -1,14 +1,21 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/mining/gal_audio_tracks_panel.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/stat_kpi_strip.dart';
+import 'package:fushi/src/settings/settings_kit.dart'
+    show SettingsEmptyState, SettingsSectionJumpBar;
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeOverlay, FushiFloatingChromeScrollInset;
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/settings_section_anchor.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/utils.dart';
 
@@ -43,6 +50,10 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
   /// 试听片段播完后把按钮从「停止」复位回「试听」的定时器（时长精确来自 PCM 长度）。
   Timer? _previewResetTimer;
 
+  /// 正文滚动 + 分组锚点登记（settings kit 的分组跳转条用）。
+  final ScrollController _scroll = ScrollController();
+  final SettingsSectionSpy _spy = SettingsSectionSpy();
+
   @override
   void initState() {
     super.initState();
@@ -51,11 +62,14 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
     if (_controller.state.isActive) {
       unawaited(_controller.refreshAudioTracks());
     }
+    _spy.attach(_scroll);
   }
 
   @override
   void dispose() {
     _previewResetTimer?.cancel();
+    _spy.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -140,20 +154,24 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
           return Column(
             children: <Widget>[
               FushiPageHeader.customTitle(
-                title: GameSectionTabs(
-                  selected: GameSection.settings,
-                  focusIdPrefix: 'game-diagnostics-tab',
-                  onSelectLibrary: widget.onShowLibrary,
-                  onSelectMonitor: widget.onShowCapture,
-                  onSelectSettings: () =>
-                      gameSectionNotifier.value = GameSection.settings,
-                ),
+                // 在游戏外壳里页签由浮动工具栏画：主位给零尺寸占位，页头整行
+                // 零高度（动作登记进外壳动作组），不留一条钉死的空白带。
+                title: GameSectionTabsHostScope.hostedOf(context)
+                    ? const SizedBox.shrink()
+                    : GameSectionTabs(
+                        selected: GameSection.settings,
+                        focusIdPrefix: 'game-diagnostics-tab',
+                        onSelectLibrary: widget.onShowLibrary,
+                        onSelectMonitor: widget.onShowCapture,
+                        onSelectSettings: () =>
+                            gameSectionNotifier.value = GameSection.settings,
+                      ),
                 actions: <Widget>[
                   FushiIconButton(
                     key: const ValueKey<String>(
                       'game-diagnostics-back-to-settings',
                     ),
-                    icon: Icons.arrow_back,
+                    icon: FushiIcons.back,
                     tooltip: t.settings,
                     onTap: () =>
                         gameSectionNotifier.value = GameSection.settings,
@@ -161,113 +179,75 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
                   // BUG-1027：「刷新音轨」已就近移入「活跃音轨」卡片标题行；
                   // 页头只保留全局性的清事件动作。
                   FushiIconButton(
-                    icon: Icons.delete_sweep_outlined,
+                    icon: FushiIcons.deleteSweep,
                     tooltip: t.game_clear_events,
                     onTap: _controller.clearEvents,
                   ),
                 ],
               ),
               Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      StatKpiStrip(
-                        items: <StatKpiItem>[
-                          StatKpiItem(
-                            icon: Icons.format_quote_outlined,
-                            value: '${_controller.lines.length}',
-                            label: t.game_captured_lines,
+                // 分组跳转条叠进库页外壳的浮动工具区（嵌套
+                // [FushiFloatingChromeOverlay]，与书架搜索行同构）：往下滚跟外壳
+                // 页签一起收起，正文滚到它底下；正文滚动视图经
+                // [FushiFloatingChromeScrollInset] 拿到 MediaQuery 顶部 padding
+                // 自己让位，工具区收起后顶部不留空白。不在外壳里时退化成「跳转条
+                // + 正文」竖排。
+                child: FushiFloatingChromeOverlay(
+                  // settings kit 的分组跳转条：分段卡片经 [SettingsSectionAnchor]
+                  // 自动登记，滚动时当前分组的胶囊弹簧变宽填色。
+                  chrome: ListenableBuilder(
+                    listenable: _spy,
+                    builder: (BuildContext context, Widget? _) {
+                      if (_spy.sections.length < 3) {
+                        return const SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: SettingsSectionJumpBar(
+                          sections: _spy.sections,
+                          activeId: _spy.activeId,
+                          onSelected: (String id) => _spy.jumpTo(
+                            id,
+                            duration:
+                                context.fushiMotion.spatialDefault.duration,
                           ),
-                          // 文本来自引擎 Hook 时，「0/3 文本端点」是外部工具的可选
-                          // 接入口而非健康指标——KPI 改为显示真实文本来源（BUG-1027）。
-                          if (_controller.hasEngineSource)
-                            StatKpiItem(
-                              icon: Icons.link_outlined,
-                              value: t.game_text_source_engine,
-                              label: t.game_health_text,
-                            )
-                          else
-                            StatKpiItem(
-                              icon: Icons.link_outlined,
-                              value:
-                                  '${_controller.endpointStatuses.where((e) => e.phase == TexthookerEndpointPhase.connected).length}/${_controller.endpointStatuses.length}',
-                              label: t.game_text_endpoints,
-                            ),
-                          StatKpiItem(
-                            icon: Icons.warning_amber_outlined,
-                            value: '${state.textGapCount}',
-                            label: t.game_text_gaps,
-                          ),
-                          StatKpiItem(
-                            icon: Icons.graphic_eq,
-                            value: galHookAudioBackendLabel(state.audioBackend),
-                            label: t.game_health_audio,
-                          ),
-                        ],
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        // 「序号缺口」是 hook 文本环丢行计数——0 为正常，非告警。
-                        child: Text(
-                          t.game_text_gaps_hint,
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                  ),
+                        ),
+                      );
+                    },
+                  ),
+                  child: FushiFloatingChromeScrollInset(
+                    child: SettingsSectionSpyScope(
+                      spy: _spy,
+                      // 本页由 HomeGamePage 的 IndexedStack 急切构建：切到诊断
+                      // 子区时重开进场窗口，错峰进场才落在用户眼前。
+                      child: FushiEntranceScope(
+                        replayKey: gameSectionNotifier.value ==
+                            GameSection.diagnostics,
+                        // 必须在 Builder 里读让位：外层 builder 的 context 在
+                        // [FushiFloatingChromeScrollInset] 之上。吃掉后从子树
+                        // 摘掉，卡片里的列表不再让一遍。
+                        child: Builder(
+                          builder: (BuildContext context) {
+                            final double chromeTop =
+                                MediaQuery.paddingOf(context).top;
+                            return MediaQuery.removePadding(
+                              context: context,
+                              removeTop: true,
+                              child: SingleChildScrollView(
+                                controller: _scroll,
+                                padding: EdgeInsets.fromLTRB(
+                                  16,
+                                  8 + chromeTop,
+                                  16,
+                                  24,
+                                ),
+                                child: _buildBody(context, state, events),
+                              ),
+                            );
+                          },
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      LayoutBuilder(
-                        builder: (BuildContext context, BoxConstraints box) {
-                          final Widget pipeline = _PipelineCard(state: state);
-                          final Widget endpoints = _EndpointCard(
-                            endpoints: _controller.endpointStatuses,
-                            engineHookActive: _controller.hasEngineSource,
-                          );
-                          if (box.maxWidth < 840) {
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: <Widget>[
-                                pipeline,
-                                const SizedBox(height: 16),
-                                endpoints,
-                              ],
-                            );
-                          }
-                          return IntrinsicHeight(
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: <Widget>[
-                                Expanded(child: pipeline),
-                                const SizedBox(width: 16),
-                                Expanded(child: endpoints),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      _AudioTracksCard(
-                        state: state,
-                        onRefresh: _controller.refreshAudioTracks,
-                        onSelectVoice: _handleSelectVoice,
-                        onToggleExcluded: _controller.setTrackExcluded,
-                        onPreviewTrack: _handlePreviewTrack,
-                        previewingSourcePtr: _previewingSourcePtr,
-                      ),
-                      const SizedBox(height: 16),
-                      _EventsCard(
-                        events: events,
-                        warningsOnly: _warningsOnly,
-                        onWarningsOnlyChanged: (bool value) {
-                          setState(() => _warningsOnly = value);
-                        },
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -277,7 +257,142 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
       ),
     );
   }
+
+  /// 正文：KPI 条 + 分段卡片（流水线 / 端点、音轨、事件），整体错峰进场。
+  Widget _buildBody(
+    BuildContext context,
+    GalHookSessionState state,
+    List<GalHookEvent> events,
+  ) {
+    final List<Widget> blocks = <Widget>[
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          StatKpiStrip(
+            items: <StatKpiItem>[
+              StatKpiItem(
+                icon: FushiIcons.quote,
+                value: '${_controller.lines.length}',
+                label: t.game_captured_lines,
+              ),
+              // 文本来自引擎 Hook 时，「0/3 文本端点」是外部工具的可选
+              // 接入口而非健康指标——KPI 改为显示真实文本来源（BUG-1027）。
+              if (_controller.hasEngineSource)
+                StatKpiItem(
+                  icon: FushiIcons.link,
+                  value: t.game_text_source_engine,
+                  label: t.game_health_text,
+                )
+              else
+                StatKpiItem(
+                  icon: FushiIcons.link,
+                  value:
+                      '${_controller.endpointStatuses.where((e) => e.phase == TexthookerEndpointPhase.connected).length}/${_controller.endpointStatuses.length}',
+                  label: t.game_text_endpoints,
+                ),
+              StatKpiItem(
+                icon: FushiIcons.warning,
+                value: '${state.textGapCount}',
+                label: t.game_text_gaps,
+              ),
+              StatKpiItem(
+                icon: FushiIcons.volumeUp,
+                value: galHookAudioBackendLabel(state.audioBackend),
+                label: t.game_health_audio,
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            // 「序号缺口」是 hook 文本环丢行计数——0 为正常，非告警。
+            child: Text(
+              t.game_text_gaps_hint,
+              style: context.fushiType.bodySmall.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+      LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints box) {
+          final Widget pipeline = _PipelineCard(state: state);
+          final Widget endpoints = _EndpointCard(
+            endpoints: _controller.endpointStatuses,
+            engineHookActive: _controller.hasEngineSource,
+          );
+          if (box.maxWidth < 840) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                pipeline,
+                const SizedBox(height: 16),
+                endpoints,
+              ],
+            );
+          }
+          return IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(child: pipeline),
+                const SizedBox(width: 16),
+                Expanded(child: endpoints),
+              ],
+            ),
+          );
+        },
+      ),
+      _AudioTracksCard(
+        state: state,
+        onRefresh: _controller.refreshAudioTracks,
+        onSelectVoice: _handleSelectVoice,
+        onToggleExcluded: _controller.setTrackExcluded,
+        onPreviewTrack: _handlePreviewTrack,
+        previewingSourcePtr: _previewingSourcePtr,
+      ),
+      _EventsCard(
+        events: events,
+        warningsOnly: _warningsOnly,
+        onWarningsOnlyChanged: (bool value) {
+          setState(() => _warningsOnly = value);
+        },
+      ),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        for (int i = 0; i < blocks.length; i++) ...<Widget>[
+          if (i > 0) const SizedBox(height: 16),
+          FushiStaggeredEntrance(index: i, child: blocks[i]),
+        ],
+      ],
+    );
+  }
 }
+
+/// 诊断状态的语义层级：就绪 / 等待（降级、未接通）/ 出错。
+enum _DiagnosticLevel { ok, waiting, error }
+
+/// 状态行行首形状图标的配色。M3E：就绪 primary、等待 tertiary、出错 error 饱和
+/// 色块。Apple 的 tertiary 落在系统绿上，所以 Apple 下就绪取 tertiary（绿）、
+/// 等待取 neutral（灰），保持「绿 = 健康」的 iOS 语义。
+FushiCardTone _diagnosticTone(BuildContext context, _DiagnosticLevel level) {
+  final bool apple = isGlassDesign(context);
+  return switch (level) {
+    _DiagnosticLevel.ok =>
+      apple ? FushiCardTone.tertiary : FushiCardTone.primary,
+    _DiagnosticLevel.waiting =>
+      apple ? FushiCardTone.neutral : FushiCardTone.tertiary,
+    _DiagnosticLevel.error => FushiCardTone.error,
+  };
+}
+
+IconData _diagnosticIcon(_DiagnosticLevel level) => switch (level) {
+      _DiagnosticLevel.ok => FushiIcons.success,
+      _DiagnosticLevel.waiting => FushiIcons.pending,
+      _DiagnosticLevel.error => FushiIcons.error,
+    };
 
 class _PipelineCard extends StatelessWidget {
   const _PipelineCard({required this.state});
@@ -289,7 +404,7 @@ class _PipelineCard extends StatelessWidget {
     final bool active = state.isActive;
     return _SectionCard(
       title: t.game_pipeline,
-      icon: Icons.account_tree_outlined,
+      icon: FushiIcons.hub,
       child: Column(
         children: <Widget>[
           _DiagnosticRow(
@@ -305,6 +420,7 @@ class _PipelineCard extends StatelessWidget {
                 ? galHookSessionPhaseLabel(state.phase)
                 : t.game_status_waiting,
             ok: active && state.phase != GalHookSessionPhase.error,
+            error: state.phase == GalHookSessionPhase.error,
           ),
           _DiagnosticRow(
             label: t.game_health_window,
@@ -327,12 +443,12 @@ class _PipelineCard extends StatelessWidget {
           ),
           if (state.fallbackReason != null)
             _DetailBox(
-              icon: Icons.info_outline,
+              icon: FushiIcons.info,
               text: state.fallbackReason!,
             ),
           if (state.lastError != null)
             _DetailBox(
-              icon: Icons.error_outline,
+              icon: FushiIcons.error,
               text: state.lastError!,
               error: true,
             ),
@@ -356,10 +472,9 @@ class _EndpointCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final TextStyle? hintStyle = Theme.of(context)
-        .textTheme
-        .bodySmall
-        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
+    final TextStyle hintStyle = context.fushiType.bodySmall.copyWith(
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    );
     // 端点是 Textractor / agent / LunaTranslator 等外部工具的兼容接入口；普通用户
     // 永远处于「连接中/重试中」循环属正常，解释文案常驻，且重试态不再用告警观感
     //（_EndpointRow 的未连接态统一中性图标/中性色）。
@@ -367,7 +482,7 @@ class _EndpointCard extends StatelessWidget {
     final Widget rows = endpoints.isEmpty
         ? Text(
             t.game_status_not_configured,
-            style: Theme.of(context).textTheme.bodyMedium,
+            style: context.fushiType.bodyMedium,
           )
         : Column(
             children: <Widget>[
@@ -378,32 +493,39 @@ class _EndpointCard extends StatelessWidget {
     if (!engineHookActive) {
       return _SectionCard(
         title: t.game_text_endpoints,
-        icon: Icons.hub_outlined,
+        icon: FushiIcons.link,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[hint, const SizedBox(height: 8), rows],
         ),
       );
     }
-    return FushiCard(
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: FushiExpansionTile(
-          tilePadding: EdgeInsets.zero,
-          childrenPadding: EdgeInsets.zero,
-          initiallyExpanded: false,
-          leading: const FushiIcon(Icons.hub_outlined, size: 20),
-          title: Text(
-            t.game_text_endpoints,
-            style: Theme.of(context).textTheme.titleMedium,
+    return SettingsSectionAnchor(
+      title: t.game_text_endpoints,
+      child: FushiCard(
+        child: Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: FushiExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: EdgeInsets.zero,
+            initiallyExpanded: false,
+            leading: const FushiListLeadingIcon(
+              FushiIcons.link,
+              shape: FushiLeadingShape.square,
+              tone: FushiCardTone.neutral,
+            ),
+            title: Text(
+              t.game_text_endpoints,
+              style: context.fushiType.titleMediumEmphasized,
+            ),
+            subtitle: Text(t.game_endpoints_engine_active, style: hintStyle),
+            children: <Widget>[
+              const SizedBox(height: 4),
+              hint,
+              const SizedBox(height: 8),
+              rows,
+            ],
           ),
-          subtitle: Text(t.game_endpoints_engine_active, style: hintStyle),
-          children: <Widget>[
-            const SizedBox(height: 4),
-            hint,
-            const SizedBox(height: 8),
-            rows,
-          ],
         ),
       ),
     );
@@ -422,20 +544,19 @@ class _EndpointRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool connected = endpoint.phase == TexthookerEndpointPhase.connected;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          FushiIcon(
-            connected ? Icons.check_circle_outline : Icons.sync_outlined,
-            size: 18,
-            // 已连接 = 健康语义色（MD3 harmonize 绿 / Apple systemGreen），
-            // 与流水线行的「就绪」同一口径；未连接保持中性。
-            color: connected
-                ? fushiStatusColor(context, FushiStatusTone.success)
-                : fushiNeutralSecondaryForeground(context),
+          FushiListLeadingIcon(
+            connected ? FushiIcons.success : FushiIcons.sync,
+            // 已连接 = 健康语义（与流水线行的「就绪」同一口径）；未连接保持中性。
+            tone: connected
+                ? _diagnosticTone(context, _DiagnosticLevel.ok)
+                : FushiCardTone.neutral,
+            size: 32,
+            iconSize: 18,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
           Expanded(child: Text(endpoint.url)),
           const SizedBox(width: 12),
           Flexible(
@@ -447,7 +568,7 @@ class _EndpointRow extends StatelessWidget {
                 textAlign: TextAlign.end,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall,
+                style: context.fushiType.bodySmall,
               ),
             ),
           ),
@@ -480,9 +601,9 @@ class _AudioTracksCard extends StatelessWidget {
     // 顶栏的音轨对话框复用同一份），这里只保留诊断页的卡片壳与刷新入口。
     return _SectionCard(
       title: t.game_audio_tracks,
-      icon: Icons.multitrack_audio_outlined,
+      icon: FushiIcons.audio,
       trailing: FushiIconButton(
-        icon: Icons.refresh,
+        icon: FushiIcons.refresh,
         tooltip: t.game_refresh_tracks,
         onTap: onRefresh,
       ),
@@ -513,7 +634,7 @@ class _EventsCard extends StatelessWidget {
     final List<GalHookEvent> newest = events.reversed.toList(growable: false);
     return _SectionCard(
       title: t.game_session_events,
-      icon: Icons.receipt_long_outlined,
+      icon: FushiIcons.history,
       trailing: Wrap(
         spacing: 8,
         children: <Widget>[
@@ -533,12 +654,10 @@ class _EventsCard extends StatelessWidget {
       ),
       child: newest.isEmpty
           ? Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(
-                t.game_no_events,
-                style: TextStyle(
-                  color: fushiNeutralSecondaryForeground(context),
-                ),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: SettingsEmptyState(
+                icon: FushiIcons.history,
+                title: t.game_no_events,
               ),
             )
           : Column(
@@ -574,14 +693,22 @@ class _EventTile extends StatelessWidget {
     final Widget leading = isEinkTheme(context)
         ? FushiIcon(
             switch (event.severity) {
-              GalHookEventSeverity.info => Icons.info_outline,
-              GalHookEventSeverity.success => Icons.check_circle_outline,
-              GalHookEventSeverity.warning => Icons.warning_amber_outlined,
-              GalHookEventSeverity.error => Icons.error_outline,
+              GalHookEventSeverity.info => FushiIcons.info,
+              GalHookEventSeverity.success => FushiIcons.success,
+              GalHookEventSeverity.warning => FushiIcons.warning,
+              GalHookEventSeverity.error => FushiIcons.error,
             },
             size: 18,
           )
-        : FushiIcon(Icons.circle, size: 10, color: color);
+        : SizedBox.square(
+            dimension: 10,
+            child: DecoratedBox(
+              decoration: ShapeDecoration(
+                color: color,
+                shape: const CircleBorder(),
+              ),
+            ),
+          );
     return FushiListTileControl(
       dense: true,
       contentPadding: EdgeInsets.zero,
@@ -596,6 +723,8 @@ class _EventTile extends StatelessWidget {
   }
 }
 
+/// 诊断页的分段卡片：M3E 卡（20 圆角）+ 行首方圆角形状图标 + 强调标题；经
+/// [SettingsSectionAnchor] 登记进页顶的分组跳转条。
 class _SectionCard extends StatelessWidget {
   const _SectionCard({
     required this.title,
@@ -611,26 +740,33 @@ class _SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FushiCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              FushiIcon(icon, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium,
+    return SettingsSectionAnchor(
+      title: title,
+      child: FushiCard(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                FushiListLeadingIcon(
+                  icon,
+                  shape: FushiLeadingShape.square,
                 ),
-              ),
-              if (trailing != null) trailing!,
-            ],
-          ),
-          const SizedBox(height: 12),
-          child,
-        ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: context.fushiType.titleMediumEmphasized,
+                  ),
+                ),
+                if (trailing != null) trailing!,
+              ],
+            ),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
       ),
     );
   }
@@ -641,29 +777,34 @@ class _DiagnosticRow extends StatelessWidget {
     required this.label,
     required this.value,
     required this.ok,
+    this.error = false,
   });
 
   final String label;
   final String value;
   final bool ok;
 
+  /// 该环节明确出错（而不只是尚未就绪）：行首换 error 色块。
+  final bool error;
+
   @override
   Widget build(BuildContext context) {
+    final _DiagnosticLevel level = error
+        ? _DiagnosticLevel.error
+        : ok
+            ? _DiagnosticLevel.ok
+            : _DiagnosticLevel.waiting;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          FushiIcon(
-            ok ? Icons.check_circle_outline : Icons.schedule_outlined,
-            size: 18,
-            // 就绪走成功语义色而非主色：主色在 Apple 下是单色强调（黑 / 白），
-            // 与「等待」的灰图标几乎分不开；绿勾一眼读出健康。
-            color: ok
-                ? fushiStatusColor(context, FushiStatusTone.success)
-                : fushiNeutralSecondaryForeground(context),
+          FushiListLeadingIcon(
+            _diagnosticIcon(level),
+            tone: _diagnosticTone(context, level),
+            size: 32,
+            iconSize: 18,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
           Expanded(child: Text(label)),
           const SizedBox(width: 12),
           Flexible(
@@ -674,7 +815,7 @@ class _DiagnosticRow extends StatelessWidget {
                 textAlign: TextAlign.end,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall,
+                style: context.fushiType.bodySmall,
               ),
             ),
           ),
@@ -698,7 +839,7 @@ class _DetailBox extends StatelessWidget {
     final Color foreground = fushiNeutralBlockForeground(context);
     return Container(
       margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(12),
       decoration: fushiNeutralBlockDecoration(context),
       child: Row(
         children: <Widget>[

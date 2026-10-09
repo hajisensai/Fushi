@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -185,18 +185,20 @@ void main() {
           .width,
       greaterThan(1300),
     );
-    expect(
-      tester
-          .getSize(
-            find.byKey(
-              const ValueKey<String>(
-                'video-subscription-card-subscription-1',
-              ),
-            ),
-          )
-          .width,
-      greaterThan(1300),
+    // M3E 订阅页（7bbb7cfe060）宽屏改为两列网格：卡片撑满自己那一列——与
+    // 汇总头左对齐，两列宽加列间距正好铺满汇总头的宽度（不是收窄成固定宽）。
+    final Rect header = tester.getRect(
+      find.byKey(const ValueKey<String>('video-subscriptions-header')),
     );
+    final Rect card = tester.getRect(
+      find.byKey(
+        const ValueKey<String>('video-subscription-card-subscription-1'),
+      ),
+    );
+    expect(card.left, moreOrLessEquals(header.left));
+    final double gutter = header.width - card.width * 2;
+    expect(gutter, greaterThan(0));
+    expect(gutter, lessThanOrEqualTo(24));
     expect(tester.takeException(), isNull);
   });
 

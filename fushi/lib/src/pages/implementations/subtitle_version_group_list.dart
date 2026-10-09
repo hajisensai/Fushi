@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi_engine/media/video/jimaku_client.dart'
     show jimakuLanguageLabel;
 import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/episode_span_format.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_archive_label.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
@@ -244,7 +245,9 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
     final bool busyThis = widget.busyIdentityKey == candidate.identityKey;
     final bool highlight = widget.requestedEpisode != null &&
         candidate.episode == widget.requestedEpisode;
+    final String? packLabel = subtitleArchivePackLabel(candidate);
     final List<String> meta = <String>[
+      if (packLabel != null) packLabel,
       if (candidate.episode != null) 'EP${candidate.episode}',
       if (candidate.language.isNotEmpty)
         jimakuLanguageLabel(candidate.language),

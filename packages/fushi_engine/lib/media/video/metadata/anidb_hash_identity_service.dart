@@ -138,7 +138,7 @@ class AnidbHashIdentityService {
           onProgress?.call(stat.size, stat.size);
           final _BackfilledRecord filled =
               await _backfillEpisodeAirDate(known, store);
-          return _fromRecord(filled.record, stat, isCancelled,
+          return await _fromRecord(filled.record, stat, isCancelled,
               episodeInfoError: filled.error);
         }
         if (known != null) missAttempts = known.missAttempts;
@@ -170,7 +170,7 @@ class AnidbHashIdentityService {
           await store.save(moved);
           final _BackfilledRecord filled =
               await _backfillEpisodeAirDate(moved, store);
-          return _fromRecord(filled.record, stat, isCancelled,
+          return await _fromRecord(filled.record, stat, isCancelled,
               episodeInfoError: filled.error);
         }
         if (known != null) missAttempts = known.missAttempts;

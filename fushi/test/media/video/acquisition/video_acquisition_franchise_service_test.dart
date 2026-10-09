@@ -289,7 +289,7 @@ void main() {
     );
 
     VideoAcquisitionService build(
-      Future<VideoFranchise?> Function(VideoDiscoveryItem item) loadFranchise,
+      Future<VideoFranchise?> Function(VideoFranchiseQuery query) loadFranchise,
     ) {
       final VideoAcquisitionService service = VideoAcquisitionService(
         defaults: const VideoAcquisitionDefaults(

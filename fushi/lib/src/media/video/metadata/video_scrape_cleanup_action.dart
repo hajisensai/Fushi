@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_service.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -40,7 +41,7 @@ Future<bool> showClearAllVideoScrapeRecordsAction({
                 title: t.video_source_scrape_clear_all_confirm_title,
                 message: t.video_source_scrape_clear_all_confirm_body,
                 confirmLabel: t.video_source_scrape_clear_all_confirm_action,
-                leadingIcon: Icons.delete_sweep_outlined,
+                leadingIcon: FushiIcons.deleteSweep,
               ),
         );
     if (confirmed == null || !context.mounted) return false;

@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/source_guard.dart' show compactCode;
+
 /// 书架流媒体书（YouTube/直链，TODO-1157）进度写穿源码守卫。
 ///
 /// 根因背景：流媒体书**有** VideoBooks 行却走互联远端（无行）的持久化路径，位置只写
@@ -15,28 +17,26 @@ import 'package:flutter_test/flutter_test.dart';
 /// （删掉任一步即红），与 TODO-1307 守卫同构。
 /// 源码扫描的归一化：压掉全部空白，并把 tall-style 拆行补出来的尾随逗号
 /// （`,)`）收回 `)`。钉的是调用形态本身，不是它当天被 dart format 排成什么样。
-String _flat(String v) =>
-    v.replaceAll(RegExp(r'\s+'), '').replaceAll(',)', ')');
+String _flat(String v) => compactCode(v).replaceAll(',)', ')');
 
 void main() {
-  final String pageSrc =
-      File('lib/src/pages/implementations/video_fushi_page.dart')
-          .readAsStringSync()
-          .replaceAll(String.fromCharCode(13), '');
+  final String pageSrc = File(
+    'lib/src/pages/implementations/video_fushi_page.dart',
+  ).readAsStringSync().replaceAll(String.fromCharCode(13), '');
 
   // [_persistRemotePosition] 函数体切片（到下一个方法 doc 注释为止的窄窗口，避免同形
   // token 在别处抢匹配）。
   String persistRemoteSlice() {
-    final int start =
-        pageSrc.indexOf('Future<void> _persistRemotePosition(String uid');
+    final int start = pageSrc.indexOf(
+      'Future<void> _persistRemotePosition(String uid',
+    );
     expect(start, greaterThan(0), reason: '_persistRemotePosition 必须存在');
     final int end = pageSrc.indexOf('Future<void> _loadSingle', start);
     expect(end, greaterThan(start));
     return pageSrc.substring(start, end);
   }
 
-  test('① 书架流媒体书位置写穿 DB：_persistRemotePosition 含 _bookRow 门 + updatePosition',
-      () {
+  test('① 书架流媒体书位置写穿 DB：_persistRemotePosition 含 _bookRow 门 + updatePosition', () {
     final String slice = persistRemoteSlice();
     expect(
       slice.contains('if (_bookRow != null)'),
@@ -47,22 +47,36 @@ void main() {
       // dart format 会按行宽折行，**并在拆行时补尾随逗号**——所以归一化要同时
       // 压掉空白和把 `,)` 收成 `)`，否则「差一个逗号」就让守卫假红（实测过一次）。
       // PR #1707（9036953d68b）：在线视频源入库集合集连播时写当前成员自己那一行
-      // （keyUid），非合集仍写 widget.bookUid——两路都必须落在 _bookRow 门内。
-      _flat(slice).contains('if(_bookRow!=null){'
-          'finalStringrowUid=_isRemoteCollection?keyUid:widget.bookUid;'
-          'awaitwidget.repo.updatePosition(rowUid,clamped,playedAt:nowMs);'),
+      // （keyUid），非合集经 _activeBookUid；无原盘选片时回落 widget.bookUid。两路都在 _bookRow 门内。
+      _flat(slice).contains(
+        'if(_bookRow!=null){'
+        'finalStringrowUid=_isRemoteCollection?keyUid:_activeBookUid;'
+        'awaitwidget.repo.updatePosition(rowUid,clamped,playedAt:nowMs);',
+      ),
       isTrue,
-      reason: '书架流媒体书必须把断点写穿 VideoBooks（lastPositionMs/lastPlayedAt），'
+      reason:
+          '书架流媒体书必须把断点写穿 VideoBooks（lastPositionMs/lastPlayedAt），'
           '否则书架「继续观看/在看筛选/合集续播」对流媒体书失明；'
-          '非合集写 widget.bookUid，合集写当前成员行',
+          '非合集写当前视频身份，远端合集写当前成员行',
+    );
+    expect(
+      _flat(pageSrc),
+      contains(
+        _flat('String get _activeBookUid => _discBookUid ?? widget.bookUid;'),
+      ),
+      reason:
+          'YouTube / remote entries have no disc override and keep their original row identity',
     );
     // DB 写必须在「真观看」阈值之后（BUG-996 同款考虑：近起点假进度不落 DB）。
     final int iThreshold = slice.indexOf('kMeaningfulRemoteWatchMs');
     // 折行安全锚：方法名带左括号（widget.repo 与 .updatePosition 可能被 format 拆行）。
     final int iDbWrite = slice.indexOf('.updatePosition(');
     expect(iThreshold, greaterThan(0));
-    expect(iDbWrite, greaterThan(iThreshold),
-        reason: 'DB 写穿必须在 5s 真观看阈值之后（避免慢流 resume 未落地时的 ~0 假进度）');
+    expect(
+      iDbWrite,
+      greaterThan(iThreshold),
+      reason: 'DB 写穿必须在 5s 真观看阈值之后（避免慢流 resume 未落地时的 ~0 假进度）',
+    );
   });
 
   test('② 观看统计采集器不按 _bookRow / !_isRemote 门控（BUG-2587：远端也采集）', () {
@@ -81,7 +95,8 @@ void main() {
     );
     expect(
       pageSrc.contains(
-          'final (String uid, int episodeIndex) = _watchStatsIdentity;'),
+        'final (String uid, int episodeIndex) = _watchStatsIdentity;',
+      ),
       isTrue,
       reason: '采集器身份只经 _watchStatsIdentity（远端 = 断点键同口径）',
     );

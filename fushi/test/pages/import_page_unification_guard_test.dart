@@ -28,13 +28,16 @@ String _methodSlice(String source, String signature) {
 }
 
 void main() {
-  final String page =
-      _read('lib/src/pages/implementations/media_sources_page.dart');
-  final String view =
-      _read('lib/src/pages/implementations/media_sources_view.dart');
+  final String page = _read(
+    'lib/src/pages/implementations/media_sources_page.dart',
+  );
+  final String view = _read(
+    'lib/src/pages/implementations/media_sources_view.dart',
+  );
   final String manga = _read('lib/src/media/manga/manga_sources_page.dart');
-  final String game =
-      _read('lib/src/pages/implementations/home_game_page.dart');
+  final String game = _read(
+    'lib/src/pages/implementations/home_game_page.dart',
+  );
 
   group('页头不再有「添加来源」，入口在常驻来源区头', () {
     test('书 / 视频导入页', () {
@@ -99,7 +102,8 @@ void main() {
     });
 
     test('游戏保留单件入口（无扫描根概念，无文件夹管线）', () {
-      expect(game, contains('label: t.game_add'));
+      // M3E 拖放区卡片里的主按钮（不再经共享 QuickImportSection 的 tonal 钮）。
+      expect(game, contains('label: Text(t.game_add)'));
       expect(game, contains('addGameViaFilePicker'));
     });
 
@@ -122,17 +126,21 @@ void main() {
     final String online = _read(
       'lib/src/pages/implementations/browse_online_sources_view.dart',
     );
-    final String mangaOnline =
-        _read('lib/src/media/manga/manga_online_sources_view.dart');
-    final String browse =
-        _read('lib/src/pages/implementations/browse_page.dart');
+    final String mangaOnline = _read(
+      'lib/src/media/manga/manga_online_sources_view.dart',
+    );
+    final String browse = _read(
+      'lib/src/pages/implementations/browse_page.dart',
+    );
 
     test('两页本地段都是快速导入 + 常驻来源，不再挂分段选择器', () {
       for (final String source in <String>[page, manga]) {
         expect(source, isNot(contains('ImportPageSegmentBar(')));
         expect(source, contains('Widget _buildLocalSegment()'));
-        final String local =
-            _methodSlice(source, 'Widget _buildLocalSegment()');
+        final String local = _methodSlice(
+          source,
+          'Widget _buildLocalSegment()',
+        );
         expect(local, contains('QuickImportSection('));
         expect(local, contains('MediaSourcesView('));
       }
@@ -154,8 +162,9 @@ void main() {
       expect(online, isNot(contains('VideoOnlineSourcesPage')));
       expect(online, isNot(contains('video_online_sources_entry')));
       expect(
-        File('lib/src/media/video/online/video_online_sources_page.dart')
-            .existsSync(),
+        File(
+          'lib/src/media/video/online/video_online_sources_page.dart',
+        ).existsSync(),
         isFalse,
         reason: '独立页已并入浏览模块；再长出来就是又分叉了',
       );
@@ -164,7 +173,9 @@ void main() {
     test('扩展节 widget key 固定、浏览页按域保活，切页签 / 切域不丢状态', () {
       expect(
         online,
-        contains(r"ValueKey<String>('video_mihon_extensions_${widget.section.name}')"),
+        contains(
+          r"ValueKey<String>('video_mihon_extensions_${widget.section.name}')",
+        ),
       );
       expect(
         mangaOnline,
@@ -191,9 +202,26 @@ void main() {
       expect(browse, isNot(contains('FushiSegmentedStrip')));
       expect(browse, isNot(contains('ButtonSegment<')));
       expect(
-        RegExp(r'_BrowseSwipeSections<\w+>\(').allMatches(browse),
+        RegExp(
+          r'_BrowseSwipeSections<(?:OnlineSourcesDomain|_DownloadsResourceDomain|BrowseDownloadsSection)>\(',
+        ).allMatches(browse),
         hasLength(3),
         reason: '来源 / 扩展共用一处 + 发现 + 下载，共三处二级标签条',
+      );
+      // One additional generic constructor belongs only to the explicit
+      // widget-test seam. Keep a total budget so new production domains cannot
+      // silently escape the typed-site assertions above.
+      expect(
+        RegExp(r'_BrowseSwipeSections<\w+>\(').allMatches(browse),
+        hasLength(4),
+      );
+      final String seam = methodBody(
+        browse,
+        'Widget debugBrowseSwipeSections<',
+      );
+      expect(
+        RegExp(r'_BrowseSwipeSections<T>\(').allMatches(seam),
+        hasLength(1),
       );
       expect(
         'secondary: true'.allMatches(browse),
@@ -217,8 +245,9 @@ void main() {
     });
 
     test('i18n 里 media_source_local_roots key 已删除', () {
-      final String zh =
-          File('lib/i18n/strings_zh-CN.i18n.json').readAsStringSync();
+      final String zh = File(
+        'lib/i18n/strings_zh-CN.i18n.json',
+      ).readAsStringSync();
       final String en = File('lib/i18n/strings.i18n.json').readAsStringSync();
       expect(zh, isNot(contains('media_source_local_roots')));
       expect(en, isNot(contains('media_source_local_roots')));

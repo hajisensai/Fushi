@@ -140,9 +140,18 @@ void main() {
     test('四个 tab 的顶栏动作行逐颗同形：目标 → 刷新 → 清空全部统计', () {
       for (final String path in tabPages) {
         final String src = File(path).readAsStringSync();
-        final int flag = src.indexOf('Icons.flag_outlined');
-        final int refresh = src.indexOf('Icons.refresh');
-        final int clear = src.indexOf('Icons.delete_sweep_outlined');
+        // 已迁到 FushiIcons 的页用语义名，未迁的仍是 Icons.*：两种写法都认。
+        int find(String fushi, String legacy) {
+          final int i = src.indexOf(fushi);
+          return i >= 0 ? i : src.indexOf(legacy);
+        }
+
+        final int flag = find('FushiIcons.flag', 'Icons.flag_outlined');
+        final int refresh = find('FushiIcons.refresh', 'Icons.refresh');
+        final int clear = find(
+          'FushiIcons.deleteSweep',
+          'Icons.delete_sweep_outlined',
+        );
         expect(flag, isNonNegative, reason: '$path 缺目标按钮');
         expect(refresh, greaterThan(flag), reason: '$path 刷新不在目标之后');
         expect(clear, greaterThan(refresh), reason: '$path 清空不在刷新之后');

@@ -1,5 +1,5 @@
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
@@ -20,11 +20,13 @@ import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
 import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -48,7 +50,8 @@ SettingsDestination buildVideoDestination() {
     ),
     title: t.settings_destination_video,
     summary: t.video_settings_summary,
-    icon: Icons.movie_outlined,
+    // 图标与底栏 / 侧栏同一真值（homeNavItemFor），不在设置里另写一份。
+    icon: homeNavItemFor(HomeTab.video).icon,
     sections: <SettingsSection>[
       // 分组顺序（2026-10 重排）：播放 → 显示与画质（下接四个折叠的 mpv 进阶组）→
       // 字幕外观 → 字幕行为与来源 → 音频 → 控制与手势 → 截图与片段 → 弹幕 → 媒体库 →
@@ -72,6 +75,7 @@ SettingsDestination buildVideoDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setVideoAutoPlayNext(value);
             },
+            defaultValue: true,
           ),
           // 「单文件循环」从「画质」分区移到「播放」分区（语义归属播放行为，紧随自动
           // 连播）。VideoPlacement（mpv/playback order 200）不变——面板投影位置照旧，
@@ -110,6 +114,7 @@ SettingsDestination buildVideoDestination() {
                 height,
               );
             },
+            defaultValue: 0,
           ),
           // 沉浸/画面缩放都是长标签四态：dropdown 渲染（TODO-209，分段条在窄 pane
           // 只能横向滚动裁断）。
@@ -136,6 +141,7 @@ SettingsDestination buildVideoDestination() {
                 ) async {
                   await setVideoImmersiveModeDual(settingsContext, mode);
                 },
+            defaultValue: VideoImmersiveMode.fallback,
           ),
           // 底部细进度条：控制条淡出后在视频最下方留一条主题色细线（B 站 / YouTube
           // 同款）。纯 pref、**默认关**——控制条淡出本身就是「把画面让干净」，常亮的
@@ -152,6 +158,7 @@ SettingsDestination buildVideoDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setVideoSlimProgressBar(value);
             },
+            defaultValue: false,
           ),
         ],
       ),
@@ -187,6 +194,7 @@ SettingsDestination buildVideoDestination() {
                 (SettingsContext settingsContext, VideoFitMode mode) async {
                   await setVideoFitModeDual(settingsContext, mode);
                 },
+            defaultValue: VideoFitMode.contain,
           ),
           SettingsSwitchItem(
             id: 'video.playback.lock_window_aspect',
@@ -199,6 +207,7 @@ SettingsDestination buildVideoDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await setVideoLockWindowAspectRatioDual(settingsContext, value);
             },
+            defaultValue: false,
           ),
           // Windows HDR 直通 / 10-bit 输出（docs/plans/2026-08-30-video-hdr-passthrough.md）：
           // auto = 显示器 HDR 开着且片源 HDR 才走宿主窗直通；always = 只要在 Windows
@@ -234,6 +243,7 @@ SettingsDestination buildVideoDestination() {
                 ) async {
                   await setVideoHdrOutputModeDual(settingsContext, mode);
                 },
+            defaultValue: VideoHdrOutputMode.auto,
           ),
         ],
       ),
@@ -259,6 +269,7 @@ SettingsDestination buildVideoDestination() {
                 (VideoMpvConfig c) => c.copyWith(highQuality: value),
               );
             },
+            defaultValue: VideoMpvConfig.defaults.highQuality,
           ),
           // S 形上采样（sigmoid-upscaling）：与「画质增强/着色器等级」并列的一档可选画质
           // 开关（TODO-1120/BUG-538）。默认关（性能占用偏大，见 VideoMpvConfig.defaults）。
@@ -308,6 +319,7 @@ SettingsDestination buildVideoDestination() {
                 (VideoMpvConfig c) => c.copyWith(hwdec: value),
               );
             },
+            defaultValue: VideoMpvConfig.defaults.hwdec,
           ),
           _videoMpvSwitchItem(
             id: 'video.quality.deband',
@@ -433,6 +445,7 @@ SettingsDestination buildVideoDestination() {
                 (VideoMpvConfig c) => c.copyWith(hdrToneMapping: value),
               );
             },
+            defaultValue: VideoMpvConfig.defaults.hdrToneMapping,
           ),
           SettingsSegmentedItem<String>(
             id: 'video.hdr.compute_peak',
@@ -467,6 +480,7 @@ SettingsDestination buildVideoDestination() {
                 (VideoMpvConfig c) => c.copyWith(hdrComputePeak: value),
               );
             },
+            defaultValue: VideoMpvConfig.defaults.hdrComputePeak,
           ),
         ],
       ),
@@ -501,6 +515,7 @@ SettingsDestination buildVideoDestination() {
                 (VideoMpvConfig c) => c.copyWith(videoRotate: value),
               );
             },
+            defaultValue: VideoMpvConfig.defaults.videoRotate,
           ),
           SettingsSegmentedItem<String>(
             id: 'video.geometry.aspect',
@@ -533,6 +548,7 @@ SettingsDestination buildVideoDestination() {
                 (VideoMpvConfig c) => c.copyWith(aspectOverride: value),
               );
             },
+            defaultValue: VideoMpvConfig.defaults.aspectOverride,
           ),
           SettingsSliderItem(
             id: 'video.geometry.zoom',
@@ -563,6 +579,7 @@ SettingsDestination buildVideoDestination() {
                 (VideoMpvConfig c) => c.copyWith(videoZoom: v),
               );
             },
+            defaultValue: VideoMpvConfig.defaults.videoZoom,
           ),
           SettingsSliderItem(
             id: 'video.geometry.panscan',
@@ -592,6 +609,7 @@ SettingsDestination buildVideoDestination() {
                 (VideoMpvConfig c) => c.copyWith(panscan: v),
               );
             },
+            defaultValue: VideoMpvConfig.defaults.panscan,
           ),
         ],
       ),
@@ -712,6 +730,7 @@ SettingsDestination buildVideoDestination() {
                 (VideoSubtitleStyle s) => s.copyWith(fontSize: v),
               );
             },
+            defaultValue: VideoSubtitleStyle.defaults.fontSize,
           ),
           SettingsStepperItem(
             id: 'video.subtitle.font_weight',
@@ -795,6 +814,7 @@ SettingsDestination buildVideoDestination() {
                 (VideoSubtitleStyle s) => s.copyWith(backgroundOpacity: v),
               );
             },
+            defaultValue: VideoSubtitleStyle.defaults.backgroundOpacity,
           ),
           // 主字幕垂直锚定（TODO-2838）：底部（默认，历史行为）/ 顶部。顶锚时下面的
           // 「垂直位置」量纲变为**离顶距离**（镜像副字幕置顶的既有消费路径）；ASS 自带
@@ -832,6 +852,7 @@ SettingsDestination buildVideoDestination() {
                 ),
               );
             },
+            defaultValue: VideoSubtitleStyle.defaults.mainAnchor.name,
           ),
           SettingsSliderItem(
             id: 'video.subtitle.position',
@@ -863,6 +884,7 @@ SettingsDestination buildVideoDestination() {
                 (VideoSubtitleStyle s) => s.copyWith(bottomPadding: v),
               );
             },
+            defaultValue: VideoSubtitleStyle.defaults.bottomPadding,
           ),
           // 副字幕垂直位置：与上面的主字幕位置**同量纲、各自独立**（此前两层共用
           // `bottomPadding` 一个字段——主字幕拿它当底距、置顶的副字幕拿它当顶距，调一个
@@ -944,6 +966,7 @@ SettingsDestination buildVideoDestination() {
               await setVideoRespectAssStyleDual(settingsContext, value);
               settingsContext.refresh();
             },
+            defaultValue: true,
           ),
         ],
       ),
@@ -978,6 +1001,7 @@ SettingsDestination buildVideoDestination() {
                 ) async {
                   await setVideoSubtitleObscureModeDual(settingsContext, mode);
                 },
+            defaultValue: VideoSubtitleObscureMode.none,
           ),
           // TODO-1382：副字幕遮蔽三态（镜像主字幕，独立开关）。快捷键 Shift+G 循环、
           // Shift+H 隐藏。
@@ -1007,6 +1031,7 @@ SettingsDestination buildVideoDestination() {
                     mode,
                   );
                 },
+            defaultValue: VideoSubtitleObscureMode.none,
           ),
           // 从遮蔽模式里拆出来的独立开关（默认开 = 历史行为）：遮蔽模式管「遮什么」
           // （模糊 / 隐藏），本开关管「能不能临时看一眼」。关掉后遮蔽在整句期间恒定
@@ -1024,6 +1049,7 @@ SettingsDestination buildVideoDestination() {
               await setVideoSubtitleObscureRevealDual(settingsContext, value);
               settingsContext.refresh();
             },
+            defaultValue: true,
           ),
           // 「字幕暂停播放模式」从「播放」分区移到「字幕」分区（句尾自动暂停按字幕 cue
           // 边界暂停，语义归字幕）。VideoPlacement（subtitle order 30）不变——面板投影
@@ -1042,6 +1068,7 @@ SettingsDestination buildVideoDestination() {
                     c.copyWith(pauseAtSubtitleEnd: value),
               );
             },
+            defaultValue: VideoAsbplayerConfig.defaults.pauseAtSubtitleEnd,
           ),
           // 下载字幕按内嵌字幕轨自动对齐（embedded_reference_subtitle_sync.dart）。
           // 纯下载期行为，不进播放页面板（无 VideoPlacement）。
@@ -1057,6 +1084,7 @@ SettingsDestination buildVideoDestination() {
                 value,
               );
             },
+            defaultValue: true,
           ),
           // ── 自动获取字幕 ─────────────────────────────────────────────────
           // 这个开关的主要价值是**让用户知道这件事存在**（BUG-1698）。
@@ -1077,6 +1105,7 @@ SettingsDestination buildVideoDestination() {
               await settingsContext.appModel
                   .setVideoSubtitleBackfillAfterScrape(value);
             },
+            defaultValue: true,
           ),
           // BUG-2728 的自动上传：远端（互联 host）视频上导入 / 重定时的字幕上传到
           // host 并设为该集默认——会改掉所有 peer 看到的默认字幕，所以要能关。
@@ -1092,6 +1121,7 @@ SettingsDestination buildVideoDestination() {
               await settingsContext.appModel
                   .setVideoSubtitleAutoUploadToHost(value);
             },
+            defaultValue: true,
           ),
           // ── 在线字幕来源 → 「在线服务」分区 ─────────────────────────────
           // Jimaku / OpenSubtitles 曾在这里与下载页各挂一份同一组件（BUG-1712 的
@@ -1152,6 +1182,7 @@ SettingsDestination buildVideoDestination() {
                 (VideoMpvConfig c) => c.copyWith(audioChannels: value),
               );
             },
+            defaultValue: VideoMpvConfig.defaults.audioChannels,
           ),
           _videoMpvSwitchItem(
             id: 'video.audio.normalize_downmix',
@@ -1165,6 +1196,22 @@ SettingsDestination buildVideoDestination() {
             read: (VideoMpvConfig c) => c.normalizeDownmix,
             write: (VideoMpvConfig c, bool v) =>
                 c.copyWith(normalizeDownmix: v),
+          ),
+          // 杜比 / DTS 直通：默认关，不做「自动」——为什么见
+          // [VideoMpvConfig.audioPassthrough]。
+          _videoMpvSwitchItem(
+            id: 'video.audio.passthrough',
+            title: t.video_setting_mpv_passthrough,
+            subtitle: t.video_setting_mpv_passthrough_hint,
+            icon: FushiIcons.audio,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 195,
+              section: t.video_setting_mpv_group_audio,
+            ),
+            read: (VideoMpvConfig c) => c.audioPassthrough,
+            write: (VideoMpvConfig c, bool v) =>
+                c.copyWith(audioPassthrough: v),
           ),
         ],
       ),
@@ -1203,6 +1250,7 @@ SettingsDestination buildVideoDestination() {
                     c.copyWith(doubleTapSeekSeconds: value),
               );
             },
+            defaultValue: VideoAsbplayerConfig.defaults.doubleTapSeekSeconds,
           ),
           // 点击画面是否切换播放/暂停（默认开 = 旧行为）。桌面对应控制条主题的
           // `playAndPauseOnTap`（单击画面），移动端对应双击中带的暂停 fallback
@@ -1224,6 +1272,7 @@ SettingsDestination buildVideoDestination() {
                     c.copyWith(tapTogglesPlayback: value),
               );
             },
+            defaultValue: VideoAsbplayerConfig.defaults.tapTogglesPlayback,
           ),
           // 长按倍速 / 跳转步长 / 句末暂停都落在 videoAsbplayerConfig；无 host 时是
           // 全局默认（下次播放生效），host 在场经页面回调即时生效（与播放页内调一致）。
@@ -1251,6 +1300,7 @@ SettingsDestination buildVideoDestination() {
                     c.copyWith(longPressSpeed: snapVideoLongPressSpeed(v)),
               );
             },
+            defaultValue: VideoAsbplayerConfig.defaults.longPressSpeed,
           ),
           SettingsStepperItem(
             id: 'video.playback.seek_seconds',
@@ -1270,6 +1320,7 @@ SettingsDestination buildVideoDestination() {
                     c.copyWith(seekSeconds: v.round().clamp(1, 30)),
               );
             },
+            defaultValue: VideoAsbplayerConfig.defaults.seekSeconds.toDouble(),
           ),
           // BUG-1485：触屏横滑调进度的灵敏度。旧实现把「每像素跨多少时间」按视频总
           // 时长比例换算，长片一拽就起飞；换算模型改成「拖过整屏 = 固定一段时长」
@@ -1303,6 +1354,7 @@ SettingsDestination buildVideoDestination() {
                         c.copyWith(dragSeekSensitivity: value),
                   );
                 },
+            defaultValue: VideoAsbplayerConfig.defaults.dragSeekSensitivity,
           ),
           // issue #1525：移动端左半区竖滑调亮度 / 右半区竖滑调音量各自可关（默认开 =
           // 旧行为），常误触的用户改用系统亮度条与实体音量键。仅移动端可见——桌面控制条
@@ -1323,6 +1375,7 @@ SettingsDestination buildVideoDestination() {
                     c.copyWith(brightnessSwipeGesture: value),
               );
             },
+            defaultValue: VideoAsbplayerConfig.defaults.brightnessSwipeGesture,
           ),
           SettingsSwitchItem(
             id: 'video.playback.volume_swipe_gesture',
@@ -1339,6 +1392,7 @@ SettingsDestination buildVideoDestination() {
                 (VideoAsbplayerConfig c) => c.copyWith(volumeSwipeGesture: value),
               );
             },
+            defaultValue: VideoAsbplayerConfig.defaults.volumeSwipeGesture,
           ),
           // 「重置控件布局」原独占一个「控件」section（仅此一项）；单项撑一个分区
           // 是欠填充结构，并入「控制与手势」尾部。面板里归「控制」分类、排在拖拽编辑器后。
@@ -1386,6 +1440,7 @@ SettingsDestination buildVideoDestination() {
                       .setVideoScreenshotDestination(destination);
                   settingsContext.refresh();
                 },
+            defaultValue: VideoScreenshotDestination.ask,
           ),
           // 目录行常驻可见（不按去向 gate）：用户通常先把目录选好、再把去向切到
           // 「保存到目录」，gate 掉会逼出「先切去向才能设目录」的鸡生蛋。
@@ -1462,6 +1517,7 @@ SettingsDestination buildVideoDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await setVideoDanmakuEnabledDual(settingsContext, value);
             },
+            defaultValue: false,
           ),
           SettingsSwitchItem(
             id: 'video.danmaku.online',
@@ -1492,6 +1548,7 @@ SettingsDestination buildVideoDestination() {
             onChanged: (SettingsContext settingsContext, double v) async {
               await setVideoDanmakuMaxActiveDual(settingsContext, v.round());
             },
+            defaultValue: kDefaultVideoDanmakuMaxActive.toDouble(),
           ),
           // 自建/镜像 Dandanplay 服务器地址是第三方端点，已迁到「在线服务」分区
           // （settings_schema_services.dart）；弹幕行为开关留在这里。
@@ -1521,6 +1578,7 @@ SettingsDestination buildVideoDestination() {
                 value,
               );
             },
+            defaultValue: true,
           ),
           // 主资料源二选一；另一源恒为兜底（MAL ↔ TMDB）。来源级可在来源
           // 刮削设置里覆盖。改后经 commitVideoMetadataRuntimePreference 重建
@@ -1670,6 +1728,7 @@ SettingsDestination buildVideoDestination() {
             title: t.video_source_scrape_clear_all,
             subtitle: t.video_source_scrape_clear_all_hint,
             icon: Icons.delete_sweep_outlined,
+            destructive: true,
             onTap: (SettingsContext settingsContext) async {
               await showClearAllVideoScrapeRecordsAction(
                 context: settingsContext.context,
@@ -1712,6 +1771,7 @@ SettingsDestination buildVideoDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.videoMpvLuaScriptsEnabled,
             onChanged: _setVideoLuaScriptsEnabled,
+            defaultValue: false,
           ),
           SettingsActionItem(
             id: 'video.player.mpv_lua_scripts_import',
@@ -1856,6 +1916,7 @@ SettingsDestination buildVideoDestination() {
                     a.copyWith(speedStep: double.parse(v.toStringAsFixed(2))),
               );
             },
+            defaultValue: VideoAsbplayerConfig.defaults.speedStep,
           ),
           // TODO-1351：音频轨切换区（「音频」分类，参考「检查器」音频 tab）。
           SettingsCustomItem(
@@ -2126,6 +2187,7 @@ SettingsSwitchItem _videoMpvSwitchItem({
         (VideoMpvConfig config) => write(config, value),
       );
     },
+    defaultValue: read(VideoMpvConfig.defaults),
   );
 }
 
@@ -2168,6 +2230,7 @@ SettingsSliderItem _videoMpvColorSliderItem({
         (VideoMpvConfig config) => write(config, v.round()),
       );
     },
+    defaultValue: read(VideoMpvConfig.defaults).toDouble(),
   );
 }
 
@@ -2208,6 +2271,7 @@ SettingsSliderItem _videoDanmakuStyleSliderItem({
     onChangeEnd: (SettingsContext c, double v) async {
       await commitVideoDanmakuStyle(c, (VideoDanmakuStyle s) => write(s, v));
     },
+    defaultValue: read(VideoDanmakuStyle.defaults),
   );
 }
 

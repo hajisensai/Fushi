@@ -1,13 +1,14 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/collections/collection_detail_layout.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
+import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
-import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
-import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
 import 'package:fushi/src/media/video/metadata/video_credit_rail.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
@@ -17,6 +18,8 @@ import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -45,6 +48,7 @@ class VideoWorkDetailPage extends StatefulWidget {
     this.deleteMembersStatisticsSubtitle,
     this.onRescrapeCollection,
     this.onChooseTmdbOrdering,
+    this.onPickOnlineCover,
     super.key,
   });
 
@@ -65,7 +69,8 @@ class VideoWorkDetailPage extends StatefulWidget {
     List<VideoBookRow> members,
     bool deleteLocalFiles,
     bool deleteStatistics,
-  )? onDeleteMembersMedia;
+  )?
+  onDeleteMembersMedia;
 
   /// 透传给 [MediaCollectionDetailPage.deleteMembersLocalFilesSubtitle]：
   /// 「同时删除其中的视频」之下的二级「同时删除本地文件」勾选说明。
@@ -77,11 +82,14 @@ class VideoWorkDetailPage extends StatefulWidget {
   /// 透传给合集详情页的「重新刮削资料与封面」（刮削 controller 归 HomePage，
   /// 由库页注入）。null = 不渲染该菜单项。
   final Future<void> Function(MediaCollectionRow collection)?
-      onRescrapeCollection;
+  onRescrapeCollection;
 
   /// 透传给合集详情页的「TMDB 集编排」（备选排序）。null = 不渲染该菜单项。
   final Future<void> Function(MediaCollectionRow collection)?
-      onChooseTmdbOrdering;
+  onChooseTmdbOrdering;
+
+  /// 透传给合集详情页的「在线搜索封面」（BUG-2999）。null = 不渲染该菜单项。
+  final Future<File?> Function(String workTitle)? onPickOnlineCover;
 
   @override
   State<VideoWorkDetailPage> createState() => _VideoWorkDetailPageState();
@@ -126,60 +134,76 @@ class _VideoWorkDetailPageState extends State<VideoWorkDetailPage> {
     if (collectionId != null) {
       return FutureBuilder<MediaCollectionRow?>(
         future: _collectionFuture,
-        builder: (BuildContext context,
-            AsyncSnapshot<MediaCollectionRow?> snapshot) {
-          final MediaCollectionRow? collection = snapshot.data;
-          if (snapshot.connectionState != ConnectionState.done) {
-            // BUG-2230：同上 —— 加载态与它下面的 `collection == null` 终态口径一致，
-            // 都带 AppBar。future 悬挂时这里就是用户能看到的全部界面。
-            return Scaffold(
-              appBar: FushiAppBar(),
-              body: Center(child: adaptiveIndicator(context: context)),
-            );
-          }
-          if (collection == null) {
-            return Scaffold(
-              appBar: FushiAppBar(),
-              body: Center(
-                child: Text(t.video_load_failed_not_found),
-              ),
-            );
-          }
-          return MediaCollectionDetailPage(
-            database: widget.database,
-            videoSpecs: widget.videoSpecs,
-            collection: collection,
-            // 成员解析走共享的 [loadCollectionEpisodeSlots]：合集清单是跨端 union，
-            // 「本机没有这一行」不等于「这一集不存在」（BUG-1704）。
-            loadEpisodes: () => loadCollectionEpisodeSlots(
-              repository: widget.repository,
-              collectionId: collection.id,
-              loadRemoteVideos: widget.remote?.loadRemoteVideos,
-            ),
-            remote: widget.remote,
-            onOpenEpisode: (VideoBookRow episode) {
-              Navigator.push<void>(
-                context,
-                adaptivePageRoute<void>(
-                  context: context,
-                  builder: (_) => VideoFushiPage.neutralized(
-                    bookUid: episode.bookUid,
-                    repo: widget.repository,
-                    playlistCollectionId: collection.id,
-                  ),
+        builder:
+            (
+              BuildContext context,
+              AsyncSnapshot<MediaCollectionRow?> snapshot,
+            ) {
+              final MediaCollectionRow? collection = snapshot.data;
+              if (snapshot.connectionState != ConnectionState.done) {
+                // BUG-2230：同上 —— 加载态与它下面的 `collection == null` 终态口径一致，
+                // 都带 AppBar。future 悬挂时这里就是用户能看到的全部界面。
+                return Scaffold(
+                  appBar: FushiAppBar(),
+                  body: Center(child: adaptiveIndicator(context: context)),
+                );
+              }
+              if (collection == null) {
+                return Scaffold(
+                  appBar: FushiAppBar(),
+                  body: Center(child: Text(t.video_load_failed_not_found)),
+                );
+              }
+              return MediaCollectionDetailPage(
+                database: widget.database,
+                videoSpecs: widget.videoSpecs,
+                collection: collection,
+                // 成员解析走共享的 [loadCollectionEpisodeSlots]：合集清单是跨端 union，
+                // 「本机没有这一行」不等于「这一集不存在」（BUG-1704）。
+                loadEpisodes: () => loadCollectionEpisodeSlots(
+                  repository: widget.repository,
+                  collectionId: collection.id,
+                  loadRemoteVideos: widget.remote?.loadRemoteVideos,
                 ),
+                remote: widget.remote,
+                onOpenEpisode: (VideoBookRow episode) {
+                  Navigator.push<void>(
+                    context,
+                    adaptivePageRoute<void>(
+                      context: context,
+                      builder: (_) => VideoFushiPage.neutralized(
+                        bookUid: episode.bookUid,
+                        repo: widget.repository,
+                        playlistCollectionId: collection.id,
+                      ),
+                    ),
+                  );
+                },
+                onOpenDiscMenu: (VideoBookRow episode) {
+                  Navigator.push<void>(
+                    context,
+                    adaptivePageRoute<void>(
+                      context: context,
+                      builder: (_) => VideoFushiPage.neutralized(
+                        bookUid: episode.bookUid,
+                        repo: widget.repository,
+                        playlistCollectionId: collection.id,
+                        openBlurayMenu: true,
+                      ),
+                    ),
+                  );
+                },
+                onChanged: widget.onChanged,
+                onDeleteMembersMedia: widget.onDeleteMembersMedia,
+                deleteMembersLocalFilesSubtitle:
+                    widget.deleteMembersLocalFilesSubtitle,
+                deleteMembersStatisticsSubtitle:
+                    widget.deleteMembersStatisticsSubtitle,
+                onRescrapeCollection: widget.onRescrapeCollection,
+                onChooseTmdbOrdering: widget.onChooseTmdbOrdering,
+                onPickOnlineCover: widget.onPickOnlineCover,
               );
             },
-            onChanged: widget.onChanged,
-            onDeleteMembersMedia: widget.onDeleteMembersMedia,
-            deleteMembersLocalFilesSubtitle:
-                widget.deleteMembersLocalFilesSubtitle,
-            deleteMembersStatisticsSubtitle:
-                widget.deleteMembersStatisticsSubtitle,
-            onRescrapeCollection: widget.onRescrapeCollection,
-            onChooseTmdbOrdering: widget.onChooseTmdbOrdering,
-          );
-        },
       );
     }
     return _StandaloneVideoWorkDetail(
@@ -245,13 +269,15 @@ class _StandaloneVideoWorkDetailState
   }
 
   Future<void> _load() async {
-    final VideoBookRow? book =
-        await widget.repository.getByBookUid(widget.bookUid);
-    final VideoMetadataWorkRow? work =
-        await widget.database.getVideoMetadataWorkByBook(widget.bookUid);
+    final VideoBookRow? book = await widget.repository.getByBookUid(
+      widget.bookUid,
+    );
+    final VideoMetadataWorkRow? work = await widget.database
+        .getVideoMetadataWorkByBook(widget.bookUid);
     final VideoMetadataWorkCredits? credits =
-        await VideoMetadataCreditRepository(widget.database)
-            .forBook(widget.bookUid);
+        await VideoMetadataCreditRepository(
+          widget.database,
+        ).forBook(widget.bookUid);
     final List<VideoMetadataTermRow> terms = work == null
         ? const <VideoMetadataTermRow>[]
         : await widget.database.getVideoMetadataTermsForWork(work.id);
@@ -290,175 +316,118 @@ class _StandaloneVideoWorkDetailState
     if (_loading) {
       // BUG-2230：加载态与它的兄弟终态（下面 `book == null` 分支）口径必须一致 ——
       // 都带 AppBar（= 返回键）。桌面端没有系统返回键，`_load` 若久久不返回，
-      // 无顶栏的转圈就是一个没有出口的页面。
+      // 无顶栏的骨架就是一个没有出口的页面。
       return Scaffold(
         appBar: FushiAppBar(),
-        body: Center(child: adaptiveIndicator(context: context)),
+        body: const MediaDetailSkeleton(rows: 3),
       );
     }
     final VideoBookRow? book = _book;
     if (book == null) {
       return Scaffold(
         appBar: FushiAppBar(),
-        body: Center(child: Text(t.video_load_failed_not_found)),
+        body: FushiPlaceholderMessage(
+          icon: FushiIcons.searchOff,
+          tone: FushiPlaceholderTone.error,
+          message: t.video_load_failed_not_found,
+        ),
       );
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final VideoMetadataWorkRow? work = _work;
-    final ImageProvider? poster = _image('poster') ??
+    final ImageProvider? poster =
+        _image('poster') ??
+        _image('cover') ??
         resolveMediaCoverImage(
-            kind: MediaKind.video, localPath: book.coverPath);
-    final ImageProvider? backdrop = _image('backdrop') ?? poster;
+          kind: MediaKind.video,
+          localPath: book.coverPath,
+        );
+    final ImageProvider? fanart = _image('backdrop');
+    final String title = work?.title ?? book.title;
+    final String? originalTitle = work?.originalTitle;
+    final String? status = work?.status?.trim();
+    final double? rating = work?.rating;
+    final int? runtime = work?.runtimeMinutes;
+    // M3E 作品详情：宽屏两栏（左 hero sticky、右规格 / 资料 / 人物 / 附件），
+    // 窄屏单列。大背景 fanart 优先、没有就拿海报模糊垫底（与系列详情同一判据）。
     return Scaffold(
+      // 背景铺满到窗口顶端（浮动顶栏下不留整宽底带），让位由布局处理。
       extendBodyBehindAppBar: true,
-      appBar: FushiAppBar(backgroundColor: Colors.transparent),
-      body: ListView(
-        padding: EdgeInsets.zero,
-        children: <Widget>[
-          SizedBox(
-            height:
-                (MediaQuery.sizeOf(context).height * 0.62).clamp(400.0, 620.0),
-            child: Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                if (backdrop != null)
-                  LandscapeCoverImage(
-                    image: backdrop,
-                    overlays: const <Widget>[
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: <Color>[
-                              Color(0x22000000),
-                              Color(0xE8000000),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    tokens.spacing.page,
-                    kToolbarHeight + tokens.spacing.page,
-                    tokens.spacing.page,
-                    tokens.spacing.section,
-                  ),
-                  // 2026-10 体验优化：海报只在宽度 ≥ 900 时出现（与
-                  // CollectionDetailHero 同一门槛）。窄屏固定 210 宽的海报会把
-                  // 文字列挤到约 78dp，标题被压成竖排字。
-                  child: LayoutBuilder(
-                    builder: (BuildContext context, BoxConstraints box) {
-                      final ImageProvider? heroPoster =
-                          box.maxWidth >= 900 ? poster : null;
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: <Widget>[
-                          if (heroPoster != null)
-                            SizedBox(
-                              width: 210,
-                              child: AspectRatio(
-                                aspectRatio: 2 / 3,
-                                child: ClipRRect(
-                                  borderRadius: FushiBorderRadius.card,
-                                  child: PortraitCoverImage(image: heroPoster),
-                                ),
-                              ),
-                            ),
-                          if (heroPoster != null)
-                            SizedBox(width: tokens.spacing.section),
-                          Expanded(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                Text(
-                                  work?.title ?? book.title,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .displaySmall
-                                      ?.copyWith(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                ),
-                                if (work?.originalTitle case final String title)
-                                  Text(
-                                    title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                    color: Colors.white70,
-                                  ),
-                                  ),
-                                const SizedBox(height: 10),
-                                Text(
-                                  <String>[
-                                    if (work?.year != null) '${work!.year}',
-                                    if (work?.status?.isNotEmpty == true)
-                                      work!.status!,
-                                    if (work?.rating != null)
-                                      '★ ${work!.rating!.toStringAsFixed(1)}',
-                                    if (work?.runtimeMinutes != null)
-                                      t.video_runtime_minutes(
-                                        n: work!.runtimeMinutes!,
-                                      ),
-                                  ].join(' · '),
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                FushiFilledButton.icon(
-                                  onPressed: () => _playBook(book),
-                                  icon: const FushiIcon(Icons.play_arrow_rounded),
-                                  label: Text(book.lastPositionMs > 0
-                                      ? t.video_continue_watching
-                                      : t.collection_play),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
+      appBar: FushiAppBar(),
+      body: FushiEntranceScope(
+        child: MediaDetailLayout(
+          backdrop: collectionHeroBackdropImage(
+            backdrop: fanart,
+            cover: poster,
           ),
-          if (work?.overview?.trim().isNotEmpty == true)
-            Padding(
-              padding: EdgeInsets.all(tokens.spacing.page),
-              child: SelectableText(
-                work!.overview!,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      height: 1.55,
-                    ),
+          backdropBlur: collectionHeroBackdropBlur(backdrop: fanart),
+          bottomPadding: tokens.spacing.page,
+          header: CollectionDetailHero(
+            backdrop: fanart,
+            cover: poster,
+            title: title,
+            originalTitle: originalTitle == title ? null : originalTitle,
+            airDate: work?.premiereDate,
+            chips: <MediaDetailChip>[
+              if (work?.year case final int year)
+                MediaDetailChip('$year', icon: FushiIcons.calendar),
+              if (status != null && status.isNotEmpty)
+                MediaDetailChip(status, tone: MediaDetailChipTone.secondary),
+              if (rating != null && rating > 0)
+                MediaDetailChip(
+                  '★ ${rating.toStringAsFixed(1)}',
+                  tone: MediaDetailChipTone.primary,
+                ),
+              if (runtime != null && runtime > 0)
+                MediaDetailChip(
+                  t.video_runtime_minutes(n: runtime),
+                  icon: FushiIcons.timer,
+                ),
+            ],
+            summary: work?.overview,
+            playLabel: book.lastPositionMs > 0
+                ? t.video_continue_watching
+                : t.collection_play,
+            playButtonKey: const ValueKey<String>('video-work-play'),
+            onPlay: () => _playBook(book),
+            secondaryActions: <Widget>[
+              if (blurayDiscRootForPlaylistPath(book.videoPath) != null)
+                MediaDetailSecondaryButton(
+                  buttonKey: const ValueKey<String>('video-work-disc-menu'),
+                  icon: FushiIcons.toc,
+                  label: t.video_disc_open_menu,
+                  onPressed: () => _playBook(book, openBlurayMenu: true),
+                ),
+            ],
+          ),
+          slivers: <Widget>[
+            // v95：技术规格。这一页是「一个文件 = 一部作品」，规格无歧义，摊开
+            // 显示。探不到时整块不占位（VideoSpecsPanel 内部返回 shrink）。
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  tokens.spacing.page,
+                  tokens.spacing.section,
+                  tokens.spacing.page,
+                  0,
+                ),
+                child: VideoSpecsPanel(
+                  service: widget.videoSpecs,
+                  filePath: book.videoPath,
+                ),
               ),
             ),
-          // v95：技术规格。这一页是「一个文件 = 一部作品」，规格无歧义，摊开显示。
-          // 探不到时整块不占位（VideoSpecsPanel 内部返回 shrink）。
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-            child: VideoSpecsPanel(
-              service: widget.videoSpecs,
-              filePath: book.videoPath,
-            ),
-          ),
-          _buildTerms(tokens),
-          _buildCredits(tokens),
-          _buildExtras(tokens),
-          SizedBox(height: tokens.spacing.page),
-        ],
+            SliverToBoxAdapter(child: _buildTerms(tokens)),
+            SliverToBoxAdapter(child: _buildCredits(tokens)),
+            SliverToBoxAdapter(child: _buildExtras(tokens)),
+          ],
+        ),
       ),
     );
   }
 
+  /// 作品资料（类型 / 关键词 / 制作公司 / 地区 / 外部编号）：区块标题 + 元信息
+  /// chip 行。
   Widget _buildTerms(FushiDesignTokens tokens) {
     if (_terms.isEmpty && (_credits?.identities.isEmpty ?? true)) {
       return const SizedBox.shrink();
@@ -469,15 +438,27 @@ class _StandaloneVideoWorkDetailState
     }
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          for (final MapEntry<String, List<String>> entry in grouped.entries)
-            FushiChip(label: Text(_termChipText(entry.key, entry.value))),
-          for (final VideoMetadataIdentitySummary id
-              in _credits?.identities ?? const <VideoMetadataIdentitySummary>[])
-            FushiChip(label: Text('${id.provider.toUpperCase()}: ${id.externalId}')),
+          MediaDetailSectionHeader(t.video_work_details),
+          MediaDetailChipRow(
+            chips: <MediaDetailChip>[
+              for (final MapEntry<String, List<String>> entry
+                  in grouped.entries)
+                MediaDetailChip(
+                  _termChipText(entry.key, entry.value),
+                  tone: MediaDetailChipTone.secondary,
+                ),
+              for (final VideoMetadataIdentitySummary id
+                  in _credits?.identities ??
+                      const <VideoMetadataIdentitySummary>[])
+                MediaDetailChip(
+                  '${id.provider.toUpperCase()}: ${id.externalId}',
+                  icon: FushiIcons.link,
+                ),
+            ],
+          ),
         ],
       ),
     );
@@ -494,59 +475,54 @@ class _StandaloneVideoWorkDetailState
       'country' => t.video_work_countries,
       _ => null,
     };
-    final List<String> values =
-        kind == 'country' ? formatVideoCountriesForDisplay(names) : names;
+    final List<String> values = kind == 'country'
+        ? formatVideoCountriesForDisplay(names)
+        : names;
     final String joined = values.join(' · ');
     return label == null ? joined : '$label: $joined';
   }
 
-  /// 与合集详情页同一份照片轨道：配音 / 演职人员分两条。此前这里只画文字
-  /// Chip，照片无论刮到没刮到都不显示（BUG-2612）。
+  /// 与合集详情页同一份人物表（圆形头像横滑）：配音 / 演职人员分两条。此前这里
+  /// 只画文字 Chip，照片无论刮到没刮到都不显示（BUG-2612）。
   Widget _buildCredits(FushiDesignTokens tokens) {
     final List<VideoMetadataCreditSummary> all =
         _credits?.credits ?? const <VideoMetadataCreditSummary>[];
     final List<VideoMetadataCreditSummary> voice = all
-        .where((VideoMetadataCreditSummary credit) =>
-            credit.creditKind == 'voice_actor')
+        .where(
+          (VideoMetadataCreditSummary credit) =>
+              credit.creditKind == 'voice_actor',
+        )
         .toList(growable: false);
     final List<VideoMetadataCreditSummary> crew = all
-        .where((VideoMetadataCreditSummary credit) =>
-            credit.creditKind != 'voice_actor')
+        .where(
+          (VideoMetadataCreditSummary credit) =>
+              credit.creditKind != 'voice_actor',
+        )
         .toList(growable: false);
     if (voice.isEmpty && crew.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: EdgeInsets.only(top: tokens.spacing.section),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          if (voice.isNotEmpty)
-            VideoCreditRail(
-              title: t.video_work_voice_roles,
-              credits: voice,
-              tokens: tokens,
-            ),
-          if (voice.isNotEmpty && crew.isNotEmpty)
-            SizedBox(height: tokens.spacing.section),
-          if (crew.isNotEmpty)
-            VideoCreditRail(
-              title: t.video_work_cast_crew,
-              credits: crew,
-              tokens: tokens,
-            ),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (voice.isNotEmpty)
+          VideoCreditRail(
+            title: t.video_work_voice_roles,
+            credits: voice,
+            tokens: tokens,
+          ),
+        if (crew.isNotEmpty)
+          VideoCreditRail(
+            title: t.video_work_cast_crew,
+            credits: crew,
+            tokens: tokens,
+          ),
+      ],
     );
   }
 
   Widget _buildExtras(FushiDesignTokens tokens) {
     if (_extras.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.section,
-        tokens.spacing.page,
-        0,
-      ),
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -554,25 +530,27 @@ class _StandaloneVideoWorkDetailState
           // 不再把原始 kind（trailer / featurette …）当副标题直接显示。
           for (final (String title, List<VideoMetadataExtraRow> rows)
               in <(String, List<VideoMetadataExtraRow>)>[
-            (t.video_work_trailers, _extras.where(_isTrailer).toList()),
-            (
-              t.video_work_extras,
-              _extras
-                  .where((VideoMetadataExtraRow e) => !_isTrailer(e))
-                  .toList(),
-            ),
-          ])
-            if (rows.isNotEmpty) ...<Widget>[
-              Text(title, style: Theme.of(context).textTheme.titleLarge),
-              SizedBox(height: tokens.spacing.card),
-              for (final VideoMetadataExtraRow extra in rows)
-                FushiListItem(
-                  padding: EdgeInsets.zero,
-                  leading: const FushiIcon(Icons.play_circle_outline),
-                  title: Text(extra.title),
-                  onTap: () => unawaited(_playExtra(extra)),
+                (t.video_work_trailers, _extras.where(_isTrailer).toList()),
+                (
+                  t.video_work_extras,
+                  _extras
+                      .where((VideoMetadataExtraRow e) => !_isTrailer(e))
+                      .toList(),
                 ),
-              SizedBox(height: tokens.spacing.card),
+              ])
+            if (rows.isNotEmpty) ...<Widget>[
+              MediaDetailSectionHeader(title, count: rows.length),
+              for (int i = 0; i < rows.length; i++)
+                MediaDetailItemRow(
+                  index: i,
+                  count: rows.length,
+                  title: rows[i].title,
+                  leading: FushiIcon(
+                    FushiIcons.playCircle,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  onTap: () => unawaited(_playExtra(rows[i])),
+                ),
             ],
         ],
       ),
@@ -583,7 +561,7 @@ class _StandaloneVideoWorkDetailState
   static bool _isTrailer(VideoMetadataExtraRow extra) =>
       extra.kind == 'trailer' || extra.kind == 'teaser';
 
-  void _playBook(VideoBookRow book) {
+  void _playBook(VideoBookRow book, {bool openBlurayMenu = false}) {
     Navigator.push<void>(
       context,
       adaptivePageRoute<void>(
@@ -591,6 +569,7 @@ class _StandaloneVideoWorkDetailState
         builder: (_) => VideoFushiPage.neutralized(
           bookUid: book.bookUid,
           repo: widget.repository,
+          openBlurayMenu: openBlurayMenu,
         ),
       ),
     );
@@ -598,8 +577,9 @@ class _StandaloneVideoWorkDetailState
 
   Future<void> _playExtra(VideoMetadataExtraRow extra) async {
     if (extra.bookUid != null) {
-      final VideoBookRow? local =
-          await widget.repository.getByBookUid(extra.bookUid!);
+      final VideoBookRow? local = await widget.repository.getByBookUid(
+        extra.bookUid!,
+      );
       if (local != null && mounted) _playBook(local);
       return;
     }

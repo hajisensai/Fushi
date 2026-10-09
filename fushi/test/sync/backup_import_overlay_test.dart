@@ -10,11 +10,12 @@
 // 本文件：widget 测试断言两阶段 UI（导入期遮罩 / 退出前确认按钮）+ 源码守卫锁住接线。
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart' show BackupImportPhase;
 import 'package:fushi/src/sync/backup_import_overlay_view.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiLinearProgressIndicator;
 
@@ -104,8 +105,8 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.byIcon(Icons.error_outline), findsOneWidget);
-      expect(find.byIcon(Icons.check_circle), findsNothing);
+      expect(find.byIcon(FushiIcons.error), findsOneWidget);
+      expect(find.byIcon(FushiIcons.success), findsNothing);
       expect(find.text('Backup import failed: out of memory'), findsOneWidget);
       // DB 已关闭，失败也必须给「立即重启」出口。
       expect(find.text(t.backup_import_restart_button), findsOneWidget);
@@ -180,7 +181,7 @@ void main() {
       expect(find.text(t.dialog_cancel), findsOneWidget);
       // 尚未结束/未确认，不得出现「立即重启」出口或绿✓。
       expect(find.text(t.backup_import_restart_button), findsNothing);
-      expect(find.byIcon(Icons.check_circle), findsNothing);
+      expect(find.byIcon(FushiIcons.success), findsNothing);
       // 背景非纯黑。
       final Scaffold scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
       expect(scaffold.backgroundColor, isNot(equals(Colors.black)));
