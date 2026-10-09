@@ -102,6 +102,8 @@ import 'package:fushi/src/media/manga/reader/manga_window_load_gate.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/reader/reader_chrome_controller.dart';
+import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
+import 'package:fushi/src/media/manga/reader/manga_chapter_drawer.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show ReaderHeaderAction, ReaderSideSheetSide, showReaderSideSheet;
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
@@ -2093,10 +2095,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (row.uid.isNotEmpty) {
       final MangaChapterStateRow? state = await appModel.database
           .getMangaChapterState(bookUid: row.uid, chapterKey: chapter.key);
-      // 读完的章重新打开时从头看，而不是停在最后一页——「重读」是明确意图。
-      if (state != null && state.readAt == null && state.lastPage > 0) {
-        initialPage = state.lastPage;
-      }
+      // 读完过的章怎么开由「重新打开时」偏好决定：跳过读完的章节（furthest）=
+      // 从头看（「重读」是明确意图）；最后阅读位置 = 落回上次停下的那一页，停在
+      // 末尾才从头。
+      initialPage = resolveMangaChapterResumePoint(
+        state,
+        target: MangaResumeTargetKey.fromKey(appModel.mangaResumeTarget),
+      );
     }
     if (!mounted) return;
     if (!downloaded) {
@@ -4864,48 +4869,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final int? target = await showReaderSideSheet<int>(
       context: context,
       side: ReaderSideSheetSide.left,
-      builder: (BuildContext sheetContext) => Column(
-        key: const ValueKey<String>('manga_reader_chapter_drawer'),
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-            child: Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    t.mihon_chapters_title,
-                    style: Theme.of(sheetContext).textTheme.titleMedium,
-                  ),
-                ),
-                FushiIconButtonControl(
-                  tooltip: MaterialLocalizations.of(
-                    sheetContext,
-                  ).closeButtonTooltip,
-                  onPressed: () => Navigator.of(sheetContext).pop(),
-                  icon: const FushiIcon(Icons.close),
-                ),
-              ],
-            ),
-          ),
-          const FushiDividerControl(height: 1),
-          Expanded(
-            child: SingleChildScrollView(
-              child: MangaChapterList(
-                entry: entry,
-                states: states,
-                newestFirst: true,
-                unreadOnly: false,
-                currentChapterKey: _shelfChapterKey,
-                downloadedChapterKeys: downloaded,
-                showHeader: false,
-                onChapterTap: (OnlineMangaChapter chapter) => Navigator.of(
-                  sheetContext,
-                ).pop(entry.indexOfChapterKey(chapter.key)),
-              ),
-            ),
-          ),
-        ],
+      builder: (BuildContext sheetContext) => MangaChapterDrawer(
+        entry: entry,
+        states: states,
+        currentChapterKey: _shelfChapterKey,
+        downloadedChapterKeys: downloaded,
+        initialNewestFirst: appModel.mangaChapterListNewestFirst,
+        onNewestFirstChanged: (bool value) =>
+            unawaited(appModel.setMangaChapterListNewestFirst(value)),
+        onClose: () => Navigator.of(sheetContext).pop(),
+        onChapterTap: (OnlineMangaChapter chapter) => Navigator.of(
+          sheetContext,
+        ).pop(entry.indexOfChapterKey(chapter.key)),
       ),
     );
     if (target != null && target >= 0) {

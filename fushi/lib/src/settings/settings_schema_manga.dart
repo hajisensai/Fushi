@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
@@ -337,6 +338,28 @@ SettingsDestination buildMangaDestination() {
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMangaChromeFloating(value),
             defaultValue: true,
+          ),
+          // 只影响在线漫画（有章节的条目）；本地卷恒按书级位置恢复，两种口径一致。
+          SettingsSegmentedItem<String>(
+            id: 'manga.resume_target',
+            title: t.manga_resume_target,
+            subtitle: t.manga_resume_target_subtitle,
+            icon: FushiIcons.bookmark,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: MangaResumeTarget.furthestProgress.key,
+                label: t.manga_resume_target_furthest,
+              ),
+              SettingsSegmentOption<String>(
+                value: MangaResumeTarget.lastPosition.key,
+                label: t.manga_resume_target_last,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                MangaResumeTargetKey.fromKey(c.appModel.mangaResumeTarget).key,
+            onChanged: (SettingsContext c, String value) =>
+                c.appModel.setMangaResumeTarget(value),
+            defaultValue: kMangaResumeTargetDefault,
           ),
           // 音量键只有 Android 侧 `MainActivity.dispatchKeyEvent` 会拦截并转发
           // （见 VolumeKeyChannel），iOS 与桌面端均没有实现，故只在 Android 显示。

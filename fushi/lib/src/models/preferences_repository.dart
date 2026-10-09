@@ -84,6 +84,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/update_check_cache.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
@@ -4052,6 +4053,28 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMangaWidePageSolo(bool value) async {
     await setPref('manga_wide_page_solo', value);
+    notifyListeners();
+  }
+
+  /// 在线漫画重新打开时回到哪里（`MangaResumeTarget` 的字符串键）。默认
+  /// `furthest` = 旧行为（读完过的章算过去了，按进度往前推）；`last` = 和书一样
+  /// 回到最后停下的那一页。
+  String get mangaResumeTarget =>
+      getPref('manga_resume_target', defaultValue: kMangaResumeTargetDefault)
+          as String;
+
+  Future<void> setMangaResumeTarget(String value) async {
+    await setPref('manga_resume_target', value);
+    notifyListeners();
+  }
+
+  /// 漫画章节列表（作品页 + 阅读器章节抽屉共用）的排序：true = 新→旧（源顺序，
+  /// 旧行为），false = 第 1 话在前。用户切一次两处都记住。
+  bool get mangaChapterListNewestFirst =>
+      getPref('manga_chapter_list_newest_first', defaultValue: true) as bool;
+
+  Future<void> setMangaChapterListNewestFirst(bool value) async {
+    await setPref('manga_chapter_list_newest_first', value);
     notifyListeners();
   }
 

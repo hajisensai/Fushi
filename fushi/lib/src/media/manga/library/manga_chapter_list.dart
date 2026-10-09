@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -53,7 +56,9 @@ class MangaChapterList extends StatelessWidget {
     required this.onChapterTap,
     super.key,
     this.currentChapterKey,
+    this.currentChapterAnchorKey,
     this.onSortToggled,
+    this.onJumpToCurrent,
     this.onUnreadOnlyToggled,
     this.onToggleRead,
     this.onMarkUpToRead,
@@ -79,8 +84,16 @@ class MangaChapterList extends StatelessWidget {
   final bool unreadOnly;
   final String? currentChapterKey;
 
+  /// 挂在当前章那一行上的 key：宿主拿它 `FushiFocusScroll.ensureVisible` 定位到当前章
+  /// （阅读器章节抽屉打开即滚到当前章、作品页「跳到当前章节」）。当前章被筛掉
+  /// （只看未读）时不挂，`currentContext` 为 null。
+  final GlobalKey? currentChapterAnchorKey;
+
   final void Function(OnlineMangaChapter chapter) onChapterTap;
   final VoidCallback? onSortToggled;
+
+  /// 区块标题里的「跳到当前章节」；null = 不出现（没有当前章 / 宿主不支持）。
+  final VoidCallback? onJumpToCurrent;
   final VoidCallback? onUnreadOnlyToggled;
   final void Function(OnlineMangaChapter chapter)? onToggleRead;
   final void Function(OnlineMangaChapter chapter)? onMarkUpToRead;
@@ -175,16 +188,28 @@ class MangaChapterList extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
+          // 纯图标省出标题位：几百话的作品标题行本来就挤（计数胶囊 + 只看未读），
+          // 当前方向进 tooltip / 无障碍名称，列表本身的话数顺序一眼可见。
           if (onSortToggled != null)
-            FushiTextButton.icon(
-              key: const ValueKey<String>('manga_chapter_sort'),
-              onPressed: onSortToggled,
-              icon: const FushiIcon(FushiIcons.sort),
-              label: Text(
-                newestFirst
+            Semantics(
+              label: newestFirst
+                  ? t.manga_series_sort_newest
+                  : t.manga_series_sort_oldest,
+              child: FushiIconButtonControl(
+                key: const ValueKey<String>('manga_chapter_sort'),
+                tooltip: newestFirst
                     ? t.manga_series_sort_newest
                     : t.manga_series_sort_oldest,
+                onPressed: onSortToggled,
+                icon: const FushiIcon(FushiIcons.swapVert),
               ),
+            ),
+          if (onJumpToCurrent != null)
+            FushiIconButtonControl(
+              key: const ValueKey<String>('manga_chapter_jump_current'),
+              tooltip: t.manga_chapter_list_jump_current,
+              onPressed: onJumpToCurrent,
+              icon: const FushiIcon(FushiIcons.myLocation),
             ),
           if (onUnreadOnlyToggled != null) ...<Widget>[
             const SizedBox(width: 4),
@@ -274,43 +299,50 @@ class MangaChapterList extends StatelessWidget {
     final int pagesTotal = job?.pagesTotal ?? 0;
     // 相邻章节常有相同下载状态，列表身份必须取章节 key；状态探针放在每章内部，
     // 避免重复 sibling key，且排序 / 下载状态变化时保留该章的进场状态。
+    final GlobalKey? anchor = current ? currentChapterAnchorKey : null;
     return FushiStaggeredEntrance(
       key: ValueKey<String>('manga_chapter_${chapter.key}'),
       index: index,
       child: KeyedSubtree(
         key: ValueKey<String>('manga_chapter_download_${download.name}'),
-        child: MediaDetailItemRow(
-          index: index,
-          count: count,
-          title: chapter.name,
-          number: _numberLabel(chapter),
-          subtitle: _buildSubtitle(chapter, state, partial),
-          // 几百话的表里一个行尾小图标扫不到，整行底色才是能一眼定位的信号。
-          current: current,
-          completed: read,
-          progress: partial && pageCount != null && pageCount > 0
-              ? (lastPage + 1) / pageCount
-              : null,
-          downloadState: switch (download) {
-            _ChapterDownloadState.notDownloaded =>
-              MediaDetailDownloadState.none,
-            _ChapterDownloadState.queued => MediaDetailDownloadState.queued,
-            _ChapterDownloadState.downloading =>
-              MediaDetailDownloadState.downloading,
-            _ChapterDownloadState.downloaded =>
-              MediaDetailDownloadState.downloaded,
-            _ChapterDownloadState.failed => MediaDetailDownloadState.failed,
-          },
-          downloadProgress:
-              download == _ChapterDownloadState.downloading && pagesTotal > 0
-              ? ((job?.pagesDone ?? 0) / pagesTotal).clamp(0.0, 1.0)
-              : null,
-          trailing: _buildMenu(chapter, download),
-          onTap: () => onChapterTap(chapter),
+        child: _anchored(
+          anchor,
+          MediaDetailItemRow(
+            index: index,
+            count: count,
+            title: chapter.name,
+            number: _numberLabel(chapter),
+            subtitle: _buildSubtitle(chapter, state, partial),
+            // 几百话的表里一个行尾小图标扫不到，整行底色才是能一眼定位的信号。
+            current: current,
+            completed: read,
+            progress: partial && pageCount != null && pageCount > 0
+                ? (lastPage + 1) / pageCount
+                : null,
+            downloadState: switch (download) {
+              _ChapterDownloadState.notDownloaded =>
+                MediaDetailDownloadState.none,
+              _ChapterDownloadState.queued => MediaDetailDownloadState.queued,
+              _ChapterDownloadState.downloading =>
+                MediaDetailDownloadState.downloading,
+              _ChapterDownloadState.downloaded =>
+                MediaDetailDownloadState.downloaded,
+              _ChapterDownloadState.failed => MediaDetailDownloadState.failed,
+            },
+            downloadProgress:
+                download == _ChapterDownloadState.downloading && pagesTotal > 0
+                ? ((job?.pagesDone ?? 0) / pagesTotal).clamp(0.0, 1.0)
+                : null,
+            trailing: _buildMenu(chapter, download),
+            onTap: () => onChapterTap(chapter),
+          ),
         ),
       ),
     );
   }
+
+  static Widget _anchored(GlobalKey? anchor, Widget child) =>
+      anchor == null ? child : KeyedSubtree(key: anchor, child: child);
 
   /// 序号胶囊里的话数：整数话不带小数点；源没给（Mihon 用 -1 表示未知）就不画。
   static String? _numberLabel(OnlineMangaChapter chapter) {
@@ -445,5 +477,71 @@ class MangaChapterList extends StatelessWidget {
     final String month = date.month.toString().padLeft(2, '0');
     final String day = date.day.toString().padLeft(2, '0');
     return '${date.year}-$month-$day';
+  }
+}
+
+/// 把挂了 [anchor]（[MangaChapterList.currentChapterAnchorKey]）的当前章行滚进
+/// 视口，停在视口偏上（30%）处，上下文各留几话。返回是否找到当前章行（被「只看
+/// 未读」筛掉 / 没有当前章时为 false，什么都不滚）。
+///
+/// 阅读器章节抽屉与作品页「跳到当前章节」共用；[duration] 为零时直接跳。
+bool scrollToMangaChapterAnchor(
+  GlobalKey anchor, {
+  Duration duration = Duration.zero,
+}) {
+  final BuildContext? target = anchor.currentContext;
+  if (target == null) return false;
+  unawaited(
+    FushiFocusScroll.ensureVisible(
+      target,
+      alignment: 0.3,
+      duration: duration,
+      curve: FushiMotion.standard,
+    ),
+  );
+  return true;
+}
+
+/// 长章节表的快速滚动条：一条可拖动的滚动条，几百话直接拖到想去的位置。
+///
+/// 只在移动端加：桌面端 [ScrollBehavior] 已经给竖向滚动视图套了可拖动的滚动条，
+/// 再套一层会画两条。[notificationPredicate] 用来在多个滚动视图并存（作品页宽屏
+/// 两栏）时只跟正文那一个。
+class MangaChapterFastScrollbar extends StatelessWidget {
+  const MangaChapterFastScrollbar({
+    required this.controller,
+    required this.child,
+    super.key,
+    this.thumbVisibility = false,
+    this.notificationPredicate,
+  });
+
+  final ScrollController controller;
+  final Widget child;
+  final bool thumbVisibility;
+  final ScrollNotificationPredicate? notificationPredicate;
+
+  /// 当前平台是否需要补这条滚动条（桌面端已自带）。
+  static bool neededOn(TargetPlatform platform) => switch (platform) {
+    TargetPlatform.android ||
+    TargetPlatform.iOS ||
+    TargetPlatform.fuchsia => true,
+    TargetPlatform.linux ||
+    TargetPlatform.macOS ||
+    TargetPlatform.windows => false,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    if (!neededOn(Theme.of(context).platform)) return child;
+    return Scrollbar(
+      key: const ValueKey<String>('manga_chapter_fast_scrollbar'),
+      controller: controller,
+      thumbVisibility: thumbVisibility,
+      interactive: true,
+      notificationPredicate:
+          notificationPredicate ?? defaultScrollNotificationPredicate,
+      child: child,
+    );
   }
 }
