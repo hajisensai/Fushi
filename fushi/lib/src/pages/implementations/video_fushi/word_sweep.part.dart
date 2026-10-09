@@ -13,8 +13,9 @@ part of '../video_fushi_page.dart';
 ///   浮层可见时 `tryDictionaryPopupGamepadButton` 照常被调用，故 A=翻词条 /
 ///   X=制卡 / Y=发音全部重回可达。
 ///
-/// 纯逻辑（分词 + grapheme 折算 + 循环推进）在 [SubtitleSweepToken] /
-/// [buildSubtitleSweepTokens] / [advanceSubtitleSweepIndex]，可直接单测；本文件只做
+/// 纯逻辑（分词 + grapheme 折算 + 循环推进 + 落点）在 [SubtitleSweepToken] /
+/// [buildSubtitleSweepTokens] / [advanceSubtitleSweepIndex] /
+/// [resolveSubtitleSweepStop]，可直接单测；本文件只做
 /// 「取页面态 → 调纯函数 → 驱动既有查词链路 → OSD」。
 
 /// 扫词会话状态（仅内存，不持久化）：当前句、它的词序列、以及词游标。
@@ -41,7 +42,23 @@ class _WordSweepState {
 }
 
 extension _VideoWordSweep on _VideoFushiPageState {
-  /// 扫词「下一词 / 上一词」的单一执行体：键盘与手柄两条通道都调它。
+  /// 扫词动作的**唯一派发点**：键盘 / 手柄 / 鼠标 / 浮层回传 token 四条输入通道
+  /// 解析出动作后都先问它。[action] 是扫词动作就执行并返回 true（消费），否则返回
+  /// false 交回各通道的后续分支——各通道不再各自写一份 `if (action == …)`。
+  bool _runWordSweepAction(ShortcutAction action) {
+    switch (action) {
+      case ShortcutAction.videoLookupNextWord:
+        _sweepSubtitleWord(forward: true);
+        return true;
+      case ShortcutAction.videoLookupPrevWord:
+        _sweepSubtitleWord(forward: false);
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /// 扫词「下一词 / 上一词」的单一执行体（经 [_runWordSweepAction] 派发）。
   ///
   /// 契约：
   /// * **不进 caret**：光标激活时直接返回（正常路径下光标已在更前面吞掉这些键，这里是
@@ -51,6 +68,8 @@ extension _VideoWordSweep on _VideoFushiPageState {
   ///   [_handleSubtitleLookupTap]（它再走 `_lookupAt` 的 `replaceStack` + `reuseWarmSlot`
   ///   热槽复用，连扫不闪、不叠栈）。
   /// * **句尾循环**：由 [advanceSubtitleSweepIndex] 保证（用户拍板）。
+  /// * **跳过查不到的词**：落点由 [resolveSubtitleSweepStop] 决定（词内第一个已登记字；
+  ///   整词无已登记字则跳过，最多一圈，整句都没有就无反馈地停下）。
   ///
   /// [forward] true = 下一个词，false = 上一个词。
   void _sweepSubtitleWord({required bool forward}) {
@@ -75,20 +94,22 @@ extension _VideoWordSweep on _VideoFushiPageState {
       _wordSweep.tokens = buildSubtitleSweepTokens(anchor.sentence);
       _wordSweep.index = -1;
     }
-    final int length = _wordSweep.tokens.length;
-    if (length == 0) return;
-
-    _wordSweep.index = advanceSubtitleSweepIndex(
-      _wordSweep.index,
-      length,
-      forward: forward,
-    );
-    final SubtitleSweepToken token = _wordSweep.tokens[_wordSweep.index];
+    if (_wordSweep.tokens.isEmpty) return;
 
     // 词首字的屏幕矩形 + 该字所属 cue：两者都从 overlay 的字符登记表取（与点击查词
     // 同源），制卡的句子音频因此锚在用户正在看的那句上。
-    final SubtitleCharHit? hit = _sweepHitForGrapheme(token.graphemeStart);
-    if (hit == null) return;
+    final Map<int, SubtitleCharHit> hits = _sweepHitsForSentence(
+      anchor.sentence,
+    );
+    final SubtitleSweepStop? stop = resolveSubtitleSweepStop(
+      tokens: _wordSweep.tokens,
+      index: _wordSweep.index,
+      forward: forward,
+      selectableGraphemes: hits.keys.toSet(),
+    );
+    if (stop == null) return;
+    _wordSweep.index = stop.tokenIndex;
+    final SubtitleCharHit hit = hits[stop.graphemeIndex]!;
 
     _handleSubtitleLookupTap(
       hit.sentence,
@@ -97,27 +118,20 @@ extension _VideoWordSweep on _VideoFushiPageState {
       hit.cue,
     );
     // OSD 提示被查的词：字幕可能被浮层盖住，OSD 是「现在扫到哪个词」的可靠反馈。
-    _showOsd(token.word);
+    _showOsd(_wordSweep.tokens[stop.tokenIndex].word);
   }
 
-  /// 取当前句里 grapheme 下标 [target] 处的字符命中项。
-  ///
-  /// 精确命中优先；找不到时退到**同句里下标最大的、仍 >= target 的**那一项——分词单元
-  /// 可能落在 overlay 未登记的字上（空白 / 模糊字符），此时就近取下一个已登记字，仍能
-  /// 查到该位置的词，而不是整格静默跳过。
-  SubtitleCharHit? _sweepHitForGrapheme(int target) {
+  /// 当前可见字幕里属于 [sentence] 的已登记字符命中项，按 grapheme 下标索引（同一
+  /// 下标登记多次时取第一项）。没登记的字（空白 / 被模糊遮住）不在表里——
+  /// [resolveSubtitleSweepStop] 正是靠这一点跳过查不到的词。
+  Map<int, SubtitleCharHit> _sweepHitsForSentence(String sentence) {
     final int count = _subtitleHitTester.caretEntryCount();
-    SubtitleCharHit? nearestAfter;
+    final Map<int, SubtitleCharHit> hits = <int, SubtitleCharHit>{};
     for (int i = 0; i < count; i++) {
       final SubtitleCharHit? hit = _subtitleHitTester.caretHitAt(i);
-      if (hit == null || hit.sentence != _wordSweep.sentence) continue;
-      if (hit.graphemeIndex == target) return hit;
-      if (hit.graphemeIndex > target &&
-          (nearestAfter == null ||
-              hit.graphemeIndex < nearestAfter.graphemeIndex)) {
-        nearestAfter = hit;
-      }
+      if (hit == null || hit.sentence != sentence) continue;
+      hits.putIfAbsent(hit.graphemeIndex, () => hit);
     }
-    return nearestAfter;
+    return hits;
   }
 }

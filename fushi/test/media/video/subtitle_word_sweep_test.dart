@@ -129,6 +129,92 @@ void main() {
     });
   });
 
+  group('buildSubtitleSweepTokens：分词碎片劈开 grapheme（BUG-3086）', () {
+    List<int> starts(List<SubtitleSweepToken> ts) =>
+        ts.map((SubtitleSweepToken t) => t.graphemeStart).toList();
+    List<int> ends(List<SubtitleSweepToken> ts) =>
+        ts.map((SubtitleSweepToken t) => t.graphemeEnd).toList();
+    List<String> words(List<SubtitleSweepToken> ts) =>
+        ts.map((SubtitleSweepToken t) => t.word).toList();
+
+    test('代理对被逐码元切成两半：后半并入前一词，之后的词不整体错位', () {
+      // 引擎未命中时 textToWords 按 `text[pos]` 逐码元切：😀 变成两个半码元碎片。
+      const String sentence = '😀あい';
+      final List<SubtitleSweepToken> tokens = buildSubtitleSweepTokens(
+        sentence,
+        tokenize: fake(const <String>['\uD83D', '\uDE00', 'あ', 'い']),
+      );
+      expect(words(tokens), <String>['😀', 'あ', 'い']);
+      // 旧实现按碎片个数累加 grapheme：得 [0, 1, 2, 3]，「あ」指向「い」、「い」越界。
+      expect(starts(tokens), <int>[0, 1, 2]);
+      expect(ends(tokens), <int>[1, 2, 3]);
+      final List<String> graphemes = sentence.characters.toList();
+      expect(graphemes[tokens[1].graphemeStart], 'あ');
+      expect(graphemes[tokens[2].graphemeStart], 'い');
+    });
+
+    test('组合浊点（か + ゛）被切成两段：浊点并入前一词', () {
+      const String sentence = 'か\u3099くせい';
+      expect(sentence.characters.length, 4);
+      final List<SubtitleSweepToken> tokens = buildSubtitleSweepTokens(
+        sentence,
+        tokenize: fake(const <String>['か', '\u3099', 'く', 'せい']),
+      );
+      expect(words(tokens), <String>['か\u3099', 'く', 'せい']);
+      expect(starts(tokens), <int>[0, 1, 2]);
+      expect(ends(tokens), <int>[1, 2, 4]);
+    });
+
+    test('词尾落在 grapheme 中间：区间右端向上取整，下一段并入', () {
+      // 「あか」+「゛い」：第一词结束在 か 与浊点之间。
+      const String sentence = 'あか\u3099い';
+      final List<SubtitleSweepToken> tokens = buildSubtitleSweepTokens(
+        sentence,
+        tokenize: fake(const <String>['あか', '\u3099い']),
+      );
+      expect(words(tokens), <String>['あか\u3099い']);
+      expect(starts(tokens), <int>[0]);
+      expect(ends(tokens), <int>[3]);
+    });
+
+    test('纯 emoji 句（多个代理对，逐码元切）', () {
+      const String sentence = '😀😁';
+      final List<SubtitleSweepToken> tokens = buildSubtitleSweepTokens(
+        sentence,
+        tokenize: (String text) => <String>[
+          for (int i = 0; i < text.length; i++) text[i],
+        ],
+      );
+      expect(words(tokens), <String>['😀', '😁']);
+      expect(starts(tokens), <int>[0, 1]);
+      expect(ends(tokens), <int>[1, 2]);
+    });
+
+    test('空句：不调用分词器，直接空表', () {
+      bool called = false;
+      expect(
+        buildSubtitleSweepTokens(
+          '',
+          tokenize: (String _) {
+            called = true;
+            return const <String>[];
+          },
+        ),
+        isEmpty,
+      );
+      expect(called, isFalse);
+    });
+
+    test('分词结果比原文长（违反不变式）：超出部分被忽略，不越界', () {
+      final List<SubtitleSweepToken> tokens = buildSubtitleSweepTokens(
+        'あい',
+        tokenize: fake(const <String>['あい', 'う', 'え']),
+      );
+      expect(words(tokens), <String>['あい']);
+      expect(ends(tokens), <int>[2]);
+    });
+  });
+
   group('advanceSubtitleSweepIndex', () {
     test('前进到句尾后循环回句首', () {
       expect(advanceSubtitleSweepIndex(0, 3, forward: true), 1);
@@ -170,6 +256,102 @@ void main() {
       }
       expect(visited, <int>[0, 1, 2, 3, 4]);
       expect(advanceSubtitleSweepIndex(i, 5, forward: true), 0);
+    });
+  });
+
+  group('resolveSubtitleSweepStop', () {
+    // 「私、学生です」：、 是未登记字符（overlay 不给标点 / 空白登记命中项）。
+    final List<SubtitleSweepToken> tokens = buildSubtitleSweepTokens(
+      '私、学生です',
+      tokenize: fake(const <String>['私', '、', '学生', 'です']),
+    );
+
+    test('词内有已登记字：停在该词范围内第一个已登记字', () {
+      // 「学生」的「学」(2) 未登记、「生」(3) 已登记 → 停在 3，仍查本词。
+      final SubtitleSweepStop? stop = resolveSubtitleSweepStop(
+        tokens: tokens,
+        index: 1,
+        forward: true,
+        selectableGraphemes: <int>{0, 3, 4, 5},
+      );
+      expect(stop, (tokenIndex: 2, graphemeIndex: 3));
+    });
+
+    test('整个词都没有已登记字：跳过该词，不会两次停在同一个词', () {
+      const Set<int> selectable = <int>{0, 2, 3, 4, 5};
+      final SubtitleSweepStop? first = resolveSubtitleSweepStop(
+        tokens: tokens,
+        index: 0,
+        forward: true,
+        selectableGraphemes: selectable,
+      );
+      // 「、」整词无命中 → 直接跳到「学生」。
+      expect(first, (tokenIndex: 2, graphemeIndex: 2));
+      final SubtitleSweepStop? second = resolveSubtitleSweepStop(
+        tokens: tokens,
+        index: first!.tokenIndex,
+        forward: true,
+        selectableGraphemes: selectable,
+      );
+      expect(second, (tokenIndex: 3, graphemeIndex: 4));
+      // 后退同理跳过「、」。
+      expect(
+        resolveSubtitleSweepStop(
+          tokens: tokens,
+          index: 2,
+          forward: false,
+          selectableGraphemes: selectable,
+        ),
+        (tokenIndex: 0, graphemeIndex: 0),
+      );
+    });
+
+    test('跳过时照样循环：句尾无命中则绕回句首', () {
+      expect(
+        resolveSubtitleSweepStop(
+          tokens: tokens,
+          index: 2,
+          forward: true,
+          selectableGraphemes: <int>{0},
+        ),
+        (tokenIndex: 0, graphemeIndex: 0),
+      );
+    });
+
+    test('只有当前词可查：走满一圈回到它自己', () {
+      expect(
+        resolveSubtitleSweepStop(
+          tokens: tokens,
+          index: 2,
+          forward: true,
+          selectableGraphemes: <int>{2},
+        ),
+        (tokenIndex: 2, graphemeIndex: 2),
+      );
+    });
+
+    test('整句都没有已登记字：返回 null（最多一圈，不死循环）', () {
+      expect(
+        resolveSubtitleSweepStop(
+          tokens: tokens,
+          index: -1,
+          forward: true,
+          selectableGraphemes: const <int>{},
+        ),
+        isNull,
+      );
+    });
+
+    test('无词：返回 null', () {
+      expect(
+        resolveSubtitleSweepStop(
+          tokens: const <SubtitleSweepToken>[],
+          index: -1,
+          forward: false,
+          selectableGraphemes: const <int>{0},
+        ),
+        isNull,
+      );
     });
   });
 }
