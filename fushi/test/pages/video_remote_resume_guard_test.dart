@@ -51,53 +51,63 @@ void main() {
       await db.close();
     });
 
-    test('saved remote position persists across reopen (was always 0)',
-        () async {
-      const String bookUid = 'video/remote-movie';
-      // 远端在线视频从无 VideoBooks 行：未存过时默认 0（从头），与修复前行为一致。
-      expect(
-        repo.getPref(remotePositionPrefKey(bookUid), defaultValue: 0),
-        0,
-        reason: 'a never-watched remote video must start at 0',
-      );
+    test(
+      'saved remote position persists across reopen (was always 0)',
+      () async {
+        const String bookUid = 'video/remote-movie';
+        // 远端在线视频从无 VideoBooks 行：未存过时默认 0（从头），与修复前行为一致。
+        expect(
+          repo.getPref(remotePositionPrefKey(bookUid), defaultValue: 0),
+          0,
+          reason: 'a never-watched remote video must start at 0',
+        );
 
-      // _persistRemotePosition：播放到 73210ms 时落库。
-      await repo.setPref(remotePositionPrefKey(bookUid), 73210);
+        // _persistRemotePosition：播放到 73210ms 时落库。
+        await repo.setPref(remotePositionPrefKey(bookUid), 73210);
 
-      // 重开：跨 PreferencesRepository 实例 reload，模拟 app 重启后再次打开。
-      final PreferencesRepository repo2 = PreferencesRepository(db);
-      await repo2.loadFromDb();
-      addTearDown(repo2.dispose);
+        // 重开：跨 PreferencesRepository 实例 reload，模拟 app 重启后再次打开。
+        final PreferencesRepository repo2 = PreferencesRepository(db);
+        await repo2.loadFromDb();
+        addTearDown(repo2.dispose);
 
-      // _readPersistedRemotePosition：恢复到上次位置，而不是 0。
-      final int restored =
-          repo2.getPref(remotePositionPrefKey(bookUid), defaultValue: 0) as int;
-      expect(
-        restored,
-        73210,
-        reason: 'remote resume must read back the persisted position, not 0',
-      );
-    });
+        // _readPersistedRemotePosition：恢复到上次位置，而不是 0。
+        final int restored =
+            repo2.getPref(remotePositionPrefKey(bookUid), defaultValue: 0)
+                as int;
+        expect(
+          restored,
+          73210,
+          reason: 'remote resume must read back the persisted position, not 0',
+        );
+      },
+    );
 
-    test('two remote videos keep independent positions (keyed by bookUid)',
-        () async {
-      await repo.setPref(remotePositionPrefKey('video/a'), 1000);
-      await repo.setPref(remotePositionPrefKey('video/b'), 2000);
+    test(
+      'two remote videos keep independent positions (keyed by bookUid)',
+      () async {
+        await repo.setPref(remotePositionPrefKey('video/a'), 1000);
+        await repo.setPref(remotePositionPrefKey('video/b'), 2000);
 
-      final PreferencesRepository repo2 = PreferencesRepository(db);
-      await repo2.loadFromDb();
-      addTearDown(repo2.dispose);
+        final PreferencesRepository repo2 = PreferencesRepository(db);
+        await repo2.loadFromDb();
+        addTearDown(repo2.dispose);
 
-      expect(repo2.getPref(remotePositionPrefKey('video/a'), defaultValue: 0),
-          1000);
-      expect(repo2.getPref(remotePositionPrefKey('video/b'), defaultValue: 0),
-          2000);
-    });
+        expect(
+          repo2.getPref(remotePositionPrefKey('video/a'), defaultValue: 0),
+          1000,
+        );
+        expect(
+          repo2.getPref(remotePositionPrefKey('video/b'), defaultValue: 0),
+          2000,
+        );
+      },
+    );
   });
 
   group('TODO-559 remote video resume — source guards', () {
-    final File page =
-        File('lib/src/pages/implementations/video_fushi_page.dart');
+    final File page = File(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    );
     late String src;
 
     setUpAll(() {
@@ -113,27 +123,30 @@ void main() {
       return src.substring(start, end);
     }
 
-    test('_initRemote restores from persisted/synced position, not hardcoded 0',
-        () {
-      final String initRemote = region(
-        'Future<void> _initRemote() async {',
-        '/// per-book 播放倍速偏好 key',
-      );
-      // TODO-653/885：恢复改走 _resolveRemoteInitialPositionMs(info, index)——它在 host
-      // 真相（info.positionMs，随清单带回）与本地按集 prefs 之间取较新者（跨设备同步），
-      // 仍绝不硬编码 0（TODO-559 回归守卫保留）。
-      expect(
-        initRemote.contains('initialPositionMsOverride:') &&
-            initRemote.contains('_resolveRemoteInitialPositionMs('),
-        isTrue,
-        reason: 'remote restore must resolve persisted vs host-synced position',
-      );
-      expect(
-        initRemote.contains('initialPositionMs: 0'),
-        isFalse,
-        reason: 'remote restore must NOT hardcode 0 (the regression)',
-      );
-    });
+    test(
+      '_initRemote restores from persisted/synced position, not hardcoded 0',
+      () {
+        final String initRemote = region(
+          'Future<void> _initRemote() async {',
+          '/// per-book 播放倍速偏好 key',
+        );
+        // TODO-653/885：恢复改走 _resolveRemoteInitialPositionMs(info, index)——它在 host
+        // 真相（info.positionMs，随清单带回）与本地按集 prefs 之间取较新者（跨设备同步），
+        // 仍绝不硬编码 0（TODO-559 回归守卫保留）。
+        expect(
+          initRemote.contains('initialPositionMsOverride:') &&
+              initRemote.contains('_resolveRemoteInitialPositionMs('),
+          isTrue,
+          reason:
+              'remote restore must resolve persisted vs host-synced position',
+        );
+        expect(
+          initRemote.contains('initialPositionMs: 0'),
+          isFalse,
+          reason: 'remote restore must NOT hardcode 0 (the regression)',
+        );
+      },
+    );
 
     test('onPositionWrite is wired for remote (not null)', () {
       final String region2 = region(
@@ -156,7 +169,7 @@ void main() {
 
     test('remote position helpers use the stable bookUid + episode key', () {
       // TODO-885 / BUG-1011：键经单一真相源 helper _remotePositionKeyForIndex 派生——
-      // 单视频 / host-playlist 返回 (widget.bookUid, index)，合集连播返回 (成员 id, 0)。
+      // 单视频 / host-playlist 返回 (_activeBookUid, index)，合集连播返回 (成员 id, 0)。
       // 仍从稳定 id 派生、绝不硬编码/随机，与 host service / 测试共用同一按集 key 公式。
       expect(
         src.contains('_remotePositionKeyForIndex(int index)'),
@@ -166,10 +179,17 @@ void main() {
       );
       // 非合集分支回落稳定 bookUid + 传入集下标（单视频/host-playlist 零行为变化）。
       expect(
-        src.contains('return (widget.bookUid, index);'),
+        src.contains('return (_activeBookUid, index);'),
         isTrue,
         reason:
             'non-collection branch must key off the stable bookUid + episode',
+      );
+      expect(
+        _flat(src),
+        contains(
+          _flat('String get _activeBookUid => _discBookUid ?? widget.bookUid;'),
+        ),
+        reason: '非原盘会话必须仍回落 widget.bookUid，不能改变远端断点身份',
       );
       // 读侧用 helper 结果元组构造按集 key。
       expect(
@@ -186,30 +206,33 @@ void main() {
       );
     });
 
-    test('TODO-653: remote position is uploaded to host for cross-device sync',
-        () {
-      final String persist = region(
-        'Future<void> _persistRemotePosition(String uid, int posMs) async {',
-        'Future<void> _persistPosition',
-      );
-      // 写侧仍落本地按集 prefs（离线可用，TODO-885 / BUG-1011：键经
-      // _remotePositionKeyForIndex 派生，合集连播按成员 id 隔离）。
-      expect(
-        persist.contains(
-            'videoRemotePositionEpisodePrefKey(keyUid, episodeIndex)'),
-        isTrue,
-        reason: 'must still persist locally (per-episode) for offline restore',
-      );
-      // 且 best-effort 上报到 host（跨设备真相源），失败不抛。
-      expect(
-        persist.contains('client.putRemoteVideoPosition('),
-        isTrue,
-        reason: 'remote position must be uploaded to host (TODO-653)',
-      );
-    });
-
     test(
-        'TODO-816: host self-play also writes video_remote_position prefs '
+      'TODO-653: remote position is uploaded to host for cross-device sync',
+      () {
+        final String persist = region(
+          'Future<void> _persistRemotePosition(String uid, int posMs) async {',
+          'Future<void> _persistPosition',
+        );
+        // 写侧仍落本地按集 prefs（离线可用，TODO-885 / BUG-1011：键经
+        // _remotePositionKeyForIndex 派生，合集连播按成员 id 隔离）。
+        expect(
+          persist.contains(
+            'videoRemotePositionEpisodePrefKey(keyUid, episodeIndex)',
+          ),
+          isTrue,
+          reason:
+              'must still persist locally (per-episode) for offline restore',
+        );
+        // 且 best-effort 上报到 host（跨设备真相源），失败不抛。
+        expect(
+          persist.contains('client.putRemoteVideoPosition('),
+          isTrue,
+          reason: 'remote position must be uploaded to host (TODO-653)',
+        );
+      },
+    );
+
+    test('TODO-816: host self-play also writes video_remote_position prefs '
         '(unified key space)', () {
       // 断点②：host 本机播放（_persistPosition 单视频路径）此前只写
       // VideoBooks.lastPositionMs，不写 video_remote_position_<uid> prefs；而

@@ -221,7 +221,7 @@ class _TicketTile extends StatelessWidget {
               if (ticket.hasUnseenReply)
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
-                  child: Tooltip(
+                  child: FushiTooltip(
                     message: t.feedback_new_reply,
                     child: Semantics(
                       label: t.feedback_new_reply,

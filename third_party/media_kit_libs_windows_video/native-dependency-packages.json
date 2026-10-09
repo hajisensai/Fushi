@@ -1,0 +1,767 @@
+[
+  {
+    "name": "mingw-w64-x86_64-aom",
+    "version": "3.15.0-1",
+    "upstream": "https://aomedia.org/",
+    "dlls": [
+      "libaom.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-brotli",
+    "version": "1.2.0-1",
+    "upstream": "https://github.com/google/brotli",
+    "dlls": [
+      "libbrotlicommon.dll",
+      "libbrotlidec.dll",
+      "libbrotlienc.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-bzip2",
+    "version": "1.0.8-4",
+    "upstream": "https://sourceware.org/bzip2/",
+    "dlls": [
+      "libbz2-1.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-cairo",
+    "version": "1.18.4-4",
+    "upstream": "https://cairographics.org/",
+    "dlls": [
+      "libcairo-2.dll",
+      "libcairo-gobject-2.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-curl",
+    "version": "8.21.0-2",
+    "upstream": "https://curl.se/",
+    "dlls": [
+      "libcurl-4.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-dav1d",
+    "version": "1.5.4-1",
+    "upstream": "https://code.videolan.org/videolan/dav1d",
+    "dlls": [
+      "libdav1d-7.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-expat",
+    "version": "2.8.3-1",
+    "upstream": "https://libexpat.github.io/",
+    "dlls": [
+      "libexpat-1.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-ffmpeg",
+    "version": "9.0.1-3",
+    "upstream": "https://ffmpeg.org/",
+    "dlls": [
+      "avcodec-63.dll",
+      "avdevice-63.dll",
+      "avfilter-12.dll",
+      "avformat-63.dll",
+      "avutil-61.dll",
+      "swresample-7.dll",
+      "swscale-10.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-fontconfig",
+    "version": "2.18.3-1",
+    "upstream": "https://wiki.freedesktop.org/www/Software/fontconfig/",
+    "dlls": [
+      "libfontconfig-1.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-freetype",
+    "version": "2.14.3-1",
+    "upstream": "https://www.freetype.org/",
+    "dlls": [
+      "libfreetype-6.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-fribidi",
+    "version": "1.0.16-1",
+    "upstream": "https://github.com/fribidi/fribidi/",
+    "dlls": [
+      "libfribidi-0.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-gcc-libs",
+    "version": "16.2.0-3",
+    "upstream": "https://gcc.gnu.org",
+    "dlls": [
+      "libgcc_s_seh-1.dll",
+      "libgomp-1.dll",
+      "libstdc++-6.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-gdk-pixbuf2",
+    "version": "2.44.7-1",
+    "upstream": "https://gitlab.gnome.org/GNOME/gdk-pixbuf",
+    "dlls": [
+      "libgdk_pixbuf-2.0-0.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-gettext-runtime",
+    "version": "1.0-1",
+    "upstream": "https://www.gnu.org/software/gettext/",
+    "dlls": [
+      "libintl-8.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-ggml",
+    "version": "0.22.0-1",
+    "upstream": "https://github.com/ggml-org/ggml",
+    "dlls": [
+      "ggml-0.dll",
+      "ggml-base-0.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-glib2",
+    "version": "2.88.3-1",
+    "upstream": "https://gitlab.gnome.org/GNOME/glib",
+    "dlls": [
+      "libgio-2.0-0.dll",
+      "libglib-2.0-0.dll",
+      "libgmodule-2.0-0.dll",
+      "libgobject-2.0-0.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-gmp",
+    "version": "6.3.0-2",
+    "upstream": "https://gmplib.org/",
+    "dlls": [
+      "libgmp-10.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-gnutls",
+    "version": "3.8.13-3",
+    "upstream": "https://www.gnutls.org/",
+    "dlls": [
+      "libgnutls-30.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-graphite2",
+    "version": "1.3.15-1",
+    "upstream": "https://github.com/silnrsi/graphite",
+    "dlls": [
+      "libgraphite2.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-gsm",
+    "version": "1.0.24-1",
+    "upstream": "https://www.quut.com/gsm/",
+    "dlls": [
+      "libgsm.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-harfbuzz",
+    "version": "14.4.0-1",
+    "upstream": "https://harfbuzz.github.io/",
+    "dlls": [
+      "libharfbuzz-0.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-highway",
+    "version": "1.4.0-3",
+    "upstream": "https://github.com/google/highway",
+    "dlls": [
+      "libhwy.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-jbigkit",
+    "version": "2.1-6",
+    "upstream": "https://www.cl.cam.ac.uk/~mgk25/jbigkit/",
+    "dlls": [
+      "libjbig-0.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-lame",
+    "version": "3.100-3",
+    "upstream": "https://lame.sourceforge.io/",
+    "dlls": [
+      "libmp3lame-0.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-lcms2",
+    "version": "2.19.1-1",
+    "upstream": "https://www.littlecms.com/color-engine/",
+    "dlls": [
+      "liblcms2-2.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-lerc",
+    "version": "4.1.1-1",
+    "upstream": "https://github.com/Esri/lerc",
+    "dlls": [
+      "libLerc.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libass",
+    "version": "0.17.5-1",
+    "upstream": "https://github.com/libass/libass",
+    "dlls": [
+      "libass-9.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libbluray",
+    "version": "1.5.0-1",
+    "upstream": "https://www.videolan.org/developers/libbluray.html",
+    "dlls": [
+      "libbluray-4.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libcaca",
+    "version": "0.99.beta20-8",
+    "upstream": "https://github.com/cacalabs/libcaca",
+    "dlls": [
+      "libcaca-0.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libdatrie",
+    "version": "0.2.14-1",
+    "upstream": "https://linux.thai.net/projects/datrie",
+    "dlls": [
+      "libdatrie-1.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libdeflate",
+    "version": "1.26-1",
+    "upstream": "https://github.com/ebiggers/libdeflate",
+    "dlls": [
+      "libdeflate.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libdovi",
+    "version": "3.4.0-1",
+    "upstream": "https://github.com/quietvoid/dovi_tool/tree/main/dolby_vision",
+    "dlls": [
+      "libdovi.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libffi",
+    "version": "3.8.0-1",
+    "upstream": "https://sourceware.org/libffi",
+    "dlls": [
+      "libffi-8.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libgme",
+    "version": "0.6.5-2",
+    "upstream": "https://github.com/libgme/game-music-emu",
+    "dlls": [
+      "libgme.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libiconv",
+    "version": "1.19-1",
+    "upstream": "https://www.gnu.org/software/libiconv/",
+    "dlls": [
+      "libiconv-2.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libidn2",
+    "version": "2.3.8-4",
+    "upstream": "https://www.gnu.org/software/libidn/#libidn2",
+    "dlls": [
+      "libidn2-0.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libjpeg-turbo",
+    "version": "3.2.0-1",
+    "upstream": "https://libjpeg-turbo.virtualgl.org/",
+    "dlls": [
+      "libjpeg-8.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libjxl",
+    "version": "0.12.0-1",
+    "upstream": "https://jpeg.org/jpegxl/",
+    "dlls": [
+      "libjxl.dll",
+      "libjxl_cms.dll",
+      "libjxl_threads.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-liblc3",
+    "version": "1.1.3-1",
+    "upstream": "https://github.com/google/liblc3",
+    "dlls": [
+      "liblc3-1.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libmodplug",
+    "version": "0.8.9.0-5",
+    "upstream": "https://modplug-xmms.sourceforge.io/",
+    "dlls": [
+      "libmodplug-1.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libogg",
+    "version": "1.3.6-1",
+    "upstream": "https://xiph.org/",
+    "dlls": [
+      "libogg-0.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libplacebo",
+    "version": "7.360.1-2",
+    "upstream": "https://code.videolan.org/videolan/libplacebo",
+    "dlls": [
+      "libplacebo-360.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libpng",
+    "version": "1.6.58-1",
+    "upstream": "http://www.libpng.org/pub/png/libpng.html",
+    "dlls": [
+      "libpng16-16.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libpsl",
+    "version": "0.21.5-3",
+    "upstream": "https://rockdaboot.github.io/libpsl/",
+    "dlls": [
+      "libpsl-5.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-librsvg",
+    "version": "2.62.3-1",
+    "upstream": "https://wiki.gnome.org/Projects/LibRsvg",
+    "dlls": [
+      "librsvg-2-2.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libsoxr",
+    "version": "0.1.3-5",
+    "upstream": "https://sourceforge.net/p/soxr/wiki/Home/",
+    "dlls": [
+      "libsoxr.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libssh",
+    "version": "0.12.2-1",
+    "upstream": "https://www.libssh.org/",
+    "dlls": [
+      "libssh.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libssh2",
+    "version": "1.11.1-2",
+    "upstream": "https://libssh2.org/",
+    "dlls": [
+      "libssh2-1.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libtasn1",
+    "version": "4.21.0-1",
+    "upstream": "https://www.gnu.org/software/libtasn1/",
+    "dlls": [
+      "libtasn1-6.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libthai",
+    "version": "0.1.30-1",
+    "upstream": "https://linux.thai.net/projects/libthai",
+    "dlls": [
+      "libthai-0.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libtheora",
+    "version": "1.2.0-1",
+    "upstream": "https://www.theora.org",
+    "dlls": [
+      "libtheoradec-2.dll",
+      "libtheoraenc-2.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libtiff",
+    "version": "4.7.2-1",
+    "upstream": "https://libtiff.gitlab.io/libtiff/",
+    "dlls": [
+      "libtiff-6.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libunibreak",
+    "version": "7.0-1",
+    "upstream": "https://github.com/adah1972/libunibreak/",
+    "dlls": [
+      "libunibreak-7.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libunistring",
+    "version": "1.4.2-1",
+    "upstream": "https://www.gnu.org/software/libunistring",
+    "dlls": [
+      "libunistring-5.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libva",
+    "version": "2.24.1-1",
+    "upstream": "https://intel.github.io/libva/",
+    "dlls": [
+      "libva.dll",
+      "libva_win32.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libvorbis",
+    "version": "1.3.7-3",
+    "upstream": "https://xiph.org/",
+    "dlls": [
+      "libvorbis-0.dll",
+      "libvorbisenc-2.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libvpl",
+    "version": "2.17.0-1",
+    "upstream": "https://intel.github.io/libvpl",
+    "dlls": [
+      "libvpl-2.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libvpx",
+    "version": "1.16.0-1",
+    "upstream": "https://www.webmproject.org/",
+    "dlls": [
+      "libvpx-1.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libwebp",
+    "version": "1.6.0-1",
+    "upstream": "https://developers.google.com/speed/webp/",
+    "dlls": [
+      "libsharpyuv-0.dll",
+      "libwebp-7.dll",
+      "libwebpmux-3.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libwinpthread",
+    "version": "14.0.0.r302.gd7f3c5201-1",
+    "upstream": "https://www.mingw-w64.org/",
+    "dlls": [
+      "libwinpthread-1.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libx264",
+    "version": "0.165.r3222.b35605a-3",
+    "upstream": "https://www.videolan.org/developers/x264.html",
+    "dlls": [
+      "libx264-165.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-libxml2",
+    "version": "2.15.3-1",
+    "upstream": "https://gitlab.gnome.org/GNOME/libxml2/-/wikis/home",
+    "dlls": [
+      "libxml2-16.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-nettle",
+    "version": "4.0-1",
+    "upstream": "https://www.lysator.liu.se/~nisse/nettle",
+    "dlls": [
+      "libhogweed-7.dll",
+      "libnettle-9.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-nghttp2",
+    "version": "1.70.0-1",
+    "upstream": "https://nghttp2.org/",
+    "dlls": [
+      "libnghttp2-14.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-nghttp3",
+    "version": "1.18.0-1",
+    "upstream": "https://nghttp2.org/nghttp3/",
+    "dlls": [
+      "libnghttp3-9.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-ngtcp2",
+    "version": "1.25.0-1",
+    "upstream": "https://nghttp2.org/ngtcp2/",
+    "dlls": [
+      "libngtcp2-16.dll",
+      "libngtcp2_crypto_ossl-0.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-openal",
+    "version": "1.25.2-1",
+    "upstream": "https://github.com/kcat/openal-soft",
+    "dlls": [
+      "libopenal-1.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-opencore-amr",
+    "version": "0.1.6-1",
+    "upstream": "https://opencore-amr.sourceforge.io/",
+    "dlls": [
+      "libopencore-amrnb-0.dll",
+      "libopencore-amrwb-0.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-openjpeg2",
+    "version": "2.5.4-2",
+    "upstream": "https://www.openjpeg.org/",
+    "dlls": [
+      "libopenjp2-7.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-openssl",
+    "version": "3.6.4-1",
+    "upstream": "https://openssl-library.org",
+    "dlls": [
+      "libcrypto-3-x64.dll",
+      "libssl-3-x64.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-opus",
+    "version": "1.6.1-1",
+    "upstream": "https://www.opus-codec.org/",
+    "dlls": [
+      "libopus-0.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-p11-kit",
+    "version": "0.26.5-1",
+    "upstream": "https://p11-glue.freedesktop.org/p11-kit.html",
+    "dlls": [
+      "libp11-kit-0.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-pango",
+    "version": "1.58.2-1",
+    "upstream": "https://www.pango.org/",
+    "dlls": [
+      "libpango-1.0-0.dll",
+      "libpangocairo-1.0-0.dll",
+      "libpangoft2-1.0-0.dll",
+      "libpangowin32-1.0-0.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-pcre2",
+    "version": "10.47-1",
+    "upstream": "https://pcre.org/",
+    "dlls": [
+      "libpcre2-8-0.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-pixman",
+    "version": "0.46.4-3",
+    "upstream": "https://gitlab.freedesktop.org/pixman/pixman",
+    "dlls": [
+      "libpixman-1-0.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-rav1e",
+    "version": "0.8.1-1",
+    "upstream": "https://github.com/xiph/rav1e/",
+    "dlls": [
+      "librav1e.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-rtmpdump",
+    "version": "2.6-2",
+    "upstream": "https://rtmpdump.mplayerhq.hu/",
+    "dlls": [
+      "librtmp-1.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-shaderc",
+    "version": "2026.3-1",
+    "upstream": "https://github.com/google/shaderc",
+    "dlls": [
+      "libshaderc_shared.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-speex",
+    "version": "1.2.1-1",
+    "upstream": "https://speex.org/",
+    "dlls": [
+      "libspeex-1.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-spirv-cross",
+    "version": "1~1.4.357.0-1",
+    "upstream": "https://github.com/KhronosGroup/SPIRV-Cross/",
+    "dlls": [
+      "libspirv-cross-c-shared.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-srt",
+    "version": "1.5.7-1",
+    "upstream": "https://www.srtalliance.org/",
+    "dlls": [
+      "libsrt.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-svt-av1",
+    "version": "4.2.0-1",
+    "upstream": "https://gitlab.com/AOMediaCodec/SVT-AV1",
+    "dlls": [
+      "libSvtAv1Enc-4.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-vid.stab",
+    "version": "1.1.1-1",
+    "upstream": "http://public.hronopik.de/vid.stab",
+    "dlls": [
+      "libvidstab.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-vulkan-loader",
+    "version": "1~1.4.357.0-1",
+    "upstream": "https://www.khronos.org/vulkan/",
+    "dlls": [
+      "vulkan-1.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-whisper.cpp",
+    "version": "1~1.9.3.r75.g978113305-1",
+    "upstream": "https://github.com/ggml-org/whisper.cpp",
+    "dlls": [
+      "libwhisper-1.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-x265",
+    "version": "4.3-1",
+    "upstream": "https://www.x265.org",
+    "dlls": [
+      "libx265-217.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-xvidcore",
+    "version": "1.3.7-5",
+    "upstream": "https://www.xvid.com/",
+    "dlls": [
+      "xvidcore.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-xz",
+    "version": "5.8.3-1",
+    "upstream": "https://tukaani.org/xz",
+    "dlls": [
+      "liblzma-5.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-zimg",
+    "version": "3.0.6-3",
+    "upstream": "https://github.com/sekrit-twc/zimg",
+    "dlls": [
+      "libzimg-2.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-zlib",
+    "version": "1.3.2-2",
+    "upstream": "https://www.zlib.net/",
+    "dlls": [
+      "zlib1.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-zstd",
+    "version": "1.5.7-2",
+    "upstream": "https://facebook.github.io/zstd/",
+    "dlls": [
+      "libzstd.dll"
+    ]
+  },
+  {
+    "name": "mingw-w64-x86_64-zvbi",
+    "version": "0.2.44-2",
+    "upstream": "http://zapping.sourceforge.net/cgi-bin/view/ZVBI/WebHome",
+    "dlls": [
+      "libzvbi-0.dll"
+    ]
+  }
+]

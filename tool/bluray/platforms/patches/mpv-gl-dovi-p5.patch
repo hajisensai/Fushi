@@ -1,0 +1,256 @@
+diff --git a/video/out/gpu/shader_cache.c b/video/out/gpu/shader_cache.c
+index 0f800cdb7..df1ee8ec8 100644
+--- a/video/out/gpu/shader_cache.c
++++ b/video/out/gpu/shader_cache.c
+@@ -413,6 +413,17 @@ void gl_sc_uniform_vec3(struct gl_shader_cache *sc, char *name, float f[3])
+     u->v.f[2] = f[2];
+ }
+ 
++void gl_sc_uniform_vec4(struct gl_shader_cache *sc, char *name, float f[4])
++{
++    struct sc_uniform *u = find_uniform(sc, bstr0(name));
++    u->input.type = RA_VARTYPE_FLOAT;
++    u->input.dim_v = 4;
++    u->glsl_type = "vec4";
++    update_uniform_params(sc, u);
++    for (int n = 0; n < 4; n++)
++        u->v.f[n] = f[n];
++}
++
+ static void transpose2x2(float r[2 * 2])
+ {
+     MPSWAP(float, r[0+2*1], r[1+2*0]);
+diff --git a/video/out/gpu/shader_cache.h b/video/out/gpu/shader_cache.h
+index 3b997651b..d76f05484 100644
+--- a/video/out/gpu/shader_cache.h
++++ b/video/out/gpu/shader_cache.h
+@@ -41,6 +41,7 @@ void gl_sc_uniform_f_bstr(struct gl_shader_cache *sc, struct bstr name, float f)
+ void gl_sc_uniform_i_bstr(struct gl_shader_cache *sc, struct bstr name, int f);
+ void gl_sc_uniform_vec2(struct gl_shader_cache *sc, char *name, float f[2]);
+ void gl_sc_uniform_vec3(struct gl_shader_cache *sc, char *name, float f[3]);
++void gl_sc_uniform_vec4(struct gl_shader_cache *sc, char *name, float f[4]);
+ void gl_sc_uniform_mat2(struct gl_shader_cache *sc, char *name,
+                         bool transpose, float *v);
+ void gl_sc_uniform_mat3(struct gl_shader_cache *sc, char *name,
+diff --git a/video/out/gpu/video.c b/video/out/gpu/video.c
+index 4d90d447a..d1afefe65 100644
+--- a/video/out/gpu/video.c
++++ b/video/out/gpu/video.c
+@@ -24,6 +24,9 @@
+ 
+ #include <libavutil/common.h>
+ #include <libavutil/lfg.h>
++#include <libavutil/dovi_meta.h>
++#include <libavutil/frame.h>
++#include <libavutil/rational.h>
+ 
+ #include "video.h"
+ 
+@@ -2542,6 +2545,186 @@ static void pass_read_tex(struct gl_video *p, struct ra_tex *tex)
+     copy_image(p, &(int){0}, img);
+ }
+ 
++// Dolby Vision profile 5 (IPTPQc2, no backwards compatible base layer). Its
++// samples are not YCbCr: they only become meaningful after the per-frame RPU
++// reshaping and the IPT -> LMS -> RGB decode, which vo_gpu_next gets from
++// libplacebo and this renderer never did (the picture comes out purple/green).
++// This is a port of libplacebo's pl_shader_dovi_reshape() plus its
++// PL_COLOR_SYSTEM_DOLBYVISION decode (src/shaders/colorspace.c) and of
++// pl_map_dovi_metadata() (src/include/libplacebo/utils/libav_internal.h).
++static const AVDOVIMetadata *get_dovi_p5_metadata(struct mp_image *mpi)
++{
++    if (!mpi || mpi->params.no_dovi)
++        return NULL;
++    // mp_image.dovi now holds pl_dovi_metadata, not AVDOVIMetadata. Read the
++    // original FFmpeg side data retained by mp_image_from_av_frame instead.
++    const AVDOVIMetadata *md = NULL;
++    for (int i = 0; i < mpi->num_ff_side_data; i++) {
++        if (mpi->ff_side_data[i].type == AV_FRAME_DATA_DOVI_METADATA) {
++            md = (const AVDOVIMetadata *)mpi->ff_side_data[i].buf->data;
++            break;
++        }
++    }
++    if (!md)
++        return NULL;
++    const AVDOVIRpuDataHeader *hdr = av_dovi_get_header(md);
++    // Profile 5 is the only profile whose RPU has vdr_rpu_profile 0 with a
++    // full range base layer (the same guess dovi_tool makes). Profiles 7/8
++    // carry a valid HDR10/HLG base layer, which this renderer already shows
++    // correctly, so they are left alone.
++    if (!hdr->disable_residual_flag || hdr->vdr_rpu_profile != 0 ||
++        !hdr->bl_video_full_range_flag || hdr->bl_bit_depth < 8 ||
++        hdr->bl_bit_depth > 16 || hdr->coef_log2_denom > 62)
++        return NULL;
++    return md;
++}
++
++static float dovi_pq_eotf(float x)
++{
++    const float m1 = 2610.0 / 16384, m2 = 2523.0 / 4096 * 128;
++    const float c1 = 3424.0 / 4096, c2 = 2413.0 / 4096 * 32,
++                c3 = 2392.0 / 4096 * 32;
++    x = powf(MPMAX(x, 0.0f), 1.0f / m2);
++    return powf(MPMAX(x - c1, 0.0f) / (c2 - c3 * x), 1.0f / m1);
++}
++
++static void pass_dovi_p5(struct gl_video *p, const AVDOVIMetadata *md)
++{
++    struct gl_shader_cache *sc = p->sc;
++    const AVDOVIRpuDataHeader *hdr = av_dovi_get_header(md);
++    const AVDOVIDataMapping *map = av_dovi_get_mapping(md);
++    const AVDOVIColorMetadata *col = av_dovi_get_color(md);
++    const float pivot_scale = 1.0f / ((1 << hdr->bl_bit_depth) - 1);
++    const float coef_scale = 1.0f / (1LL << hdr->coef_log2_denom);
++    char name[32];
++
++    pass_describe(p, "dolby vision reshaping");
++
++    // pass_read_video() normalizes high bit depth YUV to the 8 bit shifted
++    // range, code / (2^n * 255/256); the RPU works on code / (2^n - 1).
++    float range_fix = (1LL << hdr->bl_bit_depth) * 255.0f / 256.0f * pivot_scale;
++    GLSLF("{\n");
++    GLSLF("vec3 dv_sig = clamp(color.rgb * %f, 0.0, 1.0);\n", range_fix);
++    GLSLF("vec4 dv_sigX = vec4(dv_sig.xxy * dv_sig.yzz,\n"
++          "                  dv_sig.x * dv_sig.y * dv_sig.z);\n");
++    GLSL(float dv_s; float dv_r; float dv_v;)
++
++    static const char *const sig_pow[3] = {
++        "dv_sig", "(dv_sig * dv_sig)", "(dv_sig * dv_sig * dv_sig)",
++    };
++    static const char *const sigx_pow[3] = {
++        "dv_sigX", "(dv_sigX * dv_sigX)", "(dv_sigX * dv_sigX * dv_sigX)",
++    };
++
++    for (int c = 0; c < 3; c++) {
++        const AVDOVIReshapingCurve *curve = &map->curves[c];
++        int num_pivots = MPMIN(curve->num_pivots, AV_DOVI_MAX_PIECES + 1);
++        if (num_pivots < 2) {
++            GLSLF("color[%d] = dv_sig[%d];\n", c, c);
++            continue;
++        }
++        GLSLF("dv_s = dv_sig[%d];\n", c);
++        for (int i = 0; i < num_pivots - 1; i++) {
++            if (curve->mapping_idc[i] == AV_DOVI_MAPPING_MMR) {
++                snprintf(name, sizeof(name), "dv_mmr_k_%d_%d", c, i);
++                gl_sc_uniform_dynamic(sc);
++                gl_sc_uniform_f(sc, name, coef_scale * curve->mmr_constant[i]);
++                GLSLF("dv_r = %s;\n", name);
++                int order = MPCLAMP(curve->mmr_order[i], 1, 3);
++                for (int j = 0; j < order; j++) {
++                    const int64_t *k = curve->mmr_coef[i][j];
++                    float a[3] = {coef_scale * k[0], coef_scale * k[1],
++                                  coef_scale * k[2]};
++                    float b[4] = {coef_scale * k[3], coef_scale * k[4],
++                                  coef_scale * k[5], coef_scale * k[6]};
++                    snprintf(name, sizeof(name), "dv_mmr_a_%d_%d_%d", c, i, j);
++                    gl_sc_uniform_dynamic(sc);
++                    gl_sc_uniform_vec3(sc, name, a);
++                    GLSLF("dv_r += dot(%s, %s);\n", name, sig_pow[j]);
++                    snprintf(name, sizeof(name), "dv_mmr_b_%d_%d_%d", c, i, j);
++                    gl_sc_uniform_dynamic(sc);
++                    gl_sc_uniform_vec4(sc, name, b);
++                    GLSLF("dv_r += dot(%s, %s);\n", name, sigx_pow[j]);
++                }
++            } else {
++                float k[3] = {0};
++                for (int n = 0; n <= MPMIN(curve->poly_order[i], 2); n++)
++                    k[n] = coef_scale * curve->poly_coef[i][n];
++                snprintf(name, sizeof(name), "dv_poly_%d_%d", c, i);
++                gl_sc_uniform_dynamic(sc);
++                gl_sc_uniform_vec3(sc, name, k);
++                GLSLF("dv_r = (%s.z * dv_s + %s.y) * dv_s + %s.x;\n",
++                      name, name, name);
++            }
++            if (i == 0) {
++                GLSL(dv_v = dv_r;)
++            } else {
++                // Pivots are ascending: the last piece whose lower pivot is
++                // <= dv_s wins.
++                snprintf(name, sizeof(name), "dv_pivot_%d_%d", c, i);
++                gl_sc_uniform_dynamic(sc);
++                gl_sc_uniform_f(sc, name, pivot_scale * curve->pivots[i]);
++                GLSLF("dv_v = mix(dv_v, dv_r, float(dv_s >= %s));\n", name);
++            }
++        }
++        float bounds[2] = {pivot_scale * curve->pivots[0],
++                           pivot_scale * curve->pivots[num_pivots - 1]};
++        snprintf(name, sizeof(name), "dv_bounds_%d", c);
++        gl_sc_uniform_dynamic(sc);
++        gl_sc_uniform_vec2(sc, name, bounds);
++        GLSLF("color[%d] = clamp(dv_v, %s.x, %s.y);\n", c, name, name);
++    }
++    GLSLF("}\n");
++
++    // Non-linear matrix + offset: yields PQ-coded LMS.
++    float nonlinear[3][3], offset[3], linear[3][3];
++    for (int i = 0; i < 3; i++) {
++        offset[i] = av_q2d(col->ycc_to_rgb_offset[i]);
++        for (int j = 0; j < 3; j++) {
++            nonlinear[i][j] = av_q2d(col->ycc_to_rgb_matrix[i * 3 + j]);
++            linear[i][j] = av_q2d(col->rgb_to_lms_matrix[i * 3 + j]);
++        }
++    }
++    gl_sc_uniform_dynamic(sc);
++    gl_sc_uniform_mat3(sc, "dv_nonlinear", true, &nonlinear[0][0]);
++    gl_sc_uniform_dynamic(sc);
++    gl_sc_uniform_vec3(sc, "dv_offset", offset);
++    GLSL(color.rgb = mat3(dv_nonlinear) * (color.rgb - dv_offset);)
++
++    // Dolby Vision always decodes to BT.2020-referred HPE LMS; that inverse is
++    // fixed, the RPU only supplies the RGB -> LMS crosstalk matrix.
++    static const float lms2rgb_fixed[3][3] = {
++        { 3.06441879, -2.16597676,  0.10155818},
++        {-0.65612108,  1.78554118, -0.12943749},
++        { 0.01736321, -0.04725154,  1.03004253},
++    };
++    float lms2rgb[3][3];
++    for (int i = 0; i < 3; i++) {
++        for (int j = 0; j < 3; j++) {
++            lms2rgb[i][j] = 0;
++            for (int k = 0; k < 3; k++)
++                lms2rgb[i][j] += lms2rgb_fixed[i][k] * linear[k][j];
++        }
++    }
++    gl_sc_uniform_dynamic(sc);
++    gl_sc_uniform_mat3(sc, "dv_lms2rgb", true, &lms2rgb[0][0]);
++    pass_linearize(sc, PL_COLOR_TRC_PQ);
++    GLSL(color.rgb = mat3(dv_lms2rgb) * color.rgb;)
++    pass_delinearize(sc, PL_COLOR_TRC_PQ);
++
++    // From here on the frame is ordinary PQ BT.2020 RGB, so the regular color
++    // management (tone mapping, gamut mapping) takes over. Only the transfer
++    // characteristics are updated: `repr.sys` also drives how pass_read_video()
++    // reads the planes of the next frame and must stay YUV.
++    p->image_params.color.primaries = PL_COLOR_PRIM_BT_2020;
++    p->image_params.color.transfer = PL_COLOR_TRC_PQ;
++    p->image_params.light = MP_CSP_LIGHT_DISPLAY;
++    if (col->source_max_pq) {
++        p->image_params.color.hdr.max_luma =
++            dovi_pq_eotf(col->source_max_pq / 4095.0f) * 10000.0f;
++    }
++}
++
+ // yuv conversion, and any other conversions before main up/down-scaling
+ static void pass_convert_yuv(struct gl_video *p)
+ {
+@@ -2559,6 +2742,12 @@ static void pass_convert_yuv(struct gl_video *p)
+     if (p->color_swizzle[0])
+         GLSLF("color = color.%s;\n", p->color_swizzle);
+ 
++    const AVDOVIMetadata *dovi = get_dovi_p5_metadata(p->image.mpi);
++    if (dovi && !p->is_gray) {
++        pass_dovi_p5(p, dovi);
++        goto done;
++    }
++
+     // Pre-colormatrix input gamma correction
+     if (cparams.repr.sys == PL_COLOR_SYSTEM_XYZ)
+         pass_linearize(p->sc, p->image_params.color.transfer);
+@@ -2618,6 +2807,7 @@ static void pass_convert_yuv(struct gl_video *p)
+               gl_sc_bvec(p->sc, 3));
+     }
+ 
++done:
+     p->components = 3;
+     if (!p->has_alpha) {
+         GLSL(color.a = 1.0;)
