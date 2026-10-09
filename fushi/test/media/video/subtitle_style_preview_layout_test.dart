@@ -7,7 +7,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../helpers/video_quick_settings_harness.dart';
 
-/// BUG-3066：字幕样式预览在竖屏手机宽度下把字号调大后，主字幕换行长过副字幕，
+/// BUG-3080：字幕样式预览在竖屏手机宽度下把字号调大后，主字幕换行长过副字幕，
 /// 两行画在同一处（串行），主字幕第一行还跑到副字幕上面。
 ///
 /// 钉住：任意字号下两层字幕的绘制矩形互不相交、副字幕（默认锚顶）恒在主字幕
