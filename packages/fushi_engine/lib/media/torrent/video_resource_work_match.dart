@@ -109,7 +109,9 @@ VideoResourceWorkMismatch? videoResourceWorkMismatch(
   if (!target.remakeMarked && _isRemake(releaseTitle, release, target)) {
     return VideoResourceWorkMismatch.remake;
   }
-  if (_isOtherSequel(release, target)) return VideoResourceWorkMismatch.sequel;
+  if (_isOtherSequel(releaseTitle, release, target)) {
+    return VideoResourceWorkMismatch.sequel;
+  }
   return null;
 }
 
@@ -139,6 +141,10 @@ bool _spansSeveralYears(String title) {
   return false;
 }
 
+/// 「新」前面紧挨着这些字时是另一个词（`最新` / `更新` / `重新` / `全新` / `崭新`…），
+/// 不是重制修饰。
+const String _newCompoundPrefixes = '最更重全崭嶄清革创創翻';
+
 bool _isRemake(String raw, String release, VideoResourceWorkTarget target) {
   if (_cjkRemakeMarker.hasMatch(raw)) return true;
   final String padded = ' $release ';
@@ -146,10 +152,12 @@ bool _isRemake(String raw, String release, VideoResourceWorkTarget target) {
   for (final String title in target.titles) {
     if (_cjkChar.hasMatch(title)) {
       final String plain = title.replaceAll(' ', '');
-      for (int i = 0; i <= plain.length; i++) {
+      // 「新」只作标题前缀修饰（`新大雄的恐龙`）或插在标题中间（`大雄的新恐龙`）
+      // 才是重制记号；标题后面的「新」（`大雄的恐龙 新版`）是发布版本说明，不算。
+      for (int i = 0; i < plain.length; i++) {
         final String inserted =
             '${plain.substring(0, i)}新${plain.substring(i)}';
-        if (compact.contains(inserted)) return true;
+        if (_containsRemakeInsertion(compact, inserted, i)) return true;
       }
       continue;
     }
@@ -168,6 +176,22 @@ bool _isRemake(String raw, String release, VideoResourceWorkTarget target) {
   return false;
 }
 
+/// [compact] 里有没有一处 [inserted]（「新」在其中第 [newAt] 位），且那个「新」
+/// 不是 `最新` / `更新` 这类复合词的后半。
+bool _containsRemakeInsertion(String compact, String inserted, int newAt) {
+  int from = 0;
+  while (true) {
+    final int at = compact.indexOf(inserted, from);
+    if (at < 0) return false;
+    from = at + 1;
+    final int newIndex = at + newAt;
+    if (newIndex > 0 && _newCompoundPrefixes.contains(compact[newIndex - 1])) {
+      continue;
+    }
+    return true;
+  }
+}
+
 /// 标题尾部的续作序号（`stand by me ドラえもん 2` → (`stand by me ドラえもん`, 2)）。
 /// 只认 1–2 位：四位数是年份，不是续作。
 (String, int?) _splitSequelNumber(String title) {
@@ -182,7 +206,29 @@ final RegExp _followingNumber = RegExp(
   r'^ (\d{1,2})(?![0-9])(?! ?(?:bit|bits|p|fps|ch|x)(?: |$))(?! \d(?: |$))',
 );
 
-bool _isOtherSequel(String release, VideoResourceWorkTarget target) {
+/// 标题后面跟着的数字是不是**集号**而不是续作序号：补零写法（`01`，续作序号没人
+/// 补零）、或原标题里这个数字带着集号上下文（` - 12`、`[12]`、`【12】`、`EP12`、
+/// `#12`、`第12话`、`12话` / `12集`、`12v2`、`12 END`）。
+bool _looksLikeEpisodeNumber(String digits, String raw) {
+  if (digits.length > 1 && digits.startsWith('0')) return true;
+  final String n = '0*${int.parse(digits)}';
+  return RegExp(
+    '(?:\\s[-–—~]\\s*$n(?![0-9])'
+    '|[\\[【(（]\\s*$n(?:v[0-9]+)?(?:\\s*(?:end|fin))?\\s*[\\]】)）]'
+    '|(?<![a-z])(?:ep\\.?\\s*|e|#\\s*)$n(?![0-9])'
+    '|第\\s*$n(?![0-9])'
+    '|(?<![0-9])$n\\s*(?:话|話|集|回)'
+    '|(?<![0-9])$n\\s*v[0-9]+(?![0-9])'
+    '|(?<![0-9])$n\\s+(?:end|fin)(?![a-z]))',
+    caseSensitive: false,
+  ).hasMatch(raw);
+}
+
+bool _isOtherSequel(
+  String raw,
+  String release,
+  VideoResourceWorkTarget target,
+) {
   final String padded = ' $release ';
   bool matched = false;
   bool mismatched = false;
@@ -200,9 +246,11 @@ bool _isOtherSequel(String release, VideoResourceWorkTarget target) {
       if (end >= padded.length || padded[end] != ' ') continue;
       final String rest = padded.substring(end);
       final RegExpMatch? following = _followingNumber.firstMatch(rest);
-      final int? found = following == null
+      final String? digits = following?.group(1);
+      // 集号（`Title 01`、`Title - 12 [1080p]`）不是续作序号：按没写序号算。
+      final int? found = digits == null || _looksLikeEpisodeNumber(digits, raw)
           ? null
-          : int.parse(following.group(1)!);
+          : int.parse(digits);
       if (found == number) {
         matched = true;
       } else {

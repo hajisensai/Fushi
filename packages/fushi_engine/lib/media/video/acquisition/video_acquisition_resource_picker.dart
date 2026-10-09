@@ -568,19 +568,26 @@ List<String> availableResolutionsOf(List<VideoResourceVersionGroup> groups) {
 ///   那一部（BUG-3065）。
 /// * [originalLanguageOnly]：用户要原语言时，标题明写「只有配音」或「硬字幕」的
 ///   发布（[releaseIsDubOnly] / [releaseHasBurnedInSubtitles]，BUG-3066）。
+///   [workLanguage] 是作品原语言码：国产片的「国语」、粤语片的「粤语」是原音轨，
+///   中文作品的「中字」是同语言字幕，都不算不合格；判不出语言时传 null（按外语
+///   作品判）。
 List<VideoResourceCandidate> cleanResourceCandidates(
   List<VideoResourceCandidate> items, {
   required bool skipExtras,
   VideoResourceWorkTarget? work,
   bool originalLanguageOnly = false,
+  String? workLanguage,
 }) => <VideoResourceCandidate>[
   for (final VideoResourceCandidate item in items)
     if (!(skipExtras && looksLikeExtrasOnlyRelease(item.title)) &&
         !(work != null &&
             videoResourceWorkMismatch(item.title, work) != null) &&
         !(originalLanguageOnly &&
-            (releaseIsDubOnly(item.title) ||
-                releaseHasBurnedInSubtitles(item.title))))
+            (releaseIsDubOnly(item.title, workLanguage: workLanguage) ||
+                releaseHasBurnedInSubtitles(
+                  item.title,
+                  workLanguage: workLanguage,
+                ))))
       item,
 ];
 

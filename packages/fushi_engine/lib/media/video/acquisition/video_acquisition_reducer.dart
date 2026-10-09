@@ -1446,6 +1446,7 @@ VideoAcquisitionReduction _onResourcesLoaded(
             ? VideoResourceWorkTarget.fromReference(reference)
             : null,
         originalLanguageOnly: wantsOriginalLanguageRelease(state),
+        workLanguage: state.contentLanguage?.code,
       ),
     ),
     busy: false,
@@ -2219,6 +2220,7 @@ VideoAcquisitionReduction _onFranchiseEntryResolved(
     // 播出年份，按首播年排会误杀）。
     filterSeriesByYear: _hasSameTitledSeries(state.franchiseEntries, target),
     originalLanguageOnly: wantsOriginalLanguageRelease(state),
+    workLanguage: state.contentLanguage?.code,
   );
   final List<VideoAcquisitionFranchiseEntry> entries =
       List<VideoAcquisitionFranchiseEntry>.of(state.franchiseEntries);
@@ -2263,7 +2265,9 @@ VideoAcquisitionReduction _onFranchiseEntryResolved(
 ///   从已知最小集号起，已出的集会一起下）。订阅推不出严格规则时退回下载。
 /// * 身份：电影按完整身份（年份 / 重制版 / 续作序号）排除兄弟作品的发布
 ///   （BUG-3065）；剧集只在清单里有同名剧集时按年份排除。
-/// * 语言：[originalLanguageOnly] 时排除只有配音 / 硬字幕的发布（BUG-3066）。
+/// * 语言：[originalLanguageOnly] 时排除只有配音 / 硬字幕的发布（BUG-3066）；
+///   「配音 / 硬字幕」按这一部的原语言判（详情给得出就用它，否则用会话的
+///   [workLanguage]）——国产片的国语、粤语片的粤语、中文作品的中字都不算。
 /// * 画质：会话画质找不到时退到「离会话画质最近的可用档」（同距取高，超分殿后，
 ///   BUG-3067）——整套里不逐部追问。
 /// * 已在库 / 已订阅：照样给计划，默认不勾。
@@ -2274,6 +2278,7 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
   required VideoAcquisitionDefaults defaults,
   bool filterSeriesByYear = false,
   bool originalLanguageOnly = false,
+  String? workLanguage,
 }) {
   final VideoMediaReference reference = entry.item.reference;
   final VideoMetadataMediaKind kind = reference.mediaKind;
@@ -2297,6 +2302,9 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
               ? VideoResourceWorkTarget.yearOnly(reference.year)
               : null,
           originalLanguageOnly: originalLanguageOnly,
+          workLanguage:
+              resolveVideoWorkContentLanguage(event.work, reference).code ??
+              workLanguage,
         ),
       );
   ({VideoAcquisitionMode mode, VideoAcquisitionResourcePlan plan})? found;
