@@ -5,14 +5,12 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/physics.dart';
-import 'package:fushi/src/media/video/video_apple_chrome.dart';
 import 'package:fushi/src/media/video/video_chrome_colors.dart';
 import 'package:fushi/src/media/video/video_control_bar.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
@@ -1765,92 +1763,6 @@ class _RippleLabel extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 跳过片头 / 片尾
-// ---------------------------------------------------------------------------
-
-/// 「跳过片头 / 片尾」按钮本体（播放页 `_buildSkipChapterButton` 负责出现时机与
-/// 位置）。MD3：主色容器 Expressive 胶囊，按下形变（[FushiPressMorph]）；墨水屏
-/// 实色描边；Apple（[apple]）：深色玻璃胶囊。都是可聚焦按钮（Tab / 手柄可达，
-/// Enter 触发）。
-class VideoSkipChapterButton extends StatelessWidget {
-  const VideoSkipChapterButton({
-    super.key,
-    required this.label,
-    required this.scale,
-    required this.apple,
-    required this.onPressed,
-  });
-
-  final String label;
-  final double scale;
-  final bool apple;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final Widget content = Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: 18 * scale,
-        vertical: 12 * scale,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          FushiIcon(Icons.double_arrow_rounded, size: 20 * scale),
-          SizedBox(width: 8 * scale),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 14 * scale,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.1,
-            ),
-          ),
-        ],
-      ),
-    );
-    if (apple) {
-      return VideoGlassHud(
-        padding: EdgeInsets.zero,
-        child: FushiPlainButton(
-          onPressed: onPressed,
-          semanticLabel: label,
-          borderRadius: BorderRadius.circular(999),
-          child: content,
-        ),
-      );
-    }
-    final ColorScheme chrome = videoM3eChromeScheme(
-      Theme.of(context).colorScheme,
-    );
-    final bool eink = isEinkTheme(context);
-    final ButtonStyle style = FilledButton.styleFrom(
-      backgroundColor: eink ? Colors.black : chrome.primaryContainer,
-      foregroundColor: eink
-          ? videoChromeNeutralForeground
-          : chrome.onPrimaryContainer,
-      padding: EdgeInsets.zero,
-      minimumSize: Size.zero,
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      side: eink
-          ? const BorderSide(color: videoChromeNeutralForeground, width: 1.5)
-          : null,
-    );
-    return FushiPressMorph(
-      enabled: true,
-      style: style,
-      builder: (BuildContext _, ButtonStyle? s, WidgetStatesController? c) =>
-          FilledButton(
-            onPressed: onPressed,
-            style: s,
-            statesController: c,
-            child: content,
-          ),
     );
   }
 }

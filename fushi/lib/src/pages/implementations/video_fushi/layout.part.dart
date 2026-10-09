@@ -576,9 +576,6 @@ extension _VideoLayout on _VideoFushiPageState {
                         // 指示）。排在控制条之后 = 画在 scrim 之上；纯装饰、
                         // IgnorePointer，不抢 seek bar 的命中区。
                         _buildVideoSlimProgressBar(controller),
-                        // 「跳过片头 / 片尾」（章节名是 OP / ED 一类时出现，见
-                        // video_chapter_skip.dart）。
-                        _buildSkipChapterButton(controller),
                         // MD3 Expressive 双击快进 / 快退涟漪（纯视觉；Apple 不发事件）。
                         Positioned.fill(
                           child: VideoM3eDoubleTapRipple(

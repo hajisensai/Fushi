@@ -6,9 +6,11 @@
 // on that first load. No external video fixture is required.
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,7 +23,9 @@ import 'package:fushi/src/media/video/video_chapter_markers.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:path/path.dart' as p;
 
+import 'helpers/observe_capture.dart' show observeScreenshotDir;
 import 'test_helpers.dart';
 
 const String _kBookUid = 'video/itest-chapter-first-load';
@@ -95,6 +99,26 @@ title=Credits
           'ffmpeg must generate the chaptered MKV: ${result.failureSummary}');
   expect(video.existsSync(), isTrue, reason: 'generated MKV should exist');
   return video;
+}
+
+/// 整窗真实像素截图（与 bluray_disc_menu_itest 同法：RenderView 根 layer
+/// toImage），存进 observe 截图目录，作 BUG 证据。
+Future<void> _saveScreenshot(WidgetTester tester, String name) async {
+  final RenderView view = tester.binding.renderViews.first;
+  final OffsetLayer? layer = view.debugLayer as OffsetLayer?;
+  expect(layer, isNotNull);
+  final ui.Image image = await layer!.toImage(view.paintBounds);
+  try {
+    final ByteData? png = await image.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
+    expect(png, isNotNull);
+    final String path = p.join(observeScreenshotDir().path, '$name.png');
+    await File(path).writeAsBytes(png!.buffer.asUint8List(), flush: true);
+    debugPrint('[video-chapter-itest] screenshot: $path');
+  } finally {
+    image.dispose();
+  }
 }
 
 VideoFushiTestHooks? _readHooks(WidgetTester tester) {
@@ -173,6 +197,26 @@ void main() {
         findsWidgets,
         reason: 'duration-ready chapters should paint seek-bar markers',
       );
+
+      // BUG：「跳过片头 / 片尾」按钮整条功能已按用户决定移除。停在名为
+      // `Intro` 的章节内（后面还有下一章——旧实现正是在这里弹按钮），画面上
+      // 不得再出现任何跳过按钮；顺手出一张真实像素截图作证据。
+      final VideoFushiTestHooks hooks = _readHooks(tester)!;
+      await hooks.debugPause();
+      await hooks.debugSeekMs(500);
+      for (int i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+        final int? pos = _readHooks(tester)?.debugPositionMs;
+        if (pos != null && pos < 2000) break;
+      }
+      expect(_readHooks(tester)!.debugPositionMs, lessThan(2000),
+          reason: 'position should sit inside the Intro chapter');
+      for (int i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.byIcon(Icons.double_arrow_rounded), findsNothing,
+          reason: 'skip-opening button was removed; Intro must not offer it');
+      await _saveScreenshot(tester, 'video_intro_chapter_no_skip_button');
 
       _readHooks(tester)!.debugShowChapterPanel();
       for (int i = 0; i < 10; i++) {
