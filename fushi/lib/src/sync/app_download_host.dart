@@ -18,14 +18,10 @@ import 'package:fushi_engine/media/discovery/discovery_models.dart'
     show DiscoveryMediaKind;
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
-import 'package:fushi_engine/media/torrent/torrent_metainfo.dart'
-    show InspectedTorrentMetainfo;
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart'
     show VideoResourceProvider;
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
-import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
-    show VideoMetadataMediaKind;
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/pipeline_subscription_host.dart';
@@ -92,50 +88,14 @@ class AppDownloadHost implements HostDownloadHost {
       ));
 
   @override
-  Future<String> addMagnet({
-    required String magnetUri,
-    required String title,
-    String mediaKind = 'movie',
-    String? discoveryKind,
-  }) =>
-      _enqueue(
-        magnetUri: magnetUri,
-        title: title,
-        mediaKind: mediaKind,
-        discoveryKind: discoveryKind,
-      );
-
-  @override
-  Future<String> addTorrent({
-    required InspectedTorrentMetainfo metainfo,
-    Set<int>? fileIndexes,
-    required String title,
-    String mediaKind = 'movie',
-    String? discoveryKind,
-  }) =>
-      _enqueue(
-        metainfo: metainfo,
-        fileIndexes: fileIndexes,
-        title: title,
-        mediaKind: mediaKind,
-        discoveryKind: discoveryKind,
-      );
-
-  /// 磁链与 `.torrent` 的唯一入队路径：两者只差种子从哪来（管线要求二选一）。
-  Future<String> _enqueue({
-    String? magnetUri,
-    InspectedTorrentMetainfo? metainfo,
-    Set<int>? fileIndexes,
-    required String title,
-    required String mediaKind,
-    required String? discoveryKind,
-  }) async {
+  Future<String> add(HostDownloadAddRequest request) async {
     final VideoDownloadPipelineService pipeline = _requirePipeline;
     if (_readyBackend() == null) {
       throw const VideoDownloadPipelineActionRequired(
         'no torrent backend configured on this host',
       );
     }
+    final String? discoveryKind = request.discoveryKind;
     DiscoveryMediaKind? kind;
     if (discoveryKind != null) {
       if (!discoveryImportSupported ||
@@ -160,19 +120,21 @@ class AppDownloadHost implements HostDownloadHost {
       throw VideoDownloadPipelineActionRequired(error.message);
     }
     return pipeline.enqueueManual(
-      VideoDownloadManualEnqueueRequest(
-        title: title,
+      request.toEnqueueRequest(
         backendTarget: target,
-        magnetUri: magnetUri,
-        metainfo: metainfo,
-        selectedFileIndexes: fileIndexes,
         discoveryKind: kind,
-        mediaKind: mediaKind == 'tv'
-            ? VideoMetadataMediaKind.tv
-            : VideoMetadataMediaKind.movie,
         targetSourceId: sourceId,
       ),
     );
+  }
+
+  @override
+  Future<List<VideoDownloadJobSubtitleRow>?> listJobSubtitles(
+    String jobId,
+  ) async {
+    final FushiDatabase db = _database();
+    if (await db.getVideoDownloadJob(jobId) == null) return null;
+    return db.getVideoDownloadJobSubtitles(jobId);
   }
 
   @override

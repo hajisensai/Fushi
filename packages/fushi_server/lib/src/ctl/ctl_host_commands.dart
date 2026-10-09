@@ -54,8 +54,11 @@ void addCtlHostOptions(ArgParser parser) {
     ..addOption('query', abbr: 'q', help: 'scrape search：搜索词')
     ..addOption('collection', help: 'scrape：按合集定位作品（合集名）')
     ..addOption('collection-type', help: 'scrape：合集类型（配合 --collection）')
-    ..addOption('provider', help: 'scrape identify：anidb | mal | tmdb')
-    ..addOption('external-id', help: 'scrape identify：该来源的作品 id')
+    ..addOption('provider', help: 'scrape identify / downloads add：anidb | mal | tmdb')
+    ..addOption('external-id', help: 'scrape identify / downloads add：该来源的作品 id')
+    ..addOption('which', help: 'videos subtitle clear：primary | secondary | all', defaultsTo: 'primary')
+    ..addFlag('all-sidecars', negatable: false, help: 'videos subtitle clear：视频旁全部 sidecar 字幕都备份挪走')
+    ..addOption('lang', help: 'videos subtitle backfill：要的字幕语言（如 ja），缺省按 host 设置')
     ..addOption('episode-group', help: 'scrape identify / episode-group：TMDB 分集排序 id')
     ..addOption('feature', help: 'assistant start：功能名')
     ..addOption('locale', help: 'assistant start：界面语言', defaultsTo: 'zh-CN')
@@ -69,7 +72,9 @@ void addCtlHostOptions(ArgParser parser) {
 const String kCtlHostUsage = '''
   ── 经互联接口（admin 代理）──
   books [ls] | progress <bookKey> [--set '<json>']
-  videos [ls] | rm <id> | position|playback <id> [--set '<json>']
+  videos [ls] [--grep s] | rm <id> | position|playback <id> [--set '<json>']
+         | subtitle clear <id> [--which primary|secondary|all] [--all-sidecars]
+         | subtitle backfill <id> [--lang ja]
   audiobooks [ls] | position|delay <key> [--set '<json>']
   manga manifest <bookKey>
   dict [ls]
@@ -122,8 +127,32 @@ CtlHostRequest? parseCtlHostAction(List<String> rest, ArgResults command, String
           return CtlHostRequest('DELETE', '$kHostProxy/library/videos/${seg(arg(0)!)}');
         case 'position' || 'playback' when arg(0) != null:
           return readOrWrite('library/videos/${seg(arg(0)!)}/$sub');
+        case 'subtitle' when arg(0) == 'clear' && arg(1) != null:
+          final String which = command['which'] as String;
+          if (!const <String>{'primary', 'secondary', 'all'}.contains(which)) {
+            return usage('videos subtitle clear <id> [--which primary|secondary|all] [--all-sidecars]');
+          }
+          return CtlHostRequest(
+            'DELETE',
+            '$kHostProxy/library/videos/${seg(arg(1)!)}/subtitle',
+            query: <String, String>{
+              'which': which,
+              if (command['all-sidecars'] as bool) 'sidecars': 'all',
+            },
+          );
+        case 'subtitle' when arg(0) == 'backfill' && arg(1) != null:
+          final String? lang = command['lang'] as String?;
+          return CtlHostRequest(
+            'POST',
+            '$kHostProxy/library/videos/${seg(arg(1)!)}/subtitle/backfill',
+            body: <String, Object?>{if (lang != null && lang.trim().isNotEmpty) 'language': lang.trim()},
+          );
       }
-      return usage("videos [ls] | videos rm <id> | videos position|playback <id> [--set '<json>']");
+      return usage(
+        "videos [ls] [--grep s] | videos rm <id> | videos position|playback <id> [--set '<json>'] | "
+        'videos subtitle clear <id> [--which primary|secondary|all] [--all-sidecars] | '
+        'videos subtitle backfill <id> [--lang ja]',
+      );
 
     case 'audiobooks':
       switch (sub) {

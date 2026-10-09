@@ -2,9 +2,10 @@
 ///
 /// ```
 /// GET    /api/downloads                  {jobs: [...]}
-/// POST   /api/downloads                  {magnet, title, mediaKind?, discoveryKind?} → {jobId}
-///                                        或 {torrent(base64 .torrent), fileIndexes?, title, …}：
-///                                        只下种子里的这几个文件（合集包挑部）
+/// POST   /api/downloads                  {magnet | torrent, title, mediaKind?, discoveryKind?,
+///                                         files?, year?, metadataProvider?, externalId?,
+///                                         subtitlePolicy?} → {jobId}（字段见 HostDownloadAddRequest）
+/// GET    /api/downloads/<id>/subtitles   {subtitles: [...]}
 /// POST   /api/downloads/<id>/cancel
 /// POST   /api/downloads/<id>/retry
 /// DELETE /api/downloads/<id>
@@ -14,8 +15,6 @@ library;
 import 'dart:convert';
 
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/media/torrent/torrent_metainfo.dart'
-    show inspectTorrentMetainfo;
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show VideoDownloadPipelineActionRequired;
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
@@ -49,50 +48,11 @@ Future<shelf.Response> handleHostDownloadRequest(
       }
       if (method == 'POST') {
         final Object? decoded = jsonDecode(await request.readAsString());
-        if (decoded is! Map) return shelf.Response(400, body: 'JSON object body required');
-        final String magnet = (decoded['magnet'] ?? '').toString().trim();
-        final String torrent = (decoded['torrent'] ?? '').toString().trim();
-        final String title = (decoded['title'] ?? '').toString().trim();
-        if (magnet.isEmpty == torrent.isEmpty) {
-          return shelf.Response(400, body: 'Exactly one of magnet or torrent is required');
+        if (decoded is! Map) {
+          return shelf.Response(400, body: 'JSON object body required');
         }
-        if (title.isEmpty) return shelf.Response(400, body: 'Missing title');
-        final Object? rawIndexes = decoded['fileIndexes'];
-        if (rawIndexes != null && torrent.isEmpty) {
-          // 磁链没有文件清单，选文件只认 `.torrent`。
-          return shelf.Response(400, body: 'fileIndexes requires torrent');
-        }
-        if (rawIndexes != null &&
-            (rawIndexes is! List || rawIndexes.isEmpty || rawIndexes.any((Object? i) => i is! int || i < 0))) {
-          return shelf.Response(400, body: 'fileIndexes must be a non-empty list of non-negative integers');
-        }
-        final String mediaKind = (decoded['mediaKind'] ?? 'movie').toString();
-        if (mediaKind != 'movie' && mediaKind != 'tv') {
-          return shelf.Response(400, body: 'mediaKind must be movie or tv');
-        }
-        final String discoveryKind = (decoded['discoveryKind'] ?? '').toString().trim();
-        if (discoveryKind.isNotEmpty && !kHostDownloadDiscoveryKinds.contains(discoveryKind)) {
-          return shelf.Response(
-            400,
-            body: 'discoveryKind must be one of ${kHostDownloadDiscoveryKinds.join(', ')}',
-          );
-        }
-        final String? discovery = discoveryKind.isEmpty ? null : discoveryKind;
-        final String jobId = torrent.isEmpty
-            ? await host.addMagnet(
-                magnetUri: magnet,
-                title: title,
-                mediaKind: mediaKind,
-                discoveryKind: discovery,
-              )
-            : await host.addTorrent(
-                // 坏 base64 / 坏 bencode 都是 FormatException → 400。
-                metainfo: inspectTorrentMetainfo(base64Decode(torrent)),
-                fileIndexes: rawIndexes == null ? null : <int>{for (final Object? i in rawIndexes as List) i! as int},
-                title: title,
-                mediaKind: mediaKind,
-                discoveryKind: discovery,
-              );
+        final String jobId =
+            await host.add(HostDownloadAddRequest.fromJson(decoded));
         return _json(<String, Object?>{'jobId': jobId});
       }
       return shelf.Response(405);
@@ -103,6 +63,16 @@ Future<shelf.Response> handleHostDownloadRequest(
       if (method != 'DELETE') return shelf.Response(405);
       await host.deleteJob(id);
       return _json(const <String, Object?>{'ok': true});
+    }
+    if (seg.length == 2 && seg[1] == 'subtitles') {
+      if (method != 'GET') return shelf.Response(405);
+      final List<VideoDownloadJobSubtitleRow>? rows =
+          await host.listJobSubtitles(id);
+      if (rows == null) return shelf.Response.notFound('Unknown job');
+      return _json(<String, Object?>{
+        'subtitles':
+            rows.map(videoDownloadJobSubtitleToWire).toList(growable: false),
+      });
     }
     if (method != 'POST') return shelf.Response(405);
     switch (seg[1]) {

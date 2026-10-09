@@ -10,7 +10,7 @@ import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart'
-    show videoDownloadJobToWire;
+    show HostDownloadAddRequest, videoDownloadJobToWire;
 import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/sync_backend_type.dart';
 import 'package:path/path.dart' as p;
@@ -423,7 +423,7 @@ List<CtlRoute> _downloadRoutes(DesktopCtlContext context) => <CtlRoute>[
     }
     return videoDownloadJobToWire(await _requireJob(appModel, id));
   }),
-  // 磁链：走 [AppDownloadHost.addMagnet]（与 admin_api / 互联代下载同一入口，落到
+  // 磁链：走 [AppDownloadHost.add]（与 admin_api / 互联代下载同一入口，落到
   // 默认受管视频来源）。.torrent：打开「添加任务」对话框预填该种子，由用户确认
   // 标题 / 内容类型 / 目标来源（对话框是种子解析与文件选择的唯一实现）。
   CtlRoute.post('/api/admin/downloads', (CtlCall call) async {
@@ -438,10 +438,12 @@ List<CtlRoute> _downloadRoutes(DesktopCtlContext context) => <CtlRoute>[
           throw const CtlFailure.badRequest('磁链里没有显示名（dn），请用 --title 指定');
         }
         final String jobId = await _mapPipelineErrors(
-          () => appModel.appDownloadHost.addMagnet(
-            magnetUri: target,
-            title: title,
-            mediaKind: call.optString('mediaKind') == 'tv' ? 'tv' : 'movie',
+          () => appModel.appDownloadHost.add(
+            HostDownloadAddRequest.magnet(
+              magnetUri: target,
+              title: title,
+              mediaKind: call.optString('mediaKind') == 'tv' ? 'tv' : 'movie',
+            ),
           ),
         );
         return <String, Object?>{'jobId': jobId, 'title': title};
