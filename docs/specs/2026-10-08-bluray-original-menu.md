@@ -70,6 +70,15 @@ Windows 的可选 BD-J Java 组件按随包清单固定版本与 SHA256，由应
 为零，再清理本次 staging，防止子 JVM 遗留文件锁。原有 Mihon helper 复用同一个
 公共进程容器，保留旧 factory 与同步 close 契约。
 
+## AACS 加密盘（2026-10-09，BUG-3074）
+
+菜单会话里 libbluray 自己读盘，必须能加载 libaacs。Fushi 随包自写的
+`native/fushi_aacs`（libaacs ABI 子集）：打开前 app 用 KEYDB 按盘 ID 精确取 VUK
+并注册给模块，与标题直放同一密钥策略与解密算法；无钥且码流加密时在打开前
+就报 KEYDB 提示，明文副本按无钥注册。首个导航快照之前的 `bd` / `stream`
+原生错误一律判打开失败并记录 libbluray 原文。有钥的加密标题允许制卡。
+总线加密、AACS 2、BD+ 不支持；Linux 依赖系统 libaacs。
+
 ## 验证边界
 
 - 索引解析：HDMV、混合 BD-J、无菜单、截断、越界、主索引损坏与备份回退。

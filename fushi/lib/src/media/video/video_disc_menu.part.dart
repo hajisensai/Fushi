@@ -94,6 +94,8 @@ extension VideoDiscMenuController on VideoPlayerController {
     _discInitialMenuPending = false;
     _discInitialMenuRequested = false;
     _discTrackOwner = VideoDiscTrackOwner.disc;
+    _discAacsState = BlurayMenuAacsState.notProtected;
+    _discNavigationConfirmed = false;
     _clearDiscResolvedTracks();
   }
 
@@ -151,6 +153,14 @@ extension VideoDiscMenuController on VideoPlayerController {
       }
     }
     if (!_isCurrentLoad(player, loadToken)) return;
+    // libbluray decrypts menus, IG and titles itself through libaacs. Register
+    // this disc's KEYDB key with the bundled module before it opens the disc;
+    // an encrypted disc without a key fails here with the KEYDB guidance.
+    _setDiscLoadStage('disc-aacs');
+    final BlurayMenuAacsState aacs =
+        await prepareBlurayMenuAacs(_discRootPath!);
+    if (!_isCurrentLoad(player, loadToken)) return;
+    _discAacsState = aacs;
     // An empty per-player override lets libbluray use its documented system
     // runtime discovery. Clear a previous disc's private override on reuse.
     _setDiscLoadStage('disc-properties');
@@ -281,6 +291,7 @@ extension VideoDiscMenuController on VideoPlayerController {
         }
         return;
       }
+      _discNavigationConfirmed = true;
       final VideoDiscNavigationState? previous = _discState;
       if (shouldReturnDiscTrackOwnership(
         owner: _discTrackOwner, previous: previous, next: next,
@@ -346,6 +357,29 @@ extension VideoDiscMenuController on VideoPlayerController {
         }
       }
     }
+  }
+
+  /// libbluray reports why a disc cannot open (AACS, BD+, unreadable index)
+  /// only as a native `bd` error; mpv then gives a generic "No protocol
+  /// handler" `stream` error and the player stays idle with no snapshot.
+  /// Until the first navigation snapshot confirms the disc opened, either one
+  /// fails the session visibly and records libbluray's actual reason.
+  void _onDiscNativeLog(Player player, PlayerLog log) {
+    if (!identical(_player, player) ||
+        !isBlurayNavigationSession ||
+        _discNavigationConfirmed ||
+        _discMenuError != null ||
+        (_discLoadStage != 'open' && !_discNavigationOpened) ||
+        !isVideoDiscOpenFailureLog(prefix: log.prefix, level: log.level)) {
+      return;
+    }
+    _invalidateDiscTitle();
+    _discMenuError = 'navigation-open-failed';
+    onPlaybackError?.call(
+      '${const VideoDiscMenuException('navigation-open-failed')}: '
+      '[${log.prefix.trim()}] ${log.text.trim()}',
+    );
+    _notifyDiscMenuChanged();
   }
 
   void _invalidateDiscTitle() {
@@ -560,7 +594,10 @@ extension VideoDiscMenuController on VideoPlayerController {
       for (final String clip in playlist.clipIds.toSet()) {
         final String stream = p.join(root, 'BDMV', 'STREAM', '$clip.m2ts');
         if (!await File(stream).exists()) return 'extraction-source-unavailable';
-        if (await isAacsEncryptedStreamFile(stream)) {
+        // A keyed disc decrypts for FFmpeg too: the shared backend resolves the
+        // same exact KEYDB entry through AacsMediaSession.
+        if (_discAacsState != BlurayMenuAacsState.keyed &&
+            await isAacsEncryptedStreamFile(stream)) {
           return 'encrypted-extraction-source';
         }
       }

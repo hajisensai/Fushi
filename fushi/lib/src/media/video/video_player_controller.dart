@@ -7,6 +7,7 @@ import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_diag_stats.dart';
 import 'package:fushi/src/media/video/video_black_flicker_detector.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
+import 'package:fushi/src/media/video/bluray_aacs_module.dart';
 import 'package:fushi/src/media/video/bluray_java_runtime.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/startup/media_handle_registry.dart';
@@ -626,6 +627,9 @@ class VideoPlayerController extends ChangeNotifier
   VideoDiscTrackOwner _discTrackOwner = VideoDiscTrackOwner.disc;
   StreamSubscription<Track>? _discTrackSub;
   StreamSubscription<Tracks>? _discTracksSub;
+  StreamSubscription<PlayerLog>? _discLogSub;
+  BlurayMenuAacsState _discAacsState = BlurayMenuAacsState.notProtected;
+  bool _discNavigationConfirmed = false;
   String? _discResolvedAudioTrackId;
   String? _discResolvedSubtitleTrackId;
   String? _discResolvedSubtitleCodec;
@@ -2516,6 +2520,9 @@ class VideoPlayerController extends ChangeNotifier
       _diagLogSub = player.stream.log.listen(_onMpvLogForDiagnostics);
       _discTrackSub = player.stream.track.listen((Track _) {
         _onDiscTracksChanged(player);
+      });
+      _discLogSub = player.stream.log.listen((PlayerLog log) {
+        _onDiscNativeLog(player, log);
       });
       _discTracksSub = player.stream.tracks.listen((Tracks _) {
         _onDiscTracksChanged(player);
@@ -4822,8 +4829,10 @@ class VideoPlayerController extends ChangeNotifier
     _discObservedPlayer = null;
     unawaited(_discTrackSub?.cancel());
     unawaited(_discTracksSub?.cancel());
+    unawaited(_discLogSub?.cancel());
     _discTrackSub = null;
     _discTracksSub = null;
+    _discLogSub = null;
     unawaited(_closeAacsSessionsExcept(null));
     // 退出前强制记录当前位置：周期保存的整秒节流会吞掉退出瞬间同一整秒内的最后
     // 几百毫秒进度。这里在 [_player] 仍存活时同步读位置并 fire-and-forget 写一次
@@ -4923,8 +4932,10 @@ class VideoPlayerController extends ChangeNotifier
     _discObservedPlayer = null;
     unawaited(_discTrackSub?.cancel());
     unawaited(_discTracksSub?.cancel());
+    unawaited(_discLogSub?.cancel());
     _discTrackSub = null;
     _discTracksSub = null;
+    _discLogSub = null;
     final Player? player = _player;
     if (player == null) {
       await closingAacs;
