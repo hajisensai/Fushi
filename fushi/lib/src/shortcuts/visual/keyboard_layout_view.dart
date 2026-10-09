@@ -66,7 +66,9 @@ const double kAnsiMainRowFlex = 15;
 ///
 /// 修饰键行按平台选两套（BUG-3203，用户 10-09 拍板）：macOS / 外接键盘的 iPad
 /// 画 Mac 键盘——左下 fn、⌃ control、⌥ option、⌘ command，右侧 ⌘ ⌥；其它平台
-/// 画 PC 的 Ctrl / Win / Alt。只是示意图的布局数据，逻辑键与存储键名不变。
+/// 画 PC 的 Ctrl / Win / Alt。Mac 上键名也按 Mac 键盘印（esc / tab / caps lock /
+/// delete / return，用户 10-10 拍板）。只是示意图的布局数据与显示，逻辑键与
+/// 存储键名不变。
 /// [platform] 缺省取快捷键显示平台 [shortcutDisplayPlatform]。
 List<List<KeyboardKeySpec>> buildPhysicalKeyboardRows({
   TargetPlatform? platform,
@@ -77,7 +79,7 @@ List<List<KeyboardKeySpec>> buildPhysicalKeyboardRows({
   final String shiftLabel = mac ? '⇧\nshift' : 'Shift';
   return <List<KeyboardKeySpec>>[
     <KeyboardKeySpec>[
-      const KeyboardKeySpec(LogicalKeyboardKey.escape, 'Esc'),
+      KeyboardKeySpec(LogicalKeyboardKey.escape, mac ? 'esc' : 'Esc'),
       const KeyboardKeySpec.spacer(0.5),
       const KeyboardKeySpec(LogicalKeyboardKey.f1, 'F1'),
       const KeyboardKeySpec(LogicalKeyboardKey.f2, 'F2'),
@@ -109,10 +111,14 @@ List<List<KeyboardKeySpec>> buildPhysicalKeyboardRows({
       const KeyboardKeySpec(LogicalKeyboardKey.digit0, '0'),
       const KeyboardKeySpec(LogicalKeyboardKey.minus, '-'),
       const KeyboardKeySpec(LogicalKeyboardKey.equal, '='),
-      const KeyboardKeySpec(LogicalKeyboardKey.backspace, 'Bksp', flex: 2),
+      KeyboardKeySpec(
+        LogicalKeyboardKey.backspace,
+        mac ? 'delete' : 'Bksp',
+        flex: 2,
+      ),
     ],
     <KeyboardKeySpec>[
-      const KeyboardKeySpec(LogicalKeyboardKey.tab, 'Tab', flex: 1.5),
+      KeyboardKeySpec(LogicalKeyboardKey.tab, mac ? 'tab' : 'Tab', flex: 1.5),
       const KeyboardKeySpec(LogicalKeyboardKey.keyQ, 'Q'),
       const KeyboardKeySpec(LogicalKeyboardKey.keyW, 'W'),
       const KeyboardKeySpec(LogicalKeyboardKey.keyE, 'E'),
@@ -128,7 +134,11 @@ List<List<KeyboardKeySpec>> buildPhysicalKeyboardRows({
       const KeyboardKeySpec(LogicalKeyboardKey.backslash, '\\', flex: 1.5),
     ],
     <KeyboardKeySpec>[
-      const KeyboardKeySpec(LogicalKeyboardKey.capsLock, 'Caps', flex: 1.75),
+      KeyboardKeySpec(
+        LogicalKeyboardKey.capsLock,
+        mac ? 'caps lock' : 'Caps',
+        flex: 1.75,
+      ),
       const KeyboardKeySpec(LogicalKeyboardKey.keyA, 'A'),
       const KeyboardKeySpec(LogicalKeyboardKey.keyS, 'S'),
       const KeyboardKeySpec(LogicalKeyboardKey.keyD, 'D'),
@@ -140,7 +150,11 @@ List<List<KeyboardKeySpec>> buildPhysicalKeyboardRows({
       const KeyboardKeySpec(LogicalKeyboardKey.keyL, 'L'),
       const KeyboardKeySpec(LogicalKeyboardKey.semicolon, ';'),
       const KeyboardKeySpec(LogicalKeyboardKey.quote, '\''),
-      const KeyboardKeySpec(LogicalKeyboardKey.enter, 'Enter', flex: 2.25),
+      KeyboardKeySpec(
+        LogicalKeyboardKey.enter,
+        mac ? 'return' : 'Enter',
+        flex: 2.25,
+      ),
     ],
     <KeyboardKeySpec>[
       KeyboardKeySpec(
@@ -258,33 +272,70 @@ const List<KeyboardKeySpec> _macModifierRow = <KeyboardKeySpec>[
 /// 行结构（5 行）：Ins/Home/PgUp、Del/End/PgDn、空行间隙、倒 T 上键、倒 T 下键。
 /// 导航键与方向键都进 [KeyboardLayoutView.presentedKeys]（与主区键取并集），故不会
 /// 从反向绑定索引 / 高亮里消失、可点可绑。
-List<List<KeyboardKeySpec>> buildNavClusterRows() {
-  return <List<KeyboardKeySpec>>[
-    <KeyboardKeySpec>[
-      const KeyboardKeySpec(LogicalKeyboardKey.insert, 'Ins'),
-      const KeyboardKeySpec(LogicalKeyboardKey.home, 'Home'),
-      const KeyboardKeySpec(LogicalKeyboardKey.pageUp, 'PgUp'),
-    ],
-    <KeyboardKeySpec>[
-      const KeyboardKeySpec(LogicalKeyboardKey.delete, 'Del'),
-      const KeyboardKeySpec(LogicalKeyboardKey.end, 'End'),
-      const KeyboardKeySpec(LogicalKeyboardKey.pageDown, 'PgDn'),
-    ],
-    <KeyboardKeySpec>[
-      const KeyboardKeySpec.spacer(3),
-    ],
-    <KeyboardKeySpec>[
-      const KeyboardKeySpec.spacer(1),
-      const KeyboardKeySpec(LogicalKeyboardKey.arrowUp, 'Up'),
-      const KeyboardKeySpec.spacer(1),
-    ],
-    <KeyboardKeySpec>[
-      const KeyboardKeySpec(LogicalKeyboardKey.arrowLeft, 'Left'),
-      const KeyboardKeySpec(LogicalKeyboardKey.arrowDown, 'Down'),
-      const KeyboardKeySpec(LogicalKeyboardKey.arrowRight, 'Right'),
-    ],
-  ];
+///
+/// macOS / iPad 按 Mac 全尺寸键盘画（用户 10-10 拍板）：Mac 没有 Insert，那个位置
+/// 是 fn（只读修饰键）；其余是 home / page up、⌦ delete（向前删除，逻辑键仍是
+/// [LogicalKeyboardKey.delete]）/ end / page down，方向键印 ← ↑ → ↓。Insert 因此
+/// 不在 Mac 示意图上（Mac 键盘按不出来）；默认绑定没有用到它，用户自己或从 PC
+/// 同步来的 Insert 绑定照常在快捷键列表里显示与改绑。
+List<List<KeyboardKeySpec>> buildNavClusterRows({TargetPlatform? platform}) {
+  final bool mac = shortcutUsesAppleSymbols(
+    platform ?? shortcutDisplayPlatform,
+  );
+  return mac ? _macNavClusterRows : _pcNavClusterRows;
 }
+
+const List<List<KeyboardKeySpec>> _pcNavClusterRows = <List<KeyboardKeySpec>>[
+  <KeyboardKeySpec>[
+    KeyboardKeySpec(LogicalKeyboardKey.insert, 'Ins'),
+    KeyboardKeySpec(LogicalKeyboardKey.home, 'Home'),
+    KeyboardKeySpec(LogicalKeyboardKey.pageUp, 'PgUp'),
+  ],
+  <KeyboardKeySpec>[
+    KeyboardKeySpec(LogicalKeyboardKey.delete, 'Del'),
+    KeyboardKeySpec(LogicalKeyboardKey.end, 'End'),
+    KeyboardKeySpec(LogicalKeyboardKey.pageDown, 'PgDn'),
+  ],
+  <KeyboardKeySpec>[
+    KeyboardKeySpec.spacer(3),
+  ],
+  <KeyboardKeySpec>[
+    KeyboardKeySpec.spacer(1),
+    KeyboardKeySpec(LogicalKeyboardKey.arrowUp, 'Up'),
+    KeyboardKeySpec.spacer(1),
+  ],
+  <KeyboardKeySpec>[
+    KeyboardKeySpec(LogicalKeyboardKey.arrowLeft, 'Left'),
+    KeyboardKeySpec(LogicalKeyboardKey.arrowDown, 'Down'),
+    KeyboardKeySpec(LogicalKeyboardKey.arrowRight, 'Right'),
+  ],
+];
+
+const List<List<KeyboardKeySpec>> _macNavClusterRows = <List<KeyboardKeySpec>>[
+  <KeyboardKeySpec>[
+    KeyboardKeySpec(LogicalKeyboardKey.fn, 'fn', kind: KeyCapKind.modifier),
+    KeyboardKeySpec(LogicalKeyboardKey.home, 'home'),
+    KeyboardKeySpec(LogicalKeyboardKey.pageUp, 'page\nup'),
+  ],
+  <KeyboardKeySpec>[
+    KeyboardKeySpec(LogicalKeyboardKey.delete, '⌦\ndelete'),
+    KeyboardKeySpec(LogicalKeyboardKey.end, 'end'),
+    KeyboardKeySpec(LogicalKeyboardKey.pageDown, 'page\ndown'),
+  ],
+  <KeyboardKeySpec>[
+    KeyboardKeySpec.spacer(3),
+  ],
+  <KeyboardKeySpec>[
+    KeyboardKeySpec.spacer(1),
+    KeyboardKeySpec(LogicalKeyboardKey.arrowUp, '↑'),
+    KeyboardKeySpec.spacer(1),
+  ],
+  <KeyboardKeySpec>[
+    KeyboardKeySpec(LogicalKeyboardKey.arrowLeft, '←'),
+    KeyboardKeySpec(LogicalKeyboardKey.arrowDown, '↓'),
+    KeyboardKeySpec(LogicalKeyboardKey.arrowRight, '→'),
+  ],
+];
 
 /// 键盘布局预览图（TODO-942 P1 起只画键盘；P2 起补全真实 ANSI 主区 + 右侧导航簇）。
 ///

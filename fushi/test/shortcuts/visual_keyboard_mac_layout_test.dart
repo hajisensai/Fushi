@@ -64,6 +64,54 @@ void main() {
     }
   });
 
+  test('macOS / iOS name keys the Mac way and use the Mac nav cluster', () {
+    String labelsOf(List<List<KeyboardKeySpec>> rows) => <String>[
+      for (final List<KeyboardKeySpec> row in rows)
+        for (final KeyboardKeySpec s in row)
+          if (!s.isSpacer) s.label,
+    ].join('|');
+
+    final String mac = labelsOf(
+      buildPhysicalKeyboardRows(platform: TargetPlatform.macOS),
+    );
+    for (final String name in <String>[
+      'esc',
+      'tab',
+      'caps lock',
+      'delete',
+      'return',
+    ]) {
+      expect(mac.split('|'), contains(name));
+    }
+    for (final String pc in <String>['Esc', 'Tab', 'Caps', 'Bksp', 'Enter']) {
+      expect(mac.split('|'), isNot(contains(pc)));
+    }
+
+    final List<List<KeyboardKeySpec>> macNav = buildNavClusterRows(
+      platform: TargetPlatform.macOS,
+    );
+    expect(
+      labelsOf(macNav),
+      'fn|home|page\nup|⌦\ndelete|end|page\ndown|↑|←|↓|→',
+    );
+    // Insert 位置在 Mac 上是只读的 fn；逻辑键不变（⌦ 仍是 delete，方向键不变）。
+    expect(macNav.first.first.key, LogicalKeyboardKey.fn);
+    expect(macNav.first.first.kind, KeyCapKind.modifier);
+    expect(macNav[1].first.key, LogicalKeyboardKey.delete);
+    expect(buildNavClusterRows(platform: TargetPlatform.iOS), macNav);
+
+    final String pc = labelsOf(
+      buildPhysicalKeyboardRows(platform: TargetPlatform.windows),
+    );
+    for (final String name in <String>['Esc', 'Tab', 'Caps', 'Bksp', 'Enter']) {
+      expect(pc.split('|'), contains(name));
+    }
+    expect(
+      labelsOf(buildNavClusterRows(platform: TargetPlatform.windows)),
+      'Ins|Home|PgUp|Del|End|PgDn|Up|Left|Down|Right',
+    );
+  });
+
   testWidgets(
     'keyboard view draws the Mac modifier row when platform is macOS',
     (WidgetTester tester) async {
@@ -101,8 +149,14 @@ void main() {
       ];
       double previousLeft = double.negativeInfinity;
       for (final LogicalKeyboardKey key in bottom) {
-        final Finder cap = find.byKey(Key('keycap_${key.keyId}'));
-        expect(cap, findsOneWidget, reason: '$key');
+        // fn 在 Mac 示意图上出现两次（左下角 + 导航簇 Insert 位），取底行那枚。
+        final Finder all = find.byKey(Key('keycap_${key.keyId}'));
+        expect(
+          all,
+          key == LogicalKeyboardKey.fn ? findsNWidgets(2) : findsOneWidget,
+          reason: '$key',
+        );
+        final Finder cap = key == LogicalKeyboardKey.fn ? all.first : all;
         final double left = tester.getRect(cap).left;
         expect(left, greaterThan(previousLeft), reason: 'Mac order at $key');
         previousLeft = left;
@@ -110,6 +164,11 @@ void main() {
       expect(
         find.byKey(Key('keycap_${LogicalKeyboardKey.controlRight.keyId}')),
         findsNothing,
+      );
+      expect(
+        find.byKey(Key('keycap_${LogicalKeyboardKey.insert.keyId}')),
+        findsNothing,
+        reason: 'Mac keyboards have no Insert key',
       );
       expect(
         tester
