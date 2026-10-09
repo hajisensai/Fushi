@@ -1593,6 +1593,9 @@ class SyncRepository {
     'video_download_backend_path_mappings',
     'video_download_target_source_id',
     'video_download_embedded_installation_id',
+    // 书架「仅从本机移除」的远端书：语义就是只对这台设备成立，随备份漂到另一台
+    // 设备会让那边的同一份远端书也莫名消失。
+    'hidden_remote_books',
   ];
 
   // ── Helpers ───────────────────────────────────────────────────────

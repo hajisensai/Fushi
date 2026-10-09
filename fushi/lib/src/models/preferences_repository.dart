@@ -569,7 +569,8 @@ class PreferencesRepository extends ChangeNotifier
 
   /// 「仅从本机移除」的远端书（反馈 nvlhtczbro）：只在本机书架隐藏、对端那份不动。
   /// 元素是 [hiddenRemoteBookKey] 拼出的「来源身份 + 远端身份键」——同名书在另一台
-  /// host / 云盘上不受牵连。按设备记（不进 Profile 快照语义以外的同步）。
+  /// host / 云盘上不受牵连。设备本地（`SyncRepository.deviceLocalPrefKeys`），不随
+  /// 备份 / 同步带到别的设备。
   Set<String> get hiddenRemoteBooks {
     final Object? raw = getPref('hidden_remote_books', defaultValue: null);
     if (raw is! String || raw.isEmpty) return <String>{};
