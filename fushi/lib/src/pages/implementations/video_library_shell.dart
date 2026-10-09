@@ -55,6 +55,7 @@ class VideoLibraryShell extends StatefulWidget {
     required this.onOpenScrapeTasks,
     required this.onLibraryChanged,
     this.loadPendingScrapeWorks,
+    this.refreshPendingScrapeWorks,
     this.localLibraryPageBuilder,
     this.mediaServerServersLoader,
     this.mediaServerPageBuilder,
@@ -80,6 +81,10 @@ class VideoLibraryShell extends StatefulWidget {
   /// 跑一轮库内自动补刮并回传当前待确认作品清单（见 [HomeVideoPage]）。
   /// null = 不接线（宿主测试），视频页的待确认提醒条静默不显示。
   final Future<List<VideoPendingScrapeWork>> Function()? loadPendingScrapeWorks;
+
+  /// 刮削结果变化后只读重算待确认清单（见 [HomeVideoPage]，BUG-3072）。
+  final Future<List<VideoPendingScrapeWork>> Function()?
+      refreshPendingScrapeWorks;
 
   /// 允许宿主测试替换本地库叶子；生产环境保持 null，使用 [HomeVideoPage]。
   final Widget Function(
@@ -318,6 +323,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                       onOpenScrapeTasks: widget.onOpenScrapeTasks,
                       scrapeTaskController: widget.scrapeTaskController,
                       loadPendingScrapeWorks: widget.loadPendingScrapeWorks,
+                      refreshPendingScrapeWorks:
+                          widget.refreshPendingScrapeWorks,
                       onOpenSources: () => _select(VideoLibrarySection.sources),
                     ),
               ),

@@ -214,6 +214,64 @@ void main() {
         reason: '主源没给年份时用本地目录年份做年份门，不能只凭标题判精确命中');
   });
 
+  // BUG-3071：BUG-2828 修复前绑错的存量（identity 表只存 TMDB id、读回来按作品
+  // 形态还原成 movie lookup）重刮时排在映射前面复用，照样拉 /movie/62564——修复版
+  // 里重刮也救不回。第一轮用「映射说 62564 是电影」造出这份存量，第二轮换成真实
+  // 映射（`{tv: 62564}`）重刮。
+  test(
+      'rescrape drops a stored TMDB id that the mapping places in the other '
+      'namespace (BUG-3071)', () async {
+    final SourceLibraryRow source =
+        await _source(db, directory, fileName: 'Show (2018).mkv');
+    final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+    final _Provider staleTmdb = _Provider(VideoMetadataProviderKind.tmdb);
+    await scrape(
+      VideoSourceScrapeCoordinator(
+        primaryProvider: VideoMetadataProviderKind.mal,
+        database: db,
+        config: const VideoSourceScrapeGlobalConfig(),
+        registry: VideoMetadataProviderRegistry(
+            <VideoMetadataProvider>[mal, staleTmdb]),
+        identityMapping: _mapping(
+          '[{"anidb_id":13491,"mal_id":42,"themoviedb_id":{"movie":[62564]},'
+          '"type":"MOVIE"}]',
+        ),
+      ),
+      source,
+    );
+    expect(staleTmdb.fetchedIds, contains('62564'), reason: '造出绑错的存量');
+
+    final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
+    final SourceScrapeReport report = await scrape(
+      VideoSourceScrapeCoordinator(
+        primaryProvider: VideoMetadataProviderKind.mal,
+        database: db,
+        config: const VideoSourceScrapeGlobalConfig(),
+        registry:
+            VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal, tmdb]),
+        identityMapping: _mapping(
+          '[{"anidb_id":13491,"mal_id":42,"themoviedb_id":{"tv":62564},'
+          '"season":{"tmdb":0},"type":"MOVIE"}]',
+        ),
+      ),
+      source,
+    );
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    expect(tmdb.fetchedIds, isNot(contains('62564')),
+        reason: '映射说 62564 在 tv 空间，存量里的 movie 62564 不能再拉');
+    final List<String> storedTmdb = <String>[
+      for (final VideoMetadataProviderIdentityRow row
+          in await db.select(db.videoMetadataProviderIdentities).get())
+        if (row.provider == 'tmdb' &&
+            row.seasonId == null &&
+            row.episodeId == null &&
+            row.personKey == null &&
+            row.characterKey == null)
+          row.externalId,
+    ];
+    expect(storedTmdb, isNot(contains('62564')), reason: '绑错的交叉引用不再写回');
+  });
+
   // 本地年份是「这一季」的，TMDB 剧的年份是第一季首播：续作季拿本地年份当门
   // 会把正确的剧挡在 ±1 年外（审查发现，与 Shoko 的无年份查询变体同理）。
   test('sequel season does not gate the TMDB show search on its local year',

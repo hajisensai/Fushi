@@ -242,6 +242,7 @@ class HomeVideoPage extends BaseModuleTabPage {
     this.onOpenScrapeTasks,
     this.scrapeTaskController,
     this.loadPendingScrapeWorks,
+    this.refreshPendingScrapeWorks,
     this.onOpenSources,
     this.remoteVideoClientLoader,
     this.cloudRemoteVideoClientLoader,
@@ -269,7 +270,19 @@ class HomeVideoPage extends BaseModuleTabPage {
   ///
   /// 一个端口两件事是有意的：这两件事读的是同一份「哪些作品还没刮出规范身份」，
   /// 拆成两个端口就会查两遍全库。null = 未接线（宿主/独立测试），提醒条不显示。
+  ///
+  /// 只在「库里可能有新作品」时调（首次进入、条目集合变化）。刮削结果落库**不**
+  /// 走这里，走 [refreshPendingScrapeWorks]（BUG-3072）。
   final Future<List<VideoPendingScrapeWork>> Function()? loadPendingScrapeWorks;
+
+  /// 刮削结果落库 / 批次结束后重算待确认清单（只读，不发起补刮）。
+  ///
+  /// 与 [loadPendingScrapeWorks] 分开是契约要求：补刮批次自己写运行记录与作品
+  /// 资料，这些写入会触发展示层变更通知；若通知也发起补刮，一轮的写入就启动下
+  /// 一轮，资料源连不上时同一作品被每分钟重刮十几次（BUG-3072）。null = 结果
+  /// 变化后不刷新提醒条计数。
+  final Future<List<VideoPendingScrapeWork>> Function()?
+  refreshPendingScrapeWorks;
 
   final VoidCallback? onOpenSources;
   final Future<RemoteVideoClient?> Function()? remoteVideoClientLoader;
@@ -790,8 +803,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       return;
     }
     _refresh();
-    // 刚确认完一个作品的身份，提醒条上的数字要跟着掉下去。
-    unawaited(_refreshPendingScrape());
+    // 刚确认完一个作品的身份，提醒条上的数字要跟着掉下去。只读重算：这里的
+    // 触发源就是刮削写入（含补刮批次自己的），不能再发起补刮（BUG-3072）。
+    unawaited(_refreshPendingScrapeCount());
   }
 
   /// 批次忙 → 闲：补一次完整刷新（节流窗口里最后的写入、封面回填、待确认数）。
@@ -3718,21 +3732,33 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 跑一轮库内在线补刮，并把「仍待人工确认身份」的数量刷进顶部提醒条。
   ///
-  /// 端口自身幂等（同一作品每进程只自动尝试一次、批次忙时直接让路），所以进页面、
-  /// 切回页面、库里多出条目、刮削结果落库后都可以无脑调用，重复调用只多一次查库。
-  Future<void> _refreshPendingScrape() async {
-    final Future<List<VideoPendingScrapeWork>> Function()? load =
-        widget.loadPendingScrapeWorks;
-    if (load == null || _pendingScrapeInFlight) return;
+  /// 只在进页面、库里多出条目时调。端口自身幂等（同一作品在退避期内只自动尝试
+  /// 一次、批次忙时记下请求待批次结束兑现），不在这里设在飞闸门：闸门会把撞上
+  /// 计数刷新的补刮请求整个吞掉。
+  Future<void> _refreshPendingScrape() =>
+      _applyPendingScrape(widget.loadPendingScrapeWorks);
+
+  /// 只重算待确认数（刮削结果落库 / 批次结束）。不发起补刮（BUG-3072）。
+  Future<void> _refreshPendingScrapeCount() async {
+    if (_pendingScrapeInFlight) return;
     _pendingScrapeInFlight = true;
+    try {
+      await _applyPendingScrape(widget.refreshPendingScrapeWorks);
+    } finally {
+      _pendingScrapeInFlight = false;
+    }
+  }
+
+  Future<void> _applyPendingScrape(
+    Future<List<VideoPendingScrapeWork>> Function()? load,
+  ) async {
+    if (load == null) return;
     try {
       final List<VideoPendingScrapeWork> pending = await load();
       if (!mounted || pending.length == _pendingScrapeCount) return;
       setState(() => _pendingScrapeCount = pending.length);
     } catch (_) {
       // 提醒条是附加信息：取不到就保留上一次的数字，不打扰页面。
-    } finally {
-      _pendingScrapeInFlight = false;
     }
   }
 
