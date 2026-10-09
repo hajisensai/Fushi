@@ -24,6 +24,7 @@ class LyricsModeHtml {
     LyricsHtmlTheme theme, {
     Color? textColorOverride,
     Color? currentColorOverride,
+    bool sweep = true,
   }) {
     final Color text = textColorOverride ?? theme.textColor;
     final Color current = currentColorOverride ?? theme.currentColor;
@@ -77,7 +78,8 @@ class LyricsModeHtml {
       vars: vars,
       bodyClasses: <String>[
         'ly-themed',
-        'ly-sweep',
+        // 逐字跟读渐变（`lyrics_sweep`）。关掉时当前行整行用纯色，不扫过。
+        if (sweep) 'ly-sweep',
         if (theme.edgeFade > 0) 'ly-fade',
         if (theme.contextBlurPx > 0) 'ly-ctxblur',
         if (theme.pastOpacityFactor < 1) 'ly-past-dim',
@@ -90,11 +92,13 @@ class LyricsModeHtml {
     LyricsHtmlTheme theme, {
     Color? textColorOverride,
     Color? currentColorOverride,
+    bool sweep = true,
   }) {
     final ({Map<String, String> vars, List<String> bodyClasses}) t = themeVars(
       theme,
       textColorOverride: textColorOverride,
       currentColorOverride: currentColorOverride,
+      sweep: sweep,
     );
     return 'window.__lyricsApplyTheme && window.__lyricsApplyTheme('
         '${jsonEncode(t.vars)}, ${jsonEncode(t.bodyClasses)});';
@@ -127,6 +131,7 @@ class LyricsModeHtml {
     LyricsHtmlTheme? theme,
     Color? textColorOverride,
     Color? currentColorOverride,
+    bool sweep = true,
     String followLabel = '',
   }) {
     // 覆盖层主题：内联进 :root 与 body class，首帧即是最终观感（不等热更）。
@@ -138,6 +143,7 @@ class LyricsModeHtml {
                 theme,
                 textColorOverride: textColorOverride,
                 currentColorOverride: currentColorOverride,
+                sweep: sweep,
               );
     final String themeVarsCss = themed == null
         ? ''
@@ -403,7 +409,12 @@ body.ly-sweep:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx {
 body.ly-sweep:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx rt {
   -webkit-text-fill-color: var(--ly-current);
 }
-body.ly-sweep.ly-vertical .cue.current .tx {
+/* BUG-3105：竖排规则必须带上与横排同样的「播放中、非查词」门，且特异性要高于
+   横排规则（多一个 .ly-vertical）。旧选择器 `body.ly-sweep.ly-vertical .cue.current .tx`
+   既不认 .ly-paused / .ly-nosweep——暂停或查词时只剩这条背景、没有 background-clip:text，
+   当前句被一整块当前色盖住；特异性又低于横排规则——播放中被 `to right` 压掉，
+   竖排一列文字只按列宽左右扫，看不到逐字推进。 */
+body.ly-sweep.ly-vertical:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx {
   background-image: linear-gradient(to bottom, var(--ly-current) calc(var(--ly-p) - 4%),
       var(--ly-upcoming) calc(var(--ly-p) + 4%));
 }

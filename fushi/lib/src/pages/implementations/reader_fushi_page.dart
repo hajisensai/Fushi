@@ -79,6 +79,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show DictionaryPopupWebViewState, MinePopupResult;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/reader/audio_highlight_style.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
 import 'package:fushi/src/reader/reader_ruby_metrics_script.dart';
 import 'package:fushi/src/reader/reader_audio_position.dart';
@@ -4007,6 +4008,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   String _currentReaderCss() {
     final ReaderThemeColors rc = _readerThemeColors;
     final FushiReaderPalette? palette = _followThemePalette;
+    // 有声书当前句：底色开关 + 自定义字色（只变字色、无底色也是一种组合）。
+    final AudioHighlightStyle audioStyle = resolveAudioHighlightStyle(
+      highlight: rc.sentenceAudioHighlight,
+      showBackground: _settings!.audioHighlightBackground,
+      customTextColor: _settings!.audioHighlightTextColor,
+    );
     _cssThemeSignature = _readerThemeSignature();
     return ReaderContentStyles.css(
       settings: _settings!,
@@ -4027,7 +4034,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // 真相源）——preset 透传手调专色（与旧 switch 值逐一相等，零变化）、custom 用
       // 用户色、system/light 从真实 ColorScheme 强调色派生（不再落硬编码天蓝/灰/蓝）。
       selectionColor: _colorToCssRgba(rc.selection),
-      sentenceAudioHighlightColor: _colorToCssRgba(rc.sentenceAudioHighlight),
+      sentenceAudioHighlightColor: _colorToCssRgba(audioStyle.background),
+      sentenceAudioTextColor: audioStyle.text == null
+          ? null
+          : _colorToCssRgba(audioStyle.text!),
       linkColor: _colorToCssRgba(rc.link),
       // 跟随主题的 M3E 阅读配色才写注音色 / 原生选区；预设与钉纸色保持旧行为。
       // 分页 / 滚动 / VN 三种布局共用这一份 CSS，取色同源。

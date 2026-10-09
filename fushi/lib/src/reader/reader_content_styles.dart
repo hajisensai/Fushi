@@ -152,6 +152,7 @@ class ReaderContentStyles {
     String? customFg,
     String? selectionColor,
     String? sentenceAudioHighlightColor,
+    String? sentenceAudioTextColor,
     String? linkColor,
     String? rubyColor,
     String? nativeSelectionColor,
@@ -169,6 +170,7 @@ class ReaderContentStyles {
       customFg: customFg,
       selectionColor: selectionColor,
       sentenceAudioHighlightColor: sentenceAudioHighlightColor,
+      sentenceAudioTextColor: sentenceAudioTextColor,
       linkColor: linkColor,
       rubyColor: rubyColor,
       nativeSelectionColor: nativeSelectionColor,
@@ -403,6 +405,8 @@ body::after {
     String? customFg,
     String? selectionColor,
     String? sentenceAudioHighlightColor,
+    // 有声书当前句字色（resolveAudioHighlightStyle 的 text）。null = 沿用正文色。
+    String? sentenceAudioTextColor,
     String? linkColor,
     // 「跟随主题」M3E 阅读配色（FushiReaderPalette）才有的两个槽位：注音字色与
     // 桌面鼠标拖选的原生 ::selection 底色。null = 不写规则（预设 / 用户钉纸色 /
@@ -679,7 +683,7 @@ $pageBreakCss
 @media (prefers-color-scheme: light) { :root { --fushi-system-text-color: #000; } }
 @media (prefers-color-scheme: dark) { :root { --fushi-system-text-color: #fff; } }
 :root {
-  --fushi-sentence-audio-text-color: ${colors.textColor};
+  --fushi-sentence-audio-text-color: ${sentenceAudioTextColor ?? colors.textColor};
   --fushi-sentence-audio-background-color: ${sentenceAudioHighlightColor ?? colors.sentenceAudioHighlightColor};
 }
 html {

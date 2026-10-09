@@ -235,6 +235,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       theme: _lyricsHtmlTheme,
       textColorOverride: _lyricsCustomTextColor(),
       currentColorOverride: _lyricsCustomHighlightColor(),
+      sweep: ReaderFushiSource.instance.lyricsSweep,
       followLabel: t.audiobook_follow_audio,
     );
 
@@ -346,6 +347,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
             theme,
             textColorOverride: _lyricsCustomTextColor(),
             currentColorOverride: _lyricsCustomHighlightColor(),
+            sweep: src.lyricsSweep,
           ),
         );
       }
@@ -661,6 +663,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         theme,
         textColorOverride: _lyricsCustomTextColor(),
         currentColorOverride: _lyricsCustomHighlightColor(),
+        sweep: ReaderFushiSource.instance.lyricsSweep,
       ),
       'applyTheme',
     );
@@ -877,7 +880,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     await controller.evaluateJavascript(
       source: 'window.__lyricsReduceMotion = $reduceMotion;'
           "document.body.classList.toggle('ly-reduce', $reduceMotion);"
-          '${theme == null ? '' : LyricsModeHtml.applyThemeInvocation(theme, textColorOverride: _lyricsCustomTextColor(), currentColorOverride: _lyricsCustomHighlightColor())}',
+          '${theme == null ? '' : LyricsModeHtml.applyThemeInvocation(theme, textColorOverride: _lyricsCustomTextColor(), currentColorOverride: _lyricsCustomHighlightColor(), sweep: ReaderFushiSource.instance.lyricsSweep)}',
     );
     if (!currentLyricsLoad()) return;
     // 注入歌词专用行级 caret（键盘/手柄逐词查词），镜像 reader 的 fushiCaret 注入。
