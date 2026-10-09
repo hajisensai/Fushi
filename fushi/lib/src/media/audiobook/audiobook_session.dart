@@ -381,21 +381,6 @@ class AudiobookSession extends ChangeNotifier {
 
     if (controller != null) {
       controller.removeListener(_onControllerChanged);
-      // BUG-3197：stopPlayback 落库的是按**控制器手里那份 cue** 编码的全书毫秒。
-      // 会话期间字幕被换过（阅读器内 / 书架重新导入字幕）时，库里已经是新 cue，
-      // 仓库层也已把存着的进度换成新编码；这时再按旧 cue 落一次，下一次开书按
-      // 新 cue 一拆就落到别的文件 / 偏移——「重新导入字幕后听书进度被重置」。
-      // 落库前把控制器的 cue 对齐到库里那份，真实时间位置（文件下标 + 文件内
-      // 偏移，来自播放器本身）不变，只换编码。
-      try {
-        await _adoptStoredCueTimeline(controller, stoppingBook);
-      } catch (error, stack) {
-        ErrorLogService.instance.log(
-          'AudiobookSession.adoptStoredCueTimeline',
-          error,
-          stack,
-        );
-      }
       // BUG-278/TODO-367：dispose 前必须真正 stop（释放 native 解码器止声），不能
       // 只 pause（pause 保留解码器，紧随的同步 dispose 又抢不过异步平台拆除，
       // Android 上表现为停止后仍在响）。stopPlayback 可 await 到平台切换 settle，
@@ -404,6 +389,22 @@ class AudiobookSession extends ChangeNotifier {
         await controller.stopPlayback();
       } catch (error, stack) {
         remember(error, stack);
+      }
+      // BUG-3197：stopPlayback 落库的是按**控制器手里那份 cue** 编码的全书毫秒。
+      // 会话期间字幕被换过（阅读器内 / 书架重新导入字幕）时，库里已经是新 cue，
+      // 仓库层也已把存着的进度换成新编码；旧编码那次落库若留着，下一次开书按
+      // 新 cue 一拆就落到别的文件 / 偏移——「重新导入字幕后听书进度被重置」。
+      // stop 之后（不是之前：stopPlayback 必须在本段同步进入，它的同步采样与
+      // 位置写接链不能被一次读库推到异步缺口之后）按库里那份 cue 把 stop 采样的
+      // 位置重新编码再落一次，真实时间位置（文件下标 + 文件内偏移）不变。
+      try {
+        await _reencodeAgainstStoredCues(controller, stoppingBook);
+      } catch (error, stack) {
+        ErrorLogService.instance.log(
+          'AudiobookSession.reencodeAgainstStoredCues',
+          error,
+          stack,
+        );
       }
       // TODO-1212：用可 await 的 disposeAndRelease 取代同步 dispose()——后者的
       // `_player.dispose()` 是 fire-and-forget，返回时 libmpv 音频文件句柄仍在异步
@@ -428,11 +429,11 @@ class AudiobookSession extends ChangeNotifier {
     }
   }
 
-  /// BUG-3197：把 [controller] 的全书 cue 换成库里当前那份（仅当两者推出的文件
-  /// 时长不同，即会话期间字幕被整组替换过）。cue 的命名空间与
+  /// BUG-3197：按库里当前那份全书 cue 给 [controller] 的 stop 位置换编码（仅当
+  /// 两者推出的文件时长不同，即会话期间字幕被整组替换过）。cue 的命名空间与
   /// `AudiobookSessionLauncher` / 阅读器灌 cue 同源：字幕书按 uid 取扁平 cue，
   /// EPUB 有声书按 bookKey 取全书 cue。
-  Future<void> _adoptStoredCueTimeline(
+  Future<void> _reencodeAgainstStoredCues(
     AudiobookPlayerController controller,
     SessionBookInfo? book,
   ) async {
@@ -441,13 +442,7 @@ class AudiobookSession extends ChangeNotifier {
     final List<AudioCue> stored = book.isSrtBookSource
         ? await SrtBookRepository(db).cuesFor(book.bookKey)
         : await AudiobookRepository(db).cuesForBook(book.bookKey);
-    if (listEquals(
-      audiobookFileDurationsFromCues(stored),
-      controller.fileDurationsMs,
-    )) {
-      return;
-    }
-    controller.setAllBookCues(stored);
+    await controller.reencodeStoppedPositionForCues(stored);
   }
 
   // ── 后台听书的学习统计（BUG-2558） ──────────────────────────────────────
