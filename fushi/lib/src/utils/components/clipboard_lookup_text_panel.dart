@@ -213,6 +213,7 @@ class SourceLookupTextPanel extends StatefulWidget {
     this.dictionaryHeadwordScale = 1.0,
     this.globalCoordinates = false,
     this.highlight,
+    this.tonalHighlight = false,
   });
 
   final String text;
@@ -235,6 +236,12 @@ class SourceLookupTextPanel extends StatefulWidget {
   /// 结果；本条只知道用户点了哪个字。宿主把「哪次点击 → 哪个长度」配对好再传下来，
   /// 迟到的结果就不会盖到用户后来点的那个字上。
   final SourceLookupHighlight? highlight;
+
+  /// 命中高亮走 M3E tonal 口径：`primaryContainer` 底 + `onPrimaryContainer` 字、
+  /// 整词两端收成胶囊圆角。app 外查词窗（popup_dictionary_page，M3E 顶部区域）用；
+  /// 默认 false 维持与 WebView 卡片内 `--fushi-primary-highlight`（主色 35%）同色的
+  /// 旧口径（首页词典 tab 等存量宿主不变）。
+  final bool tonalHighlight;
 
   /// TODO-617: [onLookup] reports the tapped char rect in **screen (global)**
   /// coordinates instead of [coordinateSpaceKey]-local. The home dictionary tab
@@ -274,10 +281,15 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
     // 命中高亮底色与弹窗 WebView 内的 `--fushi-primary-highlight` 同一口径
     // （`popup_theme_css.dart` 的 `cssRgba035(scheme.primary)`）。源文本条与弹窗
     // 卡片是同一次查词的两个可见面，底色不同会让用户以为是两种不同的标记。
-    final Color highlightColor =
-        theme.colorScheme.primary.withValues(alpha: 0.35);
-    final Radius highlightCorner =
-        FushiDesignTokens.of(context).radii.chipCorner;
+    final Color highlightColor = widget.tonalHighlight
+        ? theme.colorScheme.primaryContainer
+        : theme.colorScheme.primary.withValues(alpha: 0.35);
+    final Radius highlightCorner = widget.tonalHighlight
+        ? const Radius.circular(10)
+        : FushiDesignTokens.of(context).radii.chipCorner;
+    final TextStyle litStyle = widget.tonalHighlight
+        ? charStyle.copyWith(color: theme.colorScheme.onPrimaryContainer)
+        : charStyle;
     // 逐字给底框而不是一个整块 Rect：本条是 Wrap，命中段跨行时整块 Rect 画不出来，
     // 逐字底框天然在换行处断开、各行各自贴合。spacing:0 使同一行内的相邻底框严丝
     // 合缝，视觉上仍是一个连续的框。
@@ -303,7 +315,8 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
               Builder(
                 builder: (BuildContext charContext) {
                   final bool lit = i >= highlightStart && i < highlightEnd;
-                  final Widget glyph = Text(chars[i], style: charStyle);
+                  final Widget glyph =
+                      Text(chars[i], style: lit ? litStyle : charStyle);
                   return MouseRegion(
                     cursor: SystemMouseCursors.click,
                     onHover: (_) => _handleShiftHover(

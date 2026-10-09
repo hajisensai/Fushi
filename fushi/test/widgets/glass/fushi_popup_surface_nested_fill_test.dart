@@ -1,7 +1,10 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/rendering.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -238,5 +241,91 @@ void main() {
       expect(tinted.tint, isNotNull);
       expect(tinted.tint!.a, lessThan(0.88));
     });
+  });
+
+  // BUG-3225：app 外查词窗（popup_dictionary_page）的整卡由外层 standaloneWindow
+  // surface 画，基础层 DictionaryPopupLayer 传 `Colors.transparent` 让外层卡面透出来。
+  // 面板背衬曾把它 `.withValues(alpha: 1)` 压成不透明——透明黑变纯黑，Android（采
+  // 不到模糊、恒实底）上词条区整块黑底，浅色主题的深色词头 / 频率 / 音调看不见。
+  // 这里按真实像素断言：透明内层下读到的必须是外层卡面色，不是黑。
+  group('显式透明填充的内层不画面板（BUG-3225）', () {
+    const Color outerCard = Color(0xFFFFF8EC);
+
+    Future<Color> innerPixel(
+      WidgetTester tester, {
+      required bool glass,
+      required Brightness brightness,
+      required TargetPlatform platform,
+    }) async {
+      final GlobalKey boundaryKey = GlobalKey();
+      await tester.pumpWidget(
+        host(
+          theme(glass: glass, brightness: brightness, platform: platform),
+          RepaintBoundary(
+            key: boundaryKey,
+            child: const FushiPopupSurface(
+              standaloneWindow: true,
+              color: outerCard,
+              showBorder: false,
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: FushiPopupSurface(
+                  color: Colors.transparent,
+                  showBorder: false,
+                  borderOnForeground: false,
+                  child: SizedBox.expand(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final RenderRepaintBoundary boundary = tester
+          .renderObject<RenderRepaintBoundary>(find.byKey(boundaryKey));
+      final ByteData bytes = (await tester
+          .runAsync(() async {
+            final ui.Image image = await boundary.toImage();
+            final ByteData? data = await image.toByteData(
+              format: ui.ImageByteFormat.rawRgba,
+            );
+            final int w = image.width;
+            final int h = image.height;
+            image.dispose();
+            return (data!, w, h);
+          })
+          .then(((ByteData, int, int)? r) {
+            final (ByteData data, int w, int h) = r!;
+            // 取内层正中央的像素。
+            final int offset = ((h ~/ 2) * w + (w ~/ 2)) * 4;
+            return ByteData.sublistView(data, offset, offset + 4);
+          }));
+      return Color.fromARGB(
+        bytes.getUint8(3),
+        bytes.getUint8(0),
+        bytes.getUint8(1),
+        bytes.getUint8(2),
+      );
+    }
+
+    for (final TargetPlatform platform in <TargetPlatform>[
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    ]) {
+      for (final bool glass in <bool>[false, true]) {
+        for (final Brightness brightness in Brightness.values) {
+          testWidgets('${platform.name} ${glass ? 'Apple' : 'MD3'} $brightness：'
+              '透明内层透出外层卡面', (WidgetTester tester) async {
+            final Color pixel = await innerPixel(
+              tester,
+              glass: glass,
+              brightness: brightness,
+              platform: platform,
+            );
+            expect(pixel, outerCard, reason: '内层透明填充被画成了不透明面板（BUG-3225 黑底）');
+            expect(inSurface(BackdropFilter), findsNothing);
+          });
+        }
+      }
+    }
   });
 }
