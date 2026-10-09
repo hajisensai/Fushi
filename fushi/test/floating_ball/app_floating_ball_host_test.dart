@@ -1175,6 +1175,121 @@ void main() {
       expect(starts(), hasLength(2));
     });
 
+    group('应用在前台且应用内球开着：应用外球让位', () {
+      /// 下发给原生的让位值序列（`setAppForeground` 的 foreground 参数）。
+      List<bool> yields() => <bool>[
+        for (final MethodCall c in calls)
+          if (c.method == 'setAppForeground')
+            (c.arguments as Map<Object?, Object?>)['foreground']! as bool,
+      ];
+
+      Future<void> lifecycle(
+        WidgetTester tester,
+        List<AppLifecycleState> states,
+      ) async {
+        await tester.runAsync(() async {
+          for (final AppLifecycleState state in states) {
+            tester.binding.handleAppLifecycleStateChanged(state);
+          }
+          await debugLatestSystemBallSync;
+        });
+        await tester.pump();
+      }
+
+      void clearNative(WidgetTester tester) => addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          FloatingBallChannel.channel,
+          null,
+        );
+        // 别把绑定留在后台给后面的用例。
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+      });
+
+      testWidgets('起球前先下发让位：前台起的球首帧就不显示', (WidgetTester tester) async {
+        mockNative(tester);
+        clearNative(tester);
+        await startSystemBall(tester);
+        final int yieldAt = calls.indexWhere(
+          (MethodCall c) => c.method == 'setAppForeground',
+        );
+        final int startAt = calls.indexWhere(
+          (MethodCall c) => c.method == 'startSystemBall',
+        );
+        expect(yieldAt, isNot(-1));
+        expect(yieldAt, lessThan(startAt), reason: '让位值要先于 start 到原生');
+        expect(yields(), <bool>[true]);
+      });
+
+      testWidgets('失焦 / 最小化露面，回到前台再让位', (WidgetTester tester) async {
+        mockNative(tester);
+        clearNative(tester);
+        await startSystemBall(tester);
+        // 桌面主窗失焦只到 inactive：用户在用别的程序，应用外球该露面。
+        await lifecycle(tester, <AppLifecycleState>[
+          AppLifecycleState.inactive,
+        ]);
+        expect(yields(), <bool>[true, false]);
+        await lifecycle(tester, <AppLifecycleState>[AppLifecycleState.resumed]);
+        expect(yields(), <bool>[true, false, true]);
+        // 最小化（inactive → hidden）：露面；重复的显隐值不重复下发。
+        await lifecycle(tester, <AppLifecycleState>[
+          AppLifecycleState.inactive,
+          AppLifecycleState.hidden,
+        ]);
+        expect(yields(), <bool>[true, false, true, false]);
+        expect(starts(), hasLength(1), reason: '只改显隐，不重起球');
+      });
+
+      testWidgets('关掉「应用内显示」：前台也保留应用外球；再打开恢复让位', (WidgetTester tester) async {
+        mockNative(tester);
+        clearNative(tester);
+        await startSystemBall(tester);
+        await tester.runAsync(() async {
+          await prefs.setFloatingBallInApp(false);
+          await debugLatestSystemBallSync;
+        });
+        await tester.pump();
+        expect(yields(), <bool>[true, false]);
+        expect(ball(), findsNothing);
+        await lifecycle(tester, <AppLifecycleState>[
+          AppLifecycleState.inactive,
+          AppLifecycleState.resumed,
+        ]);
+        expect(yields(), <bool>[true, false], reason: '应用内球关着，前后台都露面');
+        await tester.runAsync(() async {
+          await prefs.setFloatingBallInApp(true);
+          await debugLatestSystemBallSync;
+        });
+        await tester.pump();
+        expect(yields(), <bool>[true, false, true]);
+        expect(prefs.floatingBallSystem, isTrue, reason: '两颗球的开关互不影响');
+      });
+
+      testWidgets('用户关掉应用外球：前后台切换不会把它打开', (WidgetTester tester) async {
+        mockNative(tester);
+        clearNative(tester);
+        await startSystemBall(tester);
+        await tester.runAsync(() async {
+          await prefs.setFloatingBallSystem(false);
+          await debugLatestSystemBallSync;
+        });
+        await tester.pump();
+        expect(calls.last.method, 'stopSystemBall');
+        final int before = calls.length;
+        await lifecycle(tester, <AppLifecycleState>[
+          AppLifecycleState.inactive,
+          AppLifecycleState.hidden,
+          AppLifecycleState.inactive,
+          AppLifecycleState.resumed,
+        ]);
+        expect(calls.sublist(before), isEmpty, reason: '没起球就不起、不发显隐');
+        expect(prefs.floatingBallSystem, isFalse);
+        expect(prefs.floatingBallInApp, isTrue);
+      });
+    });
+
     group('动作分发', () {
       setUp(() {
         target.overlayAvailable = true;

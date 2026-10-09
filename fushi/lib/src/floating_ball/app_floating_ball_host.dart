@@ -38,6 +38,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/ocr/system_ocr_setup_dialog.dart';
+import 'package:fushi/src/platform/mobile/android_picture_in_picture.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_floating_ball.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
@@ -341,6 +342,17 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
 
   bool _foreground = true;
 
+  /// 最近一次生命周期（桌面判「在前台」只认 resumed，见
+  /// [floatingBallSystemBallYieldsToInApp]）。
+  AppLifecycleState _lifecycle = AppLifecycleState.resumed;
+
+  /// Android 画中画中：Fushi 只剩小窗，应用外球不让位。
+  bool _inPictureInPicture = false;
+  StreamSubscription<bool>? _pictureInPictureSub;
+
+  /// 最近一次下发给原生的「让位」值（null = 当前这颗原生球还没下发过）。
+  bool? _sentSystemBallYield;
+
   /// 用户在当前页面点了「关闭悬浮球」；[_dismissedOwner] 是那一页的身份
   /// （[FloatingBallSceneSnapshot.owner]），页面一换就自动恢复。
   bool _dismissed = false;
@@ -383,6 +395,17 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _lifecycle =
+        WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed;
+    if (Platform.isAndroid) {
+      _inPictureInPicture = AndroidPictureInPicture.isActive;
+      _pictureInPictureSub = AndroidPictureInPicture.modeChanges.listen((
+        bool active,
+      ) {
+        _inPictureInPicture = active;
+        _pushSystemBallYield();
+      });
+    }
     _registry.addListener(_onChanged);
     pendingExternalLookup.addListener(_onChanged);
     pendingOpenLookupPage.addListener(_onChanged);
@@ -422,6 +445,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(_pictureInPictureSub?.cancel());
     _registry.removeListener(_onChanged);
     pendingExternalLookup.removeListener(_onChanged);
     pendingOpenLookupPage.removeListener(_onChanged);
@@ -446,6 +470,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   void _onPrefsChanged() {
     _settleClosedBalls();
     _syncSystemBall();
+    // 「应用内显示」开关一变，应用外球让不让位跟着变。
+    _pushSystemBallYield();
     if (mounted) setState(() {});
   }
 
@@ -482,6 +508,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lifecycle = state;
     // 回到 Fushi：关掉的应用外球按「自动恢复」重新拉起。桌面主窗失焦只到
     // inactive，所以这里认任何一次 resumed，而不只认后台 → 前台。
     final bool restoreSystem =
@@ -496,7 +523,12 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       // inactive（下拉通知栏、系统对话框）与 detached 不改变谁该露面。
       _ => _foreground,
     };
-    if (foreground == _foreground) return;
+    if (foreground == _foreground) {
+      // 桌面失焦 / 拿回焦点只在 resumed ↔ inactive 间切，「在前台」不变，但
+      // 应用外球让不让位按 resumed 判，要跟着变。
+      _pushSystemBallYield();
+      return;
+    }
     _foreground = foreground;
     // 从后台回到 Fushi：本页关掉的应用内球也恢复（「不自动恢复」时关闭已经
     // 落成了关掉「应用内显示」，不会走到这里）。
@@ -506,9 +538,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         _dismissedOwner = null;
       });
     }
-    if (_systemSignature != null) {
-      unawaited(FloatingBallChannel.setAppForeground(foreground));
-    }
+    _pushSystemBallYield();
     // 从「显示在其他应用上层」授权页回来：再试一次起系统球。桌面没有这道权限，
     // 主窗每次拿回焦点都重发一遍（重画图标、收起菜单）只是白做。
     if (foreground && Platform.isAndroid && !restoreSystem) {
@@ -631,6 +661,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       // 调 start 之前唯一一道门：此前的 await 只产出本地数据（图标、球面），
       // 过期代多做完它们不留任何痕迹，逐个 await 设门只是重复同一个判断。
       if (stale()) return;
+      // 先定显隐再起球：原生按它决定新球首帧显不显示（Fushi 在前台起球时不闪
+      // 一下）。原生跨起停保留这个值。
+      final bool yields = _systemBallYields();
+      await FloatingBallChannel.setAppForeground(yields);
+      if (stale()) return;
       final bool started = await FloatingBallChannel.startSystemBall(
         actions: actions,
         labels: labels,
@@ -651,7 +686,9 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       // 起不来（Android 没权限 / 桌面建窗失败）：不记签名，下次同步再试。
       _systemSignature = started ? signature : null;
       if (started) {
-        await FloatingBallChannel.setAppForeground(_foreground);
+        _sentSystemBallYield = yields;
+        // 起球途中前后台 / 开关变过：按此刻的值补发。
+        _pushSystemBallYield();
       }
     }().whenComplete(() {
       // 本代收尾（成功 / 失败 / 提前返回）：不再是在途目标。已被新一代取代时
@@ -668,7 +705,27 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _systemGeneration++;
     _systemRequested = false;
     _systemSignature = null;
+    _sentSystemBallYield = null;
     unawaited(FloatingBallChannel.stopSystemBall());
+  }
+
+  /// 应用外球此刻该不该给应用内球让位（见 [floatingBallSystemBallYieldsToInApp]）。
+  bool _systemBallYields() => floatingBallSystemBallYieldsToInApp(
+    inAppBallEnabled: _prefs?.floatingBallInApp ?? true,
+    lifecycle: _lifecycle,
+    mobileForeground: _foreground,
+    desktop: isDesktopSystemBallPlatform,
+    inPictureInPicture: _inPictureInPicture,
+  );
+
+  /// 原生球在跑、让位值变了才下发（线协议沿用 `setAppForeground`，值的含义是
+  /// 「让位」）。原生球没起时不发：起球前会先下发一次。
+  void _pushSystemBallYield() {
+    if (_systemSignature == null) return;
+    final bool yields = _systemBallYields();
+    if (yields == _sentSystemBallYield) return;
+    _sentSystemBallYield = yields;
+    unawaited(FloatingBallChannel.setAppForeground(yields));
   }
 
   /// 配色与动效独立同步：无障碍开关变化也要让已运行的系统球收到新策略。

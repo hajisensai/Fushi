@@ -17,7 +17,7 @@
 | 偏好 | 默认 | 含义 | 平台 |
 |---|---|---|---|
 | `floating_ball.in_app`（bool） | 开 | Flutter 悬浮球挂在根 builder 上（`AppFloatingBallHost`），任何页面都在 | 全部 |
-| `floating_ball.system`（bool） | 关 | Android 原生悬浮窗服务 `FloatingBallService`，在别的 app 上面也在；Fushi 自己在前台时原生球隐藏（应用内球开着就由它接管，场景按钮仍然可用） | 仅 Android |
+| `floating_ball.system`（bool） | 关 | Android 原生悬浮窗服务 `FloatingBallService`，在别的 app 上面也在；Fushi 在前台**且「应用内」开着**时原生球让位隐藏（由应用内球接管，场景按钮仍然可用）；「应用内」关着时前台也保留原生球；画中画算后台、分屏算前台（2026-10-09 群反馈两颗球并排，判据 `floatingBallSystemBallYieldsToInApp`） | 仅 Android |
 
 非 Android 平台读到 `floating_ball.system = true`（例如备份从 Android 恢复）不起球。
 
@@ -143,7 +143,7 @@ Dart → 原生：
 | `startSystemBall` | `{actions: List<String>, labels: Map<String,String>, ocrLanguage: String}` | bool（无权限 false） | Android |
 | `stopSystemBall` | — | null | Android |
 | `isSystemBallRunning` | — | bool | Android |
-| `setAppForeground` | `{foreground: bool}` | null | Android |
+| `setAppForeground` | `{foreground: bool}` | null | Android / Windows / macOS。值是「让位」（true = 藏原生球）而非裸前台，宿主已折入「应用内」开关与画中画；起球前先发一次，原生跨起停保留 |
 | `startScreenOcr` | `{language: String, labels: Map<String,String>}` | bool（流程是否已启动；无悬浮窗权限或已有一次在进行时 false） | Android |
 | `openPopupLookup` | — | null（弹出独立查词窗） | Android |
 | `takePendingOpenLookupPage` | — | bool（系统球「查词」时主引擎不在而排队的请求；取即清） | Android |

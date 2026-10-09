@@ -1,6 +1,6 @@
 # 桌面应用外悬浮球（Windows / macOS）
 
-2026-09-30 用户要求：Windows 和 macOS 也实现应用外悬浮球；桌面上应用外球与应用内球**可以同时存在**（不像 Android 那样主窗在前台时原生球让位）；观感 / 交互与应用内球、Android 原生球（BUG-2793 之后）一致。
+2026-09-30 用户要求：Windows 和 macOS 也实现应用外悬浮球；桌面上应用外球与应用内球**可以同时存在**（不像 Android 那样主窗在前台时原生球让位；**2026-10-09 起改为与 Android 一致**：主窗在前台（resumed）且「应用内」开着时原生球让位隐藏，失焦 / 最小化即露面，见下表 `setAppForeground`）；观感 / 交互与应用内球、Android 原生球（BUG-2793 之后）一致。
 
 ## 分工
 
@@ -16,7 +16,7 @@
 | `startSystemBall` | 见下 | `bool`：球窗 / 面板是否起来了（建窗或 D2D 失败回 false，Dart 不记签名、下次同步再试） | 未运行则创建；已运行则**原地**更新按钮 / 配色 / 图片（不挪位置、收起菜单） |
 | `stopSystemBall` | — | — | 销毁全部窗口 |
 | `isSystemBallRunning` | — | `bool` | |
-| `setAppForeground` | `{foreground: bool}` | — | 桌面**忽略**（应用内外共存） |
+| `setAppForeground` | `{foreground: bool}` | — | true = 让位：藏球与按钮列、收起菜单；false = 露面。与截屏识字的隐藏相互独立（任一成立都不显示），跨 stop / start 保留（2026-10-09 起，原先桌面忽略） |
 | `takeSystemBallClosedByUser` | — | `bool` | 桌面恒 `false`（关闭即时推给 Dart，进程就是 app） |
 
 `startSystemBall` 参数：
