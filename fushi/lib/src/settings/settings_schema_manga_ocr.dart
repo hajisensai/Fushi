@@ -10,6 +10,8 @@ import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_page_reset.dart'
+    show settingsSectionModifiedSummary;
 import 'package:fushi/utils.dart';
 
 /// 「漫画 OCR」设置组（隶属**漫画**设置分类，入口始终可见）。
@@ -72,6 +74,9 @@ SettingsSection buildMangaCatalogSection() {
     id: 'manga.section.catalog',
     presentation: SettingsSectionPresentation.collapsed,
     title: t.manga_online_catalog_title,
+    // 收起时报「N 项已修改」，与同页其它折叠分组同口径（#2042 形态）。
+    summaryBuilder: (SettingsContext c) =>
+        settingsSectionModifiedSummary(buildMangaCatalogSection(), c),
     items: <SettingsItem>[
       // 漫画「在线目录」站点根 URL（O1 mokuro.moe 目录源）。空串/尾斜杠由
       // MokuroMoeClient 的 normalizeMokuroMoeBaseUrl 归一回默认站点，故这里

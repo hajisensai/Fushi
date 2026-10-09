@@ -11,6 +11,8 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_page_reset.dart'
+    show settingsSectionModifiedSummary;
 import 'package:fushi/src/settings/settings_schema_manga_ocr.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -25,6 +27,11 @@ import 'package:fushi/utils.dart';
 ///
 /// 故拆成独立一级分类，并把漫画阅读器的观看偏好一并抬进来。OCR 组原样复用
 /// （[buildMangaOcrSection]），只是换了归属。
+///
+/// 2026-10-09 所有者：沿用 AI 页（#2042）的折叠形态——原先一组 15 项平铺，按用途
+/// 拆成「浏览与翻页」（最常用，默认展开）/「显示与缩放」/「跨页与分格」（默认收起），
+/// 分组头报「N 项已修改」。设置项、偏好键与行为一个不动，只改分组与折叠；设置
+/// 搜索命中被折叠的项时由 `SettingsSectionContainer` 临时展开定位。
 SettingsDestination buildMangaDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.manga,
@@ -39,345 +46,377 @@ SettingsDestination buildMangaDestination() {
     // 图标与底栏 / 侧栏同一真值（homeNavItemFor），不在设置里另写一份。
     icon: homeNavItemFor(HomeTab.manga).icon,
     sections: <SettingsSection>[
-      SettingsSection(
-        id: 'manga.section.viewing',
-        presentation: SettingsSectionPresentation.alwaysExpanded,
-        title: t.manga_section_viewing,
-        items: <SettingsItem>[
-          SettingsSegmentedItem<String>(
-            id: 'manga.reader_mode',
-            title: t.manga_mode_toggle,
-            icon: Icons.auto_stories_outlined,
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: 'auto',
-                label: t.manga_reading_mode_auto,
-              ),
-              SettingsSegmentOption<String>(
-                value: MangaReadingMode.spread.storageKey,
-                label: t.manga_reading_mode_spread,
-              ),
-              SettingsSegmentOption<String>(
-                value: MangaReadingMode.pagedVertical.storageKey,
-                label: t.manga_reading_mode_vertical,
-              ),
-              SettingsSegmentOption<String>(
-                value: MangaReadingMode.webtoon.storageKey,
-                label: t.manga_reading_mode_webtoon,
-              ),
-              SettingsSegmentOption<String>(
-                value: MangaReadingMode.webtoonGaps.storageKey,
-                label: t.manga_reading_mode_gaps,
-              ),
-            ],
-            selected: (SettingsContext c) {
-              final MangaReaderPreferences p =
-                  c.appModel.mangaReaderPreferences;
-              return p.autoMode ? 'auto' : p.mode.storageKey;
-            },
-            onChanged: (SettingsContext c, String value) =>
-                c.appModel.setMangaReaderPreferences(
-              c.appModel.mangaReaderPreferences.copyWithJson(<String, Object?>{
-                'autoMode': value == 'auto',
-                'mode': value == 'auto'
-                    ? c.appModel.mangaReaderPreferences.mode.storageKey
-                    : value,
-              }),
-            ),
-            defaultValue: 'auto',
-          ),
-          SettingsSegmentedItem<String>(
-            id: 'manga.reader_scale',
-            title: t.manga_reader_scale,
-            icon: Icons.aspect_ratio_outlined,
-            options: <SettingsSegmentOption<String>>[
-              for (final MangaScaleType scale in MangaScaleType.values)
-                SettingsSegmentOption<String>(
-                  value: scale.key,
-                  label: switch (scale) {
-                    MangaScaleType.fitScreen => t.manga_scale_fit_screen,
-                    MangaScaleType.stretch => t.manga_scale_stretch,
-                    MangaScaleType.fitWidth => t.manga_scale_fit_width,
-                    MangaScaleType.fitHeight => t.manga_scale_fit_height,
-                    MangaScaleType.original => t.manga_scale_original,
-                    MangaScaleType.smart => t.manga_scale_smart,
-                  },
-                ),
-            ],
-            selected: (SettingsContext c) =>
-                c.appModel.mangaReaderPreferences.scaleType.key,
-            onChanged: (SettingsContext c, String value) =>
-                c.appModel.setMangaReaderPreferences(
-              c.appModel.mangaReaderPreferences.copyWithJson(
-                <String, Object?>{'scaleType': value},
-              ),
-            ),
-            defaultValue: MangaScaleType.fitScreen.key,
-          ),
-          // 阅读方向：偏好是新书的默认值，已打开的书仍按自身状态走。
-          SettingsSegmentedItem<String>(
-            id: 'manga.reading_direction',
-            title: t.manga_reading_direction,
-            icon: Icons.swap_horiz_outlined,
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: 'rtl',
-                label: t.manga_direction_rtl,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'ltr',
-                label: t.manga_direction_ltr,
-              ),
-            ],
-            selected: (SettingsContext c) => c.appModel.mangaReadingDirection,
-            onChanged: (SettingsContext c, String value) =>
-                c.appModel.setMangaReadingDirection(value),
-            defaultValue: 'rtl',
-          ),
-          SettingsSliderItem(
-            id: 'manga.default_zoom',
-            title: t.manga_default_zoom,
-            icon: Icons.zoom_in_outlined,
-            min: kMangaZoomMinPercent.toDouble(),
-            max: kMangaZoomMaxPercent.toDouble(),
-            divisions: (kMangaZoomMaxPercent - kMangaZoomMinPercent) ~/ 10,
-            step: 10,
-            titleReadout: true,
-            commitOnRelease: true,
-            label: (double v) => '${v.round()}%',
-            value: (SettingsContext c) => c.appModel.mangaZoomPercent
-                .clamp(kMangaZoomMinPercent, kMangaZoomMaxPercent)
-                .toDouble(),
-            onChanged: (SettingsContext c, double value) =>
-                c.appModel.setMangaZoomPercent(value.round()),
-            defaultValue: 100,
-          ),
-          // 灵敏度：滚轮/捏合每一步缩放多少的倍率。旧实现丢弃滚轮 delta 幅值、
-          // 恒定 ±10 个百分点，触控板与鼠标同等对待，是「缩放极其不灵敏」的主因；
-          // 算法已改成按 delta 比例的乘法缩放，这里让用户再微调总倍率。
-          SettingsSliderItem(
-            id: 'manga.zoom_sensitivity',
-            title: t.manga_zoom_sensitivity,
-            icon: Icons.tune_outlined,
-            min: kMangaZoomSensitivityMin.toDouble(),
-            max: kMangaZoomSensitivityMax.toDouble(),
-            divisions:
-                (kMangaZoomSensitivityMax - kMangaZoomSensitivityMin) ~/ 25,
-            step: 25,
-            titleReadout: true,
-            commitOnRelease: true,
-            label: (double v) => '${v.round()}%',
-            value: (SettingsContext c) => c.appModel.mangaZoomSensitivity
-                .clamp(kMangaZoomSensitivityMin, kMangaZoomSensitivityMax)
-                .toDouble(),
-            onChanged: (SettingsContext c, double value) =>
-                c.appModel.setMangaZoomSensitivity(value.round()),
-            defaultValue: kMangaZoomSensitivityDefault.toDouble(),
-          ),
-          SettingsSegmentedItem<String>(
-            id: 'manga.page_animation',
-            title: t.manga_page_animation,
-            icon: Icons.animation_outlined,
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: MangaPageAnimation.none.key,
-                label: t.manga_page_animation_none,
-              ),
-              SettingsSegmentOption<String>(
-                value: MangaPageAnimation.slide.key,
-                label: t.manga_page_animation_slide,
-              ),
-              SettingsSegmentOption<String>(
-                value: MangaPageAnimation.fade.key,
-                label: t.manga_page_animation_fade,
-              ),
-            ],
-            selected: (SettingsContext c) => MangaPageAnimationKey.fromKey(
-              c.appModel.mangaPageAnimation,
-            ).key,
-            onChanged: (SettingsContext c, String value) =>
-                c.appModel.setMangaPageAnimation(value),
-            defaultValue: MangaPageAnimation.slide.key,
-          ),
-          // 跨页偏移：封面算不算「第 0 页」各家扫描不统一，选错整卷左右页全反。
-          SettingsSegmentedItem<int>(
-            id: 'manga.spread_offset',
-            title: t.manga_spread_offset,
-            subtitle: t.manga_spread_offset_subtitle,
-            icon: Icons.import_contacts_outlined,
-            options: <SettingsSegmentOption<int>>[
-              SettingsSegmentOption<int>(
-                value: 1,
-                label: t.manga_spread_offset_cover,
-              ),
-              SettingsSegmentOption<int>(
-                value: 0,
-                label: t.manga_spread_offset_none,
-              ),
-            ],
-            selected: (SettingsContext c) =>
-                c.appModel.mangaSpreadOffset >= 1 ? 1 : 0,
-            onChanged: (SettingsContext c, int value) =>
-                c.appModel.setMangaSpreadOffset(value),
-            defaultValue: kMangaSpreadOffsetDefault,
-          ),
-          SettingsSwitchItem(
-            id: 'manga.wide_page_solo',
-            title: t.manga_wide_page_solo,
-            subtitle: t.manga_wide_page_solo_subtitle,
-            icon: Icons.panorama_horizontal_outlined,
-            value: (SettingsContext c) => c.appModel.mangaWidePageSolo,
-            onChanged: (SettingsContext c, bool value) =>
-                c.appModel.setMangaWidePageSolo(value),
-            defaultValue: kMangaWidePageSoloDefault,
-          ),
-          SettingsNavigationItem(
-            id: 'manga.panel_model',
-            title: t.manga_panel_model,
-            subtitle: t.manga_panel_model_desc,
-            icon: FushiIcons.modelTraining,
-            child: () => SettingsDestination(
-              id: SettingsDestinationId.manga,
-              title: t.manga_panel_model,
-              icon: FushiIcons.modelTraining,
-              sections: const <SettingsSection>[],
-              body: (_) => const MangaPanelModelSettings(),
-            ),
-          ),
-          SettingsSwitchItem(
-            id: 'manga.panel_navigation',
-            title: t.manga_panel_navigation,
-            subtitle: t.manga_panel_navigation_subtitle,
-            icon: Icons.view_carousel_outlined,
-            value: (SettingsContext c) =>
-                c.appModel.mangaPanelNavigationEnabled,
-            onChanged: (SettingsContext c, bool value) =>
-                c.appModel.setMangaPanelNavigationEnabled(value),
-            defaultValue: kMangaPanelNavigationDefault,
-          ),
-          // 底色：此前恒黑，两处硬编码（WebView 文档的 html,body 与页面 Scaffold）。
-          SettingsSegmentedItem<String>(
-            id: 'manga.background',
-            title: t.manga_background,
-            icon: Icons.format_color_fill_outlined,
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: MangaBackground.black.key,
-                label: t.manga_background_black,
-              ),
-              SettingsSegmentOption<String>(
-                value: MangaBackground.white.key,
-                label: t.manga_background_white,
-              ),
-              SettingsSegmentOption<String>(
-                value: MangaBackground.gray.key,
-                label: t.manga_background_gray,
-              ),
-              SettingsSegmentOption<String>(
-                value: MangaBackground.theme.key,
-                label: t.manga_background_theme,
-              ),
-            ],
-            selected: (SettingsContext c) =>
-                MangaBackgroundKey.fromKey(c.appModel.mangaBackground).key,
-            onChanged: (SettingsContext c, String value) =>
-                c.appModel.setMangaBackground(value),
-            defaultValue: kMangaBackgroundDefault,
-          ),
-          SettingsSwitchItem(
-            id: 'manga.tap_zone_paging',
-            title: t.manga_tap_zone_paging,
-            subtitle: t.manga_tap_zone_paging_subtitle,
-            icon: Icons.touch_app_outlined,
-            value: (SettingsContext c) => c.appModel.mangaTapZonePaging,
-            onChanged: (SettingsContext c, bool value) =>
-                c.appModel.setMangaTapZonePaging(value),
-            defaultValue: true,
-          ),
-          // 热区布局只在点击翻页开启时才有意义，故随开关显隐——关着还留一排预设
-          // 会让人以为选了就能用。
-          SettingsSegmentedItem<String>(
-            id: 'manga.tap_zone_layout',
-            title: t.manga_tap_zone_layout,
-            subtitle: t.manga_tap_zone_layout_subtitle,
-            icon: Icons.grid_view_outlined,
-            visible: (SettingsContext c) => c.appModel.mangaTapZonePaging,
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: MangaTapZoneLayout.leftRight.key,
-                label: t.manga_tap_zone_layout_left_right,
-              ),
-              SettingsSegmentOption<String>(
-                value: MangaTapZoneLayout.lShaped.key,
-                label: t.manga_tap_zone_layout_l_shaped,
-              ),
-              SettingsSegmentOption<String>(
-                value: MangaTapZoneLayout.kindle.key,
-                label: t.manga_tap_zone_layout_kindle,
-              ),
-              SettingsSegmentOption<String>(
-                value: MangaTapZoneLayout.topBottom.key,
-                label: t.manga_tap_zone_layout_top_bottom,
-              ),
-            ],
-            selected: (SettingsContext c) => MangaTapZoneLayoutKey.fromKey(
-              c.appModel.mangaTapZoneLayout,
-            ).key,
-            onChanged: (SettingsContext c, String value) =>
-                c.appModel.setMangaTapZoneLayout(value),
-            defaultValue: kMangaTapZoneLayoutDefault,
-          ),
-          // 顶栏悬浮/常驻：与 EPUB 阅读器「点空白隐藏控制栏」同一模型（悬浮 = 不占
-          // 布局、默认收起、点页面中央或顶边悬停唤出后自动收起；关 = 常驻并让位）。
-          SettingsSwitchItem(
-            id: 'manga.chrome_floating',
-            title: t.manga_chrome_floating,
-            subtitle: t.manga_chrome_floating_subtitle,
-            icon: Icons.vertical_align_top_outlined,
-            value: (SettingsContext c) => c.appModel.mangaChromeFloating,
-            onChanged: (SettingsContext c, bool value) =>
-                c.appModel.setMangaChromeFloating(value),
-            defaultValue: true,
-          ),
-          // 只影响在线漫画（有章节的条目）；本地卷恒按书级位置恢复，两种口径一致。
-          SettingsSegmentedItem<String>(
-            id: 'manga.resume_target',
-            title: t.manga_resume_target,
-            subtitle: t.manga_resume_target_subtitle,
-            icon: FushiIcons.bookmark,
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: MangaResumeTarget.furthestProgress.key,
-                label: t.manga_resume_target_furthest,
-              ),
-              SettingsSegmentOption<String>(
-                value: MangaResumeTarget.lastPosition.key,
-                label: t.manga_resume_target_last,
-              ),
-            ],
-            selected: (SettingsContext c) =>
-                MangaResumeTargetKey.fromKey(c.appModel.mangaResumeTarget).key,
-            onChanged: (SettingsContext c, String value) =>
-                c.appModel.setMangaResumeTarget(value),
-            defaultValue: kMangaResumeTargetDefault,
-          ),
-          // 音量键只有 Android 侧 `MainActivity.dispatchKeyEvent` 会拦截并转发
-          // （见 VolumeKeyChannel），iOS 与桌面端均没有实现，故只在 Android 显示。
-          SettingsSwitchItem(
-            id: 'manga.volume_key_paging',
-            title: t.manga_volume_key_paging,
-            subtitle: t.manga_volume_key_paging_subtitle,
-            icon: Icons.volume_up_outlined,
-            visible: (_) => Platform.isAndroid,
-            value: (SettingsContext c) => c.appModel.mangaVolumeKeyPaging,
-            onChanged: (SettingsContext c, bool value) =>
-                c.appModel.setMangaVolumeKeyPaging(value),
-            defaultValue: true,
-          ),
-        ],
-      ),
+      _mangaPagingSection(),
+      _mangaDisplaySection(),
+      _mangaSpreadPanelsSection(),
       buildMangaOcrSection(),
       buildMangaCatalogSection(),
+    ],
+  );
+}
+
+/// 浏览与翻页：阅读模式 / 方向 / 翻页动画 / 点击翻页 / 重开位置 / 音量键翻页。最常用，默认展开。
+SettingsSection _mangaPagingSection() {
+  return SettingsSection(
+    id: 'manga.section.viewing',
+    presentation: SettingsSectionPresentation.expanded,
+    title: t.manga_section_viewing,
+    summaryBuilder: (SettingsContext c) =>
+        settingsSectionModifiedSummary(_mangaPagingSection(), c),
+    items: <SettingsItem>[
+      SettingsSegmentedItem<String>(
+        id: 'manga.reader_mode',
+        title: t.manga_mode_toggle,
+        icon: Icons.auto_stories_outlined,
+        options: <SettingsSegmentOption<String>>[
+          SettingsSegmentOption<String>(
+            value: 'auto',
+            label: t.manga_reading_mode_auto,
+          ),
+          SettingsSegmentOption<String>(
+            value: MangaReadingMode.spread.storageKey,
+            label: t.manga_reading_mode_spread,
+          ),
+          SettingsSegmentOption<String>(
+            value: MangaReadingMode.pagedVertical.storageKey,
+            label: t.manga_reading_mode_vertical,
+          ),
+          SettingsSegmentOption<String>(
+            value: MangaReadingMode.webtoon.storageKey,
+            label: t.manga_reading_mode_webtoon,
+          ),
+          SettingsSegmentOption<String>(
+            value: MangaReadingMode.webtoonGaps.storageKey,
+            label: t.manga_reading_mode_gaps,
+          ),
+        ],
+        selected: (SettingsContext c) {
+          final MangaReaderPreferences p = c.appModel.mangaReaderPreferences;
+          return p.autoMode ? 'auto' : p.mode.storageKey;
+        },
+        onChanged: (SettingsContext c, String value) =>
+            c.appModel.setMangaReaderPreferences(
+          c.appModel.mangaReaderPreferences.copyWithJson(<String, Object?>{
+            'autoMode': value == 'auto',
+            'mode': value == 'auto'
+                ? c.appModel.mangaReaderPreferences.mode.storageKey
+                : value,
+          }),
+        ),
+        defaultValue: 'auto',
+      ),
+      // 阅读方向：偏好是新书的默认值，已打开的书仍按自身状态走。
+      SettingsSegmentedItem<String>(
+        id: 'manga.reading_direction',
+        title: t.manga_reading_direction,
+        icon: Icons.swap_horiz_outlined,
+        options: <SettingsSegmentOption<String>>[
+          SettingsSegmentOption<String>(
+            value: 'rtl',
+            label: t.manga_direction_rtl,
+          ),
+          SettingsSegmentOption<String>(
+            value: 'ltr',
+            label: t.manga_direction_ltr,
+          ),
+        ],
+        selected: (SettingsContext c) => c.appModel.mangaReadingDirection,
+        onChanged: (SettingsContext c, String value) =>
+            c.appModel.setMangaReadingDirection(value),
+        defaultValue: 'rtl',
+      ),
+      SettingsSegmentedItem<String>(
+        id: 'manga.page_animation',
+        title: t.manga_page_animation,
+        icon: Icons.animation_outlined,
+        options: <SettingsSegmentOption<String>>[
+          SettingsSegmentOption<String>(
+            value: MangaPageAnimation.none.key,
+            label: t.manga_page_animation_none,
+          ),
+          SettingsSegmentOption<String>(
+            value: MangaPageAnimation.slide.key,
+            label: t.manga_page_animation_slide,
+          ),
+          SettingsSegmentOption<String>(
+            value: MangaPageAnimation.fade.key,
+            label: t.manga_page_animation_fade,
+          ),
+        ],
+        selected: (SettingsContext c) => MangaPageAnimationKey.fromKey(
+          c.appModel.mangaPageAnimation,
+        ).key,
+        onChanged: (SettingsContext c, String value) =>
+            c.appModel.setMangaPageAnimation(value),
+        defaultValue: MangaPageAnimation.slide.key,
+      ),
+      SettingsSwitchItem(
+        id: 'manga.tap_zone_paging',
+        title: t.manga_tap_zone_paging,
+        subtitle: t.manga_tap_zone_paging_subtitle,
+        icon: Icons.touch_app_outlined,
+        value: (SettingsContext c) => c.appModel.mangaTapZonePaging,
+        onChanged: (SettingsContext c, bool value) =>
+            c.appModel.setMangaTapZonePaging(value),
+        defaultValue: true,
+      ),
+      // 热区布局只在点击翻页开启时才有意义，故随开关显隐——关着还留一排预设
+      // 会让人以为选了就能用。
+      SettingsSegmentedItem<String>(
+        id: 'manga.tap_zone_layout',
+        title: t.manga_tap_zone_layout,
+        subtitle: t.manga_tap_zone_layout_subtitle,
+        icon: Icons.grid_view_outlined,
+        visible: (SettingsContext c) => c.appModel.mangaTapZonePaging,
+        options: <SettingsSegmentOption<String>>[
+          SettingsSegmentOption<String>(
+            value: MangaTapZoneLayout.leftRight.key,
+            label: t.manga_tap_zone_layout_left_right,
+          ),
+          SettingsSegmentOption<String>(
+            value: MangaTapZoneLayout.lShaped.key,
+            label: t.manga_tap_zone_layout_l_shaped,
+          ),
+          SettingsSegmentOption<String>(
+            value: MangaTapZoneLayout.kindle.key,
+            label: t.manga_tap_zone_layout_kindle,
+          ),
+          SettingsSegmentOption<String>(
+            value: MangaTapZoneLayout.topBottom.key,
+            label: t.manga_tap_zone_layout_top_bottom,
+          ),
+        ],
+        selected: (SettingsContext c) => MangaTapZoneLayoutKey.fromKey(
+          c.appModel.mangaTapZoneLayout,
+        ).key,
+        onChanged: (SettingsContext c, String value) =>
+            c.appModel.setMangaTapZoneLayout(value),
+        defaultValue: kMangaTapZoneLayoutDefault,
+      ),
+      // 只影响在线漫画（有章节的条目）；本地卷恒按书级位置恢复，两种口径一致。
+      SettingsSegmentedItem<String>(
+        id: 'manga.resume_target',
+        title: t.manga_resume_target,
+        subtitle: t.manga_resume_target_subtitle,
+        icon: FushiIcons.bookmark,
+        options: <SettingsSegmentOption<String>>[
+          SettingsSegmentOption<String>(
+            value: MangaResumeTarget.furthestProgress.key,
+            label: t.manga_resume_target_furthest,
+          ),
+          SettingsSegmentOption<String>(
+            value: MangaResumeTarget.lastPosition.key,
+            label: t.manga_resume_target_last,
+          ),
+        ],
+        selected: (SettingsContext c) =>
+            MangaResumeTargetKey.fromKey(c.appModel.mangaResumeTarget).key,
+        onChanged: (SettingsContext c, String value) =>
+            c.appModel.setMangaResumeTarget(value),
+        defaultValue: kMangaResumeTargetDefault,
+      ),
+      // 音量键只有 Android 侧 `MainActivity.dispatchKeyEvent` 会拦截并转发
+      // （见 VolumeKeyChannel），iOS 与桌面端均没有实现，故只在 Android 显示。
+      SettingsSwitchItem(
+        id: 'manga.volume_key_paging',
+        title: t.manga_volume_key_paging,
+        subtitle: t.manga_volume_key_paging_subtitle,
+        icon: Icons.volume_up_outlined,
+        visible: (_) => Platform.isAndroid,
+        value: (SettingsContext c) => c.appModel.mangaVolumeKeyPaging,
+        onChanged: (SettingsContext c, bool value) =>
+            c.appModel.setMangaVolumeKeyPaging(value),
+        defaultValue: true,
+      ),
+    ],
+  );
+}
+
+/// 显示与缩放：缩放方式 / 默认缩放 / 缩放灵敏度 / 底色 / 顶栏悬浮。默认收起。
+SettingsSection _mangaDisplaySection() {
+  return SettingsSection(
+    id: 'manga.section.display',
+    presentation: SettingsSectionPresentation.collapsed,
+    title: t.manga_section_display,
+    summaryBuilder: (SettingsContext c) =>
+        settingsSectionModifiedSummary(_mangaDisplaySection(), c),
+    items: <SettingsItem>[
+      SettingsSegmentedItem<String>(
+        id: 'manga.reader_scale',
+        title: t.manga_reader_scale,
+        icon: Icons.aspect_ratio_outlined,
+        options: <SettingsSegmentOption<String>>[
+          for (final MangaScaleType scale in MangaScaleType.values)
+            SettingsSegmentOption<String>(
+              value: scale.key,
+              label: switch (scale) {
+                MangaScaleType.fitScreen => t.manga_scale_fit_screen,
+                MangaScaleType.stretch => t.manga_scale_stretch,
+                MangaScaleType.fitWidth => t.manga_scale_fit_width,
+                MangaScaleType.fitHeight => t.manga_scale_fit_height,
+                MangaScaleType.original => t.manga_scale_original,
+                MangaScaleType.smart => t.manga_scale_smart,
+              },
+            ),
+        ],
+        selected: (SettingsContext c) =>
+            c.appModel.mangaReaderPreferences.scaleType.key,
+        onChanged: (SettingsContext c, String value) =>
+            c.appModel.setMangaReaderPreferences(
+          c.appModel.mangaReaderPreferences.copyWithJson(
+            <String, Object?>{'scaleType': value},
+          ),
+        ),
+        defaultValue: MangaScaleType.fitScreen.key,
+      ),
+      SettingsSliderItem(
+        id: 'manga.default_zoom',
+        title: t.manga_default_zoom,
+        icon: Icons.zoom_in_outlined,
+        min: kMangaZoomMinPercent.toDouble(),
+        max: kMangaZoomMaxPercent.toDouble(),
+        divisions: (kMangaZoomMaxPercent - kMangaZoomMinPercent) ~/ 10,
+        step: 10,
+        titleReadout: true,
+        commitOnRelease: true,
+        label: (double v) => '${v.round()}%',
+        value: (SettingsContext c) => c.appModel.mangaZoomPercent
+            .clamp(kMangaZoomMinPercent, kMangaZoomMaxPercent)
+            .toDouble(),
+        onChanged: (SettingsContext c, double value) =>
+            c.appModel.setMangaZoomPercent(value.round()),
+        defaultValue: 100,
+      ),
+      // 灵敏度：滚轮/捏合每一步缩放多少的倍率。旧实现丢弃滚轮 delta 幅值、
+      // 恒定 ±10 个百分点，触控板与鼠标同等对待，是「缩放极其不灵敏」的主因；
+      // 算法已改成按 delta 比例的乘法缩放，这里让用户再微调总倍率。
+      SettingsSliderItem(
+        id: 'manga.zoom_sensitivity',
+        title: t.manga_zoom_sensitivity,
+        icon: Icons.tune_outlined,
+        min: kMangaZoomSensitivityMin.toDouble(),
+        max: kMangaZoomSensitivityMax.toDouble(),
+        divisions: (kMangaZoomSensitivityMax - kMangaZoomSensitivityMin) ~/ 25,
+        step: 25,
+        titleReadout: true,
+        commitOnRelease: true,
+        label: (double v) => '${v.round()}%',
+        value: (SettingsContext c) => c.appModel.mangaZoomSensitivity
+            .clamp(kMangaZoomSensitivityMin, kMangaZoomSensitivityMax)
+            .toDouble(),
+        onChanged: (SettingsContext c, double value) =>
+            c.appModel.setMangaZoomSensitivity(value.round()),
+        defaultValue: kMangaZoomSensitivityDefault.toDouble(),
+      ),
+      // 底色：此前恒黑，两处硬编码（WebView 文档的 html,body 与页面 Scaffold）。
+      SettingsSegmentedItem<String>(
+        id: 'manga.background',
+        title: t.manga_background,
+        icon: Icons.format_color_fill_outlined,
+        options: <SettingsSegmentOption<String>>[
+          SettingsSegmentOption<String>(
+            value: MangaBackground.black.key,
+            label: t.manga_background_black,
+          ),
+          SettingsSegmentOption<String>(
+            value: MangaBackground.white.key,
+            label: t.manga_background_white,
+          ),
+          SettingsSegmentOption<String>(
+            value: MangaBackground.gray.key,
+            label: t.manga_background_gray,
+          ),
+          SettingsSegmentOption<String>(
+            value: MangaBackground.theme.key,
+            label: t.manga_background_theme,
+          ),
+        ],
+        selected: (SettingsContext c) =>
+            MangaBackgroundKey.fromKey(c.appModel.mangaBackground).key,
+        onChanged: (SettingsContext c, String value) =>
+            c.appModel.setMangaBackground(value),
+        defaultValue: kMangaBackgroundDefault,
+      ),
+      // 顶栏悬浮/常驻：与 EPUB 阅读器「点空白隐藏控制栏」同一模型（悬浮 = 不占
+      // 布局、默认收起、点页面中央或顶边悬停唤出后自动收起；关 = 常驻并让位）。
+      SettingsSwitchItem(
+        id: 'manga.chrome_floating',
+        title: t.manga_chrome_floating,
+        subtitle: t.manga_chrome_floating_subtitle,
+        icon: Icons.vertical_align_top_outlined,
+        value: (SettingsContext c) => c.appModel.mangaChromeFloating,
+        onChanged: (SettingsContext c, bool value) =>
+            c.appModel.setMangaChromeFloating(value),
+        defaultValue: true,
+      ),
+    ],
+  );
+}
+
+/// 跨页与分格：跨页偏移 / 宽页独占 / 分格模型与分格导航。默认收起。
+SettingsSection _mangaSpreadPanelsSection() {
+  return SettingsSection(
+    id: 'manga.section.spread_panels',
+    presentation: SettingsSectionPresentation.collapsed,
+    title: t.manga_section_spread_panels,
+    summaryBuilder: (SettingsContext c) =>
+        settingsSectionModifiedSummary(_mangaSpreadPanelsSection(), c),
+    items: <SettingsItem>[
+      // 跨页偏移：封面算不算「第 0 页」各家扫描不统一，选错整卷左右页全反。
+      SettingsSegmentedItem<int>(
+        id: 'manga.spread_offset',
+        title: t.manga_spread_offset,
+        subtitle: t.manga_spread_offset_subtitle,
+        icon: Icons.import_contacts_outlined,
+        options: <SettingsSegmentOption<int>>[
+          SettingsSegmentOption<int>(
+            value: 1,
+            label: t.manga_spread_offset_cover,
+          ),
+          SettingsSegmentOption<int>(
+            value: 0,
+            label: t.manga_spread_offset_none,
+          ),
+        ],
+        selected: (SettingsContext c) =>
+            c.appModel.mangaSpreadOffset >= 1 ? 1 : 0,
+        onChanged: (SettingsContext c, int value) =>
+            c.appModel.setMangaSpreadOffset(value),
+        defaultValue: kMangaSpreadOffsetDefault,
+      ),
+      SettingsSwitchItem(
+        id: 'manga.wide_page_solo',
+        title: t.manga_wide_page_solo,
+        subtitle: t.manga_wide_page_solo_subtitle,
+        icon: Icons.panorama_horizontal_outlined,
+        value: (SettingsContext c) => c.appModel.mangaWidePageSolo,
+        onChanged: (SettingsContext c, bool value) =>
+            c.appModel.setMangaWidePageSolo(value),
+        defaultValue: kMangaWidePageSoloDefault,
+      ),
+      SettingsNavigationItem(
+        id: 'manga.panel_model',
+        title: t.manga_panel_model,
+        subtitle: t.manga_panel_model_desc,
+        icon: FushiIcons.modelTraining,
+        child: () => SettingsDestination(
+          id: SettingsDestinationId.manga,
+          title: t.manga_panel_model,
+          icon: FushiIcons.modelTraining,
+          sections: const <SettingsSection>[],
+          body: (_) => const MangaPanelModelSettings(),
+        ),
+      ),
+      SettingsSwitchItem(
+        id: 'manga.panel_navigation',
+        title: t.manga_panel_navigation,
+        subtitle: t.manga_panel_navigation_subtitle,
+        icon: Icons.view_carousel_outlined,
+        value: (SettingsContext c) => c.appModel.mangaPanelNavigationEnabled,
+        onChanged: (SettingsContext c, bool value) =>
+            c.appModel.setMangaPanelNavigationEnabled(value),
+        defaultValue: kMangaPanelNavigationDefault,
+      ),
     ],
   );
 }

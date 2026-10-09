@@ -48,6 +48,28 @@ List<SettingsPageResetEntry> settingsPageResetEntries(
   ];
 }
 
+/// 折叠分组头的「N 项已修改」摘要：[section] 里有几项可见行改过默认值（判据与
+/// 页级「恢复本页默认」同一个 [settingsResetSpecFor]）；一项都没改就不显示摘要。
+///
+/// schema 分组用 `summaryBuilder: (c) => settingsSectionModifiedSummary(
+/// _buildThatSection(), c)` 接线：在渲染时按构造函数重建本组，而不是在构造期
+/// 捕获 item 列表——schema 树必须保持零参的纯字面量（与 AI 页 #2042 的
+/// `_aiSectionModifiedSummary` 同口径，合并后那边可改用本函数）。
+String? settingsSectionModifiedSummary(
+  SettingsSection section,
+  SettingsContext settingsContext,
+) {
+  if (!settingsContext.appModel.isPreferencesReady) return null;
+  final int count = section.items
+      .where(
+        (SettingsItem item) =>
+            item.isVisible(settingsContext) &&
+            (settingsResetSpecFor(item, settingsContext)?.modified ?? false),
+      )
+      .length;
+  return count == 0 ? null : t.settings_section_modified_count(n: count);
+}
+
 /// 详情页页头的溢出菜单：唯一一项「恢复本页默认」。本页没有任何声明了默认值
 /// 的项时整个按钮不出现；有但都没改过时菜单项禁用并写「本页均为默认值」。
 class SettingsPageResetAction extends StatelessWidget {
