@@ -27,6 +27,7 @@ void main() {
     'harmonicFrequency': 'harmonic_frequency',
     'collapseDictionaries': 'collapse_dictionaries',
     'showExpressionTags': 'show_expression_tags',
+    'dictionaryUnifiedStyle': 'popup_dictionary_unified_style',
   };
 
   Map<String, bool> dartDefaults() {
@@ -95,6 +96,23 @@ void main() {
       isEmpty,
       reason: 'a bare == "true" read treats a missing row as false, which is '
           'wrong for every preference whose Dart default is true',
+    );
+  });
+
+  test('the native popup injects the unified dictionary style switch', () {
+    // popup.js 只认宿主显式注入的 `window.__fushiDictUnifiedStyle === true`（缺省
+    // = 关）。系统级选词弹窗自己拼注入脚本、不经 popup_settings_injection：不注入
+    // 的话用户在设置里打开「统一词典样式」，这个入口也永远是关的。
+    final String activity = File(
+      'android/app/src/main/java/app/fushi/reader/PopupDictActivity.kt',
+    ).readAsStringSync();
+    const String injection =
+        r'window.__fushiDictUnifiedStyle = ${prefs.dictionaryUnifiedStyle};';
+    expect(activity, contains(injection));
+    expect(
+      activity.indexOf(injection),
+      lessThan(activity.indexOf('window.renderPopup()')),
+      reason: 'the flag must be set before the first render reads it',
     );
   });
 
