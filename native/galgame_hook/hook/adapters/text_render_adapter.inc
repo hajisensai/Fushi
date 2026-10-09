@@ -262,8 +262,8 @@ bool InstallSiglusExactTextAt(void* target, uintptr_t rva) {
 bool TryHookSiglusExactText() {
   if (!IsSiglusEngine()) return true;
   if (IsSiglusExactTextInstalled()) return true;
-  if (fushi_voice_hook::ReadSiglusTextOwner(g_header) !=
-      fushi_voice_hook::SiglusTextOwner::kPending) return true;
+  if (fushi_voice_hook::ReadNativeTextOwner(g_header) !=
+      fushi_voice_hook::NativeTextOwner::kPending) return true;
   const bool resolved = IsSiglusLookupProfileMatched();
   // Do not let the historical first-match text locator patch an entry while
   // the lookup resolver is still checking whole-image uniqueness and its ABI.

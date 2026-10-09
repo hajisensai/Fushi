@@ -1171,11 +1171,11 @@ target_compile_definitions(fushi_malie_lookup_test PRIVATE
 add_test(NAME fushi_malie_lookup_test
   COMMAND fushi_malie_lookup_test)
 
-add_executable(fushi_siglus_text_owner_test "tests/siglus_text_owner_test.cpp")
-target_include_directories(fushi_siglus_text_owner_test PRIVATE "include")
-target_compile_definitions(fushi_siglus_text_owner_test PRIVATE
+add_executable(fushi_native_text_owner_test "tests/native_text_owner_test.cpp")
+target_include_directories(fushi_native_text_owner_test PRIVATE "include")
+target_compile_definitions(fushi_native_text_owner_test PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
-add_test(NAME fushi_siglus_text_owner_test COMMAND fushi_siglus_text_owner_test)
+add_test(NAME fushi_native_text_owner_test COMMAND fushi_native_text_owner_test)
 
 # Locale Emulator is an x86-only runtime. Keep its actual loader-list ABI
 # regression in the standard Windows test gate, without implying x64 support.
