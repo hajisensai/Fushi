@@ -471,6 +471,22 @@ enum ShortcutAction {
   // 表截获（reader caret 同款contextual 路由），见 video_fushi/subtitle_caret.part.dart。
   videoEnterCaret(ShortcutScope.video, 'video_enter_caret'),
 
+  // 暂停句「整句扫词」（2026-10-09）：手柄查词的无光标形态，把「选谁」与「做什么」
+  // 正交——扫词只在数据层移动一个**词游标**（暂停句分词后的词序列下标），每停一词
+  // 就复用点击查词链路弹/换同一张浮层；动词（翻词条 / 制卡 / 发音）全部交给既有
+  // dictionaryPopup 表，不新增任何模态。
+  //
+  // 与 videoEnterCaret 的关系是**互不依赖**：扫词不进 caret，故浮层的 X=制卡 /
+  // Y=发音在扫词中永远可达——进了 caret 就被 `_handleCaretGamepadButton` 的模态
+  // 路由吞掉（见 video_fushi/subtitle_caret.part.dart），这正是本动作存在的理由。
+  //
+  // 默认**空绑定**、由用户自配：video scope 内的手柄键已占满（B 另属 universal
+  // 的「返回上一级」），唯一空闲的 L3/R3 是摇杆按下键、易误触，且
+  // `video_gamepad_mapping_test` 明确断言它们保持空闲，故不设默认。二者是同一
+  // 件事的两个方向（上一词 / 下一词），句尾按用户要求**循环**回句首。
+  videoLookupNextWord(ShortcutScope.video, 'video_lookup_next_word'),
+  videoLookupPrevWord(ShortcutScope.video, 'video_lookup_prev_word'),
+
   // 字幕对轴/匹配快捷键（用户请求）：把埋在快速设置面板深处的「字幕调轴」直接搬到
   // 键盘。videoOpenSubtitleAlign 一键弹波形对轴放大视图（复用 SubtitleWaveformZoomView，
   // 与面板入口同一逻辑、零第二套状态）；videoSubtitleDelayIncrease/Decrease 像 mpv 的

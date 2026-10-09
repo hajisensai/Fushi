@@ -402,6 +402,15 @@ class ShortcutDefaults {
     ], [
       _gSelect
     ]),
+    // 暂停句「整句扫词」（2026-10-09）：**默认空绑定**（键盘与手柄都留空），由用户在
+    // 快捷键设置里自配。它是有模态的 caret 查词的替代路径——不进 caret，因而浮层的
+    // 制卡 / 发音键保持可达。不设默认键的理由：键盘上常见键已被词条导航 / 制卡 / 播放
+    // 占用；手柄上 video scope 已占满（B 另属 universal 返回，L3/R3 由
+    // `video_gamepad_mapping_test` 断言保持空闲——摇杆按下键也不适合做扫词）。
+    // 「可配置即必须可执行」由 `shortcut_action_wiring_guard_test` 盯着：执行体在
+    // video_fushi_page.dart，故空绑定不是死通道。
+    ShortcutAction.videoLookupNextWord: const ShortcutBindingSet(),
+    ShortcutAction.videoLookupPrevWord: const ShortcutBindingSet(),
     // 漫画：默认键位与 reader 同构（PageDown/右/下/空格 前进），左右方向键的最终
     // 朝向再由 resolveMangaArrowPageTurn 按跨页方向（日漫默认 rtl）校正，所以这里
     // 存的是**页序语义**而非物理方向。

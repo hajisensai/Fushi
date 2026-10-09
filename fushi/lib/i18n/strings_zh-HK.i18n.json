@@ -6894,5 +6894,7 @@
   "feedback_error_duplicate": "剛剛已提交過相同的回饋",
   "video_disc_menu_open_failed": "This disc's menu could not be opened. You can still play its titles directly.",
   "video_setting_mpv_passthrough": "杜比 / DTS 直通",
-  "video_setting_mpv_passthrough_hint": "將 AC-3 / E-AC-3 / TrueHD / DTS-HD 原封不動交給擴音機或 Soundbar 解碼（包括 Atmos）。只應在裝置支援這些格式時開啟，否則可能無聲。直通時請在擴音機上調校音量：應用內的音量與靜音對這些碼流無效，所以倍速不是 1×、音量未調至最大或靜音時，會暫時改由 Fushi 解碼（擴音機上的 Atmos / DTS 標示隨之熄滅）。關閉時一律由 Fushi 解碼，5.1 / 7.1 照樣以環迴立體聲輸出。"
+  "video_setting_mpv_passthrough_hint": "將 AC-3 / E-AC-3 / TrueHD / DTS-HD 原封不動交給擴音機或 Soundbar 解碼（包括 Atmos）。只應在裝置支援這些格式時開啟，否則可能無聲。直通時請在擴音機上調校音量：應用內的音量與靜音對這些碼流無效，所以倍速不是 1×、音量未調至最大或靜音時，會暫時改由 Fushi 解碼（擴音機上的 Atmos / DTS 標示隨之熄滅）。關閉時一律由 Fushi 解碼，5.1 / 7.1 照樣以環迴立體聲輸出。",
+  "shortcut_action_video_lookup_next_word": "下一個詞（掃詞）",
+  "shortcut_action_video_lookup_prev_word": "上一個詞（掃詞）"
 }
