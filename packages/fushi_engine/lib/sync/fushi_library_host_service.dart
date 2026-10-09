@@ -1330,6 +1330,28 @@ Map<String, RemoteBookInfo> remoteAudiobookRefetchCandidates({
   return out;
 }
 
+/// 纯 SRT（standalone，无 EPUB 配对）有声书的「从对端更新字幕 / 重新下载」候选：
+/// 对端有声书清单 [remote] 里 standalone 且本端已有同 uid SrtBook 的条目，按 uid 索引。
+///
+/// 纯函数，与 [remoteAudiobookRefetchCandidates] 同义、只是身份换成 uid（standalone
+/// 书没有 bookKey）。[excludeUids] 是已经以「下载占位卡」重新挂出的 uid（BUG-2551：
+/// 本地音频断链、对端有音频）——那边整本重下即可，这里不再重复给入口，与书卡的
+/// 补拉 / 重拉互斥同口径。同 uid 多条只取首条。
+Map<String, RemoteAudiobookInfo> remoteStandaloneSrtRefetchCandidates({
+  required List<RemoteAudiobookInfo> remote,
+  required Set<String> localSrtUids,
+  Set<String> excludeUids = const <String>{},
+}) {
+  final Map<String, RemoteAudiobookInfo> out = <String, RemoteAudiobookInfo>{};
+  for (final RemoteAudiobookInfo book in remote) {
+    if (!book.isStandaloneSrt || book.identity.isEmpty) continue;
+    if (!localSrtUids.contains(book.identity)) continue;
+    if (excludeUids.contains(book.identity)) continue;
+    out.putIfAbsent(book.identity, () => book);
+  }
+  return out;
+}
+
 /// 从远端书清单 [remote] 里挑出「本端已有这本书、却还没有它的有声书，而对端有配套
 /// 有声书」的条目，按本端 bookKey 索引（BUG-2505）。
 ///

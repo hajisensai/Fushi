@@ -104,6 +104,46 @@ Future<void> _retranscribeOnHost(FushiDatabase db, Directory dir) async {
   );
 }
 
+const String _soloUid = 'srt-solo';
+
+/// host 上的一本纯字幕（standalone）有声书：无 EPUB、无 Audiobooks 行，身份 = uid，
+/// cue 在 uid 命名空间。
+Future<void> _seedHostStandalone(FushiDatabase db, Directory dir) async {
+  dir.createSync(recursive: true);
+  final File track = File(p.join(dir.path, 'solo01.m4b'))
+    ..writeAsBytesSync(List<int>.generate(2048, (int i) => (i * 7) % 251));
+  final File subs = File(p.join(dir.path, 'solo.srt'))
+    ..writeAsStringSync(_srt(<String>['一行目', '二行目']));
+  await db.upsertSrtBook(
+    SrtBooksCompanion.insert(
+      uid: _soloUid,
+      title: 'ソロ',
+      audioRoot: Value(dir.path),
+      audioPathsJson: Value(jsonEncode(<String>[track.path])),
+      srtPath: subs.path,
+      importedAt: 2,
+    ),
+  );
+  await db.replaceCuesForBook(
+    _soloUid,
+    _cues(_soloUid, <String>['一行目', '二行目']),
+  );
+}
+
+/// host 上把纯字幕书重新转录：字幕文件与 cue 换新，音频不动。
+Future<void> _retranscribeStandaloneOnHost(
+  FushiDatabase db,
+  Directory dir,
+) async {
+  File(
+    p.join(dir.path, 'solo.srt'),
+  ).writeAsStringSync(_srt(<String>['一行目。', '二行目。', '三行目。']));
+  await db.replaceCuesForBook(
+    _soloUid,
+    _cues(_soloUid, <String>['一行目。', '二行目。', '三行目。']),
+  );
+}
+
 Future<InterconnectSyncBackend> _buildBackend(String base) async {
   final SyncRepository repo = SyncRepository(_memDb());
   await repo.setFushiClientUrls(<FushiClientUrl>[
@@ -169,6 +209,10 @@ void main() {
     hostAudio = Directory(p.join(temp.path, 'host-audio'));
     clientAudioRoot = Directory(p.join(temp.path, 'client-audiobooks'));
     await _seedHost(hostDb, hostAudio);
+    await _seedHostStandalone(
+      hostDb,
+      Directory(p.join(temp.path, 'host-solo')),
+    );
 
     final LocalLibraryHostService svc = LocalLibraryHostService(
       db: hostDb,
@@ -330,6 +374,157 @@ void main() {
     );
     expect(await clientDb.getAllAudiobooks(), isEmpty);
     expect(await clientDb.getAllSrtBooks(), isEmpty);
+  });
+
+  group('纯字幕（standalone）有声书：详情里的「从对端更新字幕 / 重新下载」', () {
+    Future<void> clientDownloadStandalone({bool fresh = false}) async {
+      final File pkg = File(p.join(temp.path, 'dl', 'solo.fushiaudio'));
+      if (pkg.existsSync()) pkg.deleteSync();
+      await backend.getRemoteAudiobook(_soloUid, pkg, fresh: fresh);
+      // 与书架 _runRemoteSrtAudiobookDownload 同：纯 SRT 包不传 bookKeyOverride。
+      await SyncAssetPackageService(db: clientDb).importAudioDatabasePackage(
+        packageFile: pkg,
+        audioDatabaseRoot: clientAudioRoot,
+      );
+      pkg.deleteSync();
+    }
+
+    Future<void> clientRefreshStandaloneSubtitles() async {
+      final File pkg = File(p.join(temp.path, 'dl', 'solo.fushisubs'));
+      if (pkg.existsSync()) pkg.deleteSync();
+      try {
+        // 与书架 _runRemoteSrtSubtitleRefetch 同：身份 = uid，不传 bookKeyOverride。
+        await backend.getRemoteAudiobookSubtitles(_soloUid, pkg);
+        await SyncAssetPackageService(db: clientDb).importAudioSubtitlePackage(
+          packageFile: pkg,
+          audioDatabaseRoot: clientAudioRoot,
+        );
+      } finally {
+        if (pkg.existsSync()) pkg.deleteSync();
+      }
+    }
+
+    Future<List<String>> soloCueTexts() async => (await clientDb.getCuesForBook(
+      _soloUid,
+    )).map((AudioCueRow r) => r.cueText).toList();
+
+    test('只更新字幕：cue / 字幕文件换新，音频与听书断点保留', () async {
+      await clientDownloadStandalone();
+      expect(await soloCueTexts(), <String>['一行目', '二行目']);
+      await clientDb.setPrefTyped<int>(
+        audiobookPositionPrefKey(_soloUid),
+        4321,
+      );
+      final SrtBookRow before = (await clientDb.getSrtBookByUid(_soloUid))!;
+      final List<String> audioBefore =
+          (jsonDecode(before.audioPathsJson!) as List<dynamic>).cast<String>();
+      final List<int> audioBytes = File(audioBefore.single).readAsBytesSync();
+
+      await _retranscribeStandaloneOnHost(
+        hostDb,
+        Directory(p.join(temp.path, 'host-solo')),
+      );
+      await clientRefreshStandaloneSubtitles();
+
+      expect(await soloCueTexts(), <String>['一行目。', '二行目。', '三行目。']);
+      final SrtBookRow after = (await clientDb.getSrtBookByUid(_soloUid))!;
+      expect(after.bookKey, isEmpty, reason: '纯字幕书不能被导入成配对书');
+      expect(File(after.srtPath).readAsStringSync(), contains('三行目'));
+      expect(after.audioPathsJson, before.audioPathsJson);
+      expect(File(audioBefore.single).readAsBytesSync(), audioBytes);
+      expect(
+        await clientDb.getPrefTyped<int>(audiobookPositionPrefKey(_soloUid), 0),
+        4321,
+      );
+      expect(
+        (await clientDb.getAllSrtBooks()).where(
+          (SrtBookRow r) => r.uid == _soloUid,
+        ),
+        hasLength(1),
+      );
+    });
+
+    test('重新下载（fresh）：二次导入同一 uid 原位更新，不多出一行', () async {
+      await clientDownloadStandalone();
+      await _retranscribeStandaloneOnHost(
+        hostDb,
+        Directory(p.join(temp.path, 'host-solo')),
+      );
+      await clientDownloadStandalone(fresh: true);
+      expect(await soloCueTexts(), hasLength(3));
+      expect(
+        (await clientDb.getAllSrtBooks()).where(
+          (SrtBookRow r) => r.uid == _soloUid,
+        ),
+        hasLength(1),
+      );
+    });
+
+    test('详情对话框接线：纯字幕书详情给两项入口，复用同一套拉取 / 导入', () {
+      final String books = File(
+        'lib/src/pages/implementations/reader_history/books.part.dart',
+      ).readAsStringSync();
+      final String remote = File(
+        'lib/src/pages/implementations/reader_history/remote.part.dart',
+      ).readAsStringSync();
+      expect(
+        books,
+        contains('_remoteSrtRefetchFor(book.uid) != null'),
+        reason: '纯字幕书详情（_srtExtraActions）没按对端候选给入口',
+      );
+      expect(books, contains('bookKey.isEmpty &&'));
+      expect(
+        books,
+        contains('_refetchRemoteSrtAudiobook(remote, subtitlesOnly: true)'),
+      );
+      expect(
+        books,
+        contains('_refetchRemoteSrtAudiobook(remote, subtitlesOnly: false)'),
+      );
+      expect(remote, contains('remoteStandaloneSrtRefetchCandidates('));
+      // 只更新字幕走 /subtitles + importAudioSubtitlePackage；重新下载走整包 fresh，
+      // 与首次下载共用同一个任务本体。
+      expect(remote, contains('client.getRemoteAudiobookSubtitles('));
+      expect(remote, contains('onProgress: onProgress, fresh: true'));
+      expect(
+        RegExp(r'_runRemoteSrtAudiobookDownload\(').allMatches(remote).length,
+        greaterThanOrEqualTo(3),
+        reason: '首次下载与重新下载必须共用 _runRemoteSrtAudiobookDownload',
+      );
+    });
+
+    test('详情入口候选：只给本端已有同 uid 的 standalone；占位卡已挂出的不重复给', () {
+      const RemoteAudiobookInfo solo = RemoteAudiobookInfo(
+        bookKey: '',
+        uid: _soloUid,
+        title: 'ソロ',
+      );
+      const RemoteAudiobookInfo other = RemoteAudiobookInfo(
+        bookKey: '',
+        uid: 'srt-other',
+        title: 'other',
+      );
+      const RemoteAudiobookInfo paired = RemoteAudiobookInfo(
+        bookKey: _bookKey,
+        uid: _srtUid,
+        title: 'neko',
+      );
+      final Map<String, RemoteAudiobookInfo> got =
+          remoteStandaloneSrtRefetchCandidates(
+            remote: <RemoteAudiobookInfo>[solo, other, paired, solo],
+            localSrtUids: <String>{_soloUid, _srtUid},
+          );
+      expect(got.keys, <String>[_soloUid]);
+      expect(
+        remoteStandaloneSrtRefetchCandidates(
+          remote: <RemoteAudiobookInfo>[solo],
+          localSrtUids: <String>{_soloUid},
+          excludeUids: <String>{_soloUid},
+        ),
+        isEmpty,
+        reason: '本地音频断链时对端占位卡已重新挂出（BUG-2551），整本重下走那边',
+      );
+    });
   });
 
   test('书卡菜单候选：本端书 + 有声书都在、对端也有 → 重拉候选；与补拉候选互斥', () {
