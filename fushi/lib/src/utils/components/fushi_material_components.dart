@@ -4241,9 +4241,17 @@ class FushiPageScaffold extends StatefulWidget {
     this.bottomNavigationBar,
     this.headerCompact,
     this.extendBodyBehindHeader = true,
+    this.header,
   });
 
   final String title;
+
+  /// 整条替换默认的 [FushiPageHeader]（仍挂页头收起外壳与让位测高）。给「页头
+  /// 本身就是一条悬浮工具栏」的页面用（更新中心：`[返回] [域筛选 …] ⋯`，
+  /// [FushiFloatingTopBar]）；非 null 时 [subtitle] / [actions] / [leading] /
+  /// [headerBottom] 不再生效，返回键由 [header] 自己画。[title] 仍作页面名
+  /// 进无障碍语义。
+  final Widget? header;
   final String? subtitle;
   final Widget body;
 
@@ -4345,14 +4353,21 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     final Widget header = FushiScrollAwayChrome(
       controller: _chrome,
       enabled: floatingChrome,
-      child: FushiPageHeader(
-        title: widget.title,
-        subtitle: widget.subtitle,
-        leading: effectiveLeading,
-        actions: widget.actions,
-        bottom: widget.headerBottom,
-        compact: widget.headerCompact ?? effectiveLeading != null,
-      ),
+      child: widget.header == null
+          ? FushiPageHeader(
+              title: widget.title,
+              subtitle: widget.subtitle,
+              leading: effectiveLeading,
+              actions: widget.actions,
+              bottom: widget.headerBottom,
+              compact: widget.headerCompact ?? effectiveLeading != null,
+            )
+          : Semantics(
+              label: widget.title,
+              container: true,
+              explicitChildNodes: true,
+              child: widget.header,
+            ),
     );
     return PrimaryScrollController(
       controller: _scrollController,

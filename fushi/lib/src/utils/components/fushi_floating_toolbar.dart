@@ -36,6 +36,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -242,6 +243,7 @@ class FushiToolbarButton extends StatelessWidget {
     required this.selectedContainer,
     required this.selectedForeground,
     this.showLabel = false,
+    this.inlineLabel = false,
     this.iconSize = 24,
   });
 
@@ -250,13 +252,19 @@ class FushiToolbarButton extends StatelessWidget {
   final Color selectedContainer;
   final Color selectedForeground;
   final bool showLabel;
+
+  /// 横排「图标 + 文字」胶囊（[FushiFloatingTopBar.inlineLabels]）：选中 = 选中
+  /// 胶囊底（颜色过渡走 [fushiMotionDuration]），按压走 [FushiPressScale]。
+  final bool inlineLabel;
   final double iconSize;
 
   @override
   Widget build(BuildContext context) {
     final Color fg = item.selected ? selectedForeground : foreground;
     final Widget button;
-    if (!showLabel) {
+    if (inlineLabel) {
+      button = _buildInline(context, fg);
+    } else if (!showLabel) {
       final String tooltip = item.tooltip ?? item.label;
       final Widget iconButton = FushiIconButtonControl(
         key: item.key,
@@ -334,6 +342,97 @@ class FushiToolbarButton extends StatelessWidget {
   }
 }
 
+/// [FushiToolbarButton.inlineLabel] 胶囊的高与内边距（测宽与绘制共用）。
+const double _kInlineItemHeight = 40;
+const double _kInlineItemPadding = 12;
+const double _kInlineItemIconSize = 20;
+const double _kInlineItemIconGap = 8;
+
+/// 「图标 + 文字」胶囊的文字字阶（测宽与绘制共用）。
+TextStyle? _inlineLabelStyle(BuildContext context) =>
+    Theme.of(context).textTheme.labelLarge;
+
+/// 一颗「图标 + 文字」胶囊的宽度（纯函数，测宽用）。
+double fushiTopBarInlineItemWidth(BuildContext context, FushiToolbarItem item) {
+  final TextPainter painter = TextPainter(
+    text: TextSpan(text: item.label, style: _inlineLabelStyle(context)),
+    textDirection: Directionality.maybeOf(context) ?? TextDirection.ltr,
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: 1,
+  )..layout();
+  final double width =
+      _kInlineItemPadding * 2 +
+      _kInlineItemIconSize +
+      _kInlineItemIconGap +
+      painter.width.ceilToDouble();
+  painter.dispose();
+  return width;
+}
+
+extension on FushiToolbarButton {
+  Widget _buildInline(BuildContext context, Color fg) {
+    const ShapeBorder shape = StadiumBorder();
+    final TextStyle? style = _inlineLabelStyle(context)?.copyWith(color: fg);
+    return FushiTooltip(
+      message: item.tooltip ?? item.label,
+      excludeFromSemantics: true,
+      child: Semantics(
+        button: true,
+        selected: item.selected,
+        enabled: item.onPressed != null,
+        label: item.label,
+        excludeSemantics: true,
+        child: FushiPressScale(
+          enabled: item.onPressed != null,
+          child: AnimatedContainer(
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            curve: FushiMotion.standard,
+            height: _kInlineItemHeight,
+            decoration: ShapeDecoration(
+              color: item.selected
+                  ? selectedContainer
+                  : selectedContainer.withValues(alpha: 0),
+              shape: shape,
+            ),
+            child: Material(
+              type: MaterialType.transparency,
+              shape: shape,
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                key: item.key,
+                onTap: item.onPressed,
+                customBorder: shape,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: _kInlineItemPadding,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      FushiIcon(
+                        item.icon,
+                        color: fg,
+                        size: _kInlineItemIconSize,
+                      ),
+                      const SizedBox(width: _kInlineItemIconGap),
+                      Text(
+                        item.label,
+                        style: style,
+                        maxLines: 1,
+                        softWrap: false,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 「更多」溢出菜单按钮（⋯）。[items] 为空时不画。
 class FushiToolbarOverflowButton extends StatelessWidget {
   const FushiToolbarOverflowButton({
@@ -373,6 +472,12 @@ class FushiToolbarOverflowButton extends StatelessWidget {
                 FushiIcon(item.icon, size: 20),
                 const SizedBox(width: 12),
                 Flexible(child: Text(item.label)),
+                // 被收进「⋯」的选中项（筛选类页头窄屏时）：菜单里也要看得出
+                // 当前选的是它。
+                if (item.selected) ...<Widget>[
+                  const SizedBox(width: 12),
+                  FushiIcon(FushiIcons.check, size: 18),
+                ],
               ],
             ),
           ),
@@ -398,6 +503,7 @@ class FushiFloatingToolbar extends StatelessWidget {
     this.showLabels = false,
     this.compact = false,
     this.excludeFocus = false,
+    this.inlineLabel,
   });
 
   final List<List<FushiToolbarItem>> groups;
@@ -417,6 +523,10 @@ class FushiFloatingToolbar extends StatelessWidget {
 
   /// 纯指针面：整个工具栏不进焦点遍历池（阅读器 chrome 的不变式）。
   final bool excludeFocus;
+
+  /// 哪些按钮画成横排「图标 + 文字」胶囊（[FushiFloatingTopBar.inlineLabels]
+  /// 按宽度决定）；null = 全部按原形态。
+  final bool Function(FushiToolbarItem item)? inlineLabel;
 
   /// 工具栏实际高度（横向）/ 宽度（纵向），供页面预留空间（纯函数）。
   static double extentFor({bool compact = false, bool showLabels = false}) =>
@@ -467,6 +577,7 @@ class FushiFloatingToolbar extends StatelessWidget {
             selectedContainer: palette.selectedContainer,
             selectedForeground: palette.selectedForeground,
             showLabel: labels,
+            inlineLabel: inlineLabel?.call(group[i]) ?? false,
           ),
         );
       }
@@ -552,6 +663,10 @@ class _GroupDivider extends StatelessWidget {
 /// 保底优先于高优先级动作。展开方向带 [kFushiFloatingTopBarOverflowHysteresis] 的
 /// 回差，窗口在临界宽度附近缩放时不来回跳。动作胶囊按目标宽度立即布局、不做
 /// 尺寸动画——收缩时动画保留的旧宽度会让任意一帧溢出（HBK034）。
+///
+/// 筛选类页头（更新中心 2026-10-09：`[返回] [域筛选 …]`，没有标题胶囊）用
+/// [actionsFollowLeading] 让动作组紧跟返回胶囊排，页面级的低频动作放 [menu]
+/// ——它们恒在「⋯」里、不参与平铺，测宽时「⋯」那一格恒被预留。
 class FushiFloatingTopBar extends StatefulWidget {
   const FushiFloatingTopBar({
     super.key,
@@ -562,6 +677,9 @@ class FushiFloatingTopBar extends StatefulWidget {
     this.titleTooltip,
     this.actions = const <List<FushiToolbarItem>>[],
     this.overflow = const <FushiToolbarItem>[],
+    this.menu = const <FushiToolbarItem>[],
+    this.actionsFollowLeading = false,
+    this.inlineLabels = false,
     this.colors,
     this.excludeFocus = false,
     this.adaptiveOverflow = true,
@@ -578,6 +696,21 @@ class FushiFloatingTopBar extends StatefulWidget {
 
   /// 最低优先级的动作：[adaptiveOverflow] 时宽度够也平铺，否则恒在「⋯」里。
   final List<FushiToolbarItem> overflow;
+
+  /// 恒在「⋯」里的动作（排在被收起的 [actions] / [overflow] 之后）：宽度够也
+  /// 不平铺。非空时「⋯」恒在，测宽按「⋯」常驻算。
+  final List<FushiToolbarItem> menu;
+
+  /// 无标题胶囊时，动作组紧跟 [leading] 排（筛选紧挨返回键），而不是被推到行尾。
+  /// 有标题时不生效（标题胶囊仍在中间吃剩余宽度）。
+  final bool actionsFollowLeading;
+
+  /// 动作按「图标 + 文字」胶囊排，宽度不够时逐级降：全部带字 → 只有选中项
+  /// 带字（其余纯图标）→ 选中项带字、放不下的按优先级收进「⋯」→ 纯图标
+  /// （即默认的自适应溢出）。见 [fushiTopBarLabeledLayout]。[actions] 按一组排
+  /// （组间不画分隔），只在没有标题胶囊时生效。筛选类页头用：纯图标认不出是
+  /// 哪一类。
+  final bool inlineLabels;
   final FushiFloatingToolbarColors? colors;
   final bool excludeFocus;
 
@@ -637,18 +770,23 @@ fushiTopBarSplitActions(
 }
 
 /// 平铺 [visible] 颗时动作胶囊的估计宽度（含「⋯」）。纯函数。
+///
+/// [pinnedMenu]：「⋯」恒在（[FushiFloatingTopBar.menu] 非空），即使全部平铺也
+/// 占一格。
 double fushiTopBarActionsWidth(
   List<List<FushiToolbarItem>> groups,
   List<FushiToolbarItem> overflow,
-  int visible,
-) {
+  int visible, {
+  bool pinnedMenu = false,
+}) {
   final ({List<List<FushiToolbarItem>> groups, List<FushiToolbarItem> overflow})
   split = fushiTopBarSplitActions(groups, overflow, visible);
   int items = 0;
   for (final List<FushiToolbarItem> g in split.groups) {
     items += g.length;
   }
-  final int buttons = items + (split.overflow.isEmpty ? 0 : 1);
+  final int buttons =
+      items + (split.overflow.isEmpty && !pinnedMenu ? 0 : 1);
   if (buttons == 0) return 0;
   final int dividers = split.groups.length > 1 ? split.groups.length - 1 : 0;
   return _kTopBarActionsPadding +
@@ -661,10 +799,14 @@ int fushiTopBarFitCount(
   List<List<FushiToolbarItem>> groups,
   List<FushiToolbarItem> overflow,
   int total,
-  double budget,
-) {
+  double budget, {
+  bool pinnedMenu = false,
+}) {
   for (int k = total; k > 0; k--) {
-    if (fushiTopBarActionsWidth(groups, overflow, k) <= budget) return k;
+    if (fushiTopBarActionsWidth(groups, overflow, k, pinnedMenu: pinnedMenu) <=
+        budget) {
+      return k;
+    }
   }
   return 0;
 }
@@ -697,13 +839,20 @@ class FushiTopBarOverflowFit {
     required List<List<FushiToolbarItem>> groups,
     List<FushiToolbarItem> overflow = const <FushiToolbarItem>[],
     required double budget,
+    bool pinnedMenu = false,
   }) {
     int total = overflow.length;
     for (final List<FushiToolbarItem> g in groups) {
       total += g.length;
     }
     if (!budget.isFinite) return total;
-    final int fit = fushiTopBarFitCount(groups, overflow, total, budget);
+    final int fit = fushiTopBarFitCount(
+      groups,
+      overflow,
+      total,
+      budget,
+      pinnedMenu: pinnedMenu,
+    );
     final int? last = _lastTotal == total ? _lastVisible : null;
     int visible = fit;
     if (last != null && fit > last) {
@@ -713,6 +862,7 @@ class FushiTopBarOverflowFit {
         overflow,
         total,
         budget - kFushiFloatingTopBarOverflowHysteresis,
+        pinnedMenu: pinnedMenu,
       );
       visible = strict > last ? strict : last;
     }
@@ -722,7 +872,179 @@ class FushiTopBarOverflowFit {
   }
 }
 
+/// [FushiFloatingTopBar.inlineLabels] 的一种排法：[labeled] 里的按钮带字，
+/// [shown] 平铺（保持原顺序），[hidden] 进「⋯」。rank 越大越宽松，用于展开
+/// 回差比较。
+typedef FushiTopBarLabeledLayout = ({
+  int rank,
+  List<FushiToolbarItem> shown,
+  List<FushiToolbarItem> hidden,
+  Set<FushiToolbarItem> labeled,
+});
+
+/// rank 不设上限。
+const int kFushiTopBarLabeledRankAny = 1000000;
+
+/// [FushiFloatingTopBar.inlineLabels] 的排法决策（纯函数）：在 [budget] 里按
+/// 「全部带字 → 只有选中项带字 → 选中项带字 + 低优先级收进 ⋯ → 纯图标自适应
+/// 溢出」取第一个放得下、且 rank 不超过 [maxRank] 的排法。[items] 按优先级
+/// 从高到低；[labeledWidth] 给出一颗带字胶囊的宽度。选中项（若有）在带字的
+/// 几档里恒平铺。
+FushiTopBarLabeledLayout fushiTopBarLabeledLayout({
+  required List<FushiToolbarItem> items,
+  required double Function(FushiToolbarItem item) labeledWidth,
+  required double budget,
+  bool pinnedMenu = false,
+  int maxRank = kFushiTopBarLabeledRankAny,
+}) {
+  const double gap = kFushiFloatingToolbarItemGap;
+  final double menuSlot = pinnedMenu ? _kTopBarActionSlot : 0;
+  final int n = items.length;
+  if (999 <= maxRank) {
+    double width = _kTopBarActionsPadding + menuSlot;
+    for (final FushiToolbarItem item in items) {
+      width += labeledWidth(item) + gap;
+    }
+    if (width <= budget) {
+      return (
+        rank: 999,
+        shown: items,
+        hidden: const <FushiToolbarItem>[],
+        labeled: items.toSet(),
+      );
+    }
+  }
+  final int selectedIndex = items.indexWhere(
+    (FushiToolbarItem item) => item.selected,
+  );
+  if (selectedIndex >= 0) {
+    final FushiToolbarItem selected = items[selectedIndex];
+    final double selectedCost = labeledWidth(selected) + gap;
+    if (998 <= maxRank &&
+        _kTopBarActionsPadding +
+                selectedCost +
+                (n - 1) * _kTopBarActionSlot +
+                menuSlot <=
+            budget) {
+      return (
+        rank: 998,
+        shown: items,
+        hidden: const <FushiToolbarItem>[],
+        labeled: <FushiToolbarItem>{selected},
+      );
+    }
+    // 有东西收进 ⋯：⋯ 恒占一格。
+    final List<FushiToolbarItem> others = <FushiToolbarItem>[
+      for (final FushiToolbarItem item in items)
+        if (!identical(item, selected)) item,
+    ];
+    for (int k = n - 2; k >= 0; k--) {
+      if (100 + k > maxRank) continue;
+      final double width =
+          _kTopBarActionsPadding +
+          selectedCost +
+          _kTopBarActionSlot +
+          k * _kTopBarActionSlot;
+      if (width > budget) continue;
+      final Set<FushiToolbarItem> keep = <FushiToolbarItem>{
+        selected,
+        ...others.take(k),
+      };
+      return (
+        rank: 100 + k,
+        shown: <FushiToolbarItem>[
+          for (final FushiToolbarItem item in items)
+            if (keep.contains(item)) item,
+        ],
+        hidden: <FushiToolbarItem>[
+          for (final FushiToolbarItem item in items)
+            if (!keep.contains(item)) item,
+        ],
+        labeled: <FushiToolbarItem>{selected},
+      );
+    }
+  }
+  // 纯图标：与默认自适应溢出同一套测宽。
+  final List<List<FushiToolbarItem>> groups = <List<FushiToolbarItem>>[items];
+  for (int v = n < maxRank ? n : maxRank; v > 0; v--) {
+    if (fushiTopBarActionsWidth(
+          groups,
+          const <FushiToolbarItem>[],
+          v,
+          pinnedMenu: pinnedMenu,
+        ) <=
+        budget) {
+      return (
+        rank: v,
+        shown: items.sublist(0, v),
+        hidden: items.sublist(v),
+        labeled: const <FushiToolbarItem>{},
+      );
+    }
+  }
+  return (
+    rank: 0,
+    shown: const <FushiToolbarItem>[],
+    hidden: items,
+    labeled: const <FushiToolbarItem>{},
+  );
+}
+
 class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
+  /// [FushiFloatingTopBar.inlineLabels] 上一次的排法 rank（展开回差参照）。
+  int? _lastLabeledRank;
+
+  /// 上一次排法时的选中项（按 label 认）。选中项一变，带字的那颗宽度就变了，
+  /// rank 不再可比（进页面时从「无选中」到「有选中」也属此类），回差参照作废。
+  String? _lastLabeledSelection;
+
+  /// 带字排法 + 展开回差：更宽松的排法要连回差一起放得下才换过去。
+  FushiTopBarLabeledLayout _labeledLayoutFor(double maxWidth) {
+    final List<FushiToolbarItem> items = <FushiToolbarItem>[
+      for (final List<FushiToolbarItem> g in actions) ...g,
+      ...overflow,
+    ];
+    // 紧跟返回胶囊排时动作组前没有额外的 8 间距（返回胶囊那格已含）。
+    final double budget =
+        fushiTopBarActionsBudget(
+          maxWidth: maxWidth,
+          leadingCount: leading.length,
+          hasTitle: false,
+        ) +
+        (widget.actionsFollowLeading ? 8 : 0);
+    double width(FushiToolbarItem item) =>
+        fushiTopBarInlineItemWidth(context, item);
+    FushiTopBarLabeledLayout at(
+      double b, {
+      int cap = kFushiTopBarLabeledRankAny,
+    }) => fushiTopBarLabeledLayout(
+      items: items,
+      labeledWidth: width,
+      budget: b,
+      pinnedMenu: widget.menu.isNotEmpty,
+      maxRank: cap,
+    );
+    if (!budget.isFinite) return at(double.maxFinite);
+    FushiTopBarLabeledLayout layout = at(budget);
+    final String? selection = <String?>[
+      for (final FushiToolbarItem item in items)
+        if (item.selected) item.label,
+      null,
+    ].first;
+    final int? last = selection == _lastLabeledSelection
+        ? _lastLabeledRank
+        : null;
+    _lastLabeledSelection = selection;
+    if (last != null && layout.rank > last) {
+      final FushiTopBarLabeledLayout strict = at(
+        budget - kFushiFloatingTopBarOverflowHysteresis,
+      );
+      layout = strict.rank >= last ? strict : at(budget, cap: last);
+    }
+    _lastLabeledRank = layout.rank;
+    return layout;
+  }
+
   List<FushiToolbarItem> get leading => widget.leading;
   String get title => widget.title;
   String get subtitle => widget.subtitle;
@@ -753,6 +1075,7 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
         leadingCount: leading.length,
         hasTitle: hasTitle,
       ),
+      pinnedMenu: widget.menu.isNotEmpty,
     );
   }
 
@@ -768,7 +1091,8 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
     final ThemeData theme = Theme.of(context);
     final bool hasActions =
         actions.any((List<FushiToolbarItem> g) => g.isNotEmpty) ||
-        overflow.isNotEmpty;
+        overflow.isNotEmpty ||
+        widget.menu.isNotEmpty;
     final String t = title.trim();
     final String s = subtitle.trim();
     final Widget? titlePill = t.isEmpty && s.isEmpty
@@ -829,17 +1153,46 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
           );
     final Widget row = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final int visible = _visibleFor(
-          constraints.maxWidth,
-          hasTitle: titlePill != null,
-        );
+        final FushiTopBarLabeledLayout? labeled =
+            widget.inlineLabels && titlePill == null
+            ? _labeledLayoutFor(constraints.maxWidth)
+            : null;
         final ({
           List<List<FushiToolbarItem>> groups,
           List<FushiToolbarItem> overflow,
         })
-        split = widget.adaptiveOverflow
-            ? fushiTopBarSplitActions(actions, overflow, visible)
+        split = labeled != null
+            ? (
+                groups: <List<FushiToolbarItem>>[labeled.shown],
+                overflow: labeled.hidden,
+              )
+            : widget.adaptiveOverflow
+            ? fushiTopBarSplitActions(
+                actions,
+                overflow,
+                _visibleFor(constraints.maxWidth, hasTitle: titlePill != null),
+              )
             : (groups: actions, overflow: overflow);
+        final Widget? toolbar = hasActions
+            // 不做尺寸动画（HBK034）：AnimatedSize 收缩时会保留旧宽度一帧，窗口
+            // 骤缩时右侧溢出。按目标宽度立即布局，防抖靠展开回差。
+            ? FushiFloatingToolbar(
+                groups: split.groups,
+                overflow: <FushiToolbarItem>[
+                  ...split.overflow,
+                  ...widget.menu,
+                ],
+                colors: colors,
+                compact: true,
+                inlineLabel: labeled == null
+                    ? null
+                    : (FushiToolbarItem item) =>
+                          labeled.labeled.contains(item),
+              )
+            : null;
+        // 无标题的筛选类页头：动作组紧跟返回胶囊，剩余宽度留在行尾。
+        final bool follow =
+            widget.actionsFollowLeading && titlePill == null && toolbar != null;
         return Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
@@ -855,6 +1208,7 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
               ),
               const SizedBox(width: 8),
             ],
+            if (follow) toolbar,
             // 标题胶囊按内容收缩、最多吃满中间剩余宽度（超长书名省略号）。
             Expanded(
               child: titlePill == null
@@ -864,16 +1218,9 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
                       child: titlePill,
                     ),
             ),
-            if (hasActions) ...<Widget>[
+            if (toolbar != null && !follow) ...<Widget>[
               const SizedBox(width: 8),
-              // 不做尺寸动画（HBK034）：AnimatedSize 收缩时会保留旧宽度一帧，窗口
-              // 骤缩时右侧溢出。按目标宽度立即布局，防抖靠展开回差。
-              FushiFloatingToolbar(
-                groups: split.groups,
-                overflow: split.overflow,
-                colors: colors,
-                compact: true,
-              ),
+              toolbar,
             ],
           ],
         );

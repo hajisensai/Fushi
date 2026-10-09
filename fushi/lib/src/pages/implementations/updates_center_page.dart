@@ -1,6 +1,8 @@
+import 'dart:async' show unawaited;
 import 'dart:io' show File;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart' show UpdateFeedEntryRow;
@@ -11,6 +13,12 @@ import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/utils.dart';
 
 /// 更新中心（v101）：四个域的更新事件汇成一页。
+///
+/// 页头（2026-10-09 精简）只有一行悬浮工具栏：`[返回] [域筛选 …]`，没有「全部」
+/// ——番剧新集 / 漫画新章会被成串的应用新版、扩展更新淹没。默认打开哪个域见
+/// [pickDefaultUpdateFeedFilter]。刷新 / 全部标为已读 / 清空记录是低频页面动作，
+/// 恒在「⋯」里；筛选放不下时按 [FushiFloatingTopBar] 的自适应溢出从最低优先级
+/// （应用新版）起收进同一个「⋯」。
 ///
 /// 页面**不认识**任何一个域的打开方式——跳转由 [onOpenEntry] 注入。理由与
 /// `UpdateFeedService` 不 import slang 同源：这一页要能在 widget 测试里独立构建，
@@ -33,8 +41,18 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
   bool _loading = true;
   List<UpdateFeedEntryRow> _entries = const <UpdateFeedEntryRow>[];
 
-  /// null = 全部域。
+  /// 当前域筛选。null 只出现在进页面、默认域还没算出来的那一刻（筛选条此时
+  /// 不高亮任何一项，免得先亮「番剧新集」再跳到别的域）。
   UpdateFeedKind? _filter;
+
+  /// 进页面那一刻的未读条目。进页面即全部标已读（见 [_enter]），之后切到别的
+  /// 域从库里读回来的已经全是已读——「这次停留里哪些是新的」只能看这份快照。
+  /// 点开一条 / 「全部标为已读」时从这里摘掉。
+  Set<String> _fresh = <String>{};
+
+  /// 进页面快照最多看这么多条（按时间倒序）：只用来定默认域与本次高亮，
+  /// 远超一屏的旧条目不影响这两个判断。
+  static const int _kSnapshotLimit = 1000;
 
   @override
   void initState() {
@@ -43,36 +61,65 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
   }
 
   /// 进页面 = 已读。用户点进来的动作本身就是「我看到了」，不该进来之后还要再
-  /// 按一次「全部已读」才能把首页角标和系统通知消掉。先取列表快照再标，这一次
-  /// 停留里仍按「刚进来时哪些是新的」高亮；[markAllSeen] 顺带撤系统通知。
+  /// 按一次「全部已读」才能把首页角标和系统通知消掉。先取未读快照（定默认域 +
+  /// 本次停留的高亮）再标；[markAllSeen] 顺带撤系统通知。
   Future<void> _enter() async {
+    final List<UpdateFeedEntryRow> all = await widget.service.entries(
+      limit: _kSnapshotLimit,
+    );
+    if (!mounted) return;
+    final Set<UpdateFeedKind> unseen = <UpdateFeedKind>{};
+    final Set<UpdateFeedKind> present = <UpdateFeedKind>{};
+    final Set<String> fresh = <String>{};
+    for (final UpdateFeedEntryRow row in all) {
+      final UpdateFeedKind? kind = UpdateFeedKind.fromDbValue(row.kind);
+      if (kind == null) continue;
+      present.add(kind);
+      if (row.seenAt == null) {
+        unseen.add(kind);
+        fresh.add(row.entryId);
+      }
+    }
+    _fresh = fresh;
+    _filter = pickDefaultUpdateFeedFilter(unseen: unseen, present: present);
     await _load();
     await widget.service.markAllSeen();
   }
 
   Future<void> _load() async {
+    final UpdateFeedKind? kind = _filter;
+    if (kind == null) return;
     setState(() => _loading = true);
     final List<UpdateFeedEntryRow> rows = await widget.service.entries(
-      kinds: _filter == null
-          ? const <UpdateFeedKind>{}
-          : <UpdateFeedKind>{_filter!},
+      kinds: <UpdateFeedKind>{kind},
     );
-    if (!mounted) return;
+    // 加载期间又切了域：这份结果已经过时，交给后发的那次加载。
+    if (!mounted || kind != _filter) return;
     setState(() {
       _entries = rows;
       _loading = false;
     });
   }
 
+  void _select(UpdateFeedKind kind) {
+    if (kind == _filter) return;
+    setState(() => _filter = kind);
+    unawaited(_load());
+  }
+
+  /// 全部域标已读。进页面时库里已经全标过了，这里收掉的是本次停留的「新」
+  /// 高亮。不再按当前域标：「全部」页签没了，按域标就得逐个切过去按一遍。
   Future<void> _markAllSeen() async {
-    await widget.service.markAllSeen(kind: _filter);
+    await widget.service.markAllSeen();
     if (!mounted) return;
+    setState(() => _fresh = <String>{});
     await _load();
   }
 
-  /// 清空当前筛选下的全部记录（「全部」= 四个域一起清）。破坏性操作，先确认。
+  /// 清空当前域的全部记录。破坏性操作，先确认。
   Future<void> _clear() async {
     final UpdateFeedKind? kind = _filter;
+    if (kind == null) return;
     final FushiDestructiveConfirmResult? confirmed =
         await showAppDialog<FushiDestructiveConfirmResult>(
           context: context,
@@ -80,9 +127,7 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
               FushiDestructiveConfirmDialog(
                 title: t.updates_history_clear_confirm_title,
                 message: t.updates_history_clear_confirm_body(
-                  scope: kind == null
-                      ? t.updates_filter_all
-                      : updateFeedKindLabel(kind),
+                  scope: updateFeedKindLabel(kind),
                 ),
                 confirmLabel: t.updates_history_clear_confirm_action,
                 leadingIcon: FushiIcons.deleteSweep,
@@ -102,7 +147,10 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
     // 先标已读再跳转：跳转可能把本页顶掉（push 新路由），之后的 setState 就到不
     // 了了；而「点开过」这个事实不该取决于跳转成功与否。
     await widget.service.markSeen(<String>[entry.entryId]);
-    if (mounted) await _load();
+    if (mounted) {
+      setState(() => _fresh.remove(entry.entryId));
+      await _load();
+    }
     await widget.onOpenEntry?.call(entry);
   }
 
@@ -110,66 +158,99 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
   Widget build(BuildContext context) {
     return FushiPageScaffold(
       title: t.updates_center_title,
-      actions: <Widget>[
-        FushiIconButton(
-          icon: FushiIcons.checklist,
-          tooltip: t.updates_mark_all_seen,
-          onTap: _entries.isEmpty ? null : _markAllSeen,
-        ),
-        FushiIconButton(
-          icon: FushiIcons.deleteSweep,
-          tooltip: t.updates_history_clear,
-          onTap: _loading || _entries.isEmpty ? null : _clear,
-        ),
-        FushiIconButton(
-          icon: FushiIcons.refresh,
-          tooltip: t.refresh,
-          onTap: _loading ? null : _load,
-        ),
-      ],
-      // 域筛选条原本固定在正文顶部：页头浮在正文上之后会被胶囊盖住，所以随
-      // 页头一起进 headerBottom（页头 → 筛选纵向堆叠、一起收起）。
-      headerBottom: _buildFilters(),
+      header: _buildTopBar(context),
       // Builder：正文要在页头脚手架之内取 MediaQuery 顶部让位（状态栏 + 浮动
-      // 页头含筛选条）。
+      // 页头）。
       body: Builder(builder: _buildList),
     );
   }
 
-  Widget _buildFilters() {
-    // 横向滚动区必须包 HorizontalDragScrollable：桌面端默认 dragDevices 不含
-    // mouse，不包就是「鼠标拖不动」（守卫 horizontal_drag_scroll_guard 盯着）。
-    return HorizontalDragScrollable(
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        // 挂在页头 headerBottom 里：页头已有左右内边距，这里不再叠加。
-        child: Row(
-          children: <Widget>[
-            _filterChip(label: t.updates_filter_all, kind: null),
-            for (final UpdateFeedKind kind in UpdateFeedKind.values)
-              _filterChip(label: updateFeedKindLabel(kind), kind: kind),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _filterChip({required String label, required UpdateFeedKind? kind}) {
+  /// 唯一一行页头：返回胶囊 + 紧跟其后的域筛选按钮组（选中 = 选中胶囊底），
+  /// 页面动作恒在组尾「⋯」。宽度不够时筛选从最低优先级（枚举末位）起收进同一
+  /// 个「⋯」——测宽与展开回差全走 [FushiFloatingTopBar] 那一套。
+  Widget _buildTopBar(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final NavigatorState? navigator = Navigator.maybeOf(context);
+    final bool canPop = navigator?.canPop() ?? false;
     return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: FushiChoiceChip(
-        label: Text(label),
-        selected: _filter == kind,
-        onSelected: (bool selected) {
-          if (!selected) return;
-          setState(() => _filter = kind);
-          _load();
-        },
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.gap,
+        tokens.spacing.page,
+        tokens.spacing.gap,
+      ),
+      child: FushiFloatingTopBar(
+        actionsFollowLeading: true,
+        // 纯图标认不出是哪一类通知：宽度够就带字，放不下先只给选中项带字，
+        // 再把低优先级收进「⋯」，最后才退成纯图标。
+        inlineLabels: true,
+        leading: <FushiToolbarItem>[
+          if (canPop)
+            FushiToolbarItem(
+              key: const ValueKey<String>('updates_back'),
+              icon: FushiIcons.back,
+              label: MaterialLocalizations.of(context).backButtonTooltip,
+              onPressed: () => unawaited(navigator!.maybePop()),
+            ),
+        ],
+        actions: <List<FushiToolbarItem>>[
+          <FushiToolbarItem>[
+            for (final UpdateFeedKind kind in UpdateFeedKind.values)
+              FushiToolbarItem(
+                key: ValueKey<String>('updates_filter_${kind.dbValue}'),
+                icon: updateFeedKindIcon(kind),
+                label: updateFeedKindLabel(kind),
+                selected: _filter == kind,
+                onPressed: () => _select(kind),
+              ),
+          ],
+        ],
+        menu: <FushiToolbarItem>[
+          FushiToolbarItem(
+            key: const ValueKey<String>('updates_refresh'),
+            icon: FushiIcons.refresh,
+            label: t.refresh,
+            onPressed: _loading ? null : () => unawaited(_load()),
+          ),
+          FushiToolbarItem(
+            key: const ValueKey<String>('updates_mark_all_seen'),
+            icon: FushiIcons.checklist,
+            label: t.updates_mark_all_seen,
+            onPressed: _fresh.isEmpty ? null : () => unawaited(_markAllSeen()),
+          ),
+          FushiToolbarItem(
+            key: const ValueKey<String>('updates_clear'),
+            icon: FushiIcons.deleteSweep,
+            label: t.updates_history_clear,
+            onPressed: _loading || _entries.isEmpty
+                ? null
+                : () => unawaited(_clear()),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildList(BuildContext context) {
+    // 切域时「加载 → 列表 / 空态」交叉淡入，列表本身再按首屏错峰进场；时长走
+    // fushiMotionDuration（减弱动态效果 / 墨水屏下归零）。
+    final String phase = _loading
+        ? 'loading'
+        : _entries.isEmpty
+        ? 'empty'
+        : 'list';
+    return AnimatedSwitcher(
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      switchInCurve: FushiMotion.enter,
+      switchOutCurve: FushiMotion.exit,
+      child: KeyedSubtree(
+        key: ValueKey<String>('${phase}_${_filter?.dbValue}'),
+        child: _buildListBody(context),
+      ),
+    );
+  }
+
+  Widget _buildListBody(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     if (_loading) return SafeArea(bottom: false, child: buildLoading());
     if (_entries.isEmpty) {
@@ -199,12 +280,34 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
             index: index,
             count: _entries.length,
             onTap: () => _open(entry),
-            child: _UpdateEntryTile(entry: entry),
+            child: _UpdateEntryTile(
+              entry: entry,
+              fresh: _fresh.contains(entry.entryId),
+            ),
           );
         }),
       ),
     );
   }
+}
+
+/// 进更新中心默认落在哪个域。
+///
+/// 依次取：枚举序（番剧新集 → 漫画新章 → 漫画扩展 → 应用新版：内容在前，
+/// 「有新版本」类提示在后）里第一个**有未读**的域；都没有未读时第一个**有记录**
+/// 的域；一条记录都没有时番剧新集。番剧 / 漫画有新内容时不会被成串的应用新版
+/// 盖住，而只有应用新版是新的时也能一进来就看到它。
+UpdateFeedKind pickDefaultUpdateFeedFilter({
+  required Set<UpdateFeedKind> unseen,
+  required Set<UpdateFeedKind> present,
+}) {
+  for (final UpdateFeedKind kind in UpdateFeedKind.values) {
+    if (unseen.contains(kind)) return kind;
+  }
+  for (final UpdateFeedKind kind in UpdateFeedKind.values) {
+    if (present.contains(kind)) return kind;
+  }
+  return UpdateFeedKind.values.first;
 }
 
 /// 域的本地化名。放在这里而不是枚举里：`UpdateFeedKind` 要能在纯 Dart 单测里跑，
@@ -224,15 +327,18 @@ IconData updateFeedKindIcon(UpdateFeedKind kind) => switch (kind) {
 };
 
 class _UpdateEntryTile extends StatelessWidget {
-  const _UpdateEntryTile({required this.entry});
+  const _UpdateEntryTile({required this.entry, required this.fresh});
 
   final UpdateFeedEntryRow entry;
+
+  /// 本次停留里算「新」（进页面时未读，见 `_fresh` 快照）。
+  final bool fresh;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final UpdateFeedKind? kind = UpdateFeedKind.fromDbValue(entry.kind);
-    final bool unseen = entry.seenAt == null;
+    final bool unseen = fresh;
     final Map<String, Object?> detail = decodeUpdateFeedDetail(
       entry.detailJson,
     );
