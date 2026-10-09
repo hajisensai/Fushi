@@ -1,6 +1,6 @@
 ## BUG-3173 · 切主题或切深色时整页连闪
 - **报告**：2026-10-09（用户：设置页切换主题、切换深色模式时整页一直闪）
 - **真实性**：✅ 真 bug（Windows 路径，按代码路径定位）。`fushi/lib/main.dart` 的 `MaterialApp.builder` 挂在 AnimatedTheme 之下，主题交叉过渡（`fushiThemeAnimationStyle`，280ms）里 builder 每帧重跑，`Theme.of(context).colorScheme.surface` 是逐帧插值色；`WindowCaptionChannel.setCaptionColors` 只对「同值」去重，过渡期间每帧都是新值，每帧下发一次。runner 侧 `FlutterWindow::ApplyCaptionColors`（`fushi/windows/runner/flutter_window.cpp`）→ `Win32Window::SetBackdropColor` → `FillSurfaceBackdrop()` 用 `GetDCEx(DCX_CACHE)`（故意不裁子窗口）把整窗底色重铺一遍——一次切换整窗被重铺十几次，即「整页连闪」。`setSystemBackdrop(dark:)` 同样读插值主题。
-- **[x] ① 已修复** — 新增 `fushi/lib/src/utils/settled_theme.dart` 的 `fushiSettledTheme(themeMode, platformBrightness, light, dark)`：推给原生窗口的标题栏 / 窗口底色 / 系统材质明暗一律取**目标主题**，过渡期间只下发一次。`main.dart` 把 `appModel.theme / darkTheme` 提到 build 顶部算一次，MaterialApp 与 builder 共用。
+- **[x] ① 已修复**（`03bc68c7e7`）— 新增 `fushi/lib/src/utils/settled_theme.dart` 的 `fushiSettledTheme(themeMode, platformBrightness, light, dark)`：推给原生窗口的标题栏 / 窗口底色 / 系统材质明暗一律取**目标主题**，过渡期间只下发一次。`main.dart` 把 `appModel.theme / darkTheme` 提到 build 顶部算一次，MaterialApp 与 builder 共用。
 - **[x] ② 已加自动化测试** — `fushi/test/build/win_resize_backdrop_guard_test.dart`（源码守卫：caption 必须是 `settled.surface`，且 `settled` 来自 `fushiSettledTheme(...)`）；`fushi/test/widgets/ui_hit_area_consistency_test.dart`「主题过渡：原生窗口只认目标主题」（`fushiSettledTheme` 四种组合）。
 - **备注**：用户未注明平台。上述根因只在 Windows 生效（其它平台 `setCaptionColors` 直接 return）；Android / iOS 上若仍闪，需另行真机取证（本次未在 Android 复现，见 PR「待定」）。
