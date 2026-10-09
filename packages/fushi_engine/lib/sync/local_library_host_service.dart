@@ -126,6 +126,7 @@ abstract class _LocalLibraryHostBase
         VideoDeletionHost,
         VideoPlaybackSyncHost,
         AudiobookDelayHost,
+        AudiobookSubtitleHost,
         VideoSubtitleDefaultHost,
         VideoSubtitleClearHost,
         InterconnectServiceConfigHost,

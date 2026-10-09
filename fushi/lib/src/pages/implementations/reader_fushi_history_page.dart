@@ -2924,6 +2924,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   RemoteBookInfo? _remoteAudiobookOnlyFor(String bookKey) =>
       _shouldLoadRemoteBooks ? _lastRemoteState?.audiobookOnly[bookKey] : null;
 
+  /// 本地 [bookKey] 这本书在对端的「重新拉取有声书 / 字幕」候选：本端已有书和有声书、
+  /// 对端也有配套有声书时非 null。门与 [_remoteAudiobookOnlyFor] 相同。
+  RemoteBookInfo? _remoteAudiobookRefetchFor(String bookKey) =>
+      _shouldLoadRemoteBooks
+          ? _lastRemoteState?.audiobookRefetch[bookKey]
+          : null;
+
   /// EPUB 书卡长按菜单动作真身。[inCollectionDetail] = 合集详情页成员卡语境
   /// （菜单已注入「移出合集」）——该语境下隐藏「加入合集」，同一条目在详情页
   /// 语境下再加合集没有意义。
@@ -2964,6 +2971,25 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           onPressed: () => _downloadRemoteAudiobookOnly(
               _remoteAudiobookOnlyFor(bookKey)!, bookKey),
         ),
+      // 本机已有有声书、对端也有：host 上重新转录 / 换了字幕之后，从这里把新字幕
+      // （或整本有声书）重新拉回来。只更新字幕不动音频，进度 / 断点 / 统计都保留。
+      if (modules.isEnabled(ModuleId.listening) &&
+          _remoteAudiobookRefetchFor(bookKey) != null) ...<DialogAction>[
+        DialogListAction(
+          label: t.remote_book_subtitles_refresh,
+          icon: Icons.subtitles_outlined,
+          onPressed: () => _refetchRemoteAudiobook(
+              _remoteAudiobookRefetchFor(bookKey)!, bookKey,
+              subtitlesOnly: true),
+        ),
+        DialogListAction(
+          label: t.remote_book_audiobook_redownload,
+          icon: Icons.cloud_sync_outlined,
+          onPressed: () => _refetchRemoteAudiobook(
+              _remoteAudiobookRefetchFor(bookKey)!, bookKey,
+              subtitlesOnly: false),
+        ),
+      ],
       // 三库页对称：视频卡/游戏卡的菜单里「重命名」都排在列表项首位，书卡对齐。
       DialogListAction(
         label: t.book_rename,

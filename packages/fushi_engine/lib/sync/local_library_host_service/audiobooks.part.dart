@@ -160,6 +160,29 @@ mixin _LocalLibraryHostAudiobooks
     throw StateError('audiobook not found for identity: $identity');
   }
 
+  /// 只打身份键为 [identity] 的有声书**字幕侧**（[AudiobookSubtitleHost]）：身份解析
+  /// 与 [exportAudiobook] 同一套（先 Audiobooks.bookKey，再 SrtBooks.uid）。
+  @override
+  Future<File> exportAudiobookSubtitles(String identity) async {
+    _assertSafeName(identity);
+    final AudiobookRow? ab = await _db.getAudiobookByBookKey(identity);
+    final SrtBookRow? srt = ab != null
+        ? await _db.getSrtBookByBookKey(identity)
+        : await _db.getSrtBookByUid(identity);
+    if (srt == null) {
+      throw StateError('audiobook not found for identity: $identity');
+    }
+    final Directory tmpDir =
+        Directory.systemTemp.createTempSync('hibiki_audiobook_subs_export');
+    final File out = File(p.join(tmpDir.path, '$identity.fushisubs'));
+    await _packages.exportAudioSubtitlePackage(
+      srtBookUid: srt.uid,
+      outputFile: out,
+      bookKey: ab != null ? identity : null,
+    );
+    return out;
+  }
+
   /// 打包成 `<identity>.fushiaudio` 临时文件（srt-backed 传 [bookKey]；纯 SRT 传
   /// null，包管线据此省略 audiobook 段、cue 走 uid 命名空间）。
   Future<File> _packAudiobook({

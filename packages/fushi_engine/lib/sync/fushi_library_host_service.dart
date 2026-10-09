@@ -214,6 +214,17 @@ abstract interface class AudiobookDelayHost {
   Future<void> putAudiobookDelay(String identity, int delayMs, int updatedAtMs);
 }
 
+/// host 端「只导出有声书字幕侧」的**可选**能力（`GET /api/library/audiobooks/
+/// <identity>/subtitles`）：对齐文件 + 字幕 + token sidecar + cue，不含音频
+/// （`SyncAssetPackageService.exportAudioSubtitlePackage`）。client 的「只更新字幕」
+/// 靠它免于把整本音频重下一遍。与 [AudiobookDelayHost] 同范式：不并进主接口；
+/// host 不实现 → 404，client 提示用户改走「重新下载有声书」。
+abstract interface class AudiobookSubtitleHost {
+  /// 把身份键为 [identity] 的有声书字幕侧打成临时包，返回该文件（调用方负责删除
+  /// 它及其父临时目录）。查无此书抛 [StateError]，含路径穿越字符抛 [ArgumentError]。
+  Future<File> exportAudiobookSubtitles(String identity);
+}
+
 /// host 端「client 导入的字幕设为该视频默认字幕」的**可选**能力（远端视频导入 /
 /// 重定时字幕自动上传）。与 [AudiobookDelayHost] 同范式：不并进主接口，免得十余个
 /// 测试 fake 全量补桩；server 用 `is` 探测，实现了才在 `/api/capabilities` 声明
@@ -1294,6 +1305,29 @@ List<RemoteBookInfo> dedupeRemoteBooks({
     for (final RemoteBookInfo book in remote)
       if (!localBookKeys.contains(keyOf(book.title))) book,
   ];
+}
+
+/// 从远端书清单 [remote] 里挑出「本端已有这本书**和它的有声书**，对端也有配套有声书」
+/// 的条目，按本端 bookKey 索引——书卡菜单「从对端更新字幕 / 重新下载有声书」的候选。
+///
+/// 纯函数，与 [remoteAudiobookOnlyCandidates] 互补（同一本书只会落进两者之一）：
+/// 那边是本端缺有声书、要补拉；这边是本端已有、host 那份可能更新了（重新转录 /
+/// 重新对齐 / 换字幕）要重拉。同 key 多条远端书只取首条（与去重同口径）。
+Map<String, RemoteBookInfo> remoteAudiobookRefetchCandidates({
+  required List<RemoteBookInfo> remote,
+  required Set<String> localBookKeys,
+  required Set<String> localAudiobookKeys,
+  required String Function(String title) keyOf,
+}) {
+  final Map<String, RemoteBookInfo> out = <String, RemoteBookInfo>{};
+  for (final RemoteBookInfo book in remote) {
+    if (!book.hasAudiobook) continue;
+    final String key = keyOf(book.title);
+    if (!localBookKeys.contains(key)) continue;
+    if (!localAudiobookKeys.contains(key)) continue;
+    out.putIfAbsent(key, () => book);
+  }
+  return out;
 }
 
 /// 从远端书清单 [remote] 里挑出「本端已有这本书、却还没有它的有声书，而对端有配套

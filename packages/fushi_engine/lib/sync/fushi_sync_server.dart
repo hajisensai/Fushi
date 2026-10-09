@@ -1176,6 +1176,18 @@ class ExportPackageCache {
     });
   }
 
+  /// 让 (kind,id) 的缓存导出作废，下一次 [obtain] 必定重新打包。旧文件 best-effort
+  /// 删除（Windows 上被正在流式的请求占用则删不掉，留给 [dispose]）。
+  void invalidate(String kind, String id) {
+    final File? old = _latest.remove('$kind|$id');
+    if (old == null) return;
+    try {
+      old.deleteSync();
+    } catch (_) {
+      // 占用中：留给 dispose 整目录清理。
+    }
+  }
+
   /// 缓存文件的强验证器（`"pkg-<代数>-<size>-<mtimeMs>"`）：字节换代 ⇒ 值必变。
   /// 代数取自缓存文件名前缀 `e<seq>_`（进程内单调，快速换代时 size+mtime 粒度
   /// 不够也不撞车）；mtime 兜底跨进程重启的唯一性。纯 ASCII（CJK 词典名不进

@@ -6897,5 +6897,17 @@
   "video_setting_mpv_passthrough_hint": "Send AC-3, E-AC-3, TrueHD and DTS-HD untouched to your receiver or soundbar so it decodes them (Atmos included). Only turn on if that device supports these formats — otherwise there may be no sound. While passing through, set the volume on the receiver: Fushi's volume and mute can't act on these streams, so at any speed other than 1×, below full volume or when muted, Fushi decodes them itself for the time being (the receiver's Atmos / DTS indicator goes off). When off, Fushi always decodes them and 5.1 / 7.1 still play as surround.",
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
-  "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected."
+  "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
+  "remote_book_subtitles_refresh": "Update subtitles from peer",
+  "remote_book_audiobook_redownload": "Re-download audiobook from peer",
+  "remote_book_subtitles_refreshed": "Subtitles updated from peer",
+  "remote_book_audiobook_redownloaded": "Audiobook re-downloaded from peer",
+  "remote_book_subtitles_refresh_failed": "Couldn't update subtitles. If the peer runs an older Fushi, use Re-download audiobook instead",
+  "remote_book_subtitles_audio_mismatch": "The peer's audio files differ from this device's. Use Re-download audiobook instead",
+  "video_remote_subtitle_refetch": "Re-fetch subtitles from server",
+  "video_remote_subtitle_refetch_pick": "Choose subtitles to fetch",
+  "video_remote_subtitle_refetch_default": "Server's default subtitles",
+  "video_remote_subtitle_refetched": "Subtitles re-fetched from server",
+  "video_remote_subtitle_refetch_failed": "Couldn't re-fetch subtitles",
+  "video_remote_subtitle_refetch_none": "The server has no text subtitles for this video"
 }
