@@ -6899,5 +6899,6 @@
   "shortcut_action_video_lookup_prev_word": "上一个词（扫词）",
   "media_source_open_folder_failed": "无法打开文件夹，它可能已被移动、删除或断开连接。",
   "game_stream_line_resize": "调整台词区大小（字号随之缩放）",
-  "game_stream_rail_resize": "调整侧边栏宽度"
+  "game_stream_rail_resize": "调整侧边栏宽度",
+  "game_stream_panel_resize": "调整查词栏高度"
 }

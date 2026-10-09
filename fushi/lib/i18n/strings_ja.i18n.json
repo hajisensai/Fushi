@@ -6899,5 +6899,6 @@
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
   "game_stream_line_resize": "セリフ欄のサイズを変更（文字も拡大縮小）",
-  "game_stream_rail_resize": "サイドパネルの幅を変更"
+  "game_stream_rail_resize": "サイドパネルの幅を変更",
+  "game_stream_panel_resize": "辞書パネルの高さを変更"
 }

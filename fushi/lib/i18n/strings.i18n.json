@@ -6899,5 +6899,6 @@
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
   "game_stream_line_resize": "Resize the line area (text zooms with it)",
-  "game_stream_rail_resize": "Resize the side panel"
+  "game_stream_rail_resize": "Resize the side panel",
+  "game_stream_panel_resize": "Resize the lookup panel"
 }

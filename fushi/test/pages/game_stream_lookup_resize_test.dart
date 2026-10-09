@@ -225,12 +225,112 @@ void main() {
     ) async {
       await _pumpPage(tester, size: const Size(600, 900));
       expect(find.byKey(GameStreamPage.railResizeHandleKey), findsNothing);
+      expect(
+        find.byKey(GameStreamPage.compactRailResizeHandleKey),
+        findsOneWidget,
+      );
       await tester.drag(
         find.byKey(GameStreamPage.lineResizeHandleKey),
         const Offset(0, 40),
       );
       await tester.pumpAndSettle();
       expect(_lineHeight(tester), 180);
+    });
+  });
+
+  group('narrow layout panel resize', () {
+    // Phone portrait: the body is 844 tall, the boundary strip takes 8.
+    const Size phone = Size(390, 844);
+    const double body = 844 - 8;
+
+    testWidgets('dragging the panel edge up grows the panel and persists', (
+      WidgetTester tester,
+    ) async {
+      final List<GameStreamLookupLayout> saved = <GameStreamLookupLayout>[];
+      await _pumpPage(tester, size: phone, onChanged: saved.add);
+      // Unresized default: half the body, capped at 360.
+      expect(_videoHeight(tester), body - 360);
+
+      await tester.drag(
+        find.byKey(GameStreamPage.compactRailResizeHandleKey),
+        const Offset(0, -100),
+      );
+      await tester.pumpAndSettle();
+      expect(_videoHeight(tester), body - 460);
+      expect(saved, const <GameStreamLookupLayout>[
+        GameStreamLookupLayout(compactRailHeight: 460),
+      ]);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('panel stops at its minimum and leaves the video room for '
+        'the pad', (WidgetTester tester) async {
+      await _pumpPage(tester, size: phone);
+      await tester.drag(
+        find.byKey(GameStreamPage.compactRailResizeHandleKey),
+        const Offset(0, -900),
+      );
+      await tester.pumpAndSettle();
+      expect(_videoHeight(tester), GameStreamLookupLayout.minVideoHeight);
+      expect(tester.takeException(), isNull);
+
+      await tester.drag(
+        find.byKey(GameStreamPage.compactRailResizeHandleKey),
+        const Offset(0, 900),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        _videoHeight(tester),
+        body - GameStreamLookupLayout.minCompactRailHeight,
+      );
+    });
+
+    testWidgets('a stored panel height is restored', (
+      WidgetTester tester,
+    ) async {
+      await _pumpPage(
+        tester,
+        size: phone,
+        layout: const GameStreamLookupLayout(compactRailHeight: 300),
+      );
+      expect(_videoHeight(tester), body - 300);
+    });
+
+    testWidgets('panel handle: 48dp target, resize cursor, arrow keys', (
+      WidgetTester tester,
+    ) async {
+      final List<GameStreamLookupLayout> saved = <GameStreamLookupLayout>[];
+      await _pumpPage(tester, size: phone, onChanged: saved.add);
+      final Finder handle = find.byKey(
+        GameStreamPage.compactRailResizeHandleKey,
+      );
+      expect(tester.getSize(handle).height, greaterThanOrEqualTo(48));
+
+      final TestGesture mouse = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer(location: tester.getCenter(handle));
+      await tester.pump();
+      expect(
+        RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+        SystemMouseCursors.resizeUpDown,
+      );
+
+      Focus.of(
+        tester.element(
+          find.descendant(of: handle, matching: find.byType(MouseRegion)),
+        ),
+      ).requestFocus();
+      await tester.pump();
+      // Up moves the edge up: a taller panel.
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump();
+      expect(
+        _videoHeight(tester),
+        body - 360 - GameStreamLookupLayout.keyboardStep,
+      );
+      expect(saved.last.compactRailHeight, 360 + 16);
     });
   });
 
@@ -241,6 +341,16 @@ void main() {
         lineHeight: 222,
       );
       expect(GameStreamLookupLayout.fromJson(layout.toJson()), layout);
+      const GameStreamLookupLayout narrow = GameStreamLookupLayout(
+        compactRailHeight: 333,
+      );
+      expect(GameStreamLookupLayout.fromJson(narrow.toJson()), narrow);
+      expect(
+        GameStreamLookupLayout.fromJson(const <String, Object?>{
+          'compactRailHeight': 5,
+        }).compactRailHeight,
+        GameStreamLookupLayout.minCompactRailHeight,
+      );
       expect(
         GameStreamLookupLayout.fromJson(const <String, Object?>{
           'railWidth': 99999,
@@ -274,6 +384,7 @@ void main() {
       const GameStreamLookupLayout layout = GameStreamLookupLayout(
         railWidth: 500,
         lineHeight: 260,
+        compactRailHeight: 320,
       );
       await prefs.setGameStreamLookupLayout(layout);
       prefs.dispose();
@@ -345,6 +456,9 @@ double _lineHeight(WidgetTester tester) => tester
       ),
     )
     .height;
+
+double _videoHeight(WidgetTester tester) =>
+    tester.getSize(find.byKey(GameStreamPage.videoKey)).height;
 
 double _railWidth(WidgetTester tester) =>
     tester.getSize(find.byKey(GameStreamPage.dictionaryKey)).width;

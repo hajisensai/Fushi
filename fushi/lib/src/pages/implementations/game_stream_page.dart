@@ -164,6 +164,9 @@ class GameStreamPage extends StatefulWidget {
   static const Key railResizeHandleKey = ValueKey<String>(
     'game-stream-rail-resize-handle',
   );
+  static const Key compactRailResizeHandleKey = ValueKey<String>(
+    'game-stream-compact-rail-resize-handle',
+  );
 
   @override
   State<GameStreamPage> createState() => _GameStreamPageState();
@@ -212,6 +215,7 @@ class _GameStreamPageState extends State<GameStreamPage>
   /// Last laid-out body width / rail height: the bounds a resize drag clamps
   /// against, so a drag past the limit does not bank invisible distance.
   double _bodyWidth = 0;
+  double _bodyHeight = 0;
   double _railHeight = 0;
   bool _statsVisible = false;
   GameStreamStatsSample? _stats;
@@ -303,6 +307,22 @@ class _GameStreamPageState extends State<GameStreamPage>
     );
     if (next == current) return;
     setState(() => _lookupLayout = _lookupLayout.copyWith(railWidth: next));
+  }
+
+  /// Grows the narrow-layout panel under the video by [delta] (negative
+  /// shrinks), within this body's limits.
+  void _resizeCompactRail(double delta) {
+    final double current = _lookupLayout.effectiveCompactRailHeight(
+      _bodyHeight,
+    );
+    final double next = (current + delta).clamp(
+      GameStreamLookupLayout.minCompactRailHeight,
+      GameStreamLookupLayout.compactRailHeightLimit(_bodyHeight),
+    );
+    if (next == current) return;
+    setState(
+      () => _lookupLayout = _lookupLayout.copyWith(compactRailHeight: next),
+    );
   }
 
   /// Grows the line area by [delta] (negative shrinks), within this rail's
@@ -1124,13 +1144,61 @@ class _GameStreamPageState extends State<GameStreamPage>
             ),
           );
           if (compact) {
-            return Column(
+            // Video and panel share what the boundary strip leaves.
+            _bodyHeight = constraints.maxHeight - _railEdgeWidth;
+            final double panelHeight = _lookupLayout.effectiveCompactRailHeight(
+              _bodyHeight,
+            );
+            return Stack(
+              fit: StackFit.expand,
               children: <Widget>[
-                video,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    video,
+                    if (_lookupVisible) ...<Widget>[
+                      // Full-width edge: grab the boundary anywhere with a
+                      // mouse.
+                      SizedBox(
+                        height: _railEdgeWidth,
+                        child: _ResizeHandle(
+                          axis: Axis.vertical,
+                          semanticLabel: t.game_stream_panel_resize,
+                          showGrip: false,
+                          focusable: false,
+                          onDelta: (double delta) => _resizeCompactRail(-delta),
+                          onEnd: _commitLookupLayout,
+                        ),
+                      ),
+                      SizedBox(
+                        height: panelHeight,
+                        child: _buildLookupRail(theme),
+                      ),
+                    ],
+                  ],
+                ),
+                // Visible grip with a 48dp touch target straddling the edge,
+                // as a centred band so the video's bottom strip still reaches
+                // the game beside it.
                 if (_lookupVisible)
-                  SizedBox(
-                    height: math.min(360, constraints.maxHeight * 0.5),
-                    child: _buildLookupRail(theme),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom:
+                        panelHeight + _railEdgeWidth / 2 - _resizeHitExtent / 2,
+                    height: _resizeHitExtent,
+                    child: Center(
+                      child: SizedBox(
+                        width: _railGripBand,
+                        child: _ResizeHandle(
+                          key: GameStreamPage.compactRailResizeHandleKey,
+                          axis: Axis.vertical,
+                          semanticLabel: t.game_stream_panel_resize,
+                          onDelta: (double delta) => _resizeCompactRail(-delta),
+                          onEnd: _commitLookupLayout,
+                        ),
+                      ),
+                    ),
                   ),
               ],
             );
