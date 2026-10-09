@@ -420,6 +420,8 @@ class HomeContinueCoverCard extends StatelessWidget {
     this.progress,
     this.badgeLabel,
     this.badgeIcon,
+    this.badgeAtStart = false,
+    this.badgeScale = 1,
   });
 
   final Widget cover;
@@ -436,6 +438,15 @@ class HomeContinueCoverCard extends StatelessWidget {
   /// 右上角进度角标文案；null 且 [badgeIcon] 也为 null = 不画角标。
   final String? badgeLabel;
   final IconData? badgeIcon;
+
+  /// 角标挂在左上角（起始侧）而不是右上角。宽屏「最近添加」行用：日文竖排书名
+  /// 几乎都从封面右上角起笔，右上角的「新」会正好压在书名第一个字上；左上角是
+  /// 竖排封面最空的一角，横排书名也通常居中而不顶到左缘。
+  final bool badgeAtStart;
+
+  /// 角标缩放（1 = 与「继续」行同尺寸）。「最近添加」的「新」只是类别提示，
+  /// 缩到 0.85 以少占封面。
+  final double badgeScale;
 
   @override
   Widget build(BuildContext context) {
@@ -474,14 +485,24 @@ class HomeContinueCoverCard extends StatelessWidget {
                     // 角标恒完整显示：窄卡放不下时整枚等比缩小，不被卡边裁掉。
                     if (label != null || icon != null)
                       PositionedDirectional(
+                        key: const ValueKey<String>('home-cover-badge'),
                         top: 6,
-                        end: 6,
+                        start: badgeAtStart ? 6 : null,
+                        end: badgeAtStart ? null : 6,
                         child: ConstrainedBox(
                           constraints: BoxConstraints(maxWidth: width - 12),
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
-                            alignment: AlignmentDirectional.topEnd,
-                            child: CoverBadge(icon: icon, label: label),
+                            alignment: badgeAtStart
+                                ? AlignmentDirectional.topStart
+                                : AlignmentDirectional.topEnd,
+                            child: Transform.scale(
+                              scale: badgeScale,
+                              alignment: badgeAtStart
+                                  ? AlignmentDirectional.topStart
+                                  : AlignmentDirectional.topEnd,
+                              child: CoverBadge(icon: icon, label: label),
+                            ),
                           ),
                         ),
                       ),
