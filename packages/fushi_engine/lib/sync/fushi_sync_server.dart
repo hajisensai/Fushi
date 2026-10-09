@@ -405,6 +405,11 @@ class FushiSyncServer {
   /// §1）。null（老调用方 / 单测）→ 不公布，client 行为同升级前。
   String? hostId;
 
+  /// 「立即给这个视频补字幕」（`POST /api/library/videos/<id>/subtitle/backfill`）。
+  /// 补字幕服务住在 app（字幕来源 / 刮削身份 / AI 重排都在那边装配），无头服务端
+  /// 不接——null 时该端点回 501，能力位 `videoSubtitleBackfill=false`。
+  VideoSubtitleBackfillRunner? videoSubtitleBackfill;
+
   /// 用户在 host 上填的公网 / 反代 / DDNS 地址（每次 capabilities 实时读）。
   Future<List<String>> Function()? publicUrlsProvider;
 

@@ -13,6 +13,8 @@ library;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/discovery/discovery_metadata_identity.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
+    show kManualVideoDownloadResourceProvider;
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
@@ -87,9 +89,53 @@ VideoMediaReference videoDownloadJobMediaReference(VideoDownloadJobRow job) {
   );
 }
 
-/// 任务确认的刮削身份；拿不出 MAL / TMDB 等可直取的 id 时为 null。
+/// 任务确认的刮削身份（[videoDownloadJobConfirmedLookups] 的首选）；拿不出可直取
+/// 的 id 时为 null。
+///
+/// 下载管线的 scrape 阶段与库内补刮都只认这一个判据。
 VideoMetadataLookup? videoDownloadJobConfirmedLookup(VideoDownloadJobRow job) =>
-    videoDiscoveryMetadataLookup(videoDownloadJobMediaReference(job));
+    videoDownloadJobConfirmedLookups(job).firstOrNull;
+
+/// 任务记下的**全部**可直取身份，首选在前：手动任务显式给的 AniDB 身份（用户亲手
+/// 指定、且是默认主源）排第一，其后是入队快照里的 MAL → TMDB
+/// （[videoDiscoveryMetadataLookups]）。一家资料源连不上时后面的 id 照样可用
+/// （BUG-3073）；单条判据 [videoDownloadJobConfirmedLookup] 与库内补刮的列表判据
+/// [downloadConfirmedLookupListsForWorks] 都从这里取，两边不会各认各的。
+List<VideoMetadataLookup> videoDownloadJobConfirmedLookups(
+  VideoDownloadJobRow job,
+) {
+  final VideoMetadataLookup? manualAniDb = _manualAniDbLookup(job);
+  return <VideoMetadataLookup>[
+    ?manualAniDb,
+    for (final VideoMetadataLookup lookup in videoDiscoveryMetadataLookups(
+      videoDownloadJobMediaReference(job),
+    ))
+      if (manualAniDb == null || !_sameLookup(lookup, manualAniDb)) lookup,
+  ];
+}
+
+/// 手动任务（互联代下载 / `fushi_server ctl downloads add --provider anidb`）由用户
+/// **显式**给出的 AniDB 身份：AniDB 是默认主源，刮削协调器直接认它。
+///
+/// 只认手动任务行上的 `metadata_provider = anidb`：发现页旧快照里顺带的 AniDB
+/// 交叉引用（`identity_json` 里的 anidbId）一直不算确认身份（那些任务按 MAL /
+/// TMDB 或自动识别走），这里不改它们的去向。
+VideoMetadataLookup? _manualAniDbLookup(VideoDownloadJobRow job) {
+  if (job.resourceProvider != kManualVideoDownloadResourceProvider ||
+      job.identityJson != null ||
+      job.metadataProvider?.toLowerCase() != 'anidb') {
+    return null;
+  }
+  final int? id = int.tryParse(job.externalId?.trim() ?? '');
+  final VideoMetadataMediaKind? kind =
+      VideoMetadataMediaKind.values.asNameMap()[job.mediaKind];
+  if (id == null || id <= 0 || kind == null) return null;
+  return VideoMetadataLookup(
+    provider: VideoMetadataProviderKind.anidb,
+    externalId: '$id',
+    mediaKind: kind,
+  );
+}
 
 /// movie 形态 job 的主片行：最大 `sizeBytes`（与组织器抬正片的判据一致；
 /// 平手取列表里先出现的行）。旧行没记体积时按 0 参与比较。
@@ -196,7 +242,7 @@ Future<Map<String, VideoMetadataLookup>> downloadConfirmedLookupsForWorks(
     };
 
 /// 同 [downloadConfirmedLookupsForWorks]，但给出任务记下的**全部**可直取身份
-/// （首选在前，见 [videoDiscoveryMetadataLookups]）：一家资料源连不上时，同一部
+/// （首选在前，见 [videoDownloadJobConfirmedLookups]）：一家资料源连不上时，同一部
 /// 作品的另一个 id 照样可用（BUG-3073）。身份一致性按首选身份判。
 Future<Map<String, List<VideoMetadataLookup>>>
     downloadConfirmedLookupListsForWorks(
@@ -226,7 +272,7 @@ Future<Map<String, List<VideoMetadataLookup>>>
       continue;
     }
     final List<VideoMetadataLookup> lookups =
-        videoDiscoveryMetadataLookups(videoDownloadJobMediaReference(job));
+        videoDownloadJobConfirmedLookups(job);
     if (lookups.isEmpty) continue;
     final VideoSourceScrapeWork? work = downloadJobWork(job, files, works);
     if (work == null) continue;

@@ -6,12 +6,15 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:args/args.dart';
 import 'package:fushi_server/src/cli.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/ctl/admin_client.dart';
 import 'package:fushi_server/src/ctl/ctl_commands.dart';
+import 'package:fushi_server/src/ctl/ctl_download_commands.dart';
+import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 import 'package:test/test.dart';
 
 class _Seen {
@@ -532,6 +535,226 @@ void main() {
     });
   });
 
+  group('互联模式（--interconnect：直连运行中的 Fushi app）', () {
+    late AdminClient ic;
+    setUp(() => ic = AdminClient.interconnect(baseUri: admin.uri, password: 'host-pw'));
+    tearDown(() => ic.close());
+
+    Future<int> ictl(List<String> args, {CtlTorrentFetcher? fetch}) =>
+        runCtlAction(ic, buildCtlParser().parse(args), out: out, err: err, fetchTorrent: fetch);
+
+    test('admin 路径翻成互联路径；fushi_server 独有的接口本地拒绝', () {
+      expect(interconnectPathFor('/api/admin/host/library/videos/v%201'), '/api/library/videos/v%201');
+      expect(interconnectPathFor('/api/admin/downloads'), '/api/downloads');
+      expect(interconnectPathFor('/api/admin/downloads/d1/subtitles'), '/api/downloads/d1/subtitles');
+      expect(() => interconnectPathFor('/api/admin/status'), throwsA(isA<AdminApiException>()));
+      expect(() => interconnectPathFor('/api/admin/downloadsX'), throwsA(isA<AdminApiException>()));
+    });
+
+    final Map<List<String>, (String, String)> cases = <List<String>, (String, String)>{
+      <String>['downloads']: ('GET', '/api/downloads'),
+      <String>['dl', 'cancel', 'd1']: ('POST', '/api/downloads/d1/cancel'),
+      <String>['downloads', 'retry', 'd1']: ('POST', '/api/downloads/d1/retry'),
+      <String>['downloads', 'rm', 'd1']: ('DELETE', '/api/downloads/d1'),
+      <String>['downloads', 'subtitles', 'd1']: ('GET', '/api/downloads/d1/subtitles'),
+      <String>['videos']: ('GET', '/api/library/videos'),
+      <String>['videos', 'rm', 'video/x']: ('DELETE', '/api/library/videos/video%2Fx'),
+      <String>['videos', 'subtitle', 'clear', 'video/x']: ('DELETE', '/api/library/videos/video%2Fx/subtitle'),
+      <String>['videos', 'subtitle', 'backfill', 'v1']: ('POST', '/api/library/videos/v1/subtitle/backfill'),
+    };
+    cases.forEach((List<String> args, (String, String) expected) {
+      test(args.join(' '), () async {
+        admin.nextBody = <String, Object?>{'ok': true, 'jobs': <Object?>[], 'subtitles': <Object?>[]};
+        expect(await ictl(args), 0, reason: err.toString());
+        expect('${admin.seen.single.method} ${admin.seen.single.path}', '${expected.$1} ${expected.$2}');
+        expect(admin.seen.single.auth, 'Basic ${base64Encode(utf8.encode('fushi:host-pw'))}');
+      });
+    });
+
+    test('只有 fushi_server 才有的动作 = 64，不发请求', () async {
+      expect(await ictl(<String>['status']), 64);
+      expect(await ictl(<String>['libraries']), 64);
+      expect(admin.seen, isEmpty);
+      expect(err.toString(), contains('--interconnect'));
+    });
+
+    test('videos subtitle clear / backfill 的参数', () async {
+      expect(await ictl(<String>['videos', 'subtitle', 'clear', 'v1', '--which', 'all', '--all-sidecars']), 0);
+      expect(admin.seen.last.query, <String, String>{'which': 'all', 'sidecars': 'all'});
+      expect(await ictl(<String>['videos', 'subtitle', 'clear', 'v1']), 0);
+      expect(admin.seen.last.query, <String, String>{'which': 'primary'});
+      expect(await ictl(<String>['videos', 'subtitle', 'backfill', 'v1', '--lang', 'ja']), 0);
+      expect(admin.seen.last.body, <String, Object?>{'language': 'ja'});
+      expect(await ictl(<String>['videos', 'subtitle', 'backfill', 'v1']), 0);
+      expect(admin.seen.last.body, <String, Object?>{});
+      expect(await ictl(<String>['videos', 'subtitle', 'clear', 'v1', '--which', 'both']), 64);
+      expect(admin.seen, hasLength(4));
+    });
+
+    test('videos ls --grep 只留匹配的行', () async {
+      admin.nextBody = <Object?>[
+        <String, Object?>{'id': 'video/a', 'title': 'Doraemon Movie 10'},
+        <String, Object?>{'id': 'video/b', 'title': 'Frieren'},
+        <String, Object?>{'id': 'video/c', 'title': 'x', 'fileName': '[Fabre-RAW] DORAEMON Movie 11.mkv'},
+      ];
+      expect(await ictl(<String>['videos', 'ls', '--grep', 'doraemon']), 0);
+      expect(out.toString(), contains('video/a'));
+      expect(out.toString(), contains('video/c'));
+      expect(out.toString(), isNot(contains('Frieren')));
+    });
+
+    test('downloads subtitles 一行一条', () async {
+      admin.nextBody = <String, Object?>{
+        'subtitles': <Object?>[
+          <String, Object?>{
+            'provider': 'jimaku',
+            'status': 'placed',
+            'language': 'ja',
+            'originalFileName': 'wrong.srt',
+            'finalPath': '/v/movie.ja.srt',
+          },
+        ],
+      };
+      expect(await ictl(<String>['downloads', 'subtitles', 'd1']), 0);
+      expect(out.toString(), contains('jimaku  [placed]  ja  wrong.srt  → /v/movie.ja.srt'));
+    });
+
+    test('runCtl 从环境变量取 host 地址与密码（不需要配置文件）', () async {
+      admin.nextBody = <String, Object?>{'jobs': <Object?>[]};
+      final int code = await runCtl(
+        File('${Directory.systemTemp.path}/no-such-dir-${DateTime.now().microsecondsSinceEpoch}/fushi_server.yaml'),
+        buildCtlParser().parse(<String>['downloads']),
+        out: out,
+        err: err,
+        environment: <String, String>{'FUSHI_HOST_URL': admin.uri.toString(), 'FUSHI_HOST_PASSWORD': 'env-pw'},
+      );
+      expect(code, 0, reason: err.toString());
+      expect(admin.seen.single.path, '/api/downloads');
+      expect(admin.seen.single.auth, 'Basic ${base64Encode(utf8.encode('fushi:env-pw'))}');
+    });
+
+    test('缺密码 = 64', () async {
+      final int code = await runCtl(
+        File('${Directory.systemTemp.path}/nope/fushi_server.yaml'),
+        buildCtlParser().parse(<String>['downloads', '--interconnect', admin.uri.toString()]),
+        out: out,
+        err: err,
+        environment: const <String, String>{},
+      );
+      expect(code, 64);
+      expect(admin.seen, isEmpty);
+    });
+  });
+
+  group('downloads add（.torrent / 文件选择 / 年份 / 作品身份）', () {
+    late Directory dir;
+    late File torrent;
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('fushi_ctl_torrent_');
+      torrent = File('${dir.path}/pack.torrent')..writeAsBytesSync(_doraemonPack());
+    });
+    tearDown(() => dir.delete(recursive: true));
+
+    Future<int> add(List<String> args, {CtlTorrentFetcher? fetch}) => runCtlAction(
+      client,
+      buildCtlParser().parse(<String>['downloads', 'add', ...args]),
+      out: out,
+      err: err,
+      fetchTorrent: fetch,
+    );
+
+    test('--list-files 只列清单，不发请求', () async {
+      expect(await add(<String>['--torrent', torrent.path, '--list-files']), 0);
+      expect(admin.seen, isEmpty);
+      final String text = out.toString();
+      expect(text, contains('0    1.0 KiB  [Fabre-RAW] Doraemon Movie 09 (1988) [1080p].mkv'));
+      expect(text, contains('1    2.0 MiB  [Fabre-RAW] Doraemon Movie 10 (1989) [1080p].mkv'));
+    });
+
+    test('--select 正则只选中那一个文件，连同年份 / TMDB 身份 / 字幕策略投递', () async {
+      admin.nextBody = <String, Object?>{'jobId': 'j1'};
+      expect(
+        await add(<String>[
+          '--torrent', torrent.path, '--title', 'ドラえもん のび太の日本誕生', //
+          '--select', r'Movie 10 \(1989\)', '--year', '1989',
+          '--provider', 'tmdb', '--external-id', '12345', '--subtitle-policy', 'bestEffort',
+        ]),
+        0,
+        reason: err.toString(),
+      );
+      final Map<Object?, Object?> body = admin.seen.single.body! as Map<Object?, Object?>;
+      expect(admin.seen.single.path, '/api/admin/downloads');
+      expect(base64Decode(body['torrent']! as String), _doraemonPack());
+      expect(body['files'], <int>[1]);
+      expect(body['year'], 1989);
+      expect(body['metadataProvider'], 'tmdb');
+      expect(body['externalId'], '12345');
+      expect(body['subtitlePolicy'], 'bestEffort');
+      expect(body['mediaKind'], 'movie');
+      expect(body.containsKey('magnet'), isFalse);
+      expect(out.toString(), contains('jobId: j1'));
+      expect(out.toString(), contains('[1] [Fabre-RAW] Doraemon Movie 10 (1989) [1080p].mkv'));
+    });
+
+    test('--torrent 是 URL 时下载（经 fetch），--index 与 --select 取并集', () async {
+      final List<Uri> fetched = <Uri>[];
+      Future<Uint8List> fetch(Uri url) async {
+        fetched.add(url);
+        return Uint8List.fromList(_doraemonPack());
+      }
+
+      expect(
+        await add(<String>[
+          '--torrent', 'https://nyaa.si/download/1498115.torrent', '--title', 't', //
+          '--index', '2', '--select', 'Movie 09',
+        ], fetch: fetch),
+        0,
+        reason: err.toString(),
+      );
+      expect(fetched, <Uri>[Uri.parse('https://nyaa.si/download/1498115.torrent')]);
+      expect((admin.seen.single.body! as Map<Object?, Object?>)['files'], <int>[0, 2]);
+    });
+
+    test('用法错误一律 64 且不发请求', () async {
+      final List<List<String>> bad = <List<String>>[
+        <String>['--torrent', torrent.path], // 缺 --title
+        <String>['--torrent', torrent.path, '--title', 't', '--select', 'nothing-matches'],
+        <String>['--torrent', torrent.path, '--title', 't', '--select', '(unclosed'],
+        <String>['--torrent', torrent.path, '--title', 't', '--index', '9'],
+        <String>['--torrent', torrent.path, '--title', 't', '--year', 'soon'],
+        <String>['--torrent', torrent.path, '--title', 't', '--provider', 'tmdb'],
+        <String>['magnet:?xt=x', '--title', 't', '--select', 'a'],
+        <String>['magnet:?xt=x', '--torrent', torrent.path, '--title', 't'],
+        <String>['--title', 't'],
+      ];
+      for (final List<String> args in bad) {
+        expect(await add(args), 64, reason: args.join(' '));
+      }
+      expect(admin.seen, isEmpty);
+    });
+
+    test('.torrent 文件不存在 66、不是 torrent 65、下载失败 69', () async {
+      expect(await add(<String>['--torrent', '${dir.path}/missing.torrent', '--title', 't']), 66);
+      final File junk = File('${dir.path}/junk.torrent')..writeAsStringSync('hello');
+      expect(await add(<String>['--torrent', junk.path, '--title', 't']), 65);
+      expect(
+        await add(
+          <String>['--torrent', 'https://example.invalid/x.torrent', '--title', 't'],
+          fetch: (Uri url) async => throw HttpException('HTTP 404 Not Found', uri: url),
+        ),
+        69,
+      );
+      expect(admin.seen, isEmpty);
+    });
+
+    test('selectTorrentFiles：正则不区分大小写', () {
+      final List<InspectedTorrentFile> files =
+          inspectTorrentMetainfo(Uint8List.fromList(_doraemonPack())).files;
+      expect(selectTorrentFiles(files, patterns: <String>['movie 10']), <int>{1});
+      expect(selectTorrentFiles(files, indexes: <String>['0', '2']), <int>{0, 2});
+    });
+  });
+
   test('ctl 参数表能独立解析（cli.dart 复用同一份）', () {
     final ArgResults r = buildCtlParser().parse(<String>['downloads', 'add', 'm', '--title', 't']);
     expect(r.rest, <String>['downloads', 'add', 'm']);
@@ -585,4 +808,17 @@ class _FakeUploadServer {
   }
 
   Future<void> close() => _server.close(force: true);
+}
+
+/// nyaa 上那种「一颗种子装多部剧场版」的 v1 多文件 .torrent（3 个文件）。
+List<int> _doraemonPack() {
+  String str(String v) => '${utf8.encode(v).length}:$v';
+  String file(String name, int length) => 'd6:lengthi${length}e4:pathl${str(name)}ee';
+  return utf8.encode(
+    'd4:infod5:filesl'
+    '${file('[Fabre-RAW] Doraemon Movie 09 (1988) [1080p].mkv', 1024)}'
+    '${file('[Fabre-RAW] Doraemon Movie 10 (1989) [1080p].mkv', 2 * 1024 * 1024)}'
+    '${file('[Fabre-RAW] Doraemon Movie 11 (1990) [1080p].mkv', 3)}'
+    'e4:name${str('Doraemon Movies')}12:piece lengthi16384e6:pieces20:aaaaaaaaaaaaaaaaaaaaee',
+  );
 }

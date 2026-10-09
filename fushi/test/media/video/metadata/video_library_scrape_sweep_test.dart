@@ -583,7 +583,75 @@ void main() {
     expect(runner.sourceIds, hasLength(1));
   });
 
-  test('批次期间被挡下的条目变化请求不丢：批次结束重算清单时兑现（BUG-2199 / BUG-3072）',
+  test(
+      '批次期间被挡下的条目变化请求不丢：批次结束时调度器自己兑现，不依赖视频页'
+      '（BUG-2199 / BUG-3072 / BUG-3085）', () async {
+    final int sourceId = await addSource('D:/A');
+    final _BlockingRunner blocking = _BlockingRunner();
+    final VideoSourceScrapeTaskController busyController =
+        VideoSourceScrapeTaskController(blocking);
+    addTearDown(busyController.dispose);
+    final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
+      database: db,
+      controller: busyController,
+    );
+    addTearDown(service.dispose);
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final Future<SourceScrapeReport> batch =
+        busyController.scrapeSource(source);
+    expect(busyController.isBusy, isTrue);
+
+    // 下载入库落在别的批次期间：这次补刮请求只能先记下。
+    await addVideo('movie-b', 'D:/A/Fresh Download (2023).mkv', sourceId,
+        title: 'Fresh Download');
+    await service.sweepAndListPending();
+    expect(blocking.plannedTitles, hasLength(1), reason: '批次期间不发第二批');
+    // 批次期间的结果变化通知只读：既不兑现也不发批次。
+    await service.refreshPendingAfterScrapeResults();
+    expect(blocking.plannedTitles, hasLength(1));
+
+    // 视频页没挂载：没有任何人调 refreshPendingAfterScrapeResults。
+    blocking.release.complete();
+    await batch;
+    await service.whenDeferredSettled();
+    expect(blocking.plannedTitles.last, <String>['Fresh Download'],
+        reason: '被挡下的是真实的条目变化，批次结束必须由调度器自己兑现');
+
+    // 兑现过一次就清掉：之后的结果变化回到只读，补刮批次自己的写入也不再起新一轮。
+    await service.refreshPendingAfterScrapeResults();
+    await service.refreshPendingAfterScrapeResults();
+    await service.whenDeferredSettled();
+    expect(blocking.plannedTitles, hasLength(2));
+  });
+
+  test('结果变化通知不再兑现被挡下的请求：与调度器自己的兑现叠在一起也只跑一轮',
+      () async {
+    final int sourceId = await addSource('D:/A');
+    final _BlockingRunner blocking = _BlockingRunner();
+    final VideoSourceScrapeTaskController busyController =
+        VideoSourceScrapeTaskController(blocking);
+    addTearDown(busyController.dispose);
+    final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
+      database: db,
+      controller: busyController,
+    );
+    addTearDown(service.dispose);
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final Future<SourceScrapeReport> batch =
+        busyController.scrapeSource(source);
+    await addVideo('movie-b', 'D:/A/Fresh Download (2023).mkv', sourceId,
+        title: 'Fresh Download');
+    await service.sweepAndListPending();
+
+    blocking.release.complete();
+    await batch;
+    // 视频页挂着时批次忙→闲照旧调只读端口。
+    await service.refreshPendingAfterScrapeResults();
+    await service.whenDeferredSettled();
+    expect(blocking.plannedTitles, hasLength(2));
+  });
+
+  test('dispose 后在途批次结束不再由这一代调度器发起补刮（controller 换代 / 关停）',
       () async {
     final int sourceId = await addSource('D:/A');
     final _BlockingRunner blocking = _BlockingRunner();
@@ -597,23 +665,15 @@ void main() {
     final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
     final Future<SourceScrapeReport> batch =
         busyController.scrapeSource(source);
-    expect(busyController.isBusy, isTrue);
-
-    // 下载入库落在别的批次期间：这次补刮请求只能先记下。
     await addVideo('movie-b', 'D:/A/Fresh Download (2023).mkv', sourceId,
         title: 'Fresh Download');
     await service.sweepAndListPending();
-    expect(blocking.plannedTitles, hasLength(1), reason: '批次期间不发第二批');
+    service.dispose();
 
     blocking.release.complete();
     await batch;
-    await service.refreshPendingAfterScrapeResults();
-    expect(blocking.plannedTitles.last, <String>['Fresh Download'],
-        reason: '被挡下的是真实的条目变化，批次结束必须兑现');
-
-    // 兑现过一次就清掉：之后的结果变化回到只读。
-    await service.refreshPendingAfterScrapeResults();
-    expect(blocking.plannedTitles, hasLength(2));
+    await service.whenDeferredSettled();
+    expect(blocking.plannedTitles, hasLength(1));
   });
 
   group('AI 能力进账本指纹（2026-10-01）', () {
@@ -867,6 +927,8 @@ void main() {
 
     blocking.release.complete();
     await batch;
+    // 批次期间那次触发被记下，批次结束时调度器自己兑现（BUG-3085）；等它跑完。
+    await service.whenDeferredSettled();
     expect(await service.sweepAndListPending(), hasLength(2));
   });
 

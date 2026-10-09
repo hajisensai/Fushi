@@ -29,10 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2840 条。点号进各自文件。
+> 共 2844 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3085](bugs/BUG-3085-scrape-sweep-deferred-depends-on-page.md) | ✅ | ✅ | 补刮被挡下的请求只靠视频页忙到闲兑现，页面未挂载或在飞闸门时丢失 |
+| [BUG-3084](bugs/BUG-3084-subtitle-anidb-movie-english-release.md) | 🚧 | 🚧 | AniDB 主源电影无 tmdb/imdb 时 OpenSubtitles 英文发布名被拒（核查别名是否带英文名） |
+| [BUG-3083](bugs/BUG-3083-subtitle-backfill-global-default-hard-filter.md) | ✅ | ✅ | 补字幕在无作品语言证据时把全局默认内容语言当硬过滤，英语片的英文字幕被拒 |
+| [BUG-3082](bugs/BUG-3082-subtitle-id-confirmed-edition-suffix.md) | ✅ | ✅ | OpenSubtitles 候选 id 已确认、发布名带 Extended Cut 等版本修饰时被判别作 |
 | [BUG-3081](bugs/BUG-3081-settings-jank.md) | ✅ | ✅ | 设置页多处掉帧 |
 | [BUG-3080](bugs/BUG-3080-subtitle-preview-overlap.md) | ✅ | ✅ | 字幕样式预览字号调大后主副字幕串行 |
 | [BUG-3079](bugs/BUG-3079-online-hls-nonstandard-mime-split.md) | ✅ | ✅ | 在线视频源进度条被切成三四秒一段（HLS 播放列表被当普通列表逐分片播放） |

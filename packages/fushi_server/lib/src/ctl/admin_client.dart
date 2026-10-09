@@ -6,6 +6,10 @@
 ///
 /// `tls: true` 时服务端用的是自签证书，这里**按指纹钉扎**接受它（与互联 client
 /// 同一判据 [certificateMatchesFingerprint]），绝不无条件放行证书错误。
+///
+/// 另一种模式 [AdminClient.forInterconnect]：不经 fushi_server 的 admin 面，直接连
+/// 一台**互联 host**（正在运行的 Fushi app 或 fushi_server 的互联端口），用 Basic
+/// 鉴权（密码 = host token），admin 路径按 [interconnectPathFor] 翻成互联路径。
 library;
 
 import 'dart:async';
@@ -30,7 +34,7 @@ class AdminApiException implements Exception {
   final Object? body;
 
   @override
-  String toString() => status == 0 ? message : 'HTTP $status: $message';
+  String toString() => status <= 0 ? message : 'HTTP $status: $message';
 }
 
 /// 一个已经确定了地址与凭据的 admin API 客户端。
@@ -40,9 +44,47 @@ class AdminClient {
     required this.token,
     HttpClient? httpClient,
     this.timeout = const Duration(seconds: 30),
-  }) : _http = withCredentialProxyPolicy(httpClient ?? HttpClient());
+  })  : interconnect = false,
+        _authorization = 'Bearer $token',
+        _http = withCredentialProxyPolicy(httpClient ?? HttpClient());
   // 每个请求都带 admin_token：回环 / 明文目标恒直连，绝不交给环境代理
   // （见 credential_http_proxy.dart）。
+
+  /// 直连互联 host 的客户端：Basic 鉴权（用户名随意，密码 = host token），
+  /// 路径经 [interconnectPathFor] 改写。
+  AdminClient.interconnect({
+    required this.baseUri,
+    required String password,
+    HttpClient? httpClient,
+    this.timeout = const Duration(seconds: 60),
+  })  : interconnect = true,
+        token = password,
+        _authorization = 'Basic ${base64Encode(utf8.encode('fushi:$password'))}',
+        _http = withCredentialProxyPolicy(httpClient ?? HttpClient());
+
+  /// 连 [url] 上的互联 host。
+  ///
+  /// https 时 host 用的是自签证书：给了 [fingerprint] 就按指纹钉扎；没给就**只对
+  /// 这一个显式指定的 host:port** 放行证书校验失败（用户在命令行上点名了它，
+  /// 等价于互联 client 首次连接时的 TOFU）。其它主机名 / 端口的坏证书照样拒绝。
+  /// 走不可信网络时请用 `--fingerprint` 钉死（host 的「互联」设置页 / 配对时可见）。
+  static AdminClient forInterconnect({required String url, required String password, String? fingerprint}) {
+    final Uri baseUri = Uri.parse(url.trim());
+    if (!baseUri.hasScheme || baseUri.host.isEmpty || !<String>{'http', 'https'}.contains(baseUri.scheme)) {
+      throw AdminApiException(0, '无效的 --interconnect: $url（要写成 http(s)://host:port）');
+    }
+    if (password.isEmpty) {
+      throw const AdminApiException(0, '缺 host 密码：用 --password 或环境变量 FUSHI_HOST_PASSWORD');
+    }
+    final HttpClient http = HttpClient();
+    if (baseUri.scheme == 'https') {
+      final String? pin = _nonEmpty(fingerprint);
+      http.badCertificateCallback = (X509Certificate cert, String host, int port) => pin != null
+          ? certificateMatchesFingerprint(cert, pin)
+          : host == baseUri.host && port == baseUri.port;
+    }
+    return AdminClient.interconnect(baseUri: baseUri, password: password, httpClient: http);
+  }
 
   /// 由服务端配置推出地址与凭据。
   ///
@@ -83,8 +125,14 @@ class AdminClient {
   }
 
   final Uri baseUri;
+
+  /// admin 模式是 admin_token；互联模式是 host 密码。
   final String token;
   final Duration timeout;
+
+  /// true = 直连互联 host（[AdminClient.forInterconnect]）。
+  final bool interconnect;
+  final String _authorization;
   final HttpClient _http;
 
   Future<Object?> get(String path, {Map<String, String>? query}) => send('GET', path, query: query);
@@ -138,14 +186,14 @@ class AdminClient {
     Map<String, String>? query,
   }) async {
     final Uri uri = baseUri.replace(
-      path: _joinPath(baseUri.path, path),
+      path: _joinPath(baseUri.path, interconnect ? interconnectPathFor(path) : path),
       queryParameters: query == null || query.isEmpty ? null : query,
     );
     final HttpClientResponse response;
     final String text;
     try {
       final HttpClientRequest request = await _http.openUrl(method, uri).timeout(timeout);
-      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      request.headers.set(HttpHeaders.authorizationHeader, _authorization);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       await write(request);
       response = await request.close().timeout(timeout);
@@ -155,12 +203,18 @@ class AdminClient {
     } on HandshakeException catch (e) {
       throw AdminApiException(0, 'TLS 握手失败（证书指纹不符？）: $uri ${e.message}');
     } on SocketException catch (e) {
-      throw AdminApiException(0, '连不上 $uri（fushi_server serve 在跑吗？）: ${e.message}');
+      throw AdminApiException(
+        0,
+        '连不上 $uri（${interconnect ? 'Fushi 的互联服务开着吗？' : 'fushi_server serve 在跑吗？'}）: ${e.message}',
+      );
     }
     final Object? decoded = _tryDecode(text);
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      // admin 面回 `{error}`；互联面的 409 回 `{reason, message}`，400 回纯文本。
       final String message = decoded is Map && decoded['error'] != null
           ? decoded['error'].toString()
+          : decoded is Map && decoded['message'] != null
+          ? decoded['message'].toString()
           : (text.isEmpty ? response.reasonPhrase : text);
       throw AdminApiException(response.statusCode, message, body: decoded);
     }
@@ -176,6 +230,27 @@ String adminLoopbackHost(String bind) {
   if (b.isEmpty || b == '0.0.0.0') return '127.0.0.1';
   if (b == '::' || b == '[::]') return '::1';
   return b;
+}
+
+/// [AdminApiException.status] 取这个值 = 本地判定的用法错误（没发请求），ctl 退出码 64。
+const int kCtlUsageErrorStatus = -64;
+
+/// 互联模式下 admin 路径 → 互联路径：`/api/admin/host/<x>` → `/api/<x>`（admin 代理
+/// 本来就是这么转的），`/api/admin/downloads…` → `/api/downloads…`（同一份
+/// `HostDownloadHost`）。其余 admin 接口（状态、库根、模型、Anki…）只有 fushi_server
+/// 有，互联 host 上不存在，直接报用法错误而不是发一个注定 404 的请求。
+String interconnectPathFor(String adminPath) {
+  const String host = '/api/admin/host/';
+  const String downloads = '/api/admin/downloads';
+  if (adminPath.startsWith(host)) return '/api/${adminPath.substring(host.length)}';
+  if (adminPath == downloads || adminPath.startsWith('$downloads/')) {
+    return '/api/downloads${adminPath.substring(downloads.length)}';
+  }
+  throw AdminApiException(
+    kCtlUsageErrorStatus,
+    '$adminPath 只有 fushi_server 的 admin 面有；--interconnect 模式支持 downloads / videos / books / '
+    'audiobooks / manga / dict / metadata / scrape search|identify / collections / tags / host <METHOD> <path>',
+  );
 }
 
 /// 编码一个路径段（id 里可能有 `/`、空格等）。

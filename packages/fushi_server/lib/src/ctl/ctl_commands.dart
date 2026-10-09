@@ -30,6 +30,12 @@
 ///
 /// 公共选项：`--url` / `--token` / `--fingerprint` 覆盖配置推出的地址与凭据，
 /// `--json` 原样输出服务端 JSON（脚本用）。
+///
+/// 互联模式：`--interconnect <url> --password <host token>`（或环境变量
+/// `FUSHI_HOST_URL` / `FUSHI_HOST_PASSWORD`）直连一台**互联 host**——正在运行的
+/// Fushi app（设置 → 互联 → 本机作为 host）或 fushi_server 的互联端口——而不是
+/// fushi_server 的 admin 面。下载 / 视频 / 书 / 刮削等经互联接口的动作照常可用，
+/// 只有 fushi_server 才有的 admin 动作（status / libraries / models / anki…）报用法错误。
 library;
 
 import 'dart:convert';
@@ -38,26 +44,31 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/ctl/admin_client.dart';
+import 'package:fushi_server/src/ctl/ctl_download_commands.dart';
 import 'package:fushi_server/src/ctl/ctl_host_commands.dart';
 
 /// `ctl` 子命令的参数表；所有动作的选项平铺在这一层（动词在 rest 里）。
 ArgParser buildCtlParser() {
   final ArgParser parser = _buildBaseCtlParser();
   addCtlHostOptions(parser);
+  addCtlDownloadOptions(parser);
   return parser;
 }
 
 ArgParser _buildBaseCtlParser() => ArgParser()
   ..addOption('url', help: 'admin API 地址（缺省按配置推本机地址）')
   ..addOption('token', help: 'admin_token（缺省读配置）')
-  ..addOption('fingerprint', help: 'TLS 证书 SHA-256 指纹（缺省读本机服务端证书）')
+  ..addOption('fingerprint', help: 'TLS 证书 SHA-256 指纹（缺省读本机服务端证书；互联模式下用它钉扎 host 证书）')
+  ..addOption('interconnect', help: '直连互联 host（运行中的 Fushi app）地址，如 https://127.0.0.1:38765（或 FUSHI_HOST_URL）')
+  ..addOption('password', help: '互联 host 的密码 / token（或 FUSHI_HOST_PASSWORD）')
+  ..addOption('grep', help: 'videos / books ls：只列标题 / id / 文件名包含该串的条目（不区分大小写）')
   ..addFlag('json', negatable: false, help: '原样输出服务端 JSON')
   ..addOption('kind', help: 'libraries add：库类型 video | book', defaultsTo: 'video')
   ..addOption('id', help: 'libraries add：库 id（缺省自动生成）')
   ..addFlag('purge', negatable: false, help: 'libraries rm：移除前回收文件已消失的条目')
   ..addFlag('prune', negatable: true, help: 'scan：回收文件已消失的条目（缺省读配置）')
   ..addOption('title', help: 'downloads add：任务标题')
-  ..addOption('media-kind', help: 'downloads add：movie | tv', defaultsTo: 'movie')
+  ..addOption('media-kind', help: 'downloads add：movie | tv', allowed: <String>['movie', 'tv'], defaultsTo: 'movie')
   ..addOption('user', help: 'anki login：用户名')
   ..addOption('endpoint', help: 'anki login：自建同步服务器地址（缺省 AnkiWeb）')
   ..addFlag('accept-ankiweb', negatable: false, help: 'anki login：确认使用 AnkiWeb 的条款风险')
@@ -81,6 +92,9 @@ const Map<String, String> _aliases = <String, String>{
 const String kCtlUsage =
     '''
 fushi_server ctl <action> [args] [--url u] [--token t] [--fingerprint fp] [--json]
+fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --password <host token>
+    （直连运行中的 Fushi app 的互联 host；也可用 FUSHI_HOST_URL / FUSHI_HOST_PASSWORD。
+     https 自签证书只对这一个显式地址放行，给 --fingerprint 则按指纹钉扎）
 
   status                                   运行状态
   logs [-f|--follow]                       最近日志（-f 持续跟随）
@@ -88,7 +102,11 @@ fushi_server ctl <action> [args] [--url u] [--token t] [--fingerprint fp] [--jso
   libraries [ls] | add <path> [--kind video|book] [--id x] | rm <id> [--purge]
   scan [--prune|--no-prune]                触发一次库扫描（后台进行）
   jobs [ls] | rm <id>                      通用任务（ASR 等）
-  downloads [ls] | add <magnet> --title t [--media-kind movie|tv] | cancel|retry|rm <id>
+  downloads [ls] | cancel|retry|rm <id> | subtitles <id>
+  downloads add --title t (<magnet> | --magnet m | --torrent <路径|URL>) [--select <正则>]... [--index n]...
+                [--year y] [--provider anidb|mal|tmdb --external-id id] [--media-kind movie|tv]
+                [--subtitle-policy none|bestEffort|required]
+  downloads add --torrent <路径|URL> --list-files     列出 .torrent 文件（下标 / 大小 / 路径）
   subscriptions [ls] | add '<json>' | check [id] | enable|disable|rm <id>
   models [ls] | pull <语言 tag|ocr|ocr:key>
   settings [get] | set '<json>'
@@ -106,10 +124,40 @@ $kCtlHostUsage
         indexers=resource-indexers profile=profiles config=settings''';
 
 /// 读配置、建客户端、执行一条 `ctl` 动作。退出码见 [runCtlAction]。
-Future<int> runCtl(File configFile, ArgResults command, {StringSink? out, StringSink? err}) async {
+Future<int> runCtl(
+  File configFile,
+  ArgResults command, {
+  StringSink? out,
+  StringSink? err,
+  Map<String, String>? environment,
+}) async {
   final StringSink o = out ?? stdout;
   final StringSink e = err ?? stderr;
   final String? url = command['url'] as String?;
+  final Map<String, String> env = environment ?? Platform.environment;
+  // 显式 --url 是 admin 模式，压过环境变量里的 FUSHI_HOST_URL。
+  final String? interconnect = _flagOrEnv(command['interconnect'] as String?, url == null ? env['FUSHI_HOST_URL'] : null);
+  if (interconnect != null) {
+    final AdminClient client;
+    try {
+      client = AdminClient.forInterconnect(
+        url: interconnect,
+        password: _flagOrEnv(command['password'] as String?, env['FUSHI_HOST_PASSWORD']) ?? '',
+        fingerprint: command['fingerprint'] as String?,
+      );
+    } on AdminApiException catch (ex) {
+      e.writeln(ex.message);
+      return 64;
+    } on FormatException catch (ex) {
+      e.writeln('无效的 --interconnect: ${ex.message}');
+      return 64;
+    }
+    try {
+      return await runCtlAction(client, command, out: o, err: e);
+    } finally {
+      client.close();
+    }
+  }
   final ServerConfig config;
   if (await configFile.exists()) {
     try {
@@ -147,6 +195,13 @@ Future<int> runCtl(File configFile, ArgResults command, {StringSink? out, String
   }
 }
 
+String? _flagOrEnv(String? flag, String? env) {
+  final String? f = flag?.trim();
+  if (f != null && f.isNotEmpty) return f;
+  final String? v = env?.trim();
+  return v == null || v.isEmpty ? null : v;
+}
+
 /// 对一个现成的 [client] 执行 [command] 里的动作。
 ///
 /// 退出码：0 成功；1 服务端拒绝（4xx/5xx，或返回 `ok: false`）；64 用法错误；
@@ -163,6 +218,7 @@ Future<int> runCtlAction(
   int uploadChunkBytes = kCtlUploadChunkBytes,
   Duration followInterval = const Duration(seconds: 2),
   bool Function()? keepFollowing,
+  CtlTorrentFetcher? fetchTorrent,
 }) async {
   final List<String> rest = command.rest;
   if (rest.isEmpty) {
@@ -176,6 +232,9 @@ Future<int> runCtlAction(
   if (rest.first == 'jobs') {
     final Future<int>? jobs = runCtlJobsAction(client, command, out: out, err: err, exitCodeFor: _exitCodeFor);
     if (jobs != null) return jobs;
+  }
+  if ((_aliases[rest.first] ?? rest.first) == 'downloads' && rest.length > 1 && rest[1] == 'add') {
+    return runCtlDownloadAdd(client, command, out: out, err: err, exitCodeFor: _exitCodeFor, fetch: fetchTorrent);
   }
   if (rest.first == 'logs' && command['follow'] as bool) {
     return _followLogs(client, out: out, err: err, interval: followInterval, keepGoing: keepFollowing ?? () => true);
@@ -192,13 +251,32 @@ Future<int> runCtlAction(
     if (command['json'] as bool && ex.body != null) out.writeln(_pretty(ex.body));
     return _exitCodeFor(ex);
   }
+  final String? grep = command['grep'] as String?;
+  final Object? shown = grep == null || grep.trim().isEmpty ? response : grepRows(response, grep);
   if (command['json'] as bool) {
-    out.writeln(_pretty(response));
+    out.writeln(_pretty(shown));
   } else {
-    request.render(response, out);
+    request.render(shown, out);
   }
   if (response is Map && response['ok'] == false) return 1;
   return 0;
+}
+
+/// `--grep`：列表响应（顶层数组）里只留 title / id / 文件名 / 路径包含 [needle] 的条目
+/// （不区分大小写）。其它形状原样返回。
+Object? grepRows(Object? response, String needle) {
+  if (response is! List) return response;
+  final String n = needle.trim().toLowerCase();
+  bool hit(Object? row) {
+    if (row is! Map) return '$row'.toLowerCase().contains(n);
+    for (final String key in const <String>['title', 'id', 'bookUid', 'fileName', 'path', 'name', 'collection']) {
+      final Object? v = row[key];
+      if (v != null && '$v'.toLowerCase().contains(n)) return true;
+    }
+    return false;
+  }
+
+  return response.where(hit).toList();
 }
 
 _CtlRequest? _fromHost(CtlHostRequest? r) {
@@ -219,6 +297,7 @@ _CtlRequest? _fromHost(CtlHostRequest? r) {
 }
 
 int _exitCodeFor(AdminApiException ex) => switch (ex.status) {
+  kCtlUsageErrorStatus => 64,
   0 => 69,
   401 => 77,
   409 => 75,
@@ -447,20 +526,18 @@ _CtlRequest? _parseAction(
       switch (sub) {
         case '' || 'ls':
           return _list('GET', '$_api/downloads', 'jobs');
-        case 'add' when arg(0) != null:
-          final String? title = command['title'] as String?;
-          if (title == null || title.trim().isEmpty) return usage('downloads add <magnet> --title <标题>');
+        case 'subtitles' when arg(0) != null:
           return _CtlRequest(
-            'POST',
-            '$_api/downloads',
-            body: <String, Object?>{'magnet': arg(0), 'title': title, 'mediaKind': command['media-kind'] as String},
+            'GET',
+            '$_api/downloads/${adminPathSegment(arg(0)!)}/subtitles',
+            render: _renderJobSubtitles,
           );
         case 'cancel' || 'retry' when arg(0) != null:
           return _CtlRequest('POST', '$_api/downloads/${adminPathSegment(arg(0)!)}/$sub');
         case 'rm' when arg(0) != null:
           return _CtlRequest('DELETE', '$_api/downloads/${adminPathSegment(arg(0)!)}');
       }
-      return usage('downloads [ls] | downloads add <magnet> --title t | downloads cancel|retry|rm <id>');
+      return usage('downloads [ls] | downloads add … | downloads cancel|retry|rm|subtitles <id>');
 
     case 'subscriptions':
       switch (sub) {
@@ -675,6 +752,29 @@ void _renderPairing(Object? response, StringSink out) {
     );
   }
   _listRenderer('peers')(response, out);
+}
+
+/// `downloads subtitles <id>`：一行一条字幕行。
+void _renderJobSubtitles(Object? response, StringSink out) {
+  final Object? rows = response is Map ? response['subtitles'] : null;
+  if (rows is! List) return _renderGeneric(response, out);
+  if (rows.isEmpty) {
+    out.writeln('  （空）');
+    return;
+  }
+  for (final Object? row in rows) {
+    if (row is! Map) continue;
+    final List<String> cells = <String>[
+      '${row['provider']}',
+      '[${row['status']}]',
+      if (row['language'] != null) '${row['language']}',
+      if (row['episode'] != null) 'S${row['season'] ?? 1}E${row['episode']}',
+      _scalar(row['originalFileName']),
+      if (row['finalPath'] != null) '→ ${row['finalPath']}',
+      if (row['error'] != null) '! ${row['error']}',
+    ];
+    out.writeln('  ${cells.join('  ')}');
+  }
 }
 
 void _renderModels(Object? response, StringSink out) {

@@ -320,6 +320,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 待人工确认身份的作品数（0 = 不显示提醒条）。
   int _pendingScrapeCount = 0;
   bool _pendingScrapeInFlight = false;
+
+  /// 计数重算在飞时又来了一次请求：在飞那次读到的可能是旧状态（批次结束前那
+  /// 一刻），完成后必须再补一次，不能整个吞掉（BUG-3085）。
+  bool _pendingScrapeRecountQueued = false;
   _AllVideosLayout _allVideosLayout = _AllVideosLayout.grid;
 
   /// 当前远端视频来源：互联 host live 库 或 云盘目录，**至多一个**（TODO-2119）。
@@ -3740,10 +3744,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 只重算待确认数（刮削结果落库 / 批次结束）。不发起补刮（BUG-3072）。
   Future<void> _refreshPendingScrapeCount() async {
-    if (_pendingScrapeInFlight) return;
+    if (_pendingScrapeInFlight) {
+      _pendingScrapeRecountQueued = true;
+      return;
+    }
     _pendingScrapeInFlight = true;
     try {
-      await _applyPendingScrape(widget.refreshPendingScrapeWorks);
+      do {
+        _pendingScrapeRecountQueued = false;
+        await _applyPendingScrape(widget.refreshPendingScrapeWorks);
+      } while (_pendingScrapeRecountQueued && mounted);
     } finally {
       _pendingScrapeInFlight = false;
     }
@@ -8172,12 +8182,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       bottom: 0,
                       child: CoverProgressStrip(value: watchFrac),
                     ),
-                  // v95：清晰度 / HDR 角标。落左下角是因为另外三角已被占满（左上=标签
-                  // 与勾选框、右上=集数/新增、右下=云端），bottom 给 6 让开 3px 进度条。
+                  // v95：清晰度 / HDR / 环绕声角标。落左下角是因为另外三角已被占满（左上=
+                  // 标签与勾选框、右上=集数/新增、右下=云端），bottom 给 6 让开 3px 进度条。
                   // 不随多选态隐藏——它在左下，与左上的勾选框本就不同角，没有让位的必要。
+                  // right 也钉住：给角标条有界宽度，窄卡排不下时往上换行而不是溢出卡边。
                   Positioned(
                     bottom: 6,
                     left: 6,
+                    right: 6,
                     child: IgnorePointer(
                       child: VideoSpecsBadgeStrip(
                         service: ref.read(videoSpecsProvider),

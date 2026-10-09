@@ -308,10 +308,91 @@ void main() {
       expect(sidecarsNextTo(target), isEmpty);
     });
   });
+
+  group('BUG-3083 全局默认内容语言只排序、不硬拒', () {
+    Map<String, Object?> yourNameEntry(int id) => <String, Object?>{
+      'id': id,
+      'name': 'Your Name',
+      'flags': <String, Object?>{'anime': true, 'movie': true},
+    };
+
+    test('作品与音轨都没有语言证据：英语片的英文字幕照常装上', () async {
+      final _Jimaku jimaku = _Jimaku(
+        entries: <Map<String, Object?>>[yourNameEntry(7001)],
+        files: <int, List<String>>{
+          7001: <String>['Your.Name.WEBRip.en.srt'],
+        },
+        body: _englishSrt,
+      );
+      // 没有 originalLanguage、测试视频也没有可探的音轨 tag。
+      final SubtitleBackfillTarget target = await movieTarget(
+        'Your Name',
+        2016,
+      );
+      final SubtitleBackfillResult result = await _service(
+        <VideoSubtitleProvider>[jimaku.provider],
+        defaultContentLanguage: 'ja',
+      ).backfill(target);
+      expect(
+        result.outcome,
+        SubtitleBackfillOutcome.installed,
+        reason: result.detail,
+      );
+      expect(result.language, 'en');
+      expect(jimaku.downloads, hasLength(1));
+    });
+
+    test('同上，但候选里有默认语言的那条：它排在前面先装', () async {
+      final _Jimaku jimaku = _Jimaku(
+        entries: <Map<String, Object?>>[yourNameEntry(7002)],
+        files: <int, List<String>>{
+          7002: <String>['Your.Name.WEBRip.en.srt', 'Your.Name.WEBRip.ja.srt'],
+        },
+      );
+      final SubtitleBackfillTarget target = await movieTarget(
+        'Your Name',
+        2016,
+      );
+      final SubtitleBackfillResult result = await _service(
+        <VideoSubtitleProvider>[jimaku.provider],
+        defaultContentLanguage: 'ja',
+      ).backfill(target);
+      expect(result.outcome, SubtitleBackfillOutcome.installed);
+      expect(result.language, 'ja');
+      expect(jimaku.downloads, hasLength(1));
+    });
+
+    test('对照：作品有原语言证据（ja）时英文字幕仍被硬拒', () async {
+      final _Jimaku jimaku = _Jimaku(
+        entries: <Map<String, Object?>>[yourNameEntry(7003)],
+        files: <int, List<String>>{
+          7003: <String>['Your.Name.WEBRip.en.srt'],
+        },
+        body: _englishSrt,
+      );
+      final SubtitleBackfillTarget target = await movieTarget(
+        'Your Name',
+        2016,
+        originalLanguage: 'ja',
+      );
+      final SubtitleBackfillResult result = await _service(
+        <VideoSubtitleProvider>[jimaku.provider],
+        defaultContentLanguage: 'ja',
+      ).backfill(target);
+      expect(result.outcome, SubtitleBackfillOutcome.allCandidatesRejected);
+      expect(result.detail, contains('wanted ja'));
+      expect(sidecarsNextTo(target), isEmpty);
+    });
+  });
 }
 
-VideoSubtitleBackfillService _service(List<VideoSubtitleProvider> providers) =>
-    VideoSubtitleBackfillService(registry: VideoSubtitleRegistry(providers));
+VideoSubtitleBackfillService _service(
+  List<VideoSubtitleProvider> providers, {
+  String? defaultContentLanguage,
+}) => VideoSubtitleBackfillService(
+  registry: VideoSubtitleRegistry(providers),
+  defaultContentLanguage: defaultContentLanguage,
+);
 
 String _srt(List<String> lines) {
   final StringBuffer b = StringBuffer();
@@ -332,6 +413,12 @@ final String _japaneseSrt = _srt(<String>[
   'のび太くん、どこにいるの？',
   'ドラえもん、たすけてよ！',
   'くものうえにくにをつくろう',
+]);
+
+final String _englishSrt = _srt(<String>[
+  'Where are you going?',
+  'I keep dreaming about a town I have never seen.',
+  'Have we met somewhere before?',
 ]);
 
 http.Response _json(Object body) => http.Response.bytes(
