@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -11,7 +13,10 @@ import '../helpers/glass_unwrap.dart';
 /// 这个对话框此前零测试覆盖，而它一次保存会无条件写四列，是典型的
 /// 「整行覆盖 upsert 清空没碰的列」风险面（本仓库反复出现的 bug 形态：
 /// 「改 A 之后 B 没了」）。
-VideoDownloadSubscriptionRow _subscription({int? targetSourceId}) =>
+VideoDownloadSubscriptionRow _subscription({
+  int? targetSourceId,
+  String filterJson = '{"strict":true}',
+}) =>
     VideoDownloadSubscriptionRow(
       subscriptionId: 'subscription-1',
       resourceProvider: 'nyaa:default',
@@ -24,7 +29,7 @@ VideoDownloadSubscriptionRow _subscription({int? targetSourceId}) =>
       season: 1,
       coverUrl: null,
       searchQuery: 'Example anime',
-      filterJson: '{"strict":true}',
+      filterJson: filterJson,
       mode: 'ongoing',
       startAfterEpisode: 3,
       backendKind: 'embedded',
@@ -206,5 +211,77 @@ void main() {
         .tap(find.byKey(const ValueKey<String>('subscription-edit-save')));
     await tester.pumpAndSettle();
     expect(holder.single!.startAfterEpisode, isNull);
+  });
+
+  // 换字幕组：以前只能删掉重订。现在字幕组 / 分辨率 / 标题关键词可改，其余规则
+  // （strict、trusted、分类）原样保留；没动规则时不写 filterJson。
+  testWidgets('改字幕组与排除词：只改这几项，其余规则保留', (WidgetTester tester) async {
+    final List<VideoDownloadSubscriptionEdit?> holder = await open(
+      tester,
+      subscription: _subscription(
+        targetSourceId: 7,
+        filterJson: '{"strict":true,"releaseGroup":"Old","resolution":"1080p",'
+            '"trustedOnly":true,"nyaaCategory":"1_2"}',
+      ),
+      sources: <MediaSourceRow>[_source(id: 7, label: 'Library A')],
+    );
+    final Finder group = find.byKey(
+      const ValueKey<String>('subscription-edit-release-group'),
+    );
+    expect(tester.widget<EditableText>(find.descendant(of: group, matching: find.byType(EditableText))).controller.text, 'Old');
+    await tester.enterText(group, 'New, Other');
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('subscription-edit-title-exclude')),
+      'HEVC',
+    );
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.byKey(const ValueKey<String>('subscription-edit-save')));
+    await tester.pumpAndSettle();
+    final Map<String, Object?> filter = (jsonDecode(holder.single!.filterJson!)
+            as Map)
+        .cast<String, Object?>();
+    expect(filter['releaseGroup'], <String>['New', 'Other']);
+    expect(filter['titleExclude'], 'HEVC');
+    expect(filter['resolution'], '1080p');
+    expect(filter['strict'], isTrue);
+    expect(filter['trustedOnly'], isTrue);
+    expect(filter['nyaaCategory'], '1_2');
+  });
+
+  testWidgets('Nyaa 订阅清空字幕组：禁用保存并说明必填', (WidgetTester tester) async {
+    await open(
+      tester,
+      subscription: _subscription(
+        targetSourceId: 7,
+        filterJson: '{"strict":true,"releaseGroup":"Old","resolution":"1080p",'
+            '"trustedOnly":true}',
+      ),
+      sources: <MediaSourceRow>[_source(id: 7, label: 'Library A')],
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('subscription-edit-release-group')),
+      '',
+    );
+    await tester.pumpAndSettle();
+    final FilledButton save = tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(
+        find.byKey(const ValueKey<String>('subscription-edit-save')),
+      ),
+    );
+    expect(save.onPressed, isNull);
+    expect(find.text(t.subscription_edit_rule_required), findsOneWidget);
+  });
+
+  testWidgets('没动规则：filterJson 返回 null（宿主不写这一列）', (WidgetTester tester) async {
+    final List<VideoDownloadSubscriptionEdit?> holder = await open(
+      tester,
+      subscription: _subscription(targetSourceId: 7),
+      sources: <MediaSourceRow>[_source(id: 7, label: 'Library A')],
+    );
+    await tester
+        .tap(find.byKey(const ValueKey<String>('subscription-edit-save')));
+    await tester.pumpAndSettle();
+    expect(holder.single!.filterJson, isNull);
   });
 }

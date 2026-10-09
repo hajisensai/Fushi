@@ -6770,11 +6770,13 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 // min(用户设置, 装得下的列数)，写 --dict-columns-effective 供 grid 消费；
 // resize 只改 CSS 变量（grid 自动 reflow，零重渲）。in-app 弹窗同规则受益。
 const DICT_COLUMN_MIN_WIDTH = 170;
-// 触屏设备（主指针 coarse）列宽门槛加倍：每列至少 2×DICT_COLUMN_MIN_WIDTH 才许并排。
-// 手机弹窗本就窄（竖屏 ~400px 宽 → 340 门槛下仍是单列，维持「竖着堆叠才是手机上正确
-// 形态」的原裁决），但不再被无条件锁死——平板横屏、in-app 桌面尺寸大窗这类 coarse 且
-// 宽的场景按视口正常出多列（审计报告 #1295：老版 coarse→1 把 in-app 弹窗静默锁死单列，
-// 没有任何逃生门）。fine 指针（桌面）门槛不变。CSS grid 与 JS masonry 都经本函数取列数。
+// 触屏设备（主指针 coarse）列宽门槛放宽到 1.5 倍：每列至少 1.5×DICT_COLUMN_MIN_WIDTH
+// 才许并排。手机竖屏弹窗 ~360–400px 宽 → 255 门槛下仍是单列，维持「竖着堆叠才是手机上
+// 正确形态」的原裁决；平板横屏、in-app 桌面尺寸大窗这类 coarse 且宽的场景按视口正常出
+// 多列（审计报告 #1295：老版 coarse→1 把 in-app 弹窗静默锁死单列，没有任何逃生门）。
+// BUG-3139：门槛曾是 2 倍（340），手机横屏的视频查词弹窗（384×853@2.81 横过来约 620px
+// 宽）永远只装得下一列，用户设了「最多三列」也从不出现两列。fine 指针（桌面）门槛不变。
+// CSS grid 与 JS masonry 都经本函数取列数。
 function isCoarsePointerType() {
     try {
         return !!(window.matchMedia
@@ -6788,7 +6790,7 @@ function isCoarsePointerType() {
 // 两者都走此函数——绝不再分叉（历史上 masonry 漏了视口收敛，自动调整对方框布局不生效）。
 function effectiveDictColumns() {
     // 报告 #1295：coarse 不再「一律单列」，改为提高单列门槛（见上方注释）。
-    const colFloor = isCoarsePointerType() ? DICT_COLUMN_MIN_WIDTH * 2 : DICT_COLUMN_MIN_WIDTH;
+    const colFloor = isCoarsePointerType() ? DICT_COLUMN_MIN_WIDTH * 1.5 : DICT_COLUMN_MIN_WIDTH;
     let configured = 1;
     try {
         configured = parseInt(

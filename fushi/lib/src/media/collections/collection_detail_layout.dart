@@ -35,8 +35,9 @@ class CollectionHeroCredit {
   final String name;
 }
 
-/// 横版 fanart 当大背景时的模糊强度：轻一点，保留画面气质。
-const double kCollectionHeroBackdropBlur = 16;
+/// 横版 fanart 当大背景时的模糊强度：0 = 不模糊，画面原样露出（BUG-3190：曾是
+/// 16 + 72% 底色，fanart 被压成一片色雾，用户看来就是海报没了）。
+const double kCollectionHeroBackdropBlur = 0;
 
 /// 没有 fanart、拿 2:3 封面垫底时的模糊强度：重一点，只留色彩。
 const double kCollectionHeroCoverBlur = 32;

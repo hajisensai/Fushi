@@ -25,6 +25,7 @@ class MediaServerGridView extends StatefulWidget {
     required this.session,
     required this.parentId,
     required this.title,
+    this.library,
     super.key,
   });
 
@@ -33,6 +34,11 @@ class MediaServerGridView extends StatefulWidget {
   /// 媒体库 / 文件夹 / BoxSet id；null = 服务器根。
   final String? parentId;
   final String title;
+
+  /// 从媒体库进来时的库（[parentId] == 库 id）。有它且服务器支持
+  /// [MediaServerLibraryItems] 时，默认按库类型列作品（剧 / 电影），页头可切回
+  /// 按文件夹浏览（BUG-3198）。
+  final MediaServerLibrary? library;
 
   @override
   State<MediaServerGridView> createState() => _MediaServerGridViewState();
@@ -67,6 +73,23 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
   bool _loadMoreFailed = false;
 
   MediaServerBrowser get _browser => widget.session.browser;
+
+  /// 按文件夹浏览（列库的直接子级）而不是按库类型列作品。
+  bool _folderView = false;
+
+  /// 这一页能在「作品 / 文件夹」两种浏览间切换：从媒体库进来、服务器支持、
+  /// 库有单一作品类型（混合库本来就按文件夹浏览）。
+  bool get _canToggleFolderView {
+    final MediaServerLibrary? library = widget.library;
+    return library != null &&
+        library.kind != MediaServerLibraryKind.mixed &&
+        _browser is MediaServerLibraryItems;
+  }
+
+  void _toggleFolderView() {
+    setState(() => _folderView = !_folderView);
+    unawaited(_reload());
+  }
 
   String get _query => _searchController.text.trim();
 
@@ -116,7 +139,16 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
     if (_searchMode) {
       return _browser.search(_query, startIndex: startIndex);
     }
-    return _browser.listChildren(
+    final MediaServerBrowser browser = _browser;
+    final MediaServerLibrary? library = widget.library;
+    if (library != null && !_folderView && browser is MediaServerLibraryItems) {
+      return (browser as MediaServerLibraryItems).listLibraryItems(
+        library: library,
+        startIndex: startIndex,
+        sort: _sort,
+      );
+    }
+    return browser.listChildren(
       parentId: widget.parentId,
       startIndex: startIndex,
       sort: _sort,
@@ -237,6 +269,21 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
         title: widget.title,
         compact: true,
         leading: BackButton(onPressed: () => Navigator.of(context).maybePop()),
+        actions: <Widget>[
+          if (_canToggleFolderView)
+            FushiIconButton(
+              key: const ValueKey<String>('media-server-grid-folder-view'),
+              icon: _folderView ? FushiIcons.gridView : FushiIcons.folder,
+              tooltip: _folderView
+                  ? t.media_server_browse_by_title
+                  : t.media_server_browse_by_folder,
+              focusId: FushiFocusId(
+                '${widget.session.serverId}-grid-folder-view',
+              ),
+              selected: _folderView,
+              onTap: _toggleFolderView,
+            ),
+        ],
         bottom: _buildControls(),
       ),
       // 页头（含搜索 / 排序行）叠在正文上：网格把让位加成顶部内边距，空态 /

@@ -610,6 +610,16 @@ class PreferencesRepository extends ChangeNotifier
   /// 是否把 Jellyfin/Emby 条目混排进首页 / 系列 / 全部视频（B4）。默认 false：
   /// 媒体服务器条目只在视频页「媒体服务器」分区按服务器自己的树浏览，不再一进
   /// 视频页就整库拍平枚举；[jellyfinAutoListVideos] 只在本开关开着时才有意义。
+  /// 系列详情页在宽屏上用「海报横幅」版式（与竖屏同形：fanart 横幅在顶、hero
+  /// 叠在上面）而不是两栏（左栏信息、右栏选集）。默认 false = 两栏。
+  bool get videoDetailPosterLayout =>
+      getPref('video_detail_poster_layout', defaultValue: false) as bool;
+
+  Future<void> setVideoDetailPosterLayout(bool value) async {
+    await setPref('video_detail_poster_layout', value);
+    notifyListeners();
+  }
+
   bool get jellyfinShowInLibrary =>
       getPref('jellyfin_show_in_library', defaultValue: false) as bool;
 

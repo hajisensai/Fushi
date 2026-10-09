@@ -121,6 +121,37 @@ abstract interface class RemoteVideoEpisodeNumber {
   int? remoteVideoEpisodeNumber(String id);
 }
 
+/// 远端视频所属作品的**身份**（字幕检索用，BUG-3199）。
+class RemoteVideoTitleIdentity {
+  const RemoteVideoTitleIdentity({
+    this.originalTitle,
+    this.title,
+    this.externalIds = const <String, String>{},
+    this.isMovie = false,
+  });
+
+  /// 作品原名（日文原名等）。
+  final String? originalTitle;
+
+  /// 服务器上的作品显示名（常是用户语言的译名）。
+  final String? title;
+
+  /// `provider → id`，provider 名小写（`anilist` / `tmdb` / `imdb` / `anidb` …），
+  /// 与 `video_metadata_provider_identities.provider` 同口径。
+  final Map<String, String> externalIds;
+
+  final bool isMovie;
+}
+
+/// 「知道远端视频是哪部作品」的可选能力（BUG-3199）：媒体服务器的条目自带
+/// `OriginalTitle` 与 `ProviderIds`，而界面上的标题是服务器的显示名（中文用户的库里
+/// 就是中文译名），拿它去日语字幕站搜必然空手。字幕检索先按 ID / 原名搜，没有时
+/// 才回落显示名。
+abstract interface class RemoteVideoTitleIdentityFetch {
+  /// 远端视频 [id] 所属作品的身份；拿不到返回 null（调用方回落显示名）。
+  Future<RemoteVideoTitleIdentity?> remoteVideoTitleIdentity(String id);
+}
+
 /// 「远端合集就是一部作品」的标记能力（BUG-2626 审查补）。
 ///
 /// 字幕检索预填番名时，只有合集语义 = 作品的来源才能拿合集名当番名：在线视频源

@@ -252,6 +252,10 @@ class _VideoDownloadSubscriptionsPanelState
         targetSourceId: result.targetSourceId == null
             ? const Value<int?>.absent()
             : Value<int?>(result.targetSourceId),
+        // 字幕组 / 分辨率 / 标题关键词：同样只在用户改过时写（null = 没动）。
+        filterJson: result.filterJson == null
+            ? const Value<String>.absent()
+            : Value<String>(result.filterJson!),
         nextCheckAt: Value<int?>(now),
         lastError: const Value<String?>(null),
         updatedAt: Value<int>(now),

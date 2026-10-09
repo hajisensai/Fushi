@@ -25,6 +25,31 @@ mixin _FushiDbVideoDomain
             ..where(($VideoScrapeMetaTable t) => t.bookUid.equals(bookUid)))
           .getSingleOrNull();
 
+  /// 批量取多本的刮削资料（bookUid → 行；未刮过的不在表里）。详情页一次取完一部
+  /// 作品所有成员，替代逐本 [getVideoScrapeMeta] 的 N+1（打开系列详情页时一集一次
+  /// 往返）。按 SQLite 参数上限分块。
+  Future<Map<String, VideoScrapeMetaRow>> getVideoScrapeMetaForBooks(
+    Iterable<String> bookUids,
+  ) async {
+    final List<String> uids = bookUids.toSet().toList(growable: false);
+    final Map<String, VideoScrapeMetaRow> result =
+        <String, VideoScrapeMetaRow>{};
+    const int chunk = 500;
+    for (int i = 0; i < uids.length; i += chunk) {
+      final List<String> part = uids.sublist(
+        i,
+        i + chunk > uids.length ? uids.length : i + chunk,
+      );
+      final List<VideoScrapeMetaRow> rows = await (select(videoScrapeMeta)
+            ..where(($VideoScrapeMetaTable t) => t.bookUid.isIn(part)))
+          .get();
+      for (final VideoScrapeMetaRow row in rows) {
+        result[row.bookUid] = row;
+      }
+    }
+    return result;
+  }
+
   /// 已刮削过的 bookUid 集合。自动刮削扫描用它一次性排除已刮的，避免逐本查询
   /// （N+1）。返回 Set 供 O(1) 判断。
   Future<Set<String>> scrapedVideoBookUids() async {

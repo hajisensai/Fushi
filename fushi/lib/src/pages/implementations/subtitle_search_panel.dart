@@ -1216,6 +1216,40 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     );
   }
 
+  /// 番名备选（BUG-3199）：输入框默认填原名（日文原名排第一，见
+  /// [buildSubtitleSearchSeed]），这里一键切到其它标题（服务器 / 刮削的中文译名、
+  /// 合集名）并重搜。只有一个候选时不显示。
+  Widget _buildQueryAlternatives() {
+    final List<String> titles = widget.seed.queries;
+    if (titles.length < 2) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: ValueListenableBuilder<TextEditingValue>(
+        valueListenable: _queryCtrl,
+        builder: (BuildContext context, TextEditingValue value, Widget? _) {
+          final String current = value.text.trim();
+          return Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: <Widget>[
+              for (int i = 0; i < titles.length; i++)
+                FushiChoiceChip(
+                  key: ValueKey<String>('subtitle-query-alt-$i'),
+                  label: Text(titles[i]),
+                  selected: current == titles[i],
+                  onSelected: (_) {
+                    if (current == titles[i] || _searching) return;
+                    _queryCtrl.text = titles[i];
+                    unawaited(_search());
+                  },
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   /// 语言筛选分区（含「全部」）：仅在搜出结果里出现 ≥1 个可识别语言时显示。
   Widget _buildLanguageChips() {
     final List<String> langs = availableLanguages(_candidates);
@@ -1279,6 +1313,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
             decoration: InputDecoration(labelText: t.video_jimaku_query),
             onSubmitted: (_) => _search(),
           ),
+          _buildQueryAlternatives(),
           const SizedBox(height: 8),
           // 集数输入：默认空 → 列全部（现状）；填数字 → 只搜该集（Jimaku 服务端
           // 启发式）。hint（而非 helperText）内联在框里，不额外占一行垂直空间。

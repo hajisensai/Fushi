@@ -1243,6 +1243,32 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 而不是该集的 bookUid 上，故有 [VideoFushiPage.playlistCollectionId] 时必须走合集口，
   /// 否则恒查不到。读不到元数据一律降级为纯文本检索（= 旧行为），绝不因此挡住搜索。
   Future<SubtitleSearchSeed> _buildJimakuSeed(String fallbackTitle) async {
+    // BUG-3199：媒体服务器的条目自带原名与外部 ID，显示名是服务器的译名。远端视频
+    // 没有本地 DB 作品行，身份向服务器要。
+    final Object? remoteClient = _isRemote ? _effectiveRemoteClient : null;
+    final String? remoteId = _effectiveRemoteInfo?.id;
+    if (remoteClient is RemoteVideoTitleIdentityFetch && remoteId != null) {
+      try {
+        final RemoteVideoTitleIdentity? identity = await remoteClient
+            .remoteVideoTitleIdentity(remoteId);
+        if (identity != null) {
+          return buildSubtitleSearchSeed(
+            originalTitle: identity.originalTitle,
+            metadataTitle: identity.title,
+            displayTitle: fallbackTitle,
+            collectionTitle: _playlistTitle,
+            externalIds: identity.externalIds,
+            isMovie: identity.isMovie,
+          );
+        }
+      } on Object catch (error) {
+        // 身份拿不到只是少了捷径，照旧按显示名搜（不挡住搜索）。
+        ErrorLogService.instance.logDiagnostic(
+          'VideoFushiPage._buildJimakuSeed.remote',
+          error,
+        );
+      }
+    }
     try {
       final FushiDatabase db = appModel.database;
       final int? collectionId = widget.playlistCollectionId;
@@ -1506,6 +1532,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     String path, {
     String? selectedSource,
     String? label,
+    Future<bool> Function()? onEmptyCues,
   }) async {
     final int loadSeq = _episodeLoadSeq;
     final String displayLabel = label ?? p.basename(path);
@@ -1522,6 +1549,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
       return false;
     }
     if (cues.isEmpty) {
+      if (onEmptyCues != null && await onEmptyCues()) return true;
+      if (!mounted) return false;
       _showOsd(
         t.video_subtitle_load_failed(label: displayLabel),
         severity: ToastSeverity.error,
@@ -1631,6 +1660,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
       subtitle.path,
       selectedSource: source,
       label: label,
+      // 外挂文件轨下载到了却解析不出 cue：先别报失败，交给 libmpv 原格式再读一次。
+      onEmptyCues: track.isExternalFile
+          ? () => _showRemoteEmbeddedTrackViaPlayer(
+              controller,
+              track,
+              source: source,
+              label: label,
+            )
+          : null,
     );
   }
 
@@ -1669,11 +1707,21 @@ extension _VideoSubtitle on _VideoFushiPageState {
     required String source,
     required String label,
   }) async {
-    if (!_remoteStreamIsOriginalContainer || track.isExternalFile) return false;
     final int seq = _episodeLoadSeq;
-    final bool shown = await controller.selectEmbeddedTextTrackViaPlayer(
-      track.containerTrackOrdinal ?? track.streamIndex,
-    );
+    final bool shown;
+    if (track.isExternalFile) {
+      // BUG-3191：外挂文件轨（Emby 的外挂 ASS 等）不在流里，但它有自己的取流地址：
+      // 本端下载 / 解析不出时把原格式交给 libmpv 读（libass 认的写法比本仓解析器
+      // 宽得多），文本照样回流成可点 cue。
+      final String? url = track.url;
+      if (url == null || url.isEmpty) return false;
+      shown = await controller.selectExternalTextSubtitleViaPlayer(url);
+    } else {
+      if (!_remoteStreamIsOriginalContainer) return false;
+      shown = await controller.selectEmbeddedTextTrackViaPlayer(
+        track.containerTrackOrdinal ?? track.streamIndex,
+      );
+    }
     if (!shown || !mounted || seq != _episodeLoadSeq) return shown;
     _rebuild(() => _currentSubtitleSource = source);
     final (String subUid, int subEp) = _remotePositionKeyForIndex(

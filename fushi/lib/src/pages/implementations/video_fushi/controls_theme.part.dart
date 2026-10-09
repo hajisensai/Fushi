@@ -47,6 +47,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 中途缓冲圈带网络流读取速度（本地文件与 fork 默认外观一致）。
       bufferingIndicatorBuilder: (_) => VideoBufferingIndicator(
         readSpeed: _networkReadSpeedOf(controller),
+        visible: controller.bufferingIndicatorVisible,
       ),
       // 控制条淡入淡出时长（TODO-435）：与侧边锁按钮 / 浮动 rail 读同一真相源
       // [_videoControlsTransitionDuration]，让三者同速淡入淡出（值等于 media_kit
@@ -360,6 +361,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 中途缓冲圈带网络流读取速度（本地文件与 fork 默认外观一致）。
       bufferingIndicatorBuilder: (_) => VideoBufferingIndicator(
         readSpeed: _networkReadSpeedOf(controller),
+        visible: controller.bufferingIndicatorVisible,
       ),
       // 控制条淡入淡出时长（TODO-435）：与侧边锁按钮 / 浮动 rail 读同一真相源
       // [_videoControlsTransitionDuration]，让三者同速淡入淡出（值等于 media_kit

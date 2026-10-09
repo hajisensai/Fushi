@@ -63,7 +63,10 @@ class MediaDetailBackdrop extends StatelessWidget {
   final ImageProvider? image;
   final Object? imageKey;
 
-  /// 模糊强度。横版 fanart 可以轻一点（保留画面），竖版封面垫底要重一点。
+  /// 模糊强度。竖版封面垫底要重模糊（只留色彩）；横版 fanart 传 0 = 不模糊、
+  /// 画面原样露出（BUG-3190：fanart 被 16 的模糊 + 72% 底色压成一片色雾，用户看
+  /// 来就是「海报没了 / 被压在毛玻璃后面」）。0 时 scrim 也换成「露画面」的一套：
+  /// 上半基本透明，起始侧（两栏布局的信息栏 / 单列 hero 的文字）与底部才落到底色。
   final double blurSigma;
 
   @override
@@ -74,6 +77,7 @@ class MediaDetailBackdrop extends StatelessWidget {
     final FushiMotionScheme motion = context.fushiMotion;
     final ImageProvider? image = eink ? null : this.image;
     final Color base = cs.surface;
+    final bool showArt = image != null && blurSigma <= 0;
     return IgnorePointer(
       child: Stack(
         fit: StackFit.expand,
@@ -84,22 +88,62 @@ class MediaDetailBackdrop extends StatelessWidget {
               duration: motion.effectsSlow.duration,
               child: KeyedSubtree(
                 key: ValueKey<Object>(imageKey ?? image),
-                child: ImageFiltered(
-                  imageFilter: ui.ImageFilter.blur(
-                    sigmaX: blurSigma,
-                    sigmaY: blurSigma,
-                    tileMode: TileMode.decal,
-                  ),
-                  child: Image(
-                    image: image,
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                  ),
+                child: showArt
+                    ? Image(
+                        image: image,
+                        fit: BoxFit.cover,
+                        alignment: Alignment.topCenter,
+                        gaplessPlayback: true,
+                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                      )
+                    : ImageFiltered(
+                        imageFilter: ui.ImageFilter.blur(
+                          sigmaX: blurSigma,
+                          sigmaY: blurSigma,
+                          tileMode: TileMode.decal,
+                        ),
+                        child: Image(
+                          image: image,
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                        ),
+                      ),
+              ),
+            ),
+          if (showArt) ...<Widget>[
+            // 露画面：起始侧一道底色把信息栏 / hero 文字托住，画面其余部分原样
+            // 露出；再自上而下落到底色，与下方内容无缝。
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: AlignmentDirectional.centerStart,
+                  end: AlignmentDirectional.centerEnd,
+                  stops: const <double>[0, 0.28, 0.6],
+                  colors: <Color>[
+                    base.withValues(alpha: 0.82),
+                    base.withValues(alpha: 0.45),
+                    base.withValues(alpha: 0),
+                  ],
                 ),
               ),
             ),
-          if (!eink) ...<Widget>[
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: const <double>[0, 0.45, 0.8, 1],
+                  colors: <Color>[
+                    base.withValues(alpha: 0.05),
+                    base.withValues(alpha: 0.35),
+                    base.withValues(alpha: 0.9),
+                    base,
+                  ],
+                ),
+              ),
+            ),
+          ] else if (!eink) ...<Widget>[
             // 色晕：起始侧上角一团 primaryContainer（Apple 用强调色淡染），
             // 让没有图 / 图很暗时 hero 也带主题色气质。
             DecoratedBox(
@@ -1624,7 +1668,15 @@ class _MediaDetailSidePaneScope extends InheritedWidget {
 // 加载骨架
 // ---------------------------------------------------------------------------
 
-/// 详情页加载骨架：hero（封面块 + 标题条 + chip 条 + 按钮条）+ [rows] 行条目。
+/// 详情页加载骨架：与加载完成后的 [MediaDetailLayout] **同一套版式**。
+///
+/// - 两栏宽度（≥ [kMediaDetailTwoPaneMinWidth]）：左栏是窄式 hero（2:3 封面居中 +
+///   居中标题 / chip / 按钮条 + 简介条），右栏是区块标题 + [rows] 张宽集卡；
+/// - 单列：hero 按 [kMediaDetailHeroWideMinWidth] 分宽（封面在起始侧）/ 窄（居中），
+///   下面跟 [rows] 行条目。
+///
+/// BUG-3190：曾经不分宽窄恒画「封面在左 + 整宽条目」的旧单列样式，两栏详情页一加载
+/// 就先闪一下旧版式再跳成新版式（用户：「未加载完时显示的还是之前的样子」）。
 class MediaDetailSkeleton extends StatelessWidget {
   const MediaDetailSkeleton({super.key, this.rows = 6});
 
@@ -1634,59 +1686,162 @@ class MediaDetailSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double page = tokens.spacing.page;
+    // 页面以 extendBodyBehindAppBar 挂在浮动顶栏下时，让开顶栏。
+    final double top = MediaQuery.paddingOf(context).top;
     return FushiSkeletonShimmer(
-      child: ListView(
+      child: LayoutBuilder(
         key: const ValueKey<String>('media-detail-skeleton'),
-        physics: const NeverScrollableScrollPhysics(),
-        // 页面以 extendBodyBehindAppBar 挂在浮动顶栏下时，让开顶栏。
-        padding: EdgeInsets.fromLTRB(
-          page,
-          tokens.spacing.section + MediaQuery.paddingOf(context).top,
-          page,
-          page,
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final double width = constraints.maxWidth;
+          if (MediaDetailLayout.isTwoPane(context, width)) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SizedBox(
+                  width: kMediaDetailSidePaneWidth,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      page,
+                      top + tokens.spacing.section,
+                      page,
+                      page,
+                    ),
+                    child: _narrowHero(),
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      page,
+                      top + 8 + 12,
+                      page,
+                      page,
+                    ),
+                    child: _cards(context),
+                  ),
+                ),
+              ],
+            );
+          }
+          final bool wideHero =
+              width * FushiAppUiScale.of(context) >=
+              kMediaDetailHeroWideMinWidth;
+          return ListView(
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(
+              page,
+              tokens.spacing.section + top,
+              page,
+              page,
+            ),
+            children: <Widget>[
+              if (wideHero) _wideHero() else _narrowHero(),
+              const SizedBox(height: 28),
+              for (int i = 0; i < rows; i++) ...<Widget>[
+                FushiSkeleton(
+                  height: 64,
+                  borderRadius: fushiGroupedItemRadius(context, i, rows),
+                ),
+                const SizedBox(height: 2),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// 窄式 hero：与 [MediaDetailHero] 的窄式 / 两栏左栏同形（居中堆叠）。
+  Widget _narrowHero() => Column(
+    crossAxisAlignment: CrossAxisAlignment.center,
+    children: <Widget>[
+      FushiSkeleton(
+        width: 150,
+        height: 225,
+        borderRadius: FushiM3eShape.cardRadius,
+      ),
+      const SizedBox(height: 20),
+      const FushiSkeleton(width: 96, height: 14),
+      const SizedBox(height: 10),
+      const FushiSkeleton(width: 220, height: 30),
+      const SizedBox(height: 16),
+      const FushiSkeleton(width: 260, height: 28),
+      const SizedBox(height: 18),
+      const FushiSkeleton(
+        width: 200,
+        height: 48,
+        borderRadius: BorderRadius.all(Radius.circular(24)),
+      ),
+      const SizedBox(height: 24),
+      FushiSkeleton.line(height: 14),
+      const SizedBox(height: 8),
+      FushiSkeleton.line(widthFactor: 0.9, height: 14),
+      const SizedBox(height: 8),
+      FushiSkeleton.line(widthFactor: 0.7, height: 14),
+    ],
+  );
+
+  /// 宽式 hero：封面在起始侧、信息靠底。
+  Widget _wideHero() => Row(
+    crossAxisAlignment: CrossAxisAlignment.end,
+    children: <Widget>[
+      FushiSkeleton(
+        width: 132,
+        height: 198,
+        borderRadius: FushiM3eShape.cardRadius,
+      ),
+      const SizedBox(width: 20),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            FushiSkeleton.line(widthFactor: 0.8, height: 28),
+            const SizedBox(height: 12),
+            FushiSkeleton.line(widthFactor: 0.5, height: 16),
+            const SizedBox(height: 16),
+            FushiSkeleton.line(widthFactor: 0.65, height: 28),
+            const SizedBox(height: 20),
+            FushiSkeleton.line(widthFactor: 0.4, height: 48),
+          ],
         ),
-        children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+      ),
+    ],
+  );
+
+  /// 右栏：区块标题 + 宽集卡（缩略图 + 两条文字），与选集区同轮廓。
+  Widget _cards(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: <Widget>[
+      const FushiSkeleton(width: 96, height: 24),
+      const SizedBox(height: 16),
+      for (int i = 0; i < rows; i++) ...<Widget>[
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Row(
             children: <Widget>[
               FushiSkeleton(
-                width: 132,
-                height: 198,
+                width: 168,
+                height: 96,
                 borderRadius: FushiM3eShape.cardRadius,
               ),
-              const SizedBox(width: 20),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    FushiSkeleton.line(widthFactor: 0.8, height: 28),
-                    const SizedBox(height: 12),
-                    FushiSkeleton.line(widthFactor: 0.5, height: 16),
-                    const SizedBox(height: 16),
-                    FushiSkeleton.line(widthFactor: 0.65, height: 28),
-                    const SizedBox(height: 20),
-                    FushiSkeleton.line(widthFactor: 0.4, height: 48),
+                    FushiSkeleton.line(widthFactor: 0.7, height: 16),
+                    const SizedBox(height: 10),
+                    FushiSkeleton.line(widthFactor: 0.4, height: 12),
+                    const SizedBox(height: 10),
+                    FushiSkeleton.line(height: 12),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 28),
-          FushiSkeleton.line(height: 14),
-          const SizedBox(height: 8),
-          FushiSkeleton.line(widthFactor: 0.9, height: 14),
-          const SizedBox(height: 8),
-          FushiSkeleton.line(widthFactor: 0.7, height: 14),
-          const SizedBox(height: 28),
-          for (int i = 0; i < rows; i++) ...<Widget>[
-            FushiSkeleton(
-              height: 64,
-              borderRadius: fushiGroupedItemRadius(context, i, rows),
-            ),
-            const SizedBox(height: 2),
-          ],
-        ],
-      ),
-    );
-  }
+        ),
+        const SizedBox(height: 12),
+      ],
+    ],
+  );
 }

@@ -368,6 +368,13 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   /// 下载」那一阶段多说一句为什么又要下载，不参与阶段判定。
   bool _modelDiscarded = false;
 
+  /// 完成态下用户改过「加速 / 运行位置」：现成结果不是按眼下这组选项转出来的。
+  /// 状态卡据此提示「点重新转录」，页脚把「放弃进度」换成「重新转录」
+  /// （BUG-3138：完成态曾把选项全锁死，加速分段看着能点、点了没反应）。
+  /// 语言 / 模型不进这面旗：换它们会按新语言 / 新引擎重新规划，有现成结果就是
+  /// 那一组自己的结果。
+  bool _optionsChangedSinceResult = false;
+
   // 下载进度。
   int _downloadReceived = 0;
   int _downloadTotal = 0;
@@ -535,6 +542,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   }
 
   Future<void> _startTranscription() async {
+    _optionsChangedSinceResult = false;
     _runClock = Stopwatch()..start();
     _elapsedTotal = null;
     if (_runRemote && _remoteTarget != null) return _startRemoteTranscription();
@@ -726,6 +734,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   void _changeLanguage(AsrLanguage language) {
     if (language == _language) return;
     _language = language;
+    _optionsChangedSinceResult = false;
     _result = null;
     _elapsedTotal = null;
     _progress = null;
@@ -828,6 +837,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   /// 进度不会被顶掉，切回去还在。
   Future<void> _changeEngine(String engineId) async {
     if (_selectedEngineId() == engineId) return;
+    _optionsChangedSinceResult = false;
     // 先换服务再重新规划：plan / 就绪判定 / 任务目录全由服务决定，顺序反了会用
     // 旧引擎去查新引擎的任务。
     setState(() => _service = _serviceFor(engineId));
@@ -903,7 +913,16 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     _elapsedTotal = null;
     _finishedSrt = null;
     _progress = null;
+    _optionsChangedSinceResult = false;
     await _refreshPlan();
+  }
+
+  /// 按眼下的选项重新转录：放掉现成结果再直接开跑（BUG-3138）。新选项需要先下载
+  /// 模型时停在下载态，由用户点下载。
+  Future<void> _retranscribe() async {
+    await _discard();
+    if (!mounted || _phase != _Phase.ready) return;
+    await _startTranscription();
   }
 
   // ── 展示 ───────────────────────────────────────────────────────────────────
@@ -1051,6 +1070,13 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
               ),
             );
         }
+        sb
+          ..writeln()
+          ..write(
+            _optionsChangedSinceResult
+                ? t.audiobook_transcribe_options_changed_hint
+                : t.audiobook_transcribe_retranscribe_hint,
+          );
         return sb.toString();
       case _Phase.error:
         final String error = _error ?? '';
@@ -1102,11 +1128,13 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       _phase == _Phase.running ||
       _phase == _Phase.pausing;
 
+  /// 完成态也能改（BUG-3138）：改了只是让现成结果过期，由「重新转录」生效。
   bool get _canChangePreference =>
       _phase == _Phase.needDownload ||
       _phase == _Phase.ready ||
       _phase == _Phase.paused ||
-      _phase == _Phase.error;
+      _phase == _Phase.error ||
+      _phase == _Phase.finished;
 
   /// 状态卡的 M3E tonal 色块：失败 error、完成 tertiary、进行中 primary、
   /// 其余（待下载 / 就绪 / 已暂停 / 检查中）中性。
@@ -1274,9 +1302,15 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
           ],
           selected: <AsrAccelerationPreference>{_preference},
           showSelectedIcon: false,
+          // 不能改时传 null：分段按钮按禁用态画。曾经传一个空回调，按钮看着能点、
+          // 点了没反应（BUG-3138）。
           onSelectionChanged: !_canChangePreference
-              ? (Set<AsrAccelerationPreference> _) {}
+              ? null
               : (Set<AsrAccelerationPreference> s) {
+                  if (s.first == _preference) return;
+                  if (_phase == _Phase.finished) {
+                    _optionsChangedSinceResult = true;
+                  }
                   _preference = s.first;
                   _refreshPlan();
                 },
@@ -1298,7 +1332,11 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
             ],
             selected: _runRemote,
             enabled: _canChangePreference,
-            onChanged: (bool v) => setState(() => _runRemote = v),
+            onChanged: (bool v) => setState(() {
+              if (v == _runRemote) return;
+              if (_phase == _Phase.finished) _optionsChangedSinceResult = true;
+              _runRemote = v;
+            }),
           ),
         ),
     ];
@@ -1446,11 +1484,18 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
           ),
         );
       case _Phase.finished:
+        // 改过选项：主动作是「按新选项重新转录」；没改过仍给「放弃进度」。
         add(
-          FushiTextButton(
-            onPressed: _discard,
-            child: Text(t.audiobook_transcribe_discard),
-          ),
+          _optionsChangedSinceResult
+              ? FushiTextButton(
+                  key: const ValueKey<String>('asr-transcribe-retranscribe'),
+                  onPressed: _retranscribe,
+                  child: Text(t.audiobook_transcribe_retranscribe),
+                )
+              : FushiTextButton(
+                  onPressed: _discard,
+                  child: Text(t.audiobook_transcribe_discard),
+                ),
         );
         add(
           FushiOutlinedButton.icon(

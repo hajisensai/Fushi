@@ -3892,16 +3892,25 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 _remoteSubtitlePath = subtitle.path;
                 restoredPrimarySource = persistedSub;
                 subtitleResolved = true;
+              } else if (track != null &&
+                  track.isText &&
+                  track.isExternalFile &&
+                  (track.url?.isNotEmpty ?? false)) {
+                // BUG-3191：外挂字幕下到了却解析不出，起播后交给 libmpv 原格式读。
+                playerRenderedTrack = track;
+                subtitleResolved = true;
               }
             } catch (e) {
               debugPrint(
                 '[VideoFushiPage] embedded subtitle replay failed: $e',
               );
-              // BUG-2590：服务器抽不出 → 与手选时同款回落，起播后交给 libmpv 解码（BUG-2648）。
+              // BUG-2590：服务器抽不出 → 与手选时同款回落，起播后交给 libmpv 解码（BUG-2648）；
+              // 外挂文件轨走它自己的地址交给 libmpv（BUG-3191）。
               if (track != null &&
                   track.isText &&
-                  !track.isExternalFile &&
-                  urls.streamIsOriginalContainer) {
+                  (track.isExternalFile
+                      ? (track.url?.isNotEmpty ?? false)
+                      : urls.streamIsOriginalContainer)) {
                 playerRenderedTrack = track;
                 subtitleResolved = true;
               }
