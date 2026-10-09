@@ -17,6 +17,8 @@ import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_page_reset.dart'
+    show settingsSectionModifiedSummary;
 import 'package:fushi/src/sync/jellyfin_settings_widget.dart';
 import 'package:fushi/src/sync/plex_settings_widget.dart';
 import 'package:fushi/src/sync/plex_video_client.dart' show PlexServerConfig;
@@ -59,6 +61,12 @@ SettingsDestination buildServicesDestination() {
       SettingsSection(
         id: 'services.subtitles',
         title: t.section_services_subtitles,
+        // 2026-10-09 所有者：沿用 AI 页（#2042）的折叠形态。字幕来源是本页最常用
+        // 的一组，默认展开；其余两组默认收起。分组头报「N 项已配置」（与行上状态
+        // 同一份判据）+「N 项已修改」。顺序保持原样，见 [_servicesSectionSummary]。
+        presentation: SettingsSectionPresentation.expanded,
+        summaryBuilder: (SettingsContext c) =>
+            _servicesSectionSummary('services.subtitles', c),
         items: <SettingsItem>[
           _externalServicePage(
             id: 'services.jimaku',
@@ -188,6 +196,9 @@ SettingsDestination buildServicesDestination() {
         // 不会生效的字段。用 section 级 `visible` 而不是逐项加判据：三条渲染路径
         // （分类正文 / 主从详情 / 设置搜索索引）共用它，逐项写会漏掉搜索索引。
         visible: (_) => StoreRestrictedCapability.externalDiscovery.isAvailable,
+        presentation: SettingsSectionPresentation.collapsed,
+        summaryBuilder: (SettingsContext c) =>
+            _servicesSectionSummary('services.resources', c),
         items: <SettingsItem>[
           _externalServicePage(
             id: 'services.builtin_sources',
@@ -247,6 +258,9 @@ SettingsDestination buildServicesDestination() {
       SettingsSection(
         id: 'services.metadata',
         title: t.section_services_metadata,
+        presentation: SettingsSectionPresentation.collapsed,
+        summaryBuilder: (SettingsContext c) =>
+            _servicesSectionSummary('services.metadata', c),
         items: <SettingsItem>[
           SettingsNavigationItem(
             id: 'services.metadata.configure',
@@ -464,6 +478,9 @@ SettingsDestination buildServicesDestination() {
           ),
         ],
       ),
+      // 媒体服务器保持常显不折叠：Jellyfin / Plex 两行的「已配置」要异步读数据库
+      // （_JellyfinSettingsLink / _PlexSettingsLink），同步的分组摘要数不到它们，
+      // 收起后摘要只会少报；三行本身已各带状态，常显即可。
       SettingsSection(
         id: 'services.media',
         title: t.video_library_media_servers,
@@ -525,6 +542,37 @@ SettingsDestination buildServicesDestination() {
       ),
     ],
   );
+}
+
+/// 在线服务分组头的摘要：「N 项已配置」+「N 项已修改」，都为零就不显示。
+///
+/// 「已配置」直接数本组可见服务行**当前显示的状态文案**是否为
+/// [t.settings_service_configured]——与行上状态同一份判据、逐字一致，不另写一套
+/// 「配齐」规则（AniDB 的判据见 BUG-2586，必须走配置快照）。「使用内置配置」
+/// 不算：那是用户什么都没填。「已修改」数的是 AJATT / 默认字幕语言这类有默认值的
+/// 声明式行（与页级「恢复本页默认」同一判据）。
+///
+/// 分组顺序**保持原样**、不把已配置的组挪到前面：位置稳定才有肌肉记忆、顶部
+/// 分区跳转条与焦点遍历顺序也不随配置变化跳动；状态已由摘要在收起时报出。
+String? _servicesSectionSummary(String sectionId, SettingsContext context) {
+  if (!context.appModel.isPreferencesReady) return null;
+  final SettingsSection section = buildServicesDestination().sections
+      .firstWhere((SettingsSection s) => s.id == sectionId);
+  final String configuredLabel = t.settings_service_configured;
+  final int configured = section.items
+      .where(
+        (SettingsItem item) =>
+            item is SettingsNavigationItem &&
+            item.isVisible(context) &&
+            item.resolveSubtitle(context) == configuredLabel,
+      )
+      .length;
+  final String? modified = settingsSectionModifiedSummary(section, context);
+  final List<String> parts = <String>[
+    if (configured > 0) t.settings_services_configured_count(n: configured),
+    if (modified != null) modified,
+  ];
+  return parts.isEmpty ? null : parts.join(' · ');
 }
 
 SettingsNavigationItem _externalServicePage({
