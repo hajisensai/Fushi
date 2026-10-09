@@ -959,6 +959,7 @@ jobs:
             'fushi.exe',
             'fushidicts_ffi.dll',
             'libaacs.dll',
+            'bluray\bdj\bdj_runtime.ps1',
             'flutter_windows.dll'
           )
           $missing = @()

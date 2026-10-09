@@ -91,6 +91,18 @@ void main() {
     );
   });
 
+  test('the bundle install prefix is settled before plugins configure', () {
+    // media_kit_libs_windows_video installs bluray/bdj with the prefix it sees
+    // at configure time; a later prefix left bluray/ out of shipped bundles.
+    final String cmake = _read('windows/CMakeLists.txt');
+    final int prefix = cmake.indexOf(
+      'set(CMAKE_INSTALL_PREFIX "\${BUILD_BUNDLE_DIR}" CACHE PATH "..." FORCE)',
+    );
+    expect(prefix, greaterThanOrEqualTo(0));
+    expect(prefix, lessThan(cmake.indexOf('add_subdirectory(\${FLUTTER_MANAGED_DIR})')));
+    expect(prefix, lessThan(cmake.indexOf('include(flutter/generated_plugins.cmake)')));
+  });
+
   test('Android builds the module in the app native build', () {
     final String gradle = _read('android/app/build.gradle');
     expect(
