@@ -21,3 +21,18 @@ void fushiSelectionHaptic(BuildContext context) {
       break;
   }
 }
+
+/// 「拎起」一类的轻触感：长按底栏把选中指示器拎起来拖动时发一次。与
+/// [fushiSelectionHaptic] 同一个平台门（只在手机上发）。
+void fushiLiftHaptic(BuildContext context) {
+  switch (Theme.of(context).platform) {
+    case TargetPlatform.android:
+    case TargetPlatform.iOS:
+      HapticFeedback.lightImpact();
+    case TargetPlatform.fuchsia:
+    case TargetPlatform.linux:
+    case TargetPlatform.macOS:
+    case TargetPlatform.windows:
+      break;
+  }
+}
