@@ -6907,5 +6907,22 @@
   "feedback_draft_restored": "Restored your unsent draft (saved ${time})",
   "feedback_draft_discard": "Discard draft",
   "feedback_detail_log": "Log (${size}, compressed)",
-  "feedback_detail_log_hint": "Only the developers can open the log"
+  "feedback_detail_log_hint": "Only the developers can open the log",
+  "feedback_id_copy_hint": "Tap or long-press to copy the feedback ID",
+  "feedback_id_copied": "Feedback ID copied",
+  "feedback_search_hint": "Search by ID, title or description",
+  "feedback_search_empty": "No matching feedback",
+  "feedback_mark_done": "Mark as done",
+  "feedback_mark_done_confirm_title": "Mark this feedback as done?",
+  "feedback_mark_done_confirm_body": "It will be closed and the developers will see that you marked it done. Add a note later to reopen it.",
+  "feedback_marked_done": "Marked as done",
+  "feedback_timeline_reporter_closed": "Marked done by the reporter",
+  "feedback_timeline_you_closed": "You marked this as done",
+  "feedback_reopen": "Not fixed? Resubmit",
+  "feedback_reopen_title": "Resubmit feedback",
+  "feedback_reopen_of": "Resubmitted from #${id}",
+  "feedback_reopened_as": "Resubmitted as #${id}",
+  "feedback_reopen_include_shots": "Include the original screenshots (${n})",
+  "feedback_reopen_notice": "This creates a new feedback linked to #${id}; the original conversation stays as it is. Edit the description and add what is still wrong.",
+  "feedback_reopen_submitted": "Resubmitted and linked to the original feedback"
 }

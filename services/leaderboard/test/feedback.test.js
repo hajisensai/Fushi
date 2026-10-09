@@ -139,6 +139,130 @@ describe('反馈人', () => {
   });
 });
 
+describe('反馈人标记完成', () => {
+  it('凭本条 ticket 把 open / 处理中改为已关闭；时间线记「反馈人标记完成」；处理台看得到', async () => {
+    const env = makeEnv();
+    const dev = await makeDev(env);
+    const { id, ticket } = (await submit(env)).data;
+    // 请求体里夹带别的字段一律无视：只做这一种状态变更。
+    const r = await withTicket(env, 'POST', `/v1/feedback/${id}/close`, ticket, {
+      body: { status: 'resolved', title: '改标题', body: '改正文' }, now: NOW + 1000,
+    });
+    expect(r.status).toBe(200);
+    expect(r.data).toMatchObject({ id, status: 'closed', title: '阅读器白屏', body: '打开某本书白屏', userReplyAt: NOW + 1000 });
+    expect(r.data.messages).toEqual([expect.objectContaining({ author: 'user', status: 'closed', body: '' })]);
+    const row = env.DB.raw.prepare('SELECT title, body, status FROM feedback WHERE id = ?').get(id);
+    expect(row).toEqual({ title: '阅读器白屏', body: '打开某本书白屏', status: 'closed' });
+    // 开发者：列表标新消息、详情时间线是反馈人的关闭事件。
+    const list = await as(env, dev, 'GET', '/v1/dev/feedback?status=all');
+    expect(list.data.items[0]).toMatchObject({ id, status: 'closed', awaitingDev: true });
+    const detail = await as(env, dev, 'GET', `/v1/dev/feedback/${id}`);
+    expect(detail.data.messages.at(-1)).toMatchObject({ author: 'user', status: 'closed' });
+    // 已关闭再点：409，不重复记事件。
+    expect((await withTicket(env, 'POST', `/v1/feedback/${id}/close`, ticket)).data.error).toBe('not_closable');
+    expect(env.DB.raw.prepare('SELECT COUNT(*) n FROM feedback_messages WHERE feedback_id = ?').get(id).n).toBe(1);
+    // 追加说明重新打开后可以再关。
+    await withTicket(env, 'POST', `/v1/feedback/${id}/messages`, ticket, { body: { body: '又出现了' } });
+    expect((await withTicket(env, 'POST', `/v1/feedback/${id}/close`, ticket)).data.status).toBe('closed');
+  });
+
+  it('别人的 / 错误的 / 没有 ticket 一律 404；开发者给出结论后不能再改；按条限流', async () => {
+    const env = makeEnv();
+    const dev = await makeDev(env);
+    const mine = (await submit(env)).data;
+    const other = (await submit(env)).data;
+    const close = (id, t, now = NOW) => withTicket(env, 'POST', `/v1/feedback/${id}/close`, t, { now });
+    expect((await close(mine.id, other.ticket)).status).toBe(404);
+    expect((await close(mine.id, 'x'.repeat(32))).status).toBe(404);
+    expect((await call(env, 'POST', `/v1/feedback/${mine.id}/close`, { now: NOW })).status).toBe(404);
+    expect((await close('zzzzzzzzzz', mine.ticket)).status).toBe(404);
+    expect(env.DB.raw.prepare('SELECT status FROM feedback WHERE id = ?').get(mine.id).status).toBe('open');
+
+    // 处理中可以关；已解决 / 不修复 / 重复不能被反馈人改写。
+    await as(env, dev, 'POST', `/v1/dev/feedback/${other.id}`, { status: 'in_progress' });
+    expect((await close(other.id, other.ticket)).data.status).toBe('closed');
+    for (const status of ['resolved', 'wont_fix', 'duplicate']) {
+      const f = (await submit(env, { title: `s-${status}` })).data;
+      await as(env, dev, 'POST', `/v1/dev/feedback/${f.id}`, { status });
+      const res = await close(f.id, f.ticket);
+      expect(res.status).toBe(409);
+      expect(env.DB.raw.prepare('SELECT status FROM feedback WHERE id = ?').get(f.id).status).toBe(status);
+    }
+
+    // 限流：单条每小时 N 次（上面成功的那次与失败的 409 都计数），下一小时恢复。
+    for (let i = 1; i < FEEDBACK_LIMITS.reporterClosePerFeedbackHour; i++) {
+      expect((await close(other.id, other.ticket)).status).toBe(409);
+    }
+    expect((await close(other.id, other.ticket)).status).toBe(429);
+    expect((await close(other.id, other.ticket, NOW + 3600 * 1000)).status).toBe(409);
+  });
+});
+
+describe('重新提交', () => {
+  it('凭原反馈 ticket 新建一条并关联；原反馈须已结案；双向可见；处理台标出关联', async () => {
+    const env = makeEnv();
+    const dev = await makeDev(env);
+    const orig = (await submit(env)).data;
+    const reopen = (o, extra = {}) => submit(env, { reopenOf: o, ...extra });
+    // 未结案不能重新提交（照旧追加说明即可）。
+    expect((await reopen({ id: orig.id, ticket: orig.ticket })).data.error).toBe('parent_not_closed');
+    await as(env, dev, 'POST', `/v1/dev/feedback/${orig.id}`, { status: 'resolved', reply: '已修复' });
+
+    // 原样带着原标题 / 正文：不当作重复拒收，也不打 duplicate 标记。
+    const r = await reopen({ id: orig.id, ticket: orig.ticket }, { body: '打开某本书白屏' });
+    expect(r.status).toBe(201);
+    expect(r.data.parentId).toBe(orig.id);
+    const child = r.data;
+    expect(env.DB.raw.prepare('SELECT parent_id, flags, status FROM feedback WHERE id = ?').get(child.id))
+      .toEqual({ parent_id: orig.id, flags: '[]', status: 'open' });
+    // 原对话不动：原反馈仍是已解决，时间线照旧。
+    const parentView = await withTicket(env, 'GET', `/v1/feedback/${orig.id}`, orig.ticket);
+    expect(parentView.data).toMatchObject({ status: 'resolved', reopenedAs: [child.id], parentId: null });
+    expect(parentView.data.messages).toHaveLength(1);
+    const childView = await withTicket(env, 'GET', `/v1/feedback/${child.id}`, child.ticket);
+    expect(childView.data).toMatchObject({ parentId: orig.id, reopenedAs: [] });
+
+    const list = await as(env, dev, 'GET', '/v1/dev/feedback?status=active');
+    expect(list.data.items).toEqual([expect.objectContaining({ id: child.id, parentId: orig.id })]);
+    expect((await as(env, dev, 'GET', `/v1/dev/feedback/${orig.id}`)).data.reopenedAs).toEqual([child.id]);
+    const st = await call(env, 'POST', '/v1/feedback/status', { body: { items: [{ id: child.id, ticket: child.ticket }] }, now: NOW });
+    expect(st.data.items[0].parentId).toBe(orig.id);
+
+    // 网页处理台：新反馈上「重新提交自」、原反馈上「已被重新提交为」，都能点过去。
+    const cookie = (await webLogin(env, dev)).res.headers.get('Set-Cookie').split(';')[0];
+    const listPage = await page(env, 'GET', '/dev?status=all', { cookie });
+    expect(listPage.data).toContain(`重新提交自 #${orig.id}`);
+    expect((await page(env, 'GET', `/dev/f/${child.id}`, { cookie })).data)
+      .toContain(`重新提交自 <a href="/dev/f/${orig.id}">#${orig.id}</a>`);
+    expect((await page(env, 'GET', `/dev/f/${orig.id}`, { cookie })).data)
+      .toContain(`已被重新提交为 <a href="/dev/f/${child.id}">#${child.id}</a>`);
+  });
+
+  it('ticket 错 / 别人的 / 格式不对 → 404 / 400，不建反馈；反馈人标记完成后也能重提；次数有上限', async () => {
+    const env = makeEnv();
+    const mine = (await submit(env, { title: 'mine' })).data;
+    const other = (await submit(env, { title: 'other' })).data;
+    await withTicket(env, 'POST', `/v1/feedback/${mine.id}/close`, mine.ticket);
+    await withTicket(env, 'POST', `/v1/feedback/${other.id}/close`, other.ticket);
+    const count = () => env.DB.raw.prepare('SELECT COUNT(*) n FROM feedback').get().n;
+    const before = count();
+    // 用自己的 ticket 关联别人的反馈 → 404。
+    expect((await submit(env, { title: 'x1', reopenOf: { id: other.id, ticket: mine.ticket } })).status).toBe(404);
+    expect((await submit(env, { title: 'x2', reopenOf: { id: mine.id, ticket: 'y'.repeat(32) } })).status).toBe(404);
+    expect((await submit(env, { title: 'x3', reopenOf: { id: mine.id } })).status).toBe(404);
+    expect((await submit(env, { title: 'x4', reopenOf: 'abc' })).status).toBe(400);
+    expect(count()).toBe(before);
+
+    for (let i = 0; i < FEEDBACK_LIMITS.reopensPerFeedback; i++) {
+      const r = await submit(env, { title: `again ${i}`, reopenOf: { id: mine.id, ticket: mine.ticket } });
+      expect(r.status).toBe(201);
+      expect(r.data.parentId).toBe(mine.id);
+    }
+    expect((await submit(env, { title: 'too many', reopenOf: { id: mine.id, ticket: mine.ticket } })).data.error)
+      .toBe('too_many_reopens');
+  });
+});
+
 describe('开发者（App 端签名接口）', () => {
   it('非开发者 403；管理员设为开发者后可列表 / 详情 / 回复改状态；反馈人看得到进度', async () => {
     const env = makeEnv();
@@ -197,6 +321,28 @@ describe('开发者（App 端签名接口）', () => {
     expect(closed.data.items.map((x) => x.id)).toEqual([ids[0]]);
     const all = await as(env, dev, 'GET', '/v1/dev/feedback?status=all');
     expect(all.data.items).toHaveLength(5);
+  });
+
+  it('搜索 q：编号精确匹配，标题 / 正文包含；可与状态过滤叠加；% _ 按字面', async () => {
+    const env = makeEnv();
+    const dev = await makeDev(env);
+    const a = (await submit(env, { title: '阅读器白屏', body: '打开某本书白屏' }, { now: NOW })).data;
+    const b = (await submit(env, { title: '视频卡顿', body: '播放 4K 视频时掉帧 100%' }, { now: NOW + 1 })).data;
+    const c = (await submit(env, { title: 'Crash on launch', body: 'app closes' }, { now: NOW + 2 })).data;
+    await as(env, dev, 'POST', `/v1/dev/feedback/${c.id}`, { status: 'closed' });
+    const search = async (q, status = 'all') => (await as(env, dev, 'GET',
+      `/v1/dev/feedback?status=${status}&q=${encodeURIComponent(q)}`)).data.items.map((x) => x.id);
+    expect(await search(b.id)).toEqual([b.id]);
+    expect(await search('白屏')).toEqual([a.id]);
+    expect(await search('掉帧')).toEqual([b.id]);
+    expect(await search('crash')).toEqual([c.id]);
+    expect(await search('crash', 'active')).toEqual([]);
+    expect(await search('100%')).toEqual([b.id]);
+    expect(await search('%')).toEqual([b.id]);
+    expect(await search('_')).toEqual([]);
+    expect(await search('   ')).toHaveLength(3);
+    // 编号只做精确匹配：部分编号不当包含搜。
+    expect(await search(a.id.slice(0, 5))).toEqual([]);
   });
 
   it('附件：截图原样；日志 ?view=text 解压成文本', async () => {
@@ -312,6 +458,26 @@ describe('网页处理台', () => {
     expect(out.status).toBe(303);
     expect(env.DB.raw.prepare('SELECT COUNT(*) n FROM dev_sessions').get().n).toBe(0);
     expect((await page(env, 'GET', '/dev', { cookie })).data).toContain('发送验证码');
+  });
+
+  it('列表有搜索框，q 过滤并在分页 / 状态标签里保留；时间线标出「反馈人标记完成」', async () => {
+    const env = makeEnv();
+    const dev = await makeDev(env);
+    const a = (await submit(env, { title: '阅读器白屏' })).data;
+    const b = (await submit(env, { title: '视频卡顿' })).data;
+    await withTicket(env, 'POST', `/v1/feedback/${b.id}/close`, b.ticket);
+    const cookie = (await webLogin(env, dev)).res.headers.get('Set-Cookie').split(';')[0];
+    const all = await page(env, 'GET', '/dev?status=all', { cookie });
+    expect(all.data).toContain('name="q"');
+    expect(all.data).toContain(`#${b.id}`);
+    const hit = await page(env, 'GET', `/dev?status=all&q=${encodeURIComponent('阅读器')}`, { cookie });
+    expect(hit.data).toContain(`/dev/f/${a.id}`);
+    expect(hit.data).not.toContain(`/dev/f/${b.id}`);
+    expect(hit.data).toContain('status=active&amp;q=');
+    const none = await page(env, 'GET', `/dev?status=all&q=${encodeURIComponent('不存在')}`, { cookie });
+    expect(none.data).toContain('没有匹配的反馈');
+    const detail = await page(env, 'GET', `/dev/f/${b.id}`, { cookie });
+    expect(detail.data).toContain('反馈人标记完成');
   });
 
   it('非开发者账户登录被拒，不建会话', async () => {

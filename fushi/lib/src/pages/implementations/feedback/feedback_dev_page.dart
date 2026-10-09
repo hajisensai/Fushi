@@ -65,22 +65,59 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
   bool _loaded = false;
   String? _error;
 
+  /// 服务端搜索（`q`：编号精确匹配、标题 / 正文包含）。输入防抖后重拉第一页。
+  final TextEditingController _search = TextEditingController();
+  final FocusNode _searchFocus = FocusNode(debugLabel: 'feedback-dev-search');
+  String _query = '';
+  Timer? _searchDebounce;
+
+  /// 每次重拉第一页 +1：换筛选 / 搜索时，比它旧的在途请求结果直接丢掉。
+  int _generation = 0;
+
   @override
   void initState() {
     super.initState();
     unawaited(_load(reset: true));
   }
 
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _search.dispose();
+    _searchFocus.dispose();
+    super.dispose();
+  }
+
+  void _onSearch(String value, {bool now = false}) {
+    _searchDebounce?.cancel();
+    void apply() {
+      if (!mounted || value.trim() == _query) return;
+      setState(() {
+        _query = value.trim();
+        _loaded = false;
+      });
+      unawaited(_load(reset: true));
+    }
+
+    if (now) {
+      apply();
+    } else {
+      _searchDebounce = Timer(const Duration(milliseconds: 400), apply);
+    }
+  }
+
   Future<void> _load({required bool reset}) async {
     final LeaderboardClient? client = _devClient(ref);
-    if (client == null || _loading) return;
+    if (client == null || (_loading && !reset)) return;
+    final int generation = reset ? ++_generation : _generation;
     setState(() => _loading = true);
     try {
       final FeedbackInboxPage page = await client.devFeedbackList(
         status: _filter,
         cursor: reset ? null : _next,
+        query: _query,
       );
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       setState(() {
         if (reset) _items.clear();
         _items.addAll(page.items);
@@ -148,6 +185,16 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
                 ),
               ),
               children: <Widget>[
+                FushiSearchField(
+                  fieldKey: const ValueKey<String>('feedback-dev-search'),
+                  controller: _search,
+                  focusNode: _searchFocus,
+                  hintText: t.feedback_search_hint,
+                  onChanged: _onSearch,
+                  onSubmitted: (String v) => _onSearch(v, now: true),
+                  onClear: () => _onSearch('', now: true),
+                ),
+                SizedBox(height: tokens.spacing.gap),
                 Wrap(
                   spacing: tokens.spacing.gap,
                   runSpacing: tokens.spacing.gap,
@@ -175,8 +222,12 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
                   const FushiLoadingView()
                 else if (_items.isEmpty)
                   FushiPlaceholderMessage(
-                    icon: FushiIcons.forum,
-                    message: t.feedback_dev_empty,
+                    icon: _query.isEmpty
+                        ? FushiIcons.forum
+                        : FushiIcons.searchOff,
+                    message: _query.isEmpty
+                        ? t.feedback_dev_empty
+                        : t.feedback_search_empty,
                   )
                 else ...<Widget>[
                   for (int i = 0; i < _items.length; i++)
@@ -200,6 +251,19 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
                                   '${feedbackTime(_items[i].updatedAt)}'
                                   '${_items[i].attachmentCount > 0 ? ' · ${t.feedback_detail_attachments(n: _items[i].attachmentCount)}' : ''}',
                                 ),
+                                FeedbackIdLabel(_items[i].id),
+                                if (_items[i].parentId != null)
+                                  Text(
+                                    t.feedback_reopen_of(
+                                      id: _items[i].parentId!,
+                                    ),
+                                    key: ValueKey<String>(
+                                      'feedback-dev-parent-${_items[i].id}',
+                                    ),
+                                    style: tokens.type.metadata.copyWith(
+                                      color: colors.primary,
+                                    ),
+                                  ),
                                 if (_items[i].flags.isNotEmpty)
                                   FeedbackFlagChips(_items[i].flags),
                               ],
@@ -402,15 +466,27 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
                           children: <Widget>[
                             FeedbackStatusBadge(d.status),
                             SizedBox(width: tokens.spacing.gap),
-                            Expanded(
-                              child: Text(
-                                '${feedbackCategoryLabel(d.summary.category)} · '
-                                '#${d.id} · ${feedbackTime(d.summary.createdAt)}',
-                                style: tokens.type.metadata,
-                              ),
-                            ),
+                            Expanded(child: FeedbackMetaLine(d)),
                           ],
                         ),
+                        if (d.summary.parentId != null ||
+                            d.reopenedAs.isNotEmpty) ...<Widget>[
+                          SizedBox(height: tokens.spacing.gap),
+                          FeedbackRelationLinks(
+                            parentId: d.summary.parentId,
+                            reopenedAs: d.reopenedAs,
+                            onOpen: (String id) => unawaited(
+                              Navigator.push(
+                                context,
+                                adaptivePageRoute<void>(
+                                  context: context,
+                                  builder: (_) =>
+                                      FeedbackDevDetailPage(feedbackId: id),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                         if (d.summary.flags.isNotEmpty) ...<Widget>[
                           SizedBox(height: tokens.spacing.gap),
                           FeedbackFlagChips(d.summary.flags),
@@ -514,7 +590,7 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
                 ],
                 SizedBox(height: tokens.spacing.card),
                 FushiSectionTitle(t.feedback_detail_timeline),
-                FeedbackTimeline(messages: d.messages),
+                FeedbackTimeline(messages: d.messages, developerView: true),
                 SizedBox(height: tokens.spacing.card),
                 FushiSectionTitle(t.feedback_dev_status),
                 Wrap(

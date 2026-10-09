@@ -71,6 +71,7 @@ class FeedbackSummary {
     this.attachmentCount = 0,
     this.awaitingDev = false,
     this.flags = const <String>[],
+    this.parentId,
   });
 
   factory FeedbackSummary.fromJson(FeedbackJson j) => FeedbackSummary(
@@ -88,6 +89,7 @@ class FeedbackSummary {
     flags: List<String>.unmodifiable(
       ((j['flags'] as List<Object?>?) ?? const <Object?>[]).whereType<String>(),
     ),
+    parentId: j['parentId'] as String?,
   );
 
   final String id;
@@ -111,6 +113,9 @@ class FeedbackSummary {
   /// 服务端打的风险标记（只有开发者接口给）：`injection` 疑似提示注入、`hidden_chars`
   /// 含已剥除的隐藏字符、`links` 链接较多、`duplicate:<id>` 与另一条内容相同。
   final List<String> flags;
+
+  /// 「问题没解决，重新提交」的新反馈指向的原反馈 id；普通反馈为 null。
+  final String? parentId;
 }
 
 /// 风险标记的种类（[FeedbackSummary.flags] 的解析结果）。
@@ -235,6 +240,7 @@ class FeedbackDetail {
     required this.body,
     required this.attachments,
     required this.messages,
+    this.reopenedAs = const <String>[],
     this.contact = '',
     this.meta = const <String, Object?>{},
     this.origin = const <String, Object?>{},
@@ -246,6 +252,10 @@ class FeedbackDetail {
     body: _str(j['body']),
     attachments: _list(j['attachments'], FeedbackAttachmentInfo.fromJson),
     messages: _list(j['messages'], FeedbackMessage.fromJson),
+    reopenedAs: List<String>.unmodifiable(
+      ((j['reopenedAs'] as List<Object?>?) ?? const <Object?>[])
+          .whereType<String>(),
+    ),
     contact: _str(j['contact']),
     meta: j['meta'] is Map
         ? Map<String, Object?>.unmodifiable(_map(j['meta']))
@@ -262,6 +272,9 @@ class FeedbackDetail {
   final String body;
   final List<FeedbackAttachmentInfo> attachments;
   final List<FeedbackMessage> messages;
+
+  /// 这条被重新提交成了哪几条（新的在后）。
+  final List<String> reopenedAs;
   final String contact;
 
   /// 客户端自报的设备 / 版本信息（可伪造）。

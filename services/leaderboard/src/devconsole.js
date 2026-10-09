@@ -138,6 +138,8 @@ h2{font-size:15px;margin:20px 0 8px}
 .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
 .tabs a{padding:4px 10px;border:1px solid var(--line);border-radius:999px;text-decoration:none;font-size:14px}
 .tabs a.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.search{display:flex;gap:6px;align-items:center;margin:0 0 12px}
+.search input[type=search]{flex:1;min-width:0;padding:6px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;background:transparent;color:inherit}
 .row{display:flex;gap:10px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--line);text-decoration:none}
 .row:last-child{border-bottom:0}
 .row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -233,27 +235,38 @@ const TABS = [['active', '未结案'], ...STATUSES.map((s) => [s, STATUS_LABEL[s
 
 async function listPage(env, url, dev) {
   const status = url.searchParams.get('status') || 'active';
+  const q = (url.searchParams.get('q') || '').trim();
   const res = await devList(env, {
     status: status === 'all' ? null : status,
     cursor: url.searchParams.get('cursor'),
     limit: 50,
+    q,
   });
-  const tabs = TABS.map(([k, label]) => `<a href="/dev?status=${k}"${k === status ? ' class="on"' : ''}>${esc(label)}</a>`).join('');
+  const qs = q ? `&amp;q=${encodeURIComponent(q)}` : '';
+  const tabs = TABS.map(([k, label]) => `<a href="/dev?status=${k}${qs}"${k === status ? ' class="on"' : ''}>${esc(label)}</a>`).join('');
+  const searchForm = `<form method="get" action="/dev" class="search">
+<input type="hidden" name="status" value="${esc(status)}">
+<input type="search" name="q" value="${esc(q)}" maxlength="100" placeholder="编号 / 标题 / 正文">
+<button>搜索</button>${q ? ` <a href="/dev?status=${esc(status)}">清除</a>` : ''}
+</form>`;
   const rows = res.items.map((f) => `<a class="row" href="/dev/f/${esc(f.id)}">
 <span class="badge s-${esc(f.status)}">${esc(STATUS_LABEL[f.status] || f.status)}</span>
 <span class="badge">${esc(CATEGORY_LABEL[f.category] || f.category)}</span>
+<span class="muted">#${esc(f.id)}</span>
+${f.parentId ? `<span class="badge">重新提交自 #${esc(f.parentId)}</span>` : ''}
 <span class="t">${esc(f.title)}</span>
 ${f.awaitingDev ? '<span class="badge new">新消息</span>' : ''}
 ${flagBadges(f.flags)}
 <span class="muted">${esc(fmtTime(f.updatedAt))}</span>
 </a>`).join('');
   const more = res.next
-    ? `<p><a href="/dev?status=${esc(status)}&amp;cursor=${encodeURIComponent(res.next)}">下一页</a></p>`
+    ? `<p><a href="/dev?status=${esc(status)}${qs}&amp;cursor=${encodeURIComponent(res.next)}">下一页</a></p>`
     : '';
   return html(layout('反馈', `<h1>反馈</h1>
 <p class="muted">${esc(dev.nickname)}，你好。</p>
 <nav class="tabs">${tabs}</nav>
-<div class="card">${rows || '<p class="muted">没有反馈。</p>'}</div>
+${searchForm}
+<div class="card">${rows || `<p class="muted">${q ? '没有匹配的反馈。' : '没有反馈。'}</p>`}</div>
 ${more}`, { signedIn: true }));
 }
 
@@ -277,7 +290,10 @@ async function detailPage(env, id) {
     : '<p class="muted">未附日志。</p>';
   const timeline = f.messages.map((m) => {
     const who = m.author === 'dev' ? `开发者 ${esc(m.nickname || '')}` : '反馈人';
-    const st = m.status ? ` · 状态 → ${esc(STATUS_LABEL[m.status] || m.status)}` : '';
+    // 反馈人在 App 里点「标记为已完成」（POST /v1/feedback/:id/close）。
+    const st = m.author === 'user' && m.status === 'closed'
+      ? ' · 反馈人标记完成'
+      : m.status ? ` · 状态 → ${esc(STATUS_LABEL[m.status] || m.status)}` : '';
     const body = m.body ? `<div class="body">${esc(m.body)}</div>` : '';
     return `<div class="msg ${m.author}"><div class="muted">${who} · ${esc(fmtTime(m.createdAt))}${st}</div>${body}</div>`;
   }).join('');
@@ -290,6 +306,8 @@ async function detailPage(env, id) {
 <p class="muted"><span class="badge s-${esc(f.status)}">${esc(STATUS_LABEL[f.status] || f.status)}</span>
 ${esc(CATEGORY_LABEL[f.category] || f.category)} · #${esc(f.id)} · ${esc(fmtTime(f.createdAt))} · ${reporter}
 ${f.contact ? ` · 联系方式：${esc(f.contact)}` : ''}</p>
+${f.parentId ? `<p>重新提交自 <a href="/dev/f/${esc(f.parentId)}">#${esc(f.parentId)}</a></p>` : ''}
+${f.reopenedAs && f.reopenedAs.length ? `<p>已被重新提交为 ${f.reopenedAs.map((x) => `<a href="/dev/f/${esc(x)}">#${esc(x)}</a>`).join('、')}</p>` : ''}
 ${f.flags && f.flags.length ? `<p>${flagBadges(f.flags)}</p>` : ''}
 <p class="note">${esc(UNTRUSTED_NOTE)}</p>
 <div class="card"><div class="body">${esc(f.body)}</div></div>
