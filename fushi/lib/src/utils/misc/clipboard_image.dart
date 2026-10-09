@@ -1,3 +1,5 @@
+/// 系统剪贴板与图片：写（[copyImageToClipboard]）与读（[readClipboardImage]）。
+///
 /// 把一张图片写进系统剪贴板。
 ///
 /// 走的是本仓自有的 [FushiChannels.clipboardImage]（`copyImageFile`，入参
@@ -65,4 +67,47 @@ void _purge(Directory dir) {
       } catch (_) {}
     }
   } catch (_) {}
+}
+
+/// 剪贴板里读到的图片。
+///
+/// 两种来源：截图工具（QQ / 微信 / 系统截图）放进来的位图——[bytes]，平台侧已编成
+/// PNG（或剪贴板里本来就是 PNG / JPEG 容器字节，原样给）；文件管理器里复制的文件——
+/// [paths]，本地绝对路径，可能混着非图片文件，由调用方过滤。
+class ClipboardImageData {
+  const ClipboardImageData({this.bytes, this.paths = const <String>[]});
+
+  final Uint8List? bytes;
+  final List<String> paths;
+
+  bool get isEmpty => (bytes == null || bytes!.isEmpty) && paths.isEmpty;
+}
+
+/// 读系统剪贴板里的图片（`readImage`，与 [copyImageToClipboard] 同一条
+/// [FushiChannels.clipboardImage]）。
+///
+/// 剪贴板里没有图片、或这个平台还没接这条方法时返回 null。读失败（平台侧报错）照常
+/// 抛出，由调用方记日志——不吞。
+Future<ClipboardImageData?> readClipboardImage() async {
+  final Map<Object?, Object?>? raw;
+  try {
+    raw = await FushiChannels.clipboardImage.invokeMapMethod<Object?, Object?>(
+      'readImage',
+    );
+  } on MissingPluginException {
+    return null;
+  }
+  if (raw == null) return null;
+  final Object? bytes = raw['bytes'];
+  final Object? paths = raw['paths'];
+  final ClipboardImageData data = ClipboardImageData(
+    bytes: bytes is Uint8List && bytes.isNotEmpty ? bytes : null,
+    paths: paths is List<Object?>
+        ? <String>[
+            for (final Object? path in paths)
+              if (path is String && path.isNotEmpty) path,
+          ]
+        : const <String>[],
+  );
+  return data.isEmpty ? null : data;
 }

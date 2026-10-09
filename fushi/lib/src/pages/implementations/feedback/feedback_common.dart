@@ -1,40 +1,42 @@
 // 反馈页面共用：状态 / 分类文案、状态徽标、错误转人话、时间线、图片压缩、入口。
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart';
+import 'package:fushi/src/feedback/feedback_entry_gate.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.dart';
+import 'package:fushi/src/utils/misc/clipboard_image.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:image/image.dart' as img;
 import 'package:material_ui/material_ui.dart';
+import 'package:path/path.dart' as p;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 打开反馈中心。[captureScreen] 时先截下当前画面（打开前截，截到的是用户正在看的
 /// 页面），作为新反馈的默认截图。首页按钮与悬浮球共用这一个入口。
+///
+/// 经 [feedbackEntryGate]：已经开着时忽略重复点击；有页面转场在跑时等它走完再截，
+/// 不会截到两页叠在一起的中间帧（BUG-3097）。
 Future<void> openFeedbackCenter(
   BuildContext context, {
   bool captureScreen = true,
-}) async {
-  final Uint8List? shot = captureScreen
-      ? await captureFeedbackScreenshot()
-      : null;
-  if (!context.mounted) return;
-  await Navigator.push(
-    context,
-    adaptivePageRoute<void>(
-      context: context,
-      builder: (_) => FeedbackCenterPage(initialScreenshot: shot),
-    ),
-  );
-}
+}) => feedbackEntryGate.open(
+  context,
+  captureScreen: captureScreen,
+  route: (Uint8List? shot) => adaptivePageRoute<void>(
+    context: context,
+    builder: (_) => FeedbackCenterPage(initialScreenshot: shot),
+  ),
+);
 
 String feedbackStatusLabel(FeedbackStatus status) => switch (status) {
   FeedbackStatus.open => t.feedback_status_open,
@@ -301,6 +303,58 @@ Uint8List prepareFeedbackImageBytes(Uint8List bytes) {
     jpg = img.encodeJpg(out, quality: quality);
   }
   return jpg;
+}
+
+/// 从文件管理器复制的文件里，按扩展名认作图片的那些。
+const Set<String> kFeedbackClipboardImageExtensions = <String>{
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.webp',
+  '.bmp',
+  '.gif',
+};
+
+/// 被复制的单个图片文件读取上限：再大就不是截图了，也不该整个读进内存。
+const int kFeedbackClipboardFileMaxBytes = 64 * 1024 * 1024;
+
+/// 从系统剪贴板取出可加入反馈的图片，最多 [limit] 张，每张已按反馈上限处理过
+/// （[prepareFeedbackImage]：超限转 JPEG 缩小）。
+///
+/// 截图工具放进来的位图优先，其次是在文件管理器里复制的图片文件（按扩展名过滤，
+/// 非图片文件跳过）。剪贴板里没有图片返回空表；读剪贴板本身失败照常抛出。单个文件
+/// 读不了 / 解不出来只跳过那一个并记日志。
+Future<List<Uint8List>> readFeedbackImagesFromClipboard({
+  required int limit,
+}) async {
+  if (limit <= 0) return const <Uint8List>[];
+  final ClipboardImageData? data = await readClipboardImage();
+  if (data == null) return const <Uint8List>[];
+  final List<Uint8List> raw = <Uint8List>[?data.bytes];
+  for (final String path in data.paths) {
+    if (raw.length >= limit) break;
+    if (!kFeedbackClipboardImageExtensions.contains(
+      p.extension(path).toLowerCase(),
+    )) {
+      continue;
+    }
+    try {
+      final File file = File(path);
+      if (await file.length() > kFeedbackClipboardFileMaxBytes) continue;
+      raw.add(await file.readAsBytes());
+    } on FileSystemException catch (e, st) {
+      ErrorLogService.instance.log('feedback.paste_image_file', e, st);
+    }
+  }
+  final List<Uint8List> out = <Uint8List>[];
+  for (final Uint8List bytes in raw.take(limit)) {
+    try {
+      out.add(await prepareFeedbackImage(bytes));
+    } on FormatException catch (e, st) {
+      ErrorLogService.instance.log('feedback.paste_image_decode', e, st);
+    }
+  }
+  return out;
 }
 
 /// 反馈中心入口按钮上的未读数（有开发者新进展）。

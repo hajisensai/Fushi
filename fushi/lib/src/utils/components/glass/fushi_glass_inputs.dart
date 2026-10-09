@@ -42,6 +42,11 @@ Widget _fushiDefaultContextMenuBuilder(
   );
 }
 
+/// 设计系统默认的文本框长按 / 右键菜单（Apple 设计系统下自动换成 Cupertino 菜单）。
+/// 包装组件「没给自定义菜单」时传它，而不是传 null（null = 不要菜单）。
+const EditableTextContextMenuBuilder fushiDefaultTextContextMenuBuilder =
+    _fushiDefaultContextMenuBuilder;
+
 Widget _cupertinoContextMenuBuilder(
   BuildContext context,
   EditableTextState editableTextState,

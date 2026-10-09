@@ -94,6 +94,37 @@ describe('反馈人', () => {
     expect(env.DB.raw.prepare('SELECT bytes FROM media_usage').get().bytes).toBe(PNG.length + gz.length);
   });
 
+  it('反馈人取回自己的截图：只认本条 ticket、只给截图槽位、限次、响应禁缓存禁脚本', async () => {
+    const env = makeEnv();
+    const { id, ticket } = (await submit(env)).data;
+    const put = (slot, bytes) => withTicket(env, 'PUT', `/v1/feedback/${id}/attachments/${slot}`, ticket, { body: bytes });
+    expect((await put('s0', PNG)).status).toBe(201);
+    expect((await put('log', new Uint8Array(gzipSync(Buffer.from('secret log\n'))))).status).toBe(201);
+    const get = (slot, t = ticket, now = NOW) => withTicket(env, 'GET', `/v1/feedback/${id}/attachments/${slot}`, t, { now });
+
+    const ok = await get('s0');
+    expect(ok.status).toBe(200);
+    expect(ok.res.headers.get('Content-Type')).toBe('image/png');
+    expect(ok.res.headers.get('Cache-Control')).toContain('no-store');
+    expect(ok.res.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(ok.res.headers.get('Content-Security-Policy')).toBe("default-src 'none'");
+    // 日志不回传；空槽位 / 越界槽位与日志同样 404（不区分）。
+    expect((await get('log')).status).toBe(404);
+    expect((await get('s1')).status).toBe(404);
+    expect((await get('s9')).status).toBe(404);
+    // 别人的回执 / 没有回执 / 别的反馈 id 都拿不到。
+    const other = (await submit(env)).data;
+    expect((await get('s0', other.ticket)).status).toBe(404);
+    expect((await call(env, 'GET', `/v1/feedback/${id}/attachments/s0`, { now: NOW })).status).toBe(404);
+    expect((await withTicket(env, 'GET', `/v1/feedback/${other.id}/attachments/s0`, ticket)).status).toBe(404);
+    // 单条反馈按小时限次（第 1 次已用掉一个名额）。
+    for (let i = 1; i < FEEDBACK_LIMITS.reporterDownloadsPerFeedbackHour; i++) {
+      expect((await get('s0')).status).toBe(200);
+    }
+    expect((await get('s0')).status).toBe(429);
+    expect((await get('s0', ticket, NOW + 3600 * 1000)).status).toBe(200);
+  });
+
   it('追加说明；结案后追加会重新打开', async () => {
     const env = makeEnv();
     const dev = await makeDev(env);

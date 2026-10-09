@@ -6,6 +6,7 @@
 //   POST /v1/feedback/status                  {items:[{id, ticket}] ≤ 50} → 各条进度摘要（凭据不对的条目不返回）
 //   GET  /v1/feedback/:id                     [X-Fushi-Ticket] 详情 + 时间线
 //   POST /v1/feedback/:id/messages            [X-Fushi-Ticket] {body} 追加说明
+//   GET  /v1/feedback/:id/attachments/:slot   [X-Fushi-Ticket] 本人取回自己的截图（s0..s2；日志不回传）
 //
 // 开发者（签名，账户 role = 'dev'；网页处理台 devconsole.js 复用同一组函数）：
 //   GET  /v1/dev/feedback?status&cursor&limit
@@ -15,7 +16,10 @@
 //
 // ticket 是提交时服务端生成、只返回这一次的随机串；库里只存 SHA-256。ticket 泄露 = 那一条反馈
 // 的进度可被看到 / 被追加回复，影响面只有这一条。附件只能在提交后 24 小时内补传，且每个槽位只收一次，
-// 所以 ticket 也拿不来当无限网盘。
+// 所以 ticket 也拿不来当无限网盘。反馈人取回附件同样只认本条的 ticket，并且只给截图槽位（压缩日志
+// 是开发者排查用的，不回传给持有 ticket 的任何人）；按单条反馈每小时限次，响应 no-store + CSP
+// `default-src 'none'` + nosniff，内容在上传时已按魔数 / 宽高验过是真图片——上传窗口 24 小时、
+// 每槽一次、单张 1.5 MiB、结案 90 天后清除，下载再多也装不进新东西，ticket 当不了网盘。
 //
 // 成本：提交按 IP 限流 + 全局日预算 feedback；附件扣 media 预算并预占 R2 配额；已结案 90 天的
 // 附件由定时任务清掉（purgeFeedbackAttachments），只留文字记录。
@@ -63,6 +67,8 @@ export const FEEDBACK_LIMITS = {
   attachmentRetentionMs: 90 * 24 * HOUR,
   /** 单条反馈追加说明的累计上限（防止一张回执被拿来无限灌消息）。 */
   messagesPerFeedbackTotal: 100,
+  /** 反馈人取回自己截图的次数上限（单条反馈每小时；详情页每次最多 3 张）。 */
+  reporterDownloadsPerFeedbackHour: 60,
   /** 同来源同内容重复提交的拒收窗口。 */
   duplicateWindowMs: HOUR,
   /** 跨来源同内容打 duplicate 标记的回看窗口。 */
@@ -70,6 +76,7 @@ export const FEEDBACK_LIMITS = {
 };
 
 const SLOT_RE = /^(log|s[0-2])$/;
+const SCREENSHOT_SLOT_RE = /^s[0-2]$/;
 export const FEEDBACK_ID_RE = /^[A-Za-z0-9_-]{8,16}$/;
 
 /**
@@ -490,6 +497,21 @@ export async function attachmentResponse(env, row, slot, asText) {
   });
 }
 
+/**
+ * 反馈人取回自己的截图（调用方已用 feedbackForTicket 核对过 ticket）。日志槽位与不存在的槽位一律
+ * 404（不区分，免得探测）；单条反馈按小时限次。
+ */
+export async function reporterAttachmentResponse(env, row, slot, now) {
+  if (!SCREENSHOT_SLOT_RE.test(slot)) throw new HttpError(404, 'not_found');
+  if (!parseAttachments(row).some((a) => a.slot === slot && a.kind === 'screenshot')) {
+    throw new HttpError(404, 'not_found');
+  }
+  await hit(env, `feedback:get:${row.id}`, HOUR, FEEDBACK_LIMITS.reporterDownloadsPerFeedbackHour, now);
+  const res = await attachmentResponse(env, row, slot, false);
+  res.headers.set('Content-Security-Policy', "default-src 'none'");
+  return res;
+}
+
 export function requireDev(account) {
   if (!account || account.role !== 'dev') throw new HttpError(403, 'not_developer');
   return account;
@@ -559,6 +581,9 @@ export async function routeFeedback(request, env, url, now, io) {
   }
   if (method === 'GET' && (m = RE.one.exec(path))) {
     return json(await reporterView(env, await feedbackForTicket(env, m[1], ticket)), 200, noStore);
+  }
+  if (method === 'GET' && (m = RE.attach.exec(path))) {
+    return reporterAttachmentResponse(env, await feedbackForTicket(env, m[1], ticket), m[2], now);
   }
   if (method === 'PUT' && (m = RE.attach.exec(path))) {
     const row = await feedbackForTicket(env, m[1], ticket);

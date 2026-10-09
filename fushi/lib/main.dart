@@ -102,6 +102,7 @@ import 'package:fushi/src/platform/engine_deep_link_route_guard.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart';
+import 'package:fushi/src/feedback/feedback_entry_gate.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
@@ -2410,6 +2411,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           navigatorObservers: <NavigatorObserver>[
             appModel.focusHighlightObserver,
             floatingBallRouteObserver,
+            // 反馈自动截图要等转场走完再截（BUG-3097）。
+            feedbackRouteTransitions,
           ],
           home: home,
           locale: locale,

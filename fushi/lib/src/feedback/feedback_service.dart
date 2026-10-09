@@ -11,6 +11,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart';
+import 'package:fushi/src/feedback/feedback_draft_store.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -95,6 +96,12 @@ class FeedbackService extends ChangeNotifier {
 
   Future<FeedbackTicketStore> _storeFor() async =>
       _store ??= FeedbackTicketStore(await _supportRoot());
+
+  FeedbackDraftStore? _draftStore;
+
+  /// 提交页草稿（本机一份，见 [FeedbackDraftStore]）。
+  Future<FeedbackDraftStore> draftStore() async =>
+      _draftStore ??= FeedbackDraftStore(await _supportRoot());
 
   Future<void> load() => _loading ??= _load();
 
@@ -240,6 +247,13 @@ class FeedbackService extends ChangeNotifier {
     }
     await _applyDetail(t, d);
     return d;
+  }
+
+  /// 取回自己这条反馈的一张截图（凭本机 ticket；服务端只给截图槽位）。
+  Future<Uint8List> screenshot(String id, String slot) async {
+    final FeedbackTicket? t = byId(id);
+    if (t == null) throw StateError('unknown feedback $id');
+    return _client().feedbackScreenshot(t.id, t.ticket, slot);
   }
 
   /// 追加说明，返回更新后的详情。
