@@ -103,12 +103,14 @@ void main() {
         reason: 'back target must go through a visibility fallback.');
     final int getterStart = home.indexOf('HomeTab get _previousVisibleTab');
     final String getterBody = home.substring(getterStart, getterStart + 200);
-    expect(getterBody, contains('_activeTabs().contains(_previousTab)'),
+    expect(getterBody, contains('_activeTabs()'),
         reason: 'the fallback must test the previous tab against the active '
             'tab set, otherwise a hidden module traps the user in settings.');
-    expect(getterBody, contains('HomeTab.home'),
-        reason: 'when the previous tab is hidden, fall back to a tab that is '
-            'always present.');
+    expect(getterBody, contains('.contains(_previousTab)'));
+    // #2052 起首页本身也可关闭：回落到当前可见的默认落地页，而不是写死 home。
+    expect(getterBody, contains('homeLandingTab('),
+        reason: 'when the previous tab is hidden, fall back to the landing tab '
+            'among the visible ones.');
     expect(body, isNot(contains('_selectTab(_previousTab)')),
         reason: 'the macOS back button must not bypass the visibility '
             'fallback.');

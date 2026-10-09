@@ -62,11 +62,13 @@ void main() {
     final String src = File(
       'lib/src/pages/implementations/video_fushi/fullscreen.part.dart',
     ).readAsStringSync().replaceAll('\r\n', '\n');
-    final int route = src.indexOf('PageRouteBuilder<void>(');
+    // BUG-3223（#2054）起全屏路由是 WindowFullscreenHostPageRoute（PageRouteBuilder
+    // 子类，install 时即登记为全屏宿主）。
+    final int route = src.indexOf('WindowFullscreenHostPageRoute<void>(');
     expect(route, isNonNegative);
     final int builder = src.indexOf('pageBuilder:', route);
     expect(
-      src.substring(builder, builder + 160),
+      src.substring(builder, builder + 200),
       contains('_buildVideoFloatingBallScene('),
       reason: '全屏路由不登记视频场景，悬浮球在全屏下只剩「其它页面」按钮',
     );

@@ -106,6 +106,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 403 `disabled`、不起进程。harness 里没有起 server，探不到。由专项测试咬住。
   'interconnect/Allow remote launch':
       'packages/fushi_engine/test/game_stream_launch_settings_test.dart',
+  // #2052 起首页模块也可关闭：底栏少一格 + 落地页回落，由专项测试咬住。
+  'appearance/Home': 'test/pages/home_module_home_optional_test.dart',
   'appearance/Books': 'test/pages/home_page_tabs_test.dart',
   'appearance/Manga': 'test/pages/home_page_tabs_test.dart',
   'appearance/Video': 'test/pages/home_page_tabs_test.dart',
