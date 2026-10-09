@@ -108,7 +108,7 @@ void main() {
 
   // 歌词模式（用户 10-09 选方案 A）：歌词页按封面取色（青），查词弹窗原来跟
   // 阅读器纸色 + app 主色（紫），两者撞色。现在歌词模式下弹窗直接复用歌词页
-  // 那份封面 scheme，退出（传 null）回到原纸色主题。
+  // 那份封面 scheme，退出（传 null）回到 app ColorScheme 主题。
   group('歌词模式：弹窗跟随封面取色 scheme', () {
     final ColorScheme coverLight = ColorScheme.fromSeed(
       seedColor: const Color(0xFF00838F),
@@ -128,8 +128,6 @@ void main() {
         resolveDictionaryPopupTheme(
           eink: eink,
           einkDark: false,
-          readerBackground: paperBg,
-          readerForeground: paperFg,
           readerDark: false,
           buildColorScheme: eink ? buildEinkColorScheme : purple,
           textTheme: const TextTheme(),
@@ -147,8 +145,8 @@ void main() {
       expect(cs.primary, isNot(purple(Brightness.light).primary),
           reason: '歌词模式下不得再用 app 主色');
       expect(resolved.fillColor, coverLight.surface);
-      expect(resolved.fillColor, isNot(paperBg),
-          reason: '歌词页铺的是封面色，弹窗外壳不能再是正文纸色');
+      expect(resolved.fillColor, isNot(purple(Brightness.light).surface),
+          reason: '歌词页铺的是封面色，弹窗外壳不能再是 app 主题的 surface');
     });
 
     test('明暗跟封面 scheme（与歌词页一致），不读阅读器纸色明暗', () {
@@ -159,18 +157,16 @@ void main() {
       expect(resolved.fillColor, coverDark.surface);
     });
 
-    test('不传（退出歌词模式）= 原来的纸色 + app 主色主题，逐字段一致', () {
+    test('不传（退出歌词模式）= app ColorScheme 主题，逐字段一致', () {
       final DictionaryPopupTheme normal = resolve();
       final DictionaryPopupTheme baseline = resolveDictionaryPopupTheme(
         eink: false,
         einkDark: false,
-        readerBackground: paperBg,
-        readerForeground: paperFg,
         readerDark: false,
         buildColorScheme: purple,
         textTheme: const TextTheme(),
       );
-      expect(normal.fillColor, paperBg);
+      expect(normal.fillColor, purple(Brightness.light).surface);
       expect(normal.theme.colorScheme, baseline.theme.colorScheme);
       expect(normal.theme.colorScheme.primary,
           purple(Brightness.light).primary);
