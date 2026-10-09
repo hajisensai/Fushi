@@ -60,7 +60,76 @@ enum ModifierKey {
     }
     return null;
   }
+
+  /// 给用户看的修饰键名（BUG-3203）。[label] 是**持久化 token**（`Ctrl` / `Meta`，
+  /// 进 JSON、同步与 popup 线协议），绝不能拿来显示：macOS 上把它原样显示出来，
+  /// 用户看到的就是 Windows 的 `Ctrl` / `Alt` / `Meta`，而不是键帽上印的
+  /// ⌃ ⌥ ⇧ ⌘。所有显示快捷键的地方都经 [shortcutModifierDisplayLabel] 走这里。
+  String displayLabelOn(TargetPlatform platform) {
+    if (!shortcutUsesAppleSymbols(platform)) return label;
+    switch (this) {
+      case ctrl:
+        return '⌃'; // ⌃ Control
+      case shift:
+        return '⇧'; // ⇧ Shift
+      case alt:
+        return '⌥'; // ⌥ Option
+      case meta:
+        return '⌘'; // ⌘ Command
+    }
+  }
 }
+
+/// 快捷键显示走 Apple 键帽符号（⌃ ⌥ ⇧ ⌘）的平台：macOS，以及接了实体键盘的
+/// iPad（iPadOS 的快捷键菜单同样印这套符号）。
+bool shortcutUsesAppleSymbols(TargetPlatform platform) =>
+    platform == TargetPlatform.macOS || platform == TargetPlatform.iOS;
+
+/// 快捷键显示的平台口径：默认 [defaultTargetPlatform]（widget test 可经
+/// `debugDefaultTargetPlatformOverride` 覆盖）。
+TargetPlatform get shortcutDisplayPlatform => defaultTargetPlatform;
+
+/// 修饰键按显示顺序排好、换成显示名（BUG-3203）。Apple 平台按 HIG 的
+/// ⌃ ⌥ ⇧ ⌘ 排，其它平台沿用 [ModifierKey] 的声明顺序（Ctrl+Shift+Alt+Meta，
+/// 与历史显示一致）。
+List<String> shortcutModifierDisplayLabels(
+  Iterable<ModifierKey> modifiers, {
+  TargetPlatform? platform,
+}) {
+  final TargetPlatform p = platform ?? shortcutDisplayPlatform;
+  final List<ModifierKey> order = shortcutUsesAppleSymbols(p)
+      ? const <ModifierKey>[
+          ModifierKey.ctrl,
+          ModifierKey.alt,
+          ModifierKey.shift,
+          ModifierKey.meta,
+        ]
+      : ModifierKey.values;
+  final Set<ModifierKey> present = modifiers.toSet();
+  return <String>[
+    for (final ModifierKey m in order)
+      if (present.contains(m)) m.displayLabelOn(p),
+  ];
+}
+
+/// 单个修饰键的显示名（键盘示意图的修饰键键帽等只显示一个键的地方）。
+String shortcutModifierDisplayLabel(
+  ModifierKey modifier, {
+  TargetPlatform? platform,
+}) =>
+    modifier.displayLabelOn(platform ?? shortcutDisplayPlatform);
+
+/// 把「修饰键显示名 + 主键显示名」拼成一行文本（BUG-3203）：Apple 平台按系统
+/// 菜单的写法直接相连（`⌃⌥D`），其它平台用 `+` 连接（`Ctrl+Alt+D`）。键帽式
+/// 展示请直接用分段列表（[InputBinding.displayParts]），不要再把这行文本按 `+`
+/// 拆回去——主键本身可能就是 `+`。
+String joinShortcutDisplayParts(
+  List<String> parts, {
+  TargetPlatform? platform,
+}) =>
+    parts.join(
+      shortcutUsesAppleSymbols(platform ?? shortcutDisplayPlatform) ? '' : '+',
+    );
 
 @immutable
 class InputBinding {
@@ -360,10 +429,20 @@ class InputBinding {
         _keyToken(key),
       ].join('+');
 
-  String get displayLabel => <String>[
-        ..._sortedModifierLabels,
+  /// 给用户看的分段（修饰键在前、主键在后），每段一枚键帽。显示快捷键的唯一
+  /// 入口（BUG-3203）：修饰键名按平台走 [shortcutModifierDisplayLabels]，macOS
+  /// 上是 ⌃ ⌥ ⇧ ⌘ 而不是持久化 token 的 Ctrl / Alt / Meta。
+  List<String> displayPartsOn([TargetPlatform? platform]) => <String>[
+        ...shortcutModifierDisplayLabels(modifiers, platform: platform),
         _keyLabel(key),
-      ].join('+');
+      ];
+
+  /// [displayPartsOn] 的当前平台版本。
+  List<String> get displayParts => displayPartsOn();
+
+  /// 一行文本形式（tooltip / 菜单后缀 / 设置里的 chip）：见
+  /// [joinShortcutDisplayParts]。
+  String get displayLabel => joinShortcutDisplayParts(displayParts);
 
   /// Flutter [SingleActivator] for this binding, so a registry binding can be
   /// installed into widgets that take a `Map<ShortcutActivator, VoidCallback>`
@@ -707,9 +786,13 @@ class WheelBinding {
         direction.token,
       ].join('+');
 
-  /// 与 [InputBinding.displayLabel] 同形（`Alt+WheelDown`）。本地化显示名在
-  /// `shortcut_labels.dart` 的 [WheelBindingLabel] 里（那里把方向换成人话）。
-  String get displayLabel => serialize();
+  /// 与 [InputBinding.displayLabel] 同形（`Alt+WheelDown`，macOS 上 `⌥WheelDown`）。
+  /// 本地化显示名在 `shortcut_labels.dart` 的 [WheelBindingLabel] 里（那里把方向
+  /// 换成人话）。
+  String get displayLabel => joinShortcutDisplayParts(<String>[
+        ...shortcutModifierDisplayLabels(modifiers),
+        direction.token,
+      ]);
 
   static WheelBinding? deserialize(String s) {
     if (s.isEmpty) return null;

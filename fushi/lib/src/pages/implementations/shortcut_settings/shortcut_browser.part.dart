@@ -1925,7 +1925,9 @@ class _BindingKeycap extends StatelessWidget {
 
   Widget _keyboardFaces(BuildContext context, InputBinding binding) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final List<String> parts = _keyParts(binding.displayLabel);
+    // 分段直接取绑定的显示分段（BUG-3203）：macOS 上修饰键是 ⌃⌥⇧⌘ 且整行文本
+    // 不再用 `+` 连接，按 `+` 拆 displayLabel 会把它们挤成一枚键帽。
+    final List<String> parts = binding.displayParts;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -1936,20 +1938,6 @@ class _BindingKeycap extends StatelessWidget {
       ],
     );
   }
-}
-
-/// 把 `Ctrl+Shift+F` 拆成键帽；`Ctrl++`（键本身是加号）末尾的空段还原成 `+`。
-List<String> _keyParts(String label) {
-  final List<String> raw = label.split('+');
-  final List<String> parts = <String>[];
-  for (int i = 0; i < raw.length; i++) {
-    if (raw[i].isEmpty) {
-      if (parts.isEmpty || parts.last != '+') parts.add('+');
-      continue;
-    }
-    parts.add(raw[i]);
-  }
-  return parts;
 }
 
 /// 单枚键帽：M3E 是 secondaryContainer 实底 + 底部 2px 加深台阶，Apple 是
