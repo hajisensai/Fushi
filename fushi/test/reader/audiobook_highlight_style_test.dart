@@ -169,6 +169,54 @@ void main() {
         contains('--fushi-sentence-audio-background-color: rgba(0,0,0,0.0);'),
       );
     });
+
+    // SRT / VTT / LRC 合成书的当前句走 AudiobookBridge 的 `.fushi-active`（分页、
+    // 滚动、VN 的 highlightSelectorCue 都是它），不是 sasayaki 的 wrapper / ::highlight。
+    // 样式组对它也必须生效，且随正文 CSS 热更（bridge 只在进章时注入）。
+    String? plainCueRule(String css) {
+      final RegExpMatch? m = RegExp(
+        r'(?:^|\n)\.fushi-active \{([^{}]*)\}',
+      ).firstMatch(css);
+      return m?.group(1);
+    }
+
+    test('SRT 类书的 .fushi-active 读同一组变量；默认不改字色', () async {
+      final ReaderSettings settings = await _settings();
+      final String plain = ReaderContentStyles.css(
+        settings: settings,
+        sentenceAudioHighlightColor: 'rgba(255,200,0,0.4)',
+      );
+      final String? plainRule = plainCueRule(plain);
+      expect(plainRule != null, isTrue);
+      expect(
+        plainRule,
+        contains(
+          'background-color: var(--fushi-sentence-audio-background-color) '
+          '!important;',
+        ),
+      );
+      expect(plainRule, isNot(contains('--fushi-sentence-audio-text-color')));
+
+      final String recolored = ReaderContentStyles.css(
+        settings: settings,
+        sentenceAudioHighlightColor: 'rgba(0,0,0,0.0)',
+        sentenceAudioTextColor: 'rgba(255,200,0,1.0)',
+      );
+      expect(
+        plainCueRule(recolored),
+        contains('color: var(--fushi-sentence-audio-text-color) !important;'),
+      );
+    });
+
+    test('墨水屏不给 .fushi-active 套变量（墨水屏把变量钉成透明）', () async {
+      final ReaderSettings settings = await _settings();
+      final String eink = ReaderContentStyles.css(
+        settings: settings,
+        sentenceAudioTextColor: 'rgba(255,200,0,1.0)',
+        einkMode: true,
+      );
+      expect(plainCueRule(eink), isNull);
+    });
   });
 
   group('歌词逐字跟读渐变开关', () {

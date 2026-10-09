@@ -1007,6 +1007,7 @@ ruby.fushi-selection-ruby-active .fushi-sentence-audio-cue.fushi-sentence-audio-
   background-color: transparent !important;
   box-shadow: none !important;
 }
+${einkMode ? '' : _plainCueActiveCss(customText: sentenceAudioTextColor != null)}
 /* 链接色**恒** !important，不跟随「优先书籍样式」。这是阅读器唯一强制链接色的地方：
    撤掉后书自带的 `a{color:#000}`（EPUB 里极常见）在深色主题（背景 #0A0A0A）下就是
    黑底黑字，脚注/注释跳转链接直接不可见。开关的正当理由是「出版商 CSS 是为它自带的
@@ -1017,6 +1018,29 @@ a {
 }
 ${einkMode ? _einkOverrideCss(einkDark: einkDark) : ''}
 ''';
+  }
+
+  /// 非 sasayaki cue（SRT / VTT / LRC 合成书的 `[data-cue-id]`、`[data-fushi-sid]`）
+  /// 的当前句由 `AudiobookBridge` 打 `.fushi-active`（分页 / 滚动 / VN 的
+  /// `highlightSelectorCue` 都是它），底色原本只取 bridge 注入时的高亮色——「当前句
+  /// 高亮」样式组（底色开关 / 自定义字色）对这类书完全不生效，且 bridge 只在进章时
+  /// 注入、改设置不会刷新。这里让它读与 sasayaki 路径同一组 CSS 变量（随正文 CSS
+  /// 热更）。
+  ///
+  /// - 底色恒读变量：默认值就是同一个高亮色，开着底色时观感不变。
+  /// - 字色只在用户设了自定义字色 / 关了底色时才写：默认不改 `.fushi-active` 的字色
+  ///   （历史行为，书自带的彩色字不被压成正文色）。
+  /// - 墨水屏不输出：墨水屏把这组变量钉成透明 / inherit，套上去当前句就看不见了，
+  ///   保持 bridge 原样。
+  static String _plainCueActiveCss({required bool customText}) {
+    final String color = customText
+        ? '  color: var(--fushi-sentence-audio-text-color) !important;\n'
+        : '';
+    return '.fushi-active {\n'
+        '$color'
+        '  background-color: var(--fushi-sentence-audio-background-color) '
+        '!important;\n'
+        '}';
   }
 
   /// 墨水屏模式覆盖块（追加在正文 CSS 最末尾，级联优先级最高）。
