@@ -13,6 +13,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart'
@@ -1083,8 +1084,8 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
   }
 }
 
-/// 章节页的列表：自己持有滚动控制器与当前章行的 GlobalKey，按需把当前章滚进
-/// 视野（偏上 1/3）。每个挂载实例独立，页签切换动画里新旧两份同时存活也不会
+/// 章节页的列表：自己持有滚动控制器与当前章行的 GlobalKey，按需（定位按钮，
+/// 或播放跨章且旧当前章正在视野里时）把当前章滚进视野（偏上 1/3）。每个挂载实例独立，页签切换动画里新旧两份同时存活也不会
 /// 共享 GlobalKey / ScrollController（HBK045）。
 class _AudiobookChapterList extends StatefulWidget {
   const _AudiobookChapterList({
@@ -1129,6 +1130,33 @@ class _AudiobookChapterListState extends State<_AudiobookChapterList> {
   void dispose() {
     _scroll.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AudiobookChapterList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 播放跨章：只有旧的当前章此刻在视野里（用户正看着章节列表）才跟到新章；
+    // 用户停在顶部概览 / 资源区时不把内容拉走。打开面板时不定位（停在顶部）。
+    if (widget.currentEntry != oldWidget.currentEntry &&
+        widget.currentEntry >= 0 &&
+        oldWidget.currentEntry >= 0 &&
+        _currentRowVisible()) {
+      _scheduleReveal();
+    }
+  }
+
+  /// 当前章行（[_currentRowKey] 仍指向重建前的那一行）是否与视口有交集。
+  bool _currentRowVisible() {
+    if (!_scroll.hasClients) return false;
+    final RenderObject? row = _currentRowKey.currentContext?.findRenderObject();
+    if (row is! RenderBox || !row.attached || !row.hasSize) return false;
+    final RenderAbstractViewport? viewport = RenderAbstractViewport.maybeOf(
+      row,
+    );
+    if (viewport == null) return false;
+    final ScrollPosition pos = _scroll.position;
+    final double top = viewport.getOffsetToReveal(row, 0).offset - pos.pixels;
+    return top < pos.viewportDimension && top + row.size.height > 0;
   }
 
   void _scheduleReveal() {

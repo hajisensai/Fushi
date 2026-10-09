@@ -19,29 +19,32 @@ const Key _chaptersKey = ValueKey<String>('fushi_audiobook_chapters');
 /// 用户录屏 588×1280 px 的手机竖屏，按 1.5 dpr 折成逻辑 392×853。
 const Size _phone = Size(392, 853);
 
-Widget _panel(BuildContext ctx, {AudiobookPlayerController? controller}) =>
-    ReaderSideSheet(
-      title: '有声书',
-      subtitle: 'こうして平塚静は',
-      scrollable: false,
-      onClose: () => Navigator.of(ctx).pop(),
-      child: ReaderAudiobookPanel(
-        controller: controller,
-        toc: List<TtuTocEntry>.generate(
-          40,
-          (int i) => TtuTocEntry(index: i, label: '第$i章'),
-        ),
-        // 当前章在长目录深处：旧实现一打开就会把它滚进视野。
-        currentSection: 30,
-        onJumpSection: (int _, String? __) async {},
-        onPickAlignment: () {},
-        onTranscribe: () {},
-        title: 'Book',
-        chapterLabel: 'こうして平塚静は',
-        coverPath: null,
-        settingsBuilder: (_) => const Text('Panel settings'),
-      ),
-    );
+Widget _panel(
+  BuildContext ctx, {
+  AudiobookPlayerController? controller,
+  int currentSection = 30,
+}) => ReaderSideSheet(
+  title: '有声书',
+  subtitle: 'こうして平塚静は',
+  scrollable: false,
+  onClose: () => Navigator.of(ctx).pop(),
+  child: ReaderAudiobookPanel(
+    controller: controller,
+    toc: List<TtuTocEntry>.generate(
+      40,
+      (int i) => TtuTocEntry(index: i, label: '第$i章'),
+    ),
+    // 当前章在长目录深处：旧实现一打开就会把它滚进视野。
+    currentSection: currentSection,
+    onJumpSection: (int _, String? __) async {},
+    onPickAlignment: () {},
+    onTranscribe: () {},
+    title: 'Book',
+    chapterLabel: 'こうして平塚静は',
+    coverPath: null,
+    settingsBuilder: (_) => const Text('Panel settings'),
+  ),
+);
 
 Future<BuildContext> _pumpHost(WidgetTester tester) async {
   tester.view.physicalSize = _phone;
@@ -191,6 +194,75 @@ void main() {
     expect(<double>[
       for (final ScrollableState s in outer) s.position.pixels,
     ], outerBefore);
+    expect(tester.takeException(), isNull);
+  });
+
+  Future<ScrollableState> openWithSection(
+    WidgetTester tester,
+    ValueNotifier<int> section,
+  ) async {
+    final BuildContext context = await _pumpHost(tester);
+    showReaderSideSheet<void>(
+      context: context,
+      bottomSheetWhenCompact: true,
+      builder: (BuildContext ctx) => ValueListenableBuilder<int>(
+        valueListenable: section,
+        builder: (BuildContext ctx, int value, Widget? _) =>
+            _panel(ctx, currentSection: value),
+      ),
+    );
+    await tester.pumpAndSettle();
+    return tester.state<ScrollableState>(
+      find.descendant(
+        of: find.byKey(_chaptersKey),
+        matching: find.byType(Scrollable),
+      ),
+    );
+  }
+
+  testWidgets('播放跨章：当前章在视野里时章节列表跟到新章', (WidgetTester tester) async {
+    final ValueNotifier<int> section = ValueNotifier<int>(2);
+    addTearDown(section.dispose);
+    await openWithSection(tester, section);
+    const Key reveal = ValueKey<String>(
+      'fushi_audiobook_reveal_current_chapter',
+    );
+    await tester.ensureVisible(find.byKey(reveal));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(reveal));
+    await tester.pumpAndSettle();
+    // 旧当前章在视野里，新章离得远（未跟随时根本不在视野）。
+    expect(find.text('第2章').hitTestable(), findsOneWidget);
+
+    section.value = 39;
+    await tester.pumpAndSettle();
+
+    expect(find.text('第39章'), findsOneWidget);
+    final Rect viewport = tester.getRect(find.byKey(_chaptersKey));
+    final Rect row = tester.getRect(find.text('第39章'));
+    expect(row.top, greaterThanOrEqualTo(viewport.top));
+    expect(row.bottom, lessThanOrEqualTo(viewport.bottom));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('播放跨章：停在顶部看资源区时不把列表拉走', (WidgetTester tester) async {
+    final ValueNotifier<int> section = ValueNotifier<int>(30);
+    addTearDown(section.dispose);
+    final ScrollableState chapters = await openWithSection(tester, section);
+    expect(chapters.position.pixels, 0);
+
+    section.value = 31;
+    await tester.pumpAndSettle();
+
+    expect(chapters.position.pixels, 0);
+    for (final ScrollableState s in tester.stateList<ScrollableState>(
+      find.descendant(
+        of: find.byKey(_sheetKey),
+        matching: find.byType(Scrollable),
+      ),
+    )) {
+      if (s.position.axis == Axis.vertical) expect(s.position.pixels, 0);
+    }
     expect(tester.takeException(), isNull);
   });
 
