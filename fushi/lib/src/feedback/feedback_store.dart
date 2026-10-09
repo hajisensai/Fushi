@@ -23,6 +23,8 @@ class FeedbackTicket {
     this.devReplyAt,
     this.seenAt = 0,
     this.missing = false,
+    this.body = '',
+    this.parentId,
   });
 
   factory FeedbackTicket.fromJson(Map<String, dynamic> j) => FeedbackTicket(
@@ -36,6 +38,8 @@ class FeedbackTicket {
     devReplyAt: (j['devReplyAt'] as num?)?.toInt(),
     seenAt: (j['seenAt'] as num?)?.toInt() ?? 0,
     missing: j['missing'] == true,
+    body: j['body'] as String? ?? '',
+    parentId: j['parentId'] as String?,
   );
 
   final String id;
@@ -55,6 +59,12 @@ class FeedbackTicket {
   /// 服务端已查不到（ticket 不对 / 被清理）。保留条目让用户自己删。
   final bool missing;
 
+  /// 正文（提交时 / 看详情时记下，「我的反馈」本机搜索用；旧记录可能为空）。
+  final String body;
+
+  /// 「问题没解决，重新提交」时指向的原反馈 id（本机列表据此显示两条的关联）。
+  final String? parentId;
+
   /// 开发者有用户还没看过的新进展。
   bool get hasUnseenReply => devReplyAt != null && devReplyAt! > seenAt;
 
@@ -65,6 +75,8 @@ class FeedbackTicket {
     int? devReplyAt,
     int? seenAt,
     bool? missing,
+    String? body,
+    String? parentId,
   }) => FeedbackTicket(
     id: id,
     ticket: ticket,
@@ -76,6 +88,8 @@ class FeedbackTicket {
     devReplyAt: devReplyAt ?? this.devReplyAt,
     seenAt: seenAt ?? this.seenAt,
     missing: missing ?? this.missing,
+    body: body ?? this.body,
+    parentId: parentId ?? this.parentId,
   );
 
   /// 用服务端摘要刷新进度（标题 / 状态 / 时刻），本机字段（ticket / seenAt）不变。
@@ -85,6 +99,7 @@ class FeedbackTicket {
     updatedAt: s.updatedAt,
     devReplyAt: s.devReplyAt,
     missing: false,
+    parentId: s.parentId,
   );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -98,6 +113,8 @@ class FeedbackTicket {
     if (devReplyAt != null) 'devReplyAt': devReplyAt,
     'seenAt': seenAt,
     if (missing) 'missing': true,
+    if (body.isNotEmpty) 'body': body,
+    if (parentId != null) 'parentId': parentId,
   };
 }
 

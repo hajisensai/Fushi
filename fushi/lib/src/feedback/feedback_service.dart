@@ -30,6 +30,7 @@ class FeedbackDraft {
     this.includeDeviceInfo = true,
     this.linkAccount = true,
     this.screenshots = const <Uint8List>[],
+    this.reopenOf,
   });
 
   final FeedbackCategory category;
@@ -44,6 +45,9 @@ class FeedbackDraft {
 
   /// PNG / JPEG / WebP 字节，最多 [FeedbackLimits.screenshots] 张。
   final List<Uint8List> screenshots;
+
+  /// 「问题没解决，重新提交」：原反馈 id（必须是本机清单里的、带 ticket 的那条）。
+  final String? reopenOf;
 }
 
 /// 提交进行到哪一步（提交页的进度文案）。
@@ -166,6 +170,14 @@ class FeedbackService extends ChangeNotifier {
     final Map<String, Object?> meta = draft.includeDeviceInfo
         ? await _meta()
         : const <String, Object?>{};
+    // 重新提交：凭原反馈自己的 ticket 证明是本人的反馈（服务端还会核对原反馈已结案）。
+    FeedbackTicket? parent;
+    if (draft.reopenOf != null) {
+      parent = byId(draft.reopenOf!);
+      if (parent == null) {
+        throw StateError('unknown feedback ${draft.reopenOf}');
+      }
+    }
     final FeedbackReceipt receipt = await client.submitFeedback(
       category: draft.category,
       title: draft.title.trim(),
@@ -177,6 +189,7 @@ class FeedbackService extends ChangeNotifier {
         'screenshots': draft.screenshots.length,
       },
       linkAccount: draft.linkAccount,
+      reopenOf: parent == null ? null : (id: parent.id, ticket: parent.ticket),
     );
     final FeedbackTicket ticket = FeedbackTicket(
       id: receipt.id,
@@ -187,6 +200,8 @@ class FeedbackService extends ChangeNotifier {
       status: FeedbackStatus.open,
       updatedAt: receipt.createdAt,
       seenAt: receipt.createdAt,
+      body: draft.body.trim(),
+      parentId: parent?.id,
     );
     _tickets = <FeedbackTicket>[ticket, ..._tickets];
     await _persist();
@@ -256,6 +271,15 @@ class FeedbackService extends ChangeNotifier {
     return _client().feedbackScreenshot(t.id, t.ticket, slot);
   }
 
+  /// 反馈人把自己这条标为已关闭（问题已解决 / 不再需要），返回更新后的详情。
+  Future<FeedbackDetail> markDone(String id) async {
+    final FeedbackTicket? t = byId(id);
+    if (t == null) throw StateError('unknown feedback $id');
+    final FeedbackDetail d = await _client().closeFeedback(t.id, t.ticket);
+    await _applyDetail(t, d);
+    return d;
+  }
+
   /// 追加说明，返回更新后的详情。
   Future<FeedbackDetail> reply(String id, String body) async {
     final FeedbackTicket? t = byId(id);
@@ -275,7 +299,9 @@ class FeedbackService extends ChangeNotifier {
       d.summary.devReplyAt ?? 0,
       d.summary.updatedAt,
     ].reduce((int a, int b) => a > b ? a : b);
-    await _replace(t.mergeSummary(d.summary).copyWith(seenAt: seen));
+    await _replace(
+      t.mergeSummary(d.summary).copyWith(seenAt: seen, body: d.body),
+    );
   }
 
   Future<void> _replace(FeedbackTicket next) async {

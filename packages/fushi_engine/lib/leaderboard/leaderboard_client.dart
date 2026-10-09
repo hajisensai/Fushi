@@ -455,6 +455,7 @@ class LeaderboardClient {
     String contact = '',
     Map<String, Object?> meta = const <String, Object?>{},
     bool linkAccount = true,
+    ({String id, String ticket})? reopenOf,
   }) async {
     final bool signs = linkAccount && _identity != null;
     final JsonMap j = await _sendJson(
@@ -466,6 +467,11 @@ class LeaderboardClient {
         'body': body,
         if (contact.isNotEmpty) 'contact': contact,
         'meta': meta,
+        if (reopenOf != null)
+          'reopenOf': <String, String>{
+            'id': reopenOf.id,
+            'ticket': reopenOf.ticket,
+          },
       },
       signed: signs,
     );
@@ -571,11 +577,25 @@ class LeaderboardClient {
     ),
   );
 
+  /// 反馈人把自己这条标为已关闭（只能从待处理 / 处理中改；别的状态服务端回 409
+  /// `not_closable`）。返回更新后的详情。
+  Future<FeedbackDetail> closeFeedback(String id, String ticket) async =>
+      FeedbackDetail.fromJson(
+        await _sendJson(
+          'POST',
+          '/v1/feedback/${_segment(id)}/close',
+          signed: false,
+          headers: <String, String>{'X-Fushi-Ticket': ticket},
+        ),
+      );
+
   /// 开发者：反馈列表。[status] = `active`（未结案，默认）/ 某个状态 wire 值 / null（全部）。
+  /// [query]：编号精确匹配，或标题 / 正文包含（服务端 `q`）。
   Future<FeedbackInboxPage> devFeedbackList({
     String? status = 'active',
     String? cursor,
     int? limit,
+    String? query,
   }) async {
     _requireIdentity();
     return FeedbackInboxPage.fromJson(
@@ -586,6 +606,7 @@ class LeaderboardClient {
           if (status != null) 'status': status,
           if (cursor != null) 'cursor': cursor,
           if (limit != null) 'limit': '$limit',
+          if (query != null && query.trim().isNotEmpty) 'q': query.trim(),
         },
       ),
     );

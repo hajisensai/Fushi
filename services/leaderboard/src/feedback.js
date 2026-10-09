@@ -1,15 +1,17 @@
 // 用户反馈 + 开发者处理（设计：docs/specs/2026-10-08-feedback.md）。
 //
 // 反馈人（不要求账户；带签名提交时记下账户，开发者能看到昵称）：
-//   POST /v1/feedback                         {category, title, body, contact?, meta?} → 201 {id, ticket, ...}
+//   POST /v1/feedback                         {category, title, body, contact?, meta?, reopenOf?} → 201 {id, ticket, ...}
+//                                             reopenOf = {id, ticket}：「问题没解决，重新提交」，新反馈记 parent_id
 //   PUT  /v1/feedback/:id/attachments/:slot   [X-Fushi-Ticket] 原始字节；slot = log（gzip）/ s0..s2（截图）
 //   POST /v1/feedback/status                  {items:[{id, ticket}] ≤ 50} → 各条进度摘要（凭据不对的条目不返回）
 //   GET  /v1/feedback/:id                     [X-Fushi-Ticket] 详情 + 时间线
 //   POST /v1/feedback/:id/messages            [X-Fushi-Ticket] {body} 追加说明
 //   GET  /v1/feedback/:id/attachments/:slot   [X-Fushi-Ticket] 本人取回自己的截图（s0..s2；日志不回传）
+//   POST /v1/feedback/:id/close               [X-Fushi-Ticket] 反馈人标记完成：open / in_progress → closed
 //
 // 开发者（签名，账户 role = 'dev'；网页处理台 devconsole.js 复用同一组函数）：
-//   GET  /v1/dev/feedback?status&cursor&limit
+//   GET  /v1/dev/feedback?status&cursor&limit&q   q：编号精确匹配，或标题 / 正文包含（LIKE）
 //   GET  /v1/dev/feedback/:id
 //   GET  /v1/dev/feedback/:id/attachments/:slot[?view=text]   日志可直接解压成文本
 //   POST /v1/dev/feedback/:id                 {status?, reply?}
@@ -69,6 +71,12 @@ export const FEEDBACK_LIMITS = {
   messagesPerFeedbackTotal: 100,
   /** 反馈人取回自己截图的次数上限（单条反馈每小时；详情页每次最多 3 张）。 */
   reporterDownloadsPerFeedbackHour: 60,
+  /** 反馈人「标记完成」的次数上限（单条反馈每小时；正常只会点一次）。 */
+  reporterClosePerFeedbackHour: 5,
+  /** 处理台搜索词最长字数。 */
+  searchMax: 100,
+  /** 同一条反馈最多被重新提交几次（每次都要原反馈已结案，这里再兜一层总量）。 */
+  reopensPerFeedback: 5,
   /** 同来源同内容重复提交的拒收窗口。 */
   duplicateWindowMs: HOUR,
   /** 跨来源同内容打 duplicate 标记的回看窗口。 */
@@ -194,6 +202,7 @@ export async function feedbackById(env, id) {
 function summary(row) {
   return {
     id: row.id,
+    parentId: row.parent_id ?? null,
     category: row.category,
     title: row.title,
     status: row.status,
@@ -227,9 +236,18 @@ async function timeline(env, id) {
 }
 
 /** 反馈人看到的详情：不含开发者内部字段（联系方式原样回给本人无妨，但设备信息不回传，省流量）。 */
+/** 被重新提交成了哪几条（新的在后）。 */
+async function reopenedAs(env, id) {
+  const rows = await env.DB.prepare(
+    'SELECT id FROM feedback WHERE parent_id = ?1 ORDER BY created_at, id',
+  ).bind(id).all();
+  return rows.results.map((r) => r.id);
+}
+
 export async function reporterView(env, row) {
   return {
     ...summary(row),
+    reopenedAs: await reopenedAs(env, row.id),
     body: row.body,
     attachments: publicAttachments(row),
     messages: await timeline(env, row.id),
@@ -254,6 +272,7 @@ export async function devView(env, row) {
   }
   return {
     ...devSummary(row),
+    reopenedAs: await reopenedAs(env, row.id),
     body: row.body,
     contact: row.contact,
     meta,
@@ -269,32 +288,52 @@ export async function devView(env, row) {
  * 同一来源（账户或 IP）同一内容 1 小时内再交 → 409 duplicate_feedback；不同来源 24 小时内的
  * 同内容只打 duplicate:<先到的 id> 标记（可能是多人遇到同一问题，也可能是换 IP 灌水，交给人判）。
  */
+/**
+ * 「重新提交」的原反馈：凭它自己的 ticket 取（错一律 404，与其它 ticket 接口同口径）；原反馈须已结案
+ * （开发者结案或反馈人标记完成），且被重新提交的次数有上限。没有 reopenOf 返回 null。
+ */
+async function reopenParent(env, reopenOf) {
+  if (reopenOf === undefined || reopenOf === null) return null;
+  if (typeof reopenOf !== 'object' || Array.isArray(reopenOf)) throw new HttpError(400, 'bad_reopen');
+  const parent = await feedbackForTicket(env, reopenOf.id, reopenOf.ticket);
+  if (!CLOSED_STATUSES.includes(parent.status)) throw new HttpError(409, 'parent_not_closed');
+  const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM feedback WHERE parent_id = ?1').bind(parent.id).first();
+  if (n.n >= FEEDBACK_LIMITS.reopensPerFeedback) throw new HttpError(429, 'too_many_reopens');
+  return parent;
+}
+
 export async function createFeedback(env, account, ip, body, now, origin = {}) {
   const sub = normalizeSubmission(body);
+  const parent = await reopenParent(env, body.reopenOf);
   const hash = await contentHash(sub);
   const source = account ? `acct:${account.id}` : `ip:${ip}`;
-  try {
-    await hit(env, `feedback:dup:${source}:${hash}`, FEEDBACK_LIMITS.duplicateWindowMs, 1, now);
-  } catch (e) {
-    if (e instanceof HttpError && e.status === 429) throw new HttpError(409, 'duplicate_feedback');
-    throw e;
+  // 重新提交常常原样带着原标题 / 正文：不按「同来源同内容」拒收（每次都要原反馈已结案，另有次数上限）。
+  if (!parent) {
+    try {
+      await hit(env, `feedback:dup:${source}:${hash}`, FEEDBACK_LIMITS.duplicateWindowMs, 1, now);
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 429) throw new HttpError(409, 'duplicate_feedback');
+      throw e;
+    }
   }
   await hit(env, `feedback:ip:${ip}`, HOUR, FEEDBACK_LIMITS.submitPerIpHour, now);
   await spend(env, 'feedback', 1, now);
   await spend(env, 'write_rows', 8, now);
+  // 与原反馈同内容不算「跨来源重复」（就是它自己）。
   const earlier = await env.DB.prepare(
-    'SELECT id FROM feedback WHERE content_hash = ?1 AND created_at > ?2 ORDER BY created_at LIMIT 1',
-  ).bind(hash, now - FEEDBACK_LIMITS.duplicateLookbackMs).first();
+    `SELECT id FROM feedback WHERE content_hash = ?1 AND created_at > ?2 AND id IS NOT ?3
+     ORDER BY created_at LIMIT 1`,
+  ).bind(hash, now - FEEDBACK_LIMITS.duplicateLookbackMs, parent ? parent.id : null).first();
   const flags = earlier ? [...sub.flags, `duplicate:${earlier.id}`] : sub.flags;
   const id = randomId(10);
   const ticket = randomId(32);
   await env.DB.prepare(
     `INSERT INTO feedback (id, ticket_hash, account_id, category, title, body, contact, meta, created_at, updated_at,
-                           flags, content_hash, origin)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10, ?11, ?12)`,
+                           flags, content_hash, origin, parent_id)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10, ?11, ?12, ?13)`,
   ).bind(id, await ticketHash(ticket), account ? account.id : null, sub.category, sub.title, sub.body,
-    sub.contact, sub.meta, now, JSON.stringify(flags), hash, JSON.stringify(origin)).run();
-  return { id, ticket, status: 'open', createdAt: now, updatedAt: now };
+    sub.contact, sub.meta, now, JSON.stringify(flags), hash, JSON.stringify(origin), parent ? parent.id : null).run();
+  return { id, ticket, status: 'open', createdAt: now, updatedAt: now, parentId: parent ? parent.id : null };
 }
 
 function slotKind(slot, bytes) {
@@ -395,6 +434,36 @@ export async function addReporterMessage(env, row, body, now) {
   ]);
 }
 
+/** 反馈人能自己标记完成的状态（开发者已给出结论的不再让反馈人改）。 */
+export const REPORTER_CLOSABLE = ['open', 'in_progress'];
+
+/**
+ * POST /v1/feedback/:id/close：反馈人凭本条 ticket 把自己的反馈标为已关闭（问题已解决 / 不再需要）。
+ * 只做这一种状态变更、不收任何字段；时间线记一条 author = 'user'、status = 'closed' 的事件，
+ * 处理台显示为「反馈人标记完成」。要重新打开，照旧追加说明（addReporterMessage 会把状态拉回 open）。
+ */
+export async function reporterClose(env, row, now) {
+  await hit(env, `feedback:close:${row.id}`, HOUR, FEEDBACK_LIMITS.reporterClosePerFeedbackHour, now);
+  if (!REPORTER_CLOSABLE.includes(row.status)) throw new HttpError(409, 'not_closable');
+  // 条件更新：并发的开发者改状态 / 第二次点击不会被覆盖。
+  const res = await env.DB.prepare(
+    `UPDATE feedback SET status = 'closed', user_reply_at = ?2, updated_at = ?2
+     WHERE id = ?1 AND status IN ('open', 'in_progress')`,
+  ).bind(row.id, now).run();
+  if (res.meta.changes !== 1) throw new HttpError(409, 'not_closable');
+  await env.DB.prepare(
+    'INSERT INTO feedback_messages (feedback_id, author, body, status, created_at) VALUES (?1, \'user\', \'\', \'closed\', ?2)',
+  ).bind(row.id, now).run();
+}
+
+/** 处理台搜索词 → LIKE 模式（转义 % _ \）。空串返回 null。 */
+function searchTerm(q) {
+  if (typeof q !== 'string') return null;
+  const t = q.trim().slice(0, FEEDBACK_LIMITS.searchMax);
+  if (!t) return null;
+  return { exact: t, like: `%${t.replace(/[\\%_]/g, (c) => `\\${c}`)}%` };
+}
+
 /** 开发者处理：改状态和 / 或回复（两者至少一个）。 */
 export async function devUpdate(env, dev, row, body, now) {
   const status = body && body.status !== undefined && body.status !== null && body.status !== ''
@@ -416,36 +485,42 @@ export async function devUpdate(env, dev, row, body, now) {
 /**
  * 处理台列表：按最近变化倒序，游标 `<updated_at>:<id>`。status = 'active' 表示未结案（open + in_progress）。
  */
-export async function devList(env, { status, cursor, limit }) {
+export async function devList(env, { status, cursor, limit, q }) {
   const n = clampInt(limit, 1, 100, 30);
   let after = null;
   if (typeof cursor === 'string' && /^\d+:[A-Za-z0-9_-]{1,16}$/.test(cursor)) {
     const i = cursor.indexOf(':');
     after = { at: Number(cursor.slice(0, i)), id: cursor.slice(i + 1) };
   }
-  const cols = 'id, category, title, status, created_at, updated_at, dev_reply_at, user_reply_at, account_id, attachments, flags';
+  const cols = 'id, category, title, status, created_at, updated_at, dev_reply_at, user_reply_at, account_id, attachments, flags, parent_id';
   const page = after
     ? 'AND (updated_at < ?2 OR (updated_at = ?2 AND id < ?3))'
     : 'AND ?2 IS NULL AND ?3 IS NULL';
+  // 搜索：编号精确匹配，或标题 / 正文包含（SQLite LIKE 对 ASCII 不分大小写）。
+  const term = searchTerm(q);
+  const search = term
+    ? 'AND (id = ?5 OR title LIKE ?6 ESCAPE \'\\\' OR body LIKE ?6 ESCAPE \'\\\')'
+    : 'AND ?5 IS NULL AND ?6 IS NULL';
   let sql;
   let first;
   if (status === 'flagged') {
     // 带风险标记的反馈（量小，按更新时间索引顺扫过滤即可）。
-    sql = `SELECT ${cols} FROM feedback WHERE flags != '[]' ${page} ORDER BY updated_at DESC, id DESC LIMIT ?4`;
+    sql = `SELECT ${cols} FROM feedback WHERE flags != '[]' ${page} ${search} ORDER BY updated_at DESC, id DESC LIMIT ?4`;
     first = null;
   } else if (status === 'active') {
-    sql = `SELECT ${cols} FROM feedback WHERE status IN ('open', 'in_progress') ${page}
+    sql = `SELECT ${cols} FROM feedback WHERE status IN ('open', 'in_progress') ${page} ${search}
            ORDER BY updated_at DESC, id DESC LIMIT ?4`;
     first = null;
   } else if (STATUSES.includes(status)) {
-    sql = `SELECT ${cols} FROM feedback WHERE status = ?1 ${page} ORDER BY updated_at DESC, id DESC LIMIT ?4`;
+    sql = `SELECT ${cols} FROM feedback WHERE status = ?1 ${page} ${search} ORDER BY updated_at DESC, id DESC LIMIT ?4`;
     first = status;
   } else {
-    sql = `SELECT ${cols} FROM feedback WHERE (?1 IS NULL) ${page} ORDER BY updated_at DESC, id DESC LIMIT ?4`;
+    sql = `SELECT ${cols} FROM feedback WHERE (?1 IS NULL) ${page} ${search} ORDER BY updated_at DESC, id DESC LIMIT ?4`;
     first = null;
   }
   const rows = await env.DB.prepare(sql)
-    .bind(first, after ? after.at : null, after ? after.id : null, n + 1).all();
+    .bind(first, after ? after.at : null, after ? after.id : null, n + 1,
+      term ? term.exact : null, term ? term.like : null).all();
   const list = rows.results.slice(0, n).map((r) => ({
     ...devSummary(r),
     hasAccount: r.account_id !== null,
@@ -540,6 +615,7 @@ const RE = {
   one: new RegExp(`^/v1/feedback/${ID}$`),
   attach: new RegExp(`^/v1/feedback/${ID}/attachments/([a-z0-9]{1,4})$`),
   messages: new RegExp(`^/v1/feedback/${ID}/messages$`),
+  close: new RegExp(`^/v1/feedback/${ID}/close$`),
   devList: /^\/v1\/dev\/feedback$/,
   devOne: new RegExp(`^/v1/dev/feedback/${ID}$`),
   devAttach: new RegExp(`^/v1/dev/feedback/${ID}/attachments/([a-z0-9]{1,4})$`),
@@ -582,6 +658,11 @@ export async function routeFeedback(request, env, url, now, io) {
   if (method === 'GET' && (m = RE.one.exec(path))) {
     return json(await reporterView(env, await feedbackForTicket(env, m[1], ticket)), 200, noStore);
   }
+  if (method === 'POST' && (m = RE.close.exec(path))) {
+    const row = await feedbackForTicket(env, m[1], ticket);
+    await reporterClose(env, row, now);
+    return json(await reporterView(env, await feedbackById(env, row.id)), 200, noStore);
+  }
   if (method === 'GET' && (m = RE.attach.exec(path))) {
     return reporterAttachmentResponse(env, await feedbackForTicket(env, m[1], ticket), m[2], now);
   }
@@ -600,7 +681,9 @@ export async function routeFeedback(request, env, url, now, io) {
   if (method === 'GET' && RE.devList.test(path)) {
     requireDev(await io.auth(new Uint8Array(), {}));
     const q = url.searchParams;
-    return json(await devList(env, { status: q.get('status'), cursor: q.get('cursor'), limit: q.get('limit') }), 200, noStore);
+    return json(await devList(env, {
+      status: q.get('status'), cursor: q.get('cursor'), limit: q.get('limit'), q: q.get('q'),
+    }), 200, noStore);
   }
   if (method === 'GET' && (m = RE.devOne.exec(path))) {
     requireDev(await io.auth(new Uint8Array(), {}));

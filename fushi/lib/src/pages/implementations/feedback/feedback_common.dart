@@ -4,12 +4,14 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/feedback/feedback_entry_gate.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
+import 'package:fushi/src/feedback/feedback_store.dart';
+import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.dart';
 import 'package:fushi/src/utils/misc/clipboard_image.dart';
 import 'package:fushi/utils.dart';
@@ -175,10 +177,131 @@ class FeedbackStatusBadge extends StatelessWidget {
 }
 
 /// 处理记录时间线（反馈人与开发者两边的详情页共用）。
+/// 反馈编号（服务端 id）：`#svSfwFdmdM` 等宽小字，点按或长按复制。
+class FeedbackIdLabel extends StatelessWidget {
+  const FeedbackIdLabel(this.id, {this.style, super.key});
+
+  final String id;
+  final TextStyle? style;
+
+  Future<void> _copy(BuildContext context) async {
+    await Clipboard.setData(ClipboardData(text: id));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(FushiSnackBar(content: Text(t.feedback_id_copied)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiTooltip(
+      message: t.feedback_id_copy_hint,
+      child: Semantics(
+        button: true,
+        label: '${t.feedback_id_copy_hint} $id',
+        excludeSemantics: true,
+        child: InkWell(
+          key: ValueKey<String>('feedback-id-$id'),
+          borderRadius: FushiM3eShape.smallRadius,
+          onTap: () => unawaited(_copy(context)),
+          onLongPress: () => unawaited(_copy(context)),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+            child: Text(
+              '#$id',
+              style: (style ?? tokens.type.metadata).copyWith(
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 详情页抬头那一行：分类 · #编号（可复制）· 提交时间。
+class FeedbackMetaLine extends StatelessWidget {
+  const FeedbackMetaLine(this.detail, {super.key});
+
+  final FeedbackDetail detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextStyle style = FushiDesignTokens.of(context).type.metadata;
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: <Widget>[
+        Text(
+          '${feedbackCategoryLabel(detail.summary.category)} · ',
+          style: style,
+        ),
+        FeedbackIdLabel(detail.id, style: style),
+        Text(' · ${feedbackTime(detail.summary.createdAt)}', style: style),
+      ],
+    );
+  }
+}
+
+/// 「重新提交」关联：新反馈上「重新提交自 #原编号」、原反馈上「已被重新提交为 #新编号」。
+/// [onOpen] 给了就能点过去（目标不在手边时传 null，只显示文字）。
+class FeedbackRelationLinks extends StatelessWidget {
+  const FeedbackRelationLinks({
+    required this.parentId,
+    required this.reopenedAs,
+    this.onOpen,
+    super.key,
+  });
+
+  final String? parentId;
+  final List<String> reopenedAs;
+  final void Function(String id)? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    if (parentId == null && reopenedAs.isEmpty) return const SizedBox.shrink();
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    Widget link(String id, String label) => FushiActionChip(
+      key: ValueKey<String>('feedback-relation-$id'),
+      icon: FushiIcons.link,
+      label: label,
+      onPressed: () => onOpen?.call(id),
+    );
+    return Wrap(
+      spacing: tokens.spacing.gap,
+      runSpacing: tokens.spacing.gap / 2,
+      children: <Widget>[
+        if (parentId != null)
+          link(parentId!, t.feedback_reopen_of(id: parentId!)),
+        for (final String id in reopenedAs)
+          link(id, t.feedback_reopened_as(id: id)),
+      ],
+    );
+  }
+}
+
+/// 「我的反馈」本机搜索：编号 / 标题 / 正文，统一归一化口径。
+List<FeedbackTicket> filterFeedbackTickets(
+  List<FeedbackTicket> tickets,
+  String query,
+) => filterByMediaSearch<FeedbackTicket>(
+  tickets,
+  query,
+  (FeedbackTicket x) => <String>[x.id, x.title, x.body],
+);
+
 class FeedbackTimeline extends StatelessWidget {
-  const FeedbackTimeline({required this.messages, super.key});
+  const FeedbackTimeline({
+    required this.messages,
+    this.developerView = false,
+    super.key,
+  });
 
   final List<FeedbackMessage> messages;
+
+  /// 开发者处理页：反馈人的消息标「反馈人」而不是「你」。
+  final bool developerView;
 
   @override
   Widget build(BuildContext context) {
@@ -198,6 +321,7 @@ class FeedbackTimeline extends StatelessWidget {
             index: i,
             child: _FeedbackMessageTile(
               message: messages[i],
+              developerView: developerView,
               tokens: tokens,
               colors: colors,
             ),
@@ -210,11 +334,13 @@ class FeedbackTimeline extends StatelessWidget {
 class _FeedbackMessageTile extends StatelessWidget {
   const _FeedbackMessageTile({
     required this.message,
+    required this.developerView,
     required this.tokens,
     required this.colors,
   });
 
   final FeedbackMessage message;
+  final bool developerView;
   final FushiDesignTokens tokens;
   final ColorScheme colors;
 
@@ -223,8 +349,13 @@ class _FeedbackMessageTile extends StatelessWidget {
     final FeedbackMessage m = message;
     final String who = m.fromDeveloper
         ? t.feedback_detail_developer(name: m.nickname ?? '')
+        : developerView
+        ? t.feedback_dev_reporter
         : t.feedback_detail_you;
     final FeedbackStatus? status = m.status;
+    // 反馈人在详情页点「标记为已完成」留下的事件。
+    final bool reporterClosed =
+        !m.fromDeveloper && status == FeedbackStatus.closed;
     return Padding(
       padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
       child: DecoratedBox(
@@ -247,9 +378,13 @@ class _FeedbackMessageTile extends StatelessWidget {
               ),
               if (status != null)
                 Text(
-                  t.feedback_detail_status_changed(
-                    status: feedbackStatusLabel(status),
-                  ),
+                  reporterClosed
+                      ? (developerView
+                            ? t.feedback_timeline_reporter_closed
+                            : t.feedback_timeline_you_closed)
+                      : t.feedback_detail_status_changed(
+                          status: feedbackStatusLabel(status),
+                        ),
                   style: tokens.type.metadata.copyWith(color: colors.primary),
                 ),
               if (m.body.isNotEmpty)

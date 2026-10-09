@@ -3,11 +3,10 @@
 
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/feedback/feedback_draft_store.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
@@ -17,6 +16,7 @@ import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.da
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_detail_page.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_dev_page.dart';
+import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
@@ -105,6 +105,9 @@ final Uint8List _kOnePixelPng = Uint8List.fromList(<int>[
 
 class _Server {
   final List<http.Request> requests = <http.Request>[];
+
+  /// closedclo0 被重新提交成了哪几条（提交后服务端会把新 id 挂上来）。
+  final List<String> reopened = <String>[];
   String role = 'user';
 
   Future<http.Response> handle(http.Request r) async {
@@ -174,6 +177,122 @@ class _Server {
         headers: <String, String>{'content-type': 'image/png'},
       );
     }
+    if (path == '/v1/feedback/oldoldold0/close' && r.method == 'POST') {
+      if (r.headers['X-Fushi-Ticket'] != 'old-ticket') return _json({}, 404);
+      return _json(<String, dynamic>{
+        'id': 'oldoldold0',
+        'category': 'bug',
+        'title': '旧反馈',
+        'status': 'closed',
+        'createdAt': 100,
+        'updatedAt': 700,
+        'userReplyAt': 700,
+        'body': '截图里能看到问题',
+        'attachments': <Object>[],
+        'messages': <Object>[
+          <String, dynamic>{
+            'id': 1,
+            'author': 'user',
+            'body': '',
+            'status': 'closed',
+            'createdAt': 700,
+            'nickname': null,
+          },
+        ],
+      });
+    }
+    if (path == '/v1/dev/feedback') {
+      final String q = r.url.queryParameters['q'] ?? '';
+      final List<Map<String, dynamic>> rows = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': 'svSfwFdmdM',
+          'category': 'bug',
+          'title': '阅读器白屏',
+          'status': 'open',
+          'createdAt': 1,
+          'updatedAt': 2,
+        },
+        <String, dynamic>{
+          'id': 'abcdefghij',
+          'category': 'suggestion',
+          'title': '想要深色图标',
+          'status': 'open',
+          'createdAt': 1,
+          'updatedAt': 1,
+        },
+      ];
+      return _json(<String, dynamic>{
+        'items': <Object>[
+          for (final Map<String, dynamic> row in rows)
+            if (q.isEmpty ||
+                row['id'] == q ||
+                (row['title'] as String).contains(q))
+              row,
+        ],
+        'next': null,
+      });
+    }
+    if (path == '/v1/feedback/closedclo0' && r.method == 'GET') {
+      if (r.headers['X-Fushi-Ticket'] != 'closed-ticket') {
+        return _json({}, 404);
+      }
+      return _json(<String, dynamic>{
+        'id': 'closedclo0',
+        'category': 'suggestion',
+        'title': '漫画目录逆序',
+        'status': 'resolved',
+        'createdAt': 100,
+        'updatedAt': 300,
+        'devReplyAt': 300,
+        'body': '目录太长翻不到头',
+        'attachments': <Object>[
+          <String, dynamic>{
+            'slot': 's0',
+            'kind': 'screenshot',
+            'bytes': _kOnePixelPng.length,
+            'type': 'image/png',
+          },
+        ],
+        'messages': <Object>[],
+        'reopenedAs': reopened,
+      });
+    }
+    if (path == '/v1/feedback/closedclo0/attachments/s0') {
+      if (r.headers['X-Fushi-Ticket'] != 'closed-ticket') {
+        return _json({}, 404);
+      }
+      return http.Response.bytes(_kOnePixelPng, 200);
+    }
+    if (path == '/v1/dev/feedback/childchil0') {
+      return _json(<String, dynamic>{
+        'id': 'childchil0',
+        'category': 'bug',
+        'title': '还是白屏',
+        'status': 'open',
+        'createdAt': 5,
+        'updatedAt': 5,
+        'parentId': 'parentpar0',
+        'body': '更新后还是白屏',
+        'contact': '',
+        'attachments': <Object>[],
+        'messages': <Object>[],
+      });
+    }
+    if (path == '/v1/dev/feedback/parentpar0') {
+      return _json(<String, dynamic>{
+        'id': 'parentpar0',
+        'category': 'bug',
+        'title': '白屏',
+        'status': 'resolved',
+        'createdAt': 1,
+        'updatedAt': 4,
+        'body': '打开书白屏',
+        'contact': '',
+        'attachments': <Object>[],
+        'messages': <Object>[],
+        'reopenedAs': <String>['childchil0'],
+      });
+    }
     if (path == '/v1/feedback/status') {
       return _json(<String, dynamic>{
         'items': <Object>[
@@ -190,6 +309,11 @@ class _Server {
       });
     }
     if (path == '/v1/feedback') {
+      final Object? reopenOf =
+          (jsonDecode(r.body) as Map<String, dynamic>)['reopenOf'];
+      if (reopenOf is Map && reopenOf['id'] == 'closedclo0') {
+        reopened.add('newnewnew0');
+      }
       return _json(<String, dynamic>{
         'id': 'newnewnew0',
         'ticket': 'T' * 32,
@@ -438,6 +562,337 @@ void main() {
     );
   });
 
+  testWidgets('我的反馈：列表显示可复制的编号；按编号 / 标题 / 正文本机搜索', (WidgetTester tester) async {
+    tallView(tester);
+    await tester.runAsync(() async {
+      await FeedbackTicketStore(root).write(<FeedbackTicket>[
+        const FeedbackTicket(
+          id: 'oldoldold0',
+          ticket: 'old-ticket',
+          title: '旧反馈',
+          category: FeedbackCategory.bug,
+          createdAt: 100,
+          status: FeedbackStatus.open,
+          updatedAt: 100,
+          seenAt: 100,
+        ),
+        const FeedbackTicket(
+          id: 'svSfwFdmdM',
+          ticket: 't2',
+          title: '视频卡顿',
+          category: FeedbackCategory.bug,
+          createdAt: 200,
+          status: FeedbackStatus.closed,
+          updatedAt: 200,
+          seenAt: 200,
+          body: '播放 4K 视频时掉帧',
+        ),
+      ]);
+    });
+    final String? copied = await _captureClipboard(tester, () async {
+      final LeaderboardService b = board();
+      final FeedbackService f = feedback(b);
+      await tester.pumpWidget(wrap(b, f, const FeedbackCenterPage()));
+      await settleIo(tester, () => f.loaded);
+      expect(find.text('#svSfwFdmdM'), findsOneWidget);
+      expect(find.text('#oldoldold0'), findsOneWidget);
+      // 列表上显示状态。
+      expect(find.text(t.feedback_status_closed), findsOneWidget);
+      await tester.tap(find.text('#svSfwFdmdM'));
+      await tester.pump();
+      expect(find.text(t.feedback_id_copied), findsOneWidget);
+    });
+    expect(copied, 'svSfwFdmdM');
+
+    final Finder search = find.byKey(
+      const ValueKey<String>('feedback-center-search'),
+    );
+    Finder tile(String id) =>
+        find.byKey(ValueKey<String>('feedback-ticket-$id'));
+    Future<void> query(String q) async {
+      await tester.enterText(search, q);
+      await tester.pump();
+    }
+
+    await query('svSfwFdmdM');
+    expect(tile('svSfwFdmdM'), findsOneWidget);
+    expect(tile('oldoldold0'), findsNothing);
+    await query('旧反馈');
+    expect(tile('oldoldold0'), findsOneWidget);
+    expect(tile('svSfwFdmdM'), findsNothing);
+    await query('掉帧');
+    expect(tile('svSfwFdmdM'), findsOneWidget);
+    expect(tile('oldoldold0'), findsNothing);
+    // 归一化：全角 / 大小写与库页搜索同一口径。
+    await query('４ｋ');
+    expect(tile('svSfwFdmdM'), findsOneWidget);
+    await query('没有这条');
+    expect(find.text(t.feedback_search_empty), findsOneWidget);
+    await query('');
+    expect(tile('svSfwFdmdM'), findsOneWidget);
+    expect(tile('oldoldold0'), findsOneWidget);
+  });
+
+  testWidgets('详情页「标记为已完成」：二次确认，取消不发请求；确认后凭 ticket 关闭、按钮消失', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    await tester.runAsync(seedOld);
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    await tester.runAsync(f.load);
+    await tester.pumpWidget(
+      wrap(b, f, const FeedbackDetailPage(feedbackId: 'oldoldold0')),
+    );
+    final Finder done = find.byKey(
+      const ValueKey<String>('feedback-mark-done'),
+    );
+    await settleIo(tester, () => done.evaluate().isNotEmpty);
+    expect(find.text('#oldoldold0'), findsOneWidget);
+    Iterable<http.Request> closes() => server.requests.where(
+      (http.Request r) => r.url.path == '/v1/feedback/oldoldold0/close',
+    );
+
+    await tester.tap(done);
+    await tester.pumpAndSettle();
+    expect(find.text(t.feedback_mark_done_confirm_title), findsOneWidget);
+    await tester.tap(find.text(t.dialog_cancel));
+    await tester.pumpAndSettle();
+    expect(closes(), isEmpty);
+
+    await tester.tap(done);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(Dialog),
+        matching: find.text(t.feedback_mark_done),
+      ),
+    );
+    await settleIo(tester, () => done.evaluate().isEmpty);
+    expect(closes(), hasLength(1));
+    expect(closes().single.headers['X-Fushi-Ticket'], 'old-ticket');
+    expect(done, findsNothing);
+    expect(find.text(t.feedback_status_closed), findsOneWidget);
+    expect(find.text(t.feedback_timeline_you_closed), findsOneWidget);
+    expect(f.byId('oldoldold0')!.status, FeedbackStatus.closed);
+  });
+
+  testWidgets('处理台列表：编号可见；搜索带 q 发到服务端', (WidgetTester tester) async {
+    tallView(tester);
+    server.role = 'dev';
+    final LeaderboardService b = board();
+    await tester.runAsync(() async {
+      await LeaderboardStore(supportRoot: root, profileId: 1).write(
+        LeaderboardLocalAccount(
+          recoveryCode: LeaderboardIdentity.generate().toRecoveryCode(),
+          accountId: 'SelfAccount001',
+          consentAt: 1,
+        ),
+      );
+      await b.load();
+    });
+    final FeedbackService f = feedback(b);
+    await tester.pumpWidget(wrap(b, f, const FeedbackDevPage()));
+    await settleIo(
+      tester,
+      () => find.text('#svSfwFdmdM').evaluate().isNotEmpty,
+    );
+    expect(find.text('#svSfwFdmdM'), findsOneWidget);
+    expect(find.text('#abcdefghij'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('feedback-dev-search')),
+      'svSfwFdmdM',
+    );
+    await settleIo(tester, () => find.text('#abcdefghij').evaluate().isEmpty);
+    expect(find.text('#svSfwFdmdM'), findsOneWidget);
+    expect(find.text('#abcdefghij'), findsNothing);
+    final http.Request last = server.requests.lastWhere(
+      (http.Request r) => r.url.path == '/v1/dev/feedback',
+    );
+    expect(last.url.queryParameters['q'], 'svSfwFdmdM');
+  });
+
+  testWidgets('已结案反馈「问题没解决，重新提交」：预填原反馈、截图可选带上、凭原 ticket 关联提交', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    await tester.runAsync(() async {
+      await FeedbackTicketStore(root).write(<FeedbackTicket>[
+        const FeedbackTicket(
+          id: 'closedclo0',
+          ticket: 'closed-ticket',
+          title: '漫画目录逆序',
+          category: FeedbackCategory.suggestion,
+          createdAt: 100,
+          status: FeedbackStatus.resolved,
+          updatedAt: 300,
+          seenAt: 300,
+        ),
+      ]);
+      // 另一条还没写完的新反馈草稿：重新提交不读写草稿，交完它必须原样还在。
+      await FeedbackDraftStore(root).write(
+        const FeedbackComposeDraft(
+          category: FeedbackCategory.bug,
+          title: '另一条没写完的',
+          body: '草稿正文',
+          contact: '',
+          includeLogs: true,
+          includeDevice: true,
+          linkAccount: true,
+          screenshots: <Uint8List>[],
+          savedAt: 50,
+        ),
+      );
+    });
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    await tester.runAsync(f.load);
+    await tester.pumpWidget(
+      wrap(b, f, const FeedbackDetailPage(feedbackId: 'closedclo0')),
+    );
+    final Finder reopen = find.byKey(const ValueKey<String>('feedback-reopen'));
+    await settleIo(tester, () => reopen.evaluate().isNotEmpty);
+    // 已结案：没有「标记为已完成」，有「重新提交」。
+    expect(
+      find.byKey(const ValueKey<String>('feedback-mark-done')),
+      findsNothing,
+    );
+    await tester.tap(reopen);
+    await settleIo(
+      tester,
+      () => find
+          .byKey(const ValueKey<String>('feedback-reopen-notice'))
+          .evaluate()
+          .isNotEmpty,
+    );
+    // 预填分类 / 标题 / 正文；截图默认不带。
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('feedback-title')),
+        matching: find.text('漫画目录逆序'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('feedback-body')),
+        matching: find.text('目录太长翻不到头'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<FushiChoiceChip>(
+            find.byKey(const ValueKey<String>('feedback-category-suggestion')),
+          )
+          .selected,
+      isTrue,
+    );
+    expect(find.byKey(const ValueKey<String>('feedback-shot-0')), findsNothing);
+    // 带上原截图：凭原 ticket 取回加进附件。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('feedback-reopen-include-shots')),
+    );
+    await settleIo(
+      tester,
+      () => find
+          .byKey(const ValueKey<String>('feedback-shot-0'))
+          .evaluate()
+          .isNotEmpty,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('feedback-shot-0')),
+      findsOneWidget,
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('feedback-body')),
+      '目录太长翻不到头，新版本还是一样',
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('feedback-submit')));
+    await settleIo(tester, () => f.byId('newnewnew0') != null);
+    await settleIo(
+      tester,
+      () => find.text(t.feedback_reopen_submitted).evaluate().isNotEmpty,
+    );
+
+    final http.Request submit = server.requests.firstWhere(
+      (http.Request r) => r.url.path == '/v1/feedback',
+    );
+    final Map<String, dynamic> sent =
+        jsonDecode(submit.body) as Map<String, dynamic>;
+    expect(sent['reopenOf'], <String, dynamic>{
+      'id': 'closedclo0',
+      'ticket': 'closed-ticket',
+    });
+    expect(sent['category'], 'suggestion');
+    expect(sent['body'], '目录太长翻不到头，新版本还是一样');
+    expect(f.byId('newnewnew0')!.parentId, 'closedclo0');
+    // 原截图作为新反馈的附件传了上去。
+    expect(
+      server.requests.where(
+        (http.Request r) =>
+            r.url.path == '/v1/feedback/newnewnew0/attachments/s0',
+      ),
+      hasLength(1),
+    );
+    // 回到原反馈详情：反向显示「已被重新提交为」。
+    expect(find.text(t.feedback_reopened_as(id: 'newnewnew0')), findsOneWidget);
+    // 普通新反馈的草稿没被这次重新提交清掉。
+    final FeedbackComposeDraft? kept = await tester
+        .runAsync<FeedbackComposeDraft?>(() => FeedbackDraftStore(root).read());
+    expect(kept?.title, '另一条没写完的');
+    expect(kept?.body, '草稿正文');
+
+    // 「我的反馈」列表：两条之间的关联看得出来（先等提交页的退场动画走完）。
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpWidget(wrap(b, f, const FeedbackCenterPage()));
+    await settleIo(tester, () => f.loaded);
+    expect(
+      find.byKey(const ValueKey<String>('feedback-ticket-parent-newnewnew0')),
+      findsOneWidget,
+    );
+    expect(find.text(t.feedback_reopen_of(id: 'closedclo0')), findsOneWidget);
+    expect(find.text(t.feedback_reopened_as(id: 'newnewnew0')), findsOneWidget);
+  });
+
+  testWidgets('处理台：新反馈标「重新提交自」，详情两向链接能点过去', (WidgetTester tester) async {
+    tallView(tester);
+    server.role = 'dev';
+    final LeaderboardService b = board();
+    await tester.runAsync(() async {
+      await LeaderboardStore(supportRoot: root, profileId: 1).write(
+        LeaderboardLocalAccount(
+          recoveryCode: LeaderboardIdentity.generate().toRecoveryCode(),
+          accountId: 'SelfAccount001',
+          consentAt: 1,
+        ),
+      );
+      await b.load();
+    });
+    final FeedbackService f = feedback(b);
+    await tester.pumpWidget(
+      wrap(b, f, const FeedbackDevDetailPage(feedbackId: 'childchil0')),
+    );
+    final Finder toParent = find.byKey(
+      const ValueKey<String>('feedback-relation-parentpar0'),
+    );
+    await settleIo(tester, () => toParent.evaluate().isNotEmpty);
+    expect(find.text(t.feedback_reopen_of(id: 'parentpar0')), findsOneWidget);
+    await tester.tap(toParent);
+    await settleIo(
+      tester,
+      () => find
+          .text(t.feedback_reopened_as(id: 'childchil0'))
+          .evaluate()
+          .isNotEmpty,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('feedback-relation-childchil0')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('开发者账户：中心出现处理台入口', (WidgetTester tester) async {
     tallView(tester);
     server.role = 'dev';
@@ -511,4 +966,30 @@ void main() {
       'abcd 👨\u200D👩',
     );
   });
+}
+
+/// 捕获 [body] 期间写进系统剪贴板的文字。
+Future<String?> _captureClipboard(
+  WidgetTester tester,
+  Future<void> Function() body,
+) async {
+  String? text;
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    SystemChannels.platform,
+    (MethodCall call) async {
+      if (call.method == 'Clipboard.setData') {
+        text = (call.arguments as Map<Object?, Object?>)['text'] as String?;
+      }
+      return null;
+    },
+  );
+  try {
+    await body();
+  } finally {
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      null,
+    );
+  }
+  return text;
 }
