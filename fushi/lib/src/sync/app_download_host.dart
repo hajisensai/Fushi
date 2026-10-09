@@ -18,6 +18,8 @@ import 'package:fushi_engine/media/discovery/discovery_models.dart'
     show DiscoveryMediaKind;
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/torrent/torrent_metainfo.dart'
+    show InspectedTorrentMetainfo;
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart'
     show VideoResourceProvider;
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
@@ -95,6 +97,38 @@ class AppDownloadHost implements HostDownloadHost {
     required String title,
     String mediaKind = 'movie',
     String? discoveryKind,
+  }) =>
+      _enqueue(
+        magnetUri: magnetUri,
+        title: title,
+        mediaKind: mediaKind,
+        discoveryKind: discoveryKind,
+      );
+
+  @override
+  Future<String> addTorrent({
+    required InspectedTorrentMetainfo metainfo,
+    Set<int>? fileIndexes,
+    required String title,
+    String mediaKind = 'movie',
+    String? discoveryKind,
+  }) =>
+      _enqueue(
+        metainfo: metainfo,
+        fileIndexes: fileIndexes,
+        title: title,
+        mediaKind: mediaKind,
+        discoveryKind: discoveryKind,
+      );
+
+  /// 磁链与 `.torrent` 的唯一入队路径：两者只差种子从哪来（管线要求二选一）。
+  Future<String> _enqueue({
+    String? magnetUri,
+    InspectedTorrentMetainfo? metainfo,
+    Set<int>? fileIndexes,
+    required String title,
+    required String mediaKind,
+    required String? discoveryKind,
   }) async {
     final VideoDownloadPipelineService pipeline = _requirePipeline;
     if (_readyBackend() == null) {
@@ -130,6 +164,8 @@ class AppDownloadHost implements HostDownloadHost {
         title: title,
         backendTarget: target,
         magnetUri: magnetUri,
+        metainfo: metainfo,
+        selectedFileIndexes: fileIndexes,
         discoveryKind: kind,
         mediaKind: mediaKind == 'tv'
             ? VideoMetadataMediaKind.tv
