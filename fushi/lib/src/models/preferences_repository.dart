@@ -40,6 +40,7 @@ import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart'
     show GameStreamVideoSettings;
+import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart'
     show MediaServerVersionMemory, mediaServerVersionMemory;
@@ -142,6 +143,11 @@ const String kGameStreamRemoteLaunchPrefKey = 'game_stream_remote_launch';
 /// 字段一律跟随当前默认，默认值改了对所有人生效。旧键 `game_stream_video_settings`
 /// 存的是整张表（连隐式默认一起固化），已弃用不读。
 const String kGameStreamVideoSettingsPrefKey = 'game_stream_video_overrides';
+
+/// 串流页查词栏的尺寸（侧边栏宽度 + 台词区高度，JSON）。设备本地（见
+/// `SyncRepository.deviceLocalPrefKeys`）：合适的尺寸取决于这台设备的屏幕，
+/// 平板上调大的值随备份到手机 / 电脑只会不合身。
+const String kGameStreamLookupLayoutPrefKey = 'game_stream_lookup_layout';
 
 class PreferencesRepository extends ChangeNotifier
     implements PrefStore, AiSettingsSource {
@@ -4254,6 +4260,22 @@ class PreferencesRepository extends ChangeNotifier
       kGameStreamVideoSettingsPrefKey,
       jsonEncode(value.toOverridesJson()),
     );
+    notifyListeners();
+  }
+
+  GameStreamLookupLayout get gameStreamLookupLayout {
+    final String raw =
+        getPref(kGameStreamLookupLayoutPrefKey, defaultValue: '') as String;
+    if (raw.isEmpty) return const GameStreamLookupLayout();
+    try {
+      return GameStreamLookupLayout.fromJson(jsonDecode(raw));
+    } on FormatException {
+      return const GameStreamLookupLayout();
+    }
+  }
+
+  Future<void> setGameStreamLookupLayout(GameStreamLookupLayout value) async {
+    await setPref(kGameStreamLookupLayoutPrefKey, jsonEncode(value.toJson()));
     notifyListeners();
   }
 

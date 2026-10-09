@@ -2,7 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:fushi/src/models/preferences_repository.dart'
-    show kDownloadExecutionHostPrefKey, kGameStreamRemoteLaunchPrefKey;
+    show
+        kDownloadExecutionHostPrefKey,
+        kGameStreamLookupLayoutPrefKey,
+        kGameStreamRemoteLaunchPrefKey;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_registry.dart';
@@ -1506,6 +1509,8 @@ class SyncRepository {
     // 「允许配对设备远程启动游戏」是本机安全开关：从另一台电脑恢复备份不得替
     // 这台电脑打开远程起进程的门。
     kGameStreamRemoteLaunchPrefKey,
+    // 串流查词栏尺寸按这台设备的屏幕调：平板上调大的值恢复到手机上只会不合身。
+    kGameStreamLookupLayoutPrefKey,
     // 「本机作为制卡落地设备」：换设备恢复备份若把它带过去，就会同时有两台落地设备，
     // 同一张卡被两边各落一次。
     _keyPendingMineLandingClaimedAt,

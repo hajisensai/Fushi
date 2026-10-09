@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_receiver.dart';
@@ -120,6 +121,8 @@ class GameStreamPage extends StatefulWidget {
     this.session,
     this.settings = const GameStreamVideoSettings(),
     this.onSettingsChanged,
+    this.lookupLayout = const GameStreamLookupLayout(),
+    this.onLookupLayoutChanged,
     super.key,
   });
 
@@ -139,6 +142,13 @@ class GameStreamPage extends StatefulWidget {
   /// Persists a settings change made from the in-stream panel.
   final ValueChanged<GameStreamVideoSettings>? onSettingsChanged;
 
+  /// Lookup rail geometry the user last chose on this device (persisted by
+  /// the caller).
+  final GameStreamLookupLayout lookupLayout;
+
+  /// Persists a rail resize once the drag (or key press) that made it ends.
+  final ValueChanged<GameStreamLookupLayout>? onLookupLayoutChanged;
+
   static const Key videoKey = ValueKey<String>('game-stream-video');
   static const Key transcriptKey = ValueKey<String>('game-stream-transcript');
   static const Key transcriptTextKey = ValueKey<String>(
@@ -148,6 +158,15 @@ class GameStreamPage extends StatefulWidget {
   static const Key statsKey = ValueKey<String>('game-stream-stats');
   static const Key cursorKey = ValueKey<String>('game-stream-cursor');
   static const Key keyboardKey = ValueKey<String>('game-stream-keyboard');
+  static const Key lineResizeHandleKey = ValueKey<String>(
+    'game-stream-line-resize-handle',
+  );
+  static const Key railResizeHandleKey = ValueKey<String>(
+    'game-stream-rail-resize-handle',
+  );
+  static const Key compactRailResizeHandleKey = ValueKey<String>(
+    'game-stream-compact-rail-resize-handle',
+  );
 
   @override
   State<GameStreamPage> createState() => _GameStreamPageState();
@@ -190,6 +209,14 @@ class _GameStreamPageState extends State<GameStreamPage>
   GameStreamTouchMode _touchMode = GameStreamTouchMode.direct;
   Offset _trackpadCursor = const Offset(.5, .5);
   late GameStreamVideoSettings _settings = widget.settings;
+  late GameStreamLookupLayout _lookupLayout = widget.lookupLayout;
+  late GameStreamLookupLayout _committedLookupLayout = widget.lookupLayout;
+
+  /// Last laid-out body width / rail height: the bounds a resize drag clamps
+  /// against, so a drag past the limit does not bank invisible distance.
+  double _bodyWidth = 0;
+  double _bodyHeight = 0;
+  double _railHeight = 0;
   bool _statsVisible = false;
   GameStreamStatsSample? _stats;
   Timer? _statsTimer;
@@ -269,6 +296,51 @@ class _GameStreamPageState extends State<GameStreamPage>
 
   void _onLookupChanged() {
     if (mounted) setState(() {});
+  }
+
+  /// Widens the rail by [delta] (negative narrows), within this body's limits.
+  void _resizeRail(double delta) {
+    final double current = _lookupLayout.effectiveRailWidth(_bodyWidth);
+    final double next = (current + delta).clamp(
+      GameStreamLookupLayout.minRailWidth,
+      GameStreamLookupLayout.railWidthLimit(_bodyWidth),
+    );
+    if (next == current) return;
+    setState(() => _lookupLayout = _lookupLayout.copyWith(railWidth: next));
+  }
+
+  /// Grows the narrow-layout panel under the video by [delta] (negative
+  /// shrinks), within this body's limits.
+  void _resizeCompactRail(double delta) {
+    final double current = _lookupLayout.effectiveCompactRailHeight(
+      _bodyHeight,
+    );
+    final double next = (current + delta).clamp(
+      GameStreamLookupLayout.minCompactRailHeight,
+      GameStreamLookupLayout.compactRailHeightLimit(_bodyHeight),
+    );
+    if (next == current) return;
+    setState(
+      () => _lookupLayout = _lookupLayout.copyWith(compactRailHeight: next),
+    );
+  }
+
+  /// Grows the line area by [delta] (negative shrinks), within this rail's
+  /// limits. The line text zooms with it.
+  void _resizeLine(double delta) {
+    final double current = _lookupLayout.effectiveLineHeight(_railHeight);
+    final double next = (current + delta).clamp(
+      GameStreamLookupLayout.minLineHeight,
+      GameStreamLookupLayout.lineHeightLimit(_railHeight),
+    );
+    if (next == current) return;
+    setState(() => _lookupLayout = _lookupLayout.copyWith(lineHeight: next));
+  }
+
+  void _commitLookupLayout() {
+    if (_lookupLayout == _committedLookupLayout) return;
+    _committedLookupLayout = _lookupLayout;
+    widget.onLookupLayoutChanged?.call(_lookupLayout);
   }
 
   void _onReceiverChanged() {
@@ -1071,15 +1143,117 @@ class _GameStreamPageState extends State<GameStreamPage>
               ],
             ),
           );
-          final Widget lookup = compact
-              ? SizedBox(
-                  height: math.min(360, constraints.maxHeight * 0.5),
-                  child: _buildLookupRail(theme, compact: true),
-                )
-              : _buildLookupRail(theme);
-          return compact
-              ? Column(children: <Widget>[video, if (_lookupVisible) lookup])
-              : Row(children: <Widget>[video, if (_lookupVisible) lookup]);
+          if (compact) {
+            // Video and panel share what the boundary strip leaves.
+            _bodyHeight = constraints.maxHeight - _railEdgeWidth;
+            final double panelHeight = _lookupLayout.effectiveCompactRailHeight(
+              _bodyHeight,
+            );
+            return Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    video,
+                    if (_lookupVisible) ...<Widget>[
+                      // Full-width edge: grab the boundary anywhere with a
+                      // mouse.
+                      SizedBox(
+                        height: _railEdgeWidth,
+                        child: _ResizeHandle(
+                          axis: Axis.vertical,
+                          semanticLabel: t.game_stream_panel_resize,
+                          showGrip: false,
+                          focusable: false,
+                          onDelta: (double delta) => _resizeCompactRail(-delta),
+                          onEnd: _commitLookupLayout,
+                        ),
+                      ),
+                      SizedBox(
+                        height: panelHeight,
+                        child: _buildLookupRail(theme),
+                      ),
+                    ],
+                  ],
+                ),
+                // Visible grip with a 48dp touch target straddling the edge,
+                // as a centred band so the video's bottom strip still reaches
+                // the game beside it.
+                if (_lookupVisible)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom:
+                        panelHeight + _railEdgeWidth / 2 - _resizeHitExtent / 2,
+                    height: _resizeHitExtent,
+                    child: Center(
+                      child: SizedBox(
+                        width: _railGripBand,
+                        child: _ResizeHandle(
+                          key: GameStreamPage.compactRailResizeHandleKey,
+                          axis: Axis.vertical,
+                          semanticLabel: t.game_stream_panel_resize,
+                          onDelta: (double delta) => _resizeCompactRail(-delta),
+                          onEnd: _commitLookupLayout,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          }
+          // Video and rail share what the boundary strip leaves.
+          _bodyWidth = constraints.maxWidth - _railEdgeWidth;
+          final double railWidth = _lookupLayout.effectiveRailWidth(_bodyWidth);
+          return Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  video,
+                  if (_lookupVisible) ...<Widget>[
+                    // Full-height edge: grab the boundary anywhere with a mouse.
+                    SizedBox(
+                      width: _railEdgeWidth,
+                      child: _ResizeHandle(
+                        axis: Axis.horizontal,
+                        semanticLabel: t.game_stream_rail_resize,
+                        showGrip: false,
+                        focusable: false,
+                        onDelta: (double delta) => _resizeRail(-delta),
+                        onEnd: _commitLookupLayout,
+                      ),
+                    ),
+                    SizedBox(width: railWidth, child: _buildLookupRail(theme)),
+                  ],
+                ],
+              ),
+              // Visible grip with a 48dp touch target straddling the edge.
+              // Only a band, not the full height: the strip it overlaps on
+              // the video side would otherwise stop reaching the game.
+              if (_lookupVisible)
+                Positioned(
+                  right: railWidth + _railEdgeWidth / 2 - _resizeHitExtent / 2,
+                  width: _resizeHitExtent,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: SizedBox(
+                      height: _railGripBand,
+                      child: _ResizeHandle(
+                        key: GameStreamPage.railResizeHandleKey,
+                        axis: Axis.horizontal,
+                        semanticLabel: t.game_stream_rail_resize,
+                        onDelta: (double delta) => _resizeRail(-delta),
+                        onEnd: _commitLookupLayout,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
         },
       ),
     );
@@ -1264,145 +1438,315 @@ class _GameStreamPageState extends State<GameStreamPage>
     );
   }
 
-  Widget _buildLookupRail(ThemeData theme, {bool compact = false}) {
+  Widget _buildLookupRail(ThemeData theme) {
+    return Material(
+      color: theme.colorScheme.surface,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          _railHeight = constraints.maxHeight;
+          final double lineHeight = _lookupLayout.effectiveLineHeight(
+            constraints.maxHeight,
+          );
+          return Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              _buildLookupRailContent(theme, lineHeight),
+              // 48dp touch target centred on the gap under the line area.
+              Positioned(
+                left: 0,
+                right: 0,
+                top: lineHeight + _lineGapHeight / 2 - _resizeHitExtent / 2,
+                height: _resizeHitExtent,
+                child: _ResizeHandle(
+                  key: GameStreamPage.lineResizeHandleKey,
+                  axis: Axis.vertical,
+                  semanticLabel: t.game_stream_line_resize,
+                  onDelta: _resizeLine,
+                  onEnd: _commitLookupLayout,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildLookupRailContent(ThemeData theme, double lineHeight) {
     final GameStreamLookupController? controller = _lookupController;
     final GameStreamTextEvent? line = controller?.currentLine;
     final DictionarySearchResult? result = controller?.result;
-    return Material(
-      color: theme.colorScheme.surface,
-      child: SizedBox(
-        width: compact ? double.infinity : 360,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: compact ? 150 : 240),
-              child: SingleChildScrollView(
-                child: Column(
-                  key: GameStreamPage.transcriptKey,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text(
-                        t.game_stream_line,
-                        style: context.fushiType.titleSmallEmphasized,
-                      ),
-                    ),
-                    if (line == null)
-                      Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Text(t.game_stream_line_empty),
-                      )
-                    else
-                      SubtitleTranscriptRow(
-                        colorScheme: theme.colorScheme,
-                        selected: true,
-                        text: SubtitleTranscriptText(
-                          key: ValueKey<String>(
-                            'game-stream-line-${line.lineId}',
-                          ),
-                          textKey: GameStreamPage.transcriptTextKey,
-                          text: line.text,
-                          style: subtitleTranscriptTextStyle(
-                            fontSize: 14,
-                            selected: true,
-                            fontFamily: theme.textTheme.bodyMedium?.fontFamily,
-                            color: SubtitleTranscriptRow.textColorOf(
-                              context,
-                              theme.colorScheme,
-                              selected: true,
-                            ),
-                          ),
-                          keyboardLookup: true,
-                          onLookup: (int index, Rect anchor) {
-                            final ({int start, String term}) span =
-                                subtitleTranscriptLookupSpan(line.text, index);
-                            if (span.start < 0 ||
-                                controller?.currentLine?.lineId !=
-                                    line.lineId ||
-                                controller?.currentLine?.text != line.text) {
-                              return;
-                            }
-                            unawaited(
-                              controller?.lookup(
-                                span.term,
-                                displayTerm: line.text.characters.elementAt(
-                                  span.start,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                        trailing: SubtitleTranscriptAction(
-                          icon: FushiIcons.copy,
-                          tooltip: t.copy,
-                          color: SubtitleTranscriptRow.secondaryColorOf(
-                            context,
-                            theme.colorScheme,
-                            selected: true,
-                          ),
-                          size: 16,
-                          onPressed: () => unawaited(
-                            Clipboard.setData(ClipboardData(text: line.text)),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        SizedBox(
+          height: lineHeight,
+          child: SingleChildScrollView(
+            // The resize handle's touch target reaches this far up into the
+            // area; keep the last line of text clear of it.
+            padding: const EdgeInsets.only(
+              bottom: _resizeHitExtent / 2 - _lineGapHeight / 2,
             ),
-            const FushiDividerControl(height: 1),
-            Expanded(
-              key: GameStreamPage.dictionaryKey,
-              child: controller == null || result == null
-                  ? Center(
-                      child: controller?.searching == true
-                          ? const FushiCircularProgressIndicator()
-                          : Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Text(
-                                controller?.error ?? t.game_stream_lookup_hint,
-                                textAlign: TextAlign.center,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: fushiNeutralSecondaryForeground(
-                                    context,
-                                  ),
-                                ),
-                              ),
-                            ),
-                    )
-                  : DictionaryPopupLayer(
-                      result: result,
-                      webViewKey: _dictionaryKey,
-                      isSearching: controller.searching,
-                      isDark: theme.brightness == Brightness.dark,
-                      showBorder: false,
-                      swipeDismissible: false,
-                      enableSwipeToClose: false,
-                      onDismiss: () => setState(() => _lookupVisible = false),
-                      onTextSelected: (String text, Rect rect) =>
-                          unawaited(controller.lookup(text)),
-                      onLinkClick: (String text, Rect rect) =>
-                          unawaited(controller.lookup(text)),
-                      onMineEntry: _mine,
-                      onDuplicateCheck: controller.isDuplicate,
-                    ),
-            ),
-            if (_mineMessage != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Text(
-                  _mineMessage!,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: _mineFailed
-                        ? fushiStatusColor(context, FushiStatusTone.error)
-                        : fushiAccentForeground(context),
+            child: Column(
+              key: GameStreamPage.transcriptKey,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    t.game_stream_line,
+                    style: context.fushiType.titleSmallEmphasized,
                   ),
                 ),
-              ),
-          ],
+                if (line == null)
+                  Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Text(t.game_stream_line_empty),
+                  )
+                else
+                  SubtitleTranscriptRow(
+                    colorScheme: theme.colorScheme,
+                    selected: true,
+                    text: SubtitleTranscriptText(
+                      key: ValueKey<String>('game-stream-line-${line.lineId}'),
+                      textKey: GameStreamPage.transcriptTextKey,
+                      text: line.text,
+                      style: subtitleTranscriptTextStyle(
+                        fontSize: GameStreamLookupLayout.fontSizeFor(
+                          lineHeight,
+                        ),
+                        selected: true,
+                        fontFamily: theme.textTheme.bodyMedium?.fontFamily,
+                        color: SubtitleTranscriptRow.textColorOf(
+                          context,
+                          theme.colorScheme,
+                          selected: true,
+                        ),
+                      ),
+                      keyboardLookup: true,
+                      onLookup: (int index, Rect anchor) {
+                        final ({int start, String term}) span =
+                            subtitleTranscriptLookupSpan(line.text, index);
+                        if (span.start < 0 ||
+                            controller?.currentLine?.lineId != line.lineId ||
+                            controller?.currentLine?.text != line.text) {
+                          return;
+                        }
+                        unawaited(
+                          controller?.lookup(
+                            span.term,
+                            displayTerm: line.text.characters.elementAt(
+                              span.start,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    trailing: SubtitleTranscriptAction(
+                      icon: FushiIcons.copy,
+                      tooltip: t.copy,
+                      color: SubtitleTranscriptRow.secondaryColorOf(
+                        context,
+                        theme.colorScheme,
+                        selected: true,
+                      ),
+                      size: 16,
+                      onPressed: () => unawaited(
+                        Clipboard.setData(ClipboardData(text: line.text)),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
+        const SizedBox(
+          height: _lineGapHeight,
+          child: Center(child: FushiDividerControl(height: 1)),
+        ),
+        Expanded(
+          key: GameStreamPage.dictionaryKey,
+          child: controller == null || result == null
+              ? Center(
+                  child: controller?.searching == true
+                      ? const FushiCircularProgressIndicator()
+                      : Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            controller?.error ?? t.game_stream_lookup_hint,
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: fushiNeutralSecondaryForeground(context),
+                            ),
+                          ),
+                        ),
+                )
+              : DictionaryPopupLayer(
+                  result: result,
+                  webViewKey: _dictionaryKey,
+                  isSearching: controller.searching,
+                  isDark: theme.brightness == Brightness.dark,
+                  showBorder: false,
+                  swipeDismissible: false,
+                  enableSwipeToClose: false,
+                  onDismiss: () => setState(() => _lookupVisible = false),
+                  onTextSelected: (String text, Rect rect) =>
+                      unawaited(controller.lookup(text)),
+                  onLinkClick: (String text, Rect rect) =>
+                      unawaited(controller.lookup(text)),
+                  onMineEntry: _mine,
+                  onDuplicateCheck: controller.isDuplicate,
+                ),
+        ),
+        if (_mineMessage != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              _mineMessage!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: _mineFailed
+                    ? fushiStatusColor(context, FushiStatusTone.error)
+                    : fushiAccentForeground(context),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Width of the always-visible boundary strip between video and rail.
+const double _railEdgeWidth = 8;
+
+/// Height of the gap under the line area that carries its resize grip.
+const double _lineGapHeight = 16;
+
+/// Touch target across a resize handle's drag axis (Material minimum).
+const double _resizeHitExtent = 48;
+
+/// Length of the rail grip's 48dp-wide touch band along the edge.
+const double _railGripBand = 160;
+
+/// A drag handle that resizes a pane along [axis]: a pill grip, the matching
+/// resize cursor under a mouse, and arrow keys while focused (Up/Left shrink
+/// the measured coordinate, Down/Right grow it — same sign as a drag).
+///
+/// Reports raw deltas along [axis]; the caller decides which way is "bigger".
+class _ResizeHandle extends StatefulWidget {
+  const _ResizeHandle({
+    required this.axis,
+    required this.semanticLabel,
+    required this.onDelta,
+    required this.onEnd,
+    this.showGrip = true,
+    this.focusable = true,
+    super.key,
+  });
+
+  final Axis axis;
+  final String semanticLabel;
+  final ValueChanged<double> onDelta;
+  final VoidCallback onEnd;
+  final bool showGrip;
+  final bool focusable;
+
+  @override
+  State<_ResizeHandle> createState() => _ResizeHandleState();
+}
+
+class _ResizeHandleState extends State<_ResizeHandle> {
+  bool _hovered = false;
+  bool _dragging = false;
+  bool _focused = false;
+
+  bool get _vertical => widget.axis == Axis.vertical;
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final LogicalKeyboardKey key = event.logicalKey;
+    const double step = GameStreamLookupLayout.keyboardStep;
+    final double? delta = _vertical
+        ? (key == LogicalKeyboardKey.arrowUp
+              ? -step
+              : key == LogicalKeyboardKey.arrowDown
+              ? step
+              : null)
+        : (key == LogicalKeyboardKey.arrowLeft
+              ? -step
+              : key == LogicalKeyboardKey.arrowRight
+              ? step
+              : null);
+    if (delta == null) return KeyEventResult.ignored;
+    widget.onDelta(delta);
+    widget.onEnd();
+    return KeyEventResult.handled;
+  }
+
+  void _start() => setState(() => _dragging = true);
+
+  void _end() {
+    setState(() => _dragging = false);
+    widget.onEnd();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool active = _hovered || _dragging || _focused;
+    final double length = active ? 64 : 48;
+    final double thickness = active ? 6 : 5;
+    Widget child = widget.showGrip
+        ? Center(
+            child: AnimatedContainer(
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              curve: FushiMotion.standard,
+              width: _vertical ? length : thickness,
+              height: _vertical ? thickness : length,
+              decoration: BoxDecoration(
+                color: active ? scheme.primary : scheme.onSurfaceVariant,
+                borderRadius: BorderRadius.circular(thickness),
+              ),
+            ),
+          )
+        : ColoredBox(
+            color: active
+                ? scheme.primary.withValues(alpha: 0.5)
+                : scheme.outlineVariant,
+          );
+    child = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      dragStartBehavior: DragStartBehavior.down,
+      onVerticalDragStart: _vertical ? (_) => _start() : null,
+      onVerticalDragUpdate: _vertical
+          ? (DragUpdateDetails details) => widget.onDelta(details.delta.dy)
+          : null,
+      onVerticalDragEnd: _vertical ? (_) => _end() : null,
+      onVerticalDragCancel: _vertical ? _end : null,
+      onHorizontalDragStart: _vertical ? null : (_) => _start(),
+      onHorizontalDragUpdate: _vertical
+          ? null
+          : (DragUpdateDetails details) => widget.onDelta(details.delta.dx),
+      onHorizontalDragEnd: _vertical ? null : (_) => _end(),
+      onHorizontalDragCancel: _vertical ? null : _end,
+      child: child,
+    );
+    child = MouseRegion(
+      cursor: _vertical
+          ? SystemMouseCursors.resizeUpDown
+          : SystemMouseCursors.resizeLeftRight,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: child,
+    );
+    if (!widget.focusable) return ExcludeSemantics(child: child);
+    return Semantics(
+      label: widget.semanticLabel,
+      child: Focus(
+        onFocusChange: (bool focused) => setState(() => _focused = focused),
+        onKeyEvent: _onKey,
+        child: child,
       ),
     );
   }
