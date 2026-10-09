@@ -23,10 +23,93 @@ try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 $root = Split-Path -Parent $PSScriptRoot
 
 # --- flutter 可执行文件 ----------------------------------------------------
-# 顺序：FUSHI_FLUTTER > 本机钉定路径（保持既有行为）> PATH。
+# 版本的唯一真相源是 fushi/.fvmrc（守卫 fushi/test/build/flutter_version_single_source_guard_test.dart
+# 钉死它与 CI 同版）。按版本号找 SDK，绝不静默回退到 PATH 上版本不符的旧 flutter ——
+# 旧版本编不过本仓，pub get 还会把 lockfile 切走。
+# 顺序：FUSHI_FLUTTER（显式覆盖，不校验版本）> fvm 缓存 > 常见安装目录 > PATH 上版本相符的 flutter。
+# 这里没有任何本机私有路径：所有候选都是「按版本号拼出来的目录」。
+
+function Get-PinnedFlutterVersion {
+    [OutputType([string])]
+    param([string]$RepoRoot)
+
+    $fvmrc = Join-Path $RepoRoot 'fushi/.fvmrc'
+    if (-not (Test-Path -LiteralPath $fvmrc)) {
+        throw "找不到 $fvmrc，无法确定本仓钉定的 Flutter 版本。"
+    }
+    $text = [IO.File]::ReadAllText($fvmrc)
+    $m = [regex]::Match($text, '"flutter"\s*:\s*"([^"]+)"')
+    if (-not $m.Success) {
+        throw "$fvmrc 里没有 `"flutter`": `"<版本>`" 字段。"
+    }
+    return $m.Groups[1].Value.Trim()
+}
+
+# 读 SDK 自报的版本；读不到返回 $null（不执行 flutter，免得首跑触发下载 Dart SDK）。
+function Get-FlutterSdkVersion {
+    [OutputType([string])]
+    param([string]$SdkRoot)
+
+    $json = Join-Path $SdkRoot 'bin/cache/flutter.version.json'
+    if (Test-Path -LiteralPath $json) {
+        $m = [regex]::Match([IO.File]::ReadAllText($json), '"frameworkVersion"\s*:\s*"([^"]+)"')
+        if ($m.Success) { return $m.Groups[1].Value.Trim() }
+    }
+    $legacy = Join-Path $SdkRoot 'version'
+    if (Test-Path -LiteralPath $legacy) {
+        $v = ([IO.File]::ReadAllText($legacy)).Trim()
+        if ($v) { return $v }
+    }
+    return $null
+}
+
+function Get-FlutterExeInSdk {
+    [OutputType([string])]
+    param([string]$SdkRoot)
+
+    foreach ($name in @('flutter.bat', 'flutter')) {
+        $exe = Join-Path $SdkRoot (Join-Path 'bin' $name)
+        if (Test-Path -LiteralPath $exe) { return $exe }
+    }
+    return $null
+}
+
+function Get-FlutterSdkCandidates {
+    [OutputType([string[]])]
+    param([string]$Version)
+
+    $candidates = New-Object System.Collections.Generic.List[string]
+
+    # fvm 缓存：FVM_CACHE_PATH / FVM_HOME（新旧两代变量）> 各平台默认缓存位置。
+    foreach ($base in @($env:FVM_CACHE_PATH, $env:FVM_HOME)) {
+        if ($base) { $candidates.Add((Join-Path $base "versions/$Version")) }
+    }
+    if ($env:LOCALAPPDATA) { $candidates.Add((Join-Path $env:LOCALAPPDATA "fvm/versions/$Version")) }
+    if ($HOME) {
+        $candidates.Add((Join-Path $HOME "fvm/versions/$Version"))
+        $candidates.Add((Join-Path $HOME ".fvm/versions/$Version"))
+    }
+
+    # 常见手动安装目录：<盘符或家目录>/flutter_sdk/flutter_<版本>、<…>/flutter_<版本>。
+    $bases = New-Object System.Collections.Generic.List[string]
+    if ($HOME) { $bases.Add($HOME) }
+    try {
+        foreach ($drive in [IO.DriveInfo]::GetDrives()) {
+            if ($drive.DriveType -eq [IO.DriveType]::Fixed) { $bases.Add($drive.RootDirectory.FullName) }
+        }
+    }
+    catch { }
+    foreach ($base in $bases) {
+        $candidates.Add((Join-Path $base "flutter_sdk/flutter_$Version"))
+        $candidates.Add((Join-Path $base "flutter_$Version"))
+    }
+
+    return $candidates.ToArray()
+}
+
 function Resolve-FlutterExe {
     [OutputType([string])]
-    param()
+    param([string]$RepoRoot)
 
     if ($env:FUSHI_FLUTTER) {
         if (-not (Test-Path $env:FUSHI_FLUTTER)) {
@@ -35,14 +118,90 @@ function Resolve-FlutterExe {
         return $env:FUSHI_FLUTTER
     }
 
-    $pinned = "D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat"
-    if (Test-Path $pinned) { return $pinned }
+    $version = Get-PinnedFlutterVersion -RepoRoot $RepoRoot
+    $checked = New-Object System.Collections.Generic.List[string]
 
-    $onPath = Get-Command flutter -CommandType Application -ErrorAction SilentlyContinue |
-        Select-Object -First 1
-    if ($onPath) { return $onPath.Source }
+    foreach ($sdk in (Get-FlutterSdkCandidates -Version $version)) {
+        $checked.Add($sdk)
+        if (-not (Test-Path -LiteralPath $sdk)) { continue }
+        $exe = Get-FlutterExeInSdk -SdkRoot $sdk
+        if (-not $exe) { continue }
+        # 目录名按版本号拼出来只是候选；SDK 自报了别的版本就不认。
+        $reported = Get-FlutterSdkVersion -SdkRoot $sdk
+        if ($reported -and $reported -ne $version) { continue }
+        # fvm 缓存常是指向真实 SDK 的链接：按链接目标返回，同一份 SDK 只有一个路径
+        # （package_config 的 flutterRoot、setup_worktree 的编译缓存预热都按路径认 SDK）。
+        $item = Get-Item -LiteralPath $sdk
+        if ($item.LinkType -and $item.Target) {
+            $target = @($item.Target)[0]
+            $targetExe = Get-FlutterExeInSdk -SdkRoot $target
+            if ($targetExe) { return $targetExe }
+        }
+        return $exe
+    }
 
-    throw "找不到 flutter：既不在 $pinned，也不在 PATH。设 FUSHI_FLUTTER=<flutter.bat 完整路径> 后重跑。"
+    $mismatched = New-Object System.Collections.Generic.List[string]
+    $onPath = @(Get-Command flutter -CommandType Application -ErrorAction SilentlyContinue)
+    $seenSdks = @{}
+    foreach ($cmd in $onPath) {
+        # PATH 上同一 bin 目录会同时命中 flutter.bat 与无扩展名的 shell 脚本，按 SDK 去重。
+        $sdk = Split-Path -Parent (Split-Path -Parent $cmd.Source)
+        if ($seenSdks.ContainsKey($sdk)) { continue }
+        $seenSdks[$sdk] = $true
+        $reported = Get-FlutterSdkVersion -SdkRoot $sdk
+        if ($reported -eq $version) {
+            $exe = Get-FlutterExeInSdk -SdkRoot $sdk
+            if ($exe) { return $exe }
+        }
+        if (-not $reported) { $reported = '未知' }
+        $mismatched.Add("$sdk（$reported）")
+    }
+
+    $pathNote = if ($mismatched.Count -gt 0) { "PATH 上的 flutter 版本不符：`n    " + ($mismatched -join "`n    ") } else { 'PATH 上没有 flutter。' }
+    throw @"
+找不到 Flutter $version（版本取自 fushi/.fvmrc）。不会回退到其它版本：旧版本编不过本仓，pub get 还会改写 lockfile。
+$pathNote
+已查找的目录：
+    $($checked -join "`n    ")
+任选其一后重跑：
+  - fvm install $version
+  - 把 Flutter $version 解压到上面任一目录
+  - 设 FUSHI_FLUTTER=<Flutter $version 的 flutter.bat 完整路径>
+"@
+}
+
+# --- Git for Windows 的 bash -----------------------------------------------
+# 不能用 PATH 上的裸 `bash`：Windows 上它常解析到 C:\Windows\System32\bash.exe
+# （WSL），ci/apply-patches.sh 在 WSL 里看到的是 Linux 侧的 pub cache 与工具链，
+# 必然失败。按 git 自己的安装位置推导 Git Bash；非 Windows 直接用 PATH 上的 bash。
+function Resolve-GitBash {
+    [OutputType([string])]
+    param()
+
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return 'bash' }
+
+    $roots = New-Object System.Collections.Generic.List[string]
+    # git --exec-path = <Git>/mingw64/libexec/git-core（或 mingw32 / clangarm64）。
+    $execPath = (& git --exec-path 2>$null | Out-String).Trim()
+    if ($execPath) {
+        $roots.Add((Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $execPath))))
+    }
+    # git.exe 在 <Git>/cmd 或 <Git>/bin 下。
+    $gitCmd = Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($gitCmd) { $roots.Add((Split-Path -Parent (Split-Path -Parent $gitCmd.Source))) }
+    foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:ProgramW6432)) {
+        if ($base) { $roots.Add((Join-Path $base 'Git')) }
+    }
+    if ($env:LOCALAPPDATA) { $roots.Add((Join-Path $env:LOCALAPPDATA 'Programs/Git')) }
+
+    foreach ($root in $roots) {
+        foreach ($rel in @('bin/bash.exe', 'usr/bin/bash.exe')) {
+            $candidate = Join-Path $root $rel
+            if (Test-Path -LiteralPath $candidate) { return $candidate }
+        }
+    }
+
+    throw "找不到 Git for Windows 的 bash.exe（已按 git --exec-path 与常见安装目录查找：$($roots -join '; ')）。不会用 PATH 上的 bash：那通常是 WSL。安装 Git for Windows 后重跑。"
 }
 
 # --- 代理解析 --------------------------------------------------------------
@@ -167,7 +326,7 @@ function Get-ProxyHelpText {
 "@
 }
 
-$flutter = Resolve-FlutterExe
+$flutter = Resolve-FlutterExe -RepoRoot $root
 Write-Host "flutter: $flutter" -ForegroundColor DarkGray
 
 $resolved = Resolve-BootstrapProxy -RepoRoot $root
@@ -219,11 +378,26 @@ Pop-Location
 Write-Host "`nWorkspace resolved (single lockfile at repo root)." -ForegroundColor Green
 
 # Apply pub-cache patches for the non-vendored packages (single source of truth:
-# ci/apply-patches.sh). Requires bash (Git Bash) on PATH, same as CI.
-Write-Host "Applying pub-cache patches..." -ForegroundColor Cyan
-bash ci/apply-patches.sh
-if ($LASTEXITCODE -ne 0) {
-    throw "ci/apply-patches.sh failed."
+# ci/apply-patches.sh), run with Git Bash (see Resolve-GitBash; never the WSL bash).
+$gitBash = Resolve-GitBash
+Write-Host "Applying pub-cache patches... (bash: $gitBash)" -ForegroundColor Cyan
+# apply-patches.sh 自己找 SDK 打 flutter-sdk 补丁时优先认 FLUTTER_ROOT、否则取 PATH 上的
+# flutter —— 必须钉成上面 pub get 用的同一份 SDK，否则补丁打到 PATH 上的旧版本上。
+# 用正斜杠：交给 Git Bash 的路径别带反斜杠。
+$flutterSdkRoot = (Split-Path -Parent (Split-Path -Parent $flutter)) -replace '\\', '/'
+$previousFlutterRoot = $env:FLUTTER_ROOT
+$env:FLUTTER_ROOT = $flutterSdkRoot
+Push-Location $root
+try {
+    & $gitBash ci/apply-patches.sh
+    $patchExit = $LASTEXITCODE
+}
+finally {
+    Pop-Location
+    $env:FLUTTER_ROOT = $previousFlutterRoot
+}
+if ($patchExit -ne 0) {
+    throw "ci/apply-patches.sh failed (bash: $gitBash, exit $patchExit)."
 }
 
 Write-Host "`nBootstrap complete. Build with, e.g.:" -ForegroundColor Green

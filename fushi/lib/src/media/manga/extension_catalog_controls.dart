@@ -130,7 +130,7 @@ class ExtensionCatalogActions extends StatelessWidget {
               (
                 value: option,
                 label: option == 0
-                    ? t.mihon_extension_language_all
+                    ? t.mihon_extension_min_downloads_any
                     : '≥ ${formatMihonDownloadCount(option)}',
               ),
           ],

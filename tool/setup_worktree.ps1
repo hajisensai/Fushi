@@ -126,8 +126,8 @@ try {
     & $bootstrap
 }
 catch {
-    # 先记下，预热照做再抛：本机 bootstrap 常死在 apply-patches(bash 走了 WSL)，
-    # 那时 pub get 已经成功，预热不依赖补丁(补丁打在全机共享的 pub cache 上)。
+    # 先记下，预热照做再抛：bootstrap 若死在 apply-patches，那时 pub get 已经成功，
+    # 预热不依赖补丁(补丁打在全机共享的 pub cache 上)。
     $bootstrapError = $_
 }
 finally {
