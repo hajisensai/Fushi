@@ -26,6 +26,7 @@ import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -1195,6 +1196,22 @@ SettingsDestination buildVideoDestination() {
             read: (VideoMpvConfig c) => c.normalizeDownmix,
             write: (VideoMpvConfig c, bool v) =>
                 c.copyWith(normalizeDownmix: v),
+          ),
+          // 杜比 / DTS 直通：默认关，不做「自动」——为什么见
+          // [VideoMpvConfig.audioPassthrough]。
+          _videoMpvSwitchItem(
+            id: 'video.audio.passthrough',
+            title: t.video_setting_mpv_passthrough,
+            subtitle: t.video_setting_mpv_passthrough_hint,
+            icon: FushiIcons.audio,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 195,
+              section: t.video_setting_mpv_group_audio,
+            ),
+            read: (VideoMpvConfig c) => c.audioPassthrough,
+            write: (VideoMpvConfig c, bool v) =>
+                c.copyWith(audioPassthrough: v),
           ),
         ],
       ),

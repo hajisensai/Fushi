@@ -8182,12 +8182,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       bottom: 0,
                       child: CoverProgressStrip(value: watchFrac),
                     ),
-                  // v95：清晰度 / HDR 角标。落左下角是因为另外三角已被占满（左上=标签
-                  // 与勾选框、右上=集数/新增、右下=云端），bottom 给 6 让开 3px 进度条。
+                  // v95：清晰度 / HDR / 环绕声角标。落左下角是因为另外三角已被占满（左上=
+                  // 标签与勾选框、右上=集数/新增、右下=云端），bottom 给 6 让开 3px 进度条。
                   // 不随多选态隐藏——它在左下，与左上的勾选框本就不同角，没有让位的必要。
+                  // right 也钉住：给角标条有界宽度，窄卡排不下时往上换行而不是溢出卡边。
                   Positioned(
                     bottom: 6,
                     left: 6,
+                    right: 6,
                     child: IgnorePointer(
                       child: VideoSpecsBadgeStrip(
                         service: ref.read(videoSpecsProvider),

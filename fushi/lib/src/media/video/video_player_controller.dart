@@ -498,6 +498,35 @@ class VideoPlayerController extends ChangeNotifier
   /// 当前 mpv 配置（[load] 复用 / [applyMpvConfig] 实时切换）。
   VideoMpvConfig _mpvConfig = VideoMpvConfig.defaults;
 
+  /// 最近一次真正下发给 mpv 的 `audio-spdif`（null = 尚未下发）。倍速 / 音量 / 静音
+  /// 变化时据此判断要不要切换直通，避免无谓地重建音频输出（[_syncAudioSpdif]）。
+  String? _appliedAudioSpdif;
+
+  /// 实际可听音量：静音时为 0（本仓静音就是把 player 音量压 0）。
+  double get _outputVolume => _muted ? 0.0 : _lastVolume;
+
+  /// 按当前倍速 / 可听音量重新判定杜比 / DTS 直通是否生效，变了才下发。
+  ///
+  /// 直通下 mpv 的音量 / 静音不作用于压缩码流、倍速只能整帧丢弃（见
+  /// [resolveAudioSpdif]），所以倍速 ≠ 1、音量 < 100 或静音时临时改为本地解码，
+  /// 回到条件内再恢复直通。用户设置 [_mpvConfig] 不动。
+  Future<void> _syncAudioSpdif() async {
+    final dynamic native = _player?.platform;
+    if (native == null) return;
+    final String next = resolveAudioSpdif(
+      passthrough: _mpvConfigForCurrentSource(_mpvConfig).audioPassthrough,
+      playbackSpeed: _lastSpeed,
+      outputVolume: _outputVolume,
+    );
+    if (next == _appliedAudioSpdif) return;
+    _appliedAudioSpdif = next;
+    try {
+      await native.setProperty('audio-spdif', next);
+    } catch (_) {
+      // 非 libmpv 后端：与 [applyMpvConfigToPlayer] 同口径静默跳过。
+    }
+  }
+
   /// 当前 mpv 视频亮度（libmpv `brightness` 属性，范围 -100..100，0=原始）。桌面
   /// 左半区竖拖手势（TODO-754）在系统屏幕亮度不可控时改写它，给视频画面真实的亮
   /// 度反馈。player 未实例化 / 非 libmpv 后端时只保留此目标值，[load] 不复用（每片
@@ -2234,7 +2263,18 @@ class VideoPlayerController extends ChangeNotifier
     _mpvConfig = config;
     final Player? player = _player;
     if (player == null) return;
-    await applyMpvConfigToPlayer(player, _mpvConfigForCurrentSource(config));
+    final VideoMpvConfig effective = _mpvConfigForCurrentSource(config);
+    await applyMpvConfigToPlayer(
+      player,
+      effective,
+      playbackSpeed: _lastSpeed,
+      outputVolume: _outputVolume,
+    );
+    _appliedAudioSpdif = resolveAudioSpdif(
+      passthrough: effective.audioPassthrough,
+      playbackSpeed: _lastSpeed,
+      outputVolume: _outputVolume,
+    );
   }
 
   /// BUG-2691：Android 上服务器元数据已知是 DV P5 的片源，本次开片强制软解
@@ -2736,9 +2776,24 @@ class VideoPlayerController extends ChangeNotifier
 
     // 应用 mpv 画质/解码配置（五平台 libmpv 生效；仅非 libmpv 后端 / 不支持属性 no-op）。
     _mpvConfig = mpvConfig;
+    // 直通是否生效取决于开片倍速与可听音量（见 [resolveAudioSpdif]），这里按本次
+    // 即将下发的初值判定，下面设音量 / 速率时不必再切一次。
+    final VideoMpvConfig effectiveMpvConfig = _mpvConfigForCurrentSource(
+      _mpvConfig,
+    );
+    final double initialOutputVolume = initialVolume
+        .clamp(0.0, 100.0)
+        .toDouble();
     await applyMpvConfigToPlayer(
       player,
-      _mpvConfigForCurrentSource(_mpvConfig),
+      effectiveMpvConfig,
+      playbackSpeed: initialSpeed,
+      outputVolume: initialOutputVolume,
+    );
+    _appliedAudioSpdif = resolveAudioSpdif(
+      passthrough: effectiveMpvConfig.audioPassthrough,
+      playbackSpeed: initialSpeed,
+      outputVolume: initialOutputVolume,
     );
     if (!_isCurrentLoad(player, loadToken)) return; // mpv 配置下发后换片/销毁。
 
@@ -4348,6 +4403,7 @@ class VideoPlayerController extends ChangeNotifier
   /// 设置播放倍速（未 load 时也记下 [_lastSpeed]，下次 load 不丢）。
   Future<void> setSpeed(double rate) async {
     _lastSpeed = rate;
+    await _syncAudioSpdif();
     await _player?.setRate(rate);
   }
 
@@ -4357,6 +4413,7 @@ class VideoPlayerController extends ChangeNotifier
   Future<void> setVolume(double value) async {
     _lastVolume = value.clamp(0.0, 100.0).toDouble();
     if (_lastVolume > 0) _muted = false;
+    await _syncAudioSpdif();
     await _player?.setVolume(_lastVolume);
   }
 
@@ -4392,6 +4449,7 @@ class VideoPlayerController extends ChangeNotifier
         .clamp(0.0, 100.0)
         .toDouble();
     _muted = true;
+    await _syncAudioSpdif();
     await _player?.setVolume(0.0);
     return 0.0;
   }

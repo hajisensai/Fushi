@@ -42,7 +42,10 @@ const Duration kVideoDurationProbeTimeout = Duration(seconds: 20);
 ///
 /// v3：加 `attached_pic` disposition——此前拿第一条 video 流当视频轨，内嵌封面图会把
 /// 4K 片子标成「480p · MJPEG」；已缓存的错行靠这次 +1 自动重探。
-const int kVideoProbeFieldSetVersion = 3;
+///
+/// v4：音轨加 `profile`——Dolby Atmos 只在这里露面（`Dolby TrueHD + Dolby Atmos` /
+/// `Dolby Digital Plus + Dolby Atmos`），codec_name 仍是 truehd / eac3。
+const int kVideoProbeFieldSetVersion = 4;
 
 /// 一次 ffprobe 的产出。每个字段各自可空：探到什么算什么，绝不因为一半缺失就把
 /// 另一半也丢掉。
@@ -234,6 +237,7 @@ class AudioTrackFacts {
     this.codec,
     this.channels,
     this.channelLayout,
+    this.profile,
     this.sampleRate,
     this.bitrate,
     this.language,
@@ -254,6 +258,9 @@ class AudioTrackFacts {
   /// `channel_layout`，如 `stereo` / `5.1`。
   final String? channelLayout;
 
+  /// ffprobe `profile`，如 `Dolby TrueHD + Dolby Atmos` / `DTS-HD MA`。
+  final String? profile;
+
   final int? sampleRate;
   final int? bitrate;
 
@@ -271,6 +278,15 @@ class AudioTrackFacts {
   /// 编码显示名：`eac3` → `E-AC-3`。
   String? get codecLabel => _audioCodecLabel(codec);
 
+  /// 是否 Dolby Atmos（TrueHD / E-AC-3 JOC）。
+  ///
+  /// 首选 ffprobe `profile`（FFmpeg 7.0 起才把 Atmos 报进 profile）；更老的 ffmpeg
+  /// （移动端 ffmpeg-kit）对同一条轨只给 `truehd` / `eac3`，那时退到音轨自报标题——
+  /// 发布组几乎都把「Atmos」写进轨道名。两样都没有就按否处理（宁可漏标不错标）。
+  bool get isAtmos =>
+      _mentionsAtmos(profile) ||
+      ((codec == 'truehd' || codec == 'eac3') && _mentionsAtmos(title));
+
   /// 落库用。键名短且稳定——这串 JSON 会存进 `video_file_specs.audio_tracks_json`，
   /// 改键名等于让所有已缓存的行解不出来（届时靠 `kVideoProbeFieldSetVersion` 兜底重探）。
   Map<String, Object?> toJson() => <String, Object?>{
@@ -278,6 +294,7 @@ class AudioTrackFacts {
         if (codec != null) 'c': codec,
         if (channels != null) 'ch': channels,
         if (channelLayout != null) 'cl': channelLayout,
+        if (profile != null) 'p': profile,
         if (sampleRate != null) 'sr': sampleRate,
         if (bitrate != null) 'br': bitrate,
         if (language != null) 'l': language,
@@ -292,6 +309,7 @@ class AudioTrackFacts {
         codec: _stringFrom(json['c']),
         channels: _intFrom(json['ch']),
         channelLayout: _stringFrom(json['cl']),
+        profile: _stringFrom(json['p']),
         sampleRate: _intFrom(json['sr']),
         bitrate: _intFrom(json['br']),
         language: _stringFrom(json['l']),
@@ -443,7 +461,7 @@ Future<VideoProbeFacts> probeVideoFacts(
 const String kVideoProbeShowEntries = 'format=duration,size,bit_rate:'
     'stream=index,codec_type,codec_name,width,height,pix_fmt,'
     'color_primaries,color_transfer,color_space,bits_per_raw_sample,'
-    'r_frame_rate,bit_rate,channels,channel_layout,sample_rate:'
+    'r_frame_rate,bit_rate,channels,channel_layout,sample_rate,profile:'
     'stream_disposition=default,forced,comment,attached_pic:'
     'stream_tags=language,title';
 
@@ -538,6 +556,7 @@ List<AudioTrackFacts> _audioTracksFrom(Object? streams) {
       codec: _stringFrom(stream['codec_name']),
       channels: _intFrom(stream['channels']),
       channelLayout: _stringFrom(stream['channel_layout']),
+      profile: _stringFrom(stream['profile']),
       sampleRate: _intFrom(stream['sample_rate']),
       bitrate: _intFrom(stream['bit_rate']),
       language: _languageFrom(stream),
@@ -666,6 +685,9 @@ String? _videoCodecLabel(String? codec) {
     _ => value.toUpperCase(),
   };
 }
+
+bool _mentionsAtmos(String? text) =>
+    text != null && text.toLowerCase().contains('atmos');
 
 String? _audioCodecLabel(String? codec) {
   final String? value = _stringFrom(codec)?.toLowerCase();
