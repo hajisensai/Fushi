@@ -1155,6 +1155,11 @@ void main() {
     await tester.tap(find.text(t.stat_goal_set));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
+    // 2026-10-10：每周目标已删（只能设、不显示进度），对话框只剩每日一个框。
+    expect(
+      find.byKey(const ValueKey<String>('stat-goal-weekly-field')),
+      findsNothing,
+    );
     await tester.enterText(
       find.byKey(const ValueKey<String>('stat-goal-daily-field')),
       '1000',
@@ -1194,10 +1199,10 @@ void main() {
       find.descendant(of: dialog, matching: find.byType(FushiDialogHeroIcon)),
       findsOneWidget,
     );
-    // 每日 + 每周两个输入框，单位后缀各一个。
+    // 只剩每日一个输入框（每周目标 2026-10-10 删除），单位后缀一个。
     expect(
       find.descendant(of: dialog, matching: find.text(t.stat_goal_unit_chars)),
-      findsNWidgets(2),
+      findsOneWidget,
     );
     final Finder dailyFinder = glassUnwrap<TextField>(
         find.byKey(const ValueKey<String>('stat-goal-daily-field')));

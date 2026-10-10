@@ -8296,10 +8296,6 @@ class AppModel with ChangeNotifier {
     FushiDatabase.statDayResetHour = statDayResetHour;
   }
 
-  int get readingGoalWeeklyChars => prefsRepo.readingGoalWeeklyChars;
-  Future<void> setReadingGoalWeeklyChars(int value) =>
-      prefsRepo.setReadingGoalWeeklyChars(value);
-
   bool get remoteLookupEnabled => prefsRepo.remoteLookupEnabled;
   Future<void> setRemoteLookupEnabled(bool value) =>
       prefsRepo.setRemoteLookupEnabled(value);
