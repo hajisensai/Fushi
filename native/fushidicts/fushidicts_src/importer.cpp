@@ -1050,18 +1050,23 @@ size_t import_mdd_into(const std::vector<std::string>& mdd_paths, const std::str
       ~MappingGuard() { memory::unmap(file); }
     } mapping_guard{mapped};
 
+    // Only a failure to *parse* this part is survivable here. Anything thrown
+    // while writing a record (disk full, allocation) is the store's problem
+    // and goes up to the caller, which drops the partial store.
+    bool writing = false;
     try {
       mdx_reader::parse_mdd_streaming(mapped.data, mapped.size,
                                       [&](std::string&& path, const uint8_t* blob, size_t size) {
+                                        writing = true;
                                         open_store();
                                         if (append_media_record(mbin, write_pos, index_entries, std::move(path),
                                                                 blob, size)) {
                                           count++;
                                         }
+                                        writing = false;
                                       });
-    } catch (const std::ios_base::failure&) {
-      throw;  // the store itself failed to write: not this part's fault
     } catch (const std::exception& e) {
+      if (writing) throw;
       // Records already written stay mounted; the rest of this part is lost.
       FUSHI_LOGW("mdd parse failed (%s), continuing without the rest of this part", e.what());
     }

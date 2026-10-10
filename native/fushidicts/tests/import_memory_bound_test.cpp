@@ -15,8 +15,8 @@
 //      corrupt entry fails without leaving a file behind.
 //   B) low_ram=true and low_ram=false import the same yomitan dictionary to
 //      the same terms, glossaries and media.
-//   C) Importing a zip holding a small .mdx plus a 160 MB .mdd runs in a child
-//      process; on Windows its peak private commit must stay under 96 MB (the
+//   C) Importing a zip holding a small .mdx plus a 160 MB .mdd -- once with
+//      stored members, once with deflate members -- runs in a child process; on Windows its peak private commit must stay under 96 MB (the
 //      old path peaked near 3x the .mdd). Other platforms check the result
 //      only: their RSS counts the file-backed output pages too.
 //
@@ -194,8 +194,10 @@ int child_import(const std::string& zip_path, const std::string& out_dir) {
   return 0;
 }
 
-std::string build_big_mdict_zip() {
-  std::string zip_path;
+// [deflate] picks the member encoding: stored members are copied straight out
+// of the input mapping, deflate members are inflated into a mapping of the
+// output file. Both must stay off the heap.
+std::string build_big_mdict_zip(bool deflate) {
   std::vector<uint8_t> mdd;
   {
     std::vector<std::pair<std::string, std::string>> media;
@@ -210,15 +212,25 @@ std::string build_big_mdict_zip() {
     mdd = mdx_fixture::build_mdd_record_splits("BigMedia", media, splits);
   }
   const auto mdx = mdx_fixture::build_mdx_plain("BigMedia", {{"alpha", "<img src=\"img/0.bin\">"}});
-  zip_path = fushi_test::write_zip(
-      "big_mdict", {{"BigMedia.mdx", std::string(mdx.begin(), mdx.end())},
-                    {"BigMedia.mdd", std::string(mdd.begin(), mdd.end())}});
-  return zip_path;
+  const std::string mdx_bytes(mdx.begin(), mdx.end());
+  std::string mdd_bytes(mdd.begin(), mdd.end());
+  std::vector<uint8_t>().swap(mdd);
+  if (!deflate) {
+    return fushi_test::write_zip("big_mdict_stored",
+                                 {{"BigMedia.mdx", mdx_bytes}, {"BigMedia.mdd", std::move(mdd_bytes)}});
+  }
+  const auto mdd_size = static_cast<uint32_t>(mdd_bytes.size());
+  std::string mdd_deflated = deflate_raw(mdd_bytes);
+  std::string().swap(mdd_bytes);
+  return fushi_test::write_zip_deflate(
+      "big_mdict_deflate", {{"BigMedia.mdx", deflate_raw(mdx_bytes), static_cast<uint32_t>(mdx_bytes.size())},
+                            {"BigMedia.mdd", std::move(mdd_deflated), mdd_size}});
 }
 
-void test_mdict_zip_peak_memory(const char* self) {
-  const std::string zip_path = build_big_mdict_zip();
-  if (zip_path.empty()) return fail("C: could not write the MDict zip fixture");
+void test_mdict_zip_peak_memory(const char* self, bool deflate) {
+  const std::string label = deflate ? "C/deflate" : "C/stored";
+  const std::string zip_path = build_big_mdict_zip(deflate);
+  if (zip_path.empty()) return fail(label + ": could not write the MDict zip fixture");
   const std::string out_dir = fushi_test::temp_dir() + "/fushi_big_mdict_out";
   std::error_code ec;
   fs::remove_all(fs::u8path(out_dir), ec);
@@ -229,7 +241,7 @@ void test_mdict_zip_peak_memory(const char* self) {
   si.cb = sizeof(si);
   PROCESS_INFORMATION pi{};
   if (!CreateProcessA(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
-    return fail("C: could not start the child import");
+    return fail(label + ": could not start the child import");
   }
   WaitForSingleObject(pi.hProcess, INFINITE);
   DWORD code = 1;
@@ -239,12 +251,12 @@ void test_mdict_zip_peak_memory(const char* self) {
   const bool measured = GetProcessMemoryInfo(pi.hProcess, &pmc, sizeof(pmc)) != 0;
   CloseHandle(pi.hThread);
   CloseHandle(pi.hProcess);
-  if (code != 0) return fail("C: child import failed with exit code " + std::to_string(code));
-  if (!measured) return fail("C: could not read the child's memory counters");
+  if (code != 0) return fail(label + ": child import failed with exit code " + std::to_string(code));
+  if (!measured) return fail(label + ": could not read the child's memory counters");
   const size_t peak = pmc.PeakPagefileUsage;
-  std::fprintf(stderr, "INFO C: child peak private commit %.1f MiB (budget %.0f MiB, .mdd %.0f MiB)\n",
-               peak / 1048576.0, kPeakBudgetBytes / 1048576.0, kMediaRecords * kMediaRecordBytes / 1048576.0);
-  if (peak > kPeakBudgetBytes) fail("C: import held the media companion in memory");
+  std::fprintf(stderr, "INFO %s: child peak private commit %.1f MiB (budget %.0f MiB, .mdd %.0f MiB)\n",
+               label.c_str(), peak / 1048576.0, kPeakBudgetBytes / 1048576.0, kMediaRecords * kMediaRecordBytes / 1048576.0);
+  if (peak > kPeakBudgetBytes) fail(label + ": import held the media companion in memory");
 #else
   const pid_t pid = fork();
   if (pid == 0) {
@@ -253,8 +265,8 @@ void test_mdict_zip_peak_memory(const char* self) {
   }
   int status = 0;
   waitpid(pid, &status, 0);
-  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) return fail("C: child import failed");
-  std::fprintf(stderr, "INFO C: peak-memory assertion runs on Windows only\n");
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) return fail(label + ": child import failed");
+  std::fprintf(stderr, "INFO %s: peak-memory assertion runs on Windows only\n", label.c_str());
 #endif
 
   // The media store holds every record, byte-exact.
@@ -263,7 +275,7 @@ void test_mdict_zip_peak_memory(const char* self) {
   for (size_t i : {size_t{0}, size_t{1234}, kMediaRecords - 1}) {
     const std::vector<char> blob = q.get_media_file("BigMedia", "img/" + std::to_string(i) + ".bin");
     if (std::string(blob.begin(), blob.end()) != noise(kMediaRecordBytes, i + 11)) {
-      fail("C: media record " + std::to_string(i) + " is missing or not byte-exact");
+      fail(label + ": media record " + std::to_string(i) + " is missing or not byte-exact");
     }
   }
   fs::remove_all(fs::u8path(out_dir), ec);
@@ -278,7 +290,8 @@ int main(int argc, char** argv) {
   }
   test_extract_to();
   test_low_ram_equivalence();
-  test_mdict_zip_peak_memory(argv[0]);
+  test_mdict_zip_peak_memory(argv[0], /*deflate=*/false);
+  test_mdict_zip_peak_memory(argv[0], /*deflate=*/true);
   if (g_fail) {
     std::fprintf(stderr, "import_memory_bound_test: %d failure(s)\n", g_fail);
     return 1;
