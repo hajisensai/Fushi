@@ -100,6 +100,8 @@ extension _VideoDiscMenu on _VideoFushiPageState {
     }
     final String? action = blurayMenuKeyAction(event.logicalKey);
     if (action == null) return false;
+    // Keyboard-only users bring the top chrome (and its Back) back too.
+    _pokeDiscMenuChrome();
     if (_controller?.discMenuEntryPending == true) {
       if (action == 'prev' && event is KeyDownEvent) {
         unawaited(_handleBackOrExit());
@@ -117,6 +119,7 @@ extension _VideoDiscMenu on _VideoFushiPageState {
     if (!_discOwnsInput) return false;
     final String? action = blurayMenuGamepadAction(button);
     if (action == null) return false;
+    _pokeDiscMenuChrome();
     if (_controller?.discMenuEntryPending == true) {
       if (action == 'prev') unawaited(_handleBackOrExit());
       return true;
@@ -487,7 +490,9 @@ extension _VideoDiscMenu on _VideoFushiPageState {
   TextStyle _discMenuTitleStyle() => _m3eChrome
       ? TextStyle(
           color: _VideoFushiPageState._videoChromeNeutralFg,
-          fontSize: 16 * _videoUiScale,
+          fontSize:
+              Theme.of(context).textTheme.titleMedium!.fontSize! *
+              _videoUiScale,
           height: 1.25,
           fontWeight: FontWeight.w600,
           letterSpacing: 0.1,

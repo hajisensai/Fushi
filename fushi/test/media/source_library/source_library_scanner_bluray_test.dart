@@ -260,6 +260,47 @@ void main() {
       expect(await discMembers(), contains(p.normalize(bonus)));
     });
 
+    test('收了本盘标题的 m3u8 清单合集不被当成盘合集', () async {
+      final VideoBookRepository repo = VideoBookRepository(db);
+      final VideoBookRow main = (await repo.findByVideoPath(
+        p.join(disc, 'BDMV', 'PLAYLIST', '00001.mpls'),
+      ))!;
+      await repo.saveVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/other',
+          title: 'other',
+          videoPath: p.join(tmp.path, 'other.mkv'),
+          importedAt: const Value<int?>(1),
+        ),
+      );
+      // 盘合集清空（移空自删），只剩一个混着别处文件的清单合集收着本盘正片：
+      // 它不是这张盘，特典不能被塞进去。
+      for (final MediaCollectionRow c in await repo.getAllMediaCollections()) {
+        if (c.name != 'DISC2') continue;
+        for (final MediaCollectionItemRow item in await repo.getCollectionItems(
+          c.id,
+        )) {
+          await db.removeFromCollection(c.id, MediaKind.video, item.entryKey);
+        }
+      }
+      final int mixed = await db.createMediaCollection(
+        'mixed',
+        collectionType: 'playlist',
+      );
+      await db.addToCollection(mixed, MediaKind.video, main.bookUid);
+      await db.addToCollection(mixed, MediaKind.video, 'video/other');
+
+      final VideoBookRow row = (await ensureBlurayTitleInLibrary(db, bonus))!;
+      expect(row.sourceId, source.id);
+      final List<String> mixedMembers = <String>[
+        for (final MediaCollectionItemRow item in await repo.getCollectionItems(
+          mixed,
+        ))
+          item.entryKey,
+      ];
+      expect(mixedMembers, isNot(contains(row.bookUid)));
+    });
+
     test('用户改过的标题不被覆盖', () async {
       final VideoBookRepository repo = VideoBookRepository(db);
       await repo.saveVideoBook(
