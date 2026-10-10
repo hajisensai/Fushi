@@ -120,7 +120,7 @@ void main() {
   });
 
   group('ffmpeg 参数', () {
-    test('-ss / -to 落在 -i 之前（输入 seek，别把跳过的部分也解码一遍）', () {
+    test('-ss / -t 落在 -i 之前（输入 seek，别把跳过的部分也解码一遍）', () {
       final List<String> args = buildTranscodeSegmentArgs(
         inputPath: '/v.mkv',
         profile: const VideoTranscodeProfile(
@@ -131,9 +131,11 @@ void main() {
         end: const Duration(seconds: 18),
       );
       expect(args.indexOf('-ss'), lessThan(args.indexOf('-i')));
-      expect(args.indexOf('-to'), lessThan(args.indexOf('-i')));
+      expect(args.indexOf('-t'), lessThan(args.indexOf('-i')));
       expect(args[args.indexOf('-ss') + 1], '12.000');
-      expect(args[args.indexOf('-to') + 1], '18.000');
+      // 时长而非终点：蓝光输入改写只把 `-ss` / `-t` 折进播放列表窗口。
+      expect(args[args.indexOf('-t') + 1], '6.000');
+      expect(args, isNot(contains('-to')));
     });
 
     test('码率上限连带 maxrate/bufsize（单给 -b:v 箍不住瞬时码率）', () {

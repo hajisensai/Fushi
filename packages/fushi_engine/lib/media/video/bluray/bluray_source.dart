@@ -166,25 +166,15 @@ BluraySource? buildBluraySource(
     }
   }
 
-  final StringBuffer edl = StringBuffer('edl://');
-  for (final BlurayClipRef clip in playlist.clips) {
-    final String path = streamPath(clip.clipId);
-    edl.write(encodeEdlField(path));
-    // 每段一律显式写起止，**整段用满的段也写**：省略时 mpv 取 lavf 对 MPEG-TS 从尾部
-    // 扫出来的估计时长当段长（demux_edl.c `part->length = source->duration + …`），
-    // 每道接缝的误差累加到后续段的虚拟起点，而 [chapters] 是按 MPLS 精确 tick 算的
-    // ——多段正片后段章节与画面就错位。IN/OUT 本来就精确已知，没有理由交给估计。
-    // 起点直接用 MPLS 的 IN——EDL 的 start 在**源文件原始时间戳域**里，不减零点
-    // （零点未知的段同样成立：IN 本就是原始 PTS）。
-    edl.write(',');
-    edl.write(_seconds(clip.inTimeTicks));
-    edl.write(',');
-    edl.write(_seconds(clip.durationTicks));
-    edl.write(';');
-  }
-
   return BluraySource(
-    uri: edl.toString(),
+    uri: buildBlurayEdlUri(<BlurayEdlSegment>[
+      for (final BlurayClipRef clip in playlist.clips)
+        (
+          source: streamPath(clip.clipId),
+          inTimeTicks: clip.inTimeTicks,
+          durationTicks: clip.durationTicks,
+        ),
+    ]),
     isPlainFile: false,
     primaryStreamPath: primary,
     duration: playlist.duration,
@@ -204,6 +194,31 @@ bool _coversWholeClip(BlurayClipRef clip, BlurayClipTimebase timebase) {
   const int tolerance = kBlurayTimeScale ~/ 24 + 1;
   return clip.inTimeTicks <= timebase.presentationStartTicks + tolerance &&
       clip.outTimeTicks >= timebase.presentationEndTicks - tolerance;
+}
+
+/// 一条 EDL 条目：[source] 是 mpv 能直接打开的任何东西——本地 m2ts 路径、解密回环
+/// URL、或互联 host 的分段 URL；IN / 时长是 MPLS 的 45 kHz tick。
+typedef BlurayEdlSegment = ({String source, int inTimeTicks, int durationTicks});
+
+/// 把一条播放列表的各段拼成 `edl://`。本地播放与互联远端播放共用这一份拼法，两边
+/// 的时间轴、章节对齐因此逐 tick 相同。
+String buildBlurayEdlUri(Iterable<BlurayEdlSegment> segments) {
+  final StringBuffer edl = StringBuffer('edl://');
+  for (final BlurayEdlSegment segment in segments) {
+    edl.write(encodeEdlField(segment.source));
+    // 每段一律显式写起止，**整段用满的段也写**：省略时 mpv 取 lavf 对 MPEG-TS 从尾部
+    // 扫出来的估计时长当段长（demux_edl.c `part->length = source->duration + …`），
+    // 每道接缝的误差累加到后续段的虚拟起点，而章节是按 MPLS 精确 tick 算的
+    // ——多段正片后段章节与画面就错位。IN/OUT 本来就精确已知，没有理由交给估计。
+    // 起点直接用 MPLS 的 IN——EDL 的 start 在**源文件原始时间戳域**里，不减零点
+    // （零点未知的段同样成立：IN 本就是原始 PTS）。
+    edl.write(',');
+    edl.write(_seconds(segment.inTimeTicks));
+    edl.write(',');
+    edl.write(_seconds(segment.durationTicks));
+    edl.write(';');
+  }
+  return edl.toString();
 }
 
 /// 45 kHz tick → 秒；6 位小数把 1 tick（22.2 µs）也保住，mpv 按 double 解析。
