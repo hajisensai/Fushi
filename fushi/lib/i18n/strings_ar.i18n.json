@@ -7028,5 +7028,9 @@
   "mihon_extension_uninstall_confirm_multi": "The extension “$name” provides $count sources. Uninstalling it removes all of them:",
   "mihon_extension_package_label": "Package: $package",
   "extension_nsfw_badge": "NSFW",
-  "mihon_extension_min_downloads_any": "بلا حد"
+  "mihon_extension_min_downloads_any": "بلا حد",
+  "book_import_no_book_notice_title": "No book selected",
+  "book_import_no_book_transcribe_hint": "You can import with audio alone: transcribe it on device and a book is generated from the transcript when you import.",
+  "book_import_no_book_subtitle_hint": "You can import with audio alone: pick a subtitle file for it and a book is generated from the subtitles when you import.",
+  "book_import_no_book_transcribe_action": "Transcribe and generate book"
 }
