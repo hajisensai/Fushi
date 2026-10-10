@@ -17,6 +17,7 @@ import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.da
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_detail_page.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_dev_page.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
@@ -111,6 +112,9 @@ class _Server {
   final List<String> reopened = <String>[];
   String role = 'user';
 
+  /// 反馈人取截图前几次失败（测详情页重取）。
+  int shotFailures = 0;
+
   /// 非空时，处理台列表请求先等它放行（测「被取代的旧请求」晚到）：键是搜索词。
   final Map<String, Completer<void>> devListGates = <String, Completer<void>>{};
 
@@ -184,6 +188,10 @@ class _Server {
     }
     if (path == '/v1/feedback/oldoldold0/attachments/s0' && r.method == 'GET') {
       if (r.headers['X-Fushi-Ticket'] != 'old-ticket') return _json({}, 404);
+      if (shotFailures > 0) {
+        shotFailures--;
+        return _json(<String, dynamic>{}, 503);
+      }
       return http.Response.bytes(
         _kOnePixelPng,
         200,
@@ -573,6 +581,52 @@ void main() {
       ),
       hasLength(1),
     );
+  });
+
+  testWidgets('BUG-3239 反馈人详情：截图下载失败显示坏图，点一下重取，成功后再点看大图', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    server.shotFailures = 1;
+    await tester.runAsync(seedOld);
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    await tester.runAsync(f.load);
+    await tester.pumpWidget(
+      wrap(b, f, const FeedbackDetailPage(feedbackId: 'oldoldold0')),
+    );
+    final Finder shot = find.byKey(
+      const ValueKey<String>('feedback-detail-shot-s0'),
+    );
+    Finder inShot(Finder f) => find.descendant(of: shot, matching: f);
+    Iterable<http.Request> downloads() => server.requests.where(
+      (http.Request r) => r.url.path.endsWith('/attachments/s0'),
+    );
+    await settleIo(
+      tester,
+      () => inShot(find.byType(FushiIcon)).evaluate().isNotEmpty,
+    );
+    expect(inShot(find.byType(Image)), findsNothing);
+    expect(downloads(), hasLength(1));
+
+    // 失败的那张点一下：重新下载（不是打开一张坏的大图）。
+    await tester.tap(shot);
+    await settleIo(
+      tester,
+      () => inShot(find.byType(Image)).evaluate().isNotEmpty,
+    );
+    expect(inShot(find.byType(Image)), findsOneWidget);
+    expect(find.byType(InteractiveViewer), findsNothing);
+    expect(downloads(), hasLength(2));
+
+    // 成功后再点：看大图，复用这次下载。
+    await tester.tap(shot);
+    await settleIo(
+      tester,
+      () => find.byType(InteractiveViewer).evaluate().isNotEmpty,
+    );
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    expect(downloads(), hasLength(2));
   });
 
   testWidgets('我的反馈：列表显示可复制的编号；按编号 / 标题 / 正文本机搜索', (WidgetTester tester) async {
