@@ -60,6 +60,9 @@ R2 `fushi-leaderboard-media`；`ADMIN_USER` / `ADMIN_PASS` / `EMAIL_PEPPER` 已�
 Workers Paid 账户用 Cloudflare Email Service（在 `wrangler.toml` 加 `[[send_email]] name = "EMAIL"`，并在
 dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wrangler secret put RESEND_API_KEY`）。
 
+> ⚠️ **新增迁移的版本必须先迁移再部署**（Actions 部署勾上 `apply_migrations`，或本机先跑上面的 `d1 migrations apply --remote`）。
+> 例如 `0006_feedback_dev_notes.sql`：新代码的处理台列表显式选 `ai_summary` 列，没迁移就部署时 `/v1/dev/feedback` 与网页 `/dev` 会整页 500（反馈人接口不受影响）。迁移只加列，先迁移、旧代码照跑不受影响。
+
 部署后还要知道的：
 
 - **App 默认连 `https://rank.fushi.moe`**（`fushi/lib/src/leaderboard/leaderboard_service.dart` 的

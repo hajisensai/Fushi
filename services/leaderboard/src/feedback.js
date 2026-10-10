@@ -98,7 +98,10 @@ function cleanText(v, max, field, { required = false } = {}, sink = null) {
   if (v === undefined || v === null) v = '';
   if (typeof v !== 'string') throw new HttpError(400, `bad_${field}`);
   // eslint-disable-next-line no-control-regex
-  const stripped = stripHiddenChars(v.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ''));
+  // 换行先归一成 \n：网页表单提交的是 CRLF，不归一的话一个换行按 2 个字计（浏览器 maxlength 按 1 个），
+  // 网页与 App 存进去的同一段文字也会是两种换行。
+  const stripped = stripHiddenChars(v.replace(/\r\n?/g, '\n')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ''));
   if (stripped.hidden && sink) sink.hidden = true;
   const s = stripped.text.trim();
   if (required && !s) throw new HttpError(400, `missing_${field}`);
@@ -536,7 +539,8 @@ export async function devList(env, { status, cursor, limit, q }) {
     after = { at: Number(cursor.slice(0, i)), id: cursor.slice(i + 1) };
   }
   const cols = 'id, category, title, status, created_at, updated_at, dev_reply_at, user_reply_at, account_id, attachments, flags, parent_id, '
-    + 'ai_summary, dev_note IS NOT NULL AS has_dev_note';
+    // 列表只露一行预览：截 200 字，全文看详情（devView），省得一页 50 条整段下发。
+    + 'substr(ai_summary, 1, 200) AS ai_summary, dev_note IS NOT NULL AS has_dev_note';
   const page = after
     ? 'AND (updated_at < ?2 OR (updated_at = ?2 AND id < ?3))'
     : 'AND ?2 IS NULL AND ?3 IS NULL';

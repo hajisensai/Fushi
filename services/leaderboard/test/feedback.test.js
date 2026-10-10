@@ -541,6 +541,13 @@ describe('开发者私有批注（AI 总结 / 开发者批改）', () => {
     const cleared = await as(env, dev, 'POST', `/v1/dev/feedback/${id}/notes`, { devNote: '  ' });
     expect(cleared.data).toMatchObject({ aiSummary: 'AI：白屏，疑似 EPUB 解析失败', devNote: null, devNoteAt: null });
     expect((await as(env, dev, 'GET', '/v1/dev/feedback')).data.items.find((x) => x.id === id).hasDevNote).toBe(false);
+
+    // 列表只给 200 字预览，详情给全文。
+    const long = '长'.repeat(300);
+    await as(env, dev, 'POST', `/v1/dev/feedback/${id}/notes`, { aiSummary: long });
+    expect((await as(env, dev, 'GET', '/v1/dev/feedback')).data.items.find((x) => x.id === id).aiSummary)
+      .toBe('长'.repeat(200));
+    expect((await as(env, dev, 'GET', `/v1/dev/feedback/${id}`)).data.aiSummary).toBe(long);
   });
 
   it('网页处理台：详情显示 AI 总结、批改表单保存（要本站 Origin），长中文不被表单上限拒', async () => {
@@ -562,6 +569,11 @@ describe('开发者私有批注（AI 总结 / 开发者批改）', () => {
     expect(saved.status).toBe(303);
     expect(env.DB.raw.prepare('SELECT dev_note FROM feedback WHERE id = ?').get(id).dev_note).toBe(longNote);
     expect((await page(env, 'GET', '/dev', { cookie })).data).toContain('已批改');
+    // 表单提交的 CRLF 存成 \n（字数按 1 个换行算，与浏览器 maxlength 一致；与 App 存的同一形状）。
+    const crlf = `${'行'.repeat(FEEDBACK_LIMITS.devNoteMax - 2)}\r\n末`;
+    expect((await page(env, 'POST', `/dev/f/${id}/note`, { cookie, fields: { devNote: crlf } })).status).toBe(303);
+    expect(env.DB.raw.prepare('SELECT dev_note FROM feedback WHERE id = ?').get(id).dev_note)
+      .toBe(`${'行'.repeat(FEEDBACK_LIMITS.devNoteMax - 2)}\n末`);
     // 网页只收批改：表单里夹带 aiSummary 也改不了 AI 总结。
     await page(env, 'POST', `/dev/f/${id}/note`, { cookie, fields: { devNote: '', aiSummary: 'hack' } });
     expect(env.DB.raw.prepare('SELECT ai_summary, dev_note FROM feedback WHERE id = ?').get(id))

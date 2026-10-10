@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { call, makeEnv, nextIp } from './harness.js';
 import { FEEDBACK_LIMITS } from '../src/feedback.js';
 import {
-  formatShow, listSql, parseArgs, parseWranglerJson, showSql, sqlText, summarizeBatchSql, summarizeSql,
+  existingIdsSql, formatShow, listSql, missingIds, parseArgs, parseWranglerJson, showSql, sqlText, summarizeBatchSql, summarizeSql,
 } from '../scripts/feedback.mjs';
 
 const NOW = Date.UTC(2026, 9, 10, 4);
@@ -46,6 +46,15 @@ describe('scripts/feedback.mjs', () => {
     expect(() => summarizeBatchSql({ [a]: 'x', 'bad id!': 'y' }, NOW)).toThrow(/编号不合法/);
     expect(() => summarizeBatchSql({ [a]: 3 }, NOW)).toThrow(/不是字符串/);
     expect(() => summarizeBatchSql([], NOW)).toThrow(/对象/);
+  });
+
+  it('写前核对编号：不存在的编号被找出来（UPDATE 命中 0 行不会报错）', async () => {
+    const env = makeEnv();
+    const a = await seed(env);
+    const rows = env.DB.raw.prepare(existingIdsSql([a, 'nothere123'])).all();
+    expect(missingIds([a, 'nothere123'], rows)).toEqual(['nothere123']);
+    expect(missingIds([a], rows)).toEqual([]);
+    expect(() => existingIdsSql(["x' OR 1=1 --"])).toThrow(/编号不合法/);
   });
 
   it('list / show 的 SQL 能在真库上跑；--need-summary 只列没总结的', async () => {
