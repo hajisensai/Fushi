@@ -30,7 +30,7 @@ class BlurayClipLease {
 }
 
 class _PlaybackSession {
-  _PlaybackSession() : media = AacsMediaSession();
+  _PlaybackSession(this.media);
 
   final AacsMediaSession media;
   int inFlight = 0;
@@ -38,10 +38,15 @@ class _PlaybackSession {
 }
 
 class BlurayClipRelayPool {
-  BlurayClipRelayPool({this.idleTimeout = const Duration(minutes: 5)});
+  BlurayClipRelayPool({
+    this.idleTimeout = const Duration(minutes: 5),
+    @visibleForTesting AacsMediaSession Function()? openSession,
+  }) : _openSession = openSession ?? AacsMediaSession.new;
 
   /// 一次播放的解密会话在没有在途请求后保留多久（暂停、拖进度条的间隙不重开回环）。
   final Duration idleTimeout;
+
+  final AacsMediaSession Function() _openSession;
 
   final Map<String, _PlaybackSession> _sessions = <String, _PlaybackSession>{};
   bool _closed = false;
@@ -55,7 +60,7 @@ class BlurayClipRelayPool {
     if (_closed) throw StateError('Blu-ray clip relay pool is closed');
     final _PlaybackSession session = _sessions.putIfAbsent(
       playback,
-      _PlaybackSession.new,
+      () => _PlaybackSession(_openSession()),
     );
     session.idle?.cancel();
     session.idle = null;
