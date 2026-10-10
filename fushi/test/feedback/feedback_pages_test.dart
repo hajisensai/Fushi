@@ -110,6 +110,26 @@ class _Server {
   final List<String> reopened = <String>[];
   String role = 'user';
 
+  /// notenote00 当前的开发者批改（POST /notes 写进来）。
+  String devNote = '旧批改';
+
+  Map<String, dynamic> _noteDetail() => <String, dynamic>{
+    'id': 'notenote00',
+    'category': 'bug',
+    'title': '翻页卡住',
+    'status': 'open',
+    'createdAt': 1,
+    'updatedAt': 2,
+    'body': '翻到第三章就卡住',
+    'contact': '',
+    'attachments': <Object>[],
+    'messages': <Object>[],
+    'aiSummary': '第三章翻页卡死',
+    'aiSummaryAt': 3,
+    'devNote': devNote,
+    'devNoteAt': devNote.isEmpty ? null : 4,
+  };
+
   Future<http.Response> handle(http.Request r) async {
     requests.add(r);
     final String path = r.url.path;
@@ -142,6 +162,12 @@ class _Server {
         'messages': <Object>[],
       });
     }
+    if (path == '/v1/dev/feedback/notenote00/notes' && r.method == 'POST') {
+      devNote =
+          (jsonDecode(r.body) as Map<String, dynamic>)['devNote'] as String;
+      return _json(_noteDetail());
+    }
+    if (path == '/v1/dev/feedback/notenote00') return _json(_noteDetail());
     if (path == '/v1/feedback/oldoldold0' && r.method == 'GET') {
       if (r.headers['X-Fushi-Ticket'] != 'old-ticket') return _json({}, 404);
       return _json(<String, dynamic>{
@@ -211,6 +237,8 @@ class _Server {
           'status': 'open',
           'createdAt': 1,
           'updatedAt': 2,
+          'aiSummary': '打开书\n白屏',
+          'hasDevNote': true,
         },
         <String, dynamic>{
           'id': 'abcdefghij',
@@ -699,6 +727,20 @@ void main() {
     );
     expect(find.text('#svSfwFdmdM'), findsOneWidget);
     expect(find.text('#abcdefghij'), findsOneWidget);
+    // AI 总结折成一行预览；有批改的标「已批改」，没有的不标。
+    expect(find.text('打开书 白屏'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('feedback-dev-noted-svSfwFdmdM')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('feedback-dev-noted-abcdefghij')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('feedback-dev-ai-abcdefghij')),
+      findsNothing,
+    );
 
     await tester.enterText(
       find.byKey(const ValueKey<String>('feedback-dev-search')),
@@ -966,6 +1008,85 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('eviltitle'), findsWidgets);
+    // 没生成过 AI 总结：淡色提示，不出不可信说明。
+    expect(
+      find.byKey(const ValueKey<String>('feedback-dev-ai-summary-empty')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('feedback-dev-ai-summary-untrusted')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('处理台详情：显示 AI 总结；批改预填旧值，改完保存走 /notes 并刷新详情', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    final LeaderboardService b = board();
+    await tester.runAsync(() async {
+      await LeaderboardStore(supportRoot: root, profileId: 1).write(
+        LeaderboardLocalAccount(
+          recoveryCode: LeaderboardIdentity.generate().toRecoveryCode(),
+          accountId: 'SelfAccount001',
+          consentAt: 1,
+        ),
+      );
+      await b.load();
+    });
+    final FeedbackService f = feedback(b);
+    await tester.pumpWidget(
+      wrap(b, f, const FeedbackDevDetailPage(feedbackId: 'notenote00')),
+    );
+    final Finder summary = find.text('第三章翻页卡死');
+    await settleIo(tester, () => summary.evaluate().isNotEmpty);
+    expect(summary, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('feedback-dev-ai-summary-untrusted')),
+      findsOneWidget,
+    );
+    expect(find.text(t.feedback_dev_note_private), findsOneWidget);
+
+    final Finder field = find.byKey(
+      const ValueKey<String>('feedback-dev-note'),
+    );
+    final Finder input = find.descendant(
+      of: field,
+      matching: find.byType(EditableText),
+    );
+    expect(tester.widget<EditableText>(input).controller.text, '旧批改');
+
+    await tester.enterText(input, '  根因在分页脚本  ');
+    final Finder save = find.byKey(
+      const ValueKey<String>('feedback-dev-note-save'),
+    );
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    bool posted() => server.requests.any(
+      (http.Request r) => r.url.path == '/v1/dev/feedback/notenote00/notes',
+    );
+    await settleIo(
+      tester,
+      () =>
+          posted() &&
+          find.text(t.feedback_dev_note_saved).evaluate().isNotEmpty,
+    );
+    final http.Request req = server.requests.lastWhere(
+      (http.Request r) => r.url.path == '/v1/dev/feedback/notenote00/notes',
+    );
+    expect(req.method, 'POST');
+    expect(jsonDecode(req.body), <String, dynamic>{'devNote': '根因在分页脚本'});
+    expect(server.devNote, '根因在分页脚本');
+    expect(tester.widget<EditableText>(input).controller.text, '根因在分页脚本');
+    expect(find.text(t.feedback_dev_note_saved), findsOneWidget);
+    // 批改与回复分开：没碰回复 / 状态的那个接口。
+    expect(
+      server.requests.where(
+        (http.Request r) =>
+            r.method == 'POST' && r.url.path == '/v1/dev/feedback/notenote00',
+      ),
+      isEmpty,
+    );
   });
 
   test('feedbackSafeText 剥双向控制符与零宽字符，保留 emoji 的 ZWJ', () {

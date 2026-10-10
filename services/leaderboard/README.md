@@ -134,6 +134,7 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 | GET | `/v1/dev/feedback/:id` | 签名·开发者 | 详情（含联系方式 / 设备信息 / 反馈人） |
 | GET | `/v1/dev/feedback/:id/attachments/:slot[?view=text]` | 签名·开发者 | 附件；日志 `view=text` 服务端流式解压 |
 | POST | `/v1/dev/feedback/:id` `{status?, reply?}` | 签名·写·开发者 | 改状态 / 回复 |
+| POST | `/v1/dev/feedback/:id/notes` `{aiSummary?, devNote?}` | 签名·写·开发者 | AI 总结 / 开发者批改（仅开发者可见，反馈人接口不返回；空白 = 清除）。本机 CLI：`node scripts/feedback.mjs`（list / show / summarize），见 `docs/specs/2026-10-08-feedback.md` |
 | GET/POST | `/dev/**` | 会话 Cookie | 开发者网页处理台（邮箱验证码登录，仅 role = dev；无脚本、POST 验 Origin） |
 
 社交写（好友 / 屏蔽 / 举报）按账户每小时 120 次限流（`LIMITS.socialWritePerHour`）。被管理员隐藏的账户

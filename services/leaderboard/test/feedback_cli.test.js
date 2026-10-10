@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { call, makeEnv, nextIp } from './harness.js';
 import { FEEDBACK_LIMITS } from '../src/feedback.js';
 import {
-  formatShow, listSql, parseArgs, parseWranglerJson, showSql, sqlText, summarizeSql,
+  formatShow, listSql, parseArgs, parseWranglerJson, showSql, sqlText, summarizeBatchSql, summarizeSql,
 } from '../scripts/feedback.mjs';
 
 const NOW = Date.UTC(2026, 9, 10, 4);
@@ -34,6 +34,18 @@ describe('scripts/feedback.mjs', () => {
       .toEqual({ ai_summary: null, ai_summary_at: null });
     expect(() => summarizeSql(id, '字'.repeat(FEEDBACK_LIMITS.aiSummaryMax + 1), NOW)).toThrow(/ai_summary_too_long/);
     expect(() => summarizeSql("x' OR '1'='1", 'a', NOW)).toThrow(/编号不合法/);
+  });
+
+  it('批量回写：一次写多条；任一条编号不合法整批不生成', async () => {
+    const env = makeEnv();
+    const a = await seed(env, '甲');
+    const b = await seed(env, '乙');
+    env.DB.raw.exec(summarizeBatchSql({ [a]: '总结甲', [b]: "总结'乙" }, NOW));
+    expect(env.DB.raw.prepare('SELECT id, ai_summary FROM feedback ORDER BY id').all().map((r) => r.ai_summary).sort())
+      .toEqual(["总结'乙", '总结甲']);
+    expect(() => summarizeBatchSql({ [a]: 'x', 'bad id!': 'y' }, NOW)).toThrow(/编号不合法/);
+    expect(() => summarizeBatchSql({ [a]: 3 }, NOW)).toThrow(/不是字符串/);
+    expect(() => summarizeBatchSql([], NOW)).toThrow(/对象/);
   });
 
   it('list / show 的 SQL 能在真库上跑；--need-summary 只列没总结的', async () => {
