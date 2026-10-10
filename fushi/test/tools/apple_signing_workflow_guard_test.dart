@@ -61,7 +61,8 @@ void main() {
         r'if \[ "\$CREDS" = true \] && \[ "\$GITHUB_EVENT_NAME" = push \] \\\n\s+&& \[ "\$RELEASE_CHANNEL" = debug \] \\\n\s+&& \[ \$\(\(RELEASE_SEQUENCE % 3\)\) -eq 0 \]; then\n\s+TESTFLIGHT=true',
       ).hasMatch(content),
       isTrue,
-      reason: 'push 门必须是 CREDS && push && debug && RELEASE_SEQUENCE % 3 == 0 四件套',
+      reason:
+          'push 门必须是 CREDS && push && debug && RELEASE_SEQUENCE % 3 == 0 四件套',
     );
     expect(
       content.contains(
@@ -238,9 +239,40 @@ void main() {
       reason: 'Developer ID 重签必须带 --timestamp --options runtime',
     );
     expect(
+      'bash ../tool/notarize_submit.sh'.allMatches(content).length,
+      2,
+      reason: '签了不公证仍会被 Gatekeeper 拦：.app 与 dmg 两次公证都必须走 notarize_submit.sh',
+    );
+    expect(
       content.contains('xcrun notarytool submit'),
+      isFalse,
+      reason: 'workflow 里不得再直接调 notarytool submit：它被拒时也退出 0，必须经脚本判 status',
+    );
+    expect(
+      content.contains(
+            r"find "
+            r'"$MIHON_PREFIX"'
+            r" -type f -name '*.jar' -print0",
+          ) &&
+          content.contains(r'unzip -Z1 "$jar_abs"') &&
+          content.contains(r'zip -q "$jar_abs" "${signed_entries[@]}"'),
       isTrue,
-      reason: '签了不公证仍会被 Gatekeeper 拦',
+      reason:
+          '公证会解开 jar 检查里面的 Mach-O：mihon_bridge 下 jar 内的原生库必须先'
+          '用 Developer ID 签名并写回 jar（2026-10-10 公证 12 条拒绝全在 m-extension-server.jar 内）',
+    );
+    final notarize = File('${root.path}/tool/notarize_submit.sh');
+    expect(notarize.existsSync(), isTrue, reason: '缺 ${notarize.path}');
+    final script = notarize.readAsStringSync();
+    expect(
+      script.contains('xcrun notarytool submit') &&
+          script.contains('--output-format json') &&
+          script.contains('"\$status" != "Accepted"') &&
+          script.contains('xcrun notarytool log'),
+      isTrue,
+      reason:
+          '公证成败必须以 JSON status == Accepted 为准，被拒时打印 notarytool log'
+          '（2026-10-10：被拒 status: Invalid 时 notarytool 退出 0，失败被推迟到 stapler）',
     );
     expect(
       content.contains('xcrun stapler staple'),
