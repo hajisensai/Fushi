@@ -451,6 +451,66 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("if (ui_visible) idle_since = now;", gate)
         self.assertIn('"WAIT pid=%lu reason=%s\\n"', gate)
 
+    def test_luca_x64_language_count_is_read_per_message(self) -> None:
+        # The count global is zero until the engine boots; a launch-time
+        # injection must not turn that zero into a final site rejection.
+        source = (ROOT / "hook" / "adapters" / "luca_adapter.inc").read_text(
+            encoding="utf-8")
+        resolve = self._function_body(source, "bool ResolveLucaSites()")
+        self.assertIn("rt.record_count_source =", resolve)
+        self.assertNotIn("rt.record_count == 0u", resolve)
+        self.assertNotIn("rt.record_count > luca::kMaxMessageRecords", resolve)
+        reader = self._function_body(source, "uint32_t ReadLucaMessageRecordCount()")
+        self.assertIn("luca::X64AdmittedRecordCount(count)", reader)
+
+    def test_luca_owns_its_text_lane_and_fences_luna(self) -> None:
+        # LucaSystem joins the native text-owner handshake: Pending before
+        # Ready, NativeOwned once the MESSAGE lane is hooked (Luna never
+        # starts, so its unrelated generic threads never appear), LunaAllowed
+        # on a final rejection or a failed startup.
+        worker = self._function_body(
+            self._strip_comments(
+                (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")),
+            "DWORD WINAPI HookWorker(")
+        self.assertLess(worker.index("InitializeNativeTextOwner(g_header,"),
+                        worker.index("registry.native_text_candidate()"))
+        self.assertLess(worker.index("registry.native_text_candidate()"),
+                        worker.index("SignalReady"))
+        registry = self._strip_comments(
+            (ROOT / "hook" / "adapter_registry.inc").read_text(encoding="utf-8"))
+        candidate = self._function_body(
+            registry, "bool native_text_candidate() const")
+        self.assertIn("siglus_.probe()", candidate)
+        self.assertIn("luca_.probe()", candidate)
+        fail = self._function_body(registry, "void FailNativeTextStartup()")
+        self.assertIn("siglus_.FailTextStartup();", fail)
+        self.assertIn("luca_.FailTextStartup();", fail)
+        # Siglus runs InstallText on every process; on another engine's
+        # Pending owner it must neither hook nor settle anything.
+        siglus_install = self._function_body(registry, "void InstallText()")
+        self.assertLess(siglus_install.index("!probe()"),
+                        siglus_install.index("TryHookSiglusExactText"))
+        siglus_fail = self._function_body(registry, "void FailTextStartup()")
+        self.assertLess(siglus_fail.index("if (!probe()) return;"),
+                        siglus_fail.index("CompleteNativeTextOwner"))
+        luca = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "luca_adapter.inc").read_text(
+                encoding="utf-8"))
+        adapter = luca[luca.index("class LucaAdapter final"):]
+        settle = self._function_body(adapter, "void SettleTextOwner()")
+        self.assertLess(settle.index("LucaTextSettled(&hooked)"),
+                        settle.index("CompleteNativeTextOwner(g_header, hooked, false)"))
+        install = self._function_body(adapter, "bool install() override")
+        self.assertLess(install.index("InstallLucaText()"),
+                        install.index("SettleTextOwner();"))
+        pending = self._function_body(adapter, "void ProcessPendingEvents()")
+        self.assertLess(pending.index("InstallLucaText()"),
+                        pending.index("SettleTextOwner();"))
+        luca_fail = self._function_body(adapter, "void FailTextStartup()")
+        self.assertIn("CompleteNativeTextOwner(g_header, false, false)", luca_fail)
+        settled = self._function_body(luca, "bool LucaTextSettled(bool* installed)")
+        self.assertIn("g_luca.hooks_installed || g_luca.resolved", settled)
+
     def test_every_adapter_is_an_independent_include(self) -> None:
         source = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
         adapters = {
@@ -504,8 +564,9 @@ class AdapterStructureTest(unittest.TestCase):
             )
             self.assertIn("g_geometry_provider_registry.Retire", lifecycle_source)
 
-        self.assertEqual(18, len(publishers), publishers)
+        self.assertEqual(19, len(publishers), publishers)
         self.assertIn("luca_lookup.inc", publishers)
+        self.assertIn("luca_x64_lookup.inc", publishers)
         self.assertIn("kogado_hy_lookup.inc", publishers)
         self.assertIn("artemis_lookup.inc", publishers)
         self.assertIn("yuris_lookup.inc", publishers)
@@ -570,9 +631,12 @@ class AdapterStructureTest(unittest.TestCase):
             )
             seen[name] = spaces[0]
 
-        self.assertEqual(18, len(seen), seen)
+        self.assertEqual(19, len(seen), seen)
         self.assertEqual(
             "kLookupCoordinateSpaceClientPhysicalPixels", seen["luca_lookup.inc"]
+        )
+        self.assertEqual(
+            "kLookupCoordinateSpaceClientPhysicalPixels", seen["luca_x64_lookup.inc"]
         )
         self.assertEqual(
             "kLookupCoordinateSpaceClientPhysicalPixels", seen["fvp_lookup.inc"]
@@ -1035,24 +1099,24 @@ class AdapterStructureTest(unittest.TestCase):
         install_text = self._member_body(siglus_adapter, "void InstallText()")
         self.assertIn("!complete && IsSiglusLookupIdentityUndecided()",
                       install_text)
-        self.assertIn("CompleteSiglusTextOwner", install_text)
+        self.assertIn("CompleteNativeTextOwner", install_text)
         pending = self._member_body(siglus_adapter, "void ProcessPendingEvents()")
         self.assertIn("if (text_pending_) InstallText();", pending)
         self.assertNotIn("lookup_enabled", pending)
 
-    def test_siglus_text_ownership_fences_every_luna_start(self) -> None:
+    def test_native_text_ownership_fences_every_luna_start(self) -> None:
         worker_source = self._strip_comments(
             (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
         )
         worker = self._function_body(worker_source, "DWORD WINAPI HookWorker(")
-        self.assertLess(worker.index("InitializeSiglusTextOwner"),
+        self.assertLess(worker.index("InitializeNativeTextOwner"),
                         worker.index("SignalReady"))
-        self.assertIn("registry.FailSiglusTextStartup();", worker)
+        self.assertIn("registry.FailNativeTextStartup();", worker)
         ready_failure = self._function_body(worker, "if (!SignalReady(")
         self.assertIn("AtomicStoreShared32(&g_header->hooked, 0u)", ready_failure)
         self.assertLess(ready_failure.index("&g_header->hooked, 0u"),
-                        ready_failure.index("registry.FailSiglusTextStartup();"))
-        self.assertLess(ready_failure.index("registry.FailSiglusTextStartup();"),
+                        ready_failure.index("registry.FailNativeTextStartup();"))
+        self.assertLess(ready_failure.index("registry.FailNativeTextStartup();"),
                         ready_failure.index("return 1;"))
         injector = self._strip_comments(
             (ROOT / "injector" / "injector_main.cpp").read_text(encoding="utf-8")
@@ -1061,7 +1125,7 @@ class AdapterStructureTest(unittest.TestCase):
         start = self._function_body(run, "auto maybe_start_luna =")
         self.assertEqual(run.count("InitLunaHook("), 1)
         self.assertLess(start.index("ShouldAttempt"), start.index("InitLunaHook("))
-        self.assertIn("ReadSiglusTextOwner(header)", start)
+        self.assertIn("ReadNativeTextOwner(header)", start)
         self.assertNotIn("Sleep(", start)
         guarded = self._function_body(run, "auto init_guarded_luna =")
         self.assertIn("maybe_start_luna();", guarded)
@@ -2424,24 +2488,26 @@ class AdapterStructureTest(unittest.TestCase):
 
     def test_luca_lookup_claims_only_engine_samples_and_stays_gated(self) -> None:
         """LucaSystem 查词：只认领主映像自己的 GetAsyncKeyState 采样，受原生输入放行门控；游戏线程回调不做 IO。"""
-        runtime = self._strip_comments(
-            (ROOT / "hook" / "adapters" / "luca_lookup.inc").read_text(
-                encoding="utf-8"
-            )
-        )
-        eligible = self._function_body(runtime, "bool LucaPressEligible(")
-        self.assertIn("NativeInputAllowed", eligible)
-        self.assertIn("LucaShieldActive", eligible)
-        self.assertIn("GetForegroundWindow", eligible)
-        sample = self._function_body(runtime, "bool FilterLucaLeftButtonSample(")
-        # 只有返回地址落在主映像里的采样参与认领（宿主 / 其它模块的轮询不受影响）。
-        self.assertIn("g_luca.image_base", sample)
-        self.assertIn("g_luca.image_size", sample)
-        self.assertIn("DecideLeftButtonSample", sample)
-        for body in (eligible, sample):
-            for forbidden in ("CreateFile", "LucaLog", "WideCharToMultiByte",
-                              "std::wstring", "std::vector"):
-                self.assertNotIn(forbidden, body)
+        for filename in ("luca_lookup.inc", "luca_x64_lookup.inc"):
+            with self.subTest(runtime=filename):
+                runtime = self._strip_comments(
+                    (ROOT / "hook" / "adapters" / filename).read_text(
+                        encoding="utf-8"
+                    )
+                )
+                eligible = self._function_body(runtime, "bool LucaPressEligible(")
+                self.assertIn("NativeInputAllowed", eligible)
+                self.assertIn("LucaShieldActive", eligible)
+                self.assertIn("GetForegroundWindow", eligible)
+                sample = self._function_body(runtime, "bool FilterLucaLeftButtonSample(")
+                # 只有返回地址落在主映像里的采样参与认领（宿主 / 其它模块的轮询不受影响）。
+                self.assertIn("g_luca.image_base", sample)
+                self.assertIn("g_luca.image_size", sample)
+                self.assertIn("DecideLeftButtonSample", sample)
+                for body in (eligible, sample):
+                    for forbidden in ("CreateFile", "LucaLog", "WideCharToMultiByte",
+                                      "std::wstring", "std::vector"):
+                        self.assertNotIn(forbidden, body)
         shield = self._strip_comments(
             (ROOT / "hook" / "generic_input_shield.inc").read_text(
                 encoding="utf-8"

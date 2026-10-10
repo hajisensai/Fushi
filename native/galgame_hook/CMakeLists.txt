@@ -100,6 +100,9 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/luca_lookup_core.h"
   "hook/adapters/luca_profile.h"
   "hook/adapters/luca_text_core.h"
+  "hook/adapters/luca_x64_text_core.h"
+  "hook/adapters/luca_x64_lookup_core.h"
+  "hook/adapters/luca_x64_lookup.inc"
   "hook/adapters/yuris_adapter.inc"
   "hook/adapters/yuris_lookup.inc"
   "hook/adapters/yuris_lookup_core.h"
@@ -1168,11 +1171,11 @@ target_compile_definitions(fushi_malie_lookup_test PRIVATE
 add_test(NAME fushi_malie_lookup_test
   COMMAND fushi_malie_lookup_test)
 
-add_executable(fushi_siglus_text_owner_test "tests/siglus_text_owner_test.cpp")
-target_include_directories(fushi_siglus_text_owner_test PRIVATE "include")
-target_compile_definitions(fushi_siglus_text_owner_test PRIVATE
+add_executable(fushi_native_text_owner_test "tests/native_text_owner_test.cpp")
+target_include_directories(fushi_native_text_owner_test PRIVATE "include")
+target_compile_definitions(fushi_native_text_owner_test PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
-add_test(NAME fushi_siglus_text_owner_test COMMAND fushi_siglus_text_owner_test)
+add_test(NAME fushi_native_text_owner_test COMMAND fushi_native_text_owner_test)
 
 # Locale Emulator is an x86-only runtime. Keep its actual loader-list ABI
 # regression in the standard Windows test gate, without implying x64 support.
@@ -1214,3 +1217,11 @@ add_executable(fushi_luca_adapter_test "tests/luca_adapter_test.cpp")
 target_include_directories(fushi_luca_adapter_test PRIVATE "hook" "hook/adapters")
 target_compile_definitions(fushi_luca_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_luca_adapter_test COMMAND fushi_luca_adapter_test)
+add_executable(fushi_luca_x64_text_test "tests/luca_x64_text_test.cpp")
+target_include_directories(fushi_luca_x64_text_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_luca_x64_text_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_luca_x64_text_test COMMAND fushi_luca_x64_text_test)
+add_executable(fushi_luca_x64_lookup_test "tests/luca_x64_lookup_test.cpp")
+target_include_directories(fushi_luca_x64_lookup_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_luca_x64_lookup_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_luca_x64_lookup_test COMMAND fushi_luca_x64_lookup_test)

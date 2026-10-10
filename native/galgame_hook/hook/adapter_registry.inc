@@ -65,29 +65,32 @@ class SiglusAdapter final : public fushi_voice_hook::EngineAdapter {
     return audio_ready_;
   }
   void InstallText() {
-    if (fushi_voice_hook::ReadSiglusTextOwner(g_header) !=
-        fushi_voice_hook::SiglusTextOwner::kPending) {
+    // The owner handshake is shared with other native-text engines: a
+    // non-Siglus process must never settle a decision that is not its own.
+    if (!probe() || fushi_voice_hook::ReadNativeTextOwner(g_header) !=
+        fushi_voice_hook::NativeTextOwner::kPending) {
       text_pending_ = false;
       return;
     }
     const bool complete = TryHookSiglusExactText();
     if (IsSiglusMessageTextInstalled()) TryHookSiglusVoiceSource();
     if (IsSiglusMessageTextOwnershipBlocked())
-      fushi_voice_hook::PublishSiglusTextOwner(
-          g_header, fushi_voice_hook::SiglusTextOwner::kUnavailable);
-    fushi_voice_hook::CompleteSiglusTextOwner(
+      fushi_voice_hook::PublishNativeTextOwner(
+          g_header, fushi_voice_hook::NativeTextOwner::kUnavailable);
+    fushi_voice_hook::CompleteNativeTextOwner(
         g_header, IsSiglusExactTextInstalled(),
         !complete && IsSiglusLookupIdentityUndecided());
-    text_pending_ = fushi_voice_hook::ReadSiglusTextOwner(g_header) ==
-        fushi_voice_hook::SiglusTextOwner::kPending;
+    text_pending_ = fushi_voice_hook::ReadNativeTextOwner(g_header) ==
+        fushi_voice_hook::NativeTextOwner::kPending;
     installed_ = installed_ || probe();
   }
   void FailTextStartup() {
     text_pending_ = false;
+    if (!probe()) return;
     if (IsSiglusMessageTextOwnershipBlocked())
-      fushi_voice_hook::PublishSiglusTextOwner(
-          g_header, fushi_voice_hook::SiglusTextOwner::kUnavailable);
-    fushi_voice_hook::CompleteSiglusTextOwner(
+      fushi_voice_hook::PublishNativeTextOwner(
+          g_header, fushi_voice_hook::NativeTextOwner::kUnavailable);
+    fushi_voice_hook::CompleteNativeTextOwner(
         g_header, IsSiglusExactTextInstalled(), false);
   }
   void ProcessPendingEvents() {
@@ -548,7 +551,13 @@ class LoopbackAdapter final : public fushi_voice_hook::EngineAdapter {
 
 class AdapterRegistry {
  public:
-  void FailSiglusTextStartup() { siglus_.FailTextStartup(); }
+  // Engines whose adapter can own the text lane natively. Each settles only
+  // its own Pending decision; every other engine lets Luna start at Ready.
+  bool native_text_candidate() const { return siglus_.probe() || luca_.probe(); }
+  void FailNativeTextStartup() {
+    siglus_.FailTextStartup();
+    luca_.FailTextStartup();
+  }
   bool siglus_applicable() const { return siglus_.probe(); }
 
   void InstallStartupAdapters() {

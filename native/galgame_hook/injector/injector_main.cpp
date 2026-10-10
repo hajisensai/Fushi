@@ -19,7 +19,7 @@
 #include <vector>
 
 #include "voice_hook_ipc.h"
-#include "siglus_text_owner.h"
+#include "native_text_owner.h"
 #include "voice_hook_session.h"
 #include "hook_module_identity.h"
 #include "child_process_policy.h"
@@ -2281,14 +2281,14 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   // CREATE_SUSPENDED launch 必须等游戏内 DLL 完成首次 XAudio2/DirectSound 导出 hook，
   // 再恢复主线程。否则 Unity 可能先创建全部 source voice，之后晚 attach 只能拿到混音。
   bool luna_initialized = false;
-  fushi_voice_hook::SiglusLunaStartupGate luna_startup_gate;
-  uint32_t last_siglus_text_owner = UINT32_MAX;
+  fushi_voice_hook::NativeTextLunaStartupGate luna_startup_gate;
+  uint32_t last_native_text_owner = UINT32_MAX;
   auto maybe_start_luna = [&]() {
     if (!hold || !luna.enabled || luna_initialized) return;
-    const auto text_owner = fushi_voice_hook::ReadSiglusTextOwner(header);
-    if (last_siglus_text_owner != static_cast<uint32_t>(text_owner)) {
-      last_siglus_text_owner = static_cast<uint32_t>(text_owner);
-      fprintf(stderr, "[siglus] text_owner=%u\n", last_siglus_text_owner);
+    const auto text_owner = fushi_voice_hook::ReadNativeTextOwner(header);
+    if (last_native_text_owner != static_cast<uint32_t>(text_owner)) {
+      last_native_text_owner = static_cast<uint32_t>(text_owner);
+      fprintf(stderr, "[native-text] owner=%u\n", last_native_text_owner);
     }
     if (!luna_startup_gate.ShouldAttempt(text_owner)) return;
     luna_initialized =
@@ -2300,8 +2300,8 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   auto init_guarded_luna = [&]() -> bool {
     // Native ownership inserts no Luna hooks, so there is nothing to remove.
     // An undecided Siglus cannot bypass its ownership gate via a guarded call.
-    if (fushi_voice_hook::ReadSiglusTextOwner(header) ==
-        fushi_voice_hook::SiglusTextOwner::kNativeOwned) return true;
+    if (fushi_voice_hook::ReadNativeTextOwner(header) ==
+        fushi_voice_hook::NativeTextOwner::kNativeOwned) return true;
     if (luna.blocked_hook_names.size() != luna.blocked_hook_codes.size()) {
       fprintf(stderr,
               "[luna] blocked-hook profile is missing removal confirmation "

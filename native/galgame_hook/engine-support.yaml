@@ -377,7 +377,7 @@
           "providers": [
             "engine_exact_layout"
           ],
-          "evidence": "Engine-exact text-object provider (kLookupGeometryProviderIdLuca, 25). The text object's layout routine is resolved from the loaded image (prologue shape plus a four-block row reset at stride 0x5A, unique) and cross-checked by the fields its body reads (row capacity, origin x/y, row count, row ring, row head); it is detoured only to learn live text objects. The worker reads each known object's row ring (glyph records: unit, x, width, height; row y offset) and accepts the line only when exactly one object's records spell the selected line unit by unit; positions are design space from system.cnf SCREEN_WIDTH/HEIGHT (1280x720) projected aspect-fit to physical client pixels. The click claim runs in the generic GetAsyncKeyState detour for calls from the main image only: a fresh VK_LBUTTON press on a glyph of the offered line (host native-input admission present, no card shield, game foreground, no modifiers) is claimed and masked (0x8000|0x0001) until release. Offline: x86/x64 build and fushi_luca_adapter_test (synthetic records, projection, hit test, claim state). Live layout dump 2026-10-09: the dialogue text object holds the current line's glyph records at origin (190,576). Fushi host run 2026-10-09 (local build of this branch, original Steam launch path, 1280x720 design on a 2240x1260 physical client): one session published 28 lookup hits (15 claimed clicks, 13 Shift presses), each opening the card for the word under the cursor; per the user, a click on a glyph did not advance, a click outside closed the card without advancing, a click with no card advanced, the touch checklist (tap on a glyph, tap inside then outside the card, swipe on the card) showed no problem, and a real card was written with the line's sentence and voice. The hook log cannot tell mouse from touch input or observe advancement, so the no-advance and touch results rest on the user's report; not an accept4 run; single sample."
+          "evidence": "Engine-exact text-object provider (kLookupGeometryProviderIdLuca, 25). The text object's layout routine is resolved from the loaded image (prologue shape plus a four-block row reset at stride 0x5A, unique) and cross-checked by the fields its body reads (row capacity, origin x/y, row count, row ring, row head); it is detoured only to learn live text objects. The worker reads each known object's row ring (glyph records: unit, x, width, height; row y offset) and accepts the line only when exactly one object's records spell the selected line unit by unit; positions are design space from system.cnf SCREEN_WIDTH/HEIGHT (1280x720) projected aspect-fit to physical client pixels. The click claim runs in the generic GetAsyncKeyState detour for calls from the main image only: a fresh VK_LBUTTON press on a glyph of the offered line (host native-input admission present, no card shield, game foreground, no modifiers) is claimed and masked (0x8000|0x0001) until release. Offline: x86/x64 build and fushi_luca_adapter_test (synthetic records, projection, hit test, claim state). Live layout dump 2026-10-09: the dialogue text object holds the current line's glyph records at origin (190,576). Fushi host run 2026-10-09 (local build of this branch, original Steam launch path, 1280x720 design on a 2240x1260 physical client): one session published 28 lookup hits (15 claimed clicks, 13 Shift presses), each opening the card for the word under the cursor; per the user, a click on a glyph did not advance, a click outside closed the card without advancing, a click with no card advanced, the touch checklist (tap on a glyph, tap inside then outside the card, swipe on the card) showed no problem, and a real card was written with the line's sentence and voice. The hook log cannot tell mouse from touch input or observe advancement, so the no-advance and touch results rest on the user's report; not an accept4 run; single sample. Win64 implementation 2026-10-10: a separate unique four-subobject reset site plus model-field/row-accessor ABI cross-checks resolve the text-object drawing contract. A worker reads the 64-bit row ring and glyph records, normalizes actual per-row origins, and uses adjacent engine screen-dimension globals located through the same drawing code. Synthetic positive/negative resolver, relocation, row alignment, ABI mismatch and invalid-coordinate tests pass on x86 and x64; a read-only normally launched x64 process resolved exactly one site and valid engine dimensions. No x64 actual lookup/click/no-advance/touch/card E2E has been proved; status remains implemented_unverified."
         },
         "verified_shield": {
           "status": "implemented_unverified",
@@ -3697,7 +3697,7 @@
       ],
       "family": {
         "id": "luca",
-        "relation": "Prototype's LucaSystem engine (system.cnf boot configuration, *.PAK archives with an id-indexed member table, OGGPAK voice members); only one title measured"
+        "relation": "Prototype's Windows LucaSystem variants: x86 external boot configuration and OGGPAK members; x64 embedded configuration, packed language records and direct Ogg members. Structural implementation only; neither variant has release-eligible E2E evidence."
       },
       "detection": {
         "executable_names": {
@@ -3706,21 +3706,21 @@
         },
         "pe_architectures": {
           "values": [
-            "x86"
+            "x86",
+            "x64"
           ],
           "evidence": {
             "kind": "real_sample",
-            "reference": "LITBUS_WIN32.exe (Little Busters! English Edition, Steam) is machine 0x14c; .text is SteamStub-encrypted on disk (.bind section), so every code site is resolved from the loaded image"
+            "reference": "Little Busters! English Edition (Steam) is Windows x86; Summer Pockets REFLECTION BLUE (Steam) is Windows x64. Protected code sites are resolved from the normally launched process's loaded executable sections, not the encrypted disk image. x64 structure and layout resolution were observed read-only on 2026-10-10; full x64 capture/lookup/card E2E remains pending."
           }
         },
         "directory_files_all": {
           "values": [
-            "system.cnf",
             "files/*.PAK"
           ],
           "evidence": {
             "kind": "real_sample",
-            "reference": "system.cnf (TARGET_PLATFORM, SCREEN_WIDTH 1280, SCREEN_HEIGHT 720) next to the executable and files\\*.PAK (SCRIPT, VOICE0, VOICE2, MUSIC, SYSSE, ...); identity requires the cnf keys plus one PAK whose whole index parses under exactly one index layout"
+            "reference": "x86 admission requires system.cnf with TARGET_PLATFORM and SCREEN_WIDTH/SCREEN_HEIGHT plus one fully valid PAK index. x64 builds may embed configuration and omit system.cnf: that branch requires two fully valid PAK indexes under files and installation separately requires unique x64 MESSAGE operand readers sharing the VM cursor and language-count contract. Archive voice discovery additionally scans bounded immediate subdirectories under files. No executable name, title or hash admits a profile."
           }
         },
         "pe_imports": {
@@ -3747,12 +3747,13 @@
           ],
           "evidence": {
             "kind": "real_sample",
-            "reference": "VOICE*.PAK members are OGGPAK (\"OGGPAK\\0\" then {rate, length, complete Ogg} copies, mono); MUSIC/SYSSE members are stereo OGGPAK and are excluded by channel count"
+            "reference": "Measured x86 voice members contain mono OGGPAK copies; measured x64 voice subdirectories contain PAK members beginning with complete Ogg Vorbis streams directly. Full index parsing and mono Vorbis validation govern admission; stereo BGM/SE and malformed/truncated streams are rejected. File extensions alone do not establish resource capability."
           }
         },
         "hashes": {
           "values": [
-            "LITBUS_WIN32.exe sha256:047748c47ab636b5a97954688c9cb3d0ee68de7960166eb427c4e00f6b3f172d"
+            "LITBUS_WIN32.exe sha256:047748c47ab636b5a97954688c9cb3d0ee68de7960166eb427c4e00f6b3f172d",
+            "SummerPocketsRB.exe sha256:5eefbad2e39179f2905d066f140522663cebe7fa5dc6a13d69d5dc9a267ef0b7"
           ],
           "evidence": {
             "kind": "real_sample",
@@ -3767,7 +3768,8 @@
         "notes": [
           "The original path is the Steam launch of LITBUS_WIN32.exe; there is no separate launcher process.",
           "SteamStub decrypts .text only after start-up: site resolution reads the loaded image and retries on a bounded schedule (500 ms, 120 s window) until the MESSAGE operand shape appears; nothing is installed before that.",
-          "Measured 2026-10-09 by attaching the x86 hook to the already running game."
+          "Measured 2026-10-09 by attaching the x86 hook to the already running game.",
+          "Windows x64 Steam sample was normally launched before read-only loaded-image analysis on 2026-10-10. x64 uses Win64 operand-reader and cText ABIs; successful structural probes do not prove Hook installation, matching audio, click shielding or a real card transaction."
         ]
       },
       "text": {
@@ -3775,27 +3777,27 @@
           {
             "kind": "luca_message_text",
             "status": "implemented_unverified",
-            "verification": "Native exact text lane (source kind 12, hook 'LucaSystem exact', ENGINE:LUCA:message): the scenario VM's MESSAGE handler is located by its operand shape (ReadU16 voice id, then a two-iteration ReadString loop for the per-language records; unique in the image, both readers end in `ret 4`) and the two operand readers are detoured, filtered by return address. The Japanese record is the one carrying kana/CJK; the `speaker@` prefix (or a lone `@`) is split off and $K keyword markers are stripped. Native run 2026-10-09 on the attached original Steam process: dialogue lines were published on the lane, protagonist lines without voice and voiced lines with their voice id. Fushi host run 2026-10-09: the 'LucaSystem exact' lane delivered clean Japanese lines; one session exported 216 per-line voice clips from VOICE0/VOICE2 and a real card was written with the matching sentence and voice (user report)."
+            "verification": "Native exact text lane (source kind 12, hook 'LucaSystem exact', ENGINE:LUCA:message): the scenario VM's MESSAGE handler is located by its operand shape (ReadU16 voice id, then a two-iteration ReadString loop for the per-language records; unique in the image, both readers end in `ret 4`) and the two operand readers are detoured, filtered by return address. The Japanese record is the one carrying kana/CJK; the `speaker@` prefix (or a lone `@`) is split off and $K keyword markers are stripped. Native run 2026-10-09 on the attached original Steam process: dialogue lines were published on the lane, protagonist lines without voice and voiced lines with their voice id. Fushi host run 2026-10-09: the 'LucaSystem exact' lane delivered clean Japanese lines; one session exported 216 per-line voice clips from VOICE0/VOICE2 and a real card was written with the matching sentence and voice (user report). Windows x64 implementation (2026-10-10, implemented_unverified): unique MESSAGE voice and language-loop shapes resolve Win64 readers, a shared VM cursor and a bounded runtime language count instead of assuming two records. The returned packed string object exposes validated UTF-8 or UTF-16LE ranges; callbacks only copy bounded bytes to preallocated slots. Worker Japanese-slot calibration uses a unique kana-bearing decoded body for the current VM and language count, excluding speaker-name kana; later CJK-only/punctuation-only bodies reuse that calibrated slot. Ambiguous or conflicting kana, VM/count changes and session shutdown invalidate calibration; before calibration, CJK alone cannot choose Japanese over Chinese. Synthetic ABI/language tests pass; read-only x64 MESSAGE resolver observations exist, while x64 native text publication and four-standard/card E2E remain pending."
           },
           {
             "kind": "luna_auto_or_pc_hooks",
             "status": "implemented_unverified",
-            "verification": "LunaHook attaches generic hooks only; not used as the selected lane."
+            "verification": "Native text-owner handshake: a LucaSystem identity leaves the owner Pending before Ready; once the MESSAGE readers are hooked the owner is NativeOwned and the injector never starts LunaHook, so no generic Luna threads compete with the exact lane. A final site rejection or failed startup publishes LunaAllowed and Luna remains the fallback."
           },
           {
             "kind": "ingame_lookup_geometry",
             "status": "implemented_unverified",
-            "verification": "Engine-exact text-object provider kLookupGeometryProviderIdLuca (25), see lookup_support geometry."
+            "verification": "Engine-exact text-object provider kLookupGeometryProviderIdLuca (25), see lookup_support geometry. Win64 implementation resolves the cText four-subobject reset shape, cross-checks model fields, row stride and a unique row-record accessor, and reads design dimensions from the draw routine's adjacent RIP-relative engine globals. Actual per-row drawing origins preserve alignment and vertical offsets. Both-architecture synthetic tests and the read-only x64 resolver probe passed on 2026-10-10; actual x64 click/Shift/touch/card operation remains pending."
           }
         ],
-        "codepage": "UTF-16LE",
-        "thread_selection_hint": "Select the 'LucaSystem exact' lane."
+        "codepage": "UTF-16LE; Win64 packed records may also carry validated UTF-8",
+        "thread_selection_hint": "Select the 'LucaSystem exact' lane. On x64 a unique kana-bearing dialogue body must first calibrate the Japanese language slot; ambiguous/uninitialized language records are withheld."
       },
       "audio": {
         "priority": [
           {
             "kind": "luca_voice_pak_member",
-            "format": "complete mono Ogg Vorbis taken from the VOICE*.PAK member the MESSAGE voice id addresses (member = voice id - the archive's first id; exactly one mono archive must claim the id), the copy whose rate matches the mixer or else the highest rate",
+            "format": "complete mono Ogg Vorbis addressed by the MESSAGE voice id in exactly one structurally validated PAK (member = voice id - archive first id); x86 OGGPAK selects the highest-rate complete copy and x64 also accepts one complete direct Ogg stream; bounded discovery covers files and its immediate subdirectories",
             "status": "implemented_unverified",
             "clean_voice": "not_verified"
           },
@@ -3816,18 +3818,22 @@
       "verified_games": [],
       "current_status": "implemented_unverified",
       "known_limitations": [
-        "Only one title was measured (Little Busters! English Edition, Steam, x86); other LucaSystem builds whose MESSAGE handler or text object differ refuse and install nothing.",
-        "Only the MESSAGE opcode is published; choices, titles and other text opcodes are not a lane.",
+        "Only Windows x86 Little Busters! English Edition and Windows x64 Summer Pockets REFLECTION BLUE structural samples were measured. x64 is implemented_unverified: resolver/ABI tests and read-only structure observations do not prove actual text/voice pairing, lookup, no-advance input shielding or a real card. Other MESSAGE/cText ABIs refuse installation.",
+        "Only the MESSAGE opcode is published; choices, titles and other text opcodes are not a lane, and because the native owner fences LunaHook they are not captured by generic hooks either.",
         "Voice comes from the PAK member addressed by the voice id, not from a played-buffer capture; a build that remaps voice ids at run time would publish the wrong member (not observed).",
         "The click claim samples the engine's per-frame GetAsyncKeyState poll; touch taps promoted to sub-frame WM_LBUTTONDOWN/UP passed the user's touch checklist once, but no injected-touch (InjectTouchInput) run is recorded.",
-        "The lookup model requires exactly one live text object whose glyph records spell the selected line; ruby, multi-object pages and surrogate pairs fail closed."
+        "The lookup model requires exactly one live text object whose glyph records spell the selected line; ruby, multi-object pages and surrogate pairs fail closed.",
+        "x64 Japanese language selection requires unique body-kana calibration; CJK-only or punctuation-only messages before calibration, conflicting kana and unsupported packed-string encodings are withheld. Changing VM identity/language count or ending the session clears calibration.",
+        "Voice archive discovery is bounded to files and its immediate non-reparse subdirectories; deeper layouts and overlapping voice-id ranges fail closed or have no resource candidate. Direct Ogg must be a complete single mono Vorbis stream."
       ],
       "adapter_path": "hook/adapters/luca_adapter.inc",
       "fixture_paths": [
         "tests/fixtures/luca_replay.json"
       ],
       "test_paths": [
-        "tests/luca_adapter_test.cpp"
+        "tests/luca_adapter_test.cpp",
+        "tests/luca_x64_text_test.cpp",
+        "tests/luca_x64_lookup_test.cpp"
       ]
     }
   ]

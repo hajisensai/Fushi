@@ -1,12 +1,10 @@
 // LucaSystem (Prototype) adapter: the scenario VM's MESSAGE text lane and the
-// line's own voice from the engine's OGGPAK voice archives.
+// line's own voice from the engine's indexed voice archives.
 //
-// Identity is structural (luca_profile.h: system.cnf + a self-consistent PAK
-// index under files\).  The MESSAGE site resolves only from the image's own
-// code (luca_text_core.h).  Protected builds ship an encrypted .text that a
-// DRM stub decrypts in place before the entry point, so the site is resolved
-// from the loaded image and re-tried on the worker until that code is present
-// (bounded); the disk image is never trusted for it.
+// Identity is structural (luca_profile.h: boot configuration + a complete
+// PAK index, or the Win64 multiple-index layout). MESSAGE sites are resolved
+// from executable code in the normally loaded image, with a bounded worker
+// retry while that code becomes available. No executable name/hash is used.
 //
 // Text: the two VM operand readers are detoured, and only the calls whose
 // return address belongs to the MESSAGE site are observed: ReadU16 opens a
@@ -17,15 +15,17 @@
 //
 // Lookup: luca_lookup.inc (cText glyph records; rules in luca_lookup_core.h).
 //
-// Voice: the voice id names one member of exactly one OGGPAK archive (member
+// Voice: the voice id names one member of exactly one indexed archive (member
 // = id - id_start).  The worker reads that member from the archive file,
 // validates it (luca_pak.h) and writes the Ogg stream bound to the line's text
-// event, so the host pairs by identity, not by time.  These are the bytes the
+// event, including both OGGPAK wrappers and direct Ogg Vorbis members.
+// The host pairs by event identity. These are the bytes the
 // engine itself plays for the line; nothing is decoded.
 #include "luca_profile.h"
 #include "luca_lookup_core.h"
+#include "luca_x64_text_core.h"
 
-#if defined(_M_IX86)
+#if defined(_M_IX86) || defined(_M_X64)
 
 namespace luca = fushi_voice_hook::luca;
 
@@ -57,8 +57,14 @@ void NoteLucaDiag(uint32_t bit) {
   InterlockedOr(&g_luca_diag, static_cast<LONG>(bit));
 }
 
+#if defined(_M_IX86)
 using LucaReaderFn = uintptr_t(__fastcall*)(void* vm, void* edx,
-                                            uint32_t argument);
+                                           uint32_t argument);
+#else
+using LucaReaderFn = uintptr_t(__fastcall*)(void* vm, uint32_t argument);
+using LucaStringReaderFn = uintptr_t(__fastcall*)(void* vm, void* result,
+                                                 void* argument);
+#endif
 using LucaLayoutFn = uintptr_t(__fastcall*)(void* text, void* edx, uint32_t a,
                                             uint32_t b);
 
@@ -66,9 +72,12 @@ struct LucaMessageSlot {
   volatile LONG state = 0;  // 0 free, 1 producing, 2 pending, 3 consuming
   uint64_t tick = 0u;
   uint64_t order = 0u;
+  uint64_t vm_identity = 0u;
   uint32_t voice_id = 0u;
-  uint32_t lengths[luca::kMessageRecordCount] = {};
-  wchar_t records[luca::kMessageRecordCount][kLucaRecordChars] = {};
+  uint32_t record_count = 0u;
+  uint8_t encodings[luca::kMaxMessageRecords] = {};
+  uint32_t lengths[luca::kMaxMessageRecords] = {};  // bytes, excluding NUL
+  wchar_t records[luca::kMaxMessageRecords][kLucaRecordChars] = {};
 };
 
 // The message being assembled on the VM thread, between its ReadU16 and its
@@ -79,9 +88,11 @@ struct LucaAssembly {
   uint64_t tick = 0u;
   uint32_t voice_id = 0u;
   uint32_t count = 0u;
+  uint32_t record_count = 0u;
   bool clean = true;
-  uint32_t lengths[luca::kMessageRecordCount] = {};
-  wchar_t records[luca::kMessageRecordCount][kLucaRecordChars] = {};
+  uint8_t encodings[luca::kMaxMessageRecords] = {};
+  uint32_t lengths[luca::kMaxMessageRecords] = {};
+  wchar_t records[luca::kMaxMessageRecords][kLucaRecordChars] = {};
 };
 
 struct LucaVoiceArchive {
@@ -106,6 +117,8 @@ struct LucaRuntime {
   size_t span_count = 0u;
   uintptr_t voice_return = 0u;
   uintptr_t record_return = 0u;
+  uint32_t record_count = luca::kMessageRecordCount;
+  const uint32_t* record_count_source = nullptr;
   SRWLOCK assembly_lock = SRWLOCK_INIT;
   LucaAssembly assembly;
   std::atomic<uint64_t> next_order{0u};
@@ -116,12 +129,19 @@ struct LucaRuntime {
   std::wstring last_text;
   uint64_t last_text_tick = 0u;
   uint64_t last_text_event = 0u;
+#if defined(_M_X64)
+  luca::X64JapaneseRecordSelector japanese_record;
+#endif
 };
 
 LucaRuntime g_luca;
 LucaMessageSlot g_luca_slots[kLucaMessageSlots];
 LucaReaderFn g_luca_read_u16_original = nullptr;
+#if defined(_M_IX86)
 LucaReaderFn g_luca_read_string_original = nullptr;
+#else
+LucaStringReaderFn g_luca_read_string_original = nullptr;
+#endif
 
 // Worker-only, bounded diagnostics in %TEMP%\fushi_galhook.log.  Never logs
 // dialogue text.
@@ -158,7 +178,11 @@ void LucaLog(const wchar_t* format, ...) {
   CloseHandle(file);
 }
 
+#if defined(_M_IX86)
 #include "luca_lookup.inc"
+#else
+#include "luca_x64_lookup.inc"
+#endif
 
 // ── Game thread ────────────────────────────────────────────────────────────
 
@@ -172,7 +196,7 @@ bool CopyLucaRecord(const wchar_t* source, wchar_t* out, uint32_t* length) {
       const wchar_t unit = source[i];
       out[i] = unit;
       if (unit == L'\0') {
-        *length = i;
+        *length = i * sizeof(wchar_t);
         return true;
       }
     }
@@ -188,11 +212,14 @@ void SubmitLucaAssemblyLocked(LucaAssembly& assembly) {
     if (InterlockedCompareExchange(&slot.state, 1, 0) != 0) continue;
     slot.tick = assembly.tick;
     slot.order = g_luca.next_order.fetch_add(1u, std::memory_order_relaxed);
+    slot.vm_identity = reinterpret_cast<uintptr_t>(assembly.vm);
     slot.voice_id = assembly.voice_id;
-    for (uint32_t i = 0; i < luca::kMessageRecordCount; ++i) {
+    slot.record_count = assembly.record_count;
+    for (uint32_t i = 0; i < slot.record_count; ++i) {
+      slot.encodings[i] = assembly.encodings[i];
       slot.lengths[i] = assembly.lengths[i];
       std::memcpy(slot.records[i], assembly.records[i],
-                  (size_t{assembly.lengths[i]} + 1u) * sizeof(wchar_t));
+                  size_t{assembly.lengths[i]} + sizeof(wchar_t));
     }
     InterlockedExchange(&slot.state, 2);
     return;
@@ -200,14 +227,36 @@ void SubmitLucaAssemblyLocked(LucaAssembly& assembly) {
   NoteLucaDiag(kLucaDiagSlotDropped);
 }
 
+uint32_t ReadLucaMessageRecordCount() {
+  uint32_t count = g_luca.record_count;
+  if (g_luca.record_count_source != nullptr) {
+    __try {
+      std::memcpy(&count, g_luca.record_count_source, sizeof(count));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+      return 0u;
+    }
+  }
+#if defined(_M_X64)
+  return luca::X64AdmittedRecordCount(count);
+#else
+  return count >= 1u && count <= luca::kMaxMessageRecords ? count : 0u;
+#endif
+}
+
+#if defined(_M_IX86)
 uintptr_t __fastcall LucaReadU16Detour(void* vm, void* edx, uint32_t argument) {
   const uintptr_t value = g_luca_read_u16_original(vm, edx, argument);
+#else
+uintptr_t __fastcall LucaReadU16Detour(void* vm, uint32_t argument) {
+  const uintptr_t value = g_luca_read_u16_original(vm, argument);
+#endif
   auto& rt = g_luca;
   if (rt.live.load(std::memory_order_acquire) &&
       reinterpret_cast<uintptr_t>(_ReturnAddress()) == rt.voice_return) {
     AcquireSRWLockExclusive(&rt.assembly_lock);
     LucaAssembly& assembly = rt.assembly;
-    assembly.open = true;
+    assembly.record_count = ReadLucaMessageRecordCount();
+    assembly.open = assembly.record_count != 0u;
     assembly.vm = vm;
     assembly.tick = GetTickCount64();
     assembly.voice_id = static_cast<uint32_t>(value & 0xFFFFu);
@@ -219,9 +268,15 @@ uintptr_t __fastcall LucaReadU16Detour(void* vm, void* edx, uint32_t argument) {
   return value;
 }
 
+#if defined(_M_IX86)
 uintptr_t __fastcall LucaReadStringDetour(void* vm, void* edx,
                                           uint32_t argument) {
   const uintptr_t value = g_luca_read_string_original(vm, edx, argument);
+#else
+uintptr_t __fastcall LucaReadStringDetour(void* vm, void* result,
+                                         void* argument) {
+  const uintptr_t value = g_luca_read_string_original(vm, result, argument);
+#endif
   auto& rt = g_luca;
   if (!rt.live.load(std::memory_order_acquire) ||
       reinterpret_cast<uintptr_t>(_ReturnAddress()) != rt.record_return) {
@@ -230,13 +285,46 @@ uintptr_t __fastcall LucaReadStringDetour(void* vm, void* edx,
   AcquireSRWLockExclusive(&rt.assembly_lock);
   LucaAssembly& assembly = rt.assembly;
   if (assembly.open && assembly.vm == vm &&
-      assembly.count < luca::kMessageRecordCount) {
+      ReadLucaMessageRecordCount() != assembly.record_count) {
+    assembly.open = false;
+    assembly.clean = false;
+    NoteLucaDiag(kLucaDiagRecordRejected);
+  }
+  if (assembly.open && assembly.vm == vm &&
+      assembly.count < assembly.record_count) {
     const uint32_t index = assembly.count++;
+#if defined(_M_IX86)
+    assembly.encodings[index] = 3u;
     if (!CopyLucaRecord(reinterpret_cast<const wchar_t*>(value),
                         assembly.records[index], &assembly.lengths[index])) {
       assembly.clean = false;
     }
-    if (assembly.count == luca::kMessageRecordCount) {
+#else
+    bool copied = false;
+    __try {
+      const uint8_t* view = reinterpret_cast<const uint8_t*>(value);
+      uint64_t begin = 0u;
+      uint64_t end = 0u;
+      std::memcpy(&begin, view, sizeof(begin));
+      std::memcpy(&end, view + 8u, sizeof(end));
+      const uint8_t encoding = view[0x10u];
+      uint32_t bytes = 0u;
+      if (luca::X64RecordByteCount(begin, end, encoding,
+                                  sizeof(assembly.records[index]) - 2u,
+                                  &bytes)) {
+        std::memcpy(assembly.records[index],
+                    reinterpret_cast<const void*>(begin), bytes);
+        std::memset(reinterpret_cast<uint8_t*>(assembly.records[index]) + bytes,
+                    0, 2u);
+        assembly.encodings[index] = encoding;
+        assembly.lengths[index] = bytes;
+        copied = true;
+      }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+    if (!copied) assembly.clean = false;
+#endif
+    if (assembly.count == assembly.record_count) {
       if (assembly.clean) {
         SubmitLucaAssemblyLocked(assembly);
       } else {
@@ -269,7 +357,13 @@ bool ResolveLucaSites() {
   if (!fushi_voice_hook::exact_lookup::OpenLoadedPeImage(
           GetModuleHandleW(nullptr), &image,
           fushi_voice_hook::exact_lookup::LoadedPeSectionExtent::kVirtualSize) ||
-      image.machine != IMAGE_FILE_MACHINE_I386) {
+      image.machine !=
+#if defined(_M_IX86)
+          IMAGE_FILE_MACHINE_I386
+#else
+          IMAGE_FILE_MACHINE_AMD64
+#endif
+      ) {
     rt.site_result = luca::MessageSiteResult::kMissing;
     return false;
   }
@@ -288,7 +382,29 @@ bool ResolveLucaSites() {
     spans[span_count++] = {section.bytes, section.size, section.rva};
   }
   luca::MessageSites sites;
+#if defined(_M_IX86)
   rt.site_result = luca::ResolveMessageSites(spans.data(), span_count, &sites);
+#else
+  luca::X64MessageSites x64;
+  rt.site_result = luca::ResolveX64MessageSites(spans.data(), span_count, &x64);
+  if (rt.site_result == luca::MessageSiteResult::kResolved) {
+    if (x64.record_count_rva > image.size ||
+        image.size - x64.record_count_rva < sizeof(uint32_t)) {
+      rt.site_result = luca::MessageSiteResult::kBadTarget;
+      return false;
+    }
+    const uint8_t* count = image.base + x64.record_count_rva;
+    if (!fushi_voice_hook::exact_lookup::IsReadableSpan(count, sizeof(uint32_t))) {
+      rt.site_result = luca::MessageSiteResult::kBadTarget;
+      return false;
+    }
+    // Only the address is validated here; its value is still zero until the
+    // engine finishes booting and is read per MESSAGE instead.
+    rt.record_count = 0u;
+    sites = x64.readers;
+    rt.record_count_source = reinterpret_cast<const uint32_t*>(count);
+  }
+#endif
   if (rt.site_result != luca::MessageSiteResult::kResolved) return false;
   rt.sites = sites;
   rt.image_base = reinterpret_cast<uintptr_t>(image.base);
@@ -355,6 +471,12 @@ bool InstallLucaText() {
   return hooked;
 }
 
+// True once the MESSAGE lane is final: installed, or rejected for good.
+bool LucaTextSettled(bool* installed) {
+  *installed = g_luca.hooks_installed;
+  return g_luca.hooks_installed || g_luca.resolved;
+}
+
 // Returns the text event the line is published under (0 = not published).
 uint64_t PublishLucaTextLine(const std::wstring& text, uint64_t tick) {
   auto& rt = g_luca;
@@ -414,7 +536,7 @@ bool ReadLucaFileRange(const std::wstring& path, uint64_t offset,
   return ok;
 }
 
-// True when the member is an OGGPAK member whose first stream is mono Vorbis.
+// True when an OGGPAK or direct Ogg member starts with mono Vorbis.
 // Reads only the member's head (the identification header is on the first
 // page).
 bool IsLucaMonoOggPakMember(const std::wstring& path,
@@ -423,33 +545,27 @@ bool IsLucaMonoOggPakMember(const std::wstring& path,
   const uint32_t bytes = (std::min)(entry.length, kHeadBytes);
   std::vector<uint8_t> head;
   if (bytes <= luca::kOggPakMagicBytes + 8u ||
-      !ReadLucaFileRange(path, entry.offset, bytes, &head) ||
-      !luca::IsOggPakMember(head.data(), head.size())) {
+      !ReadLucaFileRange(path, entry.offset, bytes, &head)) {
     return false;
   }
-  const size_t stream = luca::kOggPakMagicBytes + 8u;
+  const size_t stream = luca::IsOggPakMember(head.data(), head.size())
+                            ? luca::kOggPakMagicBytes + 8u : 0u;
   return luca::OggVorbisChannels(head.data() + stream,
                                  head.size() - stream) == 1u;
 }
 
 // The engine's line-voice archives: every files\*.pak whose index reads
-// cleanly and whose first and last members are mono OGGPAK members (music and
-// system sounds share the member format but are stereo).  Loaded once, on
-// first use.
-void LoadLucaVoiceArchives() {
+// cleanly and whose first and last members start with mono Vorbis. Mono also
+// includes some SE archives; only a unique MESSAGE voice ID establishes the
+// resource used for a line. Loaded once, on first use.
+void LoadLucaVoiceDirectory(const std::wstring& directory, size_t* scanned) {
   auto& rt = g_luca;
-  if (rt.archives_loaded) return;
-  rt.archives_loaded = true;
-  std::wstring directory;
-  if (!fushi_voice_hook::engine_dir::ModuleDirectory(&directory)) return;
-  directory += L"\\files";
   WIN32_FIND_DATAW found = {};
   HANDLE search = FindFirstFileW((directory + L"\\*.pak").c_str(), &found);
   if (search == INVALID_HANDLE_VALUE) return;
-  size_t scanned = 0u;
   do {
     if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) continue;
-    if (++scanned > 64u) break;
+    if (++(*scanned) > 64u) break;
     LucaVoiceArchive archive;
     archive.path = directory + L"\\" + found.cFileName;
     uint64_t size = 0u;
@@ -477,6 +593,33 @@ void LoadLucaVoiceArchives() {
     rt.archives.push_back(std::move(archive));
   } while (FindNextFileW(search, &found));
   FindClose(search);
+}
+
+// A mono candidate is not classified as voice until the MESSAGE voice ID
+// addresses a validated member in exactly one archive.
+void LoadLucaVoiceArchives() {
+  auto& rt = g_luca;
+  if (rt.archives_loaded) return;
+  rt.archives_loaded = true;
+  std::wstring directory;
+  if (!fushi_voice_hook::engine_dir::ModuleDirectory(&directory)) return;
+  directory += L"\\files";
+  size_t scanned = 0u;
+  LoadLucaVoiceDirectory(directory, &scanned);
+  WIN32_FIND_DATAW found = {};
+  HANDLE search = FindFirstFileW((directory + L"\\*").c_str(), &found);
+  if (search != INVALID_HANDLE_VALUE) {
+    size_t directories = 0u;
+    do {
+      if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
+          (found.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 ||
+          std::wcscmp(found.cFileName, L".") == 0 ||
+          std::wcscmp(found.cFileName, L"..") == 0) continue;
+      if (++directories > 32u || scanned >= 64u) break;
+      LoadLucaVoiceDirectory(directory + L"\\" + found.cFileName, &scanned);
+    } while (FindNextFileW(search, &found));
+    FindClose(search);
+  }
   if (!rt.archives.empty()) NoteLucaDiag(kLucaDiagVoiceArchivesReady);
 }
 
@@ -505,11 +648,18 @@ void PublishLucaVoice(uint32_t voice_id, uint64_t tick, uint64_t text_event) {
   std::vector<uint8_t> data;
   std::vector<luca::OggPakStream> streams;
   if (entry.length == 0u || entry.length > kLucaVoiceMemberBytes ||
-      !ReadLucaFileRange(owner->path, entry.offset, entry.length, &data) ||
-      !luca::ParseOggPakMember(data.data(), data.size(), &streams)) {
+      !ReadLucaFileRange(owner->path, entry.offset, entry.length, &data)) {
     NoteLucaDiag(kLucaDiagVoiceRejected);
     LucaLog(L"luca: voice id %u member rejected", voice_id);
     return;
+  }
+  if (!luca::ParseOggPakMember(data.data(), data.size(), &streams)) {
+    luca::OggPakStream direct;
+    if (!luca::ParseDirectOggMember(data.data(), data.size(), &direct)) {
+      NoteLucaDiag(kLucaDiagVoiceRejected);
+      return;
+    }
+    streams = {direct};
   }
   const luca::OggPakStream* stream = luca::PickOggPakStream(streams, 0u);
   if (stream == nullptr ||
@@ -531,18 +681,45 @@ void PublishLucaVoice(uint32_t voice_id, uint64_t tick, uint64_t text_event) {
 }
 
 void ProcessLucaMessage(const LucaMessageSlot& slot) {
-  std::wstring records[luca::kMessageRecordCount];
-  for (uint32_t i = 0; i < luca::kMessageRecordCount; ++i) {
-    records[i].assign(slot.records[i], slot.lengths[i]);
+  if (slot.record_count == 0u || slot.record_count > luca::kMaxMessageRecords) return;
+  std::wstring records[luca::kMaxMessageRecords];
+  for (uint32_t i = 0; i < slot.record_count; ++i) {
+    if (slot.encodings[i] == 3u) {
+      records[i].assign(slot.records[i], slot.lengths[i] / sizeof(wchar_t));
+    } else if (slot.encodings[i] == 2u && slot.lengths[i] != 0u) {
+      const char* bytes = reinterpret_cast<const char*>(slot.records[i]);
+      const int chars = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, bytes,
+                                           static_cast<int>(slot.lengths[i]), nullptr, 0);
+      if (chars <= 0) return;
+      records[i].resize(static_cast<size_t>(chars));
+      MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, bytes,
+                          static_cast<int>(slot.lengths[i]), records[i].data(), chars);
+    }
   }
-  const uint32_t pick =
-      luca::PickJapaneseRecord(records, luca::kMessageRecordCount);
-  if (pick >= luca::kMessageRecordCount) {
+#if defined(_M_X64)
+  const uint32_t pick = g_luca.japanese_record.Select(
+      records, slot.record_count, slot.vm_identity);
+#else
+  const uint32_t pick = luca::PickJapaneseRecord(records, slot.record_count);
+#endif
+  if (pick >= slot.record_count) {
     NoteLucaDiag(kLucaDiagRecordRejected);
     return;
   }
-  const luca::MessageText text = luca::DecodeMessageRecord(records[pick]);
+  const luca::MessageText text = luca::DecodeMessageRecord(
+      records[pick],
+#if defined(_M_X64)
+      true
+#else
+      false
+#endif
+  );
   const uint64_t event = PublishLucaTextLine(text.body, slot.tick);
+  if (event != 0u) {
+    LucaLog(L"luca: MESSAGE event=%llu voice=%u record=%u/%u units=%zu",
+            static_cast<unsigned long long>(event), slot.voice_id, pick,
+            slot.record_count, text.body.size());
+  }
   if (event != 0u && slot.voice_id != 0u) {
     PublishLucaVoice(slot.voice_id, slot.tick, event);
   }
@@ -563,10 +740,14 @@ void DrainLucaMessages() {
   }
 }
 
-#else  // !_M_IX86 — every known LucaSystem PC build is x86.
+#else  // Unsupported Windows architecture.
 
 volatile LONG g_luca_diag = 0;
 bool InstallLucaText() { return false; }
+bool LucaTextSettled(bool* installed) {
+  *installed = false;
+  return true;
+}
 void DrainLucaMessages() {}
 void ProcessLucaLookupTick() {}
 void ShutdownLucaLookup() {}
@@ -592,17 +773,25 @@ class LucaAdapter final : public fushi_voice_hook::EngineAdapter {
   }
   bool install() override {
     if (!probe()) return false;
-#if defined(_M_IX86)
+#if defined(_M_IX86) || defined(_M_X64)
     NoteLucaDiag(kLucaDiagIdentityMatched);
 #endif
     installed_ = InstallLucaText() || installed_;
+    SettleTextOwner();
     return installed_;
+  }
+  // Startup failed before the MESSAGE lane could be installed: Luna is the
+  // only text source left, so it must not stay fenced by a Pending owner.
+  void FailTextStartup() {
+    if (!probe()) return;
+    fushi_voice_hook::CompleteNativeTextOwner(g_header, false, false);
   }
   // HookWorker: finish a deferred site resolution, then drain messages.
   void ProcessPendingEvents() {
     if (!installed_) {
       if (!probe()) return;
       installed_ = InstallLucaText();
+      SettleTextOwner();
       if (!installed_) return;
     }
     DrainLucaMessages();
@@ -630,8 +819,11 @@ class LucaAdapter final : public fushi_voice_hook::EngineAdapter {
   }
   void onModuleLoaded(const wchar_t*) override {}
   void shutdown() override {
-#if defined(_M_IX86)
+#if defined(_M_IX86) || defined(_M_X64)
     g_luca.live.store(false, std::memory_order_release);
+#endif
+#if defined(_M_X64)
+    g_luca.japanese_record.Reset();
 #endif
     ShutdownLucaLookup();
     installed_ = false;
@@ -643,6 +835,15 @@ class LucaAdapter final : public fushi_voice_hook::EngineAdapter {
   }
 
  private:
+  // Installed MESSAGE lane: the native owner fences Luna (its generic hooks
+  // would only add unrelated threads). Final rejection: Luna is the fallback
+  // text source. During the bounded site retry the owner stays Pending.
+  void SettleTextOwner() {
+    bool hooked = false;
+    if (!LucaTextSettled(&hooked)) return;
+    fushi_voice_hook::CompleteNativeTextOwner(g_header, hooked, false);
+  }
+
   mutable std::atomic<int> probe_state_{0};  // 0 unmeasured, 1 Luca, 2 not
   bool installed_ = false;
 };
