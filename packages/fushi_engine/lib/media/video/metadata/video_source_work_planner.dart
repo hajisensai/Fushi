@@ -1,6 +1,9 @@
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_disc_extras.dart';
+import 'package:fushi_engine/media/video/external_video.dart'
+    show normalizeVideoPath;
 import 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart';
 import 'package:fushi_engine/media/video/scraper/collection_member_policy.dart'
     show multiMemberCollectionIdByVideoUid;
@@ -78,6 +81,11 @@ class VideoSourceWorkPlanner {
         .where((VideoBookRow row) => row.sourceId == source.id)
         .toList();
     if (sourceBooks.isEmpty) return const <VideoSourceScrapeWork>[];
+    // 蓝光盘上远短于正片的标题是这张盘的特典：盘名就是片名，各自拿去识别只会把
+    // 制作特辑认成整部电影（[blurayDiscExtras]）。
+    final Map<String, String> discExtras = await blurayDiscExtras(
+      sourceBooks.map((VideoBookRow row) => row.videoPath),
+    );
 
     final List<MediaCollectionItemRow> allItems =
         await _database.getAllCollectionItems();
@@ -99,6 +107,7 @@ class VideoSourceWorkPlanner {
       // NCOP/NCED/预告/花絮仍是 VideoBook，继续出现在“全部视频”；但它们不是
       // 可独立识别的作品，不能让一次来源刮削多出四个必失败任务。
       if (!videoBookJoinsScrapePlan(book)) continue;
+      if (discExtras.containsKey(normalizeVideoPath(book.videoPath))) continue;
       final int? collectionId = primaryCollections[book.bookUid];
       final VideoNameInfo parsed =
           parseVideoFilename(p.basename(book.videoPath));

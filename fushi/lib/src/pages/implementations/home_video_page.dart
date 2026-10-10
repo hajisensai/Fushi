@@ -3436,7 +3436,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               );
             },
           ),
+          // 特典（含蓝光盘特典）挂在父作品下、不单独成作品：重刮它是断头路。
           if (widget.scrapeTaskController != null &&
+              !_isLocalExtra(book) &&
               videoBookHasScrapePlan(book, _videoSourcesById[book.sourceId]))
             DialogListAction(
               label: t.collection_rescrape,
