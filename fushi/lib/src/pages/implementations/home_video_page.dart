@@ -4276,6 +4276,26 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                             );
                             final double chromeInset =
                                 FushiFloatingChromeInset.of(context);
+                            // BUG-3235 首屏：分组 / 折叠 / 筛选要的映射还没到，此刻的
+                            // 一切分组都是拿空映射算的（全员散卡、系列筛选全判否），
+                            // 画出来就是「先铺散卡、再收拢成合集、再换海报」一块块地
+                            // 变。等映射，期间画与真实墙同几何的骨架。
+                            if (firstPaintPending) {
+                              return CustomScrollView(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                slivers: <Widget>[
+                                  SliverToBoxAdapter(
+                                    child: SizedBox(height: chromeInset),
+                                  ),
+                                  ..._buildLibraryMapsPendingSlivers(
+                                    widget.section ==
+                                            VideoLibrarySection.allVideos
+                                        ? allVideosCardLayout
+                                        : cardLayout,
+                                  ),
+                                ],
+                              );
+                            }
                             return CustomScrollView(
                               physics: const AlwaysScrollableScrollPhysics(),
                               slivers: <Widget>[
@@ -4286,69 +4306,54 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                                 SliverToBoxAdapter(
                                   child: SizedBox(height: chromeInset),
                                 ),
-                                // 首屏：分组 / 折叠 / 筛选要的映射还没到，此刻的一切
-                                // 分组都是拿空映射算的（全员散卡、系列筛选全判否）。
-                                // 画出来就是「先铺散卡、再收拢成合集、再换海报」一块块
-                                // 地变。等映射，期间画与真实墙同几何的骨架。
-                                if (firstPaintPending)
-                                  ..._buildLibraryMapsPendingSlivers(
-                                    widget.section ==
-                                            VideoLibrarySection.allVideos
-                                        ? allVideosCardLayout
-                                        : cardLayout,
-                                  )
-                                else ...<Widget>[
-                                  // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
-                                  // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
-                                  // [all] 描述整库，不随标签筛选变。
-                                  // BUG-995：只看互联远端视频（无本地视频）时也要显示概览+继续观看，
-                                  // 故门控与数据都并入 remoteVideos（否则整块消失=用户实报「远端的没有」）。
-                                  if (widget.section ==
-                                          VideoLibrarySection.home &&
-                                      (all.isNotEmpty ||
-                                          remoteVideos.isNotEmpty))
-                                    SliverToBoxAdapter(
-                                      child: _buildOverviewSection(
-                                        all,
-                                        remoteVideos,
-                                        ordered,
-                                        constraints.maxWidth,
-                                        cardLayout,
-                                      ),
-                                    ),
-                                  if (widget.section ==
-                                      VideoLibrarySection.series)
-                                    ..._buildLocalVideoSlivers(
+                                // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
+                                // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
+                                // [all] 描述整库，不随标签筛选变。
+                                // BUG-995：只看互联远端视频（无本地视频）时也要显示概览+继续观看，
+                                // 故门控与数据都并入 remoteVideos（否则整块消失=用户实报「远端的没有」）。
+                                if (widget.section ==
+                                        VideoLibrarySection.home &&
+                                    (all.isNotEmpty || remoteVideos.isNotEmpty))
+                                  SliverToBoxAdapter(
+                                    child: _buildOverviewSection(
                                       all,
-                                      ordered,
                                       remoteVideos,
+                                      ordered,
+                                      constraints.maxWidth,
                                       cardLayout,
                                     ),
-                                  if (widget.section ==
-                                      VideoLibrarySection.allVideos)
-                                    ..._buildAllVideoSlivers(
-                                      all,
-                                      ordered,
-                                      remoteVideos,
-                                      allVideosCardLayout,
-                                    ),
-                                  // 首页只有 hero + 横滚行，横滚行卡不参与勾选，所以这一帧
-                                  // 没有任何可勾选的格。必须如实登记空可见序：三个分区共用
-                                  // 同一个 State，多选态下从「全部视频」切到首页时，可见序
-                                  // 若停在上一档，底栏计数与批量删除就作用于一批屏幕上根本
-                                  // 没有的条目（批量栏不按分区门控，切过来照样显示）。
-                                  if (widget.section ==
-                                      VideoLibrarySection.home)
-                                    ..._homeSectionSelectionReset(),
-                                  if (widget.section ==
-                                          VideoLibrarySection.home &&
-                                      all.isEmpty &&
-                                      remoteVideos.isEmpty)
-                                    SliverFillRemaining(
-                                      hasScrollBody: false,
-                                      child: _buildEmpty(),
-                                    ),
-                                ],
+                                  ),
+                                if (widget.section ==
+                                    VideoLibrarySection.series)
+                                  ..._buildLocalVideoSlivers(
+                                    all,
+                                    ordered,
+                                    remoteVideos,
+                                    cardLayout,
+                                  ),
+                                if (widget.section ==
+                                    VideoLibrarySection.allVideos)
+                                  ..._buildAllVideoSlivers(
+                                    all,
+                                    ordered,
+                                    remoteVideos,
+                                    allVideosCardLayout,
+                                  ),
+                                // 首页只有 hero + 横滚行，横滚行卡不参与勾选，所以这一帧
+                                // 没有任何可勾选的格。必须如实登记空可见序：三个分区共用
+                                // 同一个 State，多选态下从「全部视频」切到首页时，可见序
+                                // 若停在上一档，底栏计数与批量删除就作用于一批屏幕上根本
+                                // 没有的条目（批量栏不按分区门控，切过来照样显示）。
+                                if (widget.section == VideoLibrarySection.home)
+                                  ..._homeSectionSelectionReset(),
+                                if (widget.section ==
+                                        VideoLibrarySection.home &&
+                                    all.isEmpty &&
+                                    remoteVideos.isEmpty)
+                                  SliverFillRemaining(
+                                    hasScrollBody: false,
+                                    child: _buildEmpty(),
+                                  ),
                               ],
                             );
                           },

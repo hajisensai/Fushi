@@ -16,8 +16,10 @@ void main() {
     expect(src, contains('FushiEntranceScope('));
     expect(
       src,
-      contains('replayKey: widget.section'),
-      reason: '三个分区共用一个 State，切分区必须重开进场窗口',
+      contains('replayKey: (widget.section, firstPaintPending)'),
+      reason:
+          '三个分区共用一个 State，切分区必须重开进场窗口；首屏骨架换成真墙'
+          '也要重开（BUG-3235），否则映射晚于窗口到达时真卡没有进场',
     );
     for (final String orientation in <String>['portrait', 'landscape']) {
       expect(
