@@ -761,18 +761,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// BUG-1699：合集表写入回调。同步/导入常是一批行连写，300ms 合并窗口后重载
   /// 一次折叠映射（[_loadLibraryMaps] 自带 setState，映射换新后网格自动重组）。
-  ///
-  /// 变更通知是在写事务**提交之后**才发出的，所以事件到达之后才开始的任意一轮
-  /// [_loadLibraryMaps] 读到的已经是这次写入的结果，防抖到点时就不必再重算一遍。
-  /// 本页自己写合集表的路径（远端收养后紧跟一次重载、改合集后 await 重载）正是
-  /// 这种情况：此前同一次写入要换来两轮整套映射重算，网格跟着重组两次。
   void _onCollectionTablesChanged(void _) {
-    final int generationAtEvent = _libraryMapsRequestGeneration;
     _collectionsReloadDebounce?.cancel();
     _collectionsReloadDebounce = Timer(const Duration(milliseconds: 300), () {
-      if (!mounted) return;
-      if (_libraryMapsRequestGeneration != generationAtEvent) return;
-      _loadLibraryMaps();
+      if (mounted) _loadLibraryMaps();
     });
   }
 
@@ -1518,9 +1510,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 再整套重载十几张映射表，全是切回视频 tab 时压在 UI isolate 上的白功。
       // 清单对象换了（TTL 过期重取 / 下拉强刷 / 换来源）才需要重新收养。
       if (!identical(videos, _adoptedRemoteVideos)) {
-        await RemoteCollectionAdoptionService(
-          appModelNoUpdate.database,
-        ).adoptVideos(videos);
+        final RemoteCollectionAdoptionService adoption =
+            RemoteCollectionAdoptionService(appModelNoUpdate.database);
+        for (final RemoteVideoInfo video in videos) {
+          await adoption.adoptVideo(video);
+        }
         _adoptedRemoteVideos = videos;
         if (mounted) await _loadLibraryMaps();
       }
@@ -4247,8 +4241,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 // 错峰淡入；窗口关闭后滚动带出 / 懒加载补入的卡瞬间出现，不拖影。
                 // 三个分区共用同一个 State，切分区（[widget.section]）时重开窗口，
                 // 新的一屏也有一次进场。
+                // 骨架换成真墙也重开窗口（BUG-3235）：窗口从挂载起计时，映射
+                // 晚于窗口到达时真卡会直接蹦出来、早于窗口时才有错峰——进场与否
+                // 取决于映射快慢。按「骨架 / 真墙」分代，真墙恒有一次完整进场。
                 return FushiEntranceScope(
-                  replayKey: widget.section,
+                  replayKey: (widget.section, firstPaintPending),
                   child: RefreshIndicator(
                     onRefresh: _pullToRefresh,
                     // 叠放工具区的高度（恒定，不随显隐变）：转圈从工具区下沿出来。

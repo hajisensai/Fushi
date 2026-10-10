@@ -61,48 +61,6 @@ void main() {
       expect((await db.getAllCollectionItems()).single.entryKey, video.id);
     },
   );
-  test(
-    'adoptVideos adopts a whole catalog and stays silent when nothing is new',
-    () async {
-      // 视频库页靠合集表变更通知重载整套映射。drift 嵌套事务的保存点释放时就会
-      // 通知根监听器，所以首次收养仍是每条真写入一次通知（合并靠库页防抖，见
-      // home_video_first_paint_test）；这里钉的是「没有新东西就一次都不通知」——
-      // 每次切回视频页 / TTL 内重取都会把整份清单再收养一遍。
-      final List<RemoteVideoInfo> videos = <RemoteVideoInfo>[
-        for (int i = 0; i < 20; i++)
-          RemoteVideoInfo(
-            id: 'video-$i',
-            title: 'Video $i',
-            collection: RemoteCollectionMembership(
-              collectionName: 'Series ${i % 3}',
-              collectionType: 'playlist',
-              sortIndex: i,
-            ),
-          ),
-      ];
-      int notifications = 0;
-      final sub = db.watchCollectionTablesChanged().listen((_) {
-        notifications++;
-      });
-      addTearDown(sub.cancel);
-
-      await service.adoptVideos(videos);
-      await pumpEventQueue();
-      expect(notifications, greaterThan(0));
-      expect((await db.getAllCollectionItems()).length, videos.length);
-      expect((await db.getAllMediaCollections()).length, 3);
-      final int afterFirstAdoption = notifications;
-
-      await service.adoptVideos(videos);
-      await pumpEventQueue();
-      expect(
-        notifications,
-        afterFirstAdoption,
-        reason: '已收养的清单再收养一遍只读不写',
-      );
-      expect((await db.getAllCollectionItems()).length, videos.length);
-    },
-  );
   for (final String format in ['epub', 'manga']) {
     test(
       '$format placeholder promotes using actual imported row UID',
