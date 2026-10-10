@@ -3875,9 +3875,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               final File subtitle = File(
                 p.join(
                   temp.path,
+                  // 落地名与手选路径同源（轨自带的 fileName，扩展名随原格式）：
+                  // 此前写死 `.srt`，Emby 外挂 ASS 重进时被按 SRT 解析成空（BUG-3232）。
                   _remoteSubtitleTempFileName(
                     '${info.id}_emb$streamIndex',
-                    'embedded_$streamIndex.srt',
+                    track?.fileName ?? 'embedded_$streamIndex.srt',
                   ),
                 ),
               );
@@ -3898,7 +3900,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   track.isExternalFile &&
                   (track.url?.isNotEmpty ?? false)) {
                 // BUG-3191：外挂字幕下到了却解析不出，起播后交给 libmpv 原格式读。
-                playerRenderedTrack = track;
+                // 交的是**刚下好的本地文件**而不是轨的取流地址（BUG-3232）：下载可能是
+                // 回落到手拼端点才成功的，轨的 url 却是失效的 DeliveryUrl。
+                playerRenderedTrack = track.copyWith(url: subtitle.path);
                 subtitleResolved = true;
               }
             } catch (e) {
