@@ -12,6 +12,7 @@ class ParsedMediaName {
     this.episode,
     this.season,
     this.year,
+    this.titleWithTrailingYear,
     this.releaseGroup,
     this.resolution,
     this.isMovieHint = false,
@@ -29,8 +30,14 @@ class ParsedMediaName {
   /// 季度（`第三季` / `S3` / `Ⅲ` / `2nd Season` / `Part 2`），解析不出为 null。
   final int? season;
 
-  /// 年份（`(2026)` / `[2026]`），解析不出为 null。
+  /// 年份（`(2026)` / `[2026]`，或标题尾部的裸年份 `Title 2023`），解析不出为 null。
   final int? year;
+
+  /// [year] 取自标题尾部**裸**年份时，不剥年份的完整标题（`Death Race 2000` →
+  /// [title] `Death Race`、本字段 `Death Race 2000`）。裸年份在语法上与「片名以
+  /// 年份结尾」无法区分（BUG-3237），刮削把它当作排在后面的标题候选；括号年份 /
+  /// 没有裸年份时为 null。
+  final String? titleWithTrailingYear;
 
   /// 字幕组/发布组（首个 `[xxx]` 块，被分类为组名的）。
   final String? releaseGroup;
