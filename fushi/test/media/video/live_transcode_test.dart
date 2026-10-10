@@ -138,6 +138,17 @@ void main() {
       expect(args, isNot(contains('-to')));
     });
 
+    test('音频补齐到段起点（音轨晚起会让 HLS seek 丢掉段首 IDR）', () {
+      final List<String> args = buildTranscodeSegmentArgs(
+        inputPath: '/v.mkv',
+        profile: const VideoTranscodeProfile(maxWidth: 1280, maxBitrate: 0),
+        start: const Duration(seconds: 12),
+        end: const Duration(seconds: 18),
+      );
+      expect(args[args.indexOf('-af') + 1], 'aresample=first_pts=0');
+      expect(args.indexOf('-af'), greaterThan(args.indexOf('-i')));
+    });
+
     test('码率上限连带 maxrate/bufsize（单给 -b:v 箍不住瞬时码率）', () {
       final List<String> args = buildTranscodeSegmentArgs(
         inputPath: '/v.mkv',

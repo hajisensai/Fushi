@@ -194,6 +194,17 @@ List<String> buildTranscodeSegmentArgs({
     // `-g 600` 本来就是一段一个关键帧。守卫见
     // `fushi/test/media/video/live_transcode_test.dart` 与 `tool/ffmpeg-min/smoke-test.sh`。
     '-bf', '0',
+    // **音频必须从段起点开始**：同一条 DTS 门槛的另一半。hls demuxer 的
+    // `first_timestamp` 取的是第 0 段**最先吐出**的包，而 mpegts 里音频 PES 小、
+    // 总比跨几十个 TS 包的视频 PES 先完整——于是第 0 段音频只要比视频晚起一点点，
+    // 门槛（`first_timestamp` + 累计 EXTINF）就越过了每一段唯一的段首 IDR，任何
+    // seek（含起播恢复进度）都把关键帧丢掉、一帧也解不出。源本身音轨带延迟就会
+    // 中招；蓝光标题的输入改写（`aselect`/`asetpts`）也会让音频晚起几百微秒。
+    // `first_pts=0` 正是 aresample 为「音频比视频晚起」准备的：开头补静音到段起点
+    // （编码器 priming 带来的负时间戳照旧由 muxer 抬平，音频仍不晚于视频）。实测
+    // 见 `fushi/test/sync/fushi_sync_server_bluray_native_test.dart`。没有音轨时这条
+    // 滤镜不生效。
+    '-af', 'aresample=first_pts=0',
     '-c:a', 'aac',
     '-b:a', '$audioBitrate',
     '-ac', '2',
