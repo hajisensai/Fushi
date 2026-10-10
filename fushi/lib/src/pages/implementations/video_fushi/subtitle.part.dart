@@ -1661,7 +1661,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       selectedSource: source,
       label: label,
       // 外挂文件轨下载到了却解析不出 cue：先别报失败，交给 libmpv 原格式再读一次。
-      // 读的是刚下好的本地文件（BUG-3232）：下载可能是 DeliveryUrl 失效后回落到手拼
+      // 读的是刚下好的本地文件（BUG-3260）：下载可能是 DeliveryUrl 失效后回落到手拼
       // 端点才成功的，轨的 url 仍是那条失效的 DeliveryUrl。
       onEmptyCues: track.isExternalFile
           ? () => _showRemoteEmbeddedTrackViaPlayer(

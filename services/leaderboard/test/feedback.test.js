@@ -262,7 +262,7 @@ describe('重新提交', () => {
       .toBe('too_many_reopens');
   });
 
-  it('BUG-3230 次数上限是原子的：并发重新提交不会一起越过上限', async () => {
+  it('BUG-3259 次数上限是原子的：并发重新提交不会一起越过上限', async () => {
     // 每次 D1 往返真实等待：没有条件 INSERT 时并发请求都会在对方写入前读到同一个旧计数。
     const env = makeEnv({ d1DelayMs: 3 });
     const mine = (await submit(env, { title: 'mine' })).data;
@@ -279,7 +279,7 @@ describe('重新提交', () => {
     expect(env.DB.raw.prepare('SELECT COUNT(*) n FROM feedback WHERE parent_id = ?').get(mine.id).n).toBe(limit);
   });
 
-  it('BUG-3230 同一来源对同一条原反馈用同样内容连交两次：第二次按重复拒收；原反馈自己的判重桶不挡重新提交', async () => {
+  it('BUG-3259 同一来源对同一条原反馈用同样内容连交两次：第二次按重复拒收；原反馈自己的判重桶不挡重新提交', async () => {
     const env = makeEnv();
     const ip = '203.0.113.77';
     const orig = (await submit(env, {}, { ip })).data;

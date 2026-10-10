@@ -29,12 +29,38 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2917 条。点号进各自文件。
+> 共 2943 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3260](bugs/BUG-3260-emby-subtitle-player-fallback-url.md) | ✅ | ✅ | 外挂字幕解析为空时交给 libmpv 的是失效的 DeliveryUrl |
+| [BUG-3259](bugs/BUG-3259-feedback-reopen-cap-race.md) | ✅ | ✅ | 反馈重新提交次数上限先 COUNT 再 INSERT 并发可超、重新提交跳过同来源判重 |
+| [BUG-3258](bugs/BUG-3258-little-busters-luca-no-text.md) | ✅ | ✅ | Little Busters!（LucaSystem 引擎）连文本都抓不到 |
+| [BUG-3257](bugs/BUG-3257-ctl-shortcuts-wheel-display-format.md) | ✅ | ✅ | 桌面CLI快捷键列表滚轮绑定在macOS输出显示格式 |
+| [BUG-3256](bugs/BUG-3256-home-tab-notifier-stale-after-module-off.md) | ✅ | ✅ | 当前 tab 被非设置页途径关掉时外壳 tab 通知残留旧值 |
+| [BUG-3255](bugs/BUG-3255-ext-offset-negative-zero.md) | ✅ | ✅ | 浏览器扩展字幕偏移绝对值小于5ms时显示-0 |
+| [BUG-3254](bugs/BUG-3254-video-delay-float-bar-stale.md) | ✅ | ✅ | 视频调轴浮条开着时快捷键改延迟，读数不跟且 ± 以旧值覆盖 |
+| [BUG-3253](bugs/BUG-3253-game-stream-narrow-panel-overflow.md) | ✅ | ✅ | 串流窄布局面板最小高度 200 在软键盘弹出时溢出 |
+| [BUG-3252](bugs/BUG-3252-hidden-remote-books-pref-cast.md) | 🚧 | 🚧 | 远端书隐藏列表偏好读取假定一定是字符串 |
+| [BUG-3251](bugs/BUG-3251-audiobook-live-cue-replace-encoding.md) | ✅ | ✅ | 播放中换字幕后周期写入仍按旧 cue 编码，被杀则断点错位 |
+| [BUG-3250](bugs/BUG-3250-shell-inline-title-unbounded.md) | ✅ | ✅ | 库页宽窗标题胶囊不限宽长页面名挤压页签 |
+| [BUG-3249](bugs/BUG-3249-home-avatar-profile-name-stale.md) | ✅ | ✅ | 首页头像只在初始化读一次 Profile 名且吞掉排行榜刷新异常 |
+| [BUG-3248](bugs/BUG-3248-audiobook-stale-token-sidecar.md) | ✅ | ✅ | 互联更新字幕后旧逐 token sidecar 残留 |
+| [BUG-3247](bugs/BUG-3247-top-bar-follow-leading-budget.md) | ✅ | ✅ | 顶栏动作紧跟返回键时自适应溢出少算 8px 提前收进溢出菜单 |
+| [BUG-3246](bugs/BUG-3246-manga-direct-open-ignores-resume-target.md) | ✅ | ✅ | 首页继续等直接打开在线漫画不按重新打开位置偏好选章 |
+| [BUG-3245](bugs/BUG-3245-hidden-remote-books-probe-creates-root.md) | ✅ | ✅ | 打开已从本机移除的远端书设置页会在云盘建同步根目录 |
+| [BUG-3244](bugs/BUG-3244-hidden-remote-books-count-i18n.md) | ✅ | ✅ | 已从本机移除的远端书设置项副标题硬拼条数未走 i18n |
+| [BUG-3243](bugs/BUG-3243-feedback-relation-chip-dead-tap.md) | ✅ | ✅ | 反馈人详情页关联 chip 对方不在本机时可点但没反应 |
+| [BUG-3242](bugs/BUG-3242-feedback-reopen-shot-fail-silent.md) | ✅ | ✅ | 重新提交带原截图时单张取回失败不提示 |
+| [BUG-3241](bugs/BUG-3241-feedback-draft-rewrite-on-blur.md) | ✅ | ✅ | 反馈草稿在桌面主窗每次失焦都整份重写（含截图） |
+| [BUG-3240](bugs/BUG-3240-feedback-draft-restore-drops-autoshot.md) | ✅ | ✅ | 反馈提交页恢复草稿时丢掉本次打开自动截的图 |
+| [BUG-3239](bugs/BUG-3239-feedback-detail-shot-no-retry.md) | ✅ | ✅ | 反馈详情页截图下载失败后本次打开期间不再重试 |
+| [BUG-3238](bugs/BUG-3238-settings-slider-rejected-value.md) | ✅ | ✅ | 设置滑条松手后被拒绝的拖动值一直挂在滑块上 |
+| [BUG-3237](bugs/BUG-3237-scrape-title-ending-in-year.md) | ✅ | ✅ | 片名以年份结尾时被当裸年份剥掉，刮削查无 |
+| [BUG-3236](bugs/BUG-3236-anki-css-open-attribute-pruned.md) | ✅ | ✅ | 制卡词典 CSS 裁剪把 details[open] 等交互态属性规则裁掉 |
+| [BUG-3235](bugs/BUG-3235-feedback-dev-list-stale-request.md) | ✅ | ✅ | 反馈处理台列表被取代的旧请求仍清加载中并写错误 |
+| [BUG-3234](bugs/BUG-3234-pill-segmented-width-estimate.md) | ✅ | ✅ | MD3 胶囊分段估宽与绘制不同源导致段被钳窄截断 |
 | [BUG-3233](bugs/BUG-3233-hdr-compositor-failure-cached.md) | ✅ | ✅ | HDR合成器一次失败就整个进程记成不支持 |
-| [BUG-3229](bugs/BUG-3229-little-busters-luca-no-text.md) | ✅ | ✅ | Little Busters!（LucaSystem 引擎）连文本都抓不到 |
 | [BUG-3228](bugs/BUG-3228-leaderboard-summary-stuck-loading.md) | ✅ | ✅ | 排行榜总字数卡加载失败后永远停在加载条 |
 | [BUG-3225](bugs/BUG-3225-android-global-lookup-black-panel.md) | ✅ | ✅ | Android app 外查词窗词条区整块黑底、浅色主题文字看不见 |
 | [BUG-3224](bugs/BUG-3224-anki-card-css-size.md) | ✅ | ✅ | 制卡把整份词典 CSS 内联进每个释义字段，AnkiDroid 预览 TransactionTooLargeException 打不开 |
