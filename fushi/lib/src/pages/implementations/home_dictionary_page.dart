@@ -1779,6 +1779,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
               padding: EdgeInsets.only(top: tokens.spacing.gap),
               child: SourceLookupTextPanel(
                 text: _sourceLookupText,
+                // 与下方结果 WebView 同一口径：Material（非玻璃 / 非墨水屏）挂
+                // html.fushi-m3e，卡内命中走 primaryContainer，本条同色。
+                tonalHighlight: !isGlassDesign(context) && !isEinkTheme(context),
                 dictionaryHeadwordScale: appModel.dictionaryFontSize /
                     appModel.defaultDictionaryFontSize,
                 highlight: _sourceHighlight,
