@@ -277,6 +277,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       _includeParentShots = true;
       _loadingParentShots = true;
     });
+    int failed = 0;
     for (final String slot in seed.screenshotSlots) {
       if (_room <= 0 || !_includeParentShots) break;
       try {
@@ -288,9 +289,17 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
         });
       } on Object catch (e, st) {
         ErrorLogService.instance.log('feedback.reopen_screenshot', e, st);
+        failed++;
       }
     }
-    if (mounted) setState(() => _loadingParentShots = false);
+    if (!mounted) return;
+    setState(() {
+      _loadingParentShots = false;
+      // 一张都没取回：开关不能停在「已带上」。
+      if (_parentShots.isEmpty) _includeParentShots = false;
+    });
+    // 少带了几张要让用户知道（开关看着是开的，附件里却缺图，BUG-3242）。
+    if (failed > 0) _notice(t.feedback_reopen_shots_failed(n: failed));
   }
 
   List<Widget> _reopenSection(FushiDesignTokens tokens) {

@@ -7028,5 +7028,6 @@
   "mihon_extension_uninstall_confirm_multi": "扩展「$name」包含 $count 个源，卸载会把它们一起移除：",
   "mihon_extension_package_label": "包名：$package",
   "extension_nsfw_badge": "NSFW",
-  "mihon_extension_min_downloads_any": "不限"
+  "mihon_extension_min_downloads_any": "不限",
+  "feedback_reopen_shots_failed": "有 ${n} 张原截图没能取回，未附上"
 }
