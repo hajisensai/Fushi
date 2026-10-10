@@ -1,8 +1,8 @@
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
-import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_input.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_bar.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_focus_host.dart';
@@ -2165,6 +2165,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   int _discBindingGeneration = 0;
   int? _discNativeGeneration;
   bool _discMenuWasActive = false;
+
+  /// 原盘菜单顶栏（返回 / 主菜单 / 弹出菜单）的显隐。原盘菜单把常规控制条整个换掉，
+  /// media_kit 的自动隐藏够不着它，所以由 [_pokeDiscMenuChrome] 按与控制条同一节奏
+  /// （[_videoControlsHoverDuration]）自己淡出；指针悬停或焦点落在顶栏上时顶住。
+  final ValueNotifier<bool> _discMenuChromeVisible = ValueNotifier<bool>(true);
+  Timer? _discMenuChromeHideTimer;
+  bool _discMenuChromeHovered = false;
+  bool _discMenuChromeFocused = false;
   List<SubtitleTrack>? _discLastSubtitleTracks;
   int _discSubtitleTracksRevision = 0;
   String get _activeBookUid => _discBookUid ?? widget.bookUid;
@@ -5664,6 +5672,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _immersiveLocked.dispose();
     _lockButtonHideTimer?.cancel();
     _lockButtonVisible.dispose();
+    _discMenuChromeHideTimer?.cancel();
+    _discMenuChromeVisible.dispose();
     _lockButtonHovered.dispose();
     _osdTimer?.cancel();
     _osdNotifier.dispose();
@@ -8566,7 +8576,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 !_kVideoBottomFoldedItems.contains(item),
           )
         : const <VideoBarEntry>[];
-    if (items.isEmpty && folded.isEmpty) return const SizedBox.shrink();
+    // 原盘会话播放正片时，「主菜单 / 弹出菜单」挂在右上组头部：与其它顶栏按钮同一
+    // 显隐（随控制条淡出）、同一外观，窄屏同样收进「⋯」。
+    final List<VideoBarEntry> disc =
+        lastTopRightSegment && controller.isBlurayNavigationSession
+        ? _discNavigationBarEntries(desktop: desktop)
+        : const <VideoBarEntry>[];
+    if (items.isEmpty && folded.isEmpty && disc.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     Widget buttonFor(VideoControlItem item) {
       final LayerLink? popoverLink = item == VideoControlItem.speed
@@ -8617,6 +8635,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         moreButtonBuilder: (VoidCallback open) =>
             _videoBarMoreButton(open, desktop: desktop),
         entries: <VideoBarEntry>[
+          ...disc,
           for (final VideoControlItem item in items)
             _videoBarEntry(
               item,
@@ -8632,7 +8651,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
     return VideoGlassSurface(
       enabled: _appleChrome,
-      padding: items.length > 1
+      padding: items.length + disc.length > 1
           ? EdgeInsets.symmetric(horizontal: 4 * _videoUiScale)
           : EdgeInsets.zero,
       child: buttonGroup(),

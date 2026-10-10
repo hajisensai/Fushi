@@ -221,12 +221,16 @@ void main() {
         '0.0',
         '1.0',
       ]);
-      expect(videoDiscNavigationCommand('mouse-move', x: .25, y: .75), <String>[
-        'discnav',
-        'mouse-move',
-        '0.25',
-        '0.75',
-      ]);
+    });
+
+    test('pointer hover never reaches the disc (it selects buttons)', () {
+      // libbluray's mouse move selects the button under the pointer and
+      // auto-action buttons fire on selection: hovering off an expanded
+      // submenu collapsed it. Only clicks are a disc command.
+      expect(
+        () => videoDiscNavigationCommand('mouse-move', x: .25, y: .75),
+        throwsArgumentError,
+      );
     });
 
     test(

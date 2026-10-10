@@ -8,6 +8,7 @@
 
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,6 +16,7 @@ import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:path/path.dart' as p;
@@ -51,15 +53,20 @@ Future<SourceLibraryRow> _videoSource(FushiDatabase db, String root) async {
   return (await db.getMediaSourceById(id))!;
 }
 
-/// 在 [root] 下铺一张盘：每个 [clips] 一条整段用满的标题。
-void _writeDisc(String root, List<String> clips) {
+/// 在 [root] 下铺一张盘：每个 [clips] 一条整段用满的标题，时长取 [secondsOf]
+/// （缺省 1500 秒）。
+void _writeDisc(
+  String root,
+  List<String> clips, {
+  Map<String, int> secondsOf = const <String, int>{},
+}) {
   for (final String dir in <String>['PLAYLIST', 'CLIPINF', 'STREAM']) {
     Directory(p.join(root, 'BDMV', dir)).createSync(recursive: true);
   }
   for (int i = 0; i < clips.length; i++) {
     final String clip = clips[i];
     const int start = 45000 * 4;
-    const int seconds = 1500;
+    final int seconds = secondsOf[clip] ?? 1500;
     File(
       p.join(root, 'BDMV', 'PLAYLIST', '0000${i + 1}.mpls'),
     ).writeAsBytesSync(
@@ -171,5 +178,100 @@ void main() {
     expect(second.succeeded, isTrue, reason: second.error ?? '');
     final Map<String, Set<String>> again = await membersByCollection(db);
     expect(again, members);
+  });
+
+  // 原盘菜单首版（2026-10-08）给「只能从菜单进入的特典」手写建行：没有来源、不进盘
+  // 合集、名字写成「盘目录名 · 00003」。刮削的每道入口都按来源挑条目，这一行在结构
+  // 上永远刮不到（用户：「这个都是bd了，为什么还能没刮削出来」）。
+  group('原盘菜单进入的特典按扫描导入的规则入库', () {
+    late FushiDatabase db;
+    late SourceLibraryRow source;
+    late String disc;
+    late String bonus;
+
+    setUp(() async {
+      db = _memDb();
+      disc = p.join(tmp.path, 'Kaguya', 'DISC2');
+      // 两条正片 + 一条 60 秒特典：特典低于相对时长下限，扫描不选它。
+      _writeDisc(
+        disc,
+        <String>['00011', '00012', '00013'],
+        secondsOf: const <String, int>{'00013': 60},
+      );
+      bonus = p.join(disc, 'BDMV', 'PLAYLIST', '00003.mpls');
+      source = await _videoSource(db, tmp.path);
+      final SourceScanSummary scan = await SourceLibraryScanner(
+        db,
+      ).scan(source);
+      expect(scan.succeeded, isTrue, reason: scan.error ?? '');
+    });
+    tearDown(() => db.close());
+
+    Future<Set<String>> discMembers() async =>
+        (await membersByCollection(db))['DISC2']!;
+
+    test('补来源、进盘合集、名字取盘名；重复调用幂等', () async {
+      expect(await discMembers(), isNot(contains(p.normalize(bonus))));
+
+      final VideoBookRow row = (await ensureBlurayTitleInLibrary(db, bonus))!;
+      expect(row.sourceId, source.id);
+      expect(row.title, 'DISC2 - 00003');
+      expect(await discMembers(), contains(p.normalize(bonus)));
+
+      final VideoBookRow again = (await ensureBlurayTitleInLibrary(db, bonus))!;
+      expect(again.bookUid, row.bookUid);
+      final List<VideoBookRow> onBonus = <VideoBookRow>[
+        for (final VideoBookRow b in await VideoBookRepository(db).listAll())
+          if (p.equals(b.videoPath, bonus)) b,
+      ];
+      expect(onBonus, hasLength(1));
+    });
+
+    test('重扫不把菜单进过的特典移出盘合集', () async {
+      await ensureBlurayTitleInLibrary(db, bonus);
+      final SourceScanSummary rescan = await SourceLibraryScanner(
+        db,
+      ).scan(source);
+      expect(rescan.succeeded, isTrue, reason: rescan.error ?? '');
+      expect(await discMembers(), contains(p.normalize(bonus)));
+      final VideoBookRow row = (await VideoBookRepository(
+        db,
+      ).findByVideoPath(bonus))!;
+      expect(row.sourceId, source.id);
+    });
+
+    test('首版建出的无来源孤儿行自愈：补来源、进合集、改回盘名', () async {
+      final VideoBookRepository repo = VideoBookRepository(db);
+      await repo.saveVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/00003 (8)',
+          title: 'DISC2 · 00003',
+          videoPath: bonus,
+          importedAt: const Value<int?>(1),
+        ),
+      );
+      final VideoBookRow healed = (await ensureBlurayTitleInLibrary(
+        db,
+        bonus,
+      ))!;
+      expect(healed.bookUid, 'video/00003 (8)');
+      expect(healed.sourceId, source.id);
+      expect(healed.title, 'DISC2 - 00003');
+      expect(await discMembers(), contains(p.normalize(bonus)));
+    });
+
+    test('用户改过的标题不被覆盖', () async {
+      final VideoBookRepository repo = VideoBookRepository(db);
+      await repo.saveVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/00003',
+          title: '制作特辑',
+          videoPath: bonus,
+          importedAt: const Value<int?>(1),
+        ),
+      );
+      final VideoBookRow row = (await ensureBlurayTitleInLibrary(db, bonus))!;
+      expect(row.title, '制作特辑');
+    });
   });
 }
