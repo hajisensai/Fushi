@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2917 条。点号进各自文件。
+> 共 2918 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3247](bugs/BUG-3247-top-bar-follow-leading-budget.md) | ✅ | ✅ | 顶栏动作紧跟返回键时自适应溢出少算 8px 提前收进溢出菜单 |
 | [BUG-3238](bugs/BUG-3238-settings-slider-rejected-value.md) | ✅ | ✅ | 设置滑条松手后被拒绝的拖动值一直挂在滑块上 |
 | [BUG-3234](bugs/BUG-3234-pill-segmented-width-estimate.md) | ✅ | ✅ | MD3 胶囊分段估宽与绘制不同源导致段被钳窄截断 |
 | [BUG-3228](bugs/BUG-3228-leaderboard-summary-stuck-loading.md) | ✅ | ✅ | 排行榜总字数卡加载失败后永远停在加载条 |
