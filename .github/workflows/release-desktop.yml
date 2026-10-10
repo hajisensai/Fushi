@@ -1988,6 +1988,34 @@ jobs:
           # 立刻失效）。-type f 同时排除了符号链接，jlink 镜像和 framework 里的
           # 符号链接不能签。
           MIHON_PREFIX="$APP/Contents/Resources/mihon_bridge/"
+          # 公证服务会解开 jar 检查里面的 Mach-O（2026-10-10 首次 Developer ID 公证被拒，
+          # 12 条错误全在 m-extension-server.jar 内：libwebp-imageio / libzstd-kmp /
+          # JNA libjnidispatch，未签名或无安全时间戳）。下面的 find 只看得到 jar 本身，
+          # 所以先把 jar 里的 Mach-O 解出来逐个签名、写回 jar，并回读校验。
+          # 运行时不校验 jar 哈希（checksums.json 只在构建期检查是否存在）。
+          while IFS= read -r -d '' jar; do
+            jar_abs="$(cd "$(dirname "$jar")" && pwd)/$(basename "$jar")"
+            work="$(mktemp -d "$RUNNER_TEMP/jar-natives.XXXXXX")"
+            unzip -q "$jar_abs" -d "$work"
+            signed_entries=()
+            while IFS= read -r entry; do
+              case "$entry" in */) continue ;; esac
+              if file "$work/$entry" | grep -q 'Mach-O'; then
+                echo "signing (in $(basename "$jar")): $entry"
+                sign_one "$work/$entry"
+                signed_entries+=("$entry")
+              fi
+            done < <(unzip -Z1 "$jar_abs")
+            # macOS 自带 bash 3.2：空数组在 set -u 下展开会报 unbound，先判长度。
+            if [ "${#signed_entries[@]}" -gt 0 ]; then
+              (cd "$work" && zip -q "$jar_abs" "${signed_entries[@]}")
+              for entry in "${signed_entries[@]}"; do
+                unzip -p "$jar_abs" "$entry" > "$work/.verify"
+                codesign --verify --strict --verbose=2 "$work/.verify"
+              done
+            fi
+            rm -rf "$work"
+          done < <(find "$MIHON_PREFIX" -type f -name '*.jar' -print0)
           while IFS= read -r item; do
             if ! file "$item" | grep -q 'Mach-O'; then
               continue
