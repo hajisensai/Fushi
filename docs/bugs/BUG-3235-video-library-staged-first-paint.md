@@ -1,0 +1,11 @@
+## BUG-3235 · 视频库首屏一块块加载
+- **报告**：2026-10-10（用户：「主页里面的视频模块好像是分块加载的，点开以后别说动画了，里面的视频是一块块加载的」）
+- **真实性**：✅ 真 bug。视频库页 `initState` 同时发出本地列表、分组映射、远端清单三路加载，各自独立 setState，渲染没有「首屏数据齐了再画」的边界：
+  - 列表先到时拿**空映射**渲染（`fushi/lib/src/pages/implementations/home_video_page.dart` `_buildVideoLibraryBody`：旧代码只判 `loaded == null`）——合集一个都折不出来，全员先铺成散卡；映射（十几张表）一到再收拢成合集、换刮削海报。BUG-2835 只给「全部视频 + 系列筛选」加了一道 `_seriesFilterPending` 特例门，系列页 / 首页照样分段重组。
+  - 远端清单逐条 `adoptVideo`（`_loadRemoteVideos` 与 `home_dashboard_page.dart` 的目录刷新，每条一个顶层事务），收养后页面主动重载一次映射，合集表变更流（`_onCollectionTablesChanged`，300 ms 防抖）又补一轮——同一次写入换来两轮整套映射重算，网格再重组一次。
+- **[x] ① 已修复** — 根因修复（不是加淡入动画盖住）：
+  - 首屏门推广到所有分区：列表**与**映射都到位才画真卡（`home_video_page.dart` `firstPaintPending`，`_libraryMapsReady` 只从 false 变 true，后续刷新用旧映射顶住），期间画与真实墙同几何的骨架（`_buildLibraryMapsPendingSlivers`，直接复用 `_buildVideoWallSliver` / `_buildAllVideoGridSliver`），映射一到整墙一次换成真卡、版面不跳；BUG-2835 的 `_seriesFilterPending` 特例随之删除（被通用门覆盖）。
+  - 表变更防抖到点时，若事件到达后已经开始过一轮全量重载就跳过（`_onCollectionTablesChanged` 记代）：drift 在事务 `finally` 的 `disposeChildStreams()` 先派发表更新、事务 future 才完成，所以事件必先于写入方随后的主动重载到达，判据确定。
+  - 远端目录收养改为整份清单一个外层事务（`RemoteCollectionAdoptionService.adoptVideos`，视频库页与首页 dashboard 两处）：几百次落盘提交合成一次。注意 drift 嵌套事务在保存点释放时就通知根监听器，**通知不会因此合并**，合并靠上面的防抖判据。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/home_video_first_paint_test.dart`（映射被卡住时系列 / 全部视频 / 首页三个分区逐帧只画骨架、不出现成员散卡；远端收养后映射只重载两轮）；`fushi/test/sync/remote_collection_adoption_service_test.dart`（整份清单收养、已收养时零通知）；`fushi/test/pages/unified_collections_architecture_guard_test.dart`（目录加载必须 `.adoptVideos(videos)`、不得退回逐条事务循环；旧断言被下载路径的 `adoptVideo(video)` 碰巧满足，已是空壳）。变异实测：去掉映射门 → 三个分区用例全红；去掉防抖跳过 → 重载次数 2→3 转红。
+- **备注**：封面卡自身的宽高比探测 / 主色采样仍会让单张卡在解码后再变一次（`cover_aspect_probe.dart`），以及构建期对封面路径的同步 `existsSync`，属于单卡级别的后续优化，不在本条范围。
