@@ -462,21 +462,23 @@ if ! grep -qw mpegts "$WORK/muxers2.txt"; then
   exit 1
 fi
 run "$FFMPEG_MIN" -hide_banner -nostdin -loglevel error -y \
-  -ss 0.100 -to 0.700 -i "$MP4_FIXTURE" \
+  -ss 0.100 -t 0.600 -i "$MP4_FIXTURE" \
   -map 0:v:0 -map '0:a:0?' -sn \
   -c:v libx264 -preset veryfast -b:v 400k -maxrate 400k -bufsize 800k \
   -profile:v high -pix_fmt yuv420p -g 600 -keyint_min 600 -sc_threshold 0 -bf 0 \
+  -af aresample=first_pts=0 \
   -c:a aac -b:a 64k -ac 2 -muxdelay 0 -muxpreload 0 -output_ts_offset 6 \
   -f mpegts "$WORK/seg.ts"
 assert_nonempty "$WORK/seg.ts"
 run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/seg.ts" -f null -
 
-# 第二段：只换 -ss/-to 与 -output_ts_offset，与 host 逐段起一个 ffmpeg 同形。
+# 第二段：只换 -ss 与 -output_ts_offset，与 host 逐段起一个 ffmpeg 同形。
 run "$FFMPEG_MIN" -hide_banner -nostdin -loglevel error -y \
-  -ss 0.700 -to 1.300 -i "$MP4_FIXTURE" \
+  -ss 0.700 -t 0.600 -i "$MP4_FIXTURE" \
   -map 0:v:0 -map '0:a:0?' -sn \
   -c:v libx264 -preset veryfast -b:v 400k -maxrate 400k -bufsize 800k \
   -profile:v high -pix_fmt yuv420p -g 600 -keyint_min 600 -sc_threshold 0 -bf 0 \
+  -af aresample=first_pts=0 \
   -c:a aac -b:a 64k -ac 2 -muxdelay 0 -muxpreload 0 -output_ts_offset 7 \
   -f mpegts "$WORK/seg2.ts"
 assert_nonempty "$WORK/seg2.ts"
