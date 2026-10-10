@@ -498,3 +498,78 @@ describe('网页处理台', () => {
     expect((await page(env, 'GET', '/dev', { cookie })).data).toContain('发送验证码');
   });
 });
+
+describe('开发者私有批注（AI 总结 / 开发者批改）', () => {
+  it('只进开发者出口：反馈人详情 / 批量进度一律不带，也不写时间线、不动排序与红点', async () => {
+    const env = makeEnv();
+    const dev = await makeDev(env);
+    const reporter = await registerUser(env, 'rep', { now: NOW });
+    const { id, ticket } = (await submit(env)).data;
+    const before = env.DB.raw.prepare('SELECT updated_at, dev_reply_at FROM feedback WHERE id = ?').get(id);
+
+    expect((await as(env, reporter, 'POST', `/v1/dev/feedback/${id}/notes`, { devNote: 'x' })).status).toBe(403);
+    expect((await call(env, 'POST', `/v1/dev/feedback/${id}/notes`, { body: { devNote: 'x' }, now: NOW })).status).toBe(401);
+    expect((await as(env, dev, 'POST', `/v1/dev/feedback/${id}/notes`, {})).data.error).toBe('nothing_to_update');
+    expect((await as(env, dev, 'POST', `/v1/dev/feedback/${id}/notes`, { devNote: 7 })).data.error).toBe('bad_dev_note');
+    expect((await as(env, dev, 'POST', `/v1/dev/feedback/${id}/notes`,
+      { aiSummary: '字'.repeat(FEEDBACK_LIMITS.aiSummaryMax + 1) })).data.error).toBe('ai_summary_too_long');
+
+    const saved = await as(env, dev, 'POST', `/v1/dev/feedback/${id}/notes`,
+      { aiSummary: 'AI：白屏，疑似 EPUB 解析失败', devNote: '先查导入日志​' });
+    expect(saved.status).toBe(200);
+    expect(saved.data).toMatchObject({
+      aiSummary: 'AI：白屏，疑似 EPUB 解析失败', aiSummaryAt: NOW, devNote: '先查导入日志', devNoteAt: NOW,
+    });
+    const item = (await as(env, dev, 'GET', '/v1/dev/feedback')).data.items.find((x) => x.id === id);
+    expect(item).toMatchObject({ aiSummary: 'AI：白屏，疑似 EPUB 解析失败', hasDevNote: true });
+
+    // 反馈人一侧：字段与文字都不出现。
+    const mine = await withTicket(env, 'GET', `/v1/feedback/${id}`, ticket);
+    const status = await call(env, 'POST', '/v1/feedback/status', { body: { items: [{ id, ticket }] }, now: NOW });
+    for (const res of [mine, status]) {
+      const text = JSON.stringify(res.data);
+      expect(res.status).toBe(200);
+      expect(text).not.toMatch(/aiSummary|devNote|hasDevNote/);
+      expect(text).not.toContain('EPUB 解析失败');
+      expect(text).not.toContain('先查导入日志');
+    }
+    expect(mine.data.messages).toEqual([]);
+    expect(env.DB.raw.prepare('SELECT COUNT(*) n FROM feedback_messages').get().n).toBe(0);
+    expect(env.DB.raw.prepare('SELECT updated_at, dev_reply_at FROM feedback WHERE id = ?').get(id)).toEqual(before);
+
+    // 只给一个字段时另一个不动；空白 = 清除。
+    const cleared = await as(env, dev, 'POST', `/v1/dev/feedback/${id}/notes`, { devNote: '  ' });
+    expect(cleared.data).toMatchObject({ aiSummary: 'AI：白屏，疑似 EPUB 解析失败', devNote: null, devNoteAt: null });
+    expect((await as(env, dev, 'GET', '/v1/dev/feedback')).data.items.find((x) => x.id === id).hasDevNote).toBe(false);
+  });
+
+  it('网页处理台：详情显示 AI 总结、批改表单保存（要本站 Origin），长中文不被表单上限拒', async () => {
+    const env = makeEnv();
+    const dev = await makeDev(env);
+    const { id, ticket } = (await submit(env)).data;
+    await as(env, dev, 'POST', `/v1/dev/feedback/${id}/notes`, { aiSummary: '<b>总结</b>' });
+    const cookie = (await webLogin(env, dev)).res.headers.get('Set-Cookie').split(';')[0];
+
+    const detail = await page(env, 'GET', `/dev/f/${id}`, { cookie });
+    expect(detail.data).toContain('&#60;b&#62;总结');
+    expect(detail.data).not.toContain('<b>总结');
+    expect(detail.data).toContain(`action="/dev/f/${id}/note"`);
+    expect((await page(env, 'GET', '/dev', { cookie })).data).toContain('AI：&#60;b&#62;总结');
+
+    expect((await page(env, 'POST', `/dev/f/${id}/note`, { cookie, fields: { devNote: 'x' }, origin: null })).status).toBe(403);
+    const longNote = '批'.repeat(FEEDBACK_LIMITS.devNoteMax);
+    const saved = await page(env, 'POST', `/dev/f/${id}/note`, { cookie, fields: { devNote: longNote } });
+    expect(saved.status).toBe(303);
+    expect(env.DB.raw.prepare('SELECT dev_note FROM feedback WHERE id = ?').get(id).dev_note).toBe(longNote);
+    expect((await page(env, 'GET', '/dev', { cookie })).data).toContain('已批改');
+    // 网页只收批改：表单里夹带 aiSummary 也改不了 AI 总结。
+    await page(env, 'POST', `/dev/f/${id}/note`, { cookie, fields: { devNote: '', aiSummary: 'hack' } });
+    expect(env.DB.raw.prepare('SELECT ai_summary, dev_note FROM feedback WHERE id = ?').get(id))
+      .toEqual({ ai_summary: '<b>总结</b>', dev_note: null });
+
+    // 回复框满 4000 个汉字（urlencoded 约 36 KB）也能提交，不再被 32 KB 一刀切成 413。
+    const reply = '复'.repeat(FEEDBACK_LIMITS.replyMax);
+    expect((await page(env, 'POST', `/dev/f/${id}`, { cookie, fields: { status: 'open', reply } })).status).toBe(303);
+    expect((await withTicket(env, 'GET', `/v1/feedback/${id}`, ticket)).data.messages[0].body).toBe(reply);
+  });
+});
