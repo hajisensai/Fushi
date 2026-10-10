@@ -351,9 +351,21 @@ class DataRootMigrator {
     try {
       await req.commitLocation(req.target);
     } catch (e) {
+      // BUG-3269：先把文件搬回旧根、再在 DB **此刻所在**的根上把路径反向改写——与正向
+      // 「先搬再改写」、备份还原「先解出再改写」同一顺序。本地发音库的路径改写要看副本
+      // 实际落在哪个根（[LocalAudioManager.resolveInternalPath]），先改写后搬回会把
+      // 路径留在即将被清掉的新根。跨盘复制时旧根完好、旧 DB 从未改写过（反向改写是
+      // 空操作）；同盘 rename 时 DB 随目录回到旧根；搬回失败时 DB 仍在新根，就地改写，
+      // 绝不在没有主库的旧根上打开 [FushiDatabase]（那会新建一个空库）。
+      await _rollbackMoves(done);
+      final String dbHome = File(
+        p.join(req.oldSupportRoot.path, fushiDatabaseFileName),
+      ).existsSync()
+          ? req.oldSupportRoot.path
+          : newSupport.path;
       try {
         await _rebaseDatabasePaths(
-          dbDirectory: newSupport.path,
+          dbDirectory: dbHome,
           oldDocumentsRoot: newDocs.path,
           newDocumentsRoot: req.oldDocumentsRoot.path,
           newSupportRoot: req.oldSupportRoot.path,
@@ -365,7 +377,6 @@ class DataRootMigrator {
           '$rollbackError',
         );
       }
-      await _rollbackMoves(done);
       await _cleanupCreatedSubtrees(createdSubtrees);
       throw DataRootMigrationException('写入新数据根设置失败，已回滚到旧根', cause: e);
     }

@@ -1,0 +1,7 @@
+## BUG-3269 · 本地发音库引用文件名像内部副本时被重挂到不存在的路径
+- **报告**：2026-10-10（用户：Android 上发音库行显示 `/storage/emulated/0/Download/Fushi Dictionary Bank/LocalAudio/local_audio_1782831652275.db` 与「发音库文件不可用，请重新选择原始 DB 文件。」，系统文件管理器里同名 6.27 GB 文件存在；错误日志无任何记录）
+- **真实性**：✅ 真 bug。用户把一份 `local_audio_<数字>.db`（别处拷出的内部副本）放进 Download 并以引用模式（BUG-483）添加；`fushi/lib/src/models/local_audio_manager.dart` 的 `resolveInternalPath` 只按文件名判「内部副本」，无条件把它重挂到 `<数据根>/local_audio_1782831652275.db`——那里没有这个文件。设置页 `AppModel.isLocalAudioDbAvailable`（`app_model.dart:8985`）对重挂后的路径 `File.exists()` 恒为 false → 显示「不可用」；`_configFor` / `bindForNativeHandler` 喂给 native 的也是这条错路径，发音实际查不出。全程只有 `exists()==false`，没有异常，所以错误日志为空。「重新选择」走复制模式会把 6 GB 拷进内部存储，才「好」了。同一判据还被数据根迁移与备份还原的 pref 改写共用，迁移数据根时会把这条引用永久改写坏。
+- **[x] ① 已修复** — `resolveInternalPath` 从「看文件名」改成「找文件」：内部副本命名的路径，`<dir>` 里有这份副本就用它；没有而存的路径在本机就是真文件（=引用）就原样返回；都没有才回到 `<dir>` 路径。运行时、备份还原（先解出文件再改写）、正向迁移（先搬再改写）都满足「文件先落地再改写」。唯一违反的是迁移提交失败的回滚（先反向改写、后搬回）——`data_root_migrator.dart` 改成先 `_rollbackMoves` 再在 DB 当前所在的根上反向改写（旧根没有主库时就地改写，不在旧根新建空库）。
+- **[x] ② 已加自动化测试** — `fushi/test/models/local_audio_manager_resolve_test.dart` 的 `BUG-3269 existing reference with an internal-looking name` 组（真实临时文件：存在的引用不被重挂 / 备份·迁移用的 `normalizeLocalAudioDbsJson` 保留引用 / 缺失时仍按文件名重挂）；既有 `backup_local_audio_portability_test.dart`（同机模拟跨机还原）与 `data_root_migrator_test.dart`（提交失败回滚）钉住另两条顺序。
+- **用户侧佐证**（2026-10-10）：用户取消勾选「引用原文件（不复制）」后，同一份 6 GB 文件添加成功——复制模式落成新的内部副本名、路径就在库目录，不经误判；只有引用模式会被重挂。与根因一致。
+- **备注**：未在真机复现（没有用户那份 6 GB 库）；判据由代码路径 + 单测直接证明。若用户撤销了「所有文件访问」权限，同一条提示也会出现，那是另一种成因（引用的文件本身读不到），本修复不改变它。
