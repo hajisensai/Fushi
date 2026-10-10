@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart' show BoxParentData, RenderShiftedBox;
+import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 import 'package:macos_ui/macos_ui.dart'
     show
         MacosScaffold,
@@ -489,6 +490,10 @@ class _HomePageState extends BasePageState<HomePage>
     // it only exists under the macOS shell).
     homeShellTabNotifier.value = _currentTab;
     homeShellTabNotifier.addListener(_onShellTabRequested);
+    // 「功能模块」可在当前 tab 上被关掉（ctl `/api/admin/modules`、互联下载
+    // 配置 / 备份恢复刷新偏好、新手引导写回）：选中身份与共享 notifier 要跟着
+    // 落到默认落地 tab，否则桌面标题栏 / macOS 侧栏 / ctl 仍报被关掉的 tab。
+    appModelNoUpdate.addListener(_onModuleVisibilityMaybeChanged);
 
     WidgetsBinding.instance.addObserver(this);
     assert(() {
@@ -854,6 +859,7 @@ class _HomePageState extends BasePageState<HomePage>
       _onHomeDictionaryTabRequested,
     );
     homeShellTabNotifier.removeListener(_onShellTabRequested);
+    appModelNoUpdate.removeListener(_onModuleVisibilityMaybeChanged);
     super.dispose();
   }
 
@@ -1053,7 +1059,8 @@ class _HomePageState extends BasePageState<HomePage>
   /// 渲染用的当前 tab：若 `_currentTab` 已不在可见列表（例如刚在「功能模块」里
   /// 关掉当前所在库页），回落到默认落地 tab（[homeLandingTab]：首页开着是首页，
   /// 关了是第一个启用的模块），避免渲染一个不存在的 tab。
-  /// `_currentTab` 自身保持不变，下一次 [_selectTab] 会纠正它。
+  /// `_currentTab` 与共享 notifier 随后由 [_onModuleVisibilityMaybeChanged]
+  /// 纠正到同一个 tab（BUG-3256）。
   HomeTab get _visibleTab {
     final List<HomeTab> tabs = _activeTabs();
     return tabs.contains(_currentTab) ? _currentTab : homeLandingTab(tabs);
@@ -1189,6 +1196,31 @@ class _HomePageState extends BasePageState<HomePage>
     // (built outside HomePage) stays in sync. Guarded by value-equality inside
     // ValueNotifier, so this never re-enters _onShellTabRequested pointlessly.
     homeShellTabNotifier.value = tab;
+  }
+
+  /// 当前所在 tab 被「功能模块」关掉时，把选中身份（`_currentTab` + 共享
+  /// [homeShellTabNotifier]）落到 [_visibleTab] 正在渲染的默认落地 tab。
+  ///
+  /// BUG-3256：首页（2026-10-09 起可关）等模块不一定从设置页关——ctl
+  /// `/api/admin/modules`、互联下载配置 / 备份恢复后的偏好刷新、新手引导写回都能
+  /// 在用户停在该 tab 时关掉它。正文由 [_visibleTab] 兜底到落地 tab，但 notifier
+  /// 留着旧值：桌面自绘标题栏写「首页」、正文却是别的页。AppModel 一通知就核对
+  /// 一次（只算一张 tab 表，代价可忽略）；构建期间的通知推到帧后，免得在别的
+  /// widget 构建时改写 notifier。
+  void _onModuleVisibilityMaybeChanged() {
+    if (!mounted) return;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback(
+        (_) => _onModuleVisibilityMaybeChanged(),
+      );
+      return;
+    }
+    final List<HomeTab> tabs = homeActiveTabs(
+      appModelNoUpdate.moduleVisibility,
+    );
+    if (tabs.contains(_currentTab)) return;
+    _selectTab(homeLandingTab(tabs));
   }
 
   /// The macOS root sidebar writes [homeShellTabNotifier] directly; route that

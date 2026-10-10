@@ -260,6 +260,32 @@ void main() {
     await _unmount(tester);
   });
 
+  testWidgets('BUG-3256 停在首页时首页被关（非设置页途径）：选中身份与 notifier 跟着落地', (
+    WidgetTester tester,
+  ) async {
+    // 书架 / 漫画在本宿主里起不来（见上），让落地 tab 是视频。
+    final Set<ModuleId> disabled = <ModuleId>{ModuleId.books, ModuleId.manga};
+    final _ModulesAppModel appModel = await _pumpHome(
+      tester,
+      disabled: disabled,
+      mobile: true,
+    );
+    await _settle(tester);
+    expect(homeShellTabNotifier.value, HomeTab.home);
+
+    // ctl `/api/admin/modules` / 偏好恢复的形态：直接改用户意愿再通知。
+    disabled.add(ModuleId.home);
+    appModel.notifyListeners();
+    await _settle(tester);
+    expect(find.byType(VideoLibraryShell), findsOneWidget);
+    expect(
+      homeShellTabNotifier.value,
+      HomeTab.video,
+      reason: '桌面标题栏 / macOS 侧栏读的 notifier 不能还停在「首页」',
+    );
+    await _unmount(tester);
+  });
+
   testWidgets('首页与书架都关：落到下一个启用的模块（漫画）', (WidgetTester tester) async {
     await _pumpHome(
       tester,
