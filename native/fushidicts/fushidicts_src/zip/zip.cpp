@@ -4,9 +4,13 @@
 
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <limits>
+#include <system_error>
 
 #include "../memory/memory.hpp"
+#include "../util/fs_utf8.hpp"
 #include "fushidicts/platform.hpp"  // FUSHI_LOGW
 
 namespace {
@@ -244,6 +248,47 @@ std::optional<Zip::MediaResult> Zip::read_media(int index) const {
     return std::nullopt;
   }
   return out;
+}
+
+bool Zip::extract_to(int index, const std::string& out_path) const {
+  if (index < 0 || static_cast<size_t>(index) >= entries.size()) {
+    return false;
+  }
+  const auto& e = entries[index];
+  if (e.compression_method != 0 && e.compression_method != 8) {
+    return false;
+  }
+  if (!has_entry_payload(file, e) || !zip_uncompressed_size_in_range(e)) {
+    return false;
+  }
+
+  const auto* src = file.data + e.data_offset;
+  // A stored entry is already the output bytes, and an empty entry has none to
+  // inflate: both go out through a plain stream, straight from the input mapping.
+  if (e.compression_method == 0 || e.uncompressed_size == 0) {
+    std::ofstream out(fushi::fs_path(out_path), std::ios::binary);
+    out.exceptions(std::ios::failbit | std::ios::badbit);
+    out.write(reinterpret_cast<const char*>(src), static_cast<std::streamsize>(
+                                                      e.compression_method == 0 ? e.uncompressed_size : 0));
+    return true;
+  }
+
+  thread_local auto* d = libdeflate_alloc_decompressor();
+  if (!d) {
+    return false;  // allocation failed -> do not deref null decompressor
+  }
+  memory::mapped_file out = memory::map_rw(out_path, e.uncompressed_size);
+  if (!out) {
+    throw memory::map_error("failed to create " + out_path);
+  }
+  const bool ok = libdeflate_deflate_decompress(d, src, e.compressed_size, out.data, e.uncompressed_size,
+                                                nullptr) == LIBDEFLATE_SUCCESS;
+  memory::unmap(out);
+  if (!ok) {
+    std::error_code ec;
+    std::filesystem::remove(fushi::fs_path(out_path), ec);
+  }
+  return ok;
 }
 
 // https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT

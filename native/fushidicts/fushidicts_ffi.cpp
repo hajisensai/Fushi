@@ -338,7 +338,7 @@ static void* import_thread_fn(void* arg) {
 #endif
   auto* a = static_cast<ImportThreadArgs*>(arg);
   try {
-    auto result = dictionary_importer::import(a->zip_path, a->output_dir, false, a->breadcrumb_dir);
+    auto result = dictionary_importer::import(a->zip_path, a->output_dir, kFushiImportLowRam, a->breadcrumb_dir);
     a->result.success = result.success ? 1 : 0;
     a->result.title = dup(result.title);
     a->result.term_count = static_cast<int32_t>(result.term_count);
