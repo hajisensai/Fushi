@@ -208,6 +208,85 @@ void main() {
       expect(result.status, isNot(VideoMetadataResolutionStatus.matched));
     });
   });
+
+  // BUG-3237：片名本身以合法年份结尾（`Death Race 2000` 是 1975 年的片子）。
+  // 裸年份照旧先剥（BUG-3192 不回退），但不剥年份的完整标题紧跟其后当候选，
+  // 搜它时不拿它自己尾巴上的年份当年份门。
+  group('titles that end in a year keep a with-year candidate', () {
+    final VideoMetadataWork deathRace = VideoMetadataWork(
+      provider: VideoMetadataProviderKind.anidb,
+      kind: VideoMetadataMediaKind.movie,
+      title: 'Death Race 2000',
+      year: 1975,
+      ids: const <VideoMetadataId>[
+        VideoMetadataId(type: 'anidb', value: '1975', isDefault: true),
+      ],
+    );
+    final VideoMetadataWork frieren2023 = VideoMetadataWork(
+      provider: VideoMetadataProviderKind.anidb,
+      kind: VideoMetadataMediaKind.movie,
+      title: 'Frieren',
+      year: 2023,
+      ids: const <VideoMetadataId>[
+        VideoMetadataId(type: 'anidb', value: '2023', isDefault: true),
+      ],
+    );
+
+    Future<VideoMetadataResolution> resolve(
+      String fileName,
+      List<VideoMetadataWork> works,
+    ) {
+      final String videoPath = 'D:/Movies/$fileName';
+      return VideoMetadataResolver(
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          _TitleKeyedProvider(works),
+        ]),
+      ).resolve(
+        VideoMetadataResolveRequest(
+          selectedProvider: VideoMetadataProviderKind.anidb,
+          mediaKind: VideoMetadataMediaKind.movie,
+          // 生产里单文件作品的 workTitle 是书名（去扩展名的文件名），
+          // parsedSeries 是解析出的标题（见 VideoSourceWorkPlanner）。
+          titleCandidates: videoScrapeTitleCandidates(
+            workTitle: fileName.substring(0, fileName.lastIndexOf('.')),
+            parsedSeries: FilenameParser.parse(fileName).title,
+            videoPath: videoPath,
+          ),
+          year: FilenameParser.parse(fileName).year,
+        ),
+      );
+    }
+
+    test(
+      'candidates keep the with-year title right after the stripped one',
+      () {
+        final List<String> candidates = videoScrapeTitleCandidates(
+          workTitle: 'Death.Race.2000.1080p',
+          parsedSeries: 'Death Race',
+          videoPath: 'D:/Movies/Death Race 2000.mkv',
+        );
+        expect(candidates.take(2), <String>['Death Race', 'Death Race 2000']);
+      },
+    );
+
+    test('a title ending in a year still matches its own work', () async {
+      final VideoMetadataResolution result = await resolve(
+        'Death Race 2000.mkv',
+        <VideoMetadataWork>[deathRace],
+      );
+      expect(result.status, VideoMetadataResolutionStatus.matched);
+      expect(result.lookup?.externalId, '1975');
+    });
+
+    test('a real bare year is still stripped first (BUG-3192)', () async {
+      final VideoMetadataResolution result = await resolve(
+        'Frieren 2023.mkv',
+        <VideoMetadataWork>[frieren2023],
+      );
+      expect(result.status, VideoMetadataResolutionStatus.matched);
+      expect(result.lookup?.externalId, '2023');
+    });
+  });
 }
 
 /// 只在归一化标题与作品标题 / 原名完全一致时返回该作品的假资料源。

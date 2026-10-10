@@ -12,6 +12,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 import 'package:fushi_engine/media/video/scraper/filename_parser.dart';
+import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
@@ -344,8 +345,10 @@ class VideoMetadataResolver {
       if (title.isEmpty) continue;
       final Set<String> normalizedTitles = _normalizedTitles(title);
       if (normalizedTitles.isEmpty) continue;
+      final VideoMetadataResolveRequest titleRequest =
+          _requestForTitle(request, title);
       final List<VideoMetadataWork> searched =
-          await _searchGated(provider, request, title);
+          await _searchGated(provider, titleRequest, title);
       final Map<String, VideoMetadataWork> exact =
           <String, VideoMetadataWork>{};
       for (final VideoMetadataWork candidate in searched) {
@@ -370,7 +373,8 @@ class VideoMetadataResolver {
             ? fetchedDetails[lookupKey]
             : await provider.fetchWork(lookup);
         if (details != null) {
-          details = await _validatedDetails(provider, lookup, details, request);
+          details =
+              await _validatedDetails(provider, lookup, details, titleRequest);
         }
         fetchedDetails[lookupKey] = details;
         if (details == null) {
@@ -471,6 +475,33 @@ class VideoMetadataResolver {
       work: work,
       lookup: _lookupForWork(work, provider.providerKind) ?? lookup,
       providerKind: provider.providerKind,
+    );
+  }
+
+  /// 这条标题候选适用的请求：候选以**裸年份**结尾、且请求年份正是它（`Death Race
+  /// 2000` + year 2000）时，这个「年份」就是从候选自己的片名尾巴上剥下来的，不是
+  /// 独立证据——按它过年份门会把 1975 年的《Death Race 2000》拒掉（BUG-3237）。
+  /// 此时该候选不带年份搜、不过年份门；其余候选照常。
+  static VideoMetadataResolveRequest _requestForTitle(
+    VideoMetadataResolveRequest request,
+    String title,
+  ) {
+    final int? year = request.year;
+    if (year == null) return request;
+    final ParsedMediaName parsed = FilenameParser.parse(title);
+    if (parsed.titleWithTrailingYear == null || parsed.year != year) {
+      return request;
+    }
+    return VideoMetadataResolveRequest(
+      selectedProvider: request.selectedProvider,
+      fallbackProvider: request.fallbackProvider,
+      mediaKind: request.mediaKind,
+      titleCandidates: request.titleCandidates,
+      seasonNumber: request.seasonNumber,
+      episodeCount: request.episodeCount,
+      confirmedLookup: request.confirmedLookup,
+      includeAdult: request.includeAdult,
+      identityHints: request.identityHints,
     );
   }
 

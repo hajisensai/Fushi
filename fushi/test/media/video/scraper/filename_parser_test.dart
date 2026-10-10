@@ -634,5 +634,32 @@ void main() {
       expect(FilenameParser.parse('Mob Psycho 100').title, 'Mob Psycho 100');
       expect(FilenameParser.parse('Gundam 0083').title, 'Gundam 0083');
     });
+
+    // BUG-3237：裸年份与「片名以年份结尾」语法上分不开，剥了就留一份完整标题。
+    test('剥了裸年份时保留带年份的完整标题', () {
+      final ParsedMediaName death = FilenameParser.parse('Death Race 2000.mkv');
+      expect(death.title, 'Death Race');
+      expect(death.year, 2000);
+      expect(death.titleWithTrailingYear, 'Death Race 2000');
+      final ParsedMediaName scene = FilenameParser.parse(
+        'Sousou.no.Frieren.2023.1080p.WEB-DL.x265',
+      );
+      expect(scene.titleWithTrailingYear, 'Sousou no Frieren 2023');
+      final ParsedMediaName withEp = FilenameParser.parse(
+        'Sousou no Frieren 2023 - 03 [1080p].mkv',
+      );
+      expect(withEp.titleWithTrailingYear, 'Sousou no Frieren 2023');
+      expect(withEp.episode, 3);
+      // 括号年份 / 没有裸年份：没有第二份标题。
+      expect(
+        FilenameParser.parse('Godzilla 2000 (1999)').titleWithTrailingYear,
+        isNull,
+      );
+      expect(
+        FilenameParser.parse('Blade Runner 2049').titleWithTrailingYear,
+        isNull,
+      );
+      expect(FilenameParser.parse('Frieren').titleWithTrailingYear, isNull);
+    });
   });
 }
