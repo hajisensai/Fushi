@@ -897,7 +897,9 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     BlurayClipLease lease,
     shelf.Request request,
   ) async {
-    final HttpClient client = HttpClient()..findProxy = (_) => 'DIRECT';
+    final HttpClient client = HttpClient()
+      ..findProxy = ((_) => 'DIRECT')
+      ..connectionTimeout = const Duration(seconds: 30);
     void finish() {
       client.close(force: true);
       lease.release();
@@ -916,9 +918,14 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       engineLog.logDiagnostic('FushiSyncServer.blurayClipProxy', e);
       return shelf.Response(502, body: 'Blu-ray clip relay unavailable');
     }
+    // 回环读盘卡死（光驱停转、盘坏道）时截断这次响应，别让它永远占着本次播放的解密
+    // 会话。播放器背压暂停读取时 `timeout` 会停表，不会误截正在播的流。
     Stream<List<int>> body() async* {
       try {
-        yield* upstream;
+        yield* upstream.timeout(
+          _kBlurayClipStallTimeout,
+          onTimeout: (EventSink<List<int>> sink) => sink.close(),
+        );
       } finally {
         finish();
       }
@@ -979,6 +986,9 @@ extension _FushiSyncServerVideo on FushiSyncServer {
 /// GET /stream 消费侧——只 GET /streamurl 却从不取流的调用者会让
 /// [_videoStreamTokens] 无界堆积（6 小时 TTL 内每次签发都是净增长）。
 const int _maxVideoStreamTokens = 128;
+
+/// 蓝光加密段转发：解密回环在这么久里一个字节都没给出就截断本次响应。
+const Duration _kBlurayClipStallTimeout = Duration(seconds: 60);
 
 /// 光盘标题制卡抽帧用的低清转码档（制卡 GIF / 截图只要小图，见 `miningVideoUrl`）。
 const VideoTranscodeProfile _kDiscMiningTranscodeProfile =

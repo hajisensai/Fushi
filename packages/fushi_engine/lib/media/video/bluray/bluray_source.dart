@@ -26,6 +26,7 @@
 // CLPI 的零点仍然要读，但只用在一个地方：判断这条 PlayItem 是不是把整段从头用到尾
 // （是就走形态 1）。读不到时仍按 MPLS 的 IN/OUT 走 EDL，保持播放、字幕和制卡同轴。
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -231,6 +232,49 @@ String _seconds(int ticks) => (ticks / kBlurayTimeScale).toStringAsFixed(6);
 String encodeEdlField(String value) {
   final int byteLength = utf8Length(value);
   return '%$byteLength%$value';
+}
+
+/// 列出 `edl://` 各条目的来源（第一个字段）。不是 EDL 返回空表。
+///
+/// 只认 [buildBlurayEdlUri] 写出的形状所需的语法：条目以 `;` 分隔、字段以 `,` 分隔、
+/// 字段可用 `%<字节数>%<内容>` 长度前缀（字节数按 UTF-8 计）。来源判定「这条流是不是
+/// 网络流」时要看的是各段，而不是 `edl://` 这个 scheme。
+List<String> decodeEdlSources(String uri) {
+  const String scheme = 'edl://';
+  if (!uri.startsWith(scheme)) return const <String>[];
+  final List<int> bytes = utf8.encode(uri.substring(scheme.length));
+  final List<String> sources = <String>[];
+  int i = 0;
+  bool entryStart = true;
+  while (i < bytes.length) {
+    final int c = bytes[i];
+    if (c == 0x3B /* ; */) {
+      entryStart = true;
+      i++;
+      continue;
+    }
+    String field;
+    if (c == 0x25 /* % */) {
+      final int close = bytes.indexOf(0x25, i + 1);
+      final int? length = close < 0
+          ? null
+          : int.tryParse(ascii.decode(bytes.sublist(i + 1, close)));
+      if (length == null || close + 1 + length > bytes.length) break;
+      field = utf8.decode(bytes.sublist(close + 1, close + 1 + length));
+      i = close + 1 + length;
+    } else {
+      int end = i;
+      while (end < bytes.length && bytes[end] != 0x2C && bytes[end] != 0x3B) {
+        end++;
+      }
+      field = utf8.decode(bytes.sublist(i, end));
+      i = end;
+    }
+    if (entryStart && field.isNotEmpty) sources.add(field);
+    entryStart = false;
+    if (i < bytes.length && bytes[i] == 0x2C /* , */) i++;
+  }
+  return sources;
 }
 
 /// [value] 的 UTF-8 字节数。EDL 的长度前缀按字节算，不是按码点。

@@ -57,14 +57,11 @@ void main() {
       pool.closeAll();
       async.flushMicrotasks();
       expect(closed, 2);
-      Object? error;
-      pool
-          .acquire('play', 'a.m2ts')
-          .then<void>((_) {}, onError: (Object e) {
-            error = e;
-          });
+      expect(pool.sessionCount, 0);
+      // 同一个 server 实例 stop 后可以再 start：池随之重开新会话。
+      pool.acquire('play', 'a.m2ts').then((BlurayClipLease l) => l.release());
       async.flushMicrotasks();
-      expect(error, isStateError, reason: '停机后不再开新的解密回环');
+      expect(opened, 3);
     });
   });
 }
