@@ -181,6 +181,25 @@ void VideoOutput::Render() {
     // H/W
     if (surface_manager_ != nullptr) {
       surface_manager_->Draw([&]() {
+        if (surface_manager_->half_float()) {
+          // HIBIKI FORK (HDR): linear light into a half-float framebuffer,
+          // then encoded into the shared texture. Same orientation as the
+          // 8-bit path's pbuffer framebuffer (no MPV_RENDER_PARAM_FLIP_Y;
+          // verified with a top/bottom split clip).
+          mpv_opengl_fbo fbo{
+              static_cast<int>(surface_manager_->linear_framebuffer()),
+              surface_manager_->width(),
+              surface_manager_->height(),
+              0x881A,  // GL_RGBA16F
+          };
+          mpv_render_param params[]{
+              {MPV_RENDER_PARAM_OPENGL_FBO, &fbo},
+              {MPV_RENDER_PARAM_INVALID, nullptr},
+          };
+          mpv_render_context_render(render_context_, params);
+          surface_manager_->EncodeLinearToOutput(hdr_reference_scale_);
+          return;
+        }
         mpv_opengl_fbo fbo{
             0,
             surface_manager_->width(),
@@ -259,6 +278,46 @@ void VideoOutput::SetSize(std::optional<int64_t> width,
   });
 }
 
+void VideoOutput::SetRenderTarget(bool linear, double target_peak_nits) {
+  const std::string peak =
+      linear && target_peak_nits > 0.0
+          ? std::to_string(static_cast<int>(target_peak_nits + 0.5))
+          : "auto";
+  mpv_set_property_string(handle_, "target-trc", linear ? "linear" : "auto");
+  mpv_set_property_string(handle_, "target-prim", linear ? "bt.2020" : "auto");
+  mpv_set_property_string(handle_, "target-peak", peak.c_str());
+}
+
+void VideoOutput::SetHdrOutput(bool enabled,
+                               double reference_white_nits,
+                               double target_peak_nits,
+                               std::function<void(bool)> on_done) {
+  thread_pool_ref_->Post([this, enabled, reference_white_nits,
+                          target_peak_nits, on_done]() {
+    if (destroyed_ || surface_manager_ == nullptr) {
+      // S/W rendering has no half-float path.
+      on_done(false);
+      return;
+    }
+    hdr_reference_scale_ =
+        reference_white_nits > 0.0
+            ? static_cast<float>(203.0 / reference_white_nits)
+            : 1.0f;
+    const bool was_half_float = surface_manager_->half_float();
+    surface_manager_->SetHalfFloat(enabled);
+    const bool now_half_float = surface_manager_->half_float();
+    // Render posts run on this same pool after this task: the next frame sees
+    // the target and the texture format change together.
+    SetRenderTarget(now_half_float, target_peak_nits);
+    if (now_half_float != was_half_float && texture_id_) {
+      // The shared handle and the pixel format changed: register a new
+      // texture with the same dimensions.
+      Resize(surface_manager_->width(), surface_manager_->height());
+    }
+    on_done(now_half_float);
+  });
+}
+
 void VideoOutput::CheckAndResize() {
   // Check if a new texture with different dimensions is needed.
   auto required_width = GetVideoWidth(), required_height = GetVideoHeight();
@@ -328,7 +387,13 @@ void VideoOutput::Resize(int64_t required_width, int64_t required_height) {
     texture->height = texture->visible_height = surface_manager_->height();
     texture->release_context = nullptr;
     texture->release_callback = [](void*) {};
-    texture->format = kFlutterDesktopPixelFormatBGRA8888;
+    // HIBIKI FORK (HDR): the patched engine's kFlutterDesktopPixelFormatRGBA16F
+    // (appended after BGRA8888, i.e. 3; spelled numerically so this still
+    // compiles against a stock engine's headers, which never see it because
+    // half-float output is only enabled once the engine reported support).
+    texture->format = surface_manager_->half_float()
+                          ? static_cast<FlutterDesktopPixelFormat>(3)
+                          : kFlutterDesktopPixelFormatBGRA8888;
     auto texture_variant =
         std::make_unique<flutter::TextureVariant>(flutter::GpuSurfaceTexture(
             kFlutterDesktopGpuSurfaceTypeDxgiSharedHandle, [&](auto, auto) {
