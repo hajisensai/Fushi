@@ -147,18 +147,16 @@ class BlurayRemoteTitle {
 
   final List<BlurayRemoteClip> clips;
 
-  /// 拼成交给播放内核的 `edl://`。[mapUrl] 在拼接前改写每段地址——client 用它把
-  /// 互联 host 的自签 https 降成交给本地中继的明文 http（`nativePlaybackUri`）；
-  /// 整串 EDL 不是 URL，过不了那道改写，必须逐段做。
-  String edlUri([String Function(String url)? mapUrl]) =>
-      buildBlurayEdlUri(<BlurayEdlSegment>[
-        for (final BlurayRemoteClip clip in clips)
-          (
-            source: mapUrl == null ? clip.url : mapUrl(clip.url),
-            inTimeTicks: clip.inTimeTicks,
-            durationTicks: clip.durationTicks,
-          ),
-      ]);
+  /// 拼成 `edl://`（与本地蓝光同一份拼法）。client 交给播放内核前照常过
+  /// `nativePlaybackUri`，它对 EDL 逐段改写互联 host 的自签 https 段。
+  String edlUri() => buildBlurayEdlUri(<BlurayEdlSegment>[
+    for (final BlurayRemoteClip clip in clips)
+      (
+        source: clip.url,
+        inTimeTicks: clip.inTimeTicks,
+        durationTicks: clip.durationTicks,
+      ),
+  ]);
 
   Map<String, Object?> toJson() => <String, Object?>{
     'durationMs': duration.inMilliseconds,

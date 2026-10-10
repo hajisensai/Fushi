@@ -246,6 +246,19 @@ void main() {
       );
     });
 
+    test('mapEdlSources 只改来源，起止与 key=value 选项按原字节保留', () {
+      expect(
+        mapEdlSources(
+          'edl://a.mkv,1,2,title=x;%5%b.mkv,start=3',
+          (String s) => 'new-$s',
+        ),
+        'edl://%9%new-a.mkv,1,2,title=x;%9%new-b.mkv,start=3',
+      );
+      expect(mapEdlSources('http://h/x', (String s) => 'y'), 'http://h/x');
+      // 长度前缀坏了：不交半截改写的 EDL。
+      expect(mapEdlSources('edl://%99%a', (String s) => 'y'), 'edl://%99%a');
+    });
+
     test('不带长度前缀的条目与非 EDL', () {
       expect(decodeEdlSources('edl://a.mkv,1,2;b.mkv'), <String>[
         'a.mkv',
