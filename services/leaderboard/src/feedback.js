@@ -297,9 +297,17 @@ async function reopenParent(env, reopenOf) {
   if (typeof reopenOf !== 'object' || Array.isArray(reopenOf)) throw new HttpError(400, 'bad_reopen');
   const parent = await feedbackForTicket(env, reopenOf.id, reopenOf.ticket);
   if (!CLOSED_STATUSES.includes(parent.status)) throw new HttpError(409, 'parent_not_closed');
-  const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM feedback WHERE parent_id = ?1').bind(parent.id).first();
-  if (n.n >= FEEDBACK_LIMITS.reopensPerFeedback) throw new HttpError(429, 'too_many_reopens');
+  // 次数上限在这里只做提前拒收（省掉后面的限流 / 预算消耗）；真正的门是 INSERT 里的条件，
+  // 先 COUNT 再 INSERT 两步之间并发的重新提交都会读到同一个旧计数。
+  if (await reopenCount(env, parent.id) >= FEEDBACK_LIMITS.reopensPerFeedback) {
+    throw new HttpError(429, 'too_many_reopens');
+  }
   return parent;
+}
+
+async function reopenCount(env, parentId) {
+  const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM feedback WHERE parent_id = ?1').bind(parentId).first();
+  return n.n;
 }
 
 export async function createFeedback(env, account, ip, body, now, origin = {}) {
@@ -307,14 +315,16 @@ export async function createFeedback(env, account, ip, body, now, origin = {}) {
   const parent = await reopenParent(env, body.reopenOf);
   const hash = await contentHash(sub);
   const source = account ? `acct:${account.id}` : `ip:${ip}`;
-  // 重新提交常常原样带着原标题 / 正文：不按「同来源同内容」拒收（每次都要原反馈已结案，另有次数上限）。
-  if (!parent) {
-    try {
-      await hit(env, `feedback:dup:${source}:${hash}`, FEEDBACK_LIMITS.duplicateWindowMs, 1, now);
-    } catch (e) {
-      if (e instanceof HttpError && e.status === 429) throw new HttpError(409, 'duplicate_feedback');
-      throw e;
-    }
+  // 重新提交常常原样带着原标题 / 正文：判重桶按原反馈分开，不撞上原反馈自己当初提交时的桶；
+  // 但同一来源把同一条原反馈用同样内容连交两次（双击 / 重试）照样拒收。
+  const dupBucket = parent
+    ? `feedback:dup:${source}:${hash}:reopen:${parent.id}`
+    : `feedback:dup:${source}:${hash}`;
+  try {
+    await hit(env, dupBucket, FEEDBACK_LIMITS.duplicateWindowMs, 1, now);
+  } catch (e) {
+    if (e instanceof HttpError && e.status === 429) throw new HttpError(409, 'duplicate_feedback');
+    throw e;
   }
   await hit(env, `feedback:ip:${ip}`, HOUR, FEEDBACK_LIMITS.submitPerIpHour, now);
   await spend(env, 'feedback', 1, now);
@@ -327,12 +337,16 @@ export async function createFeedback(env, account, ip, body, now, origin = {}) {
   const flags = earlier ? [...sub.flags, `duplicate:${earlier.id}`] : sub.flags;
   const id = randomId(10);
   const ticket = randomId(32);
-  await env.DB.prepare(
+  // 重新提交的次数上限做成条件 INSERT：计数与写入在同一条语句里，并发的重新提交不会一起越过上限。
+  const res = await env.DB.prepare(
     `INSERT INTO feedback (id, ticket_hash, account_id, category, title, body, contact, meta, created_at, updated_at,
                            flags, content_hash, origin, parent_id)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10, ?11, ?12, ?13)`,
+     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10, ?11, ?12, ?13
+     WHERE ?13 IS NULL OR (SELECT COUNT(*) FROM feedback WHERE parent_id = ?13) < ?14`,
   ).bind(id, await ticketHash(ticket), account ? account.id : null, sub.category, sub.title, sub.body,
-    sub.contact, sub.meta, now, JSON.stringify(flags), hash, JSON.stringify(origin), parent ? parent.id : null).run();
+    sub.contact, sub.meta, now, JSON.stringify(flags), hash, JSON.stringify(origin), parent ? parent.id : null,
+    FEEDBACK_LIMITS.reopensPerFeedback).run();
+  if (res.meta.changes !== 1) throw new HttpError(429, 'too_many_reopens');
   return { id, ticket, status: 'open', createdAt: now, updatedAt: now, parentId: parent ? parent.id : null };
 }
 
