@@ -209,7 +209,7 @@ void main() {
     });
   });
 
-  // BUG-3237：片名本身以合法年份结尾（`Death Race 2000` 是 1975 年的片子）。
+  // BUG-3266：片名本身以合法年份结尾（`Death Race 2000` 是 1975 年的片子）。
   // 裸年份照旧先剥（BUG-3192 不回退），但不剥年份的完整标题紧跟其后当候选，
   // 搜它时不拿它自己尾巴上的年份当年份门。
   group('titles that end in a year keep a with-year candidate', () {

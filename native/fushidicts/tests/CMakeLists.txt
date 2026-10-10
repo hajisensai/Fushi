@@ -157,7 +157,7 @@ add_test(NAME ja_kansai_ta_boundary_test
          COMMAND ja_kansai_ta_boundary_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
 
-# BUG-3229：汉字 + 假名混写（棚にあげる → 棚に上げる）经读音通路命中。
+# BUG-3261：汉字 + 假名混写（棚にあげる → 棚に上げる）经读音通路命中。
 add_executable(ja_mixed_orthography_lookup_test
     "${CMAKE_CURRENT_SOURCE_DIR}/ja_mixed_orthography_lookup_test.cpp")
 target_link_libraries(ja_mixed_orthography_lookup_test PRIVATE fushidicts)

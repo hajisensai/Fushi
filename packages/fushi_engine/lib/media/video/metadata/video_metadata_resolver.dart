@@ -480,7 +480,7 @@ class VideoMetadataResolver {
 
   /// 这条标题候选适用的请求：候选以**裸年份**结尾、且请求年份正是它（`Death Race
   /// 2000` + year 2000）时，这个「年份」就是从候选自己的片名尾巴上剥下来的，不是
-  /// 独立证据——按它过年份门会把 1975 年的《Death Race 2000》拒掉（BUG-3237）。
+  /// 独立证据——按它过年份门会把 1975 年的《Death Race 2000》拒掉（BUG-3266）。
   /// 此时该候选不带年份搜、不过年份门；其余候选照常。
   static VideoMetadataResolveRequest _requestForTitle(
     VideoMetadataResolveRequest request,

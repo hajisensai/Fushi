@@ -52,7 +52,7 @@ class _ParseState {
   String? secondaryTitle;
   bool isMovieHint = false;
 
-  /// [FilenameParser._takeTrailingYear] 剥掉了标题尾部的裸年份（BUG-3237）。
+  /// [FilenameParser._takeTrailingYear] 剥掉了标题尾部的裸年份（BUG-3266）。
   bool bareYearTaken = false;
 
   /// 为 true 时不剥尾部裸年份（重算「带年份的完整标题」用）。
@@ -97,7 +97,7 @@ class FilenameParser {
       );
     }
     // 记下产出标题的那段文本与解析前的状态：剥了裸年份时要按同样的起点重算一遍
-    // 不剥年份的完整标题（[ParsedMediaName.titleWithTrailingYear]，BUG-3237）。
+    // 不剥年份的完整标题（[ParsedMediaName.titleWithTrailingYear]，BUG-3266）。
     String titleSource = scan.outside;
     _ParseState beforeTitle = st.copy();
     String title = _parseTitleText(scan.outside, st);
@@ -654,7 +654,7 @@ class FilenameParser {
   /// 剩下的误伤（片名本身以合法年份结尾，`Death Race 2000`）语法上无法与
   /// `Frieren 2023` 区分：剥离后在 [_ParseState.bareYearTaken] 记一笔，[parse] 据此
   /// 给出不剥年份的 [ParsedMediaName.titleWithTrailingYear] 当后备刮削候选
-  /// （BUG-3237）。
+  /// （BUG-3266）。
   static String _takeTrailingYear(String text, _ParseState st) {
     if (st.year != null || st.keepBareYear) return text;
     final RegExpMatch? m = _trailingYear.firstMatch(text);

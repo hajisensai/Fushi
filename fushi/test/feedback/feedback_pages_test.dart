@@ -788,7 +788,7 @@ void main() {
     expect(last.url.queryParameters['q'], 'svSfwFdmdM');
   });
 
-  testWidgets('BUG-3235 处理台列表：被搜索取代的旧请求晚到失败，不报错、不清掉新请求的加载中', (
+  testWidgets('BUG-3264 处理台列表：被搜索取代的旧请求晚到失败，不报错、不清掉新请求的加载中', (
     WidgetTester tester,
   ) async {
     tallView(tester);

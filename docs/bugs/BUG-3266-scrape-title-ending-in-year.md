@@ -1,4 +1,4 @@
-## BUG-3237 · 片名以年份结尾时被当裸年份剥掉，刮削查无
+## BUG-3266 · 片名以年份结尾时被当裸年份剥掉，刮削查无
 - **报告**：2026-10-10（PR #2037 / BUG-3192 审查遗留疑点）
 - **真实性**：✅ 真 bug（窄面，代码路径确认）。`packages/fushi_engine/lib/media/video/scraper/filename_parser.dart` `_takeTrailingYear`（BUG-3192 新增）把标题尾部 ≤ 明年的裸年份一律剥进 `year`。`Blade Runner 2049` 靠「不晚于明年」门幸免，但 `Death Race 2000.mkv` 被解成标题 `Death Race` + 年份 2000：原值 `Death Race 2000` 虽仍是标题候选，`VideoMetadataResolver._searchWithProvider` 对所有候选统一用 `request.year`（=2000）过 ±1 年份门（`video_metadata_resolver.dart` `_passesYearGate`），1975 年的正确作品被拒，整条查无。BUG-3192 之前它能精确命中。`Godzilla 2000`（1999）恰好落在 ±1 内不受影响。语法上 `Frieren 2023` 与 `Death Race 2000` 无法区分，BUG-3192 的用例（`Sousou no Frieren 2023`）必须继续剥。
 - **[x] ① 已修复** — 不回退 BUG-3192：解析器剥了裸年份时额外给出不剥年份的 `ParsedMediaName.titleWithTrailingYear`；`videoScrapeTitleCandidates` 把它紧排在清洗标题之后；resolver 新增 `_requestForTitle`：某条候选本身以裸年份结尾且该年份正是请求年份时，这个年份就是从它自己片名上剥下来的、不是独立证据，该候选不带年份搜、不过年份门（其余候选照常）。清洗标题仍先试，`Frieren 2023` 照旧按年份精确命中。提交 `55172cf69d`（`fix(video-scrape): keep titles that end in a year searchable`）。

@@ -29,10 +29,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2943 条。点号进各自文件。
+> 共 2944 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3266](bugs/BUG-3266-scrape-title-ending-in-year.md) | ✅ | ✅ | 片名以年份结尾时被当裸年份剥掉，刮削查无 |
+| [BUG-3265](bugs/BUG-3265-anki-css-open-attribute-pruned.md) | ✅ | ✅ | 制卡词典 CSS 裁剪把 details[open] 等交互态属性规则裁掉 |
+| [BUG-3264](bugs/BUG-3264-feedback-dev-list-stale-request.md) | ✅ | ✅ | 反馈处理台列表被取代的旧请求仍清加载中并写错误 |
+| [BUG-3263](bugs/BUG-3263-pill-segmented-width-estimate.md) | ✅ | ✅ | MD3 胶囊分段估宽与绘制不同源导致段被钳窄截断 |
+| [BUG-3262](bugs/BUG-3262-hdr-compositor-failure-cached.md) | ✅ | ✅ | HDR合成器一次失败就整个进程记成不支持 |
+| [BUG-3261](bugs/BUG-3261-mixed-kana-idiom-lookup.md) | ✅ | ✅ | 汉字假名混写的惯用句（棚にあげる）查不到 |
 | [BUG-3260](bugs/BUG-3260-emby-subtitle-player-fallback-url.md) | ✅ | ✅ | 外挂字幕解析为空时交给 libmpv 的是失效的 DeliveryUrl |
 | [BUG-3259](bugs/BUG-3259-feedback-reopen-cap-race.md) | ✅ | ✅ | 反馈重新提交次数上限先 COUNT 再 INSERT 并发可超、重新提交跳过同来源判重 |
 | [BUG-3258](bugs/BUG-3258-little-busters-luca-no-text.md) | ✅ | ✅ | Little Busters!（LucaSystem 引擎）连文本都抓不到 |
@@ -56,11 +62,6 @@
 | [BUG-3240](bugs/BUG-3240-feedback-draft-restore-drops-autoshot.md) | ✅ | ✅ | 反馈提交页恢复草稿时丢掉本次打开自动截的图 |
 | [BUG-3239](bugs/BUG-3239-feedback-detail-shot-no-retry.md) | ✅ | ✅ | 反馈详情页截图下载失败后本次打开期间不再重试 |
 | [BUG-3238](bugs/BUG-3238-settings-slider-rejected-value.md) | ✅ | ✅ | 设置滑条松手后被拒绝的拖动值一直挂在滑块上 |
-| [BUG-3237](bugs/BUG-3237-scrape-title-ending-in-year.md) | ✅ | ✅ | 片名以年份结尾时被当裸年份剥掉，刮削查无 |
-| [BUG-3236](bugs/BUG-3236-anki-css-open-attribute-pruned.md) | ✅ | ✅ | 制卡词典 CSS 裁剪把 details[open] 等交互态属性规则裁掉 |
-| [BUG-3235](bugs/BUG-3235-feedback-dev-list-stale-request.md) | ✅ | ✅ | 反馈处理台列表被取代的旧请求仍清加载中并写错误 |
-| [BUG-3234](bugs/BUG-3234-pill-segmented-width-estimate.md) | ✅ | ✅ | MD3 胶囊分段估宽与绘制不同源导致段被钳窄截断 |
-| [BUG-3233](bugs/BUG-3233-hdr-compositor-failure-cached.md) | ✅ | ✅ | HDR合成器一次失败就整个进程记成不支持 |
 | [BUG-3228](bugs/BUG-3228-leaderboard-summary-stuck-loading.md) | ✅ | ✅ | 排行榜总字数卡加载失败后永远停在加载条 |
 | [BUG-3225](bugs/BUG-3225-android-global-lookup-black-panel.md) | ✅ | ✅ | Android app 外查词窗词条区整块黑底、浅色主题文字看不见 |
 | [BUG-3224](bugs/BUG-3224-anki-card-css-size.md) | ✅ | ✅ | 制卡把整份词典 CSS 内联进每个释义字段，AnkiDroid 预览 TransactionTooLargeException 打不开 |

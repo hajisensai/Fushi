@@ -35,7 +35,7 @@ class ParsedMediaName {
 
   /// [year] 取自标题尾部**裸**年份时，不剥年份的完整标题（`Death Race 2000` →
   /// [title] `Death Race`、本字段 `Death Race 2000`）。裸年份在语法上与「片名以
-  /// 年份结尾」无法区分（BUG-3237），刮削把它当作排在后面的标题候选；括号年份 /
+  /// 年份结尾」无法区分（BUG-3266），刮削把它当作排在后面的标题候选；括号年份 /
   /// 没有裸年份时为 null。
   final String? titleWithTrailingYear;
 

@@ -142,7 +142,7 @@ void main() {
 
     // 导出时 <details> 关着（没有 open 属性），卡片上点开才有：带 [open] 条件的规则
     // 要像交互态伪类一样放宽后判断，否则展开后的内容在卡上没有样式。
-    test('BUG-3236 交互态属性 [open] 放宽后判断：关着导出的 details 展开样式保留', () {
+    test('BUG-3265 交互态属性 [open] 放宽后判断：关着导出的 details 展开样式保留', () {
       final String css = _styleOf(
         slimAnkiGlossaryHtml(
           _glossary(
