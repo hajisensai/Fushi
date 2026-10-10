@@ -56,20 +56,25 @@ class AudiobookRepository {
   /// 整组替换 [bookKey] 的 cue。播放进度按**真实时间位置**跟着换编码
   /// （BUG-3197，见 [rebaseStoredPositionForCueChange]）：全书毫秒是按 cue 推出的
   /// 文件时长编码的，换字幕不换算就等于把听书断点挪到别处。
+  ///
+  /// 换 cue 与换算进度在**同一个事务**里（BUG-3251）：正在播这本书的会话监听
+  /// cue 表的提交通知、随即改用新 cue 编码周期写入；通知若早于换算，换算就会把
+  /// 会话已按新编码写下的位置当旧编码再换一遍。
   Future<void> saveCues({
     required String bookKey,
     required List<AudioCue> cues,
-  }) async {
-    final List<AudioCueRow> before = await _db.getCuesForBook(bookKey);
-    await _db.replaceCuesForBook(
-        bookKey, cues.map(AudioCue.toCompanion).toList());
-    await rebaseStoredPositionForCueChange(
-      positionKey: bookKey,
-      oldDurationsMs:
-          audiobookFileDurationsFromCues(before.map(AudioCue.fromRow)),
-      newDurationsMs: audiobookFileDurationsFromCues(cues),
-    );
-  }
+  }) =>
+      _db.transaction(() async {
+        final List<AudioCueRow> before = await _db.getCuesForBook(bookKey);
+        await _db.replaceCuesForBook(
+            bookKey, cues.map(AudioCue.toCompanion).toList());
+        await rebaseStoredPositionForCueChange(
+          positionKey: bookKey,
+          oldDurationsMs:
+              audiobookFileDurationsFromCues(before.map(AudioCue.fromRow)),
+          newDurationsMs: audiobookFileDurationsFromCues(cues),
+        );
+      });
 
   // ── 窄写入：一次只改一件事 ───────────────────────────────────────
   //

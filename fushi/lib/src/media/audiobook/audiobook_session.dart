@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show TableUpdate, TableUpdateQuery;
 import 'package:flutter/foundation.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
@@ -245,6 +246,7 @@ class AudiobookSession extends ChangeNotifier {
     controller.addListener(_onControllerChanged);
     _controller = controller;
     _book = info;
+    _watchStoredCues();
 
     _subscribeControlStreams(controller);
     await _startBackgroundSurfaces(controller);
@@ -351,6 +353,8 @@ class AudiobookSession extends ChangeNotifier {
     // BUG-2558：在 _book / _controller 被清空**之前**结算后台听书时钟——清空之后判据
     // 恒 false，但那时已经没人持有这只时钟了。
     _retireStudyClock();
+    _storedCuesSub?.cancel();
+    _storedCuesSub = null;
     _reader = null;
     _controller = null;
     _book = null;
@@ -429,6 +433,54 @@ class AudiobookSession extends ChangeNotifier {
     }
   }
 
+  /// 监听 cue 表的提交（BUG-3251）：正在播的这本书的字幕被整组替换（书架重新导入 /
+  /// 重新匹配 / 互联「只更新字幕」）时，立即把库里的新 cue 交给活控制器，周期位置
+  /// 写入从此按新 cue 编码。此前要等到 [stop] 才换编码（BUG-3197），期间 app 被直接
+  /// 杀掉，库里留下的就是旧编码，下次开书按新 cue 一拆，断点落到别的文件 / 偏移。
+  /// 仓库层把「换 cue + 换算库里进度」放在同一事务里，提交通知一定晚于换算。
+  StreamSubscription<Set<TableUpdate>>? _storedCuesSub;
+
+  void _watchStoredCues() {
+    _storedCuesSub?.cancel();
+    _storedCuesSub = null;
+    final FushiDatabase? db = _databaseGetter();
+    if (db == null) return;
+    _storedCuesSub = db
+        .tableUpdates(TableUpdateQuery.onTable(db.audioCues))
+        .listen((_) => unawaited(_adoptStoredCues(db)));
+  }
+
+  Future<void> _adoptStoredCues(FushiDatabase db) async {
+    final AudiobookPlayerController? controller = _controller;
+    final SessionBookInfo? book = _book;
+    if (controller == null || book == null || book.bookKey.isEmpty) return;
+    try {
+      final List<AudioCue> stored = await _storedCuesFor(db, book);
+      // 读库期间会话换了书 / 停了：不把这本的 cue 灌给别的控制器。
+      if (!identical(_controller, controller) ||
+          _book?.bookKey != book.bookKey) {
+        return;
+      }
+      controller.adoptReplacedBookCues(stored);
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'AudiobookSession.adoptStoredCues',
+        error,
+        stack,
+      );
+    }
+  }
+
+  /// 这本书在库里的全书 cue：字幕书按 uid 取扁平 cue，EPUB 有声书按 bookKey 取全书
+  /// cue（与 `AudiobookSessionLauncher` / 阅读器灌 cue 同源）。
+  static Future<List<AudioCue>> _storedCuesFor(
+    FushiDatabase db,
+    SessionBookInfo book,
+  ) =>
+      book.isSrtBookSource
+          ? SrtBookRepository(db).cuesFor(book.bookKey)
+          : AudiobookRepository(db).cuesForBook(book.bookKey);
+
   /// BUG-3197：按库里当前那份全书 cue 给 [controller] 的 stop 位置换编码（仅当
   /// 两者推出的文件时长不同，即会话期间字幕被整组替换过）。cue 的命名空间与
   /// `AudiobookSessionLauncher` / 阅读器灌 cue 同源：字幕书按 uid 取扁平 cue，
@@ -439,9 +491,7 @@ class AudiobookSession extends ChangeNotifier {
   ) async {
     final FushiDatabase? db = _databaseGetter();
     if (db == null || book == null || book.bookKey.isEmpty) return;
-    final List<AudioCue> stored = book.isSrtBookSource
-        ? await SrtBookRepository(db).cuesFor(book.bookKey)
-        : await AudiobookRepository(db).cuesForBook(book.bookKey);
+    final List<AudioCue> stored = await _storedCuesFor(db, book);
     await controller.reencodeStoppedPositionForCues(stored);
   }
 
@@ -825,6 +875,8 @@ class AudiobookSession extends ChangeNotifier {
     // 的事务，会与随后的 db.close() 互等（与阅读器 / PDF 的 dispose 同律）。
     _studyClock?.detach();
     _studyClock = null;
+    _storedCuesSub?.cancel();
+    _storedCuesSub = null;
     _playStreamSub?.cancel();
     _seekStreamSub?.cancel();
     _skipNextSub?.cancel();

@@ -349,6 +349,40 @@ void main() {
     );
   });
 
+  // BUG-3251：「只更新字幕」换 cue 时本机听书断点按真实时间位置换编码（与书架重新
+  // 导入同口径，BUG-3197）——多文件有声书的全书毫秒按 cue 推出的文件时长编码。
+  test('只更新字幕：多文件断点按新 cue 换编码，真实位置不变', () async {
+    AudioCuesCompanion cue(String key, int i, int file, int endMs) =>
+        AudioCuesCompanion.insert(
+          bookKey: key,
+          chapterHref: 'ch1.xhtml',
+          sentenceIndex: i,
+          textFragmentId: 'f$i',
+          cueText: 'line $i',
+          startMs: 0,
+          endMs: endMs,
+          audioFileIndex: file,
+        );
+    // 本机旧字幕：文件 0 末句 10s；断点 = 文件 1 第 3 秒 = 10000 + 3000。
+    await clientDb.replaceCuesForBook(_bookKey, <AudioCuesCompanion>[
+      cue(_bookKey, 0, 0, 10000),
+      cue(_bookKey, 1, 1, 20000),
+    ]);
+    await clientDb.setPrefTyped<int>(audiobookPositionPrefKey(_bookKey), 13000);
+    // host 新字幕：文件 0 末句 12s。
+    await hostDb.replaceCuesForBook(_bookKey, <AudioCuesCompanion>[
+      cue(_bookKey, 0, 0, 12000),
+      cue(_bookKey, 1, 1, 25000),
+    ]);
+
+    await clientRefreshSubtitles();
+
+    expect(
+      await clientDb.getPrefTyped<int>(audiobookPositionPrefKey(_bookKey), 0),
+      12000 + 3000,
+    );
+  });
+
   test('BUG-3098：重新下载整本有声书（fresh）拿到 host 新字幕，不撞 UNIQUE(uid)', () async {
     await _retranscribeOnHost(hostDb, hostAudio);
 
