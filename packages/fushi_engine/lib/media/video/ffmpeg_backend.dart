@@ -815,67 +815,34 @@ class BlurayFfmpegBackend implements FfmpegBackend, FfmpegWatchedRunner {
   /// 观察式运行：与 [run] 同一条蓝光输入改写；底层后端不支持观察式运行时退回它的
   /// [FfmpegBackend.run]，用 [FfmpegWatch.stallTimeout] 当总预算（测试替身 / 未知后端）。
   @override
-  Future<FfmpegRunResult> runWatched(List<String> args, FfmpegWatch watch) async {
-    final AacsMediaSession session = AacsMediaSession();
-    BlurayFfmpegInput? input;
-    try {
-      input = await prepareBlurayFfmpegArgs(
+  Future<FfmpegRunResult> runWatched(List<String> args, FfmpegWatch watch) =>
+      runWithBlurayFfmpegInput(
         args,
-        resolveStream: session.resolve,
+        (List<String> resolved, AacsMediaSession session) async =>
+            _redactResult(switch (delegate) {
+              final FfmpegWatchedRunner watched =>
+                await watched.runWatched(resolved, watch),
+              final FfmpegBackend other =>
+                await other.run(resolved, watch.stallTimeout),
+            }, session),
       );
-      final List<String> resolved = await session.ffmpegInputs(input.args);
-      final FfmpegRunResult result = switch (delegate) {
-        final FfmpegWatchedRunner watched =>
-          await watched.runWatched(resolved, watch),
-        final FfmpegBackend other => await other.run(resolved, watch.stallTimeout),
-      };
-      return _redactResult(result, session);
-    } finally {
-      await input?.dispose();
-      await session.close();
-    }
-  }
 
   @override
-  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
-    final AacsMediaSession session = AacsMediaSession();
-    BlurayFfmpegInput? input;
-    try {
-      input = await prepareBlurayFfmpegArgs(
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) =>
+      runWithBlurayFfmpegInput(
         args,
-        resolveStream: session.resolve,
+        (List<String> resolved, AacsMediaSession session) async =>
+            _redactResult(await delegate.run(resolved, timeout), session),
       );
-      final FfmpegRunResult result = await delegate.run(
-        await session.ffmpegInputs(input.args),
-        timeout,
-      );
-      return _redactResult(result, session);
-    } finally {
-      await input?.dispose();
-      await session.close();
-    }
-  }
 
   @override
-  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async {
-    final AacsMediaSession session = AacsMediaSession();
-    BlurayFfmpegInput? input;
-    try {
-      input = await prepareBlurayFfmpegArgs(
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
+      runWithBlurayFfmpegInput(
         args,
         probe: true,
-        resolveStream: session.resolve,
+        (List<String> resolved, AacsMediaSession session) async =>
+            _redactResult(await delegate.runProbe(resolved, timeout), session),
       );
-      final FfmpegRunResult result = await delegate.runProbe(
-        await session.ffmpegInputs(input.args, probe: true),
-        timeout,
-      );
-      return _redactResult(result, session);
-    } finally {
-      await input?.dispose();
-      await session.close();
-    }
-  }
 
   /// 查询类命令没有媒体输入，不经蓝光输入改写，直接交给底层后端。
   @override
@@ -887,6 +854,35 @@ class BlurayFfmpegBackend implements FfmpegBackend, FfmpegWatchedRunner {
           output: session.redact(result.output), executable: result.executable,
           attemptedExecutables: result.attemptedExecutables,
           fallbackReason: result.fallbackReason);
+}
+
+/// 一条 ffmpeg 命令的蓝光输入改写生命周期：MPLS 输入改写成 concat 清单、加密段换成
+/// 本命令专属的解密回环 URL，[body] 跑完（无论成败）再删清单、关解密会话。
+///
+/// 所有吃媒体输入的 ffmpeg 命令都必须经过这里：[BlurayFfmpegBackend] 包住进程单例，
+/// 自己起进程的路径（互联转码分段，见 `live_transcode.dart`）直接调它。绕开它的命令
+/// 会把几 KB 的 `.mpls` 当成视频交给 ffmpeg。
+Future<T> runWithBlurayFfmpegInput<T>(
+  List<String> args,
+  Future<T> Function(List<String> resolved, AacsMediaSession session) body, {
+  bool probe = false,
+}) async {
+  final AacsMediaSession session = AacsMediaSession();
+  BlurayFfmpegInput? input;
+  try {
+    input = await prepareBlurayFfmpegArgs(
+      args,
+      probe: probe,
+      resolveStream: session.resolve,
+    );
+    return await body(
+      await session.ffmpegInputs(input.args, probe: probe),
+      session,
+    );
+  } finally {
+    await input?.dispose();
+    await session.close();
+  }
 }
 
 @visibleForTesting

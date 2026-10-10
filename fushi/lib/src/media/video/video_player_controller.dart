@@ -29,6 +29,7 @@ import 'package:fushi_engine/media/video/bluray/aacs_media_session.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_menu_info.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -2435,6 +2436,9 @@ class VideoPlayerController extends ChangeNotifier
     Map<String, String> httpHeaderFields = const <String, String>{},
     bool autoPlay = false,
     bool openBlurayMenu = false,
+    // 互联 host 下发的蓝光标题段表（与 [mediaUri] 同时给，非 null 时取代它）。与本地
+    // 蓝光同一套 EDL 拼法；[nativePlaybackUri] 对 `edl://` 逐段改写自签 https 段。
+    BlurayRemoteTitle? remoteDiscTitle,
     // TODO-1280：YouTube 等分离流（video-only 主流 + audio-only 外挂）的 audio-only 流 URL。
     // 必须在本次 load 内、恢复 seek + play() **之前**经 `audio-add ... select` 外挂，libmpv
     // 才会让它随首个 seek / 起播与视频时间轴同步；若等 load 返回后再挂（play 已开始），新加的
@@ -2524,15 +2528,18 @@ class VideoPlayerController extends ChangeNotifier
         : bluray != null && bluray.isPlainFile
         ? bluray.primaryStreamPath
         : videoFile?.path;
-    _blurayChapters = bluray?.chapters;
+    _blurayChapters = bluray?.chapters ?? remoteDiscTitle?.chapters;
     // BUG-2455：交给 native 的 URL 统一过 [nativePlaybackUri]——互联 host 的自签
     // https 流降成明文 http 交给中继，由中继按配对指纹钉扎升回 https；本地文件 /
     // 公网流原样。native 侧从此不碰互联 host 的 TLS（随包 libmpv 换成 libcurl 后默认
     // 校验证书，自签 host 直连必失败）。
+    // 互联蓝光标题的段表拼成 EDL 后同样经这里收口：`nativePlaybackUri` 对 `edl://`
+    // 逐段改写（host 的自签 https 段降级给本地中继）。
     final String sourceUri = nativePlaybackUri(
       openBlurayMenu
           ? 'bd://menu'
-          : mediaUri ??
+          : remoteDiscTitle?.edlUri() ??
+                mediaUri ??
                 // EDL 串与解密回环 URL 都不是文件路径，不能再过 `mediaUriForVideoPath` 包成 file://。
                 (localPlaybackSource!.startsWith('http://') ||
                         localPlaybackSource.startsWith('edl://')

@@ -7,7 +7,9 @@ import 'dart:typed_data';
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/live_transcode.dart';
+import 'package:fushi_engine/sync/bluray_clip_relay_pool.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart'
     show probeVideoDurationMs;
 import 'package:fushi_engine/media/video/video_subtitle_source.dart'
@@ -255,7 +257,9 @@ class FushiSyncServer {
     Uint8List? Function(String dictionary, String path)?
         dictionaryMediaProvider,
     FushiRemoteGameStreamService? gameStreamService,
+    @visibleForTesting BlurayClipRelayPool? blurayClipRelays,
   })  : syncDataDir = p.join(syncDataDir, 'sync-data'),
+        _blurayClipRelays = blurayClipRelays ?? BlurayClipRelayPool(),
         _requestedPort = port,
         _token = token,
         _allowLan = allowLan,
@@ -342,6 +346,9 @@ class FushiSyncServer {
 
   final Map<String, _VideoStreamToken> _videoStreamTokens =
       <String, _VideoStreamToken>{};
+
+  /// 蓝光标题分段的解密会话（按流 token 复用，空闲回收；见 [BlurayClipRelayPool]）。
+  final BlurayClipRelayPool _blurayClipRelays;
 
   /// BUG-908(d)：WebDAV 写操作（PUT / MKCOL / DELETE）的按路径串行闸门。key 是目标
   /// 文件系统绝对路径，value 是该路径上最近一次写的完成 future。新的写先 await 同一
@@ -663,6 +670,7 @@ class FushiSyncServer {
     _server = null;
     await stopP2pListener();
     await main?.close(force: true);
+    await _blurayClipRelays.closeAll();
     _exportCache.dispose();
     // 漫画 P3：host 停机时中止在跑的 OCR 任务（页边界停，断点缓存保留）。
     await _mangaOcrJobs?.disposeAll();

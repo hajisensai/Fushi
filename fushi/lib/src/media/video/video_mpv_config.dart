@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
+    show decodeEdlSources;
 import 'package:media_kit/media_kit.dart';
 
 /// 视频播放的 mpv 配置（全局偏好），成体系覆盖解码/画质/画面几何/色彩均衡/音频/播放，
@@ -744,7 +746,13 @@ Future<void> applyMpvConfigToPlayer(Player player, VideoMpvConfig config,
 /// 远端视频经 host 直传，URI 是 [FushiSyncServer] 签发的 `http://…/stream?token=…`；
 /// 本地播放是 `File(path).uri`（`file://…`）。仅网络流才需要网络缓存调优，本地文件
 /// 注入这些属性既无收益又可能浪费内存（见 [buildNetworkCacheProperties]）。纯函数。
+///
+/// `edl://` 拼接流按**各段**判：任何一段是 http(s) 就是网络流（互联 host 的蓝光
+/// 标题、本地加密盘的解密回环），scheme 本身说明不了什么。
 bool isNetworkStreamUri(String uri) {
+  if (uri.startsWith('edl://')) {
+    return decodeEdlSources(uri).any(isNetworkStreamUri);
+  }
   final Uri? parsed = Uri.tryParse(uri);
   if (parsed == null) return false;
   final String scheme = parsed.scheme.toLowerCase();

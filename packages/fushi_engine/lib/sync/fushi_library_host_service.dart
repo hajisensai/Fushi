@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
@@ -2257,9 +2258,15 @@ class RemoteVideoStreamUrls {
     this.embeddedSubtitleTracks = const <RemoteVideoEmbeddedSubtitleTrack>[],
     this.streamIsOriginalContainer = true,
     this.sourceRequiresDolbyVisionReshape = false,
+    this.discTitle,
   });
 
   final String streamUrl;
+
+  /// 非 null = 这是一条蓝光标题，播放器要用它的段表拼 `edl://`（每段 URL 先过本地
+  /// TLS 中继改写），而不是直接打开 [streamUrl]。只有互联 host 会发；老 host 不发 →
+  /// null，行为与从前一致。
+  final BlurayRemoteTitle? discTitle;
   final String? subtitleUrl;
   final String? subtitleFileName;
 
@@ -2311,6 +2318,7 @@ class RemoteVideoStreamUrls {
       miningVideoHasAudio: miningVideoHasAudio,
       embeddedSubtitleTracks: embeddedSubtitleTracks,
       streamIsOriginalContainer: streamIsOriginalContainer,
+      discTitle: BlurayRemoteTitle.fromJson(json['discTitle']),
     );
   }
 }
