@@ -49,7 +49,9 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
   static const int _subtitleSyncClampMs = 600000;
 
   // 本地权威镜像（与旧面板同语义）：打开时取页面当前延迟，之后由本行内五个入口经
-  // [_commitDelay] 统一提交（页面侧对同值早退，不重复 OSD）。
+  // [_commitDelay] 统一提交（页面侧对同值早退，不重复 OSD）。本行**之外**的入口
+  // （z/x 微调、Ctrl+Shift+←/→ 对齐快捷键）改了页面延迟时，由 [_syncDelayFromHost]
+  // 拉回页面权威值（BUG-3231：浮条开着按快捷键，读数不跟、再点 ± 以旧值为基数覆盖）。
   late int _delayMs = widget.host.delayMs();
 
   /// 字幕调轴数值输入（读数胶囊的编辑态）控制器（与滑条/± 按钮共享同一权威 [_delayMs]）。
@@ -97,7 +99,49 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
   );
 
   @override
+  void initState() {
+    super.initState();
+    widget.host.subtitlePositionListenable?.addListener(_syncDelayFromHost);
+  }
+
+  @override
+  void didUpdateWidget(VideoSubtitleSyncRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final Listenable? previous = oldWidget.host.subtitlePositionListenable;
+    final Listenable? current = widget.host.subtitlePositionListenable;
+    if (!identical(previous, current)) {
+      previous?.removeListener(_syncDelayFromHost);
+      current?.addListener(_syncDelayFromHost);
+    }
+    _syncDelayFromHost(rebuild: false);
+  }
+
+  /// 页面延迟被本行以外的入口改掉（快捷键微调 / 对齐）时，把镜像、读数与输入框拉回
+  /// 页面权威值 [VideoQuickSettingsHost.delayMs]。页面 `_setDelayMs` 只发 OSD、不重建
+  /// 本行，所以除了 [didUpdateWidget] 还挂在 controller 的通知上（调延迟会立即
+  /// notify，见 `VideoPlayerController.setDelayMs`）；值没变时零开销早退。
+  ///
+  /// [rebuild] = false 供 [didUpdateWidget] 用（框架随后必然 build，不能再 setState）。
+  void _syncDelayFromHost({bool rebuild = true}) {
+    if (!mounted) return;
+    final int hostMs = widget.host.delayMs();
+    if (hostMs == _delayMs) return;
+    _delayInput.cancelPending();
+    if (_delayController.text != '$hostMs') _delayController.text = '$hostMs';
+    if (rebuild) {
+      setState(() => _delayMs = hostMs);
+    } else {
+      _delayMs = hostMs;
+    }
+  }
+
+  /// ± 步进：以页面权威值为基数（不是可能过期的镜像），快捷键刚改过的延迟不会被覆盖。
+  Future<void> _stepDelay(int deltaMs) =>
+      _commitDelay(widget.host.delayMs() + deltaMs);
+
+  @override
   void dispose() {
+    widget.host.subtitlePositionListenable?.removeListener(_syncDelayFromHost);
     _delayInput.dispose();
     _delayController.dispose();
     _secondaryDelayInput.dispose();
@@ -298,12 +342,12 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
           _stepButton(
             icon: FushiIcons.fastRewind,
             tooltip: '-1000ms',
-            onPressed: () => _commitDelay(_delayMs - 1000),
+            onPressed: () => _stepDelay(-1000),
           ),
           _stepButton(
             icon: FushiIcons.chevronLeft,
             tooltip: '-50ms',
-            onPressed: () => _commitDelay(_delayMs - 50),
+            onPressed: () => _stepDelay(-50),
           ),
           _DelayReadoutField(
             key: const ValueKey<String>('video-subtitle-delay-readout'),
@@ -321,12 +365,12 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
           _stepButton(
             icon: FushiIcons.chevronRight,
             tooltip: '+50ms',
-            onPressed: () => _commitDelay(_delayMs + 50),
+            onPressed: () => _stepDelay(50),
           ),
           _stepButton(
             icon: FushiIcons.fastForward,
             tooltip: '+1000ms',
-            onPressed: () => _commitDelay(_delayMs + 1000),
+            onPressed: () => _stepDelay(1000),
           ),
         ],
       ),

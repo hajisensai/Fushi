@@ -134,4 +134,45 @@ void main() {
       findsNothing,
     );
   });
+
+  // BUG-3231：浮条开着时用快捷键（z/x / Ctrl+Shift+←/→）改了页面延迟——页面只发
+  // OSD、不重建浮条，此前读数停在旧值，再点 ± 以旧镜像为基数把快捷键的调整覆盖掉。
+  testWidgets('float bar follows delay changed outside the row (shortcuts)', (
+    WidgetTester tester,
+  ) async {
+    final TestVideoHostState state = TestVideoHostState(delayMs: 0);
+    final ValueNotifier<int> controllerTicks = ValueNotifier<int>(0);
+    addTearDown(controllerTicks.dispose);
+    final List<int> delays = <int>[];
+    await _pumpRow(
+      tester,
+      VideoSubtitleSyncRow(
+        host: buildTestVideoHost(
+          state: state,
+          onSetDelay: delays.add,
+          subtitlePositionListenable: controllerTicks,
+        ),
+        floatBar: true,
+      ),
+    );
+    expect(find.text('+0 ms'), findsOneWidget);
+
+    // 快捷键路径：页面权威值变了，controller 随 setDelayMs 立即 notify。
+    state.delayMs = 300;
+    controllerTicks.value++;
+    await tester.pumpAndSettle();
+    expect(find.text('+300 ms'), findsOneWidget);
+
+    // 再点 +50：以 300 为基数，而不是旧镜像 0。
+    await tester.tap(find.byTooltip('+50ms'));
+    await tester.pumpAndSettle();
+    expect(delays.last, 350);
+    expect(find.text('+350 ms'), findsOneWidget);
+
+    // 即便没有任何通知（页面没挂 controller），± 也以页面权威值为基数。
+    state.delayMs = -1000;
+    await tester.tap(find.byTooltip('-50ms'));
+    await tester.pumpAndSettle();
+    expect(delays.last, -1050);
+  });
 }
