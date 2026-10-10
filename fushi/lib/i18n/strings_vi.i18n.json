@@ -7029,5 +7029,6 @@
   "mihon_extension_package_label": "Package: $package",
   "extension_nsfw_badge": "NSFW",
   "mihon_extension_min_downloads_any": "Không giới hạn",
-  "feedback_reopen_shots_failed": "Could not fetch ${n} of the original screenshots; they are not attached"
+  "feedback_reopen_shots_failed": "Could not fetch ${n} of the original screenshots; they are not attached",
+  "remote_hidden_books_hint_count": "${n} removed · Bring back remote books you removed from this device's shelf"
 }
