@@ -79,6 +79,30 @@ void main() {
           isTrue);
     });
 
+    // BUG-3232：外挂轨下到了却解析不出时交给 libmpv 的是**刚下好的本地文件**——
+    // 轨的 url 是 DeliveryUrl，下载可能是它失效后回落到手拼端点才成功的；恢复路径的
+    // 落地名也不能写死 `.srt`（Emby 外挂 ASS 会被按 SRT 解析成空）。
+    test('外挂轨解析为空：libmpv 读本地已下载文件，落地名随原格式', () {
+      final String manual = maskComments(
+        methodBody(readVideoFushiSource(),
+            'Future<void> _applyRemoteEmbeddedSubtitle('),
+      );
+      expect(manual.contains('track.copyWith(url: subtitle.path)'), isTrue,
+          reason: '手选路径 onEmptyCues 要交本地文件：\n$manual');
+      final String restore = maskComments(
+        methodBody(readVideoFushiSource(), 'Future<void> _loadRemoteEpisode('),
+      );
+      expect(
+          restore.contains(
+              'playerRenderedTrack = track.copyWith(url: subtitle.path)'),
+          isTrue,
+          reason: '恢复路径解析为空同样交本地文件');
+      expect(
+          restore.contains("track?.fileName ?? 'embedded_\$streamIndex.srt'"),
+          isTrue,
+          reason: '恢复路径落地名要随轨的原格式扩展名');
+    });
+
     // 副字幕同一条回落：此前副字幕只会下载抽取，兼容层 Emby 上主字幕能用、
     // 副字幕一选就「加载失败」、重进也静默恢复不了。
     test('副字幕 _applyRemoteEmbeddedSecondarySubtitle 下载失败先回落，再报失败', () {

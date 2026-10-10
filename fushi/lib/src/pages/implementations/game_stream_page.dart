@@ -312,6 +312,9 @@ class _GameStreamPageState extends State<GameStreamPage>
   /// Grows the narrow-layout panel under the video by [delta] (negative
   /// shrinks), within this body's limits.
   void _resizeCompactRail(double delta) {
+    // Too short for both minimums (soft keyboard up): the split is fixed, and
+    // a drag here must not overwrite the stored height with the minimum.
+    if (!GameStreamLookupLayout.compactRailResizable(_bodyHeight)) return;
     final double current = _lookupLayout.effectiveCompactRailHeight(
       _bodyHeight,
     );

@@ -5163,6 +5163,10 @@ class VideoSourceScrapeCoordinator
 /// 它们在 MAL/TMDB 上只能搜出一堆类型合格、标题不符的垃圾候选，把整条识别
 /// 污染成「待确认」，还白白消耗 Jikan 配额。**目录名**候选不受此限——目录
 /// `86` 是用户手写的番名，不是集号。
+///
+/// 标题尾部的裸年份（`Frieren 2023`）先按年份剥掉（BUG-3192），但片名本身也可能
+/// 以年份结尾（`Death Race 2000`），所以紧跟一条不剥年份的完整标题；resolver 搜
+/// 这条时不再拿它自己的尾部年份当年份门（[VideoMetadataResolver]，BUG-3237）。
 List<String> videoScrapeTitleCandidates({
   required String workTitle,
   required String parsedSeries,
@@ -5178,11 +5182,16 @@ List<String> videoScrapeTitleCandidates({
       if (!isEpisodeLabelTitle(value)) value,
     ...directoryDerived,
   ];
+  // 清洗标题在前；剥过尾部裸年份的再跟一条不剥年份的完整标题（`Death Race 2000`
+  // 这类片名本身以年份结尾，BUG-3237），原值最后。
   final List<String> values = <String>[
-    for (final String value in rawValues) ...<String>[
-      FilenameParser.parse(value).title,
-      value,
-    ],
+    for (final String value in rawValues)
+      if (FilenameParser.parse(value) case final ParsedMediaName parsed)
+        ...<String>[
+          parsed.title,
+          if (parsed.titleWithTrailingYear case final String withYear) withYear,
+          value,
+        ],
   ];
   final Set<String> seen = <String>{};
   return <String>[
