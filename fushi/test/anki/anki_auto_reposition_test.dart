@@ -36,12 +36,20 @@ class _FakeRepo extends BaseAnkiRepository {
   /// 写回时先等这个 completer，用来把一轮重排按住做单飞测试。
   Completer<void>? gate;
 
+  /// 非 null 时每张卡的写回都被 AnkiConnect 以这条原因拒绝。
+  String? rejectReason;
+
+  /// 非 null 时 listNewCards 直接抛它（模拟超时 / 连接失败）。
+  Exception? listError;
+
   @override
   bool get supportsDeckReposition => supported;
 
   @override
-  Future<List<AnkiCardInfo>> listNewCards(String deckName) async =>
-      cards[deckName] ?? const <AnkiCardInfo>[];
+  Future<List<AnkiCardInfo>> listNewCards(String deckName) async {
+    if (listError != null) throw listError!;
+    return cards[deckName] ?? const <AnkiCardInfo>[];
+  }
 
   @override
   Future<AnkiCardDueWriteResult> setNewCardPositions(
@@ -49,6 +57,15 @@ class _FakeRepo extends BaseAnkiRepository {
   ) async {
     if (gate != null) await gate!.future;
     writes.add(updates);
+    final String? reason = rejectReason;
+    if (reason != null) {
+      return AnkiCardDueWriteResult(
+        written: 0,
+        failures: <int, String>{
+          for (final AnkiCardDueUpdate u in updates) u.cardId: reason,
+        },
+      );
+    }
     return AnkiCardDueWriteResult(
       written: updates.length,
       failures: const <int, String>{},
@@ -137,6 +154,7 @@ void main() {
     bool noFrequencies = false,
     AnkiRepositionSource source = AnkiRepositionSource.dictionaries,
     Duration debounce = const Duration(milliseconds: 20),
+    AnkiAutoRepositionFailureReporter? onFailure,
   }) {
     final AnkiSettings settings = AnkiSettings(
       selectedDeckId: 1,
@@ -158,6 +176,7 @@ void main() {
       ),
       loadSettings: repo.loadSettings,
       debounce: debounce,
+      onFailure: onFailure,
     );
     return (repo: repo, scheduler: scheduler);
   }
@@ -216,6 +235,55 @@ void main() {
 
     expect(r.repo.writes, hasLength(2), reason: '第二次制卡不能被丢掉，应由第一轮收尾时捡走再跑一轮');
     r.scheduler.dispose();
+  });
+
+  group('失败上报必须带出真实原因（BUG-3272）', () {
+    test('写回被 AnkiConnect 拒绝：上报失败数与第一条原因', () async {
+      final List<(String, Object, StackTrace?)> reports =
+          <(String, Object, StackTrace?)>[];
+      final r = build(
+        onFailure: (String deck, Object error, StackTrace? stack) =>
+            reports.add((deck, error, stack)),
+      );
+      r.repo.rejectReason = 'card was not found';
+      r.scheduler.notifyMined('Mining');
+      await r.scheduler.flushNow();
+
+      expect(reports, hasLength(1));
+      expect(reports.single.$1, 'Mining');
+      final Object error = reports.single.$2;
+      expect(error, isA<AnkiAutoRepositionWriteFailures>());
+      final AnkiAutoRepositionWriteFailures f =
+          error as AnkiAutoRepositionWriteFailures;
+      expect(f.failed, 2);
+      expect(f.attempted, 2);
+      expect(f.firstReason, 'card was not found');
+      expect(error.toString(), contains('card was not found'),
+          reason: '错误日志记的是 toString()，原因不在里面就等于没记');
+      r.scheduler.dispose();
+    });
+
+    test('整轮抛异常：原异常与堆栈原样上报', () async {
+      final List<(String, Object, StackTrace?)> reports =
+          <(String, Object, StackTrace?)>[];
+      final r = build(
+        onFailure: (String deck, Object error, StackTrace? stack) =>
+            reports.add((deck, error, stack)),
+      );
+      final TimeoutException boom =
+          TimeoutException('cardsInfo', const Duration(seconds: 10));
+      r.repo.listError = boom;
+      r.scheduler.notifyMined('Mining');
+      await r.scheduler.flushNow();
+
+      expect(reports, hasLength(1));
+      expect(reports.single.$1, 'Mining');
+      expect(identical(reports.single.$2, boom), isTrue,
+          reason: '只报牌组名时用户日志里一行 Anki 记录都没有，无从定位');
+      expect(reports.single.$3, isNotNull);
+      expect(r.repo.writes, isEmpty);
+      r.scheduler.dispose();
+    });
   });
 
   test('dispose 之后的制卡不再触发', () async {
