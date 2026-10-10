@@ -257,6 +257,19 @@ class SyncAssetPackageService {
       resourceNames[file.path] = name;
       archivePathToSource['resources/$name'] = file.path;
     }
+    // 逐 token 时间 sidecar 跟着字幕走（与 [exportAudioSubtitlePackage] 同口径）：
+    // 只有与字幕**同名不同扩展**才会被读到。此前整包不带它，「重新下载有声书」后
+    // 本机要么丢了逐 token 时间、要么留着上一版的旧 sidecar（BUG-3248）。
+    final String? srtName = resourceNames[srtBook.srtPath];
+    final File tokensSidecar =
+        File(p.setExtension(srtBook.srtPath, '.tokens.jsonl'));
+    if (srtName != null && await tokensSidecar.exists()) {
+      final String name = p.setExtension(srtName, '.tokens.jsonl');
+      if (usedNames.add(name)) {
+        resourceNames[tokensSidecar.path] = name;
+        archivePathToSource['resources/$name'] = tokensSidecar.path;
+      }
+    }
 
     final String manifestJson = jsonEncode(<String, Object?>{
       'schemaVersion': 1,
@@ -388,6 +401,7 @@ class SyncAssetPackageService {
       targetDirPath: targetDir.path,
       prefix: 'resources',
     );
+    await _dropStaleTokenSidecar(srtPath, resources);
 
     // 写库段必须原子（BUG-2551）：这三张表是**一本书**，分三次 await 写下去时，
     // 任何一步抛出（磁盘满、标签表冲突、cue 批量写失败）都会把前面写下的行留在库里。
@@ -515,6 +529,7 @@ class SyncAssetPackageService {
       targetDirPath: targetDir.path,
       prefix: 'resources',
     );
+    await _dropStaleTokenSidecar(srtPath, resources);
 
     // 与 srt-backed 分支同纪律：写库段原子（BUG-2551）。半写下的 SrtBooks 行会让
     // 书架上的 standalone 占位卡永久消失，用户再没有第二次下载的入口。
@@ -738,11 +753,12 @@ class SyncAssetPackageService {
         targetDirPath: targetDir.path,
         prefix: 'resources',
       );
+      await _dropStaleTokenSidecar(srtPath, resources);
       await _db.transaction(() async {
         await (_db.update(_db.srtBooks)
               ..where(($SrtBooksTable t) => t.id.equals(local.id)))
             .write(SrtBooksCompanion(srtPath: Value(srtPath)));
-        await _db.replaceCuesForBook(uid, cueRows(uid));
+        await _replaceCuesKeepingPosition(uid, cueRows(uid));
       });
       return;
     }
@@ -775,6 +791,7 @@ class SyncAssetPackageService {
       targetDirPath: targetDir.path,
       prefix: 'resources',
     );
+    await _dropStaleTokenSidecar(srtPath, resources);
     await _db.transaction(() async {
       // 只写字幕侧的列：audioRoot / audioPathsJson / followAudio（用户的本机设置）
       // 原样不动。健康度是对齐质量的度量，跟着新对齐一起换。
@@ -792,8 +809,28 @@ class SyncAssetPackageService {
       await (_db.update(_db.srtBooks)
             ..where(($SrtBooksTable t) => t.id.equals(localSrt.id)))
           .write(SrtBooksCompanion(srtPath: Value(srtPath)));
-      await _db.replaceCuesForBook(bookKey, cueRows(bookKey));
+      await _replaceCuesKeepingPosition(bookKey, cueRows(bookKey));
     });
+  }
+
+  /// 「只更新字幕」整组换 cue，本机听书断点按**真实时间位置**跟着换编码（BUG-3251，
+  /// 与 `AudiobookRepository.saveCues` 同口径，BUG-3197）：全书毫秒按 cue 推出的
+  /// 文件时长编码，换字幕不换算，多文件有声书的断点就落到别的文件 / 偏移。
+  /// 须在调用方的事务里调：会话监听 cue 表提交通知，通知要晚于换算。
+  Future<void> _replaceCuesKeepingPosition(
+    String cueKey,
+    List<AudioCuesCompanion> rows,
+  ) async {
+    final List<AudioCueRow> before = await _db.getCuesForBook(cueKey);
+    await _db.replaceCuesForBook(cueKey, rows);
+    final List<AudioCueRow> after = await _db.getCuesForBook(cueKey);
+    await AudiobookRepository(_db).rebaseStoredPositionForCueChange(
+      positionKey: cueKey,
+      oldDurationsMs:
+          audiobookFileDurationsFromCues(before.map(AudioCue.fromRow)),
+      newDurationsMs:
+          audiobookFileDurationsFromCues(after.map(AudioCue.fromRow)),
+    );
   }
 
   Future<void> _checkSubtitleAudioCount({
@@ -1039,6 +1076,24 @@ String? _resourceName(Map<String, Object?> resources, String sourcePath) {
 
 /// 必需资源（音频 / 字幕 / 对齐文件）在 [targetDir] 下的落地路径。
 /// 包里没有登记 → 抛 [SyncAssetPackageIncompleteException]（调用方必须在写 DB 前调用）。
+/// 包里没带 [srtPath] 的逐 token 时间 sidecar（`<字幕>.tokens.jsonl`）时，删掉落地
+/// 目录里同名的**旧** sidecar（BUG-3248）。
+///
+/// 解压是原位覆盖：host 换成了非转录字幕、或重新转录后没有 sidecar，本机目录里上一版
+/// 留下的 sidecar 会原样残留在新字幕旁边。消费端（`attachAsrCueTokenTiming`）只认
+/// 「同名 + 行数等于 cue 数」，行数恰好相等时会把旧的逐 token 时间挂到新 cue 上——
+/// 跳播全偏、却没有任何报错。[srtPath] 恒在包的落地目录里（[_requiredResourcePath]），
+/// 删的只会是上一次导入写下的文件，不碰用户目录。
+Future<void> _dropStaleTokenSidecar(
+  String srtPath,
+  Map<String, Object?> resources,
+) async {
+  final String sidecar = p.setExtension(srtPath, '.tokens.jsonl');
+  if (resources.values.contains(p.basename(sidecar))) return;
+  final File file = File(sidecar);
+  if (await file.exists()) await file.delete();
+}
+
 String _requiredResourcePath(
   Directory targetDir,
   Map<String, Object?> resources,

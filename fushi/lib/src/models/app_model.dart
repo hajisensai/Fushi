@@ -1330,7 +1330,8 @@ class AppModel with ChangeNotifier {
     ),
     // BUG-2558：后台听书（reader 已 dispose）期间的学习统计写入方。两个 getter 都是
     // 闭包——本字段在 AppModel 字段初始化期构造，那时 database / 偏好都还没 ready。
-    database: () => database,
+    // 库没开时给 null（会话按「不记统计 / 不监听 cue 表」降级），不去碰 late 字段。
+    database: () => isDatabaseReady ? database : null,
     studyIdleTimeout: () => readingIdleTimeout,
   )
     ..skipActionSeconds = (() => ReaderFushiSource.instance.skipActionSeconds)
