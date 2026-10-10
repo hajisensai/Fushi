@@ -17,3 +17,4 @@
   YurisAdapter yuris_;
   FvpAdapter fvp_;
   KogadoHyAdapter kogado_hy_;
+  LucaAdapter luca_;

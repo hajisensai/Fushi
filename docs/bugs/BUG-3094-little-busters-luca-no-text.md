@@ -1,0 +1,20 @@
+## BUG-3094 · Little Busters!（LucaSystem 引擎）连文本都抓不到
+- **报告**：2026-10-09（用户：mizore520）
+- **真实性**：✅ 真 bug。Prototype 的 LucaSystem 引擎没有任何适配器（`native/galgame_hook/hook/adapter_registry.inc` 的 `Poll()` 里没有对应项），工作台只剩 LunaHook 的通用线程，抓不到干净正文。另外 Steam 版 `.text` 由 SteamStub 加密（`.bind` 节），磁盘镜像上根本扫不到代码结构，只能在进程解密后从已加载镜像识别。
+- **[x] ① 已修复**（`7a9b69ea9`、`825532843`）— 新增引擎级适配器 `luca`（`native/galgame_hook/hook/adapters/luca_*`）。
+  - 身份判据：exe 同级的 `system.cnf` 带 `TARGET_PLATFORM` / `SCREEN_WIDTH` / `SCREEN_HEIGHT`，且 `files\*.PAK` 里至少一个包的整张索引恰好只在一种索引布局下自洽。不看 exe 名、标题、哈希。
+  - 文本：脚本虚拟机 MESSAGE 指令按操作数形状识别（ReadU16 取语音号，再循环两次 ReadString 取各语言记录；全镜像唯一，两个读取函数都以 `ret 4` 结尾），按返回地址过滤后 detour。取带假名 / 汉字的那条记录，拆掉 `` `名字@ `` 前缀与 `$K` 关键词标记，发布到精确通道 `ENGINE:LUCA:message`（source kind 12）。SteamStub 晚解密，站点识别按 500 ms 间隔、120 s 上限有界重试。
+  - 语音：MESSAGE 自带的语音号定位到唯一认领它的单声道 OGGPAK 包成员（`成员 = 语音号 − 包的起始 id`；MUSIC / SYSSE 是双声道，按声道数排除），作为引擎资源发布，按文本事件号配对。
+  - 内嵌查词（provider 25）：文字对象的排版函数按序言形状 + 行重置结构识别，并核对它读取的字段；worker 读字形记录（`system.cnf` 设计分辨率 1280×720），等比投影到物理客户区像素。点击认领在通用 `GetAsyncKeyState` detour 里只对主镜像自己的 `VK_LBUTTON` 采样生效，命中字形的新按下被认领并屏蔽到松开；Shift 在 worker 里按下沿采样，光标在字上即查词，不屏蔽 Shift。
+- **[x] ② 已加自动化测试**（`7a9b69ea9`、`825532843`）— `native/galgame_hook/tests/luca_adapter_test.cpp`（PAK 索引两种布局 / 多义拒绝、OGGPAK 解析与声道判定、MESSAGE 站点命中 / 缺失 / 多义、记录解码、排版站点与字段核对、字形映射 / 投影 / 命中、点击认领状态机、Shift 按下沿与重置、`system.cnf` 解析）；`tests/adapter_structure_test.py`（只认主镜像采样、受原生输入放行门控、游戏线程回调无 IO）；`tests/galhook_workflow_test.py` + `fushi/test/mining/luca_pairing_test.dart`（回放：资源语音优先于 loopback、无语音台词不配音频、通用线程被过滤）；`fushi/test/mining/galgame_audio_test.dart`（source kind 12 → `luca:` 命名空间）。
+- **备注**：
+  - 只有一个样本：Little Busters! English Edition（Steam，x86，`LITBUS_WIN32.exe` sha256 `047748c4…172d`）。
+  - native 实机（2026-10-09，附加到已运行的 Steam 原始进程）：站点在解密后解析成功；台词逐句进入「LucaSystem exact」通道，有配音的台词拿到对应的单声道 ogg，主角台词本身无配音。
+  - 文字对象实测（同日）：对话框文字对象原点 (190,576)，字形记录与当前台词逐字一致。
+  - Fushi 宿主实测（同日，本分支本地构建，Steam 原始路径，1280×720 设计分辨率显示在 2240×1260 物理客户区）：
+    - 文本：「LucaSystem exact」线程逐句输出干净的日文正文。
+    - 语音：一次会话导出 216 个逐句 ogg，全部来自 VOICE0 / VOICE2。
+    - 查词：一次会话发布 28 次命中（点击 15 次、Shift 13 次），都弹出了光标下那个词的卡。
+    - 不推进（用户报告）：点字弹卡不推进；点卡外关卡，不推进；没有卡时点击照常推进。触摸清单（点字、卡内后卡外、卡上横滑）无问题。
+    - 制卡（用户报告）：写入真卡，句子与语音对应。
+    - hook 日志分不出鼠标和触摸，也看不到是否推进，所以「不推进」和触摸两项依据的是用户报告。不是 accept4 运行，没有 `InjectTouchInput` 注入记录，只有一个样本，状态保持 `implemented_unverified`。

@@ -54,6 +54,7 @@ LOOKUP_ACCEPTANCE_ENGINE_IDS = {
     "yuris",
     "fvp",
     "kogado_hy",
+    "luca",
 }
 LOOKUP_PROVIDERS = {
     "runtime_layout",
@@ -146,6 +147,10 @@ LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS = {
         "kLookupGeometryProviderEngineExactLayout",
         "kLookupGeometryProviderIdKogadoHy",
     ): ("kogado_hy", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdLuca",
+    ): ("luca", "engine_exact_layout"),
 }
 SIGNATURE_FIELDS = (
     "executable_names",

@@ -17,3 +17,4 @@
     consider(yuris_);
     consider(fvp_);
     consider(kogado_hy_);
+    consider(luca_);
