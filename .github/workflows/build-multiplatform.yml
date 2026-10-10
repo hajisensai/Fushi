@@ -45,6 +45,9 @@ on:
       - 'tools/bundle_7za.ps1'
       # windows / macos job 构建并校验 Mihon 桌面 sidecar（tool/mihon/*）。
       - 'tool/mihon/**'
+      # windows job 把打过补丁的 Flutter 引擎装进 SDK（ci/patches/flutter-engine/）。
+      - 'tool/engine_overlay.ps1'
+      - '.github/actions/flutter-engine-overlay/**'
       - '.github/workflows/build-multiplatform.yml'
       - '.github/actions/setup-fushi-anki-sync/**'
       - '.github/actions/provide-baked-secrets/**'
@@ -153,7 +156,7 @@ jobs:
 
           app_common='^(pubspec\.(yaml|lock)$|ci/|third_party/[^/]+/pubspec\.yaml$|native/(fushidicts|fushi_p2p|fushi_aacs)/|packages/fushi_p2p/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(provide-baked-secrets|native-artifact-store|native-store-names|pdfium-hook-cache)/)'
           smoke='^fushi/(integration_test/(app_smoke_test\.dart$|test_helpers\.dart$|support/|helpers/)|tool/(comprehensive_test_runner\.dart$|generate_test_fixtures\.dart$|test_flow/))'
-          windows_only='^(fushi/windows/|packages/(flutter_inappwebview_windows|gamepads_windows)/|packages/[^/]+/windows/|native/(fushi_torrent|galgame_hook|fushi_anki_sync)/|packages/fushi_torrent/|third_party/([^/]+/windows/|[^/]*windows[^/]*/|libplacebo-win/|m_extension_server/|jogamp/)|tool/mihon/|tools/(build_magpie_slim|bundle_7za)\.ps1$|\.github/actions/setup-fushi-anki-sync/)'
+          windows_only='^(fushi/windows/|packages/(flutter_inappwebview_windows|gamepads_windows)/|packages/[^/]+/windows/|native/(fushi_torrent|galgame_hook|fushi_anki_sync)/|packages/fushi_torrent/|third_party/([^/]+/windows/|[^/]*windows[^/]*/|libplacebo-win/|m_extension_server/|jogamp/)|tool/mihon/|tool/engine_overlay\.ps1$|tools/(build_magpie_slim|bundle_7za)\.ps1$|\.github/actions/(setup-fushi-anki-sync|flutter-engine-overlay)/)'
           macos_only='^(fushi/(macos|apple)/|packages/[^/]+/(macos|darwin)/|native/(fushi_anki_sync|fushi_torrent)/|packages/fushi_torrent/|\.github/scripts/verify_torrent_abi\.sh$|third_party/([^/]+/(macos|darwin)/|[^/]*macos[^/]*/|m_extension_server/|jogamp/)|tool/mihon/|\.github/actions/setup-fushi-anki-sync/)'
           ios_only='^(fushi/(ios|apple)/|packages/[^/]+/(ios|darwin)/|third_party/([^/]+/(ios|darwin)/|[^/]*ios[^/]*/))'
           server_only='^(pubspec\.(yaml|lock)$|ci/|packages/(fushi_server|fushi_engine|fushi_core|fushi_anki|fushi_audio|fushi_dictionary|fushi_platform|fushi_torrent|fushi_p2p)/|native/(fushi_torrent|fushi_p2p|fushi_anki_sync|fushidicts)/|fushi/assets/transforms/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(native-artifact-store|native-store-names|setup-fushi-anki-sync)/|\.github/scripts/verify_torrent_abi\.sh$)'
@@ -1257,6 +1260,8 @@ jobs:
       - uses: ./.github/actions/pdfium-hook-cache
         with:
           purpose: windows
+      # 合成器内 HDR 需要打过补丁的 flutter_windows.dll（ci/patches/flutter-engine/）。
+      - uses: ./.github/actions/flutter-engine-overlay
 
       # 烘进包里的密钥统一由 composite action 注入 —— 这批注入曾被逐字抄进 11 个
       # job，抄到最后 TMDB 有 3 个变体、两条发布 workflow 一处都没有，导致发出去

@@ -197,6 +197,30 @@ void MediaKitVideoPlugin::HandleMethodCall(
     }
     video_output_manager_->SetSize(handle_value, width_value, height_value);
     result->Success(flutter::EncodableValue(std::monostate{}));
+  } else if (method_call.method_name().compare(
+                 "VideoOutputManager.SetHdrOutput") == 0) {
+    // HIBIKI FORK (HDR in the Flutter compositor): replies with whether the
+    // half-float texture is active afterwards (false on S/W rendering or when
+    // ANGLE lacks what it needs).
+    auto arguments = std::get<flutter::EncodableMap>(*method_call.arguments());
+    auto handle =
+        std::get<std::string>(arguments[flutter::EncodableValue("handle")]);
+    auto enabled = std::get<bool>(arguments[flutter::EncodableValue("enabled")]);
+    auto reference_white_nits = std::get<double>(
+        arguments[flutter::EncodableValue("referenceWhiteNits")]);
+    auto target_peak_nits = std::get<double>(
+        arguments[flutter::EncodableValue("targetPeakNits")]);
+    auto handle_value = static_cast<int64_t>(std::stoll(handle.c_str()));
+    std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>> shared_result(
+        std::move(result));
+    video_output_manager_->SetHdrOutput(
+        handle_value, enabled, reference_white_nits, target_peak_nits,
+        [this, shared_result](bool active) {
+          RunOnMainThread(
+              [shared_result, active]() {
+                shared_result->Success(flutter::EncodableValue(active));
+              });
+        });
   } else if (method_call.method_name().compare("Utils.EnterNativeFullscreen") ==
              0) {
     auto window =

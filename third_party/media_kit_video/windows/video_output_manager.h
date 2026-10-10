@@ -40,6 +40,14 @@ class VideoOutputManager {
                std::optional<int64_t> width,
                std::optional<int64_t> height);
 
+  // HIBIKI FORK (HDR in the Flutter compositor): see
+  // |VideoOutput::SetHdrOutput|.
+  void SetHdrOutput(int64_t handle,
+                    bool enabled,
+                    double reference_white_nits,
+                    double target_peak_nits,
+                    std::function<void(bool)> on_done);
+
   // Destroys the |VideoOutput| with given handle.
   void Dispose(int64_t handle);
 

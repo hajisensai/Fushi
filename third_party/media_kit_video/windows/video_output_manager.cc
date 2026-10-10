@@ -38,6 +38,22 @@ void VideoOutputManager::SetSize(int64_t handle,
   }).detach();
 }
 
+void VideoOutputManager::SetHdrOutput(int64_t handle,
+                                      bool enabled,
+                                      double reference_white_nits,
+                                      double target_peak_nits,
+                                      std::function<void(bool)> on_done) {
+  std::thread([=]() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (video_outputs_.find(handle) != video_outputs_.end()) {
+      video_outputs_[handle]->SetHdrOutput(enabled, reference_white_nits,
+                                           target_peak_nits, on_done);
+    } else {
+      on_done(false);
+    }
+  }).detach();
+}
+
 void VideoOutputManager::Dispose(int64_t handle) {
   std::thread([=]() {
     std::lock_guard<std::mutex> lock(mutex_);

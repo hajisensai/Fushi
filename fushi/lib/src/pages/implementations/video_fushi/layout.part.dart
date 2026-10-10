@@ -57,11 +57,12 @@ Widget _hdrGraphicsWhiteLevel(VideoPlayerController controller, Widget child) {
   return ListenableBuilder(
     listenable: Listenable.merge(<Listenable>[
       controller.hdrHostActive,
+      controller.hdrCompositorActive,
       controller.hdrDisplayInfo,
     ]),
     builder: (BuildContext _, Widget? subtree) => HdrGraphicsWhiteLevel(
       linearScale: hdrGraphicsWhiteScale(
-        hostActive: controller.hdrHostActive.value,
+        hostActive: controller.hdrOutputActive,
         display: controller.hdrDisplayInfo.value,
       ),
       child: subtree!,
