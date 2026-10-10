@@ -108,6 +108,16 @@ export function summarizeBatchSql(map, now) {
   }).join('\n');
 }
 
+/** 写前核对编号都在库里：UPDATE 命中 0 行不报错，不核对的话写错编号会被静默当成「已写入」。 */
+export function existingIdsSql(ids) {
+  return `SELECT id FROM feedback WHERE id IN (${ids.map((id) => `'${checkId(id)}'`).join(', ')})`;
+}
+
+export function missingIds(ids, rows) {
+  const found = new Set(rows.map((r) => r.id));
+  return ids.filter((id) => !found.has(id));
+}
+
 /** wrangler 在 JSON 前可能多打一行提示（如检测到代理）：从第一行以 [ 开头处起解析。 */
 export function parseWranglerJson(stdout) {
   const at = stdout.startsWith('[') ? 0 : stdout.indexOf('\n[') + 1;
@@ -187,6 +197,12 @@ function d1Write(sql, where) {
   }
 }
 
+function requireExisting(ids, where) {
+  const [rows] = d1(existingIdsSql(ids), where);
+  const missing = missingIds(ids, rows);
+  if (missing.length) throw new Error(`这些反馈不存在，整批未写入：${missing.map((id) => `#${id}`).join(' ')}`);
+}
+
 function readLog(row, where, tail) {
   const log = safeJson(row.attachments || '[]', []).find((a) => a.kind === 'log');
   if (!log) return '（未附日志）';
@@ -223,7 +239,9 @@ export function main(argv, out = console.log) {
   }
   if (cmd === 'summarize' && typeof flags.json === 'string') {
     const map = JSON.parse(readFileSync(flags.json, 'utf8'));
-    d1Write(summarizeBatchSql(map, Date.now()), where);
+    const sql = summarizeBatchSql(map, Date.now());
+    requireExisting(Object.keys(map), where);
+    d1Write(sql, where);
     out(`已写入 ${Object.keys(map).length} 条 AI 总结`);
     return;
   }
@@ -233,7 +251,9 @@ export function main(argv, out = console.log) {
     else if (typeof flags.file === 'string') text = readFileSync(flags.file, 'utf8');
     else if (typeof flags.text === 'string') text = flags.text;
     else throw new Error('summarize 需要 --text、--file 或 --clear');
-    d1Write(summarizeSql(id, text, Date.now()), where);
+    const sql = summarizeSql(id, text, Date.now());
+    requireExisting([id], where);
+    d1Write(sql, where);
     out(text === null ? `#${checkId(id)} 已清除 AI 总结` : `#${checkId(id)} 已写入 AI 总结`);
     return;
   }

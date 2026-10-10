@@ -206,11 +206,12 @@ function checkOrigin(request, url) {
 }
 
 /**
- * 表单体上限按字段字数算：urlencoded 下一个汉字是 9 字节（%XX×3），按 32 KB 一刀切时
+ * 表单体上限按字段字数算：urlencoded 下一个汉字是 9 字节（%XX×3）、emoji 等 4 字节字符是 12 字节，
+ * 按最坏的 12 算。按 32 KB 一刀切时
  * 4000 字上限的回复框写到 ~3600 个汉字就 413。`chars` = 本表单最长文本字段的字数上限。
  */
 function formLimit(chars) {
-  return chars * 9 + 1024;
+  return chars * 12 + 1024;
 }
 
 async function readForm(request, maxBytes = 32 * 1024) {
