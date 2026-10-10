@@ -11,12 +11,16 @@ import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/game_statistics_page.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_dashboard.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
+import 'package:fushi/src/pages/implementations/stat_overview.dart';
+import 'package:fushi/src/pages/implementations/stat_day_reset_hour_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
 import 'package:fushi/src/stats/stat_range.dart';
@@ -34,8 +38,9 @@ enum StatsCenterTab { overview, reading, video, game }
 /// 统计中心（阶段 2，统计中心大改造）：总览 + 阅读/观看/游戏三域 tab。
 ///
 /// 三域 tab 直接复用现有统计页的 `embedded` 模式（页面本体一行没重写——不从零
-/// 重写现有功能）；总览 tab 是跨域视图（学习日历 + 范围区块 + 最近沉浸）。各媒体
-/// 首页的柱状图入口统一指到这里的对应 tab，原独立统计页路由保留（不破坏既有导航）。
+/// 重写现有功能）；总览 tab 是唯一新内容：跨域今日学习目标 + 四张跨域时段卡
+/// （点开完整日面的时段明细 sheet）。各媒体首页的柱状图入口统一指到这里的
+/// 对应 tab，原独立统计页路由保留（不破坏既有导航）。
 class StatisticsCenterPage extends BasePage {
   const StatisticsCenterPage({
     super.key,
@@ -57,31 +62,45 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
   final ValueNotifier<StatRangeSelection> _rangeSelection =
       ValueNotifier<StatRangeSelection>(const StatRangeSelection());
 
+  /// 各 tab 的「目标 / 刷新 / 清空」登记处：页头右侧按钮组画当前 tab 那份。
+  final StatCenterTabActions _tabActions = StatCenterTabActions();
+
   @override
   void dispose() {
     _rangeSelection.dispose();
+    _tabActions.dispose();
     super.dispose();
   }
 
   String _tabLabel(StatsCenterTab tab) => switch (tab) {
-        StatsCenterTab.overview => t.stat_center_tab_overview,
-        StatsCenterTab.reading => t.home_filter_read,
-        StatsCenterTab.video => t.home_filter_watch,
-        StatsCenterTab.game => t.home_filter_game,
-      };
+    StatsCenterTab.overview => t.stat_center_tab_overview,
+    StatsCenterTab.reading => t.home_filter_read,
+    StatsCenterTab.video => t.home_filter_watch,
+    StatsCenterTab.game => t.home_filter_game,
+  };
 
   @override
   Widget build(BuildContext context) {
-    // 2026-10-09 统计中心精简（PDF「统计」节）：第一行只剩返回键 + 页签，原第一行
-    // 中间那枚放不下就被截成「统...」的标题胶囊删掉；四颗动作按钮收成一颗「统计
-    // 设置」（重置时刻 + 清空统计，挂在各 tab 范围条行尾；目标改由首页每日目标卡
-    // 进入，刷新砍掉）。
+    // v105：统计按 Profile 隔离——页头点明当前看的是哪个 Profile 的数字，否则
+    // 切个 Profile「统计全没了」无从解释。名字取 ProfileViewModel 的激活项
+    // （它在 _load 前是 -1 哨兵，此时不显示副标题，等它装好再重建）。
+    final String? profileName = ref
+        .watch(profileViewModelProvider)
+        .activeProfile
+        ?.name;
+    // 页签与库页同一形态（2026-10-06）：贴合内容宽的单层浮动胶囊
+    // （[LibrarySectionTabs] floating），左缘与页头标题、正文卡片同一条页边；
+    // 当前 tab 的动作并进页头右侧的按钮组胶囊（[StatCenterTabActions]）。
     return DefaultTabController(
       length: StatsCenterTab.values.length,
       initialIndex: widget.initialTab.index,
       child: Builder(
         builder: (BuildContext context) {
           final TabController tabs = DefaultTabController.of(context);
+          // 页签行随页头一起浮动、收起（[FushiPageScaffold.headerBottom]）：留在
+          // 正文里时它在页头下沿把下面的 KPI 卡硬切、页头收起后顶部是一整块
+          // 实色空白（用户 2026-10-06 截图）。各 tab 的滚动视图自己消费
+          // `MediaQuery.paddingOf(context).top`（[StatDashboardBody]）。
           final Widget tabBar = LibrarySectionTabs<StatsCenterTab>.controlled(
             tabs: <LibrarySectionTab<StatsCenterTab>>[
               for (final StatsCenterTab tab in StatsCenterTab.values)
@@ -97,21 +116,29 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
           final Widget body = TabBarView(
             children: <Widget>[
               StatCenterTabScope(
+                registry: _tabActions,
+                index: StatsCenterTab.overview.index,
                 child: _StatsOverviewTab(rangeSelection: _rangeSelection),
               ),
               StatCenterTabScope(
+                registry: _tabActions,
+                index: StatsCenterTab.reading.index,
                 child: ReadingStatisticsPage(
                   embedded: true,
                   rangeSelection: _rangeSelection,
                 ),
               ),
               StatCenterTabScope(
+                registry: _tabActions,
+                index: StatsCenterTab.video.index,
                 child: VideoStatisticsPage(
                   embedded: true,
                   rangeSelection: _rangeSelection,
                 ),
               ),
               StatCenterTabScope(
+                registry: _tabActions,
+                index: StatsCenterTab.game.index,
                 child: GameStatisticsPage(
                   embedded: true,
                   rangeSelection: _rangeSelection,
@@ -119,10 +146,33 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
               ),
             ],
           );
-          return FushiPageScaffold(
-            title: t.stat_center_title,
-            headerTitle: tabBar,
-            body: body,
+          return ListenableBuilder(
+            listenable: Listenable.merge(<Listenable>[tabs, _tabActions]),
+            child: body,
+            builder: (BuildContext context, Widget? child) => FushiPageScaffold(
+              title: t.stat_center_title,
+              subtitle: profileName == null
+                  ? null
+                  : t.stat_center_profile_scope(name: profileName),
+              actions: <Widget>[
+                ..._tabActions.actionsFor(tabs.index),
+                // 「今日」重置整点是三域学习段共用的 dateKey 输入，所以入口放在
+                // 统计中心页头而不是某一域的设置页；宽窗展开成「图标 + 文字」
+                // 药丸（label，独立一颗 tonal 胶囊），窄窗回落为纯图标、tooltip
+                // 仍是完整标题。
+                FushiIconButton(
+                  icon: Icons.update_outlined,
+                  tooltip: t.stat_center_day_reset_hour,
+                  label: t.stat_center_day_reset_action,
+                  onTap: () => showStatDayResetHourDialog(
+                    context,
+                    ref.read(appProvider),
+                  ),
+                ),
+              ],
+              headerBottom: tabBar,
+              body: child!,
+            ),
           );
         },
       ),
@@ -130,12 +180,9 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
   }
 }
 
-/// 总览 tab：跨域（书 + 视频 + 游戏）的学习日历（含「过去一周」）+ 范围区块 +
-/// 最近沉浸。数据一次 [loadStatFacts] 取完整日面。
-///
-/// 2026-10-09 统计中心精简：删掉了媒体类型筛选 chip（与页签「阅读 / 观看 / 游戏」
-/// 重复）、目标卡与今日时长 / 今日字数 / 本周时长三张指标卡（首页已有）、
-/// 「时段明细」四张卡（与「所选范围」重复）。
+/// 总览 tab：跨域「今日目标」进度 + 四张跨域时段卡。数据一次 [loadStatFacts]
+/// 取完整日面；目标口径与首页/阅读统计页同函数（[studyGoalCharsForDay]，
+/// BUG-1993）。
 class _StatsOverviewTab extends ConsumerStatefulWidget {
   const _StatsOverviewTab({required this.rangeSelection});
 
@@ -150,26 +197,46 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   bool _loading = true;
   String? _error;
 
-  /// 跨域日面（`StatFacts.daily`）：范围区块 / 学习日历 / 阅读速度都吃它。
+  /// 完整跨域日面（`StatFacts.daily`）：目标分子的输入（目标是跨域的每日学习
+  /// 目标，不随媒体筛选变口径），也是重新筛选的源。
+  List<StatFact> _allDaily = <StatFact>[];
+
+  /// 当前媒体筛选（[_filter]）下的日面：时段卡 / 关键指标 / 范围区块都吃它。
+  /// 「全部」档与 [_allDaily] 同一批行。
   List<StatFact> _daily = <StatFact>[];
 
   /// 跨域会话流（`StatFacts.sessions`：书 / 视频 / 游戏混排，按结束时刻倒序）。
+  List<StudySession> _allSessions = <StudySession>[];
+
+  /// 当前筛选下的会话流。
   List<StudySession> _sessions = <StudySession>[];
 
+  /// 本轮加载的计数面（查词 / 制卡 / 收藏），换筛选时按 [StatMediaFilterX.source]
+  /// 重新切——与三个域 tab 同一个切分判据。
+  StatCounterFacts _counters = StatCounterFacts.empty;
+
+  /// 总览的媒体类型筛选（2026-10 重设计）：只活在本 tab，重进统计中心回到「全部」。
+  StatMediaFilter _filter = StatMediaFilter.all;
+  Map<String, String> _bookKeyByTitle = <String, String>{};
+  Set<String> _ambiguousBookTitles = <String>{};
   Map<String, String> _epubUidByBookKey = <String, String>{};
   Map<String, int> _primaryCollectionByEntry = <String, int>{};
   Map<int, String> _collectionNamesById = <int, String>{};
   List<GalgameEntry> _games = <GalgameEntry>[];
 
-  /// 明细 sheet 的书身份解析：legacy 无身份行按 title 反查 bookKey，以及库表判为
-  /// 多身份的 title（不吸收进唯一身份组，BUG-2216）。
-  Map<String, String> _bookKeyByTitle = <String, String>{};
-  Set<String> _ambiguousBookTitles = <String>{};
-
   /// 会话行封面的两张表：书条目（键 = 段 mediaKey，bookKey / 有声书 srt uid
-  /// 两种书身份都收）与视频封面路径（键 = bookUid）。游戏封面直接从 [_games] 取。
+  /// 两种书身份都收，与 [_openEntry] 同一判据）与视频封面路径（键 = bookUid）。
+  /// 游戏封面直接从 [_games] 取。
   Map<String, MediaItem> _bookItemsByKey = <String, MediaItem>{};
   Map<String, String> _videoCoverPathByUid = <String, String>{};
+
+  /// 跨域计数面分桶（阅读 + 视频 + 游戏三个来源之和）。时段卡之前只有时长 / 字数，
+  /// 制卡与查词这两个每天都在动的数字在总览上一个都看不到，只能逐个 tab 翻——
+  /// 现在与三个域 tab 的时段卡逐行同形。
+  StatActivityBuckets _lookup = StatActivityBuckets();
+  StatActivityBuckets _mined = StatActivityBuckets();
+  StatActivityBuckets _favorited = StatActivityBuckets();
+  StatActivityBuckets _favoritedSentences = StatActivityBuckets();
 
   /// 本轮加载时的统计窗口（「今日」只有一个，BUG-2219）。
   StatWindow _window = StatWindow(DateTime.now());
@@ -177,8 +244,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   /// 跨域逐日合计（范围图表 / 所选范围卡 / 学习日历共用）。
   Map<String, StatDayData> _byDay = <String, StatDayData>{};
 
-  /// 跨域计数面事件（dateKey, 次数）：所选范围卡按范围求和。跨域 = 不传
-  /// source（三个域 tab 各传自己那一个），总览恒等于三个 tab 之和。
+  /// 跨域查词 / 制卡事件（dateKey, 次数），所选范围卡按范围求和。
   List<(String, int)> _lookupEvents = const <(String, int)>[];
   List<(String, int)> _minedEvents = const <(String, int)>[];
   List<(String, int)> _favoritedEvents = const <(String, int)>[];
@@ -199,6 +265,43 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
 
   void _onRangeChanged() {
     if (mounted) setState(() {});
+  }
+
+  /// 按 [_filter] 从本轮加载的完整数据重切一遍（不重查库）。
+  ///
+  /// 「全部」= 不传 source（三个域 tab 各传自己的那一个），所以总览的数字恒等于
+  /// 三个 tab 之和；单域档与对应域 tab 同一个 source——同一批行、同一个分桶函数，
+  /// 没有第二条口径。分桶的「现在」取本轮窗口（[_window]，BUG-2219）。
+  void _applyFilter() {
+    final StatSourceKind? source = _filter.source;
+    final DateTime now = _window.now;
+    _daily = filterStatFacts(_allDaily, _filter);
+    _byDay = sumStatDaysByKey(_daily);
+    _sessions = filterStudySessions(_allSessions, _filter);
+    _lookupEvents = _counters.lookupEvents(source: source).toList();
+    _minedEvents = _counters.minedEvents(source: source).toList();
+    _favoritedEvents = _counters.favoriteWordEvents(source: source).toList();
+    _favoritedSentenceEvents = _counters
+        .favoriteSentenceEvents(source: source)
+        .toList();
+    _lookup = bucketActivityByDateKey(_lookupEvents, now);
+    _mined = bucketActivityByDateKey(_minedEvents, now);
+    _favorited = bucketActivityByDateKey(
+      _counters.favoriteWordEvents(source: source),
+      now,
+    );
+    _favoritedSentences = bucketActivityByDateKey(
+      _counters.favoriteSentenceEvents(source: source),
+      now,
+    );
+  }
+
+  void _selectFilter(StatMediaFilter filter) {
+    if (filter == _filter) return;
+    setState(() {
+      _filter = filter;
+      _applyFilter();
+    });
   }
 
   /// 加载失败后的重试：先回到加载态（按钮不可连点），再重新聚合。
@@ -226,15 +329,11 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
         activityLimit: 0,
         includeCounters: true,
       );
-      _daily = facts.daily;
-      _byDay = sumStatDaysByKey(_daily);
-      _sessions = facts.sessions;
-      final StatCounterFacts counters = facts.counters;
-      _lookupEvents = counters.lookupEvents().toList();
-      _minedEvents = counters.minedEvents().toList();
-      _favoritedEvents = counters.favoriteWordEvents().toList();
-      _favoritedSentenceEvents = counters.favoriteSentenceEvents().toList();
+      _allDaily = facts.daily;
+      _allSessions = facts.sessions;
+      _counters = facts.counters;
       _window = StatWindow(DateTime.now());
+      _applyFilter();
       _bookKeyByTitle = uniqueBookKeyByTitle(facts.epubRows);
       _ambiguousBookTitles = ambiguousBookTitles(facts.epubRows);
       _epubUidByBookKey = <String, String>{
@@ -271,15 +370,35 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     if (mounted) setState(() => _loading = false);
   }
 
-  /// 统计设置（范围条行尾 / 空数据态顶部）。本 tab 是跨域视图，所以「清空」=
-  /// 三个域一起清（[_confirmAndClearAll]）。
-  StatTabSettings get _statSettings =>
-      StatTabSettings(onClearAll: _confirmAndClearAll, enabled: !_loading);
-
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return buildEmbeddedStatTab(context, _buildBody(tokens));
+    // 四个 tab 的动作行**逐颗同形**（用户 2026-09-10「所有界面都要统一」）：
+    // 目标 → 刷新 → 清空全部统计。此前是四种排列（总览无清空、观看 / 游戏无目标），
+    // 横着切 tab 时按钮在原地变意思。目标入口的理由与 BUG-970 同：没有常驻入口就
+    // 永远设不了第一个目标（2026-10 起总览的目标面板未设时也显示引导、可点）。
+    // 本 tab 是跨域视图，所以这里的「清空」= 三个域一起清（[_confirmAndClearAll]）。
+    final List<Widget> actions = <Widget>[
+      FushiIconButton(
+        icon: Icons.flag_outlined,
+        tooltip: t.stat_goal_set,
+        enabled: !_loading,
+        onTap: _editGoals,
+      ),
+      FushiIconButton(
+        icon: Icons.refresh,
+        tooltip: t.stat_refresh,
+        enabled: !_loading,
+        onTap: () => unawaited(_load()),
+      ),
+      FushiIconButton(
+        icon: Icons.delete_sweep_outlined,
+        tooltip: t.stat_clear_all,
+        enabled: !_loading,
+        onTap: _confirmAndClearAll,
+      ),
+    ];
+    return buildEmbeddedStatTab(context, actions, _buildBody(tokens));
   }
 
   Widget _buildBody(FushiDesignTokens tokens) {
@@ -310,32 +429,42 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
         ),
       );
     }
-    return _buildOverviewBody();
+    return _buildOverviewBody(tokens);
   }
 
   /// 总览主体：数据切片 + 各区块的装配；排布（宽 / 窄、错峰进场、空数据态）
   /// 由 [StatDashboardBody] 一处决定（与三个域 tab 同一套），信息架构见那里的文档。
-  Widget _buildOverviewBody() {
+  Widget _buildOverviewBody(FushiDesignTokens tokens) {
     final StatWindow w = _window;
     final StatRange range = _range;
     final bool empty = _daily.isEmpty && _sessions.isEmpty;
-    // 学习日历（上面一行「过去一周」火苗）占原先五张指标卡的位置。
-    final Widget hero = buildStatRangeCalendarSection(
-      context,
-      byDay: _byDay,
-      now: w.now,
-      weekKeys: w.lastDayKeys(7),
-      onDaySelected: _selectDay,
+    final Widget filterBar = StatMediaFilterBar(
+      selected: _filter,
+      onChanged: _selectFilter,
+    );
+    final AppModel appModel = ref.read(appProvider);
+    final Widget hero = StatHero(
+      lead: StatGoalPanel(
+        goalChars: appModel.readingGoalDailyChars,
+        progressChars: studyGoalCharsForDay(_allDaily, w.todayKey),
+        weeklyGoalChars: appModel.readingGoalWeeklyChars,
+        weeklyProgressChars: studyGoalCharsForWeek(_allDaily, w),
+        onTap: _loading ? null : () => unawaited(_editGoals()),
+      ),
+      tiles: buildStatKpiTiles(context, computeStatKpis(_daily, w)),
     );
     if (empty) {
       return StatDashboardBody(
-        header: buildStatSettingsHeader(_statSettings),
+        replayKey: _filter,
+        header: filterBar,
         hero: hero,
         emptyState: StatDashboardEmpty(message: t.stat_overview_empty),
         tail: buildStatTailSliver(context),
       );
     }
     return StatDashboardBody(
+      replayKey: _filter,
+      header: filterBar,
       hero: hero,
       tail: buildStatTailSliver(context),
       trend: <Widget>[
@@ -343,7 +472,6 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
           range: range,
           onChanged: _selectRange,
           trailing: StatRangeActions(
-            settings: _statSettings,
             onOpenDetail: () => unawaited(_showRangeDetail(range)),
           ),
         ),
@@ -353,9 +481,6 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
           range,
           _byDay,
           extraLines: <StatSummaryLine>[
-            // 阅读速度只按阅读域算（[statBookCphOf]）：卡上的时长 / 字数是跨域
-            // 总和，视频只计时不计字、游戏 hook 只计字不计时，混算的「字/时」
-            // 谁也解释不了。
             if (statBookCphOf(_daily, range.contains) case final String cph)
               StatSummaryLine(label: t.stat_reading_speed, value: cph),
             ...buildStatRangeCounterLines(
@@ -367,8 +492,16 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
             ),
           ],
         ),
+        buildStatRangeCalendarSection(
+          context,
+          byDay: _byDay,
+          now: w.now,
+          onDaySelected: _selectDay,
+        ),
       ],
       details: <Widget>[
+        StatSectionHeader(title: t.stat_overview_periods),
+        _buildSummaryCards(w),
         buildStatSessionSection(
           context,
           sessions: _sessions,
@@ -383,6 +516,19 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     );
   }
 
+  /// 目标编辑：与阅读统计 tab 同一份表单、同一个持久化目标。
+  Future<void> _editGoals() async {
+    final bool saved = await showStatGoalEditDialog(
+      context,
+      ref.read(appProvider),
+      recentDailyAverage: statRecentDailyAverageChars(
+        _allDaily,
+        _window.lastDayKeys(7),
+      ),
+    );
+    if (saved && mounted) setState(() {});
+  }
+
   void _selectRange(StatRangeSelection selection) =>
       widget.rangeSelection.value = selection;
 
@@ -390,7 +536,8 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   void _selectDay(String dateKey) => widget.rangeSelection.value =
       StatRangeSelection(mode: StatRangeMode.day, anchorKey: dateKey);
 
-  /// 会话行展示名：游戏走库内显示名、书走 override 书名。
+  /// 会话行展示名：与时段明细的 [_entryTitle] 同判据（游戏走库内显示名、书走
+  /// override 书名），只是输入是会话而非事实行。
   String _sessionTitle(StudySession s) {
     if (s.isGame) {
       final GalgameEntry? entry = findGalgameForActivity(
@@ -440,7 +587,8 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   }
 
   /// 会话行的所属合集名（BUG-2417：会话流混排三域，段 title 是条目名——合集里
-  /// 就是分集 / 分册名）。会话恒自带身份（段 mediaKey），不需要按 title 反查。
+  /// 就是分集 / 分册名）。判据与事实行版 [_entryCollection] 同构，输入换成会话；
+  /// 会话恒自带身份（段 mediaKey），不需要 legacy 的按 title 反查。
   String? _sessionCollectionName(StudySession s) {
     if (s.mediaKey.isEmpty) return null;
     if (s.isBook) {
@@ -475,7 +623,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     );
     if (!confirmed || !mounted) return;
     // 2026-10 体验优化：三个域逐个清空可能要一两秒，期间旧数字还挂在页面上、
-    // 按钮还能再点。确认后立即进加载态（设置里的清空项随 _loading 一起禁用），
+    // 按钮还能再点。确认后立即进加载态（动作行按钮随 _loading 一起禁用），
     // 清完重聚合，再给一条完成提示。
     setState(() => _loading = true);
     final FushiDatabase db = ref.read(appProvider).database;
@@ -502,6 +650,96 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   Future<void> _clearSessions(List<StudySession> batch) async {
     await deleteStudySessions(ref.read(appProvider).database, batch);
     if (mounted) await _load();
+  }
+
+  /// 四张跨域时段卡：主值=学习总时长，副行=学习总字数 + 查词 / 制卡 / 收藏词 /
+  /// 收藏句（与阅读、视频两个域 tab 的时段卡逐行同形，只是这里是跨域求和）；
+  /// 点卡 → 完整日面的时段明细 sheet。
+  Widget _buildSummaryCards(StatWindow w) {
+    return buildStatPeriodSummaryGrid(context, <StatPeriodSummary>[
+      _periodSummary(
+        t.stat_today,
+        w.isToday,
+        (StatActivityBuckets b) => b.today,
+      ),
+      _periodSummary(
+        t.stat_this_week,
+        w.inWeek,
+        (StatActivityBuckets b) => b.week,
+      ),
+      _periodSummary(
+        t.stat_this_month,
+        w.inMonth,
+        (StatActivityBuckets b) => b.month,
+      ),
+      _periodSummary(
+        t.stat_all_time,
+        (String _) => true,
+        (StatActivityBuckets b) => b.all,
+      ),
+    ]);
+  }
+
+  /// [pick] = 这张卡取分桶里的哪一格（今日 / 本周 / 本月 / 全部），与 [contains]
+  /// 的窗口一一对应：四个计数面只分一次桶，四张卡各取一格。
+  StatPeriodSummary _periodSummary(
+    String label,
+    bool Function(String dateKey) contains,
+    int Function(StatActivityBuckets) pick,
+  ) {
+    int chars = 0;
+    int ms = 0;
+    for (final StatFact f in _daily) {
+      if (!contains(f.dateKey)) continue;
+      chars += f.chars;
+      ms += f.ms;
+    }
+    // 阅读速度只按阅读域算（[statBookCphOf]）：卡上的时长 / 字数是跨域总和，
+    // 视频只计时不计字、游戏 hook 只计字不计时，混进去的「字/时」谁也解释不了。
+    final String? cph = statBookCphOf(_daily, contains);
+    return StatPeriodSummary(
+      label: label,
+      primaryValue: formatStatTime(ms),
+      onTap: () => unawaited(_showPeriodDetail(label, contains)),
+      lines: <StatSummaryLine>[
+        StatSummaryLine(value: formatStatChars(chars)),
+        StatSummaryLine(
+          label: t.stat_reading_speed,
+          value: cph ?? kStatEmptyValue,
+        ),
+        StatSummaryLine(label: t.stat_lookup, value: '${pick(_lookup)}'),
+        StatSummaryLine(label: t.stat_mined, value: '${pick(_mined)}'),
+        StatSummaryLine(label: t.stat_favorited, value: '${pick(_favorited)}'),
+        StatSummaryLine(
+          label: t.stat_favorited_sentence,
+          value: '${pick(_favoritedSentences)}',
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showPeriodDetail(
+    String label,
+    bool Function(String dateKey) contains,
+  ) async {
+    final FushiDatabase db = ref.read(appProvider).database;
+    final bool deleted = await showStatPeriodDetailSheet(
+      context,
+      periodLabel: label,
+      contains: contains,
+      facts: _daily,
+      resolvers: StatPeriodDetailResolvers(
+        titleOf: _entryTitle,
+        collectionOf: _entryCollection,
+        onEntryTap: _openEntry,
+        onEntryDelete: (StatPeriodEntryTarget t) =>
+            deleteStatPeriodEntry(db, t),
+        ambiguousTitlesOf: (String kind) => kind == kActivityMediaBook
+            ? _ambiguousBookTitles
+            : const <String>{},
+      ),
+    );
+    if (deleted && mounted) await _load();
   }
 
   /// 范围条「明细」→ 所选范围的时段明细 sheet（跨三域，来源分节 + 合集分组 +

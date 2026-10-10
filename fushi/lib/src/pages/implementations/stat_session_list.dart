@@ -47,15 +47,12 @@ typedef StatSessionCollectionOf = String? Function(StudySession session);
 typedef StatSessionCoverOf = ImageProvider? Function(StudySession session);
 
 /// 编辑一次会话：调用页落 `applyStudySessionEdit(db, session, edit)` 再整页重聚合。
-typedef StatSessionEditOf = Future<void> Function(
-  StudySession session,
-  StudySessionEdit edit,
-);
+typedef StatSessionEditOf =
+    Future<void> Function(StudySession session, StudySessionEdit edit);
 
 /// 清除这一批会话：调用页落 `deleteStudySessions(db, sessions)` 再整页重聚合。
-typedef StatSessionClearAll = Future<void> Function(
-  List<StudySession> sessions,
-);
+typedef StatSessionClearAll =
+    Future<void> Function(List<StudySession> sessions);
 
 /// 一行的量纲文案：时长 · 字数 · 页数 · 速度（字/时），为 0 的量纲不显示；全 0
 /// 显示 0 分钟。速度只在有字数且时长够 1 分钟样本时出现（[formatStatCphOf]），
@@ -75,8 +72,8 @@ String formatStatSessionMeta(StudySession s) {
 IconData statSessionIcon(StudySession s) => s.isVideo
     ? Icons.movie
     : s.isGame
-        ? Icons.videogame_asset
-        : Icons.menu_book;
+    ? Icons.videogame_asset
+    : Icons.menu_book;
 
 /// 页面内的「最近会话」区块：标题行（右侧「全部会话」进 sheet）+ 最多 [limit] 行。
 /// [sessions] 已按结束时刻倒序（`StatFacts.sessions` 的契约）。
@@ -92,17 +89,22 @@ Widget buildStatSessionSection(
   int limit = 8,
 }) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-  final List<StudySession> shown =
-      sessions.length <= limit ? sessions : sessions.sublist(0, limit);
-  // 2026-10 统计中心重设计：会话区块是一张与图表卡同形的 [StatSectionCard]。
-  // 2026-10-09（PDF 图 3「最近沉浸」按钮乱了）：卡头行尾此前是「全部会话 (N)」
-  // 文字按钮 + 清除图标塞进一个 Wrap，手机宽下两颗各占一行、把标题挤到中间。
-  // 现在卡头只留一颗图标按钮（清除），「全部会话 (N)」挪到列表下方整行。
-  final Widget? showAll = sessions.length > shown.length
-      ? Align(
-          alignment: AlignmentDirectional.centerEnd,
-          child: FushiTextButton(
-            key: const ValueKey<String>('stat-sessions-show-all'),
+  final List<StudySession> shown = sessions.length <= limit
+      ? sessions
+      : sessions.sublist(0, limit);
+  // 2026-10 统计中心重设计：会话区块是一张与图表卡同形的 [StatSectionCard]
+  // （卡头 = 图标 + 标题 + 「全部」/「清除」动作），不再是裸在页面底色上的列表。
+  return StatSectionCard(
+    key: const ValueKey<String>('stat-sessions-section'),
+    icon: Icons.history,
+    title: t.stat_sessions_recent,
+    // 窄屏时两颗动作按钮自己换行（卡头给行尾的宽度有限）。
+    trailing: Wrap(
+      alignment: WrapAlignment.end,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: <Widget>[
+        if (sessions.length > shown.length)
+          FushiTextButton(
             onPressed: () => unawaited(
               showStatSessionsSheet(
                 context,
@@ -118,39 +120,27 @@ Widget buildStatSessionSection(
             ),
             child: Text('${t.stat_sessions_show_all} (${sessions.length})'),
           ),
-        )
-      : null;
-  return StatSectionCard(
-    key: const ValueKey<String>('stat-sessions-section'),
-    icon: Icons.history,
-    title: t.stat_sessions_recent,
-    // 清的是**这一页拿到的整批**会话（域 tab = 本域全部，总览 = 跨域全部），
-    // 不是屏幕上截断显示的那 8 条——按钮文案与防呆勾选项复述的都是 N。
-    trailing: sessions.isEmpty
-        ? null
-        : _StatSessionsClearAllButton(
+        // 清的是**这一页拿到的整批**会话（域 tab = 本域全部，总览 = 跨域全部），
+        // 不是屏幕上截断显示的那 8 条——按钮文案与防呆勾选项复述的都是 N。
+        if (sessions.isNotEmpty)
+          _StatSessionsClearAllButton(
             sessions: sessions,
             onClearAll: onClearAll,
           ),
+      ],
+    ),
     child: shown.isEmpty
         ? Padding(
             padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap),
             child: Text(t.stat_sessions_empty, style: tokens.type.metadata),
           )
-        : Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              StatSessionList(
-                sessions: shown,
-                titleOf: titleOf,
-                collectionOf: collectionOf,
-                coverOf: coverOf,
-                onDelete: onDelete,
-                onEdit: onEdit,
-              ),
-              if (showAll != null) showAll,
-            ],
+        : StatSessionList(
+            sessions: shown,
+            titleOf: titleOf,
+            collectionOf: collectionOf,
+            coverOf: coverOf,
+            onDelete: onDelete,
+            onEdit: onEdit,
           ),
   );
 }
@@ -167,8 +157,10 @@ class _StatSessionsClearAllButton extends StatelessWidget {
   final StatSessionClearAll onClearAll;
 
   Future<void> _confirmAndClear(BuildContext context) async {
-    final bool confirmed =
-        await confirmClearAllStatSessions(context, sessions.length);
+    final bool confirmed = await confirmClearAllStatSessions(
+      context,
+      sessions.length,
+    );
     if (!confirmed) return;
     await onClearAll(sessions);
   }
@@ -178,11 +170,11 @@ class _StatSessionsClearAllButton extends StatelessWidget {
   // 是最典型的误点来源。`playlist_remove` 读作「把这张列表清空」，范围一眼就对。
   @override
   Widget build(BuildContext context) => FushiIconButtonControl(
-        key: const ValueKey<String>('stat-sessions-clear-all'),
-        tooltip: t.stat_sessions_clear_all,
-        icon: const FushiIcon(Icons.playlist_remove, size: 20),
-        onPressed: () => unawaited(_confirmAndClear(context)),
-      );
+    key: const ValueKey<String>('stat-sessions-clear-all'),
+    tooltip: t.stat_sessions_clear_all,
+    icon: const FushiIcon(Icons.playlist_remove, size: 20),
+    onPressed: () => unawaited(_confirmAndClear(context)),
+  );
 }
 
 /// 会话列表（区块与 sheet 共用）。删除：确认 → [onDelete] → 行从列表移除。
@@ -242,33 +234,33 @@ class _StatSessionListState extends State<StatSessionList> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     final List<Widget> rows = <Widget>[
-        for (final StudySession s in _rows)
-          FushiListItem(
-            key: ValueKey<String>(s.key),
-            density: FushiListDensity.compact,
-            // 2026-10 体验优化：统计各列表行最小高度统一 48（触控目标）。
-            minHeight: kStatRowMinHeight,
-            padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 4),
-            leading: _buildLeading(s, colors),
-            // BUG-2417：媒体名常年比一行宽（长篇番剧标题、带副标题的书名），
-            // 单行 ellipsis 只看得到开头几个字。本区块的父容器（页面 sliver /
-            // sheet 的 Column）高度自由，放到 2 行不会撑破谁。
-            // 带封面槽时文本列窄了一个槽宽（400dp 手机宽下 2 行恰好装不下同一个
-            // 长标题），放宽到 3 行；行高本来就被 2:3 封面撑高，多一行不额外撑破。
-            titleMaxLines: widget.coverOf == null ? 2 : 3,
-            title: _buildTitle(context, s),
-            subtitle: Text(
-              '${formatStatSessionRange(s.startAt, s.endAt)} · '
-              '${formatStatSessionMeta(s)}',
-            ),
-            // 整行 = 编辑入口（见文件头：trailing 放不下第二颗按钮）。
-            onTap: () => unawaited(_edit(s)),
-            trailing: FushiIconButtonControl(
-              tooltip: t.stat_session_delete,
-              icon: const FushiIcon(Icons.delete_outline),
-              onPressed: () => unawaited(_confirmAndDelete(s)),
-            ),
+      for (final StudySession s in _rows)
+        FushiListItem(
+          key: ValueKey<String>(s.key),
+          density: FushiListDensity.compact,
+          // 2026-10 体验优化：统计各列表行最小高度统一 48（触控目标）。
+          minHeight: kStatRowMinHeight,
+          padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 4),
+          leading: _buildLeading(s, colors),
+          // BUG-2417：媒体名常年比一行宽（长篇番剧标题、带副标题的书名），
+          // 单行 ellipsis 只看得到开头几个字。本区块的父容器（页面 sliver /
+          // sheet 的 Column）高度自由，放到 2 行不会撑破谁。
+          // 带封面槽时文本列窄了一个槽宽（400dp 手机宽下 2 行恰好装不下同一个
+          // 长标题），放宽到 3 行；行高本来就被 2:3 封面撑高，多一行不额外撑破。
+          titleMaxLines: widget.coverOf == null ? 2 : 3,
+          title: _buildTitle(context, s),
+          subtitle: Text(
+            '${formatStatSessionRange(s.startAt, s.endAt)} · '
+            '${formatStatSessionMeta(s)}',
           ),
+          // 整行 = 编辑入口（见文件头：trailing 放不下第二颗按钮）。
+          onTap: () => unawaited(_edit(s)),
+          trailing: FushiIconButtonControl(
+            tooltip: t.stat_session_delete,
+            icon: const FushiIcon(Icons.delete_outline),
+            onPressed: () => unawaited(_confirmAndDelete(s)),
+          ),
+        ),
     ];
     final Widget list = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -289,7 +281,11 @@ class _StatSessionListState extends State<StatSessionList> {
   Widget _buildLeading(StudySession s, ColorScheme colors) {
     final StatSessionCoverOf? coverOf = widget.coverOf;
     if (coverOf == null) {
-      return FushiIcon(statSessionIcon(s), size: 18, color: colors.onSurfaceVariant);
+      return FushiIcon(
+        statSessionIcon(s),
+        size: 18,
+        color: colors.onSurfaceVariant,
+      );
     }
     return buildStatCoverSlot(
       context,
@@ -307,10 +303,7 @@ class _StatSessionListState extends State<StatSessionList> {
     if (collection == null) return title;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        buildStatCollectionLabel(context, collection),
-        title,
-      ],
+      children: <Widget>[buildStatCollectionLabel(context, collection), title],
     );
   }
 

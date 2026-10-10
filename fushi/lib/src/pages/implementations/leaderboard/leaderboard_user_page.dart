@@ -12,7 +12,6 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 
-import 'package:fushi/src/leaderboard/leaderboard_features.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_common.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_work_page.dart';
@@ -393,10 +392,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
 
   Widget _buildActions(FushiDesignTokens tokens) {
     final List<Widget> buttons = <Widget>[];
-    // 好友入口暂时隐藏（[LeaderboardFeatures.friendsEnabled]）：关系照常读，只是不出按钮。
-    switch (LeaderboardFeatures.friendsEnabled
-        ? _relation
-        : LeaderboardRelation.self) {
+    switch (_relation) {
       case LeaderboardRelation.self:
         break;
       case LeaderboardRelation.none:

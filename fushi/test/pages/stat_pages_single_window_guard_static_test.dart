@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// `_statWindow`），到下一个本地午夜排一次性 Timer 整页重聚合。
 ///
 /// 守卫：四个页面文件里 `StatWindow(DateTime.now())` 只许出现在字段初值与加载入口
-/// （`_loadFromDatabase` / `_load` / `_loadDashboardDataUnsafe`）里；「过去一周」
+/// （`_loadFromDatabase` / `_load` / `_loadDashboardDataUnsafe`）里；`_buildSummaryCards`
 /// 与目标卡不得现算，且必须挂 `_midnightReload`。
 void main() {
   const Map<String, String> pages = <String, String>{
@@ -20,16 +20,23 @@ void main() {
   };
 
   for (final MapEntry<String, String> e in pages.entries) {
-    test('${e.key}：「过去一周」与聚合同一个窗口，跨午夜重聚合', () {
+    test('${e.key}：时段卡谓词与聚合同一个窗口，跨午夜重聚合', () {
       final String src = File(
         'lib/src/pages/implementations/${e.key}',
       ).readAsStringSync();
-      // 2026-10-09 时段卡删除后，页面上按「今日」切的只剩学习日历顶上的「过去
-      // 一周」：它的 7 个统计日必须出自本轮加载时的 _window。
+      final int cards = src.indexOf('Widget _buildSummaryCards()');
+      expect(cards, greaterThan(0), reason: '${e.key} 缺 _buildSummaryCards');
+      final int cardsEnd = src.indexOf('\n  }\n', cards);
+      final String cardsBody = src.substring(cards, cardsEnd);
       expect(
-        src,
-        contains('weekKeys: _window.lastDayKeys(7),'),
-        reason: 'BUG-2219：「过去一周」必须吃本轮加载时的 _window',
+        cardsBody,
+        isNot(contains('StatWindow(DateTime.now())')),
+        reason: 'BUG-2219：时段卡谓词不得在点击时现算窗口',
+      );
+      expect(
+        cardsBody,
+        contains('final StatWindow w = _window;'),
+        reason: 'BUG-2219：时段卡必须吃本轮加载时的 _window',
       );
       expect(
         src,

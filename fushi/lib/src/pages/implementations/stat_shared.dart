@@ -1,12 +1,9 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
-import 'package:fushi/src/pages/implementations/stat_day_reset_hour_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -322,7 +319,8 @@ class StatSectionCard extends StatelessWidget {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final String? sub = subtitle;
     return Padding(
-      padding: margin ??
+      padding:
+          margin ??
           EdgeInsets.fromLTRB(
             tokens.spacing.card,
             tokens.spacing.card,
@@ -365,9 +363,8 @@ class StatSectionCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // 行尾控件按自然宽贴右（2026-10-09：此前 Flexible 与标题 Expanded
-                  // 平分整行，单颗图标被推到卡片中间，PDF 图 3「按钮乱了」）。
-                  if (trailing != null) trailing!,
+                  // 行尾控件可收窄（窄屏时自身换行 / 省略），不把卡头撑出界。
+                  if (trailing != null) Flexible(child: trailing!),
                 ],
               ),
             ),
@@ -380,7 +377,7 @@ class StatSectionCard extends StatelessWidget {
   }
 }
 
-/// 「所选范围」卡的一条额外指标（[label] + [value]）。
+/// 汇总周期卡的一条次级指标。[label] 为空时只显示值（如阅读卡主字数下的时长）。
 class StatSummaryLine {
   const StatSummaryLine({this.label, required this.value});
 
@@ -388,73 +385,166 @@ class StatSummaryLine {
   final String value;
 }
 
-/// 一个统计 tab 交给「统计设置」的东西（2026-10-09 统计中心精简）：页头不再有
-/// 目标 / 刷新 / 清空 / 重置时刻四颗按钮，后两项收进统计设置弹窗（目标改由首页
-/// 每日目标卡进入、刷新砍掉——切 tab / 回到页面本来就会重聚合）。
-@immutable
-class StatTabSettings {
-  const StatTabSettings({required this.onClearAll, this.enabled = true});
+/// 今天 / 本周 / 本月 / 全部中的一个汇总卡数据。
+class StatPeriodSummary {
+  const StatPeriodSummary({
+    required this.label,
+    required this.primaryValue,
+    this.lines = const <StatSummaryLine>[],
+    this.onTap,
+  });
 
-  /// 「清空统计」：清本 tab 那一域（总览 = 三域一起）。确认弹窗由回调自己弹。
-  final VoidCallback onClearAll;
+  final String label;
+  final String primaryValue;
+  final List<StatSummaryLine> lines;
 
-  /// 加载 / 清空进行中为 false：设置里的清空项随之禁用，防连点。
-  final bool enabled;
+  /// 点卡片 → 时段明细 sheet（阶段 1，统计中心大改造）。null = 纯展示卡。
+  final VoidCallback? onTap;
 }
 
-/// 标记：这个统计 tab 嵌在统计中心的 TabBarView 里（统计中心的页头已让出顶部
-/// padding，tab 不必再套 SafeArea）。
-class StatCenterTabScope extends InheritedWidget {
-  const StatCenterTabScope({required super.child, super.key});
+/// 统计中心各 tab 的页头动作登记处（2026-10-06）：每个 tab 的「目标 / 刷新 /
+/// 清空」不再在页签下方自起一排孤立的图标行，而是登记到这里，由统计中心页头
+/// 右侧的按钮组胶囊画出——只画**当前 tab** 的那一份。
+///
+/// 登记发生在 tab 的 build 期，通知延到帧末（build 期不能让树上更早的页头
+/// 重建）；只有页头本身重建，tab 内容不随之重建，不会形成循环。
+class StatCenterTabActions extends ChangeNotifier {
+  final Map<int, List<Widget>> _byTab = <int, List<Widget>>{};
+  bool _notifyScheduled = false;
+  bool _disposed = false;
 
-  static bool isIn(BuildContext context) =>
-      context.getInheritedWidgetOfExactType<StatCenterTabScope>() != null;
+  /// 第 [index] 个 tab 当前登记的动作；没登记过（还没建出来）为空。
+  List<Widget> actionsFor(int index) => _byTab[index] ?? const <Widget>[];
+
+  /// 第 [index] 个 tab 登记 / 更新自己的动作。
+  void claim(int index, List<Widget> actions) {
+    _byTab[index] = actions;
+    _scheduleNotify();
+  }
+
+  /// 第 [index] 个 tab 撤回登记（被 TabBarView 卸载时）。
+  void release(int index, List<Widget> actions) {
+    if (!identical(_byTab[index], actions)) return;
+    _byTab.remove(index);
+    _scheduleNotify();
+  }
+
+  void _scheduleNotify() {
+    if (_notifyScheduled || _disposed) return;
+    _notifyScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      _notifyScheduled = false;
+      if (!_disposed) notifyListeners();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
 
   @override
-  bool updateShouldNotify(StatCenterTabScope oldWidget) => false;
+  void dispose() {
+    _disposed = true;
+    _byTab.clear();
+    super.dispose();
+  }
+}
+
+/// 告诉统计中心里的某个 tab：它是第几个 tab、动作登记到哪里。
+class StatCenterTabScope extends InheritedWidget {
+  const StatCenterTabScope({
+    required this.registry,
+    required this.index,
+    required super.child,
+    super.key,
+  });
+
+  final StatCenterTabActions registry;
+  final int index;
+
+  static StatCenterTabScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<StatCenterTabScope>();
+
+  @override
+  bool updateShouldNotify(StatCenterTabScope oldWidget) =>
+      registry != oldWidget.registry || index != oldWidget.index;
 }
 
 /// 统计中心 tab 嵌入态外壳（阶段 2）。三域统计页在 TabBarView 里不再套各自的
 /// FushiPageScaffold——那会叠出双 Scaffold / 双顶栏，且每个 scaffold 都往
 /// PageScrollRegistry 注册滚动控制器互踩手柄翻页目标。
 ///
-/// 2026-10-09 起页头不再有任何动作按钮：统计设置（[StatSettingsButton]）挂在各页
-/// 范围条行尾（`StatRangeBar.trailing`）与空数据态顶部，独立页与统计中心 tab
-/// 同一位置，所以这里只剩「不在统计中心时让开顶部 padding」。
-Widget buildEmbeddedStatTab(BuildContext context, Widget body) {
-  if (StatCenterTabScope.isIn(context)) return body;
-  return SafeArea(bottom: false, child: body);
+/// 在统计中心里（有 [StatCenterTabScope]）：[actions] 登记进页头右侧的按钮组
+/// 胶囊，本层只剩内容。不在统计中心（独立嵌入）时回退旧形态：右对齐动作行 +
+/// 内容。
+Widget buildEmbeddedStatTab(
+  BuildContext context,
+  List<Widget> actions,
+  Widget body,
+) {
+  final StatCenterTabScope? scope = StatCenterTabScope.maybeOf(context);
+  if (scope != null) {
+    return _StatTabActionsClaim(
+      registry: scope.registry,
+      index: scope.index,
+      actions: actions,
+      child: body,
+    );
+  }
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  // 动作行不滚动：整体让开顶部 padding（SafeArea 同时把它从正文里移除，滚动
+  // 视图不再重复让位）。
+  return SafeArea(
+    bottom: false,
+    child: Column(
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.only(right: tokens.spacing.card),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Row(mainAxisSize: MainAxisSize.min, children: actions),
+          ),
+        ),
+        Expanded(child: body),
+      ],
+    ),
+  );
 }
 
-/// 统计设置入口：点开 [showStatSettingsDialog]（「今日」重置时刻 + 清空 [settings]
-/// 那一域的统计）。2026-10-09 统计中心精简：页头原来的目标 / 刷新 / 清空 / 重置
-/// 时刻四颗按钮收成这一颗，挂在范围条行尾——页头第一行只留返回键与页签，手机宽
-/// 下「总览 / 阅读 / 观看 / 游戏」才摆得下。弹窗副标题写当前 Profile（v105 统计按
-/// Profile 隔离）。
-class StatSettingsButton extends ConsumerWidget {
-  const StatSettingsButton({required this.settings, super.key});
+/// 把一个 tab 的动作登记进 [StatCenterTabActions]，卸载时撤回。
+class _StatTabActionsClaim extends StatefulWidget {
+  const _StatTabActionsClaim({
+    required this.registry,
+    required this.index,
+    required this.actions,
+    required this.child,
+  });
 
-  final StatTabSettings settings;
+  final StatCenterTabActions registry;
+  final int index;
+  final List<Widget> actions;
+  final Widget child;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return FushiIconButton(
-      key: const ValueKey<String>('stat-settings-button'),
-      icon: FushiIcons.settings,
-      tooltip: t.stat_center_settings,
-      onTap: () => unawaited(
-        showStatSettingsDialog(
-          context,
-          ref.read(appProvider),
-          settings: settings,
-          profileName: ref.read(profileViewModelProvider).activeProfile?.name,
-        ),
-      ),
-    );
+  State<_StatTabActionsClaim> createState() => _StatTabActionsClaimState();
+}
+
+class _StatTabActionsClaimState extends State<_StatTabActionsClaim> {
+  List<Widget>? _claimed;
+
+  @override
+  void dispose() {
+    final List<Widget>? claimed = _claimed;
+    if (claimed != null) widget.registry.release(widget.index, claimed);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _claimed = widget.actions;
+    widget.registry.claim(widget.index, widget.actions);
+    return widget.child;
   }
 }
 
-/// 范围条行尾的两颗按钮：「明细」+ 统计设置（[StatSettingsButton]）。
+/// 范围条行尾保留后续新增的「明细」入口。
 ///
 /// 「明细」打开时段明细 sheet（`showStatPeriodDetailSheet`：来源分节 → 合集分组
 /// → 按作品时长倒序），时段 = 范围条当前所选区间（日 / 自然周 / 月 / 年 / 全部 /
@@ -462,13 +552,7 @@ class StatSettingsButton extends ConsumerWidget {
 /// 「时段明细」卡片后统计中心里没有别处能看按作品的明细（首页热力图点日仍有），
 /// 入口挂在范围条上而不是再加一张卡：明细本来就是「所选范围」的下钻。
 class StatRangeActions extends StatelessWidget {
-  const StatRangeActions({
-    required this.settings,
-    required this.onOpenDetail,
-    super.key,
-  });
-
-  final StatTabSettings settings;
+  const StatRangeActions({required this.onOpenDetail, super.key});
 
   /// 打开所选范围的时段明细 sheet。
   final VoidCallback onOpenDetail;
@@ -484,17 +568,18 @@ class StatRangeActions extends StatelessWidget {
           tooltip: t.stat_range_detail_open,
           onTap: onOpenDetail,
         ),
-        StatSettingsButton(settings: settings),
       ],
     );
   }
 }
 
-/// 空数据态顶部的统计设置行（范围条不出现时，重置时刻 / 清空仍要够得着）。
-Widget buildStatSettingsHeader(StatTabSettings settings) => Align(
-  alignment: AlignmentDirectional.centerEnd,
-  child: StatSettingsButton(settings: settings),
-);
+/// 汇总卡两列布局的最小列宽（dp）。低于此宽度时「1234 小时 56 分钟」这类长主值
+/// 会被 [FittedBox] 压到读不出来，不如退回单列。
+const double kStatPeriodSummaryMinColumnWidth = 144;
+
+/// 列宽低于此值时卡片切紧凑内边距。手机两列每列只有 ~155dp，[FushiCard] 默认的
+/// 20dp 四边内边距会吃掉四成可用宽度，主值被压得比单列还小。
+const double kStatPeriodSummaryCompactColumnWidth = 200;
 
 /// 统计页滚动内容的收尾留白：原有的两倍卡片间距 + 底部安全区（BUG-2440）。
 ///
@@ -510,6 +595,274 @@ Widget buildStatTailSliver(BuildContext context) {
       bottom: tokens.spacing.card * 2 + bottomSafeInsetOf(context),
     ),
   );
+}
+
+/// 统计页共用的四周期汇总卡网格：能放下两列就 2×2，放不下才单列。
+///
+/// BUG：旧实现按「可用宽度 ≥ 380」判两列。这层外面还有 [FushiSpacingTokens.card]
+/// （20dp）的左右内边距，360dp 宽的手机到这里只剩 320dp，连 412dp 的大屏手机也只
+/// 有 372dp——阈值结构上高于任何手机，所以手机端永远单列。改成按**实际算出的列宽**
+/// 判：列宽够放一张卡就两列，跟屏幕宽度阈值脱钩。
+Widget buildStatPeriodSummaryGrid(
+  BuildContext context,
+  List<StatPeriodSummary> summaries,
+) {
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  final double wideGap = tokens.spacing.gap + tokens.spacing.gap / 2;
+  final double compactGap = tokens.spacing.gap;
+
+  return Padding(
+    padding: EdgeInsets.all(tokens.spacing.card),
+    child: LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final StatPeriodSummaryLayout layout = resolveStatPeriodSummaryLayout(
+          maxWidth: constraints.maxWidth,
+          wideGap: wideGap,
+          compactGap: compactGap,
+        );
+        final List<Widget> panels = summaries
+            .map(
+              (StatPeriodSummary summary) => _StatPeriodSummaryCard(
+                summary: summary,
+                compact: layout.compact,
+                width: layout.columnWidth ?? constraints.maxWidth,
+              ),
+            )
+            .toList();
+        if (layout.columnWidth == null) {
+          return Column(
+            children: <Widget>[
+              for (int i = 0; i < panels.length; i++) ...<Widget>[
+                if (i > 0) SizedBox(height: layout.gap),
+                panels[i],
+              ],
+            ],
+          );
+        }
+        // 2026-10 体验优化：两列时按行组装、行内 IntrinsicHeight + stretch，
+        // 同一排两张卡等高（旧 Wrap 各卡按自身内容高，同排高低不齐）。
+        return Column(
+          children: <Widget>[
+            for (int i = 0; i < panels.length; i += 2) ...<Widget>[
+              if (i > 0) SizedBox(height: layout.gap),
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    SizedBox(width: layout.columnWidth, child: panels[i]),
+                    SizedBox(width: layout.gap),
+                    if (i + 1 < panels.length)
+                      SizedBox(width: layout.columnWidth, child: panels[i + 1]),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    ),
+  );
+}
+
+/// [buildStatPeriodSummaryGrid] 解出的布局：列宽为 null 表示单列。
+class StatPeriodSummaryLayout {
+  const StatPeriodSummaryLayout({
+    required this.columnWidth,
+    required this.gap,
+    required this.compact,
+  });
+
+  /// 两列时每列的宽度；null = 放不下两列，走单列。
+  final double? columnWidth;
+
+  /// 卡片之间的间距（两列时同时用于横纵）。
+  final double gap;
+
+  /// 列窄到需要卡片用紧凑内边距。
+  final bool compact;
+}
+
+/// 纯函数：按可用宽度解出汇总卡网格布局，方便直接测宽度→列数的判据。
+///
+/// 先按 [wideGap] 试两列；差一点点放不下时改用 [compactGap] 再试一次（挤出的
+/// 几 dp 常常正好够 360dp 手机排下两列），仍不够才退单列。单列时间距一律用
+/// [wideGap]，纵向不缺空间。
+StatPeriodSummaryLayout resolveStatPeriodSummaryLayout({
+  required double maxWidth,
+  required double wideGap,
+  required double compactGap,
+}) {
+  // 无界宽度（横向滚动容器里）算不出列宽，只能单列。
+  if (!maxWidth.isFinite) {
+    return StatPeriodSummaryLayout(
+      columnWidth: null,
+      gap: wideGap,
+      compact: false,
+    );
+  }
+  for (final double gap in <double>[wideGap, compactGap]) {
+    final double columnWidth = (maxWidth - gap) / 2;
+    if (columnWidth >= kStatPeriodSummaryMinColumnWidth) {
+      return StatPeriodSummaryLayout(
+        columnWidth: columnWidth,
+        gap: gap,
+        compact: columnWidth < kStatPeriodSummaryCompactColumnWidth,
+      );
+    }
+  }
+  return StatPeriodSummaryLayout(
+    columnWidth: null,
+    gap: wideGap,
+    compact: false,
+  );
+}
+
+class _StatPeriodSummaryCard extends StatelessWidget {
+  const _StatPeriodSummaryCard({
+    required this.summary,
+    this.compact = false,
+    this.width,
+  });
+
+  final StatPeriodSummary summary;
+
+  /// 卡片外宽（网格算出的列宽）；用来给次级指标的值列封顶，见
+  /// [_StatSummaryLineRow.valueMaxWidth]。null / 无界时不封顶。
+  final double? width;
+
+  /// 手机两列下每列只有 ~155dp，卡片默认 20dp 内边距会把主值挤到读不出来；
+  /// 紧凑态改用 [FushiSpacingTokens.rowHorizontal]（16dp），多让出 8dp 正文宽。
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final TextStyle? subStyle = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant);
+    final double padding = compact
+        ? tokens.spacing.rowHorizontal
+        : tokens.spacing.card;
+    final double? cardWidth = width;
+    // 值列最多占内容宽的 60%，超出等比缩小——同排卡外面套了 IntrinsicHeight，
+    // 这里不能用 LayoutBuilder 现量宽度，只能由网格把列宽传进来。
+    final double? valueMaxWidth = cardWidth != null && cardWidth.isFinite
+        ? (cardWidth - padding * 2) * 0.6
+        : null;
+    // 2026-10 统计中心重设计：可点卡直接走 FushiCard.onTap——两套设计系统的
+    // 按压下沉 / 焦点环 / Enter 激活一处给齐（原 InkWell 外包没有按压反馈）。
+    return FushiCard(
+      padding: EdgeInsets.all(padding),
+      onTap: summary.onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  summary.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              // 可点卡给一个去向提示（点开 = 该时段按作品的明细）。
+              if (summary.onTap != null)
+                FushiIcon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+            ],
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              summary.primaryValue,
+              maxLines: 1,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          // 2026-10 体验优化：「标签 Expanded + 右对齐值 maxLines:1」，窄列下
+          // 标签省略、数值始终完整右对齐，四张卡的数值列竖向对齐可比。
+          for (final StatSummaryLine line in summary.lines) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap / 2),
+            _StatSummaryLineRow(
+              line: line,
+              style: subStyle,
+              valueMaxWidth: valueMaxWidth,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 汇总卡的一行次级指标（2026-10 体验优化）：有标签时标签占剩余宽度可省略、
+/// 值右对齐单行；无标签（如主值下的字数）只显示值。
+class _StatSummaryLineRow extends StatelessWidget {
+  const _StatSummaryLineRow({
+    required this.line,
+    required this.style,
+    this.valueMaxWidth,
+  });
+
+  final StatSummaryLine line;
+  final TextStyle? style;
+
+  /// 值列宽度上限：超出时等比缩小（不换行、不撑破卡片）。null = 不封顶。
+  final double? valueMaxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final String? label = line.label;
+    if (label == null) {
+      return Text(
+        line.value,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: style,
+      );
+    }
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          ),
+        ),
+        const SizedBox(width: 8),
+        ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: valueMaxWidth ?? double.infinity,
+          ),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerEnd,
+            child: Text(
+              line.value,
+              maxLines: 1,
+              textAlign: TextAlign.end,
+              style: style,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// 时长柱状图（四个统计 tab 共用）。[title] 缺省为「近 30 天」；范围图表经
@@ -644,8 +997,10 @@ List<StatIdentityGroup<T>> groupStatRowsByIdentity<T>(
       continue;
     }
     byIdentity
-        .putIfAbsent(identity,
-            () => StatIdentityGroup<T>(identity: identity, title: titleOf(row)))
+        .putIfAbsent(
+          identity,
+          () => StatIdentityGroup<T>(identity: identity, title: titleOf(row)),
+        )
         .rows
         .add(row);
   }
@@ -681,15 +1036,14 @@ List<StatIdentityGroup<T>> groupStatRowsByIdentity<T>(
     } else {
       orphanGroups
           .putIfAbsent(
-              title, () => StatIdentityGroup<T>(identity: null, title: title))
+            title,
+            () => StatIdentityGroup<T>(identity: null, title: title),
+          )
           .rows
           .add(row);
     }
   }
-  return <StatIdentityGroup<T>>[
-    ...byIdentity.values,
-    ...orphanGroups.values,
-  ];
+  return <StatIdentityGroup<T>>[...byIdentity.values, ...orphanGroups.values];
 }
 
 /// 统一事实面行的按身份分组（BUG-2216）：阅读统计页「按书」与时段明细 sheet 都走
@@ -715,7 +1069,8 @@ List<StatIdentityGroup<StatFact>> groupStatFactsByIdentity(
 /// 聚合。视频域标题可重复，必须走 [groupStatRowsByIdentity]，且观看/计数/收藏三个
 /// 行宇宙必须**同一次**分组（见 video_stat_aggregates 的 computeVideoStats）。
 Map<String, ({int lookups, int mines})> aggregateStatCountersByTitle(
-    List<LookupMiningCounterRow> rows) {
+  List<LookupMiningCounterRow> rows,
+) {
   final Map<String, ({int lookups, int mines})> out =
       <String, ({int lookups, int mines})>{};
   for (final LookupMiningCounterRow r in rows) {
@@ -757,8 +1112,11 @@ String? statCollectionName(
   required Map<int, String> collectionNamesById,
 }) {
   return (
-    collectionName:
-        statCollectionName(entryKey, primaryByEntry, collectionNamesById),
+    collectionName: statCollectionName(
+      entryKey,
+      primaryByEntry,
+      collectionNamesById,
+    ),
     title: rawTitle,
   );
 }
@@ -772,18 +1130,18 @@ String collectionQualifiedTitle({
   required Map<String, int> primaryByEntry,
   required Map<int, String> collectionNamesById,
 }) {
-  final String? name =
-      statCollectionName(entryKey, primaryByEntry, collectionNamesById);
+  final String? name = statCollectionName(
+    entryKey,
+    primaryByEntry,
+    collectionNamesById,
+  );
   if (name == null || name.isEmpty) return rawTitle;
   return '$name - $rawTitle';
 }
 
 /// 统计页 per-book / per-video tile 的「所属合集」小标签（文件夹图标 + 合集名），
 /// 阅读统计与视频统计共用（同一视觉）。合集名为 null 时调用方不渲染本 widget。
-Widget buildStatCollectionLabel(
-  BuildContext context,
-  String collectionName,
-) {
+Widget buildStatCollectionLabel(BuildContext context, String collectionName) {
   final ColorScheme colorScheme = Theme.of(context).colorScheme;
   return Row(
     mainAxisSize: MainAxisSize.min,
@@ -799,9 +1157,9 @@ Widget buildStatCollectionLabel(
           collectionName,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
         ),
       ),
     ],
@@ -925,8 +1283,7 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
     text: _initialText(widget.initialWeeklyChars),
   );
 
-  static String _initialText(int chars) =>
-      chars <= 0 ? '' : chars.toString();
+  static String _initialText(int chars) => chars <= 0 ? '' : chars.toString();
 
   static int _parse(TextEditingController c) {
     final int value = int.tryParse(c.text.trim()) ?? 0;
@@ -981,18 +1338,18 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
       theme.colorScheme.surface,
     );
     InputDecoration filled({required String label}) => InputDecoration(
-          labelText: label,
-          suffixText: t.stat_goal_unit_chars,
-          suffixStyle: theme.textTheme.titleMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          filled: true,
-          fillColor: fill,
-          border: OutlineInputBorder(
-            borderRadius: tokens.radii.cardRadius,
-            borderSide: BorderSide.none,
-          ),
-        );
+      labelText: label,
+      suffixText: t.stat_goal_unit_chars,
+      suffixStyle: theme.textTheme.titleMedium?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      filled: true,
+      fillColor: fill,
+      border: OutlineInputBorder(
+        borderRadius: tokens.radii.cardRadius,
+        borderSide: BorderSide.none,
+      ),
+    );
     return FushiAlertDialog(
       icon: const FushiDialogHeroIcon(
         icon: FushiIcons.flag,
@@ -1011,8 +1368,7 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
                 key: const ValueKey<String>('stat-goal-daily-field'),
                 controller: _daily,
                 keyboardType: TextInputType.number,
-                style: (theme.textTheme.headlineSmall ??
-                        tokens.type.listTitle)
+                style: (theme.textTheme.headlineSmall ?? tokens.type.listTitle)
                     .copyWith(fontWeight: FontWeight.w700),
                 decoration: filled(label: t.stat_goal_daily),
               ),
@@ -1071,9 +1427,10 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
         ),
         FushiFilledButton(
           key: const ValueKey<String>('stat-goal-save'),
-          onPressed: () => Navigator.of(context).pop<StatGoalEditResult>(
-            (daily: _parse(_daily), weekly: _parse(_weekly)),
-          ),
+          onPressed: () => Navigator.of(context).pop<StatGoalEditResult>((
+            daily: _parse(_daily),
+            weekly: _parse(_weekly),
+          )),
           child: Text(t.dialog_save),
         ),
       ],
@@ -1093,8 +1450,7 @@ String formatStatChars(int chars) =>
 /// 阅读速度外显：四舍五入到整数字/小时，套 i18n 单位文案（`N 字/时`）。时段卡、
 /// 会话行、按书行都经这一处（用户 2026-09-12：统计中心顶部方框与每个会话都要
 /// 显示「每小时多少字」）。
-String formatStatCph(double cph) =>
-    t.stat_speed_cph(n: cph.round().toString());
+String formatStatCph(double cph) => t.stat_speed_cph(n: cph.round().toString());
 
 /// 一组事实行 / 一次会话的阅读速度外显：经 [computeCph]（最小样本 1 分钟，
 /// BUG-1107）算不出有效速度时返回 null，调用方不显示该行而不是显示 0。
@@ -1292,11 +1648,11 @@ Color statHourlyBandColor(StatHourlyFormatBand band, StatChartColors colors) =>
 
 /// 分带图例文案。
 String statHourlyBandLabel(StatHourlyFormatBand band) => switch (band) {
-      StatHourlyFormatBand.epub => t.stat_hourly_band_epub,
-      StatHourlyFormatBand.pdf => t.stat_hourly_band_pdf,
-      StatHourlyFormatBand.manga => t.stat_hourly_band_manga,
-      StatHourlyFormatBand.unattributed => t.stat_hourly_band_unattributed,
-    };
+  StatHourlyFormatBand.epub => t.stat_hourly_band_epub,
+  StatHourlyFormatBand.pdf => t.stat_hourly_band_pdf,
+  StatHourlyFormatBand.manga => t.stat_hourly_band_manga,
+  StatHourlyFormatBand.unattributed => t.stat_hourly_band_unattributed,
+};
 
 /// 该画哪些图例项。
 ///
@@ -1304,7 +1660,8 @@ String statHourlyBandLabel(StatHourlyFormatBand band) => switch (band) {
 /// 只是噪音。但只要含未区分历史就必须画，哪怕它是唯一一带：没有图例的中性柱子会被
 /// 当成某一类的读书时长，那正是这次要消除的误读。
 List<StatHourlyFormatBand> statHourlyLegendBands(
-    List<StatHourlyFormatBand> activeBands) {
+  List<StatHourlyFormatBand> activeBands,
+) {
   if (activeBands.length <= 1 &&
       !activeBands.contains(StatHourlyFormatBand.unattributed)) {
     return const <StatHourlyFormatBand>[];

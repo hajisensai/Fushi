@@ -11,11 +11,9 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 
-import 'package:fushi/src/leaderboard/leaderboard_features.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_store.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_common.dart';
-import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_sync_panel.dart';
 import 'package:fushi/utils.dart';
 
 /// 可见性线上值。
@@ -23,10 +21,7 @@ const String kLeaderboardVisibilityPublic = 'public';
 const String kLeaderboardVisibilityFriends = 'friends';
 
 class LeaderboardAccountPage extends ConsumerStatefulWidget {
-  const LeaderboardAccountPage({this.syncError, super.key});
-
-  /// 排行榜页后台同步已出的错，交给同步卡先显示。
-  final Object? syncError;
+  const LeaderboardAccountPage({super.key});
 
   @override
   ConsumerState<LeaderboardAccountPage> createState() =>
@@ -283,15 +278,15 @@ class _LeaderboardAccountPageState
           ),
         ];
       }
-      return <Widget>[if (_devicesLoading) const FushiLinearProgressIndicator()];
+      return <Widget>[
+        if (_devicesLoading) const FushiLinearProgressIndicator(),
+      ];
     }
     return <Widget>[
       for (final LeaderboardDevice d in devices)
         FushiListItem(
           key: ValueKey<String>('leaderboard-device-${d.keyId}'),
-          leading: FushiIcon(
-            d.current ? FushiIcons.phone : FushiIcons.devices,
-          ),
+          leading: FushiIcon(d.current ? FushiIcons.phone : FushiIcons.devices),
           title: Text(
             d.current
                 ? '${d.keyId} · ${t.leaderboard_account_device_current}'
@@ -368,7 +363,9 @@ class _LeaderboardAccountPageState
                         ),
                       ),
                       FushiOutlinedButton.icon(
-                        onPressed: _busy ? null : () => unawaited(_pickAvatar()),
+                        onPressed: _busy
+                            ? null
+                            : () => unawaited(_pickAvatar()),
                         icon: const FushiIcon(FushiIcons.image),
                         label: Text(t.leaderboard_account_avatar),
                       ),
@@ -384,7 +381,9 @@ class _LeaderboardAccountPageState
                   Align(
                     alignment: Alignment.centerLeft,
                     child: FushiFilledButton.tonal(
-                      onPressed: _busy ? null : () => unawaited(_saveNickname()),
+                      onPressed: _busy
+                          ? null
+                          : () => unawaited(_saveNickname()),
                       child: Text(t.leaderboard_account_save_nickname),
                     ),
                   ),
@@ -395,12 +394,9 @@ class _LeaderboardAccountPageState
             Padding(
               padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
               child: LeaderboardChoiceRow<String>(
-                // 好友功能隐藏期间不提供「仅好友可见」（存量值不改，已选的仍显示出来）。
-                values: <String>[
+                values: const <String>[
                   kLeaderboardVisibilityPublic,
-                  if (LeaderboardFeatures.friendsEnabled ||
-                      visibility == kLeaderboardVisibilityFriends)
-                    kLeaderboardVisibilityFriends,
+                  kLeaderboardVisibilityFriends,
                 ],
                 selected: visibility,
                 labelOf: (String v) => v == kLeaderboardVisibilityPublic
@@ -447,8 +443,6 @@ class _LeaderboardAccountPageState
                   ? null
                   : () => unawaited(_setUpload(!account.uploadEnabled)),
             ),
-            LeaderboardSectionTitle(t.leaderboard_account_sync),
-            LeaderboardSyncPanel(initialError: widget.syncError),
             LeaderboardSectionTitle(t.leaderboard_account_devices),
             ..._deviceRows(),
             LeaderboardSectionTitle(t.leaderboard_account_recovery),

@@ -78,9 +78,8 @@ void main() {
       'lib/src/pages/implementations/dictionary_dialog_page.dart',
       // 2026-10 字体库重做：样张卡网格 / 列表（含拖拽重排两种形态）。
       'lib/src/pages/implementations/custom_fonts_page.dart',
-      // 2026-10-09 排行榜精简：总字数卡 / 筛选 / 榜单行与大西瓜的球。
+      // 排行榜筛选与榜单行。
       'lib/src/pages/implementations/leaderboard/leaderboard_tab.dart',
-      'lib/src/pages/implementations/leaderboard/leaderboard_watermelon_page.dart',
     ]) {
       final String src = read(path);
       expect(src, contains('FushiEntranceScope('), reason: path);

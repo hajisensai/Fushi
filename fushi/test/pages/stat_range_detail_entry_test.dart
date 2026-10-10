@@ -64,7 +64,6 @@ Future<void> _pumpBar(
                   range: range,
                   onChanged: (_) {},
                   trailing: StatRangeActions(
-                    settings: StatTabSettings(onClearAll: () {}),
                     onOpenDetail: () => unawaited(
                       showStatPeriodDetailSheet(
                         context,
@@ -91,7 +90,7 @@ Future<void> _pumpBar(
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
-  testWidgets('范围条行尾：明细按钮紧挨齿轮，手机宽同一行不溢出', (WidgetTester tester) async {
+  testWidgets('恢复页头后仍保留范围明细入口，手机宽不溢出', (WidgetTester tester) async {
     await _pumpBar(tester, const StatRangeSelection(mode: StatRangeMode.week));
     final Finder detail = find.byKey(
       const ValueKey<String>('stat-range-detail-button'),
@@ -100,9 +99,7 @@ void main() {
       const ValueKey<String>('stat-settings-button'),
     );
     expect(detail, findsOneWidget);
-    expect(gear, findsOneWidget);
-    expect(tester.getCenter(detail).dy, tester.getCenter(gear).dy);
-    expect(tester.getCenter(detail).dx, lessThan(tester.getCenter(gear).dx));
+    expect(gear, findsNothing);
     expect(tester.takeException(), isNull);
   });
 
