@@ -832,7 +832,7 @@ class FushiExpansionTile extends StatelessWidget {
     const ShapeBorder md3Shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.all(Radius.circular(kFushiMd3RowRadius)),
     );
-    return ExpansionTile(
+    final Widget tile = ExpansionTile(
       leading: leading,
       title: title,
       subtitle: subtitle,
@@ -873,7 +873,17 @@ class FushiExpansionTile extends StatelessWidget {
       statesController: statesController,
       children: children,
     );
+    // Expansible 把展开态存进 PageStorage，存储标识 = 到 PageStorage 为止沿途的
+    // PageStorageKey。调用方没给自己的键时，它与带 PageStorageKey 的祖先滚动
+    // 视图算出同一个标识：滚动写入的 double 被这里当 bool? 读、展开写入的 bool
+    // 被滚动恢复当 double? 读，两边都抛类型转换异常（release 下是整片灰色
+    // ErrorWidget，视频设置面板「字幕」分类）。补一层本组件专属的键把槽分开。
+    if (key is PageStorageKey) return tile;
+    return KeyedSubtree(key: _expansionStorageKey, child: tile);
   }
+
+  static const PageStorageKey<String> _expansionStorageKey =
+      PageStorageKey<String>('fushi-expansion-tile');
 }
 
 class _GlassExpansionTile extends StatefulWidget {
@@ -1542,7 +1552,9 @@ BorderRadius fushiGroupedItemRadius(
   int count,
 ) {
   if (!isGlassDesign(context)) return settingsSegmentRadius(index, count);
-  final Radius outer = Radius.circular(FushiAppleMetrics.of(context).groupRadius);
+  final Radius outer = Radius.circular(
+    FushiAppleMetrics.of(context).groupRadius,
+  );
   return BorderRadius.vertical(
     top: index <= 0 ? outer : Radius.zero,
     bottom: index >= count - 1 ? outer : Radius.zero,
