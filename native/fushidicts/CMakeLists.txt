@@ -83,6 +83,7 @@ add_library(fushidicts STATIC
     fushidicts_src/text_processor/text_processor.cpp
     fushidicts_src/text_processor/kanji_standardization_data.cpp
     fushidicts_src/scan/word_scan.cpp
+    fushidicts_src/scan/mixed_orthography.cpp
     fushidicts_src/deinflector.cpp
     fushidicts_src/query.cpp
     fushidicts_src/lookup.cpp
