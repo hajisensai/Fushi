@@ -694,6 +694,12 @@ class _GlassSheetBody extends StatelessWidget {
   }
 }
 
+/// [adaptiveSegmentedButton] 在当前上下文里是否渲染 MD3 胶囊分段
+/// （[FushiPillSegmentedButton]）。分段条估宽（`SegmentedStripMetrics.of`）按同一
+/// 判据选几何，两处不得各写一份分支条件。
+bool adaptiveSegmentedUsesPill(BuildContext context) =>
+    !isGlassDesign(context) && !isCupertinoPlatform(context);
+
 Widget adaptiveSegmentedButton<T extends Object>({
   required BuildContext context,
   required List<ButtonSegment<T>> segments,
@@ -735,6 +741,7 @@ Widget adaptiveSegmentedButton<T extends Object>({
   }
   // Material（M3E）：胶囊轨道 + 选中胶囊，与浏览页二级页签同一形态
   // （2026-10-09 用户「深色模式三图标分段与浏览页胶囊页签风格不一致」）。
+  assert(adaptiveSegmentedUsesPill(context));
   return FushiPillSegmentedButton<T>(
     segments: segments,
     selected: selected,
