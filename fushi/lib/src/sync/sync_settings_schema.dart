@@ -1010,8 +1010,11 @@ SettingsItem buildHiddenRemoteBooksItem() {
       ctx,
       (_) => HiddenRemoteBooksPage(
         prefs: ctx.appModel.prefsRepo,
-        remoteClientLoader: () =>
-            resolveShelfRemoteBookClient(ctx.appModel.database),
+        // 只读核对：不在远端建同步根（BUG-3245）。
+        remoteClientLoader: () => resolveShelfRemoteBookClient(
+          ctx.appModel.database,
+          createRootFolder: false,
+        ),
         sourceHostResolver: (RemoteBookClient client) =>
             remoteBookSourceHost(ctx.appModel.database, client),
       ),
