@@ -163,6 +163,60 @@ void main() {
     });
   });
 
+  // BUG-3246：首页「继续」等直接开书（没点名章）以前用 currentChapterIndex（最后一次
+  // 选的章），与作品页「继续阅读」的偏好判据分叉——读完第 2 话退出，作品页继续去第 3
+  // 话、直接开书却回到第 2 话第 1 页。
+  group('阅读器开书落到哪一章', () {
+    final OnlineMangaLibraryEntry selected2 = entry.copyWith(
+      currentChapterIndex: 1,
+    );
+    final Map<String, MangaChapterStateRow> finished2 =
+        <String, MangaChapterStateRow>{
+          '/c/1': state('/c/1', updatedAt: 1, lastPage: 19, readAt: 1),
+          '/c/2': state('/c/2', updatedAt: 2, lastPage: 19, readAt: 2),
+        };
+
+    test('没点名：与作品页「继续阅读」同一判据，不看最后一次选的章', () {
+      for (final MangaResumeTarget target in MangaResumeTarget.values) {
+        expect(
+          mangaReaderOpenChapterIndex(selected2, finished2, target: target),
+          continueMangaChapterIndex(selected2, finished2, target: target),
+          reason: target.name,
+        );
+        expect(
+          mangaReaderOpenChapterIndex(selected2, finished2, target: target),
+          0,
+          reason: '${target.name}：第 2 话读完了，前进到第 3 话',
+        );
+      }
+    });
+
+    test('点名了（作品页点某一章）：就是那一章，哪怕它读完过', () {
+      for (final MangaResumeTarget target in MangaResumeTarget.values) {
+        expect(
+          mangaReaderOpenChapterIndex(
+            selected2,
+            finished2,
+            requested: 2,
+            target: target,
+          ),
+          2,
+        );
+      }
+    });
+
+    test('点名的下标越界：退回偏好判据', () {
+      expect(
+        mangaReaderOpenChapterIndex(selected2, finished2, requested: 9),
+        0,
+      );
+      expect(
+        mangaReaderOpenChapterIndex(selected2, finished2, requested: -1),
+        0,
+      );
+    });
+  });
+
   group('一章从第几页开始', () {
     test('没有进度 / 没翻过页：第 1 页', () {
       for (final MangaResumeTarget target in MangaResumeTarget.values) {
