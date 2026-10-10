@@ -142,6 +142,32 @@ bool shouldOfferSubtitleSourceChooser({
 }) =>
     asrSupported && hasAudio;
 
+/// 「只选了音频、没有书（EPUB 等）也没有字幕」时导入对话框给的提醒。
+enum AudioOnlyImportHint {
+  /// 不是只有音频的情形，不提醒。
+  none,
+
+  /// 本机能转录：直接转录音频生成字幕，导入时据此自动生成书籍。
+  transcribeToBook,
+
+  /// 本机不能转录：选一个字幕文件，导入时据此自动生成书籍。
+  pickSubtitleToBook,
+}
+
+/// 纯函数：书导入对话框要不要提醒「没有书也能导入——转录 / 选字幕即可生成书籍」。
+/// 只在已选音频、既没选书也没选字幕时提醒；能不能转录决定给哪条出路。
+AudioOnlyImportHint audioOnlyImportHint({
+  required bool hasBook,
+  required bool hasSubtitle,
+  required bool hasAudio,
+  required bool asrSupported,
+}) {
+  if (hasBook || hasSubtitle || !hasAudio) return AudioOnlyImportHint.none;
+  return asrSupported
+      ? AudioOnlyImportHint.transcribeToBook
+      : AudioOnlyImportHint.pickSubtitleToBook;
+}
+
 /// 弹「字幕来源」选择：选现成文件 / 设备端转录。关闭返回 null。
 ///
 /// 放在这里而不是各导入对话框里：书导入（字幕行）与附加有声书（对齐文件行）两个

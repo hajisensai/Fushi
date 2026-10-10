@@ -7028,5 +7028,9 @@
   "mihon_extension_uninstall_confirm_multi": "The extension “$name” provides $count sources. Uninstalling it removes all of them:",
   "mihon_extension_package_label": "Package: $package",
   "extension_nsfw_badge": "NSFW",
-  "mihon_extension_min_downloads_any": "不限"
+  "mihon_extension_min_downloads_any": "不限",
+  "book_import_no_book_notice_title": "沒有選擇書籍",
+  "book_import_no_book_transcribe_hint": "沒有書也能匯入：直接用裝置端轉錄把音訊轉成字幕，匯入時會據此自動生成一本書。",
+  "book_import_no_book_subtitle_hint": "沒有書也能匯入：為這段音訊選一個字幕檔，匯入時會據此自動生成一本書。",
+  "book_import_no_book_transcribe_action": "轉錄並生成書籍"
 }

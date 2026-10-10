@@ -359,6 +359,10 @@ class _BookImportDialogState extends State<BookImportDialog>
               ],
             ),
           ),
+          if (_audioOnlyHint != AudioOnlyImportHint.none) ...[
+            SizedBox(height: tokens.spacing.gap),
+            stagger(_audioOnlyNotice(_audioOnlyHint)),
+          ],
           if (isDesktopPlatform && _audioPaths.isNotEmpty) ...[
             SizedBox(height: tokens.spacing.gap),
             stagger(
@@ -430,6 +434,38 @@ class _BookImportDialogState extends State<BookImportDialog>
           ],
         ],
       ),
+    );
+  }
+
+  /// 只选了音频（没书、没字幕）时的出路：本机能转录就提醒直接转录生成书籍，
+  /// 否则提醒选字幕文件生成书籍。此前这一步只有点「导入」后的一句报错。
+  AudioOnlyImportHint get _audioOnlyHint => audioOnlyImportHint(
+        hasBook: _epubPath != null,
+        hasSubtitle: _hasSubtitles,
+        hasAudio: _audioPaths.isNotEmpty,
+        asrSupported: isAsrSupported,
+      );
+
+  Widget _audioOnlyNotice(AudioOnlyImportHint hint) {
+    final bool transcribe = hint == AudioOnlyImportHint.transcribeToBook;
+    return FushiInlineNotice(
+      title: t.book_import_no_book_notice_title,
+      message: transcribe
+          ? t.book_import_no_book_transcribe_hint
+          : t.book_import_no_book_subtitle_hint,
+      icon: transcribe ? FushiIcons.voice : FushiIcons.subtitles,
+      actions: <Widget>[
+        FushiTextButton(
+          onPressed: importing
+              ? null
+              : (transcribe ? _transcribeSubtitleFromAudio : _pickSubtitle),
+          child: Text(
+            transcribe
+                ? t.book_import_no_book_transcribe_action
+                : t.srt_import_pick_subtitle_files,
+          ),
+        ),
+      ],
     );
   }
 
@@ -960,6 +996,21 @@ class _BookImportDialogState extends State<BookImportDialog>
   }
 
   Future<void> _doImport() async {
+    final AudioOnlyImportHint audioOnly = _audioOnlyHint;
+    if (audioOnly == AudioOnlyImportHint.transcribeToBook) {
+      // 只有音频：没有书也能导入——转录出字幕后接着走字幕书路径自动生成书籍，
+      // 不再停在「请至少选择书籍或字幕文件」（与下方 EPUB+音频 的 BUG-2266 同口径）。
+      await _transcribeSubtitleFromAudio();
+      if (!mounted || !_hasSubtitles) return;
+      return _doImport();
+    }
+    if (audioOnly == AudioOnlyImportHint.pickSubtitleToBook) {
+      FushiToast.show(
+        msg: t.book_import_no_book_subtitle_hint,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     if (_epubPath == null && !_hasSubtitles) {
       FushiToast.show(
         msg: t.srt_import_missing_input,
