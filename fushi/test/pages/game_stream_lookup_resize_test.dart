@@ -285,6 +285,47 @@ void main() {
       );
     });
 
+    // BUG-3253：横屏小手机（宽 < 700 走窄布局）弹出软键盘后，body 只剩一两百
+    // 高。面板最小高度定死 200 时比 body 还高，画面被挤成 0、外层 Column 溢出；
+    // 改前的实现是 min(360, h*0.5)，不会溢出。body 放不下两者下限时退回对半分。
+    for (final double height in <double>[420, 260, 200, 150, 90]) {
+      testWidgets('a body too short for both minimums is split in half '
+          'instead of overflowing ($height tall)', (WidgetTester tester) async {
+        final List<GameStreamLookupLayout> saved = <GameStreamLookupLayout>[];
+        await _pumpPage(
+          tester,
+          size: Size(680, height),
+          layout: const GameStreamLookupLayout(compactRailHeight: 420),
+          onChanged: saved.add,
+        );
+        // 画面里的手柄按键、面板里的词条在这么矮的 body 里放不下是改前就有的
+        // 内部溢出（改前同样对半分）；这里只钉外层：画面 + 分隔条 + 面板 = body。
+        tester.takeException();
+        final double shortBody = height - 8;
+        expect(_videoHeight(tester), closeTo(shortBody / 2, 0.01));
+        expect(
+          _videoHeight(tester) +
+              8 +
+              const GameStreamLookupLayout(compactRailHeight: 420)
+                  .effectiveCompactRailHeight(shortBody),
+          closeTo(height, 0.01),
+        );
+
+        // 这时拖分隔条不能把存着的高度改写成下限。
+        await tester.drag(
+          find.byKey(GameStreamPage.compactRailResizeHandleKey),
+          const Offset(0, 40),
+        );
+        await tester.pumpAndSettle();
+        tester.takeException();
+        expect(
+          saved.where((GameStreamLookupLayout l) =>
+              l.compactRailHeight != 420),
+          isEmpty,
+        );
+      });
+    }
+
     testWidgets('a stored panel height is restored', (
       WidgetTester tester,
     ) async {

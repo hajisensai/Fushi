@@ -117,15 +117,30 @@ class GameStreamLookupLayout {
         maxCompactRailHeight,
       );
 
+  /// Whether a narrow-layout body [bodyHeight] tall holds both the panel's
+  /// and the video's minimum, i.e. whether the panel height is the user's to
+  /// choose. A landscape phone with the soft keyboard up has far less.
+  static bool compactRailResizable(double bodyHeight) =>
+      bodyHeight >= minCompactRailHeight + minVideoHeight;
+
   /// The narrow-layout panel height actually used when video and panel share
   /// [bodyHeight].
-  double effectiveCompactRailHeight(double bodyHeight) =>
-      (compactRailHeight ??
-              (bodyHeight * defaultCompactRailFraction).clamp(
-                0,
-                defaultCompactRailCap,
-              ))
-          .clamp(minCompactRailHeight, compactRailHeightLimit(bodyHeight));
+  ///
+  /// A body too short for both minimums (see [compactRailResizable]) falls
+  /// back to the pre-resize split, half the body: a fixed 200 floor would be
+  /// taller than such a body and overflow it (BUG-3253).
+  double effectiveCompactRailHeight(double bodyHeight) {
+    if (!compactRailResizable(bodyHeight)) {
+      final double body = bodyHeight < 0 ? 0 : bodyHeight;
+      return body * defaultCompactRailFraction;
+    }
+    return (compactRailHeight ??
+            (bodyHeight * defaultCompactRailFraction).clamp(
+              0,
+              defaultCompactRailCap,
+            ))
+        .clamp(minCompactRailHeight, compactRailHeightLimit(bodyHeight));
+  }
 
   /// The rail width actually used in a body [bodyWidth] wide.
   double effectiveRailWidth(double bodyWidth) =>
