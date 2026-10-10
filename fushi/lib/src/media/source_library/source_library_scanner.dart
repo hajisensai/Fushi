@@ -1543,7 +1543,6 @@ class SourceLibraryScanner {
         if (c.collectionType == 'playlist') c.name: c.id,
     };
 
-    final List<VideoBookRow> library = await _videoRepo.listAll();
     int count = 0;
     for (final ScanBlurayDiscItem item in plan.blurayDiscs) {
       final BlurayDisc? disc = await readBlurayDisc(item.discRootPath);
@@ -1551,16 +1550,19 @@ class SourceLibraryScanner {
       // 散装视频，这里再报错只会把整次扫描标红。
       if (disc == null) continue;
 
-      // 合集 = 这张盘：从原盘菜单进入过的特典（筛选器这次没选中）也留在合集里，
-      // 重扫不把它解绑成无来源孤儿（[blurayDiscManifest]）。
-      final List<PlaylistEntry> entries = blurayDiscManifest(
-        discRootPath: disc.rootPath,
-        selected: <PlaylistEntry>[
-          for (final BlurayTitle title in disc.titles)
-            PlaylistEntry(title: title.name, path: title.playlistPath),
-        ],
-        library: library,
-      );
+      final List<PlaylistEntry> entries = <PlaylistEntry>[
+        for (final BlurayTitle title in disc.titles)
+          PlaylistEntry(title: title.name, path: title.playlistPath),
+      ];
+      // 特典（菜单里的「特典映像」等）入库、带来源，但不进盘合集：索引器随后把它们
+      // 挂到正片作品下，作品资料页的特典区就能看到、点开就播。
+      for (final BlurayTitle extra in disc.extras) {
+        await ensureBlurayTitleInLibrary(
+          _db,
+          extra.playlistPath,
+          sourceId: sourceId,
+        );
+      }
 
       // 合集名不能只按盘名全局对号：`S1/DISC1` 与 `S2/DISC1` 同名不同盘，对到一起
       // 会互相吞成员（见 [blurayCollectionNameCandidates]）。撞上别的盘 / 别的

@@ -4,3 +4,4 @@
 - **[x] ① 已修复**（ce3747a4b4）— 新增引擎层 `ensureBlurayTitleInLibrary`（`packages/fushi_engine/lib/media/video/bluray/bluray_library_title.dart`）：盘内标题的库行按扫描导入的规则建 / 补——来源继承同盘已入库标题、加入这张盘的 playlist 合集、名字取盘名（`<盘名> - <MPLS 号>`），幂等，存量首版自动名改回盘名，用户改过的名字不动。菜单绑定改为只调它。扫描器对齐盘合集时用 `blurayDiscManifest`（筛选选中的 + 库里已有的本盘标题），重扫不再把菜单进过的特典解绑成孤儿。
 - **[x] ② 已加自动化测试**（ce3747a4b4）— `fushi/test/media/source_library/source_library_scanner_bluray_test.dart` 组「原盘菜单进入的特典按扫描导入的规则入库」（补来源 / 进合集 / 盘名 / 幂等；重扫不移出；首版孤儿行自愈；用户改名不覆盖）。
 - **备注**：同链路另有两处未在本条修：① 刮削计划器把盘合集里每条 mpls 各当一个作品（`video_source_work_planner.dart:103-113`，`parseVideoFilename("00002.mpls")` 无集号），31 分钟的 00002 被当成整部电影刮；理想是整盘一个作品单元、特典继承盘资料，牵涉合集作品单元的两种表示，需单独设计。② 来源 6 上次扫描留有 `last_scan_error: database is locked`（插 `video_metadata_works` 时）。
+- **后续**：BUG-3233 起特典（非标题的播放列表）**不再进盘合集**，扫描直接导入并挂到正片作品下；本条加的 `blurayDiscManifest` 已删除，`ensureBlurayTitleInLibrary` 只把扫描选出的标题加进盘合集。
