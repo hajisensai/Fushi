@@ -2,7 +2,8 @@
 // 才看得到入口，权限以服务端为准（非开发者调接口一律 403）。
 //
 // 列表按状态筛选、游标分页；详情含反馈人 / 联系方式 / 设备信息 / 截图 / 日志，
-// 改状态与回复在同一个表单里一次保存。
+// 改状态与回复在同一个表单里一次保存。AI 总结（只读）与开发者批改只在开发者接口里有，
+// 反馈人接口从不返回——「反馈人看不到」由服务端保证，这里只负责展示与编辑。
 
 import 'dart:async';
 import 'dart:convert';
@@ -46,6 +47,10 @@ String _keyValues(Map<String, Object?> map) => <String>[
   for (final MapEntry<String, Object?> e in map.entries)
     '${feedbackSafeText(e.key)}: ${feedbackSafeText('${e.value}')}',
 ].join('\n');
+
+/// 列表预览用：剥伪装字符、折成一行（换行会让 maxLines: 1 只露第一段）。
+String _oneLine(String s) =>
+    feedbackSafeText(s).replaceAll(RegExp(r'\s+'), ' ').trim();
 
 LeaderboardClient? _devClient(WidgetRef ref) =>
     ref.read(leaderboardServiceProvider).client;
@@ -266,11 +271,34 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
                                   ),
                                 if (_items[i].flags.isNotEmpty)
                                   FeedbackFlagChips(_items[i].flags),
+                                if (_items[i].aiSummary != null)
+                                  Text(
+                                    _oneLine(_items[i].aiSummary!),
+                                    key: ValueKey<String>(
+                                      'feedback-dev-ai-${_items[i].id}',
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: tokens.type.metadata,
+                                  ),
                               ],
                             ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: <Widget>[
+                                if (_items[i].hasDevNote)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: Text(
+                                      t.feedback_dev_note_badge,
+                                      key: ValueKey<String>(
+                                        'feedback-dev-noted-${_items[i].id}',
+                                      ),
+                                      style: tokens.type.metadata.copyWith(
+                                        color: colors.primary,
+                                      ),
+                                    ),
+                                  ),
                                 if (_items[i].awaitingDev)
                                   Padding(
                                     padding: const EdgeInsets.only(right: 8),
@@ -319,10 +347,14 @@ class FeedbackDevDetailPage extends ConsumerStatefulWidget {
 
 class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
   final TextEditingController _reply = TextEditingController();
+
+  /// 开发者批改（只给开发者看）。与回复分开保存：回复会推给反馈人，批改不会。
+  final TextEditingController _note = TextEditingController();
   FeedbackDetail? _detail;
   FeedbackStatus? _status;
   String? _error;
   bool _saving = false;
+  bool _savingNote = false;
   final Map<String, Future<Uint8List>> _images = <String, Future<Uint8List>>{};
 
   @override
@@ -334,6 +366,7 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
   @override
   void dispose() {
     _reply.dispose();
+    _note.dispose();
     super.dispose();
   }
 
@@ -343,6 +376,7 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
     try {
       final FeedbackDetail d = await client.devFeedback(widget.feedbackId);
       if (!mounted) return;
+      _note.text = d.devNote ?? '';
       setState(() {
         _detail = d;
         _status = d.status;
@@ -389,6 +423,36 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
       );
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _saveNote() async {
+    final FeedbackDetail? d = _detail;
+    final LeaderboardClient? client = _devClient(ref);
+    if (d == null || client == null) return;
+    setState(() => _savingNote = true);
+    try {
+      final FeedbackDetail next = await client.devUpdateFeedbackNote(
+        d.id,
+        _note.text.trim(),
+      );
+      if (!mounted) return;
+      _note.text = next.devNote ?? '';
+      setState(() => _detail = next);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(FushiSnackBar(content: Text(t.feedback_dev_note_saved)));
+    } on Object catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        FushiSnackBar(
+          content: Text(
+            t.feedback_submit_failed(reason: feedbackErrorReason(e)),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _savingNote = false);
     }
   }
 
@@ -458,6 +522,11 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
               else ...<Widget>[
                 FushiStaggeredEntrance(
                   index: 0,
+                  child: _FeedbackAiSummaryCard(d),
+                ),
+                SizedBox(height: tokens.spacing.card),
+                FushiStaggeredEntrance(
+                  index: 1,
                   child: FushiCard(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -632,11 +701,103 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
                     ),
                   ),
                 ),
+                SizedBox(height: tokens.spacing.card),
+                FushiSectionTitle(t.feedback_dev_note_title),
+                FushiInlineNotice(
+                  key: const ValueKey<String>('feedback-dev-note-private'),
+                  message: t.feedback_dev_note_private,
+                ),
+                if (d.devNoteAt != null) ...<Widget>[
+                  SizedBox(height: tokens.spacing.gap),
+                  Text(
+                    t.feedback_dev_note_updated_at(
+                      time: feedbackTime(d.devNoteAt!),
+                    ),
+                    style: tokens.type.metadata,
+                  ),
+                ],
+                SizedBox(height: tokens.spacing.gap),
+                FushiTextField(
+                  key: const ValueKey<String>('feedback-dev-note'),
+                  controller: _note,
+                  enabled: !_savingNote,
+                  hintText: t.feedback_dev_note_hint,
+                  keyboardType: TextInputType.multiline,
+                  minLines: 3,
+                  maxLines: 10,
+                  maxLength: FeedbackLimits.devNoteMax,
+                ),
+                SizedBox(height: tokens.spacing.gap),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FushiPressScale(
+                    enabled: !_savingNote,
+                    child: FushiFilledButton.tonalIcon(
+                      key: const ValueKey<String>('feedback-dev-note-save'),
+                      onPressed: _savingNote
+                          ? null
+                          : () => unawaited(_saveNote()),
+                      icon: const FushiIcon(FushiIcons.save),
+                      label: Text(t.feedback_dev_note_save),
+                    ),
+                  ),
+                ),
               ],
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// AI 总结（只读）。它是 AI 读了不可信的用户内容后写的，同样当不可信数据看。
+class _FeedbackAiSummaryCard extends StatelessWidget {
+  const _FeedbackAiSummaryCard(this.detail);
+
+  final FeedbackDetail detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final String? summary = detail.aiSummary;
+    final int? at = detail.aiSummaryAt;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        FushiSectionTitle(t.feedback_dev_ai_summary),
+        FushiCard(
+          key: const ValueKey<String>('feedback-dev-ai-summary'),
+          child: summary == null
+              ? Text(
+                  t.feedback_dev_ai_summary_empty,
+                  key: const ValueKey<String>('feedback-dev-ai-summary-empty'),
+                  style: tokens.type.metadata,
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    FushiInlineNotice(
+                      key: const ValueKey<String>(
+                        'feedback-dev-ai-summary-untrusted',
+                      ),
+                      message: t.feedback_dev_ai_summary_untrusted,
+                    ),
+                    SizedBox(height: tokens.spacing.gap),
+                    SelectableText(feedbackSafeText(summary)),
+                    if (at != null) ...<Widget>[
+                      SizedBox(height: tokens.spacing.gap),
+                      Text(
+                        t.feedback_dev_ai_summary_generated_at(
+                          time: feedbackTime(at),
+                        ),
+                        style: tokens.type.metadata,
+                      ),
+                    ],
+                  ],
+                ),
+        ),
+      ],
     );
   }
 }

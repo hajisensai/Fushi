@@ -276,4 +276,88 @@ void main() {
     ).client;
     expect(() => anon.devFeedbackList(), throwsStateError);
   });
+
+  test('开发者批改：签名 POST /notes，body 只带 devNote；AI 总结与批改字段解析', () async {
+    final h = _harness((http.Request r) async {
+      if (r.url.path == '/v1/dev/feedback') {
+        return _json(<String, dynamic>{
+          'items': <Object>[
+            <String, dynamic>{
+              ..._summary('abcdefghij'),
+              'aiSummary': '阅读器白屏',
+              'hasDevNote': true,
+            },
+            _summary('klmnopqrst'),
+          ],
+          'next': null,
+        });
+      }
+      final String note =
+          (jsonDecode(r.body) as Map<String, dynamic>)['devNote'] as String;
+      return _json(<String, dynamic>{
+        ..._summary('abcdefghij'),
+        'body': 'b',
+        'attachments': <Object>[],
+        'messages': <Object>[],
+        'aiSummary': '阅读器白屏',
+        'aiSummaryAt': 11,
+        'devNote': note,
+        'devNoteAt': note.isEmpty ? null : 12,
+      });
+    }, identity: _id);
+
+    final FeedbackInboxPage page = await h.client.devFeedbackList();
+    expect(page.items.first.aiSummary, '阅读器白屏');
+    expect(page.items.first.hasDevNote, isTrue);
+    // 旧服务端 / 没生成过：缺字段即 null / false。
+    expect(page.items.last.aiSummary, isNull);
+    expect(page.items.last.hasDevNote, isFalse);
+
+    final FeedbackDetail d = await h.client.devUpdateFeedbackNote(
+      'abcdefghij',
+      '根因在分页脚本',
+    );
+    final http.Request req = h.requests.last;
+    expect(req.method, 'POST');
+    expect(req.url.path, '/v1/dev/feedback/abcdefghij/notes');
+    expect(req.headers['X-Fushi-Account'], _id.accountId);
+    expect(req.headers.containsKey('X-Fushi-Sig'), isTrue);
+    expect(jsonDecode(req.body), <String, dynamic>{'devNote': '根因在分页脚本'});
+    expect(d.aiSummary, '阅读器白屏');
+    expect(d.aiSummaryAt, 11);
+    expect(d.devNote, '根因在分页脚本');
+    expect(d.devNoteAt, 12);
+    expect(d.summary.hasDevNote, isTrue);
+
+    // 空串 = 清除：照发空串，回来的空批改解析成 null。
+    final FeedbackDetail cleared = await h.client.devUpdateFeedbackNote(
+      'abcdefghij',
+      '',
+    );
+    expect(jsonDecode(h.requests.last.body), <String, dynamic>{'devNote': ''});
+    expect(cleared.devNote, isNull);
+    expect(cleared.devNoteAt, isNull);
+    expect(cleared.summary.hasDevNote, isFalse);
+
+    // 反馈人视角（不带这些字段）全部为空。
+    final FeedbackDetail reporterView =
+        FeedbackDetail.fromJson(<String, dynamic>{
+          ..._summary('abcdefghij'),
+          'body': 'b',
+          'attachments': <Object>[],
+          'messages': <Object>[],
+        });
+    expect(reporterView.aiSummary, isNull);
+    expect(reporterView.aiSummaryAt, isNull);
+    expect(reporterView.devNote, isNull);
+    expect(reporterView.devNoteAt, isNull);
+
+    final LeaderboardClient anon = _harness(
+      (http.Request r) async => _json(<String, dynamic>{}),
+    ).client;
+    expect(
+      () => anon.devUpdateFeedbackNote('abcdefghij', 'x'),
+      throwsStateError,
+    );
+  });
 }
