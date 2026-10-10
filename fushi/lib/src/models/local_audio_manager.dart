@@ -108,14 +108,23 @@ class LocalAudioManager {
       dbPath.isNotEmpty &&
       _internalCopyNamePattern.hasMatch(_basenameAnySep(dbPath));
 
-  /// 把一条存储的 localAudio 库路径归一到本机库目录 [dir]：内部副本按**文件名**
-  /// 重挂到 `<dir>/<basename>`（跨机可移植——丢弃源机绝对前缀，只认文件名，修
+  /// 把一条存储的 localAudio 库路径归一到本机库目录 [dir]：内部副本命名的路径按
+  /// **文件名**重挂到 `<dir>/<basename>`（跨机可移植——丢弃源机绝对前缀，修
   /// TODO-1171：换机后源机绝对 path 不存在导致本地发音静默消失）；外部引用
   /// （BUG-483 引用模式，命名不匹配）原样返回（本就无法跨机，保留原值等重指）。
-  static String resolveInternalPath(String storedPath, String dir) =>
-      isInternalCopyName(storedPath)
-          ? path.join(dir, _basenameAnySep(storedPath))
-          : storedPath;
+  ///
+  /// 文件名只是「可能是内部副本」的线索，不是归属证明（BUG-3269）：用户从别的设备
+  /// 拷出 `local_audio_<数字>.db` 放进 Download 再以引用模式选中，旧实现无条件
+  /// 重挂到 `<dir>` 下一个不存在的文件，设置页恒报「不可用」、native 也拿到错路径。
+  /// 所以重挂是「找文件」：`<dir>` 里有这份副本（本机导入 / 还原 / 迁移落地的）就
+  /// 用它；没有而存的路径在本机就是真文件，那就是引用，原样返回；两处都没有才
+  /// 回到 `<dir>` 路径（调用方照常报缺失）。
+  static String resolveInternalPath(String storedPath, String dir) {
+    if (!isInternalCopyName(storedPath)) return storedPath;
+    final String rehomed = path.join(dir, _basenameAnySep(storedPath));
+    if (File(rehomed).existsSync()) return rehomed;
+    return File(storedPath).existsSync() ? storedPath : rehomed;
+  }
 
   /// 把一个库 entry 转成喂 native 的配置：path 先按 [resolveInternalPath] 归一到
   /// 本机库目录（内部副本认文件名，跨机安全），sourceOrder 只含**启用**的子来源，

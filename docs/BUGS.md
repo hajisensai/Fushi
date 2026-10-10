@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2945 条。点号进各自文件。
+> 共 2946 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3269](bugs/BUG-3269-local-audio-reference-internal-name.md) | ✅ | ✅ | 本地发音库引用文件名像内部副本时被重挂到不存在的路径 |
 | [BUG-3267](bugs/BUG-3267-lookup-highlight-two-colors.md) | ✅ | ✅ | 查词窗源文本条与结果卡命中高亮两种颜色 |
 | [BUG-3266](bugs/BUG-3266-scrape-title-ending-in-year.md) | ✅ | ✅ | 片名以年份结尾时被当裸年份剥掉，刮削查无 |
 | [BUG-3265](bugs/BUG-3265-anki-css-open-attribute-pruned.md) | ✅ | ✅ | 制卡词典 CSS 裁剪把 details[open] 等交互态属性规则裁掉 |
