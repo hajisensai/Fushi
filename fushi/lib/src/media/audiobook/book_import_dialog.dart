@@ -246,9 +246,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           tone: FushiHeroTone.tertiary,
         ),
         title: Text(t.manga_import_detected_title),
-        content: Text(
-          t.manga_import_detected_message(name: p.basename(path)),
-        ),
+        content: Text(t.manga_import_detected_message(name: p.basename(path))),
         actions: <Widget>[
           FushiTextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -301,7 +299,9 @@ class _BookImportDialogState extends State<BookImportDialog>
         _epubPath = droppedEpub;
         _epubName = p.basename(droppedEpub);
         _autoFillTitle(
-            p.basenameWithoutExtension(droppedEpub), ImportTitleSource.epub);
+          p.basenameWithoutExtension(droppedEpub),
+          ImportTitleSource.epub,
+        );
       }
       if (r.subtitlePath != null) {
         _subtitlePath = r.subtitlePath;
@@ -351,14 +351,13 @@ class _BookImportDialogState extends State<BookImportDialog>
           SizedBox(height: tokens.spacing.rowVertical),
           stagger(
             AdaptiveSettingsSection(
-              children: [
-                _epubRow(),
-                _subtitleRow(),
-                _audioRow(),
-                _coverRow(),
-              ],
+              children: [_epubRow(), _subtitleRow(), _audioRow(), _coverRow()],
             ),
           ),
+          if (_audioOnlyHint != AudioOnlyImportHint.none) ...[
+            SizedBox(height: tokens.spacing.gap),
+            stagger(_audioOnlyNotice(_audioOnlyHint)),
+          ],
           if (isDesktopPlatform && _audioPaths.isNotEmpty) ...[
             SizedBox(height: tokens.spacing.gap),
             stagger(
@@ -430,6 +429,38 @@ class _BookImportDialogState extends State<BookImportDialog>
           ],
         ],
       ),
+    );
+  }
+
+  /// 只选了音频（没书、没字幕）时的出路：本机能转录就提醒直接转录生成书籍，
+  /// 否则提醒选字幕文件生成书籍。此前这一步只有点「导入」后的一句报错。
+  AudioOnlyImportHint get _audioOnlyHint => audioOnlyImportHint(
+    hasBook: _epubPath != null,
+    hasSubtitle: _hasSubtitles,
+    hasAudio: _audioPaths.isNotEmpty,
+    asrSupported: isAsrSupported,
+  );
+
+  Widget _audioOnlyNotice(AudioOnlyImportHint hint) {
+    final bool transcribe = hint == AudioOnlyImportHint.transcribeToBook;
+    return FushiInlineNotice(
+      title: t.book_import_no_book_notice_title,
+      message: transcribe
+          ? t.book_import_no_book_transcribe_hint
+          : t.book_import_no_book_subtitle_hint,
+      icon: transcribe ? FushiIcons.voice : FushiIcons.subtitles,
+      actions: <Widget>[
+        FushiTextButton(
+          onPressed: importing
+              ? null
+              : (transcribe ? _transcribeSubtitleFromAudio : _pickSubtitle),
+          child: Text(
+            transcribe
+                ? t.book_import_no_book_transcribe_action
+                : t.srt_import_pick_subtitle_files,
+          ),
+        ),
+      ],
     );
   }
 
@@ -525,8 +556,9 @@ class _BookImportDialogState extends State<BookImportDialog>
       return null;
     }
     try {
-      final String? language =
-          await Isolate.run(() => EpubParser.readLanguageSync(path));
+      final String? language = await Isolate.run(
+        () => EpubParser.readLanguageSync(path),
+      );
       return asrLanguageHintFromBookLanguage(language);
     } catch (error, stack) {
       developer.log(
@@ -573,8 +605,8 @@ class _BookImportDialogState extends State<BookImportDialog>
       subtitle: _audioPaths.isEmpty
           ? null
           : _audioPaths.length == 1
-              ? p.basename(_audioPaths.first)
-              : t.file_count(count: _audioPaths.length),
+          ? p.basename(_audioPaths.first)
+          : t.file_count(count: _audioPaths.length),
       icon: FushiIcons.audio,
       onTap: _pickAudio,
       actions: [
@@ -636,10 +668,12 @@ class _BookImportDialogState extends State<BookImportDialog>
           _epubName = file.name;
           _autoFillTitle(
             file.name.replaceAll(
-                RegExp(
-                    r'\.(epub|pdf|mokuro|cbz|zip|txt|html?|xhtml|md|markdown|rst|org|csv|tsv|log|json|xml)$',
-                    caseSensitive: false),
-                ''),
+              RegExp(
+                r'\.(epub|pdf|mokuro|cbz|zip|txt|html?|xhtml|md|markdown|rst|org|csv|tsv|log|json|xml)$',
+                caseSensitive: false,
+              ),
+              '',
+            ),
             ImportTitleSource.epub,
           );
         });
@@ -682,10 +716,7 @@ class _BookImportDialogState extends State<BookImportDialog>
       if (attachedAudio) t.import_sidecar_audio(count: _audioPaths.length),
     ];
     if (parts.isNotEmpty && mounted) {
-      FushiToast.show(
-        msg: parts.join(' · '),
-        severity: ToastSeverity.info,
-      );
+      FushiToast.show(msg: parts.join(' · '), severity: ToastSeverity.info);
     }
   }
 
@@ -722,8 +753,10 @@ class _BookImportDialogState extends State<BookImportDialog>
         _subtitleName = p.basename(path);
         final String name = p.basename(path);
         final int dot = name.lastIndexOf('.');
-        _autoFillTitle(dot > 0 ? name.substring(0, dot) : name,
-            ImportTitleSource.subtitle);
+        _autoFillTitle(
+          dot > 0 ? name.substring(0, dot) : name,
+          ImportTitleSource.subtitle,
+        );
       });
     } finally {
       _pickerActive = false;
@@ -734,8 +767,10 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (_pickerActive) return;
     _pickerActive = true;
     try {
-      final AppModel appModel =
-          ProviderScope.containerOf(context, listen: false).read(appProvider);
+      final AppModel appModel = ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(appProvider);
       final List<String> paths = await pickRealFilePaths(
         context: context,
         appModel: appModel,
@@ -817,8 +852,8 @@ class _BookImportDialogState extends State<BookImportDialog>
     // 两框都已填就无事可做（避免无谓 ffprobe 进程）。
     if (_titleCtrl.text.isNotEmpty && _authorCtrl.text.isNotEmpty) return;
     for (final String audioPath in _audioPaths) {
-      final AudioMetadata? meta =
-          await TtsChannel.instance.extractAudioMetadata(audioPath: audioPath);
+      final AudioMetadata? meta = await TtsChannel.instance
+          .extractAudioMetadata(audioPath: audioPath);
       if (meta == null) continue;
       if (!mounted) return;
       final bool fillAuthor = _authorCtrl.text.isEmpty && meta.author != null;
@@ -926,18 +961,16 @@ class _BookImportDialogState extends State<BookImportDialog>
   }
 
   Future<bool> _epubHasCover(String bookKey) async {
-    final row = await (widget.db.select(widget.db.epubBooks)
-          ..where((tbl) => tbl.bookKey.equals(bookKey)))
-        .getSingleOrNull();
+    final row = await (widget.db.select(
+      widget.db.epubBooks,
+    )..where((tbl) => tbl.bookKey.equals(bookKey))).getSingleOrNull();
     return row?.coverPath != null;
   }
 
   // ── 导入 ────────────────────────────────────────────────────────────────
 
   /// 同名书弹窗回调，喂给 [EpubImporter]。是→加后缀，否/关闭→取消这本书。
-  Future<DuplicateChoice> _askOnDuplicate(
-    String proposedTitle,
-  ) async {
+  Future<DuplicateChoice> _askOnDuplicate(String proposedTitle) async {
     if (!mounted) return DuplicateChoice.cancel;
     final bool? keep = await showAppDialog<bool>(
       context: context,
@@ -960,6 +993,21 @@ class _BookImportDialogState extends State<BookImportDialog>
   }
 
   Future<void> _doImport() async {
+    final AudioOnlyImportHint audioOnly = _audioOnlyHint;
+    if (audioOnly == AudioOnlyImportHint.transcribeToBook) {
+      // 只有音频：没有书也能导入——转录出字幕后接着走字幕书路径自动生成书籍，
+      // 不再停在「请至少选择书籍或字幕文件」（与下方 EPUB+音频 的 BUG-2266 同口径）。
+      await _transcribeSubtitleFromAudio();
+      if (!mounted || !_hasSubtitles) return;
+      return _doImport();
+    }
+    if (audioOnly == AudioOnlyImportHint.pickSubtitleToBook) {
+      FushiToast.show(
+        msg: t.book_import_no_book_subtitle_hint,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     if (_epubPath == null && !_hasSubtitles) {
       FushiToast.show(
         msg: t.srt_import_missing_input,
@@ -1018,11 +1066,13 @@ class _BookImportDialogState extends State<BookImportDialog>
       },
       action: () async {
         reportProgress(0, '');
-        final String? authorText =
-            _authorCtrl.text.trim().isEmpty ? null : _authorCtrl.text.trim();
+        final String? authorText = _authorCtrl.text.trim().isEmpty
+            ? null
+            : _authorCtrl.text.trim();
 
         debugPrint(
-            '[fushi-import] route: epub=$_epubPath sub=$_subtitlePath audio=${_audioPaths.length} files');
+          '[fushi-import] route: epub=$_epubPath sub=$_subtitlePath audio=${_audioPaths.length} files',
+        );
         String? tail;
         if (_epubPath != null && _hasSubtitles) {
           debugPrint('[fushi-import] → _importEpubWithAlignment');
@@ -1068,32 +1118,31 @@ class _BookImportDialogState extends State<BookImportDialog>
         await _awaitCoverExtraction();
         final String? coverSource = _coverPath ?? _audioCoverPath;
         if (coverSource == null) return null;
-        final String dest =
-            p.join(persistDir.path, 'cover${p.extension(coverSource)}');
+        final String dest = p.join(
+          persistDir.path,
+          'cover${p.extension(coverSource)}',
+        );
         return await _writeCoverOrSkip(source: coverSource, destPath: dest)
             ? dest
             : null;
       },
-      onProgress: (
-        double fraction,
-        StandaloneSubtitleBookStep step,
-        String? fileName,
-      ) =>
-          reportProgress(
-              fraction,
-              switch (step) {
-                StandaloneSubtitleBookStep.parsing => t.import_step_parsing,
-                StandaloneSubtitleBookStep.buildingEpub =>
-                  t.import_step_building_epub,
-                StandaloneSubtitleBookStep.importingEpub =>
-                  t.import_step_importing_epub,
-                StandaloneSubtitleBookStep.persisting =>
-                  t.import_step_persisting,
-                StandaloneSubtitleBookStep.copyingFile =>
-                  t.import_step_copying_file(name: fileName ?? ''),
-                StandaloneSubtitleBookStep.saving => t.import_step_saving,
-                StandaloneSubtitleBookStep.done => t.import_step_done,
-              }),
+      onProgress:
+          (
+            double fraction,
+            StandaloneSubtitleBookStep step,
+            String? fileName,
+          ) => reportProgress(fraction, switch (step) {
+            StandaloneSubtitleBookStep.parsing => t.import_step_parsing,
+            StandaloneSubtitleBookStep.buildingEpub =>
+              t.import_step_building_epub,
+            StandaloneSubtitleBookStep.importingEpub =>
+              t.import_step_importing_epub,
+            StandaloneSubtitleBookStep.persisting => t.import_step_persisting,
+            StandaloneSubtitleBookStep.copyingFile =>
+              t.import_step_copying_file(name: fileName ?? ''),
+            StandaloneSubtitleBookStep.saving => t.import_step_saving,
+            StandaloneSubtitleBookStep.done => t.import_step_done,
+          }),
     );
   }
 
@@ -1128,8 +1177,10 @@ class _BookImportDialogState extends State<BookImportDialog>
     final String bookKey;
     if (carrier == ImportCarrier.text) {
       reportProgress(0.3, t.import_step_converting_epub);
-      final Uint8List bytes =
-          await TextToEpub.convert(file: file, title: title);
+      final Uint8List bytes = await TextToEpub.convert(
+        file: file,
+        title: title,
+      );
       final String filename =
           '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
       reportProgress(0.5, t.import_step_importing_epub);
@@ -1171,8 +1222,10 @@ class _BookImportDialogState extends State<BookImportDialog>
     final String bookKey;
     if (TextToEpub.isSupported(_epubPath!)) {
       reportProgress(0.1, t.import_step_converting_epub);
-      final Uint8List importBytes =
-          await TextToEpub.convert(file: epubFile, title: title);
+      final Uint8List importBytes = await TextToEpub.convert(
+        file: epubFile,
+        title: title,
+      );
       final String importFilename =
           '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub';
       reportProgress(0.2, t.import_step_importing_epub);
@@ -1327,8 +1380,9 @@ class ImportDropZoneCard extends StatelessWidget {
     final String? sub = subtitle;
     final bool dragging = FushiFileDropTarget.dragHoveringOf(context);
     final bool lit = selected || dragging;
-    final FushiCardTone tone =
-        lit ? FushiCardTone.primary : FushiCardTone.neutral;
+    final FushiCardTone tone = lit
+        ? FushiCardTone.primary
+        : FushiCardTone.neutral;
     // 点亮成色块时字跟卡片配对前景（fushiType 自带页面前景，HBK-AUDIT-022）；
     // 中性时为 null，copyWith 保持原色。
     final Color? onCard = fushiCardToneColors(context, tone)?.onContainer;
@@ -1350,9 +1404,9 @@ class ImportDropZoneCard extends StatelessWidget {
               // 默认的淡入转场会把 spatial 弹簧的过冲直接喂给透明度。
               transitionBuilder: (Widget child, Animation<double> animation) =>
                   FadeTransition(
-                opacity: fushiUnitClamped(animation),
-                child: child,
-              ),
+                    opacity: fushiUnitClamped(animation),
+                    child: child,
+                  ),
               child: FushiDialogHeroIcon(
                 key: ValueKey<bool>(selected),
                 icon: selected ? FushiIcons.success : icon,
