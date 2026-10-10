@@ -995,6 +995,55 @@ void main() {
     expect(find.text(t.feedback_reopened_as(id: 'newnewnew0')), findsOneWidget);
   });
 
+  testWidgets('BUG-3243 反馈人详情：关联的那条不在本机（别的设备提交）时画成不可点的标签', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    server.reopened.addAll(<String>['farfarfar0', 'newnewnew0']);
+    await tester.runAsync(() async {
+      await FeedbackTicketStore(root).write(<FeedbackTicket>[
+        const FeedbackTicket(
+          id: 'closedclo0',
+          ticket: 'closed-ticket',
+          title: '漫画目录逆序',
+          category: FeedbackCategory.suggestion,
+          createdAt: 100,
+          status: FeedbackStatus.resolved,
+          updatedAt: 300,
+          seenAt: 300,
+        ),
+        const FeedbackTicket(
+          id: 'newnewnew0',
+          ticket: 'new-ticket',
+          title: '漫画目录逆序',
+          category: FeedbackCategory.suggestion,
+          createdAt: 900,
+          status: FeedbackStatus.open,
+          updatedAt: 900,
+          seenAt: 900,
+        ),
+      ]);
+    });
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    await tester.runAsync(f.load);
+    await tester.pumpWidget(
+      wrap(b, f, const FeedbackDetailPage(feedbackId: 'closedclo0')),
+    );
+    final Finder elsewhere = find.byKey(
+      const ValueKey<String>('feedback-relation-farfarfar0'),
+    );
+    await settleIo(tester, () => elsewhere.evaluate().isNotEmpty);
+    // 本机有 ticket 的那条能点过去；别的设备提交的只是标签，不装成按钮。
+    expect(tester.widget(elsewhere), isA<FushiTag>());
+    expect(
+      tester.widget(
+        find.byKey(const ValueKey<String>('feedback-relation-newnewnew0')),
+      ),
+      isA<FushiActionChip>(),
+    );
+  });
+
   testWidgets('处理台：新反馈标「重新提交自」，详情两向链接能点过去', (WidgetTester tester) async {
     tallView(tester);
     server.role = 'dev';

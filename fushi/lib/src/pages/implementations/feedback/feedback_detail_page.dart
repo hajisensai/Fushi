@@ -225,9 +225,13 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
 
   bool _closing = false;
 
-  /// 关联的另一条（本机清单里有才打开；别的设备提交的没有 ticket，看不了）。
+  /// 关联的另一条本机有没有 ticket（别的设备提交的没有，看不了）。
+  bool _canOpenRelated(String id) =>
+      ref.read(feedbackServiceProvider).byId(id) != null;
+
+  /// 打开关联的另一条（只对 [_canOpenRelated] 的条目可点）。
   void _openRelated(String id) {
-    if (ref.read(feedbackServiceProvider).byId(id) == null) return;
+    if (!_canOpenRelated(id)) return;
     unawaited(
       Navigator.push(
         context,
@@ -377,6 +381,7 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
                               parentId: d.summary.parentId,
                               reopenedAs: d.reopenedAs,
                               onOpen: _openRelated,
+                              canOpen: _canOpenRelated,
                             ),
                           ],
                           SizedBox(height: tokens.spacing.gap),
