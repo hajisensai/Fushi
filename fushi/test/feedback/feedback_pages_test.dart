@@ -1,6 +1,7 @@
 // 反馈中心 / 提交页的真实交互：空表单不发请求；填好提交后回到中心、列表出现新反馈；
 // 开发者有新回复的条目标红点；开发者账户才出现处理台入口。
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -110,9 +111,21 @@ class _Server {
   final List<String> reopened = <String>[];
   String role = 'user';
 
+  /// 非空时，处理台列表请求先等它放行（测「被取代的旧请求」晚到）：键是搜索词。
+  final Map<String, Completer<void>> devListGates = <String, Completer<void>>{};
+
+  /// 非空时，处理台列表这一搜索词的请求回这个状态码。
+  final Map<String, int> devListFailures = <String, int>{};
+
   Future<http.Response> handle(http.Request r) async {
     requests.add(r);
     final String path = r.url.path;
+    if (path == '/v1/dev/feedback') {
+      final String q = r.url.queryParameters['q'] ?? '';
+      await devListGates[q]?.future;
+      final int? failure = devListFailures[q];
+      if (failure != null) return _json(<String, dynamic>{}, failure);
+    }
     if (path == '/v1/me') {
       return _json(<String, dynamic>{
         'id': 'SelfAccount001',
@@ -711,6 +724,70 @@ void main() {
       (http.Request r) => r.url.path == '/v1/dev/feedback',
     );
     expect(last.url.queryParameters['q'], 'svSfwFdmdM');
+  });
+
+  testWidgets('BUG-3235 处理台列表：被搜索取代的旧请求晚到失败，不报错、不清掉新请求的加载中', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    server.role = 'dev';
+    // 首屏请求（无搜索词）挂住、放行后失败；搜索请求也先挂住。
+    final Completer<void> stale = Completer<void>();
+    final Completer<void> fresh = Completer<void>();
+    server.devListGates[''] = stale;
+    server.devListFailures[''] = 500;
+    server.devListGates['svSfwFdmdM'] = fresh;
+    final LeaderboardService b = board();
+    await tester.runAsync(() async {
+      await LeaderboardStore(supportRoot: root, profileId: 1).write(
+        LeaderboardLocalAccount(
+          recoveryCode: LeaderboardIdentity.generate().toRecoveryCode(),
+          accountId: 'SelfAccount001',
+          consentAt: 1,
+        ),
+      );
+      await b.load();
+    });
+    final FeedbackService f = feedback(b);
+    await tester.pumpWidget(wrap(b, f, const FeedbackDevPage()));
+    Iterable<http.Request> lists() => server.requests.where(
+      (http.Request r) => r.url.path == '/v1/dev/feedback',
+    );
+    await settleIo(tester, () => lists().isNotEmpty);
+    expect(lists(), hasLength(1));
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('feedback-dev-search')),
+      'svSfwFdmdM',
+    );
+    await settleIo(tester, () => lists().length == 2);
+    expect(lists().last.url.queryParameters['q'], 'svSfwFdmdM');
+
+    // 旧请求晚到并失败：它已被搜索取代，页面应仍在等新请求。
+    stale.complete();
+    await settleIo(tester, () => false);
+    expect(find.text(t.feedback_refresh_failed), findsNothing);
+    expect(find.byType(FushiLoadingView), findsOneWidget);
+    expect(
+      tester
+          .widget<FushiIconButton>(
+            find.ancestor(
+              of: find.byTooltip(t.refresh),
+              matching: find.byType(FushiIconButton),
+            ),
+          )
+          .enabled,
+      isFalse,
+      reason: '新请求还在途：刷新按钮仍是加载中',
+    );
+
+    fresh.complete();
+    await settleIo(
+      tester,
+      () => find.text('#svSfwFdmdM').evaluate().isNotEmpty,
+    );
+    expect(find.text('#svSfwFdmdM'), findsOneWidget);
+    expect(find.text(t.feedback_refresh_failed), findsNothing);
   });
 
   testWidgets('已结案反馈「问题没解决，重新提交」：预填原反馈、截图可选带上、凭原 ticket 关联提交', (
