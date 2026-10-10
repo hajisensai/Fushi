@@ -1,0 +1,6 @@
+## BUG-3232 · 电影盘上的特辑与菜单特典被各自当成整部电影刮削
+- **报告**：2026-10-10（用户：「同一条刮削链路上没修的问题：修」，指 BUG-3231 备注里的「盘里每条标题被各当成一部作品去刮，31 分钟的 00002 被当成整部电影刮了」）
+- **真实性**：✅ 真 bug。用户库里 `Disc 2/00002.mpls`（31.5 分钟特辑）的规范作品是 `media_type=movie`、`runtime=143`、AniDB 19701——即整部电影。根因在 `VideoSourceWorkPlanner.plan`（`packages/fushi_engine/lib/media/video/metadata/video_source_work_planner.dart:98-114`）：盘成员的文件名 `0000N.mpls` 解析不出集号，每条标题各成一个 `book:` 单元，按标题（`<盘名> - NN`）去识别；盘名就是片名，所以特辑、菜单特典必然被认成正片本身。仓库已有「特典不单独成作品、挂到父作品下」的机制（`videoBookJoinsScrapePlan` + 索引器的本地附件绑定），但只认路径规则（NCOP / 预告 / Kodi extras 目录），认不出蓝光盘内的特典。
+- **[x] ① 已修复**（97068422c4）— 新增 `blurayDiscExtras` / `blurayExtraPlaylistIds`（`packages/fushi_engine/lib/media/video/bluray/bluray_disc_extras.dart`）：盘上时长短于正片 50%（`kBlurayExtraRelativeDuration`；剧集盘各条目同一量级，不受影响）的标题是这张盘的特典。计划器跳过它们；索引器把它们按「含同盘正片 .mpls 的作品」绑成本地附件（kind `extra`），并沿用既有逻辑清掉旧版误建的 book-owned 「电影」作品；库页对特典不再画「重新刮削」断头入口。**没有**改合集作品单元的分组判据（那条路会删旧作品行、把电影按 tv 搜，见计划器既有测试与设计说明）。
+- **[x] ② 已加自动化测试**（97068422c4）— `fushi/test/media/source_library/source_library_scanner_bluray_test.dart` 组「电影盘的特典不单独成作品，挂到正片下」：真盘目录 + 真扫描 + 真计划器 + 真索引器——计划只剩正片；特辑与菜单特典都绑到正片作品下、旧误建作品被清；剧集盘三集都照常进计划。
+- **备注**：被清掉的那份错误作品上若有用户字段锁会随之消失（它锚的是错误身份，同 NCOP 的既有处理）。真机未复测。

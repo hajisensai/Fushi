@@ -49,6 +49,7 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart'
 import 'package:fushi/src/media/import/sidecar_finder.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
 import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
@@ -1553,6 +1554,15 @@ class SourceLibraryScanner {
         for (final BlurayTitle title in disc.titles)
           PlaylistEntry(title: title.name, path: title.playlistPath),
       ];
+      // 特典（菜单里的「特典映像」等）入库、带来源，但不进盘合集：索引器随后把它们
+      // 挂到正片作品下，作品资料页的特典区就能看到、点开就播。
+      for (final BlurayTitle extra in disc.extras) {
+        await ensureBlurayTitleInLibrary(
+          _db,
+          extra.playlistPath,
+          sourceId: sourceId,
+        );
+      }
 
       // 合集名不能只按盘名全局对号：`S1/DISC1` 与 `S2/DISC1` 同名不同盘，对到一起
       // 会互相吞成员（见 [blurayCollectionNameCandidates]）。撞上别的盘 / 别的

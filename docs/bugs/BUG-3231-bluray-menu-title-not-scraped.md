@@ -1,0 +1,7 @@
+## BUG-3231 · 原盘菜单进入的标题建出无来源孤儿行，刮削永远刮不到
+- **报告**：2026-10-10（用户：「这个都是bd了，为什么还能没刮削出来」）
+- **真实性**：✅ 真 bug。用户库（只读查询）里同盘扫描导入的正片都已刮到 AniDB 19701；没资料的是 `Disc 2/BDMV/PLAYLIST/00003.mpls`（4.5 分钟特典，低于相对时长下限，扫描不选），它是今天从原盘菜单进入时由 `_bindDiscPlaylist`（`video_fushi/disc_menu.part.dart:247-269`，首版 fbeb260d78）手写 `saveVideoBook` 建出的：**没有 `sourceId`、不进盘合集、标题写死成「盘目录名 · 00003」**（绕过了 `readBlurayDiscName` 的 META 盘内标题）。刮削入口全按来源挑条目（`video_source_work_planner.dart:77-78`、`video_library_scrape_sweep.dart:136-163`），这一行在结构上进不了任何刮削计划；重扫也救不回（`_importBlurayDiscs` 只按筛选结果对齐合集）。
+- **[x] ① 已修复**（ce3747a4b4）— 新增引擎层 `ensureBlurayTitleInLibrary`（`packages/fushi_engine/lib/media/video/bluray/bluray_library_title.dart`）：盘内标题的库行按扫描导入的规则建 / 补——来源继承同盘已入库标题、加入这张盘的 playlist 合集、名字取盘名（`<盘名> - <MPLS 号>`），幂等，存量首版自动名改回盘名，用户改过的名字不动。菜单绑定改为只调它。扫描器对齐盘合集时用 `blurayDiscManifest`（筛选选中的 + 库里已有的本盘标题），重扫不再把菜单进过的特典解绑成孤儿。
+- **[x] ② 已加自动化测试**（ce3747a4b4）— `fushi/test/media/source_library/source_library_scanner_bluray_test.dart` 组「原盘菜单进入的特典按扫描导入的规则入库」（补来源 / 进合集 / 盘名 / 幂等；重扫不移出；首版孤儿行自愈；用户改名不覆盖）。
+- **备注**：同链路另有两处未在本条修：① 刮削计划器把盘合集里每条 mpls 各当一个作品（`video_source_work_planner.dart:103-113`，`parseVideoFilename("00002.mpls")` 无集号），31 分钟的 00002 被当成整部电影刮；理想是整盘一个作品单元、特典继承盘资料，牵涉合集作品单元的两种表示，需单独设计。② 来源 6 上次扫描留有 `last_scan_error: database is locked`（插 `video_metadata_works` 时）。
+- **后续**：BUG-3233 起特典（非标题的播放列表）**不再进盘合集**，扫描直接导入并挂到正片作品下；本条加的 `blurayDiscManifest` 已删除，`ensureBlurayTitleInLibrary` 只把扫描选出的标题加进盘合集。
