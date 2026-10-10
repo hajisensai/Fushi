@@ -7028,5 +7028,16 @@
   "mihon_extension_uninstall_confirm_multi": "扩展「$name」包含 $count 个源，卸载会把它们一起移除：",
   "mihon_extension_package_label": "包名：$package",
   "extension_nsfw_badge": "NSFW",
-  "mihon_extension_min_downloads_any": "不限"
+  "mihon_extension_min_downloads_any": "不限",
+  "feedback_dev_ai_summary": "AI 总结",
+  "feedback_dev_ai_summary_empty": "还没有 AI 总结。",
+  "feedback_dev_ai_summary_untrusted": "由 AI 根据未经核实的反馈内容生成，采取行动前请对照原文核实。",
+  "feedback_dev_ai_summary_generated_at": "生成于 ${time}",
+  "feedback_dev_note_title": "开发者批改",
+  "feedback_dev_note_private": "仅开发者可见，反馈人看不到。",
+  "feedback_dev_note_hint": "分诊、根因、对 AI 总结的更正……",
+  "feedback_dev_note_updated_at": "更新于 ${time}",
+  "feedback_dev_note_save": "保存批改",
+  "feedback_dev_note_saved": "批改已保存",
+  "feedback_dev_note_badge": "已批改"
 }

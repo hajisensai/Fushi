@@ -56,6 +56,9 @@ export const FEEDBACK_LIMITS = {
   bodyMax: 8000,
   contactMax: 200,
   replyMax: 4000,
+  /** 开发者私有：AI 总结 / 开发者批改的字数上限（见 devSaveNotes）。 */
+  aiSummaryMax: 4000,
+  devNoteMax: 8000,
   metaMaxBytes: 4096,
   screenshots: 3,
   screenshotMaxBytes: 1536 * 1024,
@@ -95,7 +98,10 @@ function cleanText(v, max, field, { required = false } = {}, sink = null) {
   if (v === undefined || v === null) v = '';
   if (typeof v !== 'string') throw new HttpError(400, `bad_${field}`);
   // eslint-disable-next-line no-control-regex
-  const stripped = stripHiddenChars(v.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ''));
+  // 换行先归一成 \n：网页表单提交的是 CRLF，不归一的话一个换行按 2 个字计（浏览器 maxlength 按 1 个），
+  // 网页与 App 存进去的同一段文字也会是两种换行。
+  const stripped = stripHiddenChars(v.replace(/\r\n?/g, '\n')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ''));
   if (stripped.hidden && sink) sink.hidden = true;
   const s = stripped.text.trim();
   if (required && !s) throw new HttpError(400, `missing_${field}`);
@@ -218,6 +224,16 @@ function devSummary(row) {
   return { ...summary(row), flags: parseFlags(row) };
 }
 
+/** 开发者私有批注（AI 总结 / 开发者批改）：只进开发者出口，反馈人接口永远不带。 */
+function devNotes(row) {
+  return {
+    aiSummary: row.ai_summary ?? null,
+    aiSummaryAt: row.ai_summary_at ?? null,
+    devNote: row.dev_note ?? null,
+    devNoteAt: row.dev_note_at ?? null,
+  };
+}
+
 async function timeline(env, id) {
   const rows = await env.DB.prepare(
     `SELECT m.id, m.author, m.body, m.status, m.created_at, a.nickname
@@ -272,6 +288,7 @@ export async function devView(env, row) {
   }
   return {
     ...devSummary(row),
+    ...devNotes(row),
     reopenedAs: await reopenedAs(env, row.id),
     body: row.body,
     contact: row.contact,
@@ -483,6 +500,35 @@ export async function devUpdate(env, dev, row, body, now) {
 }
 
 /**
+ * 开发者私有批注：`aiSummary`（AI 代理回写）/ `devNote`（开发者批改），至少给一个；空串 = 清除。
+ * 文字照常过 cleanText（剥伪装字符）。不写时间线、不动 updated_at / dev_reply_at——反馈人看不到，
+ * 也不该因此亮「有新回复」或让条目在处理台列表里跳到最前。
+ */
+export const DEV_NOTE_FIELDS = [
+  ['aiSummary', 'ai_summary', FEEDBACK_LIMITS.aiSummaryMax],
+  ['devNote', 'dev_note', FEEDBACK_LIMITS.devNoteMax],
+];
+
+/** 批注文字的唯一清洗口径（接口与 scripts/feedback.mjs 共用）：空白 → null。 */
+export function cleanDevNoteText(col, value) {
+  const field = DEV_NOTE_FIELDS.find(([, c]) => c === col);
+  if (!field) throw new Error(`unknown dev note column: ${col}`);
+  return cleanText(value, field[2], col) || null;
+}
+
+export async function devSaveNotes(env, row, body, now) {
+  const fields = DEV_NOTE_FIELDS
+    .filter(([key]) => body && body[key] !== undefined && body[key] !== null);
+  if (fields.length === 0) throw new HttpError(400, 'nothing_to_update');
+  const sets = fields.map(([, col], i) => `${col} = ?${2 + 2 * i}, ${col}_at = ?${3 + 2 * i}`);
+  const args = fields.flatMap(([key, col]) => {
+    const text = cleanDevNoteText(col, body[key]);
+    return text ? [text, now] : [null, null];
+  });
+  await env.DB.prepare(`UPDATE feedback SET ${sets.join(', ')} WHERE id = ?1`).bind(row.id, ...args).run();
+}
+
+/**
  * 处理台列表：按最近变化倒序，游标 `<updated_at>:<id>`。status = 'active' 表示未结案（open + in_progress）。
  */
 export async function devList(env, { status, cursor, limit, q }) {
@@ -492,7 +538,9 @@ export async function devList(env, { status, cursor, limit, q }) {
     const i = cursor.indexOf(':');
     after = { at: Number(cursor.slice(0, i)), id: cursor.slice(i + 1) };
   }
-  const cols = 'id, category, title, status, created_at, updated_at, dev_reply_at, user_reply_at, account_id, attachments, flags, parent_id';
+  const cols = 'id, category, title, status, created_at, updated_at, dev_reply_at, user_reply_at, account_id, attachments, flags, parent_id, '
+    // 列表只露一行预览：截 200 字，全文看详情（devView），省得一页 50 条整段下发。
+    + 'substr(ai_summary, 1, 200) AS ai_summary, dev_note IS NOT NULL AS has_dev_note';
   const page = after
     ? 'AND (updated_at < ?2 OR (updated_at = ?2 AND id < ?3))'
     : 'AND ?2 IS NULL AND ?3 IS NULL';
@@ -525,6 +573,8 @@ export async function devList(env, { status, cursor, limit, q }) {
     ...devSummary(r),
     hasAccount: r.account_id !== null,
     attachments: parseAttachments(r).length,
+    aiSummary: r.ai_summary ?? null,
+    hasDevNote: Boolean(r.has_dev_note),
     // 反馈人在开发者上次处理之后又说话了 → 处理台标「新消息」。
     awaitingDev: r.user_reply_at !== null && (r.dev_reply_at === null || r.user_reply_at > r.dev_reply_at),
   }));
@@ -619,6 +669,7 @@ const RE = {
   devList: /^\/v1\/dev\/feedback$/,
   devOne: new RegExp(`^/v1/dev/feedback/${ID}$`),
   devAttach: new RegExp(`^/v1/dev/feedback/${ID}/attachments/([a-z0-9]{1,4})$`),
+  devNotes: new RegExp(`^/v1/dev/feedback/${ID}/notes$`),
 };
 
 export function isFeedbackPath(path) {
@@ -698,6 +749,13 @@ export async function routeFeedback(request, env, url, now, io) {
     const dev = requireDev(await io.auth(bytes, { mutating: true }));
     const row = await feedbackById(env, m[1]);
     await devUpdate(env, dev, row, io.parse(bytes), now);
+    return json(await devView(env, await feedbackById(env, row.id)), 200, noStore);
+  }
+  if (method === 'POST' && (m = RE.devNotes.exec(path))) {
+    const bytes = await io.readBody(64 * 1024);
+    requireDev(await io.auth(bytes, { mutating: true }));
+    const row = await feedbackById(env, m[1]);
+    await devSaveNotes(env, row, io.parse(bytes), now);
     return json(await devView(env, await feedbackById(env, row.id)), 200, noStore);
   }
   return null;
