@@ -18,7 +18,8 @@
 ///   等）。去掉它们只会让选择器命中更多元素，所以只可能多留，不会误删：hover 态、
 ///   结构伪类在卡片上照常生效。交互态（`:hover` / `:active` / `:focus*`）**不**整条丢：
 ///   Anki 桌面有鼠标 hover，Android WebView 点按也会触发 `:hover`（「点一下显示」的
-///   提示 / 展开写法靠它），只留命中本条元素的那几条，体积代价有限。
+///   提示 / 展开写法靠它），只留命中本条元素的那几条，体积代价有限。交互态属性
+///   `[open]` 同理：导出时 `<details>` 多半关着，卡片上点开后才有 `open`，判断前一并去掉。
 /// * 选择器解析不了（本实现不认识的语法）就当作命中，整条保留。
 /// * `@media` / `@supports` / `@container` / `@layer` 等条件组递归裁剪，裁空了整组去掉；
 ///   `@font-face` / `@keyframes` 只在剩下的规则或释义 HTML 本身（MDX 词典常见的内联
@@ -143,12 +144,12 @@ bool _ruleMayApply(String selectorList, bool Function(String) matches) {
   return false;
 }
 
-/// 去掉选择器里所有伪类 / 伪元素（含函数式的括号部分）；去掉后某个复合选择器空了就补 `*`。
+/// 去掉选择器里所有伪类 / 伪元素（含函数式的括号部分）与交互态属性条件（`[open]`）；
+/// 去掉后某个复合选择器空了就补 `*`。
 /// 返回 null 表示形状不认识（交给调用方按「命中」保守处理）。
 String? _stripPseudos(String selector) {
   final StringBuffer out = StringBuffer();
   int i = 0;
-  int bracketDepth = 0;
   while (i < selector.length) {
     final String c = selector[i];
     if (c == '\\') {
@@ -164,9 +165,20 @@ String? _stripPseudos(String selector) {
       i = end;
       continue;
     }
-    if (c == '[') bracketDepth++;
-    if (c == ']') bracketDepth--;
-    if (c == ':' && bracketDepth == 0) {
+    if (c == '[') {
+      final int close = _skipAttribute(selector, i);
+      if (close < 0) return null;
+      if (_interactiveAttributes.contains(_attributeName(selector, i, close))) {
+        // 交互态属性（`details[open]`）：导出时多半是关着的，卡片上点开才出现——与
+        // 交互态伪类同样放宽，否则展开后的样式在制卡时就被裁掉了（BUG-3236）。
+        _dropSimpleSelector(out, selector, close);
+      } else {
+        out.write(selector.substring(i, close));
+      }
+      i = close;
+      continue;
+    }
+    if (c == ':') {
       int j = i + 1;
       if (j < selector.length && selector[j] == ':') j++;
       while (j < selector.length && _isIdentChar(selector[j])) {
@@ -177,12 +189,7 @@ String? _stripPseudos(String selector) {
         if (close < 0) return null;
         j = close;
       }
-      final String before = out.toString();
-      final bool compoundEmpty =
-          before.isEmpty || RegExp(r'[\s>+~]$').hasMatch(before);
-      final bool compoundContinues =
-          j < selector.length && !RegExp(r'[\s>+~,]').hasMatch(selector[j]);
-      if (compoundEmpty && !compoundContinues) out.write('*');
+      _dropSimpleSelector(out, selector, j);
       i = j;
       continue;
     }
@@ -191,6 +198,49 @@ String? _stripPseudos(String selector) {
   }
   final String result = out.toString().trim();
   return result.isEmpty ? null : result;
+}
+
+/// 用户在卡片上点一下就会变的 HTML 属性（不靠脚本）：`<details open>` / `<dialog open>`。
+/// 带这些属性条件的规则按「属性不在」判断命中，与 `:hover` 等交互态伪类同一口径。
+const Set<String> _interactiveAttributes = <String>{'open'};
+
+/// 去掉了一个简单选择器（伪类 / 交互态属性）之后：它所在的复合选择器若因此空了，补 `*`
+/// 占位（`ul > :hover` → `ul > *`）。[next] 是被去掉部分之后的下标。
+void _dropSimpleSelector(StringBuffer out, String selector, int next) {
+  final String before = out.toString();
+  final bool compoundEmpty =
+      before.isEmpty || RegExp(r'[\s>+~]$').hasMatch(before);
+  final bool compoundContinues =
+      next < selector.length && !RegExp(r'[\s>+~,]').hasMatch(selector[next]);
+  if (compoundEmpty && !compoundContinues) out.write('*');
+}
+
+/// [s] 在 [start] 处是 `[`，返回配对 `]` 之后的下标（跳过引号里的内容）；不闭合返回 -1。
+int _skipAttribute(String s, int start) {
+  int i = start + 1;
+  while (i < s.length) {
+    final String c = s[i];
+    if (c == '\\') {
+      i += 2;
+      continue;
+    }
+    if (c == '"' || c == "'") {
+      final int end = _skipString(s, i);
+      if (end < 0) return -1;
+      i = end;
+      continue;
+    }
+    if (c == ']') return i + 1;
+    i++;
+  }
+  return -1;
+}
+
+/// 属性选择器 `[name op value i]`（[start] 是 `[`、[end] 是 `]` 之后）里的属性名，小写。
+String _attributeName(String s, int start, int end) {
+  final String inner = s.substring(start + 1, end - 1).trimLeft();
+  final Match? m = RegExp(r'^(?:[-\w]*\|)?([-\w\u0080-\uffff]+)').firstMatch(inner);
+  return m?.group(1)?.toLowerCase() ?? '';
 }
 
 bool _isIdentChar(String c) => RegExp(r'[-\w\u0080-￿]').hasMatch(c);

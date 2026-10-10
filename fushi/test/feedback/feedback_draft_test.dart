@@ -143,7 +143,8 @@ void main() {
       reason: '截图各存一个文件',
     );
 
-    // 再打开（带一张新的自动截图）：恢复的是草稿，不是新截图。
+    // 再打开（带一张新的自动截图）：恢复草稿，本次的自动截图接在草稿截图后面
+    // （BUG-3240：以前被草稿整个替换掉，那一刻的现场就丢了）。
     final Uint8List newAuto = Uint8List.fromList(
       img.encodePng(img.Image(width: 3, height: 3)),
     );
@@ -158,7 +159,18 @@ void main() {
     expect(find.text('想要深色图标'), findsOneWidget);
     expect(find.text('写了一半'), findsOneWidget);
     expect(find.text('tg @me'), findsOneWidget);
-    expect(shotCount(), 2);
+    expect(shotCount(), 3);
+    expect(
+      tester
+          .widget<Image>(
+            find.descendant(
+              of: key('feedback-shot-2'),
+              matching: find.byType(Image),
+            ),
+          )
+          .image,
+      isA<MemoryImage>().having((MemoryImage m) => m.bytes, 'bytes', newAuto),
+    );
     expect(
       tester.widget<FushiSwitchListTile>(key('feedback-include-logs')).value,
       isFalse,
@@ -170,6 +182,53 @@ void main() {
     expect(key('feedback-draft-restored'), findsNothing);
     expect(find.text('想要深色图标'), findsNothing);
     expect(shotCount(), 1, reason: '回到刚打开的样子：只剩本次的自动截图');
+  });
+
+  testWidgets('BUG-3241 内容没变时失焦 / 进后台不重写草稿（桌面主窗每次失焦都会触发）', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    await tester.pumpWidget(
+      wrap(FeedbackComposePage(initialScreenshot: autoShot)),
+    );
+    await settle(tester, () => true);
+    await tester.enterText(key('feedback-body'), '写了一半');
+    await settle(tester, draftOnDisk);
+    expect((await readDraft(tester))!.body, '写了一半');
+
+    // 草稿目录里放一个记号：整份重写（先写 draft.tmp/ 再整目录替换）会把它冲掉。
+    final File marker = File('${root.path}/feedback/draft/marker');
+    marker.writeAsStringSync('x');
+    Future<void> blurAndBack() async {
+      for (final AppLifecycleState state in <AppLifecycleState>[
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+      }
+      await settle(tester, () => false);
+    }
+
+    await blurAndBack();
+    await blurAndBack();
+    expect(marker.existsSync(), isTrue, reason: '内容没变，不该重写草稿');
+
+    // 内容变了：失焦照常立刻落盘。
+    await tester.enterText(key('feedback-body'), '写了一半，又补一句');
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await settle(tester, () => !marker.existsSync());
+    expect(marker.existsSync(), isFalse);
+    expect((await readDraft(tester))!.body, '写了一半，又补一句');
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+
+    // 空表单：草稿删掉后再失焦也不再碰磁盘（不反复 clear）。
+    await tester.enterText(key('feedback-body'), '');
+    await settle(tester, () => !draftOnDisk());
+    expect(draftOnDisk(), isFalse);
   });
 
   testWidgets('输入防抖保存；进后台立刻保存；内容清空时草稿删掉', (WidgetTester tester) async {
