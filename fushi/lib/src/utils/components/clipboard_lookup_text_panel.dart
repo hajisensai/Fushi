@@ -238,9 +238,10 @@ class SourceLookupTextPanel extends StatefulWidget {
   final SourceLookupHighlight? highlight;
 
   /// 命中高亮走 M3E tonal 口径：`primaryContainer` 底 + `onPrimaryContainer` 字、
-  /// 整词两端收成胶囊圆角。app 外查词窗（popup_dictionary_page，M3E 顶部区域）用；
-  /// 默认 false 维持与 WebView 卡片内 `--fushi-primary-highlight`（主色 35%）同色的
-  /// 旧口径（首页词典 tab 等存量宿主不变）。
+  /// 整词两端收成胶囊圆角。宿主按设计系统传：Material（非玻璃 / 非墨水屏）时 WebView
+  /// 挂 `html.fushi-m3e`，popup.css 让卡内命中同样走 primaryContainer，本条必须同为
+  /// true；false 是与 `--fushi-primary-highlight`（主色 35%）同色的非 M3E 口径。
+  /// 同一次查词的源文本条与结果卡同色（用户 2026-10-10 拍板）。
   final bool tonalHighlight;
 
   /// TODO-617: [onLookup] reports the tapped char rect in **screen (global)**
@@ -278,7 +279,8 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
       color: theme.colorScheme.onSurface,
       height: 1.5,
     );
-    // 命中高亮底色与弹窗 WebView 内的 `--fushi-primary-highlight` 同一口径
+    // 命中高亮底色与弹窗 WebView 内的命中同一口径：M3E 下是 popup.css
+    // `html.fushi-m3e` 段的 primaryContainer，否则是 `--fushi-primary-highlight`
     // （`popup_theme_css.dart` 的 `cssRgba035(scheme.primary)`）。源文本条与弹窗
     // 卡片是同一次查词的两个可见面，底色不同会让用户以为是两种不同的标记。
     final Color highlightColor = widget.tonalHighlight
