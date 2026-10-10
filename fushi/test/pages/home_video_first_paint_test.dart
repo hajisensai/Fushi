@@ -16,22 +16,18 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
-import 'package:fushi_engine/sync/fushi_library_host_service.dart';
-import 'package:fushi/src/sync/remote_library_source.dart';
-import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 
-/// BUG-3235：视频库首屏「一块块加载」（用户实报：点开视频库，里面的视频是一块块出来的）。
+/// BUG-3235：视频库首屏「一块块加载」（用户实报：点开视频库，里面的视频是一块块
+/// 出来的）。
 ///
-/// 根因：本地列表、分组映射、远端清单各自 setState——列表先到就拿空映射画出
-/// 全员散卡，映射到了再收拢成合集、换海报，远端收养后又整套重载映射两遍。
-/// 这里钉死两件事：
-/// * 映射未就位时三个分区都只画骨架，不拿空映射渲染散卡；
-/// * 远端收养一次写入只换来一轮映射重载（不再被表变更防抖再补一轮）。
+/// 根因：本地列表与分组映射各自 setState——列表先到就拿**空映射**画出全员散卡，
+/// 映射（十几张表）到了再收拢成合集、换刮削海报。这里钉死：映射未就位时三个
+/// 分区都只画骨架，任何一帧都不拿空映射渲染散卡；映射一到整墙一次换成终态。
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -58,7 +54,7 @@ void main() {
     }
   });
 
-  late _CountingDatabase db;
+  late _GatedMapsDatabase db;
   late PreferencesRepository prefs;
   late PlatformServices platformServices;
   late FakeAnkiRepository ankiRepository;
@@ -68,7 +64,7 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     LocaleSettings.setLocale(AppLocale.zhCn);
-    db = _CountingDatabase();
+    db = _GatedMapsDatabase();
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     storeDir = Directory.systemTemp.createTempSync('fushi_video_first_paint');
@@ -80,34 +76,27 @@ void main() {
   });
 
   tearDown(() async {
-    db.releaseCollections();
+    db.release();
     await db.close();
     if (storeDir.existsSync()) {
       storeDir.deleteSync(recursive: true);
     }
   });
 
-  Widget buildApp(VideoLibrarySection section, {RemoteVideoClient? remote}) =>
-      ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: HomeVideoPage(
-                repo: VideoBookRepository(db),
-                section: section,
-                remoteVideoClientLoader: remote == null
-                    ? null
-                    : () async => remote,
-              ),
-            ),
-          ),
+  Widget buildApp(VideoLibrarySection section) => ProviderScope(
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: HomeVideoPage(repo: VideoBookRepository(db), section: section),
         ),
-      );
+      ),
+    ),
+  );
 
   Future<void> seedVideo(String uid, String title) => db.upsertVideoBook(
     VideoBooksCompanion(
@@ -137,13 +126,6 @@ void main() {
     const ValueKey<String>('home_video_library_maps_pending'),
   );
 
-  void useDesktopView(WidgetTester tester) {
-    tester.view.physicalSize = const Size(1280, 1600);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-  }
-
   for (final VideoLibrarySection section in <VideoLibrarySection>[
     VideoLibrarySection.series,
     VideoLibrarySection.allVideos,
@@ -152,12 +134,15 @@ void main() {
     testWidgets('映射未就位时 ${section.name} 只画骨架，不拿空映射铺散卡', (
       WidgetTester tester,
     ) async {
-      useDesktopView(tester);
+      tester.view.physicalSize = const Size(1280, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       final int cid = await seedSeriesAndLoose();
-      db.holdCollections();
+      db.hold();
 
       await tester.pumpWidget(buildApp(section));
-      // 列表早已到位、映射被卡住：逐帧推进，任何一帧都不许出现成员散卡。
+      // 列表早已到位、映射被卡住：逐帧推进，任何一帧都不许出现散卡。
       for (int i = 0; i < 10; i++) {
         await tester.pump(const Duration(milliseconds: 16));
         expect(skeleton, findsOneWidget, reason: '第 $i 帧：映射未到应画骨架');
@@ -166,7 +151,7 @@ void main() {
         expect(cardOf('video/loose'), findsNothing);
       }
 
-      db.releaseCollections();
+      db.release();
       await tester.pumpAndSettle();
 
       expect(skeleton, findsNothing);
@@ -187,111 +172,25 @@ void main() {
       }
     });
   }
-
-  testWidgets('远端收养一次写入只换来一轮映射重载', (WidgetTester tester) async {
-    useDesktopView(tester);
-    final List<RemoteVideoInfo> remoteVideos = <RemoteVideoInfo>[
-      for (int i = 0; i < 6; i++)
-        RemoteVideoInfo(
-          id: 'remote-$i',
-          title: 'Remote $i',
-          collection: RemoteCollectionMembership(
-            collectionName: 'Remote show',
-            collectionType: 'collection',
-            sortIndex: i,
-          ),
-        ),
-    ];
-
-    await tester.pumpWidget(
-      buildApp(
-        VideoLibrarySection.series,
-        remote: _ListFakeRemoteVideoClient(remoteVideos),
-      ),
-    );
-    await tester.pumpAndSettle();
-    // 等防抖窗口过完，确认没有迟到的补刀重载。
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pumpAndSettle();
-
-    expect(
-      (await db.getAllCollectionItems()).length,
-      remoteVideos.length,
-      reason: '前提：远端清单确实写进了合集表',
-    );
-    // 首屏一轮 + 收养写入后一轮。此前逐条事务收养 + 表变更防抖会再补一轮。
-    expect(db.collectionReads, 2);
-  });
 }
 
-/// 统计 / 卡住 [getAllMediaCollections]——它只被库页的整套映射重载读取，
-/// 读一次 = 重载一轮。
-class _CountingDatabase extends FushiDatabase {
-  _CountingDatabase() : super.forTesting(NativeDatabase.memory());
+/// 卡住 [getAllMediaCollections]——它只被库页的整套映射加载读取，卡住它 = 映射
+/// 迟迟不到，而本地列表照常返回（正是真机上大库的时序）。
+class _GatedMapsDatabase extends FushiDatabase {
+  _GatedMapsDatabase() : super.forTesting(NativeDatabase.memory());
 
-  int collectionReads = 0;
   Completer<void>? _gate;
 
-  void holdCollections() => _gate = Completer<void>();
+  void hold() => _gate = Completer<void>();
 
-  void releaseCollections() {
+  void release() {
     final Completer<void>? gate = _gate;
     if (gate != null && !gate.isCompleted) gate.complete();
   }
 
   @override
   Future<List<MediaCollectionRow>> getAllMediaCollections() async {
-    collectionReads++;
     await _gate?.future;
     return super.getAllMediaCollections();
   }
-}
-
-class _ListFakeRemoteVideoClient implements RemoteVideoClient {
-  _ListFakeRemoteVideoClient(this._videos);
-  final List<RemoteVideoInfo> _videos;
-
-  @override
-  String get remoteLibrarySourceId => kInterconnectRemoteLibrarySourceId;
-
-  @override
-  Future<List<RemoteVideoInfo>> listRemoteVideos() async => _videos;
-
-  @override
-  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(
-    String id, {
-    int episodeIndex = 0,
-  }) async => const RemoteVideoStreamUrls(streamUrl: 'http://x/stream');
-
-  @override
-  Future<void> getRemoteVideoSubtitle(
-    String id,
-    File dest, {
-    int? embeddedStreamIndex,
-    void Function(double progress)? onProgress,
-    int episodeIndex = 0,
-  }) async {}
-
-  @override
-  Future<void> downloadRemoteVideo(
-    String id,
-    File dest, {
-    void Function(double progress)? onProgress,
-    void Function(int received, int? total)? onBytes,
-    Future<void>? cancelSignal,
-  }) async {}
-
-  @override
-  Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
-    String id, {
-    int episodeIndex = 0,
-  }) async => (positionMs: 0, updatedAtMs: 0);
-
-  @override
-  Future<void> putRemoteVideoPosition(
-    String id,
-    int positionMs,
-    int updatedAtMs, {
-    int episodeIndex = 0,
-  }) async {}
 }
