@@ -317,7 +317,7 @@ void main() {
       final List<String> args = runnerCalls.single;
       expect(args[args.indexOf('-ss') + 1], '12.000');
       // 末段按真实时长收尾，不越过片尾。
-      expect(args[args.indexOf('-to') + 1], '15.500');
+      expect(args[args.indexOf('-t') + 1], '3.500');
       expect(args.indexOf('-ss'), lessThan(args.indexOf('-i')));
     });
 

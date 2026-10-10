@@ -2,6 +2,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'package:drift/drift.dart' show Value;
+import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_input.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_bar.dart';
@@ -3990,6 +3991,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // 外挂，libmpv 才会让它与视频时间轴同步出声（修「初始无声、跳转后才有声」）；不再等
         // load 返回后才挂（那时 play 已开始，新加音轨不会自动 seek 到当前位置 → 无声）。
         externalAudioTrackUrl: urls.audioStreamUrl,
+        // 蓝光标题：host 下发段表，按本地蓝光同一套 EDL 播放（光盘菜单远端不可用）。
+        remoteDiscTitle: urls.discTitle,
       );
       if (seq == _episodeLoadSeq && mounted && !_failed) {
         _startRemotePlaybackSession(client, info, initialPositionMs);
@@ -4895,6 +4898,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-1158：常规载入（新视频/换集）默认探测 HLS master 画质档；画质切档自身的
     // 重载传 false，避免用 variant（media playlist）URL 重探测把档位列表清空。
     bool detectHls = true,
+    // 互联 host 的蓝光标题段表（见 [VideoPlayerController.load] 的同名参数）。
+    BlurayRemoteTitle? remoteDiscTitle,
   }) async {
     // 新一次载入作废上一次的网络流「没打开」判定（换集 / 重试共用同一 controller，
     // 旧定时器不得给新一程判死）。
@@ -5011,6 +5016,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         httpHeaderFields: _streamHttpHeaderFields,
         autoPlay: !_sourceReviewActive,
         externalAudioTrackUrl: externalAudioTrackUrl,
+        remoteDiscTitle: remoteDiscTitle,
         onEmbeddedSubtitleAutoLoad: _handleEmbeddedSubtitleAutoLoad,
       );
     } catch (e, stack) {
@@ -5035,7 +5041,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-1000：远端/流视频（videoPath==null）把制卡抽取源设为可 seek 的流 URL，使
     // ImmersionMiningEngine 能从流 URL 按时间戳裁 GIF/音频（本地视频仍用 videoPath）。
     // 覆盖是幂等的：本地/空时清除，避免换片残留上一条流 URL。
-    controller.setMiningSourceOverride(videoPath == null ? mediaUri : null);
+    // 远端蓝光标题的 [mediaUri] 是 `edl://`，ffmpeg 打不开：不设成制卡源（host 给了
+    // 低清制卡流时远端载入路径会再覆盖成它）。
+    controller.setMiningSourceOverride(
+      videoPath == null && remoteDiscTitle == null ? mediaUri : null,
+    );
     // TODO-1158：探测当前流是否为 HLS master（多档画质），填充画质菜单。仅常规载入
     // 触发（画质切档的重载 detectHls=false）；网络 .m3u8 直链才 fetch，best-effort。
     if (detectHls) {
