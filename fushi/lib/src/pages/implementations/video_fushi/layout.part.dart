@@ -432,7 +432,7 @@ extension _VideoLayout on _VideoFushiPageState {
             child: Stack(
               children: <Widget>[
                 Positioned.fill(child: _buildDiscMenuSurface(controller)),
-                _buildDiscMenuBar(controller),
+                _buildDiscMenuChrome(controller),
                 _buildOsdOverlay(),
               ],
             ),
@@ -778,8 +778,6 @@ extension _VideoLayout on _VideoFushiPageState {
                         _buildVideoSideActionRail(controller),
                         _buildVideoSidePanelOverlay(controller),
                         _buildVideoControlPopoverOverlay(controller),
-                        if (controller.isBlurayNavigationSession)
-                          _buildDiscMenuBar(controller),
                         ValueListenableBuilder<bool>(
                           valueListenable: _videoControlEditMode,
                           builder: (BuildContext _, bool editing, __) {
@@ -1308,7 +1306,9 @@ extension _VideoLayout on _VideoFushiPageState {
                   constraints: const BoxConstraints(maxWidth: 720),
                   child: VideoFloatingPanelSurface(
                     opaque: true,
-                    surfaceKey: const ValueKey<String>('video-subtitle-delay-bar'),
+                    surfaceKey: const ValueKey<String>(
+                      'video-subtitle-delay-bar',
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,

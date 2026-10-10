@@ -215,17 +215,12 @@ extension VideoDiscMenuController on VideoPlayerController {
     await _sendDiscCommand(command);
   }
 
-  Future<void> setDiscPointerPosition(
-    double x,
-    double y, {
-    bool select = false,
-  }) async {
+  /// Clicks the authored button at normalized video coordinates (select +
+  /// activate in one native step). There is deliberately no hover counterpart:
+  /// see [videoDiscNavigationCommand].
+  Future<void> clickDiscMenu(double x, double y) async {
     await _sendDiscCommand(
-      videoDiscNavigationCommand(
-        select ? 'mouse-click' : 'mouse-move',
-        x: x,
-        y: y,
-      ),
+      videoDiscNavigationCommand('mouse-click', x: x, y: y),
     );
   }
 

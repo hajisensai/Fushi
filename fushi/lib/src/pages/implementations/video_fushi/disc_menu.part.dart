@@ -205,6 +205,12 @@ extension _VideoDiscMenu on _VideoFushiPageState {
       _clearClipExportState();
       _pausedForLookup = false;
       if (_hasVisiblePopup) _popNestedPopupAt(0);
+      // Reveal the menu chrome once on entry so it can be found, then let it fade.
+      // The previous chrome may have unmounted under the pointer / focus without
+      // an exit callback, so its holds do not survive into this menu visit.
+      _discMenuChromeHovered = false;
+      _discMenuChromeFocused = false;
+      _pokeDiscMenuChrome();
     }
     _discMenuWasActive = blocked;
     final String? selected = controller.selectedDiscPlaylistPath;
@@ -244,30 +250,14 @@ extension _VideoDiscMenu on _VideoFushiPageState {
         controller.selectedDiscPlaylistPath == path &&
         controller.discTitleGeneration == nativeGeneration;
     try {
-      final VideoBookRow? row = await appModel.database.transaction(() async {
-        VideoBookRow? existing = await widget.repo.findByVideoPath(path);
-        if (!current() || existing != null) return existing;
-        // Menu-only bonus titles can be absent from the importer's filtered list.
-        // Lookup, collision allocation and insertion share one DB transaction.
-        final List<VideoBookRow> books = await widget.repo.listAll();
-        if (!current()) return null;
-        final String uid = coreUniqueVideoBookUid(
-          coreSingleVideoBookUid(path),
-          books.map((VideoBookRow book) => book.bookUid).toSet(),
-        );
-        final String root = blurayDiscRootForPlaylistPath(path)!;
-        await widget.repo.saveVideoBook(
-          VideoBooksCompanion(
-            bookUid: Value(uid),
-            title: Value(
-              '${p.basename(root)} · ${p.basenameWithoutExtension(path)}',
-            ),
-            videoPath: Value(path),
-            importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-          ),
-        );
-        return widget.repo.getByBookUid(uid);
-      });
+      // Menu-only bonus titles can be absent from the importer's filtered list.
+      // They get their row through the importer's own rules (disc source, disc
+      // collection, META disc name) — a hand-built sourceless row is invisible
+      // to every scrape entry point, which select books by source.
+      final VideoBookRow? row = await ensureBlurayTitleInLibrary(
+        appModel.database,
+        path,
+      );
       if (!current() || row == null) return;
       final VideoBookRow selected = row;
       // Identity changes atomically before enabling title playback consumers.
@@ -315,47 +305,84 @@ extension _VideoDiscMenu on _VideoFushiPageState {
     }
   }
 
+  /// 原盘菜单顶栏的自动隐藏：任何指针活动都把它唤出，静置
+  /// [_VideoFushiPageState._videoControlsHoverDuration] 后淡出（与常规控制条同节奏）。
+  /// 指针悬停或焦点停在顶栏上时不排隐藏。
+  void _pokeDiscMenuChrome() {
+    if (!mounted) return;
+    _discMenuChromeVisible.value = true;
+    _discMenuChromeHideTimer?.cancel();
+    if (_discMenuChromeHovered || _discMenuChromeFocused) return;
+    _discMenuChromeHideTimer = Timer(
+      _VideoFushiPageState._videoControlsHoverDuration,
+      () {
+        if (mounted) _discMenuChromeVisible.value = false;
+      },
+    );
+  }
+
+  void _setDiscMenuChromeHovered(bool hovered) {
+    _discMenuChromeHovered = hovered;
+    _pokeDiscMenuChrome();
+  }
+
+  void _setDiscMenuChromeFocused(bool focused) {
+    _discMenuChromeFocused = focused;
+    _pokeDiscMenuChrome();
+  }
+
+  Future<void> _clickDiscMenu(
+    VideoPlayerController controller,
+    Offset position,
+    Size viewport,
+  ) async {
+    if (controller.discMenuEntryPending) return;
+    final Offset? point = blurayMenuPointerPosition(
+      position: position,
+      viewport: viewport,
+      video: Size(
+        (controller.videoWidth ?? 0).toDouble(),
+        (controller.videoHeight ?? 0).toDouble(),
+      ),
+      fit: videoFitModeToBoxFit(_videoFitMode),
+    );
+    if (point == null) return;
+    try {
+      await controller.clickDiscMenu(point.dx, point.dy);
+    } catch (error, stack) {
+      ErrorLogService.instance.log('VideoDiscMenu.pointer', error, stack);
+      if (mounted) {
+        _showOsd(t.video_disc_navigation_failed, severity: ToastSeverity.error);
+      }
+    }
+  }
+
+  /// 原盘画面上的指针层。只有**点击**交给原盘（选中并激活所点按钮）；指针移动只用来
+  /// 唤出顶栏。
+  ///
+  /// 不转发移动：libbluray 把每一次指针位置都当成「选中该处按钮」
+  /// （graphics_controller.c `_mouse_move`），而盘上带 auto-action 的按钮一被选中
+  /// 就执行导航命令。鼠标从刚展开的子菜单移开时会掠过别的按钮（页签 / 父项），菜单
+  /// 随之被切回、收起；BD-J 同理（移动即 `MOUSE_MOVED`，改焦点）。原盘菜单按遥控器
+  /// 设计，指针在上面只该有「点哪按哪」一种语义，与触屏一致。
   Widget _buildDiscMenuSurface(VideoPlayerController controller) {
     if (controller.discMenuEntryPending) return const SizedBox.expand();
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        Future<void> pointer(Offset position, {bool select = false}) async {
-          if (controller.discMenuEntryPending) return;
-          final Offset? point = blurayMenuPointerPosition(
-            position: position,
-            viewport: constraints.biggest,
-            video: Size(
-              (controller.videoWidth ?? 0).toDouble(),
-              (controller.videoHeight ?? 0).toDouble(),
-            ),
-            fit: videoFitModeToBoxFit(_videoFitMode),
-          );
-          if (point == null) return;
-          try {
-            await controller.setDiscPointerPosition(
-              point.dx,
-              point.dy,
-              select: select,
-            );
-          } catch (error, stack) {
-            ErrorLogService.instance.log('VideoDiscMenu.pointer', error, stack);
-            if (select && mounted) {
-              _showOsd(
-                t.video_disc_navigation_failed,
-                severity: ToastSeverity.error,
-              );
-            }
-          }
-        }
-
         return MouseRegion(
           cursor: SystemMouseCursors.basic,
-          onHover: (PointerHoverEvent event) =>
-              unawaited(pointer(event.localPosition)),
+          onHover: (PointerHoverEvent _) => _pokeDiscMenuChrome(),
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
+            onTapDown: (TapDownDetails _) => _pokeDiscMenuChrome(),
             onTapUp: (TapUpDetails details) {
-              unawaited(pointer(details.localPosition, select: true));
+              unawaited(
+                _clickDiscMenu(
+                  controller,
+                  details.localPosition,
+                  constraints.biggest,
+                ),
+              );
               _focusOwnership.reclaim(FocusReclaimCause.gesture);
             },
             // Claim press gestures so authored buttons never become speed/seek.
@@ -367,22 +394,154 @@ extension _VideoDiscMenu on _VideoFushiPageState {
     );
   }
 
-  Widget _buildDiscMenuBar(VideoPlayerController controller) => Positioned(
-    top: 8,
-    left: 8,
-    right: 8,
-    child: SafeArea(
-      child: BlurayDiscMenuBar(
-        navigationEnabled: !controller.discMenuEntryPending,
-        backLabel: t.back,
-        topMenuLabel: t.video_disc_top_menu,
-        popupMenuLabel: t.video_disc_popup_menu,
-        onBack: () => unawaited(_handleBackOrExit()),
-        onTopMenu: () => unawaited(_runDiscNavigation('menu')),
-        onPopupMenu: () => unawaited(_runDiscNavigation('popup')),
+  /// 原盘菜单的顶栏：与播放时的顶栏同一套部件——MD3 Expressive 下返回键并进标题
+  /// 浮动胶囊，Apple 下是玻璃圆钮 + 标题；右侧「主菜单 / 弹出菜单」是同款按钮组，窄屏
+  /// 收进「⋯」。整条随 [_discMenuChromeVisible] 淡出，隐藏时不吃点击（点穿给原盘）。
+  Widget _buildDiscMenuChrome(VideoPlayerController controller) {
+    final bool apple = _appleChrome;
+    final bool desktop = _isDesktopVideoControls;
+    final double scale = _videoUiScale;
+    final Widget back = FushiTooltip(
+      message: t.back,
+      child: KeyedSubtree(
+        key: const ValueKey<String>('bluray-menu-exit'),
+        child: _chromeIconButton(
+          icon: _videoControlItemIcon(VideoControlItem.back),
+          desktop: desktop,
+          onPressed: () => unawaited(_handleBackOrExit()),
+        ),
       ),
-    ),
-  );
+    );
+    final List<VideoBarEntry> actions = controller.discMenuEntryPending
+        ? const <VideoBarEntry>[]
+        : _discNavigationBarEntries(desktop: desktop);
+    final Widget title = ValueListenableBuilder<String?>(
+      valueListenable: _titleNotifier,
+      builder: (BuildContext _, String? value, __) => Text(
+        value ?? '',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: _discMenuTitleStyle(),
+      ),
+    );
+    return BlurayDiscMenuChrome(
+      visible: _discMenuChromeVisible,
+      transitionDuration: _videoControlsTransitionDuration,
+      slideEnabled: !apple,
+      hiddenOffset: Offset(0, -24 * scale),
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      onHoverChanged: _setDiscMenuChromeHovered,
+      onFocusChanged: _setDiscMenuChromeFocused,
+      child: VideoTopBarSlots(
+        titlePlacement: VideoTopBarTitlePlacement.left,
+        leftLead: apple
+            ? VideoGlassSurface(enabled: true, child: back)
+            : const SizedBox.shrink(),
+        leftTail: const SizedBox.shrink(),
+        title: apple
+            ? Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8 * scale),
+                  child: title,
+                ),
+              )
+            : Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: VideoM3eFloatingSurface(
+                  enabled: true,
+                  padding: EdgeInsets.fromLTRB(
+                    4 * scale,
+                    4 * scale,
+                    16 * scale,
+                    4 * scale,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      back,
+                      SizedBox(width: 4 * scale),
+                      Flexible(child: title),
+                    ],
+                  ),
+                ),
+              ),
+        rightLead: actions.isEmpty
+            ? const SizedBox.shrink()
+            : VideoGlassSurface(
+                enabled: apple,
+                padding: EdgeInsets.symmetric(horizontal: 4 * scale),
+                child: VideoControlBar(
+                  fill: false,
+                  clusterStyle: _m3eFloatingBarStyle(verticalAlignment: 0),
+                  moreButtonBuilder: (VoidCallback open) =>
+                      _videoBarMoreButton(open, desktop: desktop),
+                  entries: actions,
+                ),
+              ),
+        rightTail: const SizedBox.shrink(),
+      ),
+    );
+  }
+
+  TextStyle _discMenuTitleStyle() => _m3eChrome
+      ? TextStyle(
+          color: _VideoFushiPageState._videoChromeNeutralFg,
+          fontSize: 16 * _videoUiScale,
+          height: 1.25,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.1,
+        )
+      : _videoControlTitleStyle();
+
+  /// 原盘「主菜单 / 弹出菜单」两个导航钮。播放正片时挂在常规顶栏右上按钮组的头部
+  /// （[_topBarSlotGroup]），随控制条一起显隐；菜单模式挂在 [_buildDiscMenuChrome]。
+  /// 两处同一份条目，窄屏时都按优先级收进「⋯」。
+  List<VideoBarEntry> _discNavigationBarEntries({required bool desktop}) {
+    VideoBarEntry entry(
+      String key,
+      IconData icon,
+      String label,
+      String action,
+    ) {
+      void run() {
+        _pokeControlsVisible();
+        _pokeDiscMenuChrome();
+        unawaited(_runDiscNavigation(action));
+      }
+
+      return VideoBarEntry(
+        // 原盘会话里它们是主导航：比它们先收起的只剩全屏 / 设置以外的一切。
+        priority: 87,
+        menuAction: VideoBarMenuAction(
+          icon: icon,
+          label: label,
+          onSelected: run,
+        ),
+        child: FushiTooltip(
+          message: label,
+          child: KeyedSubtree(
+            key: ValueKey<String>(key),
+            child: _chromeIconButton(
+              icon: icon,
+              desktop: desktop,
+              onPressed: run,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return <VideoBarEntry>[
+      entry('bluray-menu-top', FushiIcons.toc, t.video_disc_top_menu, 'menu'),
+      entry(
+        'bluray-menu-popup',
+        FushiIcons.menu,
+        t.video_disc_popup_menu,
+        'popup',
+      ),
+    ];
+  }
 }
 
 class _BlurayJavaRuntimeInstallDialog extends StatefulWidget {

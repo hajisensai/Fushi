@@ -1,97 +1,79 @@
-import 'package:material_ui/material_ui.dart';
-import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/widgets.dart';
+import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 
-/// App navigation chrome for an authored disc menu. Narrow surfaces keep only
-/// the three accessible icons, leaving the disc's own buttons visible.
-class BlurayDiscMenuBar extends StatelessWidget {
-  const BlurayDiscMenuBar({
-    required this.backLabel,
-    required this.topMenuLabel,
-    required this.popupMenuLabel,
-    required this.onBack,
-    required this.onTopMenu,
-    required this.onPopupMenu,
-    this.navigationEnabled = true,
+/// Top chrome of an authored disc menu, shown over the disc's own picture.
+///
+/// The disc menu replaces the regular media_kit controls, so their auto-hide
+/// never reaches this bar; it follows its own [visible] source instead (driven
+/// by the page with the same 2 s idle timeout as the controls). While hidden it
+/// does not hit-test, so clicks fall through to the disc's buttons. Hovering or
+/// focusing the bar reports back through [onHoverChanged] / [onFocusChanged] so
+/// the page holds it open while it is being used.
+///
+/// The bar content ([child]) is built from the player's shared top-bar parts
+/// (MD3 Expressive floating pills / Apple glass), never a private style.
+class BlurayDiscMenuChrome extends StatelessWidget {
+  const BlurayDiscMenuChrome({
+    required this.visible,
+    required this.transitionDuration,
+    required this.slideEnabled,
+    required this.hiddenOffset,
+    required this.margin,
+    required this.onHoverChanged,
+    required this.onFocusChanged,
+    required this.child,
     super.key,
   });
 
-  final String backLabel;
-  final String topMenuLabel;
-  final String popupMenuLabel;
-  final bool navigationEnabled;
-  final VoidCallback onBack;
-  final VoidCallback onTopMenu;
-  final VoidCallback onPopupMenu;
+  final ValueListenable<bool> visible;
+  final Duration transitionDuration;
+
+  /// MD3 Expressive spring slide (off for the Apple design system).
+  final bool slideEnabled;
+  final Offset hiddenOffset;
+  final EdgeInsets margin;
+  final ValueChanged<bool> onHoverChanged;
+  final ValueChanged<bool> onFocusChanged;
+  final Widget child;
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (BuildContext context, BoxConstraints constraints) {
-      final double textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
-      final bool compact = constraints.maxWidth < 400 * textScale;
-      Widget menuButton(
-        String key,
-        String label,
-        IconData icon,
-        VoidCallback? onPressed,
-      ) {
-        if (compact) {
-          return FushiIconButtonControl(
-            key: ValueKey<String>(key),
-            tooltip: label,
-            icon: FushiIcon(
-              icon,
-              color: onPressed == null ? Colors.white38 : Colors.white,
-            ),
-            onPressed: onPressed,
-          );
-        }
-        return Flexible(
-          child: FushiTooltip(
-            message: label,
-            child: FushiTextButton.icon(
-              key: ValueKey<String>(key),
-              icon: FushiIcon(icon),
-              label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-              onPressed: onPressed,
+  Widget build(BuildContext context) => Positioned(
+    top: 0,
+    left: 0,
+    right: 0,
+    child: SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: margin,
+        child: ValueListenableBuilder<bool>(
+          valueListenable: visible,
+          child: VideoM3eChromeSlide(
+            enabled: slideEnabled,
+            visible: visible,
+            hiddenOffset: hiddenOffset,
+            child: MouseRegion(
+              onEnter: (PointerEnterEvent _) => onHoverChanged(true),
+              onExit: (PointerExitEvent _) => onHoverChanged(false),
+              child: Focus(
+                canRequestFocus: false,
+                skipTraversal: true,
+                onFocusChange: onFocusChanged,
+                child: child,
+              ),
             ),
           ),
-        );
-      }
-
-      final List<Widget> buttons = <Widget>[
-        FushiIconButtonControl(
-          key: const ValueKey<String>('bluray-menu-exit'),
-          tooltip: backLabel,
-          icon: const FushiIcon(FushiIcons.back, color: Colors.white),
-          onPressed: onBack,
+          builder: (BuildContext _, bool shown, Widget? bar) => IgnorePointer(
+            ignoring: !shown,
+            child: AnimatedOpacity(
+              opacity: shown ? 1 : 0,
+              duration: transitionDuration,
+              child: bar,
+            ),
+          ),
         ),
-        menuButton(
-          'bluray-menu-top',
-          topMenuLabel,
-          FushiIcons.toc,
-          navigationEnabled ? onTopMenu : null,
-        ),
-        menuButton(
-          'bluray-menu-popup',
-          popupMenuLabel,
-          FushiIcons.menu,
-          navigationEnabled ? onPopupMenu : null,
-        ),
-      ];
-      return Align(
-        alignment: Alignment.topLeft,
-        child: Material(
-          color: Colors.black87,
-          borderRadius: FushiBorderRadius.control,
-          child: compact
-              ? Wrap(children: buttons)
-              : Row(mainAxisSize: MainAxisSize.min, children: buttons),
-        ),
-      );
-    },
+      ),
+    ),
   );
 }
