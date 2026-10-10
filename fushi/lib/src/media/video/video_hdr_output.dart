@@ -298,6 +298,34 @@ CompositorHdrTarget compositorHdrTarget(HdrDisplayInfo display) {
   );
 }
 
+/// 合成器内 HDR 某一步没成时该怎么退：失败的**层级**决定记忆的范围。
+enum CompositorHdrFallback {
+  /// 引擎没开成（原版引擎 / 导出缺失）：进程内不会变，记成「不支持」。
+  engineUnsupported,
+
+  /// 视频纹理还没建好：本轮走宿主窗，纹理就绪后重判，不记任何失败。
+  awaitTexture,
+
+  /// 这一路纹理拒绝切 HDR：只对当前 Player 退回宿主窗，换片后再试。
+  textureRefused,
+}
+
+/// 合成器内 HDR 进入失败时的分流（[engineOn]：引擎交换链切成功；[textureReady]：
+/// 视频纹理已建好；[textureOn]：纹理切成功）。都成功返回 null。
+///
+/// 早先任何一步失败都把整个进程记成「不支持」，一次偶发（纹理晚一帧建好）就让 HDR
+/// 一直走宿主窗直到重启 app。
+CompositorHdrFallback? compositorHdrFallback({
+  required bool engineOn,
+  required bool textureReady,
+  required bool textureOn,
+}) {
+  if (!engineOn) return CompositorHdrFallback.engineUnsupported;
+  if (!textureReady) return CompositorHdrFallback.awaitTexture;
+  if (!textureOn) return CompositorHdrFallback.textureRefused;
+  return null;
+}
+
 /// 宿主窗模式下画面 fit 由 mpv 自己算（宿主窗矩形 = [Video] 矩形）：
 /// contain = 保比例留黑边；cover = 保比例裁切（`panscan=1`）；fill = 拉伸。
 Map<String, String> hdrHostFitProperties(VideoFitMode fit) {

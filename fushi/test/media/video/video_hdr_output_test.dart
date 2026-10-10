@@ -330,6 +330,58 @@ void main() {
     });
   });
 
+  group('compositorHdrFallback（合成器 HDR 失败的记忆范围）', () {
+    test('三步都成：不退', () {
+      expect(
+        compositorHdrFallback(engineOn: true, textureReady: true, textureOn: true),
+        isNull,
+      );
+    });
+
+    test('引擎没开成：进程级「不支持」', () {
+      expect(
+        compositorHdrFallback(
+          engineOn: false,
+          textureReady: true,
+          textureOn: false,
+        ),
+        CompositorHdrFallback.engineUnsupported,
+      );
+    });
+
+    test('纹理还没建好：等纹理，不记失败（不得被记成进程级不支持）', () {
+      expect(
+        compositorHdrFallback(
+          engineOn: true,
+          textureReady: false,
+          textureOn: false,
+        ),
+        CompositorHdrFallback.awaitTexture,
+      );
+    });
+
+    test('纹理拒绝：只退当前这一路', () {
+      expect(
+        compositorHdrFallback(
+          engineOn: true,
+          textureReady: true,
+          textureOn: false,
+        ),
+        CompositorHdrFallback.textureRefused,
+      );
+    });
+
+    test('控制器只在 engineUnsupported 分支写进程级缓存', () {
+      final String src = File(
+        'lib/src/media/video/video_player_controller.dart',
+      ).readAsStringSync();
+      expect('_compositorHdrSupported = false'.allMatches(src), hasLength(1));
+      final int write = src.indexOf('_compositorHdrSupported = false');
+      final String before = src.substring(write - 120, write);
+      expect(before, contains('CompositorHdrFallback.engineUnsupported:'));
+    });
+  });
+
   group('compositorHdrTarget（合成器内 HDR 的唯一亮度换算）', () {
     test('HDR 显示器：界面白 = SDR 内容亮度，参考白按绝对亮度，峰值 = 面板峰值', () {
       expect(
