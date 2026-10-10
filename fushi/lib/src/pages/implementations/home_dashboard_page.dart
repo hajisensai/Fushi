@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
+import 'package:drift/drift.dart'
+    show ResultSetImplementation, TableUpdate, TableUpdateQuery;
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:flutter/foundation.dart'
@@ -181,8 +183,13 @@ DashboardVideoProgress dashboardVideoContinueProgress({
 /// 排行榜（账户页在那里）。
 ///
 /// 排行榜服务只在本 Profile 已开账户时才有 `self`；开了账户但本进程还没联网取过
-/// 时补一次 [LeaderboardService.refreshSelf]（反馈中心同款做法），失败静默——头像
-/// 退回首字圆即可，不是值得打扰用户的错误。
+/// 时补一次 [LeaderboardService.refreshSelf]（反馈中心同款做法）。失败不打扰用户
+/// （头像退回首字圆即可），但照常记进 [ErrorLogService]，不吞异常。
+///
+/// Profile 名跟着库走：`profiles` 表（改名 / 导入 / 删除）或 `preferences` 表
+/// （切换激活 Profile 写 `active_profile_id`）一有写入就重读一次，名字真变了才
+/// 重建——不能只在 initState 读一次（2026-10-10 审查：改名 / 切换后首页头像仍是
+/// 旧首字，BUG-3249）。
 class _HomeAvatarPill extends ConsumerStatefulWidget {
   const _HomeAvatarPill({required this.onPressed});
 
@@ -197,19 +204,43 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
   String? _profileName;
   bool _selfRequested = false;
 
+  /// `profiles` / `preferences` 表的写入通知（改名、切换激活 Profile）。
+  StreamSubscription<Set<TableUpdate>>? _profileChanges;
+
+  /// 名字读取的代次：写入通知可能连发，只认最后一次发起的读取结果。
+  int _loadGeneration = 0;
+
   @override
   void initState() {
     super.initState();
+    final FushiDatabase db = ref.read(appProvider).database;
+    _profileChanges = db
+        .tableUpdates(
+          TableUpdateQuery.onAllTables(<ResultSetImplementation<dynamic, dynamic>>[
+            db.profiles,
+            db.preferences,
+          ]),
+        )
+        .listen((Set<TableUpdate> _) => unawaited(_loadProfileName()));
     unawaited(_loadProfileName());
   }
 
+  @override
+  void dispose() {
+    unawaited(_profileChanges?.cancel());
+    super.dispose();
+  }
+
   Future<void> _loadProfileName() async {
+    final int generation = ++_loadGeneration;
     try {
       final FushiDatabase db = ref.read(appProvider).database;
       final ProfileRow? row =
           await db.getProfileById(await db.resolveActiveProfileId());
-      if (!mounted || row == null) return;
-      setState(() => _profileName = row.name);
+      if (!mounted || generation != _loadGeneration) return;
+      final String? name = row?.name;
+      if (name == _profileName) return;
+      setState(() => _profileName = name);
     } catch (e, st) {
       ErrorLogService.instance.log('HomeAvatarPill.profile', e, st);
     }
@@ -219,7 +250,15 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
     if (_selfRequested || service.self != null) return;
     if (service.status != LeaderboardStatus.active) return;
     _selfRequested = true;
-    unawaited(service.refreshSelf().then((_) {}, onError: (Object _) {}));
+    // 失败时头像退回首字圆（self 仍为 null），只记日志、不打扰用户。
+    unawaited(
+      service.refreshSelf().then<void>(
+        (LeaderboardSelf _) {},
+        onError: (Object e, StackTrace st) {
+          ErrorLogService.instance.log('HomeAvatarPill.refreshSelf', e, st);
+        },
+      ),
+    );
   }
 
   @override

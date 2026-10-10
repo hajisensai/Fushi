@@ -1332,6 +1332,36 @@ void main() {
     expect(resumeFab(tester).visible, isFalse);
   });
 
+  testWidgets('BUG-3249 头像跟随 Profile 改名与切换（不止 initState 读一次）',
+      (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    final int alice = await db.insertProfile(
+      ProfilesCompanion.insert(name: 'Alice', createdAt: 0, updatedAt: 0),
+    );
+    final int bob = await db.insertProfile(
+      ProfilesCompanion.insert(name: 'Bob', createdAt: 0, updatedAt: 0),
+    );
+    await db.setPref('active_profile_id', '$alice');
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    String avatarLabel() => tester
+        .widget<Semantics>(
+          find.byKey(const ValueKey<String>('home-toolbar-avatar')),
+        )
+        .properties
+        .label!;
+    expect(avatarLabel(), 'Alice');
+
+    await db.updateProfileName(alice, 'Alicia');
+    await pumpDashboard(tester);
+    expect(avatarLabel(), 'Alicia', reason: '改名后头像要跟着变');
+
+    await db.setPref('active_profile_id', '$bob');
+    await pumpDashboard(tester);
+    expect(avatarLabel(), 'Bob', reason: '切换激活 Profile 后头像要跟着变');
+  });
+
   testWidgets('浮动工具栏：Tab 可达四颗动作按钮（焦点可遍历）', (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     await seedSampleData();

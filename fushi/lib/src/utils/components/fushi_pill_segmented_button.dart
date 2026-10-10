@@ -16,6 +16,12 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 ///
 /// 继承 [SegmentedButton] 只为让既有调用点、焦点 / 无障碍判据与测试
 /// （`widget is SegmentedButton`）照常识别它是分段按钮；渲染完全由本类负责。
+///
+/// [style] 只为签名兼容而接收、**不参与渲染**：调用方传的都是 Material
+/// 分段的密度 / 命中区（`kSettingsSegmentedStyle` = compact + shrinkWrap），
+/// 胶囊分段本身就是紧凑几何（段高 [segmentHeight] = 36，低于 Material 分段默认
+/// 40），与浏览页二级页签同形，不随调用方的 Material 密度再缩。估宽见
+/// `SegmentedStripMetrics.pill`（settings_shared.dart），与这里的几何常量同源。
 class FushiPillSegmentedButton<T> extends SegmentedButton<T> {
   const FushiPillSegmentedButton({
     required super.segments,
@@ -36,6 +42,10 @@ class FushiPillSegmentedButton<T> extends SegmentedButton<T> {
   /// 段的左右内边距：文字段 / 纯图标段。
   static const double labelPadding = 16;
   static const double iconOnlyPadding = 12;
+
+  /// 段内图标尺寸与「图标 + 文字」段的图标 / 文字间距。
+  static const double iconSize = 18;
+  static const double iconLabelGap = 8;
 
   @override
   State<SegmentedButton<T>> createState() =>
@@ -86,7 +96,10 @@ class _FushiPillSegmentedButtonState<T> extends State<SegmentedButton<T>> {
           : cs.onSurfaceVariant;
       final bool iconOnly = s.label == null;
       final Widget content = IconTheme.merge(
-        data: IconThemeData(color: fg, size: 18),
+        data: IconThemeData(
+          color: fg,
+          size: FushiPillSegmentedButton.iconSize,
+        ),
         child: DefaultTextStyle.merge(
           style: base.copyWith(
             color: fg,
@@ -99,7 +112,8 @@ class _FushiPillSegmentedButtonState<T> extends State<SegmentedButton<T>> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
               if (s.icon != null) s.icon!,
-              if (s.icon != null && s.label != null) const SizedBox(width: 8),
+              if (s.icon != null && s.label != null)
+                const SizedBox(width: FushiPillSegmentedButton.iconLabelGap),
               if (s.label != null) Flexible(child: s.label!),
             ],
           ),
