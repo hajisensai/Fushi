@@ -635,7 +635,7 @@ void main() {
       expect(FilenameParser.parse('Gundam 0083').title, 'Gundam 0083');
     });
 
-    // BUG-3237：裸年份与「片名以年份结尾」语法上分不开，剥了就留一份完整标题。
+    // BUG-3266：裸年份与「片名以年份结尾」语法上分不开，剥了就留一份完整标题。
     test('剥了裸年份时保留带年份的完整标题', () {
       final ParsedMediaName death = FilenameParser.parse('Death Race 2000.mkv');
       expect(death.title, 'Death Race');

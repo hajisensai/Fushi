@@ -165,7 +165,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   }
   const std::string_view scan_window(lookup_string.data(), window_bytes);
 
-  // BUG-3229：混写通路的本次查词内缓存。同一段汉字的读音、同一个候选读音的查库结果
+  // BUG-3261：混写通路的本次查词内缓存。同一段汉字的读音、同一个候选读音的查库结果
   // 在 16 个前缀 × 文本变体 × 还原形里会反复出现，各查一次。
   std::unordered_map<std::string, std::vector<std::string>> run_readings_cache;
   std::unordered_map<std::string, std::vector<std::string>> mixed_candidates_cache;
@@ -295,7 +295,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
         merge_query(deinflection.text, deinflection);
         if (reassembled != deinflection.text) merge_query(reassembled, deinflection);
 
-        // BUG-3229：汉字 + 假名混写（棚にあげる → 棚に上げる）。表记键与读音键都对不上，
+        // BUG-3261：汉字 + 假名混写（棚にあげる → 棚に上げる）。表记键与读音键都对不上，
         // 改用各汉字段的读音拼出候选完整读音去查读音索引，查回的词条逐字核对混写关系
         // 后才收录。deinflected 记查询里的混写形，排序比较器因此把它排在同长度的表记
         // 精确命中之后。

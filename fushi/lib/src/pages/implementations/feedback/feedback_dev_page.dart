@@ -127,7 +127,7 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
       });
     } on Object catch (e) {
       // 被新筛选 / 搜索取代的旧请求：它的失败与收尾都不属于眼前这份列表，不能把
-      // 新请求的「加载中」清掉、也不能把错误挂到新结果上（BUG-3235）。
+      // 新请求的「加载中」清掉、也不能把错误挂到新结果上（BUG-3264）。
       if (mounted && generation == _generation) {
         setState(() => _error = feedbackErrorReason(e));
       }

@@ -170,7 +170,7 @@ String? _stripPseudos(String selector) {
       if (close < 0) return null;
       if (_interactiveAttributes.contains(_attributeName(selector, i, close))) {
         // 交互态属性（`details[open]`）：导出时多半是关着的，卡片上点开才出现——与
-        // 交互态伪类同样放宽，否则展开后的样式在制卡时就被裁掉了（BUG-3236）。
+        // 交互态伪类同样放宽，否则展开后的样式在制卡时就被裁掉了（BUG-3265）。
         _dropSimpleSelector(out, selector, close);
       } else {
         out.write(selector.substring(i, close));
