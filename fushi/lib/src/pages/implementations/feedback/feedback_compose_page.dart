@@ -164,6 +164,16 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
           _shots
             ..clear()
             ..addAll(draft.screenshots);
+          // 本次打开前自动截的画面接在草稿截图后面（还有空位、且不是草稿里已有的同一张）：
+          // 它是打开反馈那一刻的现场，关掉提交页就再也截不回来（BUG-3240）。
+          final Uint8List? autoShot = widget.initialScreenshot;
+          if (autoShot != null &&
+              _room > 0 &&
+              !draft.screenshots.any(
+                (Uint8List s) => listEquals(s, autoShot),
+              )) {
+            _shots.add(autoShot);
+          }
           _restoredAt = draft.savedAt;
         });
         _title.text = draft.title;

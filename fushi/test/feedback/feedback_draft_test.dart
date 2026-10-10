@@ -143,7 +143,8 @@ void main() {
       reason: '截图各存一个文件',
     );
 
-    // 再打开（带一张新的自动截图）：恢复的是草稿，不是新截图。
+    // 再打开（带一张新的自动截图）：恢复草稿，本次的自动截图接在草稿截图后面
+    // （BUG-3240：以前被草稿整个替换掉，那一刻的现场就丢了）。
     final Uint8List newAuto = Uint8List.fromList(
       img.encodePng(img.Image(width: 3, height: 3)),
     );
@@ -158,7 +159,18 @@ void main() {
     expect(find.text('想要深色图标'), findsOneWidget);
     expect(find.text('写了一半'), findsOneWidget);
     expect(find.text('tg @me'), findsOneWidget);
-    expect(shotCount(), 2);
+    expect(shotCount(), 3);
+    expect(
+      tester
+          .widget<Image>(
+            find.descendant(
+              of: key('feedback-shot-2'),
+              matching: find.byType(Image),
+            ),
+          )
+          .image,
+      isA<MemoryImage>().having((MemoryImage m) => m.bytes, 'bytes', newAuto),
+    );
     expect(
       tester.widget<FushiSwitchListTile>(key('feedback-include-logs')).value,
       isFalse,
