@@ -8127,13 +8127,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: textAlign,
-                  style: TextStyle(
-                    color: _videoChromeNeutralFg,
-                    fontSize: 16 * scale,
-                    height: 1.25,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.1,
-                  ),
+                  style: _m3eTopBarTitleStyle(),
                 ),
                 if (episode != null)
                   Text(
@@ -8184,6 +8178,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       ),
     );
   }
+
+  /// MD3 Expressive 浮动标题胶囊里的作品名字样（播放顶栏与原盘菜单顶栏共用）。
+  TextStyle _m3eTopBarTitleStyle() => TextStyle(
+    color: _videoChromeNeutralFg,
+    fontSize: 16 * _videoUiScale * _controlsDensityScale,
+    height: 1.25,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 0.1,
+  );
 
   /// M3E 顶栏：返回键是否并进标题胶囊——标题在中段（topCenter）、左上组只有返回键时
   /// 合成一颗「返回 + 标题」胶囊（遮挡最小化，2026-10-06）。用户把别的按钮放进左上、
