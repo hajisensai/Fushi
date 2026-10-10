@@ -136,6 +136,8 @@
     var n = Number(ms);
     if (!isFinite(n) || n === 0) return '0';
     var sec = Math.round(n / 10) / 100;
+    // |偏移| < 5ms 舍入到 0（含 -0）：显示 '0'，不能落到负号分支变成 '-0'。
+    if (sec === 0) return '0';
     var text = String(Math.abs(sec));
     return (sec > 0 ? '+' : '-') + text;
   }

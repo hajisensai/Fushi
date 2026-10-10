@@ -12,6 +12,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_pill_segmented_button.dart';
 import 'package:fushi/src/utils/components/settings_section_anchor.dart';
 import 'package:fushi/src/settings/settings_kit.dart'
     show SettingsKitScaffold;
@@ -1431,11 +1432,61 @@ const double _kSegmentHorizontalChrome = 28.0;
 /// such as the 深色模式 light/system/dark strip), in logical pixels.
 const double _kSegmentIconOnlyWidth = 44.0;
 
-/// M3 Expressive 连接式按钮组每段比 Material 分段估宽多出的宽度：选中段的
-/// 内边距 12 + 对勾 18 + 间距 8 + 16 = 54，而 [_kSegmentHorizontalChrome] 只算 28；
-/// 段宽按最宽段等宽排，所以每段都按这个差值补（见 AdaptiveSettingsSegmentedRow
-/// 的 MD3 分支）。
-const double _kConnectedGroupSegmentExtra = 26.0;
+/// 分段条估宽用的几何：每段外框、纯图标段单元宽、文字段前置图标的附加宽、
+/// 整条轨道附加宽。
+///
+/// 估宽必须与 [adaptiveSegmentedButton] 实际渲染的控件同源：MD3 渲染的是
+/// [FushiPillSegmentedButton]（[pill]，几何常量直接取自该类），Apple / Cupertino
+/// 渲染的是 Material 系分段（[material]，保守估算）。按上下文取用 [of]，
+/// 不要在调用点另写数字（2026-10-10 审查：胶囊分段每段比估宽多 4、轨道再多 8，
+/// [FushiSegmentedStrip] 把条钉在偏小的估宽上，段被钳窄截断）。
+class SegmentedStripMetrics {
+  const SegmentedStripMetrics({
+    required this.labelChrome,
+    required this.iconOnlyCell,
+    required this.leadingIconExtra,
+    required this.trackExtra,
+  });
+
+  /// 文字段：文案宽之外的左右外框合计。
+  final double labelChrome;
+
+  /// 纯图标段的整段宽（含外框）。
+  final double iconOnlyCell;
+
+  /// 「图标 + 文字」段在文案之外多占的宽（图标 + 间距）；0 表示不计。
+  final double leadingIconExtra;
+
+  /// 整条轨道在各段之外多占的宽（左右内边距合计）。
+  final double trackExtra;
+
+  /// Material [SegmentedButton] 系（Apple 设计系统 / Cupertino 下的分段）。
+  static const SegmentedStripMetrics material = SegmentedStripMetrics(
+    labelChrome: _kSegmentHorizontalChrome,
+    iconOnlyCell: _kSegmentIconOnlyWidth + _kSegmentHorizontalChrome,
+    leadingIconExtra: 0,
+    trackExtra: 0,
+  );
+
+  /// MD3 胶囊分段 [FushiPillSegmentedButton]。
+  static const SegmentedStripMetrics pill = SegmentedStripMetrics(
+    labelChrome: FushiPillSegmentedButton.labelPadding * 2,
+    iconOnlyCell: FushiPillSegmentedButton.iconSize +
+        FushiPillSegmentedButton.iconOnlyPadding * 2,
+    leadingIconExtra: FushiPillSegmentedButton.iconSize +
+        FushiPillSegmentedButton.iconLabelGap,
+    trackExtra: FushiPillSegmentedButton.trackPadding * 2,
+  );
+
+  /// 当前上下文里 [adaptiveSegmentedButton] 实际渲染的那种分段的几何。
+  static SegmentedStripMetrics of(BuildContext context) =>
+      adaptiveSegmentedUsesPill(context) ? pill : material;
+}
+
+/// 每段是否带图标（与 `segmentLabels` 同序），供 [SegmentedStripMetrics.pill]
+/// 计入「图标 + 文字」段的图标宽。
+List<bool> segmentedStripIconFlags<T>(List<ButtonSegment<T>> segments) =>
+    <bool>[for (final ButtonSegment<T> s in segments) s.icon != null];
 
 /// Average advance width of one label glyph relative to the font size. CJK /
 /// fullwidth glyphs are ~1em wide; Latin (and most other narrow scripts) are
@@ -1504,38 +1555,50 @@ double estimateLabelAdvanceWidth({
   return width;
 }
 
-/// Estimated width (logical pixels) of ONE segment cell of a Material
-/// segmented strip: the widest segment's content, floored at [minSegmentWidth],
-/// plus per-segment chrome. Material [SegmentedButton] lays EVERY segment out
-/// at the same width — the widest segment's intrinsic width (framework
-/// `_calculateHorizontalChildSize`) — so this is the building block for the
-/// strip's natural width.
+/// Estimated width (logical pixels) of ONE segment cell of a segmented strip:
+/// the widest segment's content, floored at [minSegmentWidth], plus
+/// per-segment chrome from [metrics]. Both Material [SegmentedButton]
+/// (framework `_calculateHorizontalChildSize`) and [FushiPillSegmentedButton]
+/// lay EVERY segment out at the same width — the widest segment's intrinsic
+/// width — so this is the building block for the strip's natural width.
+///
+/// [segmentHasIcon] (same order as [segmentLabels], see
+/// [segmentedStripIconFlags]) adds [SegmentedStripMetrics.leadingIconExtra] to
+/// labelled segments that also carry an icon.
 double segmentedStripCellWidth({
   required List<String?> segmentLabels,
   required double fontSize,
   required double textScaleFactor,
   double minSegmentWidth = 0.0,
+  SegmentedStripMetrics metrics = SegmentedStripMetrics.material,
+  List<bool>? segmentHasIcon,
 }) {
   final double scaledFont = fontSize * textScaleFactor;
   double cell = minSegmentWidth;
-  for (final String? label in segmentLabels) {
-    final double content = (label == null || label.isEmpty)
-        ? _kSegmentIconOnlyWidth
-        : _segmentLabelContentWidth(label, scaledFont);
-    final double candidate = content + _kSegmentHorizontalChrome;
+  for (int i = 0; i < segmentLabels.length; i++) {
+    final String? label = segmentLabels[i];
+    final bool hasIcon = segmentHasIcon != null &&
+        i < segmentHasIcon.length &&
+        segmentHasIcon[i];
+    final double candidate = (label == null || label.isEmpty)
+        ? metrics.iconOnlyCell
+        : _segmentLabelContentWidth(label, scaledFont) +
+            metrics.labelChrome +
+            (hasIcon ? metrics.leadingIconExtra : 0.0);
     if (candidate > cell) cell = candidate;
   }
   return cell;
 }
 
-/// Estimates the intrinsic width (logical pixels) a Material segmented strip
-/// would occupy if laid out at its natural size, WITHOUT actually building it.
+/// Estimates the intrinsic width (logical pixels) a segmented strip would
+/// occupy if laid out at its natural size, WITHOUT actually building it.
 ///
 /// Used by [AdaptiveSettingsSegmentedRow] and [FushiSegmentedStrip] to decide,
 /// inside a [LayoutBuilder], whether the strip fits (→ bounded equal-width
 /// layout) or must fall back to a horizontal scroll view (→ narrow pane, keep
-/// every segment reachable per BUG-008). It does not need to be exact — only
-/// conservative: a slight over-estimate prefers the safe scrolling path.
+/// every segment reachable per BUG-008). Pass [metrics] =
+/// [SegmentedStripMetrics.of] for the control actually rendered; the default
+/// [SegmentedStripMetrics.material] is the conservative Material estimate.
 ///
 /// BUG-1719 (顶栏下沉): the estimate MUST model the framework's equal-width
 /// layout — `segmentCount × widestCell` — NOT the sum of each segment's own
@@ -1555,15 +1618,20 @@ double estimateSegmentedStripWidth({
   required double fontSize,
   required double textScaleFactor,
   double minSegmentWidth = 0.0,
+  SegmentedStripMetrics metrics = SegmentedStripMetrics.material,
+  List<bool>? segmentHasIcon,
 }) {
   if (segmentLabels.isEmpty) return 0.0;
   return segmentLabels.length *
-      segmentedStripCellWidth(
-        segmentLabels: segmentLabels,
-        fontSize: fontSize,
-        textScaleFactor: textScaleFactor,
-        minSegmentWidth: minSegmentWidth,
-      );
+          segmentedStripCellWidth(
+            segmentLabels: segmentLabels,
+            fontSize: fontSize,
+            textScaleFactor: textScaleFactor,
+            minSegmentWidth: minSegmentWidth,
+            metrics: metrics,
+            segmentHasIcon: segmentHasIcon,
+          ) +
+      metrics.trackExtra;
 }
 
 class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
@@ -1658,6 +1726,7 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
         onDecrement: () => selectAt(currentIndex - 1),
         child: _SegmentedStripHost(
           controlBelow: controlBelow,
+          segmentHasIcon: segmentedStripIconFlags<T>(segments),
           segmentLabels: segmentLabels,
           strip: strip,
         ),
@@ -1740,19 +1809,16 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
       return label is Text ? label.data : null;
     }).toList(growable: false);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // MD3 下 adaptiveSegmentedButton 渲染的是 M3 Expressive 连接式按钮组
-    // （FushiConnectedButtonGroup）：段内边距 16+16（选中段带对勾时 12 + 18 图标
-    // + 8 间距 + 16），段宽取最宽段（equalExtents），段间 2dp 缝。Material
-    // SegmentedButton 的估宽（每段 +28）因此每段少算 26、还漏了缝——判据以为
-    // 「放得下行内」，实际控件比估宽宽一截把整行右溢（窄视频面板 312 宽的
-    // 「字幕位置」行溢出 15px）。这里按连接式按钮组的真实几何补齐。
+    // MD3 下 adaptiveSegmentedButton 渲染的是胶囊分段（FushiPillSegmentedButton）：
+    // 估宽取它自己的几何常量（SegmentedStripMetrics.of），与绘制同源。早先这里
+    // 按「连接式按钮组」手补每段 +26 与段间缝，控件换成胶囊后成了另一套数字。
     final double stripWidth = estimateSegmentedStripWidth(
-          segmentLabels: stripLabels,
-          fontSize: tokens.type.controlLabel.fontSize ?? 14.0,
-          textScaleFactor: MediaQuery.textScalerOf(context).scale(1),
-        ) +
-        segments.length * _kConnectedGroupSegmentExtra +
-        (segments.length - 1).clamp(0, segments.length) * 2;
+      segmentLabels: stripLabels,
+      segmentHasIcon: segmentedStripIconFlags<T>(segments),
+      fontSize: tokens.type.controlLabel.fontSize ?? 14.0,
+      textScaleFactor: MediaQuery.textScalerOf(context).scale(1),
+      metrics: SegmentedStripMetrics.of(context),
+    );
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool useSegments = settingsChoiceUsesSegments(
@@ -2249,11 +2315,13 @@ class _SegmentedStripHost extends StatelessWidget {
   const _SegmentedStripHost({
     required this.controlBelow,
     required this.segmentLabels,
+    required this.segmentHasIcon,
     required this.strip,
   });
 
   final bool controlBelow;
   final List<String?> segmentLabels;
+  final List<bool> segmentHasIcon;
   final Widget strip;
 
   @override
@@ -2278,8 +2346,10 @@ class _SegmentedStripHost extends StatelessWidget {
         final double available = constraints.maxWidth;
         final double estimated = estimateSegmentedStripWidth(
           segmentLabels: segmentLabels,
+          segmentHasIcon: segmentHasIcon,
           fontSize: fontSize,
           textScaleFactor: textScale,
+          metrics: SegmentedStripMetrics.of(context),
         );
         // A controlBelow strip ALWAYS occupies the full row width so that every
         // segmented box in the same section reads as equal-width (TODO-882: a
@@ -2371,16 +2441,24 @@ class FushiSegmentedStrip<T extends Object> extends StatelessWidget {
     // 分段条自然宽是纯 build 期可算量（只依赖标签/字号/缩放，不依赖布局）。
     // 先算出来：页头（[FushiHeaderCrampScope]）用它判定「左边是否摆得下」，
     // LayoutBuilder 里再用同一个值决定滚动兜底。
+    // 估宽几何与实际渲染的分段同源（MD3 = 胶囊分段，见 SegmentedStripMetrics）：
+    // 下面 fits 时把条钉在这个宽上，估小了段会被钳窄截断。
+    final SegmentedStripMetrics metrics = SegmentedStripMetrics.of(context);
+    final List<bool> segmentHasIcon = segmentedStripIconFlags<T>(segments);
     final double naturalWidth = estimateSegmentedStripWidth(
       segmentLabels: segmentLabels,
+      segmentHasIcon: segmentHasIcon,
       fontSize: fontSize,
       textScaleFactor: textScale,
+      metrics: metrics,
     );
     final double preferredWidth = estimateSegmentedStripWidth(
       segmentLabels: segmentLabels,
+      segmentHasIcon: segmentHasIcon,
       fontSize: fontSize,
       textScaleFactor: textScale,
       minSegmentWidth: minSegmentWidth ?? 0.0,
+      metrics: metrics,
     );
     FushiHeaderCrampScope.maybeOf(
       context,
@@ -2406,10 +2484,21 @@ class FushiSegmentedStrip<T extends Object> extends StatelessWidget {
                 ? preferredWidth
                 : (naturalWidth <= available ? naturalWidth : null);
         if (target != null) {
-          return Align(
-            alignment: alignment,
-            child: SizedBox(width: target, child: strip),
-          );
+          // 胶囊分段（MD3）自带 IntrinsicWidth、按最宽段等宽排：给它「至少
+          // target、至多可用宽」，估宽与真实文字度量的细小差（字距等）由控件
+          // 自己吸收，不会被钉窄截断。Material 系分段仍钉死宽度（BUG-1719）。
+          final Widget sized = metrics == SegmentedStripMetrics.pill
+              ? ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minWidth: target,
+                    maxWidth: available.isFinite
+                        ? available
+                        : double.infinity,
+                  ),
+                  child: strip,
+                )
+              : SizedBox(width: target, child: strip);
+          return Align(alignment: alignment, child: sized);
         }
         // 与上面 [_SegmentedStripHost] 同一契约：装不下就横向滚动，且桌面端要能用
         // 鼠标左键拖着滚（默认 dragDevices 不含 mouse，否则只有滚轮能动）。段内
@@ -2420,6 +2509,8 @@ class FushiSegmentedStrip<T extends Object> extends StatelessWidget {
           child: _SegmentedStripScroller(
             strip: strip,
             segmentLabels: segmentLabels,
+            segmentHasIcon: segmentHasIcon,
+            metrics: metrics,
             selectedIndex: selectedIndex,
             fontSize: fontSize,
             textScale: textScale,
@@ -2439,6 +2530,8 @@ class _SegmentedStripScroller extends StatefulWidget {
   const _SegmentedStripScroller({
     required this.strip,
     required this.segmentLabels,
+    required this.segmentHasIcon,
+    required this.metrics,
     required this.selectedIndex,
     required this.fontSize,
     required this.textScale,
@@ -2446,6 +2539,8 @@ class _SegmentedStripScroller extends StatefulWidget {
 
   final Widget strip;
   final List<String?> segmentLabels;
+  final List<bool> segmentHasIcon;
+  final SegmentedStripMetrics metrics;
   final int selectedIndex;
   final double fontSize;
   final double textScale;
@@ -2489,15 +2584,18 @@ class _SegmentedStripScrollerState extends State<_SegmentedStripScroller> {
   /// is absorbed by [_kRevealMargin].
   double get _cellWidth => segmentedStripCellWidth(
         segmentLabels: widget.segmentLabels,
+        segmentHasIcon: widget.segmentHasIcon,
         fontSize: widget.fontSize,
         textScaleFactor: widget.textScale,
+        metrics: widget.metrics,
       );
 
   void _ensureSelectedVisible({required bool animate}) {
     if (!mounted || !_controller.hasClients) return;
     final int index = widget.selectedIndex;
     if (index < 0 || index >= widget.segmentLabels.length) return;
-    final double start = index * _cellWidth;
+    final double start =
+        widget.metrics.trackExtra / 2 + index * _cellWidth;
     final double end = start + _cellWidth;
     final ScrollPosition position = _controller.position;
     final double viewport = position.viewportDimension;
@@ -3494,8 +3592,11 @@ class _KeyboardStepper extends StatelessWidget {
 /// 拖动跟手（2026-10-09 Android 用户反馈「设置里的数值拉条松手才变」）：拖动
 /// 中的值放在本 State 里直接画，不等调用方把新值写回 [value]——不少滑条拖动中
 /// 只做预览、松手才落库（字幕外观），或写库是异步的，旧实现下滑块在整段拖动里
-/// 钉在原地。松手后保留最后的拖动值，直到调用方的 [value] 真的变了（或刚好等于
-/// 它）再交还，避免提交在途时滑块先弹回旧值再跳过去。
+/// 钉在原地。松手后保留最后的拖动值，直到调用方**下一次重建本控件**再交还
+/// [value]，避免提交在途时滑块先弹回旧值再跳过去。调用方那次重建给出的 [value]
+/// 就是它的裁决：接受则等于新值，拒绝 / 钳制则是旧值或钳后的值——不能只在
+/// [value] 变了时才交还，否则被拒绝的拖动值会一直挂在滑块上（2026-10-10 审查，
+/// BUG-3238）。
 class _KeyboardSlider extends StatefulWidget {
   const _KeyboardSlider({
     required this.value,
@@ -3533,12 +3634,10 @@ class _KeyboardSliderState extends State<_KeyboardSlider> {
   @override
   void didUpdateWidget(covariant _KeyboardSlider oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final double? local = _local;
-    if (local == null || _dragging) return;
-    // 松手后：调用方的值动了（提交落地）或已与拖动值一致，交还给调用方。
-    if (widget.value != oldWidget.value || widget.value == local) {
-      _local = null;
-    }
+    if (_local == null || _dragging) return;
+    // 松手 / 键盘微调之后调用方第一次重建本控件：它给的 value 就是提交结果
+    // （接受 = 新值；拒绝 = 旧值），一律交还，不再用本地值盖住它。
+    _local = null;
   }
 
   bool _dragging = false;

@@ -696,6 +696,8 @@ test('parseOffsetSeconds / formatOffsetSeconds', () => {
   assert.strictEqual(F(1500), '+1.5');
   assert.strictEqual(F(-42000), '-42');
   assert.strictEqual(F(123), '+0.12');
+  // 审查遗留：|偏移| < 5ms 舍入到 0，不能显示成 '-0'。
+  for (const tiny of [4, -4, 1, -1, -4.9]) assert.strictEqual(F(tiny), '0', String(tiny));
 });
 
 // BUG-3144：通用悬浮按钮跟 video-target.js 挑出的正片走，并按父级包含块折算 fixed 坐标。

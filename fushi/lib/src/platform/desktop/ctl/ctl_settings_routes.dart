@@ -910,17 +910,30 @@ Future<Object?> _listShortcuts(DesktopCtlContext context, CtlCall call) async {
       'scope': action.scope.name,
       'action': action.key,
       'label': action.label,
-      'keyboard': <String>[
-        for (final InputBinding b in bindings.keyboardBindings) b.displayLabel,
-      ],
-      'gamepad': <String>[
-        for (final GamepadBinding b in bindings.gamepadBindings) b.serialize(),
-      ],
-      'mouse': <String>[
-        for (final MouseBinding b in bindings.mouseBindings) b.serialize(),
-        for (final WheelBinding b in bindings.wheelBindings) b.displayLabel,
-      ],
+      ...ctlShortcutBindingColumns(bindings),
     });
   }
   return <String, Object?>{'shortcuts': rows, 'count': rows.length};
 }
+
+/// `/api/admin/shortcuts` 每行的三列绑定。
+///
+/// 手柄 / 鼠标列是持久化序列化格式（`serialize()`，与 `shortcut_bindings` 偏好
+/// 同一套 token，跨平台恒定、可回读）；滚轮绑定同列，也必须走 `serialize()`——
+/// 它的 `displayLabel` 自 BUG-3203 起随平台变成 `⌥WheelDown` 这类显示格式，
+/// 混进来会让同一列在 macOS 上一半 token、一半符号（2026-10-10 审查）。
+/// 键盘列历来是显示标签（`Ctrl+F` 而非持久化的 `Ctrl+KeyF`，BUG-3040），不变。
+Map<String, List<String>> ctlShortcutBindingColumns(
+  ShortcutBindingSet bindings,
+) => <String, List<String>>{
+  'keyboard': <String>[
+    for (final InputBinding b in bindings.keyboardBindings) b.displayLabel,
+  ],
+  'gamepad': <String>[
+    for (final GamepadBinding b in bindings.gamepadBindings) b.serialize(),
+  ],
+  'mouse': <String>[
+    for (final MouseBinding b in bindings.mouseBindings) b.serialize(),
+    for (final WheelBinding b in bindings.wheelBindings) b.serialize(),
+  ],
+};
