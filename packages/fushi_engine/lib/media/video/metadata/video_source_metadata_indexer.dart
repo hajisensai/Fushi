@@ -3,6 +3,9 @@ library;
 export 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart';
 
 import 'package:drift/drift.dart' show Value;
+import 'package:fushi_engine/media/video/bluray/bluray_disc_extras.dart';
+import 'package:fushi_engine/media/video/external_video.dart'
+    show normalizeVideoPath;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.dart';
 import 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart';
@@ -79,6 +82,7 @@ class VideoSourceMetadataIndexer {
           indexed[existing.id] = _IndexedWorkRoot(
             workId: existing.id,
             root: _workRoot(work.members, source.rootPath),
+            memberPaths: _memberPaths(work),
           );
           continue;
         }
@@ -113,25 +117,34 @@ class VideoSourceMetadataIndexer {
       indexed[workId] = _IndexedWorkRoot(
         workId: workId,
         root: _workRoot(work.members, source.rootPath),
+        memberPaths: _memberPaths(work),
       );
     }
 
     final List<VideoBookRow> books = (await database.allVideoBooks())
         .where((VideoBookRow row) => row.sourceId == source.id)
         .toList(growable: false);
+    final Map<String, String> discExtras = await blurayDiscExtras(
+      books.map((VideoBookRow row) => row.videoPath),
+    );
     for (final VideoBookRow book in books) {
       final VideoLocalExtraMatch? match =
           classifyLocalVideoExtra(book.videoPath);
-      if (match == null) continue;
-      final String directory =
-          p.dirname(p.normalize(p.absolute(book.videoPath)));
-      final List<_IndexedWorkRoot> candidates = indexed.values
-          .where((_IndexedWorkRoot value) =>
-              p.equals(value.root, directory) ||
-              p.isWithin(value.root, directory))
-          .toList()
-        ..sort((_IndexedWorkRoot a, _IndexedWorkRoot b) =>
-            b.root.length.compareTo(a.root.length));
+      final String? discMain = discExtras[normalizeVideoPath(book.videoPath)];
+      final List<_IndexedWorkRoot> candidates;
+      if (match != null) {
+        candidates = _candidatesByDirectory(indexed.values, book.videoPath);
+      } else if (discMain != null) {
+        // 蓝光特典挂在同盘正片的作品下：同一个 PLAYLIST 目录里可能并排着几条
+        // 正片级标题，按目录就近会二义，按「含正片那条 .mpls 的作品」才唯一。
+        final String main = normalizeVideoPath(discMain);
+        candidates = <_IndexedWorkRoot>[
+          for (final _IndexedWorkRoot value in indexed.values)
+            if (value.memberPaths.contains(main)) value,
+        ];
+      } else {
+        continue;
+      }
       if (candidates.isEmpty ||
           (candidates.length > 1 &&
               candidates[0].root.length == candidates[1].root.length)) {
@@ -143,7 +156,8 @@ class VideoSourceMetadataIndexer {
             ..where((table) => table.bookUid.equals(book.bookUid)))
           .go();
       if (removed > 0) changed = true;
-      final String kind = _kindName(match.kind);
+      final String kind =
+          _kindName(match?.kind ?? VideoMetadataExtraKind.extra);
       final VideoMetadataExtraRow? current =
           await database.getVideoMetadataExtraByBook(book.bookUid);
       if (current != null &&
@@ -212,6 +226,26 @@ class VideoSourceMetadataIndexer {
     );
   }
 
+  static Set<String> _memberPaths(VideoSourceScrapeWork work) => <String>{
+        for (final VideoBookRow member in work.members)
+          normalizeVideoPath(member.videoPath),
+      };
+
+  /// 路径型特典（NCOP / 预告 / Kodi extras 目录）的父作品：目录最近、且唯一。
+  static List<_IndexedWorkRoot> _candidatesByDirectory(
+    Iterable<_IndexedWorkRoot> indexed,
+    String videoPath,
+  ) {
+    final String directory = p.dirname(p.normalize(p.absolute(videoPath)));
+    return indexed
+        .where((_IndexedWorkRoot value) =>
+            p.equals(value.root, directory) ||
+            p.isWithin(value.root, directory))
+        .toList()
+      ..sort((_IndexedWorkRoot a, _IndexedWorkRoot b) =>
+          b.root.length.compareTo(a.root.length));
+  }
+
   static String _workRoot(List<VideoBookRow> members, String sourceRoot) {
     List<String> parts =
         p.split(p.dirname(p.normalize(p.absolute(members.first.videoPath))));
@@ -243,7 +277,14 @@ class VideoSourceMetadataIndexer {
 }
 
 class _IndexedWorkRoot {
-  const _IndexedWorkRoot({required this.workId, required this.root});
+  const _IndexedWorkRoot({
+    required this.workId,
+    required this.root,
+    required this.memberPaths,
+  });
   final int workId;
   final String root;
+
+  /// 作品成员的归一路径（蓝光特典按「含同盘正片」认父作品）。
+  final Set<String> memberPaths;
 }

@@ -17,6 +17,8 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:path/path.dart' as p;
@@ -313,6 +315,105 @@ void main() {
       );
       final VideoBookRow row = (await ensureBlurayTitleInLibrary(db, bonus))!;
       expect(row.title, '制作特辑');
+    });
+  });
+
+  // 用户：31 分钟的 00002 被当成整部电影刮（media_type=movie、runtime=143）。盘名就是
+  // 片名，盘上每条标题各自拿去识别，特辑必然认成正片。特典要像 NCOP 一样不单独成
+  // 作品、挂到同盘正片的作品下。
+  group('电影盘的特典不单独成作品，挂到正片下', () {
+    late FushiDatabase db;
+    late SourceLibraryRow source;
+    late String disc;
+
+    String mpls(String root, String id) =>
+        p.join(root, 'BDMV', 'PLAYLIST', '$id.mpls');
+
+    setUp(() async {
+      db = _memDb();
+      disc = p.join(tmp.path, 'Movie', 'DISC2');
+      // 正片 1500 秒 + 300 秒特辑（20%，扫描选中）+ 60 秒菜单特典（扫描不选）。
+      _writeDisc(
+        disc,
+        <String>['00011', '00012', '00013'],
+        secondsOf: const <String, int>{'00012': 300, '00013': 60},
+      );
+      source = await _videoSource(db, tmp.path);
+      final SourceScanSummary scan = await SourceLibraryScanner(
+        db,
+      ).scan(source);
+      expect(scan.succeeded, isTrue, reason: scan.error ?? '');
+      await ensureBlurayTitleInLibrary(db, mpls(disc, '00003'));
+    });
+    tearDown(() => db.close());
+
+    test('刮削计划只有正片一个作品单元', () async {
+      final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+        db,
+      ).plan(source);
+      final List<String> planned = <String>[
+        for (final VideoSourceScrapeWork work in works)
+          for (final VideoBookRow member in work.members)
+            p.normalize(member.videoPath),
+      ];
+      expect(planned, <String>[p.normalize(mpls(disc, '00001'))]);
+    });
+
+    test('索引把特典绑到正片作品下，并清掉旧版误建的「电影」作品', () async {
+      final VideoBookRepository repo = VideoBookRepository(db);
+      final VideoBookRow featurette = (await repo.findByVideoPath(
+        mpls(disc, '00002'),
+      ))!;
+      // 旧版本把 00002 当独立电影刮过：一份 book-owned 的错误规范作品。
+      await db.upsertVideoMetadataWork(
+        VideoMetadataWorksCompanion.insert(
+          bookUid: Value<String?>(featurette.bookUid),
+          mediaType: 'movie',
+          title: 'DISC2',
+          updatedAt: 1,
+        ),
+      );
+
+      await VideoSourceMetadataIndexer(db).index(source);
+
+      final VideoBookRow main = (await repo.findByVideoPath(
+        mpls(disc, '00001'),
+      ))!;
+      final VideoMetadataWorkRow mainWork = (await db
+          .getVideoMetadataWorkByBook(main.bookUid))!;
+      for (final String id in <String>['00002', '00003']) {
+        final VideoBookRow extra = (await repo.findByVideoPath(
+          mpls(disc, id),
+        ))!;
+        expect(
+          await db.getVideoMetadataWorkByBook(extra.bookUid),
+          isNull,
+          reason: '$id 不能有自己的规范作品',
+        );
+        final VideoMetadataExtraRow? bound = await db
+            .getVideoMetadataExtraByBook(extra.bookUid);
+        expect(bound?.workId, mainWork.id, reason: '$id 应挂在正片作品下');
+      }
+    });
+
+    test('剧集盘各集同一量级：都不是特典，照常各自进计划', () async {
+      final String series = p.join(tmp.path, 'Series', 'VOL1');
+      _writeDisc(series, <String>['00021', '00022', '00023']);
+      final SourceScanSummary scan = await SourceLibraryScanner(
+        db,
+      ).scan(source);
+      expect(scan.succeeded, isTrue, reason: scan.error ?? '');
+      final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+        db,
+      ).plan(source);
+      final Set<String> planned = <String>{
+        for (final VideoSourceScrapeWork work in works)
+          for (final VideoBookRow member in work.members)
+            p.normalize(member.videoPath),
+      };
+      for (final String id in <String>['00001', '00002', '00003']) {
+        expect(planned, contains(p.normalize(mpls(series, id))));
+      }
     });
   });
 }

@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2918 条。点号进各自文件。
+> 共 2919 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3232](bugs/BUG-3232-bluray-disc-extras-scraped-as-movie.md) | 🚧 | 🚧 | 电影盘上的特辑与菜单特典被各自当成整部电影刮削 |
 | [BUG-3231](bugs/BUG-3231-bluray-menu-title-not-scraped.md) | ✅ | ✅ | 原盘菜单进入的标题建出无来源孤儿行，刮削永远刮不到 |
 | [BUG-3230](bugs/BUG-3230-bluray-menu-hover-collapses.md) | ✅ | ✅ | 原盘菜单鼠标点击展开后移开鼠标菜单收起 |
 | [BUG-3229](bugs/BUG-3229-bluray-menu-chrome-never-hides.md) | ✅ | ✅ | 原盘菜单左上角退出不自动隐藏且菜单栏不符合 M3E / Apple 规范 |
