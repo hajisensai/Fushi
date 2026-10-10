@@ -29,10 +29,22 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2915 条。点号进各自文件。
+> 共 2927 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3252](bugs/BUG-3252-hidden-remote-books-pref-cast.md) | 🚧 | 🚧 | 远端书隐藏列表偏好读取假定一定是字符串 |
+| [BUG-3246](bugs/BUG-3246-manga-direct-open-ignores-resume-target.md) | ✅ | ✅ | 首页继续等直接打开在线漫画不按重新打开位置偏好选章 |
+| [BUG-3245](bugs/BUG-3245-hidden-remote-books-probe-creates-root.md) | ✅ | ✅ | 打开已从本机移除的远端书设置页会在云盘建同步根目录 |
+| [BUG-3244](bugs/BUG-3244-hidden-remote-books-count-i18n.md) | ✅ | ✅ | 已从本机移除的远端书设置项副标题硬拼条数未走 i18n |
+| [BUG-3243](bugs/BUG-3243-feedback-relation-chip-dead-tap.md) | ✅ | ✅ | 反馈人详情页关联 chip 对方不在本机时可点但没反应 |
+| [BUG-3242](bugs/BUG-3242-feedback-reopen-shot-fail-silent.md) | ✅ | ✅ | 重新提交带原截图时单张取回失败不提示 |
+| [BUG-3241](bugs/BUG-3241-feedback-draft-rewrite-on-blur.md) | ✅ | ✅ | 反馈草稿在桌面主窗每次失焦都整份重写（含截图） |
+| [BUG-3240](bugs/BUG-3240-feedback-draft-restore-drops-autoshot.md) | ✅ | ✅ | 反馈提交页恢复草稿时丢掉本次打开自动截的图 |
+| [BUG-3239](bugs/BUG-3239-feedback-detail-shot-no-retry.md) | ✅ | ✅ | 反馈详情页截图下载失败后本次打开期间不再重试 |
+| [BUG-3236](bugs/BUG-3236-anki-css-open-attribute-pruned.md) | ✅ | ✅ | 制卡词典 CSS 裁剪把 details[open] 等交互态属性规则裁掉 |
+| [BUG-3235](bugs/BUG-3235-feedback-dev-list-stale-request.md) | ✅ | ✅ | 反馈处理台列表被取代的旧请求仍清加载中并写错误 |
+| [BUG-3230](bugs/BUG-3230-feedback-reopen-cap-race.md) | ✅ | ✅ | 反馈重新提交次数上限先 COUNT 再 INSERT 并发可超、重新提交跳过同来源判重 |
 | [BUG-3228](bugs/BUG-3228-leaderboard-summary-stuck-loading.md) | ✅ | ✅ | 排行榜总字数卡加载失败后永远停在加载条 |
 | [BUG-3225](bugs/BUG-3225-android-global-lookup-black-panel.md) | ✅ | ✅ | Android app 外查词窗词条区整块黑底、浅色主题文字看不见 |
 | [BUG-3224](bugs/BUG-3224-anki-card-css-size.md) | ✅ | ✅ | 制卡把整份词典 CSS 内联进每个释义字段，AnkiDroid 预览 TransactionTooLargeException 打不开 |
