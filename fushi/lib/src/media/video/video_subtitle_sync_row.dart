@@ -51,7 +51,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
   // 本地权威镜像（与旧面板同语义）：打开时取页面当前延迟，之后由本行内五个入口经
   // [_commitDelay] 统一提交（页面侧对同值早退，不重复 OSD）。本行**之外**的入口
   // （z/x 微调、Ctrl+Shift+←/→ 对齐快捷键）改了页面延迟时，由 [_syncDelayFromHost]
-  // 拉回页面权威值（BUG-3231：浮条开着按快捷键，读数不跟、再点 ± 以旧值为基数覆盖）。
+  // 拉回页面权威值（BUG-3254：浮条开着按快捷键，读数不跟、再点 ± 以旧值为基数覆盖）。
   late int _delayMs = widget.host.delayMs();
 
   /// 字幕调轴数值输入（读数胶囊的编辑态）控制器（与滑条/± 按钮共享同一权威 [_delayMs]）。

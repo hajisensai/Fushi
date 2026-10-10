@@ -135,7 +135,7 @@ void main() {
     );
   });
 
-  // BUG-3231：浮条开着时用快捷键（z/x / Ctrl+Shift+←/→）改了页面延迟——页面只发
+  // BUG-3254：浮条开着时用快捷键（z/x / Ctrl+Shift+←/→）改了页面延迟——页面只发
   // OSD、不重建浮条，此前读数停在旧值，再点 ± 以旧镜像为基数把快捷键的调整覆盖掉。
   testWidgets('float bar follows delay changed outside the row (shortcuts)', (
     WidgetTester tester,

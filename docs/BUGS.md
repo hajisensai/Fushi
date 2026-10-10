@@ -29,10 +29,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2915 条。点号进各自文件。
+> 共 2921 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3254](bugs/BUG-3254-video-delay-float-bar-stale.md) | ✅ | ✅ | 视频调轴浮条开着时快捷键改延迟，读数不跟且 ± 以旧值覆盖 |
+| [BUG-3253](bugs/BUG-3253-game-stream-narrow-panel-overflow.md) | ✅ | ✅ | 串流窄布局面板最小高度 200 在软键盘弹出时溢出 |
+| [BUG-3251](bugs/BUG-3251-audiobook-live-cue-replace-encoding.md) | ✅ | ✅ | 播放中换字幕后周期写入仍按旧 cue 编码，被杀则断点错位 |
+| [BUG-3248](bugs/BUG-3248-audiobook-stale-token-sidecar.md) | ✅ | ✅ | 互联更新字幕后旧逐 token sidecar 残留 |
+| [BUG-3237](bugs/BUG-3237-scrape-title-ending-in-year.md) | ✅ | ✅ | 片名以年份结尾时被当裸年份剥掉，刮削查无 |
+| [BUG-3232](bugs/BUG-3232-emby-subtitle-player-fallback-url.md) | ✅ | ✅ | 外挂字幕解析为空时交给 libmpv 的是失效的 DeliveryUrl |
 | [BUG-3228](bugs/BUG-3228-leaderboard-summary-stuck-loading.md) | ✅ | ✅ | 排行榜总字数卡加载失败后永远停在加载条 |
 | [BUG-3225](bugs/BUG-3225-android-global-lookup-black-panel.md) | ✅ | ✅ | Android app 外查词窗词条区整块黑底、浅色主题文字看不见 |
 | [BUG-3224](bugs/BUG-3224-anki-card-css-size.md) | ✅ | ✅ | 制卡把整份词典 CSS 内联进每个释义字段，AnkiDroid 预览 TransactionTooLargeException 打不开 |
