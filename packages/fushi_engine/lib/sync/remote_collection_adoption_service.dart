@@ -19,6 +19,22 @@ class RemoteCollectionAdoptionService {
     localEntryKey: video.id,
   );
 
+  /// 目录刷新：整份远端视频清单在**一个**事务里收养。
+  ///
+  /// 逐条 [adoptVideo] 是每条一个顶层事务、一次提交：几百条远端视频就是几百次
+  /// 落盘提交。包进一个外层事务后，每条的 DAO 事务退化成保存点，整份清单只提交
+  /// 一次。
+  ///
+  /// 注意变更通知**不会**因此合并：drift 的嵌套事务在保存点释放时就直接通知根
+  /// 监听器，每条真写入仍各发一次合集表通知——合并靠消费端（库页的防抖重载）。
+  /// 已收养过的条目在 DAO 里只读不写，整份清单都已收养时不产生任何通知。
+  Future<void> adoptVideos(Iterable<RemoteVideoInfo> videos) =>
+      database.transaction(() async {
+        for (final RemoteVideoInfo video in videos) {
+          await adoptVideo(video);
+        }
+      });
+
   /// 目录刷新：整份远端清单一次收养。身份索引只装载一次（全表读
   /// `epub_books` + alias），不按本数重复物化——dashboard 启动路径也走这里。
   Future<void> adoptBooks(Iterable<RemoteBookInfo> books) async {
