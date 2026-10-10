@@ -140,6 +140,32 @@ void main() {
       expect(css, contains('.icon:not(:hover){opacity: 1;}'));
     });
 
+    // 导出时 <details> 关着（没有 open 属性），卡片上点开才有：带 [open] 条件的规则
+    // 要像交互态伪类一样放宽后判断，否则展开后的内容在卡上没有样式。
+    test('BUG-3236 交互态属性 [open] 放宽后判断：关着导出的 details 展开样式保留', () {
+      final String css = _styleOf(
+        slimAnkiGlossaryHtml(
+          _glossary(
+            '<details><summary>例</summary><div class="x">body</div></details>',
+            '$_scope details[open] .x { color: red; }\n'
+                '$_scope details[open] > summary { font-weight: bold; }\n'
+                '$_scope [open] { margin: 1px; }\n'
+                '$_scope details[OPEN="" i] .x { padding: 2px; }\n'
+                '$_scope details[open] .absent { color: blue; }\n'
+                '$_scope [data-sc-class="unused"] { color: green; }',
+          ),
+        ),
+      );
+      expect(css, contains('details[open] .x{color: red;}'));
+      expect(css, contains('details[open] > summary{font-weight: bold;}'));
+      expect(css, contains('[open]{margin: 1px;}'));
+      expect(css, contains('padding: 2px'));
+      // 放宽只去掉交互态条件，结构照常判断：本条没有的元素照样裁。
+      expect(css, isNot(contains('.absent')));
+      // 其它属性条件不放宽。
+      expect(css, isNot(contains('unused')));
+    });
+
     test('@media 等条件组递归裁剪，裁空整组去掉', () {
       final String css = _styleOf(
         slimAnkiGlossaryHtml(
