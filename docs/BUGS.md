@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2916 条。点号进各自文件。
+> 共 2917 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3233](bugs/BUG-3233-hdr-compositor-failure-cached.md) | ✅ | ✅ | HDR合成器一次失败就整个进程记成不支持 |
 | [BUG-3229](bugs/BUG-3229-little-busters-luca-no-text.md) | ✅ | ✅ | Little Busters!（LucaSystem 引擎）连文本都抓不到 |
 | [BUG-3228](bugs/BUG-3228-leaderboard-summary-stuck-loading.md) | ✅ | ✅ | 排行榜总字数卡加载失败后永远停在加载条 |
 | [BUG-3225](bugs/BUG-3225-android-global-lookup-black-panel.md) | ✅ | ✅ | Android app 外查词窗词条区整块黑底、浅色主题文字看不见 |

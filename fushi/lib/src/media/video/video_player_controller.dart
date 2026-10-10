@@ -645,6 +645,14 @@ class VideoPlayerController extends ChangeNotifier
   /// 引擎是否带合成器内 HDR（runner 解析补丁导出符号的结果，进程内不变，缓存）。
   static bool? _compositorHdrSupported;
 
+  /// 视频纹理拒绝切 HDR 的那个 [Player]（纹理与 Player 一一对应）：只对它退回宿主窗，
+  /// 换片新建 Player 后重新尝试。与 [_compositorHdrSupported] 分开——那是**引擎**能力，
+  /// 进程内不变；纹理失败只说明这一路输出做不到，不能把整个进程记成「不支持」。
+  Player? _compositorTextureRefusedFor;
+
+  /// 正在等纹理就绪的那个 [Player]：同一 Player 只挂一个等待（重判可能多次落进来）。
+  Player? _compositorTextureAwaitedFor;
+
   /// 合成器内 HDR 当前下发给引擎 / 纹理 / mpv 的亮度参数；显示器变化时重下发。
   CompositorHdrTarget? _compositorTarget;
 
@@ -4192,7 +4200,10 @@ class VideoPlayerController extends ChangeNotifier
     // window has on Windows; the texture renderer (gl_video) would show the
     // inverted IPT colours (BUG-2691).
     final bool useCompositor =
-        want && !_hdrSourceIsDolbyVision && await _isCompositorHdrSupported();
+        want &&
+        !_hdrSourceIsDolbyVision &&
+        !identical(_compositorTextureRefusedFor, player) &&
+        await _isCompositorHdrSupported();
     if (!identical(_player, player)) return;
     if (useCompositor) {
       if (hdrHostActive.value) await _exitHdrHost(player);
@@ -4240,9 +4251,15 @@ class VideoPlayerController extends ChangeNotifier
           targetPeakNits: target.targetPeakNits,
         );
     if (!identical(_player, player)) return;
-    if (!textureOn) {
+    final CompositorHdrFallback? fallback = compositorHdrFallback(
+      engineOn: engineOn,
+      textureReady: platform != null,
+      textureOn: textureOn,
+    );
+    if (fallback != null) {
       debugPrint(
-        '[hdr-compositor] unavailable (engine=$engineOn texture=$textureOn); '
+        '[hdr-compositor] unavailable (engine=$engineOn '
+        'texture=${platform == null ? 'not-ready' : textureOn}); '
         'falling back to the host window',
       );
       if (engineOn) {
@@ -4251,7 +4268,15 @@ class VideoPlayerController extends ChangeNotifier
           sdrWhiteNits: kScRgbWhiteNits,
         );
       }
-      _compositorHdrSupported = false;
+      if (!identical(_player, player)) return;
+      switch (fallback) {
+        case CompositorHdrFallback.engineUnsupported:
+          _compositorHdrSupported = false;
+        case CompositorHdrFallback.awaitTexture:
+          _retryCompositorWhenTextureReady(player);
+        case CompositorHdrFallback.textureRefused:
+          _compositorTextureRefusedFor = player;
+      }
       unawaited(_evaluateHdrOutput());
       return;
     }
@@ -4264,6 +4289,26 @@ class VideoPlayerController extends ChangeNotifier
     hdrCompositorActive.value = true;
     notifyListeners();
     debugPrint('[hdr-compositor] enter $target');
+  }
+
+  /// 合成器 HDR 需要视频纹理（[PlatformVideoController]）在手；它还没建好时等它一次，
+  /// 到位后重判 HDR 输出。只挂一次、到位即摘，换片（Player 变了）则不再重判。
+  void _retryCompositorWhenTextureReady(Player player) {
+    final VideoController? controller = _videoController;
+    if (controller == null || identical(_compositorTextureAwaitedFor, player)) {
+      return;
+    }
+    _compositorTextureAwaitedFor = player;
+    late final VoidCallback listener;
+    listener = () {
+      if (controller.notifier.value == null) return;
+      controller.notifier.removeListener(listener);
+      if (identical(_compositorTextureAwaitedFor, player)) {
+        _compositorTextureAwaitedFor = null;
+      }
+      if (identical(_player, player)) unawaited(_evaluateHdrOutput());
+    };
+    controller.notifier.addListener(listener);
   }
 
   Future<void> _exitHdrCompositor(Player player) async {
