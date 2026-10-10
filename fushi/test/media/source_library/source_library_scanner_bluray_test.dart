@@ -388,6 +388,56 @@ void main() {
     );
   });
 
+  // 用户截图「好像到外面了」：旧版本从菜单进特典时建的孤儿行（无来源、名字「Disc 1 ·
+  // 00002」）单独躺在库首层。启动回填的索引要认领它们，开一次 app 就自愈。
+  test('启动索引认领旧版本留下的蓝光孤儿行：补来源、改回盘名、挂到正片下', () async {
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final String disc = p.join(tmp.path, 'Kaguya', 'Disc 1');
+    _writePlaylist(disc, '00001', <(String, int)>[('00001', 8430)]);
+    _writePlaylist(disc, '00002', <(String, int)>[
+      ('00002', 90),
+      ('00003', 90),
+      ('00006', 100),
+    ]);
+    final SourceLibraryRow source = await _videoSource(db, tmp.path);
+    final SourceScanSummary scan = await SourceLibraryScanner(db).scan(source);
+    expect(scan.succeeded, isTrue, reason: scan.error ?? '');
+
+    final VideoBookRepository repo = VideoBookRepository(db);
+    final String extraPath = p.join(disc, 'BDMV', 'PLAYLIST', '00002.mpls');
+    final VideoBookRow extra = (await repo.findByVideoPath(extraPath))!;
+    // 还原成旧版本的样子：无来源、首版自动名、没挂到任何作品下。
+    await repo.updateTitle(extra.bookUid, 'Disc 1 · 00002');
+    await db.customStatement(
+      'UPDATE video_books SET source_id = NULL WHERE book_uid = ?',
+      <Object?>[extra.bookUid],
+    );
+    await db.customStatement(
+      'DELETE FROM video_metadata_extras WHERE book_uid = ?',
+      <Object?>[extra.bookUid],
+    );
+
+    final VideoSourceMetadataIndexer indexer = VideoSourceMetadataIndexer(db);
+    expect(await indexer.index(source), isTrue);
+
+    final VideoBookRow healed = (await repo.getByBookUid(extra.bookUid))!;
+    expect(healed.sourceId, source.id);
+    expect(healed.title, 'Disc 1 - 00002');
+    final VideoBookRow main = (await repo.findByVideoPath(
+      p.join(disc, 'BDMV', 'PLAYLIST', '00001.mpls'),
+    ))!;
+    final VideoMetadataWorkRow work = (await db.getVideoMetadataWorkByBook(
+      main.bookUid,
+    ))!;
+    expect(
+      (await db.getVideoMetadataExtraByBook(extra.bookUid))?.workId,
+      work.id,
+    );
+    // 没有孤儿了：再跑一遍零写入（启动回填据此决定刷不刷新库页）。
+    expect(await indexer.index(source), isFalse);
+  });
+
   // 用户：31 分钟的 00002 被当成整部电影刮（media_type=movie、runtime=143）。盘名就是
   // 片名，盘上每条标题各自拿去识别，特辑必然认成正片。特典要像 NCOP 一样不单独成
   // 作品、挂到同盘正片的作品下。

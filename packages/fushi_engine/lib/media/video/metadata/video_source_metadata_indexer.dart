@@ -4,6 +4,9 @@ export 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.d
 
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/media/video/bluray/bluray_disc_extras.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
+    show isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
@@ -44,7 +47,7 @@ class VideoSourceMetadataIndexer {
   }
 
   Future<bool> _indexUnlocked(SourceLibraryRow source) async {
-    bool changed = false;
+    bool changed = await _adoptOrphanBlurayTitles(source);
     final List<VideoSourceScrapeWork> allWorks =
         await VideoSourceWorkPlanner(database).plan(source);
     final List<VideoSourceScrapeWork> works = <VideoSourceScrapeWork>[
@@ -186,6 +189,32 @@ class VideoSourceMetadataIndexer {
           updatedAt: now,
         ),
       );
+    }
+    return changed;
+  }
+
+  /// 认领本来源目录下没有来源的蓝光盘标题（BUG-3231 / 3233）。
+  ///
+  /// 原盘菜单首版从菜单进入特典时当场手写建行：没有来源、名字是「盘目录名 ·
+  /// MPLS 号」。没有来源的行不在任何来源的计划与索引里，所以它既刮不到、也挂不到
+  /// 正片作品下，只能当一张孤零零的卡片留在库首层。这一步按入库规则
+  /// （[ensureBlurayTitleInLibrary]）补来源、把首版自动名改回盘名，接下来的索引就把
+  /// 它当特典挂到正片下。启动回填对每个来源都跑这里，旧版本留下的行开一次 app 就
+  /// 自愈；没有孤儿时零写入。
+  Future<bool> _adoptOrphanBlurayTitles(SourceLibraryRow source) async {
+    final String root = p.normalize(p.absolute(source.rootPath));
+    bool changed = false;
+    for (final VideoBookRow row in await database.allVideoBooks()) {
+      if (row.sourceId != null || !isBlurayPlaylistPath(row.videoPath)) {
+        continue;
+      }
+      if (!p.isWithin(root, p.normalize(p.absolute(row.videoPath)))) continue;
+      final VideoBookRow? adopted = await ensureBlurayTitleInLibrary(
+        database,
+        row.videoPath,
+        sourceId: source.id,
+      );
+      if (adopted?.sourceId != null) changed = true;
     }
     return changed;
   }
