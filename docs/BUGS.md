@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2922 条。点号进各自文件。
+> 共 2923 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3257](bugs/BUG-3257-ctl-shortcuts-wheel-display-format.md) | ✅ | ✅ | 桌面CLI快捷键列表滚轮绑定在macOS输出显示格式 |
 | [BUG-3256](bugs/BUG-3256-home-tab-notifier-stale-after-module-off.md) | ✅ | ✅ | 当前 tab 被非设置页途径关掉时外壳 tab 通知残留旧值 |
 | [BUG-3255](bugs/BUG-3255-ext-offset-negative-zero.md) | ✅ | ✅ | 浏览器扩展字幕偏移绝对值小于5ms时显示-0 |
 | [BUG-3250](bugs/BUG-3250-shell-inline-title-unbounded.md) | ✅ | ✅ | 库页宽窗标题胶囊不限宽长页面名挤压页签 |

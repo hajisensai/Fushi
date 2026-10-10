@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_cli/fushi_cli.dart';
@@ -8,6 +10,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_values.dart';
 import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
 
 /// 建路由表不解引用 ref（handler 都是闭包），给一个空壳即可。
 class _UnusedRef implements WidgetRef {
@@ -212,6 +215,23 @@ void main() {
     );
     expect((books['totals']! as Map<String, Object?>)['chars'], 801);
     expect((books['byKind']! as Map<String, Object?>).keys, <String>['read']);
+  });
+
+  test('快捷键列：滚轮绑定走序列化格式，macOS 上也不出 ⌥ 显示符号', () {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final Map<String, List<String>> columns = ctlShortcutBindingColumns(
+      const ShortcutBindingSet(
+        wheelBindings: <WheelBinding>[
+          WheelBinding(
+            WheelDirection.down,
+            modifiers: <ModifierKey>{ModifierKey.alt},
+          ),
+        ],
+      ),
+    );
+    expect(columns['mouse'], <String>['Alt+WheelDown']);
+    debugDefaultTargetPlatformOverride = null;
   });
 
   test('时长格式', () {
