@@ -3592,8 +3592,11 @@ class _KeyboardStepper extends StatelessWidget {
 /// 拖动跟手（2026-10-09 Android 用户反馈「设置里的数值拉条松手才变」）：拖动
 /// 中的值放在本 State 里直接画，不等调用方把新值写回 [value]——不少滑条拖动中
 /// 只做预览、松手才落库（字幕外观），或写库是异步的，旧实现下滑块在整段拖动里
-/// 钉在原地。松手后保留最后的拖动值，直到调用方的 [value] 真的变了（或刚好等于
-/// 它）再交还，避免提交在途时滑块先弹回旧值再跳过去。
+/// 钉在原地。松手后保留最后的拖动值，直到调用方**下一次重建本控件**再交还
+/// [value]，避免提交在途时滑块先弹回旧值再跳过去。调用方那次重建给出的 [value]
+/// 就是它的裁决：接受则等于新值，拒绝 / 钳制则是旧值或钳后的值——不能只在
+/// [value] 变了时才交还，否则被拒绝的拖动值会一直挂在滑块上（2026-10-10 审查，
+/// BUG-3238）。
 class _KeyboardSlider extends StatefulWidget {
   const _KeyboardSlider({
     required this.value,
@@ -3631,12 +3634,10 @@ class _KeyboardSliderState extends State<_KeyboardSlider> {
   @override
   void didUpdateWidget(covariant _KeyboardSlider oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final double? local = _local;
-    if (local == null || _dragging) return;
-    // 松手后：调用方的值动了（提交落地）或已与拖动值一致，交还给调用方。
-    if (widget.value != oldWidget.value || widget.value == local) {
-      _local = null;
-    }
+    if (_local == null || _dragging) return;
+    // 松手 / 键盘微调之后调用方第一次重建本控件：它给的 value 就是提交结果
+    // （接受 = 新值；拒绝 = 旧值），一律交还，不再用本地值盖住它。
+    _local = null;
   }
 
   bool _dragging = false;
