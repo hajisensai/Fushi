@@ -363,9 +363,12 @@ constexpr uint32_t kTextSourceYuris = 9;
 // Kogado "Hy" exact text: the script page the message window's row renderer
 // shows, rows joined, speaker row removed.
 constexpr uint32_t kTextSourceKogadoHy = 11;
-// Text source ids 12-14: reserved, unassigned. The Malie adapter took 15 while
+// LucaSystem exact text: the Japanese record of the scenario VM's MESSAGE
+// opcode, role prefix and glossary markers removed.
+constexpr uint32_t kTextSourceLuca = 12;
+// Text source ids 13-14: reserved, unassigned. The Malie adapter took 15 while
 // other engine adapters were in flight; no branch in this repository uses
-// 12-14 (checked 2026-10-03 across all local refs). The host maps unknown kinds
+// 13-14 (checked 2026-10-03 across all local refs). The host maps unknown kinds
 // to the generic 'hook:' lane, so a new kind must be registered here AND in
 // GalHookedLine.textThreadKey/textThreadLabel (fushi/lib/src/mining/
 // galgame_audio_source.dart) in the same change; register the number here
@@ -921,15 +924,18 @@ constexpr uint32_t kLookupGeometryProviderIdBgi = 21u;
 constexpr uint32_t kLookupGeometryProviderIdYuris = 22u;
 // Kogado "Hy" message-window row layout provider (append-only id).
 constexpr uint32_t kLookupGeometryProviderIdKogadoHy = 24u;
-// Provider ids 25-27: reserved, unassigned. The Malie adapter took 28 while
+// LucaSystem message-window (cText glyph record) exact layout provider
+// (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdLuca = 25u;
+// Provider ids 26-27: reserved, unassigned. The Malie adapter took 28 while
 // other engine adapters were in flight; no branch in this repository uses
-// 25-27 (checked 2026-10-04 across all local refs and upstream/develop).
+// 26-27 (checked 2026-10-04 across all local refs and upstream/develop).
 // Every production pair is whitelisted in three places that must change
 // together: IsProductionProviderPair
 // (fushi/windows/runner/lookup_hit_validation.h),
 // isGalLookupProductionProviderPair (fushi/lib/src/platform/
 // gal_hook_text_overlay_channel.dart) and its contract test
-// (fushi/test/lookup/gal_ingame_lookup_contract_test.dart, which pins 25-27 as
+// (fushi/test/lookup/gal_ingame_lookup_contract_test.dart, which pins 26-27 as
 // rejected). Register a new id here first.
 // Malie RICHTEXT3D message exact layout provider (append-only id).
 constexpr uint32_t kLookupGeometryProviderIdMalie = 28u;

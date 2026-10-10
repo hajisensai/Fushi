@@ -32,6 +32,7 @@
 | `yuris` | YU-RIS | `implemented_unverified` | yuris_message_text (implemented_unverified)；luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | yuris_decoder_input_voice_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `fvp` | FVP (Favorite View Point) | `implemented_unverified` | fvp_text_print_hook (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | fvp_decoder_input_ogg_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `kogado_hy` | Kogado Hy engine | `implemented_unverified` | kogado_hy_message_page_hook (implemented_unverified)；luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
+| `luca` | LucaSystem (Prototype) | `implemented_unverified` | luca_message_text (implemented_unverified)；luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | luca_voice_pak_member (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 
 ## 无 OCR 内嵌查词矩阵
 
@@ -60,6 +61,7 @@
 | `yuris` | engine_exact_layout | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `fvp` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `kogado_hy` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `luca` | engine_exact_layout | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 
 证据边界：
 
@@ -124,6 +126,9 @@
   - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
   - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
 - `kogado_hy` geometry：Engine-exact message-window provider (kLookupGeometryProviderIdKogadoHy, 24). Sites resolve only from structure (kogado_hy_core.h ResolveLookupSites): the row renderer of the text lane gives the row pitch (`shl r,imm8; lea r,[r+r*s]`), the row band (`push WIDTH; push HEIGHT` before THyAlpha::Draw) and, at every row-array call site that shows a row, the row array's panel (`mov eax,[ebx+P]; call THyRGBPanel::SetModify`); the exported THyRGBPanel::ClientToScreen gives the panel's x/y/parent fields and THyRGBPanel::SetVisible its shown flag. A CP932 byte is half the row height wide (MS Gothic). The glyphs of the published click unit are placed at the panel chain's live origin (every panel of the chain shown) plus (byte * width, row * pitch), the same skips as the text lane (speaker row, quote indent), and projected to physical client pixels under the design aspect (the window's logical client is the design screen). The engine reads clicks only as window messages (a press swallowed in the game window's procedure does not advance; no key-state polling): a claimed WM_LBUTTONDOWN/DBLCLK is swallowed with its WM_LBUTTONUP in the game window's procedure (replaced for each bound window, chained with CallWindowProc and restored at shutdown while still the head of the chain; the window thread is not the script thread that renders the rows; the window is the only visible non-child top-level window whose class the game image registered), for mouse and promoted touch alike; refused when the unit or its last row changed, the panel moved or hid, the client size changed, the host's native-input admission is missing, a card shields the game or the game is not foreground. Offline: resolver on the 2004 Symphonic Rain SR.exe (row 24/520x20, panel fields 0x70/0x74/0x38/0x31, arrays 0x118->0x60 and 0x248->0xb4); fushi_kogado_hy_adapter_test. Fushi host run 2026-10-04 (local build of this branch, original launch path: SR.exe SHA-256 04b4c08b...ce4c started from the workbench under Locale Emulator, DPI-unaware 640x480 window stretched to a 1120x840 client): mouse click on a glyph opened the card for the clicked word in the adventure window (row 1 and row 2) and in the full-screen window (row 3), without advancing; a click outside closed the card without advancing; with no card a click advanced. Touch (InjectTouchInput PT_TOUCH): a tap on a glyph opened the card without advancing; a tap inside the card (nested lookup) then outside closed both without advancing; a horizontal swipe on the card closed it without advancing; with no card a swipe advanced and a 0.9 s long press opened the game's right-click menu, as the mouse does; the game window stayed foreground throughout. No card was written (no fake AnkiConnect run); not an accept4 run; single sample.
+  - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
+  - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate); no measured real-build click-leak rate is recorded.
+- `luca` geometry：Engine-exact text-object provider (kLookupGeometryProviderIdLuca, 25). The text object's layout routine is resolved from the loaded image (prologue shape plus a four-block row reset at stride 0x5A, unique) and cross-checked by the fields its body reads (row capacity, origin x/y, row count, row ring, row head); it is detoured only to learn live text objects. The worker reads each known object's row ring (glyph records: unit, x, width, height; row y offset) and accepts the line only when exactly one object's records spell the selected line unit by unit; positions are design space from system.cnf SCREEN_WIDTH/HEIGHT (1280x720) projected aspect-fit to physical client pixels. The click claim runs in the generic GetAsyncKeyState detour for calls from the main image only: a fresh VK_LBUTTON press on a glyph of the offered line (host native-input admission present, no card shield, game foreground, no modifiers) is claimed and masked (0x8000|0x0001) until release. Offline: x86/x64 build and fushi_luca_adapter_test (synthetic records, projection, hit test, claim state). Live layout dump 2026-10-09: the dialogue text object holds the current line's glyph records at origin (190,576). Fushi host run 2026-10-09 (local build of this branch, original Steam launch path, 1280x720 design on a 2240x1260 physical client): one session published 28 lookup hits (15 claimed clicks, 13 Shift presses), each opening the card for the word under the cursor; per the user, a click on a glyph did not advance, a click outside closed the card without advancing, a click with no card advanced, the touch checklist (tap on a glyph, tap inside then outside the card, swipe on the card) showed no problem, and a real card was written with the line's sentence and voice. The hook log cannot tell mouse from touch input or observe advancement, so the no-advance and touch results rest on the user's report; not an accept4 run; single sample.
   - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
   - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate); no measured real-build click-leak rate is recorded.
 
@@ -1187,6 +1192,51 @@ Tests：`tests/fvp_format_test.cpp`、`tests/fvp_lookup_test.cpp`
 Fixtures：`tests/fixtures/kogado_hy_replay.json`
 
 Tests：`tests/kogado_hy_adapter_test.cpp`
+
+### LucaSystem (Prototype) (`luca`)
+
+- 状态：`implemented_unverified`
+- 别名：LucaSystem、LUCA System、Prototype
+- 家族：`luca`（Prototype's LucaSystem engine (system.cnf boot configuration, *.PAK archives with an id-indexed member table, OGGPAK voice members); only one title measured）
+- 当前 adapter：`hook/adapters/luca_adapter.inc`
+- 进程策略：launch=`generic_launch_available`，attach=`generic_attach_available`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `pe_architectures`：x86；证据：real_sample — LITBUS_WIN32.exe (Little Busters! English Edition, Steam) is machine 0x14c; .text is SteamStub-encrypted on disk (.bind section), so every code site is resolved from the loaded image
+- `directory_files_all`：system.cnf、files/*.PAK；证据：real_sample — system.cnf (TARGET_PLATFORM, SCREEN_WIDTH 1280, SCREEN_HEIGHT 720) next to the executable and files\*.PAK (SCRIPT, VOICE0, VOICE2, MUSIC, SYSSE, ...); identity requires the cnf keys plus one PAK whose whole index parses under exactly one index layout
+- `pe_imports`：USER32.dll、GDI32.dll、DSOUND.dll、d3d11.dll、steam_api.dll；证据：real_sample — LITBUS_WIN32.exe import table: Direct3D 11 presents, DirectSound plays, mouse buttons are polled per frame through GetAsyncKeyState; catalogue only, the adapter never matches on imports
+- `resource_extensions`：.pak、.ogg；证据：real_sample — VOICE*.PAK members are OGGPAK ("OGGPAK\0" then {rate, length, complete Ogg} copies, mono); MUSIC/SYSSE members are stereo OGGPAK and are excluded by channel count
+- `hashes`：LITBUS_WIN32.exe sha256:047748c47ab636b5a97954688c9cb3d0ee68de7960166eb427c4e00f6b3f172d；证据：real_sample — Catalogue only; the adapter does not hash-pin
+
+文本能力：
+
+- `luca_message_text`：`implemented_unverified` — Native exact text lane (source kind 12, hook 'LucaSystem exact', ENGINE:LUCA:message): the scenario VM's MESSAGE handler is located by its operand shape (ReadU16 voice id, then a two-iteration ReadString loop for the per-language records; unique in the image, both readers end in `ret 4`) and the two operand readers are detoured, filtered by return address. The Japanese record is the one carrying kana/CJK; the `speaker@` prefix (or a lone `@`) is split off and $K keyword markers are stripped. Native run 2026-10-09 on the attached original Steam process: dialogue lines were published on the lane, protagonist lines without voice and voiced lines with their voice id. Fushi host run 2026-10-09: the 'LucaSystem exact' lane delivered clean Japanese lines; one session exported 216 per-line voice clips from VOICE0/VOICE2 and a real card was written with the matching sentence and voice (user report).
+- `luna_auto_or_pc_hooks`：`implemented_unverified` — LunaHook attaches generic hooks only; not used as the selected lane.
+- `ingame_lookup_geometry`：`implemented_unverified` — Engine-exact text-object provider kLookupGeometryProviderIdLuca (25), see lookup_support geometry.
+- codepage：UTF-16LE
+- 线程提示：Select the 'LucaSystem exact' lane.
+
+音频优先级：
+
+1. `luca_voice_pak_member` — `implemented_unverified`；格式：complete mono Ogg Vorbis taken from the VOICE*.PAK member the MESSAGE voice id addresses (member = voice id - the archive's first id; exactly one mono archive must claim the id), the copy whose rate matches the mixer or else the highest rate；clean voice：not_verified
+2. `directsound_pcm` — `implemented_unverified`；格式：generic DirectSound fallback；clean voice：engine_dependent
+3. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+
+已知限制：
+
+- Only one title was measured (Little Busters! English Edition, Steam, x86); other LucaSystem builds whose MESSAGE handler or text object differ refuse and install nothing.
+- Only the MESSAGE opcode is published; choices, titles and other text opcodes are not a lane.
+- Voice comes from the PAK member addressed by the voice id, not from a played-buffer capture; a build that remaps voice ids at run time would publish the wrong member (not observed).
+- The click claim samples the engine's per-frame GetAsyncKeyState poll; touch taps promoted to sub-frame WM_LBUTTONDOWN/UP passed the user's touch checklist once, but no injected-touch (InjectTouchInput) run is recorded.
+- The lookup model requires exactly one live text object whose glyph records spell the selected line; ruby, multi-object pages and surrogate pairs fail closed.
+
+Fixtures：`tests/fixtures/luca_replay.json`
+
+Tests：`tests/luca_adapter_test.cpp`
 
 ## 状态定义
 
