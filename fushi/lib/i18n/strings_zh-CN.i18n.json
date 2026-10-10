@@ -7029,5 +7029,6 @@
   "mihon_extension_package_label": "包名：$package",
   "extension_nsfw_badge": "NSFW",
   "mihon_extension_min_downloads_any": "不限",
-  "feedback_reopen_shots_failed": "有 ${n} 张原截图没能取回，未附上"
+  "feedback_reopen_shots_failed": "有 ${n} 张原截图没能取回，未附上",
+  "remote_hidden_books_hint_count": "已移除 ${n} 本 · 找回在书架上「仅从本机移除」的远端书"
 }

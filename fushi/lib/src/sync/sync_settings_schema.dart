@@ -991,17 +991,20 @@ SettingsItem buildShowRemoteEntriesItem() {
   );
 }
 
+/// 「已从本机移除的远端书」入口的副标题：有记录时带条数。条数与说明的拼法交给各语言
+/// 的文案（BUG-3244：以前硬拼 `'$n · 说明'`，数字没有量词、语序也不能按语言调整）。
+String hiddenRemoteBooksSubtitle(int n) => n == 0
+    ? t.remote_hidden_books_hint
+    : t.remote_hidden_books_hint_count(n: n);
+
 /// 「已从本机移除的远端书」找回列表入口，副标题报条数。
 SettingsItem buildHiddenRemoteBooksItem() {
   return SettingsNavigationItem(
     id: 'sync.hidden_remote_books',
     title: t.remote_hidden_books_title,
-    subtitleBuilder: (SettingsContext ctx) {
-      final int n = ctx.appModel.prefsRepo.hiddenRemoteBooks.length;
-      return n == 0
-          ? t.remote_hidden_books_hint
-          : '$n · ${t.remote_hidden_books_hint}';
-    },
+    subtitleBuilder: (SettingsContext ctx) => hiddenRemoteBooksSubtitle(
+      ctx.appModel.prefsRepo.hiddenRemoteBooks.length,
+    ),
     icon: FushiIcons.visibilityOff,
     onTap: (SettingsContext ctx) => pushSettingsPage(
       ctx,
