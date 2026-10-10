@@ -49,7 +49,6 @@ class BlurayClipRelayPool {
   final AacsMediaSession Function() _openSession;
 
   final Map<String, _PlaybackSession> _sessions = <String, _PlaybackSession>{};
-  bool _closed = false;
 
   @visibleForTesting
   int get sessionCount => _sessions.length;
@@ -57,7 +56,6 @@ class BlurayClipRelayPool {
   /// 为播放 [playback]（流 token）解析码流 [streamPath]。未加密时原样返回路径；
   /// 加密时返回本次播放共用的解密回环 URL。
   Future<BlurayClipLease> acquire(String playback, String streamPath) async {
-    if (_closed) throw StateError('Blu-ray clip relay pool is closed');
     final _PlaybackSession session = _sessions.putIfAbsent(
       playback,
       () => _PlaybackSession(_openSession()),
@@ -84,9 +82,10 @@ class BlurayClipRelayPool {
     });
   }
 
-  /// host 停机：关掉全部解密回环（释放光驱 / 盘文件句柄）。
+  /// host 停机：关掉全部解密回环（释放光驱 / 盘文件句柄）。池本身可继续用——
+  /// 同一个 server 实例 stop 之后允许再 start。停机前还在途的请求释放时发现会话
+  /// 已不在表里，不会再挂回收定时器。
   Future<void> closeAll() async {
-    _closed = true;
     final List<_PlaybackSession> sessions = _sessions.values.toList();
     _sessions.clear();
     for (final _PlaybackSession session in sessions) {

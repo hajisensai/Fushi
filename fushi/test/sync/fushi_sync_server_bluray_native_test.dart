@@ -173,12 +173,11 @@ void main() {
                 'mpv rendered nothing for $uri:\n'
                 '${File('${frames.path}.log').readAsStringSync()}',
           );
-          final List<File> images =
-              frames.listSync().whereType<File>().toList()
-                ..sort((File a, File b) => a.path.compareTo(b.path));
+          final List<File> images = frames.listSync().whereType<File>().toList()
+            ..sort((File a, File b) => a.path.compareTo(b.path));
           final List<String> colors = <String>[];
           for (final File image in images) {
-            final ProcessResult rgb = await Process.run(ffmpeg!, <String>[
+            final ProcessResult rgb = await Process.run(ffmpeg, <String>[
               '-hide_banner', '-loglevel', 'error', '-i', image.path, //
               '-vf', 'scale=1:1', '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-',
             ], stdoutEncoding: null);
@@ -203,7 +202,11 @@ void main() {
         expect(seam / whole.length, closeTo(1.2 / 2.8, 0.06));
         final List<String> sought = await play(title.edlUri(), 1.5);
         expect(sought, isNotEmpty);
-        expect(sought, everyElement('b'), reason: 'seek past the seam over HTTP');
+        expect(
+          sought,
+          everyElement('b'),
+          reason: 'seek past the seam over HTTP',
+        );
 
         // Transcoded HLS from the same title (host runs the Blu-ray rewrite).
         final Map<String, dynamic> hls = await streamUrl(

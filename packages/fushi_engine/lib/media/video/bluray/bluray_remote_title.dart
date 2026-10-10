@@ -77,6 +77,9 @@ Future<BlurayTitleStreams?> readBlurayTitleStreams(String playlistPath) async {
   final List<String> streamPaths = <String>[];
   final List<int> clipStreams = <int>[];
   for (final BlurayClipRef clip in playlist.clips) {
+    // clipId 是 MPLS 里的 5 个原始字节，BD 规范要求是数字；分段端点按它拼路径，
+    // 不是数字（例如 `../..`）就整条拒绝，免得跳出 `STREAM/`。
+    if (!_clipIdPattern.hasMatch(clip.clipId)) return null;
     final String path = p.join(root, 'BDMV', 'STREAM', clip.streamFileName);
     int index = streamPaths.indexOf(path);
     if (index < 0) {
@@ -91,6 +94,8 @@ Future<BlurayTitleStreams?> readBlurayTitleStreams(String playlistPath) async {
     clipStreams: clipStreams,
   );
 }
+
+final RegExp _clipIdPattern = RegExp(r'^\d{5}$');
 
 /// 远端一段：[url] 是 host 的分段地址，IN / 时长是 MPLS tick。
 class BlurayRemoteClip {

@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -267,6 +266,21 @@ void main() {
     expect(json['url'], isNot(contains('/stream?')));
     expect(json['transcoded'], isFalse);
     expect(json.containsKey('miningVideoUrl'), isFalse, reason: '转不了码就不给');
+  });
+
+  test('clipId 不是 5 位数字的 MPLS 整条拒绝（分段端点按它拼路径）', () async {
+    disc.playlist.writeAsBytesSync(
+      buildMplsFixture(
+        playItems: const <FixturePlayItem>[
+          FixturePlayItem(
+            clipId: '../..',
+            inTimeTicks: 468000,
+            outTimeTicks: 522000,
+          ),
+        ],
+      ),
+    );
+    expect(await readBlurayTitleStreams(disc.playlist.path), isNull);
   });
 
   test('普通视频的 streamurl 不带 discTitle（老行为不变）', () async {

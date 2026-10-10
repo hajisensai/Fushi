@@ -2546,11 +2546,7 @@ class VideoPlayerController extends ChangeNotifier
                           ? localPlaybackSource
                           : mediaUriForVideoPath(localPlaybackSource)),
           );
-    // 远端蓝光标题的 EDL 每段都是 host 的 http 流：缓存 / 预读 / 打不开诊断都要按
-    // 网络源配，而 `edl://` 这个 scheme 本身判不出来。
-    _sourceIsNetwork =
-        (!openBlurayMenu && remoteDiscTitle != null) ||
-        isNetworkStreamUri(sourceUri);
+    _sourceIsNetwork = isNetworkStreamUri(sourceUri);
     // 远端流 URL 带 api_key / PlaySessionId；调试日志可一键上传，先脱敏。
     debugPrint(
       '[video-load] cues=${cues.length} '
