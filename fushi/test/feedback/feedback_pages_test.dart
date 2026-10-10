@@ -1,6 +1,7 @@
 // 反馈中心 / 提交页的真实交互：空表单不发请求；填好提交后回到中心、列表出现新反馈；
 // 开发者有新回复的条目标红点；开发者账户才出现处理台入口。
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -16,6 +17,7 @@ import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.da
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_detail_page.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_dev_page.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
@@ -110,9 +112,27 @@ class _Server {
   final List<String> reopened = <String>[];
   String role = 'user';
 
+  /// closedclo0 带哪几张截图（s1 取回必失败）。
+  List<String> closedShotSlots = <String>['s0'];
+
+  /// 反馈人取截图前几次失败（测详情页重取）。
+  int shotFailures = 0;
+
+  /// 非空时，处理台列表请求先等它放行（测「被取代的旧请求」晚到）：键是搜索词。
+  final Map<String, Completer<void>> devListGates = <String, Completer<void>>{};
+
+  /// 非空时，处理台列表这一搜索词的请求回这个状态码。
+  final Map<String, int> devListFailures = <String, int>{};
+
   Future<http.Response> handle(http.Request r) async {
     requests.add(r);
     final String path = r.url.path;
+    if (path == '/v1/dev/feedback') {
+      final String q = r.url.queryParameters['q'] ?? '';
+      await devListGates[q]?.future;
+      final int? failure = devListFailures[q];
+      if (failure != null) return _json(<String, dynamic>{}, failure);
+    }
     if (path == '/v1/me') {
       return _json(<String, dynamic>{
         'id': 'SelfAccount001',
@@ -171,6 +191,10 @@ class _Server {
     }
     if (path == '/v1/feedback/oldoldold0/attachments/s0' && r.method == 'GET') {
       if (r.headers['X-Fushi-Ticket'] != 'old-ticket') return _json({}, 404);
+      if (shotFailures > 0) {
+        shotFailures--;
+        return _json(<String, dynamic>{}, 503);
+      }
       return http.Response.bytes(
         _kOnePixelPng,
         200,
@@ -246,16 +270,21 @@ class _Server {
         'devReplyAt': 300,
         'body': '目录太长翻不到头',
         'attachments': <Object>[
-          <String, dynamic>{
-            'slot': 's0',
-            'kind': 'screenshot',
-            'bytes': _kOnePixelPng.length,
-            'type': 'image/png',
-          },
+          for (final String slot in closedShotSlots)
+            <String, dynamic>{
+              'slot': slot,
+              'kind': 'screenshot',
+              'bytes': _kOnePixelPng.length,
+              'type': 'image/png',
+            },
         ],
         'messages': <Object>[],
         'reopenedAs': reopened,
       });
+    }
+    if (path == '/v1/feedback/closedclo0/attachments/s1') {
+      // 第二张原截图取不回（服务端已清理 / 网络失败）。
+      return _json(<String, dynamic>{}, 503);
     }
     if (path == '/v1/feedback/closedclo0/attachments/s0') {
       if (r.headers['X-Fushi-Ticket'] != 'closed-ticket') {
@@ -562,6 +591,52 @@ void main() {
     );
   });
 
+  testWidgets('BUG-3239 反馈人详情：截图下载失败显示坏图，点一下重取，成功后再点看大图', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    server.shotFailures = 1;
+    await tester.runAsync(seedOld);
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    await tester.runAsync(f.load);
+    await tester.pumpWidget(
+      wrap(b, f, const FeedbackDetailPage(feedbackId: 'oldoldold0')),
+    );
+    final Finder shot = find.byKey(
+      const ValueKey<String>('feedback-detail-shot-s0'),
+    );
+    Finder inShot(Finder f) => find.descendant(of: shot, matching: f);
+    Iterable<http.Request> downloads() => server.requests.where(
+      (http.Request r) => r.url.path.endsWith('/attachments/s0'),
+    );
+    await settleIo(
+      tester,
+      () => inShot(find.byType(FushiIcon)).evaluate().isNotEmpty,
+    );
+    expect(inShot(find.byType(Image)), findsNothing);
+    expect(downloads(), hasLength(1));
+
+    // 失败的那张点一下：重新下载（不是打开一张坏的大图）。
+    await tester.tap(shot);
+    await settleIo(
+      tester,
+      () => inShot(find.byType(Image)).evaluate().isNotEmpty,
+    );
+    expect(inShot(find.byType(Image)), findsOneWidget);
+    expect(find.byType(InteractiveViewer), findsNothing);
+    expect(downloads(), hasLength(2));
+
+    // 成功后再点：看大图，复用这次下载。
+    await tester.tap(shot);
+    await settleIo(
+      tester,
+      () => find.byType(InteractiveViewer).evaluate().isNotEmpty,
+    );
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    expect(downloads(), hasLength(2));
+  });
+
   testWidgets('我的反馈：列表显示可复制的编号；按编号 / 标题 / 正文本机搜索', (WidgetTester tester) async {
     tallView(tester);
     await tester.runAsync(() async {
@@ -713,6 +788,70 @@ void main() {
     expect(last.url.queryParameters['q'], 'svSfwFdmdM');
   });
 
+  testWidgets('BUG-3235 处理台列表：被搜索取代的旧请求晚到失败，不报错、不清掉新请求的加载中', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    server.role = 'dev';
+    // 首屏请求（无搜索词）挂住、放行后失败；搜索请求也先挂住。
+    final Completer<void> stale = Completer<void>();
+    final Completer<void> fresh = Completer<void>();
+    server.devListGates[''] = stale;
+    server.devListFailures[''] = 500;
+    server.devListGates['svSfwFdmdM'] = fresh;
+    final LeaderboardService b = board();
+    await tester.runAsync(() async {
+      await LeaderboardStore(supportRoot: root, profileId: 1).write(
+        LeaderboardLocalAccount(
+          recoveryCode: LeaderboardIdentity.generate().toRecoveryCode(),
+          accountId: 'SelfAccount001',
+          consentAt: 1,
+        ),
+      );
+      await b.load();
+    });
+    final FeedbackService f = feedback(b);
+    await tester.pumpWidget(wrap(b, f, const FeedbackDevPage()));
+    Iterable<http.Request> lists() => server.requests.where(
+      (http.Request r) => r.url.path == '/v1/dev/feedback',
+    );
+    await settleIo(tester, () => lists().isNotEmpty);
+    expect(lists(), hasLength(1));
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('feedback-dev-search')),
+      'svSfwFdmdM',
+    );
+    await settleIo(tester, () => lists().length == 2);
+    expect(lists().last.url.queryParameters['q'], 'svSfwFdmdM');
+
+    // 旧请求晚到并失败：它已被搜索取代，页面应仍在等新请求。
+    stale.complete();
+    await settleIo(tester, () => false);
+    expect(find.text(t.feedback_refresh_failed), findsNothing);
+    expect(find.byType(FushiLoadingView), findsOneWidget);
+    expect(
+      tester
+          .widget<FushiIconButton>(
+            find.ancestor(
+              of: find.byTooltip(t.refresh),
+              matching: find.byType(FushiIconButton),
+            ),
+          )
+          .enabled,
+      isFalse,
+      reason: '新请求还在途：刷新按钮仍是加载中',
+    );
+
+    fresh.complete();
+    await settleIo(
+      tester,
+      () => find.text('#svSfwFdmdM').evaluate().isNotEmpty,
+    );
+    expect(find.text('#svSfwFdmdM'), findsOneWidget);
+    expect(find.text(t.feedback_refresh_failed), findsNothing);
+  });
+
   testWidgets('已结案反馈「问题没解决，重新提交」：预填原反馈、截图可选带上、凭原 ticket 关联提交', (
     WidgetTester tester,
   ) async {
@@ -862,6 +1001,100 @@ void main() {
     );
     expect(find.text(t.feedback_reopen_of(id: 'closedclo0')), findsOneWidget);
     expect(find.text(t.feedback_reopened_as(id: 'newnewnew0')), findsOneWidget);
+  });
+
+  testWidgets('BUG-3242 重新提交带原截图：有张取不回时提示用户，开关不假装全带上', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    server.closedShotSlots = <String>['s0', 's1'];
+    await tester.runAsync(() async {
+      await FeedbackTicketStore(root).write(<FeedbackTicket>[
+        const FeedbackTicket(
+          id: 'closedclo0',
+          ticket: 'closed-ticket',
+          title: '漫画目录逆序',
+          category: FeedbackCategory.suggestion,
+          createdAt: 100,
+          status: FeedbackStatus.resolved,
+          updatedAt: 300,
+          seenAt: 300,
+        ),
+      ]);
+    });
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    await tester.runAsync(f.load);
+    await tester.pumpWidget(
+      wrap(b, f, const FeedbackDetailPage(feedbackId: 'closedclo0')),
+    );
+    final Finder reopen = find.byKey(const ValueKey<String>('feedback-reopen'));
+    await settleIo(tester, () => reopen.evaluate().isNotEmpty);
+    await tester.tap(reopen);
+    final Finder include = find.byKey(
+      const ValueKey<String>('feedback-reopen-include-shots'),
+    );
+    await settleIo(tester, () => include.evaluate().isNotEmpty);
+    await tester.tap(include);
+    final String warning = t.feedback_reopen_shots_failed(n: 1);
+    await settleIo(tester, () => find.text(warning).evaluate().isNotEmpty);
+    // ScaffoldMessenger 把 SnackBar 挂在每个已注册的 Scaffold 上（详情页 + 提交页）。
+    expect(find.text(warning), findsWidgets);
+    expect(
+      find.byKey(const ValueKey<String>('feedback-shot-0')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey<String>('feedback-shot-1')), findsNothing);
+    expect(tester.widget<FushiSwitchListTile>(include).value, isTrue);
+  });
+
+  testWidgets('BUG-3243 反馈人详情：关联的那条不在本机（别的设备提交）时画成不可点的标签', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    server.reopened.addAll(<String>['farfarfar0', 'newnewnew0']);
+    await tester.runAsync(() async {
+      await FeedbackTicketStore(root).write(<FeedbackTicket>[
+        const FeedbackTicket(
+          id: 'closedclo0',
+          ticket: 'closed-ticket',
+          title: '漫画目录逆序',
+          category: FeedbackCategory.suggestion,
+          createdAt: 100,
+          status: FeedbackStatus.resolved,
+          updatedAt: 300,
+          seenAt: 300,
+        ),
+        const FeedbackTicket(
+          id: 'newnewnew0',
+          ticket: 'new-ticket',
+          title: '漫画目录逆序',
+          category: FeedbackCategory.suggestion,
+          createdAt: 900,
+          status: FeedbackStatus.open,
+          updatedAt: 900,
+          seenAt: 900,
+        ),
+      ]);
+    });
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    await tester.runAsync(f.load);
+    await tester.pumpWidget(
+      wrap(b, f, const FeedbackDetailPage(feedbackId: 'closedclo0')),
+    );
+    final Finder elsewhere = find.byKey(
+      const ValueKey<String>('feedback-relation-farfarfar0'),
+    );
+    await settleIo(tester, () => elsewhere.evaluate().isNotEmpty);
+    // 本机有 ticket 的那条能点过去；别的设备提交的只是标签，不装成按钮。
+    expect(tester.widget(elsewhere), isA<FushiTag>());
+    expect(
+      tester.widget(
+        find.byKey(const ValueKey<String>('feedback-relation-newnewnew0')),
+      ),
+      isA<FushiActionChip>(),
+    );
   });
 
   testWidgets('处理台：新反馈标「重新提交自」，详情两向链接能点过去', (WidgetTester tester) async {

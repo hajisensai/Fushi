@@ -53,6 +53,9 @@ class FeedbackReopenSeed {
   final List<String> screenshotSlots;
 }
 
+/// [_FeedbackComposePageState._onDisk]：磁盘上没有草稿。
+const Object _kNoDraftOnDisk = Object();
+
 class FeedbackComposePage extends ConsumerStatefulWidget {
   const FeedbackComposePage({this.initialScreenshot, this.reopenOf, super.key});
 
@@ -97,6 +100,11 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   int? _restoredAt;
   Timer? _draftTimer;
   late final AppLifecycleListener _lifecycle;
+
+  /// 磁盘上草稿此刻的内容：[_kNoDraftOnDisk] = 没有草稿，[FeedbackComposeDraft] = 上次
+  /// 写下去的那份，null = 不知道（下一次落盘照写）。落盘前与它比，没变就不写——桌面
+  /// 主窗每次失焦都会触发落盘，每次都整份重写（连同最多 3 张截图）是纯写放大（BUG-3241）。
+  Object? _onDisk;
 
   /// initState 里取一次：dispose 时还要用它落盘，那时已不能再碰 ref。
   late final FeedbackService _service;
@@ -154,6 +162,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       final FeedbackComposeDraft? draft = await (await _service.draftStore())
           .read();
       if (!mounted) return;
+      _onDisk = draft ?? _kNoDraftOnDisk;
       // 草稿读回来之前用户已经动手写了：以眼前的为准，下一次保存覆盖旧草稿。
       if (draft != null && !_hasDraftContent) {
         super.setState(() {
@@ -164,6 +173,16 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
           _shots
             ..clear()
             ..addAll(draft.screenshots);
+          // 本次打开前自动截的画面接在草稿截图后面（还有空位、且不是草稿里已有的同一张）：
+          // 它是打开反馈那一刻的现场，关掉提交页就再也截不回来（BUG-3240）。
+          final Uint8List? autoShot = widget.initialScreenshot;
+          if (autoShot != null &&
+              _room > 0 &&
+              !draft.screenshots.any(
+                (Uint8List s) => listEquals(s, autoShot),
+              )) {
+            _shots.add(autoShot);
+          }
           _restoredAt = draft.savedAt;
         });
         _title.text = draft.title;
@@ -201,6 +220,9 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       screenshots: List<Uint8List>.of(_shots),
       savedAt: DateTime.now().millisecondsSinceEpoch,
     );
+    final Object target = keep ? draft : _kNoDraftOnDisk;
+    if (_sameOnDisk(_onDisk, target)) return;
+    _onDisk = target;
     unawaited(
       _service
           .draftStore()
@@ -210,8 +232,30 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
           )
           .catchError((Object e, StackTrace st) {
             ErrorLogService.instance.log('feedback.draft_save', e, st);
+            // 没写成：磁盘上是什么不知道了，下一次照写。
+            if (identical(_onDisk, target)) _onDisk = null;
           }),
     );
+  }
+
+  /// 两份草稿状态是否一样（不比保存时刻；截图按引用比——表单里的截图对象只在增删时换）。
+  static bool _sameOnDisk(Object? a, Object b) {
+    if (identical(a, b)) return true;
+    if (a is! FeedbackComposeDraft || b is! FeedbackComposeDraft) return false;
+    if (a.category != b.category ||
+        a.title != b.title ||
+        a.body != b.body ||
+        a.contact != b.contact ||
+        a.includeLogs != b.includeLogs ||
+        a.includeDevice != b.includeDevice ||
+        a.linkAccount != b.linkAccount ||
+        a.screenshots.length != b.screenshots.length) {
+      return false;
+    }
+    for (int i = 0; i < a.screenshots.length; i++) {
+      if (!identical(a.screenshots[i], b.screenshots[i])) return false;
+    }
+    return true;
   }
 
   /// 「丢弃草稿」：删掉磁盘上的草稿，表单回到刚打开时的样子（带本次的自动截图）。
@@ -232,6 +276,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       _error = null;
     });
     _draftTimer?.cancel();
+    _onDisk = _kNoDraftOnDisk;
     unawaited(
       _service
           .draftStore()
@@ -277,6 +322,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       _includeParentShots = true;
       _loadingParentShots = true;
     });
+    int failed = 0;
     for (final String slot in seed.screenshotSlots) {
       if (_room <= 0 || !_includeParentShots) break;
       try {
@@ -288,9 +334,17 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
         });
       } on Object catch (e, st) {
         ErrorLogService.instance.log('feedback.reopen_screenshot', e, st);
+        failed++;
       }
     }
-    if (mounted) setState(() => _loadingParentShots = false);
+    if (!mounted) return;
+    setState(() {
+      _loadingParentShots = false;
+      // 一张都没取回：开关不能停在「已带上」。
+      if (_parentShots.isEmpty) _includeParentShots = false;
+    });
+    // 少带了几张要让用户知道（开关看着是开的，附件里却缺图，BUG-3242）。
+    if (failed > 0) _notice(t.feedback_reopen_shots_failed(n: failed));
   }
 
   List<Widget> _reopenSection(FushiDesignTokens tokens) {

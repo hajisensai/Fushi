@@ -94,11 +94,35 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
   }
 
   /// 截图字节按槽位缓存：刷新详情不重复下载（服务端对单条反馈的下载有限次）。
+  /// 只缓存成功的下载：失败的槽位从缓存里摘掉、记进 [_failedShots]，点一下缩略图重取
+  /// （否则一次网络抖动就让这张图在本次打开期间永远是坏图，BUG-3239）。
   final Map<String, Future<Uint8List>> _images = <String, Future<Uint8List>>{};
+  final Set<String> _failedShots = <String>{};
 
-  Future<Uint8List> _image(String slot) => _images[slot] ??= ref
-      .read(feedbackServiceProvider)
-      .screenshot(widget.feedbackId, slot);
+  Future<Uint8List> _image(String slot) => _images[slot] ??= _download(slot);
+
+  Future<Uint8List> _download(String slot) async {
+    try {
+      final Uint8List bytes = await ref
+          .read(feedbackServiceProvider)
+          .screenshot(widget.feedbackId, slot);
+      _failedShots.remove(slot);
+      return bytes;
+    } on Object {
+      _images.remove(slot);
+      _failedShots.add(slot);
+      rethrow;
+    }
+  }
+
+  /// 点缩略图：上次取失败了就重取（重建出新的 Future），否则看大图。
+  void _onShotTap(String slot) {
+    if (_failedShots.contains(slot)) {
+      setState(() => _failedShots.remove(slot));
+      return;
+    }
+    _viewImage(slot);
+  }
 
   void _viewImage(String slot) => unawaited(
     showAppDialog<void>(
@@ -140,7 +164,7 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
                 FushiPressScale(
                   child: GestureDetector(
                     key: ValueKey<String>('feedback-detail-shot-${a.slot}'),
-                    onTap: () => _viewImage(a.slot),
+                    onTap: () => _onShotTap(a.slot),
                     child: ClipRRect(
                       borderRadius: FushiM3eShape.smallRadius,
                       child: SizedBox(
@@ -201,9 +225,13 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
 
   bool _closing = false;
 
-  /// 关联的另一条（本机清单里有才打开；别的设备提交的没有 ticket，看不了）。
+  /// 关联的另一条本机有没有 ticket（别的设备提交的没有，看不了）。
+  bool _canOpenRelated(String id) =>
+      ref.read(feedbackServiceProvider).byId(id) != null;
+
+  /// 打开关联的另一条（只对 [_canOpenRelated] 的条目可点）。
   void _openRelated(String id) {
-    if (ref.read(feedbackServiceProvider).byId(id) == null) return;
+    if (!_canOpenRelated(id)) return;
     unawaited(
       Navigator.push(
         context,
@@ -353,6 +381,7 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
                               parentId: d.summary.parentId,
                               reopenedAs: d.reopenedAs,
                               onOpen: _openRelated,
+                              canOpen: _canOpenRelated,
                             ),
                           ],
                           SizedBox(height: tokens.spacing.gap),

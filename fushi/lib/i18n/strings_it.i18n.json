@@ -7027,5 +7027,7 @@
   "mihon_extension_uninstall_confirm_multi": "The extension “$name” provides $count sources. Uninstalling it removes all of them:",
   "mihon_extension_package_label": "Package: $package",
   "extension_nsfw_badge": "NSFW",
-  "mihon_extension_min_downloads_any": "Qualsiasi"
+  "mihon_extension_min_downloads_any": "Qualsiasi",
+  "feedback_reopen_shots_failed": "Could not fetch ${n} of the original screenshots; they are not attached",
+  "remote_hidden_books_hint_count": "${n} removed · Bring back remote books you removed from this device's shelf"
 }
