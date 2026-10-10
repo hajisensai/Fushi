@@ -1,4 +1,4 @@
-## BUG-3094 · Little Busters!（LucaSystem 引擎）连文本都抓不到
+## BUG-3229 · Little Busters!（LucaSystem 引擎）连文本都抓不到
 - **报告**：2026-10-09（用户：mizore520）
 - **真实性**：✅ 真 bug。Prototype 的 LucaSystem 引擎没有任何适配器（`native/galgame_hook/hook/adapter_registry.inc` 的 `Poll()` 里没有对应项），工作台只剩 LunaHook 的通用线程，抓不到干净正文。另外 Steam 版 `.text` 由 SteamStub 加密（`.bind` 节），磁盘镜像上根本扫不到代码结构，只能在进程解密后从已加载镜像识别。
 - **[x] ① 已修复**（`7a9b69ea9`、`825532843`）— 新增引擎级适配器 `luca`（`native/galgame_hook/hook/adapters/luca_*`）。
