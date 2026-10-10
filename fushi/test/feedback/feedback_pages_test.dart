@@ -112,6 +112,9 @@ class _Server {
   final List<String> reopened = <String>[];
   String role = 'user';
 
+  /// closedclo0 带哪几张截图（s1 取回必失败）。
+  List<String> closedShotSlots = <String>['s0'];
+
   /// 反馈人取截图前几次失败（测详情页重取）。
   int shotFailures = 0;
 
@@ -267,16 +270,21 @@ class _Server {
         'devReplyAt': 300,
         'body': '目录太长翻不到头',
         'attachments': <Object>[
-          <String, dynamic>{
-            'slot': 's0',
-            'kind': 'screenshot',
-            'bytes': _kOnePixelPng.length,
-            'type': 'image/png',
-          },
+          for (final String slot in closedShotSlots)
+            <String, dynamic>{
+              'slot': slot,
+              'kind': 'screenshot',
+              'bytes': _kOnePixelPng.length,
+              'type': 'image/png',
+            },
         ],
         'messages': <Object>[],
         'reopenedAs': reopened,
       });
+    }
+    if (path == '/v1/feedback/closedclo0/attachments/s1') {
+      // 第二张原截图取不回（服务端已清理 / 网络失败）。
+      return _json(<String, dynamic>{}, 503);
     }
     if (path == '/v1/feedback/closedclo0/attachments/s0') {
       if (r.headers['X-Fushi-Ticket'] != 'closed-ticket') {
@@ -993,6 +1001,51 @@ void main() {
     );
     expect(find.text(t.feedback_reopen_of(id: 'closedclo0')), findsOneWidget);
     expect(find.text(t.feedback_reopened_as(id: 'newnewnew0')), findsOneWidget);
+  });
+
+  testWidgets('BUG-3242 重新提交带原截图：有张取不回时提示用户，开关不假装全带上', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    server.closedShotSlots = <String>['s0', 's1'];
+    await tester.runAsync(() async {
+      await FeedbackTicketStore(root).write(<FeedbackTicket>[
+        const FeedbackTicket(
+          id: 'closedclo0',
+          ticket: 'closed-ticket',
+          title: '漫画目录逆序',
+          category: FeedbackCategory.suggestion,
+          createdAt: 100,
+          status: FeedbackStatus.resolved,
+          updatedAt: 300,
+          seenAt: 300,
+        ),
+      ]);
+    });
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    await tester.runAsync(f.load);
+    await tester.pumpWidget(
+      wrap(b, f, const FeedbackDetailPage(feedbackId: 'closedclo0')),
+    );
+    final Finder reopen = find.byKey(const ValueKey<String>('feedback-reopen'));
+    await settleIo(tester, () => reopen.evaluate().isNotEmpty);
+    await tester.tap(reopen);
+    final Finder include = find.byKey(
+      const ValueKey<String>('feedback-reopen-include-shots'),
+    );
+    await settleIo(tester, () => include.evaluate().isNotEmpty);
+    await tester.tap(include);
+    final String warning = t.feedback_reopen_shots_failed(n: 1);
+    await settleIo(tester, () => find.text(warning).evaluate().isNotEmpty);
+    // ScaffoldMessenger 把 SnackBar 挂在每个已注册的 Scaffold 上（详情页 + 提交页）。
+    expect(find.text(warning), findsWidgets);
+    expect(
+      find.byKey(const ValueKey<String>('feedback-shot-0')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey<String>('feedback-shot-1')), findsNothing);
+    expect(tester.widget<FushiSwitchListTile>(include).value, isTrue);
   });
 
   testWidgets('BUG-3243 反馈人详情：关联的那条不在本机（别的设备提交）时画成不可点的标签', (
