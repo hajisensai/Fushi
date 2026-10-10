@@ -157,6 +157,18 @@ add_test(NAME ja_kansai_ta_boundary_test
          COMMAND ja_kansai_ta_boundary_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
 
+# BUG-3229：汉字 + 假名混写（棚にあげる → 棚に上げる）经读音通路命中。
+add_executable(ja_mixed_orthography_lookup_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/ja_mixed_orthography_lookup_test.cpp")
+target_link_libraries(ja_mixed_orthography_lookup_test PRIVATE fushidicts)
+target_include_directories(ja_mixed_orthography_lookup_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(ja_mixed_orthography_lookup_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME ja_mixed_orthography_lookup_test
+         COMMAND ja_mixed_orthography_lookup_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
+
 # BUG-2853：Yomitan 词典自带变形（`[formOf, [rule...]]` 重定向记录）在 lookup 里被跟随。
 add_executable(yomitan_redirect_lookup_test
     "${CMAKE_CURRENT_SOURCE_DIR}/yomitan_redirect_lookup_test.cpp")
