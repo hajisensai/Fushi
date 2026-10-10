@@ -257,7 +257,9 @@ class FushiSyncServer {
     Uint8List? Function(String dictionary, String path)?
         dictionaryMediaProvider,
     FushiRemoteGameStreamService? gameStreamService,
+    @visibleForTesting BlurayClipRelayPool? blurayClipRelays,
   })  : syncDataDir = p.join(syncDataDir, 'sync-data'),
+        _blurayClipRelays = blurayClipRelays ?? BlurayClipRelayPool(),
         _requestedPort = port,
         _token = token,
         _allowLan = allowLan,
@@ -346,7 +348,7 @@ class FushiSyncServer {
       <String, _VideoStreamToken>{};
 
   /// 蓝光标题分段的解密会话（按流 token 复用，空闲回收；见 [BlurayClipRelayPool]）。
-  final BlurayClipRelayPool _blurayClipRelays = BlurayClipRelayPool();
+  final BlurayClipRelayPool _blurayClipRelays;
 
   /// BUG-908(d)：WebDAV 写操作（PUT / MKCOL / DELETE）的按路径串行闸门。key 是目标
   /// 文件系统绝对路径，value 是该路径上最近一次写的完成 future。新的写先 await 同一
