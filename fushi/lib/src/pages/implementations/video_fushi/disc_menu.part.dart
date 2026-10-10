@@ -487,17 +487,8 @@ extension _VideoDiscMenu on _VideoFushiPageState {
     );
   }
 
-  TextStyle _discMenuTitleStyle() => _m3eChrome
-      ? TextStyle(
-          color: _VideoFushiPageState._videoChromeNeutralFg,
-          fontSize:
-              Theme.of(context).textTheme.titleMedium!.fontSize! *
-              _videoUiScale,
-          height: 1.25,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.1,
-        )
-      : _videoControlTitleStyle();
+  TextStyle _discMenuTitleStyle() =>
+      _m3eChrome ? _m3eTopBarTitleStyle() : _videoControlTitleStyle();
 
   /// 原盘「主菜单 / 弹出菜单」两个导航钮。播放正片时挂在常规顶栏右上按钮组的头部
   /// （[_topBarSlotGroup]），随控制条一起显隐；菜单模式挂在 [_buildDiscMenuChrome]。
