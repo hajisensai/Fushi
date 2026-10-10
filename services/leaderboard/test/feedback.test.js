@@ -261,6 +261,38 @@ describe('重新提交', () => {
     expect((await submit(env, { title: 'too many', reopenOf: { id: mine.id, ticket: mine.ticket } })).data.error)
       .toBe('too_many_reopens');
   });
+
+  it('BUG-3230 次数上限是原子的：并发重新提交不会一起越过上限', async () => {
+    // 每次 D1 往返真实等待：没有条件 INSERT 时并发请求都会在对方写入前读到同一个旧计数。
+    const env = makeEnv({ d1DelayMs: 3 });
+    const mine = (await submit(env, { title: 'mine' })).data;
+    await withTicket(env, 'POST', `/v1/feedback/${mine.id}/close`, mine.ticket);
+    const limit = FEEDBACK_LIMITS.reopensPerFeedback;
+    for (let i = 0; i < limit - 1; i++) {
+      expect((await submit(env, { title: `again ${i}`, reopenOf: { id: mine.id, ticket: mine.ticket } })).status)
+        .toBe(201);
+    }
+    const race = await Promise.all([0, 1, 2, 3].map((i) =>
+      submit(env, { title: `race ${i}`, reopenOf: { id: mine.id, ticket: mine.ticket } })));
+    expect(race.filter((r) => r.status === 201)).toHaveLength(1);
+    for (const r of race.filter((x) => x.status !== 201)) expect(r.data.error).toBe('too_many_reopens');
+    expect(env.DB.raw.prepare('SELECT COUNT(*) n FROM feedback WHERE parent_id = ?').get(mine.id).n).toBe(limit);
+  });
+
+  it('BUG-3230 同一来源对同一条原反馈用同样内容连交两次：第二次按重复拒收；原反馈自己的判重桶不挡重新提交', async () => {
+    const env = makeEnv();
+    const ip = '203.0.113.77';
+    const orig = (await submit(env, {}, { ip })).data;
+    await withTicket(env, 'POST', `/v1/feedback/${orig.id}/close`, orig.ticket);
+    const first = await submit(env, { reopenOf: { id: orig.id, ticket: orig.ticket } }, { ip });
+    expect(first.status).toBe(201);
+    const again = await submit(env, { reopenOf: { id: orig.id, ticket: orig.ticket } }, { ip });
+    expect(again.status).toBe(409);
+    expect(again.data.error).toBe('duplicate_feedback');
+    // 换了内容就是新的说明，照收。
+    const changed = await submit(env, { body: '更新后还是白屏', reopenOf: { id: orig.id, ticket: orig.ticket } }, { ip });
+    expect(changed.status).toBe(201);
+  });
 });
 
 describe('开发者（App 端签名接口）', () => {
