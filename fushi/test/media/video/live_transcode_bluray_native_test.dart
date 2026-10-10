@@ -71,6 +71,36 @@ void main() {
           ),
         );
 
+        Future<List<double>> ptsOf(Uint8List segment, String name) async {
+          final String ts = p.join(root.path, name);
+          await File(ts).writeAsBytes(segment);
+          final ProcessResult info = await Process.run(executable!, <String>[
+            '-hide_banner', '-copyts', '-i', ts, '-an', //
+            '-vf', 'showinfo', '-f', 'null', '-',
+          ]);
+          return <double>[
+            for (final Match m in RegExp(
+              r'pts_time:([0-9.]+)',
+            ).allMatches('${info.stderr}'))
+              double.parse(m.group(1)!),
+          ];
+        }
+
+        // The whole 2.8 s title inside segment 0 (default 6 s segments).
+        final List<double> whole = await ptsOf(
+          await transcodeSegment(
+            inputPath: playlist,
+            profile: const VideoTranscodeProfile(maxWidth: 64, maxBitrate: 0),
+            index: 0,
+            durationMs: 2800,
+          ),
+          'seg0.ts',
+        );
+        expect(whole, hasLength(70), reason: '2.8 seconds at 25 fps');
+        // Segment 0 alone is lifted by the AAC priming (avoid_negative_ts), the
+        // same as an ordinary transcode; it must not land at the clip's PTS.
+        expect(whole.first, inInclusiveRange(0, 0.03));
+
         // Segment 1 of 1-second segments straddles the seam.
         final Uint8List segment = await transcodeSegment(
           inputPath: playlist,
