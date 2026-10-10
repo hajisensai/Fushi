@@ -123,6 +123,7 @@ Future<VideoBookRow?> ensureBlurayTitleInLibrary(
     final int? collectionId = await _discCollectionId(
       db,
       siblings.map((VideoBookRow b) => b.bookUid).toSet(),
+      root,
     );
     if (collectionId != null) {
       await db.addToCollection(collectionId, MediaKind.video, uid);
@@ -131,20 +132,41 @@ Future<VideoBookRow?> ensureBlurayTitleInLibrary(
   });
 }
 
-/// 这张盘的合集：扫描导入建的 `playlist` 合集，以同盘已入库标题的成员身份认出。
-/// 盘还没被扫描导入过（库里只有这一条）时没有合集，返回 null。
+/// 这张盘的合集：扫描导入建的 `playlist` 合集，以同盘已入库标题的成员身份认出，
+/// 且成员全是本盘标题（与扫描器 `_collectionBelongsToDisc` 同一判据——收了本盘
+/// mpls 的 m3u8 清单合集不算）。盘还没被扫描导入过时没有合集，返回 null。
 Future<int?> _discCollectionId(
   FushiDatabase db,
   Set<String> siblingUids,
+  String normalizedRoot,
 ) async {
   if (siblingUids.isEmpty) return null;
-  for (final MediaCollectionItemRow item in await db.getAllCollectionItems()) {
-    if (item.mediaType != MediaKind.video.dbValue) continue;
-    if (!siblingUids.contains(item.entryKey)) continue;
-    final MediaCollectionRow? collection = await db.getMediaCollectionById(
-      item.collectionId,
-    );
-    if (collection?.collectionType == 'playlist') return item.collectionId;
+  final List<MediaCollectionItemRow> all = await db.getAllCollectionItems();
+  final Set<int> candidates = <int>{
+    for (final MediaCollectionItemRow item in all)
+      if (item.mediaType == MediaKind.video.dbValue &&
+          siblingUids.contains(item.entryKey))
+        item.collectionId,
+  };
+  for (final int id in candidates) {
+    final MediaCollectionRow? collection = await db.getMediaCollectionById(id);
+    if (collection?.collectionType != 'playlist') continue;
+    if (await _allMembersOnDisc(db, all, id, normalizedRoot)) return id;
   }
   return null;
+}
+
+Future<bool> _allMembersOnDisc(
+  FushiDatabase db,
+  List<MediaCollectionItemRow> all,
+  int collectionId,
+  String normalizedRoot,
+) async {
+  for (final MediaCollectionItemRow item in all) {
+    if (item.collectionId != collectionId) continue;
+    final VideoBookRow? row = await db.getVideoBookByBookUid(item.entryKey);
+    if (row == null) continue;
+    if (!_onDisc(row.videoPath, normalizedRoot)) return false;
+  }
+  return true;
 }
