@@ -92,13 +92,24 @@ bool isDashboardContinueBook(MediaItem item, Set<String> completedBookKeys) {
       ShelfReadStatus.reading;
 }
 
-/// 宽屏首页的封面高度：随内容区宽度放大（宽 × 0.2），夹在 176…260 之间。
+/// 首页是否用双栏版式：横屏（宽 > 高，且至少 600 宽）或宽屏（≥ 840，平板竖屏
+/// 以上的桌面窗口）。竖屏手机 / 平板竖屏走单栏。
 ///
-/// 1024 宽平板约 205、1300 以上（桌面 1440）封顶 260——「继续」最多 10 张
-/// 2:3 竖卡在 1440 下正好铺满一行，下方「最近添加」行按 0.82 倍跟随。
+/// 横屏手机（约 800×380）高度紧张，单栏会把主角卡和今日统计挤成上下两屏；
+/// 双栏让两者并排出现在首屏。
 @visibleForTesting
-double dashboardWideCoverHeight(double contentWidth) =>
-    (contentWidth * 0.2).clamp(176.0, 260.0);
+bool dashboardUsesTwoColumns(Size size) =>
+    size.width >= 840 || (size.width >= 600 && size.width > size.height);
+
+/// 双栏版式下「继续」主角卡的封面高度：随主列宽放大（× 0.3），夹在 150…240。
+@visibleForTesting
+double dashboardHeroCoverHeight(double mainColumnWidth) =>
+    (mainColumnWidth * 0.3).clamp(150.0, 240.0);
+
+/// 双栏版式下「继续」横滑行的封面高度：随主列宽放大（× 0.2），夹在 132…200。
+@visibleForTesting
+double dashboardRowCoverHeight(double mainColumnWidth) =>
+    (mainColumnWidth * 0.2).clamp(132.0, 200.0);
 
 /// 「继续」视频卡的进度（[dashboardVideoContinueProgress] 的结果）。
 ///
@@ -587,16 +598,15 @@ class _HomeDashboardPageState
   /// null = 没有可继续的条目，FAB 不出现。
   _ContinueEntry? _resumeEntry;
 
-  /// 「继续」封面行（2026-10 精简：只有封面，不再挂标题 / 副标题文字块）：书 /
-  /// 视频 / 游戏统一 2:3 竖卡、等高等宽（视频优先用作品海报，只有横版截帧时裁进
-  /// 竖卡，不再横竖混排）。窄屏封面高
-  /// [_kContinueCoverHeight]，宽屏（主列 ≥ [_kWideLayoutMinWidth]）按窗口宽放大
-  /// （[dashboardWideCoverHeight]）——行里没有文字了，封面是唯一的信息载体。
-  static const double _kContinueCoverHeight = 148;
-  /// 宽屏「最近添加」行封面相对「继续」行的缩放：次要信息，比「继续」小一号。
-  static const double _kRecentCoverScale = 0.82;
+  /// 「继续」横滑行（主角卡之外的其余条目）：书 / 视频 / 游戏统一 2:3 竖卡、等高
+  /// 等宽（视频优先用作品海报，只有横版截帧时裁进竖卡），封面下方挂两行标题。
+  /// 单栏封面高 [_kContinueCoverHeight]，双栏按主列宽放大
+  /// （[dashboardRowCoverHeight]）。
+  static const double _kContinueCoverHeight = 132;
   static const double _kContinueCoverAspect = 2 / 3;
-  static const double _kWideLayoutMinWidth = 900;
+
+  /// 侧栏「最近添加」最多几条：侧栏只给一眼「新进了什么」，完整列表在各库页。
+  static const int _kRecentLimit = 4;
 
   /// 视频文件路径 → 容器时长（毫秒，[VideoFileSpecs] 探测缓存，只查在看的
   /// 视频）。`VideoBooks` 不存总时长，单视频 / 合集里的某一集要画「看到哪」的
@@ -1166,53 +1176,95 @@ class _HomeDashboardPageState
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        // 2026-10 精简（用户反馈「首页砍到只剩有用的」）：原四栏（继续 / 学习活动
-        // / 最近添加 / 活动）收成**一张卡**——顶部学习头部行（目标环 + 今日字数 +
-        // 今日时长），下面是只有封面的「继续」行。热力图（统计中心能看）、最近
-        // 添加、活动时间轴（本机 + 同步同一本书各出一条，重复）全部删掉。宽屏不再
-        // 分主列 / 侧列，卡片通栏，封面随宽度放大。
+        // 2026-10-10 重设计（用户：「首页每一项都要有标题，加回继续阅读和 M3E 波浪
+        // 条，横屏竖屏都要好用但别信息过多」）。每个分区都是带标题的卡：
+        // - 「今日」：学习头部行（目标环 + 今日字数 + 今日时长）；
+        // - 「继续」：最近一条放大成主角卡（[HomeContinueHero]：波浪进度条 +
+        //   「继续阅读 / 继续观看」主按钮），其余条目是带标题的封面横滑行；
+        // - 「最近添加」：只在双栏版式的侧栏出现（紧凑列表，最多 4 条）；
+        // - Bangumi 同步卡（模块开着时）。
         //
-        // 宽屏（桌面 / 平板横屏，用户 2026-10-09：下方空白太多）补两样，手机宽度
-        // 不变：① 封面随窗口宽放大（[dashboardWideCoverHeight]）；② 主卡下方加
-        // 一行「最近添加」封面（无标题行，每张卡挂「新」角标自解释；与「继续」
-        // 已有的作品去重）。不恢复学习日历 / 活动栏 / 标题行 / 筛选。
-        final bool wide = constraints.maxWidth >= _kWideLayoutMinWidth;
-        final double coverHeight = wide
-            ? dashboardWideCoverHeight(constraints.maxWidth)
-            : _kContinueCoverHeight;
-        final Widget studyCard = _buildStudyContinueCard(
-          tokens,
+        // 版式（[dashboardUsesTwoColumns]）：
+        // - 竖屏单栏：今日 → 继续 → 同步卡。手机竖屏一屏就是「今天读了多少 +
+        //   接着读什么」，不再塞别的。
+        // - 横屏 / 宽屏双栏：左主列（3/5）是「继续」，右侧栏（2/5）依次是今日、
+        //   最近添加、同步卡——横屏高度紧，左右并排把主角卡和今日统计同时放进
+        //   首屏；封面按主列宽放大（[dashboardHeroCoverHeight] /
+        //   [dashboardRowCoverHeight]）。
+        final bool twoColumn = dashboardUsesTwoColumns(constraints.biggest);
+        final double contentWidth =
+            constraints.maxWidth - tokens.spacing.card * 2;
+        final double mainWidth = twoColumn
+            ? (contentWidth - tokens.spacing.card) * 3 / 5
+            : contentWidth;
+        final List<_ContinueEntry> continueEntries = _collectContinueEntries(
           appModel,
           books,
           lastReadByKey,
           epubUidByKey,
           completedBookKeys,
-          coverHeight: coverHeight,
         );
-        final Widget? recentCard = wide && _initialLoadDone
-            ? _buildRecentlyAddedCard(
-                tokens,
-                appModel,
-                books,
-                coverHeight: coverHeight * _kRecentCoverScale,
-              )
+        final Widget continueCard = _buildContinueSection(
+          tokens,
+          appModel,
+          continueEntries,
+          heroCoverHeight:
+              twoColumn ? dashboardHeroCoverHeight(mainWidth) : 150,
+          rowCoverHeight: twoColumn
+              ? dashboardRowCoverHeight(mainWidth)
+              : _kContinueCoverHeight,
+        );
+        final Widget studyCard = _buildStudySection(tokens);
+        final Widget? recentCard = twoColumn && _initialLoadDone
+            ? _buildRecentlyAddedCard(tokens, appModel, books)
             : null;
         int entrance = 0;
-        final Widget body = Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            FushiStaggeredEntrance(index: entrance++, child: studyCard),
-            if (recentCard != null) ...<Widget>[
-              SizedBox(height: tokens.spacing.card),
-              FushiStaggeredEntrance(index: entrance++, child: recentCard),
+        Widget entering(Widget child) =>
+            FushiStaggeredEntrance(index: entrance++, child: child);
+        final Widget body;
+        if (twoColumn) {
+          final Widget main = entering(continueCard);
+          final List<Widget> side = <Widget>[
+            entering(studyCard),
+            if (recentCard != null) entering(recentCard),
+            if (trackingCard != null) entering(trackingCard),
+          ];
+          body = Row(
+            key: const ValueKey<String>('home-two-column'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(flex: 3, child: main),
+              SizedBox(width: tokens.spacing.card),
+              Expanded(
+                flex: 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    for (int i = 0; i < side.length; i++) ...<Widget>[
+                      if (i > 0) SizedBox(height: tokens.spacing.card),
+                      side[i],
+                    ],
+                  ],
+                ),
+              ),
             ],
-            if (trackingCard != null) ...<Widget>[
+          );
+        } else {
+          body = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              entering(studyCard),
               SizedBox(height: tokens.spacing.card),
-              FushiStaggeredEntrance(index: entrance++, child: trackingCard),
+              entering(continueCard),
+              if (trackingCard != null) ...<Widget>[
+                SizedBox(height: tokens.spacing.card),
+                entering(trackingCard),
+              ],
             ],
-          ],
-        );
+          );
+        }
         // 2026-10 动效重做：仪表盘首屏错峰进场。
         // 2026-10 首页统一浮动工具栏：顶部不再是贴边实体条，栏与「继续」FAB
         // 悬浮在列表之上（Stack），列表顶部让出栏高、底部让出 FAB 与外壳
@@ -1366,22 +1418,20 @@ class _HomeDashboardPageState
     await _updateCount?.reload();
   }
 
-  // ── 学习 + 继续（2026-10 精简后首页唯一的主卡） ───────────────────────────
+  // ── 今日 / 继续 ─────────────────────────────────────────────────────────
 
-  /// 首页主卡：顶部学习头部行（[HomeStudyHeader]：目标环 + 今日字数 + 今日时长），
-  /// 下面是「继续」封面行——在读的书（[isDashboardContinueBook]）、在看的视频
-  /// （有断点且未完成 / 合集 Next-Up）、玩过的游戏与互联远端补位按最近活动时刻
-  /// 倒序混排取前 10 条。不再有分类筛选（用户反馈「主界面没必要分四类，查看分类
-  /// 留给统计中心」），也不再有「继续」标题与条目标题（看封面就知道是什么）。
-  Widget _buildStudyContinueCard(
-    FushiDesignTokens tokens,
+  /// 「继续」条目：在读的书（[isDashboardContinueBook]）、在看的视频（有断点且
+  /// 未完成 / 合集 Next-Up）、玩过的游戏与互联远端补位按最近活动时刻倒序混排，
+  /// 关掉的模块先出局，取前 10 条。不做分类筛选（用户反馈「主界面没必要分四类，
+  /// 查看分类留给统计中心」）。顺带写入 [_resumeEntry]（FAB）与
+  /// [_continueVisible]（「最近添加」去重）。
+  List<_ContinueEntry> _collectContinueEntries(
     AppModel appModel,
     List<MediaItem> books,
     Map<String, int> lastReadByKey,
     Map<String, String> epubUidByKey,
-    Set<String> completedBookKeys, {
-    required double coverHeight,
-  }) {
+    Set<String> completedBookKeys,
+  ) {
     final List<_ContinueEntry> entries = <_ContinueEntry>[];
     for (final MediaItem item in books) {
       if (isDashboardContinueBook(item, completedBookKeys)) {
@@ -1522,20 +1572,61 @@ class _HomeDashboardPageState
         .toList();
     _resumeEntry = visible.isEmpty ? null : visible.first;
     _continueVisible = visible;
+    return visible;
+  }
 
-    // 首载未结束时挂同轮廓骨架，而不是先闪空态再跳成真数据；新用户空库给空态
-    // 说明 + 去书架 / 去媒体库的引导按钮（首页不会是一片空白）。
+  /// 「今日」分区：学习头部行（[HomeStudyHeader]），首载未结束时挂同轮廓骨架。
+  Widget _buildStudySection(FushiDesignTokens tokens) {
+    return _sectionCard(
+      tokens,
+      title: t.stat_today,
+      icon: FushiIcons.barChart,
+      key: const ValueKey<String>('home-study-card'),
+      child: _initialLoadDone
+          ? _buildStudyHeader(tokens)
+          : const HomeGoalSkeleton(),
+    );
+  }
+
+  /// 「继续」分区：第一条放大成主角卡（[HomeContinueHero]），其余条目是带标题
+  /// 的封面横滑行（`home-continue-row`）。
+  ///
+  /// 首载未结束时挂同轮廓骨架，而不是先闪空态再跳成真数据；新用户空库给空态
+  /// 说明 + 去书架 / 去媒体库的引导按钮（首页不会是一片空白）。
+  Widget _buildContinueSection(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    List<_ContinueEntry> visible, {
+    required double heroCoverHeight,
+    required double rowCoverHeight,
+  }) {
+    final ModuleVisibility visibility = appModel.moduleVisibility;
     final Widget continueContent;
     if (visible.isNotEmpty) {
-      continueContent = _continueCardsRow(
-        tokens,
-        appModel,
-        visible,
-        coverHeight: coverHeight,
-        rowKey: 'home-continue-row',
+      continueContent = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          _buildContinueHero(
+            tokens,
+            appModel,
+            visible.first,
+            coverHeight: heroCoverHeight,
+          ),
+          if (visible.length > 1) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap),
+            _continueCardsRow(
+              tokens,
+              appModel,
+              visible.sublist(1),
+              coverHeight: rowCoverHeight,
+              rowKey: 'home-continue-row',
+            ),
+          ],
+        ],
       );
     } else if (!_initialLoadDone) {
-      continueContent = HomeContinueRowSkeleton(coverHeight: coverHeight);
+      continueContent = HomeContinueRowSkeleton(coverHeight: rowCoverHeight);
     } else {
       continueContent = HomeEmptyState(
         icon: FushiIcons.playCircle,
@@ -1557,40 +1648,72 @@ class _HomeDashboardPageState
     }
     return _sectionCard(
       tokens,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          if (_initialLoadDone)
-            _buildStudyHeader(tokens)
-          else
-            const HomeGoalSkeleton(),
-          SizedBox(height: tokens.spacing.gap),
-          // 数据到达 / 空库 ↔ 有内容切换时交叉淡入 + 尺寸弹簧过渡，不硬跳。
-          FushiAnimatedSize(
-            duration: fushiMotionDuration(context, FushiMotion.medium),
-            curve: FushiMotion.standard,
-            alignment: AlignmentDirectional.topStart,
-            child: AnimatedSwitcher(
-              duration: fushiMotionDuration(context, FushiMotion.medium),
-              switchInCurve: FushiMotion.enter,
-              switchOutCurve: FushiMotion.exit,
-              child: KeyedSubtree(
-                key: ValueKey<String>(
-                  visible.isNotEmpty
-                      ? 'continue'
-                      : (_initialLoadDone ? 'empty' : 'loading'),
-                ),
-                child: continueContent,
-              ),
+      title: t.home_continue,
+      icon: FushiIcons.playCircle,
+      key: const ValueKey<String>('home-continue-card'),
+      // 数据到达 / 空库 ↔ 有内容切换时交叉淡入 + 尺寸弹簧过渡，不硬跳。
+      child: FushiAnimatedSize(
+        duration: fushiMotionDuration(context, FushiMotion.medium),
+        curve: FushiMotion.standard,
+        alignment: AlignmentDirectional.topStart,
+        child: AnimatedSwitcher(
+          duration: fushiMotionDuration(context, FushiMotion.medium),
+          switchInCurve: FushiMotion.enter,
+          switchOutCurve: FushiMotion.exit,
+          child: KeyedSubtree(
+            key: ValueKey<String>(
+              visible.isNotEmpty
+                  ? 'continue'
+                  : (_initialLoadDone ? 'empty' : 'loading'),
             ),
+            child: continueContent,
           ),
-        ],
+        ),
       ),
     );
   }
 
-  /// 「继续」FAB 的动作文案。
+  /// 「继续」主角卡：标题与横滑卡同一显示名规则（合集成员显示合集名），副标题
+  /// 是「类型 ·（合集里的这一集）·（远端设备）」，进度条右侧是与封面角标同一份
+  /// 进度文案；封面走同一条 [_continueCover] 取图链（2:3 竖槽）。
+  Widget _buildContinueHero(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    _ContinueEntry entry, {
+    required double coverHeight,
+  }) {
+    final String kind = _kindLabel(entry.kind);
+    final String? collectionName = entry.collectionName;
+    final List<String> subtitle = <String>[
+      kind,
+      if (collectionName != null && collectionName != entry.title) entry.title,
+      if (entry.remote != null) _remoteDeviceName ?? t.home_remote_source,
+    ];
+    final int recent = entry.recentMs;
+    return HomeContinueHero(
+      cover: _continueCover(tokens, appModel, entry),
+      coverHeight: coverHeight,
+      eyebrow: recent > 0
+          ? formatActivityRelativeTime(recent, DateTime.now())
+          : null,
+      title: collectionName ?? entry.title,
+      subtitle: subtitle.join(' · '),
+      progress: entry.progress,
+      progressLabel: entry.badgeLabel,
+      actionLabel: _resumeActionLabel(entry),
+      actionIcon: _resumeActionIcon(entry),
+      onOpen: () => unawaited(_openContinueEntry(appModel, entry)),
+    );
+  }
+
+  /// 条目类型的短标签（阅读 / 观看 / 游戏）：主角卡副标题与「最近添加」行共用。
+  String _kindLabel(MediaKind kind) => switch (kind) {
+        MediaKind.video => t.home_filter_watch,
+        MediaKind.game => t.home_filter_game,
+        MediaKind.epub || MediaKind.srt => t.home_filter_read,
+      };
+
+  /// 主角卡主按钮与「继续」FAB 共用的动作文案。
   String _resumeActionLabel(_ContinueEntry entry) => switch (entry.kind) {
         MediaKind.video => t.video_continue_watching,
         MediaKind.epub || MediaKind.srt => t.book_continue_reading,
@@ -1599,28 +1722,27 @@ class _HomeDashboardPageState
         MediaKind.game => t.collection_open,
       };
 
-  /// 「继续」FAB 的动作图标。
+  /// 主角卡主按钮与「继续」FAB 共用的动作图标。
   IconData _resumeActionIcon(_ContinueEntry entry) => switch (entry.kind) {
         MediaKind.video => FushiIcons.play,
         MediaKind.epub || MediaKind.srt => FushiIcons.books,
         MediaKind.game => FushiIcons.games,
       };
 
-  /// 宽屏「最近添加」卡（用户 2026-10-09：桌面 / 平板横屏下方空白太多）。
+  /// 「最近添加」卡（用户 2026-10-09：桌面 / 平板横屏空白太多；10-10 起带标题、
+  /// 放进双栏版式的侧栏）。
   ///
-  /// 只在宽屏挂（手机宽度布局不变），形态是一行比「继续」小一号的 2:3 封面：
-  /// **没有标题行、没有筛选**（用户要求删掉的都不回来），每张卡左上角挂一枚缩小的
-  /// 「新」角标自解释（右上角留给竖排书名）。数据源是本页快照里已有的书 / 视频 / 游戏行（不新增查询）：
+  /// 只在双栏版式挂（竖屏单栏不出，免得手机首页信息过多），形态是紧凑列表
+  /// （[HomeRecentTile]：小封面 + 标题 + 「类型 · 相对时间」），最多
+  /// [_kRecentLimit] 条。数据源是本页快照里已有的书 / 视频 / 游戏行（不新增查询）：
   /// 书按 `EpubBooks.importedAt`、视频按 `VideoBooks.importedAt`（合集按成员
   /// 最大值收成一张，封面取合集海报）、游戏按 `addedAt` 倒序混排；已在「继续」
-  /// 行出现的作品去重；关掉的模块先出局；取前 12。没有可显示的条目 → null
-  /// （不出空卡）。
+  /// 出现的作品去重；关掉的模块先出局。没有可显示的条目 → null（不出空卡）。
   Widget? _buildRecentlyAddedCard(
     FushiDesignTokens tokens,
     AppModel appModel,
-    List<MediaItem> books, {
-    required double coverHeight,
-  }) {
+    List<MediaItem> books,
+  ) {
     final Set<String> shownBooks = <String>{};
     final Set<String> shownVideos = <String>{};
     final Set<int> shownVideoCollections = <int>{};
@@ -1638,7 +1760,6 @@ class _HomeDashboardPageState
       if (e.game != null) shownGames.add(e.game!.id);
     }
 
-    final String badge = t.home_recent_badge;
     final List<_ContinueEntry> entries = <_ContinueEntry>[];
     for (final MediaItem item in books) {
       if (shownBooks.contains(item.mediaIdentifier)) continue;
@@ -1651,7 +1772,6 @@ class _HomeDashboardPageState
         kind: _bookMediaKind(item),
         title: ReaderFushiSource.instance.getDisplayTitleFromMediaItem(item),
         recentMs: addedAt,
-        badgeLabel: badge,
         book: item,
       ));
     }
@@ -1671,7 +1791,6 @@ class _HomeDashboardPageState
         kind: MediaKind.video,
         title: v.title,
         recentMs: addedAt,
-        badgeLabel: badge,
         video: v,
       ));
     }
@@ -1702,7 +1821,6 @@ class _HomeDashboardPageState
         kind: MediaKind.video,
         title: first.title,
         recentMs: addedAt,
-        badgeLabel: badge,
         collectionName: _collectionNamesById[ce.key],
         collectionId: ce.key,
         video: first,
@@ -1715,7 +1833,6 @@ class _HomeDashboardPageState
         kind: MediaKind.game,
         title: g.displayName,
         recentMs: g.addedAt.millisecondsSinceEpoch,
-        badgeLabel: badge,
         game: g,
       ));
     }
@@ -1726,47 +1843,53 @@ class _HomeDashboardPageState
     );
     final List<_ContinueEntry> visible = entries
         .where((_ContinueEntry e) => visibility.isEnabled(e.module))
-        .take(12)
+        .take(_kRecentLimit)
         .toList();
     if (visible.isEmpty) return null;
+    final DateTime now = DateTime.now();
     return _sectionCard(
       tokens,
-      child: KeyedSubtree(
-        key: const ValueKey<String>('home-recent-card'),
-        child: _continueCardsRow(
-          tokens,
-          appModel,
-          visible,
-          coverHeight: coverHeight,
-          rowKey: 'home-recent-row',
-          // 「新」挂左上角并缩小：右上角是日文竖排书名的起笔处，会被压住。
-          categoryBadge: true,
-        ),
+      title: t.home_recently_added,
+      icon: FushiIcons.schedule,
+      key: const ValueKey<String>('home-recent-card'),
+      child: Column(
+        key: const ValueKey<String>('home-recent-list'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          for (final _ContinueEntry e in visible)
+            HomeRecentTile(
+              cover: _continueCover(tokens, appModel, e),
+              title: _continueDisplayTitle(e),
+              subtitle: '${_kindLabel(e.kind)} · '
+                  '${formatActivityRelativeTime(e.recentMs, now)}',
+              onTap: () => unawaited(_openContinueEntry(appModel, e)),
+            ),
+        ],
       ),
     );
   }
 
-  /// 「继续」封面行：定高横向 ListView，只有封面（2026-10 精简）。
-  ///
-  /// 整排 2:3 竖卡等高等宽（书 / 视频 / 游戏同一几何），横向滚动。
+  /// 「继续」横滑行：定高横向 ListView，2:3 竖卡等高等宽（书 / 视频 / 游戏同一
+  /// 几何），每张卡下方挂两行标题（2026-10-10「首页每一项都要有标题」）。
   Widget _continueCardsRow(
     FushiDesignTokens tokens,
     AppModel appModel,
     List<_ContinueEntry> entries, {
     required double coverHeight,
     required String rowKey,
-    bool categoryBadge = false,
   }) {
     // BUG-2002 同款几何：悬停放大是纯绘制变换（以卡中心放大），行视口高度恰等于
     // 卡高时，溢出的上下各 (scale-1)/2 会被 ListView 视口裁成平边。行高留出余量、
     // 卡片自身尺寸不变；不能改用 Clip.none：懒加载 cacheExtent 里已构建的卡会画到
-    // 行外。
-    final double liftHeadroom = coverHeight * (kFushiHoverLiftScale - 1) / 2;
+    // 行外。卡高 = 封面 + 标题块。
+    final double cardHeight = coverHeight + homeCoverTitleBlockHeight(context);
+    final double liftHeadroom = cardHeight * (kFushiHoverLiftScale - 1) / 2;
     final double liftSideRoom =
         coverHeight * _kContinueCoverAspect * (kFushiHoverLiftScale - 1) / 2;
     return SizedBox(
       key: ValueKey<String>(rowKey),
-      height: coverHeight + liftHeadroom * 2,
+      height: cardHeight + liftHeadroom * 2,
       // 桌面默认 MaterialScrollBehavior 的 dragDevices 不含鼠标——横排行
       // 用鼠标左右拖会毫无反应。共享件统一放开 mouse/trackpad/stylus 拖动
       // （与合集行 CollectionShelfRow 同款）；触屏行为不变。
@@ -1788,21 +1911,19 @@ class _HomeDashboardPageState
             appModel,
             entries[i],
             coverHeight: coverHeight,
-            categoryBadge: categoryBadge,
           ),
         ),
       ),
     );
   }
 
-  /// 「继续」单卡：[HomeContinueCoverCard]（封面 + 底部进度条 + 右上角进度角标）。
-  /// 一行卡片统一 2:3 竖版、等高等宽（书 / 视频 / 游戏同一几何，不再横竖混排）。
+  /// 「继续」单卡：[HomeContinueCoverCard]（封面 + 底部进度条 + 右上角进度角标 +
+  /// 下方两行标题）。一行卡片统一 2:3 竖版、等高等宽（书 / 视频 / 游戏同一几何）。
   Widget _buildContinueCard(
     FushiDesignTokens tokens,
     AppModel appModel,
     _ContinueEntry entry, {
     required double coverHeight,
-    bool categoryBadge = false,
   }) {
     return HomeContinueCoverCard(
       cover: _continueCover(tokens, appModel, entry),
@@ -1812,8 +1933,7 @@ class _HomeDashboardPageState
       progress: entry.progress,
       badgeLabel: entry.badgeLabel,
       badgeIcon: entry.badgeIcon,
-      badgeAtStart: categoryBadge,
-      badgeScale: categoryBadge ? 0.85 : 1,
+      showTitle: true,
       onTap: () => unawaited(_openContinueEntry(appModel, entry)),
     );
   }
@@ -2115,26 +2235,36 @@ class _HomeDashboardPageState
             ? Border.all(color: tokens.surfaces.outline)
             : null,
       ),
-      child: Padding(
-        padding: EdgeInsets.all(tokens.spacing.gap),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            FushiIcon(icon, color: tokens.type.metadata.color),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Flexible(
-              child: Text(
-                title,
-                textAlign: TextAlign.center,
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
-                style: tokens.type.metadata.copyWith(
-                  color: tokens.surfaces.onSurface,
+      // 「最近添加」列表的小封面（几十像素宽）塞不下字，只放图标。
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints c) {
+          if (c.maxWidth < 64) {
+            return Center(
+              child: FushiIcon(icon, color: tokens.type.metadata.color),
+            );
+          }
+          return Padding(
+            padding: EdgeInsets.all(tokens.spacing.gap),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                FushiIcon(icon, color: tokens.type.metadata.color),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Flexible(
+                  child: Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                    style: tokens.type.metadata.copyWith(
+                      color: tokens.surfaces.onSurface,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -2305,6 +2435,7 @@ class _HomeDashboardPageState
       return _sectionCard(
         tokens,
         title: t.media_tracking_card_title,
+        icon: FushiIcons.sync,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
@@ -2336,6 +2467,7 @@ class _HomeDashboardPageState
     return _sectionCard(
       tokens,
       title: t.media_tracking_card_title,
+      icon: FushiIcons.sync,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -2683,13 +2815,16 @@ class _HomeDashboardPageState
 
   // ── 共享外壳 ────────────────────────────────────────────────────────────
 
-  /// 统一的分区卡：可选标题（+ 可选右侧 header 控件）+ 内容，套 group 底色圆角。
   /// [_sectionCard] 的内边距。
   double _sectionCardInset(FushiDesignTokens tokens) => tokens.spacing.gap + 4;
 
+  /// 统一的分区卡：标题行（可选前导图标 + 标题 + 可选右侧控件）+ 可选 header +
+  /// 内容，套 group 底色圆角。2026-10-10 起首页每个分区都带标题。
   Widget _sectionCard(
     FushiDesignTokens tokens, {
+    Key? key,
     String? title,
+    IconData? icon,
     required Widget child,
     Widget? header,
     List<Widget> trailing = const <Widget>[],
@@ -2701,7 +2836,30 @@ class _HomeDashboardPageState
     // 的 group 令牌）+ inset grouped 圆角（iOS ≈ 24 / 桌面 12），与 FushiCard 同口径。
     final bool apple = isGlassDesign(context);
     final String? label = title;
+    final Widget? titleText = label == null
+        ? null
+        : Row(
+            children: <Widget>[
+              if (icon != null) ...<Widget>[
+                FushiIcon(
+                  icon,
+                  size: 18,
+                  color: tokens.type.sectionLabel.color,
+                ),
+                SizedBox(width: tokens.spacing.gap / 2),
+              ],
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.sectionLabel,
+                ),
+              ),
+            ],
+          );
     return DecoratedBox(
+      key: key,
       decoration: ShapeDecoration(
         color: apple
             ? appleColorsOf(context).secondaryGroupedBackground
@@ -2721,16 +2879,13 @@ class _HomeDashboardPageState
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            // 无标题卡（2026-10 精简后的首页主卡）：内容直接顶格，不留标题行。
-            if (label != null) ...<Widget>[
+            if (titleText != null) ...<Widget>[
               if (trailing.isEmpty)
-                Text(label, style: tokens.type.sectionLabel)
+                titleText
               else
                 Row(
                   children: <Widget>[
-                    Expanded(
-                      child: Text(label, style: tokens.type.sectionLabel),
-                    ),
+                    Expanded(child: titleText),
                     for (final Widget w in trailing) ...<Widget>[
                       SizedBox(width: tokens.spacing.gap),
                       w,

@@ -281,29 +281,67 @@ void main() {
     return cid;
   }
 
-  // 只数「继续」行里的卡：宽屏下方还有一行「最近添加」，用的是同一个卡组件。
-  Finder coverCards() => find.descendant(
+  // 2026-10-10 重设计：「继续」第一条是主角卡（HomeContinueHero），其余条目在
+  // `home-continue-row` 横滑行里（HomeContinueCoverCard，封面下挂标题）。
+  const ValueKey<String> studyCardKey = ValueKey<String>('home-study-card');
+  const ValueKey<String> continueCardKey =
+      ValueKey<String>('home-continue-card');
+  const ValueKey<String> recentCardKey = ValueKey<String>('home-recent-card');
+  Finder hero() => find.byType(HomeContinueHero);
+  Finder heroAction() =>
+      find.byKey(const ValueKey<String>('home-continue-hero-action'));
+  Finder rowCards() => find.descendant(
         of: find.byKey(const ValueKey<String>('home-continue-row')),
         matching: find.byType(HomeContinueCoverCard),
       );
-  Finder recentCards() => find.descendant(
-        of: find.byKey(const ValueKey<String>('home-recent-row')),
-        matching: find.byType(HomeContinueCoverCard),
+  Finder recentTiles() => find.descendant(
+        of: find.byKey(const ValueKey<String>('home-recent-list')),
+        matching: find.byType(HomeRecentTile),
       );
-  HomeContinueCoverCard onlyCard(WidgetTester tester) =>
-      tester.widget<HomeContinueCoverCard>(coverCards());
 
-  // ── 2026-10 首页精简（用户反馈 PDF「1.首页」） ─────────────────────────────
+  /// 分区标题：限定在该分区卡内找，免得和别处同字样的文字混淆。
+  Finder sectionTitle(ValueKey<String> card, String title) => find.descendant(
+        of: find.byKey(card),
+        matching: find.text(title),
+      );
+
+  /// 「继续」条目按屏上顺序：主角卡在前（角标文案 = progressLabel），横滑行
+  /// 随后。替代旧版「整排封面卡」的 coverCards()/onlyCard()。
+  List<_ContinueItem> continueItems(WidgetTester tester) => <_ContinueItem>[
+        for (final HomeContinueHero h in tester.widgetList<HomeContinueHero>(
+          hero(),
+        ))
+          (
+            title: h.title,
+            badgeLabel: h.progressLabel,
+            progress: h.progress,
+            badgeIcon: null,
+          ),
+        for (final HomeContinueCoverCard c
+            in tester.widgetList<HomeContinueCoverCard>(rowCards()))
+          (
+            title: c.title,
+            badgeLabel: c.badgeLabel,
+            progress: c.progress,
+            badgeIcon: c.badgeIcon,
+          ),
+      ];
+  HomeContinueHero onlyHero(WidgetTester tester) {
+    expect(rowCards(), findsNothing, reason: '只有一条时不该出横滑行');
+    return tester.widget<HomeContinueHero>(hero());
+  }
+
+  // ── 2026-10 首页精简（用户反馈 PDF「1.首页」）→ 10-10 加回分区标题 ─────────────
 
   for (final Size size in const <Size>[Size(1280, 900), Size(420, 900)]) {
     testWidgets(
-        '精简 · ${size.width.toInt()} 宽：一张主卡（学习头部行 + 封面行），'
-        '「继续」/「学习活动」标题、四类筛选、学习日历、最近添加、活动全部删除',
+        '分区标题 · ${size.width.toInt()} 宽：「今日」「继续」各成一张带标题的卡，'
+        '「学习活动」标题、四类筛选、学习日历、活动仍然删除',
         (WidgetTester tester) async {
       useSize(tester, size);
       await seedSampleData();
-      // 只导入、没看过：旧版会进「最近添加」大栏；现在手机宽度没有这一栏，宽屏
-      // 只在主卡下方补一行无标题的精简封面（见下方宽屏专项测试）。
+      // 只导入、没看过：竖屏单栏不出「最近添加」，双栏版式在侧栏列出（见下方
+      // 双栏专项测试）。
       await db.upsertVideoBook(VideoBooksCompanion(
         bookUid: const Value('recent-only'),
         title: const Value('刚导入的视频'),
@@ -313,50 +351,110 @@ void main() {
       await tester.pumpWidget(buildApp());
       await pumpDashboard(tester);
 
+      final bool twoColumn = size.width >= 840;
       expect(tester.takeException(), isNull);
       expect(find.byType(HomeStudyHeader), findsOneWidget);
-      expect(find.byKey(const ValueKey<String>('home-continue-row')),
-          findsOneWidget);
-      expect(coverCards(), findsOneWidget);
-      // 被删掉的字样 / 控件。
+      expect(sectionTitle(studyCardKey, t.stat_today), findsOneWidget);
+      expect(sectionTitle(continueCardKey, t.home_continue), findsOneWidget);
+      // 只有一条可继续：主角卡，没有横滑行。
+      expect(onlyHero(tester).title, '继续看的视频');
+      // 被删掉的字样 / 控件（「阅读 / 观看 / 游戏」现在是主角卡副标题的类型
+      // 标签，不再代表筛选，故只查「全部」）。
       for (final String gone in <String>[
-        t.home_continue,
         t.reading_activity,
-        t.home_recently_added,
         t.home_activity,
         t.home_filter_all,
-        t.home_filter_read,
-        t.home_filter_watch,
-        t.home_filter_game,
         t.stat_goal_daily,
-        if (size.width < 900) '刚导入的视频',
+        if (!twoColumn) '刚导入的视频',
+        if (!twoColumn) t.home_recently_added,
       ]) {
         expect(find.text(gone), findsNothing, reason: gone);
       }
       expect(find.byType(StatContributionHeatmap), findsNothing);
       expect(
-        find.byKey(const ValueKey<String>('home-recent-row')),
-        size.width < 900 ? findsNothing : findsOneWidget,
+        find.byKey(const ValueKey<String>('home-two-column')),
+        twoColumn ? findsOneWidget : findsNothing,
       );
-      // 学习头部行在封面行之上（原第 2 栏移到原第 1 栏上面）。
       expect(
-        tester.getTopLeft(find.byType(HomeStudyHeader)).dy,
-        lessThan(tester.getTopLeft(coverCards()).dy),
+        find.byKey(recentCardKey),
+        twoColumn ? findsOneWidget : findsNothing,
       );
+      final Rect study = tester.getRect(find.byKey(studyCardKey));
+      final Rect continueCard = tester.getRect(find.byKey(continueCardKey));
+      if (twoColumn) {
+        // 双栏：左主列「继续」，右侧栏「今日」在上、「最近添加」在下。
+        expect(sectionTitle(recentCardKey, t.home_recently_added),
+            findsOneWidget);
+        expect(continueCard.right, lessThan(study.left));
+        expect(
+          tester.getTopLeft(find.byKey(recentCardKey)).dy,
+          greaterThan(study.bottom),
+        );
+      } else {
+        // 单栏：「今日」在「继续」之上。
+        expect(study.bottom, lessThanOrEqualTo(continueCard.top));
+      }
     });
   }
 
-  test('宽屏封面高度随内容宽放大并夹在 176…260', () {
-    expect(dashboardWideCoverHeight(900), 180);
-    expect(dashboardWideCoverHeight(1024), closeTo(204.8, 0.01));
-    expect(dashboardWideCoverHeight(1440), 260);
-    expect(dashboardWideCoverHeight(2560), 260);
-    expect(dashboardWideCoverHeight(800), 176);
+  test('版式与封面尺寸纯函数：双栏判据 + 主角卡 / 横滑行封面高度随主列宽放大', () {
+    // 竖屏手机 / 平板竖屏：单栏。
+    expect(dashboardUsesTwoColumns(const Size(420, 900)), isFalse);
+    expect(dashboardUsesTwoColumns(const Size(700, 1000)), isFalse);
+    // 不到 600 宽的横屏也不分栏；正方形不算横屏。
+    expect(dashboardUsesTwoColumns(const Size(599, 300)), isFalse);
+    expect(dashboardUsesTwoColumns(const Size(600, 600)), isFalse);
+    // 横屏手机 / 平板横屏：双栏。
+    expect(dashboardUsesTwoColumns(const Size(600, 400)), isTrue);
+    expect(dashboardUsesTwoColumns(const Size(844, 390)), isTrue);
+    // ≥ 840 宽：无论横竖都双栏。
+    expect(dashboardUsesTwoColumns(const Size(840, 1200)), isTrue);
+    expect(dashboardUsesTwoColumns(const Size(1280, 900)), isTrue);
+
+    expect(dashboardHeroCoverHeight(400), 150);
+    expect(dashboardHeroCoverHeight(600), closeTo(180, 0.01));
+    expect(dashboardHeroCoverHeight(800), 240);
+    expect(dashboardHeroCoverHeight(1600), 240);
+
+    expect(dashboardRowCoverHeight(500), 132);
+    expect(dashboardRowCoverHeight(800), closeTo(160, 0.01));
+    expect(dashboardRowCoverHeight(1000), 200);
+    expect(dashboardRowCoverHeight(1600), 200);
   });
 
+  for (final Size size in const <Size>[Size(420, 900), Size(844, 390)]) {
+    testWidgets(
+        '版式 · ${size.width.toInt()}×${size.height.toInt()}：'
+        '${size.width > size.height ? '横屏手机走双栏' : '竖屏手机走单栏'}',
+        (WidgetTester tester) async {
+      useSize(tester, size);
+      await seedSampleData();
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
+
+      final bool twoColumn = size.width > size.height;
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(const ValueKey<String>('home-two-column')),
+        twoColumn ? findsOneWidget : findsNothing,
+      );
+      final Rect study = tester.getRect(find.byKey(studyCardKey));
+      final Rect continueCard = tester.getRect(find.byKey(continueCardKey));
+      if (twoColumn) {
+        // 横屏高度紧：主角卡与今日统计并排出现在首屏。
+        expect(continueCard.right, lessThan(study.left));
+        expect(study.top, lessThan(continueCard.bottom));
+      } else {
+        expect(study.bottom, lessThanOrEqualTo(continueCard.top));
+        // 单栏主角卡封面高 150。
+        expect(onlyHero(tester).coverHeight, 150);
+      }
+    });
+  }
+
   testWidgets(
-      '宽屏补内容：主卡下方一行「最近添加」精简封面（无标题行、挂「新」角标、'
-      '按导入时间倒序、与「继续」去重）；封面随宽度放大', (WidgetTester tester) async {
+      '双栏「最近添加」：侧栏带标题的紧凑列表（「类型 · 相对时间」副标题、'
+      '按导入时间倒序、与「继续」去重）；主角卡封面按主列宽放大', (WidgetTester tester) async {
     useSize(tester, const Size(1440, 900));
     final int now = DateTime.now().millisecondsSinceEpoch;
     for (final (String, int) b in <(String, int)>[
@@ -391,44 +489,63 @@ void main() {
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    // 「继续」只有在读的那本，封面按 1440 宽放大到 260。
-    expect(tester.widgetList<HomeContinueCoverCard>(coverCards()).map(
-        (HomeContinueCoverCard c) => c.title), <String>['在读书']);
-    expect(tester.widget<HomeContinueCoverCard>(coverCards()).height, 260);
-    // 「最近添加」：导入时间倒序、在读书已在「继续」里不重复出现、角标「新」、
-    // 比「继续」小一号；没有任何标题字样。
-    final List<HomeContinueCoverCard> recent =
-        tester.widgetList<HomeContinueCoverCard>(recentCards()).toList();
-    expect(recent.map((HomeContinueCoverCard c) => c.title),
+    // 「继续」只有在读的那本：主角卡，封面高度按主列（左 3/5）宽放大。
+    final HomeContinueHero h = onlyHero(tester);
+    expect(h.title, '在读书');
+    final double mainWidth = tester.getSize(find.byKey(continueCardKey)).width;
+    expect(h.coverHeight, dashboardHeroCoverHeight(mainWidth));
+    expect(h.coverHeight, greaterThan(150));
+    // 「最近添加」：导入时间倒序、在读书已在「继续」里不重复出现、副标题是
+    // 「类型 · 相对时间」；有分区标题。
+    expect(sectionTitle(recentCardKey, t.home_recently_added), findsOneWidget);
+    final List<HomeRecentTile> recent =
+        tester.widgetList<HomeRecentTile>(recentTiles()).toList();
+    expect(recent.map((HomeRecentTile r) => r.title),
         <String>['新书B', '刚导入的视频', '新书A']);
-    for (final HomeContinueCoverCard c in recent) {
-      expect(c.badgeLabel, t.home_recent_badge);
-      expect(c.progress, isNull);
-      expect(c.height, closeTo(260 * 0.82, 0.01));
+    expect(recent[0].subtitle, startsWith('${t.home_filter_read} · '));
+    expect(recent[1].subtitle, startsWith('${t.home_filter_watch} · '));
+    expect(recent[2].subtitle, startsWith('${t.home_filter_read} · '));
+    for (final HomeRecentTile r in recent) {
+      expect(find.descendant(of: recentTiles(), matching: find.text(r.title)),
+          findsOneWidget, reason: '紧凑行把标题画在屏上：${r.title}');
     }
-    // 「新」挂左上角、缩小（右上角是竖排书名起笔处，不压字）；「继续」的进度
-    // 角标仍在右上角。
-    for (final HomeContinueCoverCard c in recent) {
-      expect(c.badgeAtStart, isTrue);
-      expect(c.badgeScale, lessThan(1));
-    }
-    expect(tester.widget<HomeContinueCoverCard>(coverCards()).badgeAtStart,
-        isFalse);
-    final Finder recentBadge = find.descendant(
-      of: recentCards().first,
-      matching: find.byType(CoverBadge),
-    );
-    final Rect recentCard = tester.getRect(recentCards().first);
-    expect(tester.getRect(recentBadge).center.dx, lessThan(recentCard.center.dx));
-    expect(tester.getTopLeft(recentBadge).dx - recentCard.left, lessThan(12));
-    expect(find.text(t.home_recently_added), findsNothing);
+    // 在侧栏：整张卡在「继续」主列右侧。
     expect(
-      tester.getTopLeft(recentCards().first).dy,
-      greaterThan(tester.getBottomLeft(coverCards()).dy),
+      tester.getTopLeft(find.byKey(recentCardKey)).dx,
+      greaterThan(tester.getTopRight(find.byKey(continueCardKey)).dx),
     );
   });
 
-  testWidgets('宽屏补内容只在宽屏：手机宽度不出「最近添加」行、封面仍是 148',
+  testWidgets('双栏「最近添加」最多 4 条（取导入最新的）', (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final List<MediaItem> books = <MediaItem>[];
+    for (int i = 1; i <= 6; i++) {
+      await db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: '新书$i',
+        title: '新书$i',
+        epubPath: '/abs/$i.epub',
+        extractDir: '/abs/$i',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        // 新书6 最新。
+        importedAt: now - (10 - i) * 1000,
+      ));
+      books.add(readingBook('新书$i', '新书$i', position: 0));
+    }
+    await tester.pumpWidget(buildAppWithBooks(books, const <String, int>{}));
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(
+      tester
+          .widgetList<HomeRecentTile>(recentTiles())
+          .map((HomeRecentTile r) => r.title),
+      <String>['新书6', '新书5', '新书4', '新书3'],
+    );
+  });
+
+  testWidgets('「最近添加」只在双栏：竖屏单栏不出；单栏主角卡封面 150、横滑行封面 132',
       (WidgetTester tester) async {
     useSize(tester, const Size(412, 900));
     final int now = DateTime.now().millisecondsSinceEpoch;
@@ -445,14 +562,18 @@ void main() {
       <MediaItem>[
         readingBook('新书A', '新书A', position: 0),
         readingBook('在读书', '在读书', position: 40),
+        readingBook('在读书2', '在读书2', position: 20),
       ],
-      const <String, int>{'在读书': 1},
+      const <String, int>{'在读书': 2, '在读书2': 1},
     ));
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    expect(find.byKey(const ValueKey<String>('home-recent-row')), findsNothing);
-    expect(tester.widget<HomeContinueCoverCard>(coverCards()).height, 148);
+    expect(find.byKey(const ValueKey<String>('home-two-column')), findsNothing);
+    expect(find.byKey(recentCardKey), findsNothing);
+    expect(find.text('新书A'), findsNothing);
+    expect(tester.widget<HomeContinueHero>(hero()).coverHeight, 150);
+    expect(tester.widget<HomeContinueCoverCard>(rowCards()).height, 132);
   });
 
   testWidgets('精简 · 学习头部行：今日字数 + 同一行右侧今日时长（不挂小字标签）',
@@ -520,7 +641,36 @@ void main() {
     });
   }
 
-  testWidgets('精简 · 封面行只有封面：有封面的书不再挂标题文字，角标 = 阅读进度',
+  for (final double width in <double>[320, 360, 420]) {
+    testWidgets('$width 宽手机：主角卡（长标题 + 按钮）与带标题的横滑行不溢出',
+        (WidgetTester tester) async {
+      useSize(tester, Size(width, 800));
+      await tester.pumpWidget(buildAppWithBooks(
+        <MediaItem>[
+          readingBook('长', '很长很长很长很长很长很长很长很长很长很长的书名第一卷',
+              position: 30),
+          readingBook('长2', '另一本同样很长很长很长很长很长很长的书名',
+              position: 60),
+          readingBook('短', '短', position: 10),
+        ],
+        const <String, int>{'长': 3, '长2': 2, '短': 1},
+      ));
+      await pumpDashboard(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(heroAction(), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('home-continue-hero-progress')),
+          findsOneWidget);
+      expect(rowCards(), findsNWidgets(2));
+      final Rect heroRect = tester.getRect(hero());
+      expect(heroRect.right, lessThanOrEqualTo(width + 0.5));
+      expect(tester.getRect(heroAction()).right,
+          lessThanOrEqualTo(heroRect.right + 0.5));
+    });
+  }
+
+  testWidgets('「继续」主角卡 + 带标题的横滑行：最近读的放大成主角卡（波浪进度 + '
+      '「继续阅读」），其余卡封面下挂标题，角标 = 阅读进度',
       (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     final File cover = File('${storeDir.path}/book_cover.png')
@@ -536,23 +686,51 @@ void main() {
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    final List<HomeContinueCoverCard> cards =
-        tester.widgetList<HomeContinueCoverCard>(coverCards()).toList();
-    // 最近读的在前；没有「主角卡」了，所有条目同一行。
-    expect(cards.map((HomeContinueCoverCard c) => c.title),
+    final List<_ContinueItem> items = continueItems(tester);
+    // 最近读的是主角卡，其余进横滑行。
+    expect(items.map((_ContinueItem c) => c.title),
         <String>['有封面的书', '另一本书']);
-    expect(cards.map((HomeContinueCoverCard c) => c.badgeLabel),
+    expect(items.map((_ContinueItem c) => c.badgeLabel),
         <String?>['30%', '50%']);
-    expect(cards.first.progress, 0.3);
-    // 标题只进读屏 / 悬停提示，屏上不画。
-    expect(find.text('有封面的书'), findsNothing);
-    expect(find.text('另一本书'), findsNothing);
-    expect(find.text('30%'), findsOneWidget);
+    expect(items.first.progress, 0.3);
+    // 主角卡：标题、M3E 波浪进度条 + 进度文案、「继续阅读」主按钮。
+    expect(
+      tester
+          .widget<Text>(
+              find.byKey(const ValueKey<String>('home-continue-hero-title')))
+          .data,
+      '有封面的书',
+    );
+    expect(find.byKey(const ValueKey<String>('home-continue-hero-progress')),
+        findsOneWidget);
+    expect(find.descendant(of: hero(), matching: find.text('30%')),
+        findsOneWidget);
+    expect(
+      find.descendant(
+          of: heroAction(), matching: find.text(t.book_continue_reading)),
+      findsOneWidget,
+    );
+    // 横滑卡：封面下方画标题，右上角角标仍是进度。
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('home-cover-title')),
+        matching: find.text('另一本书'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.descendant(of: rowCards(), matching: find.text('50%')),
+        findsOneWidget);
     final SemanticsHandle semantics = tester.ensureSemantics();
     await tester.pump();
-    expect(find.bySemanticsLabel('有封面的书 · 30%'), findsOneWidget);
+    expect(find.bySemanticsLabel('另一本书 · 50%'), findsOneWidget);
     semantics.dispose();
-    expect(find.byType(CoverProgressStrip), findsNWidgets(2));
+    // 封面底部进度条只在横滑卡上（主角卡用波浪进度条）。
+    expect(find.byType(CoverProgressStrip), findsOneWidget);
+    expect(
+      find.descendant(
+          of: rowCards(), matching: find.byType(CoverProgressStrip)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('精简 · 没有封面的条目兜底显示标题（BUG-1018：用 override 书名）',
@@ -578,6 +756,9 @@ void main() {
       ),
       findsOneWidget,
     );
+    // 主角卡标题同样走 override 书名（与封面兜底同名，屏上出现两次是预期）。
+    expect(onlyHero(tester).title, '改后的书名');
+    expect(find.text('改后的书名'), findsNWidgets(2));
     expect(find.text('原书名'), findsNothing);
   });
 
@@ -634,12 +815,11 @@ void main() {
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    final Map<String, HomeContinueCoverCard> byTitle =
-        <String, HomeContinueCoverCard>{
-      for (final HomeContinueCoverCard c
-          in tester.widgetList<HomeContinueCoverCard>(coverCards()))
-        c.title: c,
+    // 「知道时长的视频」最近看 → 主角卡；另一条在横滑行（带播放图标角标）。
+    final Map<String, _ContinueItem> byTitle = <String, _ContinueItem>{
+      for (final _ContinueItem c in continueItems(tester)) c.title: c,
     };
+    expect(tester.widget<HomeContinueHero>(hero()).title, '知道时长的视频');
     expect(byTitle['知道时长的视频']!.progress, 0.25);
     expect(byTitle['知道时长的视频']!.badgeLabel, '25%');
     expect(byTitle['不知道时长的视频']!.progress, isNull);
@@ -706,18 +886,25 @@ void main() {
   testWidgets('精简 · 封面卡悬停抬升：绘制超出卡片原始边界但不被横滚行视口截平',
       (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
+    // 第一本是主角卡，书B / 书C 进横滑行。
     final MediaItem a = readingBook('书A', '书A', position: 30);
     final MediaItem b = readingBook('书B', '书B', position: 50);
+    final MediaItem c = readingBook('书C', '书C', position: 70);
     await tester.pumpWidget(buildAppWithBooks(
-      <MediaItem>[a, b],
-      const <String, int>{'书A': 2, '书B': 1},
+      <MediaItem>[a, b, c],
+      const <String, int>{'书A': 3, '书B': 2, '书C': 1},
     ));
     await pumpDashboard(tester);
 
-    // 悬停放大是 FushiHoverLift 内层的绘制变换：量卡体（ClipRRect），不量外壳。
+    // 悬停放大是 FushiHoverLift 内层的绘制变换：量卡体（ClipRRect），不量外壳；
+    // 卡体下方还挂着标题块，放大后同样不能被行视口截掉。
     final Finder card = find
-        .descendant(of: coverCards().last, matching: find.byType(ClipRRect))
+        .descendant(of: rowCards().last, matching: find.byType(ClipRRect))
         .first;
+    final Finder title = find.descendant(
+      of: rowCards().last,
+      matching: find.byKey(const ValueKey<String>('home-cover-title')),
+    );
     final Rect viewport =
         tester.getRect(find.byKey(const ValueKey<String>('home-continue-row')));
     final Rect originalRect = tester.getRect(card);
@@ -730,6 +917,8 @@ void main() {
     expect(liftedRect.top, lessThan(originalRect.top));
     expect(liftedRect.top, greaterThanOrEqualTo(viewport.top - 0.01));
     expect(liftedRect.bottom, lessThanOrEqualTo(viewport.bottom + 0.01));
+    expect(tester.getRect(title).bottom,
+        lessThanOrEqualTo(viewport.bottom + 0.01));
     await mouse.removePointer();
     await pumpDashboard(tester);
     expect(tester.getRect(card), originalRect);
@@ -747,12 +936,14 @@ void main() {
       coverPath: Value(cover.path),
       lastPositionMs: const Value(60000),
     ));
+    // 书A 最近读 → 主角卡；横版视频与书B 进横滑行。
     final MediaItem book = readingBook('书A', '书A', position: 30);
+    final MediaItem other = readingBook('书B', '书B', position: 60);
     // 卡片是数据回填后才建的、解码是真异步 I/O：两段都必须在同一个 runAsync 里。
     await tester.runAsync(() async {
       await tester.pumpWidget(buildAppWithBooks(
-        <MediaItem>[book],
-        const <String, int>{'书A': 1},
+        <MediaItem>[book, other],
+        const <String, int>{'书A': 2},
       ));
       await Future<void>.delayed(const Duration(milliseconds: 600));
       await tester.pump();
@@ -763,12 +954,13 @@ void main() {
 
     expect(tester.takeException(), isNull);
     final List<HomeContinueCoverCard> cards =
-        tester.widgetList<HomeContinueCoverCard>(coverCards()).toList();
-    expect(cards, hasLength(2));
+        tester.widgetList<HomeContinueCoverCard>(rowCards()).toList();
+    expect(cards.map((HomeContinueCoverCard c) => c.title),
+        unorderedEquals(<String>['在看的横版视频', '书B']));
     for (final HomeContinueCoverCard c in cards) {
       expect(c.width, closeTo(c.height * 2 / 3, 0.01), reason: c.title);
     }
-    expect(tester.getSize(coverCards().first), tester.getSize(coverCards().last));
+    expect(tester.getSize(rowCards().first), tester.getSize(rowCards().last));
     // 横版截帧裁进竖卡：直接 cover 铺满，不走模糊垫底 + contain。
     final Image frame = tester.widget<Image>(find.descendant(
       of: find.byWidgetPredicate((Widget w) =>
@@ -805,8 +997,12 @@ void main() {
 
     expect(tester.takeException(), isNull);
     final Iterable<Image> images = tester.widgetList<Image>(
-      find.descendant(of: coverCards(), matching: find.byType(Image)),
+      find.descendant(
+        of: find.byKey(continueCardKey),
+        matching: find.byType(Image),
+      ),
     );
+    expect(images, isNotEmpty);
     String pathOf(Image i) {
       ImageProvider p = i.image;
       if (p is ResizeImage) p = p.imageProvider;
@@ -816,7 +1012,8 @@ void main() {
     expect(images.map(pathOf), everyElement(poster.path));
   });
 
-  testWidgets('精简 · 窄卡上的集数角标完整显示，不被卡边裁掉', (WidgetTester tester) async {
+  testWidgets('精简 · 窄屏横滑卡上的集数角标完整显示，不被卡边裁掉；主角卡进度文案同样完整',
+      (WidgetTester tester) async {
     useSize(tester, const Size(320, 700));
     final int cid = await db.createMediaCollection('很长的作品名');
     for (int i = 1; i <= 12; i++) {
@@ -829,19 +1026,29 @@ void main() {
       ));
       await db.addToCollection(cid, MediaKind.video, 'ep$i');
     }
-    await tester.pumpWidget(buildApp());
+    // 一本刚读过的书占主角卡，把合集挤进横滑行（窄卡角标是本用例的对象）。
+    await tester.pumpWidget(buildAppWithBooks(
+      <MediaItem>[readingBook('书A', '书A', position: 30)],
+      <String, int>{'书A': DateTime.now().millisecondsSinceEpoch},
+    ));
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    expect(onlyCard(tester).badgeLabel, t.home_continue_episode(n: 12));
-    final Rect card = tester.getRect(coverCards());
+    expect(continueItems(tester).map((_ContinueItem c) => c.badgeLabel),
+        <String?>['30%', t.home_continue_episode(n: 12)]);
+    final Rect card = tester.getRect(rowCards());
     final Rect badge = tester.getRect(find.descendant(
-      of: coverCards(),
+      of: rowCards(),
       matching: find.byType(CoverBadge),
     ));
     expect(badge.left, greaterThanOrEqualTo(card.left));
     expect(badge.right, lessThanOrEqualTo(card.right));
     expect(find.text(t.home_continue_episode(n: 12)), findsOneWidget);
+    // 主角卡进度文案在卡内完整显示。
+    final Rect heroRect = tester.getRect(hero());
+    final Rect label =
+        tester.getRect(find.descendant(of: hero(), matching: find.text('30%')));
+    expect(label.right, lessThanOrEqualTo(heroRect.right));
   });
 
   testWidgets('点继续区视频卡直接续播（带主合集 id），不再只是切视频 tab；合集卡角标 = 集数',
@@ -874,11 +1081,18 @@ void main() {
     await pumpDashboard(tester);
 
     final HomeTab tabBefore = homeShellTabNotifier.value;
-    // 合集成员：显示名 = 合集名，角标 = 在看中的 E1 是第 1 集。
-    final HomeContinueCoverCard c = onlyCard(tester);
+    // 合集成员：显示名 = 合集名，进度文案 = 在看中的 E1 是第 1 集；副标题带出
+    // 这一集的标题。
+    final HomeContinueHero c = onlyHero(tester);
     expect(c.title, '进击的巨人');
-    expect(c.badgeLabel, t.home_continue_episode(n: 1));
-    await tester.tap(coverCards());
+    expect(c.progressLabel, t.home_continue_episode(n: 1));
+    expect(c.subtitle, '${t.home_filter_watch} · S01E01');
+    expect(
+      find.descendant(
+          of: heroAction(), matching: find.text(t.video_continue_watching)),
+      findsOneWidget,
+    );
+    await tester.tap(heroAction());
     await tester.pump();
     expect(opened, <(String, int?)>[('e1', cid)]);
     expect(homeShellTabNotifier.value, tabBefore);
@@ -945,14 +1159,13 @@ void main() {
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    final List<HomeContinueCoverCard> cards =
-        tester.widgetList<HomeContinueCoverCard>(coverCards()).toList();
+    final List<_ContinueItem> cards = continueItems(tester);
     expect(
-      cards.map((HomeContinueCoverCard c) => c.title),
+      cards.map((_ContinueItem c) => c.title),
       containsAll(<String>['某游戏', '某视频']),
     );
-    final HomeContinueCoverCard game =
-        cards.singleWhere((HomeContinueCoverCard c) => c.title == '某游戏');
+    final _ContinueItem game =
+        cards.singleWhere((_ContinueItem c) => c.title == '某游戏');
     expect(game.badgeLabel, isNull);
     expect(game.progress, isNull);
   });
@@ -983,9 +1196,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(
-      tester
-          .widgetList<HomeContinueCoverCard>(coverCards())
-          .map((HomeContinueCoverCard c) => c.title),
+      continueItems(tester).map((_ContinueItem c) => c.title),
       <String>['某系列'],
     );
   });
@@ -1022,10 +1233,12 @@ void main() {
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    final HomeContinueCoverCard c = onlyCard(tester);
+    final HomeContinueHero c = onlyHero(tester);
     expect(c.title, '进击的巨人');
-    expect(c.badgeLabel, t.home_continue_episode(n: 2));
-    await tester.tap(coverCards());
+    expect(c.progressLabel, t.home_continue_episode(n: 2));
+    // 主角卡整卡可点（不只是主按钮）：点标题同样打开 Next-Up 那一集。
+    await tester
+        .tap(find.byKey(const ValueKey<String>('home-continue-hero-title')));
     await tester.pump();
     expect(opened, <(String, int?)>[('e2', cid)]);
   });
@@ -1054,7 +1267,8 @@ void main() {
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    expect(coverCards(), findsNothing);
+    expect(hero(), findsNothing);
+    expect(rowCards(), findsNothing);
     expect(find.byType(HomeEmptyState), findsOneWidget);
   });
 
@@ -1066,8 +1280,17 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.byType(HomeStudyHeader), findsOneWidget);
+    // 空库也照样挂分区标题，空态说明落在「继续」卡里。
+    expect(sectionTitle(studyCardKey, t.stat_today), findsOneWidget);
+    expect(sectionTitle(continueCardKey, t.home_continue), findsOneWidget);
     expect(find.text(t.stat_goal_set), findsOneWidget);
-    expect(find.text(t.home_continue_empty), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(continueCardKey),
+        matching: find.text(t.home_continue_empty),
+      ),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey<String>('home-empty-go-books')),
         findsOneWidget);
     expect(find.byKey(const ValueKey<String>('home-empty-go-video')),
@@ -1090,11 +1313,15 @@ void main() {
     expect(find.byType(HomeContinueRowSkeleton), findsOneWidget);
     expect(find.byType(HomeGoalSkeleton), findsOneWidget);
     expect(find.byType(HomeEmptyState), findsNothing);
+    // 骨架期间分区标题已在位（数据到达后不跳版），「最近添加」不出骨架。
+    expect(sectionTitle(studyCardKey, t.stat_today), findsOneWidget);
+    expect(sectionTitle(continueCardKey, t.home_continue), findsOneWidget);
+    expect(find.byKey(recentCardKey), findsNothing);
 
     await pumpDashboard(tester);
     await tester.pump(const Duration(milliseconds: 600));
     expect(find.byType(HomeContinueRowSkeleton), findsNothing);
-    expect(coverCards(), findsOneWidget);
+    expect(hero(), findsOneWidget);
   });
 
   testWidgets('BUG-3034 · 切回首页（页面重建）首帧直接用上一轮快照，不再挂骨架等整批',
@@ -1124,7 +1351,7 @@ void main() {
       ),
     ));
     await pumpDashboard(tester);
-    expect(coverCards(), findsOneWidget);
+    expect(hero(), findsOneWidget);
 
     showPage.value = false;
     await tester.pump();
@@ -1135,7 +1362,7 @@ void main() {
     // 重建后的**第一帧**：快照已上屏，没有骨架。
     expect(find.byType(HomeContinueRowSkeleton), findsNothing);
     expect(find.byType(HomeGoalSkeleton), findsNothing);
-    expect(onlyCard(tester).title, '继续看的视频');
+    expect(onlyHero(tester).title, '继续看的视频');
     await pumpDashboard(tester);
     expect(tester.takeException(), isNull);
   });
@@ -1249,32 +1476,48 @@ void main() {
     );
   });
 
-  testWidgets('精简 · 焦点可遍历：Tab 能落到「继续」封面卡', (WidgetTester tester) async {
+  testWidgets('焦点可遍历：Tab 能落到主角卡的主按钮与横滑行封面卡（主角卡本身不占停靠点）',
+      (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     await seedSampleData();
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/second'),
+      title: Value('第二个在看的视频'),
+      videoPath: Value('/abs/second.mp4'),
+      lastPositionMs: Value(30000),
+    ));
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
+    expect(rowCards(), findsOneWidget);
 
-    final Finder card = coverCards();
-    bool focusedOnCard() {
+    bool focusedIn(Finder target) {
       final BuildContext? ctx = FocusManager.instance.primaryFocus?.context;
       if (ctx == null) return false;
-      final Element cardEl = tester.element(card);
+      final Element el = tester.element(target);
+      if (identical(ctx, el)) return true;
       bool hit = false;
       ctx.visitAncestorElements((Element e) {
-        if (identical(e, cardEl)) hit = true;
+        if (identical(e, el)) hit = true;
         return !hit;
       });
       return hit;
     }
 
-    bool reached = false;
-    for (int i = 0; i < 40 && !reached; i++) {
+    bool reachedAction = false;
+    bool reachedRowCard = false;
+    bool focusedHeroBody = false;
+    for (int i = 0; i < 60 && !(reachedAction && reachedRowCard); i++) {
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.pump();
-      reached = focusedOnCard();
+      final bool inAction = focusedIn(heroAction());
+      reachedAction |= inAction;
+      reachedRowCard |= focusedIn(rowCards());
+      if (!inAction && focusedIn(hero())) focusedHeroBody = true;
     }
-    expect(reached, isTrue, reason: '封面卡必须是 Tab 可达的焦点停靠点');
+    expect(reachedAction, isTrue, reason: '主角卡主按钮必须是 Tab 可达的焦点停靠点');
+    expect(reachedRowCard, isTrue, reason: '横滑行封面卡必须是 Tab 可达的焦点停靠点');
+    expect(focusedHeroBody, isFalse,
+        reason: '主角卡整卡与主按钮是同一动作，不能占两个 Tab 停靠点');
   });
 
   // ── 2026-10 首页统一浮动工具栏 ────────────────────────────────────────────
@@ -1666,3 +1909,12 @@ const List<int> _kOnePixelPng = <int>[
   0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
   0x42, 0x60, 0x82,
 ];
+
+/// 「继续」条目的统一视图：主角卡（角标文案取 progressLabel，无角标图标）与横滑
+/// 行封面卡归一，便于按屏上顺序断言排序 / 去重 / 进度。
+typedef _ContinueItem = ({
+  String title,
+  String? badgeLabel,
+  double? progress,
+  IconData? badgeIcon,
+});
