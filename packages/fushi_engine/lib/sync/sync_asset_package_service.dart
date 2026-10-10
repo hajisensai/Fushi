@@ -758,7 +758,7 @@ class SyncAssetPackageService {
         await (_db.update(_db.srtBooks)
               ..where(($SrtBooksTable t) => t.id.equals(local.id)))
             .write(SrtBooksCompanion(srtPath: Value(srtPath)));
-        await _db.replaceCuesForBook(uid, cueRows(uid));
+        await _replaceCuesKeepingPosition(uid, cueRows(uid));
       });
       return;
     }
@@ -809,8 +809,28 @@ class SyncAssetPackageService {
       await (_db.update(_db.srtBooks)
             ..where(($SrtBooksTable t) => t.id.equals(localSrt.id)))
           .write(SrtBooksCompanion(srtPath: Value(srtPath)));
-      await _db.replaceCuesForBook(bookKey, cueRows(bookKey));
+      await _replaceCuesKeepingPosition(bookKey, cueRows(bookKey));
     });
+  }
+
+  /// 「只更新字幕」整组换 cue，本机听书断点按**真实时间位置**跟着换编码（BUG-3251，
+  /// 与 `AudiobookRepository.saveCues` 同口径，BUG-3197）：全书毫秒按 cue 推出的
+  /// 文件时长编码，换字幕不换算，多文件有声书的断点就落到别的文件 / 偏移。
+  /// 须在调用方的事务里调：会话监听 cue 表提交通知，通知要晚于换算。
+  Future<void> _replaceCuesKeepingPosition(
+    String cueKey,
+    List<AudioCuesCompanion> rows,
+  ) async {
+    final List<AudioCueRow> before = await _db.getCuesForBook(cueKey);
+    await _db.replaceCuesForBook(cueKey, rows);
+    final List<AudioCueRow> after = await _db.getCuesForBook(cueKey);
+    await AudiobookRepository(_db).rebaseStoredPositionForCueChange(
+      positionKey: cueKey,
+      oldDurationsMs:
+          audiobookFileDurationsFromCues(before.map(AudioCue.fromRow)),
+      newDurationsMs:
+          audiobookFileDurationsFromCues(after.map(AudioCue.fromRow)),
+    );
   }
 
   Future<void> _checkSubtitleAudioCount({
