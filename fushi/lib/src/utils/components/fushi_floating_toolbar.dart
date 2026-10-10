@@ -1036,14 +1036,7 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
       for (final List<FushiToolbarItem> g in actions) ...g,
       ...overflow,
     ];
-    // 紧跟返回胶囊排时动作组前没有额外的 8 间距（返回胶囊那格已含）。
-    final double budget =
-        fushiTopBarActionsBudget(
-          maxWidth: maxWidth,
-          leadingCount: leading.length,
-          hasTitle: false,
-        ) +
-        (widget.actionsFollowLeading ? 8 : 0);
+    final double budget = _actionsBudget(maxWidth, hasTitle: false);
     double width(FushiToolbarItem item) =>
         fushiTopBarInlineItemWidth(context, item);
     FushiTopBarLabeledLayout at(
@@ -1102,14 +1095,24 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
     return _fit.visibleFor(
       groups: actions,
       overflow: overflow,
-      budget: fushiTopBarActionsBudget(
-        maxWidth: maxWidth,
-        leadingCount: leading.length,
-        hasTitle: hasTitle,
-      ),
+      budget: _actionsBudget(maxWidth, hasTitle: hasTitle),
       pinnedMenu: widget.menu.isNotEmpty,
     );
   }
+
+  /// 动作组的宽度预算：两条测宽路径（带字排法 / 自适应溢出）共用。
+  ///
+  /// [fushiTopBarActionsBudget] 末尾减的 8 是行尾动作组前那段间距；
+  /// [FushiFloatingTopBar.actionsFollowLeading] 生效（无标题）时动作组紧跟前置
+  /// 胶囊排、前面没有这段间距（前置胶囊那格的 8 已计入 leading slot；没有前置
+  /// 胶囊时动作组就是行首），预算加回 8——与 build 里 `follow` 的 Row 排法一致。
+  double _actionsBudget(double maxWidth, {required bool hasTitle}) =>
+      fushiTopBarActionsBudget(
+        maxWidth: maxWidth,
+        leadingCount: leading.length,
+        hasTitle: hasTitle,
+      ) +
+      (widget.actionsFollowLeading && !hasTitle ? 8 : 0);
 
   @override
   Widget build(BuildContext context) {

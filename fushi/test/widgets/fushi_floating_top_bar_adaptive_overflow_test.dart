@@ -40,9 +40,7 @@ void main() {
     const ValueKey<String>('fushi_floating_toolbar_overflow'),
   );
 
-  testWidgets('HBK034: 760 → 320 骤缩第一帧即收进 ⋯ 且不溢出', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('HBK034: 760 → 320 骤缩第一帧即收进 ⋯ 且不溢出', (WidgetTester tester) async {
     await tester.pumpWidget(host(760));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
@@ -209,6 +207,60 @@ void main() {
       final FushiTopBarLabeledLayout l = at(120);
       expect(l.labeled, isEmpty);
       expect(l.shown, <FushiToolbarItem>[items[0]]);
+    });
+  });
+
+  group('actionsFollowLeading 的宽度预算与排法一致', () {
+    final List<FushiToolbarItem> three = actions.sublist(0, 3);
+    final double need = fushiTopBarActionsWidth(
+      <List<FushiToolbarItem>>[three],
+      const <FushiToolbarItem>[],
+      3,
+    );
+
+    Widget follow(double width, {required bool withLeading}) => MaterialApp(
+      home: Scaffold(
+        body: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: width,
+            child: FushiFloatingTopBar(
+              actionsFollowLeading: true,
+              leading: <FushiToolbarItem>[
+                if (withLeading)
+                  FushiToolbarItem(
+                    icon: Icons.arrow_back,
+                    label: 'Back',
+                    onPressed: () {},
+                  ),
+              ],
+              actions: <List<FushiToolbarItem>>[three],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('有前置胶囊：动作组前没有行尾间距，恰好放得下就全部平铺', (WidgetTester tester) async {
+      // 前置胶囊一格 56 + 其后 8；动作组紧跟其后，前面不再有 8 间距。
+      await tester.pumpWidget(follow(64 + need, withLeading: true));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(more, findsNothing, reason: '恰好放得下，不该收进 ⋯');
+    });
+
+    testWidgets('无前置胶囊：预算 = 整行宽，不多算 8（少 1px 就收起且不溢出）', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(follow(need, withLeading: false));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(more, findsNothing);
+
+      await tester.pumpWidget(follow(need - 1, withLeading: false));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: '预算多算会溢出');
+      expect(more, findsOneWidget);
     });
   });
 }
