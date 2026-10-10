@@ -4407,15 +4407,6 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('reading_goal_daily_chars', value.clamp(0, 1000000));
     notifyListeners();
   }
-
-  int get readingGoalWeeklyChars =>
-      (getPref('reading_goal_weekly_chars', defaultValue: 0) as int)
-          .clamp(0, 10000000);
-
-  Future<void> setReadingGoalWeeklyChars(int value) async {
-    await setPref('reading_goal_weekly_chars', value.clamp(0, 10000000));
-    notifyListeners();
-  }
 }
 
 /// [MediaServerVersionMemory] 的偏好表实现（[PreferencesRepository.loadFromDb]

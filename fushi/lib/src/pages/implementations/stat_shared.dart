@@ -847,7 +847,8 @@ String formatStatTime(int ms) {
 ///
 /// 2026-10 体验优化：首页原有一套只编每日目标的 `_DailyGoalDialog`（带预设 chip
 /// 与近 7 日参考），统计页这套只有两个裸输入框——两套对话框合并为本函数 +
-/// [StatGoalEditDialog]：每日 + 每周 + 预设 + 近 7 日参考，三处入口共用。
+/// [StatGoalEditDialog]：每日目标 + 预设 + 近 7 日参考，多处入口共用（每周目标
+/// 2026-10-10 用户拍板删除：统计中心目标卡删掉后它只能设、不显示进度）。
 /// [recentDailyAverage] 为近 7 日日均字数（与目标同口径，见
 /// [statRecentDailyAverageChars]）；<=0 不显示参考行。
 Future<bool> showStatGoalEditDialog(
@@ -859,13 +860,11 @@ Future<bool> showStatGoalEditDialog(
     context: context,
     builder: (BuildContext _) => StatGoalEditDialog(
       initialDailyChars: appModel.readingGoalDailyChars,
-      initialWeeklyChars: appModel.readingGoalWeeklyChars,
       recentDailyAverage: recentDailyAverage,
     ),
   );
   if (result == null) return false;
   await appModel.setReadingGoalDailyChars(result.daily);
-  await appModel.setReadingGoalWeeklyChars(result.weekly);
   return true;
 }
 
@@ -885,27 +884,24 @@ int statRecentDailyAverageChars(
 }
 
 /// [StatGoalEditDialog] 保存时的结果（已规整为 >= 0；0 = 关闭该目标）。
-typedef StatGoalEditResult = ({int daily, int weekly});
+typedef StatGoalEditResult = ({int daily});
 
 /// 目标编辑表单。独立 StatefulWidget **自持** controller 生命周期：dispose 跟随
 /// 路由销毁（弹出动画结束后）。曾经「await showDialog 返回即 dispose」会在退场
 /// 动画帧触碰已销毁 controller——保存后宿主 setState 让仍在退场的 TextField
 /// 重建 addListener 直接断言崩（widget 测试实测复现）。
 ///
-/// BUG-1075：输入框带单位后缀、近 7 日日均参考值、一排快捷预设 chip（只填每日；
-/// 每周目标通常按每日 × 7 自行估算，不再额外塞一排）。保存 pop
+/// BUG-1075：输入框带单位后缀、近 7 日日均参考值、一排快捷预设 chip。保存 pop
 /// [StatGoalEditResult]，取消 pop null。
 class StatGoalEditDialog extends StatefulWidget {
   const StatGoalEditDialog({
     required this.initialDailyChars,
-    required this.initialWeeklyChars,
     this.recentDailyAverage = 0,
     super.key,
   });
 
-  /// 当前每日 / 每周目标（0 = 未设，输入框留空）。
+  /// 当前每日目标（0 = 未设，输入框留空）。
   final int initialDailyChars;
-  final int initialWeeklyChars;
 
   /// 近 7 日日均字数（全来源合计，与目标同口径）；<=0 不显示参考行。
   final int recentDailyAverage;
@@ -920,9 +916,6 @@ class StatGoalEditDialog extends StatefulWidget {
 class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
   late final TextEditingController _daily = TextEditingController(
     text: _initialText(widget.initialDailyChars),
-  );
-  late final TextEditingController _weekly = TextEditingController(
-    text: _initialText(widget.initialWeeklyChars),
   );
 
   static String _initialText(int chars) =>
@@ -948,7 +941,6 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
   void dispose() {
     _daily.removeListener(_onDailyChanged);
     _daily.dispose();
-    _weekly.dispose();
     super.dispose();
   }
 
@@ -1053,13 +1045,6 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
                   if (picked.isNotEmpty) _applyPreset(picked.first);
                 },
               ),
-              SizedBox(height: tokens.spacing.card + tokens.spacing.gap),
-              FushiTextFieldControl(
-                key: const ValueKey<String>('stat-goal-weekly-field'),
-                controller: _weekly,
-                keyboardType: TextInputType.number,
-                decoration: filled(label: t.stat_goal_weekly),
-              ),
             ],
           ),
         ),
@@ -1072,7 +1057,7 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
         FushiFilledButton(
           key: const ValueKey<String>('stat-goal-save'),
           onPressed: () => Navigator.of(context).pop<StatGoalEditResult>(
-            (daily: _parse(_daily), weekly: _parse(_weekly)),
+            (daily: _parse(_daily)),
           ),
           child: Text(t.dialog_save),
         ),
