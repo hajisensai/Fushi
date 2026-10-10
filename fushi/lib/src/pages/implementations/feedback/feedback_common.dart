@@ -245,12 +245,15 @@ class FeedbackMetaLine extends StatelessWidget {
 }
 
 /// 「重新提交」关联：新反馈上「重新提交自 #原编号」、原反馈上「已被重新提交为 #新编号」。
-/// [onOpen] 给了就能点过去（目标不在手边时传 null，只显示文字）。
+/// [onOpen] 给了就能点过去；[canOpen] 判某一条打不打得开（反馈人那边，别的设备提交的
+/// 那条本机没有 ticket 看不了）。打不开的只显示成不可点的标签，不画成能点的 chip
+/// （BUG-3243：以前画成 chip、点了没反应）。
 class FeedbackRelationLinks extends StatelessWidget {
   const FeedbackRelationLinks({
     required this.parentId,
     required this.reopenedAs,
     this.onOpen,
+    this.canOpen,
     super.key,
   });
 
@@ -258,16 +261,29 @@ class FeedbackRelationLinks extends StatelessWidget {
   final List<String> reopenedAs;
   final void Function(String id)? onOpen;
 
+  /// null = 凡是给了 [onOpen] 都能打开。
+  final bool Function(String id)? canOpen;
+
   @override
   Widget build(BuildContext context) {
     if (parentId == null && reopenedAs.isEmpty) return const SizedBox.shrink();
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    Widget link(String id, String label) => FushiActionChip(
-      key: ValueKey<String>('feedback-relation-$id'),
-      icon: FushiIcons.link,
-      label: label,
-      onPressed: () => onOpen?.call(id),
-    );
+    final void Function(String id)? open = onOpen;
+    Widget link(String id, String label) =>
+        open != null && (canOpen?.call(id) ?? true)
+        ? FushiActionChip(
+            key: ValueKey<String>('feedback-relation-$id'),
+            icon: FushiIcons.link,
+            label: label,
+            onPressed: () => open(id),
+          )
+        : FushiTag(
+            key: ValueKey<String>('feedback-relation-$id'),
+            icon: FushiIcons.link,
+            text: label,
+            tone: FushiTagTone.neutral,
+            dense: true,
+          );
     return Wrap(
       spacing: tokens.spacing.gap,
       runSpacing: tokens.spacing.gap / 2,
