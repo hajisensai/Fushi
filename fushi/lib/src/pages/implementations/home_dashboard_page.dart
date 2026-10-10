@@ -1063,9 +1063,7 @@ class _HomeDashboardPageState
         _adoptedRemoteBooks = remoteBooks;
       }
       if (!identical(remoteVideos, _adoptedRemoteVideos)) {
-        for (final RemoteVideoInfo video in remoteVideos) {
-          await adoption.adoptVideo(video);
-        }
+        await adoption.adoptVideos(remoteVideos);
         _adoptedRemoteVideos = remoteVideos;
       }
       if (skipIfUnchanged &&

@@ -461,8 +461,16 @@ void main() {
     // 加载时经 RemoteCollectionAdoptionService 把 DTO 的主合集归属写进本地合集表
     // （DAO 在事务里裁决墓碑 / 自然键 / 排序），渲染只读 _primaryCollectionByEntry。
     // 退回渲染期解析（撤收养、或重新出现 _resolveLocalCollectionId）即转红。
-    expect(homeSrc.contains('adoption.adoptVideo(video)'), isTrue,
-        reason: '视频远端占位的合集归属须在目录加载时持久化收养');
+    // 目录加载整份清单一个事务收养（adoptVideos）：逐条 adoptVideo 是每条一次
+    // 提交 + 一次合集表变更通知，库页随之多轮重载映射、网格一块块重组。
+    expect(homeSrc.contains('.adoptVideos(videos)'), isTrue,
+        reason: '视频远端占位的合集归属须在目录加载时持久化收养（整份清单一次）');
+    expect(
+      RegExp(r'for \(final RemoteVideoInfo \w+ in \w+\) \{\s*await adoption\.adoptVideo\(')
+          .hasMatch(homeSrc),
+      isFalse,
+      reason: '目录加载不得退回逐条事务收养',
+    );
     // 书架的远端清单加载在 reader_history/remote.part.dart（主体的 part）。
     final String historyRemoteSrc = File(
       'lib/src/pages/implementations/reader_history/remote.part.dart',

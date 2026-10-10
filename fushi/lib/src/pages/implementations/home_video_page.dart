@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha1;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
@@ -522,13 +523,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   VideoExtrasFilter _extrasFilter = VideoExtrasFilter.all;
   int? _sourceFilter;
 
-  /// 系列归属判据依赖的两份映射（[_primaryCollectionByEntry] / [_collectionsById]）
-  /// 是否已由 [_loadLibraryMaps] 落位。
+  /// 分组 / 折叠 / 筛选依赖的映射（合集字典、折叠归属、刮削资料、海报…）是否
+  /// 已由 [_loadLibraryMaps] 首次落位。只从 false 变 true，此后的重载用旧映射顶住。
   ///
-  /// 映射未就位时它们是空 map，[_isCollectionMember] 会对**每一条**返回 false——
-  /// 那是「还不知道」，不是「都不在系列里」。把未知当否会让「系列内」档位在映射
-  /// 到位前把整墙判空，闪一下筛选空态。大库上 [_loadLibraryMaps] 要跑一会儿，
-  /// 用户完全来得及在这段窗口里选档位。
+  /// 映射未就位时它们是空 map：合集一个都折不出来（全员散卡）、
+  /// [_isCollectionMember] 对**每一条**返回 false、刮削海报全缺——那是「还不知道」，
+  /// 不是「都是散片、都没海报」。拿它渲染，首屏就是先铺散卡、映射一到再收拢成合集
+  /// 并换海报（用户实报「视频一块块加载」）；「系列内」档位还会把整墙判空、闪一下
+  /// 筛选空态（BUG-2835）。所以三个分区在它为 false 时都只画骨架。
   bool _libraryMapsReady = false;
 
   /// 系列归属筛选归「全部视频」独有：控件只在那个分区露出，所以别的分区必须恒
@@ -539,17 +541,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 「非系列」不该让搜索静默落空。
   ///
   /// 映射未就位时**不**退回「全部」：默认档位是「非系列」后，退回「全部」等于
-  /// 每次进页都先铺满整库再缩回散片。未就位期间由 [_seriesFilterPending] 让
-  /// 「全部视频」显示加载态，既不拿「还不知道」当判据筛，也不闪。
+  /// 每次进页都先铺满整库再缩回散片。未就位期间整页画骨架
+  /// （[_buildLibraryMapsPendingSlivers]），既不拿「还不知道」当判据筛，也不闪。
   VideoSeriesFilter get _effectiveSeriesFilter =>
       widget.section == VideoLibrarySection.allVideos &&
           _searchQuery.trim().isEmpty
       ? _seriesFilter
       : VideoSeriesFilter.all;
-
-  /// 系列归属判据所需的映射还没到、而当前档位又要用它（BUG-2835）。
-  bool get _seriesFilterPending =>
-      !_libraryMapsReady && _effectiveSeriesFilter != VideoSeriesFilter.all;
 
   /// 媒体类型 / 正片特典 / 来源三档同样只在「全部视频」露出，别的分区恒按「全部」。
   bool get _isAllVideosSection =>
@@ -763,10 +761,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// BUG-1699：合集表写入回调。同步/导入常是一批行连写，300ms 合并窗口后重载
   /// 一次折叠映射（[_loadLibraryMaps] 自带 setState，映射换新后网格自动重组）。
+  ///
+  /// 变更通知是在写事务**提交之后**才发出的，所以事件到达之后才开始的任意一轮
+  /// [_loadLibraryMaps] 读到的已经是这次写入的结果，防抖到点时就不必再重算一遍。
+  /// 本页自己写合集表的路径（远端收养后紧跟一次重载、改合集后 await 重载）正是
+  /// 这种情况：此前同一次写入要换来两轮整套映射重算，网格跟着重组两次。
   void _onCollectionTablesChanged(void _) {
+    final int generationAtEvent = _libraryMapsRequestGeneration;
     _collectionsReloadDebounce?.cancel();
     _collectionsReloadDebounce = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) _loadLibraryMaps();
+      if (!mounted) return;
+      if (_libraryMapsRequestGeneration != generationAtEvent) return;
+      _loadLibraryMaps();
     });
   }
 
@@ -1512,11 +1518,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 再整套重载十几张映射表，全是切回视频 tab 时压在 UI isolate 上的白功。
       // 清单对象换了（TTL 过期重取 / 下拉强刷 / 换来源）才需要重新收养。
       if (!identical(videos, _adoptedRemoteVideos)) {
-        final RemoteCollectionAdoptionService adoption =
-            RemoteCollectionAdoptionService(appModelNoUpdate.database);
-        for (final RemoteVideoInfo video in videos) {
-          await adoption.adoptVideo(video);
-        }
+        await RemoteCollectionAdoptionService(
+          appModelNoUpdate.database,
+        ).adoptVideos(videos);
         _adoptedRemoteVideos = videos;
         if (mounted) await _loadLibraryMaps();
       }
@@ -4115,11 +4119,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             snap.connectionState == ConnectionState.done
             ? (snap.data ?? const <VideoBookRow>[])
             : _videosCache;
-        if (loaded == null) {
-          // 仅首载（无缓存）显示加载圈；后续刷新用旧数据顶住，不闪屏。
-          return buildLoading();
-        }
-        final List<VideoBookRow> all = loaded;
+        // 首屏要列表与映射**都**到位才画真卡（见 [_libraryMapsReady]）；任一未到
+        // 都画同几何骨架。后续刷新用旧列表 / 旧映射顶住，不闪屏。
+        final bool firstPaintPending = loaded == null || !_libraryMapsReady;
+        final List<VideoBookRow> all = loaded ?? const <VideoBookRow>[];
         final Set<String>? filter = ref
             .watch(filteredVideoBookUidsProvider)
             .valueOrNull;
@@ -4286,54 +4289,69 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                                 SliverToBoxAdapter(
                                   child: SizedBox(height: chromeInset),
                                 ),
-                                // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
-                                // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
-                                // [all] 描述整库，不随标签筛选变。
-                                // BUG-995：只看互联远端视频（无本地视频）时也要显示概览+继续观看，
-                                // 故门控与数据都并入 remoteVideos（否则整块消失=用户实报「远端的没有」）。
-                                if (widget.section ==
-                                        VideoLibrarySection.home &&
-                                    (all.isNotEmpty || remoteVideos.isNotEmpty))
-                                  SliverToBoxAdapter(
-                                    child: _buildOverviewSection(
+                                // 首屏：分组 / 折叠 / 筛选要的映射还没到，此刻的一切
+                                // 分组都是拿空映射算的（全员散卡、系列筛选全判否）。
+                                // 画出来就是「先铺散卡、再收拢成合集、再换海报」一块块
+                                // 地变。等映射，期间画与真实墙同几何的骨架。
+                                if (firstPaintPending)
+                                  ..._buildLibraryMapsPendingSlivers(
+                                    widget.section ==
+                                            VideoLibrarySection.allVideos
+                                        ? allVideosCardLayout
+                                        : cardLayout,
+                                  )
+                                else ...<Widget>[
+                                  // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
+                                  // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
+                                  // [all] 描述整库，不随标签筛选变。
+                                  // BUG-995：只看互联远端视频（无本地视频）时也要显示概览+继续观看，
+                                  // 故门控与数据都并入 remoteVideos（否则整块消失=用户实报「远端的没有」）。
+                                  if (widget.section ==
+                                          VideoLibrarySection.home &&
+                                      (all.isNotEmpty ||
+                                          remoteVideos.isNotEmpty))
+                                    SliverToBoxAdapter(
+                                      child: _buildOverviewSection(
+                                        all,
+                                        remoteVideos,
+                                        ordered,
+                                        constraints.maxWidth,
+                                        cardLayout,
+                                      ),
+                                    ),
+                                  if (widget.section ==
+                                      VideoLibrarySection.series)
+                                    ..._buildLocalVideoSlivers(
                                       all,
-                                      remoteVideos,
                                       ordered,
-                                      constraints.maxWidth,
+                                      remoteVideos,
                                       cardLayout,
                                     ),
-                                  ),
-                                if (widget.section ==
-                                    VideoLibrarySection.series)
-                                  ..._buildLocalVideoSlivers(
-                                    all,
-                                    ordered,
-                                    remoteVideos,
-                                    cardLayout,
-                                  ),
-                                if (widget.section ==
-                                    VideoLibrarySection.allVideos)
-                                  ..._buildAllVideoSlivers(
-                                    all,
-                                    ordered,
-                                    remoteVideos,
-                                    allVideosCardLayout,
-                                  ),
-                                // 首页只有 hero + 横滚行，横滚行卡不参与勾选，所以这一帧
-                                // 没有任何可勾选的格。必须如实登记空可见序：三个分区共用
-                                // 同一个 State，多选态下从「全部视频」切到首页时，可见序
-                                // 若停在上一档，底栏计数与批量删除就作用于一批屏幕上根本
-                                // 没有的条目（批量栏不按分区门控，切过来照样显示）。
-                                if (widget.section == VideoLibrarySection.home)
-                                  ..._homeSectionSelectionReset(),
-                                if (widget.section ==
-                                        VideoLibrarySection.home &&
-                                    all.isEmpty &&
-                                    remoteVideos.isEmpty)
-                                  SliverFillRemaining(
-                                    hasScrollBody: false,
-                                    child: _buildEmpty(),
-                                  ),
+                                  if (widget.section ==
+                                      VideoLibrarySection.allVideos)
+                                    ..._buildAllVideoSlivers(
+                                      all,
+                                      ordered,
+                                      remoteVideos,
+                                      allVideosCardLayout,
+                                    ),
+                                  // 首页只有 hero + 横滚行，横滚行卡不参与勾选，所以这一帧
+                                  // 没有任何可勾选的格。必须如实登记空可见序：三个分区共用
+                                  // 同一个 State，多选态下从「全部视频」切到首页时，可见序
+                                  // 若停在上一档，底栏计数与批量删除就作用于一批屏幕上根本
+                                  // 没有的条目（批量栏不按分区门控，切过来照样显示）。
+                                  if (widget.section ==
+                                      VideoLibrarySection.home)
+                                    ..._homeSectionSelectionReset(),
+                                  if (widget.section ==
+                                          VideoLibrarySection.home &&
+                                      all.isEmpty &&
+                                      remoteVideos.isEmpty)
+                                    SliverFillRemaining(
+                                      hasScrollBody: false,
+                                      child: _buildEmpty(),
+                                    ),
+                                ],
                               ],
                             );
                           },
@@ -5464,6 +5482,29 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ];
   }
 
+  /// 首屏映射未就位（[_libraryMapsReady] 为 false）时的骨架墙：格子几何直接走
+  /// 真实的墙 / 网格 sliver（同列数、同卡宽、同行高），映射一到整墙一次换成真卡，
+  /// 版面不跳。三屏行数足够盖住一屏，不按库大小造格。
+  List<Widget> _buildLibraryMapsPendingSlivers(
+    ({int columns, double cardWidth}) cardLayout,
+  ) {
+    final List<_VideoWallEntry> cells = List<_VideoWallEntry>.filled(
+      cardLayout.columns * 3,
+      const _VideoWallEntry(build: _videoCardSkeleton),
+    );
+    final EdgeInsets padding = EdgeInsets.all(
+      FushiDesignTokens.of(context).spacing.card,
+    );
+    return <Widget>[
+      KeyedSubtree(
+        key: const ValueKey<String>('home_video_library_maps_pending'),
+        child: widget.section == VideoLibrarySection.allVideos
+            ? _buildAllVideoGridSliver(cells, padding, cardLayout)
+            : _buildVideoWallSliver(cells, padding, cardLayout),
+      ),
+    ];
+  }
+
   /// “全部视频”逐条展示原始 VideoBook，不按合集折叠；本地预告/花絮也因此保留。
   List<Widget> _buildAllVideoSlivers(
     List<VideoBookRow> all,
@@ -5474,15 +5515,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (all.isEmpty && remoteVideos.isEmpty) {
       return _emptyStateSlivers(_buildEmpty());
     }
-    // BUG-2835：系列归属判据要的映射还没到——此刻的 [books] 是拿空映射筛的（全员
-    // 判成「非系列」），渲染出来就是先铺满整库再缩回散片。等映射，不闪。
-    if (_seriesFilterPending) {
-      return _emptyStateSlivers(
-        const FushiLoadingView(
-          key: ValueKey<String>('home_video_all_videos_maps_pending'),
-        ),
-      );
-    }
+    // BUG-2835 的「映射未到先别拿空映射筛」已上移成所有分区共用的首屏门
+    // （[_buildLibraryMapsPendingSlivers]），走到这里映射一定已就位。
     if (books.isEmpty && remoteVideos.isEmpty) {
       return _emptyStateSlivers(
         _buildFilteredEmpty(
@@ -8619,6 +8653,24 @@ class _VideoWallEntry {
 
   final Widget Function(VideoCardOrientation orientation) build;
 }
+
+/// 骨架卡：封面块（按朝向 2:3 / 16:9）+ 两行文字条，与真卡同轮廓。
+Widget _videoCardSkeleton(VideoCardOrientation orientation) => Column(
+  crossAxisAlignment: CrossAxisAlignment.stretch,
+  mainAxisSize: MainAxisSize.min,
+  children: <Widget>[
+    AspectRatio(
+      aspectRatio: orientation == VideoCardOrientation.portrait
+          ? kVideoPortraitCardAspect
+          : kVideoLandscapeCardAspect,
+      child: const FushiSkeleton(),
+    ),
+    const SizedBox(height: 8),
+    FushiSkeleton.line(widthFactor: 0.8),
+    const SizedBox(height: 6),
+    FushiSkeleton.line(widthFactor: 0.5, height: 10),
+  ],
+);
 
 /// 横滚行一项（TODO-2486）：最近时刻（排序键）+ 惰性构造。
 class _VideoRowItem {
