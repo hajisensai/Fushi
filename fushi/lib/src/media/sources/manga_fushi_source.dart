@@ -70,12 +70,23 @@ class MangaFushiSource extends ReaderMediaSource {
     MediaItem? item,
     Bookmark? initialBookmarkJump,
   }) {
+    return buildChapterLaunchPage(item: item);
+  }
+
+  /// [buildLaunchPage] 的点名版：作品页开某一章时经 `openMedia(launchPageBuilder:)`
+  /// 用它，把章下标显式交给阅读器（[MangaFushiPage.initialChapterIndex]）；
+  /// [chapterIndex] 为 null 等同直接开书。
+  Widget buildChapterLaunchPage({MediaItem? item, int? chapterIndex}) {
     final String bookKey =
         ReaderFushiSource.parseBookKey(item?.mediaIdentifier ?? '') ?? '';
     // 漫画在 WebView 里按原生密度渲染；与阅读器一致包 UI-scale 中和层，
     // 保证弹窗坐标契约（JS getClientRects 视口坐标 → 屏幕坐标恒等映射）。
     return FushiAppUiScaleNeutralizer(
-      child: MangaFushiPage(item: item, bookKey: bookKey),
+      child: MangaFushiPage(
+        item: item,
+        bookKey: bookKey,
+        initialChapterIndex: chapterIndex,
+      ),
     );
   }
 

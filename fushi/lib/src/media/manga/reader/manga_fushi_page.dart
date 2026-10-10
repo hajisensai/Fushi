@@ -445,10 +445,15 @@ class MangaFushiPage extends BaseSourcePage {
     super.key,
     required super.item,
     required this.bookKey,
+    this.initialChapterIndex,
     this.sourceReview,
     this.ocrEnginesOverride,
     this.lensDisclosureOverride,
   });
+
+  /// 在线漫画：调用方点名要开的章（下标，见 [mangaReaderOpenChapterIndex]）。null =
+  /// 没点名（直接开书），按「重新打开位置」偏好选章。本地卷忽略。
+  final int? initialChapterIndex;
 
   /// 进入即整卷识别用的引擎集合（测试缝；生产经 [MangaOcrWizardEngines.resolve]）。
   final MangaOcrWizardEngines? ocrEnginesOverride;
@@ -2019,7 +2024,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     try {
       final OnlineMangaLibraryService service = appModel
           .onlineMangaLibraryService(entry.runtime);
-      int chapterIndex = OnlineMangaLibraryService.initialChapterIndex(entry);
+      int chapterIndex = mangaReaderOpenChapterIndex(
+        entry,
+        await appModel.database.getMangaChapterStates(row.uid),
+        requested: widget.initialChapterIndex,
+        target: MangaResumeTargetKey.fromKey(appModel.mangaResumeTarget),
+      );
       if (!_sourceLocatorApplied &&
           widget.sourceReview != null &&
           widget.sourceReview!.chapterId == null) {
