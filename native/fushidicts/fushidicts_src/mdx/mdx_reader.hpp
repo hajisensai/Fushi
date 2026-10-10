@@ -60,8 +60,19 @@ MdxMeta parse_streaming(const uint8_t* data, size_t size, const EntrySink& sink,
 // Whole-dictionary convenience wrapper over parse_streaming. Holds every entry
 // in memory; prefer parse_streaming for anything user-supplied.
 MdxResult parse(const uint8_t* data, size_t size);
-// Parse an .mdd (same container as .mdx, but records are binary files keyed by
-// path). Records are returned byte-exact: no text transcoding, no trailing-NUL
-// stripping, no @@@LINK resolution.
+// Invoked once per .mdd record with ownership of its path. `blob` points into
+// the record block currently being decoded and is valid only for the call.
+using MddSink = std::function<void(std::string&& path, const uint8_t* blob, size_t size)>;
+
+// Streaming .mdd parse (same container as .mdx, but records are binary files
+// keyed by path). Records are handed over byte-exact: no text transcoding, no
+// trailing-NUL stripping, no @@@LINK resolution. Peak memory is the key table
+// plus one record block, so a media companion of hundreds of MB no longer has
+// to fit in RAM twice over (BUG-3234) -- the importer writes each record out
+// as it arrives.
+void parse_mdd_streaming(const uint8_t* data, size_t size, const MddSink& sink);
+
+// Whole-container convenience wrapper over parse_mdd_streaming. Holds every
+// record in memory; prefer the streaming form for anything user-supplied.
 std::vector<MddEntry> parse_mdd(const uint8_t* data, size_t size);
 }

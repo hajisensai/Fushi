@@ -208,6 +208,16 @@ add_fushi_test(mdx_sibling_script_media_test mdx_sibling_script_media_test.cpp
 # 发音按钮渲染成 0×0 破图、点不着。
 add_fushi_test(mdx_loose_asset_media_test mdx_loose_asset_media_test.cpp
     "${FUSHI_ROOT}/fushidicts_external/libdeflate")
+# BUG-3234: an MDict inside a zip (and any .mdd) is extracted and mounted
+# without holding the member / media companion in RAM -- peak private commit of
+# a child import is bounded on Windows -- and the low_ram mode Android/iOS run
+# in imports the same yomitan dictionary as the wide default.
+add_fushi_test(import_memory_bound_test import_memory_bound_test.cpp
+    "${FUSHI_SRC}"
+    "${FUSHI_ROOT}/fushidicts_external/libdeflate")
+if(WIN32)
+  target_link_libraries(import_memory_bound_test PRIVATE psapi)
+endif()
 # Phase A: MDD (MDX media companion) parses byte-exact and auto-mounts into the
 # dict as media.bin/idx; get_media_file returns the bytes by normalized path.
 add_fushi_test(mdd_media_import_test mdd_media_import_test.cpp
