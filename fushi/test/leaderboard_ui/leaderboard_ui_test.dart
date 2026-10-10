@@ -8,19 +8,14 @@ import 'package:flutter/services.dart' show MethodCall, SystemChannels;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/leaderboard/leaderboard_features.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_store.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_account_page.dart';
-import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_chars_summary.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
-    show FushiLinearProgressIndicator;
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_common.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_share_card.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_sign_in_page.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_user_page.dart';
-import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_watermelon_page.dart';
 import 'package:fushi/utils.dart'
     show FushiDestructiveConfirmDialog, FushiLoadingView, FushiSelectableChip;
 import 'package:fushi_core/fushi_core.dart';
@@ -457,12 +452,17 @@ void main() {
     await settle(tester);
     expect(byKey('leaderboard-signin-error'), findsNothing);
     expect(
-      tester.widget<FilledButton>(glassUnwrap<FilledButton>(byKey('leaderboard-signin-send'))).onPressed,
+      tester
+          .widget<FilledButton>(
+            glassUnwrap<FilledButton>(byKey('leaderboard-signin-send')),
+          )
+          .onPressed,
       isNull,
       reason: '冷却中不能重发',
     );
-    FilledButton submit() =>
-        tester.widget<FilledButton>(glassUnwrap<FilledButton>(byKey('leaderboard-signin-submit')));
+    FilledButton submit() => tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(byKey('leaderboard-signin-submit')),
+    );
     expect(submit().onPressed, isNull);
 
     await tester.enterText(field('leaderboard-signin-code'), '123456');
@@ -493,7 +493,11 @@ void main() {
     // 走完冷却，让周期 Timer 自己停掉。
     await tester.pump(const Duration(seconds: 61));
     expect(
-      tester.widget<FilledButton>(glassUnwrap<FilledButton>(byKey('leaderboard-signin-send'))).onPressed,
+      tester
+          .widget<FilledButton>(
+            glassUnwrap<FilledButton>(byKey('leaderboard-signin-send')),
+          )
+          .onPressed,
       isNotNull,
     );
   });
@@ -520,7 +524,7 @@ void main() {
       find.text(
         t.leaderboard_board_me(
           rank: 2,
-          value: leaderboardMetricValue(LeaderboardMetric.chars, 3),
+          value: leaderboardMetricValue(LeaderboardMetric.book, 3),
         ),
       ),
       findsOneWidget,
@@ -529,57 +533,14 @@ void main() {
       find.textContaining(t.leaderboard_board_updated(time: '')),
       findsOneWidget,
     );
-    // 2026-10-09 精简：同步卡挪进账户页；好友榜 / 作品人气只隐藏入口。
-    expect(
-      find.byKey(const ValueKey<String>('leaderboard-sync-status')),
-      findsNothing,
-    );
     expect(
       find.byKey(const ValueKey<String>('leaderboard-sync-claim')),
       findsNothing,
     );
-    expect(
-      find.byKey(
-        ValueKey<String>('leaderboard-scope-${t.leaderboard_scope_friends}'),
-      ),
-      findsNothing,
-    );
-    expect(
-      find.byKey(
-        ValueKey<String>('leaderboard-view-${t.leaderboard_view_works}'),
-      ),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const ValueKey<String>('leaderboard-header-friends')),
-      findsNothing,
-    );
-    // 字数排在指标行第一位。
-    final double charsX = tester
-        .getTopLeft(
-          find.byKey(
-            ValueKey<String>('leaderboard-metric-${t.leaderboard_metric_chars}'),
-          ),
-        )
-        .dx;
-    final double bookX = tester
-        .getTopLeft(
-          find.byKey(
-            ValueKey<String>('leaderboard-metric-${t.leaderboard_kind_book}'),
-          ),
-        )
-        .dx;
-    expect(charsX, lessThan(bookX));
-    // 总字数卡：总榜 / 周榜字数榜上「我」的值。
-    expect(
-      find.byKey(const ValueKey<String>('leaderboard-summary-total')),
-      findsOneWidget,
-    );
     final http.Request rank = server.requests.firstWhere(
-      (http.Request r) =>
-          r.url.path == '/v1/rank' && r.url.queryParameters['limit'] == '50',
+      (http.Request r) => r.url.path == '/v1/rank',
     );
-    expect(rank.url.queryParameters['metric'], 'chars');
+    expect(rank.url.queryParameters['metric'], 'book');
     expect(rank.url.queryParameters['window'], 'week');
     expect(rank.url.queryParameters['scope'], 'global');
     expect(rank.headers.containsKey('X-Fushi-Sig'), isTrue);
@@ -595,7 +556,7 @@ void main() {
     expect(
       find.text(
         t.leaderboard_board_me_pending(
-          value: leaderboardMetricValue(LeaderboardMetric.chars, 9),
+          value: leaderboardMetricValue(LeaderboardMetric.book, 9),
           time: leaderboardDateTime(
             1790000000000 + kLeaderboardSnapshotInterval.inMilliseconds,
           ),
@@ -614,8 +575,7 @@ void main() {
     expect(find.text(t.leaderboard_board_me_unranked), findsOneWidget);
   });
 
-  testWidgets('榜单快照未生成：显示「榜单生成中」；上传设备在别处：账户页给出接管按钮', (WidgetTester tester) async {
-    tallView(tester);
+  testWidgets('榜单快照未生成：显示「榜单生成中」；上传设备在别处：给出接管按钮', (WidgetTester tester) async {
     server.rankComputedAt = null;
     final LeaderboardService service = await activeService(
       tester,
@@ -626,15 +586,6 @@ void main() {
 
     expect(find.text(t.leaderboard_board_generating), findsWidgets);
     expect(
-      find.byKey(const ValueKey<String>('leaderboard-sync-claim')),
-      findsNothing,
-      reason: '同步卡已挪进账户页',
-    );
-
-    // 同一个 ProviderScope 换页（不能先 pump 空树：那会连带 dispose 服务）。
-    await tester.pumpWidget(wrap(service, const LeaderboardAccountPage()));
-    await settle(tester);
-    expect(
       find.byKey(const ValueKey<String>('leaderboard-sync-elsewhere')),
       findsOneWidget,
     );
@@ -644,7 +595,11 @@ void main() {
     );
     expect(
       tester
-          .widget<TextButton>(glassUnwrap<TextButton>(find.byKey(const ValueKey<String>('leaderboard-sync-now'))),)
+          .widget<TextButton>(
+            glassUnwrap<TextButton>(
+              find.byKey(const ValueKey<String>('leaderboard-sync-now')),
+            ),
+          )
           .onPressed,
       isNull,
       reason: '被挡住时「立即同步」必然 409，直接禁用',
@@ -677,10 +632,9 @@ void main() {
       findsOneWidget,
     );
     expect(find.text(t.leaderboard_user_shelf_private), findsOneWidget);
-    // 好友入口默认隐藏（LeaderboardFeatures.friendsEnabled = false）。
     expect(
       find.byKey(const ValueKey<String>('leaderboard-user-add-friend')),
-      findsNothing,
+      findsOneWidget,
     );
   });
 
@@ -1166,7 +1120,12 @@ void main() {
     final Finder share = find.byKey(
       const ValueKey<String>('leaderboard-header-share'),
     );
-    expect(share, findsOneWidget);
+    expect(
+      tester
+          .widget<OutlinedButton>(glassUnwrap<OutlinedButton>(share))
+          .onPressed,
+      isNotNull,
+    );
     await tester.tap(share);
     await settle(tester);
 
@@ -1213,7 +1172,9 @@ void main() {
     await settle(tester);
     await tester.enterText(editable('leaderboard-signin-code'), '123456');
     await tester.pump();
-    final FilledButton submit = tester.widget<FilledButton>(glassUnwrap<FilledButton>(byKey('leaderboard-signin-submit')),);
+    final FilledButton submit = tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(byKey('leaderboard-signin-submit')),
+    );
     expect(submit.onPressed, isNotNull, reason: '登录不强制勾同意');
     await tester.tap(byKey('leaderboard-signin-submit'));
     // 账户先落盘再激活（`_adopt`）：状态翻成 active 时文件已写完。
@@ -1286,7 +1247,11 @@ void main() {
     expect(byKey('leaderboard-signin-nickname'), findsOneWidget);
     expect(email(), 'a@b.cd');
     expect(
-      tester.widget<FilledButton>(glassUnwrap<FilledButton>(byKey('leaderboard-signin-send'))).onPressed,
+      tester
+          .widget<FilledButton>(
+            glassUnwrap<FilledButton>(byKey('leaderboard-signin-send')),
+          )
+          .onPressed,
       isNotNull,
       reason: '登录码不能拿来注册：切换后可以立刻发注册码',
     );
@@ -1458,8 +1423,6 @@ void main() {
   testWidgets('用户页：服务端给 relation none 时不再拉好友列表；缺字段才回退', (
     WidgetTester tester,
   ) async {
-    LeaderboardFeatures.friendsEnabled = true;
-    addTearDown(() => LeaderboardFeatures.friendsEnabled = false);
     Future<void> open() async {
       final LeaderboardService service = await activeService(tester);
       await tester.pumpWidget(
@@ -1493,103 +1456,32 @@ void main() {
       reason: '旧服务端没有 relation 字段：回退按好友列表推断',
     );
   });
-
-  testWidgets('大西瓜：顶栏入口进页，本周字数榜画成头像球，字数越多球越大', (
+  testWidgets('恢复完整榜单：显示账户、同步、好友和作品人气，不显示新增总字数卡与西瓜入口', (
     WidgetTester tester,
   ) async {
     tallView(tester);
     final LeaderboardService service = await activeService(tester);
-    await tester.pumpWidget(wrap(service, const LeaderboardTab()));
+    await tester.pumpWidget(wrap(service, const LeaderboardPage()));
     await settle(tester);
-    await tester.tap(byKey('leaderboard-header-watermelon'));
-    await settle(tester);
-    expect(find.byType(LeaderboardWatermelonPage), findsOneWidget);
-    final http.Request req = server.requests.lastWhere(
-      (http.Request r) => r.url.path == '/v1/rank',
-    );
-    expect(req.url.queryParameters['metric'], 'chars');
-    expect(req.url.queryParameters['window'], 'week');
-    expect(byKey('leaderboard-watermelon-viewer'), findsOneWidget);
-    double sizeOf(String id) => tester
-        .widget<LeaderboardAvatar>(
-          find.descendant(
-            of: find.byType(LeaderboardWatermelonPage),
-            matching: find.byWidgetPredicate(
-              (Widget w) => w is LeaderboardAvatar && w.account.id == id,
-            ),
-          ),
-        )
-        .size;
-    expect(sizeOf(_otherId), greaterThan(sizeOf(_selfId)));
-  });
-
-  testWidgets('从首页 push 进来时顶栏第一位是返回键，其后是头像 + 昵称#编号', (
-    WidgetTester tester,
-  ) async {
-    tallView(tester);
-    final LeaderboardService service = await activeService(tester);
-    final GlobalKey<NavigatorState> nav = GlobalKey<NavigatorState>();
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: <Override>[
-          leaderboardServiceProvider.overrideWith((Ref _) => service),
-        ],
-        child: MaterialApp(
-          navigatorKey: nav,
-          home: const Scaffold(body: SizedBox.expand()),
-        ),
-      ),
-    );
-    unawaited(
-      nav.currentState!.push<void>(
-        MaterialPageRoute<void>(
-          builder: (BuildContext _) => const LeaderboardTab(),
-        ),
-      ),
-    );
-    await settle(tester);
-    final Finder back = byKey('leaderboard-back');
-    expect(back, findsOneWidget);
-    final Finder title = find.descendant(
-      of: byKey('leaderboard-top-bar'),
-      matching: find.text('Me#0042'),
-    );
-    expect(title, findsOneWidget);
+    expect(find.text('Me#0042'), findsWidgets);
+    expect(byKey('leaderboard-sync-status'), findsOneWidget);
+    expect(byKey('leaderboard-header-friends'), findsOneWidget);
     expect(
-      tester.getCenter(back).dx,
-      lessThan(tester.getCenter(title).dx),
-      reason: '返回键在头像胶囊左侧',
+      byKey('leaderboard-scope-${t.leaderboard_scope_friends}'),
+      findsOneWidget,
     );
-    await tester.tap(back);
-    await settle(tester);
-    // 退场转场比 settle 的十帧长：再推进一秒让路由真正移除。
-    await tester.pump(const Duration(seconds: 1));
-    expect(find.byType(LeaderboardTab), findsNothing);
-  });
-
-  testWidgets('总字数卡：加载失败显示原因，不永远停在加载条上', (WidgetTester tester) async {
-    Widget card({Object? error}) => MaterialApp(
-      home: Scaffold(
-        body: LeaderboardCharsSummaryCard(
-          total: null,
-          week: null,
-          error: error,
-        ),
-      ),
-    );
-    await tester.pumpWidget(card());
-    expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
     expect(
-      find.byKey(const ValueKey<String>('leaderboard-summary-error')),
-      findsNothing,
+      byKey('leaderboard-view-${t.leaderboard_view_works}'),
+      findsOneWidget,
     );
-
-    const LeaderboardApiException error = LeaderboardApiException(
-      503,
-      'not_configured',
+    expect(byKey('leaderboard-summary-total'), findsNothing);
+    expect(byKey('leaderboard-header-watermelon'), findsNothing);
+    expect(
+      server.requests.where(
+        (http.Request r) =>
+            r.url.path == '/v1/rank' && r.url.queryParameters['limit'] == '1',
+      ),
+      isEmpty,
     );
-    await tester.pumpWidget(card(error: error));
-    expect(find.byType(FushiLinearProgressIndicator), findsNothing);
-    expect(find.text(leaderboardErrorText(error)), findsOneWidget);
   });
 }

@@ -3,10 +3,8 @@
 //
 // 未开启：同意说明卡（会公开什么 / 不会上传什么）+ 注册 / 登录 / 恢复码导入入口；
 // 未开启时本页不发任何网络请求。
-// 已开启（2026-10-09 精简）：顶栏只剩「返回 + 头像 昵称#编号」，主页 / 分享 /
-// 账户 / 大西瓜收成按宽度自适应的动作（放不下进「⋯」）；同步状态挪进账户页。
-// 正文 = 总字数卡 → 窗口 × 指标（字数在前）→ 榜单。好友 / 作品人气只隐藏入口，
-// 由 [LeaderboardFeatures] 集中开关。
+// 已开启：页头（头像、昵称#、主页 / 好友 / 分享 / 账户）→ 同步状态行 → 榜单
+// （范围 × 窗口 × 指标，或「作品人气」）。
 
 import 'dart:async';
 
@@ -18,43 +16,34 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 
-import 'package:fushi/src/leaderboard/leaderboard_features.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
+import 'package:fushi/src/leaderboard/leaderboard_store.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_account_page.dart';
-import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_chars_summary.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_common.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_friends_page.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_share_card.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_sign_in_page.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_user_page.dart';
-import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_watermelon_page.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_work_page.dart';
-import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/utils.dart';
 
 /// 榜单每页行数。
 const int kLeaderboardRankPageSize = 50;
 
-/// 指标在页面上的顺序：字数排第一（2026-10-09）。
-const List<LeaderboardMetric> kLeaderboardMetricOrder = <LeaderboardMetric>[
-  LeaderboardMetric.chars,
-  LeaderboardMetric.book,
-  LeaderboardMetric.manga,
-  LeaderboardMetric.video,
-  LeaderboardMetric.game,
-];
-
-/// 排行榜独立页。排行榜自带周 / 月 / 总窗口，与统计中心的时间范围选择无关，
-/// 所以不再挂在统计中心里当 tab。
+/// 排行榜独立页：页头 + [LeaderboardTab]。排行榜自带周 / 月 / 总窗口，与统计中心
+/// 的时间范围选择无关，所以不再挂在统计中心里当 tab。
 class LeaderboardPage extends StatelessWidget {
   const LeaderboardPage({super.key});
 
   @override
-  Widget build(BuildContext context) => const LeaderboardTab();
+  Widget build(BuildContext context) => FushiPageScaffold(
+    title: t.leaderboard_title,
+    body: const LeaderboardTab(),
+  );
 }
 
-/// 排行榜页（含页头）：按账户状态在说明卡与榜单之间切换。
+/// 排行榜页的主体：按账户状态在说明卡与榜单之间切换。
 class LeaderboardTab extends ConsumerStatefulWidget {
   const LeaderboardTab({super.key});
 
@@ -79,29 +68,20 @@ class _LeaderboardTabState extends ConsumerState<LeaderboardTab> {
       builder: (BuildContext context, AsyncSnapshot<void> snap) {
         // 加载 / 错误态不滚动：让开悬浮页头（正文铺在页头底下）。
         if (snap.connectionState != ConnectionState.done) {
-          return FushiPageScaffold(
-            title: t.leaderboard_title,
-            body: const SafeArea(bottom: false, child: FushiLoadingView()),
-          );
+          return const SafeArea(bottom: false, child: FushiLoadingView());
         }
         if (snap.hasError) {
-          return FushiPageScaffold(
-            title: t.leaderboard_title,
-            body: SafeArea(
-              bottom: false,
-              child: LeaderboardErrorView(
-                error: snap.error!,
-                onRetry: () => setState(() => _loaded = service.load()),
-              ),
+          return SafeArea(
+            bottom: false,
+            child: LeaderboardErrorView(
+              error: snap.error!,
+              onRetry: () => setState(() => _loaded = service.load()),
             ),
           );
         }
         return service.status == LeaderboardStatus.active
             ? const LeaderboardActiveView()
-            : FushiPageScaffold(
-                title: t.leaderboard_title,
-                body: const LeaderboardIntroView(),
-              );
+            : const LeaderboardIntroView();
       },
     );
   }
@@ -209,12 +189,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
   _BoardView _view = _BoardView.users;
   LeaderboardScope _scope = LeaderboardScope.global;
   LeaderboardWindow _window = LeaderboardWindow.week;
-  LeaderboardMetric _metric = LeaderboardMetric.chars;
-
-  /// 总字数卡：总榜 / 周榜字数榜上「我」的值；null = 还没取到。
-  int? _summaryTotal;
-  int? _summaryWeek;
-  Object? _summaryError;
+  LeaderboardMetric _metric = LeaderboardMetric.book;
 
   RankPage? _rank;
   List<RankRow> _rankRows = <RankRow>[];
@@ -224,7 +199,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
   bool _loadingMore = false;
   Object? _error;
 
-  /// 后台同步的错误：同步卡在账户页，这里只留一个入口提示。
+  bool _syncing = false;
   Object? _syncError;
   Object? _selfError;
 
@@ -236,7 +211,6 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
     super.initState();
     final LeaderboardService service = ref.read(leaderboardServiceProvider);
     unawaited(_refreshSelf());
-    unawaited(_refreshSummary());
     unawaited(_reload());
     // 统计中心打开 = 上传时机之一（间隔 / 开关 / 上传设备判断都在服务里）。
     unawaited(
@@ -254,38 +228,6 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
     } catch (e, st) {
       ErrorLogService.instance.log('Leaderboard.refreshSelf', e, st);
       if (mounted) setState(() => _selfError = e);
-    }
-  }
-
-  /// 总字数卡的两个数：字数榜总榜 / 本周榜上「我」的值（不在快照里时服务端带实时值）。
-  Future<void> _refreshSummary() async {
-    final LeaderboardClient? client = ref
-        .read(leaderboardServiceProvider)
-        .client;
-    if (client == null) return;
-    try {
-      final List<RankPage> pages = await Future.wait(<Future<RankPage>>[
-        client.rank(
-          metric: LeaderboardMetric.chars,
-          window: LeaderboardWindow.all,
-          limit: 1,
-        ),
-        client.rank(
-          metric: LeaderboardMetric.chars,
-          window: LeaderboardWindow.week,
-          limit: 1,
-        ),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        _summaryTotal = pages[0].me?.value ?? 0;
-        _summaryWeek = pages[1].me?.value ?? 0;
-        _summaryError = null;
-      });
-    } catch (e, st) {
-      ErrorLogService.instance.log('Leaderboard.summary', e, st);
-      // 不记下失败，卡片会永远停在加载条上；已有数时保留旧数（下拉刷新失败不清空）。
-      if (mounted) setState(() => _summaryError = e);
     }
   }
 
@@ -403,6 +345,54 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
     }
   }
 
+  Future<void> _syncNow() async {
+    setState(() {
+      _syncing = true;
+      _syncError = null;
+    });
+    try {
+      await ref.read(leaderboardServiceProvider).syncNow();
+    } catch (e, st) {
+      ErrorLogService.instance.log('Leaderboard.syncNow', e, st);
+      if (mounted) setState(() => _syncError = e);
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  Future<void> _claim() async {
+    final FushiDestructiveConfirmResult? ok =
+        await showAppDialog<FushiDestructiveConfirmResult>(
+          context: context,
+          builder: (BuildContext _) => FushiDestructiveConfirmDialog(
+            title: t.leaderboard_sync_claim_title,
+            message: t.leaderboard_sync_claim_message,
+            confirmLabel: t.leaderboard_sync_claim_action,
+            leadingIcon: FushiIcons.swap,
+          ),
+        );
+    if (ok == null || !mounted) return;
+    final LeaderboardService service = ref.read(leaderboardServiceProvider);
+    // 登录 / 导入时没同意公开的本机账户：接管前先确认公开清单。
+    final bool consent =
+        !service.hasConsent &&
+        await showLeaderboardUploadConsentDialog(context);
+    if (!service.hasConsent && !consent) return;
+    if (!mounted) return;
+    setState(() {
+      _syncing = true;
+      _syncError = null;
+    });
+    try {
+      await service.claimUploadDevice(consent: consent);
+    } catch (e, st) {
+      ErrorLogService.instance.log('Leaderboard.claimUploadDevice', e, st);
+      if (mounted) setState(() => _syncError = e);
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
   void _openUser(String id) => unawaited(
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -429,154 +419,139 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final LeaderboardService service = ref.watch(leaderboardServiceProvider);
-    // 正文铺到悬浮页头底下：顶部让出「状态栏 + 页头」（Builder 的 context 在页头
-    // 脚手架之内才读得到这段 padding；下拉指示器也从页头下沿出现）。
-    final Widget page = Builder(
-      builder: (BuildContext context) => FushiRefreshIndicator(
-        edgeOffset: MediaQuery.paddingOf(context).top,
-        onRefresh: () async {
-          await Future.wait(<Future<void>>[
-            _refreshSelf(),
-            _refreshSummary(),
-            _reload(),
-          ]);
-        },
-        child: FushiEntranceScope(
-          // 换窗口 / 指标重开错峰进场窗口，新榜单从上往下依次落位。
-          replayKey:
-              '${_view.name}-${_scope.name}-${_window.name}-${_metric.name}',
-          child: ListView(
-            key: const ValueKey<String>('leaderboard-active'),
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: withBottomSafeInset(
-              context,
-              EdgeInsets.only(
-                top: MediaQuery.paddingOf(context).top,
-                bottom: tokens.spacing.card * 2,
-              ),
+    return FushiRefreshIndicator(
+      // 下拉指示器从悬浮页头下沿出现，而不是藏在页头后面。
+      edgeOffset: MediaQuery.paddingOf(context).top,
+      onRefresh: () async {
+        await Future.wait(<Future<void>>[_refreshSelf(), _reload()]);
+      },
+      child: FushiEntranceScope(
+        replayKey:
+            '${_view.name}-${_scope.name}-${_window.name}-${_metric.name}',
+        child: ListView(
+          key: const ValueKey<String>('leaderboard-active'),
+          physics: const AlwaysScrollableScrollPhysics(),
+          // 正文铺到悬浮页头底下：顶部让出「状态栏 + 页头」。
+          padding: withBottomSafeInset(
+            context,
+            EdgeInsets.only(
+              top: MediaQuery.paddingOf(context).top,
+              bottom: tokens.spacing.card * 2,
             ),
-            children: <Widget>[
-              FushiStaggeredEntrance(index: 0, child: _buildSummary(tokens)),
-              if (_syncError != null) _buildSyncErrorRow(tokens),
-              FushiStaggeredEntrance(index: 1, child: _buildFilters(tokens)),
-              ..._buildBoard(tokens),
-            ],
           ),
+          children: <Widget>[
+            FushiStaggeredEntrance(
+              index: 0,
+              child: _buildHeader(tokens, service),
+            ),
+            FushiStaggeredEntrance(
+              index: 1,
+              child: _buildSyncRow(tokens, service),
+            ),
+            FushiStaggeredEntrance(index: 2, child: _buildFilters(tokens)),
+            ..._buildBoard(tokens),
+          ],
         ),
       ),
     );
-    return FushiPageScaffold(
-      title: t.leaderboard_title,
-      header: _buildTopBar(service),
-      body: page,
-    );
   }
 
-  /// 顶栏：返回 + 「头像 昵称#编号」标题胶囊（点它进自己的主页）+ 按宽度自适应
-  /// 的动作（大西瓜优先，放不下的依次收进「⋯」）。
-  Widget _buildTopBar(LeaderboardService service) {
+  Widget _buildHeader(FushiDesignTokens tokens, LeaderboardService service) {
     final LeaderboardSelf? self = service.self;
     final String selfId = self?.account.id ?? service.account?.accountId ?? '';
-    final bool canPop = Navigator.maybeOf(context)?.canPop() ?? false;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 页头外边距与更新中心等「整条换成悬浮工具栏」的页一致（FushiPageScaffold.header
-    // 不替调用方加边距）；下沿多 4 给标题胶囊里的头像留呼吸位。
     return Padding(
       padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.gap,
-        tokens.spacing.page,
-        tokens.spacing.gap + 4,
+        tokens.spacing.card,
+        tokens.spacing.card,
+        tokens.spacing.card,
+        0,
       ),
-      child: FushiFloatingTopBar(
-        key: const ValueKey<String>('leaderboard-top-bar'),
-        leading: <FushiToolbarItem>[
-          if (canPop)
-            FushiToolbarItem(
-              key: const ValueKey<String>('leaderboard-back'),
-              icon: FushiIcons.back,
-              label: MaterialLocalizations.of(context).backButtonTooltip,
-              onPressed: () => unawaited(Navigator.of(context).maybePop()),
-            ),
-        ],
-        titleLeading: self == null
-            ? const SizedBox.square(
-                dimension: 32,
-                child: FushiIcon(FushiIcons.account, size: 28),
-              )
-            : LeaderboardAvatar(account: self.account, size: 32),
-        title: self?.account.tag ?? t.leaderboard_header_loading,
-        subtitle: _selfError == null ? '' : leaderboardErrorText(_selfError!),
-        titleTooltip: t.leaderboard_header_profile,
-        onTitleTap: selfId.isEmpty ? null : () => _openUser(selfId),
-        actions: <List<FushiToolbarItem>>[
-          <FushiToolbarItem>[
-            FushiToolbarItem(
-              key: const ValueKey<String>('leaderboard-header-watermelon'),
-              icon: FushiIcons.blur,
-              label: t.leaderboard_watermelon_title,
-              onPressed: () => _push(LeaderboardWatermelonPage(selfId: selfId)),
-            ),
-            FushiToolbarItem(
-              key: const ValueKey<String>('leaderboard-header-share'),
-              icon: FushiIcons.share,
-              label: t.leaderboard_header_share,
-              onPressed: self == null
-                  ? null
-                  : () => unawaited(
-                      showLeaderboardShareSheet(
-                        context,
-                        initialWindow: _window,
+      child: FushiCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                if (self != null)
+                  LeaderboardAvatar(account: self.account, size: 48)
+                else
+                  const SizedBox.square(
+                    dimension: 48,
+                    child: FushiIcon(FushiIcons.account, size: 40),
+                  ),
+                SizedBox(width: tokens.spacing.gap),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        self?.account.tag ?? t.leaderboard_header_loading,
+                        key: const ValueKey<String>('leaderboard-self-tag'),
+                        style: tokens.type.listTitle,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
+                      if (_selfError != null)
+                        Text(
+                          leaderboardErrorText(_selfError!),
+                          style: tokens.type.metadata,
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            Wrap(
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap,
+              children: <Widget>[
+                FushiOutlinedButton.icon(
+                  onPressed: selfId.isEmpty ? null : () => _openUser(selfId),
+                  icon: const FushiIcon(FushiIcons.person),
+                  label: Text(t.leaderboard_header_profile),
+                ),
+                FushiOutlinedButton.icon(
+                  key: const ValueKey<String>('leaderboard-header-friends'),
+                  onPressed: () => _push(const LeaderboardFriendsPage()),
+                  icon: const FushiIcon(FushiIcons.group),
+                  label: Text(t.leaderboard_header_friends),
+                ),
+                FushiOutlinedButton.icon(
+                  key: const ValueKey<String>('leaderboard-header-share'),
+                  onPressed: self == null
+                      ? null
+                      : () => unawaited(
+                          showLeaderboardShareSheet(
+                            context,
+                            initialWindow: _window,
+                          ),
+                        ),
+                  icon: const FushiIcon(FushiIcons.share),
+                  label: Text(t.leaderboard_header_share),
+                ),
+                FushiOutlinedButton.icon(
+                  onPressed: () => _push(const LeaderboardAccountPage()),
+                  icon: const FushiIcon(FushiIcons.account),
+                  label: Text(t.leaderboard_header_account),
+                ),
+              ],
             ),
           ],
-          <FushiToolbarItem>[
-            FushiToolbarItem(
-              key: const ValueKey<String>('leaderboard-header-account'),
-              icon: FushiIcons.settings,
-              label: t.leaderboard_header_account,
-              onPressed: () =>
-                  _push(LeaderboardAccountPage(syncError: _syncError)),
-            ),
-            FushiToolbarItem(
-              key: const ValueKey<String>('leaderboard-header-profile'),
-              icon: FushiIcons.person,
-              label: t.leaderboard_header_profile,
-              onPressed: selfId.isEmpty ? null : () => _openUser(selfId),
-            ),
-          ],
-        ],
-        overflow: <FushiToolbarItem>[
-          if (LeaderboardFeatures.friendsEnabled)
-            FushiToolbarItem(
-              key: const ValueKey<String>('leaderboard-header-friends'),
-              icon: FushiIcons.group,
-              label: t.leaderboard_header_friends,
-              onPressed: () => _push(const LeaderboardFriendsPage()),
-            ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildSummary(FushiDesignTokens tokens) => Padding(
-    padding: EdgeInsets.fromLTRB(
-      tokens.spacing.card,
-      tokens.spacing.card,
-      tokens.spacing.card,
-      0,
-    ),
-    child: LeaderboardCharsSummaryCard(
-      total: _summaryTotal,
-      week: _summaryWeek,
-      error: _summaryError,
-    ),
-  );
-
-  /// 后台同步失败：一行错误提示，点进账户页看同步卡（可重试 / 接管）。
-  Widget _buildSyncErrorRow(FushiDesignTokens tokens) {
-    final Color error = Theme.of(context).colorScheme.error;
+  Widget _buildSyncRow(FushiDesignTokens tokens, LeaderboardService service) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final LeaderboardLocalAccount? account = service.account;
+    final int? last = account?.lastSyncAt;
+    final String status = account != null && !account.uploadEnabled
+        ? t.leaderboard_sync_upload_off
+        : (last == null
+              ? t.leaderboard_sync_never
+              : t.leaderboard_sync_last(time: leaderboardDateTime(last)));
+    final bool blockedElsewhere = service.isUploadDevice == false;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.card,
@@ -585,18 +560,71 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
         0,
       ),
       child: FushiCard(
-        key: const ValueKey<String>('leaderboard-sync-error'),
-        onTap: () => _push(LeaderboardAccountPage(syncError: _syncError)),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            FushiIcon(FushiIcons.syncProblem, size: 20, color: error),
-            SizedBox(width: tokens.spacing.gap),
-            Expanded(
-              child: Text(
-                leaderboardSyncErrorText(_syncError!),
-                style: tokens.type.listSubtitle.copyWith(color: error),
-              ),
+            Row(
+              children: <Widget>[
+                const FushiIcon(FushiIcons.cloudSync, size: 20),
+                SizedBox(width: tokens.spacing.gap),
+                Expanded(
+                  child: Text(
+                    status,
+                    key: const ValueKey<String>('leaderboard-sync-status'),
+                    style: tokens.type.listSubtitle,
+                  ),
+                ),
+                FushiTextButton(
+                  key: const ValueKey<String>('leaderboard-sync-now'),
+                  onPressed:
+                      _syncing ||
+                          blockedElsewhere ||
+                          account?.uploadEnabled != true
+                      ? null
+                      : () => unawaited(_syncNow()),
+                  child: _syncing
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: FushiCircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(t.leaderboard_sync_now),
+                ),
+              ],
             ),
+            if (blockedElsewhere) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                t.leaderboard_sync_owned_elsewhere,
+                key: const ValueKey<String>('leaderboard-sync-elsewhere'),
+                style: tokens.type.listSubtitle,
+              ),
+              SizedBox(height: tokens.spacing.gap),
+              FushiFilledButton.tonalIcon(
+                key: const ValueKey<String>('leaderboard-sync-claim'),
+                onPressed: _syncing ? null : () => unawaited(_claim()),
+                icon: const FushiIcon(FushiIcons.swap),
+                label: Text(t.leaderboard_sync_claim_action),
+              ),
+            ],
+            if ((service.droppedForShelfLimit ?? 0) > 0) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                t.leaderboard_sync_shelf_limit(
+                  limit: kLeaderboardMaxShelfRows,
+                  count: service.droppedForShelfLimit!,
+                ),
+                key: const ValueKey<String>('leaderboard-sync-shelf-limit'),
+                style: tokens.type.listSubtitle,
+              ),
+            ],
+            if (_syncError != null) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                leaderboardSyncErrorText(_syncError!),
+                key: const ValueKey<String>('leaderboard-sync-error'),
+                style: tokens.type.metadata.copyWith(color: colors.error),
+              ),
+            ],
           ],
         ),
       ),
@@ -619,27 +647,23 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          if (LeaderboardFeatures.popularWorksEnabled) ...<Widget>[
-            LeaderboardChoiceRow<_BoardView>(
-              keyPrefix: 'leaderboard-view',
-              values: _BoardView.values,
-              selected: _view,
-              labelOf: (_BoardView v) => v == _BoardView.users
-                  ? t.leaderboard_view_users
-                  : t.leaderboard_view_works,
-              onSelected: (_BoardView v) => _select(() {
-                _view = v;
-                // 作品人气没有「字数」维度。
-                if (v == _BoardView.works &&
-                    _metric == LeaderboardMetric.chars) {
-                  _metric = LeaderboardMetric.book;
-                }
-              }),
-            ),
-            SizedBox(height: tokens.spacing.gap),
-          ],
-          if (_view == _BoardView.users &&
-              LeaderboardFeatures.friendsEnabled) ...<Widget>[
+          LeaderboardChoiceRow<_BoardView>(
+            keyPrefix: 'leaderboard-view',
+            values: _BoardView.values,
+            selected: _view,
+            labelOf: (_BoardView v) => v == _BoardView.users
+                ? t.leaderboard_view_users
+                : t.leaderboard_view_works,
+            onSelected: (_BoardView v) => _select(() {
+              _view = v;
+              // 作品人气没有「字数」维度。
+              if (v == _BoardView.works && _metric == LeaderboardMetric.chars) {
+                _metric = LeaderboardMetric.book;
+              }
+            }),
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          if (_view == _BoardView.users) ...<Widget>[
             LeaderboardChoiceRow<LeaderboardScope>(
               keyPrefix: 'leaderboard-scope',
               values: LeaderboardScope.values,
@@ -662,8 +686,8 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
           LeaderboardChoiceRow<LeaderboardMetric>(
             keyPrefix: 'leaderboard-metric',
             values: _view == _BoardView.users
-                ? kLeaderboardMetricOrder
-                : kLeaderboardMetricOrder
+                ? LeaderboardMetric.values
+                : LeaderboardMetric.values
                       .where(
                         (LeaderboardMetric m) => m != LeaderboardMetric.chars,
                       )
@@ -703,9 +727,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
 
   List<Widget> _buildBoard(FushiDesignTokens tokens) {
     if (_loading) {
-      return <Widget>[
-        const FushiLoadingView(),
-      ];
+      return <Widget>[const FushiLoadingView()];
     }
     if (_error != null) {
       return <Widget>[
@@ -757,29 +779,29 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
         FushiStaggeredEntrance(
           index: i + 3,
           child: FushiListItem(
-          key: ValueKey<String>('leaderboard-rank-${row.account.id}'),
-          leading: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              SizedBox(
-                width: 36,
-                child: Text(
-                  '${row.rank}',
-                  textAlign: TextAlign.center,
-                  style: tokens.type.listTitle,
+            key: ValueKey<String>('leaderboard-rank-${row.account.id}'),
+            leading: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                SizedBox(
+                  width: 36,
+                  child: Text(
+                    '${row.rank}',
+                    textAlign: TextAlign.center,
+                    style: tokens.type.listTitle,
+                  ),
                 ),
-              ),
-              SizedBox(width: tokens.spacing.gap),
-              LeaderboardAvatar(account: row.account),
-            ],
+                SizedBox(width: tokens.spacing.gap),
+                LeaderboardAvatar(account: row.account),
+              ],
+            ),
+            title: Text(row.account.tag),
+            trailing: Text(
+              leaderboardMetricValue(_metric, row.value),
+              style: tokens.type.listTitle,
+            ),
+            onTap: () => _openUser(row.account.id),
           ),
-          title: Text(row.account.tag),
-          trailing: Text(
-            leaderboardMetricValue(_metric, row.value),
-            style: tokens.type.listTitle,
-          ),
-          onTap: () => _openUser(row.account.id),
-        ),
         ),
       LeaderboardLoadMore(
         hasMore: _rankHasMore,

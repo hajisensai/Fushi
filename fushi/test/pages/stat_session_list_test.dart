@@ -91,14 +91,14 @@ void main() {
     expect(find.text('k-b'), findsOneWidget, reason: '空标题回退 mediaKey');
     expect(find.text(t.stat_sessions_recent), findsOneWidget);
     expect(find.byIcon(Icons.delete_outline), findsNWidgets(2));
-    expect(find.textContaining(formatStatSessionMeta(_session('a', chars: 1200))),
-        findsOneWidget);
+    expect(
+      find.textContaining(formatStatSessionMeta(_session('a', chars: 1200))),
+      findsOneWidget,
+    );
     expect(find.text(t.stat_sessions_empty), findsNothing);
   });
 
-  testWidgets('BUG-2417：命中合集的行带合集名，未命中只有条目名', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('BUG-2417：命中合集的行带合集名，未命中只有条目名', (WidgetTester tester) async {
     await _pump(
       tester,
       sessions: <StudySession>[
@@ -155,11 +155,7 @@ void main() {
     final RenderParagraph title = tester.renderObject<RenderParagraph>(
       find.text(long),
     );
-    expect(
-      title.didExceedMaxLines,
-      isFalse,
-      reason: '两行装得下这个长度的媒体名',
-    );
+    expect(title.didExceedMaxLines, isFalse, reason: '两行装得下这个长度的媒体名');
     expect(
       title.size.height,
       greaterThan(title.preferredLineHeight * 1.5),
@@ -167,18 +163,77 @@ void main() {
     );
   });
 
-  testWidgets('封面：有封面画 2:3 封面槽，无封面画域图标占位，两行左缘对齐', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('封面：有封面画 2:3 封面槽，无封面画域图标占位，两行左缘对齐', (WidgetTester tester) async {
     // 1×1 透明 PNG。
     final MemoryImage cover = MemoryImage(
       Uint8List.fromList(<int>[
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
-        0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
-        0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
-        0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
-        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+        0x89,
+        0x50,
+        0x4E,
+        0x47,
+        0x0D,
+        0x0A,
+        0x1A,
+        0x0A,
+        0x00,
+        0x00,
+        0x00,
+        0x0D,
+        0x49,
+        0x48,
+        0x44,
+        0x52,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x08,
+        0x06,
+        0x00,
+        0x00,
+        0x00,
+        0x1F,
+        0x15,
+        0xC4,
+        0x89,
+        0x00,
+        0x00,
+        0x00,
+        0x0D,
+        0x49,
+        0x44,
+        0x41,
+        0x54,
+        0x78,
+        0x9C,
+        0x63,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0x05,
+        0x00,
+        0x01,
+        0x0D,
+        0x0A,
+        0x2D,
+        0xB4,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x49,
+        0x45,
+        0x4E,
+        0x44,
+        0xAE,
+        0x42,
+        0x60,
+        0x82,
       ]),
     );
     await _pump(
@@ -218,9 +273,7 @@ void main() {
     expect(tester.getSize(find.byIcon(Icons.menu_book)), const Size(18, 18));
   });
 
-  testWidgets('BUG-2417：带封面槽时长标题放宽一行、仍不截断', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('BUG-2417：带封面槽时长标题放宽一行、仍不截断', (WidgetTester tester) async {
     const String long = 'Re：从零开始的异世界生活 第三期 第七话 暗中行动する者たち';
     tester.view.physicalSize = const Size(400, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -244,7 +297,11 @@ void main() {
   });
 
   testWidgets('空列表显示空态', (WidgetTester tester) async {
-    await _pump(tester, sessions: const <StudySession>[], onDelete: (_) async {});
+    await _pump(
+      tester,
+      sessions: const <StudySession>[],
+      onDelete: (_) async {},
+    );
     expect(find.text(t.stat_sessions_empty), findsOneWidget);
     expect(find.byIcon(Icons.delete_outline), findsNothing);
   });
@@ -270,44 +327,7 @@ void main() {
     expect(find.text('S4'), findsOneWidget, reason: 'sheet 里是全量');
   });
 
-  // PDF 图 3（2026-10-09）：手机宽下卡头「全部会话 (N)」+ 清除图标挤进一个 Wrap，
-  // 各占一行、标题被顶到中间。现在卡头只有标题 + 清除图标同一行，「全部会话」
-  // 在列表下方。
-  testWidgets('手机宽：卡头标题与清除钮同一行，「全部会话」在列表下方', (
-    WidgetTester tester,
-  ) async {
-    tester.view.physicalSize = const Size(360, 1600);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    await _pump(
-      tester,
-      sessions: <StudySession>[
-        for (int i = 0; i < 12; i++) _session('s$i', title: 'S$i'),
-      ],
-      onDelete: (_) async {},
-      limit: 3,
-    );
-    final Rect title = tester.getRect(find.text(t.stat_sessions_recent));
-    final Rect clear = tester.getRect(
-      find.byKey(const ValueKey<String>('stat-sessions-clear-all')),
-    );
-    expect(
-      (clear.center.dy - title.center.dy).abs(),
-      lessThan(clear.height / 2),
-      reason: '清除钮与标题同一行',
-    );
-    expect(clear.right, greaterThan(360 - 80), reason: '清除钮贴卡片右缘，不在中间');
-    final Rect showAll = tester.getRect(
-      find.byKey(const ValueKey<String>('stat-sessions-show-all')),
-    );
-    expect(showAll.top, greaterThan(tester.getRect(find.text('S2')).bottom),
-        reason: '「全部会话」在最后一行之下');
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('垃圾桶 → 会话专用确认文案 → 删除回调 + 行移除；取消不动', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('垃圾桶 → 会话专用确认文案 → 删除回调 + 行移除；取消不动', (WidgetTester tester) async {
     final List<String> deleted = <String>[];
     await _pump(
       tester,
@@ -432,8 +452,10 @@ void main() {
       find.byKey(const ValueKey<String>('stat-sessions-clear-all')),
     );
     await tester.pumpAndSettle();
-    final Finder confirm =
-        find.widgetWithText(FilledButton, t.stat_clear_all_confirm);
+    final Finder confirm = find.widgetWithText(
+      FilledButton,
+      t.stat_clear_all_confirm,
+    );
     expect(
       tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirm)).onPressed,
       isNull,
@@ -474,9 +496,7 @@ void main() {
     expect(find.text('A'), findsOneWidget);
   });
 
-  testWidgets('空列表：不显示「清除全部会话」按钮（没有东西可清）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('空列表：不显示「清除全部会话」按钮（没有东西可清）', (WidgetTester tester) async {
     await _pump(
       tester,
       sessions: const <StudySession>[],

@@ -71,19 +71,30 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
   Map<String, int> _primaryCollectionByEntry = <String, int>{};
   Map<int, String> _collectionNamesById = <int, String>{};
 
+  /// 游戏域计数面分桶（查词 / 制卡 / 收藏词 / 收藏句）。本页此前一个都没有——
+  /// 不是「忘了显示」：galgame 会话里的查词与制卡以前**全被记成 book 来源**，
+  /// 游戏域根本没有这四个数字可取，它们错误地堆在阅读 tab 里。写入面分流补上
+  /// `game` 来源之后（`lookup/overlay_stat_source.dart`），这里与阅读 / 观看两个
+  /// tab 的时段卡逐行同形，总览的跨域数字恒等于三个 tab 之和。
+  ///
+  /// 历史数据不回填：旧行的 source_type 已经是 'book' 落库，且不带任何游戏身份，
+  /// 没有可靠判据能把它们认回来。所以升级后这四个数字从 0 开始长。
+  StatActivityBuckets _lookup = StatActivityBuckets();
+  StatActivityBuckets _mined = StatActivityBuckets();
+  StatActivityBuckets _favorited = StatActivityBuckets();
+  StatActivityBuckets _favoritedSentences = StatActivityBuckets();
+
   GalgameRepository get _repo => appModelNoUpdate.galgameRepo;
 
   /// 范围选择：统计中心传进来的共享那份，或独立页自持的一份。
   late final ValueNotifier<StatRangeSelection> _rangeSelection =
       widget.rangeSelection ??
-          ValueNotifier<StatRangeSelection>(const StatRangeSelection());
+      ValueNotifier<StatRangeSelection>(const StatRangeSelection());
 
   /// 游戏域逐日合计（范围图表 / 所选范围卡 / 学习日历共用）。
   Map<String, StatDayData> _byDay = <String, StatDayData>{};
 
-  /// 游戏域计数面事件（查词 / 制卡 / 收藏词 / 收藏句），所选范围卡按范围求和。
-  /// galgame 会话里的查词与制卡以前全被记成 book 来源，写入面分流补上 `game`
-  /// 来源之后（`lookup/overlay_stat_source.dart`）才有；历史数据不回填。
+  /// 游戏域查词 / 制卡事件，所选范围卡按范围求和。
   List<(String, int)> _lookupEvents = const <(String, int)>[];
   List<(String, int)> _minedEvents = const <(String, int)>[];
   List<(String, int)> _favoritedEvents = const <(String, int)>[];
@@ -91,10 +102,10 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
 
   /// 当前范围：共享选择 × 本轮今日 × 游戏域最早有数据的一天。
   StatRange get _range => StatRange.resolve(
-        _rangeSelection.value,
-        todayKey: _window.todayKey,
-        earliestKey: earliestStatDateKey(_byDay.keys),
-      );
+    _rangeSelection.value,
+    todayKey: _window.todayKey,
+    earliestKey: earliestStatDateKey(_byDay.keys),
+  );
 
   @override
   void initState() {
@@ -184,15 +195,28 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
         includeCounters: true,
       );
       final StatCounterFacts counterFacts = facts.counters;
-      _lookupEvents =
-          counterFacts.lookupEvents(source: StatSourceKind.game).toList();
-      _minedEvents =
-          counterFacts.minedEvents(source: StatSourceKind.game).toList();
-      _favoritedEvents =
-          counterFacts.favoriteWordEvents(source: StatSourceKind.game).toList();
+      _lookupEvents = counterFacts
+          .lookupEvents(source: StatSourceKind.game)
+          .toList();
+      _minedEvents = counterFacts
+          .minedEvents(source: StatSourceKind.game)
+          .toList();
+      _lookup = bucketActivityByDateKey(_lookupEvents, now);
+      _favoritedEvents = counterFacts
+          .favoriteWordEvents(source: StatSourceKind.game)
+          .toList();
       _favoritedSentenceEvents = counterFacts
           .favoriteSentenceEvents(source: StatSourceKind.game)
           .toList();
+      _mined = bucketActivityByDateKey(_minedEvents, now);
+      _favorited = bucketActivityByDateKey(
+        counterFacts.favoriteWordEvents(source: StatSourceKind.game),
+        now,
+      );
+      _favoritedSentences = bucketActivityByDateKey(
+        counterFacts.favoriteSentenceEvents(source: StatSourceKind.game),
+        now,
+      );
       _gameFacts = facts.dailyGames.toList();
       _byDay = sumStatDaysByKey(_gameFacts);
       _sessions = facts.sessions.where((StudySession s) => s.isGame).toList();
@@ -209,13 +233,31 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
     if (mounted) setState(() => _loading = false);
   }
 
-  /// 统计设置（范围条行尾 / 空数据态顶部）：清空本页这一域（2026-10-09 起目标 /
-  /// 刷新 / 清空 / 重置时刻四颗页头按钮收进这里；目标改由首页每日目标卡进入）。
-  StatTabSettings get _statSettings =>
-      StatTabSettings(onClearAll: _confirmAndClearAll, enabled: !_loading);
-
   @override
   Widget build(BuildContext context) {
+    // 四个 tab 的动作行逐颗同形（用户 2026-09-10「所有界面都要统一」）：
+    // 目标 → 刷新 → 清空全部统计。目标是**跨域的每日学习目标**（同一份表单、同一个
+    // 持久化值），本页此前没有入口，切到这个 tab 目标按钮就凭空消失。
+    final List<Widget> actions = <Widget>[
+      FushiIconButton(
+        icon: Icons.flag_outlined,
+        tooltip: t.stat_goal_set,
+        enabled: !_loading,
+        onTap: _editGoals,
+      ),
+      FushiIconButton(
+        icon: Icons.refresh,
+        tooltip: t.stat_refresh,
+        enabled: !_loading,
+        onTap: _load,
+      ),
+      FushiIconButton(
+        icon: Icons.delete_sweep_outlined,
+        tooltip: t.stat_clear_all,
+        enabled: !_loading,
+        onTap: _confirmAndClearAll,
+      ),
+    ];
     final Widget body = buildStatPageBody(
       loading: _loading,
       error: _error,
@@ -224,36 +266,32 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
       errorBuilder: (String error) => buildError(error: error),
       contentBuilder: _buildContent,
     );
-    if (widget.embedded) return buildEmbeddedStatTab(context, body);
+    if (widget.embedded) return buildEmbeddedStatTab(context, actions, body);
     return FushiPageScaffold(
       title: t.game_statistics,
+      actions: actions,
       body: body,
     );
   }
 
   /// 骨架与总览 / 阅读 / 观看 tab 同一套（2026-10 统计中心重设计，
-  /// [StatDashboardBody]；2026-10-09 精简）：学习日历（含「过去一周」）→ 趋势栏
-  /// （时间窗口分段 + 日期翻页 → 范围时长图 → 所选范围卡）→ 明细栏（最近沉浸 →
-  /// 按游戏列表）。宽屏两栏，窄屏单栏。
+  /// [StatDashboardBody]）：关键指标区（四张指标卡）→ 趋势栏（时间窗口分段 +
+  /// 日期翻页 → 范围时长图 → 所选范围卡 → 学习日历）→ 明细栏（时段卡 → 最近
+  /// 会话 → 按游戏列表）。宽屏两栏，窄屏单栏。
   Widget _buildContent() {
-    final Widget hero = buildStatRangeCalendarSection(
-      context,
-      byDay: _byDay,
-      now: _window.now,
-      weekKeys: _window.lastDayKeys(7),
-      onDaySelected: (String dateKey) => _rangeSelection.value =
-          StatRangeSelection(mode: StatRangeMode.day, anchorKey: dateKey),
+    final Widget hero = StatHero(
+      tiles: buildStatKpiTiles(context, computeStatKpis(_gameFacts, _window)),
     );
     // counters 也算有数据（与视频页 review4-6 同一个坑）：只在游戏域查过词 /
     // 制过卡而还没玩满一次会话时，四个计数明明有数却显示空状态。
-    final bool empty = _aggregate.allSessions == 0 &&
-        _lookupEvents.isEmpty &&
-        _minedEvents.isEmpty &&
-        _favoritedEvents.isEmpty &&
-        _favoritedSentenceEvents.isEmpty;
+    final bool empty =
+        _aggregate.allSessions == 0 &&
+        _lookup.all == 0 &&
+        _mined.all == 0 &&
+        _favorited.all == 0 &&
+        _favoritedSentences.all == 0;
     if (empty) {
       return StatDashboardBody(
-        header: buildStatSettingsHeader(_statSettings),
         hero: hero,
         emptyState: StatDashboardEmpty(message: t.game_stat_no_sessions),
         tail: buildStatTailSliver(context),
@@ -265,6 +303,8 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
       tail: buildStatTailSliver(context),
       trend: _buildRangeSection(),
       details: <Widget>[
+        StatSectionHeader(title: t.stat_overview_periods),
+        _buildSummaryCards(),
         buildStatSessionSection(
           context,
           sessions: _sessions,
@@ -342,23 +382,15 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
     if (deleted && mounted) await _load();
   }
 
-  /// 范围区块：范围条（时间窗口分段 + 日期翻页）→ 范围时长图 → 所选范围卡
-  /// （与总览 / 阅读 / 观看 tab 同序；学习日历在顶部）。
+  /// 范围区块：范围条（时间窗口分段 + 日期翻页）→ 范围时长图 → 所选范围卡 →
+  /// 学习日历（与总览 / 阅读 / 观看 tab 同序）。
   List<Widget> _buildRangeSection() {
     final StatRange range = _range;
-    int sessions = 0;
-    for (final StudySession s in _sessions) {
-      final String key = FushiDatabase.statDateKeyOf(
-        DateTime.fromMillisecondsSinceEpoch(s.startAt),
-      );
-      if (range.contains(key)) sessions++;
-    }
     return <Widget>[
       StatRangeBar(
         range: range,
         onChanged: (StatRangeSelection s) => _rangeSelection.value = s,
         trailing: StatRangeActions(
-          settings: _statSettings,
           onOpenDetail: () => unawaited(_showRangeDetail(range)),
         ),
       ),
@@ -367,18 +399,138 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
         context,
         range,
         _byDay,
-        extraLines: <StatSummaryLine>[
-          StatSummaryLine(label: t.game_stat_sessions, value: '$sessions'),
-          ...buildStatRangeCounterLines(
-            range,
-            lookups: _lookupEvents,
-            mined: _minedEvents,
-            favorited: _favoritedEvents,
-            favoritedSentences: _favoritedSentenceEvents,
-          ),
-        ],
+        extraLines: buildStatRangeCounterLines(
+          range,
+          lookups: _lookupEvents,
+          mined: _minedEvents,
+          favorited: _favoritedEvents,
+          favoritedSentences: _favoritedSentenceEvents,
+        ),
+      ),
+      buildStatRangeCalendarSection(
+        context,
+        byDay: _byDay,
+        now: _window.now,
+        onDaySelected: (String dateKey) => _rangeSelection.value =
+            StatRangeSelection(mode: StatRangeMode.day, anchorKey: dateKey),
       ),
     ];
+  }
+
+  Widget _buildSummaryCards() {
+    // 时段谓词与聚合同一个窗口（BUG-2219），跨午夜靠 [_midnightReload] 重聚合。
+    final StatWindow w = _window;
+    return buildStatPeriodSummaryGrid(context, <StatPeriodSummary>[
+      _periodSummary(
+        t.stat_today,
+        _aggregate.todayMs,
+        _aggregate.todaySessions,
+        contains: w.isToday,
+        pick: (StatActivityBuckets b) => b.today,
+      ),
+      _periodSummary(
+        t.stat_this_week,
+        _aggregate.weekMs,
+        _aggregate.weekSessions,
+        contains: w.inWeek,
+        pick: (StatActivityBuckets b) => b.week,
+      ),
+      _periodSummary(
+        t.stat_this_month,
+        _aggregate.monthMs,
+        _aggregate.monthSessions,
+        contains: w.inMonth,
+        pick: (StatActivityBuckets b) => b.month,
+      ),
+      _periodSummary(
+        t.stat_all_time,
+        _aggregate.allMs,
+        _aggregate.allSessions,
+        contains: (String _) => true,
+        pick: (StatActivityBuckets b) => b.all,
+      ),
+    ]);
+  }
+
+  /// [pick] = 这张卡取分桶里的哪一格（今日 / 本周 / 本月 / 全部），与 [contains]
+  /// 的窗口一一对应：四个计数面只分一次桶，四张卡各取一格（与总览 tab 同形）。
+  StatPeriodSummary _periodSummary(
+    String label,
+    int ms,
+    int sessions, {
+    required bool Function(String dateKey) contains,
+    required int Function(StatActivityBuckets) pick,
+  }) {
+    // 字数（hook 文本）现算：游戏聚合只有时长与次数，字数在事实面 [_gameFacts] 上，
+    // 与总览 tab 从 _daily 求和是同一口径。四张同形卡横过去时不能只有游戏少一行。
+    int chars = 0;
+    for (final StatFact f in _gameFacts) {
+      if (contains(f.dateKey)) chars += f.chars;
+    }
+    return StatPeriodSummary(
+      label: label,
+      primaryValue: formatStatTime(ms),
+      onTap: () => unawaited(_showPeriodDetail(label, contains)),
+      lines: <StatSummaryLine>[
+        StatSummaryLine(value: formatStatChars(chars)),
+        StatSummaryLine(label: t.game_stat_sessions, value: '$sessions'),
+        StatSummaryLine(label: t.stat_lookup, value: '${pick(_lookup)}'),
+        StatSummaryLine(label: t.stat_mined, value: '${pick(_mined)}'),
+        StatSummaryLine(label: t.stat_favorited, value: '${pick(_favorited)}'),
+        StatSummaryLine(
+          label: t.stat_favorited_sentence,
+          value: '${pick(_favoritedSentences)}',
+        ),
+      ],
+    );
+  }
+
+  /// 时段卡 → 时段明细 sheet（阶段 1 统一组件；本页是游戏统计，明细只吃游戏域
+  /// 切片 [_gameFacts]）。条目点击进游戏详情页（不静默拉起游戏，BUG-1111 同一
+  /// 约定）；已删游戏点了没有目标页，原地不动。
+  Future<void> _showPeriodDetail(
+    String label,
+    bool Function(String dateKey) contains,
+  ) async {
+    final FushiDatabase db = appModelNoUpdate.database;
+    final bool deleted = await showStatPeriodDetailSheet(
+      context,
+      periodLabel: label,
+      contains: contains,
+      facts: _gameFacts,
+      resolvers: StatPeriodDetailResolvers(
+        titleOf: (StatFact f) {
+          final GalgameEntry? entry = findGalgameForActivity(
+            _games,
+            mediaKey: f.mediaKey,
+            title: f.title,
+          );
+          final String name = displayTitleForGame(
+            entry: entry,
+            rawTitle: f.title,
+          );
+          return name.isEmpty ? f.mediaKey : name;
+        },
+        collectionOf: (StatFact f) => f.mediaKey.isEmpty
+            ? null
+            : statCollectionName(
+                MediaKind.game.compositeKey(f.mediaKey),
+                _primaryCollectionByEntry,
+                _collectionNamesById,
+              ),
+        onEntryTap: (String mediaKind, String mediaKey) async {
+          for (final GalgameEntry game in _games) {
+            if (game.id == mediaKey) {
+              await _openGame(game);
+              return;
+            }
+          }
+        },
+        onEntryDelete: (StatPeriodEntryTarget t) =>
+            deleteStatPeriodEntry(db, t),
+      ),
+    );
+    if (deleted && mounted) await _load();
   }
 
   /// 「按游戏」一行：三域共用的 [buildStatMediaRow]（本行就是它的原型）。右侧
@@ -400,10 +552,11 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
       title: row.title,
       meta: row.chars > 0
           ? '${formatStatChars(row.chars)} · '
-              '${t.game_stat_last_played}: $lastPlayed'
+                '${t.game_stat_last_played}: $lastPlayed'
           : '${t.game_stat_last_played}: $lastPlayed',
-      meta2:
-          game == null ? null : '${t.game_stat_sessions}: ${game.sessionCount}',
+      meta2: game == null
+          ? null
+          : '${t.game_stat_sessions}: ${game.sessionCount}',
       trailing: formatStatTime(row.ms),
       onTap: game == null ? null : () => unawaited(_openGame(game)),
     );
@@ -432,14 +585,14 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
   /// 会话行封面：与 [_sessionTitle] 同一次库内查找（游戏已删则无封面画占位），
   /// 与「按游戏」行同一条游戏封面解析链。
   ImageProvider? _sessionCover(StudySession s) => resolveMediaCoverImage(
-        kind: MediaKind.game,
-        localPath: findGalgameForActivity(
-          _games,
-          mediaKey: s.mediaKey,
-          title: s.title,
-        )?.coverPath,
-        decodeWidth: kActivityCoverDecodePixelWidth,
-      );
+    kind: MediaKind.game,
+    localPath: findGalgameForActivity(
+      _games,
+      mediaKey: s.mediaKey,
+      title: s.title,
+    )?.coverPath,
+    decodeWidth: kActivityCoverDecodePixelWidth,
+  );
 
   /// 会话行的所属合集名（BUG-2417：同一系列的分作单看名字认不出属于哪套）。
   /// 'game|<galgames.id>' 键契约，与时段明细 sheet 的 collectionOf 同一映射。
@@ -455,6 +608,13 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
   Future<void> _deleteSession(StudySession s) async {
     await deleteStudySession(appModelNoUpdate.database, s);
     if (mounted) await _load();
+  }
+
+  /// 目标编辑：与阅读 tab、总览 tab 同一份表单、同一个持久化目标（每日学习目标是
+  /// **跨域**的一个值，不是每个域各一份）。
+  Future<void> _editGoals() async {
+    final bool saved = await showStatGoalEditDialog(context, appModelNoUpdate);
+    if (saved && mounted) setState(() {});
   }
 
   /// 改一次会话（日期 / 字数）：走会话编辑的唯一入口（先在 StudyClock 上退役 uid

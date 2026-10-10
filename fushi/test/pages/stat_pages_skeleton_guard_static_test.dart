@@ -7,13 +7,14 @@ import '../helpers/source_guard.dart';
 /// 三个域统计页与总览同一骨架（2026-10 统计中心重设计，`StatDashboardBody`）的
 /// 源码守卫：
 ///
-///   学习日历（含「过去一周」火苗，2026-10-09 取代目标卡 + 四张指标卡）→ 趋势栏
-///   `_buildRangeSection()`（范围条 → 范围时长图 → 所选范围卡）→ 明细栏：最近沉浸
-///   `buildStatSessionSection(` → 按媒体列表（每行 `buildStatMediaRow(`）。时段卡
-///   （「时段明细」）2026-10-09 删除——与所选范围卡重复。
+///   关键指标区 `StatHero(` → 趋势栏 `_buildRangeSection()`（范围条 → 范围时长图
+///   → 所选范围卡 → 学习日历，2026-09-28 取代写死的近 30 天图）→ 明细栏：时段卡
+///   `_buildSummaryCards()` → 最近会话 `buildStatSessionSection(` → 按媒体列表
+///   （每行 `buildStatMediaRow(`）。
 ///
-/// 阅读页「分析」折叠（`StatAnalysisFold(`）接在趋势栏末尾，视频页把小时分布折进
-/// 折叠区；三页的 `_buildContent` 里不许再有各自手搓的 tile / 进度条排行。
+/// 阅读页的目标面板是指标区的 lead、「分析」折叠（`StatAnalysisFold(`）接在趋势栏
+/// 末尾，视频页把小时分布折进折叠区；三页的 `_buildContent` 里不许再有各自手搓的
+/// tile / 进度条排行。
 const Map<String, String> _pages = <String, String>{
   'reading': 'lib/src/pages/implementations/reading_statistics_page.dart',
   'video': 'lib/src/pages/implementations/video_statistics_page.dart',
@@ -43,35 +44,37 @@ void main() {
       );
       final String content = methodBody(src, 'Widget _buildContent()');
 
-      test('骨架顺序：学习日历 → 范围区块 → 最近沉浸 → 按媒体列表', () {
-        expect(content.contains('StatDashboardBody('), isTrue,
-            reason: '${e.key} 不走共享骨架');
-        final int calendar = src.contains('Widget _buildCalendarSection()')
-            ? content.indexOf('_buildCalendarSection()')
-            : content.indexOf('buildStatRangeCalendarSection(');
+      test('骨架顺序：指标区 → 范围区块 → 时段卡 → 最近会话 → 按媒体列表', () {
+        expect(
+          content.contains('StatDashboardBody('),
+          isTrue,
+          reason: '${e.key} 不走共享骨架',
+        );
+        final int hero = content.indexOf('StatHero(');
         final int range = content.indexOf('_buildRangeSection()');
+        final int cards = content.indexOf('_buildSummaryCards()');
         final int sessions = content.indexOf('buildStatSessionSection(');
         final int list = content.indexOf('SliverList(');
-        expect(calendar, isNonNegative);
-        expect(range, greaterThan(calendar));
-        expect(sessions, greaterThan(range));
+        expect(hero, isNonNegative);
+        expect(range, greaterThan(hero));
+        expect(cards, greaterThan(range));
+        expect(sessions, greaterThan(cards));
         expect(list, greaterThan(sessions));
-        for (final String gone in <String>[
-          'StatHero(',
-          'StatGoalPanel(',
-          '_buildSummaryCards()',
-          'buildStatKpiTiles(',
-        ]) {
-          expect(content.contains(gone), isFalse,
-              reason: '${e.key} 还留着 $gone（2026-10-09 已删）');
-        }
+        expect(
+          content.contains('buildStatKpiTiles(context, computeStatKpis('),
+          isTrue,
+          reason: '${e.key} 的指标卡要走共享四卡',
+        );
       });
 
-      test('范围区块齐全：范围条 / 范围时长图 / 所选范围卡；不再写死近 30 天', () {
-        final String range =
-            methodBody(src, 'List<Widget> _buildRangeSection()');
+      test('范围区块齐全：范围条 / 学习日历 / 范围时长图 / 所选范围卡；不再写死近 30 天', () {
+        final String range = methodBody(
+          src,
+          'List<Widget> _buildRangeSection()',
+        );
         for (final String block in <String>[
           'StatRangeBar(',
+          'buildStatRangeCalendarSection(',
           'buildStatRangeChartSection(',
           'buildStatRangeSummary(',
         ]) {
@@ -95,16 +98,18 @@ void main() {
     });
   }
 
-  test('阅读页：「分析」折叠在趋势栏末尾；折叠里装齐五个下沉区块', () {
+  test('阅读页：目标面板在指标区、「分析」折叠在趋势栏末尾；折叠里装齐五个下沉区块', () {
     final String src = maskComments(
       File(_pages['reading']!).readAsStringSync().replaceAll('\r\n', '\n'),
     );
     final String content = methodBody(src, 'Widget _buildContent()');
+    final int goal = content.indexOf('StatGoalPanel(');
     final int range = content.indexOf('_buildRangeSection()');
     final int fold = content.indexOf('_buildAnalysisFold()');
     final int details = content.indexOf('details:');
     final int header = content.indexOf('_buildByBookHeader()');
-    expect(range, isNonNegative);
+    expect(goal, isNonNegative);
+    expect(range, greaterThan(goal));
     expect(fold, greaterThan(range));
     expect(details, greaterThan(fold), reason: '折叠在趋势栏，不在明细栏');
     expect(header, greaterThan(details));

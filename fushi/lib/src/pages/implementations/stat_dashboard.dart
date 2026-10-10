@@ -1,9 +1,14 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/pages/implementations/stat_ring.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/pages/implementations/stat_summary.dart';
+import 'package:fushi/src/pages/implementations/stat_trends.dart';
+import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_engine/stats/stat_facts.dart';
 
 /// 统计中心的统一版式件（2026-10 重设计）：总览与阅读 / 观看 / 游戏三个域页
 /// 共用同一套页面骨架、关键指标卡、目标面板、区块小标题与空数据态——各页只
@@ -216,6 +221,121 @@ class StatSectionHeader extends StatelessWidget {
   }
 }
 
+/// 关键指标（今日 / 本周时长、今日 / 本周字数、连续天数、近 7 日活跃天数）。
+@immutable
+class StatKpis {
+  const StatKpis({
+    required this.todayMs,
+    required this.weekMs,
+    required this.prevWeekMs,
+    required this.todayChars,
+    required this.weekChars,
+    required this.streak,
+    required this.activeDaysLast7,
+  });
+
+  final int todayMs;
+  final int weekMs;
+  final int prevWeekMs;
+  final int todayChars;
+  final int weekChars;
+  final int streak;
+  final int activeDaysLast7;
+}
+
+/// 纯函数：关键指标。窗口一律出自 [w]（本轮加载的唯一窗口，BUG-2219），
+/// 连续天数与阅读页同一个 [computeReadingStreak]（喂的是本页日面的活跃日）。
+/// 总览喂筛选后的跨域日面，三个域页喂各自域的日面——同一函数、同一口径。
+StatKpis computeStatKpis(Iterable<StatFact> daily, StatWindow w) {
+  int todayMs = 0;
+  int weekMs = 0;
+  int prevWeekMs = 0;
+  int todayChars = 0;
+  int weekChars = 0;
+  final Set<String> active = <String>{};
+  for (final StatFact f in daily) {
+    if (f.ms <= 0 && f.chars <= 0) continue;
+    active.add(f.dateKey);
+    if (w.isToday(f.dateKey)) {
+      todayMs += f.ms;
+      todayChars += f.chars;
+    }
+    if (w.inWeek(f.dateKey)) {
+      weekMs += f.ms;
+      weekChars += f.chars;
+    }
+    if (w.inPrevWeek(f.dateKey)) prevWeekMs += f.ms;
+  }
+  int activeDaysLast7 = 0;
+  for (final String key in w.lastDayKeys(7)) {
+    if (active.contains(key)) activeDaysLast7++;
+  }
+  return StatKpis(
+    todayMs: todayMs,
+    weekMs: weekMs,
+    prevWeekMs: prevWeekMs,
+    todayChars: todayChars,
+    weekChars: weekChars,
+    streak: computeReadingStreak(active, w.now),
+    activeDaysLast7: activeDaysLast7,
+  );
+}
+
+/// 纯函数：本周计入每周目标的字数——与阅读页周目标同口径（学习域日面在
+/// [w] 本周内的字数和；日分子见 `studyGoalCharsForDay`，BUG-1993）。
+int studyGoalCharsForWeek(Iterable<StatFact> daily, StatWindow w) {
+  int total = 0;
+  for (final StatFact f in daily) {
+    if (w.inWeek(f.dateKey)) total += f.chars;
+  }
+  return total;
+}
+
+/// 四张标准指标卡（今日时长 / 本周时长（较上周）/ 今日字数（本周）/ 连续天数
+/// （近 7 日活跃））。四个统计页的指标区都从这里出，卡序、图标、说明行一致。
+List<Widget> buildStatKpiTiles(BuildContext context, StatKpis kpis) {
+  final StatChartColors colors = statChartColorsOf(context);
+  final String weekDelta = formatWeekOverWeekDelta(
+    kpis.weekMs,
+    kpis.prevWeekMs,
+  );
+  final Color? weekDeltaColor = kpis.prevWeekMs == 0
+      ? null
+      : (kpis.weekMs >= kpis.prevWeekMs ? colors.up : colors.down);
+  return <Widget>[
+    StatKpiTile(
+      key: const ValueKey<String>('stat-kpi-today-time'),
+      icon: FushiIcons.calendar,
+      label: t.stat_overview_today_time,
+      value: formatStatTime(kpis.todayMs),
+    ),
+    StatKpiTile(
+      key: const ValueKey<String>('stat-kpi-week-time'),
+      icon: FushiIcons.calendar,
+      label: t.stat_overview_week_time,
+      value: formatStatTime(kpis.weekMs),
+      caption: t.stat_overview_vs_last_week(delta: weekDelta),
+      captionColor: weekDeltaColor,
+    ),
+    StatKpiTile(
+      key: const ValueKey<String>('stat-kpi-today-chars'),
+      icon: FushiIcons.language,
+      label: t.stat_overview_today_chars,
+      value: formatStatChars(kpis.todayChars),
+      caption: t.stat_overview_week_chars(
+        value: formatStatChars(kpis.weekChars),
+      ),
+    ),
+    StatKpiTile(
+      key: const ValueKey<String>('stat-kpi-streak'),
+      icon: FushiIcons.streak,
+      label: t.stat_streak,
+      value: t.stat_format_days(n: kpis.streak),
+      caption: t.stat_overview_active_days(n: kpis.activeDaysLast7),
+    ),
+  ];
+}
+
 /// 关键指标区：可选的 [lead]（目标面板）+ 指标卡 [tiles]。
 ///
 /// 宽屏（≥ [kStatHeroWideMinWidth]）：有 [lead] 时 lead : 2×2 卡 = 2 : 3 并排，
@@ -423,6 +543,203 @@ class StatIconBadge extends StatelessWidget {
         shape: BoxShape.circle,
       ),
       child: FushiIcon(icon, size: 18, color: color),
+    );
+  }
+}
+
+/// 目标面板（指标区的 lead）：设了目标 = 环形进度（进场时弧从 0 长到当前值）+
+/// 进度文案，另设了每周目标时下面多一条周进度条；都没设 = 引导文案。整卡可点进
+/// 目标编辑（与页头旗标按钮同一个入口）。
+///
+/// 环优先画每日目标；只设了每周目标时环画每周。分子由调用方传入（学习域
+/// `studyGoalCharsForDay` 口径，BUG-1993），面板不重算。
+class StatGoalPanel extends StatelessWidget {
+  const StatGoalPanel({
+    required this.goalChars,
+    required this.progressChars,
+    required this.onTap,
+    super.key,
+    this.weeklyGoalChars = 0,
+    this.weeklyProgressChars = 0,
+  });
+
+  /// 每日目标字数；≤ 0 = 未设。
+  final int goalChars;
+
+  /// 今日计入目标的字数。
+  final int progressChars;
+
+  /// 每周目标字数；≤ 0 = 未设。
+  final int weeklyGoalChars;
+
+  /// 本周计入目标的字数。
+  final int weeklyProgressChars;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final StatChartColors colors = statChartColorsOf(context);
+    final Widget body;
+    if (goalChars <= 0 && weeklyGoalChars <= 0) {
+      body = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          StatIconBadge(icon: FushiIcons.flag, color: colors.series),
+          SizedBox(width: tokens.spacing.card),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  t.stat_overview_goal_unset,
+                  style: statSectionTitleStyle(context),
+                ),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  t.stat_overview_goal_unset_hint,
+                  style: tokens.type.metadata.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                SizedBox(height: tokens.spacing.gap),
+                Text(
+                  t.stat_goal_set,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: colors.series,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    } else {
+      final bool daily = goalChars > 0;
+      final int goal = daily ? goalChars : weeklyGoalChars;
+      final int progress = daily ? progressChars : weeklyProgressChars;
+      final String title = daily ? t.stat_goal_daily : t.stat_goal_weekly;
+      final double fraction = (progress / goal).clamp(0.0, 1.0);
+      final bool reached = progress >= goal;
+      final Color ringColor = reached ? colors.reached : colors.series;
+      body = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          StatChartEntrance(
+            replayKey: fraction,
+            builder: (BuildContext context, double p) => StatRing(
+              fraction: fraction * p,
+              color: ringColor,
+              trackColor: ringColor.withValues(alpha: 0.16),
+              value: '${(fraction * 100 * p).round()}%',
+              caption: title,
+              size: 104,
+              strokeWidth: 10,
+            ),
+          ),
+          SizedBox(width: tokens.spacing.card),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(title, style: statSectionTitleStyle(context)),
+                SizedBox(height: tokens.spacing.gap / 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    t.stat_goal_progress(read: progress, goal: goal),
+                    maxLines: 1,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                ),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  reached
+                      ? t.stat_goal_reached
+                      : t.stat_overview_goal_remaining(
+                          value: formatStatChars(goal - progress),
+                        ),
+                  style: tokens.type.metadata.copyWith(
+                    color: reached ? colors.reached : scheme.onSurfaceVariant,
+                    fontWeight: reached ? FontWeight.w600 : null,
+                  ),
+                ),
+                if (daily && weeklyGoalChars > 0) ...<Widget>[
+                  SizedBox(height: tokens.spacing.gap),
+                  _StatWeeklyGoalBar(
+                    read: weeklyProgressChars,
+                    goal: weeklyGoalChars,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+    return FushiCard(
+      key: const ValueKey<String>('stat-goal-panel'),
+      onTap: onTap,
+      padding: EdgeInsets.all(tokens.spacing.card),
+      child: Center(child: body),
+    );
+  }
+}
+
+/// 目标面板里的每周目标进度条（标签 + 条 + 「已读 / 目标」）。
+class _StatWeeklyGoalBar extends StatelessWidget {
+  const _StatWeeklyGoalBar({required this.read, required this.goal});
+
+  final int read;
+  final int goal;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final StatChartColors colors = statChartColorsOf(context);
+    final bool reached = goalReached(read, goal);
+    final Color barColor = reached ? colors.reached : colors.series;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 240),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            '${t.stat_goal_weekly} · ${t.stat_goal_progress(read: read, goal: goal)}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: tokens.type.metadata.copyWith(
+              color: reached ? colors.reached : scheme.onSurfaceVariant,
+            ),
+          ),
+          SizedBox(height: tokens.spacing.gap / 2),
+          StatChartEntrance(
+            replayKey: read,
+            builder: (BuildContext context, double p) => ClipRRect(
+              borderRadius: tokens.radii.chipRadius,
+              child: FushiLinearProgressIndicator(
+                value: (goalProgressFraction(read, goal) ?? 0) * p,
+                minHeight: 6,
+                backgroundColor: isGlassDesign(context)
+                    ? null
+                    : barColor.withValues(alpha: 0.16),
+                color: barColor,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

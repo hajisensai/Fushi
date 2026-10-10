@@ -14,6 +14,9 @@ import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart';
 import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
+import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/pages/implementations/updates_center_page.dart';
+import 'package:fushi/utils.dart' show FushiIconButton, t;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -166,7 +169,9 @@ Future<void> _seedThreeDomains(AppModel appModel) async {
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('统计中心五个 tab：统计 tab 布局统一、排行 tab 显示说明卡', (WidgetTester tester) async {
+  testWidgets('统计中心五个 tab：统计 tab 布局统一、排行 tab 显示说明卡', (
+    WidgetTester tester,
+  ) async {
     // 启动期 FlutterError（离线更新检查的 Socket 异常等）先收着，否则 pending error
     // 会撞上后面的 expect()。范式同 observe_offscreen_test。
     final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
@@ -181,6 +186,15 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
 
       final AppModel appModel = await readyAppModel(tester);
+      expect(
+        find.byKey(const ValueKey<String>('home-toolbar-avatar')),
+        findsOneWidget,
+      );
+      final ObserveShot home = await captureFlutterFrame(
+        tester,
+        'restored-home',
+      );
+      expect(home.saved && home.nonBlank, isTrue);
       await _seedThreeDomains(appModel);
 
       const List<(StatsCenterTab, String)> tabs = <(StatsCenterTab, String)>[
@@ -209,15 +223,18 @@ void main() {
           reason: '$name tab 不应是白屏（${shot.path}, ${shot.bytes}B）',
         );
         // 四个 tab 的顶栏必须逐颗同形：目标 → 刷新 → 清空全部统计。
-        for (final IconData icon in <IconData>[
-          Icons.flag_outlined,
-          Icons.refresh,
-          Icons.delete_sweep_outlined,
+        for (final String tooltip in <String>[
+          t.stat_goal_set,
+          t.stat_refresh,
+          t.stat_clear_all,
         ]) {
           expect(
-            find.byIcon(icon),
+            find.byWidgetPredicate(
+              (Widget widget) =>
+                  widget is FushiIconButton && widget.tooltip == tooltip,
+            ),
             findsWidgets,
-            reason: '$name tab 缺顶栏按钮 ${icon.codePoint}',
+            reason: '$name tab 缺顶栏按钮 $tooltip',
           );
         }
         // 会话流每行都有铅笔，区块标题行有「清除全部会话」。
@@ -238,8 +255,47 @@ void main() {
         // testWidgets 的 async zone 里 await 会等不到自己驱动的帧，整条用例卡到
         // 超时（实测 8 分钟 timeout，不带滚动的同一条只要 59 秒）。
         final ScrollableState scroller = tester.state<ScrollableState>(
-          find.byType(Scrollable).last,
+          find
+              .descendant(
+                of: find.byType(CustomScrollView),
+                matching: find.byWidgetPredicate(
+                  (Widget widget) =>
+                      widget is Scrollable &&
+                      widget.axisDirection == AxisDirection.down,
+                ),
+              )
+              .first,
         );
+        final Finder rangeSummary = find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is StatSectionCard && widget.title == t.stat_range_summary,
+        );
+        for (
+          int step = 0;
+          step < 40 && rangeSummary.evaluate().isEmpty;
+          step++
+        ) {
+          scroller.position.jumpTo(
+            (scroller.position.pixels + 240).clamp(
+              0,
+              scroller.position.maxScrollExtent,
+            ),
+          );
+          await tester.pump(const Duration(milliseconds: 60));
+        }
+        expect(rangeSummary, findsOneWidget, reason: '$name tab 缺所选范围卡');
+        for (final String label in <String>[
+          t.stat_lookup,
+          t.stat_mined,
+          t.stat_favorited,
+          t.stat_favorited_sentence,
+        ]) {
+          expect(
+            find.descendant(of: rangeSummary, matching: find.text(label)),
+            findsOneWidget,
+            reason: '$name tab 所选范围卡缺计数 $label',
+          );
+        }
         for (int step = 0; step < 40 && clearAll.evaluate().isEmpty; step++) {
           final double next = scroller.position.pixels + 240;
           scroller.position.jumpTo(
@@ -264,7 +320,7 @@ void main() {
         // 会话行整行可点 = 编辑入口（trailing 放不下第二颗按钮，见
         // stat_session_list.dart 文件头）。
         expect(
-          find.byIcon(Icons.delete_outline),
+          find.byTooltip(t.stat_session_delete),
           findsWidgets,
           reason: '$name tab 的会话行缺删除按钮',
         );
@@ -301,8 +357,27 @@ void main() {
       );
       nav.pop();
       await tester.pump(const Duration(seconds: 1));
-      debugPrint('[stats-layout] ${StatsCenterTab.values.length} 个 tab + 排行榜页各抓一帧完成，'
-          '启动期错误 ${errors.length} 条');
+      nav.push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext _) =>
+              UpdatesCenterPage(service: appModel.updateFeedService),
+        ),
+      );
+      for (int f = 0; f < 20; f++) {
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+      expect(find.text(t.updates_filter_all), findsWidgets);
+      final ObserveShot updates = await captureFlutterFrame(
+        tester,
+        'restored-updates',
+      );
+      expect(updates.saved && updates.nonBlank, isTrue);
+      nav.pop();
+      await tester.pump(const Duration(seconds: 1));
+      debugPrint(
+        '[stats-layout] ${StatsCenterTab.values.length} 个 tab + 排行榜页各抓一帧完成，'
+        '启动期错误 ${errors.length} 条',
+      );
     } finally {
       FlutterError.onError = oldHandler;
     }

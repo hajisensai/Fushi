@@ -100,6 +100,7 @@ const List<String> kStatPages = <String>[
   'lib/src/platform/desktop/ctl/ctl_settings_routes.dart',
   'lib/src/pages/implementations/home_dashboard_page.dart',
   'lib/src/pages/implementations/statistics_center_page.dart',
+  'lib/src/pages/implementations/stat_dashboard.dart',
   'lib/src/pages/implementations/stat_period_detail_sheet.dart',
   'lib/src/pages/implementations/video_stat_aggregates.dart',
   'lib/src/pages/implementations/game_stat_aggregates.dart',
@@ -122,13 +123,13 @@ void main() {
   ];
 
   List<File> dartFiles() => <File>[
-        for (final String rel in scanRoots)
-          if (Directory(rel).existsSync())
-            ...Directory(rel)
-                .listSync(recursive: true)
-                .whereType<File>()
-                .where((File f) => f.path.endsWith('.dart')),
-      ]..sort((File a, File b) => a.path.compareTo(b.path));
+    for (final String rel in scanRoots)
+      if (Directory(rel).existsSync())
+        ...Directory(rel)
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((File f) => f.path.endsWith('.dart')),
+  ]..sort((File a, File b) => a.path.compareTo(b.path));
 
   String norm(String path) => p.split(path).join('/');
   String read(String path) => maskComments(File(path).readAsStringSync());
@@ -179,7 +180,8 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: '页面 / 仓库 / galgame hook 不得自己拼段：时长与字数必须经 StudyClock '
+      reason:
+          '页面 / 仓库 / galgame hook 不得自己拼段：时长与字数必须经 StudyClock '
           '进同一段同一 uid（BUG-2564：hook 自家攒 500 字才 insert 新 uid，统计页翻几行'
           '后仍是 0），否则又是第二本账：\n${offenders.join('\n')}',
     );
@@ -206,7 +208,8 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: '首页与统计页数字必须同源（用户拍板）：只许经 loadStatFacts 的统一事实面，'
+      reason:
+          '首页与统计页数字必须同源（用户拍板）：只许经 loadStatFacts 的统一事实面，'
           '不许各页各读各表：\n${offenders.join('\n')}',
     );
     for (final String path in <String>[
@@ -239,7 +242,8 @@ void main() {
     expect(
       unregistered,
       isEmpty,
-      reason: '这些文件用了 StatWindow 却没进 kStatPages，④ 的窗口阈值扫描'
+      reason:
+          '这些文件用了 StatWindow 却没进 kStatPages，④ 的窗口阈值扫描'
           '看不见它们：$unregistered',
     );
   });
@@ -260,14 +264,18 @@ void main() {
         expect(
           src.contains(shape),
           isFalse,
-          reason: '$path 含 $shape：不得自己算窗口起点——此前四处手算 `now-7d` + '
+          reason:
+              '$path 含 $shape：不得自己算窗口起点——此前四处手算 `now-7d` + '
               '`>=` 让「近 7 天」含 8 天、环比分母却 7 天；只许用 StatWindow',
         );
       }
     }
     final String window = read('lib/src/stats/stat_window.dart');
     expect(
-      containsCodeLine(window, 'for (int i = n - 1; i >= 0; i--) _keyDaysAgo(_now, i),'),
+      containsCodeLine(
+        window,
+        'for (int i = n - 1; i >= 0; i--) _keyDaysAgo(_now, i),',
+      ),
       isTrue,
       reason: '近 n 天 = lastDayKeys(n)：含今日恰 n 天（近 7 天起点 = 6 天前）',
     );
@@ -292,7 +300,8 @@ void main() {
         expect(
           containsIdentifier(src, shape),
           isFalse,
-          reason: '$path 含 $shape：会话累计器是 BUG-1052 / 1107「第二本账被重锚吃掉 / '
+          reason:
+              '$path 含 $shape：会话累计器是 BUG-1052 / 1107「第二本账被重锚吃掉 / '
               '口径分叉」的根因，v92 起只有 StudyClock 持有累计',
         );
       }
@@ -308,7 +317,8 @@ void main() {
         'ledger: _readLedger,',
       ),
       isTrue,
-      reason: 'EPUB 新读字数经 ReadUnitLedger（翻走即计，经开始方式门落定，'
+      reason:
+          'EPUB 新读字数经 ReadUnitLedger（翻走即计，经开始方式门落定，'
           'BUG-3100）记进当前段',
     );
     final String manga = read(
@@ -394,7 +404,8 @@ void main() {
     expect(
       firstAwait,
       greaterThan(clearOpen),
-      reason: '旧 VideoWatchTracker.stop 在 await 之后才清零累计器：dispose 与进程退出'
+      reason:
+          '旧 VideoWatchTracker.stop 在 await 之后才清零累计器：dispose 与进程退出'
           '并发各写一条活动行（时长翻倍）。清引用必须在任何 await 之前',
     );
     expect(firstAwait, greaterThan(clearTimer));
@@ -416,7 +427,8 @@ void main() {
       expect(
         containsIdentifierCall(read(path), 'studyGoalCharsForDay'),
         isTrue,
-        reason: '$path：目标分子必须走 studyGoalCharsForDay（学习域：书 + 字幕 + '
+        reason:
+            '$path：目标分子必须走 studyGoalCharsForDay（学习域：书 + 字幕 + '
             '游戏 hook，BUG-1993），首页与统计页各自手搓求和迟早再对不上',
       );
     }
@@ -431,7 +443,8 @@ void main() {
         'studyGoalCharsForDay(_dailyRows,',
       ),
       isTrue,
-      reason: '首页目标分子的实参必须是完整日面 _dailyRows（书 ∪ 视频 ∪ 游戏），'
+      reason:
+          '首页目标分子的实参必须是完整日面 _dailyRows（书 ∪ 视频 ∪ 游戏），'
           '换成任何单域切片都会让 BUG-1993 原地复发',
     );
     expect(
@@ -464,7 +477,8 @@ void main() {
       expect(
         containsCodeLine(body, 'if (!mounted) return;'),
         isTrue,
-        reason: '$path：加载入口首帧由 postFrameCallback 触发，State 可能已 dispose，'
+        reason:
+            '$path：加载入口首帧由 postFrameCallback 触发，State 可能已 dispose，'
             '第一处 setState 前必须过 mounted 门',
       );
     });
@@ -474,9 +488,12 @@ void main() {
       expect(
         containsCodeLine(src, 'setState(() => _loading = false);') &&
             !containsCodeLine(
-                src, 'if (mounted) setState(() => _loading = false);'),
+              src,
+              'if (mounted) setState(() => _loading = false);',
+            ),
         isFalse,
-        reason: '$path：await 之后的收尾 setState 必须写成 '
+        reason:
+            '$path：await 之后的收尾 setState 必须写成 '
             '`if (mounted) setState(() => _loading = false);`',
       );
     }
@@ -499,7 +516,8 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: '批量 LWW 落地原语只给「不是本机时钟产出的段」用（同步 / 备份 / 第三方'
+      reason:
+          '批量 LWW 落地原语只给「不是本机时钟产出的段」用（同步 / 备份 / 第三方'
           '备份导入）；本地写入面必须经 StudyClock：\n${offenders.join('\n')}',
     );
     // 正向：两条合法落地面确实走它——守卫不是在空转。

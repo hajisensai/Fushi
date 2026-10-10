@@ -61,15 +61,15 @@ class StatRangeBar extends StatelessWidget {
   /// 前移重置整点。
   Future<void> _pickCustomRange(BuildContext context) async {
     final DateTime lastDate = FushiDatabase.statDateKeyToDay(range.todayKey);
-    final DateTime earliest = FushiDatabase.statDateKeyToDay(
-      range.earliestKey,
-    );
+    final DateTime earliest = FushiDatabase.statDateKeyToDay(range.earliestKey);
     final DateTime tenYearsBack = DateTime(lastDate.year - 10);
     final DateTime domainStart = earliest.isBefore(tenYearsBack)
         ? earliest
         : tenYearsBack;
     // 选择跨 tab 共享，当前域可能没有这么早的数据；编辑不能截短原区间。
-    final DateTime selectedStart = FushiDatabase.statDateKeyToDay(range.fromKey);
+    final DateTime selectedStart = FushiDatabase.statDateKeyToDay(
+      range.fromKey,
+    );
     final DateTime firstDate = selectedStart.isBefore(domainStart)
         ? selectedStart
         : domainStart;
@@ -198,7 +198,8 @@ class StatRangeBar extends StatelessWidget {
     // 粒度分段与期间步进器同一行、同高 40（此前分两行、步进器是悬浮大胶囊），
     // 窄屏摆不下时步进器折到下一行。
     return Padding(
-      padding: padding ??
+      padding:
+          padding ??
           EdgeInsets.fromLTRB(
             tokens.spacing.card,
             tokens.spacing.card,
@@ -501,9 +502,7 @@ Widget buildStatRangeSummary(
                       child: Text(
                         value,
                         maxLines: 1,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
+                        style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -525,34 +524,12 @@ Widget buildStatRangeSummary(
   );
 }
 
-/// 「过去一周」火苗的大小档：近 7 天里有学习记录的天数 → 0（一天都没有，画灰
-/// 色线框）/ 1（1–2 天，小）/ 2（3–5 天，中）/ 3（6–7 天，大）。取代原「连续天数」
-/// 卡（PDF「连续天数改成过去一周的天数，按数量分成三个不同大小的小火苗」）。
-int statWeekFlameTier(int activeDays) {
-  if (activeDays <= 0) return 0;
-  if (activeDays <= 2) return 1;
-  if (activeDays <= 5) return 2;
-  return 3;
-}
-
-/// [statWeekFlameTier] 各档的火苗图标尺寸（0 档 = 灰色线框，与 1 档同大）。
-double statWeekFlameSize(int tier) => switch (tier) {
-  3 => 40,
-  2 => 32,
-  _ => 24,
-};
-
 /// 学习日历（Niratan「Reading Calendar」）：本域的逐日热力图，格子深浅 = 当日
 /// 学习时长（只有字数的日子如实算最浅一档）；点某天 → 范围切到那一天。
-///
-/// 2026-10-09 统计中心精简：「连续天数」卡并进来——卡内上面一行是「过去一周」
-/// （[weekKeys] = 含今日的近 7 个统计日，升序）：左边一枚按活跃天数分三档大小的
-/// 火苗 + 天数，右边 7 个日格（有记录 = 实心火苗，没有 = 淡色线框）；下面是日历。
 Widget buildStatRangeCalendarSection(
   BuildContext context, {
   required Map<String, StatDayData> byDay,
   required DateTime now,
-  required List<String> weekKeys,
   required ValueChanged<String> onDaySelected,
 }) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -561,227 +538,28 @@ Widget buildStatRangeCalendarSection(
       if (e.value.ms > 0 || e.value.chars > 0)
         e.key: math.max(e.value.ms ~/ 1000, 1),
   };
+  // 2026-10 统计中心重设计：区块卡外框（[StatSectionCard]）。
   return StatSectionCard(
-    key: const ValueKey<String>('stat-calendar-section'),
     title: t.stat_range_calendar,
     icon: Icons.calendar_month_outlined,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        StatWeekFlameRow(
-          weekKeys: weekKeys,
-          activeKeys: values.keys.toSet(),
-          onDaySelected: onDaySelected,
-        ),
-        SizedBox(height: tokens.spacing.card),
-        StatContributionHeatmap(
-          valueByDateKey: values,
-          now: now,
-          baseColor: tokens.surfaces.primary,
-          emptyColor: statHeatmapEmptyColors(context).$1,
-          emptyBorderColor: statHeatmapEmptyColors(context).$2,
-          valueLabel: (String dateKey, int _) {
-            final StatDayData? d = byDay[dateKey];
-            final String day = formatStatHeatmapDay(dateKey);
-            if (d == null) return day;
-            final List<String> parts = <String>[
-              day,
-              if (d.ms > 0) formatStatTime(d.ms),
-              if (d.chars > 0) formatStatChars(d.chars),
-            ];
-            return parts.join(' · ');
-          },
-          onDaySelected: (String dateKey, int _) => onDaySelected(dateKey),
-        ),
-      ],
+    child: StatContributionHeatmap(
+      valueByDateKey: values,
+      now: now,
+      baseColor: tokens.surfaces.primary,
+      emptyColor: statHeatmapEmptyColors(context).$1,
+      emptyBorderColor: statHeatmapEmptyColors(context).$2,
+      valueLabel: (String dateKey, int _) {
+        final StatDayData? d = byDay[dateKey];
+        final String day = formatStatHeatmapDay(dateKey);
+        if (d == null) return day;
+        final List<String> parts = <String>[
+          day,
+          if (d.ms > 0) formatStatTime(d.ms),
+          if (d.chars > 0) formatStatChars(d.chars),
+        ];
+        return parts.join(' · ');
+      },
+      onDaySelected: (String dateKey, int _) => onDaySelected(dateKey),
     ),
   );
-}
-
-/// 「过去一周」一行：分档火苗 + 天数 · 7 个日格（点某格 = 范围切到那一天）。进场
-/// 时火苗从 0 弹到原大、日格自左向右错峰点亮（[StatChartEntrance]，减弱动效 /
-/// 墨水屏下直接落位）。
-class StatWeekFlameRow extends StatelessWidget {
-  const StatWeekFlameRow({
-    required this.weekKeys,
-    required this.activeKeys,
-    required this.onDaySelected,
-    super.key,
-  });
-
-  /// 近 7 个统计日 key，升序（最后一个是今日）。
-  final List<String> weekKeys;
-
-  /// 有学习记录的统计日。
-  final Set<String> activeKeys;
-  final ValueChanged<String> onDaySelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final StatChartColors colors = statChartColorsOf(context);
-    final MaterialLocalizations l10n = MaterialLocalizations.of(context);
-    final int active = weekKeys.where(activeKeys.contains).length;
-    final int tier = statWeekFlameTier(active);
-    final Color flameColor = tier == 0 ? scheme.outlineVariant : colors.series;
-    return StatChartEntrance(
-      replayKey: active,
-      builder: (BuildContext context, double p) {
-        // 一行：左边分档火苗，右边「过去一周 · N 天」+ 7 个日格。日格区吃剩余
-        // 宽度（Expanded），手机宽也排得下一行。
-        final Widget flame = SizedBox.square(
-          dimension: 44,
-          child: Center(
-            child: Transform.scale(
-              scale: FushiSpringCurve.spatialFast.transform(p),
-              child: FushiIcon(
-                FushiIcons.streak,
-                key: ValueKey<String>('stat-week-flame-tier-$tier'),
-                size: statWeekFlameSize(tier),
-                fill: tier == 0 ? 0 : 1,
-                color: flameColor,
-              ),
-            ),
-          ),
-        );
-        final Widget caption = Text.rich(
-          TextSpan(
-            children: <InlineSpan>[
-              TextSpan(
-                text: t.stat_format_days(n: active),
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: scheme.onSurface,
-                ),
-              ),
-              TextSpan(text: '  ${t.stat_week_past}'),
-            ],
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: tokens.type.metadata.copyWith(color: scheme.onSurfaceVariant),
-        );
-        final Widget days = Row(
-          children: <Widget>[
-            for (int i = 0; i < weekKeys.length; i++)
-              _StatWeekDayCell(
-                dateKey: weekKeys[i],
-                active: activeKeys.contains(weekKeys[i]),
-                isToday: i == weekKeys.length - 1,
-                weekday:
-                    l10n.narrowWeekdays[FushiDatabase.statDateKeyToDay(
-                          weekKeys[i],
-                        ).weekday %
-                        7],
-                // 自左向右错峰：第 i 格在进度过了 i/9 之后才开始长。
-                progress: ((p * 9 - i) / 3).clamp(0.0, 1.0),
-                color: colors.series,
-                onTap: () => onDaySelected(weekKeys[i]),
-              ),
-          ],
-        );
-        return Semantics(
-          container: true,
-          label: t.stat_week_past,
-          value: t.stat_format_days(n: active),
-          child: Row(
-            children: <Widget>[
-              flame,
-              SizedBox(width: tokens.spacing.gap),
-              // 宽屏不把 7 个日格拉满整卡（桌面上会稀疏成一排散点），限宽贴左。
-              Expanded(
-                child: Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 360),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        caption,
-                        SizedBox(height: tokens.spacing.gap / 2),
-                        days,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _StatWeekDayCell extends StatelessWidget {
-  const _StatWeekDayCell({
-    required this.dateKey,
-    required this.active,
-    required this.isToday,
-    required this.weekday,
-    required this.progress,
-    required this.color,
-    required this.onTap,
-  });
-
-  final String dateKey;
-  final bool active;
-  final bool isToday;
-  final String weekday;
-  final double progress;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    return Expanded(
-      child: FushiTooltip(
-        message: formatStatHeatmapDay(dateKey),
-        child: InkWell(
-          key: ValueKey<String>('stat-week-day-$dateKey'),
-          customBorder: const StadiumBorder(),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                SizedBox.square(
-                  dimension: 22,
-                  child: Center(
-                    child: Transform.scale(
-                      scale: active
-                          ? FushiSpringCurve.spatialFast.transform(progress)
-                          : 1,
-                      child: FushiIcon(
-                        FushiIcons.streak,
-                        size: active ? 20 : 16,
-                        fill: active ? 1 : 0,
-                        color: active
-                            ? color
-                            : scheme.outlineVariant.withValues(alpha: 0.8),
-                      ),
-                    ),
-                  ),
-                ),
-                SizedBox(height: tokens.spacing.gap / 2),
-                Text(
-                  weekday,
-                  style: tokens.type.metadata.copyWith(
-                    color: isToday ? scheme.onSurface : scheme.onSurfaceVariant,
-                    fontWeight: isToday ? FontWeight.w700 : null,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
