@@ -51,8 +51,7 @@ Future<String?> showAsrTranscribeSheet({
   Future<String?> Function({
     required String fileName,
     required String? initialDirectory,
-  })?
-  saveFilePicker,
+  })? saveFilePicker,
   String Function()? languageGetter,
   Future<void> Function(String tag)? languageSetter,
   InterconnectJobClient? remoteClient,
@@ -69,10 +68,8 @@ Future<String?> showAsrTranscribeSheet({
       languageSetter == null ||
       remoteClient == null) {
     try {
-      appModel = ProviderScope.containerOf(
-        context,
-        listen: false,
-      ).read(appProvider);
+      appModel =
+          ProviderScope.containerOf(context, listen: false).read(appProvider);
     } catch (_) {
       // 测试/无 ProviderScope 的宿主：没有 app 模型就没有远程 host 与语言记忆。
     }
@@ -83,23 +80,22 @@ Future<String?> showAsrTranscribeSheet({
     setter = languageSetter ?? model.setAsrTranscribeLanguage;
   }
   // 「在互联 host 上运行」：已配对 host 宣告 jobs.kinds 含 asr 时面板多一个运行位置。
-  final InterconnectJobClient? remote =
-      remoteClient ??
+  final InterconnectJobClient? remote = remoteClient ??
       (appModel == null
           ? null
           : InterconnectJobClient(repo: SyncRepository(appModel.database)));
   Widget build(BuildContext ctx) => AsrTranscribeSheet(
-    audioPaths: audioPaths,
-    service: effective,
-    saveFilePicker: saveFilePicker,
-    languageHint: languageHint,
-    languageGetter: getter,
-    languageSetter: setter,
-    remoteClient: remote,
-    catalogGetter: catalogGetter,
-    catalogSetter: catalogSetter,
-    directoryPicker: directoryPicker,
-  );
+        audioPaths: audioPaths,
+        service: effective,
+        saveFilePicker: saveFilePicker,
+        languageHint: languageHint,
+        languageGetter: getter,
+        languageSetter: setter,
+        remoteClient: remote,
+        catalogGetter: catalogGetter,
+        catalogSetter: catalogSetter,
+        directoryPicker: directoryPicker,
+      );
   if (isDesktopPlatform) {
     return showAppDialog<String>(
       context: context,
@@ -143,7 +139,8 @@ enum SubtitleSourceChoice {
 bool shouldOfferSubtitleSourceChooser({
   required bool asrSupported,
   required bool hasAudio,
-}) => asrSupported && hasAudio;
+}) =>
+    asrSupported && hasAudio;
 
 /// 「只选了音频、没有书（EPUB 等）也没有字幕」时导入对话框给的提醒。
 enum AudioOnlyImportHint {
@@ -261,22 +258,18 @@ Future<bool> exportTranscribedSrt({
   Future<String?> Function({
     required String fileName,
     required String? initialDirectory,
-  })?
-  saveFilePicker,
+  })? saveFilePicker,
   bool? desktop,
 }) async {
   srtPath = preferredTranscriptExportPath(srtPath);
   final String suggestedName = suggestedTranscriptFileName(audioPaths);
   if (desktop ?? isDesktopPlatform) {
-    final String? initialDirectory = audioPaths.isEmpty
-        ? null
-        : File(audioPaths.first).parent.path;
+    final String? initialDirectory =
+        audioPaths.isEmpty ? null : File(audioPaths.first).parent.path;
     final Future<String?> Function({
       required String fileName,
       required String? initialDirectory,
-    })
-    pick =
-        saveFilePicker ??
+    }) pick = saveFilePicker ??
         ({required String fileName, required String? initialDirectory}) =>
             FilePicker.platform.saveFile(
               dialogTitle: t.audiobook_transcribe_export,
@@ -293,9 +286,12 @@ Future<bool> exportTranscribedSrt({
     await File(srtPath).copy(savePath);
     return true;
   }
-  await FushiShare.shareFiles(<XFile>[
-    XFile(srtPath, mimeType: 'application/x-subrip', name: suggestedName),
-  ], subject: suggestedName);
+  await FushiShare.shareFiles(
+    <XFile>[
+      XFile(srtPath, mimeType: 'application/x-subrip', name: suggestedName)
+    ],
+    subject: suggestedName,
+  );
   return true;
 }
 
@@ -337,8 +333,8 @@ class AsrTranscribeSheet extends StatefulWidget {
     this.directoryPicker,
     this.systemSpeechService,
     super.key,
-  }) : catalogGetter = catalogGetter ?? _readAsrModelCatalog,
-       catalogSetter = catalogSetter ?? saveAsrModelCatalog;
+  })  : catalogGetter = catalogGetter ?? _readAsrModelCatalog,
+        catalogSetter = catalogSetter ?? saveAsrModelCatalog;
 
   final List<String> audioPaths;
 
@@ -346,8 +342,7 @@ class AsrTranscribeSheet extends StatefulWidget {
   final Future<String?> Function({
     required String fileName,
     required String? initialDirectory,
-  })?
-  saveFilePicker;
+  })? saveFilePicker;
   final AsrTranscriptionService service;
 
   /// 书本身的语言推出的初值（见 [showAsrTranscribeSheet]）；优先于 [languageGetter]，
@@ -434,8 +429,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   @override
   void initState() {
     super.initState();
-    _language =
-        widget.languageHint ??
+    _language = widget.languageHint ??
         AsrLanguage.fromTag(widget.languageGetter?.call()) ??
         AsrLanguage.japanese;
     _service = _serviceFor(_selectedEngineId());
@@ -550,27 +544,27 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     _downloadSub = _service
         .downloadModel(language: plan.language, variant: plan.variant)
         .listen(
-          (ModelDownloadEvent e) {
-            if (e.fileName != lastFile) {
-              completedBytes += lastFileTotal;
-              lastFile = e.fileName;
-              lastFileTotal = e.totalBytes;
-            }
-            if (!mounted) return;
-            setState(() {
-              _downloadFile = e.fileName;
-              _downloadReceived = completedBytes + e.receivedBytes;
-            });
-          },
-          onError: (Object e, StackTrace _) {
-            if (!mounted) return;
-            _failWith(e);
-          },
-          onDone: () {
-            if (!mounted) return;
-            _refreshPlan();
-          },
-        );
+      (ModelDownloadEvent e) {
+        if (e.fileName != lastFile) {
+          completedBytes += lastFileTotal;
+          lastFile = e.fileName;
+          lastFileTotal = e.totalBytes;
+        }
+        if (!mounted) return;
+        setState(() {
+          _downloadFile = e.fileName;
+          _downloadReceived = completedBytes + e.receivedBytes;
+        });
+      },
+      onError: (Object e, StackTrace _) {
+        if (!mounted) return;
+        _failWith(e);
+      },
+      onDone: () {
+        if (!mounted) return;
+        _refreshPlan();
+      },
+    );
   }
 
   Future<void> _startTranscription() async {
@@ -606,19 +600,19 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
           if (!mounted) return;
           switch (e) {
             case AsrTranscribeProgressEvent(
-              progress: final AsrTranscribeProgress p,
-            ):
+                progress: final AsrTranscribeProgress p,
+              ):
               setState(() => _progress = p);
             case AsrTranscribePausedEvent(
-              progress: final AsrTranscribeProgress p,
-            ):
+                progress: final AsrTranscribeProgress p,
+              ):
               setState(() {
                 _progress = p;
                 _phase = _Phase.paused;
               });
             case AsrTranscribeFinishedEvent(
-              result: final AsrTranscribeResult r,
-            ):
+                result: final AsrTranscribeResult r,
+              ):
               setState(() {
                 _result = r;
                 _finishedSrt = r.srtPath;
@@ -686,10 +680,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       });
       return;
     }
-    final Directory jobDir = await widget.service.jobDirFor(
-      widget.audioPaths,
-      _language,
-    );
+    final Directory jobDir =
+        await widget.service.jobDirFor(widget.audioPaths, _language);
     await jobDir.create(recursive: true);
     if (!mounted) return;
     setState(() {
@@ -705,66 +697,62 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     });
     _remoteSub = client
         .run(
-          target: target,
-          kind: 'asr',
-          params: <String, Object?>{'language': _language.tag},
-          inputs: widget.audioPaths.map(File.new).toList(growable: false),
-          outputDir: jobDir,
-        )
+      target: target,
+      kind: 'asr',
+      params: <String, Object?>{'language': _language.tag},
+      inputs: widget.audioPaths.map(File.new).toList(growable: false),
+      outputDir: jobDir,
+    )
         .listen(
-          (HostJobEvent e) async {
-            if (!mounted) return;
-            switch (e) {
-              case HostJobUploading(
-                done: final int done,
-                total: final int total,
-              ):
-                setState(() {
-                  _phase = _Phase.loading;
-                  _remoteStatus = t.audiobook_transcribe_remote_uploading(
-                    device: target.label,
-                    done: done,
-                    total: total,
-                  );
-                });
-              case HostJobRunning(progress: final double progress):
-                setState(() {
-                  _phase = _Phase.running;
-                  _remoteProgress = progress;
-                  _remoteStatus = t.audiobook_transcribe_remote_running(
-                    device: target.label,
-                    percent: (progress * 100).toStringAsFixed(0),
-                  );
-                });
-              case HostJobDone(outputs: final Map<String, File> outputs):
-                final File? srt = outputs[AsrJobFiles.srt];
-                // 补一份 state.json：本机链路靠它识别「这是 ASR 产物目录」（token
-                // 时间 sidecar 就在旁边）；modelId 记 host 名，便于事后追溯。
-                final AsrJobState state = AsrJobState.fresh(
-                  widget.audioPaths,
-                  modelId: 'remote:${target.label}',
-                ).copyWith(finished: true);
-                await File(
-                  p.join(jobDir.path, AsrJobFiles.state),
-                ).writeAsString(jsonEncode(state.toJson()), flush: true);
-                if (!mounted) return;
-                setState(() {
-                  _finishedSrt = srt?.path;
-                  _remoteProgress = 1;
-                  _elapsedTotal = srt == null ? null : _runClock?.elapsed;
-                  _phase = srt == null ? _Phase.error : _Phase.finished;
-                  if (srt == null) _error = 'no subtitle in remote result';
-                });
-            }
-          },
-          onError: (Object error) {
+      (HostJobEvent e) async {
+        if (!mounted) return;
+        switch (e) {
+          case HostJobUploading(done: final int done, total: final int total):
+            setState(() {
+              _phase = _Phase.loading;
+              _remoteStatus = t.audiobook_transcribe_remote_uploading(
+                device: target.label,
+                done: done,
+                total: total,
+              );
+            });
+          case HostJobRunning(progress: final double progress):
+            setState(() {
+              _phase = _Phase.running;
+              _remoteProgress = progress;
+              _remoteStatus = t.audiobook_transcribe_remote_running(
+                device: target.label,
+                percent: (progress * 100).toStringAsFixed(0),
+              );
+            });
+          case HostJobDone(outputs: final Map<String, File> outputs):
+            final File? srt = outputs[AsrJobFiles.srt];
+            // 补一份 state.json：本机链路靠它识别「这是 ASR 产物目录」（token
+            // 时间 sidecar 就在旁边）；modelId 记 host 名，便于事后追溯。
+            final AsrJobState state = AsrJobState.fresh(
+              widget.audioPaths,
+              modelId: 'remote:${target.label}',
+            ).copyWith(finished: true);
+            await File(p.join(jobDir.path, AsrJobFiles.state))
+                .writeAsString(jsonEncode(state.toJson()), flush: true);
             if (!mounted) return;
             setState(() {
-              _phase = _Phase.error;
-              _error = '$error';
+              _finishedSrt = srt?.path;
+              _remoteProgress = 1;
+              _elapsedTotal = srt == null ? null : _runClock?.elapsed;
+              _phase = srt == null ? _Phase.error : _Phase.finished;
+              if (srt == null) _error = 'no subtitle in remote result';
             });
-          },
-        );
+        }
+      },
+      onError: (Object error) {
+        if (!mounted) return;
+        setState(() {
+          _phase = _Phase.error;
+          _error = '$error';
+        });
+      },
+    );
   }
 
   /// 切换语音语言：记住选择，再按新语言包重新规划（模型是否就绪 / 该语言下这组
@@ -782,18 +770,18 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
 
   /// 这门语言当前能选哪些引擎（ONNX 包在前，系统语音在后）。
   List<AsrEngineOption> _engineOptions() => asrEngineOptions(
-    language: _language,
-    registry: asrModelRegistry,
-    systemSpeechAvailable: _systemSpeechAvailable,
-    systemSpeechLabel: t.audiobook_transcribe_engine_system,
-  );
+        language: _language,
+        registry: asrModelRegistry,
+        systemSpeechAvailable: _systemSpeechAvailable,
+        systemSpeechLabel: t.audiobook_transcribe_engine_system,
+      );
 
   /// 当前选中的引擎 id。
   String? _selectedEngineId() => selectedAsrEngineId(
-    language: _language,
-    catalog: widget.catalogGetter(),
-    options: _engineOptions(),
-  );
+        language: _language,
+        catalog: widget.catalogGetter(),
+        options: _engineOptions(),
+      );
 
   /// 按选中的引擎给出服务实例。ONNX 走注入进来的那份（生产是
   /// `createAsrTranscriptionService()`，测试是 fake）；系统语音走另一份实现。
@@ -844,13 +832,11 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       AsrModelFit.heavyOnMobile =>
         t.audiobook_transcribe_model_fit_heavy_mobile,
     };
-    final String size = FushiByteFormat.bytes(
-      pack.totalBytes(AsrEncoderVariant.int8),
-    );
+    final String size =
+        FushiByteFormat.bytes(pack.totalBytes(AsrEncoderVariant.int8));
     final bool custom = pack.id.startsWith(kAsrCustomPackIdPrefix);
-    final String badge = custom
-        ? ' · ${t.audiobook_transcribe_model_custom_badge}'
-        : '';
+    final String badge =
+        custom ? ' · ${t.audiobook_transcribe_model_custom_badge}' : '';
     return '$scope · $fit · $size$badge';
   }
 
@@ -897,9 +883,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     if (pack == null || !mounted) return;
     // withLocalPack 而不是 withCustomPack：id 由显示名派生，两个不同文件夹很容易
     // 撞上同一个 id，撞了要加后缀而不是把先前那份覆盖掉（连同指向它的选择）。
-    final ({AsrModelCatalog catalog, AsrModelPack pack}) added = widget
-        .catalogGetter()
-        .withLocalPack(pack);
+    final ({AsrModelCatalog catalog, AsrModelPack pack}) added =
+        widget.catalogGetter().withLocalPack(pack);
     await _updateCatalog(added.catalog.withChoice(_language, added.pack.id));
     if (!mounted) return;
     FushiToast.show(
@@ -969,16 +954,16 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   // ── 展示 ───────────────────────────────────────────────────────────────────
 
   String _providerLabel(OnnxExecutionProvider p) => switch (p) {
-    OnnxExecutionProvider.cuda => 'CUDA (GPU)',
-    OnnxExecutionProvider.directml => 'DirectML (GPU)',
-    OnnxExecutionProvider.coreml => 'CoreML',
-    OnnxExecutionProvider.cpu => 'CPU',
-  };
+        OnnxExecutionProvider.cuda => 'CUDA (GPU)',
+        OnnxExecutionProvider.directml => 'DirectML (GPU)',
+        OnnxExecutionProvider.coreml => 'CoreML',
+        OnnxExecutionProvider.cpu => 'CPU',
+      };
 
   String _variantLabel(AsrEncoderVariant v) => switch (v) {
-    AsrEncoderVariant.fp32 => 'fp32 · GPU',
-    AsrEncoderVariant.int8 => 'int8 · CPU',
-  };
+        AsrEncoderVariant.fp32 => 'fp32 · GPU',
+        AsrEncoderVariant.int8 => 'int8 · CPU',
+      };
 
   static String _fmtDuration(Duration d) {
     final int h = d.inHours;
@@ -1080,9 +1065,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
             t.audiobook_transcribe_speed(
               elapsed: _fmtDuration(p.elapsed),
               eta: eta == null ? '—' : _fmtDuration(eta),
-              speed: rtf == null || rtf <= 0
-                  ? '—'
-                  : (1 / rtf).toStringAsFixed(1),
+              speed:
+                  rtf == null || rtf <= 0 ? '—' : (1 / rtf).toStringAsFixed(1),
             ),
           );
         }
@@ -1255,8 +1239,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final FushiMotionScheme motion = context.fushiMotion;
-    final bool showProgressBar =
-        _phase == _Phase.downloading ||
+    final bool showProgressBar = _phase == _Phase.downloading ||
         _phase == _Phase.running ||
         _phase == _Phase.pausing ||
         _phase == _Phase.loading ||
@@ -1299,9 +1282,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                     selected: _selectedEngineId(),
                     enabled: _canChangePreference && engineOptions.length > 1,
                     entrySubtitle: (String id) => _modelSubtitle(
-                      engineOptions.firstWhere(
-                        (AsrEngineOption o) => o.id == id,
-                      ),
+                      engineOptions
+                          .firstWhere((AsrEngineOption o) => o.id == id),
                     ),
                     onChanged: _changeEngine,
                   ),
@@ -1313,8 +1295,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                   icon: const FushiIcon(FushiIcons.folderOpen),
                   // 选中系统语音时接入本地 ONNX 模型没有意义（那是另一个引擎的
                   // 东西）——留着可点会让用户以为接进来就能给系统语音用。
-                  onPressed:
-                      _canChangePreference &&
+                  onPressed: _canChangePreference &&
                           _selectedEngineId() != kAppleSpeechEngineId
                       ? _addLocalModel
                       : null,
@@ -1430,13 +1411,13 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                             ),
                             // 色块上的字跟卡片配对前景（fushiType 自带页面
                             // 前景，HBK-AUDIT-022）。
-                            style: context.fushiType.bodyMedium.tabular
-                                .copyWith(
-                                  color: fushiCardToneColors(
-                                    context,
-                                    _statusTone(),
-                                  )?.onContainer,
-                                ),
+                            style:
+                                context.fushiType.bodyMedium.tabular.copyWith(
+                              color: fushiCardToneColors(
+                                context,
+                                _statusTone(),
+                              )?.onContainer,
+                            ),
                           ),
                         ),
                       ],
