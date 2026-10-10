@@ -2437,8 +2437,7 @@ class VideoPlayerController extends ChangeNotifier
     bool autoPlay = false,
     bool openBlurayMenu = false,
     // 互联 host 下发的蓝光标题段表（与 [mediaUri] 同时给，非 null 时取代它）。与本地
-    // 蓝光同一套 EDL 拼法；每段 URL 单独过 [nativePlaybackUri]——整串 `edl://` 不是
-    // URL，过不了那道「自签 https 降级给本地中继」的改写。
+    // 蓝光同一套 EDL 拼法；[nativePlaybackUri] 对 `edl://` 逐段改写自签 https 段。
     BlurayRemoteTitle? remoteDiscTitle,
     // TODO-1280：YouTube 等分离流（video-only 主流 + audio-only 外挂）的 audio-only 流 URL。
     // 必须在本次 load 内、恢复 seek + play() **之前**经 `audio-add ... select` 外挂，libmpv
@@ -2534,18 +2533,19 @@ class VideoPlayerController extends ChangeNotifier
     // https 流降成明文 http 交给中继，由中继按配对指纹钉扎升回 https；本地文件 /
     // 公网流原样。native 侧从此不碰互联 host 的 TLS（随包 libmpv 换成 libcurl 后默认
     // 校验证书，自签 host 直连必失败）。
-    final String sourceUri = !openBlurayMenu && remoteDiscTitle != null
-        ? remoteDiscTitle.edlUri(nativePlaybackUri)
-        : nativePlaybackUri(
-            openBlurayMenu
-                ? 'bd://menu'
-                : mediaUri ??
-                      // EDL 串与解密回环 URL 都不是文件路径，不能再过 `mediaUriForVideoPath` 包成 file://。
-                      (localPlaybackSource!.startsWith('http://') ||
-                              localPlaybackSource.startsWith('edl://')
-                          ? localPlaybackSource
-                          : mediaUriForVideoPath(localPlaybackSource)),
-          );
+    // 互联蓝光标题的段表拼成 EDL 后同样经这里收口：`nativePlaybackUri` 对 `edl://`
+    // 逐段改写（host 的自签 https 段降级给本地中继）。
+    final String sourceUri = nativePlaybackUri(
+      openBlurayMenu
+          ? 'bd://menu'
+          : remoteDiscTitle?.edlUri() ??
+                mediaUri ??
+                // EDL 串与解密回环 URL 都不是文件路径，不能再过 `mediaUriForVideoPath` 包成 file://。
+                (localPlaybackSource!.startsWith('http://') ||
+                        localPlaybackSource.startsWith('edl://')
+                    ? localPlaybackSource
+                    : mediaUriForVideoPath(localPlaybackSource)),
+    );
     _sourceIsNetwork = isNetworkStreamUri(sourceUri);
     // 远端流 URL 带 api_key / PlaySessionId；调试日志可一键上传，先脱敏。
     debugPrint(

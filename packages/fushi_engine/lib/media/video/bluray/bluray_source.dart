@@ -240,26 +240,42 @@ String encodeEdlField(String value) {
 /// 字段可用 `%<字节数>%<内容>` 长度前缀（字节数按 UTF-8 计）。来源判定「这条流是不是
 /// 网络流」时要看的是各段，而不是 `edl://` 这个 scheme。
 List<String> decodeEdlSources(String uri) {
-  const String scheme = 'edl://';
-  if (!uri.startsWith(scheme)) return const <String>[];
-  final List<int> bytes = utf8.encode(uri.substring(scheme.length));
   final List<String> sources = <String>[];
+  mapEdlSources(uri, (String source) {
+    sources.add(source);
+    return source;
+  });
+  return sources;
+}
+
+/// 逐条改写 `edl://` 的来源，其余字段（起止、选项）原样保留；不是 EDL 原样返回。
+///
+/// 交给播放内核前「每个 URL 都要过 `nativePlaybackUri`」的收口靠它覆盖拼接流：整串
+/// EDL 不是 URL，只能逐段改写。语法范围同 [decodeEdlSources]；解析不下去时原样返回
+/// 输入，不交出半截改写的 EDL。
+String mapEdlSources(String uri, String Function(String source) map) {
+  const String scheme = 'edl://';
+  if (!uri.startsWith(scheme)) return uri;
+  final List<int> bytes = utf8.encode(uri.substring(scheme.length));
+  final StringBuffer out = StringBuffer(scheme);
   int i = 0;
   bool entryStart = true;
   while (i < bytes.length) {
     final int c = bytes[i];
-    if (c == 0x3B /* ; */) {
-      entryStart = true;
+    if (c == 0x3B /* ; */ || c == 0x2C /* , */) {
+      out.writeCharCode(c);
+      entryStart = c == 0x3B;
       i++;
       continue;
     }
-    String field;
+    final int start = i;
+    final String field;
     if (c == 0x25 /* % */) {
       final int close = bytes.indexOf(0x25, i + 1);
       final int? length = close < 0
           ? null
           : int.tryParse(ascii.decode(bytes.sublist(i + 1, close)));
-      if (length == null || close + 1 + length > bytes.length) break;
+      if (length == null || close + 1 + length > bytes.length) return uri;
       field = utf8.decode(bytes.sublist(close + 1, close + 1 + length));
       i = close + 1 + length;
     } else {
@@ -270,11 +286,15 @@ List<String> decodeEdlSources(String uri) {
       field = utf8.decode(bytes.sublist(i, end));
       i = end;
     }
-    if (entryStart && field.isNotEmpty) sources.add(field);
+    // 只改写来源；起止 / `key=value` 选项按原始字节拷回，语义一个字不动。
+    out.write(
+      entryStart && field.isNotEmpty
+          ? encodeEdlField(map(field))
+          : utf8.decode(bytes.sublist(start, i)),
+    );
     entryStart = false;
-    if (i < bytes.length && bytes[i] == 0x2C /* , */) i++;
   }
-  return sources;
+  return out.toString();
 }
 
 /// [value] 的 UTF-8 字节数。EDL 的长度前缀按字节算，不是按码点。
