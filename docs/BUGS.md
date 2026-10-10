@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2920 条。点号进各自文件。
+> 共 2921 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3255](bugs/BUG-3255-ext-offset-negative-zero.md) | ✅ | ✅ | 浏览器扩展字幕偏移绝对值小于5ms时显示-0 |
 | [BUG-3250](bugs/BUG-3250-shell-inline-title-unbounded.md) | ✅ | ✅ | 库页宽窗标题胶囊不限宽长页面名挤压页签 |
 | [BUG-3249](bugs/BUG-3249-home-avatar-profile-name-stale.md) | ✅ | ✅ | 首页头像只在初始化读一次 Profile 名且吞掉排行榜刷新异常 |
 | [BUG-3247](bugs/BUG-3247-top-bar-follow-leading-budget.md) | ✅ | ✅ | 顶栏动作紧跟返回键时自适应溢出少算 8px 提前收进溢出菜单 |
