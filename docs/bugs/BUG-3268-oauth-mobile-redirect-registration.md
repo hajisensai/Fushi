@@ -1,0 +1,6 @@
+## BUG-3268 · 移动端云同步改名回调未同步云端登记
+- **报告**：2026-10-10（用户：手机 OneDrive 登录提示 redirect_uri 不匹配）
+- **真实性**：✅ 真 bug。`fa1d429f06` 将原 `hibiki/lib/src/sync/` 两个 backend 的回调切到 `fushi://`。当前 `fushi/lib/src/sync/onedrive_sync_backend.dart:41` 为 `fushi://auth/onedrive`，`dropbox_sync_backend.dart:42` 为 `fushi://auth/dropbox`；`pkce_oauth_backend_mixin.dart:117` 将手机回调传入授权请求，Android 清单 `:64` 接收 `fushi://auth`。2026-10-10 Azure 后台实测目标 client ID 仅登记 `http://localhost`、`hibiki://auth/onedrive`，没有当前手机回调，因此授权服务拒绝请求。Dropbox 当前回调已登记，缺失假设不成立。
+- **[x] ① 根因修复** — 2026-10-10 在 Azure 目标应用 `49f7e6d1-fab5-48ef-90ab-13ce04986b46` 的 Mobile and desktop applications 中新增 `fushi://auth/onedrive`，Configure 保存后回读真实列表确认全部三条，保留旧回调与 localhost。这是云端操作，无代码提交哈希。应用回调不改回 `hibiki://`。同日回读 Dropbox：App key `dv2sk1o33j6pfi8` 已有 `fushi://auth/dropbox` 与 `http://localhost:9004`，未见旧回调，本次未改后台。其 Development / Only you 为另一项真实访问限制，未调整。
+- **[x] ② 增加自动化测试** — `fushi/test/sync/oauth_redirect_registration_guard_test.dart` 对真实授权 URL 的 client ID / 回调和登记契约、Android intent / iOS URL scheme、桌面端口进行核对。契约在 `docs/agent/oauth-redirects.json`，流程见 `docs/agent/oauth-redirects.md`。
+- **备注**：后台补登记无需重新发版。手机登录 E2E 尚未执行；后台配置已修复不等于手机登录已验收。离线测试只能钉住本地契约与平台接收配置，不能证明云端登记成功。桌面走 `desktop_oauth.dart:173` 的 localhost 回环地址，与手机回调分开；Dropbox 要求固定 `http://localhost:9004`。本轮定向测试 2/2 通过；首次因 sqlite3 原生资源下载超时未执行用例，补进程代理后重跑通过。
