@@ -1,0 +1,6 @@
+## BUG-3271 · 视频设置面板字幕分类下方整片灰（展开区与滚动视图 PageStorage 槽冲突）
+- **报告**：2026-10-10（用户：截图——播放器设置面板「字幕」分类，字幕轨行下方整片浅灰，滚动条极短）
+- **真实性**：✅ 真 bug。本机 `Documents/error_log.txt` 18:10 起十条 `type 'double' is not a subtype of type 'bool?' in type cast`，栈顶 `_ExpansibleState.initState (expansible.dart:383)`。分类滚动视图挂着 `PageStorageKey('video-settings-page-$selectedId')`（`fushi/lib/src/media/video/video_quick_settings_sheet.dart:224`），其下副字幕展开区 `FushiExpansionTile`（`fushi/lib/src/pages/implementations/video_fushi/subtitle.part.dart:420`）不带 PageStorageKey，两者沿途键链相同 → 同一个 PageStorage 槽。在字幕页滚动过（写入 double 偏移）后切走再切回，展开区 initState 把 double 当 `bool?` 读 → 抛异常，release 下渲染成 ErrorWidget（列表里高 100000px 的灰块）。反方向：展开副字幕写入 bool，滚动视图重建恢复偏移时当 `double?` 读，同样抛。根因在共享组件 `FushiExpansionTile`（`fushi/lib/src/utils/components/glass/fushi_glass_lists.dart` MD3 分支）没有隔离自己的存储槽，阅读器 / 漫画设置面板等同结构位置同样受影响。
+- **[x] ① 已修复** — `FushiExpansionTile` 在调用方未给 PageStorageKey 时用本组件专属 `PageStorageKey('fushi-expansion-tile')` 的 `KeyedSubtree` 包住 ExpansionTile，存储标识与祖先滚动视图分开；调用方自带 PageStorageKey 时保持原样。
+- **[x] ② 已加自动化测试** — `fushi/test/widgets/glass/fushi_glass_lists_test.dart`：「MD3 tile mounts after its scroll ancestor saved an offset」（同时断言滚动偏移照常恢复）与「MD3 tile expansion does not poison scroll offset restore」，修复前两条分别以上述两种类型转换异常失败。
+- **备注**：多个不带键的展开区处在同一滚动视图下时仍共用一个展开态槽（类型相同不会抛，修复前也如此）；需要各自记忆的调用点应传自己的 PageStorageKey。

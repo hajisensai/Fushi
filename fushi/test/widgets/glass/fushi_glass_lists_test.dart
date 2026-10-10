@@ -243,6 +243,71 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('child'), findsNothing);
     });
+
+    // 视频设置面板「字幕」分类下方整片灰：分类滚动视图挂着 PageStorageKey，其下
+    // 不带 PageStorageKey 的展开区算出的存储标识与它完全相同，滚动写入的 double
+    // 被 Expansible 当 bool? 读出而炸（release 下是灰色 ErrorWidget）。反方向
+    // （展开写入的 bool 被滚动恢复当 double? 读）同样要不炸。
+    Widget scrollHost({required bool showTile, int generation = 0}) {
+      return MaterialApp(
+        theme: buildFushiThemeData(
+          scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+          textTheme: Typography.material2021().black,
+          glass: FushiGlassMaterial.off,
+          glassDesign: false,
+        ),
+        home: Scaffold(
+          // generation 变化 = 整个滚动视图换新元素（切走分类再切回来）。
+          body: KeyedSubtree(
+            key: ValueKey<int>(generation),
+            child: ListView(
+              key: const PageStorageKey<String>('settings-page'),
+              children: <Widget>[
+                if (showTile)
+                  const FushiExpansionTile(
+                    title: Text('head'),
+                    children: <Widget>[Text('child')],
+                  ),
+                for (int i = 0; i < 40; i++)
+                  SizedBox(height: 100, child: Text('row $i')),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('MD3 tile mounts after its scroll ancestor saved an offset', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(scrollHost(showTile: true));
+      await tester.drag(find.byType(ListView), const Offset(0, -40));
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(scrollHost(showTile: true, generation: 1));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(find.text('head'), findsOneWidget);
+      // 偏移照常恢复：修复不能靠让滚动视图丢掉自己的记忆。
+      final ScrollableState scrollable = tester.state<ScrollableState>(
+        find.byType(Scrollable),
+      );
+      expect(scrollable.position.pixels, greaterThan(0));
+    });
+
+    testWidgets('MD3 tile expansion does not poison scroll offset restore', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(scrollHost(showTile: true));
+      await tester.tap(find.text('head'));
+      await tester.pumpAndSettle();
+      expect(find.text('child'), findsOneWidget);
+
+      await tester.pumpWidget(scrollHost(showTile: true, generation: 1));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(find.text('head'), findsOneWidget);
+    });
   });
 
   group('Divider / Card / Badge', () {
