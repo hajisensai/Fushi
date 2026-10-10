@@ -1,6 +1,6 @@
 ## BUG-3270 · 制卡缺词典媒体时卡片残留 fushi_dict_N 占位图，AnkiDroid 报加载失败
 - **报告**：2026-10-10（用户：AnkiDroid 复习视频制卡「舐める」时底部弹「卡片内容错误：加载「fushi_dict_4.svg」失败」，「总有这种情况」）
 - **真实性**：✅ 真 bug。popup.js 导出释义时把词典图片（明鏡的外字 SVG）写成占位符 `<img src="fushi_dict_N.ext">`，制卡时由 `buildMinedFields` 换成真实媒体文件名。某条媒体没存进 Anki（词典取不到字节 / 媒体存储失败）时，`AnkiNoteComposer.buildDictionaryMediaTags`（`packages/fushi_anki/lib/src/anki_note_composer.dart:420`）不登记它的映射，`buildMinedFields`（同文件 `:490`）于是不替换，占位符原样写进字段——卡片永久引用一个媒体库里不存在的文件，AnkiDroid 每次渲染都报加载失败。BUG-1265 宣称的「降级成 alt 文本」从未实现，`dictionary_media_missing_degrades_test.dart` 还把「占位符保持原样」锁成了预期。三个后端（AnkiDroid / AnkiConnect / AnkiMobile）共用这一处。
-- **[x] ① 已修复** — `AnkiNoteComposer.degradeUnresolvedDictionaryMedia`：媒体映射替换之后，把仍残留的 `fushi_dict_<序号>.<ext>` 占位 `<img>` 换成它的 alt 文本（`<`/`>` 转义），外层 `<a>` 摘掉指向占位符的 `href`。占位符序号形态（≤9 位数字）与缓存名的 40 位 sha1 不相交，不会误伤已替换的媒体。
+- **[x] ① 已修复**（78e5d06f9a）— `AnkiNoteComposer.degradeUnresolvedDictionaryMedia`：媒体映射替换之后，把仍残留的 `fushi_dict_<序号>.<ext>` 占位 `<img>` 换成它的 alt 文本（`<`/`>` 转义），外层 `<a>` 摘掉指向占位符的 `href`。占位符序号形态（≤9 位数字）与缓存名的 40 位 sha1 不相交，不会误伤已替换的媒体。
 - **[x] ② 已加自动化测试** — `packages/fushi_anki/test/dictionary_media_dangling_placeholder_test.dart`（真实 Yomitan 导出形状、混排、alt 尖括号、无 alt、sha1 名不受影响）；`dictionary_media_missing_degrades_test.dart` 两条错误预期改为「不得残留占位符」。
 - **备注**：本修复让卡片不再悬空引用；**为什么这条外字取不到字节**是另一层原因，每次跳过都会以 `DictionaryMedia.cache` 记进错误日志（`dictionary_webview_media.dart` `writeDictionaryMediaCache`），用户上传日志后可据此判断是词典本身缺资源还是其它原因。已经制好的旧卡里的占位符不会被追溯修改。
