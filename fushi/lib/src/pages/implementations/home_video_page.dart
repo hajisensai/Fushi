@@ -529,7 +529,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 映射未就位时它们是空 map：合集一个都折不出来（全员散卡）、
   /// [_isCollectionMember] 对**每一条**返回 false、刮削海报全缺——那是「还不知道」，
   /// 不是「都是散片、都没海报」。拿它渲染，首屏就是先铺散卡、映射一到再收拢成合集
-  /// 并换海报（用户实报「视频一块块加载」）；「系列内」档位还会把整墙判空、闪一下
+  /// 并换海报（BUG-3235，用户实报「视频一块块加载」）；「系列内」档位还会把整墙判空、闪一下
   /// 筛选空态（BUG-2835）。所以三个分区在它为 false 时都只画骨架。
   bool _libraryMapsReady = false;
 

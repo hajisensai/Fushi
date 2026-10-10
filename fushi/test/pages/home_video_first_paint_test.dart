@@ -25,7 +25,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 
-/// 视频库首屏「一块块加载」（用户实报：点开视频库，里面的视频是一块块出来的）。
+/// BUG-3235：视频库首屏「一块块加载」（用户实报：点开视频库，里面的视频是一块块出来的）。
 ///
 /// 根因：本地列表、分组映射、远端清单各自 setState——列表先到就拿空映射画出
 /// 全员散卡，映射到了再收拢成合集、换海报，远端收养后又整套重载映射两遍。
