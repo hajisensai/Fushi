@@ -580,6 +580,8 @@ extension _ReaderMining on _ReaderFushiPageState {
   /// [AudiobookRepository]；两源加载后 sasayaki 判据完全一致（BUG-395），setup 不再
   /// 按书源分叉出不同的高亮策略。返回 null = 本书无任何音频 cue 源。
   Future<List<AudioCue>?> _loadHighlightCues() async {
+    final List<AudioCue>? ttsCues = _ttsCues;
+    if (ttsCues != null) return ttsCues;
     if (_srtBookUid != null) {
       return SrtBookRepository(appModel.database).cuesFor(_srtBookUid!);
     }

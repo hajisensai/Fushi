@@ -4,6 +4,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
 import 'package:fushi/src/media/audiobook/audiobook_material_library_dialog.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -50,6 +52,20 @@ List<SettingsSection> buildListeningSections() {
           onChanged: (SettingsContext settingsContext, bool value) async {
             await settingsContext.appModel.setAudiobookBackgroundPlay(
               value: value,
+            );
+            settingsContext.refresh();
+          },
+        ),
+        // 朗读声音（TTS）：没有录音有声书的书也能由阅读器朗读并逐句高亮。
+        SettingsActionItem(
+          id: 'listening.tts_voices',
+          title: t.audiobook_tts_voice_settings,
+          subtitle: t.audiobook_tts_voice_settings_hint,
+          icon: FushiIcons.voice,
+          onTap: (SettingsContext settingsContext) async {
+            await openTtsVoiceSettingsPage(
+              settingsContext.context,
+              TtsServices.of(settingsContext.appModel.prefsRepo),
             );
             settingsContext.refresh();
           },

@@ -19,6 +19,8 @@ import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart'
     show AudiobookFollowAudioButton, AudiobookPlayFab;
 import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_read_along.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -71,6 +73,8 @@ class ReaderAudiobookPanel extends StatefulWidget {
     this.onAudioImport,
     this.onPickAlignment,
     this.onTranscribe,
+    this.onStopTts,
+    this.onOpenTtsVoices,
     this.cueStudyOffset,
     this.tick = const Duration(seconds: 1),
   });
@@ -94,6 +98,10 @@ class ReaderAudiobookPanel extends StatefulWidget {
   final VoidCallback? onAudioImport;
   final VoidCallback? onPickAlignment;
   final VoidCallback? onTranscribe;
+
+  /// TTS 朗读会话的「停止朗读」/「朗读声音」（录音有声书时不用）。
+  final VoidCallback? onStopTts;
+  final VoidCallback? onOpenTtsVoices;
 
   /// cue 音频坐标（[SubtitleRematchFragment.normCharStart]）→ 章内学习单位偏移
   /// （与 [TtuTocEntry.anchorCharOffset] 同尺）。阅读器页给出；null / 映射不出时
@@ -673,6 +681,8 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
   /// 按钮是低频的资源操作（重新选对齐文件 / 设备转录 / 导入音频），多文件时再列出
   /// 各文件名。只读控制器已有的数据，操作都是调用方原有的回调。
   Widget _buildSourceCard(ThemeData theme, AudiobookPlayerController? ctrl) {
+    final TtsReadAlong? tts = TtsReadAlong.forController(ctrl);
+    if (tts != null) return _buildTtsSourceCard(theme, tts);
     final List<File> files = ctrl?.audioFiles ?? const <File>[];
     final String? alignmentPath = ctrl?.audiobook?.alignmentPath;
     final String? alignmentName = alignmentPath == null || alignmentPath.isEmpty
@@ -785,6 +795,88 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
             const SizedBox(height: 12),
             Wrap(spacing: 8, runSpacing: 8, children: actions),
           ],
+        ],
+      ),
+    );
+  }
+
+  /// TTS 朗读时的「音频来源」卡：当前声音 + 引擎，操作是换声音 / 停止朗读。
+  Widget _buildTtsSourceCard(ThemeData theme, TtsReadAlong tts) {
+    void closeThen(VoidCallback action) {
+      Navigator.of(context).pop();
+      action();
+    }
+
+    final Color fg = ReaderPanelCard.foregroundFor(
+      context,
+      ReaderPanelCardTone.neutral,
+    );
+    final String name = tts.preset.name.isEmpty
+        ? ttsProviderLabel(tts.preset.providerId)
+        : tts.preset.name;
+    return ReaderPanelCard(
+      key: const ValueKey<String>('fushi_audiobook_tts_source_card'),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const ReaderPanelIconBadge(icon: FushiIcons.voice),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      t.audiobook_tts_source_title(name: name),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: fg,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      tts.isWaitingForCurrent
+                          ? t.audiobook_tts_waiting
+                          : ttsProviderLabel(tts.preset.providerId),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: fg.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: <Widget>[
+              if (widget.onOpenTtsVoices != null)
+                FushiFilledButton.tonalIcon(
+                  key: const ValueKey<String>(
+                    'fushi_audiobook_panel_tts_voices',
+                  ),
+                  size: FushiButtonSize.xs,
+                  onPressed: () => closeThen(widget.onOpenTtsVoices!),
+                  icon: const FushiIcon(FushiIcons.voice, size: 18),
+                  label: Text(t.audiobook_tts_voice_settings),
+                ),
+              if (widget.onStopTts != null)
+                FushiFilledButton.tonalIcon(
+                  key: const ValueKey<String>('fushi_audiobook_panel_tts_stop'),
+                  size: FushiButtonSize.xs,
+                  onPressed: () => closeThen(widget.onStopTts!),
+                  icon: const FushiIcon(FushiIcons.stop, size: 18),
+                  label: Text(t.audiobook_tts_stop),
+                ),
+            ],
+          ),
         ],
       ),
     );

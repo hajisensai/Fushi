@@ -101,6 +101,9 @@ abstract final class PrefRedactionPolicy {
     'discovery_alist_sites',
     // 同形：Audiobookshelf 服务器清单里的 base64 access / refresh token。
     'discovery_audiobookshelf_servers',
+    // 同形：朗读声音预设清单里 base64 的 Azure / Google API key 与网关 Bearer。
+    // 也在 deviceLocalPrefKeys 中。
+    'tts_voice_presets',
   };
 
   /// key 是否属于「设备本地 / 凭据」，即备份、Profile 快照与 Profile 分享 JSON

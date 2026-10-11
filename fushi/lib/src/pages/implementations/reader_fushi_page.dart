@@ -42,6 +42,15 @@ import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_read_along.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    show FushiChoiceOption, showFushiChoiceDialog;
+import 'package:fushi_engine/tts/tts_provider.dart';
+import 'package:fushi_engine/tts/tts_types.dart';
+import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
@@ -207,6 +216,7 @@ part 'reader_fushi/audiobook.part.dart';
 part 'reader_fushi/caret.part.dart';
 part 'reader_fushi/chrome.part.dart';
 part 'reader_fushi/webview.part.dart';
+part 'reader_fushi/tts.part.dart';
 
 /// TODO-904: native WebView2 实例创建失败时，fork 经 onReceivedError 合成的
 /// [WebResourceError] 描述里携带的 sentinel 前缀（须与
@@ -2047,6 +2057,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool _chromeLastPlaying = false;
   bool _chromeLastFollow = false;
   String? _audiobookBookKey;
+
+  /// 当前挂着的是 TTS 朗读会话时，它的全书 cue（只在会话内存里，不在库里）。
+  List<AudioCue>? _ttsCues;
   String? _srtBookUid;
   Map<int, int>? _srtCueChapterMap;
   List<(int firstIdx, int lastIdx)>? _srtChapterRanges;
