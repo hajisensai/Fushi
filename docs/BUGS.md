@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2957 条。点号进各自文件。
+> 共 2958 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -69,6 +69,7 @@
 | [BUG-3238](bugs/BUG-3238-settings-slider-rejected-value.md) | ✅ | ✅ | 设置滑条松手后被拒绝的拖动值一直挂在滑块上 |
 | [BUG-3237](bugs/BUG-3237-transcode-hls-seek-late-audio.md) | ✅ | ✅ | 互联转码 HLS：音轨比画面晚起的片子一 seek 就黑屏 EOF |
 | [BUG-3236](bugs/BUG-3236-interconnect-bluray-title-unplayable.md) | ✅ | ✅ | 互联客户端打不开蓝光标题（host 把 .mpls 当视频直传） |
+| [BUG-3235](bugs/BUG-3235-video-library-staged-first-paint.md) | ✅ | ✅ | 视频库首屏一块块加载 |
 | [BUG-3234](bugs/BUG-3234-android-dict-import-oom-native-kill.md) | ✅ | ✅ | Android 导入英语大词典时原生进程被杀（low_ram 写死 false + MDX-in-zip 整条目解压进堆） |
 | [BUG-3233](bugs/BUG-3233-bluray-disc-extras-missing-from-work-page.md) | ✅ | ✅ | 原盘菜单里的特典映像在作品资料页看不到 |
 | [BUG-3232](bugs/BUG-3232-bluray-disc-extras-scraped-as-movie.md) | ✅ | ✅ | 电影盘上的特辑与菜单特典被各自当成整部电影刮削 |
