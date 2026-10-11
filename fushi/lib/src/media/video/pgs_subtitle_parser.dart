@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
+import 'package:crypto/crypto.dart' show sha1;
 import 'package:image/image.dart' as img;
 
 /// Blu-ray 图形字幕（HDMV PGS，`.sup` 裸流）解析：把段流折成「一条字幕一张图」的 cue。
@@ -98,21 +99,36 @@ class PgsCue {
 
   /// 黑底合成、四周留 [padding] 像素的 PNG。Alpha 按本调色板最大不透明度归一化，
   /// 淡入帧也按满不透明渲染（OCR 只关心字形）。
-  Uint8List renderPng({int padding = 16}) {
+  Uint8List renderPng({int padding = 16}) =>
+      img.encodePng(_renderCanvas(padding));
+
+  /// 与 [renderPng] 同一张图的原始 RGBA 像素（不编码 PNG）：整轨识别直接把像素交给
+  /// 识别会话，省掉「编码 PNG → 落盘 → 后台再解码」的往返。
+  PgsRenderedImage renderRgba({int padding = 16}) {
+    final img.Image canvas = _renderCanvas(padding);
+    return PgsRenderedImage(
+      rgba: canvas.getBytes(order: img.ChannelOrder.rgba),
+      width: canvas.width,
+      height: canvas.height,
+    );
+  }
+
+  img.Image _renderCanvas(int padding) {
     final ({int left, int top, int right, int bottom}) box = bounds;
     final int w = box.right - box.left + padding * 2;
     final int h = box.bottom - box.top + padding * 2;
-    final img.Image canvas = img.Image(width: w, height: h);
+    final img.Image canvas = img.Image(width: w, height: h, numChannels: 4)
+      ..clear(img.ColorRgba8(0, 0, 0, 255));
     int maxAlpha = 0;
     for (final int argb in _palette) {
       final int a = argb >>> 24;
       if (a > maxAlpha) maxAlpha = a;
     }
-    if (maxAlpha == 0) return img.encodePng(canvas);
+    if (maxAlpha == 0) return canvas;
     for (final PgsPlacement pl in _placements) {
       _paint(canvas, pl, box.left - padding, box.top - padding, maxAlpha);
     }
-    return img.encodePng(canvas);
+    return canvas;
   }
 
   void _paint(
@@ -145,6 +161,34 @@ class PgsCue {
       }
     }
   }
+}
+
+/// 一条 cue 渲染出的不透明 RGBA 像素（黑底，[width]×[height]×4 字节）。
+class PgsRenderedImage {
+  const PgsRenderedImage({
+    required this.rgba,
+    required this.width,
+    required this.height,
+  });
+
+  final Uint8List rgba;
+  final int width;
+  final int height;
+
+  /// 像素内容指纹：同一张字幕位图（PGS 常为淡入淡出 / 换位置 / 酸点重发而重复
+  /// 显示同一内容）只识别一次。
+  String get contentKey => '${width}x$height:${sha1.convert(rgba).toString()}';
+
+  /// 编码成 PNG（只在要交给大模型 / 非本机引擎时才需要）。
+  Uint8List encodePng() => img.encodePng(
+    img.Image.fromBytes(
+      width: width,
+      height: height,
+      bytes: rgba.buffer,
+      bytesOffset: rgba.offsetInBytes,
+      numChannels: 4,
+    ),
+  );
 }
 
 /// 位图对象（ODS 拼完后的 RLE + 尺寸）。

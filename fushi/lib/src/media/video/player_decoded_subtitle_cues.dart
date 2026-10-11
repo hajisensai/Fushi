@@ -46,6 +46,32 @@ AudioCue? buildPlayerDecodedCue({
     ..audioFileIndex = 0;
 }
 
+/// BUG-3274：图形字幕（PGS / VobSub，libmpv 自绘、Dart 侧无 cue）当前在屏那句的
+/// 查词 / 制卡锚点 cue。
+///
+/// [startMs] / [endMs] 是 mpv `sub-start` / `sub-end` 换算的毫秒。mpv 的
+/// `sub_get_times` 先把视频 pts 换到字幕时基（减 `sub-delay`）再查当前句，返回的起止
+/// **不加回** `sub-delay`——即字幕文件原始坐标，与文本字幕 cue 的坐标系相同。图形模式
+/// 下 `sub-delay` = 主轨调轴，故制卡照常 `+ delayMs` 逆变换回播放器轴即可。
+///
+/// [startMs] 为 null（此刻画面上没有字幕，mpv 报属性不可用）→ null：不按播放位置
+/// 编一个假窗，交给制卡的「无区间 → 当前帧静图」路径。[endMs] 缺失（个别容器的 PGS
+/// 结束段未到）沿用 [kPlayerDecodedCueProvisionalMs] 暂定时长。[text] 是用户在暂停
+/// OCR 层点的那行识别文字（图形字幕没有 `sub-text`），为空同样返回 null。
+AudioCue? buildGraphicSubtitleAnchorCue({
+  required String text,
+  required int? startMs,
+  required int? endMs,
+}) {
+  if (startMs == null) return null;
+  return buildPlayerDecodedCue(
+    text: text,
+    startMs: startMs,
+    endMs: endMs,
+    positionMs: startMs,
+  );
+}
+
 /// 把 [cue] 合进按 startMs 升序的 [cues]，返回新列表（不改入参）、这句落在第几位
 /// [index]，以及是不是插入 [inserted]（false = 原地替换）。
 ///

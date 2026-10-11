@@ -81,6 +81,7 @@ class _FolderJobService implements MangaOcrService, MangaOcrPageService {
   Future<MangaOcrPageSession> openPageSession({
     required String imageDirPath,
     void Function(MangaOcrAcceleration acceleration)? onAcceleration,
+    bool textImagesOnly = false,
   }) => throw UnimplementedError();
 
   @override

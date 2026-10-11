@@ -9,7 +9,11 @@ import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
 import 'package:fushi/src/media/video/graphic_subtitle_track_ocr.dart';
 import 'package:fushi/src/media/video/pgs_subtitle_parser.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRecognition, OcrRect;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:image/image.dart' as img;
@@ -136,12 +140,12 @@ _Segment _pcs(List<(int, int, int)> objects, {bool epochStart = false}) => (
 _Segment _pds(int alpha) =>
     (type: 0x14, body: <int>[0x00, 0x00, 0x01, 235, 128, 128, alpha]);
 
-/// ODS：4x2 实心色 1。
-_Segment _ods() {
-  // 每行：色 1 连续 4 个（00 04 01 → flag 0x80|4 带颜色），再行尾 00 00。
+/// ODS：[width]x2 实心色 1（[width] < 64）。
+_Segment _ods({int width = 4}) {
+  // 每行：色 1 连续 width 个（00 (0x80|width) 01 带颜色），再行尾 00 00。
   final List<int> rle = <int>[
-    0x00, 0x84, 0x01, 0x00, 0x00, //
-    0x00, 0x84, 0x01, 0x00, 0x00,
+    0x00, 0x80 | width, 0x01, 0x00, 0x00, //
+    0x00, 0x80 | width, 0x01, 0x00, 0x00,
   ];
   return (
     type: 0x15,
@@ -150,7 +154,7 @@ _Segment _ods() {
       0x00, // version
       0xC0, // first + last
       0x00, ..._u16(rle.length + 4), // data length（含宽高）
-      ..._u16(4),
+      ..._u16(width),
       ..._u16(2),
       ...rle,
     ],
@@ -203,8 +207,13 @@ Uint8List _sup() {
 }
 
 /// 多条 cue 的 `.sup`：每个起点出现 500ms 后清屏；[openLast] 时最后一条不清屏
-/// （模拟抽轨进程还没写到它的收尾）。
-Uint8List _multiSup(List<int> startsMs, {bool openLast = false}) {
+/// （模拟抽轨进程还没写到它的收尾）。每条位图宽度不同（内容各异，不会被同图去重）；
+/// [sameBitmap] 时全部同一张位图。
+Uint8List _multiSup(
+  List<int> startsMs, {
+  bool openLast = false,
+  bool sameBitmap = false,
+}) {
   final BytesBuilder out = BytesBuilder();
   void put(int ms, List<_Segment> segments) {
     final int pts = ms * 90;
@@ -227,7 +236,7 @@ Uint8List _multiSup(List<int> startsMs, {bool openLast = false}) {
     put(startsMs[i], <_Segment>[
       _pcs(<(int, int, int)>[(0, 100, 200)], epochStart: true),
       _pds(0xFF),
-      _ods(),
+      _ods(width: sameBitmap ? 4 : 4 + i),
       _end,
     ]);
     if (openLast && i == startsMs.length - 1) break;
@@ -516,8 +525,20 @@ void main() {
     });
   });
 
-  group('recognizeGraphicSubtitleCues', () {
-    test('逐条识别：块内行直接拼接、块间换行、报进度', () async {
+  group('整轨识别会话（单条）', () {
+    Future<List<GraphicSubtitleTextCue>?> runOne(
+      GraphicSubtitleOcrSession session, {
+      bool cancelled = false,
+    }) => recognizeGraphicSubtitleCuesLive(
+      snapshot: () async => PgsSubtitleParser.parse(_sup()),
+      sourceComplete: () => true,
+      sourceDone: Future<void>.value(),
+      session: session,
+      positionMs: () => 0,
+      isCancelled: () => cancelled,
+    );
+
+    test('页级引擎：块内行直接拼接、块间换行', () async {
       final _FakeRecognizer recognizer = _FakeRecognizer(<MokuroImage>[
         _page(<List<String>>[
           <String>['こんにち', 'は'],
@@ -528,20 +549,12 @@ void main() {
         prepare: (String _) async =>
             MangaStreamOcrReady(MangaOcrEngineId.localOnnx, recognizer),
       );
-      final List<(int, int)> progress = <(int, int)>[];
-      final List<GraphicSubtitleTextCue>? out =
-          await recognizeGraphicSubtitleCues(
-            cues: PgsSubtitleParser.parse(_sup()),
-            session: session,
-            isCancelled: () => false,
-            onProgress: (int done, int total) => progress.add((done, total)),
-          );
+      final List<GraphicSubtitleTextCue>? out = await runOne(session);
       await session.close();
       expect(out, hasLength(1));
       expect(out!.single.text, 'こんにちは\n世界');
       expect(out.single.startMs, 1000);
       expect(out.single.endMs, 3000);
-      expect(progress, <(int, int)>[(1, 1)]);
       expect(recognizer.closed, isTrue);
     });
 
@@ -551,14 +564,8 @@ void main() {
         prepare: (String _) async =>
             MangaStreamOcrReady(MangaOcrEngineId.localOnnx, recognizer),
       );
-      final List<GraphicSubtitleTextCue>? out =
-          await recognizeGraphicSubtitleCues(
-            cues: PgsSubtitleParser.parse(_sup()),
-            session: session,
-            isCancelled: () => true,
-          );
+      expect(await runOne(session, cancelled: true), isNull);
       await session.close();
-      expect(out, isNull);
       expect(recognizer.calls, 0);
     });
 
@@ -567,11 +574,7 @@ void main() {
         prepare: (String _) async => const MangaStreamOcrNoEngine(),
       );
       await expectLater(
-        recognizeGraphicSubtitleCues(
-          cues: PgsSubtitleParser.parse(_sup()),
-          session: session,
-          isCancelled: () => false,
-        ),
+        runOne(session),
         throwsA(
           isA<GraphicSubtitleOcrUnavailable>().having(
             (GraphicSubtitleOcrUnavailable e) => e.reason,
@@ -582,8 +585,115 @@ void main() {
       );
       await session.close();
     });
-  });
 
+    test('文字图引擎：像素直接交识别器（不落 PNG），并行开满会话池', () async {
+      final _TextImageRecognizer recognizer = _TextImageRecognizer(
+        parallelism: 3,
+      );
+      final GraphicSubtitleOcrSession session = GraphicSubtitleOcrSession(
+        prepare: (String _) async =>
+            MangaStreamOcrReady(MangaOcrEngineId.localOnnx, recognizer),
+      );
+      final List<GraphicSubtitleTextCue>? out =
+          await recognizeGraphicSubtitleCuesLive(
+            snapshot: () async => PgsSubtitleParser.parse(
+              _multiSup(<int>[1000, 3000, 5000, 7000, 9000, 11000]),
+            ),
+            sourceComplete: () => true,
+            sourceDone: Future<void>.value(),
+            session: session,
+            positionMs: () => 0,
+            isCancelled: () => false,
+          );
+      await session.close();
+      expect(recognizer.pageCalls, 0, reason: '文字图引擎不该走整页管线');
+      expect(recognizer.textCalls, 6);
+      expect(recognizer.maxConcurrent, 3);
+      // 位图宽 4+i 像素，加 16px 边距 → 宽度各不相同，文字里带着宽度。
+      expect(out!.map((GraphicSubtitleTextCue c) => c.text), <String>[
+        for (int i = 0; i < 6; i++) 'w${4 + i + 32}',
+      ]);
+    });
+
+    test('同一张位图只识别一次，所有出现它的 cue 都拿到文字', () async {
+      final _TextImageRecognizer recognizer = _TextImageRecognizer(
+        parallelism: 2,
+      );
+      final GraphicSubtitleOcrSession session = GraphicSubtitleOcrSession(
+        prepare: (String _) async =>
+            MangaStreamOcrReady(MangaOcrEngineId.localOnnx, recognizer),
+      );
+      final List<GraphicSubtitleTextCue>? out =
+          await recognizeGraphicSubtitleCuesLive(
+            snapshot: () async => PgsSubtitleParser.parse(
+              _multiSup(<int>[1000, 3000, 5000, 7000], sameBitmap: true),
+            ),
+            sourceComplete: () => true,
+            sourceDone: Future<void>.value(),
+            session: session,
+            positionMs: () => 0,
+            isCancelled: () => false,
+          );
+      await session.close();
+      expect(recognizer.textCalls, 1);
+      expect(out, hasLength(4));
+      expect(out!.every((GraphicSubtitleTextCue c) => c.text == 'w36'), isTrue);
+    });
+
+    test('大模型重读不挡本地识别：本地先出字，读回后热替换，收尾等重读回齐', () async {
+      final _TextImageRecognizer recognizer = _TextImageRecognizer(
+        parallelism: 2,
+        confidence: 0.2,
+      );
+      final _GatedAiClient client = _GatedAiClient();
+      final GraphicSubtitleOcrSession session = GraphicSubtitleOcrSession(
+        prepare: (String dir) async => MangaStreamOcrReady(
+          MangaOcrEngineId.localOnnx,
+          recognizer,
+          ai: MangaStreamAiRefinement(
+            refiner: MangaAiOcrRefiner(
+              provider: _aiProvider,
+              mode: MangaAiOcrMode.lowConfidence,
+              clientFactory: () => client,
+            ),
+          ),
+        ),
+      );
+      final List<List<String>> published = <List<String>>[];
+      final List<(int, int)> aiProgress = <(int, int)>[];
+      final Future<List<GraphicSubtitleTextCue>?> running =
+          recognizeGraphicSubtitleCuesLive(
+            snapshot: () async =>
+                PgsSubtitleParser.parse(_multiSup(<int>[1000, 3000])),
+            sourceComplete: () => true,
+            sourceDone: Future<void>.value(),
+            session: session,
+            positionMs: () => 0,
+            isCancelled: () => false,
+            onRecognized: (List<GraphicSubtitleTextCue> r) => published.add(
+              <String>[for (final GraphicSubtitleTextCue c in r) c.text],
+            ),
+            onAiProgress: (int done, int total) =>
+                aiProgress.add((done, total)),
+          );
+      // 本地两条都先出字，大模型请求还挂着。
+      await client.started.future;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(published.last, <String>['w36', 'w37']);
+      expect(recognizer.textCalls, 2);
+      client.release();
+      final List<GraphicSubtitleTextCue>? out = await running;
+      await session.close();
+      // 两条拼进同一次请求（跨条批量），读回后替换。
+      expect(client.calls, 1);
+      expect(out!.map((GraphicSubtitleTextCue c) => c.text), <String>[
+        '読み',
+        '読み',
+      ]);
+      expect(published.last, <String>['読み', '読み']);
+      expect(aiProgress.last, (2, 2));
+    });
+  });
   group('边看边识别', () {
     test('pickNextGraphicSubtitleCue：播放头之后的未识别 cue 优先，再回头补', () {
       final List<PgsCue> cues = PgsSubtitleParser.parse(
@@ -714,4 +824,87 @@ void main() {
       );
     });
   });
+}
+
+final AiProviderConfig _aiProvider = AiProviderConfig(
+  id: 'p',
+  presetId: kAiCustomPresetId,
+  name: 'p',
+  baseUrl: Uri.parse('https://example.com/v1'),
+  apiKey: 'k',
+  model: 'vision',
+);
+
+/// 文字图引擎替身：文字 = `w{图宽}`，记调用数与最大并发。
+class _TextImageRecognizer
+    implements MangaStreamPageRecognizer, MangaStreamTextImageRecognizer {
+  _TextImageRecognizer({required this.parallelism, this.confidence = 0.99});
+
+  @override
+  final int parallelism;
+  final double confidence;
+  int textCalls = 0;
+  int pageCalls = 0;
+  int _inFlight = 0;
+  int maxConcurrent = 0;
+
+  @override
+  Future<OcrRecognition> recognizeTextImage(
+    Uint8List rgba, {
+    required int width,
+    required int height,
+  }) async {
+    expect(rgba.length, width * height * 4);
+    textCalls++;
+    _inFlight++;
+    if (_inFlight > maxConcurrent) maxConcurrent = _inFlight;
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    _inFlight--;
+    final String text = 'w$width';
+    return OcrRecognition(
+      text: text,
+      vertical: false,
+      lines: <String>[text],
+      lineBoxes: <OcrRect>[
+        OcrRect(left: 0, top: 0, right: width.toDouble(), bottom: 20),
+      ],
+      confidence: confidence,
+    );
+  }
+
+  @override
+  Future<MokuroImage> recognize(File pageFile) async {
+    pageCalls++;
+    throw StateError('page path must not be used');
+  }
+
+  @override
+  Future<void> close() async {}
+}
+
+/// 大模型替身：第一个请求挂起到 [release]；每张图都读成「読み」。
+class _GatedAiClient extends AiChatClient {
+  final Completer<void> started = Completer<void>();
+  final Completer<void> _gate = Completer<void>();
+  int calls = 0;
+
+  void release() {
+    if (!_gate.isCompleted) _gate.complete();
+  }
+
+  @override
+  Future<String> complete({
+    required AiProviderConfig provider,
+    required List<AiChatMessage> messages,
+    int maxTokens = 2048,
+  }) async {
+    calls++;
+    if (!started.isCompleted) started.complete();
+    await _gate.future;
+    final int count = messages.last.images.length;
+    return '{"blocks":[${<String>[for (int i = 1; i <= count; i++) '{"id":$i,"text":"読み"}'].join(',')}]}';
+  }
+
+  @override
+  void close() {}
 }

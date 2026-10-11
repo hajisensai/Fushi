@@ -46,6 +46,8 @@ class GraphicSubtitleOcrJobState {
     this.total = 0,
     this.engineLabel,
     this.aiLabel,
+    this.aiDone = 0,
+    this.aiTotal = 0,
   });
 
   final GraphicSubtitleOcrJobPhase phase;
@@ -65,6 +67,10 @@ class GraphicSubtitleOcrJobState {
 
   /// AI 重读来源；null = 没开。只在 [engineLabel] 非空后有意义。
   final String? aiLabel;
+
+  /// 大模型重读：已回 / 已排队条数（本地识别与重读并行，重读在后台批量进行）。
+  final int aiDone;
+  final int aiTotal;
 
   /// 0..1；不定态返回 null。
   double? get fraction => switch (phase) {
@@ -88,6 +94,8 @@ class GraphicSubtitleOcrJobState {
     int? total,
     String? engineLabel,
     String? aiLabel,
+    int? aiDone,
+    int? aiTotal,
   }) => GraphicSubtitleOcrJobState(
     phase: phase ?? this.phase,
     processed: processed ?? this.processed,
@@ -96,6 +104,8 @@ class GraphicSubtitleOcrJobState {
     total: total ?? this.total,
     engineLabel: engineLabel ?? this.engineLabel,
     aiLabel: aiLabel ?? this.aiLabel,
+    aiDone: aiDone ?? this.aiDone,
+    aiTotal: aiTotal ?? this.aiTotal,
   );
 
   /// 当前阶段的一行说明（含百分比）。
@@ -371,6 +381,12 @@ class _VideoGraphicSubtitleOcrProgressCardState
                         Text(
                           state.aiLabel == null
                               ? t.video_subtitle_graphic_ocr_job_ai_off
+                              : state.aiTotal > 0
+                              ? t.video_subtitle_graphic_ocr_job_ai_progress(
+                                  provider: state.aiLabel!,
+                                  done: state.aiDone,
+                                  total: state.aiTotal,
+                                )
                               : t.video_subtitle_graphic_ocr_job_ai_on(
                                   provider: state.aiLabel!,
                                 ),

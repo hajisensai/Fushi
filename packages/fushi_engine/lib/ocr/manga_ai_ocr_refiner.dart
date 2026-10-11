@@ -240,10 +240,38 @@ class MangaAiOcrPageStats {
   final String? failure;
 }
 
-/// 大模型重读器。一卷一个实例（[cache] 绑卷目录）；不是线程安全的，按页顺序调用。
+/// 一张已裁好的文字图（PNG）+ 它的本地识别块（字幕整轨重读用）。
+class MangaAiOcrCropRequest {
+  const MangaAiOcrCropRequest({required this.crop, required this.block});
+  final Uint8List crop;
+  final MokuroBlock block;
+}
+
+/// 一张待读裁图在一次重读里的状态：缓存键按裁图字节算一次，读出的文字回填
+/// [text]（null = 没读到 / 校验不过）。
+class _CropRead {
+  _CropRead(this.crop, this.block) : key = sha1.convert(crop).toString();
+
+  final Uint8List crop;
+
+  /// 校验（[isPlausibleMangaAiOcrText]）用的本地块。
+  final MokuroBlock block;
+  final String key;
+  String? text;
+
+  /// [text] 来自磁盘缓存（没发请求）。
+  bool cached = false;
+}
+
+/// 大模型重读器。一卷一个实例（[cache] 绑卷目录）。
 ///
-/// [cancel] 之后本实例作废：在途请求被中止（关掉它的 HTTP 客户端），之后的
-/// [refinePage] 一律原样交回本地结果、不再发请求。
+/// 整个实例共用**一个** [AiChatClient]（首次发请求时建），多个 [refinePage] /
+/// [refineCrops] 可以同时在途——底层 HTTP 客户端本身支持并发请求，不必每页各开
+/// 一个连接池。
+///
+/// [cancel] / [dispose] 之后本实例作废：在途请求被中止（关掉共享的 HTTP 客户端），
+/// 之后的 [refinePage] 一律原样交回本地结果、[refineCrops] 一律交回 null，不再
+/// 发请求。
 class MangaAiOcrRefiner {
   MangaAiOcrRefiner({
     required this.provider,
@@ -262,13 +290,15 @@ class MangaAiOcrRefiner {
 
   String? _fatalFailure;
   bool _cancelled = false;
-  final Set<AiChatClient> _activeClients = <AiChatClient>{};
+
+  /// 共享客户端；第一次真要发请求时才建，[cancel] / [dispose] 时关掉。
+  AiChatClient? _client;
 
   /// 遇到过「重试也没用」的失败（鉴权 / 配置 / 4xx）：此后不再发请求，整卷保留
   /// 本地结果。null = 仍可用。
   String? get fatalFailure => _fatalFailure;
 
-  /// 已被 [cancel]。
+  /// 已被 [cancel]（或 [dispose]）。
   bool get isCancelled => _cancelled;
 
   /// 调用方不再要结果（阅读会话关了 / 任务取消了 / 书删了）：中止在途请求，此后
@@ -276,11 +306,19 @@ class MangaAiOcrRefiner {
   void cancel() {
     if (_cancelled) return;
     _cancelled = true;
-    for (final AiChatClient client in _activeClients) {
-      client.close();
-    }
-    _activeClients.clear();
+    // 关掉共享客户端即中止它上面所有在途请求（IOClient 强制关闭底层连接）。
+    final AiChatClient? client = _client;
+    _client = null;
+    client?.close();
   }
+
+  /// 用完释放共享的 HTTP 客户端。语义同 [cancel]：还在途的请求被中止，之后不再
+  /// 发请求——调用方确定不再需要本实例时调它，别让连接池等 GC。幂等。
+  void dispose() => cancel();
+
+  /// 共享客户端（懒建）。只在确认未取消后的同一个同步段里调用，取消之后不会
+  /// 再建出新客户端。
+  AiChatClient _sharedClient() => _client ??= _clientFactory();
 
   /// 这个块要不要送大模型。
   bool wants(MokuroBlock block) {
@@ -331,80 +369,141 @@ class MangaAiOcrRefiner {
       ),
     );
 
-    final Map<int, String> texts = <int, String>{};
-    final List<int> pending = <int>[];
-    final Map<int, String> keys = <int, String>{};
+    // 与 wanted 同序；裁不出图的块为 null（保留本地文字）。
+    final List<_CropRead?> reads = <_CropRead?>[
+      for (int k = 0; k < wanted.length; k++)
+        crops[k] == null ? null : _CropRead(crops[k]!, page.blocks[wanted[k]]),
+    ];
+    final String? failure = await _readCrops(<_CropRead>[
+      for (final _CropRead? read in reads)
+        if (read != null) read,
+    ], cache);
+    if (_cancelled) {
+      // 调用方已不要结果：不交改写（缓存也已在 _readCrops 里跳过）。
+      return (page: page, stats: const MangaAiOcrPageStats());
+    }
+
+    final List<MokuroBlock> blocks = List<MokuroBlock>.of(page.blocks);
+    int replaced = 0;
     int cached = 0;
     for (int k = 0; k < wanted.length; k++) {
-      final Uint8List? crop = crops[k];
-      if (crop == null) continue;
-      final String key = sha1.convert(crop).toString();
-      keys[k] = key;
-      final String? hit = await cache?.lookup(key);
+      final _CropRead? read = reads[k];
+      final String? text = read?.text;
+      if (read == null || text == null) continue;
+      replaced++;
+      if (read.cached) cached++;
+      final int index = wanted[k];
+      blocks[index] = applyMangaAiOcrText(blocks[index], text);
+    }
+    return (
+      page: MokuroImage(url: page.url, size: page.size, blocks: blocks),
+      stats: MangaAiOcrPageStats(
+        candidates: wanted.length,
+        replaced: replaced,
+        cached: cached,
+        failure: failure,
+      ),
+    );
+  }
+
+  /// 跨页批量重读：[items] 每项一张裁图。按 [wants] 筛、按裁图 SHA-1 查/写 [cache]，
+  /// 未命中的按 [blocksPerRequest] 打包请求；回复过 [isPlausibleMangaAiOcrText] 校验。
+  /// 返回与 [items] 等长的列表：替换后的文字，或 null（不需要 / 失败 / 校验不过 / 已取消）。
+  /// 可并发调用（多个批次同时在途）。
+  ///
+  /// 返回的是模型原文（多行用 `\n` 分隔），没有按块几何排版——要落进
+  /// [MokuroBlock] 时交 [applyMangaAiOcrText]。遇到致命失败（[fatalFailure]）后
+  /// 只交回缓存命中的条目，不再发请求。
+  Future<List<String?>> refineCrops(
+    List<MangaAiOcrCropRequest> items, {
+    MangaAiOcrCache? cache,
+  }) async {
+    final List<String?> texts = List<String?>.filled(items.length, null);
+    if (_cancelled) return texts;
+    final Map<int, _CropRead> reads = <int, _CropRead>{
+      for (int i = 0; i < items.length; i++)
+        if (wants(items[i].block)) i: _CropRead(items[i].crop, items[i].block),
+    };
+    if (reads.isEmpty) return texts;
+    await _readCrops(reads.values.toList(), cache);
+    if (_cancelled) return List<String?>.filled(items.length, null);
+    for (final MapEntry<int, _CropRead> entry in reads.entries) {
+      texts[entry.key] = entry.value.text;
+    }
+    return texts;
+  }
+
+  /// [refinePage] 与 [refineCrops] 共用的读字核心：查缓存 → 未命中的按
+  /// [blocksPerRequest] 打包请求 → 逐条本地校验 → 新读到的写回缓存。读出的文字
+  /// 回填到各 [_CropRead.text]；返回本次遇到的请求失败（已脱敏短码，null = 没失败）。
+  ///
+  /// 失败处理：瞬时失败（网络 / 限流 / 5xx）跳过这一批继续下一批；致命失败
+  /// （鉴权 / 配置 / 4xx）记进 [fatalFailure]，本次与并发在途的其它调用都不再发
+  /// 新请求。已取消时不落缓存（可能是因为删书而取消）。
+  Future<String?> _readCrops(
+    List<_CropRead> reads,
+    MangaAiOcrCache? cache,
+  ) async {
+    final List<_CropRead> pending = <_CropRead>[];
+    for (final _CropRead read in reads) {
+      final String? hit = await cache?.lookup(read.key);
       if (hit != null) {
-        texts[k] = hit;
-        cached++;
+        read
+          ..text = hit
+          ..cached = true;
       } else {
-        pending.add(k);
+        pending.add(read);
       }
     }
 
     String? failure;
     final Map<String, String> fresh = <String, String>{};
-    if (_cancelled) {
-      return (page: page, stats: const MangaAiOcrPageStats());
-    }
-    final AiChatClient client = _clientFactory();
-    _activeClients.add(client);
-    try {
-      for (int start = 0; start < pending.length; start += blocksPerRequest) {
-        if (_cancelled) break;
-        final List<int> batch = pending.sublist(
-          start,
-          math.min(start + blocksPerRequest, pending.length),
-        );
-        final Map<int, String>? read;
-        try {
-          read = await _requestBatch(client, <Uint8List>[
-            for (final int k in batch) crops[k]!,
-          ]);
-        } on AiChatFailure catch (error) {
-          if (_cancelled) break;
-          failure = error.message;
-          if (!error.isTransient) {
-            _fatalFailure = error.message;
-            break;
-          }
-          continue;
-        }
-        if (read == null) {
-          failure = 'bad_response';
-          continue;
-        }
-        for (int j = 0; j < batch.length; j++) {
-          final int k = batch[j];
-          final String? text = read[j + 1];
-          if (text == null) continue;
-          final MokuroBlock source = page.blocks[wanted[k]];
-          if (!isPlausibleMangaAiOcrText(
-            text,
-            local: source.lines.join(),
-            block: source,
-          )) {
-            continue;
-          }
-          texts[k] = text;
-          fresh[keys[k]!] = text;
-        }
+    for (int start = 0; start < pending.length; start += blocksPerRequest) {
+      if (_cancelled) break;
+      final String? fatal = _fatalFailure;
+      if (fatal != null) {
+        // 别的调用（或本次前一批）已撞上致命失败：剩下的不再花钱。
+        failure ??= fatal;
+        break;
       }
-    } finally {
-      _activeClients.remove(client);
-      client.close();
+      final List<_CropRead> batch = pending.sublist(
+        start,
+        math.min(start + blocksPerRequest, pending.length),
+      );
+      final Map<int, String>? replies;
+      try {
+        replies = await _requestBatch(<Uint8List>[
+          for (final _CropRead read in batch) read.crop,
+        ]);
+      } on AiChatFailure catch (error) {
+        if (_cancelled) break;
+        failure = error.message;
+        if (!error.isTransient) {
+          _fatalFailure ??= error.message;
+          break;
+        }
+        continue;
+      }
+      if (replies == null) {
+        failure = 'bad_response';
+        continue;
+      }
+      for (int j = 0; j < batch.length; j++) {
+        final _CropRead read = batch[j];
+        final String? text = replies[j + 1];
+        if (text == null) continue;
+        if (!isPlausibleMangaAiOcrText(
+          text,
+          local: read.block.lines.join(),
+          block: read.block,
+        )) {
+          continue;
+        }
+        read.text = text;
+        fresh[read.key] = text;
+      }
     }
-    if (_cancelled) {
-      // 调用方已不要结果：不落缓存（它可能是因为删书而取消），也不交改写。
-      return (page: page, stats: const MangaAiOcrPageStats());
-    }
+    if (_cancelled) return failure;
     if (cache != null && fresh.isNotEmpty) {
       try {
         await cache.storeAll(fresh);
@@ -412,29 +511,13 @@ class MangaAiOcrRefiner {
         // 缓存写不进去只影响下次花不花钱，不影响本次结果。
       }
     }
-
-    final List<MokuroBlock> blocks = List<MokuroBlock>.of(page.blocks);
-    for (final MapEntry<int, String> entry in texts.entries) {
-      final int index = wanted[entry.key];
-      blocks[index] = applyMangaAiOcrText(blocks[index], entry.value);
-    }
-    return (
-      page: MokuroImage(url: page.url, size: page.size, blocks: blocks),
-      stats: MangaAiOcrPageStats(
-        candidates: wanted.length,
-        replaced: texts.length,
-        cached: cached,
-        failure: failure,
-      ),
-    );
+    return failure;
   }
 
-  /// 一批裁图一次请求；回复按 1 起的编号对回。形状不对返回 null。
-  Future<Map<int, String>?> _requestBatch(
-    AiChatClient client,
-    List<Uint8List> crops,
-  ) async {
-    final String reply = await client.complete(
+  /// 一批裁图一次请求（走共享客户端）；回复按 1 起的编号对回。形状不对返回 null。
+  /// 调用方须先确认未取消（见 [_sharedClient]）。
+  Future<Map<int, String>?> _requestBatch(List<Uint8List> crops) async {
+    final String reply = await _sharedClient().complete(
       provider: provider,
       maxTokens: 256 + 192 * crops.length,
       messages: <AiChatMessage>[

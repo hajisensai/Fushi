@@ -7030,5 +7030,6 @@
   "mihon_extension_min_downloads_any": "不限",
   "feedback_reopen_shots_failed": "Could not fetch ${n} of the original screenshots; they are not attached",
   "remote_hidden_books_hint_count": "${n} removed · Bring back remote books you removed from this device's shelf",
-  "video_subtitle_graphic_ocr_job_extracting_live": "Reading $percent% · $done lines ready, playing along"
+  "video_subtitle_graphic_ocr_job_extracting_live": "Reading $percent% · $done lines ready, playing along",
+  "video_subtitle_graphic_ocr_job_ai_progress": "AI re-read: $provider · $done/$total"
 }

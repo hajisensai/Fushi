@@ -7030,5 +7030,6 @@
   "mihon_extension_min_downloads_any": "不限",
   "feedback_reopen_shots_failed": "有 ${n} 张原截图没能取回，未附上",
   "remote_hidden_books_hint_count": "已移除 ${n} 本 · 找回在书架上「仅从本机移除」的远端书",
-  "video_subtitle_graphic_ocr_job_extracting_live": "边读边识别：已读 $percent% · 已识别 $done 条"
+  "video_subtitle_graphic_ocr_job_extracting_live": "边读边识别：已读 $percent% · 已识别 $done 条",
+  "video_subtitle_graphic_ocr_job_ai_progress": "AI 重读：$provider · $done/$total"
 }

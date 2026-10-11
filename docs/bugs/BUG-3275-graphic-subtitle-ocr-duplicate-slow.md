@@ -1,0 +1,11 @@
+## BUG-3275 · 图形字幕整轨OCR文字重复且极慢
+- **报告**：2026-10-11（用户：转出来的字幕同一句重复好几遍、夹着振假名碎片；整轨识别很慢，问是否用了显卡）
+- **真实性**：✅ 真 bug。
+  - **重复**：每条 PGS cue 本身已是裁好的一行字幕，却被当成漫画整页送进 `runMangaOcrFolderJob`（`fushi/lib/src/media/video/graphic_subtitle_ocr.dart` 旧 `_recognizePageOne` → `LocalMangaStreamPageRecognizer.recognize` → `packages/fushi_engine/lib/ocr/manga_ocr_service_impl.dart` `_pageSessionIsolateMain`）：RT-DETR 漫画检测器把字幕图拉伸到 640×640 后给出相互重叠的多个框，补检（`PpOcrPageTextSweeper`）再补回弱候选，振假名行被当成独立块，各块文字按块拼接（`graphicSubtitleTextOf`）——于是「引きあげ作業始まってる」出现多遍、「はじ / さぎょう / ひ」夹在中间。
+  - **慢**：同一条路径每条 cue 还要 UI 线程渲染 + 编码 PNG、落盘、后台再解码、写读逐页缓存 JSON；全程单会话串行；开了大模型重读时 `recognizePage` 在关键路径上逐条 `await ai.refine`（每条新建 HTTP 客户端），本地识别要等网络。Windows 上 OCR 全部跑 CPU（`packages/fushi_engine/lib/ocr/ocr_inference.dart` 偏好表为空）。
+- **[x] ① 已修复** —
+  - 引擎：页会话新增可选能力 `MangaOcrTextImageSession.recognizeTextImage`（RGBA 经 `TransferableTypedData` 直传，整图当一个块交 `RoutingOcrRecognizer`：PP 行检测 + 振假名过滤 + 逐行识别），`openPageSession(textImagesOnly: true)` 不加载漫画检测器与补检；`MangaAiOcrRefiner.refineCrops` 跨条批量重读、实例共用一个 HTTP 客户端（`dispose()` 释放）。
+  - app：`PgsCue.renderRgba` 出原始像素（不再编码 PNG）；`.sup` 解析与位图渲染挪到后台 isolate；同一张位图按像素指纹只识别一次；本机 ONNX 开 `defaultMangaStreamTextImageParallelism()` 个文字图会话并行；本地文字立即出、大模型重读进跨条批量队列（攒 8 条或 0.8 s 一批、最多 3 批并发），读回后热替换，整轨收尾等重读回齐再写 SRT；进度卡显示重读进度。
+  - 显卡：用 `tool/ocr_dml_probe` 在 RTX 5090 上实测 PP 行检测 / 行识别 / 漫画 CTC：DirectML 会话只有第一次见到的输入尺寸快，之后每种尺寸恒定 22–48 ms，与 CPU 2 线程持平或更慢；字幕宽度逐条变化，所以保持 CPU（数据与方法见 `tool/ocr_dml_probe/README.md` 2026-10-11 节）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/graphic_subtitle_track_ocr_test.dart`「整轨识别会话（单条）」组（文字图引擎不走整页管线且并行开满、同图只识别一次、大模型不挡本地且热替换并收尾等齐）；`packages/fushi_engine/test/ocr/manga_ocr_text_image_session_test.dart`（真 isolate 会话协议、`textImagesOnly` 跳过检测器）；`packages/fushi_engine/test/ocr/manga_ai_ocr_refine_crops_test.dart`（批量 / 缓存 / 校验 / 取消 / 共享客户端 / 致命失败）。
+- **备注**：已转出的旧 SRT 仍是重复文字，需要重新跑一次「转成文字字幕」。真实片源上的识别质量未在真机复测。

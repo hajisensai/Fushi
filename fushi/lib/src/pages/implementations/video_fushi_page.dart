@@ -66,7 +66,6 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
 import 'package:fushi/src/media/video/graphic_subtitle_track_ocr.dart';
-import 'package:fushi/src/media/video/pgs_subtitle_parser.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_obscure_layer.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_ocr_overlay.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_ocr_progress.dart';
@@ -6351,6 +6350,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     unawaited(_lookupAt(sentence, graphemeIndex, charRect, overrideCue: cue));
   }
 
+  /// BUG-3274：暂停 OCR 层点字查词。图形字幕没有 Dart 侧 cue，以前这里传 null 锚点 →
+  /// 制卡区间 `0..0`（无句子音频、无同步片段、封面抽片头黑帧）。先从 mpv
+  /// `sub-start` / `sub-end` 取在屏那句的真实时间窗建锚点（文本 = 被点的 OCR 句），
+  /// 再走与文本字幕完全相同的 [_handleSubtitleLookupTap] → `_lastLookupCue` → 制卡区间。
+  /// 画面上没有字幕（mpv 无 `sub-start`）时锚点为 null，制卡走当前帧静图。
+  Future<void> _handleGraphicSubtitleOcrLookupTap(
+    VideoPlayerController controller,
+    String sentence,
+    int graphemeIndex,
+    Rect globalRect,
+  ) async {
+    if (!_immersiveAllowsLookup) return;
+    final AudioCue? anchor = await controller.currentGraphicSubtitleCue(
+      text: sentence,
+    );
+    // 读 mpv 属性期间页面关闭 / 换集（controller 被替换）：不再查词。
+    if (!mounted || !identical(_controller, controller)) return;
+    _handleSubtitleLookupTap(sentence, graphemeIndex, globalRect, anchor);
+  }
+
   /// 图形字幕 OCR 查词层。引擎解析与漫画在线直读同一口径（引擎偏好 / Lens 上传
   /// 同意 / 低置信度交 AI 重读），见 `graphic_subtitle_ocr.dart`。
   Widget _buildGraphicSubtitleOcrOverlay(VideoPlayerController controller) {
@@ -6359,7 +6378,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       fit: videoFitModeToBoxFit(_videoFitMode),
       prepare: _prepareGraphicSubtitleOcr,
       onCharTap: (String sentence, int graphemeIndex, Rect globalRect) =>
-          _handleSubtitleLookupTap(sentence, graphemeIndex, globalRect, null),
+          unawaited(
+            _handleGraphicSubtitleOcrLookupTap(
+              controller,
+              sentence,
+              graphemeIndex,
+              globalRect,
+            ),
+          ),
       onUnavailable: _reportGraphicSubtitleOcrUnavailable,
       onError: (Object error, StackTrace stack) => ErrorLogService.instance.log(
         'VideoFushiPage.graphicSubtitleOcr',

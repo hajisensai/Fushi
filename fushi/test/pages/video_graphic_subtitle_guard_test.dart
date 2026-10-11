@@ -108,7 +108,7 @@ void main() {
     // 抽轨成 .sup → 解析 → 识别（AI 重读与漫画同一引擎装配）→ SRT。
     for (final String step in <String>[
       'extractGraphicSubtitleTrackToSup(',
-      'PgsSubtitleParser.parse(',
+      'readGraphicSubtitleSupInBackground(supPath)',
       'prepare: _prepareGraphicSubtitleOcr',
       // 边抽边识别：识别出的字实时补进可点字幕。
       'recognizeGraphicSubtitleCuesLive(',

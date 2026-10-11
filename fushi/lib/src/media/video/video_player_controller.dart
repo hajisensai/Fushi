@@ -442,6 +442,11 @@ class VideoPlayerController extends ChangeNotifier
   /// 关掉（[setGraphicSubtitleVisible]）；选图形轨时恒打开。
   bool _graphicSubtitleVisible = true;
 
+  /// BUG-3274：最近一次 [currentGraphicSubtitleCue] 产出的图形字幕锚点 cue。它不在
+  /// [cues] / [secondaryCues] 任一条流里，[cueStreamOwning] / [delayMsForCue] 按身份
+  /// 认出它，给出「它自成一条流、走主轨调轴」的口径（libmpv `sub-delay` = [_delayMs]）。
+  AudioCue? _graphicAnchorCue;
+
   /// 远端内嵌文本轨交给 libmpv **只解码不画**、文本经 `sub-text` 回流成可点 cue
   /// （[selectEmbeddedTextTrackViaPlayer]）时的订阅。非 null = 处于该模式；
   /// [setCues]（换字幕源）/ [load] / [dispose] 时取消。
@@ -889,11 +894,16 @@ class VideoPlayerController extends ChangeNotifier
 
   /// BUG-1592：[cue] 所属的那条流（按身份判定，主流优先）。两条流都不含它（列表面板的
   /// 合成 cue / 已换集的陈旧 cue）时回 [miningCues]，保持「至少落在当前有效流上」。
+  ///
+  /// BUG-3274：图形字幕锚点（[currentGraphicSubtitleCue]）自成一条单句流——它在
+  /// 两条文本流里都没有，回落 [miningCues] 会让 padding 按副字幕邻句夹边、上下文
+  /// 取到副字幕的句子。
   List<AudioCue> cueStreamOwning(AudioCue cue) {
     if (_cues.any((AudioCue c) => identical(c, cue))) return _cues;
     if (_secondaryCues.any((AudioCue c) => identical(c, cue))) {
       return _secondaryCues;
     }
+    if (identical(cue, _graphicAnchorCue)) return <AudioCue>[cue];
     return miningCues;
   }
 
@@ -2173,11 +2183,16 @@ class VideoPlayerController extends ChangeNotifier
   /// [_delayMs]、副流 cue 用 [effectiveSecondaryDelayMs]；两条流都不含它（列表
   /// 面板的合成 cue / 已换集的陈旧 cue）时回 [miningDelayMs]（与
   /// [cueStreamOwning] 的兜底同一口径）。
+  ///
+  /// BUG-3274：图形字幕锚点走主轨 [_delayMs]——图形轨只存在于主字幕槽，libmpv
+  /// `sub-delay` 下发的就是它（[_subtitleDelayMpvMs]）；图形模式下主流 [cues] 为空，
+  /// 兜底 [miningDelayMs] 会错拿副轨调轴。
   int delayMsForCue(AudioCue cue) {
     if (_cues.any((AudioCue c) => identical(c, cue))) return _delayMs;
     if (_secondaryCues.any((AudioCue c) => identical(c, cue))) {
       return effectiveSecondaryDelayMs;
     }
+    if (identical(cue, _graphicAnchorCue)) return _delayMs;
     return miningDelayMs;
   }
 
@@ -3849,6 +3864,62 @@ class VideoPlayerController extends ChangeNotifier
   /// 当前是否由 libmpv 自绘容器内字幕轨（图形轨 BUG-122，或远端抽不出的文本轨
   /// BUG-2590）——此时没有 cue、不可查词。播放页取证钩子用。
   bool get isPlayerRenderedSubtitleActive => _graphicSubtitleActive;
+
+  /// BUG-3274：图形字幕（libmpv 自绘）此刻在屏那句的查词 / 制卡锚点 cue。
+  ///
+  /// 图形轨没有 Dart 侧 cue（选轨时 [setCues] 清空），暂停 OCR 层查词以前不带锚点 →
+  /// 制卡区间塌成 `0..0`：没有句子音频、没有同步片段，封面抽片头 0 秒的黑帧。这里从
+  /// mpv `sub-start` / `sub-end` 取当前句的真实时间窗，文本用 OCR 识别出的 [text]
+  /// （见 [buildGraphicSubtitleAnchorCue]，坐标系与文本字幕 cue 相同：字幕文件原始
+  /// 时基，制卡按 [delayMsForCue] = [_delayMs] 逆变换）。
+  ///
+  /// 非图形模式 / 未 [load] / 画面上没有字幕（mpv 无 `sub-start`）/ 读取期间换片 →
+  /// null（调用方据此走「无区间 → 当前帧静图」）。
+  Future<AudioCue?> currentGraphicSubtitleCue({required String text}) async {
+    if (!_graphicSubtitleActive) return null;
+    final Player? player = _player;
+    if (player == null) return null;
+    final int loadToken = _loadToken;
+    final String rawStart = await _getMpvProperty('sub-start');
+    final String rawEnd = await _getMpvProperty('sub-end');
+    if (!_isCurrentLoad(player, loadToken)) return null;
+    return _adoptGraphicSubtitleAnchor(
+      text: text,
+      rawStart: rawStart,
+      rawEnd: rawEnd,
+    );
+  }
+
+  /// [currentGraphicSubtitleCue] 与测试钩子共用的落地：按 mpv 原始秒值建锚点并登记
+  /// 为 [_graphicAnchorCue]（[cueStreamOwning] / [delayMsForCue] 据此认它）。读取期间
+  /// 用户切走图形轨同样作废。
+  AudioCue? _adoptGraphicSubtitleAnchor({
+    required String text,
+    required String rawStart,
+    required String rawEnd,
+  }) {
+    if (!_graphicSubtitleActive) return null;
+    final AudioCue? cue = buildGraphicSubtitleAnchorCue(
+      text: text,
+      startMs: parseMpvSecondsToMs(rawStart),
+      endMs: parseMpvSecondsToMs(rawEnd),
+    );
+    if (cue != null) _graphicAnchorCue = cue;
+    return cue;
+  }
+
+  /// 测试钩子（BUG-3274）：宿主无 libmpv 读不到 `sub-start` / `sub-end`，直接喂原始
+  /// 属性串，走与 [currentGraphicSubtitleCue] 完全同一条 [_adoptGraphicSubtitleAnchor]。
+  @visibleForTesting
+  AudioCue? debugAdoptGraphicSubtitleAnchorForTesting({
+    required String text,
+    required String rawStart,
+    required String rawEnd,
+  }) => _adoptGraphicSubtitleAnchor(
+    text: text,
+    rawStart: rawStart,
+    rawEnd: rawEnd,
+  );
 
   /// libmpv 正在渲染的图形字幕轨：去 auto/no 后的序号 + mpv codec（如
   /// `hdmv_pgs_subtitle`）。不在图形字幕模式时为 null。图形字幕「模糊」按它抽轨拿每句

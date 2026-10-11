@@ -2208,15 +2208,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
       final List<GraphicSubtitleTextCue>? texts =
           await recognizeGraphicSubtitleCuesLive(
-            snapshot: () async {
-              try {
-                final File sup = File(supPath);
-                if (!await sup.exists()) return const <PgsCue>[];
-                return PgsSubtitleParser.parse(await sup.readAsBytes());
-              } on FileSystemException {
-                return const <PgsCue>[];
-              }
-            },
+            snapshot: () => readGraphicSubtitleSupInBackground(supPath),
             sourceComplete: () => extractDone,
             sourceDone: extractionResult.then((_) {}),
             session: session,
@@ -2237,14 +2229,24 @@ extension _VideoSubtitle on _VideoFushiPageState {
                 );
               }
             },
-            onProgress: (int done, int known) => _updateGraphicSubtitleOcrJob(
-              (GraphicSubtitleOcrJobState job) => job.copyWith(
-                phase: extractDone
-                    ? GraphicSubtitleOcrJobPhase.recognizing
-                    : GraphicSubtitleOcrJobPhase.extracting,
-                done: done,
-                total: known,
-              ),
+            onProgress: (int done, int known) {
+              final ({int done, int total}) ai = session.subtitleAiProgress;
+              _updateGraphicSubtitleOcrJob(
+                (GraphicSubtitleOcrJobState job) => job.copyWith(
+                  phase: extractDone
+                      ? GraphicSubtitleOcrJobPhase.recognizing
+                      : GraphicSubtitleOcrJobPhase.extracting,
+                  done: done,
+                  total: known,
+                  aiDone: ai.done,
+                  aiTotal: ai.total,
+                ),
+              );
+            },
+            // 本地识别完后等大模型重读收尾：进度卡上的 AI 行跟着走。
+            onAiProgress: (int done, int total) => _updateGraphicSubtitleOcrJob(
+              (GraphicSubtitleOcrJobState job) =>
+                  job.copyWith(aiDone: done, aiTotal: total),
             ),
             onRefineError: (Object error, StackTrace stack) => ErrorLogService
                 .instance

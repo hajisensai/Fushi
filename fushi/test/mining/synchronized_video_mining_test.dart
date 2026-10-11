@@ -353,6 +353,164 @@ void main() {
     expect(repo.context!.coverPath, endsWith('immersion_shot.jpg'));
   });
 
+  // BUG-3274：上一条没给 mediaSource，起点帧那一级天然跳过，掩盖了真实形状——视频页
+  // 永远带着本地源。图形字幕（PGS）制卡没有锚点 cue → `0..0` 窗 + 有源：以前起点帧
+  // 只判 `src != null`，在 0.000s 抽出片头黑帧当封面，当前帧兜底永远轮不到。
+  Future<String?> recordingFrame(List<double> calls,
+      {required String inputPath,
+      required String outputPath,
+      double atSeconds = 0,
+      FfmpegFailureReporter? onFailure,
+      String? tlsPinSha256,
+      Map<String, String> httpHeaders = const <String, String>{},
+      bool diagnosticOnly = false}) async {
+    calls.add(atSeconds);
+    await File(outputPath).writeAsBytes(<int>[0xFF, 0xD8, 0xFF, 0xD9]);
+    return outputPath;
+  }
+
+  for (final VideoMiningImageMode mode in <VideoMiningImageMode>[
+    VideoMiningImageMode.videoClip,
+    VideoMiningImageMode.gif,
+    VideoMiningImageMode.subtitleStart,
+    VideoMiningImageMode.currentFrame,
+  ]) {
+    test(
+        'BUG-3274 ${mode.name}: media source + 0..0 window never extracts the '
+        'frame at 0 s and falls to the current-frame still', () async {
+      final List<double> frameCalls = <double>[];
+      final List<String> gifCalls = <String>[];
+      final List<String> audioCalls = <String>[];
+      int stillFallbackCalls = 0;
+      final ImmersionMiningResult result = await ImmersionMiningEngine(
+        frameExtractor: (
+                {required String inputPath,
+                required String outputPath,
+                double atSeconds = 0,
+                FfmpegFailureReporter? onFailure,
+                String? tlsPinSha256,
+                Map<String, String> httpHeaders = const <String, String>{},
+                bool diagnosticOnly = false}) =>
+            recordingFrame(frameCalls,
+                inputPath: inputPath,
+                outputPath: outputPath,
+                atSeconds: atSeconds),
+        gifExtractor: (
+            {required String inputPath,
+            required int startMs,
+            required int endMs,
+            required String outputPath,
+            int fps = 8,
+            int width = 320,
+            MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+            bool diagnosticOnly = false,
+            FfmpegFailureReporter? onFailure,
+            String? tlsPinSha256,
+            Map<String, String> httpHeaders = const <String, String>{}}) async {
+          gifCalls.add(outputPath);
+          return null;
+        },
+        audioExtractor: (
+            {required String inputPath,
+            required int startMs,
+            required int endMs,
+            required String outputPath,
+            int? audioStreamIndex,
+            int? audioStreamCount,
+            FfmpegFailureReporter? onFailure,
+            int audioChannels = 1,
+            String audioBitrate = '64k',
+            String? tlsPinSha256,
+            Map<String, String> httpHeaders = const <String, String>{}}) async {
+          audioCalls.add(outputPath);
+          return null;
+        },
+      ).mine(
+          ImmersionMiningRequest(
+              fields: const <String, String>{},
+              source: AnkiMiningSource.video,
+              mediaSource: '${temp.path}/episode.mkv',
+              audioStreamCount: 1,
+              clipStartMs: 0,
+              clipEndMs: 0,
+              // 视频页修复后无区间时锚在当前位置；即便如此也不该去抽「字幕起点」帧。
+              stillFrameAtMs: 754000,
+              sentence: 'テスト',
+              imageMode: mode,
+              stillFallback: () async {
+                stillFallbackCalls++;
+                return Uint8List.fromList(<int>[0xFF, 0xD8, 0xFF, 0xD9]);
+              }),
+          compression: MiningMediaCompression.compressed,
+          tempDir: temp.path,
+          repo: repo);
+      expect(result.aborted, false);
+      expect(frameCalls, isEmpty,
+          reason: 'no subtitle start exists without a window');
+      expect(gifCalls, isEmpty);
+      expect(audioCalls, isEmpty);
+      expect(stillFallbackCalls, 1);
+      expect(result.degradedToStill, false);
+      expect(repo.context!.synchronizedVideo, false);
+      expect(repo.context!.coverPath, endsWith('immersion_shot.jpg'));
+      expect(repo.context!.sentenceAudioPath, isNull);
+    });
+  }
+
+  // 有窗时起点帧照旧可用（BUG-3274 的守卫不能误伤「字幕开头截图」模式）。
+  test(
+      'BUG-3274 subtitleStart with a real window still extracts the start frame',
+      () async {
+    final List<double> frameCalls = <double>[];
+    final ImmersionMiningResult result = await ImmersionMiningEngine(
+      frameExtractor: (
+              {required String inputPath,
+              required String outputPath,
+              double atSeconds = 0,
+              FfmpegFailureReporter? onFailure,
+              String? tlsPinSha256,
+              Map<String, String> httpHeaders = const <String, String>{},
+              bool diagnosticOnly = false}) =>
+          recordingFrame(frameCalls,
+              inputPath: inputPath,
+              outputPath: outputPath,
+              atSeconds: atSeconds),
+      audioExtractor: (
+          {required String inputPath,
+          required int startMs,
+          required int endMs,
+          required String outputPath,
+          int? audioStreamIndex,
+          int? audioStreamCount,
+          FfmpegFailureReporter? onFailure,
+          int audioChannels = 1,
+          String audioBitrate = '64k',
+          String? tlsPinSha256,
+          Map<String, String> httpHeaders = const <String, String>{}}) async {
+        await File(outputPath).writeAsBytes(<int>[1, 2, 3]);
+        return outputPath;
+      },
+    ).mine(
+        ImmersionMiningRequest(
+            fields: const <String, String>{},
+            source: AnkiMiningSource.video,
+            mediaSource: '${temp.path}/episode.mkv',
+            clipStartMs: 753500,
+            clipEndMs: 756000,
+            stillFrameAtMs: 754000,
+            sentence: 'テスト',
+            imageMode: VideoMiningImageMode.subtitleStart,
+            stillFallback: () async =>
+                Uint8List.fromList(<int>[0xFF, 0xD8, 0xFF, 0xD9])),
+        compression: MiningMediaCompression.compressed,
+        tempDir: temp.path,
+        repo: repo);
+    expect(result.aborted, false);
+    expect(frameCalls, <double>[754.0]);
+    expect(repo.context!.coverPath, contains('immersion_frame.'));
+    expect(repo.context!.sentenceAudioPath, isNotNull);
+  });
+
   test('WebM encoder missing falls back to MP4; cover follows produced format',
       () async {
     final List<MiningClipFormat> tried = <MiningClipFormat>[];
