@@ -175,30 +175,35 @@ void main() {
   }
 
   // 审查阻塞点 1：扫描 / 导入期间 uid 流约每秒触发一次整页刷新，每次都重发一轮
-  // 映射加载。大库上一轮查询慢于触发间隔时，「只认最新一轮」会让每一轮都在落地
-  // 前被下一轮作废——首屏门永远打不开、整页一直骨架。
-  testWidgets('连续触发刷新、每轮映射查询都慢于触发间隔时首屏仍会就绪', (WidgetTester tester) async {
+  // 映射加载。大库上一轮查询慢于触发间隔时，「每个信号都作废在途轮次」会让每一轮
+  // 都在落地前被下一轮作废——首屏门永远打不开、整页一直骨架。走真实的 uid 流：
+  // 每秒落库一条新视频。
+  testWidgets('扫描期间 uid 流持续触发、每轮映射查询都慢于触发间隔时首屏仍会就绪', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1280, 1600);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final int cid = await seedSeriesAndLoose();
-    // 每轮 1.5 s，刷新每 1 s 一次：任何一轮落地时都已有更新的一轮在途。
-    db.mapsDelay = const Duration(milliseconds: 1500);
+    // 每轮 2.5 s，每秒落库一条：uid 流按 1 s 节流（节流按墙钟判、尾沿计时器走测试
+    // 假时钟，实际约每 1–2 s 发一次刷新），任何一轮落地时都已有更新的一轮在途。
+    db.mapsDelay = const Duration(milliseconds: 2500);
 
     await tester.pumpWidget(buildApp(VideoLibrarySection.series));
     expect(skeleton, findsOneWidget);
-    for (int i = 1; i <= 6; i++) {
+    final int callsBefore = db.mapsCalls;
+    for (int i = 1; i <= 8; i++) {
       await tester.pump(const Duration(milliseconds: 1000));
-      HomeVideoPage.debugRefreshVideos!();
+      await seedVideo('video/scan$i', '扫描$i');
       await tester.pump();
     }
     expect(
-      db.mapsCalls,
-      greaterThanOrEqualTo(7),
-      reason: '每次刷新都应重发一轮映射加载（初始 1 轮 + 6 次刷新）',
+      db.mapsCalls - callsBefore,
+      greaterThanOrEqualTo(3),
+      reason: 'uid 流的每次变化都应重发一轮映射加载',
     );
-    expect(skeleton, findsNothing, reason: '最先完成的一轮必须能打开首屏门');
+    expect(skeleton, findsNothing, reason: '变更信号不得作废在途轮次，首屏门必须能打开');
     expect(
       find.byKey(ValueKey<String>('home_video_collection_card_$cid')),
       findsOneWidget,
@@ -206,13 +211,43 @@ void main() {
     expect(cardOf('video/loose'), findsOneWidget);
     expect(cardOf('video/ep1'), findsNothing, reason: '成员折进合集卡，不画散卡');
 
-    // 停止触发，在途的最新一轮落地后照常覆盖（就位后仍是 latest-request-wins）。
-    await tester.pump(const Duration(seconds: 2));
+    // 停止触发，在途的最新一轮落地后照常覆盖：扫描进来的新片都在墙上。
+    // 之后再发起的轮次（尾沿节流 / 合集表防抖）不再延迟，冲掉全部在途计时器。
+    db.mapsDelay = null;
+    await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
     expect(
       find.byKey(ValueKey<String>('home_video_collection_card_$cid')),
       findsOneWidget,
     );
+    expect(cardOf('video/scan8'), findsOneWidget);
+  });
+
+  // 清理不变式：作废式刷新（清理 / 删除等页面自己的写入后走的 [_refresh]）一旦
+  // 请求，此前在途的轮次即使先完成也不得落地——首屏期间同样成立。
+  testWidgets('作废式刷新之后，在途的旧轮先完成也不落地（首屏期间同样）', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final int cid = await seedSeriesAndLoose();
+    db.mapsDelay = const Duration(milliseconds: 1500);
+
+    await tester.pumpWidget(buildApp(VideoLibrarySection.series));
+    await tester.pump(const Duration(milliseconds: 500));
+    // 首轮（t=0 发起，t=1.5 s 完成）在途时请求作废式刷新（t=0.5 s 发起，t=2 s 完成）。
+    HomeVideoPage.debugRefreshVideos!();
+    await tester.pump(const Duration(milliseconds: 1100)); // t=1.6 s
+    expect(skeleton, findsOneWidget, reason: '首轮已被作废，先完成也不得落地');
+    await tester.pump(const Duration(milliseconds: 500)); // t=2.1 s
+    expect(skeleton, findsNothing, reason: '作废式刷新那一轮落地，首屏就绪');
+    expect(
+      find.byKey(ValueKey<String>('home_video_collection_card_$cid')),
+      findsOneWidget,
+    );
+    db.mapsDelay = null;
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
   });
 
   // 审查阻塞点 2：首页分区真实版面是横滚行，骨架不能是网格墙。

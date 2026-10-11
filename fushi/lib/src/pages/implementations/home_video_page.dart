@@ -491,23 +491,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 合集 id（[subscribedVideoCollectionIds]），与 [_loadLibraryMaps] 同批预取。
   Set<int> _subscribedCollectionIds = const <int>{};
 
-  /// [_loadLibraryMaps] 的 latest-request-wins 代次。全量清理会触发一轮新的空快照；
-  /// 清理前已在途的慢查询不得晚到后把旧 AniDB 映射重新写回页面状态。
+  /// [_loadLibraryMaps] 的 latest-request-wins 代次（**作废代次**）。全量清理会触发
+  /// 一轮新的空快照；清理前已在途的慢查询不得晚到后把旧 AniDB 映射重新写回页面
+  /// 状态。每次 [_loadLibraryMaps] 都 +1，代次不符的结果一律在 setState 前丢弃——
+  /// 不分首屏与否。
   ///
-  /// 例外是首屏（[_libraryMapsReady] 仍为 false）：见 [_libraryMapsResultApplies]。
+  /// 只有「外部变更信号」触发的重载（[_loadLibraryMapsKeepingInFlight]）不 +1：
+  /// 见该方法。
   int _libraryMapsRequestGeneration = 0;
 
-  /// 第 [requestGeneration] 轮映射加载的结果能否落进页面状态。
+  /// 映射加载轮次的发起序号（每轮 +1，不分作废与否）与已落地的最大序号。
   ///
-  /// 映射已就位后照旧 latest-request-wins：过时的一轮晚到不得覆盖更新的映射。
-  /// 但首屏还在等映射时，**任何一轮先完成的都放行**（BUG-3235 审查）：扫描 / 导入
-  /// 期间 uid 流约每秒触发一次 [_refresh]→[_loadLibraryMaps]，大库上一轮全表查询
-  /// 超过这个间隔时，「只认最新一轮」意味着每一轮都在落地前被下一轮作废，首屏门
-  /// 永远打不开、整页一直是骨架。首屏放行的那轮最多比在途的最新一轮旧一个触发
-  /// 间隔，最新一轮落地时照常覆盖它（届时已就位，只认最新）；早于它落地的旧轮
-  /// 则因已就位被丢弃，不会倒回去。
-  bool _libraryMapsResultApplies(int requestGeneration) =>
-      requestGeneration == _libraryMapsRequestGeneration || !_libraryMapsReady;
+  /// 同一作废代次内可能有多轮并存（变更信号不作废在途轮次），它们按发起顺序
+  /// 只进不退：发起更早的一轮晚于更新的一轮落地时被丢弃，页面不会倒回更旧的快照。
+  int _libraryMapsRequestSequence = 0;
+  int _libraryMapsAppliedSequence = 0;
 
   /// v68 附加图组（media_images）按归属分桶：合集（hero 背景/logo、续播行横卡）
   /// 与散装视频（续播行横卡）。与 [_loadLibraryMaps] 同批预取（一次全表查询）。
@@ -754,7 +752,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   void _refreshAfterVideoUidsChanged() {
     if (!mounted) return;
-    _refresh();
+    _refreshOnChangeSignal();
     // 集合真变了 = 有新视频入库（任意导入路径）：给新书补刮条目资料。挂在这里而
     // 不是 _refresh 里，因为 _refresh 还被改标签/删除/播放返回等触发，那些不带来
     // 需要刮削的新书。
@@ -762,6 +760,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 同一个信号也喂在线补刮：内置下载管线 import 落库走的就是这条 uid 流，
     // 用户停在视频页不动也能等到资料补上，不必切走再切回或重启（BUG-2199）。
     unawaited(_refreshPendingScrape());
+  }
+
+  /// 外部变更信号（uid 集合变化）触发的本地刷新：与 [_refresh] 默认路径相同
+  /// （书架列表 + 映射 + 封面自愈，不碰远端），但映射重载不作废在途轮次
+  /// （[_loadLibraryMapsKeepingInFlight]，BUG-3235 审查）。
+  void _refreshOnChangeSignal() {
+    setState(() {
+      // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
+      _future = widget.repo.listForShelf();
+    });
+    _loadLibraryMapsKeepingInFlight();
+    _maybeBackfillCovers();
   }
 
   /// [_onVideoUidsChanged] 触发整页刷新的最小间隔。
@@ -774,11 +784,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   /// BUG-1699：合集表写入回调。同步/导入常是一批行连写，300ms 合并窗口后重载
-  /// 一次折叠映射（[_loadLibraryMaps] 自带 setState，映射换新后网格自动重组）。
+  /// 一次折叠映射（自带 setState，映射换新后网格自动重组）。
+  ///
+  /// 这是外部变更信号（扫描逐条 addToCollection 期间约每 300 ms 一次），走不作废
+  /// 在途轮次的 [_loadLibraryMapsKeepingInFlight]；页面自己删 / 并合集的动作另有
+  /// 作废式刷新。
   void _onCollectionTablesChanged(void _) {
     _collectionsReloadDebounce?.cancel();
     _collectionsReloadDebounce = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) _loadLibraryMaps();
+      if (mounted) _loadLibraryMapsKeepingInFlight();
     });
   }
 
@@ -927,8 +941,32 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// [_loadWatchRecency] 的记代，与 [_libraryMapsRequestGeneration] 相互独立。
   int _watchRecencyRequestGeneration = 0;
 
+  /// 作废式重载：此前在途的轮次全部作废（代次 +1）。凡是页面自己做了会让旧快照
+  /// **变错**的写入（清理刮削记录、删除、合并、改归属…）以及默认的 [_refresh]
+  /// 都走这里。
   Future<void> _loadLibraryMaps() async {
     final int requestGeneration = ++_libraryMapsRequestGeneration;
+    await _runLibraryMapsRound(requestGeneration);
+  }
+
+  /// 外部变更信号（uid 集合变化、合集表写入、刮削批次中的进度刷新）触发的重载：
+  /// 沿用当前代次，**不作废在途轮次**。
+  ///
+  /// BUG-3235 审查：扫描 / 导入期间 uid 流约每秒、合集表约每 300 ms 发一次信号，
+  /// 刮削批次每 2 s 一次。若每个信号都作废在途轮次，大库上一轮全表查询慢于信号
+  /// 间隔时每一轮都在落地前被下一轮作废——首屏门永远打不开（整页一直骨架），
+  /// 就位后映射也整个扫描期间不更新。这类信号只说明「库里多了 / 少了东西，需要
+  /// 再读一轮更新的」，在途轮次读到的是更旧但自洽的快照，不是被清理作废的数据：
+  /// 它照常落地，紧跟的新一轮按发起序号覆盖它（序号只进不退，见
+  /// [_libraryMapsAppliedSequence]）。
+  ///
+  /// 清理不变式不受影响：清理之后的刷新走作废式 [_loadLibraryMaps]（刮削表变更
+  /// 的非批次刷新、批次结束的补刷、页面自己的清理动作都是），一旦请求，清理前
+  /// 发起的所有轮次——包括这里沿用旧代次的——都因代次不符被拒。
+  Future<void> _loadLibraryMapsKeepingInFlight() =>
+      _runLibraryMapsRound(_libraryMapsRequestGeneration);
+
+  Future<void> _runLibraryMapsRound(int requestGeneration) async {
     try {
       await _loadLibraryMapsInner(requestGeneration);
     } catch (_) {
@@ -937,9 +975,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 照常显示用户选的档位，却什么都不筛。宁可让它按（空的）映射生效：
       // 「系列内」筛出空墙，不对劲是看得见的、用户能自己切回「全部」，也好过
       // 「看起来选了、其实没生效」。异常照常上抛，不吞。
-      // 放行判据与成功路径同一个（[_libraryMapsResultApplies]）：首屏期间被作废的
-      // 旧轮失败也要能打开首屏门，否则持续触发刷新时整页同样会一直卡在骨架。
-      if (mounted && _libraryMapsResultApplies(requestGeneration)) {
+      if (mounted && requestGeneration == _libraryMapsRequestGeneration) {
         setState(() => _libraryMapsReady = true);
       }
       rethrow;
@@ -1003,6 +1039,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   Future<void> _loadLibraryMapsInner(int requestGeneration) async {
+    final int requestSequence = ++_libraryMapsRequestSequence;
     final AppModel appModel = ref.read(appProvider);
     final FushiDatabase db = appModel.database;
     final ShelfSortMode sortMode = ShelfSortMode.fromName(
@@ -1146,8 +1183,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         (imagesByBookUid[uid] ??= <MediaImageRow>[]).add(row);
       }
     }
-    if (!mounted || !_libraryMapsResultApplies(requestGeneration)) return;
+    if (!mounted || requestGeneration != _libraryMapsRequestGeneration) return;
+    // 同一代次内只进不退：发起更早的一轮晚于更新的一轮落地时丢弃。
+    if (requestSequence < _libraryMapsAppliedSequence) return;
     setState(() {
+      _libraryMapsAppliedSequence = requestSequence;
       _sortMode = sortMode;
       _memberSortIndex = memberSortIndex;
       _collectionsById = <int, MediaCollectionRow>{
@@ -4182,14 +4222,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // TODO-2486：年份 / 看完状态下拉筛选（本地即筛）。年份由条目刮削 airDate
         // 派生（无资料 = 归「未知」桶，条目不消失）；看完状态按 completedAt /
         // lastPositionMs 三档判。
+        // 首屏骨架期间屏幕上一张真卡都没有，筛选判据（系列归属 / 来源 / 年份）
+        // 要的映射也还是空的：可见集如实为空，不拿空映射筛出一批看不见的条目。
         final List<VideoBookRow> ordered = <VideoBookRow>[
-          for (final VideoBookRow b in searched)
-            if (_passesLocalFilters(b)) b,
+          if (!firstPaintPending)
+            for (final VideoBookRow b in searched)
+              if (_passesLocalFilters(b)) b,
         ];
-        // 记录当前可见（已过滤）的本地视频，供批量「全选 / 反选」用。
-        // 首屏骨架期间 [ordered] 是拿空映射筛的、屏幕上也一张真卡都没有：
-        // 如实登记为空，批量动作不得作用于看不见的条目。
-        _visibleVideos = firstPaintPending ? const <VideoBookRow>[] : ordered;
+        // 记录当前可见（已过滤）的本地视频，供批量「全选 / 反选」用（骨架期为空，
+        // 批量动作不会作用于看不见的条目）。
+        _visibleVideos = ordered;
         return FutureBuilder<_RemoteVideoState?>(
           future: _remoteFuture,
           builder:

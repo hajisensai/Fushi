@@ -11,4 +11,10 @@
   - **首页骨架版式**：首页没有墙格（真实版面是横滚行），原先套网格骨架与真实布局不一致。横滚行抽出版式本体 `_buildHorizontalRowFrame`，真实行 `_buildHorizontalCardRow` 与首页骨架 `_buildHomeRowsSkeleton` 共用（同外边距、同行高口径、同错峰进场），骨架标题位由同样式单行文本撑高，与真实行逐像素同位。
   - **骨架期间多选**：骨架帧 `_visibleVideos` 是拿空映射筛的、且骨架路径跳过了可见序登记（含首页的 `_homeSectionSelectionReset`）。骨架帧改为如实登记空可见序（`_registerNoSelectableCards`，与空态 / 首页同一函数）并清空 `_visibleVideos`，「全选 / 反选」不会落到看不见的条目上。
   - 测试（同文件新增 3 条）：连续每秒触发刷新、每轮映射查询 1.5 s 时首屏仍会就绪（变异实测：判据退回只认最新 → 该用例红）；首页骨架是横滚行、骨架卡与真卡同位同宽；骨架期间「全选」选中 0 条、映射到位后按真实可见序全选。
+- **PR #2063 CI 红修复**（第三轮，run 38117367064）：第二轮的「首屏未就绪时任何一轮先完成都放行」破坏了清理不变式——源码守卫 `video_delete_reclaim_entry_guard_test.dart`「_loadLibraryMaps is latest-request-wins across scrape cleanup refresh」钉的是「清理前发起的慢快照必须在 setState 前被拒」，而首屏期间清理刷新已请求、旧轮先完成时第二轮会把它落地（新一轮再失败时旧映射就留在页面上）。守卫不窄，是代码错了，守卫未改。重做为两层：
+  - **作废代次**（`_libraryMapsRequestGeneration`）恢复严格 latest-request-wins，不分首屏：作废式重载 `_loadLibraryMaps` 每次 +1，`_loadLibraryMapsInner` 在 setState 前 `if (!mounted || requestGeneration != _libraryMapsRequestGeneration) return;`。默认 `_refresh`、刮削表变更（含批次节流刷新与批次结束补刷）、页面自己的清理 / 删除 / 合并全走它。
+  - **变更信号不作废在途轮次**：uid 集合变化（`_refreshAfterVideoUidsChanged` → `_refreshOnChangeSignal`）与合集表写入（`_onCollectionTablesChanged`）改走 `_loadLibraryMapsKeepingInFlight`，沿用当前代次；同代内按发起序号只进不退（`_libraryMapsRequestSequence` / `_libraryMapsAppliedSequence`），旧轮晚于新轮落地被丢弃。这类信号只说明「需要再读一轮更新的」，在途快照只是更旧、不是被清理作废，所以扫描期间首屏不再饿死，就位后映射也能在扫描中持续更新。
+  - 另两条守卫：`load_paths_perf_guard_test.dart` 要求 `_loadLibraryMapsInner` 里出现 `_libraryMapsRequestGeneration`（代次检查回到 Inner 后满足）；`video_library_series_structure_guard_test.dart` 以 `_visibleVideos = ordered;` 为锚——改为骨架期 `ordered` 本身为空（`if (!firstPaintPending)` 包住筛选），可见集语义不变，守卫未改。
+  - 测试：first_paint 的饿死用例改走真实 uid 流（每秒落库一条、每轮 2.5 s），新增「作废式刷新之后在途旧轮先完成也不落地（首屏期间同样）」。变异实测：uid / 合集表信号改回作废式 → 饿死用例红；Inner 判据改成「首屏期间放行旧代次」→ 不变式用例红。
+  - 残留：刮削批次期间的节流刷新仍是作废式（批次里可能有清理写入，刻意保守）；若首屏恰逢刮削批次、且一轮映射查询慢于 2 s 节流间隔，首屏会等到批次结束的补刷。
 - **备注**：真机未复测（本轮无真机验证）。
