@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_cli/fushi_cli.dart';
@@ -217,20 +218,27 @@ void main() {
     expect((books['byKind']! as Map<String, Object?>).keys, <String>['read']);
   });
 
-  test('快捷键列：滚轮绑定走序列化格式，macOS 上也不出 ⌥ 显示符号', () {
+  test('快捷键列：键盘与滚轮按平台显示约定出，macOS 上是 ⌘ / ⌥ 符号写法', () {
     debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    const InputBinding cmdF = InputBinding(
+      key: LogicalKeyboardKey.keyF,
+      modifiers: <ModifierKey>{ModifierKey.meta},
+    );
+    const WheelBinding altWheel = WheelBinding(
+      WheelDirection.down,
+      modifiers: <ModifierKey>{ModifierKey.alt},
+    );
     final Map<String, List<String>> columns = ctlShortcutBindingColumns(
       const ShortcutBindingSet(
-        wheelBindings: <WheelBinding>[
-          WheelBinding(
-            WheelDirection.down,
-            modifiers: <ModifierKey>{ModifierKey.alt},
-          ),
-        ],
+        keyboardBindings: <InputBinding>[cmdF],
+        wheelBindings: <WheelBinding>[altWheel],
       ),
     );
-    expect(columns['mouse'], <String>['Alt+WheelDown']);
+    expect(columns['keyboard'], <String>[cmdF.displayLabel]);
+    expect(columns['keyboard']!.single, contains('⌘'));
+    expect(columns['mouse'], <String>[altWheel.displayLabel]);
+    expect(columns['mouse']!.single, contains('⌥'));
     debugDefaultTargetPlatformOverride = null;
   });
 
