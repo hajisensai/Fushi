@@ -493,7 +493,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// [_loadLibraryMaps] 的 latest-request-wins 代次。全量清理会触发一轮新的空快照；
   /// 清理前已在途的慢查询不得晚到后把旧 AniDB 映射重新写回页面状态。
+  ///
+  /// 例外是首屏（[_libraryMapsReady] 仍为 false）：见 [_libraryMapsResultApplies]。
   int _libraryMapsRequestGeneration = 0;
+
+  /// 第 [requestGeneration] 轮映射加载的结果能否落进页面状态。
+  ///
+  /// 映射已就位后照旧 latest-request-wins：过时的一轮晚到不得覆盖更新的映射。
+  /// 但首屏还在等映射时，**任何一轮先完成的都放行**（BUG-3235 审查）：扫描 / 导入
+  /// 期间 uid 流约每秒触发一次 [_refresh]→[_loadLibraryMaps]，大库上一轮全表查询
+  /// 超过这个间隔时，「只认最新一轮」意味着每一轮都在落地前被下一轮作废，首屏门
+  /// 永远打不开、整页一直是骨架。首屏放行的那轮最多比在途的最新一轮旧一个触发
+  /// 间隔，最新一轮落地时照常覆盖它（届时已就位，只认最新）；早于它落地的旧轮
+  /// 则因已就位被丢弃，不会倒回去。
+  bool _libraryMapsResultApplies(int requestGeneration) =>
+      requestGeneration == _libraryMapsRequestGeneration || !_libraryMapsReady;
 
   /// v68 附加图组（media_images）按归属分桶：合集（hero 背景/logo、续播行横卡）
   /// 与散装视频（续播行横卡）。与 [_loadLibraryMaps] 同批预取（一次全表查询）。
@@ -923,7 +937,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 照常显示用户选的档位，却什么都不筛。宁可让它按（空的）映射生效：
       // 「系列内」筛出空墙，不对劲是看得见的、用户能自己切回「全部」，也好过
       // 「看起来选了、其实没生效」。异常照常上抛，不吞。
-      if (mounted && requestGeneration == _libraryMapsRequestGeneration) {
+      // 放行判据与成功路径同一个（[_libraryMapsResultApplies]）：首屏期间被作废的
+      // 旧轮失败也要能打开首屏门，否则持续触发刷新时整页同样会一直卡在骨架。
+      if (mounted && _libraryMapsResultApplies(requestGeneration)) {
         setState(() => _libraryMapsReady = true);
       }
       rethrow;
@@ -1130,7 +1146,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         (imagesByBookUid[uid] ??= <MediaImageRow>[]).add(row);
       }
     }
-    if (!mounted || requestGeneration != _libraryMapsRequestGeneration) return;
+    if (!mounted || !_libraryMapsResultApplies(requestGeneration)) return;
     setState(() {
       _sortMode = sortMode;
       _memberSortIndex = memberSortIndex;
@@ -1749,9 +1765,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 首页分区：登记空可见序（首页没有可勾选的格），不产出任何 sliver。
   List<Widget> _homeSectionSelectionReset() {
+    _registerNoSelectableCards();
+    return const <Widget>[];
+  }
+
+  /// 本帧屏幕上一张可勾选的卡都没有（首页横滚行、空态、首屏骨架）：可见序如实
+  /// 清空，「全选 / 反选」与底栏计数才不会落到上一帧的、或拿空映射算出来的条目上。
+  void _registerNoSelectableCards() {
     _visibleCollectionIds = const <int>[];
     _syncVisibleOrder(loose: const <String>[], collections: const <int>[]);
-    return const <Widget>[];
   }
 
   /// 空态 / 筛选空态那一帧的 slivers。
@@ -1761,8 +1783,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 筛不出东西的档位」会停在上一档的可见序——墙上空空如也，底栏还写着「已选 2」，
   /// 点删除真的会删掉那两个看不见的条目。
   List<Widget> _emptyStateSlivers(Widget child) {
-    _visibleCollectionIds = const <int>[];
-    _syncVisibleOrder(loose: const <String>[], collections: const <int>[]);
+    _registerNoSelectableCards();
     return <Widget>[SliverFillRemaining(hasScrollBody: false, child: child)];
   }
 
@@ -4166,7 +4187,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             if (_passesLocalFilters(b)) b,
         ];
         // 记录当前可见（已过滤）的本地视频，供批量「全选 / 反选」用。
-        _visibleVideos = ordered;
+        // 首屏骨架期间 [ordered] 是拿空映射筛的、屏幕上也一张真卡都没有：
+        // 如实登记为空，批量动作不得作用于看不见的条目。
+        _visibleVideos = firstPaintPending ? const <VideoBookRow>[] : ordered;
         return FutureBuilder<_RemoteVideoState?>(
           future: _remoteFuture,
           builder:
@@ -4288,10 +4311,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                                     child: SizedBox(height: chromeInset),
                                   ),
                                   ..._buildLibraryMapsPendingSlivers(
-                                    widget.section ==
-                                            VideoLibrarySection.allVideos
-                                        ? allVideosCardLayout
-                                        : cardLayout,
+                                    cardLayout: cardLayout,
+                                    allVideosCardLayout: allVideosCardLayout,
+                                    availableWidth: availableWallWidth,
                                   ),
                                 ],
                               );
@@ -4956,6 +4978,26 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     required List<_VideoRowItem> items,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return _buildHorizontalRowFrame(
+      header: Text(title, style: tokens.type.sectionLabel),
+      controller: controller,
+      coverHeight: coverHeight,
+      itemCount: items.length,
+      itemBuilder: (int i) => items[i].build(),
+    );
+  }
+
+  /// 横滚行的版式本体（标题 + 定高横向列表 + 悬停余量 + 错峰进场）。真实行
+  /// [_buildHorizontalCardRow] 与首屏骨架行 [_buildHomeRowsSkeleton] 共用这一份，
+  /// 骨架换成真行时标题、卡片的位置与行高逐像素不变（BUG-3235「同几何不跳」）。
+  Widget _buildHorizontalRowFrame({
+    required Widget header,
+    required ScrollController? controller,
+    required double coverHeight,
+    required int itemCount,
+    required Widget Function(int index) itemBuilder,
+  }) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double rowCardHeight = coverHeight + _videoRowCardTextBlock(context);
     // BUG-2002：悬停放大是纯绘制变换（AnimatedScale 以卡中心放大），行视口高度
     // 恰等于卡高时，放大溢出的上下 (scale-1)/2 会被 ListView 视口裁成平边——
@@ -4970,7 +5012,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         children: <Widget>[
           Padding(
             padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-            child: Text(title, style: tokens.type.sectionLabel),
+            child: header,
           ),
           SizedBox(
             height: rowCardHeight + liftHeadroom * 2,
@@ -4982,14 +5024,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   controller: controller,
                   scrollDirection: Axis.horizontal,
                   physics: desktopAwareScrollPhysics(),
-                  itemCount: items.length,
+                  itemCount: itemCount,
                   separatorBuilder: (BuildContext _, int __) =>
                       SizedBox(width: tokens.spacing.gap),
                   itemBuilder: (BuildContext context, int i) => Padding(
                     padding: EdgeInsets.symmetric(vertical: liftHeadroom),
                     child: FushiStaggeredEntrance(
                       index: i,
-                      child: items[i].build(),
+                      child: itemBuilder(i),
                     ),
                   ),
                 ),
@@ -5484,14 +5526,35 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ];
   }
 
-  /// 首屏映射未就位（[_libraryMapsReady] 为 false）时的骨架墙：格子几何直接走
-  /// 真实的墙 / 网格 sliver（同列数、同卡宽、同行高），映射一到整墙一次换成真卡，
-  /// 版面不跳。三屏行数足够盖住一屏，不按库大小造格。
-  List<Widget> _buildLibraryMapsPendingSlivers(
-    ({int columns, double cardWidth}) cardLayout,
-  ) {
+  /// 首屏映射未就位（[_libraryMapsReady] 为 false）时的骨架，版式按分区走各自的
+  /// 真实版面，映射一到整页一次换成真内容、版面不跳：
+  /// - 系列 / 全部视频：格子几何直接走真实的墙 / 网格 sliver（同列数、同卡宽、
+  ///   同行高）。三行足够盖住一屏，不按库大小造格。
+  /// - 首页：没有墙格，真实版面是横滚行（[_buildOverviewSection]）。骨架走同一个
+  ///   行版式本体 [_buildHorizontalRowFrame]、同一份外边距与行高。
+  ///
+  /// 骨架上没有可勾选的卡：可见序在这里如实清空（与空态 / 首页同一纪律）。
+  List<Widget> _buildLibraryMapsPendingSlivers({
+    required ({int columns, double cardWidth}) cardLayout,
+    required ({int columns, double cardWidth}) allVideosCardLayout,
+    required double availableWidth,
+  }) {
+    _registerNoSelectableCards();
+    const Key pendingKey = ValueKey<String>('home_video_library_maps_pending');
+    if (widget.section == VideoLibrarySection.home) {
+      return <Widget>[
+        SliverToBoxAdapter(
+          key: pendingKey,
+          child: _buildHomeRowsSkeleton(cardLayout, availableWidth),
+        ),
+      ];
+    }
+    final bool allVideos = widget.section == VideoLibrarySection.allVideos;
+    final ({int columns, double cardWidth}) layout = allVideos
+        ? allVideosCardLayout
+        : cardLayout;
     final List<_VideoWallEntry> cells = List<_VideoWallEntry>.filled(
-      cardLayout.columns * 3,
+      layout.columns * 3,
       const _VideoWallEntry(build: _videoCardSkeleton),
     );
     final EdgeInsets padding = EdgeInsets.all(
@@ -5499,12 +5562,88 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
     return <Widget>[
       KeyedSubtree(
-        key: const ValueKey<String>('home_video_library_maps_pending'),
-        child: widget.section == VideoLibrarySection.allVideos
-            ? _buildAllVideoGridSliver(cells, padding, cardLayout)
-            : _buildVideoWallSliver(cells, padding, cardLayout),
+        key: pendingKey,
+        child: allVideos
+            ? _buildAllVideoGridSliver(cells, padding, layout)
+            : _buildVideoWallSliver(cells, padding, layout),
       ),
     ];
+  }
+
+  /// 首页分区的首屏骨架：与 [_buildOverviewSection] 同外边距、同行高口径
+  /// （[videoRowCoverHeightForPortraitWidth]）的两条横滚行骨架。标题位是一条
+  /// 文字条，高度由同样式的单行文本撑出，与真实行标题逐像素同高；卡位按无封面
+  /// 真卡的默认朝向（竖卡）定宽。真实行数随数据变（0–4 条），骨架取最常见的两条。
+  Widget _buildHomeRowsSkeleton(
+    ({int columns, double cardWidth}) cardLayout,
+    double availableWidth,
+  ) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double coverHeight = videoRowCoverHeightForPortraitWidth(
+      cardLayout.cardWidth,
+    );
+    final double cardWidth = videoCardWidthForOrientation(
+      orientation: VideoCardOrientation.portrait,
+      coverHeight: coverHeight,
+    );
+    // 盖满一行可视宽再多一张（行是懒加载列表，多出的不构建）。
+    final int cardCount =
+        ((availableWidth / (cardWidth + tokens.spacing.gap)).ceil() + 1).clamp(
+          1,
+          64,
+        );
+    final Widget header = ExcludeSemantics(
+      child: Stack(
+        alignment: AlignmentDirectional.centerStart,
+        children: <Widget>[
+          // 单行同样式文本只为撑出与真实标题相同的行高，本身不可见。
+          Text(' ', style: tokens.type.sectionLabel),
+          SizedBox(width: 96, child: FushiSkeleton.line(height: 12)),
+        ],
+      ),
+    );
+    Widget card(int _) => SizedBox(
+      width: cardWidth,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          SizedBox(height: coverHeight, child: const FushiSkeleton()),
+          const SizedBox(height: 6),
+          FushiSkeleton.line(widthFactor: 0.8),
+          const SizedBox(height: 4),
+          FushiSkeleton.line(widthFactor: 0.5, height: 10),
+        ],
+      ),
+    );
+    return FushiSkeletonShimmer(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          0,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            for (int row = 0; row < 2; row++)
+              KeyedSubtree(
+                key: ValueKey<String>('home_video_row_skeleton_$row'),
+                child: _buildHorizontalRowFrame(
+                  header: header,
+                  controller: null,
+                  coverHeight: coverHeight,
+                  itemCount: cardCount,
+                  itemBuilder: (int i) => KeyedSubtree(
+                    key: ValueKey<String>('home_video_row_skeleton_${row}_$i'),
+                    child: card(i),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// “全部视频”逐条展示原始 VideoBook，不按合集折叠；本地预告/花絮也因此保留。

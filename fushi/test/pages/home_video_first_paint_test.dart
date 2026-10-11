@@ -16,6 +16,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -172,6 +173,136 @@ void main() {
       }
     });
   }
+
+  // 审查阻塞点 1：扫描 / 导入期间 uid 流约每秒触发一次整页刷新，每次都重发一轮
+  // 映射加载。大库上一轮查询慢于触发间隔时，「只认最新一轮」会让每一轮都在落地
+  // 前被下一轮作废——首屏门永远打不开、整页一直骨架。
+  testWidgets('连续触发刷新、每轮映射查询都慢于触发间隔时首屏仍会就绪', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final int cid = await seedSeriesAndLoose();
+    // 每轮 1.5 s，刷新每 1 s 一次：任何一轮落地时都已有更新的一轮在途。
+    db.mapsDelay = const Duration(milliseconds: 1500);
+
+    await tester.pumpWidget(buildApp(VideoLibrarySection.series));
+    expect(skeleton, findsOneWidget);
+    for (int i = 1; i <= 6; i++) {
+      await tester.pump(const Duration(milliseconds: 1000));
+      HomeVideoPage.debugRefreshVideos!();
+      await tester.pump();
+    }
+    expect(
+      db.mapsCalls,
+      greaterThanOrEqualTo(7),
+      reason: '每次刷新都应重发一轮映射加载（初始 1 轮 + 6 次刷新）',
+    );
+    expect(skeleton, findsNothing, reason: '最先完成的一轮必须能打开首屏门');
+    expect(
+      find.byKey(ValueKey<String>('home_video_collection_card_$cid')),
+      findsOneWidget,
+    );
+    expect(cardOf('video/loose'), findsOneWidget);
+    expect(cardOf('video/ep1'), findsNothing, reason: '成员折进合集卡，不画散卡');
+
+    // 停止触发，在途的最新一轮落地后照常覆盖（就位后仍是 latest-request-wins）。
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(ValueKey<String>('home_video_collection_card_$cid')),
+      findsOneWidget,
+    );
+  });
+
+  // 审查阻塞点 2：首页分区真实版面是横滚行，骨架不能是网格墙。
+  testWidgets('首页分区骨架是横滚行，与真实行同几何', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    // 刚入库的散片：真实首页只有「最近添加」一条行。
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/fresh'),
+        title: const Value<String>('新片'),
+        videoPath: const Value<String>('/abs/video/fresh.mp4'),
+        importedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+    db.hold();
+
+    await tester.pumpWidget(buildApp(VideoLibrarySection.home));
+    // 跑完进场错峰，量的是静止位置。
+    for (int i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(skeleton, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('home_video_row_skeleton_0')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: skeleton, matching: find.byType(SliverGrid)),
+      findsNothing,
+      reason: '首页没有墙格，骨架不能画网格',
+    );
+    final Rect skeletonCard = tester.getRect(
+      find.byKey(const ValueKey<String>('home_video_row_skeleton_0_0')),
+    );
+
+    db.release();
+    await tester.pumpAndSettle();
+
+    expect(skeleton, findsNothing);
+    final Finder realCard = find.byKey(
+      const ValueKey<String>('home_video_recent_video/fresh'),
+    );
+    expect(realCard, findsOneWidget);
+    final Rect real = tester.getRect(realCard);
+    expect(real.topLeft, skeletonCard.topLeft, reason: '骨架卡与真卡同位，换场不跳');
+    expect(real.width, skeletonCard.width, reason: '无封面真卡是竖卡，骨架同宽');
+  });
+
+  // 审查阻塞点 3：骨架期间可见序必须为空——「全选」不能落到看不见的条目上。
+  testWidgets('骨架期间多选「全选」不选中任何条目，映射到位后按真实可见序全选', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1600, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await seedSeriesAndLoose();
+    db.hold();
+
+    await tester.pumpWidget(buildApp(VideoLibrarySection.allVideos));
+    for (int i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(skeleton, findsOneWidget);
+
+    await tester.tap(find.byIcon(FushiIcons.checklist));
+    // 批量栏滑入（映射仍卡着，pumpAndSettle 会一直等不到头，逐帧推进）。
+    for (int i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(skeleton, findsOneWidget);
+    WidgetController.hitTestWarningShouldBeFatal = true;
+    addTearDown(() => WidgetController.hitTestWarningShouldBeFatal = false);
+    await tester.tap(find.text(t.batch_select_all));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(
+      find.text(t.batch_selected_count(n: 0)),
+      findsOneWidget,
+      reason: '骨架上没有可勾选的卡，全选必须是空操作',
+    );
+
+    db.release();
+    await tester.pumpAndSettle();
+    expect(skeleton, findsNothing);
+    await tester.tap(find.text(t.batch_select_all));
+    await tester.pumpAndSettle();
+    // 「全部视频」默认「非系列」档：墙上只有那张散片。
+    expect(find.text(t.batch_selected_count(n: 1)), findsOneWidget);
+  });
 }
 
 /// 卡住 [getAllMediaCollections]——它只被库页的整套映射加载读取，卡住它 = 映射
@@ -180,6 +311,12 @@ class _GatedMapsDatabase extends FushiDatabase {
   _GatedMapsDatabase() : super.forTesting(NativeDatabase.memory());
 
   Completer<void>? _gate;
+
+  /// 每轮映射加载固定耗时（模拟大库的慢全表查询）；null = 不延迟。
+  Duration? mapsDelay;
+
+  /// 映射加载被发起的轮数。
+  int mapsCalls = 0;
 
   void hold() => _gate = Completer<void>();
 
@@ -190,7 +327,11 @@ class _GatedMapsDatabase extends FushiDatabase {
 
   @override
   Future<List<MediaCollectionRow>> getAllMediaCollections() async {
+    mapsCalls++;
     await _gate?.future;
+    if (mapsDelay case final Duration delay) {
+      await Future<void>.delayed(delay);
+    }
     return super.getAllMediaCollections();
   }
 }

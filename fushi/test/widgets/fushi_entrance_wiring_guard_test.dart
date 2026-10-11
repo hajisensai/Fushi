@@ -30,7 +30,8 @@ void main() {
         reason: '$orientation 网格格子应包在 FushiStaggeredEntrance 里',
       );
     }
-    expect(src, contains('child: items[i].build()'));
+    // 横滚行版式本体 [_buildHorizontalRowFrame]（真实行与首屏骨架行共用）。
+    expect(src, contains('child: itemBuilder(i)'));
     expect(
       RegExp(r'FushiStaggeredEntrance\(').allMatches(src).length,
       greaterThanOrEqualTo(3),
