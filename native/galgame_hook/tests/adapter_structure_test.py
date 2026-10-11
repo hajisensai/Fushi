@@ -498,8 +498,9 @@ class AdapterStructureTest(unittest.TestCase):
                 encoding="utf-8"))
         adapter = luca[luca.index("class LucaAdapter final"):]
         settle = self._function_body(adapter, "void SettleTextOwner()")
-        self.assertLess(settle.index("LucaTextSettled(&hooked)"),
-                        settle.index("CompleteNativeTextOwner(g_header, hooked, false)"))
+        self.assertLess(settle.index("LucaTextOwnerDecision()"),
+                        settle.index("CompleteNativeTextOwner(g_header, true, false)"))
+        self.assertIn("CompleteNativeTextOwner(g_header, false, false)", settle)
         install = self._function_body(adapter, "bool install() override")
         self.assertLess(install.index("InstallLucaText()"),
                         install.index("SettleTextOwner();"))
@@ -508,8 +509,17 @@ class AdapterStructureTest(unittest.TestCase):
                         pending.index("SettleTextOwner();"))
         luca_fail = self._function_body(adapter, "void FailTextStartup()")
         self.assertIn("CompleteNativeTextOwner(g_header, false, false)", luca_fail)
-        settled = self._function_body(luca, "bool LucaTextSettled(bool* installed)")
-        self.assertIn("g_luca.hooks_installed || g_luca.resolved", settled)
+        # Ownership follows structural evidence, not the retry window: the
+        # decision reads the first scan's result, never the window/elapsed time.
+        decision = self._function_body(
+            luca, "luca::TextOwnerDecision LucaTextOwnerDecision()")
+        self.assertIn("luca::DecideTextOwner(g_luca.scanned, g_luca.site_result,",
+                      decision)
+        self.assertNotIn("kLucaSiteRetryWindowMs", decision)
+        self.assertNotIn("g_luca.resolved", decision)
+        install_text = self._function_body(luca, "bool InstallLucaText()")
+        self.assertLess(install_text.index("ResolveLucaSites()"),
+                        install_text.index("rt.scanned = true;"))
 
     def test_every_adapter_is_an_independent_include(self) -> None:
         source = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")

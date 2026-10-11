@@ -9,10 +9,13 @@
 #include <string>
 #include <vector>
 
+#include <windows.h>
+
 #include "../hook/adapters/luca_lookup_core.h"
 #include "../hook/adapters/luca_profile.h"
 #include "../hook/adapters/luca_text_core.h"
 #include "../hook/luca_pak.h"
+#include "../include/native_text_owner.h"
 
 namespace luca = fushi_voice_hook::luca;
 
@@ -451,6 +454,279 @@ void TestSystemCnf() {
   assert(!fushi_voice_hook::IsLucaSystemCnf("XTARGET_PLATFORM\tWIN32\n"));
 }
 
+// ── Directory identity (luca_profile.h) on real, synthetic directories ─────
+
+// A scratch game directory under %TEMP%; removed (files, then directories,
+// deepest first) when the scope ends. Only synthetic bytes are written.
+class ScratchGameDir {
+ public:
+  ScratchGameDir() {
+    static unsigned counter = 0u;
+    wchar_t temp[MAX_PATH] = {};
+    const DWORD length = GetTempPathW(MAX_PATH, temp);
+    assert(length != 0u && length < MAX_PATH);
+    root_ = std::wstring(temp) + L"fushi_luca_probe_" +
+            std::to_wstring(GetCurrentProcessId()) + L"_" +
+            std::to_wstring(++counter);
+    MakeDir(L"");
+  }
+  ~ScratchGameDir() {
+    for (auto it = files_.rbegin(); it != files_.rend(); ++it) {
+      DeleteFileW(it->c_str());
+    }
+    for (auto it = dirs_.rbegin(); it != dirs_.rend(); ++it) {
+      RemoveDirectoryW(it->c_str());
+    }
+  }
+  ScratchGameDir(const ScratchGameDir&) = delete;
+  ScratchGameDir& operator=(const ScratchGameDir&) = delete;
+
+  const std::wstring& root() const { return root_; }
+  void MakeDir(const std::wstring& relative) {
+    const std::wstring path = relative.empty() ? root_ : root_ + L"\\" + relative;
+    const bool created = CreateDirectoryW(path.c_str(), nullptr) != FALSE ||
+                         GetLastError() == ERROR_ALREADY_EXISTS;
+    assert(created);
+    dirs_.push_back(path);
+  }
+  void Write(const std::wstring& relative, const std::vector<uint8_t>& bytes) {
+    const std::wstring path = root_ + L"\\" + relative;
+    HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
+                              CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    assert(file != INVALID_HANDLE_VALUE);
+    DWORD written = 0;
+    const bool ok = WriteFile(file, bytes.data(),
+                              static_cast<DWORD>(bytes.size()), &written,
+                              nullptr) != FALSE &&
+                    written == bytes.size();
+    CloseHandle(file);
+    assert(ok);
+    files_.push_back(path);
+  }
+  void WriteText(const std::wstring& relative, const std::string& text) {
+    Write(relative, std::vector<uint8_t>(text.begin(), text.end()));
+  }
+
+ private:
+  std::wstring root_;
+  std::vector<std::wstring> dirs_;
+  std::vector<std::wstring> files_;
+};
+
+constexpr char kLucaCnf[] =
+    "TARGET_PLATFORM\tWIN32\r\nSCREEN_WIDTH\t1280\r\nSCREEN_HEIGHT\t720\r\n";
+
+// `.pak` files other engines ship: a Quake-style PACK directory, a zip, and
+// a zero-filled blob. None has a self-consistent Luca index.
+std::vector<uint8_t> MakeForeignPackPak() {
+  std::vector<uint8_t> pak = {'P', 'A', 'C', 'K'};
+  PutU32(&pak, 4u, 0x400u);  // directory offset
+  PutU32(&pak, 8u, 64u);     // directory length
+  for (size_t i = 12u; i < 0x440u; ++i) {
+    pak.push_back(static_cast<uint8_t>(i * 7u));
+  }
+  return pak;
+}
+
+std::vector<uint8_t> MakeForeignZipPak() {
+  std::vector<uint8_t> pak = {'P', 'K', 0x03, 0x04, 0x14, 0x00};
+  for (size_t i = pak.size(); i < 0x900u; ++i) {
+    pak.push_back(static_cast<uint8_t>(0x30u + (i % 61u)));
+  }
+  return pak;
+}
+
+// A Luca-looking header whose index is not self-consistent: the second
+// member overlaps the first, so no index start reads the whole table.
+std::vector<uint8_t> MakeOverlappingPak() {
+  std::vector<uint8_t> pak = MakePak(3u, 1000u, 0x2Cu, 0u, 100u);
+  PutU32(&pak, 0x2Cu + 8u, 1u);
+  return pak;
+}
+
+// A Luca-looking header whose last member ends past the end of the file.
+std::vector<uint8_t> MakeTruncatedMemberPak() {
+  std::vector<uint8_t> pak = MakePak(3u, 2000u, 0x2Cu, 0u, 100u);
+  PutU32(&pak, 0x2Cu + 2u * 8u + 4u, 0x00100000u);
+  return pak;
+}
+
+void TestLayoutIdentity() {
+  // Fixture sanity: the synthetic archives read exactly as the probe needs.
+  {
+    const std::vector<uint8_t> good = MakePak(3u, 65000u, 0x2Cu, 0u, 100u);
+    assert(luca::ParsePakIndex(good.data(), good.size(), good.size(), nullptr,
+                               nullptr) == luca::PakIndexResult::kValid);
+    for (const std::vector<uint8_t>& bad :
+         {MakeOverlappingPak(), MakeTruncatedMemberPak(), MakeForeignPackPak(),
+          MakeForeignZipPak(), std::vector<uint8_t>(0x1000u, 0u)}) {
+      assert(luca::ParsePakIndex(bad.data(), bad.size(), bad.size(), nullptr,
+                                 nullptr) != luca::PakIndexResult::kValid);
+    }
+  }
+#if defined(_M_X64)
+  constexpr bool kX64BranchEnabled = true;
+#else
+  constexpr bool kX64BranchEnabled = false;
+#endif
+
+  // Positive, Win64 boot-config-less layout: two self-consistent root PAKs.
+  {
+    ScratchGameDir dir;
+    dir.MakeDir(L"files");
+    dir.Write(L"files\\SCRIPT.PAK", MakePak(3u, 0u, 0x2Cu, 0u, 100u));
+    dir.Write(L"files\\VOICE.PAK", MakeNamedPak(4u, 0x38u));
+    assert(fushi_voice_hook::MatchesLucaLayout(dir.root()) == kX64BranchEnabled);
+  }
+  // Positive, original layout: system.cnf + one self-consistent PAK (both
+  // architectures).
+  {
+    ScratchGameDir dir;
+    dir.WriteText(L"system.cnf", kLucaCnf);
+    dir.MakeDir(L"files");
+    dir.Write(L"files\\SCRIPT.PAK", MakePak(3u, 0u, 0x2Cu, 0u, 100u));
+    assert(fushi_voice_hook::MatchesLucaLayout(dir.root()));
+  }
+
+  // Negative: a non-Luca x64 game that ships `.pak` files of its own.
+  {
+    ScratchGameDir dir;
+    dir.MakeDir(L"files");
+    dir.Write(L"files\\data.pak", MakeForeignPackPak());
+    dir.Write(L"files\\patch.pak", MakeForeignZipPak());
+    dir.Write(L"files\\sound.pak", std::vector<uint8_t>(0x1000u, 0u));
+    assert(!fushi_voice_hook::MatchesLucaLayout(dir.root()));
+  }
+  // Negative: Luca-looking headers whose indexes are not self-consistent.
+  {
+    ScratchGameDir dir;
+    dir.MakeDir(L"files");
+    dir.Write(L"files\\A.PAK", MakeOverlappingPak());
+    dir.Write(L"files\\B.PAK", MakeTruncatedMemberPak());
+    assert(!fushi_voice_hook::MatchesLucaLayout(dir.root()));
+  }
+  // Negative: exactly one self-consistent PAK without system.cnf, alone or
+  // beside inconsistent / foreign ones (one coincidence is not an engine).
+  {
+    ScratchGameDir dir;
+    dir.MakeDir(L"files");
+    dir.Write(L"files\\ONLY.PAK", MakePak(3u, 0u, 0x2Cu, 0u, 100u));
+    assert(!fushi_voice_hook::MatchesLucaLayout(dir.root()));
+    dir.Write(L"files\\BROKEN.PAK", MakeOverlappingPak());
+    dir.Write(L"files\\data.pak", MakeForeignPackPak());
+    assert(!fushi_voice_hook::MatchesLucaLayout(dir.root()));
+  }
+  // Negative: two valid PAKs, but not in the engine's `files\` root (next to
+  // the exe, or only in a subdirectory of files\).
+  {
+    ScratchGameDir dir;
+    dir.Write(L"A.PAK", MakePak(3u, 0u, 0x2Cu, 0u, 100u));
+    dir.Write(L"B.PAK", MakePak(2u, 10u, 0x28u, 0u, 100u));
+    dir.MakeDir(L"files");
+    dir.MakeDir(L"files\\sub");
+    dir.Write(L"files\\sub\\C.PAK", MakePak(3u, 0u, 0x2Cu, 0u, 100u));
+    dir.Write(L"files\\sub\\D.PAK", MakePak(2u, 10u, 0x28u, 0u, 100u));
+    assert(!fushi_voice_hook::MatchesLucaLayout(dir.root()));
+  }
+  // Negative: a Luca boot file does not admit foreign or broken archives.
+  {
+    ScratchGameDir dir;
+    dir.WriteText(L"system.cnf", kLucaCnf);
+    dir.MakeDir(L"files");
+    dir.Write(L"files\\data.pak", MakeForeignPackPak());
+    dir.Write(L"files\\A.PAK", MakeOverlappingPak());
+    assert(!fushi_voice_hook::MatchesLucaLayout(dir.root()));
+  }
+  // A directory without system.cnf or files\ is not LucaSystem.
+  assert(!fushi_voice_hook::MatchesLucaLayout(L"C:\\nonexistent-luca-dir"));
+}
+
+// ── Text-owner handshake follows MESSAGE-site evidence ─────────────────────
+
+// Mirrors LucaAdapter::SettleTextOwner.
+void ApplyOwnerDecision(fushi_voice_hook::SharedHeader* header,
+                        luca::TextOwnerDecision decision) {
+  switch (decision) {
+    case luca::TextOwnerDecision::kNativeOwned:
+      fushi_voice_hook::CompleteNativeTextOwner(header, true, false);
+      return;
+    case luca::TextOwnerDecision::kLunaAllowed:
+      fushi_voice_hook::CompleteNativeTextOwner(header, false, false);
+      return;
+    case luca::TextOwnerDecision::kUndecided:
+      return;
+  }
+}
+
+void TestTextOwnerFollowsSiteEvidence() {
+  using fushi_voice_hook::NativeTextLunaStartupGate;
+  using fushi_voice_hook::NativeTextOwner;
+  using fushi_voice_hook::ReadNativeTextOwner;
+  using fushi_voice_hook::SharedHeader;
+  const std::vector<uint8_t> luca_code = MakeMessageCode(0x300u, 0x20u, 0x180u);
+  std::vector<uint8_t> twice = luca_code;
+  std::memcpy(twice.data() + 0x380u, luca_code.data() + 0x300u,
+              luca::kMessageOperandShapeBytes);
+  std::vector<uint8_t> bad_reader = luca_code;
+  bad_reader[0x21] = 0xC3;
+  const std::vector<uint8_t> foreign(0x400u, 0x90u);  // another engine's code
+
+  // The directory probe matched, but the image's code is not LucaSystem's
+  // (absent / not unique / wrong targets): Luna is released on that first
+  // scan, not after the 120 s retry window.
+  const std::vector<uint8_t>* const failing_scans[] = {&foreign, &twice,
+                                                        &bad_reader};
+  for (const std::vector<uint8_t>* code : failing_scans) {
+    luca::CodeSpan span{code->data(), code->size(), 0u};
+    luca::MessageSites sites;
+    const luca::MessageSiteResult result =
+        luca::ResolveMessageSites(&span, 1u, &sites);
+    assert(result != luca::MessageSiteResult::kResolved);
+    SharedHeader h{};
+    fushi_voice_hook::InitializeNativeTextOwner(&h, true);
+    NativeTextLunaStartupGate gate;
+    // Before any scan the candidate holds Pending; Luna waits.
+    ApplyOwnerDecision(&h, luca::DecideTextOwner(false, result, false));
+    assert(ReadNativeTextOwner(&h) == NativeTextOwner::kPending);
+    assert(!gate.ShouldAttempt(ReadNativeTextOwner(&h)));
+    // First scan failed: Luna starts immediately.
+    ApplyOwnerDecision(&h, luca::DecideTextOwner(true, result, false));
+    assert(ReadNativeTextOwner(&h) == NativeTextOwner::kLunaAllowed);
+    assert(gate.ShouldAttempt(ReadNativeTextOwner(&h)));
+    // A lane installed later in the retry (hydrated code) cannot take the
+    // decision back from a running Luna.
+    ApplyOwnerDecision(&h, luca::DecideTextOwner(
+                               true, luca::MessageSiteResult::kResolved, true));
+    assert(ReadNativeTextOwner(&h) == NativeTextOwner::kLunaAllowed);
+  }
+  assert(luca::DecideTextOwner(true, luca::MessageSiteResult::kMissing, false) ==
+         luca::TextOwnerDecision::kLunaAllowed);
+
+  // Sites resolved uniquely but a reader hook failed: no native lane, Luna.
+  {
+    luca::CodeSpan span{luca_code.data(), luca_code.size(), 0u};
+    luca::MessageSites sites;
+    assert(luca::ResolveMessageSites(&span, 1u, &sites) ==
+           luca::MessageSiteResult::kResolved);
+    SharedHeader h{};
+    fushi_voice_hook::InitializeNativeTextOwner(&h, true);
+    ApplyOwnerDecision(&h, luca::DecideTextOwner(
+                               true, luca::MessageSiteResult::kResolved, false));
+    assert(ReadNativeTextOwner(&h) == NativeTextOwner::kLunaAllowed);
+  }
+  // Sites unique and both hooks enabled: the native lane owns text; Luna
+  // never starts.
+  {
+    SharedHeader h{};
+    fushi_voice_hook::InitializeNativeTextOwner(&h, true);
+    NativeTextLunaStartupGate gate;
+    ApplyOwnerDecision(&h, luca::DecideTextOwner(
+                               true, luca::MessageSiteResult::kResolved, true));
+    assert(ReadNativeTextOwner(&h) == NativeTextOwner::kNativeOwned);
+    assert(!gate.ShouldAttempt(ReadNativeTextOwner(&h)));
+  }
+}
+
 }  // namespace
 
 void TestShift() {
@@ -483,7 +759,7 @@ int main() {
   TestClaim();
   TestShift();
   TestSystemCnf();
-  // A directory without system.cnf is not LucaSystem.
-  assert(!fushi_voice_hook::MatchesLucaLayout(L"C:\\nonexistent-luca-dir"));
+  TestLayoutIdentity();
+  TestTextOwnerFollowsSiteEvidence();
   return 0;
 }

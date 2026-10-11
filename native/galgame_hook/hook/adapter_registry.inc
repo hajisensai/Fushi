@@ -553,6 +553,9 @@ class AdapterRegistry {
  public:
   // Engines whose adapter can own the text lane natively. Each settles only
   // its own Pending decision; every other engine lets Luna start at Ready.
+  // A candidate only holds Pending until its adapter has structural evidence:
+  // Luca settles on its first MESSAGE-site scan (installed -> NativeOwned,
+  // anything else -> LunaAllowed), never on the retry window's expiry.
   bool native_text_candidate() const { return siglus_.probe() || luca_.probe(); }
   void FailNativeTextStartup() {
     siglus_.FailTextStartup();

@@ -104,6 +104,7 @@ struct LucaVoiceArchive {
 struct LucaRuntime {
   std::atomic<bool> live{false};
   bool resolved = false;
+  bool scanned = false;  // at least one scan of the loaded image completed
   bool hooks_installed = false;
   uint64_t first_attempt_ms = 0u;
   uint64_t last_attempt_ms = 0u;
@@ -426,7 +427,9 @@ bool InstallLucaText() {
     return false;
   }
   rt.last_attempt_ms = now;
-  if (!ResolveLucaSites()) {
+  const bool sites_resolved = ResolveLucaSites();
+  rt.scanned = true;
+  if (!sites_resolved) {
     const bool final_result =
         rt.site_result != luca::MessageSiteResult::kMissing ||
         now - rt.first_attempt_ms >= kLucaSiteRetryWindowMs;
@@ -471,10 +474,11 @@ bool InstallLucaText() {
   return hooked;
 }
 
-// True once the MESSAGE lane is final: installed, or rejected for good.
-bool LucaTextSettled(bool* installed) {
-  *installed = g_luca.hooks_installed;
-  return g_luca.hooks_installed || g_luca.resolved;
+// Text-owner decision from the MESSAGE lane's structural evidence
+// (luca_text_core.h): Pending only until the first image scan.
+luca::TextOwnerDecision LucaTextOwnerDecision() {
+  return luca::DecideTextOwner(g_luca.scanned, g_luca.site_result,
+                               g_luca.hooks_installed);
 }
 
 // Returns the text event the line is published under (0 = not published).
@@ -744,9 +748,8 @@ void DrainLucaMessages() {
 
 volatile LONG g_luca_diag = 0;
 bool InstallLucaText() { return false; }
-bool LucaTextSettled(bool* installed) {
-  *installed = false;
-  return true;
+fushi_voice_hook::luca::TextOwnerDecision LucaTextOwnerDecision() {
+  return fushi_voice_hook::luca::TextOwnerDecision::kLunaAllowed;
 }
 void DrainLucaMessages() {}
 void ProcessLucaLookupTick() {}
@@ -835,13 +838,21 @@ class LucaAdapter final : public fushi_voice_hook::EngineAdapter {
   }
 
  private:
-  // Installed MESSAGE lane: the native owner fences Luna (its generic hooks
-  // would only add unrelated threads). Final rejection: Luna is the fallback
-  // text source. During the bounded site retry the owner stays Pending.
+  // Installed MESSAGE lane (sites unique + hooks enabled): the native owner
+  // fences Luna (its generic hooks would only add unrelated threads). Any
+  // other outcome of the first image scan releases Luna immediately; the
+  // directory identity alone never holds Pending across the retry window.
   void SettleTextOwner() {
-    bool hooked = false;
-    if (!LucaTextSettled(&hooked)) return;
-    fushi_voice_hook::CompleteNativeTextOwner(g_header, hooked, false);
+    switch (LucaTextOwnerDecision()) {
+      case fushi_voice_hook::luca::TextOwnerDecision::kNativeOwned:
+        fushi_voice_hook::CompleteNativeTextOwner(g_header, true, false);
+        return;
+      case fushi_voice_hook::luca::TextOwnerDecision::kLunaAllowed:
+        fushi_voice_hook::CompleteNativeTextOwner(g_header, false, false);
+        return;
+      case fushi_voice_hook::luca::TextOwnerDecision::kUndecided:
+        return;
+    }
   }
 
   mutable std::atomic<int> probe_state_{0};  // 0 unmeasured, 1 Luca, 2 not

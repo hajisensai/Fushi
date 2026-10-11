@@ -185,6 +185,33 @@ inline MessageSiteResult ResolveMessageSites(const CodeSpan* spans,
   return MessageSiteResult::kResolved;
 }
 
+// Who owns the process's text lane (native_text_owner.h), decided from the
+// MESSAGE lane's structural evidence rather than from elapsed time.
+//
+// The directory identity (luca_profile.h) is only a candidate: it holds the
+// owner Pending from before Ready until the first scan of the loaded image.
+// Exclusive native ownership requires the MESSAGE sites to have resolved
+// uniquely AND both reader hooks to be enabled. Any other outcome of that
+// first scan -- the shape is absent, occurs more than once, or its targets
+// are not the VM's readers, or a hook failed -- releases Luna at once, so a
+// misidentified directory never fences Luna for the whole retry window.
+// A `kMissing` scan is still retried by the adapter (a DRM stub may hydrate
+// the code later); a lane installed after Luna was released runs beside it.
+enum class TextOwnerDecision : uint8_t {
+  kUndecided = 0,  // no scan yet: keep Pending
+  kNativeOwned,
+  kLunaAllowed,
+};
+
+inline TextOwnerDecision DecideTextOwner(bool scanned, MessageSiteResult site,
+                                         bool hooks_installed) {
+  if (site == MessageSiteResult::kResolved && hooks_installed) {
+    return TextOwnerDecision::kNativeOwned;
+  }
+  return scanned ? TextOwnerDecision::kLunaAllowed
+                 : TextOwnerDecision::kUndecided;
+}
+
 inline bool IsJapaneseUnit(wchar_t unit) {
   return (unit >= 0x3040 && unit <= 0x30FF) ||  // kana
          (unit >= 0x3400 && unit <= 0x4DBF) ||  // CJK ext A
