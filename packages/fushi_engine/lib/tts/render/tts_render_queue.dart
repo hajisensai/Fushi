@@ -63,6 +63,8 @@ class TtsRenderJob {
     required this.createdAt,
     required this.updatedAt,
     this.regenerate = const <int>[],
+    this.pausePreset = 'standard',
+    this.normalizeLoudness = true,
     this.status = TtsRenderJobStatus.queued,
     this.phase,
     this.done = 0,
@@ -87,6 +89,15 @@ class TtsRenderJob {
 
   /// 开始前丢弃这些句子（全书句序）的缓存音频，强制重新合成。
   final List<int> regenerate;
+
+  /// 停顿预设名（`TtsPausePreset.name`）。
+  final String pausePreset;
+
+  /// 编码时做响度归一化（ffmpeg 有 loudnorm 时；没有就如实记 [loudnessSkipped]）。
+  final bool normalizeLoudness;
+
+  /// 要求了响度归一化但本机 ffmpeg 不支持而跳过（UI 提示，不算失败）。
+  bool loudnessSkipped = false;
 
   final int createdAt;
   int updatedAt;
@@ -119,6 +130,9 @@ class TtsRenderJob {
         'sections': sections,
         'verify': verify,
         'regenerate': regenerate,
+        'pause': pausePreset,
+        'loudnorm': normalizeLoudness,
+        'loudnessSkipped': loudnessSkipped,
         'createdAt': createdAt,
         'updatedAt': updatedAt,
         'status': status.name,
@@ -153,6 +167,8 @@ class TtsRenderJob {
       sections: ints(json['sections']),
       verify: json['verify'] == true,
       regenerate: ints(json['regenerate']),
+      pausePreset: (json['pause'] as String?) ?? 'standard',
+      normalizeLoudness: json['loudnorm'] != false,
       createdAt: (json['createdAt'] as int?) ?? 0,
       updatedAt: (json['updatedAt'] as int?) ?? 0,
       status: byName(
@@ -176,7 +192,7 @@ class TtsRenderJob {
             if (TtsRenderFlag.fromJson(f) case final TtsRenderFlag flag) flag,
       ],
       verified: json['verified'] == true,
-    );
+    )..loudnessSkipped = json['loudnessSkipped'] == true;
   }
 }
 
@@ -305,6 +321,8 @@ class TtsRenderQueue extends EngineChangeNotifier {
     List<int> sections = const <int>[],
     bool verify = false,
     List<int> regenerate = const <int>[],
+    String pausePreset = 'standard',
+    bool normalizeLoudness = true,
   }) async {
     await load();
     for (final TtsRenderJob job in _jobs) {
@@ -319,6 +337,8 @@ class TtsRenderQueue extends EngineChangeNotifier {
       sections: List<int>.unmodifiable(sections),
       verify: verify,
       regenerate: List<int>.unmodifiable(regenerate),
+      pausePreset: pausePreset,
+      normalizeLoudness: normalizeLoudness,
       createdAt: now,
       updatedAt: now,
     );
