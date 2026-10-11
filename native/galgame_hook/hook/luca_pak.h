@@ -1,5 +1,6 @@
-// LucaSystem (Prototype) archive formats: the `*.PAK` index and the
-// `OGGPAK` voice member.  Pure parsing over caller-supplied bytes, no IO, so
+// LucaSystem (Prototype) archive formats: the `*.PAK` index, `OGGPAK`
+// members and direct Vorbis members. Pure parsing over caller-supplied bytes,
+// no IO, so
 // the identity probe, the HookWorker and the offline tests share one reading.
 //
 // PAK header (all little-endian u32):
@@ -10,7 +11,12 @@
 //   +0x10..+0x1F       zero
 //   +0x20 flags
 //   +index             count x {u32 offset_in_blocks, u32 byte_length}
-// The index starts at 0x28 or 0x2C depending on the archive kind.  The layout
+// Older indexes start at 0x28 or 0x2C. Newer archives carry a variable header:
+// +0x24 is the end of the NUL-delimited member-name table and the u32 just
+// before the index is its start (== index_start + count * 8). These two
+// boundaries and exactly count nonempty names resolve the index location;
+// opaque header metadata is never interpreted as a game-specific signature.
+// The layout
 // is never guessed from flags: an archive is accepted only when exactly one
 // start offset reads every entry consistently (first member at data_start,
 // members ordered, non-overlapping and inside the file, table before data).
@@ -18,8 +24,10 @@
 // OGGPAK member: "OGGPAK\0" followed by one or more {u32 sample_rate,
 // u32 length, <length bytes of a complete Ogg stream>} records that fill the
 // member exactly.  The engine ships the same line at several sample rates.
-// Music and system-sound archives use the same member format (stereo); the
-// line voice archives are mono, which is what tells them apart.
+// In the older measured build, music and system sounds are stereo OGGPAK.
+// Newer archives store a complete Ogg stream directly; both voice and some
+// sound-effect members can be mono, so channels alone do not prove voice
+// identity. The MESSAGE voice id must address the member being exported.
 #pragma once
 
 #include <cstddef>
@@ -112,6 +120,31 @@ inline uint64_t PakIndexBytes(const PakIndex& header) {
   return header.data_start;
 }
 
+// Named variable headers are bounded to 0x100 bytes. A plausible first entry
+// alone is never enough: the two name-table boundaries and all names must
+// agree before this start participates in whole-index validation.
+inline bool HasNamedPakIndex(const uint8_t* head, size_t head_bytes,
+                             const PakIndex& header, uint32_t index_start) {
+  if (index_start < 0x2Cu || index_start > 0x100u ||
+      (index_start & 3u) != 0u || head_bytes < index_start) return false;
+  const uint64_t names_start = index_start + uint64_t{header.count} * 8u;
+  const uint32_t names_end = ReadU32(head + 0x24u);
+  if (ReadU32(head + index_start - 4u) != names_start ||
+      names_start >= names_end || names_end > header.data_start ||
+      names_end > head_bytes) return false;
+  uint32_t names = 0u;
+  bool nonempty = false;
+  for (uint64_t at = names_start; at < names_end; ++at) {
+    if (head[at] == 0u) {
+      if (!nonempty || ++names > header.count) return false;
+      nonempty = false;
+    } else {
+      nonempty = true;
+    }
+  }
+  return !nonempty && names == header.count;
+}
+
 enum class PakIndexResult : uint8_t {
   kValid = 0,
   kBadHeader,
@@ -131,7 +164,10 @@ inline PakIndexResult ParsePakIndex(const uint8_t* head, size_t head_bytes,
   }
   std::vector<PakEntry> chosen;
   uint32_t chosen_start = 0u;
-  for (const size_t start : kPakIndexStarts) {
+  for (uint32_t start = 0x28u; start <= 0x100u; start += 4u) {
+    const bool legacy = start == kPakIndexStarts[0] ||
+                        start == kPakIndexStarts[1];
+    if (!legacy && !HasNamedPakIndex(head, head_bytes, header, start)) continue;
     std::vector<PakEntry> entries;
     if (!ReadPakEntries(head, head_bytes, file_size, header,
                         static_cast<uint32_t>(start), &entries)) {
@@ -225,6 +261,23 @@ inline uint32_t OggVorbisChannels(const uint8_t* data, size_t bytes) {
     return 0u;
   }
   return data[body + 11u];
+}
+
+// Newer PAK voice members hold the complete Vorbis stream directly. Keep
+// the stream's range so callers export exactly the original member bytes.
+// A bare Ogg magic is insufficient: require BOS/EOS, one logical stream,
+// a Vorbis identification header, a nonzero channel count and a sane rate.
+inline bool ParseDirectOggMember(const uint8_t* data, size_t bytes,
+                                 OggPakStream* out) {
+  if (data == nullptr || out == nullptr || bytes > UINT32_MAX ||
+      !IsCompleteOggStream(data, bytes) ||
+      OggVorbisChannels(data, bytes) == 0u) return false;
+  const size_t body = 27u + data[26];
+  if (bytes < body + 16u) return false;
+  const uint32_t rate = ReadU32(data + body + 12u);
+  if (rate < 8000u || rate > 192000u) return false;
+  *out = {rate, 0u, static_cast<uint32_t>(bytes)};
+  return true;
 }
 
 // Every record must be a complete Ogg stream and the records must fill the

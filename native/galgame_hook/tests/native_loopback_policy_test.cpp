@@ -70,11 +70,11 @@ void TestV16AndV17TailAbiAndDefaultDeny() {
   Check(offsetof(SharedHeader, adapter_reports) >=
             offsetof(SharedHeader, lookup_layer_reserved) + sizeof(uint32_t),
         "v23 adapter report block must append after the v22 layer-origin block");
-  Check(offsetof(SharedHeader, siglus_text_owner) ==
+  Check(offsetof(SharedHeader, native_text_owner) ==
             offsetof(SharedHeader, adapter_report_seq) + sizeof(uint32_t),
         "v24 ownership must follow the v23 reports without changing old fields");
   Check(offsetof(SharedHeader, game_stream_input_request_seq) ==
-            offsetof(SharedHeader, siglus_text_owner) + sizeof(uint32_t),
+            offsetof(SharedHeader, native_text_owner) + sizeof(uint32_t),
         "v25 game-stream input must append after v24 ownership");
   Check(offsetof(SharedHeader, game_stream_input_status_seq) ==
             offsetof(SharedHeader, game_stream_input_request_seq) + 4u &&
