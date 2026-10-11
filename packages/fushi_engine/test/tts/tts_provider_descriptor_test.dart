@@ -26,10 +26,10 @@ void main() {
     const GptSovitsTtsDescriptor sovits = GptSovitsTtsDescriptor();
 
     test('GPT-SoVITS: missing ref audio reported, defaults fill the rest', () {
-      expect(sovits.validate(_preset(sovits.id)), <String>['ref_audio_path']);
+      expect(sovits.validate(_preset(sovits.id)), <String>['ref_audio_path', 'prompt_text']);
       expect(
         sovits.validate(
-          _preset(sovits.id, params: <String, String>{'ref_audio_path': '/r'}),
+          _preset(sovits.id, params: <String, String>{'ref_audio_path': '/r', 'prompt_text': 'p'}),
         ),
         isEmpty,
       );
@@ -39,6 +39,7 @@ void main() {
             sovits.id,
             params: <String, String>{
               'ref_audio_path': '/r',
+              'prompt_text': 'p',
               'text_lang': '  ',
             },
           ),
@@ -58,7 +59,7 @@ void main() {
           sovits.validate(
             _preset(
               sovits.id,
-              params: <String, String>{'endpoint': bad, 'ref_audio_path': '/r'},
+              params: <String, String>{'endpoint': bad, 'ref_audio_path': '/r', 'prompt_text': 'p'},
             ),
           ),
           <String>['endpoint'],
@@ -72,6 +73,7 @@ void main() {
             params: <String, String>{
               'endpoint': 'https://gpu.local:9880/tts',
               'ref_audio_path': '/r',
+              'prompt_text': 'p',
             },
           ),
         ),

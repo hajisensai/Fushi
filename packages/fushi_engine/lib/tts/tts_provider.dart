@@ -64,6 +64,9 @@ abstract class TtsProvider {
   Future<void> dispose() async {}
 }
 
+/// 引擎的大类：自建 / 本机外部服务、在线服务、系统语音。
+enum TtsProviderCategory { external, online, system }
+
 /// 引擎描述符：一类引擎一个单例。
 abstract class TtsProviderDescriptor {
   const TtsProviderDescriptor();
@@ -72,6 +75,11 @@ abstract class TtsProviderDescriptor {
   String get id;
 
   TtsCapabilities get capabilities;
+
+  /// 设置页「添加声音」按这一类列出；同类引擎在编辑页里互相切换。
+  TtsProviderCategory get category => capabilities.online
+      ? TtsProviderCategory.online
+      : TtsProviderCategory.external;
 
   List<TtsParamSpec> get params;
 

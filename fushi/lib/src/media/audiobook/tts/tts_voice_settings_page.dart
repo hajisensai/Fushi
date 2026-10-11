@@ -12,6 +12,7 @@ import 'dart:math';
 
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
+import 'package:fushi_engine/tts/providers/translate_tts_providers.dart';
 import 'package:fushi_engine/tts/tts_audio_probe.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
@@ -33,8 +34,26 @@ import 'package:fushi/utils.dart';
 
 const Duration _kSaveDebounce = Duration(milliseconds: 600);
 
+/// 声音参数旁边存显示名的键后缀（`voice` → `voice_name`）。
+const String _kVoiceNameSuffix = '_name';
+
+/// 非官方在线接口（网页版朗读），编辑页额外提示可能失效。
+const Set<String> _kUnofficialProviders = <String>{
+  EdgeTtsDescriptor.providerId,
+  MicrosoftTranslatorTtsDescriptor.providerId,
+  GoogleTranslateTtsDescriptor.providerId,
+};
+
 /// 试听默认文本（日语学习场景；用户可改）。
 const String _kDefaultTestText = 'こんにちは。これは朗読のテストです。';
+
+/// 新建 / 换引擎时的初始参数：引擎声明的非凭据默认值。
+Map<String, String> ttsDefaultParams(TtsProviderDescriptor descriptor) =>
+    <String, String>{
+      for (final TtsParamSpec spec in descriptor.params)
+        if (spec.kind != TtsParamKind.secret && spec.defaultValue != null)
+          spec.key: spec.defaultValue!,
+    };
 
 Future<void> openTtsVoiceSettingsPage(
   BuildContext context,
@@ -123,34 +142,38 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
     await _store.setActivePresetId(_activeId);
   }
 
+  /// 「添加声音」只按大类选（外部服务 / 在线服务 / 系统语音）；具体是哪个引擎在
+  /// 编辑页的「服务类型」里选，默认取该类第一个。
   Future<void> _add() async {
-    final List<TtsProviderDescriptor> available = _registry.available;
-    final TtsProviderDescriptor? picked =
-        await showFushiChoiceDialog<TtsProviderDescriptor>(
+    final List<TtsProviderCategory> categories = <TtsProviderCategory>[
+      for (final TtsProviderCategory c in TtsProviderCategory.values)
+        if (_registry.available.any((TtsProviderDescriptor d) => d.category == c))
+          c,
+    ];
+    final TtsProviderCategory? picked =
+        await showFushiChoiceDialog<TtsProviderCategory>(
           context: context,
           title: t.audiobook_tts_voice_add_title,
           icon: FushiIcons.voice,
-          options: <FushiChoiceOption<TtsProviderDescriptor>>[
-            for (final TtsProviderDescriptor d in available)
-              FushiChoiceOption<TtsProviderDescriptor>(
-                value: d,
-                label: ttsProviderLabel(d.id),
-                icon: d.capabilities.online
-                    ? FushiIcons.cloud
-                    : FushiIcons.devices,
+          options: <FushiChoiceOption<TtsProviderCategory>>[
+            for (final TtsProviderCategory c in categories)
+              FushiChoiceOption<TtsProviderCategory>(
+                value: c,
+                label: ttsCategoryLabel(c),
+                subtitle: ttsCategoryHint(c),
+                icon: _categoryIcon(c),
               ),
           ],
         );
     if (picked == null || !mounted) return;
+    final TtsProviderDescriptor descriptor = _registry.available.firstWhere(
+      (TtsProviderDescriptor d) => d.category == picked,
+    );
     final TtsVoicePreset preset = TtsVoicePreset(
       id: _newId(),
-      providerId: picked.id,
-      name: ttsProviderLabel(picked.id),
-      params: <String, String>{
-        for (final TtsParamSpec spec in picked.params)
-          if (spec.kind != TtsParamKind.secret && spec.defaultValue != null)
-            spec.key: spec.defaultValue!,
-      },
+      providerId: descriptor.id,
+      name: ttsProviderLabel(descriptor.id),
+      params: ttsDefaultParams(descriptor),
     );
     setState(() {
       _presets = <TtsVoicePreset>[..._presets, preset];
@@ -160,6 +183,12 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
     await _store.setActivePresetId(_activeId);
     if (mounted) unawaited(_openEditor(preset.id));
   }
+
+  static IconData _categoryIcon(TtsProviderCategory c) => switch (c) {
+    TtsProviderCategory.external => FushiIcons.devices,
+    TtsProviderCategory.online => FushiIcons.cloud,
+    TtsProviderCategory.system => FushiIcons.voice,
+  };
 
   static String _newId() {
     final Random random = Random.secure();
@@ -287,14 +316,17 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
         : '';
     return AdaptiveSettingsRow(
       key: ValueKey<String>('tts-voice-${preset.id}'),
-      icon: (descriptor?.capabilities.online ?? false)
-          ? FushiIcons.cloud
-          : FushiIcons.devices,
+      icon: _categoryIcon(
+        descriptor?.category ?? TtsProviderCategory.external,
+      ),
       showIcon: true,
       title: preset.name.isEmpty
           ? ttsProviderLabel(preset.providerId)
           : preset.name,
-      subtitle: ttsProviderLabel(preset.providerId),
+      subtitle: descriptor == null
+          ? ttsProviderLabel(preset.providerId)
+          : '${ttsCategoryLabel(descriptor.category)} · '
+                '${ttsProviderLabel(preset.providerId)}',
       subtitleMaxLines: 1,
       onTap: () => unawaited(_openEditor(preset.id)),
       trailing: Row(
@@ -386,6 +418,51 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
           text: _preset.param(spec.key, fallback: spec.defaultValue),
         ),
       );
+
+  /// 同一大类里可切换的引擎（只有一个时不显示「服务类型」行）。
+  List<TtsProviderDescriptor> get _siblings {
+    final TtsProviderCategory? category = widget.descriptor?.category;
+    if (category == null) return const <TtsProviderDescriptor>[];
+    return <TtsProviderDescriptor>[
+      for (final TtsProviderDescriptor d in widget.services.registry.available)
+        if (d.category == category) d,
+    ];
+  }
+
+  Future<void> _pickServiceType() async {
+    final TtsProviderDescriptor? picked =
+        await showFushiChoiceDialog<TtsProviderDescriptor>(
+          context: context,
+          title: t.audiobook_tts_service_type,
+          selected: widget.descriptor,
+          options: <FushiChoiceOption<TtsProviderDescriptor>>[
+            for (final TtsProviderDescriptor d in _siblings)
+              FushiChoiceOption<TtsProviderDescriptor>(
+                value: d,
+                label: ttsProviderLabel(d.id),
+                subtitle: ttsProviderHint(d.id),
+              ),
+          ],
+        );
+    if (picked == null || !mounted || picked.id == _preset.providerId) return;
+    // 换引擎 = 参数表整个换掉：旧引擎的地址 / 声音 / 密钥对新引擎没有意义。
+    for (final TextEditingController c in _controllers.values) {
+      c.dispose();
+    }
+    _controllers.clear();
+    _referenceDurations.clear();
+    final bool defaultName =
+        _preset.name.isEmpty || _preset.name == ttsProviderLabel(_preset.providerId);
+    widget.onChanged(
+      TtsVoicePreset(
+        id: _preset.id,
+        providerId: picked.id,
+        name: defaultName ? ttsProviderLabel(picked.id) : _preset.name,
+        params: ttsDefaultParams(picked),
+      ),
+    );
+    setState(() => _testResult = null);
+  }
 
   void _setParam(TtsParamSpec spec, String value) {
     final bool secret = spec.kind == TtsParamKind.secret;
@@ -537,8 +614,18 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
       ],
     );
     if (picked == null || !mounted) return;
-    _controllerFor(spec).text = picked;
-    _setParam(spec, picked);
+    final TtsVoice chosen = sorted.firstWhere((TtsVoice v) => v.id == picked);
+    // 显示名只给界面用（不在参数表里，不进缓存键）：Irodori 的声音 id 是不透明串。
+    widget.onChanged(
+      _preset.copyWith(
+        params: <String, String>{
+          ..._preset.params,
+          spec.key: picked,
+          '${spec.key}$_kVoiceNameSuffix': chosen.displayName,
+        },
+      ),
+    );
+    if (_testResult != null) setState(() => _testResult = null);
   }
 
   /// 参考音频时长缓存（路径 → 毫秒，null = 读不出）。
@@ -633,7 +720,7 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
                   child: FushiInlineNotice(
                     key: const ValueKey<String>('tts-voice-online-notice'),
                     severity: FushiNoticeSeverity.info,
-                    message: descriptor.id == EdgeTtsDescriptor.providerId
+                    message: _kUnofficialProviders.contains(descriptor.id)
                         ? '${t.audiobook_tts_online_notice}\n'
                               '${t.audiobook_tts_unofficial_notice}'
                         : t.audiobook_tts_online_notice,
@@ -653,8 +740,26 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
                 ],
               ),
               AdaptiveSettingsSection(
-                title: ttsProviderLabel(_preset.providerId),
+                title: descriptor == null
+                    ? ttsProviderLabel(_preset.providerId)
+                    : ttsCategoryLabel(descriptor.category),
                 children: <Widget>[
+                  if (_siblings.length > 1)
+                    KeyedSubtree(
+                      key: const ValueKey<String>('tts-voice-service-type'),
+                      child: AdaptiveSettingsRow(
+                        title: t.audiobook_tts_service_type,
+                        subtitle: ttsProviderHint(_preset.providerId),
+                        onTap: () => unawaited(_pickServiceType()),
+                        trailing: Text(
+                          ttsProviderLabel(_preset.providerId),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: fushiNeutralSecondaryForeground(context),
+                              ),
+                        ),
+                      ),
+                    ),
                   field(
                     _textField(
                       key: const ValueKey<String>('tts-voice-name'),
@@ -756,10 +861,33 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
             ),
           ),
         );
+      case TtsParamKind.voice:
+        final String id = _preset.param(spec.key, fallback: spec.defaultValue);
+        final String name = _preset.param('${spec.key}$_kVoiceNameSuffix');
+        return KeyedSubtree(
+          key: ValueKey<String>('tts-voice-param-${spec.key}'),
+          child: AdaptiveSettingsRow(
+            title: label,
+            subtitle: id.isEmpty
+                ? t.audiobook_tts_voice_pick
+                : (name.isEmpty || name == id ? id : '$name · $id'),
+            subtitleMaxLines: 2,
+            onTap: _fetchingVoices ? null : () => unawaited(_pickVoice(spec)),
+            trailing: _fetchingVoices
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: FushiCircularProgressIndicator(strokeWidth: 2),
+                  )
+                : FushiIcon(
+                    FushiIcons.chevronRight,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+          ),
+        );
       case TtsParamKind.url:
       case TtsParamKind.text:
       case TtsParamKind.secret:
-      case TtsParamKind.voice:
         return field(
           _textField(
             key: ValueKey<String>('tts-voice-param-${spec.key}'),
@@ -773,24 +901,7 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
             keyboardType: spec.kind == TtsParamKind.url
                 ? TextInputType.url
                 : null,
-            suffixIcon: spec.kind == TtsParamKind.voice
-                ? FushiIconButtonControl(
-                    key: ValueKey<String>('tts-voice-param-${spec.key}-pick'),
-                    tooltip: t.audiobook_tts_voice_list_fetch,
-                    icon: _fetchingVoices
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: FushiCircularProgressIndicator(
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const FushiIcon(FushiIcons.dropDown),
-                    onPressed: _fetchingVoices
-                        ? null
-                        : () => unawaited(_pickVoice(spec)),
-                  )
-                : null,
+
             onChanged: (String v) => _setParam(spec, v.trim()),
           ),
         );

@@ -35,6 +35,9 @@ class SystemTtsDescriptor extends TtsProviderDescriptor {
   );
 
   @override
+  TtsProviderCategory get category => TtsProviderCategory.system;
+
+  @override
   List<TtsParamSpec> get params => const <TtsParamSpec>[];
 
   /// 系统声音随设备而变：身份里带平台名，跨设备同步来的缓存不会被误用。

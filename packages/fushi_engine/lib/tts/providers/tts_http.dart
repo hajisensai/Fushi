@@ -17,6 +17,7 @@ TtsFailure ttsFailureForStatus(int status) => switch (status) {
   401 || 403 => TtsFailure(TtsFailureCode.unauthorized, 'HTTP $status'),
   429 => TtsFailure(TtsFailureCode.rateLimited, 'HTTP $status'),
   >= 500 => TtsFailure(TtsFailureCode.serverError, 'HTTP $status'),
+  409 => TtsFailure(TtsFailureCode.busy, 'HTTP $status'),
   400 || 404 || 422 =>
     TtsFailure(TtsFailureCode.rejected, 'HTTP $status'),
   _ => TtsFailure(TtsFailureCode.badResponse, 'HTTP $status'),
