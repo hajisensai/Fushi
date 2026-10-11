@@ -1487,6 +1487,12 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     await _openAudiobookImportForKey(bookKey);
   }
 
+  Future<void> _openAudiobookStudio(String bookKey) async {
+    Navigator.pop(context);
+    await openTtsStudioPage(context, appModel: appModel, bookKey: bookKey);
+    if (mounted) _rebuild(() {});
+  }
+
   /// 打开 [AudiobookImportDialog] 本体（调用方负责先收起自己的菜单）。
   /// 卡菜单入口与字幕书「重新导入」的分流入口共用，避免第二处手抄 extractDir 查询。
   Future<void> _openAudiobookImportForKey(String bookKey) async {

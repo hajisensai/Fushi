@@ -50,6 +50,12 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
             label: t.audiobook_tts_import_audiobook,
             icon: FushiIcons.importFile,
           ),
+          FushiChoiceOption<_ListenEntryChoice>(
+            value: _ListenEntryChoice.makeAudiobook,
+            label: t.audiobook_studio_title,
+            subtitle: t.audiobook_studio_hint,
+            icon: FushiIcons.audiobook,
+          ),
         ],
       ),
     );
@@ -67,7 +73,37 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
         await _openTtsVoiceSettings();
       case _ListenEntryChoice.importAudiobook:
         await _openAudioImportDialog();
+      case _ListenEntryChoice.makeAudiobook:
+        await _openTtsStudio();
     }
+  }
+
+  /// 「制作有声书」工作台。期间有本书的任务做完入库，回来时挂上新有声书。
+  Future<void> _openTtsStudio() async {
+    final TtsRenderQueue queue = ttsRenderQueueFor(appModel);
+    final TtsRenderJob? before = queue.latestFor(widget.bookKey);
+    final bool wasDone =
+        before != null && before.status == TtsRenderJobStatus.done;
+    await _withStudyClockPaused(
+      () => openTtsStudioPage(
+        context,
+        appModel: appModel,
+        bookKey: widget.bookKey,
+      ),
+    );
+    if (!mounted) return;
+    final TtsRenderJob? after = queue.latestFor(widget.bookKey);
+    final bool completed =
+        after != null &&
+        after.status == TtsRenderJobStatus.done &&
+        (!wasDone || !identical(after, before));
+    if (!completed) return;
+    try {
+      await _resolveAudioSlot(forceReload: true);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderFushi.openTtsStudio', e, stack);
+    }
+    if (mounted) _rebuild(() {});
   }
 
   static String _ttsVoiceName(TtsVoicePreset preset) =>
@@ -207,4 +243,10 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
   }
 }
 
-enum _ListenEntryChoice { readFromHere, resume, voiceSettings, importAudiobook }
+enum _ListenEntryChoice {
+  readFromHere,
+  resume,
+  voiceSettings,
+  importAudiobook,
+  makeAudiobook,
+}

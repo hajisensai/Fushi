@@ -21,6 +21,7 @@ import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:fushi_engine/sync/epub_repackage.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_page.dart';
 import 'package:fushi/src/media/import/srt_book_reimport.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/drag_drop/card_drop_registry.dart';
@@ -3012,6 +3013,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           label: t.audiobook_import,
           icon: Icons.headphones_outlined,
           onPressed: () => _openAudiobookImport(item, bookKey),
+        ),
+      if (modules.isEnabled(ModuleId.listening))
+        DialogQuickAction(
+          label: t.audiobook_studio_title,
+          icon: FushiIcons.voice,
+          onPressed: () => _openAudiobookStudio(bookKey),
         ),
       // BUG-2505：本地已有这本书、还没有它的有声书、而对端有配套有声书 → 给一个
       // 显式的补拉入口。远端卡按「本端已有」被整条藏掉后，这里是唯一能到达对端
