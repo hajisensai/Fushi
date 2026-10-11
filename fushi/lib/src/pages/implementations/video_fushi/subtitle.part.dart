@@ -2137,6 +2137,13 @@ extension _VideoSubtitle on _VideoFushiPageState {
       prepare: _prepareGraphicSubtitleOcr,
     );
     Directory? work;
+    Future<bool>? extraction;
+    Timer? livePublishTimer;
+    bool livePublished = false;
+    bool succeeded = false;
+    final String? startSource = _currentSubtitleSource;
+    // 用户中途自己换了字幕轨就不再往播放器里塞 OCR 结果。
+    bool userKeepsSource() => _currentSubtitleSource == startSource;
     try {
       if (!await _confirmGraphicSubtitleOcrStart() || !isCurrent()) return;
       final int durationMs = controller.durationMs ?? 0;
@@ -2160,7 +2167,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
       );
       work = await Directory.systemTemp.createTemp('fushi_graphic_sub_track_');
       final String supPath = p.join(work.path, 'track.sup');
-      final bool extracted = await extractGraphicSubtitleTrackToSup(
+      // 边抽边识别（边看边 OCR）：抽轨进程写 `.sup` 的同时反复读出已落盘的 cue，
+      // 播放头附近的先识别，识别一条就补进可点字幕；不必等整个文件读完。
+      bool extractDone = false;
+      extraction = extractGraphicSubtitleTrackToSup(
         videoPath: videoPath,
         streamIndex: streamIndex,
         supPath: supPath,
@@ -2174,7 +2184,76 @@ extension _VideoSubtitle on _VideoFushiPageState {
           summary,
           StackTrace.current,
         ),
-      );
+      ).whenComplete(() => extractDone = true);
+      final Future<bool> extractionResult = extraction;
+      List<GraphicSubtitleTextCue> pending = const <GraphicSubtitleTextCue>[];
+      DateTime? lastPublishAt;
+      Future<void> publishLive() async {
+        livePublishTimer?.cancel();
+        livePublishTimer = null;
+        if (!isCurrent() || cancelled() || !userKeepsSource()) return;
+        final List<AudioCue> live = graphicSubtitleAudioCues(pending);
+        if (live.isEmpty) return;
+        lastPublishAt = DateTime.now();
+        if (!livePublished) {
+          livePublished = true;
+          // 先离开图形渲染再喂文本 cue（顺序反了控制器会漏掉图形轨的 seek 预读还原）。
+          await controller.selectSubtitleTrack(SubtitleTrack.no());
+          if (!isCurrent()) return;
+          await _setDelayMs(0);
+          if (!isCurrent()) return;
+        }
+        controller.setCues(live);
+      }
+
+      final List<GraphicSubtitleTextCue>? texts =
+          await recognizeGraphicSubtitleCuesLive(
+            snapshot: () async {
+              try {
+                final File sup = File(supPath);
+                if (!await sup.exists()) return const <PgsCue>[];
+                return PgsSubtitleParser.parse(await sup.readAsBytes());
+              } on FileSystemException {
+                return const <PgsCue>[];
+              }
+            },
+            sourceComplete: () => extractDone,
+            sourceDone: extractionResult.then((_) {}),
+            session: session,
+            positionMs: () => controller.positionMs ?? 0,
+            isCancelled: () => !isCurrent() || cancelled(),
+            onRecognized: (List<GraphicSubtitleTextCue> recognized) {
+              pending = recognized;
+              final DateTime? last = lastPublishAt;
+              final Duration since = last == null
+                  ? kGraphicSubtitleLivePublishInterval
+                  : DateTime.now().difference(last);
+              if (since >= kGraphicSubtitleLivePublishInterval) {
+                unawaited(publishLive());
+              } else {
+                livePublishTimer ??= Timer(
+                  kGraphicSubtitleLivePublishInterval - since,
+                  () => unawaited(publishLive()),
+                );
+              }
+            },
+            onProgress: (int done, int known) => _updateGraphicSubtitleOcrJob(
+              (GraphicSubtitleOcrJobState job) => job.copyWith(
+                phase: extractDone
+                    ? GraphicSubtitleOcrJobPhase.recognizing
+                    : GraphicSubtitleOcrJobPhase.extracting,
+                done: done,
+                total: known,
+              ),
+            ),
+            onRefineError: (Object error, StackTrace stack) => ErrorLogService
+                .instance
+                .log('video.graphicSubtitleOcr.refine', error, stack),
+          );
+      livePublishTimer?.cancel();
+      livePublishTimer = null;
+      if (!isCurrent()) return;
+      final bool extracted = await extractionResult;
       if (!isCurrent()) return;
       if (cancelled()) {
         _showOsd(t.video_subtitle_graphic_ocr_job_cancelled);
@@ -2184,38 +2263,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         _showOsd(t.video_subtitle_import_failed, severity: ToastSeverity.error);
         return;
       }
-      final List<PgsCue> cues = PgsSubtitleParser.parse(
-        await File(supPath).readAsBytes(),
-      );
-      if (!isCurrent()) return;
-      if (cues.isEmpty) {
-        _showOsd(t.video_subtitle_graphic_ocr_empty);
-        return;
-      }
-      _updateGraphicSubtitleOcrJob(
-        (GraphicSubtitleOcrJobState job) => job.copyWith(
-          phase: GraphicSubtitleOcrJobPhase.recognizing,
-          total: cues.length,
-        ),
-      );
-      final List<GraphicSubtitleTextCue>? texts =
-          await recognizeGraphicSubtitleCues(
-            cues: cues,
-            session: session,
-            isCancelled: () => !isCurrent() || cancelled(),
-            onProgress: (int done, int total) => _updateGraphicSubtitleOcrJob(
-              (GraphicSubtitleOcrJobState job) =>
-                  job.copyWith(done: done, total: total),
-            ),
-            onRefineError: (Object error, StackTrace stack) => ErrorLogService
-                .instance
-                .log('video.graphicSubtitleOcr.refine', error, stack),
-          );
-      if (!isCurrent()) return;
-      if (texts == null) {
-        if (cancelled()) _showOsd(t.video_subtitle_graphic_ocr_job_cancelled);
-        return;
-      }
+      if (texts == null) return;
       final String srt = buildGraphicSubtitleSrt(texts);
       if (srt.isEmpty) {
         _showOsd(t.video_subtitle_graphic_ocr_empty);
@@ -2235,6 +2283,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
       await File(target).writeAsString(srt, flush: true);
       if (!isCurrent()) return;
       _graphicSubtitleOcrJob.value = null;
+      succeeded = true;
+      if (!userKeepsSource()) {
+        // 用户中途换了别的字幕：产物只进轨道列表，不抢当前选择。
+        _registerImportedSubtitleSource(target);
+        return;
+      }
       await _importExternalSubtitle(controller, target);
       if (!isCurrent()) return;
       if (controller.cues.isNotEmpty && _currentSubtitleSource == target) {
@@ -2251,8 +2305,23 @@ extension _VideoSubtitle on _VideoFushiPageState {
       if (identical(_graphicSubtitleOcrCancel, cancel)) {
         _graphicSubtitleOcrCancel = null;
       }
+      livePublishTimer?.cancel();
+      // 识别中途出错 / 退出时抽轨进程可能还在跑：强杀并等它退出再删临时目录。
+      if (!cancel.isCompleted) cancel.complete();
+      try {
+        await extraction;
+      } catch (_) {
+        // 抽轨失败已在上面报过。
+      }
       if (mounted) _graphicSubtitleOcrJob.value = null;
       await session.close();
+      // 实时补进的半截文字字幕没有落成产物（取消 / 失败）：还原成原来的图形字幕。
+      if (livePublished &&
+          !succeeded &&
+          isCurrent() &&
+          _currentSubtitleSource == startSource) {
+        await _selectSubtitleSource(controller, source);
+      }
       try {
         await work?.delete(recursive: true);
       } on FileSystemException {

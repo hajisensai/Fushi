@@ -15,7 +15,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_local_model_labels.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart'
-    show videoM3eFloatingColor;
+    show videoM3eFloatingColor, videoM3eNeutralChromeScheme;
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
     show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
@@ -105,6 +105,12 @@ class GraphicSubtitleOcrJobState {
     return switch (phase) {
       GraphicSubtitleOcrJobPhase.preparing =>
         t.video_subtitle_graphic_ocr_job_preparing,
+      // 边读边识别：已经有字补进播放器时把条数一起报出来。
+      GraphicSubtitleOcrJobPhase.extracting when done > 0 =>
+        t.video_subtitle_graphic_ocr_job_extracting_live(
+          percent: percent,
+          done: done,
+        ),
       GraphicSubtitleOcrJobPhase.extracting =>
         f == null
             ? t.video_subtitle_graphic_ocr_extracting
@@ -145,8 +151,9 @@ String graphicSubtitleOcrPreferenceLabel(
   ),
 };
 
-/// 进度卡。
-class VideoGraphicSubtitleOcrProgressCard extends StatelessWidget {
+/// 进度卡。右上角「收起」把整张卡缩成一枚小药丸（图标 + 进度环 + 百分比），不再挡画面；
+/// 点药丸再展开。收起状态跟着这张卡的 State 走，同一个任务的进度刷新不会把它弹开。
+class VideoGraphicSubtitleOcrProgressCard extends StatefulWidget {
   const VideoGraphicSubtitleOcrProgressCard({
     required this.state,
     required this.onCancel,
@@ -157,20 +164,133 @@ class VideoGraphicSubtitleOcrProgressCard extends StatelessWidget {
   final VoidCallback onCancel;
 
   @override
+  State<VideoGraphicSubtitleOcrProgressCard> createState() =>
+      _VideoGraphicSubtitleOcrProgressCardState();
+}
+
+class _VideoGraphicSubtitleOcrProgressCardState
+    extends State<VideoGraphicSubtitleOcrProgressCard> {
+  bool _collapsed = false;
+
+  void _setCollapsed(bool value) {
+    if (_collapsed == value) return;
+    setState(() => _collapsed = value);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final ThemeData base = Theme.of(context);
+    // 卡片底色恒为播放器深色悬浮表面，前景必须同样取深色方案：直接读 app 主题时，
+    // 浅色主题下标题 / 状态 / 引擎行全是深色字压在深色底上，几乎看不见（BUG-3273）。
+    final ColorScheme scheme = videoM3eNeutralChromeScheme(base.colorScheme);
+    final ThemeData theme = base.copyWith(
+      colorScheme: scheme,
+      textTheme: base.textTheme.apply(
+        bodyColor: scheme.onSurface,
+        displayColor: scheme.onSurface,
+      ),
+      iconTheme: base.iconTheme.copyWith(color: scheme.onSurface),
+    );
+    final Color surface = videoM3eFloatingColor(base.colorScheme);
+    return Theme(
+      data: theme,
+      child: AnimatedSwitcher(
+        duration: fushiMotionDuration(context, FushiMotion.medium),
+        switchInCurve: FushiMotion.enter,
+        switchOutCurve: FushiMotion.exit,
+        layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+          alignment: Alignment.topLeft,
+          children: <Widget>[...previous, ?current],
+        ),
+        transitionBuilder: (Widget child, Animation<double> animation) =>
+            FadeTransition(
+              opacity: animation,
+              child: ScaleTransition(
+                alignment: Alignment.topLeft,
+                scale: Tween<double>(begin: 0.9, end: 1).animate(animation),
+                child: child,
+              ),
+            ),
+        child: _collapsed
+            ? _buildPill(context, theme, surface)
+            : _buildCard(context, theme, surface),
+      ),
+    );
+  }
+
+  Widget _buildPill(BuildContext context, ThemeData theme, Color surface) {
     final ColorScheme scheme = theme.colorScheme;
+    final GraphicSubtitleOcrJobState state = widget.state;
+    final double? fraction = state.fraction;
+    final String status = state.statusText();
+    return Material(
+      key: const ValueKey<String>('graphic_subtitle_ocr_progress_pill'),
+      color: surface,
+      elevation: 3,
+      shape: const StadiumBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: Tooltip(
+        message: status,
+        child: InkWell(
+          onTap: () => _setCollapsed(false),
+          child: Semantics(
+            button: true,
+            label: '${t.video_subtitle_graphic_ocr_track} · $status',
+            excludeSemantics: true,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 6, 12, 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  SizedBox.square(
+                    dimension: 20,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: <Widget>[
+                        FushiCircularProgressIndicator(
+                          value: fraction,
+                          strokeWidth: 2,
+                          color: scheme.primary,
+                        ),
+                        Icon(FushiIcons.ocr, size: 11, color: scheme.onSurface),
+                      ],
+                    ),
+                  ),
+                  if (fraction != null) ...<Widget>[
+                    const SizedBox(width: 8),
+                    Text(
+                      '${(fraction * 100).floor()}%',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontFeatures: const <FontFeature>[
+                          FontFeature.tabularFigures(),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCard(BuildContext context, ThemeData theme, Color surface) {
+    final ColorScheme scheme = theme.colorScheme;
+    final GraphicSubtitleOcrJobState state = widget.state;
     final double? fraction = state.fraction;
     final String? engine = state.engineLabel;
     final TextStyle? meta = theme.textTheme.bodySmall?.copyWith(
       color: scheme.onSurfaceVariant,
     );
     return ConstrainedBox(
+      key: const ValueKey<String>('graphic_subtitle_ocr_progress_card_box'),
       constraints: const BoxConstraints(maxWidth: 340),
       child: Material(
         key: const ValueKey<String>('graphic_subtitle_ocr_progress_card'),
         // 与播放器其它浮层（设置 / 章节面板）同一中性深色表面令牌。
-        color: videoM3eFloatingColor(scheme),
+        color: surface,
         elevation: 3,
         shape: const RoundedRectangleBorder(
           borderRadius: FushiM3eShape.cardRadius,
@@ -188,11 +308,7 @@ class VideoGraphicSubtitleOcrProgressCard extends StatelessWidget {
               children: <Widget>[
                 Row(
                   children: <Widget>[
-                    Icon(
-                      FushiIcons.ocr,
-                      size: 18,
-                      color: scheme.primary,
-                    ),
+                    Icon(FushiIcons.ocr, size: 18, color: scheme.primary),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -202,10 +318,19 @@ class VideoGraphicSubtitleOcrProgressCard extends StatelessWidget {
                       ),
                     ),
                     FushiIconButton(
+                      key: const ValueKey<String>(
+                        'graphic_subtitle_ocr_progress_collapse',
+                      ),
+                      icon: FushiIcons.expandLess,
+                      tooltip: t.video_subtitle_adjust_collapse,
+                      size: 20,
+                      onTap: () => _setCollapsed(true),
+                    ),
+                    FushiIconButton(
                       icon: FushiIcons.close,
                       tooltip: t.dialog_cancel,
                       size: 20,
-                      onTap: onCancel,
+                      onTap: widget.onCancel,
                     ),
                   ],
                 ),

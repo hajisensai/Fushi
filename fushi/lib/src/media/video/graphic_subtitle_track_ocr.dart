@@ -12,6 +12,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
@@ -57,28 +58,27 @@ List<String> buildGraphicSubtitleExtractArgs({
   required String videoPath,
   required int streamIndex,
   required String supPath,
-}) =>
-    <String>[
-      '-y',
-      '-i',
-      videoPath,
-      '-map',
-      '0:s:$streamIndex',
-      '-c',
-      'copy',
-      '-f',
-      'sup',
-      supPath,
-      '-map',
-      '0:v:0?',
-      '-map',
-      '0:s:$streamIndex',
-      '-c',
-      'copy',
-      '-f',
-      'null',
-      '-',
-    ];
+}) => <String>[
+  '-y',
+  '-i',
+  videoPath,
+  '-map',
+  '0:s:$streamIndex',
+  '-c',
+  'copy',
+  '-f',
+  'sup',
+  supPath,
+  '-map',
+  '0:v:0?',
+  '-map',
+  '0:s:$streamIndex',
+  '-c',
+  'copy',
+  '-f',
+  'null',
+  '-',
+];
 
 /// 旧的总时长预算，只给不支持观察式运行的后端兜底（测试替身等）。
 Duration graphicSubtitleExtractTimeout(int fileBytes) {
@@ -119,15 +119,17 @@ Future<bool> extractGraphicSubtitleTrackToSup({
   );
   final FfmpegRunResult result = switch (backend ?? resolveFfmpegBackend()) {
     final FfmpegWatchedRunner watched => await watched.runWatched(
-        args,
-        FfmpegWatch(
-          stallTimeout: stallTimeout,
-          onProgress: onProgress,
-          cancel: cancel,
-        ),
+      args,
+      FfmpegWatch(
+        stallTimeout: stallTimeout,
+        onProgress: onProgress,
+        cancel: cancel,
       ),
-    final FfmpegBackend plain =>
-      await plain.run(args, graphicSubtitleExtractTimeout(input.lengthSync())),
+    ),
+    final FfmpegBackend plain => await plain.run(
+      args,
+      graphicSubtitleExtractTimeout(input.lengthSync()),
+    ),
   };
   if (!cancelled &&
       result.isSuccess &&
@@ -183,9 +185,110 @@ Future<List<GraphicSubtitleTextCue>?> recognizeGraphicSubtitleCues({
   return out;
 }
 
-/// 生成 SRT：跳过空文字；时间上首尾相接（间隔 ≤ [joinGapMs]）且文字相同的相邻
+/// 边看边识别往播放器里刷新文字字幕的最小间隔：每次刷新都会重置控制器的当前句状态，
+/// 不逐条刷，攒一小批再换。
+const Duration kGraphicSubtitleLivePublishInterval = Duration(
+  milliseconds: 1500,
+);
+
+/// 边看边识别时下一条该识别的 cue：优先「还没播完」的第一条未识别 cue（离播放头最近的
+/// 将要出现的字幕先有字），播放头之后全识别完再回头补前面的。全部识别完返回 null。
+int? pickNextGraphicSubtitleCue(
+  List<PgsCue> cues,
+  Set<int> recognizedStarts,
+  int positionMs,
+) {
+  int? firstPending;
+  for (int i = 0; i < cues.length; i++) {
+    if (recognizedStarts.contains(cues[i].startMs)) continue;
+    if (cues[i].endMs > positionMs) return i;
+    firstPending ??= i;
+  }
+  return firstPending;
+}
+
+List<GraphicSubtitleTextCue> _collectRecognized(
+  List<PgsCue> cues,
+  Map<int, String> texts,
+) => <GraphicSubtitleTextCue>[
+  for (final PgsCue cue in cues)
+    if (texts[cue.startMs] case final String text)
+      GraphicSubtitleTextCue(
+        startMs: cue.startMs,
+        endMs: cue.endMs,
+        text: text,
+      ),
+];
+
+/// 边抽轨边识别（边看边 OCR）：抽轨进程还在写 `.sup` 时就按 [snapshot] 反复读出已落盘
+/// 的 cue，按 [pickNextGraphicSubtitleCue] 的顺序（播放头附近优先）逐条识别，每识别一条
+/// 就把「目前已识别的全部 cue」（按时间升序）交给 [onRecognized]，页面据此把字幕实时
+/// 补进可点 overlay。
+///
+/// - [sourceComplete] 为假时最后一条 cue 不识别：它可能还没收尾（PGS 解析器给未清屏的
+///   尾 cue 兜底时长，后续段落会改它的结束时间）。其余 cue 的起止由后一个显示集决定，
+///   不会因文件继续增长而改变，所以按起点认身份、识别过的不再重做；
+/// - 识别追上抽轨时等 [sourceDone] 或 [pollInterval] 再读；
+/// - [isCancelled] 为真 / 会话关闭返回 null；识别不可用抛 [GraphicSubtitleOcrUnavailable]。
+///
+/// 返回全部识别结果（升序）。[onProgress] 报 (已识别, 目前已知总数)。
+Future<List<GraphicSubtitleTextCue>?> recognizeGraphicSubtitleCuesLive({
+  required Future<List<PgsCue>> Function() snapshot,
+  required bool Function() sourceComplete,
+  required Future<void> sourceDone,
+  required GraphicSubtitleOcrSession session,
+  required int Function() positionMs,
+  required bool Function() isCancelled,
+  void Function(List<GraphicSubtitleTextCue> recognized)? onRecognized,
+  void Function(int done, int known)? onProgress,
+  void Function(Object error, StackTrace stack)? onRefineError,
+  Duration pollInterval = const Duration(milliseconds: 800),
+  Duration resnapshotEvery = const Duration(seconds: 2),
+}) async {
+  final Map<int, String> texts = <int, String>{};
+  final Set<int> done = <int>{};
+  List<PgsCue> latest = const <PgsCue>[];
+  while (true) {
+    if (isCancelled()) return null;
+    // 先读完成标志再读文件：标志为真时读到的必然是完整产物。
+    final bool complete = sourceComplete();
+    final List<PgsCue> all = await snapshot();
+    if (isCancelled()) return null;
+    final List<PgsCue> cues = complete || all.isEmpty
+        ? all
+        : all.sublist(0, all.length - 1);
+    latest = cues;
+    final Stopwatch sw = Stopwatch()..start();
+    bool progressed = false;
+    while (complete || sw.elapsed < resnapshotEvery) {
+      final int? i = pickNextGraphicSubtitleCue(cues, done, positionMs());
+      if (i == null) break;
+      final PgsCue cue = cues[i];
+      final MokuroImage? page = await session.recognizePage(
+        cue.renderPng(),
+        onRefineError: onRefineError,
+      );
+      if (page == null || isCancelled()) return null;
+      texts[cue.startMs] = graphicSubtitleTextOf(page);
+      done.add(cue.startMs);
+      progressed = true;
+      onProgress?.call(done.length, cues.length);
+      onRecognized?.call(_collectRecognized(cues, texts));
+    }
+    if (complete) break;
+    if (!progressed) {
+      await Future.any(<Future<void>>[
+        sourceDone,
+        Future<void>.delayed(pollInterval),
+      ]);
+    }
+  }
+  return _collectRecognized(latest, texts);
+}
+
+/// 合并相邻同文：跳过空文字；时间上首尾相接（间隔 ≤ [joinGapMs]）且文字相同的相邻
 /// cue 合并成一条（PGS 常把同一句拆成多次显示：淡入淡出、换位置）。
-String buildGraphicSubtitleSrt(
+List<GraphicSubtitleTextCue> mergeGraphicSubtitleTextCues(
   List<GraphicSubtitleTextCue> cues, {
   int joinGapMs = 50,
 }) {
@@ -205,6 +308,37 @@ String buildGraphicSubtitleSrt(
     }
     merged.add(cue);
   }
+  return merged;
+}
+
+/// 识别结果 → 可点 overlay 用的 cue（合并规则与 SRT 相同，边看边识别实时喂播放器）。
+List<AudioCue> graphicSubtitleAudioCues(List<GraphicSubtitleTextCue> cues) {
+  final List<GraphicSubtitleTextCue> merged = mergeGraphicSubtitleTextCues(
+    cues,
+  );
+  return <AudioCue>[
+    for (int i = 0; i < merged.length; i++)
+      AudioCue()
+        ..bookKey = ''
+        ..chapterHref = ''
+        ..sentenceIndex = i
+        ..textFragmentId = ''
+        ..text = merged[i].text
+        ..startMs = merged[i].startMs
+        ..endMs = merged[i].endMs
+        ..audioFileIndex = 0,
+  ];
+}
+
+/// 生成 SRT（相邻同文合并见 [mergeGraphicSubtitleTextCues]）。
+String buildGraphicSubtitleSrt(
+  List<GraphicSubtitleTextCue> cues, {
+  int joinGapMs = 50,
+}) {
+  final List<GraphicSubtitleTextCue> merged = mergeGraphicSubtitleTextCues(
+    cues,
+    joinGapMs: joinGapMs,
+  );
   final StringBuffer sb = StringBuffer();
   for (int i = 0; i < merged.length; i++) {
     final GraphicSubtitleTextCue c = merged[i];

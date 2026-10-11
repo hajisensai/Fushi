@@ -8,6 +8,7 @@ import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
 import 'package:fushi/src/media/video/graphic_subtitle_track_ocr.dart';
 import 'package:fushi/src/media/video/pgs_subtitle_parser.dart';
+import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
@@ -197,6 +198,40 @@ Uint8List _sup() {
         ..add(<int>[s.type, ..._u16(s.body.length)])
         ..add(s.body);
     }
+  }
+  return out.toBytes();
+}
+
+/// 多条 cue 的 `.sup`：每个起点出现 500ms 后清屏；[openLast] 时最后一条不清屏
+/// （模拟抽轨进程还没写到它的收尾）。
+Uint8List _multiSup(List<int> startsMs, {bool openLast = false}) {
+  final BytesBuilder out = BytesBuilder();
+  void put(int ms, List<_Segment> segments) {
+    final int pts = ms * 90;
+    for (final _Segment s in segments) {
+      out
+        ..add(<int>[0x50, 0x47])
+        ..add(<int>[
+          (pts >> 24) & 0xFF,
+          (pts >> 16) & 0xFF,
+          (pts >> 8) & 0xFF,
+          pts & 0xFF,
+        ])
+        ..add(<int>[0, 0, 0, 0])
+        ..add(<int>[s.type, ..._u16(s.body.length)])
+        ..add(s.body);
+    }
+  }
+
+  for (int i = 0; i < startsMs.length; i++) {
+    put(startsMs[i], <_Segment>[
+      _pcs(<(int, int, int)>[(0, 100, 200)], epochStart: true),
+      _pds(0xFF),
+      _ods(),
+      _end,
+    ]);
+    if (openLast && i == startsMs.length - 1) break;
+    put(startsMs[i] + 500, _set3());
   }
   return out.toBytes();
 }
@@ -546,6 +581,137 @@ void main() {
         ),
       );
       await session.close();
+    });
+  });
+
+  group('边看边识别', () {
+    test('pickNextGraphicSubtitleCue：播放头之后的未识别 cue 优先，再回头补', () {
+      final List<PgsCue> cues = PgsSubtitleParser.parse(
+        _multiSup(<int>[1000, 3000, 5000]),
+      );
+      expect(cues.map((PgsCue c) => c.startMs), <int>[1000, 3000, 5000]);
+      expect(pickNextGraphicSubtitleCue(cues, <int>{}, 3200), 1);
+      expect(pickNextGraphicSubtitleCue(cues, <int>{3000}, 3200), 2);
+      expect(pickNextGraphicSubtitleCue(cues, <int>{3000, 5000}, 3200), 0);
+      expect(
+        pickNextGraphicSubtitleCue(cues, <int>{1000, 3000, 5000}, 3200),
+        isNull,
+      );
+    });
+
+    test('从播放头附近开始识别，每条都实时交出已识别的全部 cue', () async {
+      final _FakeRecognizer recognizer = _FakeRecognizer(<MokuroImage>[
+        for (final String s in <String>['a', 'b', 'c'])
+          _page(<List<String>>[
+            <String>[s],
+          ]),
+      ]);
+      final GraphicSubtitleOcrSession session = GraphicSubtitleOcrSession(
+        prepare: (String _) async =>
+            MangaStreamOcrReady(MangaOcrEngineId.localOnnx, recognizer),
+      );
+      final List<List<int>> published = <List<int>>[];
+      final Uint8List sup = _multiSup(<int>[1000, 3000, 5000]);
+      final List<GraphicSubtitleTextCue>? out =
+          await recognizeGraphicSubtitleCuesLive(
+            snapshot: () async => PgsSubtitleParser.parse(sup),
+            sourceComplete: () => true,
+            sourceDone: Future<void>.value(),
+            session: session,
+            positionMs: () => 4000,
+            isCancelled: () => false,
+            onRecognized: (List<GraphicSubtitleTextCue> r) => published.add(
+              r.map((GraphicSubtitleTextCue c) => c.startMs).toList(),
+            ),
+          );
+      await session.close();
+      expect(published, <List<int>>[
+        <int>[5000],
+        <int>[1000, 5000],
+        <int>[1000, 3000, 5000],
+      ]);
+      expect(
+        out!.map((GraphicSubtitleTextCue c) => (c.startMs, c.text)),
+        <(int, String)>[(1000, 'b'), (3000, 'c'), (5000, 'a')],
+      );
+    });
+
+    test('抽轨未完成时不识别还没收尾的最后一条，完成后补上', () async {
+      final _FakeRecognizer recognizer = _FakeRecognizer(<MokuroImage>[
+        for (final String s in <String>['a', 'b', 'c'])
+          _page(<List<String>>[
+            <String>[s],
+          ]),
+      ]);
+      final GraphicSubtitleOcrSession session = GraphicSubtitleOcrSession(
+        prepare: (String _) async =>
+            MangaStreamOcrReady(MangaOcrEngineId.localOnnx, recognizer),
+      );
+      int snapshots = 0;
+      final List<List<int>> published = <List<int>>[];
+      final List<GraphicSubtitleTextCue>? out =
+          await recognizeGraphicSubtitleCuesLive(
+            // 第一次读到的是半截文件：3000 那条还没清屏。
+            snapshot: () async => PgsSubtitleParser.parse(
+              snapshots++ == 0
+                  ? _multiSup(<int>[1000, 3000], openLast: true)
+                  : _multiSup(<int>[1000, 3000, 5000]),
+            ),
+            sourceComplete: () => snapshots > 0,
+            sourceDone: Future<void>.value(),
+            session: session,
+            positionMs: () => 0,
+            isCancelled: () => false,
+            onRecognized: (List<GraphicSubtitleTextCue> r) =>
+                published.add(<int>[
+                  snapshots,
+                  ...r.map((GraphicSubtitleTextCue c) => c.startMs),
+                ]),
+          );
+      await session.close();
+      // 第一轮（只读过一次半截文件）只识别了已收尾的 1000。
+      expect(published.where((List<int> e) => e.first == 1), <List<int>>[
+        <int>[1, 1000],
+      ]);
+      expect(recognizer.calls, 3);
+      expect(
+        out!.map((GraphicSubtitleTextCue c) => (c.startMs, c.endMs)),
+        <(int, int)>[(1000, 1500), (3000, 3500), (5000, 5500)],
+      );
+    });
+
+    test('取消立即返回 null', () async {
+      final _FakeRecognizer recognizer = _FakeRecognizer(<MokuroImage>[]);
+      final GraphicSubtitleOcrSession session = GraphicSubtitleOcrSession(
+        prepare: (String _) async =>
+            MangaStreamOcrReady(MangaOcrEngineId.localOnnx, recognizer),
+      );
+      final List<GraphicSubtitleTextCue>? out =
+          await recognizeGraphicSubtitleCuesLive(
+            snapshot: () async => PgsSubtitleParser.parse(_sup()),
+            sourceComplete: () => true,
+            sourceDone: Future<void>.value(),
+            session: session,
+            positionMs: () => 0,
+            isCancelled: () => true,
+          );
+      await session.close();
+      expect(out, isNull);
+      expect(recognizer.calls, 0);
+    });
+
+    test('graphicSubtitleAudioCues：与 SRT 同一合并规则，按位置编号', () {
+      final List<AudioCue> cues =
+          graphicSubtitleAudioCues(const <GraphicSubtitleTextCue>[
+            GraphicSubtitleTextCue(startMs: 0, endMs: 1000, text: 'あ'),
+            GraphicSubtitleTextCue(startMs: 1020, endMs: 2000, text: 'あ'),
+            GraphicSubtitleTextCue(startMs: 2500, endMs: 2600, text: ' '),
+            GraphicSubtitleTextCue(startMs: 3000, endMs: 4000, text: 'い'),
+          ]);
+      expect(
+        cues.map((AudioCue c) => (c.sentenceIndex, c.startMs, c.endMs, c.text)),
+        <(int, int, int, String)>[(0, 0, 2000, 'あ'), (1, 3000, 4000, 'い')],
+      );
     });
   });
 }

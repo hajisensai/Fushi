@@ -110,7 +110,9 @@ void main() {
       'extractGraphicSubtitleTrackToSup(',
       'PgsSubtitleParser.parse(',
       'prepare: _prepareGraphicSubtitleOcr',
-      'recognizeGraphicSubtitleCues(',
+      // 边抽边识别：识别出的字实时补进可点字幕。
+      'recognizeGraphicSubtitleCuesLive(',
+      'controller.setCues(live)',
       'buildGraphicSubtitleSrt(',
       // 产物与 ASR 同口径：当外挂文字字幕加载，播放中即可点字查词。
       '_importExternalSubtitle(controller, target)',
