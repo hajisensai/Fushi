@@ -42,8 +42,9 @@ import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart'
-    show resolveFfmpegBackend;
+    show FfmpegBackend, FfmpegRunResult, resolveFfmpegBackend;
 import 'package:fushi_engine/tts/render/tts_cast.dart';
+import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
@@ -146,13 +147,20 @@ class AppTtsRenderRunner implements TtsRenderRunner {
 
     final TtsCancelToken ttsCancel = TtsCancelToken();
     cancel.onCancel(ttsCancel.cancel);
+    // 响度归一化：本机 ffmpeg 没有 loudnorm（桌面捆绑的精简版可能没编进去）时
+    // 如实记下跳过，不算失败。
+    final bool loudnorm =
+        job.normalizeLoudness &&
+        await _ffmpegHasLoudnorm(resolveFfmpegBackend());
+    job.loudnessSkipped = job.normalizeLoudness && !loudnorm;
+
     final Map<String, TtsProvider> providers = <String, TtsProvider>{};
-    final List<List<AudioCue>> chapterCues;
+    final ({List<List<AudioCue>> cues, List<int> fileDurationsMs}) rendered;
     try {
       voices.forEach((String presetId, _RenderVoice voice) {
         providers[presetId] = voice.descriptor.create(voice.preset, tts.host);
       });
-      chapterCues = await _renderChapters(
+      rendered = await _renderChapters(
         job: job,
         plan: plan,
         chapters: chapters,
@@ -161,13 +169,16 @@ class AppTtsRenderRunner implements TtsRenderRunner {
           final String presetId = presetOf[planIndex]!;
           return (
             provider: providers[presetId]!,
-            maxConcurrency:
-                voices[presetId]!.descriptor.capabilities.maxConcurrency,
+            maxConcurrency: ttsEffectiveConcurrency(
+              voices[presetId]!.descriptor,
+              voices[presetId]!.preset,
+            ),
             group: presetId,
           );
         },
         cache: cache,
         workDir: workDir,
+        loudnorm: loudnorm,
         onProgress: onProgress,
         cancel: cancel,
         ttsCancel: ttsCancel,
@@ -177,6 +188,7 @@ class AppTtsRenderRunner implements TtsRenderRunner {
         await provider.dispose();
       }
     }
+    final List<List<AudioCue>> chapterCues = rendered.cues;
 
     final ({bool verified, List<TtsRenderFlag> flags}) check = await _verify(
       job: job,
@@ -195,6 +207,7 @@ class AppTtsRenderRunner implements TtsRenderRunner {
       job: job,
       chapters: chapters,
       chapterCues: chapterCues,
+      fileDurationsMs: rendered.fileDurationsMs,
       workDir: workDir,
       check: check,
     );
@@ -208,6 +221,14 @@ class AppTtsRenderRunner implements TtsRenderRunner {
       ErrorLogService.instance.log('TtsRender.cleanup', e, stack);
     }
     return check;
+  }
+
+  Future<bool> _ffmpegHasLoudnorm(FfmpegBackend backend) async {
+    final FfmpegRunResult result = await backend.runQuery(const <String>[
+      '-hide_banner',
+      '-filters',
+    ], const Duration(seconds: 20));
+    return result.isSuccess && ffmpegFiltersListHas(result.output, 'loudnorm');
   }
 
   _RenderVoice _resolveVoice(TtsServices tts, String presetId) {
@@ -252,7 +273,8 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     await marker.writeAsString('', flush: true);
   }
 
-  Future<List<List<AudioCue>>> _renderChapters({
+  Future<({List<List<AudioCue>> cues, List<int> fileDurationsMs})>
+  _renderChapters({
     required TtsRenderJob job,
     required TtsBookPlan plan,
     required List<TtsRenderChapter> chapters,
@@ -260,17 +282,21 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     required _SentenceVoice Function(int planIndex) voiceOf,
     required TtsAudioCache cache,
     required Directory workDir,
+    required bool loudnorm,
     required TtsRenderProgress onProgress,
     required TtsRenderCancelToken cancel,
     required TtsCancelToken ttsCancel,
   }) async {
     final TtsRenderGate gate = TtsRenderGate(kTtsRenderMaxParallel);
+    final TtsPausePreset pause = TtsPausePreset.parse(job.pausePreset);
+    final Directory silenceDir = Directory(p.join(workDir.path, 'silence'));
     int totalSentences = 0;
     for (final TtsRenderChapter c in chapters) {
       totalSentences += c.planIndices.length;
     }
     int done = 0;
-    final List<List<AudioCue>> out = <List<AudioCue>>[];
+    final List<List<AudioCue>> cues = <List<AudioCue>>[];
+    final List<int> fileDurations = <int>[];
     for (final TtsRenderChapter chapter in chapters) {
       cancel.throwIfCancelled();
       final List<String> keys = <String>[
@@ -281,8 +307,19 @@ class AppTtsRenderRunner implements TtsRenderRunner {
         workDir,
         chapter,
       );
+      final List<int> gaps = ttsChapterGapsMs(
+        sentences: plan.sentences,
+        chapter: chapter,
+        preset: pause,
+      );
       final List<int> durations;
-      if (manifest != null && manifest.matches(chapter.section, keys)) {
+      if (manifest != null &&
+          manifest.matches(
+            chapter.section,
+            keys,
+            pausePreset: pause.name,
+            loudnorm: loudnorm,
+          )) {
         durations = manifest.durationsMs;
         done += keys.length;
         onProgress(TtsRenderJobPhase.synthesizing, done, totalSentences);
@@ -320,32 +357,49 @@ class AppTtsRenderRunner implements TtsRenderRunner {
             summary,
             StackTrace.current,
           );
-          final List<({String path, int durationMs})> entries =
-              await prepareTtsUniformEntries(
-                backend: resolveFfmpegBackend(),
-                sentences: <({String key, String path, int durationMs})>[
-                  for (int k = 0; k < keys.length; k++)
-                    (
-                      key: keys[k],
-                      path: ordered[k].path,
-                      durationMs: ordered[k].durationMs,
-                    ),
-                ],
-                mixDir: Directory(p.join(workDir.path, 'mix')),
-                cancel: cancel,
-                onFailure: logFailure,
-              );
+          final ({
+            List<({String path, int durationMs})> entries,
+            TtsAudioStreamInfo target,
+          })
+          prepared = await prepareTtsUniformEntries(
+            backend: resolveFfmpegBackend(),
+            requirePcm16: gaps.any((int g) => g > 0),
+            sentences: <({String key, String path, int durationMs})>[
+              for (int k = 0; k < keys.length; k++)
+                (
+                  key: keys[k],
+                  path: ordered[k].path,
+                  durationMs: ordered[k].durationMs,
+                ),
+            ],
+            mixDir: Directory(p.join(workDir.path, 'mix')),
+            cancel: cancel,
+            onFailure: logFailure,
+          );
           // cue 时长 = 实际拼进去的那份文件的时长（转码过的句取中间文件实测值）。
           durations = <int>[
-            for (final ({String path, int durationMs}) e in entries)
+            for (final ({String path, int durationMs}) e in prepared.entries)
               e.durationMs,
           ];
+          // 停顿 = 与本章拼接流同参数的 PCM 静音；清单里每段都带 `duration`，
+          // 时间轴严格按毫秒累加。
+          final TtsAudioStreamInfo target = prepared.target;
           await encodeTtsChapterAudio(
             backend: resolveFfmpegBackend(),
-            entries: entries,
+            entries: interleaveTtsPauses(
+              sentences: prepared.entries,
+              gapsMs: gaps,
+              silenceFor: (int ms) => ttsSilenceFile(
+                silenceDir,
+                ms: ms,
+                sampleRate: target.sampleRate,
+                channels: target.channels,
+              ),
+            ),
             outputPath: outputPath,
             cancel: cancel,
             onFailure: logFailure,
+            loudnorm: loudnorm,
           );
           await File(
             p.join(workDir.path, '${chapter.stem}.json'),
@@ -354,6 +408,8 @@ class AppTtsRenderRunner implements TtsRenderRunner {
               section: chapter.section,
               keys: keys,
               durationsMs: durations,
+              pausePreset: pause.name,
+              loudnorm: loudnorm,
             ).encode(),
             flush: true,
           );
@@ -368,16 +424,18 @@ class AppTtsRenderRunner implements TtsRenderRunner {
         chapter.fileIndex + 1,
         chapters.length,
       );
-      out.add(
+      cues.add(
         buildTtsChapterCues(
           bookKey: job.bookKey,
           sentences: plan.sentences,
           chapter: chapter,
           durationsMs: durations,
+          gapsMs: gaps,
         ),
       );
+      fileDurations.add(ttsChapterFileDurationMs(durations, gaps));
     }
-    return out;
+    return (cues: cues, fileDurationsMs: fileDurations);
   }
 
   /// 合成一章（同键只合成一次）。每种声音各自一个工作池、不超过它引擎的并发上限，
@@ -607,6 +665,7 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     required TtsRenderJob job,
     required List<TtsRenderChapter> chapters,
     required List<List<AudioCue>> chapterCues,
+    required List<int> fileDurationsMs,
     required Directory workDir,
     required ({bool verified, List<TtsRenderFlag> flags}) check,
   }) async {
@@ -635,7 +694,10 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     final String srtPath = p.join(persistDir.path, kTtsRenderSrtFileName);
     final File srtPart = File('$srtPath.part');
     await srtPart.writeAsString(
-      serializeAudioCuesToSrt(ttsCuesOnSingleTimeline(cues)),
+      serializeAudioCuesToSrt(
+        // 文件起点按真实文件时长（含章尾静音）累加，与音频对得上。
+        ttsCuesOnSingleTimeline(cues, fileDurationsMs: fileDurationsMs),
+      ),
       flush: true,
     );
     final File srt = File(srtPath);

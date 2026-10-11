@@ -27,6 +27,8 @@ class TtsPlanSentence {
     required this.matchEnd,
     required this.studyStart,
     required this.studyEnd,
+    this.endsParagraph = false,
+    this.sceneBreakAfter = false,
   });
 
   final int section;
@@ -41,6 +43,13 @@ class TtsPlanSentence {
   final int matchEnd;
   final int studyStart;
   final int studyEnd;
+
+  /// 本句是所在块级元素（段落 / 标题 / 列表项…）的最后一句。制作有声书按它加段落
+  /// 停顿；朗读不看。
+  final bool endsParagraph;
+
+  /// 本句与同章下一句之间有场景分隔（`<hr>` / 空段落 / `◇◇◇` 这类分隔块）。
+  final bool sceneBreakAfter;
 }
 
 class TtsBookPlan {
@@ -106,6 +115,8 @@ TtsBookPlan buildTtsBookPlanSync(
         ReaderAudioPositionIndex.fromChapterHtml(book.chapters[section].html);
     int rawCursor = 0;
     int normCursor = 0;
+    final int chapterFirst = out.length;
+    final List<({int start, int end})> raw = <({int start, int end})>[];
     for (final TtsTextSegment seg in splitTtsText(
       input,
       maxLength: maxLength,
@@ -134,9 +145,68 @@ TtsBookPlan buildTtsBookPlanSync(
           studyEnd: (study?.offset ?? 0) + (study?.length ?? 0),
         ),
       );
+      raw.add((start: seg.start, end: seg.end));
+    }
+    final List<({bool endsParagraph, bool sceneBreakAfter})> marks =
+        ttsSentenceBoundaryMarks(
+      sentences: raw,
+      blockEnds: input.blockEnds,
+      sceneBreaks: input.sceneBreaks,
+    );
+    for (int k = 0; k < marks.length; k++) {
+      final TtsPlanSentence s = out[chapterFirst + k];
+      out[chapterFirst + k] = TtsPlanSentence(
+        section: s.section,
+        href: s.href,
+        text: s.text,
+        spokenText: s.spokenText,
+        matchStart: s.matchStart,
+        matchEnd: s.matchEnd,
+        studyStart: s.studyStart,
+        studyEnd: s.studyEnd,
+        endsParagraph: marks[k].endsParagraph,
+        sceneBreakAfter: marks[k].sceneBreakAfter,
+      );
     }
   }
   return TtsBookPlan(out);
+}
+
+/// 一章里各句（原文区间，升序）与下一句之间有没有段落 / 场景边界。
+///
+/// 边界位置落在「本句末尾 .. 下一句开头」（含两端；块之间可能没有空白）就归本句；
+/// 最后一句的「下一句开头」是章末。被计划跳过的纯符号段（`◇◇◇`）夹在两句之间，
+/// 它的场景分隔自然落进前一句的区间。
+List<({bool endsParagraph, bool sceneBreakAfter})> ttsSentenceBoundaryMarks({
+  required List<({int start, int end})> sentences,
+  required List<int> blockEnds,
+  required List<int> sceneBreaks,
+}) {
+  // 各句区间升序、边界列表升序：两个游标单调前移，整章线性。
+  int b = 0;
+  int s = 0;
+  bool advance(List<int> sorted, int cursor, int from, int to,
+      void Function(int) save) {
+    while (cursor < sorted.length && sorted[cursor] < from) {
+      cursor++;
+    }
+    save(cursor);
+    return cursor < sorted.length && sorted[cursor] <= to;
+  }
+
+  final List<({bool endsParagraph, bool sceneBreakAfter})> out =
+      <({bool endsParagraph, bool sceneBreakAfter})>[];
+  for (int k = 0; k < sentences.length; k++) {
+    final int from = sentences[k].end;
+    final bool last = k + 1 == sentences.length;
+    final int to = last ? 1 << 40 : sentences[k + 1].start;
+    final bool paragraph =
+        advance(blockEnds, b, from, to, (int c) => b = c);
+    final bool scene =
+        advance(sceneBreaks, s, from, to, (int c) => s = c);
+    out.add((endsParagraph: paragraph, sceneBreakAfter: !last && scene));
+  }
+  return out;
 }
 
 class TtsTextSegment {
@@ -163,8 +233,9 @@ const String _quoteEnders = '」』';
 /// 软切点：句子超长时优先在这些字后断开（读起来仍自然）。
 const String _softBreaks = '、，,；;：:';
 
-/// 按句末标点切句；ruby 底本是不可拆的整体（合成用读音，显示用底本）；单句合成
-/// 文本不超过 [maxLength]（超长句先在逗号类软切点断，再硬断）。
+/// 按句末标点切句；块级元素边界与场景分隔（[EpubPlainTextWithRuby.blockEnds] /
+/// `sceneBreaks`）也是句界；ruby 底本是不可拆的整体（合成用读音，显示用底本）；
+/// 单句合成文本不超过 [maxLength]（超长句先在逗号类软切点断，再硬断）。
 List<TtsTextSegment> splitTtsText(
   EpubPlainTextWithRuby input, {
   required int maxLength,
@@ -231,13 +302,31 @@ List<TtsTextSegment> splitTtsText(
     );
   }
 
+  // 块边界 / 场景分隔是硬句界：不带句末标点的标题、`◇◇◇` 这类分隔行不能和下一
+  // 段并成一句（否则分隔符被读出来，段落停顿也落不到正确位置）。
+  final List<int> hardBreaks = <int>{
+    ...input.blockEnds,
+    ...input.sceneBreaks,
+  }.toList()
+    ..sort();
+  int hb = 0;
+
   int first = 0;
   while (first < atoms.length) {
     int i = first;
     int spoken = 0;
     int lastSoft = -1;
     bool ended = false;
+    bool hardStop = false;
+    while (hb < hardBreaks.length && hardBreaks[hb] <= atoms[first].start) {
+      hb++;
+    }
+    final int nextBreak = hb < hardBreaks.length ? hardBreaks[hb] : 1 << 40;
     while (i < atoms.length) {
+      if (i > first && atoms[i].start >= nextBreak) {
+        hardStop = true;
+        break;
+      }
       final String original = text.substring(atoms[i].start, atoms[i].end);
       if (ended &&
           !_closers.contains(original) &&
@@ -256,10 +345,50 @@ List<TtsTextSegment> splitTtsText(
       if (_softBreaks.contains(original)) lastSoft = i;
     }
     if (i == first) i = first + 1; // 单个原子就超长（畸形 ruby 已在上面过滤）。
-    final bool overflowed = !ended && i < atoms.length;
+    final bool overflowed = !ended && !hardStop && i < atoms.length;
     final int cut = overflowed && lastSoft > first ? lastSoft : i;
     emit(first, cut);
     first = cut;
   }
   return result;
+}
+/// 朗读用：把同一段落里相邻的过短句子并成一次合成。
+///
+/// 自建引擎每次请求有约 2 秒的固定开销（实测 GPT-SoVITS v5：7 字的句子 2.2 秒出声、
+/// 实时率 2 以上），倍速朗读时短句一多就跟不上。并句只发生在同一章、同一段落内，
+/// 不跨段 / 场景分隔，合并后合成文本不超过 [maxLength]；高亮覆盖合并后的整段。
+///
+/// **制作有声书不用它**：选角表按单句记说话人，并句会让两个角色的台词共用一个声音。
+TtsBookPlan mergeShortTtsSentences(
+  TtsBookPlan plan, {
+  required int maxLength,
+  int minLength = 16,
+}) {
+  final List<TtsPlanSentence> out = <TtsPlanSentence>[];
+  for (final TtsPlanSentence s in plan.sentences) {
+    final TtsPlanSentence? last = out.isEmpty ? null : out.last;
+    final bool canMerge = last != null &&
+        last.section == s.section &&
+        !last.endsParagraph &&
+        !last.sceneBreakAfter &&
+        (last.spokenText.length < minLength || s.spokenText.length < minLength) &&
+        last.spokenText.length + s.spokenText.length <= maxLength;
+    if (!canMerge) {
+      out.add(s);
+      continue;
+    }
+    out[out.length - 1] = TtsPlanSentence(
+      section: last.section,
+      href: last.href,
+      text: last.text + s.text,
+      spokenText: last.spokenText + s.spokenText,
+      matchStart: last.matchStart,
+      matchEnd: s.matchEnd,
+      studyStart: last.studyStart,
+      studyEnd: s.studyEnd,
+      endsParagraph: s.endsParagraph,
+      sceneBreakAfter: s.sceneBreakAfter,
+    );
+  }
+  return TtsBookPlan(out);
 }

@@ -128,10 +128,14 @@ class TtsReadAlong extends ChangeNotifier {
     if (voice.descriptor.validate(voice.preset).isNotEmpty) {
       throw const TtsStartException(TtsStartProblem.voiceIncomplete);
     }
-    final TtsBookPlan plan = await buildTtsBookPlan(
-      book,
-      maxLength: voice.descriptor.capabilities.maxInputLength,
-      pronunciation: tts.pronunciation.load(),
+    final int maxLength = voice.descriptor.capabilities.maxInputLength;
+    final TtsBookPlan plan = mergeShortTtsSentences(
+      await buildTtsBookPlan(
+        book,
+        maxLength: maxLength,
+        pronunciation: tts.pronunciation.load(),
+      ),
+      maxLength: maxLength,
     );
     if (plan.isEmpty) throw const TtsStartException(TtsStartProblem.emptyBook);
 
@@ -147,6 +151,7 @@ class TtsReadAlong extends ChangeNotifier {
         for (final TtsPlanSentence s in plan.sentences) s.spokenText,
       ],
       audioIdentity: voice.descriptor.audioIdentity(voice.preset),
+      concurrency: ttsEffectiveConcurrency(voice.descriptor, voice.preset),
     );
     final List<AudioCue> cues = <AudioCue>[
       for (int i = 0; i < plan.length; i++)
@@ -264,6 +269,7 @@ class TtsReadAlong extends ChangeNotifier {
     final AudiobookPlayerController? c = _controller;
     if (c == null) return;
     final int? index = c.currentCue?.audioFileIndex;
+    _updateLookahead(c);
     if (index != null && index != _scheduler.cursor) {
       _scheduler.setCursor(index);
       // 失败停在某句时用户跳到了别的句子：那是显式离开失败句，调度继续合成新位置
@@ -281,6 +287,26 @@ class TtsReadAlong extends ChangeNotifier {
       notifyListeners();
     }
     _wasPlaying = playing;
+  }
+
+  /// 预取缓冲按「播放时长」而不是句数算：2 倍速下同样 3 句只够 1/2 的时间，合成
+  /// 稍有波动（自建 GPU 服务单句延迟忽高忽低）就断。目标是当前句之后至少
+  /// [kBufferPlaybackSeconds] 秒（按当前倍速换算）的音频都在合成或已合成。
+  static const int kBufferPlaybackSeconds = 60;
+  static const int _kMinLookahead = 3;
+  static const int _kMaxLookahead = 60;
+
+  void _updateLookahead(AudiobookPlayerController c) {
+    final double speed = c.speed > 0 ? c.speed : 1.0;
+    final int targetMs = (kBufferPlaybackSeconds * 1000 * speed).round();
+    final int from = (c.currentCue?.audioFileIndex ?? _scheduler.cursor) + 1;
+    int sum = 0;
+    int count = 0;
+    for (int i = from; i < cues.length && sum < targetMs; i++) {
+      sum += cues[i].endMs - cues[i].startMs;
+      count++;
+    }
+    _scheduler.setLookahead(count.clamp(_kMinLookahead, _kMaxLookahead));
   }
 
   void _onSegmentEvent(TtsSegmentEvent event) {

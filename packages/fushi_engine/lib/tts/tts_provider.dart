@@ -121,6 +121,22 @@ abstract class TtsProviderDescriptor {
   };
 }
 
+/// 预设里覆盖并发数的参数键（通用参数，不在各引擎的 [TtsProviderDescriptor.params] 里，
+/// 不进缓存键）。
+const String kTtsConcurrencyParam = 'concurrency';
+
+/// 并发上限的可选范围（自建服务按显卡能力调，在线服务调高容易被限流）。
+const int kTtsMaxConcurrency = 8;
+
+/// 这份预设实际用的并发请求数：用户设了就用（夹到 1..[kTtsMaxConcurrency]），
+/// 否则用引擎默认值。系统语音只能串行。
+int ttsEffectiveConcurrency(TtsProviderDescriptor descriptor, TtsVoicePreset preset) {
+  if (descriptor.category == TtsProviderCategory.system) return 1;
+  final int? custom = int.tryParse(preset.param(kTtsConcurrencyParam).trim());
+  if (custom == null) return descriptor.capabilities.maxConcurrency;
+  return custom.clamp(1, kTtsMaxConcurrency);
+}
+
 /// 引擎注册表。app 在启动时把平台相关的描述符（系统 TTS）补进来。
 class TtsProviderRegistry {
   TtsProviderRegistry(Iterable<TtsProviderDescriptor> descriptors)

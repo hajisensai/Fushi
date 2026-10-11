@@ -7207,5 +7207,8 @@
   "audiobook_studio_export_done": "已导出到 ${path}",
   "audiobook_studio_export_failed": "导出失败：${reason}",
   "audiobook_studio_export_unsupported": "当前 ffmpeg 不支持写入 M4B 章节",
-  "audiobook_studio_export_running": "正在导出…"
+  "audiobook_studio_export_running": "正在导出…",
+  "audiobook_tts_concurrency": "并发请求数",
+  "audiobook_tts_concurrency_hint": "服务端和显卡扛得住时，提高并发能加快合成；在线服务调高可能被限流",
+  "audiobook_tts_concurrency_default": "默认（${n}）"
 }

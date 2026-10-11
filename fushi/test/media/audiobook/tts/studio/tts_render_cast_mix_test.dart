@@ -368,14 +368,19 @@ void main() {
         ];
     final List<String> failures = <String>[];
     final Directory mixDir = Directory(p.join(tmp.path, 'work', 'mix'));
-    final List<({String path, int durationMs})> entries =
-        await prepareTtsUniformEntries(
-          backend: const CliFfmpegBackend(),
-          sentences: sentences,
-          mixDir: mixDir,
-          cancel: TtsRenderCancelToken(),
-          onFailure: failures.add,
-        );
+    final ({
+      List<({String path, int durationMs})> entries,
+      TtsAudioStreamInfo target,
+    })
+    prepared = await prepareTtsUniformEntries(
+      backend: const CliFfmpegBackend(),
+      sentences: sentences,
+      mixDir: mixDir,
+      cancel: TtsRenderCancelToken(),
+      onFailure: failures.add,
+    );
+    final List<({String path, int durationMs})> entries = prepared.entries;
+    expect(prepared.target.sampleRate, 48000);
     expect(failures, isEmpty);
     // 合规的 48 kHz WAV 原样拼，MP3 只转一次、两处复用同一个中间文件。
     expect(entries[0].path, a);

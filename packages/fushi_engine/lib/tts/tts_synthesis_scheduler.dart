@@ -33,7 +33,7 @@ class TtsSynthesisScheduler {
     required TtsAudioCache cache,
     required List<String> texts,
     required Map<String, Object?> audioIdentity,
-    this.lookahead = 3,
+    int lookahead = 3,
     this.keepPinned = 8,
     int? concurrency,
   }) : _provider = provider,
@@ -43,6 +43,7 @@ class TtsSynthesisScheduler {
          for (final String text in texts)
            TtsAudioCache.keyFor(audioIdentity, text),
        ],
+       _lookahead = lookahead,
        _concurrency = concurrency ?? provider.capabilities.maxConcurrency;
 
   final TtsProvider _provider;
@@ -50,7 +51,17 @@ class TtsSynthesisScheduler {
   final List<String> _texts;
   final List<String> _keys;
   final int _concurrency;
-  final int lookahead;
+  int _lookahead;
+
+  /// 往后预取多少句。倍速播放时由调用方调大（消耗得快，缓冲要按播放时长而不是句数算）。
+  int get lookahead => _lookahead;
+
+  void setLookahead(int value) {
+    final int next = value < 1 ? 1 : value;
+    if (next == _lookahead) return;
+    _lookahead = next;
+    _pump();
+  }
 
   /// 当前句前后多少句的音频保持 pin（播放器可能还开着、或马上要回听）。
   final int keepPinned;

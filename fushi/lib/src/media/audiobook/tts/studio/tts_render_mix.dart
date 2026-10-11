@@ -200,7 +200,10 @@ String ttsUniformIntermediatePath(
 
 /// mov / mp4 里第一条轨的时长（毫秒，按 `mdhd`：PCM 轨 timescale = 采样率、
 /// duration = 样本数）。逐个顶层 atom 跳过（不把 `mdat` 读进内存）。
-Future<int?> readMovTrackDurationMs(String path) async {
+Future<int?> readMovTrackDurationMs(String path) =>
+    _readMoovBoxDurationMs(path, 'mdhd');
+
+Future<int?> _readMoovBoxDurationMs(String path, String box) async {
   final RandomAccessFile raf = await File(path).open();
   try {
     final int length = await raf.length();
@@ -222,8 +225,10 @@ Future<int?> readMovTrackDurationMs(String path) async {
       }
       if (size < headerLen) return null;
       if (type == 'moov') {
+        // 头部是按 16 字节读的，读 moov 内容前回到头部之后。
+        await raf.setPosition(offset + headerLen);
         final Uint8List moov = await raf.read(size - headerLen);
-        return _mdhdDurationMs(moov);
+        return _boxDurationMs(moov, box);
       }
       offset += size;
     }
@@ -233,12 +238,20 @@ Future<int?> readMovTrackDurationMs(String path) async {
   }
 }
 
-int? _mdhdDurationMs(Uint8List moov) {
+/// mp4 / m4a 的播放时长（毫秒，按 `mvhd`——已扣掉编辑列表裁掉的 AAC 前导样本；
+/// `mdhd` 的时长会多出那 1024 个样本）。
+Future<int?> readMp4PresentationDurationMs(String path) =>
+    _readMoovBoxDurationMs(path, 'mvhd');
+
+/// `mvhd` 与 `mdhd` 的版本 0 / 1 布局在时长字段之前完全相同。
+int? _boxDurationMs(Uint8List moov, String box) {
+  final List<int> name = box.codeUnits;
   for (int i = 4; i + 4 <= moov.length; i++) {
-    if (moov[i] != 0x6d ||
-        moov[i + 1] != 0x64 ||
-        moov[i + 2] != 0x68 ||
-        moov[i + 3] != 0x64) {
+    // `i` 是盒子类型所在位置（前 4 字节是盒子长度）。
+    if (moov[i] != name[0] ||
+        moov[i + 1] != name[1] ||
+        moov[i + 2] != name[2] ||
+        moov[i + 3] != name[3]) {
       continue;
     }
     final int body = i + 4;
@@ -329,12 +342,19 @@ Future<int> transcodeTtsToUniform({
 /// 不同引擎）时，已是目标 PCM 参数的句原样拼（WAV 头算出的时长精确），其余转成
 /// [mixDir] 下的统一中间文件（同键只转一次），时长取中间文件实测值——cue 时间轴
 /// 就按这份时长累加，和实际拼进去的音频一致。
-Future<List<({String path, int durationMs})>> prepareTtsUniformEntries({
+///
+/// [requirePcm16]：本章还要插 16-bit PCM 静音（停顿），全章一致但不是 `pcm_s16le`
+/// （如整章 MP3）时也走统一路径。返回的 `target` 是拼接用的流参数（静音按它生成）。
+Future<
+  ({List<({String path, int durationMs})> entries, TtsAudioStreamInfo target})
+>
+prepareTtsUniformEntries({
   required FfmpegBackend backend,
   required List<({String key, String path, int durationMs})> sentences,
   required Directory mixDir,
   required TtsRenderCancelToken cancel,
   required void Function(String summary) onFailure,
+  bool requirePcm16 = false,
 }) async {
   final Map<String, TtsAudioStreamInfo?> infoByKey =
       <String, TtsAudioStreamInfo?>{};
@@ -346,11 +366,15 @@ Future<List<({String path, int durationMs})>> prepareTtsUniformEntries({
     for (final ({String key, String path, int durationMs}) s in sentences)
       infoByKey[s.key],
   ];
-  if (ttsStreamsAreUniform(infos)) {
-    return <({String path, int durationMs})>[
-      for (final ({String key, String path, int durationMs}) s in sentences)
-        (path: s.path, durationMs: s.durationMs),
-    ];
+  if (ttsStreamsAreUniform(infos) &&
+      (infos.isEmpty || !requirePcm16 || infos.first!.codec == 'pcm_s16le')) {
+    return (
+      entries: <({String path, int durationMs})>[
+        for (final ({String key, String path, int durationMs}) s in sentences)
+          (path: s.path, durationMs: s.durationMs),
+      ],
+      target: infos.isEmpty ? pickTtsUniformTarget(infos) : infos.first!,
+    );
   }
   final TtsAudioStreamInfo target = pickTtsUniformTarget(infos);
   final Map<String, ({String path, int durationMs})> converted =
@@ -384,5 +408,5 @@ Future<List<({String path, int durationMs})>> prepareTtsUniformEntries({
     converted[s.key] = entry;
     entries.add(entry);
   }
-  return entries;
+  return (entries: entries, target: target);
 }

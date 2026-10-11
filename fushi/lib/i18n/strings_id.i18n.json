@@ -7207,5 +7207,8 @@
   "audiobook_studio_export_done": "Exported to ${path}",
   "audiobook_studio_export_failed": "Export failed: ${reason}",
   "audiobook_studio_export_unsupported": "This ffmpeg build cannot write M4B chapters",
-  "audiobook_studio_export_running": "Exporting…"
+  "audiobook_studio_export_running": "Exporting…",
+  "audiobook_tts_concurrency": "Parallel requests",
+  "audiobook_tts_concurrency_hint": "Sending more requests at once synthesizes faster if the server and GPU can keep up; online services may rate-limit",
+  "audiobook_tts_concurrency_default": "Default (${n})"
 }

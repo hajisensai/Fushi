@@ -7,10 +7,12 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
+import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:path/path.dart' as p;
 
@@ -94,13 +96,123 @@ String buildTtsConcatList(List<({String path, int durationMs})> entries) {
   return buffer.toString();
 }
 
+/// 一章各处的停顿（毫秒），长度 = 句数 + 1：`[0]` 章首、`[k]`（1 ≤ k < n）第 k-1
+/// 句之后、`[n]` 章尾。句间停顿按计划的段落 / 场景边界取 [TtsPausePreset.afterSentence]。
+List<int> ttsChapterGapsMs({
+  required List<TtsPlanSentence> sentences,
+  required TtsRenderChapter chapter,
+  required TtsPausePreset preset,
+}) {
+  final int n = chapter.planIndices.length;
+  return <int>[
+    preset.chapterLeadMs,
+    for (int k = 0; k + 1 < n; k++)
+      preset.afterSentence(
+        endsParagraph: sentences[chapter.planIndices[k]].endsParagraph,
+        sceneBreakAfter: sentences[chapter.planIndices[k]].sceneBreakAfter,
+      ),
+    preset.chapterTailMs,
+  ];
+}
+
+/// 一章成品的总时长：句音频 + 全部停顿。
+int ttsChapterFileDurationMs(List<int> durationsMs, List<int> gapsMs) {
+  int total = 0;
+  for (final int d in durationsMs) {
+    total += d;
+  }
+  for (final int g in gapsMs) {
+    total += g;
+  }
+  return total;
+}
+
+/// 句音频之间插入静音：[gapsMs] 为 0 的位置不插。[silenceFor] 给出某个时长的静音
+/// 文件路径。
+List<({String path, int durationMs})> interleaveTtsPauses({
+  required List<({String path, int durationMs})> sentences,
+  required List<int> gapsMs,
+  required String Function(int ms) silenceFor,
+}) {
+  if (gapsMs.length != sentences.length + 1) {
+    throw ArgumentError.value(gapsMs.length, 'gapsMs');
+  }
+  final List<({String path, int durationMs})> out =
+      <({String path, int durationMs})>[];
+  void gap(int ms) {
+    if (ms > 0) out.add((path: silenceFor(ms), durationMs: ms));
+  }
+
+  for (int k = 0; k < sentences.length; k++) {
+    gap(gapsMs[k]);
+    out.add(sentences[k]);
+  }
+  gap(gapsMs[sentences.length]);
+  return out;
+}
+
+/// [ms] 毫秒的 16-bit PCM 静音 WAV。
+Uint8List buildTtsSilenceWav({
+  required int ms,
+  required int sampleRate,
+  required int channels,
+}) {
+  final int frames = (sampleRate * ms / 1000).round();
+  final int dataBytes = frames * channels * 2;
+  final ByteData b = ByteData(44 + dataBytes);
+  void ascii(int at, String s) {
+    for (int i = 0; i < s.length; i++) {
+      b.setUint8(at + i, s.codeUnitAt(i));
+    }
+  }
+
+  ascii(0, 'RIFF');
+  b.setUint32(4, 36 + dataBytes, Endian.little);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  b.setUint32(16, 16, Endian.little);
+  b.setUint16(20, 1, Endian.little);
+  b.setUint16(22, channels, Endian.little);
+  b.setUint32(24, sampleRate, Endian.little);
+  b.setUint32(28, sampleRate * channels * 2, Endian.little);
+  b.setUint16(32, channels * 2, Endian.little);
+  b.setUint16(34, 16, Endian.little);
+  ascii(36, 'data');
+  b.setUint32(40, dataBytes, Endian.little);
+  return b.buffer.asUint8List();
+}
+
+/// 工作目录里按（时长, 采样率, 声道）缓存的静音文件（同步写：一章最多几种时长）。
+String ttsSilenceFile(
+  Directory dir, {
+  required int ms,
+  required int sampleRate,
+  required int channels,
+}) {
+  final File f = File(
+    p.join(dir.path, 'silence_${ms}_${sampleRate}_$channels.wav'),
+  );
+  if (!f.existsSync()) {
+    dir.createSync(recursive: true);
+    final File part = File('${f.path}.part');
+    part.writeAsBytesSync(
+      buildTtsSilenceWav(ms: ms, sampleRate: sampleRate, channels: channels),
+      flush: true,
+    );
+    part.renameSync(f.path);
+  }
+  return f.path;
+}
+
 /// 一章的 cue（时间相对本章文件）。[durationsMs] 与 [TtsRenderChapter.planIndices]
-/// 一一对应，句与句首尾相接。
+/// 一一对应；[gapsMs]（见 [ttsChapterGapsMs]）给出章首 / 句间 / 章尾的停顿，cue 只
+/// 覆盖句音频本身，不含停顿。省略 = 首尾相接无停顿。
 List<AudioCue> buildTtsChapterCues({
   required String bookKey,
   required List<TtsPlanSentence> sentences,
   required TtsRenderChapter chapter,
   required List<int> durationsMs,
+  List<int>? gapsMs,
 }) {
   if (durationsMs.length != chapter.planIndices.length) {
     throw ArgumentError.value(
@@ -109,8 +221,11 @@ List<AudioCue> buildTtsChapterCues({
       'expected ${chapter.planIndices.length} durations',
     );
   }
+  if (gapsMs != null && gapsMs.length != durationsMs.length + 1) {
+    throw ArgumentError.value(gapsMs.length, 'gapsMs');
+  }
   final List<AudioCue> cues = <AudioCue>[];
-  int cursor = 0;
+  int cursor = gapsMs?[0] ?? 0;
   for (int k = 0; k < chapter.planIndices.length; k++) {
     final int index = chapter.planIndices[k];
     final TtsPlanSentence s = sentences[index];
@@ -130,16 +245,20 @@ List<AudioCue> buildTtsChapterCues({
         ..endMs = end
         ..audioFileIndex = chapter.fileIndex,
     );
-    cursor = end;
+    cursor = end + (gapsMs?[k + 1] ?? 0);
   }
   return cues;
 }
 
-/// 逐文件 cue → 单时间轴副本（写 SRT 用；文件 i 的起点 = 前面各文件时长之和）。
-/// 文件时长取各文件 cue 的最大 `endMs`，与播放器 / 进度换算同一口径
-/// （[audiobookFileDurationsFromCues]）。
-List<AudioCue> ttsCuesOnSingleTimeline(List<AudioCue> perFileCues) {
-  final List<int> durations = audiobookFileDurationsFromCues(perFileCues);
+/// 逐文件 cue → 单时间轴副本（写 SRT / 导出用；文件 i 的起点 = 前面各文件时长之和）。
+/// [fileDurationsMs] 给了就按真实文件时长（含章尾静音）；省略时取各文件 cue 的最大
+/// `endMs`（[audiobookFileDurationsFromCues]，没有尾部静音时二者一致）。
+List<AudioCue> ttsCuesOnSingleTimeline(
+  List<AudioCue> perFileCues, {
+  List<int>? fileDurationsMs,
+}) {
+  final List<int> durations =
+      fileDurationsMs ?? audiobookFileDurationsFromCues(perFileCues);
   final List<int> offsets = List<int>.filled(durations.length, 0);
   for (int i = 1; i < durations.length; i++) {
     offsets[i] = offsets[i - 1] + durations[i - 1];
@@ -158,23 +277,38 @@ List<AudioCue> ttsCuesOnSingleTimeline(List<AudioCue> perFileCues) {
   ];
 }
 
-/// 已编码一章的 sidecar：按序的缓存键 + 每句时长。键序一致才算同一章（续跑跳过
-/// 重编码与重合成——缓存里的逐句音频这时可能早被淘汰了，时长只能从这里取）。
+/// 已编码一章的 sidecar：按序的缓存键 + 每句时长 + 停顿预设 + 是否做了响度归一化。
+/// 全部一致才算同一章（续跑跳过重编码与重合成——缓存里的逐句音频这时可能早被
+/// 淘汰了，时长只能从这里取）；换停顿预设 / 响度开关都会重编码。
 class TtsChapterManifest {
   const TtsChapterManifest({
     required this.section,
     required this.keys,
     required this.durationsMs,
+    required this.pausePreset,
+    required this.loudnorm,
   });
 
-  static const int _version = 1;
+  static const int _version = 2;
 
   final int section;
   final List<String> keys;
   final List<int> durationsMs;
 
-  bool matches(int section, List<String> keys) {
-    if (section != this.section || keys.length != this.keys.length) {
+  /// [TtsPausePreset.name]。
+  final String pausePreset;
+  final bool loudnorm;
+
+  bool matches(
+    int section,
+    List<String> keys, {
+    required String pausePreset,
+    required bool loudnorm,
+  }) {
+    if (section != this.section ||
+        keys.length != this.keys.length ||
+        pausePreset != this.pausePreset ||
+        loudnorm != this.loudnorm) {
       return false;
     }
     for (int i = 0; i < keys.length; i++) {
@@ -188,6 +322,8 @@ class TtsChapterManifest {
     'section': section,
     'keys': keys,
     'durationsMs': durationsMs,
+    'pause': pausePreset,
+    'loudnorm': loudnorm,
   });
 
   /// 解析失败 / 版本不符 / 长度不一致返回 null（调用方当作没编码过）。
@@ -201,10 +337,13 @@ class TtsChapterManifest {
     if (json is! Map) return null;
     final Object? v = json['v'], section = json['section'];
     final Object? keys = json['keys'], durations = json['durationsMs'];
+    final Object? pause = json['pause'], loudnorm = json['loudnorm'];
     if (v != _version ||
         section is! int ||
         keys is! List ||
-        durations is! List) {
+        durations is! List ||
+        pause is! String ||
+        loudnorm is! bool) {
       return null;
     }
     final List<String> k = <String>[
@@ -217,7 +356,13 @@ class TtsChapterManifest {
     ];
     if (k.length != keys.length || d.length != durations.length) return null;
     if (k.length != d.length) return null;
-    return TtsChapterManifest(section: section, keys: k, durationsMs: d);
+    return TtsChapterManifest(
+      section: section,
+      keys: k,
+      durationsMs: d,
+      pausePreset: pause,
+      loudnorm: loudnorm,
+    );
   }
 }
 
@@ -233,12 +378,34 @@ Future<TtsChapterManifest?> readTtsChapterManifest(
   return TtsChapterManifest.decode(await sidecar.readAsString());
 }
 
+/// 成品统一的采样率 / 声道。每章都一样，导出 M4B 时才能 `-c copy` 直接拼（多声优
+/// 时各章的中间采样率可能不同）；44.1 kHz 单声道也是 ACX 接受的有声书格式。
+const int kTtsOutputSampleRate = 44100;
+
+/// 单遍响度归一化（ACX 口径：RMS −23..−18 dB、峰值 ≤ −3 dB）。
+const String kTtsLoudnormFilter = 'loudnorm=I=-19:TP=-3:LRA=11';
+
+/// 编码滤镜链：先按清单时间戳补静音 / 丢样本（`aresample=async`，成品时间轴贴住
+/// [buildTtsConcatList] 的 `duration`），可选 loudnorm（它内部重采样到 192 kHz），
+/// 最后统一重采样到 [kTtsOutputSampleRate]。
+String buildTtsChapterFilter({required bool loudnorm}) => <String>[
+  'aresample=async=1:min_hard_comp=0.010:first_pts=0',
+  if (loudnorm) kTtsLoudnormFilter,
+  'aresample=$kTtsOutputSampleRate',
+].join(',');
+
+/// `ffmpeg -filters` 的输出里有没有某个滤镜（行形如 ` ... loudnorm   A->A  …`）。
+bool ffmpegFiltersListHas(String filtersOutput, String filter) => RegExp(
+  '(^|\\s)${RegExp.escape(filter)}\\s',
+  multiLine: true,
+).hasMatch(filtersOutput);
+
 /// 一章编码的 ffmpeg 参数。桌面 ffmpeg-min 没有 ipod 封装器，`.m4a` 必须显式
-/// `-f mp4`；`aresample=async=1:min_hard_comp=0.01` 按清单时间戳补静音 / 丢样本，
-/// 让成品时间轴贴住 [buildTtsConcatList] 的 `duration`。
+/// `-f mp4`。
 List<String> buildTtsChapterEncodeArgs({
   required String listPath,
   required String outputPath,
+  bool loudnorm = false,
 }) => <String>[
   '-y',
   '-f',
@@ -249,7 +416,9 @@ List<String> buildTtsChapterEncodeArgs({
   listPath,
   '-vn',
   '-af',
-  'aresample=async=1:min_hard_comp=0.010:first_pts=0',
+  buildTtsChapterFilter(loudnorm: loudnorm),
+  '-ac',
+  '1',
   '-c:a',
   'aac',
   '-b:a',
@@ -272,6 +441,7 @@ Future<void> encodeTtsChapterAudio({
   required String outputPath,
   required TtsRenderCancelToken cancel,
   required void Function(String summary) onFailure,
+  bool loudnorm = false,
 }) async {
   cancel.throwIfCancelled();
   final String listPath = p.setExtension(outputPath, '.ffconcat');
@@ -288,6 +458,7 @@ Future<void> encodeTtsChapterAudio({
   final List<String> args = buildTtsChapterEncodeArgs(
     listPath: listPath,
     outputPath: partPath,
+    loudnorm: loudnorm,
   );
   int totalMs = 0;
   for (final ({String path, int durationMs}) e in entries) {

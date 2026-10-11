@@ -109,6 +109,32 @@ void main() {
       expect(plan.sentences[0].matchEnd, plan.sentences[1].matchStart);
     });
 
+    test('block boundaries split sentences and mark paragraph ends', () {
+      final EpubBook book = EpubBook(
+        title: 'b',
+        chapters: <EpubChapter>[
+          _chapter(
+            'c0',
+            '<h2>第一章</h2><p>一。二。</p><p>◆◆◆</p><p>三</p><p>四。</p>',
+          ),
+        ],
+      );
+      final TtsBookPlan plan = buildTtsBookPlanSync(book, maxLength: 120);
+      // 标题、不带句号的段落各自成句；分隔行不进计划也不粘到下一句。
+      expect(
+        plan.sentences.map((TtsPlanSentence s) => s.text),
+        <String>['第一章', '一。', '二。', '三', '四。'],
+      );
+      expect(
+        plan.sentences.map((TtsPlanSentence s) => s.endsParagraph),
+        <bool>[true, false, true, true, true],
+      );
+      expect(
+        plan.sentences.map((TtsPlanSentence s) => s.sceneBreakAfter),
+        <bool>[false, false, true, false, false],
+      );
+    });
+
     test('start lookups find the sentence at or after a position', () {
       final EpubBook book = EpubBook(
         title: 'b',
@@ -124,6 +150,39 @@ void main() {
       expect(plan.indexAtStudyOffset(5, 0), -1);
       final TtsPlanSentence second = plan.sentences[1];
       expect(plan.indexAtMatchStart(second.section, second.matchStart), 1);
+    });
+  });
+
+  group('mergeShortTtsSentences', () {
+    test('merges short sentences inside a paragraph only', () {
+      final EpubBook book = EpubBook(
+        title: 'b',
+        chapters: <EpubChapter>[
+          _chapter('c0', '<p>はい。うん。そうだね、今日はとても良い天気だと思う。</p><p>次。</p>'),
+        ],
+      );
+      final TtsBookPlan raw = buildTtsBookPlanSync(book, maxLength: 120);
+      expect(raw.length, 4);
+      final TtsBookPlan merged = mergeShortTtsSentences(raw, maxLength: 120);
+      expect(merged.length, 2, reason: 'short lines merge, the next paragraph stays');
+      expect(merged.sentences.first.text, startsWith('はい。うん。'));
+      expect(merged.sentences.first.matchStart, raw.sentences.first.matchStart);
+      expect(merged.sentences.first.matchEnd, raw.sentences[2].matchEnd);
+      expect(merged.sentences.last.text, '次。');
+    });
+
+    test('never exceeds the engine input limit', () {
+      final EpubBook book = EpubBook(
+        title: 'b',
+        chapters: <EpubChapter>[_chapter('c0', '<p>あ。い。う。え。お。</p>')],
+      );
+      final TtsBookPlan merged = mergeShortTtsSentences(
+        buildTtsBookPlanSync(book, maxLength: 120),
+        maxLength: 4,
+      );
+      for (final TtsPlanSentence s in merged.sentences) {
+        expect(s.spokenText.length, lessThanOrEqualTo(4));
+      }
     });
   });
 }

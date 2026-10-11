@@ -98,6 +98,136 @@ void main() {
       expect(cast.toJson()['annotated'], <int>[0, 3]);
     });
 
+    test('needsReview / reviewCount：不明、低把握、无提示推断的 llm 台词', () {
+      TtsCastLine line(
+        String speaker, {
+        double? c,
+        TtsCastEvidence? ev,
+        TtsCastSource src = TtsCastSource.llm,
+      }) => TtsCastLine(
+        speaker: speaker,
+        source: src,
+        confidence: c,
+        evidence: ev,
+      );
+      final TtsCast cast = TtsCast(
+        lines: <String, TtsCastLine>{
+          '0:0': line('A', c: 0.9, ev: TtsCastEvidence.explicit),
+          '0:1': line(kTtsUnknown, c: 0.9),
+          '0:2': line('A', c: 0.5, ev: TtsCastEvidence.explicit),
+          '0:3': line('A', c: 0.95, ev: TtsCastEvidence.implicit),
+          '0:4': line('A'),
+          '0:5': line(kTtsNarrator, c: 0),
+          '0:6': line(kTtsUnknown, src: TtsCastSource.user),
+        },
+      );
+      expect(
+        <String, bool>{
+          for (final MapEntry<String, TtsCastLine> e in cast.lines.entries)
+            e.key: e.value.needsReview,
+        },
+        <String, bool>{
+          '0:0': false,
+          '0:1': true,
+          '0:2': true,
+          '0:3': true,
+          '0:4': false,
+          '0:5': false,
+          '0:6': false,
+        },
+      );
+      expect(cast.reviewCount, 3);
+    });
+
+    test('mergeRoster：同名并别名、只补空特征', () {
+      final TtsCast cast = TtsCast()
+        ..mergeRoster(const <TtsCastCharacter>[
+          TtsCastCharacter(name: 'A', aliases: <String>['a1'], gender: 'male'),
+        ])
+        ..mergeRoster(const <TtsCastCharacter>[
+          TtsCastCharacter(
+            name: 'A',
+            aliases: <String>['a1', 'a2'],
+            gender: 'female',
+            age: 'teen',
+          ),
+          TtsCastCharacter(name: 'B'),
+        ]);
+      expect(cast.roster.keys, <String>['A', 'B']);
+      expect(cast.roster['A']!.aliases, <String>['a1', 'a2']);
+      expect(cast.roster['A']!.gender, 'male');
+      expect(cast.roster['A']!.age, 'teen');
+    });
+
+    test('renameSpeaker：保留把握 / 依据，角色表旧名成为别名；并入不明不进角色表', () {
+      final TtsCast cast = TtsCast(
+        lines: <String, TtsCastLine>{
+          '0:0': const TtsCastLine(
+            speaker: 'B',
+            source: TtsCastSource.llm,
+            confidence: 0.4,
+            evidence: TtsCastEvidence.anaphoric,
+          ),
+        },
+        roster: <String, TtsCastCharacter>{
+          'A': const TtsCastCharacter(name: 'A'),
+          'B': const TtsCastCharacter(
+            name: 'B',
+            aliases: <String>['b1'],
+            gender: 'female',
+          ),
+          'C': const TtsCastCharacter(name: 'C'),
+        },
+      );
+      cast.renameSpeaker('B', 'A');
+      expect(cast.lines['0:0']!.speaker, 'A');
+      expect(cast.lines['0:0']!.confidence, 0.4);
+      expect(cast.lines['0:0']!.evidence, TtsCastEvidence.anaphoric);
+      expect(cast.roster.keys, <String>['A', 'C']);
+      expect(cast.roster['A']!.aliases, <String>['B', 'b1']);
+      expect(cast.roster['A']!.gender, 'female');
+
+      cast.renameSpeaker('C', kTtsUnknown);
+      expect(cast.roster.keys, <String>['A']);
+    });
+
+    test('JSON 往返：角色表、把握、依据；把握越界夹到 0..1', () {
+      final TtsCast cast = TtsCast(
+        lines: <String, TtsCastLine>{
+          '0:0': const TtsCastLine(
+            speaker: kTtsUnknown,
+            source: TtsCastSource.llm,
+            confidence: 0.25,
+            evidence: TtsCastEvidence.implicit,
+          ),
+        },
+        roster: <String, TtsCastCharacter>{
+          'A': const TtsCastCharacter(
+            name: 'A',
+            aliases: <String>['a1'],
+            gender: 'female',
+            age: 'elderly',
+            description: '老婆',
+          ),
+        },
+      );
+      final TtsCast back = TtsCast.fromJson(
+        jsonDecode(jsonEncode(cast.toJson())),
+      );
+      expect(back.lines['0:0']!.confidence, 0.25);
+      expect(back.lines['0:0']!.evidence, TtsCastEvidence.implicit);
+      final TtsCastCharacter a = back.roster['A']!;
+      expect(a.aliases, <String>['a1']);
+      expect(
+        (a.name, a.gender, a.age, a.description),
+        ('A', 'female', 'elderly', '老婆'),
+      );
+      expect(
+        TtsCastLine.fromJson(<String, Object?>{'s': 'A', 'c': 3})!.confidence,
+        1.0,
+      );
+    });
+
     test('fromJson 容忍坏形状', () {
       expect(TtsCast.fromJson('nope').isEmpty, isTrue);
       final TtsCast cast = TtsCast.fromJson(<String, Object?>{

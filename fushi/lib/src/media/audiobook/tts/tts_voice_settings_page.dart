@@ -775,6 +775,9 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
                   if (descriptor != null)
                     for (final TtsParamSpec spec in descriptor.params)
                       _paramRow(spec, problems.contains(spec.key), field),
+                  if (descriptor != null &&
+                      descriptor.category != TtsProviderCategory.system)
+                    _concurrencyRow(descriptor),
                 ],
               ),
               if (descriptor != null)
@@ -838,6 +841,54 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
             ],
           ),
     );
+  }
+
+  /// 并发请求数：默认用引擎的值，用户可按自己的服务端 / 显卡能力调高。
+  Widget _concurrencyRow(TtsProviderDescriptor descriptor) {
+    final int fallback = descriptor.capabilities.maxConcurrency;
+    final bool custom = _preset.param(kTtsConcurrencyParam).trim().isNotEmpty;
+    final int effective = ttsEffectiveConcurrency(descriptor, _preset);
+    return KeyedSubtree(
+      key: const ValueKey<String>('tts-voice-concurrency'),
+      child: AdaptiveSettingsRow(
+        title: t.audiobook_tts_concurrency,
+        subtitle: t.audiobook_tts_concurrency_hint,
+        subtitleMaxLines: 3,
+        onTap: () => unawaited(_pickConcurrency(fallback)),
+        trailing: Text(
+          custom ? '$effective' : t.audiobook_tts_concurrency_default(n: fallback),
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: fushiNeutralSecondaryForeground(context),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickConcurrency(int fallback) async {
+    final String current = _preset.param(kTtsConcurrencyParam).trim();
+    final String? picked = await showFushiChoiceDialog<String>(
+      context: context,
+      title: t.audiobook_tts_concurrency,
+      message: t.audiobook_tts_concurrency_hint,
+      selected: current,
+      options: <FushiChoiceOption<String>>[
+        FushiChoiceOption<String>(
+          value: '',
+          label: t.audiobook_tts_concurrency_default(n: fallback),
+        ),
+        for (int n = 1; n <= kTtsMaxConcurrency; n++)
+          FushiChoiceOption<String>(value: '$n', label: '$n'),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    final Map<String, String> params = <String, String>{..._preset.params};
+    if (picked.isEmpty) {
+      params.remove(kTtsConcurrencyParam);
+    } else {
+      params[kTtsConcurrencyParam] = picked;
+    }
+    widget.onChanged(_preset.copyWith(params: params));
   }
 
   Widget _paramRow(

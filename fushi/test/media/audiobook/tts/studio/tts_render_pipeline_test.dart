@@ -226,33 +226,58 @@ void main() {
   });
 
   group('TtsChapterManifest', () {
-    test('往返 + 键序比较', () {
+    test('往返 + 键序 / 停顿预设 / 响度开关比较', () {
       const TtsChapterManifest m = TtsChapterManifest(
         section: 3,
         keys: <String>['a', 'b', 'a'],
         durationsMs: <int>[10, 20, 10],
+        pausePreset: 'standard',
+        loudnorm: true,
       );
       final TtsChapterManifest? back = TtsChapterManifest.decode(m.encode());
       expect(back, isNotNull);
       expect(back!.durationsMs, <int>[10, 20, 10]);
-      expect(back.matches(3, <String>['a', 'b', 'a']), isTrue);
-      expect(back.matches(3, <String>['b', 'a', 'a']), isFalse);
-      expect(back.matches(4, <String>['a', 'b', 'a']), isFalse);
+      bool matches(
+        int section,
+        List<String> keys, {
+        String pause = 'standard',
+        bool loudnorm = true,
+      }) => back.matches(section, keys, pausePreset: pause, loudnorm: loudnorm);
+      expect(matches(3, <String>['a', 'b', 'a']), isTrue);
+      expect(matches(3, <String>['b', 'a', 'a']), isFalse);
+      expect(matches(4, <String>['a', 'b', 'a']), isFalse);
+      // 换停顿预设 / 响度开关都要重编码。
+      expect(matches(3, <String>['a', 'b', 'a'], pause: 'literary'), isFalse);
+      expect(matches(3, <String>['a', 'b', 'a'], loudnorm: false), isFalse);
     });
 
-    test('损坏 / 长度不一致 → null', () {
+    test('损坏 / 长度不一致 / 旧版本 → null', () {
       expect(TtsChapterManifest.decode('not json'), isNull);
+      const String tail = '"pause":"standard","loudnorm":false';
       expect(
         TtsChapterManifest.decode(
-          '{"v":1,"section":0,"keys":["a"],"durationsMs":[1,2]}',
+          '{"v":2,"section":0,"keys":["a"],"durationsMs":[1,2],$tail}',
         ),
         isNull,
       );
       expect(
         TtsChapterManifest.decode(
-          '{"v":1,"section":0,"keys":["a"],"durationsMs":[0]}',
+          '{"v":2,"section":0,"keys":["a"],"durationsMs":[0],$tail}',
         ),
         isNull,
+      );
+      // v1（没有停顿 / 响度字段）当作没编码过。
+      expect(
+        TtsChapterManifest.decode(
+          '{"v":1,"section":0,"keys":["a"],"durationsMs":[1]}',
+        ),
+        isNull,
+      );
+      expect(
+        TtsChapterManifest.decode(
+          '{"v":2,"section":0,"keys":["a"],"durationsMs":[1],$tail}',
+        ),
+        isNotNull,
       );
     });
   });

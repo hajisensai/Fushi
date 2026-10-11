@@ -40,7 +40,9 @@ class GptSovitsTtsDescriptor extends TtsProviderDescriptor {
     timing: TtsTimingGranularity.sentence,
     online: false,
     needsCredential: false,
-    maxConcurrency: 1,
+    // 实测 api_v2 并发 2 路吞吐比串行高约 15%（RTX 4070 Ti，v5 Turbo），且一句长句
+    // 不再挡住后面的短句；更高并发收益很小、显存压力大。
+    maxConcurrency: 2,
     maxInputLength: 120,
   );
 
