@@ -51,6 +51,22 @@ abstract class PlatformVideoController {
     int? height,
   });
 
+  /// HIBIKI FORK (HDR in the Flutter compositor): switches the texture handed
+  /// to Flutter between 8-bit and half-float extended-range sRGB, switching
+  /// libmpv's render target (linear BT.2020 / automatic) in the same step.
+  /// [referenceWhiteNits] is where libmpv's 203 nit reference white lands
+  /// relative to Flutter's SDR white (the display's SDR white level on an HDR
+  /// display, 203 on an SDR one); [targetPeakNits] is the peak libmpv tone
+  /// maps to (<= 0: automatic). Returns whether half-float output is active
+  /// afterwards; platforms without it (everything but the Windows hardware
+  /// path) return false.
+  Future<bool> setHdrOutput({
+    required bool enabled,
+    required double referenceWhiteNits,
+    required double targetPeakNits,
+  }) async =>
+      false;
+
   /// A [Future] that completes when the first video frame has been rendered.
   Future<void> get waitUntilFirstFrameRendered =>
       waitUntilFirstFrameRenderedCompleter.future;

@@ -910,17 +910,29 @@ Future<Object?> _listShortcuts(DesktopCtlContext context, CtlCall call) async {
       'scope': action.scope.name,
       'action': action.key,
       'label': action.label,
-      'keyboard': <String>[
-        for (final InputBinding b in bindings.keyboardBindings) b.displayLabel,
-      ],
-      'gamepad': <String>[
-        for (final GamepadBinding b in bindings.gamepadBindings) b.serialize(),
-      ],
-      'mouse': <String>[
-        for (final MouseBinding b in bindings.mouseBindings) b.serialize(),
-        for (final WheelBinding b in bindings.wheelBindings) b.displayLabel,
-      ],
+      ...ctlShortcutBindingColumns(bindings),
     });
   }
   return <String, Object?>{'shortcuts': rows, 'count': rows.length};
 }
+
+/// `/api/admin/shortcuts` 每行的三列绑定。
+///
+/// 这是给人看的列表（`fushi_cli keys ls` 直接渲染成表），按当前平台的显示约定出：
+/// 键盘与滚轮绑定都走 `displayLabel`，macOS 上就是 `⌘F` / `⌥WheelDown` 这类符号
+/// 写法，与 app 内快捷键设置页同形（用户 2026-10-10 拍板「根据 mac 的来」）。
+/// 手柄 / 鼠标键没有修饰键、也没有平台差异，沿用 `serialize()` token。
+Map<String, List<String>> ctlShortcutBindingColumns(
+  ShortcutBindingSet bindings,
+) => <String, List<String>>{
+  'keyboard': <String>[
+    for (final InputBinding b in bindings.keyboardBindings) b.displayLabel,
+  ],
+  'gamepad': <String>[
+    for (final GamepadBinding b in bindings.gamepadBindings) b.serialize(),
+  ],
+  'mouse': <String>[
+    for (final MouseBinding b in bindings.mouseBindings) b.serialize(),
+    for (final WheelBinding b in bindings.wheelBindings) b.displayLabel,
+  ],
+};

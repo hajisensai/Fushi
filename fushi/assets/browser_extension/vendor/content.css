@@ -2605,6 +2605,20 @@
  * 减弱动态效果：宿主挂 html.fushi-reduced-motion，本层的过渡 / 按压位移在末尾归零。
  * ===================================================================== */
 
+/* ── 查词命中高亮：M3E tonal ──
+   与源文本条（SourceLookupTextPanel tonalHighlight）同一口径：primaryContainer 底 +
+   onPrimaryContainer 字。宿主内联的 --fushi-primary-highlight（主色 35%）只留给
+   非 M3E（Apple 设计系统）——同一次查词的两个可见面必须同色（用户 2026-10-10 拍板）。 */
+:where(#entries-container).fushi-m3e ::highlight(fushi-selection) {
+    background-color: var(--md-primary-container, var(--fushi-primary-highlight, rgba(160, 160, 160, 0.4)));
+    color: var(--md-on-primary-container, inherit);
+}
+
+:where(#entries-container).fushi-m3e .fushi-dict-highlight {
+    background-color: var(--md-primary-container, var(--fushi-primary-highlight, rgba(160, 160, 160, 0.4))) !important;
+    color: var(--md-on-primary-container, inherit);
+}
+
 /* ── 词典结果卡：M3E 分段卡片 ──
    单列（流式布局：一本词典 / 列数设置为 1 / 视口窄到只装得下一列）= 分段列表：组首尾
    24 大圆角、组内 4、卡间 2px，与查词页左栏「查词历史」的 FushiGroupedListItem 同一套

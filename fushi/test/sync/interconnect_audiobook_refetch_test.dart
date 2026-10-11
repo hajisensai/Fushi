@@ -312,6 +312,77 @@ void main() {
     expect(await clientDb.getAllSrtBooks(), hasLength(1));
   });
 
+  // BUG-3248：解压是原位覆盖。host 换成了不带逐 token sidecar 的字幕，本机目录里
+  // 上一版的 sidecar 不能留在新字幕旁边——行数恰等于 cue 数时会被挂到新 cue 上。
+  test('host 没有 tokens sidecar 了 → 更新字幕 / 重新下载都删掉本机旧 sidecar', () async {
+    final SrtBookRow first = (await clientDb.getSrtBookByBookKey(_bookKey))!;
+    final File sidecar = File(p.setExtension(first.srtPath, '.tokens.jsonl'));
+    expect(sidecar.existsSync(), isTrue,
+        reason: '整包下载也带 sidecar（与字幕包同口径）');
+
+    // host 换了一份行数相同、但不是转录产物的字幕：没有 sidecar。
+    File(p.join(hostAudio.path, 'transcript.tokens.jsonl')).deleteSync();
+    File(p.join(hostAudio.path, 'transcript.srt'))
+        .writeAsStringSync(_srt(<String>['吾輩は猫である！', '名前はまだ無い！']));
+    await hostDb.replaceCuesForBook(
+      _bookKey,
+      _cues(_bookKey, <String>['吾輩は猫である！', '名前はまだ無い！']),
+    );
+
+    await clientRefreshSubtitles();
+    final SrtBookRow refreshed = (await clientDb.getSrtBookByBookKey(_bookKey))!;
+    expect(File(refreshed.srtPath).readAsStringSync(), contains('！'));
+    expect(
+      File(p.setExtension(refreshed.srtPath, '.tokens.jsonl')).existsSync(),
+      isFalse,
+      reason: '旧 sidecar 残留会把旧逐 token 时间挂到新 cue 上',
+    );
+
+    // 整本重下同一条原位解压路径：先放回一份旧 sidecar，重下后同样要清掉。
+    sidecar.writeAsStringSync('{"t":["吾輩"],"o":[0]}\n{"t":["名前"],"o":[0]}\n');
+    await clientDownloadAudiobook(fresh: true);
+    final SrtBookRow redownloaded =
+        (await clientDb.getSrtBookByBookKey(_bookKey))!;
+    expect(
+      File(p.setExtension(redownloaded.srtPath, '.tokens.jsonl')).existsSync(),
+      isFalse,
+    );
+  });
+
+  // BUG-3251：「只更新字幕」换 cue 时本机听书断点按真实时间位置换编码（与书架重新
+  // 导入同口径，BUG-3197）——多文件有声书的全书毫秒按 cue 推出的文件时长编码。
+  test('只更新字幕：多文件断点按新 cue 换编码，真实位置不变', () async {
+    AudioCuesCompanion cue(String key, int i, int file, int endMs) =>
+        AudioCuesCompanion.insert(
+          bookKey: key,
+          chapterHref: 'ch1.xhtml',
+          sentenceIndex: i,
+          textFragmentId: 'f$i',
+          cueText: 'line $i',
+          startMs: 0,
+          endMs: endMs,
+          audioFileIndex: file,
+        );
+    // 本机旧字幕：文件 0 末句 10s；断点 = 文件 1 第 3 秒 = 10000 + 3000。
+    await clientDb.replaceCuesForBook(_bookKey, <AudioCuesCompanion>[
+      cue(_bookKey, 0, 0, 10000),
+      cue(_bookKey, 1, 1, 20000),
+    ]);
+    await clientDb.setPrefTyped<int>(audiobookPositionPrefKey(_bookKey), 13000);
+    // host 新字幕：文件 0 末句 12s。
+    await hostDb.replaceCuesForBook(_bookKey, <AudioCuesCompanion>[
+      cue(_bookKey, 0, 0, 12000),
+      cue(_bookKey, 1, 1, 25000),
+    ]);
+
+    await clientRefreshSubtitles();
+
+    expect(
+      await clientDb.getPrefTyped<int>(audiobookPositionPrefKey(_bookKey), 0),
+      12000 + 3000,
+    );
+  });
+
   test('BUG-3098：重新下载整本有声书（fresh）拿到 host 新字幕，不撞 UNIQUE(uid)', () async {
     await _retranscribeOnHost(hostDb, hostAudio);
 

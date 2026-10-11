@@ -1281,7 +1281,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       );
       if (!mounted) return;
       setState(() => _entry = selected);
-      await _openReader(bookKey);
+      await _openReader(bookKey, chapterIndex: index);
       // 从阅读器回来必须重读：读了哪些页、哪章读完了全在阅读器里写的库。
       await _reloadAfterReading();
     } on OnlineMangaUnavailable catch (error, stack) {
@@ -1329,7 +1329,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   ///
   /// `MangaFushiSource.buildLaunchPage` 仍然返回阅读器（不是作品页），所以这里
   /// 不会自我递归。
-  Future<void> _openReader(String bookKey) async {
+  /// [chapterIndex]：在线漫画点名要开的章，显式交给阅读器（不点名时阅读器按「重新
+  /// 打开位置」偏好自己选章，那是首页「继续」等直接开书的语义）。
+  Future<void> _openReader(String bookKey, {int? chapterIndex}) async {
     MediaItem? item = switch (widget.target) {
       ShelfMangaSeriesTarget(:final MediaItem? item) => item,
       SourceMangaSeriesTarget() => null,
@@ -1343,16 +1345,23 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         adaptivePageRoute<void>(
           context: context,
           builder: (BuildContext context) => FushiAppUiScaleNeutralizer(
-            child: MangaFushiPage(item: null, bookKey: bookKey),
+            child: MangaFushiPage(
+              item: null,
+              bookKey: bookKey,
+              initialChapterIndex: chapterIndex,
+            ),
           ),
         ),
       );
       return;
     }
+    final MediaItem launchItem = item;
     await _appModel.openMedia(
       ref: ref,
       mediaSource: MangaFushiSource.instance,
-      item: item,
+      item: launchItem,
+      launchPageBuilder: () => MangaFushiSource.instance
+          .buildChapterLaunchPage(item: launchItem, chapterIndex: chapterIndex),
     );
   }
 

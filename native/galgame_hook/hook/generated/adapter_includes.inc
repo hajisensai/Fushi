@@ -17,3 +17,4 @@
 #include "../adapters/yuris_adapter.inc"
 #include "../adapters/fvp_adapter.inc"
 #include "../adapters/kogado_hy_adapter.inc"
+#include "../adapters/luca_adapter.inc"

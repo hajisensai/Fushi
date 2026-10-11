@@ -2201,6 +2201,20 @@ class AudiobookPlayerController extends ChangeNotifier {
     await _enqueuePositionWrite(uid, rebased);
   }
 
+  /// 会话期间库里的全书 cue 被整组替换（书架 / 互联「只更新字幕」重新导入字幕，
+  /// BUG-3251）：改用新 cue，使之后的周期位置写入立即按新 cue 推出的文件时长编码。
+  /// 播放器本身的（文件, 偏移）不动；仓库层已在同一事务里把库里的进度换成新编码。
+  /// 两份 cue 推出的文件时长相同时什么都不做（返回 false）——那种替换不影响编码，
+  /// 也就不去打扰阅读器按章节灌的 cue。
+  bool adoptReplacedBookCues(List<AudioCue> cues) {
+    if (cues.isEmpty) return false;
+    if (listEquals(_fileDurationsMs, audiobookFileDurationsFromCues(cues))) {
+      return false;
+    }
+    setAllBookCues(cues);
+    return true;
+  }
+
   /// 测试钩子：主播放器是否处于播放态（just_audio 公开状态）。
   @visibleForTesting
   bool get debugMainPlayerPlaying => _player.playing;

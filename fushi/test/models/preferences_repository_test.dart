@@ -972,9 +972,8 @@ void main() {
 
   // ── reading goals (TODO-1046) ─────────────────────────────────────────
   group('reading goals (TODO-1046)', () {
-    test('daily/weekly goals default to 0 (unset/off)', () {
+    test('daily goal defaults to 0 (unset/off)', () {
       expect(repo.readingGoalDailyChars, 0);
-      expect(repo.readingGoalWeeklyChars, 0);
     });
 
     test('setReadingGoalDailyChars round-trips through DB', () async {
@@ -987,28 +986,11 @@ void main() {
       expect(repo2.readingGoalDailyChars, 5000);
     });
 
-    test('setReadingGoalWeeklyChars round-trips through DB', () async {
-      await repo.setReadingGoalWeeklyChars(35000);
-      expect(repo.readingGoalWeeklyChars, 35000);
-
-      final PreferencesRepository repo2 = PreferencesRepository(db);
-      await repo2.loadFromDb();
-      addTearDown(repo2.dispose);
-      expect(repo2.readingGoalWeeklyChars, 35000);
-    });
-
     test('daily goal clamps out-of-range writes into 0..1000000', () async {
       await repo.setReadingGoalDailyChars(-5);
       expect(repo.readingGoalDailyChars, 0);
       await repo.setReadingGoalDailyChars(9999999);
       expect(repo.readingGoalDailyChars, 1000000);
-    });
-
-    test('weekly goal clamps out-of-range writes into 0..10000000', () async {
-      await repo.setReadingGoalWeeklyChars(-100);
-      expect(repo.readingGoalWeeklyChars, 0);
-      await repo.setReadingGoalWeeklyChars(999999999);
-      expect(repo.readingGoalWeeklyChars, 10000000);
     });
   });
 

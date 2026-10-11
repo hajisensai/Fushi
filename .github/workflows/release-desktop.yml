@@ -45,6 +45,7 @@ on:
       - 'tool/ffmpeg-min/**'
       - 'tool/sign_windows_release.ps1'
       - 'tool/simplysign_connect.ps1'
+      - 'tool/engine_overlay.ps1'
       - 'third_party/**'
       - 'tools/build_magpie_slim.ps1'
       - 'tools/bundle_7za.ps1'
@@ -55,6 +56,7 @@ on:
       - '.github/actions/native-artifact-store/**'
       - '.github/actions/native-store-names/**'
       - '.github/actions/pdfium-hook-cache/**'
+      - '.github/actions/flutter-engine-overlay/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
       # 无头服务端不进桌面/Apple 包（它有自己的 release-server.yml 与 server-gate.yml）。
@@ -166,6 +168,8 @@ jobs:
       - uses: ./.github/actions/pdfium-hook-cache
         with:
           purpose: windows
+      # 合成器内 HDR 需要打过补丁的 flutter_windows.dll（ci/patches/flutter-engine/）。
+      - uses: ./.github/actions/flutter-engine-overlay
       - name: Resolve desktop release channel
         id: channel
         shell: bash

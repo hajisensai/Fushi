@@ -1550,8 +1550,10 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                     s.label is Text ? (s.label! as Text).data : null,
               )
               .toList(growable: false),
+          segmentHasIcon: segmentedStripIconFlags<String>(segments),
           fontSize: fontSize,
           textScaleFactor: textScale,
+          metrics: SegmentedStripMetrics.of(context),
         );
         // 下载按钮：图标 18 + 图标/文字间距与左右内边距合计约 46，再加标签字形宽
         // （与 estimateSegmentedStripWidth 同一套保守的 CJK 倾向估算）。

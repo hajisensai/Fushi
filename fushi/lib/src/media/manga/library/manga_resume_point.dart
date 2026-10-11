@@ -85,6 +85,27 @@ int continueMangaChapterIndex(
   return bestIndex > 0 ? bestIndex - 1 : bestIndex;
 }
 
+/// 阅读器打开一部在线漫画时落到哪一章。
+///
+/// - 调用方点名了章（作品页点某一章、作品页「继续阅读」按钮）：就是那一章；
+/// - 没点名（首页「继续」、历史、合集、统计等直接开书）：与作品页「继续阅读」同一
+///   判据 [continueMangaChapterIndex]，按偏好 [target] 走——不再用
+///   `currentChapterIndex`（只记「最后一次选了哪章」），否则偏好选「最远进度」时
+///   直接开书会回到读完的那一章，而作品页的「继续阅读」去的是下一话（BUG-3246）。
+int mangaReaderOpenChapterIndex(
+  OnlineMangaLibraryEntry entry,
+  Map<String, MangaChapterStateRow> states, {
+  int? requested,
+  MangaResumeTarget target = MangaResumeTarget.furthestProgress,
+}) {
+  if (requested != null &&
+      requested >= 0 &&
+      requested < entry.chapters.length) {
+    return requested;
+  }
+  return continueMangaChapterIndex(entry, states, target: target);
+}
+
 /// 打开一章时从第几页开始（0-based；续播三层的「定起点」）。
 ///
 /// - furthestProgress：读完过的章从头看（「重读」视为明确意图），没读完且翻过页

@@ -265,6 +265,10 @@ class _HomeModuleSwipeDetectorState extends State<HomeModuleSwipeDetector>
         // 那里的横滑落空；translucent 让本层自己也参与命中，子组件照常先拿。
         behavior: HitTestBehavior.translucent,
         supportedDevices: const <PointerDeviceKind>{PointerDeviceKind.touch},
+        // 横滑切模块只是触摸捷径（底栏同样能切）。不排除语义的话，横向拖动
+        // 识别器会给整个正文挂上 scrollLeft / scrollRight 无障碍动作，读屏的
+        // 横滚手势就会误切模块（2026-10-10 审查）。
+        excludeFromSemantics: true,
         onHorizontalDragStart: enabled ? _onStart : null,
         onHorizontalDragUpdate: enabled ? _onUpdate : null,
         onHorizontalDragEnd: enabled ? _onEnd : null,

@@ -432,19 +432,21 @@ class SrtBookRepository {
   }
 
   /// 整组替换字幕书 [uid] 的 cue；进度键 `audiobook_pos_<uid>` 按真实时间位置
-  /// 换编码（BUG-3197，同 [AudiobookRepository.saveCues]）。
+  /// 换编码（BUG-3197，同 [AudiobookRepository.saveCues]；同一事务，BUG-3251）。
   Future<void> saveCues({
     required String uid,
     required List<AudioCue> cues,
-  }) async {
-    final List<AudioCue> before = await cuesFor(uid);
-    await _db.replaceCuesForBook(uid, cues.map(AudioCue.toCompanion).toList());
-    await AudiobookRepository(_db).rebaseStoredPositionForCueChange(
-      positionKey: uid,
-      oldDurationsMs: audiobookFileDurationsFromCues(before),
-      newDurationsMs: audiobookFileDurationsFromCues(cues),
-    );
-  }
+  }) =>
+      _db.transaction(() async {
+        final List<AudioCue> before = await cuesFor(uid);
+        await _db.replaceCuesForBook(
+            uid, cues.map(AudioCue.toCompanion).toList());
+        await AudiobookRepository(_db).rebaseStoredPositionForCueChange(
+          positionKey: uid,
+          oldDurationsMs: audiobookFileDurationsFromCues(before),
+          newDurationsMs: audiobookFileDurationsFromCues(cues),
+        );
+      });
 
   static SrtBook _rowToModel(SrtBookRow r) {
     final book = SrtBook();
