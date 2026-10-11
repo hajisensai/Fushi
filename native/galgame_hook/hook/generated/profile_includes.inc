@@ -16,3 +16,4 @@
 #include "../adapters/yuris_profile.h"
 #include "../adapters/fvp_profile.h"
 #include "../adapters/kogado_hy_profile.h"
+#include "../adapters/luca_profile.h"

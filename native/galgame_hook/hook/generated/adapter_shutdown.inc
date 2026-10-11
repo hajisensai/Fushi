@@ -17,3 +17,4 @@
     yuris_.shutdown();
     fvp_.shutdown();
     kogado_hy_.shutdown();
+    luca_.shutdown();

@@ -369,6 +369,24 @@
           "status": "implemented_unverified",
           "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate); no measured real-build click-leak rate is recorded."
         }
+      },
+      {
+        "engine_id": "luca",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": [
+            "engine_exact_layout"
+          ],
+          "evidence": "Engine-exact text-object provider (kLookupGeometryProviderIdLuca, 25). The text object's layout routine is resolved from the loaded image (prologue shape plus a four-block row reset at stride 0x5A, unique) and cross-checked by the fields its body reads (row capacity, origin x/y, row count, row ring, row head); it is detoured only to learn live text objects. The worker reads each known object's row ring (glyph records: unit, x, width, height; row y offset) and accepts the line only when exactly one object's records spell the selected line unit by unit; positions are design space from system.cnf SCREEN_WIDTH/HEIGHT (1280x720) projected aspect-fit to physical client pixels. The click claim runs in the generic GetAsyncKeyState detour for calls from the main image only: a fresh VK_LBUTTON press on a glyph of the offered line (host native-input admission present, no card shield, game foreground, no modifiers) is claimed and masked (0x8000|0x0001) until release. Offline: x86/x64 build and fushi_luca_adapter_test (synthetic records, projection, hit test, claim state). Live layout dump 2026-10-09: the dialogue text object holds the current line's glyph records at origin (190,576). Fushi host run 2026-10-09 (local build of this branch, original Steam launch path, 1280x720 design on a 2240x1260 physical client): one session published 28 lookup hits (15 claimed clicks, 13 Shift presses), each opening the card for the word under the cursor; per the user, a click on a glyph did not advance, a click outside closed the card without advancing, a click with no card advanced, the touch checklist (tap on a glyph, tap inside then outside the card, swipe on the card) showed no problem, and a real card was written with the line's sentence and voice. The hook log cannot tell mouse from touch input or observe advancement, so the no-advance and touch results rest on the user's report; not an accept4 run; single sample."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate); no measured real-build click-leak rate is recorded."
+        }
       }
     ]
   },
@@ -3667,6 +3685,149 @@
       ],
       "test_paths": [
         "tests/kogado_hy_adapter_test.cpp"
+      ]
+    },
+    {
+      "id": "luca",
+      "display_name": "LucaSystem (Prototype)",
+      "aliases": [
+        "LucaSystem",
+        "LUCA System",
+        "Prototype"
+      ],
+      "family": {
+        "id": "luca",
+        "relation": "Prototype's LucaSystem engine (system.cnf boot configuration, *.PAK archives with an id-indexed member table, OGGPAK voice members); only one title measured"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_architectures": {
+          "values": [
+            "x86"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "LITBUS_WIN32.exe (Little Busters! English Edition, Steam) is machine 0x14c; .text is SteamStub-encrypted on disk (.bind section), so every code site is resolved from the loaded image"
+          }
+        },
+        "directory_files_all": {
+          "values": [
+            "system.cnf",
+            "files/*.PAK"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "system.cnf (TARGET_PLATFORM, SCREEN_WIDTH 1280, SCREEN_HEIGHT 720) next to the executable and files\\*.PAK (SCRIPT, VOICE0, VOICE2, MUSIC, SYSSE, ...); identity requires the cnf keys plus one PAK whose whole index parses under exactly one index layout"
+          }
+        },
+        "pe_imports": {
+          "values": [
+            "USER32.dll",
+            "GDI32.dll",
+            "DSOUND.dll",
+            "d3d11.dll",
+            "steam_api.dll"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "LITBUS_WIN32.exe import table: Direct3D 11 presents, DirectSound plays, mouse buttons are polled per frame through GetAsyncKeyState; catalogue only, the adapter never matches on imports"
+          }
+        },
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
+        "resource_extensions": {
+          "values": [
+            ".pak",
+            ".ogg"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "VOICE*.PAK members are OGGPAK (\"OGGPAK\\0\" then {rate, length, complete Ogg} copies, mono); MUSIC/SYSSE members are stereo OGGPAK and are excluded by channel count"
+          }
+        },
+        "hashes": {
+          "values": [
+            "LITBUS_WIN32.exe sha256:047748c47ab636b5a97954688c9cb3d0ee68de7960166eb427c4e00f6b3f172d"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only; the adapter does not hash-pin"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "generic_launch_available",
+        "attach": "generic_attach_available",
+        "follow_child_processes": false,
+        "notes": [
+          "The original path is the Steam launch of LITBUS_WIN32.exe; there is no separate launcher process.",
+          "SteamStub decrypts .text only after start-up: site resolution reads the loaded image and retries on a bounded schedule (500 ms, 120 s window) until the MESSAGE operand shape appears; nothing is installed before that.",
+          "Measured 2026-10-09 by attaching the x86 hook to the already running game."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luca_message_text",
+            "status": "implemented_unverified",
+            "verification": "Native exact text lane (source kind 12, hook 'LucaSystem exact', ENGINE:LUCA:message): the scenario VM's MESSAGE handler is located by its operand shape (ReadU16 voice id, then a two-iteration ReadString loop for the per-language records; unique in the image, both readers end in `ret 4`) and the two operand readers are detoured, filtered by return address. The Japanese record is the one carrying kana/CJK; the `speaker@` prefix (or a lone `@`) is split off and $K keyword markers are stripped. Native run 2026-10-09 on the attached original Steam process: dialogue lines were published on the lane, protagonist lines without voice and voiced lines with their voice id. Fushi host run 2026-10-09: the 'LucaSystem exact' lane delivered clean Japanese lines; one session exported 216 per-line voice clips from VOICE0/VOICE2 and a real card was written with the matching sentence and voice (user report)."
+          },
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "LunaHook attaches generic hooks only; not used as the selected lane."
+          },
+          {
+            "kind": "ingame_lookup_geometry",
+            "status": "implemented_unverified",
+            "verification": "Engine-exact text-object provider kLookupGeometryProviderIdLuca (25), see lookup_support geometry."
+          }
+        ],
+        "codepage": "UTF-16LE",
+        "thread_selection_hint": "Select the 'LucaSystem exact' lane."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "luca_voice_pak_member",
+            "format": "complete mono Ogg Vorbis taken from the VOICE*.PAK member the MESSAGE voice id addresses (member = voice id - the archive's first id; exactly one mono archive must claim the id), the copy whose rate matches the mixer or else the highest rate",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "generic DirectSound fallback",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "Only one title was measured (Little Busters! English Edition, Steam, x86); other LucaSystem builds whose MESSAGE handler or text object differ refuse and install nothing.",
+        "Only the MESSAGE opcode is published; choices, titles and other text opcodes are not a lane.",
+        "Voice comes from the PAK member addressed by the voice id, not from a played-buffer capture; a build that remaps voice ids at run time would publish the wrong member (not observed).",
+        "The click claim samples the engine's per-frame GetAsyncKeyState poll; touch taps promoted to sub-frame WM_LBUTTONDOWN/UP passed the user's touch checklist once, but no injected-touch (InjectTouchInput) run is recorded.",
+        "The lookup model requires exactly one live text object whose glyph records spell the selected line; ruby, multi-object pages and surrogate pairs fail closed."
+      ],
+      "adapter_path": "hook/adapters/luca_adapter.inc",
+      "fixture_paths": [
+        "tests/fixtures/luca_replay.json"
+      ],
+      "test_paths": [
+        "tests/luca_adapter_test.cpp"
       ]
     }
   ]

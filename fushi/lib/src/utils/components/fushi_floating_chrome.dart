@@ -1377,7 +1377,8 @@ class FushiFloatingChromeBar extends StatelessWidget {
         leading == null && FushiShellInlineTitle.of(context)
         ? FushiShellTitleScope.maybeTitleOf(context)
         : null;
-    final Widget? lead = shellTitle != null && shellTitle.isNotEmpty
+    final bool inlineTitle = shellTitle != null && shellTitle.isNotEmpty;
+    final Widget? lead = inlineTitle
         ? KeyedSubtree(
             key: const ValueKey<String>('floating-chrome-shell-title'),
             child: FushiPageChromeTitle(title: Text(shellTitle)),
@@ -1402,12 +1403,24 @@ class FushiFloatingChromeBar extends StatelessWidget {
           final double maxActions = constraints.maxWidth.isFinite
               ? math.max(56.0, constraints.maxWidth / 2)
               : double.infinity;
+          // 标题胶囊是 Row 里的非弹性子项，不限宽时长页面名会按自然宽把页签
+          // 胶囊挤没（甚至整行溢出）。限到行宽的 1/3，超长名在胶囊里省略号
+          // 截断；页签保有剩余宽度（2026-10-10 审查，BUG-3250）。
+          final double maxTitle = constraints.maxWidth.isFinite
+              ? constraints.maxWidth / 3
+              : double.infinity;
           return FocusTraversalGroup(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
                 if (lead != null) ...<Widget>[
-                  lead,
+                  if (inlineTitle)
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: maxTitle),
+                      child: lead,
+                    )
+                  else
+                    lead,
                   const SizedBox(width: kFushiFloatingChromeGap),
                 ],
                 Expanded(child: tabs),

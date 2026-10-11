@@ -54,6 +54,33 @@ class ANGLESurfaceManager {
 
   void MakeCurrent(bool value);
 
+  // HIBIKI FORK (HDR in the Flutter compositor): half-float output.
+  //
+  // Off (default): libmpv renders into the B8G8R8A8 shared texture through
+  // the pbuffer's default framebuffer, exactly as upstream.
+  //
+  // On: the shared textures are R16G16B16A16_FLOAT. libmpv renders *linear*
+  // light (target-trc=linear, BT.2020 primaries, 1.0 = 203 nit reference
+  // white) into |linear_framebuffer()|; |EncodeLinearToOutput| then converts
+  // it to extended-range sRGB (BT.709 primaries, negative values for wide
+  // gamut, 1.0 = SDR white) in the shared texture. That is the encoding the
+  // patched Flutter engine's HDR output expects for RGBA16F textures.
+  //
+  // Must be called on the thread that renders (the thread pool). Returns
+  // false (and stays 8-bit) when ANGLE lacks the D3D11 texture EGLImage /
+  // half-float renderability this needs.
+  bool SetHalfFloat(bool half_float);
+  bool half_float() const { return half_float_; }
+
+  // HDR mode only: framebuffer libmpv renders linear light into.
+  GLuint linear_framebuffer() const { return linear_framebuffer_; }
+
+  // HDR mode only: encodes |linear_framebuffer()| into the shared texture.
+  // |scale| maps libmpv's 203 nit reference white onto the display's SDR
+  // white (203 / sdr_white_nits) so the compositor's SDR-white scaling lands
+  // reference white back on 203 nits.
+  void EncodeLinearToOutput(float scale);
+
   // Whether ANGLE renders on the Direct3D 11 device this class created (see
   // |shared_d3d_11_device_|). When false, libmpv can only reach ANGLE's own
   // hidden device and therefore falls back from `d3d11va` to `d3d11va-copy`,
@@ -74,6 +101,13 @@ class ANGLESurfaceManager {
   bool CreateEGLDisplay();
 
   bool CreateAndBindEGLSurface();
+
+  // HIBIKI FORK (HDR): half-float variant of |CreateAndBindEGLSurface|.
+  bool CreateHalfFloatTargets();
+  void ReleaseHalfFloatTargets();
+  bool EnsureEncodeProgram();
+  // Diagnostics (FUSHI_HDR_PROBE): logs linear / encoded pixels once.
+  void ProbeHalfFloatPixels(float scale);
 
   // Creates (once per process) the Direct3D 11 device every |ANGLESurfaceManager|
   // draws into. See |ANGLESurfaceManager::shared_d3d_11_device_|.
@@ -115,6 +149,18 @@ class ANGLESurfaceManager {
   EGLContext context_ = nullptr;
   EGLConfig config_ = nullptr;
 
+  // HIBIKI FORK (HDR): see |SetHalfFloat|.
+  bool half_float_ = false;
+  EGLImageKHR output_image_ = EGL_NO_IMAGE_KHR;
+  GLuint output_texture_ = 0;
+  GLuint output_framebuffer_ = 0;
+  GLuint linear_texture_ = 0;
+  GLuint linear_framebuffer_ = 0;
+  GLuint encode_program_ = 0;
+  GLint encode_texture_location_ = -1;
+  GLint encode_scale_location_ = -1;
+  bool probe_pending_ = false;
+
   static constexpr EGLint kEGLConfigurationAttributes[] = {
       EGL_RED_SIZE,   8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE,    8,
       EGL_ALPHA_SIZE, 8, EGL_DEPTH_SIZE, 8, EGL_STENCIL_SIZE, 8,
@@ -123,6 +169,11 @@ class ANGLESurfaceManager {
   static constexpr EGLint kEGLContextAttributes[] = {
       EGL_CONTEXT_CLIENT_VERSION,
       2,
+      EGL_NONE,
+  };
+  static constexpr EGLint kEGLContextAttributesES3[] = {
+      EGL_CONTEXT_CLIENT_VERSION,
+      3,
       EGL_NONE,
   };
   static constexpr EGLint kD3D11DisplayAttributes[] = {

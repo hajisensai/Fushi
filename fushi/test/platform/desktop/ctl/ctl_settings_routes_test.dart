@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_cli/fushi_cli.dart';
@@ -8,6 +11,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_values.dart';
 import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
 
 /// 建路由表不解引用 ref（handler 都是闭包），给一个空壳即可。
 class _UnusedRef implements WidgetRef {
@@ -212,6 +216,30 @@ void main() {
     );
     expect((books['totals']! as Map<String, Object?>)['chars'], 801);
     expect((books['byKind']! as Map<String, Object?>).keys, <String>['read']);
+  });
+
+  test('快捷键列：键盘与滚轮按平台显示约定出，macOS 上是 ⌘ / ⌥ 符号写法', () {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    const InputBinding cmdF = InputBinding(
+      key: LogicalKeyboardKey.keyF,
+      modifiers: <ModifierKey>{ModifierKey.meta},
+    );
+    const WheelBinding altWheel = WheelBinding(
+      WheelDirection.down,
+      modifiers: <ModifierKey>{ModifierKey.alt},
+    );
+    final Map<String, List<String>> columns = ctlShortcutBindingColumns(
+      const ShortcutBindingSet(
+        keyboardBindings: <InputBinding>[cmdF],
+        wheelBindings: <WheelBinding>[altWheel],
+      ),
+    );
+    expect(columns['keyboard'], <String>[cmdF.displayLabel]);
+    expect(columns['keyboard']!.single, contains('⌘'));
+    expect(columns['mouse'], <String>[altWheel.displayLabel]);
+    expect(columns['mouse']!.single, contains('⌥'));
+    debugDefaultTargetPlatformOverride = null;
   });
 
   test('时长格式', () {

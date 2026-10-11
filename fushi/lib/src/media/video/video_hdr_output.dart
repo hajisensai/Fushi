@@ -231,6 +231,101 @@ const Map<String, String> kTextureMpvProperties = <String, String>{
   'vo': 'libmpv',
 };
 
+/// libmpv 的 HDR 参考白（`MP_REF_WHITE`）：线性输出里 1.0 对应的尼特数。
+const double kMpvReferenceWhiteNits = 203;
+
+/// scRGB 的 1.0 对应的尼特数（DWM 的约定）。
+const double kScRgbWhiteNits = 80;
+
+/// 合成器内 HDR（视频留在 `vo=libmpv` 纹理里、Flutter 交换链出 scRGB）的三个亮度
+/// 参数，按显示器当前状态算一次，引擎与视频纹理各取所需。
+@immutable
+class CompositorHdrTarget {
+  const CompositorHdrTarget({
+    required this.engineSdrWhiteNits,
+    required this.referenceWhiteNits,
+    required this.targetPeakNits,
+  });
+
+  /// 交给引擎：Flutter 界面的白（sRGB 1.0）落到多少尼特。
+  final double engineSdrWhiteNits;
+
+  /// 交给视频纹理：libmpv 的 203 尼特参考白落到「界面白」的哪里——等于这个值时
+  /// 参考白与界面白同亮。
+  final double referenceWhiteNits;
+
+  /// 交给 libmpv：色调映射的目标峰值（≤0 = 让 mpv 自己推断）。
+  final double targetPeakNits;
+
+  @override
+  bool operator ==(Object other) =>
+      other is CompositorHdrTarget &&
+      other.engineSdrWhiteNits == engineSdrWhiteNits &&
+      other.referenceWhiteNits == referenceWhiteNits &&
+      other.targetPeakNits == targetPeakNits;
+
+  @override
+  int get hashCode =>
+      Object.hash(engineSdrWhiteNits, referenceWhiteNits, targetPeakNits);
+
+  @override
+  String toString() =>
+      'CompositorHdrTarget(engineSdrWhite: $engineSdrWhiteNits, '
+      'referenceWhite: $referenceWhiteNits, peak: $targetPeakNits)';
+}
+
+/// 唯一的亮度换算判据。
+///
+/// - HDR 显示器：界面白 = Windows「SDR 内容亮度」；HDR 片源按绝对亮度出（参考白
+///   就是 203 尼特，比界面白亮还是暗取决于用户那个滑块）；面板峰值以上才色调映射。
+/// - SDR 显示器（「总是」模式）：scRGB 1.0 就是显示器白，DWM 会截掉更高的值，所以
+///   参考白对齐界面白、峰值压到参考白——与 mpv 自己输出到 SDR 屏时的约定一致。
+CompositorHdrTarget compositorHdrTarget(HdrDisplayInfo display) {
+  if (!display.isHdr) {
+    return const CompositorHdrTarget(
+      engineSdrWhiteNits: kScRgbWhiteNits,
+      referenceWhiteNits: kMpvReferenceWhiteNits,
+      targetPeakNits: kMpvReferenceWhiteNits,
+    );
+  }
+  final double white = display.sdrWhiteNits > 0
+      ? display.sdrWhiteNits
+      : kScRgbWhiteNits;
+  return CompositorHdrTarget(
+    engineSdrWhiteNits: white,
+    referenceWhiteNits: white,
+    targetPeakNits: display.maxLuminance,
+  );
+}
+
+/// 合成器内 HDR 某一步没成时该怎么退：失败的**层级**决定记忆的范围。
+enum CompositorHdrFallback {
+  /// 引擎没开成（原版引擎 / 导出缺失）：进程内不会变，记成「不支持」。
+  engineUnsupported,
+
+  /// 视频纹理还没建好：本轮走宿主窗，纹理就绪后重判，不记任何失败。
+  awaitTexture,
+
+  /// 这一路纹理拒绝切 HDR：只对当前 Player 退回宿主窗，换片后再试。
+  textureRefused,
+}
+
+/// 合成器内 HDR 进入失败时的分流（[engineOn]：引擎交换链切成功；[textureReady]：
+/// 视频纹理已建好；[textureOn]：纹理切成功）。都成功返回 null。
+///
+/// 早先任何一步失败都把整个进程记成「不支持」，一次偶发（纹理晚一帧建好）就让 HDR
+/// 一直走宿主窗直到重启 app。
+CompositorHdrFallback? compositorHdrFallback({
+  required bool engineOn,
+  required bool textureReady,
+  required bool textureOn,
+}) {
+  if (!engineOn) return CompositorHdrFallback.engineUnsupported;
+  if (!textureReady) return CompositorHdrFallback.awaitTexture;
+  if (!textureOn) return CompositorHdrFallback.textureRefused;
+  return null;
+}
+
 /// 宿主窗模式下画面 fit 由 mpv 自己算（宿主窗矩形 = [Video] 矩形）：
 /// contain = 保比例留黑边；cover = 保比例裁切（`panscan=1`）；fill = 拉伸。
 Map<String, String> hdrHostFitProperties(VideoFitMode fit) {
@@ -382,6 +477,41 @@ class HdrVideoHostChannel {
       // 已销毁。
     } on MissingPluginException {
       // 非 runner 宿主。
+    }
+  }
+
+  /// 引擎是否带合成器内 HDR 输出（打过 `ci/patches/flutter-engine` 补丁、导出了
+  /// `FlutterDesktopViewSetHdrOutput`）。原版引擎 / 非 Windows 恒 false。
+  Future<bool> compositorHdrSupported() async {
+    if (!_isWindows) return false;
+    try {
+      return await _channel.invokeMethod<bool>('compositorHdrSupported') ??
+          false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  /// 开 / 关 Flutter 自己交换链的 HDR 输出（FP16 scRGB）。[sdrWhiteNits] 是显示器
+  /// 的「SDR 内容亮度」，UI 的白按它显示。返回调用后 HDR 输出是否开着（关闭或
+  /// 引擎做不到时为 false）。
+  Future<bool> setCompositorHdrOutput({
+    required bool enabled,
+    required double sdrWhiteNits,
+  }) async {
+    if (!_isWindows) return false;
+    try {
+      return await _channel.invokeMethod<bool>(
+            'setCompositorHdrOutput',
+            <String, Object>{'enabled': enabled, 'sdrWhiteNits': sdrWhiteNits},
+          ) ??
+          false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
     }
   }
 

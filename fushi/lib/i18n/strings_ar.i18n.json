@@ -3103,7 +3103,6 @@
   "stat_goal_recent_average": "آخر 7 أيام: $n حرف/يوم في المتوسط",
   "stat_goal_set": "تعيين هدف",
   "stat_goal_unit_chars": "أحرف",
-  "stat_goal_weekly": "الهدف الأسبوعي",
   "stat_hourly_band_epub": "كتب نصية",
   "stat_hourly_band_manga": "مانغا",
   "stat_hourly_band_pdf": "PDF",
@@ -7028,5 +7027,7 @@
   "mihon_extension_uninstall_confirm_multi": "The extension “$name” provides $count sources. Uninstalling it removes all of them:",
   "mihon_extension_package_label": "Package: $package",
   "extension_nsfw_badge": "NSFW",
-  "mihon_extension_min_downloads_any": "بلا حد"
+  "mihon_extension_min_downloads_any": "بلا حد",
+  "feedback_reopen_shots_failed": "Could not fetch ${n} of the original screenshots; they are not attached",
+  "remote_hidden_books_hint_count": "${n} removed · Bring back remote books you removed from this device's shelf"
 }

@@ -339,6 +339,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool：「工具栏样式强制悬浮」一次性迁移已跑（2026-10-06，非 Profile 键）。
   'reader_toolbar_style_floating_migrated',
   'reading_goal_daily_chars',
+  // int：每周字数目标（2026-10-10 用户拍板删除——#2029 删了统计中心目标卡后它
+  // 只能设、不显示进度）。存量键冻结、不再读写；留在这里只为键名不被别的功能复用。
   'reading_goal_weekly_chars',
   'remote_lookup_enabled',
   'reverse_navigation_bar',

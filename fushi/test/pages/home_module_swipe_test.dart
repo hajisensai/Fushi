@@ -5,6 +5,8 @@
 // 经 [SectionPopScope] 登记）期间的、鼠标拖动、轻蹭、纵向滚动都不切。
 import 'dart:ui' show PointerDeviceKind;
 
+import 'package:flutter/rendering.dart' show SemanticsData, SemanticsNode;
+import 'package:flutter/semantics.dart' show SemanticsAction;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/pages/implementations/home_module_swipe.dart';
@@ -303,6 +305,32 @@ void main() {
       await tester.fling(content(), const Offset(-200, 0), 1000);
       await tester.pumpAndSettle();
       expect(host.current, HomeTab.books);
+    });
+
+    testWidgets('外壳横滑不给正文加无障碍横滚动作（读屏不能误切模块）', (
+      WidgetTester tester,
+    ) async {
+      final SemanticsHandle semantics = tester.ensureSemantics();
+      await pumpHost(tester);
+      final SemanticsNode root = tester.getSemantics(
+        find.byType(HomeModuleSwipeDetector),
+      );
+      bool hasHorizontalScroll(SemanticsNode node) {
+        final SemanticsData data = node.getSemanticsData();
+        if (data.hasAction(SemanticsAction.scrollLeft) ||
+            data.hasAction(SemanticsAction.scrollRight)) {
+          return true;
+        }
+        bool found = false;
+        node.visitChildren((SemanticsNode child) {
+          found = found || hasHorizontalScroll(child);
+          return !found;
+        });
+        return found;
+      }
+
+      expect(hasHorizontalScroll(root), isFalse);
+      semantics.dispose();
     });
   });
 }

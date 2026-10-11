@@ -28,7 +28,7 @@ test('Side Panel 与播放器菜单的偏移解析 / 显示逐例同义', () => 
   for (const input of ['1.5', '+90', '−12.25', '－3', '2,5', '7s', '7 秒', '', 'abc', '1.2.3', '--1', '3601', '0', '.5']) {
     assert.strictEqual(ctx.parseOffsetSeconds(input), PC.parseOffsetSeconds(input), JSON.stringify(input));
   }
-  for (const ms of [0, 1500, -42000, 123, 100, -100]) {
+  for (const ms of [0, 1500, -42000, 123, 100, -100, 4, -4, -1]) {
     assert.strictEqual(ctx.formatOffsetSeconds(ms), PC.formatOffsetSeconds(ms), String(ms));
   }
 });
