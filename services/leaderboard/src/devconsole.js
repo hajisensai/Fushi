@@ -18,7 +18,9 @@ import { esc } from './pages.js';
 import {
   STATUSES,
   attachmentResponse,
+  FEEDBACK_LIMITS,
   devList,
+  devSaveNotes,
   devUpdate,
   devView,
   feedbackById,
@@ -140,13 +142,16 @@ h2{font-size:15px;margin:20px 0 8px}
 .tabs a.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .search{display:flex;gap:6px;align-items:center;margin:0 0 12px}
 .search input[type=search]{flex:1;min-width:0;padding:6px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;background:transparent;color:inherit}
-.row{display:flex;gap:10px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--line);text-decoration:none}
+.row{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--line);text-decoration:none}
+.row .sum{flex-basis:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
 .row:last-child{border-bottom:0}
 .row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .badge{font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
 .badge.s-open,.badge.new{border-color:var(--accent);color:var(--accent)}
 .badge.s-resolved{border-color:var(--ok);color:var(--ok)}
 .badge.warn{border-color:#c98a00;color:#c98a00}
+.badge.ok{border-color:var(--ok);color:var(--ok)}
+.card.ai{border-left:3px solid var(--ok)}
 .note{border-left:3px solid #c98a00;padding:6px 10px;margin:12px 0;font-size:14px}
 pre,.body{white-space:pre-wrap;word-break:break-word;margin:0}
 table{border-collapse:collapse;width:100%;font-size:13px}
@@ -200,11 +205,20 @@ function checkOrigin(request, url) {
   if (!origin || origin !== url.origin) throw new HttpError(403, 'bad_origin');
 }
 
-async function readForm(request) {
+/**
+ * 表单体上限按字段字数算：urlencoded 下一个汉字是 9 字节（%XX×3）、emoji 等 4 字节字符是 12 字节，
+ * 按最坏的 12 算。按 32 KB 一刀切时
+ * 4000 字上限的回复框写到 ~3600 个汉字就 413。`chars` = 本表单最长文本字段的字数上限。
+ */
+function formLimit(chars) {
+  return chars * 12 + 1024;
+}
+
+async function readForm(request, maxBytes = 32 * 1024) {
   const declared = Number(request.headers.get('Content-Length') || '0');
-  if (declared > 32 * 1024) throw new HttpError(413, 'body_too_large');
+  if (declared > maxBytes) throw new HttpError(413, 'body_too_large');
   const text = await request.text();
-  if (text.length > 32 * 1024) throw new HttpError(413, 'body_too_large');
+  if (text.length > maxBytes) throw new HttpError(413, 'body_too_large');
   return new URLSearchParams(text);
 }
 
@@ -256,8 +270,10 @@ async function listPage(env, url, dev) {
 ${f.parentId ? `<span class="badge">重新提交自 #${esc(f.parentId)}</span>` : ''}
 <span class="t">${esc(f.title)}</span>
 ${f.awaitingDev ? '<span class="badge new">新消息</span>' : ''}
+${f.hasDevNote ? '<span class="badge ok">已批改</span>' : ''}
 ${flagBadges(f.flags)}
 <span class="muted">${esc(fmtTime(f.updatedAt))}</span>
+${f.aiSummary ? `<span class="sum muted">AI：${esc(f.aiSummary)}</span>` : ''}
 </a>`).join('');
   const more = res.next
     ? `<p><a href="/dev?status=${esc(status)}${qs}&amp;cursor=${encodeURIComponent(res.next)}">下一页</a></p>`
@@ -310,6 +326,17 @@ ${f.parentId ? `<p>重新提交自 <a href="/dev/f/${esc(f.parentId)}">#${esc(f.
 ${f.reopenedAs && f.reopenedAs.length ? `<p>已被重新提交为 ${f.reopenedAs.map((x) => `<a href="/dev/f/${esc(x)}">#${esc(x)}</a>`).join('、')}</p>` : ''}
 ${f.flags && f.flags.length ? `<p>${flagBadges(f.flags)}</p>` : ''}
 <p class="note">${esc(UNTRUSTED_NOTE)}</p>
+<h2>AI 总结 <span class="muted">（仅开发者可见；据未核实的反馈内容生成）</span></h2>
+<div class="card ai">${f.aiSummary
+    ? `<div class="body">${esc(f.aiSummary)}</div><p class="muted">生成于 ${esc(fmtTime(f.aiSummaryAt))}</p>`
+    : '<p class="muted">还没有 AI 总结。</p>'}</div>
+<h2>开发者批改 <span class="muted">（仅开发者可见，反馈人看不到）</span></h2>
+<form method="post" action="/dev/f/${esc(f.id)}/note" class="card">
+<textarea id="devNote" name="devNote" maxlength="${FEEDBACK_LIMITS.devNoteMax}" aria-label="开发者批改">${esc(f.devNote || '')}</textarea>
+${f.devNoteAt ? `<p class="muted">上次保存 ${esc(fmtTime(f.devNoteAt))}</p>` : ''}
+<button>保存批改</button>
+</form>
+<h2>反馈原文</h2>
 <div class="card"><div class="body">${esc(f.body)}</div></div>
 ${shots ? `<h2>截图</h2><div class="shots">${shots}</div>` : ''}
 <h2>日志</h2>${logLinks}
@@ -382,13 +409,20 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
     return attachmentResponse(env, await feedbackById(env, m[1]), m[2], url.searchParams.get('view') === 'text');
   }
   if (method === 'POST' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})$/.exec(path))) {
-    const form = await readForm(request);
+    const form = await readForm(request, formLimit(FEEDBACK_LIMITS.replyMax));
     const row = await feedbackById(env, m[1]);
     const status = form.get('status');
     const reply = form.get('reply') || '';
     // 表单总会带上当前状态：状态没变也没写回复时什么都不做，直接回详情。
     if (status === row.status && !reply.trim()) return redirect(`/dev/f/${row.id}`);
     await devUpdate(env, dev, row, { status, reply }, now);
+    return redirect(`/dev/f/${row.id}`);
+  }
+  if (method === 'POST' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})\/note$/.exec(path))) {
+    const form = await readForm(request, formLimit(FEEDBACK_LIMITS.devNoteMax));
+    const row = await feedbackById(env, m[1]);
+    // 只收批改；AI 总结由 scripts/feedback.mjs 回写，网页不给改。
+    await devSaveNotes(env, row, { devNote: form.get('devNote') || '' }, now);
     return redirect(`/dev/f/${row.id}`);
   }
   throw new HttpError(404, 'not_found');
