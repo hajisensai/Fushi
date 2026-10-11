@@ -832,12 +832,27 @@ class FushiExpansionTile extends StatelessWidget {
     const ShapeBorder md3Shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.all(Radius.circular(kFushiMd3RowRadius)),
     );
-    return ExpansionTile(
-      leading: leading,
-      title: title,
-      subtitle: subtitle,
+    // Expansible 把展开态存进 PageStorage，存储标识 = 从它往上到最近 PageStorage
+    // 为止沿途所有 PageStorageKey。调用方没给自己的 PageStorageKey 时，这个标识
+    // 和带 PageStorageKey 的祖先滚动视图完全相同（滚动写 double、展开读 bool?，
+    // 互相类型转换异常，release 下整片灰色 ErrorWidget，BUG-3271）；而在它上方
+    // 补任何 PageStorageKey 都会同时成为展开区内所有后代的前缀，只是把撞槽挪到
+    // 展开区里的 TextField / 下拉框滚动视图身上，还让同级展开区互相串展开态。
+    // Flutter 的约定是「要记忆展开态就由调用方给唯一 PageStorageKey」，所以没给
+    // 时让 Expansible 落在一个只属于它的 PageStorage 边界下（标识为空，读写都是
+    // no-op，不记忆、不撞槽），表头与子项再接回原 bucket，后代照旧持久化。
+    final PageStorageBucket? outerBucket = key is PageStorageKey
+        ? null
+        : PageStorage.maybeOf(context);
+    Widget? storage(Widget? child) => child == null || outerBucket == null
+        ? child
+        : PageStorage(bucket: outerBucket, child: child);
+    final Widget tile = ExpansionTile(
+      leading: storage(leading),
+      title: storage(title)!,
+      subtitle: storage(subtitle),
       onExpansionChanged: onExpansionChanged,
-      trailing: trailing,
+      trailing: storage(trailing),
       showTrailingIcon: showTrailingIcon,
       initiallyExpanded: initiallyExpanded,
       maintainState: maintainState,
@@ -871,9 +886,26 @@ class FushiExpansionTile extends StatelessWidget {
       expansionAnimationStyle: expansionAnimationStyle,
       internalAddSemanticForOnTap: internalAddSemanticForOnTap,
       statesController: statesController,
-      children: children,
+      children: outerBucket == null
+          ? children
+          : <Widget>[
+              for (final Widget child in children)
+                PageStorage(
+                  // 子项自带的键原样参与同级比对（与 KeyedSubtree.wrap 同口径）。
+                  key: child.key == null ? null : ValueKey<Key>(child.key!),
+                  bucket: outerBucket,
+                  child: child,
+                ),
+            ],
     );
+    if (outerBucket == null) return tile;
+    return PageStorage(bucket: _expansionOnlyBucket, child: tile);
   }
+
+  /// Expansible 专用的 PageStorage 边界。它的标识在这里恒为空（边界与它之间
+  /// 没有 PageStorageKey），PageStorageBucket 对空标识不读不写，所以这个 bucket
+  /// 永远不存任何东西；表头与子项已经接回外层 bucket，不会落到这里。
+  static final PageStorageBucket _expansionOnlyBucket = PageStorageBucket();
 }
 
 class _GlassExpansionTile extends StatefulWidget {
@@ -1542,7 +1574,9 @@ BorderRadius fushiGroupedItemRadius(
   int count,
 ) {
   if (!isGlassDesign(context)) return settingsSegmentRadius(index, count);
-  final Radius outer = Radius.circular(FushiAppleMetrics.of(context).groupRadius);
+  final Radius outer = Radius.circular(
+    FushiAppleMetrics.of(context).groupRadius,
+  );
   return BorderRadius.vertical(
     top: index <= 0 ? outer : Radius.zero,
     bottom: index >= count - 1 ? outer : Radius.zero,
