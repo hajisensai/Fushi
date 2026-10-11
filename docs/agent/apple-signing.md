@@ -226,8 +226,16 @@ xcodebuild -project Runner.xcodeproj -target Runner -configuration Release \
 
 ### 没有 Developer ID 时：ad-hoc 包必须钉指定要求（BUG-2772）
 
-现状（2026-10-09 核对 `gh secret list`）：仓库**还没有** `MACOS_DEVELOPER_ID_P12_BASE64` /
-`MACOS_DEVELOPER_ID_P12_PASSWORD`，所以 macOS 包**所有通道**（debug / beta / formal）都走 ad-hoc
+现状更新（2026-10-10）：两个 secret 已于 2026-10-09 16:15 UTC 写入，macOS 各通道改走
+Developer ID 路径；但首批写入的口令与 p12 不一致（口令文件结尾带裸 `\r`，p12 用带 `\r`
+的口令加密，`gh secret set` 写入时去掉了 `\r`），「Import Developer ID certificate」报
+`SecKeychainItemImport: The user name or passphrase you entered is not correct`，macOS 资产
+整包缺席、调试版清单只剩 Android/Windows/iOS。`tool/apple_signing_secrets.sh` 现在按 gh
+同口径去掉口令结尾的 `\r\n` 再校验，这类不一致会在本地校验阶段直接报「口令错误」。
+**口令文件只写一行、不要带 `\r`；p12 用同一份去掉 `\r` 的口令重新导出。**
+
+以下为写入 secret 之前的历史说明：仓库没有 `MACOS_DEVELOPER_ID_P12_BASE64` /
+`MACOS_DEVELOPER_ID_P12_PASSWORD` 时，macOS 包**所有通道**（debug / beta / formal）都走 ad-hoc
 路径——签名判据不看通道，补齐这两个 secret（证书只能账号持有人在网页端建）后各通道自动改走
 Developer ID + 公证，workflow 不用再改。在那之前，手动下载用的 `-macos-arm64.dmg` 里随包放
 `打开说明 How to open.txt`（Gatekeeper「仍要打开」/ `xattr -dr com.apple.quarantine`）。
