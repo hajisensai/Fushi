@@ -250,7 +250,7 @@ void main() {
     );
     expect(
       content.contains(
-            r"find "
+            r'find '
             r'"$MIHON_PREFIX"'
             r" -type f -name '*.jar' -print0",
           ) &&
