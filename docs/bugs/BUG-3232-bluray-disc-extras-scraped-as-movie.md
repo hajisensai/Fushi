@@ -4,3 +4,8 @@
 - **[x] ① 已修复**（97068422c4）— 新增 `blurayDiscExtras` / `blurayExtraPlaylistIds`（`packages/fushi_engine/lib/media/video/bluray/bluray_disc_extras.dart`）：盘上时长短于正片 50%（`kBlurayExtraRelativeDuration`；剧集盘各条目同一量级，不受影响）的标题是这张盘的特典。计划器跳过它们；索引器把它们按「含同盘正片 .mpls 的作品」绑成本地附件（kind `extra`），并沿用既有逻辑清掉旧版误建的 book-owned 「电影」作品；库页对特典不再画「重新刮削」断头入口。**没有**改合集作品单元的分组判据（那条路会删旧作品行、把电影按 tv 搜，见计划器既有测试与设计说明）。
 - **[x] ② 已加自动化测试**（97068422c4）— `fushi/test/media/source_library/source_library_scanner_bluray_test.dart` 组「电影盘的特典不单独成作品，挂到正片下」：真盘目录 + 真扫描 + 真计划器 + 真索引器——计划只剩正片；特辑与菜单特典都绑到正片作品下、旧误建作品被清；剧集盘三集都照常进计划。
 - **备注**：被清掉的那份错误作品上若有用户字段锁会随之消失（它锚的是错误身份，同 NCOP 的既有处理）。真机未复测。
+- **审查修复（PR #2058）**：
+  - 判据：首版「比最长标题短 50% 以上即特典」会把剧集盘正片判成特典（50 分钟特别篇 + 24 分钟各集 → 各集全不刮），漏网的「全部播放」当锚时同样。改为以**正片集合**为基准（`classifyBlurayDiscExtras`，`packages/fushi_engine/lib/media/video/bluray/bluray_disc_extras.dart`）：去掉 play-all 形状的标题；候选组 = 盘上任一播放列表串起来的 ≥2 条标题（门槛 `kBlurayPlayAllGroupWeight` 0.5）或时长相近（±20%）的 ≥2 条标题（门槛 `kBlurayEpisodeGroupWeight` 0.75），组总时长须达最长正片级标题的门槛，取总时长最大的组；没有就退回最长那条（电影盘）。正片集合之外、短于集合最短一条一半的标题才是特典；没被选成标题的播放列表进了库一律是附属内容。
+  - 回退：正片一条都不在库时，在库特典里最长的那条顶上当父项、照常进计划被刮削，同盘其余特典挂到它下面（`blurayDiscExtras`）；计划器与索引器用同一批来源行求同一个映射，结论一致。
+  - 性能：盘 → 特典划分做成进程内缓存，按 `PLAYLIST/*.mpls` 的大小 / 修改时间与 `STREAM/` 目录修改时间失效（同一来源在一次启动里要被规划多遍，不再每遍重读整盘 MPLS）。
+  - 测试：`fushi/test/media/video/bluray_disc_extras_test.dart`（电影盘两条相近特辑仍是特典；剧集盘 4 集 + 长特别篇、2 集 + 特别篇、play-all 声明的剧集组、漏网 play-all 当最长标题——各集都不是特典）；`source_library_scanner_bluray_test.dart`「剧集盘带一条长特别篇」「正片不在库：最长的特典顶上进计划」。

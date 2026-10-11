@@ -13,6 +13,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/media/video/video_library_delete.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
@@ -21,6 +22,7 @@ import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:path/path.dart' as p;
 
 import '../video/bluray_fixture.dart';
@@ -388,6 +390,81 @@ void main() {
     );
   });
 
+  // PR #2058 审查：特典入库原先排在合集墓碑守卫之前——删掉整盘合集后重扫，特典
+  // 照样复活；单独删掉的特典没有任何墓碑，重扫也会回来。
+  group('删除过的盘 / 特典重扫不复活', () {
+    late FushiDatabase db;
+    late SourceLibraryRow source;
+    late String disc;
+
+    String mpls(String id) => p.join(disc, 'BDMV', 'PLAYLIST', '$id.mpls');
+
+    setUp(() async {
+      db = _memDb();
+      disc = p.join(tmp.path, 'Kaguya', 'Disc 1');
+      _writePlaylist(disc, '00001', <(String, int)>[('00001', 8430)]);
+      _writePlaylist(disc, '00002', <(String, int)>[
+        ('00002', 90),
+        ('00003', 90),
+        ('00006', 100),
+      ]);
+      _writePlaylist(disc, '00004', <(String, int)>[('00004', 200)]);
+      source = await _videoSource(db, tmp.path);
+      final SourceScanSummary scan = await SourceLibraryScanner(
+        db,
+      ).scan(source);
+      expect(scan.succeeded, isTrue, reason: scan.error ?? '');
+      final VideoBookRepository repo = VideoBookRepository(db);
+      expect(await repo.findByVideoPath(mpls('00002')), isNotNull);
+      expect(await repo.findByVideoPath(mpls('00004')), isNotNull);
+    });
+    tearDown(() => db.close());
+
+    test('删掉整盘合集（连同条目）后重扫：标题与特典都不复活', () async {
+      final VideoBookRepository repo = VideoBookRepository(db);
+      final MediaCollectionRow collection =
+          (await repo.getAllMediaCollections()).singleWhere(
+            (MediaCollectionRow c) => c.name == 'Disc 1',
+          );
+      await db.deleteMediaCollection(collection.id);
+      await repo.deleteVideoBooks(<String>[
+        for (final VideoBookRow row in await repo.listAll()) row.bookUid,
+      ]);
+
+      final SourceScanSummary rescan = await SourceLibraryScanner(
+        db,
+      ).scan(source);
+      expect(rescan.succeeded, isTrue, reason: rescan.error ?? '');
+      expect(await repo.listAll(), isEmpty);
+    });
+
+    test('单独删掉一条特典后重扫：它不回来，其余照旧', () async {
+      final VideoBookRepository repo = VideoBookRepository(db);
+      final VideoBookRow extra = (await repo.findByVideoPath(mpls('00002')))!;
+      final VideoLibraryDeleteResult result =
+          await deleteVideoBooksWithDecision(
+            repo: repo,
+            database: db,
+            pipeline: null,
+            bookUids: <String>[extra.bookUid],
+            decision: const DeleteDecision(scope: DeleteScope.keepLocalOnly),
+            compactDatabase: false,
+          );
+      expect(result.deleted, 1);
+
+      final SourceScanSummary rescan = await SourceLibraryScanner(
+        db,
+      ).scan(source);
+      expect(rescan.succeeded, isTrue, reason: rescan.error ?? '');
+      expect(await repo.findByVideoPath(mpls('00002')), isNull);
+      expect(await repo.findByVideoPath(mpls('00004')), isNotNull);
+      expect(await repo.findByVideoPath(mpls('00001')), isNotNull);
+      expect((await membersByCollection(db))['Disc 1'], <String>{
+        p.normalize(mpls('00001')),
+      });
+    });
+  });
+
   // 用户截图「好像到外面了」：旧版本从菜单进特典时建的孤儿行（无来源、名字「Disc 1 ·
   // 00002」）单独躺在库首层。启动回填的索引要认领它们，开一次 app 就自愈。
   test('启动索引认领旧版本留下的蓝光孤儿行：补来源、改回盘名、挂到正片下', () async {
@@ -513,6 +590,74 @@ void main() {
         final VideoMetadataExtraRow? bound = await db
             .getVideoMetadataExtraByBook(extra.bookUid);
         expect(bound?.workId, mainWork.id, reason: '$id 应挂在正片作品下');
+      }
+    });
+
+    // PR #2058 审查：正片不在库（用户删了正片行）时，特典既不进计划、也挂不上任何
+    // 作品。现在最长的那条特典顶上当父项照常刮削，其余特典挂到它下面。
+    test('正片不在库：最长的特典顶上进计划，其余特典挂到它下面', () async {
+      final VideoBookRepository repo = VideoBookRepository(db);
+      final VideoBookRow main = (await repo.findByVideoPath(
+        mpls(disc, '00001'),
+      ))!;
+      await repo.deleteVideoBooks(<String>[main.bookUid]);
+
+      final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+        db,
+      ).plan(source);
+      expect(
+        <String>[
+          for (final VideoSourceScrapeWork work in works)
+            for (final VideoBookRow member in work.members)
+              p.normalize(member.videoPath),
+        ],
+        <String>[p.normalize(mpls(disc, '00002'))],
+      );
+
+      await VideoSourceMetadataIndexer(db).index(source);
+      final VideoBookRow featurette = (await repo.findByVideoPath(
+        mpls(disc, '00002'),
+      ))!;
+      final VideoBookRow menuExtra = (await repo.findByVideoPath(
+        mpls(disc, '00003'),
+      ))!;
+      final VideoMetadataWorkRow work = (await db.getVideoMetadataWorkByBook(
+        featurette.bookUid,
+      ))!;
+      expect(
+        (await db.getVideoMetadataExtraByBook(menuExtra.bookUid))?.workId,
+        work.id,
+      );
+    });
+
+    // PR #2058 审查：「比最长标题短一半即特典」会把剧集盘正片判成特典——一条
+    // 50 分钟特别篇让 25 分钟的各集全部低于一半，不刮削。
+    test('剧集盘带一条长特别篇：各集与特别篇都照常进计划', () async {
+      final String series = p.join(tmp.path, 'Series', 'VOL2');
+      _writeDisc(
+        series,
+        <String>['00031', '00032', '00033', '00034', '00035'],
+        secondsOf: const <String, int>{'00035': 3000},
+      );
+      final SourceScanSummary scan = await SourceLibraryScanner(
+        db,
+      ).scan(source);
+      expect(scan.succeeded, isTrue, reason: scan.error ?? '');
+      final Set<String> planned = <String>{
+        for (final VideoSourceScrapeWork work in await VideoSourceWorkPlanner(
+          db,
+        ).plan(source))
+          for (final VideoBookRow member in work.members)
+            p.normalize(member.videoPath),
+      };
+      for (final String id in <String>[
+        '00001',
+        '00002',
+        '00003',
+        '00004',
+        '00005',
+      ]) {
+        expect(planned, contains(p.normalize(mpls(series, id))), reason: id);
       }
     });
 

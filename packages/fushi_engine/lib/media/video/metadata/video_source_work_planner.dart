@@ -81,8 +81,9 @@ class VideoSourceWorkPlanner {
         .where((VideoBookRow row) => row.sourceId == source.id)
         .toList();
     if (sourceBooks.isEmpty) return const <VideoSourceScrapeWork>[];
-    // 蓝光盘上远短于正片的标题是这张盘的特典：盘名就是片名，各自拿去识别只会把
-    // 制作特辑认成整部电影（[blurayDiscExtras]）。
+    // 蓝光盘的特典（正片集合之外、远短于正片的标题，以及没被选成标题的播放
+    // 列表）：盘名就是片名，各自拿去识别只会把制作特辑认成整部电影。正片不在库时
+    // 最长的那条特典顶上、照常进计划（[blurayDiscExtras]）。
     final Map<String, String> discExtras = await blurayDiscExtras(
       sourceBooks.map((VideoBookRow row) => row.videoPath),
     );

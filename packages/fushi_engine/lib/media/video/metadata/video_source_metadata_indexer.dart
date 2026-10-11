@@ -6,7 +6,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/media/video/bluray/bluray_disc_extras.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
-    show isBlurayPlaylistPath;
+    show blurayDiscRootForPlaylistPath, isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
@@ -138,8 +138,10 @@ class VideoSourceMetadataIndexer {
       if (match != null) {
         candidates = _candidatesByDirectory(indexed.values, book.videoPath);
       } else if (discMain != null) {
-        // 蓝光特典挂在同盘正片的作品下：同一个 PLAYLIST 目录里可能并排着几条
-        // 正片级标题，按目录就近会二义，按「含正片那条 .mpls 的作品」才唯一。
+        // 蓝光特典挂在同盘父标题的作品下：同一个 PLAYLIST 目录里可能并排着几条
+        // 正片级标题，按目录就近会二义，按「含父标题那条 .mpls 的作品」才唯一。
+        // 正片不在库时父标题是顶上来的最长特典，它自己进了计划、有作品
+        // （[blurayDiscExtras]）。
         final String main = normalizeVideoPath(discMain);
         candidates = <_IndexedWorkRoot>[
           for (final _IndexedWorkRoot value in indexed.values)
@@ -203,18 +205,31 @@ class VideoSourceMetadataIndexer {
   /// 自愈；没有孤儿时零写入。
   Future<bool> _adoptOrphanBlurayTitles(SourceLibraryRow source) async {
     final String root = p.normalize(p.absolute(source.rootPath));
-    bool changed = false;
+    // 按盘归组：一张盘读一次、一个事务认领完（[ensureBlurayDiscTitlesInLibrary]）。
+    final Map<String, List<String>> orphansByDisc = <String, List<String>>{};
+    final Map<String, String> discRootOf = <String, String>{};
     for (final VideoBookRow row in await database.allVideoBooks()) {
       if (row.sourceId != null || !isBlurayPlaylistPath(row.videoPath)) {
         continue;
       }
       if (!p.isWithin(root, p.normalize(p.absolute(row.videoPath)))) continue;
-      final VideoBookRow? adopted = await ensureBlurayTitleInLibrary(
+      final String? discRoot = blurayDiscRootForPlaylistPath(row.videoPath);
+      if (discRoot == null) continue;
+      final String key = normalizeVideoPath(discRoot);
+      discRootOf.putIfAbsent(key, () => discRoot);
+      orphansByDisc.putIfAbsent(key, () => <String>[]).add(row.videoPath);
+    }
+    bool changed = false;
+    for (final MapEntry<String, List<String>> entry in orphansByDisc.entries) {
+      final List<VideoBookRow> adopted = await ensureBlurayDiscTitlesInLibrary(
         database,
-        row.videoPath,
+        discRoot: discRootOf[entry.key]!,
+        playlistPaths: entry.value,
         sourceId: source.id,
       );
-      if (adopted?.sourceId != null) changed = true;
+      if (adopted.any((VideoBookRow row) => row.sourceId != null)) {
+        changed = true;
+      }
     }
     return changed;
   }
