@@ -308,6 +308,104 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('head'), findsOneWidget);
     });
+
+    // 不能靠在展开区上方补 PageStorageKey 隔离：那个键也是展开区内所有后代的
+    // 前缀，展开写入的 bool 会被子项里 TextField 的内部滚动视图当 double? 读
+    // （PR #2069 首版让 Lapis 编辑器 / galgame 校准等整批测试红）；同级展开区
+    // 也会共用同一个展开态槽、互相串。
+    Widget keyedListHost(List<Widget> children, {int generation = 0}) {
+      return MaterialApp(
+        theme: buildFushiThemeData(
+          scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+          textTheme: Typography.material2021().black,
+          glass: FushiGlassMaterial.off,
+          glassDesign: false,
+        ),
+        home: Scaffold(
+          body: KeyedSubtree(
+            key: ValueKey<int>(generation),
+            child: ListView(
+              key: const PageStorageKey<String>('settings-page'),
+              children: children,
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('MD3 tile expansion does not poison scrollables in its body', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        keyedListHost(const <Widget>[
+          FushiExpansionTile(
+            title: Text('head'),
+            children: <Widget>[TextField()],
+          ),
+        ]),
+      );
+      await tester.tap(find.text('head'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byType(TextField), findsOneWidget);
+    });
+
+    testWidgets('MD3 sibling tiles do not share expansion state', (
+      WidgetTester tester,
+    ) async {
+      List<Widget> tiles() => const <Widget>[
+        FushiExpansionTile(title: Text('a'), children: <Widget>[Text('a1')]),
+        FushiExpansionTile(title: Text('b'), children: <Widget>[Text('b1')]),
+      ];
+      await tester.pumpWidget(keyedListHost(tiles()));
+      await tester.tap(find.text('a'));
+      await tester.pumpAndSettle();
+      expect(find.text('a1'), findsOneWidget);
+
+      await tester.pumpWidget(keyedListHost(tiles(), generation: 1));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('b1'), findsNothing);
+    });
+
+    testWidgets('MD3 tile body keeps keyed descendant scroll offsets', (
+      WidgetTester tester,
+    ) async {
+      Widget host(int generation) => keyedListHost(<Widget>[
+        FushiExpansionTile(
+          title: const Text('head'),
+          initiallyExpanded: true,
+          children: <Widget>[
+            SizedBox(
+              height: 200,
+              child: ListView(
+                key: const PageStorageKey<String>('inner'),
+                children: <Widget>[
+                  for (int i = 0; i < 20; i++)
+                    SizedBox(height: 50, child: Text('inner $i')),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ], generation: generation);
+      await tester.pumpWidget(host(0));
+      await tester.drag(find.text('inner 0'), const Offset(0, -120));
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(host(1));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      final ScrollableState inner = tester.state<ScrollableState>(
+        find
+            .descendant(
+              of: find.byKey(const PageStorageKey<String>('inner')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      expect(inner.position.pixels, greaterThan(0));
+    });
   });
 
   group('Divider / Card / Badge', () {
