@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2949 条。点号进各自文件。
+> 共 2950 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -67,6 +67,7 @@
 | [BUG-3240](bugs/BUG-3240-feedback-draft-restore-drops-autoshot.md) | ✅ | ✅ | 反馈提交页恢复草稿时丢掉本次打开自动截的图 |
 | [BUG-3239](bugs/BUG-3239-feedback-detail-shot-no-retry.md) | ✅ | ✅ | 反馈详情页截图下载失败后本次打开期间不再重试 |
 | [BUG-3238](bugs/BUG-3238-settings-slider-rejected-value.md) | ✅ | ✅ | 设置滑条松手后被拒绝的拖动值一直挂在滑块上 |
+| [BUG-3234](bugs/BUG-3234-android-dict-import-oom-native-kill.md) | ✅ | ✅ | Android 导入英语大词典时原生进程被杀（low_ram 写死 false + MDX-in-zip 整条目解压进堆） |
 | [BUG-3228](bugs/BUG-3228-leaderboard-summary-stuck-loading.md) | ✅ | ✅ | 排行榜总字数卡加载失败后永远停在加载条 |
 | [BUG-3225](bugs/BUG-3225-android-global-lookup-black-panel.md) | ✅ | ✅ | Android app 外查词窗词条区整块黑底、浅色主题文字看不见 |
 | [BUG-3224](bugs/BUG-3224-anki-card-css-size.md) | ✅ | ✅ | 制卡把整份词典 CSS 内联进每个释义字段，AnkiDroid 预览 TransactionTooLargeException 打不开 |

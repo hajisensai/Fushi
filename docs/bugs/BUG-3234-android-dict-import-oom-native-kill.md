@@ -1,0 +1,17 @@
+## BUG-3234 · Android 导入英语大词典时原生进程被杀（low_ram 写死 false + MDX-in-zip 整条目解压进堆）
+- **报告**：2026-10-05（报错日志上报 `20261005-004625-android-asarll`，Android 2.9.1-debug.17121，设备 P00610）。一上午 5 本英语词典逐本导入，每次 3–4 秒后进程消失，下次启动由 `DictImport.crashRecovered` 补记：COBUILD10.zip、Oxford Phrasal Verbs 2nd.zip、牛津英语习语词典.zip **没有任何 native 步骤**；オックスフォード英語類語辞典[2025-08-10].zip 两次都停在 `yomitan: media #1 / graphics/scale.png`。
+- **真实性**：✅ 真 bug，原生导入的内存峰值与词典体积成正比，Android 的 lmkd 在 Dart 能看到任何东西之前就把进程杀掉。样本是商业词典的非官方转换包，拿不到原件，按日志形态沿代码路径定位，用合成样本复现。共三处，同一个病：
+  1. **`low_ram` 在所有平台写死 false**：`native/fushidicts/fushidicts_ffi.cpp:341` 调 `dictionary_importer::import(..., false, ...)`。importer 早就有有界的 low_ram 形态（2 个 bank 工作线程、zstd 训练单线程），但生产从未打开过，于是手机上 yomitan 导入同时开 `hardware_concurrency()+4` 个线程（8 核即 12 个），每个都持有一整个解压、解析、压缩中的 bank，`train_zstd_dict` 也按核数开线程。类語辞典的 breadcrumb 正是 media 线程写完最后一个媒体之后，主线程还在训练 / 处理 bank 的阶段。
+  2. **zip 里的 MDict 整条目解压进堆**：`importer.cpp` `import_mdx_from_zip` 的 `extract` 用 `zip.read()` 把整个 `.mdx` / `.mdd` 读成 `std::string`（`resize` 会先把每一页填零、全部计入 RSS），然后才写到临时目录。这条路径**一个 breadcrumb 都没有**，所以那 3 本只留下「未返回」，没有「最后步骤」——它们是 zip 包着的 MDict，不是 yomitan。
+  3. **`.mdd` 在内存里放两份**：`importer.cpp` `import_mdd_into` 先 `ifstream` 把整个 `.mdd` 读进 `vector`，再由 `mdx_reader::parse_mdd` 把**全部**记录解码进第二个 `vector<MddEntry>`，峰值约等于 2 倍 mdd 大小。直接导入 `.mdx` + `.mdd`（不经 zip）也会撞上。
+- **[x] ① 已修复** — 47f3bc868d：
+  1. `fushidicts/platform.hpp` 新增平台常量 `kFushiImportLowRam`（Android / iOS 为 true，桌面与无头服务端保持 false 不变），FFI 导入线程改为传它。判据放在平台边界：移动 OS 按 app 自身占用杀前台进程，远早于物理内存耗尽。
+  2. `Zip::extract_to(index, path)`：stored 条目直接从输入映射写出，deflate 条目解压进 `memory::map_rw` 映射的输出文件（文件页可回写，不算匿名内存）；越界、截断、超限、方法不支持、解压失败返回 false 且不留文件；磁盘满照旧抛 `map_error`。`import_mdx_from_zip` 改用它，主 `.mdx` 抽不出来时明确报错。
+  3. `mdx_reader::parse_mdd_streaming`（逐条回调，和 MDX 正文的 `parse_streaming` 同形，`parse_mdd` 退化为它的包装）；`import_mdd_into` 改为映射 `.mdd`，边解边写入 `media.bin`。某个 part 中途解析失败时，已写入的记录保留，其余跳过（原来是整个 part 丢弃）；写盘失败照旧向上抛，交给调用方清理半成品。
+  4. 可观测性：MDX-in-zip 路径补上 breadcrumb（`mdx-zip: extracting <member>` / `mdx-zip: importing <mdx>`）；清理统一挪到公共入口 `dictionary_importer::import`，成功和失败都清，不再只有 yomitan 分支自己清。
+- **[x] ② 已加自动化测试** — 0ea022a0d6 `native/fushidicts/tests/import_memory_bound_test.cpp`（ctest，CI `native-fushidicts-gate` 的 MSVC 与 gcc 两个 job 都跑）：A) `extract_to` 对 deflate / stored / 空条目逐字节一致，损坏条目返回 false 且不留文件；B) 同一 yomitan 包用 low_ram=true 与 false 导入，词条数、媒体数、每个词条的 glossary 完全一致（low_ram 以前从没在生产跑过）；C) 子进程导入「小 mdx + 160 MiB mdd」的 zip（stored / deflate 两种成员编码各一遍，21aa8e2ab4），Windows 上断言子进程私有提交峰值 < 96 MiB，并逐字节核对抽查的媒体记录。**变异实测**：只把 `importer.cpp` 换回修复前版本，C 测得 **324.9 MiB** 并变红；把 `extract_to` 的 deflate 分支改回「先 `read()` 进堆」，C/deflate 测得 **161.4 MiB** 并变红（A 同时抓到损坏条目留文件）；修复后两种都是 **4.9 MiB**。整套 38 个 ctest 全绿；NDK 28 clang arm64 编出 `libfushidicts_ffi.so` / `libfushidicts_jni.so` 无错。
+- **备注**：
+  - 没有拿到真实样本、没有在 Android 真机复测（本机未连设备）。复现与验证用的是 Windows 上的合成样本与内存计数；yomitan 那条（类語辞典）的修复依据是「low_ram 从未生效」这一代码事实，而不是现场 tombstone。用户更新到带此修复的版本后若仍崩溃，breadcrumb 现在能区分 MDX 抽取 / MDX 导入 / yomitan 各阶段。
+  - 审查（子代理）无 blocker/major；采纳两条 minor（21aa8e2ab4）：`import_mdd_into` 里写入期间抛出的异常一律上抛（不再被当作「解析失败」吞掉，保留原来「丢弃整个媒体库 + errors 记 media skipped」的语义）；内存测试补 deflate 成员。
+  - 已知但未在本条修改：① MDX 路径从不回填 `ImportResult::media_count`（`import_mdx` 丢弃了 `import_mdd_into` 的返回值），属统计缺口，与崩溃无关；② 单条目 1 GiB 上限（`zip.hpp` `kMaxUncompressedEntryBytes`）原为防巨型堆分配，`extract_to` 落盘后理由已不成立，>1 GiB 的 `.mdd` 分卷仍被跳过（既有行为）；③ 非 zip 路径的 `.mdd` 由 ifstream 改为映射读取，读取中源文件被截断 / 存储被拔会 SIGBUS——与 `.mdx` 本体自 iOS jetsam 修复起就采用的映射读取同一风险等级。
+  - 同一份日志里的 `rank.fushi.moe` DNS 解析失败按用户指示不处理。
