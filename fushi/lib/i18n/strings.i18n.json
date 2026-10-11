@@ -7041,7 +7041,7 @@
   "audiobook_tts_empty_book": "This book has no text to read aloud",
   "audiobook_tts_start_failed": "Could not start reading aloud",
   "audiobook_tts_preparing": "Preparing to read aloud…",
-  "audiobook_tts_retry_hint": "Press play to try again",
+  "audiobook_tts_retry_hint": "Press play to try again, or skip to the next sentence",
   "audiobook_tts_failure_not_configured": "The voice is not fully configured",
   "audiobook_tts_failure_network": "Could not reach the speech service",
   "audiobook_tts_failure_timeout": "The speech service took too long to respond",
@@ -7094,5 +7094,6 @@
   "audiobook_tts_param_bearer_hint": "Only needed when the server sits behind an authenticating gateway",
   "audiobook_tts_param_voice": "Voice",
   "audiobook_tts_param_invalid": "This value is not valid",
-  "audiobook_tts_param_ref_audio_length": "The reference audio is ${seconds} s; GPT-SoVITS only accepts 3-10 s"
+  "audiobook_tts_param_ref_audio_length": "The reference audio is ${seconds} s; GPT-SoVITS only accepts 3-10 s",
+  "audiobook_tts_failure_rejected": "The speech service refused this sentence"
 }

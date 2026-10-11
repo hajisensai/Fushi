@@ -266,6 +266,13 @@ class TtsReadAlong extends ChangeNotifier {
     final int? index = c.currentCue?.audioFileIndex;
     if (index != null && index != _scheduler.cursor) {
       _scheduler.setCursor(index);
+      // 失败停在某句时用户跳到了别的句子：那是显式离开失败句，调度继续合成新位置
+      // （失败句本身不被跳过——回到它时会重新请求）。
+      final int? failed = _scheduler.failedIndex;
+      if (failed != null && failed != index) {
+        _scheduler.resume();
+        notifyListeners();
+      }
     }
     final bool playing = c.isPlaying;
     // 失败停下后用户再按播放 = 重试。

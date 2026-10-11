@@ -140,6 +140,9 @@ enum TtsFailureCode {
   rateLimited,
   serverError,
   badResponse,
+
+  /// 服务端拒绝了这一句（HTTP 400/404/422：文本或参数不被接受）。重试同一句通常无用。
+  rejected,
   unsupported,
   cancelled,
 }

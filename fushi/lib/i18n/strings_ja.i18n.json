@@ -7094,5 +7094,6 @@
   "audiobook_tts_param_bearer_hint": "Only needed when the server sits behind an authenticating gateway",
   "audiobook_tts_param_voice": "Voice",
   "audiobook_tts_param_invalid": "This value is not valid",
-  "audiobook_tts_param_ref_audio_length": "The reference audio is ${seconds} s; GPT-SoVITS only accepts 3-10 s"
+  "audiobook_tts_param_ref_audio_length": "The reference audio is ${seconds} s; GPT-SoVITS only accepts 3-10 s",
+  "audiobook_tts_failure_rejected": "The speech service refused this sentence"
 }

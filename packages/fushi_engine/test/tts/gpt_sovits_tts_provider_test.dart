@@ -156,7 +156,7 @@ void main() {
 
   test('status mapping', () async {
     status = 400;
-    await expectLater(synth(preset()), failsWith(TtsFailureCode.badResponse));
+    await expectLater(synth(preset()), failsWith(TtsFailureCode.rejected));
     status = 401;
     await expectLater(synth(preset()), failsWith(TtsFailureCode.unauthorized));
     status = 403;

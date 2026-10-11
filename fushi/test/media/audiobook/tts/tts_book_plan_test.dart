@@ -34,6 +34,17 @@ void main() {
       }
     });
 
+    test('a closing quote ends a line even without a full stop', () {
+      final List<TtsTextSegment> segs = splitTtsText(
+        _plain('ないわー」「うるせ、お前だろーが。'),
+        maxLength: 120,
+      );
+      expect(
+        segs.map((TtsTextSegment s) => s.text),
+        <String>['ないわー」', '「うるせ、お前だろーが。'],
+      );
+    });
+
     test('ruby bases stay whole: spoken text uses the reading', () {
       // 漢字 at [0,2) read かんじ.
       final List<TtsTextSegment> segs = splitTtsText(

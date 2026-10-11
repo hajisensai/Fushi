@@ -157,6 +157,9 @@ class TtsTextSegment {
 const String _sentenceEnders = '。！？!?…\n';
 const String _closers = '」』”’）)]】〉》»';
 
+/// 台词引号的收尾（同时也在 [_closers] 里，紧跟句末标点时照常并入上一句）。
+const String _quoteEnders = '」』';
+
 /// 软切点：句子超长时优先在这些字后断开（读起来仍自然）。
 const String _softBreaks = '、，,；;：:';
 
@@ -244,7 +247,12 @@ List<TtsTextSegment> splitTtsText(
       if (spoken + atoms[i].spoken.length > maxLength) break;
       spoken += atoms[i].spoken.length;
       i++;
-      if (_sentenceEnders.contains(original)) ended = true;
+      // 引号收尾也是句界：台词末尾常不带句号（「……ないわー」「うるせ……」），
+      // 不在这里断就会把两个人的台词并成一句读。
+      if (_sentenceEnders.contains(original) ||
+          _quoteEnders.contains(original)) {
+        ended = true;
+      }
       if (_softBreaks.contains(original)) lastSoft = i;
     }
     if (i == first) i = first + 1; // 单个原子就超长（畸形 ruby 已在上面过滤）。

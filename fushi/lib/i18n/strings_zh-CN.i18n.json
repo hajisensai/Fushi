@@ -7041,7 +7041,7 @@
   "audiobook_tts_empty_book": "这本书没有可朗读的正文",
   "audiobook_tts_start_failed": "无法开始朗读",
   "audiobook_tts_preparing": "正在准备朗读…",
-  "audiobook_tts_retry_hint": "按播放键重试",
+  "audiobook_tts_retry_hint": "按播放键重试，或跳到下一句",
   "audiobook_tts_failure_not_configured": "声音尚未配置完整",
   "audiobook_tts_failure_network": "无法连接语音服务",
   "audiobook_tts_failure_timeout": "语音服务响应超时",
@@ -7094,5 +7094,6 @@
   "audiobook_tts_param_bearer_hint": "仅当服务架在需要认证的网关后面时填写",
   "audiobook_tts_param_voice": "声音",
   "audiobook_tts_param_invalid": "填写的值无效",
-  "audiobook_tts_param_ref_audio_length": "参考音频长 ${seconds} 秒，GPT-SoVITS 只接受 3–10 秒"
+  "audiobook_tts_param_ref_audio_length": "参考音频长 ${seconds} 秒，GPT-SoVITS 只接受 3–10 秒",
+  "audiobook_tts_failure_rejected": "语音服务拒绝合成这一句"
 }
