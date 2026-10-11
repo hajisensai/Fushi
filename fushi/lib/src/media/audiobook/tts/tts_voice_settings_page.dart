@@ -6,9 +6,13 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 import 'dart:math';
 
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
+import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
+import 'package:fushi_engine/tts/tts_audio_probe.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
@@ -537,6 +541,35 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
     _setParam(spec, picked);
   }
 
+  /// 参考音频时长缓存（路径 → 毫秒，null = 读不出）。
+  final Map<String, int?> _referenceDurations = <String, int?>{};
+
+  /// GPT-SoVITS 只接受 3–10 秒的参考音频（超出直接 400）。路径在本机能读到时
+  /// （服务跑在同一台电脑上）当场量时长提示，而不是等到朗读时才失败。
+  String? _localReferenceProblem(TtsParamSpec spec) {
+    if (_preset.providerId != GptSovitsTtsDescriptor.providerId ||
+        spec.key != GptSovitsTtsDescriptor.refAudioKey) {
+      return null;
+    }
+    final String path = _controllerFor(spec).text.trim();
+    if (path.isEmpty) return null;
+    final int? ms = _referenceDurations.putIfAbsent(path, () {
+      try {
+        final File file = File(path);
+        if (!file.existsSync()) return null;
+        final Uint8List bytes = file.readAsBytesSync();
+        final TtsAudioFormat? format = sniffTtsAudioFormat(bytes);
+        return format == null ? null : probeTtsAudioDurationMs(bytes, format);
+      } on FileSystemException {
+        return null;
+      }
+    });
+    if (ms == null || (ms >= 3000 && ms <= 10000)) return null;
+    return t.audiobook_tts_param_ref_audio_length(
+      seconds: (ms / 1000).toStringAsFixed(1),
+    );
+  }
+
   Future<void> _pickChoice(TtsParamSpec spec) async {
     final String current = _preset.param(spec.key, fallback: spec.defaultValue);
     final String? picked = await showFushiChoiceDialog<String>(
@@ -735,7 +768,7 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
             hintText: ttsParamHint(_preset.providerId, spec.key),
             errorText: invalid && _controllerFor(spec).text.isNotEmpty
                 ? t.audiobook_tts_param_invalid
-                : null,
+                : _localReferenceProblem(spec),
             obscureText: spec.kind == TtsParamKind.secret,
             keyboardType: spec.kind == TtsParamKind.url
                 ? TextInputType.url

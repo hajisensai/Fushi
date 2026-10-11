@@ -61,7 +61,8 @@ class GptSovitsTtsDescriptor extends TtsProviderDescriptor {
       choices: languages,
     ),
     TtsParamSpec(key: refAudioKey, kind: TtsParamKind.text, required: true),
-    TtsParamSpec(key: promptTextKey, kind: TtsParamKind.text),
+    // v3 起（含 v5 Turbo）参考音频必须配参考文本，空着服务端直接 400。
+    TtsParamSpec(key: promptTextKey, kind: TtsParamKind.text, required: true),
     TtsParamSpec(
       key: promptLangKey,
       kind: TtsParamKind.choice,

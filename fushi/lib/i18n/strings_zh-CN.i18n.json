@@ -7093,5 +7093,6 @@
   "audiobook_tts_param_api_key": "API 密钥",
   "audiobook_tts_param_bearer_hint": "仅当服务架在需要认证的网关后面时填写",
   "audiobook_tts_param_voice": "声音",
-  "audiobook_tts_param_invalid": "填写的值无效"
+  "audiobook_tts_param_invalid": "填写的值无效",
+  "audiobook_tts_param_ref_audio_length": "参考音频长 ${seconds} 秒，GPT-SoVITS 只接受 3–10 秒"
 }

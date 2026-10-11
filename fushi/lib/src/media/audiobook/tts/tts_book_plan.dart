@@ -13,6 +13,7 @@ import 'dart:isolate';
 
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/tts/tts_pronunciation.dart';
 
 import 'package:fushi/src/reader/reader_audio_position.dart';
 
@@ -76,12 +77,26 @@ class TtsBookPlan {
 }
 
 /// 在后台 isolate 构建整书计划。章节 HTML 惰性读盘，随 [book.chapters] 一起过界。
-Future<TtsBookPlan> buildTtsBookPlan(EpubBook book, {required int maxLength}) {
+Future<TtsBookPlan> buildTtsBookPlan(
+  EpubBook book, {
+  required int maxLength,
+  List<TtsPronunciationRule> pronunciation = const <TtsPronunciationRule>[],
+}) {
   final EpubBook light = EpubBook(title: book.title, chapters: book.chapters);
-  return Isolate.run(() => buildTtsBookPlanSync(light, maxLength: maxLength));
+  return Isolate.run(
+    () => buildTtsBookPlanSync(
+      light,
+      maxLength: maxLength,
+      pronunciation: pronunciation,
+    ),
+  );
 }
 
-TtsBookPlan buildTtsBookPlanSync(EpubBook book, {required int maxLength}) {
+TtsBookPlan buildTtsBookPlanSync(
+  EpubBook book, {
+  required int maxLength,
+  List<TtsPronunciationRule> pronunciation = const <TtsPronunciationRule>[],
+}) {
   final List<TtsPlanSentence> out = <TtsPlanSentence>[];
   for (int section = 0; section < book.chapters.length; section++) {
     if (book.isChapterNav(section)) continue;
@@ -112,7 +127,7 @@ TtsBookPlan buildTtsBookPlanSync(EpubBook book, {required int maxLength}) {
           section: section,
           href: book.chapters[section].href,
           text: seg.text,
-          spokenText: seg.spokenText,
+          spokenText: applyTtsPronunciation(seg.spokenText, pronunciation),
           matchStart: matchStart,
           matchEnd: normCursor,
           studyStart: study?.offset ?? 0,

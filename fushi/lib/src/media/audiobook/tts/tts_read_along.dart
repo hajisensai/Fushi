@@ -131,6 +131,7 @@ class TtsReadAlong extends ChangeNotifier {
     final TtsBookPlan plan = await buildTtsBookPlan(
       book,
       maxLength: voice.descriptor.capabilities.maxInputLength,
+      pronunciation: tts.pronunciation.load(),
     );
     if (plan.isEmpty) throw const TtsStartException(TtsStartProblem.emptyBook);
 

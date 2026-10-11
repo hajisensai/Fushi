@@ -376,6 +376,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'torrent_upload_intro_shown',
   // String：当前朗读声音预设 id（TtsPresetStore）。指向本机预设，设备本地。
   'tts_active_preset_id',
+  // JSON：TTS 发音词典（写法 → 读法，TtsPronunciationStore），只改合成文本。
+  'tts_pronunciation_rules',
   // double：TTS 朗读倍速（播放器本地倍速，服务端恒 1.0）。
   'tts_read_aloud_speed',
   // JSON：朗读声音预设清单，每条的凭据参数以 base64 存在 secretsB64；同时登记在

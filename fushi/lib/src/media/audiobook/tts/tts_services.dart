@@ -10,6 +10,7 @@ import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_builtin_providers.dart';
+import 'package:fushi_engine/tts/tts_pronunciation.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:path/path.dart' as p;
@@ -18,7 +19,9 @@ import 'package:fushi/src/media/audiobook/tts/system_tts_provider.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 class TtsServices {
-  TtsServices._(PrefStore prefs) : store = TtsPresetStore(prefs);
+  TtsServices._(PrefStore prefs)
+      : store = TtsPresetStore(prefs),
+        pronunciation = TtsPronunciationStore(prefs);
 
   static TtsServices? _instance;
 
@@ -26,6 +29,9 @@ class TtsServices {
   static TtsServices of(PrefStore prefs) => _instance ??= TtsServices._(prefs);
 
   final TtsPresetStore store;
+
+  /// 发音词典（朗读与制作共用）。
+  final TtsPronunciationStore pronunciation;
 
   final TtsProviderRegistry registry = TtsProviderRegistry(
     <TtsProviderDescriptor>[
