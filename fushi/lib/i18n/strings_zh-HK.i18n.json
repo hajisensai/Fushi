@@ -7039,5 +7039,9 @@
   "feedback_dev_note_updated_at": "Updated ${time}",
   "feedback_dev_note_save": "Save notes",
   "feedback_dev_note_saved": "Notes saved",
-  "feedback_dev_note_badge": "Reviewed"
+  "feedback_dev_note_badge": "Reviewed",
+  "book_import_no_book_notice_title": "沒有選擇書籍",
+  "book_import_no_book_transcribe_hint": "沒有書也能匯入：直接用裝置端轉錄把音訊轉成字幕，匯入時會據此自動生成一本書。",
+  "book_import_no_book_subtitle_hint": "沒有書也能匯入：為這段音訊選一個字幕檔，匯入時會據此自動生成一本書。",
+  "book_import_no_book_transcribe_action": "轉錄並生成書籍"
 }
