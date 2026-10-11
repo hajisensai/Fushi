@@ -37,3 +37,4 @@
     捆绑 libmpv 版本。
   - 未覆盖：不经暂停 OCR 查词的制卡入口（`_resolveVideoMiningRange` 的 currentCue / 按位置兜底）在图形模式下仍无锚点（走 C 的当前帧静图，无句子音频）；整轨 OCR 转文字后走
     文本 cue 路径，不受影响。
+- **追加修复（2026-10-11）**：图形轨选中后在后台抽轨解析出 PGS 逐句时间表（与模糊遮蔽共用 `FfmpegGraphicSubtitleRegionLoader`，同一文件同一轨只抽一次），作为主字幕槽的无文字 cue 流并入 `miningCues` / `cueStreamOwning` / `delayMsForCue`——**任何制卡入口**（不只暂停 OCR 点字）都能按播放位置锚到那句，裁句子音频与同步片段，padding 按真实邻句夹边；mpv 缺 `sub-end` 时用时间表真实结束，画面恰好无字时按位置锚最近一句。测试：`fushi/test/media/video/graphic_subtitle_anchor_cue_test.dart`「图形字幕逐句时间表」组。仍不覆盖：远端流 / 非 PGS（VobSub、DVB）图形轨，这些只能靠 mpv `sub-start`/`sub-end`。

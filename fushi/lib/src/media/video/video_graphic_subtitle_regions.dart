@@ -20,6 +20,7 @@ import 'dart:typed_data';
 import 'dart:ui' show Offset, Rect, Size;
 
 import 'package:crypto/crypto.dart';
+import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/graphic_subtitle_track_ocr.dart';
@@ -196,6 +197,35 @@ GraphicSubtitleRegionTrack graphicSubtitleRegionsFromPgs(
   );
 }
 
+/// mpv `sub-start` 与时间表起点的匹配容差：两边都来自同一个 PTS，只差毫秒取整。
+const int kGraphicTimingMatchToleranceMs = 100;
+
+/// 位图时间表 → 逐句**无文字** cue（制卡锚点 / padding 邻句用）。
+///
+/// 不按首尾相接合并：解析器已把「内容不变、只换调色板 / 酸点重发」的连续显示集并成
+/// 一条（[PgsSubtitleParser]），剩下首尾相接的相邻位图是**内容不同**的两句——蓝光
+/// 字幕前一句的结束往往正好是后一句的开始，合并会把两句裁成一张卡。
+List<AudioCue> graphicSubtitleTimingCuesFromRegions(
+  GraphicSubtitleRegionTrack track,
+) {
+  final List<({int startMs, int endMs})> spans = <({int startMs, int endMs})>[
+    for (final GraphicSubtitleRegion r in track.regions)
+      if (r.endMs > r.startMs) (startMs: r.startMs, endMs: r.endMs),
+  ];
+  return <AudioCue>[
+    for (int i = 0; i < spans.length; i++)
+      AudioCue()
+        ..bookKey = ''
+        ..chapterHref = ''
+        ..sentenceIndex = i
+        ..textFragmentId = ''
+        ..text = ''
+        ..startMs = spans[i].startMs
+        ..endMs = spans[i].endMs
+        ..audioFileIndex = 0,
+  ];
+}
+
 /// 要取哪个文件的哪条图形轨（去 auto/no 后的序号，与抽轨 `0:s:N` 同义）。
 typedef GraphicSubtitleRegionRequest = ({String videoPath, int streamIndex});
 
@@ -234,6 +264,10 @@ class FfmpegGraphicSubtitleRegionLoader implements GraphicSubtitleRegionLoader {
   final Map<String, GraphicSubtitleRegionTrack> _memory =
       <String, GraphicSubtitleRegionTrack>{};
 
+  /// 在途加载（同一文件同一轨只抽一次：模糊遮蔽层与制卡时间表会同时要它）。
+  final Map<String, Future<GraphicSubtitleRegionTrack?>> _inflight =
+      <String, Future<GraphicSubtitleRegionTrack?>>{};
+
   Directory get _cacheDir =>
       _cacheDirOverride ??
       Directory(p.join(Directory.systemTemp.path, 'fushi_graphic_sub_regions'));
@@ -250,6 +284,28 @@ class FfmpegGraphicSubtitleRegionLoader implements GraphicSubtitleRegionLoader {
     final String key = _cacheKey(request, stat);
     final GraphicSubtitleRegionTrack? hot = _memory[key];
     if (hot != null) return hot;
+    final Future<GraphicSubtitleRegionTrack?>? running = _inflight[key];
+    if (running != null) return running;
+    final Future<GraphicSubtitleRegionTrack?> loading = _loadUncached(
+      request,
+      key,
+      fallbackCanvas: fallbackCanvas,
+      cancel: cancel,
+    );
+    _inflight[key] = loading;
+    try {
+      return await loading;
+    } finally {
+      if (identical(_inflight[key], loading)) _inflight.remove(key);
+    }
+  }
+
+  Future<GraphicSubtitleRegionTrack?> _loadUncached(
+    GraphicSubtitleRegionRequest request,
+    String key, {
+    required Size fallbackCanvas,
+    Future<void>? cancel,
+  }) async {
     final File cached = File(p.join(_cacheDir.path, '$key.json'));
     if (cached.existsSync()) {
       try {

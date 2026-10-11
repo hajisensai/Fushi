@@ -1,5 +1,9 @@
+import 'dart:async';
+import 'dart:ui' show Rect, Size;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/player_decoded_subtitle_cues.dart';
+import 'package:fushi/src/media/video/video_graphic_subtitle_regions.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -121,4 +125,185 @@ void main() {
       expect(c.cueStreamOwning(stray), same(c.miningCues));
     });
   });
+
+  group('图形字幕逐句时间表（任何制卡入口都有句子时间）', () {
+    AudioCue timing(int start, int end) => AudioCue()
+      ..bookKey = ''
+      ..chapterHref = ''
+      ..sentenceIndex = 0
+      ..textFragmentId = ''
+      ..text = ''
+      ..startMs = start
+      ..endMs = end
+      ..audioFileIndex = 0;
+
+    test('PGS 位图时间表 → 逐句无文字 cue，首尾相接的两句不合并', () {
+      final List<AudioCue> cues = graphicSubtitleTimingCuesFromRegions(
+        GraphicSubtitleRegionTrack(
+          canvas: const Size(1920, 1080),
+          regions: const <GraphicSubtitleRegion>[
+            GraphicSubtitleRegion(
+              startMs: 5000,
+              endMs: 7000,
+              rect: Rect.fromLTRB(0, 0, 10, 10),
+            ),
+            GraphicSubtitleRegion(
+              startMs: 1000,
+              endMs: 3000,
+              rect: Rect.fromLTRB(0, 0, 10, 10),
+            ),
+            GraphicSubtitleRegion(
+              startMs: 3000,
+              endMs: 4500,
+              rect: Rect.fromLTRB(0, 0, 10, 10),
+            ),
+          ],
+        ),
+      );
+      expect(
+        cues.map((AudioCue c) => (c.sentenceIndex, c.startMs, c.endMs, c.text)),
+        <(int, int, int, String)>[
+          (0, 1000, 3000, ''),
+          (1, 3000, 4500, ''),
+          (2, 5000, 7000, ''),
+        ],
+      );
+    });
+
+    test('图形模式 + 有时间表：制卡流 / 调轴 / 所属流都认它（排在副字幕前）', () {
+      final VideoPlayerController c = VideoPlayerController()
+        ..setSecondaryCues(<AudioCue>[_text(0, 0, 99999)])
+        ..debugSetGraphicSubtitleActiveForTesting(true);
+      final List<AudioCue> timings = <AudioCue>[
+        timing(1000, 3000),
+        timing(5000, 7000),
+      ];
+      c.debugSetGraphicTimingCuesForTesting(timings);
+      c.setDelayMs(300);
+      c.setSecondaryDelayMs(-2000);
+      expect(c.miningCues.map((AudioCue x) => x.startMs), <int>[1000, 5000]);
+      expect(c.miningDelayMs, 300);
+      expect(c.delayMsForCue(c.miningCues[1]), 300);
+      expect(
+        c.cueStreamOwning(c.miningCues[0]).map((AudioCue x) => x.startMs),
+        <int>[1000, 5000],
+      );
+      // 退出图形模式后时间表不再生效（回落副字幕流）。
+      c.debugSetGraphicSubtitleActiveForTesting(false);
+      expect(c.miningCues.single.text, 'cue0');
+    });
+
+    test('锚点：mpv 缺 sub-end 时用时间表的真实结束，不用 5 秒暂定', () {
+      final VideoPlayerController c = VideoPlayerController()
+        ..debugSetGraphicSubtitleActiveForTesting(true);
+      c.debugSetGraphicTimingCuesForTesting(<AudioCue>[
+        timing(1000, 3000),
+        timing(12000, 13500),
+      ]);
+      final AudioCue? cue = c.debugAdoptGraphicSubtitleAnchorForTesting(
+        text: 'あいう',
+        rawStart: '12.040000',
+        rawEnd: '',
+      );
+      expect((cue!.startMs, cue.endMs, cue.text), (12000, 13500, 'あいう'));
+      // 锚点归属时间表：padding 按真实邻句夹边。
+      expect(c.cueStreamOwning(cue).length, 2);
+    });
+
+    test('锚点：画面上恰好没字（mpv 无 sub-start）时按播放位置锚到最近那句', () {
+      final VideoPlayerController c = VideoPlayerController()
+        ..debugSetGraphicSubtitleActiveForTesting(true);
+      c.debugSetGraphicTimingCuesForTesting(<AudioCue>[
+        timing(1000, 3000),
+        timing(5000, 7000),
+      ]);
+      c.debugSetPositionForTesting(4200);
+      final AudioCue? cue = c.debugAdoptGraphicSubtitleAnchorForTesting(
+        text: 'えお',
+        rawStart: '',
+        rawEnd: '',
+      );
+      expect((cue!.startMs, cue.endMs), (1000, 3000));
+      c.debugSetPositionForTesting(6000);
+      final AudioCue? inside = c.debugAdoptGraphicSubtitleAnchorForTesting(
+        text: 'えお',
+        rawStart: '',
+        rawEnd: '',
+      );
+      expect((inside!.startMs, inside.endMs), (5000, 7000));
+    });
+
+    test('选轨后后台加载时间表；换轨（世代变化）后迟到的结果丢弃', () async {
+      final _FakeRegionLoader loader = _FakeRegionLoader();
+      final VideoPlayerController c = VideoPlayerController()
+        ..debugSetGraphicSubtitleActiveForTesting(
+          true,
+          streamIndex: 0,
+          codec: 'hdmv_pgs_subtitle',
+        )
+        ..graphicSubtitleRegionLoader = loader;
+      c.debugSetVideoPathForTesting(r'C:\v\ep01.mkv');
+      c.debugLoadGraphicSubtitleTimingsForTesting(
+        streamIndex: 0,
+        codec: 'hdmv_pgs_subtitle',
+      );
+      loader.complete(<GraphicSubtitleRegion>[
+        const GraphicSubtitleRegion(
+          startMs: 1000,
+          endMs: 2000,
+          rect: Rect.fromLTRB(0, 0, 1, 1),
+        ),
+      ]);
+      await pumpEventQueue();
+      expect(c.graphicSubtitleTimingCues.single.startMs, 1000);
+
+      c.debugLoadGraphicSubtitleTimingsForTesting(
+        streamIndex: 0,
+        codec: 'hdmv_pgs_subtitle',
+      );
+      // 第二次加载还没回来时又换了一次（世代 +1）：第二次的结果作废。
+      c.debugLoadGraphicSubtitleTimingsForTesting(
+        streamIndex: 0,
+        codec: 'hdmv_pgs_subtitle',
+      );
+      loader.complete(<GraphicSubtitleRegion>[
+        const GraphicSubtitleRegion(
+          startMs: 9000,
+          endMs: 9500,
+          rect: Rect.fromLTRB(0, 0, 1, 1),
+        ),
+      ]);
+      await pumpEventQueue();
+      expect(c.graphicSubtitleTimingCues.single.startMs, 1000);
+    });
+  });
+}
+
+/// 时间表来源替身：每次 load 排队，[complete] 按先后交结果。
+class _FakeRegionLoader implements GraphicSubtitleRegionLoader {
+  final List<Completer<GraphicSubtitleRegionTrack?>> _pending =
+      <Completer<GraphicSubtitleRegionTrack?>>[];
+
+  @override
+  Future<GraphicSubtitleRegionTrack?> load(
+    GraphicSubtitleRegionRequest request, {
+    required Size fallbackCanvas,
+    Future<void>? cancel,
+  }) {
+    final Completer<GraphicSubtitleRegionTrack?> c =
+        Completer<GraphicSubtitleRegionTrack?>();
+    _pending.add(c);
+    return c.future;
+  }
+
+  void complete(List<GraphicSubtitleRegion> regions) {
+    _pending
+        .removeAt(0)
+        .complete(
+          GraphicSubtitleRegionTrack(
+            canvas: const Size(1920, 1080),
+            regions: regions,
+          ),
+        );
+  }
 }
