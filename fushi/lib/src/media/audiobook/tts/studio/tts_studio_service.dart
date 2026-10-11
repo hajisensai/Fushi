@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
+import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:path/path.dart' as p;
 
@@ -35,6 +36,10 @@ TtsRenderQueue ttsRenderQueueFor(AppModel appModel) {
 /// 制作任务的工作目录根（每个任务一个子目录，放按章编码的成品与校对产物）。
 Directory ttsRenderWorkRoot(AppModel appModel) =>
     Directory(p.join(appModel.databaseDirectory.path, 'tts_render'));
+
+/// 每本书的选角表（多声优配音）：`<db>/tts_cast/`。
+TtsCastStore ttsCastStoreFor(AppModel appModel) =>
+    TtsCastStore(Directory(p.join(appModel.databaseDirectory.path, 'tts_cast')));
 
 /// 书架行 → EPUB（只认 epub 格式且解包目录还在）。
 Future<({EpubBookRow row, EpubBook book})?> loadEpubForStudio(

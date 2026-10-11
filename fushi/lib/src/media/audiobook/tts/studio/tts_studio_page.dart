@@ -9,6 +9,7 @@ import 'dart:async';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
@@ -18,16 +19,21 @@ import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
+import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_annotator.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
     show GlassSettingsRenderer;
 import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_schema_widgets.dart'
+    show SettingsSectionFooter;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/engine_listenable.dart';
@@ -102,6 +108,33 @@ String ttsRenderJobStatusText(TtsRenderJob job) => switch (job.status) {
   },
 };
 
+/// 角色标注失败 → 文案；取消返回 null（不提示）。
+String? ttsCastAnnotateFailureText(TtsCastAnnotateFailure failure) =>
+    switch (failure.code) {
+      'cancelled' => null,
+      'no_ai_provider' => t.audiobook_studio_cast_no_ai,
+      'bad_output' => t.audiobook_studio_cast_failure_bad_output,
+      'ai_failed' => t.audiobook_studio_cast_failed(
+        reason: failure.detail == null
+            ? t.audiobook_studio_failure_internal
+            : aiFailureText(failure.detail!),
+      ),
+      _ => t.audiobook_studio_cast_failed(
+        reason: t.audiobook_studio_failure_internal,
+      ),
+    };
+
+/// [chapters] 里已经过 LLM 标注的章数。
+int ttsCastAnnotatedCount(TtsCast cast, Iterable<int> chapters) =>
+    chapters.where(cast.annotatedSections.contains).length;
+
+/// 逐句核对页列哪些句子：已有角色记录的，或带台词引号的。
+bool ttsCastIsReviewLine(TtsCast cast, TtsPlanSentence sentence) =>
+    cast.lines.containsKey(ttsLineKey(sentence.section, sentence.matchStart)) ||
+    sentence.text.contains('「') ||
+    sentence.text.contains('『') ||
+    sentence.text.contains('“');
+
 /// 进度条取值：null = 不定进度；任务结束不显示进度条时调用方不用它。
 double? ttsRenderJobProgress(TtsRenderJob job) {
   if (job.status == TtsRenderJobStatus.done) return 1;
@@ -170,6 +203,15 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
   /// 正在取音频（合成 / 读缓存）的句序。
   int? _previewing;
 
+  /// 选角表（多声优）。标注进行中不许手改（标注结果整份换回来会盖掉手改）。
+  TtsCast _cast = TtsCast();
+  bool _annotating = false;
+  bool _annotateCancelled = false;
+  int _annotateDone = 0;
+  int _annotateTotal = 0;
+  String? _annotateFailureCode;
+  String? _annotateFailureText;
+
   @override
   void initState() {
     super.initState();
@@ -180,6 +222,7 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
 
   @override
   void dispose() {
+    _annotateCancelled = true;
     _previewCancel?.cancel();
     unawaited(_releasePreview());
     super.dispose();
@@ -227,8 +270,10 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
     final Audiobook? existing = await AudiobookRepository(
       db,
     ).findByBookKey(widget.bookKey);
+    final TtsCast cast = await _loadCast();
     if (!mounted) return;
     setState(() {
+      _cast = cast;
       _loaded = loaded;
       _bookMissing = loaded == null;
       _hasAudiobook = existing != null;
@@ -238,8 +283,7 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
 
   Future<void> _rebuildPlan() async {
     final ({EpubBookRow row, EpubBook book})? loaded = _loaded;
-    final TtsProviderDescriptor? descriptor = _descriptor;
-    if (loaded == null || descriptor == null) return;
+    if (loaded == null) return;
     final int generation = ++_planGeneration;
     setState(() {
       _planning = true;
@@ -318,22 +362,13 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
       ],
     );
     if (picked == null || picked == _presetId || !mounted) return;
-    final int? oldMax = _descriptor?.capabilities.maxInputLength;
     setState(() => _presetId = picked);
-    // 计划切句只看单句长度上限：上限没变就不用重切。
-    if (_descriptor?.capabilities.maxInputLength != oldMax) {
-      await _rebuildPlan();
-    }
   }
 
   Future<void> _openVoiceSettings() async {
-    final int? oldMax = _descriptor?.capabilities.maxInputLength;
     await openTtsVoiceSettingsPage(context, _tts);
     if (!mounted) return;
     setState(_reloadPresets);
-    if (_plan == null || _descriptor?.capabilities.maxInputLength != oldMax) {
-      await _rebuildPlan();
-    }
   }
 
   static String _presetName(TtsVoicePreset p) =>
@@ -426,6 +461,178 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
       verify: job.verify,
       regenerate: _regenSelected.toList()..sort(),
     );
+  }
+
+  /// 读不出的选角表按空表处理（记日志），不挡制作台其它功能。
+  Future<TtsCast> _loadCast() async {
+    try {
+      return await ttsCastStoreFor(widget.appModel).load(widget.bookKey);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('TtsStudio.loadCast', e, stack);
+      return TtsCast();
+    }
+  }
+
+  Future<void> _saveCast() async {
+    try {
+      await ttsCastStoreFor(widget.appModel).save(widget.bookKey, _cast);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('TtsStudio.saveCast', e, stack);
+      FushiToast.show(msg: t.audiobook_studio_failure_internal);
+    }
+  }
+
+  /// 默认声音或任一角色的声音走在线服务。
+  bool get _usesOnlineVoice {
+    final Set<String> ids = <String>{
+      if (_presetId case final String id) id,
+      ..._cast.voices.values,
+    };
+    for (final TtsVoicePreset p in _presets) {
+      if (!ids.contains(p.id)) continue;
+      if (_tts.registry[p.providerId]?.category == TtsProviderCategory.online) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _annotate({required bool again}) async {
+    final TtsBookPlan? plan = _plan;
+    if (plan == null || _selected.isEmpty || _annotating) return;
+    if (again) {
+      final bool confirmed = await showFushiConfirmDialog(
+        context: context,
+        title: t.audiobook_studio_cast_reannotate,
+        message: t.audiobook_studio_cast_reannotate_confirm,
+        confirmLabel: t.audiobook_studio_cast_reannotate,
+        icon: FushiIcons.refresh,
+      );
+      if (!confirmed || !mounted) return;
+    }
+    setState(() {
+      _annotating = true;
+      _annotateCancelled = false;
+      _annotateDone = 0;
+      _annotateTotal = 0;
+      _annotateFailureCode = null;
+      _annotateFailureText = null;
+    });
+    TtsCast? result;
+    try {
+      result = await annotateTtsCast(
+        appModel: widget.appModel,
+        bookKey: widget.bookKey,
+        plan: plan,
+        sections: Set<int>.of(_selected),
+        skipAnnotated: !again,
+        onProgress: (int done, int total) {
+          if (!mounted) return;
+          setState(() {
+            _annotateDone = done;
+            _annotateTotal = total;
+          });
+        },
+        isCancelled: () => _annotateCancelled,
+      );
+    } on TtsCastAnnotateFailure catch (failure) {
+      _annotateFailureCode = failure.code;
+      _annotateFailureText = ttsCastAnnotateFailureText(failure);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('TtsStudio.annotate', e, stack);
+      _annotateFailureCode = 'internal';
+      _annotateFailureText = t.audiobook_studio_cast_failed(
+        reason: t.audiobook_studio_failure_internal,
+      );
+    }
+    // 失败 / 取消时已标完的章已经落盘：从盘上取回，不丢进度。
+    final TtsCast cast = result ?? await _loadCast();
+    if (!mounted) return;
+    setState(() {
+      _cast = cast;
+      _annotating = false;
+    });
+  }
+
+  String _voiceLabel(String? presetId) {
+    if (presetId == null) return t.audiobook_studio_cast_default_voice;
+    final TtsVoicePreset? preset = _presets
+        .where((TtsVoicePreset p) => p.id == presetId)
+        .firstOrNull;
+    return preset == null
+        ? t.audiobook_studio_failure_voice_missing
+        : _presetName(preset);
+  }
+
+  Future<void> _pickCastVoice(String speaker) async {
+    final String? picked = await showFushiChoiceDialog<String>(
+      context: context,
+      title: speaker == kTtsNarrator
+          ? t.audiobook_studio_cast_narrator
+          : speaker,
+      icon: FushiIcons.voice,
+      selected: _cast.voices[speaker] ?? '',
+      options: <FushiChoiceOption<String>>[
+        FushiChoiceOption<String>(
+          value: '',
+          label: t.audiobook_studio_cast_default_voice,
+          subtitle: _preset == null ? null : _presetName(_preset!),
+        ),
+        for (final TtsVoicePreset p in _presets)
+          FushiChoiceOption<String>(
+            value: p.id,
+            label: _presetName(p),
+            subtitle: ttsProviderLabel(p.providerId),
+          ),
+      ],
+    );
+    if (picked == null || !mounted || _annotating) return;
+    setState(() {
+      if (picked.isEmpty) {
+        _cast.voices.remove(speaker);
+      } else {
+        _cast.voices[speaker] = picked;
+      }
+    });
+    await _saveCast();
+  }
+
+  Future<void> _renameSpeaker(String from) async {
+    final String? to = await showFushiTextInputDialog(
+      context: context,
+      title: t.audiobook_studio_cast_rename_title,
+      initialValue: from,
+      labelText: t.audiobook_studio_cast_line_speaker,
+      icon: FushiIcons.edit,
+    );
+    if (to == null || to.isEmpty || to == from || !mounted || _annotating) {
+      return;
+    }
+    setState(() => _cast.renameSpeaker(from, to));
+    await _saveCast();
+  }
+
+  Future<void> _openCastLines() async {
+    final TtsBookPlan? plan = _plan;
+    if (plan == null || _chapters.isEmpty) return;
+    final int initial = _chapters
+        .map((_StudioChapter c) => c.section)
+        .firstWhere(_selected.contains, orElse: () => _chapters.first.section);
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => _TtsCastLinesPage(
+          plan: plan,
+          chapters: _chapters,
+          initialSection: initial,
+          cast: _cast,
+          onChanged: () async {
+            if (mounted) setState(() {});
+            await _saveCast();
+          },
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _releasePreview() async {
@@ -538,6 +745,7 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
               ),
               ..._voiceSection(),
               _chaptersSection(),
+              ..._castSection(),
               AdaptiveSettingsSection(
                 children: <Widget>[
                   AdaptiveSettingsSwitchRow(
@@ -626,8 +834,7 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
           ),
         ],
       ),
-      if (descriptor != null &&
-          descriptor.category == TtsProviderCategory.online)
+      if (_usesOnlineVoice)
         _notice(
           'tts-studio-online-warning',
           t.audiobook_studio_online_warning,
@@ -644,7 +851,7 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
         FushiNoticeSeverity.error,
       );
     }
-    if (_planning || (_plan == null && !_bookMissing && _preset != null)) {
+    if (_planning || (_plan == null && !_bookMissing)) {
       return const Padding(
         key: ValueKey<String>('tts-studio-planning'),
         padding: EdgeInsets.symmetric(vertical: 24),
@@ -726,6 +933,169 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
           ),
       ],
     );
+  }
+
+  List<Widget> _castSection() {
+    final TtsBookPlan? plan = _plan;
+    if (plan == null || plan.isEmpty) return const <Widget>[];
+    final List<int> sections = <int>[
+      for (final _StudioChapter c in _chapters) c.section,
+    ];
+    final int annotatedAll = ttsCastAnnotatedCount(_cast, sections);
+    final int annotatedSelected = ttsCastAnnotatedCount(_cast, _selected);
+    final bool canAnnotate = !_annotating && _selected.isNotEmpty;
+    final List<({String speaker, int count})> speakers = _cast.speakers();
+    final Widget chevron = isGlassDesign(context)
+        ? const FushiAppleChevron()
+        : FushiIcon(
+            FushiIcons.chevronRight,
+            size: 20,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          );
+    return <Widget>[
+      AdaptiveSettingsSection(
+        key: const ValueKey<String>('tts-studio-cast'),
+        title: t.audiobook_studio_cast,
+        children: <Widget>[
+          if (_annotating)
+            Padding(
+              key: const ValueKey<String>('tts-studio-cast-progress'),
+              padding: EdgeInsets.fromLTRB(
+                FushiDesignTokens.of(context).spacing.rowHorizontal,
+                12,
+                FushiDesignTokens.of(context).spacing.rowHorizontal,
+                12,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    t.audiobook_studio_cast_progress(
+                      done: _annotateDone,
+                      total: _annotateTotal,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  FushiLinearProgressIndicator(
+                    value: _annotateTotal <= 0
+                        ? null
+                        : (_annotateDone / _annotateTotal).clamp(0.0, 1.0),
+                  ),
+                ],
+              ),
+            ),
+          if (_annotating)
+            AdaptiveSettingsRow(
+              key: const ValueKey<String>('tts-studio-cast-cancel'),
+              icon: FushiIcons.stop,
+              showIcon: true,
+              title: t.audiobook_studio_cancel,
+              onTap: _annotateCancelled
+                  ? null
+                  : () => setState(() => _annotateCancelled = true),
+            )
+          else ...<Widget>[
+            // 选中的章还有没标的：补标（跳过已标的章）。
+            if (annotatedSelected < _selected.length || _selected.isEmpty)
+              AdaptiveSettingsRow(
+                key: const ValueKey<String>('tts-studio-cast-annotate'),
+                icon: FushiIcons.voice,
+                showIcon: true,
+                title: t.audiobook_studio_cast_annotate,
+                subtitle: t.audiobook_studio_cast_annotated(
+                  done: annotatedAll,
+                  total: sections.length,
+                ),
+                onTap: canAnnotate
+                    ? () => unawaited(_annotate(again: false))
+                    : null,
+              ),
+            if (annotatedSelected > 0)
+              AdaptiveSettingsRow(
+                key: const ValueKey<String>('tts-studio-cast-reannotate'),
+                icon: FushiIcons.refresh,
+                showIcon: true,
+                title: t.audiobook_studio_cast_reannotate,
+                subtitle: annotatedSelected < _selected.length
+                    ? null
+                    : t.audiobook_studio_cast_annotated(
+                        done: annotatedAll,
+                        total: sections.length,
+                      ),
+                onTap: canAnnotate
+                    ? () => unawaited(_annotate(again: true))
+                    : null,
+              ),
+          ],
+          AdaptiveSettingsRow(
+            key: const ValueKey<String>('tts-studio-cast-narrator'),
+            icon: FushiIcons.audiobook,
+            showIcon: true,
+            title: t.audiobook_studio_cast_narrator,
+            subtitle: _voiceLabel(_cast.voices[kTtsNarrator]),
+            onTap: _annotating
+                ? null
+                : () => unawaited(_pickCastVoice(kTtsNarrator)),
+          ),
+          for (final ({String speaker, int count}) s in speakers)
+            AdaptiveSettingsRow(
+              key: ValueKey<String>('tts-studio-cast-speaker-${s.speaker}'),
+              icon: FushiIcons.voice,
+              showIcon: true,
+              title: s.speaker,
+              subtitle:
+                  '${t.audiobook_studio_cast_lines(n: s.count)}'
+                  ' · ${_voiceLabel(_cast.voices[s.speaker])}',
+              onTap: _annotating
+                  ? null
+                  : () => unawaited(_pickCastVoice(s.speaker)),
+              trailing: FushiIconButtonControl(
+                key: ValueKey<String>(
+                  'tts-studio-cast-speaker-${s.speaker}-rename',
+                ),
+                tooltip: t.audiobook_studio_cast_rename,
+                icon: const FushiIcon(FushiIcons.edit),
+                onPressed: _annotating
+                    ? null
+                    : () => unawaited(_renameSpeaker(s.speaker)),
+              ),
+            ),
+          AdaptiveSettingsRow(
+            key: const ValueKey<String>('tts-studio-cast-lines'),
+            icon: FushiIcons.checklist,
+            showIcon: true,
+            title: t.audiobook_studio_cast_lines_title,
+            onTap: _annotating ? null : () => unawaited(_openCastLines()),
+            trailing: chevron,
+          ),
+        ],
+      ),
+      SettingsSectionFooter(
+        speakers.isEmpty
+            ? '${t.audiobook_studio_cast_hint}\n${t.audiobook_studio_cast_empty}'
+            : t.audiobook_studio_cast_hint,
+        key: const ValueKey<String>('tts-studio-cast-footer'),
+      ),
+      if (_annotateFailureText case final String message)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: FushiInlineNotice(
+            key: const ValueKey<String>('tts-studio-cast-failure'),
+            severity: _annotateFailureCode == 'no_ai_provider'
+                ? FushiNoticeSeverity.warning
+                : FushiNoticeSeverity.error,
+            message: message,
+            actions: <Widget>[
+              if (_annotateFailureCode == 'no_ai_provider')
+                FushiTextButton(
+                  key: const ValueKey<String>('tts-studio-cast-ai-settings'),
+                  onPressed: () => unawaited(pushAiSettingsPage(context)),
+                  child: Text(t.ai_settings_title),
+                ),
+            ],
+          ),
+        ),
+    ];
   }
 
   Widget _pronunciationSection() => AdaptiveSettingsSection(
@@ -1040,4 +1410,168 @@ class _PronunciationRuleDialogState extends State<_PronunciationRuleDialog> {
       ),
     ],
   );
+}
+
+/// 逐句核对说话人：一章一屏，惰性列表；点一句改它的说话人（用户改的不会被重新
+/// 标注覆盖）。改动直接写进传入的 [cast]，[onChanged] 负责落盘。
+class _TtsCastLinesPage extends StatefulWidget {
+  const _TtsCastLinesPage({
+    required this.plan,
+    required this.chapters,
+    required this.initialSection,
+    required this.cast,
+    required this.onChanged,
+  });
+
+  final TtsBookPlan plan;
+  final List<_StudioChapter> chapters;
+  final int initialSection;
+  final TtsCast cast;
+  final Future<void> Function() onChanged;
+
+  @override
+  State<_TtsCastLinesPage> createState() => _TtsCastLinesPageState();
+}
+
+class _TtsCastLinesPageState extends State<_TtsCastLinesPage> {
+  late int _section = widget.initialSection;
+  late List<TtsPlanSentence> _lines = _linesOf(_section);
+
+  List<TtsPlanSentence> _linesOf(int section) => <TtsPlanSentence>[
+    for (final TtsPlanSentence s in widget.plan.sentences)
+      if (s.section == section && ttsCastIsReviewLine(widget.cast, s)) s,
+  ];
+
+  String _speakerLabel(String speaker) =>
+      speaker == kTtsNarrator ? t.audiobook_studio_cast_narrator : speaker;
+
+  Future<void> _pickChapter() async {
+    final int? picked = await showFushiChoiceDialog<int>(
+      context: context,
+      title: t.audiobook_studio_chapters,
+      selected: _section,
+      options: <FushiChoiceOption<int>>[
+        for (final _StudioChapter c in widget.chapters)
+          FushiChoiceOption<int>(value: c.section, label: c.label),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _section = picked;
+      _lines = _linesOf(picked);
+    });
+  }
+
+  Future<void> _pickSpeaker(TtsPlanSentence line) async {
+    const String newSpeaker = '\u0000new';
+    final String current = widget.cast.speakerOf(line.section, line.matchStart);
+    final String? picked = await showFushiChoiceDialog<String>(
+      context: context,
+      title: t.audiobook_studio_cast_line_speaker,
+      message: line.text,
+      selected: current,
+      options: <FushiChoiceOption<String>>[
+        FushiChoiceOption<String>(
+          value: kTtsNarrator,
+          label: t.audiobook_studio_cast_narrator,
+        ),
+        for (final ({String speaker, int count}) s in widget.cast.speakers())
+          FushiChoiceOption<String>(
+            value: s.speaker,
+            label: s.speaker,
+            subtitle: t.audiobook_studio_cast_lines(n: s.count),
+          ),
+        FushiChoiceOption<String>(
+          value: newSpeaker,
+          label: t.audiobook_studio_cast_new_speaker,
+          icon: FushiIcons.add,
+        ),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    String speaker = picked;
+    if (picked == newSpeaker) {
+      final String? typed = await showFushiTextInputDialog(
+        context: context,
+        title: t.audiobook_studio_cast_line_speaker,
+        message: line.text,
+        labelText: t.audiobook_studio_cast_line_speaker,
+        icon: FushiIcons.edit,
+      );
+      if (typed == null || typed.isEmpty || !mounted) return;
+      speaker = typed;
+    }
+    if (speaker == current) return;
+    setState(
+      () => widget.cast.setUserSpeaker(line.section, line.matchStart, speaker),
+    );
+    await widget.onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double inset = isGlassDesign(context)
+        ? GlassSettingsRenderer.detailHorizontalInset(context)
+        : tokens.spacing.page;
+    final String chapterLabel =
+        widget.chapters
+            .where((_StudioChapter c) => c.section == _section)
+            .firstOrNull
+            ?.label ??
+        '';
+    return SettingsKitScaffold(
+      title: t.audiobook_studio_cast_lines_title,
+      leadingIcon: FushiIcons.checklist,
+      leadingTone: SettingsIconTone.purple,
+      bodyConsumesTopPadding: true,
+      bodyBuilder:
+          (
+            BuildContext context,
+            ScrollController controller,
+            SettingsSectionSpy spy,
+          ) => ListView.builder(
+            key: const ValueKey<String>('tts-studio-cast-lines-list'),
+            controller: controller,
+            padding: EdgeInsets.fromLTRB(
+              inset,
+              tokens.spacing.gap + MediaQuery.paddingOf(context).top,
+              inset,
+              tokens.spacing.page + bottomSafeInsetOf(context),
+            ),
+            itemCount: _lines.length + 1,
+            itemBuilder: (BuildContext context, int index) {
+              if (index == 0) {
+                return AdaptiveSettingsSection(
+                  key: const ValueKey<String>('tts-studio-cast-lines-chapter'),
+                  children: <Widget>[
+                    AdaptiveSettingsRow(
+                      icon: FushiIcons.audiobook,
+                      showIcon: true,
+                      title: chapterLabel,
+                      subtitle: _lines.isEmpty
+                          ? t.audiobook_studio_cast_empty
+                          : t.audiobook_studio_cast_lines(n: _lines.length),
+                      onTap: () => unawaited(_pickChapter()),
+                    ),
+                  ],
+                );
+              }
+              final TtsPlanSentence line = _lines[index - 1];
+              final String key = ttsLineKey(line.section, line.matchStart);
+              final TtsCastLine? cast = widget.cast.lines[key];
+              final String speaker = cast?.speaker ?? kTtsNarrator;
+              return AdaptiveSettingsRow(
+                key: ValueKey<String>('tts-studio-cast-line-$key'),
+                title: line.text,
+                titleMaxLines: 6,
+                subtitle: cast?.emotion == null
+                    ? _speakerLabel(speaker)
+                    : '${_speakerLabel(speaker)} · ${cast!.emotion}',
+                onTap: () => unawaited(_pickSpeaker(line)),
+              );
+            },
+          ),
+    );
+  }
 }

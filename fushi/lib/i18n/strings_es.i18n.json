@@ -7173,5 +7173,7 @@
   "audiobook_studio_cast_line_speaker": "Speaker",
   "audiobook_studio_cast_failure_bad_output": "The AI reply could not be understood",
   "audiobook_studio_failure_cache_busy": "Some sentences are playing and could not be regenerated",
-  "audiobook_studio_failure_verify_failed": "Speech recognition failed"
+  "audiobook_studio_failure_verify_failed": "Speech recognition failed",
+  "audiobook_studio_cast_new_speaker": "New name…",
+  "audiobook_studio_cast_reannotate_confirm": "AI labels in the selected chapters will be replaced; your manual changes are kept"
 }

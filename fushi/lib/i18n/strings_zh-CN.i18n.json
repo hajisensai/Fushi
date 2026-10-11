@@ -7173,5 +7173,7 @@
   "audiobook_studio_cast_line_speaker": "说话人",
   "audiobook_studio_cast_failure_bad_output": "无法解析 AI 的回复",
   "audiobook_studio_failure_cache_busy": "部分句子正在播放，无法重新生成",
-  "audiobook_studio_failure_verify_failed": "语音识别出错"
+  "audiobook_studio_failure_verify_failed": "语音识别出错",
+  "audiobook_studio_cast_new_speaker": "新名字…",
+  "audiobook_studio_cast_reannotate_confirm": "会覆盖所选章节的 AI 标注，手动修改的保留"
 }

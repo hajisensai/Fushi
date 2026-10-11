@@ -1,7 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/ai/ai_failure_text.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_annotator.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_page.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
+import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 
@@ -148,5 +152,59 @@ void main() {
       ttsRenderJobProgress(_job(status: TtsRenderJobStatus.queued)),
       isNull,
     );
+  });
+
+  group('cast helpers', () {
+    test('ttsCastAnnotateFailureText', () {
+      expect(
+        ttsCastAnnotateFailureText(const TtsCastAnnotateFailure('cancelled')),
+        isNull,
+      );
+      expect(
+        ttsCastAnnotateFailureText(
+          const TtsCastAnnotateFailure('no_ai_provider'),
+        ),
+        t.audiobook_studio_cast_no_ai,
+      );
+      expect(
+        ttsCastAnnotateFailureText(const TtsCastAnnotateFailure('bad_output')),
+        t.audiobook_studio_cast_failure_bad_output,
+      );
+      expect(
+        ttsCastAnnotateFailureText(
+          const TtsCastAnnotateFailure('ai_failed', 'rate_limited'),
+        ),
+        t.audiobook_studio_cast_failed(reason: aiFailureText('rate_limited')),
+      );
+      expect(
+        ttsCastAnnotateFailureText(const TtsCastAnnotateFailure('ai_failed')),
+        t.audiobook_studio_cast_failed(
+          reason: t.audiobook_studio_failure_internal,
+        ),
+      );
+    });
+
+    test('ttsCastAnnotatedCount counts only the given chapters', () {
+      final TtsCast cast = TtsCast(annotatedSections: <int>{1, 3, 9});
+      expect(ttsCastAnnotatedCount(cast, <int>[1, 2, 3]), 2);
+      expect(ttsCastAnnotatedCount(cast, <int>[]), 0);
+    });
+
+    test('ttsCastIsReviewLine: quoted or already cast', () {
+      TtsPlanSentence s(String text, int matchStart) => TtsPlanSentence(
+        section: 2,
+        href: 'c.xhtml',
+        text: text,
+        spokenText: text,
+        matchStart: matchStart,
+        matchEnd: matchStart + text.length,
+        studyStart: 0,
+        studyEnd: 0,
+      );
+      final TtsCast cast = TtsCast()..setUserSpeaker(2, 40, 'A');
+      expect(ttsCastIsReviewLine(cast, s('「おはよう」', 0)), isTrue);
+      expect(ttsCastIsReviewLine(cast, s('地の文。', 10)), isFalse);
+      expect(ttsCastIsReviewLine(cast, s('地の文。', 40)), isTrue);
+    });
   });
 }

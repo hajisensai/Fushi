@@ -5,6 +5,10 @@
 ///
 /// - 计划一律走 [buildStudioPlan]：校对结果与「单句重新生成」按计划下标指认句子，
 ///   与制作台同一口径。
+/// - 多声优配音：每句的声音按选角表（`ttsCastStoreFor`）取，没分配的用任务默认
+///   声音；缓存键按各句自己的声音算，所以章清单里的键序已含声音——给某个角色换
+///   声音只让含它台词的章失效。一章混了不同引擎的音频时先转成统一 PCM 再拼
+///   （`tts_render_mix.dart`）。
 /// - 逐句音频在 TTS 缓存里，缓存上限 512 MB，整本书可能超过：只在一章合成到编码
 ///   完成之间 pin 住这一章的键，绝不 pin 整本书。
 /// - 已编码的章落在任务工作目录（`<tts_render>/<job.id>/tts_NNN.m4a` + 同名
@@ -39,6 +43,7 @@ import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart'
     show resolveFfmpegBackend;
+import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
@@ -48,7 +53,9 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_encode.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/tts_render_mix.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_verify.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/tts_render_voices.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
@@ -61,6 +68,28 @@ const String kTtsRenderSrtFileName = 'tts_audiobook.srt';
 /// 工作目录里「重新生成的缓存已丢弃」的标记：续跑同一任务时不再丢第二次（否则会把
 /// 已经重新合成好的音频又删掉）。
 const String _kRegeneratedMarker = 'regenerated.done';
+
+/// 解析好的一份声音预设（每份预设只解析一次）。
+class _RenderVoice {
+  const _RenderVoice({
+    required this.preset,
+    required this.descriptor,
+    required this.identity,
+  });
+
+  final TtsVoicePreset preset;
+  final TtsProviderDescriptor descriptor;
+
+  /// 进缓存键的音色身份。
+  final Map<String, Object?> identity;
+}
+
+/// 合成一句要用的引擎实例；[group] = 预设 id，同组共用一个并发上限。
+typedef _SentenceVoice = ({
+  TtsProvider provider,
+  int maxConcurrency,
+  String group,
+});
 
 class AppTtsRenderRunner implements TtsRenderRunner {
   AppTtsRenderRunner({required this.appModel});
@@ -75,15 +104,6 @@ class AppTtsRenderRunner implements TtsRenderRunner {
   }) async {
     onProgress(TtsRenderJobPhase.planning, 0, 0);
     final TtsServices tts = TtsServices.of(appModel.prefsRepo);
-    final TtsVoicePreset? preset = _presetById(tts, job.presetId);
-    if (preset == null) throw const TtsRenderFailure('voice_missing');
-    final TtsProviderDescriptor? descriptor = tts.registry[preset.providerId];
-    if (descriptor == null || !descriptor.isAvailable) {
-      throw const TtsRenderFailure('voice_unavailable');
-    }
-    if (descriptor.validate(preset).isNotEmpty) {
-      throw const TtsRenderFailure('voice_incomplete');
-    }
     final ({EpubBookRow row, EpubBook book})? loaded = await loadEpubForStudio(
       appModel.database,
       job.bookKey,
@@ -95,38 +115,67 @@ class AppTtsRenderRunner implements TtsRenderRunner {
       sections: job.sections.toSet(),
     );
     if (chapters.isEmpty) throw const TtsRenderFailure('empty_book');
+
+    // 每句的声音：选角表 → 否则任务默认声音。用到的每份预设各解析一次；选角里的
+    // 声音缺失 / 不可用 / 不完整一律如实失败，不悄悄换成别的声音。
+    final TtsCast cast = await ttsCastStoreFor(appModel).load(job.bookKey);
+    final Map<int, String> presetOf = resolveTtsSentencePresets(
+      sentences: plan.sentences,
+      indices: <int>[
+        for (final TtsRenderChapter c in chapters) ...c.planIndices,
+      ],
+      cast: cast,
+      defaultPresetId: job.presetId,
+    );
+    final Map<String, _RenderVoice> voices = <String, _RenderVoice>{};
+    for (final String presetId in presetOf.values.toSet()) {
+      voices[presetId] = _resolveVoice(tts, presetId);
+    }
     cancel.throwIfCancelled();
 
-    final Map<String, Object?> identity = descriptor.audioIdentity(preset);
-    String keyOf(int planIndex) =>
-        TtsAudioCache.keyFor(identity, plan.sentences[planIndex].spokenText);
+    String keyOf(int planIndex) => TtsAudioCache.keyFor(
+      voices[presetOf[planIndex]]!.identity,
+      plan.sentences[planIndex].spokenText,
+    );
     final TtsAudioCache cache = await tts.cache();
     final Directory workDir = Directory(
       p.join(ttsRenderWorkRoot(appModel).path, job.id),
     );
     await workDir.create(recursive: true);
-    await _dropRegenerated(job, plan, keyOf, cache, workDir);
+    await _dropRegenerated(job, presetOf, keyOf, cache, workDir);
 
     final TtsCancelToken ttsCancel = TtsCancelToken();
     cancel.onCancel(ttsCancel.cancel);
-    final TtsProvider provider = descriptor.create(preset, tts.host);
+    final Map<String, TtsProvider> providers = <String, TtsProvider>{};
     final List<List<AudioCue>> chapterCues;
     try {
+      voices.forEach((String presetId, _RenderVoice voice) {
+        providers[presetId] = voice.descriptor.create(voice.preset, tts.host);
+      });
       chapterCues = await _renderChapters(
         job: job,
         plan: plan,
         chapters: chapters,
         keyOf: keyOf,
+        voiceOf: (int planIndex) {
+          final String presetId = presetOf[planIndex]!;
+          return (
+            provider: providers[presetId]!,
+            maxConcurrency:
+                voices[presetId]!.descriptor.capabilities.maxConcurrency,
+            group: presetId,
+          );
+        },
         cache: cache,
-        provider: provider,
-        concurrency: descriptor.capabilities.maxConcurrency,
         workDir: workDir,
         onProgress: onProgress,
         cancel: cancel,
         ttsCancel: ttsCancel,
       );
     } finally {
-      await provider.dispose();
+      for (final TtsProvider provider in providers.values) {
+        await provider.dispose();
+      }
     }
 
     final ({bool verified, List<TtsRenderFlag> flags}) check = await _verify(
@@ -161,18 +210,32 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     return check;
   }
 
-  TtsVoicePreset? _presetById(TtsServices tts, String id) {
-    for (final TtsVoicePreset preset in tts.store.loadPresets()) {
-      if (preset.id == id) return preset;
+  _RenderVoice _resolveVoice(TtsServices tts, String presetId) {
+    TtsVoicePreset? preset;
+    for (final TtsVoicePreset candidate in tts.store.loadPresets()) {
+      if (candidate.id == presetId) preset = candidate;
     }
-    return null;
+    if (preset == null) throw const TtsRenderFailure('voice_missing');
+    final TtsProviderDescriptor? descriptor = tts.registry[preset.providerId];
+    if (descriptor == null || !descriptor.isAvailable) {
+      throw const TtsRenderFailure('voice_unavailable');
+    }
+    if (descriptor.validate(preset).isNotEmpty) {
+      throw const TtsRenderFailure('voice_incomplete');
+    }
+    return _RenderVoice(
+      preset: preset,
+      descriptor: descriptor,
+      identity: descriptor.audioIdentity(preset),
+    );
   }
 
-  /// 「重新生成」：开始前丢掉这些句的缓存音频。被朗读会话 pin 住的删不掉，如实失败
-  /// （静默跳过等于没重新生成，用户却以为换过了）。
+  /// 「重新生成」：开始前丢掉这些句的缓存音频（按各句自己的声音算键；不在本次渲染
+  /// 范围内的句不处理——丢了也不会被重新合成）。被朗读会话 pin 住的删不掉，如实
+  /// 失败（静默跳过等于没重新生成，用户却以为换过了）。
   Future<void> _dropRegenerated(
     TtsRenderJob job,
-    TtsBookPlan plan,
+    Map<int, String> presetOf,
     String Function(int planIndex) keyOf,
     TtsAudioCache cache,
     Directory workDir,
@@ -181,7 +244,7 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     final File marker = File(p.join(workDir.path, _kRegeneratedMarker));
     if (await marker.exists()) return;
     for (final int index in job.regenerate) {
-      if (index < 0 || index >= plan.length) continue;
+      if (!presetOf.containsKey(index)) continue;
       if (!await cache.remove(keyOf(index))) {
         throw const TtsRenderFailure('cache_busy');
       }
@@ -194,14 +257,14 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     required TtsBookPlan plan,
     required List<TtsRenderChapter> chapters,
     required String Function(int planIndex) keyOf,
+    required _SentenceVoice Function(int planIndex) voiceOf,
     required TtsAudioCache cache,
-    required TtsProvider provider,
-    required int concurrency,
     required Directory workDir,
     required TtsRenderProgress onProgress,
     required TtsRenderCancelToken cancel,
     required TtsCancelToken ttsCancel,
   }) async {
+    final TtsRenderGate gate = TtsRenderGate(kTtsRenderMaxParallel);
     int totalSentences = 0;
     for (final TtsRenderChapter c in chapters) {
       totalSentences += c.planIndices.length;
@@ -235,8 +298,8 @@ class AppTtsRenderRunner implements TtsRenderRunner {
             chapter: chapter,
             keys: keys,
             cache: cache,
-            provider: provider,
-            concurrency: concurrency,
+            voiceOf: voiceOf,
+            gate: gate,
             cancel: cancel,
             ttsCancel: ttsCancel,
             onSentencesDone: (int count) {
@@ -247,27 +310,42 @@ class AppTtsRenderRunner implements TtsRenderRunner {
           final List<TtsCachedAudio> ordered = <TtsCachedAudio>[
             for (final String key in keys) audio[key]!,
           ];
-          durations = <int>[
-            for (final TtsCachedAudio a in ordered) a.durationMs,
-          ];
           onProgress(
             TtsRenderJobPhase.encoding,
             chapter.fileIndex,
             chapters.length,
           );
+          void logFailure(String summary) => ErrorLogService.instance.log(
+            'TtsRender.encode(${job.bookKey}#${chapter.section})',
+            summary,
+            StackTrace.current,
+          );
+          final List<({String path, int durationMs})> entries =
+              await prepareTtsUniformEntries(
+                backend: resolveFfmpegBackend(),
+                sentences: <({String key, String path, int durationMs})>[
+                  for (int k = 0; k < keys.length; k++)
+                    (
+                      key: keys[k],
+                      path: ordered[k].path,
+                      durationMs: ordered[k].durationMs,
+                    ),
+                ],
+                mixDir: Directory(p.join(workDir.path, 'mix')),
+                cancel: cancel,
+                onFailure: logFailure,
+              );
+          // cue 时长 = 实际拼进去的那份文件的时长（转码过的句取中间文件实测值）。
+          durations = <int>[
+            for (final ({String path, int durationMs}) e in entries)
+              e.durationMs,
+          ];
           await encodeTtsChapterAudio(
             backend: resolveFfmpegBackend(),
-            entries: <({String path, int durationMs})>[
-              for (final TtsCachedAudio a in ordered)
-                (path: a.path, durationMs: a.durationMs),
-            ],
+            entries: entries,
             outputPath: outputPath,
             cancel: cancel,
-            onFailure: (String summary) => ErrorLogService.instance.log(
-              'TtsRender.encode(${job.bookKey}#${chapter.section})',
-              summary,
-              StackTrace.current,
-            ),
+            onFailure: logFailure,
           );
           await File(
             p.join(workDir.path, '${chapter.stem}.json'),
@@ -302,69 +380,87 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     return out;
   }
 
-  /// 合成一章（同键只合成一次），并发不超过引擎上限。任一句失败：停止派发新句、
-  /// 取消同章在途请求，抛第一个失败。
+  /// 合成一章（同键只合成一次）。每种声音各自一个工作池、不超过它引擎的并发上限，
+  /// 所有声音共用一道总闸 [gate]。任一句失败：停止派发新句、取消同章在途请求，抛
+  /// 第一个失败。
   Future<Map<String, TtsCachedAudio>> _synthesizeChapter({
     required TtsBookPlan plan,
     required TtsRenderChapter chapter,
     required List<String> keys,
     required TtsAudioCache cache,
-    required TtsProvider provider,
-    required int concurrency,
+    required _SentenceVoice Function(int planIndex) voiceOf,
+    required TtsRenderGate gate,
     required TtsRenderCancelToken cancel,
     required TtsCancelToken ttsCancel,
     required void Function(int count) onSentencesDone,
   }) async {
-    final LinkedHashMap<String, String> textByKey =
-        LinkedHashMap<String, String>();
+    final LinkedHashMap<String, ({String text, _SentenceVoice voice})> byKey =
+        LinkedHashMap<String, ({String text, _SentenceVoice voice})>();
     final Map<String, int> occurrences = <String, int>{};
     for (int k = 0; k < keys.length; k++) {
-      textByKey.putIfAbsent(
+      final int planIndex = chapter.planIndices[k];
+      byKey.putIfAbsent(
         keys[k],
-        () => plan.sentences[chapter.planIndices[k]].spokenText,
+        () => (
+          text: plan.sentences[planIndex].spokenText,
+          voice: voiceOf(planIndex),
+        ),
       );
       occurrences[keys[k]] = (occurrences[keys[k]] ?? 0) + 1;
     }
-    final List<String> unique = textByKey.keys.toList();
+    // 按声音分组（同一份预设 = 同一个引擎实例 = 同一个并发上限）。
+    final Map<String, List<String>> keysByVoice = <String, List<String>>{};
+    byKey.forEach((String key, ({String text, _SentenceVoice voice}) item) {
+      keysByVoice.putIfAbsent(item.voice.group, () => <String>[]).add(key);
+    });
     final Map<String, TtsCachedAudio> results = <String, TtsCachedAudio>{};
     final TtsCancelToken chapterCancel = TtsCancelToken();
     final void Function() unlink = ttsCancel.onCancel(chapterCancel.cancel);
     Object? firstError;
     StackTrace? firstStack;
-    int next = 0;
 
-    Future<void> worker() async {
-      while (firstError == null && !chapterCancel.isCancelled) {
-        if (next >= unique.length) return;
-        final String key = unique[next++];
-        try {
-          results[key] = await cache.obtain(
-            key,
-            (String outputPath) => provider.synthesize(
-              textByKey[key]!,
-              outputPath: outputPath,
-              cancel: chapterCancel,
-            ),
-          );
-          onSentencesDone(occurrences[key]!);
-        } catch (e, stack) {
-          if (firstError == null) {
-            firstError = e;
-            firstStack = stack;
-            chapterCancel.cancel();
+    Future<void> pool(List<String> voiceKeys) async {
+      final _SentenceVoice voice = byKey[voiceKeys.first]!.voice;
+      int next = 0;
+      Future<void> worker() async {
+        while (firstError == null && !chapterCancel.isCancelled) {
+          if (next >= voiceKeys.length) return;
+          final String key = voiceKeys[next++];
+          await gate.acquire();
+          try {
+            if (firstError != null || chapterCancel.isCancelled) return;
+            results[key] = await cache.obtain(
+              key,
+              (String outputPath) => voice.provider.synthesize(
+                byKey[key]!.text,
+                outputPath: outputPath,
+                cancel: chapterCancel,
+              ),
+            );
+            onSentencesDone(occurrences[key]!);
+          } catch (e, stack) {
+            if (firstError == null) {
+              firstError = e;
+              firstStack = stack;
+              chapterCancel.cancel();
+            }
+            return;
+          } finally {
+            gate.release();
           }
-          return;
         }
       }
+
+      final int workers = voice.maxConcurrency.clamp(1, voiceKeys.length);
+      await Future.wait(<Future<void>>[
+        for (int i = 0; i < workers; i++) worker(),
+      ]);
     }
 
     try {
-      final int workers = concurrency.clamp(
-        1,
-        unique.isEmpty ? 1 : unique.length,
-      );
       await Future.wait(<Future<void>>[
-        for (int i = 0; i < workers; i++) worker(),
+        for (final List<String> voiceKeys in keysByVoice.values)
+          pool(voiceKeys),
       ]);
     } finally {
       unlink();
