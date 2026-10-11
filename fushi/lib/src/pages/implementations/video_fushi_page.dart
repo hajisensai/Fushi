@@ -3867,7 +3867,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           final RemoteVideoEmbeddedSubtitleTrack? track = streamIndex == null
               ? null
               : _remoteEmbeddedTrackByStreamIndex(streamIndex);
-          if (streamIndex != null) {
+          if (track != null && !track.isText) {
+            // 上次选的是图形轨：没有文字可下，起播后照旧交给 libmpv 自绘（时间表随选轨
+            // 走边播边记 + 整轨来源）。流不是原始容器（转码 HLS 不带轨）就落回默认分支。
+            if (urls.streamIsOriginalContainer && !track.isExternalFile) {
+              playerRenderedTrack = track;
+              subtitleResolved = true;
+            }
+          } else if (streamIndex != null) {
             _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
             try {
               final Directory temp = await getTemporaryDirectory();
@@ -4011,13 +4018,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           !_failed) {
         // BUG-2590：mpv 轨表 load 后才有，此时再把上次选的轨交给 libmpv 解码回流（BUG-2648）；
         // 选不中（轨已变）静默无字幕，不阻断播放。
+        // 图形轨同样在这时交给 libmpv 自绘（逐句时间表随选轨建立）。
         unawaited(
-          _showRemoteEmbeddedTrackViaPlayer(
-            loadedController,
-            playerRenderedTrack,
-            source: _remoteEmbeddedSubtitleSource(playerRenderedTrack),
-            label: _remoteEmbeddedSubtitleLabel(playerRenderedTrack),
-          ),
+          playerRenderedTrack.isText
+              ? _showRemoteEmbeddedTrackViaPlayer(
+                  loadedController,
+                  playerRenderedTrack,
+                  source: _remoteEmbeddedSubtitleSource(playerRenderedTrack),
+                  label: _remoteEmbeddedSubtitleLabel(playerRenderedTrack),
+                )
+              : _showRemoteGraphicTrackViaPlayer(
+                  loadedController,
+                  playerRenderedTrack,
+                  source: _remoteEmbeddedSubtitleSource(playerRenderedTrack),
+                  label: _remoteEmbeddedSubtitleLabel(playerRenderedTrack),
+                ),
         );
       }
       // TODO-1301（BUG-600）：制卡音频源与批量制卡守卫（youtube_clip_miner.dart:67）完全

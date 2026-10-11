@@ -1,14 +1,14 @@
-/// 图形字幕（PGS）每句位图在画面上的矩形：「模糊」遮蔽只糊字幕位图本身（略外扩），
-/// 不再糊整条字幕带。
+/// 图形字幕（PGS / VobSub / DVB）每句位图在画面上的矩形：「模糊」遮蔽只糊字幕位图本身
+/// （略外扩），不再糊整条字幕带；同一张表也给制卡当逐句时间（无文字 cue）。
 ///
-/// 图形字幕由 libmpv 直接画进画面，播放器不报位图坐标；坐标只在字幕包里——PCS 段给出
-/// 合成画布尺寸与每个对象的位置，ODS 给出对象宽高（[PgsSubtitleParser]）。所以这里把
-/// 当前轨原样抽成 `.sup`（与整轨转文字同一个抽取函数，按进度判活、可取消），解析出
-/// 「起止时间 + 位图外包框」的时间表，播放时按当前位置取正在显示的那几句。
+/// 图形字幕由 libmpv 直接画进画面，播放器不报位图坐标；坐标只在字幕包里（PGS 的
+/// PCS / ODS、VobSub 的 SET_DAREA、DVB 的页面 / 区域 / 对象位置）。所以这里把当前轨
+/// 原样抽出来（与整轨转文字同一个抽取函数 [extractGraphicSubtitleTrack]，按进度判活、
+/// 可取消），解码出「起止时间 + 位图外包框」的时间表，播放时按当前位置取正在显示的那几句。
 ///
-/// 抽轨要读完整个文件，耗时取决于磁盘吞吐；结果只有几 KB，按（路径, 大小, 修改时间,
-/// 轨序号）缓存在内存与临时目录里，同一个文件第二次打开不再读盘。抽取完成之前、以及
-/// 抽不出 `.sup` 的格式（VobSub / DVB），遮蔽层仍退回整条字幕带。
+/// 抽轨要读完整个文件，耗时取决于磁盘 / 网络吞吐；结果只有几 KB，本地文件按（路径, 大小,
+/// 修改时间, 轨序号）、远端流按（地址, 轨序号）缓存在内存与临时目录里，第二次打开不再
+/// 读一遍。抽取完成之前、以及解码不了的编码，遮蔽层仍退回整条字幕带。
 library;
 
 import 'dart:async';
@@ -21,10 +21,15 @@ import 'dart:ui' show Offset, Rect, Size;
 
 import 'package:crypto/crypto.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_track.dart'
+    show BitmapSubtitleTrackHeader, decodeBitmapSubtitlePayload;
 import 'package:fushi/src/media/video/graphic_subtitle_track_ocr.dart';
-import 'package:fushi/src/media/video/pgs_subtitle_parser.dart';
+
+export 'package:fushi_engine/media/video/bitmap_subtitle/graphic_subtitle_input.dart';
 
 /// 句子出现前多早开始糊、消失后多晚才撤（毫秒）。播放位置是按帧 / 按包推进的，
 /// 刚好压在起点上取会漏出一两帧字幕；两头各放一点余量。
@@ -165,14 +170,15 @@ Rect graphicSubtitleBlurRect(Rect bitmap, Size canvas) {
   return grown.intersect(Offset.zero & canvas);
 }
 
-/// PGS cue → 位图时间表。cue 没写画布尺寸（0）时用 [fallbackCanvas]（视频分辨率）。
-GraphicSubtitleRegionTrack graphicSubtitleRegionsFromPgs(
-  List<PgsCue> cues, {
+/// 位图 cue（任意编码）→ 位图时间表。cue 没写画布尺寸（0）时用 [fallbackCanvas]
+/// （视频分辨率）。
+GraphicSubtitleRegionTrack graphicSubtitleRegionsFromCues(
+  List<BitmapSubtitleCue> cues, {
   required Size fallbackCanvas,
 }) {
   Size canvas = Size.zero;
   final List<GraphicSubtitleRegion> regions = <GraphicSubtitleRegion>[];
-  for (final PgsCue cue in cues) {
+  for (final BitmapSubtitleCue cue in cues) {
     if (canvas.isEmpty && cue.canvasWidth > 0 && cue.canvasHeight > 0) {
       canvas = Size(cue.canvasWidth.toDouble(), cue.canvasHeight.toDouble());
     }
@@ -203,7 +209,7 @@ const int kGraphicTimingMatchToleranceMs = 100;
 /// 位图时间表 → 逐句**无文字** cue（制卡锚点 / padding 邻句用）。
 ///
 /// 不按首尾相接合并：解析器已把「内容不变、只换调色板 / 酸点重发」的连续显示集并成
-/// 一条（[PgsSubtitleParser]），剩下首尾相接的相邻位图是**内容不同**的两句——蓝光
+/// 一条（各解码器同一口径），剩下首尾相接的相邻位图是**内容不同**的两句——蓝光
 /// 字幕前一句的结束往往正好是后一句的开始，合并会把两句裁成一张卡。
 List<AudioCue> graphicSubtitleTimingCuesFromRegions(
   GraphicSubtitleRegionTrack track,
@@ -226,20 +232,63 @@ List<AudioCue> graphicSubtitleTimingCuesFromRegions(
   ];
 }
 
-/// 要取哪个文件的哪条图形轨（去 auto/no 后的序号，与抽轨 `0:s:N` 同义）。
-typedef GraphicSubtitleRegionRequest = ({String videoPath, int streamIndex});
+/// 要取哪个输入的哪条图形轨（[streamIndex] 是去 auto/no 后的序号，与抽轨 `0:s:N` 同义；
+/// [codec] 是播放器报的 codec 名，PGS 免探测）。
+@immutable
+class GraphicSubtitleRegionRequest {
+  const GraphicSubtitleRegionRequest({
+    required this.input,
+    required this.streamIndex,
+    this.codec,
+  });
 
-/// 播放页当前的图形轨能不能按位图坐标糊：本地文件 + PGS 轨（VobSub / DVB 抽不成
-/// `.sup`，远端流不整读）。不能时返回 null，遮蔽层退回整条字幕带。
+  final GraphicSubtitleInput input;
+  final int streamIndex;
+  final String? codec;
+
+  @override
+  bool operator ==(Object other) =>
+      other is GraphicSubtitleRegionRequest &&
+      other.input == input &&
+      other.streamIndex == streamIndex &&
+      other.codec == codec;
+
+  @override
+  int get hashCode => Object.hash(input, streamIndex, codec);
+
+  @override
+  String toString() =>
+      'GraphicSubtitleRegionRequest($input, s:$streamIndex, $codec)';
+}
+
+/// 播放页当前的图形轨能不能按位图坐标糊（**本地文件**入口）：本地路径 + 可解码的位图
+/// 编码（[graphicSubtitleTrackOcrSupportsCodec]）。远端地址在这里一律返回 null——远端
+/// 抽轨要带播放会话的请求头，走 [graphicSubtitleRegionRequestForInput]。不能时返回 null，
+/// 遮蔽层退回整条字幕带。
 GraphicSubtitleRegionRequest? graphicSubtitleRegionRequestFor({
   required String? videoPath,
   required ({int streamIndex, String? codec})? track,
 }) {
-  if (videoPath == null || track == null) return null;
+  if (videoPath == null) return null;
+  final GraphicSubtitleInput input = GraphicSubtitleInput.local(videoPath);
+  if (input.isRemote) return null;
+  return graphicSubtitleRegionRequestForInput(input: input, track: track);
+}
+
+/// 任意输入（本地路径，或 http(s) 地址 + 请求头）的图形轨请求。输入 ffmpeg 读不了
+/// （[GraphicSubtitleInput.isSupported]）或编码不能解码时返回 null。
+GraphicSubtitleRegionRequest? graphicSubtitleRegionRequestForInput({
+  required GraphicSubtitleInput? input,
+  required ({int streamIndex, String? codec})? track,
+}) {
+  if (input == null || track == null) return null;
+  if (!input.isSupported) return null;
   if (!graphicSubtitleTrackOcrSupportsCodec(track.codec)) return null;
-  final Uri? uri = Uri.tryParse(videoPath);
-  if (uri != null && uri.hasScheme && uri.scheme.length > 1) return null;
-  return (videoPath: videoPath, streamIndex: track.streamIndex);
+  return GraphicSubtitleRegionRequest(
+    input: input,
+    streamIndex: track.streamIndex,
+    codec: track.codec,
+  );
 }
 
 /// 位图时间表的来源。[load] 在拿不到时返回 null；[cancel] 完成即放弃（抽轨进程被杀）。
@@ -251,20 +300,26 @@ abstract interface class GraphicSubtitleRegionLoader {
   });
 }
 
-/// 生产实现：抽轨 → isolate 里解析 → 内存 + 临时目录 JSON 缓存。
+/// 生产实现：抽轨 → isolate 里解码 → 内存 + 临时目录 JSON 缓存。
 class FfmpegGraphicSubtitleRegionLoader implements GraphicSubtitleRegionLoader {
-  FfmpegGraphicSubtitleRegionLoader({Directory? cacheDir})
-    : _cacheDirOverride = cacheDir;
+  FfmpegGraphicSubtitleRegionLoader({
+    Directory? cacheDir,
+    FfmpegBackend? backend,
+  }) : _cacheDirOverride = cacheDir,
+       _backend = backend;
 
   /// 播放页共用的一份（缓存跨页面保留）。
   static final FfmpegGraphicSubtitleRegionLoader shared =
       FfmpegGraphicSubtitleRegionLoader();
 
   final Directory? _cacheDirOverride;
+
+  /// 抽轨后端；null = [resolveFfmpegBackend]（测试可注入真二进制）。
+  final FfmpegBackend? _backend;
   final Map<String, GraphicSubtitleRegionTrack> _memory =
       <String, GraphicSubtitleRegionTrack>{};
 
-  /// 在途加载（同一文件同一轨只抽一次：模糊遮蔽层与制卡时间表会同时要它）。
+  /// 在途加载（同一输入同一轨只抽一次：模糊遮蔽层与制卡时间表会同时要它）。
   final Map<String, Future<GraphicSubtitleRegionTrack?>> _inflight =
       <String, Future<GraphicSubtitleRegionTrack?>>{};
 
@@ -278,10 +333,8 @@ class FfmpegGraphicSubtitleRegionLoader implements GraphicSubtitleRegionLoader {
     required Size fallbackCanvas,
     Future<void>? cancel,
   }) async {
-    final File input = File(request.videoPath);
-    final FileStat stat = input.statSync();
-    if (stat.type != FileSystemEntityType.file) return null;
-    final String key = _cacheKey(request, stat);
+    final String? key = _cacheKey(request);
+    if (key == null) return null;
     final GraphicSubtitleRegionTrack? hot = _memory[key];
     if (hot != null) return hot;
     final Future<GraphicSubtitleRegionTrack?>? running = _inflight[key];
@@ -324,24 +377,31 @@ class FfmpegGraphicSubtitleRegionLoader implements GraphicSubtitleRegionLoader {
       'fushi_graphic_sub_regions_',
     );
     try {
-      final String supPath = p.join(work.path, 'track.sup');
-      final bool ok = await extractGraphicSubtitleTrackToSup(
-        videoPath: request.videoPath,
+      final String payloadPath = p.join(work.path, 'track.bin');
+      final bool ok = await extractGraphicSubtitleTrack(
+        input: request.input,
         streamIndex: request.streamIndex,
-        supPath: supPath,
+        outputPath: payloadPath,
+        codec: request.codec,
         cancel: cancel,
+        backend: _backend,
       );
       if (!ok) return null;
+      final Uint8List payload = await File(payloadPath).readAsBytes();
+      final BitmapSubtitleTrackHeader? header = readGraphicSubtitleTrackHeader(
+        payloadPath,
+        payload,
+      );
+      if (header == null) return null;
       final double fw = fallbackCanvas.width;
       final double fh = fallbackCanvas.height;
-      // 一季的 .sup 动辄十几 MB：解析放 isolate，回来的只有几 KB 的数字表。
-      final Map<String, Object?> json = await Isolate.run(() {
-        final Uint8List bytes = File(supPath).readAsBytesSync();
-        return graphicSubtitleRegionsFromPgs(
-          PgsSubtitleParser.parse(bytes),
+      // 一季的载荷动辄十几 MB：解码放 isolate，回来的只有几 KB 的数字表。
+      final Map<String, Object?> json = await Isolate.run(
+        () => graphicSubtitleRegionsFromCues(
+          decodeBitmapSubtitlePayload(payload, header),
           fallbackCanvas: Size(fw, fh),
-        ).toJson();
-      });
+        ).toJson(),
+      );
       final GraphicSubtitleRegionTrack? track =
           GraphicSubtitleRegionTrack.fromJson(json);
       if (track == null) return null;
@@ -362,10 +422,19 @@ class FfmpegGraphicSubtitleRegionLoader implements GraphicSubtitleRegionLoader {
     }
   }
 
-  static String _cacheKey(GraphicSubtitleRegionRequest r, FileStat stat) {
-    final String raw =
-        '${r.videoPath}|${stat.size}|'
-        '${stat.modified.millisecondsSinceEpoch}|${r.streamIndex}|v1';
+  /// 缓存键：本地文件带大小与修改时间（文件换了就重抽）；远端流只认地址（请求头里的
+  /// 会话凭据会轮换，不进键）。本地文件不存在返回 null。`v2`：解码器扩到 VobSub / DVB。
+  static String? _cacheKey(GraphicSubtitleRegionRequest r) {
+    final String identity;
+    if (r.input.isRemote) {
+      identity = r.input.uri;
+    } else {
+      final FileStat stat = File(r.input.uri).statSync();
+      if (stat.type != FileSystemEntityType.file) return null;
+      identity =
+          '${r.input.uri}|${stat.size}|${stat.modified.millisecondsSinceEpoch}';
+    }
+    final String raw = '$identity|${r.streamIndex}|v2';
     return sha1.convert(utf8.encode(raw)).toString();
   }
 }

@@ -469,6 +469,9 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // `POST .../subtitle/backfill`（立即补字幕）。老 host 无此字段 → 404。
         'videoSubtitleClear': _libraryService is VideoSubtitleClearHost,
         'videoSubtitleBackfill': lib && videoSubtitleBackfill != null,
+        // 图形字幕整轨回传（`GET .../graphicsubtitle?embeddedStreamIndex=`）。老 host
+        // 无此字段 / 没注入抽取实现 → false，client 不请求、时间表只靠边播边记。
+        'videoGraphicSubtitleTrack': lib && graphicSubtitleTrackExporter != null,
         // TMDB 备选排序（`/api/library/metadata/episode-group*`）。
         'videoMetadataOrdering': _libraryService is VideoMetadataOrderingHost,
         'serviceConfig': _securityContext != null &&

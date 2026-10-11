@@ -521,7 +521,10 @@ void main() {
           obscure: GraphicSubtitleObscure.blur,
           revealOnInteraction: true,
           lookupPopupVisible: false,
-          regionRequest: (videoPath: '/v/ep03.mkv', streamIndex: 0),
+          regionRequest: const GraphicSubtitleRegionRequest(
+            input: GraphicSubtitleInput.local('/v/ep03.mkv'),
+            streamIndex: 0,
+          ),
           // 位图框 = 假画面底部那行字（1920x1080 画布坐标），与 PGS 解析出的形状一致。
           regionLoader: _FixedRegionLoader(
             GraphicSubtitleRegionTrack(

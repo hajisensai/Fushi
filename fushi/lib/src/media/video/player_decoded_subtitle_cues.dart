@@ -112,6 +112,85 @@ AudioCue? buildGraphicSubtitleAnchorCue({
   return (cues: next, index: index, inserted: inserted);
 }
 
+/// 图形字幕（PGS / VobSub / DVB，libmpv 自绘）**边播边记**的一句：mpv 此刻在屏那句的
+/// `sub-start` / `sub-end`（毫秒，字幕时基）合进逐句时间表 [cues]（按 startMs 升序）。
+///
+/// 位图字幕没有 `sub-text`，但 libmpv 的位图解码驱动（`sd_lavc`）实现了 `get_times`：
+/// 画面上有位图时 `sub-start` 就是那句的显示起点，`sub-end` 在结束段解码后才可用
+/// （之前不可用）。所以：
+/// - 同一起点已在表里 → 只在拿到真实结束时**原地**改它的 endMs（不换对象：制卡流按
+///   身份认 cue，换对象会让正在用它的制卡认不出所属流）；结束仍未知则不动；
+/// - 否则按起点插入一句**无文字** cue，结束未知用 [kPlayerDecodedCueProvisionalMs]
+///   暂定（调用方在下一句出现时按 mpv 自己的规则收尾，见 [closePlayerDecodedCue]）。
+///
+/// 返回新表（插入时为新列表，原地改时为原列表）、这句的 cue、表是否有变化，以及这句
+/// 是不是新插入的 [inserted]（调用方据此认「结束未知的新句」= 暂定句）。
+({List<AudioCue> cues, AudioCue cue, bool changed, bool inserted})
+mergeGraphicSubtitleLiveTiming(
+  List<AudioCue> cues, {
+  required int startMs,
+  required int? endMs,
+}) {
+  final int? end = endMs != null && endMs > startMs ? endMs : null;
+  for (final AudioCue existing in cues) {
+    if (existing.startMs != startMs) continue;
+    if (end == null || existing.endMs == end) {
+      return (cues: cues, cue: existing, changed: false, inserted: false);
+    }
+    existing.endMs = end;
+    return (cues: cues, cue: existing, changed: true, inserted: false);
+  }
+  final AudioCue cue = AudioCue()
+    ..bookKey = ''
+    ..chapterHref = ''
+    ..sentenceIndex = 0
+    ..textFragmentId = ''
+    ..text = ''
+    ..startMs = startMs
+    ..endMs = end ?? startMs + kPlayerDecodedCueProvisionalMs
+    ..audioFileIndex = 0;
+  final List<AudioCue> next = List<AudioCue>.of(cues);
+  int insertAt = next.length;
+  for (int i = 0; i < next.length; i++) {
+    if (next[i].startMs > startMs) {
+      insertAt = i;
+      break;
+    }
+  }
+  next.insert(insertAt, cue);
+  for (int i = 0; i < next.length; i++) {
+    next[i].sentenceIndex = i;
+  }
+  return (cues: next, cue: cue, changed: true, inserted: true);
+}
+
+/// 图形字幕的**有效**逐句时间表：整轨抽取结果 [extracted] 是权威（字幕包里的真实起止，
+/// 覆盖整条轨）；边播边记的 [live] 只在抽取结果还没到（或这条来源抽不了）时顶上，抽取
+/// 结果到了以后只保留与它**不重叠**的句子（抽取解析丢掉的句子才由它补上）。
+///
+/// 两边的 cue 对象原样复用（制卡流按身份认 cue）；结果按起点升序、
+/// [AudioCue.sentenceIndex] 按位置重排。
+List<AudioCue> mergeGraphicSubtitleTimingTables({
+  required List<AudioCue> extracted,
+  required List<AudioCue> live,
+}) {
+  if (extracted.isEmpty) return List<AudioCue>.unmodifiable(live);
+  bool overlapsExtracted(AudioCue cue) => extracted.any(
+    (AudioCue e) =>
+        e.startMs == cue.startMs ||
+        (cue.startMs < e.endMs && e.startMs < cue.endMs),
+  );
+  final List<AudioCue> merged = <AudioCue>[
+    ...extracted,
+    for (final AudioCue cue in live)
+      if (!overlapsExtracted(cue)) cue,
+  ]..sort((AudioCue a, AudioCue b) => a.startMs.compareTo(b.startMs));
+  for (int i = 0; i < merged.length; i++) {
+    merged[i].sentenceIndex = i;
+  }
+  return List<AudioCue>.unmodifiable(merged);
+}
+
 /// 在第 [insertedAt] 位插入一句后，原下标 [index] 的新位置（null 保持 null）。
 int? shiftCueIndexForInsert(int? index, int insertedAt) {
   if (index == null || index < 0) return index;

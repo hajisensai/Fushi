@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'video_fushi_page_source_corpus.dart';
 
-/// 源码守卫：图形字幕整轨转文字（`_generateSubtitleFromGraphicTrack`）在**换视频源**时
+/// 源码守卫：图形字幕整轨转文字（`_runGraphicTrackOcr`）在**换视频源**时
 /// 必须被取消。
 ///
 /// 任务按 `isCurrent()`（`_episodeLoadSeq` / `_currentVideoPath` / controller）判断结果
@@ -43,9 +43,8 @@ void main() {
   });
 
   test('取消信号就是抽轨与逐条识别共用的那一个', () {
-    final String body = bodyOf(
-      'Future<void> _generateSubtitleFromGraphicTrack(',
-    );
+    // 本地 / 远端两个入口共用 [_runGraphicTrackOcr]。
+    final String body = bodyOf('Future<void> _runGraphicTrackOcr(');
     expect(body.contains('cancel: cancel.future'), isTrue);
     expect(body.contains('!isCurrent() || cancelled()'), isTrue);
     final String cancel = bodyOf('void _cancelGraphicSubtitleOcr()');

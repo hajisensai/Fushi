@@ -1,4 +1,4 @@
-/// 图形字幕（PGS / VobSub）的「模糊 / 隐藏」遮蔽：与文本字幕同一个三态开关
+/// 图形字幕（PGS / VobSub / DVB）的「模糊 / 隐藏」遮蔽：与文本字幕同一个三态开关
 /// （`VideoSubtitleObscureMode`）、同一条显形门（暂停 / 查词浮层开着 / 悬停字幕区都让位，
 /// 总闸关掉则恒定遮蔽），练听力时图形字幕也能遮住。
 ///
@@ -6,15 +6,21 @@
 /// - **隐藏**：切 libmpv `sub-visibility`（[VideoPlayerController.setGraphicSubtitleVisible]），
 ///   画面本身不受影响；
 /// - **模糊**：只糊字幕位图本身占的矩形（略外扩），画面其余部分保持清晰。位图坐标
-///   来自抽轨解析出的 PGS 时间表（[GraphicSubtitleRegionLoader]），按当前播放位置取
-///   正在显示的句子，没有字幕的时刻画面完全不糊。时间表还没抽好、或这条轨抽不出坐标
-///   （VobSub / DVB / 远端流）时，退回整条字幕带（帧底 [kGraphicSubtitleBandFraction]）。
+///   来自抽轨解码出的位图时间表（[GraphicSubtitleRegionLoader]），按当前播放位置取
+///   正在显示的句子，没有字幕的时刻画面完全不糊。时间表的来源按优先级：
+///   1. 控制器已经到手的那一份（[VideoGraphicSubtitleObscureLayer.regionTrack]，即
+///      [VideoPlayerController.graphicSubtitleRegionTrack]）——**互联播放只有这一条**：
+///      client 不许为遮蔽整片读流，用的是控制器从 host 下回来的那一小份整轨；
+///   2. 自己按本地路径 / 页面给的网络流输入抽（与控制器的时间表抽取命中同一个在途任务）。
+///   时间表还没到、或这条轨抽不出坐标（解码不了的编码 / 推导不出输入）时，退回整条
+///   字幕带（帧底 [kGraphicSubtitleBandFraction]）。
 ///   字幕显形后整层撤掉。
 library;
 
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:material_ui/material_ui.dart';
 
@@ -38,6 +44,8 @@ class VideoGraphicSubtitleObscureLayer extends StatefulWidget {
     required this.revealOnInteraction,
     required this.lookupPopupVisible,
     this.regionRequest,
+    this.regionInput,
+    this.regionTrack,
     this.regionLoader,
     super.key,
   });
@@ -55,6 +63,15 @@ class VideoGraphicSubtitleObscureLayer extends StatefulWidget {
   /// 抽轨请求的覆盖值（测试用）。缺省按控制器当前的视频路径与图形轨推导
   /// （[graphicSubtitleRegionRequestFor]）；推导不出 = 只能糊整条字幕带。
   final GraphicSubtitleRegionRequest? regionRequest;
+
+  /// 当前视频的抽轨输入（远端播放时由页面给出 http(s) 地址 + 播放会话请求头）。缺省按
+  /// 控制器的本地视频路径推导；与 [regionRequest] 同给时以 [regionRequest] 为准。
+  final GraphicSubtitleInput? regionInput;
+
+  /// 已经到手的位图时间表（通常是 [VideoPlayerController.graphicSubtitleRegionTrack]：
+  /// 控制器为逐句时间表抽 / 下回来的同一份）。有值时直接用、不再自己抽；互联播放时
+  /// [regionRequest] / [regionInput] 都推导不出，它是按位图糊的唯一来源。
+  final ValueListenable<GraphicSubtitleRegionTrack?>? regionTrack;
 
   /// 位图时间表来源；缺省为播放页共用的 [FfmpegGraphicSubtitleRegionLoader.shared]。
   final GraphicSubtitleRegionLoader? regionLoader;
@@ -86,9 +103,28 @@ class _VideoGraphicSubtitleObscureLayerState
     with SingleTickerProviderStateMixin {
   bool _hovering = false;
 
-  /// 已抽好的位图时间表（对应 [_regionsFor]）；null = 还没有 / 拿不到。
-  GraphicSubtitleRegionTrack? _regions;
+  /// 自己抽好的位图时间表（对应 [_regionsFor]）；null = 还没有 / 拿不到。
+  GraphicSubtitleRegionTrack? _loadedRegions;
   GraphicSubtitleRegionRequest? _regionsFor;
+
+  /// 此刻按位图糊用的时间表：外部给的（[VideoGraphicSubtitleObscureLayer.regionTrack]）
+  /// 优先，否则自己抽的。
+  GraphicSubtitleRegionTrack? get _regions =>
+      _providedRegions ?? _loadedRegions;
+
+  /// 外部给的、可用的位图时间表（只在「模糊」且图形轨在播时有效）。
+  GraphicSubtitleRegionTrack? get _providedRegions {
+    if (widget.obscure != GraphicSubtitleObscure.blur ||
+        !widget.controller.isPlayerRenderedSubtitleActive) {
+      return null;
+    }
+    final GraphicSubtitleRegionTrack? track = widget.regionTrack?.value;
+    if (track == null || track.regions.isEmpty || track.canvas.isEmpty) {
+      return null;
+    }
+    return track;
+  }
+
   Completer<void>? _regionCancel;
 
   /// 此刻正在显示的句子的模糊框（画布坐标）。逐帧按播放位置重算，变了才重建。
@@ -99,6 +135,7 @@ class _VideoGraphicSubtitleObscureLayerState
   void initState() {
     super.initState();
     widget.controller.addListener(_onControllerChanged);
+    widget.regionTrack?.addListener(_onRegionTrackChanged);
     _syncVisibility();
     _syncRegions();
   }
@@ -111,6 +148,10 @@ class _VideoGraphicSubtitleObscureLayerState
       unawaited(oldWidget.controller.setGraphicSubtitleVisible(true));
       widget.controller.addListener(_onControllerChanged);
     }
+    if (!identical(oldWidget.regionTrack, widget.regionTrack)) {
+      oldWidget.regionTrack?.removeListener(_onRegionTrackChanged);
+      widget.regionTrack?.addListener(_onRegionTrackChanged);
+    }
     _syncVisibility();
     _syncRegions();
   }
@@ -119,6 +160,7 @@ class _VideoGraphicSubtitleObscureLayerState
   void dispose() {
     _cancelRegionLoad();
     _ticker.dispose();
+    widget.regionTrack?.removeListener(_onRegionTrackChanged);
     widget.controller.removeListener(_onControllerChanged);
     // 离开（换页 / 关遮蔽层）时把图形字幕还原成可见，不把「隐藏」留在播放器上。
     unawaited(widget.controller.setGraphicSubtitleVisible(true));
@@ -154,6 +196,13 @@ class _VideoGraphicSubtitleObscureLayerState
     if (mounted) setState(() {});
   }
 
+  /// 外部时间表到了 / 换了（控制器抽好、从 host 下回来、换轨清空）：改用它或退回自己抽。
+  void _onRegionTrackChanged() {
+    if (!mounted) return;
+    _syncRegions();
+    setState(() => _activeRects = _rectsNow());
+  }
+
   /// 隐藏态下发 libmpv 可见性；其它视觉一律保持可见。
   void _syncVisibility() {
     final bool hide =
@@ -167,24 +216,30 @@ class _VideoGraphicSubtitleObscureLayerState
     _syncVisibility();
   }
 
-  /// 只有「模糊」且图形轨在播时才需要位图时间表；请求变了（换轨 / 换片）就丢掉旧的
-  /// 重新取。抽轨期间先按字幕带糊。
+  /// 只有「模糊」且图形轨在播时才需要位图时间表；外部已给（[_providedRegions]）就不自己
+  /// 抽；请求变了（换轨 / 换片）就丢掉旧的重新取。抽轨期间先按字幕带糊。
   void _syncRegions() {
     final VideoPlayerController c = widget.controller;
     final GraphicSubtitleRegionRequest? want =
         widget.obscure == GraphicSubtitleObscure.blur &&
-            c.isPlayerRenderedSubtitleActive
+            c.isPlayerRenderedSubtitleActive &&
+            _providedRegions == null
         ? widget.regionRequest ??
-              graphicSubtitleRegionRequestFor(
-                videoPath: c.videoPath,
-                track: c.activeGraphicSubtitleTrack,
-              )
+              (widget.regionInput != null
+                  ? graphicSubtitleRegionRequestForInput(
+                      input: widget.regionInput,
+                      track: c.activeGraphicSubtitleTrack,
+                    )
+                  : graphicSubtitleRegionRequestFor(
+                      videoPath: c.videoPath,
+                      track: c.activeGraphicSubtitleTrack,
+                    ))
         : null;
     if (want != _regionsFor) {
       _cancelRegionLoad();
       _regionsFor = want;
-      _regions = null;
-      _activeRects = const <Rect>[];
+      _loadedRegions = null;
+      _activeRects = _rectsNow();
       if (want != null) unawaited(_loadRegions(want));
     }
     _syncTicker();
@@ -215,7 +270,7 @@ class _VideoGraphicSubtitleObscureLayerState
     _regionCancel = null;
     if (track == null || track.regions.isEmpty || track.canvas.isEmpty) return;
     setState(() {
-      _regions = track;
+      _loadedRegions = track;
       _activeRects = _rectsNow();
     });
     _syncTicker();

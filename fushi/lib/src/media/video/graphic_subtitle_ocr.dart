@@ -23,7 +23,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
-import 'package:fushi/src/media/video/pgs_subtitle_parser.dart';
+import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart'
     show
@@ -196,10 +196,10 @@ class GraphicSubtitleOcrSession {
   /// 该送时，排进**跨条批量**队列（多条拼一次请求、几批并发），读回的新文字经
   /// [onRefined] 再交一次——本地识别与大模型互不等待。
   ///
-  /// 内容相同的位图（[PgsRenderedImage.contentKey]）只识别、只重读一次：后来的
+  /// 内容相同的位图（[BitmapSubtitleImage.contentKey]）只识别、只重读一次：后来的
   /// 同图直接拿前一次的结果（已重读过就直接是重读后的文字）。会话已关闭返回 null。
   Future<String?> recognizeSubtitleImage(
-    PgsRenderedImage image, {
+    BitmapSubtitleImage image, {
     void Function(String refined)? onRefined,
     void Function(Object error, StackTrace stack)? onRefineError,
   }) async {
@@ -231,7 +231,7 @@ class GraphicSubtitleOcrSession {
   }
 
   Future<String?> _recognizeSubtitleLocal(
-    PgsRenderedImage image,
+    BitmapSubtitleImage image,
     _SubtitleEntry entry,
     void Function(Object error, StackTrace stack)? onRefineError,
   ) async {
@@ -491,7 +491,7 @@ class _SubtitleAiItem {
 
 /// 字幕位图 → 交给大模型的裁图（与漫画同一套外扩 / 缩放规则）。顶层函数：给
 /// `Isolate.run` 用。
-Uint8List? graphicSubtitleAiCrop(PgsRenderedImage image) =>
+Uint8List? graphicSubtitleAiCrop(BitmapSubtitleImage image) =>
     cropMangaAiOcrBlocks(
       image.encodePng(),
       pageWidth: image.width.toDouble(),

@@ -192,6 +192,18 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       return _handleTranscodeHls(svc, request, hlsId, suffix);
     }
 
+    // GET /api/library/videos/<id>/graphicsubtitle?embeddedStreamIndex=N[&episode=E][&part=header]
+    // 图形字幕（PGS / VobSub / DVB）整轨回传：host 在本机把那一条字幕轨原样抽出来，
+    // client 解析出逐句起止（制卡锚句 / 句子音频），不为字幕把整片再读一遍。需 Basic
+    // 鉴权（不在 /stream 豁免名单）。embeddedStreamIndex 与 `/subtitle` 同义（ffmpeg
+    // `0:s:N`，即 `embeddedSubtitleTracks[].streamIndex`）。文本轨走 `/subtitle`，这里 404。
+    final String? graphicSubtitleId =
+        _extractVideoId(reqPath, 'graphicsubtitle');
+    if (graphicSubtitleId != null) {
+      if (method != 'GET') return shelf.Response(405);
+      return _handleGraphicSubtitleTrack(svc, request, graphicSubtitleId);
+    }
+
     // POST /api/library/videos/<id>/subtitle/backfill  {language?}
     // 立即给这一个视频补字幕（刮削后自动补的同一条服务，单视频入口）。必须在
     // `/subtitle` 之前匹配：bookUid 允许含 `/`，`subtitle` 后缀匹配不到这条，但
@@ -653,6 +665,74 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       );
     }
     return null;
+  }
+
+  /// `GET .../graphicsubtitle` 的处理：反查文件 → 按流号找轨（必须是图形轨）→ 交注入
+  /// 的抽取实现 → 原样回传整轨字节。
+  Future<shelf.Response> _handleGraphicSubtitleTrack(
+    FushiLibraryHostService service,
+    shelf.Request request,
+    String id,
+  ) async {
+    final GraphicSubtitleTrackExporter? exporter = graphicSubtitleTrackExporter;
+    if (exporter == null) {
+      return shelf.Response(501, body: 'Graphic subtitle export not available');
+    }
+    final int? streamIndex = int.tryParse(
+      request.url.queryParameters['embeddedStreamIndex'] ?? '',
+    );
+    if (streamIndex == null || streamIndex < 0) {
+      return shelf.Response(400, body: 'embeddedStreamIndex required');
+    }
+    final int episodeIndex = _episodeIndexFromRequest(request);
+    final File? videoFile =
+        await service.resolveVideoFile(id, episodeIndex: episodeIndex);
+    if (videoFile == null) return shelf.Response.notFound('Video not found');
+    EmbeddedSubtitleTrack? track;
+    for (final EmbeddedSubtitleTrack candidate
+        in await listEmbeddedSubtitleTracks(videoFile.path)) {
+      if (candidate.streamIndex == streamIndex) {
+        track = candidate;
+        break;
+      }
+    }
+    // 文本轨有 `/subtitle`（转出可查词的文字），这里只接图形轨。
+    if (track == null || subtitleFormatForCodec(track.codec) != null) {
+      return shelf.Response.notFound('Graphic subtitle track not found');
+    }
+    final GraphicSubtitleTrackExport? export;
+    try {
+      export = await exporter(
+        videoPath: videoFile.path,
+        streamIndex: track.streamIndex,
+        codec: track.codec,
+      );
+    } on GraphicSubtitleTrackExportUnsupported catch (e) {
+      return shelf.Response(415,
+          body: 'Unsupported graphic subtitle: ${e.codec}');
+    } catch (e) {
+      fushiDebugPrint('graphic subtitle export failed: $e');
+      return shelf.Response(500, body: 'Graphic subtitle export failed');
+    }
+    if (export == null || !export.file.existsSync()) {
+      return shelf.Response(500, body: 'Graphic subtitle export failed');
+    }
+    // `?part=header`：轨头 JSON（VobSub 调色板 / DVB 页号等载荷里没有的 extradata）；
+    // 这条轨没有轨头（PGS）时 404。缺省回载荷。两次请求命中抽取实现的同一份缓存。
+    final bool wantsHeader = request.url.queryParameters['part'] == 'header';
+    final File? file = wantsHeader ? export.headerFile : export.file;
+    if (file == null || !file.existsSync()) {
+      return shelf.Response.notFound('Graphic subtitle track header not found');
+    }
+    return shelf.Response.ok(
+      file.openRead(),
+      headers: <String, String>{
+        'Content-Type':
+            wantsHeader ? 'application/json' : 'application/octet-stream',
+        'Content-Length': '${file.lengthSync()}',
+        'X-Fushi-Graphic-Subtitle-Format': export.format,
+      },
+    );
   }
 
   Future<File?> _resolveVideoCover(

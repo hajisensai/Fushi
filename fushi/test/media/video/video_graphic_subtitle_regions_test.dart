@@ -3,7 +3,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/pgs_subtitle_parser.dart';
+import 'package:fushi_engine/media/video/bitmap_subtitle/pgs_subtitle_parser.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_obscure_layer.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_regions.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
@@ -60,9 +60,10 @@ VideoPlayerController _controller({required int positionMs}) {
   return c;
 }
 
-const GraphicSubtitleRegionRequest _request = (
-  videoPath: '/videos/ep03.mkv',
+const GraphicSubtitleRegionRequest _request = GraphicSubtitleRegionRequest(
+  input: GraphicSubtitleInput.local('/videos/ep03.mkv'),
   streamIndex: 0,
+  codec: 'hdmv_pgs_subtitle',
 );
 
 void main() {
@@ -164,7 +165,7 @@ void main() {
   });
 
   test('PGS cue → 时间表：用 PCS 声明的画布，空对象跳过', () {
-    final GraphicSubtitleRegionTrack t = graphicSubtitleRegionsFromPgs(
+    final GraphicSubtitleRegionTrack t = graphicSubtitleRegionsFromCues(
       PgsSubtitleParser.parse(_oneCueSup(canvasW: 1280, canvasH: 720)),
       fallbackCanvas: _canvas,
     );
@@ -180,11 +181,24 @@ void main() {
       streamIndex: 2,
       codec: 'hdmv_pgs_subtitle',
     );
-    test('本地 PGS 轨才按位图糊', () {
+    test('本地 PGS / VobSub / DVB 轨都按位图糊', () {
       expect(
         graphicSubtitleRegionRequestFor(videoPath: '/v/a.mkv', track: pgs),
-        (videoPath: '/v/a.mkv', streamIndex: 2),
+        const GraphicSubtitleRegionRequest(
+          input: GraphicSubtitleInput.local('/v/a.mkv'),
+          streamIndex: 2,
+          codec: 'hdmv_pgs_subtitle',
+        ),
       );
+      for (final String codec in <String>['dvd_subtitle', 'dvb_subtitle']) {
+        expect(
+          graphicSubtitleRegionRequestFor(
+            videoPath: '/v/a.mkv',
+            track: (streamIndex: 1, codec: codec),
+          )?.codec,
+          codec,
+        );
+      }
       expect(
         graphicSubtitleRegionRequestFor(
           videoPath: r'C:\videos\a.m2ts',
@@ -194,18 +208,19 @@ void main() {
         reason: 'Windows 盘符不是 URL scheme',
       );
     });
-    test('远端流 / VobSub / DVB / 没有图形轨 → 退回整条字幕带', () {
+    test('本地入口不接远端地址；不能解码的编码 / 没有图形轨 → 退回整条字幕带', () {
       expect(
         graphicSubtitleRegionRequestFor(
           videoPath: 'http://192.168.1.2/a.mkv',
           track: pgs,
         ),
         isNull,
+        reason: '远端抽轨要带会话请求头，走 graphicSubtitleRegionRequestForInput',
       );
       expect(
         graphicSubtitleRegionRequestFor(
           videoPath: '/v/a.mkv',
-          track: (streamIndex: 0, codec: 'dvd_subtitle'),
+          track: (streamIndex: 0, codec: 'dvb_teletext'),
         ),
         isNull,
       );
@@ -215,6 +230,38 @@ void main() {
       );
       expect(
         graphicSubtitleRegionRequestFor(videoPath: null, track: pgs),
+        isNull,
+      );
+    });
+    test('远端入口：http(s) + 请求头；ffmpeg 读不了的 scheme 不接', () {
+      const GraphicSubtitleInput remote = GraphicSubtitleInput(
+        uri: 'https://media.example/a.mkv',
+        headers: <String, String>{'Cookie': 'k=v'},
+      );
+      final GraphicSubtitleRegionRequest? r =
+          graphicSubtitleRegionRequestForInput(input: remote, track: pgs);
+      expect(r?.input, remote);
+      expect(r?.streamIndex, 2);
+      // 同一输入同一轨：相等（遮蔽层据此判断要不要重抽）。
+      expect(
+        r,
+        graphicSubtitleRegionRequestForInput(
+          input: const GraphicSubtitleInput(
+            uri: 'https://media.example/a.mkv',
+            headers: <String, String>{'Cookie': 'k=v'},
+          ),
+          track: pgs,
+        ),
+      );
+      expect(
+        graphicSubtitleRegionRequestForInput(
+          input: const GraphicSubtitleInput(uri: 'anime-source://x/1'),
+          track: pgs,
+        ),
+        isNull,
+      );
+      expect(
+        graphicSubtitleRegionRequestForInput(input: null, track: pgs),
         isNull,
       );
     });
@@ -307,13 +354,129 @@ void main() {
       expect(tester.getRect(region()).top, lessThan(60), reason: '顶部那句');
     });
 
-    testWidgets('拿不到坐标（抽不出 / VobSub）时退回整条字幕带', (WidgetTester tester) async {
+    testWidgets('拿不到坐标（抽不出 / 解码不了）时退回整条字幕带', (WidgetTester tester) async {
       final VideoPlayerController c = _controller(positionMs: 5000);
       addTearDown(c.dispose);
       await pump(tester, c, _FakeLoader(null));
       expect(region(), findsNothing);
       expect(band(), findsOneWidget);
       expect(blur(), findsOneWidget);
+    });
+
+    testWidgets('页面给远端输入：按它 + 当前图形轨发请求', (WidgetTester tester) async {
+      final VideoPlayerController c = _controller(positionMs: 5000);
+      addTearDown(c.dispose);
+      final _FakeLoader loader = _FakeLoader(_track());
+      const GraphicSubtitleInput remote = GraphicSubtitleInput(
+        uri: 'https://media.example/ep03.mkv',
+        headers: <String, String>{'Referer': 'https://media.example/'},
+      );
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(960, 540);
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: VideoGraphicSubtitleObscureLayer(
+              controller: c,
+              fit: BoxFit.contain,
+              obscure: GraphicSubtitleObscure.blur,
+              revealOnInteraction: true,
+              lookupPopupVisible: false,
+              regionInput: remote,
+              regionLoader: loader,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(loader.requests, <GraphicSubtitleRegionRequest>[
+        const GraphicSubtitleRegionRequest(
+          input: remote,
+          streamIndex: 0,
+          codec: 'hdmv_pgs_subtitle',
+        ),
+      ]);
+      expect(region(), findsOneWidget);
+    });
+
+    testWidgets('互联：推导不出抽轨请求时用控制器已到手的位图时间表按位图糊（不发抽轨请求）', (
+      WidgetTester tester,
+    ) async {
+      // 互联播放：控制器的视频路径是 host 的 token 流地址，遮蔽层推导不出本地抽轨请求。
+      final VideoPlayerController c = _controller(positionMs: 5000)
+        ..debugSetVideoPathForTesting(
+          'https://192.168.1.2:8766/api/library/videos/v1/stream?token=t',
+        );
+      addTearDown(c.dispose);
+      final _FakeLoader loader = _FakeLoader(_track());
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(960, 540);
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: VideoGraphicSubtitleObscureLayer(
+              controller: c,
+              fit: BoxFit.contain,
+              obscure: GraphicSubtitleObscure.blur,
+              revealOnInteraction: true,
+              lookupPopupVisible: false,
+              regionTrack: c.graphicSubtitleRegionTrack,
+              regionLoader: loader,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      // 控制器的 host 整轨还没下回来：先糊整条字幕带。
+      expect(band(), findsOneWidget);
+      expect(region(), findsNothing);
+      // host 整轨解析好了：改按位图糊，且全程没有自己抽轨（client 不读整片流）。
+      c.debugSetGraphicRegionTrackForTesting(_track());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(band(), findsNothing);
+      expect(region(), findsOneWidget);
+      expect(loader.requests, isEmpty);
+      // 换轨清空：退回整条字幕带。
+      c.debugSetGraphicRegionTrackForTesting(null);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(region(), findsNothing);
+      expect(band(), findsOneWidget);
+    });
+
+    testWidgets('外部时间表优先于自己抽的：到手后不再发抽轨请求', (WidgetTester tester) async {
+      final VideoPlayerController c = _controller(positionMs: 5000);
+      addTearDown(c.dispose);
+      c.debugSetGraphicRegionTrackForTesting(_track());
+      final _FakeLoader loader = _FakeLoader(_track());
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(960, 540);
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: VideoGraphicSubtitleObscureLayer(
+              controller: c,
+              fit: BoxFit.contain,
+              obscure: GraphicSubtitleObscure.blur,
+              revealOnInteraction: true,
+              lookupPopupVisible: false,
+              regionRequest: _request,
+              regionTrack: c.graphicSubtitleRegionTrack,
+              regionLoader: loader,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(loader.requests, isEmpty);
+      expect(region(), findsOneWidget);
     });
 
     testWidgets('暂停 = 用户在看：位图框也让位', (WidgetTester tester) async {

@@ -18,6 +18,12 @@ import 'package:fushi/src/media/video/mpv_cache_snapshot.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show CachedMediaSnapshot;
 import 'package:fushi/src/models/preferences_repository.dart' show VideoFitMode;
+import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_track.dart'
+    show bitmapSubtitleTrackHeaderPath;
+import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dart'
+    show BitmapSubtitleCue;
+import 'package:fushi_engine/media/video/bitmap_subtitle/graphic_subtitle_track_extract.dart'
+    show extractGraphicSubtitleTrack, readGraphicSubtitleTrackInBackground;
 import 'package:fushi/src/media/video/player_decoded_subtitle_cues.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_regions.dart';
 import 'package:fushi/src/media/video/video_playback_source.dart';
@@ -40,6 +46,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path/path.dart' as p;
 
 part 'video_disc_menu.part.dart';
+part 'video_graphic_subtitle_timing.part.dart';
 
 @visibleForTesting
 String mediaUriForVideoPath(String path, {bool? windows}) {
@@ -448,17 +455,63 @@ class VideoPlayerController extends ChangeNotifier
   /// 认出它，给出「它自成一条流、走主轨调轴」的口径（libmpv `sub-delay` = [_delayMs]）。
   AudioCue? _graphicAnchorCue;
 
-  /// 图形字幕（PGS）的逐句时间表：选中图形轨后在后台抽轨解析（与「模糊遮蔽」共用
-  /// [FfmpegGraphicSubtitleRegionLoader] 的同一份结果 / 缓存），每句一个**无文字**
-  /// cue（字幕文件时基，与 mpv `sub-start` 同一根轴）。
+  /// 图形字幕的**有效**逐句时间表（每句一个**无文字** cue，字幕文件时基，与 mpv
+  /// `sub-start` 同一根轴）＝整轨抽取结果 [_graphicExtractedTimingCues] 与边播边记
+  /// [_graphicLiveTimingCues] 的合并（[mergeGraphicSubtitleTimingTables]，见
+  /// `video_graphic_subtitle_timing.part.dart`）。
   ///
   /// 位图字幕本身就带着每句的显示起止（PGS 显示集的 PTS），只是 libmpv 自绘、Dart
   /// 侧没有 cue；有了这张表，任何制卡入口（不只是暂停 OCR 点字）都能按播放位置
   /// 锚到那一句，裁出句子音频 / 同步片段，padding 也按真实邻句夹边。
   List<AudioCue> _graphicTimingCues = const <AudioCue>[];
+
+  /// 整轨抽取出的时间表（本地文件 / 互联 host 整轨 / 网络流抽取）。与「模糊遮蔽」共用
+  /// [graphicSubtitleRegionLoader] 的同一份结果 / 缓存。
+  List<AudioCue> _graphicExtractedTimingCues = const <AudioCue>[];
+
+  /// 边播边记的时间表：观测 mpv `sub-start` / `sub-end`，每显示一句记一句。
+  List<AudioCue> _graphicLiveTimingCues = const <AudioCue>[];
+
+  /// 边播边记里结束段还没解码（mpv 无 `sub-end`）、用了暂定时长的那句。
+  AudioCue? _graphicLiveProvisionalCue;
+
+  /// 整轨抽取的世代：每发起一次抽取 / 每次换轨换片 +1，迟到的结果按它丢弃。
   int _graphicTimingGeneration = 0;
 
-  /// 当前图形轨的逐句时间表；不在图形模式 / 还没解析出来（非本地文件、非 PGS）为空。
+  /// 边播边记的世代：换轨 / 换片 +1，在途采样按它丢弃。
+  int _graphicLiveGeneration = 0;
+
+  /// 挂过 `sub-start` / `sub-end` 观测的 Player（每个 Player 只挂一次）。
+  Player? _graphicLiveObservedPlayer;
+
+  /// 观测回调最近一次带来的 `sub-start` / `sub-end` 原始值（每帧都回调，按值去重）。
+  final Map<String, String> _graphicLiveLastRaw = <String, String>{};
+  bool _graphicLiveSampleRunning = false;
+  bool _graphicLiveSampleAgain = false;
+
+  /// 本次选轨由调用方显式给的整轨取数输入（互联 host 整轨）；null = 按播放源推导。
+  GraphicSubtitleTimingInput? _graphicTimingInputOverride;
+
+  /// 在途整轨抽取的取消信号（网络流抽取读整条流，换轨 / 换片 / 销毁时撤销）。
+  Completer<void>? _graphicTimingCancel;
+
+  /// 整轨抽取出的**位图时间表**（与 [_graphicExtractedTimingCues] 同一次结果，任何来源：
+  /// 本地文件 / 网络流 / 互联 host 回传的整轨）。换轨 / 换片清空。
+  final ValueNotifier<GraphicSubtitleRegionTrack?> _graphicRegionTrack =
+      ValueNotifier<GraphicSubtitleRegionTrack?>(null);
+
+  /// 当前图形轨已经到手的位图时间表（逐句起止 + 位图外包框）；还没有 / 不在图形模式为
+  /// null。模糊遮蔽层据此按位图糊——互联播放时这是唯一来源：client 不许为遮蔽再整片读
+  /// 流，只能用控制器已从 host 下回来的那一小份整轨（[GraphicSubtitleTimingHostTrack]）。
+  ValueListenable<GraphicSubtitleRegionTrack?> get graphicSubtitleRegionTrack =>
+      _graphicRegionTrack;
+
+  /// 本次 [load] 交给播放器的原始网络流地址（交给 native 之前，未经中继改写）与
+  /// 请求头；本地文件为 null / 空。网络流图形字幕整轨抽取以它为输入。
+  String? _mediaUri;
+  Map<String, String> _mediaHttpHeaders = const <String, String>{};
+
+  /// 当前图形轨的逐句时间表；不在图形模式 / 两条来源都还没有句子时为空。
   List<AudioCue> get graphicSubtitleTimingCues =>
       _graphicSubtitleActive ? _graphicTimingCues : const <AudioCue>[];
 
@@ -756,6 +809,10 @@ class VideoPlayerController extends ChangeNotifier
   BlurayJavaRuntimeManager? _discJavaRuntimeProbe;
 
   void _notifyDiscMenuChanged() => notifyListeners();
+
+  /// 图形字幕逐句时间表变了（`video_graphic_subtitle_timing.part.dart` 的扩展里调不到
+  /// 受保护的 [notifyListeners]）。
+  void _notifyGraphicTimingChanged() => notifyListeners();
 
   String? _bookUid;
 
@@ -1565,6 +1622,8 @@ class VideoPlayerController extends ChangeNotifier
     // 无条件执行，否则未 [load] 时关字幕不复位标志（回归 BUG-301）。
     final bool leavingGraphic = track.id == 'no' && _graphicSubtitleActive;
     if (track.id == 'no') _graphicSubtitleActive = false;
+    // 离开图形渲染：在途的整轨抽取（网络流要读整条流）随之撤销。
+    if (leavingGraphic) _cancelGraphicTimingFetch();
     final Player? player = _player;
     if (player == null) return; // 未 load：原生下发 no-op，标志已复位即可。
     // 关字幕（`no()`）是高频路径（[_selectSubtitleOff]）：await libmpv 原生下发期间用户
@@ -1596,7 +1655,14 @@ class VideoPlayerController extends ChangeNotifier
   /// 条，与 [currentAudioStreamIndex] 同范式）。等字幕轨列表就绪后选轨并清空可点
   /// overlay（图形轨无文本）。选中返回 true；未 [load] / 轨未就绪 / 序号越界返回
   /// false（调用方据此提示失败）。
-  Future<bool> selectEmbeddedGraphicTrack(int streamIndex) async {
+  ///
+  /// 选中后这条轨的逐句时间表从两条来源合成（见 `video_graphic_subtitle_timing.part.dart`）：
+  /// 边播边记恒开；整轨抽取按 [timingInput]（调用方显式给的来源，如互联 host 回传的
+  /// 整轨），缺省按当前播放源推导（本地文件 / 网络流）。
+  Future<bool> selectEmbeddedGraphicTrack(
+    int streamIndex, {
+    GraphicSubtitleTimingInput? timingInput,
+  }) async {
     claimDiscTrackOwnership();
     final Player? player = _player;
     if (player == null) return false;
@@ -1620,10 +1686,9 @@ class VideoPlayerController extends ChangeNotifier
         .toList(growable: false);
     if (streamIndex < 0 || streamIndex >= real.length) return false;
     // 图形字幕走 libmpv 画面渲染，清掉可点 overlay（无文本可查词）。上一条图形轨的
-    // 逐句时间表作废（世代 +1，在途加载的结果会被丢弃）。
+    // 逐句时间表作废（两张表清空、世代 +1，在途抽取撤销、迟到结果丢弃）。
     setCues(const <AudioCue>[]);
-    _graphicTimingCues = const <AudioCue>[];
-    _graphicTimingGeneration++;
+    _resetGraphicTimingTables();
     await player.setSubtitleTrack(real[streamIndex]);
     if (!_isCurrentLoad(player, loadToken)) return false; // 选轨后换片/销毁。
     if (_discTitleGeneration != discGeneration) return false;
@@ -1660,6 +1725,13 @@ class VideoPlayerController extends ChangeNotifier
     );
     if (!_isCurrentLoad(player, loadToken)) return false;
     if (_discTitleGeneration != discGeneration) return false;
+    // 边播边记：挂 `sub-start` / `sub-end` 观测（每个 Player 一次），并先记下选轨时
+    // 正在显示的那句（观测只报之后的变化）。
+    await _ensureGraphicLiveObserver(player);
+    if (!_isCurrentLoad(player, loadToken)) return false;
+    if (_discTitleGeneration != discGeneration) return false;
+    _requestGraphicLiveSample(player);
+    _graphicTimingInputOverride = timingInput;
     _loadGraphicSubtitleTimings(
       streamIndex: streamIndex,
       codec: _graphicSubtitleCodec,
@@ -1706,6 +1778,7 @@ class VideoPlayerController extends ChangeNotifier
     // 清掉旧 cue（同时结束上一次回流）；本模式是文本 overlay，不是图形渲染。
     setCues(const <AudioCue>[]);
     _graphicSubtitleActive = false;
+    _cancelGraphicTimingFetch();
     await player.setSubtitleTrack(real[streamIndex]);
     if (!_isCurrentLoad(player, loadToken)) return false;
     if (_discTitleGeneration != discGeneration) return false;
@@ -1756,6 +1829,7 @@ class VideoPlayerController extends ChangeNotifier
     final int discGeneration = _discTitleGeneration;
     setCues(const <AudioCue>[]);
     _graphicSubtitleActive = false;
+    _cancelGraphicTimingFetch();
     try {
       await player.setSubtitleTrack(SubtitleTrack.uri(url));
     } catch (e) {
@@ -2137,7 +2211,10 @@ class VideoPlayerController extends ChangeNotifier
     // 非空文本 cue → 切到可点 overlay 文本字幕，离开图形轨渲染（BUG-301）。空 cue
     // 不在此推断模式：可能是图形轨（[selectEmbeddedGraphicTrack] 先清空 cue 再选轨置
     // true）或无字幕段，故只在确有文本 cue 时复位图形标志。
-    if (cues.isNotEmpty) _graphicSubtitleActive = false;
+    if (cues.isNotEmpty) {
+      _graphicSubtitleActive = false;
+      _cancelGraphicTimingFetch();
+    }
     _currentCue = null;
     _currentCueIndex = -1;
     // TODO-1312：换主 cue 列表复位活动集（旧下标对新 [_cues] 已失效、会越界）。
@@ -2640,9 +2717,11 @@ class VideoPlayerController extends ChangeNotifier
     // 这样复用 player 时上一段视频的图形轨 `sub-delay` 不会残留到新片（BUG-301）。
     // 不依赖 setCues(空) 复位——空 cue 也可能是图形轨场景。
     _graphicSubtitleActive = false;
-    _graphicTimingCues = const <AudioCue>[];
-    _graphicTimingGeneration++;
+    _resetGraphicTimingTables();
     _graphicAnchorCue = null;
+    // 网络流图形字幕整轨抽取的输入（交给 native 之前的原始地址 + 同一份请求头）。
+    _mediaUri = openBlurayMenu ? null : mediaUri;
+    _mediaHttpHeaders = Map<String, String>.unmodifiable(httpHeaderFields);
 
     // 重复 load（换集）：取消上一次的 tick / 订阅，但**复用同一 Player /
     // VideoController**，不 dispose 重建。复用是关键（BUG-120）——media_kit 全屏是推到
@@ -3986,58 +4065,14 @@ class VideoPlayerController extends ChangeNotifier
     return floor;
   }
 
-  /// 切到图形轨后在后台取它的逐句时间表（本地文件 + PGS；其它返回空表）。选轨世代
-  /// / 加载令牌 / 轨序号任一变了就丢弃结果。
-  void _loadGraphicSubtitleTimings({
-    required int streamIndex,
-    required String? codec,
-  }) {
-    final int generation = ++_graphicTimingGeneration;
-    final int loadToken = _loadToken;
-    final GraphicSubtitleRegionRequest? request =
-        graphicSubtitleRegionRequestFor(
-          videoPath: _videoPath,
-          track: (streamIndex: streamIndex, codec: codec),
-        );
-    if (request == null) return;
-    final int w = videoWidth ?? 0;
-    final int h = videoHeight ?? 0;
-    bool stale() =>
-        generation != _graphicTimingGeneration ||
-        loadToken != _loadToken ||
-        !_graphicSubtitleActive ||
-        _graphicSubtitleStreamIndex != streamIndex;
-    unawaited(() async {
-      GraphicSubtitleRegionTrack? track;
-      try {
-        // 与模糊遮蔽层共用一次抽轨；遮蔽层先发起又中途取消（换轨 / 卸载）时这里
-        // 也会拿到 null——仍是当前轨就自己再要一次。
-        for (int attempt = 0; attempt < 2 && track == null; attempt++) {
-          if (stale()) return;
-          track = await graphicSubtitleRegionLoader.load(
-            request,
-            fallbackCanvas: Size(w.toDouble(), h.toDouble()),
-          );
-        }
-      } catch (error, stack) {
-        debugPrint('[fushi] graphic subtitle timings failed: $error\n$stack');
-        return;
-      }
-      if (track == null ||
-          generation != _graphicTimingGeneration ||
-          loadToken != _loadToken ||
-          !_graphicSubtitleActive ||
-          _graphicSubtitleStreamIndex != streamIndex) {
-        return;
-      }
-      _graphicTimingCues = graphicSubtitleTimingCuesFromRegions(track);
-      notifyListeners();
-    }());
-  }
-
-  /// 图形字幕时间表来源（测试可替换）。
+  /// 图形字幕整轨时间表来源（本地文件与网络流同一个抽取器；与模糊遮蔽层共用在途任务与
+  /// 缓存；测试可替换）。
   GraphicSubtitleRegionLoader graphicSubtitleRegionLoader =
       FfmpegGraphicSubtitleRegionLoader.shared;
+
+  /// 互联 host 回传的整轨文件 → 位图时间表（测试可替换）。
+  GraphicSubtitleTrackFileRegionLoad graphicSubtitleTrackFileRegionLoad =
+      loadGraphicSubtitleRegionsFromTrackFile;
 
   /// 测试钩子（BUG-3274）：宿主无 libmpv 读不到 `sub-start` / `sub-end`，直接喂原始
   /// 属性串，走与 [currentGraphicSubtitleCue] 完全同一条 [_adoptGraphicSubtitleAnchor]。
@@ -4106,7 +4141,8 @@ class VideoPlayerController extends ChangeNotifier
   /// 测试可见：直接装入图形字幕逐句时间表（宿主无 libmpv，选不了真图形轨）。
   @visibleForTesting
   void debugSetGraphicTimingCuesForTesting(List<AudioCue> cues) {
-    _graphicTimingCues = List<AudioCue>.unmodifiable(cues);
+    _graphicExtractedTimingCues = List<AudioCue>.unmodifiable(cues);
+    _recomputeGraphicTimingCues();
   }
 
   /// 测试可见：设定当前视频路径（宿主无 libmpv，走不了 [load]）。
@@ -5444,6 +5480,9 @@ class VideoPlayerController extends ChangeNotifier
     _discJavaRuntimeProbe?.cancel();
     _discJavaRuntimeProbe = null;
     _discObservedPlayer = null;
+    _graphicLiveObservedPlayer = null;
+    _graphicLiveGeneration++;
+    _cancelGraphicTimingFetch();
     unawaited(_discTrackSub?.cancel());
     unawaited(_discTracksSub?.cancel());
     unawaited(_discLogSub?.cancel());
@@ -5530,6 +5569,7 @@ class VideoPlayerController extends ChangeNotifier
     _mediaOpened = false;
     _resetLuaScriptState(); // 与 [_releaseMediaHandles] 一致，防复用残留。
     luaScriptStates.dispose();
+    _graphicRegionTrack.dispose();
     networkReadBytesPerSecond.dispose();
     networkCacheSeconds.dispose();
     bufferingIndicatorVisible.dispose();
@@ -5563,6 +5603,9 @@ class VideoPlayerController extends ChangeNotifier
     _discJavaRuntimeProbe?.cancel();
     _discJavaRuntimeProbe = null;
     _discObservedPlayer = null;
+    _graphicLiveObservedPlayer = null;
+    _graphicLiveGeneration++;
+    _cancelGraphicTimingFetch();
     unawaited(_discTrackSub?.cancel());
     unawaited(_discTracksSub?.cancel());
     unawaited(_discLogSub?.cancel());

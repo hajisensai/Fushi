@@ -7,7 +7,9 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
 import 'package:fushi/src/media/video/graphic_subtitle_track_ocr.dart';
-import 'package:fushi/src/media/video/pgs_subtitle_parser.dart';
+import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_track.dart'
+    show bitmapSubtitleTrackHeaderPath;
+import 'package:fushi_engine/media/video/bitmap_subtitle/pgs_subtitle_parser.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -100,9 +102,15 @@ class _BinaryFfmpegBackend implements FfmpegBackend {
     return FfmpegRunResult(returnCode: r.exitCode, output: '${r.stderr}');
   }
 
+  /// 同目录的 ffprobe（入库的 ffmpeg-min 两者成对）。
   @override
-  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
-      throw UnimplementedError();
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async {
+    final ProcessResult r = await Process.run(
+      p.join(p.dirname(executable), 'ffprobe.exe'),
+      args,
+    ).timeout(timeout);
+    return FfmpegRunResult(returnCode: r.exitCode, output: '${r.stdout}');
+  }
 
   @override
   Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
@@ -278,10 +286,13 @@ class _FakeRecognizer implements MangaStreamPageRecognizer {
 }
 
 void main() {
-  test('整轨转文字只给 PGS 轨（VobSub / DVB 封不进 .sup）', () {
+  test('整轨转文字支持 PGS / VobSub / DVB 三种位图字幕（图文电视不是位图）', () {
     expect(graphicSubtitleTrackOcrSupportsCodec('hdmv_pgs_subtitle'), isTrue);
-    expect(graphicSubtitleTrackOcrSupportsCodec('dvd_subtitle'), isFalse);
-    expect(graphicSubtitleTrackOcrSupportsCodec('dvb_subtitle'), isFalse);
+    expect(graphicSubtitleTrackOcrSupportsCodec('dvd_subtitle'), isTrue);
+    expect(graphicSubtitleTrackOcrSupportsCodec('dvb_subtitle'), isTrue);
+    expect(graphicSubtitleTrackOcrSupportsCodec('S_VOBSUB'), isTrue);
+    expect(graphicSubtitleTrackOcrSupportsCodec('dvb_teletext'), isFalse);
+    expect(graphicSubtitleTrackOcrSupportsCodec('subrip'), isFalse);
     expect(graphicSubtitleTrackOcrSupportsCodec(null), isFalse);
   });
 
@@ -347,9 +358,15 @@ void main() {
         videoPath: video.path,
         streamIndex: 2,
         supPath: out,
+        codec: 'hdmv_pgs_subtitle',
         backend: backend,
       );
       expect(ok, isTrue);
+      // PGS 不需要 extradata：不探测；头文件先于载荷写好。
+      expect(
+        File(bitmapSubtitleTrackHeaderPath(out)).readAsStringSync(),
+        contains('hdmv_pgs_subtitle'),
+      );
       expect(backend.args, <String>[
         '-y',
         '-i',
@@ -383,6 +400,7 @@ void main() {
         videoPath: video.path,
         streamIndex: 0,
         supPath: p.join(dir.path, 'track.sup'),
+        codec: 'hdmv_pgs_subtitle',
         onProgress: seen.add,
         backend: backend,
       );
@@ -407,6 +425,7 @@ void main() {
         videoPath: video.path,
         streamIndex: 0,
         supPath: out,
+        codec: 'hdmv_pgs_subtitle',
         onFailure: failures.add,
         cancel: cancel.future,
         backend: backend,
@@ -414,6 +433,7 @@ void main() {
       cancel.complete();
       expect(await running, isFalse);
       expect(File(out).existsSync(), isFalse);
+      expect(File(bitmapSubtitleTrackHeaderPath(out)).existsSync(), isFalse);
       expect(failures, isEmpty);
     });
 
@@ -424,11 +444,13 @@ void main() {
         videoPath: video.path,
         streamIndex: 0,
         supPath: out,
+        codec: 'hdmv_pgs_subtitle',
         onFailure: failures.add,
         backend: _RecordingFfmpegBackend(returnCode: 1, writeSup: false),
       );
       expect(ok, isFalse);
       expect(File(out).existsSync(), isFalse);
+      expect(File(bitmapSubtitleTrackHeaderPath(out)).existsSync(), isFalse);
       expect(failures.single, contains('boom'));
     });
 

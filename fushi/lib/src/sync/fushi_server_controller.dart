@@ -13,6 +13,7 @@ import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/sync/game_stream_host.dart';
 import 'package:fushi/src/sync/game_stream_mining.dart';
+import 'package:fushi_engine/sync/interconnect_graphic_subtitle_export.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
@@ -20,6 +21,7 @@ import 'package:fushi_engine/sync/game_stream/game_stream_library.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/graphic_subtitle_track_export.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
@@ -86,6 +88,7 @@ class FushiSyncServerController extends ChangeNotifier {
     HostSubscriptionHost Function()? subscriptionsFactory,
     HostAssistantProvider Function()? assistantFactory,
     VideoSubtitleBackfillRunner? videoSubtitleBackfill,
+    GraphicSubtitleTrackExporter? graphicSubtitleTrackExporter,
     PrefStore Function()? prefsStore,
     PlatformDeviceInfoService? deviceInfo,
   })  : _navigatorKey = navigatorKey,
@@ -102,6 +105,8 @@ class FushiSyncServerController extends ChangeNotifier {
         _subscriptionsFactory = subscriptionsFactory,
         _assistantFactory = assistantFactory,
         _videoSubtitleBackfill = videoSubtitleBackfill,
+        _graphicSubtitleTrackExporter = graphicSubtitleTrackExporter ??
+            exportGraphicSubtitleTrackForInterconnect,
         _prefsStore = prefsStore,
         // Headless/test construction without an injected service falls back to
         // the desktop (machine-hostname) source; production wires the real
@@ -141,6 +146,11 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 「立即给这个视频补字幕」（`POST /api/library/videos/<id>/subtitle/backfill`）。
   /// null（headless/单测）= 端点 501。
   final VideoSubtitleBackfillRunner? _videoSubtitleBackfill;
+
+  /// 图形字幕整轨回传（`GET .../graphicsubtitle`）的抽取实现：缺省为引擎的位图字幕抽轨
+  /// （[exportGraphicSubtitleTrackForInterconnect]，带缓存与在途合并）。
+  final GraphicSubtitleTrackExporter _graphicSubtitleTrackExporter;
+
   /// host 偏好读侧（`PreferencesRepository`）。null（单测 / 老调用方）= 引擎按默认值
   /// 走，行为与接线前一致。
   final PrefStore Function()? _prefsStore;
@@ -691,7 +701,8 @@ class FushiSyncServerController extends ChangeNotifier {
       // 反代地址每次 capabilities 实时读，改完不必重启互联服务。
       ..hostId = hostId
       ..publicUrlsProvider = repo.getInterconnectPublicUrls
-      ..videoSubtitleBackfill = _videoSubtitleBackfill;
+      ..videoSubtitleBackfill = _videoSubtitleBackfill
+      ..graphicSubtitleTrackExporter = _graphicSubtitleTrackExporter;
     publish(server);
     // Fushi 改名迁移（host 侧）：host 的 WebDAV 根映射到 server.syncDataDir，
     // client 的同步根是其下的 `fushi-data/` 子目录。旧安装磁盘上还留着
