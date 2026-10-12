@@ -85,11 +85,14 @@ void main() {
     expect(historySrc.contains('getPrimaryCollectionIdByEntry'), isTrue);
   });
 
-  test('合集渲染形态：书架横排行（CollectionShelfRow）+ 视频封面卡（用户拍板 2026-07-22）', () {
-    // 书架维持 Phase C 横排行；视频侧用户拍板恢复封面卡形态（「一进去就是封面，
-    // 跟小说那种一样」）：合集渲染成封面卡混入媒体库墙。互退即转红。
-    expect(historySrc.contains('CollectionShelfRow'), isTrue,
-        reason: '书架合集必须渲染成全宽横排行');
+  test('合集渲染形态：书架合集格子（SeriesShelfCard）+ 视频封面卡（用户拍板 2026-07-22 / 2026-10-13）', () {
+    // 书架：合集折成网格里的一个叠层格子（2026-10-13 用户拍板移除「整行展开」横排
+    // 行，反馈 #TgkCgTGy81）；视频侧用户拍板封面卡形态（「一进去就是封面，跟小说
+    // 那种一样」）：合集渲染成封面卡混入媒体库墙。互退即转红。
+    expect(historySrc.contains('_buildShelfCollectionCard'), isTrue,
+        reason: '书架合集必须渲染成网格里的一个格子');
+    expect(historySrc.contains('CollectionShelfRow'), isFalse,
+        reason: '书架不得回退到全宽横排行（整行展开已移除；横排行只剩游戏库用）');
     expect(homeSrc.contains('_buildCollectionCoverCard'), isTrue,
         reason: '视频库合集必须渲染成封面卡（一合集一封面）');
     expect(homeSrc.contains('CollectionShelfRow('), isFalse,

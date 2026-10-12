@@ -482,16 +482,6 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 书架合集呈现方式 [ShelfCollectionLayout] `.name`（rows / cards）。默认 cards（用户 10-06：合集默认单格堆叠卡与书同排）
-  /// （全宽横排行，现状零变化）；cards = 合集折成网格里的一个格子、与散书同一排序。
-  String get shelfCollectionLayoutName =>
-      getPref('shelf_collection_layout', defaultValue: 'cards') as String;
-
-  Future<void> setShelfCollectionLayoutName(String name) async {
-    await setPref('shelf_collection_layout', name);
-    notifyListeners();
-  }
-
   /// 书架搜索栏「阅读状态」筛选的 [ShelfReadStatus] `.name`（unread/reading/
   /// finished）；空串 = 全部。跨重启保留（与游戏库页游玩状态筛选同一决定）。
   String get shelfReadStatusFilterName =>

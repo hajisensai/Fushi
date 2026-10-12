@@ -18,6 +18,8 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show homeShellTabNotifier, HomeTab;
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
+import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
+import 'package:fushi/src/pages/implementations/series_shelf_card.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
@@ -216,23 +218,32 @@ void main() {
         ),
         downloadBytes: _collectionDownloadFixture(manga: manga),
       );
-      // 占位卡归属合集：要在横排行里直接点它的下载键。书架默认已改「单个格子」
-      // （a55fc1382bb，成员折进格子不外露），这里显式切回整行展开。
-      await prefs.setShelfCollectionLayoutName('rows');
+      // 占位卡归属合集：成员折进合集格子不外露（整行展开已移除），下载入口在合集
+      // 详情页——点格子进详情页，再点占位卡 = 下载入库（详情页卡片手势统一经
+      // onOpenMember）。这条同时钉住「详情页里远端占位书确实能下载」。
       await tester.pumpWidget(buildApp(mangaOnly: manga));
       await tester.pumpAndSettle();
+      await tester.tap(find.byType(SeriesShelfCard));
+      await tester.pumpAndSettle();
+      expect(find.byType(MediaCollectionGridDetailPage), findsOneWidget,
+          reason: '前置：点合集格子进详情页');
       final InterconnectDownloadManager manager = ProviderScope.containerOf(
-        tester.element(find.byType(ReaderFushiHistoryPage)),
+        // 书架在详情页之下（offstage），默认 finder 看不到它。
+        tester.element(
+            find.byType(ReaderFushiHistoryPage, skipOffstage: false)),
       ).read(interconnectDownloadManagerProvider);
       final VoidCallback retryDownload = tester.widget<IconButton>(glassUnwrap<IconButton>(find.byKey(
         const ValueKey<String>('remote_book_download_Download_fixture'),
       ))).onPressed!;
+      final Finder remoteMember = find.byKey(
+        const ValueKey<String>('remote_book_card_Download_fixture'),
+      );
+      await tester.ensureVisible(remoteMember);
+      await tester.pumpAndSettle();
       await tester.runAsync(() async {
-        await tester.tap(
-          find.byKey(
-            const ValueKey<String>('remote_book_download_Download_fixture'),
-          ),
-        );
+        // 详情页成员卡包在 IgnorePointer 里，点击由外层格子接管（命中点不在卡本体上，
+        // 属预期，故关掉「未命中」告警）。
+        await tester.tap(remoteMember, warnIfMissed: false);
         final Stopwatch watch = Stopwatch()..start();
         while (watch.elapsed < const Duration(seconds: 15)) {
           await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -275,6 +286,11 @@ void main() {
       expect(importedAudiobooks, hasLength(1), reason: '重试必须继续下载有声书');
       expect((await db.getAllEpubBooks()).map((EpubBookRow row) => row.uid),
           <String>[rows.single.uid], reason: '重试不能生成带后缀的第二本书');
+      // 先退出详情页再整棵换掉（详情页开着换根会在卸载帧里重建它）。
+      Navigator.of(
+        tester.element(find.byType(MediaCollectionGridDetailPage)),
+      ).pop();
+      await tester.pumpAndSettle();
       await tester.pumpWidget(wrapScope(const SizedBox.shrink()));
       await tester.pumpWidget(buildApp(mangaOnly: manga));
       await tester.pumpAndSettle();

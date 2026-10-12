@@ -57,9 +57,6 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    // 本文件验远端占位卡折进合集**横排行**（行头计数 / View all / 行内顺序）；
-    // 书架默认已改「单个格子」（a55fc1382bb），这里显式切回整行展开。
-    await prefs.setShelfCollectionLayoutName('rows');
     final Directory storeDir =
         Directory.systemTemp.createTempSync('hibiki_remote_coll_book_store');
     appModel = AppModel(testPlatformServices())
@@ -95,6 +92,18 @@ void main() {
           ),
         ),
       );
+
+  /// 合集格子（书架上合集的唯一形态；整行展开已移除）。
+  Finder collectionCard(int cid) =>
+      find.byKey(ValueKey<String>('reader_shelf_collection_card_$cid'));
+
+  /// 点合集格子进详情页（成员在详情页里看 / 下载）。
+  Future<void> openCollectionDetail(WidgetTester tester, int cid) async {
+    await tester.tap(collectionCard(cid));
+    await tester.pumpAndSettle();
+    expect(find.byType(MediaCollectionGridDetailPage), findsOneWidget,
+        reason: '前置：点合集格子进详情页');
+  }
 
   String safeKey(String title) =>
       sanitizeTtuFilename(title).replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
@@ -138,6 +147,14 @@ void main() {
       ],
     )));
     await tester.pumpAndSettle();
+    // 成员折进合集格子；顺序在详情页里看（默认手动序）。
+    await openCollectionDetail(tester, cid);
+    // 详情页默认按卷名排；切到「手动」才是本地保存的顺序。
+    await tester.tap(find.byKey(const ValueKey<String>('collection_detail_sort')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+        find.byKey(const ValueKey<String>('collection_detail_sort_manual')));
+    await tester.pumpAndSettle();
     final Finder first = find.byKey(const ValueKey<String>('remote_book_card_First'));
     final Finder second = find.byKey(const ValueKey<String>('remote_book_card_Second'));
     expect(tester.getTopLeft(second).dx, lessThan(tester.getTopLeft(first).dx));
@@ -167,27 +184,24 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    final Finder collectionRow =
-        find.byKey(ValueKey<String>('reader_shelf_collection_row_$cid'));
-    expect(collectionRow, findsOneWidget, reason: '本地合集横排行必须渲染');
+    expect(collectionCard(cid), findsOneWidget, reason: '本地合集格子必须渲染');
     final Finder remoteCard = find
         .byKey(ValueKey<String>('remote_book_card_${safeKey('Remote Vol2')}'));
-    expect(remoteCard, findsOneWidget, reason: '远端占位书卡必须渲染');
-    expect(
-      find.ancestor(of: remoteCard, matching: collectionRow),
-      findsOneWidget,
-      reason: '远端书归属命中本地合集 → 必须折进该合集横排行（非散卡）',
-    );
+    expect(remoteCard, findsNothing,
+        reason: '远端书归属命中本地合集 → 折进合集格子，不再是书架上的散卡');
+    await openCollectionDetail(tester, cid);
+    expect(remoteCard, findsOneWidget, reason: '远端占位书卡在合集详情页里渲染');
   });
 
-  testWidgets('合集行计数计入折进来的远端占位卡（旧口径只数本地成员显示 0）', (WidgetTester tester) async {
+  testWidgets('合集格子计数计入折进来的远端占位卡（旧口径只数本地成员显示 0）', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
     // 本地合集为空（0 本地成员），只有一本 host 下发、折进该合集的远端占位书。
-    await db.createMediaCollection('MyShow', collectionType: 'collection');
+    final int countCid = await db.createMediaCollection('MyShow',
+        collectionType: 'collection');
 
     await tester.pumpWidget(buildApp(_ListFakeRemoteBookClient(
       const <RemoteBookInfo>[
@@ -204,10 +218,12 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    // 行头计数须诚实反映行体渲染的卡片数（含远端占位）：1 本，不是本地 0 本。
-    // 旧 localCount 口径会显示 '0 items'，与眼前 1 张远端卡割裂（BUG-790 书籍侧同款）。
-    expect(find.text('1 items'), findsOneWidget, reason: '合集行计数须计入折进来的远端占位卡');
-    expect(find.text('0 items'), findsNothing,
+    // 格子角标计数须诚实反映折进来的成员数（含远端占位）：1 册，不是本地 0 册。
+    // 旧 localCount 口径会显示 0，与详情页里的 1 张远端卡割裂（BUG-790 书籍侧同款）。
+    expect(collectionCard(countCid), findsOneWidget);
+    expect(find.text(t.shelf_collection_volume_count(n: 1)), findsOneWidget,
+        reason: '合集格子计数须计入折进来的远端占位卡');
+    expect(find.text(t.shelf_collection_volume_count(n: 0)), findsNothing,
         reason: '只数本地成员会显示 0，与所见 1 张远端卡割裂');
   });
 
@@ -235,7 +251,6 @@ void main() {
 
     final Finder remoteCard = find
         .byKey(ValueKey<String>('remote_book_card_${safeKey('Orphan Book')}'));
-    expect(remoteCard, findsOneWidget);
     final List<MediaCollectionRow> collections =
         await db.getAllMediaCollections();
     expect(collections, hasLength(1));
@@ -244,15 +259,11 @@ void main() {
       (await db.getCollectionItems(collections.single.id)).single.entryKey,
       'Orphan Book',
     );
-    expect(
-      find.ancestor(of: remoteCard, matching: find.byKey(
-          ValueKey<String>(
-            'reader_shelf_collection_row_${collections.single.id}',
-          ),
-        )),
-      findsOneWidget,
-      reason: '不需要先跑完整同步，未下载条目也必须成组',
-    );
+    expect(collectionCard(collections.single.id), findsOneWidget,
+        reason: '不需要先跑完整同步，未下载条目也必须成组（书架上是合集格子）');
+    expect(remoteCard, findsNothing, reason: '成员折进格子，不是散卡');
+    await openCollectionDetail(tester, collections.single.id);
+    expect(remoteCard, findsOneWidget);
   });
 
   testWidgets('BUG-1699：旧 host 无归属 DTO 时复用已同步的透传成员行',
@@ -278,18 +289,14 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    final Finder collectionRow =
-        find.byKey(ValueKey<String>('reader_shelf_collection_row_$cid'));
-    expect(collectionRow, findsOneWidget);
+    expect(collectionCard(cid), findsOneWidget);
     final Finder remoteCard = find
         .byKey(ValueKey<String>('remote_book_card_${safeKey('Remote Vol3')}'));
+    expect(remoteCard, findsNothing,
+        reason: 'host 名解析不到时须回落已同步的本地归属救回，'
+            '此前 continue 直接跳过兜底 → 散卡');
+    await openCollectionDetail(tester, cid);
     expect(remoteCard, findsOneWidget);
-    expect(
-      find.ancestor(of: remoteCard, matching: collectionRow),
-      findsOneWidget,
-      reason: 'host 名解析不到时须回落已同步的本地归属救回，'
-          '此前 continue 直接跳过兜底 → 散卡',
-    );
   });
 
   testWidgets('BUG-1699：合集同步落库后书架自动重组（无需下拉刷新/重启）', (WidgetTester tester) async {
@@ -324,14 +331,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
 
-    final Finder collectionRow =
-        find.byKey(ValueKey<String>('reader_shelf_collection_row_$cid'));
-    expect(collectionRow, findsOneWidget, reason: '合集落库后无需任何手动刷新即渲染合集行');
-    expect(
-      find.ancestor(of: remoteCard, matching: collectionRow),
-      findsOneWidget,
-      reason: '占位卡自动折进新落库的合集（BUG-1699 主诉：此前恒散卡直到重启）',
-    );
+    expect(collectionCard(cid), findsOneWidget,
+        reason: '合集落库后无需任何手动刷新即渲染合集格子');
+    expect(remoteCard, findsNothing,
+        reason: '占位卡自动折进新落库的合集（BUG-1699 主诉：此前恒散卡直到重启）');
   });
 
   testWidgets('合集详情页必须渲染远端占位成员（此前「行头 N 项、点进去只剩本地几本」）',
@@ -371,8 +374,7 @@ void main() {
       containsAll(<String>['Local Vol1', 'Remote Vol2']),
     );
 
-    await tester.tap(find.text(t.collection_view_all));
-    await tester.pumpAndSettle();
+    await openCollectionDetail(tester, cid);
 
     final Finder detail = find.byType(MediaCollectionGridDetailPage);
     expect(detail, findsOneWidget, reason: '前置：「查看全部」进详情页');
@@ -395,7 +397,8 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await db.createMediaCollection('GhostShow', collectionType: 'collection');
+    final int cid = await db.createMediaCollection('GhostShow',
+        collectionType: 'collection');
     await tester.pumpWidget(buildApp(_ListFakeRemoteBookClient(
       const <RemoteBookInfo>[
         RemoteBookInfo(
@@ -411,8 +414,7 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text(t.collection_view_all));
-    await tester.pumpAndSettle();
+    await openCollectionDetail(tester, cid);
 
     expect(find.text(t.collection_empty), findsNothing,
         reason: '成员全是远端占位时旧实现把整组卡丢光 → 在客户端把非空合集判成空');

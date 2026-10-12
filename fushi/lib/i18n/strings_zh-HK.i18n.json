@@ -6418,10 +6418,6 @@
   "reading_stats_clock_start_on_open": "On open",
   "reading_stats_clock_start_on_page_turn": "After page turn",
   "home_updates_dismiss": "關閉",
-  "shelf_collection_layout_title": "合集顯示",
-  "shelf_collection_layout_rows": "整行展開",
-  "shelf_collection_layout_cards": "單個格子",
-  "shelf_sort_and_view": "排序與顯示",
   "shelf_collection_volume_count": "$n 冊",
   "shelf_collection_series_label": "系列",
   "collection_name_taken_other_library": "其他媒體庫已有名為「$name」的合集，請換個名字。",
@@ -6870,7 +6866,6 @@
   "shortcut_action_video_lookup_next_word": "下一個詞（掃詞）",
   "shortcut_action_video_lookup_prev_word": "上一個詞（掃詞）",
   "media_source_open_folder_failed": "無法開啟資料夾，可能已被移動、刪除或中斷連線。",
-  "library_sort_filter_view": "排序、篩選與顯示",
   "library_filter_active": "已篩選",
   "settings_module_keep_one_navigation": "Keep at least one page in the navigation bar",
   "settings_section_home_shortcuts": "Home shortcuts",
@@ -7043,5 +7038,6 @@
   "book_import_no_book_notice_title": "沒有選擇書籍",
   "book_import_no_book_transcribe_hint": "沒有書也能匯入：直接用裝置端轉錄把音訊轉成字幕，匯入時會據此自動生成一本書。",
   "book_import_no_book_subtitle_hint": "沒有書也能匯入：為這段音訊選一個字幕檔，匯入時會據此自動生成一本書。",
-  "book_import_no_book_transcribe_action": "轉錄並生成書籍"
+  "book_import_no_book_transcribe_action": "轉錄並生成書籍",
+  "library_sort_filter": "Sort and filter"
 }

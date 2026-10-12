@@ -6418,10 +6418,6 @@
   "reading_stats_clock_start_on_open": "On open",
   "reading_stats_clock_start_on_page_turn": "After page turn",
   "home_updates_dismiss": "Tutup",
-  "shelf_collection_layout_title": "Collections",
-  "shelf_collection_layout_rows": "Expanded rows",
-  "shelf_collection_layout_cards": "One tile each",
-  "shelf_sort_and_view": "Sort & view",
   "shelf_collection_volume_count": "$n vols",
   "shelf_collection_series_label": "Series",
   "collection_name_taken_other_library": "Another library already has a collection named \"$name\". Pick a different name.",
@@ -6870,7 +6866,6 @@
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
-  "library_sort_filter_view": "Sort, filter and view",
   "library_filter_active": "Filtered",
   "settings_module_keep_one_navigation": "Keep at least one page in the navigation bar",
   "settings_section_home_shortcuts": "Home shortcuts",
@@ -7043,5 +7038,6 @@
   "book_import_no_book_notice_title": "No book selected",
   "book_import_no_book_transcribe_hint": "You can import with audio alone: transcribe it on device and a book is generated from the transcript when you import.",
   "book_import_no_book_subtitle_hint": "You can import with audio alone: pick a subtitle file for it and a book is generated from the subtitles when you import.",
-  "book_import_no_book_transcribe_action": "Transcribe and generate book"
+  "book_import_no_book_transcribe_action": "Transcribe and generate book",
+  "library_sort_filter": "Sort and filter"
 }
