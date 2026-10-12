@@ -7043,5 +7043,15 @@
   "book_import_no_book_notice_title": "沒有選擇書籍",
   "book_import_no_book_transcribe_hint": "沒有書也能匯入：直接用裝置端轉錄把音訊轉成字幕，匯入時會據此自動生成一本書。",
   "book_import_no_book_subtitle_hint": "沒有書也能匯入：為這段音訊選一個字幕檔，匯入時會據此自動生成一本書。",
-  "book_import_no_book_transcribe_action": "轉錄並生成書籍"
+  "book_import_no_book_transcribe_action": "轉錄並生成書籍",
+  "ai_error_quota_exhausted": "Out of credit or quota",
+  "ai_provider_api_key_numbered": "API key ${n}",
+  "ai_provider_api_key_ok": "Ends in ${tail} · OK",
+  "ai_provider_api_key_cooling": "Ends in ${tail} · cooling down until ${time} (${reason})",
+  "ai_provider_api_key_disabled": "Ends in ${tail} · disabled",
+  "ai_provider_api_key_enable": "Use this key",
+  "ai_provider_api_key_disable": "Stop using this key",
+  "ai_provider_api_key_remove": "Remove this key",
+  "ai_provider_api_keys_add": "Add another API key",
+  "ai_provider_api_keys_summary": "With several keys, a request that is rejected, rate-limited or out of credit switches to the next key and retries; the failing key cools down and is tried again later."
 }

@@ -26,6 +26,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
+import 'package:fushi_engine/ai/ai_key_rotation.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -402,6 +403,63 @@ void main() {
       expect(saved.model, 'deepseek-reasoner');
       expect(saved.protocol, AiWireProtocol.openAiCompatible);
       expect(saved.isUsable, isTrue);
+    });
+
+    testWidgets('多 key：添加 / 停用 / 删除写穿偏好，冷却状态显示在框下', (
+      WidgetTester tester,
+    ) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', apiKey: 'sk-first-1111'),
+      ]);
+      // 冷却记录走的是生产装配点（loadFromDb 装的偏好表实现），不是测试替身。
+      aiKeyHealthStore.write(
+        aiKeyFingerprint('p1', 'sk-first-1111'),
+        AiKeyHealth(
+          cooldownUntil: DateTime.now().toUtc().add(const Duration(hours: 1)),
+          failures: 1,
+          reason: 'rate_limited',
+        ),
+      );
+      expect(prefs.aiKeyHealth, hasLength(1));
+      await pumpSection(tester);
+      await openEditor(tester, 'p1');
+
+      expect(find.textContaining(t.ai_error_rate_limited), findsOneWidget);
+
+      await tapKey(tester, 'ai-provider-0-api-key-add');
+      await enter(tester, 'ai-provider-0-api-key-1', 'sk-second-2222');
+      await tapKey(tester, 'ai-provider-0-api-key-0-toggle');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(prefs.aiProviders.single.apiKeys, const <AiApiKey>[
+        AiApiKey('sk-first-1111', enabled: false),
+        AiApiKey('sk-second-2222'),
+      ]);
+      expect(prefs.aiProviders.single.apiKey, 'sk-second-2222');
+      expect(
+        find.text(t.ai_provider_api_key_disabled(tail: '1111')),
+        findsOneWidget,
+      );
+
+      // 删掉第一把：第二把顶到第一位，输入框里显示的必须是它自己的值（不沿用
+      // 被删那把的 initialValue）。
+      await tapKey(tester, 'ai-provider-0-api-key-0-remove');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(prefs.aiProviders.single.apiKeys, const <AiApiKey>[
+        AiApiKey('sk-second-2222'),
+      ]);
+      final EditableText first = tester.widget<EditableText>(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('ai-provider-0-api-key')),
+          matching: find.byType(EditableText),
+        ),
+      );
+      expect(first.controller.text, 'sk-second-2222');
+      expect(
+        find.byKey(const ValueKey<String>('ai-provider-0-api-key-1')),
+        findsNothing,
+      );
     });
 
     testWidgets('一条草稿打字到中间态：磁盘保留它上一次的有效版本，不连累其它提供商', (

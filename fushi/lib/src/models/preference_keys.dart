@@ -23,6 +23,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 「哪个功能用哪家 AI」的映射。不含凭据，但跟着 ai_providers 一起设备本地：
   // providers 不跨设备，映射跨过去只会指向一个不存在的 id。
   'ai_feature_providers',
+  // String（JSON map）：AI 多 key 轮换的冷却记录 `{指纹: {until, failures,
+  // reason}}`。指纹是 sha256(providerId + key) 的前 16 位，不含 key 本身，非凭据；
+  // 但描述的是本机配的 key 的健康，跟着 ai_providers 设备本地（deviceLocalPrefKeys）。
+  'ai_key_health',
   // 用户自配的 AI 提供商清单，每条里带 base64 的 apiKeyB64 →
   // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys
   // 与 deviceLocalPrefKeys。

@@ -44,6 +44,8 @@ import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart'
     show MediaServerVersionMemory, mediaServerVersionMemory;
+import 'package:fushi_engine/ai/ai_key_rotation.dart'
+    show AiKeyHealth, AiKeyHealthStore, aiKeyHealthStore;
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
@@ -201,6 +203,9 @@ class PreferencesRepository extends ChangeNotifier
     // 媒体服务器多版本选择的记忆落偏好表（进程级装配点，取流时由 client 读）；
     // 理由同上：挂在偏好变得可读的那一刻，所有入口都拿到同一份。
     mediaServerVersionMemory = _PrefsMediaServerVersionMemory(this);
+    // AI 多 key 轮换的冷却记录（引擎全局装配点）：落偏好表，app 重启后被拒 /
+    // 限流的 key 仍在冷却里，不会一启动就把同一把坏 key 再打一遍。
+    aiKeyHealthStore = _PrefsAiKeyHealthStore(this);
   }
 
   /// BUG-2429 的存量数据修复标记。跑过一次就再也不跑。
@@ -672,6 +677,51 @@ class PreferencesRepository extends ChangeNotifier
       map.remove(map.keys.first);
     }
     await setPref('video_media_server_version_choices', jsonEncode(map));
+  }
+
+  /// AI 多 key 轮换的冷却记录上限（超出按写入先后丢最旧的）。正常情况下成功一次
+  /// 就清掉，留存的只有还在失败的 key，这个上限只防删掉的提供商留下的孤儿无界增长。
+  static const int kAiKeyHealthLimit = 200;
+
+  /// AI 多 key 轮换的冷却记录：`{指纹: AiKeyHealth.toJson()}`（指纹见
+  /// `aiKeyFingerprint`，不含 key 本身）。设备本地。解析失败回退空 map——冷却
+  /// 记录丢了只等于「这些 key 下次照常再试」，不能挡住请求。
+  Map<String, AiKeyHealth> get aiKeyHealth {
+    final String raw = getPref('ai_key_health', defaultValue: '') as String;
+    if (raw.isEmpty) return <String, AiKeyHealth>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return <String, AiKeyHealth>{
+          for (final MapEntry<dynamic, dynamic> e in decoded.entries)
+            if (AiKeyHealth.fromJson(e.value) case final AiKeyHealth health)
+              e.key.toString(): health,
+        };
+      }
+    } on FormatException catch (e, stack) {
+      ErrorLogService.instance
+          .log('PreferencesRepository.aiKeyHealth.decode', e, stack);
+    }
+    return <String, AiKeyHealth>{};
+  }
+
+  /// 写 / 清一条冷却记录（[health] 为 null = 清）。不 notifyListeners：设置页在
+  /// 自己的探测结束时重建，没有别的界面监听它。
+  Future<void> setAiKeyHealth(String fingerprint, AiKeyHealth? health) async {
+    final Map<String, AiKeyHealth> map = aiKeyHealth..remove(fingerprint);
+    if (health != null) map[fingerprint] = health;
+    while (map.length > kAiKeyHealthLimit) {
+      map.remove(map.keys.first);
+    }
+    await setPref(
+      'ai_key_health',
+      map.isEmpty
+          ? ''
+          : jsonEncode(<String, Object?>{
+              for (final MapEntry<String, AiKeyHealth> e in map.entries)
+                e.key: e.value.toJson(),
+            }),
+    );
   }
 
   /// 本机当 host 时是否允许为对端实时转码（弱网降码率播放）。默认开。
@@ -4406,6 +4456,26 @@ class PreferencesRepository extends ChangeNotifier
   Future<void> setReadingGoalDailyChars(int value) async {
     await setPref('reading_goal_daily_chars', value.clamp(0, 1000000));
     notifyListeners();
+  }
+}
+
+/// [AiKeyHealthStore] 的偏好表实现（[PreferencesRepository.loadFromDb] 装配）。
+/// 读走偏好缓存（同步，请求热路径上不等 IO）；写入后台落库，失败只记日志——
+/// 丢一次冷却记录只等于那把 key 下次照常再试，不该打断这次 AI 请求。
+class _PrefsAiKeyHealthStore implements AiKeyHealthStore {
+  _PrefsAiKeyHealthStore(this._prefs);
+
+  final PreferencesRepository _prefs;
+
+  @override
+  AiKeyHealth? read(String fingerprint) => _prefs.aiKeyHealth[fingerprint];
+
+  @override
+  void write(String fingerprint, AiKeyHealth? health) {
+    _prefs.setAiKeyHealth(fingerprint, health).catchError(
+          (Object e, StackTrace stack) => ErrorLogService.instance
+              .log('PreferencesRepository.setAiKeyHealth', e, stack),
+        );
   }
 }
 

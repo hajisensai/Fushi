@@ -7043,5 +7043,15 @@
   "book_import_no_book_notice_title": "没有选择书籍",
   "book_import_no_book_transcribe_hint": "没有书也能导入：直接用设备端转录把音频转成字幕，导入时会据此自动生成一本书。",
   "book_import_no_book_subtitle_hint": "没有书也能导入：为这段音频选一个字幕文件，导入时会据此自动生成一本书。",
-  "book_import_no_book_transcribe_action": "转录并生成书籍"
+  "book_import_no_book_transcribe_action": "转录并生成书籍",
+  "ai_error_quota_exhausted": "余额或额度不足",
+  "ai_provider_api_key_numbered": "API 密钥 ${n}",
+  "ai_provider_api_key_ok": "末尾 ${tail} · 正常",
+  "ai_provider_api_key_cooling": "末尾 ${tail} · 冷却中，${time} 后再用（${reason}）",
+  "ai_provider_api_key_disabled": "末尾 ${tail} · 已停用",
+  "ai_provider_api_key_enable": "启用此密钥",
+  "ai_provider_api_key_disable": "停用此密钥",
+  "ai_provider_api_key_remove": "删除此密钥",
+  "ai_provider_api_keys_add": "再添加一个 API 密钥",
+  "ai_provider_api_keys_summary": "配置多个密钥时，某个密钥被拒绝、限流或额度用尽，会自动换下一个重试；失败的密钥进入冷却，到期后再用。"
 }
