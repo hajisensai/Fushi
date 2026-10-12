@@ -415,9 +415,26 @@ extension _VideoDiscMenu on _VideoFushiPageState {
         ),
       ),
     );
-    final List<VideoBarEntry> actions = controller.discMenuEntryPending
-        ? const <VideoBarEntry>[]
-        : _discNavigationBarEntries(desktop: desktop);
+    final List<VideoBarEntry> actions = <VideoBarEntry>[
+      if (!controller.discMenuEntryPending)
+        ..._discNavigationBarEntries(desktop: desktop),
+      // 原盘菜单替换了整套常规控制条，全屏键必须在这里另给一份（同一执行体与
+      // 移动端门控：[_buildFullscreenButton] / [_activateVideoControlItem]）。
+      if (!isMobilePlatform)
+        _videoBarEntry(
+          VideoControlItem.fullscreen,
+          controller,
+          slot: VideoControlSlot.topRight,
+          cluster: VideoBarCluster.start,
+          child: FushiTooltip(
+            message: _videoControlItemTooltip(VideoControlItem.fullscreen),
+            child: KeyedSubtree(
+              key: const ValueKey<String>('bluray-menu-fullscreen'),
+              child: _buildFullscreenButton(desktop: desktop),
+            ),
+          ),
+        ),
+    ];
     final Widget title = ValueListenableBuilder<String?>(
       valueListenable: _titleNotifier,
       builder: (BuildContext _, String? value, __) => Text(

@@ -260,10 +260,51 @@ class VideoDiscMenuException implements Exception {
   String toString() => 'Blu-ray menu: $code';
 }
 
+/// Whether [command] forwards a remote-control key or click to the disc.
+///
+/// For these, libbluray's negative answer means the disc did not consume the
+/// input, not that a command failed: `bd_user_input` / `bd_mouse_select` return
+/// -1 when a popup-model menu is closed, a click lands outside every enabled
+/// button (a tab button that is not selectable while another tab's submenu is
+/// expanded), a button animation is running, or a BD-J Xlet's listener returned
+/// false for the key (graphics_controller.c `_user_input` / `_mouse_move`,
+/// bdj.c `bdj_process_event`). A hardware player does nothing in that case,
+/// and the shipped `fushi-discnav1` patch propagates it as mpv's generic
+/// MPV_ERROR_COMMAND (-12). Only `menu` / `title-menu` (`bd_menu_call`, refused
+/// by the disc's UO mask) are commands that can genuinely be rejected.
+bool isVideoDiscInputCommand(List<String> command) =>
+    command.length >= 2 &&
+    command.first == 'discnav' &&
+    const <String>{
+      'up',
+      'down',
+      'left',
+      'right',
+      'select',
+      'popup',
+      'prev',
+      'mouse-click',
+    }.contains(command[1]);
+
+/// Sends a disc input (see [isVideoDiscInputCommand]) and reports whether the
+/// disc consumed it. An unconsumed key is a normal remote-control outcome, so it
+/// is a `false` result rather than a [VideoDiscMenuException].
+bool runVideoDiscInputCommand(dynamic native, List<String> command) {
+  if (!isVideoDiscInputCommand(command)) {
+    throw ArgumentError.value(command, 'command', 'Not a disc input');
+  }
+  return _runVideoDiscCommand(native, command) >= 0;
+}
+
 /// media_kit's public command() logs negative mpv results but completes normally.
 /// Disc actions need the actual result so a rejected menu never looks successful.
 /// The caller must await native initialization and check its load token first.
 void runCheckedVideoDiscCommand(dynamic native, List<String> command) {
+  final int result = _runVideoDiscCommand(native, command);
+  if (result < 0) throw VideoDiscMenuException('command-failed:$result');
+}
+
+int _runVideoDiscCommand(dynamic native, List<String> command) {
   final List<Pointer<Utf8>> strings = command
       .map((String argument) => argument.toNativeUtf8())
       .toList(growable: false);
@@ -274,8 +315,7 @@ void runCheckedVideoDiscCommand(dynamic native, List<String> command) {
     for (int i = 0; i < strings.length; i++) {
       arguments[i] = strings[i].cast<Char>();
     }
-    final int result = native.mpv.mpv_command(native.ctx, arguments) as int;
-    if (result < 0) throw VideoDiscMenuException('command-failed:$result');
+    return native.mpv.mpv_command(native.ctx, arguments) as int;
   } finally {
     calloc.free(arguments);
     for (final Pointer<Utf8> string in strings) {
