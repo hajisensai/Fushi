@@ -2992,13 +2992,21 @@ html.fushi-m3e .entry-header-meta > :first-child {
     margin-top: 0;
 }
 
+/* BUG-3308（反馈 #qFuEIpcwsC「点制卡按钮按钮后面出现直角方块」）：会做按压形变的圆形
+   图标按钮，静息圆角写 50%，不写 corner-full（999px 哨兵值）。按下时 border-radius
+   从静息值过渡到 corner-medium / corner-small，用的是会过冲的弹簧曲线
+   spring-fast-spatial（cubic-bezier y1=1.67）。从 999px 插值时，进度过冲到 1.013 以上
+   计算值就低于 0、被钳成 0px：每次按下约有 120ms 是完全直角的方块（Edge 实测
+   119–237ms 恒为 0px；真 Windows WebView2 桌面截屏抓到同一帧）。这些按钮都是正方形盒，
+   50% 就是正圆，插值起点是真实几何半径，过冲后最小仍 ≥ 10px，M3E 形变与回弹照旧。
+   守卫 popup_round_button_press_radius_bug3308_test.dart。 */
 html.fushi-m3e .header-buttons > .inline-action-button {
     box-sizing: border-box;
     width: var(--fushi-m3e-action-size);
     height: var(--fushi-m3e-action-size);
     padding: 0;
     border: none;
-    border-radius: var(--md-sys-shape-corner-full);
+    border-radius: 50%;
     color: var(--md-sys-color-on-secondary-container);
     background-color: var(--md-sys-color-secondary-container);
     background-image: none;
@@ -3204,8 +3212,9 @@ html.fushi-m3e .mine-button:where(:not(.latest):not(.duplicate)) {
     opacity: 1;
 }
 
+/* 同 BUG-3308：正方形图标按钮静息 50%，别用 999px 哨兵值（过冲插值会钳成 0px 直角）。 */
 html.fushi-m3e .inline-action-button {
-    border-radius: var(--md-sys-shape-corner-full);
+    border-radius: 50%;
     transition: opacity var(--md-sys-motion-spring-fast-effects-duration) var(--md-sys-motion-spring-fast-effects),
         background-color var(--md-sys-motion-spring-fast-effects-duration) var(--md-sys-motion-spring-fast-effects),
         box-shadow var(--md-sys-motion-spring-fast-effects-duration) var(--md-sys-motion-spring-fast-effects),
@@ -3247,8 +3256,9 @@ html.fushi-m3e .sentence-context-picker .context-count.selected {
     color: var(--md-sys-color-primary);
 }
 
+/* 同 BUG-3308：16px 正方形步进按钮，静息 50%。 */
 html.fushi-m3e .sentence-context-picker .context-stepper-btn {
-    border-radius: var(--md-sys-shape-corner-full);
+    border-radius: 50%;
 }
 
 /* ── plain tooltip（按钮悬停提示 / 无音频提示）：反色小块，4 圆角 ── */
