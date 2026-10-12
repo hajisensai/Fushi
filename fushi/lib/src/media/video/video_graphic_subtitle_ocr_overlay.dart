@@ -16,10 +16,44 @@ import 'package:fushi/src/media/video/video_player_controller.dart';
 /// 识别触发的防抖：逐帧步进 / 连续 seek 时只识别停下来的那一帧。
 const Duration kGraphicSubtitleOcrSettleDelay = Duration(milliseconds: 250);
 
-/// 「这一帧没有字」的提示停留多久后淡出（「已识别」标记在暂停期间常驻）。
-const Duration kGraphicSubtitleOcrEmptyHintDuration = Duration(
+/// 识别完成后的状态标记（「已识别 · 点字查词」/「这一帧没有字」）停留多久后淡出。
+///
+/// 反馈 YtbinN_pBG / -6dAnq8S6f：「已识别」以前在暂停期间常驻、一直压在画面上；
+/// 它只是告诉用户「现在可以点字了」，看到一眼就够。淡出的只是标记，识别出的可点
+/// 区域照旧留到继续播放 / seek / 换轨为止。
+const Duration kGraphicSubtitleOcrStatusHintDuration = Duration(
   milliseconds: 2500,
 );
+
+/// 暂停 OCR 的识别结果标记是否到时自动淡出（识别中要一直显示到出结果为止）。
+bool graphicSubtitlePauseOcrStatusAutoHides(
+  GraphicSubtitlePauseOcrStatus status,
+) => switch (status) {
+  GraphicSubtitlePauseOcrStatus.ready ||
+  GraphicSubtitlePauseOcrStatus.empty => true,
+  GraphicSubtitlePauseOcrStatus.idle ||
+  GraphicSubtitlePauseOcrStatus.recognizing => false,
+};
+
+/// 这一刻是否该对暂停画面做 OCR（纯函数，页面与测试共用同一判据）。
+///
+/// - 图形字幕（libmpv 自绘、没有 cue）：一直识别（历史行为）。
+/// - 没有图形字幕（反馈 i5A0mu1-AT：烧录在画面里的硬字幕）：只在用户打开
+///   [ocrWithoutSubtitleTrack] 且**当前没有任何文本字幕 cue**（也不在加载中）时识别——
+///   有文本轨的视频本来就能点字幕查词，整帧 OCR 只会把招牌 / 片名之类的字也铺成
+///   可点区域，与字幕查词抢点击。
+bool graphicSubtitlePauseOcrEligible({
+  required bool playing,
+  required bool hasFirstFrame,
+  required bool playerRenderedSubtitle,
+  required bool ocrWithoutSubtitleTrack,
+  required bool hasTextCues,
+  required bool textCuesLoading,
+}) {
+  if (playing || !hasFirstFrame) return false;
+  if (playerRenderedSubtitle) return true;
+  return ocrWithoutSubtitleTrack && !hasTextCues && !textCuesLoading;
+}
 
 /// 图形字幕 OCR 查词覆盖层。尺寸须与视频控件一致（挂在 controls 层里）。
 class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
@@ -31,6 +65,8 @@ class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
     this.onUnavailable,
     this.onError,
     this.captureFrame,
+    this.recognizeFrame,
+    this.ocrWithoutSubtitleTrack = false,
     this.statusTopInset = 12,
     super.key,
   });
@@ -55,6 +91,16 @@ class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
 
   /// 截帧；默认走 [VideoPlayerController.captureFrameWithSubtitles]（测试注入用）。
   final Future<Uint8List?> Function()? captureFrame;
+
+  /// 识别一帧；默认走 [GraphicSubtitleOcrSession.recognize]（测试注入用，不触发
+  /// AI 重读回调）。
+  @visibleForTesting
+  final Future<GraphicSubtitleOcrFrame?> Function(Uint8List frameBytes)?
+  recognizeFrame;
+
+  /// 没有图形字幕的视频（硬字幕）也在暂停时 OCR，见
+  /// [graphicSubtitlePauseOcrEligible]。默认关（设置 › 视频 › 字幕）。
+  final bool ocrWithoutSubtitleTrack;
 
   /// 状态标记（识别中 / 已识别）距顶部的距离——页面传顶栏高度，标记落在顶栏下方、
   /// 不压字幕（图形字幕绝大多数在画面下方）。
@@ -92,7 +138,13 @@ class _VideoGraphicSubtitleOcrOverlayState
   @override
   void didUpdateWidget(VideoGraphicSubtitleOcrOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (identical(oldWidget.controller, widget.controller)) return;
+    if (identical(oldWidget.controller, widget.controller)) {
+      // 开关变化同样改变「这一帧该不该识别」的判据。
+      if (oldWidget.ocrWithoutSubtitleTrack != widget.ocrWithoutSubtitleTrack) {
+        _onControllerChanged();
+      }
+      return;
+    }
     oldWidget.controller.removeListener(_onControllerChanged);
     widget.controller.addListener(_onControllerChanged);
     _reset();
@@ -112,9 +164,15 @@ class _VideoGraphicSubtitleOcrOverlayState
 
   _FrameKey? _currentKey() {
     final VideoPlayerController c = widget.controller;
-    if (c.isPlaying || !c.isPlayerRenderedSubtitleActive || !c.hasFirstFrame) {
-      return null;
-    }
+    final bool eligible = graphicSubtitlePauseOcrEligible(
+      playing: c.isPlaying,
+      hasFirstFrame: c.hasFirstFrame,
+      playerRenderedSubtitle: c.isPlayerRenderedSubtitleActive,
+      ocrWithoutSubtitleTrack: widget.ocrWithoutSubtitleTrack,
+      hasTextCues: c.cues.isNotEmpty,
+      textCuesLoading: c.isSubtitleCuesLoading,
+    );
+    if (!eligible) return null;
     final int? position = c.positionMs;
     if (position == null) return null;
     return (positionMs: position, trackId: c.activeSubtitleTrackId);
@@ -142,9 +200,9 @@ class _VideoGraphicSubtitleOcrOverlayState
   void _setStatus(GraphicSubtitlePauseOcrStatus status) {
     _statusFade?.cancel();
     _statusFade = null;
-    if (status == GraphicSubtitlePauseOcrStatus.empty) {
+    if (graphicSubtitlePauseOcrStatusAutoHides(status)) {
       final int generation = _generation;
-      _statusFade = Timer(kGraphicSubtitleOcrEmptyHintDuration, () {
+      _statusFade = Timer(kGraphicSubtitleOcrStatusHintDuration, () {
         if (mounted && generation == _generation) {
           _setStatus(GraphicSubtitlePauseOcrStatus.idle);
         }
@@ -167,16 +225,9 @@ class _VideoGraphicSubtitleOcrOverlayState
               widget.controller.captureFrameWithSubtitles)();
       if (bytes == null || stale()) return;
       _setStatus(GraphicSubtitlePauseOcrStatus.recognizing);
-      final GraphicSubtitleOcrSession session = _session ??=
-          GraphicSubtitleOcrSession(prepare: widget.prepare);
-      final GraphicSubtitleOcrFrame? frame = await session.recognize(
+      final GraphicSubtitleOcrFrame? frame = await _recognizeBytes(
         bytes,
-        onRefined: (GraphicSubtitleOcrFrame refined) {
-          if (!stale()) setState(() => _frame = refined);
-        },
-        onRefineError: (Object error, StackTrace stack) {
-          if (!stale()) widget.onError?.call(error, stack);
-        },
+        stale,
       );
       if (frame == null || stale()) return;
       setState(() => _frame = frame);
@@ -194,6 +245,26 @@ class _VideoGraphicSubtitleOcrOverlayState
       if (!stale()) _setStatus(GraphicSubtitlePauseOcrStatus.idle);
       if (mounted) widget.onError?.call(error, stack);
     }
+  }
+
+  Future<GraphicSubtitleOcrFrame?> _recognizeBytes(
+    Uint8List bytes,
+    bool Function() stale,
+  ) {
+    final Future<GraphicSubtitleOcrFrame?> Function(Uint8List)? injected =
+        widget.recognizeFrame;
+    if (injected != null) return injected(bytes);
+    final GraphicSubtitleOcrSession session = _session ??=
+        GraphicSubtitleOcrSession(prepare: widget.prepare);
+    return session.recognize(
+      bytes,
+      onRefined: (GraphicSubtitleOcrFrame refined) {
+        if (!stale()) setState(() => _frame = refined);
+      },
+      onRefineError: (Object error, StackTrace stack) {
+        if (!stale()) widget.onError?.call(error, stack);
+      },
+    );
   }
 
   @override

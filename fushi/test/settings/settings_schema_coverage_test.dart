@@ -357,6 +357,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Reveal when paused or hovered':
       'test/media/video/video_subtitle_hide_hover_reveal_test.dart'
       '（悬停 / 点击 / 暂停 / 查词四条显形来源同属一个总闸）',
+  // 反馈 i5A0mu1-AT：无字幕轨（硬字幕）也暂停 OCR。写 videoAsbplayerConfig
+  // （changed=true），生效点是播放页 OCR 覆盖层「这一帧该不该识别」的判据——要
+  // 真播放器截帧与 OCR 引擎，harness 无适用探针；由专项 widget 测试咬住（默认关不
+  // 识别、开了且无文本 cue 才识别、有文本 cue 不识别）。
+  'video/OCR on pause without subtitle track':
+      'test/media/video/video_graphic_subtitle_ocr_overlay_test.dart'
+      '（开关 × 图形字幕 × 文本 cue 三维判据）',
   // 视频条目自动刮削总闸。写 prefsRepo（changed=true），生效点在
   // VideoScrapeAutoService.sweep 的进场门（关=零网络请求、零资料落库），不是
   // reader CSS / 主题树，无适用探针；由专项服务测试咬住（关=不发请求、关→开

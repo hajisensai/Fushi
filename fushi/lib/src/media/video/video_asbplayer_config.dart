@@ -13,6 +13,7 @@ class VideoAsbplayerConfig {
     required this.tapTogglesPlayback,
     required this.brightnessSwipeGesture,
     required this.volumeSwipeGesture,
+    this.pauseOcrWithoutSubtitleTrack = false,
   });
 
   /// 双击「字幕跳句」哨兵值（TODO-173/BUG-231）：[doubleTapSeekSeconds] 取此值时，
@@ -41,6 +42,7 @@ class VideoAsbplayerConfig {
     tapTogglesPlayback: true,
     brightnessSwipeGesture: true,
     volumeSwipeGesture: true,
+    pauseOcrWithoutSubtitleTrack: false,
   );
 
   final int seekSeconds;
@@ -72,6 +74,12 @@ class VideoAsbplayerConfig {
   /// 关掉后右半区竖滑不再改音量，用户改用实体音量键；控制条音量滑条、键盘音量键不受影响。
   final bool volumeSwipeGesture;
 
+  /// 没有图形字幕的视频（字幕烧录在画面里的硬字幕）暂停时也对画面做 OCR、原位铺
+  /// 可点字查词（反馈 i5A0mu1-AT）。**默认 false**：只有当前没有任何文本字幕 cue 时
+  /// 才生效（有文本轨的视频本来就能点字幕查词），判据见
+  /// `graphicSubtitlePauseOcrEligible`；图形字幕（PGS 等）的暂停 OCR 不受本开关影响。
+  final bool pauseOcrWithoutSubtitleTrack;
+
   VideoAsbplayerConfig copyWith({
     int? seekSeconds,
     double? speedStep,
@@ -82,6 +90,7 @@ class VideoAsbplayerConfig {
     bool? tapTogglesPlayback,
     bool? brightnessSwipeGesture,
     bool? volumeSwipeGesture,
+    bool? pauseOcrWithoutSubtitleTrack,
   }) {
     return VideoAsbplayerConfig(
       seekSeconds: seekSeconds ?? this.seekSeconds,
@@ -94,6 +103,8 @@ class VideoAsbplayerConfig {
       brightnessSwipeGesture:
           brightnessSwipeGesture ?? this.brightnessSwipeGesture,
       volumeSwipeGesture: volumeSwipeGesture ?? this.volumeSwipeGesture,
+      pauseOcrWithoutSubtitleTrack:
+          pauseOcrWithoutSubtitleTrack ?? this.pauseOcrWithoutSubtitleTrack,
     );
   }
 
@@ -107,6 +118,7 @@ class VideoAsbplayerConfig {
         'tapTogglesPlayback': tapTogglesPlayback,
         'brightnessSwipeGesture': brightnessSwipeGesture,
         'volumeSwipeGesture': volumeSwipeGesture,
+        'pauseOcrWithoutSubtitleTrack': pauseOcrWithoutSubtitleTrack,
       };
 
   static String encode(VideoAsbplayerConfig config) =>
@@ -141,6 +153,10 @@ class VideoAsbplayerConfig {
             defaults.brightnessSwipeGesture,
         volumeSwipeGesture:
             raw['volumeSwipeGesture'] as bool? ?? defaults.volumeSwipeGesture,
+        // 旧档没有本键 → 回落 false（不对无图形字幕的视频做暂停 OCR）。
+        pauseOcrWithoutSubtitleTrack:
+            raw['pauseOcrWithoutSubtitleTrack'] as bool? ??
+                defaults.pauseOcrWithoutSubtitleTrack,
       );
     } catch (_) {
       return defaults;

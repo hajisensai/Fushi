@@ -7043,5 +7043,7 @@
   "book_import_no_book_notice_title": "没有选择书籍",
   "book_import_no_book_transcribe_hint": "没有书也能导入：直接用设备端转录把音频转成字幕，导入时会据此自动生成一本书。",
   "book_import_no_book_subtitle_hint": "没有书也能导入：为这段音频选一个字幕文件，导入时会据此自动生成一本书。",
-  "book_import_no_book_transcribe_action": "转录并生成书籍"
+  "book_import_no_book_transcribe_action": "转录并生成书籍",
+  "video_setting_pause_ocr_hard_subtitle": "无字幕轨时暂停也识别画面文字",
+  "video_setting_pause_ocr_hard_subtitle_hint": "适用于烧录在画面里的硬字幕：没有加载文本字幕时，暂停后识别画面文字，点字即可查词"
 }

@@ -247,10 +247,11 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
       ],
     );
 
+    // 「字幕调轴」是面板里的分组标题（schema 的 VideoPlacement.section，强调色、
+    // 在卡片外，与其它分组同一口径——反馈 FxUMLvIqM1），行内不再重复它；行标题
+    // 只留一句正负号含义，完整用法在读数胶囊的提示里。
     return AdaptiveSettingsRow(
-      title: t.video_setting_av_delay,
-      // 说明收成一句（正负号含义）；完整用法在读数胶囊的提示里。
-      subtitle: t.video_setting_av_delay_hint_short,
+      title: t.video_setting_av_delay_hint_short,
       icon: FushiIcons.sync,
       controlBelow: true,
       trailing: Column(
