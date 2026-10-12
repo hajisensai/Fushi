@@ -66,10 +66,10 @@ class _Call {
 
 /// 假引擎：[hang] 为真时请求一直挂着直到被取消（模拟慢服务的在途请求）。
 class _FakeProvider extends TtsProvider {
-  _FakeProvider(this.voice, this.log);
+  _FakeProvider(this.voice, this.owner);
 
   final String voice;
-  final List<_Call> log;
+  final _FakeDescriptor owner;
   bool hang = false;
   bool disposed = false;
 
@@ -88,7 +88,7 @@ class _FakeProvider extends TtsProvider {
     required TtsCancelToken cancel,
   }) async {
     final _Call call = _Call(voice, text, cancel);
-    log.add(call);
+    owner.record(call);
     if (hang) {
       final Completer<void> cancelled = Completer<void>();
       cancel.onCancel(() {
@@ -113,6 +113,27 @@ class _FakeDescriptor extends TtsProviderDescriptor {
   final bool available;
   final List<_Call> log = <_Call>[];
   final List<_FakeProvider> created = <_FakeProvider>[];
+  final List<(bool Function(List<_Call>), Completer<void>)> _waiters =
+      <(bool Function(List<_Call>), Completer<void>)>[];
+
+  void record(_Call call) {
+    log.add(call);
+    for (final (bool Function(List<_Call>), Completer<void>) w
+        in List<(bool Function(List<_Call>), Completer<void>)>.of(_waiters)) {
+      if (w.$1(log)) {
+        _waiters.remove(w);
+        w.$2.complete();
+      }
+    }
+  }
+
+  /// 等到请求记录满足 [condition]（按请求真正到达引擎来等，不靠时序假设）。
+  Future<void> until(bool Function(List<_Call> log) condition) {
+    if (condition(log)) return Future<void>.value();
+    final Completer<void> done = Completer<void>();
+    _waiters.add((condition, done));
+    return done.future.timeout(const Duration(seconds: 20));
+  }
 
   /// 新建的引擎实例是否挂起请求。
   bool hangNext = false;
@@ -139,7 +160,7 @@ class _FakeDescriptor extends TtsProviderDescriptor {
 
   @override
   TtsProvider create(TtsVoicePreset preset, TtsHost host) {
-    final _FakeProvider provider = _FakeProvider(preset.param('voice'), log)
+    final _FakeProvider provider = _FakeProvider(preset.param('voice'), this)
       ..hang = hangNext;
     created.add(provider);
     return provider;
@@ -172,9 +193,6 @@ List<int> _indices(List<_Call> calls) => <int>[
   for (final _Call c in calls) int.parse(c.text.substring(c.text.length - 1)),
 ];
 
-Future<void> _settle() =>
-    Future<void>.delayed(const Duration(milliseconds: 30));
-
 void main() {
   late Directory root;
   late TtsAudioCache cache;
@@ -188,12 +206,11 @@ void main() {
   });
 
   tearDown(() async {
+    // 调度器 dispose 等在途合成（含预取）全部收尾才返回，之后不会再有写盘。
     for (final TtsReadAlong r in live) {
       await r.debugScheduler.dispose();
     }
     live.clear();
-    // 被取消 / 预取中的合成还会落盘一小会儿，等它们收尾再删目录（Windows 文件锁）。
-    await _settle();
     await root.delete(recursive: true);
   });
 
@@ -214,7 +231,7 @@ void main() {
       // 旧声音先合成好开头两句（之后要验证它的缓存没被删）。
       readAlong.debugScheduler.setLookahead(1);
       await readAlong.debugScheduler.ensure(0);
-      await _settle();
+      await readAlong.debugScheduler.ensure(1);
       final String oldKey0 = readAlong.debugScheduler.keyOf(0);
       expect(cache.audioPathFor(oldKey0), isNotEmpty);
       expect(File(cache.audioPathFor(oldKey0)).existsSync(), isTrue);
@@ -224,7 +241,10 @@ void main() {
       oldProvider.hang = true;
       descriptor.log.clear();
       readAlong.debugScheduler.setCursor(4);
-      await _settle();
+      // 预取窗口 4..5、并发 2：两句都到达旧引擎后才算「在途」。
+      await descriptor.until(
+        (List<_Call> log) => _indices(log).toSet().containsAll(<int>{4, 5}),
+      );
       final List<_Call> oldInFlight = List<_Call>.of(descriptor.log);
       expect(oldInFlight.map((_Call c) => c.voice).toSet(), <String>{'A'});
       expect(oldInFlight, isNotEmpty);
@@ -235,7 +255,11 @@ void main() {
         _preset('b', 'B'),
         descriptor,
       );
-      await _settle();
+      // 新调度器从当前句起合成：等第 4 句的请求真正到达新引擎。
+      await descriptor.until(
+        (List<_Call> log) =>
+            log.any((_Call c) => c.voice == 'B' && c.text.endsWith('4')),
+      );
 
       expect(outcome, TtsVoiceSwitchOutcome.switched);
       expect(readAlong.preset.id, 'b');

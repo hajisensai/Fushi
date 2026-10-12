@@ -70,6 +70,11 @@ class TtsSynthesisScheduler {
   final Map<int, Completer<TtsCachedAudio>> _waiters =
       <int, Completer<TtsCachedAudio>>{};
   final Map<int, TtsCancelToken> _inFlight = <int, TtsCancelToken>{};
+
+  /// 每一路合成的整条收尾（含写缓存）。[dispose] 取消后等它们全部落定，之后才
+  /// 允许调用方释放引擎 / 清缓存目录：引擎不一定能立刻中止（系统 TTS 的整句合成、
+  /// 已经在写盘的结果），关掉之后还在后台写文件会撞上删目录 / 换引擎。
+  final Set<Future<void>> _running = <Future<void>>{};
   final Set<int> _demanded = <int>{};
   final Set<int> _pinned = <int>{};
   final StreamController<TtsSegmentEvent> _events =
@@ -163,7 +168,9 @@ class TtsSynthesisScheduler {
     while (_inFlight.length < _concurrency) {
       final int? index = _nextIndex();
       if (index == null) return;
-      unawaited(_run(index));
+      final Future<void> run = _run(index);
+      _running.add(run);
+      unawaited(run.whenComplete(() => _running.remove(run)));
     }
   }
 
@@ -206,6 +213,8 @@ class TtsSynthesisScheduler {
     }
   }
 
+  /// 停止调度：取消在途合成、让等待者以「已取消」失败、解除 pin，并**等在途合成
+  /// 全部收尾**后才返回（返回后本调度器不会再向缓存目录写任何东西，引擎可以释放）。
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
@@ -223,6 +232,7 @@ class TtsSynthesisScheduler {
       _cache.unpin(_keys[i]);
     }
     _pinned.clear();
+    await Future.wait(_running.toList());
     await _events.close();
   }
 }

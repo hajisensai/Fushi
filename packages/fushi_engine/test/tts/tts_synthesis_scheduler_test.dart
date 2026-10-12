@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
+import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_synthesis_scheduler.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:test/test.dart';
@@ -64,28 +65,31 @@ void main() {
     expect(provider.calls, <String>['t0']);
   });
 
-  test('setCursor prefetches cursor..cursor+lookahead within concurrency', () async {
-    provider = FakeTtsProvider(maxConcurrency: 2)..gateAll = true;
-    final TtsSynthesisScheduler s = make(lookahead: 3);
-    final List<int> ready = <int>[];
-    s.events.listen((TtsSegmentEvent e) {
-      if (e is TtsSegmentReady) ready.add(e.index);
-    });
-    s.setCursor(2);
-    await waitFor(() => provider.calls.length == 2);
-    await settle();
-    // 两路并发都要先异步查缓存，到达引擎的先后不确定。
-    expect(provider.calls.toSet(), <String>{'t2', 't3'});
-    expect(s.isInFlight(2) && s.isInFlight(3), isTrue);
-    for (final String t in <String>['t2', 't3', 't4', 't5', 't6']) {
-      provider.release(t);
-    }
-    await waitFor(() => ready.length == 4);
-    await settle();
-    expect(provider.calls.toSet(), <String>{'t2', 't3', 't4', 't5'});
-    expect(provider.maxActive, 2);
-    expect(ready.toSet(), <int>{2, 3, 4, 5});
-  });
+  test(
+    'setCursor prefetches cursor..cursor+lookahead within concurrency',
+    () async {
+      provider = FakeTtsProvider(maxConcurrency: 2)..gateAll = true;
+      final TtsSynthesisScheduler s = make(lookahead: 3);
+      final List<int> ready = <int>[];
+      s.events.listen((TtsSegmentEvent e) {
+        if (e is TtsSegmentReady) ready.add(e.index);
+      });
+      s.setCursor(2);
+      await waitFor(() => provider.calls.length == 2);
+      await settle();
+      // 两路并发都要先异步查缓存，到达引擎的先后不确定。
+      expect(provider.calls.toSet(), <String>{'t2', 't3'});
+      expect(s.isInFlight(2) && s.isInFlight(3), isTrue);
+      for (final String t in <String>['t2', 't3', 't4', 't5', 't6']) {
+        provider.release(t);
+      }
+      await waitFor(() => ready.length == 4);
+      await settle();
+      expect(provider.calls.toSet(), <String>{'t2', 't3', 't4', 't5'});
+      expect(provider.maxActive, 2);
+      expect(ready.toSet(), <int>{2, 3, 4, 5});
+    },
+  );
 
   test('explicit concurrency overrides provider capability', () async {
     provider = FakeTtsProvider(maxConcurrency: 4)..gateAll = true;
@@ -191,20 +195,23 @@ void main() {
     expect(s.isInFlight(0) && s.isInFlight(1), isTrue);
   });
 
-  test('stale demand outside the new window is cancelled, waiter stays pending', () async {
-    provider.gateAll = true;
-    final TtsSynthesisScheduler s = make(count: 20, lookahead: 1);
-    final Future<TtsCachedAudio> demanded = s.ensure(0);
-    await waitFor(() => provider.calls.length == 1);
-    // ensure(0) 后立刻跳到远处：_demanded 先被裁掉，在途 t0 被取消，但 ensure 仍挂起。
-    s.setCursor(15);
-    await waitFor(() => provider.cancelled.contains('t0'));
-    expect(s.failure, isNull);
-    bool done = false;
-    unawaited(demanded.then((_) => done = true, onError: (Object _) {}));
-    await settle();
-    expect(done, isFalse);
-  });
+  test(
+    'stale demand outside the new window is cancelled, waiter stays pending',
+    () async {
+      provider.gateAll = true;
+      final TtsSynthesisScheduler s = make(count: 20, lookahead: 1);
+      final Future<TtsCachedAudio> demanded = s.ensure(0);
+      await waitFor(() => provider.calls.length == 1);
+      // ensure(0) 后立刻跳到远处：_demanded 先被裁掉，在途 t0 被取消，但 ensure 仍挂起。
+      s.setCursor(15);
+      await waitFor(() => provider.cancelled.contains('t0'));
+      expect(s.failure, isNull);
+      bool done = false;
+      unawaited(demanded.then((_) => done = true, onError: (Object _) {}));
+      await settle();
+      expect(done, isFalse);
+    },
+  );
 
   test('dispose completes waiters with cancelled', () async {
     provider.gateAll = true;
@@ -235,6 +242,39 @@ void main() {
     );
     await waitFor(() => provider.cancelled.contains('t0'));
   });
+
+  test(
+    'dispose waits for a synthesis that cannot abort to finish writing',
+    () async {
+      // 系统 TTS 这类整句合成停不下来：取消后它照样写完输出。dispose 返回前必须等它
+      // 收尾，否则调用方紧接着释放引擎 / 删缓存目录时它还在写盘。
+      final _UnabortableProvider slow = _UnabortableProvider();
+      final TtsSynthesisScheduler s = TtsSynthesisScheduler(
+        provider: slow,
+        cache: cache,
+        texts: texts(1),
+        audioIdentity: const <String, Object?>{},
+        lookahead: 0,
+      );
+      schedulers.add(s);
+      unawaited(s.ensure(0).then((_) {}, onError: (Object _) {}));
+      await slow.started.future;
+      bool disposed = false;
+      final Future<void> disposing = s.dispose().then((_) => disposed = true);
+      await settle(30);
+      expect(disposed, isFalse, reason: 'synthesis still running');
+      slow.finish.complete();
+      await disposing;
+      expect(slow.wrote, isTrue);
+      // 收尾（发布或清掉 .part）已全部落定：目录里不再有半成品。
+      expect(
+        root.listSync().whereType<File>().where(
+          (File f) => f.path.endsWith('.part'),
+        ),
+        isEmpty,
+      );
+    },
+  );
 
   test('dispose releases pins', () async {
     final TtsSynthesisScheduler s = make(lookahead: 0);
@@ -269,4 +309,32 @@ class _ThrowingProvider extends FakeTtsProvider {
     required String outputPath,
     required TtsCancelToken cancel,
   }) async => throw StateError('boom');
+}
+
+/// 不理会取消的引擎：开始后一直等 [finish]，然后照常写完输出。
+class _UnabortableProvider extends TtsProvider {
+  final Completer<void> started = Completer<void>();
+  final Completer<void> finish = Completer<void>();
+  bool wrote = false;
+
+  @override
+  TtsCapabilities get capabilities => const TtsCapabilities(
+    timing: TtsTimingGranularity.sentence,
+    online: false,
+    needsCredential: false,
+    maxConcurrency: 1,
+  );
+
+  @override
+  Future<TtsResult> synthesize(
+    String text, {
+    required String outputPath,
+    required TtsCancelToken cancel,
+  }) async {
+    started.complete();
+    await finish.future;
+    await File(outputPath).writeAsBytes(buildWav());
+    wrote = true;
+    return const TtsResult(format: TtsAudioFormat.wav);
+  }
 }
