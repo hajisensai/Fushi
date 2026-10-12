@@ -8,12 +8,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/debug_log_service.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -22,8 +24,9 @@ import 'package:material_ui/material_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 /// 根布局外层的 [RepaintBoundary]（`main.dart` 的 MaterialApp builder 里），截「用户
-/// 此刻看到的画面」用。WebView / 视频纹理等平台视图在部分平台截出来是空白，用户可以
-/// 在提交页删掉它、改从相册选图。
+/// 此刻看到的画面」的回退路径用。WebView 等平台视图不在 Flutter 场景里，
+/// [RenderRepaintBoundary.toImage] 截出来那一块是空白——所以 iOS / Android 先走
+/// 原生窗口快照（见 [captureFeedbackScreenshot]），原生不可用时才回到这里。
 final GlobalKey feedbackScreenshotBoundaryKey = GlobalKey(
   debugLabel: 'feedbackScreenshotBoundary',
 );
@@ -31,9 +34,168 @@ final GlobalKey feedbackScreenshotBoundaryKey = GlobalKey(
 /// 截图长边上限（像素）：够看清界面，PNG 一般几百 KB，远低于服务端单张上限。
 const int kFeedbackScreenshotMaxSide = 1600;
 
-/// 截当前画面为 PNG；根边界还没布局（启动早期）或编码失败返回 null。
-/// 超过服务端上限时逐级缩小重截。
-Future<Uint8List?> captureFeedbackScreenshot() async {
+/// 原生窗口快照进行中。反馈截图的语义是「页面本身」，不含应用内悬浮球等全局
+/// 浮层；原生快照截的是整个窗口，所以截之前悬浮球宿主据此把球藏掉。
+final ValueNotifier<bool> feedbackWindowCaptureActive = ValueNotifier<bool>(
+  false,
+);
+
+/// 原生窗口快照：返回本 App 窗口的编码图（含 WKWebView / Android WebView 等
+/// 平台视图）；本设备做不到返回 null；失败抛 [PlatformException]。
+typedef FeedbackNativeWindowCapture = Future<Uint8List?> Function();
+
+/// 只有 iOS（`drawHierarchy`）与 Android（PixelCopy，API 26+）有原生窗口快照，
+/// 实现挂在悬浮球通道的 `captureScreen` 上（iOS `FushiFloatingBall.swift`，
+/// Android `FloatingBallChannel.java`；两端都在引擎起来时无条件注册，不依赖悬浮球
+/// 开关）。桌面三端保持 toImage：Windows / Linux 的 WebView 以纹理合成进 Flutter
+/// 场景，toImage 截得到；macOS 的 WKWebView 是原生视图，仍会缺一块。
+bool get _nativeWindowCaptureSupported => Platform.isIOS || Platform.isAndroid;
+
+Future<Uint8List?> _invokeNativeWindowCapture() =>
+    FloatingBallChannel.channel.invokeMethod<Uint8List>('captureScreen');
+
+/// 截当前画面为 PNG（长边 ≤ [kFeedbackScreenshotMaxSide]、体积 ≤ 服务端单张上限）。
+///
+/// iOS / Android 先截原生窗口（平台视图也在里面）；原生没注册 / 本设备不支持 /
+/// 失败 / 产物解不开时记日志，回退到 Flutter 根边界 toImage。都不行返回 null。
+Future<Uint8List?> captureFeedbackScreenshot() => captureFeedbackScreenshotWith(
+  nativeWindow: _nativeWindowCaptureSupported
+      ? _invokeNativeWindowCapture
+      : null,
+  boundary: _captureFeedbackBoundary,
+  awaitFrame: _awaitOverlayHiddenFrame,
+);
+
+/// 让「藏球」这一帧真正画出来再截（与悬浮球 iOS 截屏 OCR 同一做法）。
+Future<void> _awaitOverlayHiddenFrame() async {
+  SchedulerBinding.instance.scheduleFrame();
+  await SchedulerBinding.instance.endOfFrame;
+}
+
+/// [captureFeedbackScreenshot] 的可注入实现（测试缝）。[nativeWindow] 为 null
+/// 表示本平台没有原生窗口快照，直接走 [boundary]；[awaitFrame] 等藏掉浮层的那一帧
+/// 画完。
+@visibleForTesting
+Future<Uint8List?> captureFeedbackScreenshotWith({
+  required FeedbackNativeWindowCapture? nativeWindow,
+  required Future<Uint8List?> Function() boundary,
+  required Future<void> Function() awaitFrame,
+}) async {
+  if (nativeWindow != null) {
+    final Uint8List? shot = await _captureNativeWindow(
+      nativeWindow,
+      awaitFrame,
+    );
+    if (shot != null) return shot;
+  }
+  return boundary();
+}
+
+/// 藏掉全局浮层、等这一帧画完，再要原生快照；产物缩到上限内。每一种失败都
+/// 记日志后返回 null，由调用方回退到 toImage。
+Future<Uint8List?> _captureNativeWindow(
+  FeedbackNativeWindowCapture nativeWindow,
+  Future<void> Function() awaitFrame,
+) async {
+  final Uint8List? raw;
+  feedbackWindowCaptureActive.value = true;
+  try {
+    await awaitFrame();
+    raw = await nativeWindow();
+  } on MissingPluginException catch (e) {
+    ErrorLogService.instance.logDiagnostic(
+      'feedback.screenshot',
+      'native window capture not registered, falling back to toImage ($e)',
+    );
+    return null;
+  } on PlatformException catch (e, st) {
+    ErrorLogService.instance.log('feedback.screenshot.native', e, st);
+    return null;
+  } finally {
+    feedbackWindowCaptureActive.value = false;
+  }
+  if (raw == null || raw.isEmpty) {
+    ErrorLogService.instance.logDiagnostic(
+      'feedback.screenshot',
+      'native window capture unsupported on this device, falling back to '
+          'toImage',
+    );
+    return null;
+  }
+  try {
+    final Uint8List? fitted = await fitFeedbackScreenshotPng(raw);
+    if (fitted == null) {
+      ErrorLogService.instance.logDiagnostic(
+        'feedback.screenshot',
+        'native capture (${raw.length} bytes) does not fit the upload limit, '
+            'falling back to toImage',
+      );
+    }
+    return fitted;
+  } on Object catch (e, st) {
+    ErrorLogService.instance.log('feedback.screenshot.native_decode', e, st);
+    return null;
+  }
+}
+
+/// 把一张编码好的截图缩到长边 ≤ [maxSide]、体积 ≤ [maxBytes]（PNG）；原图已满足
+/// 就原样返回。逐级缩小 4 次仍超限返回 null。解码失败抛出。
+@visibleForTesting
+Future<Uint8List?> fitFeedbackScreenshotPng(
+  Uint8List encoded, {
+  int maxSide = kFeedbackScreenshotMaxSide,
+  int maxBytes = FeedbackLimits.screenshotMaxBytes,
+}) async {
+  final ui.ImmutableBuffer buffer = await ui.ImmutableBuffer.fromUint8List(
+    encoded,
+  );
+  final ui.ImageDescriptor descriptor;
+  try {
+    descriptor = await ui.ImageDescriptor.encoded(buffer);
+  } finally {
+    buffer.dispose();
+  }
+  try {
+    final int longest = math.max(descriptor.width, descriptor.height);
+    if (longest <= 0) return null;
+    if (longest <= maxSide && encoded.length <= maxBytes) return encoded;
+    double scale = math.min(1, maxSide / longest);
+    for (int attempt = 0; attempt < 4; attempt++) {
+      final ui.Codec codec = await descriptor.instantiateCodec(
+        targetWidth: math.max(1, (descriptor.width * scale).round()),
+        targetHeight: math.max(1, (descriptor.height * scale).round()),
+      );
+      final ui.Image image;
+      try {
+        image = (await codec.getNextFrame()).image;
+      } finally {
+        codec.dispose();
+      }
+      try {
+        final Uint8List? png = await _encodePng(image);
+        if (png == null) return null;
+        if (png.length <= maxBytes) return png;
+      } finally {
+        image.dispose();
+      }
+      scale *= 0.7;
+    }
+    return null;
+  } finally {
+    descriptor.dispose();
+  }
+}
+
+Future<Uint8List?> _encodePng(ui.Image image) async {
+  final ByteData? bytes = await image.toByteData(
+    format: ui.ImageByteFormat.png,
+  );
+  return bytes?.buffer.asUint8List();
+}
+
+/// Flutter 根边界 toImage（回退路径，平台视图那块是空白）；根边界还没布局
+/// （启动早期）或编码失败返回 null。超过服务端上限时逐级缩小重截。
+Future<Uint8List?> _captureFeedbackBoundary() async {
   final RenderObject? object = feedbackScreenshotBoundaryKey.currentContext
       ?.findRenderObject();
   if (object is! RenderRepaintBoundary || !object.hasSize) return null;
@@ -53,11 +215,8 @@ Future<Uint8List?> captureFeedbackScreenshot() async {
       return null;
     }
     try {
-      final ByteData? bytes = await image.toByteData(
-        format: ui.ImageByteFormat.png,
-      );
-      if (bytes == null) return null;
-      final Uint8List png = bytes.buffer.asUint8List();
+      final Uint8List? png = await _encodePng(image);
+      if (png == null) return null;
       if (png.length <= FeedbackLimits.screenshotMaxBytes) return png;
     } finally {
       image.dispose();
