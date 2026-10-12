@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3308](bugs/BUG-3308-popup-round-button-press-square.md) | 🚧 | 🚧 | 查词弹窗点「+」制卡按钮时背后出现直角方形底色 |
+| [BUG-3308](bugs/BUG-3308-popup-round-button-press-square.md) | ✅ | ✅ | 查词弹窗点「+」制卡按钮时闪出完全直角的方块 |
 | [BUG-3272](bugs/BUG-3272-anki-auto-reposition-failure-reason-lost.md) | ✅ | ✅ | 自动重排失败原因被吞且整牌组请求走交互超时 |
 | [BUG-3271](bugs/BUG-3271-expansion-tile-pagestorage-collision.md) | ✅ | ✅ | 视频设置面板字幕分类下方整片灰（展开区与滚动视图 PageStorage 槽冲突） |
 | [BUG-3270](bugs/BUG-3270-anki-dict-media-dangling-placeholder.md) | ✅ | ✅ | 制卡缺词典媒体时卡片残留 fushi_dict_N 占位图，AnkiDroid 报加载失败 |
