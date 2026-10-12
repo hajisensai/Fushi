@@ -29,10 +29,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2959 条。点号进各自文件。
+> 共 2965 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3295](bugs/BUG-3295-ios-popup-m3e-color.md) | 🚧 | 🚧 | iOS 查词框没有上 M3E 着色（未复现） |
+| [BUG-3294](bugs/BUG-3294-popup-mine-button-blue-box.md) | 🚧 | 🚧 | 点制卡按钮出现蓝色方框背景（未复现） |
+| [BUG-3293](bugs/BUG-3293-popup-loading-spinner-lingers.md) | ✅ | ✅ | 查词加载指示器在结果出来后仍压着结果转 |
+| [BUG-3292](bugs/BUG-3292-reader-popup-under-floating-chrome.md) | ✅ | ✅ | 阅读器悬浮底栏/迷你播放条盖住查词弹窗 |
+| [BUG-3288](bugs/BUG-3288-popup-headword-wheel-scroll.md) | ✅ | ✅ | 查词弹窗词头放得下仍可被滚轮纵向滚动 |
+| [BUG-3287](bugs/BUG-3287-video-subtitle-highlight-stroke.md) | ✅ | ✅ | 视频字幕查词高亮底色盖不住 .ass 描边 |
 | [BUG-3272](bugs/BUG-3272-anki-auto-reposition-failure-reason-lost.md) | ✅ | ✅ | 自动重排失败原因被吞且整牌组请求走交互超时 |
 | [BUG-3271](bugs/BUG-3271-expansion-tile-pagestorage-collision.md) | ✅ | ✅ | 视频设置面板字幕分类下方整片灰（展开区与滚动视图 PageStorage 槽冲突） |
 | [BUG-3270](bugs/BUG-3270-anki-dict-media-dangling-placeholder.md) | ✅ | ✅ | 制卡缺词典媒体时卡片残留 fushi_dict_N 占位图，AnkiDroid 报加载失败 |
