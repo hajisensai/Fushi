@@ -120,12 +120,12 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
   }
 
   /// 朗读中快速切换声音（播放条 / 有声书面板的声音入口）：选中即设为使用中并
-  /// 热切换；「朗读声音」项进设置页。
+  /// 热切换；「朗读声音」项进设置页。与其它音频模态一样经共享边界：先收起本页
+  /// 选区 / 操作条、暂停学习时钟，再弹对话框。
   Future<void> _openTtsVoiceQuickSwitch() async {
     final TtsServices tts = _ttsServices;
-    final TtsVoiceQuickSwitchChoice? choice = await showTtsVoiceQuickSwitch(
-      context,
-      tts,
+    final TtsVoiceQuickSwitchChoice? choice = await _withStudyClockPaused(
+      () => showTtsVoiceQuickSwitch(context, tts),
     );
     if (choice == null || !mounted) return;
     final String? presetId = choice.presetId;
