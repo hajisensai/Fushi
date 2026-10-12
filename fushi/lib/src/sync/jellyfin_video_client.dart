@@ -3302,6 +3302,11 @@ class JellyfinVideoClient
   /// 第一次上报会被上一集的窗口白白吃掉。
   String _lastReportItemId = '';
 
+  /// Last local pause intent, including while its HTTP report is in flight.
+  /// A delayed position flush is not an unpause. Keep the intent across Stop
+  /// too: disposal can finish another flush afterwards. Start/unpause resets it.
+  final Set<String> _pausedItems = <String>{};
+
   @override
   Future<void> putRemoteVideoPosition(
     String id,
@@ -3323,12 +3328,14 @@ class JellyfinVideoClient
       itemId: id,
       positionMs: positionMs,
       session: _latestSession(id),
+      isPaused: _pausedItems.contains(id),
       eventName: 'timeupdate',
     );
   }
 
   @override
   Future<void> startRemoteVideoPlayback(String id, int positionMs) async {
+    _pausedItems.remove(id);
     final JellyfinPlaybackSession? session = _latestSession(id);
     // 兼容层没签会话：没有可开始的东西，服务器也不认无会话的 Start。
     if (session == null) return;
@@ -3342,14 +3349,20 @@ class JellyfinVideoClient
     String id,
     int positionMs, {
     required bool paused,
-  }) =>
-      api.reportProgress(
-        itemId: id,
-        positionMs: positionMs,
-        session: _latestSession(id),
-        isPaused: paused,
-        eventName: paused ? 'pause' : 'unpause',
-      );
+  }) {
+    if (paused) {
+      _pausedItems.add(id);
+    } else {
+      _pausedItems.remove(id);
+    }
+    return api.reportProgress(
+      itemId: id,
+      positionMs: positionMs,
+      session: _latestSession(id),
+      isPaused: paused,
+      eventName: paused ? 'pause' : 'unpause',
+    );
+  }
 
   /// 播放真正停止时通知 Jellyfin，触发已播放判定与 webhook 等服务端副作用。
   ///
