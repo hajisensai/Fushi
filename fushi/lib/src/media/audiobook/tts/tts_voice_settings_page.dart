@@ -1,7 +1,9 @@
 /// 「朗读声音」设置页：声音预设的增删改、选当前声音、试听、缓存管理。
 ///
-/// 形态与 AI 提供商设置同构（本仓「用户自配服务列表」标准件）：列表页一行一个声音，
-/// 点进去是这份预设的编辑页；草稿态 + 600ms 防抖落盘 + 离开页面冲刷未落盘的编辑。
+/// 形态与 AI 提供商设置同构（本仓「用户自配服务列表」标准件）：列表一行一个声音，
+/// 行首单选一键设为使用中、行尾删除；窄屏点行推进编辑页，宽屏（与制作台同一副
+/// 双栏骨架，见 [TtsVoiceListLayout]）选中即在右侧编辑。草稿态 + 600ms 防抖落盘 +
+/// 离开页面冲刷未落盘的编辑。
 /// 参数表来自引擎描述符（[TtsProviderDescriptor.params]），本页不再抄一份校验判据。
 library;
 
@@ -23,11 +25,10 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_voice_list_layout.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
     show GlassSettingsRenderer;
 import 'package:fushi/src/settings/settings_kit.dart';
-import 'package:fushi/src/settings/settings_schema_widgets.dart'
-    show SettingsSectionFooter;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -62,7 +63,9 @@ Future<void> openTtsVoiceSettingsPage(
   final NavigatorState navigator = Navigator.of(context);
   await tts.seedBuiltinVoiceIfUnset();
   await navigator.push<void>(
-    MaterialPageRoute<void>(builder: (_) => TtsVoiceSettingsPage(services: tts)),
+    MaterialPageRoute<void>(
+      builder: (_) => TtsVoiceSettingsPage(services: tts),
+    ),
   );
 }
 
@@ -78,6 +81,10 @@ class TtsVoiceSettingsPage extends StatefulWidget {
 class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
   late List<TtsVoicePreset> _presets = widget.services.store.loadPresets();
   late String? _activeId = widget.services.store.activePreset()?.id;
+
+  /// 宽屏右侧正在编辑的声音（null / 已删除时退回使用中的声音，见
+  /// [resolveTtsVoiceSelection]）。
+  String? _selectedId;
   Timer? _saveDebounce;
   int? _cacheBytes;
 
@@ -144,10 +151,12 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
 
   /// 「添加声音」只按大类选（外部服务 / 在线服务 / 系统语音）；具体是哪个引擎在
   /// 编辑页的「服务类型」里选，默认取该类第一个。
-  Future<void> _add() async {
+  Future<void> _add({required bool wide}) async {
     final List<TtsProviderCategory> categories = <TtsProviderCategory>[
       for (final TtsProviderCategory c in TtsProviderCategory.values)
-        if (_registry.available.any((TtsProviderDescriptor d) => d.category == c))
+        if (_registry.available.any(
+          (TtsProviderDescriptor d) => d.category == c,
+        ))
           c,
     ];
     final TtsProviderCategory? picked =
@@ -178,10 +187,12 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
     setState(() {
       _presets = <TtsVoicePreset>[..._presets, preset];
       _activeId ??= preset.id;
+      _selectedId = preset.id;
     });
     await _store.savePresets(_presets);
     await _store.setActivePresetId(_activeId);
-    if (mounted) unawaited(_openEditor(preset.id));
+    // 双栏下新声音已经在右侧打开，不再推页。
+    if (mounted && !wide) unawaited(_openEditor(preset.id));
   }
 
   static IconData _categoryIcon(TtsProviderCategory c) => switch (c) {
@@ -213,16 +224,17 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
               .firstOrNull;
           // 已删除：只兜退场动画那几帧。
           if (preset == null) return const SizedBox.shrink();
-          return _TtsVoiceEditorPage(
-            key: ValueKey<String>('tts-voice-editor-$id'),
-            preset: preset,
-            descriptor: _registry[preset.providerId],
-            active: preset.id == _activeId,
-            services: widget.services,
-            onChanged: _update,
-            onUse: () => unawaited(_setActive(preset.id)),
-            onDelete: () {
-              Navigator.of(pageContext).pop();
+          return _editor(
+            preset,
+            embedded: false,
+            onDelete: () async {
+              if (!await confirmTtsVoiceDelete(
+                pageContext,
+                _displayName(preset),
+              )) {
+                return;
+              }
+              if (pageContext.mounted) Navigator.of(pageContext).pop();
               unawaited(_delete(preset.id));
             },
           );
@@ -231,12 +243,46 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
     ),
   );
 
+  /// 编辑内容：窄屏是推进的整页，宽屏（[embedded]）是右侧窗格里的滚动视图。
+  Widget _editor(
+    TtsVoicePreset preset, {
+    required bool embedded,
+    required Future<void> Function() onDelete,
+  }) => _TtsVoiceEditorPage(
+    key: ValueKey<String>('tts-voice-editor-${preset.id}'),
+    preset: preset,
+    descriptor: _registry[preset.providerId],
+    active: preset.id == _activeId,
+    services: widget.services,
+    embedded: embedded,
+    onChanged: _update,
+    onUse: () => unawaited(_setActive(preset.id)),
+    onDelete: () => unawaited(onDelete()),
+  );
+
+  static String _displayName(TtsVoicePreset preset) =>
+      preset.name.isEmpty ? ttsProviderLabel(preset.providerId) : preset.name;
+
+  TtsVoiceListEntry _entry(TtsVoicePreset preset) {
+    final TtsProviderDescriptor? descriptor = _registry[preset.providerId];
+    final bool usable =
+        descriptor != null &&
+        descriptor.isAvailable &&
+        descriptor.validate(preset).isEmpty;
+    return TtsVoiceListEntry(
+      id: preset.id,
+      title: _displayName(preset),
+      subtitle: descriptor == null
+          ? ttsProviderLabel(preset.providerId)
+          : '${ttsCategoryLabel(descriptor.category)} · '
+                '${ttsProviderLabel(preset.providerId)}',
+      icon: _categoryIcon(descriptor?.category ?? TtsProviderCategory.external),
+      incomplete: !usable,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final double inset = isGlassDesign(context)
-        ? GlassSettingsRenderer.detailHorizontalInset(context)
-        : tokens.spacing.page;
     return SettingsKitScaffold(
       title: t.audiobook_tts_voice_settings,
       leadingIcon: FushiIcons.voice,
@@ -247,111 +293,45 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
             BuildContext context,
             ScrollController controller,
             SettingsSectionSpy spy,
-          ) => ListView(
-            key: const ValueKey<String>('tts-voice-settings'),
-            controller: controller,
-            padding: EdgeInsets.fromLTRB(
-              inset,
-              tokens.spacing.gap + MediaQuery.paddingOf(context).top,
-              inset,
-              tokens.spacing.page + bottomSafeInsetOf(context),
-            ),
-            children: <Widget>[
-              AdaptiveSettingsSection(
-                key: const ValueKey<String>('tts-voice-list'),
-                title: t.audiobook_tts_voices_section,
-                children: <Widget>[
-                  for (final TtsVoicePreset preset in _presets)
-                    _presetRow(preset),
-                  AdaptiveSettingsRow(
-                    key: const ValueKey<String>('tts-voice-add'),
-                    icon: FushiIcons.add,
-                    showIcon: true,
-                    title: t.audiobook_tts_voice_add,
-                    onTap: () => unawaited(_add()),
-                  ),
-                ],
-              ),
-              if (_presets.isEmpty)
-                SettingsSectionFooter(
-                  t.audiobook_tts_voice_empty,
-                  key: const ValueKey<String>('tts-voice-empty'),
-                ),
-              AdaptiveSettingsSection(
-                key: const ValueKey<String>('tts-voice-cache'),
-                title: t.audiobook_tts_cache_section,
-                children: <Widget>[
-                  AdaptiveSettingsRow(
-                    key: const ValueKey<String>('tts-voice-cache-clear'),
-                    icon: FushiIcons.deleteSweep,
-                    showIcon: true,
-                    title: t.audiobook_tts_cache_clear,
-                    subtitle: _cacheBytes == null
-                        ? null
-                        : t.audiobook_tts_cache_size(
-                            size: _formatBytes(_cacheBytes!),
-                          ),
-                    onTap: (_cacheBytes ?? 0) > 0
-                        ? () => unawaited(_clearCache())
-                        : null,
-                  ),
-                ],
-              ),
+          ) => TtsVoiceListLayout(
+            voices: <TtsVoiceListEntry>[
+              for (final TtsVoicePreset preset in _presets) _entry(preset),
             ],
+            activeId: _activeId,
+            selectedId: _selectedId,
+            scrollController: controller,
+            onSelect: (String id) => setState(() => _selectedId = id),
+            onOpen: (String id) {
+              _selectedId = id;
+              unawaited(_openEditor(id));
+            },
+            onUse: (String id) => unawaited(_setActive(id)),
+            onDelete: (String id) => unawaited(_delete(id)),
+            onAdd: (bool wide) => unawaited(_add(wide: wide)),
+            detailBuilder: (BuildContext context, String id) {
+              final TtsVoicePreset preset = _presets.firstWhere(
+                (TtsVoicePreset p) => p.id == id,
+              );
+              return _editor(
+                preset,
+                embedded: true,
+                onDelete: () async {
+                  if (await confirmTtsVoiceDelete(
+                    context,
+                    _displayName(preset),
+                  )) {
+                    await _delete(preset.id);
+                  }
+                },
+              );
+            },
+            cacheSubtitle: _cacheBytes == null
+                ? null
+                : t.audiobook_tts_cache_size(size: _formatBytes(_cacheBytes!)),
+            onClearCache: (_cacheBytes ?? 0) > 0
+                ? () => unawaited(_clearCache())
+                : null,
           ),
-    );
-  }
-
-  Widget _presetRow(TtsVoicePreset preset) {
-    final TtsProviderDescriptor? descriptor = _registry[preset.providerId];
-    final bool usable =
-        descriptor != null &&
-        descriptor.isAvailable &&
-        descriptor.validate(preset).isEmpty;
-    final bool active = preset.id == _activeId;
-    final String status = !usable
-        ? t.audiobook_tts_voice_incomplete_status
-        : active
-        ? t.audiobook_tts_voice_active
-        : '';
-    return AdaptiveSettingsRow(
-      key: ValueKey<String>('tts-voice-${preset.id}'),
-      icon: _categoryIcon(
-        descriptor?.category ?? TtsProviderCategory.external,
-      ),
-      showIcon: true,
-      title: preset.name.isEmpty
-          ? ttsProviderLabel(preset.providerId)
-          : preset.name,
-      subtitle: descriptor == null
-          ? ttsProviderLabel(preset.providerId)
-          : '${ttsCategoryLabel(descriptor.category)} · '
-                '${ttsProviderLabel(preset.providerId)}',
-      subtitleMaxLines: 1,
-      onTap: () => unawaited(_openEditor(preset.id)),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          if (status.isNotEmpty)
-            Text(
-              status,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: usable
-                    ? fushiNeutralSecondaryForeground(context)
-                    : fushiStatusColor(context, FushiStatusTone.warning),
-              ),
-            ),
-          const SizedBox(width: 6),
-          if (isGlassDesign(context))
-            const FushiAppleChevron()
-          else
-            FushiIcon(
-              FushiIcons.chevronRight,
-              size: 20,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-        ],
-      ),
     );
   }
 
@@ -370,6 +350,7 @@ class _TtsVoiceEditorPage extends StatefulWidget {
     required this.onChanged,
     required this.onUse,
     required this.onDelete,
+    this.embedded = false,
     super.key,
   });
 
@@ -377,6 +358,9 @@ class _TtsVoiceEditorPage extends StatefulWidget {
   final TtsProviderDescriptor? descriptor;
   final bool active;
   final TtsServices services;
+
+  /// true = 宽屏右侧窗格（不带页面壳，自带滚动视图与标题）；false = 推进的整页。
+  final bool embedded;
   final ValueChanged<TtsVoicePreset> onChanged;
   final VoidCallback onUse;
   final VoidCallback onDelete;
@@ -452,7 +436,8 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
     _controllers.clear();
     _referenceDurations.clear();
     final bool defaultName =
-        _preset.name.isEmpty || _preset.name == ttsProviderLabel(_preset.providerId);
+        _preset.name.isEmpty ||
+        _preset.name == ttsProviderLabel(_preset.providerId);
     widget.onChanged(
       TtsVoicePreset(
         id: _preset.id,
@@ -692,10 +677,160 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
       child: child,
     );
 
+    List<Widget> children(BuildContext context) => <Widget>[
+      if (descriptor != null && descriptor.capabilities.online)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: FushiInlineNotice(
+            key: const ValueKey<String>('tts-voice-online-notice'),
+            severity: FushiNoticeSeverity.info,
+            message: _kUnofficialProviders.contains(descriptor.id)
+                ? '${t.audiobook_tts_online_notice}\n'
+                      '${t.audiobook_tts_unofficial_notice}'
+                : t.audiobook_tts_online_notice,
+          ),
+        ),
+      AdaptiveSettingsSection(
+        children: <Widget>[
+          AdaptiveSettingsSwitchRow(
+            key: const ValueKey<String>('tts-voice-use'),
+            title: t.audiobook_tts_voice_use,
+            subtitle: problems.isEmpty
+                ? t.audiobook_tts_voice_ready
+                : t.audiobook_tts_voice_incomplete_status,
+            value: widget.active,
+            onChanged: widget.active ? null : (_) => widget.onUse(),
+          ),
+        ],
+      ),
+      AdaptiveSettingsSection(
+        title: descriptor == null
+            ? ttsProviderLabel(_preset.providerId)
+            : ttsCategoryLabel(descriptor.category),
+        children: <Widget>[
+          if (_siblings.length > 1)
+            KeyedSubtree(
+              key: const ValueKey<String>('tts-voice-service-type'),
+              child: AdaptiveSettingsRow(
+                title: t.audiobook_tts_service_type,
+                subtitle: ttsProviderHint(_preset.providerId),
+                onTap: () => unawaited(_pickServiceType()),
+                trailing: Text(
+                  ttsProviderLabel(_preset.providerId),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: fushiNeutralSecondaryForeground(context),
+                  ),
+                ),
+              ),
+            ),
+          field(
+            _textField(
+              key: const ValueKey<String>('tts-voice-name'),
+              label: t.audiobook_tts_voice_name,
+              controller: _controllers.putIfAbsent(
+                '__name',
+                () => TextEditingController(text: _preset.name),
+              ),
+              onChanged: (String v) =>
+                  widget.onChanged(_preset.copyWith(name: v)),
+            ),
+          ),
+          if (descriptor != null)
+            for (final TtsParamSpec spec in descriptor.params)
+              _paramRow(spec, problems.contains(spec.key), field),
+          if (descriptor != null &&
+              descriptor.category != TtsProviderCategory.system)
+            _concurrencyRow(descriptor),
+        ],
+      ),
+      if (descriptor != null)
+        AdaptiveSettingsSection(
+          children: <Widget>[
+            field(
+              _textField(
+                key: const ValueKey<String>('tts-voice-test-text'),
+                label: t.audiobook_tts_voice_test_text,
+                controller: _testText,
+                onChanged: (_) {},
+              ),
+            ),
+            AdaptiveSettingsRow(
+              key: const ValueKey<String>('tts-voice-test'),
+              icon: FushiIcons.play,
+              showIcon: true,
+              title: t.audiobook_tts_voice_test,
+              onTap: problems.isEmpty && !_testing
+                  ? () => unawaited(_test())
+                  : null,
+              trailing: _testing
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : null,
+            ),
+            AdaptiveSettingsRow(
+              key: const ValueKey<String>('tts-voice-regenerate'),
+              icon: FushiIcons.refresh,
+              showIcon: true,
+              title: t.audiobook_tts_voice_regenerate,
+              subtitle: t.audiobook_tts_voice_regenerate_hint,
+              onTap: _regenerate,
+            ),
+          ],
+        ),
+      if (_testResult case final ({bool ok, String message}) result)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: FushiInlineNotice(
+            key: const ValueKey<String>('tts-voice-test-result'),
+            severity: result.ok
+                ? FushiNoticeSeverity.success
+                : FushiNoticeSeverity.error,
+            message: result.message,
+          ),
+        ),
+      Center(
+        child: FushiTextButton.icon(
+          key: const ValueKey<String>('tts-voice-delete'),
+          destructive: true,
+          onPressed: widget.onDelete,
+          icon: const FushiIcon(FushiIcons.delete),
+          label: Text(t.audiobook_tts_voice_delete),
+        ),
+      ),
+    ];
+
+    final String title = _preset.name.isEmpty
+        ? ttsProviderLabel(_preset.providerId)
+        : _preset.name;
+    if (widget.embedded) {
+      return ListView(
+        key: ValueKey<String>('tts-voice-editor-list-${_preset.id}'),
+        primary: false,
+        padding: EdgeInsets.fromLTRB(
+          inset,
+          tokens.spacing.gap,
+          inset,
+          tokens.spacing.page + bottomSafeInsetOf(context),
+        ),
+        children: <Widget>[
+          Padding(
+            padding: EdgeInsets.fromLTRB(0, 4, 0, tokens.spacing.gap),
+            child: Text(
+              title,
+              key: const ValueKey<String>('tts-voice-editor-title'),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+          ),
+          ...children(context),
+        ],
+      );
+    }
     return SettingsKitScaffold(
-      title: _preset.name.isEmpty
-          ? ttsProviderLabel(_preset.providerId)
-          : _preset.name,
+      title: title,
       leadingIcon: FushiIcons.voice,
       leadingTone: SettingsIconTone.purple,
       bodyConsumesTopPadding: true,
@@ -713,132 +848,7 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
               inset,
               tokens.spacing.page + bottomSafeInsetOf(context),
             ),
-            children: <Widget>[
-              if (descriptor != null && descriptor.capabilities.online)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: FushiInlineNotice(
-                    key: const ValueKey<String>('tts-voice-online-notice'),
-                    severity: FushiNoticeSeverity.info,
-                    message: _kUnofficialProviders.contains(descriptor.id)
-                        ? '${t.audiobook_tts_online_notice}\n'
-                              '${t.audiobook_tts_unofficial_notice}'
-                        : t.audiobook_tts_online_notice,
-                  ),
-                ),
-              AdaptiveSettingsSection(
-                children: <Widget>[
-                  AdaptiveSettingsSwitchRow(
-                    key: const ValueKey<String>('tts-voice-use'),
-                    title: t.audiobook_tts_voice_use,
-                    subtitle: problems.isEmpty
-                        ? t.audiobook_tts_voice_ready
-                        : t.audiobook_tts_voice_incomplete_status,
-                    value: widget.active,
-                    onChanged: widget.active ? null : (_) => widget.onUse(),
-                  ),
-                ],
-              ),
-              AdaptiveSettingsSection(
-                title: descriptor == null
-                    ? ttsProviderLabel(_preset.providerId)
-                    : ttsCategoryLabel(descriptor.category),
-                children: <Widget>[
-                  if (_siblings.length > 1)
-                    KeyedSubtree(
-                      key: const ValueKey<String>('tts-voice-service-type'),
-                      child: AdaptiveSettingsRow(
-                        title: t.audiobook_tts_service_type,
-                        subtitle: ttsProviderHint(_preset.providerId),
-                        onTap: () => unawaited(_pickServiceType()),
-                        trailing: Text(
-                          ttsProviderLabel(_preset.providerId),
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: fushiNeutralSecondaryForeground(context),
-                              ),
-                        ),
-                      ),
-                    ),
-                  field(
-                    _textField(
-                      key: const ValueKey<String>('tts-voice-name'),
-                      label: t.audiobook_tts_voice_name,
-                      controller: _controllers.putIfAbsent(
-                        '__name',
-                        () => TextEditingController(text: _preset.name),
-                      ),
-                      onChanged: (String v) =>
-                          widget.onChanged(_preset.copyWith(name: v)),
-                    ),
-                  ),
-                  if (descriptor != null)
-                    for (final TtsParamSpec spec in descriptor.params)
-                      _paramRow(spec, problems.contains(spec.key), field),
-                  if (descriptor != null &&
-                      descriptor.category != TtsProviderCategory.system)
-                    _concurrencyRow(descriptor),
-                ],
-              ),
-              if (descriptor != null)
-                AdaptiveSettingsSection(
-                  children: <Widget>[
-                    field(
-                      _textField(
-                        key: const ValueKey<String>('tts-voice-test-text'),
-                        label: t.audiobook_tts_voice_test_text,
-                        controller: _testText,
-                        onChanged: (_) {},
-                      ),
-                    ),
-                    AdaptiveSettingsRow(
-                      key: const ValueKey<String>('tts-voice-test'),
-                      icon: FushiIcons.play,
-                      showIcon: true,
-                      title: t.audiobook_tts_voice_test,
-                      onTap: problems.isEmpty && !_testing
-                          ? () => unawaited(_test())
-                          : null,
-                      trailing: _testing
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: FushiCircularProgressIndicator(
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : null,
-                    ),
-                    AdaptiveSettingsRow(
-                      key: const ValueKey<String>('tts-voice-regenerate'),
-                      icon: FushiIcons.refresh,
-                      showIcon: true,
-                      title: t.audiobook_tts_voice_regenerate,
-                      subtitle: t.audiobook_tts_voice_regenerate_hint,
-                      onTap: _regenerate,
-                    ),
-                  ],
-                ),
-              if (_testResult case final ({bool ok, String message}) result)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: FushiInlineNotice(
-                    key: const ValueKey<String>('tts-voice-test-result'),
-                    severity: result.ok
-                        ? FushiNoticeSeverity.success
-                        : FushiNoticeSeverity.error,
-                    message: result.message,
-                  ),
-                ),
-              Center(
-                child: FushiTextButton.icon(
-                  key: const ValueKey<String>('tts-voice-delete'),
-                  destructive: true,
-                  onPressed: widget.onDelete,
-                  icon: const FushiIcon(FushiIcons.delete),
-                  label: Text(t.audiobook_tts_voice_delete),
-                ),
-              ),
-            ],
+            children: children(context),
           ),
     );
   }
@@ -856,7 +866,9 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
         subtitleMaxLines: 3,
         onTap: () => unawaited(_pickConcurrency(fallback)),
         trailing: Text(
-          custom ? '$effective' : t.audiobook_tts_concurrency_default(n: fallback),
+          custom
+              ? '$effective'
+              : t.audiobook_tts_concurrency_default(n: fallback),
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
             color: fushiNeutralSecondaryForeground(context),
           ),

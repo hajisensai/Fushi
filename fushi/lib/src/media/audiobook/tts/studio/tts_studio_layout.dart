@@ -1,7 +1,7 @@
 /// 制作台的版面骨架：四步（内容 / 角色与配音 / 生成 / 结果）+ 常驻主操作。
 ///
 /// 按**可用宽度**分两形态（不按平台）：
-/// - 宽（≥ [kTtsStudioWideMinWidth]）：左侧固定宽侧栏列步骤（图标 + 标题 + 一行
+/// - 宽（≥ [kTtsStudioWideMinWidth]，骨架是共用的 [TtsTwoPaneLayout]）：左侧固定宽侧栏列步骤（图标 + 标题 + 一行
 ///   实时摘要），侧栏底部常驻主操作；右侧只显示选中步骤，独立滚动。
 /// - 窄：顶部一排步骤选择片，正文独立滚动，底部固定条放摘要 + 主操作。
 ///
@@ -10,18 +10,18 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/audiobook/tts/tts_two_pane_layout.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
-/// 切成「步骤侧栏 + 内容」双栏的最小宽度（MD3 window size class 的 expanded
-/// 起点，与词典管理 / 快捷键浏览器同一断点）。
-const double kTtsStudioWideMinWidth = 840;
+/// 切成「步骤侧栏 + 内容」双栏的最小宽度（与「朗读声音」共用 [kTtsWideMinWidth]）。
+const double kTtsStudioWideMinWidth = kTtsWideMinWidth;
 
-/// 双栏形态下步骤侧栏的固定宽度。
-const double kTtsStudioSidebarWidth = 300;
+/// 双栏形态下步骤侧栏的固定宽度（共用 [kTtsSidebarWidth]）。
+const double kTtsStudioSidebarWidth = kTtsSidebarWidth;
 
 /// 当前可用宽度是否走双栏。
-bool ttsStudioUsesWideLayout(double width) => width >= kTtsStudioWideMinWidth;
+bool ttsStudioUsesWideLayout(double width) => ttsUsesWideLayout(width);
 
 /// 制作台的四个步骤（顺序即展示顺序）。
 enum TtsStudioStep { content, cast, generate, result }
@@ -102,63 +102,29 @@ class TtsStudioLayout extends StatelessWidget {
   }
 
   Widget _buildWide(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final double gap = tokens.spacing.gap;
-    return Row(
+    final double gap = FushiDesignTokens.of(context).spacing.gap;
+    return TtsTwoPaneLayout(
       key: const ValueKey<String>('tts-studio-layout-wide'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Padding(
-          padding: EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            gap,
-            0,
-            tokens.spacing.page + bottomSafeInsetOf(context),
-          ),
-          child: SizedBox(
-            width: kTtsStudioSidebarWidth,
-            child: DecoratedBox(
-              key: const ValueKey<String>('tts-studio-sidebar'),
-              decoration: BoxDecoration(
-                color: tokens.surfaces.card,
-                borderRadius: FushiM3eShape.containerLargeRadius,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Expanded(
-                    child: FocusTraversalGroup(
-                      child: ListView(
-                        key: const ValueKey<String>('tts-studio-step-nav'),
-                        padding: EdgeInsets.symmetric(vertical: gap),
-                        children: <Widget>[
-                          for (int i = 0; i < steps.length; i++)
-                            _StepNavItem(
-                              key: ValueKey<String>(
-                                'tts-studio-step-${steps[i].step.name}',
-                              ),
-                              entry: steps[i],
-                              index: i,
-                              selected: steps[i].step == selected,
-                              onTap: () => onSelect(steps[i].step),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Divider(height: 1, color: tokens.surfaces.outline),
-                  Padding(
-                    key: const ValueKey<String>('tts-studio-footer'),
-                    padding: EdgeInsets.all(tokens.spacing.card),
-                    child: footerBuilder(context, true),
-                  ),
-                ],
-              ),
+      sidebarKey: const ValueKey<String>('tts-studio-sidebar'),
+      sidebar: ListView(
+        key: const ValueKey<String>('tts-studio-step-nav'),
+        padding: EdgeInsets.symmetric(vertical: gap),
+        children: <Widget>[
+          for (int i = 0; i < steps.length; i++)
+            _StepNavItem(
+              key: ValueKey<String>('tts-studio-step-${steps[i].step.name}'),
+              entry: steps[i],
+              index: i,
+              selected: steps[i].step == selected,
+              onTap: () => onSelect(steps[i].step),
             ),
-          ),
-        ),
-        Expanded(child: FocusTraversalGroup(child: _content(context))),
-      ],
+        ],
+      ),
+      sidebarFooter: KeyedSubtree(
+        key: const ValueKey<String>('tts-studio-footer'),
+        child: footerBuilder(context, true),
+      ),
+      content: _content(context),
     );
   }
 
