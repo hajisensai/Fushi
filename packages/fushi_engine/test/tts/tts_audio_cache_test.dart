@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
@@ -82,7 +83,12 @@ void main() {
       return writer(
         buildWav(dataBytes: 8000),
         boundaries: const <TtsBoundary>[
-          TtsBoundary(textOffset: 0, textLength: 2, offsetMs: 10, durationMs: 90),
+          TtsBoundary(
+            textOffset: 0,
+            textLength: 2,
+            offsetMs: 10,
+            durationMs: 90,
+          ),
         ],
       )(path);
     });
@@ -106,6 +112,37 @@ void main() {
     expect(again.durationMs, 500);
     expect(synthCalls, 1);
   });
+
+  test(
+    'concurrent obtain of the same key reuses the first published file',
+    () async {
+      final TtsAudioCache cache = TtsAudioCache(root: root);
+      const String key = 'dup';
+      final Completer<void> releaseSecond = Completer<void>();
+      final Future<TtsCachedAudio> first = cache.obtain(
+        key,
+        writer(buildWav(dataBytes: 8000)),
+      );
+      final Future<TtsCachedAudio> second = cache.obtain(key, (
+        String path,
+      ) async {
+        await releaseSecond.future;
+        return writer(buildWav(dataBytes: 16000))(path);
+      });
+      final TtsCachedAudio a = await first;
+      // 第一份已发布，模拟播放器已打开它：记下它的身份。
+      final File published = File(a.path);
+      final DateTime publishedAt = await published.lastModified();
+      final int publishedLength = await published.length();
+      releaseSecond.complete();
+      final TtsCachedAudio b = await second;
+      expect(b.path, a.path);
+      expect(b.durationMs, a.durationMs);
+      expect(await published.length(), publishedLength);
+      expect(await published.lastModified(), publishedAt);
+      expect(names(), <String>['dup.audio', 'dup.json']);
+    },
+  );
 
   test('lookup misses when audio size mismatches or meta corrupt', () async {
     final TtsAudioCache cache = TtsAudioCache(root: root);

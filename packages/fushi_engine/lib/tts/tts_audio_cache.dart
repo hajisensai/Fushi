@@ -134,6 +134,12 @@ class TtsAudioCache {
         throw const TtsFailure(TtsFailureCode.badResponse, 'invalid audio');
       }
       return await _serialized(() async {
+        // 同 key 的另一路合成（书里相邻的重复短句「はい」「……」在并发 >1 时
+        // 同时在途）可能已经先发布了：直接复用它，不删不覆盖——那个文件可能已
+        // 被播放器打开，Windows 上删除正被打开的文件会抛 FileSystemException，
+        // 让调度器把整条朗读判失败停下。本次的 .part 由 finally 清掉。
+        final TtsCachedAudio? published = await lookup(key);
+        if (published != null) return published;
         final File audio = File(audioPathFor(key));
         if (await audio.exists()) await audio.delete();
         await part.rename(audio.path);
