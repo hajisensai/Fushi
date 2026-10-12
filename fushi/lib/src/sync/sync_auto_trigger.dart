@@ -81,15 +81,54 @@ void _beginSyncActivity(SyncActivity activity) {
 /// 登记一轮同步结束：公布结局，并在最后一个在飞同步退出时清空瞬时状态。
 void _endSyncActivity(SyncRunOutcome outcome) {
   _activeSyncs--;
-  lastSyncOutcome.value = outcome;
-  if (outcome.kind == SyncActivityKind.fullSweep) {
-    lastFullSweepOutcome.value = outcome;
-  }
+  _publishSyncOutcome(outcome);
   syncInProgress.value = _activeSyncs > 0;
   if (_activeSyncs == 0) {
     syncProgress.value = null;
     syncActivity.value = null;
   }
+}
+
+/// 公布一轮同步（或一次被开关挡下的自动触发）的结局。
+void _publishSyncOutcome(SyncRunOutcome outcome) {
+  lastSyncOutcome.value = outcome;
+  if (outcome.kind == SyncActivityKind.fullSweep) {
+    lastFullSweepOutcome.value = outcome;
+  }
+}
+
+/// 自动同步路径（开机 / 定时 sweep、合集轻量、退出书单本）的开关门，必须在
+/// [_beginSyncActivity] **之前**判。
+///
+/// BUG-3305：这道判断原本在登记在飞**之后**、还排在 [_autoSyncMutex] 后面。于是把
+/// 自动同步关掉的用户，每次定时 tick / 合集表写入 / 切后台都会让 [syncInProgress]
+/// 白白置真一段（等锁 + 读偏好），界面上的「同步进行中」与真在跑的同步同形。
+/// [syncInProgress] 只为真的要跑的同步置位；被开关挡下的触发只公布结局
+/// （[SyncOutcomeReason.autoDisabled]，设置页「上次同步」照旧有字可显示）。
+Future<bool> _autoSyncGateOpen(
+  FushiDatabase db,
+  SyncActivityKind kind,
+) async {
+  SyncOutcomeReason reason;
+  try {
+    if (await SyncRepository(db).isAutoSyncEnabled()) return true;
+    reason = SyncOutcomeReason.autoDisabled;
+  } catch (e, stack) {
+    developer.log(
+      'Auto-sync gate read failed',
+      error: e,
+      stackTrace: stack,
+      name: 'SyncAutoTrigger',
+    );
+    reason = SyncOutcomeReason.failed;
+  }
+  _publishSyncOutcome(SyncRunOutcome(
+    kind: kind,
+    reason: reason,
+    channelsRun: 0,
+    finishedAt: DateTime.now().millisecondsSinceEpoch,
+  ));
+  return false;
 }
 
 // HBK-AUDIT-049: cloud backends (GoogleDrive/Dropbox/OneDrive/WebDAV/SMB) are
@@ -582,6 +621,7 @@ Future<void> _runAutoSyncAll({
   SyncReportCallback? onReport,
   SyncPostRunCallback? onPostRun,
 }) async {
+  if (!await _autoSyncGateOpen(db, SyncActivityKind.fullSweep)) return;
   if (!_syncingIds.add('__all__')) return;
 
   _beginSyncActivity(const SyncActivity(SyncActivityKind.fullSweep));
@@ -594,11 +634,6 @@ Future<void> _runAutoSyncAll({
     // per-book sync mutating the same singleton backend state.
     await _autoSyncMutex.withLock(() async {
       final repo = SyncRepository(db);
-      if (!await repo.isAutoSyncEnabled()) {
-        reason = SyncOutcomeReason.autoDisabled;
-        return;
-      }
-
       final now = DateTime.now().millisecondsSinceEpoch;
       // BUG-1569①：成功冷却戳只在整轮跑成后写（TODO-1332），失败轮不推进它——
       // 只配互联且对端离线时，每分钟 tick 都会全额重付候选串行探测。失败退避戳
@@ -1138,6 +1173,7 @@ Future<void> runCollectionsSyncNow({required FushiDatabase db}) =>
     _runCollectionsSync(db: db);
 
 Future<void> _runCollectionsSync({required FushiDatabase db}) async {
+  if (!await _autoSyncGateOpen(db, SyncActivityKind.collections)) return;
   if (_syncingIds.contains('__all__')) {
     _scheduleCollectionsSync(db);
     return;
@@ -1149,10 +1185,6 @@ Future<void> _runCollectionsSync({required FushiDatabase db}) async {
   try {
     await _autoSyncMutex.withLock(() async {
       final repo = SyncRepository(db);
-      if (!await repo.isAutoSyncEnabled()) {
-        reason = SyncOutcomeReason.autoDisabled;
-        return;
-      }
       // BUG-1604：**逐通道**隔离异常，与 app-open sweep 同一范式。这个 for 原来
       // 整体裸奔，只有外层一个 `catch (e) { developer.log(...) }`——云通道恒排第一
       // （见 enabledSyncChannelBackends），它的 `restoreAuth` 探测不到 WebDAV/FTP、
@@ -1233,6 +1265,7 @@ Future<void> _runAutoSync({
 }) async {
   final String? bookKey = ReaderFushiSource.parseBookKey(mediaIdentifier);
   if (bookKey == null || !_bookKeyPattern.hasMatch(mediaIdentifier)) return;
+  if (!await _autoSyncGateOpen(db, SyncActivityKind.singleBook)) return;
   if (_syncingIds.contains('__all__')) {
     // BUG-1569③：整轮 sweep 进行中不再静默丢弃——记账，sweep 收尾统一补跑
     // （见 [drainPendingBookSyncsAfterSweep]）。此前直接 return，sweep 那几十秒里
@@ -1253,11 +1286,6 @@ Future<void> _runAutoSync({
     // token/api/folder cache is never mutated concurrently.
     await _autoSyncMutex.withLock(() async {
       final repo = SyncRepository(db);
-      if (!await repo.isAutoSyncEnabled()) {
-        reason = SyncOutcomeReason.autoDisabled;
-        return;
-      }
-
       final book = await db.getEpubBook(bookKey);
       if (book == null) {
         // 书没了（导入记录被删/清库）——本轮无对象可同步，与「跑完了」不是一回事。
