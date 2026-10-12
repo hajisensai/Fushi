@@ -491,6 +491,7 @@ void main() {
         expect(idsOf(dest.sections[2]), <String>[
           'interconnect.upload_content',
           'interconnect.dictionary_transfer',
+          'interconnect.local_audio_transfer',
           'interconnect.fonts_transfer',
           'interconnect.upload_audiobook_files',
           'interconnect.upload_video_files',
@@ -659,6 +660,16 @@ void main() {
         reason: '互联页的传输行必须只跑互联通道',
       );
       expect(block, contains('kind: SyncAssetKind.dictionary'));
+
+      // 反馈 #5mB56tqXHa：本地音频数据库同样要有互联专属的显式上传 / 下载入口。
+      expect(ids, contains('interconnect.local_audio_transfer'));
+      final int audioAt = src.indexOf(
+        "id: 'interconnect.local_audio_transfer'",
+      );
+      expect(audioAt, greaterThanOrEqualTo(0));
+      final String audioBlock = src.substring(audioAt, audioAt + 600);
+      expect(audioBlock, contains('scope: SyncAssetChannelScope.interconnect'));
+      expect(audioBlock, contains('kind: SyncAssetKind.localAudio'));
     });
 
     test('runManualAssetTransfer filters channels by scope instead of '

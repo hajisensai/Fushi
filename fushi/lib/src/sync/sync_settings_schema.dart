@@ -653,6 +653,20 @@ SettingsDestination buildInterconnectDestination() {
               scope: SyncAssetChannelScope.interconnect,
             ),
           ),
+          // 反馈 #5mB56tqXHa：本地音频数据库与词典同属显式搬运——互联协议（live 端点）
+          // 早已支持（_syncLocalAudioLive），只是互联页缺这一行入口。
+          SettingsCustomItem(
+            id: 'interconnect.local_audio_transfer',
+            searchTitle: t.sync_asset_local_audio,
+            icon: FushiIcons.audio,
+            builder: (SettingsContext ctx) => _AssetTransferMenuRow(
+              settingsContext: ctx,
+              kind: SyncAssetKind.localAudio,
+              title: t.sync_asset_local_audio,
+              icon: FushiIcons.audio,
+              scope: SyncAssetChannelScope.interconnect,
+            ),
+          ),
           SettingsCustomItem(
             id: 'interconnect.fonts_transfer',
             searchTitle: t.sync_asset_fonts,
