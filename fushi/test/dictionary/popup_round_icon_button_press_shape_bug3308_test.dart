@@ -59,7 +59,8 @@ void main() {
           expect(
             roundRadius.hasMatch(value),
             isTrue,
-            reason: '`${sel.trim()}` 按下把 border-radius 改成了 $value——'
+            reason:
+                '`${sel.trim()}` 按下把 border-radius 改成了 $value——'
                 '圆形按钮会冒出方形背景（BUG-3308）',
           );
         }
