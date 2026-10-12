@@ -43,6 +43,7 @@ import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_routes.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
+import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
@@ -67,6 +68,7 @@ part 'fushi_sync_server/video_metadata.part.dart';
 part 'fushi_sync_server/sync_state.part.dart';
 part 'fushi_sync_server/webdav.part.dart';
 part 'fushi_sync_server/game_stream.part.dart';
+part 'fushi_sync_server/host_update.part.dart';
 
 /// Embedded WebDAV-style server used for device-to-device LAN sync.
 ///
@@ -416,6 +418,14 @@ class FushiSyncServer {
   /// 补字幕服务住在 app（字幕来源 / 刮削身份 / AI 重排都在那边装配），无头服务端
   /// 不接——null 时该端点回 501，能力位 `videoSubtitleBackfill=false`。
   VideoSubtitleBackfillRunner? videoSubtitleBackfill;
+
+  /// 远程更新本机 app（`GET/POST /api/host/update`，反馈 Pp8XPyve0N）。实现是各平台
+  /// app 的现有自更新流程；无头服务端不接——null 时端点 404、能力位 `hostUpdate=false`。
+  HostSelfUpdater? hostSelfUpdater;
+
+  /// 触发远程更新的一次性 nonce（GET 签发、POST 核销）。
+  late final HostUpdateNonceStore _hostUpdateNonces =
+      HostUpdateNonceStore(now: _now);
 
   /// 用户在 host 上填的公网 / 反代 / DDNS 地址（每次 capabilities 实时读）。
   Future<List<String>> Function()? publicUrlsProvider;
@@ -797,6 +807,9 @@ class FushiSyncServer {
     if (reqPath == '/api/host/addresses') {
       if (method != 'GET') return shelf.Response(405);
       return _handleHostAddresses();
+    }
+    if (reqPath == kHostUpdatePath) {
+      return _handleHostUpdate(request, method);
     }
     // 漫画 P3：互联 host 代跑 OCR。鉴权走上方 middleware（无豁免），处理逻辑在
     // fushi_manga_ocr_host.dart（本文件是共享热点，只留最小分发）。

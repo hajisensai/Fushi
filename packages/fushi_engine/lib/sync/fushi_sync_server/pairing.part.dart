@@ -440,6 +440,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       },
       'mining': _miningService != null,
       'gameStream': _gameStreamService != null,
+      // 远程更新 host（反馈 Pp8XPyve0N）：client 据此决定是否显示「主机版本」行。
+      'hostUpdate': hostSelfUpdater != null,
       'liveLibrary': <String, dynamic>{
         'dictionaries': lib,
         'books': lib,

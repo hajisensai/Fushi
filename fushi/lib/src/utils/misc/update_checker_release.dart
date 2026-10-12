@@ -1038,83 +1038,27 @@ class UpdateChecker {
       final HttpClient abortClient = client;
       cancellation.registerAbort(() => abortClient.close(force: true));
 
-      final Directory updatesDir = await _updatesDirectoryForCurrentPlatform();
-      // 一个 asset 的实际下载（多镜像回退 + 分片 + 续传 + 校验全在引擎里）。抽成闭包，
-      // 以便 TODO-1123 的「下载 404 → 重取 manifest 换新 URL 单次重试」复用同一套
-      // 进度/诊断/取消接线，而不复制下载参数。
-      final HttpClient downloadClient = client;
-      Future<File> downloadAsset(UpdateAsset target) {
-        // 候选计划一次算清：候选序 + 用户所选来源钉在哪个候选上（钉住就不竞速，
-        // 见 orderedCandidatesAfterRace）+ 所选来源是否根本不适用于本资产。
-        final UpdateDownloadPlan plan = resolveUpdateDownloadPlan(target.url);
-        sourceNotice.value = _downloadSourceUnavailableNotice(plan);
-        final String? notice = sourceNotice.value;
-        if (notice != null) {
-          ErrorLogService.instance
-              .logDiagnostic('UpdateChecker.download', notice);
-        }
-        return downloadUpdateAsset(
-          asset: target,
-          version: version,
-          updatesDir: updatesDir,
-          candidateUrls: plan.candidates,
-          pinnedCandidateUrl: plan.pinnedUrl,
-          openUrl: (Uri uri, Map<String, String> headers) =>
-              _openHttpDownload(downloadClient, uri, headers, version),
-          onProgress: (double value) {
-            // 首个真实进度（>0 = 已有字节落盘）才翻「下载中」；onProgress(0) 是请求前的
-            // 初始占位，不能据它过早翻、否则 connecting 几乎不可见（失去体感意义）。
-            if (value > 0) statusController.onFirstByte();
-            progress.value = value;
-          },
-          onDiagnostics: (UpdateDownloadDiagnostics value) {
-            // 诊断里 receivedBytes>0 同样表示已有字节到达，作为翻「下载中」的等价信号
-            // （某些路径 diagnostics 比 onProgress 先携带非零字节，如续传起点）。
-            if (value.receivedBytes > 0) statusController.onFirstByte();
-            diagnostics.value = value;
-          },
-          onSourceFailure: (String url, Object error, StackTrace stack) {
-            if (isExpectedUpdateNetworkFailure(error)) {
-              // TODO-1083：见上——预期的镜像不可达降级为诊断，不进用户可见报错日志。
-              ErrorLogService.instance.logDiagnostic(
-                  'UpdateChecker.download',
-                  t.update_network_failure(
-                    host: hostLabelForUpdateUrl(url),
-                    reason: describeUpdateNetworkFailureReason(error),
-                  ));
-            } else {
-              ErrorLogService.instance
-                  .log('UpdateChecker.download', error, stack);
-            }
-            debugPrint('[Fushi] download source failed ($url): $error');
-          },
-          cancellation: cancellation,
-        );
-      }
-
-      // TODO-1123 / BUG-539 根因兜底：debug 通道的 rolling tag prune 竞态下，「检查」阶段
-      // 解析出的 asset.url 可能在真正下载前被 CI 删掉 → 404。此时不再直接失败，而是重取一次
-      // manifest（重走 selectAsset）拿到新 URL，与旧不同则用新 URL 单次重试。只重试一次，
-      // 避免无限循环；重取仍 404 或拿不到新 URL 才把错误冒泡走原有失败路径。
-      final File outFile = await downloadAssetWithStaleRetry(
+      final File outFile = await _downloadAssetForInstall(
+        client: client,
         asset: asset,
-        download: downloadAsset,
-        reResolveAsset: () => _reResolveDownloadAsset(
-          client: downloadClient,
-          staleAsset: asset,
-          version: version,
-          updater: updater,
-          customProxy: customProxy,
-        ),
+        version: version,
+        updater: updater,
+        customProxy: customProxy,
+        cancellation: cancellation,
+        onProgress: (double value) {
+          // 首个真实进度（>0 = 已有字节落盘）才翻「下载中」；onProgress(0) 是请求前的
+          // 初始占位，不能据它过早翻、否则 connecting 几乎不可见（失去体感意义）。
+          if (value > 0) statusController.onFirstByte();
+          progress.value = value;
+        },
+        onDiagnostics: (UpdateDownloadDiagnostics value) {
+          // 诊断里 receivedBytes>0 同样表示已有字节到达，作为翻「下载中」的等价信号
+          // （某些路径 diagnostics 比 onProgress 先携带非零字节，如续传起点）。
+          if (value.receivedBytes > 0) statusController.onFirstByte();
+          diagnostics.value = value;
+        },
+        onSourceNotice: (String? notice) => sourceNotice.value = notice,
       );
-
-      // TODO-1149：下载完成即回收同通道旧包 / 残留 staging 根（不等下次 GC / 启动 reconcile）。
-      // 高频下载场景下每下一个新版就顺手清掉超出保留名额的旧安装包 + 空 staging 根，从源头
-      // 抑制堆积。protect 刚下好的这个包（activeAssetFileName）——它正等安装 / handoff，绝不
-      // 能被回收；handoff marker 尚未写入时靠这个名字排除，marker 写入后由 GC 自身保护。
-      // best-effort：GC 全程 try/catch 吞异常，失败绝不影响安装流程。
-      await _cleanupOldApks(version,
-          activeAssetFileName: _leafName(outFile.path));
 
       status.value = t.update_installing;
 
@@ -1168,6 +1112,178 @@ class UpdateChecker {
       diagnostics.dispose();
       overlayVisible.dispose();
     }
+  }
+
+  /// 一个 asset 的实际下载 + 404 换 URL 重试 + 下载后 GC（UI 流与互联 host 远程更新
+  /// 共用；反馈 Pp8XPyve0N 之前它是 [_runDownloadAndInstall] 里的闭包）。进度 / 诊断 /
+  /// 来源降级通告经回调交给调用方，本函数不碰任何界面。
+  static Future<File> _downloadAssetForInstall({
+    required HttpClient client,
+    required UpdateAsset asset,
+    required String version,
+    required PlatformUpdater updater,
+    required String customProxy,
+    required UpdateDownloadCancellation cancellation,
+    required void Function(double value) onProgress,
+    void Function(UpdateDownloadDiagnostics value)? onDiagnostics,
+    void Function(String? notice)? onSourceNotice,
+  }) async {
+    final Directory updatesDir = await _updatesDirectoryForCurrentPlatform();
+    // 一个 asset 的实际下载（多镜像回退 + 分片 + 续传 + 校验全在引擎里）。抽成闭包，
+    // 以便 TODO-1123 的「下载 404 → 重取 manifest 换新 URL 单次重试」复用同一套
+    // 进度/诊断/取消接线，而不复制下载参数。
+    Future<File> downloadAsset(UpdateAsset target) {
+      // 候选计划一次算清：候选序 + 用户所选来源钉在哪个候选上（钉住就不竞速，
+      // 见 orderedCandidatesAfterRace）+ 所选来源是否根本不适用于本资产。
+      final UpdateDownloadPlan plan = resolveUpdateDownloadPlan(target.url);
+      final String? notice = _downloadSourceUnavailableNotice(plan);
+      onSourceNotice?.call(notice);
+      if (notice != null) {
+        ErrorLogService.instance.logDiagnostic('UpdateChecker.download', notice);
+      }
+      return downloadUpdateAsset(
+        asset: target,
+        version: version,
+        updatesDir: updatesDir,
+        candidateUrls: plan.candidates,
+        pinnedCandidateUrl: plan.pinnedUrl,
+        openUrl: (Uri uri, Map<String, String> headers) =>
+            _openHttpDownload(client, uri, headers, version),
+        onProgress: onProgress,
+        onDiagnostics: (UpdateDownloadDiagnostics value) =>
+            onDiagnostics?.call(value),
+        onSourceFailure: (String url, Object error, StackTrace stack) {
+          if (isExpectedUpdateNetworkFailure(error)) {
+            // TODO-1083：预期的镜像不可达降级为诊断，不进用户可见报错日志。
+            ErrorLogService.instance.logDiagnostic(
+                'UpdateChecker.download',
+                t.update_network_failure(
+                  host: hostLabelForUpdateUrl(url),
+                  reason: describeUpdateNetworkFailureReason(error),
+                ));
+          } else {
+            ErrorLogService.instance.log('UpdateChecker.download', error, stack);
+          }
+          debugPrint('[Fushi] download source failed ($url): $error');
+        },
+        cancellation: cancellation,
+      );
+    }
+
+    // TODO-1123 / BUG-539 根因兜底：debug 通道的 rolling tag prune 竞态下，「检查」阶段
+    // 解析出的 asset.url 可能在真正下载前被 CI 删掉 → 404。此时不再直接失败，而是重取一次
+    // manifest（重走 selectAsset）拿到新 URL，与旧不同则用新 URL 单次重试。只重试一次，
+    // 避免无限循环；重取仍 404 或拿不到新 URL 才把错误冒泡走原有失败路径。
+    final File outFile = await downloadAssetWithStaleRetry(
+      asset: asset,
+      download: downloadAsset,
+      reResolveAsset: () => _reResolveDownloadAsset(
+        client: client,
+        staleAsset: asset,
+        version: version,
+        updater: updater,
+        customProxy: customProxy,
+      ),
+    );
+
+    // TODO-1149：下载完成即回收同通道旧包 / 残留 staging 根（不等下次 GC / 启动 reconcile）。
+    // protect 刚下好的这个包（activeAssetFileName）——它正等安装 / handoff，绝不能被回收。
+    // best-effort：GC 全程 try/catch 吞异常，失败绝不影响安装流程。
+    await _cleanupOldApks(version, activeAssetFileName: _leafName(outFile.path));
+    return outFile;
+  }
+
+  /// 无界面地查一次本平台可装的新版本（互联 host 远程更新，反馈 Pp8XPyve0N）。
+  ///
+  /// 与 [scheduleCheck] 同一条拉取 / 选包 / 比较链路（[_fetchReleasesForChannel] →
+  /// [selectUpdateReleaseForCurrentPlatform] → [isUpdateVersionNewer]），只是不弹任何
+  /// 对话框。返回 null = 已是最新 / 没有匹配 release；asset 为 null = 有新版但本平台
+  /// 没有可应用内安装的包。网络失败照常抛出。
+  static Future<({String version, UpdateAsset? asset})?> resolveAvailableUpdate({
+    required String currentVersion,
+    String? currentBuildNumber,
+    required UpdateChannel channel,
+    String customProxy = '',
+    PlatformUpdater? updater,
+  }) async {
+    final PlatformUpdater platformUpdater =
+        updater ?? updaterForCurrentPlatform();
+    final int? localSeq = currentReleaseSequence(
+      version: currentVersion,
+      buildNumber: currentBuildNumber,
+    );
+    final HttpClient client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
+    try {
+      await applyAppProxy(client, userProxy: customProxy);
+      final List<Map<String, dynamic>> releases =
+          await _fetchReleasesForChannel(client, channel);
+      final UpdateReleaseSelection? selection =
+          await selectUpdateReleaseForCurrentPlatform(
+        releases,
+        currentVersion: currentVersion,
+        currentReleaseSeq: localSeq,
+        channel: channel,
+        updater: platformUpdater,
+      );
+      if (selection == null || selection.version.isEmpty) return null;
+      if (!isUpdateVersionNewer(selection.version, currentVersion, channel,
+          remoteSeq: selection.release['releaseSequence'] as int?,
+          localSeq: localSeq)) {
+        return null;
+      }
+      return (version: selection.version, asset: selection.asset);
+    } finally {
+      client.close();
+    }
+  }
+
+  /// [version] 这一版是否已有更新流在途（对话框开着 / 正在下载安装）。
+  static bool isUpdateFlowActive(String version) =>
+      _activeUpdateFlows.containsKey(_updateFlowKey(version));
+
+  /// 无界面地下载并安装 [asset]（互联 host 远程更新，反馈 Pp8XPyve0N）。
+  ///
+  /// 与本机「发现新版本 → 下载安装」同一把版本级互斥锁、同一条下载引擎与
+  /// [PlatformUpdater.apply]：桌面 apply 会退出本进程由安装器接班重启；Android apply
+  /// 拉起系统安装确认（缺「安装未知应用」权限时抛 `INSTALL_PERMISSION_REQUIRED`，
+  /// 原样抛给调用方）。已有同版本流在途时抛 [StateError]。
+  static Future<void> downloadAndApplyHeadless({
+    required UpdateAsset asset,
+    required String version,
+    required PlatformUpdater updater,
+    String customProxy = '',
+    required void Function(double progress) onProgress,
+    required void Function() onInstalling,
+  }) {
+    if (isUpdateFlowActive(version)) {
+      throw StateError('update flow for $version already active');
+    }
+    return _runExclusiveUpdateFlow(_updateFlowKey(version), () async {
+      final UpdateDownloadCancellation cancellation =
+          UpdateDownloadCancellation();
+      final HttpClient client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 10)
+        ..idleTimeout = const Duration(seconds: 60);
+      try {
+        await applyAppProxy(client, userProxy: customProxy);
+        cancellation.registerAbort(() => client.close(force: true));
+        final File outFile = await _downloadAssetForInstall(
+          client: client,
+          asset: asset,
+          version: version,
+          updater: updater,
+          customProxy: customProxy,
+          cancellation: cancellation,
+          onProgress: onProgress,
+        );
+        onInstalling();
+        await updater.apply(outFile, version);
+      } finally {
+        cancellation.clearAbort();
+        client.close();
+      }
+    });
   }
 
   /// **可测的下载编排（TODO-1123 / BUG-539）**：先用 [asset] 下载；若失败被

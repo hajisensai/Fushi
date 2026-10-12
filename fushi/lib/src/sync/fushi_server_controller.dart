@@ -21,6 +21,7 @@ import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
+import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
@@ -86,6 +87,7 @@ class FushiSyncServerController extends ChangeNotifier {
     HostSubscriptionHost Function()? subscriptionsFactory,
     HostAssistantProvider Function()? assistantFactory,
     VideoSubtitleBackfillRunner? videoSubtitleBackfill,
+    HostSelfUpdater Function()? hostSelfUpdater,
     PrefStore Function()? prefsStore,
     PlatformDeviceInfoService? deviceInfo,
   })  : _navigatorKey = navigatorKey,
@@ -102,6 +104,7 @@ class FushiSyncServerController extends ChangeNotifier {
         _subscriptionsFactory = subscriptionsFactory,
         _assistantFactory = assistantFactory,
         _videoSubtitleBackfill = videoSubtitleBackfill,
+        _hostSelfUpdater = hostSelfUpdater,
         _prefsStore = prefsStore,
         // Headless/test construction without an injected service falls back to
         // the desktop (machine-hostname) source; production wires the real
@@ -141,6 +144,10 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 「立即给这个视频补字幕」（`POST /api/library/videos/<id>/subtitle/backfill`）。
   /// null（headless/单测）= 端点 501。
   final VideoSubtitleBackfillRunner? _videoSubtitleBackfill;
+
+  /// 远程更新本机 app 的实现（反馈 Pp8XPyve0N）。null（headless/单测）= 不接线，
+  /// `/api/host/update` 404、能力位 `hostUpdate=false`。
+  final HostSelfUpdater Function()? _hostSelfUpdater;
   /// host 偏好读侧（`PreferencesRepository`）。null（单测 / 老调用方）= 引擎按默认值
   /// 走，行为与接线前一致。
   final PrefStore Function()? _prefsStore;
@@ -691,7 +698,9 @@ class FushiSyncServerController extends ChangeNotifier {
       // 反代地址每次 capabilities 实时读，改完不必重启互联服务。
       ..hostId = hostId
       ..publicUrlsProvider = repo.getInterconnectPublicUrls
-      ..videoSubtitleBackfill = _videoSubtitleBackfill;
+      ..videoSubtitleBackfill = _videoSubtitleBackfill
+      // 远程更新本机（反馈 Pp8XPyve0N）：开关 / 平台门在实现里按请求实时判。
+      ..hostSelfUpdater = _hostSelfUpdater?.call();
     publish(server);
     // Fushi 改名迁移（host 侧）：host 的 WebDAV 根映射到 server.syncDataDir，
     // client 的同步根是其下的 `fushi-data/` 子目录。旧安装磁盘上还留着

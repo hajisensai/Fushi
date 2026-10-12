@@ -15,6 +15,7 @@ import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
+import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
@@ -1052,6 +1053,83 @@ class InterconnectSyncBackend extends SyncBackend
     }
     final Object? name = decoded['name'];
     return name is String ? name : '';
+  }
+
+  /// 互联「主机版本」：取 host 的 app 版本、可用更新与更新进度（反馈 Pp8XPyve0N）。
+  ///
+  /// 返回 null = host 不提供远程更新（老 host / 无头服务端 404）。host 明确拒绝
+  /// （未开开关 / 共享 token / 平台不支持）抛 [HostUpdateRejected]，其余错误照
+  /// [WebDavOps.checkStatus] 抛。响应里的 `nonce` 是下一次 [triggerRemoteHostUpdate]
+  /// 要带的一次性票据。[refresh] = 让 host 先（节流地）去更新源查一次。
+  ///
+  /// 与配置搬运不同，这里不要求 https：只读版本号不敏感，触发另有 nonce + 局域网
+  /// 信任区 + host 开关几道门（明文会话上的 token 本就在同一信任级别）。
+  Future<HostUpdateStatus?> getRemoteHostUpdateStatus({
+    required SyncRepository repo,
+    bool refresh = false,
+  }) async {
+    await _reloadSessionFrom(repo);
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase$kHostUpdatePath${refresh ? '?refresh=1' : ''}',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return null;
+    }
+    await _checkHostUpdateResponse(res, 'GET $kHostUpdatePath');
+    return _parseHostUpdateStatus(await _readBodyBounded(res));
+  }
+
+  /// 让 host 开始更新自己（反馈 Pp8XPyve0N）。[nonce] 取自刚拿到的
+  /// [getRemoteHostUpdateStatus] 响应，单次有效。
+  Future<HostUpdateStatus> triggerRemoteHostUpdate({
+    required SyncRepository repo,
+    required String nonce,
+  }) async {
+    await _reloadSessionFrom(repo);
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'POST',
+      '$_apiBase$kHostUpdatePath',
+    );
+    req.headers.contentType =
+        ContentType('application', 'json', charset: 'utf-8');
+    req.add(utf8.encode(jsonEncode(<String, String>{'nonce': nonce})));
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      throw const HostUpdateRejected(HostUpdateDenial.unsupported,
+          statusCode: 404);
+    }
+    await _checkHostUpdateResponse(res, 'POST $kHostUpdatePath');
+    return _parseHostUpdateStatus(await _readBodyBounded(res));
+  }
+
+  /// 错误响应：带 `{"error": code}` 的是 host 的明确拒绝 → [HostUpdateRejected]；
+  /// 其余（401 配对失效等）交给统一的 [WebDavOps.checkStatus]。
+  Future<void> _checkHostUpdateResponse(
+    HttpClientResponse res,
+    String label,
+  ) async {
+    if (res.statusCode < 400) return;
+    final SyncErrorBody? body = await readSyncErrorBody(res);
+    final HostUpdateDenial? denial =
+        parseHostUpdateDenialBody(body?.reason ?? '');
+    if (denial != null) {
+      throw HostUpdateRejected(denial, statusCode: res.statusCode);
+    }
+    _ops!.checkStatus(res.statusCode, label, serverReason: body);
+  }
+
+  HostUpdateStatus _parseHostUpdateStatus(String body) {
+    final Object? decoded = jsonDecode(body);
+    if (decoded is! Map) {
+      throw const FormatException('Invalid host update response');
+    }
+    return HostUpdateStatus.fromJson(decoded.cast<String, Object?>());
   }
 
   /// TODO-1235（TODO-961 回归）：把对端封面拉成字节，复用互联其余流量同一条钉扎

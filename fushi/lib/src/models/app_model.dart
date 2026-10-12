@@ -9,6 +9,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/updates/host_self_update_service.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
@@ -650,6 +651,10 @@ class AppModel with ChangeNotifier {
   /// 不再绑在设置页 widget 上——否则切出「同步与备份」页就把服务端关了（BUG-085）。
   /// 启动时若用户启用了 host 则自动开，仅在用户关闭开关或退出 app 时停。配对批准
   /// 弹窗经全局 [navigatorKey]，故在任意界面都能弹。
+  /// 互联 host 的远程自更新实现（见 [createAppHostSelfUpdater]）。
+  late final AppHostSelfUpdater hostSelfUpdater =
+      createAppHostSelfUpdater(this);
+
   late final FushiSyncServerController syncServerController =
       FushiSyncServerController(
     navigatorKey: navigatorKey,
@@ -703,6 +708,9 @@ class AppModel with ChangeNotifier {
     // 引擎按请求实时读的 host 偏好（「允许为对端转码视频」）：给仓库本体而不是
     // 启动时的快照，用户改完设置不必重启互联服务。
     prefsStore: () => prefsRepo,
+    // 已配对设备远程更新本机（反馈 Pp8XPyve0N）。同一个实例跨互联服务重启存活：
+    // 在途下载的进度不因用户开关一次互联而丢。
+    hostSelfUpdater: () => hostSelfUpdater,
     libraryServiceFactory: () => LocalLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,
