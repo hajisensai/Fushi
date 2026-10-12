@@ -7043,5 +7043,7 @@
   "book_import_no_book_notice_title": "没有选择书籍",
   "book_import_no_book_transcribe_hint": "没有书也能导入：直接用设备端转录把音频转成字幕，导入时会据此自动生成一本书。",
   "book_import_no_book_subtitle_hint": "没有书也能导入：为这段音频选一个字幕文件，导入时会据此自动生成一本书。",
-  "book_import_no_book_transcribe_action": "转录并生成书籍"
+  "book_import_no_book_transcribe_action": "转录并生成书籍",
+  "manga_quick_spread_shift": "错开一页",
+  "manga_quick_spread_shift_subtitle": "封面单独成页，其余两两配对；关闭则从第一页起配对。"
 }

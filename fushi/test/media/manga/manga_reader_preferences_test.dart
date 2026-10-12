@@ -46,6 +46,35 @@ void main() {
     expect(resolved.ocrTrigger, 'manual');
     expect(resolved.autoScrollSpeed, 200);
   });
+  test('spreadOffset：全局值是默认，本书覆盖（快捷设置「错开一页」）压过它', () {
+    const MangaReaderPreferences global = MangaReaderPreferences();
+    expect(global.spreadOffset, 1, reason: '默认 = 封面独占（日漫惯例）');
+    expect(
+      MangaReaderPreferences.resolve(global, <String, Object?>{
+        'spreadOffset': 0,
+      }).spreadOffset,
+      0,
+    );
+    // 没覆盖 = 跟随全局（含全局之后的改动）。
+    const MangaReaderPreferences zeroGlobal = MangaReaderPreferences(
+      spreadOffset: 0,
+    );
+    expect(MangaReaderPreferences.resolve(zeroGlobal, null).spreadOffset, 0);
+    // 越界 / 非数字钳回合法值，不落脏数据。
+    expect(
+      MangaReaderPreferences.fromJson(<String, Object?>{
+        'spreadOffset': 7,
+      }).spreadOffset,
+      1,
+    );
+    expect(
+      MangaReaderPreferences.fromJson(<String, Object?>{
+        'spreadOffset': 'x',
+      }).spreadOffset,
+      1,
+    );
+  });
+
   test('sparse overrides inherit global values and reject bad wire types', () {
     const MangaReaderPreferences global = MangaReaderPreferences(
       mode: MangaReadingMode.webtoonGaps,
