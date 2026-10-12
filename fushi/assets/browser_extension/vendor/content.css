@@ -369,6 +369,16 @@
        native ruby; see the `.expression ruby` block above), so the implicit
        overflow-y is genuinely inert. */
     scrollbar-width: none;
+    /* BUG-3288: the implicit overflow-y was NOT inert. The ruby reserve only
+       covers the TOP; the line box is still shorter than the font's content
+       area (M3E headword line-height 1.2 vs Yu Gothic UI ascent+descent), so
+       the box overflows by ~2px at the BOTTOM (measured in Edge: scrollHeight
+       69 vs clientHeight 67 at 36px). With computed overflow-y `auto` the mouse
+       wheel scrolled the headword by those 2px even though it fits. The
+       headword only ever scrolls horizontally: `hidden` clips exactly what
+       `auto` already clipped (both are scroll containers), but is not
+       user-scrollable, so the wheel goes to the popup body instead. */
+    overflow-y: hidden;
 }
 
 .expression-scroll::-webkit-scrollbar {
