@@ -7043,5 +7043,6 @@
   "book_import_no_book_notice_title": "没有选择书籍",
   "book_import_no_book_transcribe_hint": "没有书也能导入：直接用设备端转录把音频转成字幕，导入时会据此自动生成一本书。",
   "book_import_no_book_subtitle_hint": "没有书也能导入：为这段音频选一个字幕文件，导入时会据此自动生成一本书。",
-  "book_import_no_book_transcribe_action": "转录并生成书籍"
+  "book_import_no_book_transcribe_action": "转录并生成书籍",
+  "onboarding_anki_auto_reposition_hint": "制卡约 30 秒后，自动把该牌组的新卡按词频排序，常见词先学，不动复习卡。需要电脑版 Anki + AnkiConnect（手机可改连电脑上的 AnkiConnect）；AnkiDroid / AnkiMobile 无法重排。"
 }
