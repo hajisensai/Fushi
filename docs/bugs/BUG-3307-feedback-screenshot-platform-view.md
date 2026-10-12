@@ -1,0 +1,6 @@
+## BUG-3307 · 反馈自动截图缺 WebView 等平台视图（iOS 查词卡整块空白）
+- **报告**：2026-10-13（用户：应用内反馈 #_uvuiSpjZ7，iOS 27.2 / iPhone18,3；系统截图里阅读器查词卡内容完整，同一画面的反馈自动截图查词卡内容区整块空白，只剩 Flutter 画的按钮与播放条）
+- **真实性**：✅ 真 bug。反馈自动截图只走 Flutter 根边界 `RenderRepaintBoundary.toImage`（`fushi/lib/src/feedback/feedback_diagnostics.dart` 旧 `captureFeedbackScreenshot`，`object.toImage(pixelRatio:)`）。阅读器正文 / 查词卡是 WebView 平台视图：iOS 是原生 `WKWebView`，Android 的 flutter_inappwebview 走 Hybrid Composition（真 Android View），都不在 Flutter 场景里，toImage 截出来那一块是底色。PR #2090 只在提交页加了「建议改用系统截图」提示，没有修截图本身。
+- **[x] ① 已修复** — `0233cc5d65`：iOS / Android 先截原生窗口（悬浮球通道已有的 `captureScreen`；iOS 复用 `FushiFloatingBall.swift` 的 `drawHierarchy(in:afterScreenUpdates:true)`，无原生改动；Android 新增 `AppWindowSnapshot.java`：PixelCopy 拷窗口 surface + 每个可见 SurfaceView，SurfaceView 铺底、窗口缓冲区按 alpha 叠上，API 26+，24/25 回 null），产物缩到长边 1600 / 1.5MB 内；原生没注册 / 不支持 / 失败 / 解不开都记日志后回退 toImage。原生快照截整个窗口，截图期间经 `feedbackWindowCaptureActive` 把应用内悬浮球藏掉，保持「页面本身」的截图语义。只截本 App 窗口。桌面不变：Windows / Linux WebView 以纹理合成进 Flutter 场景；macOS WKWebView 仍缺（无免录屏授权的现成窗口快照能力）。
+- **[x] ② 已加自动化测试** — `fushi/test/feedback/feedback_screenshot_capture_test.dart`（原生成功 / PlatformException / MissingPlugin / 不支持 / 解码失败五条分流回退、藏球标志、桌面直走 toImage、大图缩放，加 iOS / Android / 宿主接线守卫）。
+- **备注**：iOS 原生未改；Android 原生只编译验证（`:app:assembleDebug`），未在真机验证 PixelCopy 合成结果。
