@@ -583,11 +583,11 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
     String outputPath;
     Directory? tempDir;
     if (desktop) {
+      // 只在桌面弹保存框（移动端走分享），默认文件名已带 .m4b；不传
+      // FileType.custom 扩展名过滤（BUG-2099 的选择器纪律，同 collection_exporter）。
       final String? picked = await FilePicker.platform.saveFile(
         dialogTitle: t.audiobook_studio_export,
         fileName: fileName,
-        type: FileType.custom,
-        allowedExtensions: const <String>['m4b'],
       );
       if (picked == null || picked.trim().isEmpty || !mounted) return;
       outputPath = picked;
