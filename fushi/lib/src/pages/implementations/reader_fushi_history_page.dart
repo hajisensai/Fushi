@@ -641,6 +641,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   void dispose() {
+    _memberInfoRevision.dispose();
     _searchController.dispose();
     _shelfScrollController.dispose();
     mediaType.tabRefreshNotifier.removeListener(_reloadShelfMapsOnTabRefresh);
@@ -656,8 +657,37 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     super.dispose();
   }
 
+  /// 合集详情页成员信息（最后阅读 / 进度 / 读完）的版本号：源数据 provider 刷新、
+  /// 本页重建完之后 +1，详情页订阅它重算「继续阅读」（4h4uGUck4k）。
+  final ValueNotifier<int> _memberInfoRevision = ValueNotifier<int>(0);
+
+  void _bumpMemberInfoRevision() {
+    // 等本页按新 provider 值重建完（_visibleEpubBooks 的进度在 build 里赋值）再通知。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _memberInfoRevision.value++;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    ref.listen<AsyncValue<Map<String, int>>>(
+      bookLastReadAtProvider,
+      (_, __) => _bumpMemberInfoRevision(),
+    );
+    ref.listen<AsyncValue<List<MediaItem>>>(
+      fushiBooksProvider(JapaneseLanguage.instance),
+      (_, __) => _bumpMemberInfoRevision(),
+    );
+    // 读到末尾阅读器写 completedAt、关书时该 provider 失效：同步本页的读完集，
+    // 「继续阅读」才会跳过刚读完的那本。
+    ref.listen<AsyncValue<Set<String>>>(completedEpubBookKeysProvider, (
+      _,
+      AsyncValue<Set<String>> next,
+    ) {
+      final Set<String>? keys = next.valueOrNull;
+      if (keys != null) _completedBookKeys = keys;
+      _bumpMemberInfoRevision();
+    });
     final AsyncValue<List<MediaItem>> books =
         ref.watch(fushiBooksProvider(JapaneseLanguage.instance));
     assert(() {
@@ -2361,6 +2391,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           // 2026-10-06 合集详情重设计：hero 进度 / 继续阅读 / 阅读状态筛选 /
           // 阅读时间排序 / 列表缩略图读这里；批量标记读完写 EpubBooks.completedAt。
           memberInfoOf: _collectionMemberInfo,
+          memberInfoRefresh: _memberInfoRevision,
           onSetMembersCompleted: _setCollectionMembersCompleted,
         ),
       ),

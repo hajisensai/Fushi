@@ -2,6 +2,8 @@ import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/collections/collection_member_view.dart'
+    show CollectionMemberInfo;
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show collectionDetailSortPrefKey, kCollectionDetailManualSortValue;
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
@@ -136,6 +138,46 @@ void main() {
     expect(after.map((MediaCollectionItemRow r) => r.entryKey).toList(),
         <String>['k1', 'k3'],
         reason: '菜单「移出合集」应真把 k2 从合集移除（removeFromCollection）');
+  });
+
+  testWidgets('继续阅读随 memberInfoRefresh 重算：读完另一本回来，目标换成最近在读的那本'
+      '（4h4uGUck4k）', (WidgetTester tester) async {
+    useDesktopView(tester);
+    final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
+    final Map<String, int> lastRead = <String, int>{'k1': 200, 'k2': 100};
+    final ChangeNotifier refresh = ChangeNotifier();
+    addTearDown(refresh.dispose);
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: MediaCollectionGridDetailPage(
+            database: s.db,
+            collection: s.col,
+            memberCardBuilder: cardBuilder,
+            onOpenMember: (String mediaType, String entryKey) {},
+            onChanged: () {},
+            memberInfoOf: (String mediaType, String entryKey) =>
+                CollectionMemberInfo(
+                  title: 'T-$entryKey',
+                  lastReadAt: lastRead[entryKey],
+                ),
+            memberInfoRefresh: refresh,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('T-k1'), findsWidgets);
+
+    // 在阅读器里读了 k2（详情页压在阅读器之下，没有任何重建）；回来后调用方通知。
+    lastRead['k2'] = 300;
+    // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+    refresh.notifyListeners();
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('T-k2'), findsWidgets,
+        reason: '继续阅读目标应换成最近在读的 k2');
+    expect(find.textContaining('T-k1'), findsNothing);
   });
 
   testWidgets('菜单「打开」真回调 onOpenMember', (WidgetTester tester) async {
