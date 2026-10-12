@@ -12,12 +12,12 @@ void main() {
   VideoDoubleTapCenterAction resolve({
     required bool desktop,
     required bool touch,
-    bool tapTogglesPlayback = true,
+    bool doubleTapTogglesPlayback = true,
   }) =>
       resolveVideoDoubleTapCenterAction(
         desktopControls: desktop,
         touchLikePointer: touch,
-        tapTogglesPlayback: tapTogglesPlayback,
+        doubleTapTogglesPlayback: doubleTapTogglesPlayback,
       );
 
   test('桌面触屏双击中带（双击快退快进开启时）= 播放/暂停，不进全屏', () {
@@ -32,10 +32,11 @@ void main() {
         VideoDoubleTapCenterAction.togglePlayback);
   });
 
-  test('桌面鼠标双击中带仍切全屏，且不受「点击画面播放/暂停」开关影响', () {
+  test('桌面鼠标双击中带仍切全屏，且不受「双击画面播放/暂停」开关影响', () {
     expect(resolve(desktop: true, touch: false),
         VideoDoubleTapCenterAction.toggleFullscreen);
-    expect(resolve(desktop: true, touch: false, tapTogglesPlayback: false),
+    expect(
+        resolve(desktop: true, touch: false, doubleTapTogglesPlayback: false),
         VideoDoubleTapCenterAction.toggleFullscreen);
   });
 
@@ -46,10 +47,11 @@ void main() {
         VideoDoubleTapCenterAction.togglePlayback);
   });
 
-  test('关掉「点击画面播放/暂停」后触屏双击不改播放态，也不进全屏', () {
-    expect(resolve(desktop: true, touch: true, tapTogglesPlayback: false),
+  test('关掉「双击画面播放/暂停」后触屏双击不改播放态，也不进全屏', () {
+    expect(resolve(desktop: true, touch: true, doubleTapTogglesPlayback: false),
         VideoDoubleTapCenterAction.none);
-    expect(resolve(desktop: false, touch: true, tapTogglesPlayback: false),
+    expect(
+        resolve(desktop: false, touch: true, doubleTapTogglesPlayback: false),
         VideoDoubleTapCenterAction.none);
   });
 }

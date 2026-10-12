@@ -11,6 +11,7 @@ class VideoAsbplayerConfig {
     required this.longPressSpeed,
     required this.dragSeekSensitivity,
     required this.tapTogglesPlayback,
+    required this.doubleTapTogglesPlayback,
     required this.brightnessSwipeGesture,
     required this.volumeSwipeGesture,
   });
@@ -39,6 +40,7 @@ class VideoAsbplayerConfig {
     longPressSpeed: 2.0,
     dragSeekSensitivity: VideoSeekSensitivity.medium,
     tapTogglesPlayback: true,
+    doubleTapTogglesPlayback: true,
     brightnessSwipeGesture: true,
     volumeSwipeGesture: true,
   );
@@ -57,11 +59,20 @@ class VideoAsbplayerConfig {
   /// [kDoubleTapSubtitle]。0=关（双击仍走平台默认的暂停/全屏，不分区）。
   final int doubleTapSeekSeconds;
 
-  /// 点击画面是否切换播放/暂停。默认 true（保持既有行为）。关掉后点画面只唤醒/收起
-  /// 控制条，不改播放态——桌面对应 media_kit 的 `playAndPauseOnTap`（单击），移动端
-  /// 对应双击中带落空时的暂停 fallback（BUG-221）。字幕点击查词、进度条、控制条按钮
-  /// 与快捷键都不受影响（各自独立入口）。
+  /// 桌面**鼠标单击**画面是否切换播放/暂停（media_kit 的 `playAndPauseOnTap`）。默认
+  /// true（保持既有行为）。关掉后单击画面只唤醒/收起控制条，不改播放态。字幕点击查词、
+  /// 进度条、控制条按钮与快捷键都不受影响（各自独立入口）。
+  ///
+  /// BUG-3310：它**只管鼠标单击**。触屏双击（移动端 / 桌面触屏）是另一个手势，归
+  /// [doubleTapTogglesPlayback]。两者曾共用本开关，而整份配置随备份 / 互联同步跨设备：
+  /// 在电脑上关掉「单击暂停」，同步到手机后手机的双击暂停被一并静默关掉（手机单击本就
+  /// 不改播放态，这个开关在手机上唯一的效果就是吃掉双击暂停）。
   final bool tapTogglesPlayback;
+
+  /// 触屏**双击**画面（中带，或双击快退快进关闭时的任意位置）是否切换播放/暂停
+  /// （BUG-221 / BUG-3310）。默认 true。移动端与桌面触屏 / 触控笔共用；桌面鼠标双击是
+  /// 切全屏，不读本字段。
+  final bool doubleTapTogglesPlayback;
 
   /// 移动端画面**左半区竖滑调屏幕亮度**手势开关（issue #1525）。默认 true（保持既有
   /// 行为）。关掉后左半区竖滑不再改亮度，用户改走系统亮度条；只关这一侧，右半区音量
@@ -80,6 +91,7 @@ class VideoAsbplayerConfig {
     double? longPressSpeed,
     VideoSeekSensitivity? dragSeekSensitivity,
     bool? tapTogglesPlayback,
+    bool? doubleTapTogglesPlayback,
     bool? brightnessSwipeGesture,
     bool? volumeSwipeGesture,
   }) {
@@ -91,6 +103,8 @@ class VideoAsbplayerConfig {
       longPressSpeed: longPressSpeed ?? this.longPressSpeed,
       dragSeekSensitivity: dragSeekSensitivity ?? this.dragSeekSensitivity,
       tapTogglesPlayback: tapTogglesPlayback ?? this.tapTogglesPlayback,
+      doubleTapTogglesPlayback:
+          doubleTapTogglesPlayback ?? this.doubleTapTogglesPlayback,
       brightnessSwipeGesture:
           brightnessSwipeGesture ?? this.brightnessSwipeGesture,
       volumeSwipeGesture: volumeSwipeGesture ?? this.volumeSwipeGesture,
@@ -105,6 +119,7 @@ class VideoAsbplayerConfig {
         'longPressSpeed': longPressSpeed,
         'dragSeekSensitivity': dragSeekSensitivity.name,
         'tapTogglesPlayback': tapTogglesPlayback,
+        'doubleTapTogglesPlayback': doubleTapTogglesPlayback,
         'brightnessSwipeGesture': brightnessSwipeGesture,
         'volumeSwipeGesture': volumeSwipeGesture,
       };
@@ -136,6 +151,10 @@ class VideoAsbplayerConfig {
         // 旧档没有本键 → 回落 true，既有「点画面暂停」行为原样保留。
         tapTogglesPlayback:
             raw['tapTogglesPlayback'] as bool? ?? defaults.tapTogglesPlayback,
+        // BUG-3310：旧档没有本键 → 回落 true，**不**从 tapTogglesPlayback 继承。旧档里
+        // 那个 false 多半是在电脑上为鼠标单击关的、经同步带到了手机，继承它正是本 bug。
+        doubleTapTogglesPlayback: raw['doubleTapTogglesPlayback'] as bool? ??
+            defaults.doubleTapTogglesPlayback,
         // 旧档没有这两个键 → 回落 true，既有竖滑调亮度/音量行为原样保留。
         brightnessSwipeGesture: raw['brightnessSwipeGesture'] as bool? ??
             defaults.brightnessSwipeGesture,

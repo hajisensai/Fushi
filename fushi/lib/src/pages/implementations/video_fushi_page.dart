@@ -11075,13 +11075,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // - 桌面鼠标：保留双击全屏（窗口全屏有意义，走 native window 不碰设备方向）。
     // - 桌面触屏 / 触控笔（Surface，用户 2026-10-05 拍板）：与移动端一致 = 播放/暂停，
     //   不再切全屏（全屏走控制栏按钮）。
-    // 播放/暂停受「点击画面播放/暂停」开关（[_asbConfig.tapTogglesPlayback]）门控，
-    // 与桌面鼠标单击的 playAndPauseOnTap 读同一个开关；鼠标双击 = 全屏，与播放态无关，
-    // 不受本开关影响。
+    // 播放/暂停受「双击画面播放/暂停」开关（[_asbConfig.doubleTapTogglesPlayback]）门控；
+    // 鼠标双击 = 全屏，与播放态无关，不受本开关影响。BUG-3310：不再读桌面鼠标单击那个
+    // `tapTogglesPlayback`——配置跨设备同步，电脑上关掉单击暂停会把手机双击暂停一起关掉。
     switch (resolveVideoDoubleTapCenterAction(
       desktopControls: _isDesktopVideoControls,
       touchLikePointer: isTouchLikePointerKind(event.kind),
-      tapTogglesPlayback: _asbConfig.tapTogglesPlayback,
+      doubleTapTogglesPlayback: _asbConfig.doubleTapTogglesPlayback,
     )) {
       case VideoDoubleTapCenterAction.toggleFullscreen:
         unawaited(_toggleVideoFullscreen(controlsContext));
