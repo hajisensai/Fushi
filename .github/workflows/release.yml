@@ -562,6 +562,12 @@ jobs:
         nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
         if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
         bash .github/scripts/verify_torrent_abi.sh "$so" "$nm_bin"
+        # BUG-3284：C++ 运行时必须静态链入（c++_static）。依赖 APK 里那份由 pickFirst
+        # 挑中的老 libc++_shared.so 时，新 NDK 编出的本库在设备上 dlopen 失败。
+        # 恢复来的旧件（c++_shared 时代存入的）同样会在这里被拦下，回落不到发布。
+        readelf_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+        if [ ! -x "$readelf_bin" ]; then readelf_bin=readelf; fi
+        bash .github/scripts/verify_android_cxx_self_contained.sh "$so" "$readelf_bin" "$nm_bin"
         machine="$(readelf -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
         echo "ELF machine: $machine"
         case "$machine" in

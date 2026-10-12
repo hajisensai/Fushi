@@ -58,6 +58,11 @@ for abi in "${ABIS[@]}"; do
   # 即 vcpkg-triplets/ 注释里那个 aligned_alloc undefined symbol。
   # overlay ports：libtorrent 2.0.11 私有补丁（DHT 混合代理豁免），
   # 见 vcpkg-ports/README.md；与 .ps1 版/Windows 脚本同一套。
+  # ANDROID_STL=c++_static（BUG-3284）：libc++ 私有链进本 .so，不再依赖 APK 里的
+  # libc++_shared.so。APK 只能有一份 libc++_shared.so，Gradle 按 pickFirst 从各插件里
+  # 随便挑一份（实测是 r27-beta1 的），而本库用 runner 最新 NDK 编——r30 的 libc++
+  # 把 std::hash 移出头文件（__hash_memory），老 libc++_shared 里没有 → dlopen 失败
+  # → 用户看到「缺少内置引擎运行库」。对外只有 C ABI（ht_*），私有 libc++ 是安全的。
   cmake -G Ninja -B "$build_dir" -S "$SCRIPT_DIR" \
     "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_TOOLCHAIN" \
     "-DVCPKG_TARGET_TRIPLET=$triplet" \
@@ -66,7 +71,7 @@ for abi in "${ABIS[@]}"; do
     "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_TOOLCHAIN" \
     "-DANDROID_ABI=$abi" \
     "-DANDROID_PLATFORM=android-24" \
-    "-DANDROID_STL=c++_shared" \
+    "-DANDROID_STL=c++_static" \
     "-DCMAKE_BUILD_TYPE=Release"
   cmake --build "$build_dir"
 

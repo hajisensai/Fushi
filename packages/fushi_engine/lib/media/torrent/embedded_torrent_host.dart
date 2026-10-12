@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/anti_leech.dart';
 import 'package:fushi_engine/media/torrent/download_save_root.dart';
@@ -291,17 +292,30 @@ class EmbeddedTorrentHost {
     try {
       EmbeddedTorrentEngine.open(libraryPath: libraryPath);
       ok = true;
-    } on ArgumentError {
-      ok = false; // DLL 缺失/未构建
-    } on Object {
+      _lastProbeFailure = null;
+    } on Object catch (e, s) {
+      // BUG-3284：加载失败的**原因**必须留下。「文件不在」与「文件在但 dlopen 因
+      // 未定义符号失败」在 UI 上是同一句「缺少运行库」，以前这里把错误整个吞掉，
+      // 用户上传的日志里一个字都没有，只能靠真机复现才定位到 libc++ 符号缺失。
       ok = false;
+      _lastProbeFailure = e.toString();
+      engineLog.log('EmbeddedTorrentHost.probeAvailable', e, s);
     }
     _availabilityCache = ok;
     return ok;
   }
 
+  static String? _lastProbeFailure;
+
+  /// 最近一次 [probeAvailable] 失败时原生库加载抛出的错误文本（成功 / 未探测为
+  /// null）。诊断用：区分「库不在」与「库在但链接失败」。
+  static String? get lastProbeFailure => _lastProbeFailure;
+
   /// 仅测试用：清掉 [probeAvailable] 的缓存。
-  static void resetAvailabilityProbeForTesting() => _availabilityCache = null;
+  static void resetAvailabilityProbeForTesting() {
+    _availabilityCache = null;
+    _lastProbeFailure = null;
+  }
 
   /// 见顶层 [pruneResumeFiles]（宿主内唯一的剪枝入口）。
   int _pruneResumeFiles(Set<String>? keepIds) =>

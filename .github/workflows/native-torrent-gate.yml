@@ -26,7 +26,8 @@
 #   * 不覆盖发布路径：release.yml / release-desktop.yml 的产物随包、签名、通道逻辑
 #     一概不碰。本 workflow 全程只读，`permissions: contents: read`，不上传产物、
 #     不建 tag、不碰任何 release。
-#   * 不覆盖运行期行为：这里只到「编得出、链得上、符号齐、ELF 形状对」，真机
+#   * 不覆盖运行期行为：这里只到「编得出、链得上、符号齐、ELF 形状对、C++ 运行时
+#     静态链入不依赖 APK 的 libc++_shared（BUG-3284）」，真机
 #     下载/做种/代理行为不在射程内。
 #   * 不覆盖 armeabi-v7a / x86 / x86_64：与 release.yml 的范围决策一致，只编
 #     arm64-v8a（其余 ABI 无 .so 时运行期回退外接 qBittorrent，不是静默破坏）。
@@ -47,6 +48,7 @@ on:
       - 'native/fushi_torrent/**'
       - 'packages/fushi_torrent/**'
       - '.github/scripts/verify_torrent_abi.sh'
+      - '.github/scripts/verify_android_cxx_self_contained.sh'
       - '.github/workflows/native-torrent-gate.yml'
 
 # 全程只读：不构建发布产物、不碰任何 release/tag/发布通道。
@@ -174,6 +176,10 @@ jobs:
           nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
           if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
           bash .github/scripts/verify_torrent_abi.sh "$so" "$nm_bin"
+          # BUG-3284：C++ 运行时必须静态链入，不得依赖 APK 里那份 libc++_shared.so。
+          readelf_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          if [ ! -x "$readelf_bin" ]; then readelf_bin=readelf; fi
+          bash .github/scripts/verify_android_cxx_self_contained.sh "$so" "$readelf_bin" "$nm_bin"
 
           # 目标机器类型必须是 AArch64（triplet / ANDROID_ABI 串了会静默产出别的架构）。
           machine="$(readelf -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
