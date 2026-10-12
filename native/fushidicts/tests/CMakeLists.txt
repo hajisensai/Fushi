@@ -84,6 +84,11 @@ add_fushi_test(media_import_query_test media_import_query_test.cpp)
 # two top-level directories stays unrecognised. Also pins the macOS Finder
 # shapes (__MACOSX/ + .DS_Store), nested wrappers and directory-marker entries.
 add_fushi_test(zip_wrapper_directory_test zip_wrapper_directory_test.cpp)
+# BUG-3277: names carried in the Info-ZIP Unicode Path extra (0x7075) -- an
+# archive without bit 11 stores Shift-JIS raw names and the real UTF-8 name
+# there; media must be keyed by the UTF-8 name. Includes "zip/zip.hpp".
+add_fushi_test(zip_unicode_path_extra_test zip_unicode_path_extra_test.cpp
+    "${FUSHI_SRC}")
 add_fushi_test(freq_pitch_import_query_test freq_pitch_import_query_test.cpp)
 add_fushi_test(freq_pitch_merge_query_test freq_pitch_merge_query_test.cpp)
 # BUG-1304: the two tests above drive DictionaryQuery::query(); this one drives
