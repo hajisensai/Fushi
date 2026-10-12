@@ -25,7 +25,9 @@ TtsRenderQueue ttsRenderQueueFor(AppModel appModel) {
   final TtsRenderQueue? existing = _queue;
   if (existing != null) return existing;
   final TtsRenderQueue queue = TtsRenderQueue(
-    store: File(p.join(appModel.databaseDirectory.path, 'tts_render_jobs.json')),
+    store: File(
+      p.join(appModel.databaseDirectory.path, 'tts_render_jobs.json'),
+    ),
     runner: AppTtsRenderRunner(appModel: appModel),
   );
   _queue = queue;
@@ -38,8 +40,9 @@ Directory ttsRenderWorkRoot(AppModel appModel) =>
     Directory(p.join(appModel.databaseDirectory.path, 'tts_render'));
 
 /// 每本书的选角表（多声优配音）：`<db>/tts_cast/`。
-TtsCastStore ttsCastStoreFor(AppModel appModel) =>
-    TtsCastStore(Directory(p.join(appModel.databaseDirectory.path, 'tts_cast')));
+TtsCastStore ttsCastStoreFor(AppModel appModel) => TtsCastStore(
+  Directory(p.join(appModel.databaseDirectory.path, 'tts_cast')),
+);
 
 /// 书架行 → EPUB（只认 epub 格式且解包目录还在）。
 Future<({EpubBookRow row, EpubBook book})?> loadEpubForStudio(
@@ -47,7 +50,9 @@ Future<({EpubBookRow row, EpubBook book})?> loadEpubForStudio(
   String bookKey,
 ) async {
   final EpubBookRow? row = await db.getEpubBook(bookKey);
-  if (row == null || row.format != 'epub') return null;
+  if (row == null || BookFormat.parseOrEpub(row.format) != BookFormat.epub) {
+    return null;
+  }
   final String extractDir = row.extractDir;
   if (extractDir.isEmpty || !Directory(extractDir).existsSync()) return null;
   final EpubBook book = EpubParser.parseFromExtracted(extractDir);
