@@ -367,7 +367,7 @@ class _TtsVoiceRow extends StatelessWidget {
       selected: selected,
       selectedShape: FushiListItemSelectedShape.pill,
       onTap: onTap,
-      leading: Tooltip(
+      leading: FushiTooltip(
         message: active
             ? t.audiobook_tts_voice_active
             : t.audiobook_tts_voice_use,

@@ -229,7 +229,7 @@ class _StepNavItem extends StatelessWidget {
         selected: selected,
         selectedShape: FushiListItemSelectedShape.pill,
         onTap: onTap,
-        leading: Badge(
+        leading: FushiBadgeControl(
           isLabelVisible: entry.attention,
           smallSize: 8,
           backgroundColor: scheme.error,
