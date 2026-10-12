@@ -7,11 +7,11 @@
     - 焦点栈：`pack: app.fushi.reader -- client: ...AudioFocusDelegate... -- gain: GAIN_TRANSIENT_MAY_DUCK`
     - 1.5 s 的词音频，约 1.65–1.9 s 后才 `abandonAudioFocus()`。
   - 视频（mpv，`OpenSL ES AudioPlayer` piid）自身从不申请焦点。AOSP 的 `PlaybackActivityMonitor.duckPlayers` 不 duck 与赢家同 uid 的播放器，所以模拟器上 `ducked players piids` 恒空、视频不被压低；联想 ZUI 则据这次 MAY_DUCK 申请把整路媒体（含 app 自己的视频）压低并渐变恢复——反馈人贴的焦点栈与上面逐字一致。根因在我方：读一个一秒的词不该向系统申请 duck 焦点。
-- **[x] ① 已修复** — Android 主引擎上单词音频改交原生 `TtsChannelHandler` MediaPlayer（`USAGE_MEDIA/CONTENT_TYPE_SPEECH`，不申请焦点）：
+- **[x] ① 已修复**（98f81fb4f5）— Android 主引擎上单词音频改交原生 `TtsChannelHandler` MediaPlayer（`USAGE_MEDIA/CONTENT_TYPE_SPEECH`，不申请焦点）：
   - 判据 `lookupWordAudioPlaysNatively`（`lookup_audio_playback.dart`）= `TtsChannel.hostPlaybackRegistered`，只有注册了原生 handler 的主引擎（`lib/main.dart` 调 `TtsChannel.markHostPlaybackRegistered()`）为真；弹窗词典 / 悬浮词典副引擎没有该 handler，照旧走 `<audio>`。
   - 自动发音：`autoReadWordUnified` 在原生路由下跳过 WebView，直接 `TtsChannel.playAudioRef(ref)`。
   - 手动 ♪ / 选源菜单：`popup_settings_injection.dart` 注入 `window.__fushiWordAudioViaHost`，popup.js `playWordAudio` 据此经新桥 `playWordAudioNative`（`dictionary_popup_webview.dart`）交原生播放；`data:` URL 由 `webViewWordAudioUrlToPlayableRef` 解码到按内容寻址的临时文件。宿主报失败 / 桥异常才回落 `<audio>`，不会哑。
   - 修复后同一探针：`[duck]` 两轮时刻 focus commands 日志**零条** app.fushi.reader 记录、焦点栈全程空（517 次轮询），发音播放器为 `piid:143 type:android.media.MediaPlayer state:started usage=USAGE_MEDIA content=CONTENT_TYPE_SPEECH`。
   - 有声书（just_audio + `audio_session`，`audiobook_controller.dart` `_configureAudioSession`）与制卡试听 / 录音页的焦点配置未改动。
-- **[x] ② 已加自动化测试** — `fushi/test/utils/misc/lookup_word_audio_native_route_test.dart`（data:/http → 可播 ref 行为 + 四处接线守卫）；`tools/browser-extension/word-audio.test.js`（真执行 popup.js：开关开时只走宿主桥不构造 `Audio`、宿主失败 / 桥抛错回落 `Audio`、未注入时照旧）；真机探针 `fushi/integration_test/video_lookup_audio_duck_itest.dart`。
+- **[x] ② 已加自动化测试**（98f81fb4f5）— `fushi/test/utils/misc/lookup_word_audio_native_route_test.dart`（data:/http → 可播 ref 行为 + 四处接线守卫）；`tools/browser-extension/word-audio.test.js`（真执行 popup.js：开关开时只走宿主桥不构造 `Audio`、宿主失败 / 桥抛错回落 `Audio`、未注入时照旧）；真机探针 `fushi/integration_test/video_lookup_audio_duck_itest.dart`。
 - **备注**：未在联想 ZUI 真机上验证（本机无 adb 真机）；AOSP 模拟器只能证明「焦点申请已消失」，不能复现 ZUI 的压低本身。弹窗词典 / 悬浮词典（覆盖在其它 app 上）仍经 WebView `<audio>` 申请 MAY_DUCK，那里压低的是别家 app 的音乐，属标准行为，未改。
