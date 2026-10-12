@@ -204,6 +204,12 @@ VideoDiscMenuEntryAction videoDiscMenuEntryAction(
 
 /// mpv accepts pointer coordinates in the video's normalized content rectangle.
 /// Reject outside/invalid input rather than selecting an unrelated edge button.
+///
+/// Only clicks reach the disc. mpv's `mouse-move` is `bd_mouse_select`, which
+/// libbluray treats as *selecting* the button under the pointer — and authored
+/// auto-action buttons run their navigation commands on selection. Sweeping the
+/// mouse off an expanded submenu therefore re-selected a tab/parent button and
+/// collapsed the menu. Hover is not part of a remote-driven disc menu.
 List<String> videoDiscNavigationCommand(String action, {double? x, double? y}) {
   const Set<String> actions = <String>{
     'up',
@@ -215,14 +221,12 @@ List<String> videoDiscNavigationCommand(String action, {double? x, double? y}) {
     'title-menu',
     'popup',
     'prev',
-    'mouse-move',
     'mouse-click',
   };
   if (!actions.contains(action)) {
     throw ArgumentError.value(action, 'action', 'Unknown Blu-ray menu action');
   }
-  final bool pointer = action == 'mouse-move' || action == 'mouse-click';
-  if (!pointer) return <String>['discnav', action];
+  if (action != 'mouse-click') return <String>['discnav', action];
   if (x == null ||
       y == null ||
       !x.isFinite ||

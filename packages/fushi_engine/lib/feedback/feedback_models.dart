@@ -8,6 +8,9 @@ typedef FeedbackJson = Map<String, dynamic>;
 int _int(Object? v) => (v as num).toInt();
 int? _intOrNull(Object? v) => v == null ? null : (v as num).toInt();
 String _str(Object? v) => v as String? ?? '';
+
+/// 空串与缺字段同义（服务端「清除」就是写空串）。
+String? _nonEmpty(Object? v) => v is String && v.isNotEmpty ? v : null;
 FeedbackJson _map(Object? v) =>
     (v as Map<Object?, Object?>).cast<String, dynamic>();
 List<T> _list<T>(Object? v, T Function(FeedbackJson) f) => List<T>.unmodifiable(
@@ -20,6 +23,7 @@ abstract final class FeedbackLimits {
   static const int bodyMax = 8000;
   static const int contactMax = 200;
   static const int replyMax = 4000;
+  static const int devNoteMax = 8000;
   static const int screenshots = 3;
   static const int screenshotMaxBytes = 1536 * 1024;
   static const int logMaxBytes = 2 * 1024 * 1024;
@@ -72,6 +76,8 @@ class FeedbackSummary {
     this.awaitingDev = false,
     this.flags = const <String>[],
     this.parentId,
+    this.aiSummary,
+    this.hasDevNote = false,
   });
 
   factory FeedbackSummary.fromJson(FeedbackJson j) => FeedbackSummary(
@@ -90,6 +96,8 @@ class FeedbackSummary {
       ((j['flags'] as List<Object?>?) ?? const <Object?>[]).whereType<String>(),
     ),
     parentId: j['parentId'] as String?,
+    aiSummary: _nonEmpty(j['aiSummary']),
+    hasDevNote: j['hasDevNote'] == true || _nonEmpty(j['devNote']) != null,
   );
 
   final String id;
@@ -116,6 +124,12 @@ class FeedbackSummary {
 
   /// 「问题没解决，重新提交」的新反馈指向的原反馈 id；普通反馈为 null。
   final String? parentId;
+
+  /// AI 根据（未核实的）反馈内容生成的总结；只有开发者接口给，没生成过为 null。
+  final String? aiSummary;
+
+  /// 有开发者批改（只有开发者接口给；反馈人接口恒 false）。
+  final bool hasDevNote;
 }
 
 /// 风险标记的种类（[FeedbackSummary.flags] 的解析结果）。
@@ -245,6 +259,9 @@ class FeedbackDetail {
     this.meta = const <String, Object?>{},
     this.origin = const <String, Object?>{},
     this.reporter,
+    this.aiSummaryAt,
+    this.devNote,
+    this.devNoteAt,
   });
 
   factory FeedbackDetail.fromJson(FeedbackJson j) => FeedbackDetail(
@@ -266,6 +283,9 @@ class FeedbackDetail {
     reporter: j['reporter'] == null
         ? null
         : FeedbackReporter.fromJson(_map(j['reporter'])),
+    aiSummaryAt: _intOrNull(j['aiSummaryAt']),
+    devNote: _nonEmpty(j['devNote']),
+    devNoteAt: _intOrNull(j['devNoteAt']),
   );
 
   final FeedbackSummary summary;
@@ -283,6 +303,16 @@ class FeedbackDetail {
   /// 服务端自己记录的来源（国家 / ASN / User-Agent / 是否签名），开发者接口才给。
   final Map<String, Object?> origin;
   final FeedbackReporter? reporter;
+
+  // 以下只有开发者接口给（反馈人接口从不返回，缺字段即 null）。
+  final int? aiSummaryAt;
+
+  /// 开发者批改：只给开发者看，反馈人看不到。
+  final String? devNote;
+  final int? devNoteAt;
+
+  /// AI 总结（解析在 [FeedbackSummary.aiSummary]，详情与列表同一份）。
+  String? get aiSummary => summary.aiSummary;
 
   String get id => summary.id;
   FeedbackStatus get status => summary.status;

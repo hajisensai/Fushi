@@ -29,10 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2945 条。点号进各自文件。
+> 共 2959 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3272](bugs/BUG-3272-anki-auto-reposition-failure-reason-lost.md) | ✅ | ✅ | 自动重排失败原因被吞且整牌组请求走交互超时 |
+| [BUG-3271](bugs/BUG-3271-expansion-tile-pagestorage-collision.md) | ✅ | ✅ | 视频设置面板字幕分类下方整片灰（展开区与滚动视图 PageStorage 槽冲突） |
+| [BUG-3270](bugs/BUG-3270-anki-dict-media-dangling-placeholder.md) | ✅ | ✅ | 制卡缺词典媒体时卡片残留 fushi_dict_N 占位图，AnkiDroid 报加载失败 |
+| [BUG-3269](bugs/BUG-3269-local-audio-reference-internal-name.md) | ✅ | ✅ | 本地发音库引用文件名像内部副本时被重挂到不存在的路径 |
+| [BUG-3268](bugs/BUG-3268-oauth-mobile-redirect-registration.md) | ✅ | ✅ | 移动端云同步改名回调未同步云端登记 |
 | [BUG-3267](bugs/BUG-3267-lookup-highlight-two-colors.md) | ✅ | ✅ | 查词窗源文本条与结果卡命中高亮两种颜色 |
 | [BUG-3266](bugs/BUG-3266-scrape-title-ending-in-year.md) | ✅ | ✅ | 片名以年份结尾时被当裸年份剥掉，刮削查无 |
 | [BUG-3265](bugs/BUG-3265-anki-css-open-attribute-pruned.md) | ✅ | ✅ | 制卡词典 CSS 裁剪把 details[open] 等交互态属性规则裁掉 |
@@ -63,6 +68,15 @@
 | [BUG-3240](bugs/BUG-3240-feedback-draft-restore-drops-autoshot.md) | ✅ | ✅ | 反馈提交页恢复草稿时丢掉本次打开自动截的图 |
 | [BUG-3239](bugs/BUG-3239-feedback-detail-shot-no-retry.md) | ✅ | ✅ | 反馈详情页截图下载失败后本次打开期间不再重试 |
 | [BUG-3238](bugs/BUG-3238-settings-slider-rejected-value.md) | ✅ | ✅ | 设置滑条松手后被拒绝的拖动值一直挂在滑块上 |
+| [BUG-3237](bugs/BUG-3237-transcode-hls-seek-late-audio.md) | ✅ | ✅ | 互联转码 HLS：音轨比画面晚起的片子一 seek 就黑屏 EOF |
+| [BUG-3236](bugs/BUG-3236-interconnect-bluray-title-unplayable.md) | ✅ | ✅ | 互联客户端打不开蓝光标题（host 把 .mpls 当视频直传） |
+| [BUG-3235](bugs/BUG-3235-video-library-staged-first-paint.md) | ✅ | ✅ | 视频库首屏一块块加载 |
+| [BUG-3234](bugs/BUG-3234-android-dict-import-oom-native-kill.md) | ✅ | ✅ | Android 导入英语大词典时原生进程被杀（low_ram 写死 false + MDX-in-zip 整条目解压进堆） |
+| [BUG-3233](bugs/BUG-3233-bluray-disc-extras-missing-from-work-page.md) | ✅ | ✅ | 原盘菜单里的特典映像在作品资料页看不到 |
+| [BUG-3232](bugs/BUG-3232-bluray-disc-extras-scraped-as-movie.md) | ✅ | ✅ | 电影盘上的特辑与菜单特典被各自当成整部电影刮削 |
+| [BUG-3231](bugs/BUG-3231-bluray-menu-title-not-scraped.md) | ✅ | ✅ | 原盘菜单进入的标题建出无来源孤儿行，刮削永远刮不到 |
+| [BUG-3230](bugs/BUG-3230-bluray-menu-hover-collapses.md) | ✅ | ✅ | 原盘菜单鼠标点击展开后移开鼠标菜单收起 |
+| [BUG-3229](bugs/BUG-3229-bluray-menu-chrome-never-hides.md) | ✅ | ✅ | 原盘菜单左上角退出不自动隐藏且菜单栏不符合 M3E / Apple 规范 |
 | [BUG-3228](bugs/BUG-3228-leaderboard-summary-stuck-loading.md) | ✅ | ✅ | 排行榜总字数卡加载失败后永远停在加载条 |
 | [BUG-3225](bugs/BUG-3225-android-global-lookup-black-panel.md) | ✅ | ✅ | Android app 外查词窗词条区整块黑底、浅色主题文字看不见 |
 | [BUG-3224](bugs/BUG-3224-anki-card-css-size.md) | ✅ | ✅ | 制卡把整份词典 CSS 内联进每个释义字段，AnkiDroid 预览 TransactionTooLargeException 打不开 |

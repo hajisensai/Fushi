@@ -1,0 +1,11 @@
+## BUG-3233 · 原盘菜单里的特典映像在作品资料页看不到
+- **报告**：2026-10-10（用户截图：Disc 1 的原盘菜单里有「特典映像」「ウェルカムアナウンス映像」，作品资料页只有正片一集——「这外面没有这里的特典」）
+- **真实性**：✅ 真 bug。实测用户盘 `Disc 1/BDMV/PLAYLIST`：`00000`（0.3 分钟警告 / 厂标）、`00001`（140.5 分钟正片）、`00002`（5 段拼成的 7.8 分钟特典）、`01001`（同一 `00013.m2ts` 连排 7 次的菜单背景）。扫描只导入 `selectBlurayTitles` 选出的标题（相对时长 ≥ 正片 15%，`packages/fushi_engine/lib/media/video/bluray/bluray_disc.dart` `kBlurayRelativeTitleFloor`），7.8 分钟的特典 5.5% 被筛掉、**根本没进库**，作品资料页的特典区（`video_work_detail_page.dart:284` 读 `video_metadata_extras`）自然没有它。
+- **[x] ① 已修复**（62a2ee3c53）— `readBlurayDisc` 额外产出 `BlurayDisc.extras`（`selectBlurayExtras`）：与标题同一套逐条判据（可播放类型、≥ 60 秒、有视频流、片段都在），再去掉菜单背景循环（同一片段重复）、标题的重复与章节子集、特典之间的重复与全部播放。扫描把特典按 `ensureBlurayTitleInLibrary` 入库（带来源、名字取盘名），**不进盘合集**（单片盘仍是单成员合集，卡片 / 封面口径不变）；随后的索引按 BUG-3232 把它挂到正片作品下，作品资料页「花絮」区可见、点开即播。菜单进入的特典同规则，不再进盘合集；BUG-3231 为「菜单特典进合集」加的 `blurayDiscManifest` 随之删除。
+- **[x] ② 已加自动化测试**（62a2ee3c53）— `fushi/test/media/source_library/source_library_scanner_bluray_test.dart`「真实盘形状：特典进库挂到正片下，警告与菜单背景循环不进库」（按用户盘的四条播放列表造盘，走真扫描 + 真索引），以及组「盘上的特典按扫描导入的规则入库」（带来源 / 盘名 / 不进合集 / 幂等 / 重扫 / 孤儿自愈 / 用户改名保留 / 清单合集不算盘合集）。
+- **存量自愈**：用户库里旧版本从菜单建出的孤儿行（无来源、名字「Disc 1 · 00002」「Disc 2 · 00003」）单独躺在库首层（用户截图「好像到外面了」）。`VideoSourceMetadataIndexer` 开头新增 `_adoptOrphanBlurayTitles`：本来源目录下无来源的蓝光盘标题按入库规则认领（补来源、改回盘名），随后照常挂到正片下。启动回填对每个视频来源都跑索引，所以开一次 app 就自愈；没有孤儿时零写入。测试「启动索引认领旧版本留下的蓝光孤儿行」。
+- **审查修复（PR #2058）**：
+  - 墓碑：特典入库原先排在盘合集墓碑守卫之前（`source_library_scanner.dart` `_importBlurayDiscs`），删掉整盘合集后重扫特典照样复活；单独删掉的特典不在任何合集里、不留墓碑，重扫也会回来。现在特典入库排到守卫之后（合集被删 → 整盘标题与特典都不入库），并跳过用户单删过的特典：视频库删除入口 `deleteVideoBooksWithDecision`（`fushi/lib/src/media/video/video_library_delete.dart`）删前用 `planBlurayExtraDeletionTombstones` 认出特典（盘内 `.mpls` 且不是任何合集成员），删成后在盘合集自然键下记成员墓碑（entryKey = 特典的稳定基身份），扫描器经 `deletedBlurayExtraKeysByCollection` 跳过。整盘合集被删时既有 `deleteMediaCollection` 会把成员墓碑收成合集级墓碑，守卫同样生效。
+  - 性能：`ensureBlurayTitleInLibrary` 改为批量的 `ensureBlurayDiscTitlesInLibrary`：一张盘只读一次（扫描器把已读好的盘传进来）、一个事务、全库只列一次，判盘合集归属用已列好的行而不是逐成员查库；扫描与启动认领孤儿行都按盘批量调用。
+  - 测试：`source_library_scanner_bluray_test.dart` 组「删除过的盘 / 特典重扫不复活」（删整盘合集连同条目后重扫零复活；单删特典后重扫不回来、其余照旧）。
+- **备注**：一条播放列表里拼了几段特典（用户盘 `00002` 是 5 段）时，库里是一条、按顺序连播，菜单里分开的小项不单独列出。真机未复测。

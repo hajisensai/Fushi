@@ -1,0 +1,20 @@
+{
+  "onedrive": {
+    "clientId": "49f7e6d1-fab5-48ef-90ab-13ce04986b46",
+    "mobileRedirectUri": "fushi://auth/onedrive",
+    "retainLegacyRedirectUri": "hibiki://auth/onedrive",
+    "desktopLoopbackPort": 0,
+    "cloudVerification": "verified",
+    "verifiedOn": "2026-10-10",
+    "observedRedirectUris": ["http://localhost", "hibiki://auth/onedrive", "fushi://auth/onedrive"]
+  },
+  "dropbox": {
+    "clientId": "dv2sk1o33j6pfi8",
+    "mobileRedirectUri": "fushi://auth/dropbox",
+    "retainLegacyRedirectUri": "hibiki://auth/dropbox",
+    "desktopLoopbackPort": 9004,
+    "cloudVerification": "verified",
+    "verifiedOn": "2026-10-10",
+    "observedRedirectUris": ["fushi://auth/dropbox", "http://localhost:9004"]
+  }
+}

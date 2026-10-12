@@ -1,12 +1,15 @@
 // LucaSystem (Prototype) identity probe.
 //
-// Structural rule, both halves required:
+// Structural rule for the original boot-configuration layout:
 //   1. `system.cnf` next to the executable is the engine's tab-separated
 //      boot configuration: it declares TARGET_PLATFORM and the design
 //      SCREEN_WIDTH / SCREEN_HEIGHT;
 //   2. the `files` directory beside it holds at least one `*.PAK` whose whole
 //      index reads under exactly one of the engine's index layouts
 //      (luca_pak.h).  A magic or a file name alone is not enough.
+// Win64 engines without that boot file must instead have at least two
+// completely validated root PAK indexes. Both paths additionally require
+// the architecture's unique MESSAGE code contract before installing hooks.
 //
 // The executable name, title and hash are never consulted.  The hook sites
 // are resolved separately from the image's own code (luca_text_core.h); a
@@ -109,19 +112,22 @@ inline bool IsLucaArchiveFile(const std::wstring& path) {
 }
 
 inline bool DirectoryHasLucaArchive(const std::wstring& directory,
-                                    size_t scan_limit) {
+                                    size_t scan_limit, size_t required = 1u) {
   WIN32_FIND_DATAW found = {};
   const std::wstring glob = directory + L"\\*.pak";
   HANDLE search = FindFirstFileW(glob.c_str(), &found);
   if (search == INVALID_HANDLE_VALUE) return false;
   bool matched = false;
+  size_t matches = 0u;
   size_t scanned = 0u;
   do {
     if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) continue;
     if (++scanned > scan_limit) break;
     if (IsLucaArchiveFile(directory + L"\\" + found.cFileName)) {
-      matched = true;
-      break;
+      if (++matches >= required) {
+        matched = true;
+        break;
+      }
     }
   } while (FindNextFileW(search, &found));
   FindClose(search);
@@ -136,7 +142,14 @@ inline bool MatchesLucaLayout(const std::wstring& directory,
                                   reinterpret_cast<uint8_t*>(text),
                                   sizeof(text), &read) ||
       !IsLucaSystemCnf(std::string(text, read))) {
+#if defined(_M_X64)
+    // Modern builds embed their boot configuration. Require two fully
+    // validated archives here; installation additionally requires the
+    // unique x64 MESSAGE sites and their shared VM cursor contract.
+    return DirectoryHasLucaArchive(directory + L"\\files", scan_limit, 2u);
+#else
     return false;
+#endif
   }
   return DirectoryHasLucaArchive(directory + L"\\files", scan_limit);
 }

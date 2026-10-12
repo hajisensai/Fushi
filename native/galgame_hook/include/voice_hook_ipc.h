@@ -142,7 +142,7 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 // game itself, not the lookup popup suppression contract.
 constexpr uint32_t kSharedVersion = 25;
 
-enum class SiglusTextOwner : uint32_t {
+enum class NativeTextOwner : uint32_t {
   kPending = 0,
   kNotApplicable = 1,
   kNativeOwned = 2,
@@ -1428,7 +1428,7 @@ struct SharedHeader {
   volatile uint32_t adapter_report_seq;    // 单调；0 = 从未上报过（≠"没有 adapter"）
   // v24, hook worker -> injector, single writer. Initialize before Ready;
   // Pending may become one terminal value and never return to Pending.
-  volatile uint32_t siglus_text_owner;
+  volatile uint32_t native_text_owner;
   // ── v25 game-stream native input（host→hook request；hook→host ack）───────
   // request_seq 的最高位是写令牌。payload 只描述目标 HWND 和当前 held button mask，
   // 不携带屏幕坐标，也不允许注入侧改变桌面全局输入状态。deadline_tick_ms 使用
@@ -2806,8 +2806,8 @@ inline bool IsLookupFrameSane(const SharedHeader* header,
 }
 
 static_assert(sizeof(SharedHeader) % 8 == 0, "SharedHeader must stay 8-aligned");
-static_assert(offsetof(SharedHeader, siglus_text_owner) % 4 == 0,
-              "Siglus ownership must support aligned Interlocked access");
+static_assert(offsetof(SharedHeader, native_text_owner) % 4 == 0,
+              "Native text ownership must support aligned Interlocked access");
 static_assert(offsetof(SharedHeader, game_stream_input_request_seq) % 4 == 0,
               "Game-stream input seq must support aligned Interlocked access");
 static_assert(sizeof(LookupHitSlot) % 8 == 0, "LookupHitSlot must stay 8-aligned");

@@ -282,9 +282,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   Future<AnkiConnectService> _getService() async =>
       _serviceForSettings(await loadSettings());
 
-  /// 集合级长任务（媒体去重）用的服务：同一组连接设置，单请求预算换成
-  /// [AnkiConnectService.kLongTaskTimeout]。不改缓存实例——制卡等交互路径
-  /// 仍要 10 秒内失败（BUG-2824）。
+  /// 集合级长任务（媒体去重、卡组新卡重排）用的服务：同一组连接设置，单请求
+  /// 预算换成 [AnkiConnectService.kLongTaskTimeout]。不改缓存实例——制卡等交互
+  /// 路径仍要 10 秒内失败（BUG-2824）。
   Future<AnkiConnectService> _getLongTaskService() async {
     if (_fixedService != null) return _fixedService;
     final AnkiSettings settings = await loadSettings();
@@ -1248,7 +1248,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
   @override
   Future<List<AnkiCardInfo>> listNewCards(String deckName) async {
-    final AnkiConnectService service = await _getService();
+    // 整牌组规模：`cardsInfo` 每张卡都带渲染好的问答 HTML，实测一批 200 张就有
+    // 18 MB；交互用的 10 秒预算在大牌组 / 慢机器上会把重排拦腰截断（BUG-3272）。
+    final AnkiConnectService service = await _getLongTaskService();
     final String query = ankiDeckNewCardsQuery(
       await service.getDeckNamesAndIds(),
       deckName,
@@ -1275,7 +1277,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         failures: <int, String>{},
       );
     }
-    final AnkiConnectService service = await _getService();
+    final AnkiConnectService service = await _getLongTaskService();
     final List<AnkiConnectBatchResult> results =
         await service.setCardsDueMany(updates);
     final Map<int, String> failures = <int, String>{};

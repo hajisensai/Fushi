@@ -101,6 +101,9 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
       '外接 qBittorrent WebUI，默认 127.0.0.1:8080（用户可改成局域网 NAS）。',
   'packages/fushi_engine/lib/media/torrent/torznab_client.dart':
       '用户自配 indexer，实践中多为自建/局域网/loopback（源码里另有 loopback 明文放行判据）。',
+  'packages/fushi_engine/lib/sync/fushi_sync_server/video.part.dart':
+      '互联 host 把蓝光加密分段转给本进程的 AACS 解密回环（127.0.0.1:<port>，持有即可读'
+          '明文的 bearer URL，BUG-3236）；走用户代理会把这条本机请求和它的能力 URL 一起送出去。',
   'packages/fushi_server/lib/src/ctl/admin_client.dart':
       '`fushi_server ctl` 打本机正在运行的 serve 管理 API：通配绑定改写成 127.0.0.1，'
           'TLS 按本地证书指纹钉死；走用户代理会把带 admin_token 的本机请求送进代理。',
@@ -133,7 +136,7 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
 
 /// 登记在案的文件总数（装配点 + 豁免）。**这是自校验用的哨兵**：改清单必须同步改这个数，
 /// 光靠「新增未登记即红」挡不住「悄悄多登记一条」。
-const int kRegisteredOutboundFileCount = 26;
+const int kRegisteredOutboundFileCount = 27;
 
 /// 裸出站构造的判据。
 ///

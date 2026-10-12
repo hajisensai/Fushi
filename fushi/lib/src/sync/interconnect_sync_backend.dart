@@ -2400,6 +2400,14 @@ class InterconnectSyncBackend extends SyncBackend
         'refusing to save it as the original video',
       );
     }
+    // 蓝光标题是多段 m2ts 拼起来的播放列表，没有「一个原文件」可存；[streamUrl]
+    // 是 `edl://` 段表。只能远端播放，不能整段下载。
+    if (urls.discTitle != null) {
+      throw SyncBackendError(
+        'remote video $id is a Blu-ray title; it can be streamed but not '
+        'downloaded as a single file',
+      );
+    }
     if (cancelled) throw const RemoteDownloadCancelled();
     // TODO-961 M1: https 端点（_activeFingerprint 非空）走 pinned client；明文 http
     // 用裸 client（行为零变化）。stream token URL 自带鉴权，无需额外头。每次下载

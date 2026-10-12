@@ -1,8 +1,9 @@
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
-import 'package:drift/drift.dart' show Value;
+import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_input.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_bar.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_focus_host.dart';
@@ -2165,6 +2166,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   int _discBindingGeneration = 0;
   int? _discNativeGeneration;
   bool _discMenuWasActive = false;
+
+  /// 原盘菜单顶栏（返回 / 主菜单 / 弹出菜单）的显隐。原盘菜单把常规控制条整个换掉，
+  /// media_kit 的自动隐藏够不着它，所以由 [_pokeDiscMenuChrome] 按与控制条同一节奏
+  /// （[_videoControlsHoverDuration]）自己淡出；指针悬停或焦点落在顶栏上时顶住。
+  final ValueNotifier<bool> _discMenuChromeVisible = ValueNotifier<bool>(true);
+  Timer? _discMenuChromeHideTimer;
+  bool _discMenuChromeHovered = false;
+  bool _discMenuChromeFocused = false;
   List<SubtitleTrack>? _discLastSubtitleTracks;
   int _discSubtitleTracksRevision = 0;
   String get _activeBookUid => _discBookUid ?? widget.bookUid;
@@ -3994,6 +4003,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // 外挂，libmpv 才会让它与视频时间轴同步出声（修「初始无声、跳转后才有声」）；不再等
         // load 返回后才挂（那时 play 已开始，新加音轨不会自动 seek 到当前位置 → 无声）。
         externalAudioTrackUrl: urls.audioStreamUrl,
+        // 蓝光标题：host 下发段表，按本地蓝光同一套 EDL 播放（光盘菜单远端不可用）。
+        remoteDiscTitle: urls.discTitle,
       );
       if (seq == _episodeLoadSeq && mounted && !_failed) {
         _startRemotePlaybackSession(client, info, initialPositionMs);
@@ -4899,6 +4910,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-1158：常规载入（新视频/换集）默认探测 HLS master 画质档；画质切档自身的
     // 重载传 false，避免用 variant（media playlist）URL 重探测把档位列表清空。
     bool detectHls = true,
+    // 互联 host 的蓝光标题段表（见 [VideoPlayerController.load] 的同名参数）。
+    BlurayRemoteTitle? remoteDiscTitle,
   }) async {
     // 新一次载入作废上一次的网络流「没打开」判定（换集 / 重试共用同一 controller，
     // 旧定时器不得给新一程判死）。
@@ -5015,6 +5028,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         httpHeaderFields: _streamHttpHeaderFields,
         autoPlay: !_sourceReviewActive,
         externalAudioTrackUrl: externalAudioTrackUrl,
+        remoteDiscTitle: remoteDiscTitle,
         onEmbeddedSubtitleAutoLoad: _handleEmbeddedSubtitleAutoLoad,
       );
     } catch (e, stack) {
@@ -5039,7 +5053,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-1000：远端/流视频（videoPath==null）把制卡抽取源设为可 seek 的流 URL，使
     // ImmersionMiningEngine 能从流 URL 按时间戳裁 GIF/音频（本地视频仍用 videoPath）。
     // 覆盖是幂等的：本地/空时清除，避免换片残留上一条流 URL。
-    controller.setMiningSourceOverride(videoPath == null ? mediaUri : null);
+    // 远端蓝光标题的 [mediaUri] 是 `edl://`，ffmpeg 打不开：不设成制卡源（host 给了
+    // 低清制卡流时远端载入路径会再覆盖成它）。
+    controller.setMiningSourceOverride(
+      videoPath == null && remoteDiscTitle == null ? mediaUri : null,
+    );
     // TODO-1158：探测当前流是否为 HLS master（多档画质），填充画质菜单。仅常规载入
     // 触发（画质切档的重载 detectHls=false）；网络 .m3u8 直链才 fetch，best-effort。
     if (detectHls) {
@@ -5668,6 +5686,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _immersiveLocked.dispose();
     _lockButtonHideTimer?.cancel();
     _lockButtonVisible.dispose();
+    _discMenuChromeHideTimer?.cancel();
+    _discMenuChromeVisible.dispose();
     _lockButtonHovered.dispose();
     _osdTimer?.cancel();
     _osdNotifier.dispose();
@@ -8121,13 +8141,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: textAlign,
-                  style: TextStyle(
-                    color: _videoChromeNeutralFg,
-                    fontSize: 16 * scale,
-                    height: 1.25,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.1,
-                  ),
+                  style: _m3eTopBarTitleStyle(),
                 ),
                 if (episode != null)
                   Text(
@@ -8178,6 +8192,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       ),
     );
   }
+
+  /// MD3 Expressive 浮动标题胶囊里的作品名字样（播放顶栏与原盘菜单顶栏共用）。
+  TextStyle _m3eTopBarTitleStyle() => TextStyle(
+    color: _videoChromeNeutralFg,
+    fontSize: 16 * _videoUiScale * _controlsDensityScale,
+    height: 1.25,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 0.1,
+  );
 
   /// M3E 顶栏：返回键是否并进标题胶囊——标题在中段（topCenter）、左上组只有返回键时
   /// 合成一颗「返回 + 标题」胶囊（遮挡最小化，2026-10-06）。用户把别的按钮放进左上、
@@ -8570,7 +8593,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 !_kVideoBottomFoldedItems.contains(item),
           )
         : const <VideoBarEntry>[];
-    if (items.isEmpty && folded.isEmpty) return const SizedBox.shrink();
+    // 原盘会话播放正片时，「主菜单 / 弹出菜单」挂在右上组头部：与其它顶栏按钮同一
+    // 显隐（随控制条淡出）、同一外观，窄屏同样收进「⋯」。
+    final List<VideoBarEntry> disc =
+        lastTopRightSegment && controller.isBlurayNavigationSession
+        ? _discNavigationBarEntries(desktop: desktop)
+        : const <VideoBarEntry>[];
+    if (items.isEmpty && folded.isEmpty && disc.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     Widget buttonFor(VideoControlItem item) {
       final LayerLink? popoverLink = item == VideoControlItem.speed
@@ -8621,6 +8652,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         moreButtonBuilder: (VoidCallback open) =>
             _videoBarMoreButton(open, desktop: desktop),
         entries: <VideoBarEntry>[
+          ...disc,
           for (final VideoControlItem item in items)
             _videoBarEntry(
               item,
@@ -8636,7 +8668,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
     return VideoGlassSurface(
       enabled: _appleChrome,
-      padding: items.length > 1
+      padding: items.length + disc.length > 1
           ? EdgeInsets.symmetric(horizontal: 4 * _videoUiScale)
           : EdgeInsets.zero,
       child: buttonGroup(),

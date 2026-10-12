@@ -490,6 +490,7 @@ mixin AnkiNoteComposer {
       for (final mediaEntry in dictionaryMediaTags.entries) {
         value = value.replaceAll(mediaEntry.key, mediaEntry.value);
       }
+      value = degradeUnresolvedDictionaryMedia(value);
       // 旧格式（仍带 gloss-* class）释义的外字中和兜底；新导出不命中门控，原样通过。
       value = normalizeAnkiDictionaryHtml(value);
       // 判空与写入用同一个 trim 口径。此前判空 trim、写入却是原值，于是一个字段里
@@ -503,6 +504,40 @@ mixin AnkiNoteComposer {
       }
     }
     return fields;
+  }
+
+  /// BUG-3270：popup.js 的占位符形如 `fushi_dict_<序号>.<ext>`；缓存文件名中段恒为
+  /// 40 位 sha1（[ankiDictionaryMediaCacheFilename]），序号上限 9 位即与之不相交。
+  /// 属性段按「引号内整段 | 引号外非 `>`」匹配：旧 WebView 序列化属性时不转义 `>`，
+  /// 裸 `[^>]*` 会在 alt 里的 `>` 处截断，整张图漏网。
+  static final RegExp _unresolvedMediaImg = RegExp(
+    r'<img\b(?:"[^"]*"|[^>"])*?\ssrc="fushi_dict_\d{1,9}\.[A-Za-z0-9]+"'
+    r'(?:"[^"]*"|[^>"])*>',
+  );
+  static final RegExp _unresolvedMediaHref = RegExp(
+    r'\s+href="fushi_dict_\d{1,9}\.[A-Za-z0-9]+"',
+  );
+  static final RegExp _imgAlt = RegExp(r'\salt="([^"]*)"');
+
+  /// BUG-3270：把替换后**仍残留**的词典媒体占位符降级成 alt 文本。
+  ///
+  /// 某条外字没存进 Anki（词典取不到字节 / 媒体存储失败）时它不进
+  /// [buildDictionaryMediaTags] 的映射，占位符原样留在字段里——卡片就永久引用一个
+  /// 媒体库里不存在的 `fushi_dict_N.svg`，AnkiDroid 每次渲染都报「卡片内容错误：
+  /// 加载…失败」。降级必须真的落到卡面：`<img>` 换成它的 alt 文本（与 popup.js 没
+  /// 媒体可嵌时的退化同义），外层 `<a>` 去掉指向占位符的 `href`。
+  ///
+  /// alt 来自 outerHTML 序列化：`&` / `"` 已转义，但属性值里的 `<` / `>` 不会被转义，
+  /// 挪进文本节点前必须补上，否则 alt 里的尖括号会被当成标签。
+  @visibleForTesting
+  static String degradeUnresolvedDictionaryMedia(String html) {
+    if (!html.contains('fushi_dict_')) return html;
+    return html
+        .replaceAllMapped(_unresolvedMediaImg, (Match m) {
+          final String alt = _imgAlt.firstMatch(m.group(0)!)?.group(1) ?? '';
+          return alt.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+        })
+        .replaceAll(_unresolvedMediaHref, '');
   }
 
   /// BUG-2606：覆盖 = 这张卡变成「此刻新制会得到的那张」——note 现有的每个字段都要
