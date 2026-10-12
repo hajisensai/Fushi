@@ -2811,6 +2811,68 @@ class JellyfinVideoClient
   /// 照常为 true，页面按 nextStartIndex 接着扫。
   static const int kSearchScanLimit = 500;
 
+  /// 一轮的总数要靠逐页数出来时（[searchRoundTotal]），最多数这么多行。
+  static const int kSearchMeasureLimit = 2000;
+
+  /// 一页搜索结果的服务器总数能不能当作本轮的边界（BUG-3289）。
+  ///
+  /// Emby 4.8.10 / 4.9.1 对不足 4 个字符的 SearchTerm 把 `TotalRecordCount` 报成 0，
+  /// `Items` 却照常给出命中。拿到的行本身就证明「至少有 startIndex + 行数 条」，报得比
+  /// 这还少的总数不可信。偏移越过本轮末尾时（拼接分页里问前一轮的总数）空页是正常的，
+  /// 此时报的非零总数照用；报 0 则分不清「本轮真的为空」还是被清零，同样不可信。
+  static bool searchCountContradicted({
+    required int reportedTotal,
+    required int startIndex,
+    required int rows,
+  }) =>
+      rows > 0
+          ? reportedTotal < startIndex + rows
+          : startIndex > 0 && reportedTotal == 0;
+
+  /// [page]（从 [startIndex] 起、要了 [requested] 行）所在这一轮的真实总数。
+  ///
+  /// 总数与数据一致就用服务器的；不一致时按数据定：一页没要满就是到了本轮末尾，
+  /// 否则从头逐页数到短页为止（[measure]，上限 [kSearchMeasureLimit]）。拼接分页的
+  /// cursor 要靠每一轮的准确总数换算偏移，不能拿下界凑。
+  static Future<int> searchRoundTotal({
+    required JellyfinItemsPage page,
+    required int startIndex,
+    required int requested,
+    required Future<int> Function() measure,
+  }) async {
+    final int rows = page.items.length;
+    if (!searchCountContradicted(
+      reportedTotal: page.totalCount,
+      startIndex: startIndex,
+      rows: rows,
+    )) {
+      return page.totalCount;
+    }
+    if (rows > 0 && rows < requested) return startIndex + rows;
+    return measure();
+  }
+
+  /// 从头逐页数一轮搜索有多少行（只在服务器总数不可信时用）。
+  Future<int> _measureSearchRound(String type, String term) async {
+    int counted = 0;
+    while (counted < kSearchMeasureLimit) {
+      final JellyfinItemsPage page = await api.items(
+        userId: userId,
+        recursive: true,
+        includeItemType: type,
+        searchTerm: term,
+        startIndex: counted,
+        limit: kSearchServerPageSize,
+        fields: 'ProductionYear,OriginalTitle',
+        sortBy: null,
+        sortOrder: null,
+      );
+      counted += page.items.length;
+      if (page.items.length < kSearchServerPageSize) break;
+    }
+    return counted;
+  }
+
   @override
   Future<MediaServerPage> search(
     String query, {
@@ -2841,13 +2903,14 @@ class JellyfinVideoClient
       while (true) {
         final bool enough = hits.length >= limit || scanned >= kSearchScanLimit;
         if (roundTotal != null && (enough || localStart >= roundTotal)) break;
+        final int requested = enough ? 1 : kSearchServerPageSize;
         final JellyfinItemsPage page = await api.items(
           userId: userId,
           recursive: true,
           includeItemType: type,
           searchTerm: term,
           startIndex: localStart,
-          limit: enough ? 1 : kSearchServerPageSize,
+          limit: requested,
           fields: 'ProductionYear,OriginalTitle',
           // BUG-2970：搜索**不能**按名称排序。带 SearchTerm 时 Emby / Jellyfin /
           // 兼容层缺省按相关度排；强制 SortName 会把真命中按字母序打散到几千行
@@ -2856,7 +2919,14 @@ class JellyfinVideoClient
           sortBy: null,
           sortOrder: null,
         );
-        roundTotal = page.totalCount;
+        // BUG-3289：短查询下 Emby 报的总数是 0，先按数据校正，否则「localStart >=
+        // roundTotal」会在收下这页命中之前就 break，整页结果被丢弃。
+        roundTotal = await searchRoundTotal(
+          page: page,
+          startIndex: localStart,
+          requested: requested,
+          measure: () => _measureSearchRound(type, term),
+        );
         if (enough || localStart >= roundTotal || page.items.isEmpty) break;
         scanned += page.items.length;
         final List<MediaServerItem> pageHits = mediaServerItemsFrom(page.items)
