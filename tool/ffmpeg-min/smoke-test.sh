@@ -544,6 +544,84 @@ run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
   -i "$WORK/clip-subbed.mp4" -map 0:s:0 "$WORK/clip-subbed.srt"
 assert_nonempty "$WORK/clip-subbed.srt"
 
+echo "[ffmpeg-min-smoke] verifying audiobook studio loudness + M4B export"
+# Audiobook studio (fushi/lib/src/media/audiobook/tts/studio/). Mirrors the app:
+#   1. per-chapter encode (buildTtsChapterEncodeArgs): ffconcat list of TTS
+#      segments + Dart-written silence WAVs -> aresample async + loudnorm (EBU
+#      R128) + aresample 44.1k -> AAC, `-f mp4` into a chapter .m4a;
+#   2. book export (buildAudiobookExportArgs): concat the chapter files with
+#      `-c copy`, chapters/metadata from an ;FFMETADATA1 side input
+#      (`-f ffmetadata`), jpg/png cover as attached_pic, `-f ipod` -> .m4b.
+# Plus the measurement / trim / limiter / silence filters the studio may use
+# (ebur128, loudnorm print_format=json, volume, alimiter, apad, anullsrc).
+"$FFMPEG_MIN" -hide_banner -nostats -i "$WORK/tone.wav" \
+  -af "loudnorm=I=-19:TP=-3:LRA=11:print_format=json" -f null - \
+  >"$WORK/loudnorm.log" 2>&1 || { cat "$WORK/loudnorm.log" >&2; exit 1; }
+assert_log_contains "$WORK/loudnorm.log" '"input_i"'
+"$FFMPEG_MIN" -hide_banner -nostats -i "$WORK/tone.wav" \
+  -af "ebur128=peak=true" -f null - \
+  >"$WORK/ebur128.log" 2>&1 || { cat "$WORK/ebur128.log" >&2; exit 1; }
+assert_log_contains "$WORK/ebur128.log" "Integrated loudness"
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -filter_complex "anullsrc=r=44100:cl=mono:d=0.5[gap];[gap]volume=-1.0dB,alimiter=limit=0.84,apad=pad_dur=0.3[out]" \
+  -map "[out]" -c:a aac -f mp4 "$WORK/gap.m4a"
+assert_nonempty "$WORK/gap.m4a"
+mkdir -p "$WORK/book"
+{
+  echo "ffconcat version 1.0"
+  echo "file '$WORK/tone.wav'"
+  echo "duration 2.000"
+  echo "file '$WORK/tone.wav'"
+  echo "duration 2.000"
+} > "$WORK/book/ch.ffconcat"
+for ch in 1 2; do
+  run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+    -f concat -safe 0 -i "$WORK/book/ch.ffconcat" -vn \
+    -af "aresample=async=1:min_hard_comp=0.010:first_pts=0,loudnorm=I=-19:TP=-3:LRA=11,aresample=44100" \
+    -ac 1 -c:a aac -b:a 96k -f mp4 "$WORK/book/ch$ch.m4a"
+  assert_nonempty "$WORK/book/ch$ch.m4a"
+done
+{
+  echo "ffconcat version 1.0"
+  echo "file '$WORK/book/ch1.m4a'"
+  echo "duration 4.000"
+  echo "file '$WORK/book/ch2.m4a'"
+  echo "duration 4.000"
+} > "$WORK/book/book.ffconcat"
+cat >"$WORK/book/book.ffmeta" <<'META'
+;FFMETADATA1
+title=Fushi Smoke Book
+album=Fushi Smoke Book
+artist=Fushi Narrator
+album_artist=Fushi Narrator
+
+[CHAPTER]
+TIMEBASE=1/1000
+START=0
+END=4000
+title=第一章
+
+[CHAPTER]
+TIMEBASE=1/1000
+START=4000
+END=8000
+title=第二章
+META
+for cover in cover.jpg cover.png; do
+  run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+    -f concat -safe 0 -i "$WORK/book/book.ffconcat" \
+    -f ffmetadata -i "$WORK/book/book.ffmeta" -i "$WORK/$cover" \
+    -map 0:a -map 2:v -map_metadata 1 -map_chapters 1 \
+    -c copy -disposition:v:0 attached_pic -f ipod "$WORK/book/book-$cover.m4b"
+  assert_nonempty "$WORK/book/book-$cover.m4b"
+  "$FIXTURE_FFMPEG" -hide_banner -i "$WORK/book/book-$cover.m4b" >"$WORK/book/book-$cover.log" 2>&1 || true
+  assert_log_contains "$WORK/book/book-$cover.log" "major_brand *: *M4[AB]"
+  assert_log_contains "$WORK/book/book-$cover.log" "Chapter #0:1"
+  assert_log_contains "$WORK/book/book-$cover.log" "title *: *Fushi Smoke Book"
+  assert_log_contains "$WORK/book/book-$cover.log" "attached pic"
+  run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/book/book-$cover.m4b" -map 0:a -f null -
+done
+
 echo "[ffmpeg-min-smoke] verifying bundled ffprobe (BUG-1420)"
 # BUG-1420: ffprobe was never built (--disable-ffprobe) even though Dart's
 # resolveFfprobeExecutable() has always assumed it ships next to ffmpeg. Both of

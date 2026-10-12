@@ -6,6 +6,7 @@
 #   - 视频帧/封面（-frames:v 1 → jpg/png）
 #   - YouTube/远端制卡（http(s) googlevideo 流 + -reconnect 系列网络韧性开关）
 #   - 片段导出 mp4（h264/libx264 + aac → .mp4，跨平台可打开，TODO-1257）
+#   - 有声书工作室成书（TTS 渲染 → 响度归一 loudnorm → M4B，含章节/封面/元数据）
 #
 # 产物是**两个** exe：ffmpeg(.exe) + ffprobe(.exe)。BUG-1420 之前本脚本传
 # `--disable-ffprobe`，但 Dart 侧 resolveFfprobeExecutable()（ffmpeg_backend.dart）
@@ -281,7 +282,13 @@ cd "$SRC"
 # `-safe` 是 concat demuxer 的私有选项：缺 concat 时 ffmpeg 报 "Unrecognized option
 # 'safe'" 直接退出，gal 片段（WebM / MP4 两档）在正式版全挂、只能靠调用方降级成动图。
 # 列表里的每一帧再经上面的 image2（按扩展名）+ mjpeg 解码器读入。LGPL，体积增量近零。
-DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe,hls,concat"
+# ffmetadata：有声书工作室导出 M4B 时把章节表 + 书名/作者等元数据写成 `;FFMETADATA1`
+# 文本，作为第二路输入 `-i chapters.txt -map_metadata 1 -map_chapters 1` 喂给封装。
+# 缺它这个文本文件无从识别 → AVERROR_INVALIDDATA，成书没有章节。纯文本解析，LGPL，零依赖。
+# 封面（`-i cover.jpg|png -map N:v -c:v copy -disposition:v attached_pic`）不需要新增
+# 组件：image2 demuxer（按扩展名）+ mjpeg/png parser/decoder 早已在表内，mp4/ipod 的
+# movenc 把 mjpeg/png 附图写成 `covr` atom。
+DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe,hls,concat,ffmetadata"
 # libdav1d（而不是原生 `av1`）：FFmpeg 自带的 `av1` 解码器**只是 hwaccel 挂钩壳**
 # （libavcodec/av1dec.c，allcodecs.c 里注明 "hwaccel hooks only, so prefer external
 # decoders"），本 build `--disable-everything` 后一个 hwaccel 都没有，于是任何 AV1 源
@@ -333,7 +340,13 @@ ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,libvpx_vp9,li
 # sup：图形字幕整轨 OCR（graphic_subtitle_track_ocr.dart）把 PGS 轨 `-c copy -f sup`
 # 原样抽成 `.sup` 段流再由 Dart 解析。supenc.c 只是给每段补 `PG`+PTS/DTS 头，LGPL、
 # 几十行；缺它 ffmpeg 报 "Requested output format 'sup' is not known"（exit -22）。
-MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts,sup"
+# ipod：有声书工作室导出 `.m4b`（ffmpeg 按 .m4a/.m4b 扩展名自动选 ipod，也可 `-f ipod`）。
+# 与 mov/mp4 同一个 movenc，体积增量近零；区别在模式位：ipod 模式写 `M4B ` brand +
+# iTunes `ilst` 元数据，并且（与 mov 一样）生成 QuickTime 文本章节轨——Apple Books /
+# iOS 播放器认的是这条章节轨，mp4 模式只写 Nero `chpl`。
+# ⚠️ 入库二进制重编之前桌面上仍没有 ipod：BUG-460 / TODO-1217 那几条「桌面句子音频
+# 写 .aac 不写 .m4a」的约束继续成立，别因为配方里有了 ipod 就把它们改回 .m4a。
+MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts,sup,ipod"
 # pad：有声书片段导出（buildFfmpegImageAudioToVideoArgs）用
 #   `scale=W:H:force_original_aspect_ratio=decrease,pad=W:H:(ow-iw)/2:(oh-ih)/2:color=black`
 #   把文本图缩进框内再黑边填充到精确 WxH；漏 pad → "No option name near '...'" +
@@ -358,7 +371,16 @@ MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts,
 #   时一致。移动端自编 ffmpeg-kit（完整内建滤镜集）本就带；桌面精简构建漏掉它会让
 #   倍速制卡整条 ffmpeg 失败（"No such filter: 'atempo'"）→ 卡片没句子音频。
 # Blu-ray MPLS concat input must discard packets decoded outside each IN/OUT.
-FILTERS="scale,fps,split,palettegen,paletteuse,format,aformat,aresample,anull,null,copy,setpts,asetpts,select,aselect,trim,atrim,pad,asetnsamples,astats,ametadata,overlay,atempo"
+# loudnorm / ebur128 / volume / alimiter：有声书工作室成书的响度处理。TTS 各角色/
+#   各引擎输出响度参差，成书前按 EBU R128（有声书常用 -18~-16 LUFS）归一：
+#   loudnorm 两遍（第一遍 print_format=json 测量、第二遍 measured_* 线性归一），
+#   ebur128 只做测量（质检报告），volume 做角色间增益微调，alimiter 兜真峰值。
+#   全是内建 filter，零外部库；loudnorm 内部的 R128 计算（libavfilter/ebur128.c）随
+#   filter 一起编进来。loudnorm 输出固定 192 kHz，下游靠已在表内的 aresample 降回。
+# apad / anullsrc：章节间/段落间插静音（apad 尾补、anullsrc 在 -filter_complex 里做
+#   静音源）。只开 filter、不开 lavfi 输入设备：`-f lavfi` 要拖进 avdevice 链路，而
+#   filter_complex 里直接写 anullsrc 已经够用。
+FILTERS="scale,fps,split,palettegen,paletteuse,format,aformat,aresample,anull,null,copy,setpts,asetpts,select,aselect,trim,atrim,pad,asetnsamples,astats,ametadata,overlay,atempo,loudnorm,ebur128,volume,alimiter,apad,anullsrc"
 PARSERS="h264,hevc,av1,vp9,vp8,mpeg4video,mpegvideo,vc1,aac,aac_latm,ac3,dca,mlp,mpegaudio,vorbis,opus,flac,mjpeg,png,webp"
 BSFS="aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb"
 # http/https/tcp/tls/crypto：YouTube/远端制卡（TODO-1214）的 http(s) googlevideo
