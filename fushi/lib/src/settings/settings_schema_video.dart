@@ -788,6 +788,39 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
+          // 字幕描边粗细（#xif6-gtSz7）：沿字形轮廓的真描边，与上面的柔和投影是两层。
+          // 0 = 不描边（默认）。只作用于统一外观，「尊重 .ass 自带样式」时由文件决定。
+          SettingsSliderItem(
+            id: 'video.subtitle.outline',
+            title: t.video_setting_subtitle_outline,
+            icon: Icons.border_style_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 102,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            min: 0,
+            max: kVideoSubtitleMaxOutline,
+            divisions: (kVideoSubtitleMaxOutline * 2).round(),
+            label: (double v) => '${v.toStringAsFixed(1)}px',
+            value: (SettingsContext settingsContext) =>
+                currentVideoSubtitleStyle(settingsContext)
+                    .outlineThickness
+                    .clamp(0, kVideoSubtitleMaxOutline),
+            onChanged: (SettingsContext settingsContext, double v) {
+              previewVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(outlineThickness: v),
+              );
+            },
+            onChangeEnd: (SettingsContext settingsContext, double v) async {
+              await commitVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(outlineThickness: v),
+              );
+            },
+            defaultValue: VideoSubtitleStyle.defaults.outlineThickness,
+          ),
           SettingsSliderItem(
             id: 'video.subtitle.bg_opacity',
             title: t.video_setting_subtitle_bg_opacity,
@@ -1958,6 +1991,27 @@ SettingsDestination buildVideoDestination() {
               section: t.video_setting_subtitle_appearance,
             ),
             builder: buildVideoSubtitleTextColorRow,
+          ),
+          // 字幕阴影 / 描边颜色调色盘行（#xif6-gtSz7），紧跟各自的粗细滑条。
+          SettingsCustomItem(
+            id: 'video.player.subtitle_shadow_color',
+            visible: videoHostVisible,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 101,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            builder: buildVideoSubtitleShadowColorRow,
+          ),
+          SettingsCustomItem(
+            id: 'video.player.subtitle_outline_color',
+            visible: videoHostVisible,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 103,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            builder: buildVideoSubtitleOutlineColorRow,
           ),
           // 一键无背景：与相邻 bg_opacity 滑到 0 等效的便捷动作，全局设置页有意不
           // 单列（冗余），播放页快捷面板保留。

@@ -68,7 +68,8 @@ class ClipSubtitleLayout {
       Object.hash(scale, fontSize, bottomPadding, maxWidth, shadowThickness);
 
   @override
-  String toString() => 'ClipSubtitleLayout(scale: $scale, font: $fontSize, '
+  String toString() =>
+      'ClipSubtitleLayout(scale: $scale, font: $fontSize, '
       'bottom: $bottomPadding, maxWidth: $maxWidth)';
 }
 
@@ -133,28 +134,40 @@ Future<Uint8List?> renderClipSubtitlePng({
   );
 
   try {
-    final TextPainter painter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          fontSize: layout.fontSize,
-          fontFamily: fontFamily,
-          color: style.textColor ?? const Color(0xFFFFFFFF),
-          fontWeight: _weightOf(
-            style.fontWeight ?? VideoSubtitleStyle.defaultFontWeight,
-          ),
-          // 与屏幕上同一套柔和投影（[VideoSubtitleStyle.defaults] 的 Niratan 观感），
-          // 粗细已按 scale 换算到画面像素。
-          shadows: buildSubtitleSoftShadow(
-            style.shadowColor ?? const Color(0xE6000000),
-            layout.shadowThickness,
-          ),
-        ),
+    final TextStyle fillStyle = TextStyle(
+      fontSize: layout.fontSize,
+      fontFamily: fontFamily,
+      color: style.textColor ?? const Color(0xFFFFFFFF),
+      fontWeight: _weightOf(
+        style.fontWeight ?? VideoSubtitleStyle.defaultFontWeight,
       ),
+      // 与屏幕上同一套柔和投影（[VideoSubtitleStyle.defaults] 的 Niratan 观感），
+      // 粗细已按 scale 换算到画面像素。
+      shadows: buildSubtitleSoftShadow(
+        style.shadowColor ?? const Color(0xE6000000),
+        layout.shadowThickness,
+      ),
+    );
+    // 用户描边（#xif6-gtSz7）：与屏幕同一支画笔，粗细按 scale 换算；有描边时投影挂在
+    // 描边层、填充层不带投影（阴影 < 描边 < 填充）。
+    final Paint? outline = buildSubtitleStrokePaint(
+      style.resolveOutlineColor(),
+      subtitleOutlineStrokeWidth(style.outlineThickness * layout.scale),
+    );
+    TextPainter painterFor(TextStyle s) => TextPainter(
+      text: TextSpan(text: text, style: s),
       textAlign: TextAlign.center,
       textDirection: TextDirection.ltr,
       maxLines: null,
     )..layout(maxWidth: layout.maxWidth);
+    final TextPainter? strokePainter = outline == null
+        ? null
+        : painterFor(fillStyle.copyWith(color: null, foreground: outline));
+    final TextPainter painter = painterFor(
+      outline == null
+          ? fillStyle
+          : fillStyle.copyWith(shadows: const <Shadow>[]),
+    );
 
     final ui.PictureRecorder recorder = ui.PictureRecorder();
     final Canvas canvas = Canvas(recorder);
@@ -164,18 +177,21 @@ Future<Uint8List?> renderClipSubtitlePng({
         ? layout.bottomPadding
         : frame.height - layout.bottomPadding - painter.height;
     final double dx = (frame.width - painter.width) / 2;
+    strokePainter?.paint(canvas, Offset(dx, dy));
     painter.paint(canvas, Offset(dx, dy));
 
     final ui.Picture picture = recorder.endRecording();
     final ui.Image image = await picture.toImage(frame.width, frame.height);
     try {
-      final ByteData? png =
-          await image.toByteData(format: ui.ImageByteFormat.png);
+      final ByteData? png = await image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
       return png?.buffer.asUint8List();
     } finally {
       image.dispose();
       picture.dispose();
       painter.dispose();
+      strokePainter?.dispose();
     }
   } catch (_) {
     return null;

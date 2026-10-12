@@ -688,6 +688,9 @@ extension _VideoLayout on _VideoFushiPageState {
                               ),
                               shadowThickness: _subtitleStyle
                                   .resolveShadowThickness(_videoUiScale),
+                              outlineColor: _subtitleStyle
+                                  .resolveOutlineColor(),
+                              outlineThickness: _subtitleStyle.outlineThickness,
                               backgroundColor: _subtitleStyle
                                   .resolveBackgroundColor(
                                     _subtitleBackgroundColor(

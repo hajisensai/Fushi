@@ -294,6 +294,20 @@ SubtitleLayerVAnchor? resolveLayerForcedAnchor({
 /// 纯黑，实际可见透明度由 opacity 决定。
 const Color kDefaultSubtitleBackgroundColor = Color(0xFF000000);
 
+/// 字幕**描边**的默认颜色（用户反馈 #xif6-gtSz7：描边颜色 / 粗细可自定义）。描边默认关
+/// （[VideoSubtitleStyle.outlineThickness] = 0，外观与历史一致）；用户第一次把粗细拉起来时
+/// 若没选过颜色就用纯黑——白字黑边是字幕描边的惯例。
+const Color kDefaultSubtitleOutlineColor = Color(0xFF000000);
+
+/// 描边粗细的上限（逻辑像素），持久化 clamp 与设置滑条 max 同一真相源。
+const double kVideoSubtitleMaxOutline = 8;
+
+/// 用户描边粗细（**向外可见**的宽度，与 ASS `\bord` 同义）→ Flutter 居中 stroke 的
+/// `strokeWidth`。居中描边内半边被上层填充盖住、可见只剩一半，故 ×2（与 ASS 路径的
+/// `assOutlineStrokeWidth` 同一换算）。<=0 返回 0 = 不画描边层。
+double subtitleOutlineStrokeWidth(double visiblePx) =>
+    visiblePx <= 0 ? 0 : visiblePx * 2;
+
 /// 字幕正文行高（`TextStyle.height`）。播放页 [VideoSubtitleOverlay] 与设置页的
 /// 字幕样式预览（`SubtitleStylePreview`）读同一个常量——预览要和真字幕同一套几何，
 /// 不能各写一份字面量后慢慢漂开。
@@ -345,6 +359,8 @@ class VideoSubtitleStyle {
     this.secondaryBottomPadding,
     this.mainAnchor = SubtitleLayerVAnchor.bottom,
     this.secondaryAnchor,
+    this.outlineColor,
+    this.outlineThickness = 0,
   });
 
   /// 默认字重 400（常规），与 mpv 默认（`--sub-bold=no` → Regular）对齐：同一字体
@@ -436,6 +452,17 @@ class VideoSubtitleStyle {
   /// 锚定解析优先级见 [resolveLayerForcedAnchor]。
   final SubtitleLayerVAnchor? secondaryAnchor;
 
+  /// 统一外观下的**真描边**颜色（沿字形轮廓的硬边，与 [shadowColor] 的柔和投影是两层）。
+  /// null = 用默认 [kDefaultSubtitleOutlineColor]。只在「尊重 .ass 自带样式」关、或 cue
+  /// 不带 ASS 样式时生效——尊重 ASS 时描边由文件的 \bord / \3c 决定。
+  final Color? outlineColor;
+
+  /// 统一外观下的描边粗细（逻辑像素，0..[kVideoSubtitleMaxOutline]）。默认 0 = 不描边，
+  /// 旧数据缺字段也是 0，外观像素级不变。
+  final double outlineThickness;
+
+  Color resolveOutlineColor() => outlineColor ?? kDefaultSubtitleOutlineColor;
+
   VideoSubtitleStyle copyWith({
     double? fontSize,
     Color? textColor,
@@ -453,6 +480,8 @@ class VideoSubtitleStyle {
     // null = 不改（保持当前值，含「仍自动对侧」的 null 态）。仅拖拽副字幕落点写入；
     // 无「改回自动」的入口，与 secondaryBottomPadding 同款单向语义。
     SubtitleLayerVAnchor? secondaryAnchor,
+    Color? outlineColor,
+    double? outlineThickness,
     // [backgroundColor] 与 null 语义冲突：`null` 既是「不改」又是「显式清空跟随默认黑」。
     // 用显式 [resetBackgroundColor] 标志区分——true 时把 [backgroundColor] 强制清成 null
     // （回到 [kDefaultSubtitleBackgroundColor] 固定默认），供设置面板「默认（黑）」选项用。
@@ -473,6 +502,8 @@ class VideoSubtitleStyle {
           secondaryBottomPadding ?? this.secondaryBottomPadding,
       mainAnchor: mainAnchor ?? this.mainAnchor,
       secondaryAnchor: secondaryAnchor ?? this.secondaryAnchor,
+      outlineColor: outlineColor ?? this.outlineColor,
+      outlineThickness: outlineThickness ?? this.outlineThickness,
     );
   }
 
@@ -513,6 +544,8 @@ class VideoSubtitleStyle {
         // 对侧）也照写，decode 侧 null → 继续自动。
         'mainAnchor': s.mainAnchor.name,
         'secondaryAnchor': s.secondaryAnchor?.name,
+        'outlineColor': s.outlineColor?.toARGB32(),
+        'outlineThickness': s.outlineThickness,
       });
 
   static VideoSubtitleStyle decode(String? json) {
@@ -562,6 +595,7 @@ class VideoSubtitleStyle {
       final int? argb = colorArgb(d['textColor']);
       final int? shadowArgb = colorArgb(d['shadowColor']);
       final int? backgroundArgb = colorArgb(d['backgroundColor']);
+      final int? outlineArgb = colorArgb(d['outlineColor']);
       return VideoSubtitleStyle(
         fontSize: num2d(d['fontSize'], defaults.fontSize).clamp(10, 72),
         textColor: argb == null ? null : Color(argb),
@@ -587,6 +621,11 @@ class VideoSubtitleStyle {
         mainAnchor:
             _decodeAnchor(d['mainAnchor']) ?? SubtitleLayerVAnchor.bottom,
         secondaryAnchor: _decodeAnchor(d['secondaryAnchor']),
+        // 描边（#xif6-gtSz7）：缺字段（旧数据）→ 无描边、默认色，外观不变。
+        outlineColor: outlineArgb == null ? null : Color(outlineArgb),
+        outlineThickness: num2d(d['outlineThickness'], 0)
+            .clamp(0, kVideoSubtitleMaxOutline)
+            .toDouble(),
       );
     } catch (_) {
       return defaults;

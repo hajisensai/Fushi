@@ -7043,5 +7043,8 @@
   "book_import_no_book_notice_title": "No book selected",
   "book_import_no_book_transcribe_hint": "You can import with audio alone: transcribe it on device and a book is generated from the transcript when you import.",
   "book_import_no_book_subtitle_hint": "You can import with audio alone: pick a subtitle file for it and a book is generated from the subtitles when you import.",
-  "book_import_no_book_transcribe_action": "Transcribe and generate book"
+  "book_import_no_book_transcribe_action": "Transcribe and generate book",
+  "video_setting_subtitle_shadow_color": "Shadow color",
+  "video_setting_subtitle_outline": "Outline width",
+  "video_setting_subtitle_outline_color": "Outline color"
 }

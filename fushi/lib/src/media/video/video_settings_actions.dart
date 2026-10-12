@@ -593,6 +593,62 @@ Widget buildVideoSubtitleTextColorRow(SettingsContext context) {
   );
 }
 
+/// 字幕**阴影**颜色取色行（#xif6-gtSz7）。取色器只给不透明色，这里保留当前阴影色的
+/// alpha（默认 0.9），只换 RGB——默认柔和投影的「半透明黑」观感不因换色变成实心硬影。
+Widget buildVideoSubtitleShadowColorRow(SettingsContext context) {
+  final VideoSubtitleStyle style = currentVideoSubtitleStyle(context);
+  final Color current =
+      style.shadowColor ?? VideoSubtitleStyle.defaults.shadowColor!;
+  VideoSubtitleStyle applyColor(VideoSubtitleStyle s, Color c) {
+    final Color base =
+        s.shadowColor ?? VideoSubtitleStyle.defaults.shadowColor!;
+    return s.copyWith(
+      shadowColor: Color(
+        (base.toARGB32() & 0xFF000000) | (c.toARGB32() & 0x00FFFFFF),
+      ),
+    );
+  }
+
+  return _buildSubtitleColorRow(
+    context,
+    title: t.video_setting_subtitle_shadow_color,
+    icon: Icons.blur_on_outlined,
+    current: Color(0xFF000000 | (current.toARGB32() & 0x00FFFFFF)),
+    onPreview: (Color c) => previewVideoSubtitleStyle(
+      context,
+      (VideoSubtitleStyle s) => applyColor(s, c),
+    ),
+    onCommit: (Color c) => unawaited(commitVideoSubtitleStyle(
+      context,
+      (VideoSubtitleStyle s) => applyColor(s, c),
+    )),
+  );
+}
+
+/// 字幕**描边**颜色取色行（#xif6-gtSz7）。描边粗细为 0 时选色看不出变化，故把粗细从 0
+/// 顶到可见基线（2px），与背景色行「选了色立刻生效」同一口径。
+Widget buildVideoSubtitleOutlineColorRow(SettingsContext context) {
+  final VideoSubtitleStyle style = currentVideoSubtitleStyle(context);
+  VideoSubtitleStyle applyColor(VideoSubtitleStyle s, Color c) => s.copyWith(
+        outlineColor: c,
+        outlineThickness: s.outlineThickness <= 0 ? 2 : s.outlineThickness,
+      );
+  return _buildSubtitleColorRow(
+    context,
+    title: t.video_setting_subtitle_outline_color,
+    icon: Icons.border_color_outlined,
+    current: style.resolveOutlineColor(),
+    onPreview: (Color c) => previewVideoSubtitleStyle(
+      context,
+      (VideoSubtitleStyle s) => applyColor(s, c),
+    ),
+    onCommit: (Color c) => unawaited(commitVideoSubtitleStyle(
+      context,
+      (VideoSubtitleStyle s) => applyColor(s, c),
+    )),
+  );
+}
+
 /// TODO-1059：字幕背景**颜色**取色行。背景默认 null 走
 /// [kDefaultSubtitleBackgroundColor] 固定黑，取色器初值即该固定黑。选背景色不直接
 /// 改透明度，但透明度为 0 时用户看不到颜色变化，故把透明度从 0 顶到可见基线

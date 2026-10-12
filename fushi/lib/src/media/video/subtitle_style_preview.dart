@@ -210,6 +210,11 @@ class _SubtitleStylePreviewState extends State<SubtitleStylePreview> {
         style.resolveShadowThickness(uiScale),
       ),
     );
+    // 描边（#xif6-gtSz7）：与播放页同一支画笔，粗细不随缩放（逻辑像素）。
+    final Paint? outline = buildSubtitleStrokePaint(
+      style.resolveOutlineColor(),
+      subtitleOutlineStrokeWidth(style.outlineThickness),
+    );
 
     Widget line(String text) => ConstrainedBox(
       constraints: BoxConstraints(
@@ -222,7 +227,7 @@ class _SubtitleStylePreviewState extends State<SubtitleStylePreview> {
         ),
         child: Padding(
           padding: kVideoSubtitleBoxPadding,
-          child: Text(text, textAlign: TextAlign.center, style: textStyle),
+          child: _outlinedText(text, textStyle, outline),
         ),
       ),
     );
@@ -313,6 +318,29 @@ class _SubtitleStylePreviewState extends State<SubtitleStylePreview> {
   }
 
   /// 距锚定边的距离夹到 [0, [kVideoSubtitleMaxPadding]]（与滑条 / 持久化同一上限）。
+  /// 预览正文：有描边时「描边层（带投影）+ 填充层」叠放，与播放页统一外观同一 z 序
+  /// （阴影 < 描边 < 填充）；无描边时单层，与历史预览像素一致。
+  static Widget _outlinedText(String text, TextStyle style, Paint? outline) {
+    if (outline == null) {
+      return Text(text, textAlign: TextAlign.center, style: style);
+    }
+    return Stack(
+      alignment: Alignment.center,
+      children: <Widget>[
+        Text(
+          text,
+          textAlign: TextAlign.center,
+          style: style.copyWith(color: null, foreground: outline),
+        ),
+        Text(
+          text,
+          textAlign: TextAlign.center,
+          style: style.copyWith(shadows: const <Shadow>[]),
+        ),
+      ],
+    );
+  }
+
   static double _clampDistance(double padding) =>
       padding.clamp(0, kVideoSubtitleMaxPadding).toDouble();
 
