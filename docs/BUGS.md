@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2960 条。点号进各自文件。
+> 共 2961 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3296](bugs/BUG-3296-video-enhance-off-vertical-squash.md) | 🚧 | 🚧 | Windows 关闭画质增强后画面纵向被压扁约 0.74% |
 | [BUG-3285](bugs/BUG-3285-video-skip-cue-stale-subtitle-stack.md) | ✅ | ✅ | 上/下一句跳转旧字幕残留、新句被顶高 |
 | [BUG-3272](bugs/BUG-3272-anki-auto-reposition-failure-reason-lost.md) | ✅ | ✅ | 自动重排失败原因被吞且整牌组请求走交互超时 |
 | [BUG-3271](bugs/BUG-3271-expansion-tile-pagestorage-collision.md) | ✅ | ✅ | 视频设置面板字幕分类下方整片灰（展开区与滚动视图 PageStorage 槽冲突） |
