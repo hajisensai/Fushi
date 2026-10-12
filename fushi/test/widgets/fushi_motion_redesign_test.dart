@@ -93,6 +93,32 @@ void main() {
       await gesture.up();
     });
 
+    testWidgets('按下后本卡被拆掉，迟到的 pointerUp 不抛（ufzhkidhLr）', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          const FushiPressScale(
+            child: ColoredBox(
+              color: Colors.blue,
+              child: SizedBox(width: 120, height: 160),
+            ),
+          ),
+        ),
+      );
+      final TestGesture gesture = await tester.startGesture(
+        tester.getCenter(find.byType(FushiPressScale)),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100)); // 缩放已离开 1
+      // 点击回调里开了模态 / 原生对话框，把本卡拆掉；指针路径仍记着旧渲染对象。
+      await tester.pumpWidget(_wrap(const SizedBox.shrink()));
+      expect(find.byType(FushiPressScale), findsNothing);
+      await gesture.up();
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    });
+
     for (final (String name, bool eink, bool reduce) in <(String, bool, bool)>[
       ('墨水屏', true, false),
       ('减弱动态效果', false, true),
