@@ -914,6 +914,8 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
       title: t.audiobook_studio_title,
       leadingIcon: FushiIcons.audiobook,
       leadingTone: SettingsIconTone.purple,
+      // 让位由 [TtsStudioLayout] 在固定的步骤导航之上一次性吃掉。
+      bodyConsumesTopPadding: true,
       bodyBuilder:
           (
             BuildContext context,

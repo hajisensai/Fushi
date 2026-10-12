@@ -76,11 +76,21 @@ class TtsStudioLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final bool wide = ttsStudioUsesWideLayout(constraints.maxWidth);
-        return wide ? _buildWide(context) : _buildNarrow(context);
-      },
+    // 设置页壳把页头让位放在 padding.top 里（bodyConsumesTopPadding）：骨架顶上
+    // 是固定的步骤导航（侧栏 / 选择片），不滚到页头底下，整体让开一次；步骤正文
+    // 的滚动视图在这之下，不再重复让位（与「朗读声音」的双栏同一约定）。
+    return Padding(
+      padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
+      child: MediaQuery.removePadding(
+        context: context,
+        removeTop: true,
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final bool wide = ttsStudioUsesWideLayout(constraints.maxWidth);
+            return wide ? _buildWide(context) : _buildNarrow(context);
+          },
+        ),
+      ),
     );
   }
 

@@ -73,6 +73,52 @@ void main() {
     return picked;
   }
 
+  // 设置页壳以 bodyConsumesTopPadding 把页头让位交给正文：骨架顶上的固定步骤
+  // 导航（选择片 / 侧栏）整体让开一次，正文滚动视图不再重复让位。
+  for (final Size size in <Size>[const Size(400, 800), const Size(1280, 800)]) {
+    testWidgets('${size.width.toInt()}: consumes the shell top inset once', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      double? bodyTop;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(
+              size: size,
+              padding: const EdgeInsets.only(top: 120),
+            ),
+            child: Scaffold(
+              body: TtsStudioLayout(
+                steps: steps,
+                selected: TtsStudioStep.content,
+                onSelect: (TtsStudioStep _) {},
+                body: Builder(
+                  builder: (BuildContext context) {
+                    bodyTop = MediaQuery.paddingOf(context).top;
+                    return const SizedBox.expand();
+                  },
+                ),
+                footerBuilder: (BuildContext context, bool wide) =>
+                    const SizedBox(height: 40),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final Finder nav = find.byKey(
+        ValueKey<String>(
+          size.width >= 840 ? 'tts-studio-sidebar' : 'tts-studio-step-tabs',
+        ),
+      );
+      expect(tester.getTopLeft(nav).dy, greaterThanOrEqualTo(120));
+      expect(bodyTop, 0);
+    });
+  }
+
   test('breakpoint follows the MD3 expanded width class', () {
     expect(ttsStudioUsesWideLayout(839), isFalse);
     expect(ttsStudioUsesWideLayout(840), isTrue);
