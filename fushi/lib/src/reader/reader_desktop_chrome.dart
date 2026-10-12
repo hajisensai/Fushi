@@ -718,11 +718,15 @@ class ReaderPanelSpringCurve extends Curve {
   }
 }
 
-/// 底部面板不越过停靠位；侧板保留 M3E 的轻微弹簧过冲。
-Curve readerPanelEnterCurve(ReaderPanelPresentation presentation) =>
-    presentation == ReaderPanelPresentation.bottom
-        ? FushiMotion.enter
-        : const ReaderPanelSpringCurve();
+/// 底部面板不越过停靠位；侧板保留 M3E 的轻微弹簧过冲。[apple] 为 true 时
+/// 侧板同样不过冲（iOS / macOS 侧栏 / 检查器是临界阻尼落位，没有 Expressive
+/// 回弹）。
+Curve readerPanelEnterCurve(
+  ReaderPanelPresentation presentation, {
+  bool apple = false,
+}) => presentation == ReaderPanelPresentation.bottom || apple
+    ? FushiMotion.enter
+    : const ReaderPanelSpringCurve();
 
 /// 从贴边滑出一条全高面板路由（各档见 [ReaderPanelTier]）；[bottomSheetWhenCompact]
 /// 为 true 且窗口窄于 [kReaderPanelCompactWidth] 时改从底部升起
@@ -825,7 +829,10 @@ Future<T?> showReaderSideSheet<T>({
     ) {
       final CurvedAnimation curved = CurvedAnimation(
         parent: animation,
-        curve: readerPanelEnterCurve(presentationOf(ctx)),
+        curve: readerPanelEnterCurve(
+          presentationOf(ctx),
+          apple: isGlassDesign(ctx),
+        ),
         reverseCurve: FushiMotion.exit,
       );
       final Offset begin = switch (presentationOf(ctx)) {
@@ -908,7 +915,8 @@ Color _readerPanelColor(BuildContext ctx) => isGlassDesign(ctx)
     ? appleColorsOf(ctx).groupedBackground
     : Theme.of(ctx).colorScheme.surfaceContainerLow;
 
-/// 侧板旁的面板切换工具栏（纵向 M3E 悬浮工具栏，选中项 secondaryContainer）。
+/// 侧板旁的面板切换工具栏（纵向 M3E 悬浮工具栏，选中项 secondaryContainer；
+/// Apple 下由 [FushiFloatingToolbar] 自己换成分组玻璃胶囊、选中项强调色字形）。
 class _ReaderPanelSwitcherRail extends StatelessWidget {
   const _ReaderPanelSwitcherRail({required this.switcher});
 

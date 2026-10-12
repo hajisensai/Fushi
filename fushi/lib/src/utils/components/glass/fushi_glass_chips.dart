@@ -6,22 +6,19 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
-    show GlassButton, GlassButtonStyle, LiquidRoundedRectangle;
 
 // 标签族（Chip / ChoiceChip / FilterChip / ActionChip / InputChip）的「设计系统
 // 分派」包装：构造参数与 Material 原控件逐个同名同型（含 `.elevated`），调用点
 // 只改类名。MD3 下构造原控件，外观由全局 chipTheme 统一（全胶囊、高 32、未选中
 // surfaceContainerHigh 无描边、选中 secondaryContainer，FilterChip 带对勾）；
-// 「玻璃」设计系统下渲染 iOS 26 的胶囊标签。
+// Apple 设计系统下渲染 iOS 26 的胶囊标签。
 //
-// 可交互标签是液态玻璃胶囊（用户 2026-10-04：「所有组件都要往液态玻璃靠」）：
-// 未选中 = 透明玻璃 + label 色文字，选中 = 强调色着色玻璃 + 反色字，高 32
-// （桌面 28），全胶囊、库的按压拉伸；系统降低透明度时回落实色胶囊
-// （systemFill / 强调色实底）。纯展示标签恒为实色灰胶囊。可交互的标签自带焦点节点
+// 标签是内容层控件，不是玻璃（用户 2026-10-12：「所有组件都要遵循原有的
+// Cupertino」）：可交互标签未选中 = tertiaryFill 实色胶囊 + label 色文字，选中
+// = 强调色实底 + onAccent 字，不画 M3 的前导对勾；高 32（桌面 28），全胶囊，
+// 按下变淡。纯展示标签恒为 systemFill 灰胶囊。可交互的标签自带焦点节点
 // （Tab 可达、Enter / 手柄 A → ActivateIntent），与全局焦点导航同一条激活链路。
 //
 // 命名：仓库已有共享组件 `FushiActionChip`（fushi_material_components.dart），
@@ -43,8 +40,6 @@ Widget _glassChip(
   EdgeInsetsGeometry? labelPadding,
   VisualDensity? visualDensity,
   bool selected = false,
-  bool showCheckmark = false,
-  Color? checkmarkColor,
   Color? selectedColor,
   Color? backgroundColor,
   Color? disabledColor,
@@ -75,7 +70,7 @@ Widget _glassChip(
       : ((!enabled ? disabledColor : null) ??
             stateFill ??
             backgroundColor ??
-            apple.fill);
+            (interactive ? apple.tertiaryFill : apple.fill));
   // 选中的实底上文字按底色亮度取白 / 黑（默认强调色底恒为白字）；未选中是
   // label 色。
   final Color fg = selected
@@ -86,16 +81,16 @@ Widget _glassChip(
       : apple.label;
   final double iconSize = iconTheme?.size ?? (compact ? 14 : 16);
   final Color iconColor = selected
-      ? (checkmarkColor ?? fg)
+      ? fg
       : (iconTheme?.color ?? apple.secondaryLabel);
 
   final double height = compact ? 28 : 32;
   final EdgeInsetsGeometry effectivePadding =
       padding ?? EdgeInsets.symmetric(horizontal: compact ? 10 : 12);
 
-  final Widget? leading = selected && showCheckmark
-      ? FushiIcon(CupertinoIcons.checkmark, size: iconSize, color: iconColor)
-      : avatar;
+  // iOS 胶囊靠强调色实底表达选中，不画 M3 的前导对勾（showCheckmark 只影响
+  // MD3）。
+  final Widget? leading = avatar;
   final Widget effectiveDeleteIcon =
       deleteIcon ?? FushiIcon(CupertinoIcons.xmark_circle_fill, size: iconSize);
 
@@ -156,17 +151,8 @@ Widget _glassChip(
     ),
   );
 
-  // 可交互的标签是液态玻璃胶囊（用户 2026-10-04：「所有组件都要往液态玻璃
-  // 靠」）：未选中 = 透明玻璃，选中 = 强调色着色玻璃；系统降低透明度（材质
-  // off）时回落实色胶囊。纯展示标签恒为实色灰胶囊。
-  final bool glass =
-      interactive && glassMaterialOf(context) != FushiGlassMaterial.off;
-  final bool customUnselected =
-      !selected && (stateFill != null || backgroundColor != null);
   Widget chip = _AppleChip(
     interactive: interactive,
-    glass: glass,
-    glassTint: selected || customUnselected ? fill : null,
     enabled: enabled,
     selected: selected,
     onTap: onTap,
@@ -196,23 +182,14 @@ class _AppleChip extends StatefulWidget {
     required this.height,
     required this.child,
     this.focusable = true,
-    this.glass = false,
-    this.glassTint,
     this.selected = false,
   });
 
   final bool interactive;
 
   /// 选中态（ChoiceChip / FilterChip）：只进语义（读屏「已选中」），外观由
-  /// [fill] / [glassTint] 表达。
+  /// [fill] 表达。
   final bool selected;
-
-  /// true：画成液态玻璃胶囊（库的 [GlassButton]，带按压拉伸），而不是实色
-  /// [fill] 胶囊。
-  final bool glass;
-
-  /// 玻璃的着色（选中 = 强调色）；null = 透明玻璃。
-  final Color? glassTint;
 
   /// false：可点但不自带焦点节点——外层已经有焦点目标（共享 chip 在
   /// FushiFocusRoot 里由 FushiFocusTarget 接管焦点与 ActivateIntent），再带一个
@@ -243,7 +220,6 @@ class _AppleChipState extends State<_AppleChip> {
   Widget build(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
     final BorderRadius radius = BorderRadius.circular(widget.height / 2);
-    if (widget.glass && widget.interactive) return _buildGlass(context, apple);
     Widget pill = ConstrainedBox(
       constraints: BoxConstraints(minHeight: widget.height),
       child: DecoratedBox(
@@ -304,90 +280,12 @@ class _AppleChipState extends State<_AppleChip> {
       child: gesture,
     );
   }
-
-  /// 液态玻璃形态：外形、按压拉伸与高光交给库的 [GlassButton]（与 GlassChip
-  /// 同参：胶囊、interactionScale 1.03、stretch 0.3）；焦点与 [ActivateIntent]
-  /// 仍由外层 FocusableActionDetector 接（GlassButton 自己不取焦点），键盘焦点
-  /// 画一圈强调色描边。
-  Widget _buildGlass(BuildContext context, FushiAppleColors apple) {
-    final bool tappable = widget.enabled && widget.onTap != null;
-    final BorderRadius radius = BorderRadius.circular(widget.height / 2);
-    // GlassButton 的 canRequestFocus: false 不生效：库内 GlassFocusRegion 用
-    // FocusableActionDetector 包自己的节点，而 FocusableActionDetector 会按
-    // enabled 改写 Focus.canRequestFocus，每枚标签因此多出一个 Tab 停靠点（Tab
-    // 落到内层后 Enter 不经外层 ActivateIntent）。焦点只归外层，内层整树排除。
-    Widget body = IntrinsicWidth(
-      child: IntrinsicHeight(
-        child: ExcludeFocus(
-          child: GlassButton.custom(
-            onTap: tappable ? widget.onTap! : () {},
-            enabled: widget.enabled,
-            style: widget.glassTint != null
-                ? GlassButtonStyle.prominent
-                : GlassButtonStyle.filled,
-            settings: fushiGlassSettings(context, tint: widget.glassTint),
-            quality: fushiGlassQuality(context),
-            shape: const LiquidRoundedRectangle(borderRadius: 100),
-            interactionScale: 1.03,
-            stretch: 0.3,
-            canRequestFocus: false,
-            excludeFromSemantics: true,
-            width: double.infinity,
-            height: double.infinity,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: widget.height),
-              child: Center(widthFactor: 1, heightFactor: 1, child: widget.child),
-            ),
-          ),
-        ),
-      ),
-    );
-    body = DecoratedBox(
-      position: DecorationPosition.foreground,
-      decoration: BoxDecoration(
-        borderRadius: radius,
-        border: _focusHighlight
-            ? Border.all(color: apple.accent, width: 2)
-            : null,
-      ),
-      child: body,
-    );
-    body = Opacity(opacity: widget.enabled ? 1 : 0.4, child: body);
-    // GlassButton 排除了自己的语义，读屏的 tap 由这里直接接到 onTap。
-    body = Semantics(
-      button: true,
-      selected: widget.selected,
-      enabled: widget.enabled,
-      onTap: tappable ? widget.onTap : null,
-      child: body,
-    );
-    if (!widget.focusable) return body;
-    return FocusableActionDetector(
-      enabled: widget.enabled,
-      focusNode: widget.focusNode,
-      autofocus: widget.autofocus,
-      mouseCursor: tappable ? SystemMouseCursors.click : MouseCursor.defer,
-      actions: <Type, Action<Intent>>{
-        ActivateIntent: CallbackAction<ActivateIntent>(
-          onInvoke: (ActivateIntent intent) {
-            if (tappable) widget.onTap!();
-            return null;
-          },
-        ),
-      },
-      onShowFocusHighlight: (bool value) {
-        setState(() => _focusHighlight = value);
-      },
-      child: body,
-    );
-  }
 }
 
 /// 共享 chip（`fushi_material_components.dart` 的 FushiSelectableChip /
 /// FushiActionChip / FushiTagChip）在 Apple 设计系统下的渲染入口：与
-/// [FushiChoiceChip] 等包装同一枚胶囊（可交互时是液态玻璃：未选中透明玻璃 +
-/// label 字，选中强调色着色玻璃 + 反色字，高 32 / 桌面 28；降低透明度时回落
-/// 实色胶囊）。
+/// [FushiChoiceChip] 等包装同一枚胶囊（可交互时未选中 tertiaryFill 实色 +
+/// label 字，选中强调色实底 + onAccent 字，高 32 / 桌面 28）。
 ///
 /// [onTap] 与 [onDeleted] 都为 null 时是纯展示标签（不进焦点链、不显禁用态）。
 /// [focusable] 为 false 时不自带焦点节点（调用方外层已有焦点目标）。
@@ -692,6 +590,7 @@ class FushiChoiceChip extends StatelessWidget {
   final BoxConstraints? avatarBoxConstraints;
   final ChipAnimationStyle? chipAnimationStyle;
   final MouseCursor? mouseCursor;
+
   /// 强调色（标签 / 合集等彩色 chip）：MD3 选中铺满该色、未选淡色块
   /// （[fushiAccentChipColors]）；Apple 选中用该色作胶囊底。显式给的
   /// selectedColor / backgroundColor / labelStyle 仍优先。
@@ -726,9 +625,6 @@ class FushiChoiceChip extends StatelessWidget {
         labelPadding: labelPadding,
         visualDensity: visualDensity,
         selected: selected,
-        // iOS 的单选胶囊靠强调色实底表达选中，默认不画对勾（M3 默认画）。
-        showCheckmark: showCheckmark ?? false,
-        checkmarkColor: checkmarkColor,
         selectedColor: selectedColor ?? accentColor,
         backgroundColor: backgroundColor,
         disabledColor: disabledColor,
@@ -963,6 +859,7 @@ class FushiFilterChip extends StatelessWidget {
 
   /// 语义色调，默认 [FushiFilterChipTone.include]（与原 FilterChip 完全一致）。
   final FushiFilterChipTone tone;
+
   /// 强调色（标签 / 合集等彩色 chip）：MD3 选中铺满该色、未选淡色块
   /// （[fushiAccentChipColors]）；Apple 选中用该色作胶囊底。显式给的
   /// selectedColor / backgroundColor / labelStyle 仍优先。
@@ -986,8 +883,7 @@ class FushiFilterChip extends StatelessWidget {
     final bool exclude = tone == FushiFilterChipTone.exclude;
     if (isGlassDesign(context)) {
       final ValueChanged<bool>? select = onSelected;
-      // 排除态：不走强调色选中底，换中性灰底 + destructive 减号；选中对勾
-      // 会顶掉 avatar，所以排除态不画对勾。
+      // 排除态：不走强调色选中底，换中性灰底 + destructive 减号。
       final FushiAppleColors? apple = exclude ? appleColorsOf(context) : null;
       return _glassChip(
         context,
@@ -1008,8 +904,6 @@ class FushiFilterChip extends StatelessWidget {
         labelPadding: labelPadding,
         visualDensity: visualDensity,
         selected: selected && !exclude,
-        showCheckmark: exclude ? false : (showCheckmark ?? true),
-        checkmarkColor: checkmarkColor,
         selectedColor: selectedColor ?? accentColor,
         backgroundColor: apple != null
             ? (backgroundColor ?? apple.secondaryFill)
@@ -1420,8 +1314,6 @@ class FushiInputChip extends StatelessWidget {
         labelPadding: labelPadding,
         visualDensity: visualDensity,
         selected: selected,
-        showCheckmark: showCheckmark ?? true,
-        checkmarkColor: checkmarkColor,
         selectedColor: selectedColor,
         backgroundColor: backgroundColor,
         disabledColor: disabledColor,

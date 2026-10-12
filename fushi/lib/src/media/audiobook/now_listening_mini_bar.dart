@@ -17,7 +17,6 @@ import 'package:fushi/src/utils/misc/floating_lyric_hint.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 /// 首页「正在听书」迷你条（TODO-291 阶段2）。
 ///
@@ -129,7 +128,9 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
               appModel.showFloatingLyric
                   ? FushiIcons.filled(FushiIcons.subtitles)
                   : FushiIcons.subtitles,
-              color: appModel.showFloatingLyric ? scheme.primary : null,
+              color: appModel.showFloatingLyric
+                  ? (glass ? appleColorsOf(context).accent : scheme.primary)
+                  : null,
             ),
             tooltip: t.floating_lyric_toggle_action,
             onPressed: () => _toggleFloatingLyric(appModel),
@@ -181,27 +182,35 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
       );
     }
     if (glass) {
-      // Apple Music 式迷你播放条：离边 14 的浮动液态玻璃全胶囊（导航与控件
+      // Apple Music 式迷你播放条：离边 14 的浮动实色全胶囊（导航与控件
       // 层，不是内容层；圆角取足够大让任何高度都是全圆角），点按整条回到书，
       // 按下变淡、无水波。
+      // 宽屏（iPad / macOS）不铺满：与 M3E 同样封顶 560 居中。
       return Padding(
         padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
-        child: GlassContainer(
-          useOwnLayer: true,
-          quality: fushiGlassQuality(context, prominent: true),
-          settings: fushiClearGlassSettings(context, bar: true),
-          shape: const LiquidRoundedSuperellipse(borderRadius: 999),
-          child: FushiPlainButton(
-            onPressed: openBook,
-            borderRadius: BorderRadius.circular(999),
-            child: Padding(
-              padding: const EdgeInsetsDirectional.only(
-                start: 10,
-                end: 8,
-                top: 6,
-                bottom: 6,
+        child: Center(
+          heightFactor: 1,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            // 原生 Cupertino 实色面（无玻璃 / 实时模糊，用户 2026-10-12）。
+            child: DecoratedBox(
+              decoration: fushiAppleSolidFloatingDecoration(
+                context,
+                shape: const StadiumBorder(),
               ),
-              child: content,
+              child: FushiPlainButton(
+                onPressed: openBook,
+                borderRadius: BorderRadius.circular(999),
+                child: Padding(
+                  padding: const EdgeInsetsDirectional.only(
+                    start: 10,
+                    end: 8,
+                    top: 6,
+                    bottom: 6,
+                  ),
+                  child: content,
+                ),
+              ),
             ),
           ),
         ),

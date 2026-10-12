@@ -15,11 +15,13 @@
 /// 滚时收起、往回滚时出现」的行为——只认用户发起的滚动方向
 /// （[UserScrollNotification]），不认程序滚动 / 视口尺寸变化；收起不改版面高度，
 /// 页头收起 / 弹回不会改变正文视口而自激振荡。收起 / 出现走 M3E spatial 弹簧；墨水屏与「减弱动态
-/// 效果」下瞬时切换。只服务 Material 设计系统；Apple 设计系统的页头保持既有的
-/// 玻璃形态。
+/// 效果」下瞬时切换。Apple 设计系统下收起 / 出现改走 `context.fushiMotion` 的
+/// Apple 弹簧（临界阻尼，不过冲，见 [fushiAppleChromeSpatial]），标题不装胶囊
+/// （iOS 26 / macOS 26 导航栏的内联标题是纯文字，玻璃只给栏上的控件）。
 library;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:flutter/rendering.dart';
 import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
@@ -27,6 +29,8 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
+    show fushiAppleInlineSubtitleStyle, fushiAppleInlineTitleStyle;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
     show FushiIconButtonControl;
 import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart'
@@ -35,6 +39,35 @@ import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart'
 /// 悬浮页头胶囊的高：48 = M3E 小号图标按钮 40 + 上下 4（与
 /// [kFushiFloatingToolbarCompactExtent] 一致）。
 const double kFushiPageChromeExtent = kFushiFloatingToolbarCompactExtent;
+
+/// Apple 设计系统里 chrome（栏 / 工具组）显隐与换组的位移弹簧：刚度取
+/// `context.fushiMotion` 的 spatial default（SwiftUI `.snappy` 的感知时长），
+/// 阻尼比钉 1——iOS 26 的导航栏 / 工具栏收起、弹回不过冲、不回弹。降级开关
+/// 随方案一起带过来（[FushiSpringSpec.enabled]）。只在 [isGlassDesign] 为真时调用。
+FushiSpringSpec fushiAppleChromeSpatial(BuildContext context) {
+  final FushiSpringSpec spatial = context.fushiMotion.spatialDefault;
+  return FushiSpringSpec(
+    dampingRatio: 1,
+    stiffness: spatial.stiffness,
+    enabled: spatial.enabled,
+  );
+}
+
+/// chrome 显隐的位移弹簧：MD3 用调用方给的 M3E 弹簧 [material]（保留轻微回弹
+/// 落位），Apple 用 [fushiAppleChromeSpatial]。
+SpringDescription fushiChromeRevealSpring(
+  BuildContext context,
+  SpringDescription material,
+) => isGlassDesign(context)
+    ? fushiAppleChromeSpatial(context).description
+    : material;
+
+/// chrome 显隐的透明度弹簧（effects，临界阻尼）：MD3 = M3E default effects，
+/// Apple = Apple 方案的 effects default（SwiftUI `.smooth` 短档）。
+SpringDescription fushiChromeRevealFadeSpring(BuildContext context) =>
+    isGlassDesign(context)
+    ? context.fushiMotion.effectsDefault.description
+    : FushiSprings.effectsDefault.description;
 
 /// 悬浮页头胶囊的底色（standard 面：surfaceContainer）。
 Color fushiPageChromeColor(BuildContext context) =>
@@ -138,6 +171,9 @@ class FushiPageChromeCapsule extends StatelessWidget {
 }
 
 /// 页面标题的悬浮胶囊：M3E Emphasized 字阶（titleLarge 加粗），可带一行副标题。
+/// Apple 设计系统下不装胶囊：iOS 26 / macOS 26 导航栏的内联标题是纯文字
+/// （移动 17 / 桌面 15 semibold，label 色；副标题 secondaryLabel），高
+/// [fushiAppleFloatingExtent]（不超过 [kFushiPageChromeExtent]，页头槽位照旧放得下）。
 /// [title] 原样渲染（调用方给的 Text 照用），只经 [DefaultTextStyle] 供默认字阶。
 /// 单行省略、竖向居中；行高固定（[_kTitleLineHeight] + 强制 strut），字阶 /
 /// 调用方 TextStyle 的行高都撑不高胶囊。
@@ -217,16 +253,31 @@ class FushiPageChromeTitle extends StatelessWidget {
   static double maxTitleScaleFactor(double titleFontSize) =>
       _kTextBudget / (titleFontSize * _kTitleLineHeight);
 
+  /// Apple 内联标题的字阶（iOS 26 bar title 17 / macOS 26 窗口标题 15，semibold）。
+  static TextStyle _appleTitleStyle(BuildContext context) {
+    return fushiAppleInlineTitleStyle(context).copyWith(
+      height: _kTitleLineHeight,
+      leadingDistribution: TextLeadingDistribution.even,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final TextStyle subtitleStyle =
-        (theme.textTheme.labelMedium ?? const TextStyle()).copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-          height: _kSubtitleLineHeight,
-          leadingDistribution: TextLeadingDistribution.even,
-        );
-    final TextStyle titleStyle = titleStyleOf(context);
+    final bool apple = isGlassDesign(context);
+    final TextStyle subtitleStyle = apple
+        ? fushiAppleInlineSubtitleStyle(context).copyWith(
+            height: _kSubtitleLineHeight,
+            leadingDistribution: TextLeadingDistribution.even,
+          )
+        : (theme.textTheme.labelMedium ?? const TextStyle()).copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            height: _kSubtitleLineHeight,
+            leadingDistribution: TextLeadingDistribution.even,
+          );
+    final TextStyle titleStyle = apple
+        ? _appleTitleStyle(context)
+        : titleStyleOf(context);
     final double titleFontSize = titleStyle.fontSize ?? 14;
     final TextScaler scaler = MediaQuery.textScalerOf(context);
     final bool showSubtitle =
@@ -256,12 +307,26 @@ class FushiPageChromeTitle extends StatelessWidget {
         child: content,
       );
     }
+    final Widget scaled = MediaQuery.withClampedTextScaling(
+      maxScaleFactor: maxTitleScaleFactor(titleFontSize),
+      child: content,
+    );
+    if (apple) {
+      return SizedBox(
+        height: fushiAppleFloatingExtent(context),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Align(
+            widthFactor: 1,
+            alignment: AlignmentDirectional.centerStart,
+            child: scaled,
+          ),
+        ),
+      );
+    }
     return FushiPageChromeCapsule(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: MediaQuery.withClampedTextScaling(
-        maxScaleFactor: maxTitleScaleFactor(titleFontSize),
-        child: content,
-      ),
+      child: scaled,
     );
   }
 }
@@ -418,25 +483,24 @@ class FushiScrollAwayChrome extends StatefulWidget {
 
 class _FushiScrollAwayChromeState extends State<FushiScrollAwayChrome>
     with TickerProviderStateMixin {
-  // 1 = 完全可见，0 = 收起。出现带一点回弹落位（default spatial 偏软），收起
-  // 同一弹簧。
+  // 1 = 完全可见，0 = 收起。MD3 出现带一点回弹落位（default spatial 偏软），
+  // 收起同一弹簧；Apple 走临界阻尼的 Apple 弹簧（[fushiChromeRevealSpring]）。
+  // 首次访问在 build 里（可读设计系统）。
   late final FushiSpring _shown = FushiSpring(
     vsync: this,
     initial: widget.controller.hidden ? 0 : 1,
-    spring: SpringDescription.withDampingRatio(
-      mass: 1,
-      stiffness: 520,
-      ratio: 0.86,
+    spring: fushiChromeRevealSpring(
+      context,
+      SpringDescription.withDampingRatio(mass: 1, stiffness: 520, ratio: 0.86),
     ),
   );
 
-  /// 透明度：M3E default effects 弹簧（临界阻尼、不过冲）。透明度是 effects
-  /// 属性，不跟位移共用上面的 spatial 弹簧（HBK-AUDIT-023）；同目标、同一
-  /// 降级开关。
+  /// 透明度：effects 弹簧（临界阻尼、不过冲）。透明度是 effects 属性，不跟位移
+  /// 共用上面的 spatial 弹簧（HBK-AUDIT-023）；同目标、同一降级开关。
   late final FushiSpring _fade = FushiSpring(
     vsync: this,
     initial: widget.controller.hidden ? 0 : 1,
-    spring: FushiSprings.effectsDefault.description,
+    spring: fushiChromeRevealFadeSpring(context),
   );
 
   @override

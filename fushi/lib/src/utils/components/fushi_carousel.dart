@@ -8,9 +8,12 @@
 // - [FushiCarouselItemTransform]：项本身的 M3E hero 形态——离开中心时收缩
 //   并压暗少许，回到中心弹回原尺寸。
 //
-// 墨水屏 / 减弱动态效果下三者都原样返回 child（静止、无位移）。
+// 墨水屏 / 减弱动态效果下三者都原样返回 child（静止、无位移）。Apple 设计
+// 系统下视差与项形态都原样返回 child：iOS 的分页卡片不缩放、不压暗，背景图
+// 也不放大错位（App Store Today / 精选轮播口径）。
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 /// 轮播项相对当前页的偏移（项序号 − 当前页）：0 = 正中；1 = 在末尾侧一整页
@@ -48,6 +51,7 @@ class FushiParallax extends StatelessWidget {
   Widget build(BuildContext context) {
     final double? offset = FushiCarouselItemOffset.maybeOf(context);
     if (offset == null || !fushiMotionEnabled(context)) return child;
+    if (isGlassDesign(context)) return child;
     final double t = offset.clamp(-1.0, 1.0);
     final bool rtl = Directionality.of(context) == TextDirection.rtl;
     return ClipRect(
@@ -85,6 +89,7 @@ class FushiCarouselItemTransform extends StatelessWidget {
   Widget build(BuildContext context) {
     final double? offset = FushiCarouselItemOffset.maybeOf(context);
     if (offset == null || !fushiMotionEnabled(context)) return child;
+    if (isGlassDesign(context)) return child;
     final double d = offset.abs().clamp(0.0, 1.0);
     final double scale = 1 - (1 - minScale) * d;
     return Transform.scale(

@@ -1831,9 +1831,14 @@ class _ShelfBatchDeleteProgressDialog extends StatelessWidget {
                   style: tokens.type.listTitle,
                 ),
                 SizedBox(height: tokens.spacing.gap),
-                LinearProgressIndicator(
-                  value: total == 0 ? null : done / total,
-                ),
+                if (isGlassDesign(context))
+                  FushiLinearProgressIndicator(
+                    value: total == 0 ? null : done / total,
+                  )
+                else
+                  LinearProgressIndicator(
+                    value: total == 0 ? null : done / total,
+                  ),
               ],
             );
           },

@@ -465,11 +465,81 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
         ),
       ),
     );
+    // Apple：iOS / macOS 导航栏（返回 + 标题 + 右侧动作），不再用 M3E 悬浮
+    // 工具栏顶替导航栏；「头像 昵称#编号」进副标题与右侧头像按钮。
+    if (isGlassDesign(context)) {
+      final LeaderboardSelf? self = service.self;
+      return FushiPageScaffold(
+        title: t.leaderboard_title,
+        subtitle: _selfError != null
+            ? leaderboardErrorText(_selfError!)
+            : self?.account.tag ?? t.leaderboard_header_loading,
+        actions: _buildAppleActions(service),
+        body: page,
+      );
+    }
     return FushiPageScaffold(
       title: t.leaderboard_title,
       header: _buildTopBar(service),
       body: page,
     );
+  }
+
+  /// Apple 导航栏右侧动作：与 MD3 顶栏同一组入口（默认平铺、放不下时由
+  /// [FushiPageHeader] 收进 ⋯），末位是 App Store 式圆形头像按钮（进自己的
+  /// 主页，按下变淡）。
+  List<Widget> _buildAppleActions(LeaderboardService service) {
+    final LeaderboardSelf? self = service.self;
+    final String selfId = self?.account.id ?? service.account?.accountId ?? '';
+    final double extent = fushiAppleFloatingExtent(context);
+    final double avatar = extent - 8;
+    return <Widget>[
+      FushiIconButton(
+        key: const ValueKey<String>('leaderboard-header-watermelon'),
+        icon: FushiIcons.blur,
+        tooltip: t.leaderboard_watermelon_title,
+        onTap: () => _push(LeaderboardWatermelonPage(selfId: selfId)),
+      ),
+      FushiIconButton(
+        key: const ValueKey<String>('leaderboard-header-share'),
+        icon: FushiIcons.share,
+        tooltip: t.leaderboard_header_share,
+        enabled: self != null,
+        onTap: () => unawaited(
+          showLeaderboardShareSheet(context, initialWindow: _window),
+        ),
+      ),
+      if (LeaderboardFeatures.friendsEnabled)
+        FushiIconButton(
+          key: const ValueKey<String>('leaderboard-header-friends'),
+          icon: FushiIcons.group,
+          tooltip: t.leaderboard_header_friends,
+          onTap: () => _push(const LeaderboardFriendsPage()),
+        ),
+      FushiIconButton(
+        key: const ValueKey<String>('leaderboard-header-account'),
+        icon: FushiIcons.settings,
+        tooltip: t.leaderboard_header_account,
+        onTap: () => _push(LeaderboardAccountPage(syncError: _syncError)),
+      ),
+      FushiTooltip(
+        message: t.leaderboard_header_profile,
+        child: FushiPlainButton(
+          key: const ValueKey<String>('leaderboard-header-profile'),
+          semanticLabel: t.leaderboard_header_profile,
+          borderRadius: BorderRadius.circular(extent / 2),
+          onPressed: selfId.isEmpty ? null : () => _openUser(selfId),
+          child: SizedBox.square(
+            dimension: extent,
+            child: Center(
+              child: self == null
+                  ? FushiIcon(FushiIcons.account, size: avatar)
+                  : LeaderboardAvatar(account: self.account, size: avatar),
+            ),
+          ),
+        ),
+      ),
+    ];
   }
 
   /// 顶栏：返回 + 「头像 昵称#编号」标题胶囊（点它进自己的主页）+ 按宽度自适应

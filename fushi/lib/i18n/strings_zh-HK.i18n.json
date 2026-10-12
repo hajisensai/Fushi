@@ -6215,7 +6215,7 @@
   "manga_ocr_ai_mode_low_confidence_legacy": "Volumes recognized before this option existed carry no confidence scores, so this mode leaves them untouched. Re-run OCR on such a volume (with an on-device model) to let the AI re-read its uncertain text.",
   "glass_material_frosted": "Frosted",
   "glass_material_liquid": "Liquid",
-  "design_system_glass": "Apple",
+  "design_system_glass": "Cupertino",
   "glass_material": "Glass material",
   "glass_material_hint": "Frosted blurs whatever is behind a surface; liquid glass adds refraction and highlights where the graphics engine supports it (otherwise it shows as frosted). On Windows 11 and macOS the window background shows the desktop through. Falls back to solid surfaces in e-ink mode and with increased contrast.",
   "video_settings_cat_picture": "畫面",

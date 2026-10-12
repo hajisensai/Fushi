@@ -7,6 +7,8 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
+    show GlassButton;
 
 // M3 Expressive 交互控件共享层（fushi_expressive_controls.dart）的契约：
 // ① 尺寸档 / 形状 / toggle / split / FAB / FAB menu / 滑块尺寸 / chip 强调色
@@ -14,7 +16,8 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 //    find.byType 照常命中）；
 // ② 键盘 Enter 能激活（App 把裸空格中和了），FAB menu Esc 收起；
 // ③ 减少动画 / 墨水屏下形变静止（方形按钮仍是静态圆角矩形）；
-// ④ Apple 设计系统下同一 API 映射到玻璃形态，不出现 Expressive 形变。
+// ④ Apple 设计系统下同一 API 映射到 Cupertino 形态（bordered 胶囊 / 强调色
+//    玻璃圆钮 / pull-down 菜单），不出现 Expressive 形变。
 void main() {
   late bool Function() originalShaderSupport;
   setUp(() {
@@ -362,7 +365,9 @@ void main() {
       expect(on, isFalse);
     });
 
-    testWidgets('Apple 设计系统：玻璃按钮，无 Expressive 形变', (WidgetTester tester) async {
+    testWidgets('Apple 设计系统：bordered / borderedProminent，无 Expressive 形变', (
+      WidgetTester tester,
+    ) async {
       bool on = true;
       await pumpHost(
         tester,
@@ -374,7 +379,17 @@ void main() {
         glass: true,
       );
       expect(find.byType(FushiPressMorph), findsNothing);
-      expect(find.byType(FushiFilledButton), findsOneWidget);
+      expect(find.byType(FilledButton), findsNothing);
+      final BuildContext ctx = tester.element(find.text('Save'));
+      final FushiAppleColors apple = appleColorsOf(ctx);
+      FushiPlainButton button() =>
+          tester.widget<FushiPlainButton>(find.byType(FushiPlainButton));
+      // 选中 = 强调色实底；点一下切成未选 = tertiaryFill 灰底。
+      expect(button().fill, apple.accent);
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+      expect(on, isFalse);
+      expect(button().fill, apple.tertiaryFill);
     });
   });
 
@@ -458,6 +473,44 @@ void main() {
       expect(shape.endPill, 0);
       expect(shape.radius, 4);
     });
+
+    testWidgets('Apple：单颗 pull-down 按钮，主操作是菜单首项', (WidgetTester tester) async {
+      int primary = 0;
+      String? picked;
+      await pumpHost(
+        tester,
+        (_) => FushiSplitButton(
+          label: const Text('Export'),
+          onPressed: () => primary++,
+          menuTooltip: 'More',
+          menuChildren: <Widget>[
+            MenuItemButton(
+              onPressed: () => picked = 'csv',
+              child: const Text('CSV'),
+            ),
+          ],
+        ),
+        glass: true,
+      );
+      expect(find.byType(FilledButton), findsNothing);
+      expect(find.byType(FushiPressMorph), findsNothing);
+      expect(find.byType(FushiPlainButton), findsOneWidget);
+      // 点按钮开菜单（不直接触发主操作）；首项是主操作。
+      await tester.tap(find.text('Export'));
+      await advance(tester, 400);
+      expect(primary, 0);
+      expect(find.text('CSV'), findsOneWidget);
+      expect(find.text('Export'), findsNWidgets(2));
+      await tester.tap(find.text('Export').last);
+      await advance(tester, 400);
+      expect(primary, 1);
+      expect(find.text('CSV'), findsNothing);
+      await tester.tap(find.text('Export'));
+      await advance(tester, 400);
+      await tester.tap(find.text('CSV'));
+      await advance(tester, 400);
+      expect(picked, 'csv');
+    });
   });
 
   group('FushiFab', () {
@@ -510,6 +563,35 @@ void main() {
       );
       expect(find.text('New'), findsOneWidget);
       expect(tester.getSize(find.byType(FloatingActionButton)).height, 56);
+    });
+
+    testWidgets('Apple：强调色玻璃圆钮 50，无 FloatingActionButton / 尺寸档', (
+      WidgetTester tester,
+    ) async {
+      int pressed = 0;
+      await pumpHost(
+        tester,
+        (_) => const SizedBox(),
+        glass: true,
+        fab: FushiFab(
+          icon: const Icon(Icons.add),
+          size: FushiFabSize.large,
+          tooltip: 'Add',
+          onPressed: () => pressed++,
+        ),
+      );
+      expect(find.byType(FloatingActionButton), findsNothing);
+      final Finder glass = find.byType(GlassButton);
+      expect(glass, findsOneWidget);
+      expect(tester.getSize(glass), const Size(50, 50));
+      final BuildContext ctx = tester.element(glass);
+      expect(
+        tester.widget<GlassButton>(glass).settings?.glassColor,
+        fushiGlassFill(ctx, tint: appleColorsOf(ctx).accent),
+      );
+      await tester.tap(glass);
+      await tester.pump();
+      expect(pressed, 1);
     });
   });
 
@@ -565,6 +647,50 @@ void main() {
       await advance(tester, 800);
       expect(key.currentState!.isOpen, isFalse);
       expect(fabFocus.hasFocus, isTrue);
+    });
+
+    testWidgets('Apple：强调色圆钮 + pull-down 菜单，点项执行并收起', (
+      WidgetTester tester,
+    ) async {
+      int imported = 0;
+      final List<bool> changes = <bool>[];
+      final GlobalKey<FushiFabMenuState> key = GlobalKey<FushiFabMenuState>();
+      await pumpHost(
+        tester,
+        (_) => const SizedBox(),
+        glass: true,
+        fab: FushiFabMenu(
+          key: key,
+          icon: const Icon(Icons.add),
+          tooltip: 'Add',
+          onOpenChanged: changes.add,
+          items: <FushiFabMenuItem>[
+            FushiFabMenuItem(
+              icon: const Icon(Icons.file_open),
+              label: 'Import',
+              onPressed: () => imported++,
+            ),
+          ],
+        ),
+      );
+      expect(find.byType(FloatingActionButton), findsNothing);
+      expect(find.text('Import'), findsNothing);
+      await tester.tap(find.byType(GlassButton));
+      await advance(tester, 400);
+      expect(key.currentState!.isOpen, isTrue);
+      expect(find.text('Import'), findsOneWidget);
+      await tester.tap(find.text('Import'));
+      await advance(tester, 400);
+      expect(imported, 1);
+      expect(key.currentState!.isOpen, isFalse);
+      expect(changes, <bool>[true, false]);
+      // 外部 GlobalKey 开合照旧。
+      key.currentState!.open();
+      await advance(tester, 400);
+      expect(find.text('Import'), findsOneWidget);
+      key.currentState!.close();
+      await advance(tester, 400);
+      expect(find.text('Import'), findsNothing);
     });
 
     testWidgets('减少动画：瞬间展开（无中间帧）', (WidgetTester tester) async {

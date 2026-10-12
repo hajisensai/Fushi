@@ -355,7 +355,8 @@ class FushiCookieBorder extends OutlinedBorder {
 /// - MD3（M3E）：destructive = errorContainer / onErrorContainer，其余
 ///   tertiaryContainer / onTertiaryContainer；圆角默认卡片 20；
 /// - Apple：系统红（destructive）/ 强调色实底 + 白色图标文字，iOS 行内滑动
-///   操作口径；
+///   操作口径——满高色块，操作按钮至少 74 宽，图标在上、文字在下（13 号
+///   medium，Mail / 文件 App 的滑动按钮形态）；
 /// - 墨水屏：页面底 + 实描边。
 class FushiSwipeActionBackground extends StatelessWidget {
   const FushiSwipeActionBackground({
@@ -384,7 +385,8 @@ class FushiSwipeActionBackground extends StatelessWidget {
     final Color bg;
     final Color fg;
     BorderRadius radius = borderRadius ?? FushiM3eShape.cardRadius;
-    if (isGlassDesign(context)) {
+    final bool apple = isGlassDesign(context);
+    if (apple) {
       final FushiAppleColors apple = appleColorsOf(context);
       bg = destructive ? apple.destructive : apple.accent;
       fg = destructive ? Colors.white : apple.onAccent;
@@ -397,6 +399,39 @@ class FushiSwipeActionBackground extends StatelessWidget {
       fg = destructive ? cs.onErrorContainer : cs.onTertiaryContainer;
     }
     final String? text = label;
+    final bool hasText = text != null && text.isNotEmpty;
+    if (apple) {
+      return DecoratedBox(
+        decoration: BoxDecoration(color: bg, borderRadius: radius),
+        child: Align(
+          alignment: alignment,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 74),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  FushiIcon(icon, color: fg, size: 22),
+                  if (hasText) ...<Widget>[
+                    const SizedBox(height: 4),
+                    Text(
+                      text,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: FushiAppleMetrics.of(context)
+                          .footnoteStyle(context)
+                          .copyWith(fontWeight: FontWeight.w500, color: fg),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return DecoratedBox(
       decoration: BoxDecoration(
         color: bg,
@@ -411,7 +446,7 @@ class FushiSwipeActionBackground extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               FushiIcon(icon, color: fg),
-              if (text != null && text.isNotEmpty) ...<Widget>[
+              if (hasText) ...<Widget>[
                 const SizedBox(width: 8),
                 Text(
                   text,

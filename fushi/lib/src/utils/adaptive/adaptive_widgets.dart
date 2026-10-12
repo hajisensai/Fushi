@@ -756,7 +756,9 @@ Route<T> adaptivePageRoute<T>({
   RouteSettings? settings,
   bool fullscreenDialog = false,
 }) {
-  if (isCupertinoPlatform(context)) {
+  // Apple 设计系统全平台走 Cupertino 推入转场（主题层 pageTransitionsTheme 也已
+  // 全平台 Cupertino，这里直接给 CupertinoPageRoute，不经主题查表）。
+  if (isCupertinoPlatform(context) || isGlassDesign(context)) {
     return CupertinoPageRoute<T>(
       builder: builder,
       settings: settings,

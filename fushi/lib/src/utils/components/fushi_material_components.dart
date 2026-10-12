@@ -2834,10 +2834,21 @@ List<Widget> narrowAwareAppBarActions({
     return <Widget>[
       ...alwaysVisible,
       for (final FushiAppBarAction action in collapsible)
-        IconButton(
-          tooltip: action.label,
-          icon: FushiIcon(action.icon),
-          onPressed: action.onPressed,
+        // Apple 设计系统：共享图标按钮（iOS .plain 按下变淡、SF 字形、无水波）；
+        // MD3 仍是框架 IconButton，像素不变。
+        Builder(
+          builder: (BuildContext context) => isGlassDesign(context)
+              ? FushiIconButton(
+                  tooltip: action.label,
+                  icon: action.icon,
+                  enabled: action.onPressed != null,
+                  onTap: action.onPressed,
+                )
+              : IconButton(
+                  tooltip: action.label,
+                  icon: FushiIcon(action.icon),
+                  onPressed: action.onPressed,
+                ),
         ),
     ];
   }
@@ -2999,6 +3010,7 @@ class FushiColorSwatch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) return _buildApple(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     final bool isDot = shape == FushiColorSwatchShape.dot;
@@ -3048,6 +3060,131 @@ class FushiColorSwatch extends StatelessWidget {
   }
 }
 
+/// Apple 选中环的线宽与环内间隙（iOS 颜色选择器 / UIColorWell 的选中态）。
+const double _kAppleSwatchRingWidth = 2;
+const double _kAppleSwatchRingGap = 2;
+
+extension on FushiColorSwatch {
+  /// Apple（iOS 26 颜色选择器）：色点本体 + 0.5pt 发丝描边（白 / 浅色色点在
+  /// 浅底上也看得见轮廓）；选中时外圈一道 2pt 强调色环、环与色块之间 2pt
+  /// 间隙——色块向内收、外框尺寸不变，不画对勾。dot = 圆、block = 圆角块。
+  /// 按下反馈是整块变淡（见 [_buildSwatchInteractive] 的 Apple 分支）。
+  Widget _buildApple(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final bool isDot = shape == FushiColorSwatchShape.dot;
+    final double resolvedWidth = width ?? size;
+    final double resolvedHeight = height ?? size;
+    final double outerRadius = isDot ? resolvedHeight / 2 : 10;
+    const double inset = _kAppleSwatchRingWidth + _kAppleSwatchRingGap;
+    final double innerRadius = isDot
+        ? resolvedHeight / 2
+        : math.max(0, outerRadius - inset);
+    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
+    final Widget swatch = SizedBox(
+      width: resolvedWidth,
+      height: resolvedHeight,
+      child: AnimatedContainer(
+        duration: duration,
+        curve: FushiMotion.standard,
+        padding: EdgeInsets.all(selected ? inset : 0),
+        decoration: BoxDecoration(
+          shape: isDot ? BoxShape.circle : BoxShape.rectangle,
+          borderRadius: isDot ? null : BorderRadius.circular(outerRadius),
+          border: Border.all(
+            color: selected ? apple.accent : Colors.transparent,
+            width: _kAppleSwatchRingWidth,
+          ),
+        ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: color,
+            shape: isDot ? BoxShape.circle : BoxShape.rectangle,
+            borderRadius: isDot ? null : BorderRadius.circular(innerRadius),
+            border: Border.all(
+              color: borderColor ?? apple.separator,
+              width: 0.5,
+            ),
+          ),
+          child: overlay == null
+              ? null
+              : Center(
+                  child: IconTheme.merge(
+                    data: IconThemeData(
+                      color: _swatchForegroundFor(color),
+                      size: 20,
+                    ),
+                    child: overlay!,
+                  ),
+                ),
+        ),
+      ),
+    );
+    return _buildSwatchInteractive(
+      context,
+      visual: swatch,
+      inkRadius: BorderRadius.circular(outerRadius),
+      selected: selected,
+      onTap: onTap,
+      label: label,
+      textColor: textColor,
+    );
+  }
+}
+
+/// Apple 下色块的按下反馈：按住整块降到 0.5 不透明度、松开 150ms 回升（iOS
+/// `.plain` 按钮口径），不是水波。只旁观指针（[Listener]），点按由
+/// [GestureDetector] 接；焦点 / 激活仍由外层 [FushiActivatableFocusTarget] 负责。
+class _AppleSwatchPressDim extends StatefulWidget {
+  const _AppleSwatchPressDim({
+    required this.onTap,
+    required this.child,
+    this.onLongPress,
+  });
+
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final Widget child;
+
+  @override
+  State<_AppleSwatchPressDim> createState() => _AppleSwatchPressDimState();
+}
+
+class _AppleSwatchPressDimState extends State<_AppleSwatchPressDim> {
+  bool _pressed = false;
+
+  void _set(bool value) {
+    if (_pressed == value || !mounted) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: (_) => _set(true),
+      onPointerUp: (_) => _set(false),
+      onPointerCancel: (_) => _set(false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        onLongPress: widget.onLongPress,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: AnimatedOpacity(
+            opacity: _pressed ? 0.5 : 1,
+            duration: _pressed
+                ? Duration.zero
+                : einkSafeDuration(
+                    context,
+                    const Duration(milliseconds: 150),
+                  ),
+            child: widget.child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Shared interactive wrapper for swatch widgets: InkWell ripple + a single
 /// gamepad/keyboard focus stop + selection semantics + optional caption label.
 ///
@@ -3077,7 +3214,14 @@ Widget _buildSwatchInteractive(
   } else {
     final bool underFocusRoot =
         FushiFocusRoot.maybeControllerOf(context) != null;
-    final Widget inkSwatch = Material(
+    // Apple：按下整块变淡（[_AppleSwatchPressDim]），无 InkWell 水波 / 高亮层。
+    final Widget inkSwatch = isGlassDesign(context)
+        ? _AppleSwatchPressDim(
+            onTap: onTap,
+            onLongPress: onLongPress,
+            child: visual,
+          )
+        : Material(
       color: Colors.transparent,
       borderRadius: inkRadius,
       child: InkWell(
@@ -3582,6 +3726,17 @@ class FushiPageHeader extends StatelessWidget {
     // 标题一枚标题胶囊（titleLarge 加粗）、动作收进一枚按钮组胶囊（见
     // [_FushiPageHeaderRow]）。Apple 设计系统保持既有玻璃形态。
     final bool floatingChrome = !isGlassDesign(context);
+    // Apple（iOS 26 / macOS 26）：推出来的页（有返回键）页头就是一条导航栏——
+    // 栏透明、返回玻璃圆钮、标题按导航栏 inline 字阶（移动居中 17 semibold、
+    // 桌面靠前）、动作收进 [FushiToolbar] 玻璃胶囊。根页（无返回键）仍是
+    // 左对齐大标题。
+    final bool appleNavBar = !floatingChrome &&
+        leading != null &&
+        titleWidget == null &&
+        !shellShowsTitle;
+    final Widget? appleNavTitle = appleNavBar
+        ? _FushiAppleNavTitle(title: title!, subtitle: resolvedSubtitle)
+        : null;
     final Widget? floatingTitle =
         floatingChrome && titleWidget == null && !shellShowsTitle
         ? Align(
@@ -3595,6 +3750,7 @@ class FushiPageHeader extends StatelessWidget {
         : null;
     final Widget resolvedTitle = titleWidget ??
         floatingTitle ??
+        appleNavTitle ??
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -3656,10 +3812,18 @@ class FushiPageHeader extends StatelessWidget {
         children: <Widget>[
           _FushiPageHeaderRow(
             tokens: tokens,
-            leading: floatingChrome ? fushiFloatingLeading(leading) : leading,
+            leading: floatingChrome
+                ? fushiFloatingLeading(leading)
+                : fushiAppleNavLeading(leading),
             title: resolvedTitle,
             actionItems: actions,
             floatingActions: floatingChrome,
+            appleActions: !floatingChrome,
+            appleNavBarHeight: appleNavBar
+                ? (resolvedSubtitle == null
+                      ? kFushiAppleNavBarHeight
+                      : kFushiAppleNavBarSubtitleHeight)
+                : null,
             shellActions: shellActions,
             // 只有 customTitle（标题位是分段导航等自报宽度的组件）才启用
             // 「左边摆不下就把动作收进 ⋯ 菜单」；纯文字标题自身可省略号收缩，
@@ -3729,6 +3893,8 @@ class _FushiPageHeaderRow extends StatefulWidget {
     required this.actionItems,
     required this.collapseWhenCramped,
     this.floatingActions = false,
+    this.appleActions = false,
+    this.appleNavBarHeight,
     this.shellActions,
   });
 
@@ -3736,6 +3902,13 @@ class _FushiPageHeaderRow extends StatefulWidget {
 
   /// Material（M3E）下把动作行装进一枚悬浮按钮组胶囊。
   final bool floatingActions;
+
+  /// Apple 下把图标动作收进 [FushiToolbar] 玻璃胶囊（见
+  /// [fushiAppleHeaderActionGroups]）。
+  final bool appleActions;
+
+  /// 非 null：Apple 导航栏形态（[_FushiAppleNavRow]，这一行定高为该值）。
+  final double? appleNavBarHeight;
   final Widget title;
   final Widget? leading;
   final List<Widget> actionItems;
@@ -3850,6 +4023,7 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
           );
         }
         children.add(titleChild);
+        Widget? trailing;
         if (actionItems.isNotEmpty) {
           // 动作区可用宽上界：整行宽减去动作前 gap，**再减去留给标题的保底宽**。
           // leading（含右 gap）作为非弹性子项另行占位，不计入此上界——它在 Row 里已被
@@ -3895,7 +4069,8 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
             final double needed = _titleNaturalWidth! +
                 actionsGap +
                 _estimateActionsWidth(actionItems) +
-                (widget.floatingActions ? 8 : 0);
+                (widget.floatingActions ? 8 : 0) +
+                (widget.appleActions ? 16 : 0);
             final List<FushiIconButton> collapsible = actionItems
                 .whereType<FushiIconButton>()
                 .where((FushiIconButton b) => b.onTap != null)
@@ -3909,29 +4084,58 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
             }
           }
 
-          children
-            ..add(SizedBox(width: actionsGap))
-            ..add(
-              ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: maxActionsWidth),
-                child: HorizontalDragScrollable(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    physics: const ClampingScrollPhysics(),
-                    child: FushiHeaderLabelScope(
-                      expandLabels: expandLabels,
-                      child: widget.floatingActions
-                          ? fushiFloatingHeaderActionGroups(
-                              resolvedItems,
-                              _buildActionRow,
-                              expandLabels: expandLabels,
-                            )
-                          : _buildActionRow(resolvedItems),
-                    ),
-                  ),
+          // Apple 导航栏形态里返回键不在 Row 里被单独扣除（[NavigationToolbar]
+          // 给 trailing 的是整行宽的松约束），上界要再减去它占的那一段。
+          final double navLeadingReserve =
+              widget.appleNavBarHeight != null && leading != null
+              ? kFushiAppleNavBarHeight + leadingGap
+              : 0;
+          trailing = ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: (maxActionsWidth - navLeadingReserve).clamp(
+                0.0,
+                double.infinity,
+              ),
+            ),
+            child: HorizontalDragScrollable(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const ClampingScrollPhysics(),
+                child: FushiHeaderLabelScope(
+                  expandLabels: expandLabels,
+                  child: widget.floatingActions
+                      ? fushiFloatingHeaderActionGroups(
+                          resolvedItems,
+                          _buildActionRow,
+                          expandLabels: expandLabels,
+                        )
+                      : widget.appleActions
+                      ? fushiAppleHeaderActionGroups(
+                          resolvedItems,
+                          expandLabels: expandLabels,
+                        )
+                      : _buildActionRow(resolvedItems),
                 ),
               ),
-            );
+            ),
+          );
+          children
+            ..add(SizedBox(width: actionsGap))
+            ..add(trailing);
+        }
+
+        final double? navBarHeight = widget.appleNavBarHeight;
+        if (navBarHeight != null) {
+          return _FushiAppleNavRow(
+            height: navBarHeight,
+            leading: leading,
+            middle: FushiHeaderCrampScope(
+              reportTitleNaturalWidth: _onTitleWidthReported,
+              child: widget.title,
+            ),
+            trailing: trailing,
+            middleSpacing: leadingGap,
+          );
         }
 
         // BUG-2033: 前导键 / 动作键与标题**垂直居中**对齐，不再按 start 顶对齐。
@@ -4033,6 +4237,146 @@ Widget fushiFloatingHeaderActionGroups(
       ],
     ],
   );
+}
+
+/// Apple 导航栏的标准行高（iOS 26 bar button / 玻璃圆钮 44pt）。
+const double kFushiAppleNavBarHeight = 44;
+
+/// Apple 导航栏带副标题时的行高（标题 + 一行副标题）。
+const double kFushiAppleNavBarSubtitleHeight = 52;
+
+/// Apple 页头 / 工具条的动作区（iOS 26 / macOS 26 导航栏）：连续的图标动作收进
+/// 一枚 [FushiToolbar] 玻璃胶囊（单个按钮时收成正圆），文字动作
+/// （[fushiIsStandaloneHeaderAction]）不进胶囊，按 Apple 按钮自身形态排在旁边，
+/// 间距 10（与 [FushiToolbar] 的组间距同口径）。原顺序保留。
+Widget fushiAppleHeaderActionGroups(
+  List<Widget> items, {
+  bool expandLabels = false,
+}) {
+  final List<Widget> segments = <Widget>[];
+  List<Widget> run = <Widget>[];
+  void flushRun() {
+    if (run.isEmpty) return;
+    segments.add(FushiToolbar(children: run));
+    run = <Widget>[];
+  }
+
+  for (final Widget item in items) {
+    if (fushiIsStandaloneHeaderAction(item, expandLabels: expandLabels)) {
+      flushRun();
+      segments.add(item);
+    } else {
+      run.add(item);
+    }
+  }
+  flushRun();
+  if (segments.length == 1) return segments.single;
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.center,
+    children: <Widget>[
+      for (int i = 0; i < segments.length; i++) ...<Widget>[
+        if (i > 0) const SizedBox(width: 10),
+        segments[i],
+      ],
+    ],
+  );
+}
+
+/// Apple 导航栏的 leading：[FushiRouteBackButton] 自身就是玻璃圆钮，原样；
+/// 其它图标键（关闭 / 抽屉 / 自定义图标键）收进单按钮 [FushiToolbar]（正圆
+/// 玻璃钮，与返回键同一形态）；头像、品牌位等非按钮 leading 原样返回。
+Widget? fushiAppleNavLeading(Widget? leading) {
+  if (leading == null || leading is FushiRouteBackButton) return leading;
+  if (fushiIsChromeIconButton(leading)) {
+    return FushiToolbar(children: <Widget>[leading]);
+  }
+  return leading;
+}
+
+/// Apple 导航栏 inline 标题字阶：移动 17 semibold（iOS 26 导航栏）、桌面
+/// 20 bold（macOS 26 窗口工具栏标题），label 色。与 [FushiAppBar] 的 Apple
+/// 标题同一口径。
+TextStyle fushiAppleNavTitleStyle(BuildContext context) {
+  final bool desktop = fushiAppleCompact(context);
+  return (Theme.of(context).textTheme.titleLarge ?? const TextStyle()).copyWith(
+    fontSize: desktop ? 20 : 17,
+    fontWeight: desktop ? FontWeight.w700 : FontWeight.w600,
+    color: appleColorsOf(context).label,
+  );
+}
+
+/// Apple 导航栏的标题块：单行标题（+ 可选单行副标题，13pt secondaryLabel），
+/// 移动端居中、桌面靠前。
+class _FushiAppleNavTitle extends StatelessWidget {
+  const _FushiAppleNavTitle({required this.title, this.subtitle});
+
+  final String title;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool desktop = fushiAppleCompact(context);
+    final TextAlign align = desktop ? TextAlign.start : TextAlign.center;
+    final String? sub = subtitle;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment:
+          desktop ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+      children: <Widget>[
+        Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: align,
+          style: fushiAppleNavTitleStyle(context),
+        ),
+        if (sub != null)
+          Text(
+            sub,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: align,
+            style: (Theme.of(context).textTheme.bodySmall ?? const TextStyle())
+                .copyWith(color: appleColorsOf(context).secondaryLabel),
+          ),
+      ],
+    );
+  }
+}
+
+/// Apple（iOS 26 / macOS 26）导航栏的一行：栏本身透明，leading（玻璃圆钮）、
+/// 标题、trailing（[FushiToolbar] 动作胶囊）。移动端标题按**整行**居中
+/// （[NavigationToolbar] 的 centerMiddle：两侧宽度不对称时仍居中，放不下才
+/// 贴向一侧——与 UINavigationBar / AppBar 同一算法），桌面靠前。
+class _FushiAppleNavRow extends StatelessWidget {
+  const _FushiAppleNavRow({
+    required this.height,
+    required this.middle,
+    required this.middleSpacing,
+    this.leading,
+    this.trailing,
+  });
+
+  final double height;
+  final Widget middle;
+  final double middleSpacing;
+  final Widget? leading;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      child: NavigationToolbar(
+        leading: leading,
+        middle: middle,
+        trailing: trailing,
+        centerMiddle: !fushiAppleCompact(context),
+        middleSpacing: middleSpacing,
+      ),
+    );
+  }
 }
 
 /// 悬浮页头里的文字动作：把 outlined / text / filled 按钮统一成 M3E 悬浮
@@ -4202,7 +4546,7 @@ class FushiShellHeaderActions extends StatelessWidget {
         // 带文字的动作自身就是一枚同高胶囊按钮，排在组旁（见
         // [fushiFloatingHeaderActionGroups]），不再被包进组胶囊。
         final Widget toolbar = isGlassDesign(context)
-            ? FushiToolbar(children: items)
+            ? fushiAppleHeaderActionGroups(items)
             : fushiFloatingHeaderActionGroups(
                 items,
                 (List<Widget> icons) => FushiToolbar(children: icons),
@@ -4568,6 +4912,8 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   Widget? _defaultLeading(BuildContext context) {
     final NavigatorState? navigator = Navigator.maybeOf(context);
     if (navigator == null || !navigator.canPop()) return null;
+    // Apple：返回键统一为导航栏的玻璃圆钮（SF chevron，44pt）。
+    if (isGlassDesign(context)) return const FushiRouteBackButton();
     return FushiIconButton(
       tooltip: MaterialLocalizations.of(context).backButtonTooltip,
       icon: FushiIcons.back,
@@ -4637,19 +4983,17 @@ class FushiToolScaffold extends StatelessWidget {
                 tokens.spacing.gap,
                 2,
               ),
-              // 玻璃设计系统：工具条是一条胶囊玻璃（GlassAppBar 观感）。背衬恒在、
-              // 只换背景槽（见 [FushiGlassBackdrop]），切设计系统时工具条里带
-              // GlobalKey 的动作（溢出菜单等）不被重挂。
-              child: FushiGlassBackdrop(
-                enabled: isGlassDesign(context),
-                borderRadius: const BorderRadius.all(Radius.circular(22)),
-                prominent: true,
-                child: SizedBox(
+              // Apple 设计系统（iOS 26 / macOS 26 导航栏）：栏本身透明、不再整条
+              // 装进玻璃胶囊——返回键是玻璃圆钮、标题按导航栏 inline 字阶（移动
+              // 居中 / 桌面靠前）、动作收进 [FushiToolbar] 玻璃胶囊。
+              child: SizedBox(
                   // MD3（M3E 悬浮工具条）：返回键 / 标题 / 动作各是一枚
                   // [kFushiPageChromeExtent] 高的悬浮胶囊，行高与胶囊同高（行高
-                  // 小于胶囊会把返回圆压扁、标题胶囊下半截截平）；Apple 保持 44
-                  // 的玻璃胶囊条。
-                  height: isGlassDesign(context) ? 44 : kFushiPageChromeExtent,
+                  // 小于胶囊会把返回圆压扁、标题胶囊下半截截平）；Apple 是 44
+                  // 的导航栏行（玻璃圆钮 44pt）。
+                  height: isGlassDesign(context)
+                      ? kFushiAppleNavBarHeight
+                      : kFushiPageChromeExtent,
                   // BUG-1184：动作区上界原先取 `MediaQuery.sizeOf(context).width * 0.48`
                   // ——**整窗宽**。这个脚手架并不总是占满窗口（嵌在分栏/对话框/受限宽面板
                   // 里时更常见），此时 0.48×整窗可以超过本行的真实可用宽，Row 直接右溢出。
@@ -4660,8 +5004,9 @@ class FushiToolScaffold extends StatelessWidget {
                         (BuildContext context, BoxConstraints constraints) {
                       final double gapHalf = tokens.spacing.gap / 2;
                       final bool floating = !isGlassDesign(context);
-                      final double leadingExtent =
-                          floating ? kFushiPageChromeExtent : 40;
+                      final double leadingExtent = floating
+                          ? kFushiPageChromeExtent
+                          : kFushiAppleNavBarHeight;
                       final double leadingWidth = effectiveLeading != null
                           ? leadingExtent + gapHalf
                           : 0;
@@ -4679,29 +5024,48 @@ class FushiToolScaffold extends StatelessWidget {
                                       titleFloor)
                                   .clamp(0.0, double.infinity)
                               : double.infinity;
+                      if (!floating) {
+                        return _FushiAppleNavRow(
+                          height: kFushiAppleNavBarHeight,
+                          leading: fushiAppleNavLeading(effectiveLeading),
+                          middle: _buildAppleTitle(context),
+                          middleSpacing: gapHalf,
+                          trailing: actions.isEmpty
+                              ? null
+                              : ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth: maxActionsWidth,
+                                  ),
+                                  child: HorizontalDragScrollable(
+                                    child: SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      reverse: true,
+                                      child: fushiAppleHeaderActionGroups(
+                                        actions,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                        );
+                      }
                       return Row(
                         children: <Widget>[
                           if (effectiveLeading != null) ...<Widget>[
                             SizedBox.square(
                               dimension: leadingExtent,
-                              child: floating
-                                  ? FushiPageChromeCircle(
-                                      child: effectiveLeading,
-                                    )
-                                  : effectiveLeading,
+                              child: FushiPageChromeCircle(
+                                child: effectiveLeading,
+                              ),
                             ),
                             SizedBox(width: gapHalf),
                           ],
                           Expanded(
-                            child: floating
-                                ? Align(
-                                    alignment:
-                                        AlignmentDirectional.centerStart,
-                                    child: FushiPageChromeTitle(
-                                      title: _buildTitle(tokens),
-                                    ),
-                                  )
-                                : _buildTitle(tokens),
+                            child: Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: FushiPageChromeTitle(
+                                title: _buildTitle(tokens),
+                              ),
+                            ),
                           ),
                           if (actions.isNotEmpty) ...<Widget>[
                             SizedBox(width: gapHalf),
@@ -4712,17 +5076,12 @@ class FushiToolScaffold extends StatelessWidget {
                                 child: SingleChildScrollView(
                                   scrollDirection: Axis.horizontal,
                                   reverse: true,
-                                  child: floating
-                                      ? FushiPageChromeCapsule(
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: actions,
-                                          ),
-                                        )
-                                      : Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: actions,
-                                        ),
+                                  child: FushiPageChromeCapsule(
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: actions,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
@@ -4731,7 +5090,6 @@ class FushiToolScaffold extends StatelessWidget {
                       );
                     },
                   ),
-                ),
               ),
             ),
             if (bottom != null)
@@ -4753,11 +5111,37 @@ class FushiToolScaffold extends StatelessWidget {
 
   Widget? _defaultLeading(BuildContext context) {
     if (!Navigator.of(context).canPop()) return null;
+    // Apple：返回键统一为导航栏的玻璃圆钮（SF chevron，44pt）。
+    if (isGlassDesign(context)) return const FushiRouteBackButton();
     return FushiIconButton(
       tooltip: MaterialLocalizations.of(context).backButtonTooltip,
       icon: FushiIcons.back,
       padding: EdgeInsets.zero,
       onTap: () => Navigator.of(context).maybePop(),
+    );
+  }
+
+  /// Apple 导航栏标题：inline 字阶（[fushiAppleNavTitleStyle]），移动端居中。
+  Widget _buildAppleTitle(BuildContext context) {
+    final TextStyle titleStyle = fushiAppleNavTitleStyle(context);
+    final TextAlign align =
+        fushiAppleCompact(context) ? TextAlign.start : TextAlign.center;
+    final Widget? customTitle = titleWidget;
+    if (customTitle != null) {
+      return DefaultTextStyle.merge(
+        style: titleStyle,
+        maxLines: 1,
+        textAlign: align,
+        overflow: TextOverflow.ellipsis,
+        child: customTitle,
+      );
+    }
+    return Text(
+      title!,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: align,
+      style: titleStyle,
     );
   }
 
@@ -6221,14 +6605,13 @@ class FushiCompactSearchRow extends StatelessWidget {
       context: context,
       controller: controller,
     );
-    // 与 [FushiSearchField] 同一形态语言：两套设计系统都是全圆角胶囊（MD3 填充
-    // 胶囊 surfaceContainerHigh；Apple 是无底胶囊 + 发丝分隔线描边——搜索框是
-    // 控件层，不铺 systemFill 灰块；它常压在查词弹窗的平台视图旁，着色器玻璃
-    // 会采到黑底，所以这里不用玻璃，只留描边）。
-    final bool apple = isGlassDesign(context);
+    // 与 [FushiSearchField] 同一形态语言：MD3 是 surfaceContainerHigh 填充胶囊。
+    // Apple 复用 [FushiSearchField] 的 Apple 分支（[FushiTextFieldControl] 认出
+    // 前缀放大镜 → iOS 搜索胶囊：SF 放大镜、36 高、聚焦强调色内环），见
+    // [_buildApple]。
+    if (isGlassDesign(context)) return _buildApple(context, keyboardSuffix);
     return FushiCard(
-      color: apple ? Colors.transparent : tokens.surfaces.search,
-      borderColor: apple ? appleColorsOf(context).separator : null,
+      color: tokens.surfaces.search,
       borderRadius: const BorderRadius.all(Radius.circular(22)),
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: SizedBox(
@@ -6273,6 +6656,53 @@ class FushiCompactSearchRow extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+extension on FushiCompactSearchRow {
+  /// Apple：一行 = iOS 搜索胶囊（+ 关闭键）。胶囊显式给实色 tertiaryFill 填充
+  /// （UISearchTextField 的底）——这一行常压在查词弹窗的平台视图旁，透明的
+  /// 着色器玻璃 bezel 会采到平台视图的黑底，所以不走玻璃搜索胶囊。提交走软
+  /// 键盘的「搜索」键 / 物理回车（iOS 搜索框没有单独的提交钮）；关闭键是
+  /// 胶囊旁的 plain 图标键。fieldKey / closeButtonKey / 焦点节点与 MD3 同一套。
+  Widget _buildApple(BuildContext context, Widget? keyboardSuffix) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    return SizedBox(
+      height: 44,
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: FushiTextFieldControl(
+              key: fieldKey,
+              controller: controller,
+              focusNode: focusNode,
+              hintLocales: hintLocales,
+              decoration: InputDecoration(
+                hintText: hintText,
+                filled: true,
+                fillColor: apple.tertiaryFill,
+                prefixIcon: const FushiIcon(
+                  FushiIcons.search,
+                  size: kFushiSearchFieldIconSize,
+                ),
+                suffixIcon: keyboardSuffix,
+              ),
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _submit(),
+            ),
+          ),
+          if (onClose != null) ...<Widget>[
+            const SizedBox(width: 4),
+            _CompactSearchIconButton(
+              key: closeButtonKey,
+              icon: FushiIcons.close,
+              tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+              onPressed: onClose!,
+            ),
+          ],
+        ],
       ),
     );
   }

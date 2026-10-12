@@ -700,8 +700,8 @@ void main() {
       expect(find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>), findsNothing);
       expect(find.byType(FushiAppleSegmentedControl), findsNothing);
       expect(find.byType(GlassButton), findsNothing);
-      // 选中段显示 SF 对勾。
-      expect(find.byIcon(CupertinoIcons.checkmark), findsOneWidget);
+      // iOS 分段不画 M3 选中对勾：选中只靠滑块。
+      expect(find.byIcon(CupertinoIcons.checkmark), findsNothing);
 
       await tester.tap(find.text('Gamma'));
       await settle(tester);

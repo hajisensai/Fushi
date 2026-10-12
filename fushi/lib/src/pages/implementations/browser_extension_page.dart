@@ -802,26 +802,22 @@ class _HeroStatusIcon extends StatelessWidget {
                 ? FushiStatusTone.error
                 : FushiStatusTone.warning,
       );
-      return SettingsSpringValue(
-        value: connected ? 1 : 0,
-        builder: (BuildContext context, double t, Widget? _) {
-          final double c = t.clamp(0.0, 1.0);
-          final double pulse = (t - c).abs();
-          return Transform.scale(
-            scale: 1 + pulse * 0.8,
-            child: SizedBox.square(
-              dimension: size * 0.75,
-              child: Center(
-                child: FushiIcon(
-                  connected ? FushiIcons.success : FushiIcons.warning,
-                  size: size * 0.7,
-                  fill: 1,
-                  color: color,
-                ),
-              ),
+      // Apple：SF Symbols 式的符号替换（交叉淡入），没有 M3E 弹簧过冲脉冲，
+      // 也不画 cookie 形状底。
+      return AnimatedSwitcher(
+        duration: fushiMotionDuration(context, FushiMotion.short),
+        child: SizedBox.square(
+          key: ValueKey<bool>(connected),
+          dimension: size * 0.75,
+          child: Center(
+            child: FushiIcon(
+              connected ? FushiIcons.success : FushiIcons.warning,
+              size: size * 0.7,
+              fill: 1,
+              color: color,
             ),
-          );
-        },
+          ),
+        ),
       );
     }
     final ColorScheme scheme = Theme.of(context).colorScheme;

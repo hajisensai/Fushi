@@ -1893,13 +1893,17 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
           ),
         ),
       ],
-      floatingActionButton: FushiFab(
-        key: const ValueKey<String>('font-library-import-fab'),
-        icon: const FushiIcon(FushiIcons.importFile),
-        label: Text(t.font_library_import_fab),
-        tooltip: t.custom_fonts_import_file,
-        onPressed: _fontsLoading ? null : _importFontFile,
-      ),
+      // Apple 没有 FAB：「导入字体文件」已是页头「+」菜单的首项（iOS / macOS
+      // 的添加动作在导航栏），MD3 才另挂扩展 FAB。
+      floatingActionButton: apple
+          ? null
+          : FushiFab(
+              key: const ValueKey<String>('font-library-import-fab'),
+              icon: const FushiIcon(FushiIcons.importFile),
+              label: Text(t.font_library_import_fab),
+              tooltip: t.custom_fonts_import_file,
+              onPressed: _fontsLoading ? null : _importFontFile,
+            ),
       // 字体库正文（CustomScrollView）首个 sliver 吃页头让位，滚到页头底下。
       bodyConsumesTopPadding: true,
       bodyBuilder:

@@ -113,6 +113,10 @@ class SettingsKitRadii {
 /// 弹簧驱动的标量：[value] 变化时从当前位置（连同当前速度）弹到新值，减弱动态
 /// 效果 / 墨水屏下直接跳到新值。builder 拿到的是**可能越界**的瞬时值（弹簧的
 /// overshoot 正是 M3E 的回弹手感），用作颜色插值时调用方自己 clamp。
+///
+/// Apple（[isGlassDesign]）下同刚度改临界阻尼：iOS / macOS 的状态过渡是不过冲
+/// 的弹簧，没有 Expressive 回弹（builder 拿到的值不越界，overshoot 驱动的放大 /
+/// 变宽自然归零）。
 class SettingsSpringValue extends StatefulWidget {
   const SettingsSpringValue({
     required this.value,
@@ -132,10 +136,25 @@ class SettingsSpringValue extends StatefulWidget {
 }
 
 class _SettingsSpringValueState extends State<SettingsSpringValue>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   // initState 里建（不懒建）：从没 build 过就被 dispose 时，懒建会在已失活的
-  // element 上查 TickerMode 而抛异常（FushiPressScale 同款坑）。
-  late final FushiSpring _spring;
+  // element 上查 TickerMode 而抛异常（FushiPressScale 同款坑）。设计系统在
+  // [didChangeDependencies] 里确定后，Apple 换成同刚度的临界阻尼弹簧。
+  late FushiSpring _spring;
+
+  /// 当前弹簧按哪套设计系统建的；null = 还没读过主题（initState 建的是 M3E）。
+  bool? _apple;
+
+  SpringDescription _springFor({required bool apple}) {
+    final SpringDescription base =
+        widget.spring ?? fushiExpressiveDefaultSpatial;
+    if (!apple) return base;
+    return SpringDescription.withDampingRatio(
+      mass: base.mass,
+      stiffness: base.stiffness,
+      ratio: 1,
+    );
+  }
 
   @override
   void initState() {
@@ -143,8 +162,24 @@ class _SettingsSpringValueState extends State<SettingsSpringValue>
     _spring = FushiSpring(
       vsync: this,
       initial: widget.value,
-      spring: widget.spring ?? fushiExpressiveDefaultSpatial,
+      spring: _springFor(apple: false),
     );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final bool apple = isGlassDesign(context);
+    final bool rebuild = _apple == null ? apple : apple != _apple;
+    _apple = apple;
+    if (!rebuild) return;
+    final FushiSpring old = _spring;
+    _spring = FushiSpring(
+      vsync: this,
+      initial: old.target,
+      spring: _springFor(apple: apple),
+    );
+    old.dispose();
   }
 
   @override
@@ -1090,7 +1125,25 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
     // 与共享悬浮工具栏（fushi_floating_toolbar.dart 的 FushiFloatingTopBar）
     // 同一套胶囊：同色板、同阴影 / 发丝描边；展开态胶囊淡出成纯文字标题。
     final Color pillColor = fushiFloatingToolbarPalette(context).container;
-    Widget capsule({required Widget child, required double t}) {
+    // Apple：返回 / 动作是常驻的透明玻璃圆钮 / 胶囊（[FushiFloatingPill] 的
+    // Apple 形态，iOS 26 bar button 尺寸），标题是纯文字（iOS 导航栏标题不进
+    // 胶囊）；MD3 三块实色胶囊同高 [kFushiFloatingToolbarCompactExtent]。
+    final double extent = apple
+        ? fushiAppleFloatingExtent(context)
+        : kFushiFloatingToolbarCompactExtent;
+    Widget capsule({
+      required Widget child,
+      required double t,
+      OutlinedBorder appleShape = const StadiumBorder(),
+    }) {
+      if (apple) {
+        return FushiFloatingPill(
+          color: pillColor,
+          shape: appleShape,
+          padding: EdgeInsets.zero,
+          child: child,
+        );
+      }
       final double c = t.clamp(0.0, 1.0);
       return Stack(
         children: <Widget>[
@@ -1216,10 +1269,9 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
               if (widget.onBack != null) ...<Widget>[
                 capsule(
                   t: 1,
+                  appleShape: const CircleBorder(),
                   child: FushiFillSlot.wrap(
-                    extent: const Size.square(
-                      kFushiFloatingToolbarCompactExtent,
-                    ),
+                    extent: Size.square(extent),
                     shape: const CircleBorder(),
                     child: FushiIconButtonControl(
                       icon: const FushiIcon(FushiIcons.back),
@@ -1235,40 +1287,39 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
               Expanded(
                 child: Align(
                   alignment: AlignmentDirectional.centerStart,
-                  child: capsule(
-                    t: t,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        minHeight: kFushiFloatingToolbarCompactExtent,
-                      ),
+                  child: () {
+                    final Widget title = ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: extent),
                       child: Align(
                         widthFactor: 1,
                         heightFactor: 1,
                         alignment: AlignmentDirectional.centerStart,
                         child: titleBlock,
                       ),
-                    ),
-                  ),
+                    );
+                    return apple ? title : capsule(t: t, child: title);
+                  }(),
                 ),
               ),
               if (widget.actions.isNotEmpty) ...<Widget>[
                 SizedBox(width: tokens.spacing.gap),
                 capsule(
                   t: math.max(t, 0.6),
+                  appleShape:
+                      widget.actions.length == 1 &&
+                          fushiIsChromeIconButton(widget.actions.single)
+                      ? const CircleBorder()
+                      : const StadiumBorder(),
                   child:
                       widget.actions.length == 1 &&
                           fushiIsChromeIconButton(widget.actions.single)
                       ? FushiFillSlot.wrap(
-                          extent: const Size.square(
-                            kFushiFloatingToolbarCompactExtent,
-                          ),
+                          extent: Size.square(extent),
                           shape: const CircleBorder(),
                           child: widget.actions.single,
                         )
                       : ConstrainedBox(
-                          constraints: const BoxConstraints(
-                            minHeight: kFushiFloatingToolbarCompactExtent,
-                          ),
+                          constraints: BoxConstraints(minHeight: extent),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 4),
                             child: Center(
@@ -1486,10 +1537,14 @@ class _JumpChip extends StatelessWidget {
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               onTap: onTap,
+              // Apple：按下变淡、不扩散水波纹（iOS 胶囊按钮的按压反馈）。
+              splashFactory: apple ? NoSplash.splashFactory : null,
+              highlightColor: apple ? appleColorsOf(context).fill : null,
               child: Padding(
-                // 选中胶囊变宽（M3E 按钮组「选中项变宽」）。
+                // 选中胶囊变宽（M3E 按钮组「选中项变宽」）；Apple 只换填色，
+                // 不变形。
                 padding: EdgeInsets.symmetric(
-                  horizontal: lerpDouble(14, 20, t)!,
+                  horizontal: apple ? 14 : lerpDouble(14, 20, t)!,
                   vertical: 7,
                 ),
                 child: Text(

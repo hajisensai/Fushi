@@ -716,15 +716,19 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
           padding: shellTitle
               ? null
               : EdgeInsets.fromLTRB(page, page / 2, page, 4),
-          leading: showBackButton
-              ? fushiFloatingLeading(
+          leading: !showBackButton
+              ? null
+              : isGlassDesign(context)
+              ? FushiRouteBackButton(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                )
+              : fushiFloatingLeading(
                   FushiIconButton(
                     icon: Icons.arrow_back,
                     tooltip: t.back,
                     onTap: () => Navigator.of(context).maybePop(),
                   ),
-                )
-              : null,
+                ),
           tabs: child!,
         );
       },

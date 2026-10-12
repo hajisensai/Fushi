@@ -242,7 +242,8 @@ void main() {
           ],
         ),
       );
-      expect(find.byType(GlassButton), findsNWidgets(2));
+      // Apple 标签是内容层实色胶囊，不是玻璃。
+      expect(find.byType(GlassButton), findsNothing);
       final SemanticsData on = semanticsOf(tester, find.text('on'));
       final SemanticsData off = semanticsOf(tester, find.text('off'));
       expect(on.hasAction(SemanticsAction.tap), isTrue);

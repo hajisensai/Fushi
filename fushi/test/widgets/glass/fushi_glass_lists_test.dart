@@ -11,7 +11,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 // 列表与容器包装契约：MD3 下是原 ListTile / ExpansionTile / Divider / Card /
 // Badge；玻璃下按 Apple 26 内容层规则是实色——列表行是 [FushiAppleRow]、
 // 卡片是 [FushiAppleGroupSurface]（secondaryGroupedBackground）、分隔线是
-// separator 细线，都不是玻璃组件；只有 Badge 是 GlassBadge。列表行可 Tab
+// separator 细线、Badge 是 systemRed 实色徽标，都不是玻璃组件。列表行可 Tab
 // 聚焦、Enter 激活，选中态有可见高亮。
 
 Future<void> _pump(
@@ -472,13 +472,26 @@ void main() {
             .first,
       );
       expect(surface.color, appleColorsOf(ctx).secondaryGroupedBackground);
-      // 圆点、count、纯数字 label → GlassBadge；isLabelVisible:false 不出徽标。
-      expect(find.byType(GlassBadge), findsNWidgets(3));
+      // 徽标是 iOS 实色 systemRed + 白字，不是 GlassBadge；isLabelVisible:false
+      // 不出徽标。
+      expect(find.byType(GlassBadge), findsNothing);
       expect(find.text('3'), findsOneWidget);
       expect(find.text('7'), findsOneWidget);
-      // 任意 label → 玻璃胶囊保住内容。
       expect(find.text('new'), findsOneWidget);
       expect(find.text('2'), findsNothing);
+      final DecoratedBox countPill = tester.widget<DecoratedBox>(
+        find
+            .ancestor(of: find.text('3'), matching: find.byType(DecoratedBox))
+            .first,
+      );
+      expect(
+        (countPill.decoration as BoxDecoration).color,
+        appleColorsOf(ctx).destructive,
+      );
+      expect(
+        DefaultTextStyle.of(tester.element(find.text('3'))).style.color,
+        Colors.white,
+      );
     });
 
     testWidgets('toggling a glass badge keeps the child mounted (focus)', (

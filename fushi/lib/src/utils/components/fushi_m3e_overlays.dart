@@ -81,6 +81,46 @@ const AnimationStyle fushiM3eMenuAnimationStyle = AnimationStyle(
   reverseDuration: Durations.short2,
 );
 
+/// Apple 设计系统的对话框进出场：只淡入淡出、不缩放（iOS 26 / macOS 26 的
+/// alert 不弹簧放大），曲线是临界阻尼弹簧（Apple effects default：刚度
+/// 986.96、阻尼比 1，约 0.21 秒落定，绝不过冲）。[FushiDialogRoute] 在 Apple
+/// 下自动换用它。
+const AnimationStyle fushiAppleDialogAnimationStyle = AnimationStyle(
+  curve: FushiSpringCurve(
+    stiffness: 986.96,
+    dampingRatio: 1,
+    duration: Duration(milliseconds: 220),
+  ),
+  duration: Duration(milliseconds: 220),
+  reverseCurve: FushiSpringCurve(
+    stiffness: 986.96,
+    dampingRatio: 1,
+    duration: Duration(milliseconds: 220),
+  ),
+  reverseDuration: Duration(milliseconds: 180),
+);
+
+/// Apple 设计系统的底部弹层进场：临界阻尼弹簧（SwiftUI 感知时长 0.4 秒、
+/// bounce 0 → 刚度 (2π/0.4)² ≈ 246.74），没有 M3E 的近临界回弹。
+const AnimationStyle fushiAppleSheetAnimationStyle = AnimationStyle(
+  curve: FushiSpringCurve(
+    stiffness: 246.74,
+    dampingRatio: 1,
+    duration: Duration(milliseconds: 420),
+  ),
+  duration: Duration(milliseconds: 420),
+  reverseCurve: Easing.emphasizedAccelerate,
+  reverseDuration: Durations.medium1,
+);
+
+/// 当前设计系统的底部弹层动效：Apple → [fushiAppleSheetAnimationStyle]，
+/// 其余 → [fushiM3eSheetAnimationStyle]。系统「减弱动态效果」由调用方处理。
+AnimationStyle fushiSheetAnimationStyleOf(BuildContext context) {
+  return isGlassDesign(context)
+      ? fushiAppleSheetAnimationStyle
+      : fushiM3eSheetAnimationStyle;
+}
+
 /// 把一个弹簧（[stiffness]、阻尼比 [dampingRatio]、质量 1）按 [duration] 归一化
 /// 成 [Curve]：t=1 时弹簧应已基本静止（时长取到弹簧 settle 之后）。欠阻尼时
 /// 中途会越过 1（回弹），调用方自己决定能否承受过冲。进场曲线用它代替定时
@@ -147,7 +187,8 @@ Color fushiModalScrimColor(BuildContext context) {
 /// 进场按 [animationStyle] 的弹簧曲线从 [FushiOverlayMotion.dialogScaleFrom]
 /// 弹到 1（带轻微回弹），淡入只占前 40%；退场缩到
 /// [FushiOverlayMotion.dialogScaleTo] 并快速淡出。[reduceMotion]（墨水屏 /
-/// 减弱动态效果）时无动画。
+/// 减弱动态效果）时无动画。Apple 设计系统（按 [context] 判定）下不缩放、不
+/// 回弹：改用 [fushiAppleDialogAnimationStyle] 整体淡入淡出。
 class FushiDialogRoute<T> extends DialogRoute<T> {
   FushiDialogRoute({
     required super.context,
@@ -164,15 +205,28 @@ class FushiDialogRoute<T> extends DialogRoute<T> {
     super.fullscreenDialog,
     AnimationStyle animationStyle = fushiM3eDialogAnimationStyle,
     this.reduceMotion = false,
-  }) : _style = reduceMotion ? AnimationStyle.noAnimation : animationStyle,
+  }) : _apple = isGlassDesign(context),
+       _style = _resolveStyle(context, reduceMotion, animationStyle),
        super(
-         animationStyle: reduceMotion
-             ? AnimationStyle.noAnimation
-             : animationStyle,
+         animationStyle: _resolveStyle(context, reduceMotion, animationStyle),
        );
 
   final bool reduceMotion;
+
+  /// 推路由时的设计系统：Apple 只淡入淡出（不缩放）。
+  final bool _apple;
   final AnimationStyle _style;
+
+  static AnimationStyle _resolveStyle(
+    BuildContext context,
+    bool reduceMotion,
+    AnimationStyle animationStyle,
+  ) {
+    if (reduceMotion) return AnimationStyle.noAnimation;
+    return isGlassDesign(context)
+        ? fushiAppleDialogAnimationStyle
+        : animationStyle;
+  }
 
   @override
   Duration get reverseTransitionDuration =>
@@ -194,7 +248,9 @@ class FushiDialogRoute<T> extends DialogRoute<T> {
     );
     _fade = CurvedAnimation(
       parent: animation,
-      curve: const Interval(0, 0.4, curve: Easing.emphasizedDecelerate),
+      curve: _apple
+          ? (_style.curve ?? Easing.emphasizedDecelerate)
+          : const Interval(0, 0.4, curve: Easing.emphasizedDecelerate),
       reverseCurve: _style.reverseCurve ?? Easing.emphasizedAccelerate,
     );
   }
@@ -210,6 +266,15 @@ class FushiDialogRoute<T> extends DialogRoute<T> {
     _ensure(animation);
     final CurvedAnimation scale = _scale!;
     final CurvedAnimation fade = _fade!;
+    if (_apple) {
+      // Apple：只淡入淡出，没有缩放弹出。
+      return AnimatedBuilder(
+        animation: animation,
+        child: child,
+        builder: (BuildContext context, Widget? child) =>
+            Opacity(opacity: fade.value.clamp(0.0, 1.0), child: child),
+      );
+    }
     return AnimatedBuilder(
       animation: animation,
       child: child,

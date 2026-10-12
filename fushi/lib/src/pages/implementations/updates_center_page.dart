@@ -156,12 +156,72 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
 
   @override
   Widget build(BuildContext context) {
+    // Apple：iOS / macOS 导航栏（返回 + 标题 + 右侧动作），域筛选是标题下方
+    // 的分段控件——不再用 M3E 悬浮工具栏顶替导航栏。
+    final bool apple = isGlassDesign(context);
     return FushiPageScaffold(
       title: t.updates_center_title,
-      header: _buildTopBar(context),
+      header: apple ? null : _buildTopBar(context),
+      actions: apple ? _buildAppleActions() : const <Widget>[],
+      headerBottom: apple ? _buildAppleFilter() : null,
       // Builder：正文要在页头脚手架之内取 MediaQuery 顶部让位（状态栏 + 浮动
       // 页头）。
       body: Builder(builder: _buildList),
+    );
+  }
+
+  /// Apple 导航栏右侧动作：与 MD3「⋯」里同三项，默认平铺、放不下时由
+  /// [FushiPageHeader] 收进它自己的 ⋯ 菜单。
+  List<Widget> _buildAppleActions() {
+    return <Widget>[
+      FushiIconButton(
+        key: const ValueKey<String>('updates_refresh'),
+        icon: FushiIcons.refresh,
+        tooltip: t.refresh,
+        enabled: !_loading,
+        onTap: () => unawaited(_load()),
+      ),
+      FushiIconButton(
+        key: const ValueKey<String>('updates_mark_all_seen'),
+        icon: FushiIcons.checklist,
+        tooltip: t.updates_mark_all_seen,
+        enabled: _fresh.isNotEmpty,
+        onTap: () => unawaited(_markAllSeen()),
+      ),
+      FushiIconButton(
+        key: const ValueKey<String>('updates_clear'),
+        icon: FushiIcons.deleteSweep,
+        tooltip: t.updates_history_clear,
+        enabled: !_loading && _entries.isNotEmpty,
+        onTap: () => unawaited(_clear()),
+      ),
+    ];
+  }
+
+  /// Apple 域筛选：导航栏下方一条 iOS 分段控件（四个域，单选）。
+  Widget _buildAppleFilter() {
+    final UpdateFeedKind? filter = _filter;
+    return FushiSegmentedButton<UpdateFeedKind>(
+      key: const ValueKey<String>('updates_filter_segments'),
+      showSelectedIcon: false,
+      emptySelectionAllowed: filter == null,
+      segments: <ButtonSegment<UpdateFeedKind>>[
+        for (final UpdateFeedKind kind in UpdateFeedKind.values)
+          ButtonSegment<UpdateFeedKind>(
+            value: kind,
+            tooltip: updateFeedKindLabel(kind),
+            label: Text(
+              updateFeedKindLabel(kind),
+              key: ValueKey<String>('updates_filter_${kind.dbValue}'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+      selected: <UpdateFeedKind>{if (filter != null) filter},
+      onSelectionChanged: (Set<UpdateFeedKind> picked) {
+        if (picked.isNotEmpty) _select(picked.first);
+      },
     );
   }
 

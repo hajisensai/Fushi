@@ -8,6 +8,7 @@ import 'package:fushi/src/media/collections/collection_member_view.dart';
 import 'package:fushi/src/media/tags/tag_chips.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
+import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
@@ -702,7 +703,7 @@ class _MediaCollectionGridDetailPageState
                 child: Stack(
                   children: <Widget>[
                     _buildScroll(entries, arranged, cards, filtered),
-                    _buildSelectionBar(),
+                    _buildSelectionBar(arranged),
                   ],
                 ),
               ),
@@ -1134,8 +1135,11 @@ class _MediaCollectionGridDetailPageState
     );
   }
 
-  /// 多选底部浮动操作栏（M3E floating toolbar；spring 从底部进出）。
-  Widget _buildSelectionBar() {
+  /// 多选底部浮动操作栏（M3E floating toolbar；spring 从底部进出）。Apple 走
+  /// iOS 编辑态的玻璃底栏 [BatchActionBar]（「已选 n 项」+ 全选 / 反选 + 动作
+  /// 字形），退出编辑仍由工具栏的选择开关 / 返回键负责。
+  Widget _buildSelectionBar(List<CollectionMemberEntry> arranged) {
+    if (isGlassDesign(context)) return _buildAppleSelectionBar(arranged);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool hasSelection = _selected.isNotEmpty;
     final ({
@@ -1237,6 +1241,73 @@ class _MediaCollectionGridDetailPageState
               );
             },
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Apple 多选底栏：[BatchActionBar] 玻璃胶囊；全选 / 反选以当前筛选后可见的
+  /// [arranged] 为域（被筛掉的成员不受影响），动作与 M3E 工具栏同 key 同语义。
+  Widget _buildAppleSelectionBar(List<CollectionMemberEntry> arranged) {
+    final bool hasSelection = _selected.isNotEmpty;
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: FushiChromeReveal(
+        visible: _selecting,
+        from: AxisDirection.down,
+        child: BatchActionBar(
+          selectedCount: _selected.length,
+          onSelectAll: () => setState(() {
+            _selected.addAll(<String>[
+              for (final CollectionMemberEntry e in arranged) e.key,
+            ]);
+          }),
+          onInvertSelection: () => setState(() {
+            for (final CollectionMemberEntry e in arranged) {
+              if (!_selected.remove(e.key)) _selected.add(e.key);
+            }
+          }),
+          actions: <Widget>[
+            FushiIconButton(
+              key: const ValueKey<String>('collection_detail_batch_tag'),
+              icon: FushiIcons.tag,
+              tooltip: t.tag_label,
+              enabled: hasSelection,
+              onTap: _batchTag,
+            ),
+            if (widget.onSetMembersCompleted != null) ...<Widget>[
+              FushiIconButton(
+                key: const ValueKey<String>('collection_detail_batch_read'),
+                icon: FushiIcons.success,
+                tooltip: t.book_mark_completed_action,
+                enabled: hasSelection,
+                onTap: () => _batchSetCompleted(true),
+              ),
+              FushiIconButton(
+                key: const ValueKey<String>('collection_detail_batch_unread'),
+                icon: FushiIcons.radioUnchecked,
+                tooltip: t.book_mark_uncompleted_action,
+                enabled: hasSelection,
+                onTap: () => _batchSetCompleted(false),
+              ),
+            ],
+            FushiIconButton(
+              key: const ValueKey<String>('collection_detail_batch_move'),
+              icon: FushiIcons.moveFile,
+              tooltip: t.collection_detail_move_to,
+              enabled: hasSelection,
+              onTap: _batchMove,
+            ),
+            FushiIconButton(
+              key: const ValueKey<String>('collection_detail_batch_remove'),
+              icon: FushiIcons.removeCircle,
+              tooltip: t.collection_remove_member,
+              enabled: hasSelection,
+              onTap: _batchRemove,
+            ),
+          ],
         ),
       ),
     );

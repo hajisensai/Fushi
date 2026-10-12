@@ -194,7 +194,8 @@ SettingsDestination buildAppearanceDestination() {
           //
           // 2026-10-06 用户拍板：Apple 设计系统固定毛玻璃，液态玻璃入口先关掉
           // ——本行恒不可见（设置页与设置搜索都走 visible 谓词，一并消失），
-          // 生效值由 ThemeNotifier.glassMaterialTier 钉成 frosted。schema 项、
+          // 生效值由 ThemeNotifier.glassMaterialTier 钉死（2026-10-12 起为 off：
+          // 原生 Cupertino 实色，无玻璃特效）。schema 项、
           // 偏好键 `glass_material` 与液态渲染代码都保留，恢复时把 visible 改回
           // `designSystem == 'glass'` 并撤掉 glassMaterialTier 的钉死即可。
           SettingsSegmentedItem<FushiGlassMaterial>(

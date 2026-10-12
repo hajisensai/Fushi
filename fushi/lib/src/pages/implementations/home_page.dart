@@ -1491,7 +1491,7 @@ class _HomePageState extends BasePageState<HomePage>
 
   /// 外壳大标题条右侧的页头动作槽：库页 / 浏览 / 查词的页头在外壳里时把动作
   /// 登记到这里（分区页签因此独占整行），可见那份由大标题条画出。
-  final FushiShellActionsSlot _shellActions = FushiShellActionsSlot();
+  final _HomeShellActionsSlot _shellActions = _HomeShellActionsSlot();
 
   /// 内容区外包一层滚动观察（喂 [_appleChrome] 与 [_largeTitle]）+ 顶部的
   /// 页面大标题条（[FushiShellLargeTitleBar]）+ 内容区顶部的 scroll edge 带
@@ -1565,13 +1565,35 @@ class _HomePageState extends BasePageState<HomePage>
   /// M3E 库页（叠放浮动工具区的 tab）一律用收起形态——一枚悬浮标题胶囊，
   /// 不随滚动在「裸大字」与「胶囊」之间切换：否则同样停在顶部的视频页与漫画
   /// 页一个是胶囊、一个是裸大字（2026-10-06 用户截图「标题形态不一致」）。
-  Widget _buildShellTitleBar() => FushiShellLargeTitleBar(
-    title: _shellTitleFor(_visibleTab),
-    collapsed:
-        _largeTitle.collapsed ||
-        (!isGlassDesign(context) && _tabHasFloatingChrome(_visibleTab)),
-    actions: _shellActions,
-  );
+  Widget _buildShellTitleBar() {
+    _shellActions.shellTrailing = _appleScrapeTaskAction();
+    return FushiShellLargeTitleBar(
+      title: _shellTitleFor(_visibleTab),
+      collapsed:
+          _largeTitle.collapsed ||
+          (!isGlassDesign(context) && _tabHasFloatingChrome(_visibleTab)),
+      actions: _shellActions,
+    );
+  }
+
+  /// Apple（iOS 26 / macOS 26）下视频源后台补刮任务面板的入口：没有 FAB，
+  /// 主操作进导航栏——这里是外壳大标题行右侧的一颗 bar button，带「进行中」
+  /// 角标。视频 tab 不另放：视频库页头自己就有同一颗按钮（同一外壳动作槽里，
+  /// 不画两颗）。MD3 返回 null（页面 FAB 并进悬浮底栏 / 桌面右下 FAB）。
+  Widget? _appleScrapeTaskAction() {
+    if (!isGlassDesign(context) || _visibleTab == HomeTab.video) return null;
+    final VideoSourceScrapeTaskController? controller =
+        _videoScrapeRuntime.currentController;
+    if (controller == null || !controller.isBusy) return null;
+    return FushiBadgeControl(
+      child: FushiIconButton(
+        key: const ValueKey<String>('video-source-background-task-panel'),
+        tooltip: t.video_source_scrape_tasks_open,
+        icon: _scrapeTaskIcon(controller),
+        onTap: () => unawaited(_openVideoSourceScrapeTasks()),
+      ),
+    );
+  }
 
   /// 内容顶部是叠放浮动工具栏（[FushiFloatingChromeOverlay]）的 tab：这些库页
   /// 的主滚动视图 / 分区都消费 [FushiFloatingChromeInset]，外壳大标题可以叠在
@@ -1746,7 +1768,8 @@ class _HomePageState extends BasePageState<HomePage>
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
     _inMobileLayout = false;
-    _shellFabHostedByBar = false;
+    // Apple 没有 FAB：补刮任务入口在外壳大标题行（[_appleScrapeTaskAction]）。
+    _shellFabHostedByBar = isGlassDesign(context);
     // 自绘标题栏（[FushiDesktopTitleBar.isEnabled]，Windows + macOS）已经把当前
     // tab 名画在应用顶栏上，主导航 rail 始终可见，再叠一层「隐藏 rail + 页头返回
     // 箭头」的全屏设置就成了没有来源的第二条返回出口。macOS 现在与 Windows 同壳，
@@ -1927,7 +1950,8 @@ class _HomePageState extends BasePageState<HomePage>
 
   Widget _buildMobileLayout() {
     _inMobileLayout = true;
-    _shellFabHostedByBar = !isGlassDesign(context);
+    // MD3 并进悬浮底栏的 FAB；Apple 进外壳大标题行（[_appleScrapeTaskAction]）。
+    _shellFabHostedByBar = true;
     final List<HomeTab> tabs = _activeTabs();
     final bool reversed = appModel.reverseNavigationBar;
     final List<AdaptiveNavItem> items = _navItems(tabs);
@@ -2043,7 +2067,8 @@ class _HomePageState extends BasePageState<HomePage>
       ? FushiIcons.sync
       : FushiIcons.pending;
 
-  /// 当前是不是 MD3 手机布局（页面 FAB 已经并进悬浮底栏，body 不再自己画）。
+  /// 页面 FAB 是否已由外壳的栏承载、body 不再自己画：MD3 手机布局并进悬浮
+  /// 底栏，Apple（全部布局）没有 FAB、进外壳大标题行的动作位。
   bool _shellFabHostedByBar = false;
 
   /// 需要跨 tab 切换**保活**（State 不随切走而销毁）的顶层 tab：书架、视频与游戏。
@@ -3765,6 +3790,30 @@ class _StandaloneDictionaryRoute extends StatelessWidget {
           showBackButton: true,
         ),
       ),
+    );
+  }
+}
+
+/// 首页外壳的动作槽：页头登记的动作之外，再并上外壳自己的尾随动作
+/// （Apple 下的后台补刮任务入口，见 `_appleScrapeTaskAction`）。外壳在每次
+/// 构建标题条时写 [shellTrailing]，标题条读 [actions] 时一起画在标题行右侧。
+class _HomeShellActionsSlot extends FushiShellActionsSlot {
+  /// 外壳自己的尾随动作；null = 只有页头登记的那份。
+  Widget? shellTrailing;
+
+  @override
+  Widget? get actions {
+    final Widget? page = super.actions;
+    final Widget? trailing = shellTrailing;
+    if (trailing == null) return page;
+    if (page == null) return trailing;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Flexible(child: page),
+        const SizedBox(width: 8),
+        trailing,
+      ],
     );
   }
 }

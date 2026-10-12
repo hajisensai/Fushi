@@ -747,39 +747,32 @@ void main() {
       expect(find.byType(GlassContainer), findsNothing);
     });
 
-    testWidgets('glass: round glass back button pops, bar is transparent', (
+    testWidgets('glass: plain Cupertino back button pops, bar is transparent', (
       WidgetTester tester,
     ) async {
       await pushSecond(tester, glass: true);
       expect(find.byType(BackButton), findsNothing);
       expect(find.byType(IconButton), findsNothing);
       expect(find.byType(FushiIconButtonControl), findsOneWidget);
+      // 原生 Cupertino（2026-10-12）：顶栏透明、返回键无底，不再垫玻璃圆。
       expect(
         find.descendant(
           of: find.byType(AppBar).last,
           matching: find.byType(GlassContainer),
         ),
-        findsOneWidget,
+        findsNothing,
       );
-      // 顶栏本身透明（不是一整块玻璃），玻璃只在那枚圆形返回钮上。
       expect(
         tester.widget<AppBar>(find.byType(AppBar).last).backgroundColor,
         Colors.transparent,
       );
-      final Size circle = tester.getSize(
-        find.descendant(
-          of: find.byType(AppBar).last,
-          matching: find.byType(GlassContainer),
-        ),
-      );
-      expect(circle.width, circle.height);
       await tester.tap(find.byType(FushiIconButtonControl));
       await settle(tester);
       expect(find.text('Second'), findsNothing);
       expect(find.text('Home'), findsOneWidget);
     });
 
-    testWidgets('glass: actions share one glass capsule and still fire', (
+    testWidgets('glass: actions sit in one plain row and still fire', (
       WidgetTester tester,
     ) async {
       int a = 0;
@@ -805,14 +798,17 @@ void main() {
         ),
       );
       await settle(tester);
-      final Finder capsule = find.descendant(
-        of: find.byType(AppBar),
-        matching: find.byType(GlassContainer),
-      );
-      expect(capsule, findsOneWidget);
+      // 原生 Cupertino（2026-10-12）：动作是一排无底 bar button，不收进玻璃胶囊。
       expect(
         find.descendant(
-          of: capsule,
+          of: find.byType(AppBar),
+          matching: find.byType(GlassContainer),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(AppBar),
           matching: find.byType(FushiIconButtonControl),
         ),
         findsNWidgets(2),

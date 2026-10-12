@@ -5852,12 +5852,31 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 底栏各算一次（纯函数、动作表是轻量值对象），两边读到的是同一份结论。
   MangaChromePlan _chromePlan() {
     final bool ready = _chromeActionsEnabled;
+    // Apple 没有 FAB：识别框开关是工具栏末组的一颗普通开关按钮（开 = 强调色
+    // 字形，[FushiFloatingToolbar] 的 Apple 选中态），不再另占 FAB 宽。
+    final bool apple = isGlassDesign(context);
     return planMangaChrome(
       width: MediaQuery.sizeOf(context).width,
-      groups: ready ? _chromeActionGroups() : const <List<MangaChromeAction>>[],
-      hasFab: ready,
+      groups: !ready
+          ? const <List<MangaChromeAction>>[]
+          : <List<MangaChromeAction>>[
+              ..._chromeActionGroups(),
+              if (apple) <MangaChromeAction>[_ocrBoxesToggleAction()],
+            ],
+      hasFab: ready && !apple,
     );
   }
+
+  /// 识别框开关（查词的入口）作为工具栏动作：Apple 下替代 FAB。优先级最高，
+  /// 工具栏放不下时最后才降到右上角。与 FAB / 快捷键 / 悬浮球同一执行体。
+  MangaChromeAction _ocrBoxesToggleAction() => MangaChromeAction(
+    key: const ValueKey<String>('manga_ocr_boxes_toggle'),
+    icon: _showOcrBoxes ? Icons.highlight_alt : Icons.highlight_alt_outlined,
+    label: t.manga_ocr_boxes_toggle,
+    priority: 100,
+    active: _showOcrBoxes,
+    onPressed: () => unawaited(_toggleOcrBoxes()),
+  );
 
   Widget _buildTopChrome() {
     final bool ready = _chromeActionsEnabled;
@@ -5915,19 +5934,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       toolbar: MangaReaderToolbar(
         groups: plan.toolbar,
         // FAB = 本页主操作：识别框开关（查词的入口）。开 = 圆角方、关 = 圆，按
-        // M3E 弹簧形状变形；与快捷键 / 悬浮球同一执行体。
-        fab: KeyedSubtree(
-          key: const ValueKey<String>('manga_ocr_boxes_toggle'),
-          child: FushiToolbarFab(
-            icon: _showOcrBoxes
-                ? Icons.highlight_alt
-                : Icons.highlight_alt_outlined,
-            tooltip: t.manga_ocr_boxes_toggle,
-            rounded: _showOcrBoxes,
-            morphing: true,
-            onPressed: () => unawaited(_toggleOcrBoxes()),
-          ),
-        ),
+        // M3E 弹簧形状变形；与快捷键 / 悬浮球同一执行体。Apple 无 FAB，开关
+        // 在工具栏里（[_ocrBoxesToggleAction]）。
+        fab: isGlassDesign(context)
+            ? null
+            : KeyedSubtree(
+                key: const ValueKey<String>('manga_ocr_boxes_toggle'),
+                child: FushiToolbarFab(
+                  icon: _showOcrBoxes
+                      ? Icons.highlight_alt
+                      : Icons.highlight_alt_outlined,
+                  tooltip: t.manga_ocr_boxes_toggle,
+                  rounded: _showOcrBoxes,
+                  morphing: true,
+                  onPressed: () => unawaited(_toggleOcrBoxes()),
+                ),
+              ),
       ),
     );
   }

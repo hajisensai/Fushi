@@ -8,10 +8,12 @@ import 'package:flutter/physics.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -57,21 +59,11 @@ Widget _glassFocusObserver(ValueChanged<bool>? onFocusChange, Widget child) {
   );
 }
 
-/// Material 复选 / 单选的点击目标边长：padded 48、shrinkWrap 40，再按视觉密度
-/// 修正（与 Material 布局尺寸一致，切换设计系统不跳行高）。
-double _toggleTapTarget(
-  BuildContext context,
-  MaterialTapTargetSize? tapTargetSize,
-  VisualDensity? visualDensity,
-) {
-  final ThemeData theme = Theme.of(context);
-  final MaterialTapTargetSize size =
-      tapTargetSize ?? theme.materialTapTargetSize;
-  final double base = size == MaterialTapTargetSize.padded
-      ? kMinInteractiveDimension
-      : 40;
-  final VisualDensity density = visualDensity ?? theme.visualDensity;
-  return base + density.baseSizeAdjustment.dx;
+/// Apple 复选 / 单选的点击目标边长：iOS 44pt 最小触控区；macOS 控件本身
+/// 就是点击区（16 的方框 / 圆钮外留 4 px 焦点环余量）。不用 Material 的
+/// 48dp / 视觉密度度量。
+double _appleToggleTapTarget({required bool desktop, required double size}) {
+  return desktop ? size + 8 : math.max(44, size);
 }
 
 /// 滑块方向键：返回 +1（增大）/ -1（减小）/ 0（不处理）。键位与 Material
@@ -137,8 +129,6 @@ Widget _glassCheckIndicator(
   bool isError = false,
   String? semanticLabel,
   double scale = 1.0,
-  MaterialTapTargetSize? materialTapTargetSize,
-  VisualDensity? visualDensity,
 }) {
   final FushiAppleColors apple = appleColorsOf(context);
   final bool selected = value != false;
@@ -228,11 +218,7 @@ Widget _glassCheckIndicator(
       child: glyph,
     ),
   );
-  final double target = _toggleTapTarget(
-    context,
-    materialTapTargetSize,
-    visualDensity,
-  );
+  final double target = _appleToggleTapTarget(desktop: desktop, size: size);
   return SizedBox.square(
     dimension: target,
     child: Center(child: box),
@@ -1454,36 +1440,6 @@ Widget _appleSliderKnob({
   );
 }
 
-/// 滑块数值气泡（[Slider.label] / [RangeSlider.labels]）：拖动或键盘聚焦时浮在
-/// 圆钮上方的小圆角气泡。
-Widget _appleSliderLabel(BuildContext context, String label) {
-  final FushiAppleColors apple = appleColorsOf(context);
-  return DecoratedBox(
-    decoration: BoxDecoration(
-      color: apple.tertiaryGroupedBackground,
-      borderRadius: BorderRadius.circular(8),
-      boxShadow: const <BoxShadow>[
-        BoxShadow(
-          color: Color(0x24000000),
-          blurRadius: 6,
-          offset: Offset(0, 2),
-        ),
-      ],
-    ),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      child: Text(
-        label,
-        maxLines: 1,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: apple.label,
-          fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-        ),
-      ),
-    ),
-  );
-}
-
 /// 离散化：有 divisions 时吸附到最近一格。
 double _appleDiscretize(double v, double min, double max, int? divisions) {
   final double range = max - min;
@@ -1659,7 +1615,7 @@ class _FushiAppleSliderState extends State<FushiAppleSlider> {
     _thumbSize = m.thumb;
     final Color active = widget.activeColor ?? apple.accent;
     final double? secondaryValue = widget.secondaryTrackValue;
-    final String? label = widget.label;
+    // [Slider.label] 不画数值气泡（iOS / macOS 滑块没有），读屏仍读 value 语义。
 
     final Widget body = SizedBox(
       height: m.height,
@@ -1739,17 +1695,6 @@ class _FushiAppleSliderState extends State<FushiAppleSlider> {
                         ringColor: apple.accent,
                       ),
                     ),
-                    if (label != null && (_focused || _dragging))
-                      Positioned(
-                        left: left + m.thumb / 2 - 80,
-                        width: 160,
-                        bottom: (m.height + m.thumb) / 2 + 4,
-                        child: IgnorePointer(
-                          child: Center(
-                            child: _appleSliderLabel(context, label),
-                          ),
-                        ),
-                      ),
                   ],
                 ),
               ),
@@ -2058,27 +2003,14 @@ class _GlassRangeSliderState extends State<_GlassRangeSlider> {
           decreasedValue: _semanticValue(_discretize(v - step)),
           onIncrease: () => _emit(thumb, _discretize(v + step)),
           onDecrease: () => _emit(thumb, _discretize(v - step)),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: <Widget>[
-              _appleSliderKnob(
-                size: _thumbSize,
-                color: Colors.white,
-                desktop: _appleDesktopMetrics(context),
-                focused: focused,
-                active: _dragThumb == thumb,
-                ringColor: apple.accent,
-              ),
-              if (label != null && (focused || _dragThumb == thumb))
-                Positioned(
-                  bottom: _thumbSize + 4,
-                  left: -66,
-                  right: -66,
-                  child: IgnorePointer(
-                    child: Center(child: _appleSliderLabel(context, label)),
-                  ),
-                ),
-            ],
+          // iOS / macOS 滑块不弹数值气泡；数值经 label / value 语义给读屏。
+          child: _appleSliderKnob(
+            size: _thumbSize,
+            color: Colors.white,
+            desktop: _appleDesktopMetrics(context),
+            focused: focused,
+            active: _dragThumb == thumb,
+            ringColor: apple.accent,
           ),
         ),
       ),
@@ -2258,8 +2190,6 @@ class FushiCheckbox extends StatelessWidget {
         checkColor: checkColor,
         isError: isError,
         semanticLabel: semanticLabel,
-        materialTapTargetSize: materialTapTargetSize,
-        visualDensity: visualDensity,
       );
     }
     if (_adaptive) {
@@ -2488,8 +2418,6 @@ class _FushiRadioState<T> extends State<FushiRadio<T>> with RadioClient<T> {
         autofocus: widget.autofocus,
         activeColor: widget.activeColor,
         fillColor: widget.fillColor,
-        materialTapTargetSize: widget.materialTapTargetSize,
-        visualDensity: widget.visualDensity,
       );
     }
     if (widget._adaptive) {
@@ -4060,9 +3988,8 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
     final Color fg = !enabled
         ? apple.tertiaryLabel
         : (selected ? apple.label : apple.secondaryLabel);
-    final Widget? icon = selected && widget.showSelectedIcon
-        ? (widget.selectedIcon ?? const FushiIcon(CupertinoIcons.checkmark))
-        : (s.label != null ? s.icon : null);
+    // iOS 分段不画 M3 的选中对勾：选中只靠滑块（showSelectedIcon 只影响 MD3）。
+    final Widget? icon = s.label != null ? s.icon : null;
     final Widget label = s.label ?? s.icon ?? const SizedBox.shrink();
     final Widget content = IconTheme.merge(
       data: IconThemeData(color: fg, size: 15),
@@ -4092,14 +4019,12 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
       selected: selected,
       enabled: enabled,
       onTap: () => _handlePressed(s.value),
-      thumbColor: glassMaterialOf(context) == FushiGlassMaterial.off
-          ? apple.tertiaryGroupedBackground
-          : _appleClearLensColor(context),
+      solid: glassMaterialOf(context) == FushiGlassMaterial.off,
       semanticLabel: text ?? s.tooltip,
       child: content,
     );
     if (s.tooltip != null) {
-      button = Tooltip(message: s.tooltip, child: button);
+      button = FushiTooltip(message: s.tooltip, child: button);
     }
     return button;
   }
@@ -4215,45 +4140,6 @@ class _FushiAppleSegmentedControlState
     );
   }
 
-  BoxDecoration _thumbDecoration(BuildContext context, double radius) {
-    final FushiAppleColors apple = appleColorsOf(context);
-    final bool dark =
-        Theme.of(context).colorScheme.brightness == Brightness.dark;
-    if (dark) {
-      return BoxDecoration(
-        color: widget.solid
-            ? apple.tertiaryGroupedBackground
-            : Colors.white.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(radius),
-        // 0.5 px 低透明度内高光：只是让滑块边缘略有质感，不成「白圈」。
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.12),
-          width: 0.5,
-        ),
-      );
-    }
-    return BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(radius),
-      border: Border.all(
-        color: Colors.black.withValues(alpha: 0.04),
-        width: 0.5,
-      ),
-      boxShadow: const <BoxShadow>[
-        BoxShadow(
-          color: Color(0x1F000000),
-          blurRadius: 8,
-          offset: Offset(0, 3),
-        ),
-        BoxShadow(
-          color: Color(0x0A000000),
-          blurRadius: 1,
-          offset: Offset(0, 3),
-        ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
@@ -4330,7 +4216,11 @@ class _FushiAppleSegmentedControlState
                     height: thumbHeight,
                     child: IgnorePointer(
                       child: DecoratedBox(
-                        decoration: _thumbDecoration(context, radius),
+                        decoration: _appleSegmentThumbDecoration(
+                          context,
+                          radius: radius,
+                          solid: widget.solid,
+                        ),
                       ),
                     ),
                   ),
@@ -4433,18 +4323,45 @@ class _FushiAppleSegmentedControlState
       ),
     );
     if (data.tooltip != null && data.tooltip != data.label) {
-      cell = Tooltip(message: data.tooltip, child: cell);
+      cell = FushiTooltip(message: data.tooltip, child: cell);
     }
     return cell;
   }
 }
 
-/// 分段控件选中段静止时的透明 pill 色：比轨道亮一点的无色白（深色 20% /
-/// 浅色 70%），不着强调色。深色 16% 压在 #1C1C1E 卡片 + 透明玻璃轨上与轨道
-/// 只差一阶，选中段读不出来（用户 2026-10-05 Windows 深色截图）。
-Color _appleClearLensColor(BuildContext context) {
+/// 分段控件选中滑块（[FushiAppleSegmentedControl] 与多选 / 竖排退回形态
+/// 共用，两种形态选中段长一个样）：
+/// - 深色：白 20% + 0.5 px 低透明度内高光（不发白、不成圈）；
+/// - 浅色：白色 + iOS 的柔和投影；
+/// - 降低透明度（[solid]）：深色 tertiaryGroupedBackground、浅色白。
+BoxDecoration _appleSegmentThumbDecoration(
+  BuildContext context, {
+  required double radius,
+  required bool solid,
+}) {
+  final FushiAppleColors apple = appleColorsOf(context);
   final bool dark = Theme.of(context).colorScheme.brightness == Brightness.dark;
-  return Colors.white.withValues(alpha: dark ? 0.2 : 0.7);
+  if (dark) {
+    return BoxDecoration(
+      color: solid
+          ? apple.tertiaryGroupedBackground
+          : Colors.white.withValues(alpha: 0.2),
+      borderRadius: BorderRadius.circular(radius),
+      border: Border.all(
+        color: Colors.white.withValues(alpha: 0.12),
+        width: 0.5,
+      ),
+    );
+  }
+  return BoxDecoration(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(radius),
+    border: Border.all(color: Colors.black.withValues(alpha: 0.04), width: 0.5),
+    boxShadow: const <BoxShadow>[
+      BoxShadow(color: Color(0x1F000000), blurRadius: 8, offset: Offset(0, 3)),
+      BoxShadow(color: Color(0x0A000000), blurRadius: 1, offset: Offset(0, 3)),
+    ],
+  );
 }
 
 /// 分段控件的液态玻璃轨：在控件**背后**垫一枚透明玻璃胶囊（兄弟层，而不是把
@@ -4488,7 +4405,7 @@ class _AppleSegment extends StatefulWidget {
     required this.selected,
     required this.enabled,
     required this.onTap,
-    required this.thumbColor,
+    required this.solid,
     required this.semanticLabel,
     required this.child,
   });
@@ -4496,7 +4413,9 @@ class _AppleSegment extends StatefulWidget {
   final bool selected;
   final bool enabled;
   final VoidCallback onTap;
-  final Color thumbColor;
+
+  /// 系统「降低透明度」：选中滑块用实色（见 [_appleSegmentThumbDecoration]）。
+  final bool solid;
   final String? semanticLabel;
   final Widget child;
 
@@ -4516,42 +4435,31 @@ class _AppleSegmentState extends State<_AppleSegment> {
   @override
   Widget build(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
+    final FushiSpringSpec fade = context.fushiMotion.effectsDefault;
+    final BoxDecoration thumb = widget.selected
+        ? _appleSegmentThumbDecoration(
+            context,
+            radius: 999,
+            solid: widget.solid,
+          )
+        : BoxDecoration(borderRadius: BorderRadius.circular(999));
     final Widget body = AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOutCubic,
+      duration: fade.duration,
+      curve: fade.curve,
       constraints: BoxConstraints(
         minWidth: 44,
         minHeight: fushiAppleCompact(context) ? 24 : 30,
       ),
-      decoration: BoxDecoration(
-        color: widget.selected ? widget.thumbColor : Colors.transparent,
-        borderRadius: BorderRadius.circular(999),
-        // 选中的透明 pill 带一圈细高光边（玻璃 rim），键盘焦点时换强调色环。
-        border: _focusHighlight
-            ? Border.all(color: apple.accent, width: 2)
-            : (widget.selected
-                  ? Border.all(
-                      color: Colors.white.withValues(alpha: 0.28),
-                      width: 0.6,
-                    )
-                  : null),
-        boxShadow: widget.selected
-            ? const <BoxShadow>[
-                BoxShadow(
-                  color: Color(0x1F000000),
-                  blurRadius: 8,
-                  offset: Offset(0, 3),
-                ),
-              ]
-            : const <BoxShadow>[],
-      ),
+      // 选中段与 [FushiAppleSegmentedControl] 的滑块同一套样子；键盘焦点
+      // 叠一圈强调色环。
+      decoration: _focusHighlight
+          ? thumb.copyWith(border: Border.all(color: apple.accent, width: 2))
+          : thumb,
       child: Center(
         widthFactor: 1,
         heightFactor: 1,
         child: AnimatedOpacity(
-          duration: _pressed
-              ? Duration.zero
-              : const Duration(milliseconds: 160),
+          duration: _pressed ? Duration.zero : fade.duration,
           opacity: _pressed ? 0.5 : 1,
           child: widget.child,
         ),

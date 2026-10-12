@@ -2,9 +2,9 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
-    show fushiAppleCompact, fushiClearGlassSettings;
-import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+    show fushiAppleCompact;
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
+    show fushiAppleSolidFloatingDecoration;
 
 /// 告诉后代按钮「你已经在一枚 Apple 玻璃组胶囊里」：[FushiIconButton] 的
 /// 带文字形态与选中态据此不再自带一层玻璃（玻璃叠玻璃会出两圈折射边，
@@ -36,11 +36,10 @@ class FushiToolbarScope extends InheritedWidget {
 ///   组间 8 留白，[showDividers] 时组间加一条细竖分隔；悬浮 = surfaceContainer
 ///   全胶囊、高 64（[dense] 56）、elevation 3、内边距 8。按钮本身用
 ///   [FushiIconButton] 的 Expressive 图标按钮（按压圆 → 圆角 12）。
-/// - **Apple（iOS 26 / macOS 26）**：每组按钮收进一枚液态玻璃胶囊（高 36 桌面 /
-///   44 移动，[dense] 32 / 36），组与组之间 10（[dense] 8）的间隙——Safari /
-///   Mail 工具栏的分组胶囊；单个按钮的组收成正圆。[floating] 时每枚胶囊再
-///   带一圈柔和投影，像浮在内容上。系统降低透明度时 [fushiGlassSettings]
-///   回落实色。
+/// - **Apple（原生 Cupertino）**：嵌入 = 无底的一排 bar button（高 36 桌面 /
+///   44 移动，[dense] 32 / 36），组与组之间 10（[dense] 8）的间隙；[floating]
+///   时每组收进一枚系统材质实色胶囊 + 发丝描边 + 柔和投影
+///   （[fushiAppleSolidFloatingDecoration]），不做玻璃与实时模糊。
 ///
 /// 键盘：整条工具栏是一个 [FocusTraversalGroup]——Tab 一次走完组内按钮再
 /// 离开，左右方向键由全局方向导航（FushiFocusController 的几何寻路 / Flutter
@@ -149,50 +148,36 @@ class FushiToolbar extends StatelessWidget {
     final bool compact = fushiAppleCompact(context);
     final double height = dense ? (compact ? 32 : 36) : (compact ? 36 : 44);
     final double groupGap = dense ? 8 : 10;
-    final bool dark =
-        Theme.of(context).colorScheme.brightness == Brightness.dark;
     final List<Widget> row = <Widget>[];
     for (int g = 0; g < groups.length; g++) {
       if (g > 0) row.add(SizedBox(width: groupGap));
-      Widget capsule = GlassContainer(
-        useOwnLayer: true,
-        quality: fushiGlassQuality(context, prominent: floating),
-        // 工具条图标组胶囊：无色透明玻璃（macOS 26 工具栏，对照 Niratan）；
-        // 悬浮形态浮在封面 / 图片上，用与底部标签栏同一档的 bar 透明玻璃
-        // （frost 云 + 亮边兜可读性，不加底色）。
-        settings: fushiClearGlassSettings(context, bar: floating),
-        shape: LiquidRoundedSuperellipse(borderRadius: height / 2),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: height, minWidth: height),
-          child: Padding(
-            // 胶囊两端留一点，让首尾按钮的悬停圆底不贴着胶囊边。
-            padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 4),
-            child: IconTheme.merge(
-              data: IconThemeData(color: apple.label, size: compact ? 18 : 20),
-              child: FushiToolbarScope(
-                inGlassGroup: true,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: groups[g],
-                ),
+      // 原生 Cupertino（用户 2026-10-12「特效都去掉，直接原生 Cupertino」）：
+      // 栏内的按钮组不套胶囊，就是一排无底 bar button；悬浮形态浮在封面 /
+      // 图片上，套一枚系统材质实色胶囊 + 发丝描边 + 柔和投影，不做玻璃与
+      // 实时模糊（逐颗模糊会掉帧）。
+      Widget capsule = ConstrainedBox(
+        constraints: BoxConstraints(minHeight: height, minWidth: height),
+        child: Padding(
+          // 胶囊两端留一点，让首尾按钮的悬停圆底不贴着胶囊边。
+          padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 4),
+          child: IconTheme.merge(
+            data: IconThemeData(color: apple.label, size: compact ? 18 : 20),
+            child: FushiToolbarScope(
+              inGlassGroup: true,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: groups[g],
               ),
             ),
           ),
         ),
       );
       if (floating) {
-        // 浮在内容上：一圈柔和、偏下的投影（iOS 26 悬浮工具栏 / 标签栏）。
         capsule = DecoratedBox(
-          decoration: ShapeDecoration(
+          decoration: fushiAppleSolidFloatingDecoration(
+            context,
             shape: const StadiumBorder(),
-            shadows: <BoxShadow>[
-              BoxShadow(
-                color: Colors.black.withValues(alpha: dark ? 0.32 : 0.12),
-                blurRadius: 24,
-                offset: const Offset(0, 8),
-              ),
-            ],
           ),
           child: capsule,
         );
