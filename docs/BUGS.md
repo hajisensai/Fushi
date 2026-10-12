@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2959 条。点号进各自文件。
+> 共 2962 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3302](bugs/BUG-3302-collection-continue-stale-snapshot.md) | ✅ | ✅ | 合集详情「继续阅读」停在进页快照，不随阅读更新 |
+| [BUG-3301](bugs/BUG-3301-audiobook-panel-nested-scroll.md) | ✅ | ✅ | 有声书面板矮视口外层滚动套固定高度内层章节列表，滚不到底 |
+| [BUG-3300](bugs/BUG-3300-press-scale-release-after-dispose.md) | ✅ | ✅ | FushiPressScale 松手路径读已销毁 State.context（文件选择器闪退） |
 | [BUG-3272](bugs/BUG-3272-anki-auto-reposition-failure-reason-lost.md) | ✅ | ✅ | 自动重排失败原因被吞且整牌组请求走交互超时 |
 | [BUG-3271](bugs/BUG-3271-expansion-tile-pagestorage-collision.md) | ✅ | ✅ | 视频设置面板字幕分类下方整片灰（展开区与滚动视图 PageStorage 槽冲突） |
 | [BUG-3270](bugs/BUG-3270-anki-dict-media-dangling-placeholder.md) | ✅ | ✅ | 制卡缺词典媒体时卡片残留 fushi_dict_N 占位图，AnkiDroid 报加载失败 |
