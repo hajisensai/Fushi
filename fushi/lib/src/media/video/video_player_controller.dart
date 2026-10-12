@@ -3592,7 +3592,12 @@ class VideoPlayerController extends ChangeNotifier
   List<int> _activeRenderIndices(int primaryIdx, int effectiveMs) {
     final List<int> byTime = JsonAlignmentParser.findActiveCueIndices(
       cues: _cues,
-      positionMs: effectiveMs,
+      positionMs: cueRenderPositionMs(
+        effectiveMs: effectiveMs,
+        primaryIdx: primaryIdx,
+        seekTargetIndex: _seekTargetCueIndex,
+        cues: _cues,
+      ),
       // 渲染集半开区间：相邻对白边界（前条 endMs==后条 startMs）不再同时活跃，堆叠槽位
       // 不被幻影重叠污染 → 不弹跳。末条无后继时靠下方 primaryIdx（findCueIndex 闭区间）
       // 并入兜底，不会提前 1 tick 消失（见 findActiveCueIndices 的 endInclusive 说明）。
@@ -3747,6 +3752,36 @@ class VideoPlayerController extends ChangeNotifier
   void noteExternalSeekDispatched(Future<void> seek) {
     final int token = _pendingSeekToken;
     unawaited(_awaitSeekDispatch(token, seek).catchError((Object _) {}));
+  }
+
+  /// 主字幕**渲染集**取样位置（BUG-3285：上/下一句跳转时旧字幕残留、新句被顶高）。
+  ///
+  /// [skipToCue] 在途（快照 [seekTargetIndex] 非空且代表 cue [primaryIdx] 已被 snap 到它）时，
+  /// tick 读到的 [effectiveMs] 是 seek 落地前的旧位置（还在原来那句里）或 preRoll 引导窗口
+  /// （可能还压着目标句之前那条的尾巴）。按它求时间活动集，会把「旧句 + 被并入的目标句」
+  /// 同时渲染：overlay 槽位表把旧句放在锚点槽、目标句追加到上方槽；旧句退场后锚点侧死槽
+  /// 保留（BUG-698 不变量），目标句就一直悬在上一行，直到下一句才落回基线。
+  ///
+  /// 在途期间按「目标句起点那一刻」取样：渲染集 = 目标句开场时真实在屏的 cue（真正与它
+  /// 重叠的字幕照样一起显示，TODO-1312 不回归），旧句不再混入。position 落进目标句区间后
+  /// 用实时位置；没有快照时恒用实时位置。
+  @visibleForTesting
+  static int cueRenderPositionMs({
+    required int effectiveMs,
+    required int primaryIdx,
+    required int? seekTargetIndex,
+    required List<AudioCue> cues,
+  }) {
+    if (seekTargetIndex == null || primaryIdx != seekTargetIndex) {
+      return effectiveMs;
+    }
+    if (seekTargetIndex < 0 || seekTargetIndex >= cues.length) {
+      return effectiveMs;
+    }
+    final AudioCue target = cues[seekTargetIndex];
+    final bool landed =
+        effectiveMs >= target.startMs && effectiveMs < target.endMs;
+    return landed ? effectiveMs : target.startMs;
   }
 
   /// 主动跳转目标 snap 的纯决策（TODO-565，越界判据 BUG-378 收紧到 endMs）。所有几何在
