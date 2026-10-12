@@ -644,6 +644,7 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
           onPressed: canPlay ? () => unawaited(_downloadAll()) : null,
         ),
       ],
+      moreInlineMax: MediaDetailMoreButton.kInlineActionsMax,
       moreItems: <MediaDetailMenuItem>[
         MediaDetailMenuItem(
           key: const ValueKey<String>('anime_source_open_website'),

@@ -493,6 +493,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
           : MediaDetailMoreButton(
               buttonKey: const ValueKey<String>('video-discovery-detail-more'),
               items: more,
+              inlineMax: MediaDetailMoreButton.kInlineActionsMax,
             ),
     );
   }

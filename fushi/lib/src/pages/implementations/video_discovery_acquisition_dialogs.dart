@@ -367,7 +367,12 @@ class VideoDiscoveryResourceSearchPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: FushiAppBar(title: Text(t.video_discovery_resource_search)),
+        // 结果列表的滚动不该触发顶栏收起：本页顶栏是页面标题，结果区本来就
+        // 紧，标题随滚动消失 / 弹回只会让人找不到自己在哪（反馈 XFsZIWYbr8）。
+        appBar: FushiAppBar(
+          title: Text(t.video_discovery_resource_search),
+          notificationPredicate: (ScrollNotification _) => false,
+        ),
         body: SafeArea(
           child: VideoResourceSearchSurface(
             initialItem: item,
@@ -721,6 +726,25 @@ class _VideoResourceSearchSurfaceState
   /// 下载模式：true = 平铺全部条目（旧视图）；false（默认）= 版本卡视图。
   bool _flatResourceView = false;
 
+  /// 把 [members] 整组设成选中 / 未选中（合辑整包选）。保持既有点选顺序，
+  /// 已选的不重复入列。
+  void _setGroupSelected(List<VideoResourceCandidate> members, bool selected) {
+    final Set<String> keys = <String>{
+      for (final VideoResourceCandidate m in members) m.identityKey,
+    };
+    setState(() {
+      if (selected) {
+        for (final VideoResourceCandidate m in members) {
+          if (!_isSelected(m)) _selectedCandidates.add(m);
+        }
+      } else {
+        _selectedCandidates.removeWhere(
+          (VideoResourceCandidate c) => keys.contains(c.identityKey),
+        );
+      }
+    });
+  }
+
   void _select(VideoResourceCandidate candidate) {
     setState(() {
       if (widget.subscription) {
@@ -1063,26 +1087,35 @@ class _VideoResourceSearchSurfaceState
             _buildCategorySelector(),
             if (_manualCategory == VideoDiscoveryCategory.anime) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),
-              Wrap(
-                spacing: tokens.spacing.gap,
-                runSpacing: tokens.spacing.gap,
+              // 单行横滑而不是多行 Wrap：四五个拼写换成两三行会把本来就紧的结果区
+              // 再压掉一截。
+              SingleChildScrollView(
+                key: const ValueKey<String>('video-resource-alias-chips'),
+                scrollDirection: Axis.horizontal,
+                child: Row(
                 // 与 Nyaa 实际补查的作品拼写同一份（BUG-2818）：元数据排第一的
                 // 罗马字不一定是发布组的写法，其余拼写也得点得到。
                 children: nyaaSearchQueries(
                   VideoResourceSearchRequest(media: _media),
                 )
                     .map(
-                      (String query) => FushiActionChipControl(
-                        label: Text(query),
-                        onPressed: _loading
-                            ? null
-                            : () {
-                                _queryController.text = query;
-                                unawaited(_search());
-                              },
+                      (String query) => Padding(
+                        padding: EdgeInsetsDirectional.only(
+                          end: tokens.spacing.gap,
+                        ),
+                        child: FushiActionChipControl(
+                          label: Text(query),
+                          onPressed: _loading
+                              ? null
+                              : () {
+                                  _queryController.text = query;
+                                  unawaited(_search());
+                                },
+                        ),
                       ),
                     )
                     .toList(growable: false),
+                ),
               ),
             ],
             SizedBox(height: tokens.spacing.card),
@@ -1399,6 +1432,7 @@ class _VideoResourceSearchSurfaceState
                 selectedIdentityKeys: _selectedIdentityKeys,
                 multiSelect: !widget.subscription,
                 onSelect: _select,
+                onSetGroupSelected: _setGroupSelected,
                 compact: !widget.pageMode,
               ),
             ),
@@ -1569,7 +1603,10 @@ class _VideoResourceSearchSurfaceState
                   // 只给标签时这个下拉读起来像「搜哪个源」，用户据此以为选不了
                   // 视频来源；它其实是下载落地的本地目录（BUG-1713）。
                   labelText: t.video_download_target_source_title,
-                  helperText: t.video_download_target_source_hint,
+                  // 整页形态屏幕本来就紧：说明文字再吃两行高度，结果区更扁。
+                  helperText: widget.pageMode
+                      ? null
+                      : t.video_download_target_source_hint,
                   helperMaxLines: 2,
                 ),
                 items: widget.sources
