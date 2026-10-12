@@ -6,6 +6,7 @@
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:path/path.dart' as p;
@@ -42,7 +43,23 @@ class FeedbackTicket {
     parentId: j['parentId'] as String?,
   );
 
+  /// 账户列表里、本机没有回执的条目（别的设备带账户提交的）：[ticket] 为空串，看详情
+  /// 等操作走账户签名，补传附件不可用。
+  factory FeedbackTicket.fromAccount(FeedbackSummary s) => FeedbackTicket(
+    id: s.id,
+    ticket: '',
+    title: s.title,
+    category: s.category,
+    createdAt: s.createdAt,
+    status: s.status,
+    updatedAt: s.updatedAt,
+    devReplyAt: s.devReplyAt,
+    parentId: s.parentId,
+  );
+
   final String id;
+
+  /// 服务端只给一次的回执；空串 = 凭账户列出来的条目（见 [viaAccount]）。
   final String ticket;
   final String title;
   final FeedbackCategory category;
@@ -64,6 +81,9 @@ class FeedbackTicket {
 
   /// 「问题没解决，重新提交」时指向的原反馈 id（本机列表据此显示两条的关联）。
   final String? parentId;
+
+  /// 本机没有回执、凭账户签名访问的条目（别的设备提交的）。
+  bool get viaAccount => ticket.isEmpty;
 
   /// 开发者有用户还没看过的新进展。
   bool get hasUnseenReply => devReplyAt != null && devReplyAt! > seenAt;
@@ -118,13 +138,19 @@ class FeedbackTicket {
   };
 }
 
-/// 本机反馈清单文件。
+/// 本机反馈清单文件。[fileName] 默认是本机回执清单 `tickets.json`；账户列表的缓存
+/// （别的设备提交、凭账户签名看的那些，ticket 为空串）用 [FeedbackTicketStore.account]。
 class FeedbackTicketStore {
-  FeedbackTicketStore(this.supportRoot);
+  FeedbackTicketStore(this.supportRoot, {this.fileName = 'tickets.json'});
+
+  /// 账户 [accountId] 的「我的反馈」缓存：只存进度与已读时刻，不含任何凭据。
+  FeedbackTicketStore.account(this.supportRoot, String accountId)
+    : fileName = 'account_${p.basename(accountId)}.json';
 
   final Directory supportRoot;
+  final String fileName;
 
-  File get file => File(p.join(supportRoot.path, 'feedback', 'tickets.json'));
+  File get file => File(p.join(supportRoot.path, 'feedback', fileName));
 
   /// 读全部记录（新的在前）。文件不存在 / 损坏返回空清单（损坏的原文件改名留档，不覆盖）。
   Future<List<FeedbackTicket>> read() async {
@@ -184,5 +210,101 @@ class FeedbackTicketStore {
     } on ProcessException {
       // 没有 chmod（非 POSIX 环境）：文件仍在 app 私有目录里，不阻断功能。
     }
+  }
+}
+
+/// 提交时没传上去的附件（截图 / 日志 / 视频）：`<数据根>/feedback/pending/<id>/<slot>`。
+/// 传成功或被服务端明确拒收后删除；随「从本机移除」一并清掉。视频（几十 MB）不读进内存，
+/// 用 [fileOf] 拿文件流式上传；它的 MIME 记在同目录的 `<slot>.type` 旁注里。
+class FeedbackPendingStore {
+  FeedbackPendingStore(this.supportRoot);
+
+  final Directory supportRoot;
+
+  Directory get _root =>
+      Directory(p.join(supportRoot.path, 'feedback', 'pending'));
+
+  File _file(String id, String slot) =>
+      File(p.join(_root.path, p.basename(id), p.basename(slot)));
+
+  File _typeFile(String id, String slot) =>
+      File('${_file(id, slot).path}.type');
+
+  Future<void> put(String id, String slot, List<int> bytes) async {
+    final File f = _file(id, slot);
+    await f.parent.create(recursive: true);
+    await f.writeAsBytes(bytes, flush: true);
+  }
+
+  /// 把已经在磁盘上的文件挪进待传区（视频转码产物；跨卷挪不动时复制后删原件）。
+  Future<File> putFile(
+    String id,
+    String slot,
+    File source, {
+    required String contentType,
+  }) async {
+    final File f = _file(id, slot);
+    await f.parent.create(recursive: true);
+    if (f.existsSync()) await f.delete();
+    try {
+      await source.rename(f.path);
+    } on FileSystemException {
+      await source.copy(f.path);
+      try {
+        await source.delete();
+      } on FileSystemException {
+        // 原件删不掉（用户自己的文件 / 只读）：不影响待传区那份。
+      }
+    }
+    await _typeFile(id, slot).writeAsString(contentType, flush: true);
+    return f;
+  }
+
+  Future<Uint8List?> read(String id, String slot) async {
+    final File f = _file(id, slot);
+    return f.existsSync() ? f.readAsBytes() : null;
+  }
+
+  /// 待传文件与它的 MIME（没有返回 null）。
+  Future<({File file, String contentType})?> fileOf(
+    String id,
+    String slot,
+  ) async {
+    final File f = _file(id, slot);
+    if (!f.existsSync()) return null;
+    final File type = _typeFile(id, slot);
+    final String contentType = type.existsSync()
+        ? (await type.readAsString()).trim()
+        : 'application/octet-stream';
+    return (file: f, contentType: contentType);
+  }
+
+  Future<void> remove(String id, String slot) async {
+    final File f = _file(id, slot);
+    if (f.existsSync()) await f.delete();
+    final File type = _typeFile(id, slot);
+    if (type.existsSync()) await type.delete();
+    final Directory dir = f.parent;
+    if (dir.existsSync() && dir.listSync().isEmpty) await dir.delete();
+  }
+
+  Future<void> removeAll(String id) async {
+    final Directory dir = Directory(p.join(_root.path, p.basename(id)));
+    if (dir.existsSync()) await dir.delete(recursive: true);
+  }
+
+  /// 扫描磁盘：反馈 id → 待传槽位（`.type` 旁注不算槽位）。
+  Future<Map<String, Set<String>>> scan() async {
+    final Map<String, Set<String>> out = <String, Set<String>>{};
+    if (!_root.existsSync()) return out;
+    for (final FileSystemEntity d in _root.listSync()) {
+      if (d is! Directory) continue;
+      final Set<String> slots = <String>{
+        for (final FileSystemEntity f in d.listSync())
+          if (f is File && p.extension(f.path) != '.type') p.basename(f.path),
+      };
+      if (slots.isNotEmpty) out[p.basename(d.path)] = slots;
+    }
+    return out;
   }
 }

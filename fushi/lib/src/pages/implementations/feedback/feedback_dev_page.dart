@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_dev_video_page.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -494,8 +495,11 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final FeedbackDetail? d = _detail;
     final List<FeedbackAttachmentInfo> shots = <FeedbackAttachmentInfo>[
-      ...?d?.attachments.where((FeedbackAttachmentInfo a) => !a.isLog),
+      ...?d?.attachments.where((FeedbackAttachmentInfo a) => a.isScreenshot),
     ];
+    final FeedbackAttachmentInfo? video = d?.attachments
+        .where((FeedbackAttachmentInfo a) => a.isVideo)
+        .firstOrNull;
     final bool hasLog =
         d?.attachments.any((FeedbackAttachmentInfo a) => a.isLog) ?? false;
     return FushiPageScaffold(
@@ -627,6 +631,35 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
                           ),
                         ),
                     ],
+                  ),
+                ],
+                if (video != null) ...<Widget>[
+                  SizedBox(height: tokens.spacing.card),
+                  FushiSectionTitle(t.feedback_dev_video),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FushiPressScale(
+                      child: FushiFilledButton.tonalIcon(
+                        key: const ValueKey<String>('feedback-dev-play-video'),
+                        onPressed: () => unawaited(
+                          Navigator.push(
+                            context,
+                            adaptivePageRoute<void>(
+                              context: context,
+                              builder: (_) => FeedbackDevVideoPage(
+                                feedbackId: widget.feedbackId,
+                                attachment: video,
+                              ),
+                            ),
+                          ),
+                        ),
+                        icon: const FushiIcon(FushiIcons.playCircle),
+                        label: Text(
+                          '${t.feedback_dev_video_play} · '
+                          '${FushiByteFormat.bytes(video.bytes)}',
+                        ),
+                      ),
+                    ),
                   ),
                 ],
                 SizedBox(height: tokens.spacing.card),

@@ -261,6 +261,12 @@ class _TicketTile extends StatelessWidget {
                           '${feedbackTime(ticket.updatedAt)}',
               ),
               FeedbackIdLabel(ticket.id),
+              if (ticket.viaAccount)
+                Text(
+                  t.feedback_from_other_device,
+                  key: ValueKey<String>('feedback-ticket-account-${ticket.id}'),
+                  style: tokens.type.metadata,
+                ),
               if (ticket.parentId != null)
                 Text(
                   t.feedback_reopen_of(id: ticket.parentId!),

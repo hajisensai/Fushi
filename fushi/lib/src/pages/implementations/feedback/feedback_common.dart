@@ -11,6 +11,7 @@ import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/feedback/feedback_entry_gate.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
+import 'package:fushi/src/feedback/feedback_video.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.dart';
 import 'package:fushi/src/utils/misc/clipboard_image.dart';
@@ -75,6 +76,18 @@ String feedbackErrorReason(Object error) {
   }
   return t.feedback_error_network;
 }
+
+/// 视频准备阶段的错误（太大 / 不是视频）给用户看的完整一句；别的错误返回 null
+/// （调用方按 [feedbackErrorReason] 走通用文案）。
+String? feedbackVideoErrorText(Object error) => switch (error) {
+  FeedbackVideoTooLargeException(:final int bytes) =>
+    t.feedback_video_too_large(
+      size: FushiByteFormat.bytes(bytes),
+      max: FushiByteFormat.bytes(FeedbackLimits.videoMaxBytes),
+    ),
+  FeedbackVideoUnsupportedException() => t.feedback_video_unsupported,
+  _ => null,
+};
 
 /// 显示用户文字前剥掉伪装字符（双向控制符 / 零宽字符，emoji 的 ZWJ 保留）。服务端
 /// 提交时已剥过，这里是纵深防御：旧数据或绕过服务端的内容也不会在处理台里「看到的和

@@ -28,6 +28,18 @@ abstract final class FeedbackLimits {
   static const int screenshotMaxBytes = 1536 * 1024;
   static const int logMaxBytes = 2 * 1024 * 1024;
   static const int statusBatch = 50;
+
+  /// 提交后还能补传附件的时长（服务端 attachWindowMs）。
+  static const Duration attachWindow = Duration(hours: 24);
+
+  /// 视频附件（槽位 [videoSlot]，每条反馈最多一个）的上限：服务端 videoMaxBytes。
+  static const int videoMaxBytes = 50 * 1024 * 1024;
+
+  /// 视频附件的槽位名。
+  static const String videoSlot = 'v0';
+
+  /// 「我的反馈」账户列表每页条数上限（服务端 GET /v1/feedback/mine）。
+  static const int minePage = 50;
 }
 
 enum FeedbackCategory {
@@ -185,15 +197,17 @@ class FeedbackAttachmentInfo {
         type: _str(j['type']),
       );
 
-  /// `log` | `s0`..`s2`。
+  /// `log` | `s0`..`s2` | `v0`。
   final String slot;
 
-  /// `log` | `screenshot`。
+  /// `log` | `screenshot` | `video`。
   final String kind;
   final int bytes;
   final String type;
 
   bool get isLog => kind == 'log';
+  bool get isScreenshot => kind == 'screenshot';
+  bool get isVideo => kind == 'video';
 }
 
 class FeedbackMessage {
