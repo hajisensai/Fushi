@@ -7043,5 +7043,6 @@
   "book_import_no_book_notice_title": "没有选择书籍",
   "book_import_no_book_transcribe_hint": "没有书也能导入：直接用设备端转录把音频转成字幕，导入时会据此自动生成一本书。",
   "book_import_no_book_subtitle_hint": "没有书也能导入：为这段音频选一个字幕文件，导入时会据此自动生成一本书。",
-  "book_import_no_book_transcribe_action": "转录并生成书籍"
+  "book_import_no_book_transcribe_action": "转录并生成书籍",
+  "media_server_search_all": "搜索所有服务器"
 }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
+import 'package:fushi/src/pages/implementations/media_server/media_server_aggregate_search_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_home_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
@@ -139,6 +140,36 @@ class _MediaServerListViewState extends State<MediaServerListView> {
         title: t.media_server_servers_title,
         compact: true,
         actions: <Widget>[
+          // 多台服务器时才有「搜索所有服务器」：与列表同一份清单（同一个 future），
+          // 清单回来后这里随之出现。
+          FutureBuilder<List<MediaServerEntry>>(
+            future: _future,
+            builder:
+                (
+                  BuildContext context,
+                  AsyncSnapshot<List<MediaServerEntry>> snapshot,
+                ) {
+                  final List<MediaServerEntry> servers =
+                      snapshot.data ?? const <MediaServerEntry>[];
+                  if (servers.length < 2) return const SizedBox.shrink();
+                  return FushiIconButton(
+                    key: const ValueKey<String>('media-server-list-search-all'),
+                    icon: FushiIcons.travelExplore,
+                    tooltip: t.media_server_search_all,
+                    focusId: const FushiFocusId('media-server-list-search-all'),
+                    onTap: () => openMediaServerAggregateSearch(
+                      context,
+                      <MediaServerSession>[
+                        for (final MediaServerEntry e in servers)
+                          MediaServerSession(
+                            browser: e.browser,
+                            play: widget.play,
+                          ),
+                      ],
+                    ),
+                  );
+                },
+          ),
           FushiIconButton(
             key: const ValueKey<String>('media-server-list-refresh'),
             icon: FushiIcons.refresh,
