@@ -88,8 +88,12 @@ class EdgeTtsProvider extends TtsProvider {
   /// 本机时钟与微软服务器的偏差（403 后按服务器 Date 校正一次）。
   static Duration _clockSkew = Duration.zero;
 
+  /// 合成走 Edge 155 起的新主机：2026-10 起旧主机 speech.platform.bing.com 的合成
+  /// websocket 对各地出口一律回 403（rany2/edge-tts#490 / #491）。新主机认旧令牌，
+  /// 只是参数名换成 `Ocp-Apim-Subscription-Key`，Sec-MS-GEC 与版本号沿用旧算法；
+  /// 声音列表仍在旧主机。
   static const String _wssBase =
-      'wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1';
+      'wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1';
   static const String _voicesUrl =
       'https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list';
 
@@ -167,7 +171,7 @@ class EdgeTtsProvider extends TtsProvider {
     final String connectionId = _connectionId();
     final Uri uri = Uri.parse(_wssBase).replace(
       queryParameters: <String, String>{
-        'TrustedClientToken': EdgeTtsClientIdentity.trustedClientToken,
+        'Ocp-Apim-Subscription-Key': EdgeTtsClientIdentity.trustedClientToken,
         'Sec-MS-GEC': EdgeTtsClientIdentity.secMsGec(_now),
         'Sec-MS-GEC-Version': EdgeTtsClientIdentity.secMsGecVersion,
         'ConnectionId': connectionId,
