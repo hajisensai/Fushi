@@ -1024,6 +1024,22 @@ bool readerStyleReanchorAllowed({
   return controllerAvailable && readerContentReady && !lyricsMode;
 }
 
+/// 查词弹窗按竖排（当前列左 / 右侧避让）还是横排（上 / 下避让）定位。
+///
+/// 歌词覆盖层的排版方向是**独立**偏好 `lyrics_vertical_writing`，与正文
+/// `writing_mode` 无关（正文默认竖排、歌词默认横排）。旧判据只看正文、并在歌词
+/// 模式下一律按横排处理——歌词竖排时被查的词跨列（一半在列底、一半在下一列顶）
+/// 时选区矩形纵贯整屏，上下两侧都没空间，弹窗被压成一条细缝、位置随剩余空间上下
+/// 跳（BUG-3279）。歌词模式必须按歌词自己的方向判。
+bool readerPopupVerticalWriting({
+  required bool lyricsMode,
+  required bool lyricsVerticalWriting,
+  required String? writingMode,
+}) {
+  if (lyricsMode) return lyricsVerticalWriting;
+  return writingMode?.startsWith('vertical') ?? false;
+}
+
 /// B-3 settle 窗（毫秒）：重锚 commit / 听书跟随滚动打点 `_reanchorClearedAt` 后，这么久
 /// 之内的 scroll 回传一律不落库（[readerScrollWithinReanchorSettle]）。听书 reveal 的补刷
 /// （`_scheduleReanchorSettleProgressRefresh`）也按它排在窗关之后。
@@ -2570,8 +2586,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   double get popupTopReserve => _stableTopInset;
 
   @override
-  bool get popupVerticalWriting =>
-      !_lyricsMode && (_settings?.writingMode.startsWith('vertical') ?? false);
+  bool get popupVerticalWriting => readerPopupVerticalWriting(
+    lyricsMode: _lyricsMode,
+    lyricsVerticalWriting: ReaderFushiSource.instance.lyricsVerticalWriting,
+    writingMode: _settings?.writingMode,
+  );
 
   @override
   void initState() {
@@ -2880,7 +2899,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     ]);
     if (!mounted) return;
     _openTrace.mark('spreadMap');
-    if (ReaderFushiSource.instance.lyricsMode) {
+    if (ReaderFushiSource.instance.lyricsModeForBook(widget.bookKey)) {
       await audioSlotFuture;
       if (!mounted) return;
     }
@@ -2973,7 +2992,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // + 有声书已挂载后（见 _onChapterLoadComplete）再切歌词，等价用户手动切、已知安全。
     _lyricsMode = false;
     _pendingLyricsRestore =
-        _sourceReviewSession == null && ReaderFushiSource.instance.lyricsMode;
+        _sourceReviewSession == null &&
+        ReaderFushiSource.instance.lyricsModeForBook(widget.bookKey);
 
     _audioSlotResolved = true;
 

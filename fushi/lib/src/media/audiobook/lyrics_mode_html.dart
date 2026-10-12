@@ -1,10 +1,14 @@
 import 'dart:convert';
 import 'dart:ui' show Color;
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi/src/media/audiobook/lyrics_cue_text.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
+import 'package:fushi/src/models/cjk_font_families.dart' show CjkFontStyle;
+import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 
 class LyricsModeHtml {
@@ -133,6 +137,9 @@ class LyricsModeHtml {
     Color? currentColorOverride,
     bool sweep = true,
     String followLabel = '',
+    String? contentLanguage,
+    String verticalTextOrientation = 'mixed',
+    TargetPlatform? platform,
   }) {
     // 覆盖层主题：内联进 :root 与 body class，首帧即是最终观感（不等热更）。
     // 无主题（旧调用 / 单测）时变量全部缺省，CSS 的 var() 回落值与改动前逐值相同。
@@ -182,8 +189,11 @@ class LyricsModeHtml {
     // ── TODO-907: 轴依赖样式（横排=纵滚，竖排 vertical-rl=横滚） ──
     // 把横/竖排差异收敛成三段 CSS 片段，模板里只插一次，正文逻辑不再撒分支。
     // 竖排 vertical-rl 是右起左推：主轴为列、横向滚动、纵向溢出隐藏。
+    // 竖排字形朝向跟正文同一设置（`vert_text_orient`，正文 reader_content_styles
+    // 的 textOrientCss）：同一本书切到歌词，标点 / 拉丁字母的朝向不该变（BUG-3281）。
     final String htmlBodyAxisCss = vertical
-        ? 'writing-mode: vertical-rl; overflow-x: auto; overflow-y: hidden;'
+        ? 'writing-mode: vertical-rl; overflow-x: auto; overflow-y: hidden; '
+              'text-orientation: ${_cssIdent(verticalTextOrientation)};'
         : 'overflow-x: hidden;';
     // flex 主轴跟随 writing-mode：vertical-rl 下 column = 块方向 = 从右往左，句子
     // 一列一句右起排开；row 是行内方向（自上而下），会把所有句子塞进一屏高里竖着
@@ -256,10 +266,18 @@ body.ly-themed .lyrics-container > .cue {
     // 用户没设字体时 fontFamilyCss 为空，整条链与改动前逐字节相同。
     // 覆盖层主题（Apple Music / MD3 播放页）的歌词是粗体无衬线（Apple Music 用 SF
     // 粗体）；旧歌词页保留 Noto 衬线链。用户设了正文字体时两者都优先用户字体。
-    final String lyricsFallbackFonts = theme == null
-        ? '"Noto Serif JP", "Noto Sans JP", serif'
-        : 'system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", '
-            '"Noto Sans JP", "Noto Sans CJK JP", sans-serif';
+    //
+    // BUG-3281：回退链与正文同源——[contentFontFamilyCss] 按**书的内容语言**给
+    // CJK 字体链。旧覆盖层链以 `system-ui, -apple-system` 打头：那是拉丁系统字体
+    // （Segoe UI / Roboto / SF），它们自带 “ ” ‘ ’ … — 等歧义宽度标点，于是这些
+    // 标点从拉丁字体取半角字形（竖排时只能被整体侧转），而汉字假名与 。、「」 落到
+    // 日文字体——与正文（链首就是 CJK 字体）的标点字形、竖排方向都对不上。
+    final String lyricsFallbackFonts = contentFontFamilyCss(
+      languageTag: contentLanguage,
+      platform: platform ?? defaultTargetPlatform,
+      style: theme == null ? CjkFontStyle.serif : CjkFontStyle.sansSerif,
+      fallbackWhenUnknown: true,
+    );
     final String bodyFontFamily = fontFamilyCss.isEmpty
         ? lyricsFallbackFonts
         : '$fontFamilyCss, $lyricsFallbackFonts';
@@ -341,8 +359,13 @@ body { font-family: $bodyFontFamily; }
   opacity: var(--ly-op4, 0.15);
   transform: scale(1);
   transition: opacity 0.35s ease-out, transform 0.3s ease-out, color 0.3s ease-out;
-  will-change: transform, opacity;
   cursor: pointer;
+}
+/* BUG-3282：合成层只给会动的那几行（当前行 ±3，setCue 只改这个窗口的 class）。
+   以前挂在裸 .cue 上，整页最多 600 行每行一个合成层，滚动 / 换行时合成器要搬
+   几百张图层，WebView2 / Android WebView 上掉帧明显。 */
+.cue.current, .cue.near-1, .cue.near-2, .cue.near-3 {
+  will-change: transform, opacity;
 }
 .cue.current {
   opacity: 1.0;
@@ -417,6 +440,16 @@ body.ly-sweep:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx rt {
 body.ly-sweep.ly-vertical:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx {
   background-image: linear-gradient(to bottom, var(--ly-current) calc(var(--ly-p) - 4%),
       var(--ly-upcoming) calc(var(--ly-p) + 4%));
+}
+/* BUG-3280：WebKit（iOS / macOS WKWebView）只认前缀 -webkit-box-decoration-break，
+   且在 slice 下给 background-clip: text 的多行（竖排 = 多列）行内盒只在第一段铺
+   背景——后面几段文字是透明填充又没有背景可透，长句在播放（扫过生效）时只剩开头
+   一截、其余整列消失。识别不了无前缀 slice 的引擎改用 clone：每段各铺一份渐变，
+   字一定看得见（各段同步扫过，代价是失去跨行接续）。 */
+@supports not (box-decoration-break: slice) {
+  body.ly-sweep:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx {
+    -webkit-box-decoration-break: clone;
+  }
 }
 /* 上下边缘渐隐（Niratan listEdgeFadeFraction）。body 是真正的滚动元素（BUG-784），
    遮罩挂在它的盒上、不随内容滚动。 */
@@ -567,6 +600,7 @@ function _lyricsScrollByAxis(d) {
 function scrollToCenter(el, duration, force) {
   if (!el) return;
   if (_lyBrowsing && !force) return;
+  _lyWheelStop();
   _animId++;
   var myId = _animId;
   var diff = _lyricsCenterDelta(el);
@@ -631,13 +665,51 @@ window.addEventListener('wheel', function() { _lyEnterBrowse(); }, {passive: tru
 // 竖排只能横向滚：鼠标滚轮只给 deltaY，Chromium / WebKit 不会把它转成横滚，桌面上
 // 滚轮就滚不动歌词。主方向是纵向的滚轮投影成横滚，往下滚 = 往后读 = 视口左移
 // （scrollLeft 变小，两种 RTL 约定同向）。触控板的横向手势（|dx| ≥ |dy|）照原生走。
+//
+// BUG-3282：投影后的横滚不能一步落位——一格滚轮 100px 瞬移，看起来就是一顿一顿
+// 的「有级」滚动（横排走的是浏览器原生平滑滚轮）。滚轮量累加进目标位置，按帧
+// 指数逼近（与原生平滑滚轮同观感）；连续滚动只推远目标、不重置动画。
+var _lyWheelTarget = null, _lyWheelRaf = 0;
+function _lyWheelStop() {
+  if (_lyWheelRaf) cancelAnimationFrame(_lyWheelRaf);
+  _lyWheelRaf = 0;
+  _lyWheelTarget = null;
+}
+// 纯函数：一帧之后的位置。剩余量 < 0.5px 直接落到目标。
+function __lyricsWheelStep(cur, target) {
+  var d = target - cur;
+  if (Math.abs(d) < 0.5) return target;
+  return cur + d * 0.3;
+}
+function _lyWheelFrame() {
+  _lyWheelRaf = 0;
+  if (_lyWheelTarget === null) return;
+  var s = _lyricsScrollTarget();
+  var before = s.scrollLeft;
+  var next = __lyricsWheelStep(before, _lyWheelTarget);
+  s.scrollLeft = next;
+  // 顶到滚动边界（scrollLeft 没动）或已到目标：结束，不让越界的目标空转。
+  if (next === _lyWheelTarget || s.scrollLeft === before) {
+    _lyWheelTarget = null;
+    return;
+  }
+  _lyWheelRaf = requestAnimationFrame(_lyWheelFrame);
+}
 if (__lyricsVertical) {
   window.addEventListener('wheel', function(e) {
     if (e.ctrlKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
     var px = e.deltaMode === 1 ? e.deltaY * 40
         : e.deltaMode === 2 ? e.deltaY * window.innerWidth : e.deltaY;
     e.preventDefault();
-    _lyricsScrollTarget().scrollLeft -= px;
+    var s = _lyricsScrollTarget();
+    if (window.__lyricsReduceMotion) {
+      _lyWheelStop();
+      s.scrollLeft -= px;
+      return;
+    }
+    if (_lyWheelTarget === null) _lyWheelTarget = s.scrollLeft;
+    _lyWheelTarget -= px;
+    if (!_lyWheelRaf) _lyWheelRaf = requestAnimationFrame(_lyWheelFrame);
   }, {passive: false});
 }
 document.addEventListener('scroll', function() {
@@ -1131,6 +1203,11 @@ if ($currentIndex >= 0 && $currentIndex < _cues.length) {
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#39;');
   }
+
+  /// CSS 关键字白名单化：只放行字母与连字符（`mixed` / `upright` / `sideways`），
+  /// 其余回落 `mixed`——偏好值来自持久化存储，不直接拼进样式表。
+  static String _cssIdent(String value) =>
+      RegExp(r'^[a-z-]+$').hasMatch(value) ? value : 'mixed';
 
   static String _escapeAttr(String text) {
     return text

@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart' show kStatLegacyProfileIdPrefKey;
 
+import 'package:fushi_engine/media/media_pref_keys.dart'
+    show kLyricsModeBookPrefDbPrefix;
 import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi_engine/profile/profile_document.dart'
     show kObsoleteGalgameUpscalingModePrefKey, kProfileSettingCategoryPref;
@@ -149,6 +151,10 @@ class ProfileKeys {
     // 合集详情页每合集排序偏好：键里是本机合集自增 id（设备本地状态），换
     // Profile 不该剪掉或串到别的合集上。
     'collection_detail_sort_',
+    // 每本书独立记忆的歌词模式与 audiobook_follow_ 同族：按书的阅读状态，不是
+    // 阅读偏好。进快照的话切 Profile（进出歌词模式本身就会切到 lyrics 媒体类型
+    // 的 Profile）会把这本书刚写下的模式剪掉或换回旧值。
+    kLyricsModeBookPrefDbPrefix,
   ];
 
   /// BUG-1018 (A4): per-item display-name overrides are CONTENT tied to a

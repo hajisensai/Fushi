@@ -1705,6 +1705,30 @@ class ReaderFushiSource extends ReaderMediaSource {
     await setPreference<bool>(key: 'lyrics_mode', value: value);
   }
 
+  /// 每本书独立记忆的歌词模式：这本书上次停在歌词还是正文。书没有自己的记录
+  /// （从没在这本书上切过）时回落全局 `lyrics_mode`——它记的是「最近一次切到的
+  /// 模式」，当作新书的默认值，老用户升级后行为不变。
+  bool lyricsModeForBook(String? bookKey) {
+    if (bookKey == null || bookKey.isEmpty) return lyricsMode;
+    return readStoredPreference<bool>(lyricsModeBookPrefKey(bookKey)) ??
+        lyricsMode;
+  }
+
+  /// 切换歌词模式：写这本书自己的记录，同时更新全局默认值。
+  Future<void> setLyricsModeForBook(String? bookKey, bool value) async {
+    if (bookKey != null && bookKey.isNotEmpty) {
+      await setPreference<bool>(
+          key: lyricsModeBookPrefKey(bookKey), value: value);
+    }
+    await setLyricsMode(value);
+  }
+
+  /// 每书歌词模式的偏好短键。它是**按书的阅读状态**（同 `audiobook_follow_`
+  /// 家族），不随 Profile 快照走——`ProfileKeys` 按
+  /// [pref_keys.kLyricsModeBookPrefDbPrefix] 排除。
+  static String lyricsModeBookPrefKey(String bookKey) =>
+      '${pref_keys.kLyricsModeBookPrefShortPrefix}$bookKey';
+
   bool get tapEmptyToHideChrome =>
       readerSettings?.tapEmptyToHideChrome ??
       getPreference<bool>(key: 'tap_empty_hide_chrome', defaultValue: true);

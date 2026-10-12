@@ -325,7 +325,32 @@ void main() {
         final String html = build(vertical: true);
         expect(html,
             contains('if (__lyricsVertical) {\n  window.addEventListener'));
-        expect(html, contains('_lyricsScrollTarget().scrollLeft -= px;'));
+        // BUG-3282：投影量累加进目标位置、按帧平滑逼近（不再一格瞬移）。
+        expect(html, contains('_lyWheelTarget -= px;'));
+      });
+
+      // BUG-3282：滚轮平滑的逐帧函数在真 JS 引擎里跑：单调逼近、有限帧内精确
+      // 落到目标，两个方向都成立。无 node 时 skip。
+      test('wheel easing step converges monotonically onto the target',
+          () async {
+        final String? node = _resolveNode();
+        if (node == null) {
+          markTestSkipped('node not found on PATH');
+          return;
+        }
+        const String sig = 'function __lyricsWheelStep(';
+        final String fn = '$sig${_fnSource(build(vertical: true), sig)}';
+        final Directory dir =
+            Directory.systemTemp.createTempSync('lyrics_wheel_step');
+        final File js = File('${dir.path}${Platform.pathSeparator}harness.js')
+          ..writeAsStringSync('$fn\n$_wheelHarness');
+        try {
+          final ProcessResult r = await Process.run(node, <String>[js.path]);
+          expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
+          expect('${r.stdout}', contains('WHEEL_OK 2'));
+        } finally {
+          dir.deleteSync(recursive: true);
+        }
       });
     });
 
@@ -613,6 +638,26 @@ String? _resolveNode() {
   }
   return null;
 }
+
+/// 从 0 起分别逼近 -300 / +300：每帧都更靠近、从不越过，30 帧内精确落位，
+/// 且第一帧就有明显位移（不是迟滞）。
+const String _wheelHarness = r"""
+var ok = 0;
+[-300, 300].forEach(function(target) {
+  var cur = 0, frames = 0, prevGap = Math.abs(target);
+  while (cur !== target) {
+    var next = __lyricsWheelStep(cur, target);
+    var gap = Math.abs(target - next);
+    if (gap >= prevGap) throw new Error('not converging ' + next);
+    if ((target - next) * target < 0) throw new Error('overshoot ' + next);
+    if (frames === 0 && Math.abs(next) < 50) throw new Error('sluggish ' + next);
+    prevGap = gap; cur = next;
+    if (++frames > 30) throw new Error('too slow ' + cur);
+  }
+  ok++;
+});
+console.log('WHEEL_OK ' + ok);
+""";
 
 /// Simulated vertical-rl scroller: `moved` = how far the viewport has travelled
 /// left from the start (the first cue sits at the right edge). Each convention
