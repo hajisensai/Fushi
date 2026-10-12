@@ -3,7 +3,9 @@
 // 服务端是 fushi.moe 的账户服务（services/leaderboard，路由见 src/feedback.js）。
 // 反馈不要求账户：提交拿到一次性回执（ticket）立刻落盘（FeedbackTicketStore），之后凭它
 // 查进度、追加说明。已登录排行榜账户时默认带签名提交，开发者那边能看到是谁。
-// 网络请求只在用户打开反馈中心 / 提交 / 看详情时发出，不在后台轮询。
+// 本服务的网络请求只在用户打开反馈中心 / 提交 / 看详情时发出；「有新回复」的被动检查
+// （启动 / 回前台 / 桌面定时 / 移动端系统后台任务，都要有未结案反馈且 15 分钟节流）见
+// feedback_reply_notifier.dart 与 feedback_reply_background.dart。
 
 import 'dart:async';
 import 'dart:io';
@@ -12,6 +14,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/feedback/feedback_draft_store.dart';
+import 'package:fushi/src/feedback/feedback_reply_alerts.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -69,6 +72,7 @@ class FeedbackService extends ChangeNotifier {
     Future<Map<String, Object?>> Function()? meta,
     String Function()? logText,
     Uint8List Function(String log)? logEncoder,
+    this.onSubmitted,
   }) : _supportRoot = supportRoot,
        _client = client,
        _meta = meta ?? collectFeedbackMeta,
@@ -80,6 +84,10 @@ class FeedbackService extends ChangeNotifier {
   final Future<Map<String, Object?>> Function() _meta;
   final String Function() _logText;
   final Uint8List Function(String log) _logEncoder;
+
+  /// 一条反馈提交成功（已拿到回执落盘）之后：生产装配用它排上「有新回复时通知我」的
+  /// 后台检查、首次提交时申请通知权限（见 feedback_reply_alerts.dart）。不等它完成。
+  final Future<void> Function()? onSubmitted;
 
   FeedbackTicketStore? _store;
   List<FeedbackTicket> _tickets = <FeedbackTicket>[];
@@ -205,6 +213,7 @@ class FeedbackService extends ChangeNotifier {
     );
     _tickets = <FeedbackTicket>[ticket, ..._tickets];
     await _persist();
+    if (onSubmitted case final Future<void> Function() hook) unawaited(hook());
 
     int failed = 0;
     final List<Uint8List> shots = draft.screenshots
@@ -329,6 +338,14 @@ final ChangeNotifierProvider<FeedbackService> feedbackServiceProvider =
       final FeedbackService service = FeedbackService(
         supportRoot: () async => app.databaseDirectory,
         client: () => ref.read(leaderboardServiceProvider).feedbackClient(),
+        // 用时现取（不在建 provider 时读）：提醒编排反过来依赖本服务。
+        onSubmitted: () async {
+          final FeedbackReplyAlerts alerts = ref.read(
+            feedbackReplyAlertsProvider,
+          );
+          await alerts.syncSchedule();
+          await alerts.requestPermissionAfterSubmit();
+        },
       );
       unawaited(
         service.load().catchError((Object e, StackTrace st) {

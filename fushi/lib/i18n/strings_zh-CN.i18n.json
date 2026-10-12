@@ -7045,5 +7045,8 @@
   "book_import_no_book_subtitle_hint": "没有书也能导入：为这段音频选一个字幕文件，导入时会据此自动生成一本书。",
   "book_import_no_book_transcribe_action": "转录并生成书籍",
   "feedback_reply_notice": "开发者更新了 ${n} 条你的反馈",
-  "feedback_reply_notice_open": "查看"
+  "feedback_reply_notice_open": "查看",
+  "feedback_reply_notification_title": "开发者回复了你的反馈",
+  "feedback_reply_notify_setting": "反馈有新回复时通知我",
+  "feedback_reply_notify_setting_hint": "在后台检查你提交的反馈有没有新回复，有就发系统通知"
 }

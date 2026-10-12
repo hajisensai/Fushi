@@ -67,6 +67,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/updates/update_feed_service_test.dart（关掉的域整批丢弃）',
   'system/System notifications':
       'test/updates/update_feed_service_test.dart（总开关只关通知不关红点）',
+  // 「反馈有新回复时通知我」：写 prefsRepo（changed=true），生效点是移动端后台任务
+  // 的排 / 撤与桌面定时 tick 的系统通知——harness 里没有 workmanager 与本机反馈。
+  // 行为由服务层用例咬住：「开 + 有未结案 → 排；关 → 撤」「关着 → 不发请求」。
+  'system/Notify me of feedback replies':
+      'test/feedback/feedback_reply_background_test.dart（开关 ↔ 后台排程 / tick）',
   // v92 阅读空闲门（分钟）：写 prefsRepo（changed=true），生效点是阅读器建
   // StudyClock 时读一次 appModel.readingIdleTimeout——harness 里没有阅读器。
   // 空闲门行为由 study_clock_test「阅读空闲门」用例咬住，接线由

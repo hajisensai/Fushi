@@ -7045,5 +7045,8 @@
   "book_import_no_book_subtitle_hint": "You can import with audio alone: pick a subtitle file for it and a book is generated from the subtitles when you import.",
   "book_import_no_book_transcribe_action": "Transcribe and generate book",
   "feedback_reply_notice": "Developers updated ${n} of your feedback item(s)",
-  "feedback_reply_notice_open": "View"
+  "feedback_reply_notice_open": "View",
+  "feedback_reply_notification_title": "A developer replied to your feedback",
+  "feedback_reply_notify_setting": "Notify me of feedback replies",
+  "feedback_reply_notify_setting_hint": "Checks in the background for replies to feedback you submitted and shows a system notification"
 }

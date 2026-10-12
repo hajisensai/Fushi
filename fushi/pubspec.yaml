@@ -178,6 +178,11 @@ dependencies:
   visibility_detector: ^0.4.0+2
   xml: ^6.3.0
   wakelock_plus: ^1.1.4
+  # 反馈有新回复时的后台检查：Android 走 WorkManager 周期任务（15 分钟最小周期、
+  # 联网约束），iOS 走 BGTaskScheduler app refresh（系统决定时机）。只在主 app
+  # 入口注册，后台 isolate 只读本机工单回执、问一次进度、发本地通知（见
+  # lib/src/feedback/feedback_reply_background.dart）。桌面不用它（运行中定时检查）。
+  workmanager: ^0.10.10
   record: 6.0.0
   brotli: ^0.6.0
   bonsoir: ^7.1.1

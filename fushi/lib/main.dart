@@ -104,7 +104,10 @@ import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/feedback/feedback_entry_gate.dart';
+import 'package:fushi/src/feedback/feedback_reply_alerts.dart';
 import 'package:fushi/src/feedback/feedback_reply_notifier.dart';
+import 'package:fushi/src/feedback/feedback_reply_state.dart'
+    show kFeedbackReplyPollInterval;
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart'
     show showFeedbackReplyNotice;
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
@@ -1000,14 +1003,20 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     return swallowEngineDeepLinkRoute(routeInformation);
   }
 
-  /// 回到前台补发待发制卡队列：桌面 / Android 上连续补发；AnkiMobile 只有在用户
-  /// 点过「全部发送」的会话里才发下一张（每张卡 `x-success` 跳回都会走到这里）。
   /// 启动后与回到前台时看一眼开发者有没有回复本机未结案的反馈（节流 / 无未结案不发
   /// 请求，见 [FeedbackReplyNotifier]）。只在主 app 入口：弹窗词典 / 悬浮词典是别的
-  /// entry point，不经这里。有新进展就弹一次应用内提示。
+  /// entry point，不经这里。有新进展就弹一次应用内提示；顺带同步移动端的后台检查
+  /// 排程（全部结案了就撤掉），桌面起运行中的定时检查。
   Future<void> _checkFeedbackReplies() async {
-    final int count = await ref.read(feedbackReplyNotifierProvider).check();
-    if (count <= 0 || !mounted) return;
+    final FeedbackReplyAlerts alerts = ref.read(feedbackReplyAlertsProvider);
+    final FeedbackReplyCheck result = await alerts.checker.check();
+    unawaited(alerts.syncSchedule());
+    _startFeedbackReplyPolling();
+    if (result.announce) _showFeedbackReplyNotice(result.unseen);
+  }
+
+  void _showFeedbackReplyNotice(int count) {
+    if (!mounted) return;
     final BuildContext? navContext = ref
         .read(appProvider)
         .navigatorKey
@@ -1017,6 +1026,33 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
   }
 
+  /// 桌面运行中（含最小化 / 托盘）的反馈回复定时检查；移动端交给系统后台任务。
+  Timer? _feedbackReplyTimer;
+
+  void _startFeedbackReplyPolling() {
+    if (!feedbackReplyDesktopPolling || _feedbackReplyTimer != null) return;
+    _feedbackReplyTimer = Timer.periodic(
+      kFeedbackReplyPollInterval,
+      (_) => unawaited(_feedbackReplyTick()),
+    );
+  }
+
+  /// 窗口在前台 → 应用内提示；不在（最小化 / 失焦 / 托盘）→ 系统通知（开关关着时
+  /// [FeedbackReplyAlerts.tick] 什么都不做）。
+  Future<void> _feedbackReplyTick() async {
+    final bool foreground =
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    final ({FeedbackReplyDelivery delivery, FeedbackReplyCheck result}) r =
+        await ref.read(feedbackReplyAlertsProvider).tick(
+          foreground: foreground,
+        );
+    if (r.delivery == FeedbackReplyDelivery.inApp) {
+      _showFeedbackReplyNotice(r.result.unseen);
+    }
+  }
+
+  /// 回到前台补发待发制卡队列：桌面 / Android 上连续补发；AnkiMobile 只有在用户
+  /// 点过「全部发送」的会话里才发下一张（每张卡 `x-success` 跳回都会走到这里）。
   void _flushPendingMines() {
     if (!ref.read(appProvider).isInitialised) return;
     // 「Anki 同步客户端」后端：上次没同步成功（离线等）的卡留在它自己的日志里，
@@ -1272,6 +1308,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     _iosUrlSubscription?.cancel();
     _systemColorRefreshDebounce?.cancel();
     _loadingWatchdog?.cancel();
+    _feedbackReplyTimer?.cancel();
     _exitRequestListener?.dispose();
     unawaited(_ctlServer?.stop());
     _ctlServer = null;

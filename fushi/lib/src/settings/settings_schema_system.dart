@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/feedback/feedback_reply_alerts.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart'
@@ -587,6 +588,27 @@ SettingsDestination buildSystemDestination() {
                 await feed.enableSystemNotifications();
               } else {
                 await feed.disableSystemNotifications();
+              }
+              settingsContext.refresh();
+            },
+          ),
+          // 开发者回复了我提交的反馈：移动端后台检查 / 桌面运行中定时检查 → 系统通知。
+          // 关 = 撤掉后台任务（应用内提示与红点照常）。开的时候若系统还没授权就顺手
+          // 申请——这是用户的显式动作，与上一行同口径（BUG-2498）。
+          SettingsSwitchItem(
+            id: 'system.updates.feedback_replies',
+            title: t.feedback_reply_notify_setting,
+            subtitle: t.feedback_reply_notify_setting_hint,
+            icon: Icons.forum_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.ref.read(feedbackReplyAlertsProvider).enabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              final FeedbackReplyAlerts alerts = settingsContext.ref.read(
+                feedbackReplyAlertsProvider,
+              );
+              await alerts.setEnabled(value);
+              if (value && await alerts.systemNotifier.ensureReady()) {
+                await alerts.systemNotifier.requestPermission();
               }
               settingsContext.refresh();
             },

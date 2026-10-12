@@ -414,7 +414,7 @@ class LocalUpdateNotifier implements UpdateNotifier {
 
   WindowsNotificationDetails _windowsDetails(UpdateNotification notification) {
     final String? image = _existingImage(notification);
-    final String? groupTitle = this.groupTitle;
+    final String? groupTitle = notification.grouped ? this.groupTitle : null;
     final String? appLogo = _windowsIconFile;
     return WindowsNotificationDetails(
       audio: WindowsNotificationAudio.silent(),

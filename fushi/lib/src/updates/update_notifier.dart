@@ -24,6 +24,7 @@ class UpdateNotification {
     this.imagePath,
     this.timestamp,
     this.actions = const <UpdateNotificationAction>[],
+    this.grouped = true,
   });
 
   /// 平台通知 id。同 id 再发 = 替换而不是叠加（见 `updateNotificationId`：
@@ -46,6 +47,10 @@ class UpdateNotification {
 
   /// 动作按钮，按顺序显示。空 = 只有点击本体。
   final List<UpdateNotificationAction> actions;
+
+  /// 归不归进通知后端的分组页眉（Windows 通知中心里的「订阅更新」）。反馈回复不是
+  /// 订阅更新，传 false 单独成条。
+  final bool grouped;
 }
 
 /// 用户对一条通知的响应：点本体（[actionId] 为 null）或点某个按钮。
