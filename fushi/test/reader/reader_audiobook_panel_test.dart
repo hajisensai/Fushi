@@ -119,6 +119,53 @@ void main() {
     );
   });
 
+  testWidgets('矮视口（整块面板单滚动）：手指落在章节列表上一路拖到底，末章完整可见 '
+      '（k2ykdRRxC3：外层滚动套固定高度内层列表，外层够不到底）', (tester) async {
+    const Size size = Size(400, 500); // < kReaderAudiobookPanelPinnedMinHeight
+    await tester.pumpWidget(
+      _host(
+        _panel(
+          toc: List<TtuTocEntry>.generate(
+            30,
+            (int i) => TtuTocEntry(index: i, label: 'Chapter $i'),
+          ),
+        ),
+        size: size,
+      ),
+    );
+    await tester.pumpAndSettle();
+    // 只有一条竖向滚动：「正在播放」卡与章节同滚，没有内层列表抢手势。
+    final List<ScrollableState> vertical = tester
+        .stateList<ScrollableState>(
+          find.descendant(
+            of: find.byType(ReaderAudiobookPanel),
+            matching: find.byType(Scrollable),
+          ),
+        )
+        .where((ScrollableState s) => s.position.axis == Axis.vertical)
+        .toList();
+    expect(vertical, hasLength(1));
+
+    final Finder list = find.byKey(
+      const ValueKey<String>('fushi_audiobook_chapters'),
+    );
+    for (int i = 0; i < 40; i++) {
+      // 落点永远在面板底部（章节列表区域）。
+      await tester.dragFrom(
+        tester.getRect(list).bottomCenter - const Offset(0, 40),
+        const Offset(0, -300),
+      );
+      await tester.pumpAndSettle();
+    }
+    final Finder last = find.text('Chapter 29');
+    expect(last, findsOneWidget);
+    expect(
+      tester.getRect(last).bottom,
+      lessThanOrEqualTo(tester.getRect(list).bottom),
+      reason: '末章要完整落在可视区内',
+    );
+  });
+
   for (final Size size in <Size>[
     const Size(400, 900),
     const Size(420, 760),

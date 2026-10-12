@@ -170,7 +170,8 @@ void main() {
           ),
         )
         .toList();
-    expect(outer, isNotEmpty, reason: '手机竖屏下整块面板包在外层滚动里');
+    // 矮视口下「正在播放」卡与章节并进同一条滚动（k2ykdRRxC3），不再有外层滚动；
+    // 本用例的隔离约束（定位只动章节自己的 ScrollPosition）对两种结构都成立。
 
     // 定位键在「章节」分组标题旁，先把它滚进章节列表视野里再点。
     const Key reveal = ValueKey<String>(
