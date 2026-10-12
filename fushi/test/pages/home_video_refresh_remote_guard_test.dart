@@ -1,6 +1,9 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/pages/implementations/home_video_page.dart'
+    show videoLibraryNeedsHeaderRefresh;
 
 /// 根因守卫（BUG-894：互联远端视频看完返回即重拉列表）。
 ///
@@ -125,6 +128,14 @@ void main() {
       isTrue,
       reason: '全库枚举动辄几十秒，不标 busy 就是「按了没反应、于是连按五次」',
     );
+  });
+
+  test('页头刷新按钮只给桌面平台（触屏下拉即入口，反馈 #7m1x-R3yOn）', () {
+    expect(videoLibraryNeedsHeaderRefresh(TargetPlatform.windows), isTrue);
+    expect(videoLibraryNeedsHeaderRefresh(TargetPlatform.macOS), isTrue);
+    expect(videoLibraryNeedsHeaderRefresh(TargetPlatform.linux), isTrue);
+    expect(videoLibraryNeedsHeaderRefresh(TargetPlatform.android), isFalse);
+    expect(videoLibraryNeedsHeaderRefresh(TargetPlatform.iOS), isFalse);
   });
 
   test('_refreshFromHeader 只是 _pullToRefresh 加一层 busy 记账，不另写刷新逻辑', () {

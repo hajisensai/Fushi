@@ -178,7 +178,11 @@ void main() {
     );
     await mouse.moveTo(const Offset(5, 5));
     await tester.pumpAndSettle();
-    expect(liftScaleOf(tester, cardKey), closeTo(1.0, 1e-6), reason: '鼠标移出必须复位');
+    expect(
+      liftScaleOf(tester, cardKey),
+      closeTo(1.0, 1e-6),
+      reason: '鼠标移出必须复位',
+    );
   }
 
   Future<void> seedInProgress(String uid, String title) => db.upsertVideoBook(
@@ -217,6 +221,25 @@ void main() {
       rowRect.bottom - cardRect.bottom,
       greaterThanOrEqualTo(need - 0.5),
       reason: '放大溢出的下沿会被行视口裁掉：行高必须留 (scale-1)/2 余量',
+    );
+  });
+
+  testWidgets('横滚行首张卡左侧给放大留出横向余量（不被视口裁成平边）', (WidgetTester tester) async {
+    await seedInProgress('video/side', 'Side Show');
+    await pumpPage(tester);
+
+    final Finder card = find.byKey(
+      const ValueKey<String>('home_video_continue_video/side'),
+    );
+    final Rect cardRect = tester.getRect(card);
+    final Rect rowRect = tester.getRect(
+      find.ancestor(of: card, matching: find.byType(ListView)).first,
+    );
+    final double need = cardRect.width * (kFushiHoverLiftScale - 1) / 2;
+    expect(
+      cardRect.left - rowRect.left,
+      greaterThanOrEqualTo(need - 0.5),
+      reason: '首张卡放大溢出的左沿会被行视口裁掉：列表首尾必须留横向余量',
     );
   });
 
