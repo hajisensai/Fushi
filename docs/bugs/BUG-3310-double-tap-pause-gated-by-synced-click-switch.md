@@ -17,7 +17,7 @@
   继承，`video_asbplayer_config.dart:156`）；判据只读它（`video_double_tap_center_action.dart`，页面 `video_fushi_page.dart:11084`）；
   设置页新增「双击画面播放/暂停」（`video.playback.double_tap_toggles_playback`，全平台可见，`settings_schema_video.dart:1282`），
   原「点击画面播放/暂停」只在桌面可见（`settings_schema_video.dart:1265`，移动端已无效果，露出来是假开关）。
-  桌面鼠标双击仍切全屏；左 / 右三分之一快退快进（`_handleDoubleTapSeek`，排在判据之前）未改动。提交见 PR。
+  桌面鼠标双击仍切全屏；左 / 右三分之一快退快进（`_handleDoubleTapSeek`，排在判据之前）未改动。提交 d5bbe904e1。
 - **[x] ② 已加自动化测试** — `fushi/test/pages/video_mobile_double_tap_pause_test.dart`（真实移动控制条 + 宿主 Listener 的触摸双击行为测试：
   iOS / Android 在「电脑同步来的 tapTogglesPlayback=false」下双击中带切换播放态；显式关掉双击开关后不动作；Android 左区双击照样到达宿主）、
   `fushi/test/media/video/video_asbplayer_config_test.dart`（旧档 `{"tapTogglesPlayback":false}` 解出 doubleTap=true）、
