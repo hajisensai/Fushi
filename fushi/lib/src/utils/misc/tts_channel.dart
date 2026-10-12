@@ -48,6 +48,20 @@ class TtsChannel {
   static bool get isSupported => _isSupported;
   static const _channel = FushiChannels.tts;
 
+  /// 原生 `TtsChannelHandler` 只注册在主 Activity 的引擎上（`MainActivity.
+  /// configureFlutterEngine`）；Android 弹窗词典 / 悬浮词典是另外的引擎与 entry
+  /// point，那里调本通道只会 MissingPluginException。由主入口 `main()` 调
+  /// [markHostPlaybackRegistered] 声明「本引擎有原生播放器」，消费端据此决定能否
+  /// 把单词音频交给原生 MediaPlayer（BUG-3311）。
+  static bool _hostPlaybackRegistered = false;
+
+  /// 本引擎是否能用原生 MediaPlayer 播单词音频（Android 主引擎）。
+  static bool get hostPlaybackRegistered =>
+      _isSupported && _hostPlaybackRegistered;
+
+  /// 主入口 `main()` 调一次；见 [_hostPlaybackRegistered]。
+  static void markHostPlaybackRegistered() => _hostPlaybackRegistered = true;
+
   /// Desktop only: the configured local-audio SQLite DB configs (path +
   /// per-db enabled source order), mirrored here by [setLocalAudioDbs]
   /// (Android keeps them in the native handler instead).

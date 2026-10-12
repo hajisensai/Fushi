@@ -3531,6 +3531,12 @@ async function fetchAudioUrl(expression, reading) {
 // 返回值仍是 boolean（`if (!await playWordAudio(url))` 与宿主的 `r === true` 契约一字
 // 未动），原因另存到 realm 上的 [__fushiWordAudioLastError]，由注入的 report 包装读走
 // 并随 `wordAudioPlayed` 回传。成功时清空，避免下一次失败读到上一次的陈旧原因。
+//
+// BUG-3311：Android app 内宿主注入 `window.__fushiWordAudioViaHost = true`，单词音频改交
+// 宿主原生播放器（不申请音频焦点）。WebView 的 <audio> 一出声，Chromium 的
+// AudioFocusDelegate 就以 GAIN_TRANSIENT_MAY_DUCK 申请系统音频焦点——宿主无法关掉；
+// 部分 ROM（联想 ZUI 实测）据此把 app 自己正在播的视频一起压低数秒。宿主播放失败
+// （返回非 true / 桥异常）才回落 <audio>，保证不哑。
 function playWordAudio(audioUrl) {
     const noteError = (e) => {
         window.__fushiWordAudioLastError =
@@ -3544,6 +3550,29 @@ function playWordAudio(audioUrl) {
         if (window.__fushiWordAudio) {
             try { window.__fushiWordAudio.pause(); } catch (_) { /* no-op */ }
         }
+        if (window.__fushiWordAudioViaHost === true && window.flutter_inappwebview) {
+            return Promise.resolve(window.flutter_inappwebview.callHandler(
+                'playWordAudioNative', audioUrl)).then((r) => {
+                if (r === true) {
+                    window.__fushiWordAudioLastError = '';
+                    return true;
+                }
+                return playWordAudioInWebView(audioUrl);
+            }, () => playWordAudioInWebView(audioUrl));
+        }
+        return playWordAudioInWebView(audioUrl);
+    } catch (e) {
+        noteError(e);
+        return Promise.resolve(false);
+    }
+}
+
+function playWordAudioInWebView(audioUrl) {
+    const noteError = (e) => {
+        window.__fushiWordAudioLastError =
+            (e && (e.name || e.message)) || 'UnknownError';
+    };
+    try {
         const audio = new Audio(audioUrl);
         const v = window.lookupAudioVolume;
         if (typeof v === 'number' && isFinite(v)) {

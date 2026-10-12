@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart' show md5;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -187,7 +188,9 @@ Future<bool> autoReadWordUnified(
       await resolveLookupAudioUrl(appModel, expression, reading);
   if (ref == null || ref.isEmpty) return false;
 
-  if (playInWebView != null) {
+  // BUG-3311：Android 主引擎上单词音频一律交原生播放器（不申请音频焦点），
+  // 不再经弹窗 <audio>——见 [lookupWordAudioPlaysNatively]。
+  if (playInWebView != null && !lookupWordAudioPlaysNatively) {
     final String? url = await audioRefToWebViewUrl(ref);
     if (url != null && url.isNotEmpty) {
       if (await playInWebView(url)) return true;
@@ -206,6 +209,69 @@ Future<bool> autoReadWordUnified(
     ref,
     volume: ReaderFushiSource.instance.lookupAudioVolumeGain,
   );
+}
+
+/// 单词音频是否改走宿主原生播放器而不是弹窗 WebView 的 `<audio>`（BUG-3311）。
+///
+/// Android WebView 的 `<audio>` 一出声，Chromium 的 `AudioFocusDelegate` 就以
+/// `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` 向系统申请音频焦点（`dumpsys audio` 实测
+/// `req=3`），宿主没有任何开关能关掉它；部分 ROM（联想 ZUI，反馈 #D5hTCEYMmT）据此
+/// 把 app 自己正在播的视频一起压低数秒。原生 `TtsChannelHandler` 的 MediaPlayer
+/// 不申请焦点，读一个一秒的词不该去抢系统焦点。
+///
+/// 只在 Android **主引擎**为真：原生播放器只注册在主 Activity 的引擎上，弹窗词典 /
+/// 悬浮词典的副引擎仍走 WebView `<audio>`（见 [TtsChannel.hostPlaybackRegistered]）。
+bool get lookupWordAudioPlaysNatively => TtsChannel.hostPlaybackRegistered;
+
+/// 弹窗 `playWordAudioNative` 桥的落地：把 popup.js 手里的可播 URL（远端
+/// `http(s)://` 或本地文件转成的 `data:` URL，见 [audioRefToWebViewUrl]）交原生
+/// 播放器播放。返回是否真的开始播放；false 时 popup.js 回落 `<audio>`。
+Future<bool> playWordAudioUrlNatively(String url) async {
+  final String? ref = await webViewWordAudioUrlToPlayableRef(url);
+  if (ref == null) return false;
+  return TtsChannel.instance.playAudioRef(
+    ref,
+    volume: ReaderFushiSource.instance.lookupAudioVolumeGain,
+  );
+}
+
+/// [audioRefToWebViewUrl] 的逆向：`http(s)://` 原样返回；`data:` URL 解码落到
+/// 临时目录下按内容寻址的文件（同一段音频复用同一文件，播放中的文件不会被下一次
+/// 播放覆写），返回其路径。其它形态或解码失败返回 null。
+Future<String?> webViewWordAudioUrlToPlayableRef(
+  String url, {
+  Directory? cacheDir,
+}) async {
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (!url.startsWith('data:')) return null;
+  final UriData data;
+  try {
+    data = UriData.parse(url);
+  } on FormatException {
+    return null;
+  }
+  final Uint8List bytes = data.contentAsBytes();
+  if (bytes.isEmpty) return null;
+  final Directory dir = cacheDir ??
+      Directory('${Directory.systemTemp.path}${Platform.pathSeparator}'
+          'fushi_word_audio');
+  await dir.create(recursive: true);
+  final String name =
+      '${md5.convert(bytes)}.${_audioExtensionForMime(data.mimeType)}';
+  final File file = File('${dir.path}${Platform.pathSeparator}$name');
+  if (!await file.exists() || await file.length() != bytes.length) {
+    await file.writeAsBytes(bytes, flush: true);
+  }
+  return file.path;
+}
+
+/// `data:` URL 的 MIME → 落盘扩展名（[kAudioMimeByExtension] 的反查，取首个命中；
+/// 原生 MediaPlayer 按内容嗅探，扩展名只是给人看的提示）。
+String _audioExtensionForMime(String mime) {
+  for (final MapEntry<String, String> e in kAudioMimeByExtension.entries) {
+    if (e.value == mime) return e.key;
+  }
+  return 'mp3';
 }
 
 /// Resolves word audio for [expression] / [reading] into a URL that an HTML5
