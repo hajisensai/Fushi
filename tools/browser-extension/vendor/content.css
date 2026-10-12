@@ -2381,7 +2381,8 @@
    词典名标签同一强调色口径，--md-primary 由 Dart 注入，亮 / 暗 / 自定义主题自动跟随；
    淡染半透明，自定义卡面底色下照样成立）。
    状态层：hover 22% / focus-visible 22% + 2px 主色描边环 / 按下 26%。
-   M3E 形状变形：静息整圆，按下收成 10px 圆角方块并缩到 0.92，松手带轻过冲弹回。
+   按下：形状恒为整圆（BUG-3308：曾收成 10px 圆角方块，被用户看成「方形背景」），
+   只缩到 0.92，松手带轻过冲弹回。
    时长对齐 Flutter 共享动效 token（FushiMotion.micro 90ms 按下 / short 180ms 松手 +
    release 软过冲）；减弱动态效果由 JS 挂 .no-motion 归零，墨水屏走 html.eink 通配压平。
    Apple 设计系统（html.fushi-glass-host.fushi-apple）在后面换成 Apple 胶囊口径。 */
@@ -2416,9 +2417,9 @@
     box-shadow: 0 0 0 2px var(--md-primary, var(--primary-color));
 }
 
+/* 同 BUG-3308：按下保持整圆（不再收成 10px 圆角方块），只缩放 + 加深淡染。 */
 .ctx-adjust-button:active {
     opacity: 1;
-    border-radius: 10px;
     transform: scale(0.92);
     background-color: color-mix(in srgb, var(--md-primary, var(--primary-color)) 26%, transparent);
     transition-duration: 0.09s;
@@ -2888,8 +2889,12 @@
     box-shadow: 0 0 0 2px var(--md-sys-color-surface), 0 0 0 4px var(--md-sys-color-primary);
 }
 
+/* BUG-3308（反馈 #qFuEIpcwsC「点制卡按钮出现蓝色方框背景」）：按下不再把整圆收成
+   corner-medium 圆角方块。这颗按钮自带实心底色（未制卡 = primary），按住时整块底色变成
+   37px 的 12px 圆角方块——用户看到的正是「圆形按钮点下去冒出一个差不多大的方形背景」。
+   圆形图标按钮按下只缩放 + 叠按压状态层，形状恒为整圆（border-radius 保持静息的
+   corner-full，此处不再覆写）。守卫 popup_round_icon_button_press_shape_test.dart。 */
 :where(#entries-container).fushi-m3e .header-buttons > .inline-action-button:where(:not(:disabled)):active {
-    border-radius: var(--md-sys-shape-corner-medium);
     transform: scale(0.92);
     background-image: linear-gradient(
         color-mix(in srgb, currentColor var(--md-sys-state-pressed-opacity), transparent),
@@ -3068,9 +3073,10 @@
         0 0 0 7px var(--md-sys-color-primary);
 }
 
+/* 同 BUG-3308：box-shadow 状态层跟随 border-radius，按下改成 corner-small 会让 5px 外扩的
+   状态层变成方块。形状保持整圆，只缩放。 */
 :where(#entries-container).fushi-m3e .inline-action-button:where(:not(:disabled)):where(:not(.header-buttons > *)):active {
     opacity: 1;
-    border-radius: var(--md-sys-shape-corner-small);
     transform: scale(0.86);
     background-color: color-mix(in srgb, currentColor 14%, transparent);
     box-shadow: 0 0 0 5px color-mix(in srgb, currentColor 14%, transparent);

@@ -10,7 +10,7 @@ import '../helpers/source_guard.dart';
 /// 继承正文色、UA 默认字号、只有一条 `opacity: 0.85`，与同排已跟主色的 ♪ / ☆ / +
 /// 明显不是一套（用户「查词框的选择上下文按钮还不是 m3e」）。这里钉住：
 ///  1. MD3 基础样式是 tonal 图标按钮：主色淡染容器 + 主色图标、整圆、状态层
-///     （hover / focus-visible / pressed）、按下形状变形 + 缩放、带过渡。
+///     （hover / focus-visible / pressed）、按下保持整圆只缩放（BUG-3308）、带过渡。
 ///  2. Apple 设计系统挂 `html.fushi-glass-host.fushi-apple`：胶囊灰填充、按下变暗、
 ///     不做形状变形；且生成的扩展 content.css 丢弃这段（扩展没有 Apple 设计系统）。
 ///  3. 墨水屏覆盖：描边 + 前景色，按下反色。
@@ -69,7 +69,11 @@ void main() {
     final String focus = ruleBody(css, '.ctx-adjust-button:focus-visible');
     expect(focus, contains('box-shadow: 0 0 0 2px var(--md-primary'));
     final String active = ruleBody(css, '.ctx-adjust-button:active');
-    expect(active, contains('border-radius: 10px'), reason: 'M3E 按下形状变形');
+    expect(
+      active,
+      isNot(contains('border-radius')),
+      reason: 'BUG-3308：圆形按钮按下保持整圆，不再收成圆角方块',
+    );
     expect(active, contains('transform: scale(0.92)'));
     expect(active, contains('26%'));
     expect(active, contains('transition-duration: 0.09s'));
