@@ -516,7 +516,7 @@ class FushiSwitch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) return _buildGlass(context);
-    if (_adaptive) {
+    if (_adaptive && useCupertinoAdaptiveControls(context)) {
       return Switch.adaptive(
         value: value,
         onChanged: onChanged,
@@ -1178,7 +1178,10 @@ class FushiSlider extends StatelessWidget {
     final ShowValueIndicator? valueIndicator = axis == Axis.vertical
         ? ShowValueIndicator.never
         : showValueIndicator;
-    Widget slider = _buildMd3Slider(valueIndicator);
+    Widget slider = _buildMd3Slider(
+      valueIndicator,
+      adaptive: _adaptive && useCupertinoAdaptiveControls(context),
+    );
     if (sliderSize != null && !isEinkTheme(context)) {
       slider = SliderTheme(
         data: fushiSliderSizeTheme(SliderTheme.of(context), sliderSize),
@@ -1193,8 +1196,11 @@ class FushiSlider extends StatelessWidget {
     return slider;
   }
 
-  Widget _buildMd3Slider(ShowValueIndicator? showValueIndicator) {
-    if (_adaptive) {
+  Widget _buildMd3Slider(
+    ShowValueIndicator? showValueIndicator, {
+    required bool adaptive,
+  }) {
+    if (adaptive) {
       return Slider.adaptive(
         value: value,
         secondaryTrackValue: secondaryTrackValue,
@@ -2262,7 +2268,7 @@ class FushiCheckbox extends StatelessWidget {
         visualDensity: visualDensity,
       );
     }
-    if (_adaptive) {
+    if (_adaptive && useCupertinoAdaptiveControls(context)) {
       return Checkbox.adaptive(
         value: value,
         tristate: tristate,
@@ -2492,7 +2498,7 @@ class _FushiRadioState<T> extends State<FushiRadio<T>> with RadioClient<T> {
         visualDensity: widget.visualDensity,
       );
     }
-    if (widget._adaptive) {
+    if (widget._adaptive && useCupertinoAdaptiveControls(context)) {
       return Radio<T>.adaptive(
         value: widget.value,
         groupValue: widget.groupValue,
@@ -2928,7 +2934,7 @@ class FushiCheckboxListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) return _buildGlass(context);
-    if (_adaptive) {
+    if (_adaptive && useCupertinoAdaptiveControls(context)) {
       return CheckboxListTile.adaptive(
         value: value,
         onChanged: onChanged,
@@ -3271,7 +3277,7 @@ class _FushiRadioListTileState<T> extends State<FushiRadioListTile<T>>
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) return _buildGlass(context);
-    if (widget._adaptive) {
+    if (widget._adaptive && useCupertinoAdaptiveControls(context)) {
       return RadioListTile<T>.adaptive(
         value: widget.value,
         groupValue: widget.groupValue,
@@ -3569,7 +3575,7 @@ class FushiSwitchListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) return _buildGlass(context);
-    if (_adaptive) {
+    if (_adaptive && useCupertinoAdaptiveControls(context)) {
       return SwitchListTile.adaptive(
         value: value,
         onChanged: onChanged,

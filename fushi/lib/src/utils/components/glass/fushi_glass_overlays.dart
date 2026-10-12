@@ -534,8 +534,10 @@ class FushiAlertDialog extends StatelessWidget {
        insetAnimationCurve = Curves.decelerate,
        _adaptive = false;
 
-  /// [AlertDialog.adaptive] 的分派版：MD3 下按平台出 Cupertino / Material
-  /// 对话框（同原控件），玻璃下与默认构造器同一个玻璃外壳。
+  /// [AlertDialog.adaptive] 的分派版：MD3 下恒为 Material 对话框（`auto` 五平台
+  /// 统一 M3E，iOS 不再出 Cupertino 对话框，BUG-3309），只有显式 Cupertino 设计
+  /// 系统才按平台分派（[useCupertinoAdaptiveControls]）；玻璃下与默认构造器同一个
+  /// 玻璃外壳。
   const FushiAlertDialog.adaptive({
     super.key,
     this.icon,
@@ -606,7 +608,9 @@ class FushiAlertDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!isGlassDesign(context) && _adaptive) {
+    if (!isGlassDesign(context) &&
+        _adaptive &&
+        useCupertinoAdaptiveControls(context)) {
       return AlertDialog.adaptive(
         icon: _md3HeroIcon(),
         iconPadding: iconPadding,
