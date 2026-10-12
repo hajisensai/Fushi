@@ -457,21 +457,23 @@ void main() {
     await settle(tester);
     expect(byKey('leaderboard-signin-error'), findsNothing);
     expect(
-      tester.widget<FilledButton>(glassUnwrap<FilledButton>(byKey('leaderboard-signin-send'))).onPressed,
+      tester
+          .widget<FilledButton>(
+            glassUnwrap<FilledButton>(byKey('leaderboard-signin-send')),
+          )
+          .onPressed,
       isNull,
       reason: '冷却中不能重发',
     );
-    FilledButton submit() =>
-        tester.widget<FilledButton>(glassUnwrap<FilledButton>(byKey('leaderboard-signin-submit')));
+    FilledButton submit() => tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(byKey('leaderboard-signin-submit')),
+    );
     expect(submit().onPressed, isNull);
 
     await tester.enterText(field('leaderboard-signin-code'), '123456');
     await tester.enterText(field('leaderboard-signin-nickname'), 'Neko');
     await tester.pump();
-    expect(submit().onPressed, isNull, reason: '没勾同意不能注册');
-    await tester.tap(byKey('leaderboard-signin-consent'));
-    await tester.pump();
-    expect(submit().onPressed, isNotNull);
+    expect(submit().onPressed, isNotNull, reason: '注册不强制勾公开同意（隐私：注册与公开上传分离）');
 
     server.registerError = (400, 'bad_code');
     await tester.tap(byKey('leaderboard-signin-submit'));
@@ -493,7 +495,11 @@ void main() {
     // 走完冷却，让周期 Timer 自己停掉。
     await tester.pump(const Duration(seconds: 61));
     expect(
-      tester.widget<FilledButton>(glassUnwrap<FilledButton>(byKey('leaderboard-signin-send'))).onPressed,
+      tester
+          .widget<FilledButton>(
+            glassUnwrap<FilledButton>(byKey('leaderboard-signin-send')),
+          )
+          .onPressed,
       isNotNull,
     );
   });
@@ -558,7 +564,9 @@ void main() {
     final double charsX = tester
         .getTopLeft(
           find.byKey(
-            ValueKey<String>('leaderboard-metric-${t.leaderboard_metric_chars}'),
+            ValueKey<String>(
+              'leaderboard-metric-${t.leaderboard_metric_chars}',
+            ),
           ),
         )
         .dx;
@@ -614,7 +622,9 @@ void main() {
     expect(find.text(t.leaderboard_board_me_unranked), findsOneWidget);
   });
 
-  testWidgets('榜单快照未生成：显示「榜单生成中」；上传设备在别处：账户页给出接管按钮', (WidgetTester tester) async {
+  testWidgets('榜单快照未生成：显示「榜单生成中」；上传设备在别处：账户页给出接管按钮', (
+    WidgetTester tester,
+  ) async {
     tallView(tester);
     server.rankComputedAt = null;
     final LeaderboardService service = await activeService(
@@ -644,7 +654,11 @@ void main() {
     );
     expect(
       tester
-          .widget<TextButton>(glassUnwrap<TextButton>(find.byKey(const ValueKey<String>('leaderboard-sync-now'))),)
+          .widget<TextButton>(
+            glassUnwrap<TextButton>(
+              find.byKey(const ValueKey<String>('leaderboard-sync-now')),
+            ),
+          )
           .onPressed,
       isNull,
       reason: '被挡住时「立即同步」必然 409，直接禁用',
@@ -1213,12 +1227,42 @@ void main() {
     await settle(tester);
     await tester.enterText(editable('leaderboard-signin-code'), '123456');
     await tester.pump();
-    final FilledButton submit = tester.widget<FilledButton>(glassUnwrap<FilledButton>(byKey('leaderboard-signin-submit')),);
+    final FilledButton submit = tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(byKey('leaderboard-signin-submit')),
+    );
     expect(submit.onPressed, isNotNull, reason: '登录不强制勾同意');
     await tester.tap(byKey('leaderboard-signin-submit'));
     // 账户先落盘再激活（`_adopt`）：状态翻成 active 时文件已写完。
     await settleIo(tester, () => service.status == LeaderboardStatus.active);
     expect(service.status, LeaderboardStatus.active);
+    final LeaderboardLocalAccount? saved = await tester
+        .runAsync<LeaderboardLocalAccount?>(
+          () => LeaderboardStore(supportRoot: root, profileId: 1).read(),
+        );
+    expect(saved!.uploadEnabled, isFalse);
+    expect(saved.consentAt, isNull);
+    await tester.pump(const Duration(seconds: 61));
+  });
+
+  testWidgets('注册页：不勾同意也能注册，但本机上传默认关闭、不记同意时刻', (WidgetTester tester) async {
+    tallView(tester);
+    final LeaderboardService service = buildService();
+    await tester.runAsync(service.load);
+    await tester.pumpWidget(
+      wrap(
+        service,
+        const LeaderboardSignInPage(mode: LeaderboardSignInMode.register),
+      ),
+    );
+    await settle(tester);
+    await tester.enterText(editable('leaderboard-signin-email'), 'a@b.cd');
+    await tester.tap(byKey('leaderboard-signin-send'));
+    await settle(tester);
+    await tester.enterText(editable('leaderboard-signin-code'), '123456');
+    await tester.enterText(editable('leaderboard-signin-nickname'), 'Neko');
+    await tester.pump();
+    await tester.tap(byKey('leaderboard-signin-submit'));
+    await settleIo(tester, () => service.status == LeaderboardStatus.active);
     final LeaderboardLocalAccount? saved = await tester
         .runAsync<LeaderboardLocalAccount?>(
           () => LeaderboardStore(supportRoot: root, profileId: 1).read(),
@@ -1286,7 +1330,11 @@ void main() {
     expect(byKey('leaderboard-signin-nickname'), findsOneWidget);
     expect(email(), 'a@b.cd');
     expect(
-      tester.widget<FilledButton>(glassUnwrap<FilledButton>(byKey('leaderboard-signin-send'))).onPressed,
+      tester
+          .widget<FilledButton>(
+            glassUnwrap<FilledButton>(byKey('leaderboard-signin-send')),
+          )
+          .onPressed,
       isNotNull,
       reason: '登录码不能拿来注册：切换后可以立刻发注册码',
     );
@@ -1494,9 +1542,7 @@ void main() {
     );
   });
 
-  testWidgets('大西瓜：顶栏入口进页，本周字数榜画成头像球，字数越多球越大', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('大西瓜：顶栏入口进页，本周字数榜画成头像球，字数越多球越大', (WidgetTester tester) async {
     tallView(tester);
     final LeaderboardService service = await activeService(tester);
     await tester.pumpWidget(wrap(service, const LeaderboardTab()));
@@ -1591,5 +1637,64 @@ void main() {
     await tester.pumpWidget(card(error: error));
     expect(find.byType(FushiLinearProgressIndicator), findsNothing);
     expect(find.text(leaderboardErrorText(error)), findsOneWidget);
+  });
+
+  testWidgets('总字数卡：可在周 / 月 / 累计之间切换大数字', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: LeaderboardCharsSummaryCard(
+            total: 2500000,
+            week: 40000,
+            month: 120000,
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(seconds: 5));
+    String headline() => tester
+        .widget<Text>(
+          find.byKey(const ValueKey<String>('leaderboard-summary-total')),
+        )
+        .data!;
+    expect(headline(), leaderboardGroupedNumber(2500000));
+    expect(
+      find.byKey(const ValueKey<String>('leaderboard-summary-week')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(
+        ValueKey<String>(
+          'leaderboard-summary-window-${leaderboardWindowLabel(LeaderboardWindow.month)}',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 5));
+    expect(headline(), leaderboardGroupedNumber(120000));
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('leaderboard-summary-title')),
+          )
+          .data,
+      t.leaderboard_summary_total_month,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('leaderboard-summary-share')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(
+        ValueKey<String>(
+          'leaderboard-summary-window-${leaderboardWindowLabel(LeaderboardWindow.week)}',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 5));
+    expect(headline(), leaderboardGroupedNumber(40000));
   });
 }

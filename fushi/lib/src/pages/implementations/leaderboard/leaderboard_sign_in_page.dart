@@ -152,7 +152,7 @@ class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage> {
     if (_code.text.trim().length != 6) return false;
     if (!_register) return true;
     final int nick = _nickname.text.trim().runes.length;
-    return _consent && nick >= 1 && nick <= 24;
+    return nick >= 1 && nick <= 24;
   }
 
   Future<void> _submit() async {
@@ -169,6 +169,7 @@ class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage> {
           nickname: _nickname.text.trim(),
           email: _email.text.trim(),
           code: _code.text.trim(),
+          consent: _consent,
         );
       } else {
         await service.loginWithEmail(
@@ -288,9 +289,7 @@ class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage> {
             LeaderboardConsentTile(
               key: const ValueKey<String>('leaderboard-signin-consent'),
               value: _consent,
-              label: _register
-                  ? t.leaderboard_signin_consent
-                  : t.leaderboard_signin_consent_login,
+              label: t.leaderboard_signin_consent_login,
               onChanged: (bool v) => setState(() => _consent = v),
             ),
             if (_error != null) ...<Widget>[

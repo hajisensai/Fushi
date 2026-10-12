@@ -5950,7 +5950,6 @@
   "leaderboard_sync_shelf_limit": "رفّك يتجاوز حد ${limit} عمل: لم يُرفع ${count} عمل (تُعطى الأولوية للأعمال المكتملة)",
   "leaderboard_intro_public_works": "العنوان والمؤلف والغلاف ووقت الإنهاء للأعمال التي أنهيتها أو تقرؤها",
   "leaderboard_intro_public_chars": "الأحرف المقروءة يوميًا (حسب التاريخ)",
-  "leaderboard_signin_consent": "أفهم ما سيكون عامًا (المذكور أعلاه) وأوافق على نشره.",
   "leaderboard_error_too_many_devices": "تم تسجيل الدخول إلى هذا الحساب على عدد كبير جدًا من الأجهزة. على جهاز مسجَّل الدخول بالفعل، افصل جهازًا قديمًا (الحساب ← الأجهزة المسجَّل الدخول إليها).",
   "leaderboard_error_unknown_account": "حُذف هذا الحساب على جهاز آخر، أو فُصل هذا الجهاز.",
   "leaderboard_intro_public_work_stats": "الأحرف المقروءة والوقت المستغرق في كل عمل",
@@ -7043,5 +7042,16 @@
   "book_import_no_book_notice_title": "No book selected",
   "book_import_no_book_transcribe_hint": "You can import with audio alone: transcribe it on device and a book is generated from the transcript when you import.",
   "book_import_no_book_subtitle_hint": "You can import with audio alone: pick a subtitle file for it and a book is generated from the subtitles when you import.",
-  "book_import_no_book_transcribe_action": "Transcribe and generate book"
+  "book_import_no_book_transcribe_action": "Transcribe and generate book",
+  "feedback_compose_auto_shot_hint": "The automatic screenshot may not include web views, video or the lookup card. If it looks different, remove it and add a system screenshot instead.",
+  "feedback_pending_attachments": "Attachments not uploaded yet: ${n}",
+  "feedback_pending_retry": "Retry upload",
+  "feedback_pending_retry_done": "Uploaded ${n} attachment(s).",
+  "feedback_pending_retry_failed": "${n} attachment(s) still failed to upload. Check your connection and try again.",
+  "feedback_pending_dropped": "${n} attachment(s) were rejected or expired (attachments can only be added within 24 hours of submitting).",
+  "feedback_detail_add_shot": "Add screenshot",
+  "feedback_dev_select_hint": "Select a feedback item on the left",
+  "leaderboard_summary_total_week": "Characters this week",
+  "leaderboard_summary_total_month": "Characters this month",
+  "leaderboard_summary_window_share": "${pct} of your total"
 }

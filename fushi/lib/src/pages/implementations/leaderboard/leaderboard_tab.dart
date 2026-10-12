@@ -214,6 +214,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
   /// 总字数卡：总榜 / 周榜字数榜上「我」的值；null = 还没取到。
   int? _summaryTotal;
   int? _summaryWeek;
+  int? _summaryMonth;
   Object? _summaryError;
 
   RankPage? _rank;
@@ -257,7 +258,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
     }
   }
 
-  /// 总字数卡的两个数：字数榜总榜 / 本周榜上「我」的值（不在快照里时服务端带实时值）。
+  /// 总字数卡的两个数：字数榜总榜 / 本周榜 / 本月榜上「我」的值（不在快照里时服务端带实时值）。
   Future<void> _refreshSummary() async {
     final LeaderboardClient? client = ref
         .read(leaderboardServiceProvider)
@@ -275,11 +276,17 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
           window: LeaderboardWindow.week,
           limit: 1,
         ),
+        client.rank(
+          metric: LeaderboardMetric.chars,
+          window: LeaderboardWindow.month,
+          limit: 1,
+        ),
       ]);
       if (!mounted) return;
       setState(() {
         _summaryTotal = pages[0].me?.value ?? 0;
         _summaryWeek = pages[1].me?.value ?? 0;
+        _summaryMonth = pages[2].me?.value ?? 0;
         _summaryError = null;
       });
     } catch (e, st) {
@@ -570,6 +577,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
     child: LeaderboardCharsSummaryCard(
       total: _summaryTotal,
       week: _summaryWeek,
+      month: _summaryMonth,
       error: _summaryError,
     ),
   );
@@ -703,9 +711,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
 
   List<Widget> _buildBoard(FushiDesignTokens tokens) {
     if (_loading) {
-      return <Widget>[
-        const FushiLoadingView(),
-      ];
+      return <Widget>[const FushiLoadingView()];
     }
     if (_error != null) {
       return <Widget>[
@@ -757,29 +763,29 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
         FushiStaggeredEntrance(
           index: i + 3,
           child: FushiListItem(
-          key: ValueKey<String>('leaderboard-rank-${row.account.id}'),
-          leading: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              SizedBox(
-                width: 36,
-                child: Text(
-                  '${row.rank}',
-                  textAlign: TextAlign.center,
-                  style: tokens.type.listTitle,
+            key: ValueKey<String>('leaderboard-rank-${row.account.id}'),
+            leading: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                SizedBox(
+                  width: 36,
+                  child: Text(
+                    '${row.rank}',
+                    textAlign: TextAlign.center,
+                    style: tokens.type.listTitle,
+                  ),
                 ),
-              ),
-              SizedBox(width: tokens.spacing.gap),
-              LeaderboardAvatar(account: row.account),
-            ],
+                SizedBox(width: tokens.spacing.gap),
+                LeaderboardAvatar(account: row.account),
+              ],
+            ),
+            title: Text(row.account.tag),
+            trailing: Text(
+              leaderboardMetricValue(_metric, row.value),
+              style: tokens.type.listTitle,
+            ),
+            onTap: () => _openUser(row.account.id),
           ),
-          title: Text(row.account.tag),
-          trailing: Text(
-            leaderboardMetricValue(_metric, row.value),
-            style: tokens.type.listTitle,
-          ),
-          onTap: () => _openUser(row.account.id),
-        ),
         ),
       LeaderboardLoadMore(
         hasMore: _rankHasMore,

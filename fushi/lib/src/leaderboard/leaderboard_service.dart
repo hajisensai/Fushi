@@ -234,19 +234,21 @@ class LeaderboardService extends ChangeNotifier {
     );
   }
 
-  /// 首次开启：生成本机钥匙 → 邮箱验证码注册 → 存盘（同意时刻 = 现在）。注册页必须
-  /// 勾选同意才能提交，所以这里恒为已同意。
+  /// 首次开启：生成本机钥匙 → 邮箱验证码注册 → 存盘。注册账户与公开上传是两件事
+  /// （服务端注册不要求同意）：[consent] = 用户在注册页勾选了同意公开；没勾选时本机
+  /// 上传默认关闭、不记同意时刻，之后在账户页打开上传时再确认（同 [loginWithEmail]）。
   Future<void> enable({
     required String nickname,
     required String email,
     required String code,
+    bool consent = true,
   }) async {
     await load();
     final LeaderboardIdentity identity = LeaderboardIdentity.generate();
     final LeaderboardSelf self = await _clientFor(
       identity,
     ).register(nickname: nickname, email: email, code: code);
-    await _adopt(identity, self, consent: true);
+    await _adopt(identity, self, consent: consent);
   }
 
   /// 换设备：生成本机新钥匙 → 邮箱验证码登录（服务端把这把钥匙绑到已有账户）→ 存盘。

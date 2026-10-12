@@ -15,6 +15,7 @@ import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_store.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_compose_page.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_detail_page.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_dev_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -1319,6 +1320,163 @@ void main() {
             r.method == 'POST' && r.url.path == '/v1/dev/feedback/notenote00',
       ),
       isEmpty,
+    );
+  });
+
+  testWidgets('处理台列表：横屏宽屏左列表右详情分栏，窄屏仍是 push 详情页', (WidgetTester tester) async {
+    server.role = 'dev';
+    final LeaderboardService b = board();
+    await tester.runAsync(() async {
+      await LeaderboardStore(supportRoot: root, profileId: 1).write(
+        LeaderboardLocalAccount(
+          recoveryCode: LeaderboardIdentity.generate().toRecoveryCode(),
+          accountId: 'SelfAccount001',
+          consentAt: 1,
+        ),
+      );
+      await b.load();
+    });
+    final FeedbackService f = feedback(b);
+    tester.view.physicalSize = const Size(1400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(wrap(b, f, const FeedbackDevPage()));
+    await settleIo(
+      tester,
+      () => find.text('#svSfwFdmdM').evaluate().isNotEmpty,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('feedback-dev-split')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('feedback-dev-split-empty')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('feedback-dev-svSfwFdmdM')),
+    );
+    await tester.pump();
+    // 右栏出详情，列表仍在左边（没有 push 新路由）。
+    await settleIo(
+      tester,
+      () => server.requests.any(
+        (http.Request r) => r.url.path == '/v1/dev/feedback/svSfwFdmdM',
+      ),
+    );
+    expect(find.byType(FeedbackDevDetailPage), findsOneWidget);
+    expect(find.text('#abcdefghij'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('feedback-dev-split-empty')),
+      findsNothing,
+    );
+
+    // 竖屏 / 窄屏：不分栏，点击 push 详情页（列表被盖住）。
+    tester.view.physicalSize = const Size(500, 900);
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('feedback-dev-split')),
+      findsNothing,
+    );
+  });
+
+  String composeContact(WidgetTester tester) => tester
+      .widget<EditableText>(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('feedback-contact')),
+          matching: find.byType(EditableText),
+        ),
+      )
+      .controller
+      .text;
+
+  testWidgets('提交页：联系方式默认带上次提交用的', (WidgetTester tester) async {
+    tallView(tester);
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    await tester.runAsync(() async {
+      await FeedbackContactStore(root).write('me@example.com');
+    });
+    await tester.pumpWidget(wrap(b, f, const FeedbackComposePage()));
+    await settleIo(tester, () => composeContact(tester).isNotEmpty);
+    expect(composeContact(tester), 'me@example.com');
+    // 只有预填的联系方式不算草稿内容：不会因此落盘一份「草稿」。
+    await settleIo(tester, () => false);
+    expect(
+      File('${root.path}/feedback/draft/draft.json').existsSync(),
+      isFalse,
+    );
+  });
+
+  testWidgets('提交页：有草稿时联系方式以草稿为准（哪怕草稿里是别的）', (WidgetTester tester) async {
+    tallView(tester);
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    await tester.runAsync(() async {
+      await FeedbackContactStore(root).write('me@example.com');
+      await FeedbackDraftStore(root).write(
+        FeedbackComposeDraft(
+          category: FeedbackCategory.bug,
+          title: '草稿标题',
+          body: '',
+          contact: 'draft@example.com',
+          includeLogs: true,
+          includeDevice: true,
+          linkAccount: true,
+          screenshots: const <Uint8List>[],
+          savedAt: 5,
+        ),
+      );
+    });
+    await tester.pumpWidget(wrap(b, f, const FeedbackComposePage()));
+    await settleIo(
+      tester,
+      () => find
+          .byKey(const ValueKey<String>('feedback-draft-restored'))
+          .evaluate()
+          .isNotEmpty,
+    );
+    await settleIo(tester, () => false);
+    expect(composeContact(tester), 'draft@example.com');
+  });
+
+  testWidgets('反馈人详情：有没传上去的附件时给提示与重试按钮，重试后传上去并清掉', (WidgetTester tester) async {
+    tallView(tester);
+    await tester.runAsync(() async {
+      await seedOld();
+      await FeedbackPendingStore(
+        root,
+      ).put('oldoldold0', 's1', Uint8List.fromList(<int>[9]));
+    });
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    await tester.runAsync(f.load);
+    await tester.pumpWidget(
+      wrap(b, f, const FeedbackDetailPage(feedbackId: 'oldoldold0')),
+    );
+    final Finder retry = find.byKey(
+      const ValueKey<String>('feedback-detail-retry'),
+    );
+    await settleIo(tester, () => retry.evaluate().isNotEmpty);
+    expect(retry, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('feedback-detail-pending')),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(retry);
+    await tester.tap(retry);
+    await settleIo(tester, () => f.pendingSlots('oldoldold0').isEmpty);
+    expect(f.pendingSlots('oldoldold0'), isEmpty);
+    final http.Request put = server.requests.lastWhere(
+      (http.Request r) => r.method == 'PUT',
+    );
+    expect(put.url.path, '/v1/feedback/oldoldold0/attachments/s1');
+    expect(put.bodyBytes, <int>[9]);
+    expect(put.headers['X-Fushi-Ticket'], 'old-ticket');
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('feedback-detail-pending')),
+      findsNothing,
     );
   });
 

@@ -1,6 +1,7 @@
 // 排行榜页顶部的「总字数」卡：一个大数字 + 三句话（本周增量与占比、离下一个
 // 百万还差多少、够读完几卷某部热门作品），外加一条到下一个百万的进度条。
-// 数字来自服务端字数榜的「我」（总榜 = 总字数，周榜 = 本周），不在本地另算。
+// 数字来自服务端字数榜的「我」（总榜 = 总字数，周榜 = 本周，月榜 = 本月），不在本地另算；
+// 大数字可在 周 / 月 / 累计 之间切换，进度条与参照作品始终按累计总数算。
 // 参照作品每次打开页面轮换（随包 jiten 数据，不联网）。
 
 import 'dart:math' as math;
@@ -8,6 +9,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import 'package:intl/intl.dart';
 
+import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi/src/leaderboard/leaderboard_reference_works.dart';
 import 'package:fushi/src/leaderboard/leaderboard_reference_works_data.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_common.dart';
@@ -37,12 +39,20 @@ String leaderboardEquivalentText(LeaderboardReferenceEquivalent e) {
   }
 }
 
-/// 总字数卡。[total] / [week] 为 null = 还在加载；[error] 非 null 且 [total] 为 null =
+/// 大数字当前窗口下的标题（累计 = 「总字数」）。
+String leaderboardSummaryTitle(LeaderboardWindow window) => switch (window) {
+  LeaderboardWindow.all => t.leaderboard_summary_total,
+  LeaderboardWindow.week => t.leaderboard_summary_total_week,
+  LeaderboardWindow.month => t.leaderboard_summary_total_month,
+};
+
+/// 总字数卡。[total] / [week] / [month] 为 null = 还在加载；[error] 非 null 且 [total] 为 null =
 /// 加载失败（显示原因，不再停在加载条上）。
 class LeaderboardCharsSummaryCard extends StatefulWidget {
   const LeaderboardCharsSummaryCard({
     required this.total,
     required this.week,
+    this.month,
     this.error,
     this.works = kLeaderboardReferenceWorks,
     this.random,
@@ -51,6 +61,9 @@ class LeaderboardCharsSummaryCard extends StatefulWidget {
 
   final int? total;
   final int? week;
+
+  /// 本月字数；null = 还没取到（切到「本月」时显示加载条）。
+  final int? month;
   final Object? error;
   final List<LeaderboardReferenceWork> works;
 
@@ -67,6 +80,15 @@ class _LeaderboardCharsSummaryCardState
   /// 每次打开页面（State 新建）定一个随机种子：同一次打开里数字刷新也不换作品。
   late final int _seed = (widget.random ?? math.Random()).nextInt(1 << 31);
 
+  /// 大数字显示哪个窗口（默认累计）。
+  LeaderboardWindow _window = LeaderboardWindow.all;
+
+  int? _valueOf(LeaderboardWindow w) => switch (w) {
+    LeaderboardWindow.all => widget.total,
+    LeaderboardWindow.week => widget.week,
+    LeaderboardWindow.month => widget.month,
+  };
+
   LeaderboardReferenceEquivalent? _equivalent(int total) =>
       pickLeaderboardReference(total, widget.works, math.Random(_seed));
 
@@ -77,6 +99,8 @@ class _LeaderboardCharsSummaryCardState
     final ColorScheme colors = theme.colorScheme;
     final int? total = widget.total;
     final int week = widget.week ?? 0;
+    // 大数字：累计 = total；周 / 月 = 对应窗口的值（total 已知时才有占比）。
+    final int? shown = _valueOf(_window);
     final Duration countUp = fushiMotionDuration(context, FushiMotion.long * 2);
 
     final List<Widget> lines = <Widget>[];
@@ -86,7 +110,18 @@ class _LeaderboardCharsSummaryCardState
       final double share = week <= 0 ? 0 : math.min(week / total, 1);
       final LeaderboardReferenceEquivalent? equivalent = _equivalent(total);
       lines.addAll(<Widget>[
-        if (week > 0)
+        if (_window != LeaderboardWindow.all && (shown ?? 0) > 0)
+          Text(
+            t.leaderboard_summary_window_share(
+              pct: NumberFormat.decimalPercentPattern(
+                locale: Intl.getCurrentLocale(),
+                decimalDigits: 1,
+              ).format(math.min(shown! / total, 1)),
+            ),
+            key: const ValueKey<String>('leaderboard-summary-share'),
+            style: tokens.type.listTitle,
+          )
+        else if (_window == LeaderboardWindow.all && week > 0)
           Text(
             t.leaderboard_summary_week(
               n: leaderboardGroupedNumber(week),
@@ -132,8 +167,17 @@ class _LeaderboardCharsSummaryCardState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          LeaderboardChoiceRow<LeaderboardWindow>(
+            keyPrefix: 'leaderboard-summary-window',
+            values: LeaderboardWindow.values,
+            selected: _window,
+            labelOf: leaderboardWindowLabel,
+            onSelected: (LeaderboardWindow w) => setState(() => _window = w),
+          ),
+          SizedBox(height: tokens.spacing.gap),
           Text(
-            t.leaderboard_summary_total,
+            leaderboardSummaryTitle(_window),
+            key: const ValueKey<String>('leaderboard-summary-title'),
             style: theme.textTheme.labelLarge?.copyWith(
               color: colors.onSurfaceVariant,
             ),
@@ -152,7 +196,16 @@ class _LeaderboardCharsSummaryCardState
                 child: FushiLinearProgressIndicator(),
               ),
             )
-          else if (total <= 0)
+          else if (shown == null)
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap),
+              child: const SizedBox(
+                height: 4,
+                child: FushiLinearProgressIndicator(),
+              ),
+            )
+          else if (total <= 0 ||
+              (_window != LeaderboardWindow.all && shown <= 0))
             Text(
               t.leaderboard_summary_empty,
               key: const ValueKey<String>('leaderboard-summary-empty'),
@@ -160,7 +213,7 @@ class _LeaderboardCharsSummaryCardState
             )
           else
             TweenAnimationBuilder<double>(
-              tween: Tween<double>(begin: 0, end: total.toDouble()),
+              tween: Tween<double>(begin: 0, end: shown.toDouble()),
               duration: countUp,
               curve: FushiMotion.standard,
               builder: (BuildContext context, double value, Widget? _) => Text(

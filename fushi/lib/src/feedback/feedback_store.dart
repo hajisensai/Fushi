@@ -6,6 +6,7 @@
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:path/path.dart' as p;
@@ -184,5 +185,80 @@ class FeedbackTicketStore {
     } on ProcessException {
       // 没有 chmod（非 POSIX 环境）：文件仍在 app 私有目录里，不阻断功能。
     }
+  }
+}
+
+/// 提交时没传上去的附件（截图 / 日志）的字节：`<数据根>/feedback/pending/<id>/<slot>`。
+/// 传成功或被服务端明确拒收后删除；随「从本机移除」一并清掉。
+class FeedbackPendingStore {
+  FeedbackPendingStore(this.supportRoot);
+
+  final Directory supportRoot;
+
+  Directory get _root =>
+      Directory(p.join(supportRoot.path, 'feedback', 'pending'));
+
+  File _file(String id, String slot) =>
+      File(p.join(_root.path, p.basename(id), p.basename(slot)));
+
+  Future<void> put(String id, String slot, List<int> bytes) async {
+    final File f = _file(id, slot);
+    await f.parent.create(recursive: true);
+    await f.writeAsBytes(bytes, flush: true);
+  }
+
+  Future<Uint8List?> read(String id, String slot) async {
+    final File f = _file(id, slot);
+    return f.existsSync() ? f.readAsBytes() : null;
+  }
+
+  Future<void> remove(String id, String slot) async {
+    final File f = _file(id, slot);
+    if (f.existsSync()) await f.delete();
+    final Directory dir = f.parent;
+    if (dir.existsSync() && dir.listSync().isEmpty) await dir.delete();
+  }
+
+  Future<void> removeAll(String id) async {
+    final Directory dir = Directory(p.join(_root.path, p.basename(id)));
+    if (dir.existsSync()) await dir.delete(recursive: true);
+  }
+
+  /// 扫描磁盘：反馈 id → 待传槽位。
+  Future<Map<String, Set<String>>> scan() async {
+    final Map<String, Set<String>> out = <String, Set<String>>{};
+    if (!_root.existsSync()) return out;
+    for (final FileSystemEntity d in _root.listSync()) {
+      if (d is! Directory) continue;
+      final Set<String> slots = <String>{
+        for (final FileSystemEntity f in d.listSync())
+          if (f is File) p.basename(f.path),
+      };
+      if (slots.isNotEmpty) out[p.basename(d.path)] = slots;
+    }
+    return out;
+  }
+}
+
+/// 上次提交填的联系方式：`<数据根>/feedback/last_contact.txt`。独立于草稿目录（清草稿
+/// 不会带走它），也不走草稿仓库的串行队列（读它不该排在草稿读写后面）。
+class FeedbackContactStore {
+  FeedbackContactStore(this.supportRoot);
+
+  final Directory supportRoot;
+
+  File get file =>
+      File(p.join(supportRoot.path, 'feedback', 'last_contact.txt'));
+
+  /// 没有记录返回空串。
+  Future<String> read() async {
+    final File f = file;
+    return f.existsSync() ? (await f.readAsString()).trim() : '';
+  }
+
+  Future<void> write(String contact) async {
+    final File f = file;
+    await f.parent.create(recursive: true);
+    await f.writeAsString(contact, flush: true);
   }
 }

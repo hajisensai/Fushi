@@ -5950,7 +5950,6 @@
   "leaderboard_sync_shelf_limit": "书架超过 ${limit} 部上限：有 ${count} 部未上传（优先上传读完的作品）",
   "leaderboard_intro_public_works": "读完与在读作品的标题、作者、封面、读完时间",
   "leaderboard_intro_public_chars": "每日阅读字数（按日期）",
-  "leaderboard_signin_consent": "我已了解上面列出的公开内容，同意公开。",
   "leaderboard_error_too_many_devices": "这个账户登录的设备已达上限。请在已登录的设备上（账户 → 已登录设备）解绑旧设备。",
   "leaderboard_error_unknown_account": "该账户已在其它设备删除，或本设备已被解绑。",
   "leaderboard_intro_public_work_stats": "每部作品的阅读字数与时长",
@@ -7043,5 +7042,16 @@
   "book_import_no_book_notice_title": "没有选择书籍",
   "book_import_no_book_transcribe_hint": "没有书也能导入：直接用设备端转录把音频转成字幕，导入时会据此自动生成一本书。",
   "book_import_no_book_subtitle_hint": "没有书也能导入：为这段音频选一个字幕文件，导入时会据此自动生成一本书。",
-  "book_import_no_book_transcribe_action": "转录并生成书籍"
+  "book_import_no_book_transcribe_action": "转录并生成书籍",
+  "feedback_compose_auto_shot_hint": "自动截图可能不包含网页、视频画面或查词卡；与实际画面不一致时请删除，改用系统截图添加。",
+  "feedback_pending_attachments": "还有 ${n} 个附件没上传成功",
+  "feedback_pending_retry": "重试上传",
+  "feedback_pending_retry_done": "已上传 ${n} 个附件。",
+  "feedback_pending_retry_failed": "仍有 ${n} 个附件上传失败，请检查网络后重试。",
+  "feedback_pending_dropped": "有 ${n} 个附件被拒收或已过期（提交后 24 小时内才能补传附件）。",
+  "feedback_detail_add_shot": "追加截图",
+  "feedback_dev_select_hint": "在左侧选择一条反馈",
+  "leaderboard_summary_total_week": "本周字数",
+  "leaderboard_summary_total_month": "本月字数",
+  "leaderboard_summary_window_share": "占总数 ${pct}"
 }

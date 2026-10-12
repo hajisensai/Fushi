@@ -5950,7 +5950,6 @@
   "leaderboard_sync_shelf_limit": "Je plank overschrijdt de limiet van ${limit} werken: ${count} werken zijn niet geüpload (uitgelezen werken gaan eerst)",
   "leaderboard_intro_public_works": "Titel, auteur, omslag en uitleestijd van de werken die je hebt uitgelezen of aan het lezen bent",
   "leaderboard_intro_public_chars": "Gelezen tekens per dag (op datum)",
-  "leaderboard_signin_consent": "Ik begrijp wat openbaar wordt (hierboven vermeld) en ga akkoord met publicatie.",
   "leaderboard_error_too_many_devices": "Dit account is op te veel apparaten aangemeld. Koppel op een apparaat dat al is aangemeld een oud apparaat los (Account → Aangemelde apparaten).",
   "leaderboard_error_unknown_account": "Dit account is op een ander apparaat verwijderd, of dit apparaat is losgekoppeld.",
   "leaderboard_intro_public_work_stats": "Gelezen tekens en bestede tijd per werk",
@@ -7043,5 +7042,16 @@
   "book_import_no_book_notice_title": "No book selected",
   "book_import_no_book_transcribe_hint": "You can import with audio alone: transcribe it on device and a book is generated from the transcript when you import.",
   "book_import_no_book_subtitle_hint": "You can import with audio alone: pick a subtitle file for it and a book is generated from the subtitles when you import.",
-  "book_import_no_book_transcribe_action": "Transcribe and generate book"
+  "book_import_no_book_transcribe_action": "Transcribe and generate book",
+  "feedback_compose_auto_shot_hint": "The automatic screenshot may not include web views, video or the lookup card. If it looks different, remove it and add a system screenshot instead.",
+  "feedback_pending_attachments": "Attachments not uploaded yet: ${n}",
+  "feedback_pending_retry": "Retry upload",
+  "feedback_pending_retry_done": "Uploaded ${n} attachment(s).",
+  "feedback_pending_retry_failed": "${n} attachment(s) still failed to upload. Check your connection and try again.",
+  "feedback_pending_dropped": "${n} attachment(s) were rejected or expired (attachments can only be added within 24 hours of submitting).",
+  "feedback_detail_add_shot": "Add screenshot",
+  "feedback_dev_select_hint": "Select a feedback item on the left",
+  "leaderboard_summary_total_week": "Characters this week",
+  "leaderboard_summary_total_month": "Characters this month",
+  "leaderboard_summary_window_share": "${pct} of your total"
 }

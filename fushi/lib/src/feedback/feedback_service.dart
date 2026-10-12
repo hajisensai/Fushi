@@ -62,6 +62,24 @@ class FeedbackSubmitResult {
   final int failedAttachments;
 }
 
+/// 一次补传的结果。
+class FeedbackRetryResult {
+  const FeedbackRetryResult({
+    this.uploaded = 0,
+    this.remaining = 0,
+    this.dropped = 0,
+  });
+
+  /// 这次传成功的附件数。
+  final int uploaded;
+
+  /// 仍然没传上去、留在本机待重试的附件数（网络类失败）。
+  final int remaining;
+
+  /// 服务端明确拒收、不会再重试而丢掉的附件数（超过 24 小时补传窗口等）。
+  final int dropped;
+}
+
 class FeedbackService extends ChangeNotifier {
   FeedbackService({
     required Future<Directory> Function() supportRoot,
@@ -82,6 +100,10 @@ class FeedbackService extends ChangeNotifier {
   final Uint8List Function(String log) _logEncoder;
 
   FeedbackTicketStore? _store;
+  FeedbackPendingStore? _pendingStore;
+
+  /// 反馈 id → 还没传上去的附件槽位（磁盘上的 [FeedbackPendingStore] 的内存镜像）。
+  final Map<String, Set<String>> _pending = <String, Set<String>>{};
   List<FeedbackTicket> _tickets = <FeedbackTicket>[];
   bool _loaded = false;
   bool _refreshing = false;
@@ -101,6 +123,28 @@ class FeedbackService extends ChangeNotifier {
   Future<FeedbackTicketStore> _storeFor() async =>
       _store ??= FeedbackTicketStore(await _supportRoot());
 
+  Future<FeedbackPendingStore> _pendingFor() async =>
+      _pendingStore ??= FeedbackPendingStore(await _supportRoot());
+
+  /// 这条反馈还没传上去的附件槽位（`s0`..`s2` / `log`）。
+  Set<String> pendingSlots(String id) =>
+      Set<String>.unmodifiable(_pending[id] ?? const <String>{});
+
+  /// 这条反馈还在服务端的补传窗口内（见 [FeedbackLimits.attachWindow]）。
+  bool canAttach(FeedbackTicket t) =>
+      DateTime.now().millisecondsSinceEpoch - t.createdAt <=
+      FeedbackLimits.attachWindow.inMilliseconds;
+
+  /// 上次提交填的联系方式（新反馈预填用）；没有 / 读失败返回空串。
+  Future<String> lastContact() async {
+    try {
+      return await FeedbackContactStore(await _supportRoot()).read();
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('feedback.last_contact_read', e, st);
+      return '';
+    }
+  }
+
   FeedbackDraftStore? _draftStore;
 
   /// 提交页草稿（本机一份，见 [FeedbackDraftStore]）。
@@ -111,6 +155,10 @@ class FeedbackService extends ChangeNotifier {
 
   Future<void> _load() async {
     _tickets = await (await _storeFor()).read();
+    final Map<String, Set<String>> pending = await (await _pendingFor()).scan();
+    _pending
+      ..clear()
+      ..addAll(pending);
     _loaded = true;
     notifyListeners();
   }
@@ -205,6 +253,15 @@ class FeedbackService extends ChangeNotifier {
     );
     _tickets = <FeedbackTicket>[ticket, ..._tickets];
     await _persist();
+    if (draft.contact.trim().isNotEmpty) {
+      try {
+        await FeedbackContactStore(
+          await _supportRoot(),
+        ).write(draft.contact.trim());
+      } on Object catch (e, st) {
+        ErrorLogService.instance.log('feedback.last_contact_write', e, st);
+      }
+    }
 
     int failed = 0;
     final List<Uint8List> shots = draft.screenshots
@@ -222,24 +279,100 @@ class FeedbackService extends ChangeNotifier {
       } on Object catch (e, st) {
         failed++;
         ErrorLogService.instance.log('feedback.upload_screenshot', e, st);
+        await _stash(receipt.id, 's$i', shots[i]);
       }
     }
     if (draft.includeLogs) {
       onStage?.call(FeedbackSubmitStage.logs);
+      Uint8List? gz;
       try {
-        final Uint8List gz = await compute(_logEncoder, _logText());
+        final Uint8List encoded = await compute(_logEncoder, _logText());
+        gz = encoded;
         await client.uploadFeedbackAttachment(
           receipt.id,
           receipt.ticket,
           'log',
-          gz,
+          encoded,
         );
       } on Object catch (e, st) {
         failed++;
         ErrorLogService.instance.log('feedback.upload_log', e, st);
+        if (gz != null) await _stash(receipt.id, 'log', gz);
       }
     }
     return FeedbackSubmitResult(ticket, failedAttachments: failed);
+  }
+
+  /// 附件没传上去：字节落盘留着，之后可手动补传（[retryPending]）。
+  Future<void> _stash(String id, String slot, Uint8List bytes) async {
+    try {
+      await (await _pendingFor()).put(id, slot, bytes);
+      (_pending[id] ??= <String>{}).add(slot);
+      notifyListeners();
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('feedback.stash_attachment', e, st);
+    }
+  }
+
+  /// 把这条反馈所有待传附件再传一遍。服务端同一槽位只收一次（重复传拿到 409 已按
+  /// 成功处理），超过补传窗口 / 内容被拒（400、403、404、413）的附件不会再有机会，
+  /// 直接丢弃并计入 [FeedbackRetryResult.dropped]；其余（网络类）错误留着下次再试。
+  Future<FeedbackRetryResult> retryPending(String id) async {
+    final FeedbackTicket? t = byId(id);
+    if (t == null) throw StateError('unknown feedback $id');
+    final FeedbackPendingStore store = await _pendingFor();
+    final LeaderboardClient client = _client();
+    int uploaded = 0;
+    int dropped = 0;
+    final List<String> slots = (_pending[id] ?? <String>{}).toList()..sort();
+    for (final String slot in slots) {
+      final Uint8List? bytes = await store.read(id, slot);
+      bool done = bytes == null;
+      if (bytes != null) {
+        try {
+          await client.uploadFeedbackAttachment(t.id, t.ticket, slot, bytes);
+          uploaded++;
+          done = true;
+        } on LeaderboardApiException catch (e, st) {
+          ErrorLogService.instance.log('feedback.retry_attachment', e, st);
+          if (const <int>{400, 403, 404, 413}.contains(e.status)) {
+            dropped++;
+            done = true;
+          }
+        } on Object catch (e, st) {
+          ErrorLogService.instance.log('feedback.retry_attachment', e, st);
+        }
+      }
+      if (done) {
+        await store.remove(id, slot);
+        _pending[id]?.remove(slot);
+      }
+    }
+    if (_pending[id]?.isEmpty ?? false) _pending.remove(id);
+    notifyListeners();
+    return FeedbackRetryResult(
+      uploaded: uploaded,
+      remaining: _pending[id]?.length ?? 0,
+      dropped: dropped,
+    );
+  }
+
+  /// 给已提交的反馈追加截图：占用 [usedSlots]（服务端已有的附件槽位）和本机待传之外
+  /// 的空闲截图槽位，超出空位的丢弃。字节先落盘再传，传失败也留在待传里。
+  Future<FeedbackRetryResult> addScreenshots(
+    String id,
+    List<Uint8List> shots, {
+    required Set<String> usedSlots,
+  }) async {
+    final Set<String> taken = <String>{...usedSlots, ...pendingSlots(id)};
+    final List<String> free = <String>[
+      for (int i = 0; i < FeedbackLimits.screenshots; i++)
+        if (!taken.contains('s$i')) 's$i',
+    ];
+    for (int i = 0; i < shots.length && i < free.length; i++) {
+      await _stash(id, free[i], shots[i]);
+    }
+    return retryPending(id);
   }
 
   FeedbackTicket? byId(String id) {
@@ -313,6 +446,12 @@ class FeedbackService extends ChangeNotifier {
 
   /// 从本机清单里删掉（服务端记录不受影响；删了就看不到这条的进度了）。
   Future<void> forget(String id) async {
+    _pending.remove(id);
+    try {
+      await (await _pendingFor()).removeAll(id);
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('feedback.pending_forget', e, st);
+    }
     _tickets = <FeedbackTicket>[
       for (final FeedbackTicket t in _tickets)
         if (t.id != id) t,

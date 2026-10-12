@@ -5950,7 +5950,6 @@
   "leaderboard_sync_shelf_limit": "책장이 작품 ${limit}개 제한을 초과했습니다. 작품 ${count}개는 업로드되지 않았습니다(완독한 작품이 우선)",
   "leaderboard_intro_public_works": "완독했거나 읽고 있는 작품의 제목, 저자, 표지, 완독 시각",
   "leaderboard_intro_public_chars": "날짜별 하루 읽은 글자 수",
-  "leaderboard_signin_consent": "공개되는 정보(위에 나열됨)를 이해했으며 공개하는 데 동의합니다.",
   "leaderboard_error_too_many_devices": "이 계정이 너무 많은 기기에서 로그인되어 있습니다. 이미 로그인된 기기에서 이전 기기의 연결을 해제하세요(계정 → 로그인된 기기).",
   "leaderboard_error_unknown_account": "이 계정이 다른 기기에서 삭제되었거나 이 기기의 연결이 해제되었습니다.",
   "leaderboard_intro_public_work_stats": "각 작품에서 읽은 글자 수와 소요 시간",
@@ -7043,5 +7042,16 @@
   "book_import_no_book_notice_title": "No book selected",
   "book_import_no_book_transcribe_hint": "You can import with audio alone: transcribe it on device and a book is generated from the transcript when you import.",
   "book_import_no_book_subtitle_hint": "You can import with audio alone: pick a subtitle file for it and a book is generated from the subtitles when you import.",
-  "book_import_no_book_transcribe_action": "Transcribe and generate book"
+  "book_import_no_book_transcribe_action": "Transcribe and generate book",
+  "feedback_compose_auto_shot_hint": "The automatic screenshot may not include web views, video or the lookup card. If it looks different, remove it and add a system screenshot instead.",
+  "feedback_pending_attachments": "Attachments not uploaded yet: ${n}",
+  "feedback_pending_retry": "Retry upload",
+  "feedback_pending_retry_done": "Uploaded ${n} attachment(s).",
+  "feedback_pending_retry_failed": "${n} attachment(s) still failed to upload. Check your connection and try again.",
+  "feedback_pending_dropped": "${n} attachment(s) were rejected or expired (attachments can only be added within 24 hours of submitting).",
+  "feedback_detail_add_shot": "Add screenshot",
+  "feedback_dev_select_hint": "Select a feedback item on the left",
+  "leaderboard_summary_total_week": "Characters this week",
+  "leaderboard_summary_total_month": "Characters this month",
+  "leaderboard_summary_window_share": "${pct} of your total"
 }
