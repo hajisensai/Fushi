@@ -99,6 +99,29 @@ void main() {
     expect(layer(), findsNothing);
   });
 
+  // BUG-3293：不铺底色的层（查词弹窗 overlay）浮在已渲染结果之上，结果到了就立即
+  // 淡出，不再补足最短停留——否则指示器压着结果多转 300ms。
+  testWidgets('不铺底色：结束即淡出，不补最短停留', (WidgetTester tester) async {
+    Widget overlay(bool active) => MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          width: 300,
+          height: 300,
+          child: FushiDeferredLoading(active: active),
+        ),
+      ),
+    );
+    await tester.pumpWidget(overlay(true));
+    await tester.pump(kDeferredLoadingDelay);
+    expect(indicator(), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pumpWidget(overlay(false));
+    // 只等一次淡出时长：带底色时这里指示器还得停满 300ms。
+    await tester.pump(kDeferredLoadingFade);
+    await tester.pump();
+    expect(indicator(), findsNothing);
+  });
+
   testWidgets('撤掉后不拦指针（盖在查词 WebView 上不能吞点击）', (WidgetTester tester) async {
     int taps = 0;
     await tester.pumpWidget(

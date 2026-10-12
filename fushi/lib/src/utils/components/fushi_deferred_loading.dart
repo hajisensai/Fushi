@@ -34,7 +34,8 @@ QueryBodyState resolveQueryBodyState({
 /// - [active] 变 true：立即铺 [background]（null = 不铺，只出指示器），指示器在
 ///   [kDeferredLoadingDelay] 之后淡入；
 /// - [active] 变 false：指示器还没露出 → 立即撤掉；已露出 → 补足
-///   [kDeferredLoadingMinVisible] 后整层淡出，下面的内容随之淡入。
+///   [kDeferredLoadingMinVisible] 后整层淡出，下面的内容随之淡入；不铺底色
+///   （[background] 为 null，指示器浮在已渲染内容上）时立即淡出，不补停留。
 ///
 /// 撤掉后是零尺寸空盒、不拦指针（盖在查词 WebView 上时不能吞点击，BUG-1692）。
 class FushiDeferredLoading extends StatefulWidget {
@@ -118,6 +119,16 @@ class _FushiDeferredLoadingState extends State<FushiDeferredLoading> {
       return;
     }
     // 露出不足最短停留：等最短停留计时器到点再淡出（它的回调会接手）。
+    //
+    // BUG-3293：最短停留只对**铺了底色**的层成立——那时指示器顶替着内容，立刻撤
+    // 会「一闪而过」。不铺底色的层（查词弹窗顶层的 overlay）浮在已经渲染好的结果
+    // 上面，多停的 300ms 是指示器压着结果白转（用户：「每次点查词先转一下齿轮再
+    // 出来」）。内容到了就立即淡出。
+    if (widget.background == null) {
+      _minVisibleTimer?.cancel();
+      _fadeOut();
+      return;
+    }
     if (_minVisibleElapsed) _fadeOut();
   }
 

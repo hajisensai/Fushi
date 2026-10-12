@@ -2561,10 +2561,17 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   double get _readerBottomReserve => _bottomChromeReserve + _statusFooterBand;
 
   @override
-  double get popupBottomReserve =>
-      // 弹窗避让只对挤压底栏预留空间；悬浮底栏不占正文位置故 0（避免弹窗为不存在
-      // 的预留留白）。_bottomChromeReserve 已含「占位 + 非悬浮」两道门控。
-      _bottomChromeReserve > 0 ? _readerBottomReserve : 0;
+  double get popupBottomReserve => readerPopupBottomReserve(
+        // 挤压底栏：_bottomChromeReserve 已含「占位 + 非悬浮」两道门控。
+        squeezeReserve: _bottomChromeReserve,
+        readerBottomReserve: _readerBottomReserve,
+        // BUG-3292：悬浮底部件被点出来时它画在弹层之上，弹窗必须让开；收起时 0。
+        // 门控与 [_buildFloatingBottomChrome] 的 FushiChromeReveal 同一判据。
+        floatingChromePainted:
+            _floatingToolbars && !_lyricsMode && _bottomBarShouldPaint,
+        floatingChromeExtent: _bottomChromeExtent,
+        paintedFooterBand: _statusFooterPaintedBand,
+      );
 
   @override
   double get popupTopReserve => _stableTopInset;
