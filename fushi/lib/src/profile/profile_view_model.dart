@@ -205,14 +205,29 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     required ProfileMediaKind mediaType,
   }) async {
     try {
-      final int resolvedId = await _repo.resolveProfileId(
+      final int? boundId = await _repo.resolveBoundProfileId(
         bookUid: bookUid,
         languageTag: languageTag,
         mediaType: mediaType,
       );
       final int currentActiveId = await _repo.getActiveProfileId();
-      if (resolvedId != currentActiveId) {
-        await switchProfile(resolvedId);
+      final int? fallbackId = await _repo.getFallbackProfileId();
+      if (boundId != null) {
+        if (boundId == currentActiveId) return;
+        // 绑定只是「这本书临时用」：第一次离开用户自己选的配置时记下它，之后
+        // 无绑定的条目才有地方回去（否则切过去的绑定配置就成了新的默认）。
+        if (fallbackId == null) {
+          await _repo.setFallbackProfileId(currentActiveId);
+        }
+        await _switchTo(boundId);
+        return;
+      }
+      if (fallbackId == null) return;
+      await _repo.setFallbackProfileId(null);
+      final List<ProfileRow> profiles = await _repo.getAllProfiles();
+      final bool stillExists = profiles.any((ProfileRow p) => p.id == fallbackId);
+      if (stillExists && fallbackId != currentActiveId) {
+        await _switchTo(fallbackId);
       }
     } catch (e, st) {
       debugPrint('[profile] auto-apply "${mediaType.dbValue}" binding failed '
@@ -220,7 +235,13 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     }
   }
 
-  Future<void> switchProfile(int profileId) =>
+  /// 用户手动切换：这是新的「自己选的配置」，作废绑定留下的回退点。
+  Future<void> switchProfile(int profileId) async {
+    await _repo.setFallbackProfileId(null);
+    await _switchTo(profileId);
+  }
+
+  Future<void> _switchTo(int profileId) =>
       _whileInvalidatingProfileDrafts(() async {
         await _repo.snapshotCurrentSettings(state.activeProfileId);
         await _repo.setActiveProfileId(profileId);

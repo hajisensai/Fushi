@@ -18,6 +18,10 @@
 library;
 
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
+/// 「绑定切换前」用户自己选的 Profile id（int，缺失 = 无）。设备本地状态，与
+/// `active_profile_id` 同族，不进 Profile 快照。
+const String kProfileFallbackIdPrefKey = 'profile_fallback_id';
+
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
   // 「哪个功能用哪家 AI」的映射。不含凭据，但跟着 ai_providers 一起设备本地：
@@ -327,6 +331,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'popup_max_height',
   'popup_max_width',
   'popup_wheel_speed',
+  // int：绑定临时切换前用户自己选的 Profile id（缺失 = 无）。非 Profile 键。
+  'profile_fallback_id',
   'qb_connection_config',
   // 阅读器顶栏 / 底栏按钮布局 JSON（ReaderControlLayout，v1 槽位表）。
   'reader_control_layout',

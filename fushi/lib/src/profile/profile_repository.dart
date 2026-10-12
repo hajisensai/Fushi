@@ -5,6 +5,8 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/profile/profile_document.dart';
 import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kProfileFallbackIdPrefKey;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/language_binding.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
@@ -58,6 +60,17 @@ class ProfileRepository {
 
   Future<void> setActiveProfileId(int id) =>
       _db.setPref('active_profile_id', id.toString());
+
+  /// 「绑定切换前」用户自己选的那份配置（见 [kProfileFallbackIdPrefKey]）。
+  /// null = 当前激活配置就是用户自己选的，没有处于「绑定临时生效」状态。
+  Future<int?> getFallbackProfileId() async {
+    final raw = await _db.getPref(kProfileFallbackIdPrefKey);
+    return raw == null ? null : int.tryParse(raw);
+  }
+
+  Future<void> setFallbackProfileId(int? id) => id == null
+      ? _db.deletePref(kProfileFallbackIdPrefKey)
+      : _db.setPref(kProfileFallbackIdPrefKey, id.toString());
 
   Future<int> createProfile(String name) async {
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -368,6 +381,21 @@ class ProfileRepository {
     required String? bookUid,
     String? languageTag,
     required ProfileMediaKind? mediaType,
+  }) async =>
+      (await resolveBoundProfileId(
+        bookUid: bookUid,
+        languageTag: languageTag,
+        mediaType: mediaType,
+      )) ??
+      await getActiveProfileId();
+
+  /// [resolveProfileId] 的前三级：只返回**绑定命中**的 Profile，没命中返回 null
+  /// （不回落到激活配置）。调用方需要区分「绑定指定了它」与「没有绑定」——后者应当
+  /// 回到用户自己选的配置，而不是停在上一本书的绑定配置上。
+  Future<int?> resolveBoundProfileId({
+    required String? bookUid,
+    String? languageTag,
+    required ProfileMediaKind? mediaType,
   }) async {
     if (bookUid != null) {
       final bookProfileId = await getBookProfileId(bookUid);
@@ -385,7 +413,7 @@ class ProfileRepository {
       if (mtRow != null) return mtRow.profileId;
     }
 
-    return getActiveProfileId();
+    return null;
   }
 
   // ── 导出 / 导入（单 Profile JSON 序列化）────────────────────────────
