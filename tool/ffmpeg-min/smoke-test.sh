@@ -567,11 +567,14 @@ run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
   -map "[out]" -c:a aac -f mp4 "$WORK/gap.m4a"
 assert_nonempty "$WORK/gap.m4a"
 mkdir -p "$WORK/book"
+# Entries are relative to the list file: on Windows the MSYS2 /tmp path in an
+# absolute entry is not a path the native ffmpeg.exe can open.
+cp "$WORK/tone.wav" "$WORK/book/tone.wav"
 {
   echo "ffconcat version 1.0"
-  echo "file '$WORK/tone.wav'"
+  echo "file 'tone.wav'"
   echo "duration 2.000"
-  echo "file '$WORK/tone.wav'"
+  echo "file 'tone.wav'"
   echo "duration 2.000"
 } > "$WORK/book/ch.ffconcat"
 for ch in 1 2; do
@@ -583,9 +586,9 @@ for ch in 1 2; do
 done
 {
   echo "ffconcat version 1.0"
-  echo "file '$WORK/book/ch1.m4a'"
+  echo "file 'ch1.m4a'"
   echo "duration 4.000"
-  echo "file '$WORK/book/ch2.m4a'"
+  echo "file 'ch2.m4a'"
   echo "duration 4.000"
 } > "$WORK/book/book.ffconcat"
 cat >"$WORK/book/book.ffmeta" <<'META'
