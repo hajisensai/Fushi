@@ -48,22 +48,20 @@ Future<VideoPlayerController> _pump(
   return c;
 }
 
-/// 高亮盒里包着的字符（fill 层 Text 的文本）。
-List<String> _highlightedChars(WidgetTester tester) {
+/// 高亮盒里包着的 Text（BUG-3287 起带描边的 cue 里是描边遍那份）。
+List<Text> _highlightedTexts(WidgetTester tester) {
   return tester
       .widgetList<SubtitleLookupHighlightBox>(
           find.byType(SubtitleLookupHighlightBox))
-      .map((SubtitleLookupHighlightBox box) {
-    final Finder texts = find.descendant(
-      of: find.byWidget(box),
-      matching: find.byType(Text),
-    );
-    return tester
-        .widgetList<Text>(texts)
-        .firstWhere((Text t) => t.style?.foreground == null)
-        .data!;
-  }).toList();
+      .map((SubtitleLookupHighlightBox box) => tester.widget<Text>(find
+          .descendant(of: find.byWidget(box), matching: find.byType(Text))
+          .first))
+      .toList();
 }
+
+/// 高亮盒里包着的字符。
+List<String> _highlightedChars(WidgetTester tester) =>
+    _highlightedTexts(tester).map((Text t) => t.data!).toList();
 
 void main() {
   testWidgets('区间内的字位垫底色，首尾收圆角、中间方角', (WidgetTester tester) async {
@@ -141,6 +139,70 @@ void main() {
       ),
     );
     expect(_highlightedChars(tester), <String>['g', 'o', 'i', 'n', 'g']);
+  });
+
+  // BUG-3287：带 .ass 描边的字幕，高亮底色必须画在描边遍（最底层）并按描边可见宽
+  // 外扩——此前挂在填充遍上，整个填充遍压在描边遍之上，描边外缘露在底色外面。
+  testWidgets('带描边的 cue：底色在描边层之下并外扩盖住描边', (WidgetTester tester) async {
+    await _pump(
+      tester,
+      highlight: SubtitleLookupHighlight(
+        sentence: "She's not going for it…",
+        cueStartMs: c0StartMs(),
+        graphemeStart: 0,
+        graphemeCount: 5,
+      ),
+    );
+    // 每个高亮盒只包描边遍的字（foreground 是描边画笔），不再包填充遍的字。
+    final List<Text> texts = _highlightedTexts(tester);
+    expect(texts, hasLength(5));
+    for (final Text t in texts) {
+      expect(t.style?.foreground?.style, PaintingStyle.stroke);
+    }
+    final List<SubtitleLookupHighlightBox> boxes = tester
+        .widgetList<SubtitleLookupHighlightBox>(
+            find.byType(SubtitleLookupHighlightBox))
+        .toList();
+    final double strokeWidth = texts.first.style!.foreground!.strokeWidth;
+    expect(strokeWidth, greaterThan(0));
+    // 外扩 = 可见描边宽（居中 stroke 的外半边）；Paint.strokeWidth 以 float32 存。
+    expect(boxes.first.bleed, closeTo(strokeWidth / 2, 1e-4));
+    // 上下每个字都外扩；左右只在首 / 尾外扩（中间相接不叠色）。
+    expect(boxes.first.paintOutsets.left, boxes.first.bleed);
+    expect(boxes.first.paintOutsets.right, 0);
+    expect(boxes[2].paintOutsets,
+        EdgeInsets.fromLTRB(0, boxes[2].bleed, 0, boxes[2].bleed));
+    expect(boxes.last.paintOutsets.right, boxes.last.bleed);
+  });
+
+  testWidgets('不尊重 .ass（软投影外观）不外扩', (WidgetTester tester) async {
+    final List<AudioCue> cues =
+        AssParser.parseString(content: _kAss, bookKey: 'komi');
+    final VideoPlayerController c = VideoPlayerController();
+    addTearDown(c.dispose);
+    c.setCues(cues);
+    c.debugSetPositionForTesting(_kPosMs);
+    c.debugUpdateCueForPosition(_kPosMs);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(
+          controller: c,
+          lookupHighlight: SubtitleLookupHighlight(
+            sentence: "She's not going for it…",
+            cueStartMs: c0StartMs(),
+            graphemeStart: 0,
+            graphemeCount: 5,
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+    final List<SubtitleLookupHighlightBox> boxes = tester
+        .widgetList<SubtitleLookupHighlightBox>(
+            find.byType(SubtitleLookupHighlightBox))
+        .toList();
+    expect(boxes, hasLength(5));
+    expect(boxes.every((SubtitleLookupHighlightBox b) => b.bleed == 0), isTrue);
   });
 }
 

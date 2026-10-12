@@ -148,36 +148,87 @@ class SubtitleLookupHighlight {
 
 /// 被查词高亮的单字底色盒（BUG-2091）。画在字形**之下**（background，不是
 /// foreground——盖在字上会把白字染色），只在区间首/尾字位收圆角，中间字位方角相接，
-/// 整词看起来是一条连续的选区带。不改布局几何（DecoratedBox 零尺寸影响），字幕排版
-/// 与逐字命中矩形零位移。公开类型仅为测试可 `find.byType`。
+/// 整词看起来是一条连续的选区带。不改布局几何（只画不占位），字幕排版与逐字命中矩形
+/// 零位移。公开类型仅为测试可 `find.byType`。
+///
+/// [bleed]：底色越出字位布局盒的宽度（BUG-3287）。尊重 .ass 的描边沿字形轮廓向外扩
+/// `strokeWidth/2`，伸出 advance × 行高的布局盒；底色只铺布局盒时描边外缘露在高亮
+/// 外面（用户：「查词背景没覆盖全文字」）。上下两侧每个字都外扩，左右只在区间首 / 尾
+/// 外扩——中间字位相接处不外扩，半透明底色不会叠出深色接缝。
 class SubtitleLookupHighlightBox extends StatelessWidget {
   const SubtitleLookupHighlightBox({
     required this.first,
     required this.last,
     required this.child,
+    this.bleed = 0,
     super.key,
   });
 
   final bool first;
   final bool last;
+  final double bleed;
   final Widget child;
 
   static const double _radius = 4;
 
+  /// 底色矩形相对布局盒的外扩量（测试直接断言）。
+  EdgeInsets get paintOutsets => EdgeInsets.fromLTRB(
+        first ? bleed : 0,
+        bleed,
+        last ? bleed : 0,
+        bleed,
+      );
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
+    return CustomPaint(
+      painter: _SubtitleLookupHighlightPainter(
         color: scheme.primary.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.horizontal(
-          left: first ? const Radius.circular(_radius) : Radius.zero,
-          right: last ? const Radius.circular(_radius) : Radius.zero,
-        ),
+        outsets: paintOutsets,
+        radiusLeft: first ? _radius : 0,
+        radiusRight: last ? _radius : 0,
       ),
       child: child,
     );
   }
+}
+
+class _SubtitleLookupHighlightPainter extends CustomPainter {
+  const _SubtitleLookupHighlightPainter({
+    required this.color,
+    required this.outsets,
+    required this.radiusLeft,
+    required this.radiusRight,
+  });
+
+  final Color color;
+  final EdgeInsets outsets;
+  final double radiusLeft;
+  final double radiusRight;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Radius left = Radius.circular(radiusLeft);
+    final Radius right = Radius.circular(radiusRight);
+    canvas.drawRRect(
+      RRect.fromRectAndCorners(
+        outsets.inflateRect(Offset.zero & size),
+        topLeft: left,
+        bottomLeft: left,
+        topRight: right,
+        bottomRight: right,
+      ),
+      Paint()..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_SubtitleLookupHighlightPainter oldDelegate) =>
+      oldDelegate.color != color ||
+      oldDelegate.outsets != outsets ||
+      oldDelegate.radiusLeft != radiusLeft ||
+      oldDelegate.radiusRight != radiusRight;
 }
 
 /// 在一组字符矩形里按物理方向移动选词光标（纯函数，可测）。
@@ -2133,9 +2184,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
           // 被查词高亮（BUG-2091）：本字位落在页面传入的查词区间内则垫底色。只对
           // 可交互字符（已登记、非模糊）画——与查词命中同一门控，模糊层/离场占位
           // 不会带着高亮。底色在字形之下、光标环之上再叠，两者互不遮挡。
+          //
+          // BUG-3287：整行两遍时底色归**描边遍**（最底层）画，并按描边可见宽外扩——
+          // 底色 < 描边 < 填充。此前它挂在填充遍上：整个填充遍压在整个描边遍之上，
+          // 半透明底色盖住盒内描边，盒外的描边又完全没被覆盖。描边遍不登记命中
+          // （entryIndex 恒 -1），故门控看「本遍是否可交互」而非登记序。
           final SubtitleLookupHighlight? highlight = widget.lookupHighlight;
-          if (entryIndex >= 0 &&
+          if (registerHits &&
               !blurred &&
+              pass != _GlyphPass.fillOnly &&
               highlight != null &&
               highlight.covers(
                 sentence: text,
@@ -2145,6 +2202,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
             ch = SubtitleLookupHighlightBox(
               first: highlight.isFirst(i),
               last: highlight.isLast(i),
+              bleed: _lookupHighlightBleed(i, markup, cue),
               child: ch,
             );
           }
@@ -2385,6 +2443,20 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // （见 [_positionCueGroup] 的同名回落）一致。
     return Transform(
         alignment: _alignFor(markup.anchor), transform: m, child: box);
+  }
+
+  /// 查词高亮底色越出第 [i] 个字位布局盒的宽度（BUG-3287）：= 该字描边的可见外扩
+  /// （Flutter 居中 stroke，可见外缘 = strokeWidth / 2）。不尊重 .ass（默认软投影，
+  /// 无硬描边）或该字无描边时为 0。与 [_buildSubtitleChar] 同一时刻取描边宽，
+  /// 描边动画下高亮与描边同帧同宽。
+  double _lookupHighlightBleed(int i, SubtitleMarkup? markup, AudioCue cue) {
+    if (!widget.respectAssStyle || markup == null) return 0;
+    final int? posMs = widget.controller.effectivePositionMsForCue(cue);
+    final int elapsedMs = (posMs ?? cue.startMs) - cue.startMs;
+    final double strokeWidth = _resolveStroke(i, markup,
+            elapsedMs: elapsedMs, durMs: cue.endMs - cue.startMs)
+        .$2;
+    return strokeWidth <= 0 ? 0 : strokeWidth / 2;
   }
 
   /// 本 cue 是否有任一 grapheme 会画出描边（静态判定，不看 `\t`/`\ko` 时序）：决定
