@@ -9,6 +9,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_mining_target.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
@@ -1011,6 +1012,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onOpenSentenceContextModal,
     this.isSearching = false,
     this.keepWebViewWarm = false,
+    this.showMiningTargetSwitch = false,
     this.hasChildPopup = false,
     this.onTapOutside,
     this.onScrolledToBottom,
@@ -1054,6 +1056,11 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// [BaseSourcePageState] (BUG-092) to kill the per-lookup white flash on the
   /// reader/video/audiobook surfaces.
   final bool keepWebViewWarm;
+
+  /// 顶栏是否给出「制卡目标」按钮（[DictionaryPopupMiningTargetButton]：切配置 /
+  /// 牌组）。只有真能制卡的宿主（制卡模块开着）才开；默认关，app 外覆盖窗、停驻
+  /// 热槽等不制卡的层不出现，也不去碰 Anki / 配置 provider。
+  final bool showMiningTargetSwitch;
 
   /// TODO-869：本层弹窗是否有子（后代）弹窗。透传给 [DictionaryPopupWebView] 注入
   /// `window.__hasChildPopup`，让 popup.js 点卡片本体留白时据此关后代层（有子层才发
@@ -1610,12 +1617,20 @@ class DictionaryPopupLayer extends StatelessWidget {
         ),
       ],
     ];
-    final List<Widget> textButtons = compact
-        ? <Widget>[_buildOverflowMenuButton(context)]
-        : <Widget>[
-            _buildZoomFontButton(context, zoomIn: false),
-            _buildZoomFontButton(context, zoomIn: true),
-          ];
+    final List<Widget> textButtons = <Widget>[
+      if (compact)
+        _buildOverflowMenuButton(context)
+      else ...<Widget>[
+        _buildZoomFontButton(context, zoomIn: false),
+        _buildZoomFontButton(context, zoomIn: true),
+      ],
+      // 用户建议 #fiwDIpFep7：制卡目标（配置 / 牌组）就地切换，紧凑档也保留——
+      // 它是一颗菜单键，本身就是「收起」形态。
+      if (showMiningTargetSwitch)
+        DictionaryPopupMiningTargetButton(
+          constraints: _topActionConstraints,
+        ),
+    ];
     final Widget leftCluster = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[

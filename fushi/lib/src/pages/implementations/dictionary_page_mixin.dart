@@ -1011,6 +1011,10 @@ mixin DictionaryPageMixin {
             ),
             onMineEntry: onMineEntry,
             onUpdateEntry: onUpdateEntry,
+            // 用户建议 #fiwDIpFep7：顶栏就地切配置 / 牌组，随制卡模块开关。
+            showMiningTargetSwitch: mixinAppModel.moduleVisibility.isEnabled(
+              ModuleId.cardCreation,
+            ),
             onDuplicateCheck: checkDuplicate,
             onOverwriteTargetNoteId: findOverwriteTargetNoteId,
             onMinedCardAction: onMinedCardAction,

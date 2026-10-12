@@ -7043,5 +7043,7 @@
   "book_import_no_book_notice_title": "沒有選擇書籍",
   "book_import_no_book_transcribe_hint": "沒有書也能匯入：直接用裝置端轉錄把音訊轉成字幕，匯入時會據此自動生成一本書。",
   "book_import_no_book_subtitle_hint": "沒有書也能匯入：為這段音訊選一個字幕檔，匯入時會據此自動生成一本書。",
-  "book_import_no_book_transcribe_action": "轉錄並生成書籍"
+  "book_import_no_book_transcribe_action": "轉錄並生成書籍",
+  "popup_mining_target_switch": "Switch profile or deck",
+  "popup_mining_target_empty": "No profiles or decks yet. Connect Anki in settings first."
 }
