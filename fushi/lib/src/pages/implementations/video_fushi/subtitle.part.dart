@@ -3100,6 +3100,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
                       // 让位），关掉时 Flutter 把焦点还给上一个持焦者（画面）。
                       SafeArea(
                         left: false,
+                        // 底部安全区不整块垫在面板下面（那会留一条空带），由面板
+                        // 自己铺到底、列表末尾补上被遮的一截（反馈 Lgp-nUrh6V）。
+                        bottom: false,
                         // BUG-877：面板叠一层左边缘拖拽把手（[_subtitleListResizeHandle]）
                         // 改宽度并持久化；Stack 让把手浮在面板左边缘、不占面板内容宽度。
                         child: Stack(
@@ -3108,6 +3111,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
                               key: const ValueKey<String>(
                                 'video-subtitle-jump-panel',
                               ),
+                              bottomSafeInset: MediaQuery.paddingOf(
+                                context,
+                              ).bottom,
                               controller: controller,
                               onTapCue: _handleSubtitleJumpTap,
                               onLookupCue: _handleSubtitleListLookup,
