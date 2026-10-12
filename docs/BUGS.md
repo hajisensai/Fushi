@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3296](bugs/BUG-3296-video-enhance-off-vertical-squash.md) | 🚧 | 🚧 | Windows 关闭画质增强后画面纵向被压扁约 0.74% |
+| [BUG-3296](bugs/BUG-3296-video-enhance-off-vertical-squash.md) | ✅ | ✅ | Windows 关闭画质增强后画面纵向被压扁约 0.74% |
 | [BUG-3272](bugs/BUG-3272-anki-auto-reposition-failure-reason-lost.md) | ✅ | ✅ | 自动重排失败原因被吞且整牌组请求走交互超时 |
 | [BUG-3271](bugs/BUG-3271-expansion-tile-pagestorage-collision.md) | ✅ | ✅ | 视频设置面板字幕分类下方整片灰（展开区与滚动视图 PageStorage 槽冲突） |
 | [BUG-3270](bugs/BUG-3270-anki-dict-media-dangling-placeholder.md) | ✅ | ✅ | 制卡缺词典媒体时卡片残留 fushi_dict_N 占位图，AnkiDroid 报加载失败 |
