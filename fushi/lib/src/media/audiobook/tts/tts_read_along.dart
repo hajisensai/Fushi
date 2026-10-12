@@ -442,30 +442,38 @@ class TtsReadAlong extends ChangeNotifier {
     _provider = provider;
     _scheduler = scheduler;
     _eventsSub = scheduler.events.listen(_onSegmentEvent);
-    await oldEvents?.cancel();
-    // 新调度器先从当前句开始合成（命中缓存的句子立即就绪），播放器换源后来要
-    // 这一句时多半已经在路上了。
-    scheduler
-      ..setCursor(index)
-      ..setLookahead(oldScheduler.lookahead);
+    // 新调度器已经接管：旧调度器 / 旧引擎此后不再被本会话引用，无论换源成功、
+    // 失败（超时 / 长度校验）还是中途会话被释放（[_release] 只释放当前的新调度器），
+    // 都必须在 finally 里关掉，否则旧调度器的 pin 与在途合成、旧引擎连接一直泄漏。
+    try {
+      await oldEvents?.cancel();
+      if (_released) return TtsVoiceSwitchOutcome.unchanged;
+      // 新调度器先从当前句开始合成（命中缓存的句子立即就绪），播放器换源后来要
+      // 这一句时多半已经在路上了。
+      scheduler
+        ..setCursor(index)
+        ..setLookahead(oldScheduler.lookahead);
 
-    // 旧声音的真实时长不再适用：退回估计值，新声音一句句合成完再校正。
-    for (int i = 0; i < cues.length; i++) {
-      cues[i].endMs = estimateDurationMs(plan.sentences[i].spokenText);
+      // 旧声音的真实时长不再适用：退回估计值，新声音一句句合成完再校正。
+      for (int i = 0; i < cues.length; i++) {
+        cues[i].endMs = estimateDurationMs(plan.sentences[i].spokenText);
+      }
+      controller?.refreshCueTimings();
+      if (controller != null) {
+        // 先换播放源、后关旧调度器：旧调度器关闭时会让挂起的旧源请求以「已取消」
+        // 失败，那时播放器已经不再引用旧源。
+        await controller.replaceStreamSources(
+          audioFiles: _filesFor(scheduler),
+          audioSources: _sourcesFor(scheduler),
+          fileIndex: index,
+          play: wasPlaying,
+        );
+      }
+    } finally {
+      await oldScheduler.dispose();
+      await oldProvider.dispose();
     }
-    controller?.refreshCueTimings();
-    if (controller != null) {
-      // 先换播放源、后关旧调度器：旧调度器关闭时会让挂起的旧源请求以「已取消」
-      // 失败，那时播放器已经不再引用旧源。
-      await controller.replaceStreamSources(
-        audioFiles: _filesFor(scheduler),
-        audioSources: _sourcesFor(scheduler),
-        fileIndex: index,
-        play: wasPlaying,
-      );
-    }
-    await oldScheduler.dispose();
-    await oldProvider.dispose();
+    if (_released) return TtsVoiceSwitchOutcome.unchanged;
     notifyListeners();
     return TtsVoiceSwitchOutcome.switched;
   }

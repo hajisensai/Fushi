@@ -1251,6 +1251,9 @@ class AudiobookPlayerController extends ChangeNotifier {
     required bool play,
   }) async {
     await _loadReady.future;
+    // 换声音途中会话被停掉（[AudiobookSession.stop] 先立 `_stopRequested` 再
+    // dispose）：不再碰已停 / 将释放的播放器，也不在 dispose 之后 notifyListeners。
+    if (_stopRequested) return;
     if (audioSources.length != audioFiles.length ||
         audioFiles.length != _audioFiles.length) {
       throw ArgumentError.value(
@@ -1285,6 +1288,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       }
       rethrow;
     }
+    if (_stopRequested) return;
     notifyListeners();
     if (play) await this.play();
   }
