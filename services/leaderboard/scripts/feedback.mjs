@@ -203,11 +203,32 @@ function requireExisting(ids, where) {
   if (missing.length) throw new Error(`这些反馈不存在，整批未写入：${missing.map((id) => `#${id}`).join(' ')}`);
 }
 
+/**
+ * `r2 object` 的位置参数：wrangler 3.x 的 r2 子命令默认就是远程、只认 `--local`，
+ * 传 `--remote` 会 Unknown argument 直接失败（d1 子命令才两个都认）。
+ * @param {string} where '--remote' | '--local'
+ * @returns {string[]}
+ */
+export function r2WhereArgs(where) {
+  return where === '--local' ? ['--local'] : [];
+}
+
+/**
+ * `--pipe` 的 stdout 前面可能先打一行代理提示（与 parseWranglerJson 同一现象），
+ * 从 gzip 魔数 1f 8b 处截起；找不到魔数原样返回，交给 gunzip 报真实错误。
+ * @param {Buffer} buf
+ * @returns {Buffer}
+ */
+export function gzipPayload(buf) {
+  const at = buf.indexOf(Buffer.from([0x1f, 0x8b]));
+  return at > 0 ? buf.subarray(at) : buf;
+}
+
 function readLog(row, where, tail) {
   const log = safeJson(row.attachments || '[]', []).find((a) => a.kind === 'log');
   if (!log) return '（未附日志）';
-  const gz = wrangler(['r2', 'object', 'get', `${BUCKET}/${log.key}`, where, '--pipe'], { binary: true });
-  const lines = gunzipSync(gz).toString('utf8').split('\n');
+  const gz = wrangler(['r2', 'object', 'get', `${BUCKET}/${log.key}`, ...r2WhereArgs(where), '--pipe'], { binary: true });
+  const lines = gunzipSync(gzipPayload(gz)).toString('utf8').split('\n');
   const kept = tail > 0 && lines.length > tail ? lines.slice(-tail) : lines;
   const cut = kept.length < lines.length ? `（共 ${lines.length} 行，只显示最后 ${kept.length} 行）\n` : '';
   return `${LOG_UNTRUSTED_HEADER}\n${cut}${kept.join('\n')}`;
