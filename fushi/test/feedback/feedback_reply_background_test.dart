@@ -157,6 +157,30 @@ void main() {
     });
   });
 
+  test('iOS 后台任务 identifier 三处一致（Info.plist / AppDelegate / Dart）', () {
+    // 没登记的 identifier 提交 BGTaskRequest 时 iOS 直接抛异常；三处任一处改了别处
+    // 没跟，CI 不编 iOS 时只有这条能拦住。
+    final String plist = File('ios/Runner/Info.plist').readAsStringSync();
+    final String delegate = File(
+      'ios/Runner/AppDelegate.swift',
+    ).readAsStringSync();
+    final int keyAt = plist.indexOf(
+      '<key>BGTaskSchedulerPermittedIdentifiers</key>',
+    );
+    expect(keyAt, isNonNegative);
+    expect(
+      plist.substring(keyAt, plist.indexOf('</array>', keyAt)),
+      contains('<string>$kFeedbackReplyTaskName</string>'),
+    );
+    final int modesAt = plist.indexOf('<key>UIBackgroundModes</key>');
+    expect(
+      plist.substring(modesAt, plist.indexOf('</array>', modesAt)),
+      contains('<string>fetch</string>'),
+    );
+    expect(delegate, contains('withIdentifier: "$kFeedbackReplyTaskName"'));
+    expect(delegate, contains('WorkmanagerPlugin.setPluginRegistrantCallback'));
+  });
+
   group('后台 isolate 检查', () {
     test('没有未结案反馈：不发请求', () async {
       await seed(<FeedbackTicket>[
