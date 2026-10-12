@@ -292,6 +292,7 @@ extension _VideoClipExport on _VideoFushiPageState {
     // 尺寸都在这里一次性取好。
     final VideoSubtitleStyle style = _subtitleStyle;
     final Size? area = context.size;
+    final bool respectAssStyle = appModel.videoRespectAssStyle;
 
     return (ClipSubtitleCue cue, ClipFrameSize frame) {
       final double viewportHeight = (area == null || frame.width <= 0)
@@ -318,6 +319,9 @@ extension _VideoClipExport on _VideoFushiPageState {
         anchorTop: anchor == SubtitleLayerVAnchor.top,
         // 副层有自己的位置基线；null = 跟随主层（历史行为）。
         overridePadding: cue.isSecondary ? style.secondaryBottomPadding : null,
+        // BUG-3291：与屏幕同一个开关——「尊重字幕自带样式」开着时导出也带上原字幕
+        // 的颜色 / 粗体 / 斜体；关着（纯字幕模式）屏幕上一律用户外观，导出同样不带。
+        markup: respectAssStyle ? clipCueStyledMarkup(cue) : null,
       );
     };
   }
