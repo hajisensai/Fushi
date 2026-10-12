@@ -60,6 +60,7 @@ class GalTextProcessEditorPage extends StatefulWidget {
     this.latestSample,
     this.resolveAiProvider,
     this.aiClientFactory,
+    this.aiEnabled = true,
   });
 
   /// 进页面时生效的管线（来自 `GalHookSessionController.textProcessPipeline`）。
@@ -71,6 +72,10 @@ class GalTextProcessEditorPage extends StatefulWidget {
 
   final GalTextProcessSampleProvider? latestSample;
   final GalTextProcessAiProviderResolver? resolveAiProvider;
+
+  /// 「让 AI 帮忙」区是否出现。调用方按 AI 模块开关（`isAiModuleEnabled`）求值后
+  /// 传入——本页零 Riverpod 依赖，不自己读 AppModel；false 时整段不渲染。
+  final bool aiEnabled;
 
   @visibleForTesting
   final GalTextProcessAiClientFactory? aiClientFactory;
@@ -615,8 +620,10 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
               t.game_text_process_ruby_warning,
             ),
           ],
-          SizedBox(height: tokens.spacing.section),
-          _buildAiSection(tokens),
+          if (widget.aiEnabled) ...<Widget>[
+            SizedBox(height: tokens.spacing.section),
+            _buildAiSection(tokens),
+          ],
           SizedBox(height: tokens.spacing.card),
         ],
       ),

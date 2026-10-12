@@ -12,6 +12,7 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
     show aiFailureText;
@@ -1200,8 +1201,11 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
                     ? _buildVisualTab(tokens)
                     : FushiEditorPanel(controller: _cssController),
               ),
-              SizedBox(height: tokens.spacing.gap),
-              _buildAiSection(tokens),
+              // AI 模块（`ModuleId.ai`）关掉时「让 AI 帮忙」整段不渲染。
+              if (isAiModuleEnabled(_appModel.moduleVisibility)) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
+                _buildAiSection(tokens),
+              ],
             ],
           ),
         ),

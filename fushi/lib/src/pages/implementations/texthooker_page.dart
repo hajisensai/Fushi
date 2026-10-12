@@ -32,6 +32,7 @@ import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_text_process.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/gal_text_process_editor_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
@@ -2587,6 +2588,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             selectedTextThreadKey,
           ),
           resolveAiProvider: _resolveTextProcessAiProvider,
+          aiEnabled: isAiModuleEnabled(_appModel.moduleVisibility),
           onSave: (GalTextProcessPipeline pipeline) =>
               unawaited(_session.setTextProcessPipeline(pipeline)),
         ),

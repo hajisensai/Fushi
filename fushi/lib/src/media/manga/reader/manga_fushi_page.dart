@@ -17,6 +17,7 @@ import 'package:path/path.dart' as p;
 import 'package:window_manager/window_manager.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/anki/source_review_session.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -5033,7 +5034,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 lensLanguageSetter: appModel.setMangaOcrLensLanguage,
                 pairedHostModelGetter: () => appModel.mangaOcrPairedHostModel,
                 pairedHostModelSetter: appModel.setMangaOcrPairedHostModel,
-                aiModeGetter: () => appModel.mangaOcrAiMode,
+                // AI 档位面板按 aiModeGetter 是否为 null 自我门控：AI 模块关掉时不传。
+                aiModeGetter: isAiModuleEnabled(appModel.moduleVisibility)
+                    ? () => appModel.mangaOcrAiMode
+                    : null,
                 aiModeSetter: appModel.setMangaOcrAiMode,
                 aiProviderReady: () => mangaAiOcrProviderReady(appModel),
                 openAiSettings: pushAiSettingsPage,

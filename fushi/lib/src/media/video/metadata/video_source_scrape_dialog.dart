@@ -25,6 +25,7 @@ Future<void> showVideoSourceScrapeTaskPanel({
   Future<void> Function(VideoSourceScrapeRunRow run)? onRetry,
   Future<SourceLibraryRow?> Function(int sourceId)? loadSource,
   Future<List<VideoPendingScrapeWork>> Function()? loadPendingWorks,
+  bool showAiIdentify = true,
 }) =>
     showAppDialog<void>(
       context: context,
@@ -34,6 +35,7 @@ Future<void> showVideoSourceScrapeTaskPanel({
         onRetry: onRetry,
         loadSource: loadSource,
         loadPendingWorks: loadPendingWorks,
+        showAiIdentify: showAiIdentify,
       ),
     );
 
@@ -44,6 +46,7 @@ class _VideoSourceScrapeTaskPanel extends StatefulWidget {
     this.onRetry,
     this.loadSource,
     this.loadPendingWorks,
+    this.showAiIdentify = true,
   });
 
   final VideoSourceScrapeTaskController controller;
@@ -53,6 +56,11 @@ class _VideoSourceScrapeTaskPanel extends StatefulWidget {
 
   /// 待确认队列数据源：当前计划里「从未刮出规范身份」的作品。null = 不展示。
   final Future<List<VideoPendingScrapeWork>> Function()? loadPendingWorks;
+
+  /// 待确认行上的「AI 识别」按钮是否出现：AI 模块（`ModuleId.ai`）关掉时调用方传
+  /// false，按钮整颗不渲染（判据 `isAiModuleEnabled`，由调用方求值，本面板不读
+  /// AppModel）。
+  final bool showAiIdentify;
 
   @override
   State<_VideoSourceScrapeTaskPanel> createState() =>
@@ -535,7 +543,8 @@ class _VideoSourceScrapeTaskPanelState
                   : Row(
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
-                        if (widget.controller.supportsAiIdentify)
+                        if (widget.showAiIdentify &&
+                            widget.controller.supportsAiIdentify)
                           FushiIconButtonControl(
                             key: ValueKey<String>(
                               'video-source-pending-ai-${entry.work.stableKey}',

@@ -153,6 +153,7 @@ void main() {
     for (final ModuleId module in <ModuleId>[
       ModuleId.cardCreation,
       ModuleId.services,
+      ModuleId.ai,
       ModuleId.sync,
     ]) {
       expect(

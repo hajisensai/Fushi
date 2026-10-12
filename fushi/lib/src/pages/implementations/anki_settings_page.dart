@@ -38,6 +38,7 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
         MiningClipFormat,
         MiningStillFormat,
         VideoMiningImageMode;
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
@@ -1422,6 +1423,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                         _pickHandlebar(field, currentValue),
               // 「让 AI 帮忙」的提供商按功能指派解析；编辑器本身零 Riverpod 依赖，
               // 所以在这里读偏好再传进去。
+              aiEnabled: isAiModuleEnabled(
+                ref.read(appProvider).moduleVisibility,
+              ),
               resolveAiProvider: () {
                 final PreferencesRepository prefs = ref
                     .read(appProvider)

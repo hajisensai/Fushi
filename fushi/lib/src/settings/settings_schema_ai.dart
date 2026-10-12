@@ -17,9 +17,9 @@ import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.d
 
 /// 「AI」一级设置分类：用户自配的大模型提供商 + 每个功能用哪家。
 ///
-/// 归在「在线服务」模块（`ModuleId.services`）而不是另开一个 ModuleId：这一页的
-/// 内容就是第三方在线服务的端点与凭据，与 Jimaku / OpenSubtitles / Torznab 同类，
-/// 判据表见 `module_registry.dart`，别在此另写一份。
+/// 归在独立的「AI」模块（`ModuleId.ai`，2026-10-13 起；此前挂在 `services` 下）：
+/// 用户要能把 AI 整块关掉而不连坐在线服务。判据表见 `module_registry.dart`，别在
+/// 此另写一份。
 ///
 /// 提供商与功能指派走 [SettingsDestination.body] 逃生口：提供商是一份**可增删的
 /// 记录列表**（每条还带自己的探测状态与模型下拉），schema 的声明式 item 树表达

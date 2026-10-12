@@ -374,6 +374,7 @@ Future<void> _openPendingTab(
   VideoSourceScrapeTaskController controller,
   VideoPendingScrapeWork entry, {
   Future<List<VideoPendingScrapeWork>> Function()? loadPendingWorks,
+  bool showAiIdentify = true,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -387,6 +388,7 @@ Future<void> _openPendingTab(
                 loadRuns: () => db.getVideoSourceScrapeRuns(limit: 20),
                 loadPendingWorks: loadPendingWorks ??
                     () async => <VideoPendingScrapeWork>[entry],
+                showAiIdentify: showAiIdentify,
               ),
             ),
             child: const Text('Open tasks'),
@@ -1104,6 +1106,29 @@ void main() {
       expect(runner.identifiedKeys, isEmpty);
       expect(controller.isRunning, isFalse);
       expect(controller.queuedManualRequestCount, 0);
+    });
+
+    testWidgets('AI module off: no AI button even when AI is available',
+        (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final VideoPendingScrapeWork entry = await _seedPendingWork(db);
+      final _AiIdentifyRunner runner = _AiIdentifyRunner(available: true);
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(runner);
+      addTearDown(controller.dispose);
+
+      await _openPendingTab(
+        tester,
+        db,
+        controller,
+        entry,
+        showAiIdentify: false,
+      );
+      expect(find.byKey(_aiButtonKey), findsNothing);
+      expect(find.byTooltip(t.video_source_scrape_ai_identify), findsNothing);
+      expect(find.byTooltip(t.video_source_scrape_manual_search_title),
+          findsOneWidget);
     });
 
     testWidgets('runner without AI support: no AI button at all',

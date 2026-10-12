@@ -254,10 +254,11 @@ void main() {
       }
     });
 
-    test('四个横切模块没有 tab（只有设置分类与散落入口）', () {
+    test('五个横切模块没有 tab（只有设置分类与散落入口）', () {
       expect(homeTabOfModule(ModuleId.listening), isNull);
       expect(homeTabOfModule(ModuleId.cardCreation), isNull);
       expect(homeTabOfModule(ModuleId.services), isNull);
+      expect(homeTabOfModule(ModuleId.ai), isNull);
       expect(homeTabOfModule(ModuleId.sync), isNull);
     });
   });
@@ -311,6 +312,33 @@ void main() {
         moduleOfSettingsDestination(SettingsDestinationId.interconnect),
         moduleOfSettingsDestination(SettingsDestinationId.syncBackup),
         reason: '互联是从同步备份拆出去的分类，共享同一套后端',
+      );
+    });
+
+    test('AI 是独立模块：关 AI 只藏「设置 › AI」，不连坐在线服务', () {
+      expect(
+        moduleOfSettingsDestination(SettingsDestinationId.ai),
+        ModuleId.ai,
+      );
+      final ModuleVisibility noAi = ModuleVisibility(
+        ModuleId.values.toSet()..remove(ModuleId.ai),
+      );
+      expect(isAiModuleEnabled(noAi), isFalse);
+      expect(
+        isSettingsDestinationVisible(SettingsDestinationId.ai, noAi),
+        isFalse,
+      );
+      expect(
+        isSettingsDestinationVisible(SettingsDestinationId.services, noAi),
+        isTrue,
+      );
+      final ModuleVisibility noServices = ModuleVisibility(
+        ModuleId.values.toSet()..remove(ModuleId.services),
+      );
+      expect(isAiModuleEnabled(noServices), isTrue);
+      expect(
+        isSettingsDestinationVisible(SettingsDestinationId.ai, noServices),
+        isTrue,
       );
     });
 
