@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2960 条。点号进各自文件。
+> 共 2961 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3283](bugs/BUG-3283-floating-scrim-nested-hardedge-after-collapse.md) | ✅ | ✅ | 库页工具区收起后内容中间残留浅色横带（嵌套遮罩按恒定 inset 起画） |
 | [BUG-3278](bugs/BUG-3278-video-continue-row-hover-side-clip.md) | ✅ | ✅ | 视频库继续观看横滚行悬停放大被视口左右裁剪 |
 | [BUG-3272](bugs/BUG-3272-anki-auto-reposition-failure-reason-lost.md) | ✅ | ✅ | 自动重排失败原因被吞且整牌组请求走交互超时 |
 | [BUG-3271](bugs/BUG-3271-expansion-tile-pagestorage-collision.md) | ✅ | ✅ | 视频设置面板字幕分类下方整片灰（展开区与滚动视图 PageStorage 槽冲突） |

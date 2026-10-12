@@ -784,25 +784,39 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                 // 工具行」），上面各层在接缝处停在同一不透明度。
                 // BUG-3132：曾经只伸进第一行胶囊 40 px，搜索 / 标签行背后整片透出
                 // 封面。遮罩跟着弹簧走：工具区收起时一起收回顶边。没滚动时不画。
+                // BUG-3283：嵌套层的起点是**外层此刻的可见下沿**（外层 inset 乘同一
+                // 弹簧的显隐）。`outer` 本身是恒定不随收起变的让位量（滚动内容的
+                // 让位不能随动画变），拿它当遮罩起点，收起后外壳页签早已滑出画面，
+                // 嵌套遮罩却仍从页签高度处起画——内容中间凭空出现一条顶端 0.72
+                // 不透明的硬边亮带。完全收起时嵌套层没有可见工具行，不画；顶边那一条
+                // 渐隐由最外层负责。
                 Positioned(
-                  top: nested ? outer : 0,
+                  top: nested ? outer * shown : 0,
                   left: 0,
                   right: 0,
-                  child: AnimatedOpacity(
-                    opacity: controller.contentUnderTop ? 1 : 0,
-                    duration: fushiMotionDuration(context, FushiMotion.short),
-                    child: FushiTopFadeScrim(
-                      solidHeight: (nested ? 0 : outer) + shown * _chromeHeight,
-                      // 下面还接着嵌套工具行：不在本层渐隐，由下一层接着画。
-                      fadeExtent:
-                          _nestedReach.value >
-                              outer + shown * _chromeHeight + 0.5
-                          ? 1
-                          : kFushiTopFadeExtent,
-                      topOpacity: nested ? kFushiTopScrimOverlayOpacity : 1,
-                      shoulderOpacity: kFushiTopScrimOverlayOpacity,
-                    ),
-                  ),
+                  child: nested && shown <= 0.001
+                      ? const SizedBox.shrink()
+                      : AnimatedOpacity(
+                          opacity: controller.contentUnderTop ? 1 : 0,
+                          duration: fushiMotionDuration(
+                            context,
+                            FushiMotion.short,
+                          ),
+                          child: FushiTopFadeScrim(
+                            solidHeight:
+                                (nested ? 0 : outer) + shown * _chromeHeight,
+                            // 下面还接着嵌套工具行：不在本层渐隐，由下一层接着画。
+                            fadeExtent:
+                                _nestedReach.value >
+                                    outer + shown * _chromeHeight + 0.5
+                                ? 1
+                                : kFushiTopFadeExtent,
+                            topOpacity: nested
+                                ? kFushiTopScrimOverlayOpacity
+                                : 1,
+                            shoulderOpacity: kFushiTopScrimOverlayOpacity,
+                          ),
+                        ),
                 ),
                 Positioned(
                   top: outer,
