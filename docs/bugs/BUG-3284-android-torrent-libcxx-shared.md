@@ -6,9 +6,9 @@
   - 根因：`native/fushi_torrent/build_android_so.sh:74`（及 `.ps1:91`）以 `ANDROID_STL=c++_shared` 链接，依赖 APK 里唯一的 `libc++_shared.so`；那份由 `fushi/android/app/build.gradle:244` 的 `pickFirst 'lib/**/libc++_shared.so'` 从插件 AAR 里挑中（`.note.android.ident` = NDK r27-beta1）。而 `.github/workflows/release.yml` 用 `$ANDROID_NDK_LATEST_HOME` 编本库：18749 的 `.so` 的 ident 是 **r30**，r30 的 libc++ 把 `std::hash` 移出头文件、引用 `__hash_memory`，老 libc++_shared 里没有 → dlopen 失败。2.9.1 的 `.so` 是 r29 编的，恰好不引用新符号，所以当时能用——runner 的「最新 NDK」一升级就静默坏掉。
   - 次因（让它难查）：`packages/fushi_engine/lib/media/torrent/embedded_torrent_host.dart` 的 `probeAvailable` 把加载异常整个吞掉，用户上传日志里没有任何线索；`video_download_backend_identity.dart` 的不可用提示写死「恢复 Windows 运行库」，Android 用户看到的是无从下手的 Windows 文案。
   - CI 漏网：产物校验只验「文件在 + ht_* 导出齐 + AArch64 + 16KB 对齐」，不验未定义符号能否被满足。
-- **[x] ① 已修复** — 本分支 `cc/fb-android-torrent`：
+- **[x] ① 已修复** — f497b62916（分支 `cc/fb-android-torrent`，PR #2080；native-torrent-gate 在 PR 上用 runner 最新 NDK + 新脚本真编：`NEEDED: libc.so libdl.so libm.so`、`C++ runtime self-contained: OK`）：
   - `build_android_so.sh` / `.ps1` 改 `ANDROID_STL=c++_static`，`CMakeLists.txt` Android 分支加 `-Wl,--exclude-libs,ALL`：libc++ 私有链入、静态归档符号不外露，本库不再依赖 APK 里那份 NDK 版本不受控的 libc++_shared。对外只有 C ABI（ht_*），私有 libc++ 是安全的。
   - 新增 `.github/scripts/verify_android_cxx_self_contained.sh`（NEEDED 只许 libc/libm/libdl，强未定义符号必须全带 bionic 版本标签），`release.yml` 与 `native-torrent-gate.yml` 的 Android 产物校验都调用；持久库恢复来的旧 c++_shared 件也会被它拦下（且构建输入哈希变了，不会命中旧件）。对 18749 的旧 `.so` 实跑：报 `libc++_shared.so` 依赖、退出 1。
   - `probeAvailable` 记录失败原因（`lastProbeFailure` + `engineLog.log`）；不可用提示改平台中性文案。
-- **[x] ② 已加自动化测试** — `fushi/test/media/torrent/embedded_torrent_android_runtime_test.dart`（构建脚本 / CMake / 两条 workflow 的源码守卫 + probe 失败留因的行为测试）。
-- **备注**：真机 / 模拟器上装新 APK 的端到端复测要等 CI 用新脚本出包后做；本机用 NDK r29 + c++_static 重编的 `.so` 是否过 dlopen 见 PR 说明。
+- **[x] ② 已加自动化测试** — f497b62916 + 后续提交（同步更新 `fushi/test/media/video/download/video_download_backend_identity_test.dart` 的文案断言）；`fushi/test/media/torrent/embedded_torrent_android_runtime_test.dart`（构建脚本 / CMake / 两条 workflow 的源码守卫 + probe 失败留因的行为测试）。
+- **备注**：真机 / 模拟器上装新 APK 的端到端复测要等 CI 用新脚本出包后做；CI 的 PR 构建不出带新 .so 的 APK（release.yml 只在 push / dispatch 时编 .so），所以模拟器上「新包能选内置引擎」尚未实测。
