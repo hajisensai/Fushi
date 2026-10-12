@@ -12,6 +12,13 @@ void main() {
     expect(schema, contains("id: 'appearance.startup_default_dictionary_tab'"));
     expect(schema, contains('t.startup_default_dictionary_tab'));
     expect(schema, contains('t.startup_default_dictionary_tab_hint'));
+    // 反馈 #PwEC1evz1E：查词模块关闭时该开关必须随之隐藏（没有可落地的 tab）。
+    final int at =
+        schema.indexOf("id: 'appearance.startup_default_dictionary_tab'");
+    expect(
+      schema.substring(at, at + 900),
+      contains('.isEnabled(ModuleId.lookup)'),
+    );
 
     final String english =
         File('lib/i18n/strings.i18n.json').readAsStringSync();

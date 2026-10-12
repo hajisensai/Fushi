@@ -40,4 +40,15 @@ void main() {
     expect(tester.takeException(), isNull,
         reason: 'rail 在矮窗口下应可滚动而非 RenderFlex overflow');
   });
+
+  // 反馈 #ChIDEam2hf：桌面上只溢出一点点也会立起一整条常驻滚动条，rail 不画滚动条。
+  testWidgets('溢出的导航 rail 不画滚动条', (WidgetTester tester) async {
+    await tester.pumpWidget(harness(260));
+    await tester.pump();
+    expect(find.byType(SingleChildScrollView), findsWidgets);
+    expect(
+      find.descendant(of: find.byType(Row), matching: find.byType(Scrollbar)),
+      findsNothing,
+    );
+  });
 }
