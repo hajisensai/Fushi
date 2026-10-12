@@ -33,10 +33,11 @@ void main() {
     SubtitleLayerVAnchor? secondaryAnchor,
     bool showSecondary = true,
     double? bottomPadding,
+    double width = 392,
   }) async {
     // 用户截图：竖屏手机约 392 逻辑 px 宽。
     tester.view.devicePixelRatio = 2.75;
-    tester.view.physicalSize = const Size(392 * 2.75, 850 * 2.75);
+    tester.view.physicalSize = Size(width * 2.75, 850 * 2.75);
     addTearDown(tester.view.reset);
     videoSubtitleStyleDraft.value = VideoSubtitleStyle.defaults.copyWith(
       fontSize: fontSize,
@@ -64,11 +65,23 @@ void main() {
     await tester.pump();
   }
 
-  for (final double fontSize in <double>[23, 36, 60, 96]) {
-    testWidgets('字号 $fontSize：主副字幕不相交、副上主下、都在预览框内', (
+  // 反馈 wBdELVtnhz（2026-10-09，384 宽 vivo）「拉到最大还是会重叠」：再压到更窄的
+  // 320 / 360 宽、滑条上限 48 与远超上限的 96 复核。
+  for (final (double width, double fontSize) in <(double, double)>[
+    (392, 23),
+    (392, 36),
+    (392, 60),
+    (392, 96),
+    (320, 48),
+    (320, 96),
+    (360, 48),
+    (360, 96),
+    (384, 48),
+  ]) {
+    testWidgets('宽 $width 字号 $fontSize：主副字幕不相交、副上主下、都在预览框内', (
       WidgetTester tester,
     ) async {
-      await pumpPreview(tester, fontSize);
+      await pumpPreview(tester, fontSize, width: width);
 
       final Finder main = find.text(_kSample);
       final Finder secondary = find.text(t.video_subtitle_preview_translation);
