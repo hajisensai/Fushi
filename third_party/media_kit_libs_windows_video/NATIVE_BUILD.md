@@ -6,13 +6,24 @@ including upstream HDMV/BD-J navigation added on 2026-08-25. The previous
 2026-08-13 binary had neither `discnav` nor `disc-menu`; updating Flutter alone
 could not enable original menus.
 
-Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1.7z` (48,455,947 bytes).
-SHA-256: `39ded62ef699ef23f36ec09f60f0536d5b32c6e0e12dbacd65738e1e28779aca`.
-The `fushi-discnav1` suffix identifies this patched build; it is not an
+Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1.7z` (45,060,252 bytes).
+SHA-256: `97316a1f4b0276f8255dccbf404e50dfe125998309159c00452c80b9d697a0ac`.
+The `fushi-discnav1-hwcrop1` suffix identifies this patched build; it is not an
 unmodified zhongfly release. Its DLL and dependency manifests are also tracked
 beside this document for review without unpacking the binary.
 
-`patches/disc-navigation-state.patch` is the complete local change against that
+`patches/gpu-dumb-mode-hwdec-crop.patch` (BUG-3296) fixes upstream
+`pass_render_frame_dumb()` in `video/out/gpu/video.c`: the vo=gpu "dumb mode"
+(chosen automatically when every scaler is bilinear and linear/sigmoid/correct
+scaling, deband and user shaders are all off - Fushi's "画质增强: 无") built the
+source transform against the image size instead of the mapped plane size. With
+d3d11va zero-copy the decoder surface is padded (1920x1088 for 1080p H.264,
+1920x1152 for HEVC), so the padding rows were squashed into the picture. The
+non-dumb path (`pass_read_video`) already used the plane size; the patch makes
+the dumb path do the same. Software / copy-back frames are unaffected (plane
+size equals image size). Upstream master is still unfixed as of 2026-10-13.
+
+`patches/disc-navigation-state.patch` is the navigation change against that
 upstream revision. It adds:
 
 * `disc-navigation-state` (NODE_MAP) and `disc-navigation-state-json` (STRING),

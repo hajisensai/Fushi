@@ -95,9 +95,13 @@ def main():
     shutil.copy2(args.source / "LICENSE.GPL", args.output / "licenses/MPV-GPL.txt")
     shutil.copy2(args.source / "LICENSE.LGPL", args.output / "licenses/MPV-LGPL.txt")
     commit = subprocess.check_output(["git", "-C", str(args.source), "rev-parse", "HEAD"], text=True).strip()
-    patch_file = Path(__file__).resolve().parents[2] / "third_party/media_kit_libs_windows_video/patches/disc-navigation-state.patch"
+    patches = Path(__file__).resolve().parents[2] / "third_party/media_kit_libs_windows_video/patches"
+    patch_file = patches / "disc-navigation-state.patch"
+    # BUG-3296: render-path fixes applied on top of the navigation patch.
+    render_patches = ["gpu-dumb-mode-hwdec-crop.patch"]
     (args.output / "source-provenance.json").write_text(json.dumps({
         "mpv_commit": commit, "patch_sha256": sha256(patch_file),
+        "render_patches": {name: sha256(patches / name) for name in render_patches},
         "native_menu_schema": 1, "runtime_manifest": "runtime-manifest.json",
         "dependency_packages": "msys2-packages.json",
     }, indent=2) + "\n")

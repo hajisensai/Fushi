@@ -1,0 +1,27 @@
+diff --git a/video/out/gpu/video.c b/video/out/gpu/video.c
+--- a/video/out/gpu/video.c
++++ b/video/out/gpu/video.c
+@@ -3167,6 +3167,23 @@
+     struct gl_transform off[4];
+     pass_get_images(p, &p->image, img, off);
+ 
++    // Hardware decoders may map surfaces that are larger than the image, e.g.
++    // a 1920x1088 d3d11 surface for 1080p H.264 (the 8 bottom rows are coded
++    // padding). pass_read_video() makes the source transform relative to the
++    // reference plane's real size; without the same here, the dumb path maps
++    // the whole surface onto the destination and squashes the padding rows
++    // into the picture. For uploaded (software) frames the plane size equals
++    // the image size, so this is a no-op there.
++    for (int n = 0; n < p->plane_count; n++) {
++        if (img[n].type == PLANE_RGB || img[n].type == PLANE_LUMA ||
++            img[n].type == PLANE_XYZ)
++        {
++            p->texture_w = img[n].w;
++            p->texture_h = img[n].h;
++            break;
++        }
++    }
++
+     struct gl_transform transform;
+     compute_src_transform(p, &transform);
+ 
