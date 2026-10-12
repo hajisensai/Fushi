@@ -31,7 +31,8 @@ String ttsProviderLabel(String providerId) => switch (providerId) {
 String? ttsProviderHint(String providerId) => switch (providerId) {
   EdgeTtsDescriptor.providerId ||
   MicrosoftTranslatorTtsDescriptor.providerId ||
-  GoogleTranslateTtsDescriptor.providerId => t.audiobook_tts_unofficial_free_hint,
+  GoogleTranslateTtsDescriptor.providerId =>
+    t.audiobook_tts_unofficial_free_hint,
   AzureTtsDescriptor.providerId ||
   GoogleCloudTtsDescriptor.providerId => t.audiobook_tts_key_required_hint,
   _ => null,
@@ -73,10 +74,19 @@ String? ttsParamHint(String providerId, String key) =>
       _ => null,
     };
 
-String ttsFailureText(TtsFailure failure) => switch (failure.code) {
+/// 失败码的文案。给了 [descriptor] 且该引擎不需要凭据（微软 Edge / 翻译接口等免费
+/// 接口）时，「拒绝了请求」不提示去检查密钥——用户根本没有密钥可查，那是服务端
+/// 拒绝（例如 Edge 旧主机对各地出口一律 403）。
+String ttsFailureText(
+  TtsFailure failure, {
+  TtsProviderDescriptor? descriptor,
+}) => switch (failure.code) {
   TtsFailureCode.notConfigured => t.audiobook_tts_failure_not_configured,
   TtsFailureCode.network => t.audiobook_tts_failure_network,
   TtsFailureCode.timeout => t.audiobook_tts_failure_timeout,
+  TtsFailureCode.unauthorized
+      when descriptor != null && !descriptor.capabilities.needsCredential =>
+    t.audiobook_tts_failure_server,
   TtsFailureCode.unauthorized => t.audiobook_tts_failure_unauthorized,
   TtsFailureCode.rateLimited => t.audiobook_tts_failure_rate_limited,
   TtsFailureCode.serverError => t.audiobook_tts_failure_server,

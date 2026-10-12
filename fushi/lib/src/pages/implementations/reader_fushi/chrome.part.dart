@@ -2137,6 +2137,18 @@ extension _ReaderChrome on _ReaderFushiPageState {
             if (item != ReaderControlItem.title &&
                 !_isDuplicatedByAudiobookPlayBar(item))
               _readerControlButton(_readerControlAction(item)),
+      // TTS 朗读：播放条上直接换声音（不必进面板 / 设置页）。
+      if (_ttsReadAlong != null)
+        _readerControlButton(
+          ReaderHeaderAction(
+            key: const ValueKey<String>('fushi_play_bar_tts_voice_switch'),
+            icon: FushiIcons.voice,
+            label: t.audiobook_tts_voices_section,
+            tooltip: '${t.audiobook_tts_voices_section}: '
+                '${ttsVoiceDisplayName(_ttsReadAlong!.preset)}',
+            onPressed: () => unawaited(_openTtsVoiceQuickSwitch()),
+          ),
+        ),
     ];
     final Widget? status = _playbackStatusInline ? _buildBarStatusText() : null;
     if (buttons.isEmpty) return status;
@@ -2618,6 +2630,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
           : null,
       onOpenTtsVoices: _ttsReadAlong != null
           ? () => unawaited(_openTtsVoiceSettings())
+          : null,
+      onSwitchTtsVoice: _ttsReadAlong != null
+          ? () => unawaited(_openTtsVoiceQuickSwitch())
           : null,
       onPickAlignment:
           listeningEnabled &&

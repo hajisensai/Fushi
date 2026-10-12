@@ -1239,6 +1239,56 @@ class AudiobookPlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 换掉整列流式音频源（TTS 朗读播放中换声音）：cue / 时间轴 / 会话不变，只把
+  /// 每句的音频源换成新声音的源，落到第 [fileIndex] 句句首；[play] 为真时随即续播。
+  ///
+  /// 必须整列重设而不是只 seek：just_audio 已经向旧源要过、预读过的音频（当前句与
+  /// 下一句）留在播放器里，不换源就会先播完旧声音。数量必须与现有文件列表一致。
+  Future<void> replaceStreamSources({
+    required List<File> audioFiles,
+    required List<AudioSource> audioSources,
+    required int fileIndex,
+    required bool play,
+  }) async {
+    await _loadReady.future;
+    if (audioSources.length != audioFiles.length ||
+        audioFiles.length != _audioFiles.length) {
+      throw ArgumentError.value(
+          audioSources.length, 'audioSources', 'Must match the loaded files');
+    }
+    if (fileIndex < 0 || fileIndex >= audioFiles.length) {
+      throw RangeError.range(fileIndex, 0, audioFiles.length - 1, 'fileIndex');
+    }
+    // 只停播放器、不走 [pause]：换源不是用户暂停，不落位置、不作废插图停留。
+    await _player.pause();
+    _audioFiles = audioFiles;
+    _manualReaderOverrideCue = null;
+    _stopAtPositionMs = null;
+    _returnToPosition = null;
+    _chapterTransition = false;
+    _currentCue = null;
+    _currentCueIndex = -1;
+    _beginExplicitSeek(fileIndex, 0);
+    try {
+      await _player
+          .setAudioSource(
+            ConcatenatingAudioSource(children: audioSources),
+            initialIndex: fileIndex,
+            initialPosition: Duration.zero,
+            preload: false,
+          )
+          .timeout(const Duration(seconds: 60));
+    } catch (_) {
+      if (_explicitSeekTargetFileIndex == fileIndex &&
+          _explicitSeekTargetMs == 0) {
+        _clearExplicitSeekSuppression();
+      }
+      rethrow;
+    }
+    notifyListeners();
+    if (play) await this.play();
+  }
+
   /// 快进 / 快退（秒）。
   Future<void> seekRelative(int deltaSeconds) async {
     final int newMs = (position.inMilliseconds + deltaSeconds * 1000).clamp(

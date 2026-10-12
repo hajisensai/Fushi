@@ -21,6 +21,7 @@ import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart'
 import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_read_along.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_voice_quick_switch.dart';
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -75,6 +76,7 @@ class ReaderAudiobookPanel extends StatefulWidget {
     this.onTranscribe,
     this.onStopTts,
     this.onOpenTtsVoices,
+    this.onSwitchTtsVoice,
     this.cueStudyOffset,
     this.tick = const Duration(seconds: 1),
   });
@@ -102,6 +104,10 @@ class ReaderAudiobookPanel extends StatefulWidget {
   /// TTS 朗读会话的「停止朗读」/「朗读声音」（录音有声书时不用）。
   final VoidCallback? onStopTts;
   final VoidCallback? onOpenTtsVoices;
+
+  /// TTS 朗读中「切换声音」：正在播放卡上的声音 chip 点开快速切换（先关面板，
+  /// 换声音可能重起会话，面板持有的控制器会失效）。
+  final VoidCallback? onSwitchTtsVoice;
 
   /// cue 音频坐标（[SubtitleRematchFragment.normCharStart]）→ 章内学习单位偏移
   /// （与 [TtuTocEntry.anchorCharOffset] 同尺）。阅读器页给出；null / 映射不出时
@@ -637,6 +643,28 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                   },
                 ),
               ),
+            if (TtsReadAlong.forController(ctrl) case final TtsReadAlong tts
+                when widget.onSwitchTtsVoice != null)
+              FushiPressScale(
+                child: FushiChoiceChip(
+                  key: const ValueKey<String>(
+                    'fushi_audiobook_panel_tts_voice_switch',
+                  ),
+                  avatar: const FushiIcon(FushiIcons.voice, size: 18),
+                  label: Text(
+                    ttsVoiceDisplayName(tts.preset),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  tooltip: t.audiobook_tts_voices_section,
+                  selected: false,
+                  showCheckmark: false,
+                  onSelected: (_) {
+                    Navigator.of(context).pop();
+                    widget.onSwitchTtsVoice!();
+                  },
+                ),
+              ),
             FushiPressScale(child: _SleepTimerChip(controller: ctrl)),
           ],
         ),
@@ -811,9 +839,7 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
       context,
       ReaderPanelCardTone.neutral,
     );
-    final String name = tts.preset.name.isEmpty
-        ? ttsProviderLabel(tts.preset.providerId)
-        : tts.preset.name;
+    final String name = ttsVoiceDisplayName(tts.preset);
     return ReaderPanelCard(
       key: const ValueKey<String>('fushi_audiobook_tts_source_card'),
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),

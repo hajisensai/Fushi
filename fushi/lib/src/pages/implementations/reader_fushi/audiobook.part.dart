@@ -278,6 +278,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         (session.book?.isTtsSource ?? false) &&
         session.book?.bookKey == bookKey) {
       await _attachTtsSession(session, reading, sessionController);
+      // 后台朗读期间「使用中」的声音可能在别处（设置页）换过：接回时应用上，
+      // 否则会话一直沿用开始朗读时的声音。
+      if (mounted) await _applyActiveTtsVoiceToReading();
       return;
     }
 

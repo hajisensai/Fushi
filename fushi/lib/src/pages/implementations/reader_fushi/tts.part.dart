@@ -109,14 +109,100 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
   static String _ttsVoiceName(TtsVoicePreset preset) =>
       preset.name.isEmpty ? ttsProviderLabel(preset.providerId) : preset.name;
 
+  /// 朗读声音设置页。朗读进行中时，回来后把「使用中」的声音应用到正在进行的
+  /// 朗读（在设置页里换了声音 / 改了参数，回来就生效，不必停掉重开）。
   Future<void> _openTtsVoiceSettings() async {
     await _withStudyClockPaused(
       () => openTtsVoiceSettingsPage(context, _ttsServices),
     );
+    if (!mounted || _ttsReadAlong == null) return;
+    await _applyActiveTtsVoiceToReading();
   }
 
-  /// 起朗读会话：从阅读器当前位置，或（[resume]）上次朗读的断点。
-  Future<void> _startTtsReading({required bool resume}) async {
+  /// 朗读中快速切换声音（播放条 / 有声书面板的声音入口）：选中即设为使用中并
+  /// 热切换；「朗读声音」项进设置页。
+  Future<void> _openTtsVoiceQuickSwitch() async {
+    final TtsServices tts = _ttsServices;
+    final TtsVoiceQuickSwitchChoice? choice = await showTtsVoiceQuickSwitch(
+      context,
+      tts,
+    );
+    if (choice == null || !mounted) return;
+    final String? presetId = choice.presetId;
+    if (presetId == null) {
+      await _openTtsVoiceSettings();
+      return;
+    }
+    await tts.store.setActivePresetId(presetId);
+    if (!mounted) return;
+    await _applyActiveTtsVoiceToReading();
+  }
+
+  /// 把「使用中」的声音应用到正在进行的朗读：能热切换就从当前句句首换声音续播；
+  /// 现有分句放不下新引擎的长度上限时，用新声音从当前句重起朗读会话。
+  Future<void> _applyActiveTtsVoiceToReading() async {
+    final TtsReadAlong? readAlong = _ttsReadAlong;
+    if (readAlong == null) return;
+    final ({TtsVoicePreset preset, TtsProviderDescriptor descriptor})? voice =
+        _ttsServices.activeVoice();
+    if (voice == null) {
+      FushiToast.show(
+        msg: t.audiobook_tts_no_voice,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    // 重起时保持原来的播放 / 暂停状态；位置取换声音那一刻的当前句。
+    final bool wasPlaying = _audiobookController?.isPlaying ?? false;
+    final TtsPlanSentence? sentence = readAlong.currentSentence;
+    final TtsVoiceSwitchOutcome outcome;
+    try {
+      outcome = await readAlong.switchVoice(voice.preset, voice.descriptor);
+    } on TtsStartException {
+      if (mounted) {
+        FushiToast.show(
+          msg: t.audiobook_tts_voice_incomplete,
+          severity: ToastSeverity.warning,
+        );
+      }
+      return;
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderFushi.switchTtsVoice', e, stack);
+      if (mounted) {
+        FushiToast.show(
+          msg: t.audiobook_tts_start_failed,
+          severity: ToastSeverity.error,
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    switch (outcome) {
+      case TtsVoiceSwitchOutcome.unchanged:
+        return;
+      case TtsVoiceSwitchOutcome.switched:
+        _rebuild(() {});
+      case TtsVoiceSwitchOutcome.needsRestart:
+        await _startTtsReading(
+          resume: false,
+          at: sentence == null
+              ? null
+              : TtsStartAtSentence(
+                  section: sentence.section,
+                  matchStart: sentence.matchStart,
+                ),
+          autoplay: wasPlaying,
+        );
+    }
+  }
+
+  /// 起朗读会话：从阅读器当前位置，或（[resume]）上次朗读的断点，或（[at]）
+  /// 指定的一句。[autoplay] 为假时只定位不播放。
+  Future<void> _startTtsReading({
+    required bool resume,
+    TtsStartPoint? at,
+    bool autoplay = true,
+  }) async {
     if (!_moduleVisibility.isEnabled(ModuleId.listening)) return;
     final EpubBook? book = _book;
     if (book == null) return;
@@ -159,7 +245,8 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
         services: _ttsServices,
         book: book,
         info: info,
-        startPoint: resume ? TtsStartAtResume(fallback: here) : here,
+        startPoint: at ?? (resume ? TtsStartAtResume(fallback: here) : here),
+        autoplay: autoplay,
       );
     } on TtsStartException catch (e) {
       if (!mounted) return;
@@ -185,8 +272,12 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
       }
       return;
     }
+    // 提示里带上出错的声音名：声音能在播放中换，用户要知道是哪个声音失败了。
     readAlong.onFailure = (TtsFailure failure) => FushiToast.show(
-      msg: '${ttsFailureText(failure)}\n${t.audiobook_tts_retry_hint}',
+      msg:
+          '${ttsVoiceDisplayName(readAlong.preset)}: '
+          '${ttsFailureText(failure, descriptor: readAlong.descriptor)}\n'
+          '${t.audiobook_tts_retry_hint}',
       severity: ToastSeverity.error,
     );
     final AudiobookPlayerController? controller = session.controller;

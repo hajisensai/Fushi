@@ -11,6 +11,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -40,6 +41,14 @@ class TtsStartAtReader extends TtsStartPoint {
   final int studyOffset;
 }
 
+/// 指定的一句（按章 + 句首匹配坐标定位，换了分句计划也落在包含该坐标的那句）。
+/// 播放中换声音而现有分句放不下新引擎的单次长度上限时，从当前句重起会话用它。
+class TtsStartAtSentence extends TtsStartPoint {
+  const TtsStartAtSentence({required this.section, required this.matchStart});
+  final int section;
+  final int matchStart;
+}
+
 /// 上次朗读的断点（没有断点时从当前位置）。
 class TtsStartAtResume extends TtsStartPoint {
   const TtsStartAtResume({required this.fallback});
@@ -54,19 +63,94 @@ class TtsStartException implements Exception {
   final TtsStartProblem problem;
 }
 
+/// [TtsReadAlong.switchVoice] 的结果。
+enum TtsVoiceSwitchOutcome {
+  /// 与当前声音完全相同（含凭据），什么都没做。
+  unchanged,
+
+  /// 已在本会话内热切换：从当前句句首用新声音续播。
+  switched,
+
+  /// 现有分句里有句子超出新引擎的单次长度上限，本会话放不下新声音：调用方从
+  /// [TtsReadAlong.currentSentence] 用新声音重起会话（[TtsStartAtSentence]）。
+  needsRestart,
+}
+
 class TtsReadAlong extends ChangeNotifier {
   TtsReadAlong._({
     required this.bookKey,
     required this.plan,
-    required this.preset,
-    required this.descriptor,
+    required TtsVoicePreset preset,
+    required TtsProviderDescriptor descriptor,
     required TtsProvider provider,
     required TtsSynthesisScheduler scheduler,
     required TtsPresetStore store,
+    required TtsAudioCache cache,
+    required TtsHost host,
     required this.cues,
-  }) : _provider = provider,
+  }) : _preset = preset,
+       _descriptor = descriptor,
+       _provider = provider,
        _scheduler = scheduler,
-       _store = store;
+       _store = store,
+       _cache = cache,
+       _host = host;
+
+  /// 不经有声书会话、不挂播放器的会话，只给测试驱动「换声音」的调度部分。
+  @visibleForTesting
+  static TtsReadAlong debugCreate({
+    required TtsBookPlan plan,
+    required TtsVoicePreset preset,
+    required TtsProviderDescriptor descriptor,
+    required TtsAudioCache cache,
+    required TtsHost host,
+    required TtsPresetStore store,
+    String bookKey = 'debug',
+  }) {
+    final TtsProvider provider = descriptor.create(preset, host);
+    return TtsReadAlong._(
+      bookKey: bookKey,
+      plan: plan,
+      preset: preset,
+      descriptor: descriptor,
+      provider: provider,
+      scheduler: _newScheduler(
+        plan: plan,
+        provider: provider,
+        cache: cache,
+        preset: preset,
+        descriptor: descriptor,
+      ),
+      store: store,
+      cache: cache,
+      host: host,
+      cues: <AudioCue>[
+        for (int i = 0; i < plan.length; i++)
+          AudioCue()
+            ..sentenceIndex = i
+            ..text = plan.sentences[i].text
+            ..startMs = 0
+            ..endMs = estimateDurationMs(plan.sentences[i].spokenText)
+            ..audioFileIndex = i,
+      ],
+    );
+  }
+
+  static TtsSynthesisScheduler _newScheduler({
+    required TtsBookPlan plan,
+    required TtsProvider provider,
+    required TtsAudioCache cache,
+    required TtsVoicePreset preset,
+    required TtsProviderDescriptor descriptor,
+  }) => TtsSynthesisScheduler(
+    provider: provider,
+    cache: cache,
+    texts: <String>[
+      for (final TtsPlanSentence s in plan.sentences) s.spokenText,
+    ],
+    audioIdentity: descriptor.audioIdentity(preset),
+    concurrency: ttsEffectiveConcurrency(descriptor, preset),
+  );
 
   /// 当前正在进行的朗读会话（全应用至多一个，随有声书会话释放而清空）。
   static TtsReadAlong? get active => _active;
@@ -81,15 +165,24 @@ class TtsReadAlong extends ChangeNotifier {
 
   final String bookKey;
   final TtsBookPlan plan;
-  final TtsVoicePreset preset;
-  final TtsProviderDescriptor descriptor;
+
+  /// 当前声音。播放中可以换（[switchVoice]），所以不是会话开始时的快照。
+  TtsVoicePreset get preset => _preset;
+  TtsProviderDescriptor get descriptor => _descriptor;
+  TtsVoicePreset _preset;
+  TtsProviderDescriptor _descriptor;
 
   /// 每句一条，与播放列表一一对应（`audioFileIndex == sentenceIndex == 下标`）。
   final List<AudioCue> cues;
 
-  final TtsProvider _provider;
-  final TtsSynthesisScheduler _scheduler;
+  TtsProvider _provider;
+  TtsSynthesisScheduler _scheduler;
   final TtsPresetStore _store;
+  final TtsAudioCache _cache;
+  final TtsHost _host;
+
+  /// 换声音串行化：连点两个声音时第二次要等第一次的播放源替换落定。
+  Future<void> _switchTail = Future<void>.value();
   AudiobookPlayerController? _controller;
   StreamSubscription<TtsSegmentEvent>? _eventsSub;
   bool _wasPlaying = false;
@@ -120,6 +213,7 @@ class TtsReadAlong extends ChangeNotifier {
     required EpubBook book,
     required SessionBookInfo info,
     required TtsStartPoint startPoint,
+    bool autoplay = true,
   }) async {
     final TtsServices tts = services;
     final ({TtsVoicePreset preset, TtsProviderDescriptor descriptor})? voice =
@@ -144,14 +238,12 @@ class TtsReadAlong extends ChangeNotifier {
       voice.preset,
       tts.host,
     );
-    final TtsSynthesisScheduler scheduler = TtsSynthesisScheduler(
+    final TtsSynthesisScheduler scheduler = _newScheduler(
+      plan: plan,
       provider: provider,
       cache: cache,
-      texts: <String>[
-        for (final TtsPlanSentence s in plan.sentences) s.spokenText,
-      ],
-      audioIdentity: voice.descriptor.audioIdentity(voice.preset),
-      concurrency: ttsEffectiveConcurrency(voice.descriptor, voice.preset),
+      preset: voice.preset,
+      descriptor: voice.descriptor,
     );
     final List<AudioCue> cues = <AudioCue>[
       for (int i = 0; i < plan.length; i++)
@@ -177,6 +269,8 @@ class TtsReadAlong extends ChangeNotifier {
       provider: provider,
       scheduler: scheduler,
       store: tts.store,
+      cache: cache,
+      host: tts.host,
       cues: cues,
     );
 
@@ -186,9 +280,7 @@ class TtsReadAlong extends ChangeNotifier {
     // session.start 顶掉旧会话（录音有声书或上一次朗读）时会先调旧会话的释放回调。
     final AudiobookPlayerController? controller = await session.start(
       info: info,
-      audioFiles: <File>[
-        for (int i = 0; i < plan.length; i++) File(scheduler.audioPathOf(i)),
-      ],
+      audioFiles: _filesFor(scheduler),
       prefs: SessionPrefs(
         followAudio: true,
         delayMs: 0,
@@ -206,10 +298,7 @@ class TtsReadAlong extends ChangeNotifier {
         onFollowAudioPersist: (_) async {},
       ),
       cues: cues,
-      audioSources: <TtsSentenceAudioSource>[
-        for (int i = 0; i < plan.length; i++)
-          TtsSentenceAudioSource(scheduler: scheduler, index: i),
-      ],
+      audioSources: _sourcesFor(scheduler),
       onReleased: readAlong._release,
     );
     if (controller == null) {
@@ -218,12 +307,12 @@ class TtsReadAlong extends ChangeNotifier {
     }
     readAlong._attach(controller);
     scheduler.setCursor(start.index);
-    if (start.offsetMs > 0) {
+    if (start.offsetMs > 0 || !autoplay) {
       await controller.restoreToFileOffset(
         fileIndex: start.index,
         positionMs: start.offsetMs,
       );
-      unawaited(controller.play());
+      if (autoplay) unawaited(controller.play());
     } else {
       await controller.playCueAndContinue(cues[start.index]);
     }
@@ -235,6 +324,9 @@ class TtsReadAlong extends ChangeNotifier {
     switch (point) {
       case TtsStartAtReader():
         reader = point;
+      case TtsStartAtSentence(:final int section, :final int matchStart):
+        final int index = plan.indexAtMatchStart(section, matchStart);
+        return (index: index < 0 ? 0 : index, offsetMs: 0);
       case TtsStartAtResume(:final TtsStartAtReader fallback):
         final TtsResumePoint? resume = _store.resumeFor(bookKey);
         if (resume != null) {
@@ -255,6 +347,127 @@ class TtsReadAlong extends ChangeNotifier {
       reader.studyOffset,
     );
     return (index: index < 0 ? 0 : index, offsetMs: 0);
+  }
+
+  static List<File> _filesFor(TtsSynthesisScheduler scheduler) => <File>[
+    for (int i = 0; i < scheduler.length; i++) File(scheduler.audioPathOf(i)),
+  ];
+
+  static List<TtsSentenceAudioSource> _sourcesFor(
+    TtsSynthesisScheduler scheduler,
+  ) => <TtsSentenceAudioSource>[
+    for (int i = 0; i < scheduler.length; i++)
+      TtsSentenceAudioSource(scheduler: scheduler, index: i),
+  ];
+
+  /// 正在读（或停在）的那一句的下标。
+  int get currentIndex {
+    final int? index = _controller?.currentCue?.audioFileIndex;
+    if (index != null && index >= 0 && index < plan.length) return index;
+    return _scheduler.cursor;
+  }
+
+  /// 正在读的那一句（换声音需要重起会话时按它定位）。
+  TtsPlanSentence? get currentSentence =>
+      plan.isEmpty ? null : plan.sentences[currentIndex];
+
+  /// 调度器（测试观察换声音后的合成走向）。
+  @visibleForTesting
+  TtsSynthesisScheduler get debugScheduler => _scheduler;
+
+  /// 现有分句里最长的一句（朗读用文本）。新引擎的单次长度上限比它小时本会话
+  /// 换不了声音（那一句会被引擎拒掉），只能按新上限重新分句。
+  late final int _longestSpokenLength = plan.sentences.fold<int>(
+    0,
+    (int longest, TtsPlanSentence s) =>
+        s.spokenText.length > longest ? s.spokenText.length : longest,
+  );
+
+  /// 播放中换声音：从**当前句句首**起用新声音。
+  ///
+  /// 旧声音排队 / 在途的合成全部取消（调度器连同它的请求一起换掉）；播放器的
+  /// 音频源整列换成新调度器的源——just_audio 已经预读、缓冲的旧声音音频随旧源
+  /// 一起丢弃，不会再播出半句旧声音。已经合成好的旧声音文件留在磁盘缓存里
+  /// （缓存键含声音身份），换回来时直接复用。cue 对象身份不变，阅读器高亮、
+  /// 歌词、断点照常；各句时长重置为估计值，新声音合成完逐句校正。
+  ///
+  /// 声音不完整抛 [TtsStartException]；分句放不下新声音返回
+  /// [TtsVoiceSwitchOutcome.needsRestart]（本会话不变）。
+  Future<TtsVoiceSwitchOutcome> switchVoice(
+    TtsVoicePreset preset,
+    TtsProviderDescriptor descriptor,
+  ) {
+    final Future<TtsVoiceSwitchOutcome> result = _switchTail.then(
+      (_) => _switchVoice(preset, descriptor),
+    );
+    _switchTail = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return result;
+  }
+
+  Future<TtsVoiceSwitchOutcome> _switchVoice(
+    TtsVoicePreset preset,
+    TtsProviderDescriptor descriptor,
+  ) async {
+    if (_released) return TtsVoiceSwitchOutcome.unchanged;
+    if (descriptor.validate(preset).isNotEmpty) {
+      throw const TtsStartException(TtsStartProblem.voiceIncomplete);
+    }
+    if (jsonEncode(preset.toJson()) == jsonEncode(_preset.toJson())) {
+      return TtsVoiceSwitchOutcome.unchanged;
+    }
+    if (descriptor.capabilities.maxInputLength < _longestSpokenLength) {
+      return TtsVoiceSwitchOutcome.needsRestart;
+    }
+
+    final AudiobookPlayerController? controller = _controller;
+    final int index = currentIndex;
+    final bool wasPlaying = controller?.isPlaying ?? false;
+    final TtsProvider oldProvider = _provider;
+    final TtsSynthesisScheduler oldScheduler = _scheduler;
+    final StreamSubscription<TtsSegmentEvent>? oldEvents = _eventsSub;
+
+    final TtsProvider provider = descriptor.create(preset, _host);
+    final TtsSynthesisScheduler scheduler = _newScheduler(
+      plan: plan,
+      provider: provider,
+      cache: _cache,
+      preset: preset,
+      descriptor: descriptor,
+    );
+    _preset = preset;
+    _descriptor = descriptor;
+    _provider = provider;
+    _scheduler = scheduler;
+    _eventsSub = scheduler.events.listen(_onSegmentEvent);
+    await oldEvents?.cancel();
+    // 新调度器先从当前句开始合成（命中缓存的句子立即就绪），播放器换源后来要
+    // 这一句时多半已经在路上了。
+    scheduler
+      ..setCursor(index)
+      ..setLookahead(oldScheduler.lookahead);
+
+    // 旧声音的真实时长不再适用：退回估计值，新声音一句句合成完再校正。
+    for (int i = 0; i < cues.length; i++) {
+      cues[i].endMs = estimateDurationMs(plan.sentences[i].spokenText);
+    }
+    controller?.refreshCueTimings();
+    if (controller != null) {
+      // 先换播放源、后关旧调度器：旧调度器关闭时会让挂起的旧源请求以「已取消」
+      // 失败，那时播放器已经不再引用旧源。
+      await controller.replaceStreamSources(
+        audioFiles: _filesFor(scheduler),
+        audioSources: _sourcesFor(scheduler),
+        fileIndex: index,
+        play: wasPlaying,
+      );
+    }
+    await oldScheduler.dispose();
+    await oldProvider.dispose();
+    notifyListeners();
+    return TtsVoiceSwitchOutcome.switched;
   }
 
   void _attach(AudiobookPlayerController controller) {
