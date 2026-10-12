@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2959 条。点号进各自文件。
+> 共 2961 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3291](bugs/BUG-3291-clip-export-drops-ass-style.md) | ✅ | ✅ | 片段导出烧字幕丢失原字幕颜色与加粗 |
+| [BUG-3286](bugs/BUG-3286-video-fullscreen-file-dialog-hidden.md) | ✅ | ✅ | 视频全屏时系统文件对话框被压在全屏窗口下 |
 | [BUG-3272](bugs/BUG-3272-anki-auto-reposition-failure-reason-lost.md) | ✅ | ✅ | 自动重排失败原因被吞且整牌组请求走交互超时 |
 | [BUG-3271](bugs/BUG-3271-expansion-tile-pagestorage-collision.md) | ✅ | ✅ | 视频设置面板字幕分类下方整片灰（展开区与滚动视图 PageStorage 槽冲突） |
 | [BUG-3270](bugs/BUG-3270-anki-dict-media-dangling-placeholder.md) | ✅ | ✅ | 制卡缺词典媒体时卡片残留 fushi_dict_N 占位图，AnkiDroid 报加载失败 |
