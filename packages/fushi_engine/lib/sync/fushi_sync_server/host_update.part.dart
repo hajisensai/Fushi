@@ -57,8 +57,9 @@ extension _FushiSyncServerHostUpdate on FushiSyncServer {
     String peerKey,
   ) async {
     if (!updater.platformSupported) return HostUpdateDenial.unsupported;
-    if (!await updater.isRemoteUpdateAllowed())
+    if (!await updater.isRemoteUpdateAllowed()) {
       return HostUpdateDenial.disabled;
+    }
     if (!_isLanPeerRequest(request, _remoteAddress(request))) {
       return HostUpdateDenial.zone;
     }
