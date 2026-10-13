@@ -51,8 +51,20 @@ typedef FeedbackNativeWindowCapture = Future<Uint8List?> Function();
 /// 场景，toImage 截得到；macOS 的 WKWebView 是原生视图，仍会缺一块。
 bool get _nativeWindowCaptureSupported => Platform.isIOS || Platform.isAndroid;
 
+/// 原生侧按 `maxSide` 在合成时就缩到上限内再编码（Android），不把全分辨率
+/// PNG 经通道传过来再由 Dart 解码缩放；iOS 忽略该参数，由
+/// [fitFeedbackScreenshotPng] 兜底缩放。
 Future<Uint8List?> _invokeNativeWindowCapture() =>
-    FloatingBallChannel.channel.invokeMethod<Uint8List>('captureScreen');
+    FloatingBallChannel.channel.invokeMethod<Uint8List>(
+      'captureScreen',
+      nativeWindowCaptureArguments(),
+    );
+
+/// `captureScreen` 的通道参数：输出长边上限。
+@visibleForTesting
+Map<String, Object> nativeWindowCaptureArguments({
+  int maxSide = kFeedbackScreenshotMaxSide,
+}) => <String, Object>{'maxSide': maxSide};
 
 /// 截当前画面为 PNG（长边 ≤ [kFeedbackScreenshotMaxSide]、体积 ≤ 服务端单张上限）。
 ///
@@ -66,7 +78,10 @@ Future<Uint8List?> captureFeedbackScreenshot() => captureFeedbackScreenshotWith(
   awaitFrame: _awaitOverlayHiddenFrame,
 );
 
-/// 让「藏球」这一帧真正画出来再截（与悬浮球 iOS 截屏 OCR 同一做法）。
+/// 让「藏球」这一帧的 Dart 帧提交完再发原生快照（与悬浮球 iOS 截屏 OCR 同一做法）。
+/// 这只保证 Dart 帧提交；Android Hybrid Composition 下 Flutter 画面还要等主线程
+/// 重画一次窗口才进窗口缓冲区——那一步由原生侧（`AppWindowSnapshot` 先让窗口
+/// 重画、画完再 PixelCopy）负责，不在这里多等几帧去凑。
 Future<void> _awaitOverlayHiddenFrame() async {
   SchedulerBinding.instance.scheduleFrame();
   await SchedulerBinding.instance.endOfFrame;

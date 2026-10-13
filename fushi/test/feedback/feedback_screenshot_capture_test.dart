@@ -157,7 +157,14 @@ void main() {
         'Platform.isIOS || Platform.isAndroid;',
       ),
     );
-    expect(diag, contains("invokeMethod<Uint8List>('captureScreen')"));
+    expect(
+      RegExp(
+        r"invokeMethod<Uint8List>\(\s*'captureScreen',\s*"
+        r'nativeWindowCaptureArguments\(\),?\s*\)',
+      ).hasMatch(diag),
+      isTrue,
+      reason: '反馈截图要把长边上限传给原生，原生侧缩好再编码',
+    );
     final String host = File(
       'lib/src/floating_ball/app_floating_ball_host.dart',
     ).readAsStringSync();
@@ -167,7 +174,12 @@ void main() {
       'android/app/src/main/java/app/fushi/reader/FloatingBallChannel.java',
     ).readAsStringSync();
     expect(android, contains('case "captureScreen":'));
-    expect(android, contains('AppWindowSnapshot.capture(context, result)'));
+    expect(
+      android,
+      contains(
+        'AppWindowSnapshot.capture(context, call.argument("maxSide"), result)',
+      ),
+    );
     final String ios = File(
       'ios/Runner/FushiFloatingBall.swift',
     ).readAsStringSync();
@@ -176,5 +188,77 @@ void main() {
       ios,
       contains('drawHierarchy(in: bounds, afterScreenUpdates: true)'),
     );
+  });
+
+  test('通道参数：把长边上限交给原生，原生合成时就缩好', () {
+    expect(nativeWindowCaptureArguments(), <String, Object>{
+      'maxSide': kFeedbackScreenshotMaxSide,
+    });
+    expect(nativeWindowCaptureArguments(maxSide: 800), <String, Object>{
+      'maxSide': 800,
+    });
+  });
+
+  group('AppWindowSnapshot.java（PR #2095 审查）', () {
+    final String snapshot = File(
+      'android/app/src/main/java/app/fushi/reader/AppWindowSnapshot.java',
+    ).readAsStringSync();
+
+    test('每一处位图分配都接住 OutOfMemoryError，回 CAPTURE_FAILED 而不是崩', () {
+      // 通道外层只 catch RuntimeException；OOM 是 Error，漏接 = 低端机点「反馈」闪退。
+      expect(
+        RegExp(r'Bitmap\.createBitmap\(').allMatches(snapshot).length,
+        3,
+        reason: '新增分配点要同步补 OOM 处理并更新这里',
+      );
+      expect(
+        RegExp(
+          r'session = new Session\(window, decor, maxSide, result\);\s*'
+          r'\}\s*catch \(OutOfMemoryError e\)',
+        ).hasMatch(snapshot),
+        isTrue,
+        reason: '整窗位图在 Session 构造里分配',
+      );
+      expect(
+        RegExp(
+          r'bitmap = Bitmap\.createBitmap\([^;]*\);\s*'
+          r'\}\s*catch \(OutOfMemoryError e\)',
+        ).hasMatch(snapshot),
+        isTrue,
+        reason: 'requestSurface 里每个 SurfaceView 的位图',
+      );
+      expect(
+        snapshot,
+        contains('catch (RuntimeException | OutOfMemoryError e)'),
+        reason: '合成输出图',
+      );
+    });
+
+    test('先让窗口真正重画一次再 PixelCopy（HC 下 FlutterImageView 才进缓冲区）', () {
+      expect(
+        snapshot,
+        contains('getViewTreeObserver().addOnDrawListener(this)'),
+      );
+      expect(snapshot, contains('decor.invalidate();'));
+      expect(
+        snapshot,
+        contains('new RedrawThenCapture(decor, result, () -> startSession('),
+      );
+      expect(
+        RegExp(r'startSession\(').allMatches(snapshot).length,
+        2,
+        reason: '只有重画回调一个调用点（另一处是定义）',
+      );
+      expect(
+        snapshot,
+        contains('public void onViewDetachedFromWindow'),
+        reason: '重画前窗口被拆也要回调 result，不能让 Dart 永远等',
+      );
+    });
+
+    test('合成时按 maxSide 缩放，不传全分辨率 PNG 过通道', () {
+      expect(snapshot, contains('scaledSize(width, height, maxSide)'));
+      expect(snapshot, contains('canvas.scale('));
+    });
   });
 }
