@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -179,6 +180,97 @@ void main() {
         isFalse,
       );
       expect(isLuaSubtitleMirrorTrack(SubtitleTrack.no()), isFalse);
+    });
+  });
+
+  // BUG-3325 审查：`sub-add … select` 后按 track-list 末尾认 id，TS / 网络流中途动态
+  // 加流时认不回来，孤儿镜像轨越积越多；改为认当前选中的主字幕轨。
+  group('resolveLuaSubtitleMirrorTrackId', () {
+    test('当前选中轨就是镜像：记下它的 id', () {
+      expect(
+        resolveLuaSubtitleMirrorTrackId(
+          selectedId: '7',
+          selectedTitle: kLuaSubtitleMirrorTrackTitle,
+        ),
+        '7',
+      );
+    });
+
+    test('选中的是别的轨（例如中途追加的 DVB 轨被选中）：不记', () {
+      expect(
+        resolveLuaSubtitleMirrorTrackId(
+          selectedId: '9',
+          selectedTitle: 'DVB subtitle',
+        ),
+        isNull,
+      );
+      expect(
+        resolveLuaSubtitleMirrorTrackId(selectedId: '9', selectedTitle: ''),
+        isNull,
+      );
+    });
+
+    test('属性不可用 / 没有选中轨：不记', () {
+      expect(
+        resolveLuaSubtitleMirrorTrackId(
+          selectedId: '',
+          selectedTitle: kLuaSubtitleMirrorTrackTitle,
+        ),
+        isNull,
+      );
+      expect(
+        resolveLuaSubtitleMirrorTrackId(
+          selectedId: 'no',
+          selectedTitle: kLuaSubtitleMirrorTrackTitle,
+        ),
+        isNull,
+      );
+    });
+  });
+
+  // BUG-3325 审查：写盘与 dispose / 换 Player 交错会把镜像 SRT 留在临时目录。
+  group('discardLuaSubtitleMirrorFile', () {
+    late Directory dir;
+
+    setUp(() {
+      dir = Directory.systemTemp.createTempSync('lua_mirror_discard_test_');
+    });
+
+    tearDown(() {
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+
+    test('删除文件', () async {
+      final File file = File(p.join(dir.path, 'm.srt'))
+        ..writeAsStringSync('1\n');
+      await discardLuaSubtitleMirrorFile(file);
+      expect(file.existsSync(), isFalse);
+    });
+
+    test('等 after（Player 释放）完成后才删', () async {
+      final File file = File(p.join(dir.path, 'm.srt'))
+        ..writeAsStringSync('1\n');
+      final Completer<void> released = Completer<void>();
+      final Future<void> discarding = discardLuaSubtitleMirrorFile(
+        file,
+        after: released.future,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(file.existsSync(), isTrue, reason: 'libmpv 还持有句柄时不能先删');
+      released.complete();
+      await discarding;
+      expect(file.existsSync(), isFalse);
+    });
+
+    test('after 失败也照删；文件已不存在不抛', () async {
+      final File file = File(p.join(dir.path, 'm.srt'))
+        ..writeAsStringSync('1\n');
+      await discardLuaSubtitleMirrorFile(
+        file,
+        after: Future<void>.error(StateError('dispose failed')),
+      );
+      expect(file.existsSync(), isFalse);
+      await discardLuaSubtitleMirrorFile(file);
     });
   });
 

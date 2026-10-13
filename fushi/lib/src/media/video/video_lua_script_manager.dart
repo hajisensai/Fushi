@@ -19,8 +19,10 @@ export 'package:fushi/src/media/video/video_lua_capability.dart';
 /// `scripts` 选项是 init-only，media_kit 建 handle 后经 setProperty 写它是静默
 /// no-op。与 [applyShadersToPlayer]（video_shader_manager.dart）同一条
 /// `NativePlayer.command` 边界。**命令可达 ≠ 脚本能跑**：随包 libmpv 有没有编
-/// Lua 是按平台固定的二进制事实（[MpvLuaCapability]，Windows 有、Android 实测
-/// `-Dlua=disabled` 没有），没编时 `load-script` 照样返回成功、然后什么都不发生。
+/// Lua 是按平台固定的二进制事实（[MpvLuaCapability]；Android 实测 `-Dlua=disabled`
+/// 没有，Windows 随包的 `fushi-discnav1` 系 libmpv 由 `tool/bluray/build_libmpv.ps1`
+/// 以 `-Dlua=disabled` 构建、同样没有），没编时 `load-script` 照样返回成功、然后什么
+/// 都不发生。
 /// 能力由 [VideoPlayerController] 建 Player 后读 `mpv-configuration` 探测并落
 /// pref，设置页据此如实说明；不按平台名硬编码。
 ///
@@ -199,6 +201,45 @@ const String kLuaSubtitleMirrorTrackTitle = 'fushi-lua-subtitle-mirror';
 /// [track] 是否是 Fushi 给 Lua 脚本挂的字幕镜像轨（不是用户的字幕源）。纯函数。
 bool isLuaSubtitleMirrorTrack(SubtitleTrack track) =>
     track.title == kLuaSubtitleMirrorTrackTitle;
+
+/// `sub-add <srt> select <标题>` 之后，从 libmpv 当前主字幕轨
+/// （`current-tracks/sub/id` / `current-tracks/sub/title`）认回镜像轨 id。纯函数。
+///
+/// 只认当前选中轨、不按 `track-list` 末尾认：TS / 网络流会在播放中途动态追加轨，
+/// 末尾那条未必是刚挂的镜像。标题对不上（选中被别处改掉）或属性不可用（读到空串）
+/// 时返回 null——宁可不记，也不能把用户的真实轨记成镜像拿去 `sub-remove`。
+String? resolveLuaSubtitleMirrorTrackId({
+  required String selectedId,
+  required String selectedTitle,
+}) {
+  final String id = selectedId.trim();
+  if (selectedTitle != kLuaSubtitleMirrorTrackTitle) return null;
+  if (id.isEmpty || id == 'no' || id == 'auto') return null;
+  return id;
+}
+
+/// 删除一份字幕镜像 SRT（`systemTemp/fushi_lua_subtitle_mirror` 下的临时文件）。
+///
+/// [after] 非 null 时先等它完成再删——典型是 libmpv Player 的释放：Windows 上仍被
+/// mpv 打开的文件删不掉。[after] 自身失败不影响删除（释放失败由它自己的调用方报告）。
+/// 文件已不存在 / 删不掉不算错误：临时目录里的残留无害，调用方也做不了更多。
+Future<void> discardLuaSubtitleMirrorFile(
+  File file, {
+  Future<void>? after,
+}) async {
+  if (after != null) {
+    try {
+      await after;
+    } catch (_) {
+      // 释放失败照样删文件。
+    }
+  }
+  try {
+    await file.delete();
+  } on FileSystemException {
+    // 已被清理 / 仍被占用：临时目录里的残留无害。
+  }
+}
 
 /// 字幕镜像该不该挂：装了脚本、主字幕是 Dart 侧文本 cue（非图形轨 / 非 libmpv
 /// 解码回流——后两者 libmpv 已有真实 `sid`，脚本本就读得到）、且不在蓝光导航会话

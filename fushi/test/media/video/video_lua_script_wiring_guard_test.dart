@@ -160,6 +160,57 @@ void main() {
           reason: '镜像轨若再叠 sub-delay，脚本看到的句尾会偏两倍',
         );
       });
+
+      // BUG-3325 审查①：TS / 网络流中途动态加流时 track-list 末尾未必是刚挂的镜像，
+      // 认不回 id 就摘不掉它，每次同步再挂一条，孤儿轨越积越多。
+      test('sub-add select 后从当前选中轨认回镜像 id，不按 track-list 末尾认', () {
+        final String fn = body('Future<void> _syncLuaSubtitleMirror() async {');
+        final int add = fn.indexOf("'sub-add',");
+        final int read = fn.indexOf("_getMpvProperty('current-tracks/sub/id')");
+        expect(add, greaterThan(0));
+        expect(read, greaterThan(add));
+        expect(
+          fn.indexOf('resolveLuaSubtitleMirrorTrackId('),
+          greaterThan(read),
+        );
+        expect(fn, isNot(contains('track-list/count')));
+        expect(fn, isNot(contains(r'track-list/$')));
+      });
+
+      // BUG-3325 审查②：写盘中途 dispose / 换 Player，写出的 SRT 不能再挂回控制器
+      // （那时已没人删它），换 Player 时旧镜像 SRT 也要删。
+      test('写盘后 load 已失效就当场删掉，不挂回 _luaSubtitleMirrorFile', () {
+        final String fn = body('Future<File?> _writeLuaSubtitleMirrorFile(');
+        final int write = fn.indexOf('await file.writeAsString(');
+        final int check = fn.indexOf(
+          'if (!_isCurrentLoad(player, loadToken)) {',
+          write,
+        );
+        final int adopt = fn.indexOf('_luaSubtitleMirrorFile = file;');
+        expect(write, greaterThan(0));
+        expect(check, greaterThan(write));
+        expect(adopt, greaterThan(check));
+        expect(
+          fn.substring(check, adopt),
+          contains('discardLuaSubtitleMirrorFile(file)'),
+        );
+      });
+
+      test('dispose 与 _releaseMediaHandles 都删旧镜像 SRT（等 Player 释放后）', () {
+        expect(
+          body('  void dispose() {'),
+          contains('_deleteLuaSubtitleMirrorFile(after: nativeDisposal);'),
+        );
+        final String release = body('Future<void> _releaseMediaHandles()');
+        final int take = release.indexOf('_takeLuaSubtitleMirrorFile();');
+        final int dispose = release.indexOf('await player.dispose();');
+        final int discard = release.indexOf(
+          'discardLuaSubtitleMirrorFile(staleMirror)',
+        );
+        expect(take, greaterThan(0), reason: '换 Player 不删旧镜像 SRT 会留在临时目录');
+        expect(dispose, greaterThan(take), reason: '先摘所有权，免得误删新 Player 的镜像');
+        expect(discard, greaterThan(dispose), reason: 'libmpv 放掉句柄前删不掉');
+      });
     });
   });
 

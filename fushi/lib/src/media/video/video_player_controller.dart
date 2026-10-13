@@ -2688,7 +2688,12 @@ class VideoPlayerController extends ChangeNotifier
     if (!_luaSubtitleMirrorWanted) return;
     final String srt = buildLuaSubtitleMirrorSrt(_cues, delayMs: _delayMs);
     if (srt.isEmpty) return;
-    final File file = await _writeLuaSubtitleMirrorFile(srt);
+    final File? file = await _writeLuaSubtitleMirrorFile(
+      srt,
+      player,
+      loadToken,
+    );
+    if (file == null) return;
     if (!_isCurrentLoad(player, loadToken) || !_luaSubtitleMirrorWanted) return;
     // 先确保不画再选轨：离开图形轨时 `sub-visibility` 可能还是 yes，顺序反过来
     // libmpv 会把镜像字幕画进画面，与 overlay 叠成两条。`sub-delay` 同理复位成 0
@@ -2710,21 +2715,32 @@ class VideoPlayerController extends ChangeNotifier
       return;
     }
     if (!_isCurrentLoad(player, loadToken)) return;
-    // `sub-add` 把新轨追加到 track-list 末尾：从末尾认回它的 id，标题对上才记。
-    final int count =
-        int.tryParse(await _getMpvProperty('track-list/count')) ?? 0;
-    if (count <= 0) return;
-    final int last = count - 1;
-    final String title = await _getMpvProperty('track-list/$last/title');
-    final String id = await _getMpvProperty('track-list/$last/id');
+    // `select` 让新轨成为当前主字幕轨：从 `current-tracks/sub` 认回它的 id，标题对上
+    // 才记。不能按 track-list 末尾认——TS / 网络流中途动态加流时末尾可能已是别的轨，
+    // id 记不下来，下次同步就摘不掉它、又挂一条新的，孤儿镜像轨越积越多。
+    final String id = await _getMpvProperty('current-tracks/sub/id');
+    final String title = await _getMpvProperty('current-tracks/sub/title');
     if (!_isCurrentLoad(player, loadToken)) return;
-    if (title == kLuaSubtitleMirrorTrackTitle && id.isNotEmpty) {
-      _luaSubtitleMirrorTrackId = id;
-      _luaSubtitleMirrorLoadToken = loadToken;
-    }
+    final String? mirrorId = resolveLuaSubtitleMirrorTrackId(
+      selectedId: id,
+      selectedTitle: title,
+    );
+    if (mirrorId == null) return;
+    _luaSubtitleMirrorTrackId = mirrorId;
+    _luaSubtitleMirrorLoadToken = loadToken;
   }
 
-  Future<File> _writeLuaSubtitleMirrorFile(String srt) async {
+  /// 写出一份新的镜像 SRT，成为 [_luaSubtitleMirrorFile]（旧的一份随之删除）。
+  ///
+  /// 写盘期间可能已 dispose / 换 Player / 换片（[_isCurrentLoad] 失效）：dispose 与
+  /// [_releaseMediaHandles] 已经把那时的镜像文件收走删掉，这份新文件若再挂上去就再也
+  /// 没人删，留在 `systemTemp/fushi_lua_subtitle_mirror`。所以失效时当场删掉、返回
+  /// null；写盘本身失败也删掉半成品再抛出。
+  Future<File?> _writeLuaSubtitleMirrorFile(
+    String srt,
+    Player player,
+    int loadToken,
+  ) async {
     final Directory dir = Directory(
       p.join(Directory.systemTemp.path, 'fushi_lua_subtitle_mirror'),
     );
@@ -2735,24 +2751,33 @@ class VideoPlayerController extends ChangeNotifier
         '${identityHashCode(this)}_${_luaSubtitleMirrorFileSeq++}.srt',
       ),
     );
-    await file.writeAsString(srt, flush: true);
+    try {
+      await file.writeAsString(srt, flush: true);
+    } catch (_) {
+      unawaited(discardLuaSubtitleMirrorFile(file));
+      rethrow;
+    }
+    if (!_isCurrentLoad(player, loadToken)) {
+      unawaited(discardLuaSubtitleMirrorFile(file));
+      return null;
+    }
     _deleteLuaSubtitleMirrorFile();
     _luaSubtitleMirrorFile = file;
     return file;
   }
 
-  void _deleteLuaSubtitleMirrorFile() {
-    final File? previous = _luaSubtitleMirrorFile;
+  /// 摘下当前镜像 SRT 的所有权：之后它与本控制器无关，由调用方负责删。
+  File? _takeLuaSubtitleMirrorFile() {
+    final File? file = _luaSubtitleMirrorFile;
     _luaSubtitleMirrorFile = null;
-    if (previous == null) return;
-    unawaited(
-      previous.delete().then<void>(
-        (_) {},
-        onError: (Object _) {
-          // mpv 仍持有 / 已被清理：临时目录里的残留无害。
-        },
-      ),
-    );
+    return file;
+  }
+
+  /// 删掉当前镜像 SRT；[after] 见 [discardLuaSubtitleMirrorFile]。
+  void _deleteLuaSubtitleMirrorFile({Future<void>? after}) {
+    final File? file = _takeLuaSubtitleMirrorFile();
+    if (file == null) return;
+    unawaited(discardLuaSubtitleMirrorFile(file, after: after));
   }
 
   /// 把 libmpv 经客户端 API 推来的一行日志转写进诊断时间轴（2026-09-22）。
@@ -5945,10 +5970,12 @@ class VideoPlayerController extends ChangeNotifier
     // 已先经 [_releaseMediaHandles] 放掉句柄并置 null，这里是 no-op）。但释放
     // 的 Future 要留着：下一个控制器建 Player 前先等它（见 [_pendingNativeDisposal]）。
     final Player? disposing = _player;
+    Future<void>? nativeDisposal;
     if (disposing != null) {
-      _pendingNativeDisposal = disposing.dispose().catchError((Object e) {
+      nativeDisposal = disposing.dispose().catchError((Object e) {
         debugPrint('[video-dispose] native player dispose failed: $e');
       });
+      _pendingNativeDisposal = nativeDisposal;
     }
     _player = null;
     _videoController = null;
@@ -5956,7 +5983,9 @@ class VideoPlayerController extends ChangeNotifier
     // 复位是为了不让任何迟到的回调借着旧证据放行）。
     _mediaOpened = false;
     _resetLuaScriptState(); // 与 [_releaseMediaHandles] 一致，防复用残留。
-    _deleteLuaSubtitleMirrorFile();
+    // 镜像 SRT 随 Player 作废：等 libmpv 放掉句柄再删（Windows 上仍被 mpv 打开的文件
+    // 删不掉）。写盘中途的同步看到 [_isCurrentLoad] 失效会自己删掉它写出的那份。
+    _deleteLuaSubtitleMirrorFile(after: nativeDisposal);
     luaScriptStates.dispose();
     _graphicRegionTrack.dispose();
     networkReadBytesPerSecond.dispose();
@@ -6012,9 +6041,15 @@ class VideoPlayerController extends ChangeNotifier
     unawaited(_errorSub?.cancel()); // 错误订阅与 Player 同作用域。
     _errorSub = null;
     _resetLuaScriptState(); // 新 Player 必须重新 load-script（见字段注释）。
+    // 旧 Player 的镜像轨随它消失，镜像 SRT 也一起作废。先摘下所有权（释放期间可能已
+    // 建好新 Player、写出新镜像，不能误删那份），等 libmpv 放掉句柄后再删。
+    final File? staleMirror = _takeLuaSubtitleMirrorFile();
     try {
       await player.dispose();
     } finally {
+      if (staleMirror != null) {
+        unawaited(discardLuaSubtitleMirrorFile(staleMirror));
+      }
       await closingAacs;
     }
   }
