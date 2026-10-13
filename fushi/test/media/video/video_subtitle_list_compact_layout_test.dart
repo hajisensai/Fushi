@@ -122,6 +122,39 @@ void main() {
     );
   });
 
+  testWidgets('时间戳列宽变了（<1h → ≥1h 视频）同文本也要重量行高', (tester) async {
+    // 行高缓存跨面板、跨视频共享；正文可用宽 = 行宽 − 时间戳列宽 − …，而时间戳列宽
+    // 随「这条轨有没有小时级时间戳」变。两个视频的台词文本完全相同、只差时间戳列宽，
+    // 旧签名（不含列宽）会把短视频量出的行高原样套给长视频——itemExtentBuilder 是
+    // 硬约束，正文按更窄的宽度换行却拿着旧行高，被截断。
+    final VideoPlayerController short = VideoPlayerController();
+    addTearDown(short.dispose);
+    short.setCues(<AudioCue>[for (int i = 0; i < 20; i++) _cue(i)]);
+    await tester.pumpWidget(_host(short, show: true));
+    await tester.pump();
+    final int before = videoSubtitleRowExtentCache.measurements;
+    expect(before, greaterThan(0));
+
+    final VideoPlayerController long = VideoPlayerController();
+    addTearDown(long.dispose);
+    long.setCues(<AudioCue>[
+      for (int i = 0; i < 20; i++) _cue(i),
+      // 文本与上面某句相同（不引入新缓存键），只把轨拉过 1 小时、时间戳换宽列。
+      _cue(19)
+        ..sentenceIndex = 20
+        ..startMs = 3600 * 1000
+        ..endMs = 3600 * 1000 + 2500,
+    ]);
+    await tester.pumpWidget(_host(short, show: false));
+    await tester.pumpWidget(_host(long, show: true));
+    await tester.pump();
+    expect(
+      videoSubtitleRowExtentCache.measurements,
+      greaterThan(before),
+      reason: '时间戳列从窄列换成宽列，正文可用宽变了，旧行高不能再用',
+    );
+  });
+
   testWidgets('紧凑几何：行卡几乎贴满面板（Lgp-nUrh6V）', (tester) async {
     final VideoPlayerController c = VideoPlayerController();
     addTearDown(c.dispose);

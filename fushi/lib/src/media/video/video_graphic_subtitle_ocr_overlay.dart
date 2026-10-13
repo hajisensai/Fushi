@@ -42,16 +42,21 @@ bool graphicSubtitlePauseOcrStatusAutoHides(
 ///   [ocrWithoutSubtitleTrack] 且**当前没有任何文本字幕 cue**（也不在加载中）时识别——
 ///   有文本轨的视频本来就能点字幕查词，整帧 OCR 只会把招牌 / 片名之类的字也铺成
 ///   可点区域，与字幕查词抢点击。
+/// - 「任何文本字幕」= 主字幕 **或** 副字幕：BUG-1592 支持「主字幕关、只开副字幕」，
+///   此时主 cue 为空而副 cue 非空。OCR 层挂在文本字幕层之上，若这时也整帧识别，
+///   铺出的可点区域会盖住副字幕，点副字幕走 OCR 回调、拿不到 cue，制卡丢锚点。
 bool graphicSubtitlePauseOcrEligible({
   required bool playing,
   required bool hasFirstFrame,
   required bool playerRenderedSubtitle,
   required bool ocrWithoutSubtitleTrack,
-  required bool hasTextCues,
+  required bool hasPrimaryTextCues,
+  required bool hasSecondaryTextCues,
   required bool textCuesLoading,
 }) {
   if (playing || !hasFirstFrame) return false;
   if (playerRenderedSubtitle) return true;
+  final bool hasTextCues = hasPrimaryTextCues || hasSecondaryTextCues;
   return ocrWithoutSubtitleTrack && !hasTextCues && !textCuesLoading;
 }
 
@@ -169,7 +174,10 @@ class _VideoGraphicSubtitleOcrOverlayState
       hasFirstFrame: c.hasFirstFrame,
       playerRenderedSubtitle: c.isPlayerRenderedSubtitleActive,
       ocrWithoutSubtitleTrack: widget.ocrWithoutSubtitleTrack,
-      hasTextCues: c.cues.isNotEmpty,
+      hasPrimaryTextCues: c.cues.isNotEmpty,
+      hasSecondaryTextCues: c.secondaryCues.isNotEmpty,
+      // 副字幕没有独立的加载态（由页面一次性 setSecondaryCues），只有内封主字幕的
+      // 后台抽取有加载窗口。
       textCuesLoading: c.isSubtitleCuesLoading,
     );
     if (!eligible) return null;

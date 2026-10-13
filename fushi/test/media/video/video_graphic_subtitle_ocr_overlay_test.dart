@@ -31,6 +31,16 @@ VideoPlayerController _pausedController({required bool graphic}) {
   return c;
 }
 
+AudioCue _textCue(String text) => AudioCue()
+  ..bookKey = ''
+  ..chapterHref = ''
+  ..sentenceIndex = 0
+  ..textFragmentId = ''
+  ..text = text
+  ..startMs = 4000
+  ..endMs = 7000
+  ..audioFileIndex = 0;
+
 Future<MangaStreamOcrSetup> _noPrepare(String _) =>
     throw StateError('recognizeFrame is injected; prepare must not run');
 
@@ -131,22 +141,39 @@ void main() {
   testWidgets('开关开着但有文本字幕 cue：不识别（不与字幕查词抢点击）', (tester) async {
     final VideoPlayerController c = _pausedController(graphic: false);
     addTearDown(c.dispose);
-    c.setCues(<AudioCue>[
-      AudioCue()
-        ..bookKey = ''
-        ..chapterHref = ''
-        ..sentenceIndex = 0
-        ..textFragmentId = ''
-        ..text = 'テキスト字幕'
-        ..startMs = 4000
-        ..endMs = 7000
-        ..audioFileIndex = 0,
-    ]);
+    c.setCues(<AudioCue>[_textCue('テキスト字幕')]);
     final _Probe probe = _Probe();
     await tester.pumpWidget(_overlay(c, probe, ocrWithoutSubtitleTrack: true));
     await tester.pump(kGraphicSubtitleOcrSettleDelay * 2);
     expect(probe.captures, 0);
     expect(_hitBoxes, findsNothing);
+  });
+
+  testWidgets('开关开着、主字幕关只开副字幕：不识别（BUG-1592 副字幕查词不被 OCR 盖住）', (tester) async {
+    final VideoPlayerController c = _pausedController(graphic: false);
+    addTearDown(c.dispose);
+    c.setSecondaryCues(<AudioCue>[_textCue('副字幕テキスト')]);
+    expect(c.cues, isEmpty, reason: '前提：主字幕关着');
+    final _Probe probe = _Probe();
+    await tester.pumpWidget(_overlay(c, probe, ocrWithoutSubtitleTrack: true));
+    await tester.pump(kGraphicSubtitleOcrSettleDelay * 2);
+    expect(probe.captures, 0);
+    expect(_hitBoxes, findsNothing);
+  });
+
+  testWidgets('已识别出可点区域后再开副字幕：OCR 结果立即撤掉', (tester) async {
+    final VideoPlayerController c = _pausedController(graphic: false);
+    addTearDown(c.dispose);
+    final _Probe probe = _Probe();
+    await tester.pumpWidget(_overlay(c, probe, ocrWithoutSubtitleTrack: true));
+    await tester.pump(kGraphicSubtitleOcrSettleDelay);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(_hitBoxes, findsNWidgets(_frame.chars.length));
+
+    c.setSecondaryCues(<AudioCue>[_textCue('副字幕テキスト')]);
+    await tester.pump();
+    expect(_hitBoxes, findsNothing, reason: '副字幕出现后不能再有整帧 OCR 区域压在它上面');
+    await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
   });
 
   group('graphicSubtitlePauseOcrEligible', () {
@@ -156,13 +183,15 @@ void main() {
       bool graphic = false,
       bool toggle = false,
       bool cues = false,
+      bool secondaryCues = false,
       bool loading = false,
     }) => graphicSubtitlePauseOcrEligible(
       playing: playing,
       hasFirstFrame: hasFirstFrame,
       playerRenderedSubtitle: graphic,
       ocrWithoutSubtitleTrack: toggle,
-      hasTextCues: cues,
+      hasPrimaryTextCues: cues,
+      hasSecondaryTextCues: secondaryCues,
       textCuesLoading: loading,
     );
 
@@ -176,6 +205,12 @@ void main() {
       expect(eligible(), isFalse);
       expect(eligible(toggle: true), isTrue);
       expect(eligible(toggle: true, cues: true), isFalse);
+      expect(
+        eligible(toggle: true, secondaryCues: true),
+        isFalse,
+        reason: '只开副字幕（BUG-1592）也算有文本字幕',
+      );
+      expect(eligible(toggle: true, cues: true, secondaryCues: true), isFalse);
       expect(eligible(toggle: true, loading: true), isFalse);
       expect(eligible(toggle: true, playing: true), isFalse);
     });

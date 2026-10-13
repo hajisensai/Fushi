@@ -1126,7 +1126,7 @@ SettingsDestination buildVideoDestination() {
             id: 'video.subtitle.pause_ocr_without_track',
             title: t.video_setting_pause_ocr_hard_subtitle,
             subtitle: t.video_setting_pause_ocr_hard_subtitle_hint,
-            icon: Icons.document_scanner_outlined,
+            icon: FushiIcons.ocr,
             video: VideoPlacement(
               group: VideoGroup.subtitle,
               order: 58,

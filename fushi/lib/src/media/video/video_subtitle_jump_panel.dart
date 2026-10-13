@@ -285,12 +285,18 @@ const double _kM3eRowOuterRadius = _kM3ePanelRadius - _kM3eListPaddingH;
 const double _kM3eRowInnerRadius = 6;
 
 /// 字幕列表行高的排版环境签名：这几项任一变化，同一句的行高就可能变。
+///
+/// [timestampColumnWidth] 必须在内：正文可用宽 = 行宽 − 时间戳列宽 − …，而时间戳列宽
+/// 随「这条轨有没有小时级时间戳」变（窄列 / 宽列，TODO-1200）。缓存跨面板、跨视频
+/// 共享，同一句台词在 <1h 与 ≥1h 的视频里按不同正文宽换行；签名漏了它就会复用错宽度
+/// 量出的行高，`itemExtentBuilder` 又是硬约束——行被截断或多出空白。
 typedef VideoSubtitleRowLayoutSignature = ({
   double width,
   double fontSize,
   TextScaler scaler,
   String? fontFamily,
   TextDirection direction,
+  double timestampColumnWidth,
 });
 
 /// 字幕列表行高测量缓存，**跨面板实例共享**（反馈 C9uvk6cMxF：字幕栏「打开就很卡」）。
@@ -789,14 +795,15 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// 宽度、字号或 textScaler 变化时整体作废——`SliverVariedExtentList` 每次布局都要遍历
   /// 全部条目累加 maxScrollExtent，没有缓存会把 TextPainter 跑进每一帧。
   double _rowExtentForCue(AudioCue cue, double rowWidth, {required bool bold}) {
-    // 排版环境签名：宽度 / 字号 / textScaler / 字体 / 书写方向任一变化，旧行高全部
-    // 作废（M3E / 经典两种行几何靠 key 前缀区分，可以并存）。
+    // 排版环境签名：宽度 / 字号 / textScaler / 字体 / 书写方向 / 时间戳列宽任一
+    // 变化，旧行高全部作废（M3E / 经典两种行几何靠 key 前缀区分，可以并存）。
     _rowExtentCache.bind((
       width: rowWidth,
       fontSize: _effectiveFontSize,
       scaler: _textScaler,
       fontFamily: widget.fontFamily,
       direction: _textDirection,
+      timestampColumnWidth: _timestampColumnWidth,
     ));
     // M3E：收藏行在时间戳胶囊下多一颗星，行高可能变高——收藏态进缓存键。
     final bool favorited = _m3e && widget.isCueFavorited(cue);
