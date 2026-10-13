@@ -6579,6 +6579,9 @@ function layoutMasonry(targetBodies) {
     const gap = masonryGap();
     const plans = [];
     (targetBodies || masonryBodies()).forEach(body => {
+        // BUG-3274：浏览器跳过渲染的屏外词条不铺——读它的几何会强制把整棵子树排版。
+        // 滚进视口时 __fushiOnLazyEntryVisibility 会补铺。
+        if (__fushiBodyRenderSkipped(body)) return;
         const items = [...body.children].filter(c => c.classList.contains('glossary-group'));
         // 经典单列（设置=1）或该词条无词典卡：不做 masonry，清 inline 回落 CSS
         //（block 纵向堆叠 + CSS margin-top / 空容器）。
@@ -6658,6 +6661,52 @@ function layoutMasonry(targetBodies) {
         for (let i = 0; i < cols; i++) heights[i] -= lastGaps[i];
         setStyleIfChanged(body, 'height', `${Math.max(...heights)}px`);
     });
+}
+
+// BUG-3274：查词结果的尾批词条交给浏览器按需渲染（`content-visibility: auto`）。
+// 实测 38 本词典查「トランクルーム」：10 个词头 2.1MB 释义建出约 3.9 万个节点、内容高约
+// 4 万 px，而弹窗一屏只露 700px。旧实现每追加一块词典卡就合帧铺一次 masonry，相 1/相 3
+// 的几何读会把**整页**未排版的新内容同步排一遍——4 倍降速（≈平板）下尾批 4.2 秒、单帧
+// 最长 600ms，用户看到的就是「查出来要好几秒、滑动成块卡顿、卡片来回跳」。
+// 屏外词条被浏览器跳过样式 / 布局 / 绘制；masonry 只铺渲染中的词条（几何读不会再强制
+// 排版屏外子树），词条滚进视口（contentvisibilityautostatechange skipped=false）时在
+// 同一个渲染更新里就地铺好，不露一帧行对齐 grid。不支持该事件的引擎（旧 WebKit）不加
+// 这个类，行为与旧版完全一致。首词条永不延迟：它是同步 reveal 路径。
+const __fushiLazyEntriesSupported = (() => {
+    try {
+        return typeof window !== 'undefined'
+            && 'oncontentvisibilityautostatechange' in window
+            && typeof CSS !== 'undefined' && typeof CSS.supports === 'function'
+            && CSS.supports('content-visibility', 'auto');
+    } catch (_) {
+        return false;
+    }
+})();
+
+function __fushiOnLazyEntryVisibility(ev) {
+    const entryEl = ev.currentTarget;
+    if (!entryEl) return;
+    entryEl.__fushiRenderSkipped = !!ev.skipped;
+    if (ev.skipped || !entryEl.isConnected) return;
+    const bodies = [...entryEl.querySelectorAll('.glossary-section > .category-body')];
+    if (bodies.length) layoutMasonry(bodies);
+    // 词条从 contain-intrinsic-size 的预估高度换成了真实高度：结果不满一屏时宿主是按
+    // 内容高度给弹窗定尺的，不复报就会按预估高度留白。尾批在途时由收尾那一发统一报。
+    if (!window._renderInProgress) _reportPopupHeight();
+}
+
+// [entryEl] 交给浏览器按需渲染。初始视为「被跳过」：首次渲染判定前 masonry 不碰它，
+// 否则几何读会强制把它整个排版，延迟就白做了。判定为可见时事件立即把它铺好。
+function __fushiMarkLazyEntry(entryEl) {
+    if (!__fushiLazyEntriesSupported || !entryEl || !entryEl.classList) return;
+    entryEl.classList.add('fushi-lazy-entry');
+    entryEl.__fushiRenderSkipped = true;
+    entryEl.addEventListener('contentvisibilityautostatechange', __fushiOnLazyEntryVisibility);
+}
+
+function __fushiBodyRenderSkipped(body) {
+    const entryEl = body && typeof body.closest === 'function' ? body.closest('.entry') : null;
+    return !!(entryEl && entryEl.__fushiRenderSkipped === true);
 }
 
 function observeMasonryTargets() {
@@ -6793,9 +6842,14 @@ function effectiveDictColumns() {
     const colFloor = isCoarsePointerType() ? DICT_COLUMN_MIN_WIDTH * 1.5 : DICT_COLUMN_MIN_WIDTH;
     let configured = 1;
     try {
-        configured = parseInt(
-            getComputedStyle(document.documentElement)
-                .getPropertyValue('--dict-columns'), 10) || 1;
+        // BUG-3274：宿主把 --dict-columns 写在 documentElement 的内联样式上，先读内联值；
+        // getComputedStyle 会强制整页样式重算，而 masonry 每帧都要问一次列数（尾批期间实测
+        // 占主线程 1/8）。内联没有时才回落计算样式（样式表默认值）。
+        const docStyle = document.documentElement.style;
+        const inline = docStyle && typeof docStyle.getPropertyValue === 'function'
+            ? docStyle.getPropertyValue('--dict-columns') : '';
+        configured = parseInt(inline || getComputedStyle(document.documentElement)
+            .getPropertyValue('--dict-columns'), 10) || 1;
     } catch (e) {
         configured = 1;
     }
@@ -7027,8 +7081,13 @@ window.renderPopup = function() {
         kanjiSection = null;
     }
 
-    if ((!entries || !entries.length) && !kanjiSection && window.lookupPending === true) {
+    if ((!entries || !entries.length) && !kanjiSection
+        && (window.lookupPending === true || window.lookupIdle === true)) {
         // 搜索期占位：查询还没结束，不是「没有结果」。
+        // BUG-3274：宿主推的空闲占位（热槽 seed / 换词复位，lookupIdle=true）同样不是
+        // 「没有结果」——换词时隐藏层先收到它（层未翻可见 ⇒ pending=false），旧实现画成
+        // 「未找到」留在 DOM 里，结果一慢、宿主兜底强制翻可见就露出假空态。空闲时只留
+        // 空占位盒：指示器只在 pending 为真时才会插入（见 __fushiArmPopupLoadingIndicator）。
         renderPopupLoading(container);
         window._renderedGlossaryCounts = [];
         _firePopupRendered();
@@ -7135,6 +7194,11 @@ window.renderPopup = function() {
     // 每个宏任务最多创建一个词典块。新词条的 header 与它的首块同任务建立；
     // 同词条余块逐任务追加。generation 变化立即取消旧队列。
     let nextEntryIndex = 1;
+    // BUG-3274：尾批词条按需渲染。历史页回退要把滚动位恢复到离开时的像素位置，那个值
+    // 是按真实高度量的；屏外词条若只占预估高度，恢复会落错地方——这种渲染全量排版。
+    const lazyTailEntries = __fushiLazyEntriesSupported &&
+        !(window.__fushiPendingScrollTop > 0);
+    let lazyActive = false;
     let activeEntryElement = firstEntryHasDeferredBlocks ? firstEntry : null;
     let activeEntryIndex = activeEntryElement ? 0 : -1;
     let activeEntrySeparator = null;
@@ -7214,6 +7278,14 @@ window.renderPopup = function() {
                         }
                         fragment.appendChild(element);
                         entryDomIndex[idx] = renderedDomCount++;
+                        if (lazyTailEntries && !lazyActive) {
+                            // 已有内容超过两屏才开始延迟：结果少时宿主按内容高度给弹窗
+                            // 定尺，预估占位会让它先撑大再缩回；超过两屏时弹窗本就是最大
+                            // 高度。一旦成立就不再读几何（读一次即强制排版）。
+                            lazyActive = __fushiScrollHeight() >
+                                2 * (window.innerHeight || 0);
+                        }
+                        if (lazyActive) __fushiMarkLazyEntry(element);
                         container.appendChild(fragment);
                         activeEntryElement = element;
                         activeEntryIndex = idx;

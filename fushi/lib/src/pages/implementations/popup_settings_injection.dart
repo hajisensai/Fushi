@@ -663,9 +663,15 @@ String buildPopupSettingsJs({
 /// popup.js 据此画加载指示器而不是「No results」（假空态）。**不再**按「结果是搜索期
 /// 占位单例」推断——热槽 seed / 复位 / 停驻 realm 挂的也是那个单例，但它们是空闲，
 /// 推 true 会让停驻在屏外的页面里加载动画无限循环。
+///
+/// [idle] = 本次推的是热槽 seed / 换词复位 / 停驻用的搜索期占位单例（既不是查询结果，
+/// 也不一定在查）：popup.js 只画空占位盒，**绝不**画「No results」。换词时隐藏层先收到
+/// 这个占位（pending=false，因为层还没翻可见），旧实现把它画成「未找到」留在 DOM 里，
+/// 结果渲染一慢、兜底强制翻可见时用户就看到假空态（BUG-3274）。
 String buildPopupEntriesJs(
   DictionarySearchResult result, {
   bool pending = false,
+  bool idle = false,
 }) {
   final String entriesJson = result.popupJson ??
       DictionaryPopupWebViewState.buildLookupEntriesJson(result);
@@ -675,6 +681,7 @@ String buildPopupEntriesJs(
   return '''    try { window.lookupEntries = $entriesJson; } catch(e) { window.lookupEntries = []; }
     try { window.kanjiResults = $kanjiResultsJson; } catch(e) { window.kanjiResults = []; }
     window.lookupPending = $pending;
+    window.lookupIdle = $idle;
 ''';
 }
 

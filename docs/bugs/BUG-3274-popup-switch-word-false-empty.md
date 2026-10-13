@@ -1,0 +1,12 @@
+## BUG-3274 · 视频页换词时查词弹窗先闪「未找到」、滑动掉帧
+- **报告**：2026-10-13（用户：群反馈，Windows 触屏设备，启用 38 本词典；「トランクルーム将近三秒才出来」「查出来太慢了有时候还能看到一会儿『未找到搜索结果』」；开发者：「我电脑都掉帧，这个查词框滑动」。附两段录屏 + 一张截图）
+- **真实性**：✅ 真 bug，三段根因：
+  1. **假空态**：换词复用热槽时 `DictionaryPopupController.beginTop` 把结果复位成搜索期占位单例并把层设为不可见（`fushi/lib/src/pages/implementations/dictionary_popup_controller.dart:492`）。层不可见 ⇒ `popupLookupPending` 为 false ⇒ 推给页面的是 `lookupPending=false` 的空结果，popup.js 把它当「查完为空」画成「未找到」留在 DOM 里（修复前 `fushi/assets/popup/popup.js:7030`）。结果渲染一旦超过 1.8 s 兜底（`dictionary_popup_controller.dart:262/744`），层被强制翻可见，用户看到的就是这层旧 DOM。
+  2. **渲染慢 + 滑动掉帧**：真引擎 + 真词典实测（安装版词库，27 本 term + 10 freq + 1 pitch，maxTerms=10）：C++ 查询 + Dart 构建合计冷页约 0.5 s、热查询 < 60 ms，不是瓶颈。トランクルーム 的 popupJson 2.1 MB（とる/取る/摂る 各带一份『明鏡』とる 的 32 万字节释义——トラン 去屈折成 とる 的否定形，与 Yomitan 一致），渲染出约 3.9 万节点、内容高约 4 万 px。尾批每追加一块词典卡就合帧铺一次 masonry（修复前 `popup.js:5508`），相 1/相 3 的几何读把整页新内容同步排版；Chromium 4 倍降速（≈平板）下尾批 4.4 s、单帧最长 600 ms，Layout 2170 ms、样式重算 972 ms。弹窗滚轮是 JS 驱动的缓动滚动（document 级非 passive wheel 监听），主线程一忙就成块卡顿。
+  3. masonry 每次问列数都走 `getComputedStyle(document.documentElement)`（修复前 `popup.js:6797`），整页样式重算，CPU profile 里占尾批主线程约 1/8。
+- **[x] ① 已修复** — ① 占位单例注入 `window.lookupIdle`（`popup_settings_injection.dart` `buildPopupEntriesJs` + `dictionary_popup_webview.dart` `_pushResults`），popup.js 空闲占位只画空占位盒（`popup.js` renderPopup 占位分支）。② 已渲染内容超过两屏后，再追加的尾批词条加 `content-visibility: auto`（`popup.css` `.entry.fushi-lazy-entry` + `popup.js` `__fushiMarkLazyEntry`），屏外词条跳过样式/布局/绘制；masonry 不碰被跳过的词条（`layoutMasonry` 首行判 `__fushiBodyRenderSkipped`），`contentvisibilityautostatechange` skipped=false 时就地铺好并复报高度；历史页回退恢复滚动位时不延迟；不支持该事件的引擎行为不变。③ 列数先读内联 `--dict-columns`。实测（Chromium 4 倍降速，トランクルーム）：全部画完 4.4 s → 1.2 s，Layout 2170 → 341 ms，样式重算 972 → 53 ms，单帧最长 600 → 383 ms；1 倍速 0.79 s → 0.26 s。借りる（0.4 MB）1.3 s → 1.1 s。少量结果（不足两屏）不走延迟路径，高度上报序列与旧版逐值一致；10 个词条逐个滚到截图 + 程序化校验零重叠、零隐藏卡片，布局与旧版一致。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/popup_lookup_perf_bug3274_test.js`（+ `.dart` 驱动，Node 真执行 popup.js：空闲占位不画「未找到」/ 查完为空仍画；跳过渲染的词条零几何读、滚进视口后就地摆位；列数不调 getComputedStyle；修复前第一条即红）；`fushi/test/pages/dictionary_popup_lookup_pending_test.dart`（`lookupIdle` 注入与接线）。
+- **备注**：
+  - 已知取舍：深滚到『明鏡』とる 这类数万节点的词条时，排版成本落在它第一次进入视口的那一帧（4 倍降速约 0.75 s，旧版同样的成本在打开后的前几秒里分多帧付）。试过空闲时预渲染，巨型词条本身是不可拆的整块排版，空闲时做照样撞上用户滚动，还让每次查词在视频播放时后台烧 CPU，已撤回。真正降这部分成本要么按 id 去重同一份释义（2.1 MB 里 1.14 MB 是重复），要么巨型释义默认收起/懒建，另立项。
+  - 首词条同步渲染（4 倍降速约 230 ms，含解析 2 MB 注入串）与冷页 FFI（约 0.4 s）仍在；平板上首屏可见时延主要由这两段构成。
+  - 未在用户 Windows 触屏真机上复测；装置是本机 Chromium（与 WebView2 同引擎）+ 真词典导出的真实 popupJson，脚本在 `D:/hibiki-tmp/popupbench/`（不入库）。
