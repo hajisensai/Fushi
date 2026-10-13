@@ -281,7 +281,7 @@ ruby > rt, ruby > rtc {
   /// 此比例）。所以两半都 `!important`：阅读器接管 `p` 块首 padding 与 `p::after`，
   /// 书里给 `p` 的块首 padding（极少见）在 Apple 分页下被 R 取代。
   ///
-  /// BUG-3277：块级 `p::after` 让 `p` 的直属文字落进**匿名块**，而 WebKit 不给匿名块
+  /// BUG-3323：块级 `p::after` 让 `p` 的直属文字落进**匿名块**，而 WebKit 不给匿名块
   /// 里的文本画任何 `::highlight()`——拖选 / 查词 / 收藏 / 搜索高亮在 Apple 分页下全部
   /// 隐形。负边距只能挂在块级盒上（行内盒不参与折叠截断），所以这里不改；所有 CSS
   /// Highlight 写入点在建 Range 前调 `__fushiEnsureHighlightPaintable`（定义在

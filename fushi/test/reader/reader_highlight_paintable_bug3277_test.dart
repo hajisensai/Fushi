@@ -6,7 +6,7 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 
-/// BUG-3277：iOS / macOS 分页阅读器里长按拖选、查词、收藏、搜索高亮全部不画，只剩
+/// BUG-3323：iOS / macOS 分页阅读器里长按拖选、查词、收藏、搜索高亮全部不画，只剩
 /// 选区手柄（issue #2108 图二）。
 ///
 /// 根因：BUG-2761 的 WebKit 分页页顶注音预留给每个 `p` 加了 `display:block` 的
@@ -41,7 +41,7 @@ void main() {
       between,
       contains('__fushiEnsureHighlightPaintable('),
       reason:
-          '$where：建 Range 前必须先让文本可被 ::highlight 绘制（BUG-3277）；'
+          '$where：建 Range 前必须先让文本可被 ::highlight 绘制（BUG-3323）；'
           '先建 Range 再搬节点会让这个活 Range 塌缩',
     );
   }

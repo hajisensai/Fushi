@@ -318,7 +318,7 @@ class HighlightBridge {
             continue;
           }
           try {
-            // BUG-3277: see __fushiEnsureHighlightPaintable (reader selection
+            // BUG-3323: see __fushiEnsureHighlightPaintable (reader selection
             // script). Must run before createRange: moving the node later would
             // collapse this live Range.
             if (typeof window.__fushiEnsureHighlightPaintable === 'function') {
@@ -426,7 +426,7 @@ class HighlightBridge {
 })();
 ''';
 
-  /// 注入脚本原文，只给源码契约测试读（BUG-3277 守卫）。
+  /// 注入脚本原文，只给源码契约测试读（BUG-3323 守卫）。
   @visibleForTesting
   static String get debugScriptSource => _js;
 

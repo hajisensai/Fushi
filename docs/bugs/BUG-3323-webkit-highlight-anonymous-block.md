@@ -1,4 +1,4 @@
-## BUG-3277 · iOS/macOS 分页阅读器拖选与查词高亮不可见（页顶注音预留的块级 p::after 让正文进匿名块）
+## BUG-3323 · iOS/macOS 分页阅读器拖选与查词高亮不可见（页顶注音预留的块级 p::after 让正文进匿名块）
 - **报告**：2026-10-13（用户：hajisensai/Fushi#2108「最近出现的，现在的复制框看不到范围了」，iPhone 截图：长按拖选后只有两个选区手柄与「搜索 / 复制 / 收藏」操作条，选中的文字没有任何底色）
 - **真实性**：✅ 真 bug（WebKit 专属，分页模式；09-28 BUG-2761 引入）。根因两段：
   - `fushi/lib/src/reader/reader_content_styles.dart` 的 `_webKitPaginatedRubyReserveCss`（BUG-2761 / BUG-2799）在 iOS / macOS / Linux(WPE) 分页模式给每个 `p` 发 `p::after { content:""; display:block; margin-block-end:-R }`。块级伪元素让 `p` 的直属文字被包进**匿名块**。

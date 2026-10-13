@@ -1,5 +1,5 @@
 'use strict';
-// BUG-3277: executes the production __fushiEnsureHighlightPaintable installer from
+// BUG-3323: executes the production __fushiEnsureHighlightPaintable installer from
 // reader_selection_scripts.dart (read from the worktree, never a pinned copy)
 // against a fake DOM whose computed styles are declared per element / pseudo.
 // Layout itself cannot run in node; the WebKit painting fact the helper encodes

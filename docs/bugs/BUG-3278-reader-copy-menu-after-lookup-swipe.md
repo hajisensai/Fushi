@@ -6,4 +6,4 @@
   - 未覆盖：真机触摸节奏 / 120Hz 采样、Fushi 完整组件树（弹窗 WebView 热槽、滚动模式「继续滚动即关闭弹窗」经 `PointerRouter` 把同一根手指的后续位移转给正文的路径）。
 - **[ ] ① 未修复** — 没有可证实的根因，不做靠延迟 / 时间窗 / 特判掩盖的改动。需要报告者补充：阅读模式（翻页 / 滚动 / VN）、关闭查词窗的方式（点空白 / 横滑 / 滚动正文）、iOS 版本，最好附一段录屏。
 - **[ ] ② 未加自动化测试** — 同上。
-- **备注**：同一 issue 的「复制框看不到选中范围」是另一条真 bug，见 [BUG-3277](BUG-3277-webkit-highlight-anonymous-block.md)，已修。取证装置与原始日志在本机 `D:/hibiki-tmp/issue2108/touchprobe/`（不入库）。
+- **备注**：同一 issue 的「复制框看不到选中范围」是另一条真 bug，见 [BUG-3323](BUG-3323-webkit-highlight-anonymous-block.md)，已修。取证装置与原始日志在本机 `D:/hibiki-tmp/issue2108/touchprobe/`（不入库）。

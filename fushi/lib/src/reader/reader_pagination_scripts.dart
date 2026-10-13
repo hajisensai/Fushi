@@ -2065,7 +2065,7 @@ window.__fushiInstallShell = function(C) {
       charPos = segEnd;
     }
     if (!startNode || !endNode) return null;
-    // BUG-3277: every text node the match covers must be paintable before the
+    // BUG-3323: every text node the match covers must be paintable before the
     // Range exists (see __fushiEnsureHighlightPaintable in the selection script).
     if (window.__fushiCssHighlightsSupported &&
         typeof window.__fushiEnsureHighlightPaintable === 'function') {

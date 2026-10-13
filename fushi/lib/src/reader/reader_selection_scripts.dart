@@ -379,7 +379,7 @@ const JAPANESE_RANGES = [
   ...FULLWIDTH_CHARACTER_RANGES,
 ];
 window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
-// BUG-3277: WebKit never paints ::highlight() on a text node whose layout parent is
+// BUG-3323: WebKit never paints ::highlight() on a text node whose layout parent is
 // an *anonymous* block -- i.e. text sitting directly in a block container that also
 // has an in-flow block-level child box (a real child element, or a ::before/::after
 // with display:block). Every selector form fails (p::highlight, *::highlight, ...);

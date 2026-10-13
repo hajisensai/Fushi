@@ -3466,7 +3466,7 @@ $sharedInitViewport
           }
         }
         if (!startNode || !endNode) return false;
-        // BUG-3277: make every covered text node paintable before the Range
+        // BUG-3323: make every covered text node paintable before the Range
         // exists (see __fushiEnsureHighlightPaintable in the selection script).
         if (typeof window.__fushiEnsureHighlightPaintable === 'function') {
           var paintFrom = false;
