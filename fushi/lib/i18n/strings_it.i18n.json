@@ -7049,5 +7049,7 @@
   "video_subtitle_graphic_ocr_job_ai_progress": "AI re-read: $provider · $done/$total",
   "video_setting_subtitle_shadow_color": "Shadow color",
   "video_setting_subtitle_outline": "Outline width",
-  "video_setting_subtitle_outline_color": "Outline color"
+  "video_setting_subtitle_outline_color": "Outline color",
+  "video_setting_pause_ocr_hard_subtitle": "OCR on pause without subtitle track",
+  "video_setting_pause_ocr_hard_subtitle_hint": "For hardcoded subtitles: when no text subtitle is loaded, recognize the paused frame so you can tap words to look them up"
 }

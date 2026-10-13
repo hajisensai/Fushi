@@ -844,7 +844,7 @@ void main() {
     // 会换行成两行、把详情下推，故先 ensureVisible 把按钮滚进可点区域再点，不依赖顶栏
     // 恰好单行的脆弱位置假设。
     final Finder plus50 = find.descendant(
-      of: find.widgetWithText(AdaptiveSettingsRow, t.video_setting_av_delay),
+      of: find.widgetWithText(AdaptiveSettingsRow, t.video_setting_av_delay_hint_short),
       matching: find.byIcon(FushiIcons.chevronRight),
     );
     await tester.ensureVisible(plus50);
@@ -901,6 +901,35 @@ void main() {
     expect(t.video_setting_subtitle_sync_input, 'Offset (ms)');
   });
 
+  // 反馈 FxUMLvIqM1：「字幕调轴」此前是卡片里的行标题（白字、在背景内），与其它
+  // 分组「强调色标题在卡片外」不统一；字幕页紧跟其后的暂停 / 遮蔽几行也没有分组标题。
+  testWidgets('字幕页：字幕调轴与字幕行为都是卡片外的分组标题（FxUMLvIqM1）', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pumpSheet(tester);
+    await _tapCategory(tester, 'subtitle', t.video_settings_cat_subtitle);
+
+    for (final String header in <String>[
+      t.video_setting_av_delay,
+      t.section_video_subtitle_behavior,
+    ]) {
+      expect(find.text(header), findsOneWidget, reason: header);
+      expect(
+        find.descendant(
+          of: find.byType(AdaptiveSettingsRow),
+          matching: find.text(header),
+        ),
+        findsNothing,
+        reason: '$header 应是分组标题，不能画在设置行（卡片）里',
+      );
+      expect(
+        tester.widget<Text>(find.text(header)).style?.color,
+        Theme.of(tester.element(find.text(header))).colorScheme.primary,
+        reason: '$header 与其它分组标题同为强调色',
+      );
+    }
+  });
+
   testWidgets('字幕调轴提供可拉滑条 + 数值输入框（字幕分类）', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -914,7 +943,7 @@ void main() {
     // 字幕详情里有一条可拉滑条（字幕调轴），把手按当前值定位。
     final Finder delayRow = find.widgetWithText(
       AdaptiveSettingsRow,
-      t.video_setting_av_delay,
+      t.video_setting_av_delay_hint_short,
     );
     final Slider slider = tester.widget<Slider>(glassUnwrap<Slider>(find.descendant(of: delayRow, matching: find.byType(Slider))),);
     expect(slider.value, 1200);
@@ -952,7 +981,7 @@ void main() {
 
     final Finder delayRow = find.widgetWithText(
       AdaptiveSettingsRow,
-      t.video_setting_av_delay,
+      t.video_setting_av_delay_hint_short,
     );
     expect(delayRow, findsOneWidget);
     final Finder readout =
@@ -981,7 +1010,7 @@ void main() {
 
     final Finder delayRow = find.widgetWithText(
       AdaptiveSettingsRow,
-      t.video_setting_av_delay,
+      t.video_setting_av_delay_hint_short,
     );
     final Finder slider =
         find.descendant(of: delayRow, matching: find.byType(Slider));
@@ -1015,7 +1044,7 @@ void main() {
       expect(find.text(t.video_setting_av_delay), findsOneWidget);
       final Finder delayRow = find.widgetWithText(
         AdaptiveSettingsRow,
-        t.video_setting_av_delay,
+        t.video_setting_av_delay_hint_short,
       );
       // 手动对轴控件齐全：±50/±1000ms 步进 + 滑条 + 数值输入框都在（不被自动对轴挤掉）。
       expect(
@@ -1072,7 +1101,7 @@ void main() {
 
       final Finder delayRow = find.widgetWithText(
         AdaptiveSettingsRow,
-        t.video_setting_av_delay,
+        t.video_setting_av_delay_hint_short,
       );
       final Finder autoAlignBtn = find.descendant(
         of: delayRow,
@@ -1128,7 +1157,7 @@ void main() {
 
       final Finder delayRow = find.widgetWithText(
         AdaptiveSettingsRow,
-        t.video_setting_av_delay,
+        t.video_setting_av_delay_hint_short,
       );
       final Finder autoAlignBtn = find.descendant(
         of: delayRow,
@@ -1287,7 +1316,7 @@ void main() {
 
     final Finder delayRow = find.widgetWithText(
       AdaptiveSettingsRow,
-      t.video_setting_av_delay,
+      t.video_setting_av_delay_hint_short,
     );
     expect(delayRow, findsOneWidget);
     // 界面缩放 2.0 把窗口缩成 160 宽 → 手机紧凑档：不放滑条（±步进 + 可输入读数

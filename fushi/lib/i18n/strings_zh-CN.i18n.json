@@ -7049,5 +7049,7 @@
   "video_subtitle_graphic_ocr_job_ai_progress": "AI 重读：$provider · $done/$total",
   "video_setting_subtitle_shadow_color": "阴影颜色",
   "video_setting_subtitle_outline": "描边粗细",
-  "video_setting_subtitle_outline_color": "描边颜色"
+  "video_setting_subtitle_outline_color": "描边颜色",
+  "video_setting_pause_ocr_hard_subtitle": "无字幕轨时暂停也识别画面文字",
+  "video_setting_pause_ocr_hard_subtitle_hint": "适用于烧录在画面里的硬字幕：没有加载文本字幕时，暂停后识别画面文字，点字即可查词"
 }

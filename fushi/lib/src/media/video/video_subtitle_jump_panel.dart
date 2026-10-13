@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 
@@ -249,10 +250,17 @@ const int _kDefaultFontScaleIndex = 1;
 // ---------------------------------------------------------------------------
 
 /// 浮动面板离侧栏列四边的距离。
-const double _kM3ePanelMargin = 12;
+///
+/// 反馈 C9uvk6cMxF / Lgp-nUrh6V（2026-10）：面板外 12 + 列表内 8 + 行内 14 三层留白
+/// 叠起来，窄侧栏里正文只剩一半宽、圆角面板四周一圈空着。收成 6 / 4，行卡几乎贴满
+/// 面板圆角（行卡外圆角 = 面板圆角 − 列表内边距，同心）。
+const double _kM3ePanelMargin = 6;
+
+/// 浮动面板圆角。
+const double _kM3ePanelRadius = 24;
 
 /// 列表左右内边距（行卡不贴面板边；滚动条落在这条通道里）。
-const double _kM3eListPaddingH = 8;
+const double _kM3eListPaddingH = 4;
 
 /// 行卡左内边距（含 4px 当前句指示条与它右侧 4 的留白）。
 const double _kM3eRowPadLeft = 14;
@@ -260,8 +268,8 @@ const double _kM3eRowPadLeft = 14;
 /// 行卡右内边距。
 const double _kM3eRowPadRight = 10;
 
-/// 行卡上下内边距之和（上 9 + 下 9）。
-const double _kM3eRowPadVertical = 18;
+/// 行卡上下内边距之和（上 6 + 下 6；紧凑档，见 [_kM3ePanelMargin]）。
+const double _kM3eRowPadVertical = 12;
 
 /// 行卡之间的间距（分段列表）。
 const double _kM3eRowGap = 2;
@@ -273,8 +281,80 @@ const double _kM3eChipPadVertical = 4;
 const double _kM3eStarGap = 6;
 
 /// 分段列表首尾卡的大圆角 / 中间卡的小圆角。
-const double _kM3eRowOuterRadius = 18;
+const double _kM3eRowOuterRadius = _kM3ePanelRadius - _kM3eListPaddingH;
 const double _kM3eRowInnerRadius = 6;
+
+/// 字幕列表行高的排版环境签名：这几项任一变化，同一句的行高就可能变。
+typedef VideoSubtitleRowLayoutSignature = ({
+  double width,
+  double fontSize,
+  TextScaler scaler,
+  String? fontFamily,
+  TextDirection direction,
+});
+
+/// 字幕列表行高测量缓存，**跨面板实例共享**（反馈 C9uvk6cMxF：字幕栏「打开就很卡」）。
+///
+/// 字幕列表是 push-aside 侧栏，收起时整棵 State 销毁。缓存原先挂在 State 上，每次
+/// 打开都要用 TextPainter 把整轨几百句重新排版一遍——`itemExtentBuilder` 是硬约束，
+/// SliverVariedExtentList 首帧就要**全部**行高来算总滚动长度，再加上定位当前句的偏移
+/// 估算，开一次卡一次。行高只由「排版环境签名 + 文本 + 加粗 + 收藏 + 行形态」决定，
+/// 与哪一个 State 无关，所以提到库级：同一视频反复开关列表只在第一次量。
+class VideoSubtitleRowExtentCache {
+  /// 上限：换片 / 换轨不清缓存（签名没变时旧条目照样有效），到上限整体清空，防止
+  /// 长时间播放累积无界。
+  static const int maxEntries = 20000;
+
+  final Map<String, double> _extents = <String, double>{};
+  VideoSubtitleRowLayoutSignature? _signature;
+
+  /// 时间戳单行高（只随签名变）。
+  double? timestampLineHeight;
+
+  /// 实际做过的行测量次数（测试观测「重开不重量」用）。
+  @visibleForTesting
+  int measurements = 0;
+
+  bool _listeningSystemFonts = false;
+
+  /// 绑定当前排版环境；与上次不同则作废全部条目。
+  ///
+  /// 字体在运行期加载 / 替换（用户自定义字幕字体、系统字体变化）时字宽会变，而签名
+  /// 里只有字体**名**：订阅 [PaintingBinding.systemFonts]，字体一变就整体作废。
+  void bind(VideoSubtitleRowLayoutSignature signature) {
+    if (!_listeningSystemFonts) {
+      _listeningSystemFonts = true;
+      PaintingBinding.instance.systemFonts.addListener(_invalidate);
+    }
+    if (signature == _signature) return;
+    _invalidate();
+    _signature = signature;
+  }
+
+  void _invalidate() {
+    _extents.clear();
+    timestampLineHeight = null;
+    _signature = null;
+  }
+
+  double? operator [](String key) => _extents[key];
+
+  void store(String key, double extent) {
+    if (_extents.length >= maxEntries) _extents.clear();
+    _extents[key] = extent;
+  }
+
+  /// 测试隔离用：清空条目、签名与计数。
+  @visibleForTesting
+  void reset() {
+    _invalidate();
+    measurements = 0;
+  }
+}
+
+/// 全部字幕列表面板共用的行高缓存（见 [VideoSubtitleRowExtentCache]）。
+final VideoSubtitleRowExtentCache videoSubtitleRowExtentCache =
+    VideoSubtitleRowExtentCache();
 
 /// 头部五枚图标按钮（搜索 / 字号 ± / 自动滚动 / 关闭）的 MD3 外形：40×40 命中区、
 /// 不再外扩到 48。MD3 Expressive 的 XS 图标按钮默认把点按区补到 48，五枚就是
@@ -357,6 +437,7 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     this.fontSize = 14,
     this.fontFamily,
     this.width = 320,
+    this.bottomSafeInset = 0,
     this.onExportFavorites,
     this.searchActivators = const <ShortcutActivator>[],
     this.searchRequests,
@@ -435,6 +516,11 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   /// null：同一句台词在画面上是用户设的字幕字体、在这个侧栏里却是界面字体，两套。
   final String? fontFamily;
   final double width;
+
+  /// 面板底边压着的系统底部安全区高度（iOS home 指示条等）。页面不再给侧栏整块垫
+  /// 底部安全区（那会在面板下面留一条空带），而是把面板铺到底、由列表在最后一行
+  /// 后面补上被遮的这一截（反馈 Lgp-nUrh6V）。
+  final double bottomSafeInset;
 
   /// BUG-1907：「导出收藏语句」。
   ///
@@ -591,17 +677,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// 非逐字行不在表内，[_rowCue] 回落原 cue（既有行为逐像素不变）。
   Map<int, AudioCue> _cachedMergedByRep = const <int, AudioCue>{};
 
-  /// 行高测量缓存（BUG-1034），key = `加粗位 + 文本`。宽度 / 字号 / textScaler 变化时整体
-  /// 作废，见 [_rowExtentForCue]。
-  final Map<String, double> _rowExtentCache = <String, double>{};
-  double _rowExtentCacheWidth = -1;
-  double _rowExtentCacheFontSize = -1;
-  TextScaler _rowExtentCacheScaler = TextScaler.noScaling;
-  double? _timestampLineHeight;
+  /// 行高测量缓存（BUG-1034）：库级共享的 [videoSubtitleRowExtentCache]，见
+  /// [_rowExtentForCue]。
+  VideoSubtitleRowExtentCache get _rowExtentCache =>
+      videoSubtitleRowExtentCache;
 
-  /// 测量用的排版环境，[build] 每帧从 context 刷新。`initState` 里读 `MediaQuery` /
-  /// `Directionality` 会触发 `dependOnInheritedWidgetOfExactType` 断言，故先用默认值供
-  /// 初始滚动偏移粗估，首帧 build 后即为真值（变化时缓存自动作废）。
+  /// 测量用的排版环境，[build] 每帧从 context 刷新；初始滚动偏移在首次
+  /// [didChangeDependencies] 里先同步一次再估算（`initState` 里读不了 context）。
   TextDirection _textDirection = TextDirection.ltr;
   TextScaler _textScaler = TextScaler.noScaling;
 
@@ -707,15 +789,15 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// 宽度、字号或 textScaler 变化时整体作废——`SliverVariedExtentList` 每次布局都要遍历
   /// 全部条目累加 maxScrollExtent，没有缓存会把 TextPainter 跑进每一帧。
   double _rowExtentForCue(AudioCue cue, double rowWidth, {required bool bold}) {
-    if (rowWidth != _rowExtentCacheWidth ||
-        _effectiveFontSize != _rowExtentCacheFontSize ||
-        _textScaler != _rowExtentCacheScaler) {
-      _rowExtentCache.clear();
-      _timestampLineHeight = null;
-      _rowExtentCacheWidth = rowWidth;
-      _rowExtentCacheFontSize = _effectiveFontSize;
-      _rowExtentCacheScaler = _textScaler;
-    }
+    // 排版环境签名：宽度 / 字号 / textScaler / 字体 / 书写方向任一变化，旧行高全部
+    // 作废（M3E / 经典两种行几何靠 key 前缀区分，可以并存）。
+    _rowExtentCache.bind((
+      width: rowWidth,
+      fontSize: _effectiveFontSize,
+      scaler: _textScaler,
+      fontFamily: widget.fontFamily,
+      direction: _textDirection,
+    ));
     // M3E：收藏行在时间戳胶囊下多一颗星，行高可能变高——收藏态进缓存键。
     final bool favorited = _m3e && widget.isCueFavorited(cue);
     final String key =
@@ -728,7 +810,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       bold,
       favorited: favorited,
     );
-    _rowExtentCache[key] = extent;
+    _rowExtentCache.store(key, extent);
     return extent;
   }
 
@@ -745,11 +827,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     );
     // Row 高度 = 子项高度最大值：文本、时间戳单行、动作图标。
     double content = textHeight;
-    final double timestampHeight = _timestampLineHeight ??= _measureTextHeight(
-      text: '0:00',
-      style: TextStyle(fontSize: _effectiveFontSize - 1),
-      maxWidth: double.infinity,
-    );
+    _rowExtentCache.measurements++;
+    final double timestampHeight = _rowExtentCache.timestampLineHeight ??=
+        _measureTextHeight(
+          text: '0:00',
+          style: TextStyle(fontSize: _effectiveFontSize - 1),
+          maxWidth: double.infinity,
+        );
     if (_m3e) {
       // M3E 行：行高 = max(时间戳胶囊高, 正文高, 收藏星) + 内边距；动作是叠层，
       // 不占行高。胶囊高按渲染同款样式真量（[_m3eChipTextStyle]）。
@@ -842,9 +926,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         ? initialRawIndex
         : null;
     _retainRowKeyFor(_scrollTargetRawIndex);
-    _scrollController = ScrollController(
-      initialScrollOffset: _initialScrollOffsetForCurrentCue(),
-    );
+    // 滚动控制器在首次 [didChangeDependencies] 里建：初始偏移要按**真实**的行形态
+    // （M3E / 经典）与排版环境估算，这些只能从 context 读。
     widget.controller.addListener(_onControllerChanged);
     widget.searchRequests?.addListener(_onSearchRequested);
     // PR#1032 审查 B1：挂载即对齐水位线。Ctrl+F 在列表关着时按下，页面会先开列表再立刻 +1，
@@ -856,6 +939,36 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     // BUG-878：跟踪 Ctrl / ⌘ 键状态，供 Ctrl+滚轮缩字号时把列表滚动物理切成禁滚。
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     _scheduleScrollToCurrentCue();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_scrollControllerCreated) return;
+    _scrollControllerCreated = true;
+    // 反馈 C9uvk6cMxF（字幕栏打开卡）：初始偏移以前在 initState 里按默认的经典行
+    // 形态、默认排版环境估算——生产上是 M3E 面板，于是打开时先按经典几何把当前句
+    // 之前的几百行量一遍，首帧 build 再按 M3E 几何整批重量（还会把共享行高缓存来回
+    // 作废），偏移也是错的、要靠帧后滚动再纠正。这里先同步真实环境再估算。
+    _syncLayoutEnvironment(context);
+    _scrollController = ScrollController(
+      initialScrollOffset: _initialScrollOffsetForCurrentCue(),
+    );
+  }
+
+  bool _scrollControllerCreated = false;
+
+  /// 从 context 同步行高测量所需的排版环境（书写方向 / 文字缩放 / 行形态）。测量与
+  /// 渲染必须同源（BUG-1034），[build] 与首次 [didChangeDependencies] 共用。
+  void _syncLayoutEnvironment(BuildContext context) {
+    _textDirection = Directionality.of(context);
+    _textScaler = MediaQuery.textScalerOf(context);
+    // 行高缓存 key 带 M3E / 经典前缀，切换形态不必作废。
+    _m3e = switch (widget.layout) {
+      VideoSubtitleListLayout.m3e => true,
+      VideoSubtitleListLayout.classic => false,
+      VideoSubtitleListLayout.auto => videoM3ePanelNeutral(context),
+    };
   }
 
   /// BUG-878：同步 Ctrl / ⌘ 修饰键状态（纯观察、恒返回 false 不消费按键，不干扰任何快捷键
@@ -1467,19 +1580,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     widget.hitTester?.bindHitTest(_hitTestRows);
     _rowHitCues.clear();
     // BUG-1034：行高测量必须用与渲染一致的排版环境（文字缩放 / 书写方向）。
-    _textDirection = Directionality.of(context);
-    _textScaler = MediaQuery.textScalerOf(context);
-    final bool m3e = switch (widget.layout) {
-      VideoSubtitleListLayout.m3e => true,
-      VideoSubtitleListLayout.classic => false,
-      VideoSubtitleListLayout.auto => videoM3ePanelNeutral(context),
-    };
-    if (m3e != _m3e) {
-      _m3e = m3e;
-      _rowExtentCache.clear();
-      _rowExtentCacheWidth = -1;
-    }
-    if (m3e) {
+    _syncLayoutEnvironment(context);
+    if (_m3e) {
       // M3E：中性深色浮动面板（与设置侧板同一外壳），内部控件读面板主题。
       final Widget m3ePanel = VideoM3ePanelTheme(
         child: Builder(builder: _buildM3ePanel),
@@ -1545,6 +1647,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                     // 一个 GlobalKey（存 _rowKeys，按 rawIndex）供 ensureVisible 自动滚动。
                     : ListView.builder(
                         controller: _scrollController,
+                        // 经典面板同样铺进底部安全区，只给最后一行留出被遮的一截。
+                        // 不传（0）时保持 null：沿用 ListView 自取 MediaQuery 内边距的旧行为。
+                        padding: widget.bottomSafeInset > 0
+                            ? EdgeInsets.only(bottom: widget.bottomSafeInset)
+                            : null,
                         // BUG-878：Ctrl / ⌘ 按住时禁列表滚动，让 Ctrl+滚轮只缩字号
                         // （[_handleZoomWheel]）；松开恢复默认滚动物理。
                         physics: _zoomModifierHeld
@@ -2050,11 +2157,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       final int count = visibleIndexes.length;
       body = ListView.builder(
         controller: _scrollController,
-        padding: const EdgeInsets.fromLTRB(
+        // 底部：面板压进系统底部安全区（iOS 横屏 home 指示条），列表内容一路
+        // 铺到面板底、只给最后一行留出被遮的那一截（反馈 Lgp-nUrh6V）。
+        padding: EdgeInsets.fromLTRB(
           _kM3eListPaddingH,
-          8,
+          4,
           _kM3eListPaddingH,
-          16,
+          8 + math.max(0, widget.bottomSafeInset - _kM3ePanelMargin),
         ),
         physics: _zoomModifierHeld
             ? const NeverScrollableScrollPhysics()
@@ -2102,7 +2211,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           decoration: ShapeDecoration(
             color: videoM3eFloatingColor(widget.colorScheme),
             shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.all(Radius.circular(28)),
+              borderRadius: BorderRadius.all(Radius.circular(_kM3ePanelRadius)),
             ),
             shadows: const <BoxShadow>[
               BoxShadow(
@@ -2271,7 +2380,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     );
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 10, 8),
+      padding: const EdgeInsets.fromLTRB(14, 10, 8, 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[

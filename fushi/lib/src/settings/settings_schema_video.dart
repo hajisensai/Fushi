@@ -1016,7 +1016,11 @@ SettingsDestination buildVideoDestination() {
             title: t.video_setting_subtitle_obscure,
             subtitle: t.video_setting_subtitle_obscure_hint,
             icon: Icons.blur_on_outlined,
-            video: VideoPlacement(group: VideoGroup.subtitle, order: 40),
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 40,
+              section: t.section_video_subtitle_behavior,
+            ),
             options: <SettingsSegmentOption<VideoSubtitleObscureMode>>[
               for (final VideoSubtitleObscureMode mode
                   in VideoSubtitleObscureMode.values)
@@ -1043,7 +1047,11 @@ SettingsDestination buildVideoDestination() {
             title: t.video_setting_secondary_subtitle_obscure,
             subtitle: t.video_setting_secondary_subtitle_obscure_hint,
             icon: Icons.blur_on_outlined,
-            video: VideoPlacement(group: VideoGroup.subtitle, order: 50),
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 50,
+              section: t.section_video_subtitle_behavior,
+            ),
             options: <SettingsSegmentOption<VideoSubtitleObscureMode>>[
               for (final VideoSubtitleObscureMode mode
                   in VideoSubtitleObscureMode.values)
@@ -1075,7 +1083,11 @@ SettingsDestination buildVideoDestination() {
             title: t.video_setting_subtitle_obscure_reveal,
             subtitle: t.video_setting_subtitle_obscure_reveal_hint,
             icon: Icons.visibility_outlined,
-            video: VideoPlacement(group: VideoGroup.subtitle, order: 55),
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 55,
+              section: t.section_video_subtitle_behavior,
+            ),
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.videoSubtitleObscureReveal,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -1091,7 +1103,11 @@ SettingsDestination buildVideoDestination() {
             id: 'video.playback.pause_at_subtitle_end',
             title: t.playback_auto_pause,
             icon: Icons.pause_circle_outline,
-            video: VideoPlacement(group: VideoGroup.subtitle, order: 30),
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 30,
+              section: t.section_video_subtitle_behavior,
+            ),
             value: (SettingsContext settingsContext) =>
                 currentVideoAsbConfig(settingsContext).pauseAtSubtitleEnd,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -1102,6 +1118,32 @@ SettingsDestination buildVideoDestination() {
               );
             },
             defaultValue: VideoAsbplayerConfig.defaults.pauseAtSubtitleEnd,
+          ),
+          // 没有图形字幕的视频（硬字幕烧录在画面里）暂停时也 OCR 点字查词（反馈
+          // i5A0mu1-AT）。默认关；只在当前没有任何文本字幕 cue 时生效，有文本轨的
+          // 视频不会被整帧 OCR 抢点击（判据 graphicSubtitlePauseOcrEligible）。
+          SettingsSwitchItem(
+            id: 'video.subtitle.pause_ocr_without_track',
+            title: t.video_setting_pause_ocr_hard_subtitle,
+            subtitle: t.video_setting_pause_ocr_hard_subtitle_hint,
+            icon: Icons.document_scanner_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 58,
+              section: t.section_video_subtitle_behavior,
+            ),
+            value: (SettingsContext settingsContext) => currentVideoAsbConfig(
+              settingsContext,
+            ).pauseOcrWithoutSubtitleTrack,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) =>
+                    c.copyWith(pauseOcrWithoutSubtitleTrack: value),
+              );
+            },
+            defaultValue:
+                VideoAsbplayerConfig.defaults.pauseOcrWithoutSubtitleTrack,
           ),
           // 下载字幕按内嵌字幕轨自动对齐（embedded_reference_subtitle_sync.dart）。
           // 纯下载期行为，不进播放页面板（无 VideoPlacement）。
@@ -1978,7 +2020,11 @@ SettingsDestination buildVideoDestination() {
           SettingsCustomItem(
             id: 'video.player.subtitle_sync',
             visible: videoHostVisible,
-            video: VideoPlacement(group: VideoGroup.subtitle, order: 20),
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 20,
+              section: t.video_setting_av_delay,
+            ),
             builder: buildVideoSubtitleSyncRow,
           ),
           // 字幕**文字**颜色调色盘行（TODO-1326）。
