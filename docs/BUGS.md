@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3313](bugs/BUG-3313-ass-seek-animation-stale-clock.md) | 🚧 | 🚧 | ASS 字幕跳转后位置/淡入淡出时间错乱（动画读滞后的原始播放位置） |
+| [BUG-3313](bugs/BUG-3313-ass-seek-animation-stale-clock.md) | ✅ | ✅ | ASS 字幕跳转后位置/淡入淡出时间错乱（动画读滞后的原始播放位置） |
 | [BUG-3274](bugs/BUG-3274-popup-switch-word-false-empty.md) | ✅ | ✅ | 视频页换词时查词弹窗先闪「未找到」、滑动掉帧 |
 | [BUG-3272](bugs/BUG-3272-anki-auto-reposition-failure-reason-lost.md) | ✅ | ✅ | 自动重排失败原因被吞且整牌组请求走交互超时 |
 | [BUG-3271](bugs/BUG-3271-expansion-tile-pagestorage-collision.md) | ✅ | ✅ | 视频设置面板字幕分类下方整片灰（展开区与滚动视图 PageStorage 槽冲突） |

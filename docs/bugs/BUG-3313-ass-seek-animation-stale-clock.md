@@ -1,6 +1,7 @@
 ## BUG-3313 · ASS 字幕跳转后位置/淡入淡出时间错乱（动画读滞后的原始播放位置）
-- **报告**：2026-10-13（用户：）
-- **真实性**：（沿真实代码路径验真伪后填：✅ 真 bug / ❌ 未复现，附根因 `file:line`）
-- **[ ] ① 未修复** —
-- **[ ] ② 未加自动化测试** —
-- **备注**：
+- **报告**：2026-10-13（用户：「这个ass字幕跳转的时候总是会出现显示位置，时间不对的情况」，附截图：两条 ASS 事件「キス」「フリ」同时叠在同一位置；随后补充「其他的同类问题也修了」）
+- **真实性**：✅ 真 bug。同一帧字幕的两个量来自两个时钟：活动集（哪几条在屏）走 seek 在途调和——`seekMs` / 进度条落点按**跳转目标**权威同步、暂停态无限期保持目标（`fushi/lib/src/media/video/video_player_controller.dart` `_reconcileSeekInFlightPosition`），`skipToCue` 走 cue 快照（`_applySeekTargetSnap`）；而 overlay 的 `\move` 定位（`video_subtitle_overlay.dart` `_posScreen`）与 `\fad` / `\t` / `\k` 时间全经 `effectivePositionMsForCue` 读**原始** `positionMs`——seek 刚发出时 mpv 吐的仍是跳转前的旧位置。新句子于是按旧时间插值：位置落错、淡入淡出 / 变换停在错的阶段，本该先后出现的事件叠在一起。附带缺陷：普通 seek 的落地判据是单向的 `raw >= 目标 − 250ms`，往回跳时滞后的旧位置天然大于目标，第一拍就被误判落地，上一句闪回（`_checkSeekLanded` 早因同一原因改成双向窗口，这里漏了）。
+  同类（同一根因，读原始位置做字幕时间判断）：上一句 / 下一句（`skipToNextCue` 等 4 处按 `_effectivePositionMs` 定位当前句）、调轴后即时重同步（`setDelayMs` → `_resyncTextSubtitleAfterDelayChange(positionMs)`，暂停态刚 seek 完调轴会把跳转前那句拉回来）、制卡 / 收藏 / 动作的按位置兜底锚句（`lookup_mining.part.dart`、`lookup_favorite.part.dart`、`video_fushi_page.dart` `_currentCueForAction`）、按位置对齐调轴（`subtitle.part.dart` `_snapSubtitleDelayToCue`）、调轴 / 波形面板播放头（`currentPositionMs` / `currentSubtitlePositionMs`）、弹幕叠层时钟（`layout.part.dart`）。
+- **[x] ① 已修复** — f13606b685 + d58cc9c445：控制器收敛出唯一的字幕时钟 `subtitleClockMs`（无副作用，镜像普通 seek 在途与 `skipToCue` 在途两条判据；`skipToCue` 记下自己的落点 `_seekSnapLandingMs`），`effectivePositionMsForCue`、跳句面板、上一句 / 下一句、调轴重同步与上列页面调用点全部改读它；普通 seek 落地判据改为纯函数 `plainSeekLanded`（`[目标 − 容差, 目标 + 落地窗口]`，并用发出时位置 `_plainSeekFromMs` 排除往回跳读到的旧值），调和与时钟共用。图形字幕遮蔽层与 OCR 叠层仍读真实位置（位图由 libmpv 按真实帧画），位置持久化 / 静帧画面时间 / 进度细线不属于字幕时钟语义，未改。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_subtitle_seek_clock_test.dart`（overlay 层：暂停态 seek 进带 `\t` 的句子按目标插值；控制器层：时钟在途 / 落地 / `skipToCue` 落点 / 图形层仍读真实位置、seek 在途上一句 / 下一句、往回跳不误判落地、`plainSeekLanded` 纯判据）+ `fushi/test/media/video/video_subtitle_clock_wiring_guard_test.dart`（源码守卫：视频页字幕时间调用点不得读原始 `positionMs`）。变异实测：时钟退化为原始位置 + 落地判据退回单向 + 页面一处改回 `positionMs`，新增 11 条用例全红。
+- **备注**：未在真机复现原片（手上没有用户那条 ASS），修复依据是代码路径与 widget 层像素级断言；建议用户拿原片验证「跳转后 `\move` / `\fad` 句」。
