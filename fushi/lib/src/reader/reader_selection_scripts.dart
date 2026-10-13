@@ -393,9 +393,22 @@ window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window
 // move would collapse -- hence "before building"), and the wrapper adds no box, so
 // layout and text walkers are unaffected. Idempotent; a no-op wherever the engine
 // already lays the text out under a real element.
+// Blink (Android WebView / WebView2) paints these highlights fine, so there the
+// helper is a no-op: the move would be pure DOM churn (per drag frame computed-style
+// probes, structural-selector flips below) with nothing to fix.
+// The move must also never change which reader rule a sibling matches: the reader
+// centres a lone illustration with `p > img:only-child { display:block }`; wrapping
+// the text beside it would end :only-child, turn the image inline and reflow the
+// paragraph on lookup. Such text stays where it is (unpainted on WebKit, as before).
 if (typeof window.__fushiEnsureHighlightPaintable !== 'function') {
   window.__fushiEnsureHighlightPaintable = (function() {
     var WRAPPER_TAG = 'fushi-hl-text';
+    var ua = (window.navigator && window.navigator.userAgent) || '';
+    if (/\b(?:Chrome|Chromium|HeadlessChrome)\//.test(ua)) return function() {};
+    function siblingReliesOnOnlyChild(parent) {
+      var first = parent.firstElementChild;
+      return !!first && !first.nextElementSibling && first.localName === 'img';
+    }
     function inlineLevelDisplay(display) {
       return !display || display === 'none' || display === 'contents' ||
         display.indexOf('inline') === 0 || display.indexOf('ruby') === 0;
@@ -430,6 +443,7 @@ if (typeof window.__fushiEnsureHighlightPaintable !== 'function') {
       if (!parent || parent.nodeType !== Node.ELEMENT_NODE) return;
       if (parent.localName === WRAPPER_TAG) return;
       if (!textLaidOutAnonymously(parent)) return;
+      if (siblingReliesOnOnlyChild(parent)) return;
       var wrapper = document.createElement(WRAPPER_TAG);
       parent.insertBefore(wrapper, node);
       wrapper.appendChild(node);

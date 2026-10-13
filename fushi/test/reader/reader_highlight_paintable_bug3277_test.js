@@ -69,8 +69,9 @@ class Element {
   }
 }
 
-function makeWindow() {
+function makeWindow(userAgent) {
   const window = {
+    navigator: {userAgent: userAgent || ''},
     getComputedStyle(el, pseudo) {
       if (pseudo) {
         return Object.assign({display: 'inline', position: 'static', cssFloat: 'none', content: 'none'},
@@ -196,6 +197,51 @@ let checks = 0;
   window.__fushiEnsureHighlightPaintable = existing;
   vm.runInContext(installer, vm.createContext({window, Node: {TEXT_NODE, ELEMENT_NODE}, document: {}}));
   assert.equal(window.__fushiEnsureHighlightPaintable, existing);
+  checks++;
+}
+
+// 8. Blink paints highlights in anonymous blocks: the helper must be a no-op there
+//    (Android WebView and WebView2 user agents), even for the BUG-2761 shape.
+for (const ua of [
+  'Mozilla/5.0 (Linux; Android 14; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/129.0.0.0 Mobile Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0',
+]) {
+  const win = makeWindow(ua);
+  const text = new Text('本文');
+  const p = paragraph({}, BLOCK_AFTER, text);
+  win.__fushiEnsureHighlightPaintable(text);
+  assert.equal(text.parentNode, p, `Blink must not be wrapped: ${ua}`);
+  checks++;
+}
+// WebKit user agents (iOS WKWebView, WPE) still wrap.
+{
+  const win = makeWindow('Mozilla/5.0 (iPhone; CPU iPhone OS 26_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148');
+  const text = new Text('本文');
+  paragraph({}, BLOCK_AFTER, text);
+  win.__fushiEnsureHighlightPaintable(text);
+  assert.equal(text.parentNode.localName, 'fushi-hl-text');
+  checks++;
+}
+
+// 9. Wrapping must not end `p > img:only-child` (reader CSS centres a lone image
+//    as display:block); the text beside a lone <img> stays put. With a second
+//    element sibling :only-child never matched, so wrapping is fine.
+{
+  const win = makeWindow();
+  const text = new Text('挿絵の説明');
+  const img = new Element('img', {display: 'block'});
+  const p = paragraph({}, BLOCK_AFTER, text, img);
+  win.__fushiEnsureHighlightPaintable(text);
+  assert.equal(text.parentNode, p, 'text beside a lone img must not be wrapped');
+  assert.equal(p.childNodes.length, 2);
+  checks++;
+}
+{
+  const win = makeWindow();
+  const text = new Text('本文');
+  const p = paragraph({}, BLOCK_AFTER, text, new Element('img'), new Element('ruby'));
+  win.__fushiEnsureHighlightPaintable(text);
+  assert.equal(text.parentNode.localName, 'fushi-hl-text');
   checks++;
 }
 
