@@ -30,12 +30,28 @@ const String kOpenAiOfficialHost = 'api.openai.com';
 /// 思考留了余量；正文被截断无所谓——测的是通路，不是回答。
 const int _kPingMaxTokens = 32;
 
+/// [AiChatClient.complete] 遇到临时性失败（[AiChatFailure.isTransient]：网络抖动 /
+/// 超时、429、5xx）时最多尝试几次（含第一次）。2026-10-13 用户拍板：网络波动、
+/// 偶发限流不能让一批 OCR 纠错直接作废。
+const int kAiChatMaxAttempts = 3;
+
+/// 重试的指数退避基数：第 n 次重试前等 base × 2^(n-1)（2 秒、4 秒）。提供商给了
+/// `Retry-After` 就按它的。
+const Duration kAiChatRetryBaseDelay = Duration(seconds: 2);
+
+/// 提供商要求等得比这还久（`Retry-After` 动辄几分钟的额度耗尽）就不在后台干等，
+/// 直接报失败——那不是抖动，是额度没了。
+const Duration kAiChatMaxRetryWait = Duration(seconds: 60);
+
 /// 调用失败。[message] 是**已脱敏**的短文案，可以直接进 UI——绝不含 API Key、
 /// 完整 URL 或响应体原文（后两者都可能回显凭据）。
 class AiChatFailure implements Exception {
-  const AiChatFailure(this.message);
+  const AiChatFailure(this.message, {this.retryAfter});
 
   final String message;
+
+  /// 429 回复里提供商要求的等待（`Retry-After`）；没给为 null。
+  final Duration? retryAfter;
 
   /// 原样重试可能成功的失败：网络 / 超时（都报 `network_error`）、限流、5xx。
   /// 鉴权失败、4xx、坏回复、空回复、未配置都是配置或模型的问题，重试也一样。
@@ -100,7 +116,11 @@ class AiChatClient {
   /// 按提供商排队（[AiProviderConfig.requestsPerMinute] 与 `Retry-After`）。
   final AiRateLimiter _rateLimiter;
 
+  /// 调用方已不要结果（[close]）：在途请求失败后不再重试。
+  bool _closed = false;
+
   void close() {
+    _closed = true;
     if (_ownsClient) {
       _client.close();
     }
@@ -110,6 +130,11 @@ class AiChatClient {
   ///
   /// 三种协议同一口径：回复为空或只有空白一律抛 `empty_response`——空串对每个
   /// 调用方都是「AI 什么也没给」，当成功返回只会把失败推迟成下游的解析错误。
+  ///
+  /// 临时性失败（网络 / 超时、429、5xx）最多试 [kAiChatMaxAttempts] 次，指数退避；
+  /// 退避写进限频器（[AiRateLimiter.backOff]），这家并发在途的其它请求一起避让，
+  /// 不接着撞墙。提供商要求等超过 [kAiChatMaxRetryWait]、或客户端已 [close]，
+  /// 不再重试、原样抛出。鉴权 / 4xx / 坏回复重试也一样，直接抛。
   Future<String> complete({
     required AiProviderConfig provider,
     required List<AiChatMessage> messages,
@@ -118,8 +143,7 @@ class AiChatClient {
     if (!provider.isUsable) {
       throw const AiChatFailure('provider_not_configured');
     }
-    await _rateLimiter.acquire(provider);
-    final Map<Object?, Object?> body = await _postChat(
+    final Map<Object?, Object?> body = await _postChatWithRetry(
       provider,
       messages,
       maxTokens,
@@ -432,6 +456,34 @@ class AiChatClient {
     return headers;
   }
 
+  /// 排队 → 发送；临时性失败按 [_retryDelay] 退避后再排队重发。
+  Future<Map<Object?, Object?>> _postChatWithRetry(
+    AiProviderConfig provider,
+    List<AiChatMessage> messages,
+    int maxTokens,
+  ) async {
+    for (int attempt = 1; ; attempt++) {
+      await _rateLimiter.acquire(provider);
+      try {
+        return await _postChat(provider, messages, maxTokens);
+      } on AiChatFailure catch (failure) {
+        final Duration? wait = _retryDelay(failure, attempt);
+        if (wait == null) rethrow;
+        _rateLimiter.backOff(provider, wait);
+      }
+    }
+  }
+
+  /// 第 [attempt] 次失败后还要不要再试、等多久；null = 不再试。
+  Duration? _retryDelay(AiChatFailure failure, int attempt) {
+    if (_closed || !failure.isTransient || attempt >= kAiChatMaxAttempts) {
+      return null;
+    }
+    final Duration wait =
+        failure.retryAfter ?? kAiChatRetryBaseDelay * (1 << (attempt - 1));
+    return wait > kAiChatMaxRetryWait ? null : wait;
+  }
+
   /// [throttled] 非 null 时，429 回复的 `Retry-After` 记进限频器：这家后续请求
   /// （包括并发在途、还在排队的）都等到那之后再发。
   Future<http.Response> _send(
@@ -455,7 +507,7 @@ class AiChatClient {
       if (throttled != null && retryAfter != null) {
         _rateLimiter.backOff(throttled, retryAfter);
       }
-      throw const AiChatFailure('rate_limited');
+      throw AiChatFailure('rate_limited', retryAfter: retryAfter);
     }
     if (response.statusCode >= 400) {
       throw AiChatFailure('http_${response.statusCode}');

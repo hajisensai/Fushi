@@ -146,7 +146,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 
 ### 13. AI 功能 (`lib/src/ai/`)
 
-- `ai_provider_config.dart` / `ai_chat_client.dart` -- 多提供商 LLM 调用层（OpenAI 兼容 / Anthropic / Gemini 三种 wire 协议，17 家预设含 Ollama、LM Studio 本地）；不做流式；错误一律脱敏成短码。
+- `ai_provider_config.dart` / `ai_chat_client.dart` -- 多提供商 LLM 调用层（OpenAI 兼容 / Anthropic / Gemini 三种 wire 协议，17 家预设含 Ollama、LM Studio 本地）；不做流式；错误一律脱敏成短码。`complete` 统一走 `AiRateLimiter`（按提供商的 `requestsPerMinute` 均匀排开、遵守 429 的 `Retry-After`），临时性失败（网络 / 超时、429、5xx）指数退避最多试 `kAiChatMaxAttempts` 次（2026-10-13 用户拍板：网络波动不能让一批直接作废）；鉴权 / 4xx 不重试，要求等超过 60 秒或客户端已关闭不再重试。
 - `ai_feature.dart` -- 「功能 → 提供商」指派表 `AiFeature`（galgame 文本清洗 / 词典弹窗样式 / Lapis 卡片样式 / 视频识别 / 视频搜索辅助（仅后台补字幕重排）/ 自定义主题配色 / AI 下视频 / AI 下载（小说 / 漫画 / 游戏））。新增 AI 功能 = 加枚举值 + 一个 `ai_*_assistant.dart`（提示词 + 解析 + 本地校验）+ 入口按钮；设置页功能行自动列出。
 - `ai_reply_json.dart` -- 共享的「从回复里抠 JSON」工具，所有助手共用。
 - `ai_video_acquisition_assistant.dart` + `lib/src/media/video/acquisition/` -- 「AI 下视频」（2026-09-22）：对话页里说作品名，纯函数状态机 `reduceVideoAcquisition` 决定缺什么 / 问什么 / 何时提交，AI 只做一句话 → 结构化意图补丁与多义作品选择；资源选择 / 入队 / 建订阅全是确定性代码。旧「AI 排序 / 补词」页面按钮已移除。设计见 `docs/specs/2026-09-22-ai-video-acquisition.md`。「下载执行设备」指向已配对电脑时整场对话交给电脑跑（`/api/assistant` 会话，手机只渲染与语言无关的 `VideoAcquisitionView`；对话页只认 `VideoAcquisitionSession`，端口装配只在 `app_video_acquisition_assembly.dart` 写一次），见 `docs/specs/2026-09-28-remote-ai-assistant.md`。

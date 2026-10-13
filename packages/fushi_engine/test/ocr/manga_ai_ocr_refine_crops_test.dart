@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_rate_limiter.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 import 'package:http/http.dart' as http;
@@ -58,6 +59,8 @@ void main() {
     AiChatClient factory() {
       factoryCalls[0]++;
       return AiChatClient(
+        // 重试退避不真等（重试语义本身在 ai_rate_limiter_test 里测）。
+        rateLimiter: AiRateLimiter(sleep: (Duration _) async {}),
         client: MockClient((http.Request request) async {
           final Map<String, Object?> body =
               jsonDecode(request.body) as Map<String, Object?>;
@@ -302,7 +305,7 @@ void main() {
     expect(f.imagesPerRequest, hasLength(1));
   });
 
-  test('瞬时失败（5xx）只丢这一批，后面的批次照发', () async {
+  test('瞬时失败（5xx）每批先重试满，用尽后只丢这一批，后面的批次照发', () async {
     final f = fake(status: 503);
     final MangaAiOcrRefiner refiner = MangaAiOcrRefiner(
       provider: provider,
@@ -314,7 +317,9 @@ void main() {
       item(1, cue('一')),
       item(3, cue('二')),
     ]);
-    expect(f.imagesPerRequest, <int>[1, 1]);
+    expect(f.imagesPerRequest, <int>[
+      for (int i = 0; i < 2 * kAiChatMaxAttempts; i++) 1,
+    ]);
     expect(refiner.fatalFailure, isNull);
   });
 

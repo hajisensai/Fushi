@@ -108,48 +108,163 @@ void main() {
     expect(AiProviderConfig.fromJson(negative).requestsPerMinute, 0);
   });
 
-  test('AiChatClient：每次 complete 先排队；429 的 Retry-After 推迟这家后续请求', () async {
-    final c = fakeClock();
-    int calls = 0;
-    final AiChatClient client = AiChatClient(
-      rateLimiter: c.limiter,
-      client: MockClient((http.Request request) async {
-        calls++;
-        if (calls == 1) {
-          return http.Response(
-            '',
-            429,
-            headers: <String, String>{'retry-after': '20'},
-          );
-        }
-        return http.Response(
-          jsonEncode(<String, Object?>{
-            'choices': <Object?>[
-              <String, Object?>{
-                'message': <String, Object?>{'content': 'ok'},
-              },
-            ],
-          }),
-          200,
-          headers: <String, String>{'content-type': 'application/json'},
-        );
-      }),
-    );
-    final AiProviderConfig p = provider();
+  group('AiChatClient 临时性失败重试', () {
     final List<AiChatMessage> messages = <AiChatMessage>[
       const AiChatMessage.user('hi'),
     ];
-    await expectLater(
-      client.complete(provider: p, messages: messages),
-      throwsA(
-        isA<AiChatFailure>().having(
-          (AiChatFailure f) => f.message,
-          'message',
-          'rate_limited',
-        ),
+
+    http.Response ok() => http.Response(
+      jsonEncode(<String, Object?>{
+        'choices': <Object?>[
+          <String, Object?>{
+            'message': <String, Object?>{'content': 'ok'},
+          },
+        ],
+      }),
+      200,
+      headers: <String, String>{'content-type': 'application/json'},
+    );
+
+    /// 按顺序回 [responses]（null = 抛网络异常），记下调了几次。
+    (AiChatClient, List<int>) scripted(
+      AiRateLimiter limiter,
+      List<http.Response? Function()> responses,
+    ) {
+      final List<int> calls = <int>[0];
+      final AiChatClient client = AiChatClient(
+        rateLimiter: limiter,
+        client: MockClient((http.Request request) async {
+          final http.Response? r = responses[calls[0]++]();
+          if (r == null) throw const SocketLikeException();
+          return r;
+        }),
+      );
+      return (client, calls);
+    }
+
+    Matcher failsWith(String message) => throwsA(
+      isA<AiChatFailure>().having(
+        (AiChatFailure f) => f.message,
+        'message',
+        message,
       ),
     );
-    expect(await client.complete(provider: p, messages: messages), 'ok');
-    expect(c.waits, <Duration>[const Duration(seconds: 20)]);
+
+    test('网络抖动 / 5xx：指数退避（2 秒、4 秒）后重试成功', () async {
+      final c = fakeClock();
+      final (AiChatClient client, List<int> calls) = scripted(
+        c.limiter,
+        <http.Response? Function()>[
+          () => null,
+          () => http.Response('', 503),
+          ok,
+        ],
+      );
+      expect(
+        await client.complete(provider: provider(), messages: messages),
+        'ok',
+      );
+      expect(calls.single, 3);
+      expect(c.waits, <Duration>[
+        const Duration(seconds: 2),
+        const Duration(seconds: 4),
+      ]);
+    });
+
+    test('429 按 Retry-After 等待后重试', () async {
+      final c = fakeClock();
+      final (AiChatClient client, List<int> calls) = scripted(
+        c.limiter,
+        <http.Response? Function()>[
+          () => http.Response(
+            '',
+            429,
+            headers: <String, String>{'retry-after': '20'},
+          ),
+          ok,
+        ],
+      );
+      expect(
+        await client.complete(provider: provider(), messages: messages),
+        'ok',
+      );
+      expect(calls.single, 2);
+      expect(c.waits, <Duration>[const Duration(seconds: 20)]);
+    });
+
+    test('最多试 3 次，仍失败就抛最后一次的错', () async {
+      final c = fakeClock();
+      final (
+        AiChatClient client,
+        List<int> calls,
+      ) = scripted(c.limiter, <http.Response? Function()>[
+        () => http.Response('', 500),
+        () => http.Response('', 502),
+        () => http.Response('', 503),
+      ]);
+      await expectLater(
+        client.complete(provider: provider(), messages: messages),
+        failsWith('http_503'),
+      );
+      expect(calls.single, kAiChatMaxAttempts);
+    });
+
+    test('鉴权 / 4xx 不重试', () async {
+      final c = fakeClock();
+      final (AiChatClient client, List<int> calls) = scripted(
+        c.limiter,
+        <http.Response? Function()>[() => http.Response('', 401), ok],
+      );
+      await expectLater(
+        client.complete(provider: provider(), messages: messages),
+        failsWith('unauthorized'),
+      );
+      expect(calls.single, 1);
+      expect(c.waits, isEmpty);
+    });
+
+    test('要求等超过 60 秒（额度耗尽）就不在后台干等', () async {
+      final c = fakeClock();
+      final (AiChatClient client, List<int> calls) = scripted(
+        c.limiter,
+        <http.Response? Function()>[
+          () => http.Response(
+            '',
+            429,
+            headers: <String, String>{'retry-after': '600'},
+          ),
+          ok,
+        ],
+      );
+      await expectLater(
+        client.complete(provider: provider(), messages: messages),
+        failsWith('rate_limited'),
+      );
+      expect(calls.single, 1);
+    });
+
+    test('调用方关闭客户端后不再重试', () async {
+      final c = fakeClock();
+      late final AiChatClient client;
+      final List<int> calls = <int>[0];
+      client = AiChatClient(
+        rateLimiter: c.limiter,
+        client: MockClient((http.Request request) async {
+          calls[0]++;
+          client.close();
+          return http.Response('', 503);
+        }),
+      );
+      await expectLater(
+        client.complete(provider: provider(), messages: messages),
+        failsWith('http_503'),
+      );
+      expect(calls.single, 1);
+    });
   });
+}
+
+/// MockClient 里模拟连接断开（`AiChatClient` 把任何发送异常归成 `network_error`）。
+class SocketLikeException implements Exception {
+  const SocketLikeException();
 }
