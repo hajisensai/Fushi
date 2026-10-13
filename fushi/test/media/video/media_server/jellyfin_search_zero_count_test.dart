@@ -110,6 +110,70 @@ void main() {
     expect(ids, hasLength(160), reason: '不重复');
   });
 
+  group('请求数有上界（总数不可信时不反复逐页数）', () {
+    test('一轮数过一次后，翻页不再重数', () async {
+      final _ZeroCountEmby server = _ZeroCountEmby(<Map<String, Object?>>[
+        for (int i = 0; i < 1000; i++) _movie('m-$i', '猫$i'),
+        for (int i = 0; i < 5; i++) _series('s-$i', '猫剧$i'),
+      ]);
+      final JellyfinVideoClient client = _client(server.client);
+
+      final MediaServerPage first = await client.search('猫', limit: 50);
+      // 电影轮首页 1 发 + 逐页数 1000 行（10 满页 + 1 空页）11 发 + 剧集轮只问
+      // 1 行判 hasMore 1 发。
+      expect(server.seen, hasLength(13));
+      expect(first.hasMore, isTrue);
+
+      int start = first.nextStartIndex;
+      for (int page = 0; page < 5; page++) {
+        server.seen.clear();
+        final MediaServerPage next = await client.search(
+          '猫',
+          startIndex: start,
+          limit: 50,
+        );
+        // 电影轮当前页 1 发 + 剧集轮 1 发；电影轮总数复用已数过的，不再计数。
+        expect(
+          server.seen,
+          hasLength(lessThanOrEqualTo(2)),
+          reason: '第 $page 页',
+        );
+        expect(next.nextStartIndex, greaterThan(start));
+        start = next.nextStartIndex;
+      }
+    });
+
+    test('已凑够时只问 1 行的剧集轮不触发全量计数', () async {
+      final _ZeroCountEmby server = _ZeroCountEmby(<Map<String, Object?>>[
+        for (int i = 0; i < 150; i++) _movie('m-$i', '猫$i'),
+        for (int i = 0; i < 300; i++) _series('s-$i', '猫剧$i'),
+      ]);
+      final MediaServerPage page = await _client(
+        server.client,
+      ).search('猫', limit: 50);
+      // 电影轮首页 1 发 + 逐页数 150 行 2 发；剧集轮只有 Limit=1 那 1 发。
+      expect(server.seen, hasLength(4));
+      final Iterable<Uri> seriesRequests = server.seen.where(
+        (Uri u) => u.queryParameters['IncludeItemTypes'] == 'Series',
+      );
+      expect(seriesRequests, hasLength(1));
+      expect(seriesRequests.single.queryParameters['Limit'], '1');
+      expect(page.hasMore, isTrue);
+    });
+
+    test('新搜索（startIndex 0）不复用上一次数出的总数', () async {
+      final _ZeroCountEmby server = _ZeroCountEmby(<Map<String, Object?>>[
+        for (int i = 0; i < 250; i++) _movie('m-$i', '猫$i'),
+      ]);
+      final JellyfinVideoClient client = _client(server.client);
+      await client.search('猫', limit: 50);
+      final int firstCount = server.seen.length;
+      server.seen.clear();
+      await client.search('猫', limit: 50);
+      expect(server.seen, hasLength(firstCount), reason: '重新逐页数，拿服务器最新数据');
+    });
+  });
+
   group('searchRoundTotal', () {
     JellyfinItemsPage page(int rows, int total) => JellyfinItemsPage(
       items: List<JellyfinItem>.generate(
@@ -158,6 +222,19 @@ void main() {
           measure: () async => 37,
         ),
         37,
+      );
+    });
+
+    test('只判 hasMore（exact: false）、这页满了：取下界，不逐页数', () async {
+      expect(
+        await JellyfinVideoClient.searchRoundTotal(
+          page: page(1, 0),
+          startIndex: 0,
+          requested: 1,
+          exact: false,
+          measure: never,
+        ),
+        1,
       );
     });
 

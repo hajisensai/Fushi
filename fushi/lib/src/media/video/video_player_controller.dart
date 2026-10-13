@@ -39,6 +39,7 @@ import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/net/app_native_proxy.dart';
 import 'package:fushi_audio/fushi_audio.dart';

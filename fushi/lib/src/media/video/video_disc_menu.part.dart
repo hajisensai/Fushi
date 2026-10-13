@@ -242,8 +242,16 @@ extension VideoDiscMenuController on VideoPlayerController {
     if (isVideoDiscInputCommand(command)) {
       // An unconsumed key/click is the disc's own no-op (see
       // isVideoDiscInputCommand), not a failure the user must be told about.
+      // mpv reports it with the generic MPV_ERROR_COMMAND, which a stream that is
+      // no longer a navigable disc also returns: keep the evidence in the
+      // diagnostic log, and let the post-command sample below decide the menu
+      // state — an inactive navigation is surfaced there as
+      // 'navigation-open-failed', never inferred from this result.
       if (!runVideoDiscInputCommand(native, command)) {
-        debugPrint('[disc-menu] input not consumed by disc: $command');
+        ErrorLogService.instance.logDiagnostic(
+          'VideoDiscMenu.input',
+          'input not consumed by disc: ${command.join(' ')}',
+        );
       }
     } else {
       runCheckedVideoDiscCommand(native, command);

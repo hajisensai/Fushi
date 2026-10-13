@@ -3665,7 +3665,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (mounted) {
       _showOsd(
         t.video_subtitle_remote_audio_fetching,
-        icon: Icons.graphic_eq,
+        icon: FushiIcons.audio,
         severity: ToastSeverity.info,
       );
     }
@@ -3707,7 +3707,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (mounted) {
       _showOsd(
         t.video_subtitle_remote_audio_fetching,
-        icon: Icons.graphic_eq,
+        icon: FushiIcons.audio,
         severity: ToastSeverity.info,
       );
     }

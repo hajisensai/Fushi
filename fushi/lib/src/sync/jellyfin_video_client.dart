@@ -2812,7 +2812,20 @@ class JellyfinVideoClient
   static const int kSearchScanLimit = 500;
 
   /// 一轮的总数要靠逐页数出来时（[searchRoundTotal]），最多数这么多行。
+  ///
+  /// 已知限制：真实行数超过上限时数出来的就是这个上限，本轮总数被低报——
+  /// `hasMore` 会在扫到第 [kSearchMeasureLimit] 行时提前变 false，后面一轮
+  /// （剧集轮）的拼接偏移也随之按低报的总数换算。只有服务器把总数报错
+  /// （BUG-3289：Emby 短查询报 0）且命中超过 2000 行时才会撞上；短查询的真命中
+  /// 按相关度排在前面，不会落在 2000 行之后。
   static const int kSearchMeasureLimit = 2000;
+
+  /// 本次搜索已经逐页数出来的轮总数，键是「类型 + 查询词」。
+  ///
+  /// 页面按 nextStartIndex 往后翻时每次都会重新问各轮的总数；服务器总数不可信时
+  /// 每翻一页都从头数一遍（最多 20 发请求 × 轮数 × 服务器数）。一次搜索的结果集
+  /// 在翻页期间视为不变，数过就记住；新搜索（startIndex == 0）清空，拿最新数据。
+  final Map<String, Future<int>> _searchRoundCounts = <String, Future<int>>{};
 
   /// 一页搜索结果的服务器总数能不能当作本轮的边界（BUG-3289）。
   ///
@@ -2834,11 +2847,15 @@ class JellyfinVideoClient
   /// 总数与数据一致就用服务器的；不一致时按数据定：一页没要满就是到了本轮末尾，
   /// 否则从头逐页数到短页为止（[measure]，上限 [kSearchMeasureLimit]）。拼接分页的
   /// cursor 要靠每一轮的准确总数换算偏移，不能拿下界凑。
+  ///
+  /// [exact] 为 false 时调用方只拿总数判 `hasMore`（这一轮不扫、cursor 也不落在它
+  /// 后面），下界 `startIndex + 行数` 已足够：有一行就说明还有，没必要整轮数一遍。
   static Future<int> searchRoundTotal({
     required JellyfinItemsPage page,
     required int startIndex,
     required int requested,
     required Future<int> Function() measure,
+    bool exact = true,
   }) async {
     final int rows = page.items.length;
     if (!searchCountContradicted(
@@ -2848,8 +2865,26 @@ class JellyfinVideoClient
     )) {
       return page.totalCount;
     }
-    if (rows > 0 && rows < requested) return startIndex + rows;
+    if (rows > 0 && (rows < requested || !exact)) return startIndex + rows;
     return measure();
+  }
+
+  /// 一轮搜索的行数：本次搜索数过就复用（[_searchRoundCounts]），否则逐页数。
+  /// 失败不缓存。
+  Future<int> _searchRoundCount(String type, String term) async {
+    final String key = '$type\u0000$term';
+    final Future<int> counting = _searchRoundCounts.putIfAbsent(
+      key,
+      () => _measureSearchRound(type, term),
+    );
+    try {
+      return await counting;
+    } catch (_) {
+      if (identical(_searchRoundCounts[key], counting)) {
+        _searchRoundCounts.remove(key);
+      }
+      rethrow;
+    }
   }
 
   /// 从头逐页数一轮搜索有多少行（只在服务器总数不可信时用）。
@@ -2882,6 +2917,8 @@ class JellyfinVideoClient
     final String term = query.trim();
     final List<String> tokens = mediaServerSearchTokens(term);
     if (tokens.isEmpty) return const MediaServerPage.empty();
+    // 新搜索从头来：上一次搜索数过的轮总数作废，按服务器当前数据重数。
+    if (startIndex == 0) _searchRoundCounts.clear();
     // 把两轮结果当成一条拼接序列分页：cursor 是拼接序里的服务器行位置，跨过
     // 一整轮就落到下一轮的本地偏移。每轮都要问一次（哪怕已经凑够也 Limit=1
     // 只取总数），否则 totalCount 算不出、hasMore 无从判断。
@@ -2921,11 +2958,15 @@ class JellyfinVideoClient
         );
         // BUG-3289：短查询下 Emby 报的总数是 0，先按数据校正，否则「localStart >=
         // roundTotal」会在收下这页命中之前就 break，整页结果被丢弃。
+        // 逐页数出来的总数按「类型 + 查询词」记在 [_searchRoundCounts]：本轮后续
+        // 页与之后的翻页都直接复用，不再重数。已经凑够（只问 1 行）时这一轮不会被
+        // 扫、cursor 也不落在它后面，总数只用来判 hasMore，下界就够，不触发计数。
         roundTotal = await searchRoundTotal(
           page: page,
           startIndex: localStart,
           requested: requested,
-          measure: () => _measureSearchRound(type, term),
+          exact: !enough,
+          measure: () => _searchRoundCount(type, term),
         );
         if (enough || localStart >= roundTotal || page.items.isEmpty) break;
         scanned += page.items.length;

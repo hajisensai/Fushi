@@ -550,26 +550,37 @@ void main() {
 
     test('对轴 / 重定时入口不再只认本地视频文件', () {
       expect(part, isNot(contains('!_isRemote && _currentVideoPath != null')));
+      // 波形与自动对轴只看前几分钟，走对轴音源：整集音源优先，媒体服务器流再退到
+      // 只裁前 N 分钟（BUG-3290 批次）；ASR 转录要整集，仍只认整集音源。
       for (final String fn in <String>[
         'Future<int?> _autoAlignSubtitle(',
         'Future<List<double>> _loadSubtitleWaveformEnvelope(',
-        'Future<String?> _transcribeVideoSpeech(',
       ]) {
         expect(
           body(part, fn),
-          contains('_resolveSubtitleTimingAudio()'),
-          reason: '$fn 要经统一音源解析，远端才拿得到 host 裁的整集音轨',
+          contains('_resolveSubtitleAlignAudio()'),
+          reason: '$fn 要经统一对轴音源解析，远端才拿得到 host 裁的音轨',
         );
       }
+      expect(
+        body(part, 'Future<_SubtitleTimingAudio?> _resolveSubtitleAlignAudio('),
+        contains('return _resolveSubtitleTimingAudio();'),
+        reason: '对轴音源先走整集音源解析，互联远端仍拿 host 裁的整集音轨',
+      );
+      expect(
+        body(part, 'Future<String?> _transcribeVideoSpeech('),
+        contains('_resolveSubtitleTimingAudio()'),
+        reason: 'ASR 转录只认整集音源，不能拿只裁前 N 分钟的流音频',
+      );
       expect(
         body(part, 'Future<void> _retimeSubtitleWithSpeechModel('),
         contains('_transcribeVideoSpeech(controller)'),
         reason: '重定时与生成字幕共用当前音轨转录，再经统一音源解析',
       );
       expect(
-        RegExp('_canResolveSubtitleTimingAudio').allMatches(page).length,
+        RegExp('_canResolveSubtitleAlignAudio').allMatches(page).length,
         greaterThanOrEqualTo(2),
-        reason: '快速设置面板的自动对轴与波形入口都要用新判据',
+        reason: '快速设置面板的自动对轴与波形入口都要用对轴音源判据',
       );
     });
   });

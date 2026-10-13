@@ -29,6 +29,13 @@ void main() {
     expect(body, contains('isVideoDiscInputCommand(command)'));
     expect(body, contains('runVideoDiscInputCommand(native, command)'));
     expect(body, contains('runCheckedVideoDiscCommand(native, command)'));
+    // 未接收与「当前流已不是可导航原盘」在 mpv 那里是同一个 -12：不能只 debugPrint
+    // 吞掉，要留进诊断日志；菜单状态由命令后的重采样判定。
+    expect(body, contains('ErrorLogService.instance.logDiagnostic('));
+    expect(body, isNot(contains('debugPrint(')));
+    final int input = body.indexOf('runVideoDiscInputCommand(native, command)');
+    final int resample = body.lastIndexOf('_sampleDiscMenu(player, token)');
+    expect(resample, greaterThan(input), reason: '命令后必须重采样菜单状态');
   });
 
   test('the authored-menu chrome carries its own fullscreen button', () {
