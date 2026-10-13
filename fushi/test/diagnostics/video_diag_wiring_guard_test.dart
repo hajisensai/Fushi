@@ -143,6 +143,14 @@ void main() {
         reason: '诊断关闭且无黑闪判据时，一个 mpv 属性都不该读',
       );
       expect(body, contains('videoDiagEnabledFor('));
+      expect(
+        RegExp(
+          r'wantDiag = videoDiagEnabledFor\(\s*VideoDiagCategory\.mpvStats,\s*'
+          r'VideoDiagLevel\.warn,',
+        ).hasMatch(body),
+        isTrue,
+        reason: '按 v 判是否采样会在过滤串把 mpv/stats 压到 info/warn 时连劣化告警一起丢',
+      );
     });
 
     test('采样读的是共享的属性清单，不另写一份字符串', () {

@@ -5,7 +5,9 @@ The pristine `lib/src/player/native/player/real.dart` SHA-256 is
 `6286405e40d9102a7fbca968eb23a313a0735ce40355caa779f4767b06f8e032`.
 The upstream MIT license and source header remain unchanged.
 
-The only change to `real.dart` is an imported predicate for the existing
+`real.dart` carries two changes. The value-compared
+`observePropertyChanges` subscription is described in `PATCHES.md` (BUG-3315).
+The other is an imported predicate for the existing
 `loadfile` versus temporary-playlist branch of `NativePlayer.open`.
 `native_open_policy.dart` implements and tests the request boundary:
 

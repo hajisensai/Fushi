@@ -23,3 +23,32 @@ Remove when upstream provides a callback lifetime that remains safe across
 Flutter hot restart, then rerun the native isolate-exit regression and the real
 Windows video hot-restart reproduction. The separate Windows render-context
 teardown risks are not claimed fixed by this patch.
+
+## BUG-3315: value-compared property observation
+
+`lib/src/player/native/player/real.dart` adds
+`NativePlayer.observePropertyChanges(property, listener)`. It subscribes with
+`MPV_FORMAT_STRING`, so libmpv compares the formatted value in its core and only
+emits `MPV_EVENT_PROPERTY_CHANGE` when it actually changes; the string arrives
+with the event and the listener runs without any synchronous property read.
+
+Upstream `observeProperty` subscribes with `MPV_FORMAT_NONE`. mpv reports such
+subscriptions as changed on every notification (`player/client.c`:
+`prop->format == 0` sets `changed = true`), and properties notified on
+`MPV_EVENT_TICK` (`sub-start`, `sub-end`, `time-pos`, the frame counters, ...)
+are notified once per video frame. Each of those events is answered by a
+synchronous `mpv_get_property_string` (it takes the mpv core lock) on the event
+isolate before the Dart listener can de-duplicate anything. The graphic
+subtitle timing observer hit exactly this: two core-locked reads per frame for
+the rest of the player's life.
+
+`observeProperty` is unchanged byte for byte; both methods share the listener
+table, so `unobserveProperty` removes either kind. When a value-observed
+property becomes unavailable mpv sends one `MPV_FORMAT_NONE` event; the
+existing branch handles it (the read returns null and no listener runs).
+
+Regression test: `fushi/test/third_party/media_kit_observe_changes_test.dart`
+(real libmpv; `FUSHI_TEST_LIBMPV` or a Windows Debug build). It counts
+callbacks for `frame-drop-count` under `vo=null`: the `FORMAT_NONE` control
+fires every frame, the value-compared subscription at most twice. Remove when
+upstream exposes a typed `observeProperty`.
