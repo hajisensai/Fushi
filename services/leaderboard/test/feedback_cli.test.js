@@ -1,8 +1,10 @@
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { call, makeEnv, nextIp } from './harness.js';
 import { FEEDBACK_LIMITS } from '../src/feedback.js';
 import {
-  existingIdsSql, formatShow, listSql, missingIds, parseArgs, parseWranglerJson, showSql, sqlText, summarizeBatchSql, summarizeSql,
+  existingIdsSql, formatShow, gzipPayload, listSql, missingIds, parseArgs, parseWranglerJson, r2WhereArgs, showSql, sqlText,
+  summarizeBatchSql, summarizeSql,
 } from '../scripts/feedback.mjs';
 
 const NOW = Date.UTC(2026, 9, 10, 4);
@@ -88,5 +90,15 @@ describe('scripts/feedback.mjs', () => {
       .toEqual({ cmd: 'summarize', id: 'abcdefgh', flags: { text: '你好', local: true } });
     expect(() => parseArgs(['list', '--status'])).toThrow(/需要一个值/);
     expect(sqlText(null)).toBe('NULL');
+  });
+
+  it('show --log：r2 不传 --remote，--pipe 前的代理提示行被跳过', () => {
+    expect(r2WhereArgs('--remote')).toEqual([]);
+    expect(r2WhereArgs('--local')).toEqual(['--local']);
+
+    const gz = gzipSync(Buffer.from('第一行\n第二行', 'utf8'));
+    const noisy = Buffer.concat([Buffer.from("Proxy environment variables detected. We'll use your proxy for fetch requests.\n"), gz]);
+    expect(gunzipSync(gzipPayload(noisy)).toString('utf8')).toBe('第一行\n第二行');
+    expect(gzipPayload(gz)).toBe(gz);
   });
 });
