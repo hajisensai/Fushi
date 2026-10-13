@@ -789,7 +789,7 @@ void main() {
       writeFile(
         root,
         'fushi/test/tools/bug_005_mine_test.dart',
-        "// BUG-005 回归守卫\n",
+        '// BUG-005 回归守卫\n',
       );
       bug.cmdReindex();
       git(root, <String>['add', '-A']);
