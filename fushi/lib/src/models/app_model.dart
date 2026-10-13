@@ -8827,7 +8827,8 @@ class AppModel with ChangeNotifier {
 
   /// TODO-2936：「浏览器」媒体类型 Profile 绑定的应用委托。AppModel 不在
   /// Riverpod 图里，无法直接触达 [ProfileViewModel]，由 main.dart 在根容器建好
-  /// 后注入（`autoApplyBinding(mediaType: ProfileMediaKind.browser)`）。
+  /// 后注入（`autoApplyBinding(mediaType: ProfileMediaKind.browser,
+  /// restoreFallback: false)`：查词不回退到绑定前的配置）。
   Future<void> Function()? browserLookupProfileApplier;
 
   /// 读 `ankiRepositoryProvider` 的委托（待发队列 / 自动重排 / 转发互联主机都在那条

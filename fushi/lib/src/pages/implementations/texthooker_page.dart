@@ -967,10 +967,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     // TODO-2936：应用「游戏」媒体类型的 Profile 绑定（非致命、与附着并行）。
     // 这条入口附着的是用户挑的任意外部窗口，不对应任何游戏库条目，拿不到内容语言
     // ——**故意不传** languageTag（而不是拿全局默认凑一个值），语言级整级跳过。
+    // 附着的窗口不是一个「打开的条目」：只应用命中的绑定，无绑定时不回退。
     unawaited(
       ref
           .read(profileViewModelProvider.notifier)
-          .autoApplyBinding(mediaType: ProfileMediaKind.game),
+          .autoApplyBinding(
+            mediaType: ProfileMediaKind.game,
+            restoreFallback: false,
+          ),
     );
     await _session.startAttachedCapture(picked);
   }
@@ -1027,6 +1031,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             .autoApplyBinding(
               languageTag: known?.language,
               mediaType: ProfileMediaKind.game,
+              restoreFallback: true,
             ),
       );
       final GalHookLaunchResult result = await _session.launchGame(

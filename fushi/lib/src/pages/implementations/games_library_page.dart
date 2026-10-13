@@ -665,6 +665,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         ref.read(profileViewModelProvider.notifier).autoApplyBinding(
               languageTag: game.language,
               mediaType: ProfileMediaKind.game,
+              restoreFallback: true,
             ),
       );
       final GalHookLaunchResult result = await session.launchGame(

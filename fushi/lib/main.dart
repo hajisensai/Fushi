@@ -575,9 +575,14 @@ void main([List<String> args = const <String>[]]) {
     final appModel = container.read(appProvider);
     // TODO-2936：浏览器扩展查词命中 yomitan-api server 时应用「浏览器」媒体类型
     // 的 Profile 绑定。必须在 initialise() 之前注入（server 在 initialise 内启动）。
+    // 查词是与正在看的条目并存的旁路活动：只应用命中的「浏览器」绑定，无绑定时
+    // 不回退、不消费回退点（否则阅读器背后的配置会被一次查词换掉）。
     appModel.browserLookupProfileApplier = () => container
         .read(profileViewModelProvider.notifier)
-        .autoApplyBinding(mediaType: ProfileMediaKind.browser);
+        .autoApplyBinding(
+          mediaType: ProfileMediaKind.browser,
+          restoreFallback: false,
+        );
     appModel.ankiRepositoryReader = () => container.read(ankiRepositoryProvider);
     await appModel.initialise();
     // issue #1949：用户打开了「启动 Fushi 时自动启动 Anki」且本机 AnkiConnect

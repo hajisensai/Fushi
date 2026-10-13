@@ -5,6 +5,8 @@ import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi_engine/media/video/strm_file.dart'
     show isNetworkOnlyVideoPath, kNetworkStreamSchemes;
 import 'package:fushi_engine/sync/aggregate_merge_service.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kProfileFallbackIdPrefKey;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_audio/fushi_audio.dart' show FavoriteSentence;
 import 'package:fushi_core/fushi_core.dart';
@@ -398,12 +400,21 @@ class BackupMergeEngine {
   /// `active_profile_id`、各种 `*_migrated`）。这些描述的是「本库处于什么状态」，
   /// 拿老包的值去盖会让新库自称成另一个 schema 状态，是真正会毁库的一步。
   /// `NOT EXISTS` 守卫天然把它们挡在外面，同时放行老包独有的用户设置。
+  ///
+  /// 但「本库还没有」挡不住**值是源库自增 id** 的键：profiles 按名字合并、id 重新
+  /// 分配，源库的 id 原样落进本库只会指向另一份（或不存在的）配置。这类键见
+  /// [mergeSkippedLocalIdPrefKeys]，一律不接管。
   Future<void> _adoptMissingPreferences() async {
+    final List<String> skipped = mergeSkippedLocalIdPrefKeys();
+    final String placeholders =
+        List<String>.filled(skipped.length, '?').join(', ');
     await _db.customStatement(
       'INSERT INTO preferences ("key", "value") '
       'SELECT s."key", s."value" FROM $_srcAlias.preferences AS s '
-      'WHERE NOT EXISTS '
+      'WHERE s."key" NOT IN ($placeholders) '
+      'AND NOT EXISTS '
       '(SELECT 1 FROM preferences AS t WHERE t."key" = s."key")',
+      skipped,
     );
   }
 
@@ -1653,6 +1664,12 @@ class BackupMergeEngine {
 /// positions, so device-local sync prefs are inherently never merged.
 List<String> mergeSkippedDeviceLocalPrefKeys() =>
     List<String>.unmodifiable(SyncRepository.deviceLocalPrefKeys);
+
+/// 值是**本库**自增 id 的偏好键：接管源库偏好（同机换包名迁移）时不能照搬——
+/// profiles 按名字合并、id 重新分配，源库的 id 在本库指向的是别的配置。
+/// 整份恢复不受影响（那时 profiles 表与这些键来自同一个库，彼此一致）。
+List<String> mergeSkippedLocalIdPrefKeys() =>
+    List<String>.unmodifiable(const <String>[kProfileFallbackIdPrefKey]);
 
 /// Tables that a merge import must never copy from its attached backup DB.
 ///

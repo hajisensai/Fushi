@@ -17,11 +17,12 @@
 ///    MediaSources.configJson / FushiPairedPeers.token 同源）。
 library;
 
-/// 已知的静态偏好键全集（守卫强制）。按字母序。
-/// 「绑定切换前」用户自己选的 Profile id（int，缺失 = 无）。设备本地状态，与
-/// `active_profile_id` 同族，不进 Profile 快照。
+/// 「绑定切换前」用户自己选的 Profile id（int，缺失 = 无）。与
+/// `active_profile_id` 同族，不进 Profile 快照；值是**本库**自增 id，换库即失效，
+/// 所以合并导入接管源库偏好时不带它（见 `BackupMergeEngine`）。
 const String kProfileFallbackIdPrefKey = 'profile_fallback_id';
 
+/// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
   // 「哪个功能用哪家 AI」的映射。不含凭据，但跟着 ai_providers 一起设备本地：

@@ -162,6 +162,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         bookUid: bookKey,
         languageTag: srtRow?.language ?? epubRow?.language,
         mediaType: mediaType,
+        restoreFallback: true,
       );
     } catch (e, st) {
       debugPrint(

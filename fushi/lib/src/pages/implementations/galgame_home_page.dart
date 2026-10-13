@@ -340,6 +340,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         ref.read(profileViewModelProvider.notifier).autoApplyBinding(
               languageTag: game.language,
               mediaType: ProfileMediaKind.game,
+              restoreFallback: true,
             ),
       );
       final GalHookLaunchResult result = await controller.launchGame(

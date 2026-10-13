@@ -1352,6 +1352,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           bookUid: widget.bookKey,
           languageTag: languageTag,
           mediaType: ProfileMediaKind.manga,
+          restoreFallback: true,
         );
   }
 

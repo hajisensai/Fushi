@@ -3135,6 +3135,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           bookUid: _activeBookUid,
           languageTag: languageTag,
           mediaType: ProfileMediaKind.video,
+          restoreFallback: true,
         );
   }
 

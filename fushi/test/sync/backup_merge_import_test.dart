@@ -3,7 +3,11 @@ import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kProfileFallbackIdPrefKey;
 import 'package:fushi/src/sync/backup_service.dart';
+import 'package:fushi/src/sync/pref_redaction_policy.dart'
+    show PrefRedactionPolicy;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'temp_dir_cleanup.dart';
@@ -1578,6 +1582,49 @@ void main() {
     expect(prefs['src:reader_fushi:font_size'], '22',
         reason: '老包独有的用户设置必须补进来，否则迁移完全是默认值');
     expect(prefs['prefs_version'], 'NEW', reason: '本库自己的状态标记不得被老包的值覆盖');
+  });
+
+  test('adoptSourcePreferences：值是源库自增 id 的配置回退点不接管', () async {
+    // 前提：这个键会随备份出境（不是设备本地 / 凭据），否则下面的断言是空壳——
+    // 它根本到不了合并这一步。
+    expect(
+      PrefRedactionPolicy.isDeviceLocalOrCredential(kProfileFallbackIdPrefKey),
+      isFalse,
+    );
+
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = FushiDatabase(curDir.path);
+    await cur.close();
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = FushiDatabase(srcDir.path);
+    await src.customStatement(
+        'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
+        <Object?>[kProfileFallbackIdPrefKey, '7']);
+    await src.customStatement(
+        'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
+        <Object?>['src:reader_fushi:font_size', '22']);
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    await BackupRestoreService.mergeRestoreBackup(
+      dbDirectory: curDir.path,
+      zipPath: zip,
+      adoptSourcePreferences: true,
+    );
+
+    final after = FushiDatabase(curDir.path);
+    addTearDown(after.close);
+    final Map<String, String> prefs = await after.getAllPrefs();
+    expect(prefs['src:reader_fushi:font_size'], '22',
+        reason: '同一趟接管的普通用户设置照常补进来');
+    expect(prefs.containsKey(kProfileFallbackIdPrefKey), isFalse,
+        reason: 'profiles 按名字合并、id 重新分配，源库的回退点 id 在本库指向别的配置');
   });
 
   test('默认不接管源库设置（共享备份 merge 不动本机设置）', () async {
