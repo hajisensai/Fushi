@@ -64,6 +64,7 @@ class ClipSubtitleCue {
     required this.endMs,
     required this.text,
     this.isSecondary = false,
+    this.markup,
   });
 
   /// 相对片段起点的出现时刻（毫秒）。
@@ -82,16 +83,23 @@ class ClipSubtitleCue {
   /// 副字幕会和主字幕叠印在同一个位置。SRT 生成不看它（两条轨各生成各的）。
   final bool isSecondary;
 
+  /// 源 cue 解析出的行内 / 样式表样式（ASS 颜色、粗体、斜体……），原样透传自
+  /// [AudioCue.markup]；纯文本来源也可能非 null（无样式段）。只有硬字幕烧录用得到
+  /// （BUG-3291：导出件要保留原字幕的颜色 / 加粗），SRT 生成不看它。按引用比较。
+  final SubtitleMarkup? markup;
+
   @override
   bool operator ==(Object other) =>
       other is ClipSubtitleCue &&
       other.startMs == startMs &&
       other.endMs == endMs &&
       other.text == text &&
-      other.isSecondary == isSecondary;
+      other.isSecondary == isSecondary &&
+      identical(other.markup, markup);
 
   @override
-  int get hashCode => Object.hash(startMs, endMs, text, isSecondary);
+  int get hashCode =>
+      Object.hash(startMs, endMs, text, isSecondary, identityHashCode(markup));
 
   @override
   String toString() => 'ClipSubtitleCue($startMs..$endMs, "$text"'
@@ -138,6 +146,7 @@ List<ClipSubtitleCue> buildClipSubtitleCues({
       endMs: outEnd,
       text: text,
       isSecondary: isSecondary,
+      markup: cue.markup,
     ));
   }
   return List<ClipSubtitleCue>.unmodifiable(out);

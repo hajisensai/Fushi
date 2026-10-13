@@ -4,6 +4,7 @@ import 'dart:ui'
     show AppExitResponse, PlatformDispatcher;
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/platform/desktop/windows_owned_file_picker.dart';
 import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/focus/main_window_focus_gate.dart';
@@ -262,6 +263,8 @@ void main([List<String> args = const <String>[]]) {
     // 词典），写在 main 里哪个入口都不会漏。
     installEngineHostBindings();
     installAsrHostBindings();
+    // BUG-3286：Windows 系统文件对话框以主窗为 owner，视频全屏（TOPMOST）时不被压住。
+    installWindowsOwnedFilePicker();
     // 系统「降低透明度」信号（Windows / macOS / iOS），玻璃设计系统据此回退实心。
     unawaited(SystemTransparency.initialize());
     // 用户的模型选择 / 自带模型包住在数据根下，必须在装完数据根解析器之后读。

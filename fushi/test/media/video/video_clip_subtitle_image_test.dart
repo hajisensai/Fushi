@@ -1,6 +1,9 @@
 import 'dart:typed_data';
 
+import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_audio/fushi_audio_core.dart';
+import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
 import 'package:fushi/src/media/video/video_clip_subtitle_image.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
@@ -153,6 +156,98 @@ void main() {
         );
       });
 
+      expect(png, isNotNull);
+      final ByteData bd = ByteData.sublistView(png!);
+      expect(bd.getUint32(16), 640);
+      expect(bd.getUint32(20), 360);
+    });
+  });
+
+  // BUG-3291：片段导出烧字幕要保留原字幕（ASS 样式表 / 行内标签）的颜色与粗体。
+  group('styled cue export', () {
+    const String ass = '''
+[Script Info]
+PlayResX: 1920
+PlayResY: 1080
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,60,&H000000FF,&H00FFFFFF,&H00FF0000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,前{\\c&H0000FF00&\\b0}緑\\N次
+''';
+
+    ClipSubtitleCue exportCue() {
+      final List<AudioCue> cues = AssParser.parseString(
+        content: ass,
+        bookKey: 'clip-test',
+      );
+      return buildClipSubtitleCues(cues: cues, startMs: 0, endMs: 5000).single;
+    }
+
+    test('the export cue carries the source markup through', () {
+      final ClipSubtitleCue cue = exportCue();
+      expect(cue.markup, isNotNull);
+      expect(clipCueStyledMarkup(cue), same(cue.markup));
+    });
+
+    test('style sheet colour / bold and inline overrides reach the spans', () {
+      final SubtitleMarkup markup = clipCueStyledMarkup(exportCue())!;
+      final TextSpan root = buildClipSubtitleStyledSpan(
+        markup: markup,
+        base: const TextStyle(
+          fontSize: 40,
+          color: Color(0xFFFFFFFF),
+          fontWeight: FontWeight.w400,
+        ),
+        shadowThickness: 2,
+      );
+
+      // 样式表：PrimaryColour &H000000FF（BGR）= 红；Bold=-1；OutlineColour 蓝。
+      expect(root.style!.color, const Color(0xFFFF0000));
+      expect(root.style!.fontWeight, FontWeight.bold);
+      expect(root.style!.shadows, isNotEmpty);
+      expect(
+        root.style!.shadows!.first.color.withValues(alpha: 1),
+        const Color(0xFF0000FF),
+      );
+      // 文本完整，且 \N 还原成换行。
+      expect(root.toPlainText(), '前緑\n次');
+
+      final TextSpan green = root.children!.whereType<TextSpan>().firstWhere(
+        (TextSpan s) => (s.text ?? '').startsWith('緑'),
+      );
+      expect(green.style!.color, const Color(0xFF00FF00));
+    });
+
+    test('plain cues keep the unstyled path (null markup)', () {
+      final List<AudioCue> cues = SrtParser.parseString(
+        content: '1\n00:00:01,000 --> 00:00:02,000\nただの字幕\n',
+        bookKey: 'clip-test',
+      );
+      final ClipSubtitleCue cue = buildClipSubtitleCues(
+        cues: cues,
+        startMs: 0,
+        endMs: 5000,
+      ).single;
+      expect(clipCueStyledMarkup(cue), isNull);
+    });
+
+    testWidgets('renders a styled cue to a full-frame PNG', (
+      WidgetTester tester,
+    ) async {
+      final SubtitleMarkup markup = clipCueStyledMarkup(exportCue())!;
+      final Uint8List? png = await tester.runAsync<Uint8List?>(
+        () => renderClipSubtitlePng(
+          text: '前緑 次',
+          frame: const ClipFrameSize(640, 360),
+          style: VideoSubtitleStyle.defaults,
+          viewportHeight: 360,
+          markup: markup,
+        ),
+      );
       expect(png, isNotNull);
       final ByteData bd = ByteData.sublistView(png!);
       expect(bd.getUint32(16), 640);

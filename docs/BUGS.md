@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2978 条。点号进各自文件。
+> 共 2980 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -40,6 +40,8 @@
 | [BUG-3317](bugs/BUG-3317-bitmap-subtitle-oversize-oom.md) | ✅ | ✅ | 位图字幕对象声明超大尺寸时一次分配数GB平面 |
 | [BUG-3316](bugs/BUG-3316-libmpv-probe-tests-release-backend.md) | ✅ | ✅ | media_kit 热重启探针预编译后实际测的是 release 后端 |
 | [BUG-3308](bugs/BUG-3308-popup-round-button-press-square.md) | ✅ | ✅ | 查词弹窗点「+」制卡按钮时闪出完全直角的方块 |
+| [BUG-3291](bugs/BUG-3291-clip-export-drops-ass-style.md) | ✅ | ✅ | 片段导出烧字幕丢失原字幕颜色与加粗 |
+| [BUG-3286](bugs/BUG-3286-video-fullscreen-file-dialog-hidden.md) | ✅ | ✅ | 视频全屏时系统文件对话框被压在全屏窗口下 |
 | [BUG-3284](bugs/BUG-3284-android-torrent-libcxx-shared.md) | ✅ | ✅ | Android 内置下载引擎 dlopen 失败被判缺少运行库 |
 | [BUG-3283](bugs/BUG-3283-floating-scrim-nested-hardedge-after-collapse.md) | ✅ | ✅ | 库页工具区收起后内容中间残留浅色横带（嵌套遮罩按恒定 inset 起画） |
 | [BUG-3282](bugs/BUG-3282-lyrics-scroll-layer-explosion.md) | ✅ | ✅ | 歌词滚动帧率低 |

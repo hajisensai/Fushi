@@ -1,0 +1,6 @@
+## BUG-3286 · 视频全屏时系统文件对话框被压在全屏窗口下
+- **报告**：2026-10-10（用户反馈 #HCJeshsaLz，Windows 10 19045，2.10.0-debug.18681：全屏下导入字幕文件，资源管理器对话框出不来，要先退出全屏）
+- **真实性**：✅ 真 bug — Windows 视频全屏是「保边框巨窗 + `HWND_TOPMOST`」（`fushi/windows/runner/win32_window.cpp` `SetFullscreen`，BUG-1933），主窗失活时 `WM_ACTIVATE` 又把自己 `HWND_NOTOPMOST` 重排到非置顶层顶端（同文件 `case WM_ACTIVATE`）。file_picker 8.3.7 的 Windows 实现在 `lockParentWindow == false`（默认，本仓所有调用点都没传）时 `hwndOwner = NULL`（`file_picker_windows.dart:318` `_instantiateOpenFileNameW`；选目录 `:141`），对话框是无 owner 的顶层窗口，于是被压在全屏视频之下。
+- **[x] ① 已修复** — `fushi/lib/src/platform/desktop/windows_owned_file_picker.dart`：`WindowsOwnedFilePicker` 包住平台注册的 `FilePicker`，打开 / 保存 / 选目录三种对话框一律 `lockParentWindow: true`（对话框以主窗为 owner，z 序恒在 owner 之上，owner 置顶 / 取消置顶时随之移动）；`fushi/lib/main.dart` 在 `installAsrHostBindings()` 之后调 `installWindowsOwnedFilePicker()` 装一次，覆盖全部 20+ 调用点（字幕导入、片段导出另存为、导入目录……）。提交：0e2852c984。
+- **[x] ② 已加自动化测试** — `fushi/test/platform/windows_owned_file_picker_test.dart`（三种对话框都带 owner 且其余参数原样透传；只在 Windows 装、幂等；源码守卫钉住 `main()` 的装配）。
+- **备注**：owner 由 file_picker 自己定位（打开 / 保存走 `FindWindowA("FLUTTER_RUNNER_WIN32_WINDOW")`，选目录走 `GetForegroundWindow`），本进程只有一个该类窗口、用户点按钮时它在前台；理论边角：另有一个**置顶**的其它 Flutter 应用窗口时打开 / 保存对话框可能挂到它下面。对话框期间主窗被禁用（标准模态）。未在真机全屏下复测（本会话无 GUI 前台）——真机验证点：视频全屏 → 字幕菜单「导入字幕文件」→ 对话框直接出现在全屏画面之上，选完/取消后仍在全屏。
