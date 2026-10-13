@@ -16,7 +16,9 @@ if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
-const scripts = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+// The only argument is the temp payload file the Dart test just wrote (production
+// scripts serialized from the repo); there is no user- or model-supplied path here.
+const scripts = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));  // NOSONAR: S8707 false positive, path comes from the Dart test harness
 
 const PARAGRAPH = '<p>前の文。猫がいる。後の文です。</p>';
 

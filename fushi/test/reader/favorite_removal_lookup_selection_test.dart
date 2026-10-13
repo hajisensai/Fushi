@@ -12,6 +12,8 @@ import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-3328：删除收藏 / 标注高亮后查词选区丢失。
 ///
 /// 无 CSS Custom Highlight 的引擎（iOS / macOS Safari 17.2 之前）上，高亮桥拆收藏的
@@ -67,7 +69,8 @@ void main() {
         'vn': ReaderVisualNovelScripts.vnShellScript(),
       };
       for (final MapEntry<String, String> entry in sources.entries) {
-        final String code = _stripLineComments(entry.value);
+        // 剥 // 与 /* */（等长掩码，串里的 // 不误伤），只留代码。
+        final String code = maskJsComments(entry.value);
         final int normalizeCalls = '.normalize()'.allMatches(code).length;
         // 只有 __fushiLiveRanges.normalize 自己调 node.normalize()（定义在选区脚本）。
         expect(
@@ -89,7 +92,7 @@ void main() {
         );
       }
       expect(
-        _stripLineComments(ReaderSelectionScripts.source()),
+        maskJsComments(ReaderSelectionScripts.source()),
         contains('node.normalize();'),
       );
     },
@@ -115,17 +118,6 @@ Future<_HarnessRun> _runHarness(String nodeExe, String payloadPath) async {
     },
   );
   return (exitCode: exitCode, stdout: await stdout, stderr: await stderr);
-}
-
-/// Drops `//` line comments so prose that names the forbidden calls is ignored.
-String _stripLineComments(String source) {
-  return source
-      .split('\n')
-      .map((String line) {
-        final int at = line.indexOf('//');
-        return at < 0 ? line : line.substring(0, at);
-      })
-      .join('\n');
 }
 
 /// Resolve Node before launching the browser harness so missing CI tools skip.
