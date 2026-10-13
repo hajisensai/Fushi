@@ -6418,10 +6418,6 @@
   "reading_stats_clock_start_on_open": "On open",
   "reading_stats_clock_start_on_page_turn": "After page turn",
   "home_updates_dismiss": "닫기",
-  "shelf_collection_layout_title": "Collections",
-  "shelf_collection_layout_rows": "Expanded rows",
-  "shelf_collection_layout_cards": "One tile each",
-  "shelf_sort_and_view": "Sort & view",
   "shelf_collection_volume_count": "$n vols",
   "shelf_collection_series_label": "Series",
   "collection_name_taken_other_library": "Another library already has a collection named \"$name\". Pick a different name.",
@@ -6870,7 +6866,6 @@
   "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
   "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "media_source_open_folder_failed": "Couldn't open the folder. It may have been moved, deleted, or disconnected.",
-  "library_sort_filter_view": "Sort, filter and view",
   "library_filter_active": "Filtered",
   "settings_module_keep_one_navigation": "Keep at least one page in the navigation bar",
   "settings_section_home_shortcuts": "Home shortcuts",
@@ -7061,5 +7056,6 @@
   "manga_quick_spread_shift": "Offset by one page",
   "manga_quick_spread_shift_subtitle": "Cover on its own page, then pair pages two by two. Turn off to pair from page 1.",
   "feedback_reply_notice": "Developers updated ${n} of your feedback item(s)",
-  "feedback_reply_notice_open": "View"
+  "feedback_reply_notice_open": "View",
+  "library_sort_filter": "Sort and filter"
 }

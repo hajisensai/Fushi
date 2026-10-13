@@ -304,12 +304,6 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     return result;
   }
 
-  /// 块2：合集行头整选勾选框（选=选中整个合集）。与散卡 [_bookCardShell] 的封面
-  /// 勾选框同为共享 [ShelfSelectionCheck]（内建 [IgnorePointer] 让点击穿透到行头
-  /// InkWell 整选回调；eink 实心底由组件统一处理）。
-  Widget _buildSelectionCheck(bool selected) =>
-      ShelfSelectionCheck(selected: selected);
-
   Widget _bookCardLayout({
     required String title,
     required Widget cover,

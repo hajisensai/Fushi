@@ -19,11 +19,11 @@ import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// 书架「合集以单个格子显示」（偏好 `shelf_collection_layout`）+ 两个书架 bug 的
-/// 页面级回归：
-///  - 格子模式：合集渲染成 [SeriesShelfCard]（叠层封面），与散书在**同一个网格、
-///    同一套排序**里混排（名称排序下夹在两本散书中间），不再固定排前面；
-///  - 默认整行展开（现状零变化）；「排序与显示」菜单切换后落偏好；
+/// 书架合集一律「单个格子」+ 两个书架 bug 的页面级回归：
+///  - 合集渲染成 [SeriesShelfCard]（叠层封面），与散书在**同一个网格、同一套排序**
+///    里混排（名称排序下夹在两本散书中间），不再固定排前面；
+///  - 「整行展开」模式已移除（2026-10-13，反馈 #TgkCgTGy81）：菜单里没有「合集显示」
+///    组；旧偏好值 `rows` 读成格子（兼容旧数据，key 冻结不动）；
 ///  - BUG-2968：书打了标签、所在合集没打 → 按标签筛选时这本书仍可见；
 ///  - BUG-2969：合集详情页成员右键弹的是与书架书卡同一个菜单（含「标签」）。
 void main() {
@@ -173,23 +173,23 @@ void main() {
       (WidgetTester tester) async {
     final int cid = await seedLibrary();
     await pumpPage(tester);
-    expect(prefs.shelfCollectionLayoutName, 'cards');
     expect(find.byType(CollectionShelfRow), findsNothing);
     expect(collectionCard(cid), findsOneWidget);
   });
 
-  testWidgets('整行展开：合集是横排行，没有合集格子', (WidgetTester tester) async {
+  testWidgets('旧偏好 rows（已移除的整行展开）读成格子：不再有横排行', (WidgetTester tester) async {
     final int cid = await seedLibrary();
-    await prefs.setShelfCollectionLayoutName('rows');
+    // 旧版本用户落库的值；新代码不再读这个 key，一律格子。
+    await db.setPref('shelf_collection_layout', 'rows');
+    await prefs.loadFromDb();
     await pumpPage(tester);
-    expect(find.byType(CollectionShelfRow), findsOneWidget);
-    expect(collectionCard(cid), findsNothing);
+    expect(find.byType(CollectionShelfRow), findsNothing);
+    expect(collectionCard(cid), findsOneWidget);
   });
 
   testWidgets('单个格子：合集与散书同一网格、同一排序（名称序夹在中间）',
       (WidgetTester tester) async {
     final int cid = await seedLibrary();
-    await prefs.setShelfCollectionLayoutName('cards');
     await pumpPage(tester);
 
     expect(find.byType(CollectionShelfRow), findsNothing,
@@ -210,29 +210,31 @@ void main() {
     expect(find.text(t.shelf_collection_series_label), findsOneWidget);
   });
 
-  testWidgets('「排序与显示」菜单切换合集显示并落偏好', (WidgetTester tester) async {
+  testWidgets('排序菜单只剩排序 / 筛选，没有「合集显示」组（整行展开已移除）', (
+    WidgetTester tester,
+  ) async {
     final int cid = await seedLibrary();
     await pumpPage(tester);
 
-    // 排序菜单（2026-10-10 起含阅读状态组，tooltip 改为「排序、筛选与显示」）。
     await tester.tap(
       find.byKey(const ValueKey<String>('library_sort_menu_button')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey<String>('shelf_collection_layout_cards')),
-    );
-    await tester.pumpAndSettle();
 
-    expect(prefs.shelfCollectionLayoutName, 'cards');
+    expect(find.text(t.sort_by), findsWidgets, reason: '排序组还在');
+    for (final String name in <String>['rows', 'cards']) {
+      expect(
+        find.byKey(ValueKey<String>('shelf_collection_layout_$name')),
+        findsNothing,
+        reason: '菜单里不得再有合集显示选项（只剩一种模式，没有可切换的东西）',
+      );
+    }
     expect(collectionCard(cid), findsOneWidget);
-    expect(find.byType(CollectionShelfRow), findsNothing);
   });
 
   testWidgets('格子点击进合集详情；成员右键弹与书架同一个菜单（BUG-2969）',
       (WidgetTester tester) async {
     final int cid = await seedLibrary();
-    await prefs.setShelfCollectionLayoutName('cards');
     await pumpPage(tester);
 
     await tester.tap(collectionCard(cid));
@@ -259,19 +261,23 @@ void main() {
 
   testWidgets('BUG-2968：书打了标签、合集没打 → 按标签筛选仍能找到这本书',
       (WidgetTester tester) async {
-    await seedLibrary();
+    final int cid = await seedLibrary();
     final int tagId = await db.createTag('fav', 0xFF2196F3);
     await db.addTagToBook('zeta1Key', tagId);
-    await prefs.setShelfCollectionLayoutName('rows');
 
     await pumpPage(tester, selectedTags: <int>{tagId});
 
-    // 横排行模式下合集行仍在，行里只剩打了标签的那本。
-    expect(find.byType(CollectionShelfRow), findsOneWidget,
+    // 合集格子仍在，只算命中标签的那一本（2 册 -> 1 册）；散书全被筛掉。
+    expect(collectionCard(cid), findsOneWidget,
         reason: '组内有成员命中标签，合集组不得被整组删掉');
-    expect(epubCard('zeta1Key'), findsOneWidget,
-        reason: '打了标签的书必须可见（旧逻辑随未打标签的合集一起消失）');
-    expect(epubCard('zeta2Key'), findsNothing, reason: '未命中标签的成员照常隐藏');
+    expect(find.text(t.shelf_collection_volume_count(n: 1)), findsOneWidget,
+        reason: '格子只计命中标签的成员');
     expect(epubCard('alphaKey'), findsNothing);
+    expect(epubCard('omegaKey'), findsNothing);
+
+    // 进详情页：命中标签的书可见（旧逻辑随未打标签的合集一起消失）。
+    await tester.tap(collectionCard(cid));
+    await tester.pumpAndSettle();
+    expect(epubCard('zeta1Key'), findsOneWidget);
   });
 }

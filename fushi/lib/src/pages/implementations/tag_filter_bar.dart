@@ -37,8 +37,6 @@ class FushiTagFilterBar extends ConsumerStatefulWidget {
     this.sortMode,
     this.sortModeLabel,
     this.onSortModeChanged,
-    this.viewOptionsTitle,
-    this.viewOptions = const <LibraryViewOption>[],
     this.filterOptionsTitle,
     this.filterOptions = const <LibraryViewOption>[],
     this.filterActive = false,
@@ -76,15 +74,8 @@ class FushiTagFilterBar extends ConsumerStatefulWidget {
   /// 用户选中新排序方式（页面负责 setState + 偏好持久化）。
   final ValueChanged<ShelfSortMode>? onSortModeChanged;
 
-  /// 「显示」单选组的小标题（书架：「合集显示」）；与 [viewOptions] 同时非空时，
-  /// 排序按钮升级成「排序与显示」菜单，排序项下面接这一组。
-  final String? viewOptionsTitle;
-
-  /// 「显示」单选组（书架：合集整行展开 / 单个格子）。空 = 纯排序菜单（视频库等）。
-  final List<LibraryViewOption> viewOptions;
-
   /// 「筛选」单选组的小标题（书架 / 漫画库：「阅读状态」）。与 [filterOptions]
-  /// 同时非空时，这组单选项排在排序项后面、显示组前面（2026-10-10 用户：「阅读
+  /// 同时非空时，这组单选项排在排序项后面（2026-10-10 用户：「阅读
   /// 状态下拉框放在排序那」——工具行不再单独占一枚下拉 chip）。
   final String? filterOptionsTitle;
 
@@ -184,7 +175,8 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
           key: const ValueKey<String>('library_tag_clear_chip'),
           icon: FushiIcons.filterOff,
           label: t.tag_clear_filter,
-          onTap: () => ref.read(selectedTagIdsProvider.notifier).state = <int>{},
+          onTap: () =>
+              ref.read(selectedTagIdsProvider.notifier).state = <int>{},
         ),
     ];
     final int lead = leadingChips.length;
@@ -196,13 +188,15 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
           horizontal: widget.inlineTags
               ? 0
               : tagsOnly
-                  ? tokens.spacing.page
-                  : tokens.spacing.rowHorizontal,
-          vertical:
-              widget.inlineTags ? _inlineTagPad : tokens.spacing.gap * 0.75,
+              ? tokens.spacing.page
+              : tokens.spacing.rowHorizontal,
+          vertical: widget.inlineTags
+              ? _inlineTagPad
+              : tokens.spacing.gap * 0.75,
         ),
         // 非钉住形态：整组动作作为**一个**工具栏项跟在标签后面滚动。
-        itemCount: lead +
+        itemCount:
+            lead +
             widget.tags.length +
             trailingChips.length +
             (pinned || trailing.isEmpty ? 0 : 1),
@@ -292,8 +286,8 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
             color: isEinkTheme(context)
                 ? tokens.surfaces.outline
                 : isGlassDesign(context)
-                    ? appleColorsOf(context).separator
-                    : tokens.surfaces.outline.withValues(alpha: 0.3),
+                ? appleColorsOf(context).separator
+                : tokens.surfaces.outline.withValues(alpha: 0.3),
           ),
         ),
       ),
@@ -362,19 +356,16 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
   Widget _sortMenuAction(FushiDesignTokens tokens, Set<int> selectedTagIds) {
     final t = Translations.of(context);
     final ShelfSortMode selectedMode = widget.sortMode!;
-    final String? viewTitle = widget.viewOptionsTitle;
-    final bool hasView = viewTitle != null && widget.viewOptions.isNotEmpty;
     final String? filterTitle = widget.filterOptionsTitle;
     final bool hasFilter =
         filterTitle != null && widget.filterOptions.isNotEmpty;
     final bool hasTags = widget.tagsInMenu && widget.tags.isNotEmpty;
-    final bool grouped = hasView || hasFilter || hasTags;
+    final bool grouped = hasFilter || hasTags;
     // 筛选生效（阅读状态不是「全部」/ 菜单里的标签有选中）：按钮亮圆点。
     final bool filtered =
         widget.filterActive || (hasTags && selectedTagIds.isNotEmpty);
     // 菜单面板样式交给 FushiMenuAnchor（MD3 走全局 menuTheme，Apple 走玻璃
-    // 菜单面板），不再手拼 MenuStyle。有「筛选 / 显示」组时升级成「排序、筛选
-    // 与显示」：各组带小标题、组间分隔（Files / 照片的 View options 同形）。
+    // 菜单面板），不再手拼 MenuStyle。有「筛选 / 标签」组时升级成「排序与筛选」菜单：各组带小标题、组间分隔。
     return FushiMenuAnchor(
       controller: _sortMenu,
       menuChildren: <Widget>[
@@ -428,35 +419,19 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
                   ref.read(selectedTagIdsProvider.notifier).state = <int>{},
             ),
         ],
-        if (hasView) ...<Widget>[
-          const FushiDivider(),
-          _menuSectionLabel(tokens, viewTitle),
-          for (final LibraryViewOption option in widget.viewOptions)
-            _choiceMenuItem(
-              tokens,
-              key: option.key,
-              label: option.label,
-              icon: option.icon,
-              selected: option.selected,
-              // 排序组已有 autofocus 落点（选中的排序项），这组不抢。
-              autofocus: false,
-              onPressed: option.onSelected,
-            ),
-        ],
       ],
       builder: (BuildContext context, MenuController controller, Widget? _) {
         final String tooltip = hasFilter || hasTags
-            ? t.library_sort_filter_view
-            : hasView
-                ? t.shelf_sort_and_view
-                : t.sort_by;
+            ? t.library_sort_filter
+            : t.sort_by;
         return LibraryFilterBadge(
           key: const ValueKey<String>('library_sort_menu_button'),
           active: filtered,
           child: _tagBarAction(
             icon: grouped ? FushiIcons.settings : FushiIcons.sort,
-            tooltip:
-                filtered ? '$tooltip · ${t.library_filter_active}' : tooltip,
+            tooltip: filtered
+                ? '$tooltip · ${t.library_filter_active}'
+                : tooltip,
             onTap: () =>
                 controller.isOpen ? controller.close() : controller.open(),
           ),
@@ -497,8 +472,8 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     final Color? foreground = glass
         ? null
         : selected
-            ? tokens.surfaces.primary
-            : tokens.surfaces.onSurface;
+        ? tokens.surfaces.primary
+        : tokens.surfaces.onSurface;
     return Actions(
       // B 只关菜单（焦点回归标签栏），不冒泡成 GamepadService 的整页返回。
       actions: <Type, Action<Intent>>{
@@ -593,7 +568,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
   }
 }
 
-/// 「排序与显示」菜单「显示」组里的一个单选项（[FushiTagFilterBar.viewOptions]）。
+/// 「排序与筛选」菜单里一组单选项里的一项（[FushiTagFilterBar.filterOptions]）。
 @immutable
 class LibraryViewOption {
   const LibraryViewOption({

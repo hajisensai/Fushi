@@ -90,10 +90,10 @@ import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/collections/collection_drag.dart';
+import 'package:fushi/src/media/collections/collection_shelf_row.dart'
+    show unifiedShelfCardLayout;
 import 'package:fushi/src/media/selection/media_selection_controller.dart';
 import 'package:fushi/src/media/selection/selection_gestures.dart';
-import 'package:fushi/src/media/collections/collection_shelf_row.dart';
-import 'package:fushi/src/media/collections/shelf_collection_layout.dart';
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:fushi/src/pages/implementations/series_shelf_card.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
@@ -290,7 +290,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 组合三档（块3）与批量解散/删除（块4）都读这两个集。
   Set<int> get _selectedCollectionIds => _selection.collectionIds;
 
-  /// 当前渲染成横排行的合集 id 列表（[_buildBodyWithSrtBooks] 每帧写入），供
+  /// 当前渲染成合集格子的合集 id 列表（[_buildBodyWithSrtBooks] 每帧写入），供
   /// 全选 / 反选把可见合集纳入整选集。
   List<int> _visibleCollectionIds = const <int>[];
   List<MediaItem> _visibleEpubBooks = const [];
@@ -320,10 +320,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 最近阅读=历史序，现状零变化）。旧 `ShelfEntries.sortOrder` 手动权重已废弃。
   Future<void>? _shelfMapsFuture;
   ShelfSortMode _sortMode = ShelfSortMode.recent;
-
-  /// 合集呈现方式（偏好 `shelf_collection_layout`，默认整行展开 = 现状）：
-  /// [ShelfCollectionLayout.cards] 时合集折成网格里的一个格子、与散书同一排序。
-  ShelfCollectionLayout _collectionLayout = ShelfCollectionLayout.cards;
 
   /// P5-A：书架搜索词（原文，匹配时才归一化）。**刻意不持久化**——下次进书架还
   /// 挂着上次的搜索词只会让人以为书没了（与游戏库页同一决定）。
@@ -553,9 +549,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     _hiddenRemoteBooksAtLastLoad = _hiddenRemoteBooksSignature();
     _readStatusFilter = ShelfReadStatus.values
         .asNameMap()[appModelNoUpdate.prefsRepo.shelfReadStatusFilterName];
-    _collectionLayout = ShelfCollectionLayout.fromName(
-      appModelNoUpdate.prefsRepo.shelfCollectionLayoutName,
-    );
   }
 
   /// prefsRepo 变更回调：只关心「显示远端条目」门控是否翻转（BUG-1182）。其余偏好
@@ -940,22 +933,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             onSelected: () => _setReadStatusFilter(status),
           ),
       ],
-      // 「排序与显示」：排序下面接「合集显示」（整行展开 / 单个格子）。
-      viewOptionsTitle: t.shelf_collection_layout_title,
-      viewOptions: <LibraryViewOption>[
-        for (final ShelfCollectionLayout layout in ShelfCollectionLayout.values)
-          LibraryViewOption(
-            key: ValueKey<String>('shelf_collection_layout_${layout.name}'),
-            label: layout == ShelfCollectionLayout.rows
-                ? t.shelf_collection_layout_rows
-                : t.shelf_collection_layout_cards,
-            icon: layout == ShelfCollectionLayout.rows
-                ? Icons.view_agenda_outlined
-                : Icons.grid_view_outlined,
-            selected: layout == _collectionLayout,
-            onSelected: () => _setCollectionLayout(layout),
-          ),
-      ],
       onTagsChanged: () => ref.invalidate(bookTagMapProvider),
     );
   }
@@ -1112,23 +1089,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     if (mode == _sortMode) return;
     setState(() => _sortMode = mode);
     unawaited(appModel.prefsRepo.setShelfSortModeName(mode.name));
-  }
-
-  /// 用户切换合集呈现方式：立即重排 + 偏好持久化（跨启动记住）。
-  void _setCollectionLayout(ShelfCollectionLayout layout) {
-    if (layout == _collectionLayout) return;
-    setState(() => _collectionLayout = layout);
-    unawaited(appModel.prefsRepo.setShelfCollectionLayoutName(layout.name));
-  }
-
-  /// 合集行折叠开关：`setPref` 先同步刷内存缓存，setState 重建即读到新值；
-  /// 落库 fire-and-forget（`collapsed_collection_ids`，书架/视频页共用）。
-  void _toggleCollectionCollapsed(int collectionId) {
-    final PreferencesRepository prefs = appModel.prefsRepo;
-    final Set<int> ids = prefs.collapsedCollectionIds;
-    if (!ids.remove(collectionId)) ids.add(collectionId);
-    unawaited(prefs.setCollapsedCollectionIds(ids));
-    setState(() {});
   }
 
   /// P5-A 书架工具行：搜索框 + 行尾「管理标签 / 批量选择 / 排序」，与视频库 /
@@ -1338,7 +1298,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  /// 把标签拖到书架合集行头 = 给整个合集打标签（`CollectionShelfRow.onTagDropped`）。
+  /// 把标签拖到书架合集格子 = 给整个合集打标签（合集格子的 `BookDragTarget.onTagDropped`）。
   /// 不复用 [_addTagToMedia]：它的「已存在」提示固定是 `tag_already_on_book`，对合集
   /// 文案不对。`addTagToCollection` 幂等，这里先查现有标签给合集专属提示，成功后失效
   /// [filteredCollectionIdsProvider] 让标签过滤下合集卡显隐立即刷新。
@@ -1365,7 +1325,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   }
 
   /// 把媒体卡拖到书架合集行头 = 把该条目加入本合集
-  /// （`CollectionShelfRow.onMediaDropped`）。
+  /// （合集格子的 `CollectionDropTarget.onMediaDropped`）。
   ///
   /// 「查成员 → 幂等提示 → 落库 → 失败提示」收口在 [addMediaRefToCollection]
   /// （书架 / 视频库 / 游戏库同一份，且永不抛出——它挂在 `void` 回调上）；
@@ -1845,7 +1805,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             anyMemberMatched: g.items.any(memberMatched),
           ));
     }
-    // 块2：记录本帧渲染成横排行的合集 id（供全选/反选把可见合集纳入整选集）。
+    // 块2：记录本帧渲染成合集格子的合集 id（供全选/反选把可见合集纳入整选集）。
     _visibleCollectionIds = <int>[
       for (final CollectionGroup<_ShelfBookSlot> g in shelfGroups)
         if (g.collection != null) g.collection!.id,
@@ -1940,8 +1900,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                 // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
                 // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频不再进书架
                 // （归「视频」tab 独占）。
-                // 合集 group 渲染成全宽横排行（CollectionShelfRow）集中在前，
-                // 散书合成单一 SliverGrid 在后（去碎片方案 A+顶部，已拍板）。多端库联合
+                // 合集折成网格里的一个格子，与散书同一个 SliverGrid。多端库联合
                 // 视图（spec §2.1）：远端占位书已作为散卡混入 shelfGroups（撤独立远端分区），
                 // shelfGroups 非空即渲染（含仅远端占位、无任何本地书的情形）。
                 if (shelfGroups.isNotEmpty)
@@ -1958,185 +1917,43 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  /// 主网格 sliver 组装：**分区**（去碎片 spec 2026-07-12，已拍板方案 A+顶部）
-  /// ——合集横排行集中渲染在前（每个合集独占一行、行内横移看相邻卷/集，区内
-  /// 保持排序模式的组间序），散书合成**单一** [SliverGrid] 在后。旧保序交错
-  /// 布局每个合集行都把网格切段产生残行（一两本书占一行，用户实报）；分区后
-  /// 残行恒 1 个（网格末行）。
+  /// 主网格 sliver 组装：合集折成网格里的**一个格子**（[_buildShelfCollectionCard]，
+  /// 叠层封面），与散书同一个网格、按 [groups] 已排好的同一顺序混排（合集取成员的
+  /// 代表值参与排序，见 `_shelfGroupSortKey`）。远端占位书归属合集时折进该合集格子，
+  /// 要下载就进合集详情页点它（[_openCollectionMember]）。
+  ///
+  /// 历史上还有「整行展开」模式（每个合集一条全宽横排行，偏好值 `rows`），2026-10-13
+  /// 用户拍板移除（切换要整棵 sliver 树换形、几百张卡重建，iOS 掉帧；合集多了还把
+  /// 散书挤到很下面）。偏好 key `shelf_collection_layout` 冻结不用，旧值 `rows` 无人读取
+  /// = 一律按格子显示。
   List<Widget> _buildShelfGroupSlivers(
     List<CollectionGroup<_ShelfBookSlot>> groups,
     Map<String, String> epubCoverUrisByBookKey,
     BoxConstraints constraints,
   ) {
-    // UI v2：散书网格与合集横排行统一卡宽（用户实报合集卡大一截）——以网格列宽
-    // 断点为目标宽算响应式列数，两处共用同一实际卡宽（书卡自带内边距，网格零间距）。
     final ({int columns, double cardWidth}) cardLayout = unifiedShelfCardLayout(
       availableWidth: constraints.maxWidth,
       targetWidth: _gridExtent(context, constraints),
       spacing: 0,
     );
-    // 合集单个格子：合集与散书同一个网格、按 [groups] 已排好的同一顺序混排
-    // （合集取成员代表值参与排序，见 [_shelfGroupSortKey]），不再集中排前面。
-    if (_collectionLayout == ShelfCollectionLayout.cards) {
-      return <Widget>[
-        SliverGrid.builder(
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: cardLayout.columns,
-            childAspectRatio: kShelfBookCardAspectRatio,
-          ),
-          itemCount: groups.length,
-          itemBuilder: (_, int i) => FushiStaggeredEntrance(
-            index: i,
-            child: _buildShelfGroupCard(groups[i], epubCoverUrisByBookKey),
-          ),
+    return <Widget>[
+      SliverGrid.builder(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: cardLayout.columns,
+          childAspectRatio: kShelfBookCardAspectRatio,
         ),
-      ];
-    }
-    final List<Widget> slivers = <Widget>[];
-    final List<CollectionGroup<_ShelfBookSlot>> loose =
-        <CollectionGroup<_ShelfBookSlot>>[];
-    for (final CollectionGroup<_ShelfBookSlot> group in groups) {
-      if (group.collection == null) {
-        loose.add(group);
-      } else {
-        // 合集行也错峰进场（与散书网格共用同一个进场窗口）。
-        slivers.add(
-          SliverToBoxAdapter(
-            child: FushiStaggeredEntrance(
-              index: slivers.length,
-              child: _buildShelfCollectionRow(
-                group,
-                epubCoverUrisByBookKey,
-                cardLayout,
-              ),
-            ),
-          ),
-        );
-      }
-    }
-    if (loose.isNotEmpty) {
-      slivers.add(
-        SliverGrid.builder(
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: cardLayout.columns,
-            childAspectRatio: kShelfBookCardAspectRatio,
-          ),
-          itemCount: loose.length,
-          itemBuilder: (_, i) => FushiStaggeredEntrance(
-            index: i,
-            child: _buildShelfGroupCard(
-              loose[i],
-              epubCoverUrisByBookKey,
-            ),
-          ),
-        ),
-      );
-    }
-    return slivers;
-  }
-
-  /// 一个书籍合集的全宽横排行：头（合集名+数量+查看全部→详情页，focusId 沿用
-  /// `reader-shelf-collection-<id>` 保持标签栏 down-anchor 语义）+ 横向成员卡。
-  /// 成员卡复用散书渲染（SRT 卡 / EPUB 卡，点击即开书）；卡宽与网格列宽断点同源。
-  Widget _buildShelfCollectionRow(
-    CollectionGroup<_ShelfBookSlot> group,
-    Map<String, String> epubCoverUrisByBookKey,
-    ({int columns, double cardWidth}) cardLayout,
-  ) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final MediaCollectionRow collection = group.collection!;
-    // 与散书网格 cell 同宽（unifiedShelfCardLayout）；书卡槽比 = 宽/高
-    // （kShelfBookCardAspectRatio=160/260）→ 行高按同比换算，行内卡与网格卡同形。
-    final double itemWidth = cardLayout.cardWidth;
-    final double rowHeight = itemWidth / kShelfBookCardAspectRatio;
-    // 行头计数 = 行体实际渲染的成员数（本地 + 远端占位），与 itemCount 同源（BUG-790
-    // 书籍侧对齐；视频合集 home_video_page 已修，书架合集此前漏跟）。旧口径只数本地成员，
-    // 导致「远端书已折进本地合集」时行头数字比眼前卡片少（甚至全为未下载远端书时显示
-    // 「0 本」），与所见割裂（用户实报）。行头数字必须诚实反映该行看得见的卡片数。
-    final int memberCount = group.items.length;
-    return SelectionSlotTarget(
-      // 长按扫选也能扫到合集行（合集区自成一段区间，不与散卡串区）。
-      slot: SelectionSlot.collection(collection.id),
-      child: Padding(
-        // 水平不加 padding：书卡自带 12px 内边距，与网格散卡左缘逐像素对齐。
-        padding: EdgeInsets.symmetric(
-          vertical: tokens.spacing.gap / 2,
-        ),
-        child: CollectionShelfRow(
-          key: ValueKey<String>('reader_shelf_collection_row_${collection.id}'),
-          title: collection.name,
-          countLabel: t.series_item_count(n: memberCount),
-          itemCount: group.items.length,
-          itemWidth: itemWidth,
-          rowHeight: rowHeight,
-          // 书卡自带 12px 内边距 → 行内间距归零，与散书网格视觉间距一致。
-          itemGap: 0,
-          headerFocusId:
-              FushiFocusId('reader-shelf-collection-${collection.id}'),
-          onOpenDetail: () => _openCollectionDetail(collection),
-          collapsed:
-              appModel.prefsRepo.collapsedCollectionIds.contains(collection.id),
-          onToggleCollapsed: () => _toggleCollectionCollapsed(collection.id),
-          // 块2：多选态行头挂整选勾选框（选=选中整个合集）；成员卡多选态不可单独勾。
-          selectionCheckbox: _selectionMode
-              ? _buildSelectionCheck(
-                  _selectedCollectionIds.contains(collection.id))
-              : null,
-          onToggleSelected: _selectionMode
-              ? () => _toggleCollectionSelection(collection.id)
-              : null,
-          // 拖标签到行头 = 给整个合集打标签（与散书书级拖放一致）。
-          onTagDropped: (BookTagRow tag) =>
-              _addTagToCollection(collection.id, tag),
-          // 拖书卡到行头 = 把该书加入本合集（payload 泛型与标签互不误接）。
-          onMediaDropped: (MediaRef mediaRef) =>
-              _addMediaToCollection(collection.id, mediaRef),
-          // 行头长按/右键 = 合集上下文菜单（统一三库页：打开/重命名/标签/删除）。
-          onContextMenu: () => _showCollectionContextMenu(collection),
-          // 行头下方展示该合集已打的标签 chip（与散书标签列同形）。
-          tags: ref.watch(collectionTagMapProvider).valueOrNull?[collection.id],
-          itemBuilder: (BuildContext _, int i) => _buildShelfMemberCard(
-            group.items[i].payload,
-            epubCoverUrisByBookKey,
-            selectable: false,
-          ),
+        itemCount: groups.length,
+        itemBuilder: (_, int i) => FushiStaggeredEntrance(
+          index: i,
+          child: _buildShelfGroupCard(groups[i], epubCoverUrisByBookKey),
         ),
       ),
-    );
-  }
-
-  /// 横排行成员卡：SRT / EPUB 复用散书卡渲染（交互/焦点自带）。
-  ///
-  /// [selectable]（默认 true）= 该卡在多选态可单独勾选。块2：合集行成员卡传 false——
-  /// 多选态不画勾选框、不可单独勾（整合集由行头勾选框选中），点击照常开书。
-  Widget _buildShelfMemberCard(
-    _ShelfBookSlot slot,
-    Map<String, String> epubCoverUrisByBookKey, {
-    bool selectable = true,
-  }) {
-    // 远端占位卡（EPUB / 纯 SRT）现可折进合集（经已同步的合集成员归属），成员卡也要
-    // 分派到远端占位渲染，否则命中下面的 epub! 空断言。
-    final RemoteBookInfo? remote = slot.remote;
-    if (remote != null) {
-      return _buildRemoteBookCard(remote, selectable: selectable);
-    }
-    final RemoteAudiobookInfo? remoteSrt = slot.remoteSrt;
-    if (remoteSrt != null) {
-      return _buildRemoteSrtCard(remoteSrt, selectable: selectable);
-    }
-    final SrtBook? srt = slot.srt;
-    if (srt != null) {
-      return _buildSrtCard(srt,
-          epubCoverUri: epubCoverUrisByBookKey[srt.bookKey],
-          selectable: selectable);
-    }
-    return _buildEpubBookCard(slot.epub!, selectable: selectable);
+    ];
   }
 
   /// 统一合集 Phase 4：渲染一个书架 group——散书（collection==null，单成员）回退到原有
   /// 卡片渲染（与历史逐像素一致）；合集 group 渲染 [SeriesShelfCard]（首成员封面 + 角标）。
-  /// UI v2 Phase C 后主网格只喂散 group（合集走 [_buildShelfCollectionRow] 横排行）；
-  /// 合集分支保留给零星旧调用防御。
+  /// 合集 group 走 [_buildShelfCollectionCard] 格子。
   Widget _buildShelfGroupCard(
     CollectionGroup<_ShelfBookSlot> group,
     Map<String, String> epubCoverUrisByBookKey,
@@ -2166,7 +1983,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     return _buildShelfCollectionCard(group, epubCoverUrisByBookKey);
   }
 
-  /// 合集「单个格子」卡（[ShelfCollectionLayout.cards]）：叠层封面（与视频库「系列」
+  /// 合集「单个格子」卡：叠层封面（与视频库「系列」
   /// 卡同一个 [ShelfCoverFrame] 叠层）+ 左上「N 册」+ 右上「系列」+ 标签 chip +
   /// 合集阅读进度。整行展开模式下合集行头的能力全部搬到这张卡上：
   /// - 点击 = 进合集详情页；多选态点击 = 整选合集；Ctrl/⌘/Shift + 点击直接进多选；

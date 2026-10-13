@@ -6418,10 +6418,6 @@
   "reading_stats_clock_start_on_open": "打开即开始",
   "reading_stats_clock_start_on_page_turn": "翻页后开始",
   "home_updates_dismiss": "关闭",
-  "shelf_collection_layout_title": "合集显示",
-  "shelf_collection_layout_rows": "整行展开",
-  "shelf_collection_layout_cards": "单个格子",
-  "shelf_sort_and_view": "排序与显示",
   "shelf_collection_volume_count": "$n 册",
   "shelf_collection_series_label": "系列",
   "collection_name_taken_other_library": "其他媒体库已有名为「$name」的合集，请换个名字。",
@@ -6870,7 +6866,6 @@
   "shortcut_action_video_lookup_next_word": "下一个词（扫词）",
   "shortcut_action_video_lookup_prev_word": "上一个词（扫词）",
   "media_source_open_folder_failed": "无法打开文件夹，它可能已被移动、删除或断开连接。",
-  "library_sort_filter_view": "排序、筛选与显示",
   "library_filter_active": "已筛选",
   "settings_module_keep_one_navigation": "导航栏里至少要保留一个页面",
   "settings_section_home_shortcuts": "首页入口",
@@ -7061,5 +7056,6 @@
   "manga_quick_spread_shift": "错开一页",
   "manga_quick_spread_shift_subtitle": "封面单独成页，其余两两配对；关闭则从第一页起配对。",
   "feedback_reply_notice": "开发者更新了 ${n} 条你的反馈",
-  "feedback_reply_notice_open": "查看"
+  "feedback_reply_notice_open": "查看",
+  "library_sort_filter": "排序与筛选"
 }

@@ -358,8 +358,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'sandbox_last_support_root',
   'saved_tags',
   'scan_non_japanese_text',
-  // String：书架合集呈现方式（ShelfCollectionLayout.name：rows 横排行 / cards
-  // 单个格子），默认 rows。
+  // String：已废弃（2026-10-13 起合集一律是网格里的单个格子，「整行展开」rows
+  // 模式已移除；旧值 rows / cards 都无人读取）。key 冻结保留，备份 / 旧数据兼容。
   'shelf_collection_layout',
   // String：书架「阅读状态」筛选（ShelfReadStatus.name，'' = 全部）。
   'shelf_read_status_filter',
