@@ -58,9 +58,17 @@ void main() {
     int calls = 0;
     AiChatClient factory() {
       factoryCalls[0]++;
+      // 重试退避不真等：sleep 推进假时钟，限频器与客户端共用（只给 sleep 空操作、
+      // 时钟仍是真的，限频器醒来复查时刻会空转到真实时间过去）。重试语义本身在
+      // ai_rate_limiter_test 里测。
+      DateTime now = DateTime.utc(2026, 10, 13);
+      DateTime clock() => now;
       return AiChatClient(
-        // 重试退避不真等（重试语义本身在 ai_rate_limiter_test 里测）。
-        rateLimiter: AiRateLimiter(sleep: (Duration _) async {}),
+        clock: clock,
+        rateLimiter: AiRateLimiter(
+          now: clock,
+          sleep: (Duration d) async => now = now.add(d),
+        ),
         client: MockClient((http.Request request) async {
           final Map<String, Object?> body =
               jsonDecode(request.body) as Map<String, Object?>;

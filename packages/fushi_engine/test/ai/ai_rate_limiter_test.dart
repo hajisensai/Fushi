@@ -475,11 +475,14 @@ void main() {
       ];
       await pumpEventQueue();
       expect(calls, 1, reason: '每分钟 10 次：第一个发出，其余排队');
+      // 期望先挂上再 close：被取消的 future 立刻失败，晚挂就成了未处理的异步错误。
+      final List<Future<void>> cancelled = <Future<void>>[
+        for (final Future<String> queued in pending.skip(1))
+          expectLater(queued, failsWith('cancelled')),
+      ];
       client.close();
       expect(await pending.first, 'ok');
-      for (final Future<String> queued in pending.skip(1)) {
-        await expectLater(queued, failsWith('cancelled'));
-      }
+      await Future.wait(cancelled);
       expect(calls, 1, reason: '关闭后排队的一个都没发');
 
       // 新会话：一个间隔之后的第一个请求不用再等（旧实现要等 19 个作废预约）。
@@ -559,10 +562,15 @@ void main() {
           reason: 'rate_limited',
         ),
       );
-      await clock.advance(const Duration(minutes: 1));
       // 冷却已到期，但这次请求排完队时已经看到了那条失败：再失败是第二次。
-      // 第二次冷却 2 分钟超过重试上限，直接报错。
-      await expectLater(queued, failsWith('rate_limited'));
+      // 第二次冷却 2 分钟超过重试上限，直接报错。期望先挂上再推进时钟（失败发生在
+      // advance 期间）。
+      final Future<void> failed = expectLater(
+        queued,
+        failsWith('rate_limited'),
+      );
+      await clock.advance(const Duration(minutes: 1));
+      await failed;
       expect(store.read(fp)!.failures, 2);
     });
   });
