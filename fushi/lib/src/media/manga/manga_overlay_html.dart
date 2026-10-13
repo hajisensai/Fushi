@@ -343,11 +343,56 @@ bool _mangaEndsSentence(String text) =>
 /// available and the block rectangle otherwise. This mirrors Niratan's native
 /// reader: hit testing is based on explicit character geometry instead of
 /// asking browser typography to approximate where transparent text landed.
+///
+/// Supplied regions are used only when they match the block text as a whole:
+/// every region lies on grapheme boundaries inside the sentence and every
+/// visible grapheme is covered ([mangaTextRegionsMatchSentence]). Otherwise —
+/// for example a manga.json whose text was rewritten while the regions still
+/// carry the old offsets — the whole block falls back to line geometry.
+/// Dropping the mismatched regions one by one would leave characters with no
+/// hit target (or, when all of them miss, a block that cannot be clicked).
 List<MangaOcrTextRegion> mangaEffectiveTextRegions(MokuroBlock block) {
   final List<MangaOcrTextRegion>? supplied = block.regions;
-  if (supplied != null && supplied.isNotEmpty) {
+  if (supplied != null &&
+      supplied.isNotEmpty &&
+      mangaTextRegionsMatchSentence(supplied, block.lines.join())) {
     return supplied;
   }
+  return _mangaGeometryTextRegions(block);
+}
+
+/// Whether [regions] can stand for [sentence] character by character.
+///
+/// Each region must be a non-empty UTF-16 range on grapheme boundaries inside
+/// the sentence, and together they must cover every non-whitespace grapheme.
+/// A single miss makes the whole set unusable: the caller then re-derives
+/// regions from line geometry instead of keeping a partial set.
+bool mangaTextRegionsMatchSentence(
+  List<MangaOcrTextRegion> regions,
+  String sentence,
+) {
+  final Set<int> boundaries = <int>{0};
+  final List<({int start, int end})> visible = <({int start, int end})>[];
+  int offset = 0;
+  for (final String grapheme in sentence.characters) {
+    final int end = offset + grapheme.length;
+    if (grapheme.trim().isNotEmpty) visible.add((start: offset, end: end));
+    boundaries.add(end);
+    offset = end;
+  }
+  final List<bool> covered = List<bool>.filled(sentence.length, false);
+  for (final MangaOcrTextRegion region in regions) {
+    final int start = region.utf16Start;
+    final int end = region.utf16End;
+    if (start < 0 || end <= start || end > sentence.length) return false;
+    if (!boundaries.contains(start) || !boundaries.contains(end)) return false;
+    covered.fillRange(start, end, true);
+  }
+  return visible.every((({int start, int end}) g) => covered[g.start]);
+}
+
+/// Character regions derived from `lines_coords` (or the block rectangle).
+List<MangaOcrTextRegion> _mangaGeometryTextRegions(MokuroBlock block) {
   if (block.lines.isEmpty || block.rectangle.isEmpty) {
     return const <MangaOcrTextRegion>[];
   }
@@ -462,12 +507,9 @@ String _mangaCharacterRegionsHtml({
   final double parentWidth = parent.width <= 0 ? 1 : parent.width;
   final double parentHeight = parent.height <= 0 ? 1 : parent.height;
   final StringBuffer buffer = StringBuffer();
+  // [regions] comes from [mangaEffectiveTextRegions]: every range is already
+  // known to lie inside the sentence, so nothing is filtered here.
   for (final MangaOcrTextRegion region in regions) {
-    if (region.utf16Start < 0 ||
-        region.utf16End <= region.utf16Start ||
-        region.utf16End > sentence.length) {
-      continue;
-    }
     final MokuroRect r = region.rectangle;
     final double leftPct = ((r.left - parent.left) / parentWidth) * 100;
     final double topPct = ((r.top - parent.top) / parentHeight) * 100;
