@@ -1,0 +1,14 @@
+## BUG-3276 · Lua 脚本读不到字幕：字幕结束自动暂停脚本在 Fushi 无效
+- **报告**：2026-10-13（用户：GitHub issue [#2014](https://github.com/hajisensai/Fushi/issues/2014)；同类诉求见 [#1645](https://github.com/hajisensai/Fushi/issues/1645)）。「下载的字幕结束自动暂停脚本，mpv 里能用，导入 Fushi 没用；把按键去掉也不行。」
+- **真实性**：✅ 真 bug。Fushi 的字幕一律由 Flutter overlay 画，libmpv 侧在 load 时就把字幕轨关掉（`fushi/lib/src/media/video/video_player_controller.dart:2916` `setSubtitleTrack(SubtitleTrack.no())` + `sub-auto=no` / `sub-visibility=no`），之后 `sid` 一直是 `no`。依赖 `sub-text` / `sub-start` / `sub-end` 的脚本（字幕结束暂停、`sub-seek` 逐句跳）因此永远收不到任何一句字幕——脚本装上了、没报错，就是什么都不发生。按键绑定是另一条已知边界（键盘事件被 Flutter 消费，到不了 libmpv），用户去掉按键后仍失效，说明根因在字幕这一层。
+- **[x] ① 已修复** — 装了脚本且主字幕是 Dart 侧文本 cue 时，把同一份 cue 写成 SRT 挂成一条隐藏的 libmpv 字幕轨（`sub-add <srt> select fushi-lua-subtitle-mirror`，`sub-visibility=no` 不画），脚本读到的就是 overlay 正显示的那句。
+  - 纯函数：`buildLuaSubtitleMirrorSrt` / `isLuaSubtitleMirrorTrack` / `shouldMirrorSubtitlesForLua`（`fushi/lib/src/media/video/video_lua_script_manager.dart`）。
+  - 控制器：`_syncLuaSubtitleMirror`（`video_player_controller.dart`），触发点 = `setCues` / 关字幕 `selectSubtitleTrack(no())` / 中途装脚本 `applyLuaScripts` / 调轴 `setDelayMs` / load 里 open 后字幕抑制下发之后（`_luaSubtitleMirrorFileReady = true`）。串行化 + 排队合并（连拖调轴只重挂一两次）；每个 await 后 `_isCurrentLoad` 重校验；track id 只在同一 load 内拿去 `sub-remove`（换片后旧 id 可能撞上新片真实轨）。
+  - **调轴烘进 SRT 时间戳而不是走 `sub-delay`**：mpv 0.41 实测 `sub-start` / `sub-end` 报的是未叠 `sub-delay` 的时间、`sub-text` 却按叠过的时间出现，走 `sub-delay` 时脚本会在句中就停（实测 sub-delay=0.5 时暂停在 2.48 s，句子要到 3.0 s 才结束）。
+  - 不挂镜像的情形：没装脚本（零开销）、图形字幕轨（libmpv 自绘）、libmpv 解码回流（`selectEmbeddedTextTrackViaPlayer` / `selectExternalTextSubtitleViaPlayer`，那时 libmpv 已有真实 `sid`）、蓝光导航会话。
+  - 镜像轨不是用户的字幕源：`subtitleTracks` / `_realSubtitleCount` / 按序号选轨的三处过滤统一走 `_isRealSubtitleTrack`，`activeSubtitleTrackId` 选中镜像时报 `no`。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_lua_script_manager_test.dart`（SRT 生成、调轴烘焙与负偏移截断、镜像轨识别、挂/不挂判据）；`fushi/test/media/video/video_lua_script_wiring_guard_test.dart`「Lua 字幕镜像」组（五个触发点、open 后才放行、轨过滤、调轴烘焙而非 `sub-delay`）。
+- **备注**：
+  - mpv CLI 实测（mpv 0.41，`--sid=no --sub-visibility=no` 起播后 `sub-add … select` 挂镜像）：`sub-visibility=no` 下 `sub-text` 照常推送，典型字幕结束暂停脚本暂停在 3.00 s / 5.48 s，对应句尾 3.00 / 5.50。
+  - 能力边界不变：Android 随包 libmpv 没编 Lua（`-Dlua=disabled`，BUG-2032），脚本在 Android 上本就跑不了；依赖按键绑定的脚本仍无处触发。
+  - 用户真正要的「字幕结束自动暂停」Fushi 早已内置：视频设置 › 字幕 ›「字幕暂停播放模式」（`video.playback.pause_at_subtitle_end`），不需要脚本，全平台可用。

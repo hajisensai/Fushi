@@ -1489,12 +1489,22 @@ class VideoPlayerController extends ChangeNotifier
   ///
   /// 为运行时切换 + Phase 1 内嵌字幕功能预留；无法纯单测（需真实 libmpv
   /// player），靠 analyze 验证编译。
-  List<SubtitleTrack> get subtitleTracks =>
-      _player?.state.tracks.subtitle ?? const <SubtitleTrack>[];
+  ///
+  /// 不含给 Lua 脚本挂的字幕镜像轨（[isLuaSubtitleMirrorTrack]）——它不是用户的字幕源。
+  List<SubtitleTrack> get subtitleTracks => <SubtitleTrack>[
+    for (final SubtitleTrack track
+        in _player?.state.tracks.subtitle ?? const <SubtitleTrack>[])
+      if (!isLuaSubtitleMirrorTrack(track)) track,
+  ];
 
   /// libmpv 当前选中的字幕轨 id（`no` = 关、`auto` = 交给 mpv、其余为真实轨）；
   /// 未 [load] 为 null。远端内嵌轨的 libmpv 自绘回落（BUG-2590）用它取证。
-  String? get activeSubtitleTrackId => _player?.state.track.subtitle.id;
+  /// 选中的是 Lua 字幕镜像轨时按 `no` 报（libmpv 并没有在用任何真实字幕轨）。
+  String? get activeSubtitleTrackId {
+    final SubtitleTrack? track = _player?.state.track.subtitle;
+    if (track == null) return null;
+    return isLuaSubtitleMirrorTrack(track) ? 'no' : track.id;
+  }
 
   /// 当前选中字幕轨声明的语言（BCP-47 / ISO-639，视打包者而定）。没有轨、轨未声明
   /// 语言、或值是 mpv 的占位（`und` / `auto` / `no`）时返回 null。
@@ -1543,6 +1553,8 @@ class VideoPlayerController extends ChangeNotifier
     await player.setSubtitleTrack(track);
     if (!_isCurrentLoad(player, loadToken)) return; // await 期间换片/销毁：放弃下发。
     if (_discTitleGeneration != discGeneration) return;
+    // `no()` 把镜像轨一起取消选中了；文本 overlay 仍在时重新挂上（#2014）。
+    if (track.id == 'no') _scheduleLuaSubtitleMirrorSync();
     // BUG-3104：图形字幕的 seek 预读只为它开；离开图形渲染就还原 mpv 默认值。
     if (leavingGraphic) {
       await applySubtitleMpvPropertiesToPlayer(
@@ -1580,7 +1592,7 @@ class VideoPlayerController extends ChangeNotifier
     if (!_isCurrentLoad(player, loadToken)) return false; // 等待期间换片/销毁。
     if (_discTitleGeneration != discGeneration) return false;
     final List<SubtitleTrack> real = player.state.tracks.subtitle
-        .where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no')
+        .where(_isRealSubtitleTrack)
         .toList(growable: false);
     if (streamIndex < 0 || streamIndex >= real.length) return false;
     // 图形字幕走 libmpv 画面渲染，清掉可点 overlay（无文本可查词）。
@@ -1657,7 +1669,7 @@ class VideoPlayerController extends ChangeNotifier
     if (!_isCurrentLoad(player, loadToken)) return false;
     if (_discTitleGeneration != discGeneration) return false;
     final List<SubtitleTrack> real = player.state.tracks.subtitle
-        .where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no')
+        .where(_isRealSubtitleTrack)
         .toList(growable: false);
     if (streamIndex < 0 || streamIndex >= real.length) return false;
     // 清掉旧 cue（同时结束上一次回流）；本模式是文本 overlay，不是图形渲染。
@@ -1770,7 +1782,7 @@ class VideoPlayerController extends ChangeNotifier
     if (!_isCurrentLoad(player, loadToken)) return false;
     if (_discTitleGeneration != discGeneration) return false;
     final List<SubtitleTrack> real = player.state.tracks.subtitle
-        .where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no')
+        .where(_isRealSubtitleTrack)
         .toList(growable: false);
     if (streamIndex < 0 || streamIndex >= real.length) return false;
     // 同一条轨不能同时占主、副两个槽：libmpv 对 `secondary-sid` 报「Track already
@@ -1956,7 +1968,13 @@ class VideoPlayerController extends ChangeNotifier
   /// demux 顺序索引第 N 条时用它判「目标序号已解析就绪」
   /// （[selectEmbeddedGraphicTrack] 的越界判据）。
   static int _realSubtitleCount(List<SubtitleTrack> subs) =>
-      subs.where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no').length;
+      subs.where(_isRealSubtitleTrack).length;
+
+  /// 真实字幕轨：去掉 libmpv 的 `auto`/`no` 伪轨与给 Lua 脚本挂的镜像轨
+  /// （[isLuaSubtitleMirrorTrack]）。镜像轨由 `sub-add` 追加在末尾，不占内嵌轨序号，
+  /// 但会让「轨数已就绪」提前成立，必须滤掉。
+  static bool _isRealSubtitleTrack(SubtitleTrack t) =>
+      t.id != 'auto' && t.id != 'no' && !isLuaSubtitleMirrorTrack(t);
 
   /// 等 [player] 的字幕轨列表解析出**至少 [minTrackCount] 条**真实轨（`open` 后
   /// 解析容器需要时间）。最多等 5 秒；已就绪立即返回，超时尽力继续（调用方自行判越界）。
@@ -2106,6 +2124,8 @@ class VideoPlayerController extends ChangeNotifier
     // 下标**，对新列表已无意义，留着会让新片的某句被无缘无故停一次。
     _oneShotHoldCueIndex = null;
     _lastSubtitleEndPauseCueIndex = null;
+    // 主字幕换了：给 Lua 脚本的镜像轨跟着重挂（没装脚本时零开销）。
+    _scheduleLuaSubtitleMirrorSync();
     notifyListeners();
   }
 
@@ -2215,6 +2235,8 @@ class VideoPlayerController extends ChangeNotifier
       ),
     );
     _resyncTextSubtitleAfterDelayChange(positionMs);
+    // 镜像 SRT 里烘着调轴，偏移变了就重挂（连拖滑条由同步合并，见调度处）。
+    _scheduleLuaSubtitleMirrorSync();
   }
 
   /// BUG-373：调延迟后对**文本字幕**立即按 [positionMs] 重算当前 cue 并 [notifyListeners]，
@@ -2241,7 +2263,9 @@ class VideoPlayerController extends ChangeNotifier
   /// 下发到 libmpv `sub-delay` 的延迟（毫秒）。图形内封字幕走 libmpv 画面渲染，用
   /// 真实 [_delayMs]；文本字幕（可点 overlay）偏移已在 Dart 侧扣减，故 `sub-delay`
   /// 必须为 0（显式复位，防图形轨残留）。是 [setDelayMs] /
-  /// [selectEmbeddedGraphicTrack] 决策与单测的共享真相源（BUG-301）。
+  /// [selectEmbeddedGraphicTrack] 决策与单测的共享真相源（BUG-301）。给 Lua 脚本的
+  /// 字幕镜像轨同样走 0：调轴已烘进镜像 SRT（见 [buildLuaSubtitleMirrorSrt]，mpv 的
+  /// `sub-end` 不含 `sub-delay`）。
   int get _subtitleDelayMpvMs => _graphicSubtitleActive ? _delayMs : 0;
 
   /// 当前启用的着色器绝对路径（设置界面回显用）。
@@ -2325,6 +2349,8 @@ class VideoPlayerController extends ChangeNotifier
     await _setMpvProperties(buildLuaOsdProperties());
     if (!identical(_player, player)) return; // OSD 下发期间 Player 被换/销毁。
     await applyLuaScriptsToPlayer(player, fresh);
+    // 视频播放中途才装上脚本（设置面板开关 / 导入）：当前字幕立刻镜像过去。
+    _scheduleLuaSubtitleMirrorSync();
   }
 
   /// BUG-2032：mpv 日志 → 脚本状态。与脚本无关的行（绝大多数）直接丢。
@@ -2364,6 +2390,148 @@ class VideoPlayerController extends ChangeNotifier
     // 旧 Player 的迟到日志行会挂在新 Player 的时间轴上，正是这类流水最忌讳的串台。
     unawaited(_diagLogSub?.cancel());
     _diagLogSub = null;
+    // 镜像轨与脚本同作用域：Player 没了，轨也随之没了。
+    _luaSubtitleMirrorTrackId = null;
+    _luaSubtitleMirrorFileReady = false;
+  }
+
+  // ── Lua 字幕镜像（#2014，见 video_lua_script_manager.dart 文件头「字幕镜像」段）──
+
+  /// 镜像轨在 libmpv 里的 track id；null = 当前文件上没挂。track id 按文件编号，
+  /// 换片后旧 id 可能正好是新片的一条真实轨，所以只在 [_luaSubtitleMirrorLoadToken]
+  /// 仍是当前 load 时才拿它去 `sub-remove`。
+  String? _luaSubtitleMirrorTrackId;
+  int _luaSubtitleMirrorLoadToken = -1;
+
+  /// 当前 load 的文件已 open、libmpv 字幕抑制已下发。`sub-add` 只能挂在已加载的
+  /// 文件上：[load] 前段 [setCues] 触发的同步一律等到这里再做。
+  bool _luaSubtitleMirrorFileReady = false;
+
+  /// 同步串行化：[setCues] / 关字幕 / 装脚本可能一帧内连发，`sub-remove` 与
+  /// `sub-add` 交错会留下两条镜像轨。
+  Future<void> _luaSubtitleMirrorChain = Future<void>.value();
+  bool _luaSubtitleMirrorSyncQueued = false;
+
+  /// 镜像 SRT 每次换新文件名（mpv 对外挂字幕按路径读，覆写同一路径在 Windows 上可能
+  /// 撞上 mpv 仍持有的句柄）；[_luaSubtitleMirrorFile] 是最近一份，换新时删旧的。
+  int _luaSubtitleMirrorFileSeq = 0;
+  File? _luaSubtitleMirrorFile;
+
+  bool get _luaSubtitleMirrorWanted => shouldMirrorSubtitlesForLua(
+    hasLoadedScripts: _loadedLuaScripts.isNotEmpty,
+    hasTextCues: _cues.isNotEmpty,
+    graphicSubtitleActive: _graphicSubtitleActive,
+    playerDecodedSubtitleActive: _playerDecodedTextSub != null,
+    blurayNavigationSession: isBlurayNavigationSession,
+  );
+
+  /// 排一次镜像同步。没装脚本、也没挂过镜像的播放器直接返回——零开销。
+  ///
+  /// 已有一次排着没开始的同步就不再追加：同步开跑时才读当时的 cue / 调轴，一次就能
+  /// 追上之前所有变化——调轴滑条连拖几十步也只重挂一两次。
+  void _scheduleLuaSubtitleMirrorSync() {
+    if (_player == null) return;
+    if (_loadedLuaScripts.isEmpty && _luaSubtitleMirrorTrackId == null) return;
+    if (_luaSubtitleMirrorSyncQueued) return;
+    _luaSubtitleMirrorSyncQueued = true;
+    _luaSubtitleMirrorChain = _luaSubtitleMirrorChain
+        .then((_) => _syncLuaSubtitleMirror())
+        .catchError((Object e) {
+          debugPrint('[VideoPlayerController] lua subtitle mirror failed: $e');
+        });
+  }
+
+  /// 按当前状态重挂镜像轨：先摘掉本文件上的旧镜像，需要时再把 [_cues] 写成 SRT
+  /// `sub-add ... select`。每个 await 后用 [_isCurrentLoad] 重校验（防 UAF，与本
+  /// 文件其余原生下发同一条纪律），并重判 [_luaSubtitleMirrorWanted]——await 期间
+  /// 用户可能已换成图形轨 / libmpv 回流 / 关字幕，那时再选中镜像就会抢走真实 `sid`。
+  Future<void> _syncLuaSubtitleMirror() async {
+    _luaSubtitleMirrorSyncQueued = false;
+    final Player? player = _player;
+    if (player == null || !_luaSubtitleMirrorFileReady) return;
+    final dynamic native = player.platform;
+    if (native == null) return;
+    final int loadToken = _loadToken;
+    final String? staleId = _luaSubtitleMirrorLoadToken == loadToken
+        ? _luaSubtitleMirrorTrackId
+        : null;
+    _luaSubtitleMirrorTrackId = null;
+    if (staleId != null) {
+      try {
+        await native.command(<String>['sub-remove', staleId]);
+      } catch (_) {
+        // 轨已随文件消失：无需再摘。
+      }
+      if (!_isCurrentLoad(player, loadToken)) return;
+    }
+    if (!_luaSubtitleMirrorWanted) return;
+    final String srt = buildLuaSubtitleMirrorSrt(_cues, delayMs: _delayMs);
+    if (srt.isEmpty) return;
+    final File file = await _writeLuaSubtitleMirrorFile(srt);
+    if (!_isCurrentLoad(player, loadToken) || !_luaSubtitleMirrorWanted) return;
+    // 先确保不画再选轨：离开图形轨时 `sub-visibility` 可能还是 yes，顺序反过来
+    // libmpv 会把镜像字幕画进画面，与 overlay 叠成两条。`sub-delay` 同理复位成 0
+    // （图形轨残留的偏移会在烘好的时间上再叠一次）。
+    await applySubtitleMpvPropertiesToPlayer(player, <String, String>{
+      ...buildSubtitleSuppressionProperties(),
+      ...buildSubtitleDelayProperty(_subtitleDelayMpvMs),
+    });
+    if (!_isCurrentLoad(player, loadToken) || !_luaSubtitleMirrorWanted) return;
+    try {
+      await native.command(<String>[
+        'sub-add',
+        file.path,
+        'select',
+        kLuaSubtitleMirrorTrackTitle,
+      ]);
+    } catch (e) {
+      debugPrint('[VideoPlayerController] lua subtitle mirror sub-add: $e');
+      return;
+    }
+    if (!_isCurrentLoad(player, loadToken)) return;
+    // `sub-add` 把新轨追加到 track-list 末尾：从末尾认回它的 id，标题对上才记。
+    final int count =
+        int.tryParse(await _getMpvProperty('track-list/count')) ?? 0;
+    if (count <= 0) return;
+    final int last = count - 1;
+    final String title = await _getMpvProperty('track-list/$last/title');
+    final String id = await _getMpvProperty('track-list/$last/id');
+    if (!_isCurrentLoad(player, loadToken)) return;
+    if (title == kLuaSubtitleMirrorTrackTitle && id.isNotEmpty) {
+      _luaSubtitleMirrorTrackId = id;
+      _luaSubtitleMirrorLoadToken = loadToken;
+    }
+  }
+
+  Future<File> _writeLuaSubtitleMirrorFile(String srt) async {
+    final Directory dir = Directory(
+      p.join(Directory.systemTemp.path, 'fushi_lua_subtitle_mirror'),
+    );
+    if (!dir.existsSync()) await dir.create(recursive: true);
+    final File file = File(
+      p.join(
+        dir.path,
+        '${identityHashCode(this)}_${_luaSubtitleMirrorFileSeq++}.srt',
+      ),
+    );
+    await file.writeAsString(srt, flush: true);
+    _deleteLuaSubtitleMirrorFile();
+    _luaSubtitleMirrorFile = file;
+    return file;
+  }
+
+  void _deleteLuaSubtitleMirrorFile() {
+    final File? previous = _luaSubtitleMirrorFile;
+    _luaSubtitleMirrorFile = null;
+    if (previous == null) return;
+    unawaited(
+      previous.delete().then<void>(
+        (_) {},
+        onError: (Object _) {
+          // mpv 仍持有 / 已被清理：临时目录里的残留无害。
+        },
+      ),
+    );
   }
 
   /// 把 libmpv 经客户端 API 推来的一行日志转写进诊断时间轴（2026-09-22）。
@@ -2492,6 +2660,9 @@ class VideoPlayerController extends ChangeNotifier
     // 换片同样要复位：上一片的「已打开」不能给新片背书，否则新片 open 失败时旧
     // 证据仍让三个位置写入点放行、把 0 写进新片的进度。
     _mediaOpened = false;
+    // 上一片的镜像轨随 loadfile 消失；新片 open 之前不能 `sub-add`（#2014）。
+    _luaSubtitleMirrorFileReady = false;
+    _luaSubtitleMirrorTrackId = null;
     // 上一片没落地的 seek 目标不属于这一片；这一片的「在途目标」就是它的起播点
     // （BUG-2731 后续）。重开流（换档 / 换音轨 / 自适应降档）还在打开、缓冲时再换一次档，
     // 读 [resumePositionMs] 必须拿到这次要去的起点，而不是复用的 Player 上一条流的残留
@@ -2935,6 +3106,10 @@ class VideoPlayerController extends ChangeNotifier
       );
     }
     if (!_isCurrentLoad(player, loadToken)) return; // 字幕抑制后换片/销毁。
+    // 文件已加载、字幕抑制已就位：给 Lua 脚本挂主字幕镜像（#2014）。必须在上面的
+    // `setSubtitleTrack(no())` 之后，否则刚选中的镜像会被它取消选中。
+    _luaSubtitleMirrorFileReady = true;
+    _scheduleLuaSubtitleMirrorSync();
 
     // 应用启用的 mpv 着色器（Anime4K 等）。五平台 libmpv 后端均生效——移动端 media_kit
     // 走 vo=gpu 渲染路径，glsl-shaders 进管线（见 applyShadersToPlayer doc）；仅非 libmpv
@@ -5317,6 +5492,7 @@ class VideoPlayerController extends ChangeNotifier
     // 复位是为了不让任何迟到的回调借着旧证据放行）。
     _mediaOpened = false;
     _resetLuaScriptState(); // 与 [_releaseMediaHandles] 一致，防复用残留。
+    _deleteLuaSubtitleMirrorFile();
     luaScriptStates.dispose();
     networkReadBytesPerSecond.dispose();
     networkCacheSeconds.dispose();
