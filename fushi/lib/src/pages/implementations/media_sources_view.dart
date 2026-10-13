@@ -29,6 +29,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/alist/alist_api_client.dart';
+import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
+import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/alist/alist_source_url.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi/src/media/source_library/source_library_removal.dart';
@@ -881,6 +883,17 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     }
   }
 
+  /// 视频域选中的若是音频 CD（只有 `.cda` 快捷方式），抓轨后按「仅此一次」导入，
+  /// 不登记常驻来源（BUG-3312）。返回 true 表示已接管，调用方就此结束。
+  Future<bool> _importedAsAudioCd(String picked) async {
+    if (widget.mediaKind != SourceLibraryKind.video.dbValue) return false;
+    if (!await importAudioCdIfPresent(context, db: _db, dir: picked)) {
+      return false;
+    }
+    widget.onLibraryChanged?.call();
+    return true;
+  }
+
   /// 添加本地文件夹为常驻来源（选目录 → 去重 → 落库 → 立即扫描）。
   ///
   /// 公开：除 [addSource] 的本地分支外，「导入」视图快速导入区的「导入文件夹 →
@@ -897,6 +910,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       dialogTitle: t.media_source_add_local_folder,
     );
     if (!mounted || picked == null || picked.isEmpty) return;
+    if (await _importedAsAudioCd(picked) || !mounted) return;
 
     final String norm = normalizeSourceRootPath(picked, transport: 'local');
     final List<SourceLibraryRow> existing = _rows ?? const <SourceLibraryRow>[];
@@ -950,6 +964,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       dialogTitle: t.media_import_folder,
     );
     if (!mounted || picked == null || picked.isEmpty) return;
+    if (await _importedAsAudioCd(picked) || !mounted) return;
 
     final String norm = normalizeSourceRootPath(picked, transport: 'local');
     // 该根已是常驻来源：不再造同根的一次性影子，直接重扫那一行。重扫本身在来源页
@@ -970,28 +985,22 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final String? groupingMode = await _pickVideoGroupingMode();
     if (!mounted || groupingMode == null) return;
     final VoidCallback? onLibraryChanged = widget.onLibraryChanged;
-    final int tempId = await _db.insertMediaSource(
-      MediaSourcesCompanion(
-        label: Value(defaultLabelFromRoot(norm, transport: 'local')),
-        mediaKind: Value(widget.mediaKind),
-        transport: const Value('local'),
-        rootPath: Value(norm),
-        recursive: const Value(true),
-        videoGroupingMode: Value(groupingMode),
-        sortOrder: Value(_nextSortOrder()),
-        createdAt: Value(DateTime.now().millisecondsSinceEpoch),
-      ),
-    );
-    final SourceLibraryRow? temp = await _db.getMediaSourceById(tempId);
-    if (temp == null) return;
+    int? tempId;
     SourceScanSummary? summary;
-    // 临时行不进 _rows（中途不 _load），但计入 _scanning 让 isBusy 生效，
-    // 与常驻来源扫描共享同一套忙态与重入保护。
-    setState(() => _scanning.add(tempId));
     try {
-      summary = await SourceLibraryScanner(_db).scan(temp);
+      summary = await importLocalFolderOnceAt(
+        db: _db,
+        mediaKind: widget.mediaKind,
+        path: norm,
+        videoGroupingMode: groupingMode,
+        // 临时行不进 _rows（中途不 _load），但计入 _scanning 让 isBusy 生效，
+        // 与常驻来源扫描共享同一套忙态与重入保护。
+        onScanning: (int id) {
+          tempId = id;
+          if (mounted) setState(() => _scanning.add(id));
+        },
+      );
     } finally {
-      await _db.deleteMediaSource(tempId);
       if (mounted) {
         setState(() => _scanning.remove(tempId));
         // summary == null 只发生在 scan 意外抛出（scanner 常规失败会把错误写进

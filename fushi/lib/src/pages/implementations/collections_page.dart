@@ -798,21 +798,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       final dir = Directory(audioRoot);
       if (!await dir.exists()) return [];
       final entries = await dir.list().toList();
-      final files = entries.whereType<File>().where((f) {
-        final ext = f.path.toLowerCase();
-        return ext.endsWith('.mp3') ||
-            ext.endsWith('.m4a') ||
-            ext.endsWith('.m4b') ||
-            ext.endsWith('.ogg') ||
-            ext.endsWith('.aac') ||
-            ext.endsWith('.wav') ||
-            ext.endsWith('.mp4') ||
-            ext.endsWith('.flac') ||
-            ext.endsWith('.opus') ||
-            ext.endsWith('.wma') ||
-            ext.endsWith('.ac3') ||
-            ext.endsWith('.eac3');
-      }).toList()
+      final files = entries
+          .whereType<File>()
+          .where((f) => AudiobookStorage.isAudioFile(f.path))
+          .toList()
         ..sort((a, b) => compareAudioFilePath(a.path, b.path));
       return files;
     }

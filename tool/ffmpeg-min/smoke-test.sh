@@ -271,6 +271,23 @@ for input in \
   assert_nonempty "$WORK/$stem.aac"
 done
 
+echo "[ffmpeg-min-smoke] ripping audio CD tracks to FLAC"
+# BUG-3312: audio CD import transcodes CDDA (Windows raw-read WAV) and the
+# macOS cddafs mount (`N Audio Track.aiff`, big-endian PCM) to FLAC with
+# exactly these args (audio_cd_ripper.dart). Needs the aiff demuxer, flac
+# encoder and flac muxer; the decode-back proves the output is real FLAC.
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
+  -f lavfi -i "sine=frequency=440:duration=1:sample_rate=44100" -ac 2 \
+  -c:a pcm_s16be "$WORK/track.aiff"
+for input in "$WORK/tone.wav" "$WORK/track.aiff"; do
+  stem="$(basename "$input")"
+  run "$FFMPEG_MIN" -hide_banner -loglevel error -y -i "$input" \
+    -map 0:a:0 -c:a flac -metadata title=t -metadata album=a \
+    -metadata track=1/1 -f flac "$WORK/$stem.flac"
+  assert_nonempty "$WORK/$stem.flac"
+  run "$FFMPEG_MIN" -hide_banner -loglevel error -y -i "$WORK/$stem.flac" -f null -
+done
+
 echo "[ffmpeg-min-smoke] exporting sentence audio from an HLS playlist"
 # BUG-2642: online video sources (Aniyomi extensions) hand mining an `.m3u8`.
 # Without the hls demuxer the bundled ffmpeg rejects the playlist with

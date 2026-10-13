@@ -37,12 +37,7 @@ Future<AddLocalFolderResult> addLocalFolderAsSource({
     return AddLocalFolderResult(
         outcome: AddLocalFolderOutcome.duplicate, rootPath: norm);
   }
-  final int sortOrder = existing.isEmpty
-      ? 0
-      : existing
-              .map((MediaSourceRow r) => r.sortOrder)
-              .reduce((int a, int b) => a > b ? a : b) +
-          1;
+  final int sortOrder = _nextSortOrder(existing);
   final int newId = await db.insertMediaSource(
     MediaSourcesCompanion(
       label: Value(defaultLabelFromRoot(norm, transport: 'local')),
@@ -62,6 +57,55 @@ Future<AddLocalFolderResult> addLocalFolderAsSource({
   }
   return AddLocalFolderResult(
       outcome: AddLocalFolderOutcome.added, rootPath: norm, sourceId: newId);
+}
+
+int _nextSortOrder(List<MediaSourceRow> existing) => existing.isEmpty
+    ? 0
+    : existing
+            .map((MediaSourceRow r) => r.sortOrder)
+            .reduce((int a, int b) => a > b ? a : b) +
+        1;
+
+/// 「导入文件夹（仅此一次）」：与常驻来源共用**同一条**扫描-导入管线，但登记的来源行
+/// 只作为这一次扫描的载体，扫完即删——已导入媒体保留（FK setNull 把 sourceId 归
+/// NULL，等价于手动单件导入），不留下常驻扫描根。
+///
+/// 来源页的「仅此一次」与音频 CD 抓轨导入（BUG-3312）共用这一份。抓好的 CD 落在数据根
+/// 内，而 `MediaSources.rootPath` 的契约是「数据根之外的外部目录，迁移不改写」，所以它
+/// 只能走这里、不能登记成常驻来源。
+///
+/// [onScanning] 在临时行插入后、扫描开始前回调其 id（来源页用它点亮忙态）。scanner
+/// 意外抛出时异常照常上抛，临时行仍会被删除。
+Future<SourceScanSummary?> importLocalFolderOnceAt({
+  required FushiDatabase db,
+  required String mediaKind,
+  required String path,
+  String videoGroupingMode = 'series',
+  void Function(int sourceId)? onScanning,
+}) async {
+  final String norm = normalizeSourceRootPath(path, transport: 'local');
+  final int sortOrder =
+      _nextSortOrder(await db.getMediaSourcesByKind(mediaKind));
+  final int tempId = await db.insertMediaSource(
+    MediaSourcesCompanion(
+      label: Value(defaultLabelFromRoot(norm, transport: 'local')),
+      mediaKind: Value(mediaKind),
+      transport: const Value('local'),
+      rootPath: Value(norm),
+      recursive: const Value(true),
+      videoGroupingMode: Value(videoGroupingMode),
+      sortOrder: Value(sortOrder),
+      createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+    ),
+  );
+  try {
+    final SourceLibraryRow? temp = await db.getMediaSourceById(tempId);
+    if (temp == null) return null;
+    onScanning?.call(tempId);
+    return await SourceLibraryScanner(db).scan(temp);
+  } finally {
+    await db.deleteMediaSource(tempId);
+  }
 }
 
 enum AddLocalFolderOutcome { added, duplicate }

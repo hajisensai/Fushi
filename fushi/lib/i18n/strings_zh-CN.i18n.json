@@ -7187,5 +7187,11 @@
   "video_remote_favorites_select": "多选",
   "video_remote_transcript_empty": "暂无字幕",
   "video_remote_host_connected": "已连接 $name",
-  "video_remote_line_actions": "句子操作"
+  "video_remote_line_actions": "句子操作",
+  "media_audio_cd_rip_title": "正在抓取音频 CD",
+  "media_audio_cd_rip_reading": "正在读取光盘…",
+  "media_audio_cd_rip_progress": "第 $current / $total 轨",
+  "media_audio_cd_rip_failed": "音频 CD 抓轨失败：$error",
+  "media_audio_cd_rip_unreadable": "有 $n 个损坏扇区读不出来，已用静音填充",
+  "media_audio_cd_cda_unsupported": ".cda 只是光盘音轨的快捷方式，里面没有音频。Windows 上请放入光盘后直接选择光驱；其他平台请先把 CD 转成音频文件再导入。"
 }

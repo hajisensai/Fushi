@@ -17,8 +17,24 @@ abstract final class AudiobookStorage {
     '.wma',
     '.ac3',
     '.eac3',
+    '.aiff',
+    '.aif',
     '.mp4',
   };
+
+  /// 复制进持久目录时要转成 FLAC 的扩展名。AIFF 是无损 PCM，桌面与 iOS 的播放器
+  /// 都认，但 Android 有声书播放器（just_audio → ExoPlayer）没有 AIFF 解析器，原样
+  /// 复制的书导入 / 同步到 Android 就播不出来。转成同样无损的 FLAC，落盘的音频在
+  /// 哪一端都能播。
+  static const Set<String> flacTranscodedExtensions = <String>{'.aiff', '.aif'};
+
+  /// AIFF → FLAC 编码装配点（`(source, flacPath)`，失败抛异常，返回时 flacPath 是
+  /// 完整文件）。ffmpeg 在 `fushi_engine`，本包够不着：app 与服务端启动时各装一次
+  /// （`installAudiobookFlacTranscoder()`）。
+  ///
+  /// null = 未装配 → 复制 AIFF 时抛 [StateError]。不退回原样复制：那样产出的书在
+  /// Android 上播不了，而且没有任何报错。
+  static Future<void> Function(String source, String flacPath)? flacTranscoder;
 
   /// [audioExtensions] 的去点形式（file picker 的 `allowedExtensions` 用）。
   /// 两个导入对话框原各持同一派生副本，收敛到源集合旁的单一真相。
@@ -125,7 +141,11 @@ abstract final class AudiobookStorage {
     if (p.isWithin(p.canonicalize(persistDir.path), p.canonicalize(src.path))) {
       return src.path;
     }
-    final String baseName = p.basename(src.path);
+    final bool transcode = flacTranscodedExtensions
+        .contains(p.extension(src.path).toLowerCase());
+    final String baseName = transcode
+        ? '${p.basenameWithoutExtension(src.path)}.flac'
+        : p.basename(src.path);
     if (baseName.contains('..')) {
       throw ArgumentError('Invalid filename: $baseName');
     }
@@ -147,6 +167,7 @@ abstract final class AudiobookStorage {
       } while (File(dest).existsSync());
     }
     final int totalBytes = await src.length();
+    if (transcode) return _transcodeToFlac(src, dest, totalBytes, onProgress);
 
     IOSink? sink;
     try {
@@ -176,6 +197,65 @@ abstract final class AudiobookStorage {
 
     fushiDebugPrint('[hibiki-import] persisted ${src.path} → $dest '
         '(${(totalBytes / 1024 / 1024).toStringAsFixed(1)} MB)');
+    return dest;
+  }
+
+  /// [persistFileWithProgress] 的 AIFF 分支：编码成 [dest]（FLAC）。进度按源文件
+  /// 字节报（编码前 0、完成后满），与复制分支的累计口径一致。
+  static Future<String> _transcodeToFlac(
+    File src,
+    String dest,
+    int totalBytes,
+    void Function(int copied, int total)? onProgress,
+  ) async {
+    final Future<void> Function(String, String)? transcoder = flacTranscoder;
+    if (transcoder == null) {
+      throw StateError('AudiobookStorage.flacTranscoder is not installed; '
+          'cannot persist ${p.basename(src.path)}');
+    }
+    onProgress?.call(0, totalBytes);
+    await transcoder(src.path, dest);
+    final File out = File(dest);
+    if (!out.existsSync() || out.lengthSync() == 0) {
+      throw StateError('FLAC transcode produced no output: $dest');
+    }
+    onProgress?.call(totalBytes, totalBytes);
+    fushiDebugPrint('[hibiki-import] transcoded ${src.path} → $dest');
+    return dest;
+  }
+
+  /// 已经落进 app 目录、但没经过 [syncAudioFiles] 的音频（同步包 / 互联下载解出来
+  /// 的，发送端可能是「引用原文件」导入的 AIFF 书）就地规整：AIFF 转成同目录的
+  /// FLAC 并删掉原件，其余原样。返回与 [paths] 一一对应的新路径，顺序不变（cue 的
+  /// `audioFileIndex` 就是下标）。FLAC 名与列表里别的轨撞名时加序号，不覆盖别的轨。
+  static Future<List<String>> transcodePersistedAiff(List<String> paths) async {
+    final Set<String> taken = paths.map(p.canonicalize).toSet();
+    final List<String> out = <String>[];
+    for (final String path in paths) {
+      if (!flacTranscodedExtensions.contains(p.extension(path).toLowerCase())) {
+        out.add(path);
+        continue;
+      }
+      final String dest = _freeFlacName(path, taken);
+      taken.add(p.canonicalize(dest));
+      // 目录里同名的旧 FLAC 只可能是这本书上一次导入的残留（目录按书分）。
+      final File stale = File(dest);
+      if (stale.existsSync()) stale.deleteSync();
+      await _transcodeToFlac(File(path), dest, 0, null);
+      File(path).deleteSync();
+      out.add(dest);
+    }
+    return out;
+  }
+
+  /// [aiffPath] 同目录下第一个不在 [taken] 里的 `<stem>.flac` / `<stem> _N.flac`。
+  static String _freeFlacName(String aiffPath, Set<String> taken) {
+    final String dir = p.dirname(aiffPath);
+    final String stem = p.basenameWithoutExtension(aiffPath);
+    String dest = p.join(dir, '$stem.flac');
+    for (int n = 1; taken.contains(p.canonicalize(dest)); n++) {
+      dest = p.join(dir, '$stem _$n.flac');
+    }
     return dest;
   }
 

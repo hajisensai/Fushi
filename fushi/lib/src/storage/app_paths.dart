@@ -572,6 +572,9 @@ class AppPaths {
     // 卡片来源回看的待回写草稿（临时音频/图片/字段，`card_source_drafts/<sourceId>`），
     // 失败后可恢复提交，必须随数据根走。派生点：card_source_router.dart。
     'card_source_drafts',
+    // 音频 CD 抓轨产物（BUG-3312，`<documents>/audio_cd/<卷标> (<光盘id>)/`）。导入后的
+    // 视频条目 videoPath 指向这里，必须随数据根走。派生点：audio_cd_import.dart。
+    'audio_cd',
   };
 
   /// BUG-1115：[newDataRoot] 落在**共享** documents 根（老安装的扁平布局 = 平台
