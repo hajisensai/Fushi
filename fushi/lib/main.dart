@@ -105,6 +105,9 @@ import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/feedback/feedback_entry_gate.dart';
+import 'package:fushi/src/feedback/feedback_reply_notifier.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart'
+    show showFeedbackReplyNotice;
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
@@ -779,6 +782,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// 初始化完成后补发一次待发制卡 / 补一次 Anki 同步（桌面冷启动不一定有
   /// resumed 生命周期事件）。只触发一次。
   bool _startupPendingMinesFlushed = false;
+  bool _startupFeedbackChecked = false;
 
   /// 长按 app 图标点下的快捷方式（`fushi://shortcut/<id>`）。冷启动时 URL 比
   /// `initialise()` 先到，而 HomePage.initState 会把 [homeShellTabNotifier]
@@ -1006,6 +1010,21 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
 
   /// 回到前台补发待发制卡队列：桌面 / Android 上连续补发；AnkiMobile 只有在用户
   /// 点过「全部发送」的会话里才发下一张（每张卡 `x-success` 跳回都会走到这里）。
+  /// 启动后与回到前台时看一眼开发者有没有回复本机未结案的反馈（节流 / 无未结案不发
+  /// 请求，见 [FeedbackReplyNotifier]）。只在主 app 入口：弹窗词典 / 悬浮词典是别的
+  /// entry point，不经这里。有新进展就弹一次应用内提示。
+  Future<void> _checkFeedbackReplies() async {
+    final int count = await ref.read(feedbackReplyNotifierProvider).check();
+    if (count <= 0 || !mounted) return;
+    final BuildContext? navContext = ref
+        .read(appProvider)
+        .navigatorKey
+        .currentContext;
+    if (navContext != null && navContext.mounted) {
+      showFeedbackReplyNotice(navContext, count);
+    }
+  }
+
   void _flushPendingMines() {
     if (!ref.read(appProvider).isInitialised) return;
     // 「Anki 同步客户端」后端：上次没同步成功（离线等）的卡留在它自己的日志里，
@@ -1023,6 +1042,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (state == AppLifecycleState.resumed) {
       ref.read(appProvider).refreshSystemPalette();
       _flushPendingMines();
+      if (ref.read(appProvider).isInitialised) {
+        unawaited(_checkFeedbackReplies());
+      }
       if (Platform.isIOS) {
         unawaited(_consumeAnkiMobileInfoReturn(
           AnkiMobileInfoReturnTrigger.appResumed,
@@ -2367,6 +2389,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       labelOf: (AppShortcut shortcut) => homeNavItemFor(shortcut.homeTab).label,
       disabledMessage: t.module_disabled_hint,
     );
+
+    if (!_startupFeedbackChecked) {
+      _startupFeedbackChecked = true;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => unawaited(_checkFeedbackReplies()),
+      );
+    }
 
     if (!_startupPendingMinesFlushed) {
       _startupPendingMinesFlushed = true;

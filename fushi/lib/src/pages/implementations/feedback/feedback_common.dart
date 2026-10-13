@@ -512,3 +512,21 @@ Future<List<Uint8List>> readFeedbackImagesFromClipboard({
 int watchFeedbackUnseen(WidgetRef ref) => ref.watch(
   feedbackServiceProvider.select((FeedbackService s) => s.unseenCount),
 );
+
+/// 开发者有新回复 / 改了状态时的应用内提示（snackbar，带「查看」直达反馈中心）。
+/// [context] 要在导航之下（有 ScaffoldMessenger）；找不到就静默放弃——红点照常亮。
+void showFeedbackReplyNotice(BuildContext context, int count) {
+  final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(context);
+  if (messenger == null || count <= 0) return;
+  messenger.showSnackBar(
+    FushiSnackBar(
+      key: const ValueKey<String>('feedback-reply-notice'),
+      content: Text(t.feedback_reply_notice(n: count)),
+      action: SnackBarAction(
+        label: t.feedback_reply_notice_open,
+        onPressed: () =>
+            unawaited(openFeedbackCenter(context, captureScreen: false)),
+      ),
+    ),
+  );
+}
