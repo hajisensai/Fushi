@@ -1660,6 +1660,7 @@ JSON.stringify((function(){
     final String entriesJs = buildPopupEntriesJs(
       widget.result,
       pending: widget.lookupPending,
+      idle: identical(widget.result, kPopupSearchingPlaceholderResult),
     );
     // 主题变量段随静态段一起（或已经）在 WebView 里生效；记下它供
     // didChangeDependencies 的主题热切换去重，不再另拼一份删减版拷贝。

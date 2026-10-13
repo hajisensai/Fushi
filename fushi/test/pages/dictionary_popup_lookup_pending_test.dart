@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -183,6 +185,29 @@ void main() {
     expect(
       buildPopupEntriesJs(hit),
       contains('window.lookupPending = false;'),
+    );
+  });
+
+  // BUG-3274：换词时隐藏的热槽层先收到搜索期占位（pending=false），popup.js 曾把它画成
+  // 「未找到」留在 DOM 里，结果一慢、兜底强制翻可见就露出假空态。占位必须带 idle 标记，
+  // 页面据此只画空占位盒。
+  test('buildPopupEntriesJs 给空闲占位打 lookupIdle（BUG-3274）', () {
+    expect(
+      buildPopupEntriesJs(kPopupSearchingPlaceholderResult, idle: true),
+      contains('window.lookupIdle = true;'),
+    );
+    expect(
+      buildPopupEntriesJs(hit),
+      contains('window.lookupIdle = false;'),
+      reason: '真实结果（含查完为空）不是空闲占位',
+    );
+    final String webView = File(
+      'lib/src/pages/implementations/dictionary_popup_webview.dart',
+    ).readAsStringSync();
+    expect(
+      webView,
+      contains('idle: identical(widget.result, kPopupSearchingPlaceholderResult)'),
+      reason: 'in-app 推送必须按占位单例身份下发 lookupIdle',
     );
   });
 }
