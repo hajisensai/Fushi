@@ -402,6 +402,10 @@ class SyncAssetPackageService {
       prefix: 'resources',
     );
     await _dropStaleTokenSidecar(srtPath, resources);
+    // 发送端「引用原文件」导入的 AIFF 书会原样进包；Android 播放器不认 AIFF，落库前
+    // 转成 FLAC（与本机复制导入同一条规则，BUG-3312）。
+    final List<String> playableAudioPaths =
+        await AudiobookStorage.transcodePersistedAiff(audioPaths);
 
     // 写库段必须原子（BUG-2551）：这三张表是**一本书**，分三次 await 写下去时，
     // 任何一步抛出（磁盘满、标签表冲突、cue 批量写失败）都会把前面写下的行留在库里。
@@ -415,7 +419,7 @@ class SyncAssetPackageService {
       await _db.upsertAudiobook(AudiobooksCompanion.insert(
         bookKey: bookKey,
         audioRoot: Value(targetDir.path),
-        audioPathsJson: Value(jsonEncode(audioPaths)),
+        audioPathsJson: Value(jsonEncode(playableAudioPaths)),
         alignmentFormat: _stringValue(audiobook, 'alignmentFormat'),
         alignmentPath: alignmentPath,
         healthKindRaw: Value(_nullableString(audiobook, 'healthKindRaw')),
@@ -438,7 +442,7 @@ class SyncAssetPackageService {
         title: _stringValue(srtBook, 'title'),
         author: Value(_nullableString(srtBook, 'author')),
         audioRoot: Value(targetDir.path),
-        audioPathsJson: Value(jsonEncode(audioPaths)),
+        audioPathsJson: Value(jsonEncode(playableAudioPaths)),
         srtPath: srtPath,
         coverPath: Value(coverPath),
         importedAt: _intValue(srtBook, 'importedAt'),
@@ -530,6 +534,8 @@ class SyncAssetPackageService {
       prefix: 'resources',
     );
     await _dropStaleTokenSidecar(srtPath, resources);
+    final List<String> playableAudioPaths =
+        await AudiobookStorage.transcodePersistedAiff(audioPaths);
 
     // 与 srt-backed 分支同纪律：写库段原子（BUG-2551）。半写下的 SrtBooks 行会让
     // 书架上的 standalone 占位卡永久消失，用户再没有第二次下载的入口。
@@ -542,7 +548,7 @@ class SyncAssetPackageService {
         title: _stringValue(srtBook, 'title'),
         author: Value(_nullableString(srtBook, 'author')),
         audioRoot: Value(targetDir.path),
-        audioPathsJson: Value(jsonEncode(audioPaths)),
+        audioPathsJson: Value(jsonEncode(playableAudioPaths)),
         srtPath: srtPath,
         coverPath: Value(coverPath),
         importedAt: _intValue(srtBook, 'importedAt'),
