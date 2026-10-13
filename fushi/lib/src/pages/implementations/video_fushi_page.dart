@@ -6385,7 +6385,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     unawaited(_lookupAt(sentence, graphemeIndex, charRect, overrideCue: cue));
   }
 
-  /// BUG-3274：暂停 OCR 层点字查词。图形字幕没有 Dart 侧 cue，以前这里传 null 锚点 →
+  /// BUG-3319：暂停 OCR 层点字查词。图形字幕没有 Dart 侧 cue，以前这里传 null 锚点 →
   /// 制卡区间 `0..0`（无句子音频、无同步片段、封面抽片头黑帧）。先从 mpv
   /// `sub-start` / `sub-end` 取在屏那句的真实时间窗建锚点（文本 = 被点的 OCR 句），
   /// 再走与文本字幕完全相同的 [_handleSubtitleLookupTap] → `_lastLookupCue` → 制卡区间。

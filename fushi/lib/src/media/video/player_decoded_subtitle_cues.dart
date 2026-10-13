@@ -46,7 +46,7 @@ AudioCue? buildPlayerDecodedCue({
     ..audioFileIndex = 0;
 }
 
-/// BUG-3274：图形字幕（PGS / VobSub，libmpv 自绘、Dart 侧无 cue）当前在屏那句的
+/// BUG-3319：图形字幕（PGS / VobSub，libmpv 自绘、Dart 侧无 cue）当前在屏那句的
 /// 查词 / 制卡锚点 cue。
 ///
 /// [startMs] / [endMs] 是 mpv `sub-start` / `sub-end` 换算的毫秒。mpv 的

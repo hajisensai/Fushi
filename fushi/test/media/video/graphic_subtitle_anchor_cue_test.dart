@@ -8,7 +8,7 @@ import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
-/// BUG-3274：图形字幕（PGS，libmpv 自绘）制卡只有一张黑图、没有同步视频和句子音频。
+/// BUG-3319：图形字幕（PGS，libmpv 自绘）制卡只有一张黑图、没有同步视频和句子音频。
 ///
 /// 根因：图形轨没有 Dart 侧 cue，暂停 OCR 层查词不带锚点 → 制卡区间 `0..0`。修复从
 /// mpv `sub-start` / `sub-end` 建在屏那句的锚点 cue；这里钉住「锚点怎么建」与「控制器

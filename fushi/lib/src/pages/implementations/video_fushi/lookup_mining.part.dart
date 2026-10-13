@@ -206,7 +206,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       clipEndMs: miningClipTimeMs(paddedRange?.endMs ?? 0, clipDelayMs),
       // 「字幕起始帧」封面锚点用**未 pad** 的字幕起点（同一逆变换）：封面承诺的是字幕
       // 开始那一刻的画面，不能跟着音频头 padding 往前退到上一个镜头。
-      // BUG-3274：没有任何区间（无 cue、草稿空）时锚在**当前播放位置**（已是播放器轴，
+      // BUG-3319：没有任何区间（无 cue、草稿空）时锚在**当前播放位置**（已是播放器轴，
       // 不再逆变换），与 [_mineVideoCard] 的 `sourceStartMs` 同一口径——以前落 0，静帧
       // 抽的是片头黑帧。
       stillFrameAtMs: mergedRange == null

@@ -451,7 +451,7 @@ class VideoPlayerController extends ChangeNotifier
   /// 关掉（[setGraphicSubtitleVisible]）；选图形轨时恒打开。
   bool _graphicSubtitleVisible = true;
 
-  /// BUG-3274：最近一次 [currentGraphicSubtitleCue] 产出的图形字幕锚点 cue。它不在
+  /// BUG-3319：最近一次 [currentGraphicSubtitleCue] 产出的图形字幕锚点 cue。它不在
   /// [cues] / [secondaryCues] 任一条流里，[cueStreamOwning] / [delayMsForCue] 按身份
   /// 认出它，给出「它自成一条流、走主轨调轴」的口径（libmpv `sub-delay` = [_delayMs]）。
   AudioCue? _graphicAnchorCue;
@@ -975,7 +975,7 @@ class VideoPlayerController extends ChangeNotifier
   /// BUG-1592：[cue] 所属的那条流（按身份判定，主流优先）。两条流都不含它（列表面板的
   /// 合成 cue / 已换集的陈旧 cue）时回 [miningCues]，保持「至少落在当前有效流上」。
   ///
-  /// BUG-3274：图形字幕锚点（[currentGraphicSubtitleCue]）自成一条单句流——它在
+  /// BUG-3319：图形字幕锚点（[currentGraphicSubtitleCue]）自成一条单句流——它在
   /// 两条文本流里都没有，回落 [miningCues] 会让 padding 按副字幕邻句夹边、上下文
   /// 取到副字幕的句子。
   List<AudioCue> cueStreamOwning(AudioCue cue) {
@@ -2298,7 +2298,7 @@ class VideoPlayerController extends ChangeNotifier
   /// 面板的合成 cue / 已换集的陈旧 cue）时回 [miningDelayMs]（与
   /// [cueStreamOwning] 的兜底同一口径）。
   ///
-  /// BUG-3274：图形字幕锚点走主轨 [_delayMs]——图形轨只存在于主字幕槽，libmpv
+  /// BUG-3319：图形字幕锚点走主轨 [_delayMs]——图形轨只存在于主字幕槽，libmpv
   /// `sub-delay` 下发的就是它（[_subtitleDelayMpvMs]）；图形模式下主流 [cues] 为空，
   /// 兜底 [miningDelayMs] 会错拿副轨调轴。
   int delayMsForCue(AudioCue cue) {
@@ -3993,7 +3993,7 @@ class VideoPlayerController extends ChangeNotifier
   /// BUG-2590）——此时没有 cue、不可查词。播放页取证钩子用。
   bool get isPlayerRenderedSubtitleActive => _graphicSubtitleActive;
 
-  /// BUG-3274：图形字幕（libmpv 自绘）此刻在屏那句的查词 / 制卡锚点 cue。
+  /// BUG-3319：图形字幕（libmpv 自绘）此刻在屏那句的查词 / 制卡锚点 cue。
   ///
   /// 图形轨没有 Dart 侧 cue（选轨时 [setCues] 清空），暂停 OCR 层查词以前不带锚点 →
   /// 制卡区间塌成 `0..0`：没有句子音频、没有同步片段，封面抽片头 0 秒的黑帧。这里从
@@ -4081,7 +4081,7 @@ class VideoPlayerController extends ChangeNotifier
   GraphicSubtitleTrackFileRegionLoad graphicSubtitleTrackFileRegionLoad =
       loadGraphicSubtitleRegionsFromTrackFile;
 
-  /// 测试钩子（BUG-3274）：宿主无 libmpv 读不到 `sub-start` / `sub-end`，直接喂原始
+  /// 测试钩子（BUG-3319）：宿主无 libmpv 读不到 `sub-start` / `sub-end`，直接喂原始
   /// 属性串，走与 [currentGraphicSubtitleCue] 完全同一条 [_adoptGraphicSubtitleAnchor]。
   @visibleForTesting
   AudioCue? debugAdoptGraphicSubtitleAnchorForTesting({

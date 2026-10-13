@@ -33,12 +33,12 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3319](bugs/BUG-3319-graphic-subtitle-mining-black-frame.md) | ✅ | ✅ | 图形字幕制卡只有黑色静图、无同步视频和句子音频 |
 | [BUG-3318](bugs/BUG-3318-graphic-ocr-card-no-apple-surface.md) | ✅ | ✅ | 图形字幕OCR进度卡在Apple与墨水屏下不走播放器浮层表面 |
 | [BUG-3317](bugs/BUG-3317-bitmap-subtitle-oversize-oom.md) | ✅ | ✅ | 位图字幕对象声明超大尺寸时一次分配数GB平面 |
 | [BUG-3276](bugs/BUG-3276-bitmap-subs-remote-timing-ocr.md) | ✅ | ✅ | VobSub/DVB 图形字幕与远程播放没有逐句时间与整轨 OCR |
 | [BUG-3275](bugs/BUG-3275-graphic-subtitle-ocr-duplicate-slow.md) | ✅ | ✅ | 图形字幕整轨OCR文字重复且极慢 |
 | [BUG-3274](bugs/BUG-3274-popup-switch-word-false-empty.md) | ✅ | ✅ | 视频页换词时查词弹窗先闪「未找到」、滑动掉帧 |
-| [BUG-3274](bugs/BUG-3274-graphic-subtitle-mining-black-frame.md) | ✅ | ✅ | 图形字幕制卡只有黑色静图、无同步视频和句子音频 |
 | [BUG-3273](bugs/BUG-3273-ocr-progress-card-contrast.md) | ✅ | ✅ | 图形字幕转文字进度卡浅色主题下文字看不清且无法收起 |
 | [BUG-3272](bugs/BUG-3272-anki-auto-reposition-failure-reason-lost.md) | ✅ | ✅ | 自动重排失败原因被吞且整牌组请求走交互超时 |
 | [BUG-3271](bugs/BUG-3271-expansion-tile-pagestorage-collision.md) | ✅ | ✅ | 视频设置面板字幕分类下方整片灰（展开区与滚动视图 PageStorage 槽冲突） |

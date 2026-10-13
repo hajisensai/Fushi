@@ -568,7 +568,7 @@ class ImmersionMiningEngine {
 
     // 抽字幕 cue 起始时间点的单帧；无 src / 无字幕时间窗 → null。
     //
-    // BUG-3274：没有时间窗（无 cue，`0..0` 哨兵）就没有「字幕起点」可言。以前这里只判
+    // BUG-3319：没有时间窗（无 cue，`0..0` 哨兵）就没有「字幕起点」可言。以前这里只判
     // `src != null`，于是图形字幕（PGS）制卡这类无锚点的请求在动图阶梯里把锚点 0 当真，
     // 抽出片头 0.000s 的黑帧当封面，并且因为它「成功」了，真正该用的当前帧兜底
     // （[tryCurrentFrame]）永远轮不到。与 [tryGif] 同一道窗几何判据。
@@ -691,7 +691,7 @@ class ImmersionMiningEngine {
           await runAnimatedLadder();
         case VideoMiningImageMode.subtitleStart:
           // 用户选「字幕开头截图」：起点单帧优先，失败退当前帧。主动选静态图，非降级。
-          // 无时间窗时 [tryStartFrame] 直接回 null，落到当前帧（BUG-3274）。
+          // 无时间窗时 [tryStartFrame] 直接回 null，落到当前帧（BUG-3319）。
           coverPath = await tryStartFrame();
           coverPath ??= await tryCurrentFrame();
         case VideoMiningImageMode.currentFrame:

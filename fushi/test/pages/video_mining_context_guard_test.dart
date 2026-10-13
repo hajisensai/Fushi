@@ -362,7 +362,7 @@ void main() {
     );
   });
 
-  test('BUG-3274：图形字幕暂停 OCR 查词带 mpv 真实时间窗锚点进制卡', () {
+  test('BUG-3319：图形字幕暂停 OCR 查词带 mpv 真实时间窗锚点进制卡', () {
     // 根因：图形轨（PGS）没有 Dart 侧 cue，OCR 层点字以前传 null 锚点 →
     // `_lastLookupCue = null` → 制卡区间 0..0：无句子音频、无同步片段、封面抽片头黑帧。
     final String overlay = region(

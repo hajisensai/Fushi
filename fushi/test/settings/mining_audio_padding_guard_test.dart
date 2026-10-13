@@ -190,7 +190,7 @@ void main() {
         contains('miningClipTimeMs(mergedRange.startMs, clipDelayMs)'),
         reason: '锚点 = 未 pad 的合并区间起点，经同一 A/V 逆变换',
       );
-      // BUG-3274：无区间时锚在当前播放位置（播放器轴），不再落 0 抽片头黑帧。
+      // BUG-3319：无区间时锚在当前播放位置（播放器轴），不再落 0 抽片头黑帧。
       expect(
         src.replaceAll(RegExp(r'\s+'), ' '),
         contains(

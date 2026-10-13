@@ -353,7 +353,7 @@ void main() {
     expect(repo.context!.coverPath, endsWith('immersion_shot.jpg'));
   });
 
-  // BUG-3274：上一条没给 mediaSource，起点帧那一级天然跳过，掩盖了真实形状——视频页
+  // BUG-3319：上一条没给 mediaSource，起点帧那一级天然跳过，掩盖了真实形状——视频页
   // 永远带着本地源。图形字幕（PGS）制卡没有锚点 cue → `0..0` 窗 + 有源：以前起点帧
   // 只判 `src != null`，在 0.000s 抽出片头黑帧当封面，当前帧兜底永远轮不到。
   Future<String?> recordingFrame(List<double> calls,
@@ -376,7 +376,7 @@ void main() {
     VideoMiningImageMode.currentFrame,
   ]) {
     test(
-        'BUG-3274 ${mode.name}: media source + 0..0 window never extracts the '
+        'BUG-3319 ${mode.name}: media source + 0..0 window never extracts the '
         'frame at 0 s and falls to the current-frame still', () async {
       final List<double> frameCalls = <double>[];
       final List<String> gifCalls = <String>[];
@@ -457,9 +457,9 @@ void main() {
     });
   }
 
-  // 有窗时起点帧照旧可用（BUG-3274 的守卫不能误伤「字幕开头截图」模式）。
+  // 有窗时起点帧照旧可用（BUG-3319 的守卫不能误伤「字幕开头截图」模式）。
   test(
-      'BUG-3274 subtitleStart with a real window still extracts the start frame',
+      'BUG-3319 subtitleStart with a real window still extracts the start frame',
       () async {
     final List<double> frameCalls = <double>[];
     final ImmersionMiningResult result = await ImmersionMiningEngine(
