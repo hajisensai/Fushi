@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_diag_stats.dart';
 import 'package:fushi/src/media/video/video_black_flicker_detector.dart';
+import 'package:fushi/src/media/video/coalesced_rereader.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
 import 'package:fushi/src/media/video/bluray_aacs_module.dart';
 import 'package:fushi/src/media/video/bluray_java_runtime.dart';
@@ -800,7 +801,9 @@ class VideoPlayerController extends ChangeNotifier
   String? _discResolvedSubtitleCodec;
   int? _discResolvedTracksGeneration;
   Player? _discObservedPlayer;
-  Future<void>? _discSampleFuture;
+  /// Serializes disc navigation snapshot reads without dropping a request that
+  /// arrives mid-read (see `_sampleDiscMenu` in video_disc_menu.part.dart).
+  final CoalescedRereader _discSampler = CoalescedRereader();
   bool _discMiningAvailable = false;
   String? _discExtractionError;
   int _discTitleGeneration = 0;
@@ -4622,8 +4625,6 @@ class VideoPlayerController extends ChangeNotifier
       final Player? player = _player;
       if (player == null) return;
       final int token = _loadToken;
-      await _discSampleFuture;
-      if (!_isCurrentLoad(player, token)) return;
       await _sampleDiscMenu(player, token);
       if (!_isCurrentLoad(player, token)) return;
       if (!discTitleReady) return;

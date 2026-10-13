@@ -41,7 +41,8 @@ void main() {
     });
     expect(pOff['scale'], 'bilinear');
     expect(pOn['scale'], 'ewa_lanczossharp');
-    // 两态都是零拷贝优先的同一 hwdec 候选表（d3d11va → d3d11va-copy）。
+    // 两态都是同一张 hwdec 候选表 [kWindowsAutoHwdec]（零拷贝 d3d11va 优先）；单测进程不装配
+    // 显卡能力，故是不含 nvdec-copy 的那张（见 resolvePlatformHwdec）。
     expect(pOn['hwdec'], kWindowsAutoHwdec);
     expect(pOff['hwdec'], kWindowsAutoHwdec);
   });

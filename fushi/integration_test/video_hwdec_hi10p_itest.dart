@@ -9,6 +9,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
+import 'package:fushi/src/media/video/windows_hwdec_capability.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -17,7 +18,10 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'test_helpers.dart';
 
 /// BUG-3315 真机 E2E：Windows 上 H.264 High 10（D3D11VA 无此解码配置）在**真实 app
-/// 进程**里走 `nvdec-copy` 硬解，且整段播放不崩、不掉帧。
+/// 进程**里按显卡能力选解码路径，且整段播放不崩：
+/// - 启动装配判定显卡能硬解（NVIDIA Blackwell 及以后）→ 走 `nvdec-copy`、播放期零掉帧；
+/// - 判定不支持（老 NVIDIA / 非 NVIDIA）→ 候选表里没有 `nvdec-copy`，mpv 不得选到任何
+///   CUDA 后端（不为 Hi10P 白走 CUDA 初始化），回落软解。
 ///
 /// BUG-1639 的教训是「libmpv 独立进程不崩 ≠ app 进程不崩」，所以 CUDA 路径必须在 app
 /// 里起播验证。证据走诊断时间轴（`mpv/stats` 的 params 行与每秒快照），同时验证诊断
@@ -36,7 +40,7 @@ void main() {
   final String? videoPath = Platform.environment['FUSHI_HWDEC_ITEST_VIDEO'];
 
   testWidgets(
-    'H.264 High 10 plays on nvdec-copy in the app process without drops',
+    'H.264 High 10 picks nvdec-copy only on capable GPUs, in the app process',
     (WidgetTester tester) async {
       app.main(const <String>[]);
       expect(await waitForHome(tester), isTrue);
@@ -113,11 +117,22 @@ void main() {
         isNotEmpty,
         reason: '默认过滤串下诊断必须采到 mpv/stats（BUG-3315 前一行都没有）',
       );
-      expect(
-        params.last,
-        contains('hwdec=nvdec-copy'),
-        reason: 'H.264 High 10 应由 nvdec-copy 硬解，而不是回落软解',
-      );
+      final bool capable = windowsNvdecHigh10Capable;
+      debugPrint('[hwdec-itest] nvdec-h264-high10 capable=$capable');
+      if (capable) {
+        expect(
+          params.last,
+          contains('hwdec=nvdec-copy'),
+          reason: '显卡确认支持时 H.264 High 10 应由 nvdec-copy 硬解，而不是回落软解',
+        );
+      } else {
+        expect(
+          params.last,
+          isNot(contains('hwdec=nvdec')),
+          reason: '显卡未确认支持时不得进入 CUDA（BUG-1639 的崩溃现场）',
+        );
+        expect(params.last, isNot(contains('hwdec=cuda')));
+      }
       expect(
         endPos - startPos,
         greaterThan(_kPlayFor.inMilliseconds - 3000),
@@ -134,7 +149,8 @@ void main() {
         }
       }
       debugPrint('[hwdec-itest] dropped frames while playing: $dropped');
-      expect(dropped, 0, reason: '硬解后 1080p Hi10P 播放不应掉帧');
+      // 软解路径的掉帧取决于跑测试那台机器的 CPU，只在硬解路径上断言。
+      if (capable) expect(dropped, 0, reason: '硬解后 1080p Hi10P 播放不应掉帧');
 
       await readHooks()!.debugPause();
       await navigator.maybePop();

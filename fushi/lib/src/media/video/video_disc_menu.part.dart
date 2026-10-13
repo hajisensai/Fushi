@@ -86,7 +86,7 @@ extension VideoDiscMenuController on VideoPlayerController {
     _discMenuError = null;
     _discLoadStage = null;
     _discTitleGeneration++;
-    _discSampleFuture = null;
+    _discSampler.reset();
     _discMiningAvailable = false;
     _discExtractionError = null;
     _discNavigationSupported = false;
@@ -259,24 +259,25 @@ extension VideoDiscMenuController on VideoPlayerController {
     } else {
       runCheckedVideoDiscCommand(native, command);
     }
-    // A sampler already in flight may have read the pre-command title. Wait
-    // for it, then read again so completion means a post-command snapshot.
-    await _discSampleFuture;
-    if (!_isCurrentLoad(player, token)) return;
+    // A sampler already in flight may have read the pre-command title; the
+    // sampler then reads once more, so completion means a post-command snapshot.
     await _sampleDiscMenu(player, token);
   }
 
+  /// Completes after a snapshot read that started after this call. A request
+  /// that arrives while a read is in flight marks a re-read instead of reusing
+  /// that read: value-compared observation (BUG-3315) delivers one event per
+  /// change, so a change that lands during an in-flight read of the old value
+  /// would otherwise be lost and a still menu would keep its stale state.
   Future<void> _sampleDiscMenu(Player player, int loadToken) {
     if (!_isCurrentLoad(player, loadToken) || !_discNavigationOpened) {
       return Future<void>.value();
     }
-    final Future<void>? pending = _discSampleFuture;
-    if (pending != null) return pending;
-    final Future<void> next = _readDiscMenu(player, loadToken);
-    _discSampleFuture = next;
-    return next.whenComplete(() {
-      if (identical(_discSampleFuture, next)) _discSampleFuture = null;
-    });
+    return _discSampler.request(
+      () => _readDiscMenu(player, loadToken),
+      stillWanted: () =>
+          _isCurrentLoad(player, loadToken) && _discNavigationOpened,
+    );
   }
 
   Future<void> _readDiscMenu(Player player, int loadToken) async {

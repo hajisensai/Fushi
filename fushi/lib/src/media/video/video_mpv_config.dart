@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/media/video/windows_hwdec_capability.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
     show decodeEdlSources;
 import 'package:media_kit/media_kit.dart';
@@ -408,21 +409,21 @@ Map<String, String> parseMpvConf(String text) {
 /// **根治 Windows + NVIDIA 起播整进程闪退（BUG-1639；BUG-1545 的未尽根因）。**
 /// 同一条「渲染模型 ↔ 硬解后端必须匹配」的推理在 Windows 桌面端同样成立，只是失配的
 /// 那一端换成了 CUDA：media_kit 的 `NativeVideoController` 在 Windows 也走**纹理渲染**
-/// （libmpv render API + ANGLE/OpenGL），libmpv 拿不到宿主的 D3D11 device，于是
-/// `d3d11va`（需 D3D11 interop）在 hwdec 探测里必然 `Could not create device` 失败。
-/// 而 mpv 的 `auto-safe` 白名单里**紧跟其后的就是 `nvdec`——它是 CUDA API 的封装**，
-/// 于是 NVIDIA 机器上必然回退到它：`Loading hwdec driver 'cuda'` →
-/// `cuInit()` / `cuCtxCreate_v2()` → `nvcuda64.dll` 内部空指针解引用 → 整个进程
-/// `0xC0000005` 闪退（本机 minidump 四份栈完全一致，详见 `docs/bugs/BUG-1639-*.md`）。
+/// （libmpv render API + ANGLE/OpenGL）。BUG-1639 当时 ANGLE 用的是自己建的隐藏 D3D11
+/// device，`d3d11va`（需 D3D11 interop）在 hwdec 探测里失败；而 mpv 的 `auto-safe` 白名单
+/// 里**紧跟其后的就是 `nvdec`——它是 CUDA API 的封装**，于是 NVIDIA 机器上必然回退到它：
+/// `Loading hwdec driver 'cuda'` → `cuInit()` / `cuCtxCreate_v2()` → `nvcuda64.dll` 内部
+/// 空指针解引用 → 整个进程 `0xC0000005` 闪退（本机 minidump 四份栈完全一致，详见
+/// `docs/bugs/BUG-1639-*.md`）。
 ///
 /// BUG-1545 当时只把 media_kit 抢跑下发的裸 `auto` 换成了用户策略 `auto-safe`，**但
 /// `auto-safe` 通往的是同一个 CUDA 后端**，故崩溃复发。真正的修复是让 Windows 下发的
-/// hwdec **值域里根本不含 CUDA 系后端**（`nvdec` / `cuda` 及其 copy 变体），而不是继续
-/// 在「哪个 auto」之间挑：
-/// - `auto-safe` → `d3d11va,d3d11va-copy`：先试 interop 直渲（将来 media_kit 若能共享
-///   D3D11 device 就直接受益），失败静默回落 copy-back；
-/// - `auto-copy` → `d3d11va-copy`：用户显式要 copy-back，只给 copy 变体（保留两档语义
-///   差异，且不像裸 `auto-copy` 那样在无 d3d11va 的机器上落到 `cuda-copy`）；
+/// hwdec 由 app 显式给出候选表，而不是继续在「哪个 auto」之间挑：
+/// - `auto-safe` → [kWindowsAutoHwdec]（`d3d11va,d3d11va-copy`）：先走零拷贝 interop，失败
+///   静默回落 copy-back；显卡确认能硬解 H.264 High 10 时末尾再加 `nvdec-copy`（见下）；
+/// - `auto-copy` → [kWindowsCopyHwdec]（`d3d11va-copy`）：用户显式要 copy-back，只给 copy
+///   变体；它同时是 BUG-1639 文档写给用户的「不碰 CUDA」缓解档，**任何显卡上都不含 CUDA 系
+///   后端**（也不像裸 `auto-copy` 那样在无 d3d11va 的机器上落到 `cuda-copy`）；
 /// - `no`（软解）原样透传。
 ///
 /// `d3d11va` 是 Windows 8+ 的通用硬解（Intel / AMD / NVIDIA 全支持），两档都失败时
@@ -430,40 +431,46 @@ Map<String, String> parseMpvConf(String text) {
 /// GL 上下文 + 本次崩溃的 10-bit HEVC 片源）：`Using hardware decoding (d3d11va-copy)`，
 /// 全程不加载 `nvcuda64.dll`。
 ///
-/// **这不是「为了避崩而牺牲硬解」——终点本来就是同一个。** 在 media_kit 真实用的 ANGLE
-/// 上下文下实测：`nvdec` 的零拷贝 CUDA interop 会被 **mpv 自己拒绝**
-/// （`cuGLGetDevices` 失败 → `CUDA hwdec only works with OpenGL or Vulkan backends`），
-/// 因为 ANGLE 是 GLES-over-D3D11、不是 NVIDIA 的真 OpenGL；mpv 随后照样回落到
-/// `d3d11va-copy`。也就是说 CUDA 分支**从来没能真正用上零拷贝**，它只是在回落之前先跑
-/// 一趟 `cuInit()` / `cuCtxCreate_v2()`——而那趟在本机 app 进程里会栽进驱动空指针。
-/// 本修复只是把同一个终点提前，不再路过雷区；解码依然是 GPU 硬解（NVIDIA 上 D3D11VA
-/// 底层调的就是同一块 NVDEC 硬件）。
+/// **零拷贝 `nvdec` 永不下发。** 在 media_kit 真实用的 ANGLE 上下文下实测：`nvdec` 的零拷贝
+/// CUDA interop 会被 **mpv 自己拒绝**（`cuGLGetDevices` 失败 → `CUDA hwdec only works with
+/// OpenGL or Vulkan backends`），因为 ANGLE 是 GLES-over-D3D11、不是 NVIDIA 的真 OpenGL。
+/// 也就是说它只会在回落之前先跑一趟 `cuInit()` / `cuCtxCreate_v2()`——而那趟在本机 app
+/// 进程里会栽进驱动空指针。
 ///
-/// 反过来说，真要拿到零拷贝就得让 `d3d11va`（非 copy）的 interop 在这条路径上成立
-/// ——那是 media_kit 建 ANGLE context 时把底层 D3D11 device 经 EGL 扩展暴露给 mpv 的活，
-/// 属于性能优化，与本崩溃无关（详见 `docs/bugs/BUG-1639-*.md` 末节）。
+/// 零拷贝走的是 `d3d11va` 的 `d3d11-egl` interop：BUG-1644 让 ANGLE 绑定 media_kit 自建的
+/// D3D11 device、并升级了 libmpv 后已打通（`video_output.cc` 打印
+/// `libmpv d3d11-egl zero-copy interop: available`，BUG-3296 的真 app 探针在这条路径上取证），
+/// 所以 `d3d11va` 排第一是默认首选，`d3d11va-copy` 只在 interop 不成立时兜底。
 ///
-/// **D3D11VA 解不了的格式交给 NVDEC copy-back 兜底（BUG-3315）。** D3D11VA 的解码配置表
-/// 里没有 H.264 High 10（Hi10P，番剧压制常见），`d3d11va` / `d3d11va-copy` 对它一律失败、
-/// 回落 CPU 软解——画质无差别，但 1080p/23.976 的 10-bit H.264 整条解码压在 CPU 上，再叠
-/// 上 `ewa_lanczossharp` 缩放与 copy 上传，忙时就掉帧。Blackwell（RTX 50）起 NVDEC 支持
-/// H.264 High 10，而 libmpv 能把它接进来的唯一路径是 CUDA 的 copy 变体 `nvdec-copy`（零拷贝
-/// `nvdec` 在 ANGLE 下必然被 mpv 拒绝，见上）。故候选表末尾追加 `nvdec-copy`：
-/// - 排在全部 D3D11 候选**之后**：D3D11 能解的格式（H.264 8-bit、HEVC Main/Main 10、
-///   VP9、AV1……）在前两档就成功，`nvcuda64.dll` 连加载都不会发生——BUG-1639 的 HEVC
-///   Main 10 片源在新列表下实测仍是 `d3d11va-copy`；
-/// - 只有 D3D11 拒绝的 profile 才走到 CUDA；非 NVIDIA / 老显卡上 `nvdec-copy` 初始化失败，
-///   libmpv 照旧回落软解，与改前等价；
-/// - 只给 copy 变体，非 copy 的 `nvdec` / `cuda` 永不下发。
+/// **D3D11VA 解不了的格式，只在显卡确认支持时交给 NVDEC copy-back（BUG-3315）。** D3D11VA
+/// 的解码配置表里没有 H.264 High 10（Hi10P，番剧压制常见），`d3d11va` / `d3d11va-copy` 对它
+/// 一律失败、回落 CPU 软解——画质无差别，但 1080p 的 10-bit H.264 整条解码压在 CPU 上，忙时
+/// 就掉帧。NVDEC 从 Blackwell（RTX 50）起才支持 H.264 High 10，libmpv 能把它接进来的唯一
+/// 路径是 CUDA 的 copy 变体 `nvdec-copy`。但 CUDA 初始化就是 BUG-1639 的崩溃现场（根因未
+/// 追清），RTX 20/30/40 上它对 Hi10P 只会「初始化 CUDA → profile 不支持 → 回落软解」，
+/// 白走一趟雷区、毫无收益。所以：
+/// - 只有 [nvdecHigh10Capable]（默认取 [windowsNvdecHigh10Capable]，由
+///   [installWindowsHwdecCapability] 在启动时按 DXGI 显卡身份判定）为真时，`auto-safe` 才用
+///   [kWindowsAutoHwdecWithNvdec]；判定失败 / 未判定 / 非 Blackwell 一律不下发（保守）；
+/// - `nvdec-copy` 排在全部 D3D11 候选**之后**：D3D11 能解的格式（H.264 8-bit、HEVC
+///   Main/Main 10、VP9、AV1……）在前两档就成功，`nvcuda64.dll` 连加载都不会发生——BUG-1639
+///   的 HEVC Main 10 片源在新列表下实测仍是 `d3d11va-copy`；
+/// - `auto-copy` 恒不含 CUDA 系后端（见上）。
 /// 本机 libmpv 实测（RTX 5090 / 驱动 596.49 / H.264 High 10 1080p）：列表
 /// `d3d11va,d3d11va-copy,nvdec-copy` → `Using hardware decoding (nvdec-copy)`，输出 p010；
-/// 14 个实例并发起播 ×5 轮无异常（BUG-1639 崩溃 dump 里并存 14 个 libmpv 实例）。
+/// 14 个实例并发起播 ×5 轮无异常（BUG-1639 崩溃 dump 里并存 14 个 libmpv 实例）。只有这一台
+/// 机器实测过，其它 Blackwell 型号与驱动版本是验证缺口（见 `docs/bugs/BUG-3315-*.md`）。
 ///
 /// 非 Android / 非 Windows（macOS / Linux / iOS）原样透传，零行为变化。
 ///
 /// [isAndroid] / [isWindows] 默认取 `Platform.isAndroid` / `Platform.isWindows`，
-/// 注入仅为单测。
-String resolvePlatformHwdec(String hwdec, {bool? isAndroid, bool? isWindows}) {
+/// [nvdecHigh10Capable] 默认取启动时装配的 [windowsNvdecHigh10Capable]；注入仅为单测。
+String resolvePlatformHwdec(
+  String hwdec, {
+  bool? isAndroid,
+  bool? isWindows,
+  bool? nvdecHigh10Capable,
+}) {
   final bool android = isAndroid ?? Platform.isAndroid;
   if (android) {
     // Android 纹理渲染下，surface-直渲的 auto-safe/auto 会 surface-null，统一改 copy 变体。
@@ -473,28 +480,36 @@ String resolvePlatformHwdec(String hwdec, {bool? isAndroid, bool? isWindows}) {
   final bool windows = isWindows ?? Platform.isWindows;
   if (windows) {
     // Windows GL 纹理渲染下，裸 auto* 会在 d3d11va 之后直接选零拷贝 nvdec(CUDA)（BUG-1639）。
-    // 显式给候选列表：D3D11 在前，CUDA 只以 copy 变体排在最后兜底 D3D11 解不了的格式
-    // （H.264 High 10，BUG-3315）。
+    // 显式给候选列表：D3D11 在前；CUDA 只以 copy 变体、只在显卡确认能硬解 H.264 High 10
+    // 时排在最后兜底（BUG-3315）。auto-copy 是不碰 CUDA 的缓解档。
     if (hwdec == 'no') return 'no';
     if (hwdec == 'auto-copy') return kWindowsCopyHwdec;
-    return kWindowsAutoHwdec; // auto-safe / auto / 其它 auto 变体。
+    final bool nvdec = nvdecHigh10Capable ?? windowsNvdecHigh10Capable;
+    // auto-safe / auto / 其它 auto 变体。
+    return nvdec ? kWindowsAutoHwdecWithNvdec : kWindowsAutoHwdec;
   }
   return hwdec;
 }
 
-/// Windows 下 `auto-safe`（默认档）实际下发的 hwdec 候选列表。
+/// Windows 下 `auto-safe`（默认档）实际下发的 hwdec 候选列表（显卡未确认支持 NVDEC
+/// H.264 High 10 时）。
 ///
-/// 先 `d3d11va`（interop 直渲，media_kit 当前拿不到 D3D11 device 故会失败）再
-/// `d3d11va-copy`（copy-back，实测可用），最后 `nvdec-copy` 只兜底 D3D11 没有解码配置的
-/// 格式（H.264 High 10）。见 [resolvePlatformHwdec] 的 BUG-1639 / BUG-3315 说明。
-const String kWindowsAutoHwdec = 'd3d11va,d3d11va-copy,nvdec-copy';
+/// 先 `d3d11va`（零拷贝 `d3d11-egl` interop，BUG-1644 打通后是默认首选）再
+/// `d3d11va-copy`（copy-back，interop 不成立时兜底）。不含任何 CUDA 系后端。
+/// 见 [resolvePlatformHwdec] 的 BUG-1639 / BUG-3315 说明。
+const String kWindowsAutoHwdec = 'd3d11va,d3d11va-copy';
+
+/// Windows 下 `auto-safe` 在显卡确认能用 NVDEC 硬解 H.264 High 10 时下发的候选列表：
+/// [kWindowsAutoHwdec] 末尾加 `nvdec-copy`，只兜底 D3D11 没有解码配置的格式（H.264
+/// High 10）。见 [resolvePlatformHwdec] 的 BUG-3315 说明。
+const String kWindowsAutoHwdecWithNvdec = '$kWindowsAutoHwdec,nvdec-copy';
 
 /// Windows 下 `auto-copy`（用户显式要 copy-back）实际下发的 hwdec 值。
 ///
-/// 只给 copy 变体，顺序同 [kWindowsAutoHwdec]：D3D11 在前，`nvdec-copy` 只兜底 D3D11
-/// 解不了的格式（裸 `auto-copy` 的候选顺序由 mpv 决定，不保证 CUDA 排在 D3D11 之后）。
-/// 见 [resolvePlatformHwdec] 的 BUG-1639 / BUG-3315 说明。
-const String kWindowsCopyHwdec = 'd3d11va-copy,nvdec-copy';
+/// 只给 copy 变体。它是 BUG-1639 文档写给用户的「不碰 CUDA」缓解档：**不得加入任何
+/// CUDA 系后端**（`nvdec` / `cuda` 及其 copy 变体），无论显卡是否支持——加了就让用户手里
+/// 唯一能绕开 `nvcuda64.dll` 初始化的档位失效。见 [resolvePlatformHwdec]。
+const String kWindowsCopyHwdec = 'd3d11va-copy';
 
 /// 把 [highQuality] 偏好按平台解析成「实际下发给 libmpv 的 scale 缩放链」属性 map。纯函数。
 ///
@@ -672,13 +687,17 @@ Map<String, String> buildMpvProperties(VideoMpvConfig config,
     bool? isMobile,
     bool? isWindows,
     bool? isApple,
+    bool? nvdecHigh10Capable,
     double playbackSpeed = 1.0,
     double outputVolume = 100.0}) {
   final Map<String, String> out = <String, String>{};
   // 解码：Android 纹理渲染下把 surface-直渲的 auto-safe 改写成 copy 变体（BUG-465）；
-  // Windows GL 纹理渲染下把 auto* 改写成不含 CUDA 的 d3d11va 列表（BUG-1639）。
+  // Windows GL 纹理渲染下把 auto* 改写成 D3D11 在前的显式列表（BUG-1639），显卡确认
+  // 能硬解 H.264 High 10 时 auto-safe 末尾加 nvdec-copy（BUG-3315）。
   out['hwdec'] = resolvePlatformHwdec(config.hwdec,
-      isAndroid: isAndroid, isWindows: isWindows);
+      isAndroid: isAndroid,
+      isWindows: isWindows,
+      nvdecHigh10Capable: nvdecHigh10Capable);
   // Android 10-bit → 8-bit 降位：VO 前 vf=format=yuv420p 绕开 Mali GL 16-bit 纹理 OOM
   // （TODO-1196 / BUG-465 根因）；桌面/iOS 不下发。见 [resolveAndroidPixelFormatProperties]。
   out.addAll(resolveAndroidPixelFormatProperties(isAndroid: isAndroid));

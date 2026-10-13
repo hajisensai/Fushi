@@ -5,6 +5,7 @@ import 'dart:ui'
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/platform/desktop/windows_owned_file_picker.dart';
+import 'package:fushi/src/media/video/windows_hwdec_capability.dart';
 import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/focus/main_window_focus_gate.dart';
@@ -268,6 +269,9 @@ void main([List<String> args = const <String>[]]) {
     installAsrHostBindings();
     // BUG-3286：Windows 系统文件对话框以主窗为 owner，视频全屏（TOPMOST）时不被压住。
     installWindowsOwnedFilePicker();
+    // BUG-3315：按 DXGI 显卡身份判定 NVDEC 能否硬解 H.264 High 10，确认支持才在
+    // auto-safe 候选表末尾加 nvdec-copy（resolvePlatformHwdec 同步读这份装配值）。
+    installWindowsHwdecCapability();
     // 原生 TtsChannelHandler 只挂在主 Activity 引擎上（popupMain 等副引擎没有）；
     // 单词音频据此改走不申请音频焦点的原生播放器（BUG-3311）。
     TtsChannel.markHostPlaybackRegistered();
