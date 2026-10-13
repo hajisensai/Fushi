@@ -10,6 +10,7 @@ library;
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -101,7 +102,10 @@ VideoAcquisitionAssistantHost createVideoAcquisitionAssistantHost(AppModel appMo
   videoAcquireBlocker: () async {
     if (!StoreRestrictedCapability.downloads.isAvailable ||
         !StoreRestrictedCapability.externalDiscovery.isAvailable ||
-        !appModel.moduleVisibility.isEnabled(ModuleId.browse)) {
+        !appModel.moduleVisibility.isEnabled(ModuleId.browse) ||
+        // 与首页入口门同一判据：本机关了 AI 模块是「已关闭」，不是「没配 AI」——
+        // 此时设置 › AI 已隐藏，回 no-provider 会把对端引向一条走不通的路。
+        !isAiModuleEnabled(appModel.moduleVisibility)) {
       return kHostAssistantReasonDisabled;
     }
     if (resolveVideoAcquireAiProvider(appModel.prefsRepo) == null) {
