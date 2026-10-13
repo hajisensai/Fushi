@@ -1,7 +1,11 @@
 import 'dart:io';
 
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 
 /// BUG-2780：有声书跟随高亮在带振假名的词上断开留缝（iOS 真机「会|釈|をす」）或
@@ -60,6 +64,61 @@ void main() {
       shells['vn'],
       contains('this.fillSentenceAudioRubyGaps(wrappers)'),
       reason: 'VN must fill ruby gaps after activating a cue',
+    );
+  });
+
+  // BUG-3279：接缝一侧的 join class 必须真的把那一侧改直角；长注音叠色时脚本改用
+  // 渐变背景扣掉重叠段，查词优先（BUG-125）与墨水屏的覆盖规则必须连渐变一起关掉，
+  // 否则当前句底色会从查词色 / 线式标记底下透出来。
+  test('BUG-3279: join sides are square and overrides also drop the trim '
+      'gradient', () async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final ReaderSettings settings = ReaderSettings(db);
+    await settings.refreshFromDb();
+    String rule(String css, String selector) {
+      final int at = css.indexOf('$selector {');
+      expect(at, isNonNegative, reason: 'missing rule $selector');
+      return css.substring(at, css.indexOf('}', at));
+    }
+
+    final String css = ReaderContentStyles.css(settings: settings);
+    final String joinStart = rule(
+      css,
+      '.fushi-sentence-audio-cue.fushi-sentence-audio-join-start',
+    );
+    expect(joinStart, contains('border-start-start-radius: 0'));
+    expect(joinStart, contains('border-end-start-radius: 0'));
+    final String joinEnd = rule(
+      css,
+      '.fushi-sentence-audio-cue.fushi-sentence-audio-join-end',
+    );
+    expect(joinEnd, contains('border-start-end-radius: 0'));
+    expect(joinEnd, contains('border-end-end-radius: 0'));
+    expect(
+      css.indexOf('fushi-sentence-audio-join-start {'),
+      greaterThan(
+        css.indexOf('.fushi-sentence-audio-cue.fushi-sentence-audio-active {'),
+      ),
+      reason: 'join rules must come after the rounded active rule to win',
+    );
+    expect(
+      rule(
+        css,
+        'ruby.fushi-selection-ruby-active '
+        '.fushi-sentence-audio-cue.fushi-sentence-audio-active',
+      ),
+      contains('background-image: none !important'),
+    );
+
+    final String eink = ReaderContentStyles.css(
+      settings: settings,
+      einkMode: true,
+    );
+    final String einkTail = eink.substring(eink.indexOf('E-ink 墨水屏模式覆盖'));
+    expect(
+      rule(einkTail, '.fushi-sentence-audio-cue.fushi-sentence-audio-active'),
+      contains('background-image: none !important'),
     );
   });
 }
