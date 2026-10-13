@@ -63,36 +63,43 @@ class _FeedbackDevVideoPageState extends ConsumerState<FeedbackDevVideoPage> {
   @override
   void dispose() {
     unawaited(_player?.dispose());
-    final File? f = _file;
-    if (f != null) {
-      unawaited(
-        f.parent.delete(recursive: true).then((_) {}, onError: (Object _) {}),
-      );
-    }
+    unawaited(_deleteTempDir(_file?.parent));
     super.dispose();
   }
 
+  /// 删掉临时视频目录（≤ 50 MB）；目录不在 / 删不掉（被占用）都不打扰用户。
+  static Future<void> _deleteTempDir(Directory? dir) async {
+    if (dir == null) return;
+    try {
+      await dir.delete(recursive: true);
+    } on FileSystemException {
+      // 已被删掉或仍被占用：临时目录，系统清理兜底。
+    }
+  }
+
+  /// 取视频 → 写临时文件 → 开播放器。临时目录与 [Player] 在交给 State（[_file] /
+  /// [_player]，之后由 [dispose] 释放）之前归本函数所有：中途任何一步抛错或页面已卸载，
+  /// 都在 finally 里一并释放，不留 50 MB 的临时文件和没人 dispose 的播放器。
   Future<void> _load() async {
     final LeaderboardClient? client = ref
         .read(leaderboardServiceProvider)
         .client;
     if (client == null) return;
+    Directory? dir;
+    Player? player;
+    bool adopted = false;
     try {
       final Uint8List bytes = await client.devFeedbackAttachment(
         widget.feedbackId,
         FeedbackLimits.videoSlot,
       );
-      final Directory dir = await Directory.systemTemp.createTemp(
-        'fushi_feedback_video_',
-      );
+      if (!mounted) return;
+      dir = await Directory.systemTemp.createTemp('fushi_feedback_video_');
       final File file = File(p.join(dir.path, _fileName));
       await file.writeAsBytes(bytes, flush: true);
-      if (!mounted) {
-        await dir.delete(recursive: true);
-        return;
-      }
+      if (!mounted) return;
       // 与视频页同一套硬解取值：Windows 上不让 CUDA 后端进解码链（BUG-1639）。
-      final Player player = Player();
+      player = Player();
       final VideoController controller = VideoController(
         player,
         configuration: VideoControllerConfiguration(
@@ -100,17 +107,20 @@ class _FeedbackDevVideoPageState extends ConsumerState<FeedbackDevVideoPage> {
         ),
       );
       await player.open(Media(file.path), play: false);
-      if (!mounted) {
-        await player.dispose();
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _file = file;
         _player = player;
         _controller = controller;
       });
+      adopted = true;
     } on Object catch (e) {
       if (mounted) setState(() => _error = feedbackErrorReason(e));
+    } finally {
+      if (!adopted) {
+        unawaited(player?.dispose());
+        unawaited(_deleteTempDir(dir));
+      }
     }
   }
 
@@ -204,7 +214,14 @@ class _FeedbackDevVideoPageState extends ConsumerState<FeedbackDevVideoPage> {
                     borderRadius: FushiM3eShape.smallRadius,
                     child: ColoredBox(
                       color: Colors.black,
-                      child: Video(controller: controller),
+                      // 这页没有自己的生命周期接管（视频页那套见 BUG-2544），
+                      // 就用 media_kit 自带的、对称的一套：进后台暂停、回前台
+                      // 只续播被它暂停的（进后台前本就暂停的仍暂停）。
+                      child: Video(
+                        controller: controller,
+                        pauseUponEnteringBackgroundMode: true,
+                        resumeUponEnteringForegroundMode: true,
+                      ),
                     ),
                   ),
                 ),

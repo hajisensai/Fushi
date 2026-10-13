@@ -269,8 +269,13 @@ class FeedbackService extends ChangeNotifier {
 
   /// 拉全部记录的最新进度（每批 ≤ 50）。查不到的条目标 missing（保留，由用户删）。
   /// 网络错误原样抛给调用方（反馈中心显示「刷新失败」）。
+  ///
+  /// 换账户 / 退出登录后旧账户的列表在联网之前就丢掉（[_dropStaleAccountTickets]）：
+  /// 它只取决于本机身份，不该等批量查进度成功——断网时那一步就抛了，旧账户的工单标题
+  /// 会一直挂在列表里。
   Future<void> refresh() async {
     await load();
+    _dropStaleAccountTickets(_client().identity?.accountId);
     if (_refreshing) return;
     _refreshing = true;
     notifyListeners();
@@ -308,6 +313,14 @@ class FeedbackService extends ChangeNotifier {
     }
   }
 
+  /// 账户列表只属于 [_accountKey]：当前身份 [key] 不是它（换账户 / 退出登录）就整份丢掉。
+  void _dropStaleAccountTickets(String? key) {
+    if (key == _accountKey) return;
+    _accountKey = key;
+    _accountTickets = <FeedbackTicket>[];
+    notifyListeners();
+  }
+
   /// 账户列表最多拉几页（每页 [FeedbackLimits.minePage] 条）。
   static const int _kMinePages = 5;
 
@@ -316,11 +329,8 @@ class FeedbackService extends ChangeNotifier {
   Future<void> _refreshAccount() async {
     final LeaderboardClient client = _client();
     final String? key = client.identity?.accountId;
-    if (key != _accountKey) {
-      _accountKey = key;
-      _accountTickets = <FeedbackTicket>[];
-      notifyListeners();
-    }
+    // 批量查进度的那段时间里也可能换了账户：这里再核对一次。
+    _dropStaleAccountTickets(key);
     if (key == null) return;
     final List<FeedbackSummary> items = <FeedbackSummary>[];
     String? cursor;

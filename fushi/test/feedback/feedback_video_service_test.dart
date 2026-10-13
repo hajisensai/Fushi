@@ -377,5 +377,54 @@ void main() {
         isEmpty,
       );
     });
+
+    // review of PR #2103：清旧账户列表原本排在批量查进度之后，断网时那一步先抛，
+    // 换账户 / 退出登录后旧账户的工单标题一直挂在列表里。
+    for (final bool signOut in <bool>[false, true]) {
+      test(
+        '${signOut ? '退出登录' : '换账户'}后刷新断网：旧账户的列表照样立刻丢掉',
+        () async {
+          await FeedbackTicketStore(root).write(<FeedbackTicket>[
+            const FeedbackTicket(
+              id: 'localloc00',
+              ticket: 'local-ticket',
+              title: 'local',
+              category: FeedbackCategory.bug,
+              createdAt: 3000,
+              status: FeedbackStatus.open,
+              updatedAt: 3000,
+            ),
+          ]);
+          handler = (http.Request r) async {
+            if (r.url.path == '/v1/feedback/status') {
+              return _json(<String, dynamic>{
+                'items': <Object>[_summary('localloc00', createdAt: 3000)],
+              });
+            }
+            return _json(<String, dynamic>{
+              'items': <Object>[_summary('otherdev01')],
+              'next': null,
+            });
+          };
+          final FeedbackService s = service();
+          await s.refresh();
+          expect(s.byId('otherdev01'), isNotNull);
+
+          identity = signOut ? null : LeaderboardIdentity.generate();
+          handler = (http.Request r) async =>
+              throw const SocketException('offline');
+          int notified = 0;
+          s.addListener(() => notified++);
+          await expectLater(s.refresh(), throwsA(anything));
+          expect(s.byId('otherdev01'), isNull);
+          expect(
+            s.tickets.map((FeedbackTicket t) => t.id),
+            <String>['localloc00'],
+            reason: '本机回执不受换账户影响，只丢账户列表',
+          );
+          expect(notified, greaterThan(0));
+        },
+      );
+    }
   });
 }

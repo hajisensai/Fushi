@@ -18,14 +18,16 @@ Cloudflare Worker + D1 + R2。设计与分期见
 | Workers 请求 | 10 万次/天 | 匿名读边缘缓存 60 秒（缓存键只含白名单参数）；`READ_LIMITER` 每 IP 每分钟 120 次；未鉴权写入口先过 `AUTH_LIMITER`（每 IP 每分钟 10 次，IPv6 按 /64）；图片走边缘缓存 |
 | D1 读 | 500 万行/天 | 榜单 / 人气 / 名次读定时快照（每 30 分钟一次，只读周期汇总表的当期段）；读者数、行数、周/月计分、周/月作品读者数全部增量维护；书架 / 作品读者用游标分页（每页只读 limit+1 行）；`test/plans.test.js` 在查询计划上断言每个读接口不全表扫描、不建临时 B 树 |
 | D1 写 | 10 万行/天 | 增量上报；**全局日预算 `write_rows` 8 万行**（超了 503，次日恢复）；每账户每天 2 万行 |
-| R2 存储 | 10 GB | 头像 ≤ 64KB、封面 ≤ 96KB；反馈截图 ≤ 1.5 MiB、日志 ≤ 2 MiB（结案 90 天清）；**反馈视频 ≤ 50MB，结案 7 天 / 创建 30 天（先到者）到期清理**，流式写入不进 Worker 内存；**总配额 8 GiB**（超了 507，按声明长度预占）；删除即归还 |
+| R2 存储 | 10 GB | 头像 ≤ 64KB、封面 ≤ 96KB；反馈截图 ≤ 1.5 MiB、日志 ≤ 2 MiB（结案 90 天清）；**反馈视频 ≤ 50MB，结案 7 天 / 创建 30 天（先到者）到期清理**，流式写入不进 Worker 内存；**总配额 8 GiB**（超了 507，按声明长度预占）；删除即归还。总配额分两池：**反馈视频单独 1 GiB**（`media_usage.video_bytes`，满了 507 `video_quota`，只拒视频），头像 / 封面 / 反馈截图与日志用其余 7 GiB（满了 507 `media_quota`），两池互不挤占；**视频每上传 IP 每天 ≤ 200 MB**（按声明长度计，超了 429） |
 | R2 操作 | A 类 100 万/月、B 类 1000 万/月 | 全局日预算 `media` 3000 次上传；出图先查边缘缓存 |
 | Resend 发信 | 100 封/天、3000 封/月 | 全局日预算 `email` 90 封；每 IP 每小时 5 封、每邮箱每小时 3 封 / 每天 10 封 |
 
 代价（如实）：D1 每写一行、每个受影响索引另计一行，所以超大书架（8000 部）首次同步约 4 万行，会被拆到两三天里
 续传；几百部的普通书架一次传完。榜单最多滞后 30 分钟（响应里带 `computedAt`）。
 
-预算可用 vars 覆盖：`BUDGET_WRITE_ROWS` / `BUDGET_MEDIA` / `BUDGET_REGISTER` / `BUDGET_EMAIL` / `BUDGET_FEEDBACK`（每天新反馈条数，默认 300）/ `MEDIA_QUOTA_BYTES`。反馈附件与头像 / 封面共用 R2 配额与 `media` 预算，已结案 90 天的反馈附件由定时任务清掉。
+预算可用 vars 覆盖：`BUDGET_WRITE_ROWS` / `BUDGET_MEDIA` / `BUDGET_REGISTER` / `BUDGET_EMAIL` / `BUDGET_FEEDBACK`（每天新反馈条数，默认 300）/ `MEDIA_QUOTA_BYTES` / `VIDEO_QUOTA_BYTES`（反馈视频池，默认 1 GiB，最多切走总配额一半；从总配额里切出，不另加）。反馈截图与日志和头像 / 封面共用普通池与 `media` 预算，反馈视频另占视频池（同样扣 `media` 次数），已结案 90 天的反馈附件由定时任务清掉。
+
+代价（如实）：视频池按「30 天保留 × 每 IP 每天 200 MB」算，五六个 IP 一天就能把视频池占满，之后到最早的视频过期前新视频一律 507 `video_quota`（App 留在待传区、24 小时补传窗口内可重试）；头像 / 封面 / 截图不受影响。
 
 ## 部署（维护者手动）
 
@@ -62,6 +64,7 @@ dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wr
 
 > ⚠️ **新增迁移的版本必须先迁移再部署**（Actions 部署勾上 `apply_migrations`，或本机先跑上面的 `d1 migrations apply --remote`）。
 > `0007_feedback_video_mine.sql`（`feedback.has_video` + 两个索引）：没迁移就部署时视频补传、`GET /v1/feedback/mine` 与定时清理会 500。
+> `0008_media_video_pool.sql`（`media_usage.video_bytes`，反馈视频配额池）：没迁移就部署时视频补传与视频到期清理会 500。
 > 例如 `0006_feedback_dev_notes.sql`：新代码的处理台列表显式选 `ai_summary` 列，没迁移就部署时 `/v1/dev/feedback` 与网页 `/dev` 会整页 500（反馈人接口不受影响）。迁移只加列，先迁移、旧代码照跑不受影响。
 
 部署后还要知道的：

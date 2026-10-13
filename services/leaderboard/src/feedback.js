@@ -31,7 +31,9 @@
 //
 // 成本：提交按 IP 限流 + 全局日预算 feedback；附件扣 media 预算并预占 R2 配额；已结案 90 天的
 // 附件由定时任务清掉（purgeFeedbackAttachments），只留文字记录。视频另有更短的保留期：创建 30 天
-// 或结案 7 天（先到者）即删（purgeFeedbackVideos，按 has_video 部分索引有界读）。
+// 或结案 7 天（先到者）即删（purgeFeedbackVideos，按 has_video 部分索引有界读）。视频占单独的
+// R2 配额池（budget.js 'video'，默认 1 GiB，满了 507 video_quota，不挤占头像 / 封面 / 截图那份），
+// 并按上传 IP 每天限总字节数（videoBytesPerIpDay），一个 IP 不能独占视频池。
 //
 // 防投毒（feedback_guard.js）：伪装字符剥掉、提示注入 / 链接灌水 / 跨来源重复打标记（flags），
 // 同来源同内容 1 小时内重复提交 409；截图按文件头宽高拒收解码炸弹，日志按 gzip ISIZE 拒收
@@ -41,7 +43,7 @@
 import { HttpError, b64urlEncode, clampInt, hex, json, randomId, sha256, timingSafeEqual } from './util.js';
 import { deleteMedia, releaseMediaBytes, reserveMediaBytes, spend } from './budget.js';
 import { sniffImage } from './media.js';
-import { HOUR, hit } from './ratelimit.js';
+import { DAY, HOUR, hit } from './ratelimit.js';
 import {
   LOG_MAX_DECOMPRESSED,
   LOG_UNTRUSTED_HEADER,
@@ -93,6 +95,11 @@ export const FEEDBACK_LIMITS = {
   duplicateLookbackMs: 24 * HOUR,
   /** 视频附件（槽位 v0）单个上限。 */
   videoMaxBytes: 50 * 1024 * 1024,
+  /**
+   * 每个上传 IP 每天（UTC 日窗口）视频总字节上限（按声明长度计，传失败不退）：4 段满额视频。
+   * 匿名每 IP 每小时能提 10 条反馈、每条一个 50 MB 视频，没有这一道时一个 IP 一小时就能占掉 500 MB。
+   */
+  videoBytesPerIpDay: 200 * 1024 * 1024,
   /** 视频在结案后保留多久（与创建后保留期取先到者）。 */
   videoRetentionAfterCloseMs: 7 * 24 * HOUR,
   /** 视频自创建起最多保留多久（未结案也删）。 */
@@ -508,8 +515,10 @@ function rejoin(head, reader) {
  * 内存就是 128 MB 上限的一大半）。所有能在读体之前判的都先判（窗口 / 槽位 / 长度 / 类型），超限的
  * 请求不扣预算也不占配额；魔数只读开头一块。R2 put 要求流长度已知，经 FixedLengthStream（Workers
  * 运行时全局）按声明长度封口：实际字节多了少了流都会出错，归还配额、删掉半截对象，400 bad_length。
+ * 魔数通过后才计费：先记上传 IP 当天的视频字节（超了 429 rate_limited），再扣 media 预算 1 次，最后在
+ * 视频池按声明长度预占（满了 507 video_quota；与头像 / 封面 / 截图的普通池互不挤占）。
  */
-export async function putVideoAttachment(env, row, request, now) {
+export async function putVideoAttachment(env, row, request, now, ip) {
   if (now - row.created_at > FEEDBACK_LIMITS.attachWindowMs) throw new HttpError(403, 'attach_window_closed');
   const existing = parseAttachments(row);
   if (existing.some((a) => a.slot === VIDEO_SLOT)) throw new HttpError(409, 'slot_taken');
@@ -530,8 +539,10 @@ export async function putVideoAttachment(env, row, request, now) {
     const head = await readHead(reader, 16);
     const type = sniffVideo(head);
     if (!type) throw new HttpError(415, 'not_a_video');
+    // 按 IP 的日字节额度先于全局预算：超了的 IP 不消耗全站的 media 次数。
+    await hit(env, `feedback:video:ip:${ip}`, DAY, FEEDBACK_LIMITS.videoBytesPerIpDay, now, length);
     await spend(env, 'media', 1, now);
-    await reserveMediaBytes(env, length);
+    await reserveMediaBytes(env, length, 'video');
     reserved = true;
     key = `f/${row.id}-${VIDEO_SLOT}-${randomId(8)}.${VIDEO_EXT[type]}`;
     // eslint-disable-next-line no-undef
@@ -544,14 +555,14 @@ export async function putVideoAttachment(env, row, request, now) {
     const entry = { slot: VIDEO_SLOT, kind: 'video', key, bytes: length, type };
     if (!await appendAttachment(env, row.id, entry, now)) {
       reserved = false; // deleteMedia 按对象实际大小归还
-      await deleteMedia(env, key);
+      await deleteMedia(env, key, 'video');
       throw new HttpError(409, 'conflict');
     }
     return { slot: VIDEO_SLOT, kind: 'video', bytes: length };
   } catch (e) {
     await reader.cancel().catch(() => {});
     if (reserved) {
-      await releaseMediaBytes(env, length);
+      await releaseMediaBytes(env, length, 'video');
       if (key) await env.MEDIA.delete(key);
     }
     throw e;
@@ -893,7 +904,10 @@ export async function purgeFeedbackAttachments(env, now, limit = 20) {
      LIMIT ?2`,
   ).bind(now - FEEDBACK_LIMITS.attachmentRetentionMs, limit).all();
   for (const row of rows.results) {
-    await deleteMedia(env, parseAttachments(row).map((a) => a.key));
+    // 视频与其它附件在不同的配额池，分开归还。
+    const list = parseAttachments(row);
+    await deleteMedia(env, list.filter((a) => a.kind !== 'video').map((a) => a.key));
+    await deleteMedia(env, list.filter((a) => a.kind === 'video').map((a) => a.key), 'video');
     await env.DB.prepare('UPDATE feedback SET attachments = \'[]\', has_video = 0 WHERE id = ?1').bind(row.id).run();
   }
   return rows.results.length;
@@ -913,7 +927,7 @@ export async function purgeFeedbackVideos(env, now, limit = 20) {
   ).bind(now - FEEDBACK_LIMITS.videoRetentionMs, now - FEEDBACK_LIMITS.videoRetentionAfterCloseMs, limit).all();
   for (const row of rows.results) {
     const list = parseAttachments(row);
-    await deleteMedia(env, list.filter((a) => a.kind === 'video').map((a) => a.key));
+    await deleteMedia(env, list.filter((a) => a.kind === 'video').map((a) => a.key), 'video');
     // 条件更新：附件列表在这期间被改过就留给下一轮（对象已删，下一轮 head 不到不会重复归还配额）。
     await env.DB.prepare('UPDATE feedback SET attachments = ?2, has_video = 0 WHERE id = ?1 AND attachments = ?3')
       .bind(row.id, JSON.stringify(list.filter((a) => a.kind !== 'video')), row.attachments).run();
@@ -995,7 +1009,7 @@ export async function routeFeedback(request, env, url, now, io) {
     // 补传只认 ticket：签名要覆盖整个请求体，视频没法边收边验。
     const row = await feedbackForTicket(env, m[1], ticket);
     // 视频不走 readBody：50 MB 不整读进内存，直接流式写 R2。
-    if (m[2] === VIDEO_SLOT) return json(await putVideoAttachment(env, row, request, now), 201, noStore);
+    if (m[2] === VIDEO_SLOT) return json(await putVideoAttachment(env, row, request, now, io.ip), 201, noStore);
     const bytes = await io.readBody(ATTACHMENT_MAX_BYTES);
     return json(await putAttachment(env, row, m[2], bytes, now), 201, noStore);
   }

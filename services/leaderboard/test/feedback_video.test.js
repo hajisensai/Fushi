@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import worker from '../src/worker.js';
 import { BASE, call, lastCode, makeEnv, nextIp, pngHeader, registerUser } from './harness.js';
 import { FEEDBACK_LIMITS, purgeFeedbackAttachments, purgeFeedbackVideos } from '../src/feedback.js';
+import { mediaQuota, poolQuota, videoQuota } from '../src/budget.js';
 
 const NOW = Date.UTC(2026, 9, 12, 12);
 const DAY = 24 * 3600 * 1000;
@@ -33,8 +34,9 @@ function submit(env, opts = {}) {
   });
 }
 
-function putVideo(env, f, bytes, { length = bytes.length, type = 'video/mp4', now = NOW, ticket = f.ticket } = {}) {
+function putVideo(env, f, bytes, { length = bytes.length, type = 'video/mp4', now = NOW, ticket = f.ticket, ip = null } = {}) {
   const headers = { 'X-Fushi-Ticket': ticket };
+  if (ip !== null) headers['CF-Connecting-IP'] = ip;
   if (length !== null) headers['Content-Length'] = String(length);
   if (type !== null) headers['Content-Type'] = type;
   return call(env, 'PUT', `/v1/feedback/${f.id}/attachments/v0`, { body: bytes, headers, now });
@@ -51,7 +53,9 @@ async function makeDev(env, name = 'dev') {
   return u;
 }
 
+/** 普通池（头像 / 封面 / 截图 / 日志）与视频池分开记账（budget.js MEDIA_POOLS）。 */
 const mediaBytes = (env) => env.DB.raw.prepare('SELECT bytes FROM media_usage').get().bytes;
+const videoBytes = (env) => env.DB.raw.prepare('SELECT video_bytes FROM media_usage').get().video_bytes;
 const mediaSpent = (env) => env.DB.raw.prepare("SELECT COALESCE(SUM(used), 0) n FROM budgets WHERE kind = 'media'").get().n;
 const row = (env, id) => env.DB.raw.prepare('SELECT * FROM feedback WHERE id = ?').get(id);
 
@@ -71,7 +75,8 @@ describe('视频上传', () => {
     const stored = env.MEDIA.store.get(entry.key);
     expect(stored.bytes).toEqual(MP4);
     expect(stored.httpMetadata.contentType).toBe('video/mp4');
-    expect(mediaBytes(env)).toBe(MP4.length);
+    expect(videoBytes(env)).toBe(MP4.length);
+    expect(mediaBytes(env)).toBe(0); // 视频不占普通池
     expect(mediaSpent(env)).toBe(1);
 
     // QuickTime 文件即使客户端声明 video/mp4，也按嗅探存成 video/quicktime / .mov；WebM 同理。
@@ -111,6 +116,7 @@ describe('视频上传', () => {
     expect(fake.data.error).toBe('not_a_video');
     expect(mediaSpent(env)).toBe(0);
     expect(mediaBytes(env)).toBe(0);
+    expect(videoBytes(env)).toBe(0);
     expect(env.MEDIA.store.size).toBe(0);
     expect(row(env, f.id).has_video).toBe(0);
     // 槽位没被占，之后照常能传。
@@ -126,12 +132,12 @@ describe('视频上传', () => {
     const long = await putVideo(env, f, MP4, { length: MP4.length - 10 });
     expect(long.status).toBe(400);
     expect(long.data.error).toBe('bad_length');
-    expect(mediaBytes(env)).toBe(0);
+    expect(videoBytes(env)).toBe(0);
     expect(env.MEDIA.store.size).toBe(0);
     expect(JSON.parse(row(env, f.id).attachments)).toEqual([]);
     expect(row(env, f.id).has_video).toBe(0);
     expect((await putVideo(env, f, MP4)).status).toBe(201);
-    expect(mediaBytes(env)).toBe(MP4.length);
+    expect(videoBytes(env)).toBe(MP4.length);
   });
 
   it('补传窗口过期 403；同槽二次 409；别人的回执 404；与截图互不影响', async () => {
@@ -149,7 +155,8 @@ describe('视频上传', () => {
     expect(again.data.error).toBe('slot_taken');
     expect((await withTicket(env, 'PUT', `/v1/feedback/${f.id}/attachments/s1`, f.ticket, { body: PNG })).status).toBe(201);
     expect(JSON.parse(row(env, f.id).attachments).map((a) => a.slot)).toEqual(['s0', 'v0', 's1']);
-    expect(mediaBytes(env)).toBe(MP4.length + 2 * PNG.length);
+    expect(mediaBytes(env)).toBe(2 * PNG.length);
+    expect(videoBytes(env)).toBe(MP4.length);
   });
 
   it('并发：视频与截图同时补传互不作废；v0 被并发占了才 409 conflict 并删掉自己的对象、归还配额', async () => {
@@ -170,7 +177,77 @@ describe('视频上传', () => {
     const keys = [...env.MEDIA.store.keys()].filter((k) => k.startsWith(`f/${g.id}-v0-`));
     expect(keys).toHaveLength(1);
     // 输家的预占已归还：f 的视频 + 截图 + g 的一份视频。
-    expect(mediaBytes(env)).toBe(2 * MP4.length + PNG.length);
+    expect(mediaBytes(env)).toBe(PNG.length);
+    expect(videoBytes(env)).toBe(2 * MP4.length);
+  });
+});
+
+// ---- 视频配额池 ----
+
+describe('视频配额池', () => {
+  it('视频池默认 1 GiB、最多切走总配额一半；两池之和等于总配额', () => {
+    const def = {};
+    expect(videoQuota(def)).toBe(1024 * 1024 * 1024);
+    expect(poolQuota(def, 'video') + poolQuota(def, 'media')).toBe(mediaQuota(def));
+    const small = { MEDIA_QUOTA_BYTES: '1000', VIDEO_QUOTA_BYTES: '900' };
+    expect(videoQuota(small)).toBe(500);
+    expect(poolQuota(small, 'media')).toBe(500);
+  });
+
+  it('视频池满了：视频 507 video_quota、不留对象；截图 / 头像那份照常可传', async () => {
+    const env = makeEnv({ VIDEO_QUOTA_BYTES: String(2 * MP4.length) });
+    for (let i = 0; i < 2; i++) {
+      expect((await putVideo(env, (await submit(env)).data, MP4)).status).toBe(201);
+    }
+    const f = (await submit(env)).data;
+    const full = await putVideo(env, f, MP4);
+    expect(full.status).toBe(507);
+    expect(full.data.error).toBe('video_quota');
+    expect(videoBytes(env)).toBe(2 * MP4.length);
+    expect([...env.MEDIA.store.keys()].filter((k) => k.startsWith(`f/${f.id}-`))).toEqual([]);
+    expect(row(env, f.id).has_video).toBe(0);
+    // 普通池不受影响：同一条反馈的截图照传、别人的头像照传。
+    expect((await withTicket(env, 'PUT', `/v1/feedback/${f.id}/attachments/s0`, f.ticket, { body: PNG })).status).toBe(201);
+    const u = await registerUser(env, 'avatar', { now: NOW });
+    const av = await call(env, 'PUT', '/v1/me/avatar', { key: u.key, account: u.id, body: PNG, now: NOW });
+    expect(av.status).toBeLessThan(300);
+    expect(mediaBytes(env)).toBe(2 * PNG.length);
+  });
+
+  it('普通池满了：截图 507 media_quota，视频照传（视频不吃普通池，也不被它挡）', async () => {
+    const env = makeEnv({ MEDIA_QUOTA_BYTES: '100000', VIDEO_QUOTA_BYTES: '1000' });
+    env.DB.raw.prepare('UPDATE media_usage SET bytes = ?').run(poolQuota(env, 'media'));
+    const f = (await submit(env)).data;
+    const shot = await withTicket(env, 'PUT', `/v1/feedback/${f.id}/attachments/s0`, f.ticket, { body: PNG });
+    expect(shot.status).toBe(507);
+    expect(shot.data.error).toBe('media_quota');
+    expect((await putVideo(env, f, MP4)).status).toBe(201);
+    expect(videoBytes(env)).toBe(MP4.length);
+    expect(mediaBytes(env)).toBe(poolQuota(env, 'media'));
+  });
+
+  it('每 IP 每天视频字节有上限（按声明长度计、传失败不退）：超了 429，换个 IP 照传', async () => {
+    const env = makeEnv();
+    const f = (await submit(env)).data;
+    const ip = '198.51.100.7';
+    const big = FEEDBACK_LIMITS.videoMaxBytes;
+    const attempts = Math.floor(FEEDBACK_LIMITS.videoBytesPerIpDay / big);
+    expect(attempts).toBeGreaterThan(0);
+    // 声明满额、实际只发 64 字节：每次都 400 bad_length，但当天字节额度照样记上。
+    for (let i = 0; i < attempts; i++) {
+      const r = await putVideo(env, f, MP4, { length: big, ip });
+      expect(r.status).toBe(400);
+      expect(r.data.error).toBe('bad_length');
+    }
+    const limited = await putVideo(env, f, MP4, { ip });
+    expect(limited.status).toBe(429);
+    expect(limited.data.error).toBe('rate_limited');
+    expect(videoBytes(env)).toBe(0);
+    expect(env.MEDIA.store.size).toBe(0);
+    // 额度按 IP 算：别的 IP 不受影响；次日窗口重新计。
+    expect((await putVideo(env, f, MP4, { ip: '198.51.100.8' })).status).toBe(201);
+    const g = (await submit(env, { now: NOW + DAY })).data;
+    expect((await putVideo(env, g, MP4, { ip, now: NOW + DAY })).status).toBe(201);
   });
 });
 
@@ -279,8 +356,8 @@ describe('视频到期清理', () => {
     await withTicket(env, 'PUT', `/v1/feedback/${closed.id}/attachments/log`, closed.ticket, { body: gz });
     const r = await call(env, 'POST', `/v1/dev/feedback/${closed.id}`, { key: dev.key, account: dev.id, body: { status: 'resolved' }, now: NOW });
     expect(r.status).toBe(200);
-    const total = 3 * MP4.length + PNG.length + gz.length;
-    expect(mediaBytes(env)).toBe(total);
+    expect(mediaBytes(env)).toBe(PNG.length + gz.length);
+    expect(videoBytes(env)).toBe(3 * MP4.length);
 
     expect(await purgeFeedbackVideos(env, NOW + 7 * DAY - 1)).toBe(0);
     expect(await purgeFeedbackVideos(env, NOW + 7 * DAY + 1)).toBe(1);
@@ -288,7 +365,8 @@ describe('视频到期清理', () => {
     expect(c.has_video).toBe(0);
     expect(JSON.parse(c.attachments).map((a) => a.slot)).toEqual(['s0', 'log']);
     expect(c.updated_at).toBe(NOW); // 清理不刷新 updated_at（不打乱处理台排序）
-    expect(mediaBytes(env)).toBe(total - MP4.length);
+    expect(videoBytes(env)).toBe(2 * MP4.length);
+    expect(mediaBytes(env)).toBe(PNG.length + gz.length); // 截图日志不动
     expect(env.MEDIA.store.size).toBe(4);
     expect(row(env, open.id).has_video).toBe(1);
 
@@ -298,7 +376,8 @@ describe('视频到期清理', () => {
     expect(JSON.parse(row(env, open.id).attachments)).toEqual([]);
     expect(row(env, open.id).status).toBe('open');
     expect(row(env, young.id).has_video).toBe(1);
-    expect(mediaBytes(env)).toBe(total - 2 * MP4.length);
+    expect(videoBytes(env)).toBe(MP4.length);
+    expect(mediaBytes(env)).toBe(PNG.length + gz.length);
     // 再跑一次没有可清的。
     expect(await purgeFeedbackVideos(env, NOW + 30 * DAY + 1)).toBe(0);
   });
@@ -315,7 +394,7 @@ describe('视频到期清理', () => {
       Date.now = realNow;
     }
     expect(row(env, f.id).has_video).toBe(0);
-    expect(mediaBytes(env)).toBe(0);
+    expect(videoBytes(env)).toBe(0);
 
     // 直接把带视频的已结案行交给 90 天附件清理（视频清理没赶上时）。
     const dev = await makeDev(env);
@@ -325,6 +404,7 @@ describe('视频到期清理', () => {
     expect(await purgeFeedbackAttachments(env, NOW + FEEDBACK_LIMITS.attachmentRetentionMs + 1)).toBe(1);
     expect(row(env, g.id).has_video).toBe(0);
     expect(row(env, g.id).attachments).toBe('[]');
+    expect(videoBytes(env)).toBe(0);
     expect(mediaBytes(env)).toBe(0);
   });
 });
