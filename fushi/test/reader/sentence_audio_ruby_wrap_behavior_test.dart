@@ -67,10 +67,10 @@ void main() {
     );
   });
 
-  // BUG-3279：接缝一侧的 join class 必须真的把那一侧改直角；长注音叠色时脚本改用
+  // BUG-3326：接缝一侧的 join class 必须真的把那一侧改直角；长注音叠色时脚本改用
   // 渐变背景扣掉重叠段，查词优先（BUG-125）与墨水屏的覆盖规则必须连渐变一起关掉，
   // 否则当前句底色会从查词色 / 线式标记底下透出来。
-  test('BUG-3279: join sides are square and overrides also drop the trim '
+  test('BUG-3326: join sides are square and overrides also drop the trim '
       'gradient', () async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);

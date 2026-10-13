@@ -79,7 +79,7 @@ class Text extends Node {
   constructor(v) { super(); this.nodeType = 3; this.nodeValue = v; this.charRects = null; }
   get textContent() { return this.nodeValue; }
   get data() { return this.nodeValue; }
-  // BUG-3279：逐字矩形随拆分一起切开，供折行处切分的测试按字定位。
+  // BUG-3326：逐字矩形随拆分一起切开，供折行处切分的测试按字定位。
   splitText(k) {
     const tail = new Text(this.nodeValue.slice(k));
     if (this.charRects) { tail.charRects = this.charRects.slice(k); this.charRects = this.charRects.slice(0, k); }
@@ -527,7 +527,7 @@ function makeVnReader() {
   assert.strictEqual(R.cueWrappers.size, 0);
 }
 
-// ── BUG-3279：整句高亮在同一行里是一整条，只有每一行两端是圆角 ──
+// ── BUG-3326：整句高亮在同一行里是一整条，只有每一行两端是圆角 ──
 const JOIN_S = 'fushi-sentence-audio-join-start';
 const JOIN_E = 'fushi-sentence-audio-join-end';
 const joins = (w) => (w.classList.contains(JOIN_S) ? 'S' : '-') + (w.classList.contains(JOIN_E) ? 'E' : '-');

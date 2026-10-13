@@ -1013,7 +1013,7 @@ ruby.fushi-selection-ruby-active.fushi-sentence-audio-ruby-active {
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
-/* BUG-3279：一句被振假名 / 书的行内元素拆成多个 wrapper 时，同一行里与相邻 wrapper
+/* BUG-3326：一句被振假名 / 书的行内元素拆成多个 wrapper 时，同一行里与相邻 wrapper
    相接的一侧由脚本（paintSentenceAudioRubyGaps）打上 join class，这一侧改直角——整句
    在每一行只留两端圆角，接缝处不再被两个圆角头切出缺口。逻辑属性：横竖排通吃。 */
 .fushi-sentence-audio-cue.fushi-sentence-audio-join-start {

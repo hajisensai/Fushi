@@ -81,7 +81,7 @@ const String kSentenceAudioRubyGapJs = r'''
       document.fonts.addEventListener('loadingdone', repaint);
     }
   },
-  // BUG-3279：一句被 ruby / 书自带行内元素拆成多个 wrapper，每个 wrapper 都带圆角
+  // BUG-3326：一句被 ruby / 书自带行内元素拆成多个 wrapper，每个 wrapper 都带圆角
   // （box-decoration-break: clone），同一行里相邻 wrapper 的接缝处两个圆角头对在一起，
   // 整句高亮在每个振假名前后被切出缺口。整条只该在「每一行的两端」是圆的：同一行里与
   // 相邻 wrapper 相接的一侧加 join class 改直角（radius 只是背景形状，不动排版）。

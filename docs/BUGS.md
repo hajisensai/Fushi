@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3326](bugs/BUG-3326-ruby-sentence-highlight-joints.md) | ✅ | ✅ | 有声书当前句高亮在振假名处断开、长注音处叠色 |
 | [BUG-3325](bugs/BUG-3325-lua-subtitle-scripts.md) | ✅ | ✅ | Lua 脚本读不到字幕：字幕结束自动暂停脚本在 Fushi 无效 |
 | [BUG-3324](bugs/BUG-3324-reader-copy-menu-after-lookup-swipe.md) | 🚧 | 🚧 | iOS 阅读器查词关闭后滑动自动弹出复制框并卡顿（未复现） |
 | [BUG-3323](bugs/BUG-3323-webkit-highlight-anonymous-block.md) | ✅ | ✅ | iOS/macOS 分页阅读器拖选与查词高亮不可见（页顶注音预留的块级 p::after 让正文进匿名块） |
@@ -76,7 +77,6 @@
 | [BUG-3282](bugs/BUG-3282-lyrics-scroll-layer-explosion.md) | ✅ | ✅ | 歌词滚动帧率低 |
 | [BUG-3281](bugs/BUG-3281-lyrics-punctuation-latin-font.md) | ✅ | ✅ | 歌词模式标点与引号字形与正文不一致 |
 | [BUG-3280](bugs/BUG-3280-lyrics-vertical-sweep-webkit-columns-vanish.md) | ✅ | ✅ | iOS竖排歌词播放时长句后几列消失 |
-| [BUG-3279](bugs/BUG-3279-ruby-sentence-highlight-joints.md) | ✅ | ✅ | 有声书当前句高亮在振假名处断开、长注音处叠色 |
 | [BUG-3279](bugs/BUG-3279-lyrics-vertical-popup-squeezed.md) | ✅ | ✅ | 竖排歌词查词弹窗被压扁且上下乱跳 |
 | [BUG-3278](bugs/BUG-3278-video-continue-row-hover-side-clip.md) | ✅ | ✅ | 视频库继续观看横滚行悬停放大被视口左右裁剪 |
 | [BUG-3277](bugs/BUG-3277-zip-unicode-path-extra.md) | ✅ | ✅ | Yomitan zip 的 Info-ZIP Unicode Path(0x7075) 文件名被忽略，大辞林 24 张图缺失 |

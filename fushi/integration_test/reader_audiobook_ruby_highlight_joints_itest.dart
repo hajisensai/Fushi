@@ -31,7 +31,7 @@ import 'support/itest_startup_guard.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
-/// BUG-3279：有声书当前句高亮在振假名处断开（用户截图：竖排「闇」「橙」前后各被
+/// BUG-3326：有声书当前句高亮在振假名处断开（用户截图：竖排「闇」「橙」前后各被
 /// 切出缺口，「橙（だいだい）」上下还多一条深色叠色带）。
 ///
 /// 根因：一句被 ruby / 书的行内元素拆成多个 wrapper，每个 wrapper 都带 10-09 的圆角
@@ -370,7 +370,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'BUG-3279: audiobook sentence highlight is one continuous bar across ruby '
+    'BUG-3326: audiobook sentence highlight is one continuous bar across ruby '
     'in paginated, continuous and VN modes',
     timeout: const Timeout(Duration(minutes: 15)),
     (WidgetTester tester) async {

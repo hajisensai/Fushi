@@ -1,4 +1,4 @@
-## BUG-3279 · 有声书当前句高亮在振假名处断开、长注音处叠色
+## BUG-3326 · 有声书当前句高亮在振假名处断开、长注音处叠色
 - **报告**：2026-10-13（用户：Windows 竖排截图，「間断なく開いては闇を照らし続けた。」「幾重にも重なる赤、黄、橙の光は」两句的高亮在「闇」「橙」前后被切出缺口，「橙（だいだい）」上下各多一条深色带；要求「解决成同一条高亮」，Windows 与 Mac 都要验）
 - **真实性**：✅ 真 bug，两段根因叠加：
   1. **圆角接缝**：BUG-2806 起 ruby 不移动，一句被 ruby / 书自带行内元素（`<em>` 等）拆成多个 `span.fushi-sentence-audio-cue`（`fushi/lib/src/reader/reader_sentence_audio_ruby_gap_script.dart` `sentenceAudioWrapItems`）；10-09 给 `.fushi-sentence-audio-cue.fushi-sentence-audio-active` 加了 `border-radius: 0.2em` + `box-decoration-break: clone`（`fushi/lib/src/reader/reader_content_styles.dart:1003`，修复前），每个 wrapper 两头都圆，同一列里相邻 wrapper 的接缝处两个圆角头对在一起 = 缺口。
