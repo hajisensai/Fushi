@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2994 条。点号进各自文件。
+> 共 2996 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -40,6 +40,8 @@
 | [BUG-3317](bugs/BUG-3317-bitmap-subtitle-oversize-oom.md) | ✅ | ✅ | 位图字幕对象声明超大尺寸时一次分配数GB平面 |
 | [BUG-3316](bugs/BUG-3316-libmpv-probe-tests-release-backend.md) | ✅ | ✅ | media_kit 热重启探针预编译后实际测的是 release 后端 |
 | [BUG-3308](bugs/BUG-3308-popup-round-button-press-square.md) | ✅ | ✅ | 查词弹窗点「+」制卡按钮时闪出完全直角的方块 |
+| [BUG-3306](bugs/BUG-3306-lookup-clear-x-not-working.md) | 🚧 | 🚧 | 查词页搜索框 X 清不掉结果（反馈 DUiNPr1J10，未复现） |
+| [BUG-3305](bugs/BUG-3305-sync-exit-warning-on-lookup-back.md) | ✅ | ✅ | 查词页有查询时侧滑返回弹出「同步进行中」（同步全关） |
 | [BUG-3302](bugs/BUG-3302-collection-continue-stale-snapshot.md) | ✅ | ✅ | 合集详情「继续阅读」停在进页快照，不随阅读更新 |
 | [BUG-3301](bugs/BUG-3301-audiobook-panel-nested-scroll.md) | ✅ | ✅ | 有声书面板矮视口外层滚动套固定高度内层章节列表，滚不到底 |
 | [BUG-3300](bugs/BUG-3300-press-scale-release-after-dispose.md) | ✅ | ✅ | FushiPressScale 松手路径读已销毁 State.context（文件选择器闪退） |

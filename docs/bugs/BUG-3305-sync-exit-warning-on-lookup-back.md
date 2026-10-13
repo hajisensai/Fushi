@@ -1,0 +1,10 @@
+## BUG-3305 · 查词页有查询时侧滑返回弹出「同步进行中」（同步全关）
+- **报告**：2026-10-13（用户：应用内反馈 #DUiNPr1J10，Android 2.10.0-debug.18749，vivo V2339FA）
+- **真实性**：✅ 真 bug。复现步骤是「查词页查完、**不**点 X 清掉，直接侧滑返回」→ 弹「同步进行中 / 同步尚未完成，现在退出可能会丢失数据」，同步与互联全关也照弹。两处根因：
+  1. **对话框与同步是否在跑无关**（主因）：`fushi/lib/src/pages/implementations/home_page.dart` 顶层 `PopScope(canPop: !syncing, onPopInvokedWithResult: ...)`（原 1357–1378 行）的回调只按设置 tab 收窄（`if (_visibleTab == HomeTab.settings) return;`），**没判 syncing**。Flutter 对同一 route 上**所有** PopScope 都会遍历调用 `onPopInvokedWithResult(didPop: false)`——查词页 `home_dictionary_page.dart:635` 的 `PopScope(canPop: !_hasActiveQuery && ...)` 有查询时拦下返回去清查询，顶层回调也随之被调用，于是无条件弹告警。纯函数 `shouldWarnOnExit(syncing:, isSettingsTab:)` 早就写了 syncing 条件，但生产代码没用它；测试 `home_settings_exit_sync_warning_test.dart` 测的是一棵「同构镜像树」（镜像里调了 `shouldWarnOnExit`），所以一直是绿的空壳。
+  2. **自动同步关着时 `syncInProgress` 仍会短暂置真**：`fushi/lib/src/sync/sync_auto_trigger.dart` 的 `_runAutoSyncAll` / `_runCollectionsSync` / `_runAutoSync` 都先 `_beginSyncActivity`（置 `syncInProgress=true`），再排 `_autoSyncMutex`，最后才读 `isAutoSyncEnabled()`。首页每分钟的定时 tick、合集表写入、切后台都会让「同步进行中」白亮一段（等锁 + 读偏好），返回恰好落在这段里也会被拦。begin/end 本身由 finally 配对，计数不会泄漏。
+- **[x] ① 已修复** — `7420aa25ab`：
+  - `home_page.dart`：顶层拦截抽成生产组件 `HomeSyncExitScope`，回调里用 `shouldWarnOnExit(syncing: <实时值>, isSettingsTab: <实时值>)` 判；首页 build 改挂它。
+  - `sync_auto_trigger.dart`：新增 `_autoSyncGateOpen`，三条自动路径在 `_beginSyncActivity` **之前**读开关；关着时只公布 `autoDisabled` 结局（设置页「上次同步」不变），不登记在飞、不进锁。原锁内的开关判断删除（不留两份）。结局公布收口到 `_publishSyncOutcome`。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/home_settings_exit_sync_warning_test.dart`（改为直接挂生产 `HomeSyncExitScope`：同步没跑 + 内层拦返回 → 不弹；设置 tab；同步中仍弹；回调时同步已结束不弹；源码守卫钉住首页确实挂它）、`fushi/test/sync/sync_in_progress_auto_disabled_test.dart`（开关关着时三条自动路径 `syncInProgress` 一次都不为真、结局为 autoDisabled；开着时仍 true→false 成对）。`sync_auto_trigger_lifecycle_test.dart` 的记账用例改为先打开自动同步。
+- **备注**：残留：同步**真的**在跑、且查词页有查询时侧滑返回，仍会在清查询的同时弹告警（与设置 tab 是同一类「别人消费了返回」，当前只对设置 tab 收窄）。Flutter 没有公开 API 判断「除自己外还有没有 PopScope 拦返回」，彻底消除需要各 tab 上报「本页要消费返回」，不在本修复范围。

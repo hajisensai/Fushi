@@ -18,6 +18,7 @@ import 'package:macos_ui/macos_ui.dart'
         SidebarItem,
         MacosBackButton,
         MacosIcon;
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi_anki/fushi_anki.dart' show AnkiMediaDedupReport;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
@@ -1352,29 +1353,8 @@ class _HomePageState extends BasePageState<HomePage>
       return const SizedBox.shrink();
     }
 
-    final Widget home = ValueListenableBuilder<bool>(
-      valueListenable: syncInProgress,
-      builder: (context, syncing, child) => PopScope(
-        canPop: !syncing,
-        onPopInvokedWithResult: (didPop, _) async {
-          if (didPop) return;
-          // 同 route 多 PopScope 的回调全部遍历，故此顶层同步 PopScope 在设置
-          // tab 上也会被触发；设置 tab 的返回由内层 PopScope 切回来源 tab，
-          // 这里据 [shouldWarnOnExit] 收窄到非设置 tab 才弹同步告警（TODO-698）。
-          if (_visibleTab == HomeTab.settings) return;
-          final bool? confirmed = await showAppDialog<bool>(
-            context: context,
-            builder: (BuildContext ctx) => _SyncExitWarningDialog(
-              onCancel: () => Navigator.pop(ctx, false),
-              onExit: () => Navigator.pop(ctx, true),
-            ),
-          );
-          if (confirmed == true) {
-            SystemNavigator.pop();
-          }
-        },
-        child: child!,
-      ),
+    final Widget home = HomeSyncExitScope(
+      isSettingsTab: () => _visibleTab == HomeTab.settings,
       child: Actions(
         // Desktop gamepad path: the GamepadService dispatches
         // GamepadButtonIntent here (no gameButton* key events on desktop).
@@ -3672,6 +3652,63 @@ class HomeSettingsTabContent extends StatelessWidget {
           FushiSettingsContent(
             onBack: showBackButton ? onReturnToPreviousTab : null,
           ),
+    );
+  }
+}
+
+/// 首页顶层的「同步进行中」退出拦截：同步在跑时把系统返回拦下来，问用户要不要
+/// 丢下同步退出。
+///
+/// 同 route 上**所有** [PopScope] 的回调都会被遍历（didPop=false）——只要任何一个
+/// 内层 PopScope 拦了返回（设置 tab 切回来源 tab、查词页有查询时清查询、弹窗栈
+/// 逐层关），这里的回调也会被调用，与同步是否在跑**无关**。所以回调里必须再判一次
+/// [syncing] 的**当前值**（BUG-3305）：原实现只按设置 tab 收窄、没判 syncing，查词页
+/// 有查询时侧滑返回 → 查词页 PopScope 拦下清查询 → 这里照样弹「同步进行中」，
+/// 哪怕同步全关。判据收口在纯函数 [shouldWarnOnExit]。
+class HomeSyncExitScope extends StatelessWidget {
+  const HomeSyncExitScope({
+    required this.isSettingsTab,
+    required this.child,
+    this.syncing,
+    super.key,
+  });
+
+  /// 回调触发那一刻是否在设置 tab（读实时值，不是 build 时的快照）。
+  final bool Function() isSettingsTab;
+  final Widget child;
+
+  /// 在飞同步标志；生产恒为全局 [syncInProgress]，测试注入自己的 notifier。
+  final ValueListenable<bool>? syncing;
+
+  @override
+  Widget build(BuildContext context) {
+    final ValueListenable<bool> source = syncing ?? syncInProgress;
+    return ValueListenableBuilder<bool>(
+      valueListenable: source,
+      child: child,
+      builder: (BuildContext context, bool active, Widget? child) => PopScope(
+        canPop: !active,
+        onPopInvokedWithResult: (bool didPop, Object? _) async {
+          if (didPop) return;
+          if (!shouldWarnOnExit(
+            syncing: source.value,
+            isSettingsTab: isSettingsTab(),
+          )) {
+            return;
+          }
+          final bool? confirmed = await showAppDialog<bool>(
+            context: context,
+            builder: (BuildContext ctx) => _SyncExitWarningDialog(
+              onCancel: () => Navigator.pop(ctx, false),
+              onExit: () => Navigator.pop(ctx, true),
+            ),
+          );
+          if (confirmed == true) {
+            SystemNavigator.pop();
+          }
+        },
+        child: child!,
+      ),
     );
   }
 }
