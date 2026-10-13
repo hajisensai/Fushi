@@ -8,6 +8,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:drift/drift.dart' show Value;
@@ -2281,7 +2282,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 文件夹」按钮产出完全相同的来源行。
   Future<void> _addDroppedFoldersAsSources(List<String> directories) async {
     int added = 0;
+    int folders = 0;
+    bool audioCdTaken = false;
     for (final String dir in directories) {
+      // 音频 CD 抓轨后按「仅此一次」导入、不登记来源（BUG-3312），结果已自己提示。
+      final bool isAudioCd = await importAudioCdIfPresent(
+        context,
+        db: appModel.database,
+        dir: dir,
+      );
+      if (!mounted) return;
+      if (isAudioCd) {
+        audioCdTaken = true;
+        continue;
+      }
+      folders++;
       final AddLocalFolderResult result = await addLocalFolderAsSource(
         db: appModel.database,
         mediaKind: SourceLibraryKind.video.dbValue,
@@ -2296,7 +2311,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       if (!mounted) return;
     }
     if (!mounted) return;
-    if (added > 0) _refresh();
+    if (added > 0 || audioCdTaken) _refresh();
+    if (folders == 0) return;
     FushiToast.show(
       msg: added > 0
           ? t.drag_drop_folder_source_added

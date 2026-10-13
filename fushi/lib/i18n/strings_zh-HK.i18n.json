@@ -7044,5 +7044,11 @@
   "book_import_no_book_transcribe_hint": "沒有書也能匯入：直接用裝置端轉錄把音訊轉成字幕，匯入時會據此自動生成一本書。",
   "book_import_no_book_subtitle_hint": "沒有書也能匯入：為這段音訊選一個字幕檔，匯入時會據此自動生成一本書。",
   "book_import_no_book_transcribe_action": "轉錄並生成書籍",
-  "onboarding_anki_auto_reposition_hint": "About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can't reorder cards."
+  "onboarding_anki_auto_reposition_hint": "About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can't reorder cards.",
+  "media_audio_cd_rip_title": "Ripping audio CD",
+  "media_audio_cd_rip_reading": "Reading the disc…",
+  "media_audio_cd_rip_progress": "Track $current of $total",
+  "media_audio_cd_rip_failed": "Couldn't rip the audio CD: $error",
+  "media_audio_cd_rip_unreadable": "$n damaged sectors could not be read and were filled with silence",
+  "media_audio_cd_cda_unsupported": ".cda files are only CD track shortcuts and contain no audio. On Windows, insert the disc and choose the disc drive; elsewhere, rip the CD to audio files first."
 }
