@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3325](bugs/BUG-3325-lua-subtitle-scripts.md) | ✅ | ✅ | Lua 脚本读不到字幕：字幕结束自动暂停脚本在 Fushi 无效 |
 | [BUG-3324](bugs/BUG-3324-reader-copy-menu-after-lookup-swipe.md) | 🚧 | 🚧 | iOS 阅读器查词关闭后滑动自动弹出复制框并卡顿（未复现） |
 | [BUG-3323](bugs/BUG-3323-webkit-highlight-anonymous-block.md) | ✅ | ✅ | iOS/macOS 分页阅读器拖选与查词高亮不可见（页顶注音预留的块级 p::after 让正文进匿名块） |
 | [BUG-3322](bugs/BUG-3322-jellyfin-paused-heartbeats.md) | ✅ | ✅ | Jellyfin 延迟位置心跳覆盖暂停状态 |
@@ -77,7 +78,6 @@
 | [BUG-3279](bugs/BUG-3279-lyrics-vertical-popup-squeezed.md) | ✅ | ✅ | 竖排歌词查词弹窗被压扁且上下乱跳 |
 | [BUG-3278](bugs/BUG-3278-video-continue-row-hover-side-clip.md) | ✅ | ✅ | 视频库继续观看横滚行悬停放大被视口左右裁剪 |
 | [BUG-3277](bugs/BUG-3277-zip-unicode-path-extra.md) | ✅ | ✅ | Yomitan zip 的 Info-ZIP Unicode Path(0x7075) 文件名被忽略，大辞林 24 张图缺失 |
-| [BUG-3276](bugs/BUG-3276-lua-subtitle-scripts.md) | ✅ | ✅ | Lua 脚本读不到字幕：字幕结束自动暂停脚本在 Fushi 无效 |
 | [BUG-3276](bugs/BUG-3276-bitmap-subs-remote-timing-ocr.md) | ✅ | ✅ | VobSub/DVB 图形字幕与远程播放没有逐句时间与整轨 OCR |
 | [BUG-3275](bugs/BUG-3275-graphic-subtitle-ocr-duplicate-slow.md) | ✅ | ✅ | 图形字幕整轨OCR文字重复且极慢 |
 | [BUG-3274](bugs/BUG-3274-popup-switch-word-false-empty.md) | ✅ | ✅ | 视频页换词时查词弹窗先闪「未找到」、滑动掉帧 |

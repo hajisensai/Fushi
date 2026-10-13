@@ -1,4 +1,4 @@
-## BUG-3276 · Lua 脚本读不到字幕：字幕结束自动暂停脚本在 Fushi 无效
+## BUG-3325 · Lua 脚本读不到字幕：字幕结束自动暂停脚本在 Fushi 无效
 - **报告**：2026-10-13（用户：GitHub issue [#2014](https://github.com/hajisensai/Fushi/issues/2014)；同类诉求见 [#1645](https://github.com/hajisensai/Fushi/issues/1645)）。「下载的字幕结束自动暂停脚本，mpv 里能用，导入 Fushi 没用；把按键去掉也不行。」
 - **真实性**：✅ 真 bug。Fushi 的字幕一律由 Flutter overlay 画，libmpv 侧在 load 时就把字幕轨关掉（`fushi/lib/src/media/video/video_player_controller.dart:2916` `setSubtitleTrack(SubtitleTrack.no())` + `sub-auto=no` / `sub-visibility=no`），之后 `sid` 一直是 `no`。依赖 `sub-text` / `sub-start` / `sub-end` 的脚本（字幕结束暂停、`sub-seek` 逐句跳）因此永远收不到任何一句字幕——脚本装上了、没报错，就是什么都不发生。按键绑定是另一条已知边界（键盘事件被 Flutter 消费，到不了 libmpv），用户去掉按键后仍失效，说明根因在字幕这一层。
 - **[x] ① 已修复** — 装了脚本且主字幕是 Dart 侧文本 cue 时，把同一份 cue 写成 SRT 挂成一条隐藏的 libmpv 字幕轨（`sub-add <srt> select fushi-lua-subtitle-mirror`，`sub-visibility=no` 不画），脚本读到的就是 overlay 正显示的那句。
