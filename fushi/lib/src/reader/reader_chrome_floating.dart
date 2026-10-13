@@ -94,25 +94,44 @@ double bottomChromeReserve({
 /// 画着**的那块区域。
 ///
 ///  * 挤压底栏占位（[squeezeReserve] > 0）→ [readerBottomReserve]（正文的同一份预留）。
-///  * 悬浮底部件此刻在画（[floatingChromePainted]：迷你播放条 / 悬浮工具栏被点出来、
-///    且有东西可画）→ [paintedFooterBand] + [floatingChromeExtent]：悬浮件坐在
-///    状态行带之上、自身连外边距高 [floatingChromeExtent]。此前悬浮态一律 0
-///    （「悬浮底栏不占正文位置」），但悬浮件排在查词弹层**之后**绘制，弹窗按「底部
-///    没东西」排版，被迷你播放条与工具栏盖住下半截（用户：查词「格式出现问题」）。
-///  * 其余 → 0（悬浮件收起时弹窗照旧用满到屏底）。
+///  * 底部 chrome 不占正文位置、但此刻在画（[floatingChromePainted]：「点空白隐藏
+///    控制栏」形态下被点出来，且有东西可画）→ [chromeBaseBand] + [floatingChromeExtent]：
+///    chrome 坐在它下方那条带之上、自身高 [floatingChromeExtent]。此前这种形态一律 0
+///    （「不占正文位置」），但底部 chrome 排在查词弹层**之后**绘制，弹窗按「底部没
+///    东西」排版，被盖住下半截（用户：查词「格式出现问题」）。悬浮工具栏样式与贴边
+///    样式都会这样画——门控看的是「不占位」，不是工具栏样式。
+///  * 其余 → 0（chrome 收起时弹窗照旧用满到屏底）。
 double readerPopupBottomReserve({
   required double squeezeReserve,
   required double readerBottomReserve,
   required bool floatingChromePainted,
   required double floatingChromeExtent,
-  required double paintedFooterBand,
+  required double chromeBaseBand,
 }) {
   if (squeezeReserve > 0) return readerBottomReserve;
   if (floatingChromePainted && floatingChromeExtent > 0) {
-    return paintedFooterBand + floatingChromeExtent;
+    return chromeBaseBand + floatingChromeExtent;
   }
   return 0;
 }
+
+/// 底部 chrome 下沿离屏底的距离（逻辑 px）——它画在哪条带之上，与阅读器页的实际
+/// 摆放同一口径：
+///
+///  * 悬浮工具栏样式：坐在状态行画出来的带（[paintedFooterBand]）之上，离它的外边距
+///    已计入 chrome 自身的 extent。
+///  * 贴边样式、读数独立成行（[separatePlaybackStatus]）：底栏要么坐在状态行带之上，
+///    要么把读数行并进自己最底部（那一行高同样是 [paintedFooterBand]），两者顶沿
+///    一样高。
+///  * 贴边样式、读数并进播放条：底栏贴屏底，下面垫一条系统底 inset（[bottomInset]）。
+double readerBottomChromeBaseBand({
+  required bool floatingToolbars,
+  required bool separatePlaybackStatus,
+  required double paintedFooterBand,
+  required double bottomInset,
+}) => floatingToolbars || separatePlaybackStatus
+    ? paintedFooterBand
+    : bottomInset;
 
 /// BUG-379 / BUG-1343 / BUG-1381：**独立 HTML 文档**（歌词模式 [LyricsModeHtml]、
 /// spread 整页图）的 WebView 四周留白，是「阅读器页给独立文档留多少空间」的唯一真相源。

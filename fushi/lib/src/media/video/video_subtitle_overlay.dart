@@ -151,32 +151,36 @@ class SubtitleLookupHighlight {
 /// 整词看起来是一条连续的选区带。不改布局几何（只画不占位），字幕排版与逐字命中矩形
 /// 零位移。公开类型仅为测试可 `find.byType`。
 ///
-/// [bleed]：底色越出字位布局盒的宽度（BUG-3287）。尊重 .ass 的描边沿字形轮廓向外扩
-/// `strokeWidth/2`，伸出 advance × 行高的布局盒；底色只铺布局盒时描边外缘露在高亮
-/// 外面（用户：「查词背景没覆盖全文字」）。上下两侧每个字都外扩，左右只在区间首 / 尾
-/// 外扩——中间字位相接处不外扩，半透明底色不会叠出深色接缝。
+/// [bleedX] / [bleedY]：底色越出字位布局盒的左右 / 上下宽度（BUG-3287）。尊重 .ass
+/// 的描边沿字形轮廓向外扩 `strokeWidth/2`，伸出 advance × 行高的布局盒；底色只铺
+/// 布局盒时描边外缘露在高亮外面（用户：「查词背景没覆盖全文字」）。带 `\fscx` /
+/// `\fscy` 的字形连同描边被 span 缩放，外扩按同一缩放分轴（左右 × sx、上下 × sy）。
+/// 上下两侧每个字都外扩，左右只在区间首 / 尾外扩——中间字位相接处不外扩，半透明
+/// 底色不会叠出深色接缝。
 class SubtitleLookupHighlightBox extends StatelessWidget {
   const SubtitleLookupHighlightBox({
     required this.first,
     required this.last,
     required this.child,
-    this.bleed = 0,
+    this.bleedX = 0,
+    this.bleedY = 0,
     super.key,
   });
 
   final bool first;
   final bool last;
-  final double bleed;
+  final double bleedX;
+  final double bleedY;
   final Widget child;
 
   static const double _radius = 4;
 
   /// 底色矩形相对布局盒的外扩量（测试直接断言）。
   EdgeInsets get paintOutsets => EdgeInsets.fromLTRB(
-        first ? bleed : 0,
-        bleed,
-        last ? bleed : 0,
-        bleed,
+        first ? bleedX : 0,
+        bleedY,
+        last ? bleedX : 0,
+        bleedY,
       );
 
   @override
@@ -2207,10 +2211,13 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
                 cueStartMs: cue.startMs,
                 graphemeIndex: i,
               )) {
+            final ({double x, double y}) bleed =
+                _lookupHighlightBleed(i, markup, cue);
             ch = SubtitleLookupHighlightBox(
               first: highlight.isFirst(i),
               last: highlight.isLast(i),
-              bleed: _lookupHighlightBleed(i, markup, cue),
+              bleedX: bleed.x,
+              bleedY: bleed.y,
               child: ch,
             );
           }
@@ -2455,17 +2462,22 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   }
 
   /// 查词高亮底色越出第 [i] 个字位布局盒的宽度（BUG-3287）：= 该字描边的可见外扩
-  /// （Flutter 居中 stroke，可见外缘 = strokeWidth / 2）。不尊重 .ass（默认软投影，
+  /// （Flutter 居中 stroke，可见外缘 = strokeWidth / 2），再乘该字的 span 缩放
+  /// （[_spanStaticScale]，与 [_applySpanScale] 同一判据）——`\fscx` / `\fscy` 把字形
+  /// 连同描边一起缩放，左右外扩 × sx、上下外扩 × sy。不尊重 .ass（默认软投影，
   /// 无硬描边）或该字无描边时为 0。与 [_buildSubtitleChar] 同一时刻取描边宽，
   /// 描边动画下高亮与描边同帧同宽。
-  double _lookupHighlightBleed(int i, SubtitleMarkup? markup, AudioCue cue) {
-    if (!widget.respectAssStyle || markup == null) return 0;
+  ({double x, double y}) _lookupHighlightBleed(
+      int i, SubtitleMarkup? markup, AudioCue cue) {
+    if (!widget.respectAssStyle || markup == null) return (x: 0.0, y: 0.0);
     final int? posMs = widget.controller.effectivePositionMsForCue(cue);
     final int elapsedMs = (posMs ?? cue.startMs) - cue.startMs;
     final double strokeWidth = _resolveStroke(i, markup,
             elapsedMs: elapsedMs, durMs: cue.endMs - cue.startMs)
         .$2;
-    return strokeWidth <= 0 ? 0 : strokeWidth / 2;
+    if (strokeWidth <= 0) return (x: 0.0, y: 0.0);
+    final (double sx, double sy) = _spanStaticScale(i, markup);
+    return (x: strokeWidth / 2 * sx, y: strokeWidth / 2 * sy);
   }
 
   /// 本 cue 是否有任一 grapheme 会画出描边（静态判定，不看 `\t`/`\ko` 时序）：决定
@@ -2729,6 +2741,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     return Transform.rotate(angle: -math.pi / 2, child: glyph);
   }
 
+  /// 第 [i] 个 grapheme 实际生效的 span 级静态缩放 (sx, sy)：[_applySpanScale] 与
+  /// 查词高亮外扩（[_lookupHighlightBleed]）共用的唯一判据。行级 `\t` 缩放动画在场
+  /// 时恒 (1, 1)——动画拥有整行，span 缩放不再单独作用。
+  (double, double) _spanStaticScale(int i, SubtitleMarkup markup) {
+    if (markup.scale?.isAnimated ?? false) return (1.0, 1.0);
+    final SubtitleSpan? span = _spanAt(i, markup);
+    return (span?.scaleX ?? 1.0, span?.scaleY ?? 1.0);
+  }
+
   /// span 级静态 `\fscx`/`\fscy` 缩放（ASS：标签处生效到下一次覆盖——说话人前缀
   /// `{\fscx50}（名前）{\fscx100}本文` 与句尾 `…{\fscx50}。` 只缩所在段）。做法：
   /// 布局盒宽压成 advance×sx（[SizedBox]+测量缓存），[OverflowBox] 里 [Transform]
@@ -2738,10 +2759,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   Widget _applySpanScale(Widget glyph, String char, int i,
       SubtitleMarkup? markup, TextStyle style) {
     if (!widget.respectAssStyle || markup == null) return glyph;
-    if (markup.scale?.isAnimated ?? false) return glyph;
-    final SubtitleSpan? span = _spanAt(i, markup);
-    final double sx = span?.scaleX ?? 1.0;
-    final double sy = span?.scaleY ?? 1.0;
+    final (double sx, double sy) = _spanStaticScale(i, markup);
     if (sx == 1.0 && sy == 1.0) return glyph;
     final Size cs = _charSize(char, style);
     // 布局盒：宽压成 advance×sx（行内排版真实变窄），高保持行盒高（行高不随 \fscy

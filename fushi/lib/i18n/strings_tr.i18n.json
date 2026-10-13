@@ -7056,5 +7056,6 @@
   "anime_download_filter_episode": "Episode $n only",
   "anime_download_filter_single": "Single episodes",
   "popup_mining_target_switch": "Switch profile or deck",
-  "popup_mining_target_empty": "No profiles or decks yet. Connect Anki in settings first."
+  "popup_mining_target_empty": "No profiles or decks yet. Connect Anki in settings first.",
+  "popup_mining_target_switch_failed": "Could not switch the mining target: $error"
 }

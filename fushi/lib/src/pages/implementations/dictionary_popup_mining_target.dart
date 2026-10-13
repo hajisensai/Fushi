@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi_anki/fushi_anki.dart' show AnkiDeck, AnkiSettings;
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi_anki/fushi_anki.dart' show AnkiDeck;
 import 'package:fushi_core/fushi_core.dart' show ProfileRow;
 import 'package:material_ui/material_ui.dart';
 
@@ -52,6 +56,13 @@ final class DictionaryPopupDeckTarget extends DictionaryPopupMiningTarget {
 ///
 /// 列表取自已缓存的 Anki 设置（`availableDecks`，设置页 / 上次连接时拉取）与配置
 /// 表，打开菜单不发任何网络请求。
+///
+/// 两个视图模型都是**构造后异步装载**的（`AnkiViewModel._loadSettings` /
+/// `ProfileViewModel._load`），切配置时 `ref.invalidate(ankiRepositoryProvider)`
+/// 又会把两者重建成空态再装载一遍。所以这里在 build 里 `watch` 两者——provider
+/// 随按钮常驻、装载完成即重建本按钮，菜单项取自已就绪的真值；任一方还在装载时按钮
+/// 不可点（[dictionaryPopupMiningTargetReady]），不会弹出缺节或勾错的菜单。按钮只在
+/// 制卡宿主里出现（`showMiningTargetSwitch`），不制卡的宿主不会实例化这两个仓库。
 class DictionaryPopupMiningTargetButton extends ConsumerWidget {
   const DictionaryPopupMiningTargetButton({
     required this.constraints,
@@ -63,29 +74,57 @@ class DictionaryPopupMiningTargetButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return PopupMenuButton<DictionaryPopupMiningTarget>(
+    final AnkiUiState anki = ref.watch(ankiViewModelProvider);
+    final ProfileUiState profiles = ref.watch(profileViewModelProvider);
+    return FushiPopupMenuButton<DictionaryPopupMiningTarget>(
       key: const ValueKey<String>('popup_mining_target'),
       tooltip: t.popup_mining_target_switch,
       padding: EdgeInsets.zero,
-      onSelected: (DictionaryPopupMiningTarget target) =>
-          applyDictionaryPopupMiningTarget(ref, target),
-      // 打开菜单时才读两个 provider：弹窗每次查词都会重建顶栏，常驻 watch 会让
-      // 每个宿主（含不制卡的测试宿主）都去实例化 Anki / 配置仓库。
-      itemBuilder: (BuildContext context) {
-        final AnkiSettings settings = ref.read(ankiViewModelProvider).settings;
-        final ProfileUiState profiles = ref.read(profileViewModelProvider);
-        return buildDictionaryPopupMiningTargetItems(
-          profiles: profiles.profiles,
-          activeProfileId: profiles.activeProfileId,
-          decks: settings.availableDecks,
-          selectedDeckId: settings.selectedDeckId,
-        );
-      },
+      enabled: dictionaryPopupMiningTargetReady(anki: anki, profiles: profiles),
+      onSelected: (DictionaryPopupMiningTarget target) => unawaited(
+        runDictionaryPopupMiningTargetSwitch(
+          () => applyDictionaryPopupMiningTarget(ref, target),
+          notifyFailure: _toastSwitchFailure,
+        ),
+      ),
+      itemBuilder: (BuildContext context) =>
+          buildDictionaryPopupMiningTargetItems(
+            profiles: profiles.profiles,
+            activeProfileId: profiles.activeProfileId,
+            decks: anki.settings.availableDecks,
+            selectedDeckId: anki.settings.selectedDeckId,
+          ),
       child: ConstrainedBox(
         constraints: constraints,
         child: const Center(child: FushiIcon(FushiIcons.ankiCard, size: 20)),
       ),
     );
+  }
+}
+
+/// 两个视图模型的异步首装是否都已完成：完成前列表是构造时的空占位，不是真值。
+bool dictionaryPopupMiningTargetReady({
+  required AnkiUiState anki,
+  required ProfileUiState profiles,
+}) => anki.settingsLoaded && !profiles.isLoading;
+
+void _toastSwitchFailure(String message) =>
+    FushiToast.show(msg: message, severity: ToastSeverity.error);
+
+/// 执行一次菜单选择并兜住失败：写库（切配置 / 写牌组设置）失败时记日志并经
+/// [notifyFailure] 告知用户，而不是让 Future 的错误落成未处理的 zone 错误、
+/// 用户点了没反应也不知道为什么。返回是否成功。
+Future<bool> runDictionaryPopupMiningTargetSwitch(
+  Future<void> Function() apply, {
+  required void Function(String message) notifyFailure,
+}) async {
+  try {
+    await apply();
+    return true;
+  } catch (error, stack) {
+    debugPrint('[popup] mining target switch failed: $error\n$stack');
+    notifyFailure(t.popup_mining_target_switch_failed(error: '$error'));
+    return false;
   }
 }
 

@@ -22,6 +22,22 @@ Format: Layer, Start, End, Style, Actor, MarginL, MarginR, MarginV, Effect, Text
 Dialogue: 0,0:02:23.10,0:02:24.47,Default,,0,0,0,,{\i1}She's not going for it…{\i0}
 ''';
 
+/// 同一样式（带描边）、整句 span 级静态缩放 `\fscx50\fscy200` 的 cue。
+const String _kAssScaled = r'''
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1280
+PlayResY: 720
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Trebuchet MS,45,&H00FFFFFF,&H000000FF,&H00020713,&H00000000,-1,0,0,0,100,100,0,0,1,1.7,0,2,10,10,15,1
+
+[Events]
+Format: Layer, Start, End, Style, Actor, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:02:23.10,0:02:24.47,Default,,0,0,0,,{\fscx50\fscy200}Scaled
+''';
+
 const int _kPosMs = 143500;
 
 Future<VideoPlayerController> _pump(
@@ -166,13 +182,56 @@ void main() {
     final double strokeWidth = texts.first.style!.foreground!.strokeWidth;
     expect(strokeWidth, greaterThan(0));
     // 外扩 = 可见描边宽（居中 stroke 的外半边）；Paint.strokeWidth 以 float32 存。
-    expect(boxes.first.bleed, closeTo(strokeWidth / 2, 1e-4));
+    expect(boxes.first.bleedX, closeTo(strokeWidth / 2, 1e-4));
+    expect(boxes.first.bleedY, closeTo(strokeWidth / 2, 1e-4));
     // 上下每个字都外扩；左右只在首 / 尾外扩（中间相接不叠色）。
-    expect(boxes.first.paintOutsets.left, boxes.first.bleed);
+    expect(boxes.first.paintOutsets.left, boxes.first.bleedX);
     expect(boxes.first.paintOutsets.right, 0);
     expect(boxes[2].paintOutsets,
-        EdgeInsets.fromLTRB(0, boxes[2].bleed, 0, boxes[2].bleed));
-    expect(boxes.last.paintOutsets.right, boxes.last.bleed);
+        EdgeInsets.fromLTRB(0, boxes[2].bleedY, 0, boxes[2].bleedY));
+    expect(boxes.last.paintOutsets.right, boxes.last.bleedX);
+  });
+
+  // 审查 PR #2083：`\fscx` / `\fscy` 把字形连同描边一起缩放（_applySpanScale），
+  // 高亮外扩必须按同一缩放分轴：左右 × sx、上下 × sy。
+  testWidgets('带 span 缩放的 cue：外扩随缩放分轴', (WidgetTester tester) async {
+    final List<AudioCue> cues =
+        AssParser.parseString(content: _kAssScaled, bookKey: 'scaled');
+    final VideoPlayerController c = VideoPlayerController();
+    addTearDown(c.dispose);
+    c.setCues(cues);
+    c.debugSetPositionForTesting(_kPosMs);
+    c.debugUpdateCueForPosition(_kPosMs);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(
+          controller: c,
+          respectAssStyle: true,
+          lookupHighlight: SubtitleLookupHighlight(
+            sentence: 'Scaled',
+            cueStartMs: c0StartMs(),
+            graphemeStart: 0,
+            graphemeCount: 3,
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+    expect(c.currentCue?.text, 'Scaled');
+    final List<Text> texts = _highlightedTexts(tester);
+    expect(texts, hasLength(3));
+    final double strokeWidth = texts.first.style!.foreground!.strokeWidth;
+    expect(strokeWidth, greaterThan(0));
+    final List<SubtitleLookupHighlightBox> boxes = tester
+        .widgetList<SubtitleLookupHighlightBox>(
+            find.byType(SubtitleLookupHighlightBox))
+        .toList();
+    for (final SubtitleLookupHighlightBox b in boxes) {
+      expect(b.bleedX, closeTo(strokeWidth / 2 * 0.5, 1e-4));
+      expect(b.bleedY, closeTo(strokeWidth / 2 * 2.0, 1e-4));
+    }
+    expect(boxes.first.paintOutsets.left, boxes.first.bleedX);
+    expect(boxes.first.paintOutsets.top, boxes.first.bleedY);
   });
 
   testWidgets('不尊重 .ass（软投影外观）不外扩', (WidgetTester tester) async {
@@ -202,7 +261,10 @@ void main() {
             find.byType(SubtitleLookupHighlightBox))
         .toList();
     expect(boxes, hasLength(5));
-    expect(boxes.every((SubtitleLookupHighlightBox b) => b.bleed == 0), isTrue);
+    expect(
+        boxes.every(
+            (SubtitleLookupHighlightBox b) => b.bleedX == 0 && b.bleedY == 0),
+        isTrue);
   });
 }
 

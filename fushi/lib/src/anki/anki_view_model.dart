@@ -27,6 +27,7 @@ class AnkiUiState {
     this.isFetching = false,
     this.errorMessage,
     this.mediaMaintenanceAvailable,
+    this.settingsLoaded = false,
   });
   final AnkiSettings settings;
   final bool isFetching;
@@ -35,6 +36,12 @@ class AnkiUiState {
   /// 媒体去重此刻真能不能用；null = 还没探测出结论（没探过 / 后端不可达）。
   /// 设置页用它做区块门控，未知时回落到后端静态能力。
   final bool? mediaMaintenanceAvailable;
+
+  /// [settings] 是否已从仓库装载过一次。视图模型构造时 state 是空的
+  /// [AnkiSettings]，真值由异步的 `_loadSettings` 填进来；空列表在装载前后语义不同
+  /// （「还没读」≠「真没有牌组」），按 state 当场取值的入口（查词弹窗的制卡目标
+  /// 菜单）用它区分，而不是把装载中的空态当成用户没配牌组。
+  final bool settingsLoaded;
 
   List<AnkiDeck> get availableDecks => settings.availableDecks;
   List<AnkiNoteType> get availableNoteTypes => settings.availableNoteTypes;
@@ -48,6 +55,7 @@ class AnkiUiState {
     bool clearError = false,
     bool? mediaMaintenanceAvailable,
     bool clearMediaMaintenanceAvailable = false,
+    bool? settingsLoaded,
   }) =>
       AnkiUiState(
         settings: settings ?? this.settings,
@@ -56,6 +64,7 @@ class AnkiUiState {
         mediaMaintenanceAvailable: clearMediaMaintenanceAvailable
             ? null
             : (mediaMaintenanceAvailable ?? this.mediaMaintenanceAvailable),
+        settingsLoaded: settingsLoaded ?? this.settingsLoaded,
       );
 }
 
@@ -67,7 +76,7 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
 
   Future<void> _loadSettings() async {
     final settings = await _repository.loadSettings();
-    state = state.copyWith(settings: settings);
+    state = state.copyWith(settings: settings, settingsLoaded: true);
     if (settings.selectedDeckId != null &&
         settings.selectedNoteTypeId != null &&
         (settings.availableDecks.isEmpty ||
@@ -90,6 +99,7 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
       settings: settings,
       isFetching: false,
       clearError: true,
+      settingsLoaded: true,
     );
   }
 

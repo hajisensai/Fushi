@@ -2581,12 +2581,20 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         // 挤压底栏：_bottomChromeReserve 已含「占位 + 非悬浮」两道门控。
         squeezeReserve: _bottomChromeReserve,
         readerBottomReserve: _readerBottomReserve,
-        // BUG-3292：悬浮底部件被点出来时它画在弹层之上，弹窗必须让开；收起时 0。
-        // 门控与 [_buildFloatingBottomChrome] 的 FushiChromeReveal 同一判据。
+        // BUG-3292：底栏不占位（「点空白隐藏控制栏」）但被点出来时，它画在弹层之上，
+        // 弹窗必须让开；收起时 0。门控看「不占位」而不是工具栏样式：悬浮样式
+        // （[_buildFloatingBottomChrome]）与贴边样式（[_buildBottomChrome] →
+        // [_wrapBottomChromeBar]）此刻都按 `!_lyricsMode && _bottomBarShouldPaint` 画。
         floatingChromePainted:
-            _floatingToolbars && !_lyricsMode && _bottomBarShouldPaint,
+            _bottomBarFloating && !_lyricsMode && _bottomBarShouldPaint,
+        // 贴边样式是一条缩放后的 [_readerChromeHeight]，悬浮样式是叠放高 + 外边距。
         floatingChromeExtent: _bottomChromeExtent,
-        paintedFooterBand: _statusFooterPaintedBand,
+        chromeBaseBand: readerBottomChromeBaseBand(
+          floatingToolbars: _floatingToolbars,
+          separatePlaybackStatus: _separatePlaybackStatus,
+          paintedFooterBand: _statusFooterPaintedBand,
+          bottomInset: _stableBottomInset,
+        ),
       );
 
   @override
