@@ -67,27 +67,49 @@ class Node {
   }
   removeChild(n) { this.childNodes.splice(this.childNodes.indexOf(n), 1); n.parentNode = null; return n; }
   get textContent() { return this.childNodes.map((c) => c.textContent).join(''); }
+  get previousSibling() {
+    if (!this.parentNode) return null;
+    const s = this.parentNode.childNodes;
+    return s[s.indexOf(this) - 1] || null;
+  }
+  contains(n) { for (let x = n; x; x = x.parentNode) if (x === this) return true; return false; }
 }
 
 class Text extends Node {
-  constructor(v) { super(); this.nodeType = 3; this.nodeValue = v; }
+  constructor(v) { super(); this.nodeType = 3; this.nodeValue = v; this.charRects = null; }
   get textContent() { return this.nodeValue; }
+  get data() { return this.nodeValue; }
+  // BUG-3279：逐字矩形随拆分一起切开，供折行处切分的测试按字定位。
+  splitText(k) {
+    const tail = new Text(this.nodeValue.slice(k));
+    if (this.charRects) { tail.charRects = this.charRects.slice(k); this.charRects = this.charRects.slice(0, k); }
+    this.nodeValue = this.nodeValue.slice(0, k);
+    this.parentNode.insertBefore(tail, this.nextSibling);
+    return tail;
+  }
 }
+
+const withSize = (r) => Object.assign({ width: r.right - r.left, height: r.bottom - r.top }, r);
 
 class Element extends Node {
   constructor(tag, display) {
-    super(); this.nodeType = 1; this.tagName = tag.toUpperCase(); this.className = ''; this.style = {};
+    super(); this.nodeType = 1; this.tagName = tag.toUpperCase(); this.className = '';
+    this.style = Object.create({
+      setProperty(k, v) { this[k.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = v; },
+      removeProperty(k) { delete this[k.replace(/-([a-z])/g, (_, c) => c.toUpperCase())]; },
+    });
     this.rects = [];
     this.display = display || (tag === 'p' || tag === 'div' ? 'block' : tag === 'ruby' ? 'ruby' : 'inline');
     const self = this;
     this.classList = {
       add(c) { const s = new Set(self.className.split(' ').filter(Boolean)); s.add(c); self.className = [...s].join(' '); },
-      remove(c) { self.className = self.className.split(' ').filter((x) => x && x !== c).join(' '); },
+      remove(...cs) { self.className = self.className.split(' ').filter((x) => x && !cs.includes(x)).join(' '); },
       contains(c) { return self.className.split(' ').includes(c); },
     };
   }
   closest(sel) {
-    for (let n = this; n && n.nodeType === 1; n = n.parentNode) if (n.tagName === sel.toUpperCase()) return n;
+    const tags = sel.split(',').map((x) => x.trim().toUpperCase());
+    for (let n = this; n && n.nodeType === 1; n = n.parentNode) if (tags.includes(n.tagName)) return n;
     return null;
   }
   querySelector(sel) {
@@ -99,7 +121,25 @@ class Element extends Node {
     }
     return null;
   }
-  getClientRects() { return this.rects; }
+  // 手设 rects 优先；否则按子孙文本的逐字矩形（charRects）分行合并——竖排一列一个片段。
+  getClientRects() {
+    if (this.rects.length) return this.rects.map(withSize);
+    const lines = [];
+    (function walk(n) {
+      if (n.nodeType === 3) {
+        (n.charRects || []).forEach((r) => {
+          const line = lines.find((l) => l.left === r.left);
+          if (line) { line.top = Math.min(line.top, r.top); line.bottom = Math.max(line.bottom, r.bottom); }
+          else lines.push(Object.assign({}, r));
+        });
+        return;
+      }
+      if (n.tagName === 'RT') return;
+      n.childNodes.forEach(walk);
+    })(this);
+    return lines.map(withSize);
+  }
+  cloneNode() { const e = new Element(this.tagName.toLowerCase(), this.display); e.className = this.className; return e; }
 }
 
 class Fragment extends Node { constructor() { super(); this.nodeType = 11; } }
@@ -110,6 +150,11 @@ class Range {
   _point(node, offset) {
     if (node.nodeType === 3) return { parent: node.parentNode, text: node, offset };
     return { parent: node, index: offset };
+  }
+  getBoundingClientRect() {
+    const t = this.s.text;
+    const r = t && t.charRects ? t.charRects[this.s.offset] : null;
+    return withSize(r || { left: 0, right: 0, top: 0, bottom: 0 });
   }
   setStart(n, o) { this.s = this._point(n, o); }
   setEnd(n, o) { this.e = this._point(n, o); }
@@ -166,6 +211,13 @@ class Range {
   insertNode(n) { this.insertAt.parent.insertBefore(n, this.insertAt.before); }
 }
 
+function treeWalker(root) {
+  const out = [];
+  (function walk(n) { if (n.nodeType === 3) out.push(n); else n.childNodes.forEach(walk); })(root);
+  let i = 0;
+  return { nextNode: () => (i < out.length ? out[i++] : null) };
+}
+
 function el(tag, children, display) {
   const e = new Element(tag, display);
   (children || []).forEach((c) => e.appendChild(typeof c === 'string' ? new Text(c) : c));
@@ -184,7 +236,9 @@ function baseTextNodes(root) {
 
 function makeReader(cueRoots) {
   const sandbox = {
-    document: { createRange: () => new Range(), createElement: (t) => new Element(t), documentElement: {} },
+    document: { createRange: () => new Range(), createElement: (t) => new Element(t), documentElement: {},
+      createTreeWalker: treeWalker },
+    NodeFilter: { SHOW_TEXT: 4 },
     getComputedStyle: (n) => ({
       display: n.display || 'inline', getPropertyValue: () => '',
       writingMode: 'vertical-rl', fontSize: '22px',
@@ -197,7 +251,8 @@ function makeReader(cueRoots) {
   vm.createContext(sandbox);
   const methods = ['applySentenceAudioCues', 'sentenceAudioWrapItems', 'sentenceAudioInlineGap', 'rubyForNode',
     'fillSentenceAudioRubyGaps', 'watchSentenceAudioRubyGapLayout', 'paintSentenceAudioRubyGaps',
-    'eraseSentenceAudioRubyGaps', 'clearSentenceAudioRubyGaps', '_setReanchorPending']
+    'eraseSentenceAudioRubyGaps', 'clearSentenceAudioRubyGaps', '_setReanchorPending',
+    'sentenceAudioLineRects', 'sentenceAudioSameLine', 'splitSentenceAudioJoinLines', 'splitSentenceAudioWrapper', 'moveSentenceAudioNodesKeepingRanges']
     .map(extractMethod).join(',\n');
   vm.runInContext('var R = {\n' + methods + '\n};', sandbox);
   const R = sandbox.R;
@@ -262,7 +317,7 @@ function kids(n) { return n.childNodes.filter((c) => c.nodeType === 1 || c.nodeV
   R.applySentenceAudioCues([{ id: 'c2' }]);
   const ws = R.cueWrappers.get('c2');
   assert.strictEqual(ws.length, 3, 'partial text / ruby base / partial text');
-  assert.strictEqual(ws.map((w) => w.textContent).join('|'), '学校で会話自体が|稀|なんだから。');
+  assert.strictEqual(Array.from(ws, (w) => w.textContent).join('|'), '学校で会話自体が|稀|なんだから。');
   assert.strictEqual(r.parentNode, p, 'ruby not moved');
   assert.strictEqual(ws[1].parentNode, r);
   assert.strictEqual(p.textContent, '前の文。学校で会話自体が稀まれなんだから。次の文。');
@@ -409,7 +464,9 @@ function kids(n) { return n.childNodes.filter((c) => c.nodeType === 1 || c.nodeV
 // sentence highlight broke into pieces around every annotated kanji.
 function makeVnReader() {
   const sandbox = {
-    document: { createRange: () => new Range(), createElement: (t) => new Element(t), documentElement: {}, head: {} },
+    document: { createRange: () => new Range(), createElement: (t) => new Element(t), documentElement: {}, head: {},
+      createTreeWalker: treeWalker },
+    NodeFilter: { SHOW_TEXT: 4 },
     getComputedStyle: (n) => ({
       display: n.display || 'inline', getPropertyValue: () => '',
       writingMode: 'vertical-rl', fontSize: '22px',
@@ -425,7 +482,7 @@ function makeVnReader() {
     .map((n) => extractMethod(n, vnSource))
     .concat(['sentenceAudioWrapItems', 'sentenceAudioInlineGap', 'rubyForNode', 'fillSentenceAudioRubyGaps',
       'watchSentenceAudioRubyGapLayout', 'paintSentenceAudioRubyGaps', 'eraseSentenceAudioRubyGaps',
-      'clearSentenceAudioRubyGaps'].map((n) => extractMethod(n, gapSource)))
+      'clearSentenceAudioRubyGaps', 'sentenceAudioLineRects', 'sentenceAudioSameLine', 'splitSentenceAudioJoinLines', 'splitSentenceAudioWrapper', 'moveSentenceAudioNodesKeepingRanges'].map((n) => extractMethod(n, gapSource)))
     .join(',\n');
   vm.runInContext('var R = {\n' + methods + '\n};', sandbox);
   const R = sandbox.R;
@@ -468,6 +525,102 @@ function makeVnReader() {
   R.clearCurrentSentenceAudioScreenTargets();
   assert.strictEqual(ws[1].style.boxShadow, '', 'screen-target reset also drops the gap fill');
   assert.strictEqual(R.cueWrappers.size, 0);
+}
+
+// ── BUG-3279：整句高亮在同一行里是一整条，只有每一行两端是圆角 ──
+const JOIN_S = 'fushi-sentence-audio-join-start';
+const JOIN_E = 'fushi-sentence-audio-join-end';
+const joins = (w) => (w.classList.contains(JOIN_S) ? 'S' : '-') + (w.classList.contains(JOIN_E) ? 'E' : '-');
+
+// 11. 同一列相接的 wrapper：接缝两侧打 join class（CSS 把这一侧改直角），外端不打。
+{
+  const r = ruby('漢', 'かん');
+  const p = el('p', ['ほら', r, '字だ']);
+  const R = makeReader({ c11: p });
+  R.applySentenceAudioCues([{ id: 'c11' }]);
+  const ws = R.cueWrappers.get('c11');
+  ws[0].rects = [{ left: 100, right: 122, top: 0, bottom: 44 }];
+  ws[1].rects = [{ left: 100, right: 122, top: 44, bottom: 66 }];
+  ws[2].rects = [{ left: 100, right: 122, top: 66, bottom: 110 }];
+  R.fillSentenceAudioRubyGaps(ws);
+  assert.deepStrictEqual(Array.from(ws, joins), ['-E', 'SE', 'S-'],
+    'joints square on both sides, the sentence ends stay round');
+  R.clearSentenceAudioRubyGaps();
+  assert.deepStrictEqual(Array.from(ws, joins), ['--', '--', '--'], 'join classes dropped with the highlight');
+}
+
+// 12. 换列的相邻 wrapper 不是接缝：两端都保持圆角。
+{
+  const r = ruby('漢', 'かん');
+  const p = el('p', ['ほら', r, '字だ']);
+  const R = makeReader({ c12: p });
+  R.applySentenceAudioCues([{ id: 'c12' }]);
+  const ws = R.cueWrappers.get('c12');
+  ws[0].rects = [{ left: 100, right: 122, top: 700, bottom: 744 }];
+  ws[1].rects = [{ left: 100, right: 122, top: 744, bottom: 766 }];
+  ws[2].rects = [{ left: 60, right: 82, top: 0, bottom: 44 }];
+  R.fillSentenceAudioRubyGaps(ws);
+  assert.deepStrictEqual(Array.from(ws, joins), ['-E', 'S-', '--'], 'a column break is a line end, not a joint');
+}
+
+// 13. 长注音悬挂进邻字（Blink：基字盒压进两侧 5px）：ruby 内 wrapper 的背景扣掉重叠段，
+//     半透明底色不再叠出深色带；只改背景，不碰排版。
+{
+  const r = ruby('橙', 'だいだい');
+  const p = el('p', ['黄、', r, 'の光']);
+  const R = makeReader({ c13: p });
+  R.applySentenceAudioCues([{ id: 'c13' }]);
+  const ws = R.cueWrappers.get('c13');
+  ws[0].rects = [{ left: 100, right: 122, top: 0, bottom: 44 }];
+  ws[1].rects = [{ left: 100, right: 122, top: 39, bottom: 71 }];
+  ws[2].rects = [{ left: 100, right: 122, top: 66, bottom: 110 }];
+  R.fillSentenceAudioRubyGaps(ws);
+  assert.deepStrictEqual(Array.from(ws, joins), ['-E', 'SE', 'S-']);
+  assert.strictEqual(ws[1].style.backgroundColor, 'transparent', 'the in-ruby wrapper paints via the trimmed gradient');
+  assert.strictEqual(ws[1].style.backgroundImage,
+    'linear-gradient(to bottom, transparent 5.00px, var(--fushi-sentence-audio-background-color) 5.00px, ' +
+    'var(--fushi-sentence-audio-background-color) calc(100% - 5.00px), transparent calc(100% - 5.00px))',
+    'both overlapping ends are left to the neighbours');
+  assert.ok(!ws[0].style.backgroundImage && !ws[2].style.backgroundImage, 'neighbours keep their own background');
+  assert.ok(!ws[1].style.boxShadow, 'an overlap is never bridged with a shadow');
+  R.clearSentenceAudioRubyGaps();
+  assert.strictEqual(ws[1].style.backgroundImage, '', 'trim dropped with the highlight');
+  assert.strictEqual(ws[1].style.backgroundColor, undefined);
+}
+
+// 14. 跨列的 wrapper 在注音接缝那一列被恰好在折行处切开：clone 下 radius 对每个片段一视同仁，
+//     不切的话它在上一列列尾那一端也会被一起改成直角。
+{
+  const r = ruby('漢', 'かん');
+  const p = el('p', ['あいうえおかき', r, 'くけこ']);
+  const R = makeReader({ c14: p });
+  let rebuilt = 0;
+  R.buildNodeOffsets = () => { rebuilt++; };
+  R.applySentenceAudioCues([{ id: 'c14' }]);
+  rebuilt = 0;
+  const ws = R.cueWrappers.get('c14');
+  assert.strictEqual(ws.length, 3);
+  const col = (left, top) => ({ left, right: left + 22, top, bottom: top + 22 });
+  // あいうえ：上一列列尾；おかき・漢・くけこ：下一列列首。
+  ws[0].childNodes[0].charRects = [col(100, 656), col(100, 678), col(100, 700), col(100, 722),
+    col(60, 0), col(60, 22), col(60, 44)];
+  ws[1].childNodes[0].charRects = [col(60, 66)];
+  ws[2].childNodes[0].charRects = [col(60, 88), col(60, 110), col(60, 132)];
+  R.fillSentenceAudioRubyGaps(ws);
+  assert.strictEqual(R.cueWrappers.get('c14'), ws, 'the stored wrapper list is updated in place');
+  assert.deepStrictEqual(Array.from(ws, (w) => w.textContent), ['あいうえ', 'おかき', '漢', 'くけこ'],
+    'the wrapper is cut exactly at the column break');
+  assert.strictEqual(ws[1].parentNode, p, 'the new piece is a sibling right after the original wrapper');
+  assert.strictEqual(p.childNodes.indexOf(ws[1]), p.childNodes.indexOf(ws[0]) + 1);
+  assert.ok(ws[1].classList.contains('fushi-sentence-audio-cue'));
+  assert.deepStrictEqual(Array.from(ws, joins), ['--', '-E', 'SE', 'S-'],
+    'the previous column keeps both round ends, the joints in the next column are square');
+  assert.strictEqual(p.textContent, 'あいうえおかき漢かんくけこ', 'text preserved in order');
+  assert.strictEqual(rebuilt, 1, 'node offsets rebuilt once after the split');
+  // 再次高亮（重排后重量）：已是单列片段，不再切分。
+  R.fillSentenceAudioRubyGaps(ws);
+  assert.strictEqual(ws.length, 4);
+  assert.strictEqual(rebuilt, 1);
 }
 
 console.log('all assertions passed');

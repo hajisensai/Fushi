@@ -1,0 +1,11 @@
+## BUG-3279 · 有声书当前句高亮在振假名处断开、长注音处叠色
+- **报告**：2026-10-13（用户：Windows 竖排截图，「間断なく開いては闇を照らし続けた。」「幾重にも重なる赤、黄、橙の光は」两句的高亮在「闇」「橙」前后被切出缺口，「橙（だいだい）」上下各多一条深色带；要求「解决成同一条高亮」，Windows 与 Mac 都要验）
+- **真实性**：✅ 真 bug，两段根因叠加：
+  1. **圆角接缝**：BUG-2806 起 ruby 不移动，一句被 ruby / 书自带行内元素（`<em>` 等）拆成多个 `span.fushi-sentence-audio-cue`（`fushi/lib/src/reader/reader_sentence_audio_ruby_gap_script.dart` `sentenceAudioWrapItems`）；10-09 给 `.fushi-sentence-audio-cue.fushi-sentence-audio-active` 加了 `border-radius: 0.2em` + `box-decoration-break: clone`（`fushi/lib/src/reader/reader_content_styles.dart:1003`，修复前），每个 wrapper 两头都圆，同一列里相邻 wrapper 的接缝处两个圆角头对在一起 = 缺口。
+  2. **长注音叠色**：Blink（Windows WebView2 / Android）把 ruby 内基字 wrapper 的盒撑到注音长度、两侧压进邻字（「橙/だいだい」实测 −5px），两层半透明底色叠出深色带；`paintSentenceAudioRubyGaps` 只处理正缝（box-shadow 补色），从不处理负缝。WebKit 不重叠。
+- **[x] ① 已修复** — （提交见 PR）：
+  - 共享片段 `paintSentenceAudioRubyGaps` 按实测几何给同一行相邻 wrapper 的接缝两侧打 `fushi-sentence-audio-join-start/-end`，CSS 用逻辑属性把这一侧改直角（横竖排通吃）；每一行（含跨栏 / 翻页处）的两端保持圆角。
+  - clone 下 radius 对一个元素的所有行片段一视同仁，所以跨行、且一端是接缝的 wrapper 先由 `splitSentenceAudioJoinLines` 恰好在折行处切成两个（切口两侧本来不在同一行，排版逐像素不变）。切分移动文本节点前记下 `CSS.highlights` 里全部 live Range（收藏 / 标注、查词选区、搜索）与原生选区的边界，移完写回原节点原偏移；随后重建 `buildNodeOffsets`。
+  - 负缝（重叠）改用两端透明的 `linear-gradient` 只在 ruby 内 wrapper 的背景里扣掉重叠段（不裁字形、不动排版）；查词优先（BUG-125）与墨水屏的 `!important` 覆盖规则同步加 `background-image: none`。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/sentence_audio_ruby_wrap_behavior_test.js` 第 11–14 例（接缝两侧 join / 换列不算接缝 / 长注音重叠扣除 / 跨列 wrapper 在折行处切分且原地更新 cueWrappers、文本顺序不变、只重建一次偏移；换回修复前脚本即红）+ `sentence_audio_ruby_wrap_behavior_test.dart` 的 CSS 守卫（join 两侧直角且排在圆角规则之后、查词优先与墨水屏规则关掉渐变）+ 真 app 集成测试 `fushi/integration_test/reader_audiobook_ruby_highlight_joints_itest.dart`（翻页 / 滚动 / VN 三模式逐句经 `skipToCueIndex` 跳转，量接缝圆角 / 留缝 / 叠色 / 宽度 / 列端圆角）。
+- **备注**：验证——真实引擎（`engineShell`）+ 真实正文 CSS 的探针页，新旧两版对比，竖排翻页 / 滚动 / VN + 横排翻页 / 滚动五种布局：本机 Chromium（= WebView2 引擎）旧版接缝缺口 18/18、叠色 2，新版全 0；Mac WKWebView（ssh mac，Swift 小程序 `takeSnapshot`）旧版缺口 18/18，新版全 0；两端各句逐字坐标新旧完全一致（排版不变），翻页 / 滚动下切分 2–3 次后收藏 Range 与原生选区原文不变。真 app（同一份集成测试，跳句 + 播放驱动）：Windows WebView2 离屏 runner 与 Mac WKWebView runner 三种模式均 11/11 句、同列接缝 18 处、缺口 / 留缝 / 叠色 / 宽度不一 / 列端非圆角全 0，`All tests passed`；`captureReaderWebView` 真像素截图确认整句一条、列端圆角。测试驱动的两个坑：暂停态跳句是被动高亮、按设计不动视口，VN 不换屏就没有这一句的 DOM（所以要播放）；just_audio 的 `play()` 在 macOS 上要等播放停下才完成，不能 await。

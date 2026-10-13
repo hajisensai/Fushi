@@ -1013,11 +1013,23 @@ ruby.fushi-selection-ruby-active.fushi-sentence-audio-ruby-active {
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
+/* BUG-3279：一句被振假名 / 书的行内元素拆成多个 wrapper 时，同一行里与相邻 wrapper
+   相接的一侧由脚本（paintSentenceAudioRubyGaps）打上 join class，这一侧改直角——整句
+   在每一行只留两端圆角，接缝处不再被两个圆角头切出缺口。逻辑属性：横竖排通吃。 */
+.fushi-sentence-audio-cue.fushi-sentence-audio-join-start {
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+}
+.fushi-sentence-audio-cue.fushi-sentence-audio-join-end {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
 /* BUG-2806 起基字 wrapper 在 <ruby> 里面：子元素背景画在 ruby 的查词背景之上，
    BUG-125 的「查词优先」要由 wrapper 让位（连同内联的补缝 box-shadow）。 */
 ruby.fushi-selection-ruby-active .fushi-sentence-audio-cue.fushi-sentence-audio-active {
   color: inherit !important;
   background-color: transparent !important;
+  background-image: none !important;
   box-shadow: none !important;
 }
 ${einkMode ? '' : _plainCueActiveCss(customText: sentenceAudioTextColor != null)}
@@ -1128,6 +1140,7 @@ ruby.fushi-sentence-audio-ruby-active {
 }
 .fushi-sentence-audio-cue.fushi-sentence-audio-active {
   background-color: transparent !important;
+  background-image: none !important;
   color: inherit !important;
   text-decoration-line: underline !important;
   text-decoration-style: solid !important;
