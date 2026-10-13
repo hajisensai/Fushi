@@ -945,15 +945,16 @@
   {
     "name": "libmpv-2.dll",
     "source_name": "libmpv-2.dll",
-    "source_sha256": "acc4ca1b59128663891b6aa8cc1fb5f50122a6f8adcdd05d3180f782dcf5e5da",
-    "sha256": "0712279f5d337e7381a6f8aa804e58ab4d9c6312d30b99767fb3415823481625",
-    "bytes": 4067190,
-    "rewritten_references": 22,
+    "source_sha256": "6c97afa7ccfa059b3cfd5a849dcf8abc898a71aba961d22861250ff77e797e83",
+    "sha256": "d16c19a8e6f4b7d3d483bf0c095073413de14347bf1c3329ca662b843c366492",
+    "bytes": 4553988,
+    "rewritten_references": 23,
     "imports_and_forwarders": [
       "ADVAPI32.dll",
       "api-ms-win-core-path-l1-1-0.dll",
       "AVRT.dll",
       "dwmapi.dll",
+      "fbd51.dll",
       "fbdass-9.dll",
       "fbdb1.dll",
       "fbdbluray-4.dll",
@@ -1337,8 +1338,8 @@
       "fbdpango-1.0-0.dll",
       "fbdpangocairo-1.0-0.dll",
       "fbdxml2-16.dll",
-      "KERNEL32.dll",
       "kernel32.dll",
+      "KERNEL32.dll",
       "msvcrt.dll",
       "ntdll.dll",
       "USERENV.dll",
@@ -1845,6 +1846,18 @@
       "KERNEL32.dll",
       "msvcrt.dll",
       "WS2_32.dll"
+    ]
+  },
+  {
+    "name": "fbd51.dll",
+    "source_name": "lua51.dll",
+    "source_sha256": "b8d327510b35553b949313b44a6775f8916a0b073e6214e36095a15806ca81fb",
+    "sha256": "3818953cecd29dddc698d27c48f7a10f2dab375fe5bf14bf1b6ffe21c68f5aea",
+    "bytes": 611189,
+    "rewritten_references": 1,
+    "imports_and_forwarders": [
+      "KERNEL32.dll",
+      "msvcrt.dll"
     ]
   },
   {

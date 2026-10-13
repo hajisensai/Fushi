@@ -6,9 +6,9 @@ including upstream HDMV/BD-J navigation added on 2026-08-25. The previous
 2026-08-13 binary had neither `discnav` nor `disc-menu`; updating Flutter alone
 could not enable original menus.
 
-Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1.7z` (45,060,252 bytes).
-SHA-256: `97316a1f4b0276f8255dccbf404e50dfe125998309159c00452c80b9d697a0ac`.
-The `fushi-discnav1-hwcrop1` suffix identifies this patched build; it is not an
+Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1.7z` (45,377,269 bytes).
+SHA-256: `446b883883ebccf207b09076dc2fc7deaa5538a3ecd693a230eb058ca972b2d8`.
+The `fushi-discnav1-hwcrop1-lua1` suffix identifies this patched build; it is not an
 unmodified zhongfly release. Its DLL and dependency manifests are also tracked
 beside this document for review without unpacking the binary.
 
@@ -64,10 +64,14 @@ The runtime uses MSYS2 FFmpeg 9.0.1, libbluray 1.5.0 and libplacebo 7.360.1.
 Its `msys2-packages.json` records the exact dependency package versions.
 `package_libmpv.py` follows PE imports recursively, fails on unresolved imports,
 includes package licenses and records each DLL's size and SHA-256. This closure
-includes the TrueHD decoder. Lua/JavaScript player scripts are disabled; Fushi's
-Flutter controls and C client/render APIs do not depend on them.
+includes the TrueHD decoder. Lua player scripts are built in with `-Dlua=luajit`
+(MSYS2 LuaJIT, packaged as the private `fbd51.dll`). The earlier `discnav1`
+builds used `-Dlua=disabled`, which silently broke user Lua scripts such as
+subtitle-end pause (BUG-3325); the `lua1` suffix marks the rebuild. JavaScript
+scripts remain disabled. Fushi's Flutter controls and C client/render APIs do
+not depend on either.
 
-The packager requires Python's `pefile` module. It gives all 121 non-system
+The packager requires Python's `pefile` module. It gives all 122 non-system
 dependencies fixed, same-length `fbd` module names, preserving the public
 `libmpv-2.dll` entry point. Normal imports, delay imports, export forwarders and
 literal ANSI/UTF-16 dynamic-library names are rewritten without shifting PE
@@ -93,7 +97,9 @@ private JRE, hashes, source and license details.
 ## Verification
 
 * `probe_libmpv.py` probes the loaded binary's options, command signatures,
-  properties, Blu-ray protocol, TrueHD decoder and render API.
+  properties, Blu-ray protocol, TrueHD decoder and render API, and runs a real
+  Lua script through `load-script` (it fails unless the script's own log line
+  arrives; `mpv-configuration` or the command's return code alone is no proof).
 * `test_probe_libmpv.py` checks dependency cycles/missing imports and, with
   `FUSHI_MPV_LIBRARY`, actual ABI and error propagation.
 * `verify_menu_render.py` uses the shipped ANGLE and libmpv OpenGL render API

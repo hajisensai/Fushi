@@ -14,7 +14,8 @@
 //   ③ 负向：Lua 开关关 → `track-list` 里没有 title=fushi-lua-subtitle-mirror 的轨。
 //
 // **随包 libmpv 没编 Lua 时**（`mpv-configuration` 含 `-Dlua=disabled`；2026-10-13 实测
-// Windows 随包 `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1` 就是这样），
+// Windows 随包 `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1` 就是这样，
+// `-lua1` 归档起改为 `-Dlua=luajit`，BUG-3325），
 // `load-script` 静默成功但脚本不跑：此时测试改由 Dart 侧照搬脚本逻辑（只读 mpv 的
 // `sub-end` / `time-pos` / `sub-text` 属性 → `pause`），验证的仍是镜像轨让 mpv
 // 属性层看得到字幕这一修复，但**不能**证明用户的 Lua 脚本能跑——日志里有 WARNING。
@@ -56,8 +57,9 @@ import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
 const String _kTestRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
-const String _kFfmpeg =
-    'D:/ffmpeg/ffmpeg-2025-06-11-git-f019dd69f0-full_build/bin/ffmpeg.exe';
+// 素材生成用的 ffmpeg：`FUSHI_FFMPEG` 显式指定，否则走 PATH（不写死某台机器的
+// 绝对路径——旧值在别的机器上不存在，测试在造素材这一步就 ProcessException）。
+final String _kFfmpeg = Platform.environment['FUSHI_FFMPEG'] ?? 'ffmpeg';
 
 // 第一句 1.5s–3.5s；第二句远在后面，保证暂停判定只看第一句。
 const int _kCue1StartMs = 1500;
@@ -77,12 +79,19 @@ const String _kSrt =
     '\n';
 
 /// 典型「字幕结束自动暂停」脚本（无按键绑定）。记录写到 [logPath]。
+///
+/// `sub-end` 变成 nil（句子消失）时**保留**上一句的句尾：25 fps 素材一帧 40 ms，
+/// 比 30 ms 的提前窗口宽；句尾正好落在帧边界时（调轴 +500 ms 后第一句尾 = 4.000 s），
+/// 3.960 s 那帧还没进窗口，4.000 s 那帧句子已消失、`sub-end` 已是 nil——丢掉句尾
+/// 就会整句漏停（2026-10-13 随包 libmpv 编入 Lua 后真跑出来的）。同理，暂停记录里的
+/// 句子用最后一次非空的 `sub-text`，不在暂停那一刻现读（那帧句子可能已消失）。
 String _autoPauseScript(String logPath) {
   final String path = logPath.replaceAll(r'\', '/');
   return '''
 local out = "$path"
 local sub_end = nil
 local paused_for = nil
+local sub_text = ""
 local function log(s)
   local f = io.open(out, "a")
   if f then f:write(s .. "\\n"); f:close() end
@@ -90,11 +99,16 @@ local function log(s)
 end
 log("LOADED")
 mp.observe_property("sub-end", "number", function(_, v)
-  sub_end = v
-  if v then log(string.format("SUBEND %.3f", v)) end
+  if v then
+    sub_end = v
+    log(string.format("SUBEND %.3f", v))
+  end
 end)
 mp.observe_property("sub-text", "string", function(_, v)
-  if v and v ~= "" then log("SUBTEXT " .. v) end
+  if v and v ~= "" then
+    sub_text = v
+    log("SUBTEXT " .. v)
+  end
 end)
 mp.add_periodic_timer(0.01, function()
   if not sub_end or paused_for == sub_end then return end
@@ -102,8 +116,7 @@ mp.add_periodic_timer(0.01, function()
   if pos and pos >= sub_end - 0.03 then
     paused_for = sub_end
     mp.set_property_bool("pause", true)
-    log(string.format("PAUSE pos=%.3f end=%.3f text=%s", pos, sub_end,
-      mp.get_property("sub-text") or ""))
+    log(string.format("PAUSE pos=%.3f end=%.3f text=%s", pos, sub_end, sub_text))
   end
 end)
 ''';

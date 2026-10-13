@@ -66,6 +66,9 @@ class NativeAbiTests(unittest.TestCase):
         for field in ("disc_menu_active_property", "disc_navigation_state_json_property",
                       "bluray_protocol", "truehd_decoder", "render_api"):
             self.assertTrue(report[field], field)
+        # BUG-3325: Lua player scripts must actually execute, not just load.
+        self.assertIn("-Dlua=luajit", report["configuration"])
+        self.assertTrue(report["lua_script"]["message"], report["lua_script"])
 
     def test_unavailable_state_and_invalid_navigation_are_not_success(self):
         code = """
