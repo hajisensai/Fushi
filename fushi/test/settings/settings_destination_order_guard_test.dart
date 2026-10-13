@@ -28,10 +28,10 @@ void main() {
         'buildMediaTrackingDestination()',
         'buildLookupDestination()',
         'buildCardCreationDestination()',
+        // 「模型」紧随制卡：LLM / OCR / 语音模型服务于查词与制卡（2026-10-13）。
+        'buildModelsDestination()',
         'buildDownloadsDestination()',
         'buildServicesDestination()',
-        // AI 提供商配置紧随在线服务：同属「连接」大组、同一个 services 模块开关。
-        'buildAiDestination()',
         'buildProfilesDestination()',
         'buildSyncBackupDestination()',
         'buildInterconnectDestination()',

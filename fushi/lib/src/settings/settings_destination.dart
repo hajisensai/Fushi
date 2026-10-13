@@ -16,6 +16,11 @@ enum SettingsDestinationId {
   manga,
   lookup,
   cardCreation,
+  // 「模型」一级分类（2026-10-13 用户拍板）：LLM / OCR / 语音转录 / 语音合成 / 模型
+  // 文件的唯一的家。此前 OCR 寄生在漫画、模型文件在存储、LLM（原「AI」）在连接组，
+  // 视频图形字幕却和漫画共用同一份 OCR 配置，用户找不到。原 `ai` 分类降为本页的
+  // 「LLM」子页，枚举值保留（模块门控与入口可见性判据仍按它问）。
+  models,
   video,
   mediaTracking,
   // 「下载」一级分类：torrent / qBittorrent 后端配置从下载页齿轮抬进设置主页

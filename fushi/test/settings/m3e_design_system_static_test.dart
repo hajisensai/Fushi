@@ -1110,6 +1110,9 @@ class AnotherPopupPart {
       'lib/src/media/manga/ocr/system_ocr_manga_service.dart':
           'Writes the MokuroBlock.fontSize data field for device-OCR-produced '
           'manga.json blocks; pure data layer, no UI typography.',
+      'lib/src/media/video/graphic_subtitle_ocr.dart':
+          'Writes the MokuroBlock.fontSize data field (OCR line height) for '
+          'graphic-subtitle OCR blocks; OCR geometry, no UI typography.',
       'lib/src/creator/fields/image_field.dart':
           'Anki image-field renderer uses OCR/image coordinate typography.',
       // BUG-1425：查词源文本条的字号是**跨边界对齐常量**，不是本地 MD3 排版决定：
@@ -1309,6 +1312,7 @@ class AnotherPopupPart {
       'lib/src/media/manga/ocr/system_ocr_manga_service.dart': <String>{
         'fontSize:',
       },
+      'lib/src/media/video/graphic_subtitle_ocr.dart': <String>{'fontSize:'},
       'lib/src/media/video/subtitle_waveform_align_panel.dart': <String>{
         'BorderRadius.circular(',
         'surfaceContainerHighest',
@@ -2375,7 +2379,10 @@ class AnotherPopupPart {
     // 用 tokens.spacing 凑 padding / 间距，而是取顶栏共享命中盒
     // [dictionaryPopupTopActionConstraints]（与左右两簇同一个来源），间距交给
     // [DictionaryPopupToolGroup]。守卫意图不变：不许手写魔数间距。
-    expect(sentenceActionBar, contains('dictionaryPopupTopActionConstraints()'));
+    expect(
+      sentenceActionBar,
+      contains('dictionaryPopupTopActionConstraints()'),
+    );
     expect(sentenceActionBar, contains('DictionaryPopupToolGroup('));
     expect(sentenceActionBar, isNot(contains('const SizedBox(width: 8)')));
   });

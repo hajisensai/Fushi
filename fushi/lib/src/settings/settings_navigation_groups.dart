@@ -40,7 +40,8 @@ SettingsNavigationGroupId settingsNavigationGroupFor(
   SettingsDestinationId.game ||
   SettingsDestinationId.mediaTracking => SettingsNavigationGroupId.content,
   SettingsDestinationId.lookup ||
-  SettingsDestinationId.cardCreation => SettingsNavigationGroupId.learning,
+  SettingsDestinationId.cardCreation ||
+  SettingsDestinationId.models => SettingsNavigationGroupId.learning,
   SettingsDestinationId.downloads ||
   SettingsDestinationId.services ||
   SettingsDestinationId.ai => SettingsNavigationGroupId.connections,

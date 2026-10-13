@@ -2,10 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/asr_host/asr_host.dart';
-import 'package:fushi/src/media/audiobook/asr_models_settings_section.dart';
-import 'package:fushi/src/media/manga/manga_ocr_models_storage_section.dart';
-import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_audio/fushi_audio.dart' show SrtBookRepository;
 import 'package:fushi_core/fushi_core.dart';
@@ -24,7 +20,8 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
 import 'package:fushi/utils.dart';
 
 /// 「存储」一级设置分类：数据存储位置（数据根在哪）+ 磁盘占用总览（每个类目
-/// 都可展开明细，书/词典可单条删除）+ 随包组件展示。
+/// 都可展开明细，书/词典可单条删除）+ 随包组件展示。模型的选择与下载在
+/// 「设置 › 模型」（2026-10-13 从这里迁出）。
 ///
 /// 「数据存储位置」回答「数据放哪」，模型与组件管理全局资源，与下面「占了多少」放在
 /// 一起才成一页；item id 仍是 'sync.data_storage_location'，构建函数留在
@@ -39,33 +36,7 @@ SettingsDestination buildStorageDestination() {
     title: t.settings_destination_storage,
     summary: t.settings_destination_storage_summary,
     icon: FushiIcons.sdStorage,
-    sections: <SettingsSection>[
-      buildDataStorageLocationSection(),
-      SettingsSection(
-        id: 'storage.section.models_components',
-        title: t.storage_models_components,
-        visible: (_) => isAsrSupported || _isMangaOcrLocalSupported,
-        items: <SettingsItem>[
-          SettingsNavigationItem(
-            // Preserve the existing search anchor while changing its owner.
-            id: 'listening.asr_models',
-            title: t.asr_models_section,
-            subtitle: t.asr_models_section_summary,
-            icon: FushiIcons.voice,
-            visible: (_) => isAsrSupported,
-            child: _buildAsrModelsDestination,
-          ),
-          SettingsNavigationItem(
-            id: 'storage.ocr_models',
-            title: t.manga_ocr_local_model,
-            subtitle: t.storage_ocr_models_hint,
-            icon: FushiIcons.ocr,
-            visible: (_) => _isMangaOcrLocalSupported,
-            child: _buildMangaOcrModelsDestination,
-          ),
-        ],
-      ),
-    ],
+    sections: <SettingsSection>[buildDataStorageLocationSection()],
     body: (SettingsContext c) => StorageUsageView(
       service: StorageUsageService(),
       booksProvider: () async {
@@ -221,38 +192,6 @@ SettingsDestination buildStorageDestination() {
         subtitle: t.storage_bundled_hint,
       ),
     ],
-  );
-}
-
-/// Global model resources remain reachable even when listening is disabled.
-SettingsDestination _buildAsrModelsDestination() {
-  return SettingsDestination(
-    id: SettingsDestinationId.storage,
-    visible: (_) => isAsrSupported,
-    title: t.asr_models_section,
-    icon: FushiIcons.voice,
-    sections: const <SettingsSection>[],
-    body: (SettingsContext _) => AsrModelsSettingsSection(
-      service: createAsrTranscriptionService(),
-    ),
-  );
-}
-
-/// 本机能不能跑本地 ONNX OCR（ORT native 可用性，BUG-1780）。
-bool get _isMangaOcrLocalSupported =>
-    createMangaOcrService().isSupportedPlatform;
-
-/// 每个本机 OCR 模型的下载 / 删除（漫画 OCR 设置里只管「用哪个」）。
-SettingsDestination _buildMangaOcrModelsDestination() {
-  return SettingsDestination(
-    id: SettingsDestinationId.storage,
-    visible: (_) => _isMangaOcrLocalSupported,
-    title: t.manga_ocr_local_model,
-    icon: FushiIcons.ocr,
-    sections: const <SettingsSection>[],
-    body: (SettingsContext _) => MangaOcrModelsStorageSection(
-      serviceFor: (model) => createMangaOcrService(localModel: model),
-    ),
   );
 }
 
