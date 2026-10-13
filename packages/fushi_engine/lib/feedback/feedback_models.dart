@@ -72,7 +72,7 @@ enum FeedbackStatus {
   const FeedbackStatus(this.wire);
   final String wire;
 
-  /// 已结案：客户端不再主动刷新它的进度。
+  /// 已结案（反馈人可以「问题没解决，重新提交」）。
   bool get isClosed => this != open && this != inProgress;
 
   static FeedbackStatus fromWire(Object? raw) => FeedbackStatus.values
@@ -97,6 +97,7 @@ class FeedbackSummary {
     this.parentId,
     this.aiSummary,
     this.hasDevNote = false,
+    this.fix,
   });
 
   factory FeedbackSummary.fromJson(FeedbackJson j) => FeedbackSummary(
@@ -117,6 +118,7 @@ class FeedbackSummary {
     parentId: j['parentId'] as String?,
     aiSummary: _nonEmpty(j['aiSummary']),
     hasDevNote: j['hasDevNote'] == true || _nonEmpty(j['devNote']) != null,
+    fix: FeedbackFix.tryParse(j['fix']),
   );
 
   final String id;
@@ -149,6 +151,128 @@ class FeedbackSummary {
 
   /// 有开发者批改（只有开发者接口给；反馈人接口恒 false）。
   final bool hasDevNote;
+
+  /// 修复 commit 与各通道 / 平台的发布进度（两种接口都给）；未标记修复为 null。
+  final FeedbackFix? fix;
+}
+
+/// 修复要不要新 App 才生效。
+enum FeedbackFixScope {
+  /// 要装上包含修复 commit 的新 App。
+  app('app'),
+
+  /// 不需要更新 App（例如只改了服务端），标记即生效。
+  none('none');
+
+  const FeedbackFixScope(this.wire);
+  final String wire;
+
+  /// 不认识的值按 [app] 处理：宁可让用户去更新，也不谎称「无需更新」。
+  static FeedbackFixScope fromWire(Object? raw) =>
+      raw == none.wire ? none : app;
+}
+
+/// 某个通道 / 平台第一个包含修复的构建。
+class FeedbackRelease {
+  const FeedbackRelease({required this.version, required this.at});
+
+  /// 版本串缺失 / 不是字符串的条目返回 null（没有版本号就没法和本机比较）。
+  static FeedbackRelease? tryParse(Object? raw) {
+    if (raw is! Map) return null;
+    final String? version = _nonEmpty(raw['version']);
+    if (version == null) return null;
+    final Object? at = raw['at'];
+    return FeedbackRelease(
+      version: version.trim(),
+      at: at is num ? at.toInt() : 0,
+    );
+  }
+
+  /// 构建的 build-name（`2.3.0-debug.12345` / `2.3.0-beta.12001` / `2.3.0`）。
+  final String version;
+
+  /// CI 回填的时刻（毫秒）；缺字段为 0。
+  final int at;
+
+  FeedbackJson toJson() => <String, dynamic>{'version': version, 'at': at};
+}
+
+/// 反馈挂着的修复（线格式见契约：`{sha, scope, at, releases}`）。
+class FeedbackFix {
+  const FeedbackFix({
+    required this.sha,
+    required this.scope,
+    required this.at,
+    this.releases = const <String, Map<String, FeedbackRelease>>{},
+  });
+
+  /// 不是对象 → null。其余字段缺失 / 类型不对一律取缺省，不认识的通道 / 平台原样保留
+  /// （由使用方按需忽略），坏的发布条目丢掉。
+  static FeedbackFix? tryParse(Object? raw) {
+    if (raw is! Map) return null;
+    final Object? at = raw['at'];
+    final Object? rawReleases = raw['releases'];
+    final Map<String, Map<String, FeedbackRelease>> releases =
+        <String, Map<String, FeedbackRelease>>{};
+    if (rawReleases is Map) {
+      for (final MapEntry<Object?, Object?> ch in rawReleases.entries) {
+        final Object? channel = ch.key;
+        final Object? platforms = ch.value;
+        if (channel is! String || platforms is! Map) continue;
+        final Map<String, FeedbackRelease> byPlatform =
+            <String, FeedbackRelease>{
+              for (final MapEntry<Object?, Object?> pl in platforms.entries)
+                if (pl.key is String)
+                  if (FeedbackRelease.tryParse(pl.value)
+                      case final FeedbackRelease r)
+                    pl.key! as String: r,
+            };
+        if (byPlatform.isNotEmpty) {
+          releases[channel] = Map<String, FeedbackRelease>.unmodifiable(
+            byPlatform,
+          );
+        }
+      }
+    }
+    return FeedbackFix(
+      sha: raw['sha'] is String ? raw['sha'] as String : '',
+      scope: FeedbackFixScope.fromWire(raw['scope']),
+      at: at is num ? at.toInt() : 0,
+      releases: Map<String, Map<String, FeedbackRelease>>.unmodifiable(
+        releases,
+      ),
+    );
+  }
+
+  /// 修复 commit（40 位小写 hex）。
+  final String sha;
+  final FeedbackFixScope scope;
+
+  /// 标记修复的时刻（毫秒）；缺字段为 0。
+  final int at;
+
+  /// channel（`debug` / `beta` / `stable`）→ platform → 第一个包含修复的构建。
+  final Map<String, Map<String, FeedbackRelease>> releases;
+
+  /// 短 sha（显示用）。
+  String get shortSha => sha.length > 7 ? sha.substring(0, 7) : sha;
+
+  FeedbackRelease? release(String channel, String platform) =>
+      releases[channel]?[platform];
+
+  FeedbackJson toJson() => <String, dynamic>{
+    'sha': sha,
+    'scope': scope.wire,
+    'at': at,
+    'releases': <String, dynamic>{
+      for (final MapEntry<String, Map<String, FeedbackRelease>> ch
+          in releases.entries)
+        ch.key: <String, dynamic>{
+          for (final MapEntry<String, FeedbackRelease> pl in ch.value.entries)
+            pl.key: pl.value.toJson(),
+        },
+    },
+  };
 }
 
 /// 风险标记的种类（[FeedbackSummary.flags] 的解析结果）。
@@ -337,6 +461,9 @@ class FeedbackDetail {
 
   String get id => summary.id;
   FeedbackStatus get status => summary.status;
+
+  /// 修复与发布进度（解析在 [FeedbackSummary.fix]，详情与列表同一份）。
+  FeedbackFix? get fix => summary.fix;
 }
 
 /// 提交成功的回执：[ticket] 只在这一次返回，必须存下来才能再看进度。

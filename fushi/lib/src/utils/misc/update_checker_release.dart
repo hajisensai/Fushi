@@ -2059,8 +2059,7 @@ int _compareBaseVersion(String remote, String local) {
 ///
 /// debug 预发布形如 `1.0.1-debug.6421`、beta 形如 `1.0.1-beta.3`，否则视为 stable。
 /// 与 [_versionBelongsToChannel] / [releaseMatchesUpdateChannel] 的通道判定同一套 pattern，
-/// 不新造判据。
-@visibleForTesting
+/// 不新造判据。反馈修复进度（`feedback_fix_progress.dart`）也用它判本机构建属于哪个通道。
 UpdateChannel channelForUpdateVersion(String version) {
   if (_versionBelongsToChannel(version, UpdateChannel.debug)) {
     return UpdateChannel.debug;

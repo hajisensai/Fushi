@@ -98,6 +98,33 @@ describe('查询计划：读接口不全表扫描', () => {
     expect(bad).toEqual([]);
   });
 
+  it('反馈 CI：pending 只走修复索引，released 按主键回填', async () => {
+    const env = makeEnv({ autoSnapshot: false, FEEDBACK_CI_TOKEN: 't0ken' });
+    const ci = { Authorization: 'Bearer t0ken' };
+    const f = await call(env, 'POST', '/v1/feedback', { body: { category: 'bug', title: 't', body: 'b' }, headers: { 'CF-Connecting-IP': '198.51.100.8' }, now: NOW });
+    expect((await call(env, 'POST', '/v1/ci/feedback/fixed', { body: { sha: 'a'.repeat(40), ids: [f.data.id] }, headers: ci, now: NOW })).status).toBe(200);
+    const seen = recordSql(env);
+    expect((await call(env, 'GET', '/v1/ci/feedback/pending?channel=debug&platform=android', { headers: ci, now: NOW })).status).toBe(200);
+    const released = { channel: 'debug', platform: 'android', version: '1.0.0', ids: [{ id: f.data.id, sha: 'a'.repeat(40) }] };
+    expect((await call(env, 'POST', '/v1/ci/feedback/released', { body: released, headers: ci, now: NOW })).status).toBe(200);
+    const bad = [];
+    let checked = 0;
+    for (const { sql, args } of seen) {
+      if (args.length === 0) continue;
+      // UPDATE 也要过同一道门：EXPLAIN QUERY PLAN 对 UPDATE 同样给出扫描方式。
+      if (/^\s*UPDATE feedback SET fixed_in/i.test(sql)) {
+        const plan = env.DB.raw.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...args).map((r) => r.detail);
+        checked += 1;
+        for (const d of plan) if (/^SCAN feedback/.test(d) || /TEMP B-TREE/.test(d)) bad.push(`${d}\n    in: ${sql.replace(/\s+/g, ' ').slice(0, 160)}`);
+        continue;
+      }
+      if (/fix_sha IS NOT NULL AND fix_scope = 'app'/.test(sql)) checked += 1;
+      for (const line of badPlanLines(env.DB.raw, sql, args)) bad.push(`${line}\n    in: ${sql.replace(/\s+/g, ' ').slice(0, 160)}`);
+    }
+    expect(bad).toEqual([]);
+    expect(checked).toBe(2);
+  });
+
   it('反馈：回执读取 / 批量进度 / 处理台按状态列表走索引', async () => {
     const env = makeEnv({ autoSnapshot: false });
     const ip = { 'CF-Connecting-IP': '198.51.100.7' };

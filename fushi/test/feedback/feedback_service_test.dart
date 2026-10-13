@@ -214,6 +214,65 @@ void main() {
     expect(s.tickets.map((FeedbackTicket t) => t.id), <String>['aaaaaaaaaa']);
   });
 
+  test('已结案的反馈照样刷新：修复的发布进度跟着更新并落盘；撤销标记后清掉', () async {
+    // 契约：resolved 但带 app 修复、本平台正式版还没发布的反馈要继续刷新进度。
+    // 刷新是「打开反馈中心时拉全部本机记录」，不能因为已结案就跳过。
+    await FeedbackTicketStore(root).write(<FeedbackTicket>[
+      const FeedbackTicket(
+        id: 'aaaaaaaaaa',
+        ticket: 'ta',
+        title: 'a',
+        category: FeedbackCategory.bug,
+        createdAt: 1000,
+        status: FeedbackStatus.resolved,
+        updatedAt: 1000,
+        seenAt: 1000,
+      ),
+    ]);
+    Map<String, dynamic>? fix = <String, dynamic>{
+      'sha': '0123456789abcdef0123456789abcdef01234567',
+      'scope': 'app',
+      'at': 1500,
+      'releases': <String, dynamic>{
+        'debug': <String, dynamic>{
+          'android': <String, dynamic>{
+            'version': '2.3.0-debug.150',
+            'at': 1600,
+          },
+        },
+      },
+    };
+    handler = (http.Request r) async => _json(<String, dynamic>{
+      'items': <Object>[
+        <String, dynamic>{
+          ..._summary('aaaaaaaaaa', status: 'resolved', updatedAt: 1600),
+          'fix': fix,
+        },
+      ],
+    });
+    final FeedbackService s = service();
+    await s.refresh();
+    expect(
+      requests.single.body,
+      contains('aaaaaaaaaa'),
+      reason: '已结案的反馈也要带进批量查询',
+    );
+    final FeedbackFix got = s.byId('aaaaaaaaaa')!.fix!;
+    expect(got.release('debug', 'android')!.version, '2.3.0-debug.150');
+    // 落盘：重开服务也读得到（列表离线也能显示「已修复」）。
+    final FeedbackTicket stored = (await FeedbackTicketStore(
+      root,
+    ).read()).single;
+    expect(stored.fix!.sha, '0123456789abcdef0123456789abcdef01234567');
+    expect(stored.fix!.release('debug', 'android')!.at, 1600);
+
+    // 开发者撤销了修复标记：以服务端为准清掉。
+    fix = null;
+    await s.refresh();
+    expect(s.byId('aaaaaaaaaa')!.fix, isNull);
+    expect((await FeedbackTicketStore(root).read()).single.fix, isNull);
+  });
+
   test('详情 404：标 missing 并把异常抛给页面', () async {
     await FeedbackTicketStore(root).write(<FeedbackTicket>[
       const FeedbackTicket(

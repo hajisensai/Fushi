@@ -9,18 +9,21 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/feedback/feedback_entry_gate.dart';
+import 'package:fushi/src/feedback/feedback_fix_progress.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
 import 'package:fushi/src/feedback/feedback_video.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.dart';
 import 'package:fushi/src/utils/misc/clipboard_image.dart';
+import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:image/image.dart' as img;
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -184,6 +187,165 @@ class FeedbackStatusBadge extends StatelessWidget {
           feedbackStatusLabel(status),
           style: tokens.type.metadata.copyWith(color: fg),
         ),
+      ),
+    );
+  }
+}
+
+/// 列表上「已修复」的短标签（反馈中心每条反馈的副标题）。
+String feedbackFixLabel(FeedbackFixProgress progress) => switch (progress) {
+  FeedbackFixNoUpdateNeeded() => t.feedback_fix_no_update_needed,
+  FeedbackFixInstalled() => t.feedback_fix_installed_label,
+  FeedbackFixUpdateAvailable(:final String version) => t.feedback_fix_released(
+    version: version,
+  ),
+  FeedbackFixFasterChannelOnly() ||
+  FeedbackFixPending() => t.feedback_fix_label,
+};
+
+/// 反馈人详情页状态区的修复进度：一句话 + 下一步（「检查更新」/「切换到 X 通道」）。
+/// 通道 / 平台 / 本机版本取自 [feedbackFixEnvironmentProvider]。
+class FeedbackFixNotice extends ConsumerStatefulWidget {
+  const FeedbackFixNotice(this.fix, {super.key});
+
+  final FeedbackFix fix;
+
+  @override
+  ConsumerState<FeedbackFixNotice> createState() => _FeedbackFixNoticeState();
+}
+
+class _FeedbackFixNoticeState extends ConsumerState<FeedbackFixNotice> {
+  bool _switching = false;
+
+  /// 切到更快的通道：先说明不稳定、用户确认后才写入；写完原地刷新进度
+  /// （新通道已发布 → 变成「已在 X 修复」+「检查更新」）。
+  Future<void> _switch(FeedbackFixEnvironment env, UpdateChannel to) async {
+    final bool debug = to == UpdateChannel.debug;
+    final bool ok = await showFushiConfirmDialog(
+      context: context,
+      title: debug
+          ? t.update_debug_channel
+          : t.feedback_fix_channel_beta_switch,
+      message: debug
+          ? t.update_debug_channel_warning
+          : t.feedback_fix_channel_beta_switch_confirm,
+      confirmLabel: debug
+          ? t.feedback_fix_channel_debug_switch
+          : t.feedback_fix_channel_beta_switch,
+      icon: FushiIcons.warning,
+    );
+    if (!ok || !mounted) return;
+    setState(() => _switching = true);
+    try {
+      await env.switchChannel(to);
+    } finally {
+      if (mounted) setState(() => _switching = false);
+    }
+  }
+
+  Widget _action({
+    required String key,
+    required String label,
+    required VoidCallback? onPressed,
+  }) => FushiPressScale(
+    enabled: onPressed != null,
+    child: FushiFilledButton.tonal(
+      key: ValueKey<String>(key),
+      onPressed: onPressed,
+      child: Text(label),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final FeedbackFixEnvironment env = ref.watch(
+      feedbackFixEnvironmentProvider,
+    );
+    final FeedbackFixProgress progress = env.progress(widget.fix);
+    final (
+      FushiNoticeSeverity severity,
+      IconData icon,
+      String? title,
+      String message,
+      List<Widget> actions,
+    ) = switch (progress) {
+      FeedbackFixNoUpdateNeeded() => (
+        FushiNoticeSeverity.success,
+        FushiIcons.verified,
+        null,
+        t.feedback_fix_no_update_needed,
+        const <Widget>[],
+      ),
+      FeedbackFixInstalled() => (
+        FushiNoticeSeverity.success,
+        FushiIcons.verified,
+        null,
+        t.feedback_fix_installed,
+        const <Widget>[],
+      ),
+      FeedbackFixUpdateAvailable(:final String version) => (
+        FushiNoticeSeverity.info,
+        FushiIcons.check,
+        null,
+        t.feedback_fix_released(version: version),
+        <Widget>[
+          _action(
+            key: 'feedback-fix-check-update',
+            label: t.settings_check_update_now,
+            onPressed: () => unawaited(env.checkForUpdate(context)),
+          ),
+        ],
+      ),
+      FeedbackFixFasterChannelOnly(
+        :final UpdateChannel current,
+        :final UpdateChannel channel,
+        :final String version,
+      ) =>
+        (
+          FushiNoticeSeverity.info,
+          FushiIcons.check,
+          current == UpdateChannel.beta
+              ? t.feedback_fix_next_beta
+              : t.feedback_fix_next_stable,
+          channel == UpdateChannel.debug
+              ? t.feedback_fix_faster_debug_available(version: version)
+              : t.feedback_fix_faster_beta_available(version: version),
+          <Widget>[
+            if (env.canSwitchChannel)
+              _action(
+                key: 'feedback-fix-switch-channel',
+                label: channel == UpdateChannel.debug
+                    ? t.feedback_fix_channel_debug_switch
+                    : t.feedback_fix_channel_beta_switch,
+                onPressed: _switching
+                    ? null
+                    : () => unawaited(_switch(env, channel)),
+              ),
+          ],
+        ),
+      FeedbackFixPending(:final bool building, :final UpdateChannel channel) =>
+        (
+          FushiNoticeSeverity.info,
+          FushiIcons.schedule,
+          null,
+          building
+              ? t.feedback_fix_building
+              : channel == UpdateChannel.stable
+              ? t.feedback_fix_pending_stable
+              : t.feedback_fix_pending,
+          const <Widget>[],
+        ),
+    };
+    // 进度变化（例如切换通道后）淡入新文案，不是硬切。
+    return AnimatedSwitcher(
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      child: FushiInlineNotice(
+        key: ValueKey<String>('feedback-fix-${progress.runtimeType}'),
+        severity: severity,
+        icon: icon,
+        title: title,
+        message: message,
+        actions: actions,
       ),
     );
   }

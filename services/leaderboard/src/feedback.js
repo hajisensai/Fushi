@@ -21,6 +21,17 @@
 //   GET  /v1/dev/feedback/:id/attachments/:slot[?view=text|download=1]   日志可直接解压成文本；
 //                                             视频支持 Range（浏览器拖进度条），download=1 作为附件下载
 //   POST /v1/dev/feedback/:id                 {status?, reply?}
+//   POST /v1/dev/feedback/:id/notes           {aiSummary?, devNote?}
+//
+// CI（Authorization: Bearer <env.FEEDBACK_CI_TOKEN>；没配该 secret 时一律 404，token 不对 401）：
+//   POST /v1/ci/feedback/fixed                {sha, ids ≤ 50, scope: app|none} → {updated, unchanged, missing}
+//                                             写修复 commit、fixed_in 重置；open / in_progress → resolved；
+//                                             sha 与 scope 都没变的幂等跳过（进 unchanged，发布进度保留）
+//   GET  /v1/ci/feedback/pending?channel&platform   → {items:[{id, sha}]}：scope app、180 天内、该通道平台未回填
+//   POST /v1/ci/feedback/released             {channel, platform, version, ids:[{id, sha}] ≤ 500} → {updated}
+//                                             只记最早包含修复的版本（已有记录不覆盖）；当前 fix_sha ≠ 该条 sha
+//                                             （其间被重新标记修复）的静默跳过
+// 反馈人 / 开发者接口的摘要都带 `fix`（null 或 {sha, scope, at, releases}，见 fixView）。
 //
 // ticket 是提交时服务端生成、只返回这一次的随机串；库里只存 SHA-256。ticket 泄露 = 那一条反馈
 // 的进度可被看到 / 被追加回复，影响面只有这一条。附件只能在提交后 24 小时内补传，且每个槽位只收一次，
@@ -41,7 +52,7 @@
 // meta 分开；单条反馈追加说明总数有上限。
 
 import { HttpError, b64urlEncode, clampInt, hex, json, randomId, sha256, timingSafeEqual } from './util.js';
-import { deleteMedia, releaseMediaBytes, reserveMediaBytes, spend } from './budget.js';
+import { adjustSpend, deleteMedia, releaseMediaBytes, reserveMediaBytes, spend } from './budget.js';
 import { sniffImage } from './media.js';
 import { DAY, HOUR, hit } from './ratelimit.js';
 import {
@@ -107,7 +118,21 @@ export const FEEDBACK_LIMITS = {
   /** 「我的反馈」每页条数（默认 / 上限）。 */
   minePageDefault: 30,
   minePageMax: 50,
+  /** CI：一次标记修复最多几条（一个 PR / commit 引用的反馈）。 */
+  ciFixedIds: 50,
+  /** CI：一次回填发布最多几条；pending 一次最多返回几条。 */
+  ciReleasedIds: 500,
+  ciPendingMax: 500,
+  /** CI：标记修复超过这么久还没发布的不再回填（pending 不再列出）。 */
+  ciPendingWindowMs: 180 * 24 * HOUR,
 };
+
+/** 修复追踪（迁移 0007）的取值域；接口与 scripts/feedback.mjs 共用。 */
+export const FIX_SHA_RE = /^[0-9a-f]{40}$/;
+export const FIX_SCOPES = ['app', 'none'];
+export const RELEASE_CHANNELS = ['debug', 'beta', 'stable'];
+export const RELEASE_PLATFORMS = ['android', 'windows', 'macos', 'ios', 'linux'];
+export const RELEASE_VERSION_RE = /^[A-Za-z0-9.+-]{1,64}$/;
 
 const SLOT_RE = /^(log|s[0-2]|v0)$/;
 const VIDEO_SLOT = 'v0';
@@ -250,6 +275,32 @@ export async function feedbackForReporter(request, env, id, io, bytes, { mutatin
   return row;
 }
 
+/**
+ * 修复追踪的线格式：null（未标记修复）或 {sha, scope, at, releases}；releases =
+ * {"<channel>": {"<platform>": {version, at}}}，只出白名单里的通道 / 平台，坏 JSON 当空。
+ */
+export function fixView(row) {
+  if (!row.fix_sha) return null;
+  let parsed = {};
+  try {
+    parsed = JSON.parse(row.fixed_in || '{}');
+  } catch {
+    parsed = {};
+  }
+  const releases = {};
+  for (const ch of RELEASE_CHANNELS) {
+    const per = parsed && typeof parsed === 'object' ? parsed[ch] : null;
+    if (!per || typeof per !== 'object') continue;
+    for (const pf of RELEASE_PLATFORMS) {
+      const r = per[pf];
+      if (r && typeof r === 'object' && typeof r.version === 'string') {
+        (releases[ch] ||= {})[pf] = { version: r.version, at: typeof r.at === 'number' ? r.at : null };
+      }
+    }
+  }
+  return { sha: row.fix_sha, scope: row.fix_scope === 'none' ? 'none' : 'app', at: row.fix_at ?? null, releases };
+}
+
 function summary(row) {
   return {
     id: row.id,
@@ -261,6 +312,7 @@ function summary(row) {
     updatedAt: row.updated_at,
     devReplyAt: row.dev_reply_at ?? null,
     userReplyAt: row.user_reply_at ?? null,
+    fix: fixView(row),
   };
 }
 
@@ -737,6 +789,7 @@ export async function devList(env, { status, cursor, limit, q }) {
   const n = clampInt(limit, 1, 100, 30);
   const after = parseCursor(cursor);
   const cols = 'id, category, title, status, created_at, updated_at, dev_reply_at, user_reply_at, account_id, attachments, flags, parent_id, '
+    + 'fix_sha, fix_scope, fix_at, fixed_in, '
     // 列表只露一行预览：截 200 字，全文看详情（devView），省得一页 50 条整段下发。
     + 'substr(ai_summary, 1, 200) AS ai_summary, dev_note IS NOT NULL AS has_dev_note';
   const page = after
@@ -935,6 +988,145 @@ export async function purgeFeedbackVideos(env, now, limit = 20) {
   return rows.results.length;
 }
 
+// ---- CI：修复 → 打包 → 发布追踪（迁移 0007） ----
+
+/** 修复 commit：40 位 hex，统一存小写。 */
+export function normalizeFixSha(sha) {
+  const s = typeof sha === 'string' ? sha.trim().toLowerCase() : '';
+  if (!FIX_SHA_RE.test(s)) throw new HttpError(400, 'bad_sha');
+  return s;
+}
+
+export function normalizeFixScope(scope) {
+  if (scope === undefined || scope === null) return 'app';
+  if (!FIX_SCOPES.includes(scope)) throw new HttpError(400, 'bad_scope');
+  return scope;
+}
+
+/** ids：1..max 个合法反馈编号，去重保序；任一不合法整批 400。 */
+function normalizeIds(ids, max) {
+  if (!Array.isArray(ids) || ids.length === 0) throw new HttpError(400, 'bad_ids');
+  if (ids.length > max) throw new HttpError(400, 'too_many_ids');
+  for (const id of ids) if (typeof id !== 'string' || !FEEDBACK_ID_RE.test(id)) throw new HttpError(400, 'bad_id');
+  return [...new Set(ids)];
+}
+
+/** channel / platform 白名单 → json 路径 `$.<channel>.<platform>`（只由白名单拼出，不含用户字符）。 */
+function releasePath(channel, platform) {
+  if (!RELEASE_CHANNELS.includes(channel)) throw new HttpError(400, 'bad_channel');
+  if (!RELEASE_PLATFORMS.includes(platform)) throw new HttpError(400, 'bad_platform');
+  return `$.${channel}.${platform}`;
+}
+
+/**
+ * 单条「标记修复」的语句（参数 ?1 id、?2 sha、?3 scope、?4 now）。接口在 batch 里执行；
+ * scripts/feedback.mjs fixed 把参数内联成字面量后走 wrangler 执行——同一份 SQL，不写两套判据。
+ * 顺序有意：先按旧状态插时间线（只有 open / in_progress 才记 resolved 事件），再改行。
+ * 新的修复覆盖旧的：fix_* 全部重写，fixed_in 重置为 '{}'（旧 commit 的发布记录不适用于新 commit）。
+ * 幂等：sha 与 scope 都和现有记录相同时两条语句都不命中（main 同步 develop、重跑 workflow 会重复登记，
+ * 不幂等的话已回填的发布进度会被清空）——不改 fix_at / fixed_in、不插时间线、不刷 dev_reply_at / updated_at。
+ */
+const FIX_CHANGED = '(fix_sha IS NOT ?2 OR fix_scope IS NOT ?3)';
+export const MARK_FIXED_SQL = [
+  `INSERT INTO feedback_messages (feedback_id, author, account_id, body, status, created_at)
+   SELECT id, 'dev', NULL, '', 'resolved', ?4 FROM feedback
+   WHERE id = ?1 AND status IN ('open', 'in_progress') AND ${FIX_CHANGED}`,
+  `UPDATE feedback SET fix_sha = ?2, fix_scope = ?3, fix_at = ?4, fixed_in = '{}',
+     status = CASE WHEN status IN ('open', 'in_progress') THEN 'resolved' ELSE status END,
+     dev_reply_at = ?4, updated_at = ?4
+   WHERE id = ?1 AND ${FIX_CHANGED}`,
+];
+
+/** 单条标记修复的参数（校验与归一化的唯一口径；CLI 也走这里）。 */
+export function markFixedArgs(id, sha, scope, now) {
+  if (typeof id !== 'string' || !FEEDBACK_ID_RE.test(id)) throw new HttpError(400, 'bad_id');
+  return [id, normalizeFixSha(sha), normalizeFixScope(scope), Math.trunc(now)];
+}
+
+/** POST /v1/ci/feedback/fixed。 */
+export async function ciMarkFixed(env, body, now) {
+  if (!body || typeof body !== 'object') throw new HttpError(400, 'bad_json');
+  const sha = normalizeFixSha(body.sha);
+  const scope = normalizeFixScope(body.scope);
+  const ids = normalizeIds(body.ids, FEEDBACK_LIMITS.ciFixedIds);
+  // 每条：时间线一行 + 反馈一行 + 索引。
+  await spend(env, 'write_rows', ids.length * 4, now);
+  const stmts = ids.flatMap((id) => MARK_FIXED_SQL.map((sql) => env.DB.prepare(sql).bind(...markFixedArgs(id, sha, scope, now))));
+  // 同一个 batch（同一事务）里再读一次存在的编号：UPDATE 命中 0 行既可能是「不存在」也可能是「没变」。
+  stmts.push(env.DB.prepare('SELECT id FROM feedback WHERE id IN (SELECT value FROM json_each(?1))').bind(JSON.stringify(ids)));
+  const res = await env.DB.batch(stmts);
+  const exists = new Set(res.at(-1).results.map((r) => r.id));
+  const updated = [];
+  const unchanged = [];
+  const missing = [];
+  ids.forEach((id, i) => {
+    if (res[i * 2 + 1].meta.changes === 1) updated.push(id);
+    else if (exists.has(id)) unchanged.push(id);
+    else missing.push(id);
+  });
+  return { updated, unchanged, missing };
+}
+
+/** GET /v1/ci/feedback/pending：还没回填到该通道 / 平台的「需要新 App」修复。 */
+export async function ciPending(env, channel, platform, now) {
+  const path = releasePath(channel, platform);
+  const rows = await env.DB.prepare(
+    `SELECT id, fix_sha FROM feedback
+     WHERE fix_sha IS NOT NULL AND fix_scope = 'app' AND fix_at > ?1 AND json_extract(fixed_in, ?2) IS NULL
+     ORDER BY fix_at LIMIT ?3`,
+  ).bind(now - FEEDBACK_LIMITS.ciPendingWindowMs, path, FEEDBACK_LIMITS.ciPendingMax).all();
+  return { items: rows.results.map((r) => ({ id: r.id, sha: r.fix_sha })) };
+}
+
+/** released 的 ids：1..max 个 {id, sha}；任一不合法整批 400；sha 转小写；同一 (id, sha) 去重。 */
+function normalizeReleasedItems(items, max) {
+  if (!Array.isArray(items) || items.length === 0) throw new HttpError(400, 'bad_ids');
+  if (items.length > max) throw new HttpError(400, 'too_many_ids');
+  const out = new Map();
+  for (const it of items) {
+    if (!it || typeof it !== 'object' || typeof it.id !== 'string' || !FEEDBACK_ID_RE.test(it.id)) {
+      throw new HttpError(400, 'bad_id');
+    }
+    const sha = normalizeFixSha(it.sha);
+    out.set(`${it.id}:${sha}`, { id: it.id, sha });
+  }
+  return [...out.values()];
+}
+
+/**
+ * POST /v1/ci/feedback/released：只写尚未记录该通道 / 平台的行（保留最早包含修复的版本），
+ * 且该行当前的 fix_sha 必须等于 CI 判定过祖先关系的那个 sha——pending 与 released 之间被重新
+ * 标记修复（fixed_in 已重置）的行，旧 commit 的发布结果不能记到新 commit 上。不匹配的静默跳过。
+ */
+export async function ciMarkReleased(env, body, now) {
+  if (!body || typeof body !== 'object') throw new HttpError(400, 'bad_json');
+  const path = releasePath(body.channel, body.platform);
+  if (typeof body.version !== 'string' || !RELEASE_VERSION_RE.test(body.version)) throw new HttpError(400, 'bad_version');
+  const items = normalizeReleasedItems(body.ids, FEEDBACK_LIMITS.ciReleasedIds);
+  const estimate = items.length * 2;
+  await spend(env, 'write_rows', estimate, now);
+  const res = await env.DB.prepare(
+    `UPDATE feedback SET fixed_in = json_set(fixed_in, ?2, json_object('version', ?3, 'at', ?4)),
+       dev_reply_at = ?4, updated_at = ?4
+     WHERE id IN (SELECT json_extract(value, '$.id') FROM json_each(?1))
+       AND fix_sha IS NOT NULL AND json_extract(fixed_in, ?2) IS NULL
+       AND EXISTS (SELECT 1 FROM json_each(?1) j
+                   WHERE json_extract(j.value, '$.id') = feedback.id AND json_extract(j.value, '$.sha') = feedback.fix_sha)`,
+  ).bind(JSON.stringify(items), path, body.version, now).run();
+  const updated = res.meta.changes;
+  await adjustSpend(env, 'write_rows', updated * 2 - estimate, now);
+  return { updated };
+}
+
+/** CI 鉴权：没配 FEEDBACK_CI_TOKEN 时整组接口当不存在（404）；token 不对 401。 */
+function requireCi(request, env) {
+  const token = typeof env.FEEDBACK_CI_TOKEN === 'string' ? env.FEEDBACK_CI_TOKEN : '';
+  if (!token) throw new HttpError(404, 'not_found');
+  const auth = request.headers.get('Authorization') || '';
+  const given = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  if (!given || !timingSafeEqual(given, token)) throw new HttpError(401, 'unauthorized');
+}
+
 // ---- 路由（worker.js 在通用读 / 写分发之前调用） ----
 
 const ID = '([A-Za-z0-9_-]{8,16})';
@@ -950,10 +1142,13 @@ const RE = {
   devOne: new RegExp(`^/v1/dev/feedback/${ID}$`),
   devAttach: new RegExp(`^/v1/dev/feedback/${ID}/attachments/([a-z0-9]{1,4})$`),
   devNotes: new RegExp(`^/v1/dev/feedback/${ID}/notes$`),
+  ciFixed: /^\/v1\/ci\/feedback\/fixed$/,
+  ciPending: /^\/v1\/ci\/feedback\/pending$/,
+  ciReleased: /^\/v1\/ci\/feedback\/released$/,
 };
 
 export function isFeedbackPath(path) {
-  return path.startsWith('/v1/feedback') || path.startsWith('/v1/dev/');
+  return path.startsWith('/v1/feedback') || path.startsWith('/v1/dev/') || path.startsWith('/v1/ci/feedback');
 }
 
 /**
@@ -974,6 +1169,22 @@ export async function routeFeedback(request, env, url, now, io) {
   const ticket = request.headers.get('X-Fushi-Ticket') || '';
   const noStore = { 'Cache-Control': 'no-store' };
   let m;
+
+  // CI 接口：先验 token（没配 secret 时连路径是否存在都不暴露），再读请求体。
+  if (path.startsWith('/v1/ci/feedback')) {
+    requireCi(request, env);
+    if (method === 'POST' && RE.ciFixed.test(path)) {
+      return json(await ciMarkFixed(env, io.parse(await io.readBody(16 * 1024)), now), 200, noStore);
+    }
+    if (method === 'GET' && RE.ciPending.test(path)) {
+      const q = url.searchParams;
+      return json(await ciPending(env, q.get('channel'), q.get('platform'), now), 200, noStore);
+    }
+    if (method === 'POST' && RE.ciReleased.test(path)) {
+      return json(await ciMarkReleased(env, io.parse(await io.readBody(64 * 1024)), now), 200, noStore);
+    }
+    return null;
+  }
 
   if (method === 'POST' && RE.submit.test(path)) {
     const bytes = await io.readBody(16 * 1024);

@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/feedback/feedback_fix_progress.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
@@ -17,6 +18,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -225,7 +227,7 @@ class _FeedbackCenterPageState extends ConsumerState<FeedbackCenterPage> {
   }
 }
 
-class _TicketTile extends StatelessWidget {
+class _TicketTile extends ConsumerWidget {
   const _TicketTile({
     required this.ticket,
     required this.reopenedAs,
@@ -239,9 +241,16 @@ class _TicketTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
+    // 只有带修复的条目才需要本机通道 / 版本（没修复的不碰 AppModel）。
+    final FeedbackFix? fix = ticket.missing ? null : ticket.fix;
+    final String? fixLabel = fix == null
+        ? null
+        : feedbackFixLabel(
+            ref.watch(feedbackFixEnvironmentProvider).progress(fix),
+          );
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.gap),
       child: FushiCard(
@@ -266,6 +275,12 @@ class _TicketTile extends StatelessWidget {
                   t.feedback_from_other_device,
                   key: ValueKey<String>('feedback-ticket-account-${ticket.id}'),
                   style: tokens.type.metadata,
+                ),
+              if (fixLabel != null)
+                Text(
+                  fixLabel,
+                  key: ValueKey<String>('feedback-ticket-fix-${ticket.id}'),
+                  style: tokens.type.metadata.copyWith(color: colors.tertiary),
                 ),
               if (ticket.parentId != null)
                 Text(

@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/feedback/feedback_draft_store.dart';
+import 'package:fushi/src/feedback/feedback_fix_progress.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
@@ -19,6 +20,7 @@ import 'package:fushi/src/pages/implementations/feedback/feedback_compose_page.d
 import 'package:fushi/src/pages/implementations/feedback/feedback_detail_page.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_dev_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
@@ -124,6 +126,40 @@ class _Server {
 
   /// 非空时，处理台列表这一搜索词的请求回这个状态码。
   final Map<String, int> devListFailures = <String, int>{};
+
+  /// fixfixfix0 挂着的修复：调试版 android 已发布（详情 / 进度 / 处理台同一份）。
+  Map<String, dynamic> fix = <String, dynamic>{
+    'sha': '0123456789abcdef0123456789abcdef01234567',
+    'scope': 'app',
+    'at': 1760000000000,
+    'releases': <String, dynamic>{
+      'debug': <String, dynamic>{
+        'android': <String, dynamic>{
+          'version': '2.3.0-debug.150',
+          'at': 1760000100000,
+        },
+        'windows': <String, dynamic>{
+          'version': '2.3.0-debug.151',
+          'at': 1760000200000,
+        },
+      },
+    },
+  };
+
+  Map<String, dynamic> _fixedDetail() => <String, dynamic>{
+    'id': 'fixfixfix0',
+    'category': 'bug',
+    'title': '书架闪退',
+    'status': 'resolved',
+    'createdAt': 100,
+    'updatedAt': 400,
+    'devReplyAt': 400,
+    'fix': fix,
+    'body': '打开书架就闪退',
+    'contact': '',
+    'attachments': <Object>[],
+    'messages': <Object>[],
+  };
 
   /// notenote00 当前的开发者批改（POST /notes 写进来）。
   String devNote = '旧批改';
@@ -351,6 +387,16 @@ class _Server {
         'reopenedAs': <String>['childchil0'],
       });
     }
+    if (path == '/v1/feedback/fixfixfix0' && r.method == 'GET') {
+      if (r.headers['X-Fushi-Ticket'] != 'fix-ticket') return _json({}, 404);
+      return _json(_fixedDetail());
+    }
+    if (path == '/v1/dev/feedback/fixfixfix0') return _json(_fixedDetail());
+    if (path == '/v1/feedback/status' && r.body.contains('fixfixfix0')) {
+      return _json(<String, dynamic>{
+        'items': <Object>[_fixedDetail()],
+      });
+    }
     if (path == '/v1/feedback/status') {
       return _json(<String, dynamic>{
         'items': <Object>[
@@ -384,6 +430,33 @@ class _Server {
   }
 }
 
+/// 反馈修复进度用的本机环境：通道可被「切换」改写，记录检查更新 / 切换的调用。
+class _FakeFixEnvironment {
+  _FakeFixEnvironment({
+    this.channel = UpdateChannel.stable,
+    this.local = '2.2.0',
+    this.canSwitch = true,
+  });
+
+  UpdateChannel channel;
+  final String local;
+  final bool canSwitch;
+  int checks = 0;
+  final List<UpdateChannel> switches = <UpdateChannel>[];
+
+  FeedbackFixEnvironment build() => FeedbackFixEnvironment(
+    channel: () => channel,
+    platform: 'android',
+    localVersion: local,
+    canSwitchChannel: canSwitch,
+    checkForUpdate: (BuildContext _) async => checks++,
+    switchChannel: (UpdateChannel to) async {
+      switches.add(to);
+      channel = to;
+    },
+  );
+}
+
 void main() {
   late Directory root;
   late _Server server;
@@ -412,14 +485,20 @@ void main() {
         Uint8List.fromList(<int>[0x1f, 0x8b, ...utf8.encode(s)]),
   );
 
-  Widget wrap(LeaderboardService b, FeedbackService f, Widget child) =>
-      ProviderScope(
-        overrides: <Override>[
-          leaderboardServiceProvider.overrideWith((Ref _) => b),
-          feedbackServiceProvider.overrideWith((Ref _) => f),
-        ],
-        child: TranslationProvider(child: MaterialApp(home: child)),
-      );
+  Widget wrap(
+    LeaderboardService b,
+    FeedbackService f,
+    Widget child, {
+    _FakeFixEnvironment? fixEnv,
+  }) => ProviderScope(
+    overrides: <Override>[
+      leaderboardServiceProvider.overrideWith((Ref _) => b),
+      feedbackServiceProvider.overrideWith((Ref _) => f),
+      if (fixEnv != null)
+        feedbackFixEnvironmentProvider.overrideWith((Ref _) => fixEnv.build()),
+    ],
+    child: TranslationProvider(child: MaterialApp(home: child)),
+  );
 
   void tallView(WidgetTester tester) {
     tester.view.physicalSize = const Size(1000, 3000);
@@ -451,6 +530,209 @@ void main() {
       ),
     ]);
   }
+
+  Future<void> seedFixed() async {
+    await FeedbackTicketStore(root).write(<FeedbackTicket>[
+      const FeedbackTicket(
+        id: 'fixfixfix0',
+        ticket: 'fix-ticket',
+        title: '书架闪退',
+        category: FeedbackCategory.bug,
+        createdAt: 100,
+        status: FeedbackStatus.open,
+        updatedAt: 100,
+        seenAt: 100,
+      ),
+    ]);
+  }
+
+  Future<FeedbackService> openFixedDetail(
+    WidgetTester tester,
+    _FakeFixEnvironment env,
+  ) async {
+    tallView(tester);
+    await tester.runAsync(seedFixed);
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    await tester.runAsync(f.load);
+    await tester.pumpWidget(
+      wrap(
+        b,
+        f,
+        const FeedbackDetailPage(feedbackId: 'fixfixfix0'),
+        fixEnv: env,
+      ),
+    );
+    final Finder notice = find.byKey(
+      const ValueKey<String>('feedback-fix-progress'),
+    );
+    await settleIo(tester, () => notice.evaluate().isNotEmpty);
+    await tester.pumpAndSettle();
+    return f;
+  }
+
+  testWidgets('修复进度：当前通道已发布、本机没装 → 「已在 X 修复」+ 检查更新', (
+    WidgetTester tester,
+  ) async {
+    final _FakeFixEnvironment env = _FakeFixEnvironment(
+      channel: UpdateChannel.debug,
+      local: '2.3.0-debug.100',
+    );
+    final FeedbackService f = await openFixedDetail(tester, env);
+    expect(
+      find.text(t.feedback_fix_released(version: '2.3.0-debug.150')),
+      findsOneWidget,
+    );
+    // 看详情时修复一并落到本机记录。
+    expect(f.byId('fixfixfix0')!.fix!.sha, startsWith('0123456'));
+    expect(
+      find.byKey(const ValueKey<String>('feedback-fix-switch-channel')),
+      findsNothing,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('feedback-fix-check-update')),
+    );
+    await tester.pump();
+    expect(env.checks, 1);
+  });
+
+  testWidgets('修复进度：本机构建已包含 → 只说明，不给按钮', (WidgetTester tester) async {
+    final _FakeFixEnvironment env = _FakeFixEnvironment(
+      channel: UpdateChannel.debug,
+      local: '2.3.0-debug.160',
+    );
+    await openFixedDetail(tester, env);
+    expect(find.text(t.feedback_fix_installed), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('feedback-fix-check-update')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('修复进度：正式版用户只等到调试版 → 确认不稳定后才切换通道，切完变成「检查更新」', (
+    WidgetTester tester,
+  ) async {
+    final _FakeFixEnvironment env = _FakeFixEnvironment();
+    await openFixedDetail(tester, env);
+    expect(find.text(t.feedback_fix_next_stable), findsOneWidget);
+    expect(
+      find.text(
+        t.feedback_fix_faster_debug_available(version: '2.3.0-debug.150'),
+      ),
+      findsOneWidget,
+    );
+    final Finder switchButton = find.byKey(
+      const ValueKey<String>('feedback-fix-switch-channel'),
+    );
+
+    // 取消：不写通道。
+    await tester.tap(switchButton);
+    await tester.pumpAndSettle();
+    expect(find.text(t.update_debug_channel_warning), findsOneWidget);
+    await tester.tap(find.text(t.dialog_cancel));
+    await tester.pumpAndSettle();
+    expect(env.switches, isEmpty);
+    expect(env.channel, UpdateChannel.stable);
+
+    // 确认：切到调试通道，进度原地变成「已在 X 修复」+ 检查更新。
+    await tester.tap(switchButton);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(Dialog),
+        matching: find.text(t.feedback_fix_channel_debug_switch),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(env.switches, <UpdateChannel>[UpdateChannel.debug]);
+    expect(
+      find.text(t.feedback_fix_released(version: '2.3.0-debug.150')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('feedback-fix-check-update')),
+      findsOneWidget,
+    );
+    expect(switchButton, findsNothing);
+  });
+
+  testWidgets('修复进度：本平台不能切换通道时不出「切换」按钮', (WidgetTester tester) async {
+    await openFixedDetail(tester, _FakeFixEnvironment(canSwitch: false));
+    expect(find.text(t.feedback_fix_next_stable), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('feedback-fix-switch-channel')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('修复进度：不需要更新 App 的修复直接说已生效', (WidgetTester tester) async {
+    server.fix = <String, dynamic>{...server.fix, 'scope': 'none'};
+    await openFixedDetail(tester, _FakeFixEnvironment());
+    expect(find.text(t.feedback_fix_no_update_needed), findsOneWidget);
+  });
+
+  testWidgets('反馈中心：已修复的条目带进度短标签（已结案的照样刷新）', (WidgetTester tester) async {
+    tallView(tester);
+    await tester.runAsync(seedFixed);
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    final _FakeFixEnvironment env = _FakeFixEnvironment(
+      channel: UpdateChannel.debug,
+      local: '2.3.0-debug.100',
+    );
+    await tester.pumpWidget(
+      wrap(b, f, const FeedbackCenterPage(), fixEnv: env),
+    );
+    final Finder label = find.byKey(
+      const ValueKey<String>('feedback-ticket-fix-fixfixfix0'),
+    );
+    await settleIo(tester, () => label.evaluate().isNotEmpty);
+    expect(
+      tester.widget<Text>(label).data,
+      t.feedback_fix_released(version: '2.3.0-debug.150'),
+    );
+    expect(find.text(t.feedback_status_resolved), findsOneWidget);
+  });
+
+  testWidgets('处理台详情：显示修复短 sha 与各通道 / 平台的包含版本', (WidgetTester tester) async {
+    tallView(tester);
+    final LeaderboardService b = board();
+    await tester.runAsync(() async {
+      await LeaderboardStore(supportRoot: root, profileId: 1).write(
+        LeaderboardLocalAccount(
+          recoveryCode: LeaderboardIdentity.generate().toRecoveryCode(),
+          accountId: 'SelfAccount001',
+          consentAt: 1,
+        ),
+      );
+      await b.load();
+    });
+    final FeedbackService f = feedback(b);
+    await tester.pumpWidget(
+      wrap(b, f, const FeedbackDevDetailPage(feedbackId: 'fixfixfix0')),
+    );
+    final Finder sha = find.byKey(
+      const ValueKey<String>('feedback-dev-fix-sha'),
+    );
+    await settleIo(tester, () => sha.evaluate().isNotEmpty);
+    expect(
+      tester.widget<SelectableText>(sha).data,
+      t.feedback_dev_fix_commit(sha: '0123456'),
+    );
+    final String releases = tester
+        .widget<SelectableText>(
+          find.byKey(const ValueKey<String>('feedback-dev-fix-releases')),
+        )
+        .data!;
+    expect(
+      releases,
+      contains('${t.update_channel_debug} · android: 2.3.0-debug.150'),
+    );
+    expect(
+      releases,
+      contains('${t.update_channel_debug} · windows: 2.3.0-debug.151'),
+    );
+  });
 
   testWidgets('进中心即刷新进度：开发者新回复亮红点；匿名用户没有处理台入口', (WidgetTester tester) async {
     tallView(tester);
@@ -1129,7 +1411,16 @@ void main() {
     final Finder elsewhere = find.byKey(
       const ValueKey<String>('feedback-relation-farfarfar0'),
     );
-    await settleIo(tester, () => elsewhere.evaluate().isNotEmpty);
+    // closedclo0 带一张截图：详情页会去下载它。只等关联标签就结束测试的话，下载的
+    // 网络计时器可能还没走完，CI 上偶发「Timer is still pending」。连缩略图一起等到。
+    final Finder thumb = find.descendant(
+      of: find.byKey(const ValueKey<String>('feedback-detail-shot-s0')),
+      matching: find.byType(Image),
+    );
+    await settleIo(
+      tester,
+      () => elsewhere.evaluate().isNotEmpty && thumb.evaluate().isNotEmpty,
+    );
     // 本机有 ticket 的那条能点过去；别的设备提交的只是标签，不装成按钮。
     expect(tester.widget(elsewhere), isA<FushiTag>());
     expect(

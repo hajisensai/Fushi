@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { call, makeEnv, nextIp } from './harness.js';
 import { FEEDBACK_LIMITS } from '../src/feedback.js';
 import {
-  existingIdsSql, formatShow, gzipPayload, listSql, missingIds, parseArgs, parseWranglerJson, r2WhereArgs, showSql, sqlText,
-  summarizeBatchSql, summarizeSql,
+  existingIdsSql, fixedSql, formatShow, gzipPayload, inlineSql, listSql, missingIds, parseArgs,
+  parseWranglerJson, r2WhereArgs, showSql, sqlText, summarizeBatchSql, summarizeSql,
 } from '../scripts/feedback.mjs';
 
 const NOW = Date.UTC(2026, 9, 10, 4);
@@ -77,6 +77,35 @@ describe('scripts/feedback.mjs', () => {
     expect(text).toContain('未经核实');
     // 联系方式不进 CLI 输出。
     expect(text).not.toContain('me@example.com');
+  });
+
+  it('fixed：与 CI 接口同一份 SQL——改状态、记时间线、重置 fixed_in；--no-app = scope none；校验 sha / 编号', async () => {
+    const env = makeEnv();
+    const a = await seed(env);
+    const sha = 'B'.repeat(40);
+    env.DB.raw.prepare(`UPDATE feedback SET fixed_in = '{"debug":{"android":{"version":"1","at":1}}}' WHERE id = ?`).run(a);
+    env.DB.raw.exec(fixedSql(a, sha, 'app', NOW + 7));
+    expect(env.DB.raw.prepare('SELECT status, fix_sha, fix_scope, fix_at, fixed_in, dev_reply_at, updated_at FROM feedback WHERE id = ?').get(a))
+      .toEqual({ status: 'resolved', fix_sha: 'b'.repeat(40), fix_scope: 'app', fix_at: NOW + 7, fixed_in: '{}', dev_reply_at: NOW + 7, updated_at: NOW + 7 });
+    expect(env.DB.raw.prepare('SELECT author, account_id, body, status FROM feedback_messages WHERE feedback_id = ?').all(a))
+      .toEqual([{ author: 'dev', account_id: null, body: '', status: 'resolved' }]);
+    // 同 sha 同 scope 重复执行：幂等，什么都不动。
+    env.DB.raw.prepare(`UPDATE feedback SET fixed_in = '{"debug":{"android":{"version":"2","at":2}}}' WHERE id = ?`).run(a);
+    const snap = env.DB.raw.prepare('SELECT * FROM feedback WHERE id = ?').get(a);
+    env.DB.raw.exec(fixedSql(a, sha, 'app', NOW + 99));
+    expect(env.DB.raw.prepare('SELECT * FROM feedback WHERE id = ?').get(a)).toEqual(snap);
+    expect(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM feedback_messages WHERE feedback_id = ?').get(a).n).toBe(1);
+    // 再标一次（--no-app）：覆盖 commit 与 scope，已解决的不重复记时间线。
+    env.DB.raw.exec(fixedSql(a, 'c'.repeat(40), 'none', NOW + 8));
+    expect(env.DB.raw.prepare('SELECT fix_sha, fix_scope FROM feedback WHERE id = ?').get(a)).toEqual({ fix_sha: 'c'.repeat(40), fix_scope: 'none' });
+    expect(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM feedback_messages WHERE feedback_id = ?').get(a).n).toBe(1);
+
+    expect(() => fixedSql(a, 'abc', 'app', NOW)).toThrow(/bad_sha/);
+    expect(() => fixedSql(a, 'b'.repeat(40), 'x', NOW)).toThrow(/bad_scope/);
+    expect(() => fixedSql("x' OR '1'='1", 'b'.repeat(40), 'app', NOW)).toThrow(/编号不合法/);
+    expect(parseArgs(['fixed', a, '--sha', sha, '--no-app'])).toEqual({ cmd: 'fixed', id: a, flags: { sha, 'no-app': true } });
+    expect(inlineSql('SELECT ?1, ?2, ?3', ["it's", 5, null])).toBe(`SELECT ${sqlText("it's")}, 5, NULL`);
+    expect(() => inlineSql('SELECT ?1', [1.5])).toThrow(/不支持/);
   });
 
   it('解析 wrangler 输出（前面可能多一行代理提示）与参数', () => {

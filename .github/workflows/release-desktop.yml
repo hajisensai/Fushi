@@ -41,6 +41,7 @@ on:
       - 'tool/release_sequence.sh'
       - 'tool/publish_update_manifest.sh'
       - 'tool/merge_update_manifest.py'
+      - 'tool/feedback_mark_released.sh'
       - 'tool/notarize_submit.sh'
       - 'tool/mihon/**'
       - 'tool/ffmpeg-min/**'
@@ -3192,3 +3193,60 @@ jobs:
           ASSET_GLOB: fushi-*-macos-arm64.zip fushi-*-macos-arm64.dmg fushi-*-ios.ipa
           PLATFORM_LABEL: apple
         run: bash tool/publish_update_manifest.sh
+      # 反馈发布回填：三个平台并行构建、失败的平台不出产物（上面 download-artifact 的
+      # 注释），所以按产物是否真的在本次发布里逐平台回填，不能一刀切记三个平台。
+      # 判据用 shell 的 compgen 而不是 hashFiles()：路径过滤守卫要求 hashFiles 模式
+      # 在仓库磁盘上真实存在，构建产物不满足。绝不能让发布变红：步骤 continue-on-error，
+      # 脚本内部失败也只打 ::warning。守卫：fushi/test/build/feedback_workflow_guard_test.dart。
+      - name: Backfill feedback fix releases (Windows)
+        if: steps.channel.outputs.publish_manifest == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          FEEDBACK_CI_TOKEN: ${{ secrets.FEEDBACK_CI_TOKEN }}
+          FEEDBACK_API_BASE: ${{ vars.FEEDBACK_API_BASE }}
+          CHANNEL: ${{ steps.channel.outputs.manifest_channel }}
+          PLATFORM: windows
+          VERSION: ${{ steps.channel.outputs.build_version_name }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if compgen -G 'fushi/build/release-artifacts/fushi-*-windows-setup.exe' >/dev/null; then
+            bash tool/feedback_mark_released.sh
+          else
+            echo "No Windows installer in this publish; skipping feedback backfill."
+          fi
+      - name: Backfill feedback fix releases (macOS)
+        if: steps.channel.outputs.publish_manifest == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          FEEDBACK_CI_TOKEN: ${{ secrets.FEEDBACK_CI_TOKEN }}
+          FEEDBACK_API_BASE: ${{ vars.FEEDBACK_API_BASE }}
+          CHANNEL: ${{ steps.channel.outputs.manifest_channel }}
+          PLATFORM: macos
+          VERSION: ${{ steps.channel.outputs.build_version_name }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if compgen -G 'fushi/build/release-artifacts/fushi-*-macos-arm64.zip' >/dev/null ||
+            compgen -G 'fushi/build/release-artifacts/fushi-*-macos-arm64.dmg' >/dev/null; then
+            bash tool/feedback_mark_released.sh
+          else
+            echo "No macOS package in this publish; skipping feedback backfill."
+          fi
+      - name: Backfill feedback fix releases (iOS)
+        if: steps.channel.outputs.publish_manifest == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          FEEDBACK_CI_TOKEN: ${{ secrets.FEEDBACK_CI_TOKEN }}
+          FEEDBACK_API_BASE: ${{ vars.FEEDBACK_API_BASE }}
+          CHANNEL: ${{ steps.channel.outputs.manifest_channel }}
+          PLATFORM: ios
+          VERSION: ${{ steps.channel.outputs.build_version_name }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if compgen -G 'fushi/build/release-artifacts/fushi-*-ios.ipa' >/dev/null; then
+            bash tool/feedback_mark_released.sh
+          else
+            echo "No iOS package in this publish; skipping feedback backfill."
+          fi

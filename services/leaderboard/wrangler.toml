@@ -15,6 +15,7 @@ routes = [
 #   wrangler d1 migrations apply fushi-leaderboard --remote
 #   wrangler r2 bucket create fushi-leaderboard-media
 #   wrangler secret put ADMIN_USER / ADMIN_PASS / EMAIL_PEPPER / RESEND_API_KEY
+#   （可选）wrangler secret put FEEDBACK_CI_TOKEN   CI 回填反馈修复 / 发布；不设则 /v1/ci/** 一律 404
 [[d1_databases]]
 binding = "DB"
 database_name = "fushi-leaderboard"

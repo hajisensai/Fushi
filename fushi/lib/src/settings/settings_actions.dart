@@ -178,9 +178,17 @@ Future<void> setUpdateChannel(
     if (!confirmed) return;
   }
 
-  await settingsContext.appModel.setUpdateDebugChannel(debug);
-  await settingsContext.appModel.setUpdateBetaChannel(value == 'beta' || debug);
+  await applyUpdateChannel(settingsContext.appModel, value);
   settingsContext.refresh();
+}
+
+/// 写入更新通道（`stable` / `beta` / `debug`）：debug 通道同时打开 beta（与
+/// `appUpdateChannelOf` 的 debug > beta > stable 优先级对应）。确认框由调用方负责
+/// ——设置页在 [setUpdateChannel] 里问，反馈详情页的「切换到调试通道」自己问。
+Future<void> applyUpdateChannel(AppModel appModel, String value) async {
+  final bool debug = value == 'debug';
+  await appModel.setUpdateDebugChannel(debug);
+  await appModel.setUpdateBetaChannel(value == 'beta' || debug);
 }
 
 Widget buildDesignSystemSelector(SettingsContext settingsContext) {
