@@ -90,7 +90,7 @@ class FilePickerWindows extends FilePicker {
   /// See example implementation:
   /// https://github.com/timsneath/win32/blob/main/example/dialogshow.dart
   ///
-  /// Fushi patch (BUG-3273): the stock 8.3.7 implementation ran the dialog on
+  /// Fushi patch (BUG-3321): the stock 8.3.7 implementation ran the dialog on
   /// the platform thread and mixed manual `release()` calls with win32 5.x's
   /// auto-release `Finalizer`. The result `IShellItem` was released twice (once
   /// by hand, once by its finalizer), so when the dialog's own finalizer later

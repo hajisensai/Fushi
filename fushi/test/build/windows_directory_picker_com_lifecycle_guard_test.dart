@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-3273：Windows 选文件夹后几秒整个 app 0xC0000005 崩溃的源码守卫。
+/// BUG-3321：Windows 选文件夹后几秒整个 app 0xC0000005 崩溃的源码守卫。
 ///
 /// 根因在 file_picker 8.3.7 的 `getDirectoryPath()`：它在平台线程上用 win32 5.x
 /// 的 COM 包装类，而这些包装类构造时自带 `Finalizer` 自动 `Release`。结果
@@ -27,7 +27,7 @@ void main() {
       isTrue,
       reason:
           'file_picker 升到 $lockedVersion 后没有对应的覆盖补丁：'
-          'getDirectoryPath 的 COM 双重 Release（BUG-3273）会原样回来',
+          'getDirectoryPath 的 COM 双重 Release（BUG-3321）会原样回来',
     );
   });
 
