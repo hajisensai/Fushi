@@ -673,10 +673,16 @@ BaseAnkiRepository _withAutoReposition(Ref ref, BaseAnkiRepository repo) {
     loadSettings: repo.loadSettings,
     // 文案在这一层渲染：调度器本身够不到 `t.*`（它要保持无 Flutter 依赖），
     // 在那边拼字面量等于让 17 种语言的用户都看英文。
-    onFailure: (String deckName) => FushiToast.showMine(
-      msg: t.anki_reposition_auto_failed(deck: deckName),
-      status: MineToastStatus.failed,
-    ),
+    onFailure: (String deckName, Object error, StackTrace? stack) {
+      // 原因进错误日志（用户上传的就是这份）：自动重排无人值守，toast 只有
+      // 牌组名，日志是唯一能定位「一直失败」的证据（BUG-3272）。
+      ErrorLogService.instance
+          .log('AnkiAutoReposition[$deckName]', error, stack);
+      FushiToast.showMine(
+        msg: t.anki_reposition_auto_failed(deck: deckName),
+        status: MineToastStatus.failed,
+      );
+    },
   );
   ref.onDispose(scheduler.dispose);
   return AutoRepositionAnkiRepository(inner: repo, scheduler: scheduler);

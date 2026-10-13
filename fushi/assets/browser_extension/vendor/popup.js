@@ -5384,6 +5384,7 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
     }
     
     details.appendChild(dictWrapper);
+    __fushiChunkLongGlossary(dictWrapper, dictName);
 
     // MDX 词典的条目 HTML 自带 <script>（NLT 的頻度条形图、OALDPEX 的配置界面和
     // 中文翻译开关）。经 innerHTML 插入的 script 按规范不会执行，这里补上——作用域
@@ -6574,12 +6575,24 @@ function setStyleIfChanged(el, prop, value) {
 // 现在整轮只有两次强制布局（相 1 读 clientWidth、相 3 读 offsetHeight），与卡片数无关。
 // 列分配沿用最短列打包；仅尺寸未变时复用列号，单列/空 body 仍回落 CSS。
 // [targetBodies] 缺省 = 全部词典义项容器；scheduleMasonry 只传脏 body。
+// 最近一次真实量到的词典义项容器宽度（相 1），供被跳过渲染的词条预写列宽。
+let __fushiMasonryBodyWidth = 0;
 function layoutMasonry(targetBodies) {
     const configured = dictColumns();
     const gap = masonryGap();
     const plans = [];
+    const presize = [];
     (targetBodies || masonryBodies()).forEach(body => {
         const items = [...body.children].filter(c => c.classList.contains('glossary-group'));
+        // BUG-3274：浏览器跳过渲染的屏外词条不读几何——读一次就把整棵子树强制排版。
+        // 只预写列宽（相 2 的写，不触发排版），它滚进视口时按最终列宽只排一遍，
+        // __fushiOnLazyEntryVisibility 随后只剩量高与摆位。
+        if (__fushiBodyRenderSkipped(body)) {
+            if (configured > 1 && items.length > 0) {
+                presize.push({ body, items, cols: Math.min(configured, items.length) });
+            }
+            return;
+        }
         // 经典单列（设置=1）或该词条无词典卡：不做 masonry，清 inline 回落 CSS
         //（block 纵向堆叠 + CSS margin-top / 空容器）。
         if (configured <= 1 || items.length === 0) {
@@ -6594,13 +6607,34 @@ function layoutMasonry(targetBodies) {
         const cols = Math.min(configured, items.length);
         plans.push({ body, items, cols, columnWidth: 0, itemHeights: null });
     });
-    if (plans.length === 0) return;
+    if (plans.length === 0 && presize.length === 0) return;
 
     // 相 1（读）：所有 body 的可用宽度一次读完。body 从 grid 切到 block 不改变其宽度
     //（都是撑满父容器的块级盒），故可先读后写。
     plans.forEach(plan => {
         plan.columnWidth = (plan.body.clientWidth - (plan.cols - 1) * gap) / plan.cols;
+        __fushiMasonryBodyWidth = plan.body.clientWidth;
     });
+    // 被跳过渲染的 body 与已渲染的 body 同宽（同一容器下的同构词条），用最近一次真实量到
+    // 的宽度；一次都没量过（首屏全被跳过，不会发生）就不预写，留给可见时整铺。
+    if (__fushiMasonryBodyWidth > 0) {
+        presize.forEach(({ body, items, cols }) => {
+            const width = `${(__fushiMasonryBodyWidth - (cols - 1) * gap) / cols}px`;
+            setStyleIfChanged(body, 'position', 'relative');
+            setStyleIfChanged(body, 'display', 'block');
+            items.forEach(item => {
+                // 还没摆过位的卡片先藏起来（同 BUG-1727 增量预藏）：可见时相 4 摆位并恢复，
+                // 绝不露出叠在 (0,0) 的一帧。
+                if (item.dataset.masonryCol === undefined) item.style.visibility = 'hidden';
+                if (item.style.position !== 'absolute') item.style.position = 'absolute';
+                setStyleIfChanged(item, 'left', '0');
+                setStyleIfChanged(item, 'top', '0');
+                setStyleIfChanged(item, 'marginTop', '0');
+                setStyleIfChanged(item, 'width', width);
+            });
+        });
+    }
+    if (plans.length === 0) return;
     // 相 2（写）：定位与列宽。宽度决定高度，必须在量高之前落下；位置（transform）不影响
     // 高度，留到相 4。
     plans.forEach(({ body, items, columnWidth }) => {
@@ -6658,6 +6692,214 @@ function layoutMasonry(targetBodies) {
         for (let i = 0; i < cols; i++) heights[i] -= lastGaps[i];
         setStyleIfChanged(body, 'height', `${Math.max(...heights)}px`);
     });
+}
+
+// BUG-3274：查词结果的尾批词条交给浏览器按需渲染（`content-visibility: auto`）。
+// 实测 38 本词典查「トランクルーム」：10 个词头 2.1MB 释义建出约 3.9 万个节点、内容高约
+// 4 万 px，而弹窗一屏只露 700px。旧实现每追加一块词典卡就合帧铺一次 masonry，相 1/相 3
+// 的几何读会把**整页**未排版的新内容同步排一遍——4 倍降速（≈平板）下尾批 4.2 秒、单帧
+// 最长 600ms，用户看到的就是「查出来要好几秒、滑动成块卡顿、卡片来回跳」。
+// 屏外词条被浏览器跳过样式 / 布局 / 绘制；masonry 只铺渲染中的词条（几何读不会再强制
+// 排版屏外子树），词条滚进视口（contentvisibilityautostatechange skipped=false）时在
+// 同一个渲染更新里就地铺好，不露一帧行对齐 grid。不支持该事件的引擎（旧 WebKit）不加
+// 这个类，行为与旧版完全一致。首词条永不延迟：它是同步 reveal 路径。
+const __fushiLazyEntriesSupported = (() => {
+    try {
+        return typeof window !== 'undefined'
+            && 'oncontentvisibilityautostatechange' in window
+            && typeof CSS !== 'undefined' && typeof CSS.supports === 'function'
+            && CSS.supports('content-visibility', 'auto');
+    } catch (_) {
+        return false;
+    }
+})();
+
+function __fushiOnLazyEntryVisibility(ev) {
+    const entryEl = ev.currentTarget;
+    if (!entryEl) return;
+    entryEl.__fushiRenderSkipped = !!ev.skipped;
+    if (ev.skipped || !entryEl.isConnected) return;
+    const bodies = [...entryEl.querySelectorAll('.glossary-section > .category-body')];
+    if (bodies.length) layoutMasonry(bodies);
+    // 词条从 contain-intrinsic-size 的预估高度换成了真实高度：结果不满一屏时宿主是按
+    // 内容高度给弹窗定尺的，不复报就会按预估高度留白。尾批在途时由收尾那一发统一报。
+    if (!window._renderInProgress) _reportPopupHeight();
+}
+
+// [entryEl] 交给浏览器按需渲染。初始视为「被跳过」：首次渲染判定前 masonry 不碰它，
+// 否则几何读会强制把它整个排版，延迟就白做了。判定为可见时事件立即把它铺好。
+function __fushiMarkLazyEntry(entryEl) {
+    if (!__fushiLazyEntriesSupported || !entryEl || !entryEl.classList) return;
+    entryEl.classList.add('fushi-lazy-entry');
+    entryEl.__fushiRenderSkipped = true;
+    entryEl.addEventListener('contentvisibilityautostatechange', __fushiOnLazyEntryVisibility);
+}
+
+// BUG-3274：长释义切块按需渲染。『明鏡』とる 一张卡约 1 万字，单卡排版在 4 倍降速下
+// 要 0.3–1 秒、且无法拆分——整张卡只要进视口就一次付清。把卡片正文**已有的块级子元素**
+// 各自标成 content-visibility:auto，滚到哪段才排哪段；尾批建完后空闲时逐段转回普通渲染
+// （__fushiWarmLazyContent）。
+//
+// containment 有副作用（溢出部分被裁、子元素外边距不再穿透、style containment 把计数器
+// 圈成新实例），所以：
+//   · 段一进入浏览器的预渲染区（contentvisibilityautostatechange skipped=false，视口外
+//     还有一段边距）就立刻摘掉类名回到普通渲染——用户看到的始终是原样排版，containment
+//     只作用于从没进过视口的部分。
+//   · 只标已有元素、绝不插包装：插包装会让词典 CSS 的 `>` / `+` / `:first-child` 失配，
+//     包进行内元素还会改变断行。「文字 + <br>」平铺的正文因此不切（整块渲染）。
+//   · `li` 永不标；词典样式 / 用户 CSS / 正文内联样式里出现 counter 或 list-item（隐式
+//     列表计数器）的整张卡不切。
+const LAZY_GLOSSARY_MIN_CHARS = 300;    // 正文不到这个量的卡片不切（切了也省不了什么）
+const LAZY_CHUNK_SPLIT_CHARS = 2400;    // 子树比这大就继续往里切
+const LAZY_CHUNK_MIN_CHARS = 30;        // 比这小的块不值得单独成段
+const LAZY_CHUNK_TAGS = new Set(['DIV', 'P', 'TABLE', 'SECTION', 'ARTICLE', 'UL', 'OL', 'DL', 'BLOCKQUOTE', 'DETAILS']);
+const LAZY_COUNTER_PATTERN = /counter|list-item/;
+
+// 只在 Blink（WebView2 / Android WebView / Chrome 扩展）上切块。WebKit（iOS / macOS
+// WKWebView，Mac 实测 macOS 27.2）在元素摘掉 content-visibility 后不重建渲染对象：containment
+// 期间建立的独立格式化上下文残留下来，子元素外边距从此不再向外合并——释放后的段与从没
+// 切过的排版不同（『明鏡』とる 卡内整体下移 1.125px；偏差量 = 子元素外边距，换词典可达
+// 1em），强制重排也不恢复，只有 display:none 重建渲染对象才恢复。Gecko 未验证，同样不切。
+// 词条级按需渲染（fushi-lazy-entry）在 WebKit 上逐屏像素与修复前一致，照常生效。
+const __fushiLazyChunksSupported = __fushiLazyEntriesSupported && (() => {
+    try {
+        return /(Chrome|Chromium|Edg)\//.test(String(navigator.userAgent || ''));
+    } catch (_) {
+        return false;
+    }
+})();
+
+function __fushiDictCssUsesCounters(dictName) {
+    const custom = window.customDictCSS && typeof window.customDictCSS === 'object'
+        ? window.customDictCSS[dictName] : '';
+    return [window.dictionaryStyles?.[dictName], window.globalDictCSS, custom]
+        .some(css => typeof css === 'string' && LAZY_COUNTER_PATTERN.test(css));
+}
+
+// 段回到普通渲染：摘类名与预估高度、卸监听。浏览器判定它将要可见时（预渲染区）与空闲
+// 预热时各调一次，幂等。
+function __fushiReleaseLazyChunk(chunk) {
+    chunk.removeEventListener('contentvisibilityautostatechange', __fushiOnLazyChunkVisibility);
+    chunk.classList.remove('fushi-lazy-chunk');
+    chunk.style.containIntrinsicSize = '';
+    chunk.__fushiRenderSkipped = false;
+}
+
+function __fushiOnLazyChunkVisibility(ev) {
+    const chunk = ev.currentTarget;
+    if (!chunk) return;
+    if (ev.skipped) {
+        chunk.__fushiRenderSkipped = true;
+        return;
+    }
+    __fushiReleaseLazyChunk(chunk);
+}
+
+function __fushiChunkLongGlossary(root, dictName) {
+    if (!__fushiLazyChunksSupported || !root || typeof root.textContent !== 'string') return;
+    // 历史页回退要按真实高度恢复滚动位，同 lazyTailEntries 的约定：这次渲染全量排版。
+    if (window.__fushiPendingScrollTop > 0) return;
+    if (root.textContent.length < LAZY_GLOSSARY_MIN_CHARS) return;
+    if (__fushiDictCssUsesCounters(dictName)) return;
+    if (typeof root.querySelector === 'function'
+        && root.querySelector('[style*="counter"], [style*="list-item"]')) return;
+    // 预估高度只求量级对：未渲染的段按「字数 / 每行字数 × 行高」占位，渲染过一次后
+    // `auto` 记住真实高度。宽度取最近一次量到的词典容器宽度（不读几何，不强制排版）。
+    const zoom = __fushiDocumentZoom();
+    const bodyWidth = __fushiMasonryBodyWidth > 0
+        ? __fushiMasonryBodyWidth : __fushiViewportWidth() / zoom;
+    const columnWidth = bodyWidth / Math.max(1, dictColumns());
+    const fontPx = 16;
+    const charsPerLine = Math.max(8, Math.floor(columnWidth / fontPx));
+    const walk = (node) => {
+        for (const child of node.children) {
+            const chars = (child.textContent || '').length;
+            if (chars === 0) continue;
+            if (chars > LAZY_CHUNK_SPLIT_CHARS && child.children.length > 0) {
+                walk(child);
+                continue;
+            }
+            if (chars < LAZY_CHUNK_MIN_CHARS || !LAZY_CHUNK_TAGS.has(child.tagName)) continue;
+            const lines = Math.ceil(chars / charsPerLine);
+            child.classList.add('fushi-lazy-chunk');
+            child.style.containIntrinsicSize = `auto ${Math.round(lines * fontPx * 1.8)}px`;
+            child.__fushiRenderSkipped = true;
+            child.addEventListener('contentvisibilityautostatechange', __fushiOnLazyChunkVisibility);
+        }
+    };
+    walk(root);
+}
+
+function __fushiUnlazyEntry(entryEl) {
+    entryEl.removeEventListener('contentvisibilityautostatechange', __fushiOnLazyEntryVisibility);
+    entryEl.classList.remove('fushi-lazy-entry');
+    entryEl.__fushiRenderSkipped = false;
+    entryEl.querySelectorAll('.glossary-section > .category-body').forEach(markMasonryDirty);
+    scheduleMasonry();
+}
+
+// 尾批建完后，空闲时自上而下把仍按需渲染的词条与长释义段转回普通渲染：用户滚到之前
+// 它们大概率已经排好。每个空闲时段按字数预算处理若干项（脚本里只是摘类名，排版成本
+// 落在随后那一帧），单帧成本有上界——与旧版「整个巨型词条一帧付清」不同。用户正在滚动
+// 时暂停：滚动中靠近视口的段浏览器本就会按需渲染，预热再往同一帧里塞排版只会添堵。
+// 查词时视频是暂停的，这段空闲 CPU 不与播放争抢；换词（换代）立即停止。
+const LAZY_WARM_CHARS_PER_STEP = 800;   // 4 倍降速下一步约 50ms
+const LAZY_WARM_SCROLL_QUIET_MS = 200;
+let __fushiLastScrollAt = 0;
+function __fushiNoteScroll() { __fushiLastScrollAt = performance.now(); }
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('scroll', __fushiNoteScroll, { capture: true, passive: true });
+}
+// 浏览器扩展里弹窗挂在 shadow root 上，滚动容器的 scroll 事件不穿出 shadow 边界，window
+// 收不到；在弹窗自己的根上再挂一次（幂等）。
+function __fushiWatchPopupScroll() {
+    const rootNode = __fushiRootNode();
+    if (!rootNode || rootNode === document || rootNode.__fushiScrollWatched) return;
+    if (typeof rootNode.addEventListener !== 'function') return;
+    rootNode.__fushiScrollWatched = true;
+    rootNode.addEventListener('scroll', __fushiNoteScroll, { capture: true, passive: true });
+}
+function __fushiWarmLazyContent(generation) {
+    __fushiWatchPopupScroll();
+    const schedule = (typeof requestIdleCallback === 'function')
+        ? (fn) => requestIdleCallback(fn, { timeout: 500 })
+        : (fn) => setTimeout(fn, 32);
+    const step = () => {
+        if (generation !== window._renderGeneration) return;
+        const root = __fushiContainer();
+        if (!root || typeof root.querySelector !== 'function') return;
+        const sinceScroll = performance.now() - __fushiLastScrollAt;
+        if (__fushiLastScrollAt > 0 && sinceScroll < LAZY_WARM_SCROLL_QUIET_MS) {
+            setTimeout(() => schedule(step), LAZY_WARM_SCROLL_QUIET_MS - sinceScroll);
+            return;
+        }
+        let budget = LAZY_WARM_CHARS_PER_STEP;
+        while (budget > 0) {
+            const entryEl = root.querySelector(':scope > .entry.fushi-lazy-entry');
+            if (entryEl) {
+                // 词条本体的排版成本 = 去掉仍切着的段之后剩下的字数。
+                let chunked = 0;
+                entryEl.querySelectorAll('.fushi-lazy-chunk').forEach(c => {
+                    chunked += (c.textContent || '').length;
+                });
+                budget -= Math.max(1, (entryEl.textContent || '').length - chunked);
+                __fushiUnlazyEntry(entryEl);
+                continue;
+            }
+            // 进过预渲染区的段已在事件里回到普通渲染，剩下的都是从没渲染过的。
+            const chunk = root.querySelector('.fushi-lazy-chunk');
+            if (!chunk) return;
+            budget -= (chunk.textContent || '').length;
+            __fushiReleaseLazyChunk(chunk);
+        }
+        schedule(step);
+    };
+    schedule(step);
+}
+
+function __fushiBodyRenderSkipped(body) {
+    const entryEl = body && typeof body.closest === 'function' ? body.closest('.entry') : null;
+    return !!(entryEl && entryEl.__fushiRenderSkipped === true);
 }
 
 function observeMasonryTargets() {
@@ -6793,9 +7035,14 @@ function effectiveDictColumns() {
     const colFloor = isCoarsePointerType() ? DICT_COLUMN_MIN_WIDTH * 1.5 : DICT_COLUMN_MIN_WIDTH;
     let configured = 1;
     try {
-        configured = parseInt(
-            getComputedStyle(document.documentElement)
-                .getPropertyValue('--dict-columns'), 10) || 1;
+        // BUG-3274：宿主把 --dict-columns 写在 documentElement 的内联样式上，先读内联值；
+        // getComputedStyle 会强制整页样式重算，而 masonry 每帧都要问一次列数（尾批期间实测
+        // 占主线程 1/8）。内联没有时才回落计算样式（样式表默认值）。
+        const docStyle = document.documentElement.style;
+        const inline = docStyle && typeof docStyle.getPropertyValue === 'function'
+            ? docStyle.getPropertyValue('--dict-columns') : '';
+        configured = parseInt(inline || getComputedStyle(document.documentElement)
+            .getPropertyValue('--dict-columns'), 10) || 1;
     } catch (e) {
         configured = 1;
     }
@@ -7027,8 +7274,13 @@ window.renderPopup = function() {
         kanjiSection = null;
     }
 
-    if ((!entries || !entries.length) && !kanjiSection && window.lookupPending === true) {
+    if ((!entries || !entries.length) && !kanjiSection
+        && (window.lookupPending === true || window.lookupIdle === true)) {
         // 搜索期占位：查询还没结束，不是「没有结果」。
+        // BUG-3274：宿主推的空闲占位（热槽 seed / 换词复位，lookupIdle=true）同样不是
+        // 「没有结果」——换词时隐藏层先收到它（层未翻可见 ⇒ pending=false），旧实现画成
+        // 「未找到」留在 DOM 里，结果一慢、宿主兜底强制翻可见就露出假空态。空闲时只留
+        // 空占位盒：指示器只在 pending 为真时才会插入（见 __fushiArmPopupLoadingIndicator）。
         renderPopupLoading(container);
         window._renderedGlossaryCounts = [];
         _firePopupRendered();
@@ -7135,6 +7387,11 @@ window.renderPopup = function() {
     // 每个宏任务最多创建一个词典块。新词条的 header 与它的首块同任务建立；
     // 同词条余块逐任务追加。generation 变化立即取消旧队列。
     let nextEntryIndex = 1;
+    // BUG-3274：尾批词条按需渲染。历史页回退要把滚动位恢复到离开时的像素位置，那个值
+    // 是按真实高度量的；屏外词条若只占预估高度，恢复会落错地方——这种渲染全量排版。
+    const lazyTailEntries = __fushiLazyEntriesSupported &&
+        !(window.__fushiPendingScrollTop > 0);
+    let lazyActive = false;
     let activeEntryElement = firstEntryHasDeferredBlocks ? firstEntry : null;
     let activeEntryIndex = activeEntryElement ? 0 : -1;
     let activeEntrySeparator = null;
@@ -7214,6 +7471,14 @@ window.renderPopup = function() {
                         }
                         fragment.appendChild(element);
                         entryDomIndex[idx] = renderedDomCount++;
+                        if (lazyTailEntries && !lazyActive) {
+                            // 已有内容超过两屏才开始延迟：结果少时宿主按内容高度给弹窗
+                            // 定尺，预估占位会让它先撑大再缩回；超过两屏时弹窗本就是最大
+                            // 高度。一旦成立就不再读几何（读一次即强制排版）。
+                            lazyActive = __fushiScrollHeight() >
+                                2 * (window.innerHeight || 0);
+                        }
+                        if (lazyActive) __fushiMarkLazyEntry(element);
                         container.appendChild(fragment);
                         activeEntryElement = element;
                         activeEntryIndex = idx;
@@ -7245,6 +7510,7 @@ window.renderPopup = function() {
         }
         // Second signal with the same token measures the final all-block height.
         finishRemainingEntries();
+        if (__fushiLazyEntriesSupported) __fushiWarmLazyContent(gen);
     };
     scheduleRenderTail(renderNextDictionaryBlock);
 };

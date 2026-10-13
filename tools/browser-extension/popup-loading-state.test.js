@@ -168,7 +168,9 @@ test('最短停留：露出不足 300ms 时结果渲染要等，露出前 / 超�
 test('renderPopup：只有 lookupPending 时画加载态；真实空结果仍是 .no-results；结果替换指示器时淡入', () => {
   const body = SRC.slice(SRC.indexOf('window.renderPopup = function() {'),
     SRC.indexOf('// TODO-833: entries that the hidden-dictionary filter'));
-  const pendingAt = body.indexOf("window.lookupPending === true) {\n        // 搜索期占位");
+  // BUG-3274：宿主空闲占位（lookupIdle）与 pending 同走占位分支，同样不画「未找到」。
+  const pendingAt = body.indexOf(
+    "(window.lookupPending === true || window.lookupIdle === true)) {\n        // 搜索期占位");
   const emptyAt = body.indexOf('<div class="no-results">');
   assert.ok(pendingAt > 0 && emptyAt > pendingAt, '加载态判定必须在 .no-results 之前');
   assert.match(body, /renderPopupLoading\(container\)/);

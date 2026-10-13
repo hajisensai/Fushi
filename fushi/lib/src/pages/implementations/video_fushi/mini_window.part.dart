@@ -229,6 +229,20 @@ extension _VideoMiniWindow on _VideoFushiPageState {
         child: Row(
           children: <Widget>[
             const Spacer(),
+            // 原盘会话：mini 档不渲染常规顶栏，「主菜单 / 弹出菜单」只能挂在这里，
+            // 否则小窗里放正片时回不到原盘菜单（BUG-3229 审查）。
+            if (_controller?.isBlurayNavigationSession == true) ...<Widget>[
+              _miniWindowIconButton(
+                icon: FushiIcons.toc,
+                tooltip: t.video_disc_top_menu,
+                onPressed: () => unawaited(_runDiscNavigation('menu')),
+              ),
+              _miniWindowIconButton(
+                icon: FushiIcons.menu,
+                tooltip: t.video_disc_popup_menu,
+                onPressed: () => unawaited(_runDiscNavigation('popup')),
+              ),
+            ],
             _miniWindowIconButton(
               icon: Icons.close_fullscreen_rounded,
               tooltip: t.video_mini_window_exit,

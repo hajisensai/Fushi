@@ -639,6 +639,21 @@ class LeaderboardClient {
     );
   }
 
+  /// 开发者：写批改（只给开发者看，反馈人接口不返回）。空串 = 清除。返回更新后的详情。
+  Future<FeedbackDetail> devUpdateFeedbackNote(
+    String id,
+    String devNote,
+  ) async {
+    _requireIdentity();
+    return FeedbackDetail.fromJson(
+      await _sendJson(
+        'POST',
+        '/v1/dev/feedback/${_segment(id)}/notes',
+        body: <String, dynamic>{'devNote': devNote},
+      ),
+    );
+  }
+
   /// 开发者：取附件字节。日志 [asText] 时服务端解压成 UTF-8 文本。
   Future<Uint8List> devFeedbackAttachment(
     String id,

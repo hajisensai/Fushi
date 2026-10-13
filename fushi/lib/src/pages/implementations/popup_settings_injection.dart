@@ -663,18 +663,30 @@ String buildPopupSettingsJs({
 /// popup.js 据此画加载指示器而不是「No results」（假空态）。**不再**按「结果是搜索期
 /// 占位单例」推断——热槽 seed / 复位 / 停驻 realm 挂的也是那个单例，但它们是空闲，
 /// 推 true 会让停驻在屏外的页面里加载动画无限循环。
+///
+/// [idle] = 本次推的是热槽 seed / 换词复位 / 停驻用的搜索期占位单例（既不是查询结果，
+/// 也不一定在查）：popup.js 只画空占位盒，**绝不**画「No results」。换词时隐藏层先收到
+/// 这个占位（pending=false，因为层还没翻可见），旧实现把它画成「未找到」留在 DOM 里，
+/// 结果渲染一慢、兜底强制翻可见时用户就看到假空态（BUG-3274）。
 String buildPopupEntriesJs(
   DictionarySearchResult result, {
   bool pending = false,
+  bool idle = false,
 }) {
   final String entriesJson = result.popupJson ??
       DictionaryPopupWebViewState.buildLookupEntriesJson(result);
   final String kanjiResultsJson = jsonEncode(
     result.kanjiResults.map((FushiKanjiResult k) => k.toMap()).toList(),
   );
-  return '''    try { window.lookupEntries = $entriesJson; } catch(e) { window.lookupEntries = []; }
+  // BUG-3274：词条 JSON 以字符串字面量交给 JSON.parse，而不是当 JS 对象字面量 eval。
+  // 结果多时这一段有 MB 级（38 本词典查 トランクルーム 是 2 MB）；V8 解析 JSON 文本比
+  // 解析同等体量的对象字面量快（4 倍降速实测 347 → 236 ms），且每次查词的源码都不同，
+  // 吃不到脚本编译缓存。jsonEncode 产出的是合法 JS 字符串字面量。
+  final String entriesJsonLiteral = jsonEncode(entriesJson);
+  return '''    try { window.lookupEntries = JSON.parse($entriesJsonLiteral); } catch(e) { console.warn('[popup] lookupEntries JSON.parse failed', e); window.lookupEntries = []; }
     try { window.kanjiResults = $kanjiResultsJson; } catch(e) { window.kanjiResults = []; }
     window.lookupPending = $pending;
+    window.lookupIdle = $idle;
 ''';
 }
 

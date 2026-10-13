@@ -129,6 +129,14 @@ const Set<OnboardingFeature> kOnboardingResourceFeatures = <OnboardingFeature>{
   OnboardingFeature.manualResources,
 };
 
+/// 新手引导 Anki 步里「制卡后自动按词频重排」开关的初值：**开**。
+///
+/// 设置本身（`AnkiSettings.autoRepositionEnabled`）默认关，因为它会在用户没点
+/// 任何按钮时改 Anki 的新卡顺序，不能是升级送的；但引导里用户看得见这颗开关，
+/// 照着默认走下一步就是显式选择。新卡按常见词优先学是绝大多数人想要的顺序，
+/// 而手机端用户此前几乎不会知道有这个功能。
+const bool kOnboardingAnkiAutoRepositionDefault = true;
+
 /// 第一张 Anki 卡教程的真实就绪判据。仅有旧的非空选择 id 不够：本次必须连接
 /// 成功，且两个 id 都仍存在于本次拉回的列表中。
 bool onboardingAnkiSelectionReady({

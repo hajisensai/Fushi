@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
+    show BlurayEdlSegment, buildBlurayEdlUri;
 
 void main() {
   group('parseMpvConf', () {
@@ -574,6 +576,35 @@ keep-open=yes
       // 其它非网络 scheme 也不注入。
       expect(isNetworkStreamUri('content://media/external/video/1'), isFalse);
       expect(isNetworkStreamUri(''), isFalse);
+    });
+
+    test('edl:// is judged by its segments (BUG-3236)', () {
+      // 互联 host 的蓝光标题：段是 host 的 http 流 → 要网络缓存 / 超时调优。
+      expect(
+        isNetworkStreamUri(
+          buildBlurayEdlUri(<BlurayEdlSegment>[
+            (
+              source: 'http://h:1/api/library/videos/d/bdclip.m2ts?token=t&n=0',
+              inTimeTicks: 468000,
+              durationTicks: 54000,
+            ),
+          ]),
+        ),
+        isTrue,
+      );
+      // 本地未加密盘：段是本地路径。
+      expect(
+        isNetworkStreamUri(
+          buildBlurayEdlUri(<BlurayEdlSegment>[
+            (
+              source: r'D:\Disc\BDMV\STREAM\00001.m2ts',
+              inTimeTicks: 0,
+              durationTicks: 45000,
+            ),
+          ]),
+        ),
+        isFalse,
+      );
     });
   });
 

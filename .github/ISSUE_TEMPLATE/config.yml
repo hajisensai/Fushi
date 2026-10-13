@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Discord
+    url: https://discord.gg/WhjwyGmm7f
+    about: Questions and usage help. / 使用问题与交流。
+  - name: Website / 官网
+    url: https://fushi.moe/
+    about: Downloads and docs. / 下载与文档。

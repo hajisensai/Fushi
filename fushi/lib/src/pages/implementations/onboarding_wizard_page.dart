@@ -288,6 +288,13 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         viewModel: ref.read(ankiViewModelProvider.notifier),
       );
       if (!mounted) return;
+      // 引导里那颗开关此刻才写进设置：用户看着它（默认开）按了下一步，才算
+      // 显式选择；整步跳过的不写（`AnkiSettings.autoRepositionEnabled` 默认关，
+      // 不能是升级送的）。
+      await ref
+          .read(ankiViewModelProvider.notifier)
+          .setAutoRepositionEnabled(_ankiAutoReposition);
+      if (!mounted) return;
     }
     final List<OnboardingStepId> steps = _steps;
     if (steps[_stepIndex] == OnboardingStepId.features) {
@@ -471,6 +478,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// 都非空时置 true；之后用户在本页选好二者，才由 [_ankiReadyForFirstCard] 放行
   /// 「第一张卡」教程。重开向导不会拿旧缓存冒充本次连接成功。
   bool _ankiConnectionVerified = false;
+
+  /// 「制卡后自动按词频重排」的向导内选择，初值 [kOnboardingAnkiAutoRepositionDefault]；
+  /// 离开 Anki 步时写进 `AnkiSettings.autoRepositionEnabled`（见 [_goNextAsync]）。
+  bool _ankiAutoReposition = kOnboardingAnkiAutoRepositionDefault;
 
   /// 移动端「本机改用 AnkiConnect」次级说明的展开态（默认收起）。
   bool _mobileAnkiConnectExpanded = false;
@@ -757,6 +768,21 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
               SizedBox(height: tokens.spacing.gap),
               _ankiStatusLine(anki, connected: connected),
             ],
+          ),
+        ),
+        SizedBox(height: tokens.spacing.gap),
+        // 制卡后自动按词频重排新卡（引导里默认开）。只有 AnkiConnect 有卡片级
+        // 读写，AnkiDroid / AnkiMobile 上调度器每轮判不支持直接跳过——所以开关
+        // 不置灰（换成连电脑的 AnkiConnect 后就生效），只在说明里讲清要电脑。
+        FushiCard(
+          child: AdaptiveSettingsSwitchRow(
+            icon: FushiIcons.sync,
+            showIcon: true,
+            title: t.anki_reposition_auto_title,
+            subtitle: t.onboarding_anki_auto_reposition_hint,
+            subtitleMaxLines: 4,
+            value: _ankiAutoReposition,
+            onChanged: (bool v) => setState(() => _ankiAutoReposition = v),
           ),
         ),
         if (_ankiAddonNotice != null) ...<Widget>[

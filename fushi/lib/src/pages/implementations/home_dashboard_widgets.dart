@@ -1,11 +1,15 @@
-/// 首页 dashboard 的展示件（2026-10 精简重设计）：学习头部行（目标环 + 今日
-/// 字数 + 今日时长）、「继续」封面卡、每日目标环、空态与首载骨架块。
+/// 首页 dashboard 的展示件（2026-10 精简重设计；10-10 加回分区标题与「继续」主角卡）：
+/// 学习头部行（目标环 + 今日字数 + 今日时长）、「继续」主角卡（M3E 波浪进度条 +
+/// 「继续阅读 / 继续观看」主按钮）、带标题的封面卡、「最近添加」紧凑行、每日目标环、
+/// 空态与首载骨架块。
 ///
 /// 只放**纯展示**的组件——取数、筛选、打开路径都留在
 /// `home_dashboard_page.dart` 的 state 里（那边有一批按源码锚点钉住的守卫）。
 /// 这里的组件只吃算好的值与回调，两套设计系统（MD3 Expressive / Apple）与
 /// 墨水屏的差异也在这里各自收口。
 library;
+
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
@@ -404,11 +408,37 @@ class HomeStudyHeader extends StatelessWidget {
   }
 }
 
-/// 「继续」封面卡（2026-10 精简）：只有封面，不再在下方挂标题 / 副标题两行字。
-///
-/// 封面底部贴进度条，右上角挂一枚进度角标（书 = 「42%」、视频 = 「第 3 集」
-/// 或看到的时间点）。标题只进读屏标签与桌面悬停提示；封面缺失时由调用方在
-/// [cover] 里画「图标 + 标题」兜底。悬停抬升 + 按压回弹，焦点停靠点就是卡本身。
+/// 封面卡下方标题块的文字样式（[HomeContinueCoverCard.showTitle]）。
+TextStyle homeCoverTitleStyle(BuildContext context) {
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  return tokens.type.metadata.copyWith(
+    color: tokens.surfaces.onSurface,
+    fontWeight: FontWeight.w500,
+  );
+}
+
+/// 封面与下方标题之间的间距。
+const double kHomeCoverTitleGap = 6;
+
+/// 封面卡下方标题块的固定高度：恰好两行（按当前字号与缩放实测，不估算），一排
+/// 卡的封面因此恒在同一高度、横滑行可以定高。
+double homeCoverTitleBlockHeight(BuildContext context) {
+  final TextPainter painter = TextPainter(
+    text: TextSpan(text: 'あ\nあ', style: homeCoverTitleStyle(context)),
+    textDirection: TextDirection.ltr,
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: 2,
+  )..layout();
+  final double height = painter.height;
+  painter.dispose();
+  return kHomeCoverTitleGap + height;
+}
+
+/// 「继续」封面卡：封面底部贴进度条，右上角挂一枚进度角标（书 = 「42%」、视频 =
+/// 「第 3 集」或看到的时间点）。[showTitle] 时封面下方再挂两行标题（2026-10-10
+/// 用户：「首页每一项都要有标题」）；不挂时标题只进读屏标签与桌面悬停提示。封面
+/// 缺失时由调用方在 [cover] 里画「图标 + 标题」兜底。悬停抬升 + 按压回弹，焦点
+/// 停靠点就是卡本身。
 class HomeContinueCoverCard extends StatelessWidget {
   const HomeContinueCoverCard({
     super.key,
@@ -420,15 +450,19 @@ class HomeContinueCoverCard extends StatelessWidget {
     this.progress,
     this.badgeLabel,
     this.badgeIcon,
-    this.badgeAtStart = false,
-    this.badgeScale = 1,
+    this.showTitle = false,
   });
 
   final Widget cover;
   final double width;
+
+  /// 封面高度（不含 [showTitle] 的标题块）。
   final double height;
 
-  /// 条目显示名：读屏标签 + 悬停提示（屏上不画）。
+  /// 封面下方挂两行标题（块高见 [homeCoverTitleBlockHeight]）。
+  final bool showTitle;
+
+  /// 条目显示名：读屏标签 + 悬停提示；[showTitle] 时也画在封面下方。
   final String title;
   final VoidCallback onTap;
 
@@ -438,15 +472,6 @@ class HomeContinueCoverCard extends StatelessWidget {
   /// 右上角进度角标文案；null 且 [badgeIcon] 也为 null = 不画角标。
   final String? badgeLabel;
   final IconData? badgeIcon;
-
-  /// 角标挂在左上角（起始侧）而不是右上角。宽屏「最近添加」行用：日文竖排书名
-  /// 几乎都从封面右上角起笔，右上角的「新」会正好压在书名第一个字上；左上角是
-  /// 竖排封面最空的一角，横排书名也通常居中而不顶到左缘。
-  final bool badgeAtStart;
-
-  /// 角标缩放（1 = 与「继续」行同尺寸）。「最近添加」的「新」只是类别提示，
-  /// 缩到 0.85 以少占封面。
-  final double badgeScale;
 
   @override
   Widget build(BuildContext context) {
@@ -463,58 +488,367 @@ class HomeContinueCoverCard extends StatelessWidget {
           label: label == null ? title : '$title · $label',
           onTap: onTap,
           excludeSemantics: true,
-          child: FushiTooltip(
-            message: title,
-            excludeFromSemantics: true,
-            child: SizedBox(
-              width: width,
-              height: height,
-              child: ClipRRect(
-                borderRadius: FushiBorderRadius.card,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: <Widget>[
-                    cover,
-                    if (value != null)
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: CoverProgressStrip(value: value.clamp(0.0, 1.0)),
-                      ),
-                    // 角标恒完整显示：窄卡放不下时整枚等比缩小，不被卡边裁掉。
-                    if (label != null || icon != null)
-                      PositionedDirectional(
-                        key: const ValueKey<String>('home-cover-badge'),
-                        top: 6,
-                        start: badgeAtStart ? 6 : null,
-                        end: badgeAtStart ? null : 6,
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(maxWidth: width - 12),
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: badgeAtStart
-                                ? AlignmentDirectional.topStart
-                                : AlignmentDirectional.topEnd,
-                            child: Transform.scale(
-                              scale: badgeScale,
-                              alignment: badgeAtStart
-                                  ? AlignmentDirectional.topStart
-                                  : AlignmentDirectional.topEnd,
+          child: _withTitle(
+            context,
+            FushiTooltip(
+              message: title,
+              excludeFromSemantics: true,
+              child: SizedBox(
+                width: width,
+                height: height,
+                child: ClipRRect(
+                  borderRadius: FushiBorderRadius.card,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: <Widget>[
+                      cover,
+                      if (value != null)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child:
+                              CoverProgressStrip(value: value.clamp(0.0, 1.0)),
+                        ),
+                      // 角标恒完整显示：窄卡放不下时整枚等比缩小，不被卡边裁掉。
+                      if (label != null || icon != null)
+                        PositionedDirectional(
+                          key: const ValueKey<String>('home-cover-badge'),
+                          top: 6,
+                          end: 6,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: width - 12),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: AlignmentDirectional.topEnd,
                               child: CoverBadge(icon: icon, label: label),
                             ),
                           ),
                         ),
+                      Positioned.fill(
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child: InkWell(onTap: onTap),
+                        ),
                       ),
-                    Positioned.fill(
-                      child: Material(
-                        type: MaterialType.transparency,
-                        child: InkWell(onTap: onTap),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// [showTitle] 时在封面下方挂定高两行标题块；否则原样返回封面。
+  Widget _withTitle(BuildContext context, Widget coverBox) {
+    if (!showTitle) return coverBox;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        coverBox,
+        // 标题也是点按面（封面上的 InkWell 只盖封面）。
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: SizedBox(
+            key: const ValueKey<String>('home-cover-title'),
+            width: width,
+            height: homeCoverTitleBlockHeight(context),
+            child: Padding(
+              padding: const EdgeInsets.only(top: kHomeCoverTitleGap),
+              child: Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: homeCoverTitleStyle(context),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 「继续」主角卡（2026-10-10 加回）：最近一条在读 / 在看 / 在玩的条目放大成整卡——
+/// 竖版封面在左，右侧依次是相对时间、标题、副标题、M3E 波浪进度条
+/// （[FushiLinearProgressIndicator] 在 MD3 下即 [FushiWavyLinearProgress]，Apple /
+/// 墨水屏各走原生细条）与「继续阅读 / 继续观看」主按钮。
+///
+/// 封面高度由调用方按布局给（竖屏小、横屏 / 宽屏大），卡内再按可用宽度夹一次：
+/// 封面宽不超过卡宽的 36%，极窄屏（320）上信息列仍放得下按钮。
+///
+/// 交互：整卡可点（鼠标 / 触屏）且带悬停抬升 + 按压回弹；**键盘焦点只落在主
+/// 按钮上**（卡本身 `canRequestFocus: false`），同一动作不占两个 Tab 停靠点。
+class HomeContinueHero extends StatelessWidget {
+  const HomeContinueHero({
+    super.key,
+    required this.cover,
+    required this.coverHeight,
+    required this.title,
+    required this.actionLabel,
+    required this.actionIcon,
+    required this.onOpen,
+    this.eyebrow,
+    this.subtitle,
+    this.progress,
+    this.progressLabel,
+  });
+
+  /// 封面本体（调用方按 2:3 竖槽渲染好的 PortraitCoverImage / 占位）。
+  final Widget cover;
+
+  /// 封面期望高度（2:3）；卡宽不够时等比缩小。
+  final double coverHeight;
+
+  /// 标题上方的小字（最近一次的相对时间）；null = 不画。
+  final String? eyebrow;
+  final String title;
+  final String? subtitle;
+
+  /// 0..1；null = 无可展示进度（单视频无总时长、游戏）不画进度条。
+  final double? progress;
+
+  /// 进度条右侧的进度文案（「42%」「第 3 集」「12:34」）；null = 不画。
+  final String? progressLabel;
+  final String actionLabel;
+  final IconData actionIcon;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool apple = isGlassDesign(context);
+    final bool eink = isEinkTheme(context);
+    final BorderRadius radius = fushiCardBorderRadius(context);
+    final Color fill = apple
+        ? appleColorsOf(context).tertiaryFill
+        : Color.alphaBlend(
+            tokens.surfaces.primaryContainer.withValues(alpha: 0.38),
+            tokens.surfaces.card,
+          );
+    return FushiHoverLift(
+      scale: 1.015,
+      builder: (BuildContext context, bool _) => FushiPressScale(
+        child: Material(
+          key: const ValueKey<String>('home-continue-hero'),
+          color: eink ? Colors.transparent : fill,
+          shape: RoundedRectangleBorder(
+            borderRadius: radius,
+            side: eink
+                ? BorderSide(color: tokens.surfaces.outline)
+                : BorderSide.none,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            canRequestFocus: false,
+            onTap: onOpen,
+            child: Padding(
+              padding: EdgeInsets.all(tokens.spacing.card),
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints c) {
+                  final double coverWidth = math.min(
+                    coverHeight * 2 / 3,
+                    c.maxWidth * 0.36,
+                  );
+                  return Row(
+                    children: <Widget>[
+                      ClipRRect(
+                        borderRadius: FushiBorderRadius.card,
+                        child: SizedBox(
+                          width: coverWidth,
+                          height: coverWidth * 1.5,
+                          child: cover,
+                        ),
+                      ),
+                      SizedBox(width: tokens.spacing.card + 4),
+                      // 宽屏信息列封顶 480：进度条与标题不被拉成一整条长线。
+                      Expanded(
+                        child: Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 480),
+                            child: _info(context, tokens),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _info(BuildContext context, FushiDesignTokens tokens) {
+    final ThemeData theme = Theme.of(context);
+    final TextStyle titleStyle =
+        (theme.textTheme.titleLarge ?? tokens.type.listTitle).copyWith(
+      fontWeight: FontWeight.w600,
+      color: tokens.surfaces.onSurface,
+    );
+    final double? value = progress;
+    final String? label = progressLabel;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (eyebrow case final String text) ...<Widget>[
+          Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: tokens.type.metadata.copyWith(
+              color: tokens.surfaces.primary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          SizedBox(height: tokens.spacing.gap / 2),
+        ],
+        Text(
+          title,
+          key: const ValueKey<String>('home-continue-hero-title'),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: titleStyle,
+        ),
+        if (subtitle case final String sub) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap / 2),
+          Text(
+            sub,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: tokens.type.metadata,
+          ),
+        ],
+        if (value != null || label != null) ...<Widget>[
+          SizedBox(height: tokens.spacing.card),
+          Row(
+            children: <Widget>[
+              if (value != null)
+                Expanded(
+                  // 进度从 0 弹簧长到当前值（M3E 进场；墨水屏 / 减弱动态效果下
+                  // 时长归零即瞬间到位）。
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween<double>(begin: 0, end: value.clamp(0.0, 1.0)),
+                    duration: fushiMotionDuration(context, FushiMotion.long),
+                    curve: FushiMotion.enter,
+                    builder: (BuildContext context, double v, Widget? _) =>
+                        FushiLinearProgressIndicator(
+                      key:
+                          const ValueKey<String>('home-continue-hero-progress'),
+                      value: v,
+                      minHeight: 6,
+                      color: tokens.surfaces.primary,
+                    ),
+                  ),
+                )
+              else
+                const Spacer(),
+              if (label != null) ...<Widget>[
+                SizedBox(width: tokens.spacing.gap),
+                Text(
+                  label,
+                  maxLines: 1,
+                  style: tokens.type.metadata.copyWith(
+                    color: tokens.surfaces.onSurface,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+        SizedBox(height: tokens.spacing.card),
+        // 极窄屏信息列放不下整颗按钮时等比缩小，不溢出、不截字。
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: AlignmentDirectional.centerStart,
+          child: FushiFilledButton.icon(
+            key: const ValueKey<String>('home-continue-hero-action'),
+            onPressed: onOpen,
+            icon: FushiIcon(actionIcon),
+            label: Text(actionLabel),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 「最近添加」紧凑行（2026-10-10，横屏 / 宽屏侧栏）：小竖封面 + 标题 + 「类型 ·
+/// 相对时间」一行。侧栏宽度有限，列表比横滑封面行省地方，标题也能完整露出。
+class HomeRecentTile extends StatelessWidget {
+  const HomeRecentTile({
+    super.key,
+    required this.cover,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.coverHeight = 60,
+  });
+
+  final Widget cover;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final double coverHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiPressScale(
+      child: Semantics(
+        container: true,
+        button: true,
+        label: '$title · $subtitle',
+        onTap: onTap,
+        excludeSemantics: true,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: FushiBorderRadius.card,
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
+            child: Row(
+              children: <Widget>[
+                ClipRRect(
+                  borderRadius: FushiBorderRadius.card,
+                  child: SizedBox(
+                    width: coverHeight * 2 / 3,
+                    height: coverHeight,
+                    child: cover,
+                  ),
+                ),
+                SizedBox(width: tokens.spacing.card),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: tokens.type.listTitle,
+                      ),
+                      SizedBox(height: tokens.spacing.gap / 4),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: tokens.type.metadata,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ),

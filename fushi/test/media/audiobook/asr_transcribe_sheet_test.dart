@@ -553,6 +553,27 @@ void main() {
     );
   });
 
+  test('只有音频没书没字幕：能转录提醒转录生成书籍，否则提醒选字幕', () {
+    AudioOnlyImportHint hint({
+      bool hasBook = false,
+      bool hasSubtitle = false,
+      bool hasAudio = true,
+      bool asrSupported = true,
+    }) =>
+        audioOnlyImportHint(
+          hasBook: hasBook,
+          hasSubtitle: hasSubtitle,
+          hasAudio: hasAudio,
+          asrSupported: asrSupported,
+        );
+
+    expect(hint(), AudioOnlyImportHint.transcribeToBook);
+    expect(hint(asrSupported: false), AudioOnlyImportHint.pickSubtitleToBook);
+    expect(hint(hasBook: true), AudioOnlyImportHint.none);
+    expect(hint(hasSubtitle: true), AudioOnlyImportHint.none);
+    expect(hint(hasAudio: false), AudioOnlyImportHint.none);
+  });
+
   test('导出默认文件名：首个音频同名 .srt；无音频退回 transcript.srt', () {
     expect(
       // 用平台自己的分隔符拼路径：`basenameWithoutExtension` 走平台上下文，写死

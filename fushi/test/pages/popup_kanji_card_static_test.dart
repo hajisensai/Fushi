@@ -60,7 +60,7 @@ void main() {
     test('window.kanjiResults injection sits in the same push as lookupEntries',
         () {
       final int entriesIdx =
-          injector.indexOf(r'window.lookupEntries = $entriesJson');
+          injector.indexOf(r'window.lookupEntries = JSON.parse($entriesJsonLiteral)');
       final int kanjiIdx =
           injector.indexOf(r'window.kanjiResults = $kanjiResultsJson');
       expect(entriesIdx, greaterThanOrEqualTo(0));
