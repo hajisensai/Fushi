@@ -1808,9 +1808,22 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 「哪个功能用哪家 AI」的映射（设备本地）。
+  /// 运行时**生效**的「哪个功能用哪家 AI」：AI 模块（[ModuleId.ai]）关掉时投影成
+  /// 空指派，于是每个 `AiFeature` 都解析不到提供商——行为与「从没配过 AI」完全
+  /// 一致，后台刮削 / 补字幕 / AI 下载 / 漫画 OCR 重读一个请求都不发。
+  ///
+  /// 这是 AI 调用层（[AiSettingsSource] 的全部消费方）的唯一门：入口 UI 另由
+  /// `isAiModuleEnabled` 藏，但即使某个入口漏藏，这里也兜住不发请求。设置页编辑
+  /// 用户真实存的指派一律读 [storedAiFeatureAssignments]，不读本 getter——否则模块
+  /// 关着时编辑再保存会把真实指派清空。
   @override
-  AiFeatureAssignments get aiFeatureAssignments {
+  AiFeatureAssignments get aiFeatureAssignments => moduleEnabled(ModuleId.ai)
+      ? storedAiFeatureAssignments
+      : const AiFeatureAssignments();
+
+  /// 用户真实存的「哪个功能用哪家 AI」映射（设备本地），不看 AI 模块开关。
+  /// 只给设置 › AI 编辑用；运行时解析走 [aiFeatureAssignments]。
+  AiFeatureAssignments get storedAiFeatureAssignments {
     final String raw = getPref(
       'ai_feature_providers',
       defaultValue: '',
@@ -1839,6 +1852,8 @@ class PreferencesRepository extends ChangeNotifier
   /// 缓存键：任何写入（[setPref]、[loadFromDb] 换整份缓存、跨进程刷新）都会换串，
   /// 串一变就重新解码——判据就是数据本身，不存在漏掉失效通知而读到陈旧值的路径。
   AiProviderConfig? resolveAiFeatureProvider(AiFeature feature) {
+    // 模块门在缓存之外判：缓存键只有两份原始串，翻模块开关不会换串。
+    if (!moduleEnabled(ModuleId.ai)) return null;
     final String? providersRaw = _prefCache['ai_providers'];
     final String? assignmentsRaw = _prefCache['ai_feature_providers'];
     var cache = _aiResolveCache;
@@ -1849,7 +1864,7 @@ class PreferencesRepository extends ChangeNotifier
         providersRaw: providersRaw,
         assignmentsRaw: assignmentsRaw,
         providers: aiProviders,
-        assignments: aiFeatureAssignments,
+        assignments: storedAiFeatureAssignments,
       );
     }
     return cache.assignments.resolve(feature, cache.providers);

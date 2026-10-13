@@ -3,6 +3,7 @@ import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_ai.dart';
 import 'package:fushi/src/settings/settings_schema_appearance.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
 import 'package:fushi/src/settings/settings_schema_reading.dart';
@@ -39,6 +40,7 @@ void main() {
     ModuleId.listening: 'system.module_listening',
     ModuleId.cardCreation: 'system.module_card_creation',
     ModuleId.services: 'system.module_services',
+    ModuleId.ai: 'system.module_ai',
     ModuleId.sync: 'system.module_sync',
   };
 
@@ -52,6 +54,7 @@ void main() {
       <ModuleId, SettingsDestination>{
         ModuleId.cardCreation: buildCardCreationDestination(),
         ModuleId.services: buildServicesDestination(),
+        ModuleId.ai: buildAiDestination(),
         ModuleId.sync: buildSyncBackupDestination(),
       };
 
@@ -169,7 +172,7 @@ void main() {
     );
   });
 
-  test('四个横切模块确实没有底栏 tab（否则上面两条守卫会互相放水）', () {
+  test('五个横切模块确实没有底栏 tab（否则上面两条守卫会互相放水）', () {
     // 这条是上面「按 homeTabOfModule 分流」的前提。真给听书加了 tab 的话，
     // 分流会静默把它挪到另一条守卫下，两边都不会红——先在这里挡住。
     expect(
@@ -178,6 +181,7 @@ void main() {
         ModuleId.listening,
         ModuleId.cardCreation,
         ModuleId.services,
+        ModuleId.ai,
         ModuleId.sync,
       },
     );

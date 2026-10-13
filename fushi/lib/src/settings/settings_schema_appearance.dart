@@ -32,6 +32,8 @@ String _moduleItemId(ModuleId module) => switch (module) {
   ModuleId.listening => 'system.module_listening',
   ModuleId.cardCreation => 'system.module_card_creation',
   ModuleId.services => 'system.module_services',
+  // 2026-10-13 新增，跟随同一前缀。
+  ModuleId.ai => 'system.module_ai',
   ModuleId.sync => 'system.module_sync',
 };
 
@@ -40,7 +42,7 @@ String _moduleItemId(ModuleId module) => switch (module) {
 /// **一律取别处已有的真值，绝不在这里抄第二份标签**——此前这里抄了一套
 /// `module_*_label`（'小说' 对底栏「书架」、'Galgame' 对底栏「游戏」），两份真值
 /// 各改各的必然漂移，用户看到的就是设置项名字对不上底栏。
-/// 有底栏 tab 的模块取 [homeNavItemFor]（底栏改名这里自动跟着改）；没有 tab 的四个
+/// 有底栏 tab 的模块取 [homeNavItemFor]（底栏改名这里自动跟着改）；没有 tab 的五个
 /// 取它自己那个设置一级分类的标题与图标（同理，分类改名这里自动跟着改）。
 ({String label, IconData icon}) _moduleNavIdentity(ModuleId module) {
   final HomeTab? tab = homeTabOfModule(module);
@@ -61,6 +63,7 @@ String _moduleItemId(ModuleId module) => switch (module) {
       label: t.settings_destination_services,
       icon: FushiIcons.cloud,
     ),
+    ModuleId.ai => (label: t.ai_settings_title, icon: FushiIcons.aiAssistant),
     ModuleId.sync => (
       label: t.settings_destination_sync_backup,
       icon: FushiIcons.sync,
@@ -315,7 +318,7 @@ SettingsDestination buildAppearanceDestination() {
           ),
         ],
       ),
-      // 「功能模块」：12 个模块的总开关，值域与顺序都是 [ModuleId]。
+      // 「功能模块」：13 个模块的总开关，值域与顺序都是 [ModuleId]。
       //
       // **本区管的不再只是底栏**。这些开关原来只喂 `homeActiveTabs()`（底栏/侧栏
       // tab 列表），于是「关掉视频」之后设置页仍列着「视频」「在线服务」，首页活动

@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart'
     show createInterconnectMangaOcrRunner, mangaAiOcrProviderReady;
@@ -66,7 +67,10 @@ class MangaOcrSettingsPage extends ConsumerWidget {
               lensLanguageSetter: appModel.setMangaOcrLensLanguage,
               pairedHostModelGetter: () => appModel.mangaOcrPairedHostModel,
               pairedHostModelSetter: appModel.setMangaOcrPairedHostModel,
-              aiModeGetter: () => appModel.mangaOcrAiMode,
+              // AI 档位面板按 aiModeGetter 是否为 null 自我门控：AI 模块关掉时不传。
+              aiModeGetter: isAiModuleEnabled(appModel.moduleVisibility)
+                  ? () => appModel.mangaOcrAiMode
+                  : null,
               aiModeSetter: appModel.setMangaOcrAiMode,
               aiProviderReady: () => mangaAiOcrProviderReady(appModel),
               openAiSettings: pushAiSettingsPage,

@@ -113,7 +113,7 @@ class _AiProviderSettingsSectionState
         for (final AiProviderConfig config in appModel.prefsRepo.aiProviders)
           _AiProviderDraft.fromConfig(config),
       ];
-      _assignments = appModel.prefsRepo.aiFeatureAssignments;
+      _assignments = appModel.prefsRepo.storedAiFeatureAssignments;
     }
 
     // 与同页 schema 段同一套分组（MD3 分段卡 / Apple inset grouped）：渲染器已经

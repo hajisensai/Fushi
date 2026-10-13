@@ -74,6 +74,18 @@ enum ModuleId {
   /// 在线服务与追踪：第三方 API / 索引器 / 媒体服务器凭据 + 媒体追踪。
   services('module_services_enabled'),
 
+  /// AI：用户自配的大模型提供商与全部 AI 辅助功能（AI 下载、刮削 AI 识别、
+  /// 词典 / Lapis / 主题样式生成、galgame 文本处理规则生成、漫画 OCR 大模型
+  /// 重读）。2026-10-13 起独立成模块（用户反馈「AI 用不着，想像首页那样整块
+  /// 关掉」）；此前 AI 设置挂在 [services] 下、功能入口没有总开关。
+  ///
+  /// 关掉 = 「设置 › AI」整类不渲染 + 各页 AI 入口不渲染（UI 判据
+  /// `isAiModuleEnabled`，见 `module_registry.dart`）+ 运行时每个
+  /// `AiFeature` 都解析不到提供商（`PreferencesRepository.aiFeatureAssignments`
+  /// 投影成空），行为与「从没配过 AI」完全一致，不发任何 AI 请求。已配的提供商与
+  /// 指派原样保留，重新打开即恢复。
+  ai('module_ai_enabled'),
+
   /// 同步与备份 + Fushi 互联（设备直连、本机作为服务器）。
   sync('module_sync_enabled');
 
@@ -123,6 +135,7 @@ enum ModuleId {
     ModuleId.listening ||
     ModuleId.cardCreation ||
     ModuleId.services ||
+    ModuleId.ai ||
     ModuleId.sync => true,
   };
 

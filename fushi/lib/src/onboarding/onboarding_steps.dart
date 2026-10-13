@@ -88,8 +88,9 @@ const Set<OnboardingFeature> kOnboardingDefaultCapabilities =
 /// 强制在这里补齐，向导的模块方格、写回 `module_*_enabled` 的循环与下面的步骤
 /// 总闸全部从这一张表推导，不会再出现「加了模块但向导只认 5 个」的漂移。
 ///
-/// 首页（[ModuleId.home]）返回 `null`：它不是「要不要这项功能」的选择，向导不出
-/// 它的方格、也不改写它（关首页只在 设置 → 外观 → 功能模块 里做）。
+/// 首页（[ModuleId.home]）与 AI（[ModuleId.ai]）返回 `null`：它们不是向导里「要不
+/// 要这项功能」的选择，向导不出方格、也不改写它们（只在 设置 → 外观 → 功能模块
+/// 里关）。
 OnboardingFeature? onboardingFeatureOfModule(ModuleId module) =>
     switch (module) {
       ModuleId.home => null,
@@ -103,6 +104,9 @@ OnboardingFeature? onboardingFeatureOfModule(ModuleId module) =>
       ModuleId.listening => OnboardingFeature.listening,
       ModuleId.cardCreation => OnboardingFeature.cardCreation,
       ModuleId.services => OnboardingFeature.services,
+      // AI 默认开、向导不问：新装用户还没配任何提供商，AI 入口点了只引导去配置，
+      // 「要不要 AI」不是首启该回答的问题。关 AI 在 设置 → 外观 → 功能模块。
+      ModuleId.ai => null,
       ModuleId.sync => OnboardingFeature.sync,
     };
 

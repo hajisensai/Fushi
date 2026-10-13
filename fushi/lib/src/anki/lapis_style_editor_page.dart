@@ -79,6 +79,7 @@ class LapisStyleEditorPage extends StatefulWidget {
     this.previewBuilder,
     this.resolveAiProvider,
     this.aiClientFactory,
+    this.aiEnabled = true,
     super.key,
   });
 
@@ -111,6 +112,10 @@ class LapisStyleEditorPage extends StatefulWidget {
 
   /// 「让 AI 帮忙」用的提供商解析；null = 没配。
   final LapisStyleAiProviderResolver? resolveAiProvider;
+
+  /// 「让 AI 帮忙」区是否出现。调用方按 AI 模块开关（`isAiModuleEnabled`）求值后
+  /// 传入——本页零 Riverpod 依赖，不自己读 AppModel；false 时整段不渲染。
+  final bool aiEnabled;
 
   @visibleForTesting
   final LapisStyleAiClientFactory? aiClientFactory;
@@ -1056,8 +1061,10 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
               _buildFieldMappingSection(tokens),
           ]),
           gap,
-          FushiStaggeredEntrance(index: 4, child: _buildAiSection(tokens)),
-          gap,
+          if (widget.aiEnabled) ...<Widget>[
+            FushiStaggeredEntrance(index: 4, child: _buildAiSection(tokens)),
+            gap,
+          ],
           _controlGroup(5, <Widget>[
               FushiExpansionTile(
                 tilePadding: EdgeInsets.zero,

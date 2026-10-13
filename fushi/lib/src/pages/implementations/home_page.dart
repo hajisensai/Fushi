@@ -36,7 +36,6 @@ import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
-import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/pages/implementations/managed_video_source_prompt.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
@@ -2594,16 +2593,14 @@ class _HomePageState extends BasePageState<HomePage>
   /// 「AI 下视频」入口的模块门：用户在「功能模块」里关掉的东西，入口不能再把它
   /// 带出来。
   ///
-  /// - 在线服务（`ModuleId.services`）关了 = 用户主动隐藏了「设置 › AI」。入口一旦
-  ///   出现，点击就会经 [_pushAiSettings] 推出这个被关掉的页面（`ModuleSettingsView`
-  ///   不查 `visible`），所以这里按同一判据 [isSettingsDestinationVisible] 收起。
+  /// - AI 模块（`ModuleId.ai`）关了 = 用户不要 AI，「设置 › AI」也随之隐藏。入口
+  ///   一旦出现，点击就会经 [_pushAiSettings] 推出这个被关掉的页面
+  ///   （`ModuleSettingsView` 不查 `visible`），所以按唯一判据 [isAiModuleEnabled]
+  ///   收起。
   /// - 下载模块关了：这个功能的产物就是下载任务，与设置里「AI 下视频」段
   ///   （`settings_schema_ai.dart`）同一个门。
   bool get _aiAcquireModulesEnabled =>
-      isSettingsDestinationVisible(
-        SettingsDestinationId.ai,
-        appModel.moduleVisibility,
-      ) &&
+      isAiModuleEnabled(appModel.moduleVisibility) &&
       appModel.moduleVisibility.isEnabled(ModuleId.browse);
 
   /// 打开「AI 下视频」对话页：组装全部端口后交给 [VideoAcquisitionService]。
@@ -3187,6 +3184,7 @@ class _HomePageState extends BasePageState<HomePage>
             appModel.database.getMediaSourceById(sourceId),
         loadPendingWorks: () =>
             _videoLibraryScrapeSweep.pendingWorksWithReasons(),
+        showAiIdentify: isAiModuleEnabled(appModel.moduleVisibility),
         onRetry: (VideoSourceScrapeRunRow run) async {
           final int? sourceId = run.sourceId;
           if (sourceId == null) return;

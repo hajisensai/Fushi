@@ -41,7 +41,7 @@ ModuleId? moduleOfHomeTab(HomeTab tab) => switch (tab) {
 bool isHomeTabVisible(HomeTab tab, ModuleVisibility visibility) =>
     visibility.isEnabledOrUngated(moduleOfHomeTab(tab));
 
-/// 模块 → 它的顶层 tab。四个横切模块（听书/制卡/在线服务/同步）**没有 tab**，
+/// 模块 → 它的顶层 tab。五个横切模块（听书/制卡/在线服务/AI/同步）**没有 tab**，
 /// 返回 `null`——它们只有设置分类与散落在各页的入口。
 HomeTab? homeTabOfModule(ModuleId module) => switch (module) {
   ModuleId.home => HomeTab.home,
@@ -55,6 +55,7 @@ HomeTab? homeTabOfModule(ModuleId module) => switch (module) {
   ModuleId.listening ||
   ModuleId.cardCreation ||
   ModuleId.services ||
+  ModuleId.ai ||
   ModuleId.sync => null,
 };
 
@@ -113,9 +114,8 @@ ModuleId? moduleOfSettingsDestination(SettingsDestinationId id) => switch (id) {
   // 凭据跑的，分成两个开关只会让用户关了一半还留着另一半。
   SettingsDestinationId.services => ModuleId.services,
   SettingsDestinationId.mediaTracking => ModuleId.services,
-  // AI 提供商配置就是第三方在线服务的端点 + 凭据，与 Jimaku / OpenSubtitles /
-  // Torznab 同类，共用 services 这一个开关，不另开 ModuleId。
-  SettingsDestinationId.ai => ModuleId.services,
+  // AI 自 2026-10-13 起是独立模块（用户要能整块关掉 AI 而不连坐在线服务）。
+  SettingsDestinationId.ai => ModuleId.ai,
   // 互联是从同步备份拆出去的一级分类，共享同一套后端与私有状态，同一个开关。
   SettingsDestinationId.syncBackup => ModuleId.sync,
   SettingsDestinationId.interconnect => ModuleId.sync,
@@ -128,6 +128,19 @@ bool isSettingsDestinationVisible(
   SettingsDestinationId id,
   ModuleVisibility visibility,
 ) => visibility.isEnabledOrUngated(moduleOfSettingsDestination(id));
+
+/// AI 功能总开关（[ModuleId.ai]）的**唯一 UI 判据**。
+///
+/// 所有 AI 入口（设置 › AI、发现页 / 视频详情的「AI 下载」、刮削面板的「AI 识别」、
+/// 词典 / Lapis / 自定义主题 / galgame 文本处理编辑器里的「让 AI 帮忙」、漫画 OCR
+/// 的 AI 档位）渲染前一律问它，不各自拼 `isEnabled(ModuleId.ai)`；源码守卫
+/// `test/models/ai_module_gate_guard_test.dart` 钉死入口文件都经过它。
+///
+/// 运行时（后台刮削、补字幕重排、AI 下载、漫画 OCR 重读）不靠它：那一层由
+/// `PreferencesRepository.aiFeatureAssignments` 在模块关闭时投影成空指派兜住，
+/// 入口漏藏也不会发出任何 AI 请求。
+bool isAiModuleEnabled(ModuleVisibility visibility) =>
+    visibility.isEnabled(ModuleId.ai);
 
 // ── ShortcutScope ──────────────────────────────────────────────────────────
 

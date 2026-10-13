@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart'
@@ -56,7 +57,10 @@ SettingsDestination _buildMangaOcrDestination() {
       lensLanguageSetter: c.appModel.setMangaOcrLensLanguage,
       pairedHostModelGetter: () => c.appModel.mangaOcrPairedHostModel,
       pairedHostModelSetter: c.appModel.setMangaOcrPairedHostModel,
-      aiModeGetter: () => c.appModel.mangaOcrAiMode,
+      // AI 档位面板按 aiModeGetter 是否为 null 自我门控：AI 模块关掉时不传。
+      aiModeGetter: isAiModuleEnabled(c.appModel.moduleVisibility)
+          ? () => c.appModel.mangaOcrAiMode
+          : null,
       aiModeSetter: c.appModel.setMangaOcrAiMode,
       aiProviderReady: () => mangaAiOcrProviderReady(c.appModel),
       openAiSettings: pushAiSettingsPage,

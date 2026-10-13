@@ -19,6 +19,7 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_theme_assistant.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show isAchromaticSeed, kCustomThemeDefaultSeed;
@@ -679,6 +680,9 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
 
   // ── AI 生成 ──
 
+  /// AI 模块（`ModuleId.ai`）开着才出「让 AI 帮忙」卡与「更多」里的跳转项。
+  bool get _aiVisible => isAiModuleEnabled(appModelNoUpdate.moduleVisibility);
+
   AiProviderConfig? _resolveAiProvider() {
     final CustomThemeAiProviderResolver? injected = widget.resolveAiProvider;
     if (injected != null) return injected();
@@ -1123,8 +1127,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         ],
       ),
       // ── 让 AI 帮忙（紧凑卡）──
-      _buildAiCard(),
-      SizedBox(height: card),
+      if (_aiVisible) ...<Widget>[_buildAiCard(), SizedBox(height: card)],
       // ── 界面配色 ──
       AdaptiveSettingsSection(
         title: t.theme_section_accent,
@@ -1367,7 +1370,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                     icon: const FushiIcon(FushiIcons.share),
                     label: Text(t.share_theme),
                   ),
-                  _buildMoreMenu(),
+                  // AI 关 + 草稿 = 菜单里一项都没有，整颗不渲染。
+                  if (_aiVisible || !_isDraft) _buildMoreMenu(),
                 ],
               ),
               _buildBrightnessToggle(),
@@ -1411,10 +1415,11 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         }
       },
       itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-        PopupMenuItem<String>(
-          value: 'ai',
-          child: item(FushiIcons.ai, t.ai_assist_section),
-        ),
+        if (_aiVisible)
+          PopupMenuItem<String>(
+            value: 'ai',
+            child: item(FushiIcons.ai, t.ai_assist_section),
+          ),
         if (!_isDraft)
           PopupMenuItem<String>(
             key: const ValueKey<String>('custom-theme-delete'),

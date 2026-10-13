@@ -3,6 +3,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
+import 'package:fushi_engine/ai/ai_feature.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 
@@ -88,6 +90,47 @@ void main() {
           false,
           reason: '${module.name} 不该跟着 books 一起被打开',
         );
+      }
+    });
+
+    test(
+        'AI module off: every AiFeature resolves to no provider, '
+        'stored assignments survive and come back when turned on', () async {
+      final AiProviderConfig provider = AiProviderConfig(
+        id: 'p1',
+        presetId: 'openai',
+        name: 'OpenAI',
+        baseUrl: Uri.parse('https://api.openai.com/v1'),
+        apiKey: 'sk-secret',
+        model: 'gpt-4o-mini',
+      );
+      await repo.setAiProviders(<AiProviderConfig>[provider]);
+      await repo.setAiFeatureAssignments(
+        const AiFeatureAssignments(defaultProviderId: 'p1'),
+      );
+      for (final AiFeature feature in AiFeature.values) {
+        expect(repo.resolveAiFeatureProvider(feature)?.id, 'p1');
+      }
+
+      await repo.setModuleEnabled(ModuleId.ai, false);
+      for (final AiFeature feature in AiFeature.values) {
+        expect(
+          repo.resolveAiFeatureProvider(feature),
+          isNull,
+          reason: '$feature 在 AI 模块关闭时不该解析出提供商（缓存不得放水）',
+        );
+        expect(
+          repo.aiFeatureAssignments.resolve(feature, repo.aiProviders),
+          isNull,
+          reason: '$feature 经 AiSettingsSource 契约也不该解析出提供商',
+        );
+      }
+      // 用户真实存的指派原样保留：设置页编辑读它，关模块不能清空用户配置。
+      expect(repo.storedAiFeatureAssignments.defaultProviderId, 'p1');
+
+      await repo.setModuleEnabled(ModuleId.ai, true);
+      for (final AiFeature feature in AiFeature.values) {
+        expect(repo.resolveAiFeatureProvider(feature)?.id, 'p1');
       }
     });
 
