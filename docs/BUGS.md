@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3001 条。点号进各自文件。
+> 共 3002 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -41,6 +41,7 @@
 | [BUG-3317](bugs/BUG-3317-bitmap-subtitle-oversize-oom.md) | ✅ | ✅ | 位图字幕对象声明超大尺寸时一次分配数GB平面 |
 | [BUG-3316](bugs/BUG-3316-libmpv-probe-tests-release-backend.md) | ✅ | ✅ | media_kit 热重启探针预编译后实际测的是 release 后端 |
 | [BUG-3310](bugs/BUG-3310-double-tap-pause-gated-by-synced-click-switch.md) | ✅ | ✅ | 移动端双击暂停被跨设备同步的「点击画面播放/暂停」开关静默关掉 |
+| [BUG-3309](bugs/BUG-3309-ios-md3-adaptive-cupertino-leak.md) | ✅ | ✅ | iOS 上 MD3 设计系统的 .adaptive 控件仍渲染 Cupertino 外观（来源顺序对话框绿开关） |
 | [BUG-3308](bugs/BUG-3308-popup-round-button-press-square.md) | ✅ | ✅ | 查词弹窗点「+」制卡按钮时闪出完全直角的方块 |
 | [BUG-3307](bugs/BUG-3307-feedback-screenshot-platform-view.md) | ✅ | ✅ | 反馈自动截图缺 WebView 等平台视图（iOS 查词卡整块空白） |
 | [BUG-3306](bugs/BUG-3306-lookup-clear-x-not-working.md) | 🚧 | 🚧 | 查词页搜索框 X 清不掉结果（反馈 DUiNPr1J10，未复现） |

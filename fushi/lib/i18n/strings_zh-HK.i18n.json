@@ -7079,5 +7079,6 @@
   "ai_provider_api_keys_add": "Add another API key",
   "ai_provider_api_keys_summary": "With several keys, a request that is rejected, rate-limited or out of credit switches to the next key and retries; the failing key cools down and is tried again later.",
   "video_setting_double_tap_toggles_playback": "雙擊畫面播放/暫停",
-  "video_setting_double_tap_toggles_playback_hint": "觸控螢幕雙擊畫面中間（或關閉雙擊快退快進時的任意位置）切換播放/暫停"
+  "video_setting_double_tap_toggles_playback_hint": "觸控螢幕雙擊畫面中間（或關閉雙擊快退快進時的任意位置）切換播放/暫停",
+  "local_audio_source_reorder_tooltip": "Drag or tap to reorder"
 }

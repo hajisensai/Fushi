@@ -7079,5 +7079,6 @@
   "ai_provider_api_keys_add": "再添加一个 API 密钥",
   "ai_provider_api_keys_summary": "配置多个密钥时，某个密钥被拒绝、限流或额度用尽，会自动换下一个重试；失败的密钥进入冷却，到期后再用。",
   "video_setting_double_tap_toggles_playback": "双击画面播放/暂停",
-  "video_setting_double_tap_toggles_playback_hint": "触屏双击画面中间（或关闭双击快退快进时的任意位置）切换播放/暂停"
+  "video_setting_double_tap_toggles_playback_hint": "触屏双击画面中间（或关闭双击快退快进时的任意位置）切换播放/暂停",
+  "local_audio_source_reorder_tooltip": "拖动或点按调整顺序"
 }

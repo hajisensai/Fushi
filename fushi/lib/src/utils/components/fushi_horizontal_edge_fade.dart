@@ -8,15 +8,21 @@ import 'package:material_ui/material_ui.dart';
 /// 终点时首尾项完整可见，不会被渐隐吃掉一截（HBK-AUDIT-019：原先恒定淡掉两端，
 /// 筛选行的第一枚 chip 一进页就是半透明的）。
 ///
-/// 用 [ShaderMask] 实现：不改版面、不接指针。只认直属（depth 0）的横向滚动。
+/// 用 [ShaderMask] 实现：不改版面、不接指针。只认直属（depth 0）、方向为
+/// [axis] 的滚动。[axis] 传 [Axis.vertical] 时淡的是上 / 下两端（对话框里定高
+/// 滚动列表溢出时柔和淡出，而不是被硬切一刀）。
 class FushiHorizontalEdgeFade extends StatefulWidget {
   const FushiHorizontalEdgeFade({
     required this.child,
     this.extent = 24,
+    this.axis = Axis.horizontal,
     super.key,
   });
 
   final Widget child;
+
+  /// 跟踪并渐隐的滚动方向。
+  final Axis axis;
 
   /// 每一侧渐隐的宽度（逻辑 px）。
   final double extent;
@@ -31,7 +37,7 @@ class _FushiHorizontalEdgeFadeState extends State<FushiHorizontalEdgeFade> {
   bool _fadeEnd = false;
 
   bool _track(ScrollMetrics metrics, int depth) {
-    if (depth != 0 || metrics.axis != Axis.horizontal) return false;
+    if (depth != 0 || metrics.axis != widget.axis) return false;
     final bool start = metrics.extentBefore > 0.5;
     final bool end = metrics.extentAfter > 0.5;
     if (start != _fadeStart || end != _fadeEnd) {
@@ -50,7 +56,9 @@ class _FushiHorizontalEdgeFadeState extends State<FushiHorizontalEdgeFade> {
 
   @override
   Widget build(BuildContext context) {
-    final bool rtl = Directionality.of(context) == TextDirection.rtl;
+    final bool vertical = widget.axis == Axis.vertical;
+    final bool rtl =
+        !vertical && Directionality.of(context) == TextDirection.rtl;
     // 「起点 / 终点」是滚动方向上的，RTL 下起点在右边。
     final bool fadeLeft = rtl ? _fadeEnd : _fadeStart;
     final bool fadeRight = rtl ? _fadeStart : _fadeEnd;
@@ -62,7 +70,7 @@ class _FushiHorizontalEdgeFadeState extends State<FushiHorizontalEdgeFade> {
         child: ShaderMask(
           blendMode: BlendMode.dstIn,
           shaderCallback: (Rect bounds) {
-            final double width = bounds.width;
+            final double width = vertical ? bounds.height : bounds.width;
             if ((!fadeLeft && !fadeRight) || width <= widget.extent * 2) {
               return const LinearGradient(
                 colors: <Color>[Colors.black, Colors.black],
@@ -70,6 +78,8 @@ class _FushiHorizontalEdgeFadeState extends State<FushiHorizontalEdgeFade> {
             }
             final double edge = widget.extent / width;
             return LinearGradient(
+              begin: vertical ? Alignment.topCenter : Alignment.centerLeft,
+              end: vertical ? Alignment.bottomCenter : Alignment.centerRight,
               colors: <Color>[
                 fadeLeft ? const Color(0x00000000) : const Color(0xFF000000),
                 fadeLeft ? const Color(0x80000000) : const Color(0xFF000000),

@@ -129,7 +129,7 @@ bool Function() debugShaderFilterSupported = () =>
 FushiGlassMaterial glassMaterialOf(BuildContext context) {
   final FushiGlassMaterial material =
       Theme.of(context).extension<FushiGlassTheme>()?.material ??
-          FushiGlassMaterial.off;
+      FushiGlassMaterial.off;
   if (material == FushiGlassMaterial.off) return material;
   if (isEinkTheme(context)) return FushiGlassMaterial.off;
   if (MediaQuery.maybeHighContrastOf(context) ?? false) {
@@ -166,7 +166,7 @@ double? einkSafeProgressValue(BuildContext context, double? value) {
 bool isCupertinoPlatform(BuildContext context) {
   final FushiDesignSystem designSystem =
       Theme.of(context).extension<FushiDesignSystemTheme>()?.designSystem ??
-          FushiDesignSystem.auto;
+      FushiDesignSystem.auto;
   switch (designSystem) {
     case FushiDesignSystem.material:
       return false;
@@ -182,13 +182,23 @@ bool isCupertinoPlatform(BuildContext context) {
   }
 }
 
+/// SDK 的 `X.adaptive` 系列（`Switch.adaptive` / `Slider.adaptive` /
+/// `Checkbox.adaptive` / `AlertDialog.adaptive` / `CircularProgressIndicator.adaptive`
+/// …）按 [ThemeData.platform] 选外观：iOS / macOS 上出 Cupertino 绿开关、菊花、
+/// Cupertino 对话框。本仓 `auto` 下五平台统一 MD3（M3E），所以 Fushi 包装层的
+/// `.adaptive` 构造器只在**显式选了 Cupertino 设计系统**时才交给 SDK 的平台分派，
+/// 其余一律渲染 Material 控件（BUG-3309：iOS 上「来源顺序」对话框出绿色
+/// CupertinoSwitch 外观、不跟主题色）。判据只写这一处，包装层不再各自读平台。
+bool useCupertinoAdaptiveControls(BuildContext context) =>
+    isCupertinoPlatform(context);
+
 /// True when the macOS-native (macos_ui) design system should drive this
 /// subtree. Converted shells/pages branch on this BEFORE
 /// [isCupertinoPlatform].
 bool isMacosPlatform(BuildContext context) {
   final FushiDesignSystem designSystem =
       Theme.of(context).extension<FushiDesignSystemTheme>()?.designSystem ??
-          FushiDesignSystem.auto;
+      FushiDesignSystem.auto;
   switch (designSystem) {
     case FushiDesignSystem.material:
     case FushiDesignSystem.cupertino:

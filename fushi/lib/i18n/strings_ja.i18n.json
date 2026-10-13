@@ -7079,5 +7079,6 @@
   "ai_provider_api_keys_add": "Add another API key",
   "ai_provider_api_keys_summary": "With several keys, a request that is rejected, rate-limited or out of credit switches to the next key and retries; the failing key cools down and is tried again later.",
   "video_setting_double_tap_toggles_playback": "ダブルタップで再生/一時停止",
-  "video_setting_double_tap_toggles_playback_hint": "タッチ画面で動画の中央をダブルタップ（ダブルタップでのシークがオフのときはどこでも）すると再生/一時停止を切り替えます"
+  "video_setting_double_tap_toggles_playback_hint": "タッチ画面で動画の中央をダブルタップ（ダブルタップでのシークがオフのときはどこでも）すると再生/一時停止を切り替えます",
+  "local_audio_source_reorder_tooltip": "Drag or tap to reorder"
 }
