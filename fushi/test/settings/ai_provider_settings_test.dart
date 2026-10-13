@@ -404,6 +404,25 @@ void main() {
       expect(saved.isUsable, isTrue);
     });
 
+    testWidgets('每分钟请求上限：填数字写穿配置，清空即不限', (WidgetTester tester) async {
+      await pumpSection(tester);
+      await tapKey(tester, 'ai-provider-add');
+      await tapKey(tester, 'ai-provider-preset-deepseek');
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+      expect(prefs.aiProviders.single.requestsPerMinute, 0, reason: '默认不限');
+
+      await enter(tester, 'ai-provider-0-rate-limit', '20');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(prefs.aiProviders.single.requestsPerMinute, 20);
+
+      await enter(tester, 'ai-provider-0-rate-limit', '');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(prefs.aiProviders.single.requestsPerMinute, 0);
+    });
+
     testWidgets('一条草稿打字到中间态：磁盘保留它上一次的有效版本，不连累其它提供商', (
       WidgetTester tester,
     ) async {

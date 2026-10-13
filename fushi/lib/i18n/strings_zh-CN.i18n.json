@@ -7061,5 +7061,7 @@
   "ocr_llm_default_accept": "开启",
   "ocr_llm_default_decline": "不用",
   "manga_ocr_ai_mode_pending": "尚未决定：第一次要发送没把握的文字时会询问。",
-  "manga_ocr_ai_mode_confirm_default": "现在开启"
+  "manga_ocr_ai_mode_confirm_default": "现在开启",
+  "ai_provider_rate_limit": "每分钟请求上限",
+  "ai_provider_rate_limit_hint": "留空表示不限。按套餐限额填写，避免请求太快被拦截。"
 }

@@ -11,6 +11,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:fushi_engine/media/torrent/torznab_client.dart'
     show isSafeExternalProviderEndpoint;
@@ -246,6 +247,7 @@ class AiProviderConfig {
     this.reasoningEffort = AiReasoningEffort.none,
     this.enabled = true,
     this.allowInsecureHttp = false,
+    this.requestsPerMinute = 0,
   }) {
     if (id.trim().isEmpty) {
       throw ArgumentError.value(id, 'id', 'AI provider id must not be empty');
@@ -313,6 +315,7 @@ class AiProviderConfig {
       ),
       enabled: json['enabled'] as bool? ?? true,
       allowInsecureHttp: json['allowInsecureHttp'] as bool? ?? false,
+      requestsPerMinute: math.max(0, (json['rpm'] as num?)?.toInt() ?? 0),
     );
   }
 
@@ -334,6 +337,10 @@ class AiProviderConfig {
   /// 明文 HTTP 的显式放行。本地推理服务（Ollama / LM Studio）跑在
   /// `http://localhost`，不给这个开关等于把本地模型挡在门外。
   final bool allowInsecureHttp;
+
+  /// 每分钟最多发几次请求（这家所有功能合计，见 `AiRateLimiter`）；0 = 不限。
+  /// 免费档 / 低档 API 有速率上限，超了会被 429 拦下、整批作废。
+  final int requestsPerMinute;
 
   String get displayName => name.trim().isNotEmpty ? name.trim() : baseUrl.host;
 
@@ -361,6 +368,7 @@ class AiProviderConfig {
     AiReasoningEffort? reasoningEffort,
     bool? enabled,
     bool? allowInsecureHttp,
+    int? requestsPerMinute,
   }) => AiProviderConfig(
     id: id,
     presetId: presetId,
@@ -372,6 +380,7 @@ class AiProviderConfig {
     reasoningEffort: reasoningEffort ?? this.reasoningEffort,
     enabled: enabled ?? this.enabled,
     allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
+    requestsPerMinute: requestsPerMinute ?? this.requestsPerMinute,
   );
 
   /// API Key 在 JSON 里 base64 存放。
@@ -392,6 +401,7 @@ class AiProviderConfig {
       'reasoningEffort': reasoningEffort.storageKey,
     'enabled': enabled,
     if (allowInsecureHttp) 'allowInsecureHttp': true,
+    if (requestsPerMinute > 0) 'rpm': requestsPerMinute,
   };
 }
 

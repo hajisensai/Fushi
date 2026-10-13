@@ -12,6 +12,7 @@ library;
 import 'dart:convert';
 
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_rate_limiter.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
 
@@ -88,12 +89,16 @@ class AiChatMessage {
 ///
 /// [client] 可注入，测试用假客户端断言 wire 形状，不打真网。
 class AiChatClient {
-  AiChatClient({http.Client? client})
+  AiChatClient({http.Client? client, AiRateLimiter? rateLimiter})
     : _client = client ?? createAppHttpIoClient(),
-      _ownsClient = client == null;
+      _ownsClient = client == null,
+      _rateLimiter = rateLimiter ?? AiRateLimiter.shared;
 
   final http.Client _client;
   final bool _ownsClient;
+
+  /// 按提供商排队（[AiProviderConfig.requestsPerMinute] 与 `Retry-After`）。
+  final AiRateLimiter _rateLimiter;
 
   void close() {
     if (_ownsClient) {
@@ -113,6 +118,7 @@ class AiChatClient {
     if (!provider.isUsable) {
       throw const AiChatFailure('provider_not_configured');
     }
+    await _rateLimiter.acquire(provider);
     final Map<Object?, Object?> body = await _postChat(
       provider,
       messages,
@@ -234,6 +240,7 @@ class AiChatClient {
         headers: _headers(provider),
         body: jsonEncode(payload),
       ),
+      throttled: provider,
     );
     final Object? body = _decodeBody(response);
     if (body is! Map) {
@@ -425,7 +432,12 @@ class AiChatClient {
     return headers;
   }
 
-  Future<http.Response> _send(Future<http.Response> Function() send) async {
+  /// [throttled] 非 null 时，429 回复的 `Retry-After` 记进限频器：这家后续请求
+  /// （包括并发在途、还在排队的）都等到那之后再发。
+  Future<http.Response> _send(
+    Future<http.Response> Function() send, {
+    AiProviderConfig? throttled,
+  }) async {
     final http.Response response;
     try {
       response = await send().timeout(kAiChatRequestTimeout);
@@ -437,6 +449,12 @@ class AiChatClient {
       throw const AiChatFailure('unauthorized');
     }
     if (response.statusCode == 429) {
+      final Duration? retryAfter = parseRetryAfter(
+        response.headers['retry-after'],
+      );
+      if (throttled != null && retryAfter != null) {
+        _rateLimiter.backOff(throttled, retryAfter);
+      }
       throw const AiChatFailure('rate_limited');
     }
     if (response.statusCode >= 400) {

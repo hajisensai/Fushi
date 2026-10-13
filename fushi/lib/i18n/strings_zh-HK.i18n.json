@@ -7061,5 +7061,7 @@
   "ocr_llm_default_accept": "開啟",
   "ocr_llm_default_decline": "不用",
   "manga_ocr_ai_mode_pending": "尚未決定：第一次要傳送沒把握的文字時會詢問。",
-  "manga_ocr_ai_mode_confirm_default": "現在開啟"
+  "manga_ocr_ai_mode_confirm_default": "現在開啟",
+  "ai_provider_rate_limit": "每分鐘請求上限",
+  "ai_provider_rate_limit_hint": "留空表示不限。按方案限額填寫，避免請求太快被攔截。"
 }
