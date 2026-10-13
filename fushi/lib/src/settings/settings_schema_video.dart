@@ -793,7 +793,7 @@ SettingsDestination buildVideoDestination() {
           SettingsSliderItem(
             id: 'video.subtitle.outline',
             title: t.video_setting_subtitle_outline,
-            icon: Icons.border_style_outlined,
+            icon: FushiIcons.outline,
             video: VideoPlacement(
               group: VideoGroup.subtitle,
               order: 102,

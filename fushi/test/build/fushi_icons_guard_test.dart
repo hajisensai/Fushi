@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 
 import '../helpers/scan_scale.dart';
 import '../helpers/source_guard.dart';
+import '../helpers/ttf_cmap.dart';
 
 int _legacyIconCount(String source) => RegExp(
   r'(?<![\w.])Icons\.[a-z0-9_]+',
@@ -69,6 +70,44 @@ final apple = CupertinoIcons.chat_bubble;
       expect(outline, isNot(solid));
       // 线框字族 + 显式 fill >= 0.5 同样取实心。
       expect(fushiAppleIcon(FushiIcons.home, fill: 1), solid);
+    });
+
+    test('每个语义名的码位都在打包的线框 / 实心字体子集里（否则画出豆腐块）', () {
+      // 语义名只能经 tool/icons/gen_fushi_symbols.py 新增：它同时重切两份字体子集。
+      // 手写进 fushi_icons.g.dart、没重跑脚本的码位源码里看着正常，真机却是方块。
+      for (final String path in <String>[
+        'assets/icon_fonts/FushiSymbolsRounded.ttf',
+        'assets/icon_fonts/FushiSymbolsRoundedFilled.ttf',
+      ]) {
+        final Set<int> available = ttfCmapCodePoints(
+          File(path).readAsBytesSync(),
+        );
+        expect(available, isNotEmpty, reason: '$path：cmap 解析失败');
+        final List<String> missing = <String>[
+          for (final MapEntry<String, IconData> e in FushiIcons.all.entries)
+            if (!available.contains(e.value.codePoint))
+              '${e.key} (0x${e.value.codePoint.toRadixString(16)})',
+        ];
+        expect(missing, isEmpty, reason: path);
+      }
+    });
+
+    test('字幕描边 / 阴影有独立语义名，不借用模糊遮蔽的 blur', () {
+      final Set<int> codePoints = <int>{
+        FushiIcons.outline.codePoint,
+        FushiIcons.outlineColor.codePoint,
+        FushiIcons.shadow.codePoint,
+        FushiIcons.blur.codePoint,
+      };
+      expect(codePoints, hasLength(4));
+      for (final IconData icon in <IconData>[
+        FushiIcons.outline,
+        FushiIcons.outlineColor,
+        FushiIcons.shadow,
+      ]) {
+        expect(fushiSymbolAppleIcon(icon), isNotNull);
+        expect(fushiSymbolAppleIcon(FushiIcons.filled(icon)), isNotNull);
+      }
     });
 
     test('非语义图标原样返回', () {

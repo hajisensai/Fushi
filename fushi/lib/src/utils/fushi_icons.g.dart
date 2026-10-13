@@ -1122,6 +1122,24 @@ abstract final class FushiIcons {
     fontFamily: kFushiSymbolsFontFamily,
   );
 
+  /// 描边 / 描边粗细（字幕）：Symbols `border_style`（取代 Icons.border_style_outlined / Icons.border_style）
+  static const IconData outline = IconData(
+    0xe231,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 描边颜色（字幕）：Symbols `border_color`（取代 Icons.border_color_outlined / Icons.border_color）
+  static const IconData outlineColor = IconData(
+    0xe22b,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 阴影 / 阴影颜色（字幕）：Symbols `shadow`
+  static const IconData shadow = IconData(
+    0xe9df,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
   /// 延后 / 加时：Symbols `more_time`（取代 Icons.more_time / Icons.more_time）
   static const IconData moreTime = IconData(
     0xea5d,
@@ -1807,6 +1825,9 @@ abstract final class FushiIcons {
     'blurLinear': blurLinear,
     'subtitlesOff': subtitlesOff,
     'captionsOff': captionsOff,
+    'outline': outline,
+    'outlineColor': outlineColor,
+    'shadow': shadow,
     'moreTime': moreTime,
     'alignLeft': alignLeft,
     'alignRight': alignRight,
@@ -1960,8 +1981,10 @@ abstract final class FushiIcons {
     0xe1c4: IconData(0xe1c4, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe202: IconData(0xe202, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe229: IconData(0xe229, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe22b: IconData(0xe22b, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe22e: IconData(0xe22e, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe230: IconData(0xe230, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe231: IconData(0xe231, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe232: IconData(0xe232, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe235: IconData(0xe235, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe238: IconData(0xe238, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2187,6 +2210,7 @@ abstract final class FushiIcons {
     0xe9b2: IconData(0xe9b2, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe9ba: IconData(0xe9ba, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe9bd: IconData(0xe9bd, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe9df: IconData(0xe9df, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe9e0: IconData(0xe9e0, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe9e4: IconData(0xe9e4, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe9ec: IconData(0xe9ec, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2321,6 +2345,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
     CupertinoIcons.arrow_down_to_line,
     CupertinoIcons.arrow_down_to_line,
   ),
+  0xe22b: (CupertinoIcons.paintbrush, CupertinoIcons.paintbrush_fill),
   0xe22e: (
     CupertinoIcons.arrow_left_to_line,
     CupertinoIcons.arrow_left_to_line,
@@ -2328,6 +2353,10 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   0xe230: (
     CupertinoIcons.arrow_right_to_line,
     CupertinoIcons.arrow_right_to_line,
+  ),
+  0xe231: (
+    CupertinoIcons.line_horizontal_3_decrease,
+    CupertinoIcons.line_horizontal_3_decrease,
   ),
   0xe232: (CupertinoIcons.arrow_up_to_line, CupertinoIcons.arrow_up_to_line),
   0xe235: (CupertinoIcons.text_justify, CupertinoIcons.text_justify),
@@ -2569,6 +2598,10 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
     CupertinoIcons.square_arrow_right,
   ),
   0xe9bd: (CupertinoIcons.sidebar_left, CupertinoIcons.sidebar_left),
+  0xe9df: (
+    CupertinoIcons.square_on_square,
+    CupertinoIcons.square_fill_on_square_fill,
+  ),
   0xe9e0: (CupertinoIcons.shield, CupertinoIcons.shield_fill),
   0xe9e4: (CupertinoIcons.speedometer, CupertinoIcons.speedometer),
   0xe9ec: (CupertinoIcons.hand_draw, CupertinoIcons.hand_draw_fill),

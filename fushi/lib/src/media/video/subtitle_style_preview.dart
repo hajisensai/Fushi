@@ -317,7 +317,6 @@ class _SubtitleStylePreviewState extends State<SubtitleStylePreview> {
     );
   }
 
-  /// 距锚定边的距离夹到 [0, [kVideoSubtitleMaxPadding]]（与滑条 / 持久化同一上限）。
   /// 预览正文：有描边时「描边层（带投影）+ 填充层」叠放，与播放页统一外观同一 z 序
   /// （阴影 < 描边 < 填充）；无描边时单层，与历史预览像素一致。
   static Widget _outlinedText(String text, TextStyle style, Paint? outline) {
@@ -341,6 +340,7 @@ class _SubtitleStylePreviewState extends State<SubtitleStylePreview> {
     );
   }
 
+  /// 距锚定边的距离夹到 [0, [kVideoSubtitleMaxPadding]]（与滑条 / 持久化同一上限）。
   static double _clampDistance(double padding) =>
       padding.clamp(0, kVideoSubtitleMaxPadding).toDouble();
 

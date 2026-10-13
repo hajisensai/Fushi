@@ -612,7 +612,7 @@ Widget buildVideoSubtitleShadowColorRow(SettingsContext context) {
   return _buildSubtitleColorRow(
     context,
     title: t.video_setting_subtitle_shadow_color,
-    icon: Icons.blur_on_outlined,
+    icon: FushiIcons.shadow,
     current: Color(0xFF000000 | (current.toARGB32() & 0x00FFFFFF)),
     onPreview: (Color c) => previewVideoSubtitleStyle(
       context,
@@ -636,7 +636,7 @@ Widget buildVideoSubtitleOutlineColorRow(SettingsContext context) {
   return _buildSubtitleColorRow(
     context,
     title: t.video_setting_subtitle_outline_color,
-    icon: Icons.border_color_outlined,
+    icon: FushiIcons.outlineColor,
     current: style.resolveOutlineColor(),
     onPreview: (Color c) => previewVideoSubtitleStyle(
       context,
