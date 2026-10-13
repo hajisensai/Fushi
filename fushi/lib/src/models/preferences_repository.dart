@@ -45,7 +45,7 @@ import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart'
     show MediaServerVersionMemory, mediaServerVersionMemory;
 import 'package:fushi_engine/ai/ai_key_rotation.dart'
-    show AiKeyHealth, AiKeyHealthStore, aiKeyHealthStore;
+    show AiKeyHealth, AiKeyHealthStore, AiKeyHealthUpdate, aiKeyHealthStore;
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
@@ -674,11 +674,87 @@ class PreferencesRepository extends ChangeNotifier
   /// 就清掉，留存的只有还在失败的 key，这个上限只防删掉的提供商留下的孤儿无界增长。
   static const int kAiKeyHealthLimit = 200;
 
+  /// 冷却记录的偏好键（设备本地）。
+  static const String aiKeyHealthPrefKey = 'ai_key_health';
+
   /// AI 多 key 轮换的冷却记录：`{指纹: AiKeyHealth.toJson()}`（指纹见
   /// `aiKeyFingerprint`，不含 key 本身）。设备本地。解析失败回退空 map——冷却
   /// 记录丢了只等于「这些 key 下次照常再试」，不能挡住请求。
-  Map<String, AiKeyHealth> get aiKeyHealth {
-    final String raw = getPref('ai_key_health', defaultValue: '') as String;
+  Map<String, AiKeyHealth> get aiKeyHealth => _decodeAiKeyHealth(
+    getPref(aiKeyHealthPrefKey, defaultValue: '') as String,
+  );
+
+  /// 正在落库的 [updateAiKeyHealth] 笔数；归零时才把缓存对齐到持久值。
+  int _aiKeyHealthWritesInFlight = 0;
+
+  /// 改一条冷却记录（[AiKeyHealthStore.update] 的偏好表实现）。不 notifyListeners：
+  /// 设置页在自己的探测结束时重建，没有别的界面监听它。
+  ///
+  /// 对同一条记录分两处各算一次 [update]（所以它必须是纯函数）：
+  /// 1. 进程内缓存**同步**生效——请求热路径上的下一次 read 立刻看得到；
+  /// 2. 落库在一个事务里**重读最新持久值**、只改 [fingerprint] 这一条再写回。
+  ///    弹窗词典 `:popup` 进程与主进程各有一份偏好缓存，拿自己缓存里的整份 map
+  ///    覆盖写回会抹掉对方刚记的冷却；按条合并则互不影响，[update] 看到的也是
+  ///    别的进程写过之后的当前值。
+  /// 最后一笔在途写完成时把缓存换成持久值（顺带收进别的进程记的条目）。
+  Future<void> updateAiKeyHealth(
+    String fingerprint,
+    AiKeyHealthUpdate update,
+  ) async {
+    final Map<String, AiKeyHealth> cached = aiKeyHealth;
+    if (_applyAiKeyHealthUpdate(cached, fingerprint, update)) {
+      _prefCache[aiKeyHealthPrefKey] =
+          PrefCodec.encode(_encodeAiKeyHealth(cached));
+    }
+    // 缓存里没变也照样去持久值上算一遍：别的进程可能刚写过这一条（例如缓存里
+    // 没有、持久值里有），只看缓存就跳过会漏掉该做的清除 / 合并。没变时事务里
+    // 只有一次读、不写不抬版本号。
+    _aiKeyHealthWritesInFlight++;
+    final String? persistedRaw;
+    try {
+      persistedRaw = await _db.transaction(() async {
+        final String? raw = await _db.getPref(aiKeyHealthPrefKey);
+        final Map<String, AiKeyHealth> persisted = _decodeAiKeyHealth(
+          raw == null ? '' : PrefCodec.decode<String>(raw, ''),
+        );
+        if (!_applyAiKeyHealthUpdate(persisted, fingerprint, update)) {
+          return raw;
+        }
+        final String encoded =
+            PrefCodec.encode(_encodeAiKeyHealth(persisted));
+        await _db.setPref(aiKeyHealthPrefKey, encoded);
+        return encoded;
+      });
+    } finally {
+      _aiKeyHealthWritesInFlight--;
+    }
+    if (_aiKeyHealthWritesInFlight > 0) return;
+    if (persistedRaw == null) {
+      _prefCache.remove(aiKeyHealthPrefKey);
+    } else {
+      _prefCache[aiKeyHealthPrefKey] = persistedRaw;
+    }
+  }
+
+  /// 对 [map] 里 [fingerprint] 这一条套用 [update]；值没变返回 false（不必落库）。
+  /// 改过的条目挪到末尾，超出 [kAiKeyHealthLimit] 时丢最旧的。
+  static bool _applyAiKeyHealthUpdate(
+    Map<String, AiKeyHealth> map,
+    String fingerprint,
+    AiKeyHealthUpdate update,
+  ) {
+    final AiKeyHealth? current = map[fingerprint];
+    final AiKeyHealth? next = update(current);
+    if (next == current) return false;
+    map.remove(fingerprint);
+    if (next != null) map[fingerprint] = next;
+    while (map.length > kAiKeyHealthLimit) {
+      map.remove(map.keys.first);
+    }
+    return true;
+  }
+
+  static Map<String, AiKeyHealth> _decodeAiKeyHealth(String raw) {
     if (raw.isEmpty) return <String, AiKeyHealth>{};
     try {
       final Object? decoded = jsonDecode(raw);
@@ -696,24 +772,13 @@ class PreferencesRepository extends ChangeNotifier
     return <String, AiKeyHealth>{};
   }
 
-  /// 写 / 清一条冷却记录（[health] 为 null = 清）。不 notifyListeners：设置页在
-  /// 自己的探测结束时重建，没有别的界面监听它。
-  Future<void> setAiKeyHealth(String fingerprint, AiKeyHealth? health) async {
-    final Map<String, AiKeyHealth> map = aiKeyHealth..remove(fingerprint);
-    if (health != null) map[fingerprint] = health;
-    while (map.length > kAiKeyHealthLimit) {
-      map.remove(map.keys.first);
-    }
-    await setPref(
-      'ai_key_health',
+  static String _encodeAiKeyHealth(Map<String, AiKeyHealth> map) =>
       map.isEmpty
           ? ''
           : jsonEncode(<String, Object?>{
               for (final MapEntry<String, AiKeyHealth> e in map.entries)
                 e.key: e.value.toJson(),
-            }),
-    );
-  }
+            });
 
   /// 本机当 host 时是否允许为对端实时转码（弱网降码率播放）。默认开。
   ///
@@ -4481,7 +4546,8 @@ class PreferencesRepository extends ChangeNotifier
 }
 
 /// [AiKeyHealthStore] 的偏好表实现（[PreferencesRepository.loadFromDb] 装配）。
-/// 读走偏好缓存（同步，请求热路径上不等 IO）；写入后台落库，失败只记日志——
+/// 读走偏好缓存（同步，请求热路径上不等 IO）；更新在缓存里同步生效、后台按条
+/// 合并落库（见 [PreferencesRepository.updateAiKeyHealth]），失败只记日志——
 /// 丢一次冷却记录只等于那把 key 下次照常再试，不该打断这次 AI 请求。
 class _PrefsAiKeyHealthStore implements AiKeyHealthStore {
   _PrefsAiKeyHealthStore(this._prefs);
@@ -4492,10 +4558,10 @@ class _PrefsAiKeyHealthStore implements AiKeyHealthStore {
   AiKeyHealth? read(String fingerprint) => _prefs.aiKeyHealth[fingerprint];
 
   @override
-  void write(String fingerprint, AiKeyHealth? health) {
-    _prefs.setAiKeyHealth(fingerprint, health).catchError(
+  void update(String fingerprint, AiKeyHealthUpdate update) {
+    _prefs.updateAiKeyHealth(fingerprint, update).catchError(
           (Object e, StackTrace stack) => ErrorLogService.instance
-              .log('PreferencesRepository.setAiKeyHealth', e, stack),
+              .log('PreferencesRepository.updateAiKeyHealth', e, stack),
         );
   }
 }

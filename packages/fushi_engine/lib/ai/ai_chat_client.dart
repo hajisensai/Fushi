@@ -98,8 +98,9 @@ class AiChatMessage {
 ///
 /// 一家配了多把 key 时，每次请求都经 [_withKeyRotation]：挑一把没在冷却的 key，
 /// 遇到鉴权被拒 / 限流 / 额度不足就把它记进冷却、换下一把**重试当前请求**；全部
-/// 失败时抛最后一把的真实错误。健康记录存在 `healthStore`（默认全局
-/// [aiKeyHealthStore]，app 装配成持久化实现）。
+/// 失败时抛最后一把的真实错误。例外是 [ping]（用户点「测试连接」）：它逐把真打，
+/// 冷却中的也打。健康记录存在 `healthStore`（默认全局 [aiKeyHealthStore]，app
+/// 装配成持久化实现）。
 class AiChatClient {
   AiChatClient({
     http.Client? client,
@@ -163,23 +164,49 @@ class AiChatClient {
   ///
   /// 与 [complete] 不同，这里不问 [AiProviderConfig.isUsable]：停用的提供商也允许
   /// 先测再启用，缺 key 由服务端回 401 给出更具体的结论；没填模型则无从测起。
+  ///
+  /// 配了多把 key 时**每一把启用的 key 都真打一次**（按用户排的顺序，冷却中的也
+  /// 打）：这是用户的显式自检，不是功能请求——余额不足被退避到几小时后的 key，
+  /// 用户充值后点「测试连接」就该被重新验证、成功即清掉冷却；按轮换顺序只测第一把
+  /// 能用的，会让它一直冷却到期。每把的结果照常落进健康记录（设置页框下的状态随之
+  /// 刷新）。至少一把通过即成功；全部是换 key 类失败时抛最后一个真实错误；与 key
+  /// 无关的失败（网络 / 5xx / 坏回复 / 模型不对）立即原样抛出。
   Future<void> ping(AiProviderConfig provider) async {
     if (provider.model.trim().isEmpty) {
       throw const AiChatFailure('provider_not_configured');
     }
-    final Map<Object?, Object?> body = await _withKeyRotation(
-      provider,
-      (String key) => _postChat(provider, key, const <AiChatMessage>[
-        AiChatMessage.user('ping'),
-      ], _kPingMaxTokens),
-    );
     final String topKey = switch (provider.protocol) {
       AiWireProtocol.openAiCompatible => 'choices',
       AiWireProtocol.anthropicMessages => 'content',
       AiWireProtocol.geminiGenerateContent => 'candidates',
     };
-    if (body[topKey] is! List) {
-      throw const AiChatFailure('bad_response');
+    final List<String> keys = provider.activeApiKeys;
+    final List<String> probes = keys.isEmpty ? const <String>[''] : keys;
+    AiChatFailure? last;
+    bool anyOk = false;
+    for (final String key in probes) {
+      try {
+        await _attemptKey(provider, key, (String probeKey) async {
+          final Map<Object?, Object?> body = await _postChat(
+            provider,
+            probeKey,
+            const <AiChatMessage>[AiChatMessage.user('ping')],
+            _kPingMaxTokens,
+          );
+          if (body[topKey] is! List) {
+            throw const AiChatFailure('bad_response');
+          }
+        });
+        anyOk = true;
+      } on AiChatFailure catch (failure) {
+        if (!failure.rotatesKey) {
+          rethrow;
+        }
+        last = failure;
+      }
+    }
+    if (!anyOk) {
+      throw last!;
     }
   }
 
@@ -241,7 +268,7 @@ class AiChatClient {
   ///   ——那与 key 无关，换了也是同一个错误。
   /// - 属于：把这把 key 记进冷却（`Retry-After` 优先，否则指数退避），换下一把；
   ///   全部试完仍失败就抛**最后一个真实错误**。每把 key 至多试一次，不会无限重试。
-  /// - 成功：清掉这把 key 的冷却记录。
+  /// - 成功：清掉这把 key 的冷却记录（除非发出之后别的请求刚给它记了失败）。
   Future<T> _withKeyRotation<T>(
     AiProviderConfig provider,
     Future<T> Function(String key) attempt,
@@ -250,40 +277,69 @@ class AiChatClient {
     if (keys.isEmpty) {
       return attempt('');
     }
-    final AiKeyHealthStore store = _health;
     final List<String> order = orderAiKeysForRequest(
       providerId: provider.id,
       keys: keys,
-      store: store,
+      store: _health,
       now: _clock(),
     );
     AiChatFailure? last;
     for (final String key in order) {
-      final String fingerprint = aiKeyFingerprint(provider.id, key);
       try {
-        final T result = await attempt(key);
-        if (store.read(fingerprint) != null) {
-          store.write(fingerprint, null);
-        }
-        return result;
+        return await _attemptKey(provider, key, attempt);
       } on AiChatFailure catch (failure) {
         if (!failure.rotatesKey) {
           rethrow;
         }
-        store.write(
-          fingerprint,
-          nextAiKeyHealth(
-            previous: store.read(fingerprint),
-            reason: failure.message,
-            retryAfter: failure.retryAfter,
-            now: _clock(),
-          ),
-        );
         last = failure;
       }
     }
     // keys 非空时 orderAiKeysForRequest 至少给一把，走到这里 last 必有值。
     throw last!;
+  }
+
+  /// 用一把具体的 key 执行一次 [attempt]，并把结果落进健康记录；失败原样抛出。
+  ///
+  /// 发出前先记下这把 key 的记录（`seen`），落账走 [AiKeyHealthStore.update]，由
+  /// [aiKeyHealthAfterSuccess] / [aiKeyHealthAfterFailure] 拿 `seen` 与落账时的
+  /// 当前值比较：同一把 key 上并发的请求不会把一阵限流记成多次失败，按旧视图
+  /// 发出的成功也不会抹掉别处刚记的冷却。只有换 key 类失败（[aiFailureRotatesKey]）
+  /// 才记冷却。[key] 为空（本地推理服务没有 key）时不记健康。
+  Future<T> _attemptKey<T>(
+    AiProviderConfig provider,
+    String key,
+    Future<T> Function(String key) attempt,
+  ) async {
+    if (key.isEmpty) {
+      return attempt(key);
+    }
+    final AiKeyHealthStore store = _health;
+    final String fingerprint = aiKeyFingerprint(provider.id, key);
+    final AiKeyHealth? seen = store.read(fingerprint);
+    try {
+      final T result = await attempt(key);
+      store.update(
+        fingerprint,
+        (AiKeyHealth? current) =>
+            aiKeyHealthAfterSuccess(seen: seen, current: current),
+      );
+      return result;
+    } on AiChatFailure catch (failure) {
+      if (failure.rotatesKey) {
+        final DateTime now = _clock();
+        store.update(
+          fingerprint,
+          (AiKeyHealth? current) => aiKeyHealthAfterFailure(
+            seen: seen,
+            current: current,
+            reason: failure.message,
+            retryAfter: failure.retryAfter,
+            now: now,
+          ),
+        );
+      }
+      rethrow;
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -551,17 +607,28 @@ class AiChatClient {
 const int _kFailureBodyScanBytes = 4096;
 
 /// 余额 / 额度用尽的特征词（各家错误体里的 code 或 message 片段，小写比较）：
-/// OpenAI `insufficient_quota`、DeepSeek 等 `Insufficient Balance` / 「余额不足」、
-/// Anthropic「credit balance is too low」、OpenRouter「requires more credits」、
-/// 各家的 `billing` 提示。
+/// - OpenAI：`insufficient_quota`、`billing_hard_limit_reached`、`billing_not_active`；
+/// - DeepSeek 等：`Insufficient Balance` / 「余额不足」；SiliconFlow：「balance is
+///   insufficient」；
+/// - Anthropic：「credit balance is too low」；OpenRouter：「requires more credits」；
+/// - Moonshot：`exceeded_current_quota_error`；阿里云百炼：`Arrearage`；智谱：「欠费」。
+///
+/// **只收明确的错误码 / 短语**，不收裸词 `billing`：Gemini 的**普通限流** 429
+/// （RESOURCE_EXHAUSTED）正文就写着「check your plan and billing details」，裸词
+/// 命中会把一次过几十秒就好的限流当成余额耗尽——丢掉限流语义、按失败次数指数
+/// 退避；任何正文里提到 billing 的无关 400 也会被误判。
 const List<String> _kQuotaMarkers = <String>[
   'insufficient_quota',
   'insufficient quota',
   'insufficient_balance',
   'insufficient balance',
+  'balance is insufficient',
   'credit balance',
   'more credits',
-  'billing',
+  'billing_hard_limit_reached',
+  'billing_not_active',
+  'exceeded_current_quota_error',
+  'arrearage',
   '余额不足',
   '欠费',
 ];

@@ -326,7 +326,7 @@ void main() {
     /// 区块从树上摘掉时 **ProviderScope 原位保留**：整棵树换掉会连 AppModel 与
     /// PreferencesRepository 一起 dispose，dispose-flush 的异步写就会撞上一个已
     /// 释放的 repo——那是 harness 假象，不是生产行为。
-    Widget harness() => ProviderScope(
+    Widget harness({AiChatClientFactory? clientFactory}) => ProviderScope(
       overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
       child: MaterialApp(
         theme: ThemeData(useMaterial3: true),
@@ -334,18 +334,21 @@ void main() {
           body: SizedBox(
             width: 640,
             child: SingleChildScrollView(
-              child: const AiProviderSettingsSection(),
+              child: AiProviderSettingsSection(clientFactory: clientFactory),
             ),
           ),
         ),
       ),
     );
 
-    Future<void> pumpSection(WidgetTester tester) async {
+    Future<void> pumpSection(
+      WidgetTester tester, {
+      AiChatClientFactory? clientFactory,
+    }) async {
       tester.view.physicalSize = const Size(900, 4000);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(harness());
+      await tester.pumpWidget(harness(clientFactory: clientFactory));
       await tester.pumpAndSettle();
     }
 
@@ -412,9 +415,9 @@ void main() {
         _config(id: 'p1', apiKey: 'sk-first-1111'),
       ]);
       // 冷却记录走的是生产装配点（loadFromDb 装的偏好表实现），不是测试替身。
-      aiKeyHealthStore.write(
+      aiKeyHealthStore.update(
         aiKeyFingerprint('p1', 'sk-first-1111'),
-        AiKeyHealth(
+        (_) => AiKeyHealth(
           cooldownUntil: DateTime.now().toUtc().add(const Duration(hours: 1)),
           failures: 1,
           reason: 'rate_limited',
@@ -460,6 +463,71 @@ void main() {
         find.byKey(const ValueKey<String>('ai-provider-0-api-key-1')),
         findsNothing,
       );
+    });
+
+    testWidgets('测试连接逐把真打：冷却中的 key 充值后通过即清冷却，框下状态随之恢复', (
+      WidgetTester tester,
+    ) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        AiProviderConfig(
+          id: 'p1',
+          presetId: 'openai',
+          name: 'OpenAI',
+          baseUrl: Uri.parse('https://api.openai.com/v1'),
+          apiKeys: const <AiApiKey>[
+            AiApiKey('sk-first-1111'),
+            AiApiKey('sk-second-2222'),
+          ],
+          model: 'gpt-4o-mini',
+        ),
+      ]);
+      // 第一把余额不足，已退避到几小时后；轮换顺序里它排不上号。
+      aiKeyHealthStore.update(
+        aiKeyFingerprint('p1', 'sk-first-1111'),
+        (_) => AiKeyHealth(
+          cooldownUntil: DateTime.now().toUtc().add(const Duration(hours: 6)),
+          failures: 9,
+          reason: 'quota_exhausted',
+        ),
+      );
+      final List<String> sent = <String>[];
+      await pumpSection(
+        tester,
+        clientFactory: () => AiChatClient(
+          client: MockClient((http.Request request) async {
+            sent.add(
+              (request.headers['authorization'] ?? '').replaceFirst(
+                'Bearer ',
+                '',
+              ),
+            );
+            return http.Response(
+              jsonEncode(<String, Object?>{
+                'choices': <Object?>[
+                  <String, Object?>{
+                    'message': <String, Object?>{'content': 'pong'},
+                  },
+                ],
+              }),
+              200,
+            );
+          }),
+        ),
+      );
+      await openEditor(tester, 'p1');
+      expect(find.textContaining(t.ai_error_quota_exhausted), findsOneWidget);
+
+      // 用户充值后点「测试连接」：冷却中的那把也要真打一次。
+      await tapKey(tester, 'ai-provider-0-test');
+      await tester.pumpAndSettle();
+
+      expect(sent, <String>['sk-first-1111', 'sk-second-2222']);
+      expect(prefs.aiKeyHealth, isEmpty);
+      expect(
+        find.text(t.ai_provider_api_key_ok(tail: '1111')),
+        findsOneWidget,
+      );
+      expect(find.textContaining(t.ai_error_quota_exhausted), findsNothing);
     });
 
     testWidgets('一条草稿打字到中间态：磁盘保留它上一次的有效版本，不连累其它提供商', (

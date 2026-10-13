@@ -45,6 +45,23 @@ class AiKeyHealth {
 
   bool isCoolingAt(DateTime now) => now.isBefore(cooldownUntil);
 
+  /// 值相等：[aiKeyHealthAfterSuccess] / [aiKeyHealthAfterFailure] 靠它判断「这条
+  /// 记录自请求发出以来有没有被别的请求改过」。持久化实现每次读都解码出新对象，
+  /// 不能比身份。
+  @override
+  bool operator ==(Object other) =>
+      other is AiKeyHealth &&
+      other.cooldownUntil.isAtSameMomentAs(cooldownUntil) &&
+      other.failures == failures &&
+      other.reason == reason;
+
+  @override
+  int get hashCode => Object.hash(
+    cooldownUntil.microsecondsSinceEpoch,
+    failures,
+    reason,
+  );
+
   Map<String, Object?> toJson() => <String, Object?>{
     'until': cooldownUntil.toUtc().millisecondsSinceEpoch,
     'failures': failures,
@@ -69,13 +86,24 @@ class AiKeyHealth {
   }
 }
 
+/// 一条健康记录的更新函数：收到这条记录的**当前值**（没有为 null），返回新值
+/// （null = 清掉）。必须是纯函数——持久化实现会对进程内缓存值与最新持久值各调用
+/// 一次。
+typedef AiKeyHealthUpdate = AiKeyHealth? Function(AiKeyHealth? current);
+
 /// 健康记录的存取口。app 落设备本地偏好（重启后冷却仍然有效），无头服务端用
 /// 进程内实现。
+///
+/// 写入只有 [update] 一个口子，没有「整条覆盖」：调用方先 [read] 再写回时，两个
+/// 并发请求会各自拿到同一个旧值、各算一条再先后写，后写的覆盖先写的（一次限流
+/// 记成两次失败、按旧排序发出的成功抹掉别处刚记的冷却）。「读当前 → 算下一条 →
+/// 写回」必须在实现内部一气呵成。
 abstract interface class AiKeyHealthStore {
   AiKeyHealth? read(String fingerprint);
 
-  /// [health] 为 null = 清掉这把 key 的记录（它恢复正常了）。
-  void write(String fingerprint, AiKeyHealth? health);
+  /// 原子地改 [fingerprint] 这一条：读当前值、调用 [update]、写回结果之间不插入
+  /// 别的写；只动这一条，不碰别的指纹。
+  void update(String fingerprint, AiKeyHealthUpdate update);
 }
 
 class InMemoryAiKeyHealthStore implements AiKeyHealthStore {
@@ -85,11 +113,12 @@ class InMemoryAiKeyHealthStore implements AiKeyHealthStore {
   AiKeyHealth? read(String fingerprint) => _records[fingerprint];
 
   @override
-  void write(String fingerprint, AiKeyHealth? health) {
-    if (health == null) {
+  void update(String fingerprint, AiKeyHealthUpdate update) {
+    final AiKeyHealth? next = update(_records[fingerprint]);
+    if (next == null) {
       _records.remove(fingerprint);
     } else {
-      _records[fingerprint] = health;
+      _records[fingerprint] = next;
     }
   }
 }
@@ -142,6 +171,56 @@ Duration _clampCooldown(Duration value) {
     return const Duration(seconds: 1);
   }
   return value > kAiKeyMaxCooldown ? kAiKeyMaxCooldown : value;
+}
+
+/// 一次请求在某把 key 上**成功**之后，这把 key 的记录该变成什么。
+///
+/// [seen] 是这次请求发出前读到的记录，[current] 是落账时的当前记录。只有记录自
+/// 发出以来没被别的请求改过（`current == seen`）才清掉：否则那是一个比本次发出
+/// 更晚才观测到的失败（同一把 key 上并发的另一个请求刚被拒 / 限流），本次成功
+/// 不能拿发出时的旧视图把它抹掉。
+AiKeyHealth? aiKeyHealthAfterSuccess({
+  required AiKeyHealth? seen,
+  required AiKeyHealth? current,
+}) => current == seen ? null : current;
+
+/// 一次请求在某把 key 上**失败**（且属于换 key 的失败）之后，这把 key 的记录。
+///
+/// - 记录自发出以来没变，或已被并发的成功清掉：在当前记录上照常累加
+///   （[nextAiKeyHealth]）；被清掉的情形从第一次失败重新计。
+/// - 发出之后别的并发请求已经记过一次失败：两边是从同一个旧视图出发的同一阵
+///   拒绝 / 限流的两份回执，不是「连续失败两次」——失败次数不再累加，冷却取
+///   两者里更晚的到期（服务端给的 `Retry-After` 更长时以它为准）。
+///
+/// 这样并发请求的落账顺序不影响结果：两次不带 `Retry-After` 的 429 只记一次
+/// 退避（1 分钟，不会变成 2 分钟）。
+AiKeyHealth aiKeyHealthAfterFailure({
+  required AiKeyHealth? seen,
+  required AiKeyHealth? current,
+  required String reason,
+  required Duration? retryAfter,
+  required DateTime now,
+}) {
+  if (current == null || current == seen) {
+    return nextAiKeyHealth(
+      previous: current,
+      reason: reason,
+      retryAfter: retryAfter,
+      now: now,
+    );
+  }
+  final AiKeyHealth mine = nextAiKeyHealth(
+    previous: seen,
+    reason: reason,
+    retryAfter: retryAfter,
+    now: now,
+  );
+  final bool mineLater = mine.cooldownUntil.isAfter(current.cooldownUntil);
+  return AiKeyHealth(
+    cooldownUntil: mineLater ? mine.cooldownUntil : current.cooldownUntil,
+    failures: math.max(mine.failures, current.failures),
+    reason: mineLater ? mine.reason : current.reason,
+  );
 }
 
 /// 这次请求按什么顺序试 key。

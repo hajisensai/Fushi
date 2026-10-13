@@ -3,6 +3,7 @@
 // 轮换走真实的 AiChatClient + MockClient：判据是「这次请求实际带着哪把 key 发了
 // 几次」，而不是某个内部函数的返回值——轮换写错在生产里的表现只是「明明配了两把
 // key，第一把一挂整个功能就挂」。
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -50,6 +51,13 @@ class _FakeServer {
     return respond == null ? http.Response('{}', 500) : respond();
   });
 }
+
+/// 并发测试的假服务端：两个请求都停在 sk-a 上，由测试决定应答先后。
+typedef _HeldOnA = ({
+  MockClient client,
+  List<Completer<http.Response>> replies,
+  Future<void> bothOnA,
+});
 
 void main() {
   group('存储：单 key → 列表的无损迁移', () {
@@ -160,6 +168,67 @@ void main() {
       expect(classify(402, '').rotatesKey, isTrue);
     });
 
+    test('余额判据只认明确的错误码 / 短语，裸词 billing 不算', () {
+      // 正例：各家额度 / 余额耗尽时真实返回的码与短语。
+      for (final (int status, String body) in <(int, String)>[
+        (400, '{"error":{"code":"billing_hard_limit_reached"}}'),
+        (
+          429,
+          '{"error":{"code":"billing_not_active","message":"Your account is '
+              'not active, please check your billing details on our website."}}',
+        ),
+        (
+          429,
+          '{"error":{"type":"exceeded_current_quota_error","message":"Your '
+              'account is suspended, please check your plan and billing '
+              'details"}}',
+        ),
+        (
+          400,
+          '{"code":"Arrearage","message":"Access denied, please make sure '
+              'your account is in good standing."}',
+        ),
+        (403, '{"message":"Sorry, your account balance is insufficient"}'),
+        (
+          400,
+          '{"type":"error","error":{"type":"invalid_request_error","message":'
+              '"Your credit balance is too low to access the Anthropic API. '
+              'Please go to Plans & Billing to upgrade or purchase credits."}}',
+        ),
+      ]) {
+        expect(classify(status, body).message, 'quota_exhausted', reason: body);
+      }
+
+      // 反例：Gemini 的普通限流正文里也写着 billing——必须仍是限流，并保住
+      // Retry-After（被当成余额耗尽会丢掉它、改按失败次数指数退避）。
+      final AiChatFailure gemini = classify(
+        429,
+        '{"error":{"code":429,"message":"You exceeded your current quota, '
+        'please check your plan and billing details.",'
+        '"status":"RESOURCE_EXHAUSTED"}}',
+        retryAfter: '30',
+      );
+      expect(gemini.message, 'rate_limited');
+      expect(gemini.retryAfter, const Duration(seconds: 30));
+      // 正文顺带提到 billing 的无关请求错误：与 key 无关，不换 key。
+      expect(
+        classify(
+          400,
+          '{"error":{"message":"Unknown parameter: billing_address"}}',
+        ).message,
+        'http_400',
+      );
+      // 403 本来就按鉴权换 key；不因提到 billing 被改判成余额耗尽。
+      expect(
+        classify(
+          403,
+          '{"error":{"message":"Billing account for this project is '
+          'disabled"}}',
+        ).message,
+        'unauthorized',
+      );
+    });
+
     test('429 带上 Retry-After（秒数与 HTTP-date 两种形状）', () {
       final AiChatFailure seconds = classify(429, '', retryAfter: '30');
       expect(seconds.message, 'rate_limited');
@@ -221,6 +290,76 @@ void main() {
       expect(back.failures, 1);
       expect(back.reason, 'quota_exhausted');
       expect(AiKeyHealth.fromJson(<String, Object?>{'until': 'x'}), isNull);
+      // 解码出来的新对象与原记录值相等（并发落账靠值相等判断「记录变没变」）。
+      expect(back, health);
+      expect(back.hashCode, health.hashCode);
+    });
+  });
+
+  group('并发落账：同一把 key 上同时在飞的请求', () {
+    final DateTime now = DateTime.utc(2026, 10, 13, 12);
+    const String fp = 'fp';
+    late InMemoryAiKeyHealthStore store;
+
+    setUp(() => store = InMemoryAiKeyHealthStore());
+
+    void fail(AiKeyHealth? seen, {Duration? retryAfter}) => store.update(
+      fp,
+      (AiKeyHealth? current) => aiKeyHealthAfterFailure(
+        seen: seen,
+        current: current,
+        reason: 'rate_limited',
+        retryAfter: retryAfter,
+        now: now,
+      ),
+    );
+
+    void succeed(AiKeyHealth? seen) => store.update(
+      fp,
+      (AiKeyHealth? current) =>
+          aiKeyHealthAfterSuccess(seen: seen, current: current),
+    );
+
+    test('同一旧视图出发的两次无 Retry-After 失败只记一次退避', () {
+      fail(null);
+      fail(null);
+      final AiKeyHealth health = store.read(fp)!;
+      expect(health.failures, 1);
+      expect(health.cooldownUntil, now.add(kAiKeyBaseCooldown));
+    });
+
+    test('并发失败里更长的 Retry-After 胜出，失败次数仍不累加', () {
+      fail(null);
+      fail(null, retryAfter: const Duration(minutes: 10));
+      final AiKeyHealth health = store.read(fp)!;
+      expect(health.failures, 1);
+      expect(health.cooldownUntil, now.add(const Duration(minutes: 10)));
+    });
+
+    test('真正的连续失败（发出前就看到了上一次失败）照常翻倍', () {
+      fail(null);
+      fail(store.read(fp));
+      final AiKeyHealth health = store.read(fp)!;
+      expect(health.failures, 2);
+      expect(health.cooldownUntil, now.add(const Duration(minutes: 2)));
+    });
+
+    test('按旧视图发出的成功不抹掉别处刚记的冷却；看到了那条冷却的成功才清', () {
+      fail(null);
+      succeed(null);
+      expect(store.read(fp)!.failures, 1);
+      succeed(store.read(fp));
+      expect(store.read(fp), isNull);
+    });
+
+    test('先成功后失败：失败从第一次重新计', () {
+      fail(null);
+      final AiKeyHealth? seen = store.read(fp);
+      // 两个请求都在冷却记录存在时发出；成功先回来清掉了它。
+      succeed(seen);
+      expect(store.read(fp), isNull);
+      fail(seen);
+      expect(store.read(fp)!.failures, 1);
     });
   });
 
@@ -375,6 +514,139 @@ void main() {
       );
       expect(models, <String>['m1']);
       expect(server.calls, <String>['sk-a', 'sk-b']);
+    });
+
+    /// sk-a 的应答由测试逐个放行（[replies] 按到达顺序），sk-b 恒成功。
+    _HeldOnA heldOnA() {
+      final List<Completer<http.Response>> replies =
+          <Completer<http.Response>>[];
+      final Completer<void> bothOnA = Completer<void>();
+      final MockClient client = MockClient((http.Request request) async {
+        final String key = (request.headers['authorization'] ?? '')
+            .replaceFirst('Bearer ', '');
+        if (key != 'sk-a') return _ok();
+        final Completer<http.Response> reply = Completer<http.Response>();
+        replies.add(reply);
+        if (replies.length == 2) bothOnA.complete();
+        return reply.future;
+      });
+      return (client: client, replies: replies, bothOnA: bothOnA.future);
+    }
+
+    final AiProviderConfig twoKeys = _provider(const <AiApiKey>[
+      AiApiKey('sk-a'),
+      AiApiKey('sk-b'),
+    ]);
+
+    test('两个并发请求在同一把 key 上都吃到无 Retry-After 的 429：只记一次退避', () async {
+      final _HeldOnA held = heldOnA();
+      final AiChatClient client = AiChatClient(
+        client: held.client,
+        healthStore: store,
+        clock: () => now,
+      );
+      final Future<String> first = ask(client, twoKeys);
+      final Future<String> second = ask(client, twoKeys);
+      await held.bothOnA;
+      for (final Completer<http.Response> reply in held.replies) {
+        reply.complete(http.Response('{}', 429));
+      }
+      expect(await first, 'ok');
+      expect(await second, 'ok');
+      final AiKeyHealth health = healthOf('sk-a')!;
+      expect(health.failures, 1);
+      expect(health.cooldownUntil, now.add(kAiKeyBaseCooldown));
+    });
+
+    test('成功与失败交错：两种落账顺序都留下同一条冷却', () async {
+      for (final bool failureFirst in <bool>[true, false]) {
+        store = InMemoryAiKeyHealthStore();
+        final _HeldOnA held = heldOnA();
+        final AiChatClient client = AiChatClient(
+          client: held.client,
+          healthStore: store,
+          clock: () => now,
+        );
+        final Future<String> first = ask(client, twoKeys);
+        final Future<String> second = ask(client, twoKeys);
+        await held.bothOnA;
+        held.replies[0].complete(
+          failureFirst ? http.Response('{}', 429) : _ok(),
+        );
+        expect(await first, 'ok');
+        held.replies[1].complete(
+          failureFirst ? _ok() : http.Response('{}', 429),
+        );
+        expect(await second, 'ok');
+        // 失败先落账：按旧视图（发出时没有冷却）发出的成功不能把它清掉；
+        // 成功先落账：之后回来的失败照常记一次。
+        final AiKeyHealth health = healthOf('sk-a')!;
+        expect(health.failures, 1, reason: 'failureFirst=$failureFirst');
+        expect(health.reason, 'rate_limited');
+      }
+    });
+
+    test('测试连接逐把真打（冷却中的也打），通过即清冷却', () async {
+      // sk-a 余额不足被退避到几小时后；用户充值后服务端已恢复。
+      store.update(
+        aiKeyFingerprint('p1', 'sk-a'),
+        (_) => AiKeyHealth(
+          cooldownUntil: now.add(const Duration(hours: 6)),
+          failures: 9,
+          reason: 'quota_exhausted',
+        ),
+      );
+      final _FakeServer server = _FakeServer(<String, http.Response Function()>{
+        'sk-a': _ok,
+        'sk-b': _ok,
+      });
+      await clientFor(server).ping(twoKeys);
+      expect(server.calls, <String>['sk-a', 'sk-b']);
+      expect(healthOf('sk-a'), isNull);
+    });
+
+    test('测试连接：有一把通过即成功，失败的那把照常记冷却；全挂抛最后一个真实错误', () async {
+      final _FakeServer server = _FakeServer(<String, http.Response Function()>{
+        'sk-a': () => http.Response('{}', 401),
+        'sk-b': _ok,
+      });
+      await clientFor(server).ping(twoKeys);
+      expect(server.calls, <String>['sk-a', 'sk-b']);
+      expect(healthOf('sk-a')!.reason, 'unauthorized');
+      expect(healthOf('sk-b'), isNull);
+
+      server.responses['sk-b'] = () => http.Response('{}', 402);
+      server.calls.clear();
+      await expectLater(
+        clientFor(server).ping(twoKeys),
+        throwsA(
+          isA<AiChatFailure>().having(
+            (AiChatFailure f) => f.message,
+            'message',
+            'quota_exhausted',
+          ),
+        ),
+      );
+      expect(server.calls, <String>['sk-a', 'sk-b']);
+    });
+
+    test('测试连接遇到与 key 无关的失败立即抛出，不再打后面的 key', () async {
+      final _FakeServer server = _FakeServer(<String, http.Response Function()>{
+        'sk-a': () => http.Response('{}', 404),
+        'sk-b': _ok,
+      });
+      await expectLater(
+        clientFor(server).ping(twoKeys),
+        throwsA(
+          isA<AiChatFailure>().having(
+            (AiChatFailure f) => f.message,
+            'message',
+            'http_404',
+          ),
+        ),
+      );
+      expect(server.calls, <String>['sk-a']);
+      expect(healthOf('sk-a'), isNull);
     });
   });
 }
