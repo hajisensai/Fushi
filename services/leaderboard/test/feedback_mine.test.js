@@ -18,7 +18,7 @@ function submit(env, { user = null, title = `t ${Math.random()}`, now = NOW } = 
 const signed = (env, u, method, path, body, headers = {}) => call(env, method, path, { key: u.key, account: u.id, body, headers, now: NOW });
 const withTicket = (env, method, path, ticket, body) => call(env, method, path, { headers: { 'X-Fushi-Ticket': ticket }, body, now: NOW });
 
-const SUMMARY_KEYS = ['category', 'createdAt', 'devReplyAt', 'id', 'parentId', 'status', 'title', 'updatedAt', 'userReplyAt'];
+const SUMMARY_KEYS = ['category', 'createdAt', 'devReplyAt', 'fix', 'id', 'parentId', 'status', 'title', 'updatedAt', 'userReplyAt'];
 
 describe('GET /v1/feedback/mine', () => {
   it('只列签名账户自己的，按创建时间倒序、游标分页；只给反馈人视角摘要；no-store', async () => {
