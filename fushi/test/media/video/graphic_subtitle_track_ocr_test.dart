@@ -676,6 +676,9 @@ void main() {
             refiner: MangaAiOcrRefiner(
               provider: _aiProvider,
               mode: MangaAiOcrMode.lowConfidence,
+              context: const MangaAiOcrContext(
+                source: MangaAiOcrSource.subtitle,
+              ),
               clientFactory: () => client,
             ),
           ),
@@ -708,6 +711,12 @@ void main() {
       await session.close();
       // 两条拼进同一次请求（跨条批量），读回后替换。
       expect(client.calls, 1);
+      // 请求带字幕版提示词与每条的本地猜测（2026-10-13：低置信度带上下文）。
+      final List<AiChatMessage> request = client.requests.single;
+      expect(request.first.content, kSubtitleAiOcrSystemPrompt);
+      expect(request.last.content, contains('subtitle lines'));
+      expect(request.last.content, contains('"w36"'));
+      expect(request.last.content, contains('"w37"'));
       expect(out!.map((GraphicSubtitleTextCue c) => c.text), <String>[
         '読み',
         '読み',
@@ -910,6 +919,9 @@ class _GatedAiClient extends AiChatClient {
   final Completer<void> _gate = Completer<void>();
   int calls = 0;
 
+  /// 每次请求的消息（断言请求里带了什么上下文）。
+  final List<List<AiChatMessage>> requests = <List<AiChatMessage>>[];
+
   void release() {
     if (!_gate.isCompleted) _gate.complete();
   }
@@ -921,6 +933,7 @@ class _GatedAiClient extends AiChatClient {
     int maxTokens = 2048,
   }) async {
     calls++;
+    requests.add(messages);
     if (!started.isCompleted) started.complete();
     await _gate.future;
     final int count = messages.last.images.length;

@@ -150,6 +150,9 @@ class _MangaOcrSettingsSectionState
   late String _lensLanguage;
   late MangaAiOcrMode _aiMode;
 
+  /// 用户亲手选过档位（偏好非空）。
+  late bool _aiModeChosen;
+
   /// 当前点名的服务端模型；null = 服务端默认。
   String? _pairedHostModel;
 
@@ -202,7 +205,13 @@ class _MangaOcrSettingsSectionState
       _readEnginePreference(),
     );
     _lensLanguage = normalizeLensLanguage(widget.lensLanguageGetter?.call());
-    _aiMode = MangaAiOcrMode.fromStorageKey(widget.aiModeGetter?.call());
+    final String? storedAiMode = widget.aiModeGetter?.call();
+    // 没选过 = 默认意图「低置信度」（首次使用前确认一次）；显示默认意图，但不因
+    // 「还没配提供商」去提示——那时根本不会问也不会发。
+    _aiModeChosen = storedAiMode != null && storedAiMode.isNotEmpty;
+    _aiMode = _aiModeChosen
+        ? MangaAiOcrMode.fromStorageKey(storedAiMode)
+        : MangaAiOcrMode.lowConfidence;
     _parallelTasks = (widget.parallelTasksGetter?.call() ?? 0).clamp(0, 4);
     _localModel = MangaOcrLocalModel.forPlatform(
       widget.localModelGetter?.call() ?? kDefaultMangaOcrLocalModel.key,
@@ -1244,6 +1253,7 @@ class _MangaOcrSettingsSectionState
   /// 说明收进 info。开着却没指派提供商时明说「不会发送」并给入口。
   Widget _buildPanelAiMode(ThemeData theme) {
     final bool missingProvider =
+        _aiModeChosen &&
         _aiMode != MangaAiOcrMode.off &&
         !(widget.aiProviderReady?.call() ?? false);
     final Future<void> Function(BuildContext context)? openAiSettings =
@@ -1311,7 +1321,10 @@ class _MangaOcrSettingsSectionState
           ? null
           : (MangaAiOcrMode value) async {
               if (value == _aiMode) return;
-              setState(() => _aiMode = value);
+              setState(() {
+                _aiMode = value;
+                _aiModeChosen = true;
+              });
               await widget.aiModeSetter!(value.storageKey);
             },
       footer: notes.isEmpty

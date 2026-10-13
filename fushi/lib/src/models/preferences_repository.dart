@@ -3796,12 +3796,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 漫画 OCR 的大模型识别档位（`MangaAiOcrMode.storageKey`）：`off`（默认）/
-  /// `low_confidence`（只重读本地低置信度块）/ `all`（全部块）。用哪家模型走
-  /// 「设置 › AI」的功能指派 `AiFeature.mangaOcr`。设备本地：这是「上传漫画页并
-  /// 按量计费」的开关，不能随同步漂到别的设备上自动生效。
+  /// OCR 的大模型纠错档位（`MangaAiOcrMode.storageKey`）：`off` /
+  /// `low_confidence`（只重读没把握的块）/ `all`（全部块），漫画与视频图形字幕
+  /// 共用。用哪家模型走「设置 › 模型 › LLM」的功能指派 `AiFeature.mangaOcr`。
+  /// 设备本地：这是「上传裁图并按量计费」的开关，不能随同步漂到别的设备上。
+  ///
+  /// 空串 = 用户还没选过：默认意图是 `low_confidence`（2026-10-13 用户拍板），但
+  /// 第一次真要发送时先确认一次（`ensureMangaAiOcrDefaultDecided`），确认前按
+  /// `off` 处理、不发任何请求。
   String get mangaOcrAiMode =>
-      getPref('manga_ocr_ai_mode', defaultValue: 'off') as String;
+      getPref('manga_ocr_ai_mode', defaultValue: '') as String;
 
   Future<void> setMangaOcrAiMode(String value) async {
     await setPref('manga_ocr_ai_mode', value);

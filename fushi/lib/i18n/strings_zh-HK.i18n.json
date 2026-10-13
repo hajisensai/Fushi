@@ -6193,7 +6193,7 @@
   "manga_ocr_ai_mode_off": "關閉",
   "manga_ocr_ai_mode_low_confidence": "只重讀沒把握的字",
   "manga_ocr_ai_mode_all": "全部交給大模型",
-  "manga_ocr_ai_mode_desc": "文字框仍在本機偵測，框裡的字交給視覺大模型重讀。裁出的文字框會上傳給「設定 › 模型 › LLM」裡指派的供應商並由其計費。「只重讀沒把握的字」需要本機模型；其他引擎不提供置信度，請用「全部交給大模型」。",
+  "manga_ocr_ai_mode_desc": "文字框仍在本機偵測，框裡的字交給視覺大模型重讀。裁出的文字框會連同本地識別結果與附近文字一起上傳給「設定 › 模型 › LLM」裡指派的提供者，並由其計費。「只重讀沒把握的字」：本機模型按信心度挑；不給信心度的引擎（Google Lens、系統 OCR）按明顯誤認挑，如亂碼、文字與語言對不上。想全部重讀請選「全部交給大模型」。",
   "manga_ocr_ai_mode_no_provider": "還沒有給漫畫 OCR 指派 AI 供應商，目前不會傳送任何內容。",
   "manga_ocr_ai_mode_open_settings": "開啟 AI 設定",
   "floating_ball_auto_restore": "自動恢復懸浮球",
@@ -6211,7 +6211,7 @@
   "ocr_system_model_play_services_resolvable": "系統 OCR 依賴 Google Play 服務，本機的 Google Play 服務缺失、被停用或版本過舊。",
   "ocr_system_model_play_services_fix": "修復 Google Play 服務",
   "ocr_system_model_play_services_unavailable": "本機沒有可用的 Google Play 服務，無法使用系統 OCR。",
-  "manga_ocr_ai_mode_low_confidence_legacy": "Volumes recognized before this option existed carry no confidence scores, so this mode leaves them untouched. Re-run OCR on such a volume (with an on-device model) to let the AI re-read its uncertain text.",
+  "manga_ocr_ai_mode_low_confidence_legacy": "啟用信心度記錄之前識別的卷只按明顯誤認挑選。想按信心度挑沒把握的字，請用本機模型對該卷重新識別。",
   "glass_material_frosted": "Frosted",
   "glass_material_liquid": "Liquid",
   "design_system_glass": "Apple",
@@ -7055,5 +7055,9 @@
   "models_tts_engine": "引擎",
   "models_tts_unavailable": "此平台沒有可用的語音合成引擎",
   "models_tts_usage_title": "用途",
-  "models_tts_usage": "只在本地與線上音訊都找不到時，為製卡產生單字發音"
+  "models_tts_usage": "只在本地與線上音訊都找不到時，為製卡產生單字發音",
+  "ocr_llm_default_title": "讓 LLM 糾正沒把握的 OCR 結果？",
+  "ocr_llm_default_body": "OCR 沒把握的文字框會裁圖上傳給 ${provider} 重讀，並由其計費；本地識別結果與附近文字會一併附上幫助判斷。可隨時在「設定 › 模型 › OCR」裡更改。",
+  "ocr_llm_default_accept": "開啟",
+  "ocr_llm_default_decline": "不用"
 }

@@ -63,6 +63,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_models.dart'
 import 'package:fushi/src/media/manga/manga_ocr_settings_page.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
+import 'package:fushi/src/media/manga/ocr/ocr_llm_default_consent.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
@@ -81,7 +82,7 @@ import 'package:fushi/src/media/video/stream_url_resolver.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi_engine/media/video/strm_file.dart' show isStrmPath;
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart'
-    show MangaAiOcrRefiner;
+    show MangaAiOcrContext, MangaAiOcrRefiner, MangaAiOcrSource;
 import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart'
     show BlurayEncryptedStreamException;
 import 'package:fushi_engine/media/video/bluray/aacs_configuration.dart';
@@ -6497,7 +6498,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   /// 图形字幕识别引擎：与漫画在线直读同一口径（引擎偏好 / Lens 上传同意 / AI 重读）。
-  Future<MangaStreamOcrSetup> _prepareGraphicSubtitleOcr(String workDirPath) {
+  /// [language] 是字幕轨语言（`eng` / `jpn` 等，归一后给大模型当期望语言与可疑度
+  /// 判据）；暂停帧查词不知道是哪条轨，传 null。
+  Future<MangaStreamOcrSetup> _prepareGraphicSubtitleOcr(
+    String workDirPath, {
+    String? language,
+  }) {
     return prepareMangaStreamOcr(
       imageDirPath: workDirPath,
       engines: MangaOcrWizardEngines.resolve(
@@ -6510,6 +6516,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       lensLanguage: appModel.mangaOcrLensLanguage,
       confirmLensUpload: () async =>
           mounted && await ensureGoogleLensDisclosure(context),
+      decideAiDefault: () async {
+        if (mounted) await ensureMangaAiOcrDefaultDecided(context, appModel);
+      },
+      aiContext: MangaAiOcrContext(
+        source: MangaAiOcrSource.subtitle,
+        title: _title,
+        language: normalizeSubtitleLanguageCode(language),
+      ),
     );
   }
 

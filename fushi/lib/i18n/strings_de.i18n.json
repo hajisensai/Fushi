@@ -6193,7 +6193,7 @@
   "manga_ocr_ai_mode_off": "Off",
   "manga_ocr_ai_mode_low_confidence": "Only uncertain text",
   "manga_ocr_ai_mode_all": "All text",
-  "manga_ocr_ai_mode_desc": "Text boxes are still found on this device; a vision model re-reads the text inside them. Cropped text boxes are uploaded to the provider assigned in Settings › Modelle › LLM and billed by it. \"Only uncertain text\" needs a local model; other engines report no confidence, so use \"All text\" with them.",
+  "manga_ocr_ai_mode_desc": "Text boxes are still found on this device; a vision model re-reads the text inside them. Cropped text boxes are uploaded to the provider assigned in Settings › Models › LLM and billed by it, together with the local result and nearby text to help it decide. \"Only uncertain text\" picks boxes by the local model's confidence; engines without a confidence score (Google Lens, system OCR) are judged by obvious misreads such as garbled characters or text in the wrong script. Choose \"All text\" to re-read everything.",
   "manga_ocr_ai_mode_no_provider": "No AI provider is assigned to manga OCR yet, so nothing is sent.",
   "manga_ocr_ai_mode_open_settings": "Open AI settings",
   "floating_ball_auto_restore": "Auto-restore floating ball",
@@ -6211,7 +6211,7 @@
   "ocr_system_model_play_services_resolvable": "System OCR needs Google Play services, which is missing, disabled or outdated on this device.",
   "ocr_system_model_play_services_fix": "Fix Google Play services",
   "ocr_system_model_play_services_unavailable": "This device has no usable Google Play services, so system OCR can't run here.",
-  "manga_ocr_ai_mode_low_confidence_legacy": "Volumes recognized before this option existed carry no confidence scores, so this mode leaves them untouched. Re-run OCR on such a volume (with an on-device model) to let the AI re-read its uncertain text.",
+  "manga_ocr_ai_mode_low_confidence_legacy": "Volumes recognized before confidence was recorded are judged by obvious misreads only. To pick uncertain text by confidence, recognize the volume again with a local model.",
   "glass_material_frosted": "Frosted",
   "glass_material_liquid": "Liquid",
   "design_system_glass": "Apple",
@@ -7055,5 +7055,9 @@
   "models_tts_engine": "Engine",
   "models_tts_unavailable": "No speech engine on this platform",
   "models_tts_usage_title": "Used for",
-  "models_tts_usage": "Generates word audio for cards only when no local or online audio is found"
+  "models_tts_usage": "Generates word audio for cards only when no local or online audio is found",
+  "ocr_llm_default_title": "Let an LLM fix uncertain OCR?",
+  "ocr_llm_default_body": "Text boxes the OCR isn't sure about will be cropped and sent to ${provider} to re-read, billed by that provider. The local OCR result and nearby text go along to help it decide. You can change this anytime in Settings › Models › OCR.",
+  "ocr_llm_default_accept": "Turn on",
+  "ocr_llm_default_decline": "Not now"
 }

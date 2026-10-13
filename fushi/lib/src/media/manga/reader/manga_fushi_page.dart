@@ -57,6 +57,7 @@ import 'package:fushi_engine/media/manga/panel_detection.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
+import 'package:fushi/src/media/manga/ocr/ocr_llm_default_consent.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_auto_ocr.dart';
@@ -4056,6 +4057,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             ),
         preference: MangaOcrEnginePreferenceKey.fromKey(enginePreference),
         lensLanguage: appModel.mangaOcrLensLanguage,
+        decideAiDefault: () => ensureMangaAiOcrDefaultDecided(context, appModel),
         confirmLensUpload: () async {
           if (_lensAutoOcrDeclined || !mounted) return false;
           final bool accepted =

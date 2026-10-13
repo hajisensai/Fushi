@@ -30,7 +30,8 @@ import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart'
         MangaAiOcrCropRequest,
         applyMangaAiOcrText,
         cropMangaAiOcrBlocks,
-        kMangaAiOcrBlocksPerRequest;
+        kMangaAiOcrBlocksPerRequest,
+        kMangaAiOcrMaxNearbyLines;
 import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRecognition, OcrRect;
 
 /// 识别不可用的原因（[GraphicSubtitleOcrUnavailable.reason]）。
@@ -173,6 +174,10 @@ class GraphicSubtitleOcrSession {
   Timer? _aiFlushTimer;
   int _aiTotal = 0;
   int _aiDone = 0;
+
+  /// 最近识别出的几条台词（本地结果，识别完成序）：随大模型请求当「附近文字」带上，
+  /// 帮它分辨形近字。只留 [kMangaAiOcrMaxNearbyLines] 条。
+  final List<String> _recentSubtitleLines = <String>[];
   Completer<void>? _aiChanged;
 
   /// 大模型重读进度：(已回, 已排队)。没开大模型恒为 (0, 0)。
@@ -290,6 +295,12 @@ class GraphicSubtitleOcrSession {
         lines: <String>[text],
       );
     }
+    if (text.isNotEmpty) {
+      _recentSubtitleLines.add(text);
+      if (_recentSubtitleLines.length > kMangaAiOcrMaxNearbyLines) {
+        _recentSubtitleLines.removeAt(0);
+      }
+    }
     final MangaStreamAiRefinement? ai = ready.ai;
     if (ai != null && text.isNotEmpty && ai.wants(block)) {
       _enqueueAi(
@@ -350,10 +361,20 @@ class GraphicSubtitleOcrSession {
           if (crops[i] != null) i,
       ];
       if (sent.isEmpty || _closed) return;
-      final List<String?> texts = await ai.refineCrops(<MangaAiOcrCropRequest>[
-        for (final int i in sent)
-          MangaAiOcrCropRequest(crop: crops[i]!, block: batch[i].block),
-      ]);
+      // 附近文字不重复本批自己的本地猜测（那些已逐条写在请求里）。
+      final Set<String> own = <String>{
+        for (final _SubtitleAiItem item in batch) item.block.lines.join(),
+      };
+      final List<String?> texts = await ai.refineCrops(
+        <MangaAiOcrCropRequest>[
+          for (final int i in sent)
+            MangaAiOcrCropRequest(crop: crops[i]!, block: batch[i].block),
+        ],
+        nearby: <String>[
+          for (final String line in _recentSubtitleLines)
+            if (!own.contains(line)) line,
+        ],
+      );
       if (_closed) return;
       for (int k = 0; k < sent.length; k++) {
         final String? raw = texts[k];

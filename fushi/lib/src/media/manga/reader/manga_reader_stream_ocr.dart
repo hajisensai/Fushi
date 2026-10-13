@@ -101,6 +101,8 @@ Future<MangaStreamOcrSetup> prepareMangaStreamOcr({
   required MangaOcrEnginePreference preference,
   required String lensLanguage,
   required Future<bool> Function() confirmLensUpload,
+  MangaAiOcrContext? aiContext,
+  Future<void> Function()? decideAiDefault,
 }) async {
   final MangaOcrEngineAvailability availability = await probeMangaOcrEngines(
     engines,
@@ -121,8 +123,13 @@ Future<MangaStreamOcrSetup> prepareMangaStreamOcr({
     confirmLensUpload: confirmLensUpload,
   );
   if (setup is! MangaStreamOcrReady) return setup;
+  // 用户在场：档位还没选过时在这里问一次「默认交给 LLM」（见
+  // ensureMangaAiOcrDefaultDecided），工厂随后按新档位建实例。
+  await decideAiDefault?.call();
   final MangaAiOcrRefiner? refiner = engines.aiRefinerFactory?.call();
   if (refiner == null) return setup;
+  // 漫画默认按 OCR 语言设置当期望语言；字幕由调用方给（轨语言 + 视频标题）。
+  refiner.context = aiContext ?? MangaAiOcrContext(language: lensLanguage);
   return MangaStreamOcrReady(
     setup.engine,
     setup.recognizer,
@@ -324,8 +331,11 @@ class MangaStreamAiRefinement {
 
   /// 跨页批量重读一批已裁好的文字图（字幕整轨用）：与 [refine] 同一缓存、同一
   /// 校验；返回与 [items] 等长的新文字（null = 不换）。可并发调用。
-  Future<List<String?>> refineCrops(List<MangaAiOcrCropRequest> items) =>
-      _refiner.refineCrops(items, cache: _cache);
+  /// [nearby]：附近已读文字（前几条台词），只作消歧提示。
+  Future<List<String?>> refineCrops(
+    List<MangaAiOcrCropRequest> items, {
+    List<String> nearby = const <String>[],
+  }) => _refiner.refineCrops(items, cache: _cache, nearby: nearby);
 
   /// 中止在途请求、释放常驻 HTTP 客户端，此后不再发请求。
   void cancel() => _refiner.dispose();
