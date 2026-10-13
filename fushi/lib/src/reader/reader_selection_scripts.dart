@@ -438,9 +438,10 @@ if (typeof window.__fushiEnsureHighlightPaintable !== 'function') {
       return false;
     }
     return function(node) {
-      if (!node || node.nodeType !== Node.TEXT_NODE) return;
+      // Numeric node types: this runs in node test harnesses that have no `Node`.
+      if (!node || node.nodeType !== 3) return;
       var parent = node.parentNode;
-      if (!parent || parent.nodeType !== Node.ELEMENT_NODE) return;
+      if (!parent || parent.nodeType !== 1) return;
       if (parent.localName === WRAPPER_TAG) return;
       if (!textLaidOutAnonymously(parent)) return;
       if (siblingReliesOnOnlyChild(parent)) return;
