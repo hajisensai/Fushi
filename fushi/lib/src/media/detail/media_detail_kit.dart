@@ -27,6 +27,8 @@ import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show FushiToolbarItem, FushiTopBarOverflowFit;
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -821,27 +823,82 @@ class MediaDetailMenuItem {
 }
 
 /// 「⋯」更多操作：tonal 图标按钮，点开锚定菜单（在网站打开 / 刷新 / 换源…）。
-class MediaDetailMoreButton extends StatelessWidget {
+///
+/// 默认按工具栏规则（用户 2026-10-06「默认展开，空间不足才收起」）：
+/// [items] 按给出顺序（= 优先级）先全部平铺成图标钮（文字进 tooltip），只有宽度
+/// 放不下时才从最低优先级起收进「⋯」。测宽与展开回差复用顶栏同一套
+/// [FushiTopBarOverflowFit]，不另写测宽逻辑。
+class MediaDetailMoreButton extends StatefulWidget {
   const MediaDetailMoreButton({
     required this.items,
     super.key,
     this.buttonKey,
     this.tooltip,
-    this.inlineMax = 0,
+    this.adaptiveOverflow = true,
   });
 
   final List<MediaDetailMenuItem> items;
+
+  /// 落在「⋯」按钮上（全部平铺时落在平铺那一组上）。
   final Key? buttonKey;
   final String? tooltip;
 
-  /// 动作数不超过它就平铺成图标钮，超过才收进「⋯」菜单（0 = 总是收进菜单，
-  /// 保持旧行为；视频域按工具栏规则传 [kInlineActionsMax]）。
-  final int inlineMax;
+  /// 默认 true（工具栏规则）。false 只留给确实要恒收进「⋯」的特殊场合（例如测试旧形态）。
+  final bool adaptiveOverflow;
 
-  /// 工具栏默认展开的平铺上限。
-  static const int kInlineActionsMax = 3;
+  @override
+  State<MediaDetailMoreButton> createState() => _MediaDetailMoreButtonState();
+}
 
-  Future<void> _open(BuildContext context) async {
+class _MediaDetailMoreButtonState extends State<MediaDetailMoreButton> {
+  /// 平铺颗数决策（带展开回差），与 [FushiFloatingTopBar] 同一份实现。
+  final FushiTopBarOverflowFit _fit = FushiTopBarOverflowFit();
+
+  /// 在 [maxWidth] 里平铺前几颗。操作区是 Wrap：这组按钮放不进当前行会整组换到
+  /// 下一行，所以预算是整行宽，只有一整行都放不下才收进「⋯」。
+  int _visibleFor(double maxWidth) {
+    final List<MediaDetailMenuItem> items = widget.items;
+    if (!widget.adaptiveOverflow) return 0;
+    return _fit.visibleFor(
+      groups: <List<FushiToolbarItem>>[
+        <FushiToolbarItem>[
+          for (final MediaDetailMenuItem item in items)
+            FushiToolbarItem(
+              icon: item.icon,
+              label: item.label,
+              onPressed: item.onSelected,
+            ),
+        ],
+      ],
+      budget: maxWidth,
+    );
+  }
+
+  Widget _inlineButton(MediaDetailMenuItem item) => Semantics(
+    label: item.label,
+    child: FushiIconButtonControl.filledTonal(
+      key: item.key,
+      tooltip: item.label,
+      size: FushiIconButtonSize.m,
+      onPressed: item.enabled ? item.onSelected : null,
+      icon: FushiIcon(item.icon),
+    ),
+  );
+
+  Widget _moreButton(List<MediaDetailMenuItem> hidden) => Builder(
+    builder: (BuildContext context) => FushiIconButtonControl.filledTonal(
+      key: widget.buttonKey,
+      tooltip: widget.tooltip ?? t.common_more_actions,
+      size: FushiIconButtonSize.m,
+      onPressed: () => unawaited(_open(context, hidden)),
+      icon: const FushiIcon(FushiIcons.moreHoriz),
+    ),
+  );
+
+  Future<void> _open(
+    BuildContext context,
+    List<MediaDetailMenuItem> items,
+  ) async {
     final RenderObject? box = context.findRenderObject();
     final RenderObject? overlay = Overlay.of(
       context,
@@ -876,38 +933,29 @@ class MediaDetailMoreButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final List<MediaDetailMenuItem> items = widget.items;
     if (items.isEmpty) return const SizedBox.shrink();
-    // 工具栏默认展开：动作不多（<= [inlineMax]）就全部平铺成图标钮（文字进
-    // tooltip）；操作区本身是 Wrap，放不下会换行而不是丢进「⋯」。
-    if (items.length <= inlineMax) {
-      return Row(
-        key: buttonKey,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          for (int i = 0; i < items.length; i++) ...<Widget>[
-            if (i > 0) const SizedBox(width: 8),
-            Semantics(
-              label: items[i].label,
-              child: FushiIconButtonControl.filledTonal(
-                key: items[i].key,
-                tooltip: items[i].label,
-                size: FushiIconButtonSize.m,
-                onPressed: items[i].enabled ? items[i].onSelected : null,
-                icon: FushiIcon(items[i].icon),
-              ),
-            ),
+    if (!widget.adaptiveOverflow) return _moreButton(items);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final int visible = _visibleFor(constraints.maxWidth);
+        final List<MediaDetailMenuItem> shown = items.sublist(0, visible);
+        final List<MediaDetailMenuItem> hidden = items.sublist(visible);
+        return Row(
+          key: hidden.isEmpty ? widget.buttonKey : null,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            for (int i = 0; i < shown.length; i++) ...<Widget>[
+              if (i > 0) const SizedBox(width: 8),
+              _inlineButton(shown[i]),
+            ],
+            if (hidden.isNotEmpty) ...<Widget>[
+              if (shown.isNotEmpty) const SizedBox(width: 8),
+              _moreButton(hidden),
+            ],
           ],
-        ],
-      );
-    }
-    return Builder(
-      builder: (BuildContext context) => FushiIconButtonControl.filledTonal(
-        key: buttonKey,
-        tooltip: tooltip ?? t.common_more_actions,
-        size: FushiIconButtonSize.m,
-        onPressed: () => unawaited(_open(context)),
-        icon: const FushiIcon(FushiIcons.moreHoriz),
-      ),
+        );
+      },
     );
   }
 }

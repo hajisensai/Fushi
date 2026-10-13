@@ -61,7 +61,7 @@ class OnlineWorkHeader extends StatelessWidget {
     this.primaryAction,
     this.secondaryActions = const <Widget>[],
     this.moreItems = const <MediaDetailMenuItem>[],
-    this.moreInlineMax = 0,
+    this.moreAdaptiveOverflow = true,
     this.description,
     this.selectableDescription = false,
     this.backdrop,
@@ -90,8 +90,9 @@ class OnlineWorkHeader extends StatelessWidget {
   final List<Widget> secondaryActions;
   final List<MediaDetailMenuItem> moreItems;
 
-  /// 「更多」动作不超过它就平铺（见 [MediaDetailMoreButton.inlineMax]）。
-  final int moreInlineMax;
+  /// 「更多」动作默认平铺、宽度不够才收进「⋯」（见
+  /// [MediaDetailMoreButton.adaptiveOverflow]）。
+  final bool moreAdaptiveOverflow;
 
   final String? description;
 
@@ -127,7 +128,7 @@ class OnlineWorkHeader extends StatelessWidget {
                 : MediaDetailMoreButton(
                     buttonKey: const ValueKey<String>('online_work_more'),
                     items: moreItems,
-                    inlineMax: moreInlineMax,
+                    adaptiveOverflow: moreAdaptiveOverflow,
                   ),
           )
         : actions.isEmpty

@@ -871,6 +871,41 @@ class CollectionSeasonTabBar extends StatelessWidget {
   }
 }
 
+/// 集卡文字列底部区的排法：状态行贴底（高度不够时贴顶，于是被裁掉的是它折出来的
+/// 第二行而不是观看进度），简介从顶部起、最多用到状态行之上。
+class _EpisodeCardBottomLayout extends MultiChildLayoutDelegate {
+  _EpisodeCardBottomLayout();
+
+  static const String summary = 'summary';
+  static const String status = 'status';
+
+  @override
+  void performLayout(Size size) {
+    double statusHeight = 0;
+    if (hasChild(status)) {
+      final Size s = layoutChild(
+        status,
+        BoxConstraints(maxWidth: size.width),
+      );
+      statusHeight = s.height;
+      positionChild(status, Offset(0, math.max(0, size.height - s.height)));
+    }
+    if (hasChild(summary)) {
+      layoutChild(
+        summary,
+        BoxConstraints(
+          maxWidth: size.width,
+          maxHeight: math.max(0, size.height - statusHeight),
+        ),
+      );
+      positionChild(summary, Offset.zero);
+    }
+  }
+
+  @override
+  bool shouldRelayout(_EpisodeCardBottomLayout oldDelegate) => false;
+}
+
 /// hayase 式宽集卡的固定高度。
 const double kCollectionEpisodeCardHeight = 128;
 
@@ -1070,45 +1105,49 @@ class CollectionEpisodeCard extends StatelessWidget {
         if (part.trim().isNotEmpty) part.trim(),
     ];
     final String? summary = this.summary?.trim();
-    // 「观看至 xx」与规格摘要（1080p · HEVC…）同处一行会互相挤：规格是 Expanded，
-    // 观看进度被压成省略号 / 把规格挤没。有规格槽时观看进度单独占上一行。
-    final bool watchedText = !completed && started && fraction == null;
-    final Widget watchedWidget = Row(
-      key: const ValueKey<String>('collection-episode-watched'),
-      children: <Widget>[
-        FushiIcon(FushiIcons.playCircle, color: fgVariant, size: 16),
-        const SizedBox(width: 4),
-        Flexible(
-          child: Text(
-            t.collection_episode_watched_at(
-              position: formatVideoPosition(positionMs),
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: type.labelMedium.tabular.copyWith(color: fgVariant),
-          ),
-        ),
-      ],
-    );
-    final Widget statusRow = Row(
-      children: <Widget>[
-        if (completed)
-          FushiIcon(
+    // 「观看至 xx」与规格摘要（1080p · HEVC…）同处一行时，规格若是 Expanded 会把
+    // 观看进度压成省略号。状态行改成 Wrap：两者放得下就同一行（观看在起始侧、规格
+    // 在末端），放不下规格才折到下一行。规格未探到时 [VideoSpecsInlineLine] 是零尺寸，
+    // 观看进度照旧独占状态行——卡片布局不需要预先知道规格有没有内容（它是异步探的）。
+    final Widget? statusLead = completed
+        ? FushiIcon(
             FushiIcons.filled(FushiIcons.success),
             key: const ValueKey<String>('collection-episode-completed'),
             color: apple ? cs.primary : cs.tertiary,
             size: 18,
           )
-        else if (watchedText && trailingStatus == null)
-          Flexible(child: watchedWidget),
-        if (trailingStatus != null)
-          Expanded(
-            child: Align(
-              alignment: AlignmentDirectional.centerEnd,
-              child: trailingStatus,
-            ),
-          ),
-      ],
+        : started && fraction == null
+        ? Row(
+            key: const ValueKey<String>('collection-episode-watched'),
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              FushiIcon(FushiIcons.playCircle, color: fgVariant, size: 16),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  t.collection_episode_watched_at(
+                    position: formatVideoPosition(positionMs),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: type.labelMedium.tabular.copyWith(color: fgVariant),
+                ),
+              ),
+            ],
+          )
+        : null;
+    final Widget statusRow = SizedBox(
+      width: double.infinity,
+      child: Wrap(
+        key: const ValueKey<String>('collection-episode-status'),
+        // 只有规格时贴末端（与旧版右对齐一致）；有前导时两端分开。
+        alignment: statusLead == null
+            ? WrapAlignment.end
+            : WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        children: <Widget>[?statusLead, ?trailingStatus],
+      ),
     );
     return IgnorePointer(
       child: Material(
@@ -1191,30 +1230,38 @@ class CollectionEpisodeCard extends StatelessWidget {
                               ),
                             ),
                           ),
-                        // 简介吃剩余高度（放不下就省略），卡高恒定不溢出。
-                        if (summary != null && summary.isNotEmpty)
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Align(
-                                alignment: AlignmentDirectional.topStart,
-                                child: Text(
-                                  summary,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: type.bodySmall.copyWith(
-                                    color: fgVariant,
-                                    height: 1.3,
+                        // 底部区吃剩余高度：状态行贴底，简介用状态行剩下的
+                        // 高度（放不下就省略），状态行折成两行仍放不下时裁掉
+                        // 第二行（规格）——卡高钳死，任何字号都不溢出。
+                        Expanded(
+                          child: ClipRect(
+                            child: CustomMultiChildLayout(
+                              delegate: _EpisodeCardBottomLayout(),
+                              children: <Widget>[
+                                if (summary != null && summary.isNotEmpty)
+                                  LayoutId(
+                                    id: _EpisodeCardBottomLayout.summary,
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Text(
+                                        summary,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: type.bodySmall.copyWith(
+                                          color: fgVariant,
+                                          height: 1.3,
+                                        ),
+                                      ),
+                                    ),
                                   ),
+                                LayoutId(
+                                  id: _EpisodeCardBottomLayout.status,
+                                  child: statusRow,
                                 ),
-                              ),
+                              ],
                             ),
-                          )
-                        else
-                          const Spacer(),
-                        if (watchedText && trailingStatus != null)
-                          watchedWidget,
-                        statusRow,
+                          ),
+                        ),
                       ],
                     ),
                   ),

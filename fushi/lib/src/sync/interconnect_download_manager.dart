@@ -42,6 +42,7 @@ class InterconnectDownloadTask {
     this.totalBytes,
     this.startedAt,
     this.error,
+    this.destPath,
   });
 
   /// 稳定任务键（视频用 RemoteVideoInfo.id；与列表去重键一致）。
@@ -72,6 +73,11 @@ class InterconnectDownloadTask {
   /// 失败时的错误文本（status==failed 时非空）。
   final String? error;
 
+  /// 成品落点（下载完成后文件就在这里）。任务完成后管理器丢掉重跑规格，
+  /// 「删除并删文件」要删的是**这个文件**，不能再从库行反推（库行可能已被删、
+  /// 或被重新加入成流媒体行，见 `interconnect_download_tasks_section.dart`）。
+  final String? destPath;
+
   bool get isRunning => status == InterconnectDownloadStatus.running;
   bool get isPaused => status == InterconnectDownloadStatus.paused;
 
@@ -95,6 +101,7 @@ class InterconnectDownloadTask {
       totalBytes: totalBytes ?? this.totalBytes,
       startedAt: startedAt,
       error: clearError ? null : (error ?? this.error),
+      destPath: destPath,
     );
   }
 }
@@ -513,6 +520,7 @@ class InterconnectDownloadManager extends ChangeNotifier {
       receivedBytes: receivedBytes,
       totalBytes: totalBytes,
       startedAt: _now(),
+      destPath: dest.path,
     );
     _finishedOrder.remove(id);
     _notify();
@@ -620,6 +628,7 @@ class InterconnectDownloadManager extends ChangeNotifier {
           existing?.isPaused == true ? existing!.receivedBytes : null,
       totalBytes: existing?.isPaused == true ? existing!.totalBytes : null,
       startedAt: _now(),
+      destPath: spec.dest.path,
     );
     _tasks[id] = started;
     _lastProgressNotify.remove(id);

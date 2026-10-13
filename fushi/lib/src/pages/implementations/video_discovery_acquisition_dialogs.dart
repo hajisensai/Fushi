@@ -1088,33 +1088,36 @@ class _VideoResourceSearchSurfaceState
             if (_manualCategory == VideoDiscoveryCategory.anime) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),
               // 单行横滑而不是多行 Wrap：四五个拼写换成两三行会把本来就紧的结果区
-              // 再压掉一截。
-              SingleChildScrollView(
-                key: const ValueKey<String>('video-resource-alias-chips'),
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                // 与 Nyaa 实际补查的作品拼写同一份（BUG-2818）：元数据排第一的
-                // 罗马字不一定是发布组的写法，其余拼写也得点得到。
-                children: nyaaSearchQueries(
-                  VideoResourceSearchRequest(media: _media),
-                )
-                    .map(
-                      (String query) => Padding(
-                        padding: EdgeInsetsDirectional.only(
-                          end: tokens.spacing.gap,
-                        ),
-                        child: FushiActionChipControl(
-                          label: Text(query),
-                          onPressed: _loading
-                              ? null
-                              : () {
-                                  _queryController.text = query;
-                                  unawaited(_search());
-                                },
-                        ),
-                      ),
+              // 再压掉一截。桌面默认 dragDevices 不含鼠标：不包
+              // HorizontalDragScrollable 时鼠标拖不出右侧被截掉的拼写。
+              HorizontalDragScrollable(
+                child: SingleChildScrollView(
+                  key: const ValueKey<String>('video-resource-alias-chips'),
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    // 与 Nyaa 实际补查的作品拼写同一份（BUG-2818）：元数据排第一的
+                    // 罗马字不一定是发布组的写法，其余拼写也得点得到。
+                    children: nyaaSearchQueries(
+                      VideoResourceSearchRequest(media: _media),
                     )
-                    .toList(growable: false),
+                        .map(
+                          (String query) => Padding(
+                            padding: EdgeInsetsDirectional.only(
+                              end: tokens.spacing.gap,
+                            ),
+                            child: FushiActionChipControl(
+                              label: Text(query),
+                              onPressed: _loading
+                                  ? null
+                                  : () {
+                                      _queryController.text = query;
+                                      unawaited(_search());
+                                    },
+                            ),
+                          ),
+                        )
+                        .toList(growable: false),
+                  ),
                 ),
               ),
             ],
