@@ -222,6 +222,27 @@ void main() {
     expect(response.statusCode, 400);
   });
 
+  // open / lookup 的 body 解析失败是在 async 里抛的 CtlFailure：分派处若不 await，
+  // 异常逃出 try，落到 shelf 的兜底 500（纯文本），CLI 拿不到 bad_request。
+  for (final String path in <String>[kCtlOpenPath, kCtlLookupPath]) {
+    test('$path 的 body 不是 JSON 对象 → 400 bad_request（不是 500）', () async {
+      final HttpClientResponse response = await _raw(
+        endpoint,
+        'POST',
+        path,
+        token: endpoint.token,
+        body: <int>[1, 2],
+      );
+      expect(response.statusCode, 400);
+      final Object? json = jsonDecode(
+        await response.transform(utf8.decoder).join(),
+      );
+      expect((json as Map<String, Object?>)['error'], kCtlErrorBadRequest);
+      expect(handler.opened, isEmpty);
+      expect(handler.lookups, isEmpty);
+    });
+  }
+
   test('注册路由：路径参数解码、CtlFailure 映射、List 应答', () async {
     final CtlClient client = CtlClient(endpoint);
     addTearDown(client.close);
