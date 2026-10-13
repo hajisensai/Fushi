@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3012 条。点号进各自文件。
+> 共 3013 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3327](bugs/BUG-3327-plex-paused-heartbeat.md) | ✅ | ✅ | Plex心跳把已暂停条目重新标成播放中 |
 | [BUG-3326](bugs/BUG-3326-ruby-sentence-highlight-joints.md) | ✅ | ✅ | 有声书当前句高亮在振假名处断开、长注音处叠色 |
 | [BUG-3325](bugs/BUG-3325-lua-subtitle-scripts.md) | ✅ | ✅ | Lua 脚本读不到字幕：字幕结束自动暂停脚本在 Fushi 无效 |
 | [BUG-3324](bugs/BUG-3324-reader-copy-menu-after-lookup-swipe.md) | 🚧 | 🚧 | iOS 阅读器查词关闭后滑动自动弹出复制框并卡顿（未复现） |

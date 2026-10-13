@@ -219,6 +219,38 @@ abstract interface class RemoteVideoPlaybackSession
   });
 }
 
+/// [RemoteVideoPlaybackSession] 实现共用的「按条目的本地暂停意图」。
+///
+/// 周期心跳（[RemoteVideoClient.putRemoteVideoPosition]）不知道播放器此刻是否暂停，
+/// 而播放页的断点落库是异步的：后台先暂停、延迟落库后才发的那条心跳若恒报「播放中」，
+/// 服务器会把刚暂停的条目重新标成播放中（BUG：Jellyfin #2107 / Plex 同根）。心跳的
+/// 播放态因此以这里记的意图为准。
+///
+/// 契约（各实现必须同样遵守，否则时序窗口重新打开）：
+/// - [record] 在暂停 / 继续请求发出**之前**同步调用：请求在途或失败都不改变本地意图，
+///   后一条心跳负责把失败的暂停补上。
+/// - [reset] 在起播的第一个 await **之前**调用：新一次播放从「播放中」开始。
+/// - 停止**不**清除意图：路由销毁时可能在停止上报之后再落一次断点，那不是继续播放。
+/// - 意图属于条目：别的条目不受影响。
+final class RemotePlaybackPauseIntent {
+  final Set<String> _pausedIds = <String>{};
+
+  /// 记录 [id] 的暂停 / 继续意图。
+  void record(String id, {required bool paused}) {
+    if (paused) {
+      _pausedIds.add(id);
+    } else {
+      _pausedIds.remove(id);
+    }
+  }
+
+  /// 新一次播放起播：清除 [id] 的暂停意图。
+  void reset(String id) => _pausedIds.remove(id);
+
+  /// 心跳读：[id] 最近一次本地意图是否为暂停。
+  bool isPaused(String id) => _pausedIds.contains(id);
+}
+
 /// 媒体服务器串流画质档（成熟客户端的「画质」菜单：自动 / 1080p 20 Mbps / …）。
 ///
 /// 选档 = 向服务器声明码率上限 + 宽度上限：原文件码率不超上限就仍直播放，超了由

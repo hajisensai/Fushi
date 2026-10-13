@@ -3416,7 +3416,8 @@ class JellyfinVideoClient
   /// Last local pause intent, including while its HTTP report is in flight.
   /// A delayed position flush is not an unpause. Keep the intent across Stop
   /// too: disposal can finish another flush afterwards. Start/unpause resets it.
-  final Set<String> _pausedItems = <String>{};
+  /// Contract shared with Plex: [RemotePlaybackPauseIntent].
+  final RemotePlaybackPauseIntent _pauseIntent = RemotePlaybackPauseIntent();
 
   @override
   Future<void> putRemoteVideoPosition(
@@ -3439,14 +3440,14 @@ class JellyfinVideoClient
       itemId: id,
       positionMs: positionMs,
       session: _latestSession(id),
-      isPaused: _pausedItems.contains(id),
+      isPaused: _pauseIntent.isPaused(id),
       eventName: 'timeupdate',
     );
   }
 
   @override
   Future<void> startRemoteVideoPlayback(String id, int positionMs) async {
-    _pausedItems.remove(id);
+    _pauseIntent.reset(id);
     final JellyfinPlaybackSession? session = _latestSession(id);
     // 兼容层没签会话：没有可开始的东西，服务器也不认无会话的 Start。
     if (session == null) return;
@@ -3461,11 +3462,7 @@ class JellyfinVideoClient
     int positionMs, {
     required bool paused,
   }) {
-    if (paused) {
-      _pausedItems.add(id);
-    } else {
-      _pausedItems.remove(id);
-    }
+    _pauseIntent.record(id, paused: paused);
     return api.reportProgress(
       itemId: id,
       positionMs: positionMs,

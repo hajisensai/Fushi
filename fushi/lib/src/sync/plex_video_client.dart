@@ -16,8 +16,9 @@
 // - 字幕：外挂（sidecar）文本字幕经 `/library/streams/{id}` 下载原文件；容器内
 //   文本轨 PMS 不给单独文件，[PlexVideoClient.getRemoteVideoSubtitle] 对它抛出，
 //   播放页据此交给 libmpv 从直出流里解码（与 Jellyfin 兼容层 BUG-2590 同一条回落）。
-// - 进度：`/:/timeline`（playing / paused / stopped，10 秒一档心跳），停止时位置
-//   过 90% 显式 `/:/scrobble`；续播读条目 `viewOffset`。
+// - 进度：`/:/timeline`（playing / paused / stopped，10 秒一档心跳；心跳的
+//   playing / paused 跟随按条目记录的本地暂停意图 [RemotePlaybackPauseIntent]），
+//   停止时位置过 90% 显式 `/:/scrobble`；续播读条目 `viewOffset`。
 // - 不参与「混排进视频库」（`jellyfin_show_in_library` 那条旧路径只认 Jellyfin）。
 
 import 'dart:async';
@@ -845,8 +846,17 @@ class PlexVideoClient
   int _lastReportAtMs = 0;
   String _lastReportItemId = '';
 
+  /// 本地暂停意图（含暂停请求在途 / 失败时）。延迟到暂停之后才落库的那条心跳不是
+  /// 继续播放：恒报 `playing` 会让 PMS 把刚暂停的条目重新标成播放中。停止也不清除
+  /// ——路由销毁时停止之后还可能再落一次断点。契约见 [RemotePlaybackPauseIntent]。
+  final RemotePlaybackPauseIntent _pauseIntent = RemotePlaybackPauseIntent();
+
   @visibleForTesting
   int? debugDurationOf(String id) => _durations[id];
+
+  /// timeline 的播放态：跟随本地暂停意图（[_pauseIntent]），不是恒 `playing`。
+  String _playbackState(String id) =>
+      _pauseIntent.isPaused(id) ? 'paused' : 'playing';
 
   Future<void> _timeline(String id, String state, int positionMs) =>
       api.timeline(
@@ -871,11 +881,13 @@ class PlexVideoClient
     _lastReportAtMs = nowMs;
     _lastReportItemId = id;
     // PMS 语义是 last-write-wins；updatedAtMs 只在本端语境有意义，不上传。
-    await _timeline(id, 'playing', positionMs);
+    await _timeline(id, _playbackState(id), positionMs);
   }
 
   @override
   Future<void> startRemoteVideoPlayback(String id, int positionMs) async {
+    // 新一次播放从「播放中」开始；必须在第一个 await 之前清除。
+    _pauseIntent.reset(id);
     // 新一次播放：心跳窗口重开，第一条进度不被上一集的节流吃掉。
     _lastReportAtMs = 0;
     await _timeline(id, 'playing', positionMs);
@@ -886,7 +898,11 @@ class PlexVideoClient
     String id,
     int positionMs, {
     required bool paused,
-  }) => _timeline(id, paused ? 'paused' : 'playing', positionMs);
+  }) {
+    // 发请求前同步记下意图：请求在途时到达的心跳也得报 paused。
+    _pauseIntent.record(id, paused: paused);
+    return _timeline(id, _playbackState(id), positionMs);
+  }
 
   @override
   Future<void> stopRemoteVideoPlayback(String id, int positionMs) async {
