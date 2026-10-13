@@ -197,9 +197,12 @@ extension VideoDiscMenuController on VideoPlayerController {
     if (!identical(_discObservedPlayer, player)) {
       // One observer per Player. A late event only prompts a fresh atomic read
       // for the current load; it never carries the previous title's identity.
+      // Value-compared (BUG-3315): our libmpv patch notifies this property on
+      // MPV_EVENT_TICK, so a FORMAT_NONE observer fired every frame of disc
+      // playback, each with a synchronous JSON read plus this sample's read.
       _discObservedPlayer = player;
       _setDiscLoadStage('disc-observer');
-      await native.observeProperty('disc-navigation-state-json', (
+      await native.observePropertyChanges('disc-navigation-state-json', (
         String _,
       ) async {
         if (identical(_player, player) && isBlurayNavigationSession) {
