@@ -152,6 +152,25 @@ List<ClipSubtitleCue> buildClipSubtitleCues({
   return List<ClipSubtitleCue>.unmodifiable(out);
 }
 
+/// 纯函数：把待烧录的 cue 排成**叠画顺序**——按源 cue 的 ASS `Layer`
+/// （[SubtitleMarkup.layer]，无 markup 视作 0）升序**稳定**排序，同层保持原序。
+///
+/// 烧录是 overlay 链：列表里越靠后的图越画在上面。这与 libass / 屏幕 overlay 的
+/// z 序约定一致（低层先画、高层盖在上面；同层按出现顺序）。不排序时，多层叠字
+/// （黑字 + 白描边的底层与彩色上层同位叠出一行）若底层在文件里排在上层之后，
+/// 开「尊重字幕自带样式」导出时底层的黑字会盖住上层，烧出一行黑字（BUG-3291 审查）。
+/// SRT 生成不调它：软字幕没有叠画顺序，[buildClipSubtitleCues] 的原序就是 SRT 序号。
+List<ClipSubtitleCue> orderClipCuesForBurn(List<ClipSubtitleCue> cues) {
+  final List<int> order = List<int>.generate(cues.length, (int i) => i);
+  int layerOf(int i) => cues[i].markup?.layer ?? 0;
+  // List.sort 不保证稳定：以原下标作次序键，保证同层原序不变。
+  order.sort((int a, int b) {
+    final int byLayer = layerOf(a).compareTo(layerOf(b));
+    return byLayer != 0 ? byLayer : a.compareTo(b);
+  });
+  return List<ClipSubtitleCue>.unmodifiable(order.map((int i) => cues[i]));
+}
+
 /// SRT 时间戳：`HH:MM:SS,mmm`。负值 clamp 到 0（SRT 无负时间轴）。
 String formatSrtTimestamp(int ms) {
   final int safe = ms < 0 ? 0 : ms;

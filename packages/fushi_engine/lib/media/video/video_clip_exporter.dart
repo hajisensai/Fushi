@@ -914,7 +914,8 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
       );
       if (frame != null && ffmpegCanBurnClipSubtitles(filters)) {
         final _BurnFrames? frames = await _renderClipBurnFrames(
-          cues: subtitleCues,
+          // overlay 链后画的在上：按 ASS Layer 排成与 libass / 屏幕一致的叠画顺序。
+          cues: orderClipCuesForBurn(subtitleCues),
           frame: frame,
           renderer: subtitleRenderer,
         );

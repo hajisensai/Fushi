@@ -40,6 +40,29 @@ import '../helpers/scan_scale.dart';
 const String kPickerImpl =
     'lib/src/media/import/real_path_directory_picker.dart';
 
+/// file_picker **平台实现的装饰层**（BUG-3286）：Windows 上包住注册的
+/// `FilePicker.platform`，只决定 `lockParentWindow`（让系统对话框以 Fushi 主窗为
+/// owner，视频全屏时不被压住），其余参数原样转给被包住的实现。
+///
+/// 它与 [kPickerImpl] 同类——是「选择器实现」这一层，不是调用点：所有调用点（含统一
+/// 入口）最终都经 `FilePicker.platform` 走到它，它自己不发起任何选择，也不碰安卓 /
+/// iOS 的真实路径分流（只在 Windows 装）。所以它既不进「只减不增」的
+/// [kFilePickerAllowlist]，也不算目录选择器「零豁免」的破例：目录零豁免防的是**调用点**
+/// 绕过统一入口，而它里面的 `inner.getDirectoryPath(` 是把统一入口发出的调用转发
+/// 给真正的平台实现。
+///
+/// 豁免可证伪：「装饰层只做透传」那条用例钉死它里面的选择器调用全部是 `inner.*`
+/// 的一对一转发、只在 Windows 装、不出现任何平台分流。哪天它开始自己调选择器或
+/// 改了分流，那条会红，而不是被这里的豁免静默放过。
+const String kPickerPlatformDecorator =
+    'lib/src/platform/desktop/windows_owned_file_picker.dart';
+
+/// 不算调用点、从两条调用点判据里剔除的「选择器实现层」文件。
+const Set<String> kPickerImplementationLayer = <String>{
+  kPickerImpl,
+  kPickerPlatformDecorator,
+};
+
 /// 允许裸调 `getDirectoryPath(` 的文件 → 理由。
 ///
 /// 只有一条，且是**刻意**不走统一入口的：词典目录导入在安卓与 iOS 都走原生
@@ -166,7 +189,7 @@ void main() {
 
   test('目录选择器：除统一入口与登记豁免外，不得裸调 getDirectoryPath', () {
     final Set<String> callers = _filesCalling('getDirectoryPath')
-      ..remove(kPickerImpl);
+      ..removeAll(kPickerImplementationLayer);
     final Set<String> unexpected =
         callers.difference(kDirectoryPickerAllowlist.keys.toSet());
     expect(
@@ -180,7 +203,7 @@ void main() {
 
   test('目录豁免清单不得虚挂（清单里的文件必须真的还在裸调）', () {
     final Set<String> callers = _filesCalling('getDirectoryPath')
-      ..remove(kPickerImpl);
+      ..removeAll(kPickerImplementationLayer);
     for (final String path in kDirectoryPickerAllowlist.keys) {
       expect(
         callers,
@@ -192,7 +215,8 @@ void main() {
   });
 
   test('文件选择器：裸调 pickFiles 的文件必须已登记在案', () {
-    final Set<String> callers = _filesCalling('pickFiles')..remove(kPickerImpl);
+    final Set<String> callers = _filesCalling('pickFiles')
+      ..removeAll(kPickerImplementationLayer);
     final Set<String> unexpected =
         callers.difference(kFilePickerAllowlist.keys.toSet());
     expect(
@@ -205,12 +229,73 @@ void main() {
   });
 
   test('文件豁免清单不得虚挂', () {
-    final Set<String> callers = _filesCalling('pickFiles')..remove(kPickerImpl);
+    final Set<String> callers = _filesCalling('pickFiles')
+      ..removeAll(kPickerImplementationLayer);
     for (final String path in kFilePickerAllowlist.keys) {
       expect(
         callers,
         contains(path),
         reason: '$path 已不再裸调 pickFiles，请把它从豁免清单删掉（清单只减不增）。',
+      );
+    }
+  });
+
+  test('装饰层只做透传：选择器调用全是 inner.* 一对一转发，只在 Windows 装', () {
+    final String code = maskCommentsAndScriptLines(
+      File(kPickerPlatformDecorator).readAsStringSync(),
+    );
+    const List<String> members = <String>[
+      'pickFiles',
+      'getDirectoryPath',
+      'saveFile',
+      'clearTemporaryFiles',
+    ];
+    for (final String member in members) {
+      final int anyCalls = RegExp(
+        r'\.\s*' + member + r'\s*\(',
+      ).allMatches(code).length;
+      final int innerCalls = RegExp(
+        r'\binner\s*\.\s*' + member + r'\s*\(',
+      ).allMatches(code).length;
+      expect(
+        innerCalls,
+        1,
+        reason: '$kPickerPlatformDecorator 必须把 $member 原样转给 inner（恰一次）',
+      );
+      expect(
+        anyCalls,
+        innerCalls,
+        reason: '$kPickerPlatformDecorator 出现了 inner 之外的 $member 调用——'
+            '装饰层不得自己发起选择；要新增调用点请走 $kPickerImpl。',
+      );
+    }
+    // 不碰平台分流：安卓 / iOS 的真实路径分流只属于统一入口。
+    expect(
+      RegExp(r'\bisAndroid\b|\bisIOS\b|\bisMacOS\b|\bisLinux\b').hasMatch(code),
+      isFalse,
+      reason: '装饰层不得做平台分流（只在 Windows 装，分流归 $kPickerImpl）',
+    );
+    expect(
+      code,
+      contains('Platform.isWindows'),
+      reason: '装饰层的安装必须以 Windows 为门',
+    );
+    // 唯一改写的参数是 lockParentWindow：其余参数名与被转发值同名（原样透传）。
+    final RegExp namedArg = RegExp(r'(\w+)\s*:\s*([\w.()]+)\s*,');
+    final Iterable<RegExpMatch> forwarded = RegExp(
+      r'\binner\s*\.\s*\w+\s*\(([^;]*?)\)\s*;',
+    ).allMatches(code).expand(
+      (RegExpMatch call) => namedArg.allMatches(call.group(1)!),
+    );
+    expect(forwarded, isNotEmpty);
+    for (final RegExpMatch arg in forwarded) {
+      final String name = arg.group(1)!;
+      if (name == 'lockParentWindow') continue;
+      expect(
+        arg.group(2),
+        name,
+        reason: '$kPickerPlatformDecorator 改写了参数 $name——装饰层只许决定 '
+            'lockParentWindow，其余必须原样透传',
       );
     }
   });
@@ -245,6 +330,7 @@ void main() {
 
   test('统一入口文件本身存在（清单里的路径不是拼错的）', () {
     expect(File(kPickerImpl).existsSync(), isTrue);
+    expect(File(kPickerPlatformDecorator).existsSync(), isTrue);
     for (final String path in <String>[
       ...kDirectoryPickerAllowlist.keys,
       ...kFilePickerAllowlist.keys,

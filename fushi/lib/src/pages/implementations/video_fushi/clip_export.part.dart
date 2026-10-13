@@ -516,7 +516,8 @@ extension _VideoClipExport on _VideoFushiPageState {
     final ClipFrameSize frame = ClipFrameSize(size.width, size.height);
     final ClipSubtitleFrameRenderer renderer = _clipExportSubtitleRenderer();
     final List<Uint8List> layers = <Uint8List>[];
-    for (final ClipSubtitleCue cue in cues) {
+    // 与烧录同一套叠画顺序：后合成的在上，按 ASS Layer 升序（同层原序）。
+    for (final ClipSubtitleCue cue in orderClipCuesForBurn(cues)) {
       final Uint8List? png = await renderer(cue, frame);
       if (png != null) layers.add(png);
     }
