@@ -1015,8 +1015,6 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     return swallowEngineDeepLinkRoute(routeInformation);
   }
 
-  /// 回到前台补发待发制卡队列：桌面 / Android 上连续补发；AnkiMobile 只有在用户
-  /// 点过「全部发送」的会话里才发下一张（每张卡 `x-success` 跳回都会走到这里）。
   /// 启动后与回到前台时看一眼开发者有没有回复本机未结案的反馈（节流 / 无未结案不发
   /// 请求，见 [FeedbackReplyNotifier]）。只在主 app 入口：弹窗词典 / 悬浮词典是别的
   /// entry point，不经这里。有新进展就弹一次应用内提示。
@@ -1032,6 +1030,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
   }
 
+  /// 回到前台补发待发制卡队列：桌面 / Android 上连续补发；AnkiMobile 只有在用户
+  /// 点过「全部发送」的会话里才发下一张（每张卡 `x-success` 跳回都会走到这里）。
   void _flushPendingMines() {
     if (!ref.read(appProvider).isInitialised) return;
     // 「Anki 同步客户端」后端：上次没同步成功（离线等）的卡留在它自己的日志里，

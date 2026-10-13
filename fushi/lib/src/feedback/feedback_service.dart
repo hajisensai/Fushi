@@ -3,7 +3,9 @@
 // 服务端是 fushi.moe 的账户服务（services/leaderboard，路由见 src/feedback.js）。
 // 反馈不要求账户：提交拿到一次性回执（ticket）立刻落盘（FeedbackTicketStore），之后凭它
 // 查进度、追加说明。已登录排行榜账户时默认带签名提交，开发者那边能看到是谁。
-// 网络请求只在用户打开反馈中心 / 提交 / 看详情时发出，不在后台轮询。
+// 网络请求在用户打开反馈中心 / 提交 / 看详情时发出；另外启动与回到前台时由
+// FeedbackReplyNotifier（feedback_reply_notifier.dart）节流地刷新一次进度（只在本机有
+// 未结案反馈时，≥ 15 分钟一次），用来发现开发者的新回复。没有常驻的后台轮询。
 //
 // 附件没传上去（网络中断等）时字节落盘到 FeedbackPendingStore，详情页可「重试上传」；
 // 服务端 24 小时内允许补传空闲槽位（与 PR #2090 的待传重试是同一机制）。视频（槽位 v0，
@@ -159,7 +161,9 @@ class FeedbackService extends ChangeNotifier {
   /// [_accountTickets] 属于哪个账户（设备钥匙 id）；换账户 / 退出登录时整份丢掉。
   String? _accountKey;
   bool _loaded = false;
-  bool _refreshing = false;
+
+  /// 进行中的那次 [refresh]；没有时为 null。并发的 [refresh] 合并到它上面。
+  Future<void>? _refreshInFlight;
   Future<void>? _loading;
 
   /// 「我的反馈」：本机回执在前（新的在前），再接账户列表里本机没有回执的（新的在前）。
@@ -168,7 +172,7 @@ class FeedbackService extends ChangeNotifier {
   );
 
   bool get loaded => _loaded;
-  bool get refreshing => _refreshing;
+  bool get refreshing => _refreshInFlight != null;
 
   /// 有开发者新进展、用户还没看过的条数（入口红点）。
   int get unseenCount =>
@@ -273,44 +277,55 @@ class FeedbackService extends ChangeNotifier {
   /// 换账户 / 退出登录后旧账户的列表在联网之前就丢掉（[_dropStaleAccountTickets]）：
   /// 它只取决于本机身份，不该等批量查进度成功——断网时那一步就抛了，旧账户的工单标题
   /// 会一直挂在列表里。
+  ///
+  /// 已有一次刷新在进行时**合并**到那一次：返回它的 Future，等它真正结束、拿到同一个
+  /// 成败。不能直接返回——调用方（`FeedbackReplyNotifier`）会把「立刻返回、没抛」
+  /// 当成刷新成功，记下刷新时刻后 15 分钟内不再查，而那次刷新可能随后失败，或者它的
+  /// 结果在调用方读 [tickets] 时还没落下。
   Future<void> refresh() async {
     await load();
     _dropStaleAccountTickets(_client().identity?.accountId);
-    if (_refreshing) return;
-    _refreshing = true;
-    notifyListeners();
-    try {
-      final LeaderboardClient client = _client();
-      final Map<String, FeedbackSummary> fresh = <String, FeedbackSummary>{};
-      for (int i = 0; i < _tickets.length; i += FeedbackLimits.statusBatch) {
-        final List<FeedbackTicket> batch = _tickets.sublist(
-          i,
-          (i + FeedbackLimits.statusBatch).clamp(0, _tickets.length),
-        );
-        final List<FeedbackSummary> got = await client.feedbackStatuses(
-          <({String id, String ticket})>[
-            for (final FeedbackTicket t in batch) (id: t.id, ticket: t.ticket),
-          ],
-        );
-        for (final FeedbackSummary s in got) {
-          fresh[s.id] = s;
-        }
-      }
-      if (_tickets.isNotEmpty) {
-        _tickets = <FeedbackTicket>[
-          for (final FeedbackTicket t in _tickets)
-            if (fresh[t.id] case final FeedbackSummary s)
-              t.mergeSummary(s)
-            else
-              t.copyWith(missing: true),
-        ];
-        await _persist();
-      }
-      await _refreshAccount();
-    } finally {
-      _refreshing = false;
+    final Future<void>? running = _refreshInFlight;
+    if (running != null) return running;
+    // _fetchProgress 是 async：同步调用不会立刻跑完，whenComplete 一定晚于下面的赋值。
+    final Future<void> run = _fetchProgress().whenComplete(() {
+      _refreshInFlight = null;
       notifyListeners();
+    });
+    _refreshInFlight = run;
+    notifyListeners();
+    return run;
+  }
+
+  /// 一次刷新的实际工作：批量查本机回执的进度，再拉账户列表。错误原样抛。
+  Future<void> _fetchProgress() async {
+    final LeaderboardClient client = _client();
+    final Map<String, FeedbackSummary> fresh = <String, FeedbackSummary>{};
+    for (int i = 0; i < _tickets.length; i += FeedbackLimits.statusBatch) {
+      final List<FeedbackTicket> batch = _tickets.sublist(
+        i,
+        (i + FeedbackLimits.statusBatch).clamp(0, _tickets.length),
+      );
+      final List<FeedbackSummary> got = await client.feedbackStatuses(
+        <({String id, String ticket})>[
+          for (final FeedbackTicket t in batch) (id: t.id, ticket: t.ticket),
+        ],
+      );
+      for (final FeedbackSummary s in got) {
+        fresh[s.id] = s;
+      }
     }
+    if (_tickets.isNotEmpty) {
+      _tickets = <FeedbackTicket>[
+        for (final FeedbackTicket t in _tickets)
+          if (fresh[t.id] case final FeedbackSummary s)
+            t.mergeSummary(s)
+          else
+            t.copyWith(missing: true),
+      ];
+      await _persist();
+    }
+    await _refreshAccount();
   }
 
   /// 账户列表只属于 [_accountKey]：当前身份 [key] 不是它（换账户 / 退出登录）就整份丢掉。

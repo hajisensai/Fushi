@@ -286,13 +286,13 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
               ),
             );
           }
+          // 单滚动：「正在播放」卡作为列表头 sliver 进的是 [chaptersBody] 自己的
+          // 进场 scope，外面不再套一层。
           return gate(
-            FushiEntranceScope(
-              child: chaptersBody(
-                header: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: head,
-                ),
+            chaptersBody(
+              header: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: head,
               ),
             ),
           );

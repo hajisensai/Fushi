@@ -3,6 +3,8 @@
 //    Scrollable.ensureVisible 沿所有祖先滚动，连包住整块面板的外层滚动也被推下去，
 //    「选择对齐文件 / 设备端转录生成字幕」那排一打开就被切掉；
 //  * 底部 sheet 进场不过冲：欠阻尼弹簧把 sheet 先推到停靠位上方再落回。
+import 'dart:io';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
@@ -162,16 +164,25 @@ void main() {
         matching: find.byType(Scrollable),
       ),
     );
-    final List<ScrollableState> outer = tester
-        .stateList<ScrollableState>(
-          find.ancestor(
-            of: find.byKey(_chaptersKey),
-            matching: find.byType(Scrollable),
-          ),
-        )
-        .toList();
-    // 矮视口下「正在播放」卡与章节并进同一条滚动（k2ykdRRxC3），不再有外层滚动；
-    // 本用例的隔离约束（定位只动章节自己的 ScrollPosition）对两种结构都成立。
+    // 整块面板只有**一个**竖向滚动，就是章节列表自己：钉住模式下「正在播放」卡在
+    // 列表外不滚，单滚动模式下它是列表最顶上的 sliver（k2ykdRRxC3）。两种结构里
+    // 都不存在能被定位连带推走的外层滚动；谁把「外层滚动 + 固定高度内层列表」的
+    // 嵌套加回来，这里就多出一个竖向 Scrollable。
+    final List<ScrollableState> vertical = <ScrollableState>[
+      for (final ScrollableState s in tester.stateList<ScrollableState>(
+        find.descendant(
+          of: find.byKey(_sheetKey),
+          matching: find.byType(Scrollable),
+        ),
+      ))
+        if (s.position.axis == Axis.vertical) s,
+    ];
+    expect(
+      vertical,
+      hasLength(1),
+      reason: '面板里只能有章节列表这一个竖向滚动（不得再嵌外层滚动）',
+    );
+    expect(vertical.single, same(chapters));
 
     // 定位键在「章节」分组标题旁，先把它滚进章节列表视野里再点。
     const Key reveal = ValueKey<String>(
@@ -179,9 +190,7 @@ void main() {
     );
     await tester.ensureVisible(find.byKey(reveal));
     await tester.pumpAndSettle();
-    final List<double> outerBefore = <double>[
-      for (final ScrollableState s in outer) s.position.pixels,
-    ];
+    final double sheetTop = tester.getTopLeft(find.byKey(_sheetKey)).dy;
     await tester.tap(find.byKey(reveal));
     await tester.pumpAndSettle();
 
@@ -191,10 +200,29 @@ void main() {
     expect(row.top, greaterThanOrEqualTo(viewport.top));
     expect(row.bottom, lessThanOrEqualTo(viewport.bottom));
     expect(chapters.position.pixels, greaterThan(0));
-    expect(<double>[
-      for (final ScrollableState s in outer) s.position.pixels,
-    ], outerBefore);
+    expect(
+      tester.getTopLeft(find.byKey(_sheetKey)).dy,
+      sheetTop,
+      reason: '定位不得把整块 sheet 推动',
+    );
     expect(tester.takeException(), isNull);
+  });
+
+  test('源码守卫：定位当前章只滚章节列表自己的 ScrollPosition', () {
+    // 面板在无界高度的宿主里（外层可滚的 ReaderSideSheet）走「固定 320 高的内层
+    // 列表」分支，那里确实有外层滚动。`Scrollable.ensureVisible` 会沿**所有**祖先
+    // 滚动，把外层一起推下去、切掉顶部的对齐 / 转录动作；只有
+    // `ScrollPosition.ensureVisible` 只动自己。上面的 widget 用例在单滚动结构下
+    // 观察不到这一差别（只有一个 Scrollable），所以这条约束钉在源码上。
+    final File f = File('lib/src/reader/reader_audiobook_panel.dart');
+    expect(f.existsSync(), isTrue, reason: 'run from the fushi/ package root');
+    final String src = f.readAsStringSync();
+    expect(src, contains('_scroll.position.ensureVisible('));
+    expect(
+      src.contains('Scrollable.ensureVisible('),
+      isFalse,
+      reason: 'Scrollable.ensureVisible 会连带滚动外层',
+    );
   });
 
   Future<ScrollableState> openWithSection(

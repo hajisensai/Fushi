@@ -1,6 +1,7 @@
 // 开发者回复的被动发现：没有未结案反馈不发请求；15 分钟节流（时间戳落盘）；刷新失败不记
 // 时间戳；同一批新回复只提示一次，更新的回复才再提示；应用内提示带「查看」。
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -45,12 +46,17 @@ void main() {
   bool failing = false;
   int now = 1000000;
 
+  /// 非 null 时，每个请求登记后都卡在这里，直到它完成（模拟一次进行中的刷新）。
+  Completer<void>? gate;
+
   FeedbackService service() => FeedbackService(
     supportRoot: () async => root,
     client: () => LeaderboardClient(
       baseUrl: Uri.parse('https://rank.example'),
       httpClientFactory: () async => MockClient((http.Request r) async {
         requests.add(r);
+        final Completer<void>? held = gate;
+        if (held != null) await held.future;
         if (failing) return _json(<String, dynamic>{}, 503);
         final List<dynamic> asked =
             (jsonDecode(r.body) as Map<String, dynamic>)['items']
@@ -88,6 +94,7 @@ void main() {
     replies = <String, int?>{};
     failing = false;
     now = 1000000;
+    gate = null;
   });
   tearDown(() => root.deleteSync(recursive: true));
 
@@ -186,5 +193,99 @@ void main() {
     expect(find.text(t.feedback_reply_notice(n: 2)), findsOneWidget);
     expect(find.text(t.feedback_reply_notice_open), findsOneWidget);
     ScaffoldMessenger.of(ctx).clearSnackBars();
+  });
+
+  Future<void> waitForRequests(int n) async {
+    final DateTime deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (requests.length < n) {
+      if (DateTime.now().isAfter(deadline)) {
+        fail('timed out waiting for $n requests');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+  }
+
+  test('刷新进行中再调 refresh：合并到那一次，等它结束并拿到同一个成败', () async {
+    await seed(<FeedbackTicket>[_ticket('aaaaaaaaaa')]);
+    final FeedbackService s = service();
+    final Completer<void> held = gate = Completer<void>();
+    final Future<void> first = s.refresh();
+    await waitForRequests(1);
+    expect(s.refreshing, isTrue);
+
+    bool secondSettled = false;
+    final Future<void> second = s.refresh();
+    unawaited(
+      second.then<void>(
+        (_) => secondSettled = true,
+        onError: (Object _) => secondSettled = true,
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(
+      secondSettled,
+      isFalse,
+      reason: '已有刷新在进行时不能立刻返回（调用方会当成功处理）',
+    );
+
+    failing = true;
+    final Future<void> firstFails = expectLater(first, throwsA(anything));
+    final Future<void> secondFails = expectLater(
+      second,
+      throwsA(anything),
+      reason: '合并进来的调用必须拿到那次刷新的失败',
+    );
+    held.complete();
+    await firstFails;
+    await secondFails;
+    expect(requests, hasLength(1), reason: '合并而不是再发一轮');
+    expect(s.refreshing, isFalse);
+  });
+
+  test('反馈中心的刷新进行中触发被动检查：等那次刷新结束；失败不记时间戳', () async {
+    await seed(<FeedbackTicket>[_ticket('aaaaaaaaaa')]);
+    final FeedbackService s = service();
+    final FeedbackReplyNotifier n = notifier(s);
+    final Completer<void> held = gate = Completer<void>();
+    final Future<void> center = s.refresh();
+    await waitForRequests(1);
+
+    final Future<int> checked = n.check();
+    // 让 check() 走到 service.refresh()（读本机缓存与节流状态都是本地 IO）。
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    failing = true;
+    final Future<void> centerFails = expectLater(center, throwsA(anything));
+    held.complete();
+    await centerFails;
+    expect(await checked, 0);
+
+    // 修复前：check() 拿到的是「立刻返回」，把那次失败的刷新当成功记了时间戳，
+    // 同一时刻再检查会被 15 分钟节流挡住、不发请求。
+    gate = null;
+    failing = false;
+    replies = <String, int?>{'aaaaaaaaaa': 500};
+    final int before = requests.length;
+    expect(await n.check(), 1, reason: '失败的那次刷新没有占用节流窗口');
+    expect(requests.length, greaterThan(before));
+  });
+
+  test('反馈中心的刷新进行中触发被动检查：拿到的是那次刷新落下的新进展', () async {
+    await seed(<FeedbackTicket>[_ticket('aaaaaaaaaa')]);
+    final FeedbackService s = service();
+    final FeedbackReplyNotifier n = notifier(s);
+    replies = <String, int?>{'aaaaaaaaaa': 500};
+    final Completer<void> held = gate = Completer<void>();
+    final Future<void> center = s.refresh();
+    await waitForRequests(1);
+
+    final Future<int> checked = n.check();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    held.complete();
+    await center;
+    expect(
+      await checked,
+      1,
+      reason: '修复前 check() 在结果落下前就读 tickets，新回复漏提示',
+    );
   });
 }

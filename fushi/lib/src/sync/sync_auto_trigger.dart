@@ -105,6 +105,15 @@ void _publishSyncOutcome(SyncRunOutcome outcome) {
 /// 白白置真一段（等锁 + 读偏好），界面上的「同步进行中」与真在跑的同步同形。
 /// [syncInProgress] 只为真的要跑的同步置位；被开关挡下的触发只公布结局
 /// （[SyncOutcomeReason.autoDisabled]，设置页「上次同步」照旧有字可显示）。
+///
+/// 这道门只决定「点不点亮在飞标志」，**不是**能不能跑的最终判据：门开之后还要排
+/// [_autoSyncMutex]，前面可能是一轮很长的手动「立即同步」，用户这期间关掉开关，
+/// 拿到锁后由 [_autoSyncStillEnabled] 再判一次才算数。
+///
+/// 被挡下时若有整轮 sweep 在飞（`__all__`，含手动「立即同步」），**不公布**结局：
+/// 那一轮自己马上会公布真结局，这里抢先写一个 autoDisabled 会让
+/// [lastFullSweepOutcome] / [lastSyncOutcome] 在手动同步跑着的整段时间里都报
+/// 「自动同步已关」（桌面控制通道照读这两个值）。
 Future<bool> _autoSyncGateOpen(
   FushiDatabase db,
   SyncActivityKind kind,
@@ -122,6 +131,7 @@ Future<bool> _autoSyncGateOpen(
     );
     reason = SyncOutcomeReason.failed;
   }
+  if (_syncingIds.contains('__all__')) return false;
   _publishSyncOutcome(SyncRunOutcome(
     kind: kind,
     reason: reason,
@@ -130,6 +140,14 @@ Future<bool> _autoSyncGateOpen(
   ));
   return false;
 }
+
+/// 自动同步路径**拿到 [_autoSyncMutex] 之后**的开关复核，是能不能跑的最终判据。
+///
+/// [_autoSyncGateOpen] 在锁外判，判完到拿到锁之间可能排在一轮很长的手动同步后面；
+/// 这段时间里用户关掉自动同步，不能让已经排上队的自动同步照样跑一次。读失败照常
+/// 抛给调用方，由它的外层 catch 记成 failed（与门前那次读失败同一口径）。
+Future<bool> _autoSyncStillEnabled(FushiDatabase db) =>
+    SyncRepository(db).isAutoSyncEnabled();
 
 // HBK-AUDIT-049: cloud backends (GoogleDrive/Dropbox/OneDrive/WebDAV/SMB) are
 // process-wide singletons holding mutable shared state (_accessToken,
@@ -633,6 +651,10 @@ Future<void> _runAutoSyncAll({
     // HBK-AUDIT-049: serialize the actual sync work so it never overlaps a
     // per-book sync mutating the same singleton backend state.
     await _autoSyncMutex.withLock(() async {
+      if (!await _autoSyncStillEnabled(db)) {
+        reason = SyncOutcomeReason.autoDisabled;
+        return;
+      }
       final repo = SyncRepository(db);
       final now = DateTime.now().millisecondsSinceEpoch;
       // BUG-1569①：成功冷却戳只在整轮跑成后写（TODO-1332），失败轮不推进它——
@@ -1184,6 +1206,10 @@ Future<void> _runCollectionsSync({required FushiDatabase db}) async {
   int channelsRun = 0;
   try {
     await _autoSyncMutex.withLock(() async {
+      if (!await _autoSyncStillEnabled(db)) {
+        reason = SyncOutcomeReason.autoDisabled;
+        return;
+      }
       final repo = SyncRepository(db);
       // BUG-1604：**逐通道**隔离异常，与 app-open sweep 同一范式。这个 for 原来
       // 整体裸奔，只有外层一个 `catch (e) { developer.log(...) }`——云通道恒排第一
@@ -1285,6 +1311,10 @@ Future<void> _runAutoSync({
     // books or the '__all__' sweep) so the shared singleton backend's
     // token/api/folder cache is never mutated concurrently.
     await _autoSyncMutex.withLock(() async {
+      if (!await _autoSyncStillEnabled(db)) {
+        reason = SyncOutcomeReason.autoDisabled;
+        return;
+      }
       final repo = SyncRepository(db);
       final book = await db.getEpubBook(bookKey);
       if (book == null) {
