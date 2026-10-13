@@ -668,6 +668,29 @@ PendingMineStore pendingMineStoreFor(AppModel appModel) =>
 /// 决定包不包，provider 就得 watch 它，而它存在 Anki 仓库的 SharedPreferences 里
 /// （不是 Riverpod 状态）watch 不到，那样改开关得重启 app 才生效。
 BaseAnkiRepository _withAutoReposition(Ref ref, BaseAnkiRepository repo) {
+  final AnkiAutoRepositionWiring wiring = withAnkiAutoReposition(
+    repo,
+    showFailure: (String message) => FushiToast.showMine(
+      msg: message,
+      status: MineToastStatus.failed,
+    ),
+  );
+  ref.onDispose(wiring.scheduler.dispose);
+  return wiring.repository;
+}
+
+/// 自动重排包装后的仓库与它的调度器；调度器的防抖 Timer 由持有方负责 dispose。
+typedef AnkiAutoRepositionWiring = ({
+  AutoRepositionAnkiRepository repository,
+  AnkiAutoRepositionScheduler scheduler,
+});
+
+/// [_withAutoReposition] 的无 Riverpod 版本：调用方自己决定调度器的生命周期与失败提示
+/// 的出口（视频页禁用 FushiToast，走 OSD）。失败原因一律进错误日志。
+AnkiAutoRepositionWiring withAnkiAutoReposition(
+  BaseAnkiRepository repo, {
+  required void Function(String message) showFailure,
+}) {
   final AnkiAutoRepositionScheduler scheduler = AnkiAutoRepositionScheduler(
     runner: AnkiDeckRepositionRunner(repo),
     loadSettings: repo.loadSettings,
@@ -678,14 +701,13 @@ BaseAnkiRepository _withAutoReposition(Ref ref, BaseAnkiRepository repo) {
       // 牌组名，日志是唯一能定位「一直失败」的证据（BUG-3272）。
       ErrorLogService.instance
           .log('AnkiAutoReposition[$deckName]', error, stack);
-      FushiToast.showMine(
-        msg: t.anki_reposition_auto_failed(deck: deckName),
-        status: MineToastStatus.failed,
-      );
+      showFailure(t.anki_reposition_auto_failed(deck: deckName));
     },
   );
-  ref.onDispose(scheduler.dispose);
-  return AutoRepositionAnkiRepository(inner: repo, scheduler: scheduler);
+  return (
+    repository: AutoRepositionAnkiRepository(inner: repo, scheduler: scheduler),
+    scheduler: scheduler,
+  );
 }
 
 final ankiViewModelProvider =

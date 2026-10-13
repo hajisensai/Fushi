@@ -1621,6 +1621,12 @@ abstract final class FushiIcons {
     fontFamily: kFushiSymbolsFontFamily,
   );
 
+  /// 遥控器（手机遥控电脑播放）：Symbols `settings_remote`
+  static const IconData remoteControl = IconData(
+    0xe8c7,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
   /// 全部语义名 → 线框图标（测试 / 样张页遍历用）。
   static const Map<String, IconData> all = <String, IconData>{
     'home': home,
@@ -1889,6 +1895,7 @@ abstract final class FushiIcons {
     'viewColumn': viewColumn,
     'webAsset': webAsset,
     'webAssetOff': webAssetOff,
+    'remoteControl': remoteControl,
   };
 
   /// [icon] 的实心（FILL=1）版本：选中态 / 激活态用。非语义图标原样返回。
@@ -2138,6 +2145,7 @@ abstract final class FushiIcons {
     0xe8b3: IconData(0xe8b3, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8b8: IconData(0xe8b8, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8ba: IconData(0xe8ba, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe8c7: IconData(0xe8c7, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8d4: IconData(0xe8d4, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8d5: IconData(0xe8d5, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8de: IconData(
@@ -2511,6 +2519,10 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   0xe8ba: (
     CupertinoIcons.arrow_counterclockwise,
     CupertinoIcons.arrow_counterclockwise,
+  ),
+  0xe8c7: (
+    CupertinoIcons.antenna_radiowaves_left_right,
+    CupertinoIcons.antenna_radiowaves_left_right,
   ),
   0xe8d4: (
     CupertinoIcons.arrow_right_arrow_left,

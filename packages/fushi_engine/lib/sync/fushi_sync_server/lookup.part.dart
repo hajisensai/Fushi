@@ -12,6 +12,14 @@ extension _FushiSyncServerLookup on FushiSyncServer {
       if (method != 'POST') return shelf.Response(405);
       return _handleDictionaryLookup(request);
     }
+    if (reqPath == '/api/lookup/dictionary/styles') {
+      if (method != 'POST') return shelf.Response(405);
+      return _handleRemoteDictionaryStyles(request);
+    }
+    if (reqPath == '/api/lookup/dictionary/media') {
+      if (method != 'POST') return shelf.Response(405);
+      return _handleRemoteDictionaryMedia(request);
+    }
     if (reqPath == '/api/lookup/audio') {
       if (method != 'POST') return shelf.Response(405);
       return _lookupRoutes.handleAudioLookup(request);
@@ -38,6 +46,86 @@ extension _FushiSyncServerLookup on FushiSyncServer {
       lookup: service,
       history: _historyService,
     ));
+  }
+
+  /// `POST /api/lookup/dictionary/styles {dictionaries:[name…]}` →
+  /// `{type:'dictionaryStyles', styles:{name: css}}`。
+  ///
+  /// 查词结果来自本机时，对端（手机遥控 / 远端查词）的弹窗必须用**本机**这份词典
+  /// 样式渲染。点名时只回点名且本机确实装着的词典（一次最多 [_kMaxStyleNames] 个）；
+  /// 不点名回整套。
+  /// 鉴权走上方中间件（无豁免）。
+  Future<shelf.Response> _handleRemoteDictionaryStyles(
+    shelf.Request request,
+  ) async {
+    final Map<String, String> Function()? provider = _dictionaryStylesProvider;
+    if (provider == null) return shelf.Response.notFound('Styles off');
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    final Object? names = body['dictionaries'];
+    final Map<String, String> all = provider();
+    if (names == null) {
+      // 不点名 = 整套样式（客户端会话首查一次拿全，之后只在出现没见过的词典名时
+      // 再拉）：结果里的释义可能来自词条之外的多部词典，逐名点要先解析 popupJson。
+      return jsonResponse(<String, dynamic>{
+        'type': 'dictionaryStyles',
+        'styles': all,
+      });
+    }
+    if (names is! List ||
+        names.length > _kMaxStyleNames ||
+        names.any((Object? name) => name is! String)) {
+      return shelf.Response(400, body: 'Invalid dictionaries');
+    }
+    return jsonResponse(<String, dynamic>{
+      'type': 'dictionaryStyles',
+      'styles': <String, String>{
+        for (final Object? name in names)
+          if (all[name] != null) name! as String: all[name]!,
+      },
+    });
+  }
+
+  /// `POST /api/lookup/dictionary/media {dictionary, path}` →
+  /// `{type:'dictionaryMedia', contentType, data:<base64>}`。
+  ///
+  /// 与免 Basic 的 `GET /api/media/dictionary`（浏览器扩展 `<img>` 用、凭 query
+  /// token）不同，这条走配对凭据 + JSON，客户端复用互联 POST 传输层的候选 / 钉扎 /
+  /// 401 语义。安全措施：
+  ///  * 路径经 [safeDictionaryMediaPath] 规范化，越级 / 绝对路径 / 盘符 / NUL 一律
+  ///    400，绝不交给引擎；
+  ///  * 单文件上限 [kRemoteDictionaryMediaMaxBytes]，超了 413；
+  ///  * Content-Type 由服务端按扩展名判定（[dictionaryMediaMimeType]），不信客户端。
+  Future<shelf.Response> _handleRemoteDictionaryMedia(
+    shelf.Request request,
+  ) async {
+    final Uint8List? Function(String, String)? provider =
+        _dictionaryMediaProvider;
+    if (provider == null) return shelf.Response.notFound('Media off');
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    final Object? dictionary = body['dictionary'];
+    final Object? rawPath = body['path'];
+    if (dictionary is! String ||
+        dictionary.trim().isEmpty ||
+        dictionary.contains('\u0000') ||
+        rawPath is! String) {
+      return shelf.Response(400, body: 'Invalid media request');
+    }
+    final String? path = safeDictionaryMediaPath(rawPath);
+    if (path == null) return shelf.Response(400, body: 'Invalid media path');
+    final Uint8List? bytes = provider(dictionary, path);
+    if (bytes == null || bytes.isEmpty) {
+      return shelf.Response.notFound('Not found');
+    }
+    if (bytes.length > kRemoteDictionaryMediaMaxBytes) {
+      return shelf.Response(413, body: 'Media too large');
+    }
+    return jsonResponse(<String, dynamic>{
+      'type': 'dictionaryMedia',
+      'contentType': dictionaryMediaMimeType(path),
+      'data': base64Encode(bytes),
+    });
   }
 
   /// Validates that [request]'s query token (?token= etc.) equals [_token].
@@ -93,6 +181,8 @@ extension _FushiSyncServerLookup on FushiSyncServer {
       },
     );
   }
+
+  static const int _kMaxStyleNames = 64;
 
   // /api/mine、/api/mine/forward、/api/anki/note-type/*、/api/duplicate、
   // /api/lookup/audio[/file] 的 handler 正文在 [RemoteLookupRoutes]（与

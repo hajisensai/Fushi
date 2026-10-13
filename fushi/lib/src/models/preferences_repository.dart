@@ -52,6 +52,7 @@ import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode, kVideoHdrOutputPref;
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
+import 'package:fushi/src/media/video/video_remote_control_layout.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
@@ -2078,6 +2079,19 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setVideoControlLayout(VideoControlLayout layout) async {
     await setPref('video_control_customization', layout.encode());
+    notifyListeners();
+  }
+
+  /// 手机字幕遥控器控制卡的按钮布局（主组 / 次组 / 移出）。持久化键
+  /// `video_remote_control_layout`，空 / 坏值回出厂布局。
+  VideoRemoteControlLayout get videoRemoteControlLayout =>
+      VideoRemoteControlLayout.decode(
+        getPref('video_remote_control_layout', defaultValue: '') as String,
+      );
+
+  Future<void> setVideoRemoteControlLayout(
+      VideoRemoteControlLayout layout) async {
+    await setPref('video_remote_control_layout', layout.encode());
     notifyListeners();
   }
 

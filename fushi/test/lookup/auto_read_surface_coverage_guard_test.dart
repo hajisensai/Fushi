@@ -39,6 +39,10 @@ void main() {
         'app 内词典页 mixin：searchPopup(autoRead:) 决定是否调 autoReadWord。'
             '五个消费方（home_dictionary / popup_dictionary / texthooker / '
             'floating_lyric_lookup_host / video_fushi_page）均传 autoRead: true。',
+    'lib/src/pages/implementations/video_remote_page.dart':
+        '手机字幕遥控器：查的是已配对电脑的词典（searchPopupDictionary 覆写成钉住'
+            '设备的 FushiRemoteLookupClient），弹框仍是 mixin 那一个，openLookup 传 '
+            'autoRead: true；发音经 playPopupWordAudio 问那台电脑要。',
   };
 
   /// 豁免的查词调用点：路径 → **具体**理由。
@@ -131,7 +135,7 @@ void main() {
     // 2026-08-28 删桌面剪贴板查词后 clipboard_panel_controller.dart 整文件删除，
     // 真分母从 10 降到 9：这是「真把那棵树删到了下界以下」的情形，下界同步下调。
     expectScanScale(found.length,
-        what: 'searchDictionary 调用点所在文件', atLeast: 9, measured: 9);
+        what: 'searchDictionary 调用点所在文件', atLeast: 9, measured: 10);
     final Set<String> declared = <String>{
       ...wiredSurfaces.keys,
       ...exemptCallSites.keys,

@@ -20,6 +20,7 @@ import 'package:fushi/src/pages/implementations/confirm_mine_round_trip.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart'
     show kPopupSearchingPlaceholderResult;
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/popup_settings_injection.dart';
@@ -251,9 +252,15 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.nudgeSurfaceOnRender = false,
     this.restoreScrollTop,
     this.lookupPending = false,
+    this.resourceSource,
   });
 
   final DictionarySearchResult result;
+
+  /// 结果来自别的设备（手机字幕遥控器查电脑的词典）时，词典样式 / 词典媒体 / ♪ 发音
+  /// 一律取自那台设备（见 [DictionaryPopupResourceSource]）。null = 本机结果，走
+  /// `FushiDicts` 老路径。由宿主按表面注入，不是全局开关。
+  final DictionaryPopupResourceSource? resourceSource;
 
   /// 注入页面的 `window.lookupPending`：本层可见且确有一次查询在进行中（唯一派生点
   /// `popupLookupPending`，`DictionaryPopupLayer` 按控制器状态 + 层可见性算好传入）。
@@ -528,6 +535,7 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
     _lastPushedPending = false;
     _lastRenderedPending = false;
     _lastSentStaticRevision = null;
+    _lastSentRemoteStyles = null;
     _lastSentInAppExtrasKey = null;
     _lastThemeVarsJs = null;
   }
@@ -700,6 +708,11 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
   /// 串做全串比较，现在只存 int（builder 侧按输入 memo，同内容 ⇒ 同 revision）。
   /// 页面重载（onLoadStop）时置 null 强制重发（新页面无状态）。
   int? _lastSentStaticRevision;
+
+  /// 最近一次注入的远端词典样式表（[DictionaryPopupResourceSource.dictionaryStyles]
+  /// 的实例身份）。静态段重发会把 `window.dictionaryStyles` 换回本机样式，所以静态段
+  /// 一变远端样式必须跟着重发；样式表身份变了（会话中途拉到新词典）同样重发。
+  Map<String, String>? _lastSentRemoteStyles;
 
   /// 字体 URL 拦截器的目录白名单：只有导入字体落盘的那一个目录。
   ///
@@ -1420,8 +1433,22 @@ JSON.stringify((function(){
   /// `<audio>` element (remote `http(s)://` pass-through, local file → base64
   /// `data:` URL). Shared single source of truth with the overlay + auto-read so
   /// every surface plays word audio the same way (see [resolveWordAudioWebViewUrl]).
-  Future<String?> _resolveWordAudio(String expression, String reading) =>
-      resolveWordAudioWebViewUrl(ref.read(appProvider), expression, reading);
+  /// 制卡前要落进本机 Anki 媒体缓存的词典媒体清单（`fields['dictionaryMedia']`）。
+  /// 结果来自别的设备时返回空清单：本机没有那部词典，卡也由那台设备用它自己的
+  /// 词典与 Anki 落地。
+  String _dictionaryMediaForLocalMining(Map<String, String> fields) =>
+      widget.resourceSource == null ? (fields['dictionaryMedia'] ?? '') : '';
+
+  Future<String?> _resolveWordAudio(String expression, String reading) async {
+    final DictionaryPopupResourceSource? resources = widget.resourceSource;
+    if (resources == null) {
+      return resolveWordAudioWebViewUrl(
+          ref.read(appProvider), expression, reading);
+    }
+    // 结果来自别的设备：♪ 也问那台设备（本机音频源未必有、也不是同一份配置）。
+    return audioRefToWebViewUrl(
+        await resources.wordAudioRef(expression, reading));
+  }
 
   /// BUG-1093：等待 JS 真实播放结果的 pending 表。`evaluateJavascript` 不会 await
   /// JS Promise，之前本方法无条件返回 true——WebView2 的 autoplay 策略在 document
@@ -1636,6 +1663,13 @@ JSON.stringify((function(){
     // 下一次推送重发。BUG-717 ③：比较从 MB 级全串换成 revision 整数（builder 按
     // 输入 memo，同内容 ⇒ 同实例同 revision），combined 只在真要发时才拼一次。
     final PopupStaticSettingsJs staticSettings = _buildStaticSettings();
+    // 结果来自别的设备时整表换成那台设备的词典样式（见 [_lastSentRemoteStyles]）。
+    final Map<String, String>? remoteStyles =
+        widget.resourceSource?.dictionaryStyles;
+    // 从远端来源换回本机：页面里还是远端样式，静态段（含本机样式）必须重发。
+    if (remoteStyles == null && _lastSentRemoteStyles != null) {
+      _lastSentStaticRevision = null;
+    }
     final bool staticChanged =
         staticSettings.revision != _lastSentStaticRevision;
     if (staticChanged) {
@@ -1643,6 +1677,13 @@ JSON.stringify((function(){
     }
     final String staticSettingsJs =
         staticChanged ? staticSettings.combined : '';
+    // 远端样式排在静态段之后，覆盖它写入的本机样式；静态段一重发就得跟着重发。
+    final bool remoteStylesChanged = remoteStyles != null &&
+        (staticChanged || !identical(remoteStyles, _lastSentRemoteStyles));
+    _lastSentRemoteStyles = remoteStyles;
+    final String remoteStylesJs = remoteStylesChanged
+        ? 'window.dictionaryStyles = ${jsonEncode(remoteStyles)};'
+        : '';
     // BUG-717 ③：in-app 固定块（__fushiResetPopupScroll 钩子 + 句子上下文 i18n +
     // sentenceContextPreviewEnabled）并入静态段的失效节奏：随静态段版本重发
     // （语言切换 → builder memo 键含 locale → 新 revision → 必然重发），另跟踪
@@ -1690,6 +1731,7 @@ JSON.stringify((function(){
         ''';
     _controller!.evaluateJavascript(source: '''
       $staticSettingsJs
+      $remoteStylesJs
       $inAppExtrasJs
       $entriesJs
       ${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};
@@ -2222,6 +2264,14 @@ JSON.stringify((function(){
             whitelistedPaths: _configuredDictionaryFontPaths(),
           );
         }
+        final DictionaryPopupResourceSource? resources =
+            mounted ? widget.resourceSource : null;
+        if (resources != null) {
+          return remoteDictionaryMediaWebResourceResponse(
+            request.url,
+            resources,
+          );
+        }
         return dictionaryMediaWebResourceResponse(request.url);
       },
       onWebViewCreated: (controller) {
@@ -2248,17 +2298,18 @@ JSON.stringify((function(){
               'DictPopupWebview.getDictAsset',
               null,
               ErrorLogService.instance,
-              () {
+              () async {
                 final Object? raw = args.isNotEmpty ? args.first : null;
                 if (raw is! Map) return null;
                 final String dictionary = raw['dictionary'] as String? ?? '';
                 final String path = raw['path'] as String? ?? '';
                 if (dictionary.isEmpty || path.isEmpty) return null;
                 if (!path.toLowerCase().endsWith('.js')) return null;
-                final Uint8List? bytes = FushiDicts.instance.getMediaFile(
-                  dictionary,
-                  path,
-                );
+                final DictionaryPopupResourceSource? resources =
+                    mounted ? widget.resourceSource : null;
+                final Uint8List? bytes = resources != null
+                    ? (await resources.mediaFile(dictionary, path))?.bytes
+                    : FushiDicts.instance.getMediaFile(dictionary, path);
                 if (bytes == null || bytes.isEmpty) return null;
                 return utf8.decode(bytes, allowMalformed: true);
               },
@@ -2566,8 +2617,9 @@ JSON.stringify((function(){
                 );
                 // 落盘词典媒体（gaiji）字节供 repo 嵌进卡片；必须在 onMineEntry
                 // （->repo.mineEntry 读缓存）之前完成。空/无媒体时内部直接返回。
+                // 结果来自别的设备时清单留空（本机没有那部词典，卡由那台设备落地）。
                 await writeDictionaryMediaCache(
-                    fields['dictionaryMedia'] ?? '');
+                    _dictionaryMediaForLocalMining(fields));
                 // BUG-2634：Dart 的 async 函数同步执行到首个 await，所以这一行返回
                 // 时宿主已经跑完它的同步前缀。**只有担保「草稿在首个 await 之前读完」
                 // 的宿主**（`releaseWhenPayloadConsumed`）才据此提前关窗；不担保的
@@ -2604,8 +2656,9 @@ JSON.stringify((function(){
                   (args[0] as Map)
                       .map((k, v) => MapEntry(k.toString(), v.toString())),
                 );
+                // 结果来自别的设备时清单留空（本机没有那部词典，卡由那台设备落地）。
                 await writeDictionaryMediaCache(
-                    fields['dictionaryMedia'] ?? '');
+                    _dictionaryMediaForLocalMining(fields));
                 // BUG-2634 第二轮：这条路（这个词以前制过卡）会弹「覆写 / 新增重复
                 // / 取消」的模态操作单，**无限等用户做选择**，选完还要等整张卡落地。
                 // 所以这里只解除超时、**不**提前关窗：
@@ -2680,8 +2733,9 @@ JSON.stringify((function(){
                   fieldsRaw.map((k, v) => MapEntry(k.toString(), v.toString())),
                 );
                 // 与制卡同链路：先落盘词典媒体字节，再覆盖卡片（repo 从缓存读外字）。
+                // 结果来自别的设备时清单留空（本机没有那部词典，卡由那台设备落地）。
                 await writeDictionaryMediaCache(
-                    fields['dictionaryMedia'] ?? '');
+                    _dictionaryMediaForLocalMining(fields));
                 // BUG-2634：与 mineEntry 同一条纪律（覆写路径同样在首个 await 之前
                 // 读走草稿），同样按宿主的担保决定是提前关窗还是只解除超时。
                 final Future<MinePopupResult> pending =
@@ -3042,6 +3096,15 @@ JSON.stringify((function(){
                 final expression = data['expression']?.toString() ?? '';
                 final reading = data['reading']?.toString() ?? '';
                 if (expression.isEmpty) return const <Map<String, String>>[];
+                if (widget.resourceSource != null) {
+                  // 别的设备的结果：「选择音频源」只剩那台设备给的默认一条。
+                  final String? url =
+                      await _resolveWordAudio(expression, reading);
+                  return <Map<String, String>>[
+                    if (url != null && url.isNotEmpty)
+                      <String, String>{'name': '', 'variant': '', 'url': url},
+                  ];
+                }
                 return listWordAudioWebViewChoices(
                     ref.read(appProvider), expression, reading);
               },
@@ -3143,6 +3206,11 @@ JSON.stringify((function(){
             allowedRoots: roots,
             whitelistedPaths: _configuredDictionaryFontPaths(),
           );
+        }
+        final DictionaryPopupResourceSource? resources =
+            mounted ? widget.resourceSource : null;
+        if (resources != null) {
+          return remoteDictionaryMediaCustomSchemeResponse(url, resources);
         }
         return dictionaryMediaCustomSchemeResponse(url);
       },

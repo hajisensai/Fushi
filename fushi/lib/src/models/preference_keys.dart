@@ -447,6 +447,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（[VideoOnlineMiningMode] 的 wireName）：在线视频点制卡后弹窗等不等——
   // `background` 后台（默认）/ `deferred` 看完再制卡 / `wait` 等整张卡落地。
   'video_online_mining_mode',
+  // 手机字幕遥控器控制卡按钮布局 JSON（VideoRemoteControlLayout，v1 槽位表）。
+  'video_remote_control_layout',
   'video_remote_subtitle',
   // 用户停用的内置视频资源索引器 id（逗号分隔，默认空 = 全部启用）。
   // 与 discovery_disabled_sources 同形；自配 Torznab 各自带 enabled，不进这里。

@@ -253,6 +253,42 @@ void main() {
       expect(pauses, 0);
     });
 
+    test('until：从首句播到末句句尾才停，中间各句不停（调整上下文试听）', () async {
+      final VideoPlayerController c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues(<AudioCue>[
+        _cue(0, 0, 1000),
+        _cue(1, 1001, 2000),
+        _cue(2, 2001, 3000),
+        _cue(3, 3001, 4000),
+      ]);
+
+      final List<String> actions = <String>[];
+      c.debugSetPauseAtSubtitleEndForTesting(
+        enabled: false,
+        isPlaying: () => true,
+        onPause: () async => actions.add('pause'),
+        onSeek: (int positionMs) async => actions.add('seek:$positionMs'),
+        onPlay: () async => actions.add('play'),
+      );
+
+      await c.replayCue(c.cues[0], until: c.cues[2]);
+      expect(actions, <String>['play']);
+      expect(c.debugOneShotHoldCueIndex, 2, reason: 'hold 挂在末句上');
+
+      c.debugUpdateCueForPosition(900);
+      c.debugUpdateCueForPosition(1125);
+      c.debugUpdateCueForPosition(2125);
+      await Future<void>.delayed(Duration.zero);
+      expect(actions, <String>['play'], reason: '首句、中间句句尾都不停');
+
+      c.debugUpdateCueForPosition(3125);
+      await Future<void>.delayed(Duration.zero);
+      expect(actions, <String>['play', 'pause', 'seek:3000'],
+          reason: '末句句尾停并回到它的精确结尾');
+      expect(c.debugOneShotHoldCueIndex, isNull);
+    });
+
     test('cue 不在当前列表时退化为「跳过去接着播」，不假装能停', () async {
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);

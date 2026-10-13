@@ -1,0 +1,990 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math' as math;
+import 'package:crypto/crypto.dart';
+
+import 'package:flutter/foundation.dart';
+import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
+import 'package:fushi_engine/sync/video_remote_service.dart';
+import 'package:fushi_engine/sync/video_remote_session_core.dart';
+
+/// A normalized list sentence, retaining its own subtitle clock.
+final class VideoRemoteCue {
+  const VideoRemoteCue({
+    required this.id,
+    required this.text,
+    required this.startMs,
+    required this.endMs,
+    required this.delayMs,
+    required this.track,
+  });
+  final String id;
+  final String text;
+  final int startMs;
+  final int endMs;
+  final int delayMs;
+  final String track;
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'text': text,
+    'startMs': startMs,
+    'endMs': endMs,
+    'delayMs': delayMs,
+    'track': track,
+  };
+}
+
+/// What a remote card is cut from, frozen when the host accepts `mine`.
+///
+/// Composed from the lookup's sentence-context draft exactly like the desktop
+/// video page composes its own (`MiningSentenceDraft.composeText` /
+/// `composeAudioRange`): [sentence] is the merged card text, [startMs] /
+/// [endMs] the unpadded first-to-last span on the anchor row's subtitle clock
+/// (the page pads and shifts it). Without any context both collapse to the
+/// looked-up row.
+final class VideoRemoteMineSelection {
+  const VideoRemoteMineSelection({
+    required this.sentence,
+    required this.cueSentence,
+    required this.startMs,
+    required this.endMs,
+    required this.adjusted,
+  });
+  final String sentence;
+  final String cueSentence;
+  final int startMs;
+  final int endMs;
+
+  /// Whether the phone adjusted the context (added rows or edited text). Only
+  /// then does [sentence] win over a sentence the phone sent with the fields.
+  final bool adjusted;
+}
+
+/// App-owned callbacks; the HTTP layer never sees media paths or widget state.
+final class VideoRemotePlaybackBinding {
+  const VideoRemotePlaybackBinding({
+    required this.identity,
+    required this.title,
+    required this.bookUid,
+    required this.sectionIndex,
+    required this.cues,
+    required this.state,
+    required this.command,
+    required this.mine,
+    required this.openFavorite,
+    required this.addListener,
+    required this.removeListener,
+    this.favoritesChanged,
+    this.previewAudio,
+    this.stopAudio,
+  });
+  final String Function() identity;
+  final String Function() title;
+  final String Function() bookUid;
+  final int Function() sectionIndex;
+  final List<VideoRemoteCue> Function() cues;
+  final Map<String, Object?> Function() state;
+  final Future<void> Function(String, Map<String, dynamic>) command;
+  final Future<Map<String, Object?>> Function(
+    VideoRemoteCue,
+    Map<String, dynamic>,
+    VideoRemoteMineSelection,
+  )
+  mine;
+  final Future<void> Function(FavoriteSentence) openFavorite;
+  final void Function(VoidCallback) addListener;
+  final void Function(VoidCallback) removeListener;
+  final Future<void> Function()? favoritesChanged;
+
+  /// Plays the subtitle-clock span `[startMs, endMs]` of [anchor]'s track on
+  /// the desktop player (the context dialog's audio preview). Returns false
+  /// when there is nothing to play. Null: the preview is unavailable.
+  final Future<bool> Function(VideoRemoteCue anchor, int startMs, int endMs)?
+  previewAudio;
+
+  /// Stops [previewAudio]. Null falls back to the `pause` command.
+  final Future<void> Function()? stopAudio;
+}
+
+/// One selected desktop player, one authenticated controller and fixed drafts.
+final class VideoRemoteHost implements VideoRemoteService {
+  VideoRemoteHost({
+    required FavoriteSentenceRepository Function() favorites,
+    Stream<String?> Function()? favoriteChanges,
+    DateTime Function()? now,
+  }) : _favorites = favorites,
+       _favoriteChanges = favoriteChanges,
+       _now = now ?? DateTime.now {
+    _core = VideoRemoteSessionCore(now: _now, onLeaseExpired: _expireLookup);
+  }
+  final FavoriteSentenceRepository Function() _favorites;
+  final Stream<String?> Function()? _favoriteChanges;
+  StreamSubscription<String?>? _favoriteSubscription;
+  final DateTime Function() _now;
+  late final VideoRemoteSessionCore _core;
+  VideoRemotePlaybackBinding? _binding;
+  String? _identity;
+  String _sessionId = '';
+  int _serial = 0;
+  int _subtitleVersion = 0;
+  int _favoriteVersion = 0;
+  String? _playbackError;
+  List<VideoRemoteCue> _cues = const <VideoRemoteCue>[];
+  Map<String, VideoRemoteCue> _cueMap = <String, VideoRemoteCue>{};
+  Map<String, Object?> _lastState = <String, Object?>{};
+  DateTime? _lastPublish;
+  _RemoteLookup? _lookup;
+  final Map<String, _RemoteMineTask> _tasks = <String, _RemoteMineTask>{};
+  Future<void> _mutationTail = Future<void>.value();
+
+  void register(VideoRemotePlaybackBinding binding) {
+    final VideoRemotePlaybackBinding? old = _binding;
+    if (old != null) {
+      old.removeListener(_changed);
+    }
+    _binding = binding;
+    _identity = null;
+    _playbackError = null;
+    _lookup = null;
+    binding.addListener(_changed);
+    _refresh();
+    _publish();
+  }
+
+  void unregister(VideoRemotePlaybackBinding binding) {
+    if (!identical(binding, _binding)) {
+      return;
+    }
+    binding.removeListener(_changed);
+    _binding = null;
+    _identity = null;
+    _lookup = null;
+    _cues = const <VideoRemoteCue>[];
+    _cueMap.clear();
+    _sessionId = '';
+    _publish();
+  }
+
+  /// Reports an asynchronous failure the phone cannot get from a response,
+  /// e.g. the page opened by `openFavorite` failing to load its source.
+  ///
+  /// The code rides on the `state` snapshot until the controller's next
+  /// successful operation, a session (video identity) change or a new player
+  /// registration; it never outlives the attempt it describes.
+  void reportError(String code) {
+    _playbackError = code;
+    _publish();
+  }
+
+  void _refresh() {
+    final VideoRemotePlaybackBinding? binding = _binding;
+    if (binding == null) {
+      return;
+    }
+    final String identity = binding.identity();
+    final List<VideoRemoteCue> next = binding.cues();
+    if (identity != _identity) {
+      _identity = identity;
+      _sessionId = '${_now().microsecondsSinceEpoch}_${++_serial}';
+      _lookup = null;
+      // A reported failure belongs to the session it was raised in.
+      _playbackError = null;
+      _subtitleVersion++;
+      _cues = next;
+      _cueMap = <String, VideoRemoteCue>{
+        for (final VideoRemoteCue cue in next) cue.id: cue,
+      };
+    } else if (!identical(next, _cues)) {
+      _subtitleVersion++;
+      // Track/clock changes invalidate the draft and its resume permission.
+      // Never schedule an asynchronous play that can overtake the next lookup.
+      _lookup = null;
+      _cues = next;
+      _cueMap = <String, VideoRemoteCue>{
+        for (final VideoRemoteCue cue in next) cue.id: cue,
+      };
+    }
+  }
+
+  void _changed() {
+    // No phone subscribed: do not compute transcript views on every video tick.
+    if (_core.owner == null) {
+      return;
+    }
+    final String oldSession = _sessionId;
+    final int oldVersion = _subtitleVersion;
+    _refresh();
+    final Map<String, Object?> state = _binding?.state() ?? <String, Object?>{};
+    final bool immediate =
+        oldSession != _sessionId ||
+        oldVersion != _subtitleVersion ||
+        state['playing'] != _lastState['playing'] ||
+        state['speed'] != _lastState['speed'] ||
+        state['controlRevision'] != _lastState['controlRevision'];
+    if (immediate ||
+        _lastPublish == null ||
+        _now().difference(_lastPublish!) >= const Duration(seconds: 1)) {
+      _publish();
+    }
+  }
+
+  Map<String, Object?> _snapshot() => <String, Object?>{
+    'available': _binding != null, 'revision': _core.revision,
+    'sessionId': _sessionId, 'subtitleVersion': _subtitleVersion,
+    'favoriteVersion': _favoriteVersion, 'title': _binding?.title() ?? '',
+    if (_playbackError != null) 'error': _playbackError,
+    // Public library identity only, never local paths or signed media URLs.
+    'identity': _binding?.bookUid() ?? '', 'cueCount': _cues.length,
+    'sectionIndex': _binding?.sectionIndex(),
+    ...?_binding?.state(),
+  };
+
+  void _publish() {
+    _lastState = _binding?.state() ?? <String, Object?>{};
+    _lastPublish = _now();
+    _core.publish('state', _snapshot());
+  }
+
+  VideoRemotePlaybackBinding _requireSession(Map<String, dynamic> body) {
+    _refresh();
+    final VideoRemotePlaybackBinding? binding = _binding;
+    if (binding == null) {
+      throw const VideoRemoteException(409, 'no_video');
+    }
+    if (body['sessionId'] != _sessionId) {
+      throw const VideoRemoteException(409, 'session_changed');
+    }
+    if (body['subtitleVersion'] != _subtitleVersion) {
+      throw const VideoRemoteException(409, 'subtitles_changed');
+    }
+    return binding;
+  }
+
+  VideoRemoteCue _requireCue(Map<String, dynamic> body) {
+    final VideoRemoteCue? cue = _cueMap[body['cueId']];
+    if (cue == null) {
+      throw const VideoRemoteException(404, 'cue_missing');
+    }
+    return cue;
+  }
+
+  @override
+  Future<Map<String, Object?>> handle(
+    String operation,
+    Map<String, dynamic> body,
+    String peerId,
+  ) async {
+    if (operation == 'snapshot') {
+      await _core.acquire(peerId);
+      _favoriteSubscription ??= _favoriteChanges?.call().listen((String? _) {
+        _favoriteVersion++;
+        final Future<void> Function()? changed = _binding?.favoritesChanged;
+        if (changed != null) {
+          unawaited(
+            changed().catchError((Object error, StackTrace stack) {
+              debugPrint(
+                'Video remote favorite cache refresh failed: $error\n$stack',
+              );
+            }),
+          );
+        }
+        _publish();
+      });
+      _refresh();
+      return _snapshot();
+    }
+    await _core.assertOwner(peerId);
+    if (operation == 'events') {
+      return _core.events(
+        _integer(body, 'afterRevision', 0),
+        waitMs: _integer(body, 'waitMs', 25000).clamp(0, 25000),
+      );
+    }
+    if (operation == 'subtitles') {
+      _requireSession(body);
+      final int offset = _integer(body, 'offset', 0).clamp(0, _cues.length);
+      final int limit = _integer(body, 'limit', 200).clamp(1, 200);
+      final List<FavoriteSentence> favorites = await _favorites().getAll();
+      _requireSession(body);
+      return <String, Object?>{
+        'offset': offset,
+        'total': _cues.length,
+        'subtitleVersion': _subtitleVersion,
+        'cues': _cues
+            .skip(offset)
+            .take(limit)
+            .map(
+              (VideoRemoteCue cue) => <String, Object?>{
+                ...cue.toJson(),
+                'favorited': favorites.any(
+                  (FavoriteSentence favorite) => _matches(favorite, cue),
+                ),
+              },
+            )
+            .toList(),
+      };
+    }
+    if (operation == 'favorites') {
+      return _listFavorites(body);
+    }
+    if (operation == 'mineStatus') {
+      _RemoteMineTask? task = _tasks[body['taskId']];
+      if (task == null && body['requestId'] is String) {
+        for (final _RemoteMineTask candidate in _tasks.values) {
+          if (candidate.peerId == peerId &&
+              candidate.requestId == body['requestId']) {
+            task = candidate;
+            break;
+          }
+        }
+      }
+      if (task == null || task.peerId != peerId) {
+        throw const VideoRemoteException(404, 'task_missing');
+      }
+      return task.toJson();
+    }
+    if (!videoRemoteOperations.contains(operation)) {
+      throw const VideoRemoteException(404, 'unknown_operation');
+    }
+    final String requestId = body['requestId'] is String
+        ? body['requestId'] as String
+        : '';
+    final String fingerprint = _fingerprint(operation, body);
+    if (operation == 'mine') {
+      // Mining outlives the generic request journal. Preserve retry identity
+      // while the accepted task is still available to mineStatus.
+      for (final _RemoteMineTask task in _tasks.values) {
+        if (task.peerId == peerId && task.requestId == requestId) {
+          if (task.fingerprint != fingerprint) {
+            throw const VideoRemoteException(409, 'request_id_conflict');
+          }
+          return task.toJson();
+        }
+      }
+    }
+    return _core.runIdempotent(
+      peerId,
+      requestId,
+      () => _serialize(() async {
+        // Queued commands revalidate their owner/session at execution time.
+        await _core.assertOwner(peerId);
+        final Map<String, Object?> result = await _mutate(
+          operation,
+          body,
+          peerId,
+        );
+        // A successful controller operation supersedes an earlier failure.
+        if (_playbackError != null) {
+          _playbackError = null;
+          _publish();
+        }
+        return result;
+      }),
+      fingerprint: fingerprint,
+    );
+  }
+
+  Future<Map<String, Object?>> _serialize(
+    Future<Map<String, Object?>> Function() action,
+  ) {
+    final Future<Map<String, Object?>> result = _mutationTail.then(
+      (_) => action(),
+    );
+    _mutationTail = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return result;
+  }
+
+  Future<Map<String, Object?>> _mutate(
+    String operation,
+    Map<String, dynamic> body,
+    String peerId,
+  ) async {
+    final int leaseGeneration = _core.leaseGeneration;
+    if (operation == 'disconnect') {
+      await _expireLookup(peerId);
+      _core.release(peerId);
+      return <String, Object?>{'ok': true};
+    }
+    if (operation == 'lookupEnd') {
+      final _RemoteLookup? lookup = _lookup;
+      if (lookup != null &&
+          lookup.peerId == peerId &&
+          body['contextId'] == lookup.id) {
+        _lookup = null;
+        await _resume(lookup);
+      }
+      return <String, Object?>{'ok': true};
+    }
+    if (operation == 'favoritesRemove') {
+      final Object? ids = body['ids'];
+      if (ids is! List ||
+          ids.length > 200 ||
+          ids.any((Object? id) => id is! String)) {
+        throw const VideoRemoteException(400, 'invalid_favorites');
+      }
+      final FavoriteSentenceRepository repo = _favorites();
+      final List<FavoriteSentence> all = await repo.getAll();
+      for (final FavoriteSentence favorite in all) {
+        if (favorite.source == kFavoriteSentenceSourceVideo &&
+            ids.contains(favorite.id)) {
+          await repo.removeById(favorite.id);
+        }
+      }
+      _favoriteVersion++;
+      _publish();
+      return <String, Object?>{'ok': true, 'favoriteVersion': _favoriteVersion};
+    }
+    if (operation == 'openFavorite') {
+      final List<FavoriteSentence> all = await _favorites().getAll();
+      final FavoriteSentence favorite = all.firstWhere(
+        (FavoriteSentence favorite) =>
+            favorite.id == body['id'] &&
+            favorite.source == kFavoriteSentenceSourceVideo,
+        orElse: () => throw const VideoRemoteException(404, 'favorite_missing'),
+      );
+      final VideoRemotePlaybackBinding? binding = _binding;
+      if (binding == null) {
+        throw const VideoRemoteException(409, 'no_video');
+      }
+      _lookup = null;
+      await binding.openFavorite(favorite);
+      _refresh();
+      _publish();
+      return <String, Object?>{'ok': true};
+    }
+    if (operation == 'lookupContext') {
+      return _lookupContext(_requireLookup(body, peerId), body);
+    }
+    if (operation == 'mine') {
+      final String fingerprint = _fingerprint(operation, body);
+      final _RemoteLookup lookup = _requireLookup(body, peerId);
+      final Object? fields = body['fields'];
+      if (fields is! Map<String, dynamic>) {
+        throw const VideoRemoteException(400, 'invalid_fields');
+      }
+      if (_tasks.values.any(
+        (_RemoteMineTask task) => task.status == 'running',
+      )) {
+        throw const VideoRemoteException(429, 'mining_busy');
+      }
+      if (_tasks.length >= 128) {
+        _tasks.remove(_tasks.keys.first);
+      }
+      // The original peer/request can query this task after the draft closes.
+      final String id = 'mine_${++_serial}';
+      final _RemoteMineTask task = _RemoteMineTask(
+        id,
+        peerId,
+        body['requestId'] as String,
+        fingerprint,
+      );
+      _tasks[id] = task;
+      final VideoRemotePlaybackBinding binding = lookup.binding;
+      // Frozen now: later context edits must not change an accepted card.
+      final VideoRemoteMineSelection selection = _selection(lookup);
+      final Future<Map<String, Object?>> work =
+          Future<Map<String, Object?>>.sync(
+            () => binding.mine(lookup.cue, fields, selection),
+          );
+      unawaited(
+        work.then<void>(
+          (Map<String, Object?> result) {
+            task.result = result;
+            task.status = result['success'] == true ? 'succeeded' : 'failed';
+            if (task.status == 'failed') {
+              task.error = result['error']?.toString() ?? 'mining_failed';
+            } else if (identical(_lookup, lookup)) {
+              // Same as the desktop page: a landed card consumes the draft.
+              lookup.draft.clear();
+            }
+            _core.publish('mine', task.toJson());
+          },
+          onError: (Object error, StackTrace stack) {
+            task.status = 'failed';
+            task.error = error is VideoRemoteException
+                ? error.code
+                : 'mining_failed';
+            debugPrint('Video remote mining failed: $error\n$stack');
+            _core.publish('mine', task.toJson());
+          },
+        ),
+      );
+      return task.toJson();
+    }
+    final VideoRemotePlaybackBinding binding = _requireSession(body);
+    if (operation == 'command') {
+      final String action = body['action']?.toString() ?? '';
+      if (!<String>{'play', 'pause', 'seek', 'seekCue'}.contains(action)) {
+        throw const VideoRemoteException(400, 'invalid_action');
+      }
+      _lookup = null; // Explicit playback intent supersedes automatic resume.
+      final Map<String, dynamic> command = <String, dynamic>{};
+      if (action == 'seekCue') {
+        final VideoRemoteCue cue = _requireCue(body);
+        command['positionMs'] = (cue.startMs + cue.delayMs).clamp(0, 1 << 30);
+      } else if (action == 'seek') {
+        command['positionMs'] = _integer(
+          body,
+          'positionMs',
+          0,
+        ).clamp(0, 1 << 30);
+      }
+      await binding.command(action, command);
+      _publish();
+      return <String, Object?>{'ok': true};
+    }
+    final VideoRemoteCue cue = _requireCue(body);
+    if (operation == 'lookupBegin') {
+      final _RemoteLookup? previous = _lookup;
+      if (previous != null) {
+        _lookup = null;
+        await _resume(previous);
+        await _core.assertOwner(peerId);
+        _requireLease(peerId, leaseGeneration);
+        _requireSession(body);
+      }
+      final Map<String, Object?> before = binding.state();
+      final bool wasPlaying = before['playing'] == true;
+      final int beforeControl =
+          (before['controlRevision'] as num?)?.toInt() ?? 0;
+      if (wasPlaying) {
+        await binding.command('pause', <String, dynamic>{});
+      }
+      final int control =
+          (binding.state()['controlRevision'] as num?)?.toInt() ?? 0;
+      final _RemoteLookup lookup = _RemoteLookup(
+        'lookup_${++_serial}',
+        peerId,
+        body['sessionId'] as String,
+        body['subtitleVersion'] as int,
+        binding,
+        cue,
+        wasPlaying && control == beforeControl + 1,
+        control,
+        (before['positionMs'] as num?)?.toInt(),
+      );
+      try {
+        await _core.assertOwner(peerId);
+        _requireLease(peerId, leaseGeneration);
+        _requireSession(body);
+        if (!identical(binding, _binding)) {
+          throw const VideoRemoteException(409, 'session_changed');
+        }
+      } catch (_) {
+        // Expiry/host stop can clean up before an in-flight pause completes.
+        // Undo only that pause, subject to the same local intent safeguards.
+        await _resume(lookup);
+        rethrow;
+      }
+      _lookup = lookup;
+      _publish();
+      return <String, Object?>{
+        'contextId': lookup.id,
+        'cue': cue.toJson(),
+        'sentence': cue.text,
+      };
+    }
+    if (operation == 'favoriteSet') {
+      if (body['favorited'] is! bool) {
+        throw const VideoRemoteException(400, 'invalid_favorite');
+      }
+      final FavoriteSentenceRepository repo = _favorites();
+      final List<FavoriteSentence> all = await repo.getAll();
+      await _core.assertOwner(peerId);
+      _requireLease(peerId, leaseGeneration);
+      _requireSession(body);
+      if (!identical(binding, _binding)) {
+        throw const VideoRemoteException(409, 'session_changed');
+      }
+      final List<FavoriteSentence> matches = all
+          .where((FavoriteSentence favorite) => _matches(favorite, cue))
+          .toList();
+      if (body['favorited'] == true && matches.isEmpty) {
+        await repo.add(
+          FavoriteSentence(
+            text: cue.text,
+            bookTitle: binding.title(),
+            createdAt: _now(),
+            bookKey: binding.bookUid(),
+            sectionIndex: binding.sectionIndex(),
+            normCharOffset: cue.startMs,
+            normCharLength: cue.endMs - cue.startMs,
+            source: kFavoriteSentenceSourceVideo,
+            // Same statistics-day key as every other favorite write
+            // (`statTodayKey()`), honouring the configurable day reset.
+            dateKey: FushiDatabase.statDateKeyOf(_now()),
+          ),
+        );
+      } else if (body['favorited'] == false) {
+        for (final FavoriteSentence favorite in matches) {
+          await repo.removeById(favorite.id);
+        }
+      }
+      _favoriteVersion++;
+      _publish();
+      return <String, Object?>{
+        'favorited': body['favorited'],
+        'favoriteVersion': _favoriteVersion,
+      };
+    }
+    throw const VideoRemoteException(404, 'unknown_operation');
+  }
+
+  /// The open lookup [body] names, still bound to the current session and
+  /// subtitle version; anything else is `lookup_expired`.
+  _RemoteLookup _requireLookup(Map<String, dynamic> body, String peerId) {
+    final _RemoteLookup? lookup = _lookup;
+    _refresh();
+    if (lookup == null ||
+        lookup != _lookup ||
+        lookup.peerId != peerId ||
+        lookup.id != body['contextId'] ||
+        lookup.sessionId != _sessionId ||
+        lookup.subtitleVersion != _subtitleVersion) {
+      throw const VideoRemoteException(409, 'lookup_expired');
+    }
+    return lookup;
+  }
+
+  /// `lookupContext`: the desktop page's "adjust context" draft, kept per
+  /// lookup so it dies with the lookup (session / subtitle change, lookupEnd).
+  Future<Map<String, Object?>> _lookupContext(
+    _RemoteLookup lookup,
+    Map<String, dynamic> body,
+  ) async {
+    final Object? action = body['action'];
+    if (action is! String ||
+        !videoRemoteLookupContextActions.contains(action)) {
+      throw const VideoRemoteException(400, 'invalid_action');
+    }
+    final MiningSentenceDraft draft = lookup.draft;
+    bool? played;
+    switch (action) {
+      case 'set':
+        _setContext(
+          lookup,
+          math.max(0, _integer(body, 'prev', 0)),
+          math.max(0, _integer(body, 'next', 0)),
+        );
+      case 'edit':
+        final Object? text = body['text'];
+        if (text is! String ||
+            !draft.editSentence(
+              slot: _slot(body, allowCurrent: true),
+              index: _integer(body, 'index', 0),
+              text: text,
+            )) {
+          throw const VideoRemoteException(400, 'invalid_argument');
+        }
+      case 'remove':
+        final Object? removed = body['removed'];
+        if (removed is! bool ||
+            !draft.setSentenceRemoved(
+              slot: _slot(body, allowCurrent: false),
+              index: _integer(body, 'index', 0),
+              removed: removed,
+            )) {
+          throw const VideoRemoteException(400, 'invalid_argument');
+        }
+      case 'clear':
+        draft.clear();
+      case 'previewAudio':
+        lookup.previewed = true;
+        final VideoRemoteMineSelection selection = _selection(lookup);
+        final Future<bool> Function(VideoRemoteCue, int, int)? preview =
+            lookup.binding.previewAudio;
+        played =
+            preview != null &&
+            selection.endMs > selection.startMs &&
+            await preview(lookup.cue, selection.startMs, selection.endMs);
+      case 'stopAudio':
+        lookup.previewed = true;
+        final Future<void> Function()? stop = lookup.binding.stopAudio;
+        if (stop != null) {
+          await stop();
+        } else {
+          await lookup.binding.command('pause', <String, dynamic>{});
+        }
+        played = false;
+    }
+    return <String, Object?>{
+      ...buildSentenceContextPreview(draft: draft, current: lookup.cue.text),
+      if (played != null) 'played': played,
+    };
+  }
+
+  /// The desktop page's "N rows before / after" rule
+  /// (`_setSentenceContextToDraft`) over the rows the phone lists: the
+  /// anchor's own track in time order, replacing the previous selection.
+  void _setContext(_RemoteLookup lookup, int prevCount, int nextCount) {
+    final List<VideoRemoteCue> rows = _cues
+        .where((VideoRemoteCue cue) => cue.track == lookup.cue.track)
+        .toList();
+    final int idx = rows.indexWhere(
+      (VideoRemoteCue cue) => cue.id == lookup.cue.id,
+    );
+    if (idx < 0) {
+      lookup.draft.setContext();
+      return;
+    }
+    MiningDraftSentence entry(VideoRemoteCue cue) => MiningDraftSentence(
+      sentence: cue.text,
+      audioRange: AudioPlaybackRange(
+        audioFileIndex: 0,
+        startMs: cue.startMs,
+        endMs: cue.endMs,
+      ),
+    );
+    final int prevStart = math.max(0, idx - prevCount);
+    final int nextEnd = math.min(rows.length, idx + 1 + nextCount);
+    lookup.draft.setContext(
+      prev: <MiningDraftSentence>[
+        for (int i = prevStart; i < idx; i++) entry(rows[i]),
+      ],
+      next: <MiningDraftSentence>[
+        for (int i = idx + 1; i < nextEnd; i++) entry(rows[i]),
+      ],
+    );
+  }
+
+  /// Card text and span from the draft, composed like the desktop page's
+  /// `_resolveVideoMiningRange`.
+  VideoRemoteMineSelection _selection(_RemoteLookup lookup) {
+    final VideoRemoteCue cue = lookup.cue;
+    final MiningSentenceDraft draft = lookup.draft;
+    final AudioPlaybackRange? range = draft.composeAudioRange(
+      AudioPlaybackRange(
+        audioFileIndex: 0,
+        startMs: cue.startMs,
+        endMs: cue.endMs,
+      ),
+    );
+    final bool adjusted = !draft.isEmpty || draft.currentSentenceEdit != null;
+    final String merged = draft.composeText(cue.text);
+    return VideoRemoteMineSelection(
+      sentence: adjusted ? merged : cue.text,
+      cueSentence: draft.isEmpty ? cue.text : merged,
+      startMs: range?.startMs ?? cue.startMs,
+      endMs: range?.endMs ?? cue.endMs,
+      adjusted: adjusted,
+    );
+  }
+
+  void _requireLease(String peerId, int leaseGeneration) {
+    if (_core.owner != peerId || _core.leaseGeneration != leaseGeneration) {
+      throw const VideoRemoteException(409, 'controller_lease_lost');
+    }
+  }
+
+  bool _matches(FavoriteSentence favorite, VideoRemoteCue cue) =>
+      favorite.source == kFavoriteSentenceSourceVideo &&
+      favorite.bookKey == _binding?.bookUid() &&
+      favorite.text == cue.text &&
+      (favorite.sectionIndex == null ||
+          favorite.sectionIndex == _binding?.sectionIndex()) &&
+      (favorite.normCharOffset == null ||
+          favorite.normCharOffset == cue.startMs);
+
+  Future<Map<String, Object?>> _listFavorites(Map<String, dynamic> body) async {
+    final String query = (body['query']?.toString() ?? '').toLowerCase();
+    final List<FavoriteSentence> all = (await _favorites().getAll())
+        .where(
+          (FavoriteSentence favorite) =>
+              favorite.source == kFavoriteSentenceSourceVideo &&
+              (body['currentOnly'] != true ||
+                  (favorite.bookKey == _binding?.bookUid() &&
+                      (favorite.sectionIndex == null ||
+                          favorite.sectionIndex ==
+                              _binding?.sectionIndex()))) &&
+              (query.isEmpty ||
+                  favorite.text.toLowerCase().contains(query) ||
+                  favorite.bookTitle.toLowerCase().contains(query)),
+        )
+        .toList();
+    final int offset = _integer(body, 'offset', 0).clamp(0, all.length);
+    final int limit = _integer(body, 'limit', 200).clamp(1, 200);
+    return <String, Object?>{
+      'total': all.length,
+      'favoriteVersion': _favoriteVersion,
+      'items': all
+          .skip(offset)
+          .take(limit)
+          .map(
+            (FavoriteSentence favorite) => <String, Object?>{
+              'id': favorite.id,
+              'text': favorite.text,
+              'title': favorite.bookTitle,
+              'bookUid': favorite.bookKey,
+              'sectionIndex': favorite.sectionIndex,
+              'startMs': favorite.normCharOffset,
+            },
+          )
+          .toList(),
+    };
+  }
+
+  Future<void> _expireLookup(String peerId) async {
+    await _favoriteSubscription?.cancel();
+    _favoriteSubscription = null;
+    final _RemoteLookup? lookup = _lookup;
+    if (lookup == null || lookup.peerId != peerId) {
+      return;
+    }
+    _lookup = null;
+    await _resume(lookup);
+  }
+
+  Future<void> _resume(_RemoteLookup lookup) async {
+    _refresh();
+    if (!identical(lookup.binding, _binding) ||
+        lookup.sessionId != _sessionId ||
+        lookup.subtitleVersion != _subtitleVersion ||
+        lookup.binding.identity() != _identity) {
+      return;
+    }
+    if (lookup.previewed) {
+      await _restoreAfterPreview(lookup);
+      return;
+    }
+    if (!lookup.resume) return;
+    final Map<String, Object?> state = lookup.binding.state();
+    if (state['playing'] == false &&
+        state['controlRevision'] == lookup.controlRevision) {
+      await lookup.binding.command('play', <String, dynamic>{});
+      _publish();
+    }
+  }
+
+  /// Closing a lookup that auditioned audio: stop a still-running audition,
+  /// put the playhead back where the lookup paused it, and resume only if the
+  /// lookup itself had paused playback ([_RemoteLookup.resume]).
+  Future<void> _restoreAfterPreview(_RemoteLookup lookup) async {
+    final VideoRemotePlaybackBinding binding = lookup.binding;
+    if (binding.state()['playing'] == true) {
+      final Future<void> Function()? stop = binding.stopAudio;
+      if (stop != null) {
+        await stop();
+      } else {
+        await binding.command('pause', <String, dynamic>{});
+      }
+    }
+    final int? pausedAt = lookup.pausedAtMs;
+    if (pausedAt != null) {
+      await binding.command('seek', <String, dynamic>{'positionMs': pausedAt});
+    }
+    if (lookup.resume) {
+      await binding.command('play', <String, dynamic>{});
+    }
+    _publish();
+  }
+
+  Future<void> dispose() async {
+    await releaseController();
+    _binding?.removeListener(_changed);
+    _binding = null;
+    _core.dispose();
+  }
+
+  /// Hosting can be stopped and restarted while the local player stays open.
+  Future<void> releaseController() async {
+    final String? owner = _core.owner;
+    if (owner == null) {
+      return;
+    }
+    await _expireLookup(owner);
+    _core.release(owner);
+  }
+}
+
+SentenceContextSlot _slot(
+  Map<String, dynamic> body, {
+  required bool allowCurrent,
+}) {
+  switch (body['slot']) {
+    case 'prev':
+      return SentenceContextSlot.prev;
+    case 'next':
+      return SentenceContextSlot.next;
+    case 'current' when allowCurrent:
+      return SentenceContextSlot.current;
+  }
+  throw const VideoRemoteException(400, 'invalid_argument');
+}
+
+int _integer(Map<String, dynamic> body, String key, int fallback) {
+  final Object? value = body[key];
+  if (value == null) {
+    return fallback;
+  }
+  if (value is! int) {
+    throw const VideoRemoteException(400, 'invalid_number');
+  }
+  return value;
+}
+
+Object? _canonical(Object? value) {
+  if (value is Map<String, dynamic>) {
+    final List<String> keys = value.keys.toList()..sort();
+    return <String, Object?>{
+      for (final String key in keys) key: _canonical(value[key]),
+    };
+  }
+  if (value is List) {
+    return value.map(_canonical).toList();
+  }
+  return value;
+}
+
+String _fingerprint(String operation, Map<String, dynamic> body) => sha256
+    .convert(utf8.encode(jsonEncode(<Object?>[operation, _canonical(body)])))
+    .toString();
+
+final class _RemoteLookup {
+  _RemoteLookup(
+    this.id,
+    this.peerId,
+    this.sessionId,
+    this.subtitleVersion,
+    this.binding,
+    this.cue,
+    this.resume,
+    this.controlRevision,
+    this.pausedAtMs,
+  );
+  final String id, peerId, sessionId;
+  final int subtitleVersion, controlRevision;
+  final VideoRemotePlaybackBinding binding;
+  final VideoRemoteCue cue;
+  final bool resume;
+
+  /// Desktop playhead when this lookup began (null if the binding reports none).
+  final int? pausedAtMs;
+
+  /// Set once the phone auditions audio (`previewAudio` / `stopAudio`). Those
+  /// seeks, plays and the stop-at-span-end pause belong to this lookup, so they
+  /// bump `controlRevision` without being a local intent; [_resume] then
+  /// restores the pre-lookup playhead instead of trusting the revision.
+  bool previewed = false;
+
+  /// This lookup's sentence-context draft (`lookupContext`).
+  final MiningSentenceDraft draft = MiningSentenceDraft();
+}
+
+final class _RemoteMineTask {
+  _RemoteMineTask(this.id, this.peerId, this.requestId, this.fingerprint);
+  final String id, peerId, requestId, fingerprint;
+  String status = 'running';
+  Map<String, Object?>? result;
+  String? error;
+  Map<String, Object?> toJson() => <String, Object?>{
+    'taskId': id,
+    'status': status,
+    if (result != null) 'result': result,
+    if (error != null) 'error': error,
+  };
+}

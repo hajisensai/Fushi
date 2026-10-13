@@ -20,6 +20,7 @@ import 'package:fushi_engine/sync/game_stream/game_stream_library.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/video_remote_service.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
@@ -77,6 +78,8 @@ class FushiSyncServerController extends ChangeNotifier {
     required String Function() syncDataDir,
     required FushiRemoteLookupService Function() remoteLookupServiceFactory,
     FushiRemoteMiningService Function()? miningServiceFactory,
+    VideoRemoteService Function()? videoRemoteServiceFactory,
+    Future<void> Function()? videoRemoteStopped,
     FushiRemoteHistoryService Function()? historyServiceFactory,
     FushiLibraryHostService Function()? libraryServiceFactory,
     MangaOcrService Function()? mangaOcrServiceFactory,
@@ -93,6 +96,8 @@ class FushiSyncServerController extends ChangeNotifier {
         _syncDataDir = syncDataDir,
         _remoteLookupServiceFactory = remoteLookupServiceFactory,
         _miningServiceFactory = miningServiceFactory,
+        _videoRemoteServiceFactory = videoRemoteServiceFactory,
+        _videoRemoteStopped = videoRemoteStopped,
         _historyServiceFactory = historyServiceFactory,
         _libraryServiceFactory = libraryServiceFactory,
         _mangaOcrServiceFactory = mangaOcrServiceFactory,
@@ -114,6 +119,8 @@ class FushiSyncServerController extends ChangeNotifier {
   final String Function() _syncDataDir;
   final FushiRemoteLookupService Function() _remoteLookupServiceFactory;
   final FushiRemoteMiningService Function()? _miningServiceFactory;
+  final VideoRemoteService Function()? _videoRemoteServiceFactory;
+  final Future<void> Function()? _videoRemoteStopped;
   final FushiRemoteHistoryService Function()? _historyServiceFactory;
   final FushiLibraryHostService Function()? _libraryServiceFactory;
 
@@ -648,6 +655,7 @@ class FushiSyncServerController extends ChangeNotifier {
       allowLan: true,
       remoteLookupService: _remoteLookupServiceFactory(),
       miningService: _miningServiceFactory?.call(),
+      videoRemoteService: _videoRemoteServiceFactory?.call(),
       historyService: _historyServiceFactory?.call(),
       libraryService: _libraryServiceFactory?.call(),
       // 漫画 P3：远程 OCR 任务管理器。上传页图落 <syncDataDir>/manga_ocr_jobs
@@ -676,6 +684,10 @@ class FushiSyncServerController extends ChangeNotifier {
           FushiDicts.isInitialized
               ? FushiDicts.instance.getMediaFile(dict, mediaPath)
               : null,
+      // 对端弹窗渲染本机查词结果时用本机的词典样式（`/api/lookup/dictionary/styles`）。
+      dictionaryStylesProvider: () => FushiDicts.isInitialized
+          ? FushiDicts.dictionaryStyles
+          : const <String, String>{},
     )
       ..onPairRequest = _promptPairApproval
       // TODO-961 M1: host 生成并暂存本会话 PIN，供 confirm 阶段审批弹窗显示。
@@ -766,6 +778,7 @@ class FushiSyncServerController extends ChangeNotifier {
     currentAppInterconnectP2pRuntime?.current?.hostStop();
     await broadcast?.stop();
     await server?.stop();
+    if (server != null) await _videoRemoteStopped?.call();
     await _gameStreamHost?.stop(reason: 'host_shutdown');
     _detachGameStreamTexthooker();
     _gameStreamService?.dispose();

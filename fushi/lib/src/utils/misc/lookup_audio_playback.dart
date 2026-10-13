@@ -185,6 +185,21 @@ Future<bool> autoReadWordUnified(
 }) async {
   final String? ref =
       await resolveLookupAudioUrl(appModel, expression, reading);
+  return playResolvedLookupAudio(
+    ref,
+    label: expression,
+    playInWebView: playInWebView,
+  );
+}
+
+/// [autoReadWordUnified] 的播放半段：[ref] 已解析好（本机音频源，或别的设备给的
+/// 发音——手机字幕遥控器查电脑的词典时，发音来自那台电脑），先交给弹窗 WebView 自己
+/// 的 `<audio>` 播，失败再回落 Dart 播放器。[label] 只用于诊断留痕。
+Future<bool> playResolvedLookupAudio(
+  String? ref, {
+  required String label,
+  required Future<bool> Function(String url)? playInWebView,
+}) async {
   if (ref == null || ref.isEmpty) return false;
 
   if (playInWebView != null) {
@@ -197,7 +212,7 @@ Future<bool> autoReadWordUnified(
       ErrorLogService.instance.logDiagnostic(
         'autoReadWordUnified',
         'WebView 播放失败（autoplay 拦截/未就绪/JS 异常），回落 Dart 播放器：'
-            '$expression',
+            '$label',
       );
     }
   }

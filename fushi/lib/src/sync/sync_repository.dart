@@ -1244,6 +1244,14 @@ class SyncRepository {
   static const _keyFushiClientUrl = 'sync_hibiki_client_url';
   static const _keyFushiClientUrls = 'sync_hibiki_client_urls';
   static const _keyFushiClientToken = 'sync_hibiki_client_token';
+  // 视频模块遥控按钮上次选中的 host（hostId）。指向本设备配对的那台电脑，
+  // 随备份到别的设备只会指错，属设备本地。
+  static const _keyVideoRemoteLastHostId = 'video_remote_last_host_id';
+
+  Future<String?> getVideoRemoteLastHostId() =>
+      _getStringOrNull(_keyVideoRemoteLastHostId);
+  Future<void> setVideoRemoteLastHostId(String? hostId) =>
+      _setOrDelete(_keyVideoRemoteLastHostId, hostId);
 
   /// 旧的单地址 API，仅为向后兼容保留；新代码请用 [getFushiClientUrls]。
   @Deprecated('Use getFushiClientUrls / setFushiClientUrls')
@@ -1546,6 +1554,7 @@ class SyncRepository {
     _keyFushiClientUrls,
     _keyFushiClientToken,
     _keyFushiClientUrl,
+    _keyVideoRemoteLastHostId,
     // Jellyfin 服务器绑定含访问令牌，属设备本地凭据，绝不随备份跨设备。旧单值键
     // 与新列表键都列：旧键在迁移前的备份里仍可能存在。
     _keyJellyfinServer,

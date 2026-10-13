@@ -84,6 +84,10 @@ void main() {
       // 2026-10-09 排行榜精简：总字数卡 / 筛选 / 榜单行与大西瓜的球。
       'lib/src/pages/implementations/leaderboard/leaderboard_tab.dart',
       'lib/src/pages/implementations/leaderboard/leaderboard_watermelon_page.dart',
+      // 2026-10-12 手机字幕遥控器 M3E 重做：字幕列表 / 收藏列表 / 整页脚手架。
+      'lib/src/pages/implementations/video_remote/video_remote_transcript_view.dart',
+      'lib/src/pages/implementations/video_remote/video_remote_favorites_view.dart',
+      'lib/src/pages/implementations/video_remote/video_remote_scaffold.dart',
     ]) {
       final String src = read(path);
       expect(src, contains('FushiEntranceScope('), reason: path);

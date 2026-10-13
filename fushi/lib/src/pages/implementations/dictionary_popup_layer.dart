@@ -9,6 +9,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
@@ -1041,11 +1042,16 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onResizeUpdate,
     this.onResizeEnd,
     this.onResizeCancel,
+    this.resourceSource,
     super.key,
   });
 
   final DictionarySearchResult? result;
   final bool isSearching;
+
+  /// 透传给 [DictionaryPopupWebView.resourceSource]：结果来自别的设备时，词典样式 /
+  /// 媒体 / 发音取自那台设备。null = 本机。
+  final DictionaryPopupResourceSource? resourceSource;
 
   /// When true, the popup's [DictionaryPopupWebView] is mounted (and stays
   /// mounted) even with no results and not searching — so the WebView cold-loads
@@ -1822,6 +1828,7 @@ class DictionaryPopupLayer extends StatelessWidget {
             overflowHeight: webViewOverflowHeight,
             builder: (double? visibleHeight) => DictionaryPopupWebView(
               key: webViewKey,
+              resourceSource: resourceSource,
               visibleViewportHeight: visibleHeight,
               transparentDocumentBackground: transparentDocumentBackground,
               result: result ?? kPopupSearchingPlaceholderResult,
