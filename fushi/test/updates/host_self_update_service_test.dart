@@ -5,6 +5,8 @@ import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/updates/host_self_update_service.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart'
+    show UpdateDownloadCancelledException;
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 
 /// 反馈 Pp8XPyve0N：host 侧远程自更新状态机（平台门 / 节流 / 各平台结局）。
@@ -198,6 +200,26 @@ void main() {
     expect(status.phase, HostUpdatePhase.failed);
     expect(status.error, contains('disk full'));
   });
+
+  test(
+    'PR #2100 review: cancelling on the host ends the round as cancelled',
+    () async {
+      // host 上的人在下载浮层点「取消」→ 下载引擎抛取消异常。
+      installBody = ({required onProgress, required onInstalling}) async {
+        onProgress(0.3);
+        throw const UpdateDownloadCancelledException();
+      };
+      final AppHostSelfUpdater updater = build();
+      await updater.startUpdate();
+      await settle();
+      final HostUpdateStatus status = await updater.status();
+      expect(status.phase, HostUpdatePhase.failed);
+      expect(status.error, kHostUpdateErrorCancelled);
+      expect(status.progress, isNull);
+      // 本轮结束：可以再触发一次。
+      expect(status.canTrigger, isTrue);
+    },
+  );
 
   test('host switch is read live', () async {
     final AppHostSelfUpdater updater = build();

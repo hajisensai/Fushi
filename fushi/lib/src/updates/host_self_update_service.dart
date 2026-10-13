@@ -1,6 +1,10 @@
 /// 互联 host 侧的远程自更新（反馈 Pp8XPyve0N）：把已配对 client 的「更新主机」请求
-/// 落到本机现有的自更新流程上（[UpdateChecker.resolveAvailableUpdate] 查版本、
-/// [UpdateChecker.downloadAndApplyHeadless] 下载并交给 [PlatformUpdater.apply]）。
+/// 落到本机现有的自更新流程上（[HeadlessUpdateFlow.resolveAvailableUpdate] 查版本、
+/// [HeadlessUpdateFlow.downloadAndApply] 下载并交给 [PlatformUpdater.apply]）。
+///
+/// 下载期间 host 上显示与本机「检查更新」同一个下载浮层（进度 + 「取消」+ 「隐藏」）：
+/// host 上正在阅读 / 播放的人能看见是别的设备发起了更新，并能在安装器接班退出本进程
+/// 之前取消；取消后本轮以 `failed` / `cancelled` 结束，client 随即看到。
 ///
 /// 平台门只有一处：[PlatformUpdater.supportsInAppInstall]（Android / Windows / macOS
 /// 能应用内安装，iOS / Linux 不能）——与本机「检查更新」能不能下载安装是同一个判据。
@@ -26,11 +30,11 @@ import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi/utils.dart';
 
-/// 查本平台可装新版本的函数（测试缝；生产 = [UpdateChecker.resolveAvailableUpdate]）。
+/// 查本平台可装新版本的函数（测试缝；生产 = [HeadlessUpdateFlow.resolveAvailableUpdate]）。
 typedef HostUpdateResolver =
     Future<({String version, UpdateAsset? asset})?> Function();
 
-/// 下载并安装的函数（测试缝；生产 = [UpdateChecker.downloadAndApplyHeadless]）。
+/// 下载并安装的函数（测试缝；生产 = [HeadlessUpdateFlow.downloadAndApply]）。
 typedef HostUpdateInstaller =
     Future<void> Function({
       required UpdateAsset asset,
@@ -46,6 +50,9 @@ bool hostRemoteUpdatePlatformSupported() =>
 
 /// `error` 字段里「Android 需要先授予安装未知应用权限」的取值。
 const String kHostUpdateErrorInstallPermission = 'install_permission';
+
+/// `error` 字段里「host 上的人在下载浮层取消了这次更新」的取值。
+const String kHostUpdateErrorCancelled = 'cancelled';
 
 class AppHostSelfUpdater implements HostSelfUpdater {
   AppHostSelfUpdater({
@@ -109,7 +116,7 @@ class AppHostSelfUpdater implements HostSelfUpdater {
     if (latest == null || asset == null) {
       throw const HostUpdateRejected(HostUpdateDenial.noUpdate);
     }
-    if (UpdateChecker.isUpdateFlowActive(latest.version)) {
+    if (HeadlessUpdateFlow.isActive(latest.version)) {
       throw const HostUpdateRejected(HostUpdateDenial.busy);
     }
     _phase = HostUpdatePhase.downloading;
@@ -152,10 +159,14 @@ class AppHostSelfUpdater implements HostSelfUpdater {
   }
 
   void _fail(Object e, StackTrace stack) {
-    ErrorLogService.instance.log('HostSelfUpdate.run', e, stack);
+    // host 上的人在下载浮层点了「取消」：是人的决定，不是故障，不进报错日志。
+    final bool cancelled = e is UpdateDownloadCancelledException;
+    if (!cancelled) {
+      ErrorLogService.instance.log('HostSelfUpdate.run', e, stack);
+    }
     _phase = HostUpdatePhase.failed;
     _progress = null;
-    _error = e is UpdateDownloadCancelledException ? 'cancelled' : '$e';
+    _error = cancelled ? kHostUpdateErrorCancelled : '$e';
   }
 
   /// 节流地重查最新版本；并发调用合并成一次。查失败只留痕，保留上一次结果。
@@ -204,7 +215,7 @@ AppHostSelfUpdater createAppHostSelfUpdater(AppModel appModel) {
     platform: () => Platform.operatingSystem,
     isAllowed: () =>
         SyncRepository(appModel.database).isInterconnectRemoteUpdateEnabled(),
-    resolve: () => UpdateChecker.resolveAvailableUpdate(
+    resolve: () => HeadlessUpdateFlow.resolveAvailableUpdate(
       currentVersion: currentVersion(),
       currentBuildNumber: appModel.packageInfo.buildNumber,
       channel: appUpdateChannelOf(appModel),
@@ -217,11 +228,15 @@ AppHostSelfUpdater createAppHostSelfUpdater(AppModel appModel) {
           required String version,
           required void Function(double progress) onProgress,
           required void Function() onInstalling,
-        }) => UpdateChecker.downloadAndApplyHeadless(
+        }) => HeadlessUpdateFlow.downloadAndApply(
           asset: asset,
           version: version,
           updater: updater,
           customProxy: appModel.updateCustomProxy,
+          // 与本机「检查更新」同一个下载浮层（进度 / 取消 / 隐藏），挂在根 Navigator 的
+          // Overlay 上：任意界面都看得见。app 还没有界面（无根 Navigator）时为 null，
+          // 照常下载。
+          overlay: appModel.navigatorKey.currentState?.overlay,
           onProgress: onProgress,
           onInstalling: onInstalling,
         ),

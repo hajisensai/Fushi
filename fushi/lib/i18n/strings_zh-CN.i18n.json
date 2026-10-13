@@ -7106,5 +7106,6 @@
   "interconnect_host_update_confirm_body": "主机将下载 ${version} 并重启，主机上正在播放或同步的内容会中断。",
   "interconnect_host_update_host_toggle": "允许已配对设备远程更新本机",
   "interconnect_host_update_host_toggle_desc": "局域网内的已配对设备可以查看本机版本并让本机更新。Android 上仍需在本机确认安装。",
-  "interconnect_host_update_remote_started": "已配对设备让本机开始更新"
+  "interconnect_host_update_remote_started": "已配对设备让本机开始更新",
+  "interconnect_host_update_cancelled": "主机上取消了这次更新"
 }

@@ -7106,5 +7106,6 @@
   "interconnect_host_update_confirm_body": "The host will download ${version} and restart. Anything playing or syncing on it will be interrupted.",
   "interconnect_host_update_host_toggle": "Allow paired devices to update this device",
   "interconnect_host_update_host_toggle_desc": "Paired devices on the local network can see this app's version and start an update here. On Android you still confirm the install on this device.",
-  "interconnect_host_update_remote_started": "A paired device started updating this app"
+  "interconnect_host_update_remote_started": "A paired device started updating this app",
+  "interconnect_host_update_cancelled": "The update was cancelled on the host"
 }

@@ -15,7 +15,7 @@ import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/updates/host_self_update_service.dart'
-    show kHostUpdateErrorInstallPermission;
+    show kHostUpdateErrorCancelled, kHostUpdateErrorInstallPermission;
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -73,6 +73,9 @@ String hostUpdateStatusText(HostUpdateStatus status) {
           ? t.interconnect_host_update_awaiting_permission
           : t.interconnect_host_update_awaiting_confirm;
     case HostUpdatePhase.failed:
+      if (status.error == kHostUpdateErrorCancelled) {
+        return t.interconnect_host_update_cancelled;
+      }
       return t.interconnect_host_update_failed(message: status.error ?? '');
     case HostUpdatePhase.idle:
       break;
@@ -98,6 +101,7 @@ class InterconnectHostUpdateTile extends StatefulWidget {
     required this.remote,
     this.pollInterval = const Duration(seconds: 2),
     this.reconnectWindow = const Duration(minutes: 5),
+    this.now,
   });
 
   final HostUpdateRemote remote;
@@ -105,8 +109,12 @@ class InterconnectHostUpdateTile extends StatefulWidget {
   /// 触发后多久问一次 host 进度。
   final Duration pollInterval;
 
-  /// host 断线（重启中）后最多等多久重新连上。
+  /// host 断线（重启中）后最多等多久重新连上——从**断线那一刻**算起，与之前下载了
+  /// 多久无关（慢网下载可以远超这个窗口）。
   final Duration reconnectWindow;
+
+  /// 时钟（测试缝；null = [DateTime.now]）。
+  final DateTime Function()? now;
 
   @override
   State<InterconnectHostUpdateTile> createState() =>
@@ -122,8 +130,11 @@ class _InterconnectHostUpdateTileState
 
   /// 触发更新那一刻 host 的版本；非 null = 正在跟踪这一轮更新。
   String? _trackingFrom;
-  DateTime? _trackingSince;
-  bool _reconnecting = false;
+
+  /// 跟踪期间第一次连不上 host 的时刻；非 null = host 正在重启（[_reconnecting]），
+  /// 重连窗口从这里起算，任何一次问到 host 就清掉。
+  DateTime? _disconnectedSince;
+  bool get _reconnecting => _disconnectedSince != null;
   Timer? _poll;
 
   @override
@@ -187,8 +198,7 @@ class _InterconnectHostUpdateTileState
         _status = started;
         _message = null;
         _trackingFrom = started.currentVersion;
-        _trackingSince = DateTime.now();
-        _reconnecting = false;
+        _disconnectedSince = null;
       });
       _poll?.cancel();
       _poll = Timer.periodic(widget.pollInterval, (_) => _pollOnce());
@@ -210,6 +220,8 @@ class _InterconnectHostUpdateTileState
 
   bool _polling = false;
 
+  DateTime _now() => (widget.now ?? DateTime.now)();
+
   Future<void> _pollOnce() async {
     final String? from = _trackingFrom;
     if (from == null || _polling) return;
@@ -227,18 +239,25 @@ class _InterconnectHostUpdateTileState
       }
       setState(() {
         _status = status;
-        _reconnecting = false;
+        _disconnectedSince = null;
       });
-      if (status.phase == HostUpdatePhase.failed) _stopTracking(null);
+      // 失败：本轮结束。等 host 上的人确认安装（Android）：host 这边已经没有在跑的
+      // 东西了，结果取决于 host 上的人——不再每 2 秒问一次，按钮放回来；安装框被
+      // 取消 / 没人点时，再点一次「更新主机」即可重新弹出安装确认。
+      if (status.phase == HostUpdatePhase.failed ||
+          status.phase == HostUpdatePhase.awaitingHostConfirmation) {
+        _stopTracking(null);
+      }
     } catch (_) {
       // 桌面 host 由安装器接班后进程退出：连接失败 = 正在重启，继续等它回来。
       if (!mounted) return;
-      final DateTime since = _trackingSince ?? DateTime.now();
-      if (DateTime.now().difference(since) > widget.reconnectWindow) {
+      final DateTime now = _now();
+      final DateTime since = _disconnectedSince ?? now;
+      if (now.difference(since) > widget.reconnectWindow) {
         _stopTracking(t.interconnect_host_update_reconnect_timeout);
         return;
       }
-      setState(() => _reconnecting = true);
+      setState(() => _disconnectedSince = since);
     } finally {
       _polling = false;
     }
@@ -249,8 +268,7 @@ class _InterconnectHostUpdateTileState
     _poll = null;
     setState(() {
       _trackingFrom = null;
-      _trackingSince = null;
-      _reconnecting = false;
+      _disconnectedSince = null;
       _message = message;
     });
   }

@@ -9,6 +9,7 @@
 ///   * [update_checker_race.dart]     —— 候选并发探针竞速选源 + 首字节超时（TODO-683，从下载 part 拆出避免越线）。
 ///   * [update_checker_release.dart]  —— [UpdateChecker] 门面 + release 检查 / 版本比较 / 通道匹配。
 ///   * [update_checker_ui.dart]       —— 对话框（[UpdateAvailableDialog] 等）+ 下载进度遮罩 + 字节/速度格式化。
+///   * [update_checker_headless.dart] —— 下载会话（浮层 + 取消，本机 UI 流与远程触发共用）+ 不经对话框的更新入口 [HeadlessUpdateFlow]（互联 host 远程更新）。
 library;
 
 import 'dart:async';
@@ -44,3 +45,4 @@ part 'update_checker_download.dart';
 part 'update_checker_race.dart';
 part 'update_checker_release.dart';
 part 'update_checker_ui.dart';
+part 'update_checker_headless.dart';

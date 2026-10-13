@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/interconnect_host_update_tile.dart';
+import 'package:fushi/src/updates/host_self_update_service.dart'
+    show kHostUpdateErrorCancelled;
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:material_ui/material_ui.dart';
@@ -54,7 +56,11 @@ HostUpdateStatus _status({
 );
 
 void main() {
-  Future<void> pumpTile(WidgetTester tester, _FakeRemote remote) async {
+  Future<void> pumpTile(
+    WidgetTester tester,
+    _FakeRemote remote, {
+    DateTime Function()? now,
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(useMaterial3: true),
@@ -63,6 +69,7 @@ void main() {
             remote: remote,
             pollInterval: const Duration(seconds: 2),
             reconnectWindow: const Duration(seconds: 30),
+            now: now,
           ),
         ),
       ),
@@ -186,6 +193,177 @@ void main() {
       expect(remote.refreshFlags.length, calls);
     },
   );
+
+  /// 确认对话框 → 「更新主机」，触发后跑两帧让 trigger 完成。
+  Future<void> confirmTrigger(WidgetTester tester) async {
+    await tester.tap(find.byType(FushiFilledButton));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.interconnect_host_update_action).last);
+    await tester.pump();
+    await tester.pump();
+  }
+
+  /// 推进一个轮询周期并让那次 status 调用落地。
+  Future<void> pollOnce(WidgetTester tester) async {
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump();
+  }
+
+  testWidgets(
+    'PR #2100 review: reconnect window starts at the disconnect, not at the '
+    'trigger — a download longer than the window does not time out at once',
+    (WidgetTester tester) async {
+      DateTime clock = DateTime(2026, 10, 13, 12);
+      final _FakeRemote remote = _FakeRemote()
+        ..statuses.addAll(<Object?>[
+          _status(nonce: 'stale'),
+          _status(nonce: 'fresh'),
+          // 之后一直重复这一条，直到测试把它换掉。
+          _status(phase: HostUpdatePhase.downloading, progress: 0.9),
+        ])
+        ..triggerResult = _status(
+          phase: HostUpdatePhase.downloading,
+          progress: 0,
+        );
+      await pumpTile(tester, remote, now: () => clock);
+      await confirmTrigger(tester);
+
+      // 慢网：下载了 10 分钟（远超 30 秒的重连窗口）。
+      clock = clock.add(const Duration(minutes: 10));
+      await pollOnce(tester);
+      expect(
+        find.text(t.interconnect_host_update_downloading(percent: 90)),
+        findsOneWidget,
+      );
+
+      // 安装器接班、host 退出：第一次连不上 = 正在重启，不能立刻判超时。
+      remote.statuses[0] = const SocketException('host restarting');
+      await pollOnce(tester);
+      expect(find.text(t.interconnect_host_update_restarting), findsOneWidget);
+      expect(
+        find.textContaining(t.interconnect_host_update_reconnect_timeout),
+        findsNothing,
+      );
+
+      // 断线 20 秒：仍在窗口内。
+      clock = clock.add(const Duration(seconds: 20));
+      await pollOnce(tester);
+      expect(find.text(t.interconnect_host_update_restarting), findsOneWidget);
+
+      // 断线超过 30 秒：这才超时、停止跟踪。
+      clock = clock.add(const Duration(seconds: 15));
+      await pollOnce(tester);
+      expect(
+        find.textContaining(t.interconnect_host_update_reconnect_timeout),
+        findsOneWidget,
+      );
+      final int calls = remote.refreshFlags.length;
+      await tester.pump(const Duration(seconds: 10));
+      expect(remote.refreshFlags.length, calls, reason: '超时后不再轮询');
+    },
+  );
+
+  testWidgets(
+    'PR #2100 review: a reconnect resets the disconnect clock',
+    (WidgetTester tester) async {
+      DateTime clock = DateTime(2026, 10, 13, 12);
+      final _FakeRemote remote = _FakeRemote()
+        ..statuses.addAll(<Object?>[
+          _status(nonce: 'stale'),
+          _status(nonce: 'fresh'),
+          const SocketException('blip'),
+        ])
+        ..triggerResult = _status(
+          phase: HostUpdatePhase.downloading,
+          progress: 0,
+        );
+      await pumpTile(tester, remote, now: () => clock);
+      await confirmTrigger(tester);
+
+      await pollOnce(tester);
+      expect(find.text(t.interconnect_host_update_restarting), findsOneWidget);
+
+      // 断了 25 秒后又问到了 host：断线时钟清零。
+      clock = clock.add(const Duration(seconds: 25));
+      remote.statuses[0] = _status(
+        phase: HostUpdatePhase.downloading,
+        progress: 0.5,
+      );
+      await pollOnce(tester);
+      expect(
+        find.text(t.interconnect_host_update_downloading(percent: 50)),
+        findsOneWidget,
+      );
+
+      // 再断：从这次断线重新起算，25 + 10 秒不算超时。
+      remote.statuses[0] = const SocketException('restarting');
+      await pollOnce(tester);
+      clock = clock.add(const Duration(seconds: 10));
+      await pollOnce(tester);
+      expect(find.text(t.interconnect_host_update_restarting), findsOneWidget);
+      expect(
+        find.textContaining(t.interconnect_host_update_reconnect_timeout),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'PR #2100 review: awaiting on-host confirmation stops polling and gives '
+    'the action back so the install prompt can be raised again',
+    (WidgetTester tester) async {
+      final _FakeRemote remote = _FakeRemote()
+        ..statuses.addAll(<Object?>[
+          _status(nonce: 'stale'),
+          _status(nonce: 'fresh'),
+          _status(phase: HostUpdatePhase.awaitingHostConfirmation),
+        ])
+        ..triggerResult = _status(
+          phase: HostUpdatePhase.downloading,
+          progress: 0,
+        );
+      await pumpTile(tester, remote);
+      await confirmTrigger(tester);
+      expect(remote.triggeredNonces, <String>['fresh']);
+
+      await pollOnce(tester);
+      expect(
+        find.text(t.interconnect_host_update_awaiting_confirm),
+        findsOneWidget,
+      );
+      // 不再定时问 host。
+      final int calls = remote.refreshFlags.length;
+      await tester.pump(const Duration(seconds: 10));
+      expect(remote.refreshFlags.length, calls);
+      // 按钮可点：没人点 / 取消了安装框时能再触发一次。
+      expect(actionButton(tester).onPressed, isNotNull);
+
+      await confirmTrigger(tester);
+      expect(remote.triggeredNonces, hasLength(2), reason: '可以再触发一次');
+    },
+  );
+
+  testWidgets('a download cancelled on the host is reported as such', (
+    WidgetTester tester,
+  ) async {
+    final _FakeRemote remote = _FakeRemote()
+      ..statuses.add(
+        const HostUpdateStatus(
+          currentVersion: '2.10.0',
+          platform: 'windows',
+          supported: true,
+          remoteUpdateAllowed: true,
+          latestVersion: '2.11.0',
+          phase: HostUpdatePhase.failed,
+          error: kHostUpdateErrorCancelled,
+          nonce: 'n1',
+        ),
+      );
+    await pumpTile(tester, remote);
+
+    expect(find.text(t.interconnect_host_update_cancelled), findsOneWidget);
+    expect(actionButton(tester).onPressed, isNotNull);
+  });
 
   testWidgets('trigger refused by the host shows the reason', (
     WidgetTester tester,

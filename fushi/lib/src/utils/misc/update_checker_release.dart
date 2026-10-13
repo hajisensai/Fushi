@@ -984,50 +984,15 @@ class UpdateChecker {
     PlatformUpdater updater, {
     String customProxy = '',
   }) async {
-    final progress = ValueNotifier<double>(0);
-    // 体感快修（TODO-683）：进下载前显「正在连接更新源…」，首个进度/诊断信号到达再翻
-    // 「正在下载更新…」。GFW 下坏候选累积超时期间不再让用户盯着「下载中 0%」误以为卡死。
-    final status = ValueNotifier<String>(t.update_connecting);
-    final statusController = UpdateDownloadStatusController(status);
-    final diagnostics = ValueNotifier<UpdateDownloadDiagnostics?>(null);
-    // 「本次没用上你选的下载来源」通告：所选来源对某些资产解析不出候选（旧仓库直链 /
-    // 第三方 host / 镜像前缀已下线）时行为上照常回退，但降级必须看得见，否则用户会以为
-    // 自己锁定了 Cloudflare（见 [UpdateDownloadPlan.preferenceUnavailable]）。
-    final sourceNotice = ValueNotifier<String?>(null);
-    final overlayVisible = ValueNotifier<bool>(true);
-    // 取消令牌（TODO-738）：遮罩「取消」按钮按下后置位，下载引擎在候选边界看到即中断。
-    final cancellation = UpdateDownloadCancellation();
-    late final OverlayEntry overlay;
-    overlay = OverlayEntry(
-      builder: (ctx) => ValueListenableBuilder<bool>(
-        valueListenable: overlayVisible,
-        builder: (_, visible, __) {
-          if (!visible) return const SizedBox.shrink();
-          return _DownloadOverlay(
-            progress: progress,
-            status: status,
-            notice: sourceNotice,
-            diagnostics: diagnostics,
-            onHide: () => overlayVisible.value = false,
-            onCancel: () {
-              // 立即给反馈：置「正在取消…」并请求取消；引擎在下一个候选边界中断。
-              cancellation.cancel();
-              status.value = t.update_cancelling;
-            },
-          );
-        },
-      ),
-    );
-
-    final overlayState = Overlay.of(context);
-    overlayState.insert(overlay);
+    // 下载浮层 + 取消令牌（TODO-683/738）与互联远程触发共用同一个会话，见
+    // [_UpdateDownloadSession]（update_checker_headless.dart）。
+    final _UpdateDownloadSession session = _UpdateDownloadSession()
+      ..showIn(Overlay.of(context));
+    final UpdateDownloadCancellation cancellation = session.cancellation;
 
     HttpClient? client;
     try {
-      client = HttpClient();
-      // TODO-808：建连超时从 30s 压到 10s——死镜像 TCP 连不上时更快判死、串行回退更快。
-      client.connectionTimeout = const Duration(seconds: 10);
-      client.idleTimeout = const Duration(seconds: 60);
+      client = _newUpdateHttpClient();
       // 下载同样走系统/环境代理（与检查一致）：直连/镜像不通时经用户代理出口下载。
       // 手填代理同检查阶段优先（TODO-871/862）：全部下载入口都把 customProxy 透到这里。
       await applyAppProxy(client, userProxy: customProxy);
@@ -1045,22 +1010,12 @@ class UpdateChecker {
         updater: updater,
         customProxy: customProxy,
         cancellation: cancellation,
-        onProgress: (double value) {
-          // 首个真实进度（>0 = 已有字节落盘）才翻「下载中」；onProgress(0) 是请求前的
-          // 初始占位，不能据它过早翻、否则 connecting 几乎不可见（失去体感意义）。
-          if (value > 0) statusController.onFirstByte();
-          progress.value = value;
-        },
-        onDiagnostics: (UpdateDownloadDiagnostics value) {
-          // 诊断里 receivedBytes>0 同样表示已有字节到达，作为翻「下载中」的等价信号
-          // （某些路径 diagnostics 比 onProgress 先携带非零字节，如续传起点）。
-          if (value.receivedBytes > 0) statusController.onFirstByte();
-          diagnostics.value = value;
-        },
-        onSourceNotice: (String? notice) => sourceNotice.value = notice,
+        onProgress: session.onProgress,
+        onDiagnostics: session.onDiagnostics,
+        onSourceNotice: session.onSourceNotice,
       );
 
-      status.value = t.update_installing;
+      session.status.value = t.update_installing;
 
       // BUG-427/TODO-852: on Android API 26+ without install permission the
       // native installApk throws PlatformException(INSTALL_PERMISSION_REQUIRED)
@@ -1076,8 +1031,8 @@ class UpdateChecker {
           updater: updater,
           apkFile: outFile,
           version: version,
-          overlayVisible: overlayVisible,
-          status: status,
+          overlayVisible: session.overlayVisible,
+          status: session.status,
         );
       } else {
         // Context torn down during download: fall back to a plain install
@@ -1106,11 +1061,7 @@ class UpdateChecker {
       // 取消路径已 close(force: true)，这里再 close() 幂等无害。
       cancellation.clearAbort();
       client?.close();
-      overlay.remove();
-      progress.dispose();
-      status.dispose();
-      diagnostics.dispose();
-      overlayVisible.dispose();
+      session.dispose();
     }
   }
 
@@ -1193,98 +1144,12 @@ class UpdateChecker {
     return outFile;
   }
 
-  /// 无界面地查一次本平台可装的新版本（互联 host 远程更新，反馈 Pp8XPyve0N）。
-  ///
-  /// 与 [scheduleCheck] 同一条拉取 / 选包 / 比较链路（[_fetchReleasesForChannel] →
-  /// [selectUpdateReleaseForCurrentPlatform] → [isUpdateVersionNewer]），只是不弹任何
-  /// 对话框。返回 null = 已是最新 / 没有匹配 release；asset 为 null = 有新版但本平台
-  /// 没有可应用内安装的包。网络失败照常抛出。
-  static Future<({String version, UpdateAsset? asset})?> resolveAvailableUpdate({
-    required String currentVersion,
-    String? currentBuildNumber,
-    required UpdateChannel channel,
-    String customProxy = '',
-    PlatformUpdater? updater,
-  }) async {
-    final PlatformUpdater platformUpdater =
-        updater ?? updaterForCurrentPlatform();
-    final int? localSeq = currentReleaseSequence(
-      version: currentVersion,
-      buildNumber: currentBuildNumber,
-    );
-    final HttpClient client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 10);
-    try {
-      await applyAppProxy(client, userProxy: customProxy);
-      final List<Map<String, dynamic>> releases =
-          await _fetchReleasesForChannel(client, channel);
-      final UpdateReleaseSelection? selection =
-          await selectUpdateReleaseForCurrentPlatform(
-        releases,
-        currentVersion: currentVersion,
-        currentReleaseSeq: localSeq,
-        channel: channel,
-        updater: platformUpdater,
-      );
-      if (selection == null || selection.version.isEmpty) return null;
-      if (!isUpdateVersionNewer(selection.version, currentVersion, channel,
-          remoteSeq: selection.release['releaseSequence'] as int?,
-          localSeq: localSeq)) {
-        return null;
-      }
-      return (version: selection.version, asset: selection.asset);
-    } finally {
-      client.close();
-    }
-  }
-
-  /// [version] 这一版是否已有更新流在途（对话框开着 / 正在下载安装）。
-  static bool isUpdateFlowActive(String version) =>
-      _activeUpdateFlows.containsKey(_updateFlowKey(version));
-
-  /// 无界面地下载并安装 [asset]（互联 host 远程更新，反馈 Pp8XPyve0N）。
-  ///
-  /// 与本机「发现新版本 → 下载安装」同一把版本级互斥锁、同一条下载引擎与
-  /// [PlatformUpdater.apply]：桌面 apply 会退出本进程由安装器接班重启；Android apply
-  /// 拉起系统安装确认（缺「安装未知应用」权限时抛 `INSTALL_PERMISSION_REQUIRED`，
-  /// 原样抛给调用方）。已有同版本流在途时抛 [StateError]。
-  static Future<void> downloadAndApplyHeadless({
-    required UpdateAsset asset,
-    required String version,
-    required PlatformUpdater updater,
-    String customProxy = '',
-    required void Function(double progress) onProgress,
-    required void Function() onInstalling,
-  }) {
-    if (isUpdateFlowActive(version)) {
-      throw StateError('update flow for $version already active');
-    }
-    return _runExclusiveUpdateFlow(_updateFlowKey(version), () async {
-      final UpdateDownloadCancellation cancellation =
-          UpdateDownloadCancellation();
-      final HttpClient client = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 10)
-        ..idleTimeout = const Duration(seconds: 60);
-      try {
-        await applyAppProxy(client, userProxy: customProxy);
-        cancellation.registerAbort(() => client.close(force: true));
-        final File outFile = await _downloadAssetForInstall(
-          client: client,
-          asset: asset,
-          version: version,
-          updater: updater,
-          customProxy: customProxy,
-          cancellation: cancellation,
-          onProgress: onProgress,
-        );
-        onInstalling();
-        await updater.apply(outFile, version);
-      } finally {
-        cancellation.clearAbort();
-        client.close();
-      }
-    });
-  }
+  /// 更新检查 / 下载用的出站 client（TODO-808：建连超时从 30s 压到 10s——死镜像 TCP
+  /// 连不上时更快判死、串行回退更快）。本机 UI 流与互联远程触发
+  /// （update_checker_headless.dart）共用；代理由调用方 `applyAppProxy` 现场接上。
+  static HttpClient _newUpdateHttpClient() => HttpClient()
+    ..connectionTimeout = const Duration(seconds: 10)
+    ..idleTimeout = const Duration(seconds: 60);
 
   /// **可测的下载编排（TODO-1123 / BUG-539）**：先用 [asset] 下载；若失败被
   /// [isStaleAssetDownloadFailure] 判为 404（rolling tag prune 竞态导致手里 URL 过期），
