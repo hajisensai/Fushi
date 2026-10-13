@@ -248,8 +248,7 @@ android triplet 默认**静态链接**，libtorrent/boost/openssl 全部链进�
    钉 API 28，boost.asio 会引用 API 28 才进 libc 的 `aligned_alloc`，bridge 按
    android-24 链接直接 undefined symbol——依赖与 bridge 必须同一 API level，
    overlay 统一钉 24），cmake 用 vcpkg 工具链 chainload NDK 工具链
-   （`ANDROID_PLATFORM=android-24` 对齐 minSdk，`ANDROID_STL=c++_shared` 对齐
-   app 内 fushidicts，16KB page 对齐见 CMakeLists），产物 strip 后落
+   （`ANDROID_PLATFORM=android-24` 对齐 minSdk，`ANDROID_STL=c++_static` 把 libc++ 私有链入——BUG-3284：不依赖 APK 里由 pickFirst 挑中的那份 libc++_shared，产物须过 `.github/scripts/verify_android_cxx_self_contained.sh`，16KB page 对齐见 CMakeLists），产物 strip 后落
    `prebuilt/android/<abi>/`。已在 Android 模拟器（API 34 x86_64）实测：
    `fushi/integration_test/embedded_torrent_engine_smoke_test.dart` 两用例全过
    （加载 + 版本串 + session + make_torrent）。
