@@ -18,7 +18,7 @@ Cloudflare Worker + D1 + R2。设计与分期见
 | Workers 请求 | 10 万次/天 | 匿名读边缘缓存 60 秒（缓存键只含白名单参数）；`READ_LIMITER` 每 IP 每分钟 120 次；未鉴权写入口先过 `AUTH_LIMITER`（每 IP 每分钟 10 次，IPv6 按 /64）；图片走边缘缓存 |
 | D1 读 | 500 万行/天 | 榜单 / 人气 / 名次读定时快照（每 30 分钟一次，只读周期汇总表的当期段）；读者数、行数、周/月计分、周/月作品读者数全部增量维护；书架 / 作品读者用游标分页（每页只读 limit+1 行）；`test/plans.test.js` 在查询计划上断言每个读接口不全表扫描、不建临时 B 树 |
 | D1 写 | 10 万行/天 | 增量上报；**全局日预算 `write_rows` 8 万行**（超了 503，次日恢复）；每账户每天 2 万行 |
-| R2 存储 | 10 GB | 头像 ≤ 64KB、封面 ≤ 96KB；**总配额 8 GiB**（超了 507）；删除即归还 |
+| R2 存储 | 10 GB | 头像 ≤ 64KB、封面 ≤ 96KB；反馈截图 ≤ 1.5 MiB、日志 ≤ 2 MiB（结案 90 天清）；**反馈视频 ≤ 50MB，结案 7 天 / 创建 30 天（先到者）到期清理**，流式写入不进 Worker 内存；**总配额 8 GiB**（超了 507，按声明长度预占）；删除即归还 |
 | R2 操作 | A 类 100 万/月、B 类 1000 万/月 | 全局日预算 `media` 3000 次上传；出图先查边缘缓存 |
 | Resend 发信 | 100 封/天、3000 封/月 | 全局日预算 `email` 90 封；每 IP 每小时 5 封、每邮箱每小时 3 封 / 每天 10 封 |
 
@@ -61,6 +61,7 @@ Workers Paid 账户用 Cloudflare Email Service（在 `wrangler.toml` 加 `[[sen
 dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wrangler secret put RESEND_API_KEY`）。
 
 > ⚠️ **新增迁移的版本必须先迁移再部署**（Actions 部署勾上 `apply_migrations`，或本机先跑上面的 `d1 migrations apply --remote`）。
+> `0007_feedback_video_mine.sql`（`feedback.has_video` + 两个索引）：没迁移就部署时视频补传、`GET /v1/feedback/mine` 与定时清理会 500。
 > 例如 `0006_feedback_dev_notes.sql`：新代码的处理台列表显式选 `ai_summary` 列，没迁移就部署时 `/v1/dev/feedback` 与网页 `/dev` 会整页 500（反馈人接口不受影响）。迁移只加列，先迁移、旧代码照跑不受影响。
 
 部署后还要知道的：
@@ -129,16 +130,22 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 | GET | `/img/<key>` | — | R2 出图 |
 | GET | `/u/:id`、`/w/:id`、`/rank?metric&window` | — | 只读 HTML 落地页（分享链接；匿名渲染、无脚本、边缘缓存） |
 | POST | `/v1/feedback` `{category, title, body, contact?, meta?}` | 可选签名 | 提交反馈 → 201 `{id, ticket}`（ticket 只返回这一次；带签名 = 关联账户）。每 IP 每小时 10 条，日预算 `feedback`；同来源同内容 1 小时内 409 `duplicate_feedback`；伪装字符剥掉、注入 / 链接 / 跨来源重复只打标记（`flags`，仅开发者可见） |
-| PUT | `/v1/feedback/:id/attachments/:slot` | `X-Fushi-Ticket` | 补传附件：`s0`..`s2` 截图（PNG/JPEG/WebP ≤ 1.5 MiB）、`log`（gzip ≤ 2 MiB）；提交后 24 小时内、每槽一次（重复 409 `slot_taken`） |
+| PUT | `/v1/feedback/:id/attachments/:slot` | `X-Fushi-Ticket` | 补传附件：`s0`..`s2` 截图（PNG/JPEG/WebP ≤ 1.5 MiB）、`log`（gzip ≤ 2 MiB）、`v0` 视频（mp4 / mov / webm ≤ 50MB，必须带 `Content-Length`，缺 411、超限 413、类型不对 415 `unsupported_video_type` / `not_a_video`、实际长度不符 400 `bad_length`；流式写 R2）；提交后 24 小时内、每槽一次（重复 409 `slot_taken`）。只认 ticket（签名覆盖不了流式请求体） |
 | POST | `/v1/feedback/status` `{items:[{id, ticket}] ≤ 50}` | — | 批量查进度（ticket 不对的条目不返回） |
-| GET | `/v1/feedback/:id` | `X-Fushi-Ticket` | 详情 + 处理时间线 |
-| POST | `/v1/feedback/:id/messages` `{body}` | `X-Fushi-Ticket` | 反馈人追加说明（已结案会重新打开） |
+| GET | `/v1/feedback/mine?cursor&limit` | 签名 | 本账户提交过的反馈（跨设备找回工单）→ `{items, next}`，摘要同 status，按创建时间倒序游标分页（limit 默认 30、上限 50） |
+| GET | `/v1/feedback/:id` | ticket 或同账户签名 | 详情 + 处理时间线 |
+| POST | `/v1/feedback/:id/messages` `{body}` | ticket 或同账户签名·写 | 反馈人追加说明（已结案会重新打开） |
+| POST | `/v1/feedback/:id/close` | ticket 或同账户签名·写 | 反馈人标记完成（open / in_progress → closed） |
+| GET | `/v1/feedback/:id/attachments/:slot` | ticket 或同账户签名 | 取回自己的截图（日志 / 视频不回传） |
 | GET | `/v1/dev/feedback?status&cursor&limit` | 签名·开发者 | 处理台列表（`status=active` = 未结案，`status=flagged` = 带风险标记） |
 | GET | `/v1/dev/feedback/:id` | 签名·开发者 | 详情（含联系方式 / 设备信息 / 反馈人） |
-| GET | `/v1/dev/feedback/:id/attachments/:slot[?view=text]` | 签名·开发者 | 附件；日志 `view=text` 服务端流式解压 |
+| GET | `/v1/dev/feedback/:id/attachments/:slot[?view=text\|download=1]` | 签名·开发者 | 附件；日志 `view=text` 服务端流式解压；视频支持 `Range`（206），`download=1` 作附件下载 |
 | POST | `/v1/dev/feedback/:id` `{status?, reply?}` | 签名·写·开发者 | 改状态 / 回复 |
 | POST | `/v1/dev/feedback/:id/notes` `{aiSummary?, devNote?}` | 签名·写·开发者 | AI 总结 / 开发者批改（仅开发者可见，反馈人接口不返回；空白 = 清除）。本机 CLI：`node scripts/feedback.mjs`（list / show / summarize），见 `docs/specs/2026-10-08-feedback.md` |
 | GET/POST | `/dev/**` | 会话 Cookie | 开发者网页处理台（邮箱验证码登录，仅 role = dev；无脚本、POST 验 Origin） |
+
+「ticket 或同账户签名」：带了非空 `X-Fushi-Ticket` 就只认 ticket；否则验 `X-Fushi-Account` 签名，反馈须是该账户提交的。
+不存在 / 不是你的 / 匿名提交的 / 什么都没带一律 404（不区分）；匿名提交的反馈只能凭 ticket。
 
 社交写（好友 / 屏蔽 / 举报）按账户每小时 120 次限流（`LIMITS.socialWritePerHour`）。被管理员隐藏的账户
 不出现在任何列表里，也不能被加好友或屏蔽。

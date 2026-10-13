@@ -1,7 +1,8 @@
 // 提交反馈：分类 / 标题 / 描述 / 联系方式 + 截图（默认带上打开反馈前的画面；可从
 // 相册选、也可直接粘贴剪贴板里的截图——桌面 Ctrl/Cmd+V、描述框长按菜单「粘贴图片」、
 // 显式「粘贴图片」按钮、Android 输入法插入的图片）+
-// 附带日志与设备信息开关 + 已登录排行榜账户时「以 xx 身份提交」。成功后
+// 附带日志与设备信息开关 + 已登录排行榜账户时「以 xx 身份提交」+ 可选 1 个视频（上传前
+// 本机转码成 720p，≤ 50 MB，见 feedback_video.dart；显示压缩 / 上传进度）。成功后
 // `pop(FeedbackSubmitResult)`，失败就地显示原因（不靠 toast，用户要一直看得到）。
 
 import 'dart:async';
@@ -12,6 +13,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/feedback/feedback_draft_store.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
+import 'package:fushi/src/feedback/feedback_video.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/utils/misc/clipboard_image.dart';
@@ -22,6 +24,7 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:path/path.dart' as p;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 
 /// 「问题没解决，重新提交」的原反馈：用来预填提交页（分类 / 标题 / 正文），截图可选带上。
@@ -42,7 +45,7 @@ class FeedbackReopenSeed {
     body: d.body,
     screenshotSlots: <String>[
       for (final FeedbackAttachmentInfo a in d.attachments)
-        if (!a.isLog) a.slot,
+        if (a.isScreenshot) a.slot,
     ],
   );
 
@@ -80,6 +83,14 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   bool _linkAccount = true;
   FeedbackSubmitStage? _stage;
   String? _error;
+
+  /// 选的视频（原件路径；提交时才转码）与它的大小。不进草稿：草稿只存表单文字与截图。
+  File? _video;
+  int _videoBytes = 0;
+
+  /// 视频压缩 / 上传进度（0..1；拿不到时长时为 null）。
+  double? _videoFraction;
+  bool _pickingVideo = false;
 
   /// 正在读剪贴板：Ctrl+V 与菜单 / 按钮同时触发时只读一次，避免同一张图加两遍。
   bool _pasting = false;
@@ -416,6 +427,26 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     }
   }
 
+  Future<void> _pickVideo() async {
+    if (_pickingVideo) return;
+    _pickingVideo = true;
+    try {
+      final File? file = await pickFeedbackVideoFile();
+      if (file == null || !mounted) return;
+      final int bytes = await file.length();
+      if (!mounted) return;
+      setState(() {
+        _video = file;
+        _videoBytes = bytes;
+        _error = null;
+      });
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('feedback.pick_video', e, st);
+    } finally {
+      _pickingVideo = false;
+    }
+  }
+
   /// 桌面 Ctrl+V（macOS Cmd+V）：不论焦点在不在输入框都看一眼剪贴板，有图就收。
   /// 不吃掉按键——输入框里照常粘贴文字（剪贴板里只有图时那一步什么也不贴）。
   bool _onKey(KeyEvent event) {
@@ -548,10 +579,18 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
               includeDeviceInfo: _includeDevice,
               linkAccount: _linkAccount,
               screenshots: List<Uint8List>.of(_shots),
+              video: _video,
               reopenOf: widget.reopenOf?.id,
             ),
             onStage: (FeedbackSubmitStage s) {
               if (mounted) setState(() => _stage = s);
+            },
+            onVideoProgress: (double? f) {
+              if (!mounted) return;
+              // 按整百分比刷新：上传回调按块来，几十 MB 是上千次。
+              final int? before = _percentOf(_videoFraction);
+              _videoFraction = f;
+              if (_percentOf(f) != before || f == null) setState(() {});
             },
           );
       _submitted = true;
@@ -570,16 +609,90 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       if (!mounted) return;
       setState(() {
         _stage = null;
-        _error = t.feedback_submit_failed(reason: feedbackErrorReason(e));
+        _videoFraction = null;
+        _error =
+            feedbackVideoErrorText(e) ??
+            t.feedback_submit_failed(reason: feedbackErrorReason(e));
       });
     }
   }
 
+  static int? _percentOf(double? f) => f == null ? null : (f * 100).floor();
+
+  String get _percentText {
+    final int? pct = _percentOf(_videoFraction);
+    return pct == null ? '' : '$pct%';
+  }
+
   String _stageLabel(FeedbackSubmitStage stage) => switch (stage) {
+    FeedbackSubmitStage.videoPrepare => t.feedback_stage_video_prepare(
+      percent: _percentText,
+    ),
     FeedbackSubmitStage.sending => t.feedback_stage_sending,
     FeedbackSubmitStage.screenshots => t.feedback_stage_screenshots,
     FeedbackSubmitStage.logs => t.feedback_stage_logs,
+    FeedbackSubmitStage.video => t.feedback_stage_video(percent: _percentText),
   };
+
+  /// 视频附件区：说明 + 「添加视频」或已选视频（文件名 · 大小 · 移除）+ 压缩 / 上传进度条。
+  List<Widget> _videoSection(FushiDesignTokens tokens) {
+    final File? video = _video;
+    final FeedbackSubmitStage? stage = _stage;
+    final bool transferring =
+        video != null &&
+        (stage == FeedbackSubmitStage.videoPrepare ||
+            stage == FeedbackSubmitStage.video);
+    return <Widget>[
+      SizedBox(height: tokens.spacing.card),
+      Text(
+        t.feedback_compose_video_hint(
+          max: FushiByteFormat.bytes(FeedbackLimits.videoMaxBytes),
+        ),
+        key: const ValueKey<String>('feedback-video-hint'),
+        style: tokens.type.metadata,
+      ),
+      SizedBox(height: tokens.spacing.gap),
+      if (video == null)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: _AddTile(
+            key: const ValueKey<String>('feedback-add-video'),
+            icon: FushiIcons.video,
+            label: t.feedback_compose_add_video,
+            onTap: _busy ? null : () => unawaited(_pickVideo()),
+          ),
+        )
+      else
+        FushiCard(
+          key: const ValueKey<String>('feedback-video'),
+          margin: EdgeInsets.zero,
+          child: FushiListItem(
+            leading: const FushiIcon(FushiIcons.video),
+            title: Text(
+              p.basename(video.path),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: transferring
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: FushiLinearProgressIndicator(value: _videoFraction),
+                  )
+                : Text(FushiByteFormat.bytes(_videoBytes)),
+            trailing: FushiIconButton(
+              key: const ValueKey<String>('feedback-remove-video'),
+              icon: FushiIcons.close,
+              tooltip: t.feedback_compose_remove_video,
+              enabled: !_busy,
+              onTap: () => setState(() {
+                _video = null;
+                _videoBytes = 0;
+              }),
+            ),
+          ),
+        ),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -727,6 +840,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
                 ],
               ],
             ),
+            ..._videoSection(tokens),
             SizedBox(height: tokens.spacing.card),
             FushiSwitchListTile(
               key: const ValueKey<String>('feedback-include-logs'),

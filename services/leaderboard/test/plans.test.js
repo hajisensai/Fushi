@@ -116,4 +116,47 @@ describe('查询计划：读接口不全表扫描', () => {
     }
     expect(bad).toEqual([]);
   });
+
+  it('反馈：「我的反馈」（首页 / 游标）与同账户签名读详情走索引，不建临时 B 树', async () => {
+    const env = makeEnv({ autoSnapshot: false });
+    const u = await registerUser(env, 'me', { now: NOW });
+    const ids = [];
+    for (let i = 0; i < 3; i++) {
+      const r = await call(env, 'POST', '/v1/feedback', {
+        key: u.key, account: u.id, body: { category: 'bug', title: `t${i}`, body: 'b' },
+        headers: { 'CF-Connecting-IP': `198.51.100.${i + 1}` }, now: NOW + i,
+      });
+      ids.push(r.data.id);
+    }
+    const seen = recordSql(env);
+    const first = await call(env, 'GET', '/v1/feedback/mine?limit=1', { key: u.key, account: u.id, now: NOW });
+    expect(first.status).toBe(200);
+    expect((await call(env, 'GET', `/v1/feedback/mine?limit=1&cursor=${encodeURIComponent(first.data.next)}`,
+      { key: u.key, account: u.id, now: NOW })).status).toBe(200);
+    expect((await call(env, 'GET', `/v1/feedback/${ids[0]}`, { key: u.key, account: u.id, now: NOW })).status).toBe(200);
+    const bad = [];
+    const mine = [];
+    for (const { sql, args } of seen) {
+      for (const line of badPlanLines(env.DB.raw, sql, args)) bad.push(`${line}\n    in: ${sql.replace(/\s+/g, ' ').slice(0, 160)}`);
+      if (/FROM feedback WHERE account_id = \?1/.test(sql) && args.length) {
+        mine.push(...env.DB.raw.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...args).map((r) => r.detail));
+      }
+    }
+    expect(bad).toEqual([]);
+    expect(mine.length).toBeGreaterThan(0);
+    expect(mine.every((d) => /idx_feedback_account_created/.test(d))).toBe(true);
+  });
+
+  it('反馈：视频到期清理只读带视频的行（idx_feedback_video 部分索引），不扫整张反馈表', async () => {
+    const env = makeEnv({ autoSnapshot: false });
+    const seen = recordSql(env);
+    const { purgeFeedbackVideos } = await import('../src/feedback.js');
+    await purgeFeedbackVideos(env, NOW);
+    const sel = seen.filter(({ sql, args }) => /has_video = 1/.test(sql) && /^\s*SELECT/i.test(sql) && args.length);
+    expect(sel.length).toBe(1);
+    const plan = env.DB.raw.prepare(`EXPLAIN QUERY PLAN ${sel[0].sql}`).all(...sel[0].args).map((r) => r.detail);
+    // 部分索引只含 has_video = 1 的行（视频 30 天内必被清掉，行数有界）；不许回落成整表扫描 / 临时 B 树。
+    expect(plan.join('\n')).toMatch(/idx_feedback_video/);
+    expect(plan.filter((d) => /^SCAN feedback$/.test(d) || /TEMP B-TREE/.test(d))).toEqual([]);
+  });
 });

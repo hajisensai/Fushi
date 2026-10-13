@@ -446,6 +446,24 @@ class LeaderboardClient {
     return slot;
   }
 
+  /// 开发者取附件可以取视频槽位（反馈人补传视频走 [uploadFeedbackVideo]）。
+  static String _devFeedbackSlotOf(String slot) =>
+      slot == FeedbackLimits.videoSlot ? slot : _feedbackSlotOf(slot);
+
+  /// 反馈人接口的凭据：有本机回执 [ticket] 就带 `X-Fushi-Ticket`、不签名；没有（别的设备
+  /// 提交、凭账户列出来的那条，[ticket] 为空串）就用本机账户签名——服务端只认
+  /// `account_id` 等于签名账户的反馈，别人的一律 404。
+  ({bool signed, Map<String, String>? headers}) _reporterAuth(String ticket) {
+    if (ticket.isNotEmpty) {
+      return (
+        signed: false,
+        headers: <String, String>{'X-Fushi-Ticket': ticket},
+      );
+    }
+    _requireIdentity();
+    return (signed: true, headers: null);
+  }
+
   /// 提交反馈。[linkAccount] 且本客户端有账户时带签名提交（开发者能看到反馈人昵称）；
   /// 否则匿名。返回的 [FeedbackReceipt.ticket] 只给这一次。
   Future<FeedbackReceipt> submitFeedback({
@@ -504,6 +522,87 @@ class LeaderboardClient {
     }
   }
 
+  /// 补传视频（槽位 `v0`，≤ [FeedbackLimits.videoMaxBytes]，`video/mp4` | `video/webm` |
+  /// `video/quicktime`）。[body] 是文件字节流、[length] 是总字节数：服务端按
+  /// Content-Length 流式写 R2，不整读进内存，客户端同样边读文件边发。[onProgress] 回报
+  /// 已交给连接的字节数。同槽位 409 `slot_taken` 视为上次已传成功。
+  ///
+  /// 只认本机回执（签名要覆盖整个 body，没法流式），所以不像其它反馈人接口那样能用账户签名。
+  /// 超时按体积放宽：60 秒 + 每 MiB 20 秒（≈ 50 KiB/s 的最慢上行也能传完 50 MB）。
+  Future<void> uploadFeedbackVideo(
+    String id,
+    String ticket, {
+    required Stream<List<int>> body,
+    required int length,
+    required String contentType,
+    void Function(int sent)? onProgress,
+  }) async {
+    if (length <= 0 || length > FeedbackLimits.videoMaxBytes) {
+      throw ArgumentError.value(length, 'length', 'video size out of range');
+    }
+    final Uri url = _endpoint(
+      '/v1/feedback/${_segment(id)}/attachments/${FeedbackLimits.videoSlot}',
+      null,
+    );
+    final http.StreamedRequest req = http.StreamedRequest('PUT', url)
+      ..contentLength = length;
+    req.headers['Content-Type'] = contentType;
+    req.headers['Accept'] = 'application/json';
+    req.headers['X-Fushi-Ticket'] = ticket;
+    final Duration timeout =
+        _uploadTimeout + Duration(seconds: 20 * (length ~/ (1024 * 1024) + 1));
+    final http.Client client = await _httpClientFactory();
+    try {
+      int sent = 0;
+      unawaited(
+        body
+            .map((List<int> chunk) {
+              sent += chunk.length;
+              onProgress?.call(sent);
+              return chunk;
+            })
+            .pipe(req.sink)
+            .catchError((Object _) {
+              // 读文件出错：关掉连接，错误由下面 send 那一侧抛出。
+              client.close();
+            }),
+      );
+      final http.Response res;
+      try {
+        res = await Future<http.Response>(
+          () async => http.Response.fromStream(await client.send(req)),
+        ).timeout(timeout);
+      } on TimeoutException {
+        throw LeaderboardTimeoutException('PUT', url.path, timeout);
+      }
+      final String? date = res.headers['date'];
+      if (date != null) serverClock.observe(date, _clockMs());
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        final LeaderboardApiException e = _apiError(res);
+        if (e.status == 409 && e.code == 'slot_taken') return;
+        throw e;
+      }
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 本机账户提交过的反馈（任一登录同账户的设备都能列出，按提交时刻倒序、游标分页）。
+  /// 只有反馈人视角的摘要字段；要看详情用 [feedbackDetail]（ticket 传空串即走账户签名）。
+  Future<FeedbackInboxPage> myFeedback({String? cursor, int? limit}) async {
+    _requireIdentity();
+    return FeedbackInboxPage.fromJson(
+      await _sendJson(
+        'GET',
+        '/v1/feedback/mine',
+        query: <String, String>{
+          if (cursor != null) 'cursor': cursor,
+          if (limit != null) 'limit': '$limit',
+        },
+      ),
+    );
+  }
+
   /// 批量查进度（每批 ≤ [FeedbackLimits.statusBatch]）。ticket 对不上 / 已不存在的条目不返回。
   Future<List<FeedbackSummary>> feedbackStatuses(
     List<({String id, String ticket})> items,
@@ -532,16 +631,20 @@ class LeaderboardClient {
     );
   }
 
-  /// 反馈人看详情与处理时间线。
-  Future<FeedbackDetail> feedbackDetail(String id, String ticket) async =>
-      FeedbackDetail.fromJson(
-        await _sendJson(
-          'GET',
-          '/v1/feedback/${_segment(id)}',
-          signed: false,
-          headers: <String, String>{'X-Fushi-Ticket': ticket},
-        ),
-      );
+  /// 反馈人看详情与处理时间线。[ticket] 为空串时用账户签名（见 [_reporterAuth]）。
+  Future<FeedbackDetail> feedbackDetail(String id, String ticket) async {
+    final ({bool signed, Map<String, String>? headers}) auth = _reporterAuth(
+      ticket,
+    );
+    return FeedbackDetail.fromJson(
+      await _sendJson(
+        'GET',
+        '/v1/feedback/${_segment(id)}',
+        signed: auth.signed,
+        headers: auth.headers,
+      ),
+    );
+  }
 
   /// 反馈人取回自己那条反馈的截图（[slot] = `s0`..`s2`；日志服务端不回传）。
   Future<Uint8List> feedbackScreenshot(
@@ -552,11 +655,14 @@ class LeaderboardClient {
     if (!RegExp(r'^s[0-2]$').hasMatch(slot)) {
       throw ArgumentError.value(slot, 'slot', 's0..s2');
     }
+    final ({bool signed, Map<String, String>? headers}) auth = _reporterAuth(
+      ticket,
+    );
     final http.Response res = await _send(
       'GET',
       '/v1/feedback/${_segment(id)}/attachments/$slot',
-      signed: false,
-      headers: <String, String>{'X-Fushi-Ticket': ticket},
+      signed: auth.signed,
+      headers: auth.headers,
       timeout: _uploadTimeout,
     );
     return res.bodyBytes;
@@ -567,27 +673,36 @@ class LeaderboardClient {
     String id,
     String ticket,
     String body,
-  ) async => FeedbackDetail.fromJson(
-    await _sendJson(
-      'POST',
-      '/v1/feedback/${_segment(id)}/messages',
-      body: <String, dynamic>{'body': body},
-      signed: false,
-      headers: <String, String>{'X-Fushi-Ticket': ticket},
-    ),
-  );
+  ) async {
+    final ({bool signed, Map<String, String>? headers}) auth = _reporterAuth(
+      ticket,
+    );
+    return FeedbackDetail.fromJson(
+      await _sendJson(
+        'POST',
+        '/v1/feedback/${_segment(id)}/messages',
+        body: <String, dynamic>{'body': body},
+        signed: auth.signed,
+        headers: auth.headers,
+      ),
+    );
+  }
 
   /// 反馈人把自己这条标为已关闭（只能从待处理 / 处理中改；别的状态服务端回 409
   /// `not_closable`）。返回更新后的详情。
-  Future<FeedbackDetail> closeFeedback(String id, String ticket) async =>
-      FeedbackDetail.fromJson(
-        await _sendJson(
-          'POST',
-          '/v1/feedback/${_segment(id)}/close',
-          signed: false,
-          headers: <String, String>{'X-Fushi-Ticket': ticket},
-        ),
-      );
+  Future<FeedbackDetail> closeFeedback(String id, String ticket) async {
+    final ({bool signed, Map<String, String>? headers}) auth = _reporterAuth(
+      ticket,
+    );
+    return FeedbackDetail.fromJson(
+      await _sendJson(
+        'POST',
+        '/v1/feedback/${_segment(id)}/close',
+        signed: auth.signed,
+        headers: auth.headers,
+      ),
+    );
+  }
 
   /// 开发者：反馈列表。[status] = `active`（未结案，默认）/ 某个状态 wire 值 / null（全部）。
   /// [query]：编号精确匹配，或标题 / 正文包含（服务端 `q`）。
@@ -654,7 +769,8 @@ class LeaderboardClient {
     );
   }
 
-  /// 开发者：取附件字节。日志 [asText] 时服务端解压成 UTF-8 文本。
+  /// 开发者：取附件字节。日志 [asText] 时服务端解压成 UTF-8 文本；视频（`v0`，≤ 50 MB）
+  /// 也整段取回（只在开发者点开时才取，超时放宽到 10 分钟）。
   Future<Uint8List> devFeedbackAttachment(
     String id,
     String slot, {
@@ -663,9 +779,11 @@ class LeaderboardClient {
     _requireIdentity();
     final http.Response res = await _send(
       'GET',
-      '/v1/dev/feedback/${_segment(id)}/attachments/${_feedbackSlotOf(slot)}',
+      '/v1/dev/feedback/${_segment(id)}/attachments/${_devFeedbackSlotOf(slot)}',
       query: asText ? <String, String>{'view': 'text'} : null,
-      timeout: _uploadTimeout,
+      timeout: slot == FeedbackLimits.videoSlot
+          ? _uploadTimeout * 10
+          : _uploadTimeout,
     );
     return res.bodyBytes;
   }

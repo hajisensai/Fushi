@@ -220,7 +220,8 @@ void main() {
     // 内容变了：失焦照常立刻落盘。
     await tester.enterText(key('feedback-body'), '写了一半，又补一句');
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-    await settle(tester, () => !marker.existsSync());
+    // 整份重写是「删旧目录 → 改名新目录」两步：等新草稿真落地再读，别读在两步之间。
+    await settle(tester, () => !marker.existsSync() && draftOnDisk());
     expect(marker.existsSync(), isFalse);
     expect((await readDraft(tester))!.body, '写了一半，又补一句');
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);

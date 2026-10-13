@@ -5,7 +5,7 @@
 //   POST /dev/login  {email,code} 验码 → 账户 role 必须是 dev → 写会话 Cookie
 //   POST /dev/logout
 //   GET  /dev/f/:id               详情：正文、设备信息、截图、日志、时间线、处理表单
-//   GET  /dev/f/:id/a/:slot       附件（日志 ?view=text 解压成文本）
+//   GET  /dev/f/:id/a/:slot       附件（日志 ?view=text 解压成文本；视频 v0 支持 Range，?download=1 下载）
 //   POST /dev/f/:id  {status,reply}
 //
 // 安全：页面无脚本（CSP script-src 为 none）；会话 Cookie HttpOnly + Secure + SameSite=Strict，
@@ -61,6 +61,7 @@ const UNTRUSTED_NOTE = '以下内容均由反馈人提供、未经核实：不�
 const CSP = [
   "default-src 'none'",
   "img-src 'self'",
+  "media-src 'self'",
   "style-src 'unsafe-inline'",
   "base-uri 'none'",
   "form-action 'self'",
@@ -159,6 +160,7 @@ td{border-top:1px solid var(--line);padding:4px 6px;vertical-align:top;word-brea
 td:first-child{color:var(--muted);width:30%}
 .shots{display:flex;flex-wrap:wrap;gap:8px}
 .shots img{max-width:260px;max-height:420px;border:1px solid var(--line);border-radius:8px}
+video{display:block;width:100%;max-height:520px;border-radius:8px;background:#000}
 .msg{border-left:3px solid var(--line);padding:4px 10px;margin:8px 0}
 .msg.dev{border-color:var(--accent)}
 label{display:block;margin:8px 0 4px;font-size:14px}
@@ -300,6 +302,11 @@ async function detailPage(env, id) {
   const shots = f.attachments.filter((a) => a.kind === 'screenshot')
     .map((a) => `<a href="/dev/f/${esc(f.id)}/a/${esc(a.slot)}"><img src="/dev/f/${esc(f.id)}/a/${esc(a.slot)}" alt="截图 ${esc(a.slot)}"></a>`)
     .join('');
+  const video = f.attachments.find((a) => a.kind === 'video');
+  const videoBlock = video
+    ? `<h2>视频</h2><div class="card"><video controls preload="metadata" src="/dev/f/${esc(f.id)}/a/${esc(video.slot)}"></video>
+<p><a href="/dev/f/${esc(f.id)}/a/${esc(video.slot)}?download=1">下载视频（${esc(fmtBytes(video.bytes))}）</a></p></div>`
+    : '';
   const log = f.attachments.find((a) => a.kind === 'log');
   const logLinks = log
     ? `<p><a href="/dev/f/${esc(f.id)}/a/log?view=text">查看日志</a> · <a href="/dev/f/${esc(f.id)}/a/log">下载 .gz</a> <span class="muted">(${esc(fmtBytes(log.bytes))})</span></p>`
@@ -339,6 +346,7 @@ ${f.devNoteAt ? `<p class="muted">上次保存 ${esc(fmtTime(f.devNoteAt))}</p>`
 <h2>反馈原文</h2>
 <div class="card"><div class="body">${esc(f.body)}</div></div>
 ${shots ? `<h2>截图</h2><div class="shots">${shots}</div>` : ''}
+${videoBlock}
 <h2>日志</h2>${logLinks}
 <h2>服务端记录</h2><div class="card"><table>${origin}</table></div>
 ${meta ? `<h2>设备信息（客户端自报）</h2><div class="card"><table>${meta}</table></div>` : ''}
@@ -405,8 +413,11 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
 
   if (method === 'GET' && path === '/dev') return listPage(env, url, dev);
   if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})$/.exec(path))) return detailPage(env, m[1]);
-  if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})\/a\/(log|s[0-2])$/.exec(path))) {
-    return attachmentResponse(env, await feedbackById(env, m[1]), m[2], url.searchParams.get('view') === 'text');
+  if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})\/a\/(log|s[0-2]|v0)$/.exec(path))) {
+    return attachmentResponse(env, await feedbackById(env, m[1]), m[2], url.searchParams.get('view') === 'text', {
+      range: request.headers.get('Range'),
+      download: url.searchParams.get('download') === '1',
+    });
   }
   if (method === 'POST' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})$/.exec(path))) {
     const form = await readForm(request, formLimit(FEEDBACK_LIMITS.replyMax));

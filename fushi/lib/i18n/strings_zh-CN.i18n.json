@@ -7107,5 +7107,21 @@
   "interconnect_host_update_host_toggle": "允许已配对设备远程更新本机",
   "interconnect_host_update_host_toggle_desc": "局域网内的已配对设备可以查看本机版本并让本机更新。Android 上仍需在本机确认安装。",
   "interconnect_host_update_remote_started": "已配对设备让本机开始更新",
-  "interconnect_host_update_cancelled": "主机上取消了这次更新"
+  "interconnect_host_update_cancelled": "主机上取消了这次更新",
+  "feedback_compose_add_video": "添加视频",
+  "feedback_compose_video_hint": "可附 1 个视频（不超过 ${max}），上传前会自动压缩为 720p。",
+  "feedback_compose_remove_video": "移除视频",
+  "feedback_stage_video_prepare": "正在压缩视频… ${percent}",
+  "feedback_stage_video": "正在上传视频… ${percent}",
+  "feedback_video_too_large": "视频太大（${size}），压缩后仍超过 ${max} 上限，请剪短后再试。",
+  "feedback_video_unsupported": "这个文件不是支持的视频格式（MP4 / WebM / MOV），也无法转换。",
+  "feedback_detail_video": "视频（${size}）",
+  "feedback_detail_video_hint": "视频只有开发者能播放。",
+  "feedback_detail_video_add": "追加视频",
+  "feedback_detail_video_added": "视频已上传。",
+  "feedback_from_other_device": "用本账户在其他设备提交",
+  "feedback_dev_video": "视频",
+  "feedback_dev_video_play": "播放视频",
+  "feedback_dev_video_save": "保存视频",
+  "feedback_dev_video_saved": "视频已保存。"
 }

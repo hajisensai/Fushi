@@ -49,7 +49,7 @@ import { leaderboard, popularWorks, userCard, userShelf, workPage } from './view
 import { handleAdmin } from './admin.js';
 import { listBlocks, listFriends, matchSocialWrite } from './social.js';
 import { isPagePath, renderPage } from './pages.js';
-import { isFeedbackPath, purgeFeedbackAttachments, routeFeedback } from './feedback.js';
+import { isFeedbackPath, purgeFeedbackAttachments, purgeFeedbackVideos, routeFeedback } from './feedback.js';
 import { isDevConsolePath, purgeDevSessions, routeDevConsole } from './devconsole.js';
 
 const HOUR = 3600 * 1000;
@@ -292,6 +292,7 @@ export default {
     await purgeEmailCodes(env, now);
     await purgeDevSessions(env, now);
     await purgeFeedbackAttachments(env, now);
+    await purgeFeedbackVideos(env, now);
   },
 };
 

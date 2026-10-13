@@ -1,6 +1,8 @@
 // 反馈人看自己的一条反馈：正文、状态、开发者回复与状态变更时间线、追加说明。
 // 服务端查不到（ticket 失效 / 被清理）时给「从本机移除」。附件：截图凭本机 ticket 取回
-// 显示缩略图、点开看大图；日志只列条目（服务端不把日志回传给 ticket 持有者）。
+// 显示缩略图、点开看大图；日志与视频只列条目（服务端不把它们回传给反馈人）。
+// 本机有没传上去的附件时给「重试上传」；补传窗口内（提交后 24 小时、本机回执）可「追加视频」。
+// 账户列表里的条目（别的设备提交的）凭账户签名查看，没有「从本机移除」与补传。
 
 import 'dart:async';
 import 'dart:io';
@@ -9,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
+import 'package:fushi/src/feedback/feedback_video.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_compose_page.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
@@ -96,6 +99,7 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
 
   bool _retrying = false;
   bool _addingShot = false;
+  bool _addingVideo = false;
 
   void _snack(String message) {
     if (!mounted) return;
@@ -116,7 +120,7 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
     if (r.uploaded > 0) await _load();
   }
 
-  /// 手动重试上次没传上去的附件（截图 / 日志）。
+  /// 手动重试上次没传上去的附件（截图 / 日志 / 视频）。
   Future<void> _retryPending() async {
     setState(() => _retrying = true);
     try {
@@ -155,25 +159,82 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
     }
   }
 
-  /// 待补传提示 + 追加截图入口。补传窗口（提交后 24 小时）过了、或截图槽位满了就不给
-  /// 追加入口；本机还留着没传上去的附件时，窗口过了照样显示提示（重试会被丢弃并说明）。
-  List<Widget> _attachActions(FeedbackDetail d, FushiDesignTokens tokens) {
+  /// 追加视频：选文件 → 本机转码 → 上传（进度见 [FeedbackService.videoTransfer]）。
+  Future<void> _addVideo() async {
     final FeedbackService service = ref.read(feedbackServiceProvider);
+    setState(() => _addingVideo = true);
+    try {
+      final File? picked = await pickFeedbackVideoFile();
+      if (picked == null) return;
+      final FeedbackRetryResult r = await service.addVideo(
+        widget.feedbackId,
+        picked,
+      );
+      if (r.remaining == 0 && r.dropped == 0 && r.uploaded > 0) {
+        _snack(t.feedback_detail_video_added);
+        await _load();
+      } else {
+        await _reportRetry(r);
+      }
+    } on Object catch (e) {
+      _snack(
+        feedbackVideoErrorText(e) ??
+            t.feedback_submit_failed(reason: feedbackErrorReason(e)),
+      );
+    } finally {
+      if (mounted) setState(() => _addingVideo = false);
+    }
+  }
+
+  /// 待补传提示 / 视频进度 / 追加截图与追加视频入口。补传窗口（提交后 24 小时）过了、
+  /// 截图槽位满了、或已经有视频时，不给对应的追加入口；本机还留着没传上去的附件时，窗口
+  /// 过了照样显示提示（重试会被丢弃并说明）。
+  List<Widget> _attachActions(FeedbackDetail d, FushiDesignTokens tokens) {
+    final FeedbackService service = ref.watch(feedbackServiceProvider);
     final FeedbackTicket? local = service.byId(widget.feedbackId);
-    final Set<String> pending = ref.watch(
-      feedbackServiceProvider.select(
-        (FeedbackService s) => s.pendingSlots(widget.feedbackId),
-      ),
+    final Set<String> pending = service.pendingSlots(widget.feedbackId);
+    final FeedbackVideoTransfer? transfer = service.videoTransfer(
+      widget.feedbackId,
     );
+    final bool attachable = local != null && service.canAttach(local);
+    // 截图只数截图槽位：视频（v0）与日志不占截图名额。
     final int shots =
-        d.attachments.where((FeedbackAttachmentInfo a) => !a.isLog).length +
-        pending.where((String s) => s != 'log').length;
-    final bool canAdd =
-        local != null &&
-        service.canAttach(local) &&
-        shots < FeedbackLimits.screenshots;
+        d.attachments
+            .where((FeedbackAttachmentInfo a) => a.isScreenshot)
+            .length +
+        pending
+            .where((String s) => s != 'log' && s != FeedbackLimits.videoSlot)
+            .length;
+    final bool canAddShot = attachable && shots < FeedbackLimits.screenshots;
+    final bool hasVideo =
+        d.attachments.any((FeedbackAttachmentInfo a) => a.isVideo) ||
+        pending.contains(FeedbackLimits.videoSlot);
+    final bool canAddVideo = attachable && !hasVideo && transfer == null;
+    final double? fraction = transfer?.fraction;
+    final String percent = fraction == null
+        ? ''
+        : '${(fraction * 100).floor()}%';
     return <Widget>[
-      if (pending.isNotEmpty) ...<Widget>[
+      if (transfer != null) ...<Widget>[
+        SizedBox(height: tokens.spacing.card),
+        FushiCard(
+          key: const ValueKey<String>('feedback-detail-video-progress'),
+          margin: EdgeInsets.zero,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                transfer.stage == FeedbackVideoStage.preparing
+                    ? t.feedback_stage_video_prepare(percent: percent)
+                    : t.feedback_stage_video(percent: percent),
+              ),
+              SizedBox(height: tokens.spacing.gap),
+              FushiLinearProgressIndicator(value: fraction),
+            ],
+          ),
+        ),
+      ],
+      if (pending.isNotEmpty && transfer == null) ...<Widget>[
         SizedBox(height: tokens.spacing.card),
         FushiInlineNotice(
           key: const ValueKey<String>('feedback-detail-pending'),
@@ -187,19 +248,33 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
           ],
         ),
       ],
-      if (canAdd) ...<Widget>[
+      if (canAddShot || canAddVideo) ...<Widget>[
         SizedBox(height: tokens.spacing.gap),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: FushiPressScale(
-            enabled: !_addingShot,
-            child: FushiFilledButton.tonalIcon(
-              key: const ValueKey<String>('feedback-detail-add-shot'),
-              onPressed: _addingShot ? null : () => unawaited(_addShot(d)),
-              icon: const FushiIcon(FushiIcons.addCircle),
-              label: Text(t.feedback_detail_add_shot),
-            ),
-          ),
+        Wrap(
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            if (canAddShot)
+              FushiPressScale(
+                enabled: !_addingShot,
+                child: FushiFilledButton.tonalIcon(
+                  key: const ValueKey<String>('feedback-detail-add-shot'),
+                  onPressed: _addingShot ? null : () => unawaited(_addShot(d)),
+                  icon: const FushiIcon(FushiIcons.addCircle),
+                  label: Text(t.feedback_detail_add_shot),
+                ),
+              ),
+            if (canAddVideo)
+              FushiPressScale(
+                enabled: !_addingVideo,
+                child: FushiFilledButton.tonalIcon(
+                  key: const ValueKey<String>('feedback-detail-add-video'),
+                  onPressed: _addingVideo ? null : () => unawaited(_addVideo()),
+                  icon: const FushiIcon(FushiIcons.video),
+                  label: Text(t.feedback_detail_video_add),
+                ),
+              ),
+          ],
         ),
       ],
     ];
@@ -258,8 +333,11 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
   Widget _attachments(FeedbackDetail d, FushiDesignTokens tokens) {
     final List<FeedbackAttachmentInfo> shots = <FeedbackAttachmentInfo>[
       for (final FeedbackAttachmentInfo a in d.attachments)
-        if (!a.isLog) a,
+        if (a.isScreenshot) a,
     ];
+    final FeedbackAttachmentInfo? video = d.attachments
+        .where((FeedbackAttachmentInfo a) => a.isVideo)
+        .firstOrNull;
     final FeedbackAttachmentInfo? log = d.attachments
         .where((FeedbackAttachmentInfo a) => a.isLog)
         .firstOrNull;
@@ -302,6 +380,32 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
                     ),
                   ),
                 ),
+            ],
+          ),
+        ],
+        if (video != null) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap),
+          Row(
+            key: const ValueKey<String>('feedback-detail-video'),
+            children: <Widget>[
+              const FushiIcon(FushiIcons.video),
+              SizedBox(width: tokens.spacing.gap),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      t.feedback_detail_video(
+                        size: FushiByteFormat.bytes(video.bytes),
+                      ),
+                    ),
+                    Text(
+                      t.feedback_detail_video_hint,
+                      style: tokens.type.metadata,
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ],
@@ -423,14 +527,17 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
       ),
     );
     final FeedbackDetail? d = _detail;
+    // 账户列表里的条目删不掉（下次刷新又会列出来），不给「从本机移除」。
+    final bool viaAccount = local?.viaAccount ?? false;
     return FushiPageScaffold(
       title: d?.summary.title ?? local?.title ?? t.feedback_title,
       actions: <Widget>[
-        FushiIconButton(
-          icon: FushiIcons.delete,
-          tooltip: t.feedback_detail_forget,
-          onTap: () => unawaited(_forget()),
-        ),
+        if (!viaAccount)
+          FushiIconButton(
+            icon: FushiIcons.delete,
+            tooltip: t.feedback_detail_forget,
+            onTap: () => unawaited(_forget()),
+          ),
       ],
       body: Builder(
         builder: (BuildContext context) => FushiRefreshIndicator(
@@ -454,10 +561,12 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
                   FushiPlaceholderMessage(
                     icon: FushiIcons.searchOff,
                     message: t.feedback_detail_missing,
-                    action: FushiTextButton(
-                      onPressed: () => unawaited(_forget()),
-                      child: Text(t.feedback_detail_forget),
-                    ),
+                    action: viaAccount
+                        ? null
+                        : FushiTextButton(
+                            onPressed: () => unawaited(_forget()),
+                            child: Text(t.feedback_detail_forget),
+                          ),
                   )
                 else if (d == null && _error != null)
                   FushiPlaceholderMessage(

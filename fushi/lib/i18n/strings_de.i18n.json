@@ -7107,5 +7107,21 @@
   "interconnect_host_update_host_toggle": "Allow paired devices to update this device",
   "interconnect_host_update_host_toggle_desc": "Paired devices on the local network can see this app's version and start an update here. On Android you still confirm the install on this device.",
   "interconnect_host_update_remote_started": "A paired device started updating this app",
-  "interconnect_host_update_cancelled": "The update was cancelled on the host"
+  "interconnect_host_update_cancelled": "The update was cancelled on the host",
+  "feedback_compose_add_video": "Add video",
+  "feedback_compose_video_hint": "You can attach 1 video (up to ${max}). It is compressed to 720p before uploading.",
+  "feedback_compose_remove_video": "Remove video",
+  "feedback_stage_video_prepare": "Compressing video… ${percent}",
+  "feedback_stage_video": "Uploading video… ${percent}",
+  "feedback_video_too_large": "The video is too large (${size}). Even after compression it exceeds the ${max} limit — please trim it and try again.",
+  "feedback_video_unsupported": "This file isn't a supported video (MP4 / WebM / MOV) and couldn't be converted.",
+  "feedback_detail_video": "Video (${size})",
+  "feedback_detail_video_hint": "Only developers can play the video.",
+  "feedback_detail_video_add": "Attach a video",
+  "feedback_detail_video_added": "Video uploaded.",
+  "feedback_from_other_device": "Submitted from another device with your account",
+  "feedback_dev_video": "Video",
+  "feedback_dev_video_play": "Play video",
+  "feedback_dev_video_save": "Save video",
+  "feedback_dev_video_saved": "Video saved."
 }

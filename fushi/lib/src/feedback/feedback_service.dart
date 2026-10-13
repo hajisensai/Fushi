@@ -4,6 +4,14 @@
 // 反馈不要求账户：提交拿到一次性回执（ticket）立刻落盘（FeedbackTicketStore），之后凭它
 // 查进度、追加说明。已登录排行榜账户时默认带签名提交，开发者那边能看到是谁。
 // 网络请求只在用户打开反馈中心 / 提交 / 看详情时发出，不在后台轮询。
+//
+// 附件没传上去（网络中断等）时字节落盘到 FeedbackPendingStore，详情页可「重试上传」；
+// 服务端 24 小时内允许补传空闲槽位（与 PR #2090 的待传重试是同一机制）。视频（槽位 v0，
+// ≤ 50 MB）先在本机转码成 720p H.264（feedback_video.dart），从待传区的文件流式上传。
+//
+// 「我的反馈」= 本机回执 ∪ 账户列表：已登录排行榜账户时另拉 GET /v1/feedback/mine
+// （别的设备带账户提交的也在里面），按 id 去重、本机回执优先；账户列表里的条目没有 ticket
+// （[FeedbackTicket.viaAccount]），看详情 / 追加说明 / 标记完成都用账户签名。
 
 import 'dart:async';
 import 'dart:io';
@@ -13,11 +21,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/feedback/feedback_draft_store.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
+import 'package:fushi/src/feedback/feedback_video.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
+import 'package:path/path.dart' as p;
 
 /// 用户在提交页填写 / 勾选的内容。
 class FeedbackDraft {
@@ -30,6 +40,7 @@ class FeedbackDraft {
     this.includeDeviceInfo = true,
     this.linkAccount = true,
     this.screenshots = const <Uint8List>[],
+    this.video,
     this.reopenOf,
   });
 
@@ -46,20 +57,26 @@ class FeedbackDraft {
   /// PNG / JPEG / WebP 字节，最多 [FeedbackLimits.screenshots] 张。
   final List<Uint8List> screenshots;
 
+  /// 用户选的视频文件（原件不动；上传前在本机转码）。每条反馈最多一个。
+  final File? video;
+
   /// 「问题没解决，重新提交」：原反馈 id（必须是本机清单里的、带 ticket 的那条）。
   final String? reopenOf;
 }
 
-/// 提交进行到哪一步（提交页的进度文案）。
-enum FeedbackSubmitStage { sending, screenshots, logs }
+/// 提交进行到哪一步（提交页的进度文案）。[videoPrepare] 在发正文之前（转码失败 / 太大
+/// 要在反馈交上去之前告诉用户），[video] 是最后一步（最大的附件最后传）。
+enum FeedbackSubmitStage { videoPrepare, sending, screenshots, logs, video }
 
-class FeedbackSubmitResult {
-  const FeedbackSubmitResult(this.ticket, {this.failedAttachments = 0});
+/// 视频附件正在做什么（详情页「追加视频」/「重试上传」的进度）。
+enum FeedbackVideoStage { preparing, uploading }
 
-  final FeedbackTicket ticket;
+/// 一条反馈的视频附件进度：[fraction] 0..1，未知（转码拿不到时长）为 null。
+class FeedbackVideoTransfer {
+  const FeedbackVideoTransfer(this.stage, [this.fraction]);
 
-  /// 正文已提交、但没传上去的附件数（网络中断等）。
-  final int failedAttachments;
+  final FeedbackVideoStage stage;
+  final double? fraction;
 }
 
 /// 一次补传的结果。
@@ -80,6 +97,29 @@ class FeedbackRetryResult {
   final int dropped;
 }
 
+/// 视频准备函数（默认 [prepareFeedbackVideo]；测试注入假转码）。
+typedef FeedbackVideoPreparer =
+    Future<PreparedFeedbackVideo> Function(
+      File source,
+      Directory workDir,
+      void Function(double fraction) onProgress,
+    );
+
+Future<PreparedFeedbackVideo> _defaultPrepareVideo(
+  File source,
+  Directory workDir,
+  void Function(double fraction) onProgress,
+) => prepareFeedbackVideo(source, workDir: workDir, onProgress: onProgress);
+
+class FeedbackSubmitResult {
+  const FeedbackSubmitResult(this.ticket, {this.failedAttachments = 0});
+
+  final FeedbackTicket ticket;
+
+  /// 正文已提交、但没传上去的附件数（网络中断等）。
+  final int failedAttachments;
+}
+
 class FeedbackService extends ChangeNotifier {
   FeedbackService({
     required Future<Directory> Function() supportRoot,
@@ -87,38 +127,52 @@ class FeedbackService extends ChangeNotifier {
     Future<Map<String, Object?>> Function()? meta,
     String Function()? logText,
     Uint8List Function(String log)? logEncoder,
+    FeedbackVideoPreparer? prepareVideo,
   }) : _supportRoot = supportRoot,
        _client = client,
        _meta = meta ?? collectFeedbackMeta,
        _logText = logText ?? collectFeedbackLogText,
-       _logEncoder = logEncoder ?? buildFeedbackLogGzip;
+       _logEncoder = logEncoder ?? buildFeedbackLogGzip,
+       _prepareVideo = prepareVideo ?? _defaultPrepareVideo;
 
   final Future<Directory> Function() _supportRoot;
   final LeaderboardClient Function() _client;
   final Future<Map<String, Object?>> Function() _meta;
   final String Function() _logText;
   final Uint8List Function(String log) _logEncoder;
+  final FeedbackVideoPreparer _prepareVideo;
 
   FeedbackTicketStore? _store;
   FeedbackPendingStore? _pendingStore;
 
   /// 反馈 id → 还没传上去的附件槽位（磁盘上的 [FeedbackPendingStore] 的内存镜像）。
   final Map<String, Set<String>> _pending = <String, Set<String>>{};
+
+  /// 反馈 id → 视频附件进行中的转码 / 上传进度。
+  final Map<String, FeedbackVideoTransfer> _transfers =
+      <String, FeedbackVideoTransfer>{};
   List<FeedbackTicket> _tickets = <FeedbackTicket>[];
+
+  /// 账户列表里、本机没有回执的条目（ticket 为空串），见 [refreshAccount]。
+  List<FeedbackTicket> _accountTickets = <FeedbackTicket>[];
+
+  /// [_accountTickets] 属于哪个账户（设备钥匙 id）；换账户 / 退出登录时整份丢掉。
+  String? _accountKey;
   bool _loaded = false;
   bool _refreshing = false;
   Future<void>? _loading;
 
-  /// 本机提交过的反馈（新的在前）。
-  List<FeedbackTicket> get tickets =>
-      List<FeedbackTicket>.unmodifiable(_tickets);
+  /// 「我的反馈」：本机回执在前（新的在前），再接账户列表里本机没有回执的（新的在前）。
+  List<FeedbackTicket> get tickets => List<FeedbackTicket>.unmodifiable(
+    <FeedbackTicket>[..._tickets, ..._accountTickets],
+  );
 
   bool get loaded => _loaded;
   bool get refreshing => _refreshing;
 
   /// 有开发者新进展、用户还没看过的条数（入口红点）。
   int get unseenCount =>
-      _tickets.where((FeedbackTicket t) => t.hasUnseenReply).length;
+      tickets.where((FeedbackTicket t) => t.hasUnseenReply).length;
 
   Future<FeedbackTicketStore> _storeFor() async =>
       _store ??= FeedbackTicketStore(await _supportRoot());
@@ -126,14 +180,19 @@ class FeedbackService extends ChangeNotifier {
   Future<FeedbackPendingStore> _pendingFor() async =>
       _pendingStore ??= FeedbackPendingStore(await _supportRoot());
 
-  /// 这条反馈还没传上去的附件槽位（`s0`..`s2` / `log`）。
+  /// 这条反馈还没传上去的附件槽位（`s0`..`s2` / `log` / `v0`）。
   Set<String> pendingSlots(String id) =>
       Set<String>.unmodifiable(_pending[id] ?? const <String>{});
 
-  /// 这条反馈还在服务端的补传窗口内（见 [FeedbackLimits.attachWindow]）。
+  /// 视频附件进行中的转码 / 上传（没有返回 null）。
+  FeedbackVideoTransfer? videoTransfer(String id) => _transfers[id];
+
+  /// 这条反馈还在服务端的补传窗口内（见 [FeedbackLimits.attachWindow]），且是本机回执
+  /// （账户列表里的条目不能补传：补传只认 ticket）。
   bool canAttach(FeedbackTicket t) =>
+      !t.viaAccount &&
       DateTime.now().millisecondsSinceEpoch - t.createdAt <=
-      FeedbackLimits.attachWindow.inMilliseconds;
+          FeedbackLimits.attachWindow.inMilliseconds;
 
   /// 上次提交填的联系方式（新反馈预填用）；没有 / 读失败返回空串。
   Future<String> lastContact() async {
@@ -155,12 +214,52 @@ class FeedbackService extends ChangeNotifier {
 
   Future<void> _load() async {
     _tickets = await (await _storeFor()).read();
-    final Map<String, Set<String>> pending = await (await _pendingFor()).scan();
-    _pending
-      ..clear()
-      ..addAll(pending);
+    try {
+      final Map<String, Set<String>> pending = await (await _pendingFor())
+          .scan();
+      _pending
+        ..clear()
+        ..addAll(pending);
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('feedback.pending_scan', e, st);
+    }
+    final String? key = _client().identity?.accountId;
+    if (key != null) {
+      try {
+        _accountKey = key;
+        _accountTickets = _withoutLocal(
+          await FeedbackTicketStore.account(await _supportRoot(), key).read(),
+        );
+      } on Object catch (e, st) {
+        ErrorLogService.instance.log('feedback.account_cache_read', e, st);
+      }
+    }
     _loaded = true;
     notifyListeners();
+  }
+
+  /// 去掉本机已有回执的条目（同一条以本机回执为准：它能补传附件）。
+  List<FeedbackTicket> _withoutLocal(List<FeedbackTicket> items) {
+    final Set<String> local = <String>{
+      for (final FeedbackTicket t in _tickets) t.id,
+    };
+    return <FeedbackTicket>[
+      for (final FeedbackTicket t in items)
+        if (!local.contains(t.id)) t,
+    ];
+  }
+
+  Future<void> _persistAccount() async {
+    final String? key = _accountKey;
+    if (key == null) return;
+    try {
+      await FeedbackTicketStore.account(
+        await _supportRoot(),
+        key,
+      ).write(_accountTickets);
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('feedback.account_cache_write', e, st);
+    }
   }
 
   Future<void> _persist() async {
@@ -172,7 +271,7 @@ class FeedbackService extends ChangeNotifier {
   /// 网络错误原样抛给调用方（反馈中心显示「刷新失败」）。
   Future<void> refresh() async {
     await load();
-    if (_tickets.isEmpty || _refreshing) return;
+    if (_refreshing) return;
     _refreshing = true;
     notifyListeners();
     try {
@@ -192,27 +291,97 @@ class FeedbackService extends ChangeNotifier {
           fresh[s.id] = s;
         }
       }
-      _tickets = <FeedbackTicket>[
-        for (final FeedbackTicket t in _tickets)
-          if (fresh[t.id] case final FeedbackSummary s)
-            t.mergeSummary(s)
-          else
-            t.copyWith(missing: true),
-      ];
-      await _persist();
+      if (_tickets.isNotEmpty) {
+        _tickets = <FeedbackTicket>[
+          for (final FeedbackTicket t in _tickets)
+            if (fresh[t.id] case final FeedbackSummary s)
+              t.mergeSummary(s)
+            else
+              t.copyWith(missing: true),
+        ];
+        await _persist();
+      }
+      await _refreshAccount();
     } finally {
       _refreshing = false;
       notifyListeners();
     }
   }
 
+  /// 账户列表最多拉几页（每页 [FeedbackLimits.minePage] 条）。
+  static const int _kMinePages = 5;
+
+  /// 已登录排行榜账户时拉 GET /v1/feedback/mine，替换账户列表（保留各条的已读时刻）。
+  /// 没登录 / 换了账户：丢掉旧账户的列表。网络错误原样抛（与 [refresh] 同口径）。
+  Future<void> _refreshAccount() async {
+    final LeaderboardClient client = _client();
+    final String? key = client.identity?.accountId;
+    if (key != _accountKey) {
+      _accountKey = key;
+      _accountTickets = <FeedbackTicket>[];
+      notifyListeners();
+    }
+    if (key == null) return;
+    final List<FeedbackSummary> items = <FeedbackSummary>[];
+    String? cursor;
+    for (int page = 0; page < _kMinePages; page++) {
+      final FeedbackInboxPage got = await client.myFeedback(
+        cursor: cursor,
+        limit: FeedbackLimits.minePage,
+      );
+      items.addAll(got.items);
+      cursor = got.next;
+      if (cursor == null) break;
+    }
+    // 拉的过程中换了账户：结果作废。
+    if (_client().identity?.accountId != key) return;
+    final Map<String, FeedbackTicket> previous = <String, FeedbackTicket>{
+      for (final FeedbackTicket t in _accountTickets) t.id: t,
+    };
+    // 本机有回执的那条顺便刷新进度（status 批量接口只认 ticket，这里多一个来源无妨）。
+    _accountTickets = _withoutLocal(<FeedbackTicket>[
+      for (final FeedbackSummary s in items)
+        previous[s.id]?.mergeSummary(s) ?? FeedbackTicket.fromAccount(s),
+    ]);
+    await _persistAccount();
+    notifyListeners();
+  }
+
   /// 提交反馈：先发正文（拿回执并立刻落盘），再逐个补传截图与日志。附件失败不影响
   /// 反馈本身，计入 [FeedbackSubmitResult.failedAttachments]。正文提交失败原样抛出。
+  ///
+  /// 带视频时先在本机转码（[FeedbackSubmitStage.videoPrepare]，[onVideoProgress] 回报
+  /// 0..1；太大 / 不是视频直接抛，反馈不提交），正文与其它附件交完后最后传视频
+  /// （[FeedbackSubmitStage.video]）；视频传失败留在待传区，详情页可重试。
   Future<FeedbackSubmitResult> submit(
     FeedbackDraft draft, {
     void Function(FeedbackSubmitStage stage)? onStage,
+    void Function(double? fraction)? onVideoProgress,
   }) async {
     await load();
+    final File? source = draft.video;
+    if (source == null) return _submit(draft, onStage, null, null);
+    final Directory work = await _videoWorkDir();
+    try {
+      onStage?.call(FeedbackSubmitStage.videoPrepare);
+      onVideoProgress?.call(null);
+      final PreparedFeedbackVideo video = await _prepareVideo(
+        source,
+        work,
+        (double f) => onVideoProgress?.call(f),
+      );
+      return await _submit(draft, onStage, video, onVideoProgress);
+    } finally {
+      await _deleteQuietly(work);
+    }
+  }
+
+  Future<FeedbackSubmitResult> _submit(
+    FeedbackDraft draft,
+    void Function(FeedbackSubmitStage stage)? onStage,
+    PreparedFeedbackVideo? video,
+    void Function(double? fraction)? onVideoProgress,
+  ) async {
     final LeaderboardClient client = _client();
     onStage?.call(FeedbackSubmitStage.sending);
     final Map<String, Object?> meta = draft.includeDeviceInfo
@@ -235,6 +404,7 @@ class FeedbackService extends ChangeNotifier {
         ...meta,
         'logs_attached': draft.includeLogs,
         'screenshots': draft.screenshots.length,
+        if (video != null) 'video': true,
       },
       linkAccount: draft.linkAccount,
       reopenOf: parent == null ? null : (id: parent.id, ticket: parent.ticket),
@@ -300,7 +470,39 @@ class FeedbackService extends ChangeNotifier {
         if (gz != null) await _stash(receipt.id, 'log', gz);
       }
     }
+    if (video != null) {
+      onStage?.call(FeedbackSubmitStage.video);
+      onVideoProgress?.call(0);
+      // 先挪进待传区再传：传失败（网络中断）时文件已经在那里，详情页可以重试。
+      final bool stashed = await _stashVideo(receipt.id, video);
+      final bool ok =
+          stashed &&
+          await _uploadPendingVideo(
+                ticket,
+                onProgress: (double f) => onVideoProgress?.call(f),
+              ) ==
+              _SlotOutcome.uploaded;
+      if (!ok) failed++;
+    }
     return FeedbackSubmitResult(ticket, failedAttachments: failed);
+  }
+
+  /// 本机转码用的临时目录（`<数据根>/feedback/video_work/<时刻>`，用完即删）。
+  Future<Directory> _videoWorkDir() async => Directory(
+    p.join(
+      (await _supportRoot()).path,
+      'feedback',
+      'video_work',
+      '${DateTime.now().microsecondsSinceEpoch}',
+    ),
+  ).create(recursive: true);
+
+  static Future<void> _deleteQuietly(Directory dir) async {
+    try {
+      if (dir.existsSync()) await dir.delete(recursive: true);
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('feedback.video_work_cleanup', e, st);
+    }
   }
 
   /// 附件没传上去：字节落盘留着，之后可手动补传（[retryPending]）。
@@ -348,6 +550,103 @@ class FeedbackService extends ChangeNotifier {
       status < 500 &&
       !const <int>{408, 409, 429}.contains(status);
 
+  /// 准备好的视频挪进待传区（槽位 `v0`）。挪不进去返回 false（磁盘满等，原因进日志）。
+  Future<bool> _stashVideo(String id, PreparedFeedbackVideo video) async {
+    try {
+      await (await _pendingFor()).putFile(
+        id,
+        FeedbackLimits.videoSlot,
+        video.file,
+        contentType: video.contentType,
+      );
+      (_pending[id] ??= <String>{}).add(FeedbackLimits.videoSlot);
+      notifyListeners();
+      return true;
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('feedback.stash_video', e, st);
+      return false;
+    }
+  }
+
+  void _setTransfer(String id, FeedbackVideoTransfer? next) {
+    final FeedbackVideoTransfer? prev = _transfers[id];
+    if (next == null) {
+      if (_transfers.remove(id) != null) notifyListeners();
+      return;
+    }
+    // 进度每变 1% 才通知一次：上传回调按块来，几十 MB 是上千次。
+    final double? a = prev?.fraction;
+    final double? b = next.fraction;
+    final bool same =
+        prev != null &&
+        prev.stage == next.stage &&
+        (a == null) == (b == null) &&
+        (a == null || ((a * 100).floor() == (b! * 100).floor()));
+    _transfers[id] = next;
+    if (!same) notifyListeners();
+  }
+
+  /// 传待传区里的视频；成功 / 被拒都删掉待传文件。
+  Future<_SlotOutcome> _uploadPendingVideo(
+    FeedbackTicket t, {
+    void Function(double fraction)? onProgress,
+  }) async {
+    final FeedbackPendingStore store = await _pendingFor();
+    const String slot = FeedbackLimits.videoSlot;
+    final ({File file, String contentType})? pending = await store.fileOf(
+      t.id,
+      slot,
+    );
+    if (pending == null) {
+      _pending[t.id]?.remove(slot);
+      return _SlotOutcome.dropped;
+    }
+    _SlotOutcome outcome = _SlotOutcome.failed;
+    try {
+      final int length = await pending.file.length();
+      _setTransfer(
+        t.id,
+        const FeedbackVideoTransfer(FeedbackVideoStage.uploading, 0),
+      );
+      await _client().uploadFeedbackVideo(
+        t.id,
+        t.ticket,
+        body: pending.file.openRead(),
+        length: length,
+        contentType: pending.contentType,
+        onProgress: (int sent) {
+          final double f = length == 0 ? 1 : sent / length;
+          onProgress?.call(f);
+          _setTransfer(
+            t.id,
+            FeedbackVideoTransfer(FeedbackVideoStage.uploading, f),
+          );
+        },
+      );
+      outcome = _SlotOutcome.uploaded;
+    } on LeaderboardApiException catch (e, st) {
+      ErrorLogService.instance.log('feedback.upload_video', e, st);
+      if (isPermanentAttachmentRejection(e.status)) {
+        outcome = _SlotOutcome.dropped;
+      }
+    } on ArgumentError catch (e, st) {
+      // 待传文件大小越界（被别的程序改过）：再传也一样，丢掉。
+      ErrorLogService.instance.log('feedback.upload_video', e, st);
+      outcome = _SlotOutcome.dropped;
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('feedback.upload_video', e, st);
+    } finally {
+      _setTransfer(t.id, null);
+    }
+    if (outcome != _SlotOutcome.failed) {
+      await store.remove(t.id, slot);
+      _pending[t.id]?.remove(slot);
+      if (_pending[t.id]?.isEmpty ?? false) _pending.remove(t.id);
+      notifyListeners();
+    }
+    return outcome;
+  }
+
   /// 把这条反馈所有待传附件再传一遍。服务端同一槽位只收一次（重复传拿到 409
   /// `slot_taken` 已按成功处理）；被服务端永久拒收的（[isPermanentAttachmentRejection]）
   /// 不会再有机会，直接丢弃并计入 [FeedbackRetryResult.dropped]；其余（5xx、网络类）
@@ -364,6 +663,17 @@ class FeedbackService extends ChangeNotifier {
     int dropped = 0;
     final List<String> slots = (_pending[id] ?? <String>{}).toList()..sort();
     for (final String slot in slots) {
+      if (slot == FeedbackLimits.videoSlot) {
+        switch (await _uploadPendingVideo(t)) {
+          case _SlotOutcome.uploaded:
+            uploaded++;
+          case _SlotOutcome.dropped:
+            dropped++;
+          case _SlotOutcome.failed:
+            break;
+        }
+        continue;
+      }
       final Uint8List? bytes = await store.read(id, slot);
       bool done = bytes == null;
       if (bytes != null) {
@@ -430,8 +740,46 @@ class FeedbackService extends ChangeNotifier {
     return _retryPendingNow(id);
   }
 
+  /// 给已提交的反馈追加视频（只有本机回执、补传窗口内、服务端还没有视频时才该调）：
+  /// 本机转码 → 挪进待传区 → 上传。转码阶段的「太大 / 不是视频」原样抛给调用方；上传
+  /// 失败留在待传区，结果里 `remaining` > 0。
+  Future<FeedbackRetryResult> addVideo(String id, File source) async {
+    final FeedbackTicket? t = byId(id);
+    if (t == null) throw StateError('unknown feedback $id');
+    final Directory work = await _videoWorkDir();
+    try {
+      _setTransfer(
+        id,
+        const FeedbackVideoTransfer(FeedbackVideoStage.preparing),
+      );
+      final PreparedFeedbackVideo video;
+      try {
+        video = await _prepareVideo(
+          source,
+          work,
+          (double f) => _setTransfer(
+            id,
+            FeedbackVideoTransfer(FeedbackVideoStage.preparing, f),
+          ),
+        );
+      } finally {
+        _setTransfer(id, null);
+      }
+      // 暂存与上传与同一条反馈的 [retryPending] / [addScreenshots] 串行（它们读写同一批
+      // 待传槽位与同一个待传目录）；转码在链外，几十秒的转码不该堵住别的附件操作。
+      return await _serialAttach<FeedbackRetryResult>(id, () async {
+        if (!await _stashVideo(id, video)) {
+          throw StateError('could not stage the video for upload');
+        }
+        return _retryPendingNow(id);
+      });
+    } finally {
+      await _deleteQuietly(work);
+    }
+  }
+
   FeedbackTicket? byId(String id) {
-    for (final FeedbackTicket t in _tickets) {
+    for (final FeedbackTicket t in tickets) {
       if (t.id == id) return t;
     }
     return null;
@@ -493,13 +841,23 @@ class FeedbackService extends ChangeNotifier {
   }
 
   Future<void> _replace(FeedbackTicket next) async {
+    if (next.viaAccount) {
+      _accountTickets = <FeedbackTicket>[
+        for (final FeedbackTicket t in _accountTickets)
+          t.id == next.id ? next : t,
+      ];
+      await _persistAccount();
+      notifyListeners();
+      return;
+    }
     _tickets = <FeedbackTicket>[
       for (final FeedbackTicket t in _tickets) t.id == next.id ? next : t,
     ];
     await _persist();
   }
 
-  /// 从本机清单里删掉（服务端记录不受影响；删了就看不到这条的进度了）。
+  /// 从本机清单里删掉（服务端记录不受影响；删了就看不到这条的进度了）。账户列表里的
+  /// 条目删不掉（下次刷新还会列出来），调用方不该给它们「从本机移除」。
   Future<void> forget(String id) async {
     _pending.remove(id);
     try {
@@ -514,6 +872,9 @@ class FeedbackService extends ChangeNotifier {
     await _persist();
   }
 }
+
+/// 一个附件槽位这次上传的结局。
+enum _SlotOutcome { uploaded, failed, dropped }
 
 /// 全应用一份（反馈属于这台设备，与 Profile 无关）。客户端每次用时现取：已登录排行榜
 /// 账户就带签名，换 Profile / 登录登出后自然跟着变。
