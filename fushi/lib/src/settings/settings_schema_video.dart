@@ -1327,16 +1327,17 @@ SettingsDestination buildVideoDestination() {
             },
             defaultValue: VideoAsbplayerConfig.defaults.doubleTapSeekSeconds,
           ),
-          // 点击画面是否切换播放/暂停（默认开 = 旧行为）。桌面对应控制条主题的
-          // `playAndPauseOnTap`（单击画面），移动端对应双击中带的暂停 fallback
-          // （BUG-221）——两端同一开关、语义一致，故全平台可见，不是假开关。
-          // 关掉后点画面只唤醒/收起控制条；空格键、控制条按钮、右键菜单的播放/暂停
-          // 是独立入口，不受影响。
+          // 鼠标单击画面是否切换播放/暂停（默认开 = 旧行为），对应桌面控制条主题的
+          // `playAndPauseOnTap`。关掉后单击只唤醒/收起控制条；空格键、控制条按钮、
+          // 右键菜单的播放/暂停是独立入口，不受影响。
+          // BUG-3310：只在桌面可见——移动端单击从不改播放态，本开关在移动端已无任何
+          // 效果（双击暂停改归下面的 `double_tap_toggles_playback`），露出来就是假开关。
           SettingsSwitchItem(
             id: 'video.playback.tap_toggles_playback',
             title: t.video_setting_tap_toggles_playback,
             subtitle: t.video_setting_tap_toggles_playback_hint,
             icon: Icons.touch_app_outlined,
+            visible: (_) => isDesktopPlatform,
             video: VideoPlacement(group: VideoGroup.playback, order: 14),
             value: (SettingsContext settingsContext) =>
                 currentVideoAsbConfig(settingsContext).tapTogglesPlayback,
@@ -1348,6 +1349,27 @@ SettingsDestination buildVideoDestination() {
               );
             },
             defaultValue: VideoAsbplayerConfig.defaults.tapTogglesPlayback,
+          ),
+          // 触屏双击画面（中带 / 双击快退快进关闭时任意位置）切换播放/暂停（BUG-221 /
+          // BUG-3310）。移动端与桌面触屏共用，故全平台可见；桌面鼠标双击是切全屏，
+          // 不读本开关。紧挨「双击快退快进」（order 90），两条双击设置放在一起。
+          SettingsSwitchItem(
+            id: 'video.playback.double_tap_toggles_playback',
+            title: t.video_setting_double_tap_toggles_playback,
+            subtitle: t.video_setting_double_tap_toggles_playback_hint,
+            icon: Icons.touch_app_outlined,
+            video: VideoPlacement(group: VideoGroup.playback, order: 91),
+            value: (SettingsContext settingsContext) =>
+                currentVideoAsbConfig(settingsContext).doubleTapTogglesPlayback,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) =>
+                    c.copyWith(doubleTapTogglesPlayback: value),
+              );
+            },
+            defaultValue:
+                VideoAsbplayerConfig.defaults.doubleTapTogglesPlayback,
           ),
           // 长按倍速 / 跳转步长 / 句末暂停都落在 videoAsbplayerConfig；无 host 时是
           // 全局默认（下次播放生效），host 在场经页面回调即时生效（与播放页内调一致）。

@@ -7077,5 +7077,7 @@
   "ai_provider_api_key_disable": "Stop using this key",
   "ai_provider_api_key_remove": "Remove this key",
   "ai_provider_api_keys_add": "Add another API key",
-  "ai_provider_api_keys_summary": "With several keys, a request that is rejected, rate-limited or out of credit switches to the next key and retries; the failing key cools down and is tried again later."
+  "ai_provider_api_keys_summary": "With several keys, a request that is rejected, rate-limited or out of credit switches to the next key and retries; the failing key cools down and is tried again later.",
+  "video_setting_double_tap_toggles_playback": "Double-tap video to play/pause",
+  "video_setting_double_tap_toggles_playback_hint": "On touch screens, double-tapping the middle of the video (or anywhere when double-tap seek is off) toggles playback"
 }

@@ -84,6 +84,21 @@ void main() {
     );
   });
 
+  test('BUG-3310: 旧档关了鼠标单击暂停（常经同步自电脑），双击暂停仍为开', () {
+    // 反馈 #lGxHvuULXI：电脑上关掉「点击画面播放/暂停」后整份配置同步到 iPhone，
+    // 手机双击中带就静默不再暂停。新字段不得从 tapTogglesPlayback 继承。
+    final VideoAsbplayerConfig synced =
+        VideoAsbplayerConfig.decode('{"tapTogglesPlayback":false}');
+    expect(synced.tapTogglesPlayback, isFalse);
+    expect(synced.doubleTapTogglesPlayback, isTrue);
+    expect(VideoAsbplayerConfig.defaults.doubleTapTogglesPlayback, isTrue);
+    expect(
+      VideoAsbplayerConfig.decode('{"doubleTapTogglesPlayback":"no"}')
+          .doubleTapTogglesPlayback,
+      isTrue,
+    );
+  });
+
   test('encode/decode round trips user playback preferences', () {
     const VideoAsbplayerConfig config = VideoAsbplayerConfig(
       seekSeconds: 5,
@@ -93,6 +108,7 @@ void main() {
       longPressSpeed: 2.5,
       dragSeekSensitivity: VideoSeekSensitivity.low,
       tapTogglesPlayback: false,
+      doubleTapTogglesPlayback: false,
       brightnessSwipeGesture: false,
       volumeSwipeGesture: false,
     );
@@ -107,6 +123,7 @@ void main() {
     expect(decoded.longPressSpeed, 2.5);
     expect(decoded.dragSeekSensitivity, VideoSeekSensitivity.low);
     expect(decoded.tapTogglesPlayback, isFalse);
+    expect(decoded.doubleTapTogglesPlayback, isFalse);
     expect(decoded.brightnessSwipeGesture, isFalse);
     expect(decoded.volumeSwipeGesture, isFalse);
   });

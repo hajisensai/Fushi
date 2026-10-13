@@ -148,9 +148,9 @@ void main() {
           body.contains(_flat('resolveVideoDoubleTapCenterAction('
               'desktopControls: _isDesktopVideoControls,'
               'touchLikePointer: isTouchLikePointerKind(event.kind),'
-              'tapTogglesPlayback: _asbConfig.tapTogglesPlayback')),
+              'doubleTapTogglesPlayback: _asbConfig.doubleTapTogglesPlayback')),
           isTrue,
-          reason: '中带分流必须按平台、指针类型与点击暂停开关判定');
+          reason: '中带分流必须按平台、指针类型与双击暂停开关判定');
       final int fullscreenCase =
           body.indexOf('caseVideoDoubleTapCenterAction.toggleFullscreen:');
       final int playbackCase =
@@ -223,14 +223,15 @@ void main() {
     });
   });
 
-  group('点击画面播放/暂停开关（tapTogglesPlayback）', () {
-    // 手势跑不了 headless（同本文件其余守卫），故钉三条源码不变量：
+  group('点击画面播放/暂停开关（tapTogglesPlayback）与双击暂停开关', () {
+    // 钉源码不变量：
     // ① 桌面 theme 写 `playAndPauseOnTap: _asbConfig.tapTogglesPlayback`（不得回到
     //    硬编码 `playAndPauseOnTap: true`）；
-    // ② 移动端双击中带 fallback 在 `playOrPause()` 之前有
-    //    `if (!_asbConfig.tapTogglesPlayback) return;` 门控；
-    // ③ schema 有 `id: 'video.playback.tap_toggles_playback'` 行并经
-    //    `commitVideoAsbConfig` + `copyWith(tapTogglesPlayback:` 落盘。
+    // ② 触屏双击中带的暂停由**独立的** `doubleTapTogglesPlayback` 门控，不再读
+    //    鼠标单击那个 `tapTogglesPlayback`（BUG-3310：配置跨设备同步，电脑关单击暂停
+    //    会把手机双击暂停一起静默关掉）；
+    // ③ 两个开关在 schema 各有一行并经 `commitVideoAsbConfig` 落盘；单击开关只在
+    //    桌面可见（移动端单击从不改播放态，露出来是假开关）。
     test('桌面 theme 的 playAndPauseOnTap 读用户配置，不硬编码 true', () {
       final String body = methodBody(pageCorpus,
           'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(');
@@ -241,14 +242,35 @@ void main() {
           reason: '不得把桌面单击暂停写死为 true（用户关不掉）');
     });
 
-    test('双击中带的播放/暂停受同一开关门控，鼠标全屏不受其影响', () {
+    test('双击中带的播放/暂停只受双击开关门控，不读鼠标单击开关（BUG-3310）', () {
       // 门控已收进 resolveVideoDoubleTapCenterAction（开关关 → none，鼠标全屏分支
-      // 排在门控之前），纯函数测试逐项覆盖；这里钉页面传入的是同一个开关。
+      // 排在门控之前），纯函数测试逐项覆盖；这里钉页面传入的是双击开关。
       final String body = methodBody(
           pageSrc, 'void _handleVideoPointerUp(PointerUpEvent event) {');
-      expect(body.contains('tapTogglesPlayback: _asbConfig.tapTogglesPlayback'),
+      expect(
+          body.contains(
+              'doubleTapTogglesPlayback: _asbConfig.doubleTapTogglesPlayback'),
           isTrue,
-          reason: '中带暂停必须受 tapTogglesPlayback 门控');
+          reason: '中带暂停必须受 doubleTapTogglesPlayback 门控');
+      expect(body.contains('_asbConfig.tapTogglesPlayback'), isFalse,
+          reason: 'BUG-3310：双击判定不得再读跨设备同步的鼠标单击开关');
+    });
+
+    test('schema 有「双击画面播放/暂停」行并经双路写穿落盘、全平台可见', () {
+      final int start =
+          schemaSrc.indexOf("id: 'video.playback.double_tap_toggles_playback'");
+      expect(start, greaterThanOrEqualTo(0),
+          reason: '缺双击暂停开关行 video.playback.double_tap_toggles_playback');
+      final int end = schemaSrc.indexOf("id: '", start + 1);
+      expect(end, greaterThan(start));
+      final String body = schemaSrc.substring(start, end);
+      expect(
+          body.contains('VideoPlacement(group: VideoGroup.playback'), isTrue);
+      expect(body.contains('doubleTapTogglesPlayback:'), isTrue,
+          reason: 'onChanged 必须 copyWith(doubleTapTogglesPlayback:) 落盘');
+      expect(body.contains('commitVideoAsbConfig('), isTrue);
+      // 移动端与桌面触屏都真实生效，不得按平台隐藏。
+      expect(body.contains('visible:'), isFalse);
     });
 
     test('schema 有「点击画面播放/暂停」行并经双路写穿落盘', () {
@@ -265,8 +287,9 @@ void main() {
           reason: 'onChanged 必须 copyWith(tapTogglesPlayback:) 落盘');
       expect(body.contains('commitVideoAsbConfig('), isTrue,
           reason: '必须经 commitVideoAsbConfig 双路写穿（host 即时回调 / 无 host 落 pref）');
-      // 全平台可见（桌面单击 / 移动端双击中带都受它管），不得加 visible 门把某端变假开关。
-      expect(body.contains('visible:'), isFalse, reason: '两端都真实生效，不应按平台隐藏');
+      // BUG-3310：只管桌面鼠标单击，移动端无任何效果 → 只在桌面可见。
+      expect(body.contains('visible: (_) => isDesktopPlatform'), isTrue,
+          reason: '鼠标单击开关在移动端是假开关，必须只在桌面可见');
     });
   });
 

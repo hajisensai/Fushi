@@ -735,11 +735,18 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Screenshot destination':
       'test/media/video/video_screenshot_destination_test.dart + '
       'test/pages/video_screenshot_filename_test.dart',
-  // 点击画面播放/暂停：生效点在 media_kit 控制条主题（桌面单击）与
-  // _handleVideoPointerUp 的移动端双击 fallback，两者都是真实手势 arena，harness 里
-  // 探不到。由 config round-trip（含默认 true / 旧档回落）+ 三条源码守卫（桌面主题
-  // 接线不得写死、移动端门控排在 playOrPause 之前、schema 行经双路写穿）咬住。
+  // 点击画面播放/暂停：生效点在 media_kit 桌面控制条主题（鼠标单击），真实手势
+  // arena，harness 里探不到。由 config round-trip（含默认 true / 旧档回落）+ 源码守卫
+  // （桌面主题接线不得写死、schema 行经双路写穿、只在桌面可见）咬住。
   'video/Tap video to play/pause':
+      'test/media/video/video_asbplayer_config_test.dart + '
+      'test/pages/video_double_tap_seek_guard_test.dart',
+  // 双击画面播放/暂停（BUG-3310）：生效点在 _handleVideoPointerUp 的触屏双击判据。
+  // 真实移动控制条 + 宿主 Listener 的手势行为测试驱动触屏双击并断言播放态切换；
+  // 判据纯函数、config 旧档回落（不继承 tapTogglesPlayback）与页面接线守卫各有专项。
+  'video/Double-tap video to play/pause':
+      'test/pages/video_mobile_double_tap_pause_test.dart + '
+      'test/media/video/video_double_tap_center_action_test.dart + '
       'test/media/video/video_asbplayer_config_test.dart + '
       'test/pages/video_double_tap_seek_guard_test.dart',
   'video/Obscure subtitles':
