@@ -7051,5 +7051,8 @@
   "video_setting_subtitle_outline": "Outline width",
   "video_setting_subtitle_outline_color": "Outline color",
   "video_setting_pause_ocr_hard_subtitle": "OCR on pause without subtitle track",
-  "video_setting_pause_ocr_hard_subtitle_hint": "For hardcoded subtitles: when no text subtitle is loaded, recognize the paused frame so you can tap words to look them up"
+  "video_setting_pause_ocr_hard_subtitle_hint": "For hardcoded subtitles: when no text subtitle is loaded, recognize the paused frame so you can tap words to look them up",
+  "resource_version_select_all": "Select all $n files",
+  "anime_download_filter_episode": "Episode $n only",
+  "anime_download_filter_single": "Single episodes"
 }

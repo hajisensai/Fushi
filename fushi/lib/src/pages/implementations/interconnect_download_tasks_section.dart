@@ -10,6 +10,12 @@ library;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
+import 'package:fushi/src/media/video/video_library_delete.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
+import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart'
+    show DeleteDecision, DeleteScope;
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
@@ -27,21 +33,67 @@ class InterconnectDownloadTasksSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final InterconnectDownloadManager manager =
-        ref.watch(interconnectDownloadManagerProvider);
+    final InterconnectDownloadManager manager = ref.watch(
+      interconnectDownloadManagerProvider,
+    );
     final List<DownloadTaskEntry> entries = <DownloadTaskEntry>[
       for (final InterconnectDownloadTask task in manager.tasks.values)
-        interconnectDownloadTaskEntry(manager, task),
+        interconnectDownloadTaskEntry(
+          manager,
+          task,
+          deleteCompletedFiles: _completedFilesDeleter(ref, manager, task),
+        ),
     ];
     return tasksBuilder(context, entries);
   }
 }
 
-/// 一条互联下载任务 → 下载中心条目（纯映射，供测试直接断言）。
-DownloadTaskEntry interconnectDownloadTaskEntry(
+/// 已完成的**扩展源视频**任务的「删除并删文件」：完成时它已被登记成普通本地视频行
+/// （bookUid == 任务键），所以走媒体库自己的删除链（放播放器句柄 → 删行 → 删原件），
+/// 再把任务记录移出列表。其它来源 / 状态返回 null（它们没有这条链）。
+Future<void> Function({required bool deleteFiles})? _completedFilesDeleter(
+  WidgetRef ref,
   InterconnectDownloadManager manager,
   InterconnectDownloadTask task,
 ) {
+  if (task.status != InterconnectDownloadStatus.completed ||
+      task.origin != InterconnectDownloadOrigin.extension ||
+      task.kind != InterconnectDownloadKind.video) {
+    return null;
+  }
+  return ({required bool deleteFiles}) async {
+    if (deleteFiles) {
+      final AppModel app = ref.read(appProvider);
+      final FushiDatabase db = app.database;
+      await deleteVideoBooksWithDecision(
+        repo: VideoBookRepository(db),
+        database: db,
+        pipeline: app.videoDownloadPipelineService,
+        bookUids: <String>[task.id],
+        decision: const DeleteDecision(
+          scope: DeleteScope.keepLocalOnly,
+          deleteLocalFiles: true,
+        ),
+      );
+    }
+    manager.clearTask(task.id);
+  };
+}
+
+/// 一条互联下载任务 → 下载中心条目（纯映射，供测试直接断言）。
+///
+/// [deleteCompletedFiles] 非 null 时已完成任务获得「删除（可连文件）」动作；此时
+/// 不再提供只清记录的 `clear`——扩展下载的成品清了记录就再没有地方删文件。
+DownloadTaskEntry interconnectDownloadTaskEntry(
+  InterconnectDownloadManager manager,
+  InterconnectDownloadTask task, {
+  Future<void> Function({required bool deleteFiles})? deleteCompletedFiles,
+}) {
+  final bool fromExtension =
+      task.origin == InterconnectDownloadOrigin.extension;
+  final String sectionTitle = fromExtension
+      ? t.download_method_extension
+      : t.download_interconnect_section_title;
   final String entryId = 'interconnect:${task.id}';
   final bool restartable = manager.canRestart(task.id);
   final bool unfinished = task.status == InterconnectDownloadStatus.paused ||
@@ -62,8 +114,8 @@ DownloadTaskEntry interconnectDownloadTaskEntry(
     },
     createdAt: task.startedAt,
     progress: task.progress,
-    collectionKey: 'interconnect',
-    collectionTitle: t.download_interconnect_section_title,
+    collectionKey: fromExtension ? 'interconnect-extension' : 'interconnect',
+    collectionTitle: sectionTitle,
     searchTerms: <String>[task.title],
     actions: DownloadTaskActions(
       pause:
@@ -74,7 +126,8 @@ DownloadTaskEntry interconnectDownloadTaskEntry(
       retry: restartable && task.status == InterconnectDownloadStatus.failed
           ? () => manager.resume(task.id)
           : null,
-      clear: task.status == InterconnectDownloadStatus.completed
+      clear: task.status == InterconnectDownloadStatus.completed &&
+              deleteCompletedFiles == null
           ? () async => manager.clearTask(task.id)
           : null,
       // 未完成任务的「删除」= 放弃续传：勾了删文件就连 `.part` 一起删，不勾只移出
@@ -87,23 +140,25 @@ DownloadTaskEntry interconnectDownloadTaskEntry(
                 manager.clearTask(task.id);
               }
             }
-          : null,
-      deletesFiles: unfinished && restartable,
+          : deleteCompletedFiles,
+      deletesFiles: (unfinished && restartable) || deleteCompletedFiles != null,
     ),
     builder: (BuildContext context) => DownloadTaskCard(
       key: ValueKey<String>(entryId),
       taskId: entryId,
       title: task.title,
       status: interconnectDownloadStatusLabel(task),
-      subtitle: t.download_interconnect_section_title,
-      method: task.origin == InterconnectDownloadOrigin.extension
+      subtitle: sectionTitle,
+      method: fromExtension
           ? DownloadTransferMethod.extension
           : DownloadTransferMethod.direct,
-      externalSource: task.origin == InterconnectDownloadOrigin.extension,
+      externalSource: fromExtension,
       progress: task.status == InterconnectDownloadStatus.completed
           ? 1
           : task.progress,
       leading: FushiIcon(switch (task.kind) {
+        InterconnectDownloadKind.video when fromExtension =>
+          DownloadTransferMethod.extension.icon,
         InterconnectDownloadKind.video => Icons.devices_outlined,
         InterconnectDownloadKind.book => Icons.menu_book_outlined,
         InterconnectDownloadKind.audiobook => Icons.headphones_outlined,

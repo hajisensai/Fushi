@@ -827,11 +827,19 @@ class MediaDetailMoreButton extends StatelessWidget {
     super.key,
     this.buttonKey,
     this.tooltip,
+    this.inlineMax = 0,
   });
 
   final List<MediaDetailMenuItem> items;
   final Key? buttonKey;
   final String? tooltip;
+
+  /// 动作数不超过它就平铺成图标钮，超过才收进「⋯」菜单（0 = 总是收进菜单，
+  /// 保持旧行为；视频域按工具栏规则传 [kInlineActionsMax]）。
+  final int inlineMax;
+
+  /// 工具栏默认展开的平铺上限。
+  static const int kInlineActionsMax = 3;
 
   Future<void> _open(BuildContext context) async {
     final RenderObject? box = context.findRenderObject();
@@ -869,6 +877,29 @@ class MediaDetailMoreButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) return const SizedBox.shrink();
+    // 工具栏默认展开：动作不多（<= [inlineMax]）就全部平铺成图标钮（文字进
+    // tooltip）；操作区本身是 Wrap，放不下会换行而不是丢进「⋯」。
+    if (items.length <= inlineMax) {
+      return Row(
+        key: buttonKey,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          for (int i = 0; i < items.length; i++) ...<Widget>[
+            if (i > 0) const SizedBox(width: 8),
+            Semantics(
+              label: items[i].label,
+              child: FushiIconButtonControl.filledTonal(
+                key: items[i].key,
+                tooltip: items[i].label,
+                size: FushiIconButtonSize.m,
+                onPressed: items[i].enabled ? items[i].onSelected : null,
+                icon: FushiIcon(items[i].icon),
+              ),
+            ),
+          ],
+        ],
+      );
+    }
     return Builder(
       builder: (BuildContext context) => FushiIconButtonControl.filledTonal(
         key: buttonKey,
@@ -1145,7 +1176,7 @@ class MediaDetailItemRow extends StatelessWidget {
               (number == null
                   ? null
                   : _NumberPill(number: number!, current: current));
-    final Widget? status = _buildStatus(context, cs);
+    final Widget? status = _buildStatus(context, cs, trailing != null);
     return FushiGroupedListItem(
       index: index,
       count: count,
@@ -1226,7 +1257,11 @@ class MediaDetailItemRow extends StatelessWidget {
     );
   }
 
-  Widget? _buildStatus(BuildContext context, ColorScheme cs) {
+  Widget? _buildStatus(
+    BuildContext context,
+    ColorScheme cs,
+    bool hasTrailing,
+  ) {
     final List<Widget> icons = <Widget>[
       if (completed)
         FushiIcon(
@@ -1241,11 +1276,20 @@ class MediaDetailItemRow extends StatelessWidget {
           FushiIcon(FushiIcons.pending, size: 20, color: cs.onSurfaceVariant),
         ],
         MediaDetailDownloadState.downloading => <Widget>[
+          // 下载中行尾的下载钮会被撤掉：进度圈要落在它原来的 48dp 命中区
+          // 中心（否则右偏 14dp 且只有 20dp 显得迷你）。有 trailing 时圈
+          // 仍排在状态位，只放大到 24dp。
           SizedBox.square(
-            dimension: 20,
-            child: FushiCircularProgressIndicator(
-              value: downloadProgress,
-              strokeWidth: 2.5,
+            key: const ValueKey<String>('media-detail-item-downloading'),
+            dimension: hasTrailing ? 24 : 48,
+            child: Center(
+              child: SizedBox.square(
+                dimension: 24,
+                child: FushiCircularProgressIndicator(
+                  value: downloadProgress,
+                  strokeWidth: 3,
+                ),
+              ),
             ),
           ),
         ],

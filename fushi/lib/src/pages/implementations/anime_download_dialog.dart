@@ -220,6 +220,9 @@ Future<void> showAnimeDownloadDialog(
   );
 }
 
+/// 选种结果的包形态筛选。
+enum _TorrentPackScope { all, batch, single }
+
 class AnimeDownloadDialog extends ConsumerStatefulWidget {
   const AnimeDownloadDialog({
     super.key,
@@ -349,6 +352,13 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   _TorrentSearchSnapshot? _appliedTorrentSearch;
   String _category = '1_0';
   bool _trustedOnly = false;
+
+  /// 「下载本集」入口带进来的集号：结果只留该集的单集发布 + 覆盖它的合集（默认开，
+  /// 点芯片可关）。null = 作品级入口，不按集过滤。
+  int? _episodeScope;
+
+  /// 结果的包形态筛选（展示层过滤，不重新请求）：全部 / 仅合集 / 仅单集。
+  _TorrentPackScope _packScope = _TorrentPackScope.all;
   TorrentSortKey _torrentSort = TorrentSortKey.seeders;
   List<JimakuEntry> _jimakuEntries = const <JimakuEntry>[];
   JimakuEntry? _selectedJimakuEntry;
@@ -554,6 +564,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       _appliedJimakuSearch = _currentJimakuSearchInput();
     }
     setState(() {
+      _episodeScope = presetEpisode;
+      _packScope = _TorrentPackScope.all;
       _selectedMedia = media;
       _selectedTorrent = null;
       _chosenSubs = const <(int?, JimakuFile)>[];
@@ -642,6 +654,30 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         setState(() => _loadingTorrents = false);
       }
     }
+  }
+
+  /// 展示层过滤后的结果：先按包形态（合集 / 单集），再按「本集」集号。
+  /// 合集只要集号区间覆盖该集就留；解析不出集号的单集发布保守保留，免得误杀。
+  List<NyaaTorrent> get _visibleTorrents {
+    final int? episode = _episodeScope;
+    if (_packScope == _TorrentPackScope.all && episode == null) {
+      return _torrents;
+    }
+    return <NyaaTorrent>[
+      for (final NyaaTorrent torrent in _torrents)
+        if (_packScope != _TorrentPackScope.batch || torrent.isBatch)
+          if (_packScope != _TorrentPackScope.single || !torrent.isBatch)
+            if (episode == null || _torrentCoversEpisode(torrent, episode))
+              torrent,
+    ];
+  }
+
+  bool _torrentCoversEpisode(NyaaTorrent torrent, int episode) {
+    final (int, int)? range = torrent.episodeRange;
+    if (range != null) return range.$1 <= episode && episode <= range.$2;
+    if (torrent.isBatch) return true;
+    final int? own = torrent.episode;
+    return own == null || own == episode;
   }
 
   int _compareTorrents(NyaaTorrent a, NyaaTorrent b) =>
@@ -1878,6 +1914,36 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
               selected: _trustedOnly,
               onSelected: _toggleTrustedOnly,
             ),
+            if (_episodeScope case final int episode)
+              FushiFilterChip(
+                key: const ValueKey<String>('anime-download-episode-scope'),
+                label: Text(t.anime_download_filter_episode(n: episode)),
+                visualDensity: VisualDensity.compact,
+                selected: true,
+                onSelected: (_) => setState(() => _episodeScope = null),
+              ),
+            FushiFilterChip(
+              key: const ValueKey<String>('anime-download-scope-batch'),
+              label: Text(t.anime_download_batch),
+              visualDensity: VisualDensity.compact,
+              selected: _packScope == _TorrentPackScope.batch,
+              onSelected: (bool on) => setState(
+                () => _packScope = on
+                    ? _TorrentPackScope.batch
+                    : _TorrentPackScope.all,
+              ),
+            ),
+            FushiFilterChip(
+              key: const ValueKey<String>('anime-download-scope-single'),
+              label: Text(t.anime_download_filter_single),
+              visualDensity: VisualDensity.compact,
+              selected: _packScope == _TorrentPackScope.single,
+              onSelected: (bool on) => setState(
+                () => _packScope = on
+                    ? _TorrentPackScope.single
+                    : _TorrentPackScope.all,
+              ),
+            ),
             FushiPopupMenuButton<TorrentSortKey>(
               tooltip: t.sort_by,
               initialValue: _torrentSort,
@@ -1935,16 +2001,26 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             '$categoryLabel · ${applied.trustedOnly ? t.anime_download_trusted_only : t.anime_download_unfiltered}',
       ));
     }
-    // replayKey = 本次结果列表：重搜 / 换排序（新列表对象）都重播一次进场。
+    final List<NyaaTorrent> visible = _visibleTorrents;
+    if (_torrentsLoaded && visible.isEmpty) {
+      // 原始结果非空、被筛选器滤光：不是「没搜到」，提示放宽筛选。
+      return _scrollableResultStatus(
+        FushiPlaceholderMessage(
+          icon: FushiIcons.searchOff,
+          message: t.anime_download_no_results,
+        ),
+      );
+    }
+    // replayKey = 本次结果列表 + 筛选：重搜 / 换排序 / 换筛选都重播一次进场。
     return FushiEntranceScope(
-      replayKey: _torrents,
+      replayKey: (_torrents, _packScope, _episodeScope),
       child: ListView.builder(
-        itemCount: _torrents.length,
+        itemCount: visible.length,
         itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
-          final NyaaTorrent torrent = _torrents[i];
+          final NyaaTorrent torrent = visible[i];
           return _groupedResultRow(
             index: i,
-            count: _torrents.length,
+            count: visible.length,
             onTap: () => _selectTorrent(torrent),
             child: FushiListItem(
               // 合集包 / 单集用形状区分（饼干 = 合集），可信发布组走 primary 色块。

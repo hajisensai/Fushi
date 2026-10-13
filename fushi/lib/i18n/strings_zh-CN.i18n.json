@@ -7051,5 +7051,8 @@
   "video_setting_subtitle_outline": "描边粗细",
   "video_setting_subtitle_outline_color": "描边颜色",
   "video_setting_pause_ocr_hard_subtitle": "无字幕轨时暂停也识别画面文字",
-  "video_setting_pause_ocr_hard_subtitle_hint": "适用于烧录在画面里的硬字幕：没有加载文本字幕时，暂停后识别画面文字，点字即可查词"
+  "video_setting_pause_ocr_hard_subtitle_hint": "适用于烧录在画面里的硬字幕：没有加载文本字幕时，暂停后识别画面文字，点字即可查词",
+  "resource_version_select_all": "全选本组 $n 个文件",
+  "anime_download_filter_episode": "仅第 $n 集",
+  "anime_download_filter_single": "单集"
 }

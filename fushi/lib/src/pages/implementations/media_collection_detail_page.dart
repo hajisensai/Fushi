@@ -1586,6 +1586,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         label: t.tag_label,
         onPressed: () => unawaited(editDetailCollectionTags()),
       ),
+      // 作品级下载入口：不限集号直接搜本作品的资源（此前只能长按某一集再从
+      // 「下载本集」进去，且进去是被限定在那一集的）。与补齐缺集同门。
+      if (_downloadsAvailable)
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('collection-hero-download'),
+          icon: FushiIcons.search,
+          label: t.video_discovery_resource_search,
+          onPressed: () => _openDownloadDialog(episodeNumber: null),
+        ),
       // 「补齐缺集」打开番剧下载对话框，与另外两个下载入口同门（见
       // [_downloadsAvailable]）。
       if (_downloadsAvailable)

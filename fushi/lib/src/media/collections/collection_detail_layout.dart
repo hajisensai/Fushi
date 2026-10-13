@@ -1070,6 +1070,26 @@ class CollectionEpisodeCard extends StatelessWidget {
         if (part.trim().isNotEmpty) part.trim(),
     ];
     final String? summary = this.summary?.trim();
+    // 「观看至 xx」与规格摘要（1080p · HEVC…）同处一行会互相挤：规格是 Expanded，
+    // 观看进度被压成省略号 / 把规格挤没。有规格槽时观看进度单独占上一行。
+    final bool watchedText = !completed && started && fraction == null;
+    final Widget watchedWidget = Row(
+      key: const ValueKey<String>('collection-episode-watched'),
+      children: <Widget>[
+        FushiIcon(FushiIcons.playCircle, color: fgVariant, size: 16),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            t.collection_episode_watched_at(
+              position: formatVideoPosition(positionMs),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: type.labelMedium.tabular.copyWith(color: fgVariant),
+          ),
+        ),
+      ],
+    );
     final Widget statusRow = Row(
       children: <Widget>[
         if (completed)
@@ -1079,20 +1099,8 @@ class CollectionEpisodeCard extends StatelessWidget {
             color: apple ? cs.primary : cs.tertiary,
             size: 18,
           )
-        else if (started && fraction == null) ...<Widget>[
-          FushiIcon(FushiIcons.playCircle, color: fgVariant, size: 16),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(
-              t.collection_episode_watched_at(
-                position: formatVideoPosition(positionMs),
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: type.labelMedium.tabular.copyWith(color: fgVariant),
-            ),
-          ),
-        ],
+        else if (watchedText && trailingStatus == null)
+          Flexible(child: watchedWidget),
         if (trailingStatus != null)
           Expanded(
             child: Align(
@@ -1204,6 +1212,8 @@ class CollectionEpisodeCard extends StatelessWidget {
                           )
                         else
                           const Spacer(),
+                        if (watchedText && trailingStatus != null)
+                          watchedWidget,
                         statusRow,
                       ],
                     ),

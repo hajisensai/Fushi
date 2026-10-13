@@ -652,10 +652,11 @@ void main() {
       );
       await tester.pump();
       await tester.pump();
-      // 「在网站打开」收进了作品头部的「⋯」菜单：先开菜单再点菜单项。
-      await tester.tap(find.byKey(const ValueKey<String>('online_work_more')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
+      // 动作只有两个：工具栏默认平铺成图标钮，不再收进「⋯」菜单。
+      expect(
+        find.byKey(const ValueKey<String>('anime_source_open_website')),
+        findsOneWidget,
+      );
       await tester.tap(
         find.byKey(const ValueKey<String>('anime_source_open_website')),
       );
