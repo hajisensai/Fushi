@@ -280,6 +280,13 @@ ruby > rt, ruby > rtc {
   /// 每个段落边界都净少 R（行高 1.65 时段间列距只剩段内的 0.80，用户 iOS 竖排截图即
   /// 此比例）。所以两半都 `!important`：阅读器接管 `p` 块首 padding 与 `p::after`，
   /// 书里给 `p` 的块首 padding（极少见）在 Apple 分页下被 R 取代。
+  ///
+  /// BUG-3277：块级 `p::after` 让 `p` 的直属文字落进**匿名块**，而 WebKit 不给匿名块
+  /// 里的文本画任何 `::highlight()`——拖选 / 查词 / 收藏 / 搜索高亮在 Apple 分页下全部
+  /// 隐形。负边距只能挂在块级盒上（行内盒不参与折叠截断），所以这里不改；所有 CSS
+  /// Highlight 写入点在建 Range 前调 `__fushiEnsureHighlightPaintable`（定义在
+  /// `ReaderSelectionScripts.source()`）把这类文本节点移进无样式行内包装。新增写入点同样
+  /// 要先过它（守卫 `test/reader/reader_highlight_paintable_bug3277_test.dart`）。
   static String _webKitPaginatedRubyReserveCss(double lineHeight) {
     switch (defaultTargetPlatform) {
       case TargetPlatform.iOS:
