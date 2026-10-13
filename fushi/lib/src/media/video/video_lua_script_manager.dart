@@ -19,10 +19,10 @@ export 'package:fushi/src/media/video/video_lua_capability.dart';
 /// `scripts` 选项是 init-only，media_kit 建 handle 后经 setProperty 写它是静默
 /// no-op。与 [applyShadersToPlayer]（video_shader_manager.dart）同一条
 /// `NativePlayer.command` 边界。**命令可达 ≠ 脚本能跑**：随包 libmpv 有没有编
-/// Lua 是按平台固定的二进制事实（[MpvLuaCapability]；Android 实测 `-Dlua=disabled`
-/// 没有，Windows 随包的 `fushi-discnav1` 系 libmpv 由 `tool/bluray/build_libmpv.ps1`
-/// 以 `-Dlua=disabled` 构建、同样没有），没编时 `load-script` 照样返回成功、然后什么
-/// 都不发生。
+/// Lua 是按平台固定的二进制事实（[MpvLuaCapability]；Android 随包 jar 自 BUG-3325
+/// 起编入 Lua 5.2，Windows 随包的 `fushi-discnav1` 系 libmpv 由
+/// `tool/bluray/build_libmpv.ps1` 以 `-Dlua=disabled` 构建、仍然没有），没编时
+/// `load-script` 照样返回成功、然后什么都不发生。
 /// 能力由 [VideoPlayerController] 建 Player 后读 `mpv-configuration` 探测并落
 /// pref，设置页据此如实说明；不按平台名硬编码。
 ///
@@ -117,6 +117,18 @@ List<List<String>> buildLoadScriptCommands(List<String> absolutePaths) {
 Map<String, String> buildLuaOsdProperties() => const <String, String>{
       'osd-level': '1',
       'osd-on-seek': 'no',
+    };
+
+/// 每次 `open` 之前都下发的 Lua 宿主基线属性，与有没有装用户脚本无关。纯函数。
+///
+/// libmpv 一旦编了 Lua，mpv 内置的 `ytdl_hook.lua` 也随之生效（`ytdl` 默认
+/// `yes`）：网络流加载失败时它会去拉起 `yt-dlp` / `youtube-dl` 子进程重新解析
+/// URL。Fushi 的在线流一律由 Dart 侧解析、经应用内中继（`http-proxy`）取字节，
+/// 不需要也不允许 mpv 绕开这条链路自己解析——移动端更没有那个可执行文件，只会
+/// 白白多一轮失败重试、把真实的加载错误盖掉。必须在 `open` 之前设：钩子挂在
+/// loadfile 的 `on_load` / `on_load_fail` 上。
+Map<String, String> buildLuaHostBaselineProperties() => const <String, String>{
+      'ytdl': 'no',
     };
 
 final RegExp _nonIdentifierChar = RegExp(r'[^A-Za-z0-9]');

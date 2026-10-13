@@ -3228,11 +3228,16 @@ class VideoPlayerController extends ChangeNotifier
     // `NativePlayer.command` 自带 waitForInitialization，不需要额外等 Player 就绪。
     //
     // BUG-2032：先探一次随包 libmpv 有没有编 Lua（每 controller 一次，`getProperty`
-    // 同样自带 waitForInitialization）。探测不门控下发——Android 没 Lua 时
+    // 同样自带 waitForInitialization）。探测不门控下发——没编 Lua 的 libmpv 上
     // `load-script` 本就是无害 no-op，门控的意义在设置页如实说明，不在这里省一条命令。
     _setDiscLoadStage('lua-setup');
     await _probeLuaCapability();
     if (!_isCurrentLoad(player, loadToken)) return; // 能力探测后换片/销毁。
+    // 编了 Lua 的 libmpv 自带 ytdl_hook：不关掉它，网络流加载失败时 mpv 会绕开
+    // Dart 解析链路去拉 yt-dlp（见 [buildLuaHostBaselineProperties]）。无论装没装
+    // 用户脚本都要下发，且必须早于 open。
+    await _setMpvProperties(buildLuaHostBaselineProperties());
+    if (!_isCurrentLoad(player, loadToken)) return; // 基线属性下发后换片/销毁。
     await applyLuaScripts(luaScriptPaths);
     if (!_isCurrentLoad(player, loadToken)) return; // 脚本装载后换片/销毁。
 
