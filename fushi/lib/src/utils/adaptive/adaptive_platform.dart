@@ -186,9 +186,13 @@ bool isCupertinoPlatform(BuildContext context) {
 /// `Checkbox.adaptive` / `AlertDialog.adaptive` / `CircularProgressIndicator.adaptive`
 /// …）按 [ThemeData.platform] 选外观：iOS / macOS 上出 Cupertino 绿开关、菊花、
 /// Cupertino 对话框。本仓 `auto` 下五平台统一 MD3（M3E），所以 Fushi 包装层的
-/// `.adaptive` 构造器只在**显式选了 Cupertino 设计系统**时才交给 SDK 的平台分派，
-/// 其余一律渲染 Material 控件（BUG-3309：iOS 上「来源顺序」对话框出绿色
-/// CupertinoSwitch 外观、不跟主题色）。判据只写这一处，包装层不再各自读平台。
+/// `.adaptive` 构造器只在设计系统是**隐藏的 `FushiDesignSystem.cupertino`** 时
+/// 才交给 SDK 的平台分派，其余（含隐藏的 `FushiDesignSystem.macos`）一律渲染
+/// Material 控件（BUG-3309：iOS 上「来源顺序」对话框出绿色 CupertinoSwitch
+/// 外观、不跟主题色）。判据只写这一处，包装层不再各自读平台。
+///
+/// 注意：用户可见的「Cupertino」（玻璃设计）不是这里说的 Cupertino——它走
+/// [isGlassDesign] 分支，包装层在进到本判据之前就已分流，不受此判据影响。
 bool useCupertinoAdaptiveControls(BuildContext context) =>
     isCupertinoPlatform(context);
 

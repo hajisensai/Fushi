@@ -208,6 +208,8 @@ class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog>
       key: ValueKey<String>('local_audio_source_handle_${prefs[index].name}'),
       tooltip: t.local_audio_source_reorder_tooltip,
       padding: EdgeInsets.zero,
+      // 命中 / 状态层与 48dp 热区同形（圆），视觉把手仍是 FushiDragHandle 原尺寸。
+      borderRadius: BorderRadius.circular(kMinInteractiveDimension / 2),
       onSelected: (int delta) => _move(prefs, index, index + delta),
       itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
         PopupMenuItem<int>(
@@ -221,7 +223,19 @@ class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog>
           child: _menuLabel(FushiIcons.expandMore, t.move_down),
         ),
       ],
-      child: const FushiDragHandle(),
+      // 把手视觉只有 size + 12 = 32px；触屏命中区按 M3 最小交互尺寸撑到 48dp，
+      // 把手居中、视觉尺寸不变（审查 PR #2098：32px 热区低于 48dp）。
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minWidth: kMinInteractiveDimension,
+          minHeight: kMinInteractiveDimension,
+        ),
+        child: Center(
+          widthFactor: 1,
+          heightFactor: 1,
+          child: FushiDragHandle(),
+        ),
+      ),
     );
   }
 

@@ -555,7 +555,8 @@ class FushiCircularProgressIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!isGlassDesign(context)) {
       final TargetPlatform platform = Theme.of(context).platform;
-      // MD3 下 `.adaptive` 只在显式 Cupertino 设计系统时才出菊花（BUG-3309）。
+      // MD3 下 `.adaptive` 只在隐藏的 FushiDesignSystem.cupertino 时才出菊花
+      // （BUG-3309；用户可见的「Cupertino」玻璃设计已在上面的 isGlassDesign 分流）。
       final bool cupertinoAdaptive =
           _variant == _CircularVariant.adaptive &&
           useCupertinoAdaptiveControls(context) &&

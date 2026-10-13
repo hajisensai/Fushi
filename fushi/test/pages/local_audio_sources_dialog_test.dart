@@ -172,6 +172,37 @@ void main() {
     ]);
   });
 
+  // 审查 PR #2098：把手视觉只有 32px（size 20 + 12），热区必须撑到 M3 最小交互
+  // 尺寸 48dp，且视觉尺寸不变；把手视觉框外、48dp 热区内的一点也要能打开菜单。
+  testWidgets('drag handle hit target is at least 48dp, visual stays 32', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(buildApp(threeSourceDialog((_) {})));
+    await tester.pumpAndSettle();
+
+    final Finder handleButton = find.byKey(
+      const ValueKey<String>('local_audio_source_handle_forvo'),
+    );
+    final Size hit = tester.getSize(handleButton);
+    expect(hit.width, greaterThanOrEqualTo(kMinInteractiveDimension));
+    expect(hit.height, greaterThanOrEqualTo(kMinInteractiveDimension));
+
+    final Finder visual = find.descendant(
+      of: handleButton,
+      matching: find.byType(FushiDragHandle),
+    );
+    expect(tester.getSize(visual), const Size(32, 32));
+
+    // 视觉框半宽 16，热区半宽 24：取中心右侧 22px，落在视觉框外、热区内。
+    final Offset edge = tester.getCenter(handleButton) + const Offset(22, 0);
+    expect(tester.getRect(visual).contains(edge), isFalse);
+    expect(tester.getRect(handleButton).contains(edge), isTrue);
+    await tester.tapAt(edge);
+    await tester.pumpAndSettle();
+    expect(find.text(t.move_down), findsOneWidget);
+    expect(find.text(t.move_up), findsOneWidget);
+  });
+
   testWidgets('uses FushiReorderableColumn (not SDK ReorderableListView)', (
     WidgetTester tester,
   ) async {
