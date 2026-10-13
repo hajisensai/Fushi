@@ -2065,6 +2065,17 @@ window.__fushiInstallShell = function(C) {
       charPos = segEnd;
     }
     if (!startNode || !endNode) return null;
+    // BUG-3277: every text node the match covers must be paintable before the
+    // Range exists (see __fushiEnsureHighlightPaintable in the selection script).
+    if (window.__fushiCssHighlightsSupported &&
+        typeof window.__fushiEnsureHighlightPaintable === 'function') {
+      var paintFrom = false;
+      for (var segIdx = 0; segIdx < segments.length; segIdx++) {
+        if (segments[segIdx].node === startNode) paintFrom = true;
+        if (paintFrom) window.__fushiEnsureHighlightPaintable(segments[segIdx].node);
+        if (segments[segIdx].node === endNode) break;
+      }
+    }
     var range = document.createRange();
     range.setStart(startNode, startOffset);
     range.setEnd(endNode, endOffset);

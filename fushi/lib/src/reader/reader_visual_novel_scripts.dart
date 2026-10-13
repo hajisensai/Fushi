@@ -3466,6 +3466,16 @@ $sharedInitViewport
           }
         }
         if (!startNode || !endNode) return false;
+        // BUG-3277: make every covered text node paintable before the Range
+        // exists (see __fushiEnsureHighlightPaintable in the selection script).
+        if (typeof window.__fushiEnsureHighlightPaintable === 'function') {
+          var paintFrom = false;
+          for (var segIdx = 0; segIdx < segments.length; segIdx++) {
+            if (segments[segIdx].node === startNode) paintFrom = true;
+            if (paintFrom) window.__fushiEnsureHighlightPaintable(segments[segIdx].node);
+            if (segments[segIdx].node === endNode) break;
+          }
+        }
         var range = document.createRange();
         range.setStart(startNode, startOffset);
         range.setEnd(endNode, endOffset);

@@ -379,6 +379,63 @@ const JAPANESE_RANGES = [
   ...FULLWIDTH_CHARACTER_RANGES,
 ];
 window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
+// BUG-3277: WebKit never paints ::highlight() on a text node whose layout parent is
+// an *anonymous* block -- i.e. text sitting directly in a block container that also
+// has an in-flow block-level child box (a real child element, or a ::before/::after
+// with display:block). Every selector form fails (p::highlight, *::highlight, ...);
+// an inline element parent paints fine; Blink is unaffected. The WebKit paginated
+// page-top ruby reserve (BUG-2761: block `p::after`) puts the text of *every* <p>
+// into such an anonymous block, so on iOS / macOS the drag-select, lookup,
+// favourite and search highlights all went invisible while their grips still
+// showed. Call this on each text node before building a Range for a CSS Highlight:
+// when the node is in that position it is moved, unchanged, into an unstyled inline
+// wrapper. Node identity and offsets are preserved (only Ranges created *before* the
+// move would collapse -- hence "before building"), and the wrapper adds no box, so
+// layout and text walkers are unaffected. Idempotent; a no-op wherever the engine
+// already lays the text out under a real element.
+if (typeof window.__fushiEnsureHighlightPaintable !== 'function') {
+  window.__fushiEnsureHighlightPaintable = (function() {
+    var WRAPPER_TAG = 'fushi-hl-text';
+    function inlineLevelDisplay(display) {
+      return !display || display === 'none' || display === 'contents' ||
+        display.indexOf('inline') === 0 || display.indexOf('ruby') === 0;
+    }
+    function inFlowBlockLevel(cs) {
+      if (!cs || inlineLevelDisplay(cs.display)) return false;
+      if (cs.position === 'absolute' || cs.position === 'fixed') return false;
+      return !cs.cssFloat || cs.cssFloat === 'none';
+    }
+    function generatedBlockBox(el, pseudo) {
+      var cs = window.getComputedStyle(el, pseudo);
+      var content = cs && cs.content;
+      if (!content || content === 'none' || content === 'normal') return false;
+      return inFlowBlockLevel(cs);
+    }
+    function textLaidOutAnonymously(parent) {
+      var display = window.getComputedStyle(parent).display || '';
+      if (inlineLevelDisplay(display)) return false;
+      // Text directly in a flex / grid container becomes an anonymous item.
+      if (display.indexOf('flex') >= 0 || display.indexOf('grid') >= 0) return true;
+      if (generatedBlockBox(parent, '::before') || generatedBlockBox(parent, '::after')) {
+        return true;
+      }
+      for (var child = parent.firstElementChild; child; child = child.nextElementSibling) {
+        if (inFlowBlockLevel(window.getComputedStyle(child))) return true;
+      }
+      return false;
+    }
+    return function(node) {
+      if (!node || node.nodeType !== Node.TEXT_NODE) return;
+      var parent = node.parentNode;
+      if (!parent || parent.nodeType !== Node.ELEMENT_NODE) return;
+      if (parent.localName === WRAPPER_TAG) return;
+      if (!textLaidOutAnonymously(parent)) return;
+      var wrapper = document.createElement(WRAPPER_TAG);
+      parent.insertBefore(wrapper, node);
+      wrapper.appendChild(node);
+    };
+  })();
+}
 window.fushiSelection = {
   selection: null,
   // TODO-1317: mobile long-press selection anchor.
@@ -2225,6 +2282,9 @@ window.fushiSelection = {
             this.selectionRubyElements.push(ruby);
           }
           continue;
+        }
+        if (typeof window.__fushiEnsureHighlightPaintable === 'function') {
+          window.__fushiEnsureHighlightPaintable(seg.node);
         }
         var range = document.createRange();
         range.setStart(seg.node, seg.start);
