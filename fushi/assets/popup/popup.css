@@ -362,7 +362,7 @@ html {
 }
 
 /* BUG-3274：长释义切块（popup.js __fushiChunkLongGlossary），预估高度由脚本写在内联
-   contain-intrinsic-size 上；空闲预热时摘掉类名回到普通渲染。 */
+   contain-intrinsic-size 上；进入预渲染区或空闲预热时摘掉类名回到普通渲染。 */
 .fushi-lazy-chunk {
     content-visibility: auto;
 }

@@ -183,6 +183,7 @@ const context = {
   renderStructuredContent: () => {},
   rewriteDictLinks: (html) => html,
   runDictScripts: () => {},
+  __fushiChunkLongGlossary: () => {},
   NUMERIC_TAG: /^\d+$/,
   isPartOfSpeech: () => false,
 };

@@ -683,7 +683,7 @@ String buildPopupEntriesJs(
   // 解析同等体量的对象字面量快（4 倍降速实测 347 → 236 ms），且每次查词的源码都不同，
   // 吃不到脚本编译缓存。jsonEncode 产出的是合法 JS 字符串字面量。
   final String entriesJsonLiteral = jsonEncode(entriesJson);
-  return '''    try { window.lookupEntries = JSON.parse($entriesJsonLiteral); } catch(e) { window.lookupEntries = []; }
+  return '''    try { window.lookupEntries = JSON.parse($entriesJsonLiteral); } catch(e) { console.warn('[popup] lookupEntries JSON.parse failed', e); window.lookupEntries = []; }
     try { window.kanjiResults = $kanjiResultsJson; } catch(e) { window.kanjiResults = []; }
     window.lookupPending = $pending;
     window.lookupIdle = $idle;
