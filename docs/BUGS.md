@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3007 条。点号进各自文件。
+> 共 3008 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -77,6 +77,7 @@
 | [BUG-3279](bugs/BUG-3279-lyrics-vertical-popup-squeezed.md) | ✅ | ✅ | 竖排歌词查词弹窗被压扁且上下乱跳 |
 | [BUG-3278](bugs/BUG-3278-video-continue-row-hover-side-clip.md) | ✅ | ✅ | 视频库继续观看横滚行悬停放大被视口左右裁剪 |
 | [BUG-3277](bugs/BUG-3277-zip-unicode-path-extra.md) | ✅ | ✅ | Yomitan zip 的 Info-ZIP Unicode Path(0x7075) 文件名被忽略，大辞林 24 张图缺失 |
+| [BUG-3276](bugs/BUG-3276-lua-subtitle-scripts.md) | ✅ | ✅ | Lua 脚本读不到字幕：字幕结束自动暂停脚本在 Fushi 无效 |
 | [BUG-3276](bugs/BUG-3276-bitmap-subs-remote-timing-ocr.md) | ✅ | ✅ | VobSub/DVB 图形字幕与远程播放没有逐句时间与整轨 OCR |
 | [BUG-3275](bugs/BUG-3275-graphic-subtitle-ocr-duplicate-slow.md) | ✅ | ✅ | 图形字幕整轨OCR文字重复且极慢 |
 | [BUG-3274](bugs/BUG-3274-popup-switch-word-false-empty.md) | ✅ | ✅ | 视频页换词时查词弹窗先闪「未找到」、滑动掉帧 |

@@ -87,6 +87,80 @@ void main() {
         reason: 'load-script 晚于 open 会错过首个文件的 start-file/file-loaded',
       );
     });
+
+    // #2014：字幕由 overlay 画、libmpv sid 恒为 no，sub-text 类脚本（字幕结束暂停）
+    // 永远收不到字幕。镜像轨的接线点任何一处断掉都是静默失效。
+    group('Lua 字幕镜像', () {
+      String body(String signature) {
+        final int fn = src.indexOf(signature);
+        expect(fn, greaterThan(0), reason: '找不到 $signature');
+        return src.substring(fn, src.indexOf('\n  }\n', fn));
+      }
+
+      test('换主字幕（setCues）即重挂镜像', () {
+        expect(
+          body('void setCues(List<AudioCue> cues) {'),
+          contains('_scheduleLuaSubtitleMirrorSync();'),
+        );
+      });
+
+      test('中途装脚本立刻镜像当前字幕', () {
+        final String fn = body('Future<void> applyLuaScripts(');
+        expect(
+          fn.indexOf('_scheduleLuaSubtitleMirrorSync();'),
+          greaterThan(fn.indexOf('applyLuaScriptsToPlayer(player, fresh)')),
+        );
+      });
+
+      test('关字幕 no() 会把镜像一起取消选中，之后要重挂', () {
+        expect(
+          body('Future<void> selectSubtitleTrack(SubtitleTrack track)'),
+          contains("if (track.id == 'no') _scheduleLuaSubtitleMirrorSync();"),
+        );
+      });
+
+      test('load()：镜像在 open 后的 setSubtitleTrack(no()) 之后才放行', () {
+        final int noTrack = src.indexOf(
+          'await player.setSubtitleTrack(SubtitleTrack.no());',
+          src.indexOf('await player.open('),
+        );
+        final int ready = src.indexOf('_luaSubtitleMirrorFileReady = true;');
+        expect(noTrack, greaterThan(0));
+        expect(ready, greaterThan(noTrack), reason: '早于 no() 选中的镜像会被它立刻取消选中');
+      });
+
+      test('选轨 / 数轨不把镜像轨当成用户的字幕源', () {
+        expect(
+          RegExp(
+            r"\.where\(\(SubtitleTrack t\) => t\.id != 'auto' && t\.id != 'no'\)",
+          ).hasMatch(src),
+          isFalse,
+          reason: '裸 auto/no 过滤会把镜像轨数进真实轨，改用 _isRealSubtitleTrack',
+        );
+        expect(
+          body('static bool _isRealSubtitleTrack(SubtitleTrack t) =>'),
+          contains('isLuaSubtitleMirrorTrack(t)'),
+        );
+      });
+
+      test('调轴烘进镜像 SRT，并随调轴重挂（mpv 的 sub-end 不含 sub-delay）', () {
+        expect(
+          body('Future<void> _syncLuaSubtitleMirror() async {'),
+          contains('buildLuaSubtitleMirrorSrt(_cues, delayMs: _delayMs)'),
+        );
+        expect(
+          body('void setDelayMs(int delayMs) {'),
+          contains('_scheduleLuaSubtitleMirrorSync();'),
+        );
+        expect(
+          src,
+          contains(
+            'int get _subtitleDelayMpvMs => _graphicSubtitleActive ? _delayMs : 0;',
+          ),
+          reason: '镜像轨若再叠 sub-delay，脚本看到的句尾会偏两倍',
+        );
+      });
+    });
   });
 
   group('settings schema', () {
