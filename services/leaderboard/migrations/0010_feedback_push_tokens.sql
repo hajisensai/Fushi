@@ -7,8 +7,9 @@
 --   token：发送要用原文（APNs 只认原令牌），只出现在发往 Apple 的请求路径里，任何接口都不回传。
 --   lang：通知文案语言（客户端登记时报的界面语言，归一成 zh / zh-Hant / ja / ko / en）。
 --
--- 编号说明：0007 被 PR #2103（feedback_video_mine）占用，本迁移接在它后面；两条迁移互不依赖，
--- 谁先合都能按文件名顺序应用。
+-- 编号说明：原名 0008_feedback_push_tokens.sql，与同期合入的 0008_media_video_pool.sql 撞号，
+-- 改到 0010（接在 0009_feedback_release.sql 后面）。本迁移只建表 / 建索引且全部 IF NOT EXISTS，
+-- 已经按旧名应用过的库再按新名应用一次是空操作。
 CREATE TABLE IF NOT EXISTS feedback_push_tokens (
   feedback_id TEXT NOT NULL,
   token_hash  TEXT NOT NULL,

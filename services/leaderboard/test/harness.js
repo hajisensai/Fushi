@@ -198,6 +198,7 @@ export const BASE = 'https://rank.example.com';
  *   now        服务器时刻（默认 Date.now()）
  *   body       对象（JSON）或 Uint8Array
  *   headers    额外头
+ *   ctx        Workers 的 ExecutionContext（省略 = 没有 waitUntil，后台任务在响应前做完）
  */
 let lastTime = 0;
 export async function call(env, method, path, opts = {}) {
@@ -231,7 +232,7 @@ export async function call(env, method, path, opts = {}) {
   const realNow = Date.now;
   Date.now = () => now;
   try {
-    const res = await worker.fetch(req, env);
+    const res = await worker.fetch(req, env, opts.ctx);
     if (env.autoSnapshot && method !== 'GET' && res.status < 300) await refreshSnapshots(env, now);
     const text = res.status === 204 ? '' : await res.text();
     let data = null;

@@ -605,7 +605,7 @@ SettingsDestination buildSystemDestination() {
             id: 'system.updates.feedback_replies',
             title: t.feedback_reply_notify_setting,
             subtitle: t.feedback_reply_notify_setting_hint,
-            icon: Icons.forum_outlined,
+            icon: FushiIcons.forum,
             value: (SettingsContext settingsContext) =>
                 settingsContext.ref.read(feedbackReplyAlertsProvider).enabled,
             onChanged: (SettingsContext settingsContext, bool value) async {

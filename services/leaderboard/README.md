@@ -204,7 +204,7 @@ node services/leaderboard/node_modules/wrangler/bin/wrangler.js secret put APNS_
 
 Apple 侧怎么建 Auth Key、App ID 勾 Push、sandbox / production 怎么选，见
 [`docs/agent/apple-signing.md`](../../docs/agent/apple-signing.md)「APNs 推送密钥」。迁移
-`0008_feedback_push_tokens.sql` 要先于部署应用（规则同上）。
+`0010_feedback_push_tokens.sql` 要先于部署应用（规则同上）。
 
 成本：登记扣 `write_rows`；每次处理最多 5 个出站请求（Workers Free 每请求子请求上限 50）；APNs 免费。
 **未实测**：Workers 出站 `fetch` 与 APNs 的 HTTP/2 握手要等配好密钥后用真机验证一次（日志里看

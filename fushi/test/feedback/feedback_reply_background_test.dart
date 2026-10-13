@@ -5,6 +5,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,6 +26,7 @@ import 'package:fushi/src/updates/update_notifier.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
+import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
@@ -64,6 +67,22 @@ class _FakeScheduler implements FeedbackReplyBackgroundScheduler {
   Future<void> cancel() async => calls.add('cancel');
 }
 
+/// 并发锁测试的 isolate 入口：对同一状态文件连做 40 次读改写，每次加一条自己的水位。
+Future<void> _concurrentStateWriter(List<Object> args) async {
+  final FeedbackReplyStateStore store = FeedbackReplyStateStore(
+    Directory(args[0] as String),
+  );
+  final String prefix = args[1] as String;
+  for (int i = 0; i < 40; i++) {
+    await store.update(
+      (FeedbackReplyState s) => s.withNotified(<FeedbackReplyAlert>[
+        FeedbackReplyAlert(id: '$prefix$i', title: '', devReplyAt: i + 1),
+      ]),
+    );
+  }
+  (args[2] as SendPort).send(true);
+}
+
 void main() {
   late Directory root;
   late List<http.Request> requests;
@@ -73,8 +92,16 @@ void main() {
   int now = 1000000;
   const int minute = 60 * 1000;
 
+  /// 服务端处理批量查进度时插一脚（模拟后台联网的那几秒里主 isolate 写了状态文件）。
+  Future<void> Function()? duringStatus;
+
   Future<http.Response> handle(http.Request r) async {
     requests.add(r);
+    final Future<void> Function()? hook = duringStatus;
+    if (hook != null && r.url.path.endsWith('/feedback/status')) {
+      duringStatus = null;
+      await hook();
+    }
     // 只认批量查进度；详情等别的请求一律 404（详情页显示错误态即可）。
     if (!r.url.path.endsWith('/feedback/status')) {
       return _json(<String, dynamic>{'error': 'not_found'}, 404);
@@ -127,6 +154,7 @@ void main() {
     root = Directory.systemTemp.createTempSync('fushi_feedback_bg_');
     requests = <http.Request>[];
     replies = <String, int?>{};
+    duringStatus = null;
     now = 1000000;
   });
   tearDown(() => root.deleteSync(recursive: true));
@@ -220,7 +248,10 @@ void main() {
         before,
         reason: '后台不写清单（主 isolate 可能同时在写）',
       );
-      expect((await FeedbackReplyStateStore(root).read()).notifiedReplyAt, 500);
+      expect(
+        (await FeedbackReplyStateStore(root).read()).notifiedAt('aaaaaaaaaa'),
+        500,
+      );
 
       now += 20 * minute;
       expect(await poll(), isEmpty, reason: '同一条回复不再提醒');
@@ -273,7 +304,132 @@ void main() {
         nowMs: () => now,
       );
       expect(n.sent, isEmpty);
-      expect((await FeedbackReplyStateStore(root).read()).notifiedReplyAt, 500);
+      expect(
+        (await FeedbackReplyStateStore(root).read()).notifiedAt('aaaaaaaaaa'),
+        500,
+      );
+    });
+
+    test('水位按条记：后发现、但回复时刻更早的那条照样提醒', () async {
+      await seed(<FeedbackTicket>[
+        _ticket('aaaaaaaaaa'),
+        _ticket('bbbbbbbbbb'),
+      ]);
+      replies = <String, int?>{'aaaaaaaaaa': 500};
+      expect((await poll()).map((FeedbackReplyAlert a) => a.id), <String>[
+        'aaaaaaaaaa',
+      ]);
+      // b 的回复（400）比已提醒的 a（500）早，只是这一轮才被发现（例如主 isolate 先查到
+      // 账户条目 a、后台后查到本机回执 b）。全局单水位会把它永远吞掉。
+      replies = <String, int?>{'aaaaaaaaaa': 500, 'bbbbbbbbbb': 400};
+      now += 20 * minute;
+      expect((await poll()).map((FeedbackReplyAlert a) => a.id), <String>[
+        'bbbbbbbbbb',
+      ]);
+      final FeedbackReplyState st = await FeedbackReplyStateStore(root).read();
+      expect(st.notifiedAt('aaaaaaaaaa'), 500);
+      expect(st.notifiedAt('bbbbbbbbbb'), 400);
+    });
+
+    test('旧版全局水位平滑迁移：不晚于它的旧回复不重新提醒，更新的照常', () async {
+      await seed(<FeedbackTicket>[
+        _ticket('aaaaaaaaaa'),
+        _ticket('bbbbbbbbbb'),
+      ]);
+      final File f = FeedbackReplyStateStore(root).file;
+      f.parent.createSync(recursive: true);
+      f.writeAsStringSync(
+        jsonEncode(<String, dynamic>{
+          'lastRefreshAt': 0,
+          'notifiedReplyAt': 500,
+          'permissionAsked': true,
+        }),
+      );
+      replies = <String, int?>{'aaaaaaaaaa': 450, 'bbbbbbbbbb': 600};
+      expect((await poll()).map((FeedbackReplyAlert a) => a.id), <String>[
+        'bbbbbbbbbb',
+      ]);
+      final FeedbackReplyState st = await FeedbackReplyStateStore(root).read();
+      expect(st.legacyNotifiedReplyAt, 500);
+      expect(st.notifiedAt('aaaaaaaaaa'), 500);
+      expect(st.notifiedAt('bbbbbbbbbb'), 600);
+      expect(st.permissionAsked, isTrue);
+    });
+
+    test('联网期间主 isolate 提醒了同一条、改了别的字段：后台不重复提醒、不覆盖', () async {
+      await seed(<FeedbackTicket>[_ticket('aaaaaaaaaa')]);
+      replies = <String, int?>{'aaaaaaaaaa': 500};
+      duringStatus = () async {
+        await FeedbackReplyStateStore(root).update(
+          (FeedbackReplyState s) => s
+              .withNotified(const <FeedbackReplyAlert>[
+                FeedbackReplyAlert(
+                  id: 'aaaaaaaaaa',
+                  title: 't',
+                  devReplyAt: 500,
+                ),
+              ])
+              .copyWith(
+                permissionAsked: true,
+                serverUrl: 'https://fresh.example',
+              ),
+        );
+      };
+      expect(await poll(), isEmpty, reason: '锁内用最新水位重新挑选');
+      final FeedbackReplyState st = await FeedbackReplyStateStore(root).read();
+      expect(st.permissionAsked, isTrue, reason: '后台只改自己负责的字段');
+      expect(st.serverUrl, 'https://fresh.example');
+      expect(st.notifiedAt('aaaaaaaaaa'), 500);
+    });
+  });
+
+  group('状态文件跨 isolate 排他锁', () {
+    test('两个 isolate 并发读改写：谁写的条目都不丢', () async {
+      // 两个真 isolate（与后台任务 / 主 isolate 同一进程的关系一致）；入口是顶层函数，
+      // 消息只带路径与前缀。
+      Future<void> writer(String prefix) async {
+        final ReceivePort done = ReceivePort();
+        await Isolate.spawn(_concurrentStateWriter, <Object>[
+          root.path,
+          prefix,
+          done.sendPort,
+        ]);
+        await done.first;
+        done.close();
+      }
+
+      await Future.wait(<Future<void>>[writer('a'), writer('b')]);
+      final FeedbackReplyState st = await FeedbackReplyStateStore(root).read();
+      expect(st.notified, hasLength(80));
+      expect(FeedbackReplyStateStore(root).lockFile.existsSync(), isFalse);
+    });
+
+    test('锁被占着就等；持锁方被杀留下的过期锁会被收走', () async {
+      final FeedbackReplyStateStore store = FeedbackReplyStateStore(root);
+      store.file.parent.createSync(recursive: true);
+      store.lockFile.createSync();
+      bool done = false;
+      final Future<void> pending = store
+          .update((FeedbackReplyState s) => s.copyWith(permissionAsked: true))
+          .then((_) => done = true);
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(done, isFalse, reason: '别人持锁时不进临界区');
+      store.lockFile.deleteSync();
+      await pending;
+      expect((await store.read()).permissionAsked, isTrue);
+
+      // 过期锁（持有者在临界区里被杀）。
+      store.lockFile.createSync();
+      store.lockFile.setLastModifiedSync(
+        DateTime.now().subtract(
+          FeedbackReplyStateStore.staleLockAge + const Duration(seconds: 5),
+        ),
+      );
+      await store.update(
+        (FeedbackReplyState s) => s.copyWith(alertTitle: 'after-stale'),
+      );
+      expect((await store.read()).alertTitle, 'after-stale');
+      expect(store.lockFile.existsSync(), isFalse);
     });
   });
 
@@ -335,6 +491,51 @@ void main() {
       await a.setEnabled(false);
       expect(enabled, isFalse);
       expect(scheduler.calls, <String>['schedule', 'cancel']);
+    });
+
+    test('只有账户条目（后台查不了）：不排后台任务；前台检查照常覆盖它们', () async {
+      final LeaderboardIdentity id = LeaderboardIdentity.generate(
+        random: Random(5),
+      );
+      await FeedbackTicketStore.account(
+        root,
+        id.accountId,
+      ).write(<FeedbackTicket>[
+        FeedbackTicket(
+          id: 'cccccccccc',
+          ticket: '',
+          title: 'via-account',
+          category: FeedbackCategory.bug,
+          createdAt: 100,
+          status: FeedbackStatus.open,
+          updatedAt: 100,
+        ),
+      ]);
+      final FeedbackReplyNotifier c = FeedbackReplyNotifier(
+        service: FeedbackService(
+          supportRoot: () async => root,
+          client: () => LeaderboardClient(
+            baseUrl: Uri.parse('https://rank.example'),
+            httpClientFactory: () async => MockClient(handle),
+            identity: id,
+          ),
+        ),
+        supportRoot: () async => root,
+        nowMs: () => now,
+      );
+      expect(await c.hasActiveTickets(), isTrue);
+      expect(await c.hasBackgroundPollableTickets(), isFalse);
+      scheduler = _FakeScheduler();
+      await FeedbackReplyAlerts(
+        checker: c,
+        systemNotifier: notifier,
+        scheduler: scheduler,
+        readEnabled: () => enabled,
+        writeEnabled: (bool v) async => enabled = v,
+        serverUrl: () async => 'https://custom.example',
+        alertTitle: () => 'TITLE',
+      ).syncSchedule();
+      expect(scheduler.calls, <String>['cancel']);
     });
 
     test('没有未结案反馈：撤掉后台任务（不让系统白拉起 app）', () async {

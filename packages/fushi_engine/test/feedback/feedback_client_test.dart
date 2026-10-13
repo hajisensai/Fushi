@@ -397,4 +397,51 @@ void main() {
     expect(del.url.path, '/v1/feedback/abcdefghij/push');
     expect(jsonDecode(del.body), <String, dynamic>{'token': 'ab' * 32});
   });
+
+  test('APNs 推送令牌：账户条目（ticket 为空串）凭账户签名登记 / 注销；没有账户直接抛', () async {
+    final h = _harness(
+      (http.Request r) async => _json(<String, dynamic>{
+        'registered': r.method == 'PUT',
+        if (r.method == 'PUT') 'delivering': false,
+      }),
+      identity: _id,
+    );
+    expect(
+      await h.client.registerFeedbackPushToken(
+        'abcdefghij',
+        '',
+        token: 'ab' * 32,
+        lang: 'en',
+      ),
+      isFalse,
+    );
+    await h.client.unregisterFeedbackPushToken(
+      'abcdefghij',
+      '',
+      token: 'ab' * 32,
+    );
+    for (final http.Request r in h.requests) {
+      expect(r.url.path, '/v1/feedback/abcdefghij/push');
+      expect(r.headers.containsKey('X-Fushi-Ticket'), isFalse);
+      expect(r.headers['X-Fushi-Account'], _id.accountId);
+      expect(r.headers.containsKey('X-Fushi-Sig'), isTrue);
+    }
+    expect(h.requests.map((http.Request r) => r.method), <String>[
+      'PUT',
+      'DELETE',
+    ]);
+
+    final LeaderboardClient anon = _harness(
+      (http.Request r) async => _json(<String, dynamic>{}),
+    ).client;
+    expect(
+      () => anon.registerFeedbackPushToken(
+        'abcdefghij',
+        '',
+        token: 'ab' * 32,
+        lang: 'en',
+      ),
+      throwsStateError,
+    );
+  });
 }

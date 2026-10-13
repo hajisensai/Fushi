@@ -7393,7 +7393,7 @@
   "feedback_fix_platform_not_tracked": "This platform doesn't get official update builds, so we can't tell when this fix reaches your version.",
   "feedback_reply_notification_title": "A developer replied to your feedback",
   "feedback_reply_notify_setting": "Notify me of feedback replies",
-  "feedback_reply_notify_setting_hint": "Checks in the background for replies to feedback you submitted and shows a system notification",
+  "feedback_reply_notify_setting_hint": "在背景檢查這部裝置提交的回饋有沒有新回覆，有就發系統通知（其他裝置提交的在開啟 App 時檢查）",
   "settings_destination_models": "模型",
   "settings_destination_models_summary": "LLM、OCR、語音轉錄、語音合成與模型檔案",
   "models_section_files": "模型檔案",

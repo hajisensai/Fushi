@@ -13,7 +13,6 @@
 // 怎么提醒（snackbar / 系统通知）由调用方决定，见 feedback_reply_alerts.dart。
 
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/feedback/feedback_reply_state.dart';
@@ -60,13 +59,20 @@ class FeedbackReplyNotifier {
   Future<FeedbackReplyStateStore> stateStore() async =>
       FeedbackReplyStateStore(await _supportRoot());
 
-  /// 本机有没有还在等开发者处理的反馈（决定要不要排后台检查）。
+  /// 「我的反馈」（本机回执 + 账户条目）里有没有还在等开发者处理的（决定前台 / 桌面
+  /// 要不要刷新）。
   Future<bool> hasActiveTickets() async {
     await service.load();
-    return service.tickets.any(_isActive);
+    return service.tickets.any(feedbackAwaitingReply);
   }
 
-  static bool _isActive(FeedbackTicket t) => !t.status.isClosed && !t.missing;
+  /// 有没有**后台 isolate 查得了**的未结案反馈（决定要不要排后台检查）。与后台检查本身
+  /// 同一个判据 [feedbackBackgroundPollable]：只有账户条目时排了任务也只会被系统白拉起、
+  /// 永远发不出通知。
+  Future<bool> hasBackgroundPollableTickets() async {
+    await service.load();
+    return service.tickets.any(feedbackBackgroundPollable);
+  }
 
   /// 该刷新就刷新一次，返回要提醒的新回复（见 [FeedbackReplyCheck]）。
   /// [force]：不看节流（前台收到了远程推送——服务端刚说有新进展，立刻刷新红点）。
@@ -96,8 +102,8 @@ class FeedbackReplyNotifier {
       final List<FeedbackTicket> unseen = service.tickets
           .where((FeedbackTicket t) => t.hasUnseenReply)
           .toList();
-      // 判据在写之前现读水位：刷新的那几秒里后台 isolate 可能已经提醒过同一条。
-      late List<FeedbackReplyAlert> fresh;
+      // 判据在锁内现读水位：刷新的那几秒里后台 isolate 可能已经提醒过同一条。
+      List<FeedbackReplyAlert> fresh = const <FeedbackReplyAlert>[];
       Set<String> pushCovered = const <String>{};
       await store.update((FeedbackReplyState s) {
         pushCovered = s.pushCovered;
@@ -113,15 +119,9 @@ class FeedbackReplyNotifier {
           seenAt: <String, int>{
             for (final FeedbackTicket t in unseen) t.id: t.seenAt,
           },
-          notifiedReplyAt: s.notifiedReplyAt,
+          state: s,
         );
-        return s.copyWith(
-          lastRefreshAt: now,
-          notifiedReplyAt: fresh.fold<int>(
-            s.notifiedReplyAt,
-            (int m, FeedbackReplyAlert a) => math.max(m, a.devReplyAt),
-          ),
-        );
+        return s.withNotified(fresh).copyWith(lastRefreshAt: now);
       });
       // 由远程推送提醒的反馈（iOS，feedback_push.dart）已经弹过系统通知：水位照推，
       // 应用内提示不再重复。

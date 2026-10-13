@@ -7393,7 +7393,7 @@
   "feedback_fix_platform_not_tracked": "This platform doesn't get official update builds, so we can't tell when this fix reaches your version.",
   "feedback_reply_notification_title": "A developer replied to your feedback",
   "feedback_reply_notify_setting": "Notify me of feedback replies",
-  "feedback_reply_notify_setting_hint": "Checks in the background for replies to feedback you submitted and shows a system notification",
+  "feedback_reply_notify_setting_hint": "この端末から送信したフィードバックへの返信をバックグラウンドで確認し、システム通知でお知らせします（他の端末から送信したものはアプリを開いたときに確認します）",
   "settings_destination_models": "モデル",
   "settings_destination_models_summary": "LLM, OCR, speech recognition, speech synthesis and model files",
   "models_section_files": "Model files",

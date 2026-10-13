@@ -46,6 +46,16 @@ function submit(env, title = '阅读器白屏') {
   });
 }
 
+function submitAs(env, user, title = '账户提交') {
+  return call(env, 'POST', '/v1/feedback', {
+    body: { category: 'bug', title, body: '打开某本书白屏' },
+    headers: { 'CF-Connecting-IP': nextIp() },
+    key: user.key,
+    account: user.id,
+    now: NOW,
+  });
+}
+
 function push(env, method, id, ticket, body, now = NOW) {
   return call(env, method, `/v1/feedback/${id}/push`, { body, headers: { 'X-Fushi-Ticket': ticket }, now });
 }
@@ -88,6 +98,35 @@ describe('推送令牌登记', () => {
     // 注销。
     expect((await push(env, 'DELETE', a.id, a.ticket, { token: TOKEN_A })).data).toEqual({ registered: false });
     expect(tokens(env, a.id)).toHaveLength(0);
+  });
+
+  it('账户条目（没有 ticket）凭同账户签名登记 / 注销；别人的账户、匿名反馈一律 404', async () => {
+    const { env } = await pushEnv();
+    const owner = await registerUser(env, 'owner', { now: NOW });
+    const other = await registerUser(env, 'other', { now: NOW });
+    const mine = (await submitAs(env, owner)).data;
+    const anon = (await submit(env, '匿名')).data;
+    const signedPush = (u, method, id, body) =>
+      call(env, method, `/v1/feedback/${id}/push`, { key: u.key, account: u.id, body, now: NOW });
+
+    expect((await signedPush(owner, 'PUT', mine.id, { token: TOKEN_A, lang: 'en' })).data)
+      .toEqual({ registered: true, delivering: true });
+    expect(tokens(env, mine.id)).toEqual([{ token: TOKEN_A, lang: 'en' }]);
+    // 别人的账户给这条登记：404（不区分不存在 / 不是你的）。
+    expect((await signedPush(other, 'PUT', mine.id, { token: TOKEN_B })).status).toBe(404);
+    expect((await signedPush(other, 'DELETE', mine.id, { token: TOKEN_A })).status).toBe(404);
+    // 匿名提交的反馈只能凭 ticket。
+    expect((await signedPush(owner, 'PUT', anon.id, { token: TOKEN_B })).status).toBe(404);
+    expect(tokens(env, mine.id)).toHaveLength(1);
+    expect(tokens(env, anon.id)).toHaveLength(0);
+    // 签名不对照常 401。
+    const bad = await call(env, 'PUT', `/v1/feedback/${mine.id}/push`, {
+      key: owner.key, account: owner.id, badSig: true, body: { token: TOKEN_B }, now: NOW,
+    });
+    expect(bad.status).toBe(401);
+    // 注销。
+    expect((await signedPush(owner, 'DELETE', mine.id, { token: TOKEN_A })).data).toEqual({ registered: false });
+    expect(tokens(env, mine.id)).toHaveLength(0);
   });
 
   it('每条反馈最多 N 个令牌：满了挤掉最久没登记的', async () => {
@@ -159,6 +198,39 @@ describe('开发者处理后的 APNs 推送', () => {
     expect(tokens(env, a.id)).toHaveLength(1);
     await devUpdate(env, dev, a.id, { status: 'resolved' });
     expect(sent).toHaveLength(2);
+    expect(tokens(env, a.id)).toHaveLength(0);
+  });
+
+  it('生产路径（ctx.waitUntil）：响应不等推送完成，推送与结案清令牌随后执行', async () => {
+    const { env, sent } = await pushEnv();
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const deliver = env.APNS_FETCH;
+    env.APNS_FETCH = async (url, init) => {
+      await gate;
+      return deliver(url, init);
+    };
+    const dev = await makeDev(env);
+    const a = (await submit(env)).data;
+    await push(env, 'PUT', a.id, a.ticket, { token: TOKEN_A, lang: 'en' });
+    const pending = [];
+    const ctx = { waitUntil: (p) => pending.push(p) };
+    const r = await call(env, 'POST', `/v1/dev/feedback/${a.id}`, {
+      key: dev.key, account: dev.id, body: { status: 'resolved', reply: 'fixed' }, now: NOW, ctx,
+    });
+    // 回复已写入、响应已返回，推送还卡在 APNs 那一步：没有出站、令牌也还没清。
+    expect(r.status).toBe(200);
+    expect(r.data.messages.at(-1).body).toBe('fixed');
+    expect(pending.length).toBeGreaterThan(0);
+    expect(sent).toHaveLength(0);
+    expect(tokens(env, a.id)).toHaveLength(1);
+
+    release();
+    await Promise.all(pending);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].body.aps.alert.body).toBe('A developer replied to your feedback');
     expect(tokens(env, a.id)).toHaveLength(0);
   });
 

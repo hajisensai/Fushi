@@ -77,8 +77,10 @@ class FeedbackReplyAlerts {
     await syncSchedule();
   }
 
-  /// 后台检查该不该排着：开关开 **且** 本机有未结案反馈才排，否则撤掉——没东西可等
-  /// 的时候不该让系统隔 15 分钟拉起一次 app。排之前把后台 isolate 需要、却自己拿
+  /// 后台检查该不该排着：开关开 **且** 有后台查得了的未结案反馈（本机回执，见
+  /// [FeedbackReplyNotifier.hasBackgroundPollableTickets]）才排，否则撤掉——没东西可等、
+  /// 或者只剩后台查不了的账户条目时，不该让系统隔 15 分钟白拉起一次 app。账户条目由
+  /// 前台 / 桌面运行中的检查覆盖，iOS 上还有远程推送。排之前把后台 isolate 需要、却自己拿
   /// 不到的运行环境（服务器地址、当前语言的通知标题）写进状态文件。
   ///
   /// 启动、回到前台、提交反馈后、改开关时调用；幂等。顺带对齐 iOS 远程推送的令牌登记
@@ -87,7 +89,7 @@ class FeedbackReplyAlerts {
     await syncPush();
     if (!scheduler.supported) return;
     try {
-      if (!enabled || !await checker.hasActiveTickets()) {
+      if (!enabled || !await checker.hasBackgroundPollableTickets()) {
         await scheduler.cancel();
         return;
       }

@@ -308,7 +308,7 @@ $W secret put APNS_BUNDLE_ID --config wrangler.toml   # app.fushi.reader
 $W secret put APNS_ENV       --config wrangler.toml   # production（见下）
 ```
 
-部署前先应用迁移 `0008_feedback_push_tokens.sql`（Actions 部署勾 `apply_migrations`）。
+部署前先应用迁移 `0010_feedback_push_tokens.sql`（Actions 部署勾 `apply_migrations`）。
 
 ### sandbox 与 production
 

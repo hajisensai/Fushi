@@ -256,7 +256,7 @@ void main() {
     final Future<void> center = s.refresh();
     await waitForRequests(1);
 
-    final Future<int> checked = n.check();
+    final Future<int> checked = notice(n);
     // 让 check() 走到 service.refresh()（读本机缓存与节流状态都是本地 IO）。
     await Future<void>.delayed(const Duration(milliseconds: 100));
     failing = true;
@@ -284,7 +284,7 @@ void main() {
     final Future<void> center = s.refresh();
     await waitForRequests(1);
 
-    final Future<int> checked = n.check();
+    final Future<int> checked = notice(n);
     await Future<void>.delayed(const Duration(milliseconds: 100));
     held.complete();
     await center;

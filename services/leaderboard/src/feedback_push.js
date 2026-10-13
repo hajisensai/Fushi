@@ -1,8 +1,8 @@
 // 反馈回复的 APNs 推送（iOS；Android 无 GMS 不接 FCM，继续走 App 的后台检查；桌面不变）。
 //
-// 反馈人（凭本条反馈的 ticket，与其它反馈人接口同一口径）：
-//   PUT    /v1/feedback/:id/push   [X-Fushi-Ticket] {token, lang?} → 200 {registered: true, delivering}
-//   DELETE /v1/feedback/:id/push   [X-Fushi-Ticket] {token}        → 200 {registered: false}
+// 反馈人（凭本条反馈的 ticket 或提交所用账户的签名，与其它反馈人接口同一口径 feedbackForReporter）：
+//   PUT    /v1/feedback/:id/push   [凭据] {token, lang?} → 200 {registered: true, delivering}
+//   DELETE /v1/feedback/:id/push   [凭据] {token}        → 200 {registered: false}
 // 令牌是 APNs device token 的十六进制串；一条反馈最多 PUSH_LIMITS.tokensPerFeedback 个，
 // 满了挤掉最久没登记过的那个（换机 / 重装后的新令牌总能登记上）。已结案的反馈不收登记。
 //
@@ -75,7 +75,7 @@ function cleanToken(body) {
 }
 
 /**
- * PUT /v1/feedback/:id/push。调用方已用 feedbackForTicket 核对过 ticket；[closed] = 该反馈
+ * PUT /v1/feedback/:id/push。调用方已用 feedbackForReporter 核对过凭据；[closed] = 该反馈
  * 已结案（结案后不再有回复可推，登记了也会在下次处理时被清掉，直接拒）。
  */
 export async function registerPushToken(env, row, body, now, { closed }) {

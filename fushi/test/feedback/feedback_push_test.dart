@@ -4,6 +4,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/feedback/feedback_push.dart';
@@ -13,6 +14,7 @@ import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
+import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -25,9 +27,10 @@ http.Response _json(Object body, [int status = 200]) => http.Response.bytes(
 FeedbackTicket _ticket(
   String id, {
   FeedbackStatus status = FeedbackStatus.open,
+  bool viaAccount = false,
 }) => FeedbackTicket(
   id: id,
-  ticket: 'T$id',
+  ticket: viaAccount ? '' : 'T$id',
   title: 'title-$id',
   category: FeedbackCategory.bug,
   createdAt: 100,
@@ -72,15 +75,24 @@ void main() {
   late List<http.Request> requests;
   Map<String, int?> replies = <String, int?>{};
   bool delivering = true;
+
+  /// 反馈 id → 服务端对它的 PUT /push 回的错误状态码（模拟服务端已单方面删令牌 / 限流）。
+  Map<String, int> pushErrors = <String, int>{};
+
+  /// 反馈 id → 该条 PUT 时服务端答复的 delivering（缺省用 [delivering]）。
+  Map<String, bool> deliveringById = <String, bool>{};
   int now = 1000000;
   const int minute = 60 * 1000;
 
   Future<http.Response> handle(http.Request r) async {
     requests.add(r);
     if (r.url.path.endsWith('/push')) {
+      final String id = r.url.pathSegments[2];
+      final int? err = pushErrors[id];
+      if (err != null) return _json(<String, dynamic>{'error': 'x'}, err);
       return _json(<String, dynamic>{
         'registered': r.method == 'PUT',
-        if (r.method == 'PUT') 'delivering': delivering,
+        if (r.method == 'PUT') 'delivering': deliveringById[id] ?? delivering,
       });
     }
     if (!r.url.path.endsWith('/feedback/status')) {
@@ -104,9 +116,12 @@ void main() {
     });
   }
 
+  LeaderboardIdentity? identity;
+
   LeaderboardClient client([Uri? baseUrl]) => LeaderboardClient(
     baseUrl: baseUrl ?? Uri.parse('https://rank.example'),
     httpClientFactory: () async => MockClient(handle),
+    identity: identity,
   );
 
   Future<void> seed(List<FeedbackTicket> tickets) =>
@@ -116,14 +131,16 @@ void main() {
     _FakePush push, {
     bool enabled = true,
     bool permitted = true,
+    Future<List<FeedbackTicket>> Function()? tickets,
   }) => FeedbackPushRegistrar(
     platform: push,
-    tickets: () => FeedbackTicketStore(root).read(),
+    tickets: tickets ?? () => FeedbackTicketStore(root).read(),
     client: client,
     stateStore: () async => FeedbackReplyStateStore(root),
     enabled: () => enabled,
     permitted: () async => permitted,
     lang: () => 'zh-CN',
+    nowMs: () => now,
   );
 
   List<String> pushCalls() => <String>[
@@ -138,6 +155,9 @@ void main() {
     requests = <http.Request>[];
     replies = <String, int?>{};
     delivering = true;
+    pushErrors = <String, int>{};
+    deliveringById = <String, bool>{};
+    identity = null;
     now = 1000000;
   });
   tearDown(() => root.deleteSync(recursive: true));
@@ -159,13 +179,125 @@ void main() {
 
       final FeedbackReplyState s = await FeedbackReplyStateStore(root).read();
       expect(s.pushToken, _tokenA);
-      expect(s.pushRegistered, <String>['aaaaaaaaaa']);
+      expect(s.pushRegistrations.keys, <String>['aaaaaaaaaa']);
       expect(s.pushCovered, <String>{'aaaaaaaaaa'});
 
       requests.clear();
       await registrar(push).sync();
-      expect(pushCalls(), isEmpty, reason: '已登记的不再重复登记');
+      expect(pushCalls(), isEmpty, reason: '复核间隔内不重复登记');
+
+      now += 20 * minute;
+      await registrar(push).sync();
+      expect(pushCalls(), <String>[
+        'PUT aaaaaaaaaa $_tokenA',
+      ], reason: '过了复核间隔向服务端重新登记（服务端可能已单方面删了令牌）');
     });
+
+    test('服务端单方面删了令牌：复核 PUT 失败 → 不再算推送覆盖；服务端恢复后自愈', () async {
+      await seed(<FeedbackTicket>[_ticket('aaaaaaaaaa')]);
+      final _FakePush push = _FakePush(token: _tokenA);
+      await registrar(push).sync();
+      expect((await FeedbackReplyStateStore(root).read()).pushCovered, <String>{
+        'aaaaaaaaaa',
+      });
+
+      // 例如反馈被结案清令牌后又被重开、本机清单还没刷新：服务端回 404。
+      pushErrors = <String, int>{'aaaaaaaaaa': 404};
+      now += 20 * minute;
+      await registrar(push).sync();
+      FeedbackReplyState s = await FeedbackReplyStateStore(root).read();
+      expect(s.pushCovered, isEmpty, reason: 'PUT 成功才算覆盖');
+      expect(s.pushRegistrations, isEmpty);
+
+      // 本机路径因此照常提醒这条的新回复。
+      replies = <String, int?>{'aaaaaaaaaa': 500};
+      final List<FeedbackReplyAlert> bg = await pollFeedbackRepliesInBackground(
+        supportRoot: root,
+        client: (Uri u) => client(u),
+        defaultBaseUrl: Uri.parse('https://rank.example'),
+        nowMs: now,
+      );
+      expect(bg.map((FeedbackReplyAlert a) => a.id), <String>['aaaaaaaaaa']);
+
+      // 失败的那条下次 sync 立刻重试（不等复核间隔），成功即恢复覆盖。
+      pushErrors = <String, int>{};
+      requests.clear();
+      await registrar(push).sync();
+      expect(pushCalls(), <String>['PUT aaaaaaaaaa $_tokenA']);
+      s = await FeedbackReplyStateStore(root).read();
+      expect(s.pushCovered, <String>{'aaaaaaaaaa'});
+    });
+
+    test('delivering 逐条记录：只有服务端答复会推送的那条算覆盖', () async {
+      await seed(<FeedbackTicket>[
+        _ticket('aaaaaaaaaa'),
+        _ticket('bbbbbbbbbb'),
+      ]);
+      deliveringById = <String, bool>{'bbbbbbbbbb': false};
+      await registrar(_FakePush(token: _tokenA)).sync();
+      final FeedbackReplyState s = await FeedbackReplyStateStore(root).read();
+      expect(s.pushRegistrations.keys.toSet(), <String>{
+        'aaaaaaaaaa',
+        'bbbbbbbbbb',
+      });
+      expect(s.pushCovered, <String>{'aaaaaaaaaa'});
+    });
+
+    test('账户条目（没有 ticket）凭账户签名登记、注销', () async {
+      identity = LeaderboardIdentity.generate(random: Random(3));
+      List<FeedbackTicket> mine = <FeedbackTicket>[
+        _ticket('cccccccccc', viaAccount: true),
+      ];
+      final _FakePush push = _FakePush(token: _tokenA);
+      await registrar(push, tickets: () async => mine).sync();
+      expect(pushCalls(), <String>['PUT cccccccccc $_tokenA']);
+      final http.Request put = requests.single;
+      expect(put.headers.containsKey('X-Fushi-Ticket'), isFalse);
+      expect(put.headers['X-Fushi-Account'], identity!.accountId);
+      expect((await FeedbackReplyStateStore(root).read()).pushCovered, <String>{
+        'cccccccccc',
+      });
+
+      requests.clear();
+      mine = <FeedbackTicket>[
+        _ticket('cccccccccc', viaAccount: true, status: FeedbackStatus.closed),
+      ];
+      await registrar(push, tickets: () async => mine).sync();
+      expect(pushCalls(), <String>['DELETE cccccccccc $_tokenA']);
+      expect(requests.single.headers['X-Fushi-Account'], identity!.accountId);
+    });
+
+    test(
+      '旧版状态文件（pushRegistered + 全局 pushDelivering）平滑迁移、下次 sync 立即复核',
+      () async {
+        await seed(<FeedbackTicket>[_ticket('aaaaaaaaaa')]);
+        final File f = FeedbackReplyStateStore(root).file;
+        f.parent.createSync(recursive: true);
+        f.writeAsStringSync(
+          jsonEncode(<String, dynamic>{
+            'lastRefreshAt': 0,
+            'notifiedReplyAt': 0,
+            'pushToken': _tokenA,
+            'pushRegistered': <String>['aaaaaaaaaa'],
+            'pushDelivering': true,
+          }),
+        );
+        final FeedbackReplyState old = await FeedbackReplyStateStore(
+          root,
+        ).read();
+        expect(old.pushCovered, <String>{'aaaaaaaaaa'});
+        expect(old.pushRegistrations['aaaaaaaaaa']!.confirmedAt, 0);
+
+        await registrar(_FakePush(token: _tokenA)).sync();
+        expect(pushCalls(), <String>['PUT aaaaaaaaaa $_tokenA']);
+        expect(
+          (await FeedbackReplyStateStore(
+            root,
+          ).read()).pushRegistrations['aaaaaaaaaa']!.confirmedAt,
+          now,
+        );
+      },
+    );
 
     test('反馈结案 → 注销；开关关 → 全部注销并清空状态', () async {
       await seed(<FeedbackTicket>[
@@ -183,7 +315,7 @@ void main() {
       await registrar(push).sync();
       expect(pushCalls(), <String>['DELETE aaaaaaaaaa $_tokenA']);
       expect(
-        (await FeedbackReplyStateStore(root).read()).pushRegistered,
+        (await FeedbackReplyStateStore(root).read()).pushRegistrations.keys,
         <String>['bbbbbbbbbb'],
       );
 
@@ -193,7 +325,7 @@ void main() {
       expect(push.tokenCalls, 2, reason: '关着不再向系统要令牌');
       final FeedbackReplyState s = await FeedbackReplyStateStore(root).read();
       expect(s.pushToken, isNull);
-      expect(s.pushRegistered, isEmpty);
+      expect(s.pushRegistrations, isEmpty);
       expect(s.pushCovered, isEmpty);
     });
 
@@ -244,14 +376,21 @@ void main() {
       await FeedbackReplyStateStore(root).update(
         (FeedbackReplyState s) => s.withPush(
           token: _tokenA,
-          registered: <String>['aaaaaaaaaa'],
-          delivering: true,
+          registrations: <String, FeedbackPushRegistration>{
+            'aaaaaaaaaa': FeedbackPushRegistration(
+              delivering: true,
+              confirmedAt: now,
+            ),
+          },
         ),
       );
       replies = <String, int?>{'aaaaaaaaaa': 500, 'bbbbbbbbbb': 400};
       final List<FeedbackReplyAlert> bg = await poll();
       expect(bg.map((FeedbackReplyAlert a) => a.id), <String>['bbbbbbbbbb']);
-      expect((await FeedbackReplyStateStore(root).read()).notifiedReplyAt, 500);
+      expect(
+        (await FeedbackReplyStateStore(root).read()).notifiedAt('aaaaaaaaaa'),
+        500,
+      );
 
       replies = <String, int?>{'aaaaaaaaaa': 700};
       now += 20 * minute;
@@ -265,7 +404,10 @@ void main() {
       ).check();
       expect(fg.announce, isFalse, reason: '推送已经提醒过');
       expect(fg.unseen, 1, reason: '红点照常');
-      expect((await FeedbackReplyStateStore(root).read()).notifiedReplyAt, 700);
+      expect(
+        (await FeedbackReplyStateStore(root).read()).notifiedAt('aaaaaaaaaa'),
+        700,
+      );
     });
 
     test('服务端还没配 APNs（delivering=false）：照旧由本机路径提醒', () async {

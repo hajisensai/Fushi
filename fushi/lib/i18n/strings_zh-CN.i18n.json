@@ -7393,7 +7393,7 @@
   "feedback_fix_platform_not_tracked": "本平台不随官方渠道更新，无法判断你的版本何时包含这个修复。",
   "feedback_reply_notification_title": "开发者回复了你的反馈",
   "feedback_reply_notify_setting": "反馈有新回复时通知我",
-  "feedback_reply_notify_setting_hint": "在后台检查你提交的反馈有没有新回复，有就发系统通知",
+  "feedback_reply_notify_setting_hint": "在后台检查这台设备提交的反馈有没有新回复，有就发系统通知（其他设备提交的在打开 App 时检查）",
   "settings_destination_models": "模型",
   "settings_destination_models_summary": "LLM、OCR、语音转录、语音合成与模型文件",
   "models_section_files": "模型文件",

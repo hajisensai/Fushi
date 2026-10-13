@@ -14,7 +14,7 @@
 //   [凭据] = X-Fushi-Ticket（本条回执），或提交时所用账户的签名（feedbackForReporter）；二者择一，
 //   带了 ticket 就只认 ticket。匿名提交的反馈只能凭 ticket。补传附件（PUT）只认 ticket——签名要覆盖
 //   整个请求体，视频没法边收边验。
-//   PUT / DELETE /v1/feedback/:id/push        [X-Fushi-Ticket] {token, lang?} 登记 / 注销 APNs 推送令牌（feedback_push.js）
+//   PUT / DELETE /v1/feedback/:id/push        [凭据] {token, lang?} 登记 / 注销 APNs 推送令牌（feedback_push.js）
 //
 // 开发者（签名，账户 role = 'dev'；网页处理台 devconsole.js 复用同一组函数）：
 //   GET  /v1/dev/feedback?status&cursor&limit&q   q：编号精确匹配，或标题 / 正文包含（LIKE）
@@ -1257,8 +1257,10 @@ export async function routeFeedback(request, env, url, now, io) {
   }
 
   if ((method === 'PUT' || method === 'DELETE') && (m = RE.push.exec(path))) {
-    const row = await feedbackForTicket(env, m[1], ticket);
-    const body = io.parse(await io.readBody(4 * 1024));
+    // 与追加说明同一凭据：本机回执带 ticket，跨设备凭账户列出的条目（没有 ticket）用账户签名。
+    const bytes = await io.readBody(4 * 1024);
+    const row = await feedbackForReporter(request, env, m[1], io, bytes, { mutating: true });
+    const body = io.parse(bytes);
     const out = method === 'PUT'
       ? await registerPushToken(env, row, body, now, { closed: CLOSED_STATUSES.includes(row.status) })
       : await unregisterPushToken(env, row, body);

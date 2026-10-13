@@ -708,35 +708,43 @@ class LeaderboardClient {
   /// device token 的十六进制串；[lang] 是界面语言标签（服务端据此选通知文案）。
   /// 反馈已结案时服务端回 409 `feedback_closed`（原样抛出，调用方据此不再登记）。
   /// 返回服务端此刻是否真的会推送（`delivering`：APNs 已配置）。
+  /// [ticket] 为空串（凭账户列出的条目）时用账户签名（见 [_reporterAuth]）。
   Future<bool> registerFeedbackPushToken(
     String id,
     String ticket, {
     required String token,
     required String lang,
   }) async {
+    final ({bool signed, Map<String, String>? headers}) auth = _reporterAuth(
+      ticket,
+    );
     final JsonMap j = await _sendJson(
       'PUT',
       '/v1/feedback/${_segment(id)}/push',
       body: <String, String>{'token': token, 'lang': lang},
-      signed: false,
-      headers: <String, String>{'X-Fushi-Ticket': ticket},
+      signed: auth.signed,
+      headers: auth.headers,
     );
     return j['delivering'] == true;
   }
 
-  /// 注销本条反馈下的这个 APNs 令牌（不存在也算成功）。
+  /// 注销本条反馈下的这个 APNs 令牌（不存在也算成功）。凭据同
+  /// [registerFeedbackPushToken]。
   Future<void> unregisterFeedbackPushToken(
     String id,
     String ticket, {
     required String token,
   }) async {
+    final ({bool signed, Map<String, String>? headers}) auth = _reporterAuth(
+      ticket,
+    );
     await _send(
       'DELETE',
       '/v1/feedback/${_segment(id)}/push',
       bytes: _encodeJson(<String, String>{'token': token}),
       contentType: _json,
-      signed: false,
-      headers: <String, String>{'X-Fushi-Ticket': ticket},
+      signed: auth.signed,
+      headers: auth.headers,
     );
   }
 
