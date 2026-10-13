@@ -116,6 +116,9 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.onAudioImport,
     this.onPickAlignment,
     this.onTranscribe,
+    this.onStopTts,
+    this.onOpenTtsVoices,
+    this.onSwitchTtsVoice,
     this.cueStudyOffset,
     this.onOpenStatistics,
     this.autofocusSearch = false,
@@ -205,6 +208,13 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
 
   /// 有声书面板「资源」页：对当前音频做设备端转录生成字幕。null = 本机不支持。
   final VoidCallback? onTranscribe;
+
+  /// TTS 朗读会话：停止朗读 / 打开朗读声音设置（[ReaderAudiobookPanel] 同名参数）。
+  final VoidCallback? onStopTts;
+  final VoidCallback? onOpenTtsVoices;
+
+  /// TTS 朗读中快速切换声音（[ReaderAudiobookPanel.onSwitchTtsVoice]）。
+  final VoidCallback? onSwitchTtsVoice;
 
   /// cue 音频坐标 → 章内学习单位偏移（[ReaderAudiobookPanel.cueStudyOffset]）。
   final int? Function(SubtitleRematchFragment fragment)? cueStudyOffset;
@@ -1020,6 +1030,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       onAudioImport: widget.onAudioImport,
       onPickAlignment: widget.onPickAlignment,
       onTranscribe: widget.onTranscribe,
+      onStopTts: widget.onStopTts,
+      onOpenTtsVoices: widget.onOpenTtsVoices,
+      onSwitchTtsVoice: widget.onSwitchTtsVoice,
       cueStudyOffset: widget.cueStudyOffset,
     );
   }

@@ -1919,12 +1919,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
             ShortcutAction.readerOpenAudiobook,
           ),
           semanticsId: 'hibiki.reader.header.audiobook',
-          // 已挂有声书 → 侧栏面板；没有 → 直接进导入。
+          // 已挂有声书（含 TTS 朗读）→ 侧栏面板；没有 → 听书入口（朗读 / 导入）。
           onPressed: _audiobookController != null
               ? () => unawaited(
                     _showAppearanceSheet(initialSubPage: 'audiobook'),
                   )
-              : _openAudioImportDialog,
+              : _openListenEntry,
         );
       case ReaderControlItem.fullscreen:
         return ReaderHeaderAction(
@@ -2137,6 +2137,18 @@ extension _ReaderChrome on _ReaderFushiPageState {
             if (item != ReaderControlItem.title &&
                 !_isDuplicatedByAudiobookPlayBar(item))
               _readerControlButton(_readerControlAction(item)),
+      // TTS 朗读：播放条上直接换声音（不必进面板 / 设置页）。
+      if (_ttsReadAlong != null)
+        _readerControlButton(
+          ReaderHeaderAction(
+            key: const ValueKey<String>('fushi_play_bar_tts_voice_switch'),
+            icon: FushiIcons.voice,
+            label: t.audiobook_tts_voices_section,
+            tooltip: '${t.audiobook_tts_voices_section}: '
+                '${ttsVoiceDisplayName(_ttsReadAlong!.preset)}',
+            onPressed: () => unawaited(_openTtsVoiceQuickSwitch()),
+          ),
+        ),
     ];
     final Widget? status = _playbackStatusInline ? _buildBarStatusText() : null;
     if (buttons.isEmpty) return status;
@@ -2613,15 +2625,26 @@ extension _ReaderChrome on _ReaderFushiPageState {
           : null,
       // 有声书面板「资源」页：对齐文件 / 转录只对 EPUB 有声书开放（standalone
       // SRT 书走 _openSrtBookReimport 一条路）。
+      onStopTts: _ttsReadAlong != null
+          ? () => unawaited(_stopTtsReading())
+          : null,
+      onOpenTtsVoices: _ttsReadAlong != null
+          ? () => unawaited(_openTtsVoiceSettings())
+          : null,
+      onSwitchTtsVoice: _ttsReadAlong != null
+          ? () => unawaited(_openTtsVoiceQuickSwitch())
+          : null,
       onPickAlignment:
           listeningEnabled &&
               _srtBookUid == null &&
+              _ttsReadAlong == null &&
               _audiobookController != null
           ? () => unawaited(_openAlignmentImportDialog())
           : null,
       onTranscribe:
           listeningEnabled &&
               _srtBookUid == null &&
+              _ttsReadAlong == null &&
               _audiobookController != null &&
               isAsrSupported
           ? () => unawaited(_transcribeFromAudiobookPanel())

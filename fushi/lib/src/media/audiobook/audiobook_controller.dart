@@ -810,9 +810,14 @@ class AudiobookPlayerController extends ChangeNotifier {
   ///
   /// 加载完成后会从 Hive (`appModel` box) 读取上次保存的播放位置并
   /// `seek` 过去，避免页面重建（背景回前台 / 路由重建）时音频从头开始。
+  ///
+  /// [audioSources] 非空时用它代替按 [audioFiles] 建的文件源（TTS 朗读：每句一个
+  /// 按需合成的流式源），两者必须一一对应——[audioFiles] 仍是制卡切句子音频时读的
+  /// 本地路径。
   Future<void> load({
     required Audiobook audiobook,
     required List<File> audioFiles,
+    List<AudioSource>? audioSources,
     bool initialFollowAudio = true,
     int initialDelayMs = 0,
     double initialSpeed = 1.0,
@@ -846,7 +851,21 @@ class AudiobookPlayerController extends ChangeNotifier {
 
     await _configureAudioSession();
 
-    if (audioFiles.length == 1) {
+    if (audioSources != null) {
+      assert(audioSources.length == audioFiles.length);
+      try {
+        await _player
+            .setAudioSource(
+              ConcatenatingAudioSource(children: audioSources),
+              preload: false,
+            )
+            .timeout(const Duration(seconds: 60));
+      } catch (e, stack) {
+        debugPrint('AudiobookController.setSource(stream): $e\n$stack');
+        _loadReady.complete();
+        rethrow;
+      }
+    } else if (audioFiles.length == 1) {
       try {
         await _player
             .setAudioSource(
@@ -1022,14 +1041,17 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 立即基于当前播放位置解析 currentCue，避免播放栏/高亮在 positionStream
   /// 下一次 tick 之前出现空白（尤其是暂停状态下 positionStream 不发事件）。
   void setChapterCues(List<AudioCue> cues) {
-    _chapterCues = List<AudioCue>.from(cues)
-      ..sort((a, b) => a.startMs.compareTo(b.startMs));
-    _playbackOrderedCues = List<AudioCue>.from(cues)
-      ..sort((AudioCue a, AudioCue b) {
-        final int byFile = a.audioFileIndex.compareTo(b.audioFileIndex);
-        if (byFile != 0) return byFile;
-        return a.startMs.compareTo(b.startMs);
-      });
+    // 播放顺序 = (文件下标, 文件内起点)。只按 startMs 排会把多文件书各文件的 cue
+    // 交错在一起（startMs 是文件内相对值），上一句 / 下一句就跳到别的文件；每句一个
+    // 文件的 TTS 朗读里 startMs 全是 0，只按它排顺序完全随机。
+    int playbackOrder(AudioCue a, AudioCue b) {
+      final int byFile = a.audioFileIndex.compareTo(b.audioFileIndex);
+      if (byFile != 0) return byFile;
+      return a.startMs.compareTo(b.startMs);
+    }
+
+    _chapterCues = List<AudioCue>.from(cues)..sort(playbackOrder);
+    _playbackOrderedCues = List<AudioCue>.from(cues)..sort(playbackOrder);
     // 跨章守卫期间只替换 cue 列表，不清 _currentCue 也不重算——
     // 否则 _updateCurrentCue 被 guard 挡住，_currentCue 卡 null，
     // 守卫放下后第一次 tick 会匹配到 cue[0] 导致进度清零。
@@ -1070,6 +1092,13 @@ class AudiobookPlayerController extends ChangeNotifier {
     }
     _allBookCueIdToIndex = idMap;
     _rebuildFileDurations();
+  }
+
+  /// cue 的 [AudioCue.endMs] 被就地更新后（TTS 朗读：一句合成完才知道真实时长）
+  /// 重算各文件时长与全书时间轴。cue 对象身份不变，阅读器 / 歌词持有的引用照常有效。
+  void refreshCueTimings() {
+    _rebuildFileDurations();
+    notifyListeners();
   }
 
   /// 从全书 cue 推算每个文件时长 = 该文件内 cue 的最大 endMs。推算口径只有
@@ -1208,6 +1237,60 @@ class AudiobookPlayerController extends ChangeNotifier {
       rethrow;
     }
     notifyListeners();
+  }
+
+  /// 换掉整列流式音频源（TTS 朗读播放中换声音）：cue / 时间轴 / 会话不变，只把
+  /// 每句的音频源换成新声音的源，落到第 [fileIndex] 句句首；[play] 为真时随即续播。
+  ///
+  /// 必须整列重设而不是只 seek：just_audio 已经向旧源要过、预读过的音频（当前句与
+  /// 下一句）留在播放器里，不换源就会先播完旧声音。数量必须与现有文件列表一致。
+  Future<void> replaceStreamSources({
+    required List<File> audioFiles,
+    required List<AudioSource> audioSources,
+    required int fileIndex,
+    required bool play,
+  }) async {
+    await _loadReady.future;
+    // 换声音途中会话被停掉（[AudiobookSession.stop] 先立 `_stopRequested` 再
+    // dispose）：不再碰已停 / 将释放的播放器，也不在 dispose 之后 notifyListeners。
+    if (_stopRequested) return;
+    if (audioSources.length != audioFiles.length ||
+        audioFiles.length != _audioFiles.length) {
+      throw ArgumentError.value(
+          audioSources.length, 'audioSources', 'Must match the loaded files');
+    }
+    if (fileIndex < 0 || fileIndex >= audioFiles.length) {
+      throw RangeError.range(fileIndex, 0, audioFiles.length - 1, 'fileIndex');
+    }
+    // 只停播放器、不走 [pause]：换源不是用户暂停，不落位置、不作废插图停留。
+    await _player.pause();
+    _audioFiles = audioFiles;
+    _manualReaderOverrideCue = null;
+    _stopAtPositionMs = null;
+    _returnToPosition = null;
+    _chapterTransition = false;
+    _currentCue = null;
+    _currentCueIndex = -1;
+    _beginExplicitSeek(fileIndex, 0);
+    try {
+      await _player
+          .setAudioSource(
+            ConcatenatingAudioSource(children: audioSources),
+            initialIndex: fileIndex,
+            initialPosition: Duration.zero,
+            preload: false,
+          )
+          .timeout(const Duration(seconds: 60));
+    } catch (_) {
+      if (_explicitSeekTargetFileIndex == fileIndex &&
+          _explicitSeekTargetMs == 0) {
+        _clearExplicitSeekSuppression();
+      }
+      rethrow;
+    }
+    if (_stopRequested) return;
+    notifyListeners();
+    if (play) await this.play();
   }
 
   /// 快进 / 快退（秒）。

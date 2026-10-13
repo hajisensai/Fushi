@@ -12,6 +12,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:just_audio/just_audio.dart' show AudioSource;
 
 /// 进程级常驻有声书会话（TODO-291 阶段2）。
 ///
@@ -119,6 +120,10 @@ class AudiobookSession extends ChangeNotifier {
 
   AudiobookPlayerController? _controller;
 
+  /// 当前会话来源的资源释放回调（TTS 朗读：停调度、解除缓存 pin）。在原生播放器
+  /// 真正放掉之后才调——播放器还开着文件时解除 pin，淘汰就可能删到它。
+  Future<void> Function()? _onReleased;
+
   /// start/stop 共用的生命周期队列。切书与退出可能来自页面、通知栏和数据迁移等
   /// 不同入口；串行化保证旧控制器已完成最终写入/stop/dispose 后，新一代才可发布。
   Future<void> _lifecycleTail = Future<void>.value();
@@ -179,6 +184,8 @@ class AudiobookSession extends ChangeNotifier {
     required SessionPrefs prefs,
     required SessionPersistCallbacks persist,
     List<AudioCue> cues = const <AudioCue>[],
+    List<AudioSource>? audioSources,
+    Future<void> Function()? onReleased,
   }) {
     return _enqueueLifecycle<AudiobookPlayerController?>(
       () => _startInternal(
@@ -187,6 +194,8 @@ class AudiobookSession extends ChangeNotifier {
         prefs: prefs,
         persist: persist,
         cues: cues,
+        audioSources: audioSources,
+        onReleased: onReleased,
       ),
     );
   }
@@ -197,9 +206,16 @@ class AudiobookSession extends ChangeNotifier {
     required SessionPrefs prefs,
     required SessionPersistCallbacks persist,
     required List<AudioCue> cues,
+    List<AudioSource>? audioSources,
+    Future<void> Function()? onReleased,
   }) async {
     final AudiobookPlayerController? existing = _controller;
-    if (existing != null && _book?.bookKey == info.bookKey) {
+    // 同书复用只对录音有声书成立：同一本 EPUB 的录音有声书与 TTS 朗读是两种会话，
+    // 互相顶替、或重新开始朗读时都必须重新加载。
+    if (existing != null &&
+        _book?.bookKey == info.bookKey &&
+        !(_book?.isTtsSource ?? false) &&
+        !info.isTtsSource) {
       // 同书复用：刷新元数据（封面/标题可能更新过）后直接返回。
       _book = info;
       _rewirePersist(existing, persist);
@@ -221,6 +237,7 @@ class AudiobookSession extends ChangeNotifier {
       await controller.load(
         audiobook: info.audiobook,
         audioFiles: audioFiles,
+        audioSources: audioSources,
         initialFollowAudio: prefs.followAudio,
         initialDelayMs: prefs.delayMs,
         initialSpeed: prefs.speed,
@@ -230,6 +247,7 @@ class AudiobookSession extends ChangeNotifier {
       );
     } catch (e) {
       controller.dispose();
+      await onReleased?.call();
       rethrow;
     }
 
@@ -246,6 +264,7 @@ class AudiobookSession extends ChangeNotifier {
     controller.addListener(_onControllerChanged);
     _controller = controller;
     _book = info;
+    _onReleased = onReleased;
     _watchStoredCues();
 
     _subscribeControlStreams(controller);
@@ -350,6 +369,8 @@ class AudiobookSession extends ChangeNotifier {
   Future<void> _stopInternal() async {
     final AudiobookPlayerController? controller = _controller;
     final SessionBookInfo? stoppingBook = _book;
+    final Future<void> Function()? onReleased = _onReleased;
+    _onReleased = null;
     // BUG-2558：在 _book / _controller 被清空**之前**结算后台听书时钟——清空之后判据
     // 恒 false，但那时已经没人持有这只时钟了。
     _retireStudyClock();
@@ -420,6 +441,13 @@ class AudiobookSession extends ChangeNotifier {
         remember(error, stack);
       }
     }
+    if (onReleased != null) {
+      try {
+        await onReleased();
+      } catch (error, stack) {
+        remember(error, stack);
+      }
+    }
 
     try {
       await _stopBackgroundSurfaces();
@@ -445,6 +473,9 @@ class AudiobookSession extends ChangeNotifier {
     _storedCuesSub = null;
     final FushiDatabase? db = _databaseGetter();
     if (db == null) return;
+    // TTS 朗读的 cue 不在库里：库里那份是同一本书的录音有声书（或为空），不能拿来
+    // 覆盖朗读会话的时间轴。
+    if (_book?.isTtsSource ?? false) return;
     _storedCuesSub = db
         .tableUpdates(TableUpdateQuery.onTable(db.audioCues))
         .listen((_) => unawaited(_adoptStoredCues(db)));
@@ -491,6 +522,7 @@ class AudiobookSession extends ChangeNotifier {
   ) async {
     final FushiDatabase? db = _databaseGetter();
     if (db == null || book == null || book.bookKey.isEmpty) return;
+    if (book.isTtsSource) return;
     final List<AudioCue> stored = await _storedCuesFor(db, book);
     await controller.reencodeStoppedPositionForCues(stored);
   }
@@ -886,6 +918,9 @@ class AudiobookSession extends ChangeNotifier {
       controller.removeListener(_onControllerChanged);
       controller.dispose();
     }
+    final Future<void> Function()? onReleased = _onReleased;
+    _onReleased = null;
+    if (onReleased != null) unawaited(onReleased());
     _controller = null;
     _book = null;
     _reader = null;
@@ -922,6 +957,7 @@ class SessionBookInfo {
     required this.title,
     required this.mediaIdentifier,
     this.isSrtBookSource = false,
+    this.isTtsSource = false,
     this.author,
     this.coverPath,
     this.statsMediaKey,
@@ -940,6 +976,13 @@ class SessionBookInfo {
   /// audiobooks can also use an SRT alignment file, but their cues live in the
   /// Audiobooks namespace and must be loaded through AudiobookRepository.
   final bool isSrtBookSource;
+
+  /// True when the session plays on-demand TTS synthesis of the EPUB text.
+  ///
+  /// Its cues live only in memory (one cue per synthesized sentence); stored
+  /// cues for the same [bookKey] belong to a recorded audiobook and must never
+  /// be adopted into this session.
+  final bool isTtsSource;
 
   final String? author;
   final String? coverPath;

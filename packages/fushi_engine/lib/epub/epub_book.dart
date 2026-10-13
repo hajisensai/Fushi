@@ -798,13 +798,27 @@ class _ChapterImageScan {
 
 /// [EpubBook.chapterPlainTextWithRuby] 的产物。
 class EpubPlainTextWithRuby {
-  const EpubPlainTextWithRuby({required this.text, required this.rubies});
+  const EpubPlainTextWithRuby({
+    required this.text,
+    required this.rubies,
+    this.blockEnds = const <int>[],
+    this.sceneBreaks = const <int>[],
+  });
 
   /// 与 [EpubBook.chapterPlainText] 逐码元相同的纯文本。
   final String text;
 
   /// 按出现顺序、互不重叠的 ruby 基底区间（[text] 的 UTF-16 码元）与读音。
   final List<EpubRubyAnnotation> rubies;
+
+  /// 块级元素（`p`/`div`/`li`/`h1`–`h6`/`blockquote`…）在 [text] 里的结束偏移
+  /// （升序，可重复——嵌套块在同一处收尾）。纯文本本身不带段落分隔（块之间只剩
+  /// 折叠后的空白），段落边界只能从这里取。
+  final List<int> blockEnds;
+
+  /// 场景分隔在 [text] 里的位置（升序）：`<hr>`、空段落（`<p>` 里没有文字也没有
+  /// 图片）、只由分隔符号组成的块（`◇◇◇` / `＊` / `※` …）。
+  final List<int> sceneBreaks;
 }
 
 /// 一处 ruby：基底在纯文本里的区间 `[start, end)` 与 `<rt>` 读音（多段 `<rt>`
@@ -841,6 +855,32 @@ class _RubyPlainTextWalker {
   int _rubyStart = -2;
   StringBuffer? _reading;
 
+  /// 块级元素（段落边界只认这些；`section`/`body` 之类的大容器不算段落）。
+  static const Set<String> _blockTags = <String>{
+    'p',
+    'div',
+    'li',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'blockquote',
+    'dd',
+    'dt',
+    'pre',
+  };
+
+  /// 场景分隔常用的符号（整块只由它们和空白组成时当场景分隔）。
+  static final RegExp _separatorOnly =
+      RegExp(r'^[\s◇◆♢♦◈＊*※・·〇○●◎□■☆★△▲▽▼─━―－\-=＝#＃~〜～†‡§]+$');
+
+  static const Set<String> _mediaTags = <String>{'img', 'image', 'svg', 'video'};
+
+  final List<int> _blockEnds = <int>[];
+  final List<int> _sceneBreaks = <int>[];
+
   static EpubPlainTextWithRuby walk(html_dom.Element? body) {
     final _RubyPlainTextWalker w = _RubyPlainTextWalker._();
     if (body != null) w._visit(body);
@@ -856,7 +896,42 @@ class _RubyPlainTextWalker {
             reading: r.reading,
           ),
     ];
-    return EpubPlainTextWithRuby(text: text, rubies: rubies);
+    int clamp(int offset) => (offset - shift).clamp(0, text.length);
+    return EpubPlainTextWithRuby(
+      text: text,
+      rubies: rubies,
+      blockEnds: <int>[for (final int e in w._blockEnds) clamp(e)],
+      sceneBreaks: <int>[for (final int s in w._sceneBreaks) clamp(s)],
+    );
+  }
+
+  /// 块收尾：记段落边界；整块是空段落 / 纯分隔符时另记场景分隔。只读 [_out]，
+  /// 不写——纯文本必须与 [EpubBook.chapterPlainText] 逐码元相同。
+  void _closeBlock(html_dom.Element node, String tag, int start) {
+    final int end = _out.length;
+    _blockEnds.add(end);
+    if (end == start) {
+      // 只有 `<p>` 的空段落算分隔（空 `<div>` 多是排版容器）；带插图的不算。
+      if (tag == 'p' && !_hasMedia(node)) _sceneBreaks.add(end);
+    } else if (end - start <= _maxSeparatorBlock &&
+        _separatorOnly.hasMatch(
+          String.fromCharCodes(_units.sublist(start, end)),
+        )) {
+      _sceneBreaks.add(end);
+    }
+  }
+
+  /// 分隔块都很短；更长的块不必判（也省得为每个段落切子串）。
+  static const int _maxSeparatorBlock = 64;
+
+  /// 与 [_out] 同步的码元副本（StringBuffer 不能取子串）。
+  final List<int> _units = <int>[];
+
+  static bool _hasMedia(html_dom.Element node) {
+    for (final html_dom.Element child in node.children) {
+      if (_mediaTags.contains(child.localName) || _hasMedia(child)) return true;
+    }
+    return false;
   }
 
   void _visit(html_dom.Node node) {
@@ -882,14 +957,21 @@ class _RubyPlainTextWalker {
       }
       return;
     }
+    if (tag == 'hr') {
+      _sceneBreaks.add(_out.length);
+      return;
+    }
     final bool isRuby = tag == 'ruby' && _rubyStart == -2;
     if (isRuby) {
       _rubyStart = -1;
       _reading = StringBuffer();
     }
+    final bool isBlock = _blockTags.contains(tag);
+    final int blockStart = _out.length;
     for (final html_dom.Node child in node.nodes) {
       _visit(child);
     }
+    if (isBlock) _closeBlock(node, tag, blockStart);
     if (isRuby) {
       final String reading =
           _reading!.toString().replaceAll(_whitespaceRun, '').trim();
@@ -917,11 +999,15 @@ class _RubyPlainTextWalker {
         continue;
       }
       if (_pendingSpace) {
-        if (_out.isNotEmpty) _out.write(' ');
+        if (_out.isNotEmpty) {
+          _out.write(' ');
+          _units.add(0x20);
+        }
         _pendingSpace = false;
       }
       if (_rubyStart == -1) _rubyStart = _out.length;
       _out.write(ch);
+      _units.add(ch.codeUnitAt(0));
     }
   }
 }

@@ -385,6 +385,16 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'texthooker_enabled',
   'texthooker_urls',
   'torrent_upload_intro_shown',
+  // String：当前朗读声音预设 id（TtsPresetStore）。指向本机预设，设备本地。
+  'tts_active_preset_id',
+  // JSON：TTS 发音词典（写法 → 读法，TtsPronunciationStore），只改合成文本。
+  'tts_pronunciation_rules',
+  // double：TTS 朗读倍速（播放器本地倍速，服务端恒 1.0）。
+  'tts_read_aloud_speed',
+  // JSON：朗读声音预设清单，每条的凭据参数以 base64 存在 secretsB64；同时登记在
+  // kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys 与
+  // deviceLocalPrefKeys（地址多是本机 / 局域网的 GPT-SoVITS 服务）。
+  'tts_voice_presets',
   'update_auto_install',
   'update_beta_channel',
   'update_custom_proxy',
@@ -541,6 +551,9 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   // int（毫秒，v101）：`updates_last_check_<UpdateFeedKind.dbValue>`——某个域上次
   // 后台检查完成的时刻。到期判据只读它，失败也照记（否则断网时每个 tick 都重试）。
   'updates_last_check_',
+  // JSON：`tts_resume_<bookKey>` TTS 朗读断点（章 + 句首匹配偏移 + 句内毫秒 +
+  // 音频缓存键，TtsResumePoint）。
+  'tts_resume_',
   'video_danmaku_episode/',
   // 视频远端断点/播放偏好三件套族（PositionPrefKeys，fushi_library_host_service.dart）：
   // `<前缀><bookUid>` 值键 + `<前缀>at_<bookUid>` 时间戳键，逐字段 LWW 跨设备同步
@@ -571,6 +584,8 @@ const Set<String> kCredentialPreferenceKeys = <String>{
   'jimaku_api_key',
   'network_proxy_password',
   'network_proxy_username',
+  // 每份朗读声音预设里 base64 的 secretsB64（API key / Bearer）。
+  'tts_voice_presets',
   'video_subtitle_subdl_api_key',
   'yomitan_api_key',
 };

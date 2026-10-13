@@ -263,25 +263,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     // 同一份记忆化 future 补齐时序契约；已就绪时立即返回，零额外开销。
     await appModel.initialiseAudioHandler();
     final AudiobookSession session = appModel.audiobookSession;
-    final AudiobookPlayerController? old = _audiobookController;
-    if (old != null) {
-      // 旧引用是 session 控制器：先 detach（不 dispose）。reader 字段清掉等下面重接。
-      session.detachReader(this);
-      // 歌词层在场时本页给旧控制器挂的强制跟随随解绑一起撤（会话可能比本页活得
-      // 久）；新控制器接上后由 [_reapplyLyricsFollowOverride] 补挂。
-      if (_lyricsMode) old.setReaderFollowOverride(false);
-      _audiobookController = null;
-      _syncChromePlaybackListener();
-      _audiobookBookKey = null;
-      _srtBookUid = null;
-      _srtCueChapterMap = null;
-      _srtChapterRanges = null;
-      // 缓存生命周期 = 音频槽绑定：detach 即失效，重接后由
-      // _primeAudioCuesForCurrentBook 重灌（_prepareSasayakiCuesJson 复用它，
-      // 不再每章重查全书 cue）。
-      _cachedAllCues = null;
-      _cachedSentenceAudio = false;
-    }
+    // 旧引用是 session 控制器：先 detach（不 dispose）。reader 字段清掉等下面重接。
+    _detachAudioSlotFromReader(session);
     if (forceReload && session.isActive) {
       // 导入了新音频：必须重 load，stop 旧会话让 session.start 走全新加载分支。
       await session.stop();
@@ -289,6 +272,21 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
 
     final FushiDatabase db = appModel.database;
     final String bookKey = widget.bookKey;
+
+    // 本书正在 TTS 朗读（退书后台继续听再进来）：接回朗读会话，不去解析录音有声书——
+    // 两者同一个 bookKey，按录音那条路接会把库里的 cue 灌进朗读会话。
+    final AudiobookPlayerController? sessionController = session.controller;
+    final TtsReadAlong? reading = TtsReadAlong.forController(sessionController);
+    if (reading != null &&
+        sessionController != null &&
+        (session.book?.isTtsSource ?? false) &&
+        session.book?.bookKey == bookKey) {
+      await _attachTtsSession(session, reading, sessionController);
+      // 后台朗读期间「使用中」的声音可能在别处（设置页）换过：接回时应用上，
+      // 否则会话一直沿用开始朗读时的声音。
+      if (mounted) await _applyActiveTtsVoiceToReading();
+      return;
+    }
 
     final AudiobookSessionLauncher launcher = AudiobookSessionLauncher(db);
     final AudiobookSessionStartRequest? req = await launcher.resolve(bookKey);
@@ -311,6 +309,29 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         false,
       );
     }
+  }
+
+  /// 解绑本页当前挂着的会话控制器（不 dispose，会话可能比本页活得久），清空所有
+  /// 跟这一个音频槽绑定的缓存，等调用方重新接一个。
+  void _detachAudioSlotFromReader(AudiobookSession session) {
+    final AudiobookPlayerController? old = _audiobookController;
+    if (old == null) return;
+    session.detachReader(this);
+    // 歌词层在场时本页给旧控制器挂的强制跟随随解绑一起撤（会话可能比本页活得
+    // 久）；新控制器接上后由 [_reapplyLyricsFollowOverride] 补挂。
+    if (_lyricsMode) old.setReaderFollowOverride(false);
+    _audiobookController = null;
+    _syncChromePlaybackListener();
+    _audiobookBookKey = null;
+    _srtBookUid = null;
+    _srtCueChapterMap = null;
+    _srtChapterRanges = null;
+    _ttsCues = null;
+    // 缓存生命周期 = 音频槽绑定：detach 即失效，重接后由
+    // _primeAudioCuesForCurrentBook 重灌（_prepareSasayakiCuesJson 复用它，
+    // 不再每章重查全书 cue）。
+    _cachedAllCues = null;
+    _cachedSentenceAudio = false;
   }
 
   /// 歌词层在场时换接了控制器（重导入强制重载等）：把覆盖层期间的正文强制跟随
@@ -472,6 +493,16 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   Future<void> _primeAudioCuesForCurrentBook() async {
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller == null) return;
+
+    // TTS 朗读：cue 只在会话内存里（每句一条、全是 fushi-cue:// 句级片段）。
+    final List<AudioCue>? ttsCues = _ttsCues;
+    if (ttsCues != null) {
+      controller.setAllBookCues(ttsCues);
+      controller.setChapterCues(ttsCues);
+      _cachedAllCues = ttsCues;
+      _cachedSentenceAudio = true;
+      return;
+    }
 
     if (_srtBookUid != null) {
       final SrtBookRepository repo = SrtBookRepository(appModel.database);

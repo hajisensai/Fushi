@@ -80,6 +80,9 @@ void main() {
     final String audiobook = File(
       'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
     ).readAsStringSync();
+    final String tts = File(
+      'lib/src/pages/implementations/reader_fushi/tts.part.dart',
+    ).readAsStringSync();
     final String boundary = maskComments(
       methodBody(navigation, 'Future<T?> _withStudyClockPaused<T>('),
     );
@@ -100,6 +103,10 @@ void main() {
       (audiobook, 'Future<void> _openSrtBookReimport('),
       (chrome, 'Future<void> _openAlignmentImportDialog('),
       (chrome, 'Future<void> _transcribeFromAudiobookPanel('),
+      (tts, 'Future<void> _openListenEntry('),
+      (tts, 'Future<void> _openTtsStudio('),
+      (tts, 'Future<void> _openTtsVoiceSettings('),
+      (tts, 'Future<void> _openTtsVoiceQuickSwitch('),
     ]) {
       expect(
         maskComments(methodBody(route.$1, route.$2)),
@@ -119,13 +126,19 @@ void main() {
     );
     expect(panel, contains('_syncPanelClockHold(kind)'));
     expect(panel, contains('await _presentSideSheet('));
-    // The unbound-audio branch must not bypass teardown in either input route.
+    // The unbound-audio branch must not bypass teardown in either input route:
+    // both the header button and the B shortcut open the listen entry (TTS /
+    // import), whose import choice goes on to the bounded import dialog.
     expect(audiobook, contains('await _openSrtBookReimport();'));
     final String caret = File(
       'lib/src/pages/implementations/reader_fushi/caret.part.dart',
     ).readAsStringSync();
-    expect(caret, contains('_openAudioImportDialog()'));
-    expect(chrome, contains(': _openAudioImportDialog,'));
+    expect(caret, contains('_openListenEntry()'));
+    expect(chrome, contains(': _openListenEntry,'));
+    expect(
+      maskComments(methodBody(tts, 'Future<void> _openListenEntry(')),
+      contains('await _openAudioImportDialog();'),
+    );
   });
 
   test(

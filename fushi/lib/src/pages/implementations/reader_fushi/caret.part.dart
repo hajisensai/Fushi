@@ -685,7 +685,7 @@ extension _ReaderCaret on _ReaderFushiPageState {
         _openReadingStatistics();
         return KeyEventResult.handled;
       case ShortcutAction.readerOpenAudiobook:
-        // 一键打开有声书面板（默认 B）；没挂有声书时直接进导入。
+        // 一键打开有声书面板（默认 B）；没挂有声书时弹听书入口（朗读 / 导入）。
         // 「听书」模块关掉时本键**不消费**（ignored 而非 handled）：吃掉按键会让
         // 同一个键上可能存在的通用动作也跟着失效，而模块关掉只该关自己的入口。
         if (!_moduleVisibility.isEnabled(ModuleId.listening)) {
@@ -698,7 +698,7 @@ extension _ReaderCaret on _ReaderFushiPageState {
         if (_audiobookController != null) {
           unawaited(_showAppearanceSheet(initialSubPage: 'audiobook'));
         } else {
-          unawaited(_openAudioImportDialog());
+          unawaited(_openListenEntry());
         }
         return KeyEventResult.handled;
       case ShortcutAction.readerToggleStudyClock:
