@@ -9,8 +9,10 @@
 >
 > 新建一条：`dart run tool/bug.dart new <slug> [标题...]`（取「本地 + origin/develop」已占最大号 + 1、生成骨架、重建索引；
 > 不 fetch、不遍历其它分支）。并发分支撞号不用提前防：把 develop 合进来 / rebase 之后跑
-> `dart run tool/bug.dart settle`，它把 develop 上没有的那一份改到下一个空号并重建索引；develop 收到 push 时
-> CI（`bug-number-settle.yml`）也会自动跑并提交。手动改号用 `dart run tool/bug.dart renumber <old> <new>`
+> `dart run tool/bug.dart settle`，每组同号文件里**最早进入 develop 首父链**的那份保留原号，develop 上没有的
+> 那一份改到下一个空号并重建索引；develop 收到 push 时 CI（`bug-number-settle.yml`）在最新的 develop 尖端上
+> 跑同一判据并提交（推送被拒就整轮重算），被取消 / 乱序的 run 留下的撞号由下一次一并收口。
+> 手动改号用 `dart run tool/bug.dart renumber <old> <new>`
 > （文件名 + 正文 H2 + 代码/测试引用一把改 + 自校验；别手改——只改文件名不改正文 H2 会让 `bugs_per_file_guard_test` 变红）。
 > 改完某条 bug 文件后：`dart run tool/bug.dart reindex` 重建下面的索引表。
 >

@@ -19,7 +19,10 @@
 //   ② `new` 取号要看得见**并发工作区里还没提交**的 bug 文件（BUG-1429 根因）；
 //   ③ `check` 要报出「我新引入的号还被谁占着」，且不能被历史噪声淹掉；
 //   ④ 真撞上时 `renumber` 一条命令把四处（文件名 / 正文 H2 / 代码引用 / 测试名与测试文件名）
-//      一起改掉并自校验零残留——只改文件名不改正文 H2 出过 CI 红。
+//      一起改掉并自校验零残留——只改文件名不改正文 H2 出过 CI 红；
+//   ⑤ `settle` 的先后判据是无状态的「最早进入基线首父链者保留」：相邻 push 积压的多组撞号、
+//      被 concurrency 取消的 run 留下的撞号、同号三份以上，都在下一次 settle 里一把收口
+//      （PR #2122 审查：旧的「以 push 前的 sha 为基线」在相邻 push 下会把 develop 永久卡在撞号态）。
 //
 // 全部用临时目录里的真 git 仓库做 fixture，不碰仓库里真实的 docs/bugs/*.md，也不依赖网络
 // （remote 用本地路径的 bare repo）。
@@ -845,21 +848,15 @@ void main() {
       expect(out.join('\n'), contains('无撞号'));
     });
 
-    test('CI：develop 上以 push 前的 sha 为基线，这次 push 带进来的那份改号', () async {
+    test('CI：站在 develop 尖端上（HEAD == 基线）跑，后进入首父链的那份改号', () async {
       final root = makeCollisionFixture();
       git(root, <String>['checkout', '-q', 'main']);
-      final before =
-          (Process.runSync('git', <String>[
-                    'rev-parse',
-                    'HEAD',
-                  ], workingDirectory: root.path).stdout
-                  as String)
-              .trim();
       // 模拟 PR 合进 develop：一个 merge commit 把 feature 带进来（索引按 union 合并）。
+      // 两份 BUG-005 此时**都已在基线上**——不靠「push 前的 sha」，只看谁先进首父链。
       writeFile(root, '.gitattributes', 'docs/BUGS.md merge=union\n');
       git(root, <String>['merge', '-q', '--no-ff', '--no-edit', 'feature']);
 
-      expect(await bug.cmdSettle(<String>['--base', before]), 0);
+      expect(await bug.cmdSettle(<String>['--base', 'main']), 0);
 
       expectSettled(root);
     });
@@ -895,6 +892,240 @@ void main() {
       expect(await bug.cmdSettle(<String>['--base', 'main']), 0);
 
       expect(readFile(root, 'docs/BUGS.md'), index);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // PR #2122 审查：settle 的先后判据必须无状态。
+  //
+  // 旧实现以「push 前的 sha」为基线、只改「这次 push 带进来的那份」。相邻两次 push 之间：
+  // job2 把 B 的 101 改成 102 时看不到同时合进来的 C（也是 102），推上去后 develop 有两份 102；
+  // job3 的基线已同时含两份，判不出谁是新的 → 抛错，develop 永久卡在撞号态。被 concurrency
+  // 取消的 run 带进来的撞号也永远没人收。现在的判据只看 develop 首父链上谁先进来。
+  // -------------------------------------------------------------------------
+  group('bug.dart settle：最早进入基线首父链者保留（无状态判据）', () {
+    String pad(int n) => n.toString().padLeft(3, '0');
+
+    String headSha(Directory root) =>
+        (Process.runSync('git', <String>[
+                  'rev-parse',
+                  'HEAD',
+                ], workingDirectory: root.path).stdout
+                as String)
+            .trim();
+
+    /// develop（这里叫 main）的种子：已有 BUG-100，索引按 union 合并。停在 main 上。
+    Directory makeDevelopFixture() {
+      final root = makeBareFixture('bug_settle_chain_');
+      temps.add(root);
+      writeFile(root, '.gitattributes', 'docs/BUGS.md merge=union\n');
+      writeFile(root, 'docs/bugs/BUG-100-seed.md', bugDoc(100, '种子'));
+      git(root, <String>['init', '-q', '-b', 'main', '.']);
+      git(root, <String>['config', 'core.autocrlf', 'false']);
+      git(root, <String>['config', 'user.email', 'fixture@example.com']);
+      git(root, <String>['config', 'user.name', 'fixture']);
+      git(root, <String>['config', 'commit.gpgsign', 'false']);
+      Directory.current = root;
+      bug.cmdReindex();
+      git(root, <String>['add', '-A']);
+      git(root, <String>['commit', '-qm', 'seed']);
+      return root;
+    }
+
+    /// 从 [forkAt] 分出 PR 分支：新建 BUG-[number]-[slug] 与引用它的 `lib/[slug].dart`，
+    /// 再以 `--no-ff` 合进 main（等同 GitHub 的合并提交，PR 的改动在首父 diff 里）。
+    void mergePr(Directory root, String forkAt, int number, String slug) {
+      git(root, <String>['checkout', '-q', '-b', 'pr-$slug', forkAt]);
+      writeFile(root, 'docs/bugs/BUG-${pad(number)}-$slug.md', bugDoc(number, slug));
+      writeFile(
+        root,
+        'lib/$slug.dart',
+        '// 修 BUG-${pad(number)}：$slug 的根因。\nvoid main() {}\n',
+      );
+      bug.cmdReindex();
+      git(root, <String>['add', '-A']);
+      git(root, <String>['commit', '-qm', 'pr $slug']);
+      git(root, <String>['checkout', '-q', 'main']);
+      git(root, <String>['merge', '-q', '--no-ff', '--no-edit', 'pr-$slug']);
+    }
+
+    void expectBug(Directory root, int number, String slug) {
+      final rel = 'docs/bugs/BUG-${pad(number)}-$slug.md';
+      expect(exists(root, rel), isTrue, reason: '$slug 应落在 BUG-${pad(number)}');
+      expect(readFile(root, rel), startsWith('## BUG-${pad(number)} · '));
+      expect(
+        readFile(root, 'lib/$slug.dart'),
+        contains('修 BUG-${pad(number)}：'),
+        reason: '$slug 的代码引用要跟着它的号走',
+      );
+    }
+
+    test('相邻 push 积压：旧 job 推上去的「102」与同时合进来的 C 的 102 撞号 → 下一次 settle 收口', () async {
+      final root = makeDevelopFixture();
+      final seed = headSha(root);
+      mergePr(root, seed, 101, 'a'); // push1：A 合入，无撞号
+      final afterA = headSha(root);
+      mergePr(root, seed, 101, 'b'); // push2：B 合入，与 A 撞 101
+      mergePr(root, afterA, 102, 'c'); // push3：C（A 合入后 new 出 102）合入
+      // 旧 job2 只看 push2 的树，把 B 改成 102，rebase 到 push3 之后推了上去：
+      git(root, <String>['mv', 'docs/bugs/BUG-101-b.md', 'docs/bugs/BUG-102-b.md']);
+      writeFile(root, 'docs/bugs/BUG-102-b.md', bugDoc(102, 'b'));
+      writeFile(root, 'lib/b.dart', '// 修 BUG-102：b 的根因。\nvoid main() {}\n');
+      bug.cmdReindex();
+      git(root, <String>['add', '-A']);
+      git(root, <String>['commit', '-qm', 'chore(bugs): stale settle pushed after C']);
+      expect(bug.collidedBugNumbers(), <int>[102], reason: '前提：develop 上两份 102');
+
+      expect(await bug.cmdSettle(<String>['--base', 'main']), 0);
+
+      expectBug(root, 101, 'a');
+      expectBug(root, 102, 'c'); // 先进首父链（merge C）的保留
+      expectBug(root, 103, 'b'); // 改号提交才进来的那份再改一次
+      expect(exists(root, 'docs/bugs/BUG-102-b.md'), isFalse);
+      expect(bug.cmdCheck(), 0);
+    });
+
+    test('被取消的 run 留下多组撞号：一次 settle 全部收口，先进来的保留（与文件名字典序无关）', () async {
+      final root = makeDevelopFixture();
+      final seed = headSha(root);
+      // 四次 push 挨着来，中间的 settle 全被 concurrency 取消——两组撞号都积在 develop 上。
+      // 先进来的 slug 字典序反而靠后，防「按文件名排」冒充「按进入先后排」。
+      mergePr(root, seed, 101, 'zeta');
+      mergePr(root, seed, 101, 'alpha');
+      mergePr(root, seed, 102, 'gamma');
+      mergePr(root, seed, 102, 'beta');
+      expect(bug.collidedBugNumbers(), <int>[101, 102]);
+
+      expect(await bug.cmdSettle(<String>['--base', 'main']), 0);
+
+      expectBug(root, 101, 'zeta');
+      expectBug(root, 102, 'gamma');
+      expectBug(root, 103, 'alpha');
+      expectBug(root, 104, 'beta');
+      expect(bug.collidedBugNumbers(), isEmpty);
+      expect(bug.cmdCheck(), 0);
+    });
+
+    test('同号三份：最早的保留，其余两份依次改号，不留第三份给 check 报红', () async {
+      final root = makeDevelopFixture();
+      final seed = headSha(root);
+      mergePr(root, seed, 101, 'x');
+      mergePr(root, seed, 101, 'y');
+      mergePr(root, seed, 101, 'z');
+      expect(bug.locateBugFiles(101), hasLength(3));
+
+      expect(await bug.cmdSettle(<String>['--base', 'main']), 0);
+
+      expectBug(root, 101, 'x');
+      expectBug(root, 102, 'y');
+      expectBug(root, 103, 'z');
+      expect(bug.cmdCheck(), 0);
+
+      out.clear();
+      expect(await bug.cmdSettle(<String>['--base', 'main']), 0, reason: '幂等');
+      expect(out.join('\n'), contains('无撞号'));
+    });
+
+    test('改号提交本身也按「这时才进来」算（--no-renames），不会被改名检测追溯回旧号的提交', () async {
+      final root = makeDevelopFixture();
+      final seed = headSha(root);
+      mergePr(root, seed, 101, 'old');
+      mergePr(root, seed, 102, 'later');
+      // 有人手动把 BUG-101-old 改名成 102（git mv）：改名提交在 later 之后。
+      git(root, <String>['mv', 'docs/bugs/BUG-101-old.md', 'docs/bugs/BUG-102-old.md']);
+      writeFile(root, 'docs/bugs/BUG-102-old.md', bugDoc(102, 'old'));
+      writeFile(root, 'lib/old.dart', '// 修 BUG-102：old 的根因。\nvoid main() {}\n');
+      bug.cmdReindex();
+      git(root, <String>['add', '-A']);
+      git(root, <String>['commit', '-qm', 'manual rename']);
+
+      expect(await bug.cmdSettle(<String>['--base', 'main']), 0);
+
+      expectBug(root, 102, 'later');
+      expectBug(root, 103, 'old');
+    });
+
+    test('本地分支：基线自身的撞号不在本地改（归 develop 上的 settle），只改还没进基线的那份', () async {
+      final root = makeDevelopFixture();
+      final seed = headSha(root);
+      git(root, <String>['checkout', '-q', '-b', 'feature', seed]);
+      writeFile(root, 'docs/bugs/BUG-101-mine.md', bugDoc(101, 'mine'));
+      writeFile(root, 'lib/mine.dart', '// 修 BUG-101：mine 的根因。\nvoid main() {}\n');
+      bug.cmdReindex();
+      git(root, <String>['add', '-A']);
+      git(root, <String>['commit', '-qm', 'mine']);
+      git(root, <String>['checkout', '-q', 'main']);
+      mergePr(root, seed, 101, 'first');
+      mergePr(root, seed, 101, 'second'); // develop 自己也撞了，还没被 CI 收口
+      git(root, <String>['checkout', '-q', 'feature']);
+      git(root, <String>['merge', '-q', '--no-edit', 'main']);
+
+      final code = await bug.cmdSettle(<String>['--base', 'main']);
+
+      expectBug(root, 101, 'first');
+      expectBug(root, 101, 'second'); // 不动：两边各改一次会在合并时撞成 rename/rename 冲突
+      expectBug(root, 102, 'mine');
+      expect(warn.join('\n'), contains('基线自身的撞号'));
+      expect(code, 1, reason: '基线自身仍撞号，check 如实报红');
+    });
+
+    test('同一个提交带进来两份同号：判不出先后 → 整体报错，一个文件都不动', () async {
+      final root = makeDevelopFixture();
+      writeFile(root, 'docs/bugs/BUG-101-p.md', bugDoc(101, 'p'));
+      writeFile(root, 'docs/bugs/BUG-101-q.md', bugDoc(101, 'q'));
+      bug.cmdReindex();
+      git(root, <String>['add', '-A']);
+      git(root, <String>['commit', '-qm', 'two at once']);
+
+      await expectLater(
+        bug.cmdSettle(<String>['--base', 'main']),
+        throwsA(
+          isA<bug.BugToolError>().having(
+            (bug.BugToolError e) => e.message,
+            'message',
+            contains('同时进来'),
+          ),
+        ),
+      );
+      expect(exists(root, 'docs/bugs/BUG-101-p.md'), isTrue);
+      expect(exists(root, 'docs/bugs/BUG-101-q.md'), isTrue);
+    });
+
+    test('renumber 手动改号在三份同号时只改最晚进来的那份，并提示用 settle 收口', () async {
+      final root = makeDevelopFixture();
+      final seed = headSha(root);
+      mergePr(root, seed, 101, 'x');
+      mergePr(root, seed, 101, 'y');
+      mergePr(root, seed, 101, 'z');
+
+      await bug.cmdRenumber(<String>['101', '150', '--base', 'main']);
+
+      expectBug(root, 101, 'x');
+      expectBug(root, 101, 'y');
+      expectBug(root, 150, 'z');
+      expect(warn.join('\n'), contains('settle'));
+    });
+
+    test('先后比较：基线上的按首父序号，没进基线的排最后；同位置判为同时进来', () {
+      bug.BugFileArrival at(String path, int? position) =>
+          bug.BugFileArrival(path: path, commit: position == null ? '' : 'c$position', position: position);
+      final ranked = <bug.BugFileArrival>[
+        at('docs/bugs/BUG-101-local.md', null),
+        at('docs/bugs/BUG-101-late.md', 7),
+        at('docs/bugs/BUG-101-early.md', 3),
+      ]..sort(bug.compareArrivals);
+      expect(ranked.map((bug.BugFileArrival a) => a.path).toList(), <String>[
+        'docs/bugs/BUG-101-early.md',
+        'docs/bugs/BUG-101-late.md',
+        'docs/bugs/BUG-101-local.md',
+      ]);
+      expect(bug.sameArrival(at('a', 3), at('b', 3)), isTrue);
+      expect(bug.sameArrival(at('a', null), at('b', null)), isTrue);
+      expect(bug.sameArrival(at('a', 3), at('b', null)), isFalse);
+      expect(
+        () => bug.requireDistinctArrivals(101, <bug.BugFileArrival>[at('a', 3), at('b', 3)], 'main'),
+        throwsA(isA<bug.BugToolError>()),
+      );
     });
   });
 }
