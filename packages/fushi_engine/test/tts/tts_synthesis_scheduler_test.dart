@@ -245,7 +245,10 @@ void main() {
     await waitFor(() => provider.calls.length == 1);
     s.setCursor(15);
     await waitFor(() => provider.cancelled.contains('t0'));
+    // gateAll 只管「新登记的门」：第一次合成已经给 t0 建了门，不放行它，重新合成的
+    // t0 会一直等在这扇旧门上。
     provider.gateAll = false;
+    provider.release('t0');
     s.setCursor(0);
     final TtsCachedAudio audio = await s.ensure(0);
     expect(audio.path, s.audioPathOf(0));
