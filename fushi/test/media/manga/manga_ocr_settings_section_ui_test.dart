@@ -290,6 +290,83 @@ void main() {
         findsOneWidget);
   });
 
+  // 2026-10-13：档位没选过（偏好空串）= 默认意图「低置信度」，首次使用前才确认；
+  // 此时没配提供商也不提示「不会发送」——那时根本不会问也不会发。亲手选过的档位
+  // 没人接时照旧提示（同一 harness 的正向对照，证明下面的 findsNothing 不是空壳）。
+  for (final (String stored, bool warns) in <(String, bool)>[
+    ('', false),
+    ('low_confidence', true),
+  ]) {
+    testWidgets('AI mode "$stored": shows low confidence, warns=$warns',
+        (WidgetTester tester) async {
+      String value = stored;
+      await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+        service: _FakeOcrService(ready: true),
+        mokuroPathGetter: () => '',
+        mokuroPathSetter: (String _) async {},
+        probeExternal: (String _) async => null,
+        aiModeGetter: () => value,
+        aiModeSetter: (String next) async => value = next,
+        aiProviderReady: () => false,
+      )));
+      await tester.pumpAndSettle();
+      final Finder row = find.byKey(
+        const ValueKey<String>('manga_ocr_ai_mode'),
+        skipOffstage: false,
+      );
+      expect(row, findsOneWidget);
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.text(t.manga_ocr_ai_mode_low_confidence),
+          skipOffstage: false,
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('manga_ocr_ai_mode_no_provider'),
+          skipOffstage: false,
+        ),
+        warns ? findsOneWidget : findsNothing,
+      );
+    });
+  }
+
+  testWidgets('AI mode unset with a provider: pending note + confirm default',
+      (WidgetTester tester) async {
+    String value = '';
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: _FakeOcrService(ready: true),
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      aiModeGetter: () => value,
+      aiModeSetter: (String next) async => value = next,
+      aiProviderReady: () => true,
+    )));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('manga_ocr_ai_mode_pending'),
+          skipOffstage: false),
+      findsOneWidget,
+    );
+    final Finder confirm = find.byKey(
+      const ValueKey<String>('manga_ocr_ai_mode_confirm_default'),
+      skipOffstage: false,
+    );
+    await tester.ensureVisible(confirm);
+    await tester.tap(confirm);
+    await tester.pumpAndSettle();
+    expect(value, 'low_confidence', reason: '点「现在开启」写入默认档');
+    expect(
+      find.byKey(const ValueKey<String>('manga_ocr_ai_mode_pending'),
+          skipOffstage: false),
+      findsNothing,
+      reason: '选定后不再显示「尚未决定」',
+    );
+  });
+
   testWidgets('lens language row is absent without a language setter',
       (WidgetTester tester) async {
     final _FakeOcrService service = _FakeOcrService(ready: true);

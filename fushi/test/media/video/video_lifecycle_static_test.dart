@@ -217,7 +217,8 @@ void main() {
 
     // ---- A 层：selectEmbeddedGraphicTrack ----
     String graphicBody() => methodBody(
-          r'Future<bool> selectEmbeddedGraphicTrack\(int streamIndex\) async \{',
+          // BUG-3276 起多了命名参数 timingInput：只锚方法名 + 首个参数，签名再加参数不翻车。
+          r'Future<bool> selectEmbeddedGraphicTrack\(\s*int streamIndex[^)]*\) async \{',
           r'\n  \}',
         );
 

@@ -360,6 +360,10 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       }
     }
     if (!mounted) return;
+    // 用户在场：档位没选过时在开跑前问一次「默认交给 LLM」，任务的跟随步骤随后
+    // 按新档位装配（见 MangaOcrWizardEngines.decideAiDefault）。
+    await _engines.decideAiDefault?.call();
+    if (!mounted) return;
     if (widget.launchInBackground) {
       final String? bookKey = _createdBookKey;
       if (bookKey == null) {

@@ -20,9 +20,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show
-        FushiHeightReporter,
-        FushiTopFadeScrim;
+    show FushiHeightReporter, FushiTopFadeScrim;
 import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart'
     show fushiIsChromeIconButton;
@@ -236,6 +234,7 @@ SettingsIconTone settingsIconToneFor(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.downloads => SettingsIconTone.teal,
   SettingsDestinationId.services => SettingsIconTone.blue,
   SettingsDestinationId.ai => SettingsIconTone.purple,
+  SettingsDestinationId.models => SettingsIconTone.purple,
   SettingsDestinationId.profiles => SettingsIconTone.pink,
   SettingsDestinationId.syncBackup => SettingsIconTone.blue,
   SettingsDestinationId.interconnect => SettingsIconTone.teal,
@@ -1523,44 +1522,44 @@ class _JumpChip extends StatelessWidget {
     return KeyedSubtree(
       key: valueKey,
       child: SettingsSpringValue(
-      value: selected ? 1 : 0,
-      builder: (BuildContext context, double t, Widget? _) {
-        final double c = t.clamp(0.0, 1.0);
-        return FushiPressScale(
-          child: Material(
-            color: Color.lerp(idle, active, c),
-            shape: StadiumBorder(
-              side: eink && selected
-                  ? BorderSide(color: scheme.onSurface, width: 2)
-                  : BorderSide.none,
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: onTap,
-              // Apple：按下变淡、不扩散水波纹（iOS 胶囊按钮的按压反馈）。
-              splashFactory: apple ? NoSplash.splashFactory : null,
-              highlightColor: apple ? appleColorsOf(context).fill : null,
-              child: Padding(
-                // 选中胶囊变宽（M3E 按钮组「选中项变宽」）；Apple 只换填色，
-                // 不变形。
-                padding: EdgeInsets.symmetric(
-                  horizontal: apple ? 14 : lerpDouble(14, 20, t)!,
-                  vertical: 7,
-                ),
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: Color.lerp(idleFg, activeFg, c),
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+        value: selected ? 1 : 0,
+        builder: (BuildContext context, double t, Widget? _) {
+          final double c = t.clamp(0.0, 1.0);
+          return FushiPressScale(
+            child: Material(
+              color: Color.lerp(idle, active, c),
+              shape: StadiumBorder(
+                side: eink && selected
+                    ? BorderSide(color: scheme.onSurface, width: 2)
+                    : BorderSide.none,
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: onTap,
+                // Apple：按下变淡、不扩散水波纹（iOS 胶囊按钮的按压反馈）。
+                splashFactory: apple ? NoSplash.splashFactory : null,
+                highlightColor: apple ? appleColorsOf(context).fill : null,
+                child: Padding(
+                  // 选中胶囊变宽（M3E 按钮组「选中项变宽」）；Apple 只换填色，
+                  // 不变形。
+                  padding: EdgeInsets.symmetric(
+                    horizontal: apple ? 14 : lerpDouble(14, 20, t)!,
+                    vertical: 7,
+                  ),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: Color.lerp(idleFg, activeFg, c),
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        );
-      },
-    ),
+          );
+        },
+      ),
     );
   }
 }
@@ -2042,10 +2041,7 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
                 // （「结果中的词头数量上限 99」压在状态栏与胶囊之间）。遮罩
                 // 实色盖满整段让位（状态栏 + 页头 + 跳转条），再往下柔和渐隐；
                 // 与库页外壳顶部遮罩同一口径（BUG-3132 的修法）。
-                child: FushiTopFadeScrim(
-                  solidHeight: inset(),
-                  topOpacity: 1,
-                ),
+                child: FushiTopFadeScrim(solidHeight: inset(), topOpacity: 1),
               ),
             ),
           ),

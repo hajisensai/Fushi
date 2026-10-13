@@ -36,10 +36,11 @@ import 'package:fushi_engine/ocr/ocr_types.dart';
 
 /// 漫画 OCR 的大模型档位。
 enum MangaAiOcrMode {
-  /// 不用大模型（默认）。
+  /// 不用大模型。
   off,
 
-  /// 只重读本地识别器低置信度的块。
+  /// 只重读没把握的块：有分数按 [kMangaAiOcrLowConfidenceThreshold]，没分数的按
+  /// [isSuspectMangaOcrText]。app 侧默认意图（首次使用前确认一次）。
   lowConfidence,
 
   /// 每个块都重读。
@@ -94,9 +95,49 @@ Rules:
 - Omit furigana (small reading glyphs printed beside kanji); keep only the main text.
 - Do not translate, explain, correct, normalise or complete the text. Keep the original script (kanji, kana, latin), punctuation, small kana, long-vowel marks and sound effects as written.
 - If an image contains no readable text, use an empty string.
+- Hints may follow the images: the local OCR guess for each id (often partly wrong), nearby text that was already read, the work title and the expected language. Use them only to choose between characters that look alike in the image. The image is the only source of truth: never output a hint the image does not show, and never add words from nearby text.
 
 Reply with JSON only, no prose:
 {"blocks":[{"id":1,"text":"..."}]}''';
+
+/// 字幕版系统提示词：图是整条字幕位图（PGS / VobSub / DVB），语言不限日语。
+const String kSubtitleAiOcrSystemPrompt = '''
+You are an OCR engine for video subtitles. Each image is one subtitle rendered as a bitmap. Transcribe exactly the text shown in each image.
+
+Rules:
+- Read lines top to bottom; put a newline between lines.
+- Omit ruby / furigana (small reading glyphs above or beside the main text).
+- Keep the original language and script. Do not translate, explain, correct, normalise or complete the text. Keep punctuation, dashes, music notes and speaker marks as written.
+- If an image contains no readable text, use an empty string.
+- Hints may follow the images: the local OCR guess for each id (often partly wrong), nearby text that was already read, the work title and the expected language. Use them only to choose between characters that look alike in the image. The image is the only source of truth: never output a hint the image does not show, and never add words from nearby text.
+
+Reply with JSON only, no prose:
+{"blocks":[{"id":1,"text":"..."}]}''';
+
+/// 送给大模型的「附近已读文字」最多几行、每行最多几个字：只为消歧，多了只是花钱。
+const int kMangaAiOcrMaxNearbyLines = 12;
+const int kMangaAiOcrMaxNearbyLineLength = 80;
+
+/// 文字来自哪类图：决定系统提示词与「这些图挨在一起」的说法。
+enum MangaAiOcrSource { manga, subtitle }
+
+/// 重读一卷 / 一条字幕轨时的上下文：随每次请求带给模型，只用于消歧（形近字），
+/// 也给 [isSuspectMangaOcrText] 提供期望语言。全为空 = 与旧版只发图片一致。
+class MangaAiOcrContext {
+  const MangaAiOcrContext({
+    this.source = MangaAiOcrSource.manga,
+    this.title,
+    this.language,
+  });
+
+  final MangaAiOcrSource source;
+
+  /// 作品标题（系列名 / 视频标题）；null = 不带。
+  final String? title;
+
+  /// 期望语言（BCP 47 / ISO 639，如 `ja`、`zh-Hans`、`en`）；null = 不知道。
+  final String? language;
+}
 
 /// 进程内按缓存文件规范化路径分桶的写锁（链尾 Future），形状同
 /// `manga_json_writeback.dart` 的 `runExclusiveOnMangaJson`。
@@ -240,7 +281,8 @@ class MangaAiOcrPageStats {
   final String? failure;
 }
 
-/// 一张已裁好的文字图（PNG）+ 它的本地识别块（字幕整轨重读用）。
+/// 一张已裁好的文字图（PNG）+ 它的本地识别块（字幕整轨重读用）。块里的本地文字
+/// 会作为「本地猜测」随请求带给模型。
 class MangaAiOcrCropRequest {
   const MangaAiOcrCropRequest({required this.crop, required this.block});
   final Uint8List crop;
@@ -276,6 +318,7 @@ class MangaAiOcrRefiner {
   MangaAiOcrRefiner({
     required this.provider,
     required this.mode,
+    this.context = const MangaAiOcrContext(),
     AiChatClient Function()? clientFactory,
     this.threshold = kMangaAiOcrLowConfidenceThreshold,
     this.blocksPerRequest = kMangaAiOcrBlocksPerRequest,
@@ -284,6 +327,10 @@ class MangaAiOcrRefiner {
 
   final AiProviderConfig provider;
   final MangaAiOcrMode mode;
+
+  /// 本实例读的是什么（漫画 / 字幕、标题、语言）。工厂在不知道媒体的地方建实例，
+  /// 装配方（`prepareMangaStreamOcr`）在第一次请求前补上；之后不再改。
+  MangaAiOcrContext context;
   final double threshold;
   final int blocksPerRequest;
   final AiChatClient Function() _clientFactory;
@@ -326,9 +373,15 @@ class MangaAiOcrRefiner {
     return switch (mode) {
       MangaAiOcrMode.off => false,
       MangaAiOcrMode.all => true,
-      // 不出分的引擎（Lens / 系统 OCR / 旧缓存）null：不知道就不花钱。
-      MangaAiOcrMode.lowConfidence =>
-        block.confidence != null && block.confidence! < threshold,
+      // 不出分的引擎（Lens / 系统 OCR / 旧缓存）：看文字本身可不可疑。想不漏就选
+      // 「全部」档（2026-10-13 用户拍板：两种做法可选）。
+      MangaAiOcrMode.lowConfidence => switch (block.confidence) {
+        final double score => score < threshold,
+        null => isSuspectMangaOcrText(
+          block.lines.join('\n'),
+          language: context.language,
+        ),
+      },
     };
   }
 
@@ -374,10 +427,18 @@ class MangaAiOcrRefiner {
       for (int k = 0; k < wanted.length; k++)
         crops[k] == null ? null : _CropRead(crops[k]!, page.blocks[wanted[k]]),
     ];
-    final String? failure = await _readCrops(<_CropRead>[
-      for (final _CropRead? read in reads)
-        if (read != null) read,
-    ], cache);
+    final Set<int> wantedSet = wanted.toSet();
+    final String? failure = await _readCrops(
+      <_CropRead>[
+        for (final _CropRead? read in reads)
+          if (read != null) read,
+      ],
+      cache,
+      nearby: <String>[
+        for (int i = 0; i < page.blocks.length; i++)
+          if (!wantedSet.contains(i)) page.blocks[i].lines.join(),
+      ],
+    );
     if (_cancelled) {
       // 调用方已不要结果：不交改写（缓存也已在 _readCrops 里跳过）。
       return (page: page, stats: const MangaAiOcrPageStats());
@@ -414,9 +475,13 @@ class MangaAiOcrRefiner {
   /// 返回的是模型原文（多行用 `\n` 分隔），没有按块几何排版——要落进
   /// [MokuroBlock] 时交 [applyMangaAiOcrText]。遇到致命失败（[fatalFailure]）后
   /// 只交回缓存命中的条目，不再发请求。
+  ///
+  /// [nearby] 是调用方已经读好的附近文字（字幕：前面几条已定稿的台词），只作消歧
+  /// 提示随请求带上。
   Future<List<String?>> refineCrops(
     List<MangaAiOcrCropRequest> items, {
     MangaAiOcrCache? cache,
+    List<String> nearby = const <String>[],
   }) async {
     final List<String?> texts = List<String?>.filled(items.length, null);
     if (_cancelled) return texts;
@@ -425,7 +490,7 @@ class MangaAiOcrRefiner {
         if (wants(items[i].block)) i: _CropRead(items[i].crop, items[i].block),
     };
     if (reads.isEmpty) return texts;
-    await _readCrops(reads.values.toList(), cache);
+    await _readCrops(reads.values.toList(), cache, nearby: nearby);
     if (_cancelled) return List<String?>.filled(items.length, null);
     for (final MapEntry<int, _CropRead> entry in reads.entries) {
       texts[entry.key] = entry.value.text;
@@ -442,8 +507,9 @@ class MangaAiOcrRefiner {
   /// 新请求。已取消时不落缓存（可能是因为删书而取消）。
   Future<String?> _readCrops(
     List<_CropRead> reads,
-    MangaAiOcrCache? cache,
-  ) async {
+    MangaAiOcrCache? cache, {
+    List<String> nearby = const <String>[],
+  }) async {
     final List<_CropRead> pending = <_CropRead>[];
     for (final _CropRead read in reads) {
       final String? hit = await cache?.lookup(read.key);
@@ -472,9 +538,7 @@ class MangaAiOcrRefiner {
       );
       final Map<int, String>? replies;
       try {
-        replies = await _requestBatch(<Uint8List>[
-          for (final _CropRead read in batch) read.crop,
-        ]);
+        replies = await _requestBatch(batch, nearby);
       } on AiChatFailure catch (error) {
         if (_cancelled) break;
         failure = error.message;
@@ -516,24 +580,174 @@ class MangaAiOcrRefiner {
 
   /// 一批裁图一次请求（走共享客户端）；回复按 1 起的编号对回。形状不对返回 null。
   /// 调用方须先确认未取消（见 [_sharedClient]）。
-  Future<Map<int, String>?> _requestBatch(List<Uint8List> crops) async {
+  Future<Map<int, String>?> _requestBatch(
+    List<_CropRead> batch,
+    List<String> nearby,
+  ) async {
     final String reply = await _sharedClient().complete(
       provider: provider,
-      maxTokens: 256 + 192 * crops.length,
+      maxTokens: 256 + 192 * batch.length,
       messages: <AiChatMessage>[
-        const AiChatMessage.system(kMangaAiOcrSystemPrompt),
+        AiChatMessage.system(switch (context.source) {
+          MangaAiOcrSource.manga => kMangaAiOcrSystemPrompt,
+          MangaAiOcrSource.subtitle => kSubtitleAiOcrSystemPrompt,
+        }),
         AiChatMessage.user(
-          'There are ${crops.length} images, ids 1 to ${crops.length} in '
-          'order. Return one entry per id.',
+          buildMangaAiOcrUserPrompt(
+            localGuesses: <String>[
+              for (final _CropRead read in batch) read.block.lines.join('\n'),
+            ],
+            nearby: nearby,
+            context: context,
+          ),
           images: <AiChatImage>[
-            for (final Uint8List crop in crops) AiChatImage(bytes: crop),
+            for (final _CropRead read in batch) AiChatImage(bytes: read.crop),
           ],
         ),
       ],
     );
-    return parseMangaAiOcrReply(reply, count: crops.length);
+    return parseMangaAiOcrReply(reply, count: batch.length);
   }
 }
+
+/// 一批请求的用户消息：图片编号说明 + 上下文提示（标题 / 期望语言 / 每张图的本地
+/// 猜测 / 附近已读文字）。提示只为消歧，规则写在系统提示词里。
+///
+/// 本地猜测与附近文字用 JSON 字符串字面量写出：多行文字、引号都不会和编号串行。
+/// 附近文字按 [kMangaAiOcrMaxNearbyLines] / [kMangaAiOcrMaxNearbyLineLength] 截断，
+/// 取**最后**几行（字幕：离这批最近的台词）。
+String buildMangaAiOcrUserPrompt({
+  required List<String> localGuesses,
+  required List<String> nearby,
+  required MangaAiOcrContext context,
+}) {
+  final int count = localGuesses.length;
+  final StringBuffer
+  out = StringBuffer('There are $count images, ids 1 to $count in order. ')
+    ..writeln(switch (context.source) {
+      MangaAiOcrSource.manga => 'They are text regions from the same manga.',
+      MangaAiOcrSource.subtitle =>
+        'They are subtitle lines from the same video, mostly in playback order.',
+    });
+  final String title = context.title?.trim() ?? '';
+  if (title.isNotEmpty) out.writeln('Work title: ${jsonEncode(title)}');
+  final String language = context.language?.trim() ?? '';
+  if (language.isNotEmpty) out.writeln('Expected language: $language');
+  out.writeln('Local OCR guess per id (may contain errors):');
+  for (int i = 0; i < count; i++) {
+    out.writeln('${i + 1}: ${jsonEncode(localGuesses[i].trim())}');
+  }
+  final List<String> lines = <String>[
+    for (final String line in nearby)
+      if (line.trim().isNotEmpty)
+        line.trim().length > kMangaAiOcrMaxNearbyLineLength
+            ? line.trim().substring(0, kMangaAiOcrMaxNearbyLineLength)
+            : line.trim(),
+  ];
+  if (lines.isNotEmpty) {
+    out.writeln('Nearby text already read (for disambiguation only):');
+    final int from = math.max(0, lines.length - kMangaAiOcrMaxNearbyLines);
+    for (final String line in lines.sublist(from)) {
+      out.writeln(jsonEncode(line));
+    }
+  }
+  out.write('Return one entry per id.');
+  return out.toString();
+}
+
+/// 不出分的引擎（Lens / 系统 OCR / 没有置信度的旧卷）的「没把握」判据：识别出的
+/// 文字本身带着认错的痕迹。只收有根据的信号，宁可漏判（漏判可改用「全部」档）：
+///
+/// - 出现替换符 U+FFFD、私用区或控制字符：引擎吐了乱码；
+/// - 期望语言是中日文，却整段只有拉丁字母、或拉丁字母夹在两个中日文字之间
+///   （`あいxう`）：典型的形近误认；
+/// - 期望语言是韩文却没有一个谚文字母而有拉丁字母；
+/// - 期望语言是拉丁文字语言，却混进了汉字 / 假名 / 谚文。
+///
+/// 只有标点（`！？`、`…`）**不**算：漫画里这类块本来就多，送去重读只是花钱。
+/// [language] 为 null 时只看乱码一条。
+bool isSuspectMangaOcrText(String text, {String? language}) {
+  final List<int> runes = text.replaceAll(RegExp(r'\s'), '').runes.toList();
+  if (runes.isEmpty) return false;
+  for (final int rune in runes) {
+    if (rune == 0xFFFD ||
+        rune < 0x20 ||
+        (rune >= 0x7F && rune < 0xA0) ||
+        (rune >= 0xE000 && rune <= 0xF8FF)) {
+      return true;
+    }
+  }
+  final String lang = (language ?? '')
+      .split(RegExp('[-_]'))
+      .first
+      .toLowerCase();
+  if (lang.isEmpty) return false;
+  final bool hasLatin = runes.any(_isLatinLetter);
+  final bool hasCjk = runes.any(_isCjkOrKana);
+  final bool hasHangul = runes.any(_isHangul);
+  switch (lang) {
+    case 'ja' || 'zh':
+      // 「OK」「TV」「NG」「Ｈ」这类 ≤3 字母的大写 / 全角缩写在中日文里本来就常见。
+      if (hasLatin && !hasCjk) return !_isShortCapsAbbreviation(runes);
+      for (int i = 1; i + 1 < runes.length; i++) {
+        if (_isLatinLetter(runes[i]) &&
+            _isCjkOrKana(runes[i - 1]) &&
+            _isCjkOrKana(runes[i + 1])) {
+          return true;
+        }
+      }
+      return false;
+    case 'ko':
+      return hasLatin && !hasHangul;
+    default:
+      return _latinScriptLanguages.contains(lang) && (hasCjk || hasHangul);
+  }
+}
+
+/// 整块是不超过 3 个大写 / 全角拉丁字母（可带标点数字）：`OK`、`ＮＧ！`、`TV`。
+bool _isShortCapsAbbreviation(List<int> runes) {
+  final List<int> letters = runes.where(_isLatinLetter).toList();
+  if (letters.isEmpty || letters.length > 3) return false;
+  return letters.every(
+    (int r) => (r >= 0x41 && r <= 0x5A) || (r >= 0xFF21 && r <= 0xFF3A),
+  );
+}
+
+/// 用拉丁字母书写的常见语言（[isSuspectMangaOcrText] 的「混进中日韩文字」判据）。
+const Set<String> _latinScriptLanguages = <String>{
+  'en',
+  'de',
+  'es',
+  'fr',
+  'it',
+  'pt',
+  'nl',
+  'id',
+  'tr',
+  'vi',
+  'pl',
+  'sv',
+};
+
+bool _isLatinLetter(int rune) =>
+    (rune >= 0x41 && rune <= 0x5A) ||
+    (rune >= 0x61 && rune <= 0x7A) ||
+    (rune >= 0xFF21 && rune <= 0xFF3A) ||
+    (rune >= 0xFF41 && rune <= 0xFF5A);
+
+bool _isCjkOrKana(int rune) =>
+    (rune >= 0x3040 && rune <= 0x30FF) ||
+    (rune >= 0x31F0 && rune <= 0x31FF) ||
+    (rune >= 0x3400 && rune <= 0x4DBF) ||
+    (rune >= 0x4E00 && rune <= 0x9FFF) ||
+    (rune >= 0xF900 && rune <= 0xFAFF) ||
+    (rune >= 0xFF66 && rune <= 0xFF9F) ||
+    (rune >= 0x20000 && rune <= 0x3FFFF);
+
+bool _isHangul(int rune) =>
+    (rune >= 0xAC00 && rune <= 0xD7AF) ||
+    (rune >= 0x1100 && rune <= 0x11FF) ||
+    (rune >= 0x3130 && rune <= 0x318F);
 
 /// 解析模型回复：`{"blocks":[{"id":n,"text":"..."}]}`，只收 1..[count] 的编号。
 /// 整体形状不对返回 null；单条坏的跳过。

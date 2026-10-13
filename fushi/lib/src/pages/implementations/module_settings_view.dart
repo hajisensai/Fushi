@@ -23,7 +23,8 @@ class ModuleSettingsView extends ConsumerStatefulWidget {
     required this.destinationId,
     required Widget this.navigation,
     super.key,
-  }) : routeTitle = null;
+  }) : routeTitle = null,
+       destination = null;
 
   /// 推出来的独立设置页（如「设置 › AI」「设置 › 互联」）：页头是
   /// [FushiPageHeader.route]——标题 + 自动返回键，不再各页手写
@@ -31,6 +32,7 @@ class ModuleSettingsView extends ConsumerStatefulWidget {
   const ModuleSettingsView.route({
     required this.destinationId,
     required String title,
+    this.destination,
     super.key,
   }) : navigation = null,
        routeTitle = title;
@@ -42,6 +44,10 @@ class ModuleSettingsView extends ConsumerStatefulWidget {
 
   /// [ModuleSettingsView.route] 的页面标题。
   final String? routeTitle;
+
+  /// 不是一级分类的子页（如「模型 › LLM」）直接给出构造闭包；null = 按
+  /// [destinationId] 在一级分类里找。
+  final SettingsDestination Function()? destination;
 
   @override
   ConsumerState<ModuleSettingsView> createState() => _ModuleSettingsViewState();
@@ -56,12 +62,12 @@ class _ModuleSettingsViewState extends ConsumerState<ModuleSettingsView>
       appModel: appModel,
       ref: ref,
     );
-    final SettingsDestination destination = buildSettingsSchema(
-      settingsContext,
-    ).firstWhere(
-      (SettingsDestination destination) =>
-          destination.id == widget.destinationId,
-    );
+    final SettingsDestination destination =
+        widget.destination?.call() ??
+        buildSettingsSchema(settingsContext).firstWhere(
+          (SettingsDestination destination) =>
+              destination.id == widget.destinationId,
+        );
     // 玻璃：与设置主页同一套 macOS / iOS 设置详情（GlassSettingsRenderer）。
     final SettingsRenderer renderer =
         isGlassDesign(context) && !isCupertinoPlatform(context)

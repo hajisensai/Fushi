@@ -2266,6 +2266,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       controller,
       input: input,
       streamIndex: streamIndex,
+      language: source.language,
       applyResult: (String target) =>
           _importExternalSubtitle(controller, target),
       restoreGraphic: () => _selectSubtitleSource(controller, source),
@@ -2287,6 +2288,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       controller,
       input: input,
       streamIndex: track.streamIndex,
+      language: track.language,
       applyResult: (String target) async {
         _registerImportedSubtitleSource(target);
         await _applyRemoteSubtitle(controller, target);
@@ -2314,6 +2316,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     required int streamIndex,
     required Future<void> Function(String target) applyResult,
     required Future<void> Function() restoreGraphic,
+    String? language,
   }) async {
     final String? videoPath = _currentVideoPath;
     if (_graphicSubtitleOcrRunning) return;
@@ -2329,7 +2332,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     _graphicSubtitleOcrCancel = cancel;
     bool cancelled() => cancel.isCompleted;
     final GraphicSubtitleOcrSession session = GraphicSubtitleOcrSession(
-      prepare: _prepareGraphicSubtitleOcr,
+      prepare: (String dir) =>
+          _prepareGraphicSubtitleOcr(dir, language: language),
     );
     Directory? work;
     Future<bool>? extraction;
@@ -2555,6 +2559,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 本机模型）与 AI 重读是否开启，「OCR 设置」直达同一个设置页改模型 / 引擎 /
   /// AI 档位，回来后确认框按新设置重绘。返回是否开始。
   Future<bool> _confirmGraphicSubtitleOcrStart() async {
+    if (!mounted) return false;
+    // 档位还没选过：先问一次「默认交给 LLM」，下面的确认框才能如实写 AI 开没开。
+    await ensureMangaAiOcrDefaultDecided(context, appModel);
     if (!mounted) return false;
     final bool? start = await _focusOwnership.guardOverlay(
       () => showAppDialog<bool>(

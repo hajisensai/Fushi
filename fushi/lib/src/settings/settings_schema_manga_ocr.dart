@@ -33,16 +33,20 @@ SettingsSection buildMangaOcrSection() {
         title: t.manga_ocr_section,
         subtitle: t.manga_ocr_section_summary,
         icon: FushiIcons.ocr,
-        child: _buildMangaOcrDestination,
+        // 主家在「设置 › 模型 › OCR」；漫画分类留同一页的快捷入口。
+        child: () => buildOcrSettingsPage(SettingsDestinationId.manga),
       ),
     ],
   );
 }
 
-SettingsDestination _buildMangaOcrDestination() {
+/// OCR 设置子页（引擎 / 本机模型 / Lens 语言 / LLM 纠错 / 并发），漫画与视频图形
+/// 字幕共用。[owner] 是挂它的父分类（子页共用父分类 id，见
+/// [SettingsNavigationItem.child]）。
+SettingsDestination buildOcrSettingsPage(SettingsDestinationId owner) {
   return SettingsDestination(
-    id: SettingsDestinationId.manga,
-    title: t.manga_ocr_section,
+    id: owner,
+    title: 'OCR',
     icon: FushiIcons.ocr,
     sections: const <SettingsSection>[],
     body: (SettingsContext c) => MangaOcrSettingsSection(

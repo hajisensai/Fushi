@@ -403,6 +403,24 @@ class _AiProviderSettingsSectionState
                     _update(index, draft.copyWith(model: value)),
               ),
             ),
+            field(
+              _textField(
+                key: ValueKey<String>('ai-provider-$index-rate-limit'),
+                label: t.ai_provider_rate_limit,
+                hintText: t.ai_provider_rate_limit_hint,
+                initialValue: draft.requestsPerMinute > 0
+                    ? '${draft.requestsPerMinute}'
+                    : '',
+                keyboardType: TextInputType.number,
+                // 空 / 0 / 非数字一律按不限（与配置解析同口径）。
+                onChanged: (String value) => _update(
+                  index,
+                  draft.copyWith(
+                    requestsPerMinute: int.tryParse(value.trim()) ?? 0,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
         SettingsSectionFooter(t.ai_provider_api_keys_summary),
@@ -1150,6 +1168,7 @@ class _AiProviderDraft {
     required this.reasoningEffort,
     required this.enabled,
     required this.allowInsecureHttp,
+    required this.requestsPerMinute,
   });
 
   factory _AiProviderDraft.fromConfig(AiProviderConfig config) =>
@@ -1164,6 +1183,7 @@ class _AiProviderDraft {
         reasoningEffort: config.reasoningEffort,
         enabled: config.enabled,
         allowInsecureHttp: config.allowInsecureHttp,
+        requestsPerMinute: config.requestsPerMinute,
       );
 
   /// 选了一家预设后的新草稿。
@@ -1187,6 +1207,7 @@ class _AiProviderDraft {
     enabled: true,
     // 本地服务默认地址是 loopback HTTP，不勾这个开关就连构造都过不去。
     allowInsecureHttp: preset.isLocal,
+    requestsPerMinute: 0,
   );
 
   final String id;
@@ -1203,6 +1224,9 @@ class _AiProviderDraft {
   final bool enabled;
   final bool allowInsecureHttp;
 
+  /// 每分钟请求上限；0 = 不限（见 [AiProviderConfig.requestsPerMinute]）。
+  final int requestsPerMinute;
+
   String get presetDisplayName =>
       aiProviderPresetById(presetId)?.displayName ?? presetId;
 
@@ -1218,6 +1242,7 @@ class _AiProviderDraft {
     AiReasoningEffort? reasoningEffort,
     bool? enabled,
     bool? allowInsecureHttp,
+    int? requestsPerMinute,
   }) => _AiProviderDraft(
     id: id,
     presetId: presetId,
@@ -1229,6 +1254,7 @@ class _AiProviderDraft {
     reasoningEffort: reasoningEffort ?? this.reasoningEffort,
     enabled: enabled ?? this.enabled,
     allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
+    requestsPerMinute: requestsPerMinute ?? this.requestsPerMinute,
   );
 
   /// 有效即返回配置，否则 null。
@@ -1253,6 +1279,7 @@ class _AiProviderDraft {
         reasoningEffort: reasoningEffort,
         enabled: enabled,
         allowInsecureHttp: allowInsecureHttp,
+        requestsPerMinute: requestsPerMinute < 0 ? 0 : requestsPerMinute,
       );
     } on ArgumentError {
       return null;

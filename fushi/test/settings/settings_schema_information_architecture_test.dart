@@ -1,11 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_appearance.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart';
 import 'package:fushi/src/settings/settings_schema_manga.dart';
+import 'package:fushi/src/settings/settings_schema_models.dart';
 import 'package:fushi/src/settings/settings_schema_profiles.dart';
 import 'package:fushi/src/settings/settings_schema_reading.dart';
 import 'package:fushi/src/settings/settings_schema_storage.dart';
@@ -19,6 +22,7 @@ List<SettingsDestination> _destinations() => <SettingsDestination>[
   buildMangaDestination(),
   buildVideoDestination(),
   buildLookupDestination(),
+  buildModelsDestination(),
   buildProfilesDestination(),
   buildStorageDestination(),
   buildSystemDestination(),
@@ -138,7 +142,9 @@ void main() {
     () {
       for (final (SettingsDestination destination, String itemId)
           in <(SettingsDestination, String)>[
-            (buildStorageDestination(), 'listening.asr_models'),
+            (buildModelsDestination(), 'listening.asr_models'),
+            (buildModelsDestination(), 'models.ocr'),
+            (buildModelsDestination(), 'storage.ocr_models'),
             (buildMangaDestination(), 'manga.ocr'),
           ]) {
         final SettingsNavigationItem navigation =
@@ -157,7 +163,7 @@ void main() {
   );
 
   test(
-    'ASR models have one global storage owner independent of module settings',
+    'ASR models have one global Models owner independent of module settings',
     () {
       final List<SettingsDestination> owners = _destinations()
           .where(
@@ -170,17 +176,17 @@ void main() {
           .toList();
       expect(
         owners.map((SettingsDestination d) => d.id),
-        <SettingsDestinationId>[SettingsDestinationId.storage],
+        <SettingsDestinationId>[SettingsDestinationId.models],
       );
-      final SettingsDestination storage = owners.single;
+      final SettingsDestination models = owners.single;
       expect(
-        storage.visible,
+        models.visible,
         isNull,
         reason: 'Global models must not be gated by the listening module',
       );
       final List<SettingsSearchEntry> results =
           flattenVisibleSettings(<SettingsDestination>[
-                storage,
+                models,
               ], _GlobalModelContext())
               .where(
                 (SettingsSearchEntry e) => e.item.id == 'listening.asr_models',
@@ -188,11 +194,11 @@ void main() {
               .toList();
       expect(results, hasLength(isAsrSupported ? 1 : 0));
       if (isAsrSupported) {
-        expect(results.single.destination.id, SettingsDestinationId.storage);
+        expect(results.single.destination.id, SettingsDestinationId.models);
         expect(results.single.hasRevealTarget, isTrue);
         expect(
           results.single.sectionTitle,
-          _section(storage, 'storage.section.models_components').title,
+          _section(models, 'models.section.kinds').title,
         );
       }
     },
@@ -255,9 +261,26 @@ void main() {
 }
 
 /// Global resources must not require a listening configuration or a live host.
+///
+/// The only state exposed is module visibility with **every module off**: the
+/// Models page's LLM row is gated by the services module, while ASR models must
+/// stay reachable regardless.
 class _GlobalModelContext implements SettingsContext {
+  @override
+  AppModel get appModel => _NoModulesAppModel();
+
   @override
   dynamic noSuchMethod(Invocation invocation) => throw StateError(
     'Unexpected context dependency: ${invocation.memberName}',
+  );
+}
+
+class _NoModulesAppModel implements AppModel {
+  @override
+  ModuleVisibility get moduleVisibility => const ModuleVisibility(<ModuleId>{});
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw StateError(
+    'Unexpected AppModel dependency: ${invocation.memberName}',
   );
 }
