@@ -6588,18 +6588,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     String workDirPath, {
     String? language,
   }) {
+    // 两个询问框（「默认交给 LLM」与 Lens 上传披露）都会夺走视频键盘焦点：
+    // 套 guardOverlay，任何退出路径都把快捷键还给播放器。
     return prepareMangaStreamOcr(
       imageDirPath: workDirPath,
       engines: MangaOcrWizardEngines.resolve(
         context: context,
         db: appModel.database,
-      ),
+      ).wrapDecideAiDefault(_focusOwnership.guardOverlay),
       preference: MangaOcrEnginePreferenceKey.fromKey(
         appModel.mangaOcrEnginePreference,
       ),
       lensLanguage: appModel.mangaOcrLensLanguage,
       confirmLensUpload: () async =>
-          mounted && await ensureGoogleLensDisclosure(context),
+          mounted &&
+          await _focusOwnership.guardOverlay(
+            () => ensureGoogleLensDisclosure(context),
+          ),
       aiContext: MangaAiOcrContext(
         source: MangaAiOcrSource.subtitle,
         title: _title,

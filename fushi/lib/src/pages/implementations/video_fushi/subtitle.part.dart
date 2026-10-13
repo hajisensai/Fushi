@@ -2561,7 +2561,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
   Future<bool> _confirmGraphicSubtitleOcrStart() async {
     if (!mounted) return false;
     // 档位还没选过：先问一次「默认交给 LLM」，下面的确认框才能如实写 AI 开没开。
-    await ensureMangaAiOcrDefaultDecided(context, appModel);
+    await _focusOwnership.guardOverlay(
+      () => ensureMangaAiOcrDefaultDecided(context, appModel),
+    );
     if (!mounted) return false;
     final bool? start = await _focusOwnership.guardOverlay(
       () => showAppDialog<bool>(

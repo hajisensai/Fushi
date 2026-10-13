@@ -128,8 +128,27 @@ class MangaOcrWizardEngines {
     final MangaOcrService Function(MangaOcrLocalModel)? serviceFor =
         modelServiceFor;
     if (serviceFor == null) return this;
+    return _copy(service: serviceFor(model), localModel: model);
+  }
+
+  /// [decideAiDefault] 换成 [wrap] 包过的版本，其余不变。给需要在询问框外面再套一层
+  /// 的入口用——例如视频页要用焦点守卫（`PageFocusOwnership.guardOverlay`）包住
+  /// 弹框，关掉后把快捷键焦点还给播放器。没有询问（null）时原样返回。
+  MangaOcrWizardEngines wrapDecideAiDefault(
+    Future<void> Function(Future<void> Function() decide) wrap,
+  ) {
+    final Future<void> Function()? decide = decideAiDefault;
+    if (decide == null) return this;
+    return _copy(decideAiDefault: () => wrap(decide));
+  }
+
+  MangaOcrWizardEngines _copy({
+    MangaOcrService? service,
+    MangaOcrLocalModel? localModel,
+    Future<void> Function()? decideAiDefault,
+  }) {
     return MangaOcrWizardEngines(
-      service: serviceFor(model),
+      service: service ?? this.service,
       externalRunner: externalRunner,
       remoteRunner: remoteRunner,
       lensRunner: lensRunner,
@@ -137,11 +156,11 @@ class MangaOcrWizardEngines {
       initialEnginePreference: initialEnginePreference,
       initialLensLanguage: initialLensLanguage,
       lensLanguageSetter: lensLanguageSetter,
-      localModel: model,
+      localModel: localModel ?? this.localModel,
       localModelSetter: localModelSetter,
       modelServiceFor: modelServiceFor,
       aiRefinerFactory: aiRefinerFactory,
-      decideAiDefault: decideAiDefault,
+      decideAiDefault: decideAiDefault ?? this.decideAiDefault,
     );
   }
 

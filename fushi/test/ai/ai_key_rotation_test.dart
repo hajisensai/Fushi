@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_key_rotation.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/ai_rate_limiter.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -372,10 +373,17 @@ void main() {
       now = DateTime.utc(2026, 10, 13, 12);
     });
 
+    /// 重试退避不真等：限频器与客户端共用假时钟，sleep 只把时间往前拨。
+    AiRateLimiter fakeLimiter() => AiRateLimiter(
+      now: () => now,
+      sleep: (Duration d) async => now = now.add(d),
+    );
+
     AiChatClient clientFor(_FakeServer server) => AiChatClient(
       client: server.client,
       healthStore: store,
       clock: () => now,
+      rateLimiter: fakeLimiter(),
     );
 
     Future<String> ask(AiChatClient client, AiProviderConfig provider) =>
@@ -460,7 +468,7 @@ void main() {
       expect(again.cooldownUntil, now.add(const Duration(minutes: 2)));
     });
 
-    test('与 key 无关的失败（5xx）不换 key、不记冷却', () async {
+    test('与 key 无关的失败（5xx）不换 key、不记冷却（只按临时性失败原样重试）', () async {
       final _FakeServer server = _FakeServer(<String, http.Response Function()>{
         'sk-a': () => http.Response('{}', 503),
         'sk-b': _ok,
@@ -478,7 +486,9 @@ void main() {
           ),
         ),
       );
-      expect(server.calls, <String>['sk-a']);
+      expect(server.calls, <String>[
+        for (int i = 0; i < kAiChatMaxAttempts; i++) 'sk-a',
+      ]);
       expect(healthOf('sk-a'), isNull);
     });
 
@@ -494,7 +504,9 @@ void main() {
       for (int i = 0; i < 3; i++) {
         await expectLater(ask(client, provider), throwsA(isA<AiChatFailure>()));
       }
-      expect(server.calls, <String>['sk-b', 'sk-b', 'sk-b']);
+      // 第一次请求：冷却 1 分钟，等到期后重试一次（再失败冷却 2 分钟，超过重试
+      // 上限不再干等）；之后两次请求各在冷却中真打一次。
+      expect(server.calls, <String>['sk-b', 'sk-b', 'sk-b', 'sk-b']);
     });
 
     test('listModels / ping 同样轮换', () async {
@@ -542,6 +554,7 @@ void main() {
       final _HeldOnA held = heldOnA();
       final AiChatClient client = AiChatClient(
         client: held.client,
+        rateLimiter: fakeLimiter(),
         healthStore: store,
         clock: () => now,
       );
@@ -564,6 +577,7 @@ void main() {
         final _HeldOnA held = heldOnA();
         final AiChatClient client = AiChatClient(
           client: held.client,
+          rateLimiter: fakeLimiter(),
           healthStore: store,
           clock: () => now,
         );

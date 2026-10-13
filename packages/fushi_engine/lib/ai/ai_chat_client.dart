@@ -60,7 +60,8 @@ class AiChatFailure implements Exception {
   bool get rotatesKey => aiFailureRotatesKey(message);
 
   /// 原样重试可能成功的失败：网络 / 超时（都报 `network_error`）、限流、5xx。
-  /// 鉴权失败、4xx、坏回复、空回复、未配置都是配置或模型的问题，重试也一样。
+  /// 鉴权失败、4xx、坏回复、空回复、未配置都是配置或模型的问题，重试也一样；
+  /// `cancelled`（客户端已 `close`，排队中的请求被放弃）是调用方不要了，不重试。
   bool get isTransient =>
       message == 'network_error' ||
       message == 'rate_limited' ||
@@ -111,9 +112,9 @@ class AiChatMessage {
 ///
 /// [client] 可注入，测试用假客户端断言 wire 形状，不打真网。
 ///
-/// 一家配了多把 key 时，每次请求都经 [_withKeyRotation]：挑一把没在冷却的 key，
+/// 一家配了多把 key 时，每次请求都经 [_rotateKeys]：挑一把没在冷却的 key，
 /// 遇到鉴权被拒 / 限流 / 额度不足就把它记进冷却、换下一把**重试当前请求**；全部
-/// 失败时抛最后一把的真实错误。例外是 [ping]（用户点「测试连接」）：它逐把真打，
+/// 失败时抛最有信息量的真实错误（[_KeyRoundFailure.reported]）。例外是 [ping]（用户点「测试连接」）：它逐把真打，
 /// 冷却中的也打。健康记录存在 `healthStore`（默认全局 [aiKeyHealthStore]，app
 /// 装配成持久化实现）。
 class AiChatClient {
@@ -142,8 +143,14 @@ class AiChatClient {
   /// 调用方已不要结果（[close]）：在途请求失败后不再重试。
   bool _closed = false;
 
+  /// 本客户端在限频器里排队的请求共用的取消信号，[close] 时触发。
+  final AiRateLimitCancellation _cancellation = AiRateLimitCancellation();
+
+  /// 调用方不再要结果：还在限频器里排队的请求立即放弃（抛 `cancelled`，不占
+  /// 空位），之后的 [complete] 也不再发出；在途请求失败后不再重试。
   void close() {
     _closed = true;
+    _cancellation.cancel();
     if (_ownsClient) {
       _client.close();
     }
@@ -154,10 +161,11 @@ class AiChatClient {
   /// 三种协议同一口径：回复为空或只有空白一律抛 `empty_response`——空串对每个
   /// 调用方都是「AI 什么也没给」，当成功返回只会把失败推迟成下游的解析错误。
   ///
-  /// 临时性失败（网络 / 超时、429、5xx）最多试 [kAiChatMaxAttempts] 次，指数退避；
-  /// 退避写进限频器（[AiRateLimiter.backOff]），这家并发在途的其它请求一起避让，
-  /// 不接着撞墙。提供商要求等超过 [kAiChatMaxRetryWait]、或客户端已 [close]，
-  /// 不再重试、原样抛出。鉴权 / 4xx / 坏回复重试也一样，直接抛。
+  /// 临时性失败（网络 / 超时、429、5xx）最多试 [kAiChatMaxAttempts] 轮，等待取指数
+  /// 退避与 key 冷却到期中更晚者；退避写进限频器（[AiRateLimiter.backOff]），这家
+  /// 并发在途的其它请求一起避让，不接着撞墙。要等超过 [kAiChatMaxRetryWait]、或
+  /// 客户端已 [close]，不再重试、原样抛出（还在排队时被关抛 `cancelled`）。
+  /// 鉴权 / 4xx / 坏回复重试也一样，直接抛。
   Future<String> complete({
     required AiProviderConfig provider,
     required List<AiChatMessage> messages,
@@ -290,41 +298,70 @@ class AiChatClient {
   // 多 key 轮换
   // -------------------------------------------------------------------------
 
-  /// 用 [provider] 的 key 依次执行 [attempt]，直到成功或 key 用完。
-  ///
-  /// - 没有任何 key（本地推理服务）：以空 key 执行一次，不记健康。
-  /// - 失败码不属于「换 key 可能就好」（网络 / 5xx / 坏回复…）：原样抛出，不换 key
-  ///   ——那与 key 无关，换了也是同一个错误。
-  /// - 属于：把这把 key 记进冷却（`Retry-After` 优先，否则指数退避），换下一把；
-  ///   全部试完仍失败就抛**最后一个真实错误**。每把 key 至多试一次，不会无限重试。
-  /// - 成功：清掉这把 key 的冷却记录（除非发出之后别的请求刚给它记了失败）。
+  /// 一轮换 key（[_rotateKeys]），不重试；全部失败时抛 [_KeyRoundFailure.reported]。
   Future<T> _withKeyRotation<T>(
     AiProviderConfig provider,
     Future<T> Function(String key) attempt,
   ) async {
-    final List<String> keys = provider.activeApiKeys;
-    if (keys.isEmpty) {
-      return attempt('');
+    try {
+      return await _rotateKeys(provider, attempt);
+    } on _KeyRoundFailure catch (round) {
+      throw round.reported;
     }
-    final List<String> order = orderAiKeysForRequest(
-      providerId: provider.id,
-      keys: keys,
-      store: _health,
-      now: _clock(),
-    );
-    AiChatFailure? last;
-    for (final String key in order) {
+  }
+
+  /// 用 [provider] 的 key 依次执行 [attempt]，直到成功或这一轮没有 key 可试。
+  ///
+  /// - 候选是 [among]（null = 全部启用的 key）；没有任何 key（本地推理服务）时
+  ///   候选只有空 key，不记健康。
+  /// - **每一把**都是先 [beforeEach]（限频排队）、再按排完队那一刻的健康记录
+  ///   （[orderAiKeysForRequest]）挑下一把：排队期间别的请求刚让某把 key 冷却，
+  ///   这一把就不会被选中。
+  /// - 冷却中的 key 只在本轮第一把、且没有别的可用 key 时真打一次（「宁可真打
+  ///   一次拿回真实错误」，见 [orderAiKeysForRequest]），打完本轮结束；本轮已经有
+  ///   key 失败之后，剩下的都在冷却就不再去撞。
+  /// - 换 key 类失败（鉴权 / 限流 / 额度，[aiFailureRotatesKey]）：记进冷却
+  ///   （[_attemptKey]），换下一把；与 key 无关的临时性失败（网络 / 5xx）：换了
+  ///   也一样，本轮结束；与 key 无关的非临时性失败（4xx / 坏回复）：原样抛出。
+  /// - 本轮结束仍没成功：抛 [_KeyRoundFailure]，带每把试过的 key 各自的失败原因，
+  ///   由调用方决定重不重试、重试时只在哪些 key 里选。
+  Future<T> _rotateKeys<T>(
+    AiProviderConfig provider,
+    Future<T> Function(String key) attempt, {
+    Set<String>? among,
+    Future<void> Function()? beforeEach,
+  }) async {
+    final List<String> keys = provider.activeApiKeys;
+    final List<String> pool = keys.isEmpty
+        ? const <String>['']
+        : keys.where((String k) => among?.contains(k) ?? true).toList();
+    final Map<String, AiChatFailure> failures = <String, AiChatFailure>{};
+    while (true) {
+      final List<String> left = pool
+          .where((String k) => !failures.containsKey(k))
+          .toList();
+      if (left.isEmpty) break;
+      await beforeEach?.call();
+      final DateTime now = _clock();
+      final String key = orderAiKeysForRequest(
+        providerId: provider.id,
+        keys: left,
+        store: _health,
+        now: now,
+      ).first;
+      final bool cooling =
+          _health.read(aiKeyFingerprint(provider.id, key))?.isCoolingAt(now) ??
+          false;
+      if (cooling && failures.isNotEmpty) break;
       try {
         return await _attemptKey(provider, key, attempt);
       } on AiChatFailure catch (failure) {
-        if (!failure.rotatesKey) {
-          rethrow;
-        }
-        last = failure;
+        if (!failure.rotatesKey && !failure.isTransient) rethrow;
+        failures[key] = failure;
+        if (!failure.rotatesKey || cooling) break;
       }
     }
-    // keys 非空时 orderAiKeysForRequest 至少给一把，走到这里 last 必有值。
-    throw last!;
+    throw _KeyRoundFailure(failures);
   }
 
   /// 用一把具体的 key 执行一次 [attempt]，并把结果落进健康记录；失败原样抛出。
@@ -334,6 +371,9 @@ class AiChatClient {
   /// 当前值比较：同一把 key 上并发的请求不会把一阵限流记成多次失败，按旧视图
   /// 发出的成功也不会抹掉别处刚记的冷却。只有换 key 类失败（[aiFailureRotatesKey]）
   /// 才记冷却。[key] 为空（本地推理服务没有 key）时不记健康。
+  ///
+  /// 限频排队必须在调用本函数**之前**完成（[_rotateKeys] 的 `beforeEach`）：`seen`
+  /// 若在排队前读，排队期间别处记下的失败会被当成「同一阵限流」，不再累加。
   Future<T> _attemptKey<T>(
     AiProviderConfig provider,
     String key,
@@ -597,38 +637,79 @@ class AiChatClient {
   }
 
   /// 一次 [complete] 的完整发送：外层是临时性失败的退避重试，内层每一轮都经
-  /// [_withKeyRotation] 换 key，每把 key 真正发出前先在限频器排队。
+  /// [_rotateKeys] 换 key，每把 key 真正发出前先在限频器排队（[_acquire]）。
   ///
   /// 某把 key 被限流只让**这把 key** 冷却（[_attemptKey]），轮换照常换下一把，不把
-  /// 整家提供商拖进 `Retry-After`；只有一轮里所有 key 都失败、失败又属于临时性
-  /// （全被限流、网络、5xx）时，才按 [_retryDelay] 让整家退避——这时并发在途的其它
-  /// 请求本来也会撞同一堵墙。
+  /// 整家提供商拖进 `Retry-After`；只有一轮里所有候选 key 都失败、其中又有临时性
+  /// 失败（限流、网络、5xx）时，才按 [_retryDelay] 让整家退避——这时并发在途的其它
+  /// 请求本来也会撞同一堵墙。下一轮只在上一轮**因临时性原因**失败的 key 里选：
+  /// 鉴权被拒 / 额度用尽的 key 在这次请求里不再试，最终报错也不会被它们顶替。
   Future<T> _withRetry<T>(
     AiProviderConfig provider,
     Future<T> Function(String key) send,
   ) async {
+    Set<String>? among;
     for (int round = 1; ; round++) {
       try {
-        return await _withKeyRotation(provider, (String key) async {
-          await _rateLimiter.acquire(provider);
-          return send(key);
-        });
-      } on AiChatFailure catch (failure) {
-        final Duration? wait = _retryDelay(failure, round);
-        if (wait == null) rethrow;
+        return await _rotateKeys(
+          provider,
+          send,
+          among: among,
+          beforeEach: () => _acquire(provider),
+        );
+      } on _KeyRoundFailure catch (failed) {
+        final Duration? wait = _retryDelay(provider, failed, round);
+        if (wait == null) throw failed.reported;
         _rateLimiter.backOff(provider, wait);
+        among = failed.transientKeys;
       }
     }
   }
 
-  /// 第 [attempt] 次失败后还要不要再试、等多久；null = 不再试。
-  Duration? _retryDelay(AiChatFailure failure, int attempt) {
-    if (_closed || !failure.isTransient || attempt >= kAiChatMaxAttempts) {
-      return null;
+  /// 在限频器排到这家的空位；[close] 之后（含排队途中被关）抛 `cancelled`。
+  Future<void> _acquire(AiProviderConfig provider) async {
+    if (!await _rateLimiter.acquire(provider, cancellation: _cancellation)) {
+      throw const AiChatFailure('cancelled');
     }
-    final Duration wait =
-        failure.retryAfter ?? kAiChatRetryBaseDelay * (1 << (attempt - 1));
+  }
+
+  /// 第 [round] 轮失败后还要不要再试、等多久；null = 不再试。
+  ///
+  /// 等待取「指数退避」与「上一轮因临时性原因失败的 key 里最早能再试的时刻」中
+  /// 更晚的那个：一把 429 没带 `Retry-After` 的 key 冷却一分钟，2 秒后重打只会
+  /// 撞在冷却上、把冷却越推越长。要等超过 [kAiChatMaxRetryWait] 就不在后台干等。
+  Duration? _retryDelay(
+    AiProviderConfig provider,
+    _KeyRoundFailure failed,
+    int round,
+  ) {
+    if (_closed || round >= kAiChatMaxAttempts) return null;
+    final DateTime now = _clock();
+    DateTime? soonest;
+    for (final String key in failed.transientKeys) {
+      final DateTime ready = _keyReadyAt(provider, key, failed.failures[key]!);
+      if (soonest == null || ready.isBefore(soonest)) soonest = ready;
+    }
+    if (soonest == null) return null;
+    final Duration backoff = kAiChatRetryBaseDelay * (1 << (round - 1));
+    final Duration untilReady = soonest.difference(now);
+    final Duration wait = untilReady > backoff ? untilReady : backoff;
     return wait > kAiChatMaxRetryWait ? null : wait;
+  }
+
+  /// 这把 key 刚以 [failure] 失败，何时能再试：冷却记录与应答里 `Retry-After`
+  /// 两者更晚的那个（没有 key 的本地服务没有冷却记录，只看后者）。
+  DateTime _keyReadyAt(
+    AiProviderConfig provider,
+    String key,
+    AiChatFailure failure,
+  ) {
+    final DateTime now = _clock();
+    final DateTime byReply = now.add(failure.retryAfter ?? Duration.zero);
+    final DateTime? byHealth = _health
+        .read(aiKeyFingerprint(provider.id, key))
+        ?.cooldownUntil;
+    return byHealth != null && byHealth.isAfter(byReply) ? byHealth : byReply;
   }
 
   Future<http.Response> _send(Future<http.Response> Function() send) async {
@@ -665,6 +746,28 @@ class AiChatClient {
         : '${base.path}/';
     return base.replace(path: '$basePath$path');
   }
+}
+
+/// 一轮换 key 没有成功（[AiChatClient._rotateKeys]）：每把试过的 key 各自因什么
+/// 失败，按尝试顺序（没有 key 的本地服务记在空串下）。至少有一条。
+class _KeyRoundFailure implements Exception {
+  _KeyRoundFailure(this.failures) : assert(failures.isNotEmpty);
+
+  final Map<String, AiChatFailure> failures;
+
+  /// 因临时性原因（限流 / 网络 / 5xx）失败、过一会儿可能就好的 key。
+  Set<String> get transientKeys => <String>{
+    for (final MapEntry<String, AiChatFailure> e in failures.entries)
+      if (e.value.isTransient) e.key,
+  };
+
+  /// 这次请求最终报给调用方的错误：有临时性失败时报最后一个临时性失败——请求
+  /// 是被它挡住的（「限流了，稍后再试」），某把失效 key 的 `unauthorized` 只说明
+  /// 那一把的问题，不能顶替它；全是 key 本身的问题时报最后一个。
+  AiChatFailure get reported => failures.values.lastWhere(
+    (AiChatFailure f) => f.isTransient,
+    orElse: () => failures.values.last,
+  );
 }
 
 /// 应答体里只看开头这么多字节找特征词：错误体都很短，没必要整份解码。
