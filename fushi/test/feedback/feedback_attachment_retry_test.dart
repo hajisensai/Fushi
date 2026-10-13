@@ -8,11 +8,14 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
+import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:image/image.dart' as img;
 
 http.Response _json(Object body, [int status = 200]) => http.Response.bytes(
   utf8.encode(jsonEncode(body)),
@@ -164,6 +167,164 @@ void main() {
     expect(r.dropped, 1);
     expect(r.remaining, 0);
     expect(s.pendingSlots('abcdefghij'), isEmpty);
+  });
+
+  test('截图被拒收（415 宽高超限 / 不是图片）：丢弃，不当网络错误无限重试', () async {
+    handler = (http.Request r) async {
+      if (r.url.path == '/v1/feedback') return created();
+      return _json(<String, dynamic>{'error': 'x'}, 503);
+    };
+    final FeedbackService s = service();
+    await s.submit(
+      FeedbackDraft(
+        category: draft.category,
+        title: 't',
+        body: 'b',
+        includeLogs: false,
+        screenshots: <Uint8List>[_bytes(1), _bytes(2)],
+      ),
+    );
+    expect(s.pendingSlots('abcdefghij'), <String>{'s0', 's1'});
+    handler = (http.Request r) async => r.url.path.endsWith('/s0')
+        ? _json(<String, dynamic>{'error': 'bad_image_dimensions'}, 415)
+        : _json(<String, dynamic>{'error': 'not_an_image'}, 415);
+    final FeedbackRetryResult r = await s.retryPending('abcdefghij');
+    expect(r.dropped, 2);
+    expect(r.remaining, 0);
+    expect(s.pendingSlots('abcdefghij'), isEmpty);
+    expect(await FeedbackPendingStore(root).scan(), isEmpty);
+  });
+
+  test('拒收分类：4xx 永久丢弃，408 / 409 conflict / 429 与 5xx 留着重试', () {
+    for (final int status in <int>[400, 403, 404, 410, 413, 415, 422]) {
+      expect(
+        FeedbackService.isPermanentAttachmentRejection(status),
+        isTrue,
+        reason: '$status',
+      );
+    }
+    for (final int status in <int>[408, 409, 429, 500, 502, 503, 504]) {
+      expect(
+        FeedbackService.isPermanentAttachmentRejection(status),
+        isFalse,
+        reason: '$status',
+      );
+    }
+  });
+
+  test('429 限流 / 409 conflict：留在本机待下次重试', () async {
+    handler = (http.Request r) async {
+      if (r.url.path == '/v1/feedback') return created();
+      return _json(<String, dynamic>{'error': 'x'}, 503);
+    };
+    final FeedbackService s = service();
+    await s.submit(
+      FeedbackDraft(
+        category: draft.category,
+        title: 't',
+        body: 'b',
+        includeLogs: false,
+        screenshots: <Uint8List>[_bytes(1), _bytes(2)],
+      ),
+    );
+    handler = (http.Request r) async => r.url.path.endsWith('/s0')
+        ? _json(<String, dynamic>{'error': 'rate_limited'}, 429)
+        : _json(<String, dynamic>{'error': 'conflict'}, 409);
+    final FeedbackRetryResult r = await s.retryPending('abcdefghij');
+    expect(r.dropped, 0);
+    expect(r.remaining, 2);
+    expect(s.pendingSlots('abcdefghij'), <String>{'s0', 's1'});
+  });
+
+  test('「重试上传」与「追加截图」同时按：同一条反馈的附件操作排队，不重复上传、不并发', () async {
+    handler = (http.Request r) async {
+      if (r.url.path == '/v1/feedback') return created();
+      return _json(<String, dynamic>{'error': 'x'}, 503);
+    };
+    final FeedbackService s = service();
+    await s.submit(
+      FeedbackDraft(
+        category: draft.category,
+        title: 't',
+        body: 'b',
+        includeLogs: false,
+        screenshots: <Uint8List>[_bytes(1)],
+      ),
+    );
+    expect(s.pendingSlots('abcdefghij'), <String>{'s0'});
+    requests.clear();
+    int inFlight = 0;
+    int maxInFlight = 0;
+    handler = (http.Request r) async {
+      inFlight++;
+      maxInFlight = inFlight > maxInFlight ? inFlight : maxInFlight;
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      inFlight--;
+      return _json(<String, dynamic>{'slot': 'x'}, 201);
+    };
+    final List<FeedbackRetryResult> results =
+        await Future.wait(<Future<FeedbackRetryResult>>[
+          s.retryPending('abcdefghij'),
+          s.addScreenshots(
+            'abcdefghij',
+            <Uint8List>[_bytes(7)],
+            usedSlots: const <String>{},
+          ),
+        ]);
+    expect(maxInFlight, 1);
+    // s0 只传一次；新截图不会落进刚被补传占掉的 s0，而是进 s1。
+    expect(
+      requests.map((http.Request q) => q.url.pathSegments.last).toList(),
+      <String>['s0', 's1'],
+    );
+    expect(requests[0].bodyBytes, _bytes(1));
+    expect(requests[1].bodyBytes, _bytes(7));
+    expect(results[0].uploaded, 1);
+    expect(results[1].uploaded, 1);
+    expect(s.pendingSlots('abcdefghij'), isEmpty);
+    expect(await FeedbackPendingStore(root).scan(), isEmpty);
+  });
+
+  test('待传目录：删掉一个槽位时目录里还有别的槽位就留着目录，删空才删目录', () async {
+    final FeedbackPendingStore store = FeedbackPendingStore(root);
+    await store.put('abcdefghij', 's0', _bytes(1));
+    await store.put('abcdefghij', 's1', _bytes(2));
+    await store.remove('abcdefghij', 's0');
+    expect(await store.scan(), <String, Set<String>>{
+      'abcdefghij': <String>{'s1'},
+    });
+    await store.remove('abcdefghij', 's1');
+    expect(
+      Directory('${root.path}/feedback/pending/abcdefghij').existsSync(),
+      isFalse,
+    );
+    // 目录已不在（被并发的一方删掉）时再删也不报错。
+    await store.remove('abcdefghij', 's1');
+  });
+
+  test('选图：宽高超服务端上限的长截图（字节数不大）缩到长边上限再交，不原样放行', () {
+    final Uint8List tall = Uint8List.fromList(
+      img.encodePng(
+        img.Image(width: 8, height: FeedbackLimits.screenshotMaxSide + 808),
+      ),
+    );
+    expect(tall.length, lessThan(FeedbackLimits.screenshotMaxBytes));
+    expect(feedbackImageDimensionsAcceptable(tall), isFalse);
+    final Uint8List out = prepareFeedbackImageBytes(tall);
+    expect(identical(out, tall), isFalse);
+    final img.Image? decoded = img.decodeImage(out);
+    expect(decoded, isNotNull);
+    expect(decoded!.height, kFeedbackScreenshotMaxSide);
+    expect(feedbackImageDimensionsAcceptable(out), isTrue);
+    expect(out.length, lessThanOrEqualTo(FeedbackLimits.screenshotMaxBytes));
+  });
+
+  test('选图：宽高与字节数都在上限内的 PNG 原样放行', () {
+    final Uint8List small = Uint8List.fromList(
+      img.encodePng(img.Image(width: 1080, height: 2400)),
+    );
+    expect(feedbackImageDimensionsAcceptable(small), isTrue);
+    expect(identical(prepareFeedbackImageBytes(small), small), isTrue);
   });
 
   test('追加截图：只用服务端和本机都没占用的空闲槽位，超出空位的丢弃', () async {

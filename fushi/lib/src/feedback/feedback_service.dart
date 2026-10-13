@@ -314,10 +314,48 @@ class FeedbackService extends ChangeNotifier {
     }
   }
 
-  /// 把这条反馈所有待传附件再传一遍。服务端同一槽位只收一次（重复传拿到 409 已按
-  /// 成功处理），超过补传窗口 / 内容被拒（400、403、404、413）的附件不会再有机会，
-  /// 直接丢弃并计入 [FeedbackRetryResult.dropped]；其余（网络类）错误留着下次再试。
-  Future<FeedbackRetryResult> retryPending(String id) async {
+  /// 每条反馈一条附件操作链：[retryPending] 与 [addScreenshots] 都读写同一批待传槽位
+  /// 和同一个待传目录（「重试上传」与「追加截图」两个按钮可以同时按），排成一队依次跑。
+  final Map<String, Future<void>> _attachChains = <String, Future<void>>{};
+
+  /// 把 [task] 接到反馈 [id] 的附件操作链末尾；前一个失败不影响后一个。
+  Future<T> _serialAttach<T>(String id, Future<T> Function() task) {
+    final Future<void> previous = _attachChains[id] ?? Future<void>.value();
+    final Future<T> result = previous.then<T>((_) => task());
+    // 链尾只管「轮到下一个」：结果与异常照常交给调用方 [result]。
+    final Future<void> tail = result.then<void>(
+      (T _) {},
+      onError: (Object _) {},
+    );
+    _attachChains[id] = tail;
+    unawaited(
+      tail.then<void>((_) {
+        if (identical(_attachChains[id], tail)) _attachChains.remove(id);
+      }),
+    );
+    return result;
+  }
+
+  /// 服务端对这次上传的拒绝是不是永久的（再传同样的字节也只会得到同样的结果）。
+  ///
+  /// 4xx 是「请求本身不被接受」：补传窗口已过（403）、反馈不存在（404）、太大（413）、
+  /// 不是图片 / 宽高超限（415）……都丢弃。例外的 4xx 是暂时的：408 请求超时、429 限流、
+  /// 409 `conflict`（并发写附件列表时输了，重传就行；`slot_taken` 在客户端已当成功）。
+  /// 5xx 与网络异常不归这里管，留着下次再试。
+  @visibleForTesting
+  static bool isPermanentAttachmentRejection(int status) =>
+      status >= 400 &&
+      status < 500 &&
+      !const <int>{408, 409, 429}.contains(status);
+
+  /// 把这条反馈所有待传附件再传一遍。服务端同一槽位只收一次（重复传拿到 409
+  /// `slot_taken` 已按成功处理）；被服务端永久拒收的（[isPermanentAttachmentRejection]）
+  /// 不会再有机会，直接丢弃并计入 [FeedbackRetryResult.dropped]；其余（5xx、网络类）
+  /// 错误留着下次再试。与同一条反馈的 [addScreenshots] 串行。
+  Future<FeedbackRetryResult> retryPending(String id) =>
+      _serialAttach<FeedbackRetryResult>(id, () => _retryPendingNow(id));
+
+  Future<FeedbackRetryResult> _retryPendingNow(String id) async {
     final FeedbackTicket? t = byId(id);
     if (t == null) throw StateError('unknown feedback $id');
     final FeedbackPendingStore store = await _pendingFor();
@@ -335,7 +373,7 @@ class FeedbackService extends ChangeNotifier {
           done = true;
         } on LeaderboardApiException catch (e, st) {
           ErrorLogService.instance.log('feedback.retry_attachment', e, st);
-          if (const <int>{400, 403, 404, 413}.contains(e.status)) {
+          if (isPermanentAttachmentRejection(e.status)) {
             dropped++;
             done = true;
           }
@@ -358,13 +396,30 @@ class FeedbackService extends ChangeNotifier {
   }
 
   /// 给已提交的反馈追加截图：占用 [usedSlots]（服务端已有的附件槽位）和本机待传之外
-  /// 的空闲截图槽位，超出空位的丢弃。字节先落盘再传，传失败也留在待传里。
+  /// 的空闲截图槽位，超出空位的丢弃。字节先落盘再传，传失败也留在待传里。与同一条
+  /// 反馈的 [retryPending] 串行。
+  ///
+  /// 已占用的槽位 = [usedSlots] ∪ 调用这一刻的待传槽位 ∪ 排到自己时的待传槽位：前面
+  /// 排着的补传会把调用时还在待传的槽位传上去并移出待传清单，它们在服务端已被占用，
+  /// 只看排到时的待传清单会把新截图塞进去、被服务端当成 `slot_taken` 静默吞掉。
   Future<FeedbackRetryResult> addScreenshots(
     String id,
     List<Uint8List> shots, {
     required Set<String> usedSlots,
-  }) async {
-    final Set<String> taken = <String>{...usedSlots, ...pendingSlots(id)};
+  }) {
+    final Set<String> takenAtCall = <String>{...usedSlots, ...pendingSlots(id)};
+    return _serialAttach<FeedbackRetryResult>(
+      id,
+      () => _addScreenshotsNow(id, shots, takenAtCall),
+    );
+  }
+
+  Future<FeedbackRetryResult> _addScreenshotsNow(
+    String id,
+    List<Uint8List> shots,
+    Set<String> takenAtCall,
+  ) async {
+    final Set<String> taken = <String>{...takenAtCall, ...pendingSlots(id)};
     final List<String> free = <String>[
       for (int i = 0; i < FeedbackLimits.screenshots; i++)
         if (!taken.contains('s$i')) 's$i',
@@ -372,7 +427,7 @@ class FeedbackService extends ChangeNotifier {
     for (int i = 0; i < shots.length && i < free.length; i++) {
       await _stash(id, free[i], shots[i]);
     }
-    return retryPending(id);
+    return _retryPendingNow(id);
   }
 
   FeedbackTicket? byId(String id) {

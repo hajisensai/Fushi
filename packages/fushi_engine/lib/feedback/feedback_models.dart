@@ -26,6 +26,13 @@ abstract final class FeedbackLimits {
   static const int devNoteMax = 8000;
   static const int screenshots = 3;
   static const int screenshotMaxBytes = 1536 * 1024;
+
+  /// 截图单边像素上限（服务端 feedback_guard.js IMAGE_MAX_SIDE）。超了回 415
+  /// `bad_image_dimensions`，永远传不上去。
+  static const int screenshotMaxSide = 8192;
+
+  /// 截图总像素上限（服务端 IMAGE_MAX_PIXELS）。
+  static const int screenshotMaxPixels = 40000000;
   static const int logMaxBytes = 2 * 1024 * 1024;
   static const int statusBatch = 50;
 

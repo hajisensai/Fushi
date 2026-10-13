@@ -416,13 +416,18 @@ class _FeedbackMessageTile extends StatelessWidget {
   }
 }
 
-/// 用户选的图：小于服务端上限且是 PNG / JPEG / WebP 就原样用，否则缩到长边
-/// [kFeedbackScreenshotMaxSide] 再存 JPEG。解码 / 编码在后台 isolate。不是图片抛
+/// 用户选的图：是 PNG / JPEG / WebP、字节数与宽高都在服务端上限内就原样用，否则缩到
+/// 长边 [kFeedbackScreenshotMaxSide] 再存 JPEG。解码 / 编码在后台 isolate。不是图片抛
 /// [FormatException]。
 Future<Uint8List> prepareFeedbackImage(Uint8List bytes) =>
     Isolate.run<Uint8List>(() => prepareFeedbackImageBytes(bytes));
 
 /// [prepareFeedbackImage] 的同步内核（纯函数，可单测）。
+///
+/// 原样放行的图必须同时满足服务端的全部收图条件（`services/leaderboard` 的
+/// `slotKind`：字节数、能读出宽高、单边与总像素上限）：只看字节数会把 Android 长截图
+/// （如 1080×9000 PNG，几百 KB）原样放过去，服务端回 415 `bad_image_dimensions`，
+/// 附件永远传不上去。
 Uint8List prepareFeedbackImageBytes(Uint8List bytes) {
   final bool known =
       (bytes.length > 3 &&
@@ -432,7 +437,11 @@ Uint8List prepareFeedbackImageBytes(Uint8List bytes) {
       (bytes.length > 8 && bytes[0] == 0x89 && bytes[1] == 0x50) ||
       (bytes.length > 12 &&
           String.fromCharCodes(bytes.sublist(8, 12)) == 'WEBP');
-  if (known && bytes.length <= FeedbackLimits.screenshotMaxBytes) return bytes;
+  if (known &&
+      bytes.length <= FeedbackLimits.screenshotMaxBytes &&
+      feedbackImageDimensionsAcceptable(bytes)) {
+    return bytes;
+  }
   img.Image? decoded;
   try {
     decoded = img.decodeImage(bytes);
@@ -454,6 +463,26 @@ Uint8List prepareFeedbackImageBytes(Uint8List bytes) {
     jpg = img.encodeJpg(out, quality: quality);
   }
   return jpg;
+}
+
+/// 只读文件头（不解码像素）判断宽高是否在服务端可接受范围内：单边不超过
+/// [FeedbackLimits.screenshotMaxSide]、总像素不超过 [FeedbackLimits.screenshotMaxPixels]、
+/// 宽高都大于 0。读不出宽高按不可接受处理（服务端同样拒收），交给解码重编码那条路。
+bool feedbackImageDimensionsAcceptable(Uint8List bytes) {
+  final img.DecodeInfo? info;
+  try {
+    info = img.findDecoderForData(bytes)?.startDecode(bytes);
+  } on Object {
+    return false;
+  }
+  if (info == null) return false;
+  final int w = info.width;
+  final int h = info.height;
+  return w > 0 &&
+      h > 0 &&
+      w <= FeedbackLimits.screenshotMaxSide &&
+      h <= FeedbackLimits.screenshotMaxSide &&
+      w * h <= FeedbackLimits.screenshotMaxPixels;
 }
 
 /// 从文件管理器复制的文件里，按扩展名认作图片的那些。

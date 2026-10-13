@@ -216,7 +216,14 @@ class FeedbackPendingStore {
     final File f = _file(id, slot);
     if (f.existsSync()) await f.delete();
     final Directory dir = f.parent;
-    if (dir.existsSync() && dir.listSync().isEmpty) await dir.delete();
+    if (!dir.existsSync() || dir.listSync().isNotEmpty) return;
+    try {
+      await dir.delete();
+    } on FileSystemException {
+      // 查空与删除之间被并发的 [put] 写进了新槽位（非递归删除遇非空目录失败），或目录
+      // 已被别人删掉：两种情况目录此刻都不该再删。只有它仍在、仍然空却删不掉才是真错误。
+      if (dir.existsSync() && dir.listSync().isEmpty) rethrow;
+    }
   }
 
   Future<void> removeAll(String id) async {

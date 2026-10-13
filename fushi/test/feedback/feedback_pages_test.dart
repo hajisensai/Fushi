@@ -1440,6 +1440,52 @@ void main() {
     expect(composeContact(tester), 'draft@example.com');
   });
 
+  testWidgets('提交页：丢弃恢复的草稿后联系方式回到上次提交用的，而不是变空', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    await tester.runAsync(() async {
+      await FeedbackContactStore(root).write('me@example.com');
+      await FeedbackDraftStore(root).write(
+        FeedbackComposeDraft(
+          category: FeedbackCategory.bug,
+          title: '草稿标题',
+          body: '',
+          contact: '',
+          includeLogs: true,
+          includeDevice: true,
+          linkAccount: true,
+          screenshots: const <Uint8List>[],
+          savedAt: 5,
+        ),
+      );
+    });
+    await tester.pumpWidget(wrap(b, f, const FeedbackComposePage()));
+    final Finder discard = find.byKey(
+      const ValueKey<String>('feedback-draft-discard'),
+    );
+    await settleIo(tester, () => discard.evaluate().isNotEmpty);
+    await settleIo(tester, () => false);
+    // 草稿里联系方式是空的：恢复时以草稿为准，不预填。
+    expect(composeContact(tester), '');
+    await tester.ensureVisible(discard);
+    await tester.tap(discard);
+    await settleIo(tester, () => composeContact(tester).isNotEmpty);
+    expect(composeContact(tester), 'me@example.com');
+    expect(
+      find.byKey(const ValueKey<String>('feedback-draft-restored')),
+      findsNothing,
+    );
+    // 预填回来的联系方式不算草稿内容：丢弃后不会又落盘一份草稿。
+    await settleIo(tester, () => false);
+    expect(
+      File('${root.path}/feedback/draft/draft.json').existsSync(),
+      isFalse,
+    );
+  });
+
   testWidgets('反馈人详情：有没传上去的附件时给提示与重试按钮，重试后传上去并清掉', (WidgetTester tester) async {
     tallView(tester);
     await tester.runAsync(() async {

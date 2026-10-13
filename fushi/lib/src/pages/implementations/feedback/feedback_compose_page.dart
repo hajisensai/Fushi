@@ -277,7 +277,8 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     return true;
   }
 
-  /// 「丢弃草稿」：删掉磁盘上的草稿，表单回到刚打开时的样子（带本次的自动截图）。
+  /// 「丢弃草稿」：删掉磁盘上的草稿，表单回到刚打开时的样子（带本次的自动截图、
+  /// 上次提交用的联系方式）。
   void _discardDraft() {
     _draftTimer?.cancel();
     _title.text = '';
@@ -304,6 +305,9 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
             ErrorLogService.instance.log('feedback.draft_clear', e, st);
           }),
     );
+    // 恢复了草稿时打开页面那次预填被草稿让掉了（[_prefilledContact] 还是空的）：草稿
+    // 没了，联系方式回到「上次提交用的那个」，与没有草稿时打开一样。
+    unawaited(_prefillContact());
   }
 
   @override
