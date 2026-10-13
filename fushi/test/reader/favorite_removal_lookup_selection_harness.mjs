@@ -96,9 +96,11 @@ const scenario = (label, css) => `
       : selection.highlightWrappers.filter(w => w.isConnected).map(w => w.textContent).join('');
     return {
       live: true,
-      connected: st.startNode.isConnected && segments.every(s => s.node.isConnected),
+      connected: st.startNode.isConnected &&
+        segments.concat(st.ranges).every(s => s.node.isConnected),
       start: st.startNode.data.slice(st.startOffset, st.startOffset + 1),
       matched: segments.map(s => s.node.data.slice(s.start, s.end)).join(''),
+      selected: st.ranges.map(s => s.node.data.slice(s.start, s.end)).join(''),
       painted,
     };
   }
@@ -107,6 +109,7 @@ const scenario = (label, css) => `
     check(state.live && state.connected, phase + ': lookup selection still references the document', state);
     check(state.start === '猫', phase + ': selection start still points at the looked-up character', state);
     check(state.matched === matched, phase + ': matched ranges still cover the looked-up text', state);
+    check(state.selected === '猫がいる', phase + ': the whole selected span still reads the same', state);
     check(state.painted === matched, phase + ': lookup highlight is still painted', state);
   }
   // Whether the favourite is painted at all, so a deletion that never touched
@@ -116,14 +119,19 @@ const scenario = (label, css) => `
       ? !!(CSS.highlights.get('fushi-hl-' + color) && CSS.highlights.get('fushi-hl-' + color).size)
       : document.querySelectorAll('[data-highlight-id="' + id + '"]').length > 0;
   }
-  const favorite = { id: 'fav', text: '前の文。猫がいる。', color: 'yellow' };
-  const other = { id: 'other', text: '後の文です。', color: 'blue' };
+  // The lookup selects 4 characters (猫がいる) and the popup highlights the
+  // matched 2 (猫が). The favourite starts inside the selected span, so the
+  // selection's last segment lies in the favourite's first text node: unwrapping
+  // the favourite puts that node right after the unmatched 「い」 and normalize()
+  // merges it away -- the case a bare normalize() lost.
+  const favorite = { id: 'fav', text: 'る。後の文', color: 'yellow' };
+  const other = { id: 'other', text: '前の文。', color: 'blue' };
 
   window.__fushiApplyHighlights([favorite, other]);
   const hit = catNode();
   selection.selectFromPosition(hit.node, hit.at, 4);
   selection.highlightSelection(2);
-  expectLookup('猫が', 'lookup inside a favourite');
+  expectLookup('猫が', 'lookup reaching into a favourite');
   check(favoritePainted('fav', 'yellow') && favoritePainted('other', 'blue'), 'both favourites are painted');
 
   // Toggling the favourite off from the lookup popup re-applies the remaining
