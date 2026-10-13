@@ -49,3 +49,7 @@ packages/flutter_inappwebview_linux/** -whitespace
 # （守卫 fushi/test/settings/tmdb_attribution_test.dart 按 sha256 校验）。虽然它是
 # 文本(SVG)，但绝不能参与行尾/文本规范化——任何一字节变动都会让哈希证据链断掉。
 fushi/assets/attribution/tmdb/blue_square_1.svg binary
+
+# docs/BUGS.md 是生成的索引表：两边各加一行时按行并集合并、永不冲突；
+# 行序 / 去重交给 `tool/bug.dart settle`（或 reindex）重建。
+docs/BUGS.md merge=union

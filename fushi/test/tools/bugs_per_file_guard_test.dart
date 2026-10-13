@@ -39,7 +39,8 @@ void main() {
       expect(
         stray,
         isEmpty,
-        reason: 'docs/BUGS.md 仍含正文标题 $stray —— 正文必须在 docs/bugs/，'
+        reason:
+            'docs/BUGS.md 仍含正文标题 $stray —— 正文必须在 docs/bugs/，'
             '本文件只保留头部约定 + marker 间的自动索引（退回单文件=并发冲突复发）',
       );
     });
@@ -50,8 +51,11 @@ void main() {
         final n = f.uri.pathSegments.last;
         return n.endsWith('.md') && !n.startsWith('_');
       }).toList();
-      expect(files.length, greaterThanOrEqualTo(100),
-          reason: '已迁移过 117 条，文件数异常少说明迁移丢失');
+      expect(
+        files.length,
+        greaterThanOrEqualTo(100),
+        reason: '已迁移过 117 条，文件数异常少说明迁移丢失',
+      );
       final byNum = <int, String>{};
       for (final f in files) {
         final name = f.uri.pathSegments.last;
@@ -59,9 +63,12 @@ void main() {
         expect(m, isNotNull, reason: '$name 首个 `## BUG-NNN · 标题` 标题缺失/格式错');
         final num = int.parse(m!.group(1)!);
         final prev = byNum[num];
-        expect(prev, isNull,
-            reason:
-                '号撞了：BUG-$num 同时在 $prev 与 $name —— 改名其一（dart run tool/bug.dart check 可查）');
+        expect(
+          prev,
+          isNull,
+          reason:
+              '号撞了：BUG-$num 同时在 $prev 与 $name —— 跑 dart run tool/bug.dart settle 自动改号',
+        );
         byNum[num] = name;
       }
     });
@@ -72,9 +79,11 @@ void main() {
       final links = linkRe.allMatches(content).map((m) => m.group(1)!).toList();
       expect(links, isNotEmpty, reason: '索引表里没有任何 bug 链接，reindex 可能没跑');
       for (final rel in links) {
-        expect(File('${bugsDir.path}/$rel').existsSync(), isTrue,
-            reason:
-                '索引指向不存在的文件 docs/bugs/$rel（跑 dart run tool/bug.dart reindex）');
+        expect(
+          File('${bugsDir.path}/$rel').existsSync(),
+          isTrue,
+          reason: '索引指向不存在的文件 docs/bugs/$rel（跑 dart run tool/bug.dart reindex）',
+        );
       }
     });
   });

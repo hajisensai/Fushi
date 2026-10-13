@@ -1,0 +1,68 @@
+# 合并时收口 BUG 号撞号（2026-10-13）。
+#
+# 取号（`tool/bug.dart new`）不加锁，也不再遍历全部分支 / 工作区——只看本地与
+# origin/develop。并发分支各自取到同一个号是常态；它们先后合进 develop 时，这里以
+# **这次 push 之前的 develop**（`github.event.before`）为基线跑 `bug.dart settle`：
+# 这次 push 带进来的那份改到下一个空号（文件名 / 正文 H2 / 本次改动里的引用一起改，
+# 范围外文件断言一字未变），develop 上原有的那份不动；再重建 docs/BUGS.md 索引
+# （它在 .gitattributes 里是 merge=union，合并不冲突，但行序可能乱）。没有改动就什么都不提交。
+#
+# 用 GITHUB_TOKEN 推回 develop：本仓刻意不设分支保护（日常直推 develop），所以推得进去；
+# GITHUB_TOKEN 推送不会再触发 workflow，不会自我循环。
+name: Settle BUG numbers
+
+on:
+  push:
+    branches: ['develop']
+    paths:
+      - 'docs/bugs/**'
+      - 'docs/BUGS.md'
+
+permissions:
+  contents: write
+
+# 串行：两次 push 的收口互相看得见对方的提交，不并发改号。
+concurrency:
+  group: bug-number-settle
+  cancel-in-progress: false
+
+jobs:
+  settle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      # bug.dart 只用 dart:*，不需要 pub get。版本与 Flutter 3.47.6 自带的 Dart 一致。
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: '3.12.0'
+      - name: Settle against the pre-push tip
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            # 新建分支 / 被强推掉的 before：没有可信基线，就只校验不改号。
+            echo "::warning::push 前的 sha ${BEFORE} 不可用，跳过改号，只做 check"
+            dart tool/bug.dart check
+            exit 0
+          fi
+          dart tool/bug.dart settle --base "$BEFORE"
+      - name: Commit and push
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "没有撞号，索引已同步"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m "chore(bugs): settle BUG number collisions after ${GITHUB_SHA::9}"
+          # develop 在本 job 运行期间又被推进：把收口提交接到最新 develop 上再推。
+          # rebase 冲突就让 job 红，交给人处理，不强推。
+          git fetch origin develop
+          git rebase origin/develop
+          git push origin HEAD:develop
