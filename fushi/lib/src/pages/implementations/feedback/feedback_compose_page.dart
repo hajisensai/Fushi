@@ -86,6 +86,9 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
 
   bool get _busy => _stage != null;
 
+  /// 联系方式框里是「上次用过的联系方式」预填的值（不算用户新写的草稿内容）。
+  String _prefilledContact = '';
+
   int get _room => FeedbackLimits.screenshots - _shots.length;
 
   // ---- 草稿（FeedbackDraftStore，本机一份）----
@@ -136,7 +139,22 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       _category = seed.category;
       _title.text = seed.title;
       _body.text = seed.body;
+      unawaited(_prefillContact());
     }
+  }
+
+  /// 联系方式默认带上次提交用的那个。必须在草稿读完之后做：草稿里的联系方式（哪怕
+  /// 是空）以草稿为准；用户已经开始填了也不覆盖。
+  Future<void> _prefillContact() async {
+    final String last = await _service.lastContact();
+    if (!mounted ||
+        last.isEmpty ||
+        _contact.text.isNotEmpty ||
+        _restoredAt != null) {
+      return;
+    }
+    _prefilledContact = last;
+    _contact.text = last;
   }
 
   @override
@@ -149,7 +167,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   bool get _hasDraftContent =>
       _title.text.trim().isNotEmpty ||
       _body.text.trim().isNotEmpty ||
-      _contact.text.trim().isNotEmpty ||
+      _contact.text.trim() != _prefilledContact ||
       _category != FeedbackCategory.bug ||
       !_includeLogs ||
       !_includeDevice ||
@@ -195,6 +213,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       _draftLoaded = true;
       _draftTimer?.cancel();
     }
+    await _prefillContact();
   }
 
   void _scheduleDraftSave() {
@@ -263,7 +282,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     _draftTimer?.cancel();
     _title.text = '';
     _body.text = '';
-    _contact.text = '';
+    _contact.text = _prefilledContact;
     super.setState(() {
       _category = FeedbackCategory.bug;
       _includeLogs = true;
@@ -662,6 +681,14 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
               Text(
                 _pasteHint,
                 key: const ValueKey<String>('feedback-paste-hint'),
+                style: tokens.type.metadata,
+              ),
+            ],
+            if (widget.initialScreenshot != null) ...<Widget>[
+              const SizedBox(height: 2),
+              Text(
+                t.feedback_compose_auto_shot_hint,
+                key: const ValueKey<String>('feedback-auto-shot-hint'),
                 style: tokens.type.metadata,
               ),
             ],

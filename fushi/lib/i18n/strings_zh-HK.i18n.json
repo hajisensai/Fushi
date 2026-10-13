@@ -5950,7 +5950,6 @@
   "leaderboard_sync_shelf_limit": "書架超過 ${limit} 部上限：有 ${count} 部未上傳（優先上傳讀完的作品）",
   "leaderboard_intro_public_works": "讀完與在讀作品的標題、作者、封面、讀完時間",
   "leaderboard_intro_public_chars": "每日閱讀字數（按日期）",
-  "leaderboard_signin_consent": "我已瞭解上面列出的公開內容，同意公開。",
   "leaderboard_error_too_many_devices": "這個帳户登入的裝置已達上限。請在已登入的裝置上（帳户 → 已登入裝置）解綁舊裝置。",
   "leaderboard_error_unknown_account": "該帳户已在其它裝置刪除，或本裝置已被解綁。",
   "leaderboard_intro_public_work_stats": "每部作品的閱讀字數與時長",
@@ -7057,5 +7056,16 @@
   "manga_quick_spread_shift_subtitle": "Cover on its own page, then pair pages two by two. Turn off to pair from page 1.",
   "feedback_reply_notice": "Developers updated ${n} of your feedback item(s)",
   "feedback_reply_notice_open": "View",
-  "library_sort_filter": "Sort and filter"
+  "library_sort_filter": "Sort and filter",
+  "feedback_compose_auto_shot_hint": "The automatic screenshot may not include web views, video or the lookup card. If it looks different, remove it and add a system screenshot instead.",
+  "feedback_pending_attachments": "Attachments not uploaded yet: ${n}",
+  "feedback_pending_retry": "Retry upload",
+  "feedback_pending_retry_done": "Uploaded ${n} attachment(s).",
+  "feedback_pending_retry_failed": "${n} attachment(s) still failed to upload. Check your connection and try again.",
+  "feedback_pending_dropped": "${n} attachment(s) were rejected or expired (attachments can only be added within 24 hours of submitting).",
+  "feedback_detail_add_shot": "Add screenshot",
+  "feedback_dev_select_hint": "Select a feedback item on the left",
+  "leaderboard_summary_total_week": "Characters this week",
+  "leaderboard_summary_total_month": "Characters this month",
+  "leaderboard_summary_window_share": "${pct} of your total"
 }

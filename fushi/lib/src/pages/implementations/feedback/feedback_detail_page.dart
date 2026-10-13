@@ -3,6 +3,7 @@
 // 显示缩略图、点开看大图；日志只列条目（服务端不把日志回传给 ticket 持有者）。
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -91,6 +92,117 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  bool _retrying = false;
+  bool _addingShot = false;
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
+  }
+
+  /// 汇报一次补传的结果，并在有附件传上去时刷新详情（缩略图才会出现）。
+  Future<void> _reportRetry(FeedbackRetryResult r) async {
+    if (r.remaining > 0) {
+      _snack(t.feedback_pending_retry_failed(n: r.remaining));
+    } else if (r.dropped > 0) {
+      _snack(t.feedback_pending_dropped(n: r.dropped));
+    } else if (r.uploaded > 0) {
+      _snack(t.feedback_pending_retry_done(n: r.uploaded));
+    }
+    if (r.uploaded > 0) await _load();
+  }
+
+  /// 手动重试上次没传上去的附件（截图 / 日志）。
+  Future<void> _retryPending() async {
+    setState(() => _retrying = true);
+    try {
+      await _reportRetry(
+        await ref.read(feedbackServiceProvider).retryPending(widget.feedbackId),
+      );
+    } on Object catch (e) {
+      _snack(t.feedback_submit_failed(reason: feedbackErrorReason(e)));
+    } finally {
+      if (mounted) setState(() => _retrying = false);
+    }
+  }
+
+  /// 给这条反馈追加一张截图（相册选图）。
+  Future<void> _addShot(FeedbackDetail d) async {
+    final FeedbackService service = ref.read(feedbackServiceProvider);
+    setState(() => _addingShot = true);
+    try {
+      final File? file = await pickGalleryImageFile();
+      if (file == null) return;
+      final Uint8List bytes = await prepareFeedbackImage(
+        await file.readAsBytes(),
+      );
+      final FeedbackRetryResult r = await service.addScreenshots(
+        widget.feedbackId,
+        <Uint8List>[bytes],
+        usedSlots: <String>{
+          for (final FeedbackAttachmentInfo a in d.attachments) a.slot,
+        },
+      );
+      await _reportRetry(r);
+    } on Object catch (e) {
+      _snack(t.feedback_submit_failed(reason: feedbackErrorReason(e)));
+    } finally {
+      if (mounted) setState(() => _addingShot = false);
+    }
+  }
+
+  /// 待补传提示 + 追加截图入口。补传窗口（提交后 24 小时）过了、或截图槽位满了就不给
+  /// 追加入口；本机还留着没传上去的附件时，窗口过了照样显示提示（重试会被丢弃并说明）。
+  List<Widget> _attachActions(FeedbackDetail d, FushiDesignTokens tokens) {
+    final FeedbackService service = ref.read(feedbackServiceProvider);
+    final FeedbackTicket? local = service.byId(widget.feedbackId);
+    final Set<String> pending = ref.watch(
+      feedbackServiceProvider.select(
+        (FeedbackService s) => s.pendingSlots(widget.feedbackId),
+      ),
+    );
+    final int shots =
+        d.attachments.where((FeedbackAttachmentInfo a) => !a.isLog).length +
+        pending.where((String s) => s != 'log').length;
+    final bool canAdd =
+        local != null &&
+        service.canAttach(local) &&
+        shots < FeedbackLimits.screenshots;
+    return <Widget>[
+      if (pending.isNotEmpty) ...<Widget>[
+        SizedBox(height: tokens.spacing.card),
+        FushiInlineNotice(
+          key: const ValueKey<String>('feedback-detail-pending'),
+          message: t.feedback_pending_attachments(n: pending.length),
+          actions: <Widget>[
+            FushiTextButton(
+              key: const ValueKey<String>('feedback-detail-retry'),
+              onPressed: _retrying ? null : () => unawaited(_retryPending()),
+              child: Text(t.feedback_pending_retry),
+            ),
+          ],
+        ),
+      ],
+      if (canAdd) ...<Widget>[
+        SizedBox(height: tokens.spacing.gap),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FushiPressScale(
+            enabled: !_addingShot,
+            child: FushiFilledButton.tonalIcon(
+              key: const ValueKey<String>('feedback-detail-add-shot'),
+              onPressed: _addingShot ? null : () => unawaited(_addShot(d)),
+              icon: const FushiIcon(FushiIcons.addCircle),
+              label: Text(t.feedback_detail_add_shot),
+            ),
+          ),
+        ),
+      ],
+    ];
   }
 
   /// 截图字节按槽位缓存：刷新详情不重复下载（服务端对单条反馈的下载有限次）。
@@ -432,6 +544,7 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
                       child: _attachments(d, tokens),
                     ),
                   ],
+                  ..._attachActions(d, tokens),
                   SizedBox(height: tokens.spacing.card),
                   FushiSectionTitle(t.feedback_detail_timeline),
                   FeedbackTimeline(messages: d.messages),

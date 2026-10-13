@@ -28,6 +28,9 @@ abstract final class FeedbackLimits {
   static const int screenshotMaxBytes = 1536 * 1024;
   static const int logMaxBytes = 2 * 1024 * 1024;
   static const int statusBatch = 50;
+
+  /// 提交后还能补传附件的时长（服务端 attachWindowMs）。
+  static const Duration attachWindow = Duration(hours: 24);
 }
 
 enum FeedbackCategory {

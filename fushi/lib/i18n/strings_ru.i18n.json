@@ -5950,7 +5950,6 @@
   "leaderboard_sync_shelf_limit": "Ваша полка превышает лимит в ${limit} произведений: не загружено произведений — ${count} (сначала идут завершённые)",
   "leaderboard_intro_public_works": "Название, автор, обложка и время завершения произведений, которые вы закончили или читаете",
   "leaderboard_intro_public_chars": "Прочитанные символы по дням (по датам)",
-  "leaderboard_signin_consent": "Я понимаю, что станет общедоступным (перечислено выше), и согласен это опубликовать.",
   "leaderboard_error_too_many_devices": "В этот аккаунт выполнен вход на слишком многих устройствах. На устройстве, где вход уже выполнен, отвяжите старое устройство (Аккаунт → Устройства с выполненным входом).",
   "leaderboard_error_unknown_account": "Этот аккаунт был удалён на другом устройстве, либо это устройство было отвязано.",
   "leaderboard_intro_public_work_stats": "Прочитанные символы и затраченное время по каждому произведению",
@@ -7057,5 +7056,16 @@
   "manga_quick_spread_shift_subtitle": "Cover on its own page, then pair pages two by two. Turn off to pair from page 1.",
   "feedback_reply_notice": "Developers updated ${n} of your feedback item(s)",
   "feedback_reply_notice_open": "View",
-  "library_sort_filter": "Sort and filter"
+  "library_sort_filter": "Sort and filter",
+  "feedback_compose_auto_shot_hint": "The automatic screenshot may not include web views, video or the lookup card. If it looks different, remove it and add a system screenshot instead.",
+  "feedback_pending_attachments": "Attachments not uploaded yet: ${n}",
+  "feedback_pending_retry": "Retry upload",
+  "feedback_pending_retry_done": "Uploaded ${n} attachment(s).",
+  "feedback_pending_retry_failed": "${n} attachment(s) still failed to upload. Check your connection and try again.",
+  "feedback_pending_dropped": "${n} attachment(s) were rejected or expired (attachments can only be added within 24 hours of submitting).",
+  "feedback_detail_add_shot": "Add screenshot",
+  "feedback_dev_select_hint": "Select a feedback item on the left",
+  "leaderboard_summary_total_week": "Characters this week",
+  "leaderboard_summary_total_month": "Characters this month",
+  "leaderboard_summary_window_share": "${pct} of your total"
 }

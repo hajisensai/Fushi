@@ -55,6 +55,10 @@ String _oneLine(String s) =>
 LeaderboardClient? _devClient(WidgetRef ref) =>
     ref.read(leaderboardServiceProvider).client;
 
+/// 开发者处理台分栏的最小宽度，以及分栏时左列表的宽度。
+const double _kSplitMinWidth = 840;
+const double _kSplitListWidth = 440;
+
 class FeedbackDevPage extends ConsumerStatefulWidget {
   const FeedbackDevPage({super.key});
 
@@ -64,6 +68,9 @@ class FeedbackDevPage extends ConsumerStatefulWidget {
 
 class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
   String? _filter = 'active';
+
+  /// 宽屏分栏时右栏正在看的反馈 id（窄屏不用，窄屏点击直接 push 详情页）。
+  String? _selectedId;
   final List<FeedbackSummary> _items = <FeedbackSummary>[];
   String? _next;
   bool _loading = false;
@@ -152,7 +159,15 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
     unawaited(_load(reset: true));
   }
 
-  Future<void> _open(FeedbackSummary item) async {
+  /// 横屏宽屏（桌面窗口 / 平板横置）时用左列表右详情分栏：宽够放下两栏，且是横向的。
+  static bool _useSplit(BoxConstraints c) =>
+      c.maxWidth >= _kSplitMinWidth && c.maxWidth > c.maxHeight;
+
+  Future<void> _open(FeedbackSummary item, {required bool split}) async {
+    if (split) {
+      setState(() => _selectedId = item.id);
+      return;
+    }
     await Navigator.push(
       context,
       adaptivePageRoute<void>(
@@ -177,174 +192,228 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
           onTap: () => unawaited(_load(reset: true)),
         ),
       ],
-      body: Builder(
-        builder: (BuildContext context) => FushiRefreshIndicator(
-          edgeOffset: MediaQuery.paddingOf(context).top,
-          onRefresh: () => _load(reset: true),
-          child: FushiEntranceScope(
-            replayKey: _filter,
-            enabled: _loaded,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: withBottomSafeInset(
-                context,
-                EdgeInsets.fromLTRB(
-                  tokens.spacing.card,
-                  tokens.spacing.card + MediaQuery.paddingOf(context).top,
-                  tokens.spacing.card,
-                  tokens.spacing.card,
-                ),
-              ),
-              children: <Widget>[
-                FushiSearchField(
-                  fieldKey: const ValueKey<String>('feedback-dev-search'),
-                  controller: _search,
-                  focusNode: _searchFocus,
-                  hintText: t.feedback_search_hint,
-                  onChanged: _onSearch,
-                  onSubmitted: (String v) => _onSearch(v, now: true),
-                  onClear: () => _onSearch('', now: true),
-                ),
-                SizedBox(height: tokens.spacing.gap),
-                Wrap(
-                  spacing: tokens.spacing.gap,
-                  runSpacing: tokens.spacing.gap,
+      body: LayoutBuilder(
+        builder: (BuildContext _, BoxConstraints constraints) {
+          final bool split = _useSplit(constraints);
+          final Widget list = Builder(
+            builder: (BuildContext context) => FushiRefreshIndicator(
+              edgeOffset: MediaQuery.paddingOf(context).top,
+              onRefresh: () => _load(reset: true),
+              child: FushiEntranceScope(
+                replayKey: _filter,
+                enabled: _loaded,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: withBottomSafeInset(
+                    context,
+                    EdgeInsets.fromLTRB(
+                      tokens.spacing.card,
+                      tokens.spacing.card + MediaQuery.paddingOf(context).top,
+                      tokens.spacing.card,
+                      tokens.spacing.card,
+                    ),
+                  ),
                   children: <Widget>[
-                    for (final String? f in _kFilters)
-                      FushiChoiceChip(
-                        key: ValueKey<String>(
-                          'feedback-dev-filter-${f ?? 'all'}',
-                        ),
-                        label: Text(_filterLabel(f)),
-                        selected: _filter == f,
-                        onSelected: (bool _) => _setFilter(f),
-                      ),
-                  ],
-                ),
-                SizedBox(height: tokens.spacing.card),
-                if (_error != null && _items.isEmpty)
-                  FushiPlaceholderMessage(
-                    icon: FushiIcons.cloudOff,
-                    tone: FushiPlaceholderTone.error,
-                    message: t.feedback_refresh_failed,
-                    detail: _error,
-                  )
-                else if (!_loaded)
-                  const FushiLoadingView()
-                else if (_items.isEmpty)
-                  FushiPlaceholderMessage(
-                    icon: _query.isEmpty
-                        ? FushiIcons.forum
-                        : FushiIcons.searchOff,
-                    message: _query.isEmpty
-                        ? t.feedback_dev_empty
-                        : t.feedback_search_empty,
-                  )
-                else ...<Widget>[
-                  for (int i = 0; i < _items.length; i++)
-                    FushiStaggeredEntrance(
-                      index: i,
-                      child: Padding(
-                        padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-                        child: FushiCard(
-                          key: ValueKey<String>('feedback-dev-${_items[i].id}'),
-                          onTap: () => unawaited(_open(_items[i])),
-                          child: FushiListItem(
-                            leading: FushiIcon(
-                              feedbackCategoryIcon(_items[i].category),
+                    FushiSearchField(
+                      fieldKey: const ValueKey<String>('feedback-dev-search'),
+                      controller: _search,
+                      focusNode: _searchFocus,
+                      hintText: t.feedback_search_hint,
+                      onChanged: _onSearch,
+                      onSubmitted: (String v) => _onSearch(v, now: true),
+                      onClear: () => _onSearch('', now: true),
+                    ),
+                    SizedBox(height: tokens.spacing.gap),
+                    Wrap(
+                      spacing: tokens.spacing.gap,
+                      runSpacing: tokens.spacing.gap,
+                      children: <Widget>[
+                        for (final String? f in _kFilters)
+                          FushiChoiceChip(
+                            key: ValueKey<String>(
+                              'feedback-dev-filter-${f ?? 'all'}',
                             ),
-                            title: Text(feedbackSafeText(_items[i].title)),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: <Widget>[
-                                Text(
-                                  '${feedbackTime(_items[i].updatedAt)}'
-                                  '${_items[i].attachmentCount > 0 ? ' · ${t.feedback_detail_attachments(n: _items[i].attachmentCount)}' : ''}',
+                            label: Text(_filterLabel(f)),
+                            selected: _filter == f,
+                            onSelected: (bool _) => _setFilter(f),
+                          ),
+                      ],
+                    ),
+                    SizedBox(height: tokens.spacing.card),
+                    if (_error != null && _items.isEmpty)
+                      FushiPlaceholderMessage(
+                        icon: FushiIcons.cloudOff,
+                        tone: FushiPlaceholderTone.error,
+                        message: t.feedback_refresh_failed,
+                        detail: _error,
+                      )
+                    else if (!_loaded)
+                      const FushiLoadingView()
+                    else if (_items.isEmpty)
+                      FushiPlaceholderMessage(
+                        icon: _query.isEmpty
+                            ? FushiIcons.forum
+                            : FushiIcons.searchOff,
+                        message: _query.isEmpty
+                            ? t.feedback_dev_empty
+                            : t.feedback_search_empty,
+                      )
+                    else ...<Widget>[
+                      for (int i = 0; i < _items.length; i++)
+                        FushiStaggeredEntrance(
+                          index: i,
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              bottom: tokens.spacing.gap,
+                            ),
+                            child: FushiCard(
+                              key: ValueKey<String>(
+                                'feedback-dev-${_items[i].id}',
+                              ),
+                              onTap: () =>
+                                  unawaited(_open(_items[i], split: split)),
+                              selected: split && _selectedId == _items[i].id,
+                              child: FushiListItem(
+                                leading: FushiIcon(
+                                  feedbackCategoryIcon(_items[i].category),
                                 ),
-                                FeedbackIdLabel(_items[i].id),
-                                if (_items[i].parentId != null)
-                                  Text(
-                                    t.feedback_reopen_of(
-                                      id: _items[i].parentId!,
+                                title: Text(feedbackSafeText(_items[i].title)),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    Text(
+                                      '${feedbackTime(_items[i].updatedAt)}'
+                                      '${_items[i].attachmentCount > 0 ? ' · ${t.feedback_detail_attachments(n: _items[i].attachmentCount)}' : ''}',
                                     ),
-                                    key: ValueKey<String>(
-                                      'feedback-dev-parent-${_items[i].id}',
-                                    ),
-                                    style: tokens.type.metadata.copyWith(
-                                      color: colors.primary,
-                                    ),
-                                  ),
-                                if (_items[i].flags.isNotEmpty)
-                                  FeedbackFlagChips(_items[i].flags),
-                                if (_items[i].aiSummary != null)
-                                  Text(
-                                    _oneLine(_items[i].aiSummary!),
-                                    key: ValueKey<String>(
-                                      'feedback-dev-ai-${_items[i].id}',
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: tokens.type.metadata,
-                                  ),
-                              ],
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: <Widget>[
-                                if (_items[i].hasDevNote)
-                                  Padding(
-                                    padding: const EdgeInsets.only(right: 8),
-                                    child: Text(
-                                      t.feedback_dev_note_badge,
-                                      key: ValueKey<String>(
-                                        'feedback-dev-noted-${_items[i].id}',
+                                    FeedbackIdLabel(_items[i].id),
+                                    if (_items[i].parentId != null)
+                                      Text(
+                                        t.feedback_reopen_of(
+                                          id: _items[i].parentId!,
+                                        ),
+                                        key: ValueKey<String>(
+                                          'feedback-dev-parent-${_items[i].id}',
+                                        ),
+                                        style: tokens.type.metadata.copyWith(
+                                          color: colors.primary,
+                                        ),
                                       ),
-                                      style: tokens.type.metadata.copyWith(
-                                        color: colors.primary,
+                                    if (_items[i].flags.isNotEmpty)
+                                      FeedbackFlagChips(_items[i].flags),
+                                    if (_items[i].aiSummary != null)
+                                      Text(
+                                        _oneLine(_items[i].aiSummary!),
+                                        key: ValueKey<String>(
+                                          'feedback-dev-ai-${_items[i].id}',
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: tokens.type.metadata,
                                       ),
-                                    ),
-                                  ),
-                                if (_items[i].awaitingDev)
-                                  Padding(
-                                    padding: const EdgeInsets.only(right: 8),
-                                    child: Text(
-                                      t.feedback_dev_awaiting,
-                                      style: tokens.type.metadata.copyWith(
-                                        color: colors.error,
+                                  ],
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    if (_items[i].hasDevNote)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          right: 8,
+                                        ),
+                                        child: Text(
+                                          t.feedback_dev_note_badge,
+                                          key: ValueKey<String>(
+                                            'feedback-dev-noted-${_items[i].id}',
+                                          ),
+                                          style: tokens.type.metadata.copyWith(
+                                            color: colors.primary,
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                  ),
-                                FeedbackStatusBadge(_items[i].status),
-                              ],
+                                    if (_items[i].awaitingDev)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          right: 8,
+                                        ),
+                                        child: Text(
+                                          t.feedback_dev_awaiting,
+                                          style: tokens.type.metadata.copyWith(
+                                            color: colors.error,
+                                          ),
+                                        ),
+                                      ),
+                                    FeedbackStatusBadge(_items[i].status),
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                  if (_next != null)
-                    Center(
-                      child: FushiTextButton(
-                        onPressed: _loading
-                            ? null
-                            : () => unawaited(_load(reset: false)),
-                        child: Text(t.feedback_dev_load_more),
-                      ),
-                    ),
-                ],
-              ],
+                      if (_next != null)
+                        Center(
+                          child: FushiTextButton(
+                            onPressed: _loading
+                                ? null
+                                : () => unawaited(_load(reset: false)),
+                            child: Text(t.feedback_dev_load_more),
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
+              ),
             ),
-          ),
-        ),
+          );
+          return split ? _splitBody(list, tokens) : list;
+        },
       ),
+    );
+  }
+
+  /// 左列表右详情。右栏按选中的 id 换 key，切换反馈就重建详情页（各自的输入框 / 请求
+  /// 状态互不串）；详情里改了状态 / 回复 / 批改后列表跟着重拉。
+  Widget _splitBody(Widget list, FushiDesignTokens tokens) {
+    final String? id = _selectedId;
+    return Row(
+      key: const ValueKey<String>('feedback-dev-split'),
+      children: <Widget>[
+        SizedBox(width: _kSplitListWidth, child: list),
+        const VerticalDivider(width: 1),
+        Expanded(
+          child: id == null
+              ? FushiPlaceholderMessage(
+                  key: const ValueKey<String>('feedback-dev-split-empty'),
+                  icon: FushiIcons.forum,
+                  message: t.feedback_dev_select_hint,
+                )
+              : FeedbackDevDetailPage(
+                  key: ValueKey<String>('feedback-dev-pane-$id'),
+                  feedbackId: id,
+                  embedded: true,
+                  onChanged: () => unawaited(_load(reset: true)),
+                ),
+        ),
+      ],
     );
   }
 }
 
 class FeedbackDevDetailPage extends ConsumerStatefulWidget {
-  const FeedbackDevDetailPage({required this.feedbackId, super.key});
+  const FeedbackDevDetailPage({
+    required this.feedbackId,
+    this.embedded = false,
+    this.onChanged,
+    super.key,
+  });
 
   final String feedbackId;
+
+  /// 嵌在宽屏分栏的右栏里：没有「返回」（右栏不是一条路由）。
+  final bool embedded;
+
+  /// 状态 / 回复 / 批改保存成功后通知宿主（分栏时左侧列表据此重拉）。
+  final VoidCallback? onChanged;
 
   @override
   ConsumerState<FeedbackDevDetailPage> createState() =>
@@ -418,6 +487,7 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
         _detail = next;
         _status = next.status;
       });
+      widget.onChanged?.call();
     } on Object catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -445,6 +515,7 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
       if (!mounted) return;
       _note.text = next.devNote ?? '';
       setState(() => _detail = next);
+      widget.onChanged?.call();
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(FushiSnackBar(content: Text(t.feedback_dev_note_saved)));
@@ -499,6 +570,7 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
     final bool hasLog =
         d?.attachments.any((FeedbackAttachmentInfo a) => a.isLog) ?? false;
     return FushiPageScaffold(
+      automaticallyImplyLeading: !widget.embedded,
       title: d == null
           ? t.feedback_dev_title
           : feedbackSafeText(d.summary.title),
