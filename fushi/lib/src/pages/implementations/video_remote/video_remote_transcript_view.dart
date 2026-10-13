@@ -24,6 +24,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 
 /// 查词回调：第 [lineIndex] 行、第 [charOffset] 个字（grapheme 下标，与
 /// `subtitleTranscriptLookupSpan(text, charOffset)` 同口径）+ 查词弹框的全局锚点
@@ -593,8 +595,8 @@ class _LineActionsSheet extends StatelessWidget {
         children: <Widget>[
           DecoratedBox(
             decoration: BoxDecoration(
-              color: cs.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(20),
+              color: FushiDesignTokens.of(context).surfaces.search,
+              borderRadius: FushiM3eShape.cardRadius,
             ),
             child: Padding(
               padding: const EdgeInsets.all(16),

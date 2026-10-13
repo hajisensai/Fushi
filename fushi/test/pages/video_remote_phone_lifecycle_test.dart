@@ -149,7 +149,8 @@ void main() {
         page(tester).openFavorite(page(tester).favorites.single, lookup: true),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(TextButton, t.play).last);
+      // 「打开收藏」走共享确认框（showFushiConfirmDialog），确认键文案是「播放」。
+      await tester.tap(find.text(t.play).last);
       await _wait(tester, () => host.operations.contains('openFavorite'));
       await _flush(tester);
       expect(host.lookups, isEmpty);

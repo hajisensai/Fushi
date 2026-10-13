@@ -43,7 +43,7 @@ import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:fushi_core/fushi_core.dart'
     show kStatSourceVideo, mimeTypeForFilePath;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
     show lookupHighlightGraphemeCount;
@@ -1010,15 +1010,13 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     final String? contextId = _lookupContextId;
     try {
       if (contextId == null) throw const VideoRemoteError('lookup_expired');
-      final Map<String, dynamic> result = await _client.call(
-        'lookupContext',
-        <String, dynamic>{
-          ...args,
-          'contextId': contextId,
-          'requestId': _client.requestId(),
-          'action': action,
-        },
-      );
+      final Map<String, dynamic> result = await _client
+          .call('lookupContext', <String, dynamic>{
+            ...args,
+            'contextId': contextId,
+            'requestId': _client.requestId(),
+            'action': action,
+          });
       return _contextPreview = Map<String, Object?>.of(result);
     } catch (e) {
       final String text = report ? videoRemoteErrorText(e) : '';
@@ -1447,29 +1445,16 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
       }
     }
     // 根 Overlay 上的查词浮层排在对话框路由之上：对话框期间整栈让位。
-    final bool? confirmed = await runWithLookupPopupHidden<bool?>(
-      () => showDialog<bool>(
+    final bool confirmed = await runWithLookupPopupHidden<bool>(
+      () => showFushiConfirmDialog(
         context: context,
-        builder: (BuildContext context) => AlertDialog(
-          title: Text(t.video_remote_open_favorite),
-          content: Text(favorite['title'].toString()),
-          actions: <Widget>[
-            FushiTextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text(t.cancel),
-            ),
-            FushiTextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(t.play),
-            ),
-          ],
-        ),
+        title: t.video_remote_open_favorite,
+        message: favorite['title'].toString(),
+        cancelLabel: t.cancel,
+        confirmLabel: t.play,
       ),
     );
-    if (confirmed != true ||
-        !mounted ||
-        !_foreground ||
-        generation != _generation) {
+    if (!confirmed || !mounted || !_foreground || generation != _generation) {
       return;
     }
     await _client.call('openFavorite', <String, dynamic>{

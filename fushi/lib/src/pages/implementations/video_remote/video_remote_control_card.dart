@@ -15,6 +15,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 
 /// 控制卡的两种形态。
 enum VideoRemoteControlCardVariant {
@@ -525,7 +527,7 @@ class _GridTile extends StatelessWidget {
     final bool disabled = onPressed == null;
     final Color background = active
         ? cs.secondaryContainer
-        : cs.surfaceContainerHighest;
+        : FushiDesignTokens.of(context).surfaces.overlay;
     final Color foreground = active
         ? cs.onSecondaryContainer
         : cs.onSurfaceVariant;
@@ -548,7 +550,7 @@ class _GridTile extends StatelessWidget {
             curve: motion.effectsDefault.curve,
             decoration: BoxDecoration(
               color: disabled ? background.withValues(alpha: 0.38) : background,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: FushiM3eShape.cardRadius,
             ),
             child: Material(
               type: MaterialType.transparency,
@@ -556,7 +558,7 @@ class _GridTile extends StatelessWidget {
                 key: ValueKey<String>(
                   'video-remote-control-${item.storageValue}',
                 ),
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: FushiM3eShape.cardRadius,
                 onTap: onPressed,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(
@@ -611,7 +613,7 @@ class _CoverThumb extends StatelessWidget {
     final ImageProvider? image = cover;
     final int cache = (size * MediaQuery.devicePixelRatioOf(context)).round();
     return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: FushiM3eShape.cardRadius,
       child: SizedBox.square(
         dimension: size,
         child: image == null

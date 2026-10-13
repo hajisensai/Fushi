@@ -834,7 +834,9 @@ extension _VideoLookupMining on _VideoFushiPageState {
     // State 的 `mounted`，不是 `context.mounted`：后台落地时页面可能早已 unmount，
     // 那时连取 `context` 都会抛（debug FlutterError / release 空检查），落地回调
     // （写制卡历史）就跟着没了，还会记一条假失败。
-    if (!mounted || silent) return result;
+    if (!mounted) return result;
+    // 手机遥控出卡（silent）：结果回给手机，电脑这边不弹 OSD。
+    if (silent) return result;
     // TODO-971：制卡成功（card_exported / card_overwritten，含牌组名）走突出 OSD——
     // 居中、更大、停留更久，区别于音量/亮度小角标，避免用户「制卡了没反馈」。
     // describeMineOutcome 早就算出了 status，此前只被拿去选 prominent 布尔、颜色
