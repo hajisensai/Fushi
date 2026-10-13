@@ -1336,7 +1336,7 @@ SettingsDestination buildVideoDestination() {
             id: 'video.playback.tap_toggles_playback',
             title: t.video_setting_tap_toggles_playback,
             subtitle: t.video_setting_tap_toggles_playback_hint,
-            icon: Icons.touch_app_outlined,
+            icon: FushiIcons.touch,
             visible: (_) => isDesktopPlatform,
             video: VideoPlacement(group: VideoGroup.playback, order: 14),
             value: (SettingsContext settingsContext) =>
@@ -1357,7 +1357,7 @@ SettingsDestination buildVideoDestination() {
             id: 'video.playback.double_tap_toggles_playback',
             title: t.video_setting_double_tap_toggles_playback,
             subtitle: t.video_setting_double_tap_toggles_playback_hint,
-            icon: Icons.touch_app_outlined,
+            icon: FushiIcons.touch,
             video: VideoPlacement(group: VideoGroup.playback, order: 91),
             value: (SettingsContext settingsContext) =>
                 currentVideoAsbConfig(settingsContext).doubleTapTogglesPlayback,
