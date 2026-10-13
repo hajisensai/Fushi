@@ -1061,10 +1061,14 @@ mixin DictionaryPageMixin {
             ),
             onMineEntry: onMineEntry,
             onUpdateEntry: onUpdateEntry,
-            // 用户建议 #fiwDIpFep7：顶栏就地切配置 / 牌组，随制卡模块开关。
-            showMiningTargetSwitch: mixinAppModel.moduleVisibility.isEnabled(
-              ModuleId.cardCreation,
-            ),
+            // 用户建议 #fiwDIpFep7：顶栏就地切配置 / 牌组，随制卡模块开关。结果来自
+            // 别的设备（[popupResourceSource] 非 null，如手机遥控电脑制卡）时卡片落在
+            // 那台设备、用它的 Anki 配置，本机的切换对卡片不起作用，不显示。
+            showMiningTargetSwitch:
+                mixinAppModel.moduleVisibility.isEnabled(
+                  ModuleId.cardCreation,
+                ) &&
+                popupResourceSource == null,
             onDuplicateCheck: checkDuplicate,
             onOverwriteTargetNoteId: findOverwriteTargetNoteId,
             onMinedCardAction: onMinedCardAction,
