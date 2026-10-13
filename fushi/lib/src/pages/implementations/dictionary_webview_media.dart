@@ -6,6 +6,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart';
 import 'package:fushi_engine/epub/epub_book.dart' show fallbackMimeType;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show isValidFontData;
 import 'package:path/path.dart' as p;
@@ -481,6 +482,73 @@ _DictionaryMediaResponse? _dictionaryMediaResponse(Uri url) {
   }
 
   return null;
+}
+
+/// 结果来自别的设备时的词典媒体拦截（[DictionaryPopupResourceSource]）：URL 形状与
+/// 本机路径完全一致（`image://?dictionary=&path=` / `dictmedia://<path>?dictionary=`），
+/// 只是字节改问那台设备。不是词典媒体 URL 返回 null（交给 WebView 默认处理）。
+Future<WebResourceResponse?> remoteDictionaryMediaWebResourceResponse(
+  Uri url,
+  DictionaryPopupResourceSource source,
+) async {
+  final _DictionaryMediaResponse? response =
+      await _remoteDictionaryMediaResponse(url, source);
+  if (response == null) return null;
+  return WebResourceResponse(
+    contentType: response.contentType,
+    contentEncoding: response.contentEncoding,
+    statusCode: response.statusCode,
+    reasonPhrase: response.reasonPhrase,
+    data: response.data,
+  );
+}
+
+/// [remoteDictionaryMediaWebResourceResponse] 的 iOS / macOS 自定义 scheme 版。
+Future<CustomSchemeResponse?> remoteDictionaryMediaCustomSchemeResponse(
+  Uri url,
+  DictionaryPopupResourceSource source,
+) async {
+  final _DictionaryMediaResponse? response =
+      await _remoteDictionaryMediaResponse(url, source);
+  if (response == null) return null;
+  return CustomSchemeResponse(
+    data: response.data,
+    contentType: response.contentType,
+    contentEncoding: response.contentEncoding ?? 'utf-8',
+  );
+}
+
+Future<_DictionaryMediaResponse?> _remoteDictionaryMediaResponse(
+  Uri url,
+  DictionaryPopupResourceSource source,
+) async {
+  final bool stylesheet = url.scheme == 'dictmedia';
+  if (url.scheme != 'image' && !stylesheet) return null;
+  final String dictName = url.queryParameters['dictionary'] ?? '';
+  final String mediaPath = normalizeDictionaryMediaPath(
+    stylesheet
+        ? Uri.decodeComponent(url.host)
+        : url.queryParameters['path'] ?? '',
+  );
+  if (dictName.isEmpty || mediaPath.isEmpty) {
+    return _DictionaryMediaResponse.notFound();
+  }
+  try {
+    final DictionaryPopupMedia? media =
+        await source.mediaFile(dictName, mediaPath);
+    if (media == null) return _DictionaryMediaResponse.notFound();
+    // dictmedia:// 只承载词典样式表（与本机路径同口径强制 text/css）。
+    final String mime = stylesheet ? 'text/css' : media.contentType;
+    return _DictionaryMediaResponse.ok(
+      data: media.bytes,
+      contentType: mime,
+      contentEncoding: mime.startsWith('text/') ? 'utf-8' : null,
+    );
+  } catch (e, stack) {
+    // 取不到只降级这一张图（alt 文本），但原因要留痕：对端掉线 / 证书不符都在这里。
+    ErrorLogService.instance.log('DictionaryMedia.remote', e, stack);
+    return _DictionaryMediaResponse.notFound();
+  }
 }
 
 class _DictionaryMediaResponse {

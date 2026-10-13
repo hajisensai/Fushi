@@ -21,6 +21,7 @@ import 'package:fushi/src/pages/base_source_page.dart'
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult, DictionaryPopupWebViewState;
 import 'package:fushi/src/pages/implementations/sentence_context_dialog.dart';
@@ -200,6 +201,16 @@ mixin DictionaryPageMixin {
   Future<void> Function(SentenceContextSlot slot, int index, bool removed)?
       get onRemoveSentenceContext => null;
 
+  /// 「制卡前调整·选择句子上下文」里的「试听」（视频/首页查词车道）：放这张卡会写进
+  /// 去的那段句子音频（草稿上下文 + 当前句合并后的区间），返回 false = 没有可试听
+  /// 的音频。默认 null = 不支持，对话框不渲染试听按钮。视频页放本机播放器；手机遥控
+  /// 页经遥控协议让电脑端播放器放（手机上没有视频音频）。与 reader 车道
+  /// （[BaseSourcePageState.onPreviewSentenceAudio]）对称。
+  Future<bool> Function()? get onPreviewSentenceAudioToDraft => null;
+
+  /// 停止 [onPreviewSentenceAudioToDraft] 起的试听。与之同时为 null 或同时非 null。
+  Future<void> Function()? get onStopSentenceAudioPreviewToDraft => null;
+
   /// BUG-797 / BUG-1040：有多少个「必须盖住查词弹窗」的 Flutter 对话框正开着。
   ///
   /// 查词弹窗是**原生平台视图**（桌面 WebView2 / Android platform view），靠 airspace 永远
@@ -261,6 +272,13 @@ mixin DictionaryPageMixin {
           editSentence: onEditSentenceContextText,
           // 移除 / 恢复某一句前文/后文（剔掉夹在中间的旁白）。宿主没接传 null。
           removeSentence: onRemoveSentenceContext,
+          // 试听：宿主没接（或只接了一半）就传 null，对话框不渲染试听按钮。
+          previewAudio: onStopSentenceAudioPreviewToDraft == null
+              ? null
+              : onPreviewSentenceAudioToDraft,
+          stopAudioPreview: onPreviewSentenceAudioToDraft == null
+              ? null
+              : onStopSentenceAudioPreviewToDraft,
           // BUG-2627：回传「有没有真的点到制卡按钮」。弹窗层在这次往返途中被关栈
           // （或 State 已卸载）时为 false，对话框据此提示，不再静默关窗。
           onConfirm: () async =>
@@ -419,6 +437,42 @@ mixin DictionaryPageMixin {
       ? AnkiMiningSource.video
       : AnkiMiningSource.book;
 
+  /// 弹窗查词的数据源注入点：首查（[pushNestedPopup]）、加载更多（[loadMoreForEntry]）
+  /// 与原地跳转（[navigatePopupInPlace]）三处都只走这里。默认走本机
+  /// [AppModel.searchDictionary]（含它自己的远端优先分支），行为与从前一致；手机字幕
+  /// 遥控器覆写成「只问钉住的那台电脑」，嵌套查词 / 原地跳转 / 加载更多随之同源。
+  @protected
+  Future<DictionarySearchResult> searchPopupDictionary({
+    required String term,
+    required int maximumTerms,
+  }) =>
+      mixinAppModel.searchDictionary(
+        searchTerm: term,
+        searchWithWildcards: true,
+        overrideMaximumTerms: maximumTerms,
+      );
+
+  /// 自动发音的播放注入点（[autoReadWord] 解析 + 播放的那一步）。默认走本机音频源
+  /// [autoReadWordUnified]；查词结果来自别的设备时覆写成问那台设备要发音。返回是否
+  /// 真的开始播放（去重窗口靠它，BUG-1127）。
+  @protected
+  Future<bool> playPopupWordAudio(
+    String expression,
+    String reading,
+    DictionaryPopupWebViewState? popupState,
+  ) =>
+      autoReadWordUnified(
+        mixinAppModel,
+        expression,
+        reading,
+        playInWebView: popupState?.playWordAudioUrl,
+      );
+
+  /// 弹窗词典侧资源（样式 / 媒体 / ♪）的来源，透传给每一层 [DictionaryPopupLayer]。
+  /// null（默认）= 本机词典；结果来自别的设备时宿主返回那台设备的资源源。
+  @protected
+  DictionaryPopupResourceSource? get popupResourceSource => null;
+
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final repo = ref.read(ankiRepositoryProvider);
     final miningContext = AnkiMiningContext(
@@ -513,12 +567,7 @@ mixin DictionaryPageMixin {
     String reading,
     DictionaryPopupWebViewState? popupState,
   ) =>
-      autoReadWordUnified(
-        mixinAppModel,
-        expression,
-        reading,
-        playInWebView: popupState?.playWordAudioUrl,
-      );
+      playPopupWordAudio(expression, reading, popupState);
 
   /// Checks whether a card for [expression] / [reading] already exists in Anki.
   Future<bool> checkDuplicate(String expression, String reading) async {
@@ -851,6 +900,7 @@ mixin DictionaryPageMixin {
             isSearching: entry.isSearching,
             keepWebViewWarm: entry.isWarmSlot,
             webViewKey: entry.webViewKey,
+            resourceSource: popupResourceSource,
             // TODO-869：本层有后代弹窗时注入 __hasChildPopup，点卡片本体留白才能关子窗。
             hasChildPopup: index < controller.entries.length - 1,
             isDark: isDark,
@@ -1158,10 +1208,9 @@ mixin DictionaryPageMixin {
     setState(() {});
     late final DictionarySearchResult result;
     try {
-      result = await mixinAppModel.searchDictionary(
-        searchTerm: trimmed,
-        searchWithWildcards: true,
-        overrideMaximumTerms: maxTerms,
+      result = await searchPopupDictionary(
+        term: trimmed,
+        maximumTerms: maxTerms,
       );
       // 词典查询（三级缓存 → FFI）到此为止。小内存模式把 popupJson 缓存砍到 2MB、
       // ffiLookup 砍到 8MB，重复查词的命中率随之下降、这一段会更常真跑 FFI——所以条目
@@ -1269,11 +1318,9 @@ mixin DictionaryPageMixin {
     final String term = entry.searchTerm;
     setState(() => entry.isSearching = true);
     try {
-      final DictionarySearchResult result =
-          await mixinAppModel.searchDictionary(
-        searchTerm: term,
-        searchWithWildcards: true,
-        overrideMaximumTerms: newMax,
+      final DictionarySearchResult result = await searchPopupDictionary(
+        term: term,
+        maximumTerms: newMax,
       );
       // 原地跳转 / 后退 / 前进会在同一个 entry 上换词：词变了就丢弃这批续查结果。
       if (mounted &&
@@ -1331,11 +1378,9 @@ mixin DictionaryPageMixin {
     final String termAtStart = entry.searchTerm;
     entry.isSearching = true;
     try {
-      final DictionarySearchResult result =
-          await mixinAppModel.searchDictionary(
-        searchTerm: trimmed,
-        searchWithWildcards: true,
-        overrideMaximumTerms: mixinAppModel.maximumTerms,
+      final DictionarySearchResult result = await searchPopupDictionary(
+        term: trimmed,
+        maximumTerms: mixinAppModel.maximumTerms,
       );
       if (!mounted ||
           !controller.entries.contains(entry) ||

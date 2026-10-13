@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/widgets.dart';
 
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
+    show FushiPlaybackClock;
 
 /// 歌词播放覆盖层（Apple / MD3 两套样式）共用的数据契约。
 ///
@@ -147,11 +149,13 @@ class LyricsPlayerData {
 }
 
 /// 播放位置与读数的读口。控件层用 Ticker / 定时器轮询（只读、无副作用）。
-abstract class LyricsPlayerClock {
+abstract class LyricsPlayerClock implements FushiPlaybackClock {
   /// 全书播放位置（多文件有声书已换算成全书时间轴）。
+  @override
   Duration get position;
 
   /// 全书总时长；未知为 [Duration.zero]。
+  @override
   Duration get duration;
 
   /// 阅读器读数快照（只读）。

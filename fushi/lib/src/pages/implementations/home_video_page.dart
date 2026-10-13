@@ -129,6 +129,8 @@ import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig, JellyfinVideoClient;
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/video_remote_targets.dart';
+import 'package:fushi/src/pages/implementations/video_remote_page.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
@@ -258,6 +260,7 @@ class HomeVideoPage extends BaseModuleTabPage {
     this.cloudRemoteVideoClientLoader,
     this.jellyfinVideoClientLoader,
     this.remoteVideoDownloadDestination,
+    this.videoRemoteTargetsLoader,
     super.key,
   });
 
@@ -309,6 +312,10 @@ class HomeVideoPage extends BaseModuleTabPage {
   final Future<JellyfinVideoClient?> Function()? jellyfinVideoClientLoader;
   final Future<File> Function(RemoteVideoInfo video)?
   remoteVideoDownloadDestination;
+
+  /// 测试钩子：注入「可遥控的电脑」探测结果。缺省时生产路径走
+  /// [probeVideoRemoteTargets]（已配对、可达、声明 `videoRemoteControlV1`）。
+  final Future<List<VideoRemoteTarget>> Function()? videoRemoteTargetsLoader;
 
   /// 测试钩子：强制重查本地视频列表（程序化 seed 视频后让其出现在网格）。
   /// 视频页用 initState 一次性 FutureBuilder + IndexedStack 保活，seed 晚于
@@ -654,6 +661,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 「initState 完成前依赖 InheritedWidget」断言。
     // （门控基线已由上面的 _loadRemoteVideos() 首帧取数写入 _remoteGateAtLastLoad。）
     appModelNoUpdate.prefsRepo.addListener(_onPrefsChangedForRemoteGate);
+    // 页头遥控按钮：进页面、回前台、配对清单 / 互联开关变化时重探，build 不探。
+    SyncRepository.fushiClientUrlsRevision.addListener(
+      _onVideoRemoteConfigChanged,
+    );
+    SyncRepository.interconnectEnabledRevision.addListener(
+      _onVideoRemoteConfigChanged,
+    );
+    _videoRemoteLifecycle = AppLifecycleListener(
+      onResume: _onVideoRemoteConfigChanged,
+    );
+    unawaited(_refreshVideoRemoteTargets());
     assert(() {
       HomeVideoPage.debugRefreshVideos = _refresh;
       return true;
@@ -672,6 +690,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     setState(() {
       _remoteFuture = _loadRemoteVideos();
     });
+    unawaited(_refreshVideoRemoteTargets());
     // 切回视频页**不再**重跑在线补刮 / 待确认清单（2026-10 切 tab 卡顿）：那一轮
     // 是「每个来源全库重列 + 逐文件 parseVideoFilename + 逐作品查规范身份」，全压在
     // UI isolate 上，恰好与切 tab 的首帧撞在一起。它要追的变化都有自己的信号，且
@@ -718,6 +737,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     widget.libraryRefreshSignal?.removeListener(_onLibraryRefreshRequested);
     _autoScrape?.dispose();
     appModelNoUpdate.prefsRepo.removeListener(_onPrefsChangedForRemoteGate);
+    SyncRepository.fushiClientUrlsRevision.removeListener(
+      _onVideoRemoteConfigChanged,
+    );
+    SyncRepository.interconnectEnabledRevision.removeListener(
+      _onVideoRemoteConfigChanged,
+    );
+    _videoRemoteLifecycle?.dispose();
     assert(() {
       HomeVideoPage.debugRefreshVideos = null;
       return true;
@@ -2564,6 +2590,75 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 打开收藏夹页（书签 + 收藏句子，含视频来源的收藏句子，TODO-047 ③a）。与书架页头
   /// 的收藏夹入口同一 [CollectionsPage]——视频与书架共用一个收藏夹，按来源区分展示。
+  /// 此刻可遥控的电脑（页头遥控按钮只在非空时出现）。
+  List<VideoRemoteTarget> _videoRemoteTargets = const <VideoRemoteTarget>[];
+
+  /// 遥控探测的记代：只认最后一轮的结果，旧轮次晚到时丢弃。
+  int _videoRemoteProbeGeneration = 0;
+  AppLifecycleListener? _videoRemoteLifecycle;
+
+  void _onVideoRemoteConfigChanged() {
+    unawaited(_refreshVideoRemoteTargets());
+  }
+
+  Future<void> _refreshVideoRemoteTargets() async {
+    final int generation = ++_videoRemoteProbeGeneration;
+    final Future<List<VideoRemoteTarget>> Function()? injected =
+        widget.videoRemoteTargetsLoader;
+    List<VideoRemoteTarget> targets;
+    try {
+      targets = injected != null
+          ? await injected()
+          : await probeVideoRemoteTargets(
+              repository: SyncRepository(appModelNoUpdate.database),
+            );
+    } catch (_) {
+      targets = const <VideoRemoteTarget>[];
+    }
+    if (!mounted || generation != _videoRemoteProbeGeneration) return;
+    setState(() => _videoRemoteTargets = targets);
+  }
+
+  /// 页头遥控按钮：一台直接进遥控页；多台先选（默认选中上次那台）。
+  Future<void> _openVideoRemote() async {
+    final List<VideoRemoteTarget> targets = _videoRemoteTargets;
+    if (targets.isEmpty) return;
+    final SyncRepository syncRepo = SyncRepository(appModelNoUpdate.database);
+    VideoRemoteTarget target = targets.first;
+    if (targets.length > 1) {
+      final String? last = await syncRepo.getVideoRemoteLastHostId();
+      if (!mounted) return;
+      final String? hostId = await showFushiChoiceDialog<String>(
+        context: context,
+        title: t.video_remote_title,
+        icon: FushiIcons.remoteControl,
+        selected: last,
+        options: <FushiChoiceOption<String>>[
+          for (final VideoRemoteTarget candidate in targets)
+            FushiChoiceOption<String>(
+              value: candidate.hostId,
+              label: candidate.displayName,
+              icon: FushiIcons.laptop,
+            ),
+        ],
+      );
+      if (hostId == null || !mounted) return;
+      target = targets.firstWhere(
+        (VideoRemoteTarget candidate) => candidate.hostId == hostId,
+      );
+      await syncRepo.setVideoRemoteLastHostId(hostId);
+      if (!mounted) return;
+    }
+    await Navigator.push(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) =>
+            VideoRemotePage(repository: syncRepo, peer: target.peer),
+      ),
+    );
+  }
+
   void _openCollections() {
     Navigator.push(
       context,
@@ -6822,6 +6917,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         icon: Icons.collections_bookmark_outlined,
         onTap: _openCollections,
       ),
+      // 手机遥控电脑播放：只在探到可遥控的已配对电脑时出现（本机做 host 时没有）。
+      if (_videoRemoteTargets.isNotEmpty)
+        FushiIconButton(
+          key: const ValueKey<String>('video-library-remote-control'),
+          tooltip: t.video_remote_title,
+          label: t.video_remote_title,
+          icon: FushiIcons.remoteControl,
+          onTap: _openVideoRemote,
+        ),
       // 统计入口已收敛到首页 dashboard（用户定案 2026-09-01）。
       // 旧后台流水线仍会在进页面 / 新视频入库时补本地 sidecar；在线元数据刮削
       // 统一从来源页进入 canonical coordinator。

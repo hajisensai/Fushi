@@ -254,6 +254,17 @@ TextStyle subtitleTranscriptTextStyle({
   height: 1.25,
 );
 
+/// 行内「正在查的词」的 grapheme 区间 `[start, start + count)`（与
+/// [subtitleTranscriptLookupSpan] 的起点、`lookupHighlightGraphemeCount` 的长度同口径）。
+typedef SubtitleTranscriptHighlightRange = ({int start, int count});
+
+/// 被查词高亮底色的不透明度：与视频底部字幕的 `SubtitleLookupHighlightBox`
+/// （`video_subtitle_overlay.dart`，主题 primary × 0.45）同一视觉。
+const double kSubtitleTranscriptHighlightAlpha = 0.45;
+
+/// 被查词高亮带两端的圆角（同 `SubtitleLookupHighlightBox`）。
+const double kSubtitleTranscriptHighlightRadius = 4;
+
 /// One wrapped paragraph with the video subtitle sidebar's character hit test.
 /// Keyboard lookup is opt-in; arrows move by grapheme and Enter queries the
 /// same character as a tap. The text stays a single paragraph in either mode.
@@ -265,6 +276,7 @@ class SubtitleTranscriptText extends StatefulWidget {
     this.textKey,
     this.onBackgroundTap,
     this.keyboardLookup = false,
+    this.lookupHighlight,
     super.key,
   });
 
@@ -274,6 +286,10 @@ class SubtitleTranscriptText extends StatefulWidget {
   final Key? textKey;
   final VoidCallback? onBackgroundTap;
   final bool keyboardLookup;
+
+  /// 正在查的词：在字形**之下**画主题色底色带（不改排版几何、不影响逐字命中）。
+  /// null = 不高亮，组件树与之前完全一致。
+  final SubtitleTranscriptHighlightRange? lookupHighlight;
 
   @override
   State<SubtitleTranscriptText> createState() => _SubtitleTranscriptTextState();
@@ -440,22 +456,158 @@ class _SubtitleTranscriptTextState extends State<SubtitleTranscriptText> {
             }
             widget.onBackgroundTap?.call();
           },
-          child: RichText(
-            // BUG-872：稳定 key 让 [_hitTestRows] 能按 builder 下标取到本行 RenderParagraph
-            // 反查字符命中（供查词浮层 dismiss barrier 切换查词 + 列表 Shift-悬停 / keydown）。
-            key: widget.textKey,
-            text: textSpan,
-            softWrap: true,
-            overflow: TextOverflow.clip,
-            maxLines: null,
-            textAlign: TextAlign.start,
+          child: _withLookupHighlight(
+            context,
+            textSpan: textSpan,
             textDirection: textDirection,
             textScaler: textScaler,
+            maxWidth: maxWidth,
+            child: RichText(
+              // BUG-872：稳定 key 让 [_hitTestRows] 能按 builder 下标取到本行 RenderParagraph
+              // 反查字符命中（供查词浮层 dismiss barrier 切换查词 + 列表 Shift-悬停 / keydown）。
+              key: widget.textKey,
+              text: textSpan,
+              softWrap: true,
+              overflow: TextOverflow.clip,
+              maxLines: null,
+              textAlign: TextAlign.start,
+              textDirection: textDirection,
+              textScaler: textScaler,
+            ),
           ),
         );
       },
     );
   }
+
+  /// 没有高亮时原样返回 [child]（调用方的组件树零变化）；有高亮时在字形之下
+  /// 垫一层画底色带的 [CustomPaint]。
+  Widget _withLookupHighlight(
+    BuildContext context, {
+    required InlineSpan textSpan,
+    required TextDirection textDirection,
+    required TextScaler textScaler,
+    required double maxWidth,
+    required Widget child,
+  }) {
+    final SubtitleTranscriptHighlightRange? range =
+        subtitleTranscriptHighlightUtf16Range(
+          widget.text,
+          widget.lookupHighlight,
+        );
+    if (range == null) return child;
+    return CustomPaint(
+      key: const ValueKey<String>('subtitle-transcript-lookup-highlight'),
+      painter: _SubtitleTranscriptHighlightPainter(
+        textSpan: textSpan,
+        textDirection: textDirection,
+        textScaler: textScaler,
+        maxWidth: maxWidth,
+        start: range.start,
+        end: range.start + range.count,
+        color: Theme.of(context).colorScheme.primary.withValues(
+          alpha: kSubtitleTranscriptHighlightAlpha,
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// 把 grapheme 区间 [highlight] 换成 [text] 里的 UTF-16 区间 `(start, count)`；
+/// 越界部分截掉，空区间 / 越界 / null 返回 null（纯函数，可测）。
+@visibleForTesting
+SubtitleTranscriptHighlightRange? subtitleTranscriptHighlightUtf16Range(
+  String text,
+  SubtitleTranscriptHighlightRange? highlight,
+) {
+  if (highlight == null || highlight.count <= 0 || highlight.start < 0) {
+    return null;
+  }
+  final List<int> starts = subtitleGraphemeStartOffsets(text);
+  if (highlight.start >= starts.length) return null;
+  final List<int> ends = subtitleGraphemeEndOffsets(text);
+  final int last = (highlight.start + highlight.count - 1).clamp(
+    highlight.start,
+    ends.length - 1,
+  );
+  final int start = starts[highlight.start];
+  return (start: start, count: ends[last] - start);
+}
+
+/// 在段落字形之下画被查词的底色带：同一视觉行的字形盒合成一段，整词首段收左
+/// 圆角、末段收右圆角（跨行时中间断开处方角），与视频底部字幕的高亮同形。
+class _SubtitleTranscriptHighlightPainter extends CustomPainter {
+  _SubtitleTranscriptHighlightPainter({
+    required this.textSpan,
+    required this.textDirection,
+    required this.textScaler,
+    required this.maxWidth,
+    required this.start,
+    required this.end,
+    required this.color,
+  });
+
+  final InlineSpan textSpan;
+  final TextDirection textDirection;
+  final TextScaler textScaler;
+  final double maxWidth;
+  final int start;
+  final int end;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final TextPainter painter = TextPainter(
+      text: textSpan,
+      textAlign: TextAlign.start,
+      textDirection: textDirection,
+      textScaler: textScaler,
+    );
+    try {
+      // 与 RichText 同一组约束排版，换行位置一致。
+      painter.layout(maxWidth: maxWidth);
+      final List<Rect> runs = <Rect>[];
+      for (final TextBox box in painter.getBoxesForSelection(
+        TextSelection(baseOffset: start, extentOffset: end),
+      )) {
+        final Rect rect = box.toRect();
+        if (runs.isNotEmpty &&
+            (runs.last.center.dy - rect.center.dy).abs() < rect.height / 2) {
+          runs.last = runs.last.expandToInclude(rect);
+        } else {
+          runs.add(rect);
+        }
+      }
+      final Paint paint = Paint()..color = color;
+      const Radius radius = Radius.circular(kSubtitleTranscriptHighlightRadius);
+      for (int i = 0; i < runs.length; i++) {
+        final bool first = i == 0, last = i == runs.length - 1;
+        canvas.drawRRect(
+          RRect.fromRectAndCorners(
+            runs[i],
+            topLeft: first ? radius : Radius.zero,
+            bottomLeft: first ? radius : Radius.zero,
+            topRight: last ? radius : Radius.zero,
+            bottomRight: last ? radius : Radius.zero,
+          ),
+          paint,
+        );
+      }
+    } finally {
+      painter.dispose();
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SubtitleTranscriptHighlightPainter oldDelegate) =>
+      oldDelegate.start != start ||
+      oldDelegate.end != end ||
+      oldDelegate.color != color ||
+      oldDelegate.maxWidth != maxWidth ||
+      oldDelegate.textDirection != textDirection ||
+      oldDelegate.textScaler != textScaler ||
+      oldDelegate.textSpan != textSpan;
 }
 
 /// Shared sidebar row spacing, current-line color and optional action columns.

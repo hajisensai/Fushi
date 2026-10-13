@@ -1096,6 +1096,8 @@ class VideoPlayerController extends ChangeNotifier
   /// 登记一次已发出的 seek：计数 +1，并记下目标等它落地（见 [_pendingSeekLandingMs]）。
   int _noteSeekIssued(int targetMs) {
     _seekGeneration++;
+    // 用户 seek 也是显式播放控制意图（见 [remoteControlRevision]）。
+    _remoteControlRevision++;
     return _setPendingSeekLanding(targetMs);
   }
 
@@ -3336,9 +3338,7 @@ class VideoPlayerController extends ChangeNotifier
     _syncCueForPosition(resolvedStartMs, persistPosition: false);
 
     // 订阅播放态翻转（包括播完自动暂停、焦点丢失），即时刷新 UI 图标。
-    _playingSub = player.stream.playing.listen((_) {
-      notifyListeners();
-    });
+    _playingSub = player.stream.playing.listen(_onPlayingChanged);
     _completedSub = player.stream.completed.listen(_handleCompletedChanged);
 
     // 订阅视频原始分辨率变化：解码出分辨率后让 overlay 重新做 \pos letterbox 映射。
@@ -4518,18 +4518,52 @@ class VideoPlayerController extends ChangeNotifier
     await onPositionWrite?.call(bookUid, posMs);
   }
 
+  /// 播放控制修订号：每一次显式播放 / 暂停 / 跳转意图都 +1（含「重复暂停」这种不改
+  /// 状态的命令）。手机遥控查词据此判断「结束查词时能否恢复播放」——只恢复自己造成
+  /// 的暂停，期间任何一次本地控制都让恢复资格失效。
+  ///
+  /// 递增点只有三处底层汇合点：[_notePlaybackIntent]（本控制器的播放 / 暂停入口）、
+  /// [_noteSeekIssued]（全部用户 seek 入口，load 的恢复 seek 不经它）、以及
+  /// `stream.playing` 上不是本控制器下发的翻转（media_kit 控制条按钮 / 快捷键直调
+  /// `player.playOrPause()` 绕过本控制器，见 [_onPlayingChanged]）。
+  int _remoteControlRevision = 0;
+  int get remoteControlRevision => _remoteControlRevision;
+
+  /// 本控制器最近一次下发、尚未在 `stream.playing` 上兑现的目标播放态。兑现那次翻转
+  /// 已由下发时计过修订号，不再重复计；其它翻转一律视为外部控制。
+  bool? _commandedPlaying;
+
+  void _notePlaybackIntent(bool? targetPlaying) {
+    _remoteControlRevision++;
+    _commandedPlaying = targetPlaying;
+  }
+
+  void _onPlayingChanged(bool playing) {
+    if (_commandedPlaying == playing) {
+      _commandedPlaying = null;
+    } else {
+      _commandedPlaying = null;
+      _remoteControlRevision++;
+    }
+    notifyListeners();
+  }
+
   /// 开始播放（未 load 时 no-op 安全）。
   Future<void> play() async {
+    _notePlaybackIntent(true);
     await _player?.play();
   }
 
   /// 暂停（未 load 时 no-op 安全）。
   Future<void> pause() async {
+    _notePlaybackIntent(false);
     await _player?.pause();
   }
 
   Future<void> playOrPause() async {
-    await _player?.playOrPause();
+    final Player? player = _player;
+    _notePlaybackIntent(player == null ? null : !player.state.playing);
+    await player?.playOrPause();
   }
 
   Future<void> _mpvCommand(List<String> command) async {
@@ -5129,10 +5163,9 @@ class VideoPlayerController extends ChangeNotifier
     }
   }
 
-  /// 切换播放/暂停（未 load 时 no-op 安全）。
-  Future<void> togglePlayPause() async {
-    await _player?.playOrPause();
-  }
+  /// 切换播放/暂停（未 load 时 no-op 安全）。与 [playOrPause] 同一条路径，
+  /// 让播放控制修订号只在一处递增。
+  Future<void> togglePlayPause() => playOrPause();
 
   /// seek 到指定毫秒位置（未 load 时 no-op 安全）。
   ///
@@ -5327,11 +5360,14 @@ class VideoPlayerController extends ChangeNotifier
   /// 一次性 hold 的作废由 [seekMs] / [_rawSeekMs] / [setCues] 负责：用户中途拖进度、
   /// 跳去别的句或换片，都立刻放弃「停在本句尾」的意图。全局偏好
   /// `字幕结束暂停`（[setPauseAtSubtitleEnd]）与本方法正交，互不改写。
-  Future<void> replayCue(AudioCue cue) async {
+  ///
+  /// [until] 非空时从 [cue] 句首一直播到 [until] 句尾才停（制卡「调整上下文」试听
+  /// 多句合并区间用）：一次性 hold 挂在 [until] 上，中间各句照常走过。
+  Future<void> replayCue(AudioCue cue, {AudioCue? until}) async {
     // 先 seek（内部 [_rawSeekMs] 会清掉上一次的一次性 hold），再置本次目标——顺序与
     // [skipToCue] 置 [_seekTargetCueIndex] 同构，故绝不会被自清。
     await skipToCue(cue);
-    final int? targetIndex = _resolveCueIndex(cue);
+    final int? targetIndex = _resolveCueIndex(until ?? cue);
     if (targetIndex != null) {
       _oneShotHoldCueIndex = targetIndex;
       // 这一句可能刚被句尾暂停过（全局开关开着时）。不清防重复记号的话，重播到句尾会

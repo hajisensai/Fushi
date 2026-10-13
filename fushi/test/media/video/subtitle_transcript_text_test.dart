@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
@@ -66,5 +67,77 @@ void main() {
       tester.widget<RichText>(find.byKey(paragraph)).text.toPlainText(),
       '😀日本語',
     );
+  });
+
+  test('lookup highlight grapheme range maps to UTF-16 and clamps', () {
+    // '😀' is two UTF-16 units: grapheme 1 starts at offset 2.
+    expect(
+      subtitleTranscriptHighlightUtf16Range('😀日本語', (start: 1, count: 2)),
+      (start: 2, count: 2),
+    );
+    expect(
+      subtitleTranscriptHighlightUtf16Range('😀日本語', (start: 0, count: 9)),
+      (start: 0, count: 5),
+    );
+    expect(subtitleTranscriptHighlightUtf16Range('日本語', null), isNull);
+    expect(
+      subtitleTranscriptHighlightUtf16Range('日本語', (start: 3, count: 1)),
+      isNull,
+    );
+    expect(
+      subtitleTranscriptHighlightUtf16Range('日本語', (start: 0, count: 0)),
+      isNull,
+    );
+  });
+
+  testWidgets('lookup highlight paints under the text without moving it', (
+    WidgetTester tester,
+  ) async {
+    const Key paragraph = ValueKey<String>('paragraph');
+    const Key highlight = ValueKey<String>(
+      'subtitle-transcript-lookup-highlight',
+    );
+    final List<(int, Rect)> lookups = <(int, Rect)>[];
+    Widget app(SubtitleTranscriptHighlightRange? range) => MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          width: 120,
+          child: SubtitleTranscriptText(
+            text: '今日はいい天気ですね。明日も晴れるかな',
+            textKey: paragraph,
+            style: subtitleTranscriptTextStyle(fontSize: 20, selected: false),
+            lookupHighlight: range,
+            onLookup: (int index, Rect anchor) => lookups.add((index, anchor)),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(app(null));
+    // No highlight: the widget tree is exactly as before (no painter layer).
+    expect(find.byKey(highlight), findsNothing);
+    final Rect before = tester.getRect(find.byKey(paragraph));
+
+    await tester.pumpWidget(app((start: 5, count: 2)));
+    expect(find.byKey(highlight), findsOneWidget);
+    expect(tester.getRect(find.byKey(paragraph)), before);
+    final CustomPaint paint = tester.widget<CustomPaint>(find.byKey(highlight));
+    expect(paint.painter, isNotNull);
+    expect(paint.foregroundPainter, isNull);
+
+    // Hit testing still resolves the tapped glyph through the highlight layer.
+    final RenderParagraph render = tester.renderObject<RenderParagraph>(
+      find.byKey(paragraph),
+    );
+    final Offset local = render
+        .getBoxesForSelection(
+          const TextSelection(baseOffset: 5, extentOffset: 6),
+        )
+        .first
+        .toRect()
+        .center;
+    await tester.tapAt(render.localToGlobal(local));
+    await tester.pump();
+    expect(lookups.single.$1, 5);
+    expect(lookups.single.$2.contains(render.localToGlobal(local)), isTrue);
   });
 }

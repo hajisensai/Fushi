@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
+    show kRemoteDictionaryMediaMaxBytes, safeDictionaryMediaPath;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -220,18 +223,107 @@ class FushiRemoteLookupClient {
     );
   }
 
+  /// 远端词典自带的 CSS（`/api/lookup/dictionary/styles`）：查词结果来自对端时，
+  /// 弹窗必须用**对端**这份样式渲染（本机未必装了同名词典，装了也可能是另一版）。
+  /// - 返回 map：只含对端确实装着的词典（可能为空——老 host 没这个端点也是空）；
+  /// - 抛 [RemoteLookupUnreachableError]：与 [searchDictionary] 同一判据。
+  ///
+  /// [dictionaries] 为 null 时取对端整套样式。
+  Future<Map<String, String>> dictionaryStyles([
+    Iterable<String>? dictionaries,
+  ]) async {
+    final List<String>? names = dictionaries?.toSet().toList();
+    if (names != null && names.isEmpty) return const <String, String>{};
+    final InterconnectPostOutcome outcome = await _postLookup(
+      path: '/api/lookup/dictionary/styles',
+      body: <String, dynamic>{if (names != null) 'dictionaries': names},
+    );
+    if (outcome.allUnreachable) {
+      throw RemoteLookupUnreachableError(
+        'all enabled paired candidates failed at the transport layer '
+        '(connection refused / timeout / DNS) for /api/lookup/dictionary/styles',
+      );
+    }
+    final Map<String, dynamic>? json = outcome.json;
+    final Object? styles = json?['styles'];
+    if (json == null || json['type'] != 'dictionaryStyles' || styles is! Map) {
+      return const <String, String>{};
+    }
+    return <String, String>{
+      for (final MapEntry<Object?, Object?> e in styles.entries)
+        if (e.key is String &&
+            e.value is String &&
+            (names == null || names.contains(e.key)))
+          e.key! as String: e.value! as String,
+    };
+  }
+
+  /// 远端词典媒体文件（外字 / 音调图 / 词典脚本，`/api/lookup/dictionary/media`）。
+  /// 路径先在本端按与 host 同一判据（[safeDictionaryMediaPath]）收紧，越级的请求根本
+  /// 不发出去；回包超过 [kRemoteDictionaryMediaMaxBytes] 视为无效。
+  /// - 返回 null：路径非法 / 对端没有这个文件 / 老 host；
+  /// - 抛 [RemoteLookupUnreachableError]：与 [searchDictionary] 同一判据。
+  Future<RemoteDictionaryMedia?> dictionaryMedia({
+    required String dictionary,
+    required String path,
+  }) async {
+    final String? safePath = safeDictionaryMediaPath(path);
+    if (dictionary.isEmpty || safePath == null) return null;
+    final InterconnectPostOutcome outcome = await _postLookup(
+      path: '/api/lookup/dictionary/media',
+      body: <String, dynamic>{'dictionary': dictionary, 'path': safePath},
+      // 媒体是字节传输，不是「对端还活着吗」的 RPC 往返（见 [_audioTransferTimeout]）。
+      timeout: _audioTransferTimeout,
+    );
+    if (outcome.allUnreachable) {
+      throw RemoteLookupUnreachableError(
+        'all enabled paired candidates failed at the transport layer '
+        '(connection refused / timeout / DNS) for /api/lookup/dictionary/media',
+      );
+    }
+    final Map<String, dynamic>? json = outcome.json;
+    final Object? data = json?['data'];
+    final Object? contentType = json?['contentType'];
+    if (json == null ||
+        json['type'] != 'dictionaryMedia' ||
+        data is! String ||
+        contentType is! String ||
+        contentType.isEmpty) {
+      return null;
+    }
+    final Uint8List bytes;
+    try {
+      bytes = base64Decode(data);
+    } on FormatException {
+      return null;
+    }
+    if (bytes.isEmpty || bytes.length > kRemoteDictionaryMediaMaxBytes) {
+      return null;
+    }
+    return RemoteDictionaryMedia(bytes: bytes, contentType: contentType);
+  }
+
   Future<InterconnectPostOutcome> _postLookup({
     required String path,
     required Map<String, dynamic> body,
+    Duration? timeout,
   }) {
     return _transport.post(
       path: path,
       body: body,
-      timeout: _timeout,
+      timeout: timeout ?? _timeout,
       authErrorMessage: 'Fushi server rejected remote lookup token',
       onlyCandidate: _onlyCandidate,
     );
   }
+}
+
+/// 对端词典媒体文件（[FushiRemoteLookupClient.dictionaryMedia]）。
+class RemoteDictionaryMedia {
+  const RemoteDictionaryMedia({required this.bytes, required this.contentType});
+
+  final Uint8List bytes;
+  final String contentType;
 }
 
 Future<String?> _materializePinnedAudio(

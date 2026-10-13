@@ -11,7 +11,7 @@ import 'package:fushi/src/media/video/bluray_disc_track_selection.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
 import 'package:fushi/src/media/video/bluray_java_runtime.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_menu_info.dart';
-import 'dart:convert' show utf8;
+import 'dart:convert' show jsonDecode, jsonEncode, utf8;
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -40,6 +40,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
     show padSentenceRange;
@@ -241,11 +242,18 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
+import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart'
+    show writeDictionaryMediaCache;
+import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
+    show safeDictionaryMediaPath;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult, DictionaryPopupWebViewState;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/sync/interconnect_adaptive_quality.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/video_remote_host.dart';
+import 'package:fushi_engine/sync/video_remote_service.dart'
+    show VideoRemoteException;
 import 'package:fushi/src/sync/sync_backend.dart'
     show SyncAuthError, SyncPeerUnreachableError;
 import 'package:fushi/src/sync/sync_error_messages.dart'
@@ -317,6 +325,7 @@ part 'video_fushi/fullscreen.part.dart';
 part 'video_fushi/mini_window.part.dart';
 part 'video_fushi/layout.part.dart';
 part 'video_fushi/playback_remote.part.dart';
+part 'video_fushi/remote_control.part.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
@@ -545,6 +554,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     required this.repo,
     this.playlistCollectionId,
     this.initialCueStartMs,
+    this.initialRemoteFavorite,
     this.sourceReview,
     this.sourceReviewSession,
     this.initialEpisodeIndex,
@@ -561,6 +571,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     required this.repo,
     required RemoteVideoClient client,
     this.initialCueStartMs,
+    this.initialRemoteFavorite,
     this.sourceReview,
     this.sourceReviewSession,
     this.initialEpisodeIndex,
@@ -590,6 +601,9 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// 本地专用；远端播放列表走 host 驱动的 episodeIndex，不用此字段。
   final int? playlistCollectionId;
   final int? initialCueStartMs;
+
+  /// Remote favorite keeps its subtitle identity until both tracks are loaded.
+  final FavoriteSentence? initialRemoteFavorite;
   final CardSourceLink? sourceReview;
   final SourceReviewSession? sourceReviewSession;
   final int? initialEpisodeIndex;
@@ -616,6 +630,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     required VideoBookRepository repo,
     int? playlistCollectionId,
     int? initialCueStartMs,
+    FavoriteSentence? initialRemoteFavorite,
     CardSourceLink? sourceReview,
     SourceReviewSession? sourceReviewSession,
     int? initialEpisodeIndex,
@@ -628,6 +643,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       repo: repo,
       playlistCollectionId: playlistCollectionId,
       initialCueStartMs: initialCueStartMs,
+      initialRemoteFavorite: initialRemoteFavorite,
       sourceReview: sourceReview,
       sourceReviewSession: sourceReviewSession,
       initialEpisodeIndex: initialEpisodeIndex,
@@ -642,6 +658,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     required VideoBookRepository repo,
     required RemoteVideoClient client,
     int? initialCueStartMs,
+    FavoriteSentence? initialRemoteFavorite,
     CardSourceLink? sourceReview,
     SourceReviewSession? sourceReviewSession,
     int? initialEpisodeIndex,
@@ -653,6 +670,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       repo: repo,
       client: client,
       initialCueStartMs: initialCueStartMs,
+      initialRemoteFavorite: initialRemoteFavorite,
       sourceReview: sourceReview,
       sourceReviewSession: sourceReviewSession,
       initialEpisodeIndex: initialEpisodeIndex,
@@ -2370,6 +2388,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<void> Function(SentenceContextSlot slot, int index, bool removed)?
   get onRemoveSentenceContext => _removeSentenceContext;
 
+  /// 「选择句子上下文」对话框的试听（视频车道）：本机播放器从合并区间首句播到末句
+  /// 句尾自动停（[_previewSentenceContextAudio]）。
+  @override
+  Future<bool> Function()? get onPreviewSentenceAudioToDraft =>
+      _previewSentenceContextAudio;
+
+  @override
+  Future<void> Function()? get onStopSentenceAudioPreviewToDraft =>
+      () async => _controller?.pause();
+
   /// TODO-382「+句」可撤销（视频车道）：弹窗点「清空已加句子」清掉本会话累积的全部草稿
   /// 句，回传清空后的句数（恒 0）。不动字幕列表「选入词卡」的 cue 选择集（两套独立机制）。
   @override
@@ -2486,6 +2514,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 行内收藏 toggle 后增量更新。新条目按 `bookUid + cue.startMs` 匹配；旧条目没有
   /// startMs 时保留 text-only 兼容键。
   final Set<String> _favoritedVideoSentences = <String>{};
+  VideoRemotePlaybackBinding? _videoRemoteBinding;
+  final _VideoRemoteCueCache _videoRemoteCueCache = _VideoRemoteCueCache();
+  bool _initialRemoteFavoriteApplied = false;
 
   // ── DictionaryPageMixin 必需的抽象成员 ──────────────────────────────
   @override
@@ -3237,6 +3268,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           // `Private` 会命中 'private' 报成「受限」，把本地文件问题指向错误方向。
           _failReason = t.video_load_failed_not_opened;
         });
+        if (widget.initialRemoteFavorite != null) {
+          appModel.videoRemoteHost.reportError('favorite_source_unavailable');
+        }
       },
     );
   }
@@ -3274,6 +3308,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _failed = true;
           _failReason = t.video_load_failed_not_opened;
         });
+        if (widget.initialRemoteFavorite != null) {
+          appModel.videoRemoteHost.reportError('favorite_source_unavailable');
+        }
       },
     );
   }
@@ -3331,6 +3368,22 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   Future<void> _init() async {
+    try {
+      await _initVideo();
+    } catch (_) {
+      if (widget.initialRemoteFavorite != null) {
+        appModel.videoRemoteHost.reportError('favorite_source_unavailable');
+      }
+      rethrow;
+    } finally {
+      if (widget.initialRemoteFavorite != null &&
+          (_failed || _missingResource)) {
+        appModel.videoRemoteHost.reportError('favorite_source_unavailable');
+      }
+    }
+  }
+
+  Future<void> _initVideo() async {
     // TODO-1063: 视频毕业为常驻媒体类型后，配置方案的「媒体类型绑定」也支持
     // 绑定 profile 到 'video'。打开视频即解析并应用绑定的 profile（与阅读器
     // /有声书同构），使看视频时的查词浮层 / 制卡按绑定 profile 生效。与视频
@@ -4931,6 +4984,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 互联 host 的蓝光标题段表（见 [VideoPlayerController.load] 的同名参数）。
     BlurayRemoteTitle? remoteDiscTitle,
   }) async {
+    _unregisterVideoRemote();
     // 新一次载入作废上一次的网络流「没打开」判定（换集 / 重试共用同一 controller，
     // 旧定时器不得给新一程判死）。
     _networkOpenDiagnoseTimer?.cancel();
@@ -5156,6 +5210,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _videoReadyToShow = controller.isReadyForFirstPaint;
       }
     });
+    _registerVideoRemote(controller);
     // BUG-839：快路径（本地文件 load 即出画）就绪后触发「换集保持全屏」的重进全屏
     // （仅 initialFullscreen 新页生效；慢路径由 [_promoteVideoReady] 触发）。
     if (isInitialVideoOpen && _videoReadyToShow) {
@@ -5208,7 +5263,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _ensureWatchTracker(controller, title);
     _playAfterSourceReviewIfReady();
     unawaited(_restoreAudioTrack(controller));
-    unawaited(_restoreSecondarySubtitle(controller));
+    if (widget.initialRemoteFavorite != null &&
+        !_initialRemoteFavoriteApplied) {
+      _initialRemoteFavoriteApplied = true;
+      await _restoreSecondarySubtitle(controller);
+      if (mounted) {
+        try {
+          await _openRemoteVideoFavorite(widget.initialRemoteFavorite!);
+        } catch (error, stack) {
+          // 可预期的失败（歧义 / 字幕缺失 / 来源不可用）带自己的稳定码报回手机。
+          appModel.videoRemoteHost.reportError(
+            error is VideoRemoteException
+                ? error.code
+                : 'favorite_source_unavailable',
+          );
+          ErrorLogService.instance.log(
+            'VideoFushi.remoteFavorite',
+            error,
+            stack,
+          );
+        }
+      }
+    } else {
+      unawaited(_restoreSecondarySubtitle(controller));
+    }
   }
 
   /// 观看统计的身份 `(uid, episodeIndex)` = 本页此刻播的那个视频：书架书（本地视频 /
@@ -5579,6 +5657,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   void dispose() {
+    _unregisterVideoRemote();
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。
     _frameProbe.stop();

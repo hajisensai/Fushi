@@ -293,6 +293,12 @@ class ServerDictionaryHost {
     );
   }
 
+  /// 词典名 → 词典自带 CSS，给 `/api/lookup/dictionary/styles`（对端弹窗渲染本机结果）。
+  Map<String, String> styles() {
+    if (!_available || !FushiDicts.isInitialized) return const <String, String>{};
+    return FushiDicts.dictionaryStyles;
+  }
+
   /// 词典媒体字节（外字 / 音调图），给 `/api/media/dictionary` 与制卡落缓存。
   Uint8List? mediaFile(String dictionary, String path) {
     if (!_available || !FushiDicts.isInitialized) return null;

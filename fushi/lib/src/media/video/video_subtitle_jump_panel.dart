@@ -132,6 +132,108 @@ String formatCueTimestamp(int startMs) =>
   return (byRep: merged, repByRaw: repByRaw);
 }
 
+/// 邻接链折叠的最大空隙（BUG-1776）：链尾 endMs 与下一段 startMs 之间 ≤ 本值才视为
+/// 「同一持续显示的特效链」。卡拉OK交替层的分段严格首尾相接（空隙 0），真实重复台词
+/// 之间隔着静默段（远大于 40ms），阈值取小保证宁可漏合不错合。
+const int _kChainFoldGapMs = 40;
+
+/// Shared representative rows for desktop and phone subtitle transcripts.
+/// Keeps raw indexes stable and leaves source cues untouched.
+///
+/// [chainEndMsByRep] holds, for every representative row that absorbed a
+/// later adjacency-chain segment, the end of the whole chain. A folded row
+/// spans its full chain, not only the head segment.
+({
+  List<int> indexes,
+  Map<int, int> representativeByRaw,
+  Map<int, AudioCue> mergedByRep,
+  Map<int, int> chainEndMsByRep,
+}) subtitleTranscriptRows(List<AudioCue> cues) {
+  final List<int> reps = <int>[];
+  final Map<String, int> firstByKey = <String, int>{};
+  final Map<int, int> repByRaw = <int, int>{};
+  // TODO-1384：先把 ASS 逐字卡拉OK 事件合并成整句组（判据见
+  // [mergePerCharacterCueGroups]）。组内非组首成员直接映射到组首、不进 reps——它与
+  // 下面按 `(startMs, 文本)` 的重复折叠是**同一个代表行机制**的两种成因，故共用一张
+  // repByRaw 表：当前播放句落在任一单字事件上，都能定位回那唯一渲染的整句行。
+  final ({Map<int, AudioCue> byRep, Map<int, int> repByRaw}) mergedGroups =
+      mergePerCharacterCueGroups(cues);
+  for (int i = 0; i < cues.length; i++) {
+    final int? mergedRep = mergedGroups.repByRaw[i];
+    if (mergedRep != null) {
+      repByRaw[i] = mergedRep;
+      if (mergedRep == i) reps.add(i);
+      continue;
+    }
+    final AudioCue cue = cues[i];
+    final String key = '${cue.startMs}\u0000${cue.text}';
+    final int? rep = firstByKey[key];
+    if (rep == null) {
+      firstByKey[key] = i;
+      repByRaw[i] = i;
+      reps.add(i);
+    } else {
+      repByRaw[i] = rep;
+    }
+  }
+  // BUG-1776：第二轮**邻接链折叠**。卡拉OK交替特效把同一句歌词拆成时间上首尾相接、
+  // startMs 各异的多组事件（如每 1.5s 换一对 \clip 分屏层），精确键折不掉 → 列表同句
+  // 连出四行。判据「同文本 + 与该文本链尾窗口相接/重叠（空隙 ≤ [_kChainFoldGapMs]）」；
+  // 每个文本各自开链（歌词链与对白/翻译行在时间轴上交错是常态，单链头会被异文本行
+  // 打断）。链断开（真实静默段）即换新链头，隔静默的重复台词（「はい」连呼）不受影响。
+  // 代表行取链首，折进同一张 repByRaw（当前句落在链中任一段都高亮/定位到链首行）。
+  final Map<int, int> chainByRep = <int, int>{};
+  final Map<int, int> chainEndMsByRep = <int, int>{};
+  final List<int> chained = <int>[];
+  final Map<String, ({int head, int endMs})> openChains =
+      <String, ({int head, int endMs})>{};
+  for (final int rep in reps) {
+    final AudioCue c = mergedGroups.byRep[rep] ?? cues[rep];
+    final ({int head, int endMs})? chain = openChains[c.text];
+    if (chain != null && c.startMs <= chain.endMs + _kChainFoldGapMs) {
+      chainByRep[rep] = chain.head;
+      final int endMs = c.endMs > chain.endMs ? c.endMs : chain.endMs;
+      openChains[c.text] = (head: chain.head, endMs: endMs);
+      chainEndMsByRep[chain.head] = endMs;
+    } else {
+      openChains[c.text] = (head: rep, endMs: c.endMs);
+      chained.add(rep);
+    }
+  }
+  if (chainByRep.isNotEmpty) {
+    for (final MapEntry<int, int> e in repByRaw.entries.toList()) {
+      final int? head = chainByRep[e.value];
+      if (head != null) repByRaw[e.key] = head;
+    }
+  }
+  return (
+    indexes: chained,
+    representativeByRaw: repByRaw,
+    mergedByRep: mergedGroups.byRep,
+    chainEndMsByRep: chainEndMsByRep,
+  );
+}
+
+/// 每个代表行实际呈现的文本与完整时间跨度：逐字卡拉OK 组取合成整句，邻接链折叠行
+/// 的 `endMs` 取整条链的结束（[subtitleTranscriptRows] 的 `chainEndMsByRep`），而不是
+/// 链首那一段。手机遥控的句子列表、句子回放与制卡时间窗都按这个跨度。
+List<({int rawIndex, String text, int startMs, int endMs})>
+    subtitleTranscriptRowSpans(List<AudioCue> cues) {
+  final rows = subtitleTranscriptRows(cues);
+  final List<({int rawIndex, String text, int startMs, int endMs})> spans =
+      <({int rawIndex, String text, int startMs, int endMs})>[];
+  for (final int rawIndex in rows.indexes) {
+    final AudioCue cue = rows.mergedByRep[rawIndex] ?? cues[rawIndex];
+    spans.add((
+      rawIndex: rawIndex,
+      text: cue.text,
+      startMs: cue.startMs,
+      endMs: rows.chainEndMsByRep[rawIndex] ?? cue.endMs,
+    ));
+  }
+  return spans;
+}
+
 /// 播放头**最近的**（不晚于它的）cue 下标（BUG-1484）。纯函数，面板与测试同源。
 ///
 /// [JsonAlignmentParser.findCueIndex] 是「命中」语义：播放头落进静默 gap（OP 之后、章节
@@ -1367,11 +1469,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     return count;
   }
 
-  /// 邻接链折叠的最大空隙（BUG-1776）：链尾 endMs 与下一段 startMs 之间 ≤ 本值才视为
-  /// 「同一持续显示的特效链」。卡拉OK交替层的分段严格首尾相接（空隙 0），真实重复台词
-  /// 之间隔着静默段（远大于 40ms），阈值取小保证宁可漏合不错合。
-  static const int _kChainFoldGapMs = 40;
-
   /// BUG-841：按 `(startMs, 文本)` 折叠重复 cue，返回代表行 raw 下标（升序）并同步
   /// 刷新 [_cachedRepresentativeByRaw]（每个 raw → 其代表行 raw）。按 cues 身份 + 长度
   /// 记忆化（`setCues` 换列表即失效；[_clearCueCaches] 亦清）。特效叠加 / 多层同句拷贝
@@ -1382,69 +1479,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         _cachedDedupCuesLength == cues.length) {
       return _cachedDedupIndexes;
     }
-    final List<int> reps = <int>[];
-    final Map<String, int> firstByKey = <String, int>{};
-    final Map<int, int> repByRaw = <int, int>{};
-    // TODO-1384：先把 ASS 逐字卡拉OK 事件合并成整句组（判据见
-    // [mergePerCharacterCueGroups]）。组内非组首成员直接映射到组首、不进 reps——它与
-    // 下面按 `(startMs, 文本)` 的重复折叠是**同一个代表行机制**的两种成因，故共用一张
-    // repByRaw 表：当前播放句落在任一单字事件上，都能定位回那唯一渲染的整句行。
-    final ({Map<int, AudioCue> byRep, Map<int, int> repByRaw}) mergedGroups =
-        mergePerCharacterCueGroups(cues);
-    for (int i = 0; i < cues.length; i++) {
-      final int? mergedRep = mergedGroups.repByRaw[i];
-      if (mergedRep != null) {
-        repByRaw[i] = mergedRep;
-        if (mergedRep == i) reps.add(i);
-        continue;
-      }
-      final AudioCue cue = cues[i];
-      final String key = '${cue.startMs}\u0000${cue.text}';
-      final int? rep = firstByKey[key];
-      if (rep == null) {
-        firstByKey[key] = i;
-        repByRaw[i] = i;
-        reps.add(i);
-      } else {
-        repByRaw[i] = rep;
-      }
-    }
-    // BUG-1776：第二轮**邻接链折叠**。卡拉OK交替特效把同一句歌词拆成时间上首尾相接、
-    // startMs 各异的多组事件（如每 1.5s 换一对 \clip 分屏层），精确键折不掉 → 列表同句
-    // 连出四行。判据「同文本 + 与该文本链尾窗口相接/重叠（空隙 ≤ [_kChainFoldGapMs]）」；
-    // 每个文本各自开链（歌词链与对白/翻译行在时间轴上交错是常态，单链头会被异文本行
-    // 打断）。链断开（真实静默段）即换新链头，隔静默的重复台词（「はい」连呼）不受影响。
-    // 代表行取链首，折进同一张 repByRaw（当前句落在链中任一段都高亮/定位到链首行）。
-    final Map<int, int> chainByRep = <int, int>{};
-    final List<int> chained = <int>[];
-    final Map<String, ({int head, int endMs})> openChains =
-        <String, ({int head, int endMs})>{};
-    for (final int rep in reps) {
-      final AudioCue c = mergedGroups.byRep[rep] ?? cues[rep];
-      final ({int head, int endMs})? chain = openChains[c.text];
-      if (chain != null && c.startMs <= chain.endMs + _kChainFoldGapMs) {
-        chainByRep[rep] = chain.head;
-        openChains[c.text] = (
-          head: chain.head,
-          endMs: c.endMs > chain.endMs ? c.endMs : chain.endMs,
-        );
-      } else {
-        openChains[c.text] = (head: rep, endMs: c.endMs);
-        chained.add(rep);
-      }
-    }
-    if (chainByRep.isNotEmpty) {
-      for (final MapEntry<int, int> e in repByRaw.entries.toList()) {
-        final int? head = chainByRep[e.value];
-        if (head != null) repByRaw[e.key] = head;
-      }
-    }
+    final rows = subtitleTranscriptRows(cues);
     _cachedDedupCues = cues;
     _cachedDedupCuesLength = cues.length;
-    _cachedDedupIndexes = chained;
-    _cachedRepresentativeByRaw = repByRaw;
-    _cachedMergedByRep = mergedGroups.byRep;
-    return chained;
+    _cachedDedupIndexes = rows.indexes;
+    _cachedRepresentativeByRaw = rows.representativeByRaw;
+    _cachedMergedByRep = rows.mergedByRep;
+    return rows.indexes;
   }
 
   /// 某个**代表行**在列表里实际呈现/交互所用的 cue（TODO-1384）。逐字卡拉OK 组返回

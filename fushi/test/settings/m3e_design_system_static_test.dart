@@ -933,6 +933,11 @@ class AnotherPopupPart {
           'appUiScale, never page chrome -- it carries over the reviewed '
           'content exception already granted to video_subtitle_jump_panel, '
           'which now delegates to this file.',
+      'lib/src/pages/implementations/video_remote/video_remote_transcript_view.dart':
+          'Phone video remote subtitle list: fontSize: is the cue text itself, '
+          'animated up for the current line (kVideoRemoteCurrentScale) -- the '
+          'same subtitle-content class as the allowlisted subtitle jump panel '
+          'and transcript text, not ordinary chrome.',
       'lib/src/pages/implementations/game_stream_page.dart':
           'Game-stream receiver: fontSize: sizes the streamed Hook line text '
           'in the collapsible transcript rail -- the same subtitle-content '
@@ -1355,6 +1360,8 @@ class AnotherPopupPart {
       'lib/src/media/video/subtitle_transcript_text.dart': <String>{
         'fontSize:',
       },
+      'lib/src/pages/implementations/video_remote/video_remote_transcript_view.dart':
+          <String>{'fontSize:'},
       'lib/src/pages/implementations/game_stream_page.dart': <String>{
         'fontSize:',
       },

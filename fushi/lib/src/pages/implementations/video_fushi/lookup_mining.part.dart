@@ -29,6 +29,18 @@ part of '../video_fushi_page.dart';
 /// ([_onMineEntryImpl], [_onUpdateEntryImpl]), the card landing path
 /// ([_mineVideoCard]) and the mined-sentence history row ([_recordMinedSentenceForVideo]).
 extension _VideoLookupMining on _VideoFushiPageState {
+  /// 本机 Anki 仓库 + 制卡后自动重排（与 `ankiRepositoryProvider` 的本地分支同构，
+  /// 只是不套待发队列、也不随「制卡到已配对设备」改道）。每次遥控制卡取一份新仓库，
+  /// 读的是当下的 Anki 设置；调度器防抖到期跑完一轮即空闲，不挂在页面上——遥控
+  /// 打开收藏会替换页面，挂在页面上会把未到期的重排一起丢掉。
+  BaseAnkiRepository _localAutoRepositionAnkiRepository() {
+    return withAnkiAutoReposition(
+      ref.read(platformServicesProvider).createAnkiRepository(),
+      showFailure: (String message) =>
+          _showOsd(message, severity: ToastSeverity.error),
+    ).repository;
+  }
+
   /// 把一条 cue 的画面/音频时间窗转成草稿可合并的区间。视频所有 cue 同属一个视频文件，
   /// [audioFileIndex] 统一用 0（合并恒成功，取 min start / max end）。null cue → null
   /// 区间（草稿据此退化为只合文本，不静默拼坏区间）。
@@ -105,6 +117,50 @@ extension _VideoLookupMining on _VideoFushiPageState {
   Future<int> _clearSentenceDraft() async {
     _miningDraft.clear();
     return _miningDraft.length;
+  }
+
+  /// 「选择句子上下文」对话框的试听（[DictionaryPageMixin.onPreviewSentenceAudioToDraft]
+  /// 的私有目标）：放**这张卡会合并进去的那段**——草稿全部句 + 当前查词句的首句起
+  /// →末句止，而不只是当前句（BUG-2196 ② 同一口径）。
+  Future<bool> _previewSentenceContextAudio() async {
+    final VideoPlayerController? controller = _controller;
+    final AudioCue? anchor = _lastLookupCue;
+    if (controller == null || anchor == null) return false;
+    final AudioPlaybackRange? span = _miningDraft.composeAudioRange(
+      _cueRange(anchor),
+    );
+    if (span == null) return false;
+    return _replaySubtitleSpan(
+      controller.cueStreamOwning(anchor),
+      span.startMs,
+      span.endMs,
+    );
+  }
+
+  /// 在 [stream]（一条按 startMs 升序的字幕流）上把字幕时基区间 `[startMs, endMs]`
+  /// 落到首尾两句，经 [VideoPlayerController.replayCue] 从首句句首播到末句句尾自动停
+  /// ——与查词顶栏「重播本句」同一套句尾判定（倍速 / 延迟 / seek 吸附都已处理）。
+  /// 本机试听与手机遥控试听（声音都在电脑上放）共用。区间里没有任何一句时返回 false。
+  Future<bool> _replaySubtitleSpan(
+    List<AudioCue> stream,
+    int startMs,
+    int endMs,
+  ) async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null || endMs <= startMs) return false;
+    AudioCue? first;
+    AudioCue? last;
+    for (final AudioCue cue in stream) {
+      if (cue.endMs <= startMs || cue.startMs >= endMs) continue;
+      first ??= cue;
+      last = cue;
+    }
+    if (first == null) return false;
+    await controller.replayCue(
+      first,
+      until: identical(first, last) ? null : last,
+    );
+    return true;
   }
 
   /// 制卡（覆写 [DictionaryPageMixin.onMineEntry]）：在词典 [fields]（已含单词
@@ -357,9 +413,15 @@ extension _VideoLookupMining on _VideoFushiPageState {
     int? updateNoteId,
     VideoMiningHistorySnapshot? historySnapshot,
     void Function(MinePopupResult result)? onBackgroundLanded,
+    bool silent = false,
+    bool forceForeground = false,
+    bool forceSubtitleStart = false,
+    bool localOnly = false,
+    void Function(String code)? onFailure,
   }) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null || !_discExtractionAllowed(controller)) {
+      onFailure?.call('video_extraction_unavailable');
       return const MinePopupResult();
     }
     // 在线视频：弹窗等不等这张卡（见 [VideoOnlineMiningMode]）。覆盖已有卡片 / 回看会话
@@ -367,14 +429,18 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final VideoOnlineMiningMode onlineMode = resolveVideoOnlineMiningMode(
       preferred: appModel.videoOnlineMiningMode,
       mediaSource: controller.miningSource,
-      overwrite: updateNoteId != null,
+      overwrite: updateNoteId != null || forceForeground,
       sourceReview: _sourceReviewSession != null,
     );
 
     // 入队前立即冻结所有播放器/页面输入。换集会复用或 dispose controller，后续任务绝不能
     // 到真正出队时再读“当前集”。截图 Future 也在点击当下启动，current-frame 模式不会因
     // 本地 pushReplacement / 远端换流而截到下一集或访问已释放播放器。
-    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
+    // 遥控制卡（[localOnly]）强制本机 Anki：不经「制卡到已配对设备」转发、不进待发
+    // 队列（失败要当场报回手机），但自动重排与普通制卡同一套。
+    final BaseAnkiRepository repo = localOnly
+        ? _localAutoRepositionAnkiRepository()
+        : ref.read(ankiRepositoryProvider);
     final MiningMediaCompression mediaCompression =
         MiningMediaCompression.resolve(
           imageTier: appModel.miningImageQuality,
@@ -436,7 +502,11 @@ extension _VideoLookupMining on _VideoFushiPageState {
     }
 
     final String? documentTitle = _videoMiningDocumentTitle();
-    final VideoMiningImageMode imageMode = appModel.videoMiningImageMode;
+    final VideoMiningImageMode imageMode =
+        forceSubtitleStart &&
+            appModel.videoMiningImageMode == VideoMiningImageMode.currentFrame
+        ? VideoMiningImageMode.subtitleStart
+        : appModel.videoMiningImageMode;
     final MiningAnimatedFormat animatedFormat =
         appModel.videoMiningAnimatedFormat;
     final MiningStillFormat stillFormat = appModel.videoMiningStillFormat;
@@ -447,20 +517,20 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final String? collectionTag = appModel.autoAddBookNameToTags
         ? BaseAnkiRepository.sanitizeTitleTag(_playlistTitle)
         : null;
-    final Future<Uint8List?> currentFrameSnapshot = controller
-        .screenshot()
-        .catchError((Object error, StackTrace stack) {
-          // 截图在入队时就启动，必须立刻接住异常；否则任务排队期间 Future 已失败会成为
-          // unhandled async error。GIF/字幕起点帧路径仍可继续，截图只作为对应模式/兜底。
-          try {
-            ErrorLogService.instance.log(
-              'mineVideoCard.snapshotCurrentFrame',
-              error,
-              stack,
-            );
-          } catch (_) {}
-          return null;
-        });
+    final Future<Uint8List?> currentFrameSnapshot = forceSubtitleStart
+        ? Future<Uint8List?>.value(null)
+        : controller.screenshot().catchError((Object error, StackTrace stack) {
+            // 截图在入队时就启动，必须立刻接住异常；否则任务排队期间 Future 已失败会成为
+            // unhandled async error。GIF/字幕起点帧路径仍可继续，截图只作为对应模式/兜底。
+            try {
+              ErrorLogService.instance.log(
+                'mineVideoCard.snapshotCurrentFrame',
+                error,
+                stack,
+              );
+            } catch (_) {}
+            return null;
+          });
     // 不 await：先把本任务按点击顺序送进共享队列，轮到它时再解析临时目录。否则两个
     // 连续点击可能因 path_provider 返回先后不同而逆序入队。
     final Future<String> tempDir = getTemporaryDirectory().then(
@@ -683,6 +753,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
       recordStats: reviewSession == null,
       mineDb: mineDb,
       statIdentity: statIdentity,
+      silent: silent,
+      onFailure: onFailure,
     );
     if (onlineMode == VideoOnlineMiningMode.wait) return land(await job);
     // 后台 / 看完再制卡：弹窗不陪着等。结局（成功 / 暂存 / 失败）在落地时由 OSD 报告。
@@ -709,10 +781,13 @@ extension _VideoLookupMining on _VideoFushiPageState {
     required bool recordStats,
     required FushiDatabase mineDb,
     required ({String bookKey, String title}) statIdentity,
+    bool silent = false,
+    void Function(String code)? onFailure,
   }) {
     // BUG-296 / TODO-390：应带句子音频却抽取失败 → 显式 OSD + 中止，不建无音频卡。
     if (res.aborted) {
-      if (mounted) {
+      onFailure?.call(res.abortReason ?? 'sentence_audio_export_failed');
+      if (mounted && !silent) {
         _showOsd(
           t.card_export_failed_detail(
             reason:
@@ -727,7 +802,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       return const MinePopupResult();
     }
     // W2a：动图降级为静态帧时可感知 OSD（原因取 GIF 失败摘要，最贴近根因）。
-    if (res.degradedToStill && mounted) {
+    if (res.degradedToStill && mounted && !silent) {
       _showOsd(
         t.card_cover_degraded_to_static(
           reason: coverFailure ?? 'animated clip unavailable',
@@ -736,6 +811,10 @@ extension _VideoLookupMining on _VideoFushiPageState {
       );
     }
     final MineOutcome outcome = res.outcome! as MineOutcome;
+    if (outcome.result != MineResult.success &&
+        outcome.result != MineResult.queued) {
+      onFailure?.call(outcome.errorCode ?? outcome.result.name);
+    }
     if (staged) {
       // 看完再制卡：只是进了待制卡列表。统计 / 历史等写入 Anki 时再记。
       if (outcome.result == MineResult.success) unawaited(_onVideoMineStaged());
@@ -761,6 +840,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
     // 那时连取 `context` 都会抛（debug FlutterError / release 空检查），落地回调
     // （写制卡历史）就跟着没了，还会记一条假失败。
     if (!mounted) return result;
+    // 手机遥控出卡（silent）：结果回给手机，电脑这边不弹 OSD。
+    if (silent) return result;
     // TODO-971：制卡成功（card_exported / card_overwritten，含牌组名）走突出 OSD——
     // 居中、更大、停留更久，区别于音量/亮度小角标，避免用户「制卡了没反馈」。
     // describeMineOutcome 早就算出了 status，此前只被拿去选 prominent 布尔、颜色

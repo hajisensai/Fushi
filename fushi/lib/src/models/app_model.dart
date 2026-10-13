@@ -211,6 +211,7 @@ import 'package:fushi/src/sync/sync_conflict_prompter.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_state_apply_lock.dart';
+import 'package:fushi/src/sync/video_remote_host.dart';
 import 'package:fushi/src/models/theme_notifier.dart' as theme_notifier;
 import 'package:fushi/src/models/theme_notifier.dart'
     show ThemeNotifier, CustomThemeEntry, ThemePreset;
@@ -647,6 +648,17 @@ class AppModel with ChangeNotifier {
   /// HomePage（弹窗词典 / 悬浮词典入口）。
   VideoScrapeRuntime? videoScrapeRuntime;
 
+  /// 手机字幕遥控器的播放器适配宿主：当前视频页登记 / 注销播放绑定，互联服务端
+  /// 经 [syncServerController] 把它注入为 `videoRemoteControlV1` 能力。
+  late final VideoRemoteHost videoRemoteHost = VideoRemoteHost(
+    favorites: () => FavoriteSentenceRepository(database),
+    favoriteChanges: () => (database.select(database.preferences)
+          ..where((row) => row.key.equals('favorite_sentences')))
+        .watchSingleOrNull()
+        .map((PreferenceRow? row) => row?.value)
+        .distinct(),
+  );
+
   /// App 级 Hibiki LAN 同步服务端宿主：生命周期归 AppModel（整个会话），
   /// 不再绑在设置页 widget 上——否则切出「同步与备份」页就把服务端关了（BUG-085）。
   /// 启动时若用户启用了 host 则自动开，仅在用户关闭开关或退出 app 时停。配对批准
@@ -662,6 +674,8 @@ class AppModel with ChangeNotifier {
     syncDataDir: () => databaseDirectory.path,
     remoteLookupServiceFactory: createRemoteLookupService,
     miningServiceFactory: createRemoteMiningService,
+    videoRemoteServiceFactory: () => videoRemoteHost,
+    videoRemoteStopped: () => videoRemoteHost.releaseController(),
     historyServiceFactory: createRemoteHistoryService,
     // TODO-1356: advertise this device's real per-platform name (hardware model
     // on mobile, hostname on desktop) so peers never see "localhost".
@@ -8021,6 +8035,7 @@ class AppModel with ChangeNotifier {
       // 关停在 dispose 之前就开始。
       unawaited(syncServerController.stop());
       syncServerController.dispose();
+      unawaited(videoRemoteHost.dispose());
     }
     // BUG-1569②：合集观察者是模块级全局（幂等，未装载时 no-op），dispose 路径
     // 也对称撤掉，防止未决防抖 Timer 在 AppModel 销毁后仍去摸 db。

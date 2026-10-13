@@ -27,7 +27,7 @@ void main() {
   const Map<String, Map<String, int>> allowlist = <String, Map<String, int>>{
     'SnackBar': <String, int>{},
     'Tooltip': <String, int>{
-      'lib/src/media/audiobook/lyrics_player/lyrics_player_md3.dart': 2,
+      'lib/src/media/audiobook/lyrics_player/lyrics_player_md3.dart': 1,
       'lib/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart': 1,
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart': 1,
       'lib/src/media/video/video_m3e_chrome.dart': 1,

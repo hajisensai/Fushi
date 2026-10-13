@@ -290,6 +290,7 @@ class HeadlessHost {
       remoteLookupService: dictionaries.available ? ServerRemoteLookupService(dictionaries) : null,
       historyService: dictionaries.available ? ServerRemoteHistoryService(db) : null,
       dictionaryMediaProvider: dictionaries.available ? dictionaries.mediaFile : null,
+      dictionaryStylesProvider: dictionaries.available ? dictionaries.styles : null,
       // 互联制卡（/api/mine、/api/mine/forward、/api/duplicate、/api/anki/*）：落到
       // 本机 Anki 同步客户端库，需要随包的 fushi-anki-sync。
       miningService: anki.available ? ServerRemoteMiningService.forLanding(anki, dictionaries: dictionaries) : null,
