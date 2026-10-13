@@ -103,6 +103,32 @@ void main() {
     );
   });
 
+  // BUG-3275（反馈 ICrzgr8FsV）：窄弹窗里按钮组压住词头。左簇 flex-basis 0 让换行判定永远
+  // 「放得下」，按钮组从不换行；min-content 下限恢复「放不下就整组换到下一行」，长词头由
+  // 词头行自身宽度（容器单位）封顶、仍横向滚动。前后对比截图见 PR。
+  test(
+    'narrow popup wraps the header buttons instead of covering the headword',
+    () {
+      expect(
+        ruleBody('html.fushi-m3e .entry-header-main'),
+        contains('min-width: min-content'),
+        reason: '左簇要有「词头放得下」的下限，换行判定才会把按钮组挤到下一行',
+      );
+      final String header = ruleBody('html.fushi-m3e .entry-header');
+      expect(header, contains('flex-wrap: wrap'));
+      expect(
+        header,
+        contains('container-type: inline-size'),
+        reason: '100cqw 要按词头行自身宽度解析',
+      );
+      expect(
+        ruleBody('html.fushi-m3e .expression-scroll'),
+        contains('max-width: 100cqw'),
+        reason: '超长词头封顶在整行宽，不把卡片撑出横向溢出',
+      );
+    },
+  );
+
   test('pitch source list is not a native title tooltip', () {
     final String fn = js.substring(
       js.indexOf('function createPitchGroup('),

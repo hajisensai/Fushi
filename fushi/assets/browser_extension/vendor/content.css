@@ -2787,10 +2787,29 @@
     row-gap: 4px;
     padding-top: 0;
     min-height: 48px;
+    /* 词头盒 inline-size 包含：.expression-scroll 的 100cqw 按词头行自身宽度解析（见下方
+       .entry-header-main 的说明）。词条宽度由弹窗 / 网格列决定，不靠内容撑。 */
+    container-type: inline-size;
 }
 
 :where(#entries-container).fushi-m3e .expression-scroll {
     flex: 0 1 auto;
+    /* 长词头封顶在整行宽（见下方 .entry-header-main），超出部分仍横向滚动。 */
+    max-width: 100cqw;
+}
+
+/* 反馈 ICrzgr8FsV（Android 竖排阅读窄弹窗「查词时文字与 ui 重叠」）：左簇 flex-basis 是 0，
+   换行判定看到的左簇宽永远是 0，「词头 + 按钮组放不下就整组换行」从来不会触发——按钮组
+   硬挤在同一行，把词头压到只剩一个字宽，大字与注音画到按钮底下。给左簇一个「词头本身
+   放得下」的下限（min-content：词头 nowrap 的整宽、元数据列能折到的最窄宽），放不下时
+   按钮组整组换到下一行（仍右对齐）；放得下时左簇照旧 flex-grow 吃满剩余宽度。
+   自适应优先级：先把元数据列换到词头下方，再把按钮组换到下一行，词头本身永远不被挤压。
+   左簇的下限被 .expression-scroll 的 100cqw 封顶在整行宽，超长词头不会把卡片撑出横向溢出
+   （cqw 按 .entry-header 自己的宽度解析，不成环）。不认容器单位的旧引擎（iOS 15 的
+   WKWebView）没有这个封顶：比整行还宽的注音词头会撑出卡片横向溢出，换行本身照常生效。
+   不包 @supports：generate-content-css.mjs 不处理嵌套 at-rule。 */
+:where(#entries-container).fushi-m3e .entry-header-main {
+    min-width: min-content;
 }
 
 /* Display small（36）；窄弹窗按视口宽收到 28，长词头不至于一上来就横向滚动。注音
