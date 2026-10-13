@@ -1,7 +1,8 @@
 // Fushi 排行榜 / 公开书架 Worker（设计：docs/specs/2026-09-28-leaderboard-accounts.md）。
 //
 // 绑定：DB（D1 fushi-leaderboard）、MEDIA（R2 fushi-leaderboard-media）。
-// secrets：ADMIN_USER / ADMIN_PASS；可选 vars：BANNED_WORDS。
+// secrets：ADMIN_USER / ADMIN_PASS；可选 FEEDBACK_CI_TOKEN（CI 回填反馈修复 / 发布；没配则 /v1/ci/** 一律 404）；
+// 可选 vars：BANNED_WORDS。
 //
 // API（JSON；签名见 auth.js）：
 //   POST   /v1/email/code               {email, purpose, lang?} 发邮箱验证码（email.js；永远 202）
@@ -28,6 +29,7 @@
 //   POST   /v1/reports                   [签名] {targetKind, targetId, reason}
 //   GET    /img/<key>                                    R2 出图
 //   /v1/feedback/**、/v1/dev/feedback/**                反馈与开发者处理（feedback.js 文件头）
+//   /v1/ci/feedback/**                    [Bearer FEEDBACK_CI_TOKEN]  CI 回填修复 commit / 发布版本（同上）
 //
 // 开发者网页处理台（HTML，会话 Cookie；devconsole.js）：/dev/**
 //
@@ -158,7 +160,7 @@ async function route(request, env, now, ctx) {
     return handleAdmin(env, request, path, body, now);
   }
 
-  // ---- 反馈与开发者处理：凭据各不相同（ticket / 签名 / 会话 Cookie），一律不进边缘缓存 ----
+  // ---- 反馈、开发者处理与 CI 回填：凭据各不相同（ticket / 签名 / Bearer），一律不进边缘缓存 ----
   if (isFeedbackPath(path)) {
     const submit = method === 'POST' && path === '/v1/feedback';
     await bindingLimit(submit ? env.AUTH_LIMITER : env.READ_LIMITER, request);

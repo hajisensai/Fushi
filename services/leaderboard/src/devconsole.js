@@ -4,7 +4,7 @@
 //   POST /dev/code   {email}      发登录验证码（与 App 新设备登录同一套 purpose=login 验证码）
 //   POST /dev/login  {email,code} 验码 → 账户 role 必须是 dev → 写会话 Cookie
 //   POST /dev/logout
-//   GET  /dev/f/:id               详情：正文、设备信息、截图、日志、时间线、处理表单
+//   GET  /dev/f/:id               详情：正文、设备信息、截图、日志、时间线、修复 commit 与各通道发布版本（只读）、处理表单
 //   GET  /dev/f/:id/a/:slot       附件（日志 ?view=text 解压成文本）
 //   POST /dev/f/:id  {status,reply}
 //
@@ -271,6 +271,7 @@ ${f.parentId ? `<span class="badge">重新提交自 #${esc(f.parentId)}</span>` 
 <span class="t">${esc(f.title)}</span>
 ${f.awaitingDev ? '<span class="badge new">新消息</span>' : ''}
 ${f.hasDevNote ? '<span class="badge ok">已批改</span>' : ''}
+${f.fix ? `<span class="badge ok">修复 ${esc(f.fix.sha.slice(0, 7))}</span>` : ''}
 ${flagBadges(f.flags)}
 <span class="muted">${esc(fmtTime(f.updatedAt))}</span>
 ${f.aiSummary ? `<span class="sum muted">AI：${esc(f.aiSummary)}</span>` : ''}
@@ -284,6 +285,22 @@ ${f.aiSummary ? `<span class="sum muted">AI：${esc(f.aiSummary)}</span>` : ''}
 ${searchForm}
 <div class="card">${rows || `<p class="muted">${q ? '没有匹配的反馈。' : '没有反馈。'}</p>`}</div>
 ${more}`, { signedIn: true }));
+}
+
+const CHANNEL_LABEL = { debug: '调试版', beta: '测试版', stable: '正式版' };
+
+/** 修复追踪（只读）：修复 commit + 各通道 / 平台最早包含它的版本。未标记修复 → 空串。 */
+function fixSection(fix) {
+  if (!fix) return '';
+  const scope = fix.scope === 'none' ? '无需更新 App' : '需要新 App';
+  const rows = Object.entries(fix.releases || {}).flatMap(([ch, per]) => Object.entries(per)
+    .map(([pf, r]) => `<tr><td>${esc(CHANNEL_LABEL[ch] || ch)} · ${esc(pf)}</td><td>${esc(r.version)} <span class="muted">${esc(fmtTime(r.at))}</span></td></tr>`))
+    .join('');
+  const releases = rows
+    ? `<table>${rows}</table>`
+    : `<p class="muted">${fix.scope === 'none' ? '不需要发布。' : '还没有发布包含这个修复。'}</p>`;
+  return `<h2>修复</h2>
+<div class="card"><p>commit <code>${esc(fix.sha)}</code> · ${esc(scope)} · ${esc(fmtTime(fix.at))}</p>${releases}</div>`;
 }
 
 async function detailPage(env, id) {
@@ -326,6 +343,7 @@ ${f.parentId ? `<p>重新提交自 <a href="/dev/f/${esc(f.parentId)}">#${esc(f.
 ${f.reopenedAs && f.reopenedAs.length ? `<p>已被重新提交为 ${f.reopenedAs.map((x) => `<a href="/dev/f/${esc(x)}">#${esc(x)}</a>`).join('、')}</p>` : ''}
 ${f.flags && f.flags.length ? `<p>${flagBadges(f.flags)}</p>` : ''}
 <p class="note">${esc(UNTRUSTED_NOTE)}</p>
+${fixSection(f.fix)}
 <h2>AI 总结 <span class="muted">（仅开发者可见；据未核实的反馈内容生成）</span></h2>
 <div class="card ai">${f.aiSummary
     ? `<div class="body">${esc(f.aiSummary)}</div><p class="muted">生成于 ${esc(fmtTime(f.aiSummaryAt))}</p>`

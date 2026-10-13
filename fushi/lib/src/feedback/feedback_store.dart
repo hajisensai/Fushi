@@ -25,6 +25,7 @@ class FeedbackTicket {
     this.missing = false,
     this.body = '',
     this.parentId,
+    this.fix,
   });
 
   factory FeedbackTicket.fromJson(Map<String, dynamic> j) => FeedbackTicket(
@@ -40,6 +41,7 @@ class FeedbackTicket {
     missing: j['missing'] == true,
     body: j['body'] as String? ?? '',
     parentId: j['parentId'] as String?,
+    fix: FeedbackFix.tryParse(j['fix']),
   );
 
   final String id;
@@ -64,6 +66,9 @@ class FeedbackTicket {
 
   /// 「问题没解决，重新提交」时指向的原反馈 id（本机列表据此显示两条的关联）。
   final String? parentId;
+
+  /// 最近一次拉到的修复与发布进度（列表据此显示「已修复」）；未标记修复为 null。
+  final FeedbackFix? fix;
 
   /// 开发者有用户还没看过的新进展。
   bool get hasUnseenReply => devReplyAt != null && devReplyAt! > seenAt;
@@ -90,16 +95,24 @@ class FeedbackTicket {
     missing: missing ?? this.missing,
     body: body ?? this.body,
     parentId: parentId ?? this.parentId,
+    fix: fix,
   );
 
-  /// 用服务端摘要刷新进度（标题 / 状态 / 时刻），本机字段（ticket / seenAt）不变。
-  FeedbackTicket mergeSummary(FeedbackSummary s) => copyWith(
+  /// 用服务端摘要刷新进度（标题 / 状态 / 时刻 / 修复），本机字段（ticket / seenAt）不变。
+  /// 修复以服务端为准：摘要里没有就清掉（开发者撤销了标记）。
+  FeedbackTicket mergeSummary(FeedbackSummary s) => FeedbackTicket(
+    id: id,
+    ticket: ticket,
     title: s.title,
+    category: category,
+    createdAt: createdAt,
     status: s.status,
     updatedAt: s.updatedAt,
-    devReplyAt: s.devReplyAt,
-    missing: false,
-    parentId: s.parentId,
+    devReplyAt: s.devReplyAt ?? devReplyAt,
+    seenAt: seenAt,
+    body: body,
+    parentId: s.parentId ?? parentId,
+    fix: s.fix,
   );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -115,6 +128,7 @@ class FeedbackTicket {
     if (missing) 'missing': true,
     if (body.isNotEmpty) 'body': body,
     if (parentId != null) 'parentId': parentId,
+    if (fix != null) 'fix': fix!.toJson(),
   };
 }
 

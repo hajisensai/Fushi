@@ -642,6 +642,10 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
                   )
                 else
                   Text(t.feedback_dev_no_log, style: tokens.type.metadata),
+                if (d.fix case final FeedbackFix fix) ...<Widget>[
+                  SizedBox(height: tokens.spacing.card),
+                  _FeedbackFixCard(fix),
+                ],
                 if (d.origin.isNotEmpty) ...<Widget>[
                   SizedBox(height: tokens.spacing.card),
                   FushiSectionTitle(t.feedback_dev_origin),
@@ -753,6 +757,86 @@ class _FeedbackDevDetailPageState extends ConsumerState<FeedbackDevDetailPage> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 修复 commit（短 sha，可选中复制全长）与各通道 / 平台第一个包含它的版本（CI 回填）。
+class _FeedbackFixCard extends StatelessWidget {
+  const _FeedbackFixCard(this.fix);
+
+  final FeedbackFix fix;
+
+  static const List<String> _channelOrder = <String>['debug', 'beta', 'stable'];
+
+  static String _channelLabel(String wire) => switch (wire) {
+    'debug' => t.update_channel_debug,
+    'beta' => t.update_channel_beta,
+    'stable' => t.update_channel_stable,
+    _ => feedbackSafeText(wire),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final List<String> channels = <String>[
+      ..._channelOrder.where(fix.releases.containsKey),
+      ...fix.releases.keys.where((String c) => !_channelOrder.contains(c)),
+    ];
+    final List<String> lines = <String>[
+      for (final String channel in channels)
+        for (final MapEntry<String, FeedbackRelease> e
+            in (fix.releases[channel]!.entries.toList()..sort(
+              (
+                MapEntry<String, FeedbackRelease> a,
+                MapEntry<String, FeedbackRelease> b,
+              ) => a.key.compareTo(b.key),
+            )))
+          '${_channelLabel(channel)} · ${feedbackSafeText(e.key)}: '
+              '${feedbackSafeText(e.value.version)}'
+              '${e.value.at > 0 ? ' · ${feedbackTime(e.value.at)}' : ''}',
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        FushiSectionTitle(t.feedback_dev_fix_title),
+        FushiCard(
+          key: const ValueKey<String>('feedback-dev-fix'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              FushiTooltip(
+                message: fix.sha,
+                child: SelectableText(
+                  t.feedback_dev_fix_commit(sha: fix.shortSha),
+                  key: const ValueKey<String>('feedback-dev-fix-sha'),
+                  style: tokens.type.metadata.copyWith(
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures(),
+                    ],
+                  ),
+                ),
+              ),
+              if (fix.at > 0)
+                Text(feedbackTime(fix.at), style: tokens.type.metadata),
+              SizedBox(height: tokens.spacing.gap),
+              if (fix.scope == FeedbackFixScope.none)
+                Text(t.feedback_fix_no_update_needed)
+              else if (lines.isEmpty)
+                Text(
+                  t.feedback_dev_fix_releases_empty,
+                  style: tokens.type.metadata,
+                )
+              else
+                SelectableText(
+                  lines.join('\n'),
+                  key: const ValueKey<String>('feedback-dev-fix-releases'),
+                  style: tokens.type.metadata,
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

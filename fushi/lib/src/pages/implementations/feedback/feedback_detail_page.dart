@@ -384,6 +384,15 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
                               canOpen: _canOpenRelated,
                             ),
                           ],
+                          if (d.fix case final FeedbackFix fix) ...<Widget>[
+                            SizedBox(height: tokens.spacing.gap),
+                            FeedbackFixNotice(
+                              fix,
+                              key: const ValueKey<String>(
+                                'feedback-fix-progress',
+                              ),
+                            ),
+                          ],
                           SizedBox(height: tokens.spacing.gap),
                           SelectableText(d.body),
                           if (d.status.isClosed) ...<Widget>[

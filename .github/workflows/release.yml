@@ -35,6 +35,7 @@ on:
       - 'tool/release_sequence.sh'
       - 'tool/publish_update_manifest.sh'
       - 'tool/merge_update_manifest.py'
+      - 'tool/feedback_mark_released.sh'
       - '.github/workflows/release.yml'
       - '.github/workflows/release-desktop.yml'
       - '.github/actions/provide-baked-secrets/**'
@@ -1084,6 +1085,23 @@ jobs:
         ASSET_GLOB: fushi-*.apk
         PLATFORM_LABEL: android
       run: bash tool/publish_update_manifest.sh
+
+    # 反馈发布回填：清单落地 = 这一版 Android 包已对用户可见，把「本构建包含其修复」的
+    # 反馈记上 <channel>.android = 本版本（按 git 祖先关系判定，见脚本头注释）。
+    # 绝不能让发布变红：步骤 continue-on-error，脚本内部失败也只打 ::warning。
+    # 守卫：fushi/test/build/feedback_workflow_guard_test.dart。
+    - name: Backfill feedback fix releases (Android)
+      if: steps.channel.outputs.publish_manifest == 'true'
+      continue-on-error: true
+      shell: bash
+      env:
+        FEEDBACK_CI_TOKEN: ${{ secrets.FEEDBACK_CI_TOKEN }}
+        FEEDBACK_API_BASE: ${{ vars.FEEDBACK_API_BASE }}
+        CHANNEL: ${{ steps.channel.outputs.manifest_channel }}
+        PLATFORM: android
+        VERSION: ${{ steps.channel.outputs.build_version_name }}
+        HEAD_SHA: ${{ github.sha }}
+      run: bash tool/feedback_mark_released.sh
 
     # 正式版发布成功后自动把 main 同步成 develop（2026-09-08 用户要求）。
     #
