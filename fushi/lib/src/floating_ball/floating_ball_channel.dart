@@ -186,7 +186,9 @@ class FloatingBallChannel {
 
   // ── iOS ─────────────────────────────────────────────────────────────
 
-  /// 截 app 自己的窗口，返回物理像素 PNG；失败返回 null。
+  /// 截 app 自己的窗口，返回物理像素 PNG；失败返回 null。iOS 用于截屏 OCR；
+  /// Android（PixelCopy，API 26+）也实现了同名方法，供反馈截图直接经 [channel]
+  /// 调用（`captureFeedbackScreenshot`，它要自己区分失败原因并回退）。
   static Future<Uint8List?> captureScreen() =>
       _invoke<Uint8List>('captureScreen');
 

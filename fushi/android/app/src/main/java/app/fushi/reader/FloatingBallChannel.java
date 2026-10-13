@@ -310,6 +310,10 @@ final class FloatingBallChannel {
                 result.success(started);
                 return;
             }
+            case "captureScreen":
+                // 截本 App 窗口（含 WebView），反馈截图用；与 iOS 同名同契约（PNG 字节）。
+                AppWindowSnapshot.capture(context, result);
+                return;
             default:
                 result.notImplemented();
         }

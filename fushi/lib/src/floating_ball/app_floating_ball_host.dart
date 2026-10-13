@@ -27,6 +27,7 @@ import 'package:fushi/src/floating_ball/camera_ocr_photo.dart';
 import 'package:fushi/src/floating_ball/desktop_system_ball_assets.dart';
 import 'package:fushi/src/utils/components/accent_logo_image.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
+import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
@@ -412,6 +413,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingCameraOcr.addListener(_onChanged);
     pendingSync.addListener(_onChanged);
     pendingSystemOcrSetup.addListener(_onChanged);
+    feedbackWindowCaptureActive.addListener(_onChanged);
     // 「图标跟随主题色」开关一变，桌面系统球球面要重画。
     appLogoFollowsAccent.addListener(_onLogoTintChanged);
     if (Platform.isIOS ||
@@ -452,6 +454,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     pendingCameraOcr.removeListener(_onChanged);
     pendingSync.removeListener(_onChanged);
     pendingSystemOcrSetup.removeListener(_onChanged);
+    feedbackWindowCaptureActive.removeListener(_onChanged);
     appLogoFollowsAccent.removeListener(_onLogoTintChanged);
     _prefs?.removeListener(_onPrefsChanged);
     // 还在路上的起球闭包作废。
@@ -1060,7 +1063,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     );
   }
 
-  /// 反馈：截下当前页面（球不在截图边界里，不用先藏）再打开反馈中心。
+  /// 反馈：截下当前页面再打开反馈中心。原生窗口快照会拍到球，截图期间球由
+  /// [feedbackWindowCaptureActive] 藏掉（见 build）。
   Future<void> _openFeedback() async {
     final BuildContext? ctx = _navigatorContext;
     if (ctx == null) return;
@@ -1302,6 +1306,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     if (!prefs.floatingBallInApp ||
         scene.hidesBall ||
         _capturing ||
+        // 反馈截图走原生窗口快照（含 WebView）时球会被一起拍进去，先藏。
+        feedbackWindowCaptureActive.value ||
         _dismissed) {
       return const SizedBox.shrink();
     }
