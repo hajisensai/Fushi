@@ -1322,6 +1322,52 @@ class NativePlayer extends PlatformPlayer {
     calloc.free(name);
   }
 
+  /// Fushi patch (BUG-3315): observes [property] with `MPV_FORMAT_STRING`, so libmpv
+  /// compares values in its core and only emits an event when the formatted value
+  /// actually changes; the new value travels with the event.
+  ///
+  /// [observeProperty] uses `MPV_FORMAT_NONE`, which mpv reports as changed on every
+  /// notification (`player/client.c`: `prop->format == 0` → `changed = true`). For
+  /// properties notified on `MPV_EVENT_TICK` (`sub-start`, `sub-end`, `time-pos`, …)
+  /// that is one event per video frame, each answered by a synchronous
+  /// `mpv_get_property_string` (core lock) on the event isolate before the listener
+  /// can even de-duplicate.
+  ///
+  /// Shares the listener table with [observeProperty]; [unobserveProperty] removes
+  /// either kind.
+  Future<void> observePropertyChanges(
+    String property,
+    Future<void> Function(String) listener, {
+    bool waitForInitialization = true,
+  }) async {
+    if (disposed) {
+      throw AssertionError('[Player] has been disposed');
+    }
+
+    if (waitForInitialization) {
+      await waitForPlayerInitialization;
+      await waitForVideoControllerInitializationIfAttached;
+    }
+
+    if (observed.containsKey(property)) {
+      throw ArgumentError.value(
+        property,
+        'property',
+        'Already observed',
+      );
+    }
+    final reply = property.hashCode;
+    observed[property] = listener;
+    final name = property.toNativeUtf8();
+    mpv.mpv_observe_property(
+      ctx,
+      reply,
+      name.cast(),
+      generated.mpv_format.MPV_FORMAT_STRING,
+    );
+    calloc.free(name);
+  }
+
   /// Unobserves property for the internal libmpv instance of this [Player].
   /// Please use this method only if you know what you are doing, existing methods in [Player] implementation are suited for the most use cases.
   ///
@@ -2065,6 +2111,20 @@ class NativePlayer extends PlatformPlayer {
                 print(stacktrace);
               }
               mpv.mpv_free(data.cast());
+            }
+          }
+        } else if (prop.ref.format == generated.mpv_format.MPV_FORMAT_STRING) {
+          // Fushi patch (BUG-3315): value-compared observation from
+          // [observePropertyChanges]; the string arrives with the event, no
+          // synchronous property read.
+          final fn = observed[prop.ref.name.cast<Utf8>().toDartString()];
+          final data = prop.ref.data.cast<Pointer<Utf8>>();
+          if (fn != null && data != nullptr && data.value != nullptr) {
+            try {
+              await fn.call(data.value.toDartString());
+            } catch (exception, stacktrace) {
+              print(exception);
+              print(stacktrace);
             }
           }
         }
