@@ -13,12 +13,46 @@ import 'package:media_kit/ffi/ffi.dart';
 import 'package:media_kit/generated/libmpv/bindings.dart' as generated;
 import 'package:media_kit/src/player/native/core/initializer.dart';
 import 'package:media_kit/src/player/native/core/native_library.dart';
+import 'package:media_kit/src/values.dart' show kDebugMode;
 import 'package:vm_service/vm_service.dart' as vm;
 import 'package:vm_service/vm_service_io.dart';
 
 Future<void> _checkpoint(String message) async {
   stdout.writeln(message);
   await stdout.flush();
+}
+
+// LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS.
+const int _searchBesideLibrary = 0x00000100 | 0x00001000;
+
+/// Load libmpv the way the app's layout resolves it. The app ships libmpv's
+/// dependent DLLs beside it and beside fushi.exe; this probe runs under the
+/// SDK's dart.exe, whose default search order never visits libmpv's folder,
+/// so a dynamically linked libmpv fails with error 126. Loading the absolute
+/// path with its own folder on the dependency search path keeps the module
+/// resident; the later DynamicLibrary.open calls reuse it.
+void _preloadLibrary(String library) {
+  if (!Platform.isWindows) return;
+  final int Function(Pointer<Utf16>, Pointer<Void>, int) loadLibraryEx =
+      DynamicLibrary.open('kernel32.dll').lookupFunction<
+        IntPtr Function(Pointer<Utf16>, Pointer<Void>, Uint32),
+        int Function(Pointer<Utf16>, Pointer<Void>, int)
+      >('LoadLibraryExW');
+  final int Function() lastError = DynamicLibrary.open(
+    'kernel32.dll',
+  ).lookupFunction<Uint32 Function(), int Function()>('GetLastError');
+  // LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR only derives the folder from a canonical
+  // backslash path; the same file named with '/' still fails with 126.
+  final Pointer<Utf16> path = File(
+    library,
+  ).absolute.path.replaceAll('/', r'\').toNativeUtf16();
+  try {
+    if (loadLibraryEx(path, nullptr, _searchBesideLibrary) == 0) {
+      throw StateError('LoadLibraryExW($library) failed: ${lastError()}');
+    }
+  } finally {
+    calloc.free(path);
+  }
 }
 
 Future<void> _stopWorkers(vm.VmService service) async {
@@ -91,21 +125,36 @@ Future<void> main(List<String> arguments) async {
     throw ArgumentError('Expected <libmpv path> <kill|dispose>');
   }
   final String mode = arguments[1];
-  await _checkpoint('PROBE START $mode');
+  await _checkpoint('PROBE START $mode debug=$kDebugMode');
   final ServiceProtocolInfo info = await Service.controlWebServer(enable: true);
   final Uri server = info.serverUri!;
   final vm.VmService service = await vmServiceConnectUri(
     server.replace(scheme: 'ws', path: '${server.path}ws').toString(),
   );
   await _checkpoint('VM SERVICE READY');
+  _preloadLibrary(arguments[0]);
+  await _checkpoint('LIBRARY PRELOADED');
   final ReceivePort ready = ReceivePort();
   final ReceivePort exited = ReceivePort();
+  final ReceivePort failed = ReceivePort();
   final Future<dynamic> exitNotification = exited.first;
-  final Isolate owner = await Isolate.spawn<List<Object>>(_owner, <Object>[
-    ready.sendPort,
-    arguments[0],
-  ], onExit: exited.sendPort);
-  final List<Object> created = (await ready.first) as List<Object>;
+  final Isolate owner = await Isolate.spawn<List<Object>>(
+    _owner,
+    <Object>[ready.sendPort, arguments[0]],
+    onExit: exited.sendPort,
+    onError: failed.sendPort,
+  );
+  // An owner that throws before reporting its handle must fail this process
+  // now, not leave it parked on `ready` until the test's deadline.
+  final List<Object> created =
+      (await Future.any<Object?>(<Future<Object?>>[
+            ready.first,
+            failed.first.then<Object?>(
+              (dynamic error) => throw StateError('OWNER FAILED $error'),
+            ),
+          ]))
+          as List<Object>;
+  failed.close();
   await _checkpoint('OWNER READY / $mode REQUEST START');
   final Pointer<generated.mpv_handle> handle =
       Pointer<generated.mpv_handle>.fromAddress(created[0] as int);

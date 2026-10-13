@@ -49,6 +49,10 @@ Future<({String dart, String kernel})> _compileProbe() async {
     <String>[
       'compile',
       'kernel',
+      // `dart compile kernel` defines dart.vm.product=true, which turns
+      // media_kit's kDebugMode off and silently selects the release
+      // NativeCallable backend. Keep the debug selection BUG-3003 patches.
+      '--define=dart.vm.product=false',
       '--packages=${config.toFilePath()}',
       '--output=$kernel',
       File(
@@ -200,41 +204,40 @@ void main() {
       : library == null
       ? 'Build Windows Debug or set FUSHI_TEST_LIBMPV to libmpv-2.dll'
       : null;
-  group(
-    'precompiled native libmpv lifecycle',
-    () {
-      late ({String dart, String kernel}) probe;
-      setUpAll(() async {
-        // Compile once under a separate 90s deadline. Native tests below retain
-        // their 25s execution deadline and 35s enclosing test timeout.
-        probe = await _compileProbe();
-      });
-      for (final String mode in <String>['kill', 'dispose']) {
-        test('BUG-3003: native wakeup/quit survives owner $mode', () async {
-          final ProcessResult result = await _runBoundedProcess(
-            probe.dart,
-            <String>[probe.kernel, library!, mode],
-            stage: 'libmpv $mode native probe',
-            deadline: const Duration(seconds: 25),
-          );
-          final String evidence = '${result.stdout}\n${result.stderr}';
-          expect(result.exitCode, 0, reason: evidence);
-          expect(result.stdout, contains('OWNER EXITED'), reason: evidence);
-          expect(result.stdout, contains('WORKERS EXITED'), reason: evidence);
-          expect(result.stdout, contains('EVENTS DRAINED'), reason: evidence);
-          expect(result.stdout, contains('WAKEUP RETURNED'), reason: evidence);
-          expect(result.stdout, contains('QUIT RETURNED'), reason: evidence);
-          expect(result.stdout, contains('PASS $mode'), reason: evidence);
-          if (mode == 'dispose') {
-            expect(
-              result.stdout,
-              contains('DISPOSE RETURNED'),
-              reason: evidence,
-            );
-          }
-        }, timeout: const Timeout(Duration(seconds: 35)));
-      }
-    },
-    skip: skip,
-  );
+  group('precompiled native libmpv lifecycle', () {
+    late ({String dart, String kernel}) probe;
+    setUpAll(() async {
+      // Compile once under a separate 90s deadline. Native tests below retain
+      // their 25s execution deadline and 35s enclosing test timeout.
+      probe = await _compileProbe();
+    });
+    for (final String mode in <String>['kill', 'dispose']) {
+      test('BUG-3003: native wakeup/quit survives owner $mode', () async {
+        final ProcessResult result = await _runBoundedProcess(
+          probe.dart,
+          <String>[probe.kernel, library!, mode],
+          stage: 'libmpv $mode native probe',
+          deadline: const Duration(seconds: 25),
+        );
+        final String evidence = '${result.stdout}\n${result.stderr}';
+        expect(
+          result.stdout,
+          contains('PROBE START $mode debug=true'),
+          reason:
+              'The probe must exercise the patched debug backend.\n'
+              '$evidence',
+        );
+        expect(result.exitCode, 0, reason: evidence);
+        expect(result.stdout, contains('OWNER EXITED'), reason: evidence);
+        expect(result.stdout, contains('WORKERS EXITED'), reason: evidence);
+        expect(result.stdout, contains('EVENTS DRAINED'), reason: evidence);
+        expect(result.stdout, contains('WAKEUP RETURNED'), reason: evidence);
+        expect(result.stdout, contains('QUIT RETURNED'), reason: evidence);
+        expect(result.stdout, contains('PASS $mode'), reason: evidence);
+        if (mode == 'dispose') {
+          expect(result.stdout, contains('DISPOSE RETURNED'), reason: evidence);
+        }
+      }, timeout: const Timeout(Duration(seconds: 35)));
+    }
+  }, skip: skip);
 }
