@@ -863,7 +863,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   double _dragStartPointerY = 0;
 
   /// `\fad`/`\fade` 淡入淡出逐帧刷新驱动（TODO-1373）：活动集里有带 fade 的 cue（且开
-  /// respectAssStyle）时启动，每帧 setState 重读 [VideoPlayerController.effectivePositionMs]
+  /// respectAssStyle）时启动，每帧 setState 重读 [VideoPlayerController.effectivePositionMsForCue]（字幕时钟）
   /// 重算各 cue 不透明度；否则停掉，避免无谓逐帧重建。读真实播放位置，故暂停 / 变速 / seek
   /// 天然同步、无需额外门控。
   Ticker? _fadeTicker;

@@ -826,7 +826,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     cues: widget.controller.cues,
     currentCueIndex: widget.controller.currentCueIndex,
     // 音画延迟校正后的位置：与 controller 求 cue 命中同一根时间轴。
-    positionMs: widget.controller.effectivePositionMs,
+    positionMs: widget.controller.effectiveSubtitleClockMs,
     follow: _autoScroll,
   );
 
