@@ -1,4 +1,4 @@
-## BUG-3273 · Jellyfin 延迟位置心跳覆盖暂停状态
+## BUG-3322 · Jellyfin 延迟位置心跳覆盖暂停状态
 - **报告**：2026-10-12，在排查离开播放后被提前记为完成的问题时发现。
 - **验证**：已通过生产客户端和 API 复现协议缺陷：未修改的 develop 在 10 个新增回归用例中有 7 个失败；修复后的定向测试批次 133 个用例全部通过。原始设备端事件尚未完成端到端复现。
 - **根因**：`fushi/lib/src/pages/implementations/video_fushi_page.dart:2992` 在进入后台时发起不等待完成的位置刷新，而 `_persistRemotePosition`（`:4334`）需要等待数据库写入。原生播放状态监听器（`:4424`）因此可以先上报 `IsPaused: true`，位置刷新随后才调用 `JellyfinVideoClient.putRemoteVideoPosition`。该心跳（`fushi/lib/src/sync/jellyfin_video_client.dart:3311`）原先没有传入 `isPaused`，导致 `JellyfinApi.reportProgress`（`:1733`）序列化默认值 `false`，覆盖已暂停的状态。只有原有心跳节流允许这次延迟请求时才会发生覆盖。
