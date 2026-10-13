@@ -1581,6 +1581,8 @@ class SyncRepository {
     // 单独漂过去只会变成一堆悬空 id，故一并设备本地。
     'ai_providers',
     'ai_feature_providers',
+    // 多 key 轮换的冷却记录：按本机 key 的指纹索引，换台设备全是悬空记录。
+    'ai_key_health',
     // 漫画 OCR 大模型档位：开了就是「上传漫画页 + 按量计费」，这种同意只对点它的
     // 那台设备成立，漂过去会让另一台配了 AI 的设备静默开始上传。
     'manga_ocr_ai_mode',

@@ -14,6 +14,7 @@ String aiFailureText(String code) {
   return switch (code) {
     'unauthorized' => t.ai_error_unauthorized,
     'rate_limited' => t.ai_error_rate_limited,
+    'quota_exhausted' => t.ai_error_quota_exhausted,
     'network_error' => t.ai_error_network,
     'bad_response' => t.ai_error_bad_response,
     'empty_response' => t.ai_error_empty_response,

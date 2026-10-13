@@ -233,6 +233,42 @@ AiProviderPreset? aiProviderPresetById(String? id) {
   return null;
 }
 
+/// 一家提供商名下的一把 API Key。
+///
+/// 同一家可以配多把（有序）：请求按顺序挑一把**没在冷却**的用，被拒 / 限流 /
+/// 额度用尽就换下一把重试（见 `ai_key_rotation.dart`）。冷却状态是运行时健康
+/// 记录，不在这里——这里只存用户的配置（值 + 启用开关）。
+class AiApiKey {
+  const AiApiKey(this.value, {this.enabled = true});
+
+  final String value;
+
+  /// 用户手动停用的 key 不参与请求，但留在列表里（不必删了再重新粘贴）。
+  final bool enabled;
+
+  /// 请求里真正发出去的值：两端空白一律去掉（粘贴常带换行）。
+  String get trimmed => value.trim();
+
+  /// 参与请求：启用且非空。
+  bool get isActive => enabled && trimmed.isNotEmpty;
+
+  /// 界面上辨认这把 key 用的末 4 位（不足 4 位就全是它自己）。
+  String get tail {
+    final String v = trimmed;
+    return v.length <= 4 ? v : v.substring(v.length - 4);
+  }
+
+  AiApiKey copyWith({String? value, bool? enabled}) =>
+      AiApiKey(value ?? this.value, enabled: enabled ?? this.enabled);
+
+  @override
+  bool operator ==(Object other) =>
+      other is AiApiKey && other.value == value && other.enabled == enabled;
+
+  @override
+  int get hashCode => Object.hash(value, enabled);
+}
+
 /// 一家已配置的 AI 提供商。
 class AiProviderConfig {
   AiProviderConfig({
@@ -240,13 +276,23 @@ class AiProviderConfig {
     required this.presetId,
     required this.name,
     required this.baseUrl,
-    this.apiKey = '',
+    String apiKey = '',
+    List<AiApiKey>? apiKeys,
     this.model = '',
     this.protocol = AiWireProtocol.openAiCompatible,
     this.reasoningEffort = AiReasoningEffort.none,
     this.enabled = true,
     this.allowInsecureHttp = false,
-  }) {
+  }) : apiKeys = List<AiApiKey>.unmodifiable(
+         apiKeys ??
+             (apiKey.isEmpty
+                 ? const <AiApiKey>[]
+                 : <AiApiKey>[AiApiKey(apiKey)]),
+       ) {
+    assert(
+      apiKeys == null || apiKey.isEmpty,
+      'pass either apiKey (single) or apiKeys (list), not both',
+    );
     if (id.trim().isEmpty) {
       throw ArgumentError.value(id, 'id', 'AI provider id must not be empty');
     }
@@ -291,21 +337,12 @@ class AiProviderConfig {
     if (url == null) {
       throw const FormatException('AI provider entry has no usable base URL');
     }
-    final Object? rawKey = json['apiKeyB64'];
-    String apiKey = '';
-    if (rawKey is String && rawKey.isNotEmpty) {
-      try {
-        apiKey = utf8.decode(base64Decode(rawKey));
-      } on FormatException {
-        apiKey = '';
-      }
-    }
     return AiProviderConfig(
       id: (json['id'] as String? ?? '').trim(),
       presetId: json['presetId'] as String? ?? kAiCustomPresetId,
       name: json['name'] as String? ?? '',
       baseUrl: url,
-      apiKey: apiKey,
+      apiKeys: _decodeApiKeys(json),
       model: json['model'] as String? ?? '',
       protocol: AiWireProtocol.fromStorageKey(json['protocol'] as String?),
       reasoningEffort: AiReasoningEffort.fromStorageKey(
@@ -325,7 +362,25 @@ class AiProviderConfig {
 
   final String name;
   final Uri baseUrl;
-  final String apiKey;
+
+  /// 这家的全部 key（有序，含停用的与空白草稿）。
+  final List<AiApiKey> apiKeys;
+
+  /// 参与请求的 key（启用且非空），按用户排的顺序，值已去空白。
+  List<String> get activeApiKeys => <String>[
+    for (final AiApiKey key in apiKeys)
+      if (key.isActive) key.trimmed,
+  ];
+
+  /// 第一把参与请求的 key；一把都没有时为空串。
+  ///
+  /// 单 key 时代的读口（服务端配置、旧调用方）。多 key 轮换只在调用层
+  /// （`AiChatClient`）里做，别处要「这家能不能发请求」一律问 [isUsable]。
+  String get apiKey {
+    final List<String> active = activeApiKeys;
+    return active.isEmpty ? '' : active.first;
+  }
+
   final String model;
   final AiWireProtocol protocol;
   final AiReasoningEffort reasoningEffort;
@@ -349,13 +404,16 @@ class AiProviderConfig {
       return false;
     }
     final bool needsKey = preset?.requiresApiKey ?? true;
-    return !needsKey || apiKey.trim().isNotEmpty;
+    return !needsKey || activeApiKeys.isNotEmpty;
   }
 
+  /// [apiKey] 是单 key 时代的写口：给了就把整份列表换成这一把（空串 = 清空）；
+  /// 与 [apiKeys] 二选一。
   AiProviderConfig copyWith({
     String? name,
     Uri? baseUrl,
     String? apiKey,
+    List<AiApiKey>? apiKeys,
     String? model,
     AiWireProtocol? protocol,
     AiReasoningEffort? reasoningEffort,
@@ -366,7 +424,11 @@ class AiProviderConfig {
     presetId: presetId,
     name: name ?? this.name,
     baseUrl: baseUrl ?? this.baseUrl,
-    apiKey: apiKey ?? this.apiKey,
+    apiKeys:
+        apiKeys ??
+        (apiKey == null
+            ? this.apiKeys
+            : <AiApiKey>[if (apiKey.isNotEmpty) AiApiKey(apiKey)]),
     model: model ?? this.model,
     protocol: protocol ?? this.protocol,
     reasoningEffort: reasoningEffort ?? this.reasoningEffort,
@@ -374,7 +436,9 @@ class AiProviderConfig {
     allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
   );
 
-  /// API Key 在 JSON 里 base64 存放。
+  /// API Key 在 JSON 里 base64 存放：`apiKeys` 是完整有序列表（空白草稿不落盘），
+  /// 另把第一把参与请求的 key 照旧写进单 key 时代的 `apiKeyB64`——降级回旧版本时
+  /// 旧解码器只认那一个字段，这样旧版至少还能用第一把 key 继续工作。
   ///
   /// 说清楚：这是**遮蔽不是加密**——能解码回来的东西挡不住拿到设备的人。本仓没有
   /// secure storage，既有做法（OPDS 密码、同步服务器密码）同样是 base64。真正被
@@ -385,7 +449,16 @@ class AiProviderConfig {
     'presetId': presetId,
     'name': name,
     'baseUrl': baseUrl.toString(),
-    if (apiKey.isNotEmpty) 'apiKeyB64': base64Encode(utf8.encode(apiKey)),
+    if (apiKey.isNotEmpty) 'apiKeyB64': _b64(apiKey),
+    if (apiKeys.any((AiApiKey k) => k.trimmed.isNotEmpty))
+      'apiKeys': <Map<String, Object?>>[
+        for (final AiApiKey key in apiKeys)
+          if (key.trimmed.isNotEmpty)
+            <String, Object?>{
+              'keyB64': _b64(key.trimmed),
+              if (!key.enabled) 'enabled': false,
+            },
+      ],
     'model': model,
     'protocol': protocol.storageKey,
     if (reasoningEffort != AiReasoningEffort.none)
@@ -393,6 +466,49 @@ class AiProviderConfig {
     'enabled': enabled,
     if (allowInsecureHttp) 'allowInsecureHttp': true,
   };
+}
+
+String _b64(String value) => base64Encode(utf8.encode(value));
+
+String _unb64(Object? raw) {
+  if (raw is! String || raw.isEmpty) {
+    return '';
+  }
+  try {
+    return utf8.decode(base64Decode(raw));
+  } on FormatException {
+    return '';
+  }
+}
+
+/// 读 key 列表：有 `apiKeys` 就以它为准；没有（单 key 时代写下的记录）就把
+/// `apiKeyB64` 无损迁移成一元素列表。同值的 key 只留第一把（重复的 key 轮换时
+/// 只会把同一个失败多吃一遍）。
+List<AiApiKey> _decodeApiKeys(Map<String, Object?> json) {
+  final Object? list = json['apiKeys'];
+  final List<AiApiKey> keys = <AiApiKey>[];
+  if (list is List) {
+    for (final Object? entry in list) {
+      if (entry is! Map) {
+        continue;
+      }
+      final String value = _unb64(entry['keyB64']).trim();
+      if (value.isEmpty) {
+        continue;
+      }
+      keys.add(AiApiKey(value, enabled: entry['enabled'] as bool? ?? true));
+    }
+  } else {
+    final String legacy = _unb64(json['apiKeyB64']);
+    if (legacy.isNotEmpty) {
+      keys.add(AiApiKey(legacy));
+    }
+  }
+  final Set<String> seen = <String>{};
+  return <AiApiKey>[
+    for (final AiApiKey key in keys)
+      if (seen.add(key.trimmed)) key,
+  ];
 }
 
 /// 整份清单编码成一个偏好值。

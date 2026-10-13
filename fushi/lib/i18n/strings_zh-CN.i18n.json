@@ -7067,5 +7067,15 @@
   "feedback_dev_select_hint": "在左侧选择一条反馈",
   "leaderboard_summary_total_week": "本周字数",
   "leaderboard_summary_total_month": "本月字数",
-  "leaderboard_summary_window_share": "占总数 ${pct}"
+  "leaderboard_summary_window_share": "占总数 ${pct}",
+  "ai_error_quota_exhausted": "余额或额度不足",
+  "ai_provider_api_key_numbered": "API 密钥 ${n}",
+  "ai_provider_api_key_ok": "末尾 ${tail} · 正常",
+  "ai_provider_api_key_cooling": "末尾 ${tail} · 冷却中，${time} 后再用（${reason}）",
+  "ai_provider_api_key_disabled": "末尾 ${tail} · 已停用",
+  "ai_provider_api_key_enable": "启用此密钥",
+  "ai_provider_api_key_disable": "停用此密钥",
+  "ai_provider_api_key_remove": "删除此密钥",
+  "ai_provider_api_keys_add": "再添加一个 API 密钥",
+  "ai_provider_api_keys_summary": "配置多个密钥时，某个密钥被拒绝、限流或额度用尽，会自动换下一个重试；失败的密钥进入冷却，到期后再用。"
 }

@@ -7067,5 +7067,15 @@
   "feedback_dev_select_hint": "Select a feedback item on the left",
   "leaderboard_summary_total_week": "Characters this week",
   "leaderboard_summary_total_month": "Characters this month",
-  "leaderboard_summary_window_share": "${pct} of your total"
+  "leaderboard_summary_window_share": "${pct} of your total",
+  "ai_error_quota_exhausted": "Out of credit or quota",
+  "ai_provider_api_key_numbered": "API key ${n}",
+  "ai_provider_api_key_ok": "Ends in ${tail} · OK",
+  "ai_provider_api_key_cooling": "Ends in ${tail} · cooling down until ${time} (${reason})",
+  "ai_provider_api_key_disabled": "Ends in ${tail} · disabled",
+  "ai_provider_api_key_enable": "Use this key",
+  "ai_provider_api_key_disable": "Stop using this key",
+  "ai_provider_api_key_remove": "Remove this key",
+  "ai_provider_api_keys_add": "Add another API key",
+  "ai_provider_api_keys_summary": "With several keys, a request that is rejected, rate-limited or out of credit switches to the next key and retries; the failing key cools down and is tried again later."
 }

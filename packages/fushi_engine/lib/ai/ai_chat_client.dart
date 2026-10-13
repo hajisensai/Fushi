@@ -11,6 +11,7 @@ library;
 
 import 'dart:convert';
 
+import 'package:fushi_engine/ai/ai_key_rotation.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
@@ -32,9 +33,16 @@ const int _kPingMaxTokens = 32;
 /// 调用失败。[message] 是**已脱敏**的短文案，可以直接进 UI——绝不含 API Key、
 /// 完整 URL 或响应体原文（后两者都可能回显凭据）。
 class AiChatFailure implements Exception {
-  const AiChatFailure(this.message);
+  const AiChatFailure(this.message, {this.retryAfter});
 
   final String message;
+
+  /// 服务端在限流应答里给的 `Retry-After`（没有就是 null），决定这把 key 冷却多久。
+  final Duration? retryAfter;
+
+  /// 换一把 key 重试可能成功：鉴权被拒、限流、余额 / 额度不足（见
+  /// [aiFailureRotatesKey]）。
+  bool get rotatesKey => aiFailureRotatesKey(message);
 
   /// 原样重试可能成功的失败：网络 / 超时（都报 `network_error`）、限流、5xx。
   /// 鉴权失败、4xx、坏回复、空回复、未配置都是配置或模型的问题，重试也一样。
@@ -87,13 +95,28 @@ class AiChatMessage {
 /// 按 [AiProviderConfig.protocol] 分派的调用客户端。
 ///
 /// [client] 可注入，测试用假客户端断言 wire 形状，不打真网。
+///
+/// 一家配了多把 key 时，每次请求都经 [_withKeyRotation]：挑一把没在冷却的 key，
+/// 遇到鉴权被拒 / 限流 / 额度不足就把它记进冷却、换下一把**重试当前请求**；全部
+/// 失败时抛最后一把的真实错误。健康记录存在 `healthStore`（默认全局
+/// [aiKeyHealthStore]，app 装配成持久化实现）。
 class AiChatClient {
-  AiChatClient({http.Client? client})
-    : _client = client ?? createAppHttpIoClient(),
-      _ownsClient = client == null;
+  AiChatClient({
+    http.Client? client,
+    AiKeyHealthStore? healthStore,
+    DateTime Function()? clock,
+  }) : _client = client ?? createAppHttpIoClient(),
+       _ownsClient = client == null,
+       _healthStore = healthStore,
+       _clock = clock ?? DateTime.now;
 
   final http.Client _client;
   final bool _ownsClient;
+  final AiKeyHealthStore? _healthStore;
+  final DateTime Function() _clock;
+
+  /// 每次现取全局装配点：app 在偏好可读之后才换成持久化实现，客户端可能比那更早建。
+  AiKeyHealthStore get _health => _healthStore ?? aiKeyHealthStore;
 
   void close() {
     if (_ownsClient) {
@@ -113,10 +136,9 @@ class AiChatClient {
     if (!provider.isUsable) {
       throw const AiChatFailure('provider_not_configured');
     }
-    final Map<Object?, Object?> body = await _postChat(
+    final Map<Object?, Object?> body = await _withKeyRotation(
       provider,
-      messages,
-      maxTokens,
+      (String key) => _postChat(provider, key, messages, maxTokens),
     );
     final String? text = switch (provider.protocol) {
       AiWireProtocol.openAiCompatible => _openAiText(body),
@@ -145,10 +167,11 @@ class AiChatClient {
     if (provider.model.trim().isEmpty) {
       throw const AiChatFailure('provider_not_configured');
     }
-    final Map<Object?, Object?> body = await _postChat(
+    final Map<Object?, Object?> body = await _withKeyRotation(
       provider,
-      const <AiChatMessage>[AiChatMessage.user('ping')],
-      _kPingMaxTokens,
+      (String key) => _postChat(provider, key, const <AiChatMessage>[
+        AiChatMessage.user('ping'),
+      ], _kPingMaxTokens),
     );
     final String topKey = switch (provider.protocol) {
       AiWireProtocol.openAiCompatible => 'choices',
@@ -164,7 +187,13 @@ class AiChatClient {
   ///
   /// 存在的理由：内置预设里的默认模型名**必然过时**（厂商迭代比本 app 发版快），
   /// 把用户钉死在一个写死的字符串上迟早变成「开箱即 404」。
-  Future<List<String>> listModels(AiProviderConfig provider) async {
+  Future<List<String>> listModels(AiProviderConfig provider) =>
+      _withKeyRotation(provider, (String key) => _listModels(provider, key));
+
+  Future<List<String>> _listModels(
+    AiProviderConfig provider,
+    String key,
+  ) async {
     final Uri uri = switch (provider.protocol) {
       AiWireProtocol.openAiCompatible => _resolve(provider.baseUrl, 'models'),
       AiWireProtocol.anthropicMessages => _resolve(
@@ -174,10 +203,10 @@ class AiChatClient {
       AiWireProtocol.geminiGenerateContent => _resolve(
         provider.baseUrl,
         'models',
-      ).replace(queryParameters: <String, String>{'key': provider.apiKey}),
+      ).replace(queryParameters: <String, String>{'key': key}),
     };
     final http.Response response = await _send(
-      () => _client.get(uri, headers: _headers(provider)),
+      () => _client.get(uri, headers: _headers(provider, key)),
     );
     final Object? body = _decodeBody(response);
     if (body is! Map) {
@@ -202,12 +231,69 @@ class AiChatClient {
   }
 
   // -------------------------------------------------------------------------
+  // 多 key 轮换
+  // -------------------------------------------------------------------------
+
+  /// 用 [provider] 的 key 依次执行 [attempt]，直到成功或 key 用完。
+  ///
+  /// - 没有任何 key（本地推理服务）：以空 key 执行一次，不记健康。
+  /// - 失败码不属于「换 key 可能就好」（网络 / 5xx / 坏回复…）：原样抛出，不换 key
+  ///   ——那与 key 无关，换了也是同一个错误。
+  /// - 属于：把这把 key 记进冷却（`Retry-After` 优先，否则指数退避），换下一把；
+  ///   全部试完仍失败就抛**最后一个真实错误**。每把 key 至多试一次，不会无限重试。
+  /// - 成功：清掉这把 key 的冷却记录。
+  Future<T> _withKeyRotation<T>(
+    AiProviderConfig provider,
+    Future<T> Function(String key) attempt,
+  ) async {
+    final List<String> keys = provider.activeApiKeys;
+    if (keys.isEmpty) {
+      return attempt('');
+    }
+    final AiKeyHealthStore store = _health;
+    final List<String> order = orderAiKeysForRequest(
+      providerId: provider.id,
+      keys: keys,
+      store: store,
+      now: _clock(),
+    );
+    AiChatFailure? last;
+    for (final String key in order) {
+      final String fingerprint = aiKeyFingerprint(provider.id, key);
+      try {
+        final T result = await attempt(key);
+        if (store.read(fingerprint) != null) {
+          store.write(fingerprint, null);
+        }
+        return result;
+      } on AiChatFailure catch (failure) {
+        if (!failure.rotatesKey) {
+          rethrow;
+        }
+        store.write(
+          fingerprint,
+          nextAiKeyHealth(
+            previous: store.read(fingerprint),
+            reason: failure.message,
+            retryAfter: failure.retryAfter,
+            now: _clock(),
+          ),
+        );
+        last = failure;
+      }
+    }
+    // keys 非空时 orderAiKeysForRequest 至少给一把，走到这里 last 必有值。
+    throw last!;
+  }
+
+  // -------------------------------------------------------------------------
   // 各协议实现
   // -------------------------------------------------------------------------
 
   /// 按协议发一次 chat 请求，返回解码后的应答对象（不解释正文）。
   Future<Map<Object?, Object?>> _postChat(
     AiProviderConfig provider,
+    String key,
     List<AiChatMessage> messages,
     int maxTokens,
   ) async {
@@ -224,14 +310,14 @@ class AiChatClient {
         _resolve(
           provider.baseUrl,
           'models/${provider.model}:generateContent',
-        ).replace(queryParameters: <String, String>{'key': provider.apiKey}),
+        ).replace(queryParameters: <String, String>{'key': key}),
         _geminiPayload(messages, maxTokens),
       ),
     };
     final http.Response response = await _send(
       () => _client.post(
         uri,
-        headers: _headers(provider),
+        headers: _headers(provider, key),
         body: jsonEncode(payload),
       ),
     );
@@ -406,17 +492,17 @@ class AiChatClient {
   // 共用
   // -------------------------------------------------------------------------
 
-  Map<String, String> _headers(AiProviderConfig provider) {
+  Map<String, String> _headers(AiProviderConfig provider, String key) {
     final Map<String, String> headers = <String, String>{
       'content-type': 'application/json',
     };
     switch (provider.protocol) {
       case AiWireProtocol.openAiCompatible:
-        if (provider.apiKey.isNotEmpty) {
-          headers['authorization'] = 'Bearer ${provider.apiKey}';
+        if (key.isNotEmpty) {
+          headers['authorization'] = 'Bearer $key';
         }
       case AiWireProtocol.anthropicMessages:
-        headers['x-api-key'] = provider.apiKey;
+        headers['x-api-key'] = key;
         headers['anthropic-version'] = '2023-06-01';
       case AiWireProtocol.geminiGenerateContent:
         // key 走 query 参数，不进 header。
@@ -433,14 +519,13 @@ class AiChatClient {
       // 原始异常可能带完整 URL（含 Gemini 的 ?key=），绝不透出。
       throw const AiChatFailure('network_error');
     }
-    if (response.statusCode == 401 || response.statusCode == 403) {
-      throw const AiChatFailure('unauthorized');
-    }
-    if (response.statusCode == 429) {
-      throw const AiChatFailure('rate_limited');
-    }
     if (response.statusCode >= 400) {
-      throw AiChatFailure('http_${response.statusCode}');
+      throw classifyAiHttpFailure(
+        statusCode: response.statusCode,
+        bodyBytes: response.bodyBytes,
+        retryAfterHeader: response.headers['retry-after'],
+        now: _clock(),
+      );
     }
     return response;
   }
@@ -460,4 +545,76 @@ class AiChatClient {
         : '${base.path}/';
     return base.replace(path: '$basePath$path');
   }
+}
+
+/// 应答体里只看开头这么多字节找特征词：错误体都很短，没必要整份解码。
+const int _kFailureBodyScanBytes = 4096;
+
+/// 余额 / 额度用尽的特征词（各家错误体里的 code 或 message 片段，小写比较）：
+/// OpenAI `insufficient_quota`、DeepSeek 等 `Insufficient Balance` / 「余额不足」、
+/// Anthropic「credit balance is too low」、OpenRouter「requires more credits」、
+/// 各家的 `billing` 提示。
+const List<String> _kQuotaMarkers = <String>[
+  'insufficient_quota',
+  'insufficient quota',
+  'insufficient_balance',
+  'insufficient balance',
+  'credit balance',
+  'more credits',
+  'billing',
+  '余额不足',
+  '欠费',
+];
+
+/// key 本身无效的特征词：Gemini 对坏 key 回的是 **400** `API_KEY_INVALID`
+/// （「API key not valid」），只看状态码认不出是鉴权问题。
+const List<String> _kInvalidKeyMarkers = <String>[
+  'api_key_invalid',
+  'api key not valid',
+  'invalid_api_key',
+  'invalid api key',
+  'incorrect api key',
+];
+
+/// 把一个 ≥400 的应答归成脱敏短码（绝不带出响应体原文）。
+///
+/// - 402，或 400/403/429 且体里有余额特征词 → `quota_exhausted`（换 key 重试）；
+/// - 401 / 403，或 400 且体里有坏 key 特征词 → `unauthorized`（换 key 重试）；
+/// - 429 → `rate_limited`，带上 `Retry-After`（换 key 重试，这把按它冷却）；
+/// - 其余 → `http_<状态码>`（与 key 无关，不换 key）。
+///
+/// 余额判据排在限流之前：OpenAI 额度用尽回的是 429 `insufficient_quota`，按限流
+/// 处理会把它当成「过一会儿就好」。
+AiChatFailure classifyAiHttpFailure({
+  required int statusCode,
+  required List<int> bodyBytes,
+  required String? retryAfterHeader,
+  required DateTime now,
+}) {
+  final String body = utf8
+      .decode(
+        bodyBytes.length > _kFailureBodyScanBytes
+            ? bodyBytes.sublist(0, _kFailureBodyScanBytes)
+            : bodyBytes,
+        allowMalformed: true,
+      )
+      .toLowerCase();
+  bool has(List<String> markers) => markers.any(body.contains);
+  if (statusCode == 402 ||
+      ((statusCode == 400 || statusCode == 403 || statusCode == 429) &&
+          has(_kQuotaMarkers))) {
+    return const AiChatFailure('quota_exhausted');
+  }
+  if (statusCode == 401 ||
+      statusCode == 403 ||
+      (statusCode == 400 && has(_kInvalidKeyMarkers))) {
+    return const AiChatFailure('unauthorized');
+  }
+  if (statusCode == 429) {
+    return AiChatFailure(
+      'rate_limited',
+      retryAfter: parseRetryAfter(retryAfterHeader, now),
+    );
+  }
+  return AiChatFailure('http_$statusCode');
 }

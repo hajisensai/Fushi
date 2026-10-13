@@ -23,6 +23,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
+import 'package:fushi_engine/ai/ai_key_rotation.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -298,16 +299,16 @@ class _AiProviderSettingsSectionState
             ScrollController controller,
             SettingsSectionSpy spy,
           ) => ListView(
-        controller: controller,
-        key: ValueKey<String>('ai-provider-editor-${draft.id}'),
-        padding: EdgeInsets.fromLTRB(
-          inset,
-          tokens.spacing.gap + MediaQuery.paddingOf(context).top,
-          inset,
-          tokens.spacing.page + bottomSafeInsetOf(pageContext),
-        ),
-        children: <Widget>[_providerEditor(pageContext, index)],
-      ),
+            controller: controller,
+            key: ValueKey<String>('ai-provider-editor-${draft.id}'),
+            padding: EdgeInsets.fromLTRB(
+              inset,
+              tokens.spacing.gap + MediaQuery.paddingOf(context).top,
+              inset,
+              tokens.spacing.page + bottomSafeInsetOf(pageContext),
+            ),
+            children: <Widget>[_providerEditor(pageContext, index)],
+          ),
     );
   }
 
@@ -358,14 +359,25 @@ class _AiProviderSettingsSectionState
                     _update(index, draft.copyWith(name: value)),
               ),
             ),
-            field(
-              _textField(
-                key: ValueKey<String>('ai-provider-$index-api-key'),
-                label: t.ai_provider_api_key,
-                initialValue: draft.apiKey,
-                obscureText: true,
-                onChanged: (String value) =>
-                    _update(index, draft.copyWith(apiKey: value)),
+            for (int pos = 0; pos < draft.apiKeys.length; pos++)
+              KeyedSubtree(
+                // 身份跟着这把 key 走（uid），不跟位置：删掉前面一把时，后面
+                // 那把的输入框不能沿用前一把的 initialValue。
+                key: ValueKey<String>(
+                  'ai-provider-${draft.id}-key-${draft.apiKeys[pos].uid}',
+                ),
+                child: field(_apiKeyField(pageContext, index, draft, pos)),
+              ),
+            AdaptiveSettingsRow(
+              key: ValueKey<String>('ai-provider-$index-api-key-add'),
+              icon: FushiIcons.add,
+              showIcon: true,
+              title: t.ai_provider_api_keys_add,
+              onTap: () => _update(
+                index,
+                draft.copyWith(
+                  apiKeys: <_AiKeyDraft>[...draft.apiKeys, _AiKeyDraft.empty()],
+                ),
               ),
             ),
             field(
@@ -393,6 +405,7 @@ class _AiProviderSettingsSectionState
             ),
           ],
         ),
+        SettingsSectionFooter(t.ai_provider_api_keys_summary),
         AdaptiveSettingsSection(
           children: <Widget>[
             KeyedSubtree(
@@ -520,6 +533,105 @@ class _AiProviderSettingsSectionState
     );
   }
 
+  /// 第 [pos] 把 API Key 的输入框：框下是「末尾四位 · 状态」，框尾是启用开关与删除。
+  ///
+  /// 第一把沿用单 key 时代的 `ai-provider-<i>-api-key` 键（既有测试与焦点驱动脚本
+  /// 按它找），其余按位置编号。
+  Widget _apiKeyField(
+    BuildContext context,
+    int index,
+    _AiProviderDraft draft,
+    int pos,
+  ) {
+    final _AiKeyDraft key = draft.apiKeys[pos];
+    final bool several = draft.apiKeys.length > 1;
+    void replace(_AiKeyDraft? next) {
+      final List<_AiKeyDraft> keys = <_AiKeyDraft>[...draft.apiKeys];
+      if (next == null) {
+        keys.removeAt(pos);
+      } else {
+        keys[pos] = next;
+      }
+      // 列表至少留一个输入框：删掉最后一把等于把它清空。
+      _update(
+        index,
+        draft.copyWith(
+          apiKeys: keys.isEmpty ? <_AiKeyDraft>[_AiKeyDraft.empty()] : keys,
+        ),
+      );
+    }
+
+    final bool hasValue = key.value.trim().isNotEmpty;
+    return _textField(
+      key: ValueKey<String>(
+        pos == 0
+            ? 'ai-provider-$index-api-key'
+            : 'ai-provider-$index-api-key-$pos',
+      ),
+      label: several
+          ? t.ai_provider_api_key_numbered(n: pos + 1)
+          : t.ai_provider_api_key,
+      initialValue: key.value,
+      obscureText: true,
+      helperText: hasValue ? _apiKeyStatus(context, draft.id, key) : null,
+      onChanged: (String value) => replace(key.copyWith(value: value)),
+      suffixIcon: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (several || hasValue)
+            FushiIconButtonControl(
+              key: ValueKey<String>('ai-provider-$index-api-key-$pos-toggle'),
+              tooltip: key.enabled
+                  ? t.ai_provider_api_key_disable
+                  : t.ai_provider_api_key_enable,
+              isSelected: key.enabled,
+              icon: FushiIcon(
+                key.enabled ? FushiIcons.check : FushiIcons.block,
+              ),
+              onPressed: () => replace(key.copyWith(enabled: !key.enabled)),
+            ),
+          if (several || hasValue)
+            FushiIconButtonControl(
+              key: ValueKey<String>('ai-provider-$index-api-key-$pos-remove'),
+              tooltip: t.ai_provider_api_key_remove,
+              icon: const FushiIcon(FushiIcons.delete),
+              onPressed: () => replace(null),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 「末尾 abcd · 正常 / 已停用 / 冷却中到几点（原因）」。冷却记录只由调用层写，
+  /// 这里只读全局装配点（[aiKeyHealthStore]）；探测结束时 setState 会刷新它。
+  String _apiKeyStatus(
+    BuildContext context,
+    String providerId,
+    _AiKeyDraft key,
+  ) {
+    final String tail = AiApiKey(key.value).tail;
+    if (!key.enabled) return t.ai_provider_api_key_disabled(tail: tail);
+    final AiKeyHealth? health = aiKeyHealthStore.read(
+      aiKeyFingerprint(providerId, key.value),
+    );
+    final DateTime now = DateTime.now();
+    if (health == null || !health.isCoolingAt(now)) {
+      return t.ai_provider_api_key_ok(tail: tail);
+    }
+    final DateTime until = health.cooldownUntil.toLocal();
+    final MaterialLocalizations l10n = MaterialLocalizations.of(context);
+    final String clock = l10n.formatTimeOfDay(TimeOfDay.fromDateTime(until));
+    final bool sameDay =
+        until.year == now.year &&
+        until.month == now.month &&
+        until.day == now.day;
+    return t.ai_provider_api_key_cooling(
+      tail: tail,
+      time: sameDay ? clock : '${l10n.formatShortMonthDay(until)} $clock',
+      reason: aiFailureText(health.reason),
+    );
+  }
+
   /// 编辑页的输入框：MD3 填充式 / Apple 实色字段（[FushiTextFormFieldControl]），
   /// 错误与说明在框下。
   Widget _textField({
@@ -529,6 +641,7 @@ class _AiProviderSettingsSectionState
     String? initialValue,
     TextEditingController? controller,
     String? hintText,
+    String? helperText,
     String? errorText,
     bool obscureText = false,
     TextInputType? keyboardType,
@@ -546,6 +659,7 @@ class _AiProviderSettingsSectionState
       decoration: InputDecoration(
         labelText: label,
         hintText: hintText,
+        helperText: helperText,
         errorText: errorText,
         errorMaxLines: 3,
         suffixIcon: suffixIcon,
@@ -1022,7 +1136,7 @@ class _AiProviderDraft {
     required this.id,
     required this.presetId,
     required this.name,
-    required this.apiKey,
+    required this.apiKeys,
     required this.baseUrl,
     required this.model,
     required this.protocol,
@@ -1036,7 +1150,7 @@ class _AiProviderDraft {
         id: config.id,
         presetId: config.presetId,
         name: config.name,
-        apiKey: config.apiKey,
+        apiKeys: _AiKeyDraft.listFrom(config.apiKeys),
         baseUrl: config.baseUrl.toString(),
         model: config.model,
         protocol: config.protocol,
@@ -1058,7 +1172,7 @@ class _AiProviderDraft {
     id: id,
     presetId: preset.id,
     name: preset.displayName,
-    apiKey: '',
+    apiKeys: <_AiKeyDraft>[_AiKeyDraft.empty()],
     baseUrl: preset.baseUrl,
     model: preset.suggestedModel,
     protocol: preset.protocol,
@@ -1071,7 +1185,10 @@ class _AiProviderDraft {
   final String id;
   final String presetId;
   final String name;
-  final String apiKey;
+
+  /// 至少一项（可能是空白输入框）：编辑页总有一处可以填 key，「列表为空」不必
+  /// 在渲染与删除里各写一遍特判。
+  final List<_AiKeyDraft> apiKeys;
   final String baseUrl;
   final String model;
   final AiWireProtocol protocol;
@@ -1087,7 +1204,7 @@ class _AiProviderDraft {
 
   _AiProviderDraft copyWith({
     String? name,
-    String? apiKey,
+    List<_AiKeyDraft>? apiKeys,
     String? baseUrl,
     String? model,
     AiWireProtocol? protocol,
@@ -1098,7 +1215,7 @@ class _AiProviderDraft {
     id: id,
     presetId: presetId,
     name: name ?? this.name,
-    apiKey: apiKey ?? this.apiKey,
+    apiKeys: apiKeys ?? this.apiKeys,
     baseUrl: baseUrl ?? this.baseUrl,
     model: model ?? this.model,
     protocol: protocol ?? this.protocol,
@@ -1120,7 +1237,10 @@ class _AiProviderDraft {
         presetId: presetId,
         name: name,
         baseUrl: parsed,
-        apiKey: apiKey,
+        apiKeys: <AiApiKey>[
+          for (final _AiKeyDraft key in apiKeys)
+            AiApiKey(key.value, enabled: key.enabled),
+        ],
         model: model,
         protocol: protocol,
         reasoningEffort: reasoningEffort,
@@ -1148,6 +1268,33 @@ class _AiProviderDraft {
         ? t.ai_provider_allow_http_summary
         : t.ai_provider_base_url_invalid;
   }
+}
+
+/// 编辑中的一把 API Key。[uid] 只活在本进程，给输入框一个跟着 key 走的身份
+/// （删掉前面一把时后面的输入框不能错位）；不进持久化。
+class _AiKeyDraft {
+  _AiKeyDraft(this.value, {this.enabled = true}) : uid = _nextUid++;
+
+  _AiKeyDraft._keep(this.uid, this.value, this.enabled);
+
+  factory _AiKeyDraft.empty() => _AiKeyDraft('');
+
+  /// 已存的 key 列表 → 草稿；一把都没有时给一个空白输入框。
+  static List<_AiKeyDraft> listFrom(List<AiApiKey> keys) => keys.isEmpty
+      ? <_AiKeyDraft>[_AiKeyDraft.empty()]
+      : <_AiKeyDraft>[
+          for (final AiApiKey key in keys)
+            _AiKeyDraft(key.value, enabled: key.enabled),
+        ];
+
+  static int _nextUid = 0;
+
+  final int uid;
+  final String value;
+  final bool enabled;
+
+  _AiKeyDraft copyWith({String? value, bool? enabled}) =>
+      _AiKeyDraft._keep(uid, value ?? this.value, enabled ?? this.enabled);
 }
 
 /// 探测状态：进行中 / 有结论。
