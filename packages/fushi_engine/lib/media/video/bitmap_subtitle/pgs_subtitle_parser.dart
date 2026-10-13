@@ -180,9 +180,9 @@ class PgsPlacement {
 }
 
 /// PGS RLE 解码为调色板索引平面；数据不足时余下像素保持 0（透明）。
-/// 尺寸非法返回 null。
+/// 尺寸非法（含超过 [kBitmapSubtitleMaxDimension]）返回 null。
 Uint8List? decodePgsRle(Uint8List rle, int width, int height) {
-  if (width <= 0 || height <= 0) return null;
+  if (!isDecodableBitmapSubtitleSize(width, height)) return null;
   final Uint8List out = Uint8List(width * height);
   int i = 0, x = 0, y = 0;
   while (i < rle.length && y < height) {
@@ -339,7 +339,15 @@ class _PgsState {
     int o = 4;
     if (seq & 0x80 != 0) {
       if (b.length < 11) return;
-      _pending[id] = _PgsPendingObject(_u16(b, o + 3), _u16(b, o + 5));
+      final int width = _u16(b, o + 3);
+      final int height = _u16(b, o + 5);
+      if (!isDecodableBitmapSubtitleSize(width, height)) {
+        // 损坏的对象：连同同 id 的旧对象一起作废，后续分片也不再拼接。
+        _pending.remove(id);
+        _objects.remove(id);
+        return;
+      }
+      _pending[id] = _PgsPendingObject(width, height);
       _u24(b, o); // 总长含宽高 4 字节；分片按 last 标志收束即可，不依赖它。
       o += 7;
     }

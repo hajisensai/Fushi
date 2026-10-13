@@ -35,8 +35,13 @@ class VideoFloatingPanelSurface extends StatelessWidget {
     this.surfaceKey,
     this.borderRadius,
     this.opaque = false,
+    this.glassRadius,
     super.key,
   });
+
+  /// Apple 液态玻璃的超椭圆圆角；null = [radiusOf]。小尺寸浮层（如胶囊药丸）
+  /// 用它取半高，否则 18 / 28 的面板圆角在矮表面上不成胶囊。
+  final double? glassRadius;
 
   /// MD3：true 时表面用不透明底色（不透出下面的画面 / 字幕）。设置面板与调轴浮条
   /// 用它——面板里是成片的文字与控件，背后透出字幕会和面板文字叠在一起难读。
@@ -69,7 +74,7 @@ class VideoFloatingPanelSurface extends StatelessWidget {
         useOwnLayer: true,
         quality: fushiGlassQuality(context, prominent: true),
         settings: videoPanelGlassSettings(context),
-        shape: LiquidRoundedSuperellipse(borderRadius: radius),
+        shape: LiquidRoundedSuperellipse(borderRadius: glassRadius ?? radius),
         clipBehavior: Clip.antiAlias,
         child: Theme(
           data: theme.copyWith(
@@ -186,9 +191,9 @@ TextStyle? videoPanelTitleStyle(BuildContext context) {
       color: appleColorsOf(context).label,
     );
   }
-  return Theme.of(context).textTheme.titleLarge?.copyWith(
-        fontWeight: FontWeight.w700,
-      );
+  return Theme.of(
+    context,
+  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700);
 }
 
 /// 底部半透明**抽屉**：与 [VideoTranslucentSidePanel] 同一套配色/圆角/焦点纪律，只是
@@ -291,9 +296,9 @@ class _VideoTranslucentBottomDrawerState
                                       decoration: BoxDecoration(
                                         color: glass
                                             ? appleColorsOf(inner).tertiaryLabel
-                                            : Theme.of(inner)
-                                                .colorScheme
-                                                .outline,
+                                            : Theme.of(
+                                                inner,
+                                              ).colorScheme.outline,
                                         borderRadius: borderRadius,
                                       ),
                                     ),

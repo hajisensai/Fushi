@@ -14,8 +14,8 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_local_model_labels.dart';
-import 'package:fushi/src/media/video/video_m3e_chrome.dart'
-    show videoM3eFloatingColor, videoM3eNeutralChromeScheme;
+import 'package:fushi/src/media/video/video_side_panel.dart'
+    show VideoFloatingPanelSurface;
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
     show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
@@ -189,104 +189,122 @@ class _VideoGraphicSubtitleOcrProgressCardState
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData base = Theme.of(context);
-    // 卡片底色恒为播放器深色悬浮表面，前景必须同样取深色方案：直接读 app 主题时，
-    // 浅色主题下标题 / 状态 / 引擎行全是深色字压在深色底上，几乎看不见（BUG-3273）。
-    final ColorScheme scheme = videoM3eNeutralChromeScheme(base.colorScheme);
-    final ThemeData theme = base.copyWith(
-      colorScheme: scheme,
-      textTheme: base.textTheme.apply(
-        bodyColor: scheme.onSurface,
-        displayColor: scheme.onSurface,
+    // 表面交给播放器浮层的统一表面：Apple 液态玻璃 / M3E 中性深色（面板中性主题
+    // 重走主题工厂，浅色主题下前景也是亮色，BUG-3273）/ 墨水屏实色描边。卡片自己
+    // 不再挑底色与前景，否则 Apple 下是一块 M3 深色卡、墨水屏下半透明。
+    return AnimatedSwitcher(
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      switchInCurve: FushiMotion.enter,
+      switchOutCurve: FushiMotion.exit,
+      layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+        alignment: Alignment.topLeft,
+        children: <Widget>[...previous, ?current],
       ),
-      iconTheme: base.iconTheme.copyWith(color: scheme.onSurface),
-    );
-    final Color surface = videoM3eFloatingColor(base.colorScheme);
-    return Theme(
-      data: theme,
-      child: AnimatedSwitcher(
-        duration: fushiMotionDuration(context, FushiMotion.medium),
-        switchInCurve: FushiMotion.enter,
-        switchOutCurve: FushiMotion.exit,
-        layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
-          alignment: Alignment.topLeft,
-          children: <Widget>[...previous, ?current],
-        ),
-        transitionBuilder: (Widget child, Animation<double> animation) =>
-            FadeTransition(
-              opacity: animation,
-              child: ScaleTransition(
-                alignment: Alignment.topLeft,
-                scale: Tween<double>(begin: 0.9, end: 1).animate(animation),
-                child: child,
-              ),
+      transitionBuilder: (Widget child, Animation<double> animation) =>
+          FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(
+              alignment: Alignment.topLeft,
+              scale: Tween<double>(begin: 0.9, end: 1).animate(animation),
+              child: child,
             ),
-        child: _collapsed
-            ? _buildPill(context, theme, surface)
-            : _buildCard(context, theme, surface),
-      ),
+          ),
+      child: _collapsed ? _buildPill() : _buildCard(),
     );
   }
 
-  Widget _buildPill(BuildContext context, ThemeData theme, Color surface) {
-    final ColorScheme scheme = theme.colorScheme;
+  /// 药丸高度，也是它的命中区高度（整颗药丸都是 InkWell）。
+  static const double _pillHeight = 40;
+
+  Widget _buildPill() {
     final GraphicSubtitleOcrJobState state = widget.state;
     final double? fraction = state.fraction;
     final String status = state.statusText();
-    return Material(
+    return VideoFloatingPanelSurface(
       key: const ValueKey<String>('graphic_subtitle_ocr_progress_pill'),
-      color: surface,
-      elevation: 3,
-      shape: const StadiumBorder(),
-      clipBehavior: Clip.antiAlias,
-      child: Tooltip(
-        message: status,
-        child: InkWell(
-          onTap: () => _setCollapsed(false),
-          child: Semantics(
-            button: true,
-            label: '${t.video_subtitle_graphic_ocr_track} · $status',
-            excludeSemantics: true,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 6, 12, 6),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  SizedBox.square(
-                    dimension: 20,
-                    child: Stack(
-                      alignment: Alignment.center,
+      borderRadius: BorderRadius.circular(_pillHeight / 2),
+      glassRadius: _pillHeight / 2,
+      child: Builder(
+        builder: (BuildContext context) {
+          final ThemeData theme = Theme.of(context);
+          final ColorScheme scheme = theme.colorScheme;
+          return Tooltip(
+            message: status,
+            child: InkWell(
+              onTap: () => _setCollapsed(false),
+              child: Semantics(
+                button: true,
+                label: '${t.video_subtitle_graphic_ocr_track} · $status',
+                excludeSemantics: true,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    minHeight: _pillHeight,
+                    minWidth: _pillHeight,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
-                        FushiCircularProgressIndicator(
-                          value: fraction,
-                          strokeWidth: 2,
-                          color: scheme.primary,
+                        SizedBox.square(
+                          dimension: 20,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: <Widget>[
+                              FushiCircularProgressIndicator(
+                                value: fraction,
+                                strokeWidth: 2,
+                                color: scheme.primary,
+                              ),
+                              Icon(
+                                FushiIcons.ocr,
+                                size: 11,
+                                color: scheme.onSurface,
+                              ),
+                            ],
+                          ),
                         ),
-                        Icon(FushiIcons.ocr, size: 11, color: scheme.onSurface),
+                        if (fraction != null) ...<Widget>[
+                          const SizedBox(width: 8),
+                          Text(
+                            '${(fraction * 100).floor()}%',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: scheme.onSurface,
+                              fontFeatures: const <FontFeature>[
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                        ],
                       ],
                     ),
                   ),
-                  if (fraction != null) ...<Widget>[
-                    const SizedBox(width: 8),
-                    Text(
-                      '${(fraction * 100).floor()}%',
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontFeatures: const <FontFeature>[
-                          FontFeature.tabularFigures(),
-                        ],
-                      ),
-                    ),
-                  ],
-                ],
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildCard(BuildContext context, ThemeData theme, Color surface) {
+  Widget _buildCard() {
+    return ConstrainedBox(
+      key: const ValueKey<String>('graphic_subtitle_ocr_progress_card_box'),
+      constraints: const BoxConstraints(maxWidth: 340),
+      child: VideoFloatingPanelSurface(
+        surfaceKey: const ValueKey<String>(
+          'graphic_subtitle_ocr_progress_card',
+        ),
+        borderRadius: FushiM3eShape.cardRadius,
+        child: Builder(builder: _buildCardBody),
+      ),
+    );
+  }
+
+  Widget _buildCardBody(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final GraphicSubtitleOcrJobState state = widget.state;
     final double? fraction = state.fraction;
@@ -294,111 +312,92 @@ class _VideoGraphicSubtitleOcrProgressCardState
     final TextStyle? meta = theme.textTheme.bodySmall?.copyWith(
       color: scheme.onSurfaceVariant,
     );
-    return ConstrainedBox(
-      key: const ValueKey<String>('graphic_subtitle_ocr_progress_card_box'),
-      constraints: const BoxConstraints(maxWidth: 340),
-      child: Material(
-        key: const ValueKey<String>('graphic_subtitle_ocr_progress_card'),
-        // 与播放器其它浮层（设置 / 章节面板）同一中性深色表面令牌。
-        color: surface,
-        elevation: 3,
-        shape: const RoundedRectangleBorder(
-          borderRadius: FushiM3eShape.cardRadius,
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 6, 14),
-          child: FushiAnimatedSize(
-            duration: fushiMotionDuration(context, FushiMotion.medium),
-            curve: FushiMotion.standard,
-            alignment: Alignment.topCenter,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 6, 14),
+      child: FushiAnimatedSize(
+        duration: fushiMotionDuration(context, FushiMotion.medium),
+        curve: FushiMotion.standard,
+        alignment: Alignment.topCenter,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
               children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Icon(FushiIcons.ocr, size: 18, color: scheme.primary),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        t.video_subtitle_graphic_ocr_track,
-                        style: theme.textTheme.titleSmall,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    FushiIconButton(
-                      key: const ValueKey<String>(
-                        'graphic_subtitle_ocr_progress_collapse',
-                      ),
-                      icon: FushiIcons.expandLess,
-                      tooltip: t.video_subtitle_adjust_collapse,
-                      size: 20,
-                      onTap: () => _setCollapsed(true),
-                    ),
-                    FushiIconButton(
-                      icon: FushiIcons.close,
-                      tooltip: t.dialog_cancel,
-                      size: 20,
-                      onTap: widget.onCancel,
-                    ),
-                  ],
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(right: 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      AnimatedSwitcher(
-                        duration: fushiMotionDuration(
-                          context,
-                          FushiMotion.short,
-                        ),
-                        child: Text(
-                          state.statusText(),
-                          key: ValueKey<String>(
-                            'graphic_ocr_status_${state.phase.name}',
-                          ),
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      FushiWavyLinearProgress(
-                        value: fraction,
-                        color: scheme.primary,
-                        trackColor: scheme.secondaryContainer,
-                        semanticsLabel: state.statusText(),
-                      ),
-                      if (engine != null) ...<Widget>[
-                        const SizedBox(height: 8),
-                        Text(
-                          t.video_subtitle_graphic_ocr_job_engine(
-                            engine: engine,
-                          ),
-                          style: meta,
-                        ),
-                        Text(
-                          state.aiLabel == null
-                              ? t.video_subtitle_graphic_ocr_job_ai_off
-                              : state.aiTotal > 0
-                              ? t.video_subtitle_graphic_ocr_job_ai_progress(
-                                  provider: state.aiLabel!,
-                                  done: state.aiDone,
-                                  total: state.aiTotal,
-                                )
-                              : t.video_subtitle_graphic_ocr_job_ai_on(
-                                  provider: state.aiLabel!,
-                                ),
-                          style: meta,
-                        ),
-                      ],
-                    ],
+                Icon(FushiIcons.ocr, size: 18, color: scheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    t.video_subtitle_graphic_ocr_track,
+                    style: theme.textTheme.titleSmall,
+                    overflow: TextOverflow.ellipsis,
                   ),
+                ),
+                FushiIconButton(
+                  key: const ValueKey<String>(
+                    'graphic_subtitle_ocr_progress_collapse',
+                  ),
+                  icon: FushiIcons.expandLess,
+                  tooltip: t.video_subtitle_adjust_collapse,
+                  size: 20,
+                  onTap: () => _setCollapsed(true),
+                ),
+                FushiIconButton(
+                  icon: FushiIcons.close,
+                  tooltip: t.dialog_cancel,
+                  size: 20,
+                  onTap: widget.onCancel,
                 ),
               ],
             ),
-          ),
+            Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  AnimatedSwitcher(
+                    duration: fushiMotionDuration(context, FushiMotion.short),
+                    child: Text(
+                      state.statusText(),
+                      key: ValueKey<String>(
+                        'graphic_ocr_status_${state.phase.name}',
+                      ),
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  FushiWavyLinearProgress(
+                    value: fraction,
+                    color: scheme.primary,
+                    trackColor: scheme.secondaryContainer,
+                    semanticsLabel: state.statusText(),
+                  ),
+                  if (engine != null) ...<Widget>[
+                    const SizedBox(height: 8),
+                    Text(
+                      t.video_subtitle_graphic_ocr_job_engine(engine: engine),
+                      style: meta,
+                    ),
+                    Text(
+                      state.aiLabel == null
+                          ? t.video_subtitle_graphic_ocr_job_ai_off
+                          : state.aiTotal > 0
+                          ? t.video_subtitle_graphic_ocr_job_ai_progress(
+                              provider: state.aiLabel!,
+                              done: state.aiDone,
+                              total: state.aiTotal,
+                            )
+                          : t.video_subtitle_graphic_ocr_job_ai_on(
+                              provider: state.aiLabel!,
+                            ),
+                      style: meta,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

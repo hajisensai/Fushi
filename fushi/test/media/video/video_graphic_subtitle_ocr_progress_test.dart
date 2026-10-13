@@ -16,6 +16,11 @@ import 'package:fushi/src/media/video/video_graphic_subtitle_ocr_progress.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_regions.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show FushiGlassMaterial;
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
+    show GlassContainer;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -217,6 +222,77 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     expect(find.byKey(full), findsOneWidget);
     expect(find.byKey(pill), findsNothing);
+  });
+
+  testWidgets('进度卡 / 药丸走播放器浮层统一表面：Apple 是液态玻璃，MD3 不是', (
+    WidgetTester tester,
+  ) async {
+    Future<void> pump({required bool glass}) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildFushiThemeData(
+            scheme: buildFushiColorScheme(
+              seedColor: kFushiDefaultSeed,
+              brightness: Brightness.light,
+            ),
+            textTheme: Typography.material2021().black,
+            glass: glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+            glassDesign: glass,
+          ),
+          home: FushiGlassScope(
+            child: Scaffold(
+              body: Align(
+                alignment: Alignment.topLeft,
+                child: VideoGraphicSubtitleOcrProgressCard(
+                  state: const GraphicSubtitleOcrJobState(
+                    phase: GraphicSubtitleOcrJobPhase.recognizing,
+                    done: 3,
+                    total: 10,
+                  ),
+                  onCancel: () {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
+    const String cardKey = 'graphic_subtitle_ocr_progress_card';
+    const String pillKey = 'graphic_subtitle_ocr_progress_pill';
+
+    await pump(glass: false);
+    expect(find.byType(GlassContainer), findsNothing);
+    expect(
+      tester.widget(find.byKey(const ValueKey<String>(cardKey))),
+      isA<Material>(),
+    );
+
+    await pump(glass: true);
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>('graphic_subtitle_ocr_progress_card_box'),
+        ),
+        matching: find.byType(GlassContainer),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('graphic_subtitle_ocr_progress_collapse'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    final Finder pill = find.byKey(const ValueKey<String>(pillKey));
+    expect(
+      find.descendant(of: pill, matching: find.byType(GlassContainer)),
+      findsOneWidget,
+    );
+    // 药丸整颗可点，命中区不小于 40。
+    expect(tester.getSize(pill).height, greaterThanOrEqualTo(40));
   });
 
   test('边读边识别：抽轨阶段已有识别结果时报出条数', () {

@@ -10,6 +10,18 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' show sha1;
 import 'package:image/image.dart' as img;
 
+/// 单个位图对象 / 区域的边长上限。BD PGS 与 DVB 的对象都不超过 4096（DVB 对象坐标
+/// 只有 12 bit，DVD 同样）；码流声明更大的尺寸只可能是损坏数据——照单全收时
+/// 65535×65535 的声明会一次分配 4 GB 平面把进程打爆。
+const int kBitmapSubtitleMaxDimension = 4096;
+
+/// 码流声明的位图尺寸能否解码：正数且两边都不超过 [kBitmapSubtitleMaxDimension]。
+bool isDecodableBitmapSubtitleSize(int width, int height) =>
+    width > 0 &&
+    height > 0 &&
+    width <= kBitmapSubtitleMaxDimension &&
+    height <= kBitmapSubtitleMaxDimension;
+
 /// 位图外包框（画布坐标系，像素；right / bottom 为开区间）。
 typedef BitmapSubtitleBounds = ({int left, int top, int right, int bottom});
 

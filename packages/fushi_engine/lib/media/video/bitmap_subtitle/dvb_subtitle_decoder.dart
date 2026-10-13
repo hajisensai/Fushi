@@ -733,6 +733,11 @@ class _DvbState {
     final int id = b[0];
     final int width = (b[2] << 8) | b[3];
     final int height = (b[4] << 8) | b[5];
+    if (!isDecodableBitmapSubtitleSize(width, height)) {
+      // 损坏的区域定义：丢掉，页面引用它时 [_snapshot] 跳过。
+      _regions.remove(id);
+      return;
+    }
     final int depthCode = (b[6] >> 2) & 0x7;
     final int depth = switch (depthCode) {
       1 => 2,
@@ -838,7 +843,7 @@ class _DvbState {
     for (final ({int id, int x, int y}) p
         in _page ?? const <({int id, int x, int y})>[]) {
       final _DvbRegionDef? def = _regions[p.id];
-      if (def == null || def.width <= 0 || def.height <= 0) continue;
+      if (def == null) continue;
       final List<DvbObjectPlacement> objects = <DvbObjectPlacement>[
         for (final ({int id, int x, int y}) ref in def.objects)
           if (_objects[ref.id] case final DvbObject object)
