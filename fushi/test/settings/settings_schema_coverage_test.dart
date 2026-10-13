@@ -379,6 +379,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/OCR on pause without subtitle track':
       'test/media/video/video_graphic_subtitle_ocr_overlay_test.dart'
       '（开关 × 图形字幕 × 文本 cue 三维判据）',
+  // BUG-3314：暂停时识别画面文字的范围（所有视频 / 仅图片字幕 / 关闭）。写 prefsRepo
+  // （changed=true），生效点在播放页暂停 OCR 覆盖层的识别门——要真播放器暂停、截帧
+  // 与 OCR 引擎，harness 无适用探针；由专项测试咬住判据（图形字幕必识别、文字字幕在屏
+  // 时让位、关闭一律不识别）。
+  'video/Recognize on-screen text when paused':
+      'test/media/video/graphic_subtitle_pause_ocr_test.dart'
+      '（VideoPauseOcrScope.shouldRecognize 三档判据）',
   // 视频条目自动刮削总闸。写 prefsRepo（changed=true），生效点在
   // VideoScrapeAutoService.sweep 的进场门（关=零网络请求、零资料落库），不是
   // reader CSS / 主题树，无适用探针；由专项服务测试咬住（关=不发请求、关→开

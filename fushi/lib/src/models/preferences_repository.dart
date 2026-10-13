@@ -63,6 +63,7 @@ import 'package:fushi/src/media/video/video_clip_export_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
     show kMiningHeadPadMs, kMiningPadMaxMs, kMiningTailPadMs;
 import 'package:fushi/src/mining/galgame_library.dart';
@@ -2835,6 +2836,15 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setVideoOnlineMiningMode(VideoOnlineMiningMode mode) async {
     await setPref('video_online_mining_mode', mode.wireName);
+    notifyListeners();
+  }
+
+  // 暂停时识别画面文字的范围（见 [VideoPauseOcrScope]）。默认 all。
+  VideoPauseOcrScope get videoPauseOcrScope => VideoPauseOcrScope.fromWireName(
+      getPref('video_pause_ocr_scope', defaultValue: null) as String?);
+
+  Future<void> setVideoPauseOcrScope(VideoPauseOcrScope scope) async {
+    await setPref('video_pause_ocr_scope', scope.wireName);
     notifyListeners();
   }
 

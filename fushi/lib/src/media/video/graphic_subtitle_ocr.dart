@@ -21,6 +21,8 @@ import 'package:flutter/painting.dart'
     show Alignment, BoxFit, FittedSizes, applyBoxFit;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/manga/manga_overlay_html.dart'
+    show mangaEffectiveTextRegions;
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dart';
@@ -554,43 +556,13 @@ GraphicSubtitleOcrFrame graphicSubtitleOcrFrameOf(MokuroImage image) {
 
 /// 一个块里每个字的位置。整句是块内各行直接拼接（与漫画查词同一口径）。
 ///
-/// 引擎给了字级区域（Lens）且覆盖全部字素时用它；否则按行把块均分（横排自上而下、
-/// 竖排自右向左），行内按字素数沿主轴均分——字幕是单字体等宽排版，均分足够准。
+/// 字级几何与漫画覆盖层同一份（[mangaEffectiveTextRegions]）：引擎给了字级区域
+/// （Lens）就用它；否则按识别器交回的每行框（`linesCoords`）切行、行内按字素分格。
+/// 不能按行数均分整个块：字幕带振假名时检测框把注音也框进来，注音行又比正文矮得多，
+/// 均分后每个可点框都偏离真实的字（BUG-3314）。
 List<GraphicSubtitleOcrChar> graphicSubtitleOcrCharsOf(MokuroBlock block) {
   final String sentence = block.lines.join();
   if (sentence.trim().isEmpty) return const <GraphicSubtitleOcrChar>[];
-  final List<GraphicSubtitleOcrChar>? fromRegions = _charsFromRegions(
-    block,
-    sentence,
-  );
-  if (fromRegions != null) return fromRegions;
-  final List<GraphicSubtitleOcrChar> out = <GraphicSubtitleOcrChar>[];
-  final MokuroRect box = block.rectangle;
-  final int lineCount = block.lines.length;
-  int graphemeBase = 0;
-  for (int line = 0; line < lineCount; line++) {
-    final List<String> graphemes = block.lines[line].characters.toList();
-    final Rect lineRect = _lineSlice(box, line, lineCount, block.isVertical);
-    for (int i = 0; i < graphemes.length; i++) {
-      if (graphemes[i].trim().isNotEmpty) {
-        out.add((
-          sentence: sentence,
-          graphemeIndex: graphemeBase + i,
-          rect: _charSlice(lineRect, i, graphemes.length, block.isVertical),
-        ));
-      }
-    }
-    graphemeBase += graphemes.length;
-  }
-  return out;
-}
-
-List<GraphicSubtitleOcrChar>? _charsFromRegions(
-  MokuroBlock block,
-  String sentence,
-) {
-  final List<MangaOcrTextRegion>? regions = block.regions;
-  if (regions == null || regions.isEmpty) return null;
   // UTF-16 起点 → 字素下标。
   final Map<int, int> graphemeAtUtf16 = <int, int>{};
   int offset = 0;
@@ -599,40 +571,21 @@ List<GraphicSubtitleOcrChar>? _charsFromRegions(
     graphemeAtUtf16[offset] = index++;
     offset += g.length;
   }
-  final List<GraphicSubtitleOcrChar> out = <GraphicSubtitleOcrChar>[];
-  for (final MangaOcrTextRegion region in regions) {
-    final int? grapheme = graphemeAtUtf16[region.utf16Start];
-    // 区域与文字对不上（例如 AI 改写过文字）：整块退回均分。
-    if (grapheme == null || region.utf16End > sentence.length) return null;
-    final MokuroRect r = region.rectangle;
-    out.add((
-      sentence: sentence,
-      graphemeIndex: grapheme,
-      rect: Rect.fromLTRB(r.left, r.top, r.right, r.bottom),
-    ));
-  }
-  return out;
-}
-
-Rect _lineSlice(MokuroRect box, int line, int count, bool vertical) {
-  if (vertical) {
-    // 竖排：第一行在最右。
-    final double w = (box.right - box.left) / count;
-    final double right = box.right - w * line;
-    return Rect.fromLTRB(right - w, box.top, right, box.bottom);
-  }
-  final double h = (box.bottom - box.top) / count;
-  final double top = box.top + h * line;
-  return Rect.fromLTRB(box.left, top, box.right, top + h);
-}
-
-Rect _charSlice(Rect line, int index, int count, bool vertical) {
-  if (vertical) {
-    final double h = line.height / count;
-    return Rect.fromLTWH(line.left, line.top + h * index, line.width, h);
-  }
-  final double w = line.width / count;
-  return Rect.fromLTWH(line.left + w * index, line.top, w, line.height);
+  return <GraphicSubtitleOcrChar>[
+    for (final MangaOcrTextRegion region in mangaEffectiveTextRegions(block))
+      if (graphemeAtUtf16[region.utf16Start] case final int grapheme
+          when region.utf16End <= sentence.length)
+        (
+          sentence: sentence,
+          graphemeIndex: grapheme,
+          rect: Rect.fromLTRB(
+            region.rectangle.left,
+            region.rectangle.top,
+            region.rectangle.right,
+            region.rectangle.bottom,
+          ),
+        ),
+  ];
 }
 
 /// 帧图像素矩形 → 视频控件内的本地矩形。

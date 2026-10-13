@@ -6495,6 +6495,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return VideoGraphicSubtitleOcrOverlay(
       controller: controller,
       fit: videoFitModeToBoxFit(_videoFitMode),
+      scope: appModel.videoPauseOcrScope,
       prepare: _prepareGraphicSubtitleOcr,
       // 没有图形字幕（硬字幕）也暂停 OCR：用户开关，默认关（反馈 i5A0mu1-AT）。
       ocrWithoutSubtitleTrack: _asbConfig.pauseOcrWithoutSubtitleTrack,

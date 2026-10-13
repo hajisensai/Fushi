@@ -33,7 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3013 条。点号进各自文件。
+> 共 3014 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -50,6 +50,7 @@
 | [BUG-3317](bugs/BUG-3317-bitmap-subtitle-oversize-oom.md) | ✅ | ✅ | 位图字幕对象声明超大尺寸时一次分配数GB平面 |
 | [BUG-3316](bugs/BUG-3316-libmpv-probe-tests-release-backend.md) | ✅ | ✅ | media_kit 热重启探针预编译后实际测的是 release 后端 |
 | [BUG-3315](bugs/BUG-3315-windows-hi10p-h264-software-decode.md) | ✅ | ✅ | Windows 播放 H.264 High 10 走 CPU 软解掉帧；诊断默认不采 mpv 掉帧统计 |
+| [BUG-3314](bugs/BUG-3314-graphic-subtitle-ocr-ruby-tap-duplicate.md) | ✅ | ✅ | 图片字幕OCR点击位置偏移、振假名混入正文、转录出重复字幕 |
 | [BUG-3313](bugs/BUG-3313-ass-seek-animation-stale-clock.md) | ✅ | ✅ | ASS 字幕跳转后位置/淡入淡出时间错乱（动画读滞后的原始播放位置） |
 | [BUG-3312](bugs/BUG-3312-audio-cd-cda-import.md) | ✅ | ✅ | 音频 CD 导入视频库一条不收：需先抓轨成 FLAC（Windows .cda / macOS .aiff 挂载） |
 | [BUG-3311](bugs/BUG-3311-android-lookup-audio-duck.md) | ✅ | ✅ | android-video-lookup-word-audio-ducks-video |

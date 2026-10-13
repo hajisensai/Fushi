@@ -81,16 +81,17 @@ class _FakeLineRecognizer extends PpOcrLineRecognizer {
   // 生产路径调的是 recognizeLineScored（recognizeLine 转调它），假件重写这一个。
   @override
   Future<({String text, double? confidence})> recognizeLineScored(
-      img.Image line) async {
+    img.Image line,
+  ) async {
     lines.add(line);
     return (text: reply, confidence: null);
   }
 }
 
 PpTextLine _line(double l, double t, double r, double b) => PpTextLine(
-      rect: OcrRect(left: l, top: t, right: r, bottom: b),
-      score: 1,
-    );
+  rect: OcrRect(left: l, top: t, right: r, bottom: b),
+  score: 1,
+);
 
 /// 与纯 Dart 复现同一组输出：父框 400x200、正文框 200x10，IoU=0.025。
 class _NestedDetectionSession extends _DeadSession {
@@ -127,7 +128,8 @@ class _NestedLineRecognizer extends PpOcrLineRecognizer {
 
   @override
   Future<({String text, double? confidence})> recognizeLineScored(
-      img.Image crop) async {
+    img.Image crop,
+  ) async {
     heights.add(crop.height);
     return (text: crop.height == 10 ? 'BODY' : 'TITLE', confidence: null);
   }
@@ -141,26 +143,26 @@ class _FixedRegionDetector implements OcrDetector {
 
   @override
   Future<PageDetections> detect(img.Image page) async => PageDetections(
-        textRegions: <DetectedTextRegion>[
-          for (final OcrRect rect in rects)
-            DetectedTextRegion(
-              rect: rect,
-              score: 0.9,
-              classId: 1,
-              insideBubble: true,
-            ),
-        ],
-        bubbles: const <OcrRect>[],
-      );
+    textRegions: <DetectedTextRegion>[
+      for (final OcrRect rect in rects)
+        DetectedTextRegion(
+          rect: rect,
+          score: 0.9,
+          classId: 1,
+          insideBubble: true,
+        ),
+    ],
+    bubbles: const <OcrRect>[],
+  );
 }
 
 /// BUG-2783：两列竖排气泡，宽 200 ≥ 高 100。PP 切出两条竖列 + 一截被切断的
 /// 短列碎片（30×30，单看会被当成横行）。
 List<PpTextLine> _twoColumnVerticalBubble() => <PpTextLine>[
-      _line(150, 5, 180, 95),
-      _line(100, 5, 130, 95),
-      _line(100, 60, 130, 90),
-    ];
+  _line(150, 5, 180, 95),
+  _line(100, 5, 130, 95),
+  _line(100, 60, 130, 90),
+];
 
 void main() {
   final img.Image page = img.Image(width: 400, height: 300);
@@ -209,11 +211,13 @@ void main() {
         <PpTextLine>[],
       ];
     final _FakeLineRecognizer lineRecognizer = _FakeLineRecognizer();
-    final BatchOcrRecognizer routed = RoutingOcrRecognizer(
-      mangaOcr: manga,
-      lineDetector: detector,
-      lineRecognizer: lineRecognizer,
-    ) as BatchOcrRecognizer;
+    final BatchOcrRecognizer routed =
+        RoutingOcrRecognizer(
+              mangaOcr: manga,
+              lineDetector: detector,
+              lineRecognizer: lineRecognizer,
+            )
+            as BatchOcrRecognizer;
     const List<OcrRect> boxes = <OcrRect>[
       OcrRect(left: 310, top: 0, right: 350, bottom: 150),
       OcrRect(left: 20, top: 160, right: 220, bottom: 210),
@@ -238,13 +242,15 @@ void main() {
     final _FakeBatchMangaOcr manga = _FakeBatchMangaOcr();
     final _FakeLineRecognizer lineRecognizer = _FakeLineRecognizer()
       ..reply = '';
-    final BatchOcrRecognizer routed = RoutingOcrRecognizer(
-      mangaOcr: manga,
-      lineDetector: _FakeLineDetector(<PpTextLine>[
-        _line(0, 0, 150, 40),
-      ]),
-      lineRecognizer: lineRecognizer,
-    ) as BatchOcrRecognizer;
+    final BatchOcrRecognizer routed =
+        RoutingOcrRecognizer(
+              mangaOcr: manga,
+              lineDetector: _FakeLineDetector(<PpTextLine>[
+                _line(0, 0, 150, 40),
+              ]),
+              lineRecognizer: lineRecognizer,
+            )
+            as BatchOcrRecognizer;
     const OcrRect box = OcrRect(left: 20, top: 0, right: 220, bottom: 50);
     expect(await routed.recognizeBatch(page, <OcrRect>[box]), <String>[
       'GPU@20',
@@ -259,11 +265,13 @@ void main() {
     final _FakeLineDetector detector = _FakeLineDetector(<PpTextLine>[
       _line(0, 0, 150, 40),
     ]);
-    final BatchOcrRecognizer routed = RoutingOcrRecognizer(
-      mangaOcr: manga,
-      lineDetector: detector,
-      lineRecognizer: _FakeLineRecognizer(),
-    ) as BatchOcrRecognizer;
+    final BatchOcrRecognizer routed =
+        RoutingOcrRecognizer(
+              mangaOcr: manga,
+              lineDetector: detector,
+              lineRecognizer: _FakeLineRecognizer(),
+            )
+            as BatchOcrRecognizer;
     expect(
       await routed.recognizeBatch(page, const <OcrRect>[
         OcrRect(left: 0, top: 0, right: 200, bottom: 50),
@@ -280,15 +288,17 @@ void main() {
   test('GPU 路由批次中的横排块仍保留竖行坐标变换、边距和拼接顺序', () async {
     final _FakeBatchMangaOcr manga = _FakeBatchMangaOcr()..reply = 'v';
     final _FakeLineRecognizer rec = _FakeLineRecognizer()..reply = 'h';
-    final BatchOcrRecognizer routed = RoutingOcrRecognizer(
-      mangaOcr: manga,
-      lineDetector: _FakeLineDetector(<PpTextLine>[
-        _line(10, 40, 290, 70),
-        _line(10, 30, 290, 36),
-        _line(200, 5, 220, 95),
-      ]),
-      lineRecognizer: rec,
-    ) as BatchOcrRecognizer;
+    final BatchOcrRecognizer routed =
+        RoutingOcrRecognizer(
+              mangaOcr: manga,
+              lineDetector: _FakeLineDetector(<PpTextLine>[
+                _line(10, 40, 290, 70),
+                _line(10, 30, 290, 36),
+                _line(200, 5, 220, 95),
+              ]),
+              lineRecognizer: rec,
+            )
+            as BatchOcrRecognizer;
     expect(
       await routed.recognizeBatch(page, const <OcrRect>[
         OcrRect(left: 50, top: 100, right: 350, bottom: 200),
@@ -307,11 +317,13 @@ void main() {
 
   test('GPU 后端结果不等长时抛错，不能把文本拼到另一框', () async {
     final _FakeBatchMangaOcr manga = _FakeBatchMangaOcr()..returnedCount = 1;
-    final BatchOcrRecognizer routed = RoutingOcrRecognizer(
-      mangaOcr: manga,
-      lineDetector: _FakeLineDetector(<PpTextLine>[]),
-      lineRecognizer: _FakeLineRecognizer(),
-    ) as BatchOcrRecognizer;
+    final BatchOcrRecognizer routed =
+        RoutingOcrRecognizer(
+              mangaOcr: manga,
+              lineDetector: _FakeLineDetector(<PpTextLine>[]),
+              lineRecognizer: _FakeLineRecognizer(),
+            )
+            as BatchOcrRecognizer;
     await expectLater(
       routed.recognizeBatch(page, const <OcrRect>[
         OcrRect(left: 0, top: 0, right: 40, bottom: 150),
@@ -333,6 +345,38 @@ void main() {
         const OcrRect(left: 0, top: 0, right: 98, bottom: 121),
       ),
       isFalse,
+    );
+  });
+
+  // BUG-3314：《新・のび太の海底鬼岩城》PGS 位图上 PP 行检测的真实行框。以前这里只有
+  // filterThinLines + 按 top 排序：注音「た / やま / やま」被当正文读，说话人标签
+  // 「（スネ夫）」（top 51）排到台词「海だ 海！」（top 46）后面。
+  test('横排块逐行单元：去上下注音、同排标签与台词并成一行、按排从上到下', () {
+    PpTextLine l(double left, double top, double right, double bottom) =>
+        PpTextLine(
+          rect: OcrRect(left: left, top: top, right: right, bottom: bottom),
+          score: 0.9,
+        );
+    final List<PpTextLine> lines = orderLinesForReading(
+      horizontalBlockReadingLines(<PpTextLine>[
+        l(279, 46, 538, 114), // 海だ 海！
+        l(19, 51, 293, 113), // （スネ夫）
+        l(284, 116, 680, 177), // 山だったら山！
+        l(22, 116, 293, 178), // （のび太）
+        l(171, 176, 212, 216), // た
+        l(281, 176, 347, 216), // やま
+        l(581, 176, 647, 215), // やま
+      ]),
+    );
+    expect(
+      <List<double>>[
+        for (final PpTextLine line in lines)
+          <double>[line.rect.left, line.rect.top, line.rect.right],
+      ],
+      <List<double>>[
+        <double>[19, 46, 538],
+        <double>[22, 116, 680],
+      ],
     );
   });
 
@@ -370,8 +414,7 @@ void main() {
     const OcrRect box = OcrRect(left: 200, top: 40, right: 310, bottom: 260);
     final OcrRecognition out = (await r.recognizeOriented(page, <OcrRect>[
       box,
-    ]))
-        .single;
+    ])).single;
     expect(out.text, '母の子守唄で眠ったことは一度もなかった');
     expect(out.vertical, isTrue);
     expect(out.lines, <String>['母の子守唄で', '眠ったことは', '一度もなかった']);
@@ -394,8 +437,7 @@ void main() {
     const OcrRect box = OcrRect(left: 50, top: 100, right: 350, bottom: 200);
     final OcrRecognition out = (await r.recognizeOriented(page, <OcrRect>[
       box,
-    ]))
-        .single;
+    ])).single;
     expect(out.text, 'abab');
     expect(out.vertical, isFalse);
     expect(out.lines, <String>['ab', 'ab']);

@@ -474,6 +474,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_online_mining_mode',
   // 手机字幕遥控器控制卡按钮布局 JSON（VideoRemoteControlLayout，v1 槽位表）。
   'video_remote_control_layout',
+  // String（[VideoPauseOcrScope] 的 wireName）：暂停时识别画面文字（OCR 点字查词）
+  // 的范围——`all` 所有视频（默认）/ `graphic_subtitles` 只在图形字幕时 / `off`。
+  'video_pause_ocr_scope',
   'video_remote_subtitle',
   // 用户停用的内置视频资源索引器 id（逗号分隔，默认空 = 全部启用）。
   // 与 discovery_disabled_sources 同形；自配 Torznab 各自带 enabled，不进这里。

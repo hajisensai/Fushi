@@ -12,6 +12,7 @@ import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/video/subtitle_style_preview.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
@@ -1096,6 +1097,40 @@ SettingsDestination buildVideoDestination() {
             },
             defaultValue: true,
           ),
+          // 暂停 OCR 点字查词的范围：以前只在图形字幕时识别，2026-10-13 用户要求扩大到
+          // 所有视频（硬字幕 / 画面文字）。每次暂停都跑整帧识别，所以可以收窄或关掉。
+          SettingsSegmentedItem<VideoPauseOcrScope>(
+            id: 'video.subtitle.pause_ocr_scope',
+            title: t.video_setting_pause_ocr_scope,
+            subtitle: t.video_setting_pause_ocr_scope_hint,
+            icon: Icons.document_scanner_outlined,
+            video: VideoPlacement(group: VideoGroup.subtitle, order: 60),
+            options: <SettingsSegmentOption<VideoPauseOcrScope>>[
+              SettingsSegmentOption<VideoPauseOcrScope>(
+                value: VideoPauseOcrScope.all,
+                label: t.video_setting_pause_ocr_scope_all,
+              ),
+              SettingsSegmentOption<VideoPauseOcrScope>(
+                value: VideoPauseOcrScope.graphicSubtitles,
+                label: t.video_setting_pause_ocr_scope_graphic,
+              ),
+              SettingsSegmentOption<VideoPauseOcrScope>(
+                value: VideoPauseOcrScope.off,
+                label: t.video_setting_pause_ocr_scope_off,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoPauseOcrScope,
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  VideoPauseOcrScope scope,
+                ) async {
+                  await settingsContext.appModel.setVideoPauseOcrScope(scope);
+                  settingsContext.refresh();
+                },
+            defaultValue: VideoPauseOcrScope.all,
+          ),
           // 「字幕暂停播放模式」从「播放」分区移到「字幕」分区（句尾自动暂停按字幕 cue
           // 边界暂停，语义归字幕）。VideoPlacement（subtitle order 30）不变——面板投影
           // 位置照旧，仅调全局设置页所属 SettingsSection。
@@ -1193,8 +1228,9 @@ SettingsDestination buildVideoDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.videoSubtitleAutoUploadToHost,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setVideoSubtitleAutoUploadToHost(value);
+              await settingsContext.appModel.setVideoSubtitleAutoUploadToHost(
+                value,
+              );
             },
             defaultValue: true,
           ),
@@ -1486,7 +1522,8 @@ SettingsDestination buildVideoDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await commitVideoAsbConfig(
                 settingsContext,
-                (VideoAsbplayerConfig c) => c.copyWith(volumeSwipeGesture: value),
+                (VideoAsbplayerConfig c) =>
+                    c.copyWith(volumeSwipeGesture: value),
               );
             },
             defaultValue: VideoAsbplayerConfig.defaults.volumeSwipeGesture,
@@ -1533,8 +1570,9 @@ SettingsDestination buildVideoDestination() {
                   SettingsContext settingsContext,
                   VideoScreenshotDestination destination,
                 ) async {
-                  await settingsContext.appModel
-                      .setVideoScreenshotDestination(destination);
+                  await settingsContext.appModel.setVideoScreenshotDestination(
+                    destination,
+                  );
                   settingsContext.refresh();
                 },
             defaultValue: VideoScreenshotDestination.ask,
@@ -1545,8 +1583,10 @@ SettingsDestination buildVideoDestination() {
             id: 'video.playback.screenshot_directory',
             title: t.video_setting_screenshot_directory,
             subtitleBuilder: (SettingsContext settingsContext) {
-              final String dir =
-                  settingsContext.appModel.videoScreenshotDirectory.trim();
+              final String dir = settingsContext
+                  .appModel
+                  .videoScreenshotDirectory
+                  .trim();
               return dir.isEmpty ? t.video_screenshot_directory_not_set : dir;
             },
             icon: Icons.folder_open_outlined,
@@ -1558,14 +1598,16 @@ SettingsDestination buildVideoDestination() {
                 appModel: settingsContext.appModel,
                 dialogTitle: t.video_setting_screenshot_directory,
                 initialDirectory:
-                    settingsContext.appModel.videoScreenshotDirectory.trim()
+                    settingsContext.appModel.videoScreenshotDirectory
+                        .trim()
                         .isEmpty
                     ? null
                     : settingsContext.appModel.videoScreenshotDirectory.trim(),
               );
               if (picked == null || picked.isEmpty) return;
-              await settingsContext.appModel
-                  .setVideoScreenshotDirectory(picked);
+              await settingsContext.appModel.setVideoScreenshotDirectory(
+                picked,
+              );
               settingsContext.refresh();
             },
           ),
@@ -1589,8 +1631,9 @@ SettingsDestination buildVideoDestination() {
             resetValue: (SettingsContext settingsContext) =>
                 kVideoClipExportVideoBitrateFollowSource,
             onChanged: (SettingsContext settingsContext, num value) async {
-              await settingsContext.appModel
-                  .setVideoClipExportVideoBitrateKbps(value.toInt());
+              await settingsContext.appModel.setVideoClipExportVideoBitrateKbps(
+                value.toInt(),
+              );
               settingsContext.refresh();
             },
           ),
@@ -1731,9 +1774,10 @@ SettingsDestination buildVideoDestination() {
             placeholder: t.video_source_scrape_locale_follow_ui,
             value: (SettingsContext settingsContext) =>
                 (settingsContext.appModel.prefsRepo.getPref(
-              kVideoMetadataLocalePref,
-              defaultValue: '',
-            ) as String)
+                          kVideoMetadataLocalePref,
+                          defaultValue: '',
+                        )
+                        as String)
                     .trim(),
             resetValue: (SettingsContext settingsContext) => '',
             onChanged: (SettingsContext settingsContext, String value) async {
@@ -1749,22 +1793,22 @@ SettingsDestination buildVideoDestination() {
           // commitVideoMetadataRuntimePreference 同款路径重建刮削快照。
           for (final (String key, String title, IconData icon) limit
               in <(String, String, IconData)>[
-            (
-              kVideoMetadataMaxCoversPref,
-              t.video_metadata_max_covers,
-              Icons.image_outlined
-            ),
-            (
-              kVideoMetadataMaxBackdropsPref,
-              t.video_metadata_max_backdrops,
-              Icons.panorama_outlined
-            ),
-            (
-              kVideoMetadataMaxLogosPref,
-              t.video_metadata_max_logos,
-              Icons.title_outlined
-            ),
-          ])
+                (
+                  kVideoMetadataMaxCoversPref,
+                  t.video_metadata_max_covers,
+                  Icons.image_outlined,
+                ),
+                (
+                  kVideoMetadataMaxBackdropsPref,
+                  t.video_metadata_max_backdrops,
+                  Icons.panorama_outlined,
+                ),
+                (
+                  kVideoMetadataMaxLogosPref,
+                  t.video_metadata_max_logos,
+                  Icons.title_outlined,
+                ),
+              ])
             SettingsStepperItem(
               id: 'video.library.${limit.$1}',
               title: limit.$2,
@@ -1778,7 +1822,7 @@ SettingsDestination buildVideoDestination() {
                 return (raw is int
                         ? raw
                         : int.tryParse('$raw') ??
-                            kVideoMetadataDefaultMaxImages)
+                              kVideoMetadataDefaultMaxImages)
                     .toDouble();
               },
               step: 1,
@@ -1786,8 +1830,10 @@ SettingsDestination buildVideoDestination() {
               max: 30,
               format: (double v) => '${v.round()}',
               onChanged: (SettingsContext settingsContext, double v) async {
-                await settingsContext.appModel.prefsRepo
-                    .setPref(limit.$1, v.round());
+                await settingsContext.appModel.prefsRepo.setPref(
+                  limit.$1,
+                  v.round(),
+                );
                 await settingsContext.appModel
                     .reloadVideoDownloadPipelineRuntime();
               },
@@ -1799,12 +1845,15 @@ SettingsDestination buildVideoDestination() {
             icon: Icons.people_outline,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.prefsRepo.getPref(
-                  kVideoMetadataStaffImagesPref,
-                  defaultValue: false,
-                ) as bool,
+                      kVideoMetadataStaffImagesPref,
+                      defaultValue: false,
+                    )
+                    as bool,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.prefsRepo
-                  .setPref(kVideoMetadataStaffImagesPref, value);
+              await settingsContext.appModel.prefsRepo.setPref(
+                kVideoMetadataStaffImagesPref,
+                value,
+              );
               await settingsContext.appModel
                   .reloadVideoDownloadPipelineRuntime();
             },
