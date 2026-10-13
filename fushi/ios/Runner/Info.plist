@@ -132,12 +132,23 @@
 			`AVAudioSessionCategory.playback` 也配了，缺的只是这条声明）。
 			「后台播放有声书时照常计学习统计」这条行为在 iOS 上同样以它为前提：进程
 			被挂起就没有播放态可言，统计判据自然也永远走不到那条豁免。
-			只声明 audio 一项：本 app 的后台需求就是播音频，多声明的模式会在审核时
-			被要求逐条举证用途。
+			audio 之外只多声明 fetch 一项：「反馈有新回复时通知我」靠 BGTaskScheduler
+			的 app refresh 在后台问一次反馈进度（feedback_reply_background.dart），
+			BGAppRefreshTask 需要 fetch 模式。多声明的模式会在审核时被要求逐条举证用途。
 		-->
 		<key>UIBackgroundModes</key>
 		<array>
 			<string>audio</string>
+			<string>fetch</string>
+		</array>
+		<!--
+			BGTaskScheduler 允许提交的任务 identifier。必须与 Dart 侧
+			kFeedbackReplyTaskName、AppDelegate 里 WorkmanagerPlugin.registerPeriodicTask
+			的 identifier 逐字一致：没登记的 identifier 提交时系统直接抛异常。
+		-->
+		<key>BGTaskSchedulerPermittedIdentifiers</key>
+		<array>
+			<string>app.fushi.feedback-reply-check</string>
 		</array>
 		<!--
 			出口合规声明。不写这个键的话，每个上传到 TestFlight 的构建都会卡在

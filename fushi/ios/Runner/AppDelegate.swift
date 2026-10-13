@@ -1,6 +1,7 @@
 import CoreText
 import UIKit
 import Flutter
+import workmanager_apple
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterStreamHandler, FlutterImplicitEngineDelegate {
@@ -27,6 +28,19 @@ import Flutter
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    // 「反馈有新回复时通知我」的后台检查（BGAppRefreshTask；Dart 侧
+    // lib/src/feedback/feedback_reply_background.dart）。UIScene 生命周期下插件在
+    // didFinishLaunching 返回之后才注册，系统在后台拉起 app 时要求 launch handler
+    // 已经登记——所以必须在这里、在 super 之前登记。identifier 与 Info.plist 的
+    // BGTaskSchedulerPermittedIdentifiers、Dart 的 kFeedbackReplyTaskName 逐字一致。
+    // 后台引擎里的插件（path_provider 解数据根、flutter_local_notifications 发通知）
+    // 经 GeneratedPluginRegistrant 注册。
+    WorkmanagerPlugin.setPluginRegistrantCallback { registry in
+      GeneratedPluginRegistrant.register(with: registry)
+    }
+    WorkmanagerPlugin.registerPeriodicTask(
+      withIdentifier: "app.fushi.feedback-reply-check",
+      earliestBeginInSeconds: NSNumber(value: 15 * 60))
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 

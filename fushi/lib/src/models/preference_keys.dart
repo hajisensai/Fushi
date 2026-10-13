@@ -127,6 +127,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'extension_popup_independent_size',
   'extension_popup_max_height',
   'extension_popup_max_width',
+  // bool，默认 true：「反馈有新回复时通知我」。开 = 移动端排后台检查（WorkManager /
+  // BGTaskScheduler）、桌面运行中定时检查，新回复发系统通知；关 = 撤掉后台任务、
+  // 不发系统通知（应用内提示照常）。见 feedback_reply_alerts.dart。
+  'feedback_reply_notifications',
   'first_time_setup',
   // 悬浮球（docs/specs/2026-09-28-floating-ball.md）。`.actions` / `.mode` 是
   // 旧版单份全局按钮 / 三态模式，只作迁移读取；新值是 `.in_app` / `.system`

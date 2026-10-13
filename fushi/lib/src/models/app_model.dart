@@ -16,6 +16,12 @@ import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/updates/update_probes.dart';
 import 'package:fushi/src/pages/implementations/updates_center_open.dart';
+import 'package:fushi/src/feedback/feedback_reply_alerts.dart'
+    show kFeedbackReplyNotificationsPref;
+import 'package:fushi/src/feedback/feedback_reply_state.dart'
+    show decodeFeedbackNotificationPayload;
+import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart'
+    show openFeedbackTicket;
 import 'package:fushi/src/updates/update_notifier.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1109,25 +1115,43 @@ class AppModel with ChangeNotifier {
       _updateFeedService ??= UpdateFeedService(
         database: database,
         prefs: prefsRepo,
-        notifier: LocalUpdateNotifier.isSupportedPlatform
-            ? LocalUpdateNotifier(
-                appName: 'Fushi',
-                groupTitle: t.updates_notification_header,
-                onResponse: _onUpdateNotificationResponse,
-              )
-            : const NoopUpdateNotifier(),
+        notifier: systemNotifier,
         notificationText: localizedUpdateNotificationText,
       );
 
-  /// 用户点了系统通知：本体 / 「打开」→ 那条更新的落点（番剧 = 播放该集）；
-  /// 「查看更新」/ 载荷解不出 / 条目已被清 → 更新中心。先把窗口唤到前台——
-  /// Windows 的 toast 激活只是回调进程，不会替我们把主窗拉起来。
-  Future<void> _onUpdateNotificationResponse(
+  /// 本进程唯一的系统通知后端（更新提醒与反馈回复提醒共用）。
+  ///
+  /// 必须只有一份：`flutter_local_notifications` 的插件是进程内单例，点击回调只有
+  /// 一个槽位，谁最后 `initialize` 谁赢——两个消费方各建一份，先建的那方的通知点了
+  /// 就没反应。所以点击统一进 [_onSystemNotificationResponse]，按载荷分派。
+  /// 懒建，理由同 [updateFeedService]。
+  UpdateNotifier? _systemNotifier;
+  UpdateNotifier get systemNotifier =>
+      _systemNotifier ??= LocalUpdateNotifier.isSupportedPlatform
+          ? LocalUpdateNotifier(
+              appName: 'Fushi',
+              groupTitle: t.updates_notification_header,
+              onResponse: _onSystemNotificationResponse,
+            )
+          : const NoopUpdateNotifier();
+
+  /// 用户点了系统通知。先把窗口唤到前台——Windows 的 toast 激活只是回调进程，
+  /// 不会替我们把主窗拉起来。反馈回复通知 → 那条反馈的详情；其余是更新提醒：
+  /// 本体 / 「打开」→ 那条更新的落点（番剧 = 播放该集）；「查看更新」/ 载荷解不出 /
+  /// 条目已被清 → 更新中心。
+  Future<void> _onSystemNotificationResponse(
     UpdateNotificationResponse response,
   ) async {
     await DesktopLookupService.instance.bringMainWindowToFront();
     final BuildContext? context = navigatorKey.currentContext;
-    if (context == null || !isDatabaseReady) return;
+    if (context == null || !context.mounted) return;
+    final String? feedbackId =
+        decodeFeedbackNotificationPayload(response.payload);
+    if (feedbackId != null) {
+      await openFeedbackTicket(context, feedbackId);
+      return;
+    }
+    if (!isDatabaseReady) return;
     final UpdateNotificationPayload? payload =
         UpdateNotificationPayload.decode(response.payload);
     final UpdateFeedEntryRow? entry = payload == null ||
@@ -1219,7 +1243,14 @@ class AppModel with ChangeNotifier {
     final UpdateFeedService feed = updateFeedService;
     // 通知后端在这里（HomePage 已就绪、navigator 已存在）初始化：点击回调与
     // 冷启动回放都要有可跳转的 context。
-    unawaited(feed.warmUpNotifier());
+    // 反馈回复提醒共用同一个通知后端：更新提醒的系统通知关着、反馈回复开着时，
+    // 点击回调与冷启动回放也得挂上，否则点反馈通知拉起的 app 不会跳到那条反馈。
+    unawaited(feed.warmUpNotifier(
+      otherConsumers: prefsRepo.getPref(
+        kFeedbackReplyNotificationsPref,
+        defaultValue: true,
+      ) as bool,
+    ));
     final UpdateCheckScheduler scheduler = UpdateCheckScheduler(
       prefs: prefsRepo,
       isKindEnabled: feed.isKindEnabled,

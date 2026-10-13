@@ -7393,5 +7393,8 @@
   "feedback_dev_fix_title": "修复",
   "feedback_dev_fix_commit": "提交 ${sha}",
   "feedback_dev_fix_releases_empty": "还没有发布包含它",
-  "feedback_fix_platform_not_tracked": "本平台不随官方渠道更新，无法判断你的版本何时包含这个修复。"
+  "feedback_fix_platform_not_tracked": "本平台不随官方渠道更新，无法判断你的版本何时包含这个修复。",
+  "feedback_reply_notification_title": "开发者回复了你的反馈",
+  "feedback_reply_notify_setting": "反馈有新回复时通知我",
+  "feedback_reply_notify_setting_hint": "在后台检查你提交的反馈有没有新回复，有就发系统通知"
 }

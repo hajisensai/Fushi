@@ -7393,5 +7393,8 @@
   "feedback_dev_fix_title": "Fix",
   "feedback_dev_fix_commit": "Commit ${sha}",
   "feedback_dev_fix_releases_empty": "Not in any release yet",
-  "feedback_fix_platform_not_tracked": "This platform doesn't get official update builds, so we can't tell when this fix reaches your version."
+  "feedback_fix_platform_not_tracked": "This platform doesn't get official update builds, so we can't tell when this fix reaches your version.",
+  "feedback_reply_notification_title": "A developer replied to your feedback",
+  "feedback_reply_notify_setting": "Notify me of feedback replies",
+  "feedback_reply_notify_setting_hint": "Checks in the background for replies to feedback you submitted and shows a system notification"
 }

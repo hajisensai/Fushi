@@ -85,6 +85,12 @@ void main() {
     nowMs: () => now,
   );
 
+  /// 应用内提示的条数（0 = 这次不提示）。
+  Future<int> notice(FeedbackReplyNotifier n) async {
+    final FeedbackReplyCheck r = await n.check();
+    return r.announce ? r.unseen : 0;
+  }
+
   Future<void> seed(List<FeedbackTicket> tickets) =>
       FeedbackTicketStore(root).write(tickets);
 
@@ -102,19 +108,19 @@ void main() {
 
   test('没有任何反馈 / 只有已结案的反馈：完全不发请求', () async {
     final FeedbackReplyNotifier n = notifier(service());
-    expect(await n.check(), 0);
+    expect(await notice(n), 0);
     await seed(<FeedbackTicket>[
       _ticket('aaaaaaaaaa', status: FeedbackStatus.resolved),
       _ticket('bbbbbbbbbb', status: FeedbackStatus.closed),
     ]);
-    expect(await notifier(service()).check(), 0);
+    expect(await notice(notifier(service())), 0);
     expect(requests, isEmpty);
   });
 
   test('有未结案反馈：刷新一次；15 分钟内不再发；过了窗口再发', () async {
     await seed(<FeedbackTicket>[_ticket('aaaaaaaaaa')]);
     final FeedbackReplyNotifier n = notifier(service());
-    expect(await n.check(), 0, reason: '没有新回复不提示');
+    expect(await notice(n), 0, reason: '没有新回复不提示');
     expect(requests, hasLength(1));
 
     now += 14 * minute;
@@ -135,33 +141,33 @@ void main() {
     final FeedbackService s = service();
     final FeedbackReplyNotifier n = notifier(s);
     replies = <String, int?>{'aaaaaaaaaa': 500};
-    expect(await n.check(), 1);
+    expect(await notice(n), 1);
     expect(s.unseenCount, 1);
 
     // 用户没看，下个窗口同一批回复仍未读：红点在，但不重复提示。
     now += 20 * minute;
-    expect(await n.check(), 0);
+    expect(await notice(n), 0);
     expect(s.unseenCount, 1);
 
     // 重启后同样不重复。
     now += 20 * minute;
-    expect(await notifier(service()).check(), 0);
+    expect(await notice(notifier(service())), 0);
 
     // 另一条有了更新的回复：再提示一次（共 2 条未读）。
     replies = <String, int?>{'aaaaaaaaaa': 500, 'bbbbbbbbbb': 900};
     now += 20 * minute;
-    expect(await n.check(), 2);
+    expect(await notice(n), 2);
   });
 
   test('刷新失败不记时间戳：下次前台立刻重试', () async {
     await seed(<FeedbackTicket>[_ticket('aaaaaaaaaa')]);
     final FeedbackReplyNotifier n = notifier(service());
     failing = true;
-    expect(await n.check(), 0);
+    expect(await notice(n), 0);
     expect(requests, hasLength(1));
     failing = false;
     replies = <String, int?>{'aaaaaaaaaa': 500};
-    expect(await n.check(), 1, reason: '失败没占用节流窗口');
+    expect(await notice(n), 1, reason: '失败没占用节流窗口');
     expect(requests, hasLength(2));
   });
 

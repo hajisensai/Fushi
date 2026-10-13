@@ -15,6 +15,7 @@ import 'package:fushi/src/feedback/feedback_store.dart';
 import 'package:fushi/src/feedback/feedback_video.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_detail_page.dart';
 import 'package:fushi/src/utils/misc/clipboard_image.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi/utils.dart';
@@ -43,6 +44,28 @@ Future<void> openFeedbackCenter(
     builder: (_) => FeedbackCenterPage(initialScreenshot: shot),
   ),
 );
+
+/// 点了「开发者回复了你的反馈」的系统通知：直达那条反馈的详情。本机清单里已经没有
+/// 这条（用户删了）就退到反馈中心。清单可能还没加载（被通知冷启动），先等它。
+/// [context] 是根 navigator 的 context（通知回调里只有它）。
+Future<void> openFeedbackTicket(BuildContext context, String feedbackId) async {
+  final FeedbackService service = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(feedbackServiceProvider);
+  await service.load();
+  if (!context.mounted) return;
+  if (service.byId(feedbackId) == null) {
+    await openFeedbackCenter(context, captureScreen: false);
+    return;
+  }
+  await Navigator.of(context).push(
+    adaptivePageRoute<void>(
+      context: context,
+      builder: (_) => FeedbackDetailPage(feedbackId: feedbackId),
+    ),
+  );
+}
 
 String feedbackStatusLabel(FeedbackStatus status) => switch (status) {
   FeedbackStatus.open => t.feedback_status_open,
