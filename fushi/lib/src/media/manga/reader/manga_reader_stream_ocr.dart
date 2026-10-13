@@ -102,7 +102,6 @@ Future<MangaStreamOcrSetup> prepareMangaStreamOcr({
   required String lensLanguage,
   required Future<bool> Function() confirmLensUpload,
   MangaAiOcrContext? aiContext,
-  Future<void> Function()? decideAiDefault,
 }) async {
   final MangaOcrEngineAvailability availability = await probeMangaOcrEngines(
     engines,
@@ -124,12 +123,20 @@ Future<MangaStreamOcrSetup> prepareMangaStreamOcr({
   );
   if (setup is! MangaStreamOcrReady) return setup;
   // 用户在场：档位还没选过时在这里问一次「默认交给 LLM」（见
-  // ensureMangaAiOcrDefaultDecided），工厂随后按新档位建实例。
-  await decideAiDefault?.call();
+  // MangaOcrWizardEngines.decideAiDefault），工厂随后按新档位建实例。
+  await engines.decideAiDefault?.call();
   final MangaAiOcrRefiner? refiner = engines.aiRefinerFactory?.call();
   if (refiner == null) return setup;
-  // 漫画默认按 OCR 语言设置当期望语言；字幕由调用方给（轨语言 + 视频标题）。
-  refiner.context = aiContext ?? MangaAiOcrContext(language: lensLanguage);
+  // 期望语言：字幕由调用方给（轨语言 + 视频标题）。漫画只有引擎是 Lens 时才用
+  // Lens 的识别语言——它是 Lens 自己的设置，对系统 OCR / 配对主机说明不了这本书
+  // 是什么语言；拿错语言会让「低置信度」按书写系统不符把整章都送出去。
+  refiner.context =
+      aiContext ??
+      MangaAiOcrContext(
+        language: setup.engine == MangaOcrEngineId.googleLens
+            ? lensLanguage
+            : null,
+      );
   return MangaStreamOcrReady(
     setup.engine,
     setup.recognizer,

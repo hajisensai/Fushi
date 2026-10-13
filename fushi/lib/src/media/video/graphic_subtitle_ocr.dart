@@ -309,6 +309,7 @@ class GraphicSubtitleOcrSession {
           block: block,
           crop: Isolate.run(() => graphicSubtitleAiCrop(image)),
           onError: onRefineError,
+          localText: text,
         ),
         ai,
       );
@@ -363,7 +364,7 @@ class GraphicSubtitleOcrSession {
       if (sent.isEmpty || _closed) return;
       // 附近文字不重复本批自己的本地猜测（那些已逐条写在请求里）。
       final Set<String> own = <String>{
-        for (final _SubtitleAiItem item in batch) item.block.lines.join(),
+        for (final _SubtitleAiItem item in batch) item.localText,
       };
       final List<String?> texts = await ai.refineCrops(
         <MangaAiOcrCropRequest>[
@@ -502,10 +503,14 @@ class _SubtitleAiItem {
     required this.block,
     required this.crop,
     required this.onError,
+    required this.localText,
   });
 
   final _SubtitleEntry entry;
   final MokuroBlock block;
+
+  /// 本地识别出的整条文字（与 [GraphicSubtitleOcrSession] 记进最近台词的同一串）。
+  final String localText;
   final Future<Uint8List?> crop;
   final void Function(Object error, StackTrace stack)? onError;
 }

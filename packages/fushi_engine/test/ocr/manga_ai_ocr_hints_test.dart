@@ -116,6 +116,14 @@ void main() {
       );
     });
 
+    test('中日文里 ≤3 字母的大写 / 全角缩写不算可疑，小写或更长的仍算', () {
+      expect(isSuspectMangaOcrText('OK', language: 'ja'), isFalse);
+      expect(isSuspectMangaOcrText('ＮＧ！', language: 'ja'), isFalse);
+      expect(isSuspectMangaOcrText('TV', language: 'zh'), isFalse);
+      expect(isSuspectMangaOcrText('abc', language: 'ja'), isTrue);
+      expect(isSuspectMangaOcrText('HELLO', language: 'ja'), isTrue);
+    });
+
     test('韩文没有谚文却有拉丁字母；拉丁语言混进中日韩文字', () {
       expect(isSuspectMangaOcrText('Il0', language: 'ko'), isTrue);
       expect(isSuspectMangaOcrText('안녕하세요', language: 'ko'), isFalse);

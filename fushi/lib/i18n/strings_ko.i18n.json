@@ -7059,5 +7059,7 @@
   "ocr_llm_default_title": "Let an LLM fix uncertain OCR?",
   "ocr_llm_default_body": "Text boxes the OCR isn't sure about will be cropped and sent to ${provider} to re-read, billed by that provider. The local OCR result and nearby text go along to help it decide. You can change this anytime in Settings › Models › OCR.",
   "ocr_llm_default_accept": "Turn on",
-  "ocr_llm_default_decline": "Not now"
+  "ocr_llm_default_decline": "Not now",
+  "manga_ocr_ai_mode_pending": "Not decided yet: you'll be asked the first time uncertain text would be sent.",
+  "manga_ocr_ai_mode_confirm_default": "Turn on now"
 }

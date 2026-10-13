@@ -687,7 +687,8 @@ bool isSuspectMangaOcrText(String text, {String? language}) {
   final bool hasHangul = runes.any(_isHangul);
   switch (lang) {
     case 'ja' || 'zh':
-      if (hasLatin && !hasCjk) return true;
+      // 「OK」「TV」「NG」「Ｈ」这类 ≤3 字母的大写 / 全角缩写在中日文里本来就常见。
+      if (hasLatin && !hasCjk) return !_isShortCapsAbbreviation(runes);
       for (int i = 1; i + 1 < runes.length; i++) {
         if (_isLatinLetter(runes[i]) &&
             _isCjkOrKana(runes[i - 1]) &&
@@ -701,6 +702,15 @@ bool isSuspectMangaOcrText(String text, {String? language}) {
     default:
       return _latinScriptLanguages.contains(lang) && (hasCjk || hasHangul);
   }
+}
+
+/// 整块是不超过 3 个大写 / 全角拉丁字母（可带标点数字）：`OK`、`ＮＧ！`、`TV`。
+bool _isShortCapsAbbreviation(List<int> runes) {
+  final List<int> letters = runes.where(_isLatinLetter).toList();
+  if (letters.isEmpty || letters.length > 3) return false;
+  return letters.every(
+    (int r) => (r >= 0x41 && r <= 0x5A) || (r >= 0xFF21 && r <= 0xFF3A),
+  );
 }
 
 /// 用拉丁字母书写的常见语言（[isSuspectMangaOcrText] 的「混进中日韩文字」判据）。

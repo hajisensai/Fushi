@@ -1258,7 +1258,36 @@ class _MangaOcrSettingsSectionState
         !(widget.aiProviderReady?.call() ?? false);
     final Future<void> Function(BuildContext context)? openAiSettings =
         widget.openAiSettings;
+    // 档位没定（偏好空串）且有提供商接：说明首次会问，并给一个当场确认默认档的
+    // 入口——分段控件点已选中项不回调，否则用户在这里无法「选定」默认的低置信度。
+    final bool pendingDefault =
+        !_aiModeChosen &&
+        widget.aiModeSetter != null &&
+        (widget.aiProviderReady?.call() ?? false);
     final List<Widget> notes = <Widget>[
+      if (pendingDefault) ...<Widget>[
+        Text(
+          t.manga_ocr_ai_mode_pending,
+          key: const ValueKey<String>('manga_ocr_ai_mode_pending'),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: fushiNeutralSecondaryForeground(context),
+          ),
+        ),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FushiFilledButton.tonalIcon(
+            key: const ValueKey<String>('manga_ocr_ai_mode_confirm_default'),
+            onPressed: () async {
+              setState(() => _aiModeChosen = true);
+              await widget.aiModeSetter!(
+                MangaAiOcrMode.lowConfidence.storageKey,
+              );
+            },
+            icon: const FushiIcon(FushiIcons.ai, size: 18),
+            label: Text(t.manga_ocr_ai_mode_confirm_default),
+          ),
+        ),
+      ],
       if (_aiMode == MangaAiOcrMode.lowConfidence)
         Text(
           t.manga_ocr_ai_mode_low_confidence_legacy,

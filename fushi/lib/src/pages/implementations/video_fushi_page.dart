@@ -6516,9 +6516,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       lensLanguage: appModel.mangaOcrLensLanguage,
       confirmLensUpload: () async =>
           mounted && await ensureGoogleLensDisclosure(context),
-      decideAiDefault: () async {
-        if (mounted) await ensureMangaAiOcrDefaultDecided(context, appModel);
-      },
       aiContext: MangaAiOcrContext(
         source: MangaAiOcrSource.subtitle,
         title: _title,

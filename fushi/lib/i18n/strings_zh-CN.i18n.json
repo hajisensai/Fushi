@@ -7059,5 +7059,7 @@
   "ocr_llm_default_title": "让 LLM 纠正没把握的 OCR 结果？",
   "ocr_llm_default_body": "OCR 没把握的文字框会裁图上传给 ${provider} 重读，并由其计费；本地识别结果与附近文字会一并附上帮助判断。可随时在「设置 › 模型 › OCR」里更改。",
   "ocr_llm_default_accept": "开启",
-  "ocr_llm_default_decline": "不用"
+  "ocr_llm_default_decline": "不用",
+  "manga_ocr_ai_mode_pending": "尚未决定：第一次要发送没把握的文字时会询问。",
+  "manga_ocr_ai_mode_confirm_default": "现在开启"
 }

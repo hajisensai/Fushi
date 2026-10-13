@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/external_mokuro_runner.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/media/manga/ocr/ocr_llm_default_consent.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -80,6 +81,7 @@ class MangaOcrWizardEngines {
     this.localModelSetter,
     this.modelServiceFor,
     this.aiRefinerFactory,
+    this.decideAiDefault,
   });
 
   /// 生产依赖集的**唯一**装配点。所有入口都必须经此，不得再手抄参数表。
@@ -116,6 +118,7 @@ class MangaOcrWizardEngines {
       modelServiceFor: (MangaOcrLocalModel model) =>
           createMangaOcrService(localModel: model),
       aiRefinerFactory: () => createMangaAiOcrRefiner(appModel),
+      decideAiDefault: () => ensureMangaAiOcrDefaultDecided(context, appModel),
     );
   }
 
@@ -138,6 +141,7 @@ class MangaOcrWizardEngines {
       localModelSetter: localModelSetter,
       modelServiceFor: modelServiceFor,
       aiRefinerFactory: aiRefinerFactory,
+      decideAiDefault: decideAiDefault,
     );
   }
 
@@ -184,4 +188,9 @@ class MangaOcrWizardEngines {
   /// 或返回 null = 不经大模型。工厂而非实例：识别器带「本卷鉴权已失败」的状态，
   /// 不能跨任务共用，也要跟着设置的最新值走。
   final MangaAiOcrRefiner? Function()? aiRefinerFactory;
+
+  /// 用户在场的入口开跑前调一次：档位没选过时问「默认交给 LLM」
+  /// （[ensureMangaAiOcrDefaultDecided]），之后 [aiRefinerFactory] 按新档位建实例。
+  /// 与工厂同一个装配点；null（测试直连）= 不问。后台路径不调它。
+  final Future<void> Function()? decideAiDefault;
 }

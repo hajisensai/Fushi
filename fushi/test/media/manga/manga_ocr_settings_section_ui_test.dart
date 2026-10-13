@@ -333,6 +333,40 @@ void main() {
     });
   }
 
+  testWidgets('AI mode unset with a provider: pending note + confirm default',
+      (WidgetTester tester) async {
+    String value = '';
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: _FakeOcrService(ready: true),
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      aiModeGetter: () => value,
+      aiModeSetter: (String next) async => value = next,
+      aiProviderReady: () => true,
+    )));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('manga_ocr_ai_mode_pending'),
+          skipOffstage: false),
+      findsOneWidget,
+    );
+    final Finder confirm = find.byKey(
+      const ValueKey<String>('manga_ocr_ai_mode_confirm_default'),
+      skipOffstage: false,
+    );
+    await tester.ensureVisible(confirm);
+    await tester.tap(confirm);
+    await tester.pumpAndSettle();
+    expect(value, 'low_confidence', reason: '点「现在开启」写入默认档');
+    expect(
+      find.byKey(const ValueKey<String>('manga_ocr_ai_mode_pending'),
+          skipOffstage: false),
+      findsNothing,
+      reason: '选定后不再显示「尚未决定」',
+    );
+  });
+
   testWidgets('lens language row is absent without a language setter',
       (WidgetTester tester) async {
     final _FakeOcrService service = _FakeOcrService(ready: true);
