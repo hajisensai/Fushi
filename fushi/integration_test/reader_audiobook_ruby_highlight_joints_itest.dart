@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -293,7 +294,8 @@ Future<List<String>> _runMode(
     // 跳句后播放：播放中的跟读高亮才会把视口 / VN 屏带到这一句（暂停态是被动高亮，
     // 按设计不动视口，VN 不换屏）。每句 4 秒，在本句播放期间量完再暂停。
     await controller.skipToCueIndex(i);
-    await controller.play();
+    // just_audio 的 play() 在播放停下 / 放完时才完成（macOS 原生后端如此），不能 await。
+    unawaited(controller.play());
     Map<String, dynamic>? m;
     Map<String, dynamic>? last;
     final String want = sentences[i];
