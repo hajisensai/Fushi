@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2983 条。点号进各自文件。
+> 共 2989 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -42,7 +42,13 @@
 | [BUG-3308](bugs/BUG-3308-popup-round-button-press-square.md) | ✅ | ✅ | 查词弹窗点「+」制卡按钮时闪出完全直角的方块 |
 | [BUG-3297](bugs/BUG-3297-subtitle-list-open-remeasure.md) | ✅ | ✅ | 视频字幕列表每次打开都把当前句之前的行重新排版两遍 |
 | [BUG-3296](bugs/BUG-3296-video-enhance-off-vertical-squash.md) | 🚧 | 🚧 | Windows 关闭画质增强后画面纵向被压扁约 0.74% |
+| [BUG-3295](bugs/BUG-3295-ios-popup-m3e-color.md) | 🚧 | 🚧 | iOS 查词框没有上 M3E 着色（未复现） |
+| [BUG-3294](bugs/BUG-3294-popup-mine-button-blue-box.md) | 🚧 | 🚧 | 点制卡按钮出现蓝色方框背景（未复现） |
+| [BUG-3293](bugs/BUG-3293-popup-loading-spinner-lingers.md) | ✅ | ✅ | 查词加载指示器在结果出来后仍压着结果转 |
+| [BUG-3292](bugs/BUG-3292-reader-popup-under-floating-chrome.md) | ✅ | ✅ | 阅读器悬浮底栏/迷你播放条盖住查词弹窗 |
 | [BUG-3291](bugs/BUG-3291-clip-export-drops-ass-style.md) | ✅ | ✅ | 片段导出烧字幕丢失原字幕颜色与加粗 |
+| [BUG-3288](bugs/BUG-3288-popup-headword-wheel-scroll.md) | ✅ | ✅ | 查词弹窗词头放得下仍可被滚轮纵向滚动 |
+| [BUG-3287](bugs/BUG-3287-video-subtitle-highlight-stroke.md) | ✅ | ✅ | 视频字幕查词高亮底色盖不住 .ass 描边 |
 | [BUG-3286](bugs/BUG-3286-video-fullscreen-file-dialog-hidden.md) | ✅ | ✅ | 视频全屏时系统文件对话框被压在全屏窗口下 |
 | [BUG-3285](bugs/BUG-3285-video-skip-cue-stale-subtitle-stack.md) | ✅ | ✅ | 上/下一句跳转旧字幕残留、新句被顶高 |
 | [BUG-3284](bugs/BUG-3284-android-torrent-libcxx-shared.md) | ✅ | ✅ | Android 内置下载引擎 dlopen 失败被判缺少运行库 |

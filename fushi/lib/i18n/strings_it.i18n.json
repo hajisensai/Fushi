@@ -7054,5 +7054,7 @@
   "video_setting_pause_ocr_hard_subtitle_hint": "For hardcoded subtitles: when no text subtitle is loaded, recognize the paused frame so you can tap words to look them up",
   "resource_version_select_all": "Select all $n files",
   "anime_download_filter_episode": "Episode $n only",
-  "anime_download_filter_single": "Single episodes"
+  "anime_download_filter_single": "Single episodes",
+  "popup_mining_target_switch": "Switch profile or deck",
+  "popup_mining_target_empty": "No profiles or decks yet. Connect Anki in settings first."
 }

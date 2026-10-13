@@ -90,6 +90,30 @@ double bottomChromeReserve({
   return chromeHeight;
 }
 
+/// 查词弹窗的底部避让高（逻辑 px，BUG-3292）：弹窗不能排进底部 chrome 此刻**真的
+/// 画着**的那块区域。
+///
+///  * 挤压底栏占位（[squeezeReserve] > 0）→ [readerBottomReserve]（正文的同一份预留）。
+///  * 悬浮底部件此刻在画（[floatingChromePainted]：迷你播放条 / 悬浮工具栏被点出来、
+///    且有东西可画）→ [paintedFooterBand] + [floatingChromeExtent]：悬浮件坐在
+///    状态行带之上、自身连外边距高 [floatingChromeExtent]。此前悬浮态一律 0
+///    （「悬浮底栏不占正文位置」），但悬浮件排在查词弹层**之后**绘制，弹窗按「底部
+///    没东西」排版，被迷你播放条与工具栏盖住下半截（用户：查词「格式出现问题」）。
+///  * 其余 → 0（悬浮件收起时弹窗照旧用满到屏底）。
+double readerPopupBottomReserve({
+  required double squeezeReserve,
+  required double readerBottomReserve,
+  required bool floatingChromePainted,
+  required double floatingChromeExtent,
+  required double paintedFooterBand,
+}) {
+  if (squeezeReserve > 0) return readerBottomReserve;
+  if (floatingChromePainted && floatingChromeExtent > 0) {
+    return paintedFooterBand + floatingChromeExtent;
+  }
+  return 0;
+}
+
 /// BUG-379 / BUG-1343 / BUG-1381：**独立 HTML 文档**（歌词模式 [LyricsModeHtml]、
 /// spread 整页图）的 WebView 四周留白，是「阅读器页给独立文档留多少空间」的唯一真相源。
 ///
@@ -178,8 +202,7 @@ bool bottomBarVisible({
 bool readerToolbarsHidden({
   required bool hideToolbarsPreference,
   required bool inAppFloatingBallEnabled,
-}) =>
-    hideToolbarsPreference && inAppFloatingBallEnabled;
+}) => hideToolbarsPreference && inAppFloatingBallEnabled;
 
 /// BUG-1195：视觉小说（VN）模式下一次「空白点击」的归宿。
 enum ReaderVnBlankTapAction {
@@ -288,8 +311,7 @@ bool topProgressUsesFrostedGlass({required bool floating}) => floating;
 bool topProgressPillShowsBlur({
   required bool floating,
   required bool obscured,
-}) =>
-    topProgressUsesFrostedGlass(floating: floating) && !obscured;
+}) => topProgressUsesFrostedGlass(floating: floating) && !obscured;
 
 /// 阅读器「工具栏样式」偏好（`reader_toolbar_style`）是否走悬浮形态。
 ///

@@ -1166,6 +1166,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             ? onMineFromPopup
             : _mineBlockedByModuleGate,
         onUpdateEntry: cardCreationEnabled ? onUpdateFromPopup : null,
+        // 用户建议 #fiwDIpFep7：顶栏就地切配置 / 牌组，随制卡模块开关。
+        showMiningTargetSwitch: cardCreationEnabled,
         // TODO-948②：阅读器/有声书弹窗收藏按钮接线（视频走 mixin，不经此处）。
         onFavoriteEntry: onFavoriteFromPopup,
         onFavoriteCheck: onFavoriteCheckFromPopup,

@@ -63,6 +63,68 @@ void main() {
       );
     });
 
+    // BUG-3292：查词弹窗避让悬浮底部件——悬浮件画在弹层之上，点出来时弹窗必须让开。
+    group('popup bottom reserve (BUG-3292)', () {
+      test('squeeze bar occupying -> reader bottom reserve', () {
+        expect(
+          readerPopupBottomReserve(
+            squeezeReserve: 56,
+            readerBottomReserve: 90,
+            floatingChromePainted: false,
+            floatingChromeExtent: 0,
+            paintedFooterBand: 0,
+          ),
+          90,
+        );
+      });
+
+      test('floating chrome painted -> footer band + floating extent', () {
+        expect(
+          readerPopupBottomReserve(
+            squeezeReserve: 0,
+            readerBottomReserve: 34,
+            floatingChromePainted: true,
+            floatingChromeExtent: 152,
+            paintedFooterBand: 40,
+          ),
+          192,
+        );
+      });
+
+      test('floating chrome hidden or empty -> 0', () {
+        expect(
+          readerPopupBottomReserve(
+            squeezeReserve: 0,
+            readerBottomReserve: 34,
+            floatingChromePainted: false,
+            floatingChromeExtent: 152,
+            paintedFooterBand: 40,
+          ),
+          0,
+        );
+        expect(
+          readerPopupBottomReserve(
+            squeezeReserve: 0,
+            readerBottomReserve: 34,
+            floatingChromePainted: true,
+            floatingChromeExtent: 0,
+            paintedFooterBand: 40,
+          ),
+          0,
+        );
+      });
+
+      test('reader page wires popupBottomReserve through the helper', () {
+        final String page = readReaderPageSource();
+        expect(page, contains('double get popupBottomReserve => '
+            'readerPopupBottomReserve('));
+        expect(
+          page,
+          contains('_floatingToolbars && !_lyricsMode && _bottomBarShouldPaint'),
+        );
+      });
+    });
+
     test('bottom reserve: floating -> 0 even when occupying', () {
       expect(
         bottomChromeReserve(
