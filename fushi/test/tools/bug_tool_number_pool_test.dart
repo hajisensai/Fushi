@@ -53,7 +53,8 @@ String readFile(Directory root, String rel) =>
 bool exists(Directory root, String rel) =>
     File('${root.path}/$rel').existsSync();
 
-const String indexShell = '# Bug 跟踪\n\n---\n\n'
+const String indexShell =
+    '# Bug 跟踪\n\n---\n\n'
     '<!-- BUGS-INDEX:BEGIN -->\n<!-- BUGS-INDEX:END -->\n';
 
 String bugDoc(int n, String title) =>
@@ -108,15 +109,22 @@ void main() {
     final root = makeBareFixture('bug_renumber_');
     temps.add(root);
     writeFile(
-        root,
-        'docs/bugs/BUG-005-foo.md',
-        '## BUG-005 · 示例标题\n- **[x] ① 已修复** — abc123\n'
-            '- **[x] ② 已加自动化测试** — fushi/test/tools/bug_005_foo_test.dart\n');
+      root,
+      'docs/bugs/BUG-005-foo.md',
+      '## BUG-005 · 示例标题\n- **[x] ① 已修复** — abc123\n'
+          '- **[x] ② 已加自动化测试** — fushi/test/tools/bug_005_foo_test.dart\n',
+    );
     writeFile(root, 'docs/bugs/BUG-006-bar.md', bugDoc(6, '另一条'));
-    writeFile(root, 'lib/foo.dart',
-        '// 修 BUG-005：根因在 foo.dart:42。debug-005 与 BUG-0055 都不该被改。\nvoid main() {}\n');
-    writeFile(root, 'fushi/test/tools/bug_005_foo_test.dart',
-        "void main() {\n  test('BUG-005 回归守卫', () {});\n}\n");
+    writeFile(
+      root,
+      'lib/foo.dart',
+      '// 修 BUG-005：根因在 foo.dart:42。debug-005 与 BUG-0055 都不该被改。\nvoid main() {}\n',
+    );
+    writeFile(
+      root,
+      'fushi/test/tools/bug_005_foo_test.dart',
+      "void main() {\n  test('BUG-005 回归守卫', () {});\n}\n",
+    );
     git(root, <String>['init', '-q', '.']);
     git(root, <String>['config', 'user.email', 'fixture@example.com']);
     git(root, <String>['config', 'user.name', 'fixture']);
@@ -131,17 +139,19 @@ void main() {
   group('bug.dart renumber：一条命令改四处 + 自校验', () {
     test('文件名 / 正文 H2 / 代码引用 / 测试名与测试文件名四处同步改，且 git 记为改名', () async {
       final root = enterRenumberFixture();
-      await bug.cmdRenumber(
-        <String>['5', '9'],
-        scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6}),
-      );
+      await bug.cmdRenumber(<String>[
+        '5',
+        '9',
+      ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6}));
 
       // ① 文件名
       expect(exists(root, 'docs/bugs/BUG-005-foo.md'), isFalse);
       expect(exists(root, 'docs/bugs/BUG-009-foo.md'), isTrue);
       // ② 正文 H2（守卫测试按 H2 判重号，只改文件名会 CI 红）
-      expect(readFile(root, 'docs/bugs/BUG-009-foo.md'),
-          startsWith('## BUG-009 · '));
+      expect(
+        readFile(root, 'docs/bugs/BUG-009-foo.md'),
+        startsWith('## BUG-009 · '),
+      );
       // ③ 代码引用；同时不许误伤 debug-005 / BUG-0055
       final lib = readFile(root, 'lib/foo.dart');
       expect(lib, contains('修 BUG-009：'));
@@ -149,18 +159,26 @@ void main() {
       expect(lib, contains('BUG-0055'));
       // ④ 测试名 + 测试文件名
       expect(exists(root, 'fushi/test/tools/bug_009_foo_test.dart'), isTrue);
-      expect(readFile(root, 'fushi/test/tools/bug_009_foo_test.dart'),
-          contains("test('BUG-009 回归守卫'"));
+      expect(
+        readFile(root, 'fushi/test/tools/bug_009_foo_test.dart'),
+        contains("test('BUG-009 回归守卫'"),
+      );
       // bug 文件正文里指向测试文件的路径也跟着改
-      expect(readFile(root, 'docs/bugs/BUG-009-foo.md'),
-          contains('fushi/test/tools/bug_009_foo_test.dart'));
+      expect(
+        readFile(root, 'docs/bugs/BUG-009-foo.md'),
+        contains('fushi/test/tools/bug_009_foo_test.dart'),
+      );
       // 索引自动重建
-      expect(readFile(root, 'docs/BUGS.md'),
-          contains('[BUG-009](bugs/BUG-009-foo.md)'));
+      expect(
+        readFile(root, 'docs/BUGS.md'),
+        contains('[BUG-009](bugs/BUG-009-foo.md)'),
+      );
       expect(readFile(root, 'docs/BUGS.md'), isNot(contains('BUG-005')));
       // git mv 保留历史（porcelain 里是 R）
-      final status = Process.runSync('git', <String>['status', '--porcelain'],
-          workingDirectory: root.path);
+      final status = Process.runSync('git', <String>[
+        'status',
+        '--porcelain',
+      ], workingDirectory: root.path);
       expect(status.stdout as String, contains('R'));
       expect(bug.cmdCheck(), 0);
     });
@@ -168,10 +186,10 @@ void main() {
     test('自校验口径：改号前扫得到残留，改号后归零', () async {
       enterRenumberFixture();
       expect(await bug.findResidualRefs(5), isNotEmpty);
-      await bug.cmdRenumber(
-        <String>['5', '9'],
-        scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6}),
-      );
+      await bug.cmdRenumber(<String>[
+        '5',
+        '9',
+      ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6}));
       expect(await bug.findResidualRefs(5), isEmpty);
       expect(await bug.findResidualRefs(9), isNotEmpty);
     });
@@ -181,12 +199,17 @@ void main() {
     test('目标号本地已被占用 → 抛错且一个文件都不动', () async {
       final root = enterRenumberFixture();
       await expectLater(
-        bug.cmdRenumber(
-          <String>['5', '6'],
-          scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6}),
+        bug.cmdRenumber(<String>[
+          '5',
+          '6',
+        ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6})),
+        throwsA(
+          isA<bug.BugToolError>().having(
+            (bug.BugToolError e) => e.message,
+            'message',
+            contains('本地已被占用'),
+          ),
         ),
-        throwsA(isA<bug.BugToolError>().having(
-            (bug.BugToolError e) => e.message, 'message', contains('本地已被占用'))),
       );
       expect(exists(root, 'docs/bugs/BUG-005-foo.md'), isTrue);
       expect(readFile(root, 'lib/foo.dart'), contains('BUG-005'));
@@ -196,14 +219,17 @@ void main() {
     test('目标号被其它分支占用（跨分支扫描口径）→ 抛错且不动文件', () async {
       final root = enterRenumberFixture();
       await expectLater(
-        bug.cmdRenumber(
-          <String>['5', '9'],
-          scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6, 9}),
-        ),
-        throwsA(isA<bug.BugToolError>().having(
+        bug.cmdRenumber(<String>[
+          '5',
+          '9',
+        ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6, 9})),
+        throwsA(
+          isA<bug.BugToolError>().having(
             (bug.BugToolError e) => e.message,
             'message',
-            contains('已被其它分支占用'))),
+            contains('已被其它分支占用'),
+          ),
+        ),
       );
       expect(exists(root, 'docs/bugs/BUG-005-foo.md'), isTrue);
       expect(exists(root, 'docs/bugs/BUG-009-foo.md'), isFalse);
@@ -212,24 +238,34 @@ void main() {
     test('<old> 不存在 → 抛错', () async {
       enterRenumberFixture();
       await expectLater(
-        bug.cmdRenumber(
-          <String>['404', '405'],
-          scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{}),
+        bug.cmdRenumber(<String>[
+          '404',
+          '405',
+        ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{})),
+        throwsA(
+          isA<bug.BugToolError>().having(
+            (bug.BugToolError e) => e.message,
+            'message',
+            contains('不存在'),
+          ),
         ),
-        throwsA(isA<bug.BugToolError>().having(
-            (bug.BugToolError e) => e.message, 'message', contains('不存在'))),
       );
     });
 
     test('非纯数字参数 → 抛错', () async {
       enterRenumberFixture();
       await expectLater(
-        bug.cmdRenumber(
-          <String>['BUG-005', '9'],
-          scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{}),
+        bug.cmdRenumber(<String>[
+          'BUG-005',
+          '9',
+        ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{})),
+        throwsA(
+          isA<bug.BugToolError>().having(
+            (bug.BugToolError e) => e.message,
+            'message',
+            contains('纯数字'),
+          ),
         ),
-        throwsA(isA<bug.BugToolError>().having(
-            (bug.BugToolError e) => e.message, 'message', contains('纯数字'))),
       );
     });
   });
@@ -241,15 +277,18 @@ void main() {
       final beforeDoc = readFile(root, 'docs/bugs/BUG-005-foo.md');
       final beforeIndex = readFile(root, 'docs/BUGS.md');
 
-      await bug.cmdRenumber(
-        <String>['5', '9', '--dry-run'],
-        scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6}),
-      );
+      await bug.cmdRenumber(<String>[
+        '5',
+        '9',
+        '--dry-run',
+      ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6}));
 
       final printed = out.join('\n');
       expect(printed, contains('[dry-run]'));
-      expect(printed,
-          contains('docs/bugs/BUG-005-foo.md  →  docs/bugs/BUG-009-foo.md'));
+      expect(
+        printed,
+        contains('docs/bugs/BUG-005-foo.md  →  docs/bugs/BUG-009-foo.md'),
+      );
       expect(printed, contains('fushi/test/tools/bug_005_foo_test.dart'));
       expect(printed, contains('lib/foo.dart:1'));
       // 落盘检查：文件名与内容全部原样
@@ -276,8 +315,10 @@ void main() {
     });
 
     test('renameNumberInPath 只动文件名部分', () {
-      expect(bug.renameNumberInPath('docs/bugs/BUG-005-foo.md', 5, 9),
-          'docs/bugs/BUG-009-foo.md');
+      expect(
+        bug.renameNumberInPath('docs/bugs/BUG-005-foo.md', 5, 9),
+        'docs/bugs/BUG-009-foo.md',
+      );
       expect(bug.renameNumberInPath('bug-005/inner/other.dart', 5, 9), isNull);
       expect(bug.renameNumberInPath('lib/foo.dart', 5, 9), isNull);
     });
@@ -323,12 +364,12 @@ void main() {
     return worker;
   }
 
-  group('bug.dart new：跨分支取号', () {
+  group('bug.dart new --scan：跨分支取号', () {
     test('clone 之后别人才 push 的号也能扫到（真 fetch）→ 取全局最大 +1，无降级警告', () async {
       final worker = makeRemoteFixture(pushPeerBeforeClone: false);
       Directory.current = worker;
 
-      await bug.cmdNew(<String>['some-slug', '标题']);
+      await bug.cmdNew(<String>['some-slug', '标题', '--scan']);
 
       // 本地只看得到 BUG-003；远端 peer 分支占了 020 → 必须取 021 而不是 004。
       expect(exists(worker, 'docs/bugs/BUG-021-some-slug.md'), isTrue);
@@ -344,10 +385,10 @@ void main() {
         'remote',
         'set-url',
         'origin',
-        '${worker.path}/does-not-exist.git'
+        '${worker.path}/does-not-exist.git',
       ]);
 
-      await bug.cmdNew(<String>['offline-slug', '标题']);
+      await bug.cmdNew(<String>['offline-slug', '标题', '--scan']);
 
       final warned = warn.join('\n');
       expect(warned, contains('未能刷新远端分支'));
@@ -362,11 +403,23 @@ void main() {
       writeFile(root, 'docs/bugs/BUG-003-base.md', bugDoc(3, '基线'));
       Directory.current = root;
 
-      await bug.cmdNew(<String>['nogit-slug', '标题']);
+      await bug.cmdNew(<String>['nogit-slug', '标题', '--scan']);
 
       final warned = warn.join('\n');
       expect(warned, contains('未能扫描分支/工作区'));
       expect(warned, contains('可能与并发分支相撞'));
+      expect(exists(root, 'docs/bugs/BUG-004-nogit-slug.md'), isTrue);
+    });
+
+    test('默认口径不在 git 仓库里 → 只按本地取号，并说明拿不到基线', () async {
+      final root = makeBareFixture('bug_nogit_default_');
+      temps.add(root);
+      writeFile(root, 'docs/bugs/BUG-003-base.md', bugDoc(3, '基线'));
+      Directory.current = root;
+
+      await bug.cmdNew(<String>['nogit-slug', '标题']);
+
+      expect(warn.join('\n'), contains('拿不到基线'));
       expect(exists(root, 'docs/bugs/BUG-004-nogit-slug.md'), isTrue);
     });
 
@@ -376,12 +429,14 @@ void main() {
       writeFile(root, 'docs/bugs/BUG-003-base.md', bugDoc(3, '基线'));
       Directory.current = root;
 
-      await bug.cmdNew(
-        <String>['stub-slug'],
-        scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{3, 41}),
+      await bug.cmdNew(<String>[
+        'stub-slug',
+      ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{3, 41}));
+      expect(
+        exists(root, 'docs/bugs/BUG-042-stub-slug.md'),
+        isTrue,
+        reason: '要取「本地最大与跨分支最大」的全局最大 +1',
       );
-      expect(exists(root, 'docs/bugs/BUG-042-stub-slug.md'), isTrue,
-          reason: '要取「本地最大与跨分支最大」的全局最大 +1');
       expect(warn, isEmpty);
     });
   });
@@ -393,35 +448,45 @@ void main() {
   /// 在 [worker] 旁边挂一个 `git worktree`，并在里面写一个**未提交**的 bug 文件。
   /// 这就是 `bug.dart new` 写完文件、还没 commit 的那几十分钟的真实状态。
   Directory addSiblingWorktreeWithUncommittedBug(
-      Directory worker, int number, String slug) {
+    Directory worker,
+    int number,
+    String slug,
+  ) {
     final sibling = Directory('${worker.parent.path}/wt-$slug');
     git(worker, <String>['worktree', 'add', '--detach', sibling.path, 'HEAD']);
     writeFile(
-        sibling,
-        'docs/bugs/BUG-${number.toString().padLeft(3, '0')}-$slug.md',
-        bugDoc(number, '并发工作区里刚 new 出来、还没 commit'));
+      sibling,
+      'docs/bugs/BUG-${number.toString().padLeft(3, '0')}-$slug.md',
+      bugDoc(number, '并发工作区里刚 new 出来、还没 commit'),
+    );
     return sibling;
   }
 
-  group('bug.dart new：号池盲区（BUG-1429）', () {
+  group('bug.dart new --scan：号池盲区（BUG-1429）', () {
     test('并发工作区里**未提交**的 bug 文件必须算已占（一天连撞六次的根因）', () async {
       final worker = makeRemoteFixture(pushPeerBeforeClone: true);
       Directory.current = worker;
       // 邻居工作区刚 `new` 出 BUG-050，还没 commit——任何 commit 树里都没有它。
       addSiblingWorktreeWithUncommittedBug(worker, 50, 'neighbour');
 
-      await bug.cmdNew(<String>['mine', '标题']);
+      await bug.cmdNew(<String>['mine', '标题', '--scan']);
 
-      expect(exists(worker, 'docs/bugs/BUG-051-mine.md'), isTrue,
-          reason: '未提交的 BUG-050 必须算已占；取 021/050 都是撞号');
+      expect(
+        exists(worker, 'docs/bugs/BUG-051-mine.md'),
+        isTrue,
+        reason: '未提交的 BUG-050 必须算已占；取 021/050 都是撞号',
+      );
       expect(exists(worker, 'docs/bugs/BUG-050-mine.md'), isFalse);
     });
 
     test('未提交文件的占用证据要写清「哪个工作区」，不是只给一个数字', () async {
       final worker = makeRemoteFixture(pushPeerBeforeClone: true);
       Directory.current = worker;
-      final sibling =
-          addSiblingWorktreeWithUncommittedBug(worker, 50, 'neighbour');
+      final sibling = addSiblingWorktreeWithUncommittedBug(
+        worker,
+        50,
+        'neighbour',
+      );
 
       final scan = await bug.scanBranchBugNumbers();
 
@@ -429,10 +494,16 @@ void main() {
       final described = scan.occupancy.describe(50);
       expect(described, contains('已被'));
       expect(described, contains('BUG-050-neighbour.md'));
-      expect(described, contains(sibling.path.replaceAll(r'\', '/')),
-          reason: '得说清是哪个工作区占的，否则没法判断该找谁改号');
-      expect(scan.worktreeCount, greaterThanOrEqualTo(2),
-          reason: '主工作区 + 邻居工作区都要扫到，实际 ${scan.worktreeCount}');
+      expect(
+        described,
+        contains(sibling.path.replaceAll(r'\', '/')),
+        reason: '得说清是哪个工作区占的，否则没法判断该找谁改号',
+      );
+      expect(
+        scan.worktreeCount,
+        greaterThanOrEqualTo(2),
+        reason: '主工作区 + 邻居工作区都要扫到，实际 ${scan.worktreeCount}',
+      );
     });
 
     test('远端不可达（降级）时，本机并发工作区的未提交号仍然看得见', () async {
@@ -443,14 +514,17 @@ void main() {
         'remote',
         'set-url',
         'origin',
-        '${worker.path}/does-not-exist.git'
+        '${worker.path}/does-not-exist.git',
       ]);
 
-      await bug.cmdNew(<String>['mine', '标题']);
+      await bug.cmdNew(<String>['mine', '标题', '--scan']);
 
       expect(warn.join('\n'), contains('未能刷新远端分支'), reason: '降级必须显式警告');
-      expect(exists(worker, 'docs/bugs/BUG-061-mine.md'), isTrue,
-          reason: '网络断了不影响本机工作区扫描——本机并发才是撞号的大头');
+      expect(
+        exists(worker, 'docs/bugs/BUG-061-mine.md'),
+        isTrue,
+        reason: '网络断了不影响本机工作区扫描——本机并发才是撞号的大头',
+      );
     });
   });
 
@@ -461,7 +535,10 @@ void main() {
       // 邻居分支上有一份坏态文件：文件名说 030，正文 H2 说 031。两个号都被认领了。
       git(worker, <String>['checkout', '-q', '-b', 'mismatch']);
       writeFile(
-          worker, 'docs/bugs/BUG-030-mismatch.md', bugDoc(31, '文件名与 H2 不一致'));
+        worker,
+        'docs/bugs/BUG-030-mismatch.md',
+        bugDoc(31, '文件名与 H2 不一致'),
+      );
       git(worker, <String>['add', '-A']);
       git(worker, <String>['commit', '-qm', 'mismatch']);
       git(worker, <String>['checkout', '-q', '-']);
@@ -480,7 +557,10 @@ void main() {
       Directory.current = worker;
       git(worker, <String>['checkout', '-q', '-b', 'refs-only']);
       writeFile(
-          worker, 'lib/foo.dart', '// 修 BUG-777 的根因在这里。\nvoid main() {}\n');
+        worker,
+        'lib/foo.dart',
+        '// 修 BUG-777 的根因在这里。\nvoid main() {}\n',
+      );
       writeFile(worker, 'docs/notes.md', '见 BUG-778 与 bug_779_foo_test.dart\n');
       git(worker, <String>['add', '-A']);
       git(worker, <String>['commit', '-qm', 'refs']);
@@ -494,7 +574,7 @@ void main() {
     });
   });
 
-  group('bug.dart check：跨分支/工作区占用复核', () {
+  group('bug.dart check --scan：跨分支/工作区占用复核', () {
     /// base(main) 上有 BUG-003；陈旧分支上有同号但不同文件名的 BUG-003-stale.md（历史噪声，
     /// 不该报）；我的工作区有未提交的 BUG-050-mine.md，而邻居工作区也占了 050（该报）。
     Future<Directory> makeCheckFixture() async {
@@ -516,7 +596,7 @@ void main() {
     test('报出「我新引入的号被别的文件名占了」，并写清占用者与来源', () async {
       await makeCheckFixture();
 
-      final code = await bug.cmdCheckAll(<String>[]);
+      final code = await bug.cmdCheckAll(<String>['--scan']);
 
       final warned = warn.join('\n');
       expect(warned, contains('BUG-050'));
@@ -528,10 +608,13 @@ void main() {
     test('base 上已定案的号不报——陈旧分支的历史同号是那些分支的活', () async {
       await makeCheckFixture();
 
-      await bug.cmdCheckAll(<String>[]);
+      await bug.cmdCheckAll(<String>['--scan']);
 
-      expect(warn.join('\n'), isNot(contains('BUG-003')),
-          reason: 'BUG-003 已在 base 上定案；不过滤会在真仓库吐 72KB 历史噪声，信号全埋掉');
+      expect(
+        warn.join('\n'),
+        isNot(contains('BUG-003')),
+        reason: 'BUG-003 已在 base 上定案；不过滤会在真仓库吐 72KB 历史噪声，信号全埋掉',
+      );
     });
 
     test('--strict 让跨源撞号也退非 0（开 PR 前的硬门）', () async {
@@ -551,12 +634,23 @@ void main() {
       expect(await bug.cmdCheckAll(<String>['--strict']), 0);
     });
 
-    test('--no-scan 退回纯本地校验，并显式说明「本地绿不代表没被占」', () async {
+    test('默认（与兼容的 --no-scan）只做本地校验，并指向合并时的 settle', () async {
       await makeCheckFixture();
 
-      expect(await bug.cmdCheckAll(<String>['--no-scan']), 0);
-      expect(warn.join('\n'), contains('不代表'));
-      expect(warn.join('\n'), isNot(contains('BUG-050-neighbour.md')));
+      for (final args in <List<String>>[
+        <String>[],
+        <String>['--no-scan'],
+      ]) {
+        out.clear();
+        warn.clear();
+        expect(await bug.cmdCheckAll(args), 0);
+        expect(out.join('\n'), contains('settle'));
+        expect(
+          warn.join('\n'),
+          isNot(contains('BUG-050-neighbour.md')),
+          reason: '默认不该遍历其它工作区',
+        );
+      }
     });
   });
 
@@ -567,25 +661,30 @@ void main() {
       // binary，并发合并时静默丢掉对方的改动。
       final nul = String.fromCharCode(0);
       String sha(String seed) => (seed + 'x' * 20).substring(0, 20);
-      final body = '100644 BUG-007-real.md$nul${sha('abcdefghij')}'
+      final body =
+          '100644 BUG-007-real.md$nul${sha('abcdefghij')}'
           '100644 readme.md$nul${sha('..BUG-9999..')}';
 
       final entries = bug.parseTreeEntries(body);
 
-      expect(entries.map((bug.TreeEntry e) => e.name).toList(),
-          <String>['BUG-007-real.md', 'readme.md']);
+      expect(entries.map((bug.TreeEntry e) => e.name).toList(), <String>[
+        'BUG-007-real.md',
+        'readme.md',
+      ]);
       expect(entries.first.sha.length, 40, reason: '20 字节要展开成 40 位十六进制');
       expect(
-          entries
-              .map((bug.TreeEntry e) => e.name)
-              .where((String n) => n.contains('9999')),
-          isEmpty,
-          reason: 'sha 里的 BUG-9999 是随机字节，不是文件名');
+        entries
+            .map((bug.TreeEntry e) => e.name)
+            .where((String n) => n.contains('9999')),
+        isEmpty,
+        reason: 'sha 里的 BUG-9999 是随机字节，不是文件名',
+      );
     });
 
     test('parseBatchBlocks 按 header 里的 size 精确切块，块内含换行也不串块', () {
-      final blocks =
-          bug.parseBatchBlocks('aa11 blob 5\nab\ncd\nbb22 blob 2\nef\n');
+      final blocks = bug.parseBatchBlocks(
+        'aa11 blob 5\nab\ncd\nbb22 blob 2\nef\n',
+      );
 
       expect(blocks.length, 2);
       expect(blocks[0].sha, 'aa11');
@@ -610,22 +709,192 @@ void main() {
       git(root, <String>['commit', '-qm', 'partial']);
       writeFile(root, 'docs/bugs/BUG-005-foo.md', bugDoc(5, '刚建还没提交'));
       writeFile(
-          root, 'fushi/test/tools/bug_005_foo_test.dart', '// BUG-005 守卫\n');
+        root,
+        'fushi/test/tools/bug_005_foo_test.dart',
+        '// BUG-005 守卫\n',
+      );
       Directory.current = root;
 
-      await bug.cmdRenumber(
-        <String>['5', '9'],
-        scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{}),
-      );
+      await bug.cmdRenumber(<String>[
+        '5',
+        '9',
+      ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{}));
 
       expect(exists(root, 'docs/bugs/BUG-009-foo.md'), isTrue);
       expect(exists(root, 'docs/bugs/BUG-005-foo.md'), isFalse);
-      expect(readFile(root, 'docs/bugs/BUG-009-foo.md'),
-          startsWith('## BUG-009 · '));
+      expect(
+        readFile(root, 'docs/bugs/BUG-009-foo.md'),
+        startsWith('## BUG-009 · '),
+      );
       expect(exists(root, 'fushi/test/tools/bug_009_foo_test.dart'), isTrue);
       expect(readFile(root, 'lib/foo.dart'), contains('BUG-009'));
       expect(await bug.findResidualRefs(5), isEmpty);
       expect(bug.cmdCheck(), 0);
+    });
+  });
+
+  group('bug.dart new：默认口径（本地 + 基线树，不遍历）', () {
+    test('看得见 origin/main 上的号，看不见别的分支与邻居工作区——那些交给合并时的 settle', () async {
+      final worker = makeRemoteFixture(pushPeerBeforeClone: true);
+      Directory.current = worker;
+      // 基线（origin/main）上再加一条 BUG-010：worker 只要 fetch 过就看得见。
+      git(worker, <String>['checkout', '-q', '-b', 'tmp-base']);
+      writeFile(worker, 'docs/bugs/BUG-010-on-base.md', bugDoc(10, '基线上的号'));
+      git(worker, <String>['add', '-A']);
+      git(worker, <String>['commit', '-qm', 'base 010']);
+      git(worker, <String>['push', '-q', 'origin', 'HEAD:main']);
+      git(worker, <String>['checkout', '-q', 'main']);
+      git(worker, <String>['branch', '-q', '-D', 'tmp-base']);
+      git(worker, <String>['fetch', '-q', 'origin']);
+      addSiblingWorktreeWithUncommittedBug(worker, 50, 'neighbour');
+
+      await bug.cmdNew(<String>['mine', '标题']);
+
+      expect(
+        exists(worker, 'docs/bugs/BUG-011-mine.md'),
+        isTrue,
+        reason: '取「本地 003 与基线 010」最大 +1；peer 分支的 020、邻居工作区的 050 都不扫',
+      );
+      expect(out.join('\n'), contains('settle'));
+    });
+  });
+
+  group('bug.dart settle：合并时收口撞号', () {
+    /// 基线 main 上有 BUG-005-theirs（lib/theirs.dart 引用它）；feature 分支各自取到 005，
+    /// 建了 BUG-005-mine（lib/mine.dart 与同号测试文件引用它）。返回仓库根，停在 feature 上、
+    /// 尚未合并 main。
+    Directory makeCollisionFixture() {
+      final root = makeBareFixture('bug_settle_');
+      temps.add(root);
+      writeFile(root, 'docs/bugs/BUG-004-old.md', bugDoc(4, '老条目'));
+      git(root, <String>['init', '-q', '-b', 'main', '.']);
+      // 本机全局 core.autocrlf 会在切分支时把 fixture 文件转成 CRLF，索引逐字节比较就失真。
+      git(root, <String>['config', 'core.autocrlf', 'false']);
+      git(root, <String>['config', 'user.email', 'fixture@example.com']);
+      git(root, <String>['config', 'user.name', 'fixture']);
+      // 本机全局 commit.gpgsign=true 会让 fixture 提交失败，显式关掉。
+      git(root, <String>['config', 'commit.gpgsign', 'false']);
+      Directory.current = root;
+      bug.cmdReindex();
+      git(root, <String>['add', '-A']);
+      git(root, <String>['commit', '-qm', 'seed']);
+
+      git(root, <String>['checkout', '-q', '-b', 'feature']);
+      writeFile(root, 'docs/bugs/BUG-005-mine.md', bugDoc(5, '我这条'));
+      writeFile(
+        root,
+        'lib/mine.dart',
+        '// 修 BUG-005：我这条的根因。\nvoid main() {}\n',
+      );
+      writeFile(
+        root,
+        'fushi/test/tools/bug_005_mine_test.dart',
+        '// BUG-005 回归守卫\n',
+      );
+      bug.cmdReindex();
+      git(root, <String>['add', '-A']);
+      git(root, <String>['commit', '-qm', 'mine']);
+
+      git(root, <String>['checkout', '-q', 'main']);
+      writeFile(root, 'docs/bugs/BUG-005-theirs.md', bugDoc(5, '别人那条'));
+      writeFile(
+        root,
+        'lib/theirs.dart',
+        '// 修 BUG-005：别人那条的根因。\nvoid main() {}\n',
+      );
+      bug.cmdReindex();
+      git(root, <String>['add', '-A']);
+      git(root, <String>['commit', '-qm', 'theirs']);
+      git(root, <String>['checkout', '-q', 'feature']);
+      return root;
+    }
+
+    void expectSettled(Directory root) {
+      expect(
+        exists(root, 'docs/bugs/BUG-005-theirs.md'),
+        isTrue,
+        reason: '基线那条不动',
+      );
+      expect(exists(root, 'docs/bugs/BUG-005-mine.md'), isFalse);
+      expect(
+        readFile(root, 'docs/bugs/BUG-006-mine.md'),
+        startsWith('## BUG-006 · '),
+      );
+      expect(readFile(root, 'lib/mine.dart'), contains('BUG-006'));
+      expect(exists(root, 'fushi/test/tools/bug_006_mine_test.dart'), isTrue);
+      expect(
+        readFile(root, 'lib/theirs.dart'),
+        contains('BUG-005'),
+        reason: '指向基线那条的引用一个字都不能改',
+      );
+      expect(readFile(root, 'docs/BUGS.md'), contains('BUG-006-mine.md'));
+      expect(bug.cmdCheck(), 0);
+    }
+
+    test('本地：合进基线（docs/BUGS.md 按 union 合并不冲突）后 settle，把我这份改到下一个空号', () async {
+      final root = makeCollisionFixture();
+      writeFile(root, '.gitattributes', 'docs/BUGS.md merge=union\n');
+      git(root, <String>['merge', '-q', '--no-edit', 'main']);
+      expect(bug.collidedBugNumbers(), <int>[5]);
+
+      expect(await bug.cmdSettle(<String>['--base', 'main']), 0);
+
+      expectSettled(root);
+      out.clear();
+      expect(await bug.cmdSettle(<String>['--base', 'main']), 0, reason: '幂等');
+      expect(out.join('\n'), contains('无撞号'));
+    });
+
+    test('CI：develop 上以 push 前的 sha 为基线，这次 push 带进来的那份改号', () async {
+      final root = makeCollisionFixture();
+      git(root, <String>['checkout', '-q', 'main']);
+      final before =
+          (Process.runSync('git', <String>[
+                    'rev-parse',
+                    'HEAD',
+                  ], workingDirectory: root.path).stdout
+                  as String)
+              .trim();
+      // 模拟 PR 合进 develop：一个 merge commit 把 feature 带进来（索引按 union 合并）。
+      writeFile(root, '.gitattributes', 'docs/BUGS.md merge=union\n');
+      git(root, <String>['merge', '-q', '--no-ff', '--no-edit', 'feature']);
+
+      expect(await bug.cmdSettle(<String>['--base', before]), 0);
+
+      expectSettled(root);
+    });
+
+    test('--dry-run 一个字节都不落盘', () async {
+      final root = makeCollisionFixture();
+      writeFile(root, '.gitattributes', 'docs/BUGS.md merge=union\n');
+      git(root, <String>['merge', '-q', '--no-edit', 'main']);
+
+      expect(await bug.cmdSettle(<String>['--base', 'main', '--dry-run']), 0);
+
+      expect(exists(root, 'docs/bugs/BUG-005-mine.md'), isTrue);
+      expect(readFile(root, 'lib/mine.dart'), contains('BUG-005'));
+    });
+
+    test('无撞号时只重建索引（union 合并留下的乱序行被理顺）', () async {
+      final root = makeCollisionFixture();
+      final index = readFile(root, 'docs/BUGS.md');
+      // 把两行索引的顺序倒过来，模拟 union 合并后的行序。
+      final lines = index.split('\n');
+      final rows = lines.where((String l) => l.startsWith('| [BUG-')).toList();
+      expect(rows, hasLength(2));
+      writeFile(
+        root,
+        'docs/BUGS.md',
+        index
+            .replaceFirst(rows[0], '@@ROW0@@')
+            .replaceFirst(rows[1], rows[0])
+            .replaceFirst('@@ROW0@@', rows[1]),
+      );
+      expect(bug.cmdCheck(), 1);
+
+      expect(await bug.cmdSettle(<String>['--base', 'main']), 0);
+
+      expect(readFile(root, 'docs/BUGS.md'), index);
     });
   });
 }
