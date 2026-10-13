@@ -2412,6 +2412,45 @@ window.fushiSelection = {
       window.fushiReader.buildNodeOffsets();
     }
   },
+  // BUG-3326 审查：选区与拖选锚点存的是「文本节点 + 数字偏移」，不是 live Range。别的模块在
+  // offset 处 splitText 切开 node（tail 是切点之后的新节点，如有声书整句高亮在折行处切 wrapper）
+  // 后调这里，按 DOM splitText 对 live Range 的同一语义换算：落在切点及之后的点改指 tail、
+  // 偏移减去 offset；跨切点的段拆成前后两段。不换算的话切点之后的偏移越界——查词高亮
+  // （highlightSelection 的 codePointAt 读空）、拖动柄（selectionEndpoints）与制卡句子上下文都会坏。
+  noteTextNodeSplit: function(node, offset, tail) {
+    var point = function(n, o) {
+      return n === node && o >= offset ? { node: tail, offset: o - offset } : { node: n, offset: o };
+    };
+    var copy = function(r, n, start, end) {
+      var c = {};
+      for (var k in r) c[k] = r[k];
+      c.node = n; c.start = start; c.end = end;
+      return c;
+    };
+    var segments = function(list) {
+      var out = [];
+      list.forEach(function(r) {
+        if (r.node !== node || r.end <= offset) out.push(r);
+        else if (r.start >= offset) out.push(copy(r, tail, r.start - offset, r.end - offset));
+        else out.push(copy(r, node, r.start, offset), copy(r, tail, 0, r.end - offset));
+      });
+      return out;
+    };
+    var sel = this.selection;
+    if (sel) {
+      var s = point(sel.startNode, sel.startOffset);
+      sel.startNode = s.node; sel.startOffset = s.offset;
+      if (sel.ranges) sel.ranges = segments(sel.ranges);
+      if (sel.matchedRanges) sel.matchedRanges = segments(sel.matchedRanges);
+    }
+    var anchor = this.dragAnchor;
+    if (anchor) {
+      var a = point(anchor.node, anchor.offset);
+      anchor.node = a.node; anchor.offset = a.offset;
+      var e = point(anchor.endNode, anchor.endOffset);
+      anchor.endNode = e.node; anchor.endOffset = e.offset;
+    }
+  },
   clearSelectionOnViewportChange: function() {
     if (this.dragAnchor || this.activeHandle) return;
     this.clearSelection();

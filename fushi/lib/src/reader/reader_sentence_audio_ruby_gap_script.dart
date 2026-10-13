@@ -103,11 +103,8 @@ const String kSentenceAudioRubyGapJs = r'''
       var pr = this.sentenceAudioLineRects(prev);
       var nr = this.sentenceAudioLineRects(next);
       if (!pr.length || !nr.length) continue;
-      var a = pr[pr.length - 1];
-      var b = nr[0];
-      if (!this.sentenceAudioSameLine(a, b, vertical)) continue;
-      var gap = vertical ? b.top - a.bottom : b.left - a.right;
-      if (Math.abs(gap) > parseFloat(getComputedStyle(next).fontSize) * 3) continue;
+      var gap = this.sentenceAudioJoinGap(prev, next, pr[pr.length - 1], nr[0], vertical);
+      if (gap === null) continue;
       prev.classList.add('fushi-sentence-audio-join-end');
       next.classList.add('fushi-sentence-audio-join-start');
       joined.push(prev, next);
@@ -123,6 +120,7 @@ const String kSentenceAudioRubyGapJs = r'''
         trims.set(trimEl, t);
         continue;
       }
+      // 正缝只会出现在 ruby 一侧（sentenceAudioJoinGap 已把两侧都不在 ruby 里的正缝排除）。
       if (!(gap > 0.5)) continue;
       if (this.rubyForNode(next)) fills.push({ el: next, dx: vertical ? 0 : -gap, dy: vertical ? -gap : 0 });
       else fills.push({ el: prev, dx: vertical ? 0 : gap, dy: vertical ? gap : 0 });
@@ -178,6 +176,17 @@ const String kSentenceAudioRubyGapJs = r'''
   sentenceAudioSameLine: function(a, b, vertical) {
     return vertical ? (a.left < b.right && b.left < a.right) : (a.top < b.bottom && b.top < a.bottom);
   },
+  // 相邻两个 wrapper（prev 的末行片段 a、next 的首行片段 b）是否在同一行接成一条：是则返回
+  // 行内方向上的缝（负数 = 重叠），否则 null。缝都由 ruby 撑出 / 压进：两侧都不在 ruby 里时
+  // （被 <em> / <fushi-hl-text> 拆开），它们本来紧贴，量出正缝说明中间夹着不属于本句的内容
+  // （非 matchable 符号、内联外字图），那不是接缝——两端保持圆角，也不能补色涂到别人身上。
+  sentenceAudioJoinGap: function(prev, next, a, b, vertical) {
+    if (!this.sentenceAudioSameLine(a, b, vertical)) return null;
+    var gap = vertical ? b.top - a.bottom : b.left - a.right;
+    if (Math.abs(gap) > parseFloat(getComputedStyle(next).fontSize) * 3) return null;
+    if (gap > 0.5 && !this.rubyForNode(prev) && !this.rubyForNode(next)) return null;
+    return gap;
+  },
   // 跨行且一端与同一行的邻 wrapper 相接的 wrapper，在折行处切成两个：接缝一端的那一行
   // 单独成一个 wrapper（就地修改 wrappers 数组，它就是 cueWrappers 里存的那一份）。
   splitSentenceAudioJoinLines: function(wrappers, vertical) {
@@ -189,7 +198,7 @@ const String kSentenceAudioRubyGapJs = r'''
       var next = wrappers[i + 1];
       var nextRects = next ? this.sentenceAudioLineRects(next) : [];
       var lastLine = rects[rects.length - 1];
-      if (nextRects.length && this.sentenceAudioSameLine(lastLine, nextRects[0], vertical)) {
+      if (nextRects.length && this.sentenceAudioJoinGap(w, next, lastLine, nextRects[0], vertical) !== null) {
         var self = this;
         var tail = this.splitSentenceAudioWrapper(w, function(r) {
           return self.sentenceAudioSameLine(r, lastLine, vertical);
@@ -203,7 +212,7 @@ const String kSentenceAudioRubyGapJs = r'''
       var prev = wrappers[i - 1];
       var prevRects = prev ? this.sentenceAudioLineRects(prev) : [];
       if (rects.length >= 2 && prevRects.length &&
-          this.sentenceAudioSameLine(prevRects[prevRects.length - 1], rects[0], vertical)) {
+          this.sentenceAudioJoinGap(prev, w, prevRects[prevRects.length - 1], rects[0], vertical) !== null) {
         var firstLine = rects[0];
         var self2 = this;
         var rest = this.splitSentenceAudioWrapper(w, function(r) {
@@ -240,7 +249,7 @@ const String kSentenceAudioRubyGapJs = r'''
     if (!hit || hit.node.parentNode !== w) return null;
     if (hit.offset === 0 && !hit.node.previousSibling) return null;
     var moved = [];
-    var first = hit.offset > 0 ? hit.node.splitText(hit.offset) : hit.node;
+    var first = hit.offset > 0 ? this.splitSentenceAudioText(hit.node, hit.offset) : hit.node;
     for (var n = first; n; n = n.nextSibling) moved.push(n);
     var tail = w.cloneNode(false);
     tail.classList.remove('fushi-sentence-audio-join-start', 'fushi-sentence-audio-join-end');
@@ -249,21 +258,42 @@ const String kSentenceAudioRubyGapJs = r'''
     this.moveSentenceAudioNodesKeepingRanges(w, cut, moved, tail);
     return tail;
   },
-  // 把 w 从第 cut 个子节点起的 moved 移进 tail，并把 tail 插到 w 后面。移除节点会把落在它里面的 live Range 边界
-  // 塌到父节点上：查词选区、收藏 / 标注、搜索高亮都是存起来的 live Range（CSS.highlights），
-  // 原生选区也是——先记下这些边界，移完按原节点 / 原偏移写回，指向 w 子节点序号的边界换算到
-  // tail。插入 tail 本身对外层边界的影响由 DOM 规范自动调整。
-  moveSentenceAudioNodesKeepingRanges: function(w, cut, moved, tail) {
+  // 在 offset 处切开文本节点，返回切点之后的新节点。live Range 的边界由 DOM splitText 自己换算，
+  // 但查词选区（fushiSelection.selection / dragAnchor）存的是「文本节点 + 数字偏移」的普通对象：
+  // 切完原节点变短，切点之后的偏移会越界（查词高亮画不出、拖动柄消失、制卡句子上下文指错）。
+  // 文本节点被拆分是它们唯一的失效点，所以由这里统一通知选区的拥有者按同一语义换算。
+  splitSentenceAudioText: function(node, offset) {
+    var tail = node.splitText(offset);
+    var selection = window.fushiSelection;
+    if (selection && typeof selection.noteTextNodeSplit === 'function') {
+      selection.noteTextNodeSplit(node, offset, tail);
+    }
+    return tail;
+  },
+  // 搬移 wrapper 子节点时要保住的全部 live Range：CSS.highlights 里登记的（查词选区、收藏 /
+  // 标注、搜索高亮）、原生选区，以及不进 CSS.highlights 的迟到图片重锚目标（搜索命中 Range 的
+  // cloneRange，见 registerImageLateAnchor）。新增「存起来的 live Range」要在这里登记。
+  sentenceAudioLiveRanges: function() {
     var ranges = [];
+    var add = function(r) {
+      if (r && typeof r.setStart === 'function' && ranges.indexOf(r) < 0) ranges.push(r);
+    };
     try {
       if (typeof CSS !== 'undefined' && CSS.highlights) {
-        CSS.highlights.forEach(function(hl) {
-          hl.forEach(function(r) { if (r && typeof r.setStart === 'function') ranges.push(r); });
-        });
+        CSS.highlights.forEach(function(hl) { hl.forEach(add); });
       }
     } catch (e) {}
     var sel = window.getSelection ? window.getSelection() : null;
-    if (sel && sel.rangeCount) ranges.push(sel.getRangeAt(0));
+    if (sel && sel.rangeCount) add(sel.getRangeAt(0));
+    add(this.__imgReanchorTarget);
+    return ranges;
+  },
+  // 把 w 从第 cut 个子节点起的 moved 移进 tail，并把 tail 插到 w 后面。移除节点会把落在它里面的 live Range 边界
+  // 塌到父节点上（sentenceAudioLiveRanges 列出的那些）——先记下这些边界，移完按原节点 / 原偏移写回，
+  // 指向 w 子节点序号的边界换算到 tail。插入 tail 本身对外层边界的影响由 DOM 规范自动调整。
+  // 只搬节点、不改文本节点身份，所以查词选区的「节点 + 偏移」在这一步不受影响（拆分见 splitSentenceAudioText）。
+  moveSentenceAudioNodesKeepingRanges: function(w, cut, moved, tail) {
+    var ranges = this.sentenceAudioLiveRanges();
     var inMoved = function(c) {
       for (var m = 0; m < moved.length; m++) if (moved[m] === c || moved[m].contains(c)) return true;
       return false;

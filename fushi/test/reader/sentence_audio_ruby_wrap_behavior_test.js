@@ -35,6 +35,7 @@ const readSrc = (f) => fs.readFileSync(path.resolve(__dirname, '../../lib/src/re
 const gapSource = readSrc('reader_sentence_audio_ruby_gap_script.dart');
 const source = readSrc('reader_pagination_scripts.dart') + '\n' + gapSource;
 const vnSource = readSrc('reader_visual_novel_scripts.dart') + '\n' + gapSource;
+const selectionSource = readSrc('reader_selection_scripts.dart');
 
 function extractMethod(name, from) {
   const re = new RegExp('\\n  ' + name + ': function\\([\\s\\S]*?\\n  \\},');
@@ -45,6 +46,23 @@ function extractMethod(name, from) {
 }
 
 // ── fake DOM ────────────────────────────────────────────────────────────────
+
+// 测试登记的 live Range（LiveRange）：按 DOM 规范随节点插入 / 移除 / splitText 调整边界，
+// 才能复现「搬移节点把 live Range 塌到父节点上」（BUG-3326 审查）。没登记时不影响任何用例。
+const liveRanges = [];
+function liveRangesOnRemove(parent, index, node) {
+  liveRanges.forEach((r) => ['s', 'e'].forEach((k) => {
+    const p = r[k];
+    if (node.contains(p.node)) r[k] = { node: parent, offset: index };
+    else if (p.node === parent && p.offset > index) r[k] = { node: parent, offset: p.offset - 1 };
+  }));
+}
+function liveRangesOnInsert(parent, index) {
+  liveRanges.forEach((r) => ['s', 'e'].forEach((k) => {
+    const p = r[k];
+    if (p.node === parent && p.offset > index) r[k] = { node: parent, offset: p.offset + 1 };
+  }));
+}
 
 class Node {
   constructor() { this.parentNode = null; this.childNodes = []; }
@@ -63,9 +81,14 @@ class Node {
     if (n.nodeType === 11) { n.childNodes.slice().forEach((c) => this.insertBefore(c, ref)); return n; }
     if (n.parentNode) n.parentNode.removeChild(n);
     const i = ref ? this.childNodes.indexOf(ref) : this.childNodes.length;
+    liveRangesOnInsert(this, i);
     n.parentNode = this; this.childNodes.splice(i, 0, n); return n;
   }
-  removeChild(n) { this.childNodes.splice(this.childNodes.indexOf(n), 1); n.parentNode = null; return n; }
+  removeChild(n) {
+    const i = this.childNodes.indexOf(n);
+    liveRangesOnRemove(this, i, n);
+    this.childNodes.splice(i, 1); n.parentNode = null; return n;
+  }
   get textContent() { return this.childNodes.map((c) => c.textContent).join(''); }
   get previousSibling() {
     if (!this.parentNode) return null;
@@ -84,9 +107,28 @@ class Text extends Node {
     const tail = new Text(this.nodeValue.slice(k));
     if (this.charRects) { tail.charRects = this.charRects.slice(k); this.charRects = this.charRects.slice(0, k); }
     this.nodeValue = this.nodeValue.slice(0, k);
-    this.parentNode.insertBefore(tail, this.nextSibling);
+    const parent = this.parentNode;
+    parent.insertBefore(tail, this.nextSibling);
+    // DOM「split a Text node」：本节点里偏移 > k 的边界移进新节点；父节点上紧跟本节点的边界后移一位。
+    const after = parent.childNodes.indexOf(this) + 1;
+    liveRanges.forEach((r) => ['s', 'e'].forEach((key) => {
+      const p = r[key];
+      if (p.node === this && p.offset > k) r[key] = { node: tail, offset: p.offset - k };
+      else if (p.node === parent && p.offset === after) r[key] = { node: parent, offset: after + 1 };
+    }));
     return tail;
   }
+}
+
+// 只做被测代码用到的那几个 Range 成员；构造即登记为 live。
+class LiveRange {
+  constructor(sn, so, en, eo) { this.s = { node: sn, offset: so }; this.e = { node: en, offset: eo }; liveRanges.push(this); }
+  get startContainer() { return this.s.node; }
+  get startOffset() { return this.s.offset; }
+  get endContainer() { return this.e.node; }
+  get endOffset() { return this.e.offset; }
+  setStart(n, o) { this.s = { node: n, offset: o }; }
+  setEnd(n, o) { this.e = { node: n, offset: o }; }
 }
 
 const withSize = (r) => Object.assign({ width: r.right - r.left, height: r.bottom - r.top }, r);
@@ -252,10 +294,14 @@ function makeReader(cueRoots) {
   const methods = ['applySentenceAudioCues', 'sentenceAudioWrapItems', 'sentenceAudioInlineGap', 'rubyForNode',
     'fillSentenceAudioRubyGaps', 'watchSentenceAudioRubyGapLayout', 'paintSentenceAudioRubyGaps',
     'eraseSentenceAudioRubyGaps', 'clearSentenceAudioRubyGaps', '_setReanchorPending',
-    'sentenceAudioLineRects', 'sentenceAudioSameLine', 'splitSentenceAudioJoinLines', 'splitSentenceAudioWrapper', 'moveSentenceAudioNodesKeepingRanges']
+    'sentenceAudioLineRects', 'sentenceAudioSameLine', 'sentenceAudioJoinGap', 'splitSentenceAudioJoinLines',
+    'splitSentenceAudioWrapper', 'splitSentenceAudioText', 'sentenceAudioLiveRanges', 'moveSentenceAudioNodesKeepingRanges']
     .map(extractMethod).join(',\n');
   vm.runInContext('var R = {\n' + methods + '\n};', sandbox);
+  // 查词选区的拥有者（reader_selection_scripts.dart）：只取文本节点拆分时的换算入口。
+  vm.runInContext('window.fushiSelection = {\n' + extractMethod('noteTextNodeSplit', selectionSource) + '\n};', sandbox);
   const R = sandbox.R;
+  R.testWindow = sandbox.window;
   R.cueWrappers = new Map();
   R.cueRubyElements = new Map();
   R.resetSentenceAudioCues = () => {};
@@ -482,7 +528,9 @@ function makeVnReader() {
     .map((n) => extractMethod(n, vnSource))
     .concat(['sentenceAudioWrapItems', 'sentenceAudioInlineGap', 'rubyForNode', 'fillSentenceAudioRubyGaps',
       'watchSentenceAudioRubyGapLayout', 'paintSentenceAudioRubyGaps', 'eraseSentenceAudioRubyGaps',
-      'clearSentenceAudioRubyGaps', 'sentenceAudioLineRects', 'sentenceAudioSameLine', 'splitSentenceAudioJoinLines', 'splitSentenceAudioWrapper', 'moveSentenceAudioNodesKeepingRanges'].map((n) => extractMethod(n, gapSource)))
+      'clearSentenceAudioRubyGaps', 'sentenceAudioLineRects', 'sentenceAudioSameLine', 'sentenceAudioJoinGap',
+      'splitSentenceAudioJoinLines', 'splitSentenceAudioWrapper', 'splitSentenceAudioText', 'sentenceAudioLiveRanges',
+      'moveSentenceAudioNodesKeepingRanges'].map((n) => extractMethod(n, gapSource)))
     .join(',\n');
   vm.runInContext('var R = {\n' + methods + '\n};', sandbox);
   const R = sandbox.R;
@@ -606,8 +654,39 @@ const joins = (w) => (w.classList.contains(JOIN_S) ? 'S' : '-') + (w.classList.c
     col(60, 0), col(60, 22), col(60, 44)];
   ws[1].childNodes[0].charRects = [col(60, 66)];
   ws[2].childNodes[0].charRects = [col(60, 88), col(60, 110), col(60, 132)];
+  // 审查补充：切点（「お」前）之后已有查词选区「かき」（关掉「查词时暂停」边播边点词，词典结果
+  // 回来前下一句变成当前句）。它存的是「文本节点 + 数字偏移」，matchedRanges 跨切点；
+  // 拖选锚点也在切点之后。另有一个不进 CSS.highlights 的迟到图片重锚目标（搜索命中 cloneRange）。
+  const t0 = ws[0].childNodes[0];
+  const S = R.testWindow.fushiSelection;
+  S.selection = {
+    startNode: t0, startOffset: 5, text: 'かき',
+    ranges: [{ node: t0, start: 5, end: 7 }],
+    matchedRanges: [{ node: t0, start: 3, end: 6 }],
+  };
+  S.dragAnchor = { node: t0, offset: 5, endNode: t0, endOffset: 6, startX: 0, startY: 0, moved: false };
+  R.__imgReanchorTarget = new LiveRange(t0, 5, t0, 7);
   R.fillSentenceAudioRubyGaps(ws);
   assert.strictEqual(R.cueWrappers.get('c14'), ws, 'the stored wrapper list is updated in place');
+  const covered = (segs) => segs.map((r) => {
+    assert.ok(r.start >= 0 && r.start < r.end && r.end <= r.node.nodeValue.length,
+      'segment offsets stay inside their text node: ' + r.node.nodeValue + ' [' + r.start + ',' + r.end + ')');
+    return r.node.nodeValue.slice(r.start, r.end);
+  }).join('');
+  const tailText = ws[1].childNodes[0];
+  assert.strictEqual(tailText.nodeValue, 'おかき');
+  assert.strictEqual(S.selection.startNode, tailText, 'selection start follows the split into the new text node');
+  assert.strictEqual(S.selection.startOffset, 1);
+  assert.strictEqual(covered(S.selection.ranges), 'かき', 'selected text unchanged by the split');
+  assert.strictEqual(covered(S.selection.matchedRanges), 'えおか', 'a segment across the cut is split in two');
+  assert.strictEqual(S.selection.matchedRanges.length, 2);
+  assert.deepStrictEqual([S.dragAnchor.node === tailText, S.dragAnchor.offset, S.dragAnchor.endNode === tailText,
+    S.dragAnchor.endOffset], [true, 1, true, 2], 'drag anchor glyphs follow the split');
+  const target = R.__imgReanchorTarget;
+  assert.ok(target.startContainer === tailText && target.endContainer === tailText,
+    'the late-image reanchor target is not collapsed onto the wrapper by the move');
+  assert.strictEqual(tailText.nodeValue.slice(target.startOffset, target.endOffset), 'かき');
+  liveRanges.length = 0;
   assert.deepStrictEqual(Array.from(ws, (w) => w.textContent), ['あいうえ', 'おかき', '漢', 'くけこ'],
     'the wrapper is cut exactly at the column break');
   assert.strictEqual(ws[1].parentNode, p, 'the new piece is a sibling right after the original wrapper');
@@ -621,6 +700,27 @@ const joins = (w) => (w.classList.contains(JOIN_S) ? 'S' : '-') + (w.classList.c
   R.fillSentenceAudioRubyGaps(ws);
   assert.strictEqual(ws.length, 4);
   assert.strictEqual(rebuilt, 1);
+}
+
+// 15. 两侧都不在 ruby 里的相邻 wrapper（被 <em> 拆开）：紧贴时是接缝（直角）；量出正缝说明中间
+//     夹着不属于本句的内容（内联外字图），不是接缝——两端保持圆角、不补色，也不为它切分。
+{
+  const em = el('em', ['えお']);
+  const p = el('p', ['あいう', el('img'), em]);
+  const R = makeReader({ c15: p });
+  R.applySentenceAudioCues([{ id: 'c15' }]);
+  const ws = R.cueWrappers.get('c15');
+  assert.deepStrictEqual(Array.from(ws, (w) => w.textContent), ['あいう', 'えお']);
+  ws[0].rects = [{ left: 100, right: 122, top: 0, bottom: 66 }];
+  ws[1].rects = [{ left: 100, right: 122, top: 66, bottom: 110 }];
+  R.fillSentenceAudioRubyGaps(ws);
+  assert.deepStrictEqual(Array.from(ws, joins), ['-E', 'S-'], 'touching non-ruby wrappers form one bar');
+  ws.forEach((w) => assert.ok(!w.style.boxShadow, 'nothing to bridge'));
+  ws[1].rects = [{ left: 100, right: 122, top: 88, bottom: 132 }];
+  R.fillSentenceAudioRubyGaps(ws);
+  assert.deepStrictEqual(Array.from(ws, joins), ['--', '--'], 'content in between is not a joint');
+  ws.forEach((w) => assert.ok(!w.style.boxShadow, 'the in-between image is never painted with the highlight'));
+  assert.strictEqual(ws.length, 2);
 }
 
 console.log('all assertions passed');
