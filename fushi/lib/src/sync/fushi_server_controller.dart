@@ -23,6 +23,7 @@ import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/graphic_subtitle_track_export.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
+import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
@@ -89,6 +90,7 @@ class FushiSyncServerController extends ChangeNotifier {
     HostAssistantProvider Function()? assistantFactory,
     VideoSubtitleBackfillRunner? videoSubtitleBackfill,
     GraphicSubtitleTrackExporter? graphicSubtitleTrackExporter,
+    HostSelfUpdater Function()? hostSelfUpdater,
     PrefStore Function()? prefsStore,
     PlatformDeviceInfoService? deviceInfo,
   })  : _navigatorKey = navigatorKey,
@@ -107,6 +109,7 @@ class FushiSyncServerController extends ChangeNotifier {
         _videoSubtitleBackfill = videoSubtitleBackfill,
         _graphicSubtitleTrackExporter = graphicSubtitleTrackExporter ??
             exportGraphicSubtitleTrackForInterconnect,
+        _hostSelfUpdater = hostSelfUpdater,
         _prefsStore = prefsStore,
         // Headless/test construction without an injected service falls back to
         // the desktop (machine-hostname) source; production wires the real
@@ -150,6 +153,10 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 图形字幕整轨回传（`GET .../graphicsubtitle`）的抽取实现：缺省为引擎的位图字幕抽轨
   /// （[exportGraphicSubtitleTrackForInterconnect]，带缓存与在途合并）。
   final GraphicSubtitleTrackExporter _graphicSubtitleTrackExporter;
+
+  /// 远程更新本机 app 的实现（反馈 Pp8XPyve0N）。null（headless/单测）= 不接线，
+  /// `/api/host/update` 404、能力位 `hostUpdate=false`。
+  final HostSelfUpdater Function()? _hostSelfUpdater;
 
   /// host 偏好读侧（`PreferencesRepository`）。null（单测 / 老调用方）= 引擎按默认值
   /// 走，行为与接线前一致。
@@ -702,7 +709,9 @@ class FushiSyncServerController extends ChangeNotifier {
       ..hostId = hostId
       ..publicUrlsProvider = repo.getInterconnectPublicUrls
       ..videoSubtitleBackfill = _videoSubtitleBackfill
-      ..graphicSubtitleTrackExporter = _graphicSubtitleTrackExporter;
+      ..graphicSubtitleTrackExporter = _graphicSubtitleTrackExporter
+      // 远程更新本机（反馈 Pp8XPyve0N）：开关 / 平台门在实现里按请求实时判。
+      ..hostSelfUpdater = _hostSelfUpdater?.call();
     publish(server);
     // Fushi 改名迁移（host 侧）：host 的 WebDAV 根映射到 server.syncDataDir，
     // client 的同步根是其下的 `fushi-data/` 子目录。旧安装磁盘上还留着

@@ -39,6 +39,9 @@ import 'package:fushi/src/sync/desktop_oauth.dart'
 import 'package:fushi/src/sync/desktop_oauth_wait_dialog.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
+import 'package:fushi/src/sync/interconnect_host_update_tile.dart';
+import 'package:fushi/src/updates/host_self_update_service.dart'
+    show hostRemoteUpdatePlatformSupported;
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/remote_book_client.dart' show RemoteBookClient;
 import 'package:fushi/src/sync/hidden_remote_books.dart'
@@ -824,6 +827,19 @@ SettingsDestination buildInterconnectDestination() {
                   direction: _ProfileTransferDirection.download,
                 ),
           ),
+          // 主机版本 / 更新主机（反馈 Pp8XPyve0N）：在 client 上就能看到 host 跑的
+          // 版本、让它自己下载安装新版。门（host 开关 / 平台 / 局域网 / nonce）全在
+          // host 端，这一行只展示状态与 host 给的拒绝原因。
+          SettingsCustomItem(
+            id: 'interconnect.host_update',
+            searchTitle: t.interconnect_host_update_title,
+            icon: FushiIcons.server,
+            builder: (SettingsContext ctx) => InterconnectHostUpdateTile(
+              remote: InterconnectHostUpdateRemote(
+                SyncRepository(ctx.appModel.database),
+              ),
+            ),
+          ),
         ],
       ),
       // 本机作为服务器：host 模式（开关 + 端口 + TLS + token + 已配对列表）整块挪进
@@ -981,6 +997,26 @@ SettingsDestination _buildInterconnectHostPage() {
               ).setInterconnectProfileTransferEnabled(value);
             },
           ),
+          // 远程更新本机许可（反馈 Pp8XPyve0N）。默认关：让别的设备在本机下载安装
+          // 可执行文件必须是主人的显式意愿。端点另有已配对 peer token + 局域网信任区
+          // + 一次性 nonce 几道门。只在本机能应用内自更新的平台出现（平台门 =
+          // PlatformUpdater.supportsInAppInstall，与 host 端点同一个判据）。
+          SettingsSwitchItem(
+            id: 'interconnect.remote_update_host',
+            title: t.interconnect_host_update_host_toggle,
+            subtitle: t.interconnect_host_update_host_toggle_desc,
+            icon: FushiIcons.server,
+            visible: (SettingsContext ctx) =>
+                hostRemoteUpdatePlatformSupported(),
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectRemoteUpdate,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectRemoteUpdate = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectRemoteUpdateEnabled(value);
+            },
+          ),
         ],
       ),
     ],
@@ -1132,6 +1168,7 @@ class _SyncSettingsState {
 
   /// host 侧：是否允许已配对设备读写本机「配置文件」（Profile）。默认 false。
   bool interconnectProfileTransfer = false;
+  bool interconnectRemoteUpdate = false;
   bool _loaded = false;
   bool _loading = false;
 
@@ -1242,6 +1279,8 @@ class _SyncSettingsState {
           .isInterconnectServiceConfigSyncEnabled();
       interconnectProfileTransfer = await _repo
           .isInterconnectProfileTransferEnabled();
+      interconnectRemoteUpdate = await _repo
+          .isInterconnectRemoteUpdateEnabled();
       serverEnabled = await _repo.isServerEnabled();
       serverPort = await _repo.getServerPort();
       final List<FushiClientUrl> urls = await _repo.getFushiClientUrls();

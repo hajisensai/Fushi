@@ -234,6 +234,10 @@ class SyncRepository {
   // （BUG-988 立过的规矩），出站也一样：整份 Profile 比四个内容上传开关更敏感。
   static const _keyInterconnectProfileTransfer =
       'interconnect_profile_transfer';
+  // 互联「远程更新本机」的 **host 侧**开关（反馈 Pp8XPyve0N）：允许已配对设备查看并
+  // 触发本机 app 更新。默认 false —— 让别的设备在本机下载安装可执行文件，必须是主机
+  // 主人的显式意愿（Never break userspace：升级后什么都不会自己发生）。
+  static const _keyInterconnectRemoteUpdate = 'interconnect_remote_update';
   // 互联通道专属的「共享统计 / 共享收藏夹」开关。此前互联的聚合同步（统计 + 收藏
   // 词句）无条件复用云备份的 sync_stats_enabled，用户在互联页既看不到这两类数据
   // 正在跨设备流动，也没法只对互联单独关掉——与 BUG-988 拆四个上传开关时修掉的
@@ -666,6 +670,15 @@ class SyncRepository {
       _db.getPrefTyped<bool>(_keyInterconnectProfileTransfer, false);
   Future<void> setInterconnectProfileTransferEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keyInterconnectProfileTransfer, v);
+
+  /// host 侧：是否允许已配对设备远程更新本机 app（`/api/host/update`）。
+  ///
+  /// 端点另有已配对 peer token + 局域网信任区 + 一次性 nonce 几道门；本开关是
+  /// **用户意图**那一道，默认关。
+  Future<bool> isInterconnectRemoteUpdateEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectRemoteUpdate, false);
+  Future<void> setInterconnectRemoteUpdateEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectRemoteUpdate, v);
 
   /// 互联通道「共享统计」：阅读/观看时长、字数、逐时桶、查词与制卡计数。关掉后本设备
   /// 既不把统计推给对端，也不把对端统计折进本地——两个方向一起停，否则「关了还在收」
