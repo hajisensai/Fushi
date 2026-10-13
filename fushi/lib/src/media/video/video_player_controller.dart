@@ -3306,9 +3306,12 @@ class VideoPlayerController extends ChangeNotifier
   void _maybeSampleBlackFlicker(Player player, int loadToken) {
     final bool wantFlicker =
         onSuspectedBlackFlicker != null && !_blackFlickerDetector.hasFired;
+    // 按采样能产出的**最高**级别（劣化窗口的 warn）判是否采样：每秒快照行是 v、参数
+    // 变化行是 info、劣化行是 warn，各自再由 [videoDiag] 按过滤串取舍。若按 v 判，过滤串
+    // 把 `mpv/stats` 压到 info / warn 时整轮采样被跳过，连劣化告警也一起丢了。
     final bool wantDiag = videoDiagEnabledFor(
       VideoDiagCategory.mpvStats,
-      VideoDiagLevel.v,
+      VideoDiagLevel.warn,
     );
     if (!wantFlicker && !wantDiag) return;
     if (_flickerSampleInFlight) return;
