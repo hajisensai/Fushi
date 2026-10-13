@@ -5,7 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
-import 'package:fushi/src/models/cjk_font_families.dart' show CjkFontStyle;
+import 'package:fushi/src/models/cjk_font_families.dart'
+    show CjkFontStyle, cjkFontsFor;
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
@@ -151,13 +152,27 @@ void main() {
       );
       expect(at, isNonNegative);
       final String block = html.substring(at, html.indexOf('}\n}', at) + 3);
+      // 回退只限竖排：WebKit 上这条 @supports 恒成立，不带 .ly-vertical 的话横排
+      // （默认）多行长句也会被改成 clone，每行各自扫光、不再跨行接续。
+      final Map<String, String> fallbackRules = _rules(block);
+      expect(fallbackRules.keys, <String>[
+        'body.ly-sweep.ly-vertical:not(.ly-paused) '
+            '.cue.current:not(.ly-nosweep) .tx',
+      ]);
       expect(
-        block,
-        contains(
-          'body.ly-sweep:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx',
-        ),
+        fallbackRules.values.single,
+        contains('-webkit-box-decoration-break: clone;'),
       );
-      expect(block, contains('-webkit-box-decoration-break: clone;'));
+      // 全页只有竖排选择器下出现 clone：横排扫过规则保持 slice。
+      final Iterable<MapEntry<String, String>> cloneRules = _rules(html).entries
+          .where(
+            (MapEntry<String, String> e) =>
+                e.value.contains('box-decoration-break: clone'),
+          );
+      expect(cloneRules, isNotEmpty);
+      for (final MapEntry<String, String> e in cloneRules) {
+        expect(e.key, contains('.ly-vertical'), reason: e.key);
+      }
       // 回退规则在扫过规则之后，同特异性下后者胜。
       expect(
         at,
@@ -173,7 +188,6 @@ void main() {
         languageTag: 'ja',
         platform: TargetPlatform.windows,
         style: CjkFontStyle.sansSerif,
-        fallbackWhenUnknown: true,
       );
       expect(chain, isNotEmpty);
       expect(html, contains('body { font-family: $chain; }'));
@@ -195,9 +209,52 @@ void main() {
         languageTag: 'ja',
         platform: TargetPlatform.android,
         style: CjkFontStyle.serif,
-        fallbackWhenUnknown: true,
       );
       expect(html, contains('body { font-family: $chain; }'));
+    });
+
+    test('非 CJK / 未知内容语言不套日文 CJK 链（没有全局学习语言）', () {
+      final Set<String> cjkFaces = <String>{
+        for (final TargetPlatform p in <TargetPlatform>[
+          TargetPlatform.windows,
+          TargetPlatform.iOS,
+        ])
+          for (final CjkFontStyle s in CjkFontStyle.values)
+            for (final List<String> fs in cjkFontsFor(p, s).values) ...fs,
+      };
+      String bodyFont(String html) => RegExp(
+        r'body \{ font-family: ([^;]*); \}',
+      ).firstMatch(html)!.group(1)!;
+      String head(String chain) =>
+          chain.split(',').first.trim().replaceAll('"', '');
+
+      for (final String? lang in <String?>['en', 'es', null]) {
+        for (final TargetPlatform p in <TargetPlatform>[
+          TargetPlatform.windows,
+          TargetPlatform.iOS,
+        ]) {
+          final String themed = bodyFont(
+            _html(contentLanguage: lang, platform: p),
+          );
+          final String plain = bodyFont(
+            _html(theme: null, contentLanguage: lang, platform: p),
+          );
+          for (final String chain in <String>[themed, plain]) {
+            expect(cjkFaces, isNot(contains(head(chain))), reason: '$lang $p');
+            for (final String face in cjkFaces) {
+              expect(chain, isNot(contains('"$face"')), reason: '$lang $p');
+            }
+          }
+          // 与正文 _bodyFontFamily 同口径：无主题落 serif。
+          expect(plain, 'serif');
+          expect(themed, 'system-ui, -apple-system, sans-serif');
+        }
+      }
+      // 用户正文字体照旧排链首，后接通用族。
+      expect(
+        bodyFont(_html(contentLanguage: 'en', fontFamilyCss: '"MyFont"')),
+        '"MyFont", system-ui, -apple-system, sans-serif',
+      );
     });
 
     test('竖排字形朝向跟正文设置；横排不输出；非法值回落 mixed', () {

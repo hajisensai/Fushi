@@ -37,8 +37,8 @@ class LyricsModeHtml {
         i < theme.contextOpacities.length
             ? theme.contextOpacities[i]
             : (theme.contextOpacities.isEmpty
-                ? 1.0
-                : theme.contextOpacities.last),
+                  ? 1.0
+                  : theme.contextOpacities.last),
     ];
     final double scale = theme.deselectedScale <= 0
         ? 1.0
@@ -48,9 +48,7 @@ class LyricsModeHtml {
       '--ly-text': _css(text),
       '--ly-current': _css(current),
       // 逐字扫过（Niratan 的 line progress sweep）：当前行未读部分 = 当前色 × 0.4。
-      '--ly-upcoming': _css(
-        current.withValues(alpha: current.a * 0.4),
-      ),
+      '--ly-upcoming': _css(current.withValues(alpha: current.a * 0.4)),
       '--ly-hl': _css(theme.accentColor),
       '--ly-hl-text': _css(theme.selectionTextColor),
       '--ly-op1': ops[0].toStringAsFixed(3),
@@ -72,9 +70,7 @@ class LyricsModeHtml {
       '--ly-ctx-blur': '${theme.contextBlurPx.toStringAsFixed(1)}px',
       '--ly-radius': '${theme.rowRadius.toStringAsFixed(1)}px',
       '--ly-hover': _css(theme.hoverFill),
-      '--ly-pill-bg': _css(
-        current.withValues(alpha: 0.16),
-      ),
+      '--ly-pill-bg': _css(current.withValues(alpha: 0.16)),
       '--ly-pill-fg': _css(current),
       '--ly-past-k': theme.pastOpacityFactor.clamp(0.0, 1.0).toStringAsFixed(3),
     };
@@ -145,18 +141,18 @@ class LyricsModeHtml {
     // 无主题（旧调用 / 单测）时变量全部缺省，CSS 的 var() 回落值与改动前逐值相同。
     final ({Map<String, String> vars, List<String> bodyClasses})? themed =
         theme == null
-            ? null
-            : themeVars(
-                theme,
-                textColorOverride: textColorOverride,
-                currentColorOverride: currentColorOverride,
-                sweep: sweep,
-              );
+        ? null
+        : themeVars(
+            theme,
+            textColorOverride: textColorOverride,
+            currentColorOverride: currentColorOverride,
+            sweep: sweep,
+          );
     final String themeVarsCss = themed == null
         ? ''
         : themed.vars.entries
-            .map((MapEntry<String, String> e) => '${e.key}: ${e.value};')
-            .join(' ');
+              .map((MapEntry<String, String> e) => '${e.key}: ${e.value};')
+              .join(' ');
     final StringBuffer cueHtml = StringBuffer();
     final LyricsCueTextResolver? textResolver = book == null
         ? null
@@ -257,8 +253,9 @@ body.ly-themed .lyrics-container > .cue {
       // 竖排标记只服务主题态的扫过 / 渐隐方向；旧观感不加 class（输出与改动前一致）。
       if (vertical && themed != null) 'ly-vertical',
     ];
-    final String blurBodyClass =
-        bodyClasses.isEmpty ? '' : ' class="${bodyClasses.join(' ')}"';
+    final String blurBodyClass = bodyClasses.isEmpty
+        ? ''
+        : ' class="${bodyClasses.join(' ')}"';
     final String followLabelHtml = _escapeHtml(followLabel);
     // 歌词模式此前硬编码 "Noto Serif JP", "Noto Sans JP", serif：同一本书在正文视图
     // 用用户设的阅读字体、切到歌词就变回 Noto。这里接上 FontTarget.body 的
@@ -272,11 +269,15 @@ body.ly-themed .lyrics-container > .cue {
     // （Segoe UI / Roboto / SF），它们自带 “ ” ‘ ’ … — 等歧义宽度标点，于是这些
     // 标点从拉丁字体取半角字形（竖排时只能被整体侧转），而汉字假名与 。、「」 落到
     // 日文字体——与正文（链首就是 CJK 字体）的标点字形、竖排方向都对不上。
-    final String lyricsFallbackFonts = contentFontFamilyCss(
-      languageTag: contentLanguage,
+    //
+    // 与正文 `_bodyFontFamily` 同口径：**不**开 fallbackWhenUnknown。没有全局学习
+    // 语言——英文 / 西语有声书（或语言未知的书）不能被塞进日文 CJK 链；只有内容
+    // 语言确为 CJK 时才给 CJK 链，否则落回通用族（无主题 serif，与正文同；覆盖层
+    // 主题保持无衬线的系统字体观感）。
+    final String lyricsFallbackFonts = _lyricsFallbackFonts(
+      contentLanguage: contentLanguage,
       platform: platform ?? defaultTargetPlatform,
-      style: theme == null ? CjkFontStyle.serif : CjkFontStyle.sansSerif,
-      fallbackWhenUnknown: true,
+      themed: theme != null,
     );
     final String bodyFontFamily = fontFamilyCss.isEmpty
         ? lyricsFallbackFonts
@@ -445,9 +446,11 @@ body.ly-sweep.ly-vertical:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx {
    且在 slice 下给 background-clip: text 的多行（竖排 = 多列）行内盒只在第一段铺
    背景——后面几段文字是透明填充又没有背景可透，长句在播放（扫过生效）时只剩开头
    一截、其余整列消失。识别不了无前缀 slice 的引擎改用 clone：每段各铺一份渐变，
-   字一定看得见（各段同步扫过，代价是失去跨行接续）。 */
+   字一定看得见（各段同步扫过，代价是失去跨行接续）。
+   只限竖排：WebKit 上这条 @supports 恒成立，横排（默认）多行长句若也改 clone，
+   每行各自扫光、不再按阅读顺序跨行接续。与 BUG-3105 竖排规则同门同特异性。 */
 @supports not (box-decoration-break: slice) {
-  body.ly-sweep:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx {
+  body.ly-sweep.ly-vertical:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx {
     -webkit-box-decoration-break: clone;
   }
 }
@@ -1202,6 +1205,23 @@ if ($currentIndex >= 0 && $currentIndex < _cues.length) {
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#39;');
+  }
+
+  /// 歌词正文的字体回退链（BUG-3281）。内容语言为 CJK 时与正文同源的 CJK 链；
+  /// 否则（非 CJK / 未知）通用族：无主题 `serif`（同正文 `_bodyFontFamily`），
+  /// 覆盖层主题 `system-ui, -apple-system, sans-serif`。
+  static String _lyricsFallbackFonts({
+    required String? contentLanguage,
+    required TargetPlatform platform,
+    required bool themed,
+  }) {
+    final String chain = contentFontFamilyCss(
+      languageTag: contentLanguage,
+      platform: platform,
+      style: themed ? CjkFontStyle.sansSerif : CjkFontStyle.serif,
+    );
+    if (chain.isNotEmpty) return chain;
+    return themed ? 'system-ui, -apple-system, sans-serif' : 'serif';
   }
 
   /// CSS 关键字白名单化：只放行字母与连字符（`mixed` / `upright` / `sideways`），
