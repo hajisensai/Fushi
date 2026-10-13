@@ -235,6 +235,14 @@ _WatchRecency _buildWatchRecency(
   );
 }
 
+/// 页头是否需要显式「刷新」按钮（BUG-2567 / 反馈 #7m1x-R3yOn）。
+///
+/// 下拉刷新（[RefreshIndicator]）只认 `dragDevices` 里的设备，Flutter 默认集合
+/// **不含鼠标**，桌面用户靠下拉够不到手动刷新，所以桌面平台需要按钮；触屏平台
+/// （Android / iOS）下拉手势已是同一个入口，按钮只是重复。
+bool videoLibraryNeedsHeaderRefresh(TargetPlatform platform) =>
+    FushiAppUiScale.isDesktopPlatform(platform);
+
 class HomeVideoPage extends BaseModuleTabPage {
   const HomeVideoPage({
     required this.repo,
@@ -5049,6 +5057,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 行高留出溢出余量、卡片自身尺寸不变；不能用 Clip.none：懒加载 cacheExtent
     // 里已构建的卡会画到行外。
     final double liftHeadroom = rowCardHeight * (kFushiHoverLiftScale - 1) / 2;
+    // 同理左右：首张 / 末张卡贴着视口左右沿，放大溢出的横向余量也被裁平
+    // （BUG-3278，BUG-2281 首页「继续」行同款）。列表首尾各留最宽（横版）卡的
+    // 溢出量，卡片自身尺寸与间距不变。
+    final double liftSideRoom =
+        videoCardWidthForOrientation(
+          orientation: VideoCardOrientation.landscape,
+          coverHeight: coverHeight,
+        ) *
+        (kFushiHoverLiftScale - 1) /
+        2;
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.gap),
       child: Column(
@@ -5067,6 +5085,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 child: ListView.separated(
                   controller: controller,
                   scrollDirection: Axis.horizontal,
+                  padding: EdgeInsets.symmetric(horizontal: liftSideRoom),
                   physics: desktopAwareScrollPhysics(),
                   itemCount: itemCount,
                   separatorBuilder: (BuildContext _, int __) =>
@@ -6779,7 +6798,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             tooltip: t.video_source_scrape_tasks_open,
             label: t.video_source_scrape_tasks_open,
             icon: widget.scrapeTaskController?.pendingConfirmation == null
-                ? Icons.sync_outlined
+                // 与书架 / 漫画库页头的「刮削」入口同一个图标（manage_search）；
+                // 旧的 sync 图标长得像刷新按钮（反馈 #7m1x-R3yOn）。
+                ? Icons.manage_search_outlined
                 : Icons.rule_folder_outlined,
             onTap: widget.onOpenScrapeTasks!,
           ),
@@ -6810,16 +6831,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 而 Flutter 的默认集合**不含鼠标**，所以桌面用户手里一个手动刷新入口都没有。
       // 媒体服务器登录后要等自动列举、清单被 [RemoteLibraryCache] 的 TTL 挡住、或
       // 用户在设置里关掉了「进影片页时自动列出」时，桌面端就彻底卡死在空库上。
-      // 按钮补回来（三端都有，触屏用户下拉照旧），busy 态复用 [FushiIconButton]
-      // 自带的转圈，避免「按了没反应」。
-      FushiIconButton(
-        key: const ValueKey<String>('video-library-refresh'),
-        tooltip: t.refresh,
-        label: t.refresh,
-        icon: Icons.refresh_outlined,
-        busy: _headerRefreshBusy,
-        onTap: _headerRefreshBusy ? null : _refreshFromHeader,
-      ),
+      // 按钮补回来，busy 态复用 [FushiIconButton] 自带的转圈，避免「按了没反应」。
+      // 只在桌面平台显示（[videoLibraryNeedsHeaderRefresh]）：触屏平台下拉手势就是
+      // 同一个入口，再放一个按钮就是同一件事的两个入口（反馈 #7m1x-R3yOn）。
+      if (videoLibraryNeedsHeaderRefresh(defaultTargetPlatform))
+        FushiIconButton(
+          key: const ValueKey<String>('video-library-refresh'),
+          tooltip: t.refresh,
+          label: t.refresh,
+          icon: Icons.refresh_outlined,
+          busy: _headerRefreshBusy,
+          onTap: _headerRefreshBusy ? null : _refreshFromHeader,
+        ),
     ];
     final Widget? navigation = widget.navigation;
     if (navigation != null) {

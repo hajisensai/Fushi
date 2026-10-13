@@ -157,4 +157,59 @@ void main() {
       expect((e.widget as FushiTopFadeScrim).solidHeight, lessThan(1));
     }
   });
+
+  testWidgets('BUG-3283 工具区收起后没有遮罩段悬在内容中间（嵌套层不得从外层固定 inset 起画）', (
+    WidgetTester tester,
+  ) async {
+    final FushiFloatingChromeController controller =
+        FushiFloatingChromeController();
+    addTearDown(controller.dispose);
+    final ValueNotifier<int> count = ValueNotifier<int>(40);
+    addTearDown(count.dispose);
+    await tester.pumpWidget(harness(controller, count));
+    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.pumpAndSettle();
+    expect(controller.visible, isFalse);
+    expect(controller.contentUnderTop, isTrue);
+
+    // 收起 = 工具区整个滑出画面：此时任何遮罩的顶边都必须贴着视口顶边。嵌套层
+    // 曾按外层「恒定 inset」（外壳页签高度）定位，收起后在页签高度处凭空画出一条
+    // 顶端 0.72 不透明的硬边（实机：书架继续阅读卡 / 漫画发现横幅中间一条亮带）。
+    final Finder scrims = find.byType(FushiTopFadeScrim);
+    for (final Element e in scrims.evaluate()) {
+      final Finder f = find.byWidget(e.widget);
+      expect(tester.getTopLeft(f).dy, lessThan(1), reason: '收起后遮罩不得悬在内容中间');
+    }
+  });
+
+  testWidgets('BUG-3283 嵌套遮罩顶边始终接在外层可见下沿（展开 / 收起一路连续）', (
+    WidgetTester tester,
+  ) async {
+    final FushiFloatingChromeController controller =
+        FushiFloatingChromeController();
+    addTearDown(controller.dispose);
+    final ValueNotifier<int> count = ValueNotifier<int>(40);
+    addTearDown(count.dispose);
+    await tester.pumpWidget(harness(controller, count));
+    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.pumpAndSettle();
+    // 弹回：动画中途逐帧核对，嵌套遮罩（若在画）顶边 == 外壳页签此刻的可见下沿。
+    controller.show();
+    for (int i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      final Finder nestedScrim = find.descendant(
+        of: find.byType(FushiFloatingChromeOverlay).last,
+        matching: find.byType(FushiTopFadeScrim),
+      );
+      if (nestedScrim.evaluate().isEmpty) continue;
+      final double top = tester.getTopLeft(nestedScrim).dy;
+      final double outerBottom = tester.getBottomLeft(find.text('tabs')).dy;
+      expect(
+        top,
+        lessThanOrEqualTo(outerBottom + 12),
+        reason: '嵌套遮罩顶边不得落到外层页签可见下沿之下（第 $i 帧）',
+      );
+    }
+    await tester.pumpAndSettle();
+  });
 }

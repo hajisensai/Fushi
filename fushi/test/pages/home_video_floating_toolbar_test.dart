@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -142,6 +143,8 @@ void main() {
   testWidgets('多选：悬浮动作组切成「已选 N · 退出」，底部批量栏浮起；退出后换回', (
     WidgetTester tester,
   ) async {
+    // 刷新按钮只在桌面平台出现（触屏下拉即入口，反馈 #7m1x-R3yOn）。
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     tester.view.physicalSize = const Size(1600, 1000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -185,5 +188,27 @@ void main() {
       inPill(find.byKey(const ValueKey<String>('video-library-refresh'))),
       findsOneWidget,
     );
+    debugDefaultTargetPlatformOverride = null; // 须在用例体内复位：不变量先于 tearDown 校验
+  });
+
+  testWidgets('触屏平台页头不画刷新按钮（下拉刷新是同一入口，不重复）', (WidgetTester tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final FushiSectionTabBar<VideoLibrarySection> strip = tester.widget(
+      find.byType(FushiSectionTabBar<VideoLibrarySection>),
+    );
+    strip.onChanged!(VideoLibrarySection.allVideos);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('video-library-refresh')),
+      findsNothing,
+    );
+    debugDefaultTargetPlatformOverride = null;
   });
 }
