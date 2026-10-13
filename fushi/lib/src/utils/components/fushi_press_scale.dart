@@ -53,10 +53,22 @@ class _FushiPressScaleState extends State<FushiPressScale>
     _press = AnimationController.unbounded(vsync: this, value: 1);
   }
 
+  /// 非 null = 当前有一次「按下」尚未放回；它是唯一的按压状态源。
   Offset? _downPosition;
+
+  /// 按下时取好的弹簧：松手路径**不再碰 [context]**。指针事件按 hit-test 时记下的
+  /// 渲染对象路径派发，与 widget 生命周期无关——点击回调里开了模态 / 原生对话框
+  /// （Windows 的文件选择器会在指针事件派发途中泵一圈消息、跑帧）把本卡拆掉后，
+  /// 这条路径上的 pointerUp 仍会到达已销毁的 State。此时读 `context` 会抛
+  /// `Null check operator used on a null value`（ufzhkidhLr）。
+  FushiSpringSpec? _releaseSpring;
 
   @override
   void dispose() {
+    // 销毁后到达的 pointerUp / pointerCancel 在 _release 里因 _downPosition == null
+    // 直接返回，不会再碰已 dispose 的控制器或 context。
+    _downPosition = null;
+    _releaseSpring = null;
     _press.dispose();
     super.dispose();
   }
@@ -64,8 +76,10 @@ class _FushiPressScaleState extends State<FushiPressScale>
   void _onDown(PointerDownEvent event) {
     // 只认主键：右键 / 中键是菜单与平移，不是「按下这张卡」。
     if (event.buttons != kPrimaryButton) return;
+    final FushiSpringSpec spring = context.fushiMotion.spatialFast;
     _downPosition = event.position;
-    _press.fushiSpringTo(widget.scale, context.fushiMotion.spatialFast);
+    _releaseSpring = spring;
+    _press.fushiSpringTo(widget.scale, spring);
   }
 
   void _onMove(PointerMoveEvent event) {
@@ -75,9 +89,11 @@ class _FushiPressScaleState extends State<FushiPressScale>
   }
 
   void _release() {
+    if (_downPosition == null) return;
+    final FushiSpringSpec? spring = _releaseSpring;
     _downPosition = null;
-    if (!_press.isAnimating && (_press.value - 1).abs() < 1e-3) return;
-    _press.fushiSpringTo(1, context.fushiMotion.spatialFast);
+    _releaseSpring = null;
+    if (spring != null) _press.fushiSpringTo(1, spring);
   }
 
   @override

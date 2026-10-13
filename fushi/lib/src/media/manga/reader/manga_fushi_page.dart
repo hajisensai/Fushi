@@ -1774,7 +1774,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _tapZonePaging = appModel.mangaTapZonePaging;
     _tapZoneLayout = MangaTapZoneLayoutKey.fromKey(appModel.mangaTapZoneLayout);
     _background = MangaBackgroundKey.fromKey(appModel.mangaBackground);
-    _spreadOffset = appModel.mangaSpreadOffset >= 1 ? 1 : 0;
     _widePageSolo = appModel.mangaWidePageSolo;
     _chromeFloating = appModel.mangaChromeFloating;
     _applyVolumeKeyPaging(appModel.mangaVolumeKeyPaging);
@@ -1809,6 +1808,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
     }
     _readerPreferences = readerPreferences;
+    // 全局值是默认，本书覆盖（快捷设置「错开一页」）压过它。
+    _spreadOffset = readerPreferences.spreadOffset >= 1 ? 1 : 0;
     try {
       // 没有本书覆盖时不碰 wakelock：openMedia 已按全局「保持屏幕常亮」设好，漫画
       // 默认值（true）不能把用户全局关掉的常亮再打开。
@@ -5111,7 +5112,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final bool fullscreenChanged = desktopWindowFullscreenSupported
         ? hasFullscreenOverride && prefs.fullscreen != _isWindowFullscreen
         : prefs.fullscreen != _readerPreferences.fullscreen;
-    final bool modeChanged = nextMode != _mode;
+    // 跨页偏移（封面算不算第 0 页）改了也要重排 spread 序列：它和阅读模式一样
+    // 决定页序配对（快捷设置「错开一页」立即生效）。
+    final int nextSpreadOffset = prefs.spreadOffset >= 1 ? 1 : 0;
+    final bool modeChanged =
+        nextMode != _mode || nextSpreadOffset != _spreadOffset;
+    _spreadOffset = nextSpreadOffset;
     final List<MangaSpreadEntry> spreads = modeChanged
         ? _buildSpreadsFor(payload, nextMode)
         : _spreads;

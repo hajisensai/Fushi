@@ -376,6 +376,8 @@ class _LnReaderNovelDetailPageState
     final LnReaderNovel? novel = _novel;
     // 页头只留标题：「在网站打开」「刷新」收进作品头部的「⋯」菜单（M3E 详情骨架）。
     return FushiPageScaffold(
+      // hero 里已有大标题：顶栏标题等它滚出视口再淡入（不同屏重复）。
+      revealTitleAfterScroll: kMediaDetailTitleRevealOffset,
       title: novel?.name.isNotEmpty == true ? novel!.name : widget.item.name,
       subtitle: widget.plugin.name,
       // 正文铺到悬浮页头底下（脚手架默认）：封面模糊背景一直画到窗口顶端。

@@ -11,7 +11,6 @@ library;
 
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:material_ui/material_ui.dart';
@@ -222,16 +221,21 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
       const SizedBox(height: 12),
     ];
     // 章节列表自带一个进场窗口（新挂载的 scope），与「正在播放」卡错峰进场。
-    final Widget body = KeyedSubtree(
+    Widget chaptersBody({Widget? header}) => KeyedSubtree(
       key: const ValueKey<String>('fushi_audiobook_tab_chapters'),
-      child: FushiEntranceScope(child: _buildChaptersTab(theme, ctrl)),
+      child: FushiEntranceScope(
+        child: _buildChaptersTab(theme, ctrl, header: header),
+      ),
     );
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
-          // 高度够 → 「正在播放」卡钉住、只有页签内容滚；不够 → 整块面板一起滚
-          // （手机横屏），否则 Expanded 被压到 ~0，页签以下滚不出来。
+          // 高度够 → 「正在播放」卡钉住、只有章节列表滚；不够（手机竖屏 sheet 去掉
+          // 标题后常 < 660，横屏更矮）→ 「正在播放」卡与章节列表并进**同一条**
+          // 滚动（CustomScrollView），一指滚到底。曾是「外层滚动 + 固定高度的内层
+          // 章节列表」两层嵌套：手指落在列表上只滚内层，外层够不到底，章节只露
+          // 一小截且滚不到底（k2ykdRRxC3）。
           final bool pinned = readerAudiobookPanelPinsHero(
             constraints.maxHeight,
           );
@@ -248,28 +252,35 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     ...head,
-                    Expanded(child: body),
+                    Expanded(child: chaptersBody()),
                   ],
                 ),
               ),
             );
           }
-          final Widget column = Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              ...head,
-              SizedBox(
-                height: math.max(320, constraints.maxHeight * 0.8),
-                child: body,
+          if (!constraints.maxHeight.isFinite) {
+            return gate(
+              FushiEntranceScope(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    ...head,
+                    SizedBox(height: 320, child: chaptersBody()),
+                  ],
+                ),
               ),
-            ],
-          );
-          if (!constraints.maxHeight.isFinite) return gate(column);
-          return SingleChildScrollView(
-            key: const ValueKey<String>('fushi_audiobook_scroll_chapters'),
-            primary: false,
-            child: gate(FushiEntranceScope(child: column)),
+            );
+          }
+          return gate(
+            FushiEntranceScope(
+              child: chaptersBody(
+                header: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: head,
+                ),
+              ),
+            ),
           );
         },
       ),
@@ -622,6 +633,9 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                   key: ValueKey<String>('fushi_audiobook_speed_$v'),
                   label: Text(AudiobookSpeedSlider.format(v)),
                   selected: (ctrl.speed - v).abs() < 0.01,
+                  // 选中态铺主色（MD3 默认的 secondaryContainer 淡粉在
+                  // primaryContainer 卡上几乎看不出选中；Apple 胶囊用同色实底）。
+                  accentColor: theme.colorScheme.primary,
                   showCheckmark: false,
                   onSelected: (_) {
                     unawaited(ctrl.setSpeed(v));
@@ -859,7 +873,13 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
 
   /// 「章节」页：目录 + 该章首句在全书音频时间轴上的起点；当前章高亮。点击先跳
   /// 阅读器到该章，再把音频定位到该章首句（无 cue 的章只跳文字）。
-  Widget _buildChaptersTab(ThemeData theme, AudiobookPlayerController? ctrl) {
+  ///
+  /// [header] 非空 = 整块面板单滚动模式：它作为列表最顶上的 sliver 与章节同滚。
+  Widget _buildChaptersTab(
+    ThemeData theme,
+    AudiobookPlayerController? ctrl, {
+    Widget? header,
+  }) {
     final int currentEntry =
         resolveCurrentTocEntry(
           widget.toc,
@@ -921,11 +941,8 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
             ScrollController scroll,
             GlobalKey currentRowKey,
             VoidCallback revealCurrent,
-          ) => ListView.builder(
-            key: const ValueKey<String>('fushi_audiobook_chapters'),
-            controller: scroll,
-            itemCount: leadCount + widget.toc.length,
-            itemBuilder: fushiStaggeredItemBuilder((
+          ) {
+            final NullableIndexedWidgetBuilder itemBuilder = fushiStaggeredItemBuilder((
               BuildContext context,
               int index,
             ) {
@@ -990,8 +1007,26 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                   }
                 },
               );
-            }),
-          ),
+            });
+            final int count = leadCount + widget.toc.length;
+            const Key listKey = ValueKey<String>('fushi_audiobook_chapters');
+            if (header == null) {
+              return ListView.builder(
+                key: listKey,
+                controller: scroll,
+                itemCount: count,
+                itemBuilder: itemBuilder,
+              );
+            }
+            return CustomScrollView(
+              key: listKey,
+              controller: scroll,
+              slivers: <Widget>[
+                SliverToBoxAdapter(child: header),
+                SliverList.builder(itemCount: count, itemBuilder: itemBuilder),
+              ],
+            );
+          },
     );
   }
 }

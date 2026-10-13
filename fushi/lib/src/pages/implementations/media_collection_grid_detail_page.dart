@@ -57,6 +57,7 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
     this.onDeleteMembersMedia,
     this.deleteMembersStatisticsSubtitle,
     this.memberInfoOf,
+    this.memberInfoRefresh,
     this.onSetMembersCompleted,
     super.key,
   });
@@ -114,6 +115,11 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
   /// 成员的展示信息（显示名 / 纯封面 / 进度 / 最后阅读时刻 / 读完）。null = 调用方
   /// 不提供：hero 不画进度、没有阅读状态筛选与「阅读时间」排序、没有标记读完。
   final CollectionMemberInfoResolver? memberInfoOf;
+
+  /// [memberInfoOf] 背后的数据（最后阅读时刻 / 进度 / 读完）变了的通知。详情页是压在
+  /// 阅读器之下的独立路由，不会因调用方的 provider 变化而重建；不订阅这条，读完一本
+  /// 回到详情页，「继续阅读」与 hero 进度仍停在进页时的快照（4h4uGUck4k）。
+  final Listenable? memberInfoRefresh;
 
   /// 多选「标记读完 / 未读」落库（调用方按成员种类写各自的读完真值）。null = 不提供。
   final Future<void> Function(
@@ -188,11 +194,26 @@ class _MediaCollectionGridDetailPageState
     super.initState();
     _name = widget.collection.name;
     _scroll.addListener(_onScroll);
+    widget.memberInfoRefresh?.addListener(_onMemberInfoChanged);
     _reload();
+  }
+
+  void _onMemberInfoChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didUpdateWidget(covariant MediaCollectionGridDetailPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.memberInfoRefresh != widget.memberInfoRefresh) {
+      oldWidget.memberInfoRefresh?.removeListener(_onMemberInfoChanged);
+      widget.memberInfoRefresh?.addListener(_onMemberInfoChanged);
+    }
   }
 
   @override
   void dispose() {
+    widget.memberInfoRefresh?.removeListener(_onMemberInfoChanged);
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     _search.dispose();

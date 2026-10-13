@@ -7057,5 +7057,7 @@
   "anime_download_filter_single": "Single episodes",
   "popup_mining_target_switch": "Switch profile or deck",
   "popup_mining_target_empty": "No profiles or decks yet. Connect Anki in settings first.",
-  "popup_mining_target_switch_failed": "Could not switch the mining target: $error"
+  "popup_mining_target_switch_failed": "Could not switch the mining target: $error",
+  "manga_quick_spread_shift": "Offset by one page",
+  "manga_quick_spread_shift_subtitle": "Cover on its own page, then pair pages two by two. Turn off to pair from page 1."
 }

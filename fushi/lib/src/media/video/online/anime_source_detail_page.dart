@@ -510,6 +510,8 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
         if (!didPop) _exitSelection();
       },
       child: FushiPageScaffold(
+        // hero 里已有大标题：顶栏标题等它滚出视口再淡入（不同屏重复）。
+        revealTitleAfterScroll: kMediaDetailTitleRevealOffset,
         title: _anime.title,
         subtitle: widget.sourceContext.source.name,
         // 正文铺到悬浮页头底下（脚手架默认）：背景一直画到窗口顶端。

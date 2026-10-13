@@ -4045,6 +4045,7 @@ class PreferencesRepository extends ChangeNotifier
           ? 'right_left'
           : mangaTapZoneLayout,
       'volumeKeys': mangaVolumeKeyPaging,
+      'spreadOffset': mangaSpreadOffset,
     });
   }
 
@@ -4068,6 +4069,7 @@ class PreferencesRepository extends ChangeNotifier
           : value.tapZones.key,
     );
     await setPref('manga_volume_key_paging', value.volumeKeys);
+    await setPref('manga_spread_offset', value.spreadOffset);
     await setPref(
       'manga_page_animation',
       value.animateTransitions

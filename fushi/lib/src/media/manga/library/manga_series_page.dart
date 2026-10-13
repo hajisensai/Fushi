@@ -1442,6 +1442,8 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     // 正文铺到悬浮页头底下（脚手架默认 extendBodyBehindHeader）：封面模糊背景
     // 一直画到窗口顶端，页头只是胶囊。
     return FushiPageScaffold(
+      // hero 里已有大标题：顶栏标题等它滚出视口再淡入（不同屏重复）。
+      revealTitleAfterScroll: kMediaDetailTitleRevealOffset,
       title: title,
       body: _buildBody(context),
     );

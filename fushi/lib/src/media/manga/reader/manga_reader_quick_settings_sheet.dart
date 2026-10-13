@@ -221,6 +221,19 @@ class _MangaReaderQuickSettingsSheetState
               : null,
         ),
       ),
+      // 错开一页 = 跨页偏移（封面独占单页后再配对）。紧挨单双页：选错整卷左右页全反，
+      // 要在读的当下就能改。落本书覆盖（全局值是默认），切换后立即重排。
+      AdaptiveSettingsSwitchRow(
+        key: const ValueKey<String>('manga_quick_spread_shift'),
+        title: t.manga_quick_spread_shift,
+        subtitle: t.manga_quick_spread_shift_subtitle,
+        value: _prefs.spreadOffset >= 1,
+        // 与单双页同理：条漫恒单列，没有配对可错开。
+        onChanged: _mode == MangaReadingMode.spread
+            ? (bool on) =>
+                  _apply(<String, Object?>{'spreadOffset': on ? 1 : 0})
+            : null,
+      ),
       _QuickRow(
         title: t.manga_reader_scale,
         child: FushiSegmentedButton<String>(

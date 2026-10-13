@@ -3480,6 +3480,7 @@ class FushiPageHeader extends StatelessWidget {
     this.bottom,
     this.padding,
     this.compact = false,
+    this.titleRevealed,
   }) : titleWidget = null;
 
   /// 用任意组件占据页头主位。适合把分段导航直接放进页头动作同一行，避免再渲染
@@ -3494,7 +3495,12 @@ class FushiPageHeader extends StatelessWidget {
   })  : title = null,
         titleWidget = title,
         subtitle = null,
-        bottom = null;
+        bottom = null,
+        titleRevealed = null;
+
+  /// null = 标题恒显示；非 null = 标题随该值淡入 / 淡出（详情页：hero 里已有
+  /// 大标题，顶栏标题等 hero 标题滚出视口再出现，避免同屏两个相同标题）。
+  final bool? titleRevealed;
 
   /// 推出来的独立页（不在首页外壳里）的页头：标题 + 自动返回键。
   ///
@@ -3514,6 +3520,7 @@ class FushiPageHeader extends StatelessWidget {
     Key? backButtonKey,
   })  : titleWidget = null,
         compact = false,
+        titleRevealed = null,
         leading = FushiRouteBackButton(key: backButtonKey, onPressed: onBack);
 
   final String? title;
@@ -3593,7 +3600,7 @@ class FushiPageHeader extends StatelessWidget {
             ),
           )
         : null;
-    final Widget resolvedTitle = titleWidget ??
+    final Widget unfadedTitle = titleWidget ??
         floatingTitle ??
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -3625,6 +3632,16 @@ class FushiPageHeader extends StatelessWidget {
               ),
           ],
         );
+
+    final bool? revealed = titleRevealed;
+    final Widget resolvedTitle = revealed == null
+        ? unfadedTitle
+        : AnimatedOpacity(
+            key: const ValueKey<String>('fushi_page_header_title_fade'),
+            opacity: revealed ? 1 : 0,
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            child: IgnorePointer(ignoring: !revealed, child: unfadedTitle),
+          );
 
     // 2026-10-04「顶部标签栏做成全宽」：在首页外壳里、主位是分区页签（或标题
     // 已由外壳大标题条画出）时，动作交给外壳大标题条右侧（iOS 26 / macOS 26
@@ -4261,9 +4278,15 @@ class FushiPageScaffold extends StatefulWidget {
     this.extendBodyBehindHeader = true,
     this.header,
     this.headerTitle,
+    this.revealTitleAfterScroll,
   });
 
   final String title;
+
+  /// 非 null = 页头标题初始隐藏，正文竖向滚过这个距离（逻辑像素）后淡入。
+  /// 给「正文顶部已有同名大标题」的详情页用（[MediaDetailLayout] 的 hero）：
+  /// 否则顶栏胶囊与 hero 各有一个相同标题。返回键 / 动作不受影响。
+  final double? revealTitleAfterScroll;
 
   /// 整条替换默认的 [FushiPageHeader]（仍挂页头收起外壳与让位测高）。给「页头
   /// 本身就是一条悬浮工具栏」的页面用（更新中心：`[返回] [域筛选 …] ⋯`，
@@ -4333,12 +4356,25 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   /// 页头底下）：驱动顶部渐隐遮罩。
   final ValueNotifier<bool> _scrolledUnder = ValueNotifier<bool>(false);
 
+  /// [FushiPageScaffold.revealTitleAfterScroll]：标题是否已该显示。
+  final ValueNotifier<bool> _titleRevealed = ValueNotifier<bool>(false);
+
   void _onHeaderHeight(double height) {
     if (!mounted || height == _headerHeight) return;
     setState(() => _headerHeight = height);
   }
 
+  void _trackTitleReveal(Notification notification) {
+    final double? after = widget.revealTitleAfterScroll;
+    if (after == null) return;
+    if (notification is ScrollUpdateNotification &&
+        notification.metrics.axis == Axis.vertical) {
+      _titleRevealed.value = notification.metrics.extentBefore > after;
+    }
+  }
+
   bool _trackScrolledUnder(Notification notification) {
+    _trackTitleReveal(notification);
     // 只看竖向轴、不限深度：正文常是横向 TabBarView 套各页竖向列表（统计
     // 中心），竖向滚动的 depth 是 1。
     if (notification is ScrollUpdateNotification &&
@@ -4365,6 +4401,7 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     _scrollController.dispose();
     _chrome.dispose();
     _scrolledUnder.dispose();
+    _titleRevealed.dispose();
     super.dispose();
   }
 
@@ -4375,7 +4412,7 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
         (widget.automaticallyImplyLeading ? _defaultLeading(context) : null);
     final bool floatingChrome = !isGlassDesign(context);
     final bool extendBody = widget.extendBodyBehindHeader && floatingChrome;
-    final Widget header = FushiScrollAwayChrome(
+    Widget buildHeader(bool? titleRevealed) => FushiScrollAwayChrome(
       controller: _chrome,
       enabled: floatingChrome,
       child: widget.header != null
@@ -4399,8 +4436,16 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
               actions: widget.actions,
               bottom: widget.headerBottom,
               compact: widget.headerCompact ?? effectiveLeading != null,
+              titleRevealed: titleRevealed,
             ),
     );
+    final Widget header = widget.revealTitleAfterScroll == null
+        ? buildHeader(null)
+        : ValueListenableBuilder<bool>(
+            valueListenable: _titleRevealed,
+            builder: (BuildContext context, bool revealed, Widget? _) =>
+                buildHeader(revealed),
+          );
     return PrimaryScrollController(
       controller: _scrollController,
       // Inherit on EVERY platform. The default is mobile-only, which would
@@ -4449,9 +4494,11 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
                   fit: StackFit.passthrough,
                   children: <Widget>[
                     NotificationListener<Notification>(
-                      onNotification: (Notification notification) =>
-                          floatingChrome &&
-                          _chrome.handleNotification(notification),
+                      onNotification: (Notification notification) {
+                        _trackTitleReveal(notification);
+                        return floatingChrome &&
+                            _chrome.handleNotification(notification);
+                      },
                       child: widget.body,
                     ),
                     Positioned(

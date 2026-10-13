@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2991 条。点号进各自文件。
+> 共 2994 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -40,6 +40,9 @@
 | [BUG-3317](bugs/BUG-3317-bitmap-subtitle-oversize-oom.md) | ✅ | ✅ | 位图字幕对象声明超大尺寸时一次分配数GB平面 |
 | [BUG-3316](bugs/BUG-3316-libmpv-probe-tests-release-backend.md) | ✅ | ✅ | media_kit 热重启探针预编译后实际测的是 release 后端 |
 | [BUG-3308](bugs/BUG-3308-popup-round-button-press-square.md) | ✅ | ✅ | 查词弹窗点「+」制卡按钮时闪出完全直角的方块 |
+| [BUG-3302](bugs/BUG-3302-collection-continue-stale-snapshot.md) | ✅ | ✅ | 合集详情「继续阅读」停在进页快照，不随阅读更新 |
+| [BUG-3301](bugs/BUG-3301-audiobook-panel-nested-scroll.md) | ✅ | ✅ | 有声书面板矮视口外层滚动套固定高度内层章节列表，滚不到底 |
+| [BUG-3300](bugs/BUG-3300-press-scale-release-after-dispose.md) | ✅ | ✅ | FushiPressScale 松手路径读已销毁 State.context（文件选择器闪退） |
 | [BUG-3299](bugs/BUG-3299-profile-binding-sticky.md) | ✅ | ✅ | 绑定配置切换后无绑定条目不回到用户自选配置 |
 | [BUG-3298](bugs/BUG-3298-episode-switch-reentry.md) | ✅ | ✅ | 视频换集 _switchEpisode 无防重入 |
 | [BUG-3297](bugs/BUG-3297-subtitle-list-open-remeasure.md) | ✅ | ✅ | 视频字幕列表每次打开都把当前句之前的行重新排版两遍 |

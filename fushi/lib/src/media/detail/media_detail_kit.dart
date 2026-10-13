@@ -54,6 +54,11 @@ const double kMediaDetailHeroWideMinWidth = 640;
 ///
 /// [image] 变化（多张 fanart 轮换）时交叉淡入；[imageKey] 给轮换下标之类的
 /// 稳定身份（缺省用 [image] 本身）。墨水屏不画图与色晕。
+/// 详情页顶栏标题的淡入阈值（逻辑像素）：hero 大标题大致滚到顶栏胶囊下面的位置
+/// （[FushiPageScaffold.revealTitleAfterScroll]）。窄屏单列 hero 的标题在封面下方
+/// 约 300–360 处；此前恒显示，顶栏与 hero 同屏出现两个相同标题。
+const double kMediaDetailTitleRevealOffset = 320;
+
 class MediaDetailBackdrop extends StatelessWidget {
   const MediaDetailBackdrop({
     this.image,
@@ -98,17 +103,22 @@ class MediaDetailBackdrop extends StatelessWidget {
                         gaplessPlayback: true,
                         errorBuilder: (_, _, _) => const SizedBox.shrink(),
                       )
-                    : ImageFiltered(
-                        imageFilter: ui.ImageFilter.blur(
-                          sigmaX: blurSigma,
-                          sigmaY: blurSigma,
-                          tileMode: TileMode.decal,
-                        ),
-                        child: Image(
-                          image: image,
-                          fit: BoxFit.cover,
-                          gaplessPlayback: true,
-                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    // ClipRect：模糊会把封面边缘的颜色向外晕开，ImageFiltered 默认
+                    // 不裁剪，晕出的部分落在 hero 底边之外、压在下方内容上，看起来
+                    // 就是 hero 底部一条带阴影的硬边（渐隐 scrim 只盖得住框内）。
+                    : ClipRect(
+                        child: ImageFiltered(
+                          imageFilter: ui.ImageFilter.blur(
+                            sigmaX: blurSigma,
+                            sigmaY: blurSigma,
+                            tileMode: TileMode.decal,
+                          ),
+                          child: Image(
+                            image: image,
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                          ),
                         ),
                       ),
               ),
