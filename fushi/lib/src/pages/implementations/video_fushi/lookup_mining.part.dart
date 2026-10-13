@@ -161,7 +161,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
         controller.currentCue ??
         resolveMiningCueForPosition(
           cues: controller.miningCues,
-          positionMs: controller.positionMs ?? 0,
+          positionMs: controller.subtitleClockMs ?? 0,
           // TODO-2837：按位置解析必须与有效流的 cue 命中同一根轴（主流空落副流
           // 时用副轨生效轴，否则副轨独立调轴后锚错句）。
           delayMs: controller.miningDelayMs,

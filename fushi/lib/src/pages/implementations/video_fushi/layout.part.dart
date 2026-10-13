@@ -595,7 +595,7 @@ extension _VideoLayout on _VideoFushiPageState {
                               items: _danmakuVisibleItems,
                               enabled: appModel.videoDanmakuEnabled,
                               maxActive: appModel.videoDanmakuMaxActive,
-                              positionMs: () => controller.positionMs ?? 0,
+                              positionMs: () => controller.subtitleClockMs ?? 0,
                               // 播放器时钟 ~200ms 才更新，overlay 内按帧插值需知道是否在播放
                               // 与当前速率，才能平滑外推且暂停时冻结、倍速时同步。
                               isPlaying: () => controller.isPlaying,

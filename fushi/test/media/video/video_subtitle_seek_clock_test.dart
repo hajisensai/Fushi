@@ -144,6 +144,44 @@ void main() {
     });
   });
 
+  group('seek 在途时上一句 / 下一句以跳转目标为准，不按滞后旧位置', () {
+    List<AudioCue> cues() => <AudioCue>[
+      _cue(0, 1000, 2000),
+      _cue(1, 5000, 6000),
+      _cue(2, 9000, 10000),
+    ];
+
+    test('暂停态 seek 进 line1 后按下一句：到 line2（修复前按旧位置算出 line1，原地）', () async {
+      final VideoPlayerController c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues(cues());
+      c.debugSetIsPlayingForTesting(false);
+      c.debugSetPositionForTesting(1500);
+      c.debugUpdateCueForPosition(1500);
+
+      await c.seekMs(5500);
+      expect(c.currentCue!.text, 'line1');
+      await c.skipToNextCue();
+      c.debugUpdateCueForPosition(1500);
+      expect(c.currentCue!.text, 'line2');
+    });
+
+    test('暂停态 seek 进 line2 后按上一句：到 line1（修复前按旧位置算不出上一句）', () async {
+      final VideoPlayerController c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues(cues());
+      c.debugSetIsPlayingForTesting(false);
+      c.debugSetPositionForTesting(1500);
+      c.debugUpdateCueForPosition(1500);
+
+      await c.seekMs(9500);
+      expect(c.currentCue!.text, 'line2');
+      await c.skipToPrevCue();
+      c.debugUpdateCueForPosition(1500);
+      expect(c.currentCue!.text, 'line1');
+    });
+  });
+
   group('普通 seek 往回跳：滞后旧位置不被误判落地', () {
     test('播放态往回跳远：旧位置大于目标也不把上一句闪回来', () async {
       final VideoPlayerController c = VideoPlayerController();

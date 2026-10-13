@@ -1096,7 +1096,7 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 测试可注入的播放位置（毫秒）：widget 测试无真实 [Player]（[positionMs] 恒 null），
   /// 无法驱动 `\fad`/`\fade` 按位置逐帧求不透明度。置非 null 时覆盖 [positionMs]（并经
-  /// [_effectivePositionMs] 流入字幕淡变）。传 null 还原真实来源。
+  /// [subtitleClockMs] 流入字幕淡变）。传 null 还原真实来源。
   int? _debugPositionOverride;
 
   @visibleForTesting
@@ -2274,7 +2274,7 @@ class VideoPlayerController extends ChangeNotifier
         buildSubtitleDelayProperty(_subtitleDelayMpvMs),
       ),
     );
-    _resyncTextSubtitleAfterDelayChange(positionMs);
+    _resyncTextSubtitleAfterDelayChange(subtitleClockMs);
   }
 
   /// BUG-373：调延迟后对**文本字幕**立即按 [positionMs] 重算当前 cue 并 [notifyListeners]，
@@ -5067,7 +5067,7 @@ class VideoPlayerController extends ChangeNotifier
     if (_cues.isEmpty) return;
     final int? next = nextCueIndexFor(
       cues: _cues,
-      positionMs: _effectivePositionMs,
+      positionMs: effectiveSubtitleClockMs,
       anchorIndex: _seekTargetCueIndex,
     );
     if (next == null) return;
@@ -5086,7 +5086,7 @@ class VideoPlayerController extends ChangeNotifier
     if (_cues.isEmpty) return;
     final int? prev = prevCueIndexFor(
       cues: _cues,
-      positionMs: _effectivePositionMs,
+      positionMs: effectiveSubtitleClockMs,
       anchorIndex: _seekTargetCueIndex,
     );
     if (prev == null) return;
@@ -5114,7 +5114,7 @@ class VideoPlayerController extends ChangeNotifier
     }
     final PrevSeekDecision decision = prevSeekDecisionFor(
       cues: _cues,
-      positionMs: _effectivePositionMs,
+      positionMs: effectiveSubtitleClockMs,
       seekSeconds: seekSeconds,
       anchorIndex: _seekTargetCueIndex,
       degradeFarCueToTimeSeek: degradeFarCueToTimeSeek,
@@ -5148,7 +5148,7 @@ class VideoPlayerController extends ChangeNotifier
     }
     final int? next = nextCueIndexFor(
       cues: _cues,
-      positionMs: _effectivePositionMs,
+      positionMs: effectiveSubtitleClockMs,
       anchorIndex: _seekTargetCueIndex,
     );
     // next == null：已在末句之后，无下一句 → 保持 no-op（不前进越过片尾，避免误跳到结尾）。
