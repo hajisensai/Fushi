@@ -14,6 +14,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 
 /// BUG-712 P1 守卫：每次查词只把结果推进弹窗 WebView 一次。
 ///
@@ -882,7 +883,10 @@ DictionarySearchResult makeResult(String term) => DictionarySearchResult(
 
 Widget wrapPopup({required AppModel appModel, required Widget popup}) {
   return ProviderScope(
-    overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+    overrides: <Override>[
+      appProvider.overrideWith((ref) => appModel),
+      ...popupMiningTargetTestOverrides(),
+    ],
     child: TranslationProvider(
       child: MaterialApp(
         home: Scaffold(
@@ -928,7 +932,10 @@ Widget buildDedupHostApp({
   required GlobalKey<DedupHostPageState> hostKey,
 }) {
   return ProviderScope(
-    overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+    overrides: <Override>[
+      appProvider.overrideWith((ref) => appModel),
+      ...popupMiningTargetTestOverrides(),
+    ],
     child: TranslationProvider(
       child: MaterialApp(
         builder: (context, child) => child ?? const SizedBox.shrink(),
