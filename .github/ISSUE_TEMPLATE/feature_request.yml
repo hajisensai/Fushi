@@ -1,0 +1,43 @@
+name: Feature request / 功能建议
+description: Suggest a new feature or an improvement. / 新功能或改进建议。
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search [existing issues](https://github.com/hajisensai/hibiki/issues?q=is%3Aissue) first. English or Chinese are both fine.
+        提交前请先搜索[已有 issue](https://github.com/hajisensai/hibiki/issues?q=is%3Aissue)。中英文均可。
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case · 遇到的问题或使用场景
+      description: What are you trying to do, and what gets in the way today? / 你想做什么、现在卡在哪里。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution · 期望的方案
+      description: How would you like it to work? / 你希望它怎样工作。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives / references · 替代方案与参考
+      description: Workarounds you use, or other apps that do this well (links, screenshots). / 现有的变通做法，或做得好的其他应用（链接、截图）。
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform / 平台
+      multiple: true
+      options:
+        - All / 全平台
+        - Android
+        - iOS
+        - Windows
+        - macOS
+        - Linux
+        - Browser extension / 浏览器扩展
+        - Headless server / 无头服务端
