@@ -411,6 +411,7 @@ class ImmersionMiningRequest {
     this.mediaSourceTlsPinSha256,
     this.mediaSourceHttpHeaders = const {},
     this.mediaSourceRouteReady,
+    this.fieldsMediaReady,
     this.remoteAudioClipper,
     this.cachedMediaSnapshot,
     this.mediaTimeOffsetMs = 0,
@@ -532,6 +533,16 @@ class ImmersionMiningRequest {
   /// 在队列里轮到本任务、构造 ffmpeg 参数之前先等它。它从不失败（宿主自己兜错）。
   final Future<void>? mediaSourceRouteReady;
 
+  /// [fields] 里登记的词典媒体（外字等，`dictionaryMedia`）落进 Anki 媒体缓存完成的
+  /// 信号；null = 已就位（调用方在入队前就写好了缓存）。
+  ///
+  /// 与 [mediaSourceRouteReady] 同一个理由：写缓存是异步的，而制卡请求必须在点击当下
+  /// **同步**冻结播放器输入并入队。先 await 写缓存再冻结，中间那段时间里换集，卡片就
+  /// 会拿旧集字幕的时间去截新集的音频和画面（手机遥控制卡曾如此）。所以调用方当场
+  /// 开始写、把 Future 挂在这里，引擎在队列里轮到本任务时先等它，再抽媒体、落卡。
+  /// 它失败时本次制卡按失败结束（与改动前 await 写缓存抛错同一结局）。
+  final Future<void>? fieldsMediaReady;
+
   /// BUG-1004：互联 host（LAN Hibiki 库）远端流的句子音频改由 **host 端**裁好再下载——host
   /// 用本地文件裁、不经网络/TLS，从根上绕开「client ffmpeg 抓 host 自签 https / token 流」的
   /// 整类失败（移动端自编 ffmpeg-kit 的 TLS pin 仍有残余缺口、URL 编码/网络脆弱等，见
@@ -599,6 +610,7 @@ class ImmersionMiningRequest {
         animatedFormat: animatedFormat,
         stillFormat: stillFormat,
         clipFormat: clipFormat,
+        fieldsMediaReady: fieldsMediaReady,
         mediaTimeOffsetMs: snapshot.zeroMs,
         stageNote: stageNote,
       );
@@ -668,6 +680,7 @@ class ImmersionMiningRequest {
       mediaSourceHttpHeaders,
     ),
     mediaSourceRouteReady: mediaSourceRouteReady,
+    fieldsMediaReady: fieldsMediaReady,
     remoteAudioClipper: remoteAudioClipper,
     cachedMediaSnapshot: cachedMediaSnapshot,
     mediaTimeOffsetMs: mediaTimeOffsetMs,

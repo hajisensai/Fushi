@@ -381,8 +381,17 @@ class ImmersionMiningEngine {
     // 它就是一个未处理的异步错误。
     final Future<CachedMediaSnapshot?> pendingSnapshot =
         _guardSnapshot(frozenRequest.cachedMediaSnapshot);
+    // 词典媒体缓存同样在点击当下开写（见 [ImmersionMiningRequest.fieldsMediaReady]）：
+    // 当场接住失败，轮到本任务时再原样抛出，本次制卡按失败结束。
+    final Future<AsyncError?> fieldsMediaFailure =
+        _settleFailure(frozenRequest.fieldsMediaReady);
     return _sharedMiningQueue.enqueueRethrowing<ImmersionMiningResult>(
       () async {
+        // 落卡要从缓存读词典媒体字节：缓存写完之前不抽、不落。
+        final AsyncError? mediaFailure = await fieldsMediaFailure;
+        if (mediaFailure != null) {
+          Error.throwWithStackTrace(mediaFailure.error, mediaFailure.stackTrace);
+        }
         final String resolvedTempDir = await tempDir;
         // 在线视频：播放器在点击当下把这句所在的缓冲落成了本地副本。拿到就对副本抽取
         // （本地 seek，毫秒级），副本抽不出来（中止）再走下面的远端抽取；副本用完即删。
@@ -432,6 +441,16 @@ class ImmersionMiningEngine {
         return snapshot;
       },
       onError: (Object _) => null,
+    );
+  }
+
+  /// 把 [pending] 的失败当场收成值（null = 成功 / 无需等待）。错误处理在调用当下
+  /// 同步挂上，任务排队期间它先失败也不会成为未处理的异步错误。
+  static Future<AsyncError?> _settleFailure(Future<void>? pending) {
+    if (pending == null) return Future<AsyncError?>.value();
+    return pending.then<AsyncError?>(
+      (void _) => null,
+      onError: (Object error, StackTrace stack) => AsyncError(error, stack),
     );
   }
 

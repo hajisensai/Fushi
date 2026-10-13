@@ -541,22 +541,30 @@ final class VideoRemoteHost implements VideoRemoteService {
     final VideoRemoteCue cue = _requireCue(body);
     if (operation == 'lookupBegin') {
       final _RemoteLookup? previous = _lookup;
+      // Switching rows with the dialog open names the lookup it replaces: its
+      // pause is handed over as is, never resumed and paused again (that gap
+      // leaks a network round trip of audio and picture on the desktop).
+      // Without the field (older phones) the previous lookup ends as before.
+      _RemoteLookup? handedOver;
       if (previous != null) {
         _lookup = null;
-        await _resume(previous);
+        if (body['replaceContextId'] == previous.id &&
+            previous.peerId == peerId) {
+          if (await _reclaimPause(previous)) handedOver = previous;
+        } else {
+          await _resume(previous);
+        }
         await _core.assertOwner(peerId);
         _requireLease(peerId, leaseGeneration);
         _requireSession(body);
       }
       final Map<String, Object?> before = binding.state();
       final bool wasPlaying = before['playing'] == true;
-      final int beforeControl =
-          (before['controlRevision'] as num?)?.toInt() ?? 0;
+      final int beforeControl = _controlRevision(before);
       if (wasPlaying) {
         await binding.command('pause', <String, dynamic>{});
       }
-      final int control =
-          (binding.state()['controlRevision'] as num?)?.toInt() ?? 0;
+      final int control = _controlRevision(binding.state());
       final _RemoteLookup lookup = _RemoteLookup(
         'lookup_${++_serial}',
         peerId,
@@ -564,9 +572,11 @@ final class VideoRemoteHost implements VideoRemoteService {
         body['subtitleVersion'] as int,
         binding,
         cue,
-        wasPlaying && control == beforeControl + 1,
+        handedOver?.resume ?? (wasPlaying && control == beforeControl + 1),
         control,
-        (before['positionMs'] as num?)?.toInt(),
+        handedOver != null
+            ? handedOver.pausedAtMs
+            : (before['positionMs'] as num?)?.toInt(),
       );
       try {
         await _core.assertOwner(peerId);
@@ -698,17 +708,25 @@ final class VideoRemoteHost implements VideoRemoteService {
         final VideoRemoteMineSelection selection = _selection(lookup);
         final Future<bool> Function(VideoRemoteCue, int, int)? preview =
             lookup.binding.previewAudio;
-        played =
-            preview != null &&
-            selection.endMs > selection.startMs &&
-            await preview(lookup.cue, selection.startMs, selection.endMs);
+        try {
+          played =
+              preview != null &&
+              selection.endMs > selection.startMs &&
+              await preview(lookup.cue, selection.startMs, selection.endMs);
+        } finally {
+          _adoptAudition(lookup);
+        }
       case 'stopAudio':
         lookup.previewed = true;
         final Future<void> Function()? stop = lookup.binding.stopAudio;
-        if (stop != null) {
-          await stop();
-        } else {
-          await lookup.binding.command('pause', <String, dynamic>{});
+        try {
+          if (stop != null) {
+            await stop();
+          } else {
+            await lookup.binding.command('pause', <String, dynamic>{});
+          }
+        } finally {
+          _adoptAudition(lookup);
         }
         played = false;
     }
@@ -839,32 +857,39 @@ final class VideoRemoteHost implements VideoRemoteService {
     await _resume(lookup);
   }
 
+  /// Ends [lookup]: resumes the playback it paused, but only while that pause
+  /// is still its own ([_reclaimPause]).
   Future<void> _resume(_RemoteLookup lookup) async {
+    if (!await _reclaimPause(lookup) || !lookup.resume) return;
+    final VideoRemotePlaybackBinding binding = lookup.binding;
+    // An audition was stopped and rewound by [_reclaimPause]; otherwise the
+    // desktop must still be paused exactly as the lookup left it.
+    if (lookup.previewed || binding.state()['playing'] == false) {
+      await binding.command('play', <String, dynamic>{});
+      _publish();
+    }
+  }
+
+  /// Whether the desktop is still the way [lookup] left it: same session and
+  /// no local playback intent since (`controlRevision` equals the lookup's
+  /// baseline, see [_RemoteLookup.controlRevision]). Anything else (someone at
+  /// the desktop dragged, played or paused) belongs to that person and is
+  /// left alone. While it is still owned and the phone auditioned audio, the
+  /// audition is undone: a still-running one is stopped and the playhead goes
+  /// back to where the lookup paused it.
+  Future<bool> _reclaimPause(_RemoteLookup lookup) async {
     _refresh();
     if (!identical(lookup.binding, _binding) ||
         lookup.sessionId != _sessionId ||
         lookup.subtitleVersion != _subtitleVersion ||
         lookup.binding.identity() != _identity) {
-      return;
+      return false;
     }
-    if (lookup.previewed) {
-      await _restoreAfterPreview(lookup);
-      return;
-    }
-    if (!lookup.resume) return;
-    final Map<String, Object?> state = lookup.binding.state();
-    if (state['playing'] == false &&
-        state['controlRevision'] == lookup.controlRevision) {
-      await lookup.binding.command('play', <String, dynamic>{});
-      _publish();
-    }
-  }
-
-  /// Closing a lookup that auditioned audio: stop a still-running audition,
-  /// put the playhead back where the lookup paused it, and resume only if the
-  /// lookup itself had paused playback ([_RemoteLookup.resume]).
-  Future<void> _restoreAfterPreview(_RemoteLookup lookup) async {
     final VideoRemotePlaybackBinding binding = lookup.binding;
+    if (_controlRevision(binding.state()) != lookup.controlRevision) {
+      return false;
+    }
+    if (!lookup.previewed) return true;
     if (binding.state()['playing'] == true) {
       final Future<void> Function()? stop = binding.stopAudio;
       if (stop != null) {
@@ -877,10 +902,17 @@ final class VideoRemoteHost implements VideoRemoteService {
     if (pausedAt != null) {
       await binding.command('seek', <String, dynamic>{'positionMs': pausedAt});
     }
-    if (lookup.resume) {
-      await binding.command('play', <String, dynamic>{});
-    }
     _publish();
+    return true;
+  }
+
+  /// The audition's own seek / play / stop are the lookup's, not a local
+  /// intent: move the lookup's baseline past them. The span-end stop that
+  /// follows later is automatic and does not move the revision (see
+  /// `VideoPlayerController.remoteControlRevision`), so any change after this
+  /// point is someone at the desktop.
+  void _adoptAudition(_RemoteLookup lookup) {
+    lookup.controlRevision = _controlRevision(lookup.binding.state());
   }
 
   Future<void> dispose() async {
@@ -915,6 +947,9 @@ SentenceContextSlot _slot(
   }
   throw const VideoRemoteException(400, 'invalid_argument');
 }
+
+int _controlRevision(Map<String, Object?> state) =>
+    (state['controlRevision'] as num?)?.toInt() ?? 0;
 
 int _integer(Map<String, dynamic> body, String key, int fallback) {
   final Object? value = body[key];
@@ -957,18 +992,26 @@ final class _RemoteLookup {
     this.pausedAtMs,
   );
   final String id, peerId, sessionId;
-  final int subtitleVersion, controlRevision;
+  final int subtitleVersion;
   final VideoRemotePlaybackBinding binding;
   final VideoRemoteCue cue;
   final bool resume;
 
-  /// Desktop playhead when this lookup began (null if the binding reports none).
+  /// The desktop's `controlRevision` as this lookup last left it: right after
+  /// its own pause, then after each audition action
+  /// ([VideoRemoteHost._adoptAudition]). A different revision at close means a
+  /// local playback intent, which cancels both resuming and the post-audition
+  /// restore.
+  int controlRevision;
+
+  /// Desktop playhead before the lookup chain paused it (null if the binding
+  /// reports none). A handed-over lookup keeps its predecessor's value.
   final int? pausedAtMs;
 
   /// Set once the phone auditions audio (`previewAudio` / `stopAudio`). Those
-  /// seeks, plays and the stop-at-span-end pause belong to this lookup, so they
-  /// bump `controlRevision` without being a local intent; [_resume] then
-  /// restores the pre-lookup playhead instead of trusting the revision.
+  /// seeks and plays move the playhead, so closing puts back the pre-lookup
+  /// playhead ([VideoRemoteHost._reclaimPause]) instead of leaving it at the
+  /// span end.
   bool previewed = false;
 
   /// This lookup's sentence-context draft (`lookupContext`).

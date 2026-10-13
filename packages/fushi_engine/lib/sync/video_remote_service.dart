@@ -26,6 +26,11 @@ const Set<String> videoRemoteOperations = <String>{
   'events',
   'subtitles',
   'command',
+  // `{sessionId, subtitleVersion, cueId, requestId, replaceContextId?}`.
+  // `replaceContextId` names the open lookup this one replaces (the phone
+  // switched rows with the dialog open): the host hands that lookup's pause
+  // over instead of resuming and pausing again. Hosts that predate the field
+  // ignore it and end the open lookup first, which is the old behaviour.
   'lookupBegin',
   'lookupEnd',
   // Sentence context of the open lookup (the desktop video page's "adjust

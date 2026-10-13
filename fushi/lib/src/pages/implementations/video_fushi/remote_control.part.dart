@@ -196,12 +196,13 @@ extension _VideoRemoteControl on _VideoFushiPageState {
           dateKey: statTodayKey(),
         );
     final FushiDatabase historyDb = appModel.database;
-    // 手机弹框里的词典是本机这几部（手机端查的就是本机词典）：外字等词典媒体在这里
-    // 落进本机 Anki 媒体缓存，与本机弹框制卡同一步骤（手机那边没有这些字节）。
-    await writeDictionaryMediaCache(
-      _remoteDictionaryMediaJson(fields['dictionaryMedia'] ?? ''),
+    final String dictionaryMedia = _remoteDictionaryMediaJson(
+      fields['dictionaryMedia'] ?? '',
     );
     String? error;
+    // 宿主校验完查词上下文后同步调到这里：从那一刻到 [_mineVideoCard] 冻结播放器输入
+    // 之间不得有任何 await，否则这段时间里换集（手机 openFavorite / 电脑本地换集）
+    // 会让卡片用旧集字幕的时间去裁新集的音频和画面。
     final MinePopupResult result = await _mineVideoCard(
       fields: fields,
       clipStartMs: miningClipTimeMs(padded.startMs, cue.delayMs),
@@ -215,6 +216,9 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       forceSubtitleStart: true,
       localOnly: true,
       onFailure: (String code) => error = code,
+      // 手机弹框里的词典是本机这几部（手机端查的就是本机词典）：外字等词典媒体落进
+      // 本机 Anki 媒体缓存，与本机弹框制卡同一步骤（手机那边没有这些字节）。
+      writeFieldsMedia: () => writeDictionaryMediaCache(dictionaryMedia),
     );
     if (result.ankiConnect) {
       await _recordMinedSentenceForVideo(history, result.noteId, db: historyDb);

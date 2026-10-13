@@ -69,6 +69,105 @@ void main() {
   });
 
   test(
+    'switching rows with replaceContextId hands the pause over without resuming',
+    () async {
+      final Map<String, Object?> first = await call(
+        'lookupBegin',
+        <String, dynamic>{'cueId': 'primary'},
+      );
+      expect(player.commands, <String>['pause']);
+      final Map<String, Object?> second = await call(
+        'lookupBegin',
+        <String, dynamic>{
+          'cueId': 'secondary',
+          'replaceContextId': first['contextId'],
+        },
+      );
+      // No resume-then-pause: the desktop never plays between the two lookups.
+      expect(player.commands, <String>['pause']);
+      expect(player.playing, isFalse);
+      // The old context is gone; ending it is a no-op.
+      await call('lookupEnd', <String, dynamic>{
+        'contextId': first['contextId'],
+      });
+      expect(player.commands, <String>['pause']);
+      // The new lookup owns the pause and resumes it on close.
+      await call('lookupEnd', <String, dynamic>{
+        'contextId': second['contextId'],
+      });
+      expect(player.commands, <String>['pause', 'play']);
+      expect(player.playing, isTrue);
+    },
+  );
+
+  test(
+    'an audition before the row switch is rewound, not resumed, on handover',
+    () async {
+      player.seekMs = 1500;
+      final Map<String, Object?> first = await call(
+        'lookupBegin',
+        <String, dynamic>{'cueId': 'primary'},
+      );
+      await call('lookupContext', <String, dynamic>{
+        'contextId': first['contextId'],
+        'action': 'previewAudio',
+      });
+      player.playing = true; // audition still running
+      player.commands.clear();
+      final Map<String, Object?> second = await call(
+        'lookupBegin',
+        <String, dynamic>{
+          'cueId': 'secondary',
+          'replaceContextId': first['contextId'],
+        },
+      );
+      expect(player.previews.last, 'stop');
+      expect(player.commands, <String>['seek']);
+      expect(player.seekMs, 1500);
+      expect(player.playing, isFalse);
+      await call('lookupEnd', <String, dynamic>{
+        'contextId': second['contextId'],
+      });
+      expect(player.commands, <String>['seek', 'play']);
+      expect(player.playing, isTrue);
+    },
+  );
+
+  test(
+    'without replaceContextId (older phones) the previous lookup ends first',
+    () async {
+      await call('lookupBegin', <String, dynamic>{'cueId': 'primary'});
+      await call('lookupBegin', <String, dynamic>{'cueId': 'secondary'});
+      expect(player.commands, <String>['pause', 'play', 'pause']);
+      expect(player.playing, isFalse);
+    },
+  );
+
+  test(
+    'a local intent before the row switch is not handed over as owned pause',
+    () async {
+      final Map<String, Object?> first = await call(
+        'lookupBegin',
+        <String, dynamic>{'cueId': 'primary'},
+      );
+      // Someone at the desktop paused explicitly: that pause is theirs.
+      await player.command('pause', <String, dynamic>{});
+      final Map<String, Object?> second = await call(
+        'lookupBegin',
+        <String, dynamic>{
+          'cueId': 'secondary',
+          'replaceContextId': first['contextId'],
+        },
+      );
+      await call('lookupEnd', <String, dynamic>{
+        'contextId': second['contextId'],
+      });
+      expect(player.commands, <String>['pause', 'pause']);
+      expect(player.playing, isFalse);
+    },
+  );
+
+  test(
     'reported error clears after the next successful operation or session',
     () async {
       host.reportError('favorite_source_unavailable');
@@ -264,9 +363,9 @@ void main() {
         expect(player.playing, isFalse);
         await context(id, 'set', <String, dynamic>{'prev': 1, 'next': 0});
         await context(id, 'previewAudio');
-        // The real audition seeks, plays and pauses at the span end: all of
-        // those bump the revision without being a local playback intent.
-        player.controlRevision += 3;
+        // The audition stops by itself at the span end. That automatic stop
+        // does not move the revision (the real controller is checked below).
+        player.playing = false;
         player.seekMs = 1900;
         player.commands.clear();
         await call('lookupEnd', <String, dynamic>{'contextId': id});
@@ -291,6 +390,41 @@ void main() {
         expect(player.seekMs, 1200);
       },
     );
+
+    test(
+      'a local drag or play after an audition is never overridden on close',
+      () async {
+        player.seekMs = 1500;
+        final String id = await begin('p1');
+        await context(id, 'previewAudio');
+        player.playing = false; // the audition stopped at the span end
+        player.seekMs = 1900;
+        // Someone at the desktop drags the progress bar and plays on.
+        await player.command('seek', <String, dynamic>{'positionMs': 5000});
+        await player.command('play', <String, dynamic>{});
+        player.commands.clear();
+        player.previews.clear();
+        await call('lookupEnd', <String, dynamic>{'contextId': id});
+        expect(player.commands, isEmpty);
+        expect(player.previews, isEmpty);
+        expect(player.seekMs, 5000);
+        expect(player.playing, isTrue);
+      },
+    );
+
+    test('lease expiry after an audition keeps a local drag as well', () async {
+      player.seekMs = 1500;
+      final String id = await begin('p1');
+      await context(id, 'previewAudio');
+      player.playing = false;
+      await player.command('seek', <String, dynamic>{'positionMs': 5000});
+      player.commands.clear();
+      now = now.add(const Duration(seconds: 36));
+      await host.handle('snapshot', <String, dynamic>{}, 'second-phone');
+      expect(player.commands, isEmpty);
+      expect(player.seekMs, 5000);
+      expect(player.playing, isFalse);
+    });
 
     test('stale or malformed requests are refused, never crash', () async {
       final String id = await begin('p1');
@@ -408,6 +542,39 @@ void main() {
         await intent();
         expect(controller.remoteControlRevision, greaterThan(before));
       }
+    },
+  );
+
+  test(
+    'the automatic span-end stop of a replay does not count as a local intent',
+    () async {
+      AudioCue cue(int index, int start, int end) => AudioCue()
+        ..bookKey = 'video/1'
+        ..chapterHref = 'video://default'
+        ..sentenceIndex = index
+        ..textFragmentId = ''
+        ..text = 'line$index'
+        ..startMs = start
+        ..endMs = end
+        ..audioFileIndex = 0;
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[cue(0, 0, 1000), cue(1, 1001, 2000)]);
+      // The phone's audition is a replay: its seek and play are intents.
+      final int beforeReplay = controller.remoteControlRevision;
+      await controller.replayCue(controller.cues[0]);
+      final int afterReplay = controller.remoteControlRevision;
+      expect(afterReplay, greaterThan(beforeReplay));
+      // Crossing the span end pauses and parks on the cue end by itself.
+      controller.debugUpdateCueForPosition(900);
+      controller.debugUpdateCueForPosition(1125);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.debugOneShotHoldCueIndex, isNull);
+      expect(controller.remoteControlRevision, afterReplay);
+      // A pause or seek from the desktop afterwards still counts.
+      await controller.seekMs(5000);
+      expect(controller.remoteControlRevision, greaterThan(afterReplay));
     },
   );
 
@@ -800,9 +967,17 @@ final class _Player {
         },
     previewAudio: (VideoRemoteCue anchor, int startMs, int endMs) async {
       previews.add('${anchor.id}:$startMs-$endMs');
+      // Like the real replay: seek to the span and play (two intents).
+      controlRevision += 2;
+      playing = true;
       return true;
     },
-    stopAudio: () async => previews.add('stop'),
+    stopAudio: () async {
+      previews.add('stop');
+      // Like the real stop (`controller.pause`): an intent that pauses.
+      controlRevision++;
+      playing = false;
+    },
     openFavorite: (FavoriteSentence favorite) async {
       seekMs = favorite.normCharOffset;
       notify();

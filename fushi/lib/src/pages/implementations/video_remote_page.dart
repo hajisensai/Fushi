@@ -763,8 +763,10 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   /// 从收藏卡发起，高亮画在那张卡上，否则画在字幕行上。
   ///
   /// 会话规则：弹框栈与电脑端的一次查词上下文一一对应。第一次点字 `lookupBegin`
-  /// （电脑暂停）；弹框开着时再点同一行沿用上下文；点了别的行先 `lookupEnd` 旧的再
-  /// `lookupBegin` 新的；整个栈关掉（[_popAt] 收口）才 `lookupEnd`。
+  /// （电脑暂停）；弹框开着时再点同一行沿用上下文；点了别的行发带
+  /// `replaceContextId`（旧上下文）的 `lookupBegin`，电脑把旧上下文的暂停直接转交给
+  /// 新的、不经「恢复再暂停」（老电脑不认这个字段，照旧先结束旧的再开新的）；整个栈
+  /// 关掉（[_popAt] 收口）才 `lookupEnd`。
   Future<void> openLookup(
     Map<String, dynamic> row,
     int charOffset, {
@@ -791,15 +793,20 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     if (!_lookupBoundTo(cueId)) {
       final String? previous = _lookupContextId;
       _clearLookupContext();
-      if (previous != null) await _sendLookupEnd(previous);
-      final Map<String, dynamic> begun = await _client.call(
-        'lookupBegin',
-        <String, dynamic>{
+      final Map<String, dynamic> begun;
+      try {
+        begun = await _client.call('lookupBegin', <String, dynamic>{
           ..._session,
           'cueId': cueId,
           'requestId': _client.requestId(),
-        },
-      );
+          if (previous != null) 'replaceContextId': previous,
+        });
+      } catch (_) {
+        // 没开成新上下文：旧的还挂在电脑上（会话 / 字幕已变、这一行没了），照旧
+        // 结束它，电脑只恢复它自己造成的暂停。已被转交过的旧上下文，电脑当未知忽略。
+        if (previous != null) unawaited(_guard(() => _sendLookupEnd(previous)));
+        rethrow;
+      }
       final String contextId = begun['contextId'].toString();
       if (serial != _lookupSerial ||
           !mounted ||

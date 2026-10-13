@@ -221,21 +221,42 @@ void main() {
       await _wait(tester, () => count('dictionary') >= 2);
       await _flush(tester);
       expect(count('lookupBegin'), 1);
-      // Another line while open: end the old context, then begin the new one.
+      // Another line while open: one lookupBegin that names the context it
+      // replaces, so the computer hands its pause over. No lookupEnd in
+      // between: that would resume the video for a network round trip.
       unawaited(state.openLookup(state.rows[2], 0));
       await _wait(tester, () => count('lookupBegin') == 2);
-      expect(host.ended, <String>['lookup-1']);
-      expect(
-        host.operations.lastIndexOf('lookupEnd'),
-        lessThan(host.operations.lastIndexOf('lookupBegin')),
-      );
       expect(host.lookups.last['cueId'], 'primary-2');
+      expect(host.lookups.last['replaceContextId'], 'lookup-1');
+      expect(host.lookups.first.containsKey('replaceContextId'), isFalse);
+      expect(count('lookupEnd'), 0);
+      expect(host.ended, isEmpty);
       await _wait(tester, () => state.lookupOpen);
       state.closeLookup();
-      await _wait(tester, () => host.ended.length == 2);
-      expect(host.ended.last, 'lookup-2');
+      await _wait(tester, () => host.ended.isNotEmpty);
+      expect(host.ended, <String>['lookup-2']);
       expect(state.lookupOpen, isFalse);
       expect(appModel.localSearches, 0);
+      expect(tester.takeException(), isNull);
+      await close(tester);
+    },
+  );
+
+  testWidgets(
+    'a refused row switch still ends the context it meant to replace',
+    (WidgetTester tester) async {
+      host.dualTrack = true;
+      await open(tester);
+      final VideoRemotePageState state = page(tester);
+      unawaited(state.openLookup(state.rows[1], 0));
+      await _wait(tester, () => state.lookupOpen);
+      // The computer refuses the switch (e.g. the subtitles changed): the old
+      // context is still open there and must not keep the video paused.
+      host.lookupBeginError = 'subtitles_changed';
+      unawaited(state.openLookup(state.rows[2], 0));
+      await _wait(tester, () => host.ended.isNotEmpty);
+      expect(host.lookups.last['replaceContextId'], 'lookup-1');
+      expect(host.ended, <String>['lookup-1']);
       expect(tester.takeException(), isNull);
       await close(tester);
     },
@@ -515,6 +536,9 @@ final class _PhoneHost {
   final List<String> ended = <String>[];
   final List<Map<String, dynamic>> contexts = <Map<String, dynamic>>[];
   String? contextError;
+
+  /// The next `lookupBegin` answers this error code (409) once.
+  String? lookupBeginError;
   final List<Completer<http.Response>> _events = <Completer<http.Response>>[];
   late final MockClient client = MockClient(_handle);
   Completer<void>? disconnectGate;
@@ -615,6 +639,11 @@ final class _PhoneHost {
         return _response(<String, dynamic>{'ok': true});
       case 'lookupBegin':
         lookups.add(body);
+        final String? refused = lookupBeginError;
+        if (refused != null) {
+          lookupBeginError = null;
+          return _response(<String, dynamic>{'error': refused}, 409);
+        }
         return _response(<String, dynamic>{
           'contextId': 'lookup-${lookups.length}',
           'sentence': 'Shared sentence',

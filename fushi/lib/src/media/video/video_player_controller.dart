@@ -1116,8 +1116,9 @@ class VideoPlayerController extends ChangeNotifier
   /// 登记一次已发出的 seek：计数 +1，并记下目标等它落地（见 [_pendingSeekLandingMs]）。
   int _noteSeekIssued(int targetMs) {
     _seekGeneration++;
-    // 用户 seek 也是显式播放控制意图（见 [remoteControlRevision]）。
-    _remoteControlRevision++;
+    // 用户 seek 也是显式播放控制意图（见 [remoteControlRevision]）；句尾自动停下的
+    // 落点 seek 不是（见 [_automaticSubtitleEndHold]）。
+    if (!_automaticSubtitleEndHold) _remoteControlRevision++;
     return _setPendingSeekLanding(targetMs);
   }
 
@@ -4675,6 +4676,12 @@ class VideoPlayerController extends ChangeNotifier
   /// 状态的命令）。手机遥控查词据此判断「结束查词时能否恢复播放」——只恢复自己造成
   /// 的暂停，期间任何一次本地控制都让恢复资格失效。
   ///
+  /// 句尾自动停下（全局「字幕结束暂停」或 [replayCue] 的一次性 hold）**不**递增：
+  /// 那是已计过的那次播放 / 重播意图自己的收尾，不是谁新按了什么。手机试听（经
+  /// [replayCue]）播到句尾自动停下后，手机关弹框时据此仍能认出「电脑没人动过」、
+  /// 把播放头放回查词前；而试听停下之后电脑前的任何拖动 / 播放都会让它变，手机就
+  /// 不再回跳续播（见 [_automaticSubtitleEndHold]）。
+  ///
   /// 递增点只有三处底层汇合点：[_notePlaybackIntent]（本控制器的播放 / 暂停入口）、
   /// [_noteSeekIssued]（全部用户 seek 入口，load 的恢复 seek 不经它）、以及
   /// `stream.playing` 上不是本控制器下发的翻转（media_kit 控制条按钮 / 快捷键直调
@@ -4687,8 +4694,24 @@ class VideoPlayerController extends ChangeNotifier
   bool? _commandedPlaying;
 
   void _notePlaybackIntent(bool? targetPlaying) {
-    _remoteControlRevision++;
+    if (!_automaticSubtitleEndHold) _remoteControlRevision++;
     _commandedPlaying = targetPlaying;
+  }
+
+  /// 正在执行句尾自动停下（[_runSubtitleEndHold]）的同步前缀：其间经
+  /// [_notePlaybackIntent] / [_noteSeekIssued] 的暂停与落点 seek 不计入
+  /// [remoteControlRevision]。只在同步段内为真，别的代码插不进来。
+  bool _automaticSubtitleEndHold = false;
+
+  /// 以「句尾自动停下」身份调用 [action]（暂停或落点 seek）。[pause] / [seekMs] 都在
+  /// 第一个 await 之前就登记了意图，所以只需在同步调用期间置位。
+  Future<void> _runSubtitleEndHold(Future<void> Function() action) {
+    _automaticSubtitleEndHold = true;
+    try {
+      return action();
+    } finally {
+      _automaticSubtitleEndHold = false;
+    }
   }
 
   void _onPlayingChanged(bool playing) {
@@ -5274,7 +5297,7 @@ class VideoPlayerController extends ChangeNotifier
     final int endedCueIndex = _currentCueIndex;
     if (!_holdEnabledForCue(endedCueIndex)) return;
     _consumeOneShotHold(endedCueIndex);
-    unawaited((_pauseAtSubtitleEndOverride ?? pause).call());
+    unawaited(_runSubtitleEndHold(_pauseAtSubtitleEndOverride ?? pause));
   }
 
   bool _shouldHoldAtSubtitleEnd(int nextCueIndex, int effectiveMs) {
@@ -5302,11 +5325,13 @@ class VideoPlayerController extends ChangeNotifier
     _lastSubtitleEndPauseCueIndex = cueIndex;
     _consumeOneShotHold(cueIndex);
     unawaited(() async {
-      await (_pauseAtSubtitleEndOverride ?? pause).call();
+      await _runSubtitleEndHold(_pauseAtSubtitleEndOverride ?? pause);
       final Future<void> Function(int positionMs) seekToEnd =
           _pauseAtSubtitleEndSeekOverride ?? seekMs;
-      await seekToEnd(
-        cueSeekTargetMs(cueStartMs: cue.endMs, delayMs: _delayMs),
+      await _runSubtitleEndHold(
+        () => seekToEnd(
+          cueSeekTargetMs(cueStartMs: cue.endMs, delayMs: _delayMs),
+        ),
       );
     }());
   }

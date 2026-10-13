@@ -405,6 +405,11 @@ extension _VideoLookupMining on _VideoFushiPageState {
   /// 走 [BaseAnkiRepository.updateMinedNote]）。返回 [MinePopupResult]：成功带回 note id
   /// （新制时来自 addNote，覆盖时即 [updateNoteId]），让弹窗保持「最新可改」第三态。
   /// 区间非正（`clipEndMs <= clipStartMs`，如无 cue）时不抽媒体、回退当前帧截图作封面。
+  ///
+  /// [writeFieldsMedia]：把 [fields] 里的词典媒体写进 Anki 媒体缓存。本方法在冻结
+  /// 播放器输入**之后**才调用它，引擎在队列里等它写完再落卡（见
+  /// [ImmersionMiningRequest.fieldsMediaReady]）——调用方不得先 await 写缓存再调本方法，
+  /// 那段 await 里换集，卡片就会裁到新一集。
   Future<MinePopupResult> _mineVideoCard({
     required Map<String, String> fields,
     required int clipStartMs,
@@ -420,6 +425,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     bool forceSubtitleStart = false,
     bool localOnly = false,
     void Function(String code)? onFailure,
+    Future<void> Function()? writeFieldsMedia,
   }) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null || !_discExtractionAllowed(controller)) {
@@ -692,6 +698,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
         // 无防盗链源这里是空 map，抽取器据此 no-op，既有路径零影响。
         mediaSourceHttpHeaders: _streamHttpHeaderFields,
         mediaSourceRouteReady: mediaSourceRouteReady,
+        // 词典媒体缓存：输入已全部冻结，这时才开写，引擎落卡前等它。
+        fieldsMediaReady: writeFieldsMedia?.call(),
         // BUG-1004：互联 host 远端流句子音频优先走 host 端裁（绕开 client ffmpeg 抓远端流）。
         remoteAudioClipper: remoteAudioClipper,
         clipStartMs: clipStartMs,
