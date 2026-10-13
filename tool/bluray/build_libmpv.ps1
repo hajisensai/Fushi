@@ -23,6 +23,9 @@ $angle = Join-Path $out 'angle'
 Run 'git' @('clone', '--filter=blob:none', '--no-checkout', 'https://github.com/mpv-player/mpv.git', $source)
 Run 'git' @('-C', $source, 'checkout', '--detach', '36abaa32d00a7229ee206aae12dc0e97e7962dca')
 Run 'git' @('-C', $source, 'apply', (Join-Path $repoRoot 'third_party\media_kit_libs_windows_video\patches\disc-navigation-state.patch'))
+# BUG-3296: vo=gpu dumb mode ignored the hwdec surface padding (1080p H.264 on
+# d3d11va zero-copy rendered the 1088-row surface squashed into 1080 rows).
+Run 'git' @('-C', $source, 'apply', (Join-Path $repoRoot 'third_party\media_kit_libs_windows_video\patches\gpu-dumb-mode-hwdec-crop.patch'))
 New-Item -ItemType Directory -Path $angle | Out-Null
 Push-Location $angle
 try { Run 'cmake' @('-E', 'tar', 'xzf', (Join-Path $repoRoot 'third_party\media_kit_libs_windows_video\vendored\ANGLE.7z')) }

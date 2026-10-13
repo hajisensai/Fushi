@@ -54,7 +54,7 @@
 | [BUG-3299](bugs/BUG-3299-profile-binding-sticky.md) | ✅ | ✅ | 绑定配置切换后无绑定条目不回到用户自选配置 |
 | [BUG-3298](bugs/BUG-3298-episode-switch-reentry.md) | ✅ | ✅ | 视频换集 _switchEpisode 无防重入 |
 | [BUG-3297](bugs/BUG-3297-subtitle-list-open-remeasure.md) | ✅ | ✅ | 视频字幕列表每次打开都把当前句之前的行重新排版两遍 |
-| [BUG-3296](bugs/BUG-3296-video-enhance-off-vertical-squash.md) | 🚧 | 🚧 | Windows 关闭画质增强后画面纵向被压扁约 0.74% |
+| [BUG-3296](bugs/BUG-3296-video-enhance-off-vertical-squash.md) | ✅ | ✅ | Windows 关闭画质增强后画面纵向被压扁约 0.74% |
 | [BUG-3295](bugs/BUG-3295-ios-popup-m3e-color.md) | 🚧 | 🚧 | iOS 查词框没有上 M3E 着色（未复现） |
 | [BUG-3294](bugs/BUG-3294-popup-mine-button-blue-box.md) | 🚧 | 🚧 | 点制卡按钮出现蓝色方框背景（未复现） |
 | [BUG-3293](bugs/BUG-3293-popup-loading-spinner-lingers.md) | ✅ | ✅ | 查词加载指示器在结果出来后仍压着结果转 |
