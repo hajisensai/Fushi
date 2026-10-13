@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2969 条。点号进各自文件。
+> 共 2970 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -40,6 +40,7 @@
 | [BUG-3308](bugs/BUG-3308-popup-round-button-press-square.md) | ✅ | ✅ | 查词弹窗点「+」制卡按钮时闪出完全直角的方块 |
 | [BUG-3277](bugs/BUG-3277-zip-unicode-path-extra.md) | ✅ | ✅ | Yomitan zip 的 Info-ZIP Unicode Path(0x7075) 文件名被忽略，大辞林 24 张图缺失 |
 | [BUG-3276](bugs/BUG-3276-bitmap-subs-remote-timing-ocr.md) | ✅ | ✅ | VobSub/DVB 图形字幕与远程播放没有逐句时间与整轨 OCR |
+| [BUG-3275](bugs/BUG-3275-lookup-header-buttons-overlap.md) | ✅ | ✅ | 查词弹窗窄宽时按钮组压住词头 |
 | [BUG-3275](bugs/BUG-3275-graphic-subtitle-ocr-duplicate-slow.md) | ✅ | ✅ | 图形字幕整轨OCR文字重复且极慢 |
 | [BUG-3274](bugs/BUG-3274-popup-switch-word-false-empty.md) | ✅ | ✅ | 视频页换词时查词弹窗先闪「未找到」、滑动掉帧 |
 | [BUG-3273](bugs/BUG-3273-ocr-progress-card-contrast.md) | ✅ | ✅ | 图形字幕转文字进度卡浅色主题下文字看不清且无法收起 |
