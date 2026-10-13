@@ -7392,5 +7392,6 @@
   "feedback_fix_channel_beta_switch_confirm": "Beta builds get less testing than stable releases and may have problems. Switch to the beta channel?",
   "feedback_dev_fix_title": "Fix",
   "feedback_dev_fix_commit": "Commit ${sha}",
-  "feedback_dev_fix_releases_empty": "Not in any release yet"
+  "feedback_dev_fix_releases_empty": "Not in any release yet",
+  "feedback_fix_platform_not_tracked": "This platform doesn't get official update builds, so we can't tell when this fix reaches your version."
 }

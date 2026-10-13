@@ -61,6 +61,12 @@ class FeedbackFixFasterChannelOnly extends FeedbackFixProgress {
   final String version;
 }
 
+/// 本机平台不在官方发布回填范围内（[kFeedbackReleasePlatforms] 之外，例如社区维护的
+/// Linux）：没有任何构建会回填它，说「等待下个版本」会让反馈人永远等下去。
+class FeedbackFixPlatformNotTracked extends FeedbackFixProgress {
+  const FeedbackFixPlatformNotTracked();
+}
+
 /// 还没有任何本平台构建包含修复。
 class FeedbackFixPending extends FeedbackFixProgress {
   const FeedbackFixPending({required this.channel, required this.building});
@@ -72,15 +78,27 @@ class FeedbackFixPending extends FeedbackFixProgress {
   final bool building;
 }
 
-/// 本机平台在发布回填里的键；不在五端之内返回 null（没有任何构建会回填它）。
-String? feedbackPlatformKey() {
-  if (Platform.isAndroid) return 'android';
-  if (Platform.isWindows) return 'windows';
-  if (Platform.isMacOS) return 'macos';
-  if (Platform.isIOS) return 'ios';
-  if (Platform.isLinux) return 'linux';
-  return null;
-}
+/// 官方发布 workflow 会回填的平台（`release.yml`：android；`release-desktop.yml`：
+/// windows / macos / ios，各自的 `PLATFORM:`）。Linux App 是社区维护平台，CI 不出包，
+/// 没有任何回填——不在这里。键与 `Platform.operatingSystem` 同形；与 workflow 的一致性
+/// 由 `test/feedback/feedback_fix_progress_test.dart` 钉死。
+const Set<String> kFeedbackReleasePlatforms = <String>{
+  'android',
+  'windows',
+  'macos',
+  'ios',
+};
+
+/// **纯函数**：[operatingSystem]（`Platform.operatingSystem` 口径）在发布回填里的键；
+/// 不在 [kFeedbackReleasePlatforms] 里返回 null（没有任何构建会回填它）。
+String? feedbackPlatformKeyFor(String operatingSystem) =>
+    kFeedbackReleasePlatforms.contains(operatingSystem)
+    ? operatingSystem
+    : null;
+
+/// 本机平台在发布回填里的键（[feedbackPlatformKeyFor]）。
+String? feedbackPlatformKey() =>
+    feedbackPlatformKeyFor(Platform.operatingSystem);
 
 /// 用户在 [channel] 下能收到哪些通道的构建（与更新器的嵌套合集同一口径：越激进的通道
 /// 合集越大），自己的通道排第一。
@@ -122,7 +140,8 @@ FeedbackRelease? _releaseIn(
 /// **纯函数**：[fix] 对本机意味着什么。
 ///
 /// * [channel]：用户当前选的更新通道（[appUpdateChannelOf]）。
-/// * [platform]：[feedbackPlatformKey]；null 表示本平台没有构建回填。
+/// * [platform]：[feedbackPlatformKey]；null 表示本平台没有构建回填
+///   （→ [FeedbackFixPlatformNotTracked]，不说「等待下个版本」）。
 /// * [localVersion]：本机构建版本（[resolveCurrentAppVersion] 口径）；null / 空串表示
 ///   未知，此时不判「已包含」。本机构建属于哪个通道由它的版本串决定，只和该通道的
 ///   那条发布比较。
@@ -137,29 +156,28 @@ FeedbackFixProgress feedbackFixProgress(
   if (fix.scope == FeedbackFixScope.none) {
     return const FeedbackFixNoUpdateNeeded();
   }
-  if (platform != null) {
-    final String local = localVersion?.trim() ?? '';
-    if (local.isNotEmpty) {
-      final UpdateChannel localChannel = channelForUpdateVersion(local);
-      final FeedbackRelease? own = _releaseIn(fix, localChannel, platform);
-      if (own != null &&
-          !updateTagIsNewerThanCurrent(own.version, local, localChannel)) {
-        return FeedbackFixInstalled(own.version);
-      }
+  if (platform == null) return const FeedbackFixPlatformNotTracked();
+  final String local = localVersion?.trim() ?? '';
+  if (local.isNotEmpty) {
+    final UpdateChannel localChannel = channelForUpdateVersion(local);
+    final FeedbackRelease? own = _releaseIn(fix, localChannel, platform);
+    if (own != null &&
+        !updateTagIsNewerThanCurrent(own.version, local, localChannel)) {
+      return FeedbackFixInstalled(own.version);
     }
-    for (final UpdateChannel c in _admittedBy(channel)) {
-      final FeedbackRelease? r = _releaseIn(fix, c, platform);
-      if (r != null) return FeedbackFixUpdateAvailable(r.version);
-    }
-    for (final UpdateChannel c in _fasterThan(channel)) {
-      final FeedbackRelease? r = _releaseIn(fix, c, platform);
-      if (r != null) {
-        return FeedbackFixFasterChannelOnly(
-          current: channel,
-          channel: c,
-          version: r.version,
-        );
-      }
+  }
+  for (final UpdateChannel c in _admittedBy(channel)) {
+    final FeedbackRelease? r = _releaseIn(fix, c, platform);
+    if (r != null) return FeedbackFixUpdateAvailable(r.version);
+  }
+  for (final UpdateChannel c in _fasterThan(channel)) {
+    final FeedbackRelease? r = _releaseIn(fix, c, platform);
+    if (r != null) {
+      return FeedbackFixFasterChannelOnly(
+        current: channel,
+        channel: c,
+        version: r.version,
+      );
     }
   }
   return FeedbackFixPending(

@@ -1,4 +1,4 @@
-// 反馈「修复 → 打包 → 发布」追踪（迁移 0007；CI 接口 /v1/ci/feedback/**）。
+// 反馈「修复 → 打包 → 发布」追踪（迁移 0009；CI 接口 /v1/ci/feedback/**）。
 import { describe, expect, it } from 'vitest';
 import { call, makeEnv, nextIp, registerUser } from './harness.js';
 import { FEEDBACK_LIMITS } from '../src/feedback.js';
@@ -71,7 +71,8 @@ describe('POST /v1/ci/feedback/fixed', () => {
 
     const ra = row(env, a.id);
     expect(ra).toMatchObject({ fix_sha: SHA, fix_scope: 'app', fix_at: NOW, fixed_in: '{}', status: 'resolved', dev_reply_at: NOW, updated_at: NOW });
-    expect(row(env, b.id)).toMatchObject({ status: 'wont_fix', fix_sha: SHA, dev_reply_at: NOW });
+    // 结案的不插时间线，也就不刷「开发者新消息」时刻（否则反馈人亮红点却没有新消息）。
+    expect(row(env, b.id)).toMatchObject({ status: 'wont_fix', fix_sha: SHA, dev_reply_at: null, updated_at: NOW });
     const msgs = (id) => env.DB.raw.prepare('SELECT author, account_id, body, status, created_at FROM feedback_messages WHERE feedback_id = ?').all(id);
     expect(msgs(a.id)).toEqual([{ author: 'dev', account_id: null, body: '', status: 'resolved', created_at: NOW }]);
     expect(msgs(b.id)).toEqual([]);
@@ -92,7 +93,8 @@ describe('POST /v1/ci/feedback/fixed', () => {
     expect(JSON.parse(row(env, a.id).fixed_in)).toEqual({ debug: { android: { version: '2.3.0-debug.1', at: NOW } } });
     const r = await fixed(env, [a.id], SHA2.toUpperCase(), 'none', NOW + 1000);
     expect(r.data.updated).toEqual([a.id]);
-    expect(row(env, a.id)).toMatchObject({ fix_sha: SHA2, fix_scope: 'none', fix_at: NOW + 1000, fixed_in: '{}', status: 'resolved' });
+    // 已解决的重新标记：不插时间线，dev_reply_at 停在第一次标记修复的时刻。
+    expect(row(env, a.id)).toMatchObject({ fix_sha: SHA2, fix_scope: 'none', fix_at: NOW + 1000, fixed_in: '{}', status: 'resolved', dev_reply_at: NOW, updated_at: NOW + 1000 });
     expect(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM feedback_messages WHERE feedback_id = ?').get(a.id).n).toBe(1);
   });
 
@@ -188,7 +190,8 @@ describe('GET /v1/ci/feedback/pending + POST /v1/ci/feedback/released', () => {
     expect((await released(env, body, NOW + 10)).data).toEqual({ updated: 1 });
     expect((await released(env, { ...body, version: '2.3.0-debug.12399' }, NOW + 20)).data).toEqual({ updated: 0 });
     expect((await released(env, { ...body, channel: 'beta', version: '2.3.0-beta.12001' }, NOW + 30)).data).toEqual({ updated: 1 });
-    expect(row(env, a.id)).toMatchObject({ dev_reply_at: NOW + 30, updated_at: NOW + 30 });
+    // 回填不是开发者回复：dev_reply_at / updated_at 停在标记修复那一刻。
+    expect(row(env, a.id)).toMatchObject({ dev_reply_at: NOW, updated_at: NOW });
     expect(row(env, plain.id).fixed_in).toBe('{}');
 
     const releases = {
@@ -224,6 +227,63 @@ describe('GET /v1/ci/feedback/pending + POST /v1/ci/feedback/released', () => {
     expect((await released(env, { ...ok, ids: [] })).data.error).toBe('bad_ids');
     expect(row(env, a.id).fixed_in).toBe('{}');
     expect((await released(env, { ...ok, version: '2.3.0+45' })).data).toEqual({ updated: 1 });
+  });
+});
+
+describe('CI 回填不冒充开发者回复', () => {
+  async function makeDev(env) {
+    const dev = await registerUser(env, 'dev', { now: NOW });
+    expect((await call(env, 'POST', `/admin/api/accounts/${dev.id}/role`, { headers: basic, body: { role: 'dev' }, now: NOW })).status).toBe(200);
+    return dev;
+  }
+  const awaiting = async (env, dev, id) => {
+    const list = await call(env, 'GET', '/v1/dev/feedback?status=all', { key: dev.key, account: dev.id, now: NOW });
+    return list.data.items.find((x) => x.id === id).awaitingDev;
+  };
+  const say = (env, f, text, now) => call(env, 'POST', `/v1/feedback/${f.id}/messages`, {
+    headers: { 'X-Fushi-Ticket': f.ticket }, body: { body: text }, now,
+  });
+
+  it('标记修复后反馈人追问：多通道多平台回填都不冲掉「新消息」，dev_reply_at / updated_at 不动', async () => {
+    const env = ciEnv();
+    const dev = await makeDev(env);
+    const a = await submit(env);
+    await fixed(env, [a.id]);
+    expect(row(env, a.id).dev_reply_at).toBe(NOW);
+    expect((await say(env, a, '升级后还是白屏', NOW + 10)).status).toBeLessThan(300);
+    expect(await awaiting(env, dev, a.id)).toBe(true);
+    const before = row(env, a.id);
+
+    let at = NOW + 100;
+    for (const channel of ['debug', 'beta', 'stable']) {
+      for (const platform of ['android', 'windows', 'macos', 'ios']) {
+        at += 1;
+        const r = await released(env, { channel, platform, version: channel === 'stable' ? '2.3.0' : `2.3.0-${channel}.1`, ids: [rel(a.id)] }, at);
+        expect(r.data).toEqual({ updated: 1 });
+      }
+    }
+    const after = row(env, a.id);
+    expect({ dev_reply_at: after.dev_reply_at, updated_at: after.updated_at, user_reply_at: after.user_reply_at, status: after.status })
+      .toEqual({ dev_reply_at: before.dev_reply_at, updated_at: before.updated_at, user_reply_at: before.user_reply_at, status: before.status });
+    expect(Object.keys(JSON.parse(after.fixed_in)).sort()).toEqual(['beta', 'debug', 'stable']);
+    expect(await awaiting(env, dev, a.id)).toBe(true);
+    // 反馈人侧：摘要的 devReplyAt 也没被回填推后（App 拿它和 seenAt 比亮红点）。
+    const s = await call(env, 'POST', '/v1/feedback/status', { body: { items: [{ id: a.id, ticket: a.ticket }] }, now: at });
+    expect(s.data.items[0].devReplyAt).toBe(NOW);
+  });
+
+  it('对已结案的行重新标记修复：不插时间线，也不刷 dev_reply_at（「新消息」保留）', async () => {
+    const env = ciEnv();
+    const dev = await makeDev(env);
+    const a = await submit(env);
+    // 反馈人追问过、开发者已把它判成重复：追加说明不会把 duplicate 拉回 open。
+    env.DB.raw.prepare("UPDATE feedback SET status = 'duplicate', dev_reply_at = ?2, user_reply_at = ?3 WHERE id = ?1").run(a.id, NOW - 20, NOW - 10);
+    expect(await awaiting(env, dev, a.id)).toBe(true);
+    const r = await fixed(env, [a.id], SHA, 'app', NOW + 5);
+    expect(r.data.updated).toEqual([a.id]);
+    expect(row(env, a.id)).toMatchObject({ status: 'duplicate', fix_sha: SHA, dev_reply_at: NOW - 20, user_reply_at: NOW - 10, updated_at: NOW + 5 });
+    expect(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM feedback_messages WHERE feedback_id = ?').get(a.id).n).toBe(0);
+    expect(await awaiting(env, dev, a.id)).toBe(true);
   });
 });
 

@@ -7392,5 +7392,6 @@
   "feedback_fix_channel_beta_switch_confirm": "测试版没有正式版测试充分，可能有问题。切换到测试通道？",
   "feedback_dev_fix_title": "修复",
   "feedback_dev_fix_commit": "提交 ${sha}",
-  "feedback_dev_fix_releases_empty": "还没有发布包含它"
+  "feedback_dev_fix_releases_empty": "还没有发布包含它",
+  "feedback_fix_platform_not_tracked": "本平台不随官方渠道更新，无法判断你的版本何时包含这个修复。"
 }

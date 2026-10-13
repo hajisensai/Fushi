@@ -200,6 +200,7 @@ String feedbackFixLabel(FeedbackFixProgress progress) => switch (progress) {
     version: version,
   ),
   FeedbackFixFasterChannelOnly() ||
+  FeedbackFixPlatformNotTracked() ||
   FeedbackFixPending() => t.feedback_fix_label,
 };
 
@@ -323,6 +324,13 @@ class _FeedbackFixNoticeState extends ConsumerState<FeedbackFixNotice> {
               ),
           ],
         ),
+      FeedbackFixPlatformNotTracked() => (
+        FushiNoticeSeverity.info,
+        FushiIcons.check,
+        null,
+        t.feedback_fix_platform_not_tracked,
+        const <Widget>[],
+      ),
       FeedbackFixPending(:final bool building, :final UpdateChannel channel) =>
         (
           FushiNoticeSeverity.info,

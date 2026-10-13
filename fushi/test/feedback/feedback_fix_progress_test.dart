@@ -1,6 +1,8 @@
 // 反馈修复进度（契约第 6 节）：按用户当前更新通道 + 本机平台 + 本机版本，算出该给反馈人
 // 看哪句话。版本比较复用更新器判据；本机构建属于哪个通道由版本串判定，跨通道不比较。
 
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/feedback/feedback_fix_progress.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
@@ -302,17 +304,30 @@ void main() {
       );
     });
 
-    test('本平台没有构建回填（platform null）：一律等待', () {
+    test('本平台没有构建回填（platform null）：不说「等待下个版本」', () {
+      for (final UpdateChannel channel in UpdateChannel.values) {
+        for (final String? local in <String?>[null, '2.3.0', '2.3.0-debug.9']) {
+          expect(
+            _progress(
+              _fix(
+                at: _now - 1000,
+                releases: <String, Map<String, String>>{
+                  'stable': <String, String>{'android': '2.3.0'},
+                },
+              ),
+              channel: channel,
+              platform: null,
+              local: local,
+            ),
+            isA<FeedbackFixPlatformNotTracked>(),
+            reason: '$channel / $local',
+          );
+        }
+      }
+      // scope none 照旧说无需更新（与平台无关）。
       expect(
-        _progress(
-          _fix(
-            releases: <String, Map<String, String>>{
-              'stable': <String, String>{'android': '2.3.0'},
-            },
-          ),
-          platform: null,
-        ),
-        isA<FeedbackFixPending>(),
+        _progress(_fix(scope: 'none'), platform: null),
+        isA<FeedbackFixNoUpdateNeeded>(),
       );
     });
 
@@ -355,13 +370,42 @@ void main() {
     });
   });
 
-  test('feedbackPlatformKey 取本机五端之一', () {
-    expect(<String>[
-      'android',
-      'windows',
-      'macos',
-      'ios',
-      'linux',
-    ], contains(feedbackPlatformKey()));
+  group('平台键只认官方发布回填的平台', () {
+    test('四个回填平台原样返回；Linux / 未知平台为 null', () {
+      for (final String os in <String>['android', 'windows', 'macos', 'ios']) {
+        expect(feedbackPlatformKeyFor(os), os);
+      }
+      for (final String os in <String>['linux', 'fuchsia', '']) {
+        expect(feedbackPlatformKeyFor(os), isNull, reason: os);
+      }
+    });
+
+    test('本机平台键与纯函数同口径', () {
+      expect(
+        feedbackPlatformKey(),
+        feedbackPlatformKeyFor(Platform.operatingSystem),
+      );
+    });
+
+    test('与发布 workflow 的回填步骤一致（加 / 减回填平台要同步改这里）', () {
+      final RegExp platformLine = RegExp(
+        r'^\s*PLATFORM:\s*([a-z]+)\s*$',
+        multiLine: true,
+      );
+      final Set<String> backfilled = <String>{};
+      for (final String path in <String>[
+        '../.github/workflows/release.yml',
+        '../.github/workflows/release-desktop.yml',
+      ]) {
+        final File f = File(path);
+        expect(f.existsSync(), isTrue, reason: '缺 ${f.absolute.path}');
+        backfilled.addAll(
+          platformLine
+              .allMatches(f.readAsStringSync())
+              .map((RegExpMatch m) => m.group(1)!),
+        );
+      }
+      expect(backfilled, kFeedbackReleasePlatforms);
+    });
   });
 }

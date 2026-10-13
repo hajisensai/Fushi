@@ -103,10 +103,14 @@ describe('查询计划：读接口不全表扫描', () => {
     const ci = { Authorization: 'Bearer t0ken' };
     const f = await call(env, 'POST', '/v1/feedback', { body: { category: 'bug', title: 't', body: 'b' }, headers: { 'CF-Connecting-IP': '198.51.100.8' }, now: NOW });
     expect((await call(env, 'POST', '/v1/ci/feedback/fixed', { body: { sha: 'a'.repeat(40), ids: [f.data.id] }, headers: ci, now: NOW })).status).toBe(200);
+    const stamps = () => env.DB.raw.prepare('SELECT dev_reply_at, updated_at FROM feedback WHERE id = ?').get(f.data.id);
+    const before = stamps();
     const seen = recordSql(env);
     expect((await call(env, 'GET', '/v1/ci/feedback/pending?channel=debug&platform=android', { headers: ci, now: NOW })).status).toBe(200);
     const released = { channel: 'debug', platform: 'android', version: '1.0.0', ids: [{ id: f.data.id, sha: 'a'.repeat(40) }] };
-    expect((await call(env, 'POST', '/v1/ci/feedback/released', { body: released, headers: ci, now: NOW })).status).toBe(200);
+    expect((await call(env, 'POST', '/v1/ci/feedback/released', { body: released, headers: ci, now: NOW + 1 })).status).toBe(200);
+    // 回填只写 fixed_in（不在任何索引里）：不碰 updated_at 所在的两条索引，也不冒充开发者回复。
+    expect(stamps()).toEqual(before);
     const bad = [];
     let checked = 0;
     for (const { sql, args } of seen) {
@@ -123,6 +127,9 @@ describe('查询计划：读接口不全表扫描', () => {
     }
     expect(bad).toEqual([]);
     expect(checked).toBe(2);
+    for (const { sql } of seen) {
+      if (/^\s*UPDATE feedback SET fixed_in/i.test(sql)) expect(sql).not.toMatch(/dev_reply_at|updated_at/);
+    }
   });
 
   it('反馈：回执读取 / 批量进度 / 处理台按状态列表走索引', async () => {

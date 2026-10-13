@@ -8,6 +8,9 @@
 --              channel ∈ debug | beta | stable；platform ∈ android | windows | macos | ios | linux
 -- 写入口：POST /v1/ci/feedback/fixed、/v1/ci/feedback/released（feedback.js），
 -- 手动兜底 scripts/feedback.mjs fixed。重新标记修复会把 fixed_in 重置为 '{}'。
+-- 回填 fixed_in 不是开发者回复：released 只写 fixed_in，不动 dev_reply_at / updated_at。
+-- 编号 0009：0007 / 0008 已被反馈视频附件（has_video、media_usage.video_bytes）占用；本迁移只加
+-- fix_* / fixed_in 列与 idx_feedback_fix 部分索引，与它们不重名。
 ALTER TABLE feedback ADD COLUMN fix_sha TEXT;
 ALTER TABLE feedback ADD COLUMN fix_scope TEXT;
 ALTER TABLE feedback ADD COLUMN fix_at INTEGER;

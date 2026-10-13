@@ -97,7 +97,9 @@ describe('scripts/feedback.mjs', () => {
     expect(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM feedback_messages WHERE feedback_id = ?').get(a).n).toBe(1);
     // 再标一次（--no-app）：覆盖 commit 与 scope，已解决的不重复记时间线。
     env.DB.raw.exec(fixedSql(a, 'c'.repeat(40), 'none', NOW + 8));
-    expect(env.DB.raw.prepare('SELECT fix_sha, fix_scope FROM feedback WHERE id = ?').get(a)).toEqual({ fix_sha: 'c'.repeat(40), fix_scope: 'none' });
+    // 已解决的不插时间线，dev_reply_at 也不刷（与时间线同一判据，否则反馈人亮红点却没有新消息）。
+    expect(env.DB.raw.prepare('SELECT fix_sha, fix_scope, dev_reply_at, updated_at FROM feedback WHERE id = ?').get(a))
+      .toEqual({ fix_sha: 'c'.repeat(40), fix_scope: 'none', dev_reply_at: NOW + 7, updated_at: NOW + 8 });
     expect(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM feedback_messages WHERE feedback_id = ?').get(a).n).toBe(1);
 
     expect(() => fixedSql(a, 'abc', 'app', NOW)).toThrow(/bad_sha/);

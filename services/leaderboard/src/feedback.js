@@ -30,7 +30,8 @@
 //   GET  /v1/ci/feedback/pending?channel&platform   → {items:[{id, sha}]}：scope app、180 天内、该通道平台未回填
 //   POST /v1/ci/feedback/released             {channel, platform, version, ids:[{id, sha}] ≤ 500} → {updated}
 //                                             只记最早包含修复的版本（已有记录不覆盖）；当前 fix_sha ≠ 该条 sha
-//                                             （其间被重新标记修复）的静默跳过
+//                                             （其间被重新标记修复）的静默跳过；只写 fixed_in，
+//                                             不刷 dev_reply_at / updated_at（回填不是开发者回复）
 // 反馈人 / 开发者接口的摘要都带 `fix`（null 或 {sha, scope, at, releases}，见 fixView）。
 //
 // ticket 是提交时服务端生成、只返回这一次的随机串；库里只存 SHA-256。ticket 泄露 = 那一条反馈
@@ -127,7 +128,7 @@ export const FEEDBACK_LIMITS = {
   ciPendingWindowMs: 180 * 24 * HOUR,
 };
 
-/** 修复追踪（迁移 0007）的取值域；接口与 scripts/feedback.mjs 共用。 */
+/** 修复追踪（迁移 0009）的取值域；接口与 scripts/feedback.mjs 共用。 */
 export const FIX_SHA_RE = /^[0-9a-f]{40}$/;
 export const FIX_SCOPES = ['app', 'none'];
 export const RELEASE_CHANNELS = ['debug', 'beta', 'stable'];
@@ -988,7 +989,7 @@ export async function purgeFeedbackVideos(env, now, limit = 20) {
   return rows.results.length;
 }
 
-// ---- CI：修复 → 打包 → 发布追踪（迁移 0007） ----
+// ---- CI：修复 → 打包 → 发布追踪（迁移 0009） ----
 
 /** 修复 commit：40 位 hex，统一存小写。 */
 export function normalizeFixSha(sha) {
@@ -1022,18 +1023,23 @@ function releasePath(channel, platform) {
  * 单条「标记修复」的语句（参数 ?1 id、?2 sha、?3 scope、?4 now）。接口在 batch 里执行；
  * scripts/feedback.mjs fixed 把参数内联成字面量后走 wrangler 执行——同一份 SQL，不写两套判据。
  * 顺序有意：先按旧状态插时间线（只有 open / in_progress 才记 resolved 事件），再改行。
+ * dev_reply_at 只在插了时间线的那一种情况刷新（与时间线同一个判据 FIX_REPORTED_STATUSES）：它是
+ * 「开发者有新消息」的唯一时刻——App 拿它和 seenAt 比亮红点、处理台拿它和 user_reply_at 比判「新消息」。
+ * 已结案的行只改 fix_*，刷新它会让反馈人看到红点却找不到新消息，也会冲掉反馈人追问的「新消息」。
  * 新的修复覆盖旧的：fix_* 全部重写，fixed_in 重置为 '{}'（旧 commit 的发布记录不适用于新 commit）。
  * 幂等：sha 与 scope 都和现有记录相同时两条语句都不命中（main 同步 develop、重跑 workflow 会重复登记，
  * 不幂等的话已回填的发布进度会被清空）——不改 fix_at / fixed_in、不插时间线、不刷 dev_reply_at / updated_at。
  */
 const FIX_CHANGED = '(fix_sha IS NOT ?2 OR fix_scope IS NOT ?3)';
+const FIX_REPORTED_STATUSES = "status IN ('open', 'in_progress')";
 export const MARK_FIXED_SQL = [
   `INSERT INTO feedback_messages (feedback_id, author, account_id, body, status, created_at)
    SELECT id, 'dev', NULL, '', 'resolved', ?4 FROM feedback
-   WHERE id = ?1 AND status IN ('open', 'in_progress') AND ${FIX_CHANGED}`,
+   WHERE id = ?1 AND ${FIX_REPORTED_STATUSES} AND ${FIX_CHANGED}`,
   `UPDATE feedback SET fix_sha = ?2, fix_scope = ?3, fix_at = ?4, fixed_in = '{}',
-     status = CASE WHEN status IN ('open', 'in_progress') THEN 'resolved' ELSE status END,
-     dev_reply_at = ?4, updated_at = ?4
+     status = CASE WHEN ${FIX_REPORTED_STATUSES} THEN 'resolved' ELSE status END,
+     dev_reply_at = CASE WHEN ${FIX_REPORTED_STATUSES} THEN ?4 ELSE dev_reply_at END,
+     updated_at = ?4
    WHERE id = ?1 AND ${FIX_CHANGED}`,
 ];
 
@@ -1097,24 +1103,28 @@ function normalizeReleasedItems(items, max) {
  * POST /v1/ci/feedback/released：只写尚未记录该通道 / 平台的行（保留最早包含修复的版本），
  * 且该行当前的 fix_sha 必须等于 CI 判定过祖先关系的那个 sha——pending 与 released 之间被重新
  * 标记修复（fixed_in 已重置）的行，旧 commit 的发布结果不能记到新 commit 上。不匹配的静默跳过。
+ * 只写 fixed_in：自动回填不是开发者回复，不刷 dev_reply_at（否则处理台「新消息」判据
+ * user_reply_at > dev_reply_at 被每个通道 / 平台的包冲掉，反馈人在别的平台也会反复亮红点却没有新消息），
+ * 也不刷 updated_at（处理台按它排序；一条修复最多被回填 通道 × 平台 次，刷了会把旧单反复顶到最前，
+ * 还会推迟结案附件的到期清理）。发布进度由 App 按本机通道 / 平台从 fix.releases 自己解读。
  */
 export async function ciMarkReleased(env, body, now) {
   if (!body || typeof body !== 'object') throw new HttpError(400, 'bad_json');
   const path = releasePath(body.channel, body.platform);
   if (typeof body.version !== 'string' || !RELEASE_VERSION_RE.test(body.version)) throw new HttpError(400, 'bad_version');
   const items = normalizeReleasedItems(body.ids, FEEDBACK_LIMITS.ciReleasedIds);
-  const estimate = items.length * 2;
+  // 只改 fixed_in（不在任何索引里）：每条一行。
+  const estimate = items.length;
   await spend(env, 'write_rows', estimate, now);
   const res = await env.DB.prepare(
-    `UPDATE feedback SET fixed_in = json_set(fixed_in, ?2, json_object('version', ?3, 'at', ?4)),
-       dev_reply_at = ?4, updated_at = ?4
+    `UPDATE feedback SET fixed_in = json_set(fixed_in, ?2, json_object('version', ?3, 'at', ?4))
      WHERE id IN (SELECT json_extract(value, '$.id') FROM json_each(?1))
        AND fix_sha IS NOT NULL AND json_extract(fixed_in, ?2) IS NULL
        AND EXISTS (SELECT 1 FROM json_each(?1) j
                    WHERE json_extract(j.value, '$.id') = feedback.id AND json_extract(j.value, '$.sha') = feedback.fix_sha)`,
   ).bind(JSON.stringify(items), path, body.version, now).run();
   const updated = res.meta.changes;
-  await adjustSpend(env, 'write_rows', updated * 2 - estimate, now);
+  await adjustSpend(env, 'write_rows', updated - estimate, now);
   return { updated };
 }
 
