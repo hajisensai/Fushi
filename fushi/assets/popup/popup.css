@@ -361,6 +361,12 @@ html {
     contain-intrinsic-size: auto 600px;
 }
 
+/* BUG-3274：长释义切块（popup.js __fushiChunkLongGlossary），预估高度由脚本写在内联
+   contain-intrinsic-size 上；进入预渲染区或空闲预热时摘掉类名回到普通渲染。 */
+.fushi-lazy-chunk {
+    content-visibility: auto;
+}
+
 /* design-2026-08 讨论区反馈: 顶栏贴近词头——首词条不再叠加自己的 8px 顶距（顶部呼吸空间由
    Flutter 顶栏 + 振假名 0.55em 预留区承担），词条之间的 8px 节奏不变。
    :first-child 的语义恰好精确：汉字卡(kanjiSection)在场时首词条不是

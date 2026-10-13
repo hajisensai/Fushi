@@ -678,7 +678,12 @@ String buildPopupEntriesJs(
   final String kanjiResultsJson = jsonEncode(
     result.kanjiResults.map((FushiKanjiResult k) => k.toMap()).toList(),
   );
-  return '''    try { window.lookupEntries = $entriesJson; } catch(e) { window.lookupEntries = []; }
+  // BUG-3274：词条 JSON 以字符串字面量交给 JSON.parse，而不是当 JS 对象字面量 eval。
+  // 结果多时这一段有 MB 级（38 本词典查 トランクルーム 是 2 MB）；V8 解析 JSON 文本比
+  // 解析同等体量的对象字面量快（4 倍降速实测 347 → 236 ms），且每次查词的源码都不同，
+  // 吃不到脚本编译缓存。jsonEncode 产出的是合法 JS 字符串字面量。
+  final String entriesJsonLiteral = jsonEncode(entriesJson);
+  return '''    try { window.lookupEntries = JSON.parse($entriesJsonLiteral); } catch(e) { console.warn('[popup] lookupEntries JSON.parse failed', e); window.lookupEntries = []; }
     try { window.kanjiResults = $kanjiResultsJson; } catch(e) { window.kanjiResults = []; }
     window.lookupPending = $pending;
     window.lookupIdle = $idle;
