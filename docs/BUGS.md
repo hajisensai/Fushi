@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3003 条。点号进各自文件。
+> 共 3005 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -61,6 +61,8 @@
 | [BUG-3293](bugs/BUG-3293-popup-loading-spinner-lingers.md) | ✅ | ✅ | 查词加载指示器在结果出来后仍压着结果转 |
 | [BUG-3292](bugs/BUG-3292-reader-popup-under-floating-chrome.md) | ✅ | ✅ | 阅读器悬浮底栏/迷你播放条盖住查词弹窗 |
 | [BUG-3291](bugs/BUG-3291-clip-export-drops-ass-style.md) | ✅ | ✅ | 片段导出烧字幕丢失原字幕颜色与加粗 |
+| [BUG-3290](bugs/BUG-3290-bluray-menu-unconsumed-input-error.md) | ✅ | ✅ | 原盘菜单方向键 / 点击没被原盘接收时报「未能执行菜单操作」 |
+| [BUG-3289](bugs/BUG-3289-emby-short-query-zero-count.md) | ✅ | ✅ | Emby 短查询 TotalRecordCount 清零，搜索把整页命中丢弃 |
 | [BUG-3288](bugs/BUG-3288-popup-headword-wheel-scroll.md) | ✅ | ✅ | 查词弹窗词头放得下仍可被滚轮纵向滚动 |
 | [BUG-3287](bugs/BUG-3287-video-subtitle-highlight-stroke.md) | ✅ | ✅ | 视频字幕查词高亮底色盖不住 .ass 描边 |
 | [BUG-3286](bugs/BUG-3286-video-fullscreen-file-dialog-hidden.md) | ✅ | ✅ | 视频全屏时系统文件对话框被压在全屏窗口下 |

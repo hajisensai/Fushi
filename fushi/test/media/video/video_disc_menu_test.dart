@@ -198,6 +198,54 @@ void main() {
         ),
       );
     });
+    // BUG-3290: libbluray answers an unconsumed key/click with -1 (popup closed,
+    // click outside enabled buttons, BD-J listener returned false); the shipped
+    // patch surfaces that as MPV_ERROR_COMMAND. It is a no-op, not an error.
+    test('unconsumed remote input is a false result, never an exception', () {
+      for (final String action in <String>[
+        'up',
+        'down',
+        'left',
+        'right',
+        'select',
+        'popup',
+        'prev',
+      ]) {
+        final List<String> command = videoDiscNavigationCommand(action);
+        expect(isVideoDiscInputCommand(command), isTrue, reason: action);
+        expect(runVideoDiscInputCommand(_Native(_Mpv(-12)), command), isFalse);
+        expect(runVideoDiscInputCommand(_Native(_Mpv(0)), command), isTrue);
+      }
+      final List<String> click = videoDiscNavigationCommand(
+        'mouse-click',
+        x: .5,
+        y: .9,
+      );
+      expect(isVideoDiscInputCommand(click), isTrue);
+      final _Mpv mpv = _Mpv(-12);
+      expect(runVideoDiscInputCommand(_Native(mpv), click), isFalse);
+      expect(mpv.received, click);
+    });
+
+    test('menu calls stay checked: a refused top menu is still an error', () {
+      for (final String action in <String>['menu', 'title-menu']) {
+        final List<String> command = videoDiscNavigationCommand(action);
+        expect(isVideoDiscInputCommand(command), isFalse);
+        expect(
+          () => runVideoDiscInputCommand(_Native(_Mpv(0)), command),
+          throwsArgumentError,
+        );
+        expect(
+          () => runCheckedVideoDiscCommand(_Native(_Mpv(-12)), command),
+          throwsA(isA<VideoDiscMenuException>()),
+        );
+      }
+      expect(
+        isVideoDiscInputCommand(<String>['set', 'disc-menu', 'yes']),
+        isFalse,
+      );
+    });
+
     test('keyboard and top/popup actions retain upstream semantics', () {
       for (final String action in <String>[
         'up',

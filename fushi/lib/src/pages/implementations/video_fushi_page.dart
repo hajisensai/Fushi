@@ -10287,7 +10287,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 能裁整集音轨）时给自动对轴按钮，否则置 null 让面板不显示该按钮。
       onAutoAlign:
           (_controller?.cues.isNotEmpty ?? false) &&
-              _canResolveSubtitleTimingAudio
+              _canResolveSubtitleAlignAudio
           ? _autoAlignSubtitle
           : null,
       // 「上/下一句对齐到当前时间」按钮：与键盘 Ctrl+Shift+←/→ 同一执行体。只要有
@@ -10302,7 +10302,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       videoDurationMs: _controller?.durationMs ?? 0,
       loadSubtitleWaveform:
           (_controller?.cues.isNotEmpty ?? false) &&
-              _canResolveSubtitleTimingAudio
+              _canResolveSubtitleAlignAudio
           ? _loadSubtitleWaveformEnvelope
           : null,
       subtitlePositionListenable: _controller,

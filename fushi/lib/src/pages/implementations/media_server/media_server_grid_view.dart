@@ -26,6 +26,7 @@ class MediaServerGridView extends StatefulWidget {
     required this.parentId,
     required this.title,
     this.library,
+    this.initialQuery,
     super.key,
   });
 
@@ -39,6 +40,9 @@ class MediaServerGridView extends StatefulWidget {
   /// [MediaServerLibraryItems] 时，默认按库类型列作品（剧 / 电影），页头可切回
   /// 按文件夹浏览（BUG-3198）。
   final MediaServerLibrary? library;
+
+  /// 进来时搜索框里已有的关键词（从「搜索所有服务器」的某台「查看全部」进来）。
+  final String? initialQuery;
 
   @override
   State<MediaServerGridView> createState() => _MediaServerGridViewState();
@@ -98,6 +102,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
   @override
   void initState() {
     super.initState();
+    _searchController.text = widget.initialQuery ?? '';
     _scrollController.addListener(_onScroll);
     unawaited(_reload());
   }

@@ -7123,5 +7123,6 @@
   "feedback_dev_video": "Video",
   "feedback_dev_video_play": "Play video",
   "feedback_dev_video_save": "Save video",
-  "feedback_dev_video_saved": "Video saved."
+  "feedback_dev_video_saved": "Video saved.",
+  "media_server_search_all": "Search all servers"
 }

@@ -15,6 +15,7 @@ void openMediaServerGrid(
   required String? parentId,
   required String title,
   MediaServerLibrary? library,
+  String? initialQuery,
 }) {
   Navigator.of(context).push<void>(
     adaptivePageRoute<void>(
@@ -24,6 +25,7 @@ void openMediaServerGrid(
         parentId: parentId,
         title: title,
         library: library,
+        initialQuery: initialQuery,
       ),
     ),
   );

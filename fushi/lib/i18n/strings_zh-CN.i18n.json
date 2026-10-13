@@ -7123,5 +7123,6 @@
   "feedback_dev_video": "视频",
   "feedback_dev_video_play": "播放视频",
   "feedback_dev_video_save": "保存视频",
-  "feedback_dev_video_saved": "视频已保存。"
+  "feedback_dev_video_saved": "视频已保存。",
+  "media_server_search_all": "搜索所有服务器"
 }

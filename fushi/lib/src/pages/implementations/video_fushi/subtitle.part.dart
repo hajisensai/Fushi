@@ -3605,6 +3605,97 @@ extension _VideoSubtitle on _VideoFushiPageState {
     return (path: path, audioStreamIndex: null, audioStreamCount: null);
   }
 
+  /// 媒体服务器（Emby / Jellyfin / Plex）与在线源的流：对轴音源就是播放中的流本身
+  /// （用户反馈 5m4b74SHhv）。判据与制卡同一条：[videoMiningInputUsesPlaybackRelay]
+  /// 认可的流，制卡已经能经播放中继 + 防盗链头让 ffmpeg 读它。
+  String? get _streamAlignAudioSource {
+    final String? source = _controller?.miningSource;
+    if (source == null) return null;
+    return videoMiningInputUsesPlaybackRelay(
+          remoteClient: _effectiveRemoteClient,
+          mediaSource: source,
+        )
+        ? source
+        : null;
+  }
+
+  /// 波形 / 自动对轴有没有音源：整集音源（[_canResolveSubtitleTimingAudio]）或
+  /// 可读的流。ASR 转录 / 重定时要整集，仍只认前者。
+  bool get _canResolveSubtitleAlignAudio =>
+      _canResolveSubtitleTimingAudio || _streamAlignAudioSource != null;
+
+  /// 波形 / 自动对轴的音频输入。整集音源优先；否则从流里只裁出这两者实际会看的
+  /// 前 [kSubtitleAutoAlignProbeLimitMs]（时间轴与本地视频完全同源，波形窗口不变），
+  /// 不必拉整集。按「流 + 音轨」缓存，失败不缓存。
+  Future<_SubtitleTimingAudio?> _resolveSubtitleAlignAudio() async {
+    if (_canResolveSubtitleTimingAudio) return _resolveSubtitleTimingAudio();
+    final VideoPlayerController? controller = _controller;
+    final String? source = _streamAlignAudioSource;
+    final int durationMs = controller?.durationMs ?? 0;
+    if (controller == null || source == null || durationMs <= 0) return null;
+    final int? audioStreamIndex = controller.currentAudioStreamIndex;
+    final String key = 'stream|$source|${audioStreamIndex ?? '-'}';
+    final Future<String?> fetch = _remoteTimingAudioFetches.putIfAbsent(
+      key,
+      () => _fetchStreamAlignAudio(
+        controller,
+        source,
+        endMs: math.min(durationMs, kSubtitleAutoAlignProbeLimitMs),
+        audioStreamIndex: audioStreamIndex,
+        audioStreamCount: controller.realAudioStreamCount,
+      ),
+    );
+    final String? path = await fetch;
+    if (path == null) {
+      if (identical(_remoteTimingAudioFetches[key], fetch)) {
+        _remoteTimingAudioFetches.remove(key);
+      }
+      return null;
+    }
+    return (path: path, audioStreamIndex: null, audioStreamCount: null);
+  }
+
+  Future<String?> _fetchStreamAlignAudio(
+    VideoPlayerController controller,
+    String source, {
+    required int endMs,
+    required int? audioStreamIndex,
+    required int audioStreamCount,
+  }) async {
+    if (mounted) {
+      _showOsd(
+        t.video_subtitle_remote_audio_fetching,
+        icon: Icons.graphic_eq,
+        severity: ToastSeverity.info,
+      );
+    }
+    final Map<String, String> headers = _streamHttpHeaderFields;
+    final ({String url, Future<void> ready}) relayed = relayFfmpegRemoteInput(
+      source,
+      isHls: controller.isHlsStream(),
+      headers: headers,
+    );
+    await relayed.ready;
+    final Directory dir = Directory(
+      p.join((await getTemporaryDirectory()).path, 'fushi_timing_audio'),
+    );
+    await dir.create(recursive: true);
+    return extractAudioSegmentViaFfmpeg(
+      inputPath: ffmpegRemoteInputFor(relayed.url),
+      startMs: 0,
+      endMs: endMs,
+      outputPath: p.join(
+        dir.path,
+        'stream_${DateTime.now().microsecondsSinceEpoch}.aac',
+      ),
+      audioStreamIndex: audioStreamIndex,
+      audioStreamCount: audioStreamCount,
+      httpHeaders: headers,
+      // 读流至多与实时播放一样慢；再留两分钟连接 / 收尾余量。
+      timeout: Duration(milliseconds: endMs + 120000),
+    );
+  }
+
   Future<String?> _fetchRemoteTimingAudio(
     InterconnectSyncBackend backend,
     String id, {
@@ -3682,7 +3773,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (controller == null) return null;
     final List<AudioCue> cues = controller.cues;
     final int? durationMs = controller.durationMs;
-    if (cues.isEmpty || !_canResolveSubtitleTimingAudio) {
+    if (cues.isEmpty || !_canResolveSubtitleAlignAudio) {
       _showOsd(
         t.video_subtitle_auto_align_low_confidence,
         severity: ToastSeverity.warning,
@@ -3707,7 +3798,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       severity: ToastSeverity.info,
     );
 
-    final _SubtitleTimingAudio? audio = await _resolveSubtitleTimingAudio();
+    final _SubtitleTimingAudio? audio = await _resolveSubtitleAlignAudio();
     if (!mounted) return null;
     final List<double> rawRms = audio == null
         ? const <double>[]
@@ -3763,7 +3854,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
   Future<List<double>> _loadSubtitleWaveformEnvelope() async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return const <double>[];
-    final _SubtitleTimingAudio? audio = await _resolveSubtitleTimingAudio();
+    final _SubtitleTimingAudio? audio = await _resolveSubtitleAlignAudio();
     if (audio == null) return const <double>[];
     final String videoPath = audio.path;
     // TODO-1244：按「视频路径 + 当前音轨」缓存已抽出的波形包络。同一视频/音轨重复打开
@@ -3796,7 +3887,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
     final List<AudioCue> cues = controller.cues;
-    if (cues.isEmpty || !_canResolveSubtitleTimingAudio) {
+    if (cues.isEmpty || !_canResolveSubtitleAlignAudio) {
       _showOsd(
         t.video_subtitle_waveform_unavailable,
         severity: ToastSeverity.warning,

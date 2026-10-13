@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
+import 'package:fushi/src/pages/implementations/media_server/media_server_aggregate_search_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_routes.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
@@ -211,6 +212,23 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
               title: t.search,
             ),
           ),
+          if (widget.servers.length > 1)
+            FushiIconButton(
+              key: const ValueKey<String>('media-server-home-search-all'),
+              icon: FushiIcons.travelExplore,
+              tooltip: t.media_server_search_all,
+              focusId: FushiFocusId(
+                '${widget.session.serverId}-home-search-all',
+              ),
+              onTap: () =>
+                  openMediaServerAggregateSearch(context, <MediaServerSession>[
+                    for (final MediaServerBrowser browser in widget.servers)
+                      MediaServerSession(
+                        browser: browser,
+                        play: widget.session.play,
+                      ),
+                  ]),
+            ),
           FushiIconButton(
             key: const ValueKey<String>('media-server-home-refresh'),
             icon: FushiIcons.refresh,

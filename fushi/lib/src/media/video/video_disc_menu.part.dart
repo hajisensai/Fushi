@@ -239,7 +239,15 @@ extension VideoDiscMenuController on VideoPlayerController {
     final dynamic native = player.platform;
     await native.getProperty('mpv-version', waitForInitialization: false);
     if (!_isCurrentLoad(player, token)) return;
-    runCheckedVideoDiscCommand(native, command);
+    if (isVideoDiscInputCommand(command)) {
+      // An unconsumed key/click is the disc's own no-op (see
+      // isVideoDiscInputCommand), not a failure the user must be told about.
+      if (!runVideoDiscInputCommand(native, command)) {
+        debugPrint('[disc-menu] input not consumed by disc: $command');
+      }
+    } else {
+      runCheckedVideoDiscCommand(native, command);
+    }
     // A sampler already in flight may have read the pre-command title. Wait
     // for it, then read again so completion means a post-command snapshot.
     await _discSampleFuture;
