@@ -31,14 +31,19 @@ enum VideoPauseOcrScope {
   /// 暂停的这一帧该不该识别。
   ///
   /// [graphicSubtitleActive]：libmpv 正在自绘字幕轨（画面里的字幕没有 Dart 文字）。
-  /// [textCueOnScreen]：Fushi 自绘的文字字幕此刻在屏——它本身就能点字查词，是这一刻
-  /// 的权威文本；OCR 的可点框叠在它上面会抢走点击、查到画面里的另一段字，所以让位。
+  /// [textCueOnScreen]：Fushi 自绘的文字字幕此刻在屏——主字幕**或**副字幕（BUG-1592
+  /// 支持「主字幕关、只开副字幕」）。它本身就能点字查词，是这一刻的权威文本；OCR 的
+  /// 可点框叠在它上面会抢走点击、查到画面里的另一段字，所以让位。
+  /// [textCuesLoading]：内封文字字幕还在后台抽取，这一帧有没有文字字幕还不知道——
+  /// 先不识别，免得抽取完成后字幕盖在已铺好的 OCR 框下面。
   bool shouldRecognize({
     required bool graphicSubtitleActive,
     required bool textCueOnScreen,
+    required bool textCuesLoading,
   }) => switch (this) {
     VideoPauseOcrScope.off => false,
     VideoPauseOcrScope.graphicSubtitles => graphicSubtitleActive,
-    VideoPauseOcrScope.all => graphicSubtitleActive || !textCueOnScreen,
+    VideoPauseOcrScope.all =>
+      graphicSubtitleActive || (!textCueOnScreen && !textCuesLoading),
   };
 }

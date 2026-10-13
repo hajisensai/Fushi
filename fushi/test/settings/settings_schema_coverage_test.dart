@@ -372,13 +372,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Reveal when paused or hovered':
       'test/media/video/video_subtitle_hide_hover_reveal_test.dart'
       '（悬停 / 点击 / 暂停 / 查词四条显形来源同属一个总闸）',
-  // 反馈 i5A0mu1-AT：无字幕轨（硬字幕）也暂停 OCR。写 videoAsbplayerConfig
-  // （changed=true），生效点是播放页 OCR 覆盖层「这一帧该不该识别」的判据——要
-  // 真播放器截帧与 OCR 引擎，harness 无适用探针；由专项 widget 测试咬住（默认关不
-  // 识别、开了且无文本 cue 才识别、有文本 cue 不识别）。
-  'video/OCR on pause without subtitle track':
-      'test/media/video/video_graphic_subtitle_ocr_overlay_test.dart'
-      '（开关 × 图形字幕 × 文本 cue 三维判据）',
   // BUG-3314：暂停时识别画面文字的范围（所有视频 / 仅图片字幕 / 关闭）。写 prefsRepo
   // （changed=true），生效点在播放页暂停 OCR 覆盖层的识别门——要真播放器暂停、截帧
   // 与 OCR 引擎，harness 无适用探针；由专项测试咬住判据（图形字幕必识别、文字字幕在屏

@@ -1,5 +1,5 @@
 // 暂停 OCR 覆盖层：识别完成标记到时淡出（反馈 YtbinN_pBG / -6dAnq8S6f）、
-// 无图形字幕的视频按开关识别（反馈 i5A0mu1-AT）。
+// 无图形字幕的视频按 VideoPauseOcrScope 识别（反馈 i5A0mu1-AT / BUG-3314）。
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +9,7 @@ import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart'
 import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_ocr_overlay.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_ocr_progress.dart';
+import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:material_ui/material_ui.dart';
@@ -58,7 +59,7 @@ class _Probe {
 Widget _overlay(
   VideoPlayerController c,
   _Probe probe, {
-  bool ocrWithoutSubtitleTrack = false,
+  VideoPauseOcrScope scope = VideoPauseOcrScope.graphicSubtitles,
 }) {
   return MaterialApp(
     home: Scaffold(
@@ -72,7 +73,7 @@ Widget _overlay(
           onCharTap: (_, _, _) {},
           captureFrame: probe.capture,
           recognizeFrame: probe.recognize,
-          ocrWithoutSubtitleTrack: ocrWithoutSubtitleTrack,
+          scope: scope,
         ),
       ),
     ),
@@ -121,41 +122,41 @@ void main() {
     );
   });
 
-  testWidgets('没有图形字幕：开关关时不识别，开了且无文本字幕才识别', (tester) async {
+  testWidgets('没有图形字幕：仅图形字幕档不识别，所有视频档且无文字字幕在屏才识别', (tester) async {
     final VideoPlayerController c = _pausedController(graphic: false);
     addTearDown(c.dispose);
     final _Probe probe = _Probe();
 
     await tester.pumpWidget(_overlay(c, probe));
     await tester.pump(kGraphicSubtitleOcrSettleDelay * 2);
-    expect(probe.captures, 0, reason: '默认关：无图形字幕的视频不做暂停 OCR');
+    expect(probe.captures, 0, reason: '仅图形字幕档：无图形字幕的视频不做暂停 OCR');
 
-    await tester.pumpWidget(_overlay(c, probe, ocrWithoutSubtitleTrack: true));
+    await tester.pumpWidget(_overlay(c, probe, scope: VideoPauseOcrScope.all));
     await tester.pump(kGraphicSubtitleOcrSettleDelay);
     await tester.pump(const Duration(milliseconds: 500));
-    expect(probe.captures, 1, reason: '打开开关后，硬字幕视频暂停即识别');
+    expect(probe.captures, 1, reason: '所有视频档：硬字幕视频暂停即识别');
     expect(_hitBoxes, findsNWidgets(_frame.chars.length));
     await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
   });
 
-  testWidgets('开关开着但有文本字幕 cue：不识别（不与字幕查词抢点击）', (tester) async {
+  testWidgets('所有视频档但文字字幕在屏：不识别（不与字幕查词抢点击）', (tester) async {
     final VideoPlayerController c = _pausedController(graphic: false);
     addTearDown(c.dispose);
     c.setCues(<AudioCue>[_textCue('テキスト字幕')]);
     final _Probe probe = _Probe();
-    await tester.pumpWidget(_overlay(c, probe, ocrWithoutSubtitleTrack: true));
+    await tester.pumpWidget(_overlay(c, probe, scope: VideoPauseOcrScope.all));
     await tester.pump(kGraphicSubtitleOcrSettleDelay * 2);
     expect(probe.captures, 0);
     expect(_hitBoxes, findsNothing);
   });
 
-  testWidgets('开关开着、主字幕关只开副字幕：不识别（BUG-1592 副字幕查词不被 OCR 盖住）', (tester) async {
+  testWidgets('所有视频档、主字幕关只开副字幕：不识别（BUG-1592 副字幕查词不被 OCR 盖住）', (tester) async {
     final VideoPlayerController c = _pausedController(graphic: false);
     addTearDown(c.dispose);
     c.setSecondaryCues(<AudioCue>[_textCue('副字幕テキスト')]);
     expect(c.cues, isEmpty, reason: '前提：主字幕关着');
     final _Probe probe = _Probe();
-    await tester.pumpWidget(_overlay(c, probe, ocrWithoutSubtitleTrack: true));
+    await tester.pumpWidget(_overlay(c, probe, scope: VideoPauseOcrScope.all));
     await tester.pump(kGraphicSubtitleOcrSettleDelay * 2);
     expect(probe.captures, 0);
     expect(_hitBoxes, findsNothing);
@@ -165,7 +166,7 @@ void main() {
     final VideoPlayerController c = _pausedController(graphic: false);
     addTearDown(c.dispose);
     final _Probe probe = _Probe();
-    await tester.pumpWidget(_overlay(c, probe, ocrWithoutSubtitleTrack: true));
+    await tester.pumpWidget(_overlay(c, probe, scope: VideoPauseOcrScope.all));
     await tester.pump(kGraphicSubtitleOcrSettleDelay);
     await tester.pump(const Duration(milliseconds: 500));
     expect(_hitBoxes, findsNWidgets(_frame.chars.length));
@@ -176,45 +177,7 @@ void main() {
     await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
   });
 
-  group('graphicSubtitlePauseOcrEligible', () {
-    bool eligible({
-      bool playing = false,
-      bool hasFirstFrame = true,
-      bool graphic = false,
-      bool toggle = false,
-      bool cues = false,
-      bool secondaryCues = false,
-      bool loading = false,
-    }) => graphicSubtitlePauseOcrEligible(
-      playing: playing,
-      hasFirstFrame: hasFirstFrame,
-      playerRenderedSubtitle: graphic,
-      ocrWithoutSubtitleTrack: toggle,
-      hasPrimaryTextCues: cues,
-      hasSecondaryTextCues: secondaryCues,
-      textCuesLoading: loading,
-    );
-
-    test('图形字幕暂停即识别，与开关无关', () {
-      expect(eligible(graphic: true), isTrue);
-      expect(eligible(graphic: true, playing: true), isFalse);
-      expect(eligible(graphic: true, hasFirstFrame: false), isFalse);
-    });
-
-    test('无图形字幕：需开关 + 无文本 cue + 不在加载', () {
-      expect(eligible(), isFalse);
-      expect(eligible(toggle: true), isTrue);
-      expect(eligible(toggle: true, cues: true), isFalse);
-      expect(
-        eligible(toggle: true, secondaryCues: true),
-        isFalse,
-        reason: '只开副字幕（BUG-1592）也算有文本字幕',
-      );
-      expect(eligible(toggle: true, cues: true, secondaryCues: true), isFalse);
-      expect(eligible(toggle: true, loading: true), isFalse);
-      expect(eligible(toggle: true, playing: true), isFalse);
-    });
-
+  group('graphicSubtitlePauseOcrStatus', () {
     test('只有识别结果标记会自动淡出', () {
       expect(
         graphicSubtitlePauseOcrStatusAutoHides(

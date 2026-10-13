@@ -40,31 +40,6 @@ bool graphicSubtitlePauseOcrStatusAutoHides(
   GraphicSubtitlePauseOcrStatus.recognizing => false,
 };
 
-/// 这一刻是否该对暂停画面做 OCR（纯函数，页面与测试共用同一判据）。
-///
-/// - 图形字幕（libmpv 自绘、没有 cue）：一直识别（历史行为）。
-/// - 没有图形字幕（反馈 i5A0mu1-AT：烧录在画面里的硬字幕）：只在用户打开
-///   [ocrWithoutSubtitleTrack] 且**当前没有任何文本字幕 cue**（也不在加载中）时识别——
-///   有文本轨的视频本来就能点字幕查词，整帧 OCR 只会把招牌 / 片名之类的字也铺成
-///   可点区域，与字幕查词抢点击。
-/// - 「任何文本字幕」= 主字幕 **或** 副字幕：BUG-1592 支持「主字幕关、只开副字幕」，
-///   此时主 cue 为空而副 cue 非空。OCR 层挂在文本字幕层之上，若这时也整帧识别，
-///   铺出的可点区域会盖住副字幕，点副字幕走 OCR 回调、拿不到 cue，制卡丢锚点。
-bool graphicSubtitlePauseOcrEligible({
-  required bool playing,
-  required bool hasFirstFrame,
-  required bool playerRenderedSubtitle,
-  required bool ocrWithoutSubtitleTrack,
-  required bool hasPrimaryTextCues,
-  required bool hasSecondaryTextCues,
-  required bool textCuesLoading,
-}) {
-  if (playing || !hasFirstFrame) return false;
-  if (playerRenderedSubtitle) return true;
-  final bool hasTextCues = hasPrimaryTextCues || hasSecondaryTextCues;
-  return ocrWithoutSubtitleTrack && !hasTextCues && !textCuesLoading;
-}
-
 /// 图形字幕 OCR 查词覆盖层。尺寸须与视频控件一致（挂在 controls 层里）。
 class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
   const VideoGraphicSubtitleOcrOverlay({
@@ -77,7 +52,6 @@ class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
     this.onError,
     this.captureFrame,
     this.recognizeFrame,
-    this.ocrWithoutSubtitleTrack = false,
     this.statusTopInset = 12,
     super.key,
   });
@@ -112,10 +86,6 @@ class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
   @visibleForTesting
   final Future<GraphicSubtitleOcrFrame?> Function(Uint8List frameBytes)?
   recognizeFrame;
-
-  /// 没有图形字幕的视频（硬字幕）也在暂停时 OCR，见
-  /// [graphicSubtitlePauseOcrEligible]。默认关（设置 › 视频 › 字幕）。
-  final bool ocrWithoutSubtitleTrack;
 
   /// 状态标记（识别中 / 已识别）距顶部的距离——页面传顶栏高度，标记落在顶栏下方、
   /// 不压字幕（图形字幕绝大多数在画面下方）。
@@ -180,7 +150,11 @@ class _VideoGraphicSubtitleOcrOverlayState
     if (c.isPlaying || !c.hasFirstFrame) return null;
     if (!widget.scope.shouldRecognize(
       graphicSubtitleActive: c.isPlayerRenderedSubtitleActive,
-      textCueOnScreen: c.activeCues.isNotEmpty,
+      textCueOnScreen:
+          c.activeCues.isNotEmpty || c.secondaryActiveCues.isNotEmpty,
+      // 副字幕没有独立的加载态（由页面一次性 setSecondaryCues），只有内封主字幕的
+      // 后台抽取有加载窗口。
+      textCuesLoading: c.isSubtitleCuesLoading,
     )) {
       return null;
     }

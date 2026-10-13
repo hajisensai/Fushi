@@ -81,16 +81,48 @@ void main() {
     test('所有视频：图形字幕必识别；文字字幕在屏时让位，没有时识别画面', () {
       const VideoPauseOcrScope s = VideoPauseOcrScope.all;
       expect(
-        s.shouldRecognize(graphicSubtitleActive: true, textCueOnScreen: false),
+        s.shouldRecognize(
+          graphicSubtitleActive: true,
+          textCueOnScreen: false,
+          textCuesLoading: false,
+        ),
         isTrue,
       );
       expect(
-        s.shouldRecognize(graphicSubtitleActive: false, textCueOnScreen: false),
+        s.shouldRecognize(
+          graphicSubtitleActive: false,
+          textCueOnScreen: false,
+          textCuesLoading: false,
+        ),
         isTrue,
       );
       expect(
-        s.shouldRecognize(graphicSubtitleActive: false, textCueOnScreen: true),
+        s.shouldRecognize(
+          graphicSubtitleActive: false,
+          textCueOnScreen: true,
+          textCuesLoading: false,
+        ),
         isFalse,
+      );
+    });
+
+    test('所有视频：内封文字字幕还在抽取时先不识别画面，图形字幕不受影响', () {
+      const VideoPauseOcrScope s = VideoPauseOcrScope.all;
+      expect(
+        s.shouldRecognize(
+          graphicSubtitleActive: false,
+          textCueOnScreen: false,
+          textCuesLoading: true,
+        ),
+        isFalse,
+      );
+      expect(
+        s.shouldRecognize(
+          graphicSubtitleActive: true,
+          textCueOnScreen: false,
+          textCuesLoading: true,
+        ),
+        isTrue,
       );
     });
 
@@ -100,6 +132,7 @@ void main() {
           VideoPauseOcrScope.graphicSubtitles.shouldRecognize(
             graphicSubtitleActive: true,
             textCueOnScreen: text,
+            textCuesLoading: false,
           ),
           isTrue,
         );
@@ -107,6 +140,7 @@ void main() {
           VideoPauseOcrScope.graphicSubtitles.shouldRecognize(
             graphicSubtitleActive: false,
             textCueOnScreen: text,
+            textCuesLoading: false,
           ),
           isFalse,
         );
@@ -115,6 +149,7 @@ void main() {
             VideoPauseOcrScope.off.shouldRecognize(
               graphicSubtitleActive: graphic,
               textCueOnScreen: text,
+              textCuesLoading: false,
             ),
             isFalse,
           );
