@@ -12,6 +12,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:path/path.dart' as p;
 
@@ -53,6 +54,11 @@ class FeedbackDraftStore {
       Directory(p.join(supportRoot.path, 'feedback', 'draft.tmp'));
 
   Future<void> _queue = Future<void>.value();
+
+  /// 此刻已排进来的读写全部结束（成功或失败）后完成。测试用它等「进后台立刻保存」
+  /// 真正落盘，而不是轮询文件加一个真实时间上限（机器一忙就超时）。
+  @visibleForTesting
+  Future<void> get idle => _queue;
 
   Future<T> _serial<T>(Future<T> Function() op) {
     final Future<T> next = _queue.then((_) => op());

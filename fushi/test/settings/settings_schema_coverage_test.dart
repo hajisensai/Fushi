@@ -139,7 +139,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // AI（2026-10-13 起独立模块）：同上，生效点是「设置 › AI」整条分类消失，另有
   // 运行时投影（每个 AiFeature 解析不到提供商）由 preferences_repository_test 咬住，
   // 各页入口由 test/models/ai_module_gate_guard_test.dart 守。
-  'appearance/AI': 'test/settings/settings_module_gating_test.dart',
+  // AI 模块的开关行标签取自它的设置分类标题（2026-10-13 起是 LLM 子页的「LLM」，
+  // 见 settings_module_labels_match_nav_test）。
+  'appearance/LLM': 'test/settings/settings_module_gating_test.dart',
   // 漫画观看偏好五项。写 prefsRepo（changed=true），生效点全部在**漫画阅读器的
   // WebView 文档**里——这些值被注入成 CSS 过渡声明 / JS 常量（ZOOM_SENS、
   // TAP_ZONE_PAGING、IS_RTL、PAGE_ANIM），widget harness 里没有 WebView，也就没有

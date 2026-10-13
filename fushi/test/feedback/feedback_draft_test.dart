@@ -1,6 +1,7 @@
 // 提交页草稿：写到一半离开（返回 / 切走 / 进后台）就落盘，下次打开自动恢复并可丢弃；
 // 输入防抖保存；表单清空时草稿也删掉。草稿在 `<数据根>/feedback/draft/`，截图各存一个文件。
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -245,20 +246,18 @@ void main() {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-    // 不推进假时钟（防抖定时器不会触发），只让真实 IO 走完：落盘只能来自进后台。
-    bool flushed() {
-      try {
-        return draftOnDisk() &&
-            File(
-              '${root.path}/feedback/draft/draft.json',
-            ).readAsStringSync().contains('第二句');
-      } on FileSystemException {
-        // Windows 上正在替换目录时读会撞共享冲突：还没写完，下一轮再看。
-        return false;
-      }
-    }
-
-    for (int i = 0; i < 200 && !flushed(); i++) {
+    // 不推进假时钟（防抖定时器不会触发），只等真实 IO 走完：落盘只能来自进后台。
+    // 等的是草稿存储的串行写队列本身（进后台那次写已经排在里面），不轮询文件、也不
+    // 设真实时间上限——机器一忙就会提前放弃。完成回调挂在测试 zone 里：那次写的
+    // 后续微任务只在 pump 时冲刷，在真实 zone 里干等它会永远挂住。
+    bool written = false;
+    unawaited(
+      service
+          .draftStore()
+          .then((FeedbackDraftStore store) => store.idle)
+          .then((_) => written = true),
+    );
+    while (!written) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 10)),
       );
