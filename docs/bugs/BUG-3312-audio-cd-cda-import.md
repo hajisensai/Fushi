@@ -10,5 +10,6 @@
   - 判定（`audioCdLayoutOf`）认两种形态：Windows 光驱根只有 `.cda`；macOS 挂载点 `.TOC.plist` + `.aiff`。macOS 形态是普通 AIFF 文件，任何桌面都能转；Windows 形态只有本机光驱能抓。
 - **[x] ② 已加自动化测试** — `fushi/test/media/audio_cd/audio_cd_disc_test.dart`（TOC：纯音频 / 增强型 CD 扣间隙 / Control 在低 4 位 / 全数据盘 / 截断；两种 CD 形态判定；macOS 轨号排序；光盘 id；WAV 头）与 `audio_cd_import_test.dart`（目录判定；普通目录放行；非光驱的 `.cda` 提示后照常扫描、不弹抓轨框、不留来源行；`importLocalFolderOnceAt` 扫完删除临时来源行；macOS 挂载点 → FLAC 流水线：按轨号顺序、标签参数、复用不再编码、编码失败不留 `.flac`/`.part`、取消不交出结果）。变异实测：Control 位域改回读高 4 位时 3 条用例变红。
 - **备注**：
-  - 真机验证（本机光驱 `E:\`，12 轨纯音频盘）：TOC 与独立 Python 抓轨脚本一致；取消约 0.2 秒返回、无 `.part` 残留；复用分支跳过 11 轨，只抓第 3 轨，22 秒、0 坏扇区；该轨 PCM 与参考抓轨解码后的 SHA-256 逐字节一致。
-  - macOS 未在真 Mac + 光驱上实测（本机无此环境）：挂载点形态按 cddafs 的公开布局实现，流水线由假 ffmpeg 测试覆盖，aiff → flac 由 macOS 版 ffmpeg-min 的 CI 冒烟测试实跑。Linux 音频 CD 无文件系统，需另写 ioctl，未做。
+  - 真机验证（本机光驱 `E:\`，12 轨纯音频盘，只用入库的 ffmpeg-min，`FUSHI_FFMPEG` 指向它）：TOC 与独立 Python 抓轨脚本一致；整盘抓成 FLAC 7 分 43 秒、0 坏扇区、无残留临时文件，12 轨解码后的 PCM 与参考抓轨 SHA-256 / 长度逐轨一致；取消约 0.2 秒返回、无 `.part` 残留；复用分支不重抓已有轨。
+  - macOS 形态：用真实音轨转成的大端 AIFF 搭了模拟挂载点（`.TOC.plist` + `1/10 Audio Track.aiff`），经入库的 Windows 版 ffmpeg-min 转出的 FLAC 与参考 PCM 逐字节一致，轨号排序与标签正确；macOS 版 ffmpeg-min 的 aiff → flac 由 CI 冒烟测试实跑（run 38352738009）。
+  - 未在真 Mac + 光驱上实测（本机无此环境）：挂载点形态按 cddafs 的公开布局（`.TOC.plist` + `N Audio Track.aiff`）实现。Linux 音频 CD 无文件系统，需另写 ioctl，未做。
