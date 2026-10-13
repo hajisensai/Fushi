@@ -1,13 +1,14 @@
-## BUG-3312 · 音频 CD（.cda）导入视频库一条不收：Windows 需先抓轨
+## BUG-3312 · 音频 CD 导入视频库一条不收：需先抓轨成 FLAC（Windows .cda / macOS .aiff 挂载）
 - **报告**：2026-10-13（用户：把光驱 `E:\` 当文件夹导入「说不行」，「音频库只认 .flac/.wav/.mp3 等格式，不支持 .cda 修复一下」）
 - **真实性**：✅ 真 bug。Windows 把音频 CD 的每条音轨显示成 44 字节的 `TrackNN.cda` 快捷方式，里面**没有音频**。来源扫描 `planScanFromFileList`（`fushi/lib/src/media/source_library/source_library_scanner.dart` 的视频分支，`kVideoExtensions` / `kAudioExtensions` 白名单）对 `.cda` 一条不收，导入结果恒为 0；拖入光驱同样经 `addLocalFolderAsSource` 登记一个扫不出东西的来源。把 `.cda` 加进白名单是错的修法：快捷方式不可播放、拔盘即失效，本机 libmpv / ffmpeg 也没有 libcdio，读不了 `cdda://`。
 - **[x] ① 已修复** — 导入入口在进扫描前认出音频 CD 并抓轨：
-  - 引擎 `packages/fushi_engine/lib/media/audio_cd/`：`audio_cd_disc.dart`（TOC 解析 / CD 判定 / 光盘 id / WAV 头，纯函数）、`windows_audio_cd_drive.dart`（裸 FFI `IOCTL_CDROM_READ_TOC` + `IOCTL_CDROM_RAW_READ`）、`audio_cd_ripper.dart`（每轨一个后台 isolate 读原始扇区写 WAV，每块可取消；同盘复用 `<documents>/audio_cd/<卷标> (<光盘id>)/`，已抓完的轨不重抓；划伤扇区按扇区重读，仍读不出以静音填充并计数告知；连续一秒读不出 = 弹盘 / 驱动失效，本轨失败，绝不把整段静音当成品缓存）。
+  - 引擎 `packages/fushi_engine/lib/media/audio_cd/`：`audio_cd_disc.dart`（TOC 解析 / CD 判定 / 光盘 id / WAV 头，纯函数）、`windows_audio_cd_drive.dart`（裸 FFI `IOCTL_CDROM_READ_TOC` + `IOCTL_CDROM_RAW_READ`）、`audio_cd_ripper.dart`（Windows：每轨一个后台 isolate 读原始扇区成临时 WAV，每块可取消；macOS：cddafs 挂载点的 `N Audio Track.aiff` 按轨号排序直接读；两者都经 ffmpeg 转 `Track NN.flac`，先写 `.part`、成功才改名，故「文件存在」即「抓完」；同盘复用 `<documents>/audio_cd/<卷标> (<光盘id>)/`（macOS 光盘 id 取各轨轨号 + 字节数），已抓完的轨不重抓；划伤扇区按扇区重读，仍读不出以静音填充并计数告知；连续一秒读不出 = 弹盘 / 驱动失效，本轨失败，绝不把整段静音当成品缓存）。
   - App `fushi/lib/src/media/audio_cd/audio_cd_import.dart`：`importAudioCdIfPresent` 一处判定，接入视频库「添加本地文件夹」「导入文件夹（仅一次）」（`media_sources_view.dart` 的 `_importedAsAudioCd`）与拖入文件夹（`home_video_page.dart` 的 `_addDroppedFoldersAsSources`）。不是 CD 原样放行；Windows 光驱弹进度框抓轨，再按「仅此一次」导入（`add_local_folder_source.dart` 新抽出的 `importLocalFolderOnceAt`，来源页的「仅此一次」也改用它），按文件夹分组；非 Windows 或 `.cda` 被拷到普通目录时提示原因后照常扫描（子目录可能有真媒体）。
   - 抓好的目录在数据根内，**不能**登记成常驻来源：`MediaSources.rootPath` 的契约是数据根之外的外部目录、迁移不改写（`path_rebase_coverage.dart`）。`audio_cd` 登记进 `AppPaths.fushiOwnedDocumentsEntries`（迁移随根搬，条目 videoPath 由迁移器改写）与存储类目 `videoDownloads`。
   - 进度框只能由抓轨自己结束：返回键只触发取消（`PopScope`），出栈只移除自己这条路由（别的页面被推到上面时不误弹）。失败进 `ErrorLogService`。
-  - 直接写 WAV 不转 FLAC：Windows 随包的 ffmpeg-min 没有 FLAC 编码器与 flac/wav 封装器。
-- **[x] ② 已加自动化测试** — `fushi/test/media/audio_cd/audio_cd_disc_test.dart`（TOC：纯音频 / 增强型 CD 扣间隙 / Control 在低 4 位 / 全数据盘 / 截断；CD 判定；光盘 id；WAV 头）与 `audio_cd_import_test.dart`（目录判定；普通目录放行；非光驱的 `.cda` 提示后照常扫描、不弹抓轨框、不留来源行；`importLocalFolderOnceAt` 扫完删除临时来源行）。变异实测：Control 位域改回读高 4 位时 3 条用例变红。
+  - ffmpeg-min 配方补上 `flac` 编码器 / `flac` 封装器 / `aiff` 解复用器（`tool/ffmpeg-min/build-ffmpeg-min.sh`），冒烟测试按 app 的同一组参数跑 WAV/AIFF → FLAC → 解回，重编三平台二进制入库。
+  - 判定（`audioCdLayoutOf`）认两种形态：Windows 光驱根只有 `.cda`；macOS 挂载点 `.TOC.plist` + `.aiff`。macOS 形态是普通 AIFF 文件，任何桌面都能转；Windows 形态只有本机光驱能抓。
+- **[x] ② 已加自动化测试** — `fushi/test/media/audio_cd/audio_cd_disc_test.dart`（TOC：纯音频 / 增强型 CD 扣间隙 / Control 在低 4 位 / 全数据盘 / 截断；两种 CD 形态判定；macOS 轨号排序；光盘 id；WAV 头）与 `audio_cd_import_test.dart`（目录判定；普通目录放行；非光驱的 `.cda` 提示后照常扫描、不弹抓轨框、不留来源行；`importLocalFolderOnceAt` 扫完删除临时来源行；macOS 挂载点 → FLAC 流水线：按轨号顺序、标签参数、复用不再编码、编码失败不留 `.flac`/`.part`、取消不交出结果）。变异实测：Control 位域改回读高 4 位时 3 条用例变红。
 - **备注**：
   - 真机验证（本机光驱 `E:\`，12 轨纯音频盘）：TOC 与独立 Python 抓轨脚本一致；取消约 0.2 秒返回、无 `.part` 残留；复用分支跳过 11 轨，只抓第 3 轨，22 秒、0 坏扇区；该轨 PCM 与参考抓轨解码后的 SHA-256 逐字节一致。
-  - 未做：macOS 的音频 CD 由系统挂载成 `.aiff`，而三处扩展名集合都没有 `.aiff`。加进去只是半支持——ffmpeg-min 无 aiff 解复用器（封面 / 时长 / ASR 失败），Android 有声书的 ExoPlayer 也播不了 AIFF——需要重编 ffmpeg-min，并在 Mac + 光驱上实测，另开任务。Linux 音频 CD 无文件系统，需另写 ioctl。
+  - macOS 未在真 Mac + 光驱上实测（本机无此环境）：挂载点形态按 cddafs 的公开布局实现，流水线由假 ffmpeg 测试覆盖，aiff → flac 由 macOS 版 ffmpeg-min 的 CI 冒烟测试实跑。Linux 音频 CD 无文件系统，需另写 ioctl，未做。

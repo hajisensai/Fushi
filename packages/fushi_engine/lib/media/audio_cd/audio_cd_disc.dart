@@ -1,9 +1,10 @@
-/// 音频 CD（CDDA）的纯数据层：TOC 解析、目录判定、光盘身份、WAV 头。无 IO。
+/// 音频 CD（CDDA）的纯数据层：TOC 解析、目录形态判定、光盘身份、WAV 头。无 IO。
 ///
 /// Windows 把音频 CD 的每条音轨显示成 `TrackNN.cda`——那是 44 字节的快捷方式，
-/// **不含任何音频**。真正的音频只能按扇区从光驱读出（见
-/// `windows_audio_cd_drive.dart`），所以导入链路要先认出「这是一张音频 CD」，
-/// 再抓轨成真实文件交给既有的扫描导入（BUG-3312）。
+/// **不含任何音频**，真正的音频只能按扇区从光驱读出（见
+/// `windows_audio_cd_drive.dart`）；macOS 把它挂载成一组 `.aiff`，拔盘即消失。
+/// 两种都不能直接入库，导入链路要先认出「这是一张音频 CD」，再抓成 FLAC 交给
+/// 既有的扫描导入（BUG-3312）。
 library;
 
 import 'dart:typed_data';
@@ -58,23 +59,77 @@ class AudioCdTrack {
   String toString() => 'AudioCdTrack($number, $startLba..$endLba)';
 }
 
+/// 抓轨失败（无盘、不是光驱、驱动拒读、弹盘、编码失败）。[message] 面向日志与提示。
+class AudioCdException implements Exception {
+  const AudioCdException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'AudioCdException: $message';
+}
+
+/// macOS cddafs 挂载点根上的目录表文件（音轨表的 plist）。
+const String kMacCdTocFileName = '.TOC.plist';
+
 /// 路径是否是 `.cda` 快捷方式（大小写不敏感）。
 bool isCdaPath(String path) => p.extension(path).toLowerCase() == kCdaExtension;
 
-/// 一个目录的文件名清单是否就是一张音频 CD 的根：至少一条 `.cda`，
-/// 且没有任何可直接导入的媒体文件（[isImportableMedia] 判定）。
+/// 路径是否是 AIFF（macOS 把 CD 音轨挂载成 `N Audio Track.aiff`）。
+bool isAiffPath(String path) {
+  final String ext = p.extension(path).toLowerCase();
+  return ext == '.aiff' || ext == '.aif';
+}
+
+/// 音频 CD 在文件系统里的两种样子。
+enum AudioCdLayout {
+  /// Windows 光驱根：只有 `TrackNN.cda` 快捷方式，音频要按扇区读（[parseCdromToc]）。
+  windowsCda,
+
+  /// macOS cddafs 挂载点：`.TOC.plist` + 每轨一个真实的 `.aiff`，拔盘即消失。
+  macCddafs,
+}
+
+/// 一个目录的直接子文件名是不是一张音频 CD 的根；不是返回 null。
 ///
-/// 混合模式 / 增强型 CD 的数据轨里若带了真媒体文件，就照常走原导入，不抢。
-bool isAudioCdListing(
+/// 只要有任何可直接导入的媒体文件（[isImportableMedia]）就不算：混合模式 /
+/// 增强型 CD 的数据轨里带了真媒体，照常走原导入，不抢。
+AudioCdLayout? audioCdLayoutOf(
   Iterable<String> fileNames, {
   required bool Function(String name) isImportableMedia,
 }) {
   bool sawCda = false;
+  bool sawAiff = false;
+  bool sawToc = false;
   for (final String name in fileNames) {
-    if (isImportableMedia(name)) return false;
+    if (isImportableMedia(name)) return null;
     sawCda = sawCda || isCdaPath(name);
+    sawAiff = sawAiff || isAiffPath(name);
+    sawToc = sawToc || name == kMacCdTocFileName;
   }
-  return sawCda;
+  if (sawCda) return AudioCdLayout.windowsCda;
+  if (sawToc && sawAiff) return AudioCdLayout.macCddafs;
+  return null;
+}
+
+/// macOS 挂载点的 AIFF 文件名按轨号排序：`2 Audio Track.aiff` 排在
+/// `10 Audio Track.aiff` 前面（字符串排序会反过来）。轨号取文件名开头的数字，
+/// 没有数字的按出现顺序接在后面编号。
+List<({int number, String name})> macCdTracksOf(Iterable<String> fileNames) {
+  final List<String> aiffs = fileNames.where(isAiffPath).toList();
+  int? leading(String name) =>
+      int.tryParse(RegExp(r'^\d+').firstMatch(name)?.group(0) ?? '');
+  aiffs.sort((String a, String b) {
+    final int? na = leading(a);
+    final int? nb = leading(b);
+    if (na != null && nb != null && na != nb) return na.compareTo(nb);
+    if ((na == null) != (nb == null)) return na == null ? 1 : -1;
+    return a.compareTo(b);
+  });
+  return <({int number, String name})>[
+    for (int i = 0; i < aiffs.length; i++)
+      (number: leading(aiffs[i]) ?? i + 1, name: aiffs[i]),
+  ];
 }
 
 /// 解析 `IOCTL_CDROM_READ_TOC` 返回的 `CDROM_TOC`，只留音频轨。
@@ -130,6 +185,14 @@ String audioCdDiscId(List<AudioCdTrack> tracks) => fnv1a32Hex(
   <String>[
     for (final AudioCdTrack t in tracks)
       '${t.number}:${t.startLba}-${t.endLba}',
+  ].join(',').codeUnits,
+);
+
+/// macOS 挂载点的光盘身份：每轨 AIFF 的轨号与字节数（= 扇区数的函数）派生，
+/// 与 [audioCdDiscId] 同一用途。
+String macCdDiscId(List<({int number, int bytes})> tracks) => fnv1a32Hex(
+  <String>[
+    for (final ({int number, int bytes}) t in tracks) '${t.number}:${t.bytes}',
   ].join(',').codeUnits,
 );
 

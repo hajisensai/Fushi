@@ -90,33 +90,75 @@ void main() {
     });
   });
 
-  group('isAudioCdListing', () {
+  group('audioCdLayoutOf', () {
     bool media(String name) => name.endsWith('.flac') || name.endsWith('.mp4');
 
-    test('only .cda shortcuts is an audio CD', () {
+    test('Windows: only .cda shortcuts', () {
       expect(
-        isAudioCdListing(<String>[
+        audioCdLayoutOf(<String>[
           'Track01.cda',
           'TRACK02.CDA',
         ], isImportableMedia: media),
-        isTrue,
+        AudioCdLayout.windowsCda,
+      );
+    });
+
+    test('macOS cddafs mount: .TOC.plist plus AIFF tracks', () {
+      expect(
+        audioCdLayoutOf(<String>[
+          '.TOC.plist',
+          '1 Audio Track.aiff',
+          '2 Audio Track.AIF',
+        ], isImportableMedia: media),
+        AudioCdLayout.macCddafs,
+      );
+      // 没有 .TOC.plist 的 AIFF 只是一个装着 AIFF 的普通文件夹，不是光盘。
+      expect(
+        audioCdLayoutOf(<String>[
+          '1 Audio Track.aiff',
+        ], isImportableMedia: media),
+        isNull,
       );
     });
 
     test('any importable media wins: the folder imports as before', () {
       expect(
-        isAudioCdListing(<String>[
+        audioCdLayoutOf(<String>[
           'Track01.cda',
           'a.flac',
         ], isImportableMedia: media),
-        isFalse,
+        isNull,
       );
       expect(
-        isAudioCdListing(<String>['a.flac'], isImportableMedia: media),
-        isFalse,
+        audioCdLayoutOf(<String>[
+          '.TOC.plist',
+          '1 Audio Track.aiff',
+          'bonus.mp4',
+        ], isImportableMedia: media),
+        isNull,
       );
-      expect(isAudioCdListing(<String>[], isImportableMedia: media), isFalse);
+      expect(audioCdLayoutOf(<String>[], isImportableMedia: media), isNull);
     });
+  });
+
+  test('macOS tracks sort by track number, not by string', () {
+    expect(
+      macCdTracksOf(<String>[
+        '.TOC.plist',
+        '10 Audio Track.aiff',
+        '2 Audio Track.aiff',
+        '1 Audio Track.aiff',
+      ]),
+      <({int number, String name})>[
+        (number: 1, name: '1 Audio Track.aiff'),
+        (number: 2, name: '2 Audio Track.aiff'),
+        (number: 10, name: '10 Audio Track.aiff'),
+      ],
+    );
+    expect(
+      macCdDiscId(<({int number, int bytes})>[(number: 1, bytes: 100)]),
+      isNot(macCdDiscId(<({int number, int bytes})>[(number: 1, bytes: 101)])),
+    );
   });
 
   test('disc id is stable per TOC and differs across discs', () {

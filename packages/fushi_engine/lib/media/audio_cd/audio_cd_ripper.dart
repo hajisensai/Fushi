@@ -1,10 +1,12 @@
-/// 音频 CD 抓轨：光驱原始扇区 → 每轨一个 WAV，落在按光盘身份命名的目录里。
+/// 音频 CD 抓轨：每轨一个 FLAC，落在按光盘身份命名的目录里（BUG-3312）。
 ///
-/// 直接写 WAV 而不经 ffmpeg 转 FLAC：Windows 随包的 ffmpeg-min 没有 FLAC 编码器
-/// 与 flac/wav 封装器，WAV 头是 44 字节的定长结构，自己写零依赖、零失败模式。
+/// - Windows 光驱（[AudioCdLayout.windowsCda]）：原始扇区在后台 isolate 里读成临时
+///   WAV（阻塞系统调用，按块回报进度、可取消），再由 ffmpeg 转 FLAC。
+/// - macOS 挂载点（[AudioCdLayout.macCddafs]）：每轨本就是 AIFF，直接由 ffmpeg 转
+///   FLAC。挂载点拔盘即消失，所以同样要抓成本地文件才能入库。
 ///
-/// 读盘是阻塞系统调用，每轨在一个后台 isolate 里读，按块回报进度、可取消。
-/// 同一张盘重插得到同一目录（[audioCdDiscId]），已抓完的轨直接复用。
+/// FLAC 先写 `.part`、编码成功才改名到位，所以「文件存在」就是「已抓完」：同一张盘
+/// 重插得到同一目录，已抓的轨直接复用，半截的 `.part` 会重抓。
 library;
 
 import 'dart:async';
@@ -15,9 +17,10 @@ import 'dart:typed_data';
 
 import 'package:fushi_engine/media/audio_cd/audio_cd_disc.dart';
 import 'package:fushi_engine/media/audio_cd/windows_audio_cd_drive.dart';
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:path/path.dart' as p;
 
-/// 抓轨进度：[trackIndex] 从 0 起，[fraction] 是整张盘的扇区完成比例。
+/// 抓轨进度：[trackIndex] 从 0 起，[fraction] 是整张盘的完成比例。
 typedef AudioCdRipProgress = ({
   int trackIndex,
   int trackCount,
@@ -31,7 +34,7 @@ typedef AudioCdRipResult = ({
   int unreadableSectors,
 });
 
-/// 取消开关：UI 持有一份，[ripAudioCd] 在块之间检查。
+/// 取消开关：UI 持有一份，[ripAudioCd] 在块之间 / 轨之间检查。
 class AudioCdRipCancellation {
   bool _cancelled = false;
   void Function()? _onCancel;
@@ -45,86 +48,194 @@ class AudioCdRipCancellation {
   }
 }
 
-/// 把 [drivePath] 所在光驱里的音频 CD 抓到 `<outputRoot>/<卷标> (<光盘id>)/`。
+/// 单轨 FLAC 编码上限。macOS 直读光盘上的 AIFF，受驱动读速限制，一轨几十秒。
+const Duration _encodeTimeout = Duration(minutes: 10);
+
+/// 一条待抓的轨：[weight] 是进度权重（扇区数或字节数）；[cdda] 与 [aiffPath]
+/// 恰有一个非空，分别对应两种 [AudioCdLayout]。
+typedef _DiscTrack = ({
+  int number,
+  int weight,
+  AudioCdTrack? cdda,
+  String? aiffPath,
+});
+
+typedef _Disc = ({String label, String id, List<_DiscTrack> tracks});
+
+/// 把 [discPath] 上的音频 CD 抓到 `<outputRoot>/<卷标> (<光盘id>)/Track NN.flac`。
 ///
-/// 被取消时删掉未完成的那一轨并返回 null；读盘失败抛 [AudioCdException]。
+/// 被取消时删掉未完成的那一轨并返回 null；读盘 / 编码失败抛 [AudioCdException]。
 Future<AudioCdRipResult?> ripAudioCd({
-  required String drivePath,
+  required String discPath,
+  required AudioCdLayout layout,
   required String outputRoot,
+  required FfmpegBackend ffmpeg,
   void Function(AudioCdRipProgress progress)? onProgress,
   AudioCdRipCancellation? cancellation,
 }) async {
-  final ({List<AudioCdTrack> tracks, String? label}) disc = await Isolate.run(
-    () => _readDisc(drivePath),
-  );
+  final _Disc disc = switch (layout) {
+    AudioCdLayout.windowsCda => await Isolate.run(
+      () => _readWindowsDisc(discPath),
+    ),
+    AudioCdLayout.macCddafs => _readMacDisc(discPath),
+  };
   if (disc.tracks.isEmpty) {
     throw const AudioCdException('The disc has no audio tracks');
   }
   final Directory dir = Directory(
-    p.join(
-      outputRoot,
-      '${_safeName(disc.label ?? 'Audio CD')} (${audioCdDiscId(disc.tracks)})',
-    ),
+    p.join(outputRoot, '${_safeName(disc.label)} (${disc.id})'),
   );
   await dir.create(recursive: true);
 
-  final int totalSectors = disc.tracks.fold(
+  final int total = disc.tracks.fold(
     0,
-    (int sum, AudioCdTrack t) => sum + t.sectorCount,
+    (int sum, _DiscTrack t) => sum + t.weight,
   );
-  int doneSectors = 0;
+  int done = 0;
   int unreadable = 0;
   final List<String> files = <String>[];
   for (int i = 0; i < disc.tracks.length; i++) {
     // 取消后连「已缓存的轨」也不再交出：调用方拿到 null 就不导入。
     if (cancellation?.isCancelled ?? false) return null;
-    final AudioCdTrack track = disc.tracks[i];
-    void report(int sectors) {
-      doneSectors += sectors;
+    final _DiscTrack track = disc.tracks[i];
+    void report(int units) {
+      done += units;
       onProgress?.call((
         trackIndex: i,
         trackCount: disc.tracks.length,
-        fraction: doneSectors / totalSectors,
+        fraction: total == 0 ? 1 : done / total,
       ));
     }
 
-    final String wav = p.join(
-      dir.path,
-      '${audioCdTrackBaseName(track.number)}.wav',
-    );
-    if (_isCompleteTrack(wav, track)) {
-      report(track.sectorCount);
-      files.add(wav);
+    final String name = audioCdTrackBaseName(track.number);
+    final String flac = p.join(dir.path, '$name.flac');
+    if (File(flac).existsSync()) {
+      report(track.weight);
+      files.add(flac);
       continue;
     }
-    final int? bad = await _ripTrack(
-      drivePath: drivePath,
-      track: track,
-      wavPath: wav,
-      onSectors: report,
-      cancellation: cancellation,
-    );
-    if (bad == null) return null;
-    unreadable += bad;
-    files.add(wav);
+    final AudioCdTrack? cdda = track.cdda;
+    final String? tempWav = cdda == null ? null : '$flac.wav';
+    try {
+      if (cdda != null) {
+        final int? bad = await _ripTrack(
+          drivePath: discPath,
+          track: cdda,
+          wavPath: tempWav!,
+          onSectors: report,
+          cancellation: cancellation,
+        );
+        if (bad == null) return null;
+        unreadable += bad;
+      }
+      await _encodeFlac(
+        ffmpeg,
+        input: tempWav ?? track.aiffPath!,
+        output: flac,
+        title: name,
+        album: disc.label,
+        number: track.number,
+        total: disc.tracks.length,
+      );
+    } finally {
+      if (tempWav != null && File(tempWav).existsSync()) {
+        File(tempWav).deleteSync();
+      }
+    }
+    if (cdda == null) report(track.weight);
+    files.add(flac);
   }
   return (directory: dir.path, files: files, unreadableSectors: unreadable);
 }
 
-({List<AudioCdTrack> tracks, String? label}) _readDisc(String drivePath) {
+_Disc _readWindowsDisc(String drivePath) {
   final WindowsAudioCdDrive drive = WindowsAudioCdDrive.open(drivePath);
   try {
-    return (tracks: drive.readToc(), label: windowsVolumeLabel(drivePath));
+    final List<AudioCdTrack> toc = drive.readToc();
+    return (
+      label: windowsVolumeLabel(drivePath) ?? 'Audio CD',
+      id: audioCdDiscId(toc),
+      tracks: <_DiscTrack>[
+        for (final AudioCdTrack t in toc)
+          (number: t.number, weight: t.sectorCount, cdda: t, aiffPath: null),
+      ],
+    );
   } finally {
     drive.close();
   }
 }
 
-/// 已有的 WAV 字节数与本轨扇区数严格对上才算抓完（中途断电的残文件会重抓）。
-bool _isCompleteTrack(String wavPath, AudioCdTrack track) {
-  final File f = File(wavPath);
-  return f.existsSync() &&
-      f.lengthSync() == 44 + track.sectorCount * kCddaRawSectorBytes;
+/// macOS 挂载点：卷名就是盘名，`N Audio Track.aiff` 按轨号排序。
+_Disc _readMacDisc(String mountPath) {
+  final List<String> names = <String>[
+    for (final FileSystemEntity e in Directory(
+      mountPath,
+    ).listSync(followLinks: false))
+      if (e is File) p.basename(e.path),
+  ];
+  final List<({int number, String path, int bytes})> tracks =
+      <({int number, String path, int bytes})>[
+        for (final ({int number, String name}) t in macCdTracksOf(names))
+          (
+            number: t.number,
+            path: p.join(mountPath, t.name),
+            bytes: File(p.join(mountPath, t.name)).lengthSync(),
+          ),
+      ];
+  return (
+    label: p.basename(p.normalize(mountPath)),
+    id: macCdDiscId(<({int number, int bytes})>[
+      for (final ({int number, String path, int bytes}) t in tracks)
+        (number: t.number, bytes: t.bytes),
+    ]),
+    tracks: <_DiscTrack>[
+      for (final ({int number, String path, int bytes}) t in tracks)
+        (number: t.number, weight: t.bytes, cdda: null, aiffPath: t.path),
+    ],
+  );
+}
+
+/// [input]（CDDA 的 WAV 或 macOS 的 AIFF）→ [output] FLAC。先写 `.part`，
+/// 成功才改名：中途失败 / 被杀留下的只会是 `.part`，下次重抓。
+Future<void> _encodeFlac(
+  FfmpegBackend ffmpeg, {
+  required String input,
+  required String output,
+  required String title,
+  required String album,
+  required int number,
+  required int total,
+}) async {
+  final File part = File('$output.part');
+  final FfmpegRunResult result = await ffmpeg.run(<String>[
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-y',
+    '-i',
+    input,
+    '-map',
+    '0:a:0',
+    '-c:a',
+    'flac',
+    '-metadata',
+    'title=$title',
+    '-metadata',
+    'album=$album',
+    '-metadata',
+    'track=$number/$total',
+    '-f',
+    'flac',
+    part.path,
+  ], _encodeTimeout);
+  if (result.returnCode != 0 || !part.existsSync() || part.lengthSync() == 0) {
+    if (part.existsSync()) part.deleteSync();
+    final String detail = result.output.trim().split('\n').last;
+    throw AudioCdException(
+      'FLAC encoding failed (exit ${result.returnCode}): $detail',
+    );
+  }
+  part.renameSync(output);
 }
 
 String _safeName(String name) {

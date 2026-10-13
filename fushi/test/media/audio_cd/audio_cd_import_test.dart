@@ -6,11 +6,44 @@ import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/audio_cd/audio_cd_disc.dart';
+import 'package:fushi_engine/media/audio_cd/audio_cd_ripper.dart';
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
-/// BUG-3312：音频 CD 在 Windows 上只露出 `TrackNN.cda` 快捷方式，扫描器按扩展名
-/// 白名单一条不收。导入入口先经 [importAudioCdIfPresent] 认出它。
+/// BUG-3312：音频 CD 在 Windows 上只露出 `TrackNN.cda` 快捷方式，在 macOS 上挂载成
+/// 拔盘即消失的 `.aiff`。导入入口先经 [importAudioCdIfPresent] 认出它、抓成 FLAC。
+
+/// 假 ffmpeg：把输入原样拷到最后一个参数（输出路径），记下每次调用的参数。
+class _FakeFfmpeg implements FfmpegBackend {
+  _FakeFfmpeg({this.exitCode = 0});
+
+  final int exitCode;
+  final List<List<String>> calls = <List<String>>[];
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    calls.add(args);
+    if (exitCode == 0) {
+      File(
+        args.last,
+      ).writeAsBytesSync(File(args[args.indexOf('-i') + 1]).readAsBytesSync());
+    } else {
+      File(args.last).writeAsBytesSync(const <int>[1]); // 失败也可能留下半截
+    }
+    return FfmpegRunResult(returnCode: exitCode, output: 'boom\nlast line');
+  }
+
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
+      throw UnimplementedError();
+
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      throw UnimplementedError();
+}
+
 void main() {
   late Directory root;
 
@@ -25,28 +58,37 @@ void main() {
     return d;
   }
 
-  group('isAudioCdDirectory', () {
-    test('a folder of only .cda shortcuts is an audio CD', () {
+  group('audioCdLayoutOfDirectory', () {
+    test('Windows .cda shortcuts and the macOS cddafs mount are audio CDs', () {
       expect(
-        isAudioCdDirectory(
+        audioCdLayoutOfDirectory(
           dirWith('cd', <String>['Track01.cda', 'Track02.cda']).path,
         ),
-        isTrue,
+        AudioCdLayout.windowsCda,
+      );
+      expect(
+        audioCdLayoutOfDirectory(
+          dirWith('mac', <String>['.TOC.plist', '1 Audio Track.aiff']).path,
+        ),
+        AudioCdLayout.macCddafs,
       );
     });
 
     test('real media next to .cda keeps the normal import', () {
       expect(
-        isAudioCdDirectory(
+        audioCdLayoutOfDirectory(
           dirWith('mixed', <String>['Track01.cda', '01.flac']).path,
         ),
-        isFalse,
+        isNull,
       );
       expect(
-        isAudioCdDirectory(dirWith('music', <String>['01.mp3']).path),
-        isFalse,
+        audioCdLayoutOfDirectory(dirWith('music', <String>['01.mp3']).path),
+        isNull,
       );
-      expect(isAudioCdDirectory(dirWith('empty', <String>[]).path), isFalse);
+      expect(
+        audioCdLayoutOfDirectory(dirWith('empty', <String>[]).path),
+        isNull,
+      );
     });
 
     test('only direct children count, and unreadable paths are not a CD', () {
@@ -55,8 +97,108 @@ void main() {
       File(
         p.join(outer.path, 'inner', 'Track01.cda'),
       ).writeAsBytesSync(<int>[0]);
-      expect(isAudioCdDirectory(outer.path), isFalse);
-      expect(isAudioCdDirectory(p.join(root.path, 'missing')), isFalse);
+      expect(audioCdLayoutOfDirectory(outer.path), isNull);
+      expect(audioCdLayoutOfDirectory(p.join(root.path, 'missing')), isNull);
+    });
+  });
+
+  group('ripAudioCd (macOS mount → FLAC)', () {
+    late Directory mount;
+    late String out;
+
+    setUp(() {
+      mount = dirWith('My Album', <String>['.TOC.plist']);
+      for (final String n in <String>['1', '2', '10']) {
+        File(
+          p.join(mount.path, '$n Audio Track.aiff'),
+        ).writeAsStringSync('pcm-$n');
+      }
+      out = p.join(root.path, 'out');
+    });
+
+    test(
+      'encodes every track in track order with tags, then reuses them',
+      () async {
+        final _FakeFfmpeg ffmpeg = _FakeFfmpeg();
+        final AudioCdRipResult? result = await ripAudioCd(
+          discPath: mount.path,
+          layout: AudioCdLayout.macCddafs,
+          outputRoot: out,
+          ffmpeg: ffmpeg,
+        );
+        expect(result, isNotNull);
+        expect(p.basename(result!.directory), startsWith('My Album ('));
+        expect(result.files.map(p.basename), <String>[
+          'Track 01.flac',
+          'Track 02.flac',
+          'Track 10.flac',
+        ]);
+        expect(File(result.files.last).readAsStringSync(), 'pcm-10');
+        expect(
+          ffmpeg.calls.last,
+          containsAllInOrder(<String>[
+            '-c:a',
+            'flac',
+            '-metadata',
+            'title=Track 10',
+            '-metadata',
+            'album=My Album',
+            '-metadata',
+            'track=10/3',
+            '-f',
+            'flac',
+          ]),
+        );
+        expect(
+          Directory(
+            result.directory,
+          ).listSync().map((FileSystemEntity e) => p.basename(e.path)),
+          isNot(contains(endsWith('.part'))),
+        );
+
+        // 同一张盘再插：已抓的轨直接复用，不再编码。
+        final _FakeFfmpeg again = _FakeFfmpeg();
+        final AudioCdRipResult? reused = await ripAudioCd(
+          discPath: mount.path,
+          layout: AudioCdLayout.macCddafs,
+          outputRoot: out,
+          ffmpeg: again,
+        );
+        expect(reused!.files, result.files);
+        expect(again.calls, isEmpty);
+      },
+    );
+
+    test('a failed encode leaves neither .flac nor .part behind', () async {
+      await expectLater(
+        ripAudioCd(
+          discPath: mount.path,
+          layout: AudioCdLayout.macCddafs,
+          outputRoot: out,
+          ffmpeg: _FakeFfmpeg(exitCode: 1),
+        ),
+        throwsA(isA<AudioCdException>()),
+      );
+      final List<String> left = Directory(out)
+          .listSync(recursive: true)
+          .whereType<File>()
+          .map((File f) => p.basename(f.path))
+          .toList();
+      expect(left, isEmpty);
+    });
+
+    test('a cancelled rip hands back nothing to import', () async {
+      final AudioCdRipCancellation cancel = AudioCdRipCancellation()..cancel();
+      expect(
+        await ripAudioCd(
+          discPath: mount.path,
+          layout: AudioCdLayout.macCddafs,
+          outputRoot: out,
+          ffmpeg: _FakeFfmpeg(),
+          cancellation: cancel,
+        ),
+        isNull,
+      );
     });
   });
 

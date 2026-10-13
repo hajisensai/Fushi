@@ -15,16 +15,6 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:fushi_engine/media/audio_cd/audio_cd_disc.dart';
 
-/// 读光盘失败（无盘、不是光驱、驱动拒绝等）。[message] 面向日志与提示。
-class AudioCdException implements Exception {
-  const AudioCdException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => 'AudioCdException: $message';
-}
-
 const int _genericRead = 0x80000000;
 const int _fileShareReadWrite = 0x3;
 const int _openExisting = 3;

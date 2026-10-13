@@ -9,27 +9,31 @@ import 'package:fushi_engine/media/audio_cd/audio_cd_disc.dart';
 import 'package:fushi_engine/media/audio_cd/audio_cd_ripper.dart';
 import 'package:fushi_engine/media/audio_cd/windows_audio_cd_drive.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
 /// 视频库导入入口的音频 CD 接管（BUG-3312）。
 ///
-/// 音频 CD 在 Windows 上只露出 `TrackNN.cda` 快捷方式，里面没有音频，扫描器按扩展名
-/// 白名单分类必然一条不收。所以在进扫描之前认出它：
+/// 音频 CD 在 Windows 上只露出 `TrackNN.cda` 快捷方式（里面没有音频），在 macOS 上
+/// 挂载成一组拔盘即消失的 `.aiff`——扫描器要么一条不收，要么收进一堆随时失效的路径。
+/// 所以在进扫描之前认出它（[audioCdLayoutOfDirectory]）：
 /// - 不是音频 CD：返回 false，调用方照原流程走，行为逐字不变。
-/// - Windows 光驱里的音频 CD：弹进度框抓轨到 `<documents>/audio_cd/`（同一张盘重插
-///   复用，已抓的轨不重抓），再按「仅此一次」导入视频库（[importLocalFolderOnceAt]）；
-///   取消 / 失败只提示。均返回 true，调用方刷新后结束。抓好的目录在数据根内，
-///   不能登记成常驻来源（`MediaSources.rootPath` 只收数据根之外的外部目录）。
-/// - `.cda` 不在光驱上（非 Windows，或从光盘拷出来的文件夹）：提示原因后返回 false，
-///   照常扫描——子目录里可能还有真正的媒体文件。
+/// - 能抓（Windows 光驱 / 桌面上的 macOS 挂载点）：弹进度框抓成 FLAC 到
+///   `<documents>/audio_cd/`（同一张盘重插复用，已抓的轨不重抓），再按「仅此一次」
+///   导入视频库（[importLocalFolderOnceAt]）；取消 / 失败只提示。均返回 true，调用方
+///   刷新后结束。抓好的目录在数据根内，不能登记成常驻来源（`MediaSources.rootPath`
+///   只收数据根之外的外部目录）。
+/// - 抓不了（`.cda` 不在 Windows 光驱上，例如从光盘拷出来的文件夹）：提示原因后返回
+///   false，照常扫描——子目录里可能还有真正的媒体文件。
 Future<bool> importAudioCdIfPresent(
   BuildContext context, {
   required FushiDatabase db,
   required String dir,
 }) async {
-  if (!isAudioCdDirectory(dir)) return false;
-  if (!Platform.isWindows || !isWindowsCdromPath(dir)) {
+  final AudioCdLayout? layout = audioCdLayoutOfDirectory(dir);
+  if (layout == null) return false;
+  if (!_canRip(layout, dir)) {
     FushiToast.show(
       msg: t.media_audio_cd_cda_unsupported,
       severity: ToastSeverity.warning,
@@ -42,8 +46,11 @@ Future<bool> importAudioCdIfPresent(
   final String? ripped = await showAppDialog<String>(
     context: context,
     barrierDismissible: false,
-    builder: (BuildContext _) =>
-        AudioCdRipDialog(drivePath: dir, outputRoot: outputRoot.path),
+    builder: (BuildContext _) => AudioCdRipDialog(
+      discPath: dir,
+      layout: layout,
+      outputRoot: outputRoot.path,
+    ),
   );
   if (ripped == null) return true;
   final SourceScanSummary? summary = await importLocalFolderOnceAt(
@@ -63,8 +70,16 @@ Future<bool> importAudioCdIfPresent(
   return true;
 }
 
-/// [dir] 的直接子文件是否构成一张音频 CD（见 [isAudioCdListing]）。读不了返回 false。
-bool isAudioCdDirectory(String dir) {
+/// Windows 光驱要按扇区读，只有本机光驱能抓；macOS 挂载点每轨已是普通 AIFF 文件，
+/// 任何带随包 ffmpeg-min（含 aiff / flac）的桌面都能转。移动端没有光驱，不接管。
+bool _canRip(AudioCdLayout layout, String dir) => switch (layout) {
+  AudioCdLayout.windowsCda => Platform.isWindows && isWindowsCdromPath(dir),
+  AudioCdLayout.macCddafs =>
+    Platform.isMacOS || Platform.isWindows || Platform.isLinux,
+};
+
+/// [dir] 的直接子文件构成哪种音频 CD（见 [audioCdLayoutOf]）。不是 / 读不了返回 null。
+AudioCdLayout? audioCdLayoutOfDirectory(String dir) {
   final List<String> names;
   try {
     names = <String>[
@@ -74,9 +89,9 @@ bool isAudioCdDirectory(String dir) {
         if (e is File) p.basename(e.path),
     ];
   } on FileSystemException {
-    return false;
+    return null;
   }
-  return isAudioCdListing(
+  return audioCdLayoutOf(
     names,
     isImportableMedia: (String name) =>
         kVideoLibraryMediaExtensions.contains(p.extension(name).toLowerCase()),
@@ -90,11 +105,13 @@ bool isAudioCdDirectory(String dir) {
 class AudioCdRipDialog extends StatefulWidget {
   const AudioCdRipDialog({
     super.key,
-    required this.drivePath,
+    required this.discPath,
+    required this.layout,
     required this.outputRoot,
   });
 
-  final String drivePath;
+  final String discPath;
+  final AudioCdLayout layout;
   final String outputRoot;
 
   @override
@@ -121,8 +138,10 @@ class _AudioCdRipDialogState extends State<AudioCdRipDialog> {
     String? directory;
     try {
       final AudioCdRipResult? result = await ripAudioCd(
-        drivePath: widget.drivePath,
+        discPath: widget.discPath,
+        layout: widget.layout,
         outputRoot: widget.outputRoot,
+        ffmpeg: resolveFfmpegBackend(),
         cancellation: _cancellation,
         onProgress: (AudioCdRipProgress progress) {
           if (mounted) setState(() => _progress = progress);
