@@ -678,7 +678,8 @@ keep-open=yes
         'lib/src/media/video/video_player_controller.dart',
       ).readAsStringSync();
       final int select = src.indexOf(
-        'Future<bool> selectEmbeddedGraphicTrack(int streamIndex)',
+        // BUG-3276 起签名多了命名参数 timingInput，只锚方法名。
+        'Future<bool> selectEmbeddedGraphicTrack(',
       );
       final String selectBody = src.substring(
         select,
