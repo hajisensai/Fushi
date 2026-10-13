@@ -10248,7 +10248,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return controller.currentCue ??
         resolveMiningCueForPosition(
           cues: controller.cues,
-          positionMs: controller.positionMs ?? 0,
+          positionMs: controller.subtitleClockMs ?? 0,
           delayMs: _delayMs,
         );
   }
@@ -10385,7 +10385,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           ? _loadSubtitleWaveformEnvelope
           : null,
       subtitlePositionListenable: _controller,
-      currentSubtitlePositionMs: () => _controller?.positionMs ?? -1,
+      currentSubtitlePositionMs: () => _controller?.subtitleClockMs ?? -1,
       // TODO-1244：波形对轴视图逐句试听——seek 到该句时间并播放，复用现有播放器（不新建栈）。
       onPlaySubtitleCue: (int startMs) async {
         final VideoPlayerController? controller = _controller;

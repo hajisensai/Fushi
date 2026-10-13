@@ -71,7 +71,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
       overrideCue: overrideCue,
       currentCue: controller.currentCue,
       cues: controller.miningCues,
-      positionMs: controller.positionMs ?? 0,
+      positionMs: controller.subtitleClockMs ?? 0,
       // TODO-2837：按位置兜底与有效流的 cue 命中同一根轴（主流空落副流时用副轨
       // 生效轴，副轨独立调轴后才不会锚错句）。
       delayMs: controller.miningDelayMs,

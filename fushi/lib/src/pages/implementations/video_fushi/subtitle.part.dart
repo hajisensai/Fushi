@@ -3545,7 +3545,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (controller == null) return null;
     final int? newDelayMs = VideoPlayerController.snapSubtitleDelayMs(
       cues: controller.cues,
-      positionMs: controller.positionMs,
+      positionMs: controller.subtitleClockMs,
       currentDelayMs: _delayMs,
       next: next,
     );
@@ -3958,7 +3958,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
           },
           positionListenable: controller,
           // positionMs 可空（未就绪）；与快速设置面板路径同用 -1 哨兵 = 不画播放头。
-          currentPositionMs: () => controller.positionMs ?? -1,
+          currentPositionMs: () => controller.subtitleClockMs ?? -1,
         ),
       ),
     );
