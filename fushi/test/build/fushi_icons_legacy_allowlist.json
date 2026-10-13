@@ -162,7 +162,7 @@
  "lib/src/pages/implementations/video_fushi/mini_window.part.dart": 5,
  "lib/src/pages/implementations/video_fushi/quality.part.dart": 18,
  "lib/src/pages/implementations/video_fushi/speed.part.dart": 2,
- "lib/src/pages/implementations/video_fushi/subtitle.part.dart": 34,
+ "lib/src/pages/implementations/video_fushi/subtitle.part.dart": 31,
  "lib/src/pages/implementations/video_fushi/volume_osd.part.dart": 7,
  "lib/src/pages/implementations/video_fushi_page.dart": 75,
  "lib/src/pages/implementations/video_loading_overlay.dart": 2,

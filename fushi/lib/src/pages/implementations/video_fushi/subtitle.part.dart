@@ -312,7 +312,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
             leading: FushiIcon(
               !track.isText
                   ? (_remoteGraphicTrackSelectable(track)
-                        ? Icons.image_outlined
+                        ? FushiIcons.image
                         : Icons.image_not_supported_outlined)
                   : track.isExternalFile
                   ? Icons.closed_caption_outlined
@@ -341,7 +341,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
           // 服务器 / URL 流按流地址 + 播放会话请求头抽（[_remoteGraphicTrackOcrInput]）。
           if (_remoteGraphicTrackOcrInput(controller, track) != null)
             FushiListTileControl(
-              leading: const Icon(Icons.document_scanner_outlined),
+              leading: const Icon(FushiIcons.ocr),
               title: Text(t.video_subtitle_graphic_ocr_track),
               subtitle: Text(t.video_subtitle_graphic_ocr_track_hint),
               contentPadding: const EdgeInsetsDirectional.only(
@@ -401,7 +401,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
             FushiListTileControl(
               leading: FushiIcon(
                 source.isGraphicEmbedded
-                    ? Icons.image_outlined
+                    ? FushiIcons.image
                     : (source.isEmbedded ? Icons.movie : Icons.subtitles),
               ),
               title: Text(source.label),
@@ -423,7 +423,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
           // 查词，不必暂停。取数与逐句时间表同一口径（本地读盘 / 网络流带请求头）。
           if (_graphicTrackOcrInput(controller, source) != null)
             FushiListTileControl(
-              leading: const Icon(Icons.document_scanner_outlined),
+              leading: const Icon(FushiIcons.ocr),
               title: Text(t.video_subtitle_graphic_ocr_track),
               subtitle: Text(t.video_subtitle_graphic_ocr_track_hint),
               contentPadding: const EdgeInsetsDirectional.only(
@@ -605,7 +605,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
           FushiListTileControl(
             leading: FushiIcon(
               source.isGraphicEmbedded
-                  ? Icons.image_outlined
+                  ? FushiIcons.image
                   : (source.isEmbedded ? Icons.movie : Icons.subtitles),
             ),
             title: Text(source.label),

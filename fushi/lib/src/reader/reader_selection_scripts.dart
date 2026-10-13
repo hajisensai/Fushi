@@ -548,7 +548,7 @@ if (typeof window.__fushiEnsureHighlightPaintable !== 'function') {
     // of <html> / <body> drops the whole cache.
     var anonymousByParent = new WeakMap();
     if (window.MutationObserver && document.head) {
-      var styleObserver = new MutationObserver(function() { anonymousByParent = new WeakMap(); });
+      var styleObserver = new window.MutationObserver(function() { anonymousByParent = new WeakMap(); });
       styleObserver.observe(document.head,
           { childList: true, characterData: true, attributes: true, subtree: true });
       [document.documentElement, document.body].forEach(function(root) {

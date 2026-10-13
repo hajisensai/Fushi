@@ -256,7 +256,8 @@ void main() {
     expect(source, contains('session.showIn(overlay)'));
     // 出站装配纪律（outbound_http_discipline_guard_test）：本 part 不登记裸 client，
     // 一律经 release part 的 _newUpdateHttpClient。
-    expect(source, isNot(contains('HttpClient()')));
+    // 只判裸构造：`_newUpdateHttpClient()` 的名字里也含 `HttpClient()`，子串判会误报。
+    expect(source, isNot(matches(RegExp(r'(?<![\w.])HttpClient\('))));
     expect(source, contains('UpdateChecker._newUpdateHttpClient()'));
 
     final String releaseSource = read(release);
