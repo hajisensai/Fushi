@@ -222,8 +222,10 @@ void main() {
     expect(response.statusCode, 400);
   });
 
-  // open / lookup 的 body 解析失败是在 async 里抛的 CtlFailure：分派处若不 await，
-  // 异常逃出 try，落到 shelf 的兜底 500（纯文本），CLI 拿不到 bad_request。
+  // open / lookup 的 body 解析失败是在 async 里抛的 CtlFailure，必须被 _handle 的
+  // try 映射成 400 bad_request，而不是落到 shelf 的兜底 500（纯文本）。分派处显式
+  // `return await`：不 await 时异常能否被 try 接住取决于编译器对 async return 的
+  // 实现（当前 VM 会接住，所以本测试钉的是契约，不是那一行 await）。
   for (final String path in <String>[kCtlOpenPath, kCtlLookupPath]) {
     test('$path 的 body 不是 JSON 对象 → 400 bad_request（不是 500）', () async {
       final HttpClientResponse response = await _raw(
