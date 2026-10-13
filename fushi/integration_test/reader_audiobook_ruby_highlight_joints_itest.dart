@@ -292,6 +292,7 @@ Future<List<String>> _runMode(
   for (int i = 0; i < sentences.length; i++) {
     await controller.skipToCueIndex(i);
     Map<String, dynamic>? m;
+    Map<String, dynamic>? last;
     final String want = sentences[i];
     for (int k = 0; k < 20; k++) {
       await tester.pump(const Duration(milliseconds: 250));
@@ -300,6 +301,7 @@ Future<List<String>> _runMode(
       );
       if (raw is! String) continue;
       final Map<String, dynamic> got = jsonDecode(raw) as Map<String, dynamic>;
+      last = got;
       if ((got['text'] as String) == want) {
         // 跳转后的重排 / 跟随翻页落定：再量一次取稳定值。
         await tester.pump(const Duration(milliseconds: 400));
@@ -313,7 +315,11 @@ Future<List<String>> _runMode(
       }
     }
     if (m == null) {
-      failures.add('$tag cue $i: highlight never showed 「$want」');
+      failures.add(
+        '$tag cue $i: highlight never showed 「$want」 '
+        '(last: wrappers=${last?['wrappers']} text=「${last?['text']}」 '
+        'controllerCue=${controller.currentCueIdx})',
+      );
       continue;
     }
     measured++;
@@ -427,11 +433,15 @@ void main() {
 
           final List<String> failures = <String>[];
           try {
+            const String only = String.fromEnvironment('RUBY_HL_MODES');
             for (final String mode in <String>[
               'paginated',
               'continuous',
               'vn',
             ]) {
+              if (only.isNotEmpty && !only.split(',').contains(mode)) {
+                continue;
+              }
               failures.addAll(
                 await _runMode(tester, appModel, bookKey, sentences, mode),
               );
