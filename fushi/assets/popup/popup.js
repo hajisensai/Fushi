@@ -5384,6 +5384,7 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
     }
     
     details.appendChild(dictWrapper);
+    __fushiChunkLongGlossary(dictWrapper, dictName);
 
     // MDX 词典的条目 HTML 自带 <script>（NLT 的頻度条形图、OALDPEX 的配置界面和
     // 中文翻译开关）。经 innerHTML 插入的 script 按规范不会执行，这里补上——作用域
@@ -6574,15 +6575,24 @@ function setStyleIfChanged(el, prop, value) {
 // 现在整轮只有两次强制布局（相 1 读 clientWidth、相 3 读 offsetHeight），与卡片数无关。
 // 列分配沿用最短列打包；仅尺寸未变时复用列号，单列/空 body 仍回落 CSS。
 // [targetBodies] 缺省 = 全部词典义项容器；scheduleMasonry 只传脏 body。
+// 最近一次真实量到的词典义项容器宽度（相 1），供被跳过渲染的词条预写列宽。
+let __fushiMasonryBodyWidth = 0;
 function layoutMasonry(targetBodies) {
     const configured = dictColumns();
     const gap = masonryGap();
     const plans = [];
+    const presize = [];
     (targetBodies || masonryBodies()).forEach(body => {
-        // BUG-3274：浏览器跳过渲染的屏外词条不铺——读它的几何会强制把整棵子树排版。
-        // 滚进视口时 __fushiOnLazyEntryVisibility 会补铺。
-        if (__fushiBodyRenderSkipped(body)) return;
         const items = [...body.children].filter(c => c.classList.contains('glossary-group'));
+        // BUG-3274：浏览器跳过渲染的屏外词条不读几何——读一次就把整棵子树强制排版。
+        // 只预写列宽（相 2 的写，不触发排版），它滚进视口时按最终列宽只排一遍，
+        // __fushiOnLazyEntryVisibility 随后只剩量高与摆位。
+        if (__fushiBodyRenderSkipped(body)) {
+            if (configured > 1 && items.length > 0) {
+                presize.push({ body, items, cols: Math.min(configured, items.length) });
+            }
+            return;
+        }
         // 经典单列（设置=1）或该词条无词典卡：不做 masonry，清 inline 回落 CSS
         //（block 纵向堆叠 + CSS margin-top / 空容器）。
         if (configured <= 1 || items.length === 0) {
@@ -6597,13 +6607,34 @@ function layoutMasonry(targetBodies) {
         const cols = Math.min(configured, items.length);
         plans.push({ body, items, cols, columnWidth: 0, itemHeights: null });
     });
-    if (plans.length === 0) return;
+    if (plans.length === 0 && presize.length === 0) return;
 
     // 相 1（读）：所有 body 的可用宽度一次读完。body 从 grid 切到 block 不改变其宽度
     //（都是撑满父容器的块级盒），故可先读后写。
     plans.forEach(plan => {
         plan.columnWidth = (plan.body.clientWidth - (plan.cols - 1) * gap) / plan.cols;
+        __fushiMasonryBodyWidth = plan.body.clientWidth;
     });
+    // 被跳过渲染的 body 与已渲染的 body 同宽（同一容器下的同构词条），用最近一次真实量到
+    // 的宽度；一次都没量过（首屏全被跳过，不会发生）就不预写，留给可见时整铺。
+    if (__fushiMasonryBodyWidth > 0) {
+        presize.forEach(({ body, items, cols }) => {
+            const width = `${(__fushiMasonryBodyWidth - (cols - 1) * gap) / cols}px`;
+            setStyleIfChanged(body, 'position', 'relative');
+            setStyleIfChanged(body, 'display', 'block');
+            items.forEach(item => {
+                // 还没摆过位的卡片先藏起来（同 BUG-1727 增量预藏）：可见时相 4 摆位并恢复，
+                // 绝不露出叠在 (0,0) 的一帧。
+                if (item.dataset.masonryCol === undefined) item.style.visibility = 'hidden';
+                if (item.style.position !== 'absolute') item.style.position = 'absolute';
+                setStyleIfChanged(item, 'left', '0');
+                setStyleIfChanged(item, 'top', '0');
+                setStyleIfChanged(item, 'marginTop', '0');
+                setStyleIfChanged(item, 'width', width);
+            });
+        });
+    }
+    if (plans.length === 0) return;
     // 相 2（写）：定位与列宽。宽度决定高度，必须在量高之前落下；位置（transform）不影响
     // 高度，留到相 4。
     plans.forEach(({ body, items, columnWidth }) => {
@@ -6702,6 +6733,182 @@ function __fushiMarkLazyEntry(entryEl) {
     entryEl.classList.add('fushi-lazy-entry');
     entryEl.__fushiRenderSkipped = true;
     entryEl.addEventListener('contentvisibilityautostatechange', __fushiOnLazyEntryVisibility);
+}
+
+// BUG-3274：长释义切块按需渲染。『明鏡』とる 一张卡就有约 30 万字节，单卡排版在 4 倍
+// 降速下要 1 秒左右、且无法拆分——整张卡只要进视口就一次付清。把卡片正文的块级子元素
+// 切成若干段、各自 content-visibility:auto，滚到哪段才排哪段；尾批建完后空闲时逐段
+// 转回普通渲染（__fushiWarmLazyContent），每步只付几段的成本。预热完成后 DOM 与切块前
+// 完全一致，containment 的副作用（外边距不再穿透、超出盒子的部分被裁）只存在于过渡期。
+//
+// 两条硬约束：
+//   · `li` 永不切：style containment 会把元素自身的 counter-increment 圈进新计数器，
+//     列表编号会断成每项都是 1。
+//   · 词典样式 / 用户 CSS 里出现 counter 的词典整张卡都不切：计数器可能跨段累加。
+const LAZY_GLOSSARY_MIN_CHARS = 300;    // 正文不到这个量的卡片不切（切了也省不了什么）
+const LAZY_CHUNK_SPLIT_CHARS = 2400;    // 子树比这大就继续往里切
+const LAZY_CHUNK_MIN_CHARS = 30;        // 比这小的块不值得单独成段
+// 块级子元素直接标记，不插包装：包装会改变 DOM 结构，相邻兄弟选择器、:first-child
+// 一类的词典样式在过渡期就会失效。唯一例外是「文字 + <br>」平铺的正文（MDX/HTML 词典
+// 常见，日本国語大辞典一张卡 998 个这样的节点）：见 __fushiWrapFlatLines。
+const LAZY_CHUNK_TAGS = new Set(['DIV', 'P', 'TABLE', 'SECTION', 'ARTICLE', 'UL', 'OL', 'DL', 'BLOCKQUOTE', 'DETAILS']);
+
+function __fushiDictCssUsesCounters(dictName) {
+    const custom = window.customDictCSS && typeof window.customDictCSS === 'object'
+        ? window.customDictCSS[dictName] : '';
+    return [window.dictionaryStyles?.[dictName], window.globalDictCSS, custom]
+        .some(css => typeof css === 'string' && css.includes('counter'));
+}
+
+// 「文字 + <br>」平铺正文里可以安全放进同一个块的节点：文本、<br> 与常见行内标签。
+const LAZY_FLAT_INLINE_TAGS = new Set(['BR', 'SPAN', 'A', 'B', 'I', 'U', 'S', 'EM', 'STRONG', 'SMALL', 'SUB', 'SUP', 'FONT', 'RUBY', 'RB', 'RT', 'RP', 'MARK', 'CODE']);
+const LAZY_FLAT_LINES_CHARS = 600;       // 每段大约容纳的字数
+
+// 只在 <br> 之后断开，把若干行包进 div.fushi-lazy-chunk。与原文等价的理由：
+//   · 块末尾单个 <br> 不产生空行，块边界本身就换行 ⇒ 「…文<br>|文…」行数不变；
+//     连续 <br><br> 产生的空行仍在同一块里，照样渲染成空行；
+//   · text-indent 只作用于块的首行：首段继承容器的值（与原文首行一致），后续段置 0；
+//     ::first-line / ::first-letter 只命中首个块的首行，与原文一致。
+// 预热时拆回原状（__fushiUnwrapLazyChunk），之后 DOM 与切块前逐节点相同。
+function __fushiWrapFlatLines(container, charsPerLine, fontPx) {
+    const nodes = [...container.childNodes];
+    if (nodes.length < 8) return;
+    if (!nodes.every(n => n.nodeType === 3 || (n.nodeType === 1 && LAZY_FLAT_INLINE_TAGS.has(n.tagName)))) return;
+    if (!nodes.some(n => n.nodeType === 1 && n.tagName === 'BR')) return;
+    const groups = [];
+    let current = [];
+    let chars = 0;
+    nodes.forEach(n => {
+        current.push(n);
+        chars += (n.textContent || '').length;
+        if (n.nodeType === 1 && n.tagName === 'BR' && chars >= LAZY_FLAT_LINES_CHARS) {
+            groups.push({ nodes: current, chars });
+            current = [];
+            chars = 0;
+        }
+    });
+    if (current.length) groups.push({ nodes: current, chars });
+    if (groups.length < 2) return;
+    groups.forEach((group, index) => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'fushi-lazy-chunk fushi-lazy-wrap';
+        if (index > 0) wrapper.style.textIndent = '0';
+        const brs = group.nodes.filter(n => n.nodeType === 1 && n.tagName === 'BR').length;
+        const lines = Math.max(brs, Math.ceil(group.chars / charsPerLine));
+        wrapper.style.containIntrinsicSize = `auto ${Math.round(lines * fontPx * 1.8)}px`;
+        container.insertBefore(wrapper, group.nodes[0]);
+        group.nodes.forEach(n => wrapper.appendChild(n));
+        wrapper.__fushiRenderSkipped = true;
+        wrapper.addEventListener('contentvisibilityautostatechange', __fushiOnLazyChunkVisibility);
+    });
+}
+
+function __fushiUnwrapLazyChunk(chunk) {
+    chunk.removeEventListener('contentvisibilityautostatechange', __fushiOnLazyChunkVisibility);
+    if (chunk.classList.contains('fushi-lazy-wrap')) {
+        chunk.replaceWith(...chunk.childNodes);
+        return;
+    }
+    chunk.classList.remove('fushi-lazy-chunk');
+    chunk.style.containIntrinsicSize = '';
+}
+
+function __fushiOnLazyChunkVisibility(ev) {
+    if (ev.currentTarget) ev.currentTarget.__fushiRenderSkipped = !!ev.skipped;
+}
+
+function __fushiChunkLongGlossary(root, dictName) {
+    if (!__fushiLazyEntriesSupported || !root || typeof root.textContent !== 'string') return;
+    // 历史页回退要按真实高度恢复滚动位，同 lazyTailEntries 的约定：这次渲染全量排版。
+    if (window.__fushiPendingScrollTop > 0) return;
+    if (root.textContent.length < LAZY_GLOSSARY_MIN_CHARS) return;
+    if (__fushiDictCssUsesCounters(dictName)) return;
+    // 预估高度只求量级对：未渲染的段按「字数 / 每行字数 × 行高」占位，渲染过一次后
+    // `auto` 记住真实高度。宽度取最近一次量到的词典容器宽度（不读几何，不强制排版）。
+    const zoom = __fushiDocumentZoom();
+    const bodyWidth = __fushiMasonryBodyWidth > 0
+        ? __fushiMasonryBodyWidth : __fushiViewportWidth() / zoom;
+    const columnWidth = bodyWidth / Math.max(1, dictColumns());
+    const fontPx = 16;
+    const charsPerLine = Math.max(8, Math.floor(columnWidth / fontPx));
+    const walk = (node) => {
+        __fushiWrapFlatLines(node, charsPerLine, fontPx);
+        for (const child of node.children) {
+            if (child.classList.contains('fushi-lazy-wrap')) continue;
+            const chars = (child.textContent || '').length;
+            if (chars === 0) continue;
+            if (chars > LAZY_CHUNK_SPLIT_CHARS && child.children.length > 0) {
+                walk(child);
+                continue;
+            }
+            if (chars < LAZY_CHUNK_MIN_CHARS || !LAZY_CHUNK_TAGS.has(child.tagName)) continue;
+            const lines = Math.ceil(chars / charsPerLine);
+            child.classList.add('fushi-lazy-chunk');
+            child.style.containIntrinsicSize = `auto ${Math.round(lines * fontPx * 1.8)}px`;
+            // 初始视为被跳过；浏览器判定可见时翻成 false。预热只摘被跳过的段：正在屏上的
+            // 段摘掉类名会从「contain 下渲染」换成普通渲染，哪怕只差一像素也是可见的闪变。
+            child.__fushiRenderSkipped = true;
+            child.addEventListener('contentvisibilityautostatechange', __fushiOnLazyChunkVisibility);
+        }
+    };
+    walk(root);
+}
+
+function __fushiUnlazyEntry(entryEl) {
+    entryEl.removeEventListener('contentvisibilityautostatechange', __fushiOnLazyEntryVisibility);
+    entryEl.classList.remove('fushi-lazy-entry');
+    entryEl.__fushiRenderSkipped = false;
+    entryEl.querySelectorAll('.glossary-section > .category-body').forEach(markMasonryDirty);
+    scheduleMasonry();
+}
+
+// 尾批建完后，空闲时自上而下把仍按需渲染的词条与长释义段转回普通渲染：用户滚到之前
+// 它们大概率已经排好。每个空闲时段按字数预算处理若干项（脚本里只是摘类名，排版成本
+// 落在随后那一帧），单帧成本有上界——与旧版「整个巨型词条一帧付清」不同。用户正在滚动
+// 时暂停：滚动中靠近视口的段浏览器本就会按需渲染，预热再往同一帧里塞排版只会添堵。
+// 查词时视频是暂停的，这段空闲 CPU 不与播放争抢；换词（换代）立即停止。
+const LAZY_WARM_CHARS_PER_STEP = 800;   // 4 倍降速下一步约 50ms
+const LAZY_WARM_SCROLL_QUIET_MS = 200;
+let __fushiLastScrollAt = 0;
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('scroll', () => { __fushiLastScrollAt = performance.now(); },
+        { capture: true, passive: true });
+}
+function __fushiWarmLazyContent(generation) {
+    const schedule = (typeof requestIdleCallback === 'function')
+        ? (fn) => requestIdleCallback(fn, { timeout: 500 })
+        : (fn) => setTimeout(fn, 32);
+    const step = () => {
+        if (generation !== window._renderGeneration) return;
+        const root = __fushiContainer();
+        if (!root || typeof root.querySelector !== 'function') return;
+        const sinceScroll = performance.now() - __fushiLastScrollAt;
+        if (__fushiLastScrollAt > 0 && sinceScroll < LAZY_WARM_SCROLL_QUIET_MS) {
+            setTimeout(() => schedule(step), LAZY_WARM_SCROLL_QUIET_MS - sinceScroll);
+            return;
+        }
+        let budget = LAZY_WARM_CHARS_PER_STEP;
+        while (budget > 0) {
+            const entryEl = root.querySelector(':scope > .entry.fushi-lazy-entry');
+            if (entryEl) {
+                // 词条本体的排版成本 = 去掉仍切着的段之后剩下的字数。
+                let chunked = 0;
+                entryEl.querySelectorAll('.fushi-lazy-chunk').forEach(c => {
+                    chunked += (c.textContent || '').length;
+                });
+                budget -= Math.max(1, (entryEl.textContent || '').length - chunked);
+                __fushiUnlazyEntry(entryEl);
+                continue;
+            }
+            const chunk = [...root.querySelectorAll('.fushi-lazy-chunk')]
+                .find(c => c.__fushiRenderSkipped === true);
+            if (!chunk) return;
+            budget -= (chunk.textContent || '').length;
+            __fushiUnwrapLazyChunk(chunk);
+        }
+        schedule(step);
+    };
+    schedule(step);
 }
 
 function __fushiBodyRenderSkipped(body) {
@@ -7317,6 +7524,7 @@ window.renderPopup = function() {
         }
         // Second signal with the same token measures the final all-block height.
         finishRemainingEntries();
+        if (__fushiLazyEntriesSupported) __fushiWarmLazyContent(gen);
     };
     scheduleRenderTail(renderNextDictionaryBlock);
 };
