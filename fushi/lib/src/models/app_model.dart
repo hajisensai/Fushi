@@ -249,6 +249,7 @@ import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/mining/mining_image_mode_target.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
+import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/immersion_capture_channel.dart';
 import 'package:fushi/src/mining/youtube_clip_miner.dart';
@@ -8142,6 +8143,11 @@ class AppModel with ChangeNotifier {
       prefsRepo.videoOnlineMiningMode;
   Future<void> setVideoOnlineMiningMode(VideoOnlineMiningMode mode) =>
       prefsRepo.setVideoOnlineMiningMode(mode);
+
+  // 暂停时识别画面文字的范围（透传 prefsRepo）。默认所有视频。
+  VideoPauseOcrScope get videoPauseOcrScope => prefsRepo.videoPauseOcrScope;
+  Future<void> setVideoPauseOcrScope(VideoPauseOcrScope scope) =>
+      prefsRepo.setVideoPauseOcrScope(scope);
 
   VideoMiningImageMode get galMiningImageMode => prefsRepo.galMiningImageMode;
   void setGalMiningImageMode(VideoMiningImageMode mode) =>

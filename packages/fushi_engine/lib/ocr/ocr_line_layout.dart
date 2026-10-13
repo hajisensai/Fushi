@@ -65,8 +65,14 @@ bool? voteOcrLineOrientation(List<OcrRect> lines) {
 }
 
 /// 振假名：比块内行厚 p75 的 [thinRatio] 还细的行，或贴在一条至少厚 1.25 倍的行的
-/// 注音侧（竖排右侧 / 横排上方，跨轴间隙不超过那条行厚的 0.35 倍、沿轴有重叠）且
-/// 不到 p75 的 [sideRatio] 倍厚的行。
+/// 注音侧（竖排右侧 / 横排上方或下方，跨轴间隙不超过那条行厚的 0.35 倍、沿轴有
+/// 重叠）且不到 p75 的 [sideRatio] 倍厚的行。
+///
+/// p75 按**行长加权**（[_lengthWeightedP75]）：注音天生切成很多短段，按段数取
+/// 分位数时，一行正文配四段注音的块 p75 就落在注音自己的厚度上，两条判据一起失效。
+///
+/// 横排认下方：双行字幕第二行的注音标在字**下方**（上方被第一行占了）；字幕注音
+/// 约为正文行高的 0.6~0.65，只按 [thinRatio] 会整排漏掉（BUG-3314）。
 List<OcrRect> dropOcrRubyLines(
   List<OcrRect> lines, {
   required bool vertical,
@@ -74,25 +80,21 @@ List<OcrRect> dropOcrRubyLines(
   double sideRatio = 0.82,
 }) {
   if (lines.length < 2) return lines;
-  final List<double> thickness = <double>[
-    for (final OcrRect line in lines)
-      ocrLineThickness(line, vertical: vertical),
-  ]..sort();
-  final double p75 =
-      thickness[math.min(thickness.length - 1, (3 * thickness.length) ~/ 4)];
+  final double p75 = _lengthWeightedP75(lines, vertical: vertical);
   bool besideThickerLine(OcrRect line) {
     final double own = ocrLineThickness(line, vertical: vertical);
     for (final OcrRect other in lines) {
       if (identical(other, line)) continue;
       final double base = ocrLineThickness(other, vertical: vertical);
       if (base < own * 1.25) continue;
-      final double gap = vertical
-          ? line.left - other.right
-          : other.top - line.bottom;
+      bool hugs(double gap) => gap >= -0.35 * base && gap <= 0.35 * base;
+      final bool onRubySide = vertical
+          ? hugs(line.left - other.right)
+          : hugs(other.top - line.bottom) || hugs(line.top - other.bottom);
       final double along = vertical
           ? math.min(line.bottom, other.bottom) - math.max(line.top, other.top)
           : math.min(line.right, other.right) - math.max(line.left, other.left);
-      if (gap >= -0.35 * base && gap <= 0.35 * base && along > 0) return true;
+      if (onRubySide && along > 0) return true;
     }
     return false;
   }
@@ -104,6 +106,30 @@ List<OcrRect> dropOcrRubyLines(
               besideThickerLine(line))))
         line,
   ];
+}
+
+/// 行厚的 75 分位，每行按它沿阅读方向的长度计权（文字量越多的行越代表正文字号）。
+double _lengthWeightedP75(List<OcrRect> lines, {required bool vertical}) {
+  final List<({double thickness, double length})> rows =
+      <({double thickness, double length})>[
+        for (final OcrRect line in lines)
+          (
+            thickness: ocrLineThickness(line, vertical: vertical),
+            length: math.max(1, vertical ? line.height : line.width),
+          ),
+      ]..sort(
+        (
+          ({double thickness, double length}) a,
+          ({double thickness, double length}) b,
+        ) => a.thickness.compareTo(b.thickness),
+      );
+  final double total = rows.fold<double>(0, (double s, r) => s + r.length);
+  double seen = 0;
+  for (final ({double thickness, double length}) row in rows) {
+    seen += row.length;
+    if (seen >= 0.75 * total) return row.thickness;
+  }
+  return rows.last.thickness;
 }
 
 /// 把同一列（竖排）/同一行（横排）被检测器切碎的片段合并成一条。

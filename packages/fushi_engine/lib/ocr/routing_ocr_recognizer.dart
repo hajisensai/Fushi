@@ -221,7 +221,9 @@ class RoutingOcrRecognizer
         lineHints: lineHints,
       );
     }
-    final List<PpTextLine> lines = orderLinesForReading(detected);
+    final List<PpTextLine> lines = orderLinesForReading(
+      horizontalBlockReadingLines(detected),
+    );
     final List<String> texts = <String>[];
     final List<OcrRect> boxes = <OcrRect>[];
     double? confidence;
@@ -272,6 +274,35 @@ class RoutingOcrRecognizer
       lineHints: lineHints,
     );
   }
+}
+
+/// 横排块逐行识别的单元：横行去振假名（[dropOcrRubyLines]，含横排下方注音）后把
+/// 同一排被检测器切碎的片段并成一行（[mergeOcrLineFragments]）；竖行原样。
+///
+/// 这一步以前只有按 p75 行厚 0.6 的 [filterThinLines]：字幕注音约为正文的
+/// 0.6~0.65，整排漏过、被当正文读进去；说话人标签「（スネ夫）」与台词被切成两段、
+/// 又按 top 排序，标签落到台词后面（BUG-3314）。
+List<PpTextLine> horizontalBlockReadingLines(List<PpTextLine> lines) {
+  final List<PpTextLine> horizontal = <PpTextLine>[
+    for (final PpTextLine line in lines)
+      if (!line.vertical) line,
+  ];
+  final List<OcrRect> rows = mergeOcrLineFragments(
+    dropOcrRubyLines(<OcrRect>[
+      for (final PpTextLine line in horizontal) line.rect,
+    ], vertical: false),
+    vertical: false,
+  );
+  double scoreOf(OcrRect row) => horizontal
+      .where(
+        (PpTextLine l) => row.containsPoint(l.rect.centerX, l.rect.centerY),
+      )
+      .fold<double>(0, (double m, PpTextLine l) => math.max(m, l.score));
+  return <PpTextLine>[
+    for (final PpTextLine line in lines)
+      if (line.vertical) line,
+    for (final OcrRect row in rows) PpTextLine(rect: row, score: scoreOf(row)),
+  ];
 }
 
 /// 横排 PP 路径保留单块切行，竖框与横排空结果的整框后备合并成一批。

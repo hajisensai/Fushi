@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2964 条。点号进各自文件。
+> 共 2965 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3314](bugs/BUG-3314-graphic-subtitle-ocr-ruby-tap-duplicate.md) | ✅ | ✅ | 图片字幕OCR点击位置偏移、振假名混入正文、转录出重复字幕 |
 | [BUG-3276](bugs/BUG-3276-bitmap-subs-remote-timing-ocr.md) | ✅ | ✅ | VobSub/DVB 图形字幕与远程播放没有逐句时间与整轨 OCR |
 | [BUG-3275](bugs/BUG-3275-graphic-subtitle-ocr-duplicate-slow.md) | ✅ | ✅ | 图形字幕整轨OCR文字重复且极慢 |
 | [BUG-3274](bugs/BUG-3274-popup-switch-word-false-empty.md) | ✅ | ✅ | 视频页换词时查词弹窗先闪「未找到」、滑动掉帧 |

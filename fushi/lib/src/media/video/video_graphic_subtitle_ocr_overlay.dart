@@ -1,5 +1,9 @@
-/// 图形字幕查词覆盖层：暂停时截下当前帧（含 libmpv 自绘的字幕位图）做 OCR，
+/// 暂停 OCR 查词覆盖层：暂停时截下当前帧（含 libmpv 自绘的字幕位图）做 OCR，
 /// 在识别出的每个字上方铺一个透明可点区域，点字即查词。
+///
+/// 起初只为图形字幕（PGS / VobSub / DVB，没有 Dart 文字）而设；现在按
+/// [VideoPauseOcrScope] 扩到所有视频（硬字幕、画面文字），Fushi 自绘的文字字幕在屏
+/// 时让位给它（见 [VideoPauseOcrScope.shouldRecognize]）。
 ///
 /// 识别与 AI 重读见 `graphic_subtitle_ocr.dart`；本层只负责「何时识别」与「摆在哪」。
 library;
@@ -10,6 +14,7 @@ import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
+import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_ocr_progress.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 
@@ -28,6 +33,7 @@ class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
     required this.fit,
     required this.prepare,
     required this.onCharTap,
+    this.scope = VideoPauseOcrScope.graphicSubtitles,
     this.onUnavailable,
     this.onError,
     this.captureFrame,
@@ -42,11 +48,15 @@ class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
 
   final GraphicSubtitleOcrPrepare prepare;
 
+  /// 哪些视频暂停时识别（用户设置）。
+  final VideoPauseOcrScope scope;
+
   /// 点中一个字：整句、句内字素下标、字在**全局**坐标系下的矩形。
   final void Function(String sentence, int graphemeIndex, Rect globalRect)
   onCharTap;
 
-  /// 引擎不可用（每个会话只报一次）。
+  /// 引擎不可用（每个会话只报一次；只在图形字幕帧上报——普通视频的暂停识别是
+  /// 顺带的，没配 OCR 的用户不该每看一部片都被提示一次）。
   final void Function(GraphicSubtitleOcrUnavailableReason reason)?
   onUnavailable;
 
@@ -92,11 +102,15 @@ class _VideoGraphicSubtitleOcrOverlayState
   @override
   void didUpdateWidget(VideoGraphicSubtitleOcrOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (identical(oldWidget.controller, widget.controller)) return;
-    oldWidget.controller.removeListener(_onControllerChanged);
-    widget.controller.addListener(_onControllerChanged);
-    _reset();
-    _onControllerChanged();
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller.removeListener(_onControllerChanged);
+      widget.controller.addListener(_onControllerChanged);
+      _reset();
+      _key = null;
+      _onControllerChanged();
+    } else if (oldWidget.scope != widget.scope) {
+      _onControllerChanged();
+    }
   }
 
   @override
@@ -112,7 +126,11 @@ class _VideoGraphicSubtitleOcrOverlayState
 
   _FrameKey? _currentKey() {
     final VideoPlayerController c = widget.controller;
-    if (c.isPlaying || !c.isPlayerRenderedSubtitleActive || !c.hasFirstFrame) {
+    if (c.isPlaying || !c.hasFirstFrame) return null;
+    if (!widget.scope.shouldRecognize(
+      graphicSubtitleActive: c.isPlayerRenderedSubtitleActive,
+      textCueOnScreen: c.activeCues.isNotEmpty,
+    )) {
       return null;
     }
     final int? position = c.positionMs;
@@ -161,6 +179,7 @@ class _VideoGraphicSubtitleOcrOverlayState
   Future<void> _recognize() async {
     final int generation = _generation;
     bool stale() => !mounted || generation != _generation;
+    final bool graphic = widget.controller.isPlayerRenderedSubtitleActive;
     try {
       final Uint8List? bytes =
           await (widget.captureFrame ??
@@ -180,14 +199,15 @@ class _VideoGraphicSubtitleOcrOverlayState
       );
       if (frame == null || stale()) return;
       setState(() => _frame = frame);
-      _setStatus(
-        frame.isEmpty
-            ? GraphicSubtitlePauseOcrStatus.empty
-            : GraphicSubtitlePauseOcrStatus.ready,
-      );
+      // 「这一帧没有字」只对图形字幕有意义（那里本该有字幕）；普通画面没字是常态。
+      _setStatus(switch ((frame.isEmpty, graphic)) {
+        (false, _) => GraphicSubtitlePauseOcrStatus.ready,
+        (true, true) => GraphicSubtitlePauseOcrStatus.empty,
+        (true, false) => GraphicSubtitlePauseOcrStatus.idle,
+      });
     } on GraphicSubtitleOcrUnavailable catch (e) {
       if (!stale()) _setStatus(GraphicSubtitlePauseOcrStatus.idle);
-      if (_unavailableReported || !mounted) return;
+      if (_unavailableReported || !mounted || !graphic) return;
       _unavailableReported = true;
       widget.onUnavailable?.call(e.reason);
     } catch (error, stack) {

@@ -7063,5 +7063,10 @@
   "manga_ocr_ai_mode_pending": "Not decided yet: you'll be asked the first time uncertain text would be sent.",
   "manga_ocr_ai_mode_confirm_default": "Turn on now",
   "ai_provider_rate_limit": "Requests per minute",
-  "ai_provider_rate_limit_hint": "Empty = no limit. Use your plan's limit so requests aren't rejected for going too fast."
+  "ai_provider_rate_limit_hint": "Empty = no limit. Use your plan's limit so requests aren't rejected for going too fast.",
+  "video_setting_pause_ocr_scope": "Recognize on-screen text when paused",
+  "video_setting_pause_ocr_scope_hint": "OCR the paused frame so its text can be tapped for lookup. Text subtitles already shown by Fushi take priority.",
+  "video_setting_pause_ocr_scope_all": "All videos",
+  "video_setting_pause_ocr_scope_graphic": "Image subtitles only",
+  "video_setting_pause_ocr_scope_off": "Off"
 }

@@ -23,6 +23,7 @@ import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:characters/characters.dart';
 import 'package:crypto/crypto.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
@@ -556,11 +557,17 @@ class MangaAiOcrRefiner {
         final _CropRead read = batch[j];
         final String? text = replies[j + 1];
         if (text == null) continue;
-        if (!isPlausibleMangaAiOcrText(
-          text,
-          local: read.block.lines.join(),
-          block: read.block,
-        )) {
+        final String local = read.block.lines.join();
+        if (!isPlausibleMangaAiOcrText(text, local: local, block: read.block) ||
+            !mangaAiOcrReplyBelongsToCrop(
+              text,
+              local: local,
+              others: <String>[
+                for (int k = 0; k < batch.length; k++)
+                  if (k != j) batch[k].block.lines.join(),
+                ...nearby,
+              ],
+            )) {
           continue;
         }
         read.text = text;
@@ -796,6 +803,46 @@ bool isPlausibleMangaAiOcrText(
   final int? capacity = block == null ? null : mangaAiOcrBlockCapacity(block);
   final int byGeometry = capacity == null ? 0 : capacity + 8;
   return compact.length <= math.max(byLocal, byGeometry);
+}
+
+/// 大模型的回复是不是这张图自己的：它明显更像 [others]（同批别的图的本地猜测、
+/// 附近已读文字）里的某一条、而不像本图的本地猜测 [local] 时判为串号，返回 false。
+///
+/// 多图一批按编号对回，模型偶尔把邻图的字答到这张的编号上，或者照抄提示里的附近
+/// 台词；长度校验拦不住——字幕里表现为相邻两条变成同一句（BUG-3314）。相似度按
+/// 字的多重集合算 Dice 系数（与语序无关，形近字读错一两个仍算像）。「明显」=
+/// 别条至少 0.6 且比本条高出 0.2：本地读得再糊，正确回复也总与它共享大半的字；
+/// 两条本来就几乎一样（「スタッフA / B」同一句台词）时分不出、照收。
+bool mangaAiOcrReplyBelongsToCrop(
+  String reply, {
+  required String local,
+  required Iterable<String> others,
+}) {
+  final double own = _charDice(reply, local);
+  for (final String other in others) {
+    final double score = _charDice(reply, other);
+    if (score >= 0.6 && score > own + 0.2) return false;
+  }
+  return true;
+}
+
+double _charDice(String a, String b) {
+  final List<String> x = a.replaceAll(RegExp(r'\s'), '').characters.toList();
+  final List<String> y = b.replaceAll(RegExp(r'\s'), '').characters.toList();
+  if (x.isEmpty || y.isEmpty) return 0;
+  final Map<String, int> counts = <String, int>{};
+  for (final String c in x) {
+    counts[c] = (counts[c] ?? 0) + 1;
+  }
+  int common = 0;
+  for (final String c in y) {
+    final int n = counts[c] ?? 0;
+    if (n > 0) {
+      counts[c] = n - 1;
+      common++;
+    }
+  }
+  return 2 * common / (x.length + y.length);
 }
 
 /// 这个块的框按字号算最多装得下几个字；给不出（没有尺寸可用）返回 null。

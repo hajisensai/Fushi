@@ -6412,6 +6412,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return VideoGraphicSubtitleOcrOverlay(
       controller: controller,
       fit: videoFitModeToBoxFit(_videoFitMode),
+      scope: appModel.videoPauseOcrScope,
       prepare: _prepareGraphicSubtitleOcr,
       onCharTap: (String sentence, int graphemeIndex, Rect globalRect) =>
           unawaited(

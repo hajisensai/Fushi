@@ -224,5 +224,35 @@ void main() {
       ], vertical: false);
       expect(kept.map((OcrRect r) => r.top), <double>[20, 70]);
     });
+
+    // BUG-3314：以下行框都是《新・のび太の海底鬼岩城》蓝光 PGS 位图上 PP 行检测的
+    // 真实输出（字幕注音约为正文行高的 0.6~0.65，正好卡在旧的 0.6 阈值上方）。
+    test('横排：双行字幕第二行的注音标在字下方，同样去掉', () {
+      final List<OcrRect> kept = dropOcrRubyLines(<OcrRect>[
+        _r(21, 49, 249, 115), // （のび太）
+        _r(42, 113, 796, 177), // キャンプ行くなら山がいい！
+        _r(517, 176, 585, 216), // やま：在「山」下方
+      ], vertical: false);
+      expect(kept.map((OcrRect r) => r.top), <double>[49, 113]);
+    });
+
+    test('一行正文配四段注音：典型行厚按行长计，注音段数再多也不把基准拉低', () {
+      final List<OcrRect> kept = dropOcrRubyLines(<OcrRect>[
+        _r(436, 15, 500, 52), // あさ
+        _r(21, 16, 80, 53), // とり
+        _r(134, 16, 201, 51), // こえ
+        _r(264, 16, 306, 50), // お
+        _r(22, 53, 496, 111), // 鳥の声で起きる朝
+      ], vertical: false);
+      expect(kept.map((OcrRect r) => r.top), <double>[53]);
+    });
+
+    test('没有注音的双行字幕两行都保留', () {
+      final List<OcrRect> kept = dropOcrRubyLines(<OcrRect>[
+        _r(20, 45, 468, 113), // （のび太）んっ!?
+        _r(42, 115, 529, 177), // ち…ちがうわい！
+      ], vertical: false);
+      expect(kept, hasLength(2));
+    });
   });
 }

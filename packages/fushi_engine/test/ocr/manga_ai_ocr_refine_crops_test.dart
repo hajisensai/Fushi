@@ -356,6 +356,63 @@ void main() {
     expect(second.page.blocks.single.lines.join(), '第2-1');
     expect(second.page.blocks.single.aiRecognized, isTrue);
   });
+
+  // BUG-3314：一批多图按编号对回，模型把邻条的字答到这条的编号上（或照抄提示里的
+  // 附近台词），字幕里相邻两条就成了同一句。台词取自《新・のび太の海底鬼岩城》PGS
+  // 的真实本地识别结果。
+  test('回复串号（答成同批别条 / 附近台词）不采用，本条留本地文字', () async {
+    final f = fake(
+      reply: (int call, int count) => jsonEncode(<String, Object?>{
+        'blocks': <Object?>[
+          // 1 号答成了 2 号的台词，2 号正常（只纠了一个形近字），3 号照抄附近台词。
+          <String, Object?>{'id': 1, 'text': '(のび太)キャンプ行くなら山がいい!'},
+          <String, Object?>{'id': 2, 'text': '(のび太)キャンプ行くなら山がいい!'},
+          <String, Object?>{'id': 3, 'text': 'しずかちゃんはどっち?'},
+        ],
+      }),
+    );
+    final MangaAiOcrRefiner refiner = MangaAiOcrRefiner(
+      provider: provider,
+      mode: MangaAiOcrMode.all,
+      clientFactory: f.factory,
+    );
+    final List<String?> texts = await refiner.refineCrops(
+      <MangaAiOcrCropRequest>[
+        item(1, cue('(スネ夫)のび太は泳げないからだろ?')),
+        item(2, cue('(のび太)キャンプ行くなら山がいい！')),
+        item(3, cue('緑に囲まれておいしい空気')),
+      ],
+      nearby: <String>['しずかちゃんはどっち?'],
+    );
+    expect(texts, <String?>[null, '(のび太)キャンプ行くなら山がいい!', null]);
+  });
+
+  test('归属判据：读错几个字仍算本条；同一句只差说话人时分不出、照收', () {
+    expect(
+      mangaAiOcrReplyBelongsToCrop(
+        '鳥の声で起きる朝',
+        local: 'とりこえおあさ鳥の声で起きる朝',
+        others: <String>['緑に囲まれておいしい空気'],
+      ),
+      isTrue,
+    );
+    expect(
+      mangaAiOcrReplyBelongsToCrop(
+        '(スタッフB)Aフレーム振り出しスロー',
+        local: '(スタッフA)Aフレーム振り出しスロー',
+        others: <String>['(スタッフB)Aフレーム振り出しスロー'],
+      ),
+      isTrue,
+    );
+    expect(
+      mangaAiOcrReplyBelongsToCrop(
+        'やっぱり山だよね!',
+        local: 'マリンアクティビティや色あざやかなサンゴや魚!',
+        others: <String>['やっぱり山だよね!'],
+      ),
+      isFalse,
+    );
+  });
 }
 
 /// 立即回固定回复，记调用次数与是否被关。

@@ -7063,5 +7063,10 @@
   "manga_ocr_ai_mode_pending": "尚未決定：第一次要傳送沒把握的文字時會詢問。",
   "manga_ocr_ai_mode_confirm_default": "現在開啟",
   "ai_provider_rate_limit": "每分鐘請求上限",
-  "ai_provider_rate_limit_hint": "留空表示不限。按方案限額填寫，避免請求太快被攔截。"
+  "ai_provider_rate_limit_hint": "留空表示不限。按方案限額填寫，避免請求太快被攔截。",
+  "video_setting_pause_ocr_scope": "暫停時辨識畫面文字",
+  "video_setting_pause_ocr_scope_hint": "暫停時對畫面做文字辨識，辨識出的字可直接點按查詞。畫面上已有 Fushi 顯示的文字字幕時以字幕為準。",
+  "video_setting_pause_ocr_scope_all": "所有影片",
+  "video_setting_pause_ocr_scope_graphic": "僅圖片字幕",
+  "video_setting_pause_ocr_scope_off": "關閉"
 }
