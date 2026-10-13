@@ -281,7 +281,10 @@ cd "$SRC"
 # `-safe` 是 concat demuxer 的私有选项：缺 concat 时 ffmpeg 报 "Unrecognized option
 # 'safe'" 直接退出，gal 片段（WebM / MP4 两档）在正式版全挂、只能靠调用方降级成动图。
 # 列表里的每一帧再经上面的 image2（按扩展名）+ mjpeg 解码器读入。LGPL，体积增量近零。
-DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe,hls,concat"
+# aiff：macOS 把音频 CD 挂载成 `/Volumes/<盘名>/N Audio Track.aiff`（cddafs），抓轨导入
+# （BUG-3312，audio_cd_ripper.dart）要把它读出来转 FLAC；样本 PCM 是大端 pcm_s16be，
+# 解码器早已在 DECODERS 里。缺它 ffmpeg 报 "Invalid data found when processing input"。
+DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe,hls,concat,aiff"
 # libdav1d（而不是原生 `av1`）：FFmpeg 自带的 `av1` 解码器**只是 hwaccel 挂钩壳**
 # （libavcodec/av1dec.c，allcodecs.c 里注明 "hwaccel hooks only, so prefer external
 # decoders"），本 build `--disable-everything` 后一个 hwaccel 都没有，于是任何 AV1 源
@@ -311,7 +314,9 @@ DECODERS="h264,hevc,libdav1d,vp9,vp8,mpeg4,mpeg2video,mpeg1video,flv,rv10,rv20,r
 # 一族能内嵌；AV1 片段（libsvtav1）同样配 Opus 音轨。二者 BSD 许可。
 # ⚠️ CI 需装 libvpx / opus 开发包（MSYS2: mingw-w64-x86_64-{libvpx,opus}；apt: libvpx-dev
 # libopus-dev）；macOS 在 build_darwin_static_deps 里静态自编。
-ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,libvpx_vp9,libopus,ass,ssa,subrip,webvtt,movtext,pcm_s16le"
+# flac：音频 CD 抓轨（BUG-3312）把 CDDA / AIFF 无损存成 FLAC（体积约为 WAV 的一半），
+# 与 MUXERS 里的 flac 成对；FFmpeg 原生编码器，LGPL，体积增量很小。
+ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,libvpx_vp9,libopus,ass,ssa,subrip,webvtt,movtext,pcm_s16le,flac"
 # pcm_s16le：能量探针（audio_energy_probe.dart，TODO-701）用 `-f null -`；null muxer 的
 # 默认音频编码器是 pcm_s16le，缺它会报 "Default encoder for format null (codec pcm_s16le)
 # is probably disabled ... Encoder not found"，探针在三平台全挂（TODO-1096）。
@@ -333,7 +338,9 @@ ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,libvpx_vp9,li
 # sup：图形字幕整轨 OCR（graphic_subtitle_track_ocr.dart）把 PGS 轨 `-c copy -f sup`
 # 原样抽成 `.sup` 段流再由 Dart 解析。supenc.c 只是给每段补 `PG`+PTS/DTS 头，LGPL、
 # 几十行；缺它 ffmpeg 报 "Requested output format 'sup' is not known"（exit -22）。
-MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts,sup"
+# flac：音频 CD 抓轨输出 `Track NN.flac`（BUG-3312），缺它报 "Requested output format
+# 'flac' is not known"。
+MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,webm,srt,ass,webvtt,null,mpegts,sup,flac"
 # pad：有声书片段导出（buildFfmpegImageAudioToVideoArgs）用
 #   `scale=W:H:force_original_aspect_ratio=decrease,pad=W:H:(ow-iw)/2:(oh-ih)/2:color=black`
 #   把文本图缩进框内再黑边填充到精确 WxH；漏 pad → "No option name near '...'" +
