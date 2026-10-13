@@ -484,8 +484,6 @@ class VideoPlayerController extends ChangeNotifier
   /// 挂过 `sub-start` / `sub-end` 观测的 Player（每个 Player 只挂一次）。
   Player? _graphicLiveObservedPlayer;
 
-  /// 观测回调最近一次带来的 `sub-start` / `sub-end` 原始值（每帧都回调，按值去重）。
-  final Map<String, String> _graphicLiveLastRaw = <String, String>{};
   bool _graphicLiveSampleRunning = false;
   bool _graphicLiveSampleAgain = false;
 
