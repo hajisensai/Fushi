@@ -11,7 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 1. 不再用 `_buildSectionHeader` 渲染 `t.srt_books_section` / `t.section_epub`；
 /// 2. SRT 与 EPUB 合并进同一网格：把 srtBooks 与 epubBooks 各自构造成
 ///    `_ShelfBookSlot` payload 合进单一 `shelfGroups`（TODO-616 A2 分组 + 跨类型排序），
-///    再用 `itemCount: shelfGroups.length` 渲染——证明两类卡（+ 系列卡）进同一个
+///    再用 `itemCount: groups.length` 渲染——证明两类卡（+ 合集格子）进同一个
 ///    itemCount 网格、无分区头。
 ///
 /// 注：视频分区头 `t.shelf_video_section` 与 `_buildSectionHeader` 已随书架视频
@@ -77,18 +77,18 @@ void main() {
       reason: 'SRT 与 EPUB 必须构造进同一合并列表（无类型分区）',
     );
     // 单一 shelfGroups 交给 _buildShelfGroupSlivers 分区渲染（去碎片方案 A：
-    // 合集横排行集中在前、散书单一网格在后）。SRT/EPUB 仍在同一合并列表、同一
-    // 网格混排（itemCount: loose.length），**依旧没有按类型拆的分区头**——本守卫
-    // 保护的不变量不变，渲染载体从交错 slivers 换成分区 slivers。
+    // 合集格子与散书同一 SliverGrid）。SRT/EPUB 仍在同一合并列表、同一网格混排
+    // （itemCount: groups.length），**依旧没有按类型拆的分区头**——本守卫保护的
+    // 不变量不变，渲染载体从交错 slivers 换成分区 slivers。
     expect(
       body.contains('..._buildShelfGroupSlivers('),
       isTrue,
       reason: '单一合并 shelfGroups 必须整体交给分区渲染（无类型拆分）',
     );
     expect(
-      body.contains('itemCount: loose.length'),
+      body.contains('itemCount: groups.length'),
       isTrue,
-      reason: '散书（SRT+EPUB 混排）共用同一个网格',
+      reason: '合集格子与散书（SRT+EPUB 混排）共用同一个网格',
     );
   });
 }
