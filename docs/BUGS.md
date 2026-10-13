@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3320](bugs/BUG-3320-lookup-header-buttons-overlap.md) | ✅ | ✅ | 查词弹窗窄宽时按钮组压住词头 |
 | [BUG-3319](bugs/BUG-3319-graphic-subtitle-mining-black-frame.md) | ✅ | ✅ | 图形字幕制卡只有黑色静图、无同步视频和句子音频 |
 | [BUG-3318](bugs/BUG-3318-graphic-ocr-card-no-apple-surface.md) | ✅ | ✅ | 图形字幕OCR进度卡在Apple与墨水屏下不走播放器浮层表面 |
 | [BUG-3317](bugs/BUG-3317-bitmap-subtitle-oversize-oom.md) | ✅ | ✅ | 位图字幕对象声明超大尺寸时一次分配数GB平面 |
@@ -40,7 +41,6 @@
 | [BUG-3308](bugs/BUG-3308-popup-round-button-press-square.md) | ✅ | ✅ | 查词弹窗点「+」制卡按钮时闪出完全直角的方块 |
 | [BUG-3277](bugs/BUG-3277-zip-unicode-path-extra.md) | ✅ | ✅ | Yomitan zip 的 Info-ZIP Unicode Path(0x7075) 文件名被忽略，大辞林 24 张图缺失 |
 | [BUG-3276](bugs/BUG-3276-bitmap-subs-remote-timing-ocr.md) | ✅ | ✅ | VobSub/DVB 图形字幕与远程播放没有逐句时间与整轨 OCR |
-| [BUG-3275](bugs/BUG-3275-lookup-header-buttons-overlap.md) | ✅ | ✅ | 查词弹窗窄宽时按钮组压住词头 |
 | [BUG-3275](bugs/BUG-3275-graphic-subtitle-ocr-duplicate-slow.md) | ✅ | ✅ | 图形字幕整轨OCR文字重复且极慢 |
 | [BUG-3274](bugs/BUG-3274-popup-switch-word-false-empty.md) | ✅ | ✅ | 视频页换词时查词弹窗先闪「未找到」、滑动掉帧 |
 | [BUG-3273](bugs/BUG-3273-ocr-progress-card-contrast.md) | ✅ | ✅ | 图形字幕转文字进度卡浅色主题下文字看不清且无法收起 |
