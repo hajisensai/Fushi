@@ -138,7 +138,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
 
     _rebuild(() => _lyricsModeTransition = true);
     try {
-      await ReaderFushiSource.instance.setLyricsMode(entering);
+      await ReaderFushiSource.instance
+          .setLyricsModeForBook(widget.bookKey, entering);
 
       if (entering) {
         // 覆盖层架构：正文 WebView 不卸载、不换文档，只在它上面盖一层歌词。进入前
@@ -242,6 +243,11 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       currentColorOverride: _lyricsCustomHighlightColor(),
       sweep: ReaderFushiSource.instance.lyricsSweep,
       followLabel: t.audiobook_follow_audio,
+      // 标点字形 / 竖排朝向与正文同源（BUG-3281）：同一份内容语言字体链、同一个
+      // 竖排字形朝向设置。
+      contentLanguage: _contentLanguage,
+      verticalTextOrientation:
+          ReaderFushiSource.readerSettings?.verticalTextOrientation ?? 'mixed',
     );
 
     if (!mounted ||

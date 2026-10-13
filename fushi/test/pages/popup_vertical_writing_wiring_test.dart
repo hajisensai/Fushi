@@ -34,14 +34,19 @@ void main() {
     final String src =
         read('lib/src/pages/implementations/reader_fushi_page.dart');
     expect(
-        RegExp(r'popupVerticalWriting\s*=>[\s\S]{0,80}writingMode')
+        RegExp(r'popupVerticalWriting\s*=>[\s\S]{0,220}writingMode')
             .hasMatch(src),
         isTrue,
         reason: 'reader 必须用 _settings.writingMode 决定竖排避让');
-    expect(src.contains('_lyricsMode'), isTrue);
-    // getter 必须用 !_lyricsMode 门控，歌词模式（横排渲染）不套竖排避让
-    expect(RegExp(r'popupVerticalWriting\s*=>\s*!_lyricsMode').hasMatch(src),
+    // BUG-3279：歌词有自己的竖排开关，歌词模式按它判（不再一律横排）。判据在
+    // 纯函数 readerPopupVerticalWriting，行为测试见
+    // test/media/audiobook/lyrics_mode_feedback_batch_test.dart。
+    expect(
+        RegExp(r'popupVerticalWriting\s*=>\s*readerPopupVerticalWriting\('
+                r'[\s\S]{0,80}lyricsMode:\s*_lyricsMode'
+                r'[\s\S]{0,120}lyricsVerticalWriting')
+            .hasMatch(src),
         isTrue,
-        reason: '歌词模式恒横排，popupVerticalWriting 必须 !_lyricsMode 门控');
+        reason: '歌词模式必须按 lyricsVerticalWriting 判竖排避让');
   });
 }

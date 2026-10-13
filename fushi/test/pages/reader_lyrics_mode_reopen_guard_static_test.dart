@@ -32,8 +32,9 @@ void main() {
       initSource,
       contains(
           '_pendingLyricsRestore =\n'
-            '        _sourceReviewSession == null && '
-            'ReaderFushiSource.instance.lyricsMode;'),
+            '        _sourceReviewSession == null &&\n'
+            '        ReaderFushiSource.instance'
+            '.lyricsModeForBook(widget.bookKey);'),
       reason: 'fresh open 应把持久化歌词模式记成待恢复意图。',
     );
     expect(

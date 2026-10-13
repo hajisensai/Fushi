@@ -250,7 +250,10 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       // 「_audiobookController == null → 关歌词」是同一条不变式。
       if (_lyricsMode) {
         _lyricsMode = false;
-        await ReaderFushiSource.instance.setLyricsMode(false);
+        await ReaderFushiSource.instance.setLyricsModeForBook(
+          widget.bookKey,
+          false,
+        );
       }
       return;
     }
@@ -302,7 +305,10 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
 
     if (_audiobookController == null && _lyricsMode) {
       _lyricsMode = false;
-      await ReaderFushiSource.instance.setLyricsMode(false);
+      await ReaderFushiSource.instance.setLyricsModeForBook(
+        widget.bookKey,
+        false,
+      );
     }
   }
 

@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2974 条。点号进各自文件。
+> 共 2978 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -42,6 +42,10 @@
 | [BUG-3308](bugs/BUG-3308-popup-round-button-press-square.md) | ✅ | ✅ | 查词弹窗点「+」制卡按钮时闪出完全直角的方块 |
 | [BUG-3284](bugs/BUG-3284-android-torrent-libcxx-shared.md) | ✅ | ✅ | Android 内置下载引擎 dlopen 失败被判缺少运行库 |
 | [BUG-3283](bugs/BUG-3283-floating-scrim-nested-hardedge-after-collapse.md) | ✅ | ✅ | 库页工具区收起后内容中间残留浅色横带（嵌套遮罩按恒定 inset 起画） |
+| [BUG-3282](bugs/BUG-3282-lyrics-scroll-layer-explosion.md) | ✅ | ✅ | 歌词滚动帧率低 |
+| [BUG-3281](bugs/BUG-3281-lyrics-punctuation-latin-font.md) | ✅ | ✅ | 歌词模式标点与引号字形与正文不一致 |
+| [BUG-3280](bugs/BUG-3280-lyrics-vertical-sweep-webkit-columns-vanish.md) | ✅ | ✅ | iOS竖排歌词播放时长句后几列消失 |
+| [BUG-3279](bugs/BUG-3279-lyrics-vertical-popup-squeezed.md) | ✅ | ✅ | 竖排歌词查词弹窗被压扁且上下乱跳 |
 | [BUG-3278](bugs/BUG-3278-video-continue-row-hover-side-clip.md) | ✅ | ✅ | 视频库继续观看横滚行悬停放大被视口左右裁剪 |
 | [BUG-3277](bugs/BUG-3277-zip-unicode-path-extra.md) | ✅ | ✅ | Yomitan zip 的 Info-ZIP Unicode Path(0x7075) 文件名被忽略，大辞林 24 张图缺失 |
 | [BUG-3276](bugs/BUG-3276-bitmap-subs-remote-timing-ocr.md) | ✅ | ✅ | VobSub/DVB 图形字幕与远程播放没有逐句时间与整轨 OCR |

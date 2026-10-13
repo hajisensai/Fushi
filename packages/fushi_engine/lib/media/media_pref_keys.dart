@@ -15,6 +15,15 @@ String dbSourcePrefKey(String sourceId, String key) => 'src:$sourceId:$key';
 /// 阅读器媒体源的持久化 id。
 const String kReaderSourcePersistedKey = 'reader_fushi';
 
+/// 阅读器「每本书独立记忆的歌词模式」短键前缀（`lyrics_mode_book_<bookKey>`），
+/// 存在阅读器源命名空间下。
+const String kLyricsModeBookPrefShortPrefix = 'lyrics_mode_book_';
+
+/// 同一组键在 DB 里的完整前缀
+/// （= `dbSourcePrefKey(kReaderSourcePersistedKey, kLyricsModeBookPrefShortPrefix)`）。
+/// 按书的阅读状态，Profile 快照按此前缀排除。
+const String kLyricsModeBookPrefDbPrefix = 'src:reader_fushi:lyrics_mode_book_';
+
 /// 书籍媒体标识前缀（`fushi://book/<bookKey>`）。
 const String kReaderBookIdentifierPrefix = 'fushi://book/';
 

@@ -1,0 +1,6 @@
+## BUG-3279 · 竖排歌词查词弹窗被压扁且上下乱跳
+- **报告**：2026-10-10 / 10-11 应用内反馈 #rg9J96D3TP（Windows：竖排歌词查词弹窗只露出极小一部分，时而在顶时而在底）、#lwUuW4AT59（Windows：点底部跨行的词，顶部弹出的查词框被挤得很小；反馈人自己判断「竖排歌词没适配竖排的查词弹出逻辑」）、#ykRclgOaRZ（Android：词同时出现在底部和顶部时查词窗口十分狭窄，希望改用左右两侧）
+- **真实性**：✅ 真 bug。`fushi/lib/src/pages/implementations/reader_fushi_page.dart:2573`（修前）`popupVerticalWriting => !_lyricsMode && (_settings?.writingMode…)`：歌词模式一律按横排定位弹窗。这条判据写于歌词只有横排的年代（`3ddc1fabd9`），TODO-907 之后歌词有了**独立**的竖排开关 `lyrics_vertical_writing`，判据却没跟上。竖排歌词里被查的词跨列（前半在右列列底、后半在左列列顶）时，选区并集矩形几乎贯穿整屏高度，`calcPopupPosition` 的横排分支（`dictionary_popup_layer.dart` `placeAboveBelow`）上下两侧都只剩几像素，弹窗被压成一条细缝，并在「上面剩 2px / 下面剩 0px」之间随点击位置换边——即三条反馈描述的现象。
+- **[x] ① 已修复** — 判据收成纯函数 `readerPopupVerticalWriting`（`reader_fushi_page.dart`）：歌词模式按 `ReaderFushiSource.lyricsVerticalWriting` 判，正文照旧按 `writing_mode` 判。竖排时走既有的「当前列左 / 右侧避让」分支（与正文竖排同一条路径）。提交 `9880325ff1`（分支 `cc/fb-lyrics-mode`）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/audiobook/lyrics_mode_feedback_batch_test.dart`（`BUG-3279` 组）：纯函数四种组合；跨列选区矩形下横排分支高度 < 20px（修前行为）、竖排分支给出完整 400×400 且不与选区相交。`fushi/test/pages/popup_vertical_writing_wiring_test.dart` 守卫改为要求 getter 经 `readerPopupVerticalWriting` 并传入 `lyricsVerticalWriting`。
+- **备注**：没有真机复测（本批只做到 Dart 侧行为测试）。
