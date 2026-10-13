@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -9,10 +10,7 @@ void main() {
   const String endpoint = 'https://logs.example.com/api/logs';
   const String token = 'test-token';
 
-  Future<LogUploadOutcome> run(
-    MockClient client, {
-    String log = 'hello log',
-  }) {
+  Future<LogUploadOutcome> run(MockClient client, {String log = 'hello log'}) {
     return performLogUpload(
       log: log,
       kind: 'error',
@@ -23,6 +21,7 @@ void main() {
       device: 'Pixel 7 / Android 14',
       tsIso: '2026-06-06T12:34:56Z',
       client: client,
+      retryBackoff: const <Duration>[Duration.zero, Duration.zero],
     );
   }
 
@@ -83,29 +82,78 @@ void main() {
       final Map<String, dynamic> body =
           jsonDecode(seen.body) as Map<String, dynamic>;
       final String sentLog = body['log'] as String;
-      expect(utf8.encode(sentLog).length, lessThanOrEqualTo(512 * 1024),
-          reason: 'pad=$pad 时截断结果超限');
-      expect(sentLog.contains('�'), isFalse,
-          reason: 'pad=$pad 时出现替换符，说明切点没对齐字符边界');
+      expect(
+        utf8.encode(sentLog).length,
+        lessThanOrEqualTo(512 * 1024),
+        reason: 'pad=$pad 时截断结果超限',
+      );
+      expect(
+        sentLog.contains('�'),
+        isFalse,
+        reason: 'pad=$pad 时出现替换符，说明切点没对齐字符边界',
+      );
       expect(sentLog, contains('[truncated]'));
     }
   });
 
   test('401 → unauthorized', () async {
-    final MockClient client =
-        MockClient((http.Request req) async => http.Response('no', 401));
+    final MockClient client = MockClient(
+      (http.Request req) async => http.Response('no', 401),
+    );
     expect((await run(client)).kind, LogUploadStatus.unauthorized);
   });
 
   test('413 → tooLarge', () async {
-    final MockClient client =
-        MockClient((http.Request req) async => http.Response('too big', 413));
+    final MockClient client = MockClient(
+      (http.Request req) async => http.Response('too big', 413),
+    );
     expect((await run(client)).kind, LogUploadStatus.tooLarge);
   });
 
-  test('网络异常 → networkError', () async {
-    final MockClient client =
-        MockClient((http.Request req) async => throw Exception('boom'));
+  test('网络异常重试用尽 → networkError，共尝试 1 + 退避次数', () async {
+    int calls = 0;
+    final MockClient client = MockClient((http.Request req) async {
+      calls++;
+      throw const SocketException('connect timed out');
+    });
     expect((await run(client)).kind, LogUploadStatus.networkError);
+    expect(calls, 3);
+  });
+
+  test('瞬时失败（建连超时 / 5xx / 429）后重试成功', () async {
+    final List<Future<http.Response> Function()> replies =
+        <Future<http.Response> Function()>[
+          () async => throw const SocketException('connect timed out'),
+          () async => http.Response('bad gateway', 502),
+          () async => http.Response('{"id":"ok"}', 200),
+        ];
+    int calls = 0;
+    final MockClient client = MockClient(
+      (http.Request req) => replies[calls++](),
+    );
+    final LogUploadOutcome out = await run(client);
+    expect(out.kind, LogUploadStatus.success);
+    expect(out.id, 'ok');
+    expect(calls, 3);
+
+    calls = 0;
+    final MockClient limited = MockClient(
+      (http.Request req) async =>
+          calls++ == 0 ? http.Response('slow', 429) : http.Response('{}', 200),
+    );
+    expect((await run(limited)).kind, LogUploadStatus.success);
+    expect(calls, 2);
+  });
+
+  test('鉴权失败与超限不重试', () async {
+    for (final int code in <int>[401, 403, 413]) {
+      int calls = 0;
+      final MockClient client = MockClient((http.Request req) async {
+        calls++;
+        return http.Response('no', code);
+      });
+      await run(client);
+      expect(calls, 1, reason: 'HTTP $code 不应重发');
+    }
   });
 }
