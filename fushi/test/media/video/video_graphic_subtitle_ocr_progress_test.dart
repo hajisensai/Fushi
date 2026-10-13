@@ -139,6 +139,100 @@ void main() {
     expect(find.textContaining('Engine:'), findsNothing);
   });
 
+  testWidgets('BUG-3273 进度卡：浅色主题下文字仍是深底上的亮色', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      _host(
+        Align(
+          alignment: Alignment.topLeft,
+          child: VideoGraphicSubtitleOcrProgressCard(
+            state: const GraphicSubtitleOcrJobState(
+              phase: GraphicSubtitleOcrJobPhase.recognizing,
+              done: 3,
+              total: 12,
+              engineLabel: 'Local · CTC',
+            ),
+            onCancel: () {},
+          ),
+        ),
+        brightness: Brightness.light,
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    final Material card = tester.widget<Material>(
+      find.byKey(const ValueKey<String>('graphic_subtitle_ocr_progress_card')),
+    );
+    final double bg = card.color!.computeLuminance();
+    for (final String text in <String>[
+      t.video_subtitle_graphic_ocr_track,
+      t.video_subtitle_graphic_ocr_job_recognizing(
+        done: 3,
+        total: 12,
+        percent: 25,
+      ),
+      t.video_subtitle_graphic_ocr_job_engine(engine: 'Local · CTC'),
+    ]) {
+      final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+        find.text(text),
+      );
+      final Color fg = paragraph.text.style!.color!;
+      expect(
+        fg.computeLuminance(),
+        greaterThan(bg + 0.3),
+        reason: '「$text」在深色卡片上必须是亮色字',
+      );
+    }
+  });
+
+  testWidgets('进度卡可收起成小药丸，进度刷新不弹开，点药丸展开', (WidgetTester tester) async {
+    Widget card(int done) => _host(
+      Align(
+        alignment: Alignment.topLeft,
+        child: VideoGraphicSubtitleOcrProgressCard(
+          state: GraphicSubtitleOcrJobState(
+            phase: GraphicSubtitleOcrJobPhase.recognizing,
+            done: done,
+            total: 10,
+          ),
+          onCancel: () {},
+        ),
+      ),
+    );
+    const Key pill = ValueKey<String>('graphic_subtitle_ocr_progress_pill');
+    const Key full = ValueKey<String>('graphic_subtitle_ocr_progress_card');
+    await tester.pumpWidget(card(2));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byTooltip(t.video_subtitle_adjust_collapse));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byKey(full), findsNothing);
+    expect(find.byKey(pill), findsOneWidget);
+    expect(find.text('20%'), findsOneWidget);
+    await tester.pumpWidget(card(5));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byKey(full), findsNothing);
+    expect(find.text('50%'), findsOneWidget);
+    await tester.tap(find.byKey(pill));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byKey(full), findsOneWidget);
+    expect(find.byKey(pill), findsNothing);
+  });
+
+  test('边读边识别：抽轨阶段已有识别结果时报出条数', () {
+    const GraphicSubtitleOcrJobState s = GraphicSubtitleOcrJobState(
+      phase: GraphicSubtitleOcrJobPhase.extracting,
+      processed: Duration(minutes: 6),
+      duration: Duration(minutes: 24),
+      done: 17,
+      total: 20,
+    );
+    expect(
+      s.statusText(),
+      t.video_subtitle_graphic_ocr_job_extracting_live(percent: 25, done: 17),
+    );
+  });
+
   testWidgets('暂停 OCR 状态标记：识别中 / 已识别 / 空闲', (WidgetTester tester) async {
     Future<void> show(GraphicSubtitlePauseOcrStatus status) async {
       await tester.pumpWidget(
@@ -427,7 +521,10 @@ void main() {
           obscure: GraphicSubtitleObscure.blur,
           revealOnInteraction: true,
           lookupPopupVisible: false,
-          regionRequest: (videoPath: '/v/ep03.mkv', streamIndex: 0),
+          regionRequest: const GraphicSubtitleRegionRequest(
+            input: GraphicSubtitleInput.local('/v/ep03.mkv'),
+            streamIndex: 0,
+          ),
           // 位图框 = 假画面底部那行字（1920x1080 画布坐标），与 PGS 解析出的形状一致。
           regionLoader: _FixedRegionLoader(
             GraphicSubtitleRegionTrack(

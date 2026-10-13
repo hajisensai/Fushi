@@ -749,6 +749,13 @@ extension _VideoLayout on _VideoFushiPageState {
                             revealOnInteraction:
                                 appModel.videoSubtitleObscureReveal,
                             lookupPopupVisible: _hasVisiblePopup,
+                            // 网络流图形轨：与逐句时间表同一份抽取输入（同一个在途任务，
+                            // 整条流只读一遍）；本地文件由遮蔽层按路径推导。
+                            regionInput:
+                                controller.activeGraphicSubtitleRemoteInput,
+                            // 控制器已到手的位图时间表（逐句时间表同一份）：互联播放
+                            // 时 client 不读整片，按位图糊只能用它从 host 下回来的整轨。
+                            regionTrack: controller.graphicSubtitleRegionTrack,
                           ),
                         ),
                         // 图形字幕（PGS / VobSub / DVB）没有 cue：暂停时对画面做 OCR，

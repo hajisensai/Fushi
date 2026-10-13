@@ -11,6 +11,8 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' show Offset, Rect, Size;
 
@@ -21,7 +23,15 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
+import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart'
+    show
+        MangaAiOcrCropRequest,
+        applyMangaAiOcrText,
+        cropMangaAiOcrBlocks,
+        kMangaAiOcrBlocksPerRequest;
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRecognition, OcrRect;
 
 /// 识别不可用的原因（[GraphicSubtitleOcrUnavailable.reason]）。
 enum GraphicSubtitleOcrUnavailableReason {
@@ -119,48 +129,6 @@ class GraphicSubtitleOcrSession {
     return done.future;
   }
 
-  /// 识别一张图并**等待** AI 重读（整轨生成用：要的是最终文字，不是先给后换）。
-  /// 返回重读后的页（没有替换任何块则是本地页）；会话已关闭返回 null。AI 失败时
-  /// 保留本地文字，错误交 [onRefineError]。
-  Future<MokuroImage?> recognizePage(
-    Uint8List imageBytes, {
-    void Function(Object error, StackTrace stack)? onRefineError,
-  }) {
-    final Completer<MokuroImage?> done = Completer<MokuroImage?>();
-    _tail = _tail.then((_) async {
-      try {
-        done.complete(await _recognizePageOne(imageBytes, onRefineError));
-      } catch (error, stack) {
-        done.completeError(error, stack);
-      }
-    });
-    return done.future;
-  }
-
-  Future<MokuroImage?> _recognizePageOne(
-    Uint8List imageBytes,
-    void Function(Object error, StackTrace stack)? onRefineError,
-  ) async {
-    if (_closed) return null;
-    final MangaStreamOcrReady ready = await _ensureReady();
-    if (_closed) return null;
-    final File file = File(p.join(_dir!.path, 'frame_${_frameSeq++}.png'));
-    await file.writeAsBytes(imageBytes, flush: true);
-    try {
-      final MokuroImage local = await ready.recognizer.recognize(file);
-      final MangaStreamAiRefinement? ai = ready.ai;
-      if (ai == null || _closed) return local;
-      try {
-        return await ai.refine(local, file) ?? local;
-      } catch (error, stack) {
-        onRefineError?.call(error, stack);
-        return local;
-      }
-    } finally {
-      await _deleteQuietly(file);
-    }
-  }
-
   Future<GraphicSubtitleOcrFrame?> _recognizeOne(
     Uint8List frameBytes,
     void Function(GraphicSubtitleOcrFrame refined)? onRefined,
@@ -194,6 +162,242 @@ class GraphicSubtitleOcrSession {
           .whenComplete(() => _deleteQuietly(file)),
     );
     return graphicSubtitleOcrFrameOf(local);
+  }
+
+  // ── 整轨字幕识别（边看边识别）──────────────────────────────────────────────
+
+  final Map<String, _SubtitleEntry> _subtitleEntries =
+      <String, _SubtitleEntry>{};
+  final List<_SubtitleAiItem> _aiQueue = <_SubtitleAiItem>[];
+  final Set<Future<void>> _aiRunning = <Future<void>>{};
+  Timer? _aiFlushTimer;
+  int _aiTotal = 0;
+  int _aiDone = 0;
+  Completer<void>? _aiChanged;
+
+  /// 大模型重读进度：(已回, 已排队)。没开大模型恒为 (0, 0)。
+  ({int done, int total}) get subtitleAiProgress =>
+      (done: _aiDone, total: _aiTotal);
+
+  /// 整轨识别同时可在途几条：本机 ONNX 走文字图会话池，其它引擎（Lens / 系统
+  /// OCR）逐条串行。会触发引擎解析。
+  Future<int> subtitleParallelism() async {
+    final MangaStreamOcrReady ready = await _ensureReady();
+    final MangaStreamPageRecognizer recognizer = ready.recognizer;
+    return recognizer is MangaStreamTextImageRecognizer
+        ? math.max(
+            1,
+            (recognizer as MangaStreamTextImageRecognizer).parallelism,
+          )
+        : 1;
+  }
+
+  /// 识别一条字幕位图（整轨用）。本地文字立即返回；开了大模型重读且这条按档位
+  /// 该送时，排进**跨条批量**队列（多条拼一次请求、几批并发），读回的新文字经
+  /// [onRefined] 再交一次——本地识别与大模型互不等待。
+  ///
+  /// 内容相同的位图（[BitmapSubtitleImage.contentKey]）只识别、只重读一次：后来的
+  /// 同图直接拿前一次的结果（已重读过就直接是重读后的文字）。会话已关闭返回 null。
+  Future<String?> recognizeSubtitleImage(
+    BitmapSubtitleImage image, {
+    void Function(String refined)? onRefined,
+    void Function(Object error, StackTrace stack)? onRefineError,
+  }) async {
+    if (_closed) return null;
+    final String key = image.contentKey;
+    final _SubtitleEntry? known = _subtitleEntries[key];
+    if (known != null) {
+      final String? refined = known.refined;
+      if (refined != null) return refined;
+      if (onRefined != null) known.listeners.add(onRefined);
+      return known.local;
+    }
+    final _SubtitleEntry entry = _SubtitleEntry();
+    if (onRefined != null) entry.listeners.add(onRefined);
+    _subtitleEntries[key] = entry;
+    final Future<String?> local = _recognizeSubtitleLocal(
+      image,
+      entry,
+      onRefineError,
+    );
+    entry.local = local;
+    try {
+      return await local;
+    } catch (_) {
+      // 失败的不留在去重表里，同图下次重试。
+      if (identical(_subtitleEntries[key], entry)) _subtitleEntries.remove(key);
+      rethrow;
+    }
+  }
+
+  Future<String?> _recognizeSubtitleLocal(
+    BitmapSubtitleImage image,
+    _SubtitleEntry entry,
+    void Function(Object error, StackTrace stack)? onRefineError,
+  ) async {
+    final MangaStreamOcrReady ready = await _ensureReady();
+    if (_closed) return null;
+    final MangaStreamPageRecognizer recognizer = ready.recognizer;
+    final MokuroRect full = MokuroRect.fromLTRB(
+      0,
+      0,
+      image.width.toDouble(),
+      image.height.toDouble(),
+    );
+    final String text;
+    final MokuroBlock block;
+    if (recognizer case final MangaStreamTextImageRecognizer textual) {
+      final OcrRecognition read = await textual.recognizeTextImage(
+        image.rgba,
+        width: image.width,
+        height: image.height,
+      );
+      if (_closed) return null;
+      text = read.text.trim();
+      double lineHeight = 0;
+      for (final OcrRect box in read.lineBoxes ?? const <OcrRect>[]) {
+        lineHeight = math.max(lineHeight, box.height);
+      }
+      block = MokuroBlock(
+        rectangle: full,
+        isVertical: read.vertical,
+        fontSize: lineHeight > 0 ? lineHeight : image.height * 0.6,
+        zIndex: 0,
+        lines: read.lines ?? <String>[text],
+        confidence: read.confidence,
+      );
+    } else {
+      // Lens / 系统 OCR：只认图片文件，走页级入口。
+      final Uint8List png = await Isolate.run(image.encodePng);
+      if (_closed) return null;
+      final File file = File(p.join(_dir!.path, 'frame_${_frameSeq++}.png'));
+      await file.writeAsBytes(png, flush: true);
+      try {
+        final MokuroImage page = await recognizer.recognize(file);
+        if (_closed) return null;
+        text = page.blocks
+            .map((MokuroBlock b) => b.lines.join().trim())
+            .where((String s) => s.isNotEmpty)
+            .join('\n');
+      } finally {
+        await _deleteQuietly(file);
+      }
+      block = MokuroBlock(
+        rectangle: full,
+        isVertical: false,
+        fontSize: image.height * 0.6,
+        zIndex: 0,
+        lines: <String>[text],
+      );
+    }
+    final MangaStreamAiRefinement? ai = ready.ai;
+    if (ai != null && text.isNotEmpty && ai.wants(block)) {
+      _enqueueAi(
+        _SubtitleAiItem(
+          entry: entry,
+          block: block,
+          crop: Isolate.run(() => graphicSubtitleAiCrop(image)),
+          onError: onRefineError,
+        ),
+        ai,
+      );
+    }
+    return text;
+  }
+
+  void _enqueueAi(_SubtitleAiItem item, MangaStreamAiRefinement ai) {
+    _aiQueue.add(item);
+    _aiTotal++;
+    _signalAi();
+    if (_aiQueue.length >= kMangaAiOcrBlocksPerRequest) {
+      _flushAi(ai);
+    } else {
+      _aiFlushTimer ??= Timer(kGraphicSubtitleAiBatchDelay, () => _flushAi(ai));
+    }
+  }
+
+  /// 攒满一批或等够 [kGraphicSubtitleAiBatchDelay] 就发；同时在途最多
+  /// [kGraphicSubtitleAiConcurrency] 批。
+  void _flushAi(MangaStreamAiRefinement ai) {
+    _aiFlushTimer?.cancel();
+    _aiFlushTimer = null;
+    while (_aiQueue.isNotEmpty &&
+        _aiRunning.length < kGraphicSubtitleAiConcurrency &&
+        !_closed) {
+      final int n = math.min(kMangaAiOcrBlocksPerRequest, _aiQueue.length);
+      final List<_SubtitleAiItem> batch = _aiQueue.sublist(0, n);
+      _aiQueue.removeRange(0, n);
+      late final Future<void> running;
+      running = _runAiBatch(batch, ai).whenComplete(() {
+        _aiRunning.remove(running);
+        _signalAi();
+        if (_aiQueue.isNotEmpty) _flushAi(ai);
+      });
+      _aiRunning.add(running);
+    }
+  }
+
+  Future<void> _runAiBatch(
+    List<_SubtitleAiItem> batch,
+    MangaStreamAiRefinement ai,
+  ) async {
+    try {
+      final List<Uint8List?> crops = await Future.wait(<Future<Uint8List?>>[
+        for (final _SubtitleAiItem item in batch) item.crop,
+      ]);
+      final List<int> sent = <int>[
+        for (int i = 0; i < batch.length; i++)
+          if (crops[i] != null) i,
+      ];
+      if (sent.isEmpty || _closed) return;
+      final List<String?> texts = await ai.refineCrops(<MangaAiOcrCropRequest>[
+        for (final int i in sent)
+          MangaAiOcrCropRequest(crop: crops[i]!, block: batch[i].block),
+      ]);
+      if (_closed) return;
+      for (int k = 0; k < sent.length; k++) {
+        final String? raw = texts[k];
+        if (raw == null) continue;
+        final _SubtitleAiItem item = batch[sent[k]];
+        final String refined = applyMangaAiOcrText(
+          item.block,
+          raw,
+        ).lines.join().trim();
+        if (refined.isEmpty) continue;
+        item.entry.refined = refined;
+        for (final void Function(String) listener in item.entry.listeners) {
+          listener(refined);
+        }
+      }
+    } catch (error, stack) {
+      if (!_closed) batch.first.onError?.call(error, stack);
+    } finally {
+      _aiDone += batch.length;
+    }
+  }
+
+  void _signalAi() {
+    final Completer<void>? changed = _aiChanged;
+    _aiChanged = null;
+    changed?.complete();
+  }
+
+  /// 等排队与在途的大模型重读全部回来（整轨收尾写 SRT 前调用）。[onProgress] 在
+  /// 每批回来时报 (已回, 总数)。会话关闭立即返回。
+  Future<void> drainSubtitleRefinements({
+    void Function(int done, int total)? onProgress,
+  }) async {
+    while (!_closed && (_aiQueue.isNotEmpty || _aiRunning.isNotEmpty)) {
+      if (_aiQueue.isNotEmpty && _aiRunning.isEmpty) {
+        final MangaStreamAiRefinement? ai = (await _ensureReady()).ai;
+        if (ai == null) break;
+        _flushAi(ai);
+      }
+      onProgress?.call(_aiDone, _aiTotal);
+      final Completer<void> changed = _aiChanged ??= Completer<void>();
+      await changed.future;
+    }
+    onProgress?.call(_aiDone, _aiTotal);
   }
 
   Future<MangaStreamOcrReady> _ensureReady() async {
@@ -231,6 +435,10 @@ class GraphicSubtitleOcrSession {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
+    _aiFlushTimer?.cancel();
+    _aiFlushTimer = null;
+    _aiQueue.clear();
+    _signalAi();
     final Future<MangaStreamOcrSetup>? setup = _setup;
     if (setup != null) {
       try {
@@ -253,6 +461,50 @@ class GraphicSubtitleOcrSession {
     }
   }
 }
+
+/// 字幕大模型重读：攒批的最长等待。攒满 [kMangaAiOcrBlocksPerRequest] 条立即发。
+const Duration kGraphicSubtitleAiBatchDelay = Duration(milliseconds: 800);
+
+/// 字幕大模型重读：同时在途的批数（每批一次请求）。
+const int kGraphicSubtitleAiConcurrency = 3;
+
+class _SubtitleEntry {
+  Future<String?>? local;
+  String? refined;
+  final List<void Function(String refined)> listeners =
+      <void Function(String refined)>[];
+}
+
+class _SubtitleAiItem {
+  _SubtitleAiItem({
+    required this.entry,
+    required this.block,
+    required this.crop,
+    required this.onError,
+  });
+
+  final _SubtitleEntry entry;
+  final MokuroBlock block;
+  final Future<Uint8List?> crop;
+  final void Function(Object error, StackTrace stack)? onError;
+}
+
+/// 字幕位图 → 交给大模型的裁图（与漫画同一套外扩 / 缩放规则）。顶层函数：给
+/// `Isolate.run` 用。
+Uint8List? graphicSubtitleAiCrop(BitmapSubtitleImage image) =>
+    cropMangaAiOcrBlocks(
+      image.encodePng(),
+      pageWidth: image.width.toDouble(),
+      pageHeight: image.height.toDouble(),
+      boxes: <MokuroRect>[
+        MokuroRect.fromLTRB(
+          0,
+          0,
+          image.width.toDouble(),
+          image.height.toDouble(),
+        ),
+      ],
+    ).single;
 
 Future<void> _deleteQuietly(File file) async {
   try {

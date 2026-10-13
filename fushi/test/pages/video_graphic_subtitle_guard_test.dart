@@ -49,10 +49,15 @@ void main() {
 
   test('控制器有图形轨画面渲染入口 + load 恢复参数', () {
     final String src = read('lib/src/media/video/video_player_controller.dart');
+    // 首个位置参数仍是轨序号；可选的 `timingInput` 指定逐句时间表的整轨来源（互联
+    // host 回传的整轨等，缺省按播放源推导）——不许变成必填、也不许丢掉轨序号。
     expect(
-      src.contains('Future<bool> selectEmbeddedGraphicTrack(int streamIndex)'),
+      RegExp(
+        r'Future<bool> selectEmbeddedGraphicTrack\(\s*int streamIndex,\s*\{\s*'
+        r'GraphicSubtitleTimingInput\? timingInput,\s*\}\)',
+      ).hasMatch(src),
       isTrue,
-      reason: '应有把图形轨交给 libmpv 渲染的方法',
+      reason: '应有把图形轨交给 libmpv 渲染的方法（轨序号 + 可选整轨时间表来源）',
     );
     expect(
       src.contains('int? renderGraphicStreamIndex'),
@@ -100,20 +105,55 @@ void main() {
       greaterThan(tile),
       reason: '按钮应触发整轨 OCR',
     );
-    final int method = src.indexOf(
+    // 本地入口：取数与控制器逐句时间表同一口径，再交共用流程。
+    final int local = src.indexOf(
       'Future<void> _generateSubtitleFromGraphicTrack(',
     );
+    expect(local, greaterThan(-1));
+    final String localBody = src.substring(
+      local,
+      src.indexOf('\n  }\n', local),
+    );
+    expect(
+      RegExp(
+        r'_graphicTrackOcrInput\(\s*controller,\s*source,?\s*\)',
+      ).hasMatch(localBody),
+      isTrue,
+    );
+    expect(localBody.contains('_runGraphicTrackOcr('), isTrue);
+    // 取数口径：图形轨 + 可解码编码（PGS / VobSub / DVB）+ 控制器推导出的输入。
+    final int inputAt = src.indexOf(
+      'GraphicSubtitleTimingInput? _graphicTrackOcrInput(',
+    );
+    expect(inputAt, greaterThan(-1));
+    final String inputBody = src.substring(
+      inputAt,
+      src.indexOf('\n  }\n', inputAt),
+    );
+    expect(
+      inputBody.contains('graphicSubtitleTrackOcrSupportsCodec(source.codec)'),
+      isTrue,
+    );
+    expect(
+      inputBody.contains('controller.graphicSubtitleTimingInputForTrack('),
+      isTrue,
+    );
+    final int method = src.indexOf('Future<void> _runGraphicTrackOcr(');
     expect(method, greaterThan(-1));
     final String body = src.substring(method, src.indexOf('\n  }\n', method));
-    // 抽轨成 .sup → 解析 → 识别（AI 重读与漫画同一引擎装配）→ SRT。
+    // 取整轨载荷（带编码的抽轨 / host 整轨）→ 按轨头解码 → 识别（AI 重读与漫画同一
+    // 引擎装配）→ SRT。
     for (final String step in <String>[
-      'extractGraphicSubtitleTrackToSup(',
-      'PgsSubtitleParser.parse(',
+      'materializeGraphicSubtitleTrack(',
+      'readGraphicSubtitleTrackInBackground(',
       'prepare: _prepareGraphicSubtitleOcr',
-      'recognizeGraphicSubtitleCues(',
+      // 边抽边识别：识别出的字实时补进可点字幕。
+      'recognizeGraphicSubtitleCuesLive(',
+      'controller.setCues(live)',
       'buildGraphicSubtitleSrt(',
-      // 产物与 ASR 同口径：当外挂文字字幕加载，播放中即可点字查词。
-      '_importExternalSubtitle(controller, target)',
+      // 产物与 ASR 同口径：当外挂文字字幕加载，播放中即可点字查词（本地入口传
+      // `_importExternalSubtitle`，远端入口传 `_applyRemoteSubtitle`）。
+      'await applyResult(target);',
       'on GraphicSubtitleOcrUnavailable',
       'await session.close();',
     ]) {
@@ -121,6 +161,53 @@ void main() {
     }
     // 取消判据：换集 / 换播放器 / 离开页面即停。
     expect(body.contains('isCancelled: () => !isCurrent()'), isTrue);
+    expect(
+      RegExp(
+        r'applyResult: \(String target\) =>\s*_importExternalSubtitle\(controller, target\)',
+      ).hasMatch(localBody),
+      isTrue,
+    );
+  });
+
+  test('远端图形轨也有整轨 OCR 入口：互联下 host 整轨、其它按流地址 + 请求头', () {
+    final String src = readVideoFushiSource();
+    expect(
+      RegExp(
+        r'_generateSubtitleFromRemoteGraphicTrack\(\s*controller,\s*track,?\s*\)',
+      ).hasMatch(src),
+      isTrue,
+      reason: '远端字幕轨行下应有整轨 OCR 按钮',
+    );
+    final int at = src.indexOf(
+      'GraphicSubtitleTimingInput? _remoteGraphicTrackOcrInput(',
+    );
+    expect(at, greaterThan(-1));
+    final String body = src.substring(at, src.indexOf('\n  }\n', at));
+    // 互联：下载 host 抽好的整轨，绝不读整片流。
+    expect(
+      body.contains('client is RemoteVideoGraphicSubtitleTrackFetch'),
+      isTrue,
+    );
+    expect(body.contains('buildRemoteGraphicSubtitleTimingInput('), isTrue);
+    // 媒体服务器 / URL 流：控制器同一口径（流地址 + 播放会话请求头）。
+    expect(
+      body.contains('controller.graphicSubtitleTimingInputForTrack('),
+      isTrue,
+    );
+    // 互联分支必须先于流地址分支 return。
+    expect(
+      body.indexOf('buildRemoteGraphicSubtitleTimingInput('),
+      lessThan(body.indexOf('controller.graphicSubtitleTimingInputForTrack(')),
+    );
+    final int run = src.indexOf(
+      'Future<void> _generateSubtitleFromRemoteGraphicTrack(',
+    );
+    final String runBody = src.substring(run, src.indexOf('\n  }\n', run));
+    expect(runBody.contains('_runGraphicTrackOcr('), isTrue);
+    expect(
+      runBody.contains('_applyRemoteSubtitle(controller, target)'),
+      isTrue,
+    );
   });
 
   test('图形分支在加载遮罩之前 return，不弹遮罩（瞬时切轨）', () {

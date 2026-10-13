@@ -9,7 +9,7 @@
 /// 内没有任何推进，才算卡死。
 ///
 /// 调用方要让进度在整个文件里连续推进：只映射稀疏的字幕流时，`out_time_us` 只在字幕
-/// 包处跳一下（长段无对白就几分钟不动）。见 `graphic_subtitle_track_ocr.dart` 的做法：
+/// 包处跳一下（长段无对白就几分钟不动）。见 `bitmap_subtitle/graphic_subtitle_track_extract.dart` 的做法：
 /// 同一次读文件里再加一个 `-f null` 输出拷贝视频包，进度就跟随文件读取位置。
 library;
 

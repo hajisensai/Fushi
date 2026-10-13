@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show Rect;
+import 'dart:ui' show Rect, Size;
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
@@ -18,7 +18,14 @@ import 'package:fushi/src/media/video/mpv_cache_snapshot.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show CachedMediaSnapshot;
 import 'package:fushi/src/models/preferences_repository.dart' show VideoFitMode;
+import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_track.dart'
+    show bitmapSubtitleTrackHeaderPath;
+import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dart'
+    show BitmapSubtitleCue;
+import 'package:fushi_engine/media/video/bitmap_subtitle/graphic_subtitle_track_extract.dart'
+    show extractGraphicSubtitleTrack, readGraphicSubtitleTrackInBackground;
 import 'package:fushi/src/media/video/player_decoded_subtitle_cues.dart';
+import 'package:fushi/src/media/video/video_graphic_subtitle_regions.dart';
 import 'package:fushi/src/media/video/video_playback_source.dart';
 import 'package:fushi/src/media/video/video_shader_manager.dart';
 import 'package:fushi_engine/media/metadata/credential_redaction.dart'
@@ -40,6 +47,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path/path.dart' as p;
 
 part 'video_disc_menu.part.dart';
+part 'video_graphic_subtitle_timing.part.dart';
 
 @visibleForTesting
 String mediaUriForVideoPath(String path, {bool? windows}) {
@@ -443,6 +451,71 @@ class VideoPlayerController extends ChangeNotifier
   /// 关掉（[setGraphicSubtitleVisible]）；选图形轨时恒打开。
   bool _graphicSubtitleVisible = true;
 
+  /// BUG-3274：最近一次 [currentGraphicSubtitleCue] 产出的图形字幕锚点 cue。它不在
+  /// [cues] / [secondaryCues] 任一条流里，[cueStreamOwning] / [delayMsForCue] 按身份
+  /// 认出它，给出「它自成一条流、走主轨调轴」的口径（libmpv `sub-delay` = [_delayMs]）。
+  AudioCue? _graphicAnchorCue;
+
+  /// 图形字幕的**有效**逐句时间表（每句一个**无文字** cue，字幕文件时基，与 mpv
+  /// `sub-start` 同一根轴）＝整轨抽取结果 [_graphicExtractedTimingCues] 与边播边记
+  /// [_graphicLiveTimingCues] 的合并（[mergeGraphicSubtitleTimingTables]，见
+  /// `video_graphic_subtitle_timing.part.dart`）。
+  ///
+  /// 位图字幕本身就带着每句的显示起止（PGS 显示集的 PTS），只是 libmpv 自绘、Dart
+  /// 侧没有 cue；有了这张表，任何制卡入口（不只是暂停 OCR 点字）都能按播放位置
+  /// 锚到那一句，裁出句子音频 / 同步片段，padding 也按真实邻句夹边。
+  List<AudioCue> _graphicTimingCues = const <AudioCue>[];
+
+  /// 整轨抽取出的时间表（本地文件 / 互联 host 整轨 / 网络流抽取）。与「模糊遮蔽」共用
+  /// [graphicSubtitleRegionLoader] 的同一份结果 / 缓存。
+  List<AudioCue> _graphicExtractedTimingCues = const <AudioCue>[];
+
+  /// 边播边记的时间表：观测 mpv `sub-start` / `sub-end`，每显示一句记一句。
+  List<AudioCue> _graphicLiveTimingCues = const <AudioCue>[];
+
+  /// 边播边记里结束段还没解码（mpv 无 `sub-end`）、用了暂定时长的那句。
+  AudioCue? _graphicLiveProvisionalCue;
+
+  /// 整轨抽取的世代：每发起一次抽取 / 每次换轨换片 +1，迟到的结果按它丢弃。
+  int _graphicTimingGeneration = 0;
+
+  /// 边播边记的世代：换轨 / 换片 +1，在途采样按它丢弃。
+  int _graphicLiveGeneration = 0;
+
+  /// 挂过 `sub-start` / `sub-end` 观测的 Player（每个 Player 只挂一次）。
+  Player? _graphicLiveObservedPlayer;
+
+  /// 观测回调最近一次带来的 `sub-start` / `sub-end` 原始值（每帧都回调，按值去重）。
+  final Map<String, String> _graphicLiveLastRaw = <String, String>{};
+  bool _graphicLiveSampleRunning = false;
+  bool _graphicLiveSampleAgain = false;
+
+  /// 本次选轨由调用方显式给的整轨取数输入（互联 host 整轨）；null = 按播放源推导。
+  GraphicSubtitleTimingInput? _graphicTimingInputOverride;
+
+  /// 在途整轨抽取的取消信号（网络流抽取读整条流，换轨 / 换片 / 销毁时撤销）。
+  Completer<void>? _graphicTimingCancel;
+
+  /// 整轨抽取出的**位图时间表**（与 [_graphicExtractedTimingCues] 同一次结果，任何来源：
+  /// 本地文件 / 网络流 / 互联 host 回传的整轨）。换轨 / 换片清空。
+  final ValueNotifier<GraphicSubtitleRegionTrack?> _graphicRegionTrack =
+      ValueNotifier<GraphicSubtitleRegionTrack?>(null);
+
+  /// 当前图形轨已经到手的位图时间表（逐句起止 + 位图外包框）；还没有 / 不在图形模式为
+  /// null。模糊遮蔽层据此按位图糊——互联播放时这是唯一来源：client 不许为遮蔽再整片读
+  /// 流，只能用控制器已从 host 下回来的那一小份整轨（[GraphicSubtitleTimingHostTrack]）。
+  ValueListenable<GraphicSubtitleRegionTrack?> get graphicSubtitleRegionTrack =>
+      _graphicRegionTrack;
+
+  /// 本次 [load] 交给播放器的原始网络流地址（交给 native 之前，未经中继改写）与
+  /// 请求头；本地文件为 null / 空。网络流图形字幕整轨抽取以它为输入。
+  String? _mediaUri;
+  Map<String, String> _mediaHttpHeaders = const <String, String>{};
+
+  /// 当前图形轨的逐句时间表；不在图形模式 / 两条来源都还没有句子时为空。
+  List<AudioCue> get graphicSubtitleTimingCues =>
+      _graphicSubtitleActive ? _graphicTimingCues : const <AudioCue>[];
+
   /// 远端内嵌文本轨交给 libmpv **只解码不画**、文本经 `sub-text` 回流成可点 cue
   /// （[selectEmbeddedTextTrackViaPlayer]）时的订阅。非 null = 处于该模式；
   /// [setCues]（换字幕源）/ [load] / [dispose] 时取消。
@@ -738,6 +811,10 @@ class VideoPlayerController extends ChangeNotifier
 
   void _notifyDiscMenuChanged() => notifyListeners();
 
+  /// 图形字幕逐句时间表变了（`video_graphic_subtitle_timing.part.dart` 的扩展里调不到
+  /// 受保护的 [notifyListeners]）。
+  void _notifyGraphicTimingChanged() => notifyListeners();
+
   String? _bookUid;
 
   /// 视频文件绝对路径；制卡时按 cue 时间裁字幕音频片段用。
@@ -886,14 +963,31 @@ class VideoPlayerController extends ChangeNotifier
   /// 该流恒空 → 锚点 null → 制卡区间塌成 `0..0`：句子音频空、封面走 `atSeconds=0.0` 抽出
   /// 片头黑帧（用户报「制卡黑屏」）。副字幕本就是同构的 cue 流（TODO-1312 起与主字幕独立
   /// 求活动集、可逐字符查词），把「唯一的字幕流」这个隐含前提显式化即可，不加特例分支。
-  List<AudioCue> get miningCues => _cues.isNotEmpty ? _cues : _secondaryCues;
+  ///
+  /// 图形字幕模式下主流为空，但主字幕槽里的图形轨有逐句时间表
+  /// （[graphicSubtitleTimingCues]）：它就是主字幕的句子，排在副字幕流之前。
+  List<AudioCue> get miningCues {
+    if (_cues.isNotEmpty) return _cues;
+    final List<AudioCue> timings = graphicSubtitleTimingCues;
+    return timings.isNotEmpty ? timings : _secondaryCues;
+  }
 
   /// BUG-1592：[cue] 所属的那条流（按身份判定，主流优先）。两条流都不含它（列表面板的
   /// 合成 cue / 已换集的陈旧 cue）时回 [miningCues]，保持「至少落在当前有效流上」。
+  ///
+  /// BUG-3274：图形字幕锚点（[currentGraphicSubtitleCue]）自成一条单句流——它在
+  /// 两条文本流里都没有，回落 [miningCues] 会让 padding 按副字幕邻句夹边、上下文
+  /// 取到副字幕的句子。
   List<AudioCue> cueStreamOwning(AudioCue cue) {
     if (_cues.any((AudioCue c) => identical(c, cue))) return _cues;
     if (_secondaryCues.any((AudioCue c) => identical(c, cue))) {
       return _secondaryCues;
+    }
+    final List<AudioCue> timings = graphicSubtitleTimingCues;
+    if (timings.any((AudioCue c) => identical(c, cue))) return timings;
+    if (identical(cue, _graphicAnchorCue)) {
+      // 有时间表时锚点属于它（padding 按真实邻句夹边）；还没有时自成单句流。
+      return timings.isNotEmpty ? timings : <AudioCue>[cue];
     }
     return miningCues;
   }
@@ -1529,6 +1623,8 @@ class VideoPlayerController extends ChangeNotifier
     // 无条件执行，否则未 [load] 时关字幕不复位标志（回归 BUG-301）。
     final bool leavingGraphic = track.id == 'no' && _graphicSubtitleActive;
     if (track.id == 'no') _graphicSubtitleActive = false;
+    // 离开图形渲染：在途的整轨抽取（网络流要读整条流）随之撤销。
+    if (leavingGraphic) _cancelGraphicTimingFetch();
     final Player? player = _player;
     if (player == null) return; // 未 load：原生下发 no-op，标志已复位即可。
     // 关字幕（`no()`）是高频路径（[_selectSubtitleOff]）：await libmpv 原生下发期间用户
@@ -1560,7 +1656,14 @@ class VideoPlayerController extends ChangeNotifier
   /// 条，与 [currentAudioStreamIndex] 同范式）。等字幕轨列表就绪后选轨并清空可点
   /// overlay（图形轨无文本）。选中返回 true；未 [load] / 轨未就绪 / 序号越界返回
   /// false（调用方据此提示失败）。
-  Future<bool> selectEmbeddedGraphicTrack(int streamIndex) async {
+  ///
+  /// 选中后这条轨的逐句时间表从两条来源合成（见 `video_graphic_subtitle_timing.part.dart`）：
+  /// 边播边记恒开；整轨抽取按 [timingInput]（调用方显式给的来源，如互联 host 回传的
+  /// 整轨），缺省按当前播放源推导（本地文件 / 网络流）。
+  Future<bool> selectEmbeddedGraphicTrack(
+    int streamIndex, {
+    GraphicSubtitleTimingInput? timingInput,
+  }) async {
     claimDiscTrackOwnership();
     final Player? player = _player;
     if (player == null) return false;
@@ -1583,8 +1686,10 @@ class VideoPlayerController extends ChangeNotifier
         .where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no')
         .toList(growable: false);
     if (streamIndex < 0 || streamIndex >= real.length) return false;
-    // 图形字幕走 libmpv 画面渲染，清掉可点 overlay（无文本可查词）。
+    // 图形字幕走 libmpv 画面渲染，清掉可点 overlay（无文本可查词）。上一条图形轨的
+    // 逐句时间表作废（两张表清空、世代 +1，在途抽取撤销、迟到结果丢弃）。
     setCues(const <AudioCue>[]);
+    _resetGraphicTimingTables();
     await player.setSubtitleTrack(real[streamIndex]);
     if (!_isCurrentLoad(player, loadToken)) return false; // 选轨后换片/销毁。
     if (_discTitleGeneration != discGeneration) return false;
@@ -1621,6 +1726,17 @@ class VideoPlayerController extends ChangeNotifier
     );
     if (!_isCurrentLoad(player, loadToken)) return false;
     if (_discTitleGeneration != discGeneration) return false;
+    // 边播边记：挂 `sub-start` / `sub-end` 观测（每个 Player 一次），并先记下选轨时
+    // 正在显示的那句（观测只报之后的变化）。
+    await _ensureGraphicLiveObserver(player);
+    if (!_isCurrentLoad(player, loadToken)) return false;
+    if (_discTitleGeneration != discGeneration) return false;
+    _requestGraphicLiveSample(player);
+    _graphicTimingInputOverride = timingInput;
+    _loadGraphicSubtitleTimings(
+      streamIndex: streamIndex,
+      codec: _graphicSubtitleCodec,
+    );
     return true;
   }
 
@@ -1663,6 +1779,7 @@ class VideoPlayerController extends ChangeNotifier
     // 清掉旧 cue（同时结束上一次回流）；本模式是文本 overlay，不是图形渲染。
     setCues(const <AudioCue>[]);
     _graphicSubtitleActive = false;
+    _cancelGraphicTimingFetch();
     await player.setSubtitleTrack(real[streamIndex]);
     if (!_isCurrentLoad(player, loadToken)) return false;
     if (_discTitleGeneration != discGeneration) return false;
@@ -1713,6 +1830,7 @@ class VideoPlayerController extends ChangeNotifier
     final int discGeneration = _discTitleGeneration;
     setCues(const <AudioCue>[]);
     _graphicSubtitleActive = false;
+    _cancelGraphicTimingFetch();
     try {
       await player.setSubtitleTrack(SubtitleTrack.uri(url));
     } catch (e) {
@@ -2094,7 +2212,10 @@ class VideoPlayerController extends ChangeNotifier
     // 非空文本 cue → 切到可点 overlay 文本字幕，离开图形轨渲染（BUG-301）。空 cue
     // 不在此推断模式：可能是图形轨（[selectEmbeddedGraphicTrack] 先清空 cue 再选轨置
     // true）或无字幕段，故只在确有文本 cue 时复位图形标志。
-    if (cues.isNotEmpty) _graphicSubtitleActive = false;
+    if (cues.isNotEmpty) {
+      _graphicSubtitleActive = false;
+      _cancelGraphicTimingFetch();
+    }
     _currentCue = null;
     _currentCueIndex = -1;
     // TODO-1312：换主 cue 列表复位活动集（旧下标对新 [_cues] 已失效、会越界）。
@@ -2168,16 +2289,26 @@ class VideoPlayerController extends ChangeNotifier
   /// [_delayMs]，主流为空落副字幕流时用 [effectiveSecondaryDelayMs]。制卡按位置
   /// 解析锚点 / 裁剪逆变换必须与该流的 cue 命中同一根时间轴（TODO-2837）。
   int get miningDelayMs =>
-      _cues.isNotEmpty ? _delayMs : effectiveSecondaryDelayMs;
+      _cues.isNotEmpty || graphicSubtitleTimingCues.isNotEmpty
+      ? _delayMs
+      : effectiveSecondaryDelayMs;
 
   /// [cue] 所属流的生效调轴（按身份判定，镜像 [cueStreamOwning]）：主流 cue 用
   /// [_delayMs]、副流 cue 用 [effectiveSecondaryDelayMs]；两条流都不含它（列表
   /// 面板的合成 cue / 已换集的陈旧 cue）时回 [miningDelayMs]（与
   /// [cueStreamOwning] 的兜底同一口径）。
+  ///
+  /// BUG-3274：图形字幕锚点走主轨 [_delayMs]——图形轨只存在于主字幕槽，libmpv
+  /// `sub-delay` 下发的就是它（[_subtitleDelayMpvMs]）；图形模式下主流 [cues] 为空，
+  /// 兜底 [miningDelayMs] 会错拿副轨调轴。
   int delayMsForCue(AudioCue cue) {
     if (_cues.any((AudioCue c) => identical(c, cue))) return _delayMs;
     if (_secondaryCues.any((AudioCue c) => identical(c, cue))) {
       return effectiveSecondaryDelayMs;
+    }
+    if (identical(cue, _graphicAnchorCue)) return _delayMs;
+    if (graphicSubtitleTimingCues.any((AudioCue c) => identical(c, cue))) {
+      return _delayMs;
     }
     return miningDelayMs;
   }
@@ -2593,6 +2724,11 @@ class VideoPlayerController extends ChangeNotifier
     // 这样复用 player 时上一段视频的图形轨 `sub-delay` 不会残留到新片（BUG-301）。
     // 不依赖 setCues(空) 复位——空 cue 也可能是图形轨场景。
     _graphicSubtitleActive = false;
+    _resetGraphicTimingTables();
+    _graphicAnchorCue = null;
+    // 网络流图形字幕整轨抽取的输入（交给 native 之前的原始地址 + 同一份请求头）。
+    _mediaUri = openBlurayMenu ? null : mediaUri;
+    _mediaHttpHeaders = Map<String, String>.unmodifiable(httpHeaderFields);
 
     // 重复 load（换集）：取消上一次的 tick / 订阅，但**复用同一 Player /
     // VideoController**，不 dispose 重建。复用是关键（BUG-120）——media_kit 全屏是推到
@@ -3857,6 +3993,107 @@ class VideoPlayerController extends ChangeNotifier
   /// BUG-2590）——此时没有 cue、不可查词。播放页取证钩子用。
   bool get isPlayerRenderedSubtitleActive => _graphicSubtitleActive;
 
+  /// BUG-3274：图形字幕（libmpv 自绘）此刻在屏那句的查词 / 制卡锚点 cue。
+  ///
+  /// 图形轨没有 Dart 侧 cue（选轨时 [setCues] 清空），暂停 OCR 层查词以前不带锚点 →
+  /// 制卡区间塌成 `0..0`：没有句子音频、没有同步片段，封面抽片头 0 秒的黑帧。这里从
+  /// mpv `sub-start` / `sub-end` 取当前句的真实时间窗，文本用 OCR 识别出的 [text]
+  /// （见 [buildGraphicSubtitleAnchorCue]，坐标系与文本字幕 cue 相同：字幕文件原始
+  /// 时基，制卡按 [delayMsForCue] = [_delayMs] 逆变换）。
+  ///
+  /// 非图形模式 / 未 [load] / 画面上没有字幕（mpv 无 `sub-start`）/ 读取期间换片 →
+  /// null（调用方据此走「无区间 → 当前帧静图」）。
+  Future<AudioCue?> currentGraphicSubtitleCue({required String text}) async {
+    if (!_graphicSubtitleActive) return null;
+    final Player? player = _player;
+    if (player == null) return null;
+    final int loadToken = _loadToken;
+    final String rawStart = await _getMpvProperty('sub-start');
+    final String rawEnd = await _getMpvProperty('sub-end');
+    if (!_isCurrentLoad(player, loadToken)) return null;
+    return _adoptGraphicSubtitleAnchor(
+      text: text,
+      rawStart: rawStart,
+      rawEnd: rawEnd,
+    );
+  }
+
+  /// [currentGraphicSubtitleCue] 与测试钩子共用的落地：按 mpv 原始秒值建锚点并登记
+  /// 为 [_graphicAnchorCue]（[cueStreamOwning] / [delayMsForCue] 据此认它）。读取期间
+  /// 用户切走图形轨同样作废。
+  AudioCue? _adoptGraphicSubtitleAnchor({
+    required String text,
+    required String rawStart,
+    required String rawEnd,
+  }) {
+    if (!_graphicSubtitleActive) return null;
+    final int? mpvStart = parseMpvSecondsToMs(rawStart);
+    // 有逐句时间表时以它为准：mpv 读不到 `sub-end`（部分 demuxer）时不用 5 秒暂定
+    // 时长；画面上恰好没有字幕（句间空档 / 刚消失）时按播放位置锚到最近那句。
+    final AudioCue? timed = _graphicTimingCueFor(mpvStart);
+    final AudioCue? cue = timed != null
+        ? buildGraphicSubtitleAnchorCue(
+            text: text,
+            startMs: timed.startMs,
+            endMs: timed.endMs,
+          )
+        : buildGraphicSubtitleAnchorCue(
+            text: text,
+            startMs: mpvStart,
+            endMs: parseMpvSecondsToMs(rawEnd),
+          );
+    if (cue != null) _graphicAnchorCue = cue;
+    return cue;
+  }
+
+  /// 逐句时间表里与 mpv 当前句对应的那句：[mpvStartMs] 非空时按起点匹配（容差
+  /// [kGraphicTimingMatchToleranceMs]）；为空时按播放位置取「正在显示的那句，否则
+  /// 最后一句已开始的」（与制卡按位置解析同一规则）。表为空返回 null。
+  AudioCue? _graphicTimingCueFor(int? mpvStartMs) {
+    final List<AudioCue> timings = graphicSubtitleTimingCues;
+    if (timings.isEmpty) return null;
+    if (mpvStartMs != null) {
+      for (final AudioCue c in timings) {
+        if ((c.startMs - mpvStartMs).abs() <= kGraphicTimingMatchToleranceMs) {
+          return c;
+        }
+      }
+      return null;
+    }
+    final int? pos = positionMs;
+    if (pos == null) return null;
+    final int at = effectiveSubtitlePositionMs(pos, _delayMs);
+    AudioCue? floor;
+    for (final AudioCue c in timings) {
+      if (c.startMs > at) break;
+      if (at <= c.endMs) return c;
+      floor = c;
+    }
+    return floor;
+  }
+
+  /// 图形字幕整轨时间表来源（本地文件与网络流同一个抽取器；与模糊遮蔽层共用在途任务与
+  /// 缓存；测试可替换）。
+  GraphicSubtitleRegionLoader graphicSubtitleRegionLoader =
+      FfmpegGraphicSubtitleRegionLoader.shared;
+
+  /// 互联 host 回传的整轨文件 → 位图时间表（测试可替换）。
+  GraphicSubtitleTrackFileRegionLoad graphicSubtitleTrackFileRegionLoad =
+      loadGraphicSubtitleRegionsFromTrackFile;
+
+  /// 测试钩子（BUG-3274）：宿主无 libmpv 读不到 `sub-start` / `sub-end`，直接喂原始
+  /// 属性串，走与 [currentGraphicSubtitleCue] 完全同一条 [_adoptGraphicSubtitleAnchor]。
+  @visibleForTesting
+  AudioCue? debugAdoptGraphicSubtitleAnchorForTesting({
+    required String text,
+    required String rawStart,
+    required String rawEnd,
+  }) => _adoptGraphicSubtitleAnchor(
+    text: text,
+    rawStart: rawStart,
+    rawEnd: rawEnd,
+  );
+
   /// libmpv 正在渲染的图形字幕轨：去 auto/no 后的序号 + mpv codec（如
   /// `hdmv_pgs_subtitle`）。不在图形字幕模式时为 null。图形字幕「模糊」按它抽轨拿每句
   /// 位图的坐标（`video_graphic_subtitle_regions.dart`）。
@@ -3907,6 +4144,24 @@ class VideoPlayerController extends ChangeNotifier
     _graphicSubtitleStreamIndex = streamIndex;
     _graphicSubtitleCodec = codec;
   }
+
+  /// 测试可见：直接装入图形字幕逐句时间表（宿主无 libmpv，选不了真图形轨）。
+  @visibleForTesting
+  void debugSetGraphicTimingCuesForTesting(List<AudioCue> cues) {
+    _graphicExtractedTimingCues = List<AudioCue>.unmodifiable(cues);
+    _recomputeGraphicTimingCues();
+  }
+
+  /// 测试可见：设定当前视频路径（宿主无 libmpv，走不了 [load]）。
+  @visibleForTesting
+  void debugSetVideoPathForTesting(String? path) => _videoPath = path;
+
+  /// 测试可见：直接触发一次图形字幕时间表加载（走与选轨成功后完全相同的路径）。
+  @visibleForTesting
+  void debugLoadGraphicSubtitleTimingsForTesting({
+    required int streamIndex,
+    required String? codec,
+  }) => _loadGraphicSubtitleTimings(streamIndex: streamIndex, codec: codec);
 
   @visibleForTesting
   void debugHandleCompletedForTesting(bool completed) {
@@ -5232,6 +5487,9 @@ class VideoPlayerController extends ChangeNotifier
     _discJavaRuntimeProbe?.cancel();
     _discJavaRuntimeProbe = null;
     _discObservedPlayer = null;
+    _graphicLiveObservedPlayer = null;
+    _graphicLiveGeneration++;
+    _cancelGraphicTimingFetch();
     unawaited(_discTrackSub?.cancel());
     unawaited(_discTracksSub?.cancel());
     unawaited(_discLogSub?.cancel());
@@ -5318,6 +5576,7 @@ class VideoPlayerController extends ChangeNotifier
     _mediaOpened = false;
     _resetLuaScriptState(); // 与 [_releaseMediaHandles] 一致，防复用残留。
     luaScriptStates.dispose();
+    _graphicRegionTrack.dispose();
     networkReadBytesPerSecond.dispose();
     networkCacheSeconds.dispose();
     bufferingIndicatorVisible.dispose();
@@ -5351,6 +5610,9 @@ class VideoPlayerController extends ChangeNotifier
     _discJavaRuntimeProbe?.cancel();
     _discJavaRuntimeProbe = null;
     _discObservedPlayer = null;
+    _graphicLiveObservedPlayer = null;
+    _graphicLiveGeneration++;
+    _cancelGraphicTimingFetch();
     unawaited(_discTrackSub?.cancel());
     unawaited(_discTracksSub?.cancel());
     unawaited(_discLogSub?.cancel());

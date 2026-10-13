@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:collection/collection.dart';
 import 'package:image/image.dart' as img;
 
+import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dart';
+
 /// Blu-ray 图形字幕（HDMV PGS，`.sup` 裸流）解析：把段流折成「一条字幕一张图」的 cue。
 ///
 /// 只做整轨 OCR 需要的那部分语义：
@@ -62,7 +64,7 @@ class PgsSubtitleParser {
 }
 
 /// 一条图形字幕：显示区间 + 惰性渲染的位图。
-class PgsCue {
+class PgsCue implements BitmapSubtitleCue {
   PgsCue._({
     required this.startMs,
     required this.endMs,
@@ -74,77 +76,65 @@ class PgsCue {
        _palette = palette;
 
   /// 相对 `.sup` 时间轴原点（ffmpeg 抽取时已减去容器起点）的毫秒。
+  @override
   final int startMs;
+  @override
   final int endMs;
 
   /// PCS 声明的合成画布尺寸（[bounds] 所在的坐标系；通常等于视频分辨率，片源被缩放
   /// 重编码时可能不同——播放器按它把位图等比映射到画面）。段里没写（0）时为 0。
+  @override
   final int canvasWidth;
+  @override
   final int canvasHeight;
   final List<PgsPlacement> _placements;
   final Uint32List _palette;
 
+  /// PGS 的强制标志在 PCS 对象级，整轨识别不区分，恒为 false。
+  @override
+  bool get forced => false;
+
   /// 对象并集外包框（视频坐标系，像素）。
-  ({int left, int top, int right, int bottom}) get bounds {
-    int l = 1 << 30, t = 1 << 30, r = 0, b = 0;
-    for (final PgsPlacement pl in _placements) {
-      l = l < pl.x ? l : pl.x;
-      t = t < pl.y ? t : pl.y;
-      r = r > pl.x + pl.width ? r : pl.x + pl.width;
-      b = b > pl.y + pl.height ? b : pl.y + pl.height;
-    }
-    return (left: l, top: t, right: r, bottom: b);
-  }
+  @override
+  BitmapSubtitleBounds get bounds => bitmapSubtitleLayerBounds(
+    _placements.map(
+      (PgsPlacement pl) =>
+          (x: pl.x, y: pl.y, width: pl.width, height: pl.height),
+    ),
+  );
 
   /// 黑底合成、四周留 [padding] 像素的 PNG。Alpha 按本调色板最大不透明度归一化，
   /// 淡入帧也按满不透明渲染（OCR 只关心字形）。
-  Uint8List renderPng({int padding = 16}) {
-    final ({int left, int top, int right, int bottom}) box = bounds;
-    final int w = box.right - box.left + padding * 2;
-    final int h = box.bottom - box.top + padding * 2;
-    final img.Image canvas = img.Image(width: w, height: h);
-    int maxAlpha = 0;
-    for (final int argb in _palette) {
-      final int a = argb >>> 24;
-      if (a > maxAlpha) maxAlpha = a;
-    }
-    if (maxAlpha == 0) return img.encodePng(canvas);
-    for (final PgsPlacement pl in _placements) {
-      _paint(canvas, pl, box.left - padding, box.top - padding, maxAlpha);
-    }
-    return img.encodePng(canvas);
-  }
+  @override
+  Uint8List renderPng({int padding = 16}) =>
+      img.encodePng(_renderCanvas(padding));
 
-  void _paint(
-    img.Image canvas,
-    PgsPlacement pl,
-    int originX,
-    int originY,
-    int maxAlpha,
-  ) {
-    final Uint8List? pixels = decodePgsRle(
-      pl.object.rle,
-      pl.object.width,
-      pl.object.height,
-    );
-    if (pixels == null) return;
-    for (int y = 0; y < pl.height; y++) {
-      final int row = (pl.cropY + y) * pl.object.width + pl.cropX;
-      for (int x = 0; x < pl.width; x++) {
-        final int argb = _palette[pixels[row + x]];
-        final int a = argb >>> 24;
-        if (a == 0) continue;
-        final double k = a >= maxAlpha ? 1 : a / maxAlpha;
-        canvas.setPixelRgb(
-          pl.x + x - originX,
-          pl.y + y - originY,
-          (((argb >> 16) & 0xFF) * k).round(),
-          (((argb >> 8) & 0xFF) * k).round(),
-          ((argb & 0xFF) * k).round(),
-        );
-      }
-    }
-  }
+  /// 与 [renderPng] 同一张图的原始 RGBA 像素（不编码 PNG）：整轨识别直接把像素交给
+  /// 识别会话，省掉「编码 PNG → 落盘 → 后台再解码」的往返。
+  @override
+  BitmapSubtitleImage renderRgba({int padding = 16}) =>
+      bitmapSubtitleImageOf(_renderCanvas(padding));
+
+  img.Image _renderCanvas(int padding) => composeBitmapSubtitleImage(
+    bounds: bounds,
+    padding: padding,
+    layers: <BitmapSubtitleLayer>[
+      for (final PgsPlacement pl in _placements)
+        if (decodePgsRle(pl.object.rle, pl.object.width, pl.object.height)
+            case final Uint8List pixels)
+          BitmapSubtitleLayer(
+            x: pl.x,
+            y: pl.y,
+            width: pl.width,
+            height: pl.height,
+            indices: pixels,
+            stride: pl.object.width,
+            sourceX: pl.cropX,
+            sourceY: pl.cropY,
+            palette: _palette,
+          ),
+    ],
+  );
 }
 
 /// 位图对象（ODS 拼完后的 RLE + 尺寸）。

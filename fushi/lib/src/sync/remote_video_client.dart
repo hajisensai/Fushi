@@ -108,6 +108,33 @@ abstract interface class RemoteVideoStreamHeaders {
   Map<String, String> get httpHeaderFields;
 }
 
+/// 「host 能回传图形字幕整轨」的可选能力（互联 host：它有原文件）。
+///
+/// 图形字幕（PGS / VobSub / DVB）由 libmpv 自绘，播放页要每句的起止才能制卡锚句；
+/// host 在本机把那一条字幕轨原样抽出来（几百 KB）回传，client 不为字幕把整片再读一遍。
+/// 媒体服务器 / URL 流没有这种端点，不实现本能力（它们的整轨抽取走流地址）。
+abstract interface class RemoteVideoGraphicSubtitleTrackFetch {
+  /// 把视频 [id] 第 [embeddedStreamIndex] 条字幕轨（host 的
+  /// [RemoteVideoEmbeddedSubtitleTrack.streamIndex]）的整轨载荷下载到 [dest]。host 不支持
+  /// （老 host 404 / 没接入抽取 501 / 编码不支持 415）或抽取失败时抛错。
+  Future<void> getRemoteVideoGraphicSubtitleTrack(
+    String id,
+    File dest, {
+    required int embeddedStreamIndex,
+    int episodeIndex = 0,
+  });
+
+  /// 同一条轨的轨头（JSON：编码 + 载荷里没有的 extradata，如 VobSub 调色板 / DVB
+  /// 页号）下载到 [dest]。这条轨没有轨头（PGS）或 host 不支持时抛错——调用方据此
+  /// 只靠载荷本身解（PGS 段流自带全部信息）。
+  Future<void> getRemoteVideoGraphicSubtitleTrackHeader(
+    String id,
+    File dest, {
+    required int embeddedStreamIndex,
+    int episodeIndex = 0,
+  });
+}
+
 /// 「知道某一集的集号」的可选能力（BUG-2626）。
 ///
 /// [RemoteVideoInfo] 只有 `title` 与合集内的 `sortIndex`：前者是分集标题（在线视频源

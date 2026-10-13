@@ -7044,5 +7044,7 @@
   "book_import_no_book_transcribe_hint": "You can import with audio alone: transcribe it on device and a book is generated from the transcript when you import.",
   "book_import_no_book_subtitle_hint": "You can import with audio alone: pick a subtitle file for it and a book is generated from the subtitles when you import.",
   "book_import_no_book_transcribe_action": "Transcribe and generate book",
-  "onboarding_anki_auto_reposition_hint": "About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can't reorder cards."
+  "onboarding_anki_auto_reposition_hint": "About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can't reorder cards.",
+  "video_subtitle_graphic_ocr_job_extracting_live": "Reading $percent% · $done lines ready, playing along",
+  "video_subtitle_graphic_ocr_job_ai_progress": "AI re-read: $provider · $done/$total"
 }

@@ -67,7 +67,6 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
 import 'package:fushi/src/media/video/graphic_subtitle_track_ocr.dart';
-import 'package:fushi/src/media/video/pgs_subtitle_parser.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_obscure_layer.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_ocr_overlay.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_ocr_progress.dart';
@@ -3877,7 +3876,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           final RemoteVideoEmbeddedSubtitleTrack? track = streamIndex == null
               ? null
               : _remoteEmbeddedTrackByStreamIndex(streamIndex);
-          if (streamIndex != null) {
+          if (track != null && !track.isText) {
+            // 上次选的是图形轨：没有文字可下，起播后照旧交给 libmpv 自绘（时间表随选轨
+            // 走边播边记 + 整轨来源）。流不是原始容器（转码 HLS 不带轨）就落回默认分支。
+            if (urls.streamIsOriginalContainer && !track.isExternalFile) {
+              playerRenderedTrack = track;
+              subtitleResolved = true;
+            }
+          } else if (streamIndex != null) {
             _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
             try {
               final Directory temp = await getTemporaryDirectory();
@@ -4023,13 +4029,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           !_failed) {
         // BUG-2590：mpv 轨表 load 后才有，此时再把上次选的轨交给 libmpv 解码回流（BUG-2648）；
         // 选不中（轨已变）静默无字幕，不阻断播放。
+        // 图形轨同样在这时交给 libmpv 自绘（逐句时间表随选轨建立）。
         unawaited(
-          _showRemoteEmbeddedTrackViaPlayer(
-            loadedController,
-            playerRenderedTrack,
-            source: _remoteEmbeddedSubtitleSource(playerRenderedTrack),
-            label: _remoteEmbeddedSubtitleLabel(playerRenderedTrack),
-          ),
+          playerRenderedTrack.isText
+              ? _showRemoteEmbeddedTrackViaPlayer(
+                  loadedController,
+                  playerRenderedTrack,
+                  source: _remoteEmbeddedSubtitleSource(playerRenderedTrack),
+                  label: _remoteEmbeddedSubtitleLabel(playerRenderedTrack),
+                )
+              : _showRemoteGraphicTrackViaPlayer(
+                  loadedController,
+                  playerRenderedTrack,
+                  source: _remoteEmbeddedSubtitleSource(playerRenderedTrack),
+                  label: _remoteEmbeddedSubtitleLabel(playerRenderedTrack),
+                ),
         );
       }
       // TODO-1301（BUG-600）：制卡音频源与批量制卡守卫（youtube_clip_miner.dart:67）完全
@@ -6371,6 +6385,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     unawaited(_lookupAt(sentence, graphemeIndex, charRect, overrideCue: cue));
   }
 
+  /// BUG-3274：暂停 OCR 层点字查词。图形字幕没有 Dart 侧 cue，以前这里传 null 锚点 →
+  /// 制卡区间 `0..0`（无句子音频、无同步片段、封面抽片头黑帧）。先从 mpv
+  /// `sub-start` / `sub-end` 取在屏那句的真实时间窗建锚点（文本 = 被点的 OCR 句），
+  /// 再走与文本字幕完全相同的 [_handleSubtitleLookupTap] → `_lastLookupCue` → 制卡区间。
+  /// 画面上没有字幕（mpv 无 `sub-start`）时锚点为 null，制卡走当前帧静图。
+  Future<void> _handleGraphicSubtitleOcrLookupTap(
+    VideoPlayerController controller,
+    String sentence,
+    int graphemeIndex,
+    Rect globalRect,
+  ) async {
+    if (!_immersiveAllowsLookup) return;
+    final AudioCue? anchor = await controller.currentGraphicSubtitleCue(
+      text: sentence,
+    );
+    // 读 mpv 属性期间页面关闭 / 换集（controller 被替换）：不再查词。
+    if (!mounted || !identical(_controller, controller)) return;
+    _handleSubtitleLookupTap(sentence, graphemeIndex, globalRect, anchor);
+  }
+
   /// 图形字幕 OCR 查词层。引擎解析与漫画在线直读同一口径（引擎偏好 / Lens 上传
   /// 同意 / 低置信度交 AI 重读），见 `graphic_subtitle_ocr.dart`。
   Widget _buildGraphicSubtitleOcrOverlay(VideoPlayerController controller) {
@@ -6379,7 +6413,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       fit: videoFitModeToBoxFit(_videoFitMode),
       prepare: _prepareGraphicSubtitleOcr,
       onCharTap: (String sentence, int graphemeIndex, Rect globalRect) =>
-          _handleSubtitleLookupTap(sentence, graphemeIndex, globalRect, null),
+          unawaited(
+            _handleGraphicSubtitleOcrLookupTap(
+              controller,
+              sentence,
+              graphemeIndex,
+              globalRect,
+            ),
+          ),
       onUnavailable: _reportGraphicSubtitleOcrUnavailable,
       onError: (Object error, StackTrace stack) => ErrorLogService.instance.log(
         'VideoFushiPage.graphicSubtitleOcr',

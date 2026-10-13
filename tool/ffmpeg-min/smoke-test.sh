@@ -151,6 +151,27 @@ fi
 run "$FIXTURE_FFMPEG" -hide_banner -loglevel error \
   -i "$WORK/pgs-out.sup" -map 0 -c copy -f null -
 
+# VobSub / DVB image subtitles are copied out as a single-stream MPEG-TS
+# (`-f sup` rejects them with "Invalid data"); the Dart side demuxes the PES
+# packets itself (bitmap_subtitle/mpegts_subtitle_demuxer.dart). `-muxdelay 0`
+# is mandatory: the TS muxer otherwise shifts every PTS by 1.4 s. The host
+# FFmpeg re-encodes the PGS fixture bitmap-to-bitmap (dvdsub / dvbsub
+# encoders); the minimal build needs no subtitle encoder or decoder for this.
+for codec in dvdsub dvbsub; do
+  echo "[ffmpeg-min-smoke] extracting a $codec track to mpegts"
+  run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
+    -i "$WORK/pgs.mkv" -map 0:s:0 -c:s "$codec" "$WORK/$codec.mkv"
+  run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+    -i "$WORK/$codec.mkv" -map 0:s:0 -c copy -muxdelay 0 -muxpreload 0 \
+    -f mpegts "$WORK/$codec-out.ts" \
+    -map '0:v:0?' -map 0:s:0 -c copy -f null -
+  assert_nonempty "$WORK/$codec-out.ts"
+  if [ "$(od -An -tx1 -N1 "$WORK/$codec-out.ts" | tr -d ' \n')" != "47" ]; then
+    echo "[ffmpeg-min-smoke] $codec extraction is not an MPEG-TS stream" >&2
+    exit 1
+  fi
+done
+
 echo "[ffmpeg-min-smoke] exporting cue GIF and frame"
 run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
   -ss 0.100 -t 1.000 -i "$MP4_FIXTURE" -an \

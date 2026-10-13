@@ -27,6 +27,7 @@ import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
+import 'package:fushi_engine/sync/interconnect_graphic_subtitle_export.dart';
 import 'package:fushi_engine/sync/local_audio_library_store.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart';
@@ -305,7 +306,13 @@ class HeadlessHost {
       ..pairedPeerTokensProvider = _loadPairedPeerTokens
       // 地址集：与 LAN 广播同一个设备 id；公网 / 反代地址与 app 同一个偏好键。
       ..hostId = identity.deviceId
-      ..publicUrlsProvider = (() async => config.publicUrls);
+      ..publicUrlsProvider = (() async => config.publicUrls)
+      // 图形字幕（PGS / VobSub / DVB）整轨回传：与 app 当 host 同一份引擎实现（抽轨走
+      // 引擎 ffmpeg 后端解析——配置里的 ffmpeg 路径 / `FUSHI_FFMPEG` / PATH），缓存落
+      // 服务端自己的临时目录。
+      ..graphicSubtitleTrackExporter = InterconnectGraphicSubtitleExporter(
+        cacheDir: Directory(p.join(paths.temp.path, 'graphic_sub_tracks')),
+      ).export;
     try {
       await server.start();
     } catch (_) {

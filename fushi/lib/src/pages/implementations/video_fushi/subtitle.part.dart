@@ -307,11 +307,13 @@ extension _VideoSubtitle on _VideoFushiPageState {
         ),
       if (_isRemote)
         for (final RemoteVideoEmbeddedSubtitleTrack track
-            in _remoteEmbeddedSubtitleTracks)
+            in _remoteEmbeddedSubtitleTracks) ...<Widget>[
           FushiListTileControl(
             leading: FushiIcon(
               !track.isText
-                  ? Icons.image_not_supported_outlined
+                  ? (_remoteGraphicTrackSelectable(track)
+                        ? Icons.image_outlined
+                        : Icons.image_not_supported_outlined)
                   : track.isExternalFile
                   ? Icons.closed_caption_outlined
                   : Icons.movie_filter_outlined,
@@ -320,17 +322,43 @@ extension _VideoSubtitle on _VideoFushiPageState {
             subtitle: Text(
               track.isText
                   ? (track.fileName ?? track.codec)
+                  : _remoteGraphicTrackSelectable(track)
+                  ? t.video_subtitle_graphic_learning_hint
                   : t.video_subtitle_import_unsupported,
             ),
-            enabled: track.isText && !_subtitleLoadingShown,
+            enabled:
+                _remoteEmbeddedTrackSelectable(track) && !_subtitleLoadingShown,
             selected:
                 _currentSubtitleSource == _remoteEmbeddedSubtitleSource(track),
             selectedColor: selectedFg,
-            onTap: track.isText && !_subtitleLoadingShown
+            onTap:
+                _remoteEmbeddedTrackSelectable(track) && !_subtitleLoadingShown
                 ? () =>
                       unawaited(_applyRemoteEmbeddedSubtitle(controller, track))
                 : null,
           ),
+          // 远端图形轨同样能整轨 OCR：互联下 host 回传整轨（client 不读整片），媒体
+          // 服务器 / URL 流按流地址 + 播放会话请求头抽（[_remoteGraphicTrackOcrInput]）。
+          if (_remoteGraphicTrackOcrInput(controller, track) != null)
+            FushiListTileControl(
+              leading: const Icon(Icons.document_scanner_outlined),
+              title: Text(t.video_subtitle_graphic_ocr_track),
+              subtitle: Text(t.video_subtitle_graphic_ocr_track_hint),
+              contentPadding: const EdgeInsetsDirectional.only(
+                start: 56,
+                end: 16,
+              ),
+              enabled: !_subtitleLoadingShown && !_graphicSubtitleOcrRunning,
+              onTap: _subtitleLoadingShown || _graphicSubtitleOcrRunning
+                  ? null
+                  : () => unawaited(
+                      _generateSubtitleFromRemoteGraphicTrack(
+                        controller,
+                        track,
+                      ),
+                    ),
+            ),
+        ],
       // BUG-1861：远端模式下本机落盘的字幕档（Jimaku 下载 / 手动导入）也要有自己的行。
       // 远端字幕轨行原本只覆盖 YouTube 轨 / host sidecar / host 内封轨三类，本机档案
       // 经 [_applyRemoteSubtitle] 应用后只改 `_currentSubtitleSource`，列表里没有任何
@@ -391,10 +419,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
                   : () => unawaited(_selectSubtitleSource(controller, source)),
             ),
           ),
-          // 图形轨整轨 OCR 成文字字幕：生成后播放中就能直接点字查词，不必暂停。
-          if (source.isGraphicEmbedded &&
-              source.streamIndex != null &&
-              graphicSubtitleTrackOcrSupportsCodec(source.codec))
+          // 图形轨（PGS / VobSub / DVB）整轨 OCR 成文字字幕：生成后播放中就能直接点字
+          // 查词，不必暂停。取数与逐句时间表同一口径（本地读盘 / 网络流带请求头）。
+          if (_graphicTrackOcrInput(controller, source) != null)
             FushiListTileControl(
               leading: const Icon(Icons.document_scanner_outlined),
               title: Text(t.video_subtitle_graphic_ocr_track),
@@ -1595,11 +1622,31 @@ extension _VideoSubtitle on _VideoFushiPageState {
     return 'Embedded ${track.streamIndex}: ${parts.join(' / ')}';
   }
 
+  /// 远端图形轨（PGS / VobSub / DVB）能不能选：它得在 libmpv 正在 demux 的流里——
+  /// 原始容器直出（转码 HLS 不带轨）、且不是外挂文件。选中后交给 libmpv 自绘，逐句
+  /// 时间表照样有（边播边记 + host 整轨 / 网络流抽取，见
+  /// [VideoPlayerController.selectEmbeddedGraphicTrack]）。
+  bool _remoteGraphicTrackSelectable(RemoteVideoEmbeddedSubtitleTrack track) =>
+      !track.isText &&
+      !track.isExternalFile &&
+      _remoteStreamIsOriginalContainer;
+
+  bool _remoteEmbeddedTrackSelectable(RemoteVideoEmbeddedSubtitleTrack track) =>
+      track.isText || _remoteGraphicTrackSelectable(track);
+
   Future<void> _applyRemoteEmbeddedSubtitle(
     VideoPlayerController controller,
     RemoteVideoEmbeddedSubtitleTrack track,
   ) async {
     if (!track.isText) {
+      // 图形轨没有文字可下：直接交给 libmpv 渲染（流里就有这条轨）。
+      final bool shown = await _showRemoteGraphicTrackViaPlayer(
+        controller,
+        track,
+        source: _remoteEmbeddedSubtitleSource(track),
+        label: _remoteEmbeddedSubtitleLabel(track),
+      );
+      if (shown || !mounted) return;
       _showOsd(
         t.video_subtitle_import_unsupported,
         severity: ToastSeverity.error,
@@ -1731,6 +1778,52 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
     unawaited(appModel.setRemoteSubtitleSource(subUid, subEp, source));
     _showOsd(t.video_subtitle_remote_player_decoded(label: label));
+    return true;
+  }
+
+  /// 远端直出容器里的**图形**轨（PGS / VobSub / DVB）交给 libmpv 自绘
+  /// （[VideoPlayerController.selectEmbeddedGraphicTrack]），选中即持久化选择。
+  ///
+  /// 逐句时间表照样有：边播边记恒开；整轨来源——互联 host 回传它抽好的整轨（client
+  /// 不读整片，[buildRemoteGraphicSubtitleTimingInput]），其它来源（媒体服务器 / URL
+  /// 流）由播放器按当前流地址 + 请求头抽取。暂停 OCR 查词 / 制卡据此锚句。
+  ///
+  /// 返回 false = 轨不可选（[_remoteGraphicTrackSelectable]）/ 轨未就绪 / 序号越界。
+  Future<bool> _showRemoteGraphicTrackViaPlayer(
+    VideoPlayerController controller,
+    RemoteVideoEmbeddedSubtitleTrack track, {
+    required String source,
+    required String label,
+  }) async {
+    if (!_remoteGraphicTrackSelectable(track)) return false;
+    final int seq = _episodeLoadSeq;
+    final int ordinal = track.containerTrackOrdinal ?? track.streamIndex;
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    final RemoteVideoInfo? info = _effectiveRemoteInfo;
+    final (String subUid, int subEp) = _remotePositionKeyForIndex(
+      _currentEpisode,
+    );
+    final bool shown = await controller.selectEmbeddedGraphicTrack(
+      ordinal,
+      timingInput: client == null || info == null
+          ? null
+          : buildRemoteGraphicSubtitleTimingInput(
+              client: client,
+              videoId: info.id,
+              track: track,
+              containerOrdinal: ordinal,
+              episodeIndex: subEp,
+              tempDirectory: getTemporaryDirectory,
+            ),
+    );
+    if (!shown || !mounted || seq != _episodeLoadSeq) return shown;
+    _rebuild(() => _currentSubtitleSource = source);
+    unawaited(appModel.setRemoteSubtitleSource(subUid, subEp, source));
+    // 图形轨只能当画面渲染、逐字查词要暂停 OCR——是降级而非成功，配色与本地一致。
+    _showOsd(
+      t.video_subtitle_graphic_shown(label: label),
+      severity: ToastSeverity.warning,
+    );
     return true;
   }
 
@@ -2108,19 +2201,121 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
   }
 
-  /// 把图形字幕轨（PGS）整轨 OCR 成文字 SRT 并当外挂字幕加载：确认引擎 → 解析引擎 →
-  /// 抽轨 → 解析位图 → 逐条识别（低置信度交 AI，与漫画同一开关）→ 合并相邻同文。产物
-  /// 落字幕目录，与 ASR 产物同口径，之后播放中直接点字查词。
-  ///
-  /// 全程挂一张进度卡（[_graphicSubtitleOcrJob]）：阶段 + 百分比 + 实际引擎 / AI 重读来源
-  /// + 取消。引擎与模型复用漫画 OCR 设置（开始前的确认框可直达），不另起一套。
+  /// 本地 / 本机媒体库条目（含网络流书）的图形轨整轨取数输入：与控制器取逐句时间表
+  /// 同一个口径（[VideoPlayerController.graphicSubtitleTimingInputForTrack]：本地文件读盘、
+  /// 网络流带播放会话请求头）。推导不出 / 编码解不了返回 null（菜单不出整轨 OCR 入口）。
+  GraphicSubtitleTimingInput? _graphicTrackOcrInput(
+    VideoPlayerController controller,
+    SubtitleSource source,
+  ) {
+    final int? streamIndex = source.streamIndex;
+    if (!source.isGraphicEmbedded || streamIndex == null) return null;
+    if (!graphicSubtitleTrackOcrSupportsCodec(source.codec)) return null;
+    return controller.graphicSubtitleTimingInputForTrack(
+      streamIndex: streamIndex,
+      codec: source.codec,
+    );
+  }
+
+  /// 远端图形轨的整轨取数输入：互联 host 回传它抽好的整轨（client **不读**整片流，
+  /// [buildRemoteGraphicSubtitleTimingInput]）；媒体服务器 / URL 流按当前流地址 + 播放
+  /// 会话请求头抽（与控制器的逐句时间表同一口径）。轨不在 libmpv 正 demux 的原始容器里
+  /// （[_remoteGraphicTrackSelectable]）/ 编码解不了 / 推导不出返回 null。
+  GraphicSubtitleTimingInput? _remoteGraphicTrackOcrInput(
+    VideoPlayerController controller,
+    RemoteVideoEmbeddedSubtitleTrack track,
+  ) {
+    if (!_remoteGraphicTrackSelectable(track)) return null;
+    if (!graphicSubtitleTrackOcrSupportsCodec(track.codec)) return null;
+    final int ordinal = track.containerTrackOrdinal ?? track.streamIndex;
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    final RemoteVideoInfo? info = _effectiveRemoteInfo;
+    if (client != null &&
+        info != null &&
+        client is RemoteVideoGraphicSubtitleTrackFetch) {
+      final (String _, int episode) = _remotePositionKeyForIndex(
+        _currentEpisode,
+      );
+      return buildRemoteGraphicSubtitleTimingInput(
+        client: client,
+        videoId: info.id,
+        track: track,
+        containerOrdinal: ordinal,
+        episodeIndex: episode,
+        tempDirectory: getTemporaryDirectory,
+      );
+    }
+    return controller.graphicSubtitleTimingInputForTrack(
+      streamIndex: ordinal,
+      codec: track.codec,
+    );
+  }
+
+  /// 本地图形轨整轨 OCR（取数见 [_graphicTrackOcrInput]，流程见 [_runGraphicTrackOcr]）。
   Future<void> _generateSubtitleFromGraphicTrack(
     VideoPlayerController controller,
     SubtitleSource source,
   ) async {
     final int? streamIndex = source.streamIndex;
+    final GraphicSubtitleTimingInput? input = _graphicTrackOcrInput(
+      controller,
+      source,
+    );
+    if (streamIndex == null || input == null) return;
+    await _runGraphicTrackOcr(
+      controller,
+      input: input,
+      streamIndex: streamIndex,
+      applyResult: (String target) =>
+          _importExternalSubtitle(controller, target),
+      restoreGraphic: () => _selectSubtitleSource(controller, source),
+    );
+  }
+
+  /// 远端图形轨整轨 OCR（取数见 [_remoteGraphicTrackOcrInput]：互联下 host 整轨、
+  /// 媒体服务器 / URL 流按流地址 + 请求头）。产物落本机字幕目录，按远端字幕选择持久化。
+  Future<void> _generateSubtitleFromRemoteGraphicTrack(
+    VideoPlayerController controller,
+    RemoteVideoEmbeddedSubtitleTrack track,
+  ) async {
+    final GraphicSubtitleTimingInput? input = _remoteGraphicTrackOcrInput(
+      controller,
+      track,
+    );
+    if (input == null) return;
+    await _runGraphicTrackOcr(
+      controller,
+      input: input,
+      streamIndex: track.streamIndex,
+      applyResult: (String target) async {
+        _registerImportedSubtitleSource(target);
+        await _applyRemoteSubtitle(controller, target);
+      },
+      restoreGraphic: () => _showRemoteGraphicTrackViaPlayer(
+        controller,
+        track,
+        source: _remoteEmbeddedSubtitleSource(track),
+        label: _remoteEmbeddedSubtitleLabel(track),
+      ),
+    );
+  }
+
+  /// 把图形字幕轨（PGS / VobSub / DVB）整轨 OCR 成文字 SRT 并当外挂字幕加载：确认引擎 →
+  /// 解析引擎 → 取整轨载荷（[materializeGraphicSubtitleTrack]：本地 / 网络流抽轨，互联下
+  /// host 整轨）→ 解码位图 → 逐条识别（低置信度交 AI，与漫画同一开关）→ 合并相邻同文。
+  /// 产物落字幕目录，与 ASR 产物同口径（[applyResult] 加载），之后播放中直接点字查词。
+  ///
+  /// 全程挂一张进度卡（[_graphicSubtitleOcrJob]）：阶段 + 百分比 + 实际引擎 / AI 重读来源
+  /// + 取消。引擎与模型复用漫画 OCR 设置（开始前的确认框可直达），不另起一套。
+  /// 实时补进的半截文字没落成产物（取消 / 失败）时经 [restoreGraphic] 还原图形字幕。
+  Future<void> _runGraphicTrackOcr(
+    VideoPlayerController controller, {
+    required GraphicSubtitleTimingInput input,
+    required int streamIndex,
+    required Future<void> Function(String target) applyResult,
+    required Future<void> Function() restoreGraphic,
+  }) async {
     final String? videoPath = _currentVideoPath;
-    if (streamIndex == null || videoPath == null) return;
     if (_graphicSubtitleOcrRunning) return;
     final int loadSeq = _episodeLoadSeq;
     bool isCurrent() =>
@@ -2137,6 +2332,13 @@ extension _VideoSubtitle on _VideoFushiPageState {
       prepare: _prepareGraphicSubtitleOcr,
     );
     Directory? work;
+    Future<bool>? extraction;
+    Timer? livePublishTimer;
+    bool livePublished = false;
+    bool succeeded = false;
+    final String? startSource = _currentSubtitleSource;
+    // 用户中途自己换了字幕轨就不再往播放器里塞 OCR 结果。
+    bool userKeepsSource() => _currentSubtitleSource == startSource;
     try {
       if (!await _confirmGraphicSubtitleOcrStart() || !isCurrent()) return;
       final int durationMs = controller.durationMs ?? 0;
@@ -2159,11 +2361,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
         ),
       );
       work = await Directory.systemTemp.createTemp('fushi_graphic_sub_track_');
-      final String supPath = p.join(work.path, 'track.sup');
-      final bool extracted = await extractGraphicSubtitleTrackToSup(
-        videoPath: videoPath,
-        streamIndex: streamIndex,
-        supPath: supPath,
+      // 载荷格式随编码（PGS 段流 / VobSub、DVB 单轨 TS + 轨头），读取一律按轨头解码。
+      final String payloadPath = p.join(work.path, 'track.bin');
+      // 边抽边识别（边看边 OCR）：抽轨进程写载荷的同时反复读出已落盘的 cue，
+      // 播放头附近的先识别，识别一条就补进可点字幕；不必等整个文件读完。
+      bool extractDone = false;
+      extraction = materializeGraphicSubtitleTrack(
+        input: input,
+        outputPath: payloadPath,
         cancel: cancel.future,
         onProgress: (Duration processed) => _updateGraphicSubtitleOcrJob(
           (GraphicSubtitleOcrJobState job) =>
@@ -2174,7 +2379,81 @@ extension _VideoSubtitle on _VideoFushiPageState {
           summary,
           StackTrace.current,
         ),
-      );
+      ).whenComplete(() => extractDone = true);
+      final Future<bool> extractionResult = extraction;
+      List<GraphicSubtitleTextCue> pending = const <GraphicSubtitleTextCue>[];
+      DateTime? lastPublishAt;
+      Future<void> publishLive() async {
+        livePublishTimer?.cancel();
+        livePublishTimer = null;
+        if (!isCurrent() || cancelled() || !userKeepsSource()) return;
+        final List<AudioCue> live = graphicSubtitleAudioCues(pending);
+        if (live.isEmpty) return;
+        lastPublishAt = DateTime.now();
+        if (!livePublished) {
+          livePublished = true;
+          // 先离开图形渲染再喂文本 cue（顺序反了控制器会漏掉图形轨的 seek 预读还原）。
+          await controller.selectSubtitleTrack(SubtitleTrack.no());
+          if (!isCurrent()) return;
+          await _setDelayMs(0);
+          if (!isCurrent()) return;
+        }
+        controller.setCues(live);
+      }
+
+      final List<GraphicSubtitleTextCue>? texts =
+          await recognizeGraphicSubtitleCuesLive(
+            snapshot: () => readGraphicSubtitleTrackInBackground(
+              payloadPath,
+              complete: extractDone,
+            ),
+            sourceComplete: () => extractDone,
+            sourceDone: extractionResult.then((_) {}),
+            session: session,
+            positionMs: () => controller.positionMs ?? 0,
+            isCancelled: () => !isCurrent() || cancelled(),
+            onRecognized: (List<GraphicSubtitleTextCue> recognized) {
+              pending = recognized;
+              final DateTime? last = lastPublishAt;
+              final Duration since = last == null
+                  ? kGraphicSubtitleLivePublishInterval
+                  : DateTime.now().difference(last);
+              if (since >= kGraphicSubtitleLivePublishInterval) {
+                unawaited(publishLive());
+              } else {
+                livePublishTimer ??= Timer(
+                  kGraphicSubtitleLivePublishInterval - since,
+                  () => unawaited(publishLive()),
+                );
+              }
+            },
+            onProgress: (int done, int known) {
+              final ({int done, int total}) ai = session.subtitleAiProgress;
+              _updateGraphicSubtitleOcrJob(
+                (GraphicSubtitleOcrJobState job) => job.copyWith(
+                  phase: extractDone
+                      ? GraphicSubtitleOcrJobPhase.recognizing
+                      : GraphicSubtitleOcrJobPhase.extracting,
+                  done: done,
+                  total: known,
+                  aiDone: ai.done,
+                  aiTotal: ai.total,
+                ),
+              );
+            },
+            // 本地识别完后等大模型重读收尾：进度卡上的 AI 行跟着走。
+            onAiProgress: (int done, int total) => _updateGraphicSubtitleOcrJob(
+              (GraphicSubtitleOcrJobState job) =>
+                  job.copyWith(aiDone: done, aiTotal: total),
+            ),
+            onRefineError: (Object error, StackTrace stack) => ErrorLogService
+                .instance
+                .log('video.graphicSubtitleOcr.refine', error, stack),
+          );
+      livePublishTimer?.cancel();
+      livePublishTimer = null;
+      if (!isCurrent()) return;
+      final bool extracted = await extractionResult;
       if (!isCurrent()) return;
       if (cancelled()) {
         _showOsd(t.video_subtitle_graphic_ocr_job_cancelled);
@@ -2184,38 +2463,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         _showOsd(t.video_subtitle_import_failed, severity: ToastSeverity.error);
         return;
       }
-      final List<PgsCue> cues = PgsSubtitleParser.parse(
-        await File(supPath).readAsBytes(),
-      );
-      if (!isCurrent()) return;
-      if (cues.isEmpty) {
-        _showOsd(t.video_subtitle_graphic_ocr_empty);
-        return;
-      }
-      _updateGraphicSubtitleOcrJob(
-        (GraphicSubtitleOcrJobState job) => job.copyWith(
-          phase: GraphicSubtitleOcrJobPhase.recognizing,
-          total: cues.length,
-        ),
-      );
-      final List<GraphicSubtitleTextCue>? texts =
-          await recognizeGraphicSubtitleCues(
-            cues: cues,
-            session: session,
-            isCancelled: () => !isCurrent() || cancelled(),
-            onProgress: (int done, int total) => _updateGraphicSubtitleOcrJob(
-              (GraphicSubtitleOcrJobState job) =>
-                  job.copyWith(done: done, total: total),
-            ),
-            onRefineError: (Object error, StackTrace stack) => ErrorLogService
-                .instance
-                .log('video.graphicSubtitleOcr.refine', error, stack),
-          );
-      if (!isCurrent()) return;
-      if (texts == null) {
-        if (cancelled()) _showOsd(t.video_subtitle_graphic_ocr_job_cancelled);
-        return;
-      }
+      if (texts == null) return;
       final String srt = buildGraphicSubtitleSrt(texts);
       if (srt.isEmpty) {
         _showOsd(t.video_subtitle_graphic_ocr_empty);
@@ -2223,7 +2471,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
       }
       final Directory directory = await AppPaths.videoSubtitlesDirectory();
       final String videoKey = sha256
-          .convert(utf8.encode('${widget.bookUid}|$videoPath|$_currentEpisode'))
+          .convert(
+            utf8.encode(
+              '${widget.bookUid}|${videoPath ?? _activeBookUid}|$_currentEpisode',
+            ),
+          )
           .toString()
           .substring(0, 12);
       final String target = p.join(
@@ -2235,7 +2487,13 @@ extension _VideoSubtitle on _VideoFushiPageState {
       await File(target).writeAsString(srt, flush: true);
       if (!isCurrent()) return;
       _graphicSubtitleOcrJob.value = null;
-      await _importExternalSubtitle(controller, target);
+      succeeded = true;
+      if (!userKeepsSource()) {
+        // 用户中途换了别的字幕：产物只进轨道列表，不抢当前选择。
+        _registerImportedSubtitleSource(target);
+        return;
+      }
+      await applyResult(target);
       if (!isCurrent()) return;
       if (controller.cues.isNotEmpty && _currentSubtitleSource == target) {
         await _setDelayMs(0);
@@ -2251,8 +2509,23 @@ extension _VideoSubtitle on _VideoFushiPageState {
       if (identical(_graphicSubtitleOcrCancel, cancel)) {
         _graphicSubtitleOcrCancel = null;
       }
+      livePublishTimer?.cancel();
+      // 识别中途出错 / 退出时抽轨进程可能还在跑：强杀并等它退出再删临时目录。
+      if (!cancel.isCompleted) cancel.complete();
+      try {
+        await extraction;
+      } catch (_) {
+        // 抽轨失败已在上面报过。
+      }
       if (mounted) _graphicSubtitleOcrJob.value = null;
       await session.close();
+      // 实时补进的半截文字字幕没有落成产物（取消 / 失败）：还原成原来的图形字幕。
+      if (livePublished &&
+          !succeeded &&
+          isCurrent() &&
+          _currentSubtitleSource == startSource) {
+        await restoreGraphic();
+      }
       try {
         await work?.delete(recursive: true);
       } on FileSystemException {
@@ -3606,3 +3879,74 @@ typedef _SubtitleTimingAudio = ({
   int? audioStreamIndex,
   int? audioStreamCount,
 });
+
+/// 远端图形轨的整轨时间表来源：[client] 能回传 host 抽好的整轨
+/// （[RemoteVideoGraphicSubtitleTrackFetch]，互联 host 有原文件）时给出
+/// [GraphicSubtitleTimingHostTrack]——client 只下几百 KB，**绝不**退回按流地址整片读；
+/// 其它来源（媒体服务器 / URL 流 / 在线源直链）返回 null，由播放器按当前流地址 + 请求头
+/// 推导网络流抽取（[graphicSubtitleTimingInputForSource]）。
+///
+/// [track] 是 host 清单里的轨（下载按 host 的 [RemoteVideoEmbeddedSubtitleTrack.streamIndex]），
+/// [containerOrdinal] 是它在容器内字幕轨里的序号（播放器选轨用的那个）。下载失败只记
+/// 日志、返回 null：时间表退回边播边记，不打扰播放。
+GraphicSubtitleTimingInput? buildRemoteGraphicSubtitleTimingInput({
+  required RemoteVideoClient client,
+  required String videoId,
+  required RemoteVideoEmbeddedSubtitleTrack track,
+  required int containerOrdinal,
+  required int episodeIndex,
+  required Future<Directory> Function() tempDirectory,
+}) {
+  if (client is! RemoteVideoGraphicSubtitleTrackFetch) return null;
+  final RemoteVideoGraphicSubtitleTrackFetch fetcher =
+      client as RemoteVideoGraphicSubtitleTrackFetch;
+  return GraphicSubtitleTimingHostTrack(
+    streamIndex: containerOrdinal,
+    codec: track.codec,
+    download: () async {
+      final Directory temp = await tempDirectory();
+      final String safeId = videoId.replaceAll(
+        RegExp(r'[^A-Za-z0-9._-]+'),
+        '_',
+      );
+      // 每次下载独占一组文件名：逐句时间表与整轨 OCR 可能同时下同一条轨，各自解析完
+      // 即删，共用文件名会互相截断 / 删掉对方的载荷。
+      final String stem = p.join(
+        temp.path,
+        'fushi_remote_graphic_${safeId}_e${episodeIndex}_s${track.streamIndex}'
+        '_${DateTime.now().microsecondsSinceEpoch}',
+      );
+      final File payload = File('$stem.bin');
+      try {
+        await fetcher.getRemoteVideoGraphicSubtitleTrack(
+          videoId,
+          payload,
+          embeddedStreamIndex: track.streamIndex,
+          episodeIndex: episodeIndex,
+        );
+      } catch (error) {
+        debugPrint('[VideoFushiPage] remote graphic subtitle track: $error');
+        return null;
+      }
+      if (!payload.existsSync()) return null;
+      // 轨头：VobSub / DVB 的 extradata 不在载荷里；PGS 没有也能解（host 404 即无）。
+      final File header = File('$stem.header.download.json');
+      bool hasHeader = true;
+      try {
+        await fetcher.getRemoteVideoGraphicSubtitleTrackHeader(
+          videoId,
+          header,
+          embeddedStreamIndex: track.streamIndex,
+          episodeIndex: episodeIndex,
+        );
+      } catch (error) {
+        debugPrint('[VideoFushiPage] remote graphic subtitle header: $error');
+        hasHeader = false;
+      }
+      return (
+        payload: payload,
+        header: hasHeader && header.existsSync() ? header : null,
+      );
+    },
+  );
+}

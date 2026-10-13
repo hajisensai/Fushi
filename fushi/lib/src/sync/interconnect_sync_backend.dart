@@ -186,6 +186,7 @@ class InterconnectSyncBackend extends SyncBackend
     implements
         RemoteBookClient,
         RemoteVideoClient,
+        RemoteVideoGraphicSubtitleTrackFetch,
         RemoteVideoPlaybackSync,
         RemoteVideoQualityLimit,
         RemoteCoverFetcher {
@@ -2319,6 +2320,60 @@ class InterconnectSyncBackend extends SyncBackend
       destination: dest,
       onProgress: syncTransferFractionOnly(onProgress),
     );
+  }
+
+  /// 下载 host 抽好的图形字幕整轨（`GET .../graphicsubtitle`）到 [dest]。
+  ///
+  /// host 要先在本机整片读一遍抽轨（之后命中它的缓存），首字节可能要等几十秒——走
+  /// [downloadContentFile] 的打包型首字节余量（[packageFirstByteTimeout]）。老 host 无
+  /// 该端点 → 404、没接入抽取 → 501、编码不支持 → 415，一律抛错由调用方退回边播边记。
+  @override
+  Future<void> getRemoteVideoGraphicSubtitleTrack(
+    String id,
+    File dest, {
+    required int embeddedStreamIndex,
+    int episodeIndex = 0,
+  }) =>
+      _downloadGraphicSubtitlePart(
+        id,
+        dest,
+        embeddedStreamIndex: embeddedStreamIndex,
+        episodeIndex: episodeIndex,
+        header: false,
+      );
+
+  /// 同一条轨的轨头（`?part=header`，VobSub 调色板 / DVB 页号等 extradata）。
+  @override
+  Future<void> getRemoteVideoGraphicSubtitleTrackHeader(
+    String id,
+    File dest, {
+    required int embeddedStreamIndex,
+    int episodeIndex = 0,
+  }) =>
+      _downloadGraphicSubtitlePart(
+        id,
+        dest,
+        embeddedStreamIndex: embeddedStreamIndex,
+        episodeIndex: episodeIndex,
+        header: true,
+      );
+
+  Future<void> _downloadGraphicSubtitlePart(
+    String id,
+    File dest, {
+    required int embeddedStreamIndex,
+    required int episodeIndex,
+    required bool header,
+  }) async {
+    await _ensureResolved();
+    final Uri uri = Uri.parse(
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/graphicsubtitle',
+    ).replace(queryParameters: <String, String>{
+      'embeddedStreamIndex': '$embeddedStreamIndex',
+      if (episodeIndex > 0) 'episode': '$episodeIndex',
+      if (header) 'part': 'header',
+    });
+    await downloadContentFile(fileId: uri.toString(), destination: dest);
   }
 
   /// BUG-1004：请求 host 在其**本地**裁出视频 [id] 的 `[startMs,endMs)` 段音频（mining 句子

@@ -7044,5 +7044,7 @@
   "book_import_no_book_transcribe_hint": "沒有書也能匯入：直接用裝置端轉錄把音訊轉成字幕，匯入時會據此自動生成一本書。",
   "book_import_no_book_subtitle_hint": "沒有書也能匯入：為這段音訊選一個字幕檔，匯入時會據此自動生成一本書。",
   "book_import_no_book_transcribe_action": "轉錄並生成書籍",
-  "onboarding_anki_auto_reposition_hint": "About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can't reorder cards."
+  "onboarding_anki_auto_reposition_hint": "About 30 seconds after you mine, new cards in that deck are reordered by word frequency so common words come first. Review cards are never touched. Needs desktop Anki with AnkiConnect (a phone can use it by connecting to AnkiConnect on a computer); AnkiDroid and AnkiMobile can't reorder cards.",
+  "video_subtitle_graphic_ocr_job_extracting_live": "Reading $percent% · $done lines ready, playing along",
+  "video_subtitle_graphic_ocr_job_ai_progress": "AI re-read: $provider · $done/$total"
 }

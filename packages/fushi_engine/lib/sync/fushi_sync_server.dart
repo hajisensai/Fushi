@@ -29,6 +29,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
 import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/graphic_subtitle_track_export.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
@@ -416,6 +417,12 @@ class FushiSyncServer {
   /// 补字幕服务住在 app（字幕来源 / 刮削身份 / AI 重排都在那边装配），无头服务端
   /// 不接——null 时该端点回 501，能力位 `videoSubtitleBackfill=false`。
   VideoSubtitleBackfillRunner? videoSubtitleBackfill;
+
+  /// 图形字幕整轨回传（`GET /api/library/videos/<id>/graphicsubtitle`）用的抽取实现。
+  /// 由装配方注入（app 与无头服务端都注入引擎的
+  /// `InterconnectGraphicSubtitleExporter`，见 `interconnect_graphic_subtitle_export.dart`）——null 时该端点回 501，能力位 `videoGraphicSubtitleTrack=false`，client 的
+  /// 图形字幕时间表退回边播边记。见 `graphic_subtitle_track_export.dart`。
+  GraphicSubtitleTrackExporter? graphicSubtitleTrackExporter;
 
   /// 用户在 host 上填的公网 / 反代 / DDNS 地址（每次 capabilities 实时读）。
   Future<List<String>> Function()? publicUrlsProvider;
