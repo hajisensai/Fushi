@@ -1110,6 +1110,14 @@ class AnotherPopupPart {
       'lib/src/media/manga/ocr/system_ocr_manga_service.dart':
           'Writes the MokuroBlock.fontSize data field for device-OCR-produced '
           'manga.json blocks; pure data layer, no UI typography.',
+      // BUG-3275：图形字幕整轨 OCR 把每条位图交给漫画 OCR 链路（本地识别 + 大模型
+      // 重读），为此构造 MokuroBlock——写的是同一个 fontSize 数据字段（识别出的字高，
+      // 交给 AI 重读的低置信度判据与裁图用），文件零 UI。既有 reviewed 豁免类跟随
+      // 新生产者；「无 UI 代码」由下面的纯数据层断言钉成可证伪的。
+      'lib/src/media/video/graphic_subtitle_ocr.dart':
+          'Builds MokuroBlock data records (fontSize = recognized glyph '
+          'height) to feed graphic subtitle bitmaps through the manga OCR / '
+          'AI re-read pipeline; pure data layer, no UI typography.',
       'lib/src/creator/fields/image_field.dart':
           'Anki image-field renderer uses OCR/image coordinate typography.',
       // BUG-1425：查词源文本条的字号是**跨边界对齐常量**，不是本地 MD3 排版决定：
@@ -1309,6 +1317,7 @@ class AnotherPopupPart {
       'lib/src/media/manga/ocr/system_ocr_manga_service.dart': <String>{
         'fontSize:',
       },
+      'lib/src/media/video/graphic_subtitle_ocr.dart': <String>{'fontSize:'},
       'lib/src/media/video/subtitle_waveform_align_panel.dart': <String>{
         'BorderRadius.circular(',
         'surfaceContainerHighest',
@@ -1834,6 +1843,46 @@ class AnotherPopupPart {
         isNot(contains(chrome)),
         reason: 'the reviewed exemption must not start covering page chrome',
       );
+    }
+  });
+
+  // BUG-3275：graphic_subtitle_ocr.dart 的豁免理由同样是「只写 MokuroBlock 数据字段」，
+  // 钉成可证伪的：不得引入 widget / Material 层，fontSize: 只能是 MokuroBlock 构造。
+  test('graphic subtitle OCR stays a pure data layer', () {
+    final String code = maskComments(
+      File('lib/src/media/video/graphic_subtitle_ocr.dart').readAsStringSync(),
+    );
+    for (final String layer in const <String>[
+      'package:flutter/widgets.dart',
+      'package:flutter/material.dart',
+      'package:material_ui/',
+      'package:cupertino_ui/',
+    ]) {
+      expect(
+        code,
+        isNot(contains(layer)),
+        reason:
+            'graphic_subtitle_ocr.dart is allowlisted as a pure data layer; '
+            'importing $layer invalidates that reason',
+      );
+    }
+    final RegExp blockWrite = RegExp(r'MokuroBlock\(\s*[^;]*?fontSize:');
+    final int fontSizeHits = 'fontSize:'.allMatches(code).length;
+    expect(fontSizeHits, greaterThan(0));
+    expect(
+      blockWrite.allMatches(code).length,
+      fontSizeHits,
+      reason:
+          'every fontSize: in graphic_subtitle_ocr.dart must be a '
+          'MokuroBlock data-field write, not page typography',
+    );
+    for (final String chrome in const <String>[
+      'TextStyle(',
+      'Card(',
+      'ListTile(',
+      'BorderRadius.circular(',
+    ]) {
+      expect(code, isNot(contains(chrome)));
     }
   });
 
@@ -2375,7 +2424,10 @@ class AnotherPopupPart {
     // 用 tokens.spacing 凑 padding / 间距，而是取顶栏共享命中盒
     // [dictionaryPopupTopActionConstraints]（与左右两簇同一个来源），间距交给
     // [DictionaryPopupToolGroup]。守卫意图不变：不许手写魔数间距。
-    expect(sentenceActionBar, contains('dictionaryPopupTopActionConstraints()'));
+    expect(
+      sentenceActionBar,
+      contains('dictionaryPopupTopActionConstraints()'),
+    );
     expect(sentenceActionBar, contains('DictionaryPopupToolGroup('));
     expect(sentenceActionBar, isNot(contains('const SizedBox(width: 8)')));
   });

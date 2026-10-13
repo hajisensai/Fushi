@@ -15,4 +15,4 @@
 
 2026-10-10 Azure 后台回读确认目标 client ID 应用原先仅有 `http://localhost`、`hibiki://auth/onedrive`；在 Mobile and desktop applications 平台添加 `fushi://auth/onedrive` 并 Configure 保存后，真实 Redirect URIs 列表显示全部三条。旧回调与桌面回调均保留。云端回调缺失已修复，手机登录尚未验证。
 
-2026-08-07 的 `fa1d429f06` 把手机回调从 `hibiki://` 切到 `fushi://`。当时文件路径是 `hibiki/lib/src/sync/`，当前是 `fushi/lib/src/sync/`。桌面经 `desktop_oauth.dart` 生成 localhost 回环地址，与手机 custom scheme 分开。
+2026-08-07 的 `fa1d429f06` 把手机回调从 `hibiki://` 切到 `fushi://`。回调代码当前在 `fushi/lib/src/sync/`（app 目录改名前的旧路径见该提交本身）。桌面经 `desktop_oauth.dart` 生成 localhost 回环地址，与手机 custom scheme 分开。
