@@ -1410,7 +1410,16 @@ void main() {
     final Finder elsewhere = find.byKey(
       const ValueKey<String>('feedback-relation-farfarfar0'),
     );
-    await settleIo(tester, () => elsewhere.evaluate().isNotEmpty);
+    // closedclo0 带一张截图：详情页会去下载它。只等关联标签就结束测试的话，下载的
+    // 网络计时器可能还没走完，CI 上偶发「Timer is still pending」。连缩略图一起等到。
+    final Finder thumb = find.descendant(
+      of: find.byKey(const ValueKey<String>('feedback-detail-shot-s0')),
+      matching: find.byType(Image),
+    );
+    await settleIo(
+      tester,
+      () => elsewhere.evaluate().isNotEmpty && thumb.evaluate().isNotEmpty,
+    );
     // 本机有 ticket 的那条能点过去；别的设备提交的只是标签，不装成按钮。
     expect(tester.widget(elsewhere), isA<FushiTag>());
     expect(
