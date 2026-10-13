@@ -197,6 +197,39 @@ LiquidGlassSettings fushiGlassSettingsOverPlatformView(
   );
 }
 
+/// Apple 悬浮胶囊（悬浮工具栏 / 动作组 / 迷你播放条 / 悬浮圆钮）的实色面：
+/// 系统材质实色（深 #1C1C1E / 浅 #F9F9F9，[tint] 覆盖，如强调色圆钮）+ 0.5 px
+/// 发丝描边 + 一层柔和投影。
+///
+/// 不用玻璃：悬浮胶囊常压在滚动列表、阅读器 / 视频画面上，每颗各开一层实时
+/// 模糊（`useOwnLayer`）逐帧重采样，桌面与 Android 上明显掉帧，玻璃的亮边在
+/// 浅色底上也是一圈刺眼的白边（用户 2026-10-12）。结构（分组胶囊、bar button
+/// 尺寸、选中强调色字形）仍按 iOS 26，只是材质取实色。
+ShapeDecoration fushiAppleSolidFloatingDecoration(
+  BuildContext context, {
+  required ShapeBorder shape,
+  Color? tint,
+}) {
+  final bool dark = Theme.of(context).colorScheme.brightness == Brightness.dark;
+  final Color hairline = dark
+      ? Colors.white.withValues(alpha: 0.10)
+      : Colors.black.withValues(alpha: 0.08);
+  final ShapeBorder outlined = shape is OutlinedBorder
+      ? shape.copyWith(side: BorderSide(color: hairline, width: 0.5))
+      : shape;
+  return ShapeDecoration(
+    color: tint ?? fushiGlassPlatformViewFallback(context),
+    shape: outlined,
+    shadows: <BoxShadow>[
+      BoxShadow(
+        color: Colors.black.withValues(alpha: dark ? 0.30 : 0.10),
+        blurRadius: 16,
+        offset: const Offset(0, 4),
+      ),
+    ],
+  );
+}
+
 /// 玻璃着色器「采不到背景」处的实色兜底（UIKit systemMaterial：深 #1C1C1E /
 /// 浅 #F9F9F9）。库只在采样为空的像素上用它，采得到背景的地方照常是玻璃。
 ///

@@ -2,7 +2,9 @@ import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
 // Material 3 Expressive（2025-05）的进度与加载指示，自绘实现。
 //
@@ -23,6 +25,23 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 // 每个控件只有一个 AnimationController，画在 RepaintBoundary 里；系统「减少
 // 动态效果」（MediaQuery.disableAnimations）时退回直线 / 静止、不跑动画。
 // 墨水屏不用这里（调用方退回 Material 原控件的墨水屏处理）。
+//
+// Apple 设计系统（isGlassDesign）下三个控件在内部改走 Apple 进度，直接调用点
+// 也不会漏出 M3E 形态（不跑 ticker、不画波浪 / 形变）：
+// - [FushiWavyLinearProgress] → [FushiAppleLinearProgress] 细线（不超过 iOS 4 /
+//   macOS 3 的线宽，忽略 waving / 停止点 / 缝）；
+// - [FushiWavyCircularProgress] 不定态 → 菊花 [fushiAppleActivityIndicator]，
+//   确定态 → 细圆环 [FushiAppleProgressRing]（外框与内边距不变，不跳布局）；
+// - [FushiExpressiveLoadingIndicator] → 菊花（iOS 没有 contained 圆底）。
+// 调用方显式给的颜色照用。
+
+/// Apple 线性进度的线宽上限：触屏 4、桌面（macOS 尺寸档）3。
+double _appleLinearMaxHeight(BuildContext context) {
+  return switch (Theme.of(context).platform) {
+    TargetPlatform.macOS || TargetPlatform.windows || TargetPlatform.linux => 3,
+    _ => 4,
+  };
+}
 
 /// 是否允许动画（系统「减少动态效果」时为 false）。
 bool _motionAllowed(BuildContext context) =>
@@ -137,7 +156,7 @@ class _FushiWavyLinearProgressState extends State<FushiWavyLinearProgress>
   // 不跑控制器——否则「已看完」贴底满条这类静止装饰会永远每帧重绘。
   @override
   bool wantsAnimation(BuildContext context) {
-    if (!_motionAllowed(context)) return false;
+    if (!_motionAllowed(context) || isGlassDesign(context)) return false;
     final double? value = widget.value;
     if (value != null && !widget.waving) return false;
     return value == null || _amplitudeEase(value.clamp(0.0, 1.0)) > 0;
@@ -145,6 +164,20 @@ class _FushiWavyLinearProgressState extends State<FushiWavyLinearProgress>
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      // 父级给紧高度（如 SizedBox(height: 12)）时细线垂直居中，不被撑成粗条。
+      return Align(
+        heightFactor: 1,
+        child: FushiAppleLinearProgress(
+          value: widget.value,
+          height: math.min(widget.strokeWidth, _appleLinearMaxHeight(context)),
+          color: widget.color,
+          trackColor: widget.trackColor,
+          semanticsLabel: widget.semanticsLabel,
+          semanticsValue: widget.semanticsValue,
+        ),
+      );
+    }
     final double? value = widget.value;
     final bool motion = _motionAllowed(context);
     final double stroke = widget.strokeWidth;
@@ -409,10 +442,12 @@ class _FushiWavyCircularProgressState extends State<FushiWavyCircularProgress>
   Duration get tickerPeriod => const Duration(milliseconds: 8000);
 
   @override
-  bool wantsAnimation(BuildContext context) => _motionAllowed(context);
+  bool wantsAnimation(BuildContext context) =>
+      _motionAllowed(context) && !isGlassDesign(context);
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) return _buildApple(context);
     final double? value = widget.value;
     final bool motion = _motionAllowed(context);
     return Semantics(
@@ -447,6 +482,41 @@ class _FushiWavyCircularProgressState extends State<FushiWavyCircularProgress>
           ),
         ),
       ),
+    );
+  }
+
+  /// Apple：外框 [FushiWavyCircularProgress.size] 与内边距不变，不定态菊花、
+  /// 确定态细圆环（小外框线宽 2，否则 3）。
+  Widget _buildApple(BuildContext context) {
+    final double? value = widget.value;
+    final double inner = math.max(
+      0,
+      widget.size - widget.padding.resolve(Directionality.of(context)).vertical,
+    );
+    final Widget indicator;
+    if (value == null) {
+      final Widget spinner = fushiAppleActivityIndicator(
+        context,
+        size: inner,
+        color: widget.color,
+      );
+      indicator = widget.semanticsLabel == null
+          ? spinner
+          : Semantics(label: widget.semanticsLabel, child: spinner);
+    } else {
+      indicator = FushiAppleProgressRing(
+        value: value,
+        size: inner,
+        strokeWidth: inner <= 24 ? 2 : 3,
+        color: widget.color,
+        trackColor: widget.trackColor,
+        semanticsLabel: widget.semanticsLabel,
+        semanticsValue: widget.semanticsValue,
+      );
+    }
+    return SizedBox.square(
+      dimension: widget.size,
+      child: Padding(padding: widget.padding, child: indicator),
     );
   }
 }
@@ -659,10 +729,29 @@ class _FushiExpressiveLoadingIndicatorState
       Duration(milliseconds: _morphMs * _kSampledShapes.length);
 
   @override
-  bool wantsAnimation(BuildContext context) => _motionAllowed(context);
+  bool wantsAnimation(BuildContext context) =>
+      _motionAllowed(context) && !isGlassDesign(context);
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      // iOS / macOS 的不定态「加载」是菊花：不变形、不铺 contained 圆底；
+      // 颜色只认调用方显式给的，否则系统灰。
+      // 外框与 MD3 同为 size × size，切设计系统不跳布局、不被父级撑宽。
+      return Semantics(
+        label: widget.semanticsLabel,
+        child: SizedBox.square(
+          dimension: widget.size,
+          child: Center(
+            child: fushiAppleActivityIndicator(
+              context,
+              size: widget.size,
+              color: widget.color,
+            ),
+          ),
+        ),
+      );
+    }
     final ColorScheme cs = Theme.of(context).colorScheme;
     final Color color =
         widget.color ?? (widget.contained ? cs.onPrimaryContainer : cs.primary);

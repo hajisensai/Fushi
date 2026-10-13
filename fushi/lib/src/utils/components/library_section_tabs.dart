@@ -162,8 +162,9 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
   /// M3 Expressive 浮动页签胶囊（2026-10-05 视频库浮动工具栏）：整排收进一枚
   /// 悬浮的 floating toolbar 胶囊（[FushiFloatingToolbarSurface]），按自然宽贴左、
   /// 摆不下时在胶囊里横滑；选中段是 secondaryContainer 全胶囊，切换时弹性
-  /// 拉伸滑过去（[TabIndicatorAnimation.elastic]）。Apple 设计系统是一枚
-  /// 液态玻璃胶囊。焦点 / 投影 / 跟随契约与常规形态完全相同。
+  /// 拉伸滑过去（[TabIndicatorAnimation.elastic]）。Apple 设计系统不套胶囊，
+  /// 是贴内容宽排在页面上的 iOS 文字页签（下划线跟字走）。焦点 / 投影 /
+  /// 跟随契约与常规形态完全相同。
   final bool floating;
 
   /// MD3 secondary tabs：页面内、primary tabs 之下的二级分区（如「浏览」页签里
@@ -210,14 +211,21 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
       return _focusShell(
         selectedValue: selectedValue,
         onSelect: onSelect,
-        child: FushiSectionTabBar<T>(
-          tabs: tabs,
-          selected: selectedValue,
-          onChanged: onSelect,
-          secondary: secondary,
-          fill: fill,
-          floating: floating,
-        ),
+        child: isGlassDesign(context)
+            ? _AppleSectionSegments<T>(
+                tabs: tabs,
+                selected: selectedValue,
+                onChanged: onSelect,
+                fill: fill && !floating,
+              )
+            : FushiSectionTabBar<T>(
+                tabs: tabs,
+                selected: selectedValue,
+                onChanged: onSelect,
+                secondary: secondary,
+                fill: fill,
+                floating: floating,
+              ),
       );
     }
     // 焦点外壳要的是「当前值 + 怎么切」，从宿主 controller 就地派生；监听它才能让
@@ -226,21 +234,181 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
       animation: host,
       builder: (BuildContext context, Widget? child) {
         final int index = host.index.clamp(0, tabs.length - 1);
+        void select(T value) {
+          final int target = tabs.indexWhere(
+            (LibrarySectionTab<T> tab) => tab.value == value,
+          );
+          if (target >= 0 && target != host.index) host.animateTo(target);
+        }
+
         return _focusShell(
           selectedValue: tabs[index].value,
-          onSelect: (T value) {
-            final int target = tabs.indexWhere(
-              (LibrarySectionTab<T> tab) => tab.value == value,
-            );
-            if (target >= 0 && target != host.index) host.animateTo(target);
-          },
-          child: FushiSectionTabBar<T>.controlled(
-            tabs: tabs,
-            controller: host,
-            secondary: secondary,
-            fill: fill,
-            floating: floating,
+          onSelect: select,
+          child: isGlassDesign(context)
+              ? _AppleSectionSegments<T>(
+                  tabs: tabs,
+                  selected: tabs[index].value,
+                  onChanged: select,
+                  fill: fill && !floating,
+                )
+              : FushiSectionTabBar<T>.controlled(
+                  tabs: tabs,
+                  controller: host,
+                  secondary: secondary,
+                  fill: fill,
+                  floating: floating,
+                ),
+        );
+      },
+    );
+  }
+}
+
+/// [LibrarySectionTabs] 在 Apple 设计系统下的呈现层：原生 Cupertino 分段控件
+/// （用户 2026-10-12「顶部的标签页改回为 Cupertino 的分段选择器」，取代 10-04
+/// 的 iOS 文字页签 + 下划线）。
+///
+/// 段宽一律等分（`UISegmentedControl` 形态）：[fill] 且摆得下时铺满整行，
+/// 否则按内容取宽贴左。段数多到摆不下时不横滑（横滑会把首尾段切掉一截，
+/// 2026-10-12 用户截图「视频这块没贴合」），与 MD3 页签同一套溢出：只排得下
+/// 的前几段进控件，其余收进末尾的「更多」下拉；选中段在溢出区时替换到可见
+/// 末位，永远看得到自己在哪。焦点契约在外层 [FushiAdjustableSegmented]（与
+/// MD3 的 TabBar 同一外壳）。
+class _AppleSectionSegments<T extends Object> extends StatelessWidget {
+  const _AppleSectionSegments({
+    required this.tabs,
+    required this.selected,
+    required this.onChanged,
+    required this.fill,
+  });
+
+  final List<LibrarySectionTab<T>> tabs;
+  final T selected;
+  final ValueChanged<T> onChanged;
+  final bool fill;
+
+  /// 等宽段的格宽：最宽文案 + 两侧 14（同 [FushiSegmentedButton] 的口径）。
+  double _cellWidth(BuildContext context) {
+    final bool compact = fushiAppleCompact(context);
+    final TextStyle style =
+        (Theme.of(context).textTheme.labelLarge ?? const TextStyle()).copyWith(
+          fontSize: compact ? 13 : 15,
+          fontWeight: FontWeight.w600,
+        );
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    double widest = 0;
+    for (final LibrarySectionTab<T> tab in tabs) {
+      final TextPainter painter = TextPainter(
+        text: TextSpan(text: tab.label, style: style),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      widest = math.max(widest, painter.width);
+      painter.dispose();
+    }
+    return widest + 28;
+  }
+
+  /// [count] 段的控件宽（轨道两端各 3）。
+  static double _controlWidth(double cell, int count) => count * cell + 6;
+
+  Future<void> _showOverflow(
+    BuildContext anchorContext,
+    List<int> hidden,
+  ) async {
+    final RenderBox button = anchorContext.findRenderObject()! as RenderBox;
+    final RenderBox overlay =
+        Navigator.of(anchorContext).overlay!.context.findRenderObject()!
+            as RenderBox;
+    final RelativeRect position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        button.localToGlobal(Offset.zero, ancestor: overlay),
+        button.localToGlobal(
+          button.size.bottomRight(Offset.zero),
+          ancestor: overlay,
+        ),
+      ),
+      Offset.zero & overlay.size,
+    );
+    final int? picked = await showFushiMenu<int>(
+      context: anchorContext,
+      position: position,
+      items: <PopupMenuEntry<int>>[
+        for (final int i in hidden)
+          PopupMenuItem<int>(value: i, child: Text(tabs[i].label)),
+      ],
+    );
+    if (picked != null) onChanged(tabs[picked].value);
+  }
+
+  Widget _control(List<int> visible, {required bool expand}) {
+    return FushiSegmentedButton<T>(
+      segments: <ButtonSegment<T>>[
+        for (final int i in visible)
+          ButtonSegment<T>(
+            value: tabs[i].value,
+            label: Text(tabs[i].label, key: tabs[i].labelKey),
           ),
+      ],
+      selected: <T>{selected},
+      showSelectedIcon: false,
+      onSelectionChanged: (Set<T> values) {
+        if (values.isNotEmpty) onChanged(values.first);
+      },
+      expandedInsets: expand ? EdgeInsets.zero : null,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double cell = _cellWidth(context);
+    final double natural = _controlWidth(cell, tabs.length);
+    FushiHeaderCrampScope.maybeOf(context)?.reportTitleNaturalWidth(natural);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double max = constraints.maxWidth;
+        final List<int> all = <int>[for (int i = 0; i < tabs.length; i++) i];
+        if (!max.isFinite || natural <= max) {
+          return Align(
+            alignment: AlignmentDirectional.centerStart,
+            widthFactor: fill ? null : 1,
+            child: SizedBox(
+              width: fill && max.isFinite ? max : natural,
+              child: _control(all, expand: true),
+            ),
+          );
+        }
+        // 溢出：留出「更多」钮的位置，算排得下几段（至少 1 段）。
+        final int count = math.max(
+          1,
+          ((max - _kSectionTabMoreWidth - 6) / cell).floor(),
+        );
+        final int selectedIndex = math.max(
+          0,
+          tabs.indexWhere((LibrarySectionTab<T> tab) => tab.value == selected),
+        );
+        final List<int> visible = <int>[
+          for (int i = 0; i < count - 1; i++) i,
+          selectedIndex >= count - 1 ? selectedIndex : count - 1,
+        ];
+        final List<int> hidden = <int>[
+          for (final int i in all)
+            if (!visible.contains(i)) i,
+        ];
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            SizedBox(
+              width: _controlWidth(cell, visible.length),
+              child: _control(visible, expand: true),
+            ),
+            Builder(
+              builder: (BuildContext anchorContext) => _SectionTabMoreButton(
+                onTap: () => _showOverflow(anchorContext, hidden),
+              ),
+            ),
+          ],
         );
       },
     );
@@ -1180,9 +1348,10 @@ class _SectionTabOverflowFade extends StatelessWidget {
   Widget build(BuildContext context) {
     // eink：渐隐是一条灰阶过渡带 = 抖动噪点；去掉，尾端 tab 直接截断（横向拖滚照常）。
     if (isEinkTheme(context)) return const SizedBox.shrink();
-    final Color background = floating && secondary
+    final bool apple = isGlassDesign(context);
+    final Color background = floating && secondary && !apple
         ? _CompactSecondaryTabsFrame.colorOf(context)
-        : floating
+        : floating && !apple
         ? FushiFloatingToolbarSurface.colorOf(context)
         : Theme.of(context).scaffoldBackgroundColor;
     return IgnorePointer(
@@ -1226,6 +1395,16 @@ class _FloatingSectionTabsFrame extends StatelessWidget {
         final double width = constraints.maxWidth.isFinite
             ? math.min(wanted, constraints.maxWidth)
             : wanted;
+        // Apple：顶部文字页签（用户 2026-10-04 定的 iOS 文字页签 + 下划线）直接
+        // 排在页面上，不装进 M3E 的悬浮工具栏胶囊——iOS 没有「页签条套一枚浮起
+        // 的实色胶囊」这种形态，玻璃只给控件。
+        if (isGlassDesign(context)) {
+          return Align(
+            alignment: AlignmentDirectional.centerStart,
+            widthFactor: constraints.maxWidth.isFinite ? null : 1,
+            child: SizedBox(width: width, child: child),
+          );
+        }
         return Align(
           alignment: AlignmentDirectional.centerStart,
           widthFactor: constraints.maxWidth.isFinite ? null : 1,

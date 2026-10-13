@@ -13,10 +13,14 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiShellHeaderActions;
 import 'package:fushi/src/utils/components/fushi_toolbar.dart'
-    show FushiToolbarScope;
+    show FushiToolbar;
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart'
-    show FushiPageChromeTitle;
+    show
+        FushiPageChromeTitle,
+        fushiAppleChromeSpatial,
+        fushiChromeRevealFadeSpring,
+        fushiChromeRevealSpring;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show FushiShellActionsSlot, FushiShellTitleScope;
 import 'package:fushi/src/utils/misc/platform_utils.dart'
@@ -47,6 +51,10 @@ import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart'
 //
 // 墨水屏与系统「减弱动态效果」下不做任何位移 / 形变（[fushiExpressiveMotionEnabled]），
 // 显隐直接切换。
+//
+// Apple 设计系统（[isGlassDesign]）：显隐 / 换组改走 `context.fushiMotion` 的 Apple
+// 弹簧（临界阻尼，不过冲，[fushiChromeRevealSpring]），换组只交叉淡变不缩放；动作组
+// 是 [FushiToolbar] 的悬浮分组玻璃胶囊，标题是纯文字（iOS 26 / macOS 26 工具栏）。
 
 /// 浮动工具栏的显隐状态。
 ///
@@ -643,14 +651,14 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
       final FushiSpring created = FushiSpring(
         vsync: this,
         initial: controller.visible ? 1 : 0,
-        spring: fushiExpressiveDefaultSpatial,
+        spring: fushiChromeRevealSpring(context, fushiExpressiveDefaultSpatial),
       );
       created.animation.addListener(_syncVisibleBottom);
       _shown = created;
       _fade = FushiSpring(
         vsync: this,
         initial: controller.visible ? 1 : 0,
-        spring: FushiSprings.effectsDefault.description,
+        spring: fushiChromeRevealFadeSpring(context),
       );
     } else {
       final bool animate = fushiExpressiveMotionEnabled(context);
@@ -830,7 +838,8 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                       child: Opacity(
                         opacity: hidden ? 0 : opacity,
                         child: Transform.translate(
-                          // 用未截断的弹簧值：轻微回弹体现在位置上。
+                          // 用未截断的弹簧值：MD3 的轻微回弹体现在位置上
+                          // （Apple 弹簧临界阻尼，本就不越界）。
                           offset: Offset(0, -(1 - value) * travel),
                           child: chrome,
                         ),
@@ -1019,7 +1028,8 @@ class _RenderFushiHeightReporter extends RenderProxyBox {
 /// 高度展开、淡入；反之收回、高度归零。
 ///
 /// 高度与位移取 M3 Expressive「default spatial」弹簧（轻微回弹），透明度取
-/// 「default effects」弹簧（临界阻尼、不过冲；HBK-AUDIT-023）。
+/// 「default effects」弹簧（临界阻尼、不过冲；HBK-AUDIT-023）。Apple 设计系统下
+/// 两者都换成 `context.fushiMotion` 的 Apple 弹簧（位移临界阻尼，不回弹）。
 /// 重定向带着当前速度续上，滚动方向来回切也不会跳帧。墨水屏 / 减弱动态效果
 /// 下直接切换。收起后 [child] 默认不卸载（State 与焦点注册都保留），只是零高度、
 /// 不可点、不可读（[ExcludeSemantics]）；再次显示时原样回来。收起途中就不再
@@ -1050,17 +1060,18 @@ class FushiSpringReveal extends StatefulWidget {
 
 class _FushiSpringRevealState extends State<FushiSpringReveal>
     with TickerProviderStateMixin {
+  // 首次访问在 build / didUpdateWidget 里（可读设计系统）。
   late final FushiSpring _spring = FushiSpring(
     vsync: this,
     initial: widget.visible ? 1 : 0,
-    spring: fushiExpressiveDefaultSpatial,
+    spring: fushiChromeRevealSpring(context, fushiExpressiveDefaultSpatial),
   );
 
   /// 透明度：effects 弹簧，与 [_spring] 同目标、同一降级开关。
   late final FushiSpring _fade = FushiSpring(
     vsync: this,
     initial: widget.visible ? 1 : 0,
-    spring: FushiSprings.effectsDefault.description,
+    spring: fushiChromeRevealFadeSpring(context),
   );
 
   @override
@@ -1137,13 +1148,13 @@ class _FushiSpringRevealState extends State<FushiSpringReveal>
 ///
 /// - MD3：surfaceContainer 全胶囊 + Elevation 3 两层投影；[vibrant] 时
 ///   primaryContainer（上下文工具栏用）；
-/// - Apple：分组背景色胶囊 + 发丝描边 + 柔和偏下投影（不做实时背景模糊，
-///   与阅读器悬浮栏同口径）；
+/// - Apple：[FushiFloatingPill] 的无色液态玻璃胶囊 + 柔和投影，缺省最小高
+///   [fushiAppleFloatingExtent]（iOS 26 悬浮栏 44 / macOS 26 工具栏 36）；
 /// - 墨水屏：无阴影，一圈 outline。
 class FushiFloatingToolbarSurface extends StatelessWidget {
   const FushiFloatingToolbarSurface({
     required this.child,
-    this.height = 56,
+    this.height,
     this.padding = const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
     this.vibrant = false,
     super.key,
@@ -1151,8 +1162,9 @@ class FushiFloatingToolbarSurface extends StatelessWidget {
 
   final Widget child;
 
-  /// 胶囊最小高度（M3E floating toolbar 紧凑档 56）。
-  final double height;
+  /// 胶囊最小高度；缺省 MD3 = M3E floating toolbar 紧凑档 56，Apple =
+  /// [fushiAppleFloatingExtent]。
+  final double? height;
   final EdgeInsetsGeometry padding;
 
   /// M3E 的「vibrant」配色（primaryContainer）。Apple 设计系统下忽略。
@@ -1169,12 +1181,17 @@ class FushiFloatingToolbarSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final double minHeight =
+        height ??
+        (isGlassDesign(context)
+            ? fushiAppleFloatingExtent(context)
+            : kFushiFloatingToolbarCompactExtent);
     return FushiFloatingPill(
       color: colorOf(context, vibrant: vibrant),
       padding: padding,
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          minHeight: math.max(0, height - padding.vertical),
+          minHeight: math.max(0, minHeight - padding.vertical),
         ),
         child: Center(widthFactor: 1, heightFactor: 1, child: child),
       ),
@@ -1186,11 +1203,12 @@ class FushiFloatingToolbarSurface extends StatelessWidget {
 ///
 /// 动作集合变了（切分区多 / 少一个按钮、进入多选换成「完成」）时整组按
 /// M3E 上下文切换交叉形变：旧组缩小淡出、新组从 0.8 弹到 1，胶囊宽度跟着
-/// 弹簧过渡。没有动作时零尺寸。
+/// 弹簧过渡。Apple 设计系统下不缩放：新旧组交叉淡变（effects 弹簧），宽度走
+/// 临界阻尼的 Apple 弹簧（iOS 26 工具栏换组）。没有动作时零尺寸。
 ///
 /// MD3 下是 [FushiFloatingToolbarSurface] 胶囊里一排无底图标按钮；Apple 下
-/// 动作本身已由 [FushiShellHeaderActions] 收进玻璃胶囊，这里只补悬浮投影，
-/// 不再套第二层玻璃（玻璃叠玻璃会出两圈折射边）。
+/// 外壳动作画成 [FushiToolbar] 的悬浮玻璃胶囊（iOS 26 / macOS 26 工具栏按钮组，
+/// 高 [fushiAppleFloatingExtent]），不再外套一层 56 高的悬浮面。
 class FushiFloatingActionsPill extends StatelessWidget {
   const FushiFloatingActionsPill({required this.slot, super.key});
 
@@ -1211,12 +1229,14 @@ class FushiFloatingActionsPill extends StatelessWidget {
       builder: (BuildContext context, Widget? _) {
         final Widget? actions = slot.actions;
         final bool motion = fushiExpressiveMotionEnabled(context);
+        final bool apple = isGlassDesign(context);
         final Widget pill = actions == null
             ? const SizedBox.shrink(key: ValueKey<String>('empty'))
             : KeyedSubtree(
                 key: ValueKey<Object>(_signatureOf(actions)),
                 child: _FloatingActionsBody(actions: actions),
               );
+        if (apple) return _appleSwitcher(context, pill);
         return FushiAnimatedSize(
           duration: motion ? const Duration(milliseconds: 420) : Duration.zero,
           curve: const FushiSpringCurve(),
@@ -1259,6 +1279,31 @@ class FushiFloatingActionsPill extends StatelessWidget {
       },
     );
   }
+
+  /// Apple：换组只交叉淡变（effects 弹簧，不缩放），胶囊宽度走临界阻尼的
+  /// Apple 弹簧（不回弹）。降级时两者时长归零。
+  static Widget _appleSwitcher(BuildContext context, Widget pill) {
+    final FushiMotionScheme motion = context.fushiMotion;
+    final FushiSpringSpec size = fushiAppleChromeSpatial(context);
+    return FushiAnimatedSize(
+      duration: size.duration,
+      curve: size.curve,
+      alignment: AlignmentDirectional.centerEnd,
+      clipBehavior: Clip.none,
+      child: AnimatedSwitcher(
+        duration: motion.effectsSlow.duration,
+        reverseDuration: motion.effectsFast.duration,
+        switchInCurve: motion.effectsSlow.curve,
+        switchOutCurve: motion.effectsFast.curve,
+        layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+          alignment: AlignmentDirectional.centerEnd,
+          clipBehavior: Clip.none,
+          children: <Widget>[...previous, if (current != null) current],
+        ),
+        child: pill,
+      ),
+    );
+  }
 }
 
 class _FloatingActionsBody extends StatelessWidget {
@@ -1270,19 +1315,18 @@ class _FloatingActionsBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final Widget content;
     if (isGlassDesign(context) && actions is FushiShellHeaderActions) {
-      // Apple：外壳动作组自带一层玻璃胶囊（[FushiToolbar]），放进悬浮胶囊里会
-      // 叠出两圈边。直接把按钮排进胶囊，并告诉它们「已在胶囊组里」（不再各自
-      // 带玻璃底）；放不下时横滑兜底。
-      content = FushiToolbarScope(
-        inGlassGroup: true,
-        child: HorizontalDragScrollable(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            physics: const ClampingScrollPhysics(),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: (actions as FushiShellHeaderActions).actions,
-            ),
+      // Apple：iOS 26 / macOS 26 工具栏按钮组——[FushiToolbar] 的悬浮形态就是
+      // 一枚无色玻璃胶囊 + 柔和投影（高 [fushiAppleFloatingExtent]），按钮在组里
+      // 不再各自带玻璃底。不再外套 56 高的悬浮面（玻璃叠玻璃两圈折射边、
+      // 比工具栏高一截）。放不下时横滑兜底；横滑视口不裁投影。
+      return HorizontalDragScrollable(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const ClampingScrollPhysics(),
+          clipBehavior: Clip.none,
+          child: FushiToolbar(
+            floating: true,
+            children: (actions as FushiShellHeaderActions).actions,
           ),
         ),
       );
@@ -1414,8 +1458,11 @@ class FushiFloatingChromeBar extends StatelessWidget {
           ),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
+          final double minActions = isGlassDesign(context)
+              ? fushiAppleFloatingExtent(context)
+              : kFushiFloatingToolbarCompactExtent;
           final double maxActions = constraints.maxWidth.isFinite
-              ? math.max(56.0, constraints.maxWidth / 2)
+              ? math.max(minActions, constraints.maxWidth / 2)
               : double.infinity;
           // 标题胶囊是 Row 里的非弹性子项，不限宽时长页面名会按自然宽把页签
           // 胶囊挤没（甚至整行溢出）。限到行宽的 1/3，超长名在胶囊里省略号

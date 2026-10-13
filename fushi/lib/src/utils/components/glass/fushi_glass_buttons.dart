@@ -4,15 +4,17 @@ import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 // 按钮族的「设计系统分派」包装：构造参数与 Material 原控件逐个同名同型，
 // 调用点只改类名。MD3 设计系统下原样构造原控件（像素、焦点、语义一字不差）；
-// 「玻璃」设计系统下按 iOS 26 的按钮样式渲染：主按钮 / 次按钮 / 文字按钮都是
-// liquid_glass_widgets 的 [GlassButton] 玻璃胶囊（自带 GlassFocusRegion：焦点环 +
-// Enter → ActivateIntent，与全局焦点导航和手柄 A 键同一条激活链路）；内联链接与
-// 默认图标按钮是无底的 plain 按钮（同样走 ActivateIntent）。
+// Apple 设计系统下按 iOS 26 的按钮样式渲染：主按钮是 liquid_glass_widgets 的
+// [GlassButton] 强调色玻璃胶囊（自带 GlassFocusRegion：焦点环 + Enter →
+// ActivateIntent，与全局焦点导航和手柄 A 键同一条激活链路）；tonal / outlined
+// 是 `.bordered` 灰底胶囊，文字按钮与默认图标按钮是 `.plain` 无底按钮（都经
+// [FushiPlainButton]，同样走 ActivateIntent）。
 
 enum _FushiButtonKind { text, filled, tonal, outlined }
 
@@ -262,15 +264,16 @@ bool fushiAppleCompact(BuildContext context) {
   }
 }
 
-/// 玻璃按钮的共用渲染，形态对齐 iOS 26 的按钮样式（[GlassButton.custom]
-/// 液态玻璃胶囊）：
+/// Apple 按钮的共用渲染，形态对齐 iOS 26 / macOS 26 的 UIButton 配置：
 /// - filled = `.glassProminent`：强调色着色的玻璃胶囊，onAccent 字 semibold；
-/// - tonal / outlined = `.glass`：透明玻璃胶囊，label 色文字；
-/// - text = 同样是 `.glass` 透明玻璃胶囊 + label 色字；只有内边距被调用方
-///   压成 0 的内联链接是 `.plain` 无底强调色文字（见 [FushiPlainButton]）。
-///   调用方给了实底背景色时按着色玻璃画。
+/// - tonal / outlined = `.bordered`：tertiaryFill 灰底胶囊 + 强调色字（内容
+///   层控件，不是玻璃）；
+/// - text = `.plain`：无底强调色文字，按下变淡（见 [FushiPlainButton]）；
+/// - alert / sheet 动作区（[FushiAlertActionScope] / [FushiDialogActionScope]）
+///   里的非主操作保持透明玻璃胶囊 + label 色字；调用方给了实底背景色时按
+///   着色玻璃画。
 ///
-/// 高度：移动端 44（Messages 的 Edit 胶囊）、桌面 34；圆角恒为全胶囊。
+/// 高度：移动端 44、桌面 34（plain 桌面 28）；圆角恒为全胶囊。
 /// [style] 里能映射的字段（前景 / 背景色、内边距、最小 / 固定尺寸、字体）照用，
 /// 其余忽略。
 Widget _glassButton(
@@ -302,19 +305,14 @@ Widget _glassButton(
   final bool customBg = styleBg != null && styleBg.a > 0;
   final bool alertAction = FushiAlertActionScope.of(context);
   final bool sheetAction = FushiDialogActionScope.of(context);
-  // 用户 2026-10-04 三次拍板：「很多按钮都不是玻璃胶囊」——文字按钮也是
-  // `.glass` 透明玻璃胶囊（label 色字），只有正文里的内联链接（调用方把
-  // 内边距压成 0 的那种）保持 `.plain` 纯强调色文字。
-  final EdgeInsetsGeometry? stylePadding = style?.padding?.resolve(
-    resolveStates,
-  );
-  final bool inlineLink = stylePadding != null && stylePadding.horizontal == 0;
-  final bool plain =
-      kind == _FushiButtonKind.text &&
-      !customBg &&
-      !alertAction &&
-      !sheetAction &&
-      inlineLink;
+  // 用户 2026-10-12：「所有组件都要遵循原有的 Cupertino」——内容区文字按钮
+  // = `.plain`（无底强调色字），tonal / outlined = `.bordered`（灰底强调色
+  // 字）。alert / sheet 动作区与调用方着色的按钮仍走玻璃胶囊。
+  final bool contentArea = !customBg && !alertAction && !sheetAction;
+  final bool plain = kind == _FushiButtonKind.text && contentArea;
+  final bool bordered =
+      (kind == _FushiButtonKind.tonal || kind == _FushiButtonKind.outlined) &&
+      contentArea;
 
   GlassButtonStyle glassStyle = GlassButtonStyle.filled;
   Color? tint;
@@ -328,16 +326,16 @@ Widget _glassButton(
       weight = FontWeight.w600;
     case _FushiButtonKind.tonal:
     case _FushiButtonKind.outlined:
-      fg = apple.label;
+      fg = bordered ? apple.accent : apple.label;
     case _FushiButtonKind.text:
-      // 玻璃胶囊里一律 label 色字；只有内联链接是强调色纯文字。
+      // plain 强调色字；动作区玻璃胶囊里 label 色字。
       fg = plain ? apple.accent : apple.label;
   }
   if (customBg) {
     tint = styleBg;
     if (kind == _FushiButtonKind.text) fg = Colors.white;
   }
-  // 破坏性操作（删除 / 退出登录）：systemRed 字，胶囊仍是透明玻璃。
+  // 破坏性操作（删除 / 退出登录）：systemRed 字，底不变。
   if (destructive) fg = apple.destructive;
   // 压在图片 / hero 上的主按钮（Apple TV「播放」）：固定白底黑字的
   // prominent 玻璃——单色强调色在浅色下是黑胶囊，压在 hero 黑渐变上看不见。
@@ -364,10 +362,10 @@ Widget _glassButton(
   final Size? minimumSize = style?.minimumSize?.resolve(resolveStates);
   final Size? fixedSize = style?.fixedSize?.resolve(resolveStates);
 
-  final TextStyle textStyle = (theme.textTheme.labelLarge ?? const TextStyle())
-      .copyWith(fontSize: compact ? 15 : 17, fontWeight: weight)
-      .merge(style?.textStyle?.resolve(resolveStates))
-      .copyWith(color: fg);
+  final TextStyle textStyle = fushiAppleButtonTextStyle(
+    context,
+    prominent: weight == FontWeight.w600,
+  ).merge(style?.textStyle?.resolve(resolveStates)).copyWith(color: fg);
   Widget content;
   if (icon != null && label != null) {
     final bool trailing = iconAlignment == IconAlignment.end;
@@ -417,11 +415,24 @@ Widget _glassButton(
       child: content,
     );
   }
+  if (bordered) {
+    // `.bordered`：灰底实色胶囊（禁用态底保留、字褪成 tertiaryLabel）；
+    // 悬停 / 按下由 [FushiPlainButton] 在底色上叠一层前景色。
+    return FushiPlainButton(
+      onPressed: onPressed,
+      onLongPress: onLongPress,
+      onHover: onHover,
+      onFocusChange: onFocusChange,
+      focusNode: focusNode,
+      autofocus: autofocus,
+      borderRadius: BorderRadius.circular((fixedSize?.height ?? minHeight) / 2),
+      fill: apple.tertiaryFill,
+      child: content,
+    );
+  }
 
-  // 液态玻璃胶囊（用户 2026-10-04 二次拍板：「所有组件都要往液态玻璃靠」，
-  // 撤回同日早些时候的实色胶囊）：filled = `.glassProminent` 强调色着色玻璃，
-  // tonal / outlined（以及 alert / sheet 动作区里的取消类）= `.glass` 透明
-  // 玻璃。按压 / 拉伸 / 高光由库的 GlassButton 自己做；焦点环 + Enter →
+  // 液态玻璃胶囊：filled = `.glassProminent` 强调色着色玻璃，alert / sheet
+  // 动作区里的取消类与调用方着色按钮 = `.glass` / 着色玻璃。按压 / 拉伸 / 高光由库的 GlassButton 自己做；焦点环 + Enter →
   // ActivateIntent 由它内置的 GlassFocusRegion 接上。内容区多是平底，按钮
   // 各自 useOwnLayer 取背景折射。
   // 已经浮在另一枚玻璃面（批量操作栏、迷你条、悬浮工具条）里时不再另起
@@ -473,6 +484,81 @@ Widget _glassButton(
     );
   }
   return button;
+}
+
+/// Apple 按钮文字：移动 17 / 桌面 15（iOS body / macOS 控件字号），
+/// [prominent]（强调色主按钮）semibold，其余 medium。颜色由调用方补。
+TextStyle fushiAppleButtonTextStyle(
+  BuildContext context, {
+  bool prominent = false,
+}) {
+  final bool compact = fushiAppleCompact(context);
+  return (Theme.of(context).textTheme.labelLarge ?? const TextStyle()).copyWith(
+    fontSize: compact ? 15 : 17,
+    fontWeight: prominent ? FontWeight.w600 : FontWeight.w500,
+  );
+}
+
+/// iOS `.bordered` / `.borderedProminent` 胶囊按钮（内容层实色，不是玻璃）：
+/// [prominent] = 强调色底 + onAccent 字 semibold，否则 tertiaryFill 灰底 +
+/// 强调色字；禁用态底保留、字褪成 tertiaryLabel。高度桌面 34 / 移动 44，
+/// 按下变淡、悬停叠前景色（[FushiPlainButton]），焦点环 + Enter →
+/// ActivateIntent 同 plain 按钮。[trailing] 画在标签之后（如 pull-down 的
+/// chevron）。
+Widget fushiAppleBorderedButton(
+  BuildContext context, {
+  required bool prominent,
+  required VoidCallback? onPressed,
+  required Widget label,
+  Widget? icon,
+  Widget? trailing,
+  FocusNode? focusNode,
+  bool autofocus = false,
+  String? semanticLabel,
+}) {
+  final FushiAppleColors apple = appleColorsOf(context);
+  final bool compact = fushiAppleCompact(context);
+  final bool enabled = onPressed != null;
+  final Color fg = !enabled
+      ? apple.tertiaryLabel
+      : (prominent ? apple.onAccent : apple.accent);
+  final double height = compact ? 34 : 44;
+  final double gap = compact ? 5 : 6;
+  final TextStyle textStyle = fushiAppleButtonTextStyle(
+    context,
+    prominent: prominent,
+  ).copyWith(color: fg);
+  final Widget content = IconTheme.merge(
+    data: IconThemeData(color: fg, size: compact ? 16 : 19),
+    child: DefaultTextStyle.merge(
+      style: textStyle,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: compact ? 14 : 20),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (icon != null) ...<Widget>[icon, SizedBox(width: gap)],
+            Flexible(child: label),
+            if (trailing != null) ...<Widget>[SizedBox(width: gap), trailing],
+          ],
+        ),
+      ),
+    ),
+  );
+  return FushiPlainButton(
+    onPressed: onPressed,
+    focusNode: focusNode,
+    autofocus: autofocus,
+    semanticLabel: semanticLabel,
+    borderRadius: BorderRadius.circular(height / 2),
+    fill: prominent && enabled ? apple.accent : apple.tertiaryFill,
+    child: ConstrainedBox(
+      constraints: BoxConstraints(minWidth: height, minHeight: height),
+      child: Center(widthFactor: 1, heightFactor: 1, child: content),
+    ),
+  );
 }
 
 /// MD3 破坏性按钮：error 色前景（描边按钮连描边一起），调用方 style 里显式
@@ -1391,7 +1477,10 @@ class FushiIconButtonControl extends StatelessWidget {
     // 形状都取容器的，state layer 与命中区撑满容器；容器不变形，按钮也不变形。
     final FushiFillSlot? slot = FushiFillSlot.maybeOf(context);
     if (slot != null) {
-      final ButtonStyle fill = fushiFillSlotButtonStyle(slot.extent, slot.shape);
+      final ButtonStyle fill = fushiFillSlotButtonStyle(
+        slot.extent,
+        slot.shape,
+      );
       return _buildMaterial(base == null ? fill : fill.merge(base));
     }
     // 圆角按尺寸档（XS / S 12→8、M 16→12、L / XL 28→16）；圆形未选按下收到
@@ -1651,8 +1740,9 @@ class FushiIconButtonControl extends StatelessWidget {
   /// - 默认（[IconButton]）= `.plain`，无底 label 色图标，44 / 36 的触控区，
   ///   按下变淡——**不是玻璃**；选中（toggle）时是更亮的透明玻璃圆钮；
   /// - `.filled` = 强调色着色玻璃圆钮（`.glassProminent`），onAccent 图标；
-  /// - `.filledTonal` / `.outlined` = 无色透明玻璃圆钮（`.glass`，Messages /
-  ///   Niratan 顶栏那颗圆钮：只有高光边，无灰底），label 色图标。
+  /// - `.filledTonal` / `.outlined` = `.bordered` 灰底圆钮（tertiaryFill 实色
+  ///   底 + 强调色图标，内容层控件，不是玻璃）；toggle 选中时换
+  ///   `.borderedProminent` 强调色底 + onAccent 图标。
   Widget _buildGlass(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
@@ -1664,11 +1754,17 @@ class FushiIconButtonControl extends StatelessWidget {
     };
     final Color? styleFg = style?.foregroundColor?.resolve(states);
     final Color? styleBg = style?.backgroundColor?.resolve(states);
-    // 非 standard 变体、toggle 选中态、调用方给了底色时画玻璃圆钮；其余无底。
+    final bool customBg = styleBg != null && styleBg.a > 0;
+    // `.filledTonal` / `.outlined`（调用方没给底色时）= `.bordered` 灰底圆钮。
+    final bool bordered =
+        !customBg &&
+        (_variant == _IconButtonVariant.filledTonal ||
+            _variant == _IconButtonVariant.outlined);
+    // `.filled`、standard 的 toggle 选中态、调用方给了底色时画玻璃圆钮；
+    // 其余无底。
     final bool raised =
-        _variant != _IconButtonVariant.standard ||
-        selected ||
-        (styleBg != null && styleBg.a > 0);
+        !bordered &&
+        (_variant != _IconButtonVariant.standard || selected || customBg);
     // 只有 `.filled` 是强调色玻璃；toggle 选中态是「更亮一点的透明玻璃」
     // （Niratan / macOS 26 工具栏：选中不铺强调色），图标仍 label 色。
     // `.filled` 的 toggle 未选中时与 MD3 一样退成中性（这里 = 透明玻璃）。
@@ -1676,7 +1772,13 @@ class FushiIconButtonControl extends StatelessWidget {
         _variant == _IconButtonVariant.filled && (isSelected ?? true);
     final Color fg = !enabled
         ? (disabledColor ?? apple.tertiaryLabel)
-        : (styleFg ?? color ?? (prominent ? apple.onAccent : apple.label));
+        : (styleFg ??
+              color ??
+              (prominent
+                  ? apple.onAccent
+                  : (bordered
+                        ? (selected ? apple.onAccent : apple.accent)
+                        : apple.label)));
     final Color? tint = (styleBg != null && styleBg.a > 0)
         ? styleBg
         : (prominent && enabled ? apple.accent : null);
@@ -1705,6 +1807,9 @@ class FushiIconButtonControl extends StatelessWidget {
         autofocus: autofocus,
         borderRadius: BorderRadius.circular(extent / 2),
         semanticLabel: tooltip,
+        fill: bordered
+            ? (selected && enabled ? apple.accent : apple.tertiaryFill)
+            : null,
         child: SizedBox(
           width: extent,
           height: extent,
@@ -1753,7 +1858,7 @@ class FushiIconButtonControl extends StatelessWidget {
       }
     }
     if (tooltip != null && tooltip!.isNotEmpty) {
-      button = Tooltip(message: tooltip, child: button);
+      button = FushiTooltip(message: tooltip, child: button);
     }
     return button;
   }

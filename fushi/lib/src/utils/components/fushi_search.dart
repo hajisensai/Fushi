@@ -37,7 +37,10 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 // 外边距 24→12 舒展；打开 = 从 bar 出发的 container transform on spatial
 // spring，Esc / 返回 / 点外部关闭）；material-components-android Search.md 的
 // Expressive contained 样式（bar 在 view 里视觉上延续、bouncy 动效只给
-// Expressive 主题）。Apple 设计系统对应 iOS UISearchBar（胶囊 + 「取消」）。
+// Expressive 主题）。Apple 设计系统对应 iOS UISearchBar：圆角 10 的
+// tertiaryFill 搜索框（按下高亮、不缩放、无水波纹）+ 「取消」；搜索视图直接
+// 落在目标位置，表面与内容按 Apple effects 弹簧（临界阻尼）淡入淡出——没有
+// 从搜索栏出发的容器变换，也没有弹性过冲。
 
 /// 搜索框 Esc 的处理方式。
 enum FushiSearchEscapeBehavior {
@@ -358,6 +361,14 @@ class _FushiSearchBarState extends State<FushiSearchBar> {
       child: bar,
     );
     if (!widget.expandOnFocus) return bar;
+    if (isGlassDesign(context)) {
+      // iOS 搜索栏聚焦不舒展（M3E docked bar 的 24→12 是 Expressive 语言，
+      // 且 release 曲线带回弹）：保持静止态外边距。
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: bar,
+      );
+    }
     return AnimatedPadding(
       duration: fushiMotionDuration(context, FushiMotion.medium),
       curve: _focused ? FushiMotion.release : FushiMotion.standard,
@@ -458,6 +469,9 @@ Future<String?> showFushiSearchView({
   final String? result = await navigator.push<String>(
     _FushiSearchViewRoute(
       motionEnabled: fushiMotionEnabled(context),
+      appleFade: isGlassDesign(context)
+          ? context.fushiMotion.effectsDefault
+          : null,
       capturedThemes: InheritedTheme.capture(
         from: context,
         to: navigator.context,
@@ -520,10 +534,14 @@ class _FushiSearchViewRoute extends PopupRoute<String> {
     required this.anchorRect,
     required this.barrierLabel,
     required this.motionEnabled,
+    required this.appleFade,
   });
 
   /// 打开时的动效资格（墨水屏 / 系统减弱动效 → false，路由瞬开瞬关）。
   final bool motionEnabled;
+
+  /// Apple 设计系统的淡入淡出弹簧（effects，临界阻尼）；null = MD3 容器变换。
+  final FushiSpringSpec? appleFade;
 
   final CapturedThemes capturedThemes;
   final _FushiSearchViewConfig config;
@@ -539,12 +557,16 @@ class _FushiSearchViewRoute extends PopupRoute<String> {
   Color? get barrierColor => null;
 
   @override
-  Duration get transitionDuration =>
-      motionEnabled ? const Duration(milliseconds: 500) : Duration.zero;
+  Duration get transitionDuration {
+    if (!motionEnabled) return Duration.zero;
+    return appleFade?.duration ?? const Duration(milliseconds: 500);
+  }
 
   @override
-  Duration get reverseTransitionDuration =>
-      motionEnabled ? FushiMotion.longReverse : Duration.zero;
+  Duration get reverseTransitionDuration {
+    if (!motionEnabled) return Duration.zero;
+    return appleFade?.duration ?? FushiMotion.longReverse;
+  }
 
   @override
   Widget buildPage(
@@ -557,23 +579,27 @@ class _FushiSearchViewRoute extends PopupRoute<String> {
         animation: animation,
         anchorRect: anchorRect,
         config: config,
+        appleFade: appleFade,
       ),
     );
   }
 }
 
 /// 容器变换外框：表面矩形从搜索栏插值到目标（全屏 / docked），圆角从胶囊
-/// 插值到目标圆角，内容在后半程淡入；关闭时反向。
+/// 插值到目标圆角，内容在后半程淡入；关闭时反向。Apple（[appleFade] 非空）
+/// 不做容器变换：表面直接落在目标矩形，整体按 effects 弹簧淡入淡出。
 class _FushiSearchViewFrame extends StatefulWidget {
   const _FushiSearchViewFrame({
     required this.animation,
     required this.anchorRect,
     required this.config,
+    required this.appleFade,
   });
 
   final Animation<double> animation;
   final Rect? anchorRect;
   final _FushiSearchViewConfig config;
+  final FushiSpringSpec? appleFade;
 
   @override
   State<_FushiSearchViewFrame> createState() => _FushiSearchViewFrameState();
@@ -649,17 +675,24 @@ class _FushiSearchViewFrameState extends State<_FushiSearchViewFrame> {
           child: body,
           builder: (BuildContext context, Widget? child) {
             final double raw = widget.animation.value;
-            final double t = motion ? _curve.value : 1;
+            final FushiSpringSpec? appleFade = widget.appleFade;
+            // Apple：无容器变换（矩形 / 圆角恒为目标值），表面与内容同步淡入。
+            final double t = appleFade != null || !motion ? 1 : _curve.value;
             final Rect rect = Rect.lerp(anchor, target, t)!;
             final double radius = lerpDouble(
               anchor.height / 2,
               targetRadius,
               t.clamp(0.0, 1.0),
             )!.clamp(0.0, double.infinity);
-            final double contentOpacity = motion
-                ? const Interval(0.3, 1).transform(raw)
-                : 1;
-            final double surfaceOpacity = motion ? 1 : raw;
+            final double appleOpacity = appleFade == null
+                ? 1
+                : appleFade.curve.transform(raw).clamp(0.0, 1.0);
+            final double contentOpacity = appleFade != null
+                ? 1
+                : (motion ? const Interval(0.3, 1).transform(raw) : 1);
+            final double surfaceOpacity = appleFade != null
+                ? appleOpacity
+                : (motion ? 1 : raw);
             return Stack(
               children: <Widget>[
                 Positioned.fromRect(
@@ -1117,6 +1150,22 @@ class _FushiSearchAnchorState extends State<FushiSearchAnchor> {
         SizedBox(width: large ? 8 : 4),
       ],
     );
+    if (apple) {
+      // iOS 搜索框（UISearchTextField）：圆角 10 的 tertiaryFill 实色框；按下
+      // 叠一层高亮（[FushiPlainButton] 的有底形态），不缩放、无水波纹。
+      // 展开期间同样藏起：搜索视图在原位淡入。
+      return Opacity(
+        opacity: _open ? 0 : 1,
+        child: FushiPlainButton(
+          focusNode: _focusNode,
+          onPressed: _openView,
+          fill: fill,
+          borderRadius: const BorderRadius.all(Radius.circular(10)),
+          semanticLabel: widget.hintText,
+          child: SizedBox(height: height, child: content),
+        ),
+      );
+    }
     // 展开期间把胶囊藏起来：容器变换的表面从这里「长」出去，原位留空。
     return Opacity(
       opacity: _open ? 0 : 1,

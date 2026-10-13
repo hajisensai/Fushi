@@ -532,6 +532,15 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
     spacing: 4,
     runSpacing: 4,
     children: <Widget>[
+      // Apple：MD3 的「添加」扩展 FAB 在这里是一颗栏内「+」按钮（FAB 在 Apple
+      // 下不存在）；多选时与 FAB 同样收起。
+      if (isGlassDesign(context) && widget.onAddTask != null && !_selectionMode)
+        FushiIconButton(
+          key: const ValueKey<String>('download-task-add'),
+          tooltip: t.download_task_add,
+          icon: FushiIcons.add,
+          onTap: widget.onAddTask,
+        ),
       _menu<int>(
         id: 'download-task-kind',
         label: _kind == null
@@ -845,7 +854,10 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double page = tokens.spacing.page;
-    final bool showFab = widget.onAddTask != null && !_selectionMode;
+    // Apple 没有 FAB：「添加」挪进工具行首位（iOS / macOS 的添加动作在栏内，
+    // 见 [_buildTools]）。
+    final bool showFab =
+        widget.onAddTask != null && !_selectionMode && !isGlassDesign(context);
 
     Widget rowAt(BuildContext context, int index) {
       final Object row = rows[index];

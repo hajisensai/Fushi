@@ -158,6 +158,10 @@ class FushiIconButton extends StatefulWidget {
   final EdgeInsets? padding;
 
   /// If this button needs to act like an [IconButton] with a wide area.
+  ///
+  /// MD3：Material [IconButton]（48 命中区）。Apple：仍是无底 SF 图标 + 按下
+  /// 变淡，命中区按 [fushiAppleCompact] 口径撑到桌面 36 / 移动 44（HIG 最小
+  /// 触控尺寸），不走 Material 水波。
   final bool isWideTapArea;
   final FushiFocusId? focusId;
 
@@ -202,9 +206,11 @@ class _FushiIconButtonState extends State<FushiIconButton>
       enabled = widget.enabled;
     }
     if (oldWidget.selected != widget.selected) {
+      // 选中态形变只在 MD3 渲染；Apple 不形变，直接跳值、不跑弹簧。
       _select.animateTo(
         widget.selected ? 1 : 0,
-        animate: fushiExpressiveMotionEnabled(context),
+        animate:
+            fushiExpressiveMotionEnabled(context) && !isGlassDesign(context),
       );
     }
   }
@@ -221,6 +227,8 @@ class _FushiIconButtonState extends State<FushiIconButton>
   void _setPressed(bool value) {
     if (!mounted) return;
     if (value && _tapHandler == null) return;
+    // Apple 路径不挂 [_trackPress]；防御性地不让弹簧在 Apple 下跑。
+    if (isGlassDesign(context)) return;
     _press.animateTo(value ? 1 : 0,
         animate: fushiExpressiveMotionEnabled(context));
   }
@@ -321,6 +329,11 @@ class _FushiIconButtonState extends State<FushiIconButton>
             ? _buildAppleLabelPill(context, label)
             : _buildLabelPill(context, tokens, label),
       );
+    }
+    if (widget.isWideTapArea && glass) {
+      final double extent = fushiAppleCompact(context) ? 36 : 44;
+      return _focusable(context,
+          _withTooltip(_buildAppleIcon(context, tokens, minTapExtent: extent)));
     }
     if (widget.isWideTapArea) {
       final Semantics button = Semantics(
@@ -598,7 +611,14 @@ class _FushiIconButtonState extends State<FushiIconButton>
   /// 按下变淡，没有 Material 水波。选中态 = 更亮一点的无色透明玻璃圆钮（不着
   /// 强调色，Niratan / macOS 26）；在 [FushiToolbar] 的玻璃组胶囊里改用一枚
   /// 半透明 label 色圆底，避免玻璃叠玻璃。
-  Widget _buildAppleIcon(BuildContext context, FushiDesignTokens tokens) {
+  ///
+  /// [minTapExtent] 非空时（[FushiIconButton.isWideTapArea]）按压外壳本身至少
+  /// 这么大，图标居中——整块都可点、悬停底也铺满。
+  Widget _buildAppleIcon(
+    BuildContext context,
+    FushiDesignTokens tokens, {
+    double? minTapExtent,
+  }) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
     final bool selected = widget.selected;
@@ -618,12 +638,15 @@ class _FushiIconButtonState extends State<FushiIconButton>
           ? apple.label.withValues(alpha: darkMode ? 0.16 : 0.1)
           : widget.backgroundColor,
       hoverFill: apple.tertiaryFill,
-      child: Padding(
-        padding: widget.padding ?? EdgeInsets.all(tokens.spacing.gap),
-        child: FushiIcon(
-          widget.icon,
-          size: widget.size ?? (compact ? 18 : 20),
-          color: iconColor,
+      child: _minTapBox(
+        minTapExtent,
+        Padding(
+          padding: widget.padding ?? EdgeInsets.all(tokens.spacing.gap),
+          child: FushiIcon(
+            widget.icon,
+            size: widget.size ?? (compact ? 18 : 20),
+            color: iconColor,
+          ),
         ),
       ),
     );
@@ -647,6 +670,15 @@ class _FushiIconButtonState extends State<FushiIconButton>
       button: true,
       selected: selected ? true : null,
       child: content,
+    );
+  }
+
+  /// [extent] 为 null 原样返回；否则把 [child] 撑到至少 extent × extent 并居中。
+  static Widget _minTapBox(double? extent, Widget child) {
+    if (extent == null) return child;
+    return ConstrainedBox(
+      constraints: BoxConstraints(minWidth: extent, minHeight: extent),
+      child: Center(widthFactor: 1, heightFactor: 1, child: child),
     );
   }
 

@@ -764,17 +764,31 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     if (widget.embedded) {
       return body;
     }
+    // Apple 没有 FAB：「添加游戏」是导航栏右上角的「+」（iOS / macOS 列表页的
+    // 添加动作在导航栏），MD3 才挂右下扩展 FAB。
+    final bool apple = isGlassDesign(context);
     return Scaffold(
       appBar: FushiAppBar(
         title: Text(t.games),
-        actions: const <Widget>[GamesLibraryLayoutToggle()],
+        actions: <Widget>[
+          const GamesLibraryLayoutToggle(),
+          if (apple)
+            FushiIconButton(
+              key: const ValueKey<String>('games-library-add'),
+              icon: FushiIcons.add,
+              tooltip: t.game_add,
+              onTap: _addGame,
+            ),
+        ],
       ),
-      floatingActionButton: FushiFab(
-        icon: const FushiIcon(FushiIcons.add),
-        label: Text(t.game_add),
-        tooltip: t.game_add,
-        onPressed: _addGame,
-      ),
+      floatingActionButton: apple
+          ? null
+          : FushiFab(
+              icon: const FushiIcon(FushiIcons.add),
+              label: Text(t.game_add),
+              tooltip: t.game_add,
+              onPressed: _addGame,
+            ),
       body: body,
     );
   }

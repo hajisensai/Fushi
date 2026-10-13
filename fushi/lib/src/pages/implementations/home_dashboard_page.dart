@@ -279,8 +279,13 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
     final LeaderboardSelf? self = service.self;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String name = self?.account.nickname ?? _profileName ?? '';
-    final Color onContainer = Theme.of(context).colorScheme.onPrimaryContainer;
-    const double size = 40;
+    // Apple（iOS 26 HIG / App Store 账户钮）：导航栏里一颗纯圆头像按钮，不套
+    // 胶囊；兜底圆用系统 fill / label 色，按下整体变淡（[FushiPlainButton]）。
+    final bool apple = isGlassDesign(context);
+    final FushiAppleColors? appleColors = apple ? appleColorsOf(context) : null;
+    final Color onContainer =
+        appleColors?.label ?? Theme.of(context).colorScheme.onPrimaryContainer;
+    final double size = apple ? fushiAppleFloatingExtent(context) : 40;
     final Widget avatar = self != null
         ? LeaderboardAvatar(account: self.account, size: size)
         : SizedBox.square(
@@ -288,13 +293,13 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: tokens.surfaces.primaryContainer,
+                color: appleColors?.fill ?? tokens.surfaces.primaryContainer,
               ),
               child: Center(
                 child: name.isEmpty
                     ? FushiIcon(
                         FushiIcons.person,
-                        size: 22,
+                        size: apple ? size * 0.55 : 22,
                         color: onContainer,
                       )
                     : Text(
@@ -307,6 +312,24 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
               ),
             ),
           );
+    final String label = name.isEmpty ? t.leaderboard_title : name;
+    if (apple) {
+      return Semantics(
+        key: const ValueKey<String>('home-toolbar-avatar'),
+        button: true,
+        label: label,
+        excludeSemantics: true,
+        child: FushiTooltip(
+          message: label,
+          excludeFromSemantics: true,
+          child: FushiPlainButton(
+            onPressed: widget.onPressed,
+            borderRadius: BorderRadius.circular(size / 2),
+            child: avatar,
+          ),
+        ),
+      );
+    }
     final Color container =
         fushiFloatingToolbarPalette(context).container;
     return Semantics(
@@ -1309,13 +1332,15 @@ class _HomeDashboardPageState
         // 悬浮在列表之上（Stack），列表顶部让出栏高、底部让出 FAB 与外壳
         // 底栏（Apple 悬浮标签栏经 extendBody 并进 MediaQuery 底部内边距）。
         final double bottomInset = MediaQuery.paddingOf(context).bottom;
+        // Apple 没有 FAB：「继续」只走主角卡封面行，底部不为 FAB 让位。
+        final bool resumeFab = homeResumeFabEnabled(context);
         final Widget list = ListView(
             controller: _dashboardScrollController,
             padding: EdgeInsets.fromLTRB(
               tokens.spacing.card,
-              kHomeToolbarExtent + tokens.spacing.card,
+              homeToolbarExtent(context) + tokens.spacing.card,
               tokens.spacing.card,
-              tokens.spacing.card + bottomInset + kHomeFabClearance,
+              tokens.spacing.card + bottomInset + homeFabClearance(context),
             ),
             children: <Widget>[
               // v101 更新提醒：有未读时才占位（横幅自己在 total==0 时收成
@@ -1353,11 +1378,12 @@ class _HomeDashboardPageState
                   right: tokens.spacing.card,
                   child: _buildFloatingToolbar(),
                 ),
-                PositionedDirectional(
-                  end: kHomeFabMargin,
-                  bottom: kHomeFabMargin + bottomInset,
-                  child: _buildResumeFab(appModel),
-                ),
+                if (resumeFab)
+                  PositionedDirectional(
+                    end: kHomeFabMargin,
+                    bottom: kHomeFabMargin + bottomInset,
+                    child: _buildResumeFab(appModel),
+                  ),
               ],
             ),
           ),

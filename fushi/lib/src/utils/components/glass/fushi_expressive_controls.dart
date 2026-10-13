@@ -1,14 +1,20 @@
 import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
+import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 // Material 3 Expressive（2025-05）交互控件共享层的第二批：按钮尺寸档 / 形状、
 // toggle 按钮、split button、FAB 三尺寸 + FAB menu，以及开关 thumb 图标、
@@ -19,8 +25,9 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 //
 // 形变 / 挤压动效沿用 fushi_expressive.dart 的弹簧（fast / default spatial），
 // 墨水屏与系统「减少动画」下一律静止（[fushiExpressiveMotionEnabled]）。Apple
-// 设计系统下这些组件映射到同一 API 的 iOS 原生形态（玻璃胶囊 / 系统菜单），
-// 不出现 Expressive 形变。
+// 设计系统下这些组件映射到同一 API 的 iOS 原生形态（`.bordered` /
+// `.borderedProminent` 胶囊、强调色玻璃圆钮、pull-down 菜单），不出现
+// Expressive 形变、尺寸档与弹簧。
 
 // ---------------------------------------------------------------------------
 // 按钮尺寸档 / 形状
@@ -231,8 +238,8 @@ enum FushiToggleButtonVariant { filled, tonal, outlined, elevated }
 /// surfaceContainerLow + primary 字、选中 primary + onPrimary。
 ///
 /// 读屏：`toggled` 语义；键盘 / 手柄：Enter 切换（App 把裸空格中和了）。
-/// Apple 设计系统：选中 = 强调色玻璃胶囊（FushiFilledButton），未选 = 中性
-/// 玻璃胶囊（FushiFilledButton.tonal），不变形。
+/// Apple 设计系统：未选 = `.bordered`（tertiaryFill 灰底 + 强调色字），选中 =
+/// `.borderedProminent`（强调色实底 + onAccent 字），按下变淡，不变形。
 class FushiToggleButton extends StatefulWidget {
   const FushiToggleButton({
     super.key,
@@ -367,35 +374,15 @@ class _FushiToggleButtonState extends State<FushiToggleButton> {
     if (enabled) onPressed = () => widget.onChanged!(!widget.selected);
     Widget result;
     if (isGlassDesign(context)) {
-      result = widget.selected
-          ? (icon == null
-                ? FushiFilledButton(
-                    onPressed: onPressed,
-                    focusNode: widget.focusNode,
-                    autofocus: widget.autofocus,
-                    child: widget.label,
-                  )
-                : FushiFilledButton.icon(
-                    onPressed: onPressed,
-                    focusNode: widget.focusNode,
-                    autofocus: widget.autofocus,
-                    icon: icon,
-                    label: widget.label,
-                  ))
-          : (icon == null
-                ? FushiFilledButton.tonal(
-                    onPressed: onPressed,
-                    focusNode: widget.focusNode,
-                    autofocus: widget.autofocus,
-                    child: widget.label,
-                  )
-                : FushiFilledButton.tonalIcon(
-                    onPressed: onPressed,
-                    focusNode: widget.focusNode,
-                    autofocus: widget.autofocus,
-                    icon: icon,
-                    label: widget.label,
-                  ));
+      result = fushiAppleBorderedButton(
+        context,
+        prominent: widget.selected,
+        onPressed: onPressed,
+        focusNode: widget.focusNode,
+        autofocus: widget.autofocus,
+        icon: icon,
+        label: widget.label,
+      );
     } else {
       _states.update(WidgetState.selected, widget.selected);
       final ({double pressedRadius, bool squared, double squareRadius}) spec =
@@ -474,8 +461,14 @@ enum FushiSplitButtonVariant { filled, tonal, outlined, elevated }
 /// - 外侧两端全圆角，内侧相邻角小圆角，按下 / 悬停的那一半内角弹大
 ///   （fast spatial 弹簧）；
 /// - 菜单打开时尾按钮弹成正圆（内角 → 50%），箭头转 180°（default spatial）；
-/// - 菜单是 [MenuAnchor]（Apple 设计系统下同一个锚点，主题已换成系统菜单
-///   外观），键盘 Enter / 方向键与手柄 A 都能开合与遍历，Esc 关闭。
+/// - 菜单是 [MenuAnchor]，键盘 Enter / 方向键与手柄 A 都能开合与遍历，Esc
+///   关闭。
+///
+/// Apple 设计系统：iOS 没有 split button，映射成**一颗** pull-down 按钮
+/// （标签 + `chevron.down`，filled = `.borderedProminent`，其余 `.bordered`），
+/// 点开 [FushiMenuAnchor] 的系统菜单；主操作是菜单首项（与 [menuChildren]
+/// 之间一条分隔线）。没有菜单项时就是一颗直接触发 [onPressed] 的按钮。无缝、
+/// 无弹簧、无箭头旋转。
 class FushiSplitButton extends StatefulWidget {
   const FushiSplitButton({
     super.key,
@@ -569,9 +562,10 @@ class _FushiSplitButtonState extends State<FushiSplitButton>
   void _setOpen(bool open) {
     if (!mounted || _deactivated || _menuOpen == open) return;
     setState(() => _menuOpen = open);
+    // Apple 形态没有箭头旋转，弹簧直接落位。
     _open.animateTo(
       open ? 1 : 0,
-      animate: fushiExpressiveMotionEnabled(context),
+      animate: !isGlassDesign(context) && fushiExpressiveMotionEnabled(context),
     );
   }
 
@@ -658,39 +652,50 @@ class _FushiSplitButtonState extends State<FushiSplitButton>
   }
 
   Widget _buildGlass(BuildContext context) {
-    final bool hasMenu = widget.menuChildren.isNotEmpty;
-    final Widget lead = widget.icon == null
-        ? FushiFilledButton(
-            onPressed: widget.onPressed,
-            focusNode: widget.focusNode,
-            autofocus: widget.autofocus,
-            child: widget.label,
-          )
-        : FushiFilledButton.icon(
-            onPressed: widget.onPressed,
-            focusNode: widget.focusNode,
-            autofocus: widget.autofocus,
-            icon: widget.icon,
-            label: widget.label,
-          );
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      spacing: 2,
-      children: <Widget>[
-        lead,
-        MenuAnchor(
-          controller: _menu,
-          onOpen: () => _setOpen(true),
-          onClose: () => _setOpen(false),
-          menuChildren: widget.menuChildren,
-          builder: (BuildContext context, MenuController c, Widget? _) =>
-              FushiIconButtonControl.filled(
-                onPressed: hasMenu ? _toggleMenu : null,
-                tooltip: widget.menuTooltip,
-                icon: _chevron(context, 20),
-              ),
+    final bool prominent = widget.variant == FushiSplitButtonVariant.filled;
+    if (widget.menuChildren.isEmpty) {
+      return fushiAppleBorderedButton(
+        context,
+        prominent: prominent,
+        onPressed: widget.onPressed,
+        focusNode: widget.focusNode,
+        autofocus: widget.autofocus,
+        icon: widget.icon,
+        label: widget.label,
+      );
+    }
+    final bool compact = fushiAppleCompact(context);
+    return FushiMenuAnchor(
+      controller: _menu,
+      childFocusNode: widget.focusNode,
+      onOpen: () => _setOpen(true),
+      onClose: () => _setOpen(false),
+      menuChildren: <Widget>[
+        MenuItemButton(
+          onPressed: widget.onPressed,
+          leadingIcon: widget.icon,
+          child: widget.label,
         ),
+        const FushiAppleMenuDivider(),
+        ...widget.menuChildren,
       ],
+      builder: (BuildContext context, MenuController c, Widget? _) => Semantics(
+        expanded: _menuOpen,
+        child: fushiAppleBorderedButton(
+          context,
+          prominent: prominent,
+          onPressed: _toggleMenu,
+          focusNode: widget.focusNode,
+          autofocus: widget.autofocus,
+          semanticLabel: widget.menuTooltip,
+          icon: widget.icon,
+          label: widget.label,
+          trailing: FushiIcon(
+            CupertinoIcons.chevron_down,
+            size: compact ? 11 : 13,
+          ),
+        ),
+      ),
     );
   }
 
@@ -872,10 +877,13 @@ fushiFabMetrics(FushiFabSize size) => switch (size) {
 
 /// M3 Expressive 悬浮按钮：三尺寸、六配色、可带文字（扩展 FAB）。
 ///
-/// 本体仍是 [FloatingActionButton]（语义 / 焦点 / heroTag / Scaffold 定位全
-/// 照旧），外包 [FushiGlassFab]（玻璃材质下补底）；MD3 下按压时圆角朝
-/// pressedRadius 收缩（fast spatial 弹簧）。Apple 设计系统下走主题的中性玻璃
-/// 胶囊 + 强调色图标（尺寸仍按档）。
+/// MD3：本体是 [FloatingActionButton]（语义 / 焦点 / heroTag / Scaffold 定位
+/// 全照旧），玻璃材质下补底；按压时圆角朝 pressedRadius 收缩（fast spatial
+/// 弹簧）。
+///
+/// Apple 设计系统：iOS 没有 FAB，画成强调色着色的玻璃圆钮（移动 50 / 桌面
+/// 44，`.glassProminent`，onAccent 图标）；扩展态是同高的强调色玻璃胶囊 +
+/// 17 号 semibold 文字。[size] / [color] 尺寸档与配色、heroTag 都只影响 MD3。
 class FushiFab extends StatefulWidget {
   const FushiFab({
     super.key,
@@ -935,11 +943,62 @@ class _FushiFabState extends State<FushiFab> with TickerProviderStateMixin {
     );
   }
 
+  Widget _buildApple(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final bool compact = fushiAppleCompact(context);
+    final bool enabled = widget.onPressed != null;
+    final double extent = compact ? 44 : 50;
+    final Color fg = enabled ? apple.onAccent : apple.tertiaryLabel;
+    final Widget? label = widget.label;
+    Widget content = IconTheme.merge(
+      data: IconThemeData(color: fg, size: compact ? 18 : 22),
+      child: widget.icon,
+    );
+    if (label != null) {
+      content = Padding(
+        padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 20),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            content,
+            SizedBox(width: compact ? 6 : 8),
+            Flexible(
+              child: DefaultTextStyle.merge(
+                style: fushiAppleButtonTextStyle(
+                  context,
+                  prominent: true,
+                ).copyWith(color: fg),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                child: label,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    Widget button = fushiAppleProminentGlassButton(
+      context,
+      onPressed: widget.onPressed,
+      focusNode: widget.focusNode,
+      autofocus: widget.autofocus,
+      semanticLabel: widget.tooltip,
+      extent: extent,
+      capsule: label != null,
+      child: content,
+    );
+    final String? tip = widget.tooltip;
+    if (tip != null && tip.isNotEmpty) {
+      button = FushiTooltip(message: tip, child: button);
+    }
+    return button;
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) return _buildApple(context);
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
-    final bool apple = isGlassDesign(context);
     final bool eink = isEinkTheme(context);
     final ({
       double extent,
@@ -950,7 +1009,7 @@ class _FushiFabState extends State<FushiFab> with TickerProviderStateMixin {
     m = fushiFabMetrics(widget.size);
     final FloatingActionButtonThemeData base = theme.floatingActionButtonTheme;
     final bool themedTransparent = base.backgroundColor == Colors.transparent;
-    final (Color bg, Color fg) = apple || eink
+    final (Color bg, Color fg) = eink
         ? (
             base.backgroundColor ?? cs.primaryContainer,
             base.foregroundColor ?? cs.onPrimaryContainer,
@@ -990,9 +1049,11 @@ class _FushiFabState extends State<FushiFab> with TickerProviderStateMixin {
     Widget fab = AnimatedBuilder(
       animation: _press.animation,
       builder: (BuildContext context, Widget? _) {
-        final double radius = apple
-            ? m.extent / 2
-            : lerpDouble(m.radius, m.pressedRadius, _press.value)!;
+        final double radius = lerpDouble(
+          m.radius,
+          m.pressedRadius,
+          _press.value,
+        )!;
         final ShapeBorder shape = RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radius),
           side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
@@ -1021,18 +1082,18 @@ class _FushiFabState extends State<FushiFab> with TickerProviderStateMixin {
       },
     );
     fab = FloatingActionButtonTheme(data: sized, child: fab);
-    if (!apple) {
-      fab = Listener(
-        onPointerDown: (_) => _setPressed(true),
-        onPointerUp: (_) => _setPressed(false),
-        onPointerCancel: (_) => _setPressed(false),
-        child: fab,
-      );
-    }
+    fab = Listener(
+      onPointerDown: (_) => _setPressed(true),
+      onPointerUp: (_) => _setPressed(false),
+      onPointerCancel: (_) => _setPressed(false),
+      child: fab,
+    );
     if (themedTransparent) {
-      fab = _FushiGlassFabBase(
-        color: apple ? null : bg,
-        radius: apple ? m.extent / 2 : m.radius,
+      // 玻璃材质下给 FAB 补底（与 [FushiGlassFab] 同一判据，但按 FAB 尺寸给
+      // 圆角与配色）。
+      fab = FushiGlassSurface(
+        baseColor: bg,
+        borderRadius: BorderRadius.circular(m.radius),
         child: fab,
       );
     }
@@ -1040,28 +1101,56 @@ class _FushiFabState extends State<FushiFab> with TickerProviderStateMixin {
   }
 }
 
-/// 玻璃材质下给 FAB 补底（与 [FushiGlassFab] 同一判据，但按 FAB 尺寸给圆角
-/// 与配色）。
-class _FushiGlassFabBase extends StatelessWidget {
-  const _FushiGlassFabBase({
-    required this.color,
-    required this.radius,
-    required this.child,
-  });
-
-  final Color? color;
-  final double radius;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    if (color == null) return FushiGlassFab(child: child);
-    return FushiGlassSurface(
-      baseColor: color,
-      borderRadius: BorderRadius.circular(radius),
-      child: child,
-    );
-  }
+/// Apple 强调色着色玻璃按钮（`.glassProminent`）：[capsule] = 胶囊（宽度随
+/// 内容），否则 [extent] 见方的正圆。禁用态褪成无色透明玻璃。焦点环 +
+/// Enter → ActivateIntent 由 [GlassButton] 内置的 GlassFocusRegion 接上；浮在
+/// 别的玻璃面里时走库的嵌套 vibrancy。[FushiFab] / [FushiFabMenu] 共用。
+Widget fushiAppleProminentGlassButton(
+  BuildContext context, {
+  required VoidCallback? onPressed,
+  required double extent,
+  required Widget child,
+  bool capsule = false,
+  FocusNode? focusNode,
+  bool autofocus = false,
+  String? semanticLabel,
+}) {
+  final FushiAppleColors apple = appleColorsOf(context);
+  final bool enabled = onPressed != null;
+  final bool nested =
+      context
+          .dependOnInheritedWidgetOfExactType<InheritedLiquidGlass>()
+          ?.avoidsRefraction ??
+      false;
+  return GlassButton.custom(
+    onTap: onPressed ?? () {},
+    enabled: enabled,
+    style: enabled ? GlassButtonStyle.prominent : GlassButtonStyle.filled,
+    settings: enabled
+        ? fushiGlassSettings(context, tint: apple.accent)
+        : fushiClearGlassSettings(context),
+    quality: fushiGlassQuality(context),
+    useOwnLayer: !nested,
+    persistPressOnDrag: true,
+    ambientBaseLight:
+        Theme.of(context).colorScheme.brightness == Brightness.dark
+        ? 0.0
+        : 0.25,
+    shape: capsule
+        ? LiquidRoundedSuperellipse(borderRadius: extent / 2)
+        : const LiquidOval(),
+    width: capsule ? null : extent,
+    height: extent,
+    focusNode: focusNode,
+    autofocus: autofocus,
+    label: semanticLabel ?? '',
+    child: capsule
+        ? ConstrainedBox(
+            constraints: BoxConstraints(minWidth: extent, minHeight: extent),
+            child: Center(widthFactor: 1, heightFactor: 1, child: child),
+          )
+        : child,
+  );
 }
 
 /// [FushiFabMenu] 的一项。
@@ -1086,7 +1175,9 @@ class FushiFabMenuItem {
 ///   墨水屏 / 减少动画下瞬变；
 /// - 键盘 / 手柄：Enter 开合，展开时焦点落到最近的菜单项，Esc / 手柄 B 收起并
 ///   把焦点还给 FAB；点菜单项先收起再执行；
-/// - Apple 设计系统：同一结构，菜单项是玻璃胶囊按钮，不做形变。
+/// - Apple 设计系统：iOS 没有 FAB menu，映射成强调色玻璃圆钮（同 [FushiFab]）
+///   + [FushiMenuAnchor] pull-down 菜单（菜单项 = 图标 + 文字的系统菜单行），
+///   无形变、无旋转、无错峰弹簧；[open] / [close] / [onOpenChanged] 照旧。
 ///
 /// 放在 `Scaffold.floatingActionButton` 即可：整体向上生长，底边锚定。
 class FushiFabMenu extends StatefulWidget {
@@ -1126,6 +1217,9 @@ class FushiFabMenuState extends State<FushiFabMenu>
   final List<FocusNode> _itemFocus = <FocusNode>[];
   bool _open = false;
 
+  /// Apple 形态的 pull-down 菜单开合。
+  final MenuController _menu = MenuController();
+
   bool get isOpen => _open;
 
   @override
@@ -1159,6 +1253,11 @@ class FushiFabMenuState extends State<FushiFabMenu>
 
   void _setOpen(bool value) {
     if (_open == value) return;
+    if (isGlassDesign(context)) {
+      // Apple：开合交给系统菜单，状态在 onOpen / onClose 里对齐。
+      value ? _menu.open() : _menu.close();
+      return;
+    }
     setState(() => _open = value);
     _openSpring.animateTo(
       value ? 1 : 0,
@@ -1178,12 +1277,61 @@ class FushiFabMenuState extends State<FushiFabMenu>
     }
   }
 
+  void _onAppleMenuChanged(bool open) {
+    if (!mounted || _open == open) return;
+    setState(() => _open = open);
+    widget.onOpenChanged?.call(open);
+  }
+
+  Widget _buildApple(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final bool compact = fushiAppleCompact(context);
+    return FushiMenuAnchor(
+      controller: _menu,
+      childFocusNode: _fabFocus,
+      onOpen: () => _onAppleMenuChanged(true),
+      onClose: () => _onAppleMenuChanged(false),
+      menuChildren: <Widget>[
+        for (final FushiFabMenuItem it in widget.items)
+          MenuItemButton(
+            onPressed: it.onPressed,
+            leadingIcon: it.icon,
+            child: Text(it.label),
+          ),
+      ],
+      builder: (BuildContext context, MenuController c, Widget? _) {
+        final String? tip = _open ? widget.closeTooltip : widget.tooltip;
+        Widget button = Semantics(
+          expanded: _open,
+          child: fushiAppleProminentGlassButton(
+            context,
+            onPressed: () => _open ? _menu.close() : _menu.open(),
+            focusNode: _fabFocus,
+            semanticLabel: tip,
+            extent: compact ? 44 : 50,
+            child: IconTheme.merge(
+              data: IconThemeData(
+                color: apple.onAccent,
+                size: compact ? 18 : 22,
+              ),
+              child: widget.icon,
+            ),
+          ),
+        );
+        if (tip != null && tip.isNotEmpty) {
+          button = FushiTooltip(message: tip, child: button);
+        }
+        return button;
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     _syncFocusNodes();
+    if (isGlassDesign(context)) return _buildApple(context);
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
-    final bool apple = isGlassDesign(context);
     final int n = widget.items.length;
     final (Color container, Color onContainer) = fushiFabColors(
       cs,
@@ -1197,35 +1345,28 @@ class FushiFabMenuState extends State<FushiFabMenu>
         it.onPressed?.call();
       }
 
-      final Widget button = apple
-          ? FushiFilledButton.tonalIcon(
-              onPressed: it.onPressed == null ? null : activate,
-              focusNode: _itemFocus[i],
-              icon: it.icon,
-              label: Text(it.label),
-            )
-          : FilledButton.icon(
-              onPressed: it.onPressed == null ? null : activate,
-              focusNode: _itemFocus[i],
-              style: FilledButton.styleFrom(
-                backgroundColor: container,
-                foregroundColor: onContainer,
-                iconColor: onContainer,
-                minimumSize: const Size(56, 56),
-                maximumSize: const Size(double.infinity, 56),
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                iconSize: 24,
-                textStyle: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-                shape: const StadiumBorder(),
-                elevation: 3,
-                shadowColor: cs.shadow,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              icon: it.icon,
-              label: Text(it.label),
-            );
+      final Widget button = FilledButton.icon(
+        onPressed: it.onPressed == null ? null : activate,
+        focusNode: _itemFocus[i],
+        style: FilledButton.styleFrom(
+          backgroundColor: container,
+          foregroundColor: onContainer,
+          iconColor: onContainer,
+          minimumSize: const Size(56, 56),
+          maximumSize: const Size(double.infinity, 56),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          iconSize: 24,
+          textStyle: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+          shape: const StadiumBorder(),
+          elevation: 3,
+          shadowColor: cs.shadow,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        icon: it.icon,
+        label: Text(it.label),
+      );
       // 错峰：离 FAB 最近（最下方）的先出；收起时反序。
       final int order = n - 1 - i;
       return AnimatedBuilder(
@@ -1274,9 +1415,7 @@ class FushiFabMenuState extends State<FushiFabMenu>
         // 展开：FAB（方圆角、container 色）→ 56 正圆关闭钮（primary 色）。
         final double extent = lerpDouble(m.extent, 56, t)!;
         final double radius = lerpDouble(m.radius, 28, t)!;
-        final Color bg = apple
-            ? (Color.lerp(container, cs.primary, t) ?? cs.primary)
-            : Color.lerp(container, cs.primary, t)!;
+        final Color bg = Color.lerp(container, cs.primary, t)!;
         final Color fg = Color.lerp(onContainer, cs.onPrimary, t)!;
         return Semantics(
           button: true,

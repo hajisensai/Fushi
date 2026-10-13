@@ -686,13 +686,22 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
         : 0.0;
     final String cue = c.currentCue?.text.trim() ?? '';
     final String label = cue.isEmpty ? t.reader_audiobook_now_playing : cue;
-    final Widget progress = glass || isEinkTheme(context)
+    // Apple：系统细进度条（[FushiLinearProgressIndicator] 的 Apple 分支，全圆角
+    // 强调色细轨、值变化平滑过渡）；墨水屏：无动画的 Material 细条。
+    final Widget progress = glass
+        ? FushiLinearProgressIndicator(
+            value: fraction,
+            minHeight: 3,
+            color: appleColorsOf(context).accent,
+            backgroundColor: fg.withValues(alpha: 0.16),
+          )
+        : isEinkTheme(context)
         ? ClipRRect(
             borderRadius: const BorderRadius.all(Radius.circular(2)),
             child: LinearProgressIndicator(
               value: fraction,
               minHeight: 3,
-              color: glass ? appleColorsOf(context).accent : fg,
+              color: fg,
               backgroundColor: fg.withValues(alpha: 0.16),
             ),
           )

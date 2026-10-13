@@ -15,9 +15,7 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable;
@@ -60,21 +58,23 @@ Widget _glassCircle(
   Widget child, {
   AlignmentGeometry alignment = Alignment.center,
 }) {
+  // 宽松约束（[FushiPageHeader] 的 NavigationToolbar 给 leading 的是整行松
+  // 约束）下按自身尺寸收紧，不撑满整行把按钮挤到正中；AppBar leading 槽是
+  // 紧约束，两个因子不生效，[alignment] 照旧定位。
   return Align(
     alignment: alignment,
+    widthFactor: 1,
+    heightFactor: 1,
+    // 原生 Cupertino 导航栏控件无底（用户 2026-10-12「特效都去掉，直接原生
+    // Cupertino」）：不再垫玻璃圆，只保留 44 的点按区。
     child: SizedBox.square(
       dimension: _kGlassBarControlExtent,
-      child: GlassContainer(
-        useOwnLayer: true,
-        quality: fushiGlassQuality(context),
-        shape: const LiquidOval(),
-        child: IconTheme.merge(
-          data: IconThemeData(
-            size: _kGlassBarIconSize,
-            color: appleColorsOf(context).label,
-          ),
-          child: Center(child: child),
+      child: IconTheme.merge(
+        data: IconThemeData(
+          size: _kGlassBarIconSize,
+          color: appleColorsOf(context).label,
         ),
+        child: Center(child: child),
       ),
     ),
   );
@@ -93,27 +93,21 @@ Widget _glassActionsCapsule(BuildContext context, List<Widget> actions) {
       padding: EdgeInsetsDirectional.only(
         end: _isDesktopBar(context) ? 12 : 16,
       ),
-      child: GlassContainer(
-        useOwnLayer: true,
-        quality: fushiGlassQuality(context),
-        shape: const LiquidRoundedSuperellipse(
-          borderRadius: _kGlassBarControlExtent / 2,
+      // 原生 Cupertino：一排无底 bar button，不再收进玻璃胶囊。
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minWidth: _kGlassBarControlExtent,
+          minHeight: _kGlassBarControlExtent,
+          maxHeight: _kGlassBarControlExtent,
         ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            minWidth: _kGlassBarControlExtent,
-            minHeight: _kGlassBarControlExtent,
-            maxHeight: _kGlassBarControlExtent,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: IconTheme.merge(
-              data: IconThemeData(
-                size: _kGlassBarIconSize,
-                color: appleColorsOf(context).label,
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: actions),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: IconTheme.merge(
+            data: IconThemeData(
+              size: _kGlassBarIconSize,
+              color: appleColorsOf(context).label,
             ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: actions),
           ),
         ),
       ),
@@ -145,6 +139,31 @@ TextStyle _glassTitleStyle(BuildContext context) {
     color: appleColorsOf(context).label,
   );
 }
+
+/// Apple 悬浮栏的内联标题（iOS 26 / macOS 26 导航栏不把标题装进玻璃）：
+/// 移动 17 / 桌面 15 semibold、label 色。悬浮顶栏与库页浮动行共用。
+TextStyle fushiAppleInlineTitleStyle(BuildContext context) {
+  return (Theme.of(context).textTheme.titleMedium ?? const TextStyle())
+      .copyWith(
+        color: appleColorsOf(context).label,
+        fontSize: fushiAppleCompact(context) ? 15 : 17,
+        fontWeight: FontWeight.w600,
+      );
+}
+
+/// [fushiAppleInlineTitleStyle] 的副标题：移动 12 / 桌面 11、secondaryLabel。
+TextStyle fushiAppleInlineSubtitleStyle(BuildContext context) {
+  return (Theme.of(context).textTheme.labelSmall ?? const TextStyle())
+      .copyWith(
+        color: appleColorsOf(context).secondaryLabel,
+        fontSize: fushiAppleCompact(context) ? 11 : 12,
+      );
+}
+
+/// 可点的 Apple 内联标题按下高亮的圆角（与 iOS 导航栏标题菜单同口径）。
+const BorderRadius kFushiAppleInlineTitleRadius = BorderRadius.all(
+  Radius.circular(10),
+);
 
 /// 与框架 AppBar 同一判据推出隐含 leading（抽屉键 / 关闭键 / 返回键），
 /// 但渲染成圆形玻璃钮（SF 风格图标）。推不出时返回 null（交回 AppBar，它同样

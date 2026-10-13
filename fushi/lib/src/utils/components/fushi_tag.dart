@@ -3,6 +3,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
@@ -89,6 +90,98 @@ class FushiTag extends StatelessWidget {
         ? _baseColorFor(scheme, background)
         : null;
 
+    final VoidCallback? onTap = message == null
+        ? null
+        : () {
+            FushiToast.show(
+              backgroundColor: background,
+              textColor: toned?.foreground ??
+                  foregroundColor ??
+                  scheme.onSecondaryContainer,
+              msg: message!,
+              toastLength: Toast.LENGTH_SHORT,
+              gravity: ToastGravity.BOTTOM,
+            );
+          };
+    final Widget content = ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 22),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (appleDot != null) ...[
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: appleDot,
+                  shape: BoxShape.circle,
+                ),
+                child: const SizedBox(width: 6, height: 6),
+              ),
+              const SizedBox(width: 5),
+            ],
+            if (icon != null) ...[
+              FushiIcon(
+                icon,
+                color: effectiveForeground,
+                size: iconSize ?? 12,
+              ),
+              const SizedBox(width: 4),
+            ],
+            Flexible(
+              child: Text(
+                text,
+                style: effectiveStyle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (trailingText != null) ...[
+              const SizedBox(width: 4),
+              Flexible(
+                child: DecoratedBox(
+                  decoration: ShapeDecoration(
+                    color: appleColors?.separator ??
+                        scheme.surfaceContainerHighest,
+                    shape: appleColors != null
+                        ? const StadiumBorder()
+                        : RoundedRectangleBorder(
+                            borderRadius: tokens.radii.chipRadius,
+                          ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 1,
+                    ),
+                    child: Text(
+                      trailingText!,
+                      style: baseStyle.copyWith(
+                        fontSize: 10,
+                        color: appleColors?.secondaryLabel ??
+                            scheme.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+    // Apple：iOS 点击反馈是按下变淡（.plain 按钮），没有水波 / 高亮层；不可点
+    // 的标签不包按钮（与 InkWell onTap == null 时一样不可聚焦）。
+    Widget appleTap(Widget child) => onTap == null
+        ? child
+        : FushiPlainButton(
+            onPressed: onTap,
+            borderRadius: const BorderRadius.all(Radius.circular(999)),
+            child: child,
+          );
+
     return Padding(
       padding: EdgeInsetsDirectional.only(
         end: dense ? 0 : tokens.spacing.gap / 2,
@@ -106,90 +199,8 @@ class FushiTag extends StatelessWidget {
                     : BorderSide.none,
               ),
         clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: message == null
-              ? null
-              : () {
-                  FushiToast.show(
-                    backgroundColor: background,
-                    textColor: toned?.foreground ??
-                        foregroundColor ??
-                        scheme.onSecondaryContainer,
-                    msg: message!,
-                    toastLength: Toast.LENGTH_SHORT,
-                    gravity: ToastGravity.BOTTOM,
-                  );
-                },
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 22),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (appleDot != null) ...[
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: appleDot,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const SizedBox(width: 6, height: 6),
-                    ),
-                    const SizedBox(width: 5),
-                  ],
-                  if (icon != null) ...[
-                    FushiIcon(
-                      icon,
-                      color: effectiveForeground,
-                      size: iconSize ?? 12,
-                    ),
-                    const SizedBox(width: 4),
-                  ],
-                  Flexible(
-                    child: Text(
-                      text,
-                      style: effectiveStyle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (trailingText != null) ...[
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: DecoratedBox(
-                        decoration: ShapeDecoration(
-                          color: appleColors?.separator ??
-                              scheme.surfaceContainerHighest,
-                          shape: appleColors != null
-                              ? const StadiumBorder()
-                              : RoundedRectangleBorder(
-                                  borderRadius: tokens.radii.chipRadius,
-                                ),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 5,
-                            vertical: 1,
-                          ),
-                          child: Text(
-                            trailingText!,
-                            style: baseStyle.copyWith(
-                              fontSize: 10,
-                              color: appleColors?.secondaryLabel ??
-                                  scheme.onSurfaceVariant,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
+        child:
+            apple ? appleTap(content) : InkWell(onTap: onTap, child: content),
       ),
     );
   }

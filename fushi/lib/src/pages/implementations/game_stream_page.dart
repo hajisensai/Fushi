@@ -11,6 +11,8 @@ import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart'
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_receiver.dart';
 import 'package:fushi/src/sync/game_stream_touch.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isGlassDesign;
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
@@ -974,7 +976,10 @@ class _GameStreamPageState extends State<GameStreamPage>
                         child: DecoratedBox(
                           decoration: BoxDecoration(
                             borderRadius: FushiM3eShape.cardRadius,
-                            boxShadow: fushiM3eCardShadow(context, 1),
+                            // Apple 的淡染提示条贴在画面上，不带 M3 投影。
+                            boxShadow: isGlassDesign(context)
+                                ? null
+                                : fushiM3eCardShadow(context, 1),
                           ),
                           child: FushiCard(
                             tone: FushiCardTone.error,

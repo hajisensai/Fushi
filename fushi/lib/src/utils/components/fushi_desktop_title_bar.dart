@@ -12,9 +12,10 @@ import 'package:fushi/src/media/video/video_hdr_output.dart'
 import 'package:fushi/src/platform/desktop/macos_traffic_lights.dart';
 import 'package:fushi/src/platform/macos_fullscreen_state.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
-    show isEinkTheme;
+    show isEinkTheme, isGlassDesign;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/fushi_color_roles.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:window_manager/window_manager.dart';
@@ -397,13 +398,10 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
           // 子树结构恒定，不会重挂 Navigator。
           child: ValueListenableBuilder<FushiTitleBarColors?>(
             valueListenable: FushiDesktopTitleBar._pageColors,
-            builder: (
-              BuildContext context,
-              FushiTitleBarColors? page,
-              Widget? _,
-            ) {
-              final double caption =
-                  hideFrame ? 0 : FushiDesktopTitleBar.height;
+            builder: (BuildContext context, FushiTitleBarColors? page, Widget? _) {
+              final double caption = hideFrame
+                  ? 0
+                  : FushiDesktopTitleBar.height;
               final bool overlay = page == null;
               final double offset = overlay ? 0 : caption;
               final double inset = overlay ? caption : 0;
@@ -514,6 +512,7 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
           // M3E 按钮组自己有一枚半透明 tonal 胶囊，柔光只负责让胶囊四周的
           // 背景过渡柔和、不出硬边：峰值比旧版低、渐隐半径更大，胶囊整枚落在
           // 最浓的那一段里。墨水屏不画（降级为胶囊描边，无填色）。
+          // Apple 设计系统没有胶囊，柔光直接托住扁平字形的可读性。
           if (page == null && !trafficLights && !isEinkTheme(context))
             Positioned(
               top: 0,
@@ -544,14 +543,14 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
             ),
           ValueListenableBuilder<FushiTitleBarBackdrop?>(
             valueListenable: FushiDesktopTitleBar._pageBackdrop,
-            builder: (
-              BuildContext context,
-              FushiTitleBarBackdrop? backdrop,
-              Widget? _,
-            ) =>
-                backdrop == null
-                    ? const SizedBox.shrink()
-                    : FushiTitleBarBackdropView(backdrop: backdrop),
+            builder:
+                (
+                  BuildContext context,
+                  FushiTitleBarBackdrop? backdrop,
+                  Widget? _,
+                ) => backdrop == null
+                ? const SizedBox.shrink()
+                : FushiTitleBarBackdropView(backdrop: backdrop),
           ),
           _buildCaptionControls(trafficLights, page),
         ],
@@ -561,16 +560,16 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
 
   Widget _buildCaptionControls(bool trafficLights, FushiTitleBarColors? page) {
     return Row(
-        children: <Widget>[
-          // 系统红绿灯画在原生标题栏视图里，浮在这块留位之上。
-          if (trafficLights) const SizedBox(width: _kTrafficLightsReserve),
-          Expanded(
-            child: DragToMoveArea(
-              // 拖动区必须撑满整条标题栏高度：去掉标题文字后 Row 里只剩无高度的
-              // 占位（SizedBox 宽 / Spacer），Row 会塌成 0 高，命中测试永远落不进
-              // DragToMoveArea，顶栏就拖不动了（2026-10-04 用户报）。
-              child: SizedBox.expand(
-                child: Row(
+      children: <Widget>[
+        // 系统红绿灯画在原生标题栏视图里，浮在这块留位之上。
+        if (trafficLights) const SizedBox(width: _kTrafficLightsReserve),
+        Expanded(
+          child: DragToMoveArea(
+            // 拖动区必须撑满整条标题栏高度：去掉标题文字后 Row 里只剩无高度的
+            // 占位（SizedBox 宽 / Spacer），Row 会塌成 0 高，命中测试永远落不进
+            // DragToMoveArea，顶栏就拖不动了（2026-10-04 用户报）。
+            child: SizedBox.expand(
+              child: Row(
                 children: <Widget>[
                   SizedBox(
                     width: trafficLights
@@ -586,10 +585,10 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
                   const Spacer(),
                 ],
               ),
-              ),
             ),
           ),
-          if (!trafficLights) ...<Widget>[
+        ),
+        if (!trafficLights) ...<Widget>[
           // M3E 窗口按钮组：三枚小号 standard 图标按钮收进一枚 tonal 胶囊；
           // 右缘与页面浮动页头的动作组同一条页边（[FushiSpacingTokens.page]），
           // 竖直方向在 32 高的标题行里居中。
@@ -628,8 +627,8 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
               height: FushiDesktopTitleBar.height,
             ),
           ),
-          ],
         ],
+      ],
     );
   }
 
@@ -672,6 +671,9 @@ const double _kCaptionGlyphSize = 10;
 ///   根主题的 surface（纸色与根主题明暗可能相反）；
 /// - 窗口失焦：胶囊变淡（按钮前景同步降低不透明度，见 [_FushiCaptionButton]）；
 /// - 墨水屏：无填色，一圈 outline 描边。
+/// - Apple 设计系统（[isGlassDesign]）：没有胶囊——macOS 标题栏的窗口按钮是
+///   直接画在标题栏上的扁平字形，悬停态由每枚按钮自己的小圆角方块表达
+///   （见 [_FushiCaptionButton]）。
 class _FushiCaptionButtonGroup extends StatelessWidget {
   const _FushiCaptionButtonGroup({
     required this.page,
@@ -687,10 +689,11 @@ class _FushiCaptionButtonGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
+    final bool apple = isGlassDesign(context);
     final FushiSpringSpec effects = context.fushiMotion.effectsDefault;
     final Color? pageForeground = page?.foreground;
     final Color fill;
-    if (eink) {
+    if (eink || apple) {
       fill = Colors.transparent;
     } else if (pageForeground != null) {
       fill = pageForeground.withValues(
@@ -712,20 +715,21 @@ class _FushiCaptionButtonGroup extends StatelessWidget {
         child: Stack(
           alignment: Alignment.center,
           children: <Widget>[
-            Positioned.fill(
-              top: inset,
-              bottom: inset,
-              child: IgnorePointer(
-                child: AnimatedContainer(
-                  duration: effects.duration,
-                  curve: effects.curve,
-                  decoration: ShapeDecoration(
-                    color: fill,
-                    shape: StadiumBorder(side: side),
+            if (!apple)
+              Positioned.fill(
+                top: inset,
+                bottom: inset,
+                child: IgnorePointer(
+                  child: AnimatedContainer(
+                    duration: effects.duration,
+                    curve: effects.curve,
+                    decoration: ShapeDecoration(
+                      color: fill,
+                      shape: StadiumBorder(side: side),
+                    ),
                   ),
                 ),
               ),
-            ),
             Padding(
               // 按钮命中区各自带半个间距，组内边距补齐到 [_kCaptionGroupPadding]。
               padding: const EdgeInsets.symmetric(
@@ -751,6 +755,11 @@ class _FushiCaptionButtonGroup extends StatelessWidget {
 /// 从全圆收到小圆角并轻微缩小（M3E 按压形变，spatial 弹簧回弹）；关闭按钮
 /// 悬停 / 按下 = errorContainer / onErrorContainer（不用刺眼的纯红）。墨水屏
 /// 不填色，悬停只描边；减弱动态效果 / 墨水屏下全部瞬间到位。
+///
+/// Apple 设计系统（[isGlassDesign]）按 macOS HIG 走另一套状态：静止是扁平
+/// 字形（无底、无胶囊）；悬停 = tertiaryFill 小圆角方块，按下 = 同色加深一档
+/// （secondaryFill），不缩放、不形变、无水波纹；关闭按钮悬停 = destructive
+/// 底 + 白色字形，按下压暗一层。键盘焦点 = 强调色描边。
 class _FushiCaptionButton extends StatefulWidget {
   const _FushiCaptionButton({
     required this.glyph,
@@ -815,12 +824,8 @@ class _FushiCaptionButtonState extends State<_FushiCaptionButton> {
   }
 
   void _unlistenNative() {
-    WindowCaptionChannel.captionMaxButtonHovered.removeListener(
-      _onNativeState,
-    );
-    WindowCaptionChannel.captionMaxButtonPressed.removeListener(
-      _onNativeState,
-    );
+    WindowCaptionChannel.captionMaxButtonHovered.removeListener(_onNativeState);
+    WindowCaptionChannel.captionMaxButtonPressed.removeListener(_onNativeState);
   }
 
   void _onNativeState() {
@@ -868,6 +873,7 @@ class _FushiCaptionButtonState extends State<_FushiCaptionButton> {
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
+    final bool apple = isGlassDesign(context);
     final FushiMotionScheme motion = context.fushiMotion;
     final bool hovered = _isHovered;
     final bool pressed = _isPressed;
@@ -881,7 +887,20 @@ class _FushiCaptionButtonState extends State<_FushiCaptionButton> {
         : rest.withValues(alpha: rest.a * 0.55);
     Color background = Colors.transparent;
     BorderSide side = BorderSide.none;
-    if (isClose && (hovered || pressed)) {
+    if (apple) {
+      final _AppleCaptionVisual visual = _appleCaptionVisual(
+        apple: appleColorsOf(context),
+        pageForeground: pageForeground,
+        isClose: isClose,
+        active: widget.active,
+        hovered: hovered,
+        pressed: pressed,
+        focused: _focusHighlight,
+      );
+      foreground = visual.foreground;
+      background = visual.background;
+      side = visual.side;
+    } else if (isClose && (hovered || pressed)) {
       if (eink) {
         foreground = cs.error;
         side = BorderSide(color: cs.error, width: 1.5);
@@ -907,7 +926,7 @@ class _FushiCaptionButtonState extends State<_FushiCaptionButton> {
         background = emphasis.withValues(alpha: emphasis.a * layer);
       }
     }
-    if (_focusHighlight && !eink) {
+    if (_focusHighlight && !eink && !apple) {
       side = BorderSide(color: cs.secondary, width: 2);
     }
 
@@ -932,8 +951,9 @@ class _FushiCaptionButtonState extends State<_FushiCaptionButton> {
           ),
     );
 
+    // Apple：按下只换底色深浅，不缩放（scale 恒 1，树结构与 MD3 一致）。
     final Widget visual = AnimatedScale(
-      scale: pressed ? 0.9 : 1,
+      scale: pressed && !apple ? 0.9 : 1,
       duration: motion.spatialFast.duration,
       curve: motion.spatialFast.curve,
       child: AnimatedContainer(
@@ -946,8 +966,13 @@ class _FushiCaptionButtonState extends State<_FushiCaptionButton> {
           color: background,
           shape: RoundedRectangleBorder(
             // 静止全圆（24 高 → 半径 12），按下收到 6：M3E 按压形状形变。
+            // Apple：恒为小圆角方块，不形变。
             borderRadius: BorderRadius.circular(
-              pressed ? 6 : _kCaptionButtonHeight / 2,
+              apple
+                  ? _kAppleCaptionCornerRadius
+                  : pressed
+                  ? 6
+                  : _kCaptionButtonHeight / 2,
             ),
             side: side,
           ),
@@ -1004,6 +1029,64 @@ class _FushiCaptionButtonState extends State<_FushiCaptionButton> {
       ),
     );
   }
+}
+
+/// Apple 窗口按钮悬停 / 按下底块的圆角（macOS 标题栏按钮的小圆角方块）。
+const double _kAppleCaptionCornerRadius = 6;
+
+/// Apple 设计系统下一枚窗口按钮此刻的前景 / 底色 / 描边。
+typedef _AppleCaptionVisual = ({
+  Color foreground,
+  Color background,
+  BorderSide side,
+});
+
+/// 按 macOS HIG 算 Apple 窗口按钮的状态外观（纯函数）。
+///
+/// - 静止：扁平字形，secondaryLabel（页面上报色时用页面前景），失焦降不透明度；
+/// - 悬停 / 键盘焦点：label 前景 + tertiaryFill 底（页面上报色时从页面前景
+///   派生同等强度的淡底，不引入与纸色明暗可能相反的根主题色）；
+/// - 按下：底色加深一档（secondaryFill / 更浓的页面前景）；
+/// - 关闭按钮悬停 / 按下：destructive 底 + 白色字形，按下再压暗一层；
+/// - 键盘焦点：强调色 2px 描边。
+_AppleCaptionVisual _appleCaptionVisual({
+  required FushiAppleColors apple,
+  required Color? pageForeground,
+  required bool isClose,
+  required bool active,
+  required bool hovered,
+  required bool pressed,
+  required bool focused,
+}) {
+  final Color rest = pageForeground ?? apple.secondaryLabel;
+  final Color emphasis = pageForeground ?? apple.label;
+  final BorderSide side = focused
+      ? BorderSide(color: apple.accent, width: 2)
+      : BorderSide.none;
+  if (isClose && (hovered || pressed)) {
+    return (
+      foreground: const Color(0xFFFFFFFF),
+      background: pressed
+          ? Color.alphaBlend(const Color(0x29000000), apple.destructive)
+          : apple.destructive,
+      side: side,
+    );
+  }
+  if (hovered || pressed || focused) {
+    final Color background;
+    if (pageForeground != null) {
+      final double alpha = pressed ? 0.18 : 0.10;
+      background = pageForeground.withValues(alpha: pageForeground.a * alpha);
+    } else {
+      background = pressed ? apple.secondaryFill : apple.tertiaryFill;
+    }
+    return (foreground: emphasis, background: background, side: side);
+  }
+  return (
+    foreground: active ? rest : rest.withValues(alpha: rest.a * 0.55),
+    background: const Color(0x00000000),
+    side: side,
+  );
 }
 
 /// 窗口按钮字形：10×10 逻辑像素、统一笔画与圆角端点。

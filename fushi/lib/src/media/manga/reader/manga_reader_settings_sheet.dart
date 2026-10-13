@@ -16,7 +16,7 @@ import 'package:fushi/src/reader/reader_panel_kit.dart'
     show ReaderPanelTab, ReaderPanelTabs;
 import 'package:fushi/src/settings/settings_kit.dart' show SettingsModifiedRow;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
-    show fushiFloatingPillDecoration;
+    show FushiFloatingPill, fushiFloatingPillDecoration;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -1087,68 +1087,75 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
   Widget _scopeBar(BuildContext context) {
     final bool glass = isGlassDesign(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final Widget bar = DecoratedBox(
-      decoration: fushiFloatingPillDecoration(
-        context,
-        color: glass
-            ? appleColorsOf(context).secondaryGroupedBackground
-            : scheme.surfaceContainerHigh,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            FushiSegmentedButton<MangaReaderSettingsScope>(
-              key: const ValueKey<String>('manga_reader_scope'),
-              showSelectedIcon: false,
-              segments: <ButtonSegment<MangaReaderSettingsScope>>[
-                ButtonSegment<MangaReaderSettingsScope>(
-                  value: MangaReaderSettingsScope.work,
-                  label: Text(t.manga_reader_override),
-                ),
-                ButtonSegment<MangaReaderSettingsScope>(
-                  value: MangaReaderSettingsScope.global,
-                  enabled: widget.onGlobalChanged != null,
-                  label: Text(t.manga_reader_scope_global),
-                ),
-              ],
-              selected: <MangaReaderSettingsScope>{_scope},
-              onSelectionChanged: (Set<MangaReaderSettingsScope> next) {
-                if (next.isEmpty || next.first == _scope) return;
-                setState(() {
-                  _scope = next.first;
-                  _sliderValues.clear();
-                  _draftColor = null;
-                });
-              },
+    // Apple：透明液态玻璃胶囊（[FushiFloatingPill] 的 Apple 形态，与阅读器
+    // 悬浮工具栏同一材质 + 柔和投影）；MD3：实色浮起胶囊。
+    Widget pill(Widget child) => glass
+        ? FushiFloatingPill(
+            color: scheme.surfaceContainerHigh,
+            padding: const EdgeInsets.all(6),
+            child: child,
+          )
+        : DecoratedBox(
+            decoration: fushiFloatingPillDecoration(
+              context,
+              color: scheme.surfaceContainerHigh,
             ),
-            _MotionSize(
-              duration: fushiMotionDuration(context, FushiMotion.medium),
-              curve: FushiMotion.standard,
-              child: _globalScope
-                  ? const SizedBox.shrink()
-                  : Padding(
-                      padding: const EdgeInsetsDirectional.only(start: 8),
-                      child: Semantics(
-                        hint: t.manga_reader_restore,
-                        child: FushiFilledButton.tonalIcon(
-                          key: const ValueKey<String>('manga_reader_restore'),
-                          onPressed: _overrides.isEmpty ? null : _reset,
-                          icon: const FushiIcon(FushiIcons.restart, size: 18),
-                          label: Text(t.manga_reader_scope_reset),
-                        ),
+            child: Padding(padding: const EdgeInsets.all(6), child: child),
+          );
+    final Widget bar = pill(
+      Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          FushiSegmentedButton<MangaReaderSettingsScope>(
+            key: const ValueKey<String>('manga_reader_scope'),
+            showSelectedIcon: false,
+            segments: <ButtonSegment<MangaReaderSettingsScope>>[
+              ButtonSegment<MangaReaderSettingsScope>(
+                value: MangaReaderSettingsScope.work,
+                label: Text(t.manga_reader_override),
+              ),
+              ButtonSegment<MangaReaderSettingsScope>(
+                value: MangaReaderSettingsScope.global,
+                enabled: widget.onGlobalChanged != null,
+                label: Text(t.manga_reader_scope_global),
+              ),
+            ],
+            selected: <MangaReaderSettingsScope>{_scope},
+            onSelectionChanged: (Set<MangaReaderSettingsScope> next) {
+              if (next.isEmpty || next.first == _scope) return;
+              setState(() {
+                _scope = next.first;
+                _sliderValues.clear();
+                _draftColor = null;
+              });
+            },
+          ),
+          _MotionSize(
+            duration: fushiMotionDuration(context, FushiMotion.medium),
+            curve: FushiMotion.standard,
+            child: _globalScope
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsetsDirectional.only(start: 8),
+                    child: Semantics(
+                      hint: t.manga_reader_restore,
+                      child: FushiFilledButton.tonalIcon(
+                        key: const ValueKey<String>('manga_reader_restore'),
+                        onPressed: _overrides.isEmpty ? null : _reset,
+                        icon: const FushiIcon(FushiIcons.restart, size: 18),
+                        label: Text(t.manga_reader_scope_reset),
                       ),
                     ),
-            ),
-          ],
-        ),
+                  ),
+          ),
+        ],
       ),
     );
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: 1),
       duration: fushiMotionDuration(context, FushiMotion.long),
-      curve: FushiMotion.release,
+      // Apple 落位不过冲（iOS 无 Expressive 回弹）；MD3 走 spatial 弹簧形状。
+      curve: glass ? FushiMotion.enter : FushiMotion.release,
       builder: (BuildContext context, double v, Widget? child) =>
           Transform.translate(
             offset: Offset(0, (1 - v) * 56),

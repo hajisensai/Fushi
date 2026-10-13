@@ -14,12 +14,17 @@
 ///
 /// FAB：「继续」主角卡滚出视野后，右下角弹出「继续阅读 / 继续观看 / 打开」FAB
 /// （首屏主角卡自己就有这颗主按钮，首屏不重复）。
+///
+/// Apple（iOS 26 / macOS 26 HIG）：没有 FAB 这个控件——「继续」只走主角卡封面行
+/// 本身（[homeResumeFabEnabled] 为 false，列表底部也不再为 FAB 让位）；头像是
+/// 导航栏里的纯圆账户钮，栏高随 [fushiAppleFloatingExtent]（桌面 36 / 移动 44）。
 library;
 
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 
@@ -40,6 +45,23 @@ const double kHomeFabSize = 56;
 
 /// 列表底部为 FAB 预留的高度：最后一张卡滚到底时不被 FAB 压住。
 const double kHomeFabClearance = kHomeFabSize + kHomeFabMargin;
+
+/// 悬浮条高：MD3 = [kHomeToolbarHeight]；Apple = 工具栏按钮边长
+/// [fushiAppleFloatingExtent]（与 Apple 分组玻璃胶囊同高）。
+double homeToolbarHeight(BuildContext context) => isGlassDesign(context)
+    ? fushiAppleFloatingExtent(context)
+    : kHomeToolbarHeight;
+
+/// 内容列表顶部要让出的高度（栏 + 上留白），按当前设计系统的栏高。
+double homeToolbarExtent(BuildContext context) =>
+    kHomeToolbarTopGap + homeToolbarHeight(context);
+
+/// 「继续」FAB 是否存在：Apple 没有 FAB（主操作留在主角卡封面行）。
+bool homeResumeFabEnabled(BuildContext context) => !isGlassDesign(context);
+
+/// 列表底部为 FAB 预留的高度；没有 FAB 时不留。
+double homeFabClearance(BuildContext context) =>
+    homeResumeFabEnabled(context) ? kHomeFabClearance : 0;
 
 /// 同一方向累计滚过这么多才切换显隐，避免手指微抖导致栏来回闪。
 const double _kRevealHysteresis = 24;
@@ -151,11 +173,11 @@ class HomeFloatingToolbar extends StatelessWidget {
       child: FushiChromeReveal(
         visible: visible,
         // 整栏连同投影一起滑出顶边。
-        distance: kHomeToolbarExtent + 16,
+        distance: homeToolbarExtent(context) + 16,
         child: Padding(
           padding: const EdgeInsets.only(top: kHomeToolbarTopGap),
           child: SizedBox(
-            height: kHomeToolbarHeight,
+            height: homeToolbarHeight(context),
             child: FocusTraversalGroup(
               child: Row(
                 children: <Widget>[

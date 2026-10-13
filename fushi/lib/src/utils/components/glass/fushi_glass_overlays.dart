@@ -16,6 +16,7 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -1343,6 +1344,15 @@ class _AppleMenuRowState extends State<_AppleMenuRow> {
       ),
     );
   }
+}
+
+/// [FushiMenuAnchor] 菜单项之间的 Apple 组间分隔线（与 showFushiMenu 的
+/// [PopupMenuDivider] 同一画法）。只在 Apple 设计系统的菜单里用。
+class FushiAppleMenuDivider extends StatelessWidget {
+  const FushiAppleMenuDivider({super.key});
+
+  @override
+  Widget build(BuildContext context) => _appleMenuDivider(context);
 }
 
 /// Apple 菜单的组间细分隔线（separator 色，半像素，两侧内缩）。
@@ -2715,7 +2725,7 @@ class _FushiPopupMenuButtonState<T> extends PopupMenuButtonState<T> {
         ),
       );
       if (tooltip.isNotEmpty) {
-        button = Tooltip(message: tooltip, child: button);
+        button = FushiTooltip(message: tooltip, child: button);
       }
       return button;
     }

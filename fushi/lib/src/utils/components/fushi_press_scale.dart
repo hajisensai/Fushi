@@ -1,6 +1,8 @@
 import 'package:flutter/gestures.dart' show kPrimaryButton, kTouchSlop;
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 /// 按压反馈：手指 / 鼠标按下时内容轻微缩小，松手以 M3E spatial fast 弹簧
@@ -15,12 +17,18 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 ///
 /// 墨水屏与「减弱动态效果」下（[fushiMotionEnabled]）直接返回 [child]，不建
 /// controller、不重绘。
+///
+/// Apple 设计系统（[isGlassDesign]）默认同样直接返回 [child]：iOS / macOS 的按下
+/// 反馈是变淡 / 高亮，不缩放——内层控件（`FushiPlainButton` 变淡、`InkWell`
+/// 的 highlight）已各自给出按下态，这里再叠一层只会双重反馈。确实要在 Apple
+/// 下缩放的调用点显式传 [scaleOnApple]。
 class FushiPressScale extends StatefulWidget {
   const FushiPressScale({
     required this.child,
     super.key,
     this.enabled = true,
     this.scale = FushiMotion.pressScale,
+    this.scaleOnApple = false,
   });
 
   final Widget child;
@@ -30,6 +38,9 @@ class FushiPressScale extends StatefulWidget {
 
   /// 按下时的缩放倍数。
   final double scale;
+
+  /// Apple 设计系统下是否也缩放（默认 false：Apple 按下不缩放）。
+  final bool scaleOnApple;
 
   @override
   State<FushiPressScale> createState() => _FushiPressScaleState();
@@ -99,6 +110,7 @@ class _FushiPressScaleState extends State<FushiPressScale>
   @override
   Widget build(BuildContext context) {
     if (!widget.enabled || !fushiMotionEnabled(context)) return widget.child;
+    if (!widget.scaleOnApple && isGlassDesign(context)) return widget.child;
     return Listener(
       onPointerDown: _onDown,
       onPointerMove: _onMove,

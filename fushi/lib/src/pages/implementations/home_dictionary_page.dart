@@ -2301,6 +2301,12 @@ class _LookupHistoryRowState extends State<_LookupHistoryRow> {
     final TextTheme tt = Theme.of(context).textTheme;
     final bool reveal = _hovered || _focused;
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
+    // Apple：数量角标是系统 fill 底的灰胶囊（iOS 列表计数样式，如「邮件」未读
+    // 数），不借 MD3 secondaryContainer 色；墨水屏走 MD3 分支不变。
+    final FushiAppleColors? apple =
+        isGlassDesign(context) && !isEinkTheme(context)
+        ? appleColorsOf(context)
+        : null;
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -2319,12 +2325,16 @@ class _LookupHistoryRowState extends State<_LookupHistoryRow> {
               alignment: Alignment.center,
               decoration: ShapeDecoration(
                 shape: const StadiumBorder(),
-                color: widget.selected ? cs.surface : cs.secondaryContainer,
+                color:
+                    apple?.fill ??
+                    (widget.selected ? cs.surface : cs.secondaryContainer),
               ),
               child: Text(
                 '${widget.dictionaryCount}',
                 style: tt.labelSmall?.copyWith(
-                  color: widget.selected
+                  color: apple != null
+                      ? (widget.selected ? apple.label : apple.secondaryLabel)
+                      : widget.selected
                       ? cs.onSurface
                       : cs.onSecondaryContainer,
                   fontWeight: FontWeight.w600,

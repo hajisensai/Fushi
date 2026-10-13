@@ -800,7 +800,13 @@ class ReaderPanelEmpty extends StatelessWidget {
           ),
           if (actionLabel != null && onAction != null) ...<Widget>[
             const SizedBox(height: 16),
-            FilledButton.tonal(onPressed: onAction, child: Text(actionLabel!)),
+            if (glass)
+              FushiFilledButton.tonal(
+                onPressed: onAction,
+                child: Text(actionLabel!),
+              )
+            else
+              FilledButton.tonal(onPressed: onAction, child: Text(actionLabel!)),
           ],
         ],
       ),

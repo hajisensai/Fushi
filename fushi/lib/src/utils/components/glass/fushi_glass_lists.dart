@@ -7,9 +7,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart'
 import 'package:fushi/src/utils/components/settings_shared.dart'
     show kSettingsSegmentGap, settingsSegmentRadius;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 
 export 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
@@ -19,7 +17,7 @@ export 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 // 命名构造器），调用点只改类名。MD3 下原样构造原控件；「玻璃」设计系统下按
 // Apple 26 的内容层规则渲染：列表行、卡片、分隔线都是**实色**（inset grouped
 // 的二级分组底 + 0.5px separator），不是玻璃——玻璃只给浮在内容上的导航与控件
-// 层。只有 Badge 仍是 [GlassBadge]。
+// 层。Badge 也是实色 systemRed 徽标。
 //
 // 命名：仓库已有共享组件 `FushiListTile`（fushi_list_tile.dart）、
 // `FushiDivider`（fushi_divider.dart）、`FushiCard` / `FushiBadge`
@@ -1398,10 +1396,9 @@ double? _cornerRadius(ShapeBorder? shape) {
 /// [Badge] 的设计系统分派版（含 `.count`）。仓库已有共享组件 `FushiBadge`，
 /// 故名 `FushiBadgeControl`。
 ///
-/// 玻璃形态是 [GlassBadge]：无 label → 圆点（`GlassBadge.dot`）；`.count` 或
-/// label 是纯数字 [Text] → 计数徽标；其它任意 label → 同位置的玻璃胶囊
-/// （[GlassContainer]），保住 label 内容。颜色取 colorScheme 的 error / onError
-/// （库默认是 iOS 红 / 绿）。
+/// Apple 形态是 iOS 的实色徽标（不是玻璃）：无 label → 10 的 systemRed 圆点；
+/// `.count` / 任意 label → 18 高的 systemRed 胶囊 + 白字（超过 maxCount 显示
+/// `max+`）。调用方给的 backgroundColor / textColor 照用。
 class FushiBadgeControl extends StatelessWidget {
   const FushiBadgeControl({
     super.key,
@@ -1486,67 +1483,60 @@ class FushiBadgeControl extends StatelessWidget {
     }
 
     // 结构恒定：child 永远是同一个 Stack 的第 0 个孩子，徽标显隐只增删第 1 个
-    // 孩子。GlassBadge 在 count 为 0 时直接返回 child、否则包一层 Stack——直接
-    // 用它包 child 会让 isLabelVisible 一切换 child 就整棵重挂（child 里的按钮
-    // 当场丢焦点）。所以 GlassBadge 只包一个零尺寸占位，挂在 child 的右上角。
+    // 孩子——isLabelVisible 一切换就整棵重挂会让 child 里的按钮当场丢焦点。
     final Widget base = child ?? const SizedBox.shrink();
     final ThemeData theme = Theme.of(context);
-    final BadgeThemeData badgeTheme = theme.badgeTheme;
-    final Color bg =
-        backgroundColor ??
-        badgeTheme.backgroundColor ??
-        theme.colorScheme.error;
-    final Color fg =
-        textColor ?? badgeTheme.textColor ?? theme.colorScheme.onError;
-    final GlassQuality quality = fushiGlassQuality(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    // iOS 徽标是实色 systemRed + 白字（内容层，不是玻璃）。
+    final Color bg = backgroundColor ?? apple.destructive;
+    final Color fg = textColor ?? Colors.white;
 
     Widget? badge;
     if (isLabelVisible) {
-      final Widget? labelWidget = label;
-      int? count = _count;
-      if (count == null && labelWidget is Text) {
-        count = int.tryParse(labelWidget.data?.trim() ?? '');
-      }
+      Widget? labelWidget = label;
+      final int? count = _count;
       if (count != null) {
+        labelWidget = Text(count > _maxCount ? '$_maxCount+' : '$count');
+      }
+      if (labelWidget == null) {
         badge = PositionedDirectional(
-          top: 0,
-          end: 0,
-          child: GlassBadge(
-            count: count,
-            maxCount: _count != null ? _maxCount : 999,
-            showZero: true,
-            backgroundColor: bg,
-            textColor: fg,
-            quality: quality,
-            child: const SizedBox.shrink(),
-          ),
-        );
-      } else if (labelWidget == null) {
-        badge = PositionedDirectional(
-          top: 0,
-          end: 0,
-          child: GlassBadge.dot(
-            dotColor: bg,
-            quality: quality,
-            child: const SizedBox.shrink(),
+          top: -2,
+          end: -2,
+          child: SizedBox.square(
+            dimension: smallSize ?? 10,
+            child: DecoratedBox(
+              decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+            ),
           ),
         );
       } else {
+        final double height = largeSize ?? 18;
         badge = PositionedDirectional(
           top: -6,
           end: -6,
-          child: GlassContainer(
-            shape: const LiquidRoundedSuperellipse(borderRadius: 9),
-            quality: quality,
-            settings: fushiGlassSettings(context, tint: bg),
+          child: Container(
+            constraints: BoxConstraints(minWidth: height, minHeight: height),
             padding:
                 padding ??
-                badgeTheme.padding ??
-                const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(height / 2),
+            ),
+            alignment: Alignment.center,
             child: DefaultTextStyle.merge(
               style: (theme.textTheme.labelSmall ?? const TextStyle())
-                  .copyWith(color: fg)
-                  .merge(textStyle ?? badgeTheme.textStyle),
+                  .copyWith(
+                    color: fg,
+                    fontWeight: FontWeight.w600,
+                    height: 1.2,
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures(),
+                    ],
+                  )
+                  .merge(textStyle),
+              textAlign: TextAlign.center,
+              maxLines: 1,
               child: labelWidget,
             ),
           ),

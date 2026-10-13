@@ -9,9 +9,27 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
-// 标签包装契约：MD3 下是原 Material chip；玻璃下可交互标签是液态玻璃胶囊
-// （GlassButton：未选中透明玻璃、选中强调色着色玻璃，可 Tab 聚焦、Enter 激活），
-// 纯展示标签是实色灰胶囊；界面里没有 RawChip。
+// 标签包装契约：MD3 下是原 Material chip；Apple 下标签是内容层实色胶囊（不是
+// 玻璃）：可交互未选中 tertiaryFill、选中强调色实底 + 反色字、不画 M3 前导
+// 对勾，可 Tab 聚焦、Enter 激活；纯展示标签是 systemFill 灰胶囊；界面里没有
+// RawChip。
+
+/// [text] 所在胶囊的实色底（最近一层带底色的 DecoratedBox）。
+Finder _pill(String text) => find
+    .ancestor(
+      of: find.text(text),
+      matching: find.byWidgetPredicate(
+        (Widget w) =>
+            w is DecoratedBox &&
+            w.decoration is BoxDecoration &&
+            (w.decoration as BoxDecoration).color != null,
+      ),
+    )
+    .first;
+
+Color? _pillColor(WidgetTester tester, String text) =>
+    (tester.widget<DecoratedBox>(_pill(text)).decoration as BoxDecoration)
+        .color;
 
 Future<void> _pump(
   WidgetTester tester,
@@ -77,7 +95,7 @@ void main() {
   });
 
   group('glass', () {
-    testWidgets('renders liquid-glass capsules, no Material chip', (
+    testWidgets('renders solid Cupertino capsules, no Material chip / glass', (
       WidgetTester tester,
     ) async {
       await _pump(
@@ -106,51 +124,23 @@ void main() {
       );
       expect(find.byType(RawChip), findsNothing);
       expect(find.byType(ChoiceChip), findsNothing);
-      // 四枚可交互标签是玻璃胶囊（GlassButton），纯展示的 plain 不是。
+      // 标签是内容层实色胶囊，不是玻璃。
       expect(find.byType(GlassChip), findsNothing);
-      expect(find.byType(GlassButton), findsNWidgets(4));
-      expect(
-        find.ancestor(
-          of: find.text('plain'),
-          matching: find.byType(GlassButton),
-        ),
-        findsNothing,
-      );
-      // 选中的 ChoiceChip 靠强调色实底表达，不画对勾；FilterChip 画 SF 对勾。
+      expect(find.byType(GlassButton), findsNothing);
+      // 选中的 ChoiceChip / FilterChip 都靠强调色实底表达，不画对勾。
       expect(find.byIcon(Icons.check), findsNothing);
-      expect(find.byIcon(CupertinoIcons.checkmark), findsOneWidget);
-      // 选中胶囊是强调色着色玻璃 + 反色字，高 32（移动端）。
+      expect(find.byIcon(CupertinoIcons.checkmark), findsNothing);
+      // 选中胶囊 = 强调色实底 + 反色字；未选 = tertiaryFill；展示 = fill。
       final BuildContext ctx = tester.element(find.text('choice'));
-      final Color accent = appleColorsOf(ctx).accent;
-      final GlassButton selectedGlass = tester.widget<GlassButton>(
-        find.ancestor(
-          of: find.text('choice'),
-          matching: find.byType(GlassButton),
-        ),
-      );
-      expect(
-        selectedGlass.settings?.glassColor,
-        fushiGlassFill(ctx, tint: accent),
-      );
+      final FushiAppleColors apple = appleColorsOf(ctx);
+      expect(_pillColor(tester, 'choice'), apple.accent);
+      expect(_pillColor(tester, 'filter'), apple.accent);
       expect(DefaultTextStyle.of(ctx).style.color, Colors.white);
-      final GlassButton actionGlass = tester.widget<GlassButton>(
-        find.ancestor(
-          of: find.text('action'),
-          matching: find.byType(GlassButton),
-        ),
-      );
-      expect(actionGlass.settings?.glassColor, fushiGlassFill(ctx));
-      expect(
-        tester
-            .getSize(
-              find.ancestor(
-                of: find.text('action'),
-                matching: find.byType(GlassButton),
-              ),
-            )
-            .height,
-        32,
-      );
+      expect(_pillColor(tester, 'action'), apple.tertiaryFill);
+      expect(_pillColor(tester, 'input'), apple.tertiaryFill);
+      expect(_pillColor(tester, 'plain'), apple.fill);
+      // 高 32（移动端）。
+      expect(tester.getSize(_pill('action')).height, 32);
     });
 
     testWidgets('ChoiceChip toggles on tap and on Tab + Enter', (
@@ -267,7 +257,8 @@ void main() {
         glass: true,
       );
       expect(find.byType(RawChip), findsNothing);
-      expect(find.byType(GlassButton), findsOneWidget);
+      expect(find.byType(GlassButton), findsNothing);
+      expect(find.text('a'), findsOneWidget);
       await _tabThenEnter(tester);
       expect(pressed, 1);
     });

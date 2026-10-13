@@ -1462,12 +1462,14 @@ class ThemeNotifier extends ChangeNotifier {
 
   /// 玻璃设计系统下的材质档位（不看设计系统，供设置页显示选中项）。
   ///
-  /// 2026-10-06 用户拍板：Apple 设计系统固定毛玻璃，液态玻璃先关——这里恒为
-  /// frosted，**不读也不改写** `glass_material` 偏好：已存 `liquid` 的用户读取时
-  /// 直接降级为毛玻璃，存储值原样保留（入口在设置页同步隐藏，见
-  /// settings_schema_appearance.dart 的 `appearance.glass_material`）。恢复液态
-  /// 档时还原为：偏好 == frosted ? frosted : liquid（缺省 liquid）。
-  FushiGlassMaterial get glassMaterialTier => FushiGlassMaterial.frosted;
+  /// 2026-10-12 用户拍板：Apple 设计系统去掉玻璃特效，直接原生 Cupertino 实色
+  /// 材质（「白边那些也改掉吧，有点掉帧」「其实特效都去掉，直接原生
+  /// Cupertino」）——这里恒为 off，各组件走既有的「关闭 = 实色」分支（与系统
+  /// 「降低透明度」同一条路径）。此前 2026-10-06 是固定毛玻璃。**不读也不改写**
+  /// `glass_material` 偏好，存储值原样保留（入口在设置页同步隐藏，见
+  /// settings_schema_appearance.dart 的 `appearance.glass_material`）。恢复档位
+  /// 选择时还原为：偏好 == frosted ? frosted : liquid（缺省 liquid）。
+  FushiGlassMaterial get glassMaterialTier => FushiGlassMaterial.off;
 
   Future<void> setGlassMaterial(FushiGlassMaterial value) async {
     await _set('glass_material', value.name);
@@ -2413,6 +2415,21 @@ ThemeData buildFushiThemeData({
               TargetPlatform.fuchsia: EinkNoPageTransitionsBuilder(),
             },
           )
+        // Apple 设计系统：全平台 Cupertino 推入转场（右侧滑入、旧页视差左移 +
+        // 压暗，边缘侧滑返回跟手），与 iOS 26 / macOS 26 的导航栈同一套运动。
+        // Android 不再挂预测返回 builder：Cupertino 转场不接平台预测返回事件，
+        // 系统返回键 / 手势照常 pop，也就不存在那套手势计数失配的口子。
+        : appleDesign
+        ? const PageTransitionsTheme(
+            builders: <TargetPlatform, PageTransitionsBuilder>{
+              TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+              TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+              TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+              TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+              TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+              TargetPlatform.fuchsia: CupertinoPageTransitionsBuilder(),
+            },
+          )
         // Android 侧滑返回改走自带手势记账的转场：Flutter 自带实现把平台事件直接
         // 转成 navigator 的手势计数增减，平台重发起始事件 / 手势中途路由被 pop 都
         // 会让计数失配，而计数一旦卡住，每层路由都被 IgnorePointer——画面正常但整个
@@ -2520,7 +2537,14 @@ ThemeData buildFushiThemeData({
         color: cs.onSurfaceVariant,
       ),
     ),
-    menuTheme: MenuThemeData(style: menuPanelStyle),
+    menuTheme: MenuThemeData(
+      style: appleColors == null
+          ? menuPanelStyle
+          : fushiAppleMenuPanelStyle(
+              apple: appleColors,
+              background: glassMenuColor ?? cs.surfaceContainerHigh,
+            ),
+    ),
     menuButtonTheme: MenuButtonThemeData(style: menuRowStyle),
     menuBarTheme: MenuBarThemeData(
       style: glassMenuColor == null
@@ -2729,12 +2753,23 @@ ThemeData buildFushiThemeData({
       glassDesign: glassDesign,
       glassBackground: glassTint(cs.inverseSurface, fushiGlassOverlayOpacity),
     ),
-    tooltipTheme: fushiM3eTooltipTheme(
-      cs: cs,
-      tt: tt,
-      eink: eink,
-      glassBackground: glassTint(cs.inverseSurface, fushiGlassOverlayOpacity),
-    ),
+    tooltipTheme: appleColors == null
+        ? fushiM3eTooltipTheme(
+            cs: cs,
+            tt: tt,
+            eink: eink,
+            glassBackground: glassTint(
+              cs.inverseSurface,
+              fushiGlassOverlayOpacity,
+            ),
+          )
+        : fushiAppleTooltipTheme(
+            apple: appleColors,
+            tt: tt,
+            background:
+                glassTint(cs.surfaceContainerHigh, fushiGlassOverlayOpacity) ??
+                cs.surfaceContainerHigh,
+          ),
     badgeTheme: fushiM3eBadgeTheme(cs: cs, tt: tt, eink: eink),
     datePickerTheme: fushiM3eDatePickerTheme(
       cs: cs,
@@ -3043,4 +3078,57 @@ WidgetStateProperty<Color?> _fushiSoftStateLayer(ColorScheme cs) {
     final double opacity = FushiStateLayer.opacityFor(states, soft: true);
     return opacity == 0 ? null : base.withValues(alpha: opacity);
   });
+}
+
+
+/// Apple 设计系统兜底的菜单面板（裸 [MenuAnchor] / [DropdownMenu] 等没走
+/// `showFushiMenu` 的残留调用点）：macOS 26 / iOS 26 菜单的小圆角浮层——
+/// 抬高一档的系统面板色、0.5pt 分隔线描边、圆角 12、四周内缩 5，**无 M3
+/// elevation 阴影与 tint**。毛玻璃下 [background] 已是半透明面板色。
+@visibleForTesting
+MenuStyle fushiAppleMenuPanelStyle({
+  required FushiAppleColors apple,
+  required Color background,
+}) {
+  return MenuStyle(
+    backgroundColor: WidgetStatePropertyAll<Color>(background),
+    surfaceTintColor: const WidgetStatePropertyAll<Color>(Colors.transparent),
+    elevation: const WidgetStatePropertyAll<double>(0),
+    shadowColor: const WidgetStatePropertyAll<Color>(Colors.transparent),
+    padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+      EdgeInsets.all(5),
+    ),
+    shape: WidgetStatePropertyAll<OutlinedBorder>(
+      RoundedRectangleBorder(
+        borderRadius: const BorderRadius.all(Radius.circular(12)),
+        side: BorderSide(color: apple.separator, width: 0.5),
+      ),
+    ),
+  );
+}
+
+/// Apple 设计系统兜底的裸 [Tooltip]（没走 [FushiTooltip] 的残留调用点）：
+/// macOS 帮助标签式的小浮层——系统面板色底、0.5pt 分隔线描边、圆角 6、
+/// bodySmall 字阶 label 色文字，**无阴影**；悬停 / 收起时序与 MD3 相同（400 / 100ms）。
+@visibleForTesting
+TooltipThemeData fushiAppleTooltipTheme({
+  required FushiAppleColors apple,
+  required TextTheme tt,
+  required Color background,
+}) {
+  return TooltipThemeData(
+    waitDuration: const Duration(milliseconds: 400),
+    exitDuration: const Duration(milliseconds: 100),
+    constraints: const BoxConstraints(minHeight: 22),
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: background,
+      borderRadius: const BorderRadius.all(Radius.circular(6)),
+      border: Border.all(color: apple.separator, width: 0.5),
+    ),
+    textStyle: (tt.bodySmall ?? const TextStyle()).copyWith(
+      color: apple.label,
+      fontWeight: FontWeight.w400,
+    ),
+  );
 }

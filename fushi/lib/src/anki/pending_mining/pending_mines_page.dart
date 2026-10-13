@@ -414,13 +414,26 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
   @override
   Widget build(BuildContext context) {
     final bool switchesApp = _repo?.switchesAppPerNote ?? false;
+    final bool apple = isGlassDesign(context);
     return FushiPageScaffold(
       title: t.anki_pending_mines_title,
+      // 「全部发送」按设计系统各取原生位置：Apple = 导航栏右上角按钮（FAB 在
+      // Apple 下不存在），MD3 = 右下扩展 FAB。
+      actions: <Widget>[
+        if (apple && _rows.isNotEmpty)
+          FushiIconButton(
+            key: const ValueKey<String>('pending-mines-send-all'),
+            icon: FushiIcons.upload,
+            tooltip: t.anki_pending_mines_send_all,
+            enabled: !_sending,
+            onTap: _sendAll,
+          ),
+      ],
       // Builder：正文要在页头脚手架之内取 MediaQuery 顶部让位（状态栏 + 浮动页头）。
       body: Builder(
         builder: (BuildContext context) => _buildBody(context, switchesApp),
       ),
-      floatingActionButton: _rows.isEmpty
+      floatingActionButton: apple || _rows.isEmpty
           ? null
           : FushiFab(
               onPressed: _sending ? null : _sendAll,

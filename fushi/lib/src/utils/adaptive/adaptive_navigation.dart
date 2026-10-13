@@ -1892,11 +1892,20 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
     super.dispose();
   }
 
+  /// [id] 那一格药丸槽的渲染对象。在 paint 期读：槽可能正好在本帧被 GlobalKey
+  /// 重挂（元素处于 inactive），[BuildContext.findRenderObject] 对 inactive 元素
+  /// 会抛断言；[Element.renderObject] 不断言，失活元素的渲染对象已 detach，由
+  /// 调用方的 `attached` 判据挡掉，下一帧按新位置再画。
+  RenderObject? _slotRenderObject(FushiFocusId id) {
+    final BuildContext? slot = _slots[id]?.currentContext;
+    return slot is Element ? slot.renderObject : null;
+  }
+
   /// [id] 那一格药丸槽相对本 scope 的矩形（取上一帧的布局）。
   Rect? _rectOf(FushiFocusId? id) {
     final RenderObject? scope = context.findRenderObject();
     if (id == null || scope is! RenderBox || !scope.hasSize) return null;
-    final RenderObject? slot = _slots[id]?.currentContext?.findRenderObject();
+    final RenderObject? slot = _slotRenderObject(id);
     if (slot is! RenderBox || !slot.attached || !slot.hasSize) return null;
     return slot.localToGlobal(Offset.zero, ancestor: scope) & slot.size;
   }
@@ -1905,7 +1914,7 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
   Rect? _targetIn(RenderBox scope) {
     final FushiFocusId? id = widget.selectedId;
     if (id == null) return null;
-    final RenderObject? slot = _slots[id]?.currentContext?.findRenderObject();
+    final RenderObject? slot = _slotRenderObject(id);
     if (slot is! RenderBox || !slot.attached || !slot.hasSize) return null;
     return slot.localToGlobal(Offset.zero, ancestor: scope) & slot.size;
   }
@@ -3120,29 +3129,22 @@ class _FushiNavTile extends StatelessWidget {
     if (horizontal) {
       // 胶囊里的格不画自己的选中气泡：选中 lens 由 [_GlassTabCapsule] 统一画
       // （能在项间滑行 / 拖动、按下化成液态透镜）。
-      return AnimatedContainer(
-        duration: duration,
-        curve: FushiMotion.standard,
-        width: double.infinity,
-        height: kGlassNavBarCapsuleHeight - 2 * _kGlassNavBarInnerPadding,
-        padding: const EdgeInsets.symmetric(horizontal: 2),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            glyph(24, color: tabFg),
-            const SizedBox(height: 2),
-            Text(
-              item.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: (textTheme.labelSmall ?? const TextStyle()).copyWith(
-                fontSize: 10.5,
-                height: 1.2,
-                color: tabFg,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              ),
-            ),
-          ],
+      //
+      // 底栏纯图标（与 MD3 底栏同一规则，用户 2026-10-12「底部栏跟安卓一样文字
+      // 也去掉」）：文字只进 tooltip 与无障碍语义，不再画在图标下面。
+      return FushiTooltip(
+        message: item.label,
+        child: Semantics(
+          label: item.label,
+          selected: selected,
+          child: AnimatedContainer(
+            duration: duration,
+            curve: FushiMotion.standard,
+            width: double.infinity,
+            height: kGlassNavBarCapsuleHeight - 2 * _kGlassNavBarInnerPadding,
+            alignment: Alignment.center,
+            child: glyph(24, color: tabFg),
+          ),
         ),
       );
     }

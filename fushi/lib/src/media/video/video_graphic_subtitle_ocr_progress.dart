@@ -8,7 +8,9 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
-    show FushiCircularProgressIndicator;
+    show FushiAppleLinearProgress, FushiCircularProgressIndicator;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isGlassDesign;
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -367,12 +369,18 @@ class _VideoGraphicSubtitleOcrProgressCardState
                     ),
                   ),
                   const SizedBox(height: 8),
-                  FushiWavyLinearProgress(
-                    value: fraction,
-                    color: scheme.primary,
-                    trackColor: scheme.secondaryContainer,
-                    semanticsLabel: state.statusText(),
-                  ),
+                  if (isGlassDesign(context))
+                    FushiAppleLinearProgress(
+                      value: fraction,
+                      semanticsLabel: state.statusText(),
+                    )
+                  else
+                    FushiWavyLinearProgress(
+                      value: fraction,
+                      color: scheme.primary,
+                      trackColor: scheme.secondaryContainer,
+                      semanticsLabel: state.statusText(),
+                    ),
                   if (engine != null) ...<Widget>[
                     const SizedBox(height: 8),
                     Text(

@@ -81,4 +81,34 @@ void main() {
       );
     }
   });
+
+  test('Apple 设计系统：六个平台全部 Cupertino 推入转场，墨水屏仍是墨水屏版', () {
+    ThemeData build({required bool eink}) => buildFushiThemeData(
+      scheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1F4959)),
+      textTheme: const TextTheme(),
+      glassDesign: true,
+      eink: eink,
+    );
+    final Map<TargetPlatform, PageTransitionsBuilder> apple = build(
+      eink: false,
+    ).pageTransitionsTheme.builders;
+    for (final TargetPlatform platform in TargetPlatform.values) {
+      expect(
+        apple[platform],
+        isA<CupertinoPageTransitionsBuilder>(),
+        reason: '$platform',
+      );
+    }
+    final Map<TargetPlatform, PageTransitionsBuilder> eink = build(
+      eink: true,
+    ).pageTransitionsTheme.builders;
+    expect(
+      eink[TargetPlatform.android],
+      isA<EinkNoPageTransitionsBuilder>(),
+    );
+    expect(
+      eink[TargetPlatform.iOS],
+      isA<EinkCupertinoPageTransitionsBuilder>(),
+    );
+  });
 }

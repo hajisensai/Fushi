@@ -609,17 +609,28 @@ class _GameImportDropZone extends StatelessWidget {
     final double radius = apple
         ? FushiM3eShape.small
         : FushiM3eShape.containerLarge;
+    // Apple：分组列表的次级底色，悬停 / 拖入时整块淡染强调色（15%）、描边转
+    // 强调色——不借 MD3 的 primaryContainer 色块。
+    final FushiAppleColors? appleColors = apple && !eink
+        ? appleColorsOf(context)
+        : null;
     return FushiHoverLift(
       scale: 1.01,
       forceLifted: dragHovering,
       builder: (BuildContext context, bool hovering) {
         final Color fill = eink
             ? colors.surface
+            : appleColors != null
+            ? (hovering
+                  ? appleColors.accent.withValues(alpha: 0.15)
+                  : appleColors.secondaryGroupedBackground)
             : hovering
             ? colors.primaryContainer
             : colors.surfaceContainerLow;
         final Color border = eink
             ? colors.outline
+            : appleColors != null
+            ? (hovering ? appleColors.accent : appleColors.opaqueSeparator)
             : hovering
             ? colors.primary
             : colors.outlineVariant;
@@ -666,7 +677,11 @@ class _GameImportDropZone extends StatelessWidget {
                     t.game_import_drop_hint,
                     textAlign: TextAlign.center,
                     style: context.fushiType.bodyMedium.copyWith(
-                      color: hovering && !eink
+                      color: appleColors != null
+                          ? (hovering
+                                ? appleColors.accent
+                                : appleColors.secondaryLabel)
+                          : hovering && !eink
                           ? colors.onPrimaryContainer
                           : colors.onSurfaceVariant,
                     ),
@@ -929,7 +944,8 @@ class _CaptureStatusStrip extends StatelessWidget {
 }
 
 /// 状态带里的 Hook 会话阶段 chip：primary 实色胶囊（在 primaryContainer 色块上
-/// 读作强调），墨水屏退成描边胶囊。
+/// 读作强调），墨水屏退成描边胶囊；Apple = 强调色 15% 淡染胶囊 + 强调色字
+/// （iOS 状态标签的 tinted 样式，不用实色块）。
 class _SessionPhaseChip extends StatelessWidget {
   const _SessionPhaseChip({required this.label});
 
@@ -939,9 +955,14 @@ class _SessionPhaseChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
+    final FushiAppleColors? appleColors = !eink && isGlassDesign(context)
+        ? appleColorsOf(context)
+        : null;
     return DecoratedBox(
       decoration: ShapeDecoration(
-        color: eink ? colors.surface : colors.primary,
+        color: eink
+            ? colors.surface
+            : appleColors?.accent.withValues(alpha: 0.15) ?? colors.primary,
         shape: StadiumBorder(
           side: eink ? BorderSide(color: colors.outline) : BorderSide.none,
         ),
@@ -953,7 +974,9 @@ class _SessionPhaseChip extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: context.fushiType.labelSmallEmphasized.copyWith(
-            color: eink ? colors.onSurface : colors.onPrimary,
+            color: eink
+                ? colors.onSurface
+                : appleColors?.accent ?? colors.onPrimary,
           ),
         ),
       ),
