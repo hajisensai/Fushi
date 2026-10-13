@@ -37,6 +37,21 @@ class AudiobookExportFailure implements Exception {
   String toString() => 'AudiobookExportFailure($code: $message)';
 }
 
+/// 移动端分享导出的暂存目录名（在系统临时目录下，app 自管）。
+const String kTtsAudiobookShareStagingDirName = 'fushi_m4b_share';
+
+/// 准备一次移动端分享导出的暂存目录 [root]：先删掉上一次导出留下的整本 M4B 与
+/// `.srt`，再建一个空目录给这一次用。
+///
+/// 这一次的文件不能在分享返回后立刻删：`FushiShare.shareFiles` 走非结果变体，
+/// 面板**呈现**后 Future 就完成了，用户选中的目标 App 可能还在读文件。所以由 app
+/// 自管这个固定目录、下一次导出前清旧的——任何时刻最多留一次导出的体积，而不是
+/// 每导出一次就在临时目录里多留一整本书。
+Future<Directory> prepareTtsAudiobookShareStagingDir(Directory root) async {
+  if (await root.exists()) await root.delete(recursive: true);
+  return root.create(recursive: true);
+}
+
 /// `ffmpeg -demuxers` / `-muxers` 的输出里有没有某个格式。行形如
 /// ` D   concat   …` / `  E  mp4   …` / ` DE  matroska,webm  …`。
 bool ffmpegFormatsListHas(String output, String format, {required bool demux}) {

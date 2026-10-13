@@ -15,7 +15,8 @@
 ///   `.json` 记录按序键与每句时长），重跑时键序一致的章直接跳过合成与编码。
 /// - 入库只收本次渲染的章：`job.sections` 只选了部分章时，成品有声书就只含这些章
 ///   （替换这本书原有的有声书音频与 cue），没选的章没有音频。
-/// - 工作目录保留到入库成功，成功后删除。
+/// - 工作目录保留到入库成功，成功后删除；失败 / 取消的任务目录归队列管（被同一本书
+///   的新任务取代或被移除时删，启动时清孤儿，见 [TtsRenderQueue]）。
 library;
 
 import 'dart:async';
@@ -139,8 +140,9 @@ class AppTtsRenderRunner implements TtsRenderRunner {
       plan.sentences[planIndex].spokenText,
     );
     final TtsAudioCache cache = await tts.cache();
-    final Directory workDir = Directory(
-      p.join(ttsRenderWorkRoot(appModel).path, job.id),
+    final Directory workDir = ttsRenderJobWorkDir(
+      ttsRenderWorkRoot(appModel),
+      job.id,
     );
     await workDir.create(recursive: true);
     await _dropRegenerated(job, presetOf, keyOf, cache, workDir);

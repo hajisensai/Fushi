@@ -4,11 +4,30 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data' show BytesBuilder;
 
 import 'package:fushi_engine/tts/tts_types.dart';
 
-/// 单次合成响应体上限：句级音频不会接近它，超了说明端点不对。
+/// 单次响应体上限（合成音频、声音列表 JSON 同一道）：句级音频与声音列表都不会
+/// 接近它，超了说明端点不对。地址是用户自填的，不设上限一个错的端点就能把内存撑爆。
 const int kTtsMaxResponseBytes = 64 * 1024 * 1024;
+
+/// 读完一个 2xx 响应体并解析成 JSON。按**原始字节**计 [maxBytes]，超了立刻抛
+/// `too large`（不先整块读进内存再判断）；[timeout] 是相邻两块数据之间的时限。
+Future<Object?> _readJsonBody(
+  HttpClientResponse response, {
+  required Duration timeout,
+  required int maxBytes,
+}) async {
+  final BytesBuilder bytes = BytesBuilder(copy: false);
+  await for (final List<int> chunk in response.timeout(timeout)) {
+    if (bytes.length + chunk.length > maxBytes) {
+      throw const TtsFailure(TtsFailureCode.badResponse, 'too large');
+    }
+    bytes.add(chunk);
+  }
+  return jsonDecode(utf8.decode(bytes.takeBytes()));
+}
 
 /// 单次合成整体时限（自建 GPU 服务长句可能要几十秒）。
 const Duration kTtsRequestTimeout = Duration(minutes: 3);
@@ -92,12 +111,14 @@ Future<int> ttsSendToFile({
   }
 }
 
-/// GET 一个 JSON（声音列表之类）。
+/// GET 一个 JSON（声音列表之类）。响应体与 [ttsPostJson] 同一道上限
+/// （[maxResponseBytes]，默认 [kTtsMaxResponseBytes]）。
 Future<Object?> ttsGetJson({
   required HttpClient client,
   required Uri uri,
   Map<String, String> headers = const <String, String>{},
   TtsCancelToken? cancel,
+  int maxResponseBytes = kTtsMaxResponseBytes,
 }) async {
   final TtsCancelToken token = cancel ?? TtsCancelToken();
   try {
@@ -111,8 +132,11 @@ Future<Object?> ttsGetJson({
       throw ttsFailureForStatus(response.statusCode);
     }
     token.throwIfCancelled();
-    final String text = await response.transform(utf8.decoder).join();
-    return jsonDecode(text);
+    return await _readJsonBody(
+      response,
+      timeout: const Duration(seconds: 30),
+      maxBytes: maxResponseBytes,
+    );
   } on TtsFailure {
     rethrow;
   } on FormatException {
@@ -135,6 +159,7 @@ Future<Object?> ttsPostJson({
   required Object? body,
   required TtsCancelToken cancel,
   Map<String, String> headers = const <String, String>{},
+  int maxResponseBytes = kTtsMaxResponseBytes,
 }) async {
   cancel.throwIfCancelled();
   HttpClientRequest? request;
@@ -161,18 +186,13 @@ Future<Object?> ttsPostJson({
       await response.drain<void>().catchError((Object _) {});
       throw ttsFailureForStatus(response.statusCode);
     }
-    final StringBuffer buffer = StringBuffer();
-    int length = 0;
-    await for (final String chunk
-        in response.timeout(kTtsRequestTimeout).transform(utf8.decoder)) {
-      length += chunk.length;
-      if (length > kTtsMaxResponseBytes) {
-        throw const TtsFailure(TtsFailureCode.badResponse, 'too large');
-      }
-      buffer.write(chunk);
-    }
+    final Object? decoded = await _readJsonBody(
+      response,
+      timeout: kTtsRequestTimeout,
+      maxBytes: maxResponseBytes,
+    );
     cancel.throwIfCancelled();
-    return jsonDecode(buffer.toString());
+    return decoded;
   } on TtsFailure {
     rethrow;
   } on FormatException {

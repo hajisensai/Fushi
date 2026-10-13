@@ -70,4 +70,128 @@ void main() {
     expect(notified, 1);
     expect(c.globalMsOfCue(cues[1]), 1000);
   });
+
+  group('multi-file position fallback (no current cue) stays inside the '
+      'current file', () {
+    // 播放顺序：0:0(0) 0:1000(1) 1:0(2) 1:1000(3) 2:0(4)。整表 startMs 是
+    // 0,1000,0,1000,0——不单调，对整表二分的结果无意义。
+    final List<AudioCue> cues = <AudioCue>[
+      cue(0, 0, 500),
+      cue(0, 1000, 1500),
+      cue(1, 0, 500),
+      cue(1, 1000, 1500),
+      cue(2, 0, 500),
+    ];
+
+    test('next: inside a cue of file 1 goes to the following cue', () {
+      expect(
+        AudiobookPlayerController.nextCueIndexForTesting(
+          cues: cues,
+          currentCueIndex: -1,
+          audioFileIndex: 1,
+          positionMs: 1200,
+        ),
+        4,
+      );
+    });
+
+    test('next: in a gap of file 1 goes to the first cue of file 1', () {
+      expect(
+        AudiobookPlayerController.nextCueIndexForTesting(
+          cues: cues,
+          currentCueIndex: -1,
+          audioFileIndex: 1,
+          positionMs: 700,
+        ),
+        2,
+      );
+    });
+
+    test('next: a file after every cue is the chapter boundary', () {
+      expect(
+        AudiobookPlayerController.nextCueIndexForTesting(
+          cues: cues,
+          currentCueIndex: -1,
+          audioFileIndex: 5,
+          positionMs: 0,
+        ),
+        isNull,
+      );
+    });
+
+    test('prev: in a gap of file 1 goes to the last cue started before it', () {
+      expect(
+        AudiobookPlayerController.prevCueIndexForTesting(
+          cues: cues,
+          currentCueIndex: -1,
+          currentCue: null,
+          audioFileIndex: 1,
+          positionMs: 700,
+        ),
+        2,
+      );
+    });
+
+    test('prev: before the first cue of file 1 goes to the last cue of file 0',
+        () {
+      expect(
+        AudiobookPlayerController.prevCueIndexForTesting(
+          cues: cues,
+          currentCueIndex: -1,
+          currentCue: null,
+          audioFileIndex: 1,
+          positionMs: 0,
+        ),
+        1,
+      );
+    });
+
+    test('prev: before the first cue of the first file stays at index 0', () {
+      expect(
+        AudiobookPlayerController.prevCueIndexForTesting(
+          cues: cues,
+          currentCueIndex: -1,
+          currentCue: null,
+          audioFileIndex: 0,
+          positionMs: 0,
+        ),
+        0,
+      );
+    });
+
+    test('skipByCues anchor resolves inside the current file', () {
+      expect(
+        AudiobookPlayerController.cueIndexAtFilePositionForTesting(
+          cues: cues,
+          audioFileIndex: 1,
+          positionMs: 1200,
+        ),
+        3,
+      );
+      expect(
+        AudiobookPlayerController.cueIndexAtFilePositionForTesting(
+          cues: cues,
+          audioFileIndex: 1,
+          positionMs: 700,
+        ),
+        2,
+      );
+      expect(
+        AudiobookPlayerController.cueIndexAtFilePositionForTesting(
+          cues: cues,
+          audioFileIndex: 2,
+          positionMs: 200,
+        ),
+        4,
+      );
+      expect(
+        AudiobookPlayerController.cueIndexAtFilePositionForTesting(
+          cues: cues,
+          audioFileIndex: 5,
+          positionMs: 0,
+        ),
+        4,
+      );
+    });
+  });
 }

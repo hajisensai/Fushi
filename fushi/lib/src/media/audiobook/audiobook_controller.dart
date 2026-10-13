@@ -109,13 +109,16 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 当前书的元数据（PR4 集成时供外部读取）。
   Audiobook? get audiobook => _audiobook;
 
-  /// 当前章节所有 cue（已按 startMs 排序）。
+  /// 当前章节所有 cue，按**播放顺序**（audioFileIndex，再文件内 startMs）排好，
+  /// 只在 [setChapterCues] 时重建。
+  ///
+  /// startMs 是文件内相对值：多文件书里整表的 startMs **不单调**（每个文件一段从 0
+  /// 起的块），所以凡是按位置二分的查找都只能在当前文件那一段里做
+  /// （[_fileCueSpan]），不能对整表二分。
   List<AudioCue> _chapterCues = [];
 
-  /// [_chapterCues] 按**播放顺序**（audioFileIndex，再 startMs）排好的视图，只在
-  /// [setChapterCues] 时重建。[_chapterCues] 自身只按 startMs 排（多文件时各文件
-  /// 的时间轴互相穿插），不能拿来判「上一条 / 下一条播放的 cue 是谁」；章尾未匹配
-  /// cue 的跨章判据（[unmatchedCueCrossChapterTargetForTesting]）要的正是播放邻居。
+  /// 与 [_chapterCues] 同序的播放顺序视图（章尾未匹配 cue 的跨章判据
+  /// [unmatchedCueCrossChapterTargetForTesting] 要的是播放邻居）。
   List<AudioCue> _playbackOrderedCues = const <AudioCue>[];
 
   /// 外部只读快照，供按 textFragmentId 查找 cue。
@@ -1430,6 +1433,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       cues: _chapterCues,
       currentCueIndex: _currentCueIndex,
       currentCue: _currentCue,
+      audioFileIndex: _player.currentIndex ?? 0,
       positionMs: position.inMilliseconds,
     );
     if (target == null) {
@@ -1447,6 +1451,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     final int? target = _nextCueIndex(
       cues: _chapterCues,
       currentCueIndex: _currentCueIndex,
+      audioFileIndex: _player.currentIndex ?? 0,
       positionMs: position.inMilliseconds,
     );
     if (target == null) {
@@ -1463,11 +1468,11 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (_chapterCues.isEmpty || delta == 0) return;
     int idx = _currentCueIndex;
     if (idx < 0) {
-      idx = JsonAlignmentParser.findCueIndex(
+      idx = _cueIndexAtFilePosition(
         cues: _chapterCues,
+        audioFileIndex: _player.currentIndex ?? 0,
         positionMs: position.inMilliseconds,
       );
-      if (idx < 0) idx = 0;
     }
     final int target = (idx + delta).clamp(0, _chapterCues.length - 1);
     if (target == idx) return;
@@ -1992,19 +1997,70 @@ class AudiobookPlayerController extends ChangeNotifier {
     return startMs;
   }
 
+  /// [cues] 按 (audioFileIndex, startMs) 排好时，文件 [audioFileIndex] 的 cue 是连续
+  /// 的一段 `[start, end)`；该文件没有 cue 时 `start == end` = 它在表里的插入点。
+  static ({int start, int end}) _fileCueSpan(
+    List<AudioCue> cues,
+    int audioFileIndex,
+  ) {
+    int lowerBound(bool Function(AudioCue cue) before) {
+      int lo = 0;
+      int hi = cues.length;
+      while (lo < hi) {
+        final int mid = (lo + hi) >>> 1;
+        if (before(cues[mid])) {
+          lo = mid + 1;
+        } else {
+          hi = mid;
+        }
+      }
+      return lo;
+    }
+
+    return (
+      start: lowerBound((AudioCue c) => c.audioFileIndex < audioFileIndex),
+      end: lowerBound((AudioCue c) => c.audioFileIndex <= audioFileIndex),
+    );
+  }
+
+  /// 没有当前 cue 时，「播放器停在文件 [audioFileIndex] 的 [positionMs]」对应的全表
+  /// 下标：只在该文件那一段里按位置找（[JsonAlignmentParser.findCueIndex]），命中
+  /// 返回那一条；没命中（gap / 早于该文件首句 / 该文件没有 cue）返回该文件那一段的
+  /// 起点（夹到表内）。单文件书里那一段就是整表，与原先「回到首句」一致。
+  static int _cueIndexAtFilePosition({
+    required List<AudioCue> cues,
+    required int audioFileIndex,
+    required int positionMs,
+  }) {
+    if (cues.isEmpty) return -1;
+    final ({int start, int end}) span = _fileCueSpan(cues, audioFileIndex);
+    final int local = JsonAlignmentParser.findCueIndex(
+      cues: cues.sublist(span.start, span.end),
+      positionMs: positionMs,
+    );
+    if (local >= 0) return span.start + local;
+    return span.start < cues.length ? span.start : cues.length - 1;
+  }
+
   static int? _nextCueIndex({
     required List<AudioCue> cues,
     required int currentCueIndex,
+    required int audioFileIndex,
     required int positionMs,
   }) {
     if (cues.isEmpty) return null;
-    int idx = currentCueIndex;
+    final int idx = currentCueIndex;
     if (idx < 0 || idx >= cues.length) {
-      idx = JsonAlignmentParser.findCueIndex(
-        cues: cues,
+      final ({int start, int end}) span = _fileCueSpan(cues, audioFileIndex);
+      final int local = JsonAlignmentParser.findCueIndex(
+        cues: cues.sublist(span.start, span.end),
         positionMs: positionMs,
       );
-      if (idx < 0) return 0;
+      // 没定位到 cue：跳到当前文件的首句（单文件书 = 全章首句）；当前文件之后
+      // 已没有 cue 时是章边界。
+      if (local < 0) return span.start < cues.length ? span.start : null;
+      final int at = span.start + local;
+      return at + 1 >= cues.length ? null : at + 1;
     }
     if (idx + 1 >= cues.length) return null;
     return idx + 1;
@@ -2013,8 +2069,9 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// [skipToPrevCue] 的纯决策（与 [_nextCueIndex] 对称）。对齐上游 Sasayaki
   /// `prevCue()`：
   ///  - 已定位到当前 cue：取它的前一条；已在首句返回 null（= 触发跨章边界）。
-  ///  - 未定位到 cue（gap / 开头）：按位置二分，取"最近一条起点早于当前位置"的
-  ///    cue；早于全部 cue 时回到首句（索引 0）。
+  ///  - 未定位到 cue（gap / 开头）：在**当前文件**那一段里按位置二分，取"最近一条
+  ///    起点早于当前位置"的 cue；早于该文件全部 cue 时取上一个文件的末句，已是全章
+  ///    首个文件时回到首句（索引 0）。startMs 只在同一文件内单调，不能对整表二分。
   ///
   /// 注意：这里的 gap 回退**刻意**不等同于 [JsonAlignmentParser.findCueIndex]
   /// ——后者在 gap 内返回 -1（无高亮），而"上一句"导航需要落到 gap 之前的那条
@@ -2023,6 +2080,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     required List<AudioCue> cues,
     required int currentCueIndex,
     required AudioCue? currentCue,
+    required int audioFileIndex,
     required int positionMs,
   }) {
     if (cues.isEmpty) return null;
@@ -2036,9 +2094,10 @@ class AudiobookPlayerController extends ChangeNotifier {
       if (curIdx == 0) return null; // 已在首句 → 跨章边界
       // curIdx == -1（未按 fragmentId 命中）：落到下面按位置查找。
     }
-    // 二分找第一条 startMs >= positionMs；上一条即为目标。
-    int lo = 0;
-    int hi = cues.length;
+    // 在当前文件那一段里二分找第一条 startMs >= positionMs；上一条即为目标。
+    final ({int start, int end}) span = _fileCueSpan(cues, audioFileIndex);
+    int lo = span.start;
+    int hi = span.end;
     while (lo < hi) {
       final int mid = (lo + hi) >>> 1;
       if (cues[mid].startMs < positionMs) {
@@ -2047,7 +2106,8 @@ class AudiobookPlayerController extends ChangeNotifier {
         hi = mid;
       }
     }
-    return lo == 0 ? 0 : lo - 1;
+    if (lo == 0) return 0;
+    return (lo - 1).clamp(0, cues.length - 1);
   }
 
   static int _allBookCueIndex({
@@ -2128,10 +2188,12 @@ class AudiobookPlayerController extends ChangeNotifier {
     required List<AudioCue> cues,
     required int currentCueIndex,
     required int positionMs,
+    int audioFileIndex = 0,
   }) {
     return _nextCueIndex(
       cues: cues,
       currentCueIndex: currentCueIndex,
+      audioFileIndex: audioFileIndex,
       positionMs: positionMs,
     );
   }
@@ -2142,11 +2204,27 @@ class AudiobookPlayerController extends ChangeNotifier {
     required int currentCueIndex,
     required AudioCue? currentCue,
     required int positionMs,
+    int audioFileIndex = 0,
   }) {
     return _prevCueIndex(
       cues: cues,
       currentCueIndex: currentCueIndex,
       currentCue: currentCue,
+      audioFileIndex: audioFileIndex,
+      positionMs: positionMs,
+    );
+  }
+
+  /// 测试钩子：[skipByCues] 没有当前 cue 时的起点解析（[_cueIndexAtFilePosition]）。
+  @visibleForTesting
+  static int cueIndexAtFilePositionForTesting({
+    required List<AudioCue> cues,
+    required int audioFileIndex,
+    required int positionMs,
+  }) {
+    return _cueIndexAtFilePosition(
+      cues: cues,
+      audioFileIndex: audioFileIndex,
       positionMs: positionMs,
     );
   }

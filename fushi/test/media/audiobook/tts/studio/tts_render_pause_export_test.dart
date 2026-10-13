@@ -697,4 +697,39 @@ void main() {
         ? 'FUSHI_FFMPEG_FULL not set'
         : false,
   );
+
+  group('移动端分享导出的暂存目录', () {
+    test('每次导出前清掉上一次留下的整本 M4B / SRT，返回空目录', () async {
+      final Directory tmp = await Directory.systemTemp.createTemp(
+        'm4b_staging_test_',
+      );
+      addTearDown(() => tmp.delete(recursive: true));
+      final Directory root = Directory(
+        p.join(tmp.path, kTtsAudiobookShareStagingDirName),
+      );
+
+      final Directory first = await prepareTtsAudiobookShareStagingDir(root);
+      expect(first.existsSync(), isTrue);
+      expect(first.listSync(), isEmpty);
+      await File(p.join(first.path, 'old.m4b')).writeAsBytes(<int>[1, 2, 3]);
+      await File(p.join(first.path, 'old.srt')).writeAsString('1');
+
+      final Directory second = await prepareTtsAudiobookShareStagingDir(root);
+      expect(second.path, root.path);
+      expect(second.listSync(), isEmpty, reason: '上一次的导出文件必须被清掉');
+    });
+
+    test('制作台移动端导出走自管暂存目录，不再每次 createTemp 一个新目录', () {
+      final String src = File(
+        'lib/src/media/audiobook/tts/studio/tts_studio_page.dart',
+      ).readAsStringSync();
+      expect(src, contains('prepareTtsAudiobookShareStagingDir('));
+      expect(src, contains('kTtsAudiobookShareStagingDirName'));
+      expect(
+        RegExp(r"createTemp\(\s*'fushi_m4b").hasMatch(src),
+        isFalse,
+        reason: '每次导出新建的临时目录没人删，整本 M4B 会在临时目录里越积越多',
+      );
+    });
+  });
 }

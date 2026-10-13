@@ -196,22 +196,60 @@ void main() {
   });
 
   test(
-    'stale demand outside the new window is cancelled, waiter stays pending',
+    'stale demand outside the new window is cancelled and its waiter ends '
+    'with cancelled (not left pending until dispose)',
     () async {
       provider.gateAll = true;
       final TtsSynthesisScheduler s = make(count: 20, lookahead: 1);
       final Future<TtsCachedAudio> demanded = s.ensure(0);
       await waitFor(() => provider.calls.length == 1);
-      // ensure(0) 后立刻跳到远处：_demanded 先被裁掉，在途 t0 被取消，但 ensure 仍挂起。
+      final Future<void> expectation = expectLater(
+        demanded,
+        throwsA(
+          isA<TtsFailure>().having(
+            (TtsFailure f) => f.code,
+            'code',
+            TtsFailureCode.cancelled,
+          ),
+        ),
+      );
+      // ensure(0) 后立刻跳到远处：_demanded 被裁掉、在途 t0 被取消，等待者以「已取消」
+      // 结束——不是挂到 dispose。
       s.setCursor(15);
+      await expectation;
       await waitFor(() => provider.cancelled.contains('t0'));
       expect(s.failure, isNull);
-      bool done = false;
-      unawaited(demanded.then((_) => done = true, onError: (Object _) {}));
-      await settle();
-      expect(done, isFalse);
     },
   );
+
+  test('a waiter inside the new window keeps waiting across setCursor', () async {
+    provider.gateAll = true;
+    final TtsSynthesisScheduler s = make(count: 20, lookahead: 3);
+    final Future<TtsCachedAudio> demanded = s.ensure(2);
+    await waitFor(() => provider.calls.contains('t2'));
+    s.setCursor(1);
+    bool done = false;
+    unawaited(demanded.then((_) => done = true, onError: (Object _) {}));
+    await settle();
+    expect(done, isFalse, reason: '窗口内的请求不能被误取消');
+    provider.release('t2');
+    final TtsCachedAudio audio = await demanded;
+    expect(audio.path, s.audioPathOf(2));
+  });
+
+  test('re-requesting a cancelled sentence registers a fresh waiter', () async {
+    final TtsSynthesisScheduler s = make(count: 20, lookahead: 1);
+    provider.gateAll = true;
+    final Future<TtsCachedAudio> stale = s.ensure(0);
+    unawaited(stale.then((_) {}, onError: (Object _) {}));
+    await waitFor(() => provider.calls.length == 1);
+    s.setCursor(15);
+    await waitFor(() => provider.cancelled.contains('t0'));
+    provider.gateAll = false;
+    s.setCursor(0);
+    final TtsCachedAudio audio = await s.ensure(0);
+    expect(audio.path, s.audioPathOf(0));
+  });
 
   test('dispose completes waiters with cancelled', () async {
     provider.gateAll = true;

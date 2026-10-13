@@ -7,7 +7,11 @@
 /// - 进程退出时 running 的任务下次 [load] 回到 queued。逐句音频在 TTS 缓存里、
 ///   已编码的章在任务工作目录里，重跑会跳过已完成的部分；
 /// - 真正的活由注入的 [TtsRenderRunner] 做，本类不 import 任何 EPUB / 数据库 /
-///   ffmpeg 代码，测试用假端口即可覆盖全部编排。
+///   ffmpeg 代码，测试用假端口即可覆盖全部编排；
+/// - 任务工作目录（`<workRoot>/<job.id>/`，按章 m4a、混音中间文件）的生命周期
+///   跟着清单条目走：条目被 [TtsRenderQueue.remove] 或被同一本书的新任务取代时
+///   目录一起删，[TtsRenderQueue.load] 时清掉清单里已没有的孤儿目录。清单因此
+///   每本书至多一条已结束任务，不再只增不减。
 library;
 
 import 'dart:async';
@@ -16,6 +20,11 @@ import 'dart:io';
 
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_notifier.dart';
+import 'package:path/path.dart' as p;
+
+/// 任务 [jobId] 的工作目录（制作流程与队列共用这一个口径）。
+Directory ttsRenderJobWorkDir(Directory workRoot, String jobId) =>
+    Directory(p.join(workRoot.path, jobId));
 
 enum TtsRenderJobStatus { queued, running, done, failed, cancelled }
 
@@ -258,13 +267,18 @@ abstract interface class TtsRenderRunner {
 class TtsRenderQueue extends EngineChangeNotifier {
   TtsRenderQueue({
     required File store,
+    required Directory workRoot,
     required TtsRenderRunner runner,
     DateTime Function()? now,
   })  : _store = store,
+        _workRoot = workRoot,
         _runner = runner,
         _now = now ?? DateTime.now;
 
   final File _store;
+
+  /// 各任务工作目录的根（每个任务一个 `<id>` 子目录）。
+  final Directory _workRoot;
   final TtsRenderRunner _runner;
   final DateTime Function() _now;
 
@@ -309,11 +323,46 @@ class TtsRenderQueue extends EngineChangeNotifier {
         await _store.rename('${_store.path}.corrupt');
       }
     }
+    await _deleteOrphanWorkDirs();
     notifyListeners();
     _kick();
   }
 
+  /// 工作根下名字不是清单里任务 id 的子目录（任务条目早已不在、清单损坏被挪走、
+  /// 或旧版本留下的）没有任何人会再用，删掉。只在 [_load] 里跑：此时还没有任务
+  /// 在运行，不会删到正在写的目录。
+  Future<void> _deleteOrphanWorkDirs() async {
+    if (!await _workRoot.exists()) return;
+    final Set<String> ids = <String>{
+      for (final TtsRenderJob job in _jobs) job.id,
+    };
+    // listSync：await for 遍历 list() 的完成事件在 widget 测试的 fake-async 里
+    // 送不到，会把整页测试挂住；工作根只有每本书一层子目录，同步列举代价可忽略。
+    try {
+      for (final FileSystemEntity entity in _workRoot.listSync()) {
+        if (entity is! Directory) continue;
+        if (ids.contains(p.basename(entity.path))) continue;
+        await _deleteWorkDir(entity);
+      }
+    } on FileSystemException catch (e, stack) {
+      engineLog.log('TtsRenderQueue.orphanScan', e, stack);
+    }
+  }
+
+  /// 删一个任务的工作目录。删不掉（Windows 上文件被占用）只记日志：条目已不在
+  /// 清单里，下次 [load] 的孤儿扫描会再删一次，不会永久泄漏。
+  Future<void> _deleteWorkDir(Directory dir) async {
+    try {
+      if (await dir.exists()) await dir.delete(recursive: true);
+    } on FileSystemException catch (e, stack) {
+      engineLog.log('TtsRenderQueue.deleteWorkDir', e, stack);
+    }
+  }
+
   /// 排一个任务。同一本书已有未结束的任务时直接返回那个。
+  ///
+  /// 新任务取代这本书之前所有已结束的任务（失败 / 取消 / 完成）：它们的清单条目与
+  /// 工作目录一起删掉——新任务换了 id 与目录，旧目录里的按章成品再也不会被读到。
   Future<TtsRenderJob> enqueue({
     required String bookKey,
     required String title,
@@ -342,10 +391,19 @@ class TtsRenderQueue extends EngineChangeNotifier {
       createdAt: now,
       updatedAt: now,
     );
-    _jobs.add(job);
+    final List<TtsRenderJob> superseded = <TtsRenderJob>[
+      for (final TtsRenderJob old in _jobs)
+        if (old.bookKey == bookKey) old,
+    ];
+    _jobs
+      ..removeWhere(superseded.contains)
+      ..add(job);
     await _persist();
     notifyListeners();
     _kick();
+    for (final TtsRenderJob old in superseded) {
+      await _deleteWorkDir(ttsRenderJobWorkDir(_workRoot, old.id));
+    }
     return job;
   }
 
@@ -384,6 +442,7 @@ class TtsRenderQueue extends EngineChangeNotifier {
     _jobs.remove(job);
     await _persist();
     notifyListeners();
+    await _deleteWorkDir(ttsRenderJobWorkDir(_workRoot, job.id));
   }
 
   Future<void> close() async {

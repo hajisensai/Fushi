@@ -28,6 +28,7 @@ TtsRenderQueue ttsRenderQueueFor(AppModel appModel) {
     store: File(
       p.join(appModel.databaseDirectory.path, 'tts_render_jobs.json'),
     ),
+    workRoot: ttsRenderWorkRoot(appModel),
     runner: AppTtsRenderRunner(appModel: appModel),
   );
   _queue = queue;

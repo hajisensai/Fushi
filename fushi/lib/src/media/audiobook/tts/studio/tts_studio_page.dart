@@ -575,13 +575,23 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
     return loaded.row.title.isEmpty ? loaded.book.title : loaded.row.title;
   }
 
-  /// 导出为 M4B：桌面选保存位置直接写；移动端写进临时目录再走系统分享。
+  /// 移动端分享导出的输出路径：清掉上一次导出留下的暂存，再落在空的暂存目录里。
+  Future<String> _shareStagingPath(String fileName) async {
+    final Directory staging = await prepareTtsAudiobookShareStagingDir(
+      Directory(
+        p.join(Directory.systemTemp.path, kTtsAudiobookShareStagingDirName),
+      ),
+    );
+    return p.join(staging.path, fileName);
+  }
+
+  /// 导出为 M4B：桌面选保存位置直接写；移动端写进 app 自管的暂存目录再走系统
+  /// 分享（暂存目录每次导出前清空，见 [prepareTtsAudiobookShareStagingDir]）。
   Future<void> _export() async {
     if (_exporting) return;
     final String fileName = ttsAudiobookExportFileName(_bookTitle);
     final bool desktop = isDesktopPlatform;
-    String outputPath;
-    Directory? tempDir;
+    String? pickedPath;
     if (desktop) {
       // 只在桌面弹保存框（移动端走分享），默认文件名已带 .m4b；不传
       // FileType.custom 扩展名过滤（BUG-2099 的选择器纪律，同 collection_exporter）。
@@ -590,16 +600,15 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
         fileName: fileName,
       );
       if (picked == null || picked.trim().isEmpty || !mounted) return;
-      outputPath = picked;
-    } else {
-      tempDir = await Directory.systemTemp.createTemp('fushi_m4b_');
-      outputPath = p.join(tempDir.path, fileName);
+      pickedPath = picked;
     }
     setState(() {
       _exporting = true;
       _exportProgress = null;
     });
     try {
+      final String outputPath =
+          pickedPath ?? await _shareStagingPath(fileName);
       final String written = await exportTtsAudiobookM4b(
         appModel: widget.appModel,
         bookKey: widget.bookKey,

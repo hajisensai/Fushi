@@ -2,7 +2,8 @@
 ///
 /// 失败策略（不靠重试掩盖）：任一句失败 → 调度整体停下并报 [failure]，等待中的请求
 /// **保持挂起**（播放器表现为缓冲中，而不是跳到下一句）；调用方提示用户后 [resume]
-/// 重新合成。被取消的请求（换位置 / 关闭）不算失败。
+/// 重新合成。被取消的请求（换位置移出窗口 / 关闭）以 [TtsFailureCode.cancelled]
+/// 结束，不算失败。
 library;
 
 import 'dart:async';
@@ -118,10 +119,22 @@ class TtsSynthesisScheduler {
   }
 
   /// 播放位置移动：调整预取窗口，取消窗口外的在途合成，释放远处的 pin。
+  ///
+  /// 窗口外的等待者以「已取消」结束：游标跟着播放器走，播放器已经离开那一句，
+  /// 它对旧句的 `request()` 不会再有人消费；不结束的话每次拖远都留一个挂到
+  /// [dispose] 的 Future（连同 just_audio 本机代理里那条请求）。之后真有人再要
+  /// 那一句，[ensure] 会重新登记、重新合成。
   void setCursor(int index) {
     if (_disposed) return;
     _cursor = index.clamp(0, _texts.isEmpty ? 0 : _texts.length - 1);
     _demanded.removeWhere((int i) => !_inWindow(i, slack: 1));
+    for (final int i in _waiters.keys.toList()) {
+      if (_inWindow(i, slack: 1)) continue;
+      final Completer<TtsCachedAudio> waiter = _waiters.remove(i)!;
+      if (!waiter.isCompleted) {
+        waiter.completeError(const TtsFailure(TtsFailureCode.cancelled));
+      }
+    }
     for (final MapEntry<int, TtsCancelToken> e in _inFlight.entries.toList()) {
       if (!_demanded.contains(e.key) && !_inWindow(e.key, slack: 1)) {
         e.value.cancel();
