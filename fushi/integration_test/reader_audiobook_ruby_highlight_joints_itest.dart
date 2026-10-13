@@ -59,7 +59,7 @@ const Key _kWebViewKey = ValueKey<String>('fushi_webview');
 const Key _kContentReadyKey = ValueKey<String>('fushi_content_ready');
 const String _kLabel = 'ruby-hl';
 const String _kChapterTitle = '第一章　花火';
-const int _kCueMs = 1500;
+const int _kCueMs = 4000;
 
 /// 段落 HTML（带 ruby / 书自带 em）。句子按「。」「」」切，每句一条 cue。
 const List<String> _kParagraphs = <String>[
@@ -290,7 +290,10 @@ Future<List<String>> _runMode(
   int measured = 0;
   int splitJoints = 0;
   for (int i = 0; i < sentences.length; i++) {
+    // 跳句后播放：播放中的跟读高亮才会把视口 / VN 屏带到这一句（暂停态是被动高亮，
+    // 按设计不动视口，VN 不换屏）。每句 4 秒，在本句播放期间量完再暂停。
     await controller.skipToCueIndex(i);
+    await controller.play();
     Map<String, dynamic>? m;
     Map<String, dynamic>? last;
     final String want = sentences[i];
@@ -314,6 +317,7 @@ Future<List<String>> _runMode(
         break;
       }
     }
+    await controller.pause();
     if (m == null) {
       failures.add(
         '$tag cue $i: highlight never showed 「$want」 '
