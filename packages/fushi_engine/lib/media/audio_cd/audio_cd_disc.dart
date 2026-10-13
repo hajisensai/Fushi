@@ -92,8 +92,10 @@ enum AudioCdLayout {
 
 /// 一个目录的直接子文件名是不是一张音频 CD 的根；不是返回 null。
 ///
-/// 只要有任何可直接导入的媒体文件（[isImportableMedia]）就不算：混合模式 /
-/// 增强型 CD 的数据轨里带了真媒体，照常走原导入，不抢。
+/// 只要有 AIFF 之外的可直接导入媒体（[isImportableMedia]）就不算：混合模式 /
+/// 增强型 CD 的数据轨里带了真媒体，照常走原导入，不抢。AIFF 不在此列——它就是
+/// cddafs 挂载点里的音轨本身；判据是旁边的 `.TOC.plist`。没有 `.TOC.plist` 的
+/// AIFF 是普通音频文件：和 `.cda` 放在一起时同样按「旁边有真媒体」照常导入。
 AudioCdLayout? audioCdLayoutOf(
   Iterable<String> fileNames, {
   required bool Function(String name) isImportableMedia,
@@ -102,13 +104,14 @@ AudioCdLayout? audioCdLayoutOf(
   bool sawAiff = false;
   bool sawToc = false;
   for (final String name in fileNames) {
-    if (isImportableMedia(name)) return null;
+    final bool aiff = isAiffPath(name);
+    if (!aiff && isImportableMedia(name)) return null;
     sawCda = sawCda || isCdaPath(name);
-    sawAiff = sawAiff || isAiffPath(name);
+    sawAiff = sawAiff || aiff;
     sawToc = sawToc || name == kMacCdTocFileName;
   }
-  if (sawCda) return AudioCdLayout.windowsCda;
   if (sawToc && sawAiff) return AudioCdLayout.macCddafs;
+  if (sawCda && !sawAiff) return AudioCdLayout.windowsCda;
   return null;
 }
 

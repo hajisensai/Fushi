@@ -10,6 +10,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/asr/fushi_asr_ffmpeg_backend.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:fushi_engine/media/audio/flac_encoder.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
@@ -35,6 +36,8 @@ void installServerHostBindings({
   // resolveFfmpegBackend() 之前装——后端选择是进程级单例。
   ffmpegPathOverride = config.ffmpegPath;
   ffprobePathOverride = config.ffprobePath;
+  // AIFF 有声书落盘转 FLAC（Android 播放器不认 AIFF）。
+  installAudiobookFlacTranscoder();
   // 漫画 OCR 整卷任务的后台 isolate：FFI ONNX Runtime 工厂 + ORT 库路径引导。
   ocrSessionFactoryBuilder = buildServerOcrSessionFactory;
   ocrIsolateBootstrap = serverOcrIsolateBootstrap;

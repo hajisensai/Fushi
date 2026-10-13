@@ -14,6 +14,7 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
+import 'package:fushi_audio/fushi_audio.dart' show AudiobookStorage;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/sync/epub_repackage.dart';
@@ -853,21 +854,6 @@ class SyncManager {
     }
   }
 
-  static const _audioExtensions = {
-    '.mp3',
-    '.m4a',
-    '.m4b',
-    '.aac',
-    '.ogg',
-    '.opus',
-    '.flac',
-    '.wav',
-    '.wma',
-    '.ac3',
-    '.eac3',
-    '.mp4',
-  };
-
   Future<List<String>> _resolveAudioPaths(String bookKey) async {
     final row = await _db.getAudiobookByBookKey(bookKey);
     if (row == null) return const [];
@@ -892,8 +878,7 @@ class SyncManager {
         final paths = dir
             .listSync()
             .whereType<File>()
-            .where((f) =>
-                _audioExtensions.contains(p.extension(f.path).toLowerCase()))
+            .where((f) => AudiobookStorage.isAudioFile(f.path))
             .map((f) => f.path)
             .toList()
           ..sort();

@@ -13,3 +13,10 @@
   - 真机验证（本机光驱 `E:\`，12 轨纯音频盘，只用入库的 ffmpeg-min，`FUSHI_FFMPEG` 指向它）：TOC 与独立 Python 抓轨脚本一致；整盘抓成 FLAC 7 分 43 秒、0 坏扇区、无残留临时文件，12 轨解码后的 PCM 与参考抓轨 SHA-256 / 长度逐轨一致；取消约 0.2 秒返回、无 `.part` 残留；复用分支不重抓已有轨。
   - macOS 形态：用真实音轨转成的大端 AIFF 搭了模拟挂载点（`.TOC.plist` + `1/10 Audio Track.aiff`），经入库的 Windows 版 ffmpeg-min 转出的 FLAC 与参考 PCM 逐字节一致，轨号排序与标签正确；macOS 版 ffmpeg-min 的 aiff → flac 由 CI 冒烟测试实跑（run 38352738009）。
   - 未在真 Mac + 光驱上实测（本机无此环境）：挂载点形态按 cddafs 的公开布局（`.TOC.plist` + `N Audio Track.aiff`）实现。Linux 音频 CD 无文件系统，需另写 ioctl，未做。
+- 延伸（普通 AIFF 直接导入，用户要求补上）：
+  - 三张扩展名表加 `.aiff` / `.aif`：视频库 `kAudioExtensions`、有声书 `AudiobookStorage.audioExtensions`、拖放 `kDragAudioExtensions`。另外三处手抄副本（`favorite_batch_mining_plan.dart` / `collections_page.dart` / `sync_manager.dart`）改成调 `AudiobookStorage.isAudioFile`，不再各抄一份。
+  - 播放端核实：五端 libmpv 都有 `ff_aiff_demuxer`（Android 的 `full-arm64-v8a.jar` 里 `libmpv.so` 实查），移动端 ffmpeg-kit 有 aiff 解复用器与 flac 编码器（AAR 内 `libavformat.so` / `libavcodec.so` 实查），视频库直接收 AIFF。Android 有声书播放器 just_audio → ExoPlayer 2.18.7 的 extractor 包只有 `wav/`、没有 AIFF 解析器。
+  - 所以有声书复制进持久目录时 AIFF 一律转 FLAC（`AudiobookStorage.syncAudioFiles` 是唯一写入原语；装配点 `AudiobookStorage.flacTranscoder`，由 `installAudiobookFlacTranscoder()` 在 app 与服务端各装一次；未装配时抛错，不退回原样复制）。编码与抓轨共用 `packages/fushi_engine/lib/media/audio/flac_encoder.dart`。
+  - 回归：CD 判定的「旁边有真媒体就不算 CD」规则在 AIFF 入表后会把 macOS 挂载点误判成普通文件夹（`audio_cd_import_test` 实测变红）；改成 AIFF 不算「旁边的真媒体」，挂载点靠 `.TOC.plist` 认，没有 `.TOC.plist` 的 AIFF 照常导入。
+  - 测试：`packages/fushi_audio/test/audiobook/audiobook_storage_aiff_test.dart`（转码、命名、同名不覆盖、复用不重转、未装配 / 无产出报错、引用导入不转；转码表清空的变异实测 5 条变红）；`audio_cd_disc_test.dart` 判据改用生产的 `kVideoLibraryMediaExtensions`。真文件：入库 Windows ffmpeg-min 经生产装配把两个真实 AIFF 落盘成 FLAC，PCM 逐字节一致。
+  - 已知缺口：桌面「引用原文件 / 文件夹」方式导入的 AIFF 有声书不复制、也就不转码；这种书同步或串流到 Android 时仍播不了。

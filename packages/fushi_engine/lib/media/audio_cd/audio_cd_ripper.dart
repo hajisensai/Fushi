@@ -15,6 +15,7 @@ import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:fushi_engine/media/audio/flac_encoder.dart';
 import 'package:fushi_engine/media/audio_cd/audio_cd_disc.dart';
 import 'package:fushi_engine/media/audio_cd/windows_audio_cd_drive.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
@@ -47,9 +48,6 @@ class AudioCdRipCancellation {
     _onCancel?.call();
   }
 }
-
-/// 单轨 FLAC 编码上限。macOS 直读光盘上的 AIFF，受驱动读速限制，一轨几十秒。
-const Duration _encodeTimeout = Duration(minutes: 10);
 
 /// 一条待抓的轨：[weight] 是进度权重（扇区数或字节数）；[cdda] 与 [aiffPath]
 /// 恰有一个非空，分别对应两种 [AudioCdLayout]。
@@ -195,8 +193,8 @@ _Disc _readMacDisc(String mountPath) {
   );
 }
 
-/// [input]（CDDA 的 WAV 或 macOS 的 AIFF）→ [output] FLAC。先写 `.part`，
-/// 成功才改名：中途失败 / 被杀留下的只会是 `.part`，下次重抓。
+/// [input]（CDDA 的 WAV 或 macOS 的 AIFF）→ [output] FLAC，带轨号 / 专辑标签。
+/// `.part` 落盘约定见 [encodeFlacFile]：中途失败 / 被杀只留 `.part`，下次重抓。
 Future<void> _encodeFlac(
   FfmpegBackend ffmpeg, {
   required String input,
@@ -206,36 +204,20 @@ Future<void> _encodeFlac(
   required int number,
   required int total,
 }) async {
-  final File part = File('$output.part');
-  final FfmpegRunResult result = await ffmpeg.run(<String>[
-    '-hide_banner',
-    '-loglevel',
-    'error',
-    '-y',
-    '-i',
-    input,
-    '-map',
-    '0:a:0',
-    '-c:a',
-    'flac',
-    '-metadata',
-    'title=$title',
-    '-metadata',
-    'album=$album',
-    '-metadata',
-    'track=$number/$total',
-    '-f',
-    'flac',
-    part.path,
-  ], _encodeTimeout);
-  if (result.returnCode != 0 || !part.existsSync() || part.lengthSync() == 0) {
-    if (part.existsSync()) part.deleteSync();
-    final String detail = result.output.trim().split('\n').last;
-    throw AudioCdException(
-      'FLAC encoding failed (exit ${result.returnCode}): $detail',
+  try {
+    await encodeFlacFile(
+      ffmpeg,
+      input: input,
+      output: output,
+      metadata: <String, String>{
+        'title': title,
+        'album': album,
+        'track': '$number/$total',
+      },
     );
+  } on FlacEncodeException catch (e) {
+    throw AudioCdException('FLAC encoding failed (${e.message})');
   }
-  part.renameSync(output);
 }
 
 String _safeName(String name) {

@@ -131,6 +131,8 @@ const Set<String> kDragAudioExtensions = <String>{
   'wma',
   'ac3',
   'eac3',
+  'aiff',
+  'aif',
   'mp4',
 };
 

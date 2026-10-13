@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/audio_cd/audio_cd_disc.dart';
+import 'package:fushi_engine/media/media_extensions.dart';
+import 'package:path/path.dart' as p;
 
 /// 按 `CDROM_TOC` 布局拼一份 TOC。[entries] 末项应是 lead-out（0xAA）。
 Uint8List _toc(List<({int number, int control, int lba})> entries) {
@@ -91,7 +93,9 @@ void main() {
   });
 
   group('audioCdLayoutOf', () {
-    bool media(String name) => name.endsWith('.flac') || name.endsWith('.mp4');
+    // 与生产（audioCdLayoutOfDirectory）同一判据：视频库收的扩展名，含 .aiff / .aif。
+    bool media(String name) =>
+        kVideoLibraryMediaExtensions.contains(p.extension(name).toLowerCase());
 
     test('Windows: only .cda shortcuts', () {
       expect(
@@ -126,6 +130,14 @@ void main() {
         audioCdLayoutOf(<String>[
           'Track01.cda',
           'a.flac',
+        ], isImportableMedia: media),
+        isNull,
+      );
+      // 普通 AIFF（没有 .TOC.plist）也是真媒体：和 .cda 放一起照常导入。
+      expect(
+        audioCdLayoutOf(<String>[
+          'Track01.cda',
+          'a.aiff',
         ], isImportableMedia: media),
         isNull,
       );
