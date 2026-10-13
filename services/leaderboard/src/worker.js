@@ -167,6 +167,7 @@ async function route(request, env, now, ctx) {
       readBody: (max) => readBodyBytes(request, max),
       parse: parseJsonBytes,
       auth: (bytes, opts) => authenticate(request, env, bytes, now, opts),
+      ctx,
     });
     if (res) return res;
     throw new HttpError(404, 'not_found');

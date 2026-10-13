@@ -133,6 +133,7 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 | POST | `/v1/feedback/status` `{items:[{id, ticket}] ≤ 50}` | — | 批量查进度（ticket 不对的条目不返回） |
 | GET | `/v1/feedback/:id` | `X-Fushi-Ticket` | 详情 + 处理时间线 |
 | POST | `/v1/feedback/:id/messages` `{body}` | `X-Fushi-Ticket` | 反馈人追加说明（已结案会重新打开） |
+| PUT / DELETE | `/v1/feedback/:id/push` `{token, lang?}` | `X-Fushi-Ticket` | 登记 / 注销本条反馈的 APNs 设备令牌（iOS 推送，见下「APNs 推送」）。每条 ≤ 5 个（满了挤掉最旧的），按令牌 SHA-256 去重；已结案 409 `feedback_closed`；单条反馈每小时 20 次 |
 | GET | `/v1/dev/feedback?status&cursor&limit` | 签名·开发者 | 处理台列表（`status=active` = 未结案，`status=flagged` = 带风险标记） |
 | GET | `/v1/dev/feedback/:id` | 签名·开发者 | 详情（含联系方式 / 设备信息 / 反馈人） |
 | GET | `/v1/dev/feedback/:id/attachments/:slot[?view=text]` | 签名·开发者 | 附件；日志 `view=text` 服务端流式解压 |
@@ -167,6 +168,32 @@ HTTP Basic Auth（`ADMIN_USER` / `ADMIN_PASS`，未配置时 503 fail-closed）�
 | POST | `/admin/api/works/merge` `{from, into}` | 合并误拆的作品 |
 | POST | `/admin/api/works/split` `{ref}` | 拆出误挂的别名（`ref` 带 `kind|` 前缀） |
 | POST | `/admin/api/accounts/:id/role` `{role: 'dev'\|'user'}` | 设 / 撤开发者（反馈处理台；撤销时网页会话一并作废） |
+
+## APNs 推送（反馈有新回复）
+
+开发者回复 / 改状态（App 处理台与网页处理台都走 `devUpdate`）写库之后，Worker 经 `ctx.waitUntil`
+给反馈人登记过的 iOS 设备发 APNs 推送（`src/feedback_push.js`）：文案只有通用的「开发者回复了你的反馈 /
+状态有更新」+ 反馈 id，**不带回复正文和标题**；推送失败只记日志，不影响回复写入。结案时（发完推送后）
+与 APNs 回 410 / `BadDeviceToken` / `DeviceTokenNotForTopic` 时清掉令牌。Android（无 GMS）继续用 App
+的后台检查，不接 FCM。
+
+需要的 secrets（**缺任何一项 = 不发送、不报错，每个 isolate 只记一次日志**；令牌照常登记，配好后即生效）：
+
+```bash
+node services/leaderboard/node_modules/wrangler/bin/wrangler.js secret put APNS_KEY_P8 --config services/leaderboard/wrangler.toml     # .p8 全文
+node services/leaderboard/node_modules/wrangler/bin/wrangler.js secret put APNS_KEY_ID --config services/leaderboard/wrangler.toml
+node services/leaderboard/node_modules/wrangler/bin/wrangler.js secret put APNS_TEAM_ID --config services/leaderboard/wrangler.toml
+node services/leaderboard/node_modules/wrangler/bin/wrangler.js secret put APNS_BUNDLE_ID --config services/leaderboard/wrangler.toml  # app.fushi.reader
+node services/leaderboard/node_modules/wrangler/bin/wrangler.js secret put APNS_ENV --config services/leaderboard/wrangler.toml        # production | sandbox
+```
+
+Apple 侧怎么建 Auth Key、App ID 勾 Push、sandbox / production 怎么选，见
+[`docs/agent/apple-signing.md`](../../docs/agent/apple-signing.md)「APNs 推送密钥」。迁移
+`0008_feedback_push_tokens.sql` 要先于部署应用（规则同上）。
+
+成本：登记扣 `write_rows`；每次处理最多 5 个出站请求（Workers Free 每请求子请求上限 50）；APNs 免费。
+**未实测**：Workers 出站 `fetch` 与 APNs 的 HTTP/2 握手要等配好密钥后用真机验证一次（日志里看
+`apns: push ... failed` 有没有出现）。
 
 反馈系统（回执、附件、开发者处理、防投毒、清理策略）设计见
 [`docs/specs/2026-10-08-feedback.md`](../../docs/specs/2026-10-08-feedback.md)。

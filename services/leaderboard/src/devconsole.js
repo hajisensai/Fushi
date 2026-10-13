@@ -415,7 +415,7 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
     const reply = form.get('reply') || '';
     // 表单总会带上当前状态：状态没变也没写回复时什么都不做，直接回详情。
     if (status === row.status && !reply.trim()) return redirect(`/dev/f/${row.id}`);
-    await devUpdate(env, dev, row, { status, reply }, now);
+    await devUpdate(env, dev, row, { status, reply }, now, ctx);
     return redirect(`/dev/f/${row.id}`);
   }
   if (method === 'POST' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})\/note$/.exec(path))) {
