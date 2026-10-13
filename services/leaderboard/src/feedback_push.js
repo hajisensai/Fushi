@@ -1,7 +1,7 @@
 // 反馈回复的 APNs 推送（iOS；Android 无 GMS 不接 FCM，继续走 App 的后台检查；桌面不变）。
 //
 // 反馈人（凭本条反馈的 ticket，与其它反馈人接口同一口径）：
-//   PUT    /v1/feedback/:id/push   [X-Fushi-Ticket] {token, lang?} → 200 {registered: true}
+//   PUT    /v1/feedback/:id/push   [X-Fushi-Ticket] {token, lang?} → 200 {registered: true, delivering}
 //   DELETE /v1/feedback/:id/push   [X-Fushi-Ticket] {token}        → 200 {registered: false}
 // 令牌是 APNs device token 的十六进制串；一条反馈最多 PUSH_LIMITS.tokensPerFeedback 个，
 // 满了挤掉最久没登记过的那个（换机 / 重装后的新令牌总能登记上）。已结案的反馈不收登记。
@@ -99,7 +99,9 @@ export async function registerPushToken(env, row, body, now, { closed }) {
        ON CONFLICT (feedback_id, token_hash) DO UPDATE SET lang = excluded.lang, updated_at = excluded.updated_at`,
     ).bind(row.id, h, token, lang, now),
   ]);
-  return { registered: true };
+  // delivering：服务端此刻真的会发推送（APNs 已配置）。App 据此决定这条反馈的新回复是否交给远程
+  // 推送、本机后台检查不再另发本地通知——没配置时照旧走本机检查，不会两头落空。
+  return { registered: true, delivering: apnsConfig(env) !== null };
 }
 
 /** DELETE /v1/feedback/:id/push：注销本条反馈下的这个令牌（不存在也算成功）。 */

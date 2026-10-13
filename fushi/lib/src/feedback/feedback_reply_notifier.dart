@@ -69,7 +69,8 @@ class FeedbackReplyNotifier {
   static bool _isActive(FeedbackTicket t) => !t.status.isClosed && !t.missing;
 
   /// 该刷新就刷新一次，返回要提醒的新回复（见 [FeedbackReplyCheck]）。
-  Future<FeedbackReplyCheck> check() async {
+  /// [force]：不看节流（前台收到了远程推送——服务端刚说有新进展，立刻刷新红点）。
+  Future<FeedbackReplyCheck> check({bool force = false}) async {
     if (_running) return FeedbackReplyCheck.none;
     _running = true;
     try {
@@ -80,6 +81,7 @@ class FeedbackReplyNotifier {
       final int now = _nowMs();
       // 时钟被往回拨时（last > now）不能被永久节流住。
       final bool throttled =
+          !force &&
           state.lastRefreshAt <= now &&
           now - state.lastRefreshAt < minInterval.inMilliseconds;
       if (throttled) return FeedbackReplyCheck.none;
@@ -96,7 +98,9 @@ class FeedbackReplyNotifier {
           .toList();
       // 判据在写之前现读水位：刷新的那几秒里后台 isolate 可能已经提醒过同一条。
       late List<FeedbackReplyAlert> fresh;
+      Set<String> pushCovered = const <String>{};
       await store.update((FeedbackReplyState s) {
+        pushCovered = s.pushCovered;
         fresh = selectNewReplies(
           <FeedbackReplyAlert>[
             for (final FeedbackTicket t in unseen)
@@ -119,7 +123,12 @@ class FeedbackReplyNotifier {
           ),
         );
       });
-      return FeedbackReplyCheck(unseen: unseen.length, fresh: fresh);
+      // 由远程推送提醒的反馈（iOS，feedback_push.dart）已经弹过系统通知：水位照推，
+      // 应用内提示不再重复。
+      return FeedbackReplyCheck(
+        unseen: unseen.length,
+        fresh: withoutPushCovered(fresh, pushCovered),
+      );
     } on Object catch (e, st) {
       ErrorLogService.instance.log('feedback.reply_check', e, st);
       return FeedbackReplyCheck.none;

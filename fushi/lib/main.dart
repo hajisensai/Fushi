@@ -108,8 +108,10 @@ import 'package:fushi/src/feedback/feedback_reply_alerts.dart';
 import 'package:fushi/src/feedback/feedback_reply_notifier.dart';
 import 'package:fushi/src/feedback/feedback_reply_state.dart'
     show kFeedbackReplyPollInterval;
+import 'package:fushi/src/feedback/feedback_push.dart'
+    show RemotePushPlatform;
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart'
-    show showFeedbackReplyNotice;
+    show openFeedbackTicket, showFeedbackReplyNotice;
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
@@ -1026,6 +1028,37 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
   }
 
+  /// iOS 远程推送（feedback_push.dart）：点推送 → 直达那条反馈；前台收到推送 → 立刻
+  /// 刷新一次进度（红点）。系统横幅照常由 iOS 弹，被推送覆盖的反馈不再弹应用内提示。
+  /// 冷启动由推送拉起时先取回那一次点击。只挂一次。
+  final List<StreamSubscription<String>> _remotePushSubs =
+      <StreamSubscription<String>>[];
+
+  void _listenRemotePush() {
+    final RemotePushPlatform push = ref.read(remotePushPlatformProvider);
+    if (!push.supported || _remotePushSubs.isNotEmpty) return;
+    _remotePushSubs
+      ..add(push.taps
+          .listen((String id) => unawaited(_openPushedFeedback(id))))
+      ..add(push.foregroundPushes.listen((String _) async {
+        final FeedbackReplyCheck result = await ref
+            .read(feedbackReplyNotifierProvider)
+            .check(force: true);
+        if (result.announce) _showFeedbackReplyNotice(result.unseen);
+      }));
+    unawaited(push.takeLaunchFeedbackId().then((String? id) async {
+      if (id != null) await _openPushedFeedback(id);
+    }));
+  }
+
+  Future<void> _openPushedFeedback(String feedbackId) async {
+    if (!mounted) return;
+    final BuildContext? navContext =
+        ref.read(appProvider).navigatorKey.currentContext;
+    if (navContext == null || !navContext.mounted) return;
+    await openFeedbackTicket(navContext, feedbackId);
+  }
+
   /// 桌面运行中（含最小化 / 托盘）的反馈回复定时检查；移动端交给系统后台任务。
   Timer? _feedbackReplyTimer;
 
@@ -1309,6 +1342,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     _systemColorRefreshDebounce?.cancel();
     _loadingWatchdog?.cancel();
     _feedbackReplyTimer?.cancel();
+    for (final StreamSubscription<String> s in _remotePushSubs) {
+      unawaited(s.cancel());
+    }
     _exitRequestListener?.dispose();
     unawaited(_ctlServer?.stop());
     _ctlServer = null;
@@ -2421,9 +2457,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
 
     if (!_startupFeedbackChecked) {
       _startupFeedbackChecked = true;
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => unawaited(_checkFeedbackReplies()),
-      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _listenRemotePush();
+        unawaited(_checkFeedbackReplies());
+      });
     }
 
     if (!_startupPendingMinesFlushed) {

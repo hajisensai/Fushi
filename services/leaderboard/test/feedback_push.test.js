@@ -73,7 +73,8 @@ describe('推送令牌登记', () => {
     const { env } = await pushEnv();
     const a = (await submit(env)).data;
     const b = (await submit(env, '另一条')).data;
-    expect((await push(env, 'PUT', a.id, a.ticket, { token: TOKEN_A, lang: 'zh-CN' })).data).toEqual({ registered: true });
+    expect((await push(env, 'PUT', a.id, a.ticket, { token: TOKEN_A, lang: 'zh-CN' })).data)
+      .toEqual({ registered: true, delivering: true });
     // 大写 / 重复登记：同一个令牌只占一行，语言随最后一次登记。
     expect((await push(env, 'PUT', a.id, a.ticket, { token: TOKEN_A.toUpperCase(), lang: 'ja' })).status).toBe(200);
     expect(tokens(env, a.id)).toEqual([{ token: TOKEN_A, lang: 'ja' }]);
@@ -222,7 +223,9 @@ describe('开发者处理后的 APNs 推送', () => {
     const env = makeEnv({ APNS_FETCH: fetchSpy, APNS_ENV: 'production' });
     const dev = await makeDev(env);
     const a = (await submit(env)).data;
-    expect((await push(env, 'PUT', a.id, a.ticket, { token: TOKEN_A })).status).toBe(200);
+    // 照常登记，但告诉客户端「此刻不会推送」（客户端据此继续用本机后台检查）。
+    expect((await push(env, 'PUT', a.id, a.ticket, { token: TOKEN_A })).data)
+      .toEqual({ registered: true, delivering: false });
     expect((await devUpdate(env, dev, a.id, { reply: 'one' })).status).toBe(200);
     expect((await devUpdate(env, dev, a.id, { reply: 'two' })).status).toBe(200);
     expect(fetchSpy).not.toHaveBeenCalled();
