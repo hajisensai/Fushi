@@ -7046,5 +7046,8 @@
   "book_import_no_book_transcribe_action": "转录并生成书籍",
   "onboarding_anki_auto_reposition_hint": "制卡约 30 秒后，自动把该牌组的新卡按词频排序，常见词先学，不动复习卡。需要电脑版 Anki + AnkiConnect（手机可改连电脑上的 AnkiConnect）；AnkiDroid / AnkiMobile 无法重排。",
   "video_subtitle_graphic_ocr_job_extracting_live": "边读边识别：已读 $percent% · 已识别 $done 条",
-  "video_subtitle_graphic_ocr_job_ai_progress": "AI 重读：$provider · $done/$total"
+  "video_subtitle_graphic_ocr_job_ai_progress": "AI 重读：$provider · $done/$total",
+  "video_setting_subtitle_shadow_color": "阴影颜色",
+  "video_setting_subtitle_outline": "描边粗细",
+  "video_setting_subtitle_outline_color": "描边颜色"
 }

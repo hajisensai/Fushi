@@ -468,6 +468,8 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.fontWeight = VideoSubtitleStyle.defaultFontWeight,
     this.shadowColor,
     this.shadowThickness = VideoSubtitleStyle.defaultShadowThickness,
+    this.outlineColor = kDefaultSubtitleOutlineColor,
+    this.outlineThickness = 0,
     this.backgroundColor,
     this.backgroundOpacity = 0,
     this.bottomPadding = 75,
@@ -605,6 +607,12 @@ class VideoSubtitleOverlay extends StatefulWidget {
 
   /// 字幕阴影粗细；asbplayer 默认 3px。
   final double shadowThickness;
+
+  /// 统一外观的**真描边**颜色（#xif6-gtSz7）。只在非「尊重 .ass」路径生效。
+  final Color outlineColor;
+
+  /// 统一外观的描边粗细（逻辑像素）；0 = 不描边（默认，历史外观）。
+  final double outlineThickness;
 
   /// 字幕背景颜色。
   final Color? backgroundColor;
@@ -2228,9 +2236,10 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 亚像素位置变，于是「字重随窗口大小变」。两遍几何完全同构（同样式、同约束，
     // 只有画笔不同），Stack 取同尺寸，布局 / 命中零位移；填充遍在 Stack 后位 = 在上。
     // 只有确有描边可画的 cue 才两遍（`\bord0` 全行 / 无描边基线仍单遍，与历史零差异）。
-    final bool twoPass = widget.respectAssStyle &&
-        markup != null &&
-        _cueHasVisibleOutline(chars.length, markup);
+    // 统一外观（非尊重 .ass）开了用户描边时同样两遍：同一行相邻字的描边不能啃进前字的填充。
+    final bool twoPass = widget.respectAssStyle && markup != null
+        ? _cueHasVisibleOutline(chars.length, markup)
+        : widget.outlineThickness > 0;
     final Widget textContent = twoPass
         ? Stack(
             children: <Widget>[
@@ -2490,13 +2499,13 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final int? posMs = widget.controller.effectivePositionMsForCue(cue);
     final int elapsedMs = (posMs ?? cue.startMs) - cue.startMs;
     final int durMs = cue.endMs - cue.startMs;
-    final TextStyle fillStyle =
+    TextStyle fillStyle =
         _styleForGrapheme(i, markup, elapsedMs: elapsedMs, durMs: durMs);
     final bool respect = widget.respectAssStyle && markup != null;
     final double sigma =
         _blurSigmaFor(i, markup, elapsedMs: elapsedMs, durMs: durMs);
     Widget glyph;
-    if (!respect) {
+    if (!respect && widget.outlineThickness <= 0) {
       // 默认统一外观：Niratan 柔和投影。fillStyle 在非 respect 下 shadows==null，直接挂软
       // 投影；thickness<=0（用户关阴影）时 soft 为空，渲染纯 fill（无投影、零多余层）。
       final List<Shadow> soft = buildSubtitleSoftShadow(
@@ -2509,8 +2518,21 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       );
     } else {
       // 尊重 .ass：\bord/\3c 真描边 + \shad ASS 硬投影（TODO-1105/1246），保持原样。
-      final (Color strokeColor, double strokeWidth) =
-          _resolveStroke(i, markup, elapsedMs: elapsedMs, durMs: durMs);
+      // 统一外观开了用户描边（#xif6-gtSz7）：同一套「描边层 + 填充层」，描边取用户色 /
+      // 粗细，柔和投影挂在描边层上（阴影 < 描边 < 填充，与 ASS 路径同一 z 序）。
+      final (Color strokeColor, double strokeWidth) = respect
+          ? _resolveStroke(i, markup, elapsedMs: elapsedMs, durMs: durMs)
+          : (
+              widget.outlineColor,
+              subtitleOutlineStrokeWidth(widget.outlineThickness),
+            );
+      if (!respect) {
+        final List<Shadow> soft = buildSubtitleSoftShadow(
+          widget.shadowColor ?? Theme.of(context).colorScheme.shadow,
+          widget.shadowThickness,
+        );
+        if (soft.isNotEmpty) fillStyle = fillStyle.copyWith(shadows: soft);
+      }
       final Paint? strokePaint =
           buildSubtitleStrokePaint(strokeColor, strokeWidth);
       if (strokePaint == null) {

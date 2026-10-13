@@ -804,6 +804,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'video/Font weight':
       'test/media/video/video_subtitle_style_test.dart + test/media/video/video_subtitle_font_consistency_test.dart',
   'video/Shadow': 'test/media/video/video_subtitle_style_test.dart',
+  // #xif6-gtSz7：统一外观字幕描边粗细（写 videoSubtitleStyle blob），生效点在
+  // VideoSubtitleOverlay 描边层，由专项 widget 测试咬住（描边色 / strokeWidth / 投影层次）。
+  'video/Outline width':
+      'test/media/video/video_subtitle_user_outline_test.dart',
   'video/Background opacity': 'test/media/video/video_subtitle_style_test.dart',
   'video/Vertical position':
       'test/media/video/video_subtitle_style_test.dart + test/pages/video_subtitle_push_up_guard_test.dart',
