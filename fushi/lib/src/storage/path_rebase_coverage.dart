@@ -728,6 +728,8 @@ final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
           '多要求几条声明，也不放过一个真路径 key。'),
   PathRebasePref('active_profile_id', PathRebaseKind.notAPath,
       PathValueShape.none, '当前 Profile 的自增 id（撞正则是因为 profile 里含 file）。不是路径。'),
+  PathRebasePref('profile_fallback_id', PathRebaseKind.notAPath,
+      PathValueShape.none, '绑定临时切换前用户自选 Profile 的自增 id（撞正则是因为 profile 里含 file）。不是路径。'),
   PathRebasePref('local_audio_db_display_name', PathRebaseKind.notAPath,
       PathValueShape.none, '旧单库显示名（与 local_audio_db_path 同族），不是路径。'),
 ];

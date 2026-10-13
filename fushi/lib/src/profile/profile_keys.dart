@@ -53,6 +53,8 @@ class ProfileKeys {
     // 键名从 [ModuleId.allPrefKeys] 生成，不手抄——加模块时这里自动跟上。
     ...ModuleId.allPrefKeys,
     'active_profile_id',
+    // 绑定临时切换前用户自己选的配置 id：与 active_profile_id 同族。
+    'profile_fallback_id',
     // v105 统计按 Profile 隔离：legacy 统计家族归属哪个 Profile 是**本库**的
     // 事实（值是本库自增 id），与 active_profile_id 同族。进快照就会被别的
     // Profile 的 applyProfile 剪掉，legacy 历史随即对所有 Profile 可见。

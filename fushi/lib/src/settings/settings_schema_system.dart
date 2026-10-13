@@ -253,6 +253,12 @@ SettingsDestination buildSystemDestination() {
             title: t.startup_default_dictionary_tab,
             subtitle: t.startup_default_dictionary_tab_hint,
             icon: Icons.manage_search_outlined,
+            // 反馈 #PwEC1evz1E：查词模块被关掉时这个开关没有落点（启动落地只认可见 tab，
+            // 见 homeInitialTab），留着只会开了不生效，所以随模块开关隐藏。
+            visible: (SettingsContext settingsContext) => settingsContext
+                .appModel
+                .moduleVisibility
+                .isEnabled(ModuleId.lookup),
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.startupDefaultDictionaryTab,
             onChanged: (SettingsContext settingsContext, bool value) async {

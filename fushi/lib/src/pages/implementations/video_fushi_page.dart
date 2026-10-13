@@ -2553,6 +2553,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   int _currentEpisode = 0;
 
   bool _autoAdvanceInFlight = false;
+
+  /// 本地换集（pushReplacement / 接管全屏路由）在飞标志，见 [_switchEpisode]。
+  bool _localEpisodeSwitchInFlight = false;
   String? _lastPrewarmedEpisodePath;
 
   /// 音量控件显示真相源（0..100，静音时为 0）（TODO-377 / TODO-438）。

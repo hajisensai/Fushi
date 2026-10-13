@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2989 条。点号进各自文件。
+> 共 2991 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -40,6 +40,8 @@
 | [BUG-3317](bugs/BUG-3317-bitmap-subtitle-oversize-oom.md) | ✅ | ✅ | 位图字幕对象声明超大尺寸时一次分配数GB平面 |
 | [BUG-3316](bugs/BUG-3316-libmpv-probe-tests-release-backend.md) | ✅ | ✅ | media_kit 热重启探针预编译后实际测的是 release 后端 |
 | [BUG-3308](bugs/BUG-3308-popup-round-button-press-square.md) | ✅ | ✅ | 查词弹窗点「+」制卡按钮时闪出完全直角的方块 |
+| [BUG-3299](bugs/BUG-3299-profile-binding-sticky.md) | ✅ | ✅ | 绑定配置切换后无绑定条目不回到用户自选配置 |
+| [BUG-3298](bugs/BUG-3298-episode-switch-reentry.md) | ✅ | ✅ | 视频换集 _switchEpisode 无防重入 |
 | [BUG-3297](bugs/BUG-3297-subtitle-list-open-remeasure.md) | ✅ | ✅ | 视频字幕列表每次打开都把当前句之前的行重新排版两遍 |
 | [BUG-3296](bugs/BUG-3296-video-enhance-off-vertical-squash.md) | 🚧 | 🚧 | Windows 关闭画质增强后画面纵向被压扁约 0.74% |
 | [BUG-3295](bugs/BUG-3295-ios-popup-m3e-color.md) | 🚧 | 🚧 | iOS 查词框没有上 M3E 着色（未复现） |

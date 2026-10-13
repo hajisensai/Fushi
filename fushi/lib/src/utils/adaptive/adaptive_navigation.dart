@@ -996,35 +996,44 @@ class _MaterialNavCluster extends StatelessWidget {
                       // 溢出（左侧导航底部 overflow）。改用 SingleChildScrollView 让 tile 在窗口
                       // 过矮时滚动。
                       Expanded(
-                        child: SingleChildScrollView(
-                          // 侧栏同样只有一枚在项间纵向滑动的指示器（2026-10-06
-                          // 用户「侧边栏也要有切换动画」）：收起 rail 的 56×32
-                          // 药丸、展开 rail 的整行药丸都由它滑过去，选中项超出
-                          // 可视区时自动滚进来。Apple 设计系统的行不登记药丸槽，
-                          // 滑块不画。
-                          child: _SlidingIndicatorScope(
-                            selectedId:
-                                currentIndex >= 0 && currentIndex < items.length
-                                ? FushiFocusId('$idPrefix-$currentIndex')
-                                : null,
-                            color: isEinkTheme(context)
-                                ? colors.onSurface
-                                : colors.secondaryContainer,
-                            child: Column(
-                              children: <Widget>[
-                                const SizedBox(height: 8),
-                                for (final Widget tile in buildTiles(
-                                  cellWidth: null,
-                                ))
-                                  Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      vertical: glassDesign
-                                          ? 1
-                                          : (railExtended ? 0 : 6),
+                        // 反馈 #ChIDEam2hf：桌面默认会给 SingleChildScrollView 画常驻滚动条，
+                        // 项高只差一点点溢出时就整条竖线立在侧栏上，既多余又难看。侧栏
+                        // 只靠滚轮 / 触摸 / 焦点自动滚入滚动，不画滚动条。
+                        child: ScrollConfiguration(
+                          behavior: ScrollConfiguration.of(
+                            context,
+                          ).copyWith(scrollbars: false),
+                          child: SingleChildScrollView(
+                            // 侧栏同样只有一枚在项间纵向滑动的指示器（2026-10-06
+                            // 用户「侧边栏也要有切换动画」）：收起 rail 的 56×32
+                            // 药丸、展开 rail 的整行药丸都由它滑过去，选中项超出
+                            // 可视区时自动滚进来。Apple 设计系统的行不登记药丸槽，
+                            // 滑块不画。
+                            child: _SlidingIndicatorScope(
+                              selectedId:
+                                  currentIndex >= 0 &&
+                                      currentIndex < items.length
+                                  ? FushiFocusId('$idPrefix-$currentIndex')
+                                  : null,
+                              color: isEinkTheme(context)
+                                  ? colors.onSurface
+                                  : colors.secondaryContainer,
+                              child: Column(
+                                children: <Widget>[
+                                  const SizedBox(height: 8),
+                                  for (final Widget tile in buildTiles(
+                                    cellWidth: null,
+                                  ))
+                                    Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        vertical: glassDesign
+                                            ? 1
+                                            : (railExtended ? 0 : 3),
+                                      ),
+                                      child: tile,
                                     ),
-                                    child: tile,
-                                  ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
