@@ -1,0 +1,23 @@
+## BUG-3311 · android-video-lookup-word-audio-ducks-video
+- **报告**：2026-10-10（反馈 #D5hTCEYMmT，Android 16 / 联想 TB322FC ZUI）：视频页查词时弹窗自动发音，视频音量被压低，发音播完数秒后才恢复。
+- **真实性**：✅ 真 bug（焦点申请在模拟器上实测复现；「压低视频」这一步是 ROM 策略，AOSP 不复现，见下）。
+  - 单词音频自 PR#278 起统一由弹窗 WebView 的 HTML5 `<audio>` 播放（`fushi/assets/popup/popup.js` `playWordAudio`；自动发音经 `fushi/lib/src/utils/misc/lookup_audio_playback.dart` `autoReadWordUnified` → `DictionaryPopupWebViewState.playWordAudioUrl` 驱动同一函数）。
+  - Android WebView 的 `<audio>` 一出声，Chromium `AudioFocusDelegate` 就以 `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` 申请系统音频焦点，宿主没有开关能关。实测（API 36 / API 34 x86_64 模拟器，`integration_test/video_lookup_audio_duck_itest.dart` + 并行轮询 `dumpsys audio`）：
+    - `requestAudioFocus() from uid/pid 10218/5702 AA=USAGE_MEDIA/CONTENT_TYPE_UNKNOWN clientId=...org.chromium.content.browser.AudioFocusDelegate@7f81f69 callingPack=app.fushi.reader req=3`
+    - 焦点栈：`pack: app.fushi.reader -- client: ...AudioFocusDelegate... -- gain: GAIN_TRANSIENT_MAY_DUCK`
+    - 1.5 s 的词音频，约 1.65–1.9 s 后才 `abandonAudioFocus()`。
+  - 视频（mpv，`OpenSL ES AudioPlayer` piid）自身从不申请焦点。AOSP 的 `PlaybackActivityMonitor.duckPlayers` 不 duck 与赢家同 uid 的播放器，所以模拟器上 `ducked players piids` 恒空、视频不被压低；联想 ZUI 则据这次 MAY_DUCK 申请把整路媒体（含 app 自己的视频）压低并渐变恢复——反馈人贴的焦点栈与上面逐字一致。根因在我方：读一个一秒的词不该向系统申请 duck 焦点。
+- **[x] ① 已修复**（98f81fb4f5）— Android 主引擎上单词音频改交原生 `TtsChannelHandler` MediaPlayer（`USAGE_MEDIA/CONTENT_TYPE_SPEECH`，不申请焦点）：
+  - 判据 `lookupWordAudioPlaysNatively`（`lookup_audio_playback.dart`）= `TtsChannel.hostPlaybackRegistered`，只有注册了原生 handler 的主引擎（`lib/main.dart` 调 `TtsChannel.markHostPlaybackRegistered()`）为真；弹窗词典 / 悬浮词典副引擎没有该 handler，照旧走 `<audio>`。
+  - 自动发音：`autoReadWordUnified` 在原生路由下跳过 WebView，直接 `TtsChannel.playAudioRef(ref)`。
+  - 手动 ♪ / 选源菜单：`popup_settings_injection.dart` 注入 `window.__fushiWordAudioViaHost`，popup.js `playWordAudio` 据此经新桥 `playWordAudioNative`（`dictionary_popup_webview.dart`）交原生播放；`data:` URL 由 `webViewWordAudioUrlToPlayableRef` 解码到按内容寻址的临时文件。宿主报失败 / 桥异常才回落 `<audio>`，不会哑。
+  - 修复后同一探针：`[duck]` 两轮时刻 focus commands 日志**零条** app.fushi.reader 记录、焦点栈全程空（517 次轮询），发音播放器为 `piid:143 type:android.media.MediaPlayer state:started usage=USAGE_MEDIA content=CONTENT_TYPE_SPEECH`。
+  - 有声书（just_audio + `audio_session`，`audiobook_controller.dart` `_configureAudioSession`）与制卡试听 / 录音页的焦点配置未改动。
+- **[x] ② 已加自动化测试**（98f81fb4f5）— `fushi/test/utils/misc/lookup_word_audio_native_route_test.dart`（data:/http → 可播 ref 行为 + 四处接线守卫）；`tools/browser-extension/word-audio.test.js`（真执行 popup.js：开关开时只走宿主桥不构造 `Audio`、宿主失败 / 桥抛错回落 `Audio`、未注入时照旧）；真机探针 `fushi/integration_test/video_lookup_audio_duck_itest.dart`。
+- **审查返工（PR #2105）**：
+  - 原生 `TtsChannelHandler.startPlayback` 以前在 `prepareAsync()` 之后立刻答 true：远端源 404 / 断网 / 编码不支持时弹窗当成功，既不回落 `<audio>` 也不 `showAudioError`，自动发音的 BUG-1127 去重窗口也被假成功占住。改为答复推迟到 `onPrepared` 里 `start()` 成功（true），`onError` / 被下一次播放或 `stop` 取代时答 false，`finishPendingPlay` 保证每次调用恰好答复一次（同步 `playFile` 路径在 `start()` 后答 true）。
+  - 词典释义里的 `sound://` 链接（MDX 发音）经 `rewriteDictionaryMediaPath` 变成 `image://?dictionary=&path=`，原先原生桥认不出、回落 `<audio>` 照旧申请 MAY_DUCK，且与在播的原生 ♪ 叠播。现在 `webViewWordAudioUrlToPlayableRef` 按与 scheme 拦截器同一口径取词典媒体字节落盘，交同一个原生 MediaPlayer：与 ♪ 同一入口、互相打断。原生播不了的格式（如 Speex `.spx`）仍回落 `<audio>`（Chromium 同样播不了时照旧提示失败）。
+  - `data:` / `image://` 落盘缓存 `systemTemp/fushi_word_audio` 原先只增不删；现在最多留 `kWordAudioCacheMaxFiles`（64）个文件，按 mtime 淘汰最旧，复用即刷新 mtime。
+  - 词典样式预览（`dict_style_preview.dart` `kDictStylePreviewNoopHandlers`）补注册 `playWordAudioNative`（BUG-1918：同一份 popup.js 调了未注册的 handler，Windows 端收到 null 答复会闪退）。
+- **有意的行为变化（取舍）**：Android 主引擎上查词发音**不再申请任何音频焦点**。以前 WebView `<audio>` 的 MAY_DUCK 申请会让系统把有声书 / 后台音乐（别家 app）在发音期间压低；现在一两秒的词音频与它们**全音量叠播**，不再压低。这是为了根除「压低 app 自己的视频」（本 bug）而接受的代价：读一个词不值得打断或压低用户正在听的东西，且无法只压别人不压自己（ROM 按整路媒体压）。弹窗词典 / 悬浮词典副引擎不受影响，仍走 `<audio>`（MAY_DUCK）。
+- **备注**：未在联想 ZUI 真机上验证（本机无 adb 真机）；AOSP 模拟器只能证明「焦点申请已消失」，不能复现 ZUI 的压低本身。弹窗词典 / 悬浮词典（覆盖在其它 app 上）仍经 WebView `<audio>` 申请 MAY_DUCK，那里压低的是别家 app 的音乐，属标准行为，未改。

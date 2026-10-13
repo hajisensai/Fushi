@@ -268,6 +268,9 @@ void main([List<String> args = const <String>[]]) {
     installAsrHostBindings();
     // BUG-3286：Windows 系统文件对话框以主窗为 owner，视频全屏（TOPMOST）时不被压住。
     installWindowsOwnedFilePicker();
+    // 原生 TtsChannelHandler 只挂在主 Activity 引擎上（popupMain 等副引擎没有）；
+    // 单词音频据此改走不申请音频焦点的原生播放器（BUG-3311）。
+    TtsChannel.markHostPlaybackRegistered();
     // 系统「降低透明度」信号（Windows / macOS / iOS），玻璃设计系统据此回退实心。
     unawaited(SystemTransparency.initialize());
     // 用户的模型选择 / 自带模型包住在数据根下，必须在装完数据根解析器之后读。

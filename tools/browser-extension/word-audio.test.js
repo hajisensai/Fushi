@@ -74,7 +74,7 @@ test('resolveWordAudio: background 抛错 (无 responder 抛) → 返回 null（
 // window.__fushiPlayWordAudioUrl）。以下用源码切片在受控 vm 里断言新契约。
 const POPUP_EXPORT = 'window.__fushiPlayWordAudioUrl = playWordAudio;';
 
-function loadPopupPlayer() {
+function loadPopupPlayer(windowInit = {}) {
   const popupSrc = fs.readFileSync(
     path.join(__dirname, 'vendor', 'popup.js'), 'utf8');
   const start = popupSrc.indexOf('function playWordAudio(');
@@ -94,11 +94,11 @@ function loadPopupPlayer() {
       ? Promise.reject(new Error('play failed')) : Promise.resolve();
   };
   FakeAudio.prototype.pause = function () { paused.push(this.url); };
-  const windowObj = {};
+  const windowObj = Object.assign({}, windowInit);
   const ctx = { window: windowObj, Audio: FakeAudio };
   vm.createContext(ctx);
   vm.runInContext(slice, ctx);
-  return { play: windowObj.__fushiPlayWordAudioUrl, played, paused };
+  return { play: windowObj.__fushiPlayWordAudioUrl, played, paused, window: windowObj };
 }
 
 test('playWordAudio(popup): 用 HTML5 Audio 播放并返回 true', async () => {
@@ -123,4 +123,92 @@ test('playWordAudio(popup): 空 url → false 且不构造 Audio', async () => {
 test('playWordAudio(popup): play() 失败 → false（不抛）', async () => {
   const { play } = loadPopupPlayer();
   assert.strictEqual(await play('FAIL'), false);
+});
+
+// BUG-3311：Android app 内宿主注入 __fushiWordAudioViaHost=true 时，单词音频交宿主
+// 原生播放器（不申请音频焦点）——WebView <audio> 会以 GAIN_TRANSIENT_MAY_DUCK 抢焦点，
+// 部分 ROM 据此把 app 自己的视频压低。宿主报失败才回落 <audio>。
+function hostBridge(result) {
+  const calls = [];
+  return {
+    calls,
+    flutter_inappwebview: {
+      callHandler(name, url) {
+        calls.push([name, url]);
+        return typeof result === 'function' ? result() : Promise.resolve(result);
+      },
+    },
+  };
+}
+
+test('playWordAudio(popup): 宿主原生播放开启时不构造 Audio、交 playWordAudioNative', async () => {
+  const bridge = hostBridge(true);
+  const { play, played } = loadPopupPlayer({
+    __fushiWordAudioViaHost: true,
+    flutter_inappwebview: bridge.flutter_inappwebview,
+  });
+  assert.strictEqual(await play('data:audio/mpeg;base64,AAAA'), true);
+  assert.deepStrictEqual(bridge.calls,
+    [['playWordAudioNative', 'data:audio/mpeg;base64,AAAA']]);
+  assert.strictEqual(played.length, 0, '原生播放成功时绝不能再让 WebView <audio> 出声');
+});
+
+test('playWordAudio(popup): 宿主原生播放失败 → 回落 HTML5 Audio', async () => {
+  const bridge = hostBridge(false);
+  const { play, played } = loadPopupPlayer({
+    __fushiWordAudioViaHost: true,
+    flutter_inappwebview: bridge.flutter_inappwebview,
+  });
+  assert.strictEqual(await play('http://h/a'), true);
+  assert.deepStrictEqual(played, ['http://h/a']);
+});
+
+test('playWordAudio(popup): 宿主桥抛错 → 回落 HTML5 Audio', async () => {
+  const bridge = hostBridge(() => Promise.reject(new Error('bridge gone')));
+  const { play, played } = loadPopupPlayer({
+    __fushiWordAudioViaHost: true,
+    flutter_inappwebview: bridge.flutter_inappwebview,
+  });
+  assert.strictEqual(await play('http://h/a'), true);
+  assert.deepStrictEqual(played, ['http://h/a']);
+});
+
+test('playWordAudio(popup): 未注入开关（扩展/桌面）照旧走 HTML5 Audio、不碰宿主桥', async () => {
+  const bridge = hostBridge(true);
+  const { play, played } = loadPopupPlayer({
+    flutter_inappwebview: bridge.flutter_inappwebview,
+  });
+  assert.strictEqual(await play('http://h/a'), true);
+  assert.deepStrictEqual(played, ['http://h/a']);
+  assert.strictEqual(bridge.calls.length, 0);
+});
+
+// PR #2105 审查：宿主原生播放器对远端源（404 / 断网 / 编码不支持）只在真的 start 后才回
+// true，失败回 false。此时回落的 <audio> 若也失败，必须如实回 false 并留下原因（调用方据此
+// showAudioError），不能像宿主「先回 true」时那样静默哑掉、还把 LastError 清空。
+test('playWordAudio(popup): 宿主原生失败且回落 Audio 也失败 → false 并保留失败原因', async () => {
+  const bridge = hostBridge(false);
+  const { play, played, window: w } = loadPopupPlayer({
+    __fushiWordAudioViaHost: true,
+    flutter_inappwebview: bridge.flutter_inappwebview,
+    __fushiWordAudioLastError: '',
+  });
+  assert.strictEqual(await play('FAIL'), false);
+  assert.deepStrictEqual(bridge.calls, [['playWordAudioNative', 'FAIL']]);
+  assert.deepStrictEqual(played, ['FAIL']);
+  assert.ok(w.__fushiWordAudioLastError, '失败原因必须留在 __fushiWordAudioLastError');
+});
+
+// sound:// 词典发音链接改写成 image://?dictionary=&path= 后同样交宿主原生播放器（与 ♪ 同一
+// 入口、同一停止语义），宿主能播时绝不再让 WebView <audio> 出声叠播。
+test('playWordAudio(popup): image:// 词典媒体 URL 同样只走宿主桥', async () => {
+  const bridge = hostBridge(true);
+  const url = 'image://?dictionary=MDX&path=snd%2Fa.spx';
+  const { play, played } = loadPopupPlayer({
+    __fushiWordAudioViaHost: true,
+    flutter_inappwebview: bridge.flutter_inappwebview,
+  });
+  assert.strictEqual(await play(url), true);
+  assert.deepStrictEqual(bridge.calls, [['playWordAudioNative', url]]);
+  assert.strictEqual(played.length, 0);
 });

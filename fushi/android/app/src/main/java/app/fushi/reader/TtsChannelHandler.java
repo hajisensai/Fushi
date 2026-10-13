@@ -46,6 +46,12 @@ public class TtsChannelHandler {
     // 每次 play/stop 自增；prepareAsync/completion/error 回调对比提交时的世代，
     // 让被后续播放/停止取代的旧回调直接 bail，不误动已复用的 player。
     private int playGeneration = 0;
+    // 当前这一次 playUrl/playFile 还没答复的 result。答复的语义是「真的开始播了」：
+    // 远端源 prepareAsync 要等 onPrepared 里 start 成功才回 true，onError / 被下一次
+    // 播放或 stop 取代时回 false（BUG-3311 审查：以前 prepareAsync 一返回就回 true，
+    // 404 / 断网 / 解码不支持全被当成成功，弹窗不回落也不提示）。只经
+    // [finishPendingPlay] 答复，保证每个 result 恰好答复一次。
+    private MethodChannel.Result pendingPlayResult;
     private final List<SQLiteDatabase> localAudioDbs = new ArrayList<>();
     private final List<String> localAudioDbPaths = new ArrayList<>();
     // 与 localAudioDbs 同 index 对齐：每库启用子来源的优先级序（首=最高）。
@@ -115,6 +121,7 @@ public class TtsChannelHandler {
         ioExecutor.shutdownNow();
         // 让在途回调失效后再释放唯一实例（最终拆除，不再复用）。
         playGeneration++;
+        finishPendingPlay(false);
         if (mediaPlayer != null) {
             mediaPlayer.release();
             mediaPlayer = null;
@@ -173,6 +180,8 @@ public class TtsChannelHandler {
         // 让任何在途的 prepareAsync/completion 回调失效，再 reset() 回 Idle 复用，
         // 不 release（实例留到 destroy 才释放）。
         playGeneration++;
+        // 还在 prepare 的那一次被 stop 取代：它从未出声，调用方拿 false。
+        finishPendingPlay(false);
         if (mediaPlayer != null) {
             try {
                 mediaPlayer.reset();
@@ -197,6 +206,8 @@ public class TtsChannelHandler {
     /// reset→setDataSource→prepare(Async)→start。每次自增 playGeneration，回调
     /// 比对世代后才动 player，使被后续播放/停止取代的旧回调直接 bail（TODO-744）。
     /// [async] = true 用 prepareAsync（远程 URL），false 用同步 prepare（本地文件）。
+    /// [result] 答复「是否真的开始播放」：async 时推迟到 onPrepared 里 start 成功
+    /// （true）或 onError / 被取代（false），见 [pendingPlayResult]。
     private void startPlayback(String dataSource, float volume, boolean async,
                                String tag, MethodChannel.Result result) {
         if (dataSource == null || dataSource.isEmpty()) {
@@ -204,6 +215,9 @@ public class TtsChannelHandler {
             return;
         }
         final int generation = ++playGeneration;
+        // 上一次还在 prepare 就被本次取代：它从未出声，先给它答 false。
+        finishPendingPlay(false);
+        pendingPlayResult = result;
         try {
             MediaPlayer mp = ensureMediaPlayer();
             // Idle 状态（new / reset 后）：可安全设置 attributes / dataSource。
@@ -217,11 +231,15 @@ public class TtsChannelHandler {
             mp.setVolume(volume, volume);
             mp.setOnPreparedListener(p -> {
                 // 被取代则不要 start（player 可能已被下一次播放重置）。
+                // 被取代者的 result 已在取代时答过 false。
                 if (generation != playGeneration) return;
                 try {
                     p.start();
+                    finishPendingPlay(true);
                 } catch (IllegalStateException e) {
                     android.util.Log.w("hibiki-audio", tag + " start failed", e);
+                    resetMediaPlayerQuietly();
+                    finishPendingPlay(false);
                 }
             });
             // 播完不 release，reset() 回 Idle 留待下次复用（仅当世代未变）。
@@ -232,24 +250,39 @@ public class TtsChannelHandler {
             mp.setOnErrorListener((p, what, extra) -> {
                 // 出错后 player 进入 Error 态，必须 reset() 才能再次复用。
                 if (generation == playGeneration) {
+                    android.util.Log.w("hibiki-audio",
+                        tag + " error what=" + what + " extra=" + extra);
                     resetMediaPlayerQuietly();
+                    // prepare 阶段出错（404 / 断网 / 不支持的编码）= 从未开播：答 false，
+                    // 弹窗据此回落 <audio> 并在仍失败时提示。已开播后的出错 result
+                    // 早已答过 true，这里是 no-op。
+                    finishPendingPlay(false);
                 }
                 return true;
             });
             if (async) {
+                // 答复推迟到 onPrepared / onError。
                 mp.prepareAsync();
             } else {
                 mp.prepare();
                 // 同步 prepare 返回即 Prepared，回调不会触发，这里直接 start。
-                if (generation == playGeneration) mp.start();
+                mp.start();
+                finishPendingPlay(true);
             }
-            result.success(true);
         } catch (Exception e) {
             android.util.Log.w("hibiki-audio", tag + " failed", e);
             // 失败后把 player 拉回干净的 Idle 态，避免污染下次复用。
             resetMediaPlayerQuietly();
-            result.success(false);
+            finishPendingPlay(false);
         }
+    }
+
+    /// 答复当前在途的那一次播放（若还没答复过）并清空，保证每个 result 恰好答复
+    /// 一次。只在主线程调用（method-channel 入口与 MediaPlayer 回调都在主 Looper）。
+    private void finishPendingPlay(boolean started) {
+        MethodChannel.Result pending = pendingPlayResult;
+        pendingPlayResult = null;
+        if (pending != null) pending.success(started);
     }
 
     /// 懒创建唯一的 MediaPlayer 实例（仅在主线程调用）。

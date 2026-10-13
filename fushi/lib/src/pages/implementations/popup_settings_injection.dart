@@ -28,6 +28,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_native_material.dart';
 import 'package:fushi/src/utils/popup_theme_css.dart';
+import 'package:fushi/src/utils/misc/lookup_audio_playback.dart'
+    show lookupWordAudioPlaysNatively;
 import 'package:fushi/src/reader/dictionary_font_css.dart';
 import 'package:fushi/src/reader/dictionary_language_css.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -1074,6 +1076,10 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.audioSources = $audioSourcesJson;
     window.needsAudio = true;
     window.lookupAudioVolume = $lookupAudioVolume;
+    // BUG-3311：Android 主引擎上单词音频交宿主原生播放器（不申请音频焦点）；
+    // WebView <audio> 会以 GAIN_TRANSIENT_MAY_DUCK 抢焦点、让部分 ROM 把 app 自己的
+    // 视频压低。见 lookupWordAudioPlaysNatively。
+    window.__fushiWordAudioViaHost = $lookupWordAudioPlaysNatively;
     window.i18nNoAudioAvailable = ${jsonEncode(t.popup_no_audio_available)};
     // BUG-1908：制卡失败在浮窗里的兜底文案（宿主没给出具体原因时用）。
     // galgame 浮窗是独立 native WebView2 窗口，宿主的 Flutter toast 画在主 app 窗口上，

@@ -259,6 +259,9 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
   'openMinedNote',
   'openSentenceContextModal',
   'overwriteTargetNoteId',
+  // BUG-3311：Android 主引擎上 popup.js 把单词音频交宿主原生播放器。预览不出声，
+  // 回 null（非 true）→ popup.js 回落 <audio>，与预览里其它播音桥同样 no-op。
+  'playWordAudioNative',
   // 裁剪模式（宿主调 __fushiSetVisibleViewportHeight）才会复报内容高度；预览
   // WebView 占满自身区域、不裁剪，也没有外壳高度可重算，与 popupRendered 同样 no-op。
   'popupContentResized',

@@ -3050,10 +3050,31 @@ JSON.stringify((function(){
           },
         );
 
-        // Word audio no longer round-trips to a native/libmpv player: popup.js
-        // plays the resolved URL itself with an HTML5 <audio> element (unified
-        // with the browser extension and every desktop surface — see
-        // resolveWordAudioWebViewUrl). The old `playWordAudio` handler is gone.
+        // Word audio normally plays in popup.js itself with an HTML5 <audio>
+        // element (unified with the browser extension and every desktop
+        // surface — see resolveWordAudioWebViewUrl). Exception (BUG-3311): on
+        // the Android main engine the host injects
+        // `window.__fushiWordAudioViaHost` and popup.js hands the URL back here,
+        // because WebView <audio> requests GAIN_TRANSIENT_MAY_DUCK audio focus
+        // and some ROMs duck the app's own video with it. The native
+        // MediaPlayer requests no focus. Returns whether playback started;
+        // popup.js falls back to <audio> on false.
+        controller.addJavaScriptHandler(
+          handlerName: 'playWordAudioNative',
+          callback: (args) async {
+            return _guardJsBridge<bool>(
+              'DictPopupWebview.playWordAudioNative',
+              false,
+              ErrorLogService.instance,
+              () async {
+                if (!lookupWordAudioPlaysNatively) return false;
+                final Object? url = args.isNotEmpty ? args[0] : null;
+                if (url is! String || url.isEmpty) return false;
+                return playWordAudioUrlNatively(url);
+              },
+            );
+          },
+        );
       },
       onLoadStart: (controller, url) {
         if (!mounted || !_isCurrentPopupController(controller)) return;
