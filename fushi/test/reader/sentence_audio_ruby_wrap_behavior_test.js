@@ -37,6 +37,18 @@ const source = readSrc('reader_pagination_scripts.dart') + '\n' + gapSource;
 const vnSource = readSrc('reader_visual_novel_scripts.dart') + '\n' + gapSource;
 const selectionSource = readSrc('reader_selection_scripts.dart');
 
+// 阅读器共享的切开 / 搬移保护（reader_selection_scripts.dart 的 __fushiLiveRanges 安装器），
+// 从工作区源码原样切出，与查词选区的 noteTextNodeSplit 一起装进每个 fake 阅读器。
+const liveRangesInstaller = (() => {
+  const src = selectionSource.replace(/\r/g, '');
+  const start = src.indexOf('if (!window.__fushiLiveRanges) {');
+  assert.ok(start >= 0, 'missing __fushiLiveRanges installer');
+  const endMarker = '\n  };\n}';
+  const end = src.indexOf(endMarker, start);
+  assert.ok(end > start, 'missing end of the __fushiLiveRanges installer');
+  return src.slice(start, end + endMarker.length);
+})();
+
 function extractMethod(name, from) {
   const re = new RegExp('\\n  ' + name + ': function\\([\\s\\S]*?\\n  \\},');
   // `.map(extractMethod)` passes the array index as the second argument.
@@ -276,6 +288,14 @@ function baseTextNodes(root) {
   return out;
 }
 
+// 选区脚本那一侧：共享的切开 / 搬移保护 + 查词选区的拥有者（只取拆分换算入口；clearSelection
+// 照生产语义清掉「节点 + 偏移」状态——分页的 applySentenceAudioCues 包裹前先清选区）。
+function installSelectionSide(sandbox) {
+  vm.runInContext(liveRangesInstaller, sandbox);
+  vm.runInContext('window.fushiSelection = {\n' + extractMethod('noteTextNodeSplit', selectionSource) +
+    ',\n  clearSelection: function() { this.selection = null; this.dragAnchor = null; }\n};', sandbox);
+}
+
 function makeReader(cueRoots) {
   const sandbox = {
     document: { createRange: () => new Range(), createElement: (t) => new Element(t), documentElement: {},
@@ -295,13 +315,14 @@ function makeReader(cueRoots) {
     'fillSentenceAudioRubyGaps', 'watchSentenceAudioRubyGapLayout', 'paintSentenceAudioRubyGaps',
     'eraseSentenceAudioRubyGaps', 'clearSentenceAudioRubyGaps', '_setReanchorPending',
     'sentenceAudioLineRects', 'sentenceAudioSameLine', 'sentenceAudioJoinGap', 'splitSentenceAudioJoinLines',
-    'splitSentenceAudioWrapper', 'splitSentenceAudioText', 'sentenceAudioLiveRanges', 'moveSentenceAudioNodesKeepingRanges']
+    'splitSentenceAudioWrapper', 'wrapSentenceAudioGroup']
     .map(extractMethod).join(',\n');
   vm.runInContext('var R = {\n' + methods + '\n};', sandbox);
-  // 查词选区的拥有者（reader_selection_scripts.dart）：只取文本节点拆分时的换算入口。
-  vm.runInContext('window.fushiSelection = {\n' + extractMethod('noteTextNodeSplit', selectionSource) + '\n};', sandbox);
+  installSelectionSide(sandbox);
   const R = sandbox.R;
+  sandbox.window.fushiReader = R;
   R.testWindow = sandbox.window;
+  R.testSandbox = sandbox;
   R.cueWrappers = new Map();
   R.cueRubyElements = new Map();
   R.resetSentenceAudioCues = () => {};
@@ -529,11 +550,15 @@ function makeVnReader() {
     .concat(['sentenceAudioWrapItems', 'sentenceAudioInlineGap', 'rubyForNode', 'fillSentenceAudioRubyGaps',
       'watchSentenceAudioRubyGapLayout', 'paintSentenceAudioRubyGaps', 'eraseSentenceAudioRubyGaps',
       'clearSentenceAudioRubyGaps', 'sentenceAudioLineRects', 'sentenceAudioSameLine', 'sentenceAudioJoinGap',
-      'splitSentenceAudioJoinLines', 'splitSentenceAudioWrapper', 'splitSentenceAudioText', 'sentenceAudioLiveRanges',
-      'moveSentenceAudioNodesKeepingRanges'].map((n) => extractMethod(n, gapSource)))
+      'splitSentenceAudioJoinLines', 'splitSentenceAudioWrapper', 'wrapSentenceAudioGroup']
+      .map((n) => extractMethod(n, gapSource)))
     .join(',\n');
   vm.runInContext('var R = {\n' + methods + '\n};', sandbox);
+  installSelectionSide(sandbox);
   const R = sandbox.R;
+  sandbox.window.fushiReader = R;
+  R.testWindow = sandbox.window;
+  R.testSandbox = sandbox;
   R.cueWrappers = new Map();
   R.cueSourceRanges = new Map();
   return R;
@@ -721,6 +746,85 @@ const joins = (w) => (w.classList.contains(JOIN_S) ? 'S' : '-') + (w.classList.c
   assert.deepStrictEqual(Array.from(ws, joins), ['--', '--'], 'content in between is not a joint');
   ws.forEach((w) => assert.ok(!w.style.boxShadow, 'the in-between image is never painted with the highlight'));
   assert.strictEqual(ws.length, 2);
+}
+
+// ── BUG-3326 审查（#2115 / #2119 同类）：句子包裹不再用 extractContents ──
+// extractContents 把切点之后的文字复制进新文本节点、原节点就地截短：查词选区的「节点 + 偏移」越界，
+// 落在这段文字里的 live Range 塌到切点上。包裹改为「切开（选区换算）+ 原样搬节点（live Range 写回）」，
+// 两步都经选区脚本里共享的 __fushiLiveRanges。
+const segText = (segs) => segs.map((s) => {
+  assert.ok(s.start >= 0 && s.start < s.end && s.end <= s.node.nodeValue.length,
+    'segment offsets stay inside their text node: ' + s.node.nodeValue + ' [' + s.start + ',' + s.end + ')');
+  return s.node.nodeValue.slice(s.start, s.end);
+}).join('');
+const rangeText = (r) => (r.startContainer === r.endContainer
+  ? r.startContainer.nodeValue.slice(r.startOffset, r.endOffset)
+  : r.startContainer.nodeValue.slice(r.startOffset) + r.endContainer.nodeValue.slice(0, r.endOffset));
+
+// 16. VN 播放中按句懒包裹（ensureSentenceAudioInlineTargetsForCue）时已有查词选区（关掉「查词时暂停」
+//     边播边点词）、收藏（高亮桥还没合批登记的 Range 表）与搜索高亮（CSS.highlights）。
+{
+  const t = new Text('前の文。学校で会話だ');
+  const r = ruby('稀', 'まれ');
+  const p = el('p', [t, r, 'なんだ。']);
+  const R = makeVnReader();
+  const S = R.testWindow.fushiSelection;
+  S.selection = {
+    startNode: t, startOffset: 5, text: '校で',
+    ranges: [{ node: t, start: 5, end: 7 }],
+    matchedRanges: [{ node: t, start: 2, end: 6 }],
+  };
+  S.dragAnchor = { node: t, offset: 5, endNode: t, endOffset: 6, startX: 0, startY: 0, moved: false };
+  const favorite = new LiveRange(t, 5, t, 9);
+  const search = new LiveRange(t, 4, t, 6);
+  R.testWindow.__fushiHighlightRangeMap = { fav: { color: 'yellow', ranges: [favorite], rubyElements: [] } };
+  R.testSandbox.CSS = { highlights: new Map([['fushi-search', new Set([search])]]) };
+  R.wrapSentenceAudioCueRanges([{
+    id: 'v2',
+    ranges: [{ node: t, start: 4, end: t.nodeValue.length }, { node: r.childNodes[0], start: 0, end: 1 }],
+  }]);
+  const ws = R.cueWrappers.get('v2');
+  assert.deepStrictEqual(Array.from(ws, (w) => w.textContent), ['学校で会話だ', '稀']);
+  assert.strictEqual(t.nodeValue, '前の文。', 'the head of the split keeps its identity and stays in place');
+  const inWrapper = ws[0].childNodes[0];
+  assert.strictEqual(ws[0].childNodes.length, 1, 'the wrapped text is moved, not copied');
+  assert.strictEqual(inWrapper.nodeValue, '学校で会話だ');
+  assert.strictEqual(S.selection.startNode, inWrapper, 'selection start follows the split into the wrapped node');
+  assert.strictEqual(S.selection.startOffset, 1);
+  assert.strictEqual(segText(S.selection.ranges), '校で', 'selected text unchanged by the wrap');
+  assert.strictEqual(segText(S.selection.matchedRanges), '文。学校', 'a matched segment across the cut is split in two');
+  assert.strictEqual(S.selection.matchedRanges.length, 2);
+  assert.deepStrictEqual([S.dragAnchor.node === inWrapper, S.dragAnchor.offset, S.dragAnchor.endNode === inWrapper,
+    S.dragAnchor.endOffset], [true, 1, true, 2], 'drag anchor follows the split');
+  assert.ok(favorite.startContainer === inWrapper && favorite.endContainer === inWrapper,
+    'a pending favourite Range is not collapsed onto the paragraph by the move');
+  assert.strictEqual(rangeText(favorite), '校で会話');
+  assert.strictEqual(search.startContainer, t, 'a boundary outside the moved node keeps its DOM-adjusted position');
+  assert.strictEqual(search.endContainer, inWrapper);
+  assert.strictEqual(rangeText(search), '学校', 'the search highlight still covers the same text');
+  assert.strictEqual(p.textContent, '前の文。学校で会話だ稀まれなんだ。', 'text preserved in order');
+  liveRanges.length = 0;
+}
+
+// 17. 分页 / 连续：applySentenceAudioCues 包裹前会清掉查词选区，但收藏等 live Range 照样不能塌。
+{
+  const t = new Text('前の文。学校で会話だ');
+  const p = el('p', [t]);
+  const R = makeReader({});
+  R.collectSentenceAudioCueRanges = () => [{ id: 'c17', ranges: [{ node: t, start: 4, end: 9 }] }];
+  const favorite = new LiveRange(t, 2, t, 6);
+  R.testWindow.__fushiHighlightRangeMap = { fav: { color: 'yellow', ranges: [favorite], rubyElements: [] } };
+  R.applySentenceAudioCues([{ id: 'c17' }]);
+  const ws = R.cueWrappers.get('c17');
+  assert.strictEqual(ws.length, 1);
+  assert.strictEqual(ws[0].textContent, '学校で会話');
+  assert.deepStrictEqual(p.childNodes.map((n) => n.textContent), ['前の文。', '学校で会話', 'だ'],
+    'both cuts split in place, no empty leftovers');
+  assert.strictEqual(favorite.startContainer, t);
+  assert.strictEqual(favorite.startOffset, 2);
+  assert.strictEqual(favorite.endContainer, ws[0].childNodes[0]);
+  assert.strictEqual(rangeText(favorite), '文。学校', 'the favourite across the cut still covers the same text');
+  liveRanges.length = 0;
 }
 
 console.log('all assertions passed');

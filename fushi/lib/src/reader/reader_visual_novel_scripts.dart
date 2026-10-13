@@ -3011,7 +3011,6 @@ $sharedInitViewport
   },
   wrapSentenceAudioCueRanges: function(cueRanges) {
     var wrapped = new Map();
-    var range = document.createRange();
     for (var i = cueRanges.length - 1; i >= 0; i--) {
       var id = cueRanges[i].id;
       var ranges = cueRanges[i].ranges;
@@ -3019,18 +3018,14 @@ $sharedInitViewport
       // BUG-2917：与分页 / 连续模式同一套分组（sentenceAudioWrapItems）——同一父节点下
       // 相邻的片段整组包进一个 wrapper，ruby 内基字就地单独包、ruby 不移动；逐段各包一个
       // wrapper 时竖排注音处整句高亮断成一截一截。
+      // 播放中按句懒包裹（ensureSentenceAudioInlineTargetsForCue），此时可能已有查词选区 / 原生选区：
+      // 走共享的 wrapSentenceAudioGroup（切开 / 搬移经 __fushiLiveRanges），不用 extractContents。
       var items = this.sentenceAudioWrapItems(ranges);
       var wrappers = [];
       for (var g = items.length - 1; g >= 0; g--) {
-        var first = items[g][0];
-        var last = items[g][items[g].length - 1];
-        range.setStart(first.node, first.start);
-        range.setEnd(last.node, last.end);
         var wrapper = document.createElement('span');
         wrapper.className = 'fushi-sentence-audio-cue';
-        wrapper.appendChild(range.extractContents());
-        range.insertNode(wrapper);
-        wrappers.push(wrapper);
+        wrappers.push(this.wrapSentenceAudioGroup(items[g], wrapper));
       }
       wrappers.reverse();
       this.cueWrappers.set(id, wrappers);

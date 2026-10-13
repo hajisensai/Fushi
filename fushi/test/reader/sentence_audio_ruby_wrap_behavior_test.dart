@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
+import 'package:fushi/src/reader/reader_selection_scripts.dart';
+import 'package:fushi/src/reader/reader_sentence_audio_ruby_gap_script.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 
@@ -64,6 +66,77 @@ void main() {
       shells['vn'],
       contains('this.fillSentenceAudioRubyGaps(wrappers)'),
       reason: 'VN must fill ruby gaps after activating a cue',
+    );
+  });
+
+  // BUG-3326 审查（#2115 / #2119 同类）：句子包裹曾用 Range.extractContents——它把切点两侧的
+  // 文字复制成新文本节点、原节点就地截短，VN 播放中懒包裹时查词选区的「节点 + 偏移」越界、收藏 /
+  // 搜索高亮与原生选区塌缩。三个 shell 必须都走共享的 wrapSentenceAudioGroup，正文的切开 / 搬移
+  // 只经选区脚本里的 __fushiLiveRanges（行为由同名 .js 用 node 真跑）。
+  test('BUG-3326 review: sentence wrapping splits and moves text only through '
+      '__fushiLiveRanges, never extractContents', () {
+    String slice(String source, String from, String to) {
+      final int start = source.indexOf(from);
+      expect(start, isNonNegative, reason: 'missing $from');
+      final int end = source.indexOf(to, start);
+      expect(end, greaterThan(start), reason: 'missing $to after $from');
+      return source.substring(start, end);
+    }
+
+    final Map<String, String> wrapBodies = <String, String>{
+      'paginated': slice(
+        ReaderPaginationScripts.paginatedShellSource(),
+        'applySentenceAudioCues: function',
+        'highlightSentenceAudioCue: function',
+      ),
+      'continuous': slice(
+        ReaderPaginationScripts.continuousShellSource(),
+        'applySentenceAudioCues: function',
+        'highlightSentenceAudioCue: function',
+      ),
+      'vn': slice(
+        ReaderVisualNovelScripts.vnShellScript(),
+        'wrapSentenceAudioCueRanges: function',
+        'prepareSentenceAudioInlineTargets: function',
+      ),
+    };
+    for (final MapEntry<String, String> body in wrapBodies.entries) {
+      expect(
+        body.value,
+        contains('this.wrapSentenceAudioGroup(items[g], wrapper)'),
+        reason: '${body.key} must wrap through the shared helper',
+      );
+      expect(
+        body.value,
+        isNot(contains('extractContents(')),
+        reason: '${body.key} must not copy book text with extractContents',
+      );
+    }
+    expect(kSentenceAudioRubyGapJs, isNot(contains('extractContents(')));
+    expect(
+      RegExp(r'(?<!guard)\.splitText\(').hasMatch(kSentenceAudioRubyGapJs),
+      isFalse,
+      reason: 'text nodes are split only via __fushiLiveRanges.splitText',
+    );
+    expect(kSentenceAudioRubyGapJs, contains('guard.moveNodes('));
+
+    final String selection = ReaderSelectionScripts.source();
+    final int guardAt = selection.indexOf('if (!window.__fushiLiveRanges) {');
+    expect(guardAt, isNonNegative);
+    expect(
+      guardAt,
+      lessThan(
+        selection.indexOf(
+          "if (typeof window.__fushiEnsureHighlightPaintable !== 'function')",
+        ),
+      ),
+      reason: 'the guard is installed before the helper that uses it',
+    );
+    expect(
+      selection,
+      contains('window.__fushiLiveRanges.moveNodes([node], function() {'),
+      reason: 'the <fushi-hl-text> move keeps live Ranges and the native '
+          'selection',
     );
   });
 

@@ -8,8 +8,8 @@
 /// 这些方法自己按需创建。
 const String kSentenceAudioRubyGapJs = r'''
   // BUG-2780 / BUG-2806：把一条 cue 的文本片段（文档序）折成「可整体包裹」的分组：相邻两项
-  // 父节点相同就并进同一组，组内首尾之间的兄弟节点全部被完整包含（range 两端落在同一父节点
-  // 的子节点上），extractContents 不会拆开书的元素。ruby 内的基字片段各自单独成组（wrapper
+  // 父节点相同就并进同一组，组内首尾之间的兄弟节点全部被完整包含（两端落在同一父节点
+  // 的子节点上），包裹不会拆开书的元素。ruby 内的基字片段各自单独成组（wrapper
   // 落在 ruby / rb 里、不跨 rt），ruby 本身永远不被移动（见 applySentenceAudioCues）。
   sentenceAudioWrapItems: function(segments) {
     var groups = [];
@@ -32,6 +32,33 @@ const String kSentenceAudioRubyGapJs = r'''
       }
     }
     return groups;
+  },
+  // 把 sentenceAudioWrapItems 的一组（首尾同一父节点、文档序）原地包进 wrapper。不用
+  // Range.extractContents：它把切点两侧的文字复制成新文本节点、原节点就地截短——VN 在播放中
+  // 按句懒包裹，此时的查词选区（「文本节点 + 偏移」）偏移越界，落在这段文字里的收藏 / 搜索高亮与
+  // 原生选区塌缩。改为先在首尾切点切开文本节点，再把首尾之间的兄弟节点原样搬进 wrapper，两步都经
+  // 阅读器共享的 __fushiLiveRanges（选区换算 + live Range 保护），节点身份不变。
+  // 调用方倒序处理各组：切开只改切点之后的节点，前面各组记下的「节点 + 偏移」仍然有效。
+  wrapSentenceAudioGroup: function(group, wrapper) {
+    var guard = window.__fushiLiveRanges;
+    var first = group[0];
+    var last = group[group.length - 1];
+    var endNode = last.node;
+    if (last.end < endNode.data.length) guard.splitText(endNode, last.end);
+    var startNode = first.start > 0 ? guard.splitText(first.node, first.start) : first.node;
+    if (first.node === last.node) endNode = startNode;
+    var parent = startNode.parentNode;
+    var moved = [];
+    for (var n = startNode; n; n = n.nextSibling) {
+      moved.push(n);
+      if (n === endNode) break;
+    }
+    if (moved[moved.length - 1] !== endNode) throw new Error('sentence audio group is not one sibling run');
+    guard.moveNodes(moved, function() {
+      parent.insertBefore(wrapper, startNode);
+      moved.forEach(function(m) { wrapper.appendChild(m); });
+    });
+    return wrapper;
   },
   // 两项之间的兄弟节点都是行内内容才并组（夹着块级元素就断开，不把块包进 span）；
   // 夹着 <ruby>（或含 ruby 的行内元素）也断开——ruby 一进 wrapper，WebKit 就取消注音悬挂、
@@ -248,78 +275,24 @@ const String kSentenceAudioRubyGapJs = r'''
     }
     if (!hit || hit.node.parentNode !== w) return null;
     if (hit.offset === 0 && !hit.node.previousSibling) return null;
+    // 切开与搬移都经阅读器共享的 __fushiLiveRanges（定义在选区脚本）：切开时查词选区的
+    // 「文本节点 + 偏移」由选区拥有者换算；搬移时落在被搬节点里的 live Range 与原生选区端点原样写回，
+    // 指向 w 子节点序号（切点之后）的端点换算到 tail。插入 tail 本身对外层端点的影响由 DOM 规范调整。
+    var guard = window.__fushiLiveRanges;
     var moved = [];
-    var first = hit.offset > 0 ? this.splitSentenceAudioText(hit.node, hit.offset) : hit.node;
+    var first = hit.offset > 0 ? guard.splitText(hit.node, hit.offset) : hit.node;
     for (var n = first; n; n = n.nextSibling) moved.push(n);
     var tail = w.cloneNode(false);
     tail.classList.remove('fushi-sentence-audio-join-start', 'fushi-sentence-audio-join-end');
     tail.style.boxShadow = '';
     var cut = Array.prototype.indexOf.call(w.childNodes, first);
-    this.moveSentenceAudioNodesKeepingRanges(w, cut, moved, tail);
-    return tail;
-  },
-  // 在 offset 处切开文本节点，返回切点之后的新节点。live Range 的边界由 DOM splitText 自己换算，
-  // 但查词选区（fushiSelection.selection / dragAnchor）存的是「文本节点 + 数字偏移」的普通对象：
-  // 切完原节点变短，切点之后的偏移会越界（查词高亮画不出、拖动柄消失、制卡句子上下文指错）。
-  // 文本节点被拆分是它们唯一的失效点，所以由这里统一通知选区的拥有者按同一语义换算。
-  splitSentenceAudioText: function(node, offset) {
-    var tail = node.splitText(offset);
-    var selection = window.fushiSelection;
-    if (selection && typeof selection.noteTextNodeSplit === 'function') {
-      selection.noteTextNodeSplit(node, offset, tail);
-    }
-    return tail;
-  },
-  // 搬移 wrapper 子节点时要保住的全部 live Range：CSS.highlights 里登记的（查词选区、收藏 /
-  // 标注、搜索高亮）、原生选区，以及不进 CSS.highlights 的迟到图片重锚目标（搜索命中 Range 的
-  // cloneRange，见 registerImageLateAnchor）。新增「存起来的 live Range」要在这里登记。
-  sentenceAudioLiveRanges: function() {
-    var ranges = [];
-    var add = function(r) {
-      if (r && typeof r.setStart === 'function' && ranges.indexOf(r) < 0) ranges.push(r);
-    };
-    try {
-      if (typeof CSS !== 'undefined' && CSS.highlights) {
-        CSS.highlights.forEach(function(hl) { hl.forEach(add); });
-      }
-    } catch (e) {}
-    var sel = window.getSelection ? window.getSelection() : null;
-    if (sel && sel.rangeCount) add(sel.getRangeAt(0));
-    add(this.__imgReanchorTarget);
-    return ranges;
-  },
-  // 把 w 从第 cut 个子节点起的 moved 移进 tail，并把 tail 插到 w 后面。移除节点会把落在它里面的 live Range 边界
-  // 塌到父节点上（sentenceAudioLiveRanges 列出的那些）——先记下这些边界，移完按原节点 / 原偏移写回，
-  // 指向 w 子节点序号的边界换算到 tail。插入 tail 本身对外层边界的影响由 DOM 规范自动调整。
-  // 只搬节点、不改文本节点身份，所以查词选区的「节点 + 偏移」在这一步不受影响（拆分见 splitSentenceAudioText）。
-  moveSentenceAudioNodesKeepingRanges: function(w, cut, moved, tail) {
-    var ranges = this.sentenceAudioLiveRanges();
-    var inMoved = function(c) {
-      for (var m = 0; m < moved.length; m++) if (moved[m] === c || moved[m].contains(c)) return true;
-      return false;
-    };
-    var remap = function(c, o) {
-      if (inMoved(c)) return [c, o];
-      if (c === w && o > cut) return [tail, o - cut];
-      return null;
-    };
-    var fixes = [];
-    ranges.forEach(function(r) {
-      var s = remap(r.startContainer, r.startOffset);
-      var e = remap(r.endContainer, r.endOffset);
-      if (s || e) {
-        fixes.push({ r: r, s: s || [r.startContainer, r.startOffset], e: e || [r.endContainer, r.endOffset] });
-      }
+    guard.moveNodes(moved, function() {
+      moved.forEach(function(m) { tail.appendChild(m); });
+      w.parentNode.insertBefore(tail, w.nextSibling);
+    }, function(c, o) {
+      return c === w && o > cut ? [tail, o - cut] : null;
     });
-    moved.forEach(function(n) { tail.appendChild(n); });
-    // 先把 tail 插回文档再写回边界：落在游离子树上的边界会被 setEnd 跨树塌缩。
-    w.parentNode.insertBefore(tail, w.nextSibling);
-    fixes.forEach(function(f) {
-      try {
-        f.r.setStart(f.s[0], f.s[1]);
-        f.r.setEnd(f.e[0], f.e[1]);
-      } catch (e) {}
-    });
+    return tail;
   },
   clearSentenceAudioRubyGaps: function() {
     this.sentenceAudioGapWrappers = [];

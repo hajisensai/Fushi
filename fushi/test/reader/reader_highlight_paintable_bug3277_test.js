@@ -21,12 +21,70 @@ assert(start >= 0, 'missing production installer for __fushiEnsureHighlightPaint
 const end = source.indexOf('\n  })();\n}', start);
 assert(end > start, 'missing end of the installer');
 const installer = source.slice(start, end + '\n  })();\n}'.length);
+// The helper moves nodes through the reader-wide live-range guard installed just
+// before it in the same script (BUG-3326 review); run both, as the reader does.
+const guardStart = source.indexOf('if (!window.__fushiLiveRanges) {');
+assert(guardStart >= 0 && guardStart < start, 'missing __fushiLiveRanges installer before the helper');
+const guardEnd = source.indexOf('\n  };\n}', guardStart);
+assert(guardEnd > guardStart, 'missing end of the __fushiLiveRanges installer');
+const guardInstaller = source.slice(guardStart, guardEnd + '\n  };\n}'.length);
 
 const TEXT_NODE = 3;
 const ELEMENT_NODE = 1;
 
+// Live boundaries with the DOM's live-range semantics on remove / insert: the native
+// selection's anchor / focus, the guard's tracking probes and CSS highlight Ranges.
+const liveBoundaries = [];
+function isInclusiveAncestor(a, b) {
+  for (let x = b; x; x = x.parentNode) if (x === a) return true;
+  return false;
+}
+function boundariesOnRemove(parent, index, node) {
+  for (const b of liveBoundaries) {
+    if (isInclusiveAncestor(node, b.node)) { b.node = parent; b.offset = index; }
+    else if (b.node === parent && b.offset > index) b.offset--;
+  }
+}
+function boundariesOnInsert(parent, index) {
+  for (const b of liveBoundaries) if (b.node === parent && b.offset > index) b.offset++;
+}
+class LiveRange {
+  constructor() {
+    this.s = {node: null, offset: 0};
+    this.e = {node: null, offset: 0};
+    liveBoundaries.push(this.s, this.e);
+  }
+  get startContainer() { return this.s.node; }
+  get startOffset() { return this.s.offset; }
+  get endContainer() { return this.e.node; }
+  get endOffset() { return this.e.offset; }
+  setStart(node, offset) {
+    this.s.node = node; this.s.offset = offset;
+    if (!this.e.node) { this.e.node = node; this.e.offset = offset; }
+  }
+  setEnd(node, offset) { this.e.node = node; this.e.offset = offset; }
+}
+function makeSelection() {
+  const anchor = {node: null, offset: 0};
+  const focus = {node: null, offset: 0};
+  liveBoundaries.push(anchor, focus);
+  return {
+    writes: 0,
+    get rangeCount() { return anchor.node ? 1 : 0; },
+    get anchorNode() { return anchor.node; },
+    get anchorOffset() { return anchor.offset; },
+    get focusNode() { return focus.node; },
+    get focusOffset() { return focus.offset; },
+    setBaseAndExtent(an, ao, fn, fo) {
+      this.writes++;
+      anchor.node = an; anchor.offset = ao; focus.node = fn; focus.offset = fo;
+    },
+  };
+}
+
 class Text {
   constructor(data) { this.nodeType = TEXT_NODE; this.data = data; this.parentNode = null; }
+  contains(node) { return isInclusiveAncestor(this, node); }
 }
 class Element {
   constructor(localName, style = {}, pseudo = {}) {
@@ -48,6 +106,7 @@ class Element {
     }
     return null;
   }
+  contains(node) { return isInclusiveAncestor(this, node); }
   appendChild(node) {
     if (node.parentNode) node.parentNode.removeChild(node);
     this.childNodes.push(node);
@@ -56,23 +115,31 @@ class Element {
   }
   removeChild(node) {
     assert.equal(node.parentNode, this);
-    this.childNodes.splice(this.childNodes.indexOf(node), 1);
+    const index = this.childNodes.indexOf(node);
+    boundariesOnRemove(this, index, node);
+    this.childNodes.splice(index, 1);
     node.parentNode = null;
   }
   insertBefore(node, before) {
     if (node.parentNode) node.parentNode.removeChild(node);
     const index = this.childNodes.indexOf(before);
     assert(index >= 0, 'insertBefore reference is not a child');
+    boundariesOnInsert(this, index);
     this.childNodes.splice(index, 0, node);
     node.parentNode = this;
     return node;
   }
 }
 
-function makeWindow(userAgent) {
+// opts.selection: fake native selection; opts.css: fake CSS (highlights registry);
+// opts.observers: collects the MutationObservers the helper installs (and gives the
+// document a <head> so it installs one).
+function makeWindow(userAgent, opts = {}) {
   const window = {
     navigator: {userAgent: userAgent || ''},
+    styleProbes: 0,
     getComputedStyle(el, pseudo) {
+      window.styleProbes++;
       if (pseudo) {
         return Object.assign({display: 'inline', position: 'static', cssFloat: 'none', content: 'none'},
           el.pseudo[pseudo] || {});
@@ -81,13 +148,26 @@ function makeWindow(userAgent) {
     },
   };
   window.window = window;
+  if (opts.selection) window.getSelection = () => opts.selection;
+  const document = {createElement: name => new Element(name), createRange: () => new LiveRange()};
+  if (opts.observers) {
+    document.head = new Element('head');
+    window.MutationObserver = class {
+      constructor(callback) { this.callback = callback; this.targets = []; opts.observers.push(this); }
+      observe(target) { this.targets.push(target); }
+    };
+  }
   const context = vm.createContext({
     window,
     Node: {TEXT_NODE, ELEMENT_NODE},
-    document: {createElement: name => new Element(name)},
+    document,
+    CSS: opts.css,
   });
+  vm.runInContext(guardInstaller, context);
+  assert.equal(typeof window.__fushiLiveRanges.moveNodes, 'function');
   vm.runInContext(installer, context);
   assert.equal(typeof window.__fushiEnsureHighlightPaintable, 'function');
+  window.testDocument = document;
   return window;
 }
 
@@ -242,6 +322,84 @@ for (const ua of [
   const p = paragraph({}, BLOCK_AFTER, text, new Element('img'), new Element('ruby'));
   win.__fushiEnsureHighlightPaintable(text);
   assert.equal(text.parentNode.localName, 'fushi-hl-text');
+  checks++;
+}
+
+// 10. BUG-3326 review: moving the node used to collapse every live Range with an
+//     endpoint inside it onto (parent, index). macOS paginated: the reader drags a
+//     native selection (backwards here), then a favourite / search highlight paints
+//     the node -- the selection lost its tail and Cmd+C / export copied less. The
+//     move now goes through __fushiLiveRanges: the pinned endpoint is written back
+//     with setBaseAndExtent, the other one keeps its DOM position, direction kept.
+{
+  const selection = makeSelection();
+  const win = makeWindow('', {selection});
+  const text = new Text('妹の手には絵日記帳の表紙があった。');
+  const ruby = new Element('ruby');
+  const next = new Text('次の文。');
+  const p = paragraph({}, BLOCK_AFTER, text, ruby, next);
+  selection.setBaseAndExtent(next, 2, text, 3);
+  selection.writes = 0;
+  win.__fushiEnsureHighlightPaintable(text);
+  assert.equal(text.parentNode.localName, 'fushi-hl-text');
+  assert.equal(text.parentNode.parentNode, p);
+  assert.equal(selection.writes, 1, 'the native selection is written back once');
+  assert.equal(selection.anchorNode, next, 'anchor (outside the moved node) unchanged');
+  assert.equal(selection.anchorOffset, 2);
+  assert.equal(selection.focusNode, text, 'focus stays on the same glyph of the moved node');
+  assert.equal(selection.focusOffset, 3);
+  // No endpoint in the moved node: the selection is not touched at all.
+  const other = new Text('別の段落');
+  paragraph({}, BLOCK_AFTER, other);
+  win.__fushiEnsureHighlightPaintable(other);
+  assert.equal(other.parentNode.localName, 'fushi-hl-text');
+  assert.equal(selection.writes, 1, 'an unrelated move never rewrites the native selection');
+  liveBoundaries.length = 0;
+  checks++;
+}
+
+// 11. Live Ranges already registered in CSS.highlights (an earlier search hit, a
+//     favourite painted before the stylesheet changed) keep their endpoints.
+{
+  const text = new Text('妹の手には絵日記帳の表紙があった。');
+  const p = paragraph({}, BLOCK_AFTER, text);
+  const range = new LiveRange();
+  range.setStart(text, 2);
+  range.setEnd(text, 5);
+  const win = makeWindow('', {css: {highlights: new Map([['fushi-search', new Set([range])]])}});
+  win.__fushiEnsureHighlightPaintable(text);
+  assert.equal(text.parentNode.localName, 'fushi-hl-text');
+  assert.equal(text.parentNode.parentNode, p);
+  assert.deepEqual([range.startContainer === text, range.startOffset, range.endContainer === text, range.endOffset],
+    [true, 2, true, 5], 'the highlight Range is not collapsed onto the paragraph');
+  liveBoundaries.length = 0;
+  checks++;
+}
+
+// 12. The anonymous-block verdict is cached per parent: where the helper never wraps
+//     (scrolling mode, parents that are not anonymous blocks) every drag frame used
+//     to re-probe the parent, its pseudos and every element child. A change of the
+//     <head> styles (reader CSS swap) drops the cache.
+{
+  const observers = [];
+  const win = makeWindow('', {observers});
+  assert.equal(observers.length, 1, 'one style observer is installed');
+  assert(observers[0].targets.includes(win.testDocument.head), 'the observer watches <head>');
+  const text = new Text('本文');
+  const rubies = [new Element('ruby'), new Element('ruby'), new Element('ruby')];
+  const p = paragraph({}, {}, text, ...rubies);
+  win.__fushiEnsureHighlightPaintable(text);
+  assert.equal(text.parentNode, p, 'a plain block paragraph is not wrapped');
+  const probes = win.styleProbes;
+  assert(probes > 0);
+  for (let frame = 0; frame < 5; frame++) win.__fushiEnsureHighlightPaintable(text);
+  assert.equal(win.styleProbes, probes, 'cache hit: no further getComputedStyle for the same parent');
+  // The reader stylesheet is swapped and now makes the paragraph a flex container.
+  p.computed.display = 'flex';
+  observers[0].callback([]);
+  win.__fushiEnsureHighlightPaintable(text);
+  assert(win.styleProbes > probes, 'the verdict is probed again after a style change');
+  assert.equal(text.parentNode.localName, 'fushi-hl-text', 'the fresh verdict applies');
   checks++;
 }
 

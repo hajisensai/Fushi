@@ -379,6 +379,106 @@ const JAPANESE_RANGES = [
   ...FULLWIDTH_CHARACTER_RANGES,
 ];
 window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
+// BUG-3326 审查（#2115 / #2119 同类）：阅读器里所有「切开 / 搬移正文节点」的 DOM 手术共用这一处
+// 保护，各写入点不各写一份。会被弄坏的状态有两类：
+// 1. 查词选区（fushiSelection.selection / dragAnchor）存的是「文本节点 + 数字偏移」普通对象。文本
+//    节点被切开时切点之后的偏移越界（RangeError、高亮画不出、拖动柄消失、制卡句子指错）——切开一律
+//    走 splitText()，由选区的拥有者（noteTextNodeSplit）按 DOM splitText 的同一语义换算。
+// 2. live Range（ranges() 列出的）与原生选区。节点被移出父节点时，端点落在它里面的边界按 DOM 规范
+//    塌到 (parent, index)——搬移一律走 moveNodes()：搬前钉住落在被搬节点里的端点（节点身份不变，
+//    偏移原样可用）与 remap 换算的端点，搬完写回；原生选区用 setBaseAndExtent 还原，保留拖选方向
+//    （macOS 先拖出原生选区再收藏 / 搜索，复制、导出不再少一段）。
+// 不要再用 Range.extractContents / surroundContents 切正文：它们把切点两侧的文字复制成新文本节点、
+// 原节点就地截短，两类状态都救不回。新增「存起来的 live Range」要在 ranges() 里登记。
+if (!window.__fushiLiveRanges) {
+  window.__fushiLiveRanges = {
+    // 要保住的 live Range：CSS.highlights 里登记的（查词选区、收藏 / 标注、搜索）、高亮桥已建好但
+    // 还没合批登记进 CSS.highlights 的收藏 Range 表，以及不进 CSS.highlights 的迟到图片重锚目标
+    // （搜索命中 Range 的 cloneRange，见 registerImageLateAnchor）。原生选区由 moveNodes 单独处理。
+    ranges: function() {
+      var out = [];
+      var add = function(r) {
+        if (r && typeof r.setStart === 'function' && out.indexOf(r) < 0) out.push(r);
+      };
+      if (typeof CSS !== 'undefined' && CSS.highlights) {
+        CSS.highlights.forEach(function(hl) { hl.forEach(add); });
+      }
+      var pending = window.__fushiHighlightRangeMap;
+      if (pending) {
+        for (var id in pending) (pending[id].ranges || []).forEach(add);
+      }
+      if (window.fushiReader) add(window.fushiReader.__imgReanchorTarget);
+      return out;
+    },
+    // 在 offset 处切开文本节点，返回切点之后的新节点。live Range（含原生选区）由 DOM splitText 自己
+    // 换算；查词选区的「节点 + 偏移」由它的拥有者换算。
+    splitText: function(node, offset) {
+      var tail = node.splitText(offset);
+      var selection = window.fushiSelection;
+      if (selection && typeof selection.noteTextNodeSplit === 'function') {
+        selection.noteTextNodeSplit(node, offset, tail);
+      }
+      return tail;
+    },
+    // mutate() 把 moved 里的节点（连同子孙）移走再插回文档，节点身份不变；返回前必须已插回文档
+    // （落在游离子树上的边界会被 setEnd 跨树塌缩）。remap(container, offset) 换算不在 moved 里、
+    // 却被这次搬移改了含义的端点（如原父节点里切点之后的子节点序号），返回 [node, offset] 或 null。
+    // 其余端点由 DOM 规范自己调整，写回时取搬移之后的值。
+    moveNodes: function(moved, mutate, remap) {
+      var inMoved = function(c) {
+        for (var m = 0; m < moved.length; m++) {
+          if (moved[m] === c || moved[m].contains(c)) return true;
+        }
+        return false;
+      };
+      var pin = function(c, o) {
+        if (inMoved(c)) return [c, o];
+        return remap ? remap(c, o) : null;
+      };
+      var fixes = [];
+      this.ranges().forEach(function(r) {
+        var s = pin(r.startContainer, r.startOffset);
+        var e = pin(r.endContainer, r.endOffset);
+        if (s || e) fixes.push({ r: r, s: s, e: e });
+      });
+      // 原生选区没被钉住的那一端交给一个折叠的 live Range 跟踪：DOM 规范对它的调整就是对那一端的调整
+      // （搬移之后再读 anchor / focus 不可靠：被塌缩的一端可能让选区方向翻转）。
+      var hold = function(pinned, c, o) {
+        if (pinned) return { pinned: pinned };
+        var probe = document.createRange();
+        probe.setStart(c, o);
+        return { probe: probe };
+      };
+      var read = function(h) {
+        return h.pinned || [h.probe.startContainer, h.probe.startOffset];
+      };
+      var sel = window.getSelection ? window.getSelection() : null;
+      var native = null;
+      if (sel && sel.rangeCount && sel.anchorNode && sel.focusNode) {
+        var a = pin(sel.anchorNode, sel.anchorOffset);
+        var f = pin(sel.focusNode, sel.focusOffset);
+        if (a || f) {
+          native = {
+            a: hold(a, sel.anchorNode, sel.anchorOffset),
+            f: hold(f, sel.focusNode, sel.focusOffset)
+          };
+        }
+      }
+      mutate();
+      fixes.forEach(function(x) {
+        var s = x.s || [x.r.startContainer, x.r.startOffset];
+        var e = x.e || [x.r.endContainer, x.r.endOffset];
+        x.r.setStart(s[0], s[1]);
+        x.r.setEnd(e[0], e[1]);
+      });
+      if (native) {
+        var na = read(native.a);
+        var nf = read(native.f);
+        sel.setBaseAndExtent(na[0], na[1], nf[0], nf[1]);
+      }
+    }
+  };
+}
 // BUG-3323: WebKit never paints ::highlight() on a text node whose layout parent is
 // an *anonymous* block -- i.e. text sitting directly in a block container that also
 // has an in-flow block-level child box (a real child element, or a ::before/::after
@@ -389,10 +489,11 @@ window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window
 // favourite and search highlights all went invisible while their grips still
 // showed. Call this on each text node before building a Range for a CSS Highlight:
 // when the node is in that position it is moved, unchanged, into an unstyled inline
-// wrapper. Node identity and offsets are preserved (only Ranges created *before* the
-// move would collapse -- hence "before building"), and the wrapper adds no box, so
-// layout and text walkers are unaffected. Idempotent; a no-op wherever the engine
-// already lays the text out under a real element.
+// wrapper. Node identity and offsets are preserved; the move goes through
+// __fushiLiveRanges.moveNodes, so existing live Ranges and the native selection with
+// an endpoint in the node are written back instead of collapsing onto the parent.
+// The wrapper adds no box, so layout and text walkers are unaffected. Idempotent; a
+// no-op wherever the engine already lays the text out under a real element.
 // Blink (Android WebView / WebView2) paints these highlights fine, so there the
 // helper is a no-op: the move would be pure DOM churn (per drag frame computed-style
 // probes, structural-selector flips below) with nothing to fix.
@@ -437,17 +538,44 @@ if (typeof window.__fushiEnsureHighlightPaintable !== 'function') {
       }
       return false;
     }
+    // The verdict depends only on computed styles (the parent, its ::before / ::after
+    // and its element children), so it holds until the styles change. Where the
+    // helper never wraps (scrolling mode, parents that are not anonymous blocks) every
+    // drag frame would otherwise re-probe the parent of every segment: on ruby-dense
+    // paragraphs that is O(segments x element children) getComputedStyle calls per
+    // frame on iOS. Cache per parent; any change of the <head> styles (both reader CSS
+    // swap paths rewrite #fushi-reader-style, book stylesheets) or of the class / style
+    // of <html> / <body> drops the whole cache.
+    var anonymousByParent = new WeakMap();
+    if (window.MutationObserver && document.head) {
+      var styleObserver = new MutationObserver(function() { anonymousByParent = new WeakMap(); });
+      styleObserver.observe(document.head,
+          { childList: true, characterData: true, attributes: true, subtree: true });
+      [document.documentElement, document.body].forEach(function(root) {
+        if (root) styleObserver.observe(root, { attributes: true, attributeFilter: ['class', 'style'] });
+      });
+    }
+    function laidOutAnonymously(parent) {
+      var known = anonymousByParent.get(parent);
+      if (known === undefined) {
+        known = textLaidOutAnonymously(parent);
+        anonymousByParent.set(parent, known);
+      }
+      return known;
+    }
     return function(node) {
       // Numeric node types: this runs in node test harnesses that have no `Node`.
       if (!node || node.nodeType !== 3) return;
       var parent = node.parentNode;
       if (!parent || parent.nodeType !== 1) return;
       if (parent.localName === WRAPPER_TAG) return;
-      if (!textLaidOutAnonymously(parent)) return;
+      if (!laidOutAnonymously(parent)) return;
       if (siblingReliesOnOnlyChild(parent)) return;
       var wrapper = document.createElement(WRAPPER_TAG);
-      parent.insertBefore(wrapper, node);
-      wrapper.appendChild(node);
+      window.__fushiLiveRanges.moveNodes([node], function() {
+        parent.insertBefore(wrapper, node);
+        wrapper.appendChild(node);
+      });
     };
   })();
 }

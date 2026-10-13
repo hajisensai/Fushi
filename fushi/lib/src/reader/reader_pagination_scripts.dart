@@ -1865,7 +1865,8 @@ window.__fushiInstallShell = function(C) {
     // 翻进新章节后正文「突然岔开」。现在 ruby 永远留在原位：ruby 内的基字文本就地包进
     // ruby 内部的 wrapper（排版与原书逐像素一致），长注音留下的缝由
     // fillSentenceAudioRubyGaps 在高亮时用不参与排版的 box-shadow 补上。
-    var range = document.createRange();
+    // 包裹走共享的 wrapSentenceAudioGroup（切开 / 搬移经 __fushiLiveRanges，不用 extractContents）：
+    // 收藏 / 搜索高亮等 live Range 不随包裹塌缩。
     for (var i = cueSegments.length - 1; i >= 0; i--) {
       var id = cueSegments[i].id;
       var segments = cueSegments[i].ranges;
@@ -1874,16 +1875,10 @@ window.__fushiInstallShell = function(C) {
       var wrappers = [];
       var rubyElements = [];
       for (var g = items.length - 1; g >= 0; g--) {
-        var first = items[g][0];
-        var last = items[g][items[g].length - 1];
         try {
-          range.setStart(first.node, first.start);
-          range.setEnd(last.node, last.end);
           var wrapper = document.createElement('span');
           wrapper.className = 'fushi-sentence-audio-cue';
-          wrapper.appendChild(range.extractContents());
-          range.insertNode(wrapper);
-          wrappers.push(wrapper);
+          wrappers.push(this.wrapSentenceAudioGroup(items[g], wrapper));
         } catch (e) {
           for (var k = 0; k < items[g].length; k++) {
             var ruby = this.rubyForNode(items[g][k].node);
