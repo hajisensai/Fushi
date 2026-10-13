@@ -72,7 +72,10 @@ bool? voteOcrLineOrientation(List<OcrRect> lines) {
 /// 分位数时，一行正文配四段注音的块 p75 就落在注音自己的厚度上，两条判据一起失效。
 ///
 /// 横排认下方：双行字幕第二行的注音标在字**下方**（上方被第一行占了）；字幕注音
-/// 约为正文行高的 0.6~0.65，只按 [thinRatio] 会整排漏掉（BUG-3314）。
+/// 约为正文行高的 0.6~0.65，只按 [thinRatio] 会整排漏掉（BUG-3314）。下方注音
+/// 只在「正文行上方已被另一行正文占住」时才认（[_hasTextLineAbove]）——这正是
+/// 注音被挤到下方的原因；否则英文双行字幕第二行全是 x 高度小写字母（「can we
+/// see」）时，行高不到第一行 0.82 倍又紧贴其下，会被误当注音删掉。
 List<OcrRect> dropOcrRubyLines(
   List<OcrRect> lines, {
   required bool vertical,
@@ -90,7 +93,9 @@ List<OcrRect> dropOcrRubyLines(
       bool hugs(double gap) => gap >= -0.35 * base && gap <= 0.35 * base;
       final bool onRubySide = vertical
           ? hugs(line.left - other.right)
-          : hugs(other.top - line.bottom) || hugs(line.top - other.bottom);
+          : hugs(other.top - line.bottom) ||
+                (hugs(line.top - other.bottom) &&
+                    _hasTextLineAbove(other, lines, ruby: line, own: own));
       final double along = vertical
           ? math.min(line.bottom, other.bottom) - math.max(line.top, other.top)
           : math.min(line.right, other.right) - math.max(line.left, other.left);
@@ -106,6 +111,27 @@ List<OcrRect> dropOcrRubyLines(
               besideThickerLine(line))))
         line,
   ];
+}
+
+/// 横排行 [base] 的正上方是否紧贴着另一行正文（厚度至少是候选注音 [ruby] 厚
+/// [own] 的 1.25 倍、跨轴间隙不超过 [base] 行厚的 0.35 倍、沿轴有重叠）。
+bool _hasTextLineAbove(
+  OcrRect base,
+  List<OcrRect> lines, {
+  required OcrRect ruby,
+  required double own,
+}) {
+  final double baseThickness = base.height;
+  for (final OcrRect above in lines) {
+    if (identical(above, base) || identical(above, ruby)) continue;
+    if (above.height < own * 1.25) continue;
+    final double gap = base.top - above.bottom;
+    if (gap < -0.35 * baseThickness || gap > 0.35 * baseThickness) continue;
+    final double along =
+        math.min(above.right, base.right) - math.max(above.left, base.left);
+    if (along > 0) return true;
+  }
+  return false;
 }
 
 /// 行厚的 75 分位，每行按它沿阅读方向的长度计权（文字量越多的行越代表正文字号）。

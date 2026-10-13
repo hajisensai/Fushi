@@ -562,11 +562,11 @@ class MangaAiOcrRefiner {
             !mangaAiOcrReplyBelongsToCrop(
               text,
               local: local,
-              others: <String>[
+              batchmates: <String>[
                 for (int k = 0; k < batch.length; k++)
                   if (k != j) batch[k].block.lines.join(),
-                ...nearby,
               ],
+              nearby: nearby,
             )) {
           continue;
         }
@@ -805,26 +805,46 @@ bool isPlausibleMangaAiOcrText(
   return compact.length <= math.max(byLocal, byGeometry);
 }
 
-/// 大模型的回复是不是这张图自己的：它明显更像 [others]（同批别的图的本地猜测、
-/// 附近已读文字）里的某一条、而不像本图的本地猜测 [local] 时判为串号，返回 false。
+/// 大模型的回复是不是这张图自己的：它几乎就是同批另一张图的内容、而不像本图的
+/// 本地猜测 [local] 时判为串号，返回 false。
 ///
 /// 多图一批按编号对回，模型偶尔把邻图的字答到这张的编号上，或者照抄提示里的附近
 /// 台词；长度校验拦不住——字幕里表现为相邻两条变成同一句（BUG-3314）。相似度按
-/// 字的多重集合算 Dice 系数（与语序无关，形近字读错一两个仍算像）。「明显」=
-/// 别条至少 0.6 且比本条高出 0.2：本地读得再糊，正确回复也总与它共享大半的字；
+/// 字的多重集合算 Dice 系数（与语序无关，形近字读错一两个仍算像）。
+///
+/// 串号的特征是「回复几乎等于别处的内容」，不是「和别处相似」：送去重读的恰是
+/// 本地低置信度块，本图自身的相似度天生偏低，而字幕前后句常常近似（「そうだよね」
+/// 与「そうなんだよ」约 0.73），按「像别条」判会把正确回复丢回糊掉的本地结果。
+/// 所以：
+/// - [batchmates]（同批别的图的本地猜测）：至少 [_kSwappedReplyDice] 且比本条
+///   高出 0.2 才算答串了编号；
+/// - [nearby]（附近已读文字）只拦逐字相同（去空白）的照抄，且本地猜测并不像它
+///   ——台词本身重复一遍（本地也读出了同一句）照收。
 /// 两条本来就几乎一样（「スタッフA / B」同一句台词）时分不出、照收。
 bool mangaAiOcrReplyBelongsToCrop(
   String reply, {
   required String local,
-  required Iterable<String> others,
+  Iterable<String> batchmates = const <String>[],
+  Iterable<String> nearby = const <String>[],
 }) {
   final double own = _charDice(reply, local);
-  for (final String other in others) {
+  for (final String other in batchmates) {
     final double score = _charDice(reply, other);
-    if (score >= 0.6 && score > own + 0.2) return false;
+    if (score >= _kSwappedReplyDice && score > own + 0.2) return false;
+  }
+  final String compact = _compactText(reply);
+  if (compact.isEmpty || own >= 0.8) return true;
+  for (final String line in nearby) {
+    if (_compactText(line) == compact) return false;
   }
   return true;
 }
+
+/// 「几乎就是同一句」的字 Dice 下限：差一两个形近字 / 全半角标点仍算同一句，
+/// 句式相近的不同台词（共享助词、语尾）达不到。
+const double _kSwappedReplyDice = 0.9;
+
+String _compactText(String text) => text.replaceAll(RegExp(r'\s'), '');
 
 double _charDice(String a, String b) {
   final List<String> x = a.replaceAll(RegExp(r'\s'), '').characters.toList();

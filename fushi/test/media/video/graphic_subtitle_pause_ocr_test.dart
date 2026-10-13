@@ -67,6 +67,72 @@ void main() {
         hasLength(block.lines.join().characters.length),
       );
     });
+
+    // 审查回归：字级区域是旧文字的偏移（文字已被大模型改写变长），有一个对不上就
+    // 整块改走行框，而不是逐个丢掉对不上的、留下残缺的可点框。
+    test('字级区域有一个对不上文字时整块改按行框落位，不留残缺框', () {
+      final MokuroBlock stale = MokuroBlock(
+        rectangle: block.rectangle,
+        isVertical: false,
+        fontSize: 91,
+        zIndex: 0,
+        lines: block.lines,
+        linesCoords: block.linesCoords,
+        regions: const <MangaOcrTextRegion>[
+          MangaOcrTextRegion(
+            rectangle: MokuroRect.fromLTRB(0, 0, 10, 10),
+            utf16Start: 0,
+            utf16End: 1,
+          ),
+          // 超出句长：对不上。
+          MangaOcrTextRegion(
+            rectangle: MokuroRect.fromLTRB(10, 0, 20, 10),
+            utf16Start: 999,
+            utf16End: 1000,
+          ),
+        ],
+      );
+      final List<GraphicSubtitleOcrChar> chars = graphicSubtitleOcrCharsOf(
+        stale,
+      );
+      expect(chars, hasLength(block.lines.join().characters.length));
+      expect(chars.first.rect.left, closeTo(578.3, 0.01));
+      expect(chars.first.rect.top, closeTo(826.4, 0.01));
+    });
+
+    test('字级区域全部对得上时照用引擎给的区域', () {
+      final MokuroBlock lens = MokuroBlock(
+        rectangle: block.rectangle,
+        isVertical: false,
+        fontSize: 91,
+        zIndex: 0,
+        lines: const <String>['あい'],
+        regions: const <MangaOcrTextRegion>[
+          MangaOcrTextRegion(
+            rectangle: MokuroRect.fromLTRB(1, 2, 3, 4),
+            utf16Start: 0,
+            utf16End: 1,
+          ),
+          MangaOcrTextRegion(
+            rectangle: MokuroRect.fromLTRB(5, 6, 7, 8),
+            utf16Start: 1,
+            utf16End: 2,
+          ),
+        ],
+      );
+      expect(
+        <Rect>[
+          for (final GraphicSubtitleOcrChar c in graphicSubtitleOcrCharsOf(
+            lens,
+          ))
+            c.rect,
+        ],
+        <Rect>[
+          const Rect.fromLTRB(1, 2, 3, 4),
+          const Rect.fromLTRB(5, 6, 7, 8),
+        ],
+      );
+    });
   });
 
   group('VideoPauseOcrScope', () {

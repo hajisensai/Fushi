@@ -392,7 +392,7 @@ void main() {
       mangaAiOcrReplyBelongsToCrop(
         '鳥の声で起きる朝',
         local: 'とりこえおあさ鳥の声で起きる朝',
-        others: <String>['緑に囲まれておいしい空気'],
+        batchmates: <String>['緑に囲まれておいしい空気'],
       ),
       isTrue,
     );
@@ -400,7 +400,7 @@ void main() {
       mangaAiOcrReplyBelongsToCrop(
         '(スタッフB)Aフレーム振り出しスロー',
         local: '(スタッフA)Aフレーム振り出しスロー',
-        others: <String>['(スタッフB)Aフレーム振り出しスロー'],
+        batchmates: <String>['(スタッフB)Aフレーム振り出しスロー'],
       ),
       isTrue,
     );
@@ -408,10 +408,72 @@ void main() {
       mangaAiOcrReplyBelongsToCrop(
         'やっぱり山だよね!',
         local: 'マリンアクティビティや色あざやかなサンゴや魚!',
-        others: <String>['やっぱり山だよね!'],
+        batchmates: <String>['やっぱり山だよね!'],
       ),
       isFalse,
     );
+    // 真串号：差一个全半角标点仍是同一句，照样拒。
+    expect(
+      mangaAiOcrReplyBelongsToCrop(
+        '(のび太)キャンプ行くなら山がいい!',
+        local: '(スネ夫)のび太は泳げないからだろ?',
+        batchmates: <String>['(のび太)キャンプ行くなら山がいい！'],
+      ),
+      isFalse,
+    );
+  });
+
+  // 审查回归：送去重读的是本地低置信度块，本图相似度天生低；前后句近似（约 0.73）
+  // 不是串号，正确回复不能被丢回糊掉的本地结果。
+  test('归属判据：与同批 / 附近的近似句不算串号，只拦近乎相同或逐字照抄', () {
+    expect(
+      mangaAiOcrReplyBelongsToCrop(
+        'そうなんだよ',
+        local: 'ぞラなんたよ',
+        batchmates: <String>['そうだよね'],
+        nearby: <String>['そうだよね'],
+      ),
+      isTrue,
+    );
+    // 逐字照抄附近台词、而本地猜测并不像它：拒。
+    expect(
+      mangaAiOcrReplyBelongsToCrop(
+        'しずかちゃんはどっち?',
+        local: '緑に囲まれておいしい空気',
+        nearby: <String>['しずかちゃんは どっち?'],
+      ),
+      isFalse,
+    );
+    // 台词本身重复一遍（本地也读出了同一句）：照收。
+    expect(
+      mangaAiOcrReplyBelongsToCrop(
+        'はい!',
+        local: 'はい!',
+        nearby: <String>['はい!'],
+      ),
+      isTrue,
+    );
+  });
+
+  test('refineCrops：近似的前句在附近台词 / 同批里时，本条的正确回复照收', () async {
+    final f = fake(
+      reply: (int call, int count) => jsonEncode(<String, Object?>{
+        'blocks': <Object?>[
+          <String, Object?>{'id': 1, 'text': 'そうだよね'},
+          <String, Object?>{'id': 2, 'text': 'そうなんだよ'},
+        ],
+      }),
+    );
+    final MangaAiOcrRefiner refiner = MangaAiOcrRefiner(
+      provider: provider,
+      mode: MangaAiOcrMode.all,
+      clientFactory: f.factory,
+    );
+    final List<String?> texts = await refiner.refineCrops(
+      <MangaAiOcrCropRequest>[item(1, cue('そうだよね')), item(2, cue('ぞラなんたよ'))],
+      nearby: <String>['そうだよね'],
+    );
+    expect(texts, <String?>['そうだよね', 'そうなんだよ']);
   });
 }
 

@@ -247,6 +247,26 @@ void main() {
       expect(kept.map((OcrRect r) => r.top), <double>[53]);
     });
 
+    // 审查回归：英文双行字幕第二行全是 x 高度小写字母（「can we see」），行高只有
+    // 第一行的 ~0.7 倍、紧贴其下——第一行上方没有别的正文行，下方注音不成立。
+    test('横排：英文双行字幕第二行矮而紧贴第一行，不当下方注音删掉', () {
+      final List<OcrRect> kept = dropOcrRubyLines(<OcrRect>[
+        _r(40, 40, 620, 104), // What do you mean?（厚 64）
+        _r(180, 106, 480, 150), // can we see（厚 44，0.69 倍）
+      ], vertical: false);
+      expect(kept.map((OcrRect r) => r.top), <double>[40, 106]);
+    });
+
+    test('横排：下方注音只在正文行上方已被另一行正文占住时才认', () {
+      // 同一组几何，正文行上方再压一行：第三行这时才是被挤到下方的注音。
+      final List<OcrRect> kept = dropOcrRubyLines(<OcrRect>[
+        _r(40, 0, 500, 64), // 上一行正文
+        _r(40, 62, 620, 126), // 正文行（厚 64）
+        _r(180, 126, 260, 166), // 下方注音（厚 40）
+      ], vertical: false);
+      expect(kept.map((OcrRect r) => r.top), <double>[0, 62]);
+    });
+
     test('没有注音的双行字幕两行都保留', () {
       final List<OcrRect> kept = dropOcrRubyLines(<OcrRect>[
         _r(20, 45, 468, 113), // （のび太）んっ!?

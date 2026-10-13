@@ -189,7 +189,7 @@
  "lib/src/settings/settings_schema_manga.dart": 14,
  "lib/src/settings/settings_schema_services.dart": 3,
  "lib/src/settings/settings_schema_system.dart": 27,
- "lib/src/settings/settings_schema_video.dart": 86,
+ "lib/src/settings/settings_schema_video.dart": 85,
  "lib/src/shortcuts/visual/gamepad_button_widget.dart": 4,
  "lib/src/startup/loading_watchdog_view.dart": 2,
  "lib/src/sync/plex_settings_widget.dart": 3,
