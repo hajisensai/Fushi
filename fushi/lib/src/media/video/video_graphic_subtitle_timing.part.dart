@@ -12,10 +12,10 @@ part of 'video_player_controller.dart';
 //    通用 http / 在线源解析出的直链按 URL + 播放器同一份请求头交给 ffmpeg 读流抽轨
 //    （与模糊遮蔽层同一个 [FfmpegGraphicSubtitleRegionLoader] 在途任务 / 缓存）。
 //
-// 注意 media_kit 对 `MPV_FORMAT_NONE` 观测只在属性**可读**时回调（不可用时
-// `mpv_get_property_string` 为 null，监听者不被调用）：句间空档没有事件，结束未知的
-// 一句由下一句起点收尾——这正是 `sd_lavc` 自己的规则（解到下一句时
-// `prev->endpts = pts`）。
+// 观测走比值订阅 `observePropertyChanges`（`MPV_FORMAT_STRING`，media_kit 补丁，
+// BUG-3315）：mpv 在核心里比值，只有起止真的变了才来事件，值随事件到达。属性不可用
+// （句间空档）时 mpv 只发一次无格式事件、读出 null，监听者不被调用；结束未知的一句由
+// 下一句起点收尾——这正是 `sd_lavc` 自己的规则（解到下一句时 `prev->endpts = pts`）。
 //
 // 抽取结果到了以后以它为准，边播边记只补它没有的句子
 // （[mergeGraphicSubtitleTimingTables]）。
@@ -207,7 +207,6 @@ extension VideoGraphicSubtitleTimingController on VideoPlayerController {
     _graphicLiveTimingCues = const <AudioCue>[];
     _graphicTimingCues = const <AudioCue>[];
     _graphicLiveProvisionalCue = null;
-    _graphicLiveLastRaw.clear();
     _graphicTimingGeneration++;
     _graphicLiveGeneration++;
     _graphicTimingInputOverride = null;
@@ -240,14 +239,11 @@ extension VideoGraphicSubtitleTimingController on VideoPlayerController {
     _graphicLiveObservedPlayer = player;
     for (final String property in kGraphicSubtitleLiveTimingProperties) {
       try {
-        await native.observeProperty(property, (String raw) async {
+        // 比值订阅：这两个属性挂在 `MPV_EVENT_TICK` 上，无格式的 `observeProperty` 会
+        // 每帧来一次事件、且每次先同步读一次属性（拿 mpv 核心锁）；比值订阅只在真的换句 /
+        // 结束段到了时才来（BUG-3315）。
+        await native.observePropertyChanges(property, (String _) async {
           if (!identical(_player, player)) return;
-          // media_kit 以 `MPV_FORMAT_NONE` 观测：mpv 对无格式观测不比值
-          // （`player/client.c`：`prop->format == 0` 时恒 `changed = true`），这两个属性又挂在
-          // `MPV_EVENT_TICK` 上——每帧都来一次。按回调带来的当前值去重，只有真的换句 /
-          // 结束段到了才去读一对起止。
-          if (_graphicLiveLastRaw[property] == raw) return;
-          _graphicLiveLastRaw[property] = raw;
           _requestGraphicLiveSample(player);
         }, waitForInitialization: false);
       } catch (error) {
