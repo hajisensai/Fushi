@@ -217,7 +217,9 @@ extension _VideoLookupMining on _VideoFushiPageState {
         controller.currentCue ??
         resolveMiningCueForPosition(
           cues: controller.miningCues,
-          positionMs: controller.subtitleClockMs ?? 0,
+          // BUG-3313：取句时钟跟有效流走（文本流 = 字幕时钟；图形时间表 = 真实位置，
+          // 与控制器图形锚点按位置取句同一个时钟）。
+          positionMs: controller.miningPositionMs ?? 0,
           // TODO-2837：按位置解析必须与有效流的 cue 命中同一根轴（主流空落副流
           // 时用副轨生效轴，否则副轨独立调轴后锚错句）。
           delayMs: controller.miningDelayMs,

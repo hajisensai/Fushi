@@ -82,4 +82,31 @@ void main() {
     expect(hits, greaterThanOrEqualTo(7), reason: '扫描面失效（调用点改名 / 搬家）');
     expect(offenders, isEmpty);
   });
+
+  // 按有效流（miningCues）按位置取句时，时钟必须是 miningPositionMs：图形字幕时间表
+  // 下它是真实位置（与控制器图形锚点按位置取句同一个时钟），文本流下才是字幕时钟。
+  // 直接读 subtitleClockMs 会让图形模式同一次操作出现两个「当前句」。
+  test('按 miningCues 取句的调用点读 miningPositionMs', () {
+    final List<String> offenders = <String>[];
+    int hits = 0;
+    for (final File file in _videoPageSources()) {
+      final String src = file.readAsStringSync();
+      for (final String call in _kCallsReadingSubtitleTime) {
+        for (
+          int at = src.indexOf(call);
+          at >= 0;
+          at = src.indexOf(call, at + 1)
+        ) {
+          final String args = _argsFrom(src, at + call.length);
+          if (!args.contains('.miningCues')) continue;
+          hits++;
+          if (!args.contains('.miningPositionMs')) {
+            offenders.add('${file.path}: $call');
+          }
+        }
+      }
+    }
+    expect(hits, greaterThanOrEqualTo(2), reason: '扫描面失效（调用点改名 / 搬家）');
+    expect(offenders, isEmpty);
+  });
 }

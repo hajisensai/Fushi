@@ -314,10 +314,6 @@ class VideoPlayerController extends ChangeNotifier
   /// 之后恢复纯位置推导。只影响「点列表/上下句跳转后那一瞬」，不碰连续播放的自动跟随。
   int? _seekTargetCueIndex;
 
-  /// [skipToCue] 那次 seek 的落点（原始轴，未扣调轴）；与 [_seekTargetCueIndex] 同置同清。
-  /// 在途期间字幕时钟（[subtitleClockMs]）读它而不是滞后的旧 position（BUG-3313）。
-  int? _seekSnapLandingMs;
-
   /// 「在途 seek 宽限」剩余 tick 配额（仅 [_seekTargetCueIndex] 非空时有意义）。
   ///
   /// **修 TODO-565 复核退回的真机时序漏洞。** [skipToCue] 置 [_seekTargetCueIndex] 后
@@ -979,6 +975,21 @@ class VideoPlayerController extends ChangeNotifier
     return timings.isNotEmpty ? timings : _secondaryCues;
   }
 
+  /// [miningCues] 按位置兜底取句用的时钟（BUG-3313）：取句必须跟**画面上那条字幕**走。
+  ///
+  /// - 文本 / 副字幕流：字幕是 Dart 按字幕时钟 [subtitleClockMs] 画的（seek 在途时停在跳转
+  ///   目标），取句也读它；
+  /// - 图形字幕时间表（主流为空、[graphicSubtitleTimingCues] 非空）：位图由 libmpv 按**真实
+  ///   帧**画（遮蔽层同理读 [effectivePositionMs]），seek 在途时画面上还是跳转前那句，取句读
+  ///   真实 [positionMs]——与 [currentGraphicSubtitleCue] 无 `sub-start` 时的按位置取句同一个
+  ///   时钟，同一次操作不会出现两个「当前句」。
+  int? get miningPositionMs =>
+      _miningStreamIsGraphicTimings ? positionMs : subtitleClockMs;
+
+  /// [miningCues] 此刻是否落在图形字幕逐句时间表上（与 [miningCues] 同一判据）。
+  bool get _miningStreamIsGraphicTimings =>
+      _cues.isEmpty && graphicSubtitleTimingCues.isNotEmpty;
+
   /// BUG-1592：[cue] 所属的那条流（按身份判定，主流优先）。两条流都不含它（列表面板的
   /// 合成 cue / 已换集的陈旧 cue）时回 [miningCues]，保持「至少落在当前有效流上」。
   ///
@@ -1271,22 +1282,37 @@ class VideoPlayerController extends ChangeNotifier
     return _plainSeekLandedAt(rawPosMs) ? null : target;
   }
 
-  /// [skipToCue] 在途：position 还没进过目标句的引导窗口（宽限 > 0）且此刻仍在窗口外
-  /// ——读到的是跳转前的旧位置，按落点算。与 [_applySeekTargetSnap] 同一判据。
+  /// [skipToCue] 快照期间的字幕时钟：与主字幕渲染集**同一个取样点**（[cueRenderPositionMs]）。
+  ///
+  /// 在途（读到跳转前的旧位置）或停在目标句之前的 preRoll 引导窗口里时，渲染集按**目标句
+  /// 起点**取样（BUG-3285）；动画若另读 seek 落点（句首 − preRoll），`\fad` / `\move` /
+  /// `\t` / `\k` 的 elapsed 为负，连 `\fad(0,N)` 都全透明——被点的那句在途期间看不见。
+  /// 所以这里不另记落点，直接返回渲染集的取样位置（换回原始轴 = + [_delayMs]）；position
+  /// 落进目标句区间后两者都跟真实位置。
+  ///
+  /// 目标句是否仍是代表 cue 与 [_applySeekTargetSnap] 同一判据：几何上在
+  /// `[startMs − preRoll, endMs]` 内，或仍有在途宽限。两者皆否 = 下一拍就清快照，返回 null
+  /// 跟真实位置，不把动画拽回句首。
   int? _snapInFlightClockMs(int rawPosMs, int snapIndex) {
-    final int? landing = _seekSnapLandingMs;
-    if (landing == null || _seekSnapGraceTicksLeft <= 0) return null;
     if (snapIndex < 0 || snapIndex >= _cues.length) return null;
     final AudioCue target = _cues[snapIndex];
-    final (_, bool inWindow) = cueSnapIndex(
+    final int effectiveMs = effectiveSubtitlePositionMs(rawPosMs, _delayMs);
+    final (_, bool keepSnapshot) = cueSnapIndex(
       findCueIndex: snapIndex,
-      effectiveMs: effectiveSubtitlePositionMs(rawPosMs, _delayMs),
+      effectiveMs: effectiveMs,
       targetIndex: snapIndex,
       targetStartMs: target.startMs,
       targetEndMs: target.endMs,
       preRollMs: kCueSeekPreRollMs,
     );
-    return inWindow ? null : landing;
+    if (!keepSnapshot && _seekSnapGraceTicksLeft <= 0) return null;
+    final int renderMs = cueRenderPositionMs(
+      effectiveMs: effectiveMs,
+      primaryIdx: snapIndex,
+      seekTargetIndex: snapIndex,
+      cues: _cues,
+    );
+    return renderMs == effectiveMs ? null : renderMs + _delayMs;
   }
 
   /// 测试可见：模拟媒体总时长（毫秒，驱动 seek bar 章节刻度按 start/duration 算比例，
@@ -2369,7 +2395,7 @@ class VideoPlayerController extends ChangeNotifier
   /// [_delayMs]，主流为空落副字幕流时用 [effectiveSecondaryDelayMs]。制卡按位置
   /// 解析锚点 / 裁剪逆变换必须与该流的 cue 命中同一根时间轴（TODO-2837）。
   int get miningDelayMs =>
-      _cues.isNotEmpty || graphicSubtitleTimingCues.isNotEmpty
+      _cues.isNotEmpty || _miningStreamIsGraphicTimings
       ? _delayMs
       : effectiveSecondaryDelayMs;
 
@@ -4053,7 +4079,6 @@ class VideoPlayerController extends ChangeNotifier
   /// 自然越过目标句都汇到这里，作「seek 追踪状态」的统一复位点。
   void _clearSeekTargetSnap() {
     _seekTargetCueIndex = null;
-    _seekSnapLandingMs = null;
     _seekSnapGraceTicksLeft = 0;
     _clearPlainSeekInFlight();
   }
@@ -4174,6 +4199,10 @@ class VideoPlayerController extends ChangeNotifier
   /// 在途期间按「目标句起点那一刻」取样：渲染集 = 目标句开场时真实在屏的 cue（真正与它
   /// 重叠的字幕照样一起显示，TODO-1312 不回归），旧句不再混入。position 落进目标句区间后
   /// 用实时位置；没有快照时恒用实时位置。
+  ///
+  /// 字幕时钟（[subtitleClockMs]，overlay 的 `\fad` / `\move` / `\t` / `\k` 读它）在快照期间
+  /// 取的也是这个位置（[_snapInFlightClockMs]）：哪几条在屏与它们淡到哪必须同一个时间点
+  /// （BUG-3313）。
   @visibleForTesting
   static int cueRenderPositionMs({
     required int effectiveMs,
@@ -4356,7 +4385,8 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 逐句时间表里与 mpv 当前句对应的那句：[mpvStartMs] 非空时按起点匹配（容差
   /// [kGraphicTimingMatchToleranceMs]）；为空时按播放位置取「正在显示的那句，否则
-  /// 最后一句已开始的」（与制卡按位置解析同一规则）。表为空返回 null。
+  /// 最后一句已开始的」（与制卡按位置解析同一规则、同一个时钟 [miningPositionMs]：
+  /// 图形模式下即真实位置，位图由 libmpv 按真实帧画）。表为空返回 null。
   AudioCue? _graphicTimingCueFor(int? mpvStartMs) {
     final List<AudioCue> timings = graphicSubtitleTimingCues;
     if (timings.isEmpty) return null;
@@ -4368,7 +4398,7 @@ class VideoPlayerController extends ChangeNotifier
       }
       return null;
     }
-    final int? pos = positionMs;
+    final int? pos = miningPositionMs;
     if (pos == null) return null;
     final int at = effectiveSubtitlePositionMs(pos, _delayMs);
     AudioCue? floor;
@@ -4674,8 +4704,15 @@ class VideoPlayerController extends ChangeNotifier
   }
 
   /// mpv-style single-frame stepping. mpv requires playback to be paused first.
+  ///
+  /// 逐帧步进本身是一次用户发起的位置变更，与 [seekMs] 同样作废 seek 追踪状态
+  /// （[_clearSeekTargetSnap]：普通 seek 在途目标 + [skipToCue] 快照）。否则暂停态 seek
+  /// 后逐帧跨过句子边界，字幕时钟（[subtitleClockMs]）会因「暂停态无限期保持目标」永久
+  /// 停在跳转目标上：ASS 动画、上一句 / 下一句、调轴面板与波形播放头、弹幕、按位置锚句
+  /// 全部停在原处（BUG-3313）。
   Future<void> frameStep({required bool forward}) async {
     await pause();
+    _clearSeekTargetSnap();
     await _mpvCommand(<String>[forward ? 'frame-step' : 'frame-back-step']);
   }
 
@@ -5434,7 +5471,6 @@ class VideoPlayerController extends ChangeNotifier
     ).clamp(0, 1 << 30);
     await _rawSeekMs(landingMs);
     _seekTargetCueIndex = targetIndex;
-    _seekSnapLandingMs = targetIndex == null ? null : landingMs;
     // 充满在途 seek 宽限（TODO-565 复核退回的真机时序）：异步 seek 落地前 tick 会先读到
     // 旧 position，宽限让快照撑到落点，避免在途 stale tick 把快照提前清掉 → off-by-one。
     // 目标解析不到（cue 不在 _cues，_seekTargetCueIndex==null）时无需宽限，留 0。
