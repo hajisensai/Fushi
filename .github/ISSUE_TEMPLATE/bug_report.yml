@@ -1,0 +1,93 @@
+name: Bug report / 问题反馈
+description: Something doesn't work as expected. / 功能异常、报错、闪退等。
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please search [existing issues](https://github.com/hajisensai/hibiki/issues?q=is%3Aissue) first to avoid duplicates. English or Chinese are both fine.
+        感谢反馈！提交前请先搜索[已有 issue](https://github.com/hajisensai/hibiki/issues?q=is%3Aissue) 避免重复。中英文均可。
+  - type: input
+    id: version
+    attributes:
+      label: App version / 版本号
+      description: Shown in Settings. / 可在设置中查看。
+      placeholder: e.g. 2.10.0+1354
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform / 平台
+      multiple: true
+      options:
+        - Android
+        - iOS (TestFlight)
+        - Windows
+        - macOS
+        - Linux
+        - Browser extension / 浏览器扩展
+        - Headless server / 无头服务端 (fushi_server)
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device & OS version / 设备与系统版本
+      placeholder: e.g. Pixel 8 / Android 15; Windows 11 24H2
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area / 功能模块
+      multiple: true
+      options:
+        - Book reader / 小说阅读器
+        - Audiobook / 有声书
+        - Manga / 漫画
+        - Video / 视频
+        - Dictionary & lookup / 词典与查词
+        - Anki & card mining / Anki 制卡
+        - Galgame (Windows)
+        - Sync & interconnect / 同步与互联
+        - Download & online sources / 下载与在线源
+        - Settings & UI / 设置与界面
+        - Other / 其他
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened? / 问题描述
+      description: What did you expect, and what happened instead? / 期望的结果与实际结果。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / 复现步骤
+      placeholder: |
+        1. Open ...
+        2. Tap ...
+        3. See ...
+    validations:
+      required: true
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often? / 出现频率
+      options:
+        - Every time / 每次必现
+        - Sometimes / 偶尔
+        - Only once / 仅出现过一次
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / 日志
+      description: |
+        Settings → Diagnostics → Error Log (or enable Debug Log, reproduce, then open it) → copy and paste here, or tap "Upload to server" and mention that you did. Remove anything private.
+        设置 → 诊断 → 错误日志（或先打开「启用调试日志」、复现后再查看调试日志）→ 复制粘贴到这里，或点「上传到服务器」并在此注明已上传。请删去隐私内容。
+      render: text
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Screenshots / recordings / sample files · 截图、录屏、样本文件
+      description: Drag files here. For book/dictionary/subtitle issues a minimal sample file helps a lot. / 直接拖入文件；书籍、词典、字幕类问题附最小样本文件最有帮助。
