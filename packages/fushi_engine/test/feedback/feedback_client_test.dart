@@ -360,4 +360,41 @@ void main() {
       throwsStateError,
     );
   });
+
+  test('APNs 推送令牌：凭 ticket 不签名 PUT 登记 / DELETE 注销', () async {
+    final h = _harness(
+      (http.Request r) async => _json(<String, dynamic>{
+        'registered': r.method == 'PUT',
+        if (r.method == 'PUT') 'delivering': true,
+      }),
+      identity: _id,
+    );
+    expect(
+      await h.client.registerFeedbackPushToken(
+        'abcdefghij',
+        'T' * 32,
+        token: 'ab' * 32,
+        lang: 'zh-CN',
+      ),
+      isTrue,
+    );
+    await h.client.unregisterFeedbackPushToken(
+      'abcdefghij',
+      'T' * 32,
+      token: 'ab' * 32,
+    );
+    final http.Request put = h.requests[0];
+    expect(put.method, 'PUT');
+    expect(put.url.path, '/v1/feedback/abcdefghij/push');
+    expect(put.headers['X-Fushi-Ticket'], 'T' * 32);
+    expect(put.headers.containsKey('X-Fushi-Sig'), isFalse);
+    expect(jsonDecode(put.body), <String, dynamic>{
+      'token': 'ab' * 32,
+      'lang': 'zh-CN',
+    });
+    final http.Request del = h.requests[1];
+    expect(del.method, 'DELETE');
+    expect(del.url.path, '/v1/feedback/abcdefghij/push');
+    expect(jsonDecode(del.body), <String, dynamic>{'token': 'ab' * 32});
+  });
 }

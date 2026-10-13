@@ -704,6 +704,42 @@ class LeaderboardClient {
     );
   }
 
+  /// 给本条反馈登记 APNs 设备令牌（iOS 推送「开发者回复了你的反馈」）。[token] 是
+  /// device token 的十六进制串；[lang] 是界面语言标签（服务端据此选通知文案）。
+  /// 反馈已结案时服务端回 409 `feedback_closed`（原样抛出，调用方据此不再登记）。
+  /// 返回服务端此刻是否真的会推送（`delivering`：APNs 已配置）。
+  Future<bool> registerFeedbackPushToken(
+    String id,
+    String ticket, {
+    required String token,
+    required String lang,
+  }) async {
+    final JsonMap j = await _sendJson(
+      'PUT',
+      '/v1/feedback/${_segment(id)}/push',
+      body: <String, String>{'token': token, 'lang': lang},
+      signed: false,
+      headers: <String, String>{'X-Fushi-Ticket': ticket},
+    );
+    return j['delivering'] == true;
+  }
+
+  /// 注销本条反馈下的这个 APNs 令牌（不存在也算成功）。
+  Future<void> unregisterFeedbackPushToken(
+    String id,
+    String ticket, {
+    required String token,
+  }) async {
+    await _send(
+      'DELETE',
+      '/v1/feedback/${_segment(id)}/push',
+      bytes: _encodeJson(<String, String>{'token': token}),
+      contentType: _json,
+      signed: false,
+      headers: <String, String>{'X-Fushi-Ticket': ticket},
+    );
+  }
+
   /// 开发者：反馈列表。[status] = `active`（未结案，默认）/ 某个状态 wire 值 / null（全部）。
   /// [query]：编号精确匹配，或标题 / 正文包含（服务端 `q`）。
   Future<FeedbackInboxPage> devFeedbackList({

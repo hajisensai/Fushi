@@ -10,6 +10,10 @@
 //   后台 isolate 拉不起 AppModel（读不到 Drift 偏好、排行榜账户的服务器覆盖、slang
 //   的当前语言），这两样只能由主 isolate 交给它；
 // - permissionAsked：首次提交反馈后已经向系统申请过一次通知权限，之后不再追着要。
+// - pushToken / pushRegistered / pushDelivering：iOS 远程推送（feedback_push.dart）的
+//   登记状态——当前 APNs 令牌、已用它登记过的反馈 id、服务端登记时是否答复「会推送」。
+//   被推送覆盖的反馈（[FeedbackReplyState.pushCovered]）的新回复由服务端推送提醒，
+//   前台 snackbar 与后台本地通知都不再提醒它，只推进水位——同一条回复不会提醒两次。
 //
 // **后台 isolate 只写本文件，绝不写 tickets.json**：主 isolate 随时可能在写清单
 // （提交 / 看详情 / 标已读），两个 isolate 各自读改写同一份清单会丢更新。后台只读清单、
@@ -84,6 +88,18 @@ List<FeedbackReplyAlert> selectNewReplies(
     if (c.devReplyAt > (seenAt[c.id] ?? 0) && c.devReplyAt > notifiedReplyAt) c,
 ];
 
+/// 从 [selectNewReplies] 的结果里去掉由远程推送提醒的反馈（[pushCovered]）：它们已经由
+/// 服务端推送提醒过，本机路径再提醒就是重复。水位仍按完整结果推进（调用方负责）。
+List<FeedbackReplyAlert> withoutPushCovered(
+  List<FeedbackReplyAlert> fresh,
+  Set<String> pushCovered,
+) => pushCovered.isEmpty
+    ? fresh
+    : <FeedbackReplyAlert>[
+        for (final FeedbackReplyAlert a in fresh)
+          if (!pushCovered.contains(a.id)) a,
+      ];
+
 class FeedbackReplyState {
   const FeedbackReplyState({
     this.lastRefreshAt = 0,
@@ -91,6 +107,9 @@ class FeedbackReplyState {
     this.serverUrl,
     this.alertTitle,
     this.permissionAsked = false,
+    this.pushToken,
+    this.pushRegistered = const <String>[],
+    this.pushDelivering = false,
   });
 
   factory FeedbackReplyState.fromJson(Map<String, dynamic> j) =>
@@ -100,6 +119,13 @@ class FeedbackReplyState {
         serverUrl: j['serverUrl'] as String?,
         alertTitle: j['alertTitle'] as String?,
         permissionAsked: j['permissionAsked'] == true,
+        pushToken: j['pushToken'] as String?,
+        pushRegistered: <String>[
+          for (final Object? e
+              in (j['pushRegistered'] as List<Object?>?) ?? const <Object?>[])
+            if (e is String) e,
+        ],
+        pushDelivering: j['pushDelivering'] == true,
       );
 
   final int lastRefreshAt;
@@ -107,6 +133,36 @@ class FeedbackReplyState {
   final String? serverUrl;
   final String? alertTitle;
   final bool permissionAsked;
+
+  /// 当前登记用的 APNs 令牌（十六进制）；null = 没有远程推送。
+  final String? pushToken;
+
+  /// 已用 [pushToken] 登记过的反馈 id。
+  final List<String> pushRegistered;
+
+  /// 最近一次登记时服务端答复「会推送」（APNs 已配置）。
+  final bool pushDelivering;
+
+  /// 新回复由服务端远程推送提醒的反馈：登记过 **且** 服务端确认会推送。
+  Set<String> get pushCovered => pushToken != null && pushDelivering
+      ? pushRegistered.toSet()
+      : const <String>{};
+
+  /// 整组替换远程推送登记状态（[token] 为 null = 清空）。
+  FeedbackReplyState withPush({
+    required String? token,
+    required List<String> registered,
+    required bool delivering,
+  }) => FeedbackReplyState(
+    lastRefreshAt: lastRefreshAt,
+    notifiedReplyAt: notifiedReplyAt,
+    serverUrl: serverUrl,
+    alertTitle: alertTitle,
+    permissionAsked: permissionAsked,
+    pushToken: token,
+    pushRegistered: token == null ? const <String>[] : registered,
+    pushDelivering: token != null && delivering,
+  );
 
   FeedbackReplyState copyWith({
     int? lastRefreshAt,
@@ -120,6 +176,9 @@ class FeedbackReplyState {
     serverUrl: serverUrl ?? this.serverUrl,
     alertTitle: alertTitle ?? this.alertTitle,
     permissionAsked: permissionAsked ?? this.permissionAsked,
+    pushToken: pushToken,
+    pushRegistered: pushRegistered,
+    pushDelivering: pushDelivering,
   );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -128,6 +187,9 @@ class FeedbackReplyState {
     if (serverUrl != null) 'serverUrl': serverUrl,
     if (alertTitle != null) 'alertTitle': alertTitle,
     if (permissionAsked) 'permissionAsked': true,
+    if (pushToken != null) 'pushToken': pushToken,
+    if (pushRegistered.isNotEmpty) 'pushRegistered': pushRegistered,
+    if (pushDelivering) 'pushDelivering': true,
   };
 }
 
@@ -236,6 +298,7 @@ Future<List<FeedbackReplyAlert>> pollFeedbackRepliesInBackground({
     notifiedReplyAt: state.notifiedReplyAt,
   );
   if (fresh.isEmpty) return fresh;
+  // 水位按全部新回复推进（含远程推送已提醒的），通知只发没被推送覆盖的。
   final int newest = fresh
       .map((FeedbackReplyAlert a) => a.devReplyAt)
       .reduce(math.max);
@@ -243,5 +306,5 @@ Future<List<FeedbackReplyAlert>> pollFeedbackRepliesInBackground({
     (FeedbackReplyState s) =>
         s.copyWith(notifiedReplyAt: math.max(newest, s.notifiedReplyAt)),
   );
-  return fresh;
+  return withoutPushCovered(fresh, state.pushCovered);
 }

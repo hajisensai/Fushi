@@ -274,6 +274,56 @@ com.apple.security.cs.disable-library-validation
 **将来如果引入自研加密（比如端到端加密的互联同步），必须回头改这个值并补交年度
 自分类报告。**
 
+## APNs 推送密钥（反馈回复推送）
+
+开发者在反馈处理台回复 / 改状态后，排行榜 Worker（`services/leaderboard/src/feedback_push.js`）
+给反馈人的 iOS 设备发 APNs 推送，App 没运行也能收到，点开直达那条反馈。Android 不接 FCM
+（国内无 GMS），继续用后台检查；桌面不变。**两侧缺配置都安全空转**：Worker 缺 secret 时
+不发送、不报错（每个 isolate 记一行日志），App 拿不到推送令牌时不登记，提醒照旧走本机后台检查。
+
+### 1. Apple Developer 侧
+
+1. developer.apple.com/account/resources/identifiers → `app.fushi.reader` → Capabilities 勾
+   **Push Notifications** → Save。
+2. **重新生成 App Store 描述文件**（勾了 capability 之后旧描述文件里没有 `aps-environment`）：
+   Profiles → 原来那份 `IOS_APP_STORE` 描述文件 → Edit → Save → 下载，然后照「仓库 Secrets
+   清单」重写 `IOS_PROVISIONING_PROFILE_BASE64`（`tool/apple_signing_secrets.sh`）。
+   `release-desktop.yml` 解出描述文件时发现它带 `aps-environment`，才往 `Release.xcconfig` 追加
+   `CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements`（值取描述文件里的，App Store 描述文件
+   是 `production`）；不带就照旧不接入——**描述文件没开 Push 却签进 aps-environment，codesign
+   会直接失败**，所以这一步不能写死在工程里。
+3. Keys → **+** → 勾 **Apple Push Notifications service (APNs)** → 下载 `AuthKey_<KEYID>.p8`
+   （**只能下一次**，丢了只能作废重建）。记下 Key ID 与 Team ID（10 位）。一把 Auth Key
+   对团队下所有 App、sandbox 与 production 都有效，不像旧的 .p12 推送证书一年一换。
+
+### 2. Worker secrets
+
+```bash
+cd services/leaderboard
+W="node node_modules/wrangler/bin/wrangler.js"
+$W secret put APNS_KEY_P8    --config wrangler.toml   # 粘贴 .p8 全文（含 BEGIN/END 行）
+$W secret put APNS_KEY_ID    --config wrangler.toml   # Key ID
+$W secret put APNS_TEAM_ID   --config wrangler.toml   # Team ID
+$W secret put APNS_BUNDLE_ID --config wrangler.toml   # app.fushi.reader
+$W secret put APNS_ENV       --config wrangler.toml   # production（见下）
+```
+
+部署前先应用迁移 `0008_feedback_push_tokens.sql`（Actions 部署勾 `apply_migrations`）。
+
+### sandbox 与 production
+
+| | sandbox（`api.sandbox.push.apple.com`） | production（`api.push.apple.com`） |
+|---|---|---|
+| 哪些包的令牌 | Xcode 直接装的 Debug 包（`aps-environment = development`） | TestFlight 与 App Store 包（`production`） |
+| `APNS_ENV` | `sandbox` | `production` |
+
+两套环境的令牌互不通用：令牌发错环境 APNs 回 `400 BadDeviceToken`，Worker 会把它当失效令牌删掉。
+线上 Worker 只服务 TestFlight / App Store 包，所以设 `production`。本地真机调推送：在自己机器上
+（别提交）给 Runner 加 `CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements`（Debug 的
+`FUSHI_APS_ENVIRONMENT` 默认 `development`），并临时把一个测试 Worker 的 `APNS_ENV` 设成 `sandbox`。
+
+GitHub Release 里的未签名 ipa（AltStore / Sideloadly 侧载）没有推送能力，照旧走后台检查。
+
 ## 排障
 
 | 症状 | 原因 |

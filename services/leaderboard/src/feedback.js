@@ -14,6 +14,7 @@
 //   [凭据] = X-Fushi-Ticket（本条回执），或提交时所用账户的签名（feedbackForReporter）；二者择一，
 //   带了 ticket 就只认 ticket。匿名提交的反馈只能凭 ticket。补传附件（PUT）只认 ticket——签名要覆盖
 //   整个请求体，视频没法边收边验。
+//   PUT / DELETE /v1/feedback/:id/push        [X-Fushi-Ticket] {token, lang?} 登记 / 注销 APNs 推送令牌（feedback_push.js）
 //
 // 开发者（签名，账户 role = 'dev'；网页处理台 devconsole.js 复用同一组函数）：
 //   GET  /v1/dev/feedback?status&cursor&limit&q   q：编号精确匹配，或标题 / 正文包含（LIKE）
@@ -52,10 +53,11 @@
 // 解压后过大的、出文本时截流并加「不可信数据」页眉；服务端自记来源（origin）与客户端自报的
 // meta 分开；单条反馈追加说明总数有上限。
 
-import { HttpError, b64urlEncode, clampInt, hex, json, randomId, sha256, timingSafeEqual } from './util.js';
+import { HttpError, b64urlEncode, background, clampInt, hex, json, randomId, sha256, timingSafeEqual } from './util.js';
 import { adjustSpend, deleteMedia, releaseMediaBytes, reserveMediaBytes, spend } from './budget.js';
 import { sniffImage } from './media.js';
 import { DAY, HOUR, hit } from './ratelimit.js';
+import { clearFeedbackPushTokens, notifyFeedbackUpdate, registerPushToken, unregisterPushToken } from './feedback_push.js';
 import {
   LOG_MAX_DECOMPRESSED,
   LOG_UNTRUSTED_HEADER,
@@ -726,6 +728,8 @@ export async function reporterClose(env, row, now) {
   await env.DB.prepare(
     'INSERT INTO feedback_messages (feedback_id, author, body, status, created_at) VALUES (?1, \'user\', \'\', \'closed\', ?2)',
   ).bind(row.id, now).run();
+  // 结案后不会再有回复可推：推送令牌一并作废（App 侧同时注销，这里兜住没注销成的）。
+  await clearFeedbackPushTokens(env, row.id);
 }
 
 /** 处理台搜索词 → LIKE 模式（转义 % _ \）。空串返回 null。 */
@@ -736,8 +740,12 @@ function searchTerm(q) {
   return { exact: t, like: `%${t.replace(/[\\%_]/g, (c) => `\\${c}`)}%` };
 }
 
-/** 开发者处理：改状态和 / 或回复（两者至少一个）。 */
-export async function devUpdate(env, dev, row, body, now) {
+/**
+ * 开发者处理：改状态和 / 或回复（两者至少一个）。写库之后在后台（[ctx].waitUntil）给反馈人的
+ * iOS 设备发 APNs 推送（通用文案，不带正文），结案的顺带清掉推送令牌——见 feedback_push.js。
+ * App 处理台（routeFeedback）与网页处理台（devconsole.js）都走这里，推送不会漏掉任一路径。
+ */
+export async function devUpdate(env, dev, row, body, now, ctx = null) {
   const status = body && body.status !== undefined && body.status !== null && body.status !== ''
     ? body.status : null;
   if (status !== null && !STATUSES.includes(status)) throw new HttpError(400, 'bad_status');
@@ -752,6 +760,11 @@ export async function devUpdate(env, dev, row, body, now) {
     env.DB.prepare('UPDATE feedback SET status = ?2, dev_reply_at = ?3, updated_at = ?3 WHERE id = ?1')
       .bind(row.id, changed ? status : row.status, now),
   ]);
+  const after = changed ? status : row.status;
+  await background(ctx, notifyFeedbackUpdate(env, row.id, {
+    kind: reply ? 'reply' : 'status',
+    closed: CLOSED_STATUSES.includes(after),
+  }, now));
 }
 
 /**
@@ -1147,6 +1160,7 @@ const RE = {
   one: new RegExp(`^/v1/feedback/${ID}$`),
   attach: new RegExp(`^/v1/feedback/${ID}/attachments/([a-z0-9]{1,4})$`),
   messages: new RegExp(`^/v1/feedback/${ID}/messages$`),
+  push: new RegExp(`^/v1/feedback/${ID}/push$`),
   close: new RegExp(`^/v1/feedback/${ID}/close$`),
   devList: /^\/v1\/dev\/feedback$/,
   devOne: new RegExp(`^/v1/dev/feedback/${ID}$`),
@@ -1171,6 +1185,7 @@ export function isFeedbackPath(path) {
  *   readBody: (max: number) => Promise<Uint8Array>,
  *   parse: (bytes: Uint8Array) => any,
  *   auth: (bytes: Uint8Array, opts: object) => Promise<any>,
+ *   ctx?: { waitUntil?: (p: Promise<any>) => void } | null,
  * }} io
  */
 export async function routeFeedback(request, env, url, now, io) {
@@ -1241,6 +1256,15 @@ export async function routeFeedback(request, env, url, now, io) {
     return json(await reporterView(env, await feedbackById(env, row.id)), 201, noStore);
   }
 
+  if ((method === 'PUT' || method === 'DELETE') && (m = RE.push.exec(path))) {
+    const row = await feedbackForTicket(env, m[1], ticket);
+    const body = io.parse(await io.readBody(4 * 1024));
+    const out = method === 'PUT'
+      ? await registerPushToken(env, row, body, now, { closed: CLOSED_STATUSES.includes(row.status) })
+      : await unregisterPushToken(env, row, body);
+    return json(out, 200, noStore);
+  }
+
   if (method === 'GET' && RE.devList.test(path)) {
     requireDev(await io.auth(new Uint8Array(), {}));
     const q = url.searchParams;
@@ -1263,7 +1287,7 @@ export async function routeFeedback(request, env, url, now, io) {
     const bytes = await io.readBody(16 * 1024);
     const dev = requireDev(await io.auth(bytes, { mutating: true }));
     const row = await feedbackById(env, m[1]);
-    await devUpdate(env, dev, row, io.parse(bytes), now);
+    await devUpdate(env, dev, row, io.parse(bytes), now, io.ctx);
     return json(await devView(env, await feedbackById(env, row.id)), 200, noStore);
   }
   if (method === 'POST' && (m = RE.devNotes.exec(path))) {

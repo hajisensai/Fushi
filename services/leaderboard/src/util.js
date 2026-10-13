@@ -101,3 +101,15 @@ export function timingSafeEqual(a, b) {
   for (let i = 0; i < ab.length; i++) diff |= ab[i] ^ bb[i];
   return diff === 0;
 }
+
+/**
+ * 写库之后的后台任务（推送这类不该拖慢响应、也不该让响应失败的事）：Workers 运行时交给
+ * ctx.waitUntil；没有 ctx（测试直接调 worker.fetch）就地等它完成，结果确定、可断言。
+ */
+export async function background(ctx, promise) {
+  if (ctx && ctx.waitUntil) {
+    ctx.waitUntil(promise);
+    return;
+  }
+  await promise;
+}

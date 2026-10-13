@@ -2702,6 +2702,20 @@ jobs:
             echo "CODE_SIGN_IDENTITY[sdk=iphoneos*] = Apple Distribution"
             echo "OTHER_CODE_SIGN_FLAGS = \$(inherited) --keychain $IOS_KEYCHAIN_PATH"
           } >> fushi/ios/Flutter/Release.xcconfig
+          # APNs 推送（反馈回复，fushi/ios/Runner/Runner.entitlements）：只有描述文件本身带
+          # aps-environment（App ID 已勾 Push Notifications 并重新生成描述文件）才接入那份
+          # entitlements——描述文件没有这项却签进去，codesign 会直接失败。值取描述文件里的
+          # （App Store 描述文件 = production），不在仓库里写死。
+          APS_ENV="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' "$PROFILE_PLIST" 2>/dev/null || true)"
+          if [ -n "$APS_ENV" ]; then
+            {
+              echo "CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements"
+              echo "FUSHI_APS_ENVIRONMENT = $APS_ENV"
+            } >> fushi/ios/Flutter/Release.xcconfig
+            echo "APNs push entitlement enabled (aps-environment=$APS_ENV)"
+          else
+            echo "Provisioning profile has no aps-environment: building without push (feedback replies fall back to background checks)"
+          fi
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

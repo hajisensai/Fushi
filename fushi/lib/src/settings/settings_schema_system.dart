@@ -614,7 +614,10 @@ SettingsDestination buildSystemDestination() {
               );
               await alerts.setEnabled(value);
               if (value && await alerts.systemNotifier.ensureReady()) {
-                await alerts.systemNotifier.requestPermission();
+                // 刚授权的话，iOS 远程推送此刻才登记得上（未授权时 sync 不登记）。
+                if (await alerts.systemNotifier.requestPermission()) {
+                  await alerts.syncPush();
+                }
               }
               settingsContext.refresh();
             },
