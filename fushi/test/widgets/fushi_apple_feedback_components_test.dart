@@ -134,8 +134,14 @@ void main() {
       await tester.pumpWidget(
         _app(
           const Center(
+            // 子节点要能被命中：空 SizedBox 不参与 hit-test，按下根本到不了 Listener。
             child: FushiPressScale(
-              child: SizedBox(key: box, width: 40, height: 40),
+              child: SizedBox(
+                key: box,
+                width: 40,
+                height: 40,
+                child: ColoredBox(color: Color(0xFF000000)),
+              ),
             ),
           ),
           glass: true,
