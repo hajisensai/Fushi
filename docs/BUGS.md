@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2949 条。点号进各自文件。
+> 共 2950 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3315](bugs/BUG-3315-windows-hi10p-h264-software-decode.md) | ✅ | ✅ | Windows 播放 H.264 High 10 走 CPU 软解掉帧；诊断默认不采 mpv 掉帧统计 |
 | [BUG-3276](bugs/BUG-3276-bitmap-subs-remote-timing-ocr.md) | ✅ | ✅ | VobSub/DVB 图形字幕与远程播放没有逐句时间与整轨 OCR |
 | [BUG-3275](bugs/BUG-3275-graphic-subtitle-ocr-duplicate-slow.md) | ✅ | ✅ | 图形字幕整轨OCR文字重复且极慢 |
 | [BUG-3274](bugs/BUG-3274-graphic-subtitle-mining-black-frame.md) | ✅ | ✅ | 图形字幕制卡只有黑色静图、无同步视频和句子音频 |
