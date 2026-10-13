@@ -887,11 +887,36 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 不登记常驻来源（BUG-3312）。返回 true 表示已接管，调用方就此结束。
   Future<bool> _importedAsAudioCd(String picked) async {
     if (widget.mediaKind != SourceLibraryKind.video.dbValue) return false;
-    if (!await importAudioCdIfPresent(context, db: _db, dir: picked)) {
-      return false;
-    }
+    final bool handled = await _whileTempSourceScans(
+      (void Function(int sourceId) onScanning) => importAudioCdIfPresent(
+        context,
+        db: _db,
+        dir: picked,
+        onScanning: onScanning,
+      ),
+    );
+    if (!handled) return false;
     widget.onLibraryChanged?.call();
     return true;
+  }
+
+  /// 一次性导入（[importLocalFolderOnceAt]）的临时来源行不进 [_rows]（中途不
+  /// `_load`），但扫描期间计入 [_scanning] 让 [isBusy] 生效，与常驻来源扫描共享同一套
+  /// 忙态与重入保护；[body] 结束（含抛出）即撤掉。来源页「仅此一次」与音频 CD 抓轨导入
+  /// 共用这一份，不各自记账。
+  Future<T> _whileTempSourceScans<T>(
+    Future<T> Function(void Function(int sourceId) onScanning) body,
+  ) async {
+    int? scanningId;
+    try {
+      return await body((int id) {
+        scanningId = id;
+        if (mounted) setState(() => _scanning.add(id));
+      });
+    } finally {
+      final int? id = scanningId;
+      if (id != null && mounted) setState(() => _scanning.remove(id));
+    }
   }
 
   /// 添加本地文件夹为常驻来源（选目录 → 去重 → 落库 → 立即扫描）。
@@ -985,24 +1010,19 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final String? groupingMode = await _pickVideoGroupingMode();
     if (!mounted || groupingMode == null) return;
     final VoidCallback? onLibraryChanged = widget.onLibraryChanged;
-    int? tempId;
     SourceScanSummary? summary;
     try {
-      summary = await importLocalFolderOnceAt(
-        db: _db,
-        mediaKind: widget.mediaKind,
-        path: norm,
-        videoGroupingMode: groupingMode,
-        // 临时行不进 _rows（中途不 _load），但计入 _scanning 让 isBusy 生效，
-        // 与常驻来源扫描共享同一套忙态与重入保护。
-        onScanning: (int id) {
-          tempId = id;
-          if (mounted) setState(() => _scanning.add(id));
-        },
+      summary = await _whileTempSourceScans(
+        (void Function(int sourceId) onScanning) => importLocalFolderOnceAt(
+          db: _db,
+          mediaKind: widget.mediaKind,
+          path: norm,
+          videoGroupingMode: groupingMode,
+          onScanning: onScanning,
+        ),
       );
     } finally {
       if (mounted) {
-        setState(() => _scanning.remove(tempId));
         // summary == null 只发生在 scan 意外抛出（scanner 常规失败会把错误写进
         // summary.error）；此时不播成功，让异常沿 unawaited 链路进错误日志。
         if (summary != null) {

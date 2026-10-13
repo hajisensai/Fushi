@@ -19,6 +19,7 @@ import 'package:fushi_engine/media/audio/flac_encoder.dart';
 import 'package:fushi_engine/media/audio_cd/audio_cd_disc.dart';
 import 'package:fushi_engine/media/audio_cd/windows_audio_cd_drive.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:path/path.dart' as p;
 
 /// 抓轨进度：[trackIndex] 从 0 起，[fraction] 是整张盘的完成比例。
@@ -35,16 +36,21 @@ typedef AudioCdRipResult = ({
   int unreadableSectors,
 });
 
-/// 取消开关：UI 持有一份，[ripAudioCd] 在块之间 / 轨之间检查。
+/// 取消开关：UI 持有一份。[ripAudioCd] 在轨之间、读扇区块之间检查它，正在跑的
+/// FLAC 编码经 [whenCancelled] 当场强杀（后端支持时，见 [encodeFlacFile]），全部轨
+/// 处理完后还要再看一次——取消之后绝不交出结果。
 class AudioCdRipCancellation {
-  bool _cancelled = false;
+  final Completer<void> _cancelled = Completer<void>();
   void Function()? _onCancel;
 
-  bool get isCancelled => _cancelled;
+  bool get isCancelled => _cancelled.isCompleted;
+
+  /// 取消时完成；从不取消就永不完成。
+  Future<void> get whenCancelled => _cancelled.future;
 
   void cancel() {
-    if (_cancelled) return;
-    _cancelled = true;
+    if (_cancelled.isCompleted) return;
+    _cancelled.complete();
     _onCancel?.call();
   }
 }
@@ -81,7 +87,7 @@ Future<AudioCdRipResult?> ripAudioCd({
     throw const AudioCdException('The disc has no audio tracks');
   }
   final Directory dir = Directory(
-    p.join(outputRoot, '${_safeName(disc.label)} (${disc.id})'),
+    p.join(outputRoot, audioCdFolderName(disc.label, disc.id)),
   );
   await dir.create(recursive: true);
 
@@ -126,7 +132,7 @@ Future<AudioCdRipResult?> ripAudioCd({
         if (bad == null) return null;
         unreadable += bad;
       }
-      await _encodeFlac(
+      final bool encoded = await _encodeFlac(
         ffmpeg,
         input: tempWav ?? track.aiffPath!,
         output: flac,
@@ -134,7 +140,9 @@ Future<AudioCdRipResult?> ripAudioCd({
         album: disc.label,
         number: track.number,
         total: disc.tracks.length,
+        cancel: cancellation?.whenCancelled,
       );
+      if (!encoded) return null;
     } finally {
       if (tempWav != null && File(tempWav).existsSync()) {
         File(tempWav).deleteSync();
@@ -143,6 +151,9 @@ Future<AudioCdRipResult?> ripAudioCd({
     if (cdda == null) report(track.weight);
     files.add(flac);
   }
+  // 最后一轨编码期间被取消：不支持中止的后端会把它照常编完、循环自然结束——
+  // 这里不再看一次，取消后的结果就会被交出去导入。
+  if (cancellation?.isCancelled ?? false) return null;
   return (directory: dir.path, files: files, unreadableSectors: unreadable);
 }
 
@@ -195,7 +206,8 @@ _Disc _readMacDisc(String mountPath) {
 
 /// [input]（CDDA 的 WAV 或 macOS 的 AIFF）→ [output] FLAC，带轨号 / 专辑标签。
 /// `.part` 落盘约定见 [encodeFlacFile]：中途失败 / 被杀只留 `.part`，下次重抓。
-Future<void> _encodeFlac(
+/// 返回 false = 编码途中被 [cancel] 强杀（`.part` 已删）。
+Future<bool> _encodeFlac(
   FfmpegBackend ffmpeg, {
   required String input,
   required String output,
@@ -203,9 +215,10 @@ Future<void> _encodeFlac(
   required String album,
   required int number,
   required int total,
+  Future<void>? cancel,
 }) async {
   try {
-    await encodeFlacFile(
+    return await encodeFlacFile(
       ffmpeg,
       input: input,
       output: output,
@@ -214,18 +227,26 @@ Future<void> _encodeFlac(
         'album': album,
         'track': '$number/$total',
       },
+      cancel: cancel,
     );
   } on FlacEncodeException catch (e) {
     throw AudioCdException('FLAC encoding failed (${e.message})');
   }
 }
 
-String _safeName(String name) {
-  final String cleaned = name
-      .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), '_')
-      .trim()
-      .replaceAll(RegExp(r'[. ]+$'), '');
-  return cleaned.isEmpty ? 'Audio CD' : cleaned;
+/// 抓轨目录名 `<卷标> (<光盘id>)`。
+///
+/// 卷标经 [safeWindowsFileName] 去掉非法字符（字符集只有那一处真相源），再去掉首尾
+/// 空白与 Windows 不允许的尾随 `.` / 空格；剩下为空回退 `Audio CD`。整名若会被
+/// Windows 当成保留设备名（[isWindowsReservedFileName]：卷标 `CON.x` 得到的
+/// `CON.x (…)` 在第一个 `.` 前就是 `CON`）则前缀 `_`。卷标恰为 `CON` 时整名是
+/// `CON (…)`，本就不是设备名，原样保留。
+String audioCdFolderName(String label, String discId) {
+  final String cleaned = safeWindowsFileName(
+    label,
+  ).trim().replaceAll(RegExp(r'[. ]+$'), '');
+  final String name = '${cleaned.isEmpty ? 'Audio CD' : cleaned} ($discId)';
+  return isWindowsReservedFileName(name) ? '_$name' : name;
 }
 
 /// 在后台 isolate 抓一轨到 [wavPath]。返回静音填充的扇区数；被取消返回 null。

@@ -26,10 +26,14 @@ import 'package:path/path.dart' as p;
 ///   只收数据根之外的外部目录）。
 /// - 抓不了（`.cda` 不在 Windows 光驱上，例如从光盘拷出来的文件夹）：提示原因后返回
 ///   false，照常扫描——子目录里可能还有真正的媒体文件。
+///
+/// [onScanning] 原样交给 [importLocalFolderOnceAt]：抓轨对话框出栈后的那次扫描与来源页
+/// 「仅此一次」导入是同一条管线，调用方据此点亮同一套忙态与重入保护。
 Future<bool> importAudioCdIfPresent(
   BuildContext context, {
   required FushiDatabase db,
   required String dir,
+  void Function(int sourceId)? onScanning,
 }) async {
   final AudioCdLayout? layout = audioCdLayoutOfDirectory(dir);
   if (layout == null) return false;
@@ -59,6 +63,7 @@ Future<bool> importAudioCdIfPresent(
     path: ripped,
     // 一张盘就是一张专辑：按文件夹成组，不按番剧系列去刮削。
     videoGroupingMode: 'folder',
+    onScanning: onScanning,
   );
   final String? error = summary?.error;
   FushiToast.show(
@@ -189,13 +194,13 @@ class _AudioCdRipDialogState extends State<AudioCdRipDialog> {
       onPopInvokedWithResult: (bool didPop, Object? _) {
         if (!didPop) setState(_cancellation.cancel);
       },
-      child: AlertDialog(
+      child: FushiAlertDialog(
         title: Text(t.media_audio_cd_rip_title),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            LinearProgressIndicator(value: progress?.fraction),
+            FushiLinearProgressIndicator(value: progress?.fraction),
             const SizedBox(height: 12),
             Text(
               progress == null
@@ -208,7 +213,7 @@ class _AudioCdRipDialogState extends State<AudioCdRipDialog> {
           ],
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: _cancellation.isCancelled
                 ? null
                 : () => setState(_cancellation.cancel),

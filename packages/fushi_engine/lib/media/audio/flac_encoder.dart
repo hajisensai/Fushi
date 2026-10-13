@@ -4,10 +4,12 @@
 /// 输入是任何它能解的 PCM 容器（WAV / AIFF）。
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi_audio/fushi_audio_core.dart' show AudiobookStorage;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 
 /// FLAC 编码失败（ffmpeg 退出非零或没产出文件）。[message] 是 ffmpeg 的最后一行输出。
 class FlacEncodeException implements Exception {
@@ -24,18 +26,34 @@ class FlacEncodeException implements Exception {
 Duration flacEncodeTimeoutFor(int inputBytes) =>
     Duration(minutes: 10, seconds: inputBytes ~/ (1 << 20));
 
+/// 可取消编码（见 [encodeFlacFile] 的 `cancel`）的卡死判据：ffmpeg 报告的已编码媒体
+/// 时间连续这么久不推进才判卡死。FLAC 编码的进度随输入连续推进，正常远到不了。
+const Duration kFlacEncodeStallTimeout = Duration(minutes: 2);
+
 /// [input] → [output] FLAC，[metadata] 逐条写成 `-metadata k=v`（不写则沿用输入的标签）。
 ///
 /// 先写 `<output>.part`，成功才改名到位：中途失败 / 被杀只会留下 `.part`（失败时
 /// 当场删掉），所以 [output] 存在就等于编码完整。
-Future<void> encodeFlacFile(
+///
+/// [cancel] 完成即中止：后端支持观察式运行（[FfmpegWatchedRunner]：桌面 CLI 与移动端
+/// ffmpeg-kit）时当场强杀 ffmpeg，删掉 `.part` 并返回 false。不支持中止的后端（测试
+/// 替身等）没有办法打断一次 `run`，编码照常跑完；这种情况下若编码成功仍返回 true，
+/// 由调用方在编码后自己再看一次取消状态。不传 [cancel] 时走 [FfmpegBackend.run] 的
+/// 固定总时长，行为与此前逐字一致（有声书 AIFF 落盘这条路不变）。
+///
+/// 返回 true = [output] 已就位；false = 被取消（没有任何产物留下）；失败抛
+/// [FlacEncodeException]。
+Future<bool> encodeFlacFile(
   FfmpegBackend ffmpeg, {
   required String input,
   required String output,
   Map<String, String> metadata = const <String, String>{},
+  Future<void>? cancel,
 }) async {
   final File part = File('$output.part');
-  final FfmpegRunResult result = await ffmpeg.run(<String>[
+  bool cancelled = false;
+  unawaited(cancel?.then((_) => cancelled = true));
+  final List<String> args = <String>[
     '-hide_banner',
     '-loglevel',
     'error',
@@ -53,13 +71,26 @@ Future<void> encodeFlacFile(
     '-f',
     'flac',
     part.path,
-  ], flacEncodeTimeoutFor(await File(input).length()));
+  ];
+  final FfmpegRunResult result = switch (ffmpeg) {
+    final FfmpegWatchedRunner watched when cancel != null =>
+      await watched.runWatched(
+        args,
+        FfmpegWatch(stallTimeout: kFlacEncodeStallTimeout, cancel: cancel),
+      ),
+    _ => await ffmpeg.run(
+      args,
+      flacEncodeTimeoutFor(await File(input).length()),
+    ),
+  };
   if (result.returnCode != 0 || !part.existsSync() || part.lengthSync() == 0) {
     if (part.existsSync()) part.deleteSync();
+    if (cancelled) return false;
     final String detail = result.output.trim().split('\n').last;
     throw FlacEncodeException('exit ${result.returnCode}: $detail');
   }
   part.renameSync(output);
+  return true;
 }
 
 /// 把 [encodeFlacFile] 装进 [AudiobookStorage.flacTranscoder]（AIFF 有声书落盘转
