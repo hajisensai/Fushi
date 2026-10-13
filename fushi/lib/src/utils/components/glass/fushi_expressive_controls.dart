@@ -679,23 +679,32 @@ class _FushiSplitButtonState extends State<FushiSplitButton>
         const FushiAppleMenuDivider(),
         ...widget.menuChildren,
       ],
-      builder: (BuildContext context, MenuController c, Widget? _) => Semantics(
-        expanded: _menuOpen,
-        child: fushiAppleBorderedButton(
-          context,
-          prominent: prominent,
-          onPressed: _toggleMenu,
-          focusNode: widget.focusNode,
-          autofocus: widget.autofocus,
-          semanticLabel: widget.menuTooltip,
-          icon: widget.icon,
-          label: widget.label,
-          trailing: FushiIcon(
-            CupertinoIcons.chevron_down,
-            size: compact ? 11 : 13,
+      // 读屏名称 = 主操作名 + [menuTooltip]：主操作挪进了菜单首项，只念
+      // 「更多选项」的话读屏用户不知道这颗按钮是干什么的。MergeSemantics 把
+      // 标签文字与 chevron 上的 [menuTooltip] 并成一个按钮节点（按树序念：
+      // 主操作名在前）。
+      builder: (BuildContext context, MenuController c, Widget? _) =>
+          MergeSemantics(
+            child: Semantics(
+              expanded: _menuOpen,
+              child: fushiAppleBorderedButton(
+                context,
+                prominent: prominent,
+                onPressed: _toggleMenu,
+                focusNode: widget.focusNode,
+                autofocus: widget.autofocus,
+                icon: widget.icon,
+                label: widget.label,
+                trailing: Semantics(
+                  label: widget.menuTooltip,
+                  child: FushiIcon(
+                    CupertinoIcons.chevron_down,
+                    size: compact ? 11 : 13,
+                  ),
+                ),
+              ),
+            ),
           ),
-        ),
-      ),
     );
   }
 

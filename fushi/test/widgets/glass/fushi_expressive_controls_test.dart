@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart' show SemanticsHandle, SemanticsNode;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -510,6 +511,40 @@ void main() {
       await tester.tap(find.text('CSV'));
       await advance(tester, 400);
       expect(picked, 'csv');
+    });
+
+    testWidgets('Apple：pull-down 按钮的读屏名称含主操作名与 menuTooltip', (
+      WidgetTester tester,
+    ) async {
+      final SemanticsHandle semantics = tester.ensureSemantics();
+      await pumpHost(
+        tester,
+        (_) => FushiSplitButton(
+          label: const Text('Export'),
+          onPressed: () {},
+          menuTooltip: 'More',
+          menuChildren: <Widget>[
+            MenuItemButton(onPressed: () {}, child: const Text('CSV')),
+          ],
+        ),
+        glass: true,
+      );
+      final SemanticsNode node = tester.getSemantics(
+        find.byType(FushiPlainButton),
+      );
+      expect(
+        node.label,
+        contains('Export'),
+        reason: '主操作挪进了菜单首项，读屏名称里必须仍有主操作名',
+      );
+      expect(node.label, contains('More'));
+      expect(
+        node.label.indexOf('Export'),
+        lessThan(node.label.indexOf('More')),
+        reason: '主操作名在前，menuTooltip 在后',
+      );
+      expect(node.getSemanticsData().flagsCollection.isButton, isTrue);
+      semantics.dispose();
     });
   });
 

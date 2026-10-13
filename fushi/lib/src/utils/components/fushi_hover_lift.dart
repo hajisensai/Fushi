@@ -20,10 +20,10 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 ///
 /// 触屏平台上 [MouseRegion] 本就不会触发，无需按平台分流。
 ///
-/// **Apple 设计系统**（[isGlassDesign]）默认不缩放：macOS / iPadOS 的卡片悬停与
-/// 按下都不放大缩小，悬停态照常交给 [builder] / [liftedOf]（由封面框加深阴影等
-/// 静态反馈承担），内层按压也不缩放（见 [FushiPressScale]）。确实要在 Apple 下
-/// 缩放的调用点显式传 [scaleOnApple]。
+/// **Apple 设计系统**（[isGlassDesign]）同样悬停放大、按压下沉（所有者
+/// 2026-10-13 拍板），只是默认放大倍数换成更轻的 [kFushiAppleHoverLiftScale]。
+/// 设计系统只改倍数、不增删包装层：切换设计系统时子树结构不变，[builder] 建出
+/// 的 State 不重建。
 ///
 /// **不变式（BUG-2124）**：屏幕上被放大的卡 ⟺ 指针正下方的卡。滚动会破坏它——
 /// Flutter 的鼠标命中判定在帧末才重算，`onExit` 到达时卡片已经位移，而复位又走
@@ -47,7 +47,6 @@ class FushiHoverLift extends StatefulWidget {
     this.enabled = true,
     this.scale = kFushiHoverLiftScale,
     this.forceLifted = false,
-    this.scaleOnApple = false,
   });
 
   /// 拿到当前 hover 态自行构建内容。hover 态在 [enabled] 为 false 时恒为 false。
@@ -63,9 +62,6 @@ class FushiHoverLift extends StatefulWidget {
   /// 收不到 enter/exit，由调用方从 `FushiFileDropTarget.onHoverChanged` 传进来）。
   /// [enabled] 为 false 时无效；滚动压制不作用于它（拖拽期间不会滚动）。
   final bool forceLifted;
-
-  /// Apple 设计系统下是否也缩放（悬停抬升与按压下沉一起）；默认 false。
-  final bool scaleOnApple;
 
   @override
   State<FushiHoverLift> createState() => _FushiHoverLiftState();
@@ -97,9 +93,8 @@ class _FushiHoverLiftScope extends InheritedWidget {
 /// 游戏库观感一致，推广到其余库页时不另立数值。
 const double kFushiHoverLiftScale = 1.05;
 
-/// Apple 设计系统下显式开启缩放（[FushiHoverLift.scaleOnApple]）时的悬停放大
-/// （macOS 26 的卡片悬停只是轻轻一抬，1.05 读作「跳」）。只替换默认值；调用方
-/// 显式传了别的 scale 时照用。
+/// Apple 设计系统下的悬停放大（macOS 26 的卡片悬停只是轻轻一抬，1.05 读作
+/// 「跳」）。只替换默认值；调用方显式传了别的 scale 时照用。
 const double kFushiAppleHoverLiftScale = 1.03;
 
 /// 悬停动画时长（游戏库既有实现的落地值）。
@@ -227,8 +222,7 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   void didUpdateWidget(covariant FushiHoverLift oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.enabled != widget.enabled ||
-        oldWidget.scale != widget.scale ||
-        oldWidget.scaleOnApple != widget.scaleOnApple) {
+        oldWidget.scale != widget.scale) {
       _syncLift(immediate: true);
     } else if (oldWidget.forceLifted != widget.forceLifted) {
       _syncLift();
@@ -261,20 +255,18 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
     // 2026-10 交互重做：悬停抬升之外再叠按压下沉——触屏上没有 hover，卡片
     // 此前点下去只有水波纹；按压反馈放在抬升**内层**，两者独立叠乘（桌面上
     // 悬停 1.05 × 按下 0.97），抬升的显式 Transform 仍是本组件最外层变换。
-    final bool apple = isGlassDesign(context);
     final Widget content = FushiPressScale(
-      scaleOnApple: widget.scaleOnApple,
       child: _FushiHoverLiftScope(
         lifted: _lifted,
         child: widget.builder(context, _lifted),
       ),
     );
-    final double scale = widget.scale == kFushiHoverLiftScale && apple
-        ? kFushiAppleHoverLiftScale
-        : widget.scale;
-    if (!_animate || (apple && !widget.scaleOnApple)) {
-      return _wrapHover(content);
-    }
+    // 设计系统只换倍数，不改子树结构（切换设计系统时 builder 的 State 不重建）。
+    final double scale =
+        widget.scale == kFushiHoverLiftScale && isGlassDesign(context)
+            ? kFushiAppleHoverLiftScale
+            : widget.scale;
+    if (!_animate) return _wrapHover(content);
     return _wrapHover(
       AnimatedBuilder(
         animation: _curved,

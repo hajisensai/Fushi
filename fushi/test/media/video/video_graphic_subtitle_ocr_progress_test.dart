@@ -224,7 +224,7 @@ void main() {
     expect(find.byKey(pill), findsNothing);
   });
 
-  testWidgets('进度卡 / 药丸走播放器浮层统一表面：Apple 是液态玻璃，MD3 不是', (
+  testWidgets('进度卡 / 药丸走播放器浮层统一表面：Apple 是实色悬浮面，MD3 是 Material', (
     WidgetTester tester,
   ) async {
     Future<void> pump({required bool glass}) async {
@@ -236,7 +236,8 @@ void main() {
               brightness: Brightness.light,
             ),
             textTheme: Typography.material2021().black,
-            glass: glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+            // 与生产一致：Apple 设计系统的组件材质档已钉成 off（实色）。
+            glass: FushiGlassMaterial.off,
             glassDesign: glass,
           ),
           home: FushiGlassScope(
@@ -269,16 +270,22 @@ void main() {
       isA<Material>(),
     );
 
+    // Apple：与其它 Apple 悬浮胶囊同一块实色面（BUG-3318 口径：不逐块开
+    // GlassContainer own layer），也不是 MD3 的 Material 深色卡。
     await pump(glass: true);
+    expect(find.byType(GlassContainer), findsNothing);
+    final Finder card = find.byKey(const ValueKey<String>(cardKey));
+    final Widget cardSurface = tester.widget(card);
+    expect(cardSurface, isA<DecoratedBox>());
+    final Decoration cardDecoration = (cardSurface as DecoratedBox).decoration;
+    expect(cardDecoration, isA<ShapeDecoration>());
     expect(
-      find.descendant(
-        of: find.byKey(
-          const ValueKey<String>('graphic_subtitle_ocr_progress_card_box'),
-        ),
-        matching: find.byType(GlassContainer),
-      ),
-      findsOneWidget,
+      (cardDecoration as ShapeDecoration).color,
+      fushiGlassPlatformViewFallback(tester.element(card)),
+      reason: 'Apple 实色悬浮面取系统材质实色',
     );
+    expect(cardDecoration.shape, isA<RoundedSuperellipseBorder>());
+
     await tester.tap(
       find.byKey(
         const ValueKey<String>('graphic_subtitle_ocr_progress_collapse'),
@@ -289,7 +296,21 @@ void main() {
     final Finder pill = find.byKey(const ValueKey<String>(pillKey));
     expect(
       find.descendant(of: pill, matching: find.byType(GlassContainer)),
-      findsOneWidget,
+      findsNothing,
+    );
+    final Iterable<ShapeDecoration> pillDecorations = tester
+        .widgetList<DecoratedBox>(
+          find.descendant(of: pill, matching: find.byType(DecoratedBox)),
+        )
+        .map((DecoratedBox box) => box.decoration)
+        .whereType<ShapeDecoration>();
+    expect(pillDecorations, isNotEmpty, reason: '药丸同样是 Apple 实色悬浮面');
+    final ShapeBorder pillShape = pillDecorations.first.shape;
+    expect(pillShape, isA<RoundedRectangleBorder>());
+    expect(
+      (pillShape as RoundedRectangleBorder).borderRadius,
+      BorderRadius.circular(20),
+      reason: '矮表面圆角取药丸设计高度 40 的一半，仍是胶囊',
     );
     // 药丸整颗可点，命中区不小于 40。
     expect(tester.getSize(pill).height, greaterThanOrEqualTo(40));

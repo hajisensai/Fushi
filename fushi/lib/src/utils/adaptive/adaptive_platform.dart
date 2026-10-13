@@ -3,6 +3,8 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/system_transparency.dart';
+
 enum FushiDesignSystem { auto, material, cupertino, macos }
 
 /// macOS 标准标题栏高度（逻辑像素）。`main.dart` 无条件启用透明标题栏 +
@@ -139,6 +141,33 @@ FushiGlassMaterial glassMaterialOf(BuildContext context) {
     return FushiGlassMaterial.frosted;
   }
   return material;
+}
+
+/// 窗口级系统材质（Windows 11 Mica / macOS `NSVisualEffectView` vibrancy）是否
+/// 请求开启。
+///
+/// 与 [glassMaterialOf]（组件悬浮面画不画玻璃）**解耦**：所有者 2026-10-13
+/// 拍板 Apple（Cupertino）设计系统组件悬浮面实色，但窗口级材质保留——所以这里
+/// 不看材质档（[FushiGlassTheme.material] 已钉成 off），只看三件事：设计系统
+/// （[glassDesign]，墨水屏下 [isGlassDesign] 恒 false）、系统「降低透明度」
+/// （[reduceTransparency]）与「增强对比度」（[highContrast]）。平台支不支持由
+/// 原生侧判，结果回写 `WindowCaptionChannel.systemBackdropActive`。
+bool fushiWindowBackdropRequested({
+  required bool glassDesign,
+  required bool reduceTransparency,
+  required bool highContrast,
+}) {
+  return glassDesign && !reduceTransparency && !highContrast;
+}
+
+/// [fushiWindowBackdropRequested] 的 BuildContext 版：系统「降低透明度」读
+/// [SystemTransparency] 镜像（它变化时 ThemeNotifier 通知、根 build 重跑）。
+bool windowBackdropRequestedOf(BuildContext context) {
+  return fushiWindowBackdropRequested(
+    glassDesign: isGlassDesign(context),
+    reduceTransparency: SystemTransparency.reduceTransparency.value,
+    highContrast: MediaQuery.maybeHighContrastOf(context) ?? false,
+  );
 }
 
 /// 当前上下文是否走「玻璃」设计系统的组件族（`liquid_glass_widgets`）。

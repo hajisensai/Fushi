@@ -10,7 +10,6 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 // 面板内容（视频页各 part 的字幕轨 / 音轨 / 画质 / 章节）经本文件拿到面板中性
 // 主题的判据与配色 helper。
@@ -18,12 +17,12 @@ export 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 
 /// 视频页浮层面板（设置 / 倍速 / 章节 / 画质 / 字幕抽屉）的统一表面。
 ///
-/// - Apple：浮在画面上的液态玻璃厚档（iOS 26 播放器设置面板 / macOS 26
-///   检查器）——深色 #262626 @84%、浅色白 @74%、blur 16，压得住任何亮暗画面，
-///   字始终可读；系统降低透明度（[FushiGlassMaterial.off]）时由
-///   [fushiGlassSettings] 回落实色。圆角桌面 18、触屏 28（超椭圆）。面板里的
-///   分组卡换成一层半透明系统灰（[videoPanelAppleColors]），在玻璃上浮起而不是
-///   挖出一块实色黑洞。
+/// - Apple：与播放器其它悬浮胶囊 / 迷你条 / 圆钮同一块原生 Cupertino 实色
+///   悬浮面（[fushiAppleSolidFloatingDecoration]：系统材质实色 + 发丝描边 +
+///   柔和投影），不开玻璃、不逐块 `useOwnLayer` 实时模糊（用户 2026-10-12
+///   实测掉帧、白边）。圆角桌面 18、触屏 28（超椭圆）；[glassRadius] 给定时
+///   （小药丸取半高）用普通圆角矩形，保证矮表面仍是胶囊。面板里的分组卡用
+///   [videoPanelAppleColors] 的上一级实色，在实色面上浮起。
 /// - MD3（M3 Expressive）：与播放器悬浮胶囊 / 音量倍速浮层同一层无色相中性
 ///   深色表面（[videoM3eFloatingColor]，#2D2D2D @86%），圆角 28、轻阴影；面板
 ///   内部读中性主题（[videoM3ePanelTheme]：灰阶容器、白字、强调色仍是 app 主色），
@@ -39,19 +38,19 @@ class VideoFloatingPanelSurface extends StatelessWidget {
     super.key,
   });
 
-  /// Apple 液态玻璃的超椭圆圆角；null = [radiusOf]。小尺寸浮层（如胶囊药丸）
-  /// 用它取半高，否则 18 / 28 的面板圆角在矮表面上不成胶囊。
+  /// Apple 实色悬浮面的圆角；null = [radiusOf]（超椭圆）。小尺寸浮层（如胶囊
+  /// 药丸）用它取半高，否则 18 / 28 的面板圆角在矮表面上不成胶囊。
   final double? glassRadius;
 
   /// MD3：true 时表面用不透明底色（不透出下面的画面 / 字幕）。设置面板与调轴浮条
   /// 用它——面板里是成片的文字与控件，背后透出字幕会和面板文字叠在一起难读。
-  /// Apple 液态玻璃不受影响（玻璃本身已压得住画面）。
+  /// Apple 不受影响（实色悬浮面本就不透明）。
   final bool opaque;
 
   final Widget child;
 
   /// MD3 / 墨水屏表面的圆角；null = 四角 [radiusOf]。贴底面板只圆上两角。
-  /// Apple 液态玻璃恒为四角超椭圆（玻璃形状不支持分角）。
+  /// Apple 恒为四角（[glassRadius] / [radiusOf]），与其它 Apple 悬浮面一致。
   final BorderRadius? borderRadius;
 
   /// 挂在表面本体上的 key（测试 / 几何断言按它取面板矩形）。
@@ -63,30 +62,49 @@ class VideoFloatingPanelSurface extends StatelessWidget {
     return 28;
   }
 
+  /// Apple 实色悬浮面的形状：[glassRadius] 给定时是普通圆角矩形（取半高即
+  /// 精确胶囊），否则是 [radiusOf] 的超椭圆。
+  static OutlinedBorder appleShapeOf(
+    BuildContext context, {
+    double? glassRadius,
+  }) {
+    final double? pill = glassRadius;
+    if (pill != null) {
+      return RoundedRectangleBorder(borderRadius: BorderRadius.circular(pill));
+    }
+    return RoundedSuperellipseBorder(
+      borderRadius: BorderRadius.circular(radiusOf(context)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final double radius = radiusOf(context);
     if (isGlassDesign(context)) {
       final ThemeData theme = Theme.of(context);
       final FushiAppleColors apple = videoPanelAppleColors(context);
-      return GlassContainer(
+      final OutlinedBorder shape = appleShapeOf(
+        context,
+        glassRadius: glassRadius,
+      );
+      return DecoratedBox(
         key: surfaceKey,
-        useOwnLayer: true,
-        quality: fushiGlassQuality(context, prominent: true),
-        settings: videoPanelGlassSettings(context),
-        shape: LiquidRoundedSuperellipse(borderRadius: glassRadius ?? radius),
-        clipBehavior: Clip.antiAlias,
-        child: Theme(
-          data: theme.copyWith(
-            // 只换掉 Apple 色板这一项，其余主题扩展原样保留。
-            // 只换掉 Apple 色板这一项，其余主题扩展原样保留。不写元素类型注解：
-            // 前端编译器把 `ThemeExtension<dynamic>` 按上界展开，与 analyzer
-            // 的推断不一致，显式注解会在热重载时报类型不符。
-            extensions: theme.extensions.values
-                .where((Object e) => e is! FushiAppleColors)
-                .followedBy(<FushiAppleColors>[apple]),
+        decoration: fushiAppleSolidFloatingDecoration(context, shape: shape),
+        child: Material(
+          type: MaterialType.transparency,
+          shape: shape,
+          clipBehavior: Clip.antiAlias,
+          child: Theme(
+            data: theme.copyWith(
+              // 只换掉 Apple 色板这一项，其余主题扩展原样保留。不写元素类型
+              // 注解：前端编译器把 `ThemeExtension<dynamic>` 按上界展开，与
+              // analyzer 的推断不一致，显式注解会在热重载时报类型不符。
+              extensions: theme.extensions.values
+                  .where((Object e) => e is! FushiAppleColors)
+                  .followedBy(<FushiAppleColors>[apple]),
+            ),
+            child: child,
           ),
-          child: Material(type: MaterialType.transparency, child: child),
         ),
       );
     }
@@ -130,22 +148,7 @@ class VideoFloatingPanelSurface extends StatelessWidget {
   }
 }
 
-/// 视频浮层面板的玻璃参数：在作用域玻璃之上加厚（理由见
-/// [VideoFloatingPanelSurface]）。磨砂 / 关闭档直接用作用域值（已是厚实底）。
-LiquidGlassSettings videoPanelGlassSettings(BuildContext context) {
-  final LiquidGlassSettings base = fushiGlassSettings(context);
-  if (glassMaterialOf(context) != FushiGlassMaterial.liquid) return base;
-  final bool dark = Theme.of(context).colorScheme.brightness == Brightness.dark;
-  return base.copyWith(
-    glassColor: dark
-        ? const Color(0xFF262626).withValues(alpha: 0.84)
-        : Colors.white.withValues(alpha: 0.74),
-    blur: 16,
-    thickness: dark ? 25 : 18,
-  );
-}
-
-/// 玻璃面板内的 Apple 色板：分组卡底（secondaryGroupedBackground）换成半透明
+/// 浮层面板内的 Apple 色板：分组卡底（secondaryGroupedBackground）换成半透明
 /// 系统灰，其余照旧。降低透明度时面板是实色 #1C1C1E / #F9F9F9，卡片随之用
 /// 实色的上一级（#2C2C2E / 白）。
 FushiAppleColors videoPanelAppleColors(BuildContext context) {

@@ -2518,8 +2518,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             // 11 Mica via the runner, macOS NSVisualEffectView vibrancy). The
             // home shell only turns translucent once the platform reports
             // success (`systemBackdropActive`), so Win10 / others stay solid.
+            // Decoupled from the component surface material on purpose
+            // (owner decision 2026-10-13): Apple floating surfaces are solid
+            // (glass material pinned to off) but the window-level Mica /
+            // vibrancy stays — so this asks the design system + reduce
+            // transparency + high contrast, never `glassMaterialOf`.
+            // Guarded by `test/widgets/window_backdrop_decoupling_test.dart`.
             WindowCaptionChannel.setSystemBackdrop(
-              mica: glassMaterialOf(context) != FushiGlassMaterial.off,
+              mica: windowBackdropRequestedOf(context),
               dark: settled.brightness == Brightness.dark,
             );
             // Drive the status/navigation bar icon brightness from the *live*

@@ -1448,8 +1448,9 @@ class ThemeNotifier extends ChangeNotifier {
 
   /// 功能层表面材质（与颜色主题正交）。随 Profile 走，与主题键一致；墨水屏 /
   /// 增强对比度下的回退在消费端 [glassMaterialOf] 判，这里只存用户的选择。
-  /// 生效的玻璃材质：只有设计系统选「玻璃」时才非 off；当前固定毛玻璃
-  /// （见 [glassMaterialTier]），液态档暂时关闭。
+  /// 生效的玻璃材质：只有设计系统选「玻璃」时才非 off；当前 Apple（Cupertino）
+  /// 组件悬浮面恒为实色（[glassMaterialTier] 钉成 off）。窗口级 Mica / vibrancy
+  /// 不读这里，见 [windowBackdropRequestedOf]。
   FushiGlassMaterial get glassMaterial {
     if (designSystem != 'glass') return FushiGlassMaterial.off;
     // 系统开了「降低透明度 / 关闭透明效果」：整套玻璃回退实心（主题层半透明
@@ -2419,15 +2420,17 @@ ThemeData buildFushiThemeData({
         // 压暗，边缘侧滑返回跟手），与 iOS 26 / macOS 26 的导航栈同一套运动。
         // Android 不再挂预测返回 builder：Cupertino 转场不接平台预测返回事件，
         // 系统返回键 / 手势照常 pop，也就不存在那套手势计数失配的口子。
+        // 系统「减弱动态效果」下 FushiCupertinoPageTransitionsBuilder 退化成原地
+        // 线性淡入（无推入视差），边缘侧滑返回仍装着（见该类注释）。
         : appleDesign
         ? const PageTransitionsTheme(
             builders: <TargetPlatform, PageTransitionsBuilder>{
-              TargetPlatform.android: CupertinoPageTransitionsBuilder(),
-              TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-              TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-              TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
-              TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
-              TargetPlatform.fuchsia: CupertinoPageTransitionsBuilder(),
+              TargetPlatform.android: FushiCupertinoPageTransitionsBuilder(),
+              TargetPlatform.iOS: FushiCupertinoPageTransitionsBuilder(),
+              TargetPlatform.macOS: FushiCupertinoPageTransitionsBuilder(),
+              TargetPlatform.windows: FushiCupertinoPageTransitionsBuilder(),
+              TargetPlatform.linux: FushiCupertinoPageTransitionsBuilder(),
+              TargetPlatform.fuchsia: FushiCupertinoPageTransitionsBuilder(),
             },
           )
         // Android 侧滑返回改走自带手势记账的转场：Flutter 自带实现把平台事件直接

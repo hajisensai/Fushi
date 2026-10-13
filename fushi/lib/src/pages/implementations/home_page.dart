@@ -1555,12 +1555,19 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
-  /// Apple（iOS 26 / macOS 26）下视频源后台补刮任务面板的入口：没有 FAB，
-  /// 主操作进导航栏——这里是外壳大标题行右侧的一颗 bar button，带「进行中」
-  /// 角标。视频 tab 不另放：视频库页头自己就有同一颗按钮（同一外壳动作槽里，
-  /// 不画两颗）。MD3 返回 null（页面 FAB 并进悬浮底栏 / 桌面右下 FAB）。
+  /// Apple（iOS 26 / macOS 26）下视频源后台补刮任务面板的入口：主操作进导航
+  /// 栏——这里是外壳大标题行右侧的一颗 bar button，带「进行中」角标。页头自带
+  /// 同一颗按钮的 tab（[_tabHeaderHasScrapeEntry]）不另放（同一外壳动作槽里，
+  /// 不画两颗）。外壳大标题行对可见 tab 高度为 0 时（首页 / 浏览器扩展 / 设置）
+  /// 这颗按钮画不出来，入口退回右下 FAB（见 [_scrapeEntryHostedByChrome]）。
+  /// MD3 返回 null（页面 FAB 并进悬浮底栏 / 桌面右下 FAB）。
   Widget? _appleScrapeTaskAction() {
-    if (!isGlassDesign(context) || _visibleTab == HomeTab.video) return null;
+    // 标题行高度为 0 时不往里塞按钮（塞了也只会被压扁裁掉），入口是右下 FAB。
+    if (!isGlassDesign(context) ||
+        _tabHeaderHasScrapeEntry(_visibleTab) ||
+        _shellTitleFor(_visibleTab) == null) {
+      return null;
+    }
     final VideoSourceScrapeTaskController? controller =
         _videoScrapeRuntime.currentController;
     if (controller == null || !controller.isBusy) return null;
@@ -1573,6 +1580,22 @@ class _HomePageState extends BasePageState<HomePage>
       ),
     );
   }
+
+  /// [tab] 自己的页头就带补刮任务入口：[_buildTabContent] 只给视频库页
+  /// （`VideoLibraryShell`）传了 `onOpenScrapeTasks`，它的页头自带同一颗按钮。
+  static bool _tabHeaderHasScrapeEntry(HomeTab tab) => tab == HomeTab.video;
+
+  /// 当前布局下补刮任务入口是否已由外壳的栏 / 页头承载（body 因此不再画右下
+  /// FAB）。判据与可见 tab 实际渲染的页头同源：外壳大标题行是否有高度
+  /// （[_shellTitleFor] 非 null，正是 [FushiShellLargeTitleBar] 判「有标题」
+  /// 的那一份）与该 tab 页头是否自带入口。
+  bool _scrapeEntryHostedByChrome({required bool mobileLayout}) =>
+      homeScrapeEntryHostedByChrome(
+        apple: isGlassDesign(context),
+        mobileLayout: mobileLayout,
+        shellTitleVisible: _shellTitleFor(_visibleTab) != null,
+        tabHeaderHasEntry: _tabHeaderHasScrapeEntry(_visibleTab),
+      );
 
   /// 内容顶部是叠放浮动工具栏（[FushiFloatingChromeOverlay]）的 tab：这些库页
   /// 的主滚动视图 / 分区都消费 [FushiFloatingChromeInset]，外壳大标题可以叠在
@@ -1747,8 +1770,9 @@ class _HomePageState extends BasePageState<HomePage>
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
     _inMobileLayout = false;
-    // Apple 没有 FAB：补刮任务入口在外壳大标题行（[_appleScrapeTaskAction]）。
-    _shellFabHostedByBar = isGlassDesign(context);
+    // Apple：补刮任务入口进外壳大标题行（[_appleScrapeTaskAction]）——只在
+    // 可见 tab 确有那一行时；首页 / 设置 / 浏览器扩展没有，仍画右下 FAB。
+    _shellFabHostedByBar = _scrapeEntryHostedByChrome(mobileLayout: false);
     // 自绘标题栏（[FushiDesktopTitleBar.isEnabled]，Windows + macOS）已经把当前
     // tab 名画在应用顶栏上，主导航 rail 始终可见，再叠一层「隐藏 rail + 页头返回
     // 箭头」的全屏设置就成了没有来源的第二条返回出口。macOS 现在与 Windows 同壳，
@@ -1929,8 +1953,9 @@ class _HomePageState extends BasePageState<HomePage>
 
   Widget _buildMobileLayout() {
     _inMobileLayout = true;
-    // MD3 并进悬浮底栏的 FAB；Apple 进外壳大标题行（[_appleScrapeTaskAction]）。
-    _shellFabHostedByBar = true;
+    // MD3 并进悬浮底栏的 FAB；Apple 进外壳大标题行（[_appleScrapeTaskAction]），
+    // 可见 tab 没有那一行时仍画 FAB（同桌面，见 [_scrapeEntryHostedByChrome]）。
+    _shellFabHostedByBar = _scrapeEntryHostedByChrome(mobileLayout: true);
     final List<HomeTab> tabs = _activeTabs();
     final bool reversed = appModel.reverseNavigationBar;
     final List<AdaptiveNavItem> items = _navItems(tabs);
@@ -2047,7 +2072,8 @@ class _HomePageState extends BasePageState<HomePage>
       : FushiIcons.pending;
 
   /// 页面 FAB 是否已由外壳的栏承载、body 不再自己画：MD3 手机布局并进悬浮
-  /// 底栏，Apple（全部布局）没有 FAB、进外壳大标题行的动作位。
+  /// 底栏；Apple 只在可见 tab 确有承载入口的页头时收走（见
+  /// [homeScrapeEntryHostedByChrome]）。
   bool _shellFabHostedByBar = false;
 
   /// 需要跨 tab 切换**保活**（State 不随切走而销毁）的顶层 tab：书架、视频与游戏。
@@ -3827,6 +3853,26 @@ class _StandaloneDictionaryRoute extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 视频源后台补刮任务入口是否由外壳的栏 / 页头承载（承载时首页 body 不再画
+/// 右下 FAB）。
+///
+/// - MD3：手机布局并进悬浮底栏右侧那颗 FAB（[mobileLayout]）；桌面画右下 FAB。
+/// - Apple（Cupertino）：没有悬浮底栏 FAB 位，入口进导航栏——但**只有**可见
+///   tab 确实渲染了承载它的页头时才收走 FAB：外壳大标题行有高度
+///   （[shellTitleVisible]，右侧动作位画补刮按钮），或该 tab 页头自带同一颗按钮
+///   （[tabHeaderHasEntry]）。首页 / 设置 / 浏览器扩展的外壳标题行高度为 0，
+///   此前一律收走 FAB 会让后台补刮跑着时既看不到进度也打不开任务面板。
+@visibleForTesting
+bool homeScrapeEntryHostedByChrome({
+  required bool apple,
+  required bool mobileLayout,
+  required bool shellTitleVisible,
+  required bool tabHeaderHasEntry,
+}) {
+  if (!apple) return mobileLayout;
+  return shellTitleVisible || tabHeaderHasEntry;
 }
 
 /// 首页外壳的动作槽：页头登记的动作之外，再并上外壳自己的尾随动作

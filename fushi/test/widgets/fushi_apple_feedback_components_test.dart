@@ -1,6 +1,6 @@
 // Apple 设计系统下的反馈类共享件（用户「所有组件都要遵循原有的 Cupertino」）：
-// 下拉刷新是 iOS 菊花而不是 Material 圆盘；按压 / 悬停默认不缩放（调用方可
-// 显式开启）；轮播项不缩放不压暗；标签点击是按下变淡（无 InkWell）；滑动操作
+// 下拉刷新是 iOS 菊花而不是 Material 圆盘；按压 / 悬停照常缩放（所有者
+// 2026-10-13 拍板；切换设计系统不重建子 State）；轮播项不缩放不压暗；标签点击是按下变淡（无 InkWell）；滑动操作
 // 底是满高、图标在上文字在下。MD3 路径保持原样。
 import 'dart:async';
 
@@ -127,31 +127,71 @@ void main() {
   });
 
   group('FushiPressScale / FushiHoverLift', () {
-    testWidgets('Apple：按压默认不缩放，scaleOnApple 显式开启', (WidgetTester tester) async {
+    testWidgets('Apple：按压照常缩放（所有者拍板保留按压缩放）', (
+      WidgetTester tester,
+    ) async {
+      const Key box = Key('box');
       await tester.pumpWidget(
         _app(
           const Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                FushiPressScale(child: SizedBox(width: 40, height: 40)),
-                FushiPressScale(
-                  scaleOnApple: true,
-                  child: SizedBox(width: 40, height: 40),
-                ),
-              ],
+            child: FushiPressScale(
+              child: SizedBox(key: box, width: 40, height: 40),
             ),
           ),
           glass: true,
         ),
       );
+      final Finder transition = find.descendant(
+        of: find.byType(FushiPressScale),
+        matching: find.byType(ScaleTransition),
+      );
+      expect(transition, findsOneWidget);
+      final TestGesture press = await tester.startGesture(
+        tester.getCenter(find.byKey(box)),
+      );
+      await tester.pumpAndSettle();
       expect(
-        find.descendant(
-          of: find.byType(FushiPressScale),
-          matching: find.byType(ScaleTransition),
+        tester.widget<ScaleTransition>(transition).scale.value,
+        lessThan(1.0),
+        reason: 'Apple 下按住时内容缩小',
+      );
+      await press.up();
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<ScaleTransition>(transition).scale.value,
+        closeTo(1.0, 0.001),
+      );
+    });
+
+    testWidgets('切换设计系统不重建子 State（不按设计系统增删包装层）', (
+      WidgetTester tester,
+    ) async {
+      final List<String> inits = <String>[];
+      Widget tree({required bool glass}) => _app(
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              FushiPressScale(child: _InitProbe(tag: 'press', log: inits)),
+              FushiHoverLift(
+                builder: (BuildContext context, bool hovering) =>
+                    _InitProbe(tag: 'hover', log: inits),
+              ),
+            ],
+          ),
         ),
-        findsOneWidget,
-        reason: '只有显式 scaleOnApple 的那一个缩放',
+        glass: glass,
+      );
+      await tester.pumpWidget(tree(glass: false));
+      expect(inits, <String>['press', 'hover']);
+      await tester.pumpWidget(tree(glass: true));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(tree(glass: false));
+      await tester.pumpAndSettle();
+      expect(
+        inits,
+        <String>['press', 'hover'],
+        reason: 'MD3 与 Apple 来回切换，子 State 一次都不重建',
       );
     });
 
@@ -173,7 +213,9 @@ void main() {
       );
     });
 
-    testWidgets('Apple：悬停不放大，但悬停态照常交给 builder', (WidgetTester tester) async {
+    testWidgets('Apple：悬停轻微放大，悬停态照常交给 builder', (
+      WidgetTester tester,
+    ) async {
       bool hovering = false;
       const Key card = Key('card');
       await tester.pumpWidget(
@@ -189,7 +231,6 @@ void main() {
           glass: true,
         ),
       );
-      final Size before = tester.getSize(find.byKey(card));
       final Rect rectBefore = tester.getRect(find.byKey(card));
       final TestGesture mouse = await tester.createGesture(
         kind: PointerDeviceKind.mouse,
@@ -199,8 +240,13 @@ void main() {
       await mouse.moveTo(tester.getCenter(find.byKey(card)));
       await tester.pumpAndSettle();
       expect(hovering, isTrue);
-      expect(tester.getSize(find.byKey(card)), before);
-      expect(tester.getRect(find.byKey(card)), rectBefore, reason: '不缩放');
+      final Rect rectAfter = tester.getRect(find.byKey(card));
+      expect(
+        rectAfter.width,
+        closeTo(rectBefore.width * kFushiAppleHoverLiftScale, 0.01),
+        reason: 'Apple 默认放大倍数是更轻的 kFushiAppleHoverLiftScale',
+      );
+      expect(rectAfter.center.dx, closeTo(rectBefore.center.dx, 0.01));
     });
   });
 
@@ -304,4 +350,26 @@ void main() {
     expect(icon.bottom, lessThanOrEqualTo(label.top));
     expect(icon.center.dx, closeTo(label.center.dx, 0.5));
   });
+}
+
+/// initState 时往 [log] 里记一笔 [tag]：用来断言「切换设计系统不重建子 State」。
+class _InitProbe extends StatefulWidget {
+  const _InitProbe({required this.tag, required this.log});
+
+  final String tag;
+  final List<String> log;
+
+  @override
+  State<_InitProbe> createState() => _InitProbeState();
+}
+
+class _InitProbeState extends State<_InitProbe> {
+  @override
+  void initState() {
+    super.initState();
+    widget.log.add(widget.tag);
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox(width: 40, height: 40);
 }

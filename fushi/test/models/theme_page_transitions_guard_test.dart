@@ -93,9 +93,12 @@ void main() {
       eink: false,
     ).pageTransitionsTheme.builders;
     for (final TargetPlatform platform in TargetPlatform.values) {
+      // 裸 CupertinoPageTransitionsBuilder 不认系统「减弱动态效果」，开了它的
+      // 用户也要看 500ms 推入视差；行为测试见
+      // test/models/apple_page_transitions_reduce_motion_test.dart。
       expect(
         apple[platform],
-        isA<CupertinoPageTransitionsBuilder>(),
+        isA<FushiCupertinoPageTransitionsBuilder>(),
         reason: '$platform',
       );
     }
