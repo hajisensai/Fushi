@@ -153,7 +153,6 @@ void main() {
     for (final ModuleId module in <ModuleId>[
       ModuleId.cardCreation,
       ModuleId.services,
-      ModuleId.ai,
       ModuleId.sync,
     ]) {
       expect(
@@ -165,6 +164,42 @@ void main() {
         reason: '$module 名下没有任何可见设置分类，它的开关就没有落地面了',
       );
     }
+  });
+
+  testWidgets('AI 模块的落地面是「模型」里的 LLM 子页入口（行级门控，非分类级）', (
+    WidgetTester tester,
+  ) async {
+    // 2026-10-13 起原「AI」一级分类降为「模型」分类里的 LLM 子页：AI 模块没有自己的
+    // 可见 destination，上面按 destination 归属的循环对它恒为空集。不变式不变——
+    // 「关掉模块 ⇒ 它的设置看不见也搜不到」——收口点是 models.llm 这一行：它不可见时
+    // 子页（buildAiDestination）不会被展开进搜索索引。
+    await pumpContext(tester);
+
+    bool llmEntryVisible() {
+      final List<SettingsDestination> models = buildSettingsSchema(sctx)
+          .where(
+            (SettingsDestination d) => d.id == SettingsDestinationId.models,
+          )
+          .toList();
+      expect(models, hasLength(1), reason: '模型分类不见了，下面的断言会在空集上恒绿');
+      final List<SettingsItem> llm = <SettingsItem>[
+        for (final SettingsSection section in models.single.sections)
+          for (final SettingsItem item in section.items)
+            if (item.id == 'models.llm') item,
+      ];
+      expect(llm, hasLength(1), reason: 'models.llm 入口不见了');
+      return llm.single.isVisible(sctx);
+    }
+
+    appModel.enabled = ModuleId.values.toSet();
+    expect(llmEntryVisible(), isTrue, reason: 'AI 模块开着却看不到 LLM 子页入口');
+
+    appModel.enabled = ModuleId.values.toSet()..remove(ModuleId.ai);
+    expect(
+      llmEntryVisible(),
+      isFalse,
+      reason: '关掉 AI 模块后「模型」里仍能进 LLM 子页——降级成子页时把模块门丢了',
+    );
   });
 
   testWidgets('听书模块的落地面是「阅读」里的两个分区（分区级门控，非分类级）', (

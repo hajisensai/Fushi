@@ -63,7 +63,12 @@ String _moduleItemId(ModuleId module) => switch (module) {
       label: t.settings_destination_services,
       icon: FushiIcons.cloud,
     ),
-    ModuleId.ai => (label: t.ai_settings_title, icon: FushiIcons.aiAssistant),
+    // 模块名不跟 LLM 子页标题（ai_settings_title）走：模块管的是全部 AI 功能，
+    // 子页标题 2026-10-13 改成了「LLM」。
+    ModuleId.ai => (
+      label: t.settings_destination_ai,
+      icon: FushiIcons.aiAssistant,
+    ),
     ModuleId.sync => (
       label: t.settings_destination_sync_backup,
       icon: FushiIcons.sync,

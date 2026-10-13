@@ -24,11 +24,18 @@ import 'package:fushi/src/feedback/feedback_reply_notifier.dart';
 import 'package:fushi/src/feedback/feedback_reply_state.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/updates/update_notifier.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 开关的偏好键（bool，默认 true）。登记在 preference_keys.dart。
 const String kFeedbackReplyNotificationsPref = 'feedback_reply_notifications';
+
+/// 「有回复时通知我」开关的唯一读取口径（默认开）。设置行显示开关值只需要它——
+/// 不必为读一个布尔值去构造 [feedbackReplyAlertsProvider] 那整张依赖图（通知器 →
+/// 反馈服务 → 读回执）。
+bool feedbackReplyNotificationsEnabled(PreferencesRepository prefs) =>
+    prefs.getPref(kFeedbackReplyNotificationsPref, defaultValue: true) as bool;
 
 /// 一次 [FeedbackReplyAlerts.tick] 的去向。
 enum FeedbackReplyDelivery {
@@ -182,9 +189,7 @@ final Provider<FeedbackReplyAlerts>
 feedbackReplyAlertsProvider = Provider<FeedbackReplyAlerts>((Ref ref) {
   final AppModel app = ref.read(appProvider);
   final FeedbackReplyNotifier checker = ref.read(feedbackReplyNotifierProvider);
-  bool readEnabled() =>
-      app.prefsRepo.getPref(kFeedbackReplyNotificationsPref, defaultValue: true)
-          as bool;
+  bool readEnabled() => feedbackReplyNotificationsEnabled(app.prefsRepo);
   final RemotePushPlatform pushPlatform = ref.read(remotePushPlatformProvider);
   return FeedbackReplyAlerts(
     checker: checker,

@@ -271,7 +271,7 @@ void main() {
     failing = false;
     replies = <String, int?>{'aaaaaaaaaa': 500};
     final int before = requests.length;
-    expect(await n.check(), 1, reason: '失败的那次刷新没有占用节流窗口');
+    expect(await notice(n), 1, reason: '失败的那次刷新没有占用节流窗口');
     expect(requests.length, greaterThan(before));
   });
 

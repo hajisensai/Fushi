@@ -18,8 +18,8 @@ import 'package:fushi/utils.dart';
 /// 既有页面原样挂过来（LLM = 原「AI」分类、OCR = 原漫画 OCR 页、语音转录与 OCR
 /// 模型文件 = 原存储页「模型与组件」），持久化键与搜索锚点 id 一律不变。
 ///
-/// LLM 子页仍按 [SettingsDestinationId.ai] 走 services 模块门控（那是第三方在线
-/// 服务的端点与凭据）；其余各栏是设备级资源，不属任何模块。
+/// LLM 子页仍按 [SettingsDestinationId.ai] 走 AI 模块（[ModuleId.ai]）门控：模块关掉时
+/// 这一行与它子页里的设置都不可见、搜不出来；其余各栏是设备级资源，不属任何模块。
 ///
 /// **必须零参、返回纯字面量树**（schema 按 locale 缓存，见 `settings_schema.dart`）。
 SettingsDestination buildModelsDestination() {

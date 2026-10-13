@@ -17,7 +17,7 @@ import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/updates/update_probes.dart';
 import 'package:fushi/src/pages/implementations/updates_center_open.dart';
 import 'package:fushi/src/feedback/feedback_reply_alerts.dart'
-    show kFeedbackReplyNotificationsPref;
+    show feedbackReplyNotificationsEnabled;
 import 'package:fushi/src/feedback/feedback_reply_state.dart'
     show decodeFeedbackNotificationPayload;
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart'
@@ -1247,10 +1247,7 @@ class AppModel with ChangeNotifier {
     // 反馈回复提醒共用同一个通知后端：更新提醒的系统通知关着、反馈回复开着时，
     // 点击回调与冷启动回放也得挂上，否则点反馈通知拉起的 app 不会跳到那条反馈。
     unawaited(feed.warmUpNotifier(
-      otherConsumers: prefsRepo.getPref(
-        kFeedbackReplyNotificationsPref,
-        defaultValue: true,
-      ) as bool,
+      otherConsumers: feedbackReplyNotificationsEnabled(prefsRepo),
     ));
     final UpdateCheckScheduler scheduler = UpdateCheckScheduler(
       prefs: prefsRepo,

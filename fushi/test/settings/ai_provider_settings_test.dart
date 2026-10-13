@@ -528,6 +528,8 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining(t.ai_error_quota_exhausted), findsNothing);
+    });
+
     testWidgets('每分钟请求上限：填数字写穿配置，清空即不限', (WidgetTester tester) async {
       await pumpSection(tester);
       await tapKey(tester, 'ai-provider-add');

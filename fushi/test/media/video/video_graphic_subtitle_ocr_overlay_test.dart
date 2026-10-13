@@ -143,6 +143,8 @@ void main() {
     final VideoPlayerController c = _pausedController(graphic: false);
     addTearDown(c.dispose);
     c.setCues(<AudioCue>[_textCue('テキスト字幕')]);
+    // 活动集由位置刷新求出（setCues 只复位）；走与播放时同一条路径让这条 cue 在屏。
+    c.debugUpdateCueForPosition(5000);
     final _Probe probe = _Probe();
     await tester.pumpWidget(_overlay(c, probe, scope: VideoPauseOcrScope.all));
     await tester.pump(kGraphicSubtitleOcrSettleDelay * 2);
@@ -154,6 +156,7 @@ void main() {
     final VideoPlayerController c = _pausedController(graphic: false);
     addTearDown(c.dispose);
     c.setSecondaryCues(<AudioCue>[_textCue('副字幕テキスト')]);
+    c.debugUpdateCueForPosition(5000);
     expect(c.cues, isEmpty, reason: '前提：主字幕关着');
     final _Probe probe = _Probe();
     await tester.pumpWidget(_overlay(c, probe, scope: VideoPauseOcrScope.all));
@@ -172,6 +175,7 @@ void main() {
     expect(_hitBoxes, findsNWidgets(_frame.chars.length));
 
     c.setSecondaryCues(<AudioCue>[_textCue('副字幕テキスト')]);
+    c.debugUpdateCueForPosition(5000);
     await tester.pump();
     expect(_hitBoxes, findsNothing, reason: '副字幕出现后不能再有整帧 OCR 区域压在它上面');
     await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
