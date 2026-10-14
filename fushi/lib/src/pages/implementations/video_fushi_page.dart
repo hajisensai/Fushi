@@ -40,6 +40,10 @@ import 'package:window_manager/window_manager.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
+import 'package:fushi/src/mining/advanced_mining/video_advanced_mining.dart';
+import 'package:fushi/src/mining/mining_image_mode_target.dart'
+    show probeSynchronizedClipSupport;
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
@@ -327,6 +331,7 @@ part 'video_fushi/mini_window.part.dart';
 part 'video_fushi/layout.part.dart';
 part 'video_fushi/playback_remote.part.dart';
 part 'video_fushi/remote_control.part.dart';
+part 'video_fushi/advanced_mining.part.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
@@ -2348,6 +2353,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 变化；GIF / sasayaki 音频必须仍然导出点词那句，而不是制卡瞬间的 currentCue。
   AudioCue? _lastLookupCue;
 
+  /// 最近一次字幕查词那一刻的播放位置（播放器轴毫秒）。「高级制卡」的「查词时画面」
+  /// 指的就是这一刻；对话框里的试听会挪动播放头，关闭时据此放回（[_lookupAt] 写入）。
+  int? _lastLookupPositionMs;
+
+  /// 正开着的「高级制卡」对话框会话（锁住的查词画面、在线流缓冲副本、缩略图缓存）。
+  /// [buildAdvancedMiningSections] 建，对话框 onClosed 释放；制卡在同步前缀里读它。
+  _VideoAdvancedMiningSession? _advancedMiningSession;
+
   /// 最近一次字幕查词命中的词在字幕上的范围（BUG-2091），由 [_lookupAt] 按引擎回报的
   /// 匹配长度写入；查无结果写 null。**不**在关栈路径复位——overlay 拿到的是
   /// [_activeSubtitleLookupHighlight] 这个派生值：弹窗栈全关即 null，任何关闭路径都
@@ -2397,7 +2410,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   Future<void> Function()? get onStopSentenceAudioPreviewToDraft =>
-      () async => _controller?.pause();
+      () async => _controller?.stopPlayRange();
+
+  /// 「高级制卡」对话框的句子 / 音频 / 图片分区（视频车道）。实现见
+  /// [_VideoAdvancedMining]；在任何 await 之前锁住查词画面。
+  @override
+  Future<AdvancedMiningSections> buildAdvancedMiningSections({
+    required String matched,
+  }) => _buildAdvancedMiningSectionsImpl();
 
   /// TODO-382「+句」可撤销（视频车道）：弹窗点「清空已加句子」清掉本会话累积的全部草稿
   /// 句，回传清空后的句数（恒 0）。不动字幕列表「选入词卡」的 cue 选择集（两套独立机制）。
@@ -5659,6 +5679,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   void dispose() {
     _unregisterVideoRemote();
+    // 退页时高级制卡对话框可能还开着：它的缓冲副本 / 缩略图缓存跟着页面走。
+    _discardAdvancedMiningSession();
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。
     _frameProbe.stop();

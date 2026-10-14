@@ -575,6 +575,16 @@ class VideoPlayerController extends ChangeNotifier
   /// [_rawSeekMs]，后者覆盖 [skipToCue] 点别的句子）和换片换字幕（[setCues]）清。
   int? _oneShotHoldCueIndex;
 
+  /// 「只播到这一毫秒就停」的一次性目标（播放器轴毫秒，[playRangeMs] 置，到点暂停即
+  /// 消耗）；null = 无。
+  ///
+  /// 与 [_oneShotHoldCueIndex] 同一套生命周期（[seekMs] / [_rawSeekMs] / [setCues]
+  /// 作废），但终点**不是 cue 边界**：高级制卡的试听要放的是写卡那段区间——含首尾
+  /// 留白、A/V 偏移与用户的毫秒级起止微调，句尾判定接不住任意毫秒。判定点在位置
+  /// 回调 [updateCueForPosition]（与句尾暂停同一个时钟），用的是调和过 seek 在途的
+  /// 位置，刚 seek 回起点时滞后的旧位置不会把它误判成「已到终点」。
+  int? _oneShotHoldUntilMs;
+
   /// 当前启用的 mpv 着色器绝对路径（[load] 复用 / [applyShaders] 实时切换）。
   List<String> _shaderPaths = <String>[];
 
@@ -2334,6 +2344,7 @@ class VideoPlayerController extends ChangeNotifier
     // 同理复位一次性「只播这一句就停」请求与句尾防重复停记号：两者都是**旧 _cues 的
     // 下标**，对新列表已无意义，留着会让新片的某句被无缘无故停一次。
     _oneShotHoldCueIndex = null;
+    _oneShotHoldUntilMs = null;
     _lastSubtitleEndPauseCueIndex = null;
     // 主字幕换了：给 Lua 脚本的镜像轨跟着重挂（没装脚本时零开销）。
     _scheduleLuaSubtitleMirrorSync();
@@ -3890,10 +3901,24 @@ class VideoPlayerController extends ChangeNotifier
     _checkSeekLanded(posMs);
     // 普通 seek 在途：把 tick 读到的滞后旧 position 调和成跳转目标位置（见
     // [_plainSeekTargetMs] / [_reconcileSeekInFlightPosition]），避免旧字幕被反复确认。
-    _syncCueForPosition(
-      _reconcileSeekInFlightPosition(posMs),
-      persistPosition: true,
-    );
+    final int reconciledMs = _reconcileSeekInFlightPosition(posMs);
+    _maybeStopAtPlayRangeEnd(reconciledMs);
+    _syncCueForPosition(reconciledMs, persistPosition: true);
+  }
+
+  /// [playRangeMs] 的终点判定：播到 [_oneShotHoldUntilMs] 就暂停并消耗。只在确实在播时
+  /// 触发（用户已手动暂停就不再补一次暂停）。
+  void _maybeStopAtPlayRangeEnd(int positionMs) {
+    final int? untilMs = _oneShotHoldUntilMs;
+    if (untilMs == null || positionMs < untilMs) return;
+    if (!_isPlayingForSubtitleEnd()) return;
+    _oneShotHoldUntilMs = null;
+    // 终点常落在句尾之后（尾部留白）。停下的同一拍里全局「字幕结束暂停」重新生效，
+    // 会把刚走完的那句当成「越过句尾」再停一次并 seek 回句尾——试听已经停了，不该再
+    // 挪播放头。按「这句已经停过」记账（落在句中时由 [_rearmSubtitleEndPauseIfNeeded]
+    // 自动复位，之后自然续播照常在句尾停）。
+    if (_currentCueIndex >= 0) _lastSubtitleEndPauseCueIndex = _currentCueIndex;
+    unawaited(_runSubtitleEndHold(_pauseAtSubtitleEndOverride ?? pause));
   }
 
   void _syncCueForPosition(int posMs, {required bool persistPosition}) {
@@ -5282,8 +5307,13 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 第 [cueIndex] 句是否该在句尾停：全局偏好开着（每句都停）**或**它正是一次性
   /// [replayCue] 的目标句。两个来源在此汇成单一判定，句尾时序只有一套实现。
+  ///
+  /// 毫秒级试听（[_oneShotHoldUntilMs]）进行中时全局偏好不生效：试听区间带首尾留白、
+  /// 可能跨多句，全局「每句都停」会在第一句句尾把它截断（还会 seek 回句尾，永远到不了
+  /// 区间终点）。用户要听的就是那一整段。
   bool _holdEnabledForCue(int cueIndex) =>
-      _pauseAtSubtitleEnd || _oneShotHoldCueIndex == cueIndex;
+      (_pauseAtSubtitleEnd && _oneShotHoldUntilMs == null) ||
+      _oneShotHoldCueIndex == cueIndex;
 
   /// 消耗一次性 hold（仅当它正指向 [cueIndex]）。停下即用完，避免用户之后自然播回
   /// 同一句时被再停一次。
@@ -5373,6 +5403,7 @@ class VideoPlayerController extends ChangeNotifier
     _clearSeekTargetSnap();
     // 用户主动改变播放位置 = 放弃「只播这一句就停」的意图（[_oneShotHoldCueIndex]）。
     _oneShotHoldCueIndex = null;
+    _oneShotHoldUntilMs = null;
     _beginPlainSeekInFlight(clampedMs);
     final int token = _noteSeekIssued(clampedMs);
     // 权威同步：直接按目标位置算一次字幕（不经 tick 的位置调和），gap 则立即清空。
@@ -5394,6 +5425,7 @@ class VideoPlayerController extends ChangeNotifier
     // [replayCue] 是唯一例外——它在本方法**之后**才置自己的一次性 hold，与
     // [skipToCue] 置 [_seekTargetCueIndex] 的顺序契约完全同构，故不会被自清。
     _oneShotHoldCueIndex = null;
+    _oneShotHoldUntilMs = null;
     final int clampedMs = positionMs.clamp(0, 1 << 30);
     final int token = _noteSeekIssued(clampedMs);
     await _awaitSeekDispatch(
@@ -5568,6 +5600,39 @@ class VideoPlayerController extends ChangeNotifier
   /// 测试可见：当前一次性「只播这一句就停」目标下标（[_oneShotHoldCueIndex]）。
   @visibleForTesting
   int? get debugOneShotHoldCueIndex => _oneShotHoldCueIndex;
+
+  /// 从播放器轴 [startMs] 播到 [endMs]（毫秒）后自动暂停（一次性）。
+  ///
+  /// 高级制卡「句子音频」试听用：放的必须是**写进卡片的那段**（含首尾留白、A/V 偏移与
+  /// 用户的起止微调，见 [_oneShotHoldUntilMs]），而 [replayCue] 只能停在 cue 边界。
+  /// 顺序与 [replayCue] 同构：先 [seekMs]（它会作废上一次的一次性 hold），再挂本次
+  /// 终点，再起播。用户中途 seek / 换片即放弃；[stopPlayRange] 显式停止。
+  Future<void> playRangeMs(int startMs, int endMs) async {
+    if (endMs <= startMs) return;
+    await seekMs(startMs);
+    _oneShotHoldUntilMs = endMs;
+    await (_replayPlayOverride ?? play).call();
+  }
+
+  /// 停止 [playRangeMs] 起的试听：作废终点并暂停。只 pause 不作废的话，用户之后自然
+  /// 续播会在那个旧终点被莫名停一次。
+  Future<void> stopPlayRange() async {
+    _oneShotHoldUntilMs = null;
+    await pause();
+  }
+
+  /// 测试可见：当前一次性「播到这一毫秒就停」的终点（[_oneShotHoldUntilMs]）。
+  @visibleForTesting
+  int? get debugPlayRangeUntilMs => _oneShotHoldUntilMs;
+
+  /// 容器声明的帧率（mpv `container-fps`）；非 libmpv / 未 [load] / 读不到时 null。
+  /// 高级制卡逐帧挪动封面帧的步长据此换算（见 `videoFrameStepMsForFps`）。
+  Future<double?> containerFps() async {
+    final double? fps = double.tryParse(
+      (await _getMpvProperty('container-fps')).trim(),
+    );
+    return fps == null || !fps.isFinite || fps <= 0 ? null : fps;
+  }
 
   /// 升序 cue 列表上按 `startMs` 二分求分界下标（要求 [cues] 已按 startMs 升序）：
   /// - [inclusive] 为 false：lower bound——返回首个 `startMs >= value` 的下标；

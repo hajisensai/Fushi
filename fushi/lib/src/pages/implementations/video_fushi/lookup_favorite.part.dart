@@ -44,6 +44,8 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     final String term = span.term;
     // 先判空再暂停：空词不弹浮层，不能暂停后无浮层可关→恢复路径永不触发（卡暂停）。
     if (term.isEmpty) return;
+    // 「高级制卡」的「查词时画面」就是这一刻；对话框试听挪走播放头后也据此放回。
+    _lastLookupPositionMs = controller.positionMs;
     // 仅当视频正在播放才暂停并标记，浮层全关后据此恢复（BUG-072）。查词前本就
     // 暂停 / 递归查词（已暂停）时 isPlaying==false，不暂停也不覆写标记。
     // 性能（弹窗弹出慢）：暂停是副作用，不该卡住弹窗推送。media_kit/libmpv 的

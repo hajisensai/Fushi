@@ -495,10 +495,21 @@ class ImmersionMiningEngine {
     // 时同步片段卡什么都显示不出来，改走动图阶梯。外部已给好媒体字节的来源（Netflix
     // 录制、galgame 窗口录制）由产字节的一侧在录制前判过，这里不再改它的模式——片段
     // 已经录成了，事后改模式只会让同一个文件既当封面又当音频的契约错位。
-    final VideoMiningImageMode imageMode = req.providedCoverBytes == null
-        ? await resolveTargetMiningImageMode(req.imageMode, repo: repo)
-        : req.imageMode;
-    final bool wantsSynchronizedVideo = imageMode.isVideoClip &&
+    //
+    // 高级制卡「不要音频」+「视频片段」：片段就是画面 + 句子声音一个文件，没有声音就
+    // 没有片段可言。对话框会禁用这个组合，这里兜底按动图出（与模板不支持片段时同一
+    // 降级目标），不出一个无声的「同步片段」；先降再判模板，省掉一次无用的模板探测。
+    final VideoMiningImageMode requestedMode =
+        req.omitAudio && req.imageMode.isVideoClip
+            ? VideoMiningImageMode.gif
+            : req.imageMode;
+    // 不要图片时模式无关紧要，同样不探测模板。
+    final VideoMiningImageMode imageMode =
+        req.providedCoverBytes == null && !req.omitCover
+        ? await resolveTargetMiningImageMode(requestedMode, repo: repo)
+        : requestedMode;
+    final bool wantsSynchronizedVideo = !req.omitCover &&
+        imageMode.isVideoClip &&
         (req.source == AnkiMiningSource.video ||
             req.source == AnkiMiningSource.game);
     // 抽取用的是媒体文件自己的时间轴：缓冲副本的 0 点是播放器轴上的某一刻
@@ -531,7 +542,8 @@ class ImmersionMiningEngine {
       onFailure?.call(summary);
     }
 
-    if (req.providedCoverBytes != null) {
+    // 用户明确不要图片时，外部给好的封面字节也不落盘（下面整条封面阶梯同样跳过）。
+    if (req.providedCoverBytes != null && !req.omitCover) {
       // 外部已经给好封面字节的三条路（gal 窗口抓图、浏览器扩展的 2A 截图、Netflix 片段
       // 抽帧）过去在这里被逐字节写盘：格式是产字节那一侧定的，用户在设置里选的静图格式
       // 对它们完全不生效。这里按偏好归一化一次——**只换编码、不改尺寸**（那些字节大多
@@ -670,7 +682,9 @@ class ImmersionMiningEngine {
         (selectedAudio != null || req.audioStreamCount == 1);
     Object? audioError;
     StackTrace? audioStack;
-    final Future<String?> audioFuture = (directSourceAudio
+    // 用户明确不要音频：不启动抽取（省一次 ffmpeg / 远端裁切），下方的无音频中止也
+    // 不再适用。videoClip 已在上面降成动图，directSourceAudio 恒假。
+    final Future<String?> audioFuture = (req.omitAudio || directSourceAudio
             ? Future<String?>.value(null)
             : providedVideo
             ? Future<String?>.value(coverPath)
@@ -702,7 +716,8 @@ class ImmersionMiningEngine {
       }
     }
 
-    if (coverPath == null && !synchronizedVideo) {
+    // 用户明确不要图片：整条封面阶梯（含当前帧截图兜底）都不跑。
+    if (coverPath == null && !synchronizedVideo && !req.omitCover) {
       switch (imageMode) {
         case VideoMiningImageMode.gif:
         // 普通视频的同步模式已在外层分流；保留其他来源既有的动图降级阶梯。
@@ -807,7 +822,9 @@ class ImmersionMiningEngine {
     // providedCoverBytes==null）不落任一分支 → 不中止，仍出静帧卡（Never break userspace）。
     final bool viaProvidedBytes =
         req.providedCoverBytes != null && !req.hasRange;
+    // 用户明确不要音频（[ImmersionMiningRequest.omitAudio]）时没有「缺」可言。
     if (req.requireAudio &&
+        !req.omitAudio &&
         audioPath == null &&
         (req.hasRange || viaProvidedBytes)) {
       return ImmersionMiningResult(
@@ -817,7 +834,12 @@ class ImmersionMiningEngine {
     }
     // TODO-1303：空壳卡兜底——既无封面又无音频（截图/GIF/音频全失败），不建卡。这正是
     // 「降级空壳卡仍报成功」的根：任何来源下都不该产出无媒体的卡。
-    if (coverPath == null && audioPath == null) {
+    // 唯一例外是用户为这张卡把图片和音频**都**明确省略了（高级制卡出纯文本卡）——
+    // 那是用户要的结果，不是降级。只省略其中一项而另一项没产出时照样中止：用户要的
+    // 那份媒体失败了，不能悄悄落一张什么都没有的卡。
+    if (coverPath == null &&
+        audioPath == null &&
+        !(req.omitCover && req.omitAudio)) {
       // 封面与音频**都**没出来时，两条链的首个摘要通常是同一个根因（例如 ffmpeg 缺失
       // 会同时打死两条）。取封面优先只是取一个稳定顺序，null 时自动退到音频那条。
       return ImmersionMiningResult(
