@@ -8,7 +8,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiBadgeControl;
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
-import 'package:flutter/gestures.dart' show kPrimaryMouseButton, kTouchSlop;
+import 'package:flutter/gestures.dart'
+    show DragStartBehavior, kPrimaryMouseButton, kTouchSlop;
 import 'package:flutter/rendering.dart' show OverflowBoxFit, RenderFlex;
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -2449,9 +2450,13 @@ class _NavPagedRowState extends State<_NavPagedRow>
   void _onDragEnd(DragEndDetails details) {
     final double velocity = -details.velocity.pixelsPerSecond.dx / _width;
     final double pos = _position.value;
-    int target = pos.round();
+    // 胶囊窄（每页只有一个手掌宽），半页门槛太苛：拖过 1/4 页或甩一下就翻。
+    final double moved = pos - _page;
+    int target = _page;
     if (velocity.abs() > 0.8) {
-      target = velocity > 0 ? pos.floor() + 1 : pos.ceil() - 1;
+      target = velocity > 0 ? _page + 1 : _page - 1;
+    } else if (moved.abs() > 0.25) {
+      target = moved > 0 ? _page + 1 : _page - 1;
     }
     target = target.clamp(0, widget.pages.length - 1);
     if (target != _page) fushiSelectionHaptic(context);
@@ -2491,6 +2496,9 @@ class _NavPagedRowState extends State<_NavPagedRow>
           // 翻页是纯指针手势；读屏 / 手柄靠各格自己的焦点与点击语义，焦点移到
           // 别页的格子上时随当前项自动翻过去。
           excludeFromSemantics: true,
+          // 从按下点起算位移：判定拖动前的那段触摸余量也算进翻页距离，整排
+          // 贴着手指走，不会先「卡」一下。
+          dragStartBehavior: DragStartBehavior.down,
           onHorizontalDragUpdate: _onDragUpdate,
           onHorizontalDragEnd: _onDragEnd,
           child: Stack(

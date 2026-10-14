@@ -224,6 +224,28 @@ void main() {
     expect(barLabels().first, 'Tab0');
   });
 
+  // 真 app 里实测：慢拖不到半页（没有甩速）曾被吸回原页，窄胶囊上手感发涩。
+  // 现在从按下点起算位移、拖过 1/4 页即翻。
+  testWidgets('分页滑动：慢拖约 30% 宽、不甩，也翻页', (WidgetTester tester) async {
+    await pumpStyled(tester, AdaptiveNavBarStyle.pager);
+    final double y = tester.getCenter(shown('Tab0')).dy;
+    await tester.timedDragFrom(
+      Offset(300, y),
+      const Offset(-120, 0),
+      const Duration(seconds: 1),
+    );
+    await tester.pumpAndSettle();
+    expect(barLabels(), <String>['Tab5', 'Tab6', 'Tab7', 'Tab8']);
+    // 只蹭 15%：弹回原页。
+    await tester.timedDragFrom(
+      Offset(100, y),
+      const Offset(60, 0),
+      const Duration(seconds: 1),
+    );
+    await tester.pumpAndSettle();
+    expect(barLabels(), <String>['Tab5', 'Tab6', 'Tab7', 'Tab8']);
+  });
+
   testWidgets('分页滑动：当前项在第二页时直接停在第二页', (WidgetTester tester) async {
     await pumpStyled(tester, AdaptiveNavBarStyle.pager, currentIndex: 7);
     expect(barLabels(), <String>['Tab5', 'Tab6', 'Tab7', 'Tab8']);
