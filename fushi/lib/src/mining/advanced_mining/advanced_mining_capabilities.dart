@@ -215,7 +215,7 @@ class AdvancedMiningSections {
 class AdvancedMiningCapabilities {
   const AdvancedMiningCapabilities({
     required this.matched,
-    required this.deck,
+    this.deck,
     required this.sections,
     required this.onConfirm,
     this.expression,
@@ -227,7 +227,8 @@ class AdvancedMiningCapabilities {
   /// 词条原形（标题行用）；null 时用 [matched]。
   final String? expression;
 
-  final AdvancedMiningDeckSection deck;
+  /// null = 这个表面不能选卡组（例如手机遥控电脑制卡：卡组由电脑决定）。
+  final AdvancedMiningDeckSection? deck;
   final AdvancedMiningSections sections;
   final AdvancedMiningConfirm onConfirm;
 }
