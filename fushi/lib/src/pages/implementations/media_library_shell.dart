@@ -139,6 +139,15 @@ class MediaLibraryShell extends StatefulWidget {
 class _MediaLibraryShellState extends State<MediaLibraryShell> {
   int _currentIndex = 0;
 
+  /// 「在线源」组上次停留的视图（来源 / 扩展），点组页签回到这里。
+  MediaLibraryViewKind _lastOnline = MediaLibraryViewKind.onlineSources;
+
+  /// 来源 / 扩展同属「在线源」组（2026-10-14 用户：视频库顶栏分组后「在线源
+  /// 这块其他模块也该跟进」）：顶栏只占一段，组内由二级胶囊切换。
+  static bool _isOnline(MediaLibraryViewKind kind) =>
+      kind == MediaLibraryViewKind.onlineSources ||
+      kind == MediaLibraryViewKind.extensions;
+
   /// 已访问过的视图下标（惰性构建 + 保活，见类文档）。
   final Set<int> _visited = <int>{0};
 
@@ -169,8 +178,9 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
   }
 
   void _select(MediaLibraryViewKind kind) {
-    final int index = widget.views
-        .indexWhere((MediaLibraryViewSpec spec) => spec.kind == kind);
+    final int index = widget.views.indexWhere(
+      (MediaLibraryViewSpec spec) => spec.kind == kind,
+    );
     if (index < 0) return;
     // 「回到壳」的导航所有权收在这一处：切视图发生在壳里，壳上面压着的路由不弹掉
     // 用户就什么都看不见。以本壳自己的路由为界一次弹到底，与调用方压了几层无关
@@ -185,6 +195,7 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
     setState(() {
       _currentIndex = index;
       _visited.add(index);
+      if (_isOnline(kind)) _lastOnline = kind;
     });
   }
 
@@ -273,10 +284,19 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
           // 滚不动」的根因是收起改了视口高度，BUG-2975，见
           // [FushiFloatingChromeOverlay]）。
           child: FushiFloatingChromeOverlay(
-            chrome: FushiFloatingChromeBar(tabs: navigation, slot: _actionsSlot),
+            chrome: FushiFloatingChromeBar(
+              tabs: navigation,
+              slot: _actionsSlot,
+            ),
             child: NotificationListener<ScrollNotification>(
               onNotification: _onScroll,
-              child: sections,
+              // 二级胶囊行叠在页面上、与顶栏同一份显隐（嵌套的
+              // [FushiFloatingChromeOverlay] 读同一个作用域，视图的顶部让位
+              // 自动累加两行）；不在「在线源」组时不占高度。
+              child: FushiFloatingChromeOverlay(
+                chrome: _buildOnlineSubNavigation(context, views),
+                child: sections,
+              ),
             ),
           ),
         ),
@@ -288,26 +308,89 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
   /// [MediaLibraryViewSpec.handlesChromeInset]）。
   Widget _insetFor(MediaLibraryViewSpec spec, Widget view) =>
       spec.handlesChromeInset
-          ? view
-          : FushiFloatingChromeInsetPadding(child: view);
+      ? view
+      : FushiFloatingChromeInsetPadding(child: view);
 
   Widget _buildNavigation(List<MediaLibraryViewSpec> views) {
     final MediaLibraryViewKind selected = views[_currentIndex].kind;
     // 分段条走库页共享的 [LibrarySectionTabs]（内含 [FushiAdjustableSegmented]：
     // 单个焦点停靠点，左右方向键原地切视图，手柄/键盘可达）。
+    final List<MediaLibraryViewSpec> online = <MediaLibraryViewSpec>[
+      for (final MediaLibraryViewSpec spec in views)
+        if (_isOnline(spec.kind)) spec,
+    ];
+    final bool groupOnline = online.length > 1;
+    // 「在线源」组页签的值是组内此刻 / 上次停留的视图，点它即回到那里；选中
+    // 判据仍是当前视图。
+    // 只在真的并组（≥2 个在线视图）时才用得到；没有在线视图的壳（iOS 合规门 /
+    // 宿主不可用）不能去取 `online.first`。
+    final MediaLibraryViewKind onlineValue = !groupOnline || _isOnline(selected)
+        ? selected
+        : online.any((MediaLibraryViewSpec spec) => spec.kind == _lastOnline)
+        ? _lastOnline
+        : online.first.kind;
     return LibrarySectionTabs<MediaLibraryViewKind>(
       key: _navigationKey,
       tabs: <LibrarySectionTab<MediaLibraryViewKind>>[
         for (final MediaLibraryViewSpec spec in views)
-          LibrarySectionTab<MediaLibraryViewKind>(
-            value: spec.kind,
-            label: spec.label,
-          ),
+          if (!groupOnline || !_isOnline(spec.kind))
+            LibrarySectionTab<MediaLibraryViewKind>(
+              value: spec.kind,
+              label: spec.label,
+            )
+          else if (identical(spec, online.first))
+            LibrarySectionTab<MediaLibraryViewKind>(
+              value: onlineValue,
+              label: t.media_import_segment_sources,
+            ),
       ],
       selected: selected,
       onChanged: _select,
       focusIdPrefix: widget.focusIdPrefix,
       floating: true,
+    );
+  }
+
+  /// 「在线源」组的二级胶囊（来源 / 扩展）；不在该组或组内只有一个视图时为空。
+  Widget _buildOnlineSubNavigation(
+    BuildContext context,
+    List<MediaLibraryViewSpec> views,
+  ) {
+    final MediaLibraryViewKind selected = views[_currentIndex].kind;
+    final List<MediaLibraryViewSpec> online = <MediaLibraryViewSpec>[
+      for (final MediaLibraryViewSpec spec in views)
+        if (_isOnline(spec.kind)) spec,
+    ];
+    if (online.length < 2 || !_isOnline(selected)) {
+      return const SizedBox.shrink();
+    }
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Padding(
+      // 与顶栏胶囊、页面内容同一条页边；顶上 8 + 顶栏底边 4 = 两级页签之间 12
+      // （同浏览页二级内容域）。
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.gap,
+        tokens.spacing.page,
+        tokens.spacing.gap,
+      ),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: LibrarySectionTabs<MediaLibraryViewKind>(
+          tabs: <LibrarySectionTab<MediaLibraryViewKind>>[
+            for (final MediaLibraryViewSpec spec in online)
+              LibrarySectionTab<MediaLibraryViewKind>(
+                value: spec.kind,
+                label: spec.label,
+              ),
+          ],
+          selected: selected,
+          onChanged: _select,
+          focusIdPrefix: '${widget.focusIdPrefix}-online',
+          secondary: true,
+          floating: true,
+        ),
+      ),
     );
   }
 }

@@ -24,18 +24,21 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('视频来源添加文件夹、自动归组、即时回库与全部刮削', (WidgetTester tester) async {
-    final Directory fixture =
-        Directory.systemTemp.createTempSync('fushi_video_source_itest_');
+    final Directory fixture = Directory.systemTemp.createTempSync(
+      'fushi_video_source_itest_',
+    );
     addTearDown(() {
       debugRealDirectoryPathOverride = null;
       if (fixture.existsSync()) fixture.deleteSync(recursive: true);
     });
     final Directory nested = Directory(p.join(fixture.path, 'Show', 'Season 1'))
       ..createSync(recursive: true);
-    File(p.join(nested.path, 'ITest Show S01E02.mkv'))
-        .writeAsBytesSync(<int>[0]);
-    File(p.join(nested.path, 'ITest Show S01E01.mkv'))
-        .writeAsBytesSync(<int>[0]);
+    File(
+      p.join(nested.path, 'ITest Show S01E02.mkv'),
+    ).writeAsBytesSync(<int>[0]);
+    File(
+      p.join(nested.path, 'ITest Show S01E01.mkv'),
+    ).writeAsBytesSync(<int>[0]);
     debugRealDirectoryPathOverride = fixture.path;
 
     await runFushiItest(
@@ -61,28 +64,34 @@ void main() {
           reason: '视频库视图导航应出现',
         );
 
-        final Finder navigation =
-            find.byType(FushiAdjustableSegmented<VideoLibrarySection>);
+        // 顶栏是分组（媒体库 / 发现 / 媒体服务器 / 在线源 / 导入），媒体库组内
+        // 的首页 / 系列 / 全部视频在二级胶囊里：两个焦点停靠点各走各的。
         await _stepVideoSections(
           tester,
           driver,
-          navigation,
+          _kVideoSubNav,
           expected: const <VideoLibrarySection>[
             VideoLibrarySection.series,
             VideoLibrarySection.allVideos,
-            VideoLibrarySection.mediaServers,
-            VideoLibrarySection.sources,
           ],
+          delta: 1,
+        );
+        await _adjustVideoSectionsUntil(
+          tester,
+          driver,
+          _kVideoTopNav,
+          target: VideoLibrarySection.sources,
           delta: 1,
         );
 
         final Finder addSource = find.byWidgetPredicate(
           (Widget widget) =>
-              widget is FushiIconButton &&
-              widget.tooltip == t.media_source_add,
+              widget is FushiIconButton && widget.tooltip == t.media_source_add,
         );
-        expect(await _waitFor(tester, () => addSource.evaluate().isNotEmpty),
-            isTrue);
+        expect(
+          await _waitFor(tester, () => addSource.evaluate().isNotEmpty),
+          isTrue,
+        );
         expect(await driver.focusWidget(addSource), isTrue);
         await driver.activate();
 
@@ -97,10 +106,10 @@ void main() {
 
         expect(
           await _waitFor(tester, () async {
-            final List<VideoBookRow> videos =
-                await appModel.database.allVideoBooks();
-            final List<MediaCollectionRow> collections =
-                await appModel.database.getAllMediaCollections();
+            final List<VideoBookRow> videos = await appModel.database
+                .allVideoBooks();
+            final List<MediaCollectionRow> collections = await appModel.database
+                .getAllMediaCollections();
             return videos.length == 2 &&
                 collections.length == 1 &&
                 collections.single.name == 'ITest Show';
@@ -108,17 +117,26 @@ void main() {
           isTrue,
           reason: '添加来源后应递归扫描两集并自动形成一个作品合集',
         );
-        final ObserveShot sourcesShot =
-            await captureFlutterFrame(tester, 'video-source-after-scan');
+        final ObserveShot sourcesShot = await captureFlutterFrame(
+          tester,
+          'video-source-after-scan',
+        );
         expect(sourcesShot.saved && sourcesShot.nonBlank, isTrue);
 
+        // 回到媒体库组（组页签回到组内上次停留的「全部视频」），再在二级胶囊里
+        // 退回首页。
+        await _adjustVideoSectionsUntil(
+          tester,
+          driver,
+          _kVideoTopNav,
+          target: VideoLibrarySection.allVideos,
+          delta: -1,
+        );
         await _stepVideoSections(
           tester,
           driver,
-          navigation,
+          _kVideoSubNav,
           expected: const <VideoLibrarySection>[
-            VideoLibrarySection.mediaServers,
-            VideoLibrarySection.allVideos,
             VideoLibrarySection.series,
             VideoLibrarySection.home,
           ],
@@ -132,20 +150,17 @@ void main() {
           isTrue,
           reason: '切回保活媒体库后应立即看到新合集，无需重启或手动刷新',
         );
-        final ObserveShot libraryShot =
-            await captureFlutterFrame(tester, 'video-library-after-scan');
+        final ObserveShot libraryShot = await captureFlutterFrame(
+          tester,
+          'video-library-after-scan',
+        );
         expect(libraryShot.saved && libraryShot.nonBlank, isTrue);
 
-        await _stepVideoSections(
+        await _adjustVideoSectionsUntil(
           tester,
           driver,
-          navigation,
-          expected: const <VideoLibrarySection>[
-            VideoLibrarySection.series,
-            VideoLibrarySection.allVideos,
-            VideoLibrarySection.mediaServers,
-            VideoLibrarySection.sources,
-          ],
+          _kVideoTopNav,
+          target: VideoLibrarySection.sources,
           delta: 1,
         );
         final Finder scrapeAll = find.byWidgetPredicate(
@@ -190,8 +205,10 @@ void main() {
           isTrue,
           reason: '来源页全部刮削应启动后台任务并打开任务面板',
         );
-        final ObserveShot scrapeShot =
-            await captureFlutterFrame(tester, 'video-source-scrape-task-panel');
+        final ObserveShot scrapeShot = await captureFlutterFrame(
+          tester,
+          'video-source-scrape-task-panel',
+        );
         expect(scrapeShot.saved && scrapeShot.nonBlank, isTrue);
 
         // 真实任务会访问在线元数据源；本 UI 验收只验证启动、任务面板与观察入口。
@@ -210,18 +227,32 @@ void main() {
   });
 }
 
+/// 视频库顶栏分组导航的焦点前缀。
+const String _kVideoTopNav = 'video-library-view';
+
+/// 组内二级胶囊（首页 / 系列 / 全部视频；来源 / 扩展）的焦点前缀。
+const String _kVideoSubNav = 'video-library-subview';
+
+Finder _videoNav(String prefix) => find.byWidgetPredicate(
+  (Widget widget) =>
+      widget is FushiAdjustableSegmented<VideoLibrarySection> &&
+      widget.focusIdPrefix == prefix,
+);
+
+/// 在 [prefix] 那条导航上每步按一次方向键，逐步断言落到 [expected]。
 Future<void> _stepVideoSections(
   WidgetTester tester,
   FocusDriver driver,
-  Finder navigation, {
+  String prefix, {
   required List<VideoLibrarySection> expected,
   required int delta,
 }) async {
+  final Finder navigation = _videoNav(prefix);
   for (final VideoLibrarySection section in expected) {
     expect(
       await driver.requestFocusInside(
         navigation,
-        debugLabelContains: 'video-library-view-sections',
+        debugLabelContains: '$prefix-sections',
       ),
       isTrue,
     );
@@ -229,14 +260,64 @@ Future<void> _stepVideoSections(
     expect(
       await _waitFor(
         tester,
-        () => tester
-            .widget<FushiAdjustableSegmented<VideoLibrarySection>>(navigation)
-            .selected == section,
+        () =>
+            tester
+                .widget<FushiAdjustableSegmented<VideoLibrarySection>>(
+                  navigation,
+                )
+                .selected ==
+            section,
       ),
       isTrue,
       reason: '视频库分段导航应逐步切到 $section',
     );
   }
+}
+
+/// 在 [prefix] 那条导航上按方向键直到选中 [target]（中间经过哪些分组随平台合规门
+/// 增减，不逐步钉死）。
+Future<void> _adjustVideoSectionsUntil(
+  WidgetTester tester,
+  FocusDriver driver,
+  String prefix, {
+  required VideoLibrarySection target,
+  required int delta,
+}) async {
+  final Finder navigation = _videoNav(prefix);
+  for (int step = 0; step < 8; step++) {
+    if (tester
+            .widget<FushiAdjustableSegmented<VideoLibrarySection>>(navigation)
+            .selected ==
+        target) {
+      return;
+    }
+    expect(
+      await driver.requestFocusInside(
+        navigation,
+        debugLabelContains: '$prefix-sections',
+      ),
+      isTrue,
+    );
+    final VideoLibrarySection before = tester
+        .widget<FushiAdjustableSegmented<VideoLibrarySection>>(navigation)
+        .selected;
+    await driver.adjust(steps: delta);
+    expect(
+      await _waitFor(
+        tester,
+        () =>
+            tester
+                .widget<FushiAdjustableSegmented<VideoLibrarySection>>(
+                  navigation,
+                )
+                .selected !=
+            before,
+      ),
+      isTrue,
+      reason: '视频库顶栏导航应离开 $before',
+    );
+  }
+  fail('视频库顶栏导航 8 步内没有走到 $target');
 }
 
 Future<bool> _waitFor(
