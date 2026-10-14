@@ -425,6 +425,23 @@ SettingsDestination buildAppearanceDestination() {
             },
             defaultValue: false,
           ),
+          // 手机底栏「中央展开」：左右各两项 + 中央「+」，其余模块点「+」弧形
+          // 弹出（MD3 与 Apple 设计系统都读）。
+          SettingsSwitchItem(
+            id: 'appearance.nav_bar_center_launcher',
+            title: t.home_nav_bar_center_launcher,
+            icon: FushiIcons.add,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.navBarCenterLauncher,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              unawaited(
+                settingsContext.appModel
+                    .setNavBarCenterLauncher(value)
+                    .then((_) => settingsContext.refresh()),
+              );
+            },
+            defaultValue: false,
+          ),
           // 「启动时打开查词」(id 'appearance.startup_default_dictionary_tab') 已归位到
           // 「系统 · 通用」分区（它管的是启动落地页/导航行为，与主题/明暗等外观无关）；
           // id / 持久化 key 保持不变（历史命名 appearance 前缀，仅换展示分类）。

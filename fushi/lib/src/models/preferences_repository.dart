@@ -1483,6 +1483,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 手机底栏「中央展开」形态：目的地多于 5 个时只留首尾各两项，其余收进
+  /// 中央「+」，点开从它弧形弹出。默认关 = 平铺形态（放不下才收进「更多」）。
+  bool get navBarCenterLauncher =>
+      getPref('nav_bar_center_launcher', defaultValue: false) as bool;
+
+  Future<void> setNavBarCenterLauncher(bool value) async {
+    await setPref('nav_bar_center_launcher', value);
+    notifyListeners();
+  }
+
   bool get reverseReaderBottomBar =>
       getPref('reverse_reader_bottom_bar', defaultValue: false) as bool;
 

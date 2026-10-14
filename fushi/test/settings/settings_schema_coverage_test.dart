@@ -446,8 +446,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 专项测试走设置行写偏好 → 生产装配函数（假 HTTP 客户端）断言装 / 不装。
   'services/Default subtitle language':
       'test/pages/jimaku_default_language_test.dart',
-  'services/AJATT':
-      'test/media/video/subtitle/ajatt_setting_effect_test.dart',
+  'services/AJATT': 'test/media/video/subtitle/ajatt_setting_effect_test.dart',
   // mpv Lua 脚本装载开关。写 prefsRepo（changed=true），生效点在视频播放器创建后
   // 经 libmpv `load-script` 命令装载脚本目录（widget harness 无 libmpv Player，
   // 无可探渲染输入）；由专项测试咬住目录枚举（仅顶层 .lua、排序）、load-script
@@ -984,13 +983,19 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/reader/reader_toolbar_style_setting_effect_test.dart',
   // · 纯黑深色（4c32e76）：只在深色下把 surface 压成纯黑，harness 的 t2 渲染
   //   输入观测不到；由 ThemeNotifier 配色真值测试覆盖。
-  'appearance/Pure black dark': 'test/models/theme_notifier_test.dart: '
+  'appearance/Pure black dark':
+      'test/models/theme_notifier_test.dart: '
       'pure black: legacy black-theme users keep it; toggle is independent',
   // · 底栏标签（690c490）：只影响首页 M3E 悬浮底栏的标签显隐，设置页 harness
   //   不挂首页 shell；专项测试走设置行写偏好 → 生产 adaptiveBottomBar 标签画 /
   //   不画（+ 首页接线源码守卫）。
   'appearance/Show navigation bar labels':
       'test/widgets/nav_bar_labels_setting_effect_test.dart',
+  // · 底栏中央展开（2026-10-14 原型）：同上，只影响首页底栏形态；专项测试走
+  //   设置行写偏好 → 生产 adaptiveBottomBar 平铺 / 左右各两项 + 「+」切换
+  //   （+ 首页接线源码守卫）。
+  'appearance/Bottom bar: center launcher':
+      'test/widgets/nav_bar_center_launcher_setting_effect_test.dart',
   // TODO-975: 顶部进度悬浮开关 + 悬浮控件自动隐藏延时。生效点在 reader 页悬浮
   // chrome 状态机（_topProgressReserve/_bottomChromeReserve 派生 + 自动隐藏定时器，
   // 非 reader CSS / 主题树）；由专项纯函数真值表 + 持久化 + 源码守卫覆盖。
@@ -1163,11 +1168,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/mining/mining_still_format_test.dart',
   // 音画同步片段格式：ffmpeg 参数按格式分派（视频页 / gal 窗口）+ 偏好推导（老 MP4 片段
   // 用户保持 MP4）+ 编码器缺失 AV1→VP9→MP4 降级且扩展名跟随实际产物 + WebM 卡片内嵌渲染。
-  'cardCreation/Video clip format': 'test/mining/mining_clip_format_test.dart + '
+  'cardCreation/Video clip format':
+      'test/mining/mining_clip_format_test.dart + '
       'test/mining/synchronized_video_mining_test.dart + '
       'test/mining/immersion_capture_video_test.dart + '
       '../packages/fushi_anki/test/inline_video_cover_test.dart',
-  'cardCreation/Game clip format': 'test/mining/mining_clip_format_test.dart + '
+  'cardCreation/Game clip format':
+      'test/mining/mining_clip_format_test.dart + '
       'test/mining/synchronized_video_mining_test.dart',
   // 同步后端选择：syncChannelScopeOf 是 resolveSyncBackend 的逆（选哪个就解析出哪个），
   // 外加 applyBackupBackendChange 真改变通道归属。
@@ -1248,7 +1255,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 「P2P tunnel」）与真隧道端到端；跨 NAT 真打洞仍是设备 backlog。
   'interconnect/Allow remote connections over a P2P tunnel':
       'test/sync/interconnect_p2p_tunnel_test.dart + '
-          'INTEGRATION: 跨 NAT 真机打洞',
+      'INTEGRATION: 跨 NAT 真机打洞',
   // 远端查词：与 lookup 分类共享同一份 item 定义。⚠️ 门本身
   // （AppModel._searchRemoteDictionary 开头的 remoteLookupEnabled 短路）没有守卫，
   // 仍是设备 backlog；下面两个文件只覆盖偏好往返与开关打开后的客户端链路。

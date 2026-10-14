@@ -6456,6 +6456,9 @@ class AppModel with ChangeNotifier {
   bool get navBarLabelsVisible => prefsRepo.navBarLabelsVisible;
   Future<void> setNavBarLabelsVisible(bool value) =>
       prefsRepo.setNavBarLabelsVisible(value);
+  bool get navBarCenterLauncher => prefsRepo.navBarCenterLauncher;
+  Future<void> setNavBarCenterLauncher(bool value) =>
+      prefsRepo.setNavBarCenterLauncher(value);
   void toggleReverseNavigationBar() => prefsRepo.toggleReverseNavigationBar();
 
   bool get reverseReaderBottomBar => prefsRepo.reverseReaderBottomBar;

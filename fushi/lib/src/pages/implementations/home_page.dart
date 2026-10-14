@@ -2028,6 +2028,7 @@ class _HomePageState extends BasePageState<HomePage>
             glassContentUnder: _appleChrome.contentUnderBottom,
             glassSearchIndex: glassSearchIndex,
             showLabels: appModel.navBarLabelsVisible,
+            centerLauncher: appModel.navBarCenterLauncher,
             materialFab: _shellPageFab(),
             // 反转底栏方向：查词钮 / FAB 跟着翻到左侧，整条底栏镜像。
             searchLeading: reversed,

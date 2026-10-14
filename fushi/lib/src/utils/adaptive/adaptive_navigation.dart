@@ -17,6 +17,7 @@ import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/nav_launcher_fan.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -257,6 +258,11 @@ const double _kGlassSidebarCollapsedCellWidth = 60;
 /// / MD3 FAB）挪到胶囊**起始侧**（LTR 即左侧），整条底栏成为关闭时的镜像；
 /// 胶囊收起时也缩向末端，紧贴 FAB 的另一侧不留空洞。目的地顺序本身由调用方
 /// 传入的 [items] 决定（已按反转排好）。
+///
+/// [centerLauncher]：底栏「中央展开」形态（用户偏好 `nav_bar_center_launcher`）。
+/// 目的地超过 5 个时胶囊只留首尾各两项，正中是「+」格，其余目的地（含查词，
+/// 不再拆成 FAB / 圆钮）点「+」后从它沿弧线弹出，见 [showNavLauncherFan]。
+/// 不超过 5 个时与平铺形态相同。
 Widget adaptiveBottomBar({
   required BuildContext context,
   required int currentIndex,
@@ -270,6 +276,7 @@ Widget adaptiveBottomBar({
   AdaptiveNavFab? materialFab,
   bool searchLeading = false,
   ValueChanged<int>? onDragSelect,
+  bool centerLauncher = false,
 }) {
   if (isCupertinoPlatform(context)) {
     // Cupertino keeps the stock tab bar as a single whole-bar gamepad stop. iOS
@@ -312,6 +319,7 @@ Widget adaptiveBottomBar({
     materialFab: materialFab,
     searchLeading: searchLeading,
     onDragSelect: onDragSelect,
+    centerLauncher: centerLauncher,
   );
 }
 
@@ -338,7 +346,11 @@ class _MaterialNavCluster extends StatelessWidget {
     this.materialFab,
     this.searchLeading = false,
     this.onDragSelect,
+    this.centerLauncher = false,
   });
+
+  /// 底栏「中央展开」形态，见 [adaptiveBottomBar]；侧栏不读。
+  final bool centerLauncher;
 
   /// MD3 悬浮底栏「长按拎起选中指示器、拖到目标模块松手」的落地回调（参数同
   /// [onTap] 的序号）。null = 不启用长按拖选（侧栏、玻璃底栏、调用方没接）。
@@ -407,13 +419,61 @@ class _MaterialNavCluster extends StatelessWidget {
     );
   }
 
+  /// 「中央展开」的拆分：[indices]（进胶囊的目的地，按视觉序）首尾各
+  /// [_kLauncherPinnedPerSide] 项常驻，其余收进中央「+」。目的地不多于
+  /// 5 个（或没开这个形态）时返回 null，照平铺形态画。收起项按用户的模块
+  /// 顺序列（反转底栏方向时 [indices] 是倒序，这里翻回来）。
+  _LauncherSplit? _launcherSplit(List<int> indices) {
+    if (!centerLauncher || indices.length <= 2 * _kLauncherPinnedPerSide + 1) {
+      return null;
+    }
+    final List<int> leading = indices.sublist(0, _kLauncherPinnedPerSide);
+    final List<int> trailing = indices.sublist(
+      indices.length - _kLauncherPinnedPerSide,
+    );
+    final List<int> middle = indices.sublist(
+      _kLauncherPinnedPerSide,
+      indices.length - _kLauncherPinnedPerSide,
+    );
+    return _LauncherSplit(
+      leading: leading,
+      trailing: trailing,
+      hidden: searchLeading ? middle.reversed.toList() : middle,
+    );
+  }
+
+  /// 「中央展开」的一排：左两项、「+」、右两项，五格等分。
+  Widget _buildLauncherRow(
+    BuildContext context,
+    _LauncherSplit split, {
+    double? cellWidth,
+  }) {
+    return Row(
+      children: <Widget>[
+        for (final int i in split.leading)
+          Expanded(child: _cell(context, i, cellWidth: cellWidth)),
+        Expanded(
+          child: _NavLauncherCell(
+            items: items,
+            hidden: split.hidden,
+            currentIndex: currentIndex,
+            onTap: onTap,
+            cellWidth: cellWidth,
+          ),
+        ),
+        for (final int i in split.trailing)
+          Expanded(child: _cell(context, i, cellWidth: cellWidth)),
+      ],
+    );
+  }
+
   /// Apple 设计系统（iOS 26）的悬浮标签栏本体：一枚放目的地的玻璃胶囊，
   /// [glassSearchIndex] 那一项拆成右侧的圆形玻璃钮。下滑最小化时胶囊收成
   /// 只剩当前项图标的圆（宽度动画；减弱动态效果下瞬间到位），其余目的地
   /// 淡出并移出焦点遍历 / 命中测试。焦点 id 与展开态一致（`nav-bar-<序号>`），
   /// 最小化圆用单独的 `nav-mini-bar`。
   Widget _buildGlassTabBar(BuildContext context) {
-    final int? rawSearch = glassSearchIndex;
+    final int? rawSearch = centerLauncher ? null : glassSearchIndex;
     final int? search =
         rawSearch != null &&
             rawSearch >= 0 &&
@@ -442,12 +502,20 @@ class _MaterialNavCluster extends StatelessWidget {
         final double innerFull = fullWidth - 2 * _kGlassNavBarInnerPadding;
         const double innerMini =
             _kGlassNavBarMinimizedWidth - 2 * _kGlassNavBarInnerPadding;
-        final Widget fullRow = Row(
-          children: <Widget>[
-            for (final int i in capsuleIndices)
-              Expanded(child: _cell(context, i)),
-          ],
-        );
+        final _LauncherSplit? split = _launcherSplit(capsuleIndices);
+        // 胶囊里实际排开的格（中央展开时「+」格记作 null）：气泡定位、拖动
+        // 透镜落点都按它数。
+        final List<int?> slots = split == null
+            ? capsuleIndices
+            : <int?>[...split.leading, null, ...split.trailing];
+        final Widget fullRow = split == null
+            ? Row(
+                children: <Widget>[
+                  for (final int i in capsuleIndices)
+                    Expanded(child: _cell(context, i)),
+                ],
+              )
+            : _buildLauncherRow(context, split);
         // 隐藏的那一层不挂焦点目标：FushiFocus 按几何找方向邻居，透明但仍注册
         // 的目标会让 D-pad 落到看不见的格子上。
         final Widget miniCell = selectedInCapsule
@@ -484,9 +552,11 @@ class _MaterialNavCluster extends StatelessWidget {
           );
         }
 
-        final int? selectedPos = selectedInCapsule
-            ? capsuleIndices.indexOf(currentIndex)
-            : null;
+        final int? selectedPos = !selectedInCapsule
+            ? null
+            : (slots.contains(currentIndex)
+                  ? slots.indexOf(currentIndex)
+                  : slots.indexOf(null));
         // 搜索圆钮：默认在胶囊右侧；反转底栏方向时挪到左侧（[searchLeading]）。
         Widget searchButton(int index) => SizedBox.square(
           dimension: kGlassNavBarCapsuleHeight,
@@ -512,12 +582,14 @@ class _MaterialNavCluster extends StatelessWidget {
               _GlassTabCapsule(
                 width: minimized ? _kGlassNavBarMinimizedWidth : fullWidth,
                 minimized: minimized,
-                itemCount: capsuleIndices.length,
+                itemCount: slots.length,
                 selectedPos: selectedPos,
                 duration: duration,
                 curve: curve,
                 onSelectPos: (int pos) {
-                  final int i = capsuleIndices[pos];
+                  // 拖到「+」格上松手 = 不切换（弹出层只由点按打开）。
+                  final int? i = slots[pos];
+                  if (i == null) return;
                   if (i != currentIndex) fushiSelectionHaptic(context);
                   onTap(i);
                 },
@@ -551,6 +623,7 @@ class _MaterialNavCluster extends StatelessWidget {
     final int? rawSearch = glassSearchIndex;
     int? search;
     if (materialFab == null &&
+        !centerLauncher &&
         rawSearch != null &&
         rawSearch >= 0 &&
         rawSearch < items.length &&
@@ -592,6 +665,7 @@ class _MaterialNavCluster extends StatelessWidget {
       expandFocusIds: <FushiFocusId>[
         FushiFocusId('$idPrefix-$currentIndex'),
         _NavMoreCell.focusId,
+        _NavLauncherCell.focusId,
       ],
       fab: fab,
       fabLeading: searchLeading,
@@ -664,6 +738,39 @@ class _MaterialNavCluster extends StatelessWidget {
       );
     }
     final double width = box.maxWidth;
+    final _LauncherSplit? split = _launcherSplit(indices);
+    if (split != null) {
+      final List<int> pinned = <int>[...split.leading, ...split.trailing];
+      final _FloatingBarStyle? launcherBarStyle = _FloatingBarStyle.maybeOf(
+        context,
+      );
+      final ValueChanged<int>? launcherDrag = onDragSelect;
+      return _SlidingIndicatorScope(
+        selectedId: pinned.contains(currentIndex)
+            ? FushiFocusId('$idPrefix-$currentIndex')
+            : (split.hidden.contains(currentIndex)
+                  ? _NavLauncherCell.focusId
+                  : null),
+        color:
+            launcherBarStyle?.indicator ??
+            Theme.of(context).colorScheme.tertiary,
+        dragTargets: launcherDrag == null
+            ? null
+            : <FushiFocusId, int>{
+                for (final int i in pinned) FushiFocusId('$idPrefix-$i'): i,
+              },
+        dragExcludedId: _NavLauncherCell.focusId,
+        onDragSelect: launcherDrag,
+        hoverColor:
+            launcherBarStyle?.content ??
+            Theme.of(context).colorScheme.onSurface,
+        child: _buildLauncherRow(
+          context,
+          split,
+          cellWidth: width / (pinned.length + 1),
+        ),
+      );
+    }
     final TextStyle style =
         (Theme.of(context).textTheme.labelMedium ?? const TextStyle()).copyWith(
           fontWeight: FontWeight.w600,
@@ -2191,6 +2298,135 @@ class _FloatingNavSurface extends StatelessWidget {
           ),
           child,
         ],
+      ),
+    );
+  }
+}
+
+/// 「中央展开」每侧常驻的目的地数（左右各两个 + 中间「+」= 五格）。
+const int _kLauncherPinnedPerSide = 2;
+
+/// [_MaterialNavCluster._launcherSplit] 的结果。
+@immutable
+class _LauncherSplit {
+  const _LauncherSplit({
+    required this.leading,
+    required this.trailing,
+    required this.hidden,
+  });
+
+  final List<int> leading;
+  final List<int> trailing;
+
+  /// 收进「+」的目的地，按用户的模块顺序。
+  final List<int> hidden;
+}
+
+/// 底栏「中央展开」正中的「+」格：点开后 [hidden] 里的目的地从它沿弧线弹出
+/// （[showNavLauncherFan]），点遮罩 / 「×」收回。当前页在其中时这一格显示
+/// 为选中。独立焦点目标 `nav-bar-launcher`，A / 回车打开。
+class _NavLauncherCell extends StatefulWidget {
+  const _NavLauncherCell({
+    required this.items,
+    required this.hidden,
+    required this.currentIndex,
+    required this.onTap,
+    required this.cellWidth,
+  });
+
+  final List<AdaptiveNavItem> items;
+  final List<int> hidden;
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+  final double? cellWidth;
+
+  static const FushiFocusId focusId = FushiFocusId('nav-bar-launcher');
+
+  @override
+  State<_NavLauncherCell> createState() => _NavLauncherCellState();
+}
+
+class _NavLauncherCellState extends State<_NavLauncherCell> {
+  bool _open = false;
+
+  Future<void> _launch() async {
+    if (_open) return;
+    final RenderObject? cell = context.findRenderObject();
+    final RenderObject? overlay = Overlay.of(
+      context,
+      rootOverlay: true,
+    ).context.findRenderObject();
+    if (cell is! RenderBox || overlay is! RenderBox) return;
+    final Rect rect =
+        cell.localToGlobal(Offset.zero, ancestor: overlay) & cell.size;
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    final bool glass = isGlassDesign(context);
+    // 配色跟底栏走：MD3 胶囊是 tertiary 系（与「更多」菜单同），Apple 是中性
+    // 表面色 + 主色指示；墨水屏是 surface 底、反色指示、描边、浅色遮罩。
+    final NavLauncherStyle style = NavLauncherStyle(
+      container: eink
+          ? colors.surface
+          : (glass ? colors.surfaceContainerHighest : colors.tertiaryContainer),
+      content: eink
+          ? colors.onSurface
+          : (glass ? colors.onSurface : colors.onTertiaryContainer),
+      indicator: eink
+          ? colors.onSurface
+          : (glass ? colors.primary : colors.tertiary),
+      onIndicator: eink
+          ? colors.surface
+          : (glass ? colors.onPrimary : colors.onTertiary),
+      scrim: eink
+          ? colors.surface.withValues(alpha: 0.9)
+          : Colors.black.withValues(alpha: 0.5),
+      labelColor: eink ? colors.onSurface : Colors.white,
+      outline: eink ? colors.outline : null,
+      closeLabel: MaterialLocalizations.of(context).closeButtonLabel,
+    );
+    setState(() => _open = true);
+    final int? picked = await showNavLauncherFan(
+      context: context,
+      anchor: rect,
+      style: style,
+      entries: <NavLauncherEntry>[
+        for (final int i in widget.hidden)
+          NavLauncherEntry(
+            icon: widget.items[i].icon,
+            selectedIcon: widget.items[i].selectedIcon,
+            label: widget.items[i].label,
+            selected: i == widget.currentIndex,
+          ),
+      ],
+    );
+    if (!mounted) return;
+    setState(() => _open = false);
+    if (picked == null) return;
+    final int target = widget.hidden[picked];
+    if (target != widget.currentIndex) fushiSelectionHaptic(context);
+    widget.onTap(target);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool selected = widget.hidden.contains(widget.currentIndex);
+    // 弹出层打开时它自己的「×」盖在这一格正上方，这里把底下的「+」藏起来，
+    // 免得旋转中的「×」与静止的「+」叠成米字。
+    return Opacity(
+      opacity: _open ? 0 : 1,
+      child: _NavFocusCell(
+        id: _NavLauncherCell.focusId,
+        item: AdaptiveNavItem(
+          icon: FushiIcons.add,
+          label: t.home_nav_more,
+          experimentalBadge: widget.hidden.any(
+            (int i) => widget.items[i].experimentalBadge,
+          ),
+        ),
+        selected: selected,
+        horizontal: true,
+        cellWidth: widget.cellWidth,
+        onSelect: () => unawaited(_launch()),
       ),
     );
   }
