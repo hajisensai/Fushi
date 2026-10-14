@@ -417,7 +417,27 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final settings = await loadSettings();
     final service = _serviceForSettings(settings);
 
-    final AnkiDeck? deck = resolveSelectedDeck(settings);
+    // 「高级制卡」的卡组覆盖在 payload 里，所以目标卡组必须在 payload 解析**之后**
+    // 才能定（见 resolveTargetDeck）。解析失败时沿用旧的判定次序：设置里根本没有
+    // 卡组 → 仍报 notConfigured（旧代码先查卡组），否则报同样的 payload failure。
+    final AnkiMiningPayload payload;
+    try {
+      final json = Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map);
+      payload = AnkiMiningPayload.fromJson(json);
+    } catch (e, stack) {
+      if (resolveSelectedDeck(settings) == null) {
+        return const MineOutcome.notConfigured();
+      }
+      return MineOutcome.failure(
+        'Invalid card data (payload parse failed): $e',
+        error: e,
+        stackTrace: stack,
+      );
+    }
+
+    // 覆盖卡组命中时即便设置里没选卡组也能落卡：它本就取自 availableDecks，是用户
+    // 这一次明确挑的；没有覆盖 / 没命中 → 退回设置卡组，为空仍是 notConfigured。
+    final AnkiDeck? deck = resolveTargetDeck(settings, payload);
     if (deck == null) return const MineOutcome.notConfigured();
 
     final noteType = settings.availableNoteTypes.firstWhereOrNull(
@@ -429,18 +449,6 @@ class AnkiConnectRepository extends BaseAnkiRepository {
               )
             : null);
     if (noteType == null) return const MineOutcome.notConfigured();
-
-    final AnkiMiningPayload payload;
-    try {
-      final json = Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map);
-      payload = AnkiMiningPayload.fromJson(json);
-    } catch (e, stack) {
-      return MineOutcome.failure(
-        'Invalid card data (payload parse failed): $e',
-        error: e,
-        stackTrace: stack,
-      );
-    }
 
     final _PreparedMinedFields prepared = await _renderMinedFields(
       service: service,
@@ -513,6 +521,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         _noteAnkiConnectReachable();
         // BUG-1549：把实际落卡的牌组名带回成功结果——toast 只认它，不再事后从
         // settings.selectedDeckName 猜（旧存档只有 id 时那是 null → 空引号）。
+        // 「高级制卡」覆盖卡组时这里就是覆盖后的卡组。
         return MineOutcome.success(
           noteId: noteId,
           deckName: deck.name,

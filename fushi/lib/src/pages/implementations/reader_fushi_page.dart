@@ -75,6 +75,7 @@ import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
 import 'package:fushi/src/media/import/srt_book_reimport.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/media/audiobook/audiobook_clip_export.dart';
 import 'package:fushi/src/utils/misc/card_screenshot_downsampler.dart';
 import 'package:fushi/src/media/audiobook/audiobook_clip_text_render.dart';
@@ -4528,8 +4529,8 @@ $liveConfigJs
 
   /// BUG-2196 ②：试听「这次制卡真正会写进卡片的那段音频」。
   ///
-  /// 区间取的是 `_miningDraft.composeAudioRange(_currentSentenceAudioRange())`
-  /// —— **和 `_prepareMiningContext` 里喂给 ffmpeg 的那一个是同一个表达式**，所以
+  /// 区间取的是 `_miningSentenceAudioClip()`（草稿合并 + 本次起止偏移）
+  /// —— **和 `_prepareMiningContext` 里喂给 ffmpeg 的那一个是同一个函数**，所以
   /// 听到什么就会压出什么。刻意不播「当前句的 cue」：那只能证明这句有音频，
   /// 证明不了裁出来的那段念全了，而用户报的正是后者。
   ///
@@ -4538,11 +4539,19 @@ $liveConfigJs
   bool get supportsSentenceAudioPreview => true;
 
   @override
-  Future<bool> onPreviewSentenceAudio() async {
+  Future<bool> onPreviewSentenceAudio() => _previewMiningSentenceAudio();
+
+  /// 试听 [_miningSentenceAudioClip] 给出的区间（带「高级制卡」的起止偏移）——与写卡
+  /// 同一个函数求值，听到的就是会压出来的。
+  Future<bool> _previewMiningSentenceAudio({
+    int startDeltaMs = 0,
+    int endDeltaMs = 0,
+  }) async {
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller == null) return false;
-    final AudioPlaybackRange? clip = _miningDraft.composeAudioRange(
-      _currentSentenceAudioRange(),
+    final AudioPlaybackRange? clip = _miningSentenceAudioClip(
+      startDeltaMs: startDeltaMs,
+      endDeltaMs: endDeltaMs,
     );
     if (clip == null || clip.endMs <= clip.startMs) return false;
     await controller.playRange(clip);
@@ -4553,6 +4562,49 @@ $liveConfigJs
   Future<void> onStopSentenceAudioPreview() async {
     // resumeMain: false —— 用户是在制卡对话框里点的试听，不该顺手把正文朗读接着放。
     await _audiobookController?.stopClip(resumeMain: false);
+  }
+
+  /// 「高级制卡」对话框里阅读器 / 有声书提供的分区：
+  /// * 句子：沿用原「调整上下文」的草稿回调（预览 / 增减 / 手改 / 移除）；
+  /// * 句子音频：只在挂着有声书时给。区间显示与试听都经 [_miningSentenceAudioClip]，
+  ///   与 `_prepareMiningContext` 写卡同源（BUG-2196 ②）；关窗时停掉试听。
+  /// 图片分区不给：阅读器卡图只有书封，「不要图片」由覆盖项的 omitImage 承载，
+  /// 视频图片方式 / 漫画裁切对书没有意义。
+  @override
+  Future<AdvancedMiningSections> buildAdvancedMiningSections({
+    required String matched,
+  }) async {
+    final bool hasAudiobook = _audiobookController != null;
+    return AdvancedMiningSections(
+      sentence: AdvancedMiningSentenceSection(
+        fetchPreview: onSentenceContextPreviewFromDraft,
+        setContext: onSetSentenceContextToDraft,
+        editSentence: onEditSentenceContextText,
+        removeSentence: onRemoveSentenceContext,
+      ),
+      audio: hasAudiobook
+          ? AdvancedMiningAudioSection(
+              describe: (int startDeltaMs, int endDeltaMs) async {
+                final AudioPlaybackRange? clip = _miningSentenceAudioClip(
+                  startDeltaMs: startDeltaMs,
+                  endDeltaMs: endDeltaMs,
+                );
+                if (clip == null || clip.endMs <= clip.startMs) return null;
+                return AdvancedMiningAudioWindow(
+                  startMs: clip.startMs,
+                  endMs: clip.endMs,
+                );
+              },
+              preview: (int startDeltaMs, int endDeltaMs) =>
+                  _previewMiningSentenceAudio(
+                    startDeltaMs: startDeltaMs,
+                    endDeltaMs: endDeltaMs,
+                  ),
+              stopPreview: onStopSentenceAudioPreview,
+            )
+          : null,
+      onClosed: hasAudiobook ? onStopSentenceAudioPreview : null,
+    );
   }
 
   @override

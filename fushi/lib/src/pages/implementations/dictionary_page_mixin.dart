@@ -25,7 +25,8 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult, DictionaryPopupWebViewState;
-import 'package:fushi/src/pages/implementations/sentence_context_dialog.dart';
+import 'package:fushi/src/anki/advanced_mining_deck_section.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_dialog.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
@@ -195,6 +196,12 @@ mixin DictionaryPageMixin {
   }) async =>
       AdvancedMiningSections.none;
 
+  /// 「高级制卡」对话框里能不能为这张卡选卡组。默认 true（卡组取本机 Anki 设置）；
+  /// 卡组由别的设备决定的表面覆写成 false（手机遥控页：遥控制卡落在电脑端、用电脑的
+  /// Anki 配置），对话框就不渲染卡组分区。
+  @protected
+  bool get advancedMiningDeckChoiceAvailable => true;
+
   /// 「制卡前调整·选择句子上下文」里**手改某一句文本**（视频/首页查词车道）：把 [slot]
   /// （上文/当前/下文）第 index 句的文本改成给定文本，写回本表面会话级制卡草稿。
   ///
@@ -256,53 +263,60 @@ mixin DictionaryPageMixin {
     }
   }
 
-  /// BUG-763/766：视频/首页车道点某词条「调整上下文」→ 弹 **app 原生顶层对话框**
-  /// （[SentenceContextDialog]，不再画在查词弹窗 WebView 内）。复用视频覆写的
-  /// [onSentenceContextPreviewToDraft]/[onSetSentenceContextToDraft] 驱动预览+增减；
-  /// 「确认制卡」回 [webViewKey] 那层弹窗精确点中第 [entryIndex] 个词条制卡按钮。
-  Future<void> _openSentenceContextDialogForVideo({
+  /// 「高级制卡」（视频 / 首页查词车道）：点某词条的「高级制卡」→ 弹 **app 原生顶层
+  /// 对话框**（[showAdvancedMiningDialog]，BUG-763/766：不画在查词弹窗 WebView 内）。
+  /// 卡组分区按 Anki 设置统一组装；句子 / 音频 / 图片分区由页面覆写
+  /// [buildAdvancedMiningSections] 提供；「确认」回 [webViewKey] 那层弹窗精确点中第
+  /// [entryIndex] 个词条的「+」并带上覆盖项。与 reader 车道
+  /// （`BaseSourcePageState._openAdvancedMiningDialog`）对称。
+  ///
+  /// 结果来自别的设备（[popupResourceSource] 非 null）或表面声明卡组不由本机决定
+  /// （[advancedMiningDeckChoiceAvailable] 为 false）时卡片落在那台设备、用它的 Anki
+  /// 配置，本机的卡组列表对它没有意义——不给卡组分区。
+  Future<void> _openAdvancedMiningDialog({
     required GlobalKey<DictionaryPopupWebViewState> webViewKey,
     required int entryIndex,
     required String matched,
+    required String expression,
   }) async {
-    final Future<Map<String, Object?>> Function()? preview =
-        onSentenceContextPreviewToDraft;
-    final Future<int> Function(int, int)? setter = onSetSentenceContextToDraft;
-    if (preview == null || setter == null) return;
+    if (!mounted) return;
+    // 本 mixin 没有 State 的 mounted 语义可借（mounted 是抽象成员），按 lint 的要求
+    // 用 BuildContext 自己的 mounted 判断跨 await 之后还能不能弹窗。
+    final BuildContext dialogContext = context;
     // BUG-797：对话框期间把弹窗 WebView 停靠屏外，否则原生平台视图盖住对话框。
-    await runWithLookupPopupHidden<void>(
-      () => showAppDialog<void>(
-        context: context,
-        builder: (_) => SentenceContextDialog(
+    await runWithLookupPopupHidden<void>(() async {
+      final AdvancedMiningDeckSection? deck =
+          popupResourceSource == null && advancedMiningDeckChoiceAvailable
+          ? await loadAdvancedMiningDeckSection(ref)
+          : null;
+      final AdvancedMiningSections sections =
+          await buildAdvancedMiningSections(matched: matched);
+      if (!dialogContext.mounted) {
+        await sections.onClosed?.call();
+        return;
+      }
+      await showAdvancedMiningDialog(
+        context: dialogContext,
+        capabilities: AdvancedMiningCapabilities(
           matched: matched,
-          fetchPreview: preview,
-          setContext: setter,
-          // 手改某一句文本：只改这次会写进卡片的**文本**，cue 的时间窗（音频/画面
-          // 身份）原样保留。宿主没接就传 null，对话框不渲染编辑入口。
-          editSentence: onEditSentenceContextText,
-          // 移除 / 恢复某一句前文/后文（剔掉夹在中间的旁白）。宿主没接传 null。
-          removeSentence: onRemoveSentenceContext,
-          // 试听：宿主没接（或只接了一半）就传 null，对话框不渲染试听按钮。
-          previewAudio: onStopSentenceAudioPreviewToDraft == null
-              ? null
-              : onPreviewSentenceAudioToDraft,
-          stopAudioPreview: onPreviewSentenceAudioToDraft == null
-              ? null
-              : onStopSentenceAudioPreviewToDraft,
+          expression: expression.isEmpty ? null : expression,
+          deck: deck,
+          sections: sections,
           // BUG-2627：回传「有没有真的点到制卡按钮」。弹窗层在这次往返途中被关栈
           // （或 State 已卸载）时为 false，对话框据此提示，不再静默关窗。
-          onConfirm: () async =>
+          onConfirm: (MiningRequestOverrides overrides) async =>
               await webViewKey.currentState?.mineEntryByIndex(
                 entryIndex,
                 // BUG-2634 第二轮：_onMineEntryImpl 在 await _mineVideoCard
                 // 之前就把草稿 / cue / 历史快照读完，连当前帧截图的 Future 都
                 // 在点击当下同步启动，所以提前关窗不会截到别的帧。
                 releaseWhenPayloadConsumed: true,
+                overrides: overrides,
               ) ??
               false,
         ),
-      ),
-    );
+      );
+    });
   }
 
   // 今日统计 dateKey 走 stat_activity 的权威实现（statTodayKey），不在此重复格式化。
@@ -1090,15 +1104,18 @@ mixin DictionaryPageMixin {
             onAppendSentence: onAppendSentenceToDraft,
             onSetSentenceContext: onSetSentenceContextToDraft,
             onClearSentenceDraft: onClearSentenceDraftToDraft,
-            onSentenceContextPreview: onSentenceContextPreviewToDraft,
-            // BUG-763/766：点某词条「调整上下文」→ 弹 app 原生顶层对话框（不再画在弹窗
-            // WebView 内）；确认制卡回该层 WebView 精确点中该词条制卡。
-            onOpenSentenceContextModal: onSentenceContextPreviewToDraft != null
-                ? (int entryIndex, String matched) =>
-                    _openSentenceContextDialogForVideo(
+            // 「高级制卡」：点某词条的「高级制卡」→ 弹 app 原生顶层对话框（BUG-763/766：
+            // 不画在弹窗 WebView 内）；确认制卡回该层 WebView 精确点中该词条的「+」并带上
+            // 覆盖项。只跟制卡模块走——纯查词页也有（对话框只有卡组分区）。
+            onOpenAdvancedMining: mixinAppModel.moduleVisibility.isEnabled(
+              ModuleId.cardCreation,
+            )
+                ? (int entryIndex, String matched, String expression) =>
+                    _openAdvancedMiningDialog(
                       webViewKey: entry.webViewKey,
                       entryIndex: entryIndex,
                       matched: matched,
+                      expression: expression,
                     )
                 : null,
             headerWidget: buildPopupHeaderFor(index),

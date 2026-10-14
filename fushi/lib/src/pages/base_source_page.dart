@@ -12,7 +12,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi_anki/fushi_anki.dart'
-    show AnkiMiningPayload, AnkiOpenWordOutcome;
+    show AnkiMiningPayload, AnkiOpenWordOutcome, MiningRequestOverrides;
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
@@ -25,7 +25,8 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:fushi/src/pages/implementations/sentence_context_dialog.dart';
+import 'package:fushi/src/anki/advanced_mining_deck_section.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_dialog.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
@@ -1205,18 +1206,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         onClearSentenceDraft: sentenceDraftEnabled
             ? onClearSentenceDraftToDraft
             : null,
-        // Niratan「制卡前调整·选择句子上下文」模态：弹窗按需拉取当前草稿的真实上下
-        // 文句（前/当前/后）+ 词偏移做预览。只在支持草稿的表面接线，其余传 null。
-        onSentenceContextPreview: sentenceDraftEnabled
-            ? onSentenceContextPreviewFromDraft
-            : null,
-        // BUG-763/766：点某词条「调整上下文」→ 弹 app 原生顶层对话框（不再画在弹窗
-        // WebView 内）；确认制卡回该层 WebView（item.webViewKey）精确点中该词条制卡。
-        onOpenSentenceContextModal: sentenceDraftEnabled
-            ? (int entryIndex, String matched) => _openSentenceContextDialog(
+        // 「高级制卡」：点某词条的「高级制卡」→ 弹 app 原生顶层对话框（BUG-763/766：
+        // 不画在弹窗 WebView 内）；确认制卡回该层 WebView（item.webViewKey）精确点中该
+        // 词条的「+」并带上覆盖项。只跟制卡模块走——卡组分区所有表面都有，句子 / 音频 /
+        // 图片分区由页面的 [buildAdvancedMiningSections] 决定有无。
+        onOpenAdvancedMining: cardCreationEnabled
+            ? (int entryIndex, String matched, String expression) =>
+                _openAdvancedMiningDialog(
                   webViewKey: item.webViewKey,
                   entryIndex: entryIndex,
                   matched: matched,
+                  expression: expression,
                 )
             : null,
       ),
@@ -1250,41 +1250,43 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     }
   }
 
-  /// BUG-763/766：弹窗点某词条「调整上下文」→ 弹 **app 原生顶层对话框**
-  /// （[SentenceContextDialog]，不再画在查词弹窗 WebView 内——那受弹窗表面尺寸/半透明
-  /// 限制，句子框重叠、显示不全）。复用宿主已有 [onSetSentenceContextToDraft] /
-  /// [onSentenceContextPreviewFromDraft] 驱动增减 + 预览（后端零改动）；「确认制卡」回
-  /// [webViewKey] 那层弹窗精确点中第 [entryIndex] 个词条制卡按钮
-  /// （[DictionaryPopupWebViewState.mineEntryByIndex]，复用全部制卡/查重/覆写逻辑）。
-  /// BUG-797：对话框打开期间把弹窗 WebView 停靠屏外（见 [_sentenceContextDialogOpen]），
-  /// 否则原生平台视图盖住对话框。
-  Future<void> _openSentenceContextDialog({
+  /// 「高级制卡」：弹窗点某词条的「高级制卡」→ 弹 **app 原生顶层对话框**
+  /// （[showAdvancedMiningDialog]，BUG-763/766：不画在查词弹窗 WebView 内）。
+  ///
+  /// * 卡组分区从 Anki 设置统一组装（[loadAdvancedMiningDeckSection]）；
+  /// * 句子 / 音频 / 图片分区由页面覆写 [buildAdvancedMiningSections] 提供；
+  /// * 「确认」回 [webViewKey] 那层弹窗精确点中第 [entryIndex] 个词条的「+」
+  ///   （[DictionaryPopupWebViewState.mineEntryByIndex]，复用全部制卡 / 查重 / 覆写
+  ///   逻辑），并把用户的选择作为 [MiningRequestOverrides] 并进这一次的制卡 fields。
+  ///
+  /// BUG-797：对话框打开期间把弹窗 WebView 停靠屏外（[runWithLookupPopupHidden]），
+  /// 否则原生平台视图盖住对话框。分区的组装（读 Anki 设置、取预览）也在停靠期间做：
+  /// 它们都很快，而先弹窗再停靠会让弹窗在对话框上闪一下。
+  Future<void> _openAdvancedMiningDialog({
     required GlobalKey<DictionaryPopupWebViewState> webViewKey,
     required int entryIndex,
     required String matched,
+    required String expression,
   }) async {
     if (!mounted) return;
-    await runWithLookupPopupHidden<void>(
-      () => showAppDialog<void>(
+    await runWithLookupPopupHidden<void>(() async {
+      final AdvancedMiningDeckSection deck =
+          await loadAdvancedMiningDeckSection(ref);
+      final AdvancedMiningSections sections =
+          await buildAdvancedMiningSections(matched: matched);
+      if (!mounted) {
+        await sections.onClosed?.call();
+        return;
+      }
+      await showAdvancedMiningDialog(
         context: context,
-        builder: (_) => SentenceContextDialog(
+        capabilities: AdvancedMiningCapabilities(
           matched: matched,
-          fetchPreview: onSentenceContextPreviewFromDraft,
-          setContext: onSetSentenceContextToDraft,
-          // 「手改某一句文本」：只改这次会写进卡片的**文本**，不动该句的音频区间/
-          // 身份（改完照样是同一句、同一段音频）。门控与其余草稿回调同判据
-          // （本入口只在 sentenceDraftEnabled 时才挂上，这里再按
-          // [supportsSentenceDraft] 兜一层）；不支持的表面传 null，对话框不渲染编辑入口。
-          editSentence: supportsSentenceDraft ? onEditSentenceContextText : null,
-          // 移除 / 恢复某一句前文/后文（剔掉夹在中间的旁白），门控同编辑。
-          removeSentence:
-              supportsSentenceDraft ? onRemoveSentenceContext : null,
-          // BUG-2196 ②：只有真的能出声的表面才给试听按钮。
-          previewAudio: supportsSentenceAudioPreview ? onPreviewSentenceAudio : null,
-          stopAudioPreview:
-              supportsSentenceAudioPreview ? onStopSentenceAudioPreview : null,
+          expression: expression.isEmpty ? null : expression,
+          deck: deck,
+          sections: sections,
           // BUG-2627：回传「有没有真的点到制卡按钮」，对话框据此提示，不再静默关窗。
-          onConfirm: () async =>
+          onConfirm: (MiningRequestOverrides overrides) async =>
               await webViewKey.currentState?.mineEntryByIndex(
                     entryIndex,
                     // BUG-2634 第二轮：阅读器的 onMineFromPopup 经制卡串行队列
@@ -1292,11 +1294,12 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                     // 读走——提前关窗会让弹窗关栈把草稿清掉，排到的任务用空草稿
                     // 合成。这条车道退回「等落地」，只是不会再因为宿主慢而误报。
                     releaseWhenPayloadConsumed: false,
+                    overrides: overrides,
                   ) ??
                   false,
         ),
-      ),
-    );
+      );
+    });
   }
 
   /// TODO-058：某弹窗层 WebView 渲染完成（`popupRendered`）。先把挂起的冷层翻为
