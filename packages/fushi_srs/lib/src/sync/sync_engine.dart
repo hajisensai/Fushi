@@ -108,6 +108,9 @@ class SrsSyncReport {
   final List<String> writersDeleted = <String>[];
   bool reincarnated = false;
   String? error;
+
+  /// 本轮取到的服务器时间（探针文件的服务端修改时间）。调用方据此给可信时间校时（铁律 F 第一层）。
+  int? serverTimeMs;
 }
 
 /// 同步参数。
@@ -161,6 +164,7 @@ class SrsSyncEngine {
       report.error = 'server time unavailable';
       return report;
     }
+    report.serverTimeMs = s;
 
     await _publish(st, s, report);
     if (!st.bootstrapped) {
