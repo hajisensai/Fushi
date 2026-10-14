@@ -1,4 +1,4 @@
-## BUG-3366 · sync-compare-manga-zero-progress
+## BUG-3371 · sync-compare-manga-zero-progress
 - **报告**：2026-10-14（用户：两设备不同步时的「本地 / 远端」选择弹窗缺详细信息，漫画两侧都是 0.0%，实际已读一半，也没有具体页数）
 - **真实性**：✅ 真 bug，且云通道还会丢进度。页式书（漫画 / PDF）`reader_positions.sectionIndex` 是 0-based 页码、`chaptersJson='[]'`，同步链路却一律按 EPUB 章节字符表折算：
   - 显示：`fushi/lib/src/sync/sync_compare_dialog.dart` `_fetchCompareData` 本地列 `toExploredCharCount` + `_fractionOf`（互联远端列）对空字符表恒得 0 → 两侧恒 0.0%；条目也没有页码字段。
