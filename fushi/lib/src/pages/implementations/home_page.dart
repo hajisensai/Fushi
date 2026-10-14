@@ -1933,13 +1933,11 @@ class _HomePageState extends BasePageState<HomePage>
   bool _inMobileLayout = false;
 
   /// 横滑切模块此刻是否启用：手机底栏布局、Material 设计系统（Apple 的玻璃底栏
-  /// 单独保持 iOS 的点按切换语义），且当前 tab 是参与横滑的模块页。
+  /// 单独保持 iOS 的点按切换语义），且当前 tab 在横滑序列里（[homeModuleSwipeArmed]，
+  /// 含设置，BUG-3328）。
   bool _moduleSwipeEnabled() {
     if (!_inMobileLayout || isGlassDesign(context)) return false;
-    return homeSwipeTabs(
-      tabs: _activeTabs(),
-      reversed: false,
-    ).contains(_visibleTab);
+    return homeModuleSwipeArmed(tabs: _activeTabs(), current: _visibleTab);
   }
 
   HomeTab? _moduleSwipeTarget({required bool fingerTowardStart}) =>

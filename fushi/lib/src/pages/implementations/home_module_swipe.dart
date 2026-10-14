@@ -3,8 +3,10 @@
 ///
 /// 规则都收在这里的纯函数里，[HomePage] 只负责接线：
 /// - **顺序 = 底栏顺序**（含「⋯」溢出里的模块；跟随「反转导航栏」与 RTL）；
-///   只在已启用的模块 tab 之间走，到头不循环。设置不是模块、查词是底栏旁的独立
-///   搜索钮（不在胶囊序列里），两者都不参与（[homeSwipeTabs]）。
+///   只在已启用的 tab 之间走，到头不循环。设置是胶囊里的最后一项，同样参与
+///   （BUG-3328：它曾被排除，可底栏 / 「⋯」/ 底栏拖选都能落到设置，落上去就成了
+///   横滑死胡同、滑不回来）；查词是底栏旁的独立搜索钮（不在胶囊序列里），不参与
+///   （[homeSwipeTabs]）。
 /// - **只在模块根**：tab 内容里有页内状态在接系统返回（多选模式、媒体服务器
 ///   嵌套栈钻进去一层）时不切（[ModuleRootTracker]）。阅读器 / 播放器 / 漫画是
 ///   压在首页之上的路由，手势根本到不了这里。
@@ -35,12 +37,24 @@ List<HomeTab> homeSwipeTabs({
   required List<HomeTab> tabs,
   required bool reversed,
 }) {
+  // 与底栏胶囊同一份序列：只去掉不在胶囊里的查词（FAB）。设置必须留着——它是
+  // 胶囊里的目的地，排除它会让落到设置上的用户再也滑不回去（BUG-3328）。
   final List<HomeTab> modules = <HomeTab>[
     for (final HomeTab tab in tabs)
-      if (tab != HomeTab.settings && tab != HomeTab.dictionaries) tab,
+      if (tab != HomeTab.dictionaries) tab,
   ];
   return reversed ? modules.reversed.toList() : modules;
 }
+
+/// 当前 tab 上要不要挂外壳横滑识别器：它在横滑序列（[homeSwipeTabs]）里就挂。
+///
+/// 外壳（`HomePage._moduleSwipeEnabled`）在手机底栏布局下就以此为准。序列与
+/// 底栏胶囊同一份、含设置，所以经底栏 / 「⋯」/ 底栏拖选落到的任何一页都能再
+/// 滑出去（BUG-3328：设置曾被排除，落上去识别器整个不挂，成了死胡同）。
+bool homeModuleSwipeArmed({
+  required List<HomeTab> tabs,
+  required HomeTab current,
+}) => homeSwipeTabs(tabs: tabs, reversed: false).contains(current);
 
 /// 一次横滑的目标 tab；`null` = 当前 tab 不参与横滑或已经到头。
 ///

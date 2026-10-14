@@ -27,7 +27,7 @@ const List<HomeTab> _tabs = <HomeTab>[
 
 void main() {
   group('homeSwipeTabs / homeModuleSwipeTarget', () {
-    test('顺序同底栏，设置与查词（底栏旁的独立搜索钮）不参与', () {
+    test('顺序同底栏胶囊（含设置），查词（底栏旁的独立搜索钮）不参与', () {
       expect(homeSwipeTabs(tabs: _tabs, reversed: false), <HomeTab>[
         HomeTab.home,
         HomeTab.books,
@@ -35,6 +35,7 @@ void main() {
         HomeTab.video,
         HomeTab.games,
         HomeTab.browse,
+        HomeTab.settings,
       ]);
     });
 
@@ -49,10 +50,22 @@ void main() {
       expect(target(HomeTab.home, left: true), HomeTab.books);
       expect(target(HomeTab.books, left: false), HomeTab.home);
       expect(target(HomeTab.home, left: false), isNull);
-      expect(target(HomeTab.browse, left: true), isNull);
-      // 不参与横滑的 tab 上不切。
       expect(target(HomeTab.settings, left: true), isNull);
+      // BUG-3328：设置是最后一站，进得去也出得来。
+      expect(target(HomeTab.browse, left: true), HomeTab.settings);
+      expect(target(HomeTab.settings, left: false), HomeTab.browse);
+      // 不参与横滑的 tab 上不切。
       expect(target(HomeTab.dictionaries, left: false), isNull);
+    });
+
+    test('BUG-3328：外壳在设置页上照样挂横滑识别器，查词（FAB）上不挂', () {
+      for (final HomeTab tab in _tabs) {
+        expect(
+          homeModuleSwipeArmed(tabs: _tabs, current: tab),
+          tab != HomeTab.dictionaries,
+          reason: '$tab',
+        );
+      }
     });
 
     test('只在已启用的模块之间走：被关掉的模块不在 tabs 里就被跳过', () {
@@ -151,6 +164,7 @@ void main() {
       bool horizontalList = false,
       bool selectionMode = false,
       bool enabled = true,
+      bool gateByOrder = false,
     }) async {
       tester.view.physicalSize = const Size(400, 800);
       tester.view.devicePixelRatio = 1;
@@ -162,6 +176,7 @@ void main() {
             horizontalList: horizontalList,
             selectionMode: selectionMode,
             enabled: enabled,
+            gateByOrder: gateByOrder,
           ),
         ),
       );
@@ -300,16 +315,46 @@ void main() {
       expect(host.current, HomeTab.books);
     });
 
-    testWidgets('enabled=false（桌面布局 / 设置页）不挂识别器', (WidgetTester tester) async {
+    testWidgets('BUG-3328：落到设置上右滑回到前一个模块（不是死胡同）', (WidgetTester tester) async {
+      final _SwipeHostState host = await pumpHost(
+        tester,
+        initial: HomeTab.settings,
+        gateByOrder: true,
+      );
+      await tester.fling(content(), const Offset(200, 0), 1000);
+      await tester.pumpAndSettle();
+      expect(host.current, HomeTab.browse);
+    });
+
+    testWidgets('BUG-3328：最后一个模块左滑进设置，再右滑原路回来', (WidgetTester tester) async {
+      final _SwipeHostState host = await pumpHost(
+        tester,
+        initial: HomeTab.browse,
+        gateByOrder: true,
+      );
+      await tester.fling(content(), const Offset(-200, 0), 1000);
+      await tester.pumpAndSettle();
+      expect(host.current, HomeTab.settings);
+      expect(find.text('settings'), findsOneWidget);
+      // 设置是最后一站：再往左滑到头不循环。
+      await tester.fling(content(), const Offset(-200, 0), 1000);
+      await tester.pumpAndSettle();
+      expect(host.current, HomeTab.settings);
+      await tester.fling(content(), const Offset(200, 0), 1000);
+      await tester.pumpAndSettle();
+      expect(host.current, HomeTab.browse);
+    });
+
+    testWidgets('enabled=false（桌面布局 / Apple 玻璃底栏）不挂识别器', (
+      WidgetTester tester,
+    ) async {
       final _SwipeHostState host = await pumpHost(tester, enabled: false);
       await tester.fling(content(), const Offset(-200, 0), 1000);
       await tester.pumpAndSettle();
       expect(host.current, HomeTab.books);
     });
 
-    testWidgets('外壳横滑不给正文加无障碍横滚动作（读屏不能误切模块）', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('外壳横滑不给正文加无障碍横滚动作（读屏不能误切模块）', (WidgetTester tester) async {
       final SemanticsHandle semantics = tester.ensureSemantics();
       await pumpHost(tester);
       final SemanticsNode root = tester.getSemantics(
@@ -343,12 +388,17 @@ class _SwipeHost extends StatefulWidget {
     required this.horizontalList,
     required this.selectionMode,
     required this.enabled,
+    required this.gateByOrder,
   });
 
   final HomeTab initial;
   final bool horizontalList;
   final bool selectionMode;
   final bool enabled;
+
+  /// 按外壳的真实判据（[homeModuleSwipeArmed]，随当前 tab 变）决定挂不挂
+  /// 识别器，而不是固定的 [enabled]。
+  final bool gateByOrder;
 
   @override
   State<_SwipeHost> createState() => _SwipeHostState();
@@ -372,7 +422,9 @@ class _SwipeHostState extends State<_SwipeHost> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: HomeModuleSwipeDetector(
-        enabled: widget.enabled,
+        enabled: widget.gateByOrder
+            ? homeModuleSwipeArmed(tabs: _tabs, current: current)
+            : widget.enabled,
         tracker: _tracker,
         targetFor: ({required bool fingerTowardStart}) => homeModuleSwipeTarget(
           tabs: _tabs,
