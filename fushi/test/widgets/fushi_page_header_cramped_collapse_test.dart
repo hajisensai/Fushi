@@ -75,7 +75,7 @@ void main() {
     expect(find.byIcon(Icons.star_border), findsNWidgets(4));
   });
 
-  testWidgets('纯文字标题（非 customTitle 分段形态）永不收纳', (WidgetTester tester) async {
+  testWidgets('纯文字标题：给标题留保底宽后放得下就一个不收', (WidgetTester tester) async {
     final List<String> tapped = <String>[];
     await tester.pumpWidget(
       MaterialApp(
@@ -95,7 +95,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.byIcon(FushiIcons.more), findsNothing,
-        reason: '文字标题自身可省略号收缩，维持既有行为');
+        reason: '文字标题自身可省略号收缩，只需保底宽（BUG-1184）；动作放得下就不收');
     expect(find.byIcon(Icons.star_border), findsNWidgets(4));
   });
 }

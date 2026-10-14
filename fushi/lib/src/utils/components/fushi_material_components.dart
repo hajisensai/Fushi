@@ -43,7 +43,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
         kFushiTopScrimOverlayOpacity;
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
-    show fushiFloatingPillDecoration;
+    show fushiFloatingPillDecoration, kFushiFloatingTopBarOverflowHysteresis;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -2782,96 +2782,6 @@ class FushiModalSheetFrame extends StatelessWidget {
   }
 }
 
-/// 一个可以在窄屏上被折进溢出菜单的 AppBar 动作。
-///
-/// [label] 既是宽屏 [IconButton] 的 tooltip，也是窄屏菜单项的文案——同一句话，
-/// 不需要为「折叠版」另造 i18n key。[onPressed] 为 null 时该项禁用（菜单项同样
-/// 置灰），语义与 [IconButton.onPressed] 一致。
-class FushiAppBarAction {
-  const FushiAppBarAction({
-    required this.icon,
-    required this.label,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback? onPressed;
-}
-
-/// 窄屏下把次要 AppBar 动作折进「更多」溢出菜单，把宽度让回给标题。
-///
-/// BUG-1184：合集详情、网格详情、texthooker 这些页面的 AppBar 各挂了 4~5 个动作。
-/// Material 的 AppBar 先满足 actions 的固有宽度，再把剩下的给 title——320dp 上
-/// 5 个动作 + 返回键就吃掉约 296px，标题只剩二十几像素，合集名/书名彻底看不见
-/// （不报错，就是没了）。动作数量本身是合理的，错的是「无论屏多窄都全部平铺」。
-///
-/// [alwaysVisible] 放最高频、必须一眼可点的动作（如排序）；[collapsible] 里的
-/// 在宽屏逐个平铺，窄屏收进一个 [PopupMenuButton]。折叠后动作一个都没少，只是
-/// 多一次点击——比标题消失划算得多。
-///
-/// BUG-1186：判「窄」必须用**这条 AppBar 实际拿到的约束宽**，不是 `MediaQuery`
-/// 的整窗宽。页面嵌进分栏 / 受限宽容器 / 对话框时，整窗很宽而本行很窄，按整窗判
-/// 定就永远不折叠，标题照样被挤没——与 [FushiToolScaffold] 里 BUG-1184 修掉的
-/// 是同一类错误（那边已改用 [LayoutBuilder] 的局部约束）。
-///
-/// [availableWidth] 故意做成必填、且不提供「取不到就退回整窗宽」的默认值：有默认
-/// 值就等于给这个 bug 留了一条随时能走回去的路。调用点把该 AppBar 包进
-/// [LayoutBuilder]（或包住整个 [Scaffold]——appBar 与 Scaffold 同宽）后把
-/// `constraints.maxWidth` 传进来即可。
-///
-/// 注意这里比的是**逻辑像素**：动作按钮的固有宽（[IconButton] 48）也是逻辑像素，
-/// 「几个按钮塞得下」纯粹是逻辑坐标系里的几何问题，不需要像
-/// [windowSizeClassReal] 那样按 UI 缩放还原真实物理宽。
-List<Widget> narrowAwareAppBarActions({
-  required double availableWidth,
-  required List<FushiAppBarAction> collapsible,
-  List<Widget> alwaysVisible = const <Widget>[],
-  double narrowWidth = 480,
-}) {
-  final bool narrow = availableWidth.isFinite && availableWidth < narrowWidth;
-  if (!narrow || collapsible.length < 2) {
-    return <Widget>[
-      ...alwaysVisible,
-      for (final FushiAppBarAction action in collapsible)
-        // Apple 设计系统：共享图标按钮（iOS .plain 按下变淡、SF 字形、无水波）；
-        // MD3 仍是框架 IconButton，像素不变。
-        Builder(
-          builder: (BuildContext context) => isGlassDesign(context)
-              ? FushiIconButton(
-                  tooltip: action.label,
-                  icon: action.icon,
-                  enabled: action.onPressed != null,
-                  onTap: action.onPressed,
-                )
-              : IconButton(
-                  tooltip: action.label,
-                  icon: FushiIcon(action.icon),
-                  onPressed: action.onPressed,
-                ),
-        ),
-    ];
-  }
-  return <Widget>[
-    ...alwaysVisible,
-    // 共享菜单路由（M3E 面板 / Apple 菜单），不再裸用 PopupMenuButton。
-    FushiPopupMenuButton<int>(
-      tooltip: t.common_more_actions,
-      icon: const FushiIcon(FushiIcons.more),
-      itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
-        for (int i = 0; i < collapsible.length; i++)
-          FushiPopupMenuItem<int>(
-            value: i,
-            enabled: collapsible[i].onPressed != null,
-            icon: collapsible[i].icon,
-            label: collapsible[i].label,
-          ),
-      ],
-      onSelected: (int index) => collapsible[index].onPressed?.call(),
-    ),
-  ];
-}
-
 class FushiDialogFrame extends StatelessWidget {
   const FushiDialogFrame({
     required this.child,
@@ -3842,10 +3752,6 @@ class FushiPageHeader extends StatelessWidget {
                       : kFushiAppleNavBarSubtitleHeight)
                 : null,
             shellActions: shellActions,
-            // 只有 customTitle（标题位是分段导航等自报宽度的组件）才启用
-            // 「左边摆不下就把动作收进 ⋯ 菜单」；纯文字标题自身可省略号收缩，
-            // 维持既有行为。
-            collapseWhenCramped: titleWidget != null,
           ),
           if (bottom != null)
             Padding(
@@ -3908,7 +3814,6 @@ class _FushiPageHeaderRow extends StatefulWidget {
     required this.title,
     required this.leading,
     required this.actionItems,
-    required this.collapseWhenCramped,
     this.floatingActions = false,
     this.appleActions = false,
     this.appleNavBarHeight,
@@ -3933,10 +3838,6 @@ class _FushiPageHeaderRow extends StatefulWidget {
   /// 非 null：动作登记到外壳大标题条（见 [FushiShellActionsSlot]），本行不画。
   final FushiShellActionsSlot? shellActions;
 
-  /// true（customTitle 模式）时，若标题位上报的自然宽 + 动作自然宽超过行宽，
-  /// 把可收纳的动作（[FushiIconButton]）折进一个 ⋯ 菜单，把宽度还给标题位。
-  final bool collapseWhenCramped;
-
   @override
   State<_FushiPageHeaderRow> createState() => _FushiPageHeaderRowState();
 }
@@ -3945,8 +3846,11 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
   FushiDesignTokens get tokens => widget.tokens;
 
   /// 标题位（经 [FushiHeaderCrampScope]）最近一次上报的自然宽；null = 从未上报
-  /// （纯文字标题等），永不收纳。
+  /// （纯文字标题等），此时给标题留 [fushiHeaderTitleFloor] 的保底宽。
   double? _titleNaturalWidth;
+
+  /// 动作收纳的回差状态（见 [FushiHeaderOverflowFit]）。
+  final FushiHeaderOverflowFit _overflowFit = FushiHeaderOverflowFit();
 
   void _onTitleWidthReported(double width) {
     if (_titleNaturalWidth == width) return;
@@ -3956,10 +3860,6 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
       setState(() => _titleNaturalWidth = width);
     });
   }
-
-  /// 动作区自然宽估算，见 [_estimateHeaderActionsWidth]。
-  double _estimateActionsWidth(List<Widget> items) =>
-      _estimateHeaderActionsWidth(tokens, items);
 
   Widget _buildActionRow(List<Widget> items) {
     return Row(
@@ -3975,9 +3875,6 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
       ],
     );
   }
-
-  Widget _buildOverflowMenuButton(List<FushiIconButton> collapsed) =>
-      _headerOverflowMenuButton(collapsed);
 
   /// 当前登记着动作的外壳槽（换槽 / 不再需要时先撤回旧登记）。
   FushiShellActionsSlot? _claimedSlot;
@@ -4052,54 +3949,24 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
           // 而不是「丢失」；标题被压到 0 才是真的丢失。所以保底给标题留几个字的宽度，
           // 超出的动作让它滚。保底值随文字缩放走，并且不超过行宽的三分之一，免得动作
           // 很少时反而挤到按钮。
-          final double titleFloor = constraints.maxWidth.isFinite
-              ? math.min(
-                  96.0 * MediaQuery.textScalerOf(context).scale(1),
-                  constraints.maxWidth / 3,
-                )
-              : 0.0;
+          final double titleFloor =
+              fushiHeaderTitleFloor(context, constraints.maxWidth);
           final double maxActionsWidth = constraints.maxWidth.isFinite
               ? (constraints.maxWidth - actionsGap - titleFloor)
                   .clamp(0.0, double.infinity)
               : double.infinity;
-          // 带 label 的动作是否展开成药丸：按**页头本地可用宽**（而非整窗宽）判定，经
-          // UI 缩放还原真实宽后仅 expanded（≥840）才展开。桌面带导航栏 / 分栏时整窗
-          // ≥840 但本地宽更窄，若按整窗判定会误展开、把 [Expanded] 标题挤到贴按钮/折行
-          // （用户反馈「已经重叠了还没降级成无字」）。经 [FushiHeaderLabelScope] 下发。
-          final bool expandLabels = constraints.maxWidth.isFinite &&
+          // 带 label 的动作是否**允许**展开成药丸：按**页头本地可用宽**（而非整窗宽）
+          // 判定，经 UI 缩放还原真实宽后仅 expanded（≥840）才允许。桌面带导航栏 /
+          // 分栏时整窗 ≥840 但本地宽更窄，若按整窗判定会误展开、把 [Expanded] 标题
+          // 挤到贴按钮/折行（用户反馈「已经重叠了还没降级成无字」）。允许了也要药丸
+          // 放得下才真展开（[fushiResolveHeaderActions]），结论经
+          // [FushiHeaderLabelScope] 下发。
+          final bool allowLabels = constraints.maxWidth.isFinite &&
               windowSizeClassReal(
                     constraints.maxWidth,
                     FushiAppUiScale.of(context),
                   ) ==
                   WindowSizeClass.expanded;
-
-          // 2026-08-13 手机顶栏显示不全：标题位是分段导航时（customTitle），
-          // 「标题自然宽 + 动作自然宽」超过行宽才把可收纳动作折进 ⋯ 菜单——
-          // 摆得下就一个不收（用户定案：仅在左边位置不够时才变）。宽窗药丸
-          // 形态（expandLabels）永不收纳。可收纳 <2 个时收了也省不出宽度，
-          // 维持原样让滚动兜底。
-          List<Widget> resolvedItems = actionItems;
-          if (widget.collapseWhenCramped &&
-              !expandLabels &&
-              _titleNaturalWidth != null &&
-              constraints.maxWidth.isFinite) {
-            final double needed = _titleNaturalWidth! +
-                actionsGap +
-                _estimateActionsWidth(actionItems) +
-                (widget.floatingActions ? 8 : 0) +
-                (widget.appleActions ? 16 : 0);
-            final List<FushiIconButton> collapsible = actionItems
-                .whereType<FushiIconButton>()
-                .where((FushiIconButton b) => b.onTap != null)
-                .toList(growable: false);
-            if (needed > constraints.maxWidth && collapsible.length >= 2) {
-              resolvedItems = <Widget>[
-                for (final Widget item in actionItems)
-                  if (item is! FushiIconButton || item.onTap == null) item,
-                _buildOverflowMenuButton(collapsible),
-              ];
-            }
-          }
 
           // Apple 导航栏形态里返回键不在 Row 里被单独扣除（[NavigationToolbar]
           // 给 trailing 的是整行宽的松约束），上界要再减去它占的那一段。
@@ -4107,6 +3974,37 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
               widget.appleNavBarHeight != null && leading != null
               ? kFushiAppleNavBarHeight + leadingGap
               : 0;
+
+          // 统一自适应收纳（[fushiResolveHeaderActions]）：动作区预算 = 行宽 − 动作前
+          // gap − 标题位要的宽 − 返回键 − 胶囊装饰余量。标题位是分段导航等自报自然宽
+          // 的组件（customTitle，2026-08-13 手机顶栏显示不全）时按上报的自然宽留，
+          // 否则留 BUG-1184 的标题保底宽。宽窗先药丸、再纯图标、再从最低优先级起逐颗
+          // 收进 ⋯；全放得下就一个不收（用户定案：仅在左边位置不够时才变）。
+          final double leadingReserve = leading == null
+              ? 0
+              : navLeadingReserve > 0
+              ? navLeadingReserve
+              : (widget.floatingActions ? kFushiPageChromeExtent : 48) +
+                  leadingGap;
+          final double budget = constraints.maxWidth.isFinite
+              ? constraints.maxWidth -
+                  actionsGap -
+                  (_titleNaturalWidth ?? titleFloor) -
+                  leadingReserve -
+                  (widget.floatingActions ? 8 : 0) -
+                  (widget.appleActions ? 16 : 0)
+              : double.infinity;
+          final FushiResolvedHeaderActions resolved =
+              fushiResolveHeaderActions(
+            context,
+            actions: actionItems,
+            budget: budget,
+            allowLabels: allowLabels,
+            fit: _overflowFit,
+          );
+          final List<Widget> resolvedItems = resolved.items;
+          final bool expandLabels = resolved.expandLabels;
+
           trailing = ConstrainedBox(
             constraints: BoxConstraints(
               maxWidth: (maxActionsWidth - navLeadingReserve).clamp(
@@ -4176,26 +4074,276 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
   }
 }
 
-/// 页头动作区自然宽估算（图标形态）：[FushiIconButton] = 图标 + 内边距；其它
-/// widget 给一个按钮级的保守值。只在非展开标签（<840）的窄行场景使用。
+/// 页头动作区自然宽估算：[FushiIconButton] = 图标 + 内边距（[expandLabels] 且
+/// 带 [FushiIconButton.label] 时按「图标 + 文字」药丸量，文字宽随 [textScaler]
+/// 走）；其它 widget 给一个按钮级的保守值。只依赖 build 期可得的量（标签 /
+/// 字号 / 缩放），不依赖布局结果——据此做的收纳决策不会回头改变自己的输入。
+///
+/// 逻辑像素：App UI 缩放同比放大约束与组件，「几颗放得下」与缩放无关。
 double _estimateHeaderActionsWidth(
   FushiDesignTokens tokens,
-  List<Widget> items,
-) {
+  List<Widget> items, {
+  bool expandLabels = false,
+  TextScaler textScaler = TextScaler.noScaling,
+}) {
   double total = 0;
   for (int index = 0; index < items.length; index++) {
-    if (index > 0) total += tokens.spacing.gap / 2;
     final Widget item = items[index];
+    final bool standalone =
+        fushiIsStandaloneHeaderAction(item, expandLabels: expandLabels);
+    if (index > 0) {
+      // 文字动作（药丸 / 文字按钮）各自一枚胶囊，与邻居隔 8；图标之间 gap/2。
+      final bool prevStandalone = fushiIsStandaloneHeaderAction(
+        items[index - 1],
+        expandLabels: expandLabels,
+      );
+      total += standalone || prevStandalone ? 8 : tokens.spacing.gap / 2;
+    }
     if (item is FushiIconButton) {
-      final double icon = item.size ?? 24.0;
-      final EdgeInsets padding =
-          item.padding ?? EdgeInsets.all(tokens.spacing.gap);
-      total += icon + padding.horizontal;
+      final String? label = item.label;
+      if (expandLabels && label != null) {
+        final TextPainter painter = TextPainter(
+          text: TextSpan(text: label, style: tokens.type.controlLabel),
+          textDirection: TextDirection.ltr,
+          textScaler: textScaler,
+          maxLines: 1,
+        )..layout();
+        total += (tokens.spacing.rowHorizontal - 4) +
+            tokens.spacing.rowHorizontal +
+            (item.size ?? 20) +
+            tokens.spacing.gap +
+            painter.width;
+        painter.dispose();
+      } else {
+        final double icon = item.size ?? 24.0;
+        final EdgeInsets padding =
+            item.padding ?? EdgeInsets.all(tokens.spacing.gap);
+        total += icon + padding.horizontal;
+      }
     } else {
       total += 48.0;
     }
   }
   return total;
+}
+
+/// 页头动作行里一颗动作能否收进「⋯」：有点击回调的 [FushiIconButton]，且没标
+/// [FushiIconButton.alwaysVisible]、不在选中态（激活中的切换按钮收进菜单就看不出
+/// 它开着）。其它组件（文字按钮、自带菜单的按钮、装饰图标）恒外露——它们派生
+/// 不出菜单项。
+bool fushiIsCollapsibleHeaderAction(Widget item) =>
+    item is FushiIconButton &&
+    item.onTap != null &&
+    !item.alwaysVisible &&
+    !item.selected;
+
+/// [actions] 里可收纳动作的收纳顺序（最先收的在前）：
+/// [FushiIconButton.overflowPriority] 低的先收，同优先级越靠后越先收。纯函数。
+List<int> fushiHeaderCollapseOrder(List<Widget> actions) {
+  final List<int> order = <int>[
+    for (int i = 0; i < actions.length; i++)
+      if (fushiIsCollapsibleHeaderAction(actions[i])) i,
+  ];
+  int priorityOf(int i) => (actions[i] as FushiIconButton).overflowPriority;
+  order.sort((int a, int b) {
+    final int byPriority = priorityOf(a).compareTo(priorityOf(b));
+    return byPriority != 0 ? byPriority : b.compareTo(a);
+  });
+  return order;
+}
+
+/// 在 [budget] 里要收几颗：`widthWith(k)` 是收 k 颗后动作区的估算宽（k > 0 时
+/// 已把「⋯」自身计入），取放得下的最小 k——从最低优先级起一颗一颗收，不是一次
+/// 全收。全收也放不下时，只要全收比不收窄就全收（剩下的交给横滑兜底），否则一颗
+/// 不收（收了也省不出宽度，平白多一次点击）。纯函数。
+int fushiHeaderCollapseCount({
+  required int collapsible,
+  required double Function(int collapsed) widthWith,
+  required double budget,
+}) {
+  if (!budget.isFinite) return 0;
+  for (int k = 0; k <= collapsible; k++) {
+    if (widthWith(k) <= budget) return k;
+  }
+  return collapsible > 0 && widthWith(collapsible) < widthWith(0)
+      ? collapsible
+      : 0;
+}
+
+/// 页头动作「收几颗」的决策状态：只为展开方向加回差
+/// （[kFushiFloatingTopBarOverflowHysteresis]，与 `FushiFloatingTopBar` 的
+/// 自适应溢出同一口径）——窗口在临界宽度附近拖动时不来回跳。由持有它的 State
+/// 保活；动作集合变了回差参照作废。
+///
+/// 决策输入只有 build 期估算值（[_estimateHeaderActionsWidth]、标题位上报宽），
+/// 不读布局结果，所以没有「收纳 → 布局变 → 再收纳」的反馈环；回差只防人为拖窗时
+/// 的临界抖动。
+class FushiHeaderOverflowFit {
+  int? _lastCollapsed;
+  Object? _lastSignature;
+
+  /// 带回差的收纳颗数（参数同 [fushiHeaderCollapseCount]）。[signature] 标识
+  /// 动作集合，变了就不拿上一次结果作参照。
+  int collapsedFor({
+    required int collapsible,
+    required double Function(int collapsed) widthWith,
+    required double budget,
+    required Object signature,
+  }) {
+    final int fresh = fushiHeaderCollapseCount(
+      collapsible: collapsible,
+      widthWith: widthWith,
+      budget: budget,
+    );
+    final int? last = _lastSignature == signature ? _lastCollapsed : null;
+    int result = fresh;
+    if (last != null && fresh < last) {
+      // 展开：多放出来的那几颗要连回差一起放得下才放出来。
+      final int strict = fushiHeaderCollapseCount(
+        collapsible: collapsible,
+        widthWith: widthWith,
+        budget: budget - kFushiFloatingTopBarOverflowHysteresis,
+      );
+      result = strict < last ? strict : last;
+    }
+    _lastCollapsed = result;
+    _lastSignature = signature;
+    return result;
+  }
+
+  /// 不收纳（药丸形态等）时清掉参照。
+  void reset() {
+    _lastCollapsed = null;
+    _lastSignature = null;
+  }
+}
+
+/// 估算「⋯」按钮占宽用的样板（与 [_headerOverflowMenuButton] 同一颗按钮）。
+const FushiIconButton _kHeaderOverflowProbe =
+    FushiIconButton(icon: FushiIcons.more, tooltip: '');
+
+/// ⋯ 溢出按钮的 key（测试 / 焦点驱动定位用）。
+const ValueKey<String> kFushiHeaderOverflowMenuKey =
+    ValueKey<String>('fushi-header-overflow-menu');
+
+/// [fushiResolveHeaderActions] 的结果：实际摆出来的动作（被收纳的已换成末尾
+/// 一颗「⋯」），以及带 label 的动作是否展开成药丸。
+typedef FushiResolvedHeaderActions = ({List<Widget> items, bool expandLabels});
+
+/// 页头 / 顶栏动作行的**唯一**自适应收纳判据（[FushiPageHeader]、外壳动作组
+/// [FushiShellHeaderActions]、自带 AppBar 的页面共用）。
+///
+/// 页面只声明动作与重要程度（[FushiIconButton.overflowPriority] /
+/// [FushiIconButton.alwaysVisible]），摆放在这里决定。[budget] 是动作区**实际**
+/// 可用宽（调用方用 [LayoutBuilder] 的局部约束扣掉标题保底等，绝不用 MediaQuery
+/// 整窗宽——BUG-1186 / BUG-401），逐级降级：
+///
+/// 1. [allowLabels]（宽窗）且药丸形态放得下：全部带字平铺；
+/// 2. 否则纯图标；仍放不下就从最低优先级起**逐颗**收进末尾的「⋯」，「⋯」只在
+///    至少收进一颗时出现，且它自身的宽度计入判定；
+/// 3. 全收也放不下：剩余外露动作交给调用方的横滑兜底。
+///
+/// 收纳不改外露动作的相对顺序，「⋯」恒在最后——焦点遍历即「外露按钮 → ⋯」。
+/// 菜单项由被收纳动作的图标 + 文案（label 优先、回退 tooltip）派生，共用同一个
+/// onTap，禁用态同步置灰。[fit] 非空时展开方向带回差。
+FushiResolvedHeaderActions fushiResolveHeaderActions(
+  BuildContext context, {
+  required List<Widget> actions,
+  required double budget,
+  bool allowLabels = false,
+  FushiHeaderOverflowFit? fit,
+}) {
+  if (actions.isEmpty || !budget.isFinite) {
+    return (items: actions, expandLabels: allowLabels);
+  }
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  final TextScaler textScaler = MediaQuery.textScalerOf(context);
+  if (allowLabels &&
+      _estimateHeaderActionsWidth(
+            tokens,
+            actions,
+            expandLabels: true,
+            textScaler: textScaler,
+          ) <=
+          budget) {
+    fit?.reset();
+    return (items: actions, expandLabels: true);
+  }
+  final List<int> order = fushiHeaderCollapseOrder(actions);
+  List<Widget> visibleWith(int collapsed) {
+    final Set<int> hidden = order.take(collapsed).toSet();
+    return <Widget>[
+      for (int i = 0; i < actions.length; i++)
+        if (!hidden.contains(i)) actions[i],
+    ];
+  }
+
+  double widthWith(int collapsed) => _estimateHeaderActionsWidth(
+        tokens,
+        <Widget>[
+          ...visibleWith(collapsed),
+          if (collapsed > 0) _kHeaderOverflowProbe,
+        ],
+        textScaler: textScaler,
+      );
+
+  final int collapsed = fit == null
+      ? fushiHeaderCollapseCount(
+          collapsible: order.length,
+          widthWith: widthWith,
+          budget: budget,
+        )
+      : fit.collapsedFor(
+          collapsible: order.length,
+          widthWith: widthWith,
+          budget: budget,
+          signature: Object.hashAll(<Object?>[
+            for (final Widget item in actions)
+              item is FushiIconButton
+                  ? Object.hash(item.icon, item.overflowPriority,
+                      fushiIsCollapsibleHeaderAction(item))
+                  : (item.key ?? item.runtimeType),
+          ]),
+        );
+  if (collapsed == 0) return (items: actions, expandLabels: false);
+  final Set<int> hidden = order.take(collapsed).toSet();
+  return (
+    items: <Widget>[
+      ...visibleWith(collapsed),
+      _headerOverflowMenuButton(<FushiIconButton>[
+        for (int i = 0; i < actions.length; i++)
+          if (hidden.contains(i)) actions[i] as FushiIconButton,
+      ]),
+    ],
+    expandLabels: false,
+  );
+}
+
+/// 页头标题位的保底宽（BUG-1184）：动作再多也给标题留几个字的宽度，随文字缩放
+/// 走，且不超过行宽的三分之一（动作很少时不反过来挤按钮）。
+double fushiHeaderTitleFloor(BuildContext context, double rowWidth) =>
+    rowWidth.isFinite
+        ? math.min(
+            96.0 * MediaQuery.textScalerOf(context).scale(1), rowWidth / 3)
+        : 0.0;
+
+/// 自带 AppBar（[FushiAppBar]）的页面给 [fushiResolveHeaderActions] 的动作区
+/// 预算：[barWidth] 是这条 AppBar **实际拿到的**约束宽（调用点用 [LayoutBuilder]
+/// 取，BUG-1186），扣掉返回键位、标题间距、标题保底（[fushiHeaderTitleFloor]）、
+/// 动作胶囊内边距与行尾边距。AppBar 的 actions 排在 Row 里、拿不到有界约束，
+/// 只能由外层量好宽再传进来。
+double fushiAppBarActionsBudget(BuildContext context, double barWidth) {
+  if (!barWidth.isFinite) return double.infinity;
+  const double leadingSlot = kFushiPageChromeExtent + 16;
+  const double titleSpacing = 8;
+  const double capsulePadding = 8;
+  const double trailingEdge = 16;
+  return barWidth -
+      leadingSlot -
+      titleSpacing -
+      capsulePadding -
+      trailingEdge -
+      fushiHeaderTitleFloor(context, barWidth);
 }
 
 /// 页头动作里自带一枚按钮胶囊的「文字动作」（图标 + 文字的 outlined / text /
@@ -4478,6 +4626,7 @@ class FushiFloatingTextAction extends StatelessWidget {
 /// 回退 tooltip）就地派生，动作行为共享同一个 onTap，不复制第二份实现。
 Widget _headerOverflowMenuButton(List<FushiIconButton> collapsed) {
   return Builder(
+    key: kFushiHeaderOverflowMenuKey,
     builder: (BuildContext anchorContext) => FushiIconButton(
       icon: FushiIcons.more,
       tooltip: t.common_more_actions,
@@ -4531,38 +4680,59 @@ Future<void> _showHeaderOverflowMenu(
 /// 两套设计系统都是标题行右侧的一排图标：Apple 由 [FushiToolbar] 收进一枚
 /// 液态玻璃胶囊（iOS 26 / macOS 26 大标题行工具栏），MD3 是 top app bar 的
 /// actions 位（无底一排图标按钮）。一律纯图标（文案是 tooltip）——标题行上
-/// 放图标 + 文字的药丸会把大标题挤没。外壳给的宽放不下时，可收纳的
-/// [FushiIconButton] 折进 ⋯ 菜单（与页头同一套菜单），再不够才横向滚动兜底。
-class FushiShellHeaderActions extends StatelessWidget {
-  const FushiShellHeaderActions({required this.actions, super.key});
+/// 放图标 + 文字的药丸会把大标题挤没。外壳给的宽放不下时，按
+/// [fushiResolveHeaderActions]（与页头同一套判据、同一个菜单）从最低优先级起
+/// 逐颗收进 ⋯，全收仍不够才横向滚动兜底。
+class FushiShellHeaderActions extends StatefulWidget {
+  const FushiShellHeaderActions({
+    required this.actions,
+    this.appleFloating = false,
+    super.key,
+  });
 
   final List<Widget> actions;
 
+  /// Apple 设计系统下画成悬浮工具栏胶囊（库页外壳的浮动工具栏行：
+  /// `FushiToolbar(floating: true)`，横滑视口不裁投影）。MD3 不受影响。
+  final bool appleFloating;
+
+  @override
+  State<FushiShellHeaderActions> createState() =>
+      _FushiShellHeaderActionsState();
+}
+
+class _FushiShellHeaderActionsState extends State<FushiShellHeaderActions> {
+  final FushiHeaderOverflowFit _overflowFit = FushiHeaderOverflowFit();
+
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool apple = isGlassDesign(context);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        List<Widget> items = actions;
-        final List<FushiIconButton> collapsible = actions
-            .whereType<FushiIconButton>()
-            .where((FushiIconButton b) => b.onTap != null)
-            .toList(growable: false);
-        // +16：Apple 工具栏胶囊两端的内边距与 MD3 按钮间距的余量。
-        if (constraints.maxWidth.isFinite &&
-            collapsible.length >= 2 &&
-            _estimateHeaderActionsWidth(tokens, actions) + 16 >
-                constraints.maxWidth) {
-          items = <Widget>[
-            for (final Widget item in actions)
-              if (item is! FushiIconButton || item.onTap == null) item,
-            _headerOverflowMenuButton(collapsible),
-          ];
+        // −16：Apple 工具栏胶囊两端的内边距与 MD3 按钮组胶囊内边距的余量。
+        final List<Widget> items = fushiResolveHeaderActions(
+          context,
+          actions: widget.actions,
+          budget: constraints.maxWidth - 16,
+          fit: _overflowFit,
+        ).items;
+        if (apple && widget.appleFloating) {
+          return FushiHeaderLabelScope(
+            expandLabels: false,
+            child: HorizontalDragScrollable(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const ClampingScrollPhysics(),
+                clipBehavior: Clip.none,
+                child: FushiToolbar(floating: true, children: items),
+              ),
+            ),
+          );
         }
         // MD3（M3E）：图标动作收进一枚悬浮按钮组胶囊，与页头 / 顶栏同一形态；
         // 带文字的动作自身就是一枚同高胶囊按钮，排在组旁（见
         // [fushiFloatingHeaderActionGroups]），不再被包进组胶囊。
-        final Widget toolbar = isGlassDesign(context)
+        final Widget toolbar = apple
             ? fushiAppleHeaderActionGroups(items)
             : fushiFloatingHeaderActionGroups(
                 items,
