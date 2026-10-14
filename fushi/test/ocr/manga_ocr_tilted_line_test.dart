@@ -17,7 +17,7 @@ const double _halfThick = 12;
 const double _halfLength = 80;
 
 /// 概率图上画一条绕 (_cx,_cy) 旋转 [tilt]（正值顺时针）的竖列。
-Float32List _tiltedColumn(double tilt) {
+Float32List _tiltedColumn(double tilt, {double halfLength = _halfLength}) {
   final Float32List prob = Float32List(_w * _h);
   final double c = math.cos(tilt), s = math.sin(tilt);
   for (int y = 0; y < _h; y++) {
@@ -26,7 +26,7 @@ Float32List _tiltedColumn(double tilt) {
       // 逆旋转回列的局部坐标：u 横穿列、v 沿列。
       final double u = dx * c + dy * s;
       final double v = -dx * s + dy * c;
-      if (u.abs() <= _halfThick && v.abs() <= _halfLength) {
+      if (u.abs() <= _halfThick && v.abs() <= halfLength) {
         prob[y * _w + x] = 0.9;
       }
     }
@@ -74,6 +74,34 @@ void main() {
     test('正立竖列：块倾角恰为 0（保证正常页面输出不变）', () {
       final List<PpTextLine> lines = ppDetPostprocess(_tiltedColumn(0), _w, _h);
       expect(ppBlockTilt(lines), 0);
+    });
+
+    test('只斜 2° 的长列（约 8 字）照样转：两端漂移已超行厚 10%', () {
+      const double slight = 2 * math.pi / 180;
+      final List<PpTextLine> lines = ppDetPostprocess(
+        _tiltedColumn(slight, halfLength: 100),
+        _w,
+        _h,
+      );
+      expect(ppBlockTilt(lines), closeTo(slight, 0.5 * math.pi / 180));
+    });
+
+    test('斜 3° 的短列（3 字）当正立：两端漂移不到行厚 10%', () {
+      final List<PpTextLine> lines = ppDetPostprocess(
+        _tiltedColumn(3 * math.pi / 180, halfLength: 36),
+        _w,
+        _h,
+      );
+      expect(lines.single.elongation, greaterThan(kPpTiltMinElongation));
+      expect(ppBlockTilt(lines), 0);
+    });
+
+    test('可忽略判据看漂移量不看角度：同样 3°，短列忽略、长列不忽略', () {
+      const double three = 3 * math.pi / 180;
+      expect(mokuroTiltIsNegligible(3 * 24, 24, three), isTrue);
+      expect(mokuroTiltIsNegligible(20 * 24, 24, three), isFalse);
+      // 长列只斜 1.5° 也要转（20 字两端偏 0.26 字宽）。
+      expect(mokuroTiltIsNegligible(20 * 24, 24, 1.5 * math.pi / 180), isFalse);
     });
 
     test('近方块的连通域（单字）不参与估角', () {

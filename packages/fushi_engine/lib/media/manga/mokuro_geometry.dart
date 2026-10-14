@@ -173,9 +173,18 @@ class MokuroOrientedRect {
   }
 }
 
-/// 倾角绝对值小于它就当正立：保证轴对齐（或近似轴对齐）的四边形与旧行为
-/// 逐字节一致。
-const double kMokuroQuadSnapRadians = 1.5 * math.pi / 180;
+/// 行两端的跨轴漂移不到行厚的这个比例，就当正立处理。
+const double kMokuroTiltMaxDriftRatio = 0.1;
+
+/// 长 [length]、厚 [thickness] 的行斜 [tilt] 弧度时，不转它是否也无所谓。
+///
+/// 判据不看角度本身，看后果：不转时按正立行均分的字格，两端会横向偏出
+/// `length / 2 · |sin tilt|`。偏移不到行厚的 [kMokuroTiltMaxDriftRatio] 才算
+/// 可忽略——同样斜 3°，3 个字的短列两端只偏 0.08 字宽，20 个字的长列要偏半个
+/// 字宽、首尾的字点不中。所以长行斜一点也照样转，短行不会被噪声角度带着转。
+bool mokuroTiltIsNegligible(double length, double thickness, double tilt) =>
+    length / 2 * math.sin(tilt).abs() <
+    kMokuroTiltMaxDriftRatio * thickness;
 
 /// 把 mokuro `lines_coords` 的一个四点多边形拟合成 [MokuroOrientedRect]。
 ///
@@ -222,6 +231,12 @@ MokuroOrientedRect? mokuroOrientedRectFromQuad(List<List<double>> polygon) {
     center: MokuroPoint(cx, cy),
     width: width,
     height: height,
-    rotation: rotation.abs() < kMokuroQuadSnapRadians ? 0 : rotation,
+    rotation: mokuroTiltIsNegligible(
+      math.max(width, height),
+      math.min(width, height),
+      rotation,
+    )
+        ? 0
+        : rotation,
   );
 }

@@ -27,6 +27,7 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
+import 'package:fushi_engine/media/manga/mokuro_geometry.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 
@@ -290,9 +291,6 @@ double _wrapHalfTurn(double angle) {
 /// 没有意义。
 const double kPpTiltMinElongation = 2.5;
 
-/// 倾角绝对值小于它就当正立（检测噪声 / 手写抖动），保证正常页面的输出不变。
-const double kPpTiltSnapRadians = 3 * math.pi / 180;
-
 /// 倾角绝对值超过它就不信（接近 45° 时横竖判断本身就不可靠，按外接框反推
 /// 旋转矩形也会病态）。
 const double kPpTiltMaxRadians = 40 * math.pi / 180;
@@ -300,8 +298,9 @@ const double kPpTiltMaxRadians = 40 * math.pi / 180;
 /// 一个文字块的整体倾角（弧度，正值顺时针；0 = 正立）。
 ///
 /// 同一个气泡里的行/列共享同一个倾斜（斜放的标题、手写旁白），所以按块估一个
-/// 角度：取细长连通域倾角的像素数加权中位数（抗振假名、碎片干扰）；没有可信
-/// 的行、或角度很小 / 大到不可信时返回 0。
+/// 角度：取细长连通域倾角的像素数加权中位数（抗振假名、碎片干扰）。没有可信
+/// 的行、角度大到不可信、或倾斜对块里最长那行都无关紧要
+/// （[mokuroTiltIsNegligible]：按偏移量判，不按固定角度）时返回 0。
 double ppBlockTilt(List<PpTextLine> lines) {
   final List<PpTextLine> usable = <PpTextLine>[
     for (final PpTextLine line in lines)
@@ -324,7 +323,18 @@ double ppBlockTilt(List<PpTextLine> lines) {
       break;
     }
   }
-  return median.abs() < kPpTiltSnapRadians ? 0 : median;
+  // 行的真实长 / 厚从像素数与长短轴比还原（矩形：L·T = 面积、L/T = 长短轴比），
+  // 与旋转无关；外接框在倾斜时会把厚度撑大。
+  double longest = 0;
+  double thickness = 0;
+  for (final PpTextLine line in usable) {
+    final double length = math.sqrt(line.pixelCount * line.elongation);
+    if (length > longest) {
+      longest = length;
+      thickness = math.sqrt(line.pixelCount / line.elongation);
+    }
+  }
+  return mokuroTiltIsNegligible(longest, thickness, median) ? 0 : median;
 }
 
 /// 振假名过滤：比块内行厚度 p75 的 [ratio] 还细的行丢掉（对拍脚本同规则，
