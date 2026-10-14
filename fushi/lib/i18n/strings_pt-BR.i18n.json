@@ -7477,5 +7477,9 @@
   "popup_advanced_mining_crop_done": "Done",
   "popup_advanced_mining_crop_download_failed": "Couldn't download the panel model",
   "popup_advanced_mining_sentence_shortcut_hint": "Shortcuts: [ / ] add or remove previous · Shift+[ / ] add or remove next",
-  "shortcut_action_library_search": "Buscar na biblioteca"
+  "shortcut_action_library_search": "Buscar na biblioteca",
+  "feedback_filter_all": "All",
+  "feedback_filter_active": "Ongoing",
+  "feedback_filter_closed": "Finished",
+  "feedback_filter_unread": "New replies"
 }

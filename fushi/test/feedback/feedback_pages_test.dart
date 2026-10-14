@@ -409,6 +409,15 @@ class _Server {
             'updatedAt': 500,
             'devReplyAt': 500,
           },
+          if (r.body.contains('svSfwFdmdM'))
+            <String, dynamic>{
+              'id': 'svSfwFdmdM',
+              'category': 'bug',
+              'title': '视频卡顿',
+              'status': 'closed',
+              'createdAt': 200,
+              'updatedAt': 200,
+            },
         ],
       });
     }
@@ -1017,6 +1026,115 @@ void main() {
     await query('');
     expect(tile('svSfwFdmdM'), findsOneWidget);
     expect(tile('oldoldold0'), findsOneWidget);
+  });
+
+  Future<void> seedOpenAndClosed() async {
+    await FeedbackTicketStore(root).write(<FeedbackTicket>[
+      const FeedbackTicket(
+        id: 'oldoldold0',
+        ticket: 'old-ticket',
+        title: '旧反馈',
+        category: FeedbackCategory.bug,
+        createdAt: 100,
+        status: FeedbackStatus.open,
+        updatedAt: 100,
+        seenAt: 100,
+      ),
+      const FeedbackTicket(
+        id: 'svSfwFdmdM',
+        ticket: 't2',
+        title: '视频卡顿',
+        category: FeedbackCategory.bug,
+        createdAt: 200,
+        status: FeedbackStatus.closed,
+        updatedAt: 200,
+        seenAt: 200,
+      ),
+    ]);
+  }
+
+  testWidgets('我的反馈：状态筛选（进行中 / 已结案 / 有新回复 / 全部）', (WidgetTester tester) async {
+    tallView(tester);
+    await tester.runAsync(seedOpenAndClosed);
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    await tester.pumpWidget(wrap(b, f, const FeedbackCenterPage()));
+    await settleIo(tester, () => f.unseenCount == 1);
+
+    Finder tile(String id) =>
+        find.byKey(ValueKey<String>('feedback-ticket-$id'));
+    Future<void> pick(FeedbackTicketFilter filter) async {
+      await tester.tap(
+        find.byKey(ValueKey<String>('feedback-center-filter-${filter.name}')),
+      );
+      await tester.pump();
+    }
+
+    expect(tile('oldoldold0'), findsOneWidget);
+    expect(tile('svSfwFdmdM'), findsOneWidget);
+    await pick(FeedbackTicketFilter.active);
+    expect(tile('oldoldold0'), findsOneWidget);
+    expect(tile('svSfwFdmdM'), findsNothing);
+    await pick(FeedbackTicketFilter.closed);
+    expect(tile('oldoldold0'), findsNothing);
+    expect(tile('svSfwFdmdM'), findsOneWidget);
+    // 服务端给 oldoldold0 回了开发者新回复。
+    await pick(FeedbackTicketFilter.unread);
+    expect(tile('oldoldold0'), findsOneWidget);
+    expect(tile('svSfwFdmdM'), findsNothing);
+    await pick(FeedbackTicketFilter.all);
+    expect(tile('oldoldold0'), findsOneWidget);
+    expect(tile('svSfwFdmdM'), findsOneWidget);
+  });
+
+  testWidgets('我的反馈：横屏宽屏左列表右详情分栏，移除后退回占位；窄屏不分栏', (WidgetTester tester) async {
+    await tester.runAsync(seedOld);
+    final LeaderboardService b = board();
+    final FeedbackService f = feedback(b);
+    tester.view.physicalSize = const Size(1400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(wrap(b, f, const FeedbackCenterPage()));
+    await settleIo(tester, () => f.loaded);
+    expect(
+      find.byKey(const ValueKey<String>('feedback-center-split')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('feedback-center-split-empty')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('feedback-ticket-oldoldold0')),
+    );
+    await tester.pump();
+    // 右栏出详情，列表仍在左边（没有 push 新路由）。
+    expect(find.byType(FeedbackDetailPage), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('feedback-ticket-oldoldold0')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('feedback-center-split-empty')),
+      findsNothing,
+    );
+
+    // 右栏里「从本机移除」：不 pop 整页，右栏退回占位。
+    await tester.tap(find.byTooltip(t.feedback_detail_forget));
+    await settleIo(tester, () => f.tickets.isEmpty);
+    expect(find.byType(FeedbackCenterPage), findsOneWidget);
+    expect(find.byType(FeedbackDetailPage), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('feedback-center-split-empty')),
+      findsOneWidget,
+    );
+
+    tester.view.physicalSize = const Size(500, 900);
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('feedback-center-split')),
+      findsNothing,
+    );
   });
 
   testWidgets('详情页「标记为已完成」：二次确认，取消不发请求；确认后凭 ticket 关闭、按钮消失', (
